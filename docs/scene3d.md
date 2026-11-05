@@ -157,6 +157,15 @@ let plan = { targets = Map#{ "scene" => RenderTarget.withMsaa(4, RenderTarget.wi
 場面の絵（Texture3d）を GPU に持つ量は 256 MB・64 枚まで（project.json の `scene3dTextureBudgetMB`・`scene3dTextureBudgetCount`）。
 超えた時の縮め方は [lightmap.md](lightmap.md) の「場面の絵の予算」。
 
+## 初めて出る物を先に上げる
+
+`App.withPreload3d({ key, instances, textures })` は、遊びの途中で初めて出る物の形・絵・材質のプログラムを GPU へ上げる。`key` は毎コマ読み、`instances` と `textures` は `key` が変わった時と Doc の読み直しの時だけ読む。3D の場面が 1 つも出ていないタイトルの間でも上がる。
+
+- 描かないので、置く場所は何でもよい。骨つきの物は姿勢を付けたまま渡すと、骨つきの版のプログラムも組める。
+- `Instance3d` は `tex3d:` の絵の名前しか持たないので、中身は `textures` で渡す（無い絵は 1 回知らせる）。描く時は今まで通り場面の `textures` にも載せる。
+- `key` には中身を決める入力だけを入れる。300 コマの内に 30 回変わると、組み直してばかりだと知らせる。
+- 上げた形と絵は、置き場の上限でほかの物より後に捨てる。足りなければそれらも捨てて 1 回知らせる。材質のプログラムは捨てない。
+
 ## 一人称の視点
 
 マウスで視点を回す（カーソルを窓にキャプチャする）のは 2D と 3D で共通の入力の口: `App.withMouseCapture` + `frame#mouseDelta`。

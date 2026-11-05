@@ -201,6 +201,8 @@ pub mod App {
         // 純粋関数に限るのは renderCommands の op を効果多相にしないため（静的な絵は World の
         // 純粋な投影から作れる）。
         staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }],
+        // withPreload3d の宣言。
+        preload3d = Option[{ key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }],
         // 「1 度だけ GPU に生成して 1 draw call で敷くタイルの層」の宣言（無ければ None）。
         // Spec の key が変わるとエンジンが作り直す。純粋関数に限る理由は staticLayer と同じ。
         // タイル層は動的な絵より必ず奥に描かれる — キャラを隠す絵（屋根・庇）は置けない。
@@ -280,6 +282,7 @@ pub mod App {
           parallaxLayers = Nil,
           hudView = None,
           staticLayer = None,
+          preload3d = None,
           tileLayers = None,
           spriteAtlases = _ -> Nil,
           pixelSnap = _ -> 0.0,
@@ -418,6 +421,16 @@ pub mod App {
                             build: w -> List[Render.PlacedItem],
                             app: App[w, ef]): App[w, ef] =
         App.App({ staticLayer = Some({ key = key, build = build }) | rec(app) })
+
+    /// 遊びの途中で初めて出る物（形・絵・材質のプログラム）を GPU へ先に上げる宣言。初めて出るコマに mipmap 作りとプログラムの組み立てが乗って
+    /// コマが跳ねるのを、起動（と読み直し）の 1 コマへまとめる。key は毎コマ読み、中身を決める全入力を 1 文字列にまとめた物。
+    /// instances と textures は key が変わった時と Doc の読み直しの時だけ読む純粋関数。instances は描かないので置く場所は何でもよい。
+    /// 骨つきの物は姿勢を付けたまま渡すと、骨つきの版のプログラムまで組める。view の中で後から作る絵と、材質が読まない絵は上がらない。
+    /// textures = 材質が "tex3d:" の名前で読む絵（Instance3d は名前しか持たない。その物を描く場面の textures にも載せる）。
+    /// 上げた物は置き場の上限で捨てられにくくなる。形と絵は上限に足りなければ捨て、1 回知らせる。
+    /// 描き手が GPU の 3D を持たない時（CPU の描き手・窓の無い描き手・WebLayer.withProject）は何もしない。view = None のゲームでは効かない。
+    pub def withPreload3d(plan: { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }, app: App[w, ef]): App[w, ef] =
+        App.App({ preload3d = Some(plan) | rec(app) })
 
     /// タイルの層（床・壁 1 行目など、格子に敷く静的な絵）を宣言する。エンジンが Spec ごとに
     /// 1 度だけ GPU に生成し、以後は毎フレーム 1 draw call で敷く（数百〜千マスでも軽い）。
@@ -1072,26 +1085,6 @@ pub mod App {
                       else Option.map(c -> { x = Float64.round(c#x * CameraRig.safeZoom(z)) / CameraRig.safeZoom(z),
                                              y = Float64.round(c#y * CameraRig.safeZoom(z)) / CameraRig.safeZoom(z) }, center);
         (snapped, z)
-
-    /// withFonts で宣言された名前を先に全部引いておき、名前 → アトラスの純粋な引き当てを作る。
-    /// view は純粋（ef）なので、その場で getFontAtlas を呼べない — ここで先に解いておく。
-    /// 宣言していない名前は既定フォントへ落とす（字が消えるより既定で出るほうがよい）。
-    def fontResolver(r: Rec[w, ef], dflt: FontAtlas): (String -> FontAtlas) \ Platform.GpuResources =
-        let table = r#fonts |> List.foldLeft((acc, n) ->
-            Map.insert(n, Platform.GpuResources.getFontAtlas(n), acc),
-            (Map.empty(): Map[String, FontAtlas]));
-        name -> Map.get(name, table) |> Option.getWithDefault(dflt)
-
-    /// world から画面に出す絵一式を組む（実機の字のフォントで buildSceneItems）。diagnostics は前のフレームの診断で、
-    /// view・hudView・視差レイヤの ViewCtx#diagnostics に入る。F8 スクラブ中は「表示中の瞬間」の World を渡すこと — 現在の world を
-    /// 渡すと絵は過去・カメラは現在のズレた画面になり、注釈の当たり判定も全部ずれる。
-    def sceneItems(app: App[w, ef], design: Vec2.Vec2, display: Display.Display, atlas: FontAtlas, warnOnce: String -> Unit,
-                   diagnostics: Option[FrameDiagnostics.Diagnostics], world: w,
-                   toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef):
-            List[Render.PlacedItem] \ (ef + Platform.GpuResources) =
-        let base = { atlas = atlas, fontOf = fontResolver(rec(app), atlas),
-                     visible = visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display };
-        buildSceneItems(app, design, base, world, toItems)
 
     /// ViewCtx を 1 つ受けて、view・hudView・視差レイヤの絵に camera を掛けて 1 コマぶん並べる（窓なしで呼べる）。
     /// base の visible は層ごとに見えている矩形へ置き換わり、ほかの欄（字・知らせ・診断）はどの層にも同じ値で渡る。

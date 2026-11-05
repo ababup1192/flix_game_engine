@@ -890,7 +890,7 @@ pub mod App.RemoteDebug {
                 let atlas = Platform.GpuResources.getFontAtlas("default");
                 // 画面座標の矩形と突き合わせるので、カメラ適用後（=画面に出ている）items を使う
                 let hitList = Annotate.hits(name -> Platform.GpuResources.getTextureInfo(name), rect,
-                                            App.sceneItems(app, Platform.Window.getViewportRect()#size, Platform.Window.getDisplay(), atlas, _ -> (), None, world, toItems));
+                                            App.Internal.Paint.sceneItems(app, Platform.Window.getViewportRect()#size, Platform.Window.getDisplay(), atlas, _ -> (), None, world, toItems));
                 sceneBlock(rect, hitList)
             case (None, Some((_, toChannels))) =>
                 let (drawables, _, _) = toChannels(world);

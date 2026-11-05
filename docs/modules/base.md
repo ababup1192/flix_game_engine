@@ -26,6 +26,7 @@
 |---|---|
 | 小さすぎて見えない物・画面外の物を大量に作っている | Scatter.strip（作る前に捨てる。reach 余白と cellsMax の倍々間引き） |
 | 動かない背景を毎フレーム作り直している | App.withStaticLayer（鍵が同じ間は GPU バッファを使い回す） |
+| 3D で初めて出る物のコマだけ跳ねる | App.withPreload3d（形・絵・材質のプログラムを先に GPU へ上げる。`key` が同じ間は組み直さない） |
 | タイルが多い・タイル宣言の組み立てが毎フレーム走る | App.withTileLayers（tiles はサンク — 鍵が変わるまで評価されない） |
 | 遠くで 1px を切る物まで組み立てている | 倍率の床で place ごと切る |
 | 1 マスを画素ぶんの box で組んでいる（絵は同じでも桁が違う） | PxSprite.drawQuad（1 コマ = 1 クアッド）。アトラスは PxSpriteAtlas.bake + App.withSpriteAtlases |

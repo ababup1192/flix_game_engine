@@ -68,7 +68,7 @@ pub mod App.Internal.Halt {
                         let shotPainted = paint(App.Internal.Paint.plainLook(Nil), painted);
                         let atlas = Platform.GpuResources.getFontAtlas("default");
                         let items = List.append(App.Internal.Paint.tilePausedItems(app, design, displayed),
-                                    List.append(App.sceneItems(app, design, display, atlas, warnOnce, frame#diagnostics, displayed, toItems),
+                                    List.append(App.Internal.Paint.sceneItems(app, design, display, atlas, warnOnce, frame#diagnostics, displayed, toItems),
                                                 App.Internal.Paint.staticPausedItems(app, design, displayed)));
                         let hitList = Annotate.hits(name -> Platform.GpuResources.getTextureInfo(name), rect, items);
                         (saveAnnotation(buildAnnotationRequest(design, rect, shownFrame, dump, hitList)), shotPainted)

@@ -749,6 +749,11 @@ mod RenderPaint {
     pub def queueScene3d(paint: Paint, cmd: Scene3d.RenderCmd): Unit \ IO =
         Array.put(cmd :: Array.get(0, paint#pendingScene3dHolder), 0, paint#pendingScene3dHolder)
 
+    /// Platform.Draw3d.preload3d の中身。
+    // WhyNot: queueScene3d のように溜めない — 溜めると、同じコマの Pass の場面が上がる前に描かれる。
+    pub def preloadScene3d(paint: Paint, cmd: Scene3d.PreloadCmd): Unit \ IO =
+        paint#scene3d#preload(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef), cmd)
+
     /// 使わなくなったシェーダープログラムを LRU で追い出す。
     def evictShaderPrograms(gl: GlContext, paint: Paint): Unit \ IO =
         let shaderProgramCache = paint#shaderProgramCache;

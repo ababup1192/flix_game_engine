@@ -101,6 +101,18 @@ pub def withPreload3d(plan: { key = w -> GameEngine.StaticKey, instances = w -> 
 - 形と絵の印は絶対でなく優先度。予算を超えたら印の無い物から捨て、足りなければ印のある物も捨てて 1 回警告する。
 - CPU の描き手と窓の無い描き手では何もしない。
 
+実装（2026-11-06・未コミット）: `Platform.Draw3d.preload3d` を足し、受けたその場で `Render3d.Preload` が上げる。上げた物は `budgetEvictions`（形もこれへ移した）の捨てる順を後ろへ回す。材質のプログラムは数の上限しかないので必ず守る。`key` が 300 コマの内に 30 回変わると 1 回知らせる。
+
+上の形から 1 つ変えた: `Instance3d` は `tex3d:` の絵の名前しか持たないので、plan に `textures = w -> List[Texture3d.Texture3d]` を足した（`withPreload3d(plan: { key, instances, textures }, app)`）。場面の `textures` から引く形だと、場面が来るまで上げられず、見つからない絵を待つ仕組みが要るため。
+
+未測定の懸念: 全部を 1 コマで上げるので、ブラウザではそのコマの長さが問題になりうる（上げる量が多いゲームで、タブが止まって見える時間を測っていない）。1 コマに上げる量を分ける作りは入れていない。測ってから決める。
+
+**0.88.0 の移行メモ（下書き。リリースの時に `docs/migrations/0.88.0.md` へ写す）**
+
+- 足した口: `App.withPreload3d({ key, instances, textures }, app)`。初めて出る物を視錐台の外へ毎コマ置いていたゲームは、その物を `instances` へ、読む `tex3d:` の絵を `textures` へ移して消せる。骨つきの物は姿勢を外さず渡すと、骨つきの版も組める。描く時は今まで通り場面の `textures` にも載せる。
+- 壊れる所: `Platform.Draw3d` に `preload3d` を足した。`handler Platform.Draw3d` を手で書いているテストは `def preload3d(_cmd, k) = k(())` を足す。`Platform.runNoopDraw3d` を使う所は直さなくてよい。
+- `Scene3dRenderer.Renderer` に `preload` の欄を足した。手で組む描き手は `Scene3dRenderer.none()` を土台にするか、`preload = (_, _, _) -> checked_ecast(())` を足す。
+
 ### 5. 自動インスタンス描き（ゲームの変更なし）
 
 - `plans/engine-horde-perf.md` の G → B → A をそのまま進める。

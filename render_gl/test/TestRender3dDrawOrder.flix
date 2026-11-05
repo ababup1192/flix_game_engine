@@ -51,30 +51,30 @@ mod Render3d.TestDrawOrder {
 
     // ── 置き場の上限 ──
 
-    def entry(lastUsed: Int64, bytes: Int64, counted: Bool): Render3d.Material.BudgetEntry =
-        { lastUsed = lastUsed, bytes = bytes, counted = counted }
+    def entry(lastUsed: Int64, size: Int64, counted: Bool): Render3d.Material.BudgetEntry =
+        { lastUsed = lastUsed, size = size, counted = counted, preloaded = false }
 
     /// 上限に収まっていれば、長く使っていない物も捨てない。
     @Test
     def testNothingIsDroppedWithinBudget(): Unit \ Assert =
         let entries = ("old", entry(1i64, 10i64, true)) :: ("copy", entry(2i64, 10i64, false)) :: Nil;
-        Assert.assertEq(expected = Nil, Render3d.Material.budgetEvictions({ count = 4, bytes = 100i64 }, 1000i64, entries))
+        Assert.assertEq(expected = Nil, Render3d.Material.budgetEvictions({ count = 4, size = 100i64 }, 1000i64, entries))
 
     /// 大きさを超えたら、段つきの写しも含めて古い物から収まるまで捨てる。
     @Test
     def testBytesOverBudgetDropsOldestIncludingCopies(): Unit \ Assert =
         let entries = ("scene", entry(5i64, 40i64, true)) :: ("copy", entry(2i64, 40i64, false)) :: ("new", entry(9i64, 40i64, true)) :: Nil;
-        Assert.assertEq(expected = "copy" :: Nil, Render3d.Material.budgetEvictions({ count = 10, bytes = 100i64 }, 1000i64, entries))
+        Assert.assertEq(expected = "copy" :: Nil, Render3d.Material.budgetEvictions({ count = 10, size = 100i64 }, 1000i64, entries))
 
     /// 枚数だけが超えている間は、枚数に数えない段つきの写しは捨てない。
     @Test
     def testCountOverBudgetSkipsCopies(): Unit \ Assert =
         let entries = ("copy", entry(1i64, 1i64, false)) :: ("a", entry(2i64, 1i64, true)) :: ("b", entry(3i64, 1i64, true)) :: Nil;
-        Assert.assertEq(expected = "a" :: Nil, Render3d.Material.budgetEvictions({ count = 1, bytes = 100i64 }, 1000i64, entries))
+        Assert.assertEq(expected = "a" :: Nil, Render3d.Material.budgetEvictions({ count = 1, size = 100i64 }, 1000i64, entries))
 
     /// keepFrom より後に使った物は、上限を超えていても捨てない。
     @Test
     def testRecentlyUsedIsKept(): Unit \ Assert =
         let entries = ("a", entry(8i64, 80i64, true)) :: ("b", entry(9i64, 80i64, true)) :: Nil;
-        Assert.assertEq(expected = Nil, Render3d.Material.budgetEvictions({ count = 10, bytes = 100i64 }, 8i64, entries))
+        Assert.assertEq(expected = Nil, Render3d.Material.budgetEvictions({ count = 10, size = 100i64 }, 8i64, entries))
 }

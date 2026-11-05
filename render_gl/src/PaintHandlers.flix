@@ -57,6 +57,10 @@ mod RenderPaintHandlers {
                 RenderPaint.queueScene3d(paint, cmd);
                 k(())
             }
+            def preload3d(cmd, k) = {
+                RenderPaint.preloadScene3d(paint, cmd);
+                k(())
+            }
         }
 
     /// 1 コマごとの描く側の診断を paint で集める。

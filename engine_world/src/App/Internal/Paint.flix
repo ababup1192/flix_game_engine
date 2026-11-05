@@ -3,6 +3,26 @@
 pub mod App.Internal.Paint {
     import java.lang.System
 
+    /// withFonts で宣言された名前を先に全部引いておき、名前 → アトラスの純粋な引き当てを作る。
+    /// view は純粋（ef）なので、その場で getFontAtlas を呼べない — ここで先に解いておく。
+    /// 宣言していない名前は既定フォントへ落とす（字が消えるより既定で出るほうがよい）。
+    def fontResolver(r: App.Rec[w, ef], dflt: FontAtlas): (String -> FontAtlas) \ Platform.GpuResources =
+        let table = r#fonts |> List.foldLeft((acc, n) ->
+            Map.insert(n, Platform.GpuResources.getFontAtlas(n), acc),
+            (Map.empty(): Map[String, FontAtlas]));
+        name -> Map.get(name, table) |> Option.getWithDefault(dflt)
+
+    /// world から画面に出す絵一式を組む（実機の字のフォントで buildSceneItems）。diagnostics は前のフレームの診断で、
+    /// view・hudView・視差レイヤの ViewCtx#diagnostics に入る。F8 スクラブ中は「表示中の瞬間」の World を渡すこと — 現在の world を
+    /// 渡すと絵は過去・カメラは現在のズレた画面になり、注釈の当たり判定も全部ずれる。
+    pub def sceneItems(app: App[w, ef], design: Vec2.Vec2, display: Display.Display, atlas: FontAtlas, warnOnce: String -> Unit,
+                       diagnostics: Option[FrameDiagnostics.Diagnostics], world: w,
+                       toItems: (App.ViewCtx, w) -> List[Render.PlacedItem] \ ef):
+            List[Render.PlacedItem] \ (ef + Platform.GpuResources) =
+        let base = { atlas = atlas, fontOf = fontResolver(App.rec(app), atlas),
+                     visible = App.visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display };
+        App.buildSceneItems(app, design, base, world, toItems)
+
     /// 生成したアトラスを描画部へ渡しておく（同じ key の間は何も起きない）。
     /// 同じ名前が 2 つ来たら後の方だけを使う — 両方渡すと毎フレーム key が入れ替わり、
     /// 大きさが違えば 1 枚ずつ GPU に置き去りになる。
@@ -78,6 +98,12 @@ pub mod App.Internal.Paint {
 
     /// まだ何も生成していない起動時の持ち回し。
     pub def freshTileCache(): TileCache = { gen = 0, entries = Map.empty(), passTargets = Set.empty() }
+
+    /// 先に上げる物の宣言（withPreload3d）を、この World の頼みにする。ゲームの key に Doc の世代 docGen を足すので、読み直しのたびに組み直す。
+    /// instances と textures は包むだけで、ここでは読まない。
+    pub def preloadCmd(app: App[w, ef], docGen: Int32, world: w): Option[Scene3d.PreloadCmd] =
+        App.rec(app)#preload3d |> Option.map(plan ->
+            { key = "${docGen}:" + (plan#key)(world), instances = () -> (plan#instances)(world), textures = () -> (plan#textures)(world) })
 
     /// Doc の読み直しが起きたフレームで世代を進める。ゲームの書く key は素のまま、
     /// 世代の不一致が「作り直しが要る」の判定になる（tileCacheHit が見る）。
@@ -262,6 +288,7 @@ pub mod App.Internal.Paint {
             case None          => (tileCache, glyphSeen, budgetWarned)
             case Some(toItems) =>
                 uploadAtlases((r#spriteAtlases)(world));
+                preloadCmd(app, tileCache#gen, world) |> Option.forEach(cmd -> Platform.Draw3d.preload3d(cmd));
                 let atlas = Platform.GpuResources.getFontAtlas("default");
                 let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, (r#passes)(world)));
                 let passList = plan#passes;
@@ -271,7 +298,7 @@ pub mod App.Internal.Paint {
                 // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
                 // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
                 let retained = Annotate.isIdentity(look#view);
-                let scene = App.sceneItems(app, design, display, atlas, warnOnce, diagnostics, world, toItems);
+                let scene = sceneItems(app, design, display, atlas, warnOnce, diagnostics, world, toItems);
                 let base = if (retained) scene
                            else List.append(tilePausedItems(app, design, world),
                                             List.append(scene, staticPausedItems(app, design, world)));

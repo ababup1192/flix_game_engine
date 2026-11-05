@@ -104,6 +104,8 @@ pub mod Platform {
     pub eff Draw3d {
         /// 3D の場面 1 つを、次の Draw2d.renderCommands の列へ積む（深度で前後を決め、2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
         def drawScene3d(cmd: Scene3d.RenderCmd): Unit
+        /// 遊びの途中で初めて出る物を GPU へ先に上げる。前と同じ cmd#key なら何もしない。
+        def preload3d(cmd: Scene3d.PreloadCmd): Unit
     }
 
     /// 描くのと重ねて進める仕事を 1 つずつ預ける口。
@@ -131,6 +133,7 @@ pub mod Platform {
     pub def runNoopDraw3d(f: Unit -> a \ ef): a \ ef - Draw3d =
         run f() with handler Draw3d {
             def drawScene3d(_cmd, k) = k(())
+            def preload3d(_cmd, k) = k(())
         }
 
     /// GPU に置く資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を用意し、寸法を引く。

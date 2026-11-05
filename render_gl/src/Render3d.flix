@@ -16,6 +16,7 @@
 //   glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)・出す α は材質の albedo.a）。
 //   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
 //   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は LightModel3d.skyModel）。
+// 先に上げた物（Render3d.Preload）は、置き場の上限で捨てる順を後ろへ回す。形と絵は上限に足りなければそれらも捨てて 1 回知らせ、材質のプログラムは大きさの上限が無いので必ず守る。
 mod Render3d {
     import fge.gl.GlConst
     import fge.gl.GlContext
@@ -25,7 +26,7 @@ mod Render3d {
                        depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Shadow.{bindShadowMap, putShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
-    use Render3d.Material.{blankTextureId, drawMaterials, resolveTextureAs, splitByMaterial, sweepMaterials, sweepTextures3d}
+    use Render3d.Material.{blankTextureId, budgetEvictions, drawMaterials, resolveTextureAs, splitByMaterial, sweepMaterials, sweepTextures3d}
     use Render3d.Counts.{Counter, Phase, count, countDrawCall, countInstances, noteDroppedLights, takeCounts, timed}
 
     // ── 型 ──
@@ -164,6 +165,21 @@ mod Render3d {
             + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
             + ":" + Int64.toString(force m#shaderHash)
 
+    /// 置き場の上限に数える絵の鍵。Scene = 場面の絵（textures3dRef の鍵）・Copy = 全体の登録の絵の段つきの写し（mipCopiesRef の鍵）。
+    pub enum TextureSlot with Eq, Order, ToString {
+        case Scene(String)
+        case Copy(String)
+    }
+
+    /// 材質の絵 1 枚の読み方 (知らせの中の呼び名, 名前, 使い方)。
+    pub type alias TextureRead = (String, String, Texture3d.TextureUse)
+
+    /// 先に上げた物の控え。builtKey = 最後に上げた宣言の key・meshes・programs・textures = 上げた物（置き場の鍵か、材質のプログラムの番号）・
+    /// rebuilds = 組み直した世代（新しい物が頭・rebuildStreakLimit() 個まで）。
+    pub type alias PreloadState = {
+        builtKey = Option[DrawCmd.StaticKey], meshes = Set[String], programs = Set[Int32], textures = Set[TextureSlot], rebuilds = List[Int64]
+    }
+
     /// 1 つの場面の光を uniform へ渡す形にした物（点光源・スポットは Scene3d.pickLights で選んだ後）。
     type alias LightData = {
         ambient = Array[Float32, Static], hemisphere = Float32, toonSteps = Int32,
@@ -227,7 +243,9 @@ mod Render3d {
         // 前に takeCounts してから組んだ材質のプログラム（新しい物が頭）。
         materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static],
         // 置いた物ごとの行列を glUniformMatrix4fv へ渡す時の置き場（渡した時に GL が写すので使い回す）。
-        matrixScratch = Array[Float32, Static]
+        matrixScratch = Array[Float32, Static],
+        // 先に上げた物の控え。
+        preloadRef = Ref[PreloadState, Static]
     }
 
     // ── 決まりの数 ──
@@ -284,7 +302,7 @@ mod Render3d {
           blankTexture = Array#{0} @ Static,
           sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
-          matrixScratch = Array.repeat(Static, 16, 0.0f32) }
+          matrixScratch = Array.repeat(Static, 16, 0.0f32), preloadRef = Ref.fresh(Static, Render3d.Preload.empty()) }
 
     /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限は config（project.json）から読む。
     pub def makeRenderer(gl: GlContext, config: GameEngine.EngineConfig): Scene3dRenderer.Renderer \ IO =
@@ -292,7 +310,8 @@ mod Render3d {
         { prepare = (gen, textureOf, dest, cmds) -> prepareNumbered(gl, state, gen, textureOf, dest, cmds),
           endFrame = gen -> endFrame(gl, state, gen),
           takeCounts = () -> takeCounts(state),
-          readsTexture = readsTexture }
+          readsTexture = readsTexture,
+          preload = (gen, textureOf, cmd) -> Render3d.Preload.upload(gl, state, gen, textureOf, cmd) }
 
     /// 場面のどれかのビルボードが name の絵を貼るか（材質の Tex は数えない）。
     pub def readsTexture(name: String, scenes: List[Scene3d.RenderCmd]): Bool =
@@ -508,7 +527,7 @@ mod Render3d {
         countInstances(state, total, List.count(d -> not d#culled, plain) + List.count(d -> not d#draw#culled, materials))
 
     /// 材質のある物 d を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
-    def materialTextureNames(d: MaterialDraw): List[(String, String, Texture3d.TextureUse)] =
+    def materialTextureNames(d: MaterialDraw): List[TextureRead] =
         let reads = if (List.isEmpty(d#entry#texReads)) Nil
                     else ShaderDoc.materialTexReads(d#material#spec, d#material#emission) |> List.take(Scene3d.maxMaterialTextures())
                         |> List.map(nf -> ("材質の絵", fst(nf), Texture3d.TextureUse.MaterialTexture));
@@ -581,6 +600,19 @@ mod Render3d {
         RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
         gl.useProgram(0);
         gl.bindVertexArray(0)
+
+    /// victims に先に上げた形 preloaded が入っていたら、1 回だけ知らせる。
+    def warnDroppedMeshes(state: State, victims: List[String], preloaded: Set[String]): Unit \ IO =
+        if (List.exists(k -> Set.memberOf(k, preloaded), victims))
+            warnSceneOnce(state, "@preload-dropped-mesh", "scene3d: 先に上げた形を、頂点の上限 ${vertexBudget()} が足りないので捨てた — 次に出るコマで上げ直す（先に上げる形を減らす）")
+        else ()
+
+    /// victims に先に上げた絵 preloaded が入っていたら、1 回だけ知らせる。
+    def warnDroppedTextures(state: State, victims: List[TextureSlot], preloaded: Set[TextureSlot]): Unit \ IO =
+        if (List.exists(k -> Set.memberOf(k, preloaded), victims))
+            warnSceneOnce(state, "@preload-dropped-texture", "scene3d: 先に上げた絵を、置き場の上限が足りないので捨てた — 次に出るコマで上げ直す"
+                + "（先に上げる絵を減らすか、project.json の scene3dTextureBudgetCount / scene3dTextureBudgetMB を上げる）")
+        else ()
 
     def warnSceneOnce(state: State, key: String, message: String): Unit \ IO =
         let warned = Ref.get(state#sceneWarnedRef);
@@ -897,24 +929,27 @@ mod Render3d {
         Array.put(Array.get(0, state#vertexTotal) - freed, 0, state#vertexTotal);
         Ref.put(kept, state#meshesRef)
 
-    /// 頂点の合計が上限に収まるまで、最後に使ったのが古い物から捨てる（今のコマで使った物は捨てない）。
+    /// 頂点の合計が上限に収まるまで、形を捨てる（捨てる順は meshEvictions）。
     def trimToBudget(gl: GlContext, state: State, gen: Int64): Unit \ IO =
-        let oldestFirst = Map.toList(Ref.get(state#meshesRef))
-            |> List.filter(ke -> snd(ke)#lastUsed < gen)
-            |> List.sortBy(ke -> snd(ke)#lastUsed);
-        let over = Array.get(0, state#vertexTotal) - vertexBudget();
-        let (victims, _) = oldestFirst |> List.foldLeft((acc, ke) -> {
-            let (picked, freed) = acc;
-            if (freed >= over) acc else (ke :: picked, freed + snd(ke)#vertexCount)
-        }, (Nil, 0));
-        let dropped = List.toMap(victims);
-        let kept = Map.difference(Ref.get(state#meshesRef), dropped);
+        let meshes = Ref.get(state#meshesRef);
+        let preloaded = Ref.get(state#preloadRef)#meshes;
+        let victims = meshEvictions(vertexBudget(), gen, preloaded, Map.toList(meshes) |> List.map(ke -> (fst(ke), snd(ke)#vertexCount, snd(ke)#lastUsed)));
+        let dropped = victims |> List.filterMap(key -> Map.get(key, meshes) |> Option.map(e -> (key, e))) |> List.toMap;
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る。
         if (Map.isEmpty(dropped)) ()
         else {
-            dropMeshes(gl, state, dropped, kept);
+            dropMeshes(gl, state, dropped, Map.difference(meshes, dropped));
+            warnDroppedMeshes(state, victims, preloaded);
             Log.warn("scene3d: メッシュの置き場が頂点 ${vertexBudget()} を超えたので、古い形を ${Map.size(dropped)} 個捨てた")
         }
+
+    /// entries = (鍵, 頂点の数, 最後に使った世代)。頂点の合計を vertexLimit に収めるために捨てる形の鍵。今と前のコマで使った物
+    /// （Pass の場面は画面のコマの 1 つ前の世代で描かれる）は選ばず、先に上げていない物から、最後に使ったのが古い順に選ぶ。
+    def meshEvictions(vertexLimit: Int32, gen: Int64, preloaded: Set[String], entries: List[(String, Int32, Int64)]): List[String] =
+        budgetEvictions({ count = Int32.maxValue(), size = Int32.toInt64(vertexLimit) }, gen - 1i64, entries |> List.map(e -> {
+            let (key, vertexCount, lastUsed) = e;
+            (key, { lastUsed = lastUsed, size = Int32.toInt64(vertexCount), counted = false, preloaded = Set.memberOf(key, preloaded) })
+        }))
 
     def noteUploadStreak(state: State): Unit \ IO =
         noteStreak(state#uploadStreak, "scene3d: 新しい形（Mesh3d）が ${rebuildStreakLimit()} コマ続けて GPU へ上がっている"

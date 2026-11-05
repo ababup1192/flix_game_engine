@@ -107,7 +107,8 @@ pub mod GlOffscreen {
                     GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
                     let paint = RenderPaint.create(gl, { designWidth = config#designWidth, designHeight = config#designHeight,
                                                      clearColor = config#clearColor, screenFramebuffer = 0,
-                                                     scene3d = Render3d.makeRenderer(gl, config), gpuTimer = GpuTimer.frameTimer() });
+                                                     // WhyNot: 窓の無い描き手で先に上げない — 描くコマの数が決まっていて遊びの途中が無く、上げる時間だけが増える。
+                                                     scene3d = Scene3dRenderer.withoutPreload(Render3d.makeRenderer(gl, config)), gpuTimer = GpuTimer.frameTimer() });
                     // 組み込みのフォント（受け皿）とロゴを先に載せる（窓の起動画面と同じ並び）。
                     RenderPaint.addTextures(RenderSplash.install(gl), paint);
                     let fonts = RenderPaint.loadAssets(gl, paint, LwjglAssets.loader(), config, (_, _, _) -> checked_ecast(()));

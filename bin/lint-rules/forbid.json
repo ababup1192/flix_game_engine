@@ -12,7 +12,7 @@
     {
       "id": "render-gl-body-desktop-import",
       "prefixes": ["render_gl/src/"],
-      "basenames": ["Sprite.flix", "Paint.flix", "Frame.flix", "Target.flix", "Static.flix", "Shader.flix", "Buf.flix", "RenderTexture.flix", "PaintHandlers.flix", "Scene3dRenderer.flix", "Render3d.flix", "Render3dGlsl.flix", "Material.flix", "Shadow.flix", "Light.flix", "Counts.flix"],
+      "basenames": ["Sprite.flix", "Paint.flix", "Frame.flix", "Target.flix", "Static.flix", "Shader.flix", "Buf.flix", "RenderTexture.flix", "PaintHandlers.flix", "Scene3dRenderer.flix", "Render3d.flix", "Render3dGlsl.flix", "Material.flix", "Shadow.flix", "Light.flix", "Counts.flix", "Preload.flix"],
       "pattern": "^\\s*import\\s+(org\\.lwjgl|java\\.awt|fge\\.gl\\.(LwjglGl|RecordingGl))",
       "rawLine": true,
       "hint": "render_gl の描き手の本体（ブラウザでも同じ物を使う）は LWJGL と AWT を直に呼ばない。GL は引数の gl: GlContext（fge.gl。LWJGL 版を作るのは LwjglLayer・GlOffscreen だけ）、定数は GlConst、直接バッファは gl.allocFloats など。画像のデコードや字の生成は RenderPaint.AssetLoader（デスクトップは LwjglAssets）へ"
