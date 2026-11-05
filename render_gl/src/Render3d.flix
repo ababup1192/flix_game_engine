@@ -120,11 +120,12 @@ mod Render3d {
     }
 
     /// 組んだ材質のプログラム 1 つ。spec と emission は組んだ時の物（次に来た材質と比べる）。
+    /// known = 同じ GLSL を生むと確かめた材質の参照（最近使った順・Render3d.Material.knownMaterialLimit 個まで。参照が合えば木を比べない）。
     /// paramNames = ShaderGen.compile3d が uParamN に割り当てた名前の並び・texReads = uTexN に貼る (名前, 補間) の並び
     /// （組んだ時の材質の名前。同じプログラムを名前だけ違う材質が使うので、貼る名前は描く材質から引き直す）。
     /// locs#mesh#program が 0 なら組めなかった。
     type alias MaterialEntry = {
-        spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], paramNames = List[String],
+        spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], known = List[(ShaderDoc.Spec, Option[ShaderDoc.Shade])], paramNames = List[String],
         texReads = List[(String, ShaderDoc.FilterMode)], normalMapped = Bool, lightmapped = Bool, coverage = Bool, locs = MaterialLocs, lastUsed = Int64
     }
 

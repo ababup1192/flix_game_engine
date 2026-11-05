@@ -121,6 +121,14 @@ def testMat4OfColumnsRoundTripsToColumns(): Unit \ Assert =
 def testMat4OfColumnsRejectsWrongLength(): Unit \ Assert =
     Assert.assertTrue(Result.isErr(Mat4.ofColumns(Vector.range(0, 15) |> Vector.map(Int32.toFloat64))))
 
+/// 列優先で 1〜16 の行列 × 17〜32 の行列の 16 個（左右を入れ替えると違う値になる組）。
+@Test
+def testMat4MulOfAsymmetricMatrices(): Unit \ Assert =
+    let ofRange = first -> okOrBug(Mat4.ofColumns(Vector.range(first, first + 16) |> Vector.map(Int32.toFloat64)));
+    Assert.assertEq(expected = Vector#{ 538.0, 612.0, 686.0, 760.0, 650.0, 740.0, 830.0, 920.0,
+                                        762.0, 868.0, 974.0, 1080.0, 874.0, 996.0, 1118.0, 1240.0 },
+                    Mat4.toColumns(Mat4.mul(ofRange(1), ofRange(17))))
+
 // ════════════════════════════════════════════════════════════════════
 // AnimationClip3d
 // ════════════════════════════════════════════════════════════════════
@@ -186,6 +194,28 @@ def testClipSampleDropsChannelBeyondSkin(): Unit \ Assert =
     let clip = okOrBug(AnimationClip3d.make("far", { joint = 5 | moveChannel(Vector#{ 0.0 }, Vector#{ 7.0 }) } :: Nil));
     let poses = AnimationClip3d.sample(oneJointSkin(), clip, 0.0, false);
     Assert.assertEq(expected = (1, 0.0), (Vector.length(poses), Vector.get(0, poses)#translation#x))
+
+/// 同じジョイントの同じ欄が 2 本（x = 7 の後に x = 9）あれば後ろの欄（9）。
+@Test
+def testClipSampleLaterDuplicateChannelWins(): Unit \ Assert =
+    let clip = okOrBug(AnimationClip3d.make("dup", moveChannel(Vector#{ 0.0 }, Vector#{ 7.0 }) :: moveChannel(Vector#{ 0.0 }, Vector#{ 9.0 }) :: Nil));
+    Assert.assertEq(expected = 9.0, sampledX(clip, 0.0, false))
+
+/// ジョイント 0・1・0 と交互に並んだ欄は、それぞれのジョイントへ分かれる（0 は x = 7 で倍率 2・1 は x = 3）。
+@Test
+def testClipSampleSplitsInterleavedJoints(): Unit \ Assert =
+    let grow = { path = AnimationClip3d.Path.Scale, values = Vector#{ 2.0, 2.0, 2.0 } | moveChannel(Vector#{ 0.0 }, Vector#{ 0.0 }) };
+    let clip = okOrBug(AnimationClip3d.make("mix", moveChannel(Vector#{ 0.0 }, Vector#{ 7.0 }) ::
+                                                   { joint = 1 | moveChannel(Vector#{ 0.0 }, Vector#{ 3.0 }) } :: grow :: Nil));
+    let poses = AnimationClip3d.sample(twoJointSkin(), clip, 0.0, false);
+    let p0 = Vector.get(0, poses);
+    Assert.assertEq(expected = (7.0, 2.0, 3.0), (p0#translation#x, p0#scale#x, Vector.get(1, poses)#translation#x))
+
+/// 親が自分より後ろのジョイントは、親を単位の行列として重ねる（自分の姿勢 (1, 0, 0) のまま）。
+@Test
+def testJointWorldsTreatsLaterParentAsIdentity(): Unit \ Assert =
+    let worlds = Skin3d.jointWorlds(Vector#{ 1, -1 }, Vector#{ poseAt(Vec3.v3(1.0, 0.0, 0.0)), poseAt(Vec3.v3(0.0, 5.0, 0.0)) });
+    Assert.assertEq(expected = true, matNear(Mat4.translate(Vec3.v3(1.0, 0.0, 0.0)), Vector.get(0, worlds)))
 
 /// duration は全部の欄の最後のキーフレームの時刻の最大（2 秒の欄と 3 秒の欄で 3）。
 @Test

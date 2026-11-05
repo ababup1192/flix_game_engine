@@ -243,7 +243,7 @@ pub mod ShaderGen {
         }
 
     /// 2 つの emission が同じ物か（両方無いか、参照が同じ）。
-    def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool =
+    pub def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool =
         match (a, b) {
             case (None, None)         => true
             case (Some(sa), Some(sb)) => unsafe IO {

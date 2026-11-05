@@ -712,8 +712,7 @@
 ## Mat4 — `engine/src/scene3d/Mat4.flix`
 - `pub type alias Mat4 = Mat4Data`
 - `pub def identity(): Mat4`
-- a × b（点には b を先に当て、次に a を当てる）。
-  `pub def mul(a: Mat4, b: Mat4): Mat4`
+- `pub def mul(a: Mat4, b: Mat4): Mat4`
 - 点を写す（w = 1 で掛け、w での割り算はしない。射影の行列には applyPerspective）。
   `pub def apply(m: Mat4, p: Vec3.Vec3): Vec3.Vec3`
 - 向きを写す（w = 0。平行移動を受けない）。法線には normalMatrix を掛けた物を使う。
@@ -1493,6 +1492,8 @@
   `pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool`
 - a と b が同じ物か（中身ではなく参照）。
   `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
+- 2 つの emission が同じ物か（両方無いか、参照が同じ）。
+  `pub def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool`
 - `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): Int64`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`

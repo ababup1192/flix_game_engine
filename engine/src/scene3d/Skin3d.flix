@@ -58,17 +58,17 @@ pub mod Skin3d {
 
     /// ジョイントごとの「根からの行列」（rootTransform は掛けない）。parents は親が子より先の並び。
     /// local の数が parents より少なければ、足りない所は単位の姿勢として重ねる。
-    pub def jointWorlds(parents: Vector[Int32], local: Vector[JointPose]): Vector[Mat4.Mat4] =
-        let count = Vector.length(parents);
-        let (_, revWorlds) = Vector.range(0, count) |> Vector.foldLeft((acc, i) -> {
-            let (byIndex, out) = acc;
+    /// 親が自分より後ろ（並びの約束が破れた物）は、親を単位の行列として重ねる。
+    pub def jointWorlds(parents: Vector[Int32], local: Vector[JointPose]): Vector[Mat4.Mat4] = region rc {
+        let worlds = Array.repeat(rc, Vector.length(parents), Mat4.identity());
+        Vector.forEachWithIndex((i, parent) -> {
             let localMat = Vector.nth(i, local) |> Option.map(jointPoseToMat4) |> Option.getWithDefault(Mat4.identity());
-            let parent = Vector.get(i, parents);
             let world = if (parent < 0) localMat
-                        else Mat4.mul(Map.get(parent, byIndex) |> Option.getWithDefault(Mat4.identity()), localMat);
-            (Map.insert(i, world, byIndex), world :: out)
-        }, (Map.empty(), Nil));
-        List.toVector(List.reverse(revWorlds))
+                        else Mat4.mul(if (parent < i) Array.get(parent, worlds) else Mat4.identity(), localMat);
+            Array.put(world, i, worlds)
+        }, parents);
+        Array.toVector(worlds)
+    }
 
     /// 局所の姿勢の行列（平行移動 × 回転 × 倍率）。
     pub def jointPoseToMat4(p: JointPose): Mat4.Mat4 =

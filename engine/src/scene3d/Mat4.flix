@@ -21,16 +21,17 @@ pub mod Mat4 {
                         0.0, 0.0, 0.0, 1.0 })
 
     /// a × b（点には b を先に当て、次に a を当てる）。
+    // WhyNot: 16 個をリストで作ってから詰め直さない — 骨の姿勢と描画で 1 コマに何千回も呼ばれ、リストの組み立てが掛け算より重くなる。
     pub def mul(a: Mat4, b: Mat4): Mat4 =
-        List.range(0, 16)
-            |> List.map(k -> {
-                let row = k / 4;
-                let col = k - row * 4;
-                cell(a, row, 0) * cell(b, 0, col) + cell(a, row, 1) * cell(b, 1, col) +
-                cell(a, row, 2) * cell(b, 2, col) + cell(a, row, 3) * cell(b, 3, col)
-            })
-            |> List.toVector
-            |> ofRows
+        let Mat4Data.Mat4Data(x) = a;
+        let Mat4Data.Mat4Data(y) = b;
+        let at = (row, col) ->
+            Vector.get(row * 4, x) * Vector.get(col, y) + Vector.get(row * 4 + 1, x) * Vector.get(4 + col, y) +
+            Vector.get(row * 4 + 2, x) * Vector.get(8 + col, y) + Vector.get(row * 4 + 3, x) * Vector.get(12 + col, y);
+        ofRows(Vector#{ at(0, 0), at(0, 1), at(0, 2), at(0, 3),
+                        at(1, 0), at(1, 1), at(1, 2), at(1, 3),
+                        at(2, 0), at(2, 1), at(2, 2), at(2, 3),
+                        at(3, 0), at(3, 1), at(3, 2), at(3, 3) })
 
     /// 点を写す（w = 1 で掛け、w での割り算はしない。射影の行列には applyPerspective）。
     pub def apply(m: Mat4, p: Vec3.Vec3): Vec3.Vec3 =
@@ -74,9 +75,12 @@ pub mod Mat4 {
 
     /// GL の uniform（glUniformMatrix4fv の transpose = false）に渡す列優先の 16 個。
     pub def toColumns(m: Mat4): Vector[Float64] =
-        List.range(0, 16)
-            |> List.map(k -> { let col = k / 4; cell(m, k - col * 4, col) })
-            |> List.toVector
+        let Mat4Data.Mat4Data(x) = m;
+        let at = i -> Vector.get(i, x);
+        Vector#{ at(0), at(4), at(8),  at(12),
+                 at(1), at(5), at(9),  at(13),
+                 at(2), at(6), at(10), at(14),
+                 at(3), at(7), at(11), at(15) }
 
     /// 列優先の 16 個から作る（toColumns の逆・glTF の MAT4 と同じ並び）。長さが 16 でなければ Err。
     pub def ofColumns(v: Vector[Float64]): Result[String, Mat4] =

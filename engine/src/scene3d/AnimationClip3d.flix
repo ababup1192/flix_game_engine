@@ -19,7 +19,9 @@ pub mod AnimationClip3d {
     /// 1 本の欄。joint = スキンの中の番号・times = キーフレームの秒（増える順）・values = 時刻ごとに幅の数だけ並べた値。
     pub type alias Channel = { joint = Int32, path = Path, times = Vector[Float64], values = Vector[Float64], interpolation = Interpolation }
 
-    type alias ClipRec = { name = String, channels = List[Channel], duration = Float64 }
+    /// byJoint = キーフレームのある欄をジョイントの番号ごとに分けた物（make に渡した並びのまま）。
+    // WhyNot: sample のたびに分けない — 群れの姿勢で 1 コマに何十回も引かれ、分け直しが補間より重くなる。
+    type alias ClipRec = { name = String, byJoint = Map[Int32, List[Channel]], duration = Float64 }
 
     enum ClipData { case ClipData(ClipRec) }
 
@@ -40,7 +42,9 @@ pub mod AnimationClip3d {
             |> List.sequence
             |> Result.map(checked -> ClipData.ClipData({
                 name = name,
-                channels = checked,
+                byJoint = checked
+                    |> List.filter(ch -> Vector.length(ch#times) > 0)
+                    |> List.foldLeft((m, ch) -> Map.insertWith((_new, old) -> List.append(old, ch :: Nil), ch#joint, ch :: Nil, m), Map.empty()),
                 duration = checked |> List.filterMap(ch -> Vector.last(ch#times)) |> List.foldLeft(Float64.max, 0.0)
             }))
 
@@ -73,12 +77,8 @@ pub mod AnimationClip3d {
         let local = if (not loop) t
                     else if (r#duration <= 0.0) 0.0
                     else t - Float64.floor(t / r#duration) * r#duration;
-        let count = Skin3d.jointCount(skin);
-        let byJoint = r#channels
-            |> List.filter(ch -> ch#joint < count and Vector.length(ch#times) > 0)
-            |> List.foldLeft((m, ch) -> Map.insertWith((_new, old) -> List.append(old, ch :: Nil), ch#joint, ch :: Nil, m), Map.empty());
         Skin3d.restPose(skin) |> Vector.mapWithIndex((i, rest) ->
-            Map.get(i, byJoint) |> Option.getWithDefault(Nil) |> List.foldLeft((pose, ch) -> applyChannel(local, ch, pose), rest))
+            Map.get(i, r#byJoint) |> Option.getWithDefault(Nil) |> List.foldLeft((pose, ch) -> applyChannel(local, ch, pose), rest))
 
     def applyChannel(t: Float64, ch: Channel, pose: Skin3d.JointPose): Skin3d.JointPose =
         let (k, frac) = keyAt(ch#times, t);

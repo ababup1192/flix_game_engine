@@ -387,15 +387,40 @@ mod Render3d.Material {
         let key = materialKey(m, kind);
         let cache = Ref.get(state#materialsRef);
         let entry = match Map.get(key, cache) {
-            // 来た方の spec を持ち直す — 古い方を持ち続けると、次のコマも参照の一致で抜けられず毎回木を比べる。
-            case Some(found) if sameMaterial(found, m) => { spec = m#spec, emission = m#emission, lastUsed = gen | found }
-            case old                                   => rebuildMaterial(gl, state, gen, { key = key, kind = kind }, old, m)
+            case Some(found) => reuseOrRebuild(gl, state, gen, { key = key, kind = kind }, found, m)
+            case None        => rebuildMaterial(gl, state, gen, { key = key, kind = kind }, None, m)
         };
         Ref.put(Map.insert(key, entry, Ref.get(state#materialsRef)), state#materialsRef);
         if (entry#locs#mesh#program == 0) None else Some(entry)
 
     def sameMaterial(entry: MaterialEntry, m: Scene3d.MaterialFields): Bool =
         ShaderGen.eqMaterial(entry#spec, entry#emission, m#spec, m#emission)
+
+    /// 同じ鍵の found を使い続けるか組み直すか。前に同じと確かめた参照なら木を比べない。
+    def reuseOrRebuild(gl: GlContext, state: State, gen: Int64, slot: { key = String, kind = ProgramKind }, found: MaterialEntry,
+                       m: Scene3d.MaterialFields): MaterialEntry \ IO =
+        match knownAfterHit(m, found#known) {
+            case Some(known)                    => { known = known, lastUsed = gen | found }
+            case None if sameMaterial(found, m) => { known = List.take(knownMaterialLimit(), (m#spec, m#emission) :: found#known), lastUsed = gen | found }
+            case None                           => rebuildMaterial(gl, state, gen, slot, Some(found), m)
+        }
+
+    /// m の参照が known にあれば、それを頭へ動かした known（頭なら並べ直さない）。無ければ None。
+    def knownAfterHit(m: Scene3d.MaterialFields, known: List[(ShaderDoc.Spec, Option[ShaderDoc.Shade])]): Option[List[(ShaderDoc.Spec, Option[ShaderDoc.Shade])]] =
+        match known {
+            case k :: _ if isSameRef(m, k) => Some(known)
+            case _                         =>
+                let (hit, rest) = List.partition(isSameRef(m), known);
+                if (List.isEmpty(hit)) None else Some(List.append(hit, rest))
+        }
+
+    def isSameRef(m: Scene3d.MaterialFields, k: (ShaderDoc.Spec, Option[ShaderDoc.Shade])): Bool =
+        ShaderGen.isSameSpec(fst(k), m#spec) and ShaderGen.isSameEmission(snd(k), m#emission)
+
+    /// 鍵ごとに覚えておく、同じと確かめた材質の参照の数。
+    // WhyNot: 最後に来た 1 つだけを覚えない — 同じプログラムを使う別の材質（絵の名前だけ違う物）が交互に来ると、1 つごとに木を比べ直す。
+    // WhyNot: 数を限らずに覚えない — 毎コマ材質を作り直すゲームでは、古い材質を持ち続けて増え続ける。
+    def knownMaterialLimit(): Int32 = 8
 
     /// 鍵 key の材質を組み直す。古いプログラムはすぐ消さず引退させる（同じコマの先の物がまだ使う）。
     def rebuildMaterial(gl: GlContext, state: State, gen: Int64, slot: { key = String, kind = ProgramKind }, old: Option[MaterialEntry],
@@ -432,7 +457,7 @@ mod Render3d.Material {
         };
         if (kind#skinned) bindJointsBlock(program) else ();
         bindTextureUnits(program, List.length(glsl#texReads), kind#normalMap, kind#lightmap);
-        { spec = m#spec, emission = m#emission, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
+        { spec = m#spec, emission = m#emission, known = (m#spec, m#emission) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
           lightmapped = kind#lightmap, coverage = kind#coverage,
           locs = materialLocsOf(program, glsl#paramNames, List.length(glsl#texReads)), lastUsed = gen }
 
