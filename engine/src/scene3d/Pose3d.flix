@@ -3,8 +3,9 @@
 /// 描く時のジョイントの行列（閉じた型 — compute で作った物だけ）。
 /// joint 行列 = rootTransform × ジョイントの world 行列 × 逆バインド行列。頂点には Σ 重み × joint 行列 を掛けてから、インスタンスの world 行列を掛ける。
 pub mod Pose3d {
+    import java.lang.Double
 
-    type alias PoseRec = { skin = Skin3d.Skin3d, transforms = Vector[Mat4.Mat4], matrices = Vector[Mat4.Mat4] }
+    type alias PoseRec = { skin = Skin3d.Skin3d, transforms = Vector[Mat4.Mat4], matrices = Vector[Mat4.Mat4], key = Lazy[Int64] }
 
     enum PoseData { case PoseData(PoseRec) }
 
@@ -21,7 +22,7 @@ pub mod Pose3d {
         let root = Skin3d.rootTransform(skin);
         let transforms = Skin3d.jointWorlds(Skin3d.parents(skin), filled) |> Vector.map(w -> Mat4.mul(root, w));
         let matrices = Vector.mapWithIndex((i, tr) -> Mat4.mul(tr, Vector.get(i, Skin3d.inverseBinds(skin))), transforms);
-        PoseData.PoseData({ skin = skin, transforms = transforms, matrices = matrices })
+        PoseData.PoseData({ skin = skin, transforms = transforms, matrices = matrices, key = lazy keyOfMatrices(matrices) })
 
     pub def jointCount(p: Pose3d): Int32 = Vector.length(recOf(p)#matrices)
 
@@ -34,6 +35,18 @@ pub mod Pose3d {
               rotation = Quat.slerp(pa#rotation, pb#rotation, t),
               scale = Vec3.add(pa#scale, Vec3.mul(Vec3.sub(pb#scale, pa#scale), t)) }
         })
+
+    /// 姿勢の鍵: joint 行列の並びの全部の数のビットから作る 64 bit（初めて読んだ時に求める）。同じ並びは必ず同じ鍵になり、
+    /// 1 つの数だけが違う 2 つは必ず違う鍵になる。違う並びが同じ鍵になることはありうるので、同じ中身かは鍵で決めない
+    /// （GL の描き手が同じ姿勢の物を隣に並べるのに使う）。
+    pub def keyOf(p: Pose3d): Int64 = force recOf(p)#key
+
+    // WhyNot: 鍵の後で混ぜ直さない（ずらして散らす手を入れない）— 並べる時の束ね方にだけ使い、表の引きの偏りは気にしない。
+    //   1 語ずつ xor してから奇数を掛ける形は 1 歩ごとに元へ戻せるので、1 つの数だけが違えば鍵も必ず違う。
+    def keyOfMatrices(matrices: Vector[Mat4.Mat4]): Int64 =
+        matrices |> Vector.foldLeft((acc, m) ->
+            Mat4.toColumns(m) |> Vector.foldLeft((a, v) -> Int64.bitwiseXor(a, Double.doubleToLongBits(v)) * 1099511628211i64, acc),
+            -3750763034362895579i64)
 
     /// ジョイントの番号の順の joint 行列（GL の UBO・CPU のスキニングが読む）。
     pub def jointMatrices(p: Pose3d): Vector[Mat4.Mat4] = recOf(p)#matrices

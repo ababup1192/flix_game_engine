@@ -149,11 +149,16 @@ pub mod App.HitchDetector {
                     "- 一番重いコマ: f=${Int64.toString(worst#frame)} ${ms(worst#totalNs)}ms（更新 ${ms(worst#updateNs)} / 組み立て ${ms(buildNs(worst))} / 送る ${ms(worst#diag#submitNs)} / swap ${ms(worst#diag#swapNs)} / その他 ${ms(otherNs(worst))}）" ::
                     "- ${pressLine(hitch)}" ::
                     "- 数: シェーダーを作った ${Int32.toString(List.length(List.flatMap(r -> r#diag#shaderBuilds, rows)))}・消した ${Int32.toString(List.foldLeft((acc, r) -> acc + r#diag#shaderDeletes, 0, rows))}・GPU にあるシェーダー ${Int32.toString(first#diag#liveShaders)} → ${Int32.toString(last#diag#liveShaders)}・足した字 ${Int32.toString(List.foldLeft((acc, r) -> acc + r#diag#glyphsAdded, 0, rows))}・上げ直したテクスチャ ${Int32.toString(List.length(List.flatMap(r -> r#diag#textureUploads, rows)))}・GC ${Int32.toString(List.foldLeft((acc, r) -> acc + r#gc, 0, rows))} 回 ${ms(sumBy(r -> r#gcMs * 1000000i64, rows))}ms" ::
+                    "- 3D の上げ直しと捨てた物: ${FrameDiagnostics.uploadsText(scene3dTotal(rows))}・3D の CPU の区間: ${FrameDiagnostics.cpuPhasesText(scene3dTotal(rows))}" ::
                     "" :: "## 推定原因" :: "" :: Nil;
                 let causes = guesses(config, rows) |> List.map(line -> "- ${line}");
                 String.intercalate("\n", header ::: causes ::: ("" :: Nil) ::: shaderSection(rows) ::: table(config, hitch) ::: replaySection(replay)) + "\n"
             case _ => ""
         }
+
+    /// 行の 3D の数の合計。
+    def scene3dTotal(rows: List[Row]): FrameDiagnostics.Scene3dCounts =
+        List.foldLeft((acc, r) -> FrameDiagnostics.addScene3dCounts(acc, r#diag#scene3dCounts), FrameDiagnostics.emptyScene3dCounts(), rows)
 
     def pressLine(hitch: Hitch): String = match pressBefore(hitch) {
         case Some(p) =>
@@ -180,12 +185,15 @@ pub mod App.HitchDetector {
         let gcNs = sumBy(r -> r#gcMs * 1000000i64, slow);
         let maxItems = List.foldLeft((acc, r) -> Int32.max(acc, r#diag#drawItems), 0, rows);
         let gcLed = totalSlow > 0i64 and gcNs * 3i64 > totalSlow;
+        let slow3d = scene3dTotal(slow);
+        let reuploads = slow3d#mipCopies + slow3d#texture3dUploads + slow3d#meshUploads;
         let lines =
             (if (changed > 0) Some("シェーダーを同じ名前で中身を変えて ${Int32.toString(changed)} 回作り直した（重いコマ ${Int32.toString(withBuild)}/${Int32.toString(n)}）。毎コマ変わる値（下の抜き書き）が Spec に書き込まれている。その値を Spec の外へ出す") else None) ::
             (if (firsts > 0) Some("初めて使うシェーダーを ${Int32.toString(firsts)} 本作った。場面に入る前に一度描いて作っておくと、このコマは軽くなる") else None) ::
             (if (leaked > 0 and deletes == 0) Some("GPU にあるシェーダーが ${Int32.toString(leaked)} 本増えて 1 本も消えていない。作り直しのたびに古い物が残っている（漏れ）") else None) ::
             (if (glyphs > 0) Some("初めて出る字を ${Int32.toString(glyphs)} 字アトラスへ足した（1 度だけの重さ）") else None) ::
             (if (not List.isEmpty(uploads)) Some("テクスチャの画素を ${Int32.toString(List.length(uploads))} 回上げ直した（${String.intercalate(", ", List.take(3, List.distinct(uploads)))}）。毎コマなら key が毎コマ変わっている") else None) ::
+            (if (reuploads > 0) Some("重いコマで 3D の絵か形を GPU へ上げた（${FrameDiagnostics.uploadsText(slow3d)}）。使わないコマ数で捨てた物を上げ直していないか（mip は GPU からの読み戻しで待つ）") else None) ::
             (if (reloads > 0) Some("Doc を読み直したコマが ${Int32.toString(reloads)} ある（保存した直後の重さ）") else None) ::
             (if (gcLed) Some("重いコマの時間の 1/3 以上が GC で止まっている。毎コマの割り当てを減らす（DEBUG の巻き戻し用の履歴と記録も割り当てるので、DEBUG を切っても出るか確かめる）") else None) ::
             (if (not gcLed and totalSlow > 0i64 and part(r -> r#diag#swapNs) * 2i64 > totalSlow) Some("時間の半分以上が swap。GPU の塗りが重いか、ドライバが後回しにした仕事（シェーダーのリンクなど）がここに出ている") else None) ::
@@ -228,10 +236,10 @@ pub mod App.HitchDetector {
         let limit = 40;
         let rest = List.length(shown) - limit;
         ("## 重いコマと手のあるコマ" :: "" ::
-         "| f | 合計 ms | 更新 | 組み立て | 送る | swap | その他 | 作った | GC | 手 |" ::
-         "|---|---|---|---|---|---|---|---|---|---|" :: Nil) :::
+         "| f | 合計 ms | 更新 | 組み立て | 送る | swap | その他 | 作った | GC | 3D の上げ直し | 3D の CPU | 手 |" ::
+         "|---|---|---|---|---|---|---|---|---|---|---|---|" :: Nil) :::
         (List.take(limit, shown) |> List.map(r ->
-            "| ${Int64.toString(r#frame)} | ${ms(r#totalNs)} | ${ms(r#updateNs)} | ${ms(buildNs(r))} | ${ms(r#diag#submitNs)} | ${ms(r#diag#swapNs)} | ${ms(otherNs(r))} | ${Int32.toString(List.length(r#diag#shaderBuilds))} | ${Int32.toString(r#gc)} | ${if (r#pressed == "") "" else r#pressed} |")) :::
+            "| ${Int64.toString(r#frame)} | ${ms(r#totalNs)} | ${ms(r#updateNs)} | ${ms(buildNs(r))} | ${ms(r#diag#submitNs)} | ${ms(r#diag#swapNs)} | ${ms(otherNs(r))} | ${Int32.toString(List.length(r#diag#shaderBuilds))} | ${Int32.toString(r#gc)} | ${FrameDiagnostics.uploadsText(r#diag#scene3dCounts)} | ${FrameDiagnostics.cpuPhasesText(r#diag#scene3dCounts)} | ${if (r#pressed == "") "" else r#pressed} |")) :::
         (if (rest > 0) "（残り ${Int32.toString(rest)} 行は省略）" :: Nil else Nil) ::: ("" :: Nil)
 
     def replaySection(replay: Option[(String, Int64)]): List[String] = match replay {

@@ -81,4 +81,104 @@ mod TestMip {
     @Test
     def testLodIsZeroWhenMagnifiedOrSingleLevel(): Unit \ Assert =
         Assert.assertEq(expected = (0.0, 0.0), (Mip.lodOf({ dudx = 0.01 | still() }, 16, 16, 5), Mip.lodOf({ dudx = 0.25 | still() }, 16, 16, 1)))
+
+    // ── 速い道と素直な道の段がバイトまで同じ ──
+
+    /// seed から決まる w × h の ARGB の絵（添え字を掛けて混ぜた値で埋める）。
+    def noise(seed: Int32, w: Int32, h: Int32): ShaderEval.TexData =
+        let mix = (i: Int32) -> {
+            let x = (seed + i) * -1640531535;
+            Int32.bitwiseXor(x, Int32.logicalRightShift(dist = 15, x)) * 1103515245
+        };
+        tex(w, h, Vector.range(0, w * h) |> Vector.map(mix))
+
+    def sameChain(average: Mip.Average, t: ShaderEval.TexData): Bool =
+        tuplesOf(Mip.build(average, t)) == tuplesOf(Reference.build(average, t))
+
+    def tuplesOf(chain: List[ShaderEval.TexData]): List[(Int32, Int32, Vector[Int32])] =
+        chain |> List.map(td -> (td#width, td#height, td#pixels))
+
+    /// 奇数・細長・正方の大きさのどれでも、Raw の段の列は素直な道と同じ。
+    @Test
+    def testRawChainMatchesReference(): Unit \ Assert =
+        Assert.assertTrue(List.forAll(wh -> sameChain(Mip.Average.Raw, noise(fst(wh) * 31 + snd(wh), fst(wh), snd(wh))), sampleSizes()))
+
+    /// 奇数・細長・正方の大きさのどれでも、SrgbCurve の段の列は素直な道と同じ。
+    @Test
+    def testSrgbChainMatchesReference(): Unit \ Assert =
+        Assert.assertTrue(List.forAll(wh -> sameChain(Mip.Average.SrgbCurve, noise(fst(wh) * 17 + snd(wh), fst(wh), snd(wh))), sampleSizes()))
+
+    /// 大きすぎる絵を縮めた画素は素直な道と同じ。
+    @Test
+    def testShrinkToMatchesReference(): Unit \ Assert =
+        let t = noise(7, 100, 37);
+        Assert.assertEq(expected = tuplesOf(Reference.shrinkTo(16, t) :: Nil), tuplesOf(Mip.shrinkTo(16, t) :: Nil))
+
+    def sampleSizes(): List[(Int32, Int32)] = (7, 5) :: (64, 33) :: (1, 9) :: (9, 1) :: (128, 128) :: (3, 3) :: Nil
+
+    /// 段を Vector で 1 画素ずつ作る素直な道（Mip.build と Mip.shrinkTo の答えの基準）。
+    mod Reference {
+        pub def build(average: Mip.Average, tex: ShaderEval.TexData): List[ShaderEval.TexData] =
+            buildWith(meanOf(average), tex)
+
+        def buildWith(mean: Mean, tex: ShaderEval.TexData): List[ShaderEval.TexData] =
+            if (tex#width <= 0 or tex#height <= 0 or (tex#width == 1 and tex#height == 1)) tex :: Nil
+            else tex :: buildWith(mean, halve(mean, tex))
+
+        pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData =
+            if (Int32.max(tex#width, tex#height) <= Int32.max(1, maxSide) or (tex#width <= 1 and tex#height <= 1)) tex
+            else shrinkTo(maxSide, halve(Mean.RawMean, tex))
+
+        enum Mean {
+            case RawMean
+            case SrgbCurveMean(Vector[Float64], Vector[Float64])
+        }
+
+        def meanOf(average: Mip.Average): Mean = match average {
+            case Mip.Average.Raw       => Mean.RawMean
+            case Mip.Average.SrgbCurve =>
+                Mean.SrgbCurveMean(Vector.range(0, 256) |> Vector.map(v -> Texture3d.srgbToLinear(Int32.toFloat64(v) / 255.0)),
+                                   Vector.range(1, 256) |> Vector.map(k -> Texture3d.srgbToLinear((Int32.toFloat64(k) - 0.5) / 255.0)))
+        }
+
+        def halve(mean: Mean, tex: ShaderEval.TexData): ShaderEval.TexData = region rc {
+            let (w, h) = (tex#width, tex#height);
+            let (nw, nh) = (Int32.max(1, w / 2), Int32.max(1, h / 2));
+            let out: Array[Int32, rc] = Array.empty(rc, nw * nh);
+            let src = tex#pixels;
+            List.range(0, nh) |> List.forEach(j -> {
+                let row0 = Int32.min(2 * j, h - 1) * w;
+                let row1 = Int32.min(2 * j + 1, h - 1) * w;
+                List.range(0, nw) |> List.forEach(i -> {
+                    let x0 = Int32.min(2 * i, w - 1);
+                    let x1 = Int32.min(2 * i + 1, w - 1);
+                    let (a, b, c, d) = (Vector.get(row0 + x0, src), Vector.get(row0 + x1, src), Vector.get(row1 + x0, src), Vector.get(row1 + x1, src));
+                    let pixel = Int32.bitwiseOr(Int32.bitwiseOr(rawMeanOf(24, a, b, c, d), colorMeanOf(mean, 16, a, b, c, d)),
+                                                Int32.bitwiseOr(colorMeanOf(mean, 8, a, b, c, d), colorMeanOf(mean, 0, a, b, c, d)));
+                    Array.put(pixel, j * nw + i, out)
+                })
+            });
+            { width = nw, height = nh, pixels = Array.toVector(out) }
+        }
+
+        def colorMeanOf(mean: Mean, shift: Int32, a: Int32, b: Int32, c: Int32, d: Int32): Int32 = match mean {
+            case Mean.RawMean => rawMeanOf(shift, a, b, c, d)
+            case Mean.SrgbCurveMean(toLinear, edges) =>
+                let linearOf = (x: Int32) -> Vector.get(channelOf(shift, x), toLinear);
+                let m = (linearOf(a) + linearOf(b) + linearOf(c) + linearOf(d)) / 4.0;
+                Int32.leftShift(countAtMost(m, edges, 0, Vector.length(edges)), shift)
+        }
+
+        def countAtMost(x: Float64, edges: Vector[Float64], lo: Int32, hi: Int32): Int32 =
+            if (lo >= hi) lo
+            else {
+                let mid = (lo + hi) / 2;
+                if (Vector.get(mid, edges) <= x) countAtMost(x, edges, mid + 1, hi) else countAtMost(x, edges, lo, mid)
+            }
+
+        def channelOf(shift: Int32, x: Int32): Int32 = Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, x), 255)
+
+        def rawMeanOf(shift: Int32, a: Int32, b: Int32, c: Int32, d: Int32): Int32 =
+            Int32.leftShift((channelOf(shift, a) + channelOf(shift, b) + channelOf(shift, c) + channelOf(shift, d) + 2) / 4, shift)
+    }
 }

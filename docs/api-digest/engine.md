@@ -1,4 +1,4 @@
-<!-- engine v0.85.0 / 生成: 2026-11-04 -->
+<!-- engine v0.85.0 / 生成: 2026-11-05 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -460,9 +460,15 @@
 - 1 コマの診断。時間はナノ秒。
   `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String], gpuNs = Option[Int64], gpuPasses = List[(String, Int64)], scene3dCounts = Scene3dCounts }`
 - 3D の場面の数（Diagnostics#scene3dCounts）。
-  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32 }`
+  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32, meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild], jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)] }`
 - 3D を描かないコマの数（全部 0）。
   `pub def emptyScene3dCounts(): Scene3dCounts`
+- 上げ直した物と捨てた物の数を 1 行に（どれも 0 なら "-"）。並びは Scene3dCounts の欄の順。
+  `pub def uploadsText(c: Scene3dCounts): String`
+- CPU の区間を 1 行に（ms は小数 2 桁・区間が無ければ "-"）。
+  `pub def cpuPhasesText(c: Scene3dCounts): String`
+- 2 コマぶんの数を足す（cpuPhases は同じ名前どうしを足し、初めて出た順に並べる）。
+  `pub def addScene3dCounts(a: Scene3dCounts, b: Scene3dCounts): Scene3dCounts`
 - 作ったシェーダー 1 つ。
   `pub type alias ShaderBuild = { name = String, reason = BuildReason }`
 - 作った理由。Changed は同じ名前で中身が違った時で、違う所の抜き書きを持つ。
@@ -970,6 +976,8 @@
 - `pub def jointCount(p: Pose3d): Int32`
 - 2 つの局所の姿勢を混ぜる（t = 0 で a・1 で b）。平行移動と倍率は 2 つの値の間をなめらかにつなぎ、回転は球面の上で。
   `pub def blend(a: Vector[Skin3d.JointPose], b: Vector[Skin3d.JointPose], t: Float64): Vector[Skin3d.JointPose]`
+- 姿勢の鍵: joint 行列の並びの全部の数のビットから作る 64 bit（初めて読んだ時に求める）。同じ並びは必ず同じ鍵になり、
+  `pub def keyOf(p: Pose3d): Int64`
 - ジョイントの番号の順の joint 行列（GL の UBO・CPU のスキニングが読む）。
   `pub def jointMatrices(p: Pose3d): Vector[Mat4.Mat4]`
 - ジョイントの変換（rootTransform × world。形の座標で、インスタンスの world 行列はまだ掛かっていない）。

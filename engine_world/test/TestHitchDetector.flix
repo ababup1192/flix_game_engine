@@ -112,6 +112,20 @@ mod TestHitchDetector {
     def reportOf(rows: List[Row]): String =
         detectAll(config(), rows) |> List.head |> Option.map(App.HitchDetector.report(config(), None)) |> Option.getWithDefault("")
 
+    // 重いコマで mip の写しを作ったら、推定原因に 3D の上げ直しが出る。
+    @Test
+    def testReportTellsScene3dReupload(): Unit \ Assert =
+        let mip = (r: Row) -> { diag = { scene3dCounts = { mipCopies = 1 | FrameDiagnostics.emptyScene3dCounts() } | r#diag } | r };
+        let rows = calm(0i64, 3i64) ::: (mip(row(3i64, 45i64)) :: calm(4i64, 2i64));
+        Assert.assertTrue(String.contains(substr = "重いコマで 3D の絵か形を GPU へ上げた（mip 1）", reportOf(rows)))
+
+    // 重いコマの表の行に、そのコマの 3D の上げ直しと CPU の区間が出る。
+    @Test
+    def testReportTableShowsScene3dColumns(): Unit \ Assert =
+        let posed = (r: Row) -> { diag = { scene3dCounts = { jointUploads = 300, cpuPhases = ("draw", 4000000i64) :: Nil | FrameDiagnostics.emptyScene3dCounts() } | r#diag } | r };
+        let rows = calm(0i64, 3i64) ::: (posed(row(3i64, 45i64)) :: calm(4i64, 2i64));
+        Assert.assertTrue(String.contains(substr = "| joints 300 | draw 4.00 |", reportOf(rows)))
+
     @Test
     def testReportTellsLeakWhenNothingIsDeleted(): Unit \ Assert =
         let live = (n: Int32, r: Row) -> { diag = { liveShaders = n | r#diag } | r };

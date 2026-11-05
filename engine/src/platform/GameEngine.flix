@@ -43,7 +43,8 @@ pub mod GameEngine {
     /// "used"（出しうる字を先に）/ "all"（フォントの全字）。どれを選んでも、
     /// 足りない字は出そうとしたときに追加生成される。
     /// scene3dTextureBudgetMB:
-    ///   3D の場面の絵（Texture3d）を GPU に持つ量の上限（MB）。超えると今と前のコマで使っていない古い絵から捨てる。
+    ///   3D の場面の絵（Texture3d）と、材質が読む登録の絵の mip つきの写しを GPU に持つ量の上限（MB）。超えると今と前のコマで使っていない古い絵から捨てる
+    ///   （超えない間はしばらく使わなかった絵も持ち続ける）。
     ///   project.json の任意キー `scene3dTextureBudgetMB`（既定 defaultScene3dTextureBudgetMB()）。
     /// scene3dTextureBudgetCount:
     ///   3D の場面の絵を GPU に持つ枚数の上限（texture unit の数ではない）。超え方と捨て方は MB と同じ。

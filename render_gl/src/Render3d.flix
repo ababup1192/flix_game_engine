@@ -19,6 +19,7 @@
 mod Render3d {
     import fge.gl.GlContext
     import java.lang.{Float => JFloat}
+    import java.util.Objects
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL13
     import org.lwjgl.opengl.GL14
@@ -31,6 +32,7 @@ mod Render3d {
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Shadow.{bindShadowMap, putShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{drawMaterials, resolveTextureAs, splitByMaterial, sweepMaterials, sweepTextures3d}
+    use Render3d.Counts.{Counter, Phase, count, countDrawCall, countInstances, noteDroppedLights, takeCounts, timed}
 
     // ── 型 ──
 
@@ -100,8 +102,9 @@ mod Render3d {
     type alias SkyLocs = { program = Int32, viewport = Int32, forward = Int32, right = Int32, up = Int32,
                            zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32 }
 
-    /// 骨つきの版のプログラムと、joint 行列の UBO（std140 の mat4 × Skin3d.maxJoints()）と、その UBO へ最後に書いた中身。
-    type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs, jointsUbo = Int32, uploadedJoints = Ref[Array[Float32, Static], Static] }
+    /// 骨つきの版のプログラムと、joint 行列の UBO（std140 の mat4 × Skin3d.maxJoints()）と、その UBO へ最後に書いた中身と、その中身を作った姿勢。
+    type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs, jointsUbo = Int32, uploadedJoints = Ref[Array[Float32, Static], Static],
+                                   uploadedPose = Ref[Option[Pose3d.Pose3d], Static] }
 
     /// 置いた物 1 つと、描く時に曲げる Pose（Scene3d.skinningOf。None なら骨の無い版で曲げずに描く）。
     /// culled = 視錐台の外なので描かない（形と絵は今のコマで使った物として数え、GPU から捨てない）。
@@ -137,8 +140,9 @@ mod Render3d {
     type alias Texture3dEntry = { texId = Int32, levels = Int32, bytes = Int64, lastUsed = Int64 }
 
     /// 全体の登録の絵を 3D の材質のために段つきで上げ直した写し。sourceId と version が元の絵と食い違えば作り直す。
+    /// bytes = 段を合わせた置き場の大きさ（場面の絵と同じ上限に数える）。
     // WhyNot: 元のテクスチャに段を足さない — 2D の sprite と面は段の無い元の絵を読む決まりで、そちらの絵を変えない。
-    type alias MipCopy = { sourceId = Int32, version = String, texId = Int32, levels = Int32, lastUsed = Int64 }
+    type alias MipCopy = { sourceId = Int32, version = String, texId = Int32, levels = Int32, bytes = Int64, lastUsed = Int64 }
 
     /// 材質の 1 枚を貼る材料。levels = 段の数（1 なら段の無い sampler で段 0 を読む）。
     type alias BoundTexture = { texId = Int32, flipped = Bool, levels = Int32 }
@@ -221,14 +225,20 @@ mod Render3d {
         blankTexture = Array[Int32, Static],
         // 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）。
         sceneWarnedRef = Ref[Set[String], Static],
-        // 前に takeCounts してからの数（[置いた物, 描いた物, draw call, 落とした点光源, 落としたスポット]。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
-        countsHolder = Array[Int32, Static]
+        // 前に takeCounts してからの数（添え字は Render3d.Counts.Counter。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
+        countsHolder = Array[Int32, Static],
+        // 前に takeCounts してからの CPU の区間の時間（ns。添え字は Render3d.Counts.Phase）。
+        phaseNsHolder = Array[Int64, Static],
+        // 前に takeCounts してから組んだ材質のプログラム（新しい物が頭）。
+        materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static],
+        // 置いた物ごとの行列を glUniformMatrix4fv へ渡す時の置き場（渡した時に GL が写すので使い回す）。
+        matrixScratch = Array[Float32, Static]
     }
 
     // ── 決まりの数 ──
 
-    /// この数のコマ使われなかったメッシュは GPU から捨てる。
-    def meshIdleFrames(): Int64 = 128i64
+    /// この数のコマ使われなかった影の地図の描き先は GPU から捨てる。
+    def idleTargetFrames(): Int64 = 128i64
 
     /// 置き場の頂点の合計の上限。超えたら古い物から捨てる。
     def vertexBudget(): Int32 = 4000000
@@ -274,7 +284,9 @@ mod Render3d {
           shadowWarnedRef = Ref.fresh(Static, Set.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
           blankTexture = Array#{0} @ Static,
-          sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0, 0, 0} @ Static }
+          sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
+          phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
+          matrixScratch = Array.repeat(Static, 16, 0.0f32) }
 
     /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限は config（project.json）から読む。
     pub def makeRenderer(gl: GlContext, config: GameEngine.EngineConfig): Scene3dRenderer.Renderer \ IO =
@@ -298,32 +310,6 @@ mod Render3d {
               draw = (vp, index) -> drawItem(gl, state, gen, textureOf, vp, Vector.get(index, items)) }
         }
 
-    /// 前に呼んでからの 3D の数（置いた物・描いた物・draw call・落とした点光源とスポット）を返し、0 に戻す。
-    def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
-        let h = state#countsHolder;
-        let counts = { instances = Array.get(0, h), drawn = Array.get(1, h), drawCalls = Array.get(2, h),
-                       droppedPointLights = Array.get(3, h), droppedSpotLights = Array.get(4, h) };
-        List.range(0, Array.length(h)) |> List.forEach(i -> Array.put(0, i, h));
-        counts
-
-    /// 場面の置いた物 placed 個と、そのうち視錐台の外で間引かずに描いた drawn 個を数える。
-    def countInstances(state: State, placed: Int32, drawn: Int32): Unit \ IO =
-        let h = state#countsHolder;
-        Array.put(Array.get(0, h) + placed, 0, h);
-        Array.put(Array.get(1, h) + drawn, 1, h)
-
-    /// 場面 1 つで上限を超えて落とした光を数え、種類ごとに初めての時だけ知らせる。
-    def noteDroppedLights(state: State, scene: Scene3d.Scene3dCmd): Unit \ IO =
-        let d = Scene3d.droppedLightsOf(scene);
-        let h = state#countsHolder;
-        Array.put(Array.get(3, h) + d#points, 3, h);
-        Array.put(Array.get(4, h) + d#spots, 4, h);
-        Scene3d.droppedLightsWarnings(scene) |> List.forEach(kl -> warnSceneOnce(state, fst(kl), snd(kl)))
-
-    /// 3D の draw call を 1 つ数える。
-    def countDrawCall(state: State): Unit \ IO =
-        Array.put(Array.get(2, state#countsHolder) + 1, 2, state#countsHolder)
-
     // ── 場面を描く（2D の並びの中から）──
 
     /// Design の解像度の場面を、そのテクスチャへ先に描いておく（2D の並びを描き始める前に呼ぶ）。
@@ -333,7 +319,7 @@ mod Render3d {
     def prepareScenes(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                       dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = renderShadows(gl, state, gen, cmds);
+        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, cmds));
         let designCount = Array#{0} @ Static;
         let items = List.zip(cmds, shadows) |> List.map(cs -> {
             let (cmd, shadow) = cs;
@@ -359,8 +345,8 @@ mod Render3d {
         let scissor = clipBox(vp, rect, item#cmd#clip);
         if (rect#width <= 0 or rect#height <= 0 or scissor#width <= 0 or scissor#height <= 0) ()
         else match item#designTarget {
-            case None         => drawScene(gl, state, gen, textureOf, { viewport = rect, scissor = scissor, fillBackground = true, coverage = item#multisampled },
-                                           item#shadow, scene)
+            case None         => timed(state, Phase.Draw, () -> drawScene(gl, state, gen, textureOf,
+                                           { viewport = rect, scissor = scissor, fillBackground = true, coverage = item#multisampled }, item#shadow, scene))
             case Some(target) => blitDesign(gl, state, rect, scissor, target)
         };
         GL11.glViewport(vp#x, vp#y, vp#width, vp#height);
@@ -408,7 +394,7 @@ mod Render3d {
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-            drawScene(gl, state, gen, textureOf, { viewport = full, scissor = full, fillBackground = true, coverage = false }, shadow, cmd#scene);
+            timed(state, Phase.Draw, () -> drawScene(gl, state, gen, textureOf, { viewport = full, scissor = full, fillBackground = true, coverage = false }, shadow, cmd#scene));
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             Some(target)
         }
@@ -424,6 +410,7 @@ mod Render3d {
             case Some(e) if e#width == w and e#height == h => e
             case old =>
                 Option.forEach(e -> RenderTargetGl.destroy(gl, e), old);
+                count(state, Counter.TargetRebuilds, 1);
                 let made = RenderTargetGl.create(gl, w, h, format);
                 Ref.put(Map.insert(key, made, targets), state#designTargetsRef);
                 made
@@ -479,8 +466,9 @@ mod Render3d {
                 let (blended, solid) = List.partition(d -> d#material#blend, materials);
                 bindShadowMap(shadow);
                 drawInstancesLit(gl, state, gen, programs#lit, camera, plain);
-                // WhyNot: 不透明の材質をプログラムの番号で並べたまま描く順を保つ — 深度で前後が決まるので順は絵を変えない（同じ深さの面だけが並びで決まる）。
-                drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, solid |> List.sortBy(d -> d#entry#locs#mesh#program));
+                // WhyNot: 不透明の材質を来た順のまま描かない — 深度で前後が決まるので順は絵を変えず（同じ深さの面だけが並びで決まる）、
+                //   プログラムと姿勢で並べると切り替えと骨の UBO の書き直しが減る。
+                drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, inDrawOrder(materialOrderOf, solid));
                 drawBillboards(gl, state, textureOf, programs#billboard, camera, scene);
                 drawBlended(gl, state, gen, camera, source, scene#camera#eye, blended);
                 unbindShadowMap(shadow)
@@ -492,7 +480,7 @@ mod Render3d {
                 let (plain, cutouts) = splitByMaterial(gl, state, gen, outside, m -> m#cutout or m#doubleSided, false, solidInstances);
                 noteCulled(gl, state, gen, source, List.length(scene#instances), plain, cutouts);
                 drawInstancesDepth(gl, state, gen, programs#depth, camera, scene#camera#eye, dr, plain);
-                drawMaterials(gl, state, gen, camera, MaterialPass.Depth(dr), source, cutouts |> List.sortBy(d -> d#entry#locs#mesh#program));
+                drawMaterials(gl, state, gen, camera, MaterialPass.Depth(dr), source, inDrawOrder(materialOrderOf, cutouts));
                 drawBillboards(gl, state, textureOf, programs#billboard, camera, scene)
         };
         endScene(gl)
@@ -610,7 +598,7 @@ mod Render3d {
     def drawInstancesLit(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, instances: List[MeshDraw]): Unit \ IO =
         let (skinned, plain) = List.partition(isSkinned, instances);
         drawLitWith(gl, state, gen, locs, camera, plain);
-        if (List.isEmpty(skinned)) () else drawLitWith(gl, state, gen, skinnedProgramsOf(gl, state)#lit, camera, skinned)
+        if (List.isEmpty(skinned)) () else drawLitWith(gl, state, gen, skinnedProgramsOf(gl, state)#lit, camera, inDrawOrder(d -> (0, poseKeyOf(d)), skinned))
 
     def drawLitWith(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, instances: List[MeshDraw]): Unit \ IO =
         if (List.isEmpty(instances) or locs#mesh#program == 0) ()
@@ -663,8 +651,8 @@ mod Render3d {
         let entry = meshEntry(state, gen, mesh);
         if (entry#indexCount <= 0) ()
         else {
-            GL20.glUniformMatrix4fv(locs#model, false, matrixArray(world));
-            GL20.glUniformMatrix4fv(locs#normal, false, matrixArray(Mat4.normalMatrix(world)));
+            putMatrix(state, locs#model, world);
+            putMatrix(state, locs#normal, Mat4.normalMatrix(world));
             GL30.glBindVertexArray(entry#vao);
             GL11.glDrawElements(GL11.GL_TRIANGLES, entry#indexCount, GL11.GL_UNSIGNED_INT, 0i64);
             countDrawCall(state)
@@ -672,15 +660,26 @@ mod Render3d {
 
     /// 骨つきの物は joint 行列を UBO へ置いてから描く（locs は骨つきの版のプログラム）。pose が None なら drawMesh と同じ。
     /// 間引いた物（culled）は描かず、形を今のコマで使った物として置き場に数えるだけ。
-    // WhyNot: 間引いた物を meshEntry に通さずに飛ばさない — endFrame は 128 コマ使わなかった形を捨てるので、振り向くたびに頂点を上げ直す。
+    // WhyNot: 間引いた物を meshEntry に通さずに飛ばさない — 置き場があふれると最後に使ったのが古い形から捨てるので、間引いた物から消え、振り向くたびに頂点を上げ直す。
     def drawPosedMesh(gl: GlContext, state: State, gen: Int64, locs: MeshLocs, d: MeshDraw): Unit \ IO =
         if (d#culled) discard meshEntry(state, gen, d#fields#mesh)
         else {
-            d#pose |> Option.forEach(putJoints(skinnedProgramsOf(gl, state)));
+            d#pose |> Option.forEach(putJoints(state, skinnedProgramsOf(gl, state)));
             drawMesh(state, gen, locs, d#fields#mesh, d#fields#world)
         }
 
     def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
+
+    /// 描く順の鍵（並べる物の第 1 と第 2）で並べる。鍵が同じ物は来た順（同じ入力はいつも同じ順）。
+    // WhyNot: List.sortBy に鍵だけを渡さない — 安定ソートではなく、鍵の同じ物どうしの順が並びの中身で変わる。
+    def inDrawOrder(keyOf: a -> (Int32, Int64), xs: List[a]): List[a] =
+        xs |> List.mapWithIndex((i, x) -> { let (k1, k2) = keyOf(x); ((k1, k2, i), x) }) |> List.sortBy(fst) |> List.map(snd)
+
+    /// 材質のある物の描く順の鍵: プログラムの番号・姿勢の鍵（同じ姿勢を隣に並べて骨の UBO の書き直しを減らす）。
+    def materialOrderOf(d: MaterialDraw): (Int32, Int64) = (d#entry#locs#mesh#program, poseKeyOf(d#draw))
+
+    /// 姿勢の鍵（骨の無い物は 0）。
+    def poseKeyOf(d: MeshDraw): Int64 = d#pose |> Option.map(Pose3d.keyOf) |> Option.getWithDefault(0i64)
 
     def hasUv(d: MeshDraw): Bool = Option.nonEmpty(Mesh3d.uvs(d#fields#mesh))
 
@@ -704,28 +703,53 @@ mod Render3d {
     // WhyNot: 作り直さずに書き足さない — 前のドローがまだ読んでいる UBO へ書くと、ドライバが GPU を待つ（同じ pose の部品を描くたびに待っていた）。
     // WhyNot: 1 本の大きな UBO の別の場所へ書いて glBindBufferRange で指さない — 1 コマの pose の数を先に数える道とオフセットのそろえが要り、
     //   同じ中身を書き直さないだけで書くのは 1 コマに体の数だけになる。
-    def putJoints(skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
+    // WhyNot: 前と同じ姿勢の値でも中身を作って比べない — 共有した姿勢の物は並べ替えで隣り合うので、値そのものが同じなら中身も同じ。
+    //   姿勢の鍵が同じだけの時は比べる（違う姿勢が同じ鍵になりうる）。
+    def putJoints(state: State, skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
+        if (Ref.get(skinned#uploadedPose) |> Option.exists(isSameValue(pose))) ()
+        else writeJoints(state, skinned, pose);
+        GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, jointsBinding(), skinned#jointsUbo)
+
+    def writeJoints(state: State, skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
         let matrices = Pose3d.jointMatrices(pose) |> Vector.take(Skin3d.maxJoints());
         let data = Array.repeat(Static, Int32.max(1, Vector.length(matrices) * 16), 0.0f32);
         matrices |> Vector.forEachWithIndex((j, m) ->
             Mat4.toColumns(m) |> Vector.forEachWithIndex((k, v) -> Array.put(RenderUtil.f32(v), j * 16 + k, data)));
         if (needsUpload(Ref.get(skinned#uploadedJoints), data)) {
+            count(state, Counter.JointUploads, 1);
             GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, skinned#jointsUbo);
             GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, Int32.toInt64(Skin3d.maxJoints() * 64), GL15.GL_DYNAMIC_DRAW);
             GL15.glBufferSubData(GL31.GL_UNIFORM_BUFFER, 0i64, data);
             GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, 0);
             Ref.put(data, skinned#uploadedJoints)
         } else ();
-        GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, jointsBinding(), skinned#jointsUbo)
+        Ref.put(Some(pose), skinned#uploadedPose)
+
+    /// a と b が同じ 1 つの値か（中身が同じ別の値は偽）。
+    // WhyNot: Eq で比べない — 姿勢の行列を全部比べることになり、飛ばしたい手間そのものになる。
+    def isSameValue(a: x, b: x): Bool = match (Reflect.reflectValue(a), Reflect.reflectValue(b)) {
+        case (Reflect.JvmValue.JvmObject(p), Reflect.JvmValue.JvmObject(q)) => unchecked_cast(Objects.equals(p, q) as _ \ {})
+        case _                                                              => false
+    }
 
     /// 前に UBO へ書いた中身 before と今の中身 after が違うか（長さが違うか、どれか 1 つのビットが違う）。
     /// WhyNot: Float32 の == で比べない — -0.0 と +0.0 を同じと見なし、NaN をいつも違うと見なす。書いた物をそのまま持っているかを見たい。
     def needsUpload(before: Array[Float32, r1], after: Array[Float32, r2]): Bool \ r1 + r2 =
-        let n = Array.length(after);
-        Array.length(before) != n or not List.forAll(i -> sameBits(Array.get(i, before), Array.get(i, after)), List.range(0, n))
+        Array.length(before) != Array.length(after) or differsFrom(before, after, 0)
+
+    def differsFrom(before: Array[Float32, r1], after: Array[Float32, r2], i: Int32): Bool \ r1 + r2 =
+        if (i >= Array.length(after)) false
+        else if (sameBits(Array.get(i, before), Array.get(i, after))) differsFrom(before, after, i + 1)
+        else true
 
     def sameBits(a: Float32, b: Float32): Bool =
         JFloat.floatToRawIntBits(a) == JFloat.floatToRawIntBits(b)
+
+    /// 行列 m を uniform の loc へ入れる（state の置き場を使い回す）。
+    def putMatrix(state: State, loc: Int32, m: Mat4.Mat4): Unit \ IO =
+        let out = state#matrixScratch;
+        Mat4.toColumns(m) |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, out));
+        GL20.glUniformMatrix4fv(loc, false, out)
 
     /// 列優先 16 個の float の並び（glUniformMatrix4fv に transpose = false で渡す形）。
     def matrixArray(m: Mat4.Mat4): Array[Float32, Static] \ IO =
@@ -743,6 +767,7 @@ mod Render3d {
             case Some(found) => { lastUsed = gen | found }
             case None =>
                 Array.put(1, 2, state#uploadStreak);
+                count(state, Counter.MeshUploads, 1);
                 let made = uploadMesh(gen, mesh);
                 Array.put(Array.get(0, state#vertexTotal) + made#vertexCount, 0, state#vertexTotal);
                 made
@@ -855,22 +880,21 @@ mod Render3d {
         entry#surface |> Option.forEach(vbo -> GL15.glDeleteBuffers(vbo));
         entry#uv2 |> Option.forEach(vbo -> GL15.glDeleteBuffers(vbo))
 
-    /// 画面のコマを描き終えた後に 1 回呼ぶ。使われないメッシュと上限を超えた分を捨て、毎コマの作り直しを知らせる。
-    def endFrame(state: State, gen: Int64): Unit \ IO =
+    /// 画面のコマを描き終えた後に 1 回呼ぶ。上限を超えた分のメッシュを捨て、毎コマの作り直しを知らせる。
+    // WhyNot: しばらく使わなかった形を捨てない — たまにしか出ない物（蹴りの脚・手榴弾）を出すたびに上げ直し、そのコマが跳ねる。
+    //   毎コマ新しい形を作るゲームは、上限で古い物から押し出される。
+    def endFrame(state: State, gen: Int64): Unit \ IO = timed(state, Phase.EndFrame, () -> {
         noteUploadStreak(state);
         noteMaterialStreak(state);
         sweepMaterials(state, gen);
         sweepShadowTargets(state, gen);
         sweepTextures3d(state, gen);
-        let meshes = Ref.get(state#meshesRef);
-        let isIdle = (e: MeshEntry) -> gen - e#lastUsed > meshIdleFrames();
-        let idle = Map.filter(isIdle, meshes);
-        let kept = Map.filter(e -> not isIdle(e), meshes);
-        if (Map.isEmpty(idle)) () else dropMeshes(state, idle, kept);
         if (Array.get(0, state#vertexTotal) > vertexBudget()) trimToBudget(state, gen) else ()
+    })
 
     def dropMeshes(state: State, dropped: Map[String, MeshEntry], kept: Map[String, MeshEntry]): Unit \ IO =
         Map.forEach((_key, e) -> deleteMesh(e), dropped);
+        count(state, Counter.MeshEvictions, Map.size(dropped));
         let freed = Map.foldLeft((acc, e) -> acc + e#vertexCount, 0, dropped);
         Array.put(Array.get(0, state#vertexTotal) - freed, 0, state#vertexTotal);
         Ref.put(kept, state#meshesRef)
@@ -1040,7 +1064,7 @@ mod Render3d {
         bindJointsBlock(lit);
         bindJointsBlock(depth);
         { lit = litLocsOf(lit), depth = depthLocsOf(depth), jointsUbo = createJointsBuffer(),
-          uploadedJoints = Ref.fresh(Static, Array.empty(Static, 0)) }
+          uploadedJoints = Ref.fresh(Static, Array.empty(Static, 0)), uploadedPose = Ref.fresh(Static, None) }
 
     /// プログラムの Joints の uniform block を jointsBinding() へ向ける（block の無いプログラムと 0 は何もしない）。
     def bindJointsBlock(program: Int32): Unit \ IO =

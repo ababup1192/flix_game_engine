@@ -21,4 +21,10 @@ mod TestCollisionWorld3d {
     def testBoxesNearFarAwayReturnsOnlyWideBox(): Unit \ Assert =
         let w = CollisionWorld3d.build(2.0, boxAtX(3.0) :: ground() :: Nil);
         Assert.assertEq(expected = 0 :: Nil, xs(CollisionWorld3d.boxesNear(w, Vec3.v3(-30.0, 0.0, 30.0), 1.0)))
+
+    /// 格子のマスより多くのマスに掛かる広い範囲で引くと、格子を引かずに全部の箱から絞り、build の並びで返す。
+    @Test
+    def testBoxesNearWideQueryReturnsAllInBuildOrder(): Unit \ Assert =
+        let w = CollisionWorld3d.build(2.0, boxAtX(9.0) :: ground() :: boxAtX(3.0) :: Nil);
+        Assert.assertEq(expected = 90 :: 0 :: 30 :: Nil, xs(CollisionWorld3d.boxesNear(w, Vec3.v3(0.0, 0.0, 0.0), 40.0)))
 }

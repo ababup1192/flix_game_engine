@@ -41,6 +41,8 @@ Scene3d.meshInstance(part#mesh, world)
 ## 場面の絵の予算
 
 場面の絵（Texture3d）は GPU に持つ量に上限がある（既定 256 MB・64 枚）。超えると今と前のコマで使っていない古い絵から捨て、次に要る時に上げ直す（知らせが 1 回出る）。
+上限に収まっている間は、しばらく使わなかった絵も捨てない（たまにしか出ない物を出すたびに mip を作り直さない）。
+材質が project.json の textures の絵を読む時に作る mip つきの写しも、MB の上限に数える（枚数には数えない）。
 2048² の RGBA8 の絵は mip 込みで 1 枚約 21 MB で、12 枚で 256 MB に届く。
 
 - `Gltf.loadTexturedUsing` は描くのに使う絵（baseColorTexture・normalTexture）だけを読む（metallicRoughness・occlusion・emissive は読まない）。

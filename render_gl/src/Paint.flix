@@ -717,6 +717,7 @@ mod RenderPaint {
         Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, paint#diagnosticsRef)
 
     /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・scene3dCounts は前に取り出してからの 3D の数。
+    /// shaderBuilds は 2D のシェーダーの後ろに 3D の材質のプログラムを足す（liveShaders には 3D の材質を数えない）。
     pub def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
         let counts = paint#scene3d#takeCounts();
         match Ref.get(paint#diagnosticsRef) {
@@ -724,7 +725,7 @@ mod RenderPaint {
             case Some(d) =>
                 Ref.put(Some(FrameDiagnostics.empty()), paint#diagnosticsRef);
                 let live = Array.get(0, paint#shaderLifeHolder) - Array.get(1, paint#shaderLifeHolder);
-                { shaderBuilds = List.reverse(d#shaderBuilds), textureUploads = List.reverse(d#textureUploads), liveShaders = live,
+                { shaderBuilds = List.append(List.reverse(d#shaderBuilds), counts#materialBuilds), textureUploads = List.reverse(d#textureUploads), liveShaders = live,
                   scene3dCounts = counts | d }
         }
 

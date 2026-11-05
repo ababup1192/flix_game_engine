@@ -8,9 +8,11 @@ pub mod CollisionWorld3d {
     type alias Footprint = { minX = Float64, maxX = Float64, minZ = Float64, maxZ = Float64 }
 
     /// boxes = 箱（build に渡した並びから NaN・無限大の箱を除いた物）・footprints = 箱ごとの水平の広がり・
-    /// cellSize = xz の格子の 1 マスの幅・cells = マス → そこに掛かる箱の番号・wide = 掛かるマスが多すぎて全部の問いで見る箱の番号。
+    /// cellSize = xz の格子の 1 マスの幅・cells = マス → そこに掛かる箱の番号・cellCount = cells のマスの数・
+    /// wide = 掛かるマスが多すぎて全部の問いで見る箱の番号。
+    // WhyNot: マスの数を問いのたびに Map.size で数えない — 木を全部たどるので、毎コマ体の数だけ呼ばれると格子の大きさに比例して重い。
     type alias WorldRec = { boxes = Vector[CollisionShape3d.Box3d], footprints = Vector[Footprint], cellSize = Float64,
-                            cells = Map[(Int32, Int32), List[Int32]], wide = List[Int32] }
+                            cells = Map[(Int32, Int32), List[Int32]], cellCount = Int32, wide = List[Int32] }
 
     enum WorldData { case WorldData(WorldRec) }
 
@@ -50,7 +52,8 @@ pub mod CollisionWorld3d {
                 (keys |> List.foldLeft((m, k) -> Map.insertWith((fresh, old) -> List.append(fresh, old), k, i :: Nil, m), cellMap), wideAcc)
             }
         }, (Map.empty(), Nil));
-        WorldData.WorldData({ boxes = List.toVector(kept1), footprints = List.toVector(footprints), cellSize = cs, cells = cells, wide = wide })
+        WorldData.WorldData({ boxes = List.toVector(kept1), footprints = List.toVector(footprints), cellSize = cs, cells = cells,
+                              cellCount = Map.size(cells), wide = wide })
 
     /// 集まりの全部の箱（build の並び）。
     pub def boxes(w: CollisionWorld3d): List[CollisionShape3d.Box3d] = Vector.toList(recOf(w)#boxes)
@@ -63,7 +66,7 @@ pub mod CollisionWorld3d {
         let area = { minX = point#x - d, maxX = point#x + d, minZ = point#z - d, maxZ = point#z + d };
         let (x0, x1, z0, z1) = cellRange(r#cellSize, area);
         let candidates =
-            if (cellCount(x0, x1, z0, z1) > Int32.min(queryCellLimit(), Map.size(r#cells) + 1)) List.range(0, Vector.length(r#boxes))
+            if (cellCount(x0, x1, z0, z1) > Int32.min(queryCellLimit(), r#cellCount + 1)) List.range(0, Vector.length(r#boxes))
             else {
                 let fromCells = List.range(x0, x1 + 1) |> List.flatMap(ix -> List.range(z0, z1 + 1)
                     |> List.flatMap(iz -> Map.getWithDefault((ix, iz), Nil, r#cells)));

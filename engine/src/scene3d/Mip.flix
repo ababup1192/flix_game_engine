@@ -20,71 +20,126 @@ pub mod Mip {
     // WhyNot: sRGB の式を Mip に写さない — 式は Texture3d に 1 つだけ置く（今の呼び手は 3D の描き手だけで、2D の絵は段を作らない）。
     // WhyNot: テクセルごとに pow を呼ばない — GL は描く糸の中で最初に貼る時に段を作るので、2048² の絵でそのコマがつっかえる。
     //   8bit の値は 256 通りなので、戻す表と 8bit へ戻すしきい値を 1 回作って引く。
-    pub def build(average: Average, tex: ShaderEval.TexData): List[ShaderEval.TexData] =
-        buildWith(meanOf(average), tex)
+    // WhyNot: 段ごとに Vector と List.range のクロージャーで回さない — 画素ごとに箱が作られ、1024² の絵 1 枚で 20 ms かかる
+    //   （たまにしか出ない物を初めて描くコマが跳ねる）。中間の段は配列のまま次の段へ渡す。
+    pub def build(average: Average, tex: ShaderEval.TexData): List[ShaderEval.TexData] = region rc {
+        let tables = tablesOf(rc, average);
+        if (isLastLevel(tex#width, tex#height)) tex :: Nil
+        else tex :: halveAll(rc, tables, tex#width, tex#height, Vector.toArray(rc, tex#pixels))
+    }
 
-    def buildWith(mean: Mean, tex: ShaderEval.TexData): List[ShaderEval.TexData] =
-        if (tex#width <= 0 or tex#height <= 0 or (tex#width == 1 and tex#height == 1)) tex :: Nil
-        else tex :: buildWith(mean, halve(mean, tex))
+    def isLastLevel(w: Int32, h: Int32): Bool = w <= 0 or h <= 0 or (w == 1 and h == 1)
+
+    def halveAll(rc: Region[r], tables: Tables[r], w: Int32, h: Int32, src: Array[Int32, r]): List[ShaderEval.TexData] \ r =
+        let (nw, nh) = halfSize(w, h);
+        let out = halveArray(rc, tables, w, h, src);
+        let level = { width = nw, height = nh, pixels = Array.toVector(out) };
+        if (isLastLevel(nw, nh)) level :: Nil else level :: halveAll(rc, tables, nw, nh, out)
 
     /// tex の長い辺が maxSide 以下になるまで、Raw の段と同じ縮め方で半分にした絵（もう収まっていれば tex のまま）。
     /// Raw の段の列の頭を落とした物と同じ画素になる（読み込みの時に大きすぎる絵を縮める・取り込みの最大サイズと同じ）。
     // WhyNot: 色の絵を SrgbCurve で縮めない — 読み込みの時は絵の使い方（色か法線か）を知らない。
     pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData =
-        if (Int32.max(tex#width, tex#height) <= Int32.max(1, maxSide) or (tex#width <= 1 and tex#height <= 1)) tex
-        else shrinkTo(maxSide, halve(Mean.RawMean, tex))
-
-    /// rgb の平均の材料。SrgbCurveMean = 8bit の値 → 線形の量の表と、8bit へ戻すしきい値（k − 1 番 = 8bit の値 k の下の端を線形の量にした値）。
-    enum Mean {
-        case RawMean
-        case SrgbCurveMean(Vector[Float64], Vector[Float64])
-    }
-
-    def meanOf(average: Average): Mean = match average {
-        case Average.Raw       => Mean.RawMean
-        case Average.SrgbCurve =>
-            Mean.SrgbCurveMean(Vector.range(0, 256) |> Vector.map(v -> Texture3d.srgbToLinear(Int32.toFloat64(v) / 255.0)),
-                               Vector.range(1, 256) |> Vector.map(k -> Texture3d.srgbToLinear((Int32.toFloat64(k) - 0.5) / 255.0)))
-    }
-
-    def halve(mean: Mean, tex: ShaderEval.TexData): ShaderEval.TexData = region rc {
-        let (w, h) = (tex#width, tex#height);
-        let (nw, nh) = (Int32.max(1, w / 2), Int32.max(1, h / 2));
-        let out: Array[Int32, rc] = Array.empty(rc, nw * nh);
-        let src = tex#pixels;
-        List.range(0, nh) |> List.forEach(j -> {
-            let row0 = Int32.min(2 * j, h - 1) * w;
-            let row1 = Int32.min(2 * j + 1, h - 1) * w;
-            List.range(0, nw) |> List.forEach(i -> {
-                let x0 = Int32.min(2 * i, w - 1);
-                let x1 = Int32.min(2 * i + 1, w - 1);
-                let (a, b, c, d) = (Vector.get(row0 + x0, src), Vector.get(row0 + x1, src), Vector.get(row1 + x0, src), Vector.get(row1 + x1, src));
-                let pixel = Int32.bitwiseOr(Int32.bitwiseOr(rawMeanOf(24, a, b, c, d), colorMeanOf(mean, 16, a, b, c, d)),
-                                            Int32.bitwiseOr(colorMeanOf(mean, 8, a, b, c, d), colorMeanOf(mean, 0, a, b, c, d)));
-                Array.put(pixel, j * nw + i, out)
-            })
-        });
-        { width = nw, height = nh, pixels = Array.toVector(out) }
-    }
-
-    /// 4 つの ARGB の、shift ビット目から 8 ビットの色の成分の平均を同じ位置に置いた値（SrgbCurveMean は線形の量の平均を 8bit の sRGB の値へ）。
-    def colorMeanOf(mean: Mean, shift: Int32, a: Int32, b: Int32, c: Int32, d: Int32): Int32 = match mean {
-        case Mean.RawMean => rawMeanOf(shift, a, b, c, d)
-        case Mean.SrgbCurveMean(toLinear, edges) =>
-            let linearOf = (x: Int32) -> Vector.get(channelOf(shift, x), toLinear);
-            let m = (linearOf(a) + linearOf(b) + linearOf(c) + linearOf(d)) / 4.0;
-            Int32.leftShift(countAtMost(m, edges, 0, Vector.length(edges)), shift)
-    }
-
-    /// 並び edges（小さい順）のうち lo..hi の範囲で x 以下の物の数 + lo（二分探索）。
-    def countAtMost(x: Float64, edges: Vector[Float64], lo: Int32, hi: Int32): Int32 =
-        if (lo >= hi) lo
-        else {
-            let mid = (lo + hi) / 2;
-            if (Vector.get(mid, edges) <= x) countAtMost(x, edges, mid + 1, hi) else countAtMost(x, edges, lo, mid)
+        if (fitsIn(maxSide, tex#width, tex#height)) tex
+        else region rc {
+            let (w, h, pixels) = shrinkArray(rc, tablesOf(rc, Average.Raw), maxSide, tex#width, tex#height, Vector.toArray(rc, tex#pixels));
+            { width = w, height = h, pixels = Array.toVector(pixels) }
         }
 
-    def channelOf(shift: Int32, x: Int32): Int32 = Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, x), 255)
+    def fitsIn(maxSide: Int32, w: Int32, h: Int32): Bool =
+        Int32.max(w, h) <= Int32.max(1, maxSide) or (w <= 1 and h <= 1)
+
+    def shrinkArray(rc: Region[r], tables: Tables[r], maxSide: Int32, w: Int32, h: Int32, src: Array[Int32, r]): (Int32, Int32, Array[Int32, r]) \ r =
+        if (fitsIn(maxSide, w, h)) (w, h, src)
+        else {
+            let (nw, nh) = halfSize(w, h);
+            shrinkArray(rc, tables, maxSide, nw, nh, halveArray(rc, tables, w, h, src))
+        }
+
+    /// rgb の平均の材料。srgb = 偽なら 8bit の値のまま平均する（Raw）。真なら toLinear = 8bit の値 → 線形の量の表と、
+    /// edges = 8bit へ戻すしきい値（k − 1 番 = 8bit の値 k の下の端を線形の量にした値）で平均する（SrgbCurve）。
+    /// starts = 線形の量の 0〜1 を bucketCount() 等分した区間 b の左の端 b / bucketCount() 以下のしきい値の数（数え始める位置）。
+    type alias Tables[r: Region] = { srgb = Bool, toLinear = Array[Float64, r], edges = Array[Float64, r], starts = Array[Int32, r] }
+
+    def tablesOf(rc: Region[r], average: Average): Tables[r] \ r = match average {
+        case Average.Raw       => { srgb = false, toLinear = Array.empty(rc, 0), edges = Array.empty(rc, 0), starts = Array.empty(rc, 0) }
+        case Average.SrgbCurve =>
+            let edges = Vector.range(1, 256) |> Vector.map(k -> Texture3d.srgbToLinear((Int32.toFloat64(k) - 0.5) / 255.0)) |> Vector.toArray(rc);
+            let starts = Vector.range(0, bucketCount() + 1)
+                |> Vector.map(b -> countFrom(Int32.toFloat64(b) / Int32.toFloat64(bucketCount()), edges, 0)) |> Vector.toArray(rc);
+            { srgb = true,
+              toLinear = Vector.range(0, 256) |> Vector.map(v -> Texture3d.srgbToLinear(Int32.toFloat64(v) / 255.0)) |> Vector.toArray(rc),
+              edges = edges, starts = starts }
+    }
+
+    /// 線形の量の 0〜1 を分ける区間の数（2 の冪なので、区間の端は Float64 で丸めずに表せる）。
+    def bucketCount(): Int32 = 4096
+
+    def halfSize(w: Int32, h: Int32): (Int32, Int32) = (Int32.max(1, w / 2), Int32.max(1, h / 2))
+
+    /// w × h の src の 1 段上（halfSize の大きさ）。
+    def halveArray(rc: Region[r], tables: Tables[r], w: Int32, h: Int32, src: Array[Int32, r]): Array[Int32, r] \ r =
+        let (nw, nh) = halfSize(w, h);
+        let out = Array.empty(rc, nw * nh);
+        halveRows(tables, { w = w, h = h, nw = nw, nh = nh }, src, out, 0);
+        out
+
+    def halveRows(tables: Tables[r], size: { w = Int32, h = Int32, nw = Int32, nh = Int32 }, src: Array[Int32, r], out: Array[Int32, r], j: Int32): Unit \ r =
+        if (j >= size#nh) ()
+        else {
+            let row0 = Int32.min(2 * j, size#h - 1) * size#w;
+            let row1 = Int32.min(2 * j + 1, size#h - 1) * size#w;
+            let cols = { w = size#w, row0 = row0, row1 = row1, nw = size#nw, outRow = j * size#nw };
+            halveCols(tables#srgb, { toLinear = tables#toLinear, edges = tables#edges, starts = tables#starts }, cols, src, out, 0);
+            halveRows(tables, size, src, out, j + 1)
+        }
+
+    // WhyNot: 画素ごとにレコードのフィールドを引かず、平均の仕方を関数で渡さない — フィールドは名前で探し、関数の値は呼ぶたびに
+    //   作り直すので、内側のループでは毎回の手間になる。行ごとに 1 回だけ取り出して素の引数で回す。
+    def halveCols(srgb: Bool, t: { toLinear = Array[Float64, r], edges = Array[Float64, r], starts = Array[Int32, r] },
+                  cols: { w = Int32, row0 = Int32, row1 = Int32, nw = Int32, outRow = Int32 }, src: Array[Int32, r], out: Array[Int32, r], i: Int32): Unit \ r =
+        halveColsFrom(srgb, t#toLinear, t#edges, t#starts, cols#w, cols#row0, cols#row1, cols#nw, cols#outRow, src, out, i)
+
+    def halveColsFrom(srgb: Bool, toLinear: Array[Float64, r], edges: Array[Float64, r], starts: Array[Int32, r], w: Int32, row0: Int32, row1: Int32,
+                      nw: Int32, outRow: Int32, src: Array[Int32, r], out: Array[Int32, r], i: Int32): Unit \ r =
+        if (i >= nw) ()
+        else {
+            let x0 = Int32.min(2 * i, w - 1);
+            let x1 = Int32.min(2 * i + 1, w - 1);
+            let a = Array.get(row0 + x0, src);
+            let b = Array.get(row0 + x1, src);
+            let c = Array.get(row1 + x0, src);
+            let d = Array.get(row1 + x1, src);
+            let pixel = if (srgb) srgbPixel(toLinear, edges, starts, a, b, c, d) else rawPixel(a, b, c, d);
+            Array.put(pixel, outRow + i, out);
+            halveColsFrom(srgb, toLinear, edges, starts, w, row0, row1, nw, outRow, src, out, i + 1)
+        }
+
+    /// 4 つの ARGB の成分ごとの平均（8bit の値のまま）。
+    def rawPixel(a: Int32, b: Int32, c: Int32, d: Int32): Int32 =
+        Int32.bitwiseOr(Int32.bitwiseOr(rawMeanOf(24, a, b, c, d), rawMeanOf(16, a, b, c, d)),
+                        Int32.bitwiseOr(rawMeanOf(8, a, b, c, d), rawMeanOf(0, a, b, c, d)))
+
+    /// 4 つの ARGB の平均（α は 8bit の値のまま・rgb は線形の量の平均を 8bit の sRGB の値へ）。
+    def srgbPixel(toLinear: Array[Float64, r], edges: Array[Float64, r], starts: Array[Int32, r], a: Int32, b: Int32, c: Int32, d: Int32): Int32 \ r =
+        Int32.bitwiseOr(Int32.bitwiseOr(rawMeanOf(24, a, b, c, d), srgbMeanOf(toLinear, edges, starts, 16, a, b, c, d)),
+                        Int32.bitwiseOr(srgbMeanOf(toLinear, edges, starts, 8, a, b, c, d), srgbMeanOf(toLinear, edges, starts, 0, a, b, c, d)))
+
+    /// 4 つの ARGB の、shift ビット目から 8 ビットの色の成分の、線形の量の平均を 8bit の sRGB の値へ戻して同じ位置に置いた値。
+    def srgbMeanOf(toLinear: Array[Float64, r], edges: Array[Float64, r], starts: Array[Int32, r], shift: Int32, a: Int32, b: Int32, c: Int32, d: Int32): Int32 \ r =
+        let m = (Array.get(channelOf(shift, a), toLinear) + Array.get(channelOf(shift, b), toLinear)
+                 + Array.get(channelOf(shift, c), toLinear) + Array.get(channelOf(shift, d), toLinear)) / 4.0;
+        let bucket = Int32.min(bucketCount(), Int32.max(0, Float64.truncateToInt32(m * Int32.toFloat64(bucketCount()))));
+        Int32.leftShift(countFrom(m, edges, Array.get(bucket, starts)), shift)
+
+    /// 並び edges（小さい順）の k 番から先で x 以下の物を数え足した数（k 番より前は x 以下と分かっている時に呼ぶ）。
+    // WhyNot: 255 本のしきい値を毎回二分探索しない — 平均は画素ごとにばらつき、分かれ道の読みが外れ続けて 1024² の絵 1 枚に 30 ms かかる。
+    //   区間の左の端までの数から数え始めれば、ほとんどの画素は 1〜2 本比べて済む（同じ比べで決めるので、答えは二分探索と同じ）。
+    def countFrom(x: Float64, edges: Array[Float64, r], k: Int32): Int32 \ r =
+        if (k < Array.length(edges) and Array.get(k, edges) <= x) countFrom(x, edges, k + 1) else k
+
+    // WhyNot: Int32.logicalRightShift で取り出さない — 呼ぶたびに引数のレコードを作る。下の 8 ビットだけを残すので、符号を引きずる rightShift で同じ値になる。
+    def channelOf(shift: Int32, x: Int32): Int32 = Int32.bitwiseAnd(Int32.rightShift(x, shift), 255)
 
     /// 4 つの ARGB の、shift ビット目から 8 ビットの成分の平均（(和 + 2) / 4 の切り捨て）を同じ位置に置いた値。
     def rawMeanOf(shift: Int32, a: Int32, b: Int32, c: Int32, d: Int32): Int32 =

@@ -7,8 +7,9 @@ mod Render3d.Shadow {
     import org.lwjgl.opengl.GL14
     import org.lwjgl.opengl.GL20
     import org.lwjgl.opengl.GL30
-    use Render3d.{ShadowCaster, isSkinned, ShadowLocs, ShadowTarget, ShadowUse, State, drawPosedMesh, matrixArray, maxShadowMapSize,
-                  maxShadowPcfRadius, meshDrawOf, meshIdleFrames, programsOf, shadowTextureUnit, skinnedProgramsOf, useMeshProgram}
+    use Render3d.{ShadowCaster, inDrawOrder, isSkinned, poseKeyOf, ShadowLocs, ShadowTarget, ShadowUse, State, drawPosedMesh, matrixArray, maxShadowMapSize,
+                  maxShadowPcfRadius, meshDrawOf, idleTargetFrames, programsOf, shadowTextureUnit, skinnedProgramsOf, useMeshProgram}
+    use Render3d.Counts.{Counter, count}
 
     // ── 影の地図 ──
 
@@ -57,7 +58,9 @@ mod Render3d.Shadow {
         let targets = Ref.get(state#shadowTargetsRef);
         let target = match Map.get((size, ordinal), targets) {
             case Some(found) => { lastUsed = gen | found }
-            case None        => createShadowTarget(gen, size)
+            case None        =>
+                count(state, Counter.TargetRebuilds, 1);
+                createShadowTarget(gen, size)
         };
         Ref.put(Map.insert((size, ordinal), target, targets), state#shadowTargetsRef);
         target
@@ -124,7 +127,7 @@ mod Render3d.Shadow {
                 if (skinnedDepth#mesh#program == 0) ()
                 else {
                     useMeshProgram(skinnedDepth#mesh, lightView, identity);
-                    skinned |> List.forEach(drawPosedMesh(gl, state, gen, skinnedDepth#mesh))
+                    inDrawOrder(d -> (0, poseKeyOf(d)), skinned) |> List.forEach(drawPosedMesh(gl, state, gen, skinnedDepth#mesh))
                 }
             }
         }
@@ -187,7 +190,7 @@ mod Render3d.Shadow {
     /// 使われない影の描き先を捨てる（画面のコマの終わりに 1 回）。
     pub def sweepShadowTargets(state: State, gen: Int64): Unit \ IO =
         let targets = Ref.get(state#shadowTargetsRef);
-        let idle = Map.filter(t -> gen - t#lastUsed > meshIdleFrames(), targets);
+        let idle = Map.filter(t -> gen - t#lastUsed > idleTargetFrames(), targets);
         if (Map.isEmpty(idle)) ()
         else {
             Map.forEach((_key, t) -> {

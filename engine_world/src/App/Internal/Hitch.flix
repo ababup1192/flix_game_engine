@@ -166,9 +166,15 @@ pub mod App.Internal.Hitch {
             case (Some(x), Some(y)) => "${Int32.toString(x#diag#liveShaders)} → ${Int32.toString(y#diag#liveShaders)}"
             case _                  => "-"
         };
+        let submits = rows |> List.map(r -> r#diag#submitNs) |> List.sort |> List.toVector;
+        let submitAt = (q: Int32) -> if (n == 0) 0i64 else Vector.get(Int32.min(n - 1, n * q / 100), submits);
+        let scene3d = List.foldLeft((acc, r) -> FrameDiagnostics.addScene3dCounts(acc, r#diag#scene3dCounts), FrameDiagnostics.emptyScene3dCounts(), rows);
         let lines =
             "ok perf ${name} frames=${Int32.toString(List.length(all))}（最初の ${Int64.toString(config#warmup)} コマは数えない・測るのは塗る側だけ）" ::
             "1 コマを塗る時間: p50 ${perfMs(at(50))}ms  p95 ${perfMs(at(95))}ms  max ${perfMs(at(100))}ms" ::
+            "GL へ送る時間（submit）: p50 ${perfMs(submitAt(50))}ms  p95 ${perfMs(submitAt(95))}ms  max ${perfMs(submitAt(100))}ms" ::
+            "3D の上げ直しと捨てた物の合計: ${FrameDiagnostics.uploadsText(scene3d)}" ::
+            "3D の CPU の区間の合計: ${FrameDiagnostics.cpuPhasesText(scene3d)}" ::
             "シェーダーを作った ${Int32.toString(builds)} 回・GPU にあるシェーダー ${live}" ::
             "ヒッチ ${Int32.toString(List.length(files))} 件（中身はこれを読む）:" ::
             (files |> List.map(f -> "  ${f}"));

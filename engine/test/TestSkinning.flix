@@ -304,3 +304,15 @@ def testSkinningOfFallsBackWhenJointsExceedPose(): Unit \ Assert =
     let skin = twoJointSkin();
     let i = Scene3d.meshInstance(triangleOnJoint(2), Mat4.identity()) |> Scene3d.withPose(Pose3d.compute(skin, Skin3d.restPose(skin)));
     Assert.assertEq(expected = (None, true), (skinningJointCount(i), Option.nonEmpty(Scene3d.skinningWarning(i))))
+
+/// 中身の同じ 2 つの姿勢は、別々に作っても同じ鍵になる。
+@Test
+def testPoseKeyIsSameForSameMatrices(): Unit \ Assert =
+    let local = Vector#{ poseAt(Vec3.v3(0.25, 1.0, 0.0)), poseAt(Vec3.v3(0.0, 0.0, 1.0)) };
+    Assert.assertEq(expected = Pose3d.keyOf(Pose3d.compute(twoJointSkin(), local)), Pose3d.keyOf(Pose3d.compute(twoJointSkin(), local)))
+
+/// 1 つの数だけが最後の 1 bit 違う（0.25 と、その次の Float64）2 つの姿勢は、違う鍵になる。
+@Test
+def testPoseKeyDiffersByOneBit(): Unit \ Assert =
+    let keyAt = (v: Float64) -> Pose3d.keyOf(Pose3d.compute(twoJointSkin(), Vector#{ poseAt(Vec3.v3(v, 1.0, 0.0)), poseAt(Vec3.v3(0.0, 0.0, 1.0)) }));
+    Assert.assertTrue(keyAt(0.25) != keyAt(0.25000000000000006))

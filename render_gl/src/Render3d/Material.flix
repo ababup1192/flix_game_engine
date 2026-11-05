@@ -12,9 +12,10 @@ mod Render3d.Material {
     use Render3d.Light.{putLights}
     use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialDraw, MaterialEntry, MaterialLocs,
                   MaterialPass, MeshDraw, State, Texture3dEntry, TextureSource, bindJointsBlock, drawPosedMesh, hasUv, isSkinned,
-                  lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshIdleFrames, meshLocsOf, normalMapTextureUnit, putLinearizedColor,
+                  lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit, putLinearizedColor,
                   putDepthRange, shadowLocsOf, useMeshProgram, warnSceneOnce}
     use Scene3dRenderer.{RegisteredTexture}
+    use Render3d.Counts.{Counter, Phase, count, noteMaterialBuild, timed}
 
     // ── 材質のある置いた物 ──
 
@@ -24,7 +25,7 @@ mod Render3d.Material {
     // WhyNot: 間引いた物を材質の組み立ての前に除かない — 初めて振り向いたコマで GLSL を組んで止まる（読み込み中に先に組ませる作りが効かない）。
     /// coverage = 描き先が標本を持ち、色の段で描く（cutout の材質を alpha to coverage の版で組む）。
     pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
-                        instances: List[Scene3d.Instance3d]): (List[MeshDraw], List[MaterialDraw]) \ IO =
+                        instances: List[Scene3d.Instance3d]): (List[MeshDraw], List[MaterialDraw]) \ IO = timed(state, Phase.Split, () -> {
         let classified = instances |> List.map(placed -> {
             Scene3d.lightmapWarning(placed) |> Option.forEach(line ->
                 warnSceneOnce(state, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(placed)#mesh), line));
@@ -39,6 +40,7 @@ mod Render3d.Material {
         let plain = classified |> List.filterMap(fd -> if (Option.isEmpty(snd(fd))) Some(fst(fd)) else None);
         let materials = classified |> List.filterMap(snd);
         (plain, materials)
+    })
 
     /// 置いた物 d を材質 m で描くプログラムの頂点の形。法線マップは uv つきの形にだけ当てる（uv の無い形は形ごとに 1 回知らせて無視する）。
     def vertexKindOf(state: State, coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind \ IO =
@@ -217,13 +219,14 @@ mod Render3d.Material {
             case Some(c) if c#sourceId == t#texId and c#version == t#version => { lastUsed = gen | c }
             case old =>
                 old |> Option.forEach(c -> GL11.glDeleteTextures(c#texId));
+                count(state, Counter.MipCopies, 1);
                 let w = Float64.tryToInt32(Float64.round(t#width)) |> Option.getWithDefault(1);
                 let h = Float64.tryToInt32(Float64.round(t#height)) |> Option.getWithDefault(1);
                 let pixels = Array.repeat(Static, Int32.max(1, w * h), 0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, t#texId);
                 GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
                 let chain = Mip.build(average, { width = w, height = h, pixels = Array.toVector(pixels) });
-                { sourceId = t#texId, version = t#version, texId = uploadMipChain(chain), levels = List.length(chain), lastUsed = gen }
+                { sourceId = t#texId, version = t#version, texId = uploadMipChain(chain), levels = List.length(chain), bytes = chainBytes(chain), lastUsed = gen }
         };
         Ref.put(Map.insert(key, copy, copies), state#mipCopiesRef);
         { texId = copy#texId, flipped = false, levels = copy#levels }
@@ -288,36 +291,93 @@ mod Render3d.Material {
         let entry = match Map.get(key, held) {
             case Some(found) => { lastUsed = gen | found }
             case None =>
+                count(state, Counter.Texture3dUploads, 1);
                 let chain = Mip.build(average, { width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) });
-                { texId = uploadMipChain(chain), levels = List.length(chain),
-                  bytes = chain |> List.foldLeft((acc, td) -> acc + Int32.toInt64(td#width) * Int32.toInt64(td#height) * 4i64, 0i64),
-                  lastUsed = gen }
+                { texId = uploadMipChain(chain), levels = List.length(chain), bytes = chainBytes(chain), lastUsed = gen }
         };
         Ref.put(Map.insert(key, entry, held), state#textures3dRef);
         { texId = entry#texId, flipped = false, levels = entry#levels }
 
-    /// 使われない場面の絵を捨て、上限を超えたら今と前のコマで使っていない古い物から捨てる（画面のコマの終わりに 1 回）。
+    /// 段の列を GPU に置いた時の大きさ（バイト）。
+    def chainBytes(chain: List[ShaderEval.TexData]): Int64 =
+        chain |> List.foldLeft((acc, td) -> acc + Int32.toInt64(td#width) * Int32.toInt64(td#height) * 4i64, 0i64)
+
+    /// 置き場の上限で捨てる物を選ぶ時の 1 枚。counted = 枚数の上限に数える（場面の絵は数え、段つきの写しはバイトにだけ数える）。
+    pub type alias BudgetEntry = { lastUsed = Int64, bytes = Int64, counted = Bool }
+
+    /// 置き場の上限。count = 枚数（counted の物だけ）・bytes = 大きさの合計。
+    pub type alias Budget = { count = Int32, bytes = Int64 }
+
+    /// entries が budget を超えているか。
+    pub def isOverBudget(budget: Budget, entries: List[(k, BudgetEntry)]): Bool =
+        let (n, bytes) = budgetTotals(entries);
+        n > budget#count or bytes > budget#bytes
+
+    def budgetTotals(entries: List[(k, BudgetEntry)]): (Int32, Int64) =
+        entries |> List.foldLeft((acc, ke) -> {
+            let (n, bytes) = acc;
+            let e = snd(ke);
+            (if (e#counted) n + 1 else n, bytes + e#bytes)
+        }, (0, 0i64))
+
+    /// entries を budget に収めるために捨てる物の鍵（捨てる順）。最後に使った世代が keepFrom より前の物だけを、古い物から選ぶ
+    /// （同じ世代は鍵の順）。大きさが収まっていて枚数だけが超えている間は、枚数に数えない物を飛ばす。収まっていれば Nil。
+    pub def budgetEvictions(budget: Budget, keepFrom: Int64, entries: List[(k, BudgetEntry)]): List[k] with Order[k] =
+        let (n, bytes) = budgetTotals(entries);
+        if (n <= budget#count and bytes <= budget#bytes) Nil
+        else {
+            let oldestFirst = entries |> List.filter(ke -> snd(ke)#lastUsed < keepFrom)
+                |> List.map(ke -> ((snd(ke)#lastUsed, fst(ke)), ke)) |> List.sortBy(fst) |> List.map(snd);
+            let (victims, _, _) = oldestFirst |> List.foldLeft((acc, ke) -> {
+                let (picked, leftN, leftBytes) = acc;
+                let (k, e) = ke;
+                if (leftBytes > budget#bytes or (leftN > budget#count and e#counted))
+                    (k :: picked, if (e#counted) leftN - 1 else leftN, leftBytes - e#bytes)
+                else acc
+            }, (Nil, n, bytes));
+            List.reverse(victims)
+        }
+
+    /// 場面の絵と段つきの写しを、置き場の上限を超えた時だけ、今と前のコマで使っていない古い物から捨てる（画面のコマの終わりに 1 回）。
     /// 今と前のコマで使う物だけで上限を超えていたら 1 回だけ知らせる（Pass の場面は画面のコマの 1 つ前の世代で描かれる）。
+    // WhyNot: しばらく使わなかった絵を捨てない — たまにしか出ない物の絵を出すたびに CPU で段を作り直し、そのコマが跳ねる。
     pub def sweepTextures3d(state: State, gen: Int64): Unit \ IO =
         let held = Ref.get(state#textures3dRef);
-        let isIdle = (e: Texture3dEntry) -> gen - e#lastUsed > meshIdleFrames();
-        let kept = Map.filter(e -> not isIdle(e), held);
-        let overBudget = (m: Map[String, Texture3dEntry]) ->
-            Map.size(m) > state#textureCountBudget or Map.foldLeft((acc, e) -> acc + e#bytes, 0i64, m) > state#textureByteBudget;
-        let oldestFirst = Map.toList(kept) |> List.filter(ke -> snd(ke)#lastUsed < gen - 1i64)
-            |> List.map(ke -> (snd(ke)#lastUsed, ke)) |> List.sortBy(fst) |> List.map(snd);
-        let trimmed = List.foldLeft((acc, ke) -> if (overBudget(acc)) Map.remove(fst(ke), acc) else acc, kept, oldestFirst);
-        let dropped = Map.difference(held, trimmed);
-        Map.forEach((_key, e) -> GL11.glDeleteTextures(e#texId), dropped);
-        Ref.put(trimmed, state#textures3dRef);
         let copies = Ref.get(state#mipCopiesRef);
-        let idleCopies = Map.filter(c -> gen - c#lastUsed > meshIdleFrames(), copies);
-        Map.forEach((_key, c) -> GL11.glDeleteTextures(c#texId), idleCopies);
-        Ref.put(Map.difference(copies, idleCopies), state#mipCopiesRef);
-        if (overBudget(trimmed))
-            warnSceneOnce(state, "@budget", "scene3d: 場面の絵（Texture3d）が ${state#textureCountBudget} 枚か"
+        let entries = List.append(
+            Map.toList(held) |> List.map(ke -> (TextureSlot.Scene(fst(ke)), { lastUsed = snd(ke)#lastUsed, bytes = snd(ke)#bytes, counted = true })),
+            Map.toList(copies) |> List.map(ke -> (TextureSlot.Copy(fst(ke)), { lastUsed = snd(ke)#lastUsed, bytes = snd(ke)#bytes, counted = false })));
+        let budget = { count = state#textureCountBudget, bytes = state#textureByteBudget };
+        let victims = budgetEvictions(budget, gen - 1i64, entries);
+        if (List.isEmpty(victims)) () else dropTextures(state, victims);
+        let victimSet = List.toSet(victims);
+        // WhyNot: 捨てる物を選べたかで知らせを決めない — 今と前のコマで使う物だけで超えている時は、捨てる物が無くても超えたまま。
+        if (isOverBudget(budget, List.filter(ke -> not Set.memberOf(fst(ke), victimSet), entries)))
+            warnSceneOnce(state, "@budget", "scene3d: 場面の絵（Texture3d と材質の段つきの写し）が ${state#textureCountBudget} 枚か"
                 + " ${Int64.toString(state#textureByteBudget / 1048576i64)} MB を超えて使われている — 絵を減らすか小さくするか、project.json の scene3dTextureBudgetCount / scene3dTextureBudgetMB を上げる")
         else ()
+
+    /// 置き場から victims の絵を GPU ごと捨てる。
+    def dropTextures(state: State, victims: List[TextureSlot]): Unit \ IO =
+        let (held, copies) = victims |> List.foldLeft((acc, slot) -> {
+            let (h, c) = acc;
+            match slot {
+                case TextureSlot.Scene(key) =>
+                    Map.get(key, h) |> Option.forEach(e -> GL11.glDeleteTextures(e#texId));
+                    (Map.remove(key, h), c)
+                case TextureSlot.Copy(key) =>
+                    Map.get(key, c) |> Option.forEach(e -> GL11.glDeleteTextures(e#texId));
+                    (h, Map.remove(key, c))
+            }
+        }, (Ref.get(state#textures3dRef), Ref.get(state#mipCopiesRef)));
+        Ref.put(held, state#textures3dRef);
+        Ref.put(copies, state#mipCopiesRef)
+
+    /// 置き場の上限に数える絵の鍵。Scene = 場面の絵（textures3dRef の鍵）・Copy = 全体の登録の絵の段つきの写し（mipCopiesRef の鍵）。
+    enum TextureSlot with Eq, Order {
+        case Scene(String)
+        case Copy(String)
+    }
 
     // ── 材質のプログラムの置き場 ──
 
@@ -344,10 +404,13 @@ mod Render3d.Material {
             if (e#lastUsed == gen) warnMaterialThrash(state, slot#key, m#spec#name) else ();
             retireMaterial(state, e)
         });
-        buildMaterial(gl, state, gen, m, slot#kind)
+        let reason = if (Option.isEmpty(old)) FrameDiagnostics.BuildReason.First else FrameDiagnostics.BuildReason.Changed("spec か emission の木");
+        buildMaterial(gl, state, gen, m, slot#kind, reason)
 
-    /// 材質のプログラムを組む。読む絵の組が Scene3d.maxMaterialTextures() を超える材質は、後ろの組を 0 にして組み、1 回知らせる。
-    def buildMaterial(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): MaterialEntry \ IO =
+    /// 材質のプログラムを組み、組んだ理由 reason と一緒に診断へ控える。読む絵の組が Scene3d.maxMaterialTextures() を超える材質は、
+    /// 後ろの組を 0 にして組み、1 回知らせる。
+    def buildMaterial(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind,
+                      reason: FrameDiagnostics.BuildReason): MaterialEntry \ IO =
         Array.put(1, 2, state#materialStreak);
         let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission));
         if (readCount > Scene3d.maxMaterialTextures())
@@ -359,6 +422,7 @@ mod Render3d.Material {
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
             + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
             + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + ":${m#spec#name}";
+        noteMaterialBuild(state, label, reason);
         let vertex = materialVertexSource({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap });
         let fragment = materialFragmentSource(glsl, kind);
         let program = match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
