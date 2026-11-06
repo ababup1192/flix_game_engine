@@ -1,0 +1,160 @@
+{
+ "id": "novel_arcade",
+ "title": "ノベルアーケード",
+ "files": [
+  "assets/OFL.txt",
+  "assets/book-theme.schema.json",
+  "assets/episode.schema.json",
+  "assets/episodes/horror/corridor.schema.json",
+  "assets/episodes/horror/horror.corridor.json",
+  "assets/episodes/horror/horror.episode.json",
+  "assets/episodes/horror/horror.story.json",
+  "assets/episodes/horror/horror.theme.json",
+  "assets/novel_arcade.scenes.json",
+  "assets/scenes.schema.json",
+  "assets/shelf.json",
+  "assets/shelf.schema.json",
+  "assets/shell.kind.json",
+  "assets/shell.schema.json",
+  "assets/story.schema.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [],
+ "sounds": [
+  {
+   "name": "amb_shelf",
+   "path": "assets/sfx/amb_shelf.wav",
+   "looping": true,
+   "seconds": 6
+  },
+  {
+   "name": "ui_tap",
+   "path": "assets/sfx/ui_tap.wav",
+   "looping": false,
+   "seconds": 0.049977324263038546
+  },
+  {
+   "name": "ui_page",
+   "path": "assets/sfx/ui_page.wav",
+   "looping": false,
+   "seconds": 0.12
+  },
+  {
+   "name": "ui_pick",
+   "path": "assets/sfx/ui_pick.wav",
+   "looping": false,
+   "seconds": 0.2
+  },
+  {
+   "name": "ui_open",
+   "path": "assets/sfx/ui_open.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "ui_denied",
+   "path": "assets/sfx/ui_denied.wav",
+   "looping": false,
+   "seconds": 0.16
+  },
+  {
+   "name": "game_enter",
+   "path": "assets/sfx/game_enter.wav",
+   "looping": false,
+   "seconds": 1.2
+  },
+  {
+   "name": "game_leave",
+   "path": "assets/sfx/game_leave.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "amb_night",
+   "path": "assets/episodes/horror/sfx/amb_night.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "amb_hall",
+   "path": "assets/episodes/horror/sfx/amb_hall.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "heart",
+   "path": "assets/episodes/horror/sfx/heart.wav",
+   "looping": true,
+   "seconds": 1.0499773242630386
+  },
+  {
+   "name": "step_a",
+   "path": "assets/episodes/horror/sfx/step_a.wav",
+   "looping": false,
+   "seconds": 0.42
+  },
+  {
+   "name": "step_b",
+   "path": "assets/episodes/horror/sfx/step_b.wav",
+   "looping": false,
+   "seconds": 0.42
+  },
+  {
+   "name": "knock",
+   "path": "assets/episodes/horror/sfx/knock.wav",
+   "looping": false,
+   "seconds": 0.32997732426303855
+  },
+  {
+   "name": "hush",
+   "path": "assets/episodes/horror/sfx/hush.wav",
+   "looping": false,
+   "seconds": 1.3
+  },
+  {
+   "name": "sting",
+   "path": "assets/episodes/horror/sfx/sting.wav",
+   "looping": false,
+   "seconds": 1.5
+  },
+  {
+   "name": "follow",
+   "path": "assets/episodes/horror/sfx/follow.wav",
+   "looping": false,
+   "seconds": 1.92
+  },
+  {
+   "name": "pickup",
+   "path": "assets/episodes/horror/sfx/pickup.wav",
+   "looping": false,
+   "seconds": 0.9499773242630386
+  }
+ ],
+ "design": {
+  "w": 540,
+  "h": 1170
+ },
+ "orientation": "portrait",
+ "transcoded": {
+  "assets/episodes/horror/sfx/amb_hall.wav": "assets/episodes/horror/sfx/amb_hall.webm",
+  "assets/episodes/horror/sfx/amb_night.wav": "assets/episodes/horror/sfx/amb_night.webm",
+  "assets/episodes/horror/sfx/follow.wav": "assets/episodes/horror/sfx/follow.webm",
+  "assets/episodes/horror/sfx/heart.wav": "assets/episodes/horror/sfx/heart.webm",
+  "assets/episodes/horror/sfx/hush.wav": "assets/episodes/horror/sfx/hush.webm",
+  "assets/episodes/horror/sfx/knock.wav": "assets/episodes/horror/sfx/knock.webm",
+  "assets/episodes/horror/sfx/pickup.wav": "assets/episodes/horror/sfx/pickup.webm",
+  "assets/episodes/horror/sfx/step_a.wav": "assets/episodes/horror/sfx/step_a.webm",
+  "assets/episodes/horror/sfx/step_b.wav": "assets/episodes/horror/sfx/step_b.webm",
+  "assets/episodes/horror/sfx/sting.wav": "assets/episodes/horror/sfx/sting.webm",
+  "assets/sfx/amb_shelf.wav": "assets/sfx/amb_shelf.webm",
+  "assets/sfx/game_enter.wav": "assets/sfx/game_enter.webm",
+  "assets/sfx/game_leave.wav": "assets/sfx/game_leave.webm",
+  "assets/sfx/ui_denied.wav": "assets/sfx/ui_denied.webm",
+  "assets/sfx/ui_open.wav": "assets/sfx/ui_open.webm",
+  "assets/sfx/ui_page.wav": "assets/sfx/ui_page.webm",
+  "assets/sfx/ui_pick.wav": "assets/sfx/ui_pick.webm",
+  "assets/sfx/ui_tap.wav": "assets/sfx/ui_tap.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
+ }
+}

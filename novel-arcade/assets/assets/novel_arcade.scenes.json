@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "title": "場面の説明",
+  "note": "gallery/ に描き出す場面の説明。name は Shots.names の名前とそろえる。",
+  "rows": [
+    { "name": "shelf", "title": "棚", "desc": "6 本の背表紙が並ぶトップ。", "tags": ["顔"] },
+    { "name": "novel_open", "title": "七号棟の始まり", "desc": "団地を見上げる夜の背景。", "tags": [] },
+    { "name": "novel_keeper", "title": "管理人", "desc": "立ち絵と文章。", "tags": [] },
+    { "name": "novel_corridor", "title": "廊下の入口", "desc": "ゲームと同じ絵の背景に文章が載る。", "tags": [] },
+    { "name": "game_start", "title": "通路の始まり", "desc": "文章が引いた後の遊べる画面。", "tags": [] },
+    { "name": "game_step", "title": "歩いている所", "desc": "何歩か進んだ廊下。", "tags": [] },
+    { "name": "game_turn", "title": "振り向いている途中", "desc": "指でゆっくり回している所。", "tags": [] },
+    { "name": "game_back", "title": "後ろを見た所", "desc": "真後ろを向いた廊下。", "tags": [] },
+    { "name": "game_item", "title": "落とし物", "desc": "二回鳴った後に後ろを見た所。", "tags": [] },
+    { "name": "game_guide", "title": "スワイプの案内", "desc": "初めて振り向く場面で指の丸と矢印が滑る。", "tags": [] }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "title": "七号棟の通路の値",
+  "sections": {
+    "stepSeconds": { "kind": "value", "type": "float", "label": "一歩の秒", "group": "歩く" },
+    "stepLength": { "kind": "value", "type": "float", "label": "一歩の長さ(m)", "group": "歩く" },
+    "holdWalkSeconds": { "kind": "value", "type": "float", "label": "押し続けて歩き出す秒", "group": "歩く" },
+    "turnDegreesPerSecond": { "kind": "value", "type": "float", "label": "振り向く速さの上限(度/秒)", "group": "振り向く" },
+    "dragPixelsForHalfTurn": { "kind": "value", "type": "float", "label": "180 度に要る指の移動量(px)", "group": "振り向く" },
+    "commitDegrees": { "kind": "value", "type": "float", "label": "離して振り向き切る角", "group": "振り向く" },
+    "settleRatio": { "kind": "value", "type": "float", "label": "離した後の速さの割合", "group": "振り向く" },
+    "peekDegrees": { "kind": "value", "type": "float", "label": "のぞきと数える角", "group": "振り向く" },
+    "seenDegrees": { "kind": "value", "type": "float", "label": "目が合う角", "group": "振り向く" },
+    "listenSeconds": { "kind": "value", "type": "float", "label": "音の後に居続ける秒", "group": "起きる事" },
+    "knockGapSeconds": { "kind": "value", "type": "float", "label": "ラップ音の間の秒", "group": "起きる事" },
+    "itemDistance": { "kind": "value", "type": "float", "label": "落とし物までの m", "group": "起きる事" },
+    "behindDistance": { "kind": "value", "type": "float", "label": "真後ろに立つ m", "group": "起きる事" },
+    "farDistance": { "kind": "value", "type": "float", "label": "遠くの後ろに立つ m", "group": "起きる事" },
+    "aheadDistance": { "kind": "value", "type": "float", "label": "奥に映る m", "group": "起きる事" },
+    "stages": {
+      "kind": "list", "label": "通路",
+      "fields": {
+        "id": { "type": "text", "label": "台本の stage の名前" },
+        "legA": { "type": "int", "label": "曲がり角までの歩数" },
+        "legB": { "type": "int", "label": "曲がり角からの歩数" },
+        "backdrop": { "type": "text", "label": "始まりの絵と同じ背景の名前" },
+        "guideTurn": { "type": "bool", "label": "スワイプの案内を出す" }
+      }
+    },
+    "happenings": {
+      "kind": "list", "label": "起きる事",
+      "fields": {
+        "stage": { "type": "text", "label": "通路" },
+        "atStep": { "type": "int", "label": "何歩目の後か" },
+        "knocks": { "type": "int", "label": "ラップ音の数" },
+        "figure": { "type": "text", "label": "behind / far / ahead / none" },
+        "item": { "type": "text", "label": "落とし物の名前" }
+      }
+    }
+  }
+}

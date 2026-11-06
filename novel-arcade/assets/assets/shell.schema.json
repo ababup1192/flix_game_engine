@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "title": "土台の手触り",
+  "sections": {
+    "tapSlop": { "kind": "value", "type": "float", "label": "タップと見なす動き(px)", "group": "指" },
+    "longPressSeconds": { "kind": "value", "type": "float", "label": "長押しの秒", "group": "指" },
+    "swipeMinDistance": { "kind": "value", "type": "float", "label": "スワイプの長さ(px)", "group": "指" },
+    "swipeMinSpeed": { "kind": "value", "type": "float", "label": "スワイプの速さ(px/秒)", "group": "指" },
+    "textSize": { "kind": "value", "type": "float", "label": "本文の字", "group": "字" },
+    "nameSize": { "kind": "value", "type": "float", "label": "話し手の字", "group": "字" },
+    "lineGap": { "kind": "value", "type": "float", "label": "行の間(px)", "group": "字" },
+    "charsPerSecond": { "kind": "value", "type": "float", "label": "文字送りの速さ", "group": "字" },
+    "textMargin": { "kind": "value", "type": "float", "label": "字の左右の余白", "group": "字" },
+    "textTop": { "kind": "value", "type": "float", "label": "字の始まる高さ(割合)", "group": "字" },
+    "choiceHeight": { "kind": "value", "type": "float", "label": "選択肢の高さ", "group": "選択肢" },
+    "choiceGap": { "kind": "value", "type": "float", "label": "選択肢の間", "group": "選択肢" },
+    "choiceTextSize": { "kind": "value", "type": "float", "label": "選択肢の字", "group": "選択肢" },
+    "openSeconds": { "kind": "value", "type": "float", "label": "棚から本を開く秒", "group": "切り替え" },
+    "closeSeconds": { "kind": "value", "type": "float", "label": "本を閉じる秒", "group": "切り替え" },
+    "enterSeconds": { "kind": "value", "type": "float", "label": "ノベルからゲームへの秒", "group": "切り替え" },
+    "leaveSeconds": { "kind": "value", "type": "float", "label": "ゲームからノベルへの秒", "group": "切り替え" },
+    "backdropSeconds": { "kind": "value", "type": "float", "label": "背景の切り替えの秒", "group": "切り替え" }
+  }
+}

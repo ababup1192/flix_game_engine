@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "七号棟の文章の色",
+  "note": "字と選択肢の色と、字の後ろの暗がりの濃さ。背景の絵は変わらない。",
+  "ink": "#d9e2d6",
+  "name": "#8fb09c",
+  "shade": "#030605",
+  "shadeAlpha": 0.86,
+  "choice": "#101a17",
+  "choiceInk": "#d9e2d6",
+  "font": ""
+}

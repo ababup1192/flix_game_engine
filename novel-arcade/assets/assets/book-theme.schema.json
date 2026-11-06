@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "title": "本の文章の色",
+  "sections": {
+    "ink": { "kind": "value", "type": "color", "label": "本文の字", "group": "字" },
+    "name": { "kind": "value", "type": "color", "label": "話し手の字", "group": "字" },
+    "font": { "kind": "value", "type": "text", "label": "フォントの名前（空で既定）", "group": "字" },
+    "shade": { "kind": "value", "type": "color", "label": "字の後ろの暗がり", "group": "面" },
+    "shadeAlpha": { "kind": "value", "type": "float", "label": "暗がりの濃さ", "group": "面" },
+    "choice": { "kind": "value", "type": "color", "label": "選択肢の面", "group": "面" },
+    "choiceInk": { "kind": "value", "type": "color", "label": "選択肢の字", "group": "面" }
+  }
+}

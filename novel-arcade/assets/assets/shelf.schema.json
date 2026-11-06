@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "title": "棚に並ぶ本",
+  "sections": {
+    "heading": { "kind": "value", "type": "text", "label": "見出し" },
+    "subheading": { "kind": "value", "type": "text", "label": "小見出し" },
+    "soon": { "kind": "value", "type": "text", "label": "まだ無い本のラベル" },
+    "back": { "kind": "value", "type": "text", "label": "本を閉じるボタンの字" },
+    "cards": {
+      "kind": "list",
+      "label": "背表紙",
+      "fields": {
+        "id": { "type": "text", "label": "本の id" },
+        "genre": { "type": "text", "label": "ジャンル" },
+        "title": { "type": "text", "label": "題" },
+        "tagline": { "type": "text", "label": "一言" },
+        "paper": { "type": "color", "label": "面の色" },
+        "ink": { "type": "color", "label": "字の色" },
+        "accent": { "type": "color", "label": "差し色" }
+      }
+    }
+  }
+}

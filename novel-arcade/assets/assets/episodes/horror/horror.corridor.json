@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "title": "七号棟の通路の値",
+  "note": "happenings は stage の atStep 歩目を終えた時に起きる。knocks = ラップ音の数。figure = behind（真後ろ）/ far（遠くの後ろ）/ ahead（奥に映る）/ none。item = 後ろに落ちている物。",
+  "stepSeconds": 0.9,
+  "stepLength": 1.0,
+  "holdWalkSeconds": 0.25,
+  "turnDegreesPerSecond": 58,
+  "dragPixelsForHalfTurn": 620,
+  "commitDegrees": 120,
+  "settleRatio": 0.75,
+  "peekDegrees": 50,
+  "seenDegrees": 148,
+  "listenSeconds": 7,
+  "knockGapSeconds": 0.62,
+  "itemDistance": 2.3,
+  "behindDistance": 1.5,
+  "farDistance": 7,
+  "aheadDistance": 7,
+  "stages": [
+    { "id": "first", "legA": 9, "legB": 4, "backdrop": "corridor_first", "guideTurn": true },
+    { "id": "second", "legA": 7, "legB": 6, "backdrop": "corridor_second" }
+  ],
+  "happenings": [
+    { "stage": "first", "atStep": 2, "knocks": 2, "figure": "none", "item": "photo" },
+    { "stage": "first", "atStep": 5, "knocks": 0, "figure": "ahead", "item": "" },
+    { "stage": "first", "atStep": 7, "knocks": 3, "figure": "behind", "item": "" },
+    { "stage": "first", "atStep": 11, "knocks": 2, "figure": "none", "item": "letter" },
+    { "stage": "second", "atStep": 2, "knocks": 3, "figure": "none", "item": "" },
+    { "stage": "second", "atStep": 5, "knocks": 4, "figure": "far", "item": "" },
+    { "stage": "second", "atStep": 8, "knocks": 2, "figure": "none", "item": "bell" },
+    { "stage": "second", "atStep": 11, "knocks": 3, "figure": "behind", "item": "" }
+  ]
+}
