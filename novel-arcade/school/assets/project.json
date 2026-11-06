@@ -233,7 +233,15 @@
     "compress": {
       "lossyImages": [
         {
+          "glob": "assets/episodes/fantasy/art/*.png",
+          "quality": 82
+        },
+        {
           "glob": "assets/episodes/cafe/art/*.png",
+          "quality": 82
+        },
+        {
+          "glob": "assets/episodes/mystery/art/*.png",
           "quality": 82
         }
       ]

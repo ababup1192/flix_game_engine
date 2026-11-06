@@ -4,6 +4,8 @@
  "files": [
   "assets/OFL.txt",
   "assets/episodes/school/models/atlas.rgb",
+  "assets/episodes/school/models/chibi.glb",
+  "assets/episodes/school/models/chibi.rgb",
   "assets/episodes/school/models/school.glb",
   "assets/episodes/school/portraits/akane.png",
   "assets/episodes/school/portraits/akane_angry.png",
