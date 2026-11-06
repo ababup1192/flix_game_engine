@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>game</title>
+<style>
+  :root { --fge-aspect: 1.7778; --fge-pad-min: 220px; --fge-side-min: 176px; --fge-edge: 24px; }
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; overflow: hidden; overscroll-behavior: none;
+               touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+               -webkit-tap-highlight-color: transparent; font: 14px/1.5 system-ui, sans-serif; }
+  /* WhyNot: 100vh にしない — スマホのブラウザでは 100vh がアドレスバーを隠した時の高さで、バーが出ている間は下がはみ出す。 */
+  /* 切り欠き（ノッチ）の下へ canvas を入れない。PC では env() が 0 なので 100vw のまま。 */
+  #fge-canvas { position: fixed; left: env(safe-area-inset-left); top: 0;
+                width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)); height: 100dvh; display: block; outline: none; }
+  .fge-layer { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+  #fge-boot { background: #000; }
+  #fge-track { width: min(60vw, 360px); height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
+  #fge-bar { width: 0; height: 100%; background: #ddd; }
+  #fge-start { font-size: 18px; }
+  #fge-end { background: rgba(0, 0, 0, .85); }
+  #fge-end button, #fge-rotate button { font: inherit; font-size: 16px; padding: 10px 24px; }
+  #fge-error { position: fixed; left: 8px; right: 8px; bottom: 8px; padding: 8px; background: #400; color: #fdd;
+               white-space: pre-wrap; font: 12px/1.4 monospace; max-height: 40vh; overflow: auto; z-index: 30; }
+
+  /* ── 向きの案内（指の端末で、ゲームの向きと違う時だけ）── */
+  #fge-rotate { display: none; background: rgba(0, 0, 0, .94); z-index: 20; font-size: 18px; text-align: center; padding: 24px; }
+  @media (orientation: portrait) {
+    body.fge-touch.fge-want-landscape:not(.fge-rotate-ok) #fge-rotate { display: flex; }
+  }
+  @media (orientation: landscape) {
+    body.fge-touch.fge-want-portrait:not(.fge-rotate-ok) #fge-rotate { display: flex; }
+  }
+  .fge-rotate-portrait, .fge-rotate-landscape { display: none; }
+  body.fge-want-landscape .fge-rotate-landscape, body.fge-want-portrait .fge-rotate-portrait { display: block; }
+
+  /* ── バーチャルパッド（指の端末で、ゲームが web.virtualPad を決めた時だけ）── */
+  #fge-pad { display: none; }
+  body.fge-pad-on #fge-pad { display: block; }
+  .fge-pad-zone { position: fixed; display: flex; align-items: center; box-sizing: border-box; touch-action: none; }
+  .fge-dpad { position: relative; width: 150px; height: 150px; border-radius: 50%; background: rgba(255, 255, 255, .06); }
+  .fge-dpad-arm { position: absolute; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;
+                  background: rgba(255, 255, 255, .16); border: 2px solid rgba(255, 255, 255, .3); color: rgba(255, 255, 255, .8);
+                  font-size: 18px; box-sizing: border-box; }
+  .fge-dpad-up { left: 50px; top: 0; border-radius: 10px 10px 4px 4px; }
+  .fge-dpad-down { left: 50px; bottom: 0; border-radius: 4px 4px 10px 10px; }
+  .fge-dpad-left { left: 0; top: 50px; border-radius: 10px 4px 4px 10px; }
+  .fge-dpad-right { right: 0; top: 50px; border-radius: 4px 10px 10px 4px; }
+  .fge-pad-buttons { display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 14px; }
+  .fge-pad-button { width: 68px; height: 68px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+                    background: rgba(255, 255, 255, .16); border: 2px solid rgba(255, 255, 255, .3); color: #fff;
+                    font: bold 20px system-ui, sans-serif; box-sizing: border-box; }
+  /* 右から 1 個目（A）を上に、2 個目（B）を左下に。ファミコンからの並び。 */
+  .fge-pad-button-1 { margin-top: 34px; }
+  .fge-pad-button-3 { margin-top: 34px; }
+  .fge-dpad-arm.on, .fge-pad-button.on { background: rgba(255, 255, 255, .45); }
+
+  /* ── 縦の design で起動した時（WebLayer が縦を選んだ時だけ付く class）── */
+  /* 縦の design は頁の上端と下端まで字とボタンを置くので、切り欠きとホームバーの内側に描く。横の design の縦持ちは帯の中央なので付けない。 */
+  /* WhyNot: パッドの時は上の切り欠きを引かない — 縦持ちのパッドの canvas の高さは design の比から決まり、上を引くとパッドの置き場所の式と合わなくなる（今は縦の指定を持つパッドのゲームが無い）。 */
+  @media (orientation: portrait) {
+    body.fge-portrait-design:not(.fge-pad-on) #fge-canvas {
+      top: env(safe-area-inset-top); height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  }
+
+  @media (orientation: portrait) {
+    body.fge-pad-on { --fge-game-h: min(calc(100vw / var(--fge-aspect)), calc(100dvh - var(--fge-pad-min))); }
+    body.fge-pad-on #fge-canvas { height: var(--fge-game-h); }
+    body.fge-pad-on .fge-pad-zone { top: var(--fge-game-h); bottom: 0; width: 50vw;
+                                    padding-bottom: env(safe-area-inset-bottom); }
+    .fge-pad-left { left: 0; justify-content: flex-start; padding-left: max(var(--fge-edge), env(safe-area-inset-left)); }
+    .fge-pad-right { right: 0; justify-content: flex-end; padding-right: max(var(--fge-edge), env(safe-area-inset-right)); }
+  }
+  @media (orientation: landscape) {
+    body.fge-pad-on { --fge-game-w: min(calc(100dvh * var(--fge-aspect)), calc(100vw - 2 * var(--fge-side-min))); }
+    body.fge-pad-on #fge-canvas { left: calc((100vw - var(--fge-game-w)) / 2); width: var(--fge-game-w); }
+    body.fge-pad-on .fge-pad-zone { top: 0; bottom: 0; width: calc((100vw - var(--fge-game-w)) / 2);
+                                    padding-top: 40px; padding-bottom: max(var(--fge-edge), env(safe-area-inset-bottom)); }
+    .fge-pad-left { left: 0; justify-content: center; padding-left: max(var(--fge-edge), env(safe-area-inset-left)); }
+    .fge-pad-right { right: 0; justify-content: center; padding-right: max(var(--fge-edge), env(safe-area-inset-right)); }
+  }
+</style>
+<link rel="preload" href="classes.wasm?v=b9a86f07a6f4" as="fetch" crossorigin="anonymous">
+</head>
+<body>
+<canvas id="fge-canvas" tabindex="0"></canvas>
+<div id="fge-pad"></div>
+<div id="fge-boot" class="fge-layer">
+  <div id="fge-phase">loading</div>
+  <div id="fge-track"><div id="fge-bar"></div></div>
+  <div id="fge-start" style="display: none">クリックかキーで始める</div>
+</div>
+<div id="fge-end" class="fge-layer" style="display: none">
+  <div>おわり</div>
+  <button type="button" onclick="location.reload()">もう一度遊ぶ</button>
+</div>
+<div id="fge-rotate" class="fge-layer">
+  <div class="fge-rotate-landscape">画面を横にしてください</div>
+  <div class="fge-rotate-portrait">画面を縦にしてください</div>
+  <button type="button" onclick="document.body.classList.add('fge-rotate-ok')">このまま遊ぶ</button>
+</div>
+<div id="fge-error" style="display: none"></div>
+<script src="wasm-gc-runtime.js?v=b9a86f07a6f4"></script>
+<script src="fge-web.js?v=b9a86f07a6f4"></script>
+<script src="touch-bridge.js"></script>
+</body>
+</html>

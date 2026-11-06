@@ -1,0 +1,342 @@
+{
+ "id": "novel_arcade_romance",
+ "title": "君のテンポで",
+ "files": [
+  "assets/OFL.txt",
+  "assets/episodes/romance/romance.episode.json",
+  "assets/episodes/romance/romance.live.json",
+  "assets/episodes/romance/romance.story.json",
+  "assets/episodes/romance/romance.theme.json",
+  "assets/novel_arcade.scenes.json",
+  "assets/shelf.json",
+  "assets/shell.kind.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [],
+ "sounds": [
+  {
+   "name": "amb_shelf",
+   "path": "assets/sfx/amb_shelf.wav",
+   "looping": true,
+   "seconds": 6
+  },
+  {
+   "name": "ui_tap",
+   "path": "assets/sfx/ui_tap.wav",
+   "looping": false,
+   "seconds": 0.049977324263038546
+  },
+  {
+   "name": "ui_page",
+   "path": "assets/sfx/ui_page.wav",
+   "looping": false,
+   "seconds": 0.12
+  },
+  {
+   "name": "ui_pick",
+   "path": "assets/sfx/ui_pick.wav",
+   "looping": false,
+   "seconds": 0.2
+  },
+  {
+   "name": "ui_open",
+   "path": "assets/sfx/ui_open.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "ui_denied",
+   "path": "assets/sfx/ui_denied.wav",
+   "looping": false,
+   "seconds": 0.16
+  },
+  {
+   "name": "game_enter",
+   "path": "assets/sfx/game_enter.wav",
+   "looping": false,
+   "seconds": 1.2
+  },
+  {
+   "name": "game_leave",
+   "path": "assets/sfx/game_leave.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "rm_cheer",
+   "path": "assets/episodes/romance/sfx/rm_cheer.wav",
+   "looping": false,
+   "seconds": 0.532562358276644
+  },
+  {
+   "name": "rm_city",
+   "path": "assets/episodes/romance/sfx/rm_city.wav",
+   "looping": true,
+   "seconds": 10
+  },
+  {
+   "name": "rm_count",
+   "path": "assets/episodes/romance/sfx/rm_count.wav",
+   "looping": false,
+   "seconds": 0.2
+  },
+  {
+   "name": "rm_first_0",
+   "path": "assets/episodes/romance/sfx/rm_first_0.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_1",
+   "path": "assets/episodes/romance/sfx/rm_first_1.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_2",
+   "path": "assets/episodes/romance/sfx/rm_first_2.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_3",
+   "path": "assets/episodes/romance/sfx/rm_first_3.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_4",
+   "path": "assets/episodes/romance/sfx/rm_first_4.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_5",
+   "path": "assets/episodes/romance/sfx/rm_first_5.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_6",
+   "path": "assets/episodes/romance/sfx/rm_first_6.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_7",
+   "path": "assets/episodes/romance/sfx/rm_first_7.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_8",
+   "path": "assets/episodes/romance/sfx/rm_first_8.wav",
+   "looping": false,
+   "seconds": 5.84
+  },
+  {
+   "name": "rm_flick",
+   "path": "assets/episodes/romance/sfx/rm_flick.wav",
+   "looping": false,
+   "seconds": 0.24
+  },
+  {
+   "name": "rm_hold",
+   "path": "assets/episodes/romance/sfx/rm_hold.wav",
+   "looping": true,
+   "seconds": 4
+  },
+  {
+   "name": "rm_miss",
+   "path": "assets/episodes/romance/sfx/rm_miss.wav",
+   "looping": false,
+   "seconds": 0.18
+  },
+  {
+   "name": "rm_morning",
+   "path": "assets/episodes/romance/sfx/rm_morning.wav",
+   "looping": true,
+   "seconds": 10
+  },
+  {
+   "name": "rm_rain",
+   "path": "assets/episodes/romance/sfx/rm_rain.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "rm_rain_0",
+   "path": "assets/episodes/romance/sfx/rm_rain_0.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_1",
+   "path": "assets/episodes/romance/sfx/rm_rain_1.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_2",
+   "path": "assets/episodes/romance/sfx/rm_rain_2.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_3",
+   "path": "assets/episodes/romance/sfx/rm_rain_3.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_4",
+   "path": "assets/episodes/romance/sfx/rm_rain_4.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_5",
+   "path": "assets/episodes/romance/sfx/rm_rain_5.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_6",
+   "path": "assets/episodes/romance/sfx/rm_rain_6.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_7",
+   "path": "assets/episodes/romance/sfx/rm_rain_7.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_8",
+   "path": "assets/episodes/romance/sfx/rm_rain_8.wav",
+   "looping": false,
+   "seconds": 6.533469387755102
+  },
+  {
+   "name": "rm_rain_9",
+   "path": "assets/episodes/romance/sfx/rm_rain_9.wav",
+   "looping": false,
+   "seconds": 6.067301587301587
+  },
+  {
+   "name": "rm_stamp",
+   "path": "assets/episodes/romance/sfx/rm_stamp.wav",
+   "looping": false,
+   "seconds": 0.26
+  },
+  {
+   "name": "rm_tie",
+   "path": "assets/episodes/romance/sfx/rm_tie.wav",
+   "looping": false,
+   "seconds": 0.44997732426303855
+  },
+  {
+   "name": "rm_tone_0",
+   "path": "assets/episodes/romance/sfx/rm_tone_0.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_1",
+   "path": "assets/episodes/romance/sfx/rm_tone_1.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_2",
+   "path": "assets/episodes/romance/sfx/rm_tone_2.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_3",
+   "path": "assets/episodes/romance/sfx/rm_tone_3.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_4",
+   "path": "assets/episodes/romance/sfx/rm_tone_4.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_5",
+   "path": "assets/episodes/romance/sfx/rm_tone_5.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_6",
+   "path": "assets/episodes/romance/sfx/rm_tone_6.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_7",
+   "path": "assets/episodes/romance/sfx/rm_tone_7.wav",
+   "looping": false,
+   "seconds": 0.5
+  }
+ ],
+ "design": {
+  "w": 540,
+  "h": 1170
+ },
+ "orientation": "portrait",
+ "transcoded": {
+  "assets/episodes/romance/sfx/rm_cheer.wav": "assets/episodes/romance/sfx/rm_cheer.webm",
+  "assets/episodes/romance/sfx/rm_city.wav": "assets/episodes/romance/sfx/rm_city.webm",
+  "assets/episodes/romance/sfx/rm_count.wav": "assets/episodes/romance/sfx/rm_count.webm",
+  "assets/episodes/romance/sfx/rm_first_0.wav": "assets/episodes/romance/sfx/rm_first_0.webm",
+  "assets/episodes/romance/sfx/rm_first_1.wav": "assets/episodes/romance/sfx/rm_first_1.webm",
+  "assets/episodes/romance/sfx/rm_first_2.wav": "assets/episodes/romance/sfx/rm_first_2.webm",
+  "assets/episodes/romance/sfx/rm_first_3.wav": "assets/episodes/romance/sfx/rm_first_3.webm",
+  "assets/episodes/romance/sfx/rm_first_4.wav": "assets/episodes/romance/sfx/rm_first_4.webm",
+  "assets/episodes/romance/sfx/rm_first_5.wav": "assets/episodes/romance/sfx/rm_first_5.webm",
+  "assets/episodes/romance/sfx/rm_first_6.wav": "assets/episodes/romance/sfx/rm_first_6.webm",
+  "assets/episodes/romance/sfx/rm_first_7.wav": "assets/episodes/romance/sfx/rm_first_7.webm",
+  "assets/episodes/romance/sfx/rm_first_8.wav": "assets/episodes/romance/sfx/rm_first_8.webm",
+  "assets/episodes/romance/sfx/rm_flick.wav": "assets/episodes/romance/sfx/rm_flick.webm",
+  "assets/episodes/romance/sfx/rm_hold.wav": "assets/episodes/romance/sfx/rm_hold.webm",
+  "assets/episodes/romance/sfx/rm_miss.wav": "assets/episodes/romance/sfx/rm_miss.webm",
+  "assets/episodes/romance/sfx/rm_morning.wav": "assets/episodes/romance/sfx/rm_morning.webm",
+  "assets/episodes/romance/sfx/rm_rain.wav": "assets/episodes/romance/sfx/rm_rain.webm",
+  "assets/episodes/romance/sfx/rm_rain_0.wav": "assets/episodes/romance/sfx/rm_rain_0.webm",
+  "assets/episodes/romance/sfx/rm_rain_1.wav": "assets/episodes/romance/sfx/rm_rain_1.webm",
+  "assets/episodes/romance/sfx/rm_rain_2.wav": "assets/episodes/romance/sfx/rm_rain_2.webm",
+  "assets/episodes/romance/sfx/rm_rain_3.wav": "assets/episodes/romance/sfx/rm_rain_3.webm",
+  "assets/episodes/romance/sfx/rm_rain_4.wav": "assets/episodes/romance/sfx/rm_rain_4.webm",
+  "assets/episodes/romance/sfx/rm_rain_5.wav": "assets/episodes/romance/sfx/rm_rain_5.webm",
+  "assets/episodes/romance/sfx/rm_rain_6.wav": "assets/episodes/romance/sfx/rm_rain_6.webm",
+  "assets/episodes/romance/sfx/rm_rain_7.wav": "assets/episodes/romance/sfx/rm_rain_7.webm",
+  "assets/episodes/romance/sfx/rm_rain_8.wav": "assets/episodes/romance/sfx/rm_rain_8.webm",
+  "assets/episodes/romance/sfx/rm_rain_9.wav": "assets/episodes/romance/sfx/rm_rain_9.webm",
+  "assets/episodes/romance/sfx/rm_stamp.wav": "assets/episodes/romance/sfx/rm_stamp.webm",
+  "assets/episodes/romance/sfx/rm_tie.wav": "assets/episodes/romance/sfx/rm_tie.webm",
+  "assets/episodes/romance/sfx/rm_tone_0.wav": "assets/episodes/romance/sfx/rm_tone_0.webm",
+  "assets/episodes/romance/sfx/rm_tone_1.wav": "assets/episodes/romance/sfx/rm_tone_1.webm",
+  "assets/episodes/romance/sfx/rm_tone_2.wav": "assets/episodes/romance/sfx/rm_tone_2.webm",
+  "assets/episodes/romance/sfx/rm_tone_3.wav": "assets/episodes/romance/sfx/rm_tone_3.webm",
+  "assets/episodes/romance/sfx/rm_tone_4.wav": "assets/episodes/romance/sfx/rm_tone_4.webm",
+  "assets/episodes/romance/sfx/rm_tone_5.wav": "assets/episodes/romance/sfx/rm_tone_5.webm",
+  "assets/episodes/romance/sfx/rm_tone_6.wav": "assets/episodes/romance/sfx/rm_tone_6.webm",
+  "assets/episodes/romance/sfx/rm_tone_7.wav": "assets/episodes/romance/sfx/rm_tone_7.webm",
+  "assets/sfx/amb_shelf.wav": "assets/sfx/amb_shelf.webm",
+  "assets/sfx/game_enter.wav": "assets/sfx/game_enter.webm",
+  "assets/sfx/game_leave.wav": "assets/sfx/game_leave.webm",
+  "assets/sfx/ui_denied.wav": "assets/sfx/ui_denied.webm",
+  "assets/sfx/ui_open.wav": "assets/sfx/ui_open.webm",
+  "assets/sfx/ui_page.wav": "assets/sfx/ui_page.webm",
+  "assets/sfx/ui_pick.wav": "assets/sfx/ui_pick.webm",
+  "assets/sfx/ui_tap.wav": "assets/sfx/ui_tap.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
+ }
+}

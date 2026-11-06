@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "title": "白い手袋の証言の文章の色",
+  "note": "読む面も紙にする。shade は暗がりでなく生成りの紙の色で、字は藍で刷る。",
+  "ink": "#1f2545",
+  "name": "#b23a24",
+  "shade": "#efe7d4",
+  "shadeAlpha": 0.97,
+  "choice": "#262c50",
+  "choiceInk": "#efe7d4",
+  "font": "",
+  "closeBack": "#ede3cc"
+}

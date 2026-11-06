@@ -1,0 +1,304 @@
+{
+  "version": 1,
+  "title": "君のテンポで",
+  "designWidth": 540,
+  "designHeight": 1170,
+  "windowWidth": 405,
+  "windowHeight": 878,
+  "clearColor": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0
+  },
+  "maxDeltaTime": 0.05,
+  "textures": [],
+  "glyphs": "used",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/ShipporiMincho-Regular.subset.ttf",
+      "fontSize": 40.0
+    }
+  ],
+  "sounds": [
+    {
+      "name": "amb_shelf",
+      "path": "assets/sfx/amb_shelf.wav",
+      "looping": true
+    },
+    {
+      "name": "ui_tap",
+      "path": "assets/sfx/ui_tap.wav",
+      "looping": false
+    },
+    {
+      "name": "ui_page",
+      "path": "assets/sfx/ui_page.wav",
+      "looping": false
+    },
+    {
+      "name": "ui_pick",
+      "path": "assets/sfx/ui_pick.wav",
+      "looping": false
+    },
+    {
+      "name": "ui_open",
+      "path": "assets/sfx/ui_open.wav",
+      "looping": false
+    },
+    {
+      "name": "ui_denied",
+      "path": "assets/sfx/ui_denied.wav",
+      "looping": false
+    },
+    {
+      "name": "game_enter",
+      "path": "assets/sfx/game_enter.wav",
+      "looping": false
+    },
+    {
+      "name": "game_leave",
+      "path": "assets/sfx/game_leave.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_cheer",
+      "path": "assets/episodes/romance/sfx/rm_cheer.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_city",
+      "path": "assets/episodes/romance/sfx/rm_city.wav",
+      "looping": true
+    },
+    {
+      "name": "rm_count",
+      "path": "assets/episodes/romance/sfx/rm_count.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_0",
+      "path": "assets/episodes/romance/sfx/rm_first_0.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_1",
+      "path": "assets/episodes/romance/sfx/rm_first_1.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_2",
+      "path": "assets/episodes/romance/sfx/rm_first_2.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_3",
+      "path": "assets/episodes/romance/sfx/rm_first_3.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_4",
+      "path": "assets/episodes/romance/sfx/rm_first_4.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_5",
+      "path": "assets/episodes/romance/sfx/rm_first_5.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_6",
+      "path": "assets/episodes/romance/sfx/rm_first_6.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_7",
+      "path": "assets/episodes/romance/sfx/rm_first_7.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_first_8",
+      "path": "assets/episodes/romance/sfx/rm_first_8.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_flick",
+      "path": "assets/episodes/romance/sfx/rm_flick.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_hold",
+      "path": "assets/episodes/romance/sfx/rm_hold.wav",
+      "looping": true
+    },
+    {
+      "name": "rm_miss",
+      "path": "assets/episodes/romance/sfx/rm_miss.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_morning",
+      "path": "assets/episodes/romance/sfx/rm_morning.wav",
+      "looping": true
+    },
+    {
+      "name": "rm_rain",
+      "path": "assets/episodes/romance/sfx/rm_rain.wav",
+      "looping": true
+    },
+    {
+      "name": "rm_rain_0",
+      "path": "assets/episodes/romance/sfx/rm_rain_0.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_1",
+      "path": "assets/episodes/romance/sfx/rm_rain_1.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_2",
+      "path": "assets/episodes/romance/sfx/rm_rain_2.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_3",
+      "path": "assets/episodes/romance/sfx/rm_rain_3.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_4",
+      "path": "assets/episodes/romance/sfx/rm_rain_4.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_5",
+      "path": "assets/episodes/romance/sfx/rm_rain_5.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_6",
+      "path": "assets/episodes/romance/sfx/rm_rain_6.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_7",
+      "path": "assets/episodes/romance/sfx/rm_rain_7.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_8",
+      "path": "assets/episodes/romance/sfx/rm_rain_8.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_rain_9",
+      "path": "assets/episodes/romance/sfx/rm_rain_9.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_stamp",
+      "path": "assets/episodes/romance/sfx/rm_stamp.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tie",
+      "path": "assets/episodes/romance/sfx/rm_tie.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_0",
+      "path": "assets/episodes/romance/sfx/rm_tone_0.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_1",
+      "path": "assets/episodes/romance/sfx/rm_tone_1.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_2",
+      "path": "assets/episodes/romance/sfx/rm_tone_2.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_3",
+      "path": "assets/episodes/romance/sfx/rm_tone_3.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_4",
+      "path": "assets/episodes/romance/sfx/rm_tone_4.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_5",
+      "path": "assets/episodes/romance/sfx/rm_tone_5.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_6",
+      "path": "assets/episodes/romance/sfx/rm_tone_6.wav",
+      "looping": false
+    },
+    {
+      "name": "rm_tone_7",
+      "path": "assets/episodes/romance/sfx/rm_tone_7.wav",
+      "looping": false
+    }
+  ],
+  "web": {
+    "orientation": "portrait",
+    "portraitDesign": {
+      "width": 540,
+      "minHeight": 960,
+      "maxHeight": 1280
+    }
+  },
+  "editor": {
+    "resources": [
+      {
+        "id": "shell",
+        "pattern": "assets/shell.kind.json",
+        "title": "土台の手触り",
+        "schema": "assets/shell.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "shelf",
+        "pattern": "assets/shelf.json",
+        "title": "棚に並ぶ本",
+        "schema": "assets/shelf.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "episode",
+        "pattern": "assets/episodes/*/*.episode.json",
+        "title": "本の素材の登録",
+        "schema": "assets/episode.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "romance_story",
+        "pattern": "assets/episodes/romance/romance.story.json",
+        "title": "君のテンポでの台本",
+        "schema": "assets/story.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "romance_theme",
+        "pattern": "assets/episodes/romance/romance.theme.json",
+        "title": "君のテンポでの文章の色",
+        "schema": "assets/book-theme.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "romance_live",
+        "pattern": "assets/episodes/romance/romance.live.json",
+        "title": "君のテンポでの譜面",
+        "schema": "assets/episodes/romance/live.schema.json",
+        "role": "material"
+      }
+    ]
+  }
+}

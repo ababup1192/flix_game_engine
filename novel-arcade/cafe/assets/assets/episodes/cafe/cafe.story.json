@@ -1,0 +1,168 @@
+{
+ "version": 1,
+ "title": "喫茶ひとやすみ",
+ "note": "上から順に読む。行の書き方は docs/episode-guide.md。ゲームの結果のフラグ: open_<人の id>（本音を聞けた）・half_<人の id>・shut_<人の id>・heard（聞けた数。2 回の分は足し込まれる）。前の回に聞けた人は stage の字に + で続けて渡す。",
+ "rows": [
+  {
+   "backdrop": "alley_night",
+   "hum": "cafe_night",
+   "text": "駅の裏の路地に、夜だけ開く喫茶店がある。"
+  },
+  {
+   "text": "喫茶ひとやすみ。叔父が倒れて、今週はわたしがカウンターに立っている。"
+  },
+  {
+   "backdrop": "counter_night",
+   "text": "午前一時。大家の久我さんから手紙が来た。"
+  },
+  {
+   "text": "「今月で店を閉めてもらう。夜の客では家賃にならない」"
+  },
+  {
+   "text": "叔父のノートの表紙に、太い字がある。"
+  },
+  {
+   "text": "注文を聞くな。話を聞け。一杯はそのあとだ。"
+  },
+  {
+   "game": "counter",
+   "stage": "first"
+  },
+  {
+   "text": "二時。ラジオから凪さんの声がする。"
+  },
+  {
+   "when": "open_nagi>=1",
+   "portrait": "nagi_smile",
+   "who": "ラジオの凪さん",
+   "text": "今夜は声がよく出ます。さっき飲んだ一杯のおかげかな。"
+  },
+  {
+   "when": "open_nagi==0",
+   "text": "いつもより、声が少しかすれている。"
+  },
+  {
+   "when": "open_tatsumi>=1",
+   "portrait": "tatsumi_smile",
+   "who": "辰巳さん",
+   "text": "凪さん、今日は調子がいいな。もう一周してくるよ。"
+  },
+  {
+   "when": "open_tatsumi==0",
+   "portrait": "",
+   "text": "表のタクシーは、いつのまにか消えていた。"
+  },
+  {
+   "when": "open_nagi>=1",
+   "portrait": "",
+   "text": "凪さんの席のコースターに、「半分の人」と書いてある。"
+  },
+  {
+   "when": "open_nagi>=1",
+   "text": "久我さんの手紙の字に、どこか似ていた。"
+  },
+  {
+   "when": "heard==0",
+   "portrait": "",
+   "text": "誰の話も聞けていない。ノートの字が、少し重い。"
+  },
+  {
+   "portrait": "",
+   "text": "三時をまわった。ドアの鈴が鳴る。"
+  },
+  {
+   "when": "open_tatsumi>=1 & open_nagi>=1",
+   "game": "counter",
+   "stage": "late+tatsumi+nagi"
+  },
+  {
+   "when": "open_tatsumi>=1 & open_nagi==0",
+   "game": "counter",
+   "stage": "late+tatsumi"
+  },
+  {
+   "when": "open_tatsumi==0 & open_nagi>=1",
+   "game": "counter",
+   "stage": "late+nagi"
+  },
+  {
+   "when": "open_tatsumi==0 & open_nagi==0",
+   "game": "counter",
+   "stage": "late"
+  },
+  {
+   "when": "open_kuga>=1",
+   "goto": "end_stays"
+  },
+  {
+   "when": "heard>=2",
+   "goto": "end_waits"
+  },
+  {
+   "goto": "end_closes"
+  },
+  {
+   "label": "end_stays",
+   "portrait": "kuga_smile",
+   "who": "久我さん",
+   "text": "店は続けなさい。家賃の話は、来月にしよう。"
+  },
+  {
+   "who": "久我さん",
+   "text": "夜に開いている店が、この町には要る。"
+  },
+  {
+   "portrait": "",
+   "backdrop": "counter_dawn",
+   "hum": "cafe_dawn",
+   "text": "雨が上がった。窓のネオンが、朝の色に消えていく。"
+  },
+  {
+   "text": "ノートに一行足した。久我さん。細かく挽いて、半分。ミルクを一滴。"
+  },
+  {
+   "text": "もう半分は、奥さんの分。"
+  },
+  {
+   "goto": "credits"
+  },
+  {
+   "label": "end_waits",
+   "portrait": "kuga",
+   "who": "久我さん",
+   "text": "手紙は取り下げん。だが、月末までは待とう。"
+  },
+  {
+   "portrait": "",
+   "backdrop": "alley_dawn",
+   "hum": "cafe_dawn",
+   "text": "明け方、店の前に傘が三本、立てかけてあった。"
+  },
+  {
+   "text": "聞けた話の数だけ、また来るつもりらしい。店は、もう少しだけ開いている。"
+  },
+  {
+   "goto": "credits"
+  },
+  {
+   "label": "end_closes",
+   "portrait": "",
+   "text": "月末、店を閉めた。"
+  },
+  {
+   "backdrop": "alley_dawn",
+   "hum": "cafe_rain",
+   "text": "ノートの最後のページは白いままだ。聞けなかった夜の分だけ、白い。"
+  },
+  {
+   "text": "路地の奥で、看板のネオンがひとつ消えた。"
+  },
+  {
+   "label": "credits",
+   "text": "喫茶ひとやすみ　おわり"
+  },
+  {
+   "end": true
+  }
+ ]
+}

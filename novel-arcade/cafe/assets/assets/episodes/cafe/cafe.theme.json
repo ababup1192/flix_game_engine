@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみの文章の色",
+  "note": "雨の夜の藍紫の上に、ランプの色の字を載せる。shade が字の後ろの暗がり。",
+  "ink": "#f2ecdc",
+  "name": "#62d3b8",
+  "shade": "#191330",
+  "shadeAlpha": 0.93,
+  "choice": "#352963",
+  "choiceInk": "#f2ecdc",
+  "font": ""
+}

@@ -1,0 +1,251 @@
+{
+ "id": "novel_arcade_fantasy",
+ "title": "灰の竜と三つの名",
+ "files": [
+  "assets/OFL.txt",
+  "assets/episodes/fantasy/fantasy.battle.json",
+  "assets/episodes/fantasy/fantasy.episode.json",
+  "assets/episodes/fantasy/fantasy.story.json",
+  "assets/episodes/fantasy/fantasy.theme.json",
+  "assets/novel_arcade.scenes.json",
+  "assets/shelf.json",
+  "assets/shell.kind.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [],
+ "sounds": [
+  {
+   "name": "amb_shelf",
+   "path": "assets/sfx/amb_shelf.wav",
+   "looping": true,
+   "seconds": 6
+  },
+  {
+   "name": "ui_tap",
+   "path": "assets/sfx/ui_tap.wav",
+   "looping": false,
+   "seconds": 0.049977324263038546
+  },
+  {
+   "name": "ui_page",
+   "path": "assets/sfx/ui_page.wav",
+   "looping": false,
+   "seconds": 0.12
+  },
+  {
+   "name": "ui_pick",
+   "path": "assets/sfx/ui_pick.wav",
+   "looping": false,
+   "seconds": 0.2
+  },
+  {
+   "name": "ui_open",
+   "path": "assets/sfx/ui_open.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "ui_denied",
+   "path": "assets/sfx/ui_denied.wav",
+   "looping": false,
+   "seconds": 0.16
+  },
+  {
+   "name": "game_enter",
+   "path": "assets/sfx/game_enter.wav",
+   "looping": false,
+   "seconds": 1.2
+  },
+  {
+   "name": "game_leave",
+   "path": "assets/sfx/game_leave.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "fan_amb_valley",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_valley.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_amb_chapel",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_chapel.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_amb_battle",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_battle.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_amb_dragon",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_dragon.wav",
+   "looping": true,
+   "seconds": 9.6
+  },
+  {
+   "name": "fan_amb_dawn",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_dawn.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_charge",
+   "path": "assets/episodes/fantasy/sfx/fan_charge.wav",
+   "looping": true,
+   "seconds": 2.1
+  },
+  {
+   "name": "fan_card",
+   "path": "assets/episodes/fantasy/sfx/fan_card.wav",
+   "looping": false,
+   "seconds": 0.3
+  },
+  {
+   "name": "fan_aim",
+   "path": "assets/episodes/fantasy/sfx/fan_aim.wav",
+   "looping": false,
+   "seconds": 0.1
+  },
+  {
+   "name": "fan_slash",
+   "path": "assets/episodes/fantasy/sfx/fan_slash.wav",
+   "looping": false,
+   "seconds": 0.5299773242630386
+  },
+  {
+   "name": "fan_magic",
+   "path": "assets/episodes/fantasy/sfx/fan_magic.wav",
+   "looping": false,
+   "seconds": 1.5
+  },
+  {
+   "name": "fan_charged",
+   "path": "assets/episodes/fantasy/sfx/fan_charged.wav",
+   "looping": false,
+   "seconds": 1.3499773242630386
+  },
+  {
+   "name": "fan_hammer",
+   "path": "assets/episodes/fantasy/sfx/fan_hammer.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "fan_glass",
+   "path": "assets/episodes/fantasy/sfx/fan_glass.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "fan_shatter",
+   "path": "assets/episodes/fantasy/sfx/fan_shatter.wav",
+   "looping": false,
+   "seconds": 1.06
+  },
+  {
+   "name": "fan_guard",
+   "path": "assets/episodes/fantasy/sfx/fan_guard.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "fan_hurt",
+   "path": "assets/episodes/fantasy/sfx/fan_hurt.wav",
+   "looping": false,
+   "seconds": 0.4
+  },
+  {
+   "name": "fan_roar",
+   "path": "assets/episodes/fantasy/sfx/fan_roar.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "fan_breath",
+   "path": "assets/episodes/fantasy/sfx/fan_breath.wav",
+   "looping": false,
+   "seconds": 1.3999546485260772
+  },
+  {
+   "name": "fan_call",
+   "path": "assets/episodes/fantasy/sfx/fan_call.wav",
+   "looping": false,
+   "seconds": 1.56
+  },
+  {
+   "name": "fan_refuse",
+   "path": "assets/episodes/fantasy/sfx/fan_refuse.wav",
+   "looping": false,
+   "seconds": 0.4
+  },
+  {
+   "name": "fan_song",
+   "path": "assets/episodes/fantasy/sfx/fan_song.wav",
+   "looping": false,
+   "seconds": 1.58
+  },
+  {
+   "name": "fan_win",
+   "path": "assets/episodes/fantasy/sfx/fan_win.wav",
+   "looping": false,
+   "seconds": 1.94
+  },
+  {
+   "name": "fan_calm",
+   "path": "assets/episodes/fantasy/sfx/fan_calm.wav",
+   "looping": false,
+   "seconds": 2.6
+  },
+  {
+   "name": "fan_fall",
+   "path": "assets/episodes/fantasy/sfx/fan_fall.wav",
+   "looping": false,
+   "seconds": 1.6
+  }
+ ],
+ "design": {
+  "w": 540,
+  "h": 1170
+ },
+ "orientation": "portrait",
+ "transcoded": {
+  "assets/episodes/fantasy/sfx/fan_aim.wav": "assets/episodes/fantasy/sfx/fan_aim.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_battle.wav": "assets/episodes/fantasy/sfx/fan_amb_battle.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_chapel.wav": "assets/episodes/fantasy/sfx/fan_amb_chapel.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_dawn.wav": "assets/episodes/fantasy/sfx/fan_amb_dawn.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_dragon.wav": "assets/episodes/fantasy/sfx/fan_amb_dragon.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_valley.wav": "assets/episodes/fantasy/sfx/fan_amb_valley.webm",
+  "assets/episodes/fantasy/sfx/fan_breath.wav": "assets/episodes/fantasy/sfx/fan_breath.webm",
+  "assets/episodes/fantasy/sfx/fan_call.wav": "assets/episodes/fantasy/sfx/fan_call.webm",
+  "assets/episodes/fantasy/sfx/fan_calm.wav": "assets/episodes/fantasy/sfx/fan_calm.webm",
+  "assets/episodes/fantasy/sfx/fan_card.wav": "assets/episodes/fantasy/sfx/fan_card.webm",
+  "assets/episodes/fantasy/sfx/fan_charge.wav": "assets/episodes/fantasy/sfx/fan_charge.webm",
+  "assets/episodes/fantasy/sfx/fan_charged.wav": "assets/episodes/fantasy/sfx/fan_charged.webm",
+  "assets/episodes/fantasy/sfx/fan_fall.wav": "assets/episodes/fantasy/sfx/fan_fall.webm",
+  "assets/episodes/fantasy/sfx/fan_glass.wav": "assets/episodes/fantasy/sfx/fan_glass.webm",
+  "assets/episodes/fantasy/sfx/fan_guard.wav": "assets/episodes/fantasy/sfx/fan_guard.webm",
+  "assets/episodes/fantasy/sfx/fan_hammer.wav": "assets/episodes/fantasy/sfx/fan_hammer.webm",
+  "assets/episodes/fantasy/sfx/fan_hurt.wav": "assets/episodes/fantasy/sfx/fan_hurt.webm",
+  "assets/episodes/fantasy/sfx/fan_magic.wav": "assets/episodes/fantasy/sfx/fan_magic.webm",
+  "assets/episodes/fantasy/sfx/fan_refuse.wav": "assets/episodes/fantasy/sfx/fan_refuse.webm",
+  "assets/episodes/fantasy/sfx/fan_roar.wav": "assets/episodes/fantasy/sfx/fan_roar.webm",
+  "assets/episodes/fantasy/sfx/fan_shatter.wav": "assets/episodes/fantasy/sfx/fan_shatter.webm",
+  "assets/episodes/fantasy/sfx/fan_slash.wav": "assets/episodes/fantasy/sfx/fan_slash.webm",
+  "assets/episodes/fantasy/sfx/fan_song.wav": "assets/episodes/fantasy/sfx/fan_song.webm",
+  "assets/episodes/fantasy/sfx/fan_win.wav": "assets/episodes/fantasy/sfx/fan_win.webm",
+  "assets/sfx/amb_shelf.wav": "assets/sfx/amb_shelf.webm",
+  "assets/sfx/game_enter.wav": "assets/sfx/game_enter.webm",
+  "assets/sfx/game_leave.wav": "assets/sfx/game_leave.webm",
+  "assets/sfx/ui_denied.wav": "assets/sfx/ui_denied.webm",
+  "assets/sfx/ui_open.wav": "assets/sfx/ui_open.webm",
+  "assets/sfx/ui_page.wav": "assets/sfx/ui_page.webm",
+  "assets/sfx/ui_pick.wav": "assets/sfx/ui_pick.webm",
+  "assets/sfx/ui_tap.wav": "assets/sfx/ui_tap.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
+ }
+}

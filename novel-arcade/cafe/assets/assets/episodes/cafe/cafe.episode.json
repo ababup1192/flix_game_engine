@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみの素材の登録",
+  "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。",
+  "sounds": [
+    {
+      "name": "cafe_night",
+      "path": "assets/episodes/cafe/sfx/night.wav",
+      "looping": true
+    },
+    {
+      "name": "cafe_rain",
+      "path": "assets/episodes/cafe/sfx/rain.wav",
+      "looping": true
+    },
+    {
+      "name": "cafe_dawn",
+      "path": "assets/episodes/cafe/sfx/dawn.wav",
+      "looping": true
+    },
+    {
+      "name": "cafe_grind",
+      "path": "assets/episodes/cafe/sfx/grind.wav",
+      "looping": true
+    },
+    {
+      "name": "cafe_pour",
+      "path": "assets/episodes/cafe/sfx/pour.wav",
+      "looping": true
+    },
+    {
+      "name": "cafe_bell",
+      "path": "assets/episodes/cafe/sfx/bell.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_click",
+      "path": "assets/episodes/cafe/sfx/click.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_notch",
+      "path": "assets/episodes/cafe/sfx/notch.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_slide",
+      "path": "assets/episodes/cafe/sfx/slide.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_lift",
+      "path": "assets/episodes/cafe/sfx/lift.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_set",
+      "path": "assets/episodes/cafe/sfx/set.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_cup",
+      "path": "assets/episodes/cafe/sfx/cup.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_milk",
+      "path": "assets/episodes/cafe/sfx/milk.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_honey",
+      "path": "assets/episodes/cafe/sfx/honey.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_tick",
+      "path": "assets/episodes/cafe/sfx/tick.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_open",
+      "path": "assets/episodes/cafe/sfx/open.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_shut",
+      "path": "assets/episodes/cafe/sfx/shut.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_page",
+      "path": "assets/episodes/cafe/sfx/page.wav",
+      "looping": false
+    }
+  ],
+  "textures": [
+    {
+      "name": "cafe_atlas",
+      "path": "assets/episodes/cafe/cafe.atlas.png",
+      "hasAlpha": true
+    }
+  ],
+  "resources": [
+    {
+      "id": "cafe_story",
+      "pattern": "assets/episodes/cafe/cafe.story.json",
+      "title": "喫茶ひとやすみの台本",
+      "schema": "assets/story.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "cafe_theme",
+      "pattern": "assets/episodes/cafe/cafe.theme.json",
+      "title": "喫茶ひとやすみの文章の色",
+      "schema": "assets/book-theme.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "cafe_night",
+      "pattern": "assets/episodes/cafe/cafe.night.json",
+      "title": "喫茶ひとやすみの深夜のカウンターの値",
+      "schema": "assets/episodes/cafe/night.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "cafe_atlas_index",
+      "pattern": "assets/episodes/cafe/cafe.atlas.json",
+      "title": "喫茶ひとやすみのアトラスの目次",
+      "schema": "assets/episodes/cafe/atlas.schema.json",
+      "role": "material"
+    }
+  ]
+}

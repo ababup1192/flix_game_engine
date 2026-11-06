@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "title": "放課後ひとそろい",
+  "note": "cards の id が Episodes.all の本の id と同じなら押せる。無い本は soon の字を出して押せない。本を足す時にここは触らない。",
+  "heading": "放課後ひとそろい",
+  "subheading": "",
+  "soon": "準備中",
+  "back": "棚へ",
+  "cards": [
+    {
+      "id": "school",
+      "genre": "学園・青春",
+      "title": "放課後ひとそろい",
+      "tagline": "押した順番で、隣の人が変わる",
+      "paper": "#7a5b7f",
+      "ink": "#fff4ea",
+      "accent": "#ffc98a"
+    }
+  ],
+  "startBook": "school"
+}

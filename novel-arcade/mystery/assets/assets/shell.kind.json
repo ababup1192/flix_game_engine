@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "title": "土台の手触り（指の判定・字の大きさ・切り替えの秒）",
+  "note": "大きさはどれも design px（幅 540）。スマホでは 1 CSS px がおよそ 1.4 design px なので、押せる物は 60 以上。",
+  "tapSlop": 22,
+  "longPressSeconds": 0.5,
+  "swipeMinDistance": 90,
+  "swipeMinSpeed": 260,
+  "textSize": 30,
+  "nameSize": 24,
+  "lineGap": 16,
+  "charsPerSecond": 26,
+  "textMargin": 40,
+  "textTop": 0.6,
+  "choiceHeight": 104,
+  "choiceGap": 18,
+  "choiceTextSize": 28,
+  "openSeconds": 0.7,
+  "closeSeconds": 0.9,
+  "enterSeconds": 1.3,
+  "leaveSeconds": 1.3,
+  "backdropSeconds": 1.0
+}

@@ -1,0 +1,213 @@
+{
+ "id": "novel_arcade_cafe",
+ "title": "喫茶ひとやすみ",
+ "files": [
+  "assets/OFL.txt",
+  "assets/episodes/cafe/cafe.atlas.json",
+  "assets/episodes/cafe/cafe.episode.json",
+  "assets/episodes/cafe/cafe.night.json",
+  "assets/episodes/cafe/cafe.story.json",
+  "assets/episodes/cafe/cafe.theme.json",
+  "assets/novel_arcade.scenes.json",
+  "assets/shelf.json",
+  "assets/shell.kind.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [
+  "assets/episodes/cafe/cafe.atlas.png"
+ ],
+ "sounds": [
+  {
+   "name": "amb_shelf",
+   "path": "assets/sfx/amb_shelf.wav",
+   "looping": true,
+   "seconds": 6
+  },
+  {
+   "name": "ui_tap",
+   "path": "assets/sfx/ui_tap.wav",
+   "looping": false,
+   "seconds": 0.049977324263038546
+  },
+  {
+   "name": "ui_page",
+   "path": "assets/sfx/ui_page.wav",
+   "looping": false,
+   "seconds": 0.12
+  },
+  {
+   "name": "ui_pick",
+   "path": "assets/sfx/ui_pick.wav",
+   "looping": false,
+   "seconds": 0.2
+  },
+  {
+   "name": "ui_open",
+   "path": "assets/sfx/ui_open.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "ui_denied",
+   "path": "assets/sfx/ui_denied.wav",
+   "looping": false,
+   "seconds": 0.16
+  },
+  {
+   "name": "game_enter",
+   "path": "assets/sfx/game_enter.wav",
+   "looping": false,
+   "seconds": 1.2
+  },
+  {
+   "name": "game_leave",
+   "path": "assets/sfx/game_leave.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "cafe_night",
+   "path": "assets/episodes/cafe/sfx/night.wav",
+   "looping": true,
+   "seconds": 25.9459410430839
+  },
+  {
+   "name": "cafe_rain",
+   "path": "assets/episodes/cafe/sfx/rain.wav",
+   "looping": true,
+   "seconds": 25.9459410430839
+  },
+  {
+   "name": "cafe_dawn",
+   "path": "assets/episodes/cafe/sfx/dawn.wav",
+   "looping": true,
+   "seconds": 25.9459410430839
+  },
+  {
+   "name": "cafe_grind",
+   "path": "assets/episodes/cafe/sfx/grind.wav",
+   "looping": true,
+   "seconds": 1.2
+  },
+  {
+   "name": "cafe_pour",
+   "path": "assets/episodes/cafe/sfx/pour.wav",
+   "looping": true,
+   "seconds": 1.3
+  },
+  {
+   "name": "cafe_bell",
+   "path": "assets/episodes/cafe/sfx/bell.wav",
+   "looping": false,
+   "seconds": 1.1
+  },
+  {
+   "name": "cafe_click",
+   "path": "assets/episodes/cafe/sfx/click.wav",
+   "looping": false,
+   "seconds": 0.02997732426303855
+  },
+  {
+   "name": "cafe_notch",
+   "path": "assets/episodes/cafe/sfx/notch.wav",
+   "looping": false,
+   "seconds": 0.1
+  },
+  {
+   "name": "cafe_slide",
+   "path": "assets/episodes/cafe/sfx/slide.wav",
+   "looping": false,
+   "seconds": 0.24
+  },
+  {
+   "name": "cafe_lift",
+   "path": "assets/episodes/cafe/sfx/lift.wav",
+   "looping": false,
+   "seconds": 0.08
+  },
+  {
+   "name": "cafe_set",
+   "path": "assets/episodes/cafe/sfx/set.wav",
+   "looping": false,
+   "seconds": 0.14
+  },
+  {
+   "name": "cafe_cup",
+   "path": "assets/episodes/cafe/sfx/cup.wav",
+   "looping": false,
+   "seconds": 0.3
+  },
+  {
+   "name": "cafe_milk",
+   "path": "assets/episodes/cafe/sfx/milk.wav",
+   "looping": false,
+   "seconds": 0.9
+  },
+  {
+   "name": "cafe_honey",
+   "path": "assets/episodes/cafe/sfx/honey.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "cafe_tick",
+   "path": "assets/episodes/cafe/sfx/tick.wav",
+   "looping": false,
+   "seconds": 0.02997732426303855
+  },
+  {
+   "name": "cafe_open",
+   "path": "assets/episodes/cafe/sfx/open.wav",
+   "looping": false,
+   "seconds": 2.36
+  },
+  {
+   "name": "cafe_shut",
+   "path": "assets/episodes/cafe/sfx/shut.wav",
+   "looping": false,
+   "seconds": 1.44
+  },
+  {
+   "name": "cafe_page",
+   "path": "assets/episodes/cafe/sfx/page.wav",
+   "looping": false,
+   "seconds": 0.32
+  }
+ ],
+ "design": {
+  "w": 540,
+  "h": 1170
+ },
+ "orientation": "portrait",
+ "transcoded": {
+  "assets/episodes/cafe/cafe.atlas.png": "assets/episodes/cafe/cafe.atlas.webp",
+  "assets/episodes/cafe/sfx/bell.wav": "assets/episodes/cafe/sfx/bell.webm",
+  "assets/episodes/cafe/sfx/click.wav": "assets/episodes/cafe/sfx/click.webm",
+  "assets/episodes/cafe/sfx/cup.wav": "assets/episodes/cafe/sfx/cup.webm",
+  "assets/episodes/cafe/sfx/dawn.wav": "assets/episodes/cafe/sfx/dawn.webm",
+  "assets/episodes/cafe/sfx/grind.wav": "assets/episodes/cafe/sfx/grind.webm",
+  "assets/episodes/cafe/sfx/honey.wav": "assets/episodes/cafe/sfx/honey.webm",
+  "assets/episodes/cafe/sfx/lift.wav": "assets/episodes/cafe/sfx/lift.webm",
+  "assets/episodes/cafe/sfx/milk.wav": "assets/episodes/cafe/sfx/milk.webm",
+  "assets/episodes/cafe/sfx/night.wav": "assets/episodes/cafe/sfx/night.webm",
+  "assets/episodes/cafe/sfx/notch.wav": "assets/episodes/cafe/sfx/notch.webm",
+  "assets/episodes/cafe/sfx/open.wav": "assets/episodes/cafe/sfx/open.webm",
+  "assets/episodes/cafe/sfx/page.wav": "assets/episodes/cafe/sfx/page.webm",
+  "assets/episodes/cafe/sfx/pour.wav": "assets/episodes/cafe/sfx/pour.webm",
+  "assets/episodes/cafe/sfx/rain.wav": "assets/episodes/cafe/sfx/rain.webm",
+  "assets/episodes/cafe/sfx/set.wav": "assets/episodes/cafe/sfx/set.webm",
+  "assets/episodes/cafe/sfx/shut.wav": "assets/episodes/cafe/sfx/shut.webm",
+  "assets/episodes/cafe/sfx/slide.wav": "assets/episodes/cafe/sfx/slide.webm",
+  "assets/episodes/cafe/sfx/tick.wav": "assets/episodes/cafe/sfx/tick.webm",
+  "assets/sfx/amb_shelf.wav": "assets/sfx/amb_shelf.webm",
+  "assets/sfx/game_enter.wav": "assets/sfx/game_enter.webm",
+  "assets/sfx/game_leave.wav": "assets/sfx/game_leave.webm",
+  "assets/sfx/ui_denied.wav": "assets/sfx/ui_denied.webm",
+  "assets/sfx/ui_open.wav": "assets/sfx/ui_open.webm",
+  "assets/sfx/ui_page.wav": "assets/sfx/ui_page.webm",
+  "assets/sfx/ui_pick.wav": "assets/sfx/ui_pick.webm",
+  "assets/sfx/ui_tap.wav": "assets/sfx/ui_tap.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
+ }
+}

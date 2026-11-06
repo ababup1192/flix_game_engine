@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "title": "放課後ひとそろいのパズルの値",
+  "note": "rooms の rows が面の形（. 床・# 棚・@ 始まり・$ 段ボール・T 机・H 看板の板の束・a〜d 置き場）。stages は台本の stage の名前で引く。round は結果のフラグの頭の字（first_steps など）。signSpot は話の中で聞く決まりで、画面には書かない。面を直したら make test が解けるかを総当たりで確かめる。barks の cue は start / fit / heavy / stuck / undo / hurry / help。",
+  "walkSeconds": 0.15,
+  "boxSeconds": 0.26,
+  "deskSeconds": 0.34,
+  "signSeconds": 0.5,
+  "leanRatio": 0.3,
+  "stepPixels": 46,
+  "repeatDelay": 0.3,
+  "repeatSeconds": 0.17,
+  "undoSeconds": 0.2,
+  "helpSeconds": 0.6,
+  "finaleSeconds": 2.6,
+  "holdSeconds": 0.5,
+  "barkSeconds": 2.4,
+  "hurrySteps": 10,
+  "hurrySeconds": 12,
+  "words": { "stowed": "片づけ", "steps": "残り手数", "chalkTop": "文化祭", "chalkBottom": "あと 1 日", "sign": "二年三組 ようこそ", "plainSign": "二年三組" },
+  "rooms": [
+    {
+      "id": "storeroom_small",
+      "rows": [
+        ".b..a.",
+        "..$c..",
+        "..$...",
+        "##....",
+        "..$..@",
+        "......"
+      ],
+      "spots": [
+        { "mark": "a", "tape": "#8a7dbf", "lead": "fuji" },
+        { "mark": "b", "tape": "#dd6b57", "lead": "akane" },
+        { "mark": "c", "tape": "#e8b345", "lead": "yuzu" }
+      ],
+      "windowColumn": 4,
+      "doorRow": 5
+    },
+    {
+      "id": "storeroom_back",
+      "rows": [
+        "....ab.",
+        ".$.....",
+        "###$###",
+        "....##.",
+        ".HdT##.",
+        ".@...#.",
+        ".....c."
+      ],
+      "spots": [
+        { "mark": "a", "tape": "#9dd1d6", "lead": "" },
+        { "mark": "b", "tape": "#9dd1d6", "lead": "" },
+        { "mark": "c", "tape": "#9dd1d6", "lead": "" },
+        { "mark": "d", "tape": "#9dd1d6", "lead": "" }
+      ],
+      "windowColumn": 4,
+      "doorRow": 6
+    }
+  ],
+  "stages": [
+    { "id": "first", "round": "first", "room": "storeroom_small", "backdrop": "storeroom_first", "guides": true, "seconds": 55, "stepLimit": 64, "dusk": 0.05, "doneText": "片づいた！", "helpText": "手伝ってもらった" },
+    { "id": "second_akane", "round": "second", "room": "storeroom_back", "backdrop": "storeroom_second", "seconds": 110, "stepLimit": 130, "signSpot": "a", "dusk": 0.5, "doneText": "全部片づいた！", "helpText": "下校時間！" },
+    { "id": "second_yuzu", "round": "second", "room": "storeroom_back", "backdrop": "storeroom_second", "seconds": 110, "stepLimit": 130, "signSpot": "c", "dusk": 0.5, "doneText": "全部片づいた！", "helpText": "下校時間！" },
+    { "id": "second_fuji", "round": "second", "room": "storeroom_back", "backdrop": "storeroom_second", "seconds": 110, "stepLimit": 130, "signSpot": "d", "dusk": 0.5, "doneText": "全部片づいた！", "helpText": "下校時間！" }
+  ],
+  "barks": [
+    { "cue": "start", "round": "first", "face": "akane", "who": "朱音", "text": "最初に埋めた人が相棒！ 選んで！" },
+    { "cue": "start", "round": "second", "face": "yuzu", "who": "柚", "text": "さっきの話、忘れないでね。" },
+    { "cue": "fit", "face": "akane", "who": "朱音", "text": "入った！ いいぞー！" },
+    { "cue": "fit", "face": "yuzu", "who": "柚", "text": "ぴったり！ その調子！" },
+    { "cue": "fit", "face": "fuji", "who": "藤村", "text": "……うん。きれいに収まった。" },
+    { "cue": "heavy", "face": "akane", "who": "朱音", "text": "重っ！ 腰で押して！" },
+    { "cue": "heavy", "face": "fuji", "who": "藤村", "text": "……板の束だ。それは一番重い。" },
+    { "cue": "stuck", "face": "fuji", "who": "藤村", "text": "その箱、もう動かない。押さえて戻そう。" },
+    { "cue": "stuck", "face": "yuzu", "who": "柚", "text": "あ、壁に付いちゃった。指で押さえて！" },
+    { "cue": "undo", "face": "yuzu", "who": "柚", "text": "そう、戻せば何度でも。" },
+    { "cue": "undo", "face": "fuji", "who": "藤村", "text": "……焦らなくていい。" },
+    { "cue": "hurry", "face": "akane", "who": "朱音", "text": "もうすぐ下校！ あと少し！" },
+    { "cue": "hurry", "face": "yuzu", "who": "柚", "text": "時間ないよ！ 大丈夫、見てるから！" },
+    { "cue": "help", "face": "akane", "who": "朱音", "text": "残りは任せて！ せーの！" },
+    { "cue": "help", "face": "yuzu", "who": "柚", "text": "一人でやらなくていいんだよ。持つね！" }
+  ]
+}

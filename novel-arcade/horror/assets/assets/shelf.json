@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "title": "七号棟",
+  "note": "cards の id が Episodes.all の本の id と同じなら押せる。無い本は soon の字を出して押せない。本を足す時にここは触らない。",
+  "heading": "七号棟",
+  "subheading": "",
+  "soon": "準備中",
+  "back": "棚へ",
+  "cards": [
+    {
+      "id": "horror",
+      "genre": "ホラー",
+      "title": "七号棟",
+      "tagline": "三回鳴ったら、振り向くな",
+      "paper": "#1c2a27",
+      "ink": "#d6e0d4",
+      "accent": "#7fa08e"
+    }
+  ],
+  "startBook": "horror"
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "title": "白い手袋の証言",
+  "note": "cards の id が Episodes.all の本の id と同じなら押せる。無い本は soon の字を出して押せない。本を足す時にここは触らない。",
+  "heading": "白い手袋の証言",
+  "subheading": "",
+  "soon": "準備中",
+  "back": "棚へ",
+  "cards": [
+    {
+      "id": "mystery",
+      "genre": "ミステリー",
+      "title": "白い手袋の証言",
+      "tagline": "読んだ言葉を、矛盾へ突きつける",
+      "paper": "#3a3f58",
+      "ink": "#e8e6df",
+      "accent": "#b9c4e6"
+    }
+  ],
+  "startBook": "mystery"
+}

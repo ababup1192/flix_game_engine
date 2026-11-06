@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "title": "放課後ひとそろいの素材の登録",
+  "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。",
+  "sounds": [
+    {"name": "sch_amb_room", "path": "assets/episodes/school/sfx/sch_amb_room.wav", "looping": true},
+    {"name": "sch_amb_dusk", "path": "assets/episodes/school/sfx/sch_amb_dusk.wav", "looping": true},
+    {"name": "sch_amb_morning", "path": "assets/episodes/school/sfx/sch_amb_morning.wav", "looping": true},
+    {"name": "sch_bgm", "path": "assets/episodes/school/sfx/sch_bgm.wav", "looping": true},
+    {"name": "sch_step", "path": "assets/episodes/school/sfx/sch_step.wav", "looping": false},
+    {"name": "sch_bump", "path": "assets/episodes/school/sfx/sch_bump.wav", "looping": false},
+    {"name": "sch_scrape", "path": "assets/episodes/school/sfx/sch_scrape.wav", "looping": false},
+    {"name": "sch_scrape_desk", "path": "assets/episodes/school/sfx/sch_scrape_desk.wav", "looping": false},
+    {"name": "sch_scrape_heavy", "path": "assets/episodes/school/sfx/sch_scrape_heavy.wav", "looping": false},
+    {"name": "sch_thud", "path": "assets/episodes/school/sfx/sch_thud.wav", "looping": false},
+    {"name": "sch_fit1", "path": "assets/episodes/school/sfx/sch_fit1.wav", "looping": false},
+    {"name": "sch_fit2", "path": "assets/episodes/school/sfx/sch_fit2.wav", "looping": false},
+    {"name": "sch_fit3", "path": "assets/episodes/school/sfx/sch_fit3.wav", "looping": false},
+    {"name": "sch_fit4", "path": "assets/episodes/school/sfx/sch_fit4.wav", "looping": false},
+    {"name": "sch_undo", "path": "assets/episodes/school/sfx/sch_undo.wav", "looping": false},
+    {"name": "sch_help", "path": "assets/episodes/school/sfx/sch_help.wav", "looping": false},
+    {"name": "sch_chime", "path": "assets/episodes/school/sfx/sch_chime.wav", "looping": false},
+    {"name": "sch_finish", "path": "assets/episodes/school/sfx/sch_finish.wav", "looping": false},
+    {"name": "sch_warm", "path": "assets/episodes/school/sfx/sch_warm.wav", "looping": false}
+  ],
+  "textures": [],
+  "resources": [
+    {"id": "school_story", "pattern": "assets/episodes/school/school.story.json", "title": "放課後ひとそろいの台本", "schema": "assets/story.schema.json", "role": "material"},
+    {"id": "school_theme", "pattern": "assets/episodes/school/school.theme.json", "title": "放課後ひとそろいの文章の色", "schema": "assets/book-theme.schema.json", "role": "material"},
+    {"id": "school_crate", "pattern": "assets/episodes/school/school.crate.json", "title": "放課後ひとそろいのパズルの値", "schema": "assets/episodes/school/crate.schema.json", "role": "material"}
+  ]
+}

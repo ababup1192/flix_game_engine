@@ -1,0 +1,216 @@
+{
+ "id": "novel_arcade_school",
+ "title": "放課後ひとそろい",
+ "files": [
+  "assets/OFL.txt",
+  "assets/episodes/school/school.crate.json",
+  "assets/episodes/school/school.episode.json",
+  "assets/episodes/school/school.story.json",
+  "assets/episodes/school/school.theme.json",
+  "assets/novel_arcade.scenes.json",
+  "assets/shelf.json",
+  "assets/shell.kind.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [],
+ "sounds": [
+  {
+   "name": "amb_shelf",
+   "path": "assets/sfx/amb_shelf.wav",
+   "looping": true,
+   "seconds": 6
+  },
+  {
+   "name": "ui_tap",
+   "path": "assets/sfx/ui_tap.wav",
+   "looping": false,
+   "seconds": 0.049977324263038546
+  },
+  {
+   "name": "ui_page",
+   "path": "assets/sfx/ui_page.wav",
+   "looping": false,
+   "seconds": 0.12
+  },
+  {
+   "name": "ui_pick",
+   "path": "assets/sfx/ui_pick.wav",
+   "looping": false,
+   "seconds": 0.2
+  },
+  {
+   "name": "ui_open",
+   "path": "assets/sfx/ui_open.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "ui_denied",
+   "path": "assets/sfx/ui_denied.wav",
+   "looping": false,
+   "seconds": 0.16
+  },
+  {
+   "name": "game_enter",
+   "path": "assets/sfx/game_enter.wav",
+   "looping": false,
+   "seconds": 1.2
+  },
+  {
+   "name": "game_leave",
+   "path": "assets/sfx/game_leave.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "sch_amb_room",
+   "path": "assets/episodes/school/sfx/sch_amb_room.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "sch_amb_dusk",
+   "path": "assets/episodes/school/sfx/sch_amb_dusk.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "sch_amb_morning",
+   "path": "assets/episodes/school/sfx/sch_amb_morning.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "sch_bgm",
+   "path": "assets/episodes/school/sfx/sch_bgm.wav",
+   "looping": true,
+   "seconds": 10
+  },
+  {
+   "name": "sch_step",
+   "path": "assets/episodes/school/sfx/sch_step.wav",
+   "looping": false,
+   "seconds": 0.049977324263038546
+  },
+  {
+   "name": "sch_bump",
+   "path": "assets/episodes/school/sfx/sch_bump.wav",
+   "looping": false,
+   "seconds": 0.12
+  },
+  {
+   "name": "sch_scrape",
+   "path": "assets/episodes/school/sfx/sch_scrape.wav",
+   "looping": false,
+   "seconds": 0.31718820861678004
+  },
+  {
+   "name": "sch_scrape_desk",
+   "path": "assets/episodes/school/sfx/sch_scrape_desk.wav",
+   "looping": false,
+   "seconds": 0.41478458049886624
+  },
+  {
+   "name": "sch_scrape_heavy",
+   "path": "assets/episodes/school/sfx/sch_scrape_heavy.wav",
+   "looping": false,
+   "seconds": 0.6099773242630385
+  },
+  {
+   "name": "sch_thud",
+   "path": "assets/episodes/school/sfx/sch_thud.wav",
+   "looping": false,
+   "seconds": 0.26
+  },
+  {
+   "name": "sch_fit1",
+   "path": "assets/episodes/school/sfx/sch_fit1.wav",
+   "looping": false,
+   "seconds": 0.6099773242630385
+  },
+  {
+   "name": "sch_fit2",
+   "path": "assets/episodes/school/sfx/sch_fit2.wav",
+   "looping": false,
+   "seconds": 0.6099773242630385
+  },
+  {
+   "name": "sch_fit3",
+   "path": "assets/episodes/school/sfx/sch_fit3.wav",
+   "looping": false,
+   "seconds": 0.6099773242630385
+  },
+  {
+   "name": "sch_fit4",
+   "path": "assets/episodes/school/sfx/sch_fit4.wav",
+   "looping": false,
+   "seconds": 0.6099773242630385
+  },
+  {
+   "name": "sch_undo",
+   "path": "assets/episodes/school/sfx/sch_undo.wav",
+   "looping": false,
+   "seconds": 0.08997732426303855
+  },
+  {
+   "name": "sch_help",
+   "path": "assets/episodes/school/sfx/sch_help.wav",
+   "looping": false,
+   "seconds": 0.82
+  },
+  {
+   "name": "sch_chime",
+   "path": "assets/episodes/school/sfx/sch_chime.wav",
+   "looping": false,
+   "seconds": 2.36
+  },
+  {
+   "name": "sch_finish",
+   "path": "assets/episodes/school/sfx/sch_finish.wav",
+   "looping": false,
+   "seconds": 1.12
+  },
+  {
+   "name": "sch_warm",
+   "path": "assets/episodes/school/sfx/sch_warm.wav",
+   "looping": false,
+   "seconds": 1.8799546485260772
+  }
+ ],
+ "design": {
+  "w": 540,
+  "h": 1170
+ },
+ "orientation": "portrait",
+ "transcoded": {
+  "assets/episodes/school/sfx/sch_amb_dusk.wav": "assets/episodes/school/sfx/sch_amb_dusk.webm",
+  "assets/episodes/school/sfx/sch_amb_morning.wav": "assets/episodes/school/sfx/sch_amb_morning.webm",
+  "assets/episodes/school/sfx/sch_amb_room.wav": "assets/episodes/school/sfx/sch_amb_room.webm",
+  "assets/episodes/school/sfx/sch_bgm.wav": "assets/episodes/school/sfx/sch_bgm.webm",
+  "assets/episodes/school/sfx/sch_bump.wav": "assets/episodes/school/sfx/sch_bump.webm",
+  "assets/episodes/school/sfx/sch_chime.wav": "assets/episodes/school/sfx/sch_chime.webm",
+  "assets/episodes/school/sfx/sch_finish.wav": "assets/episodes/school/sfx/sch_finish.webm",
+  "assets/episodes/school/sfx/sch_fit1.wav": "assets/episodes/school/sfx/sch_fit1.webm",
+  "assets/episodes/school/sfx/sch_fit2.wav": "assets/episodes/school/sfx/sch_fit2.webm",
+  "assets/episodes/school/sfx/sch_fit3.wav": "assets/episodes/school/sfx/sch_fit3.webm",
+  "assets/episodes/school/sfx/sch_fit4.wav": "assets/episodes/school/sfx/sch_fit4.webm",
+  "assets/episodes/school/sfx/sch_help.wav": "assets/episodes/school/sfx/sch_help.webm",
+  "assets/episodes/school/sfx/sch_scrape.wav": "assets/episodes/school/sfx/sch_scrape.webm",
+  "assets/episodes/school/sfx/sch_scrape_desk.wav": "assets/episodes/school/sfx/sch_scrape_desk.webm",
+  "assets/episodes/school/sfx/sch_scrape_heavy.wav": "assets/episodes/school/sfx/sch_scrape_heavy.webm",
+  "assets/episodes/school/sfx/sch_step.wav": "assets/episodes/school/sfx/sch_step.webm",
+  "assets/episodes/school/sfx/sch_thud.wav": "assets/episodes/school/sfx/sch_thud.webm",
+  "assets/episodes/school/sfx/sch_undo.wav": "assets/episodes/school/sfx/sch_undo.webm",
+  "assets/episodes/school/sfx/sch_warm.wav": "assets/episodes/school/sfx/sch_warm.webm",
+  "assets/sfx/amb_shelf.wav": "assets/sfx/amb_shelf.webm",
+  "assets/sfx/game_enter.wav": "assets/sfx/game_enter.webm",
+  "assets/sfx/game_leave.wav": "assets/sfx/game_leave.webm",
+  "assets/sfx/ui_denied.wav": "assets/sfx/ui_denied.webm",
+  "assets/sfx/ui_open.wav": "assets/sfx/ui_open.webm",
+  "assets/sfx/ui_page.wav": "assets/sfx/ui_page.webm",
+  "assets/sfx/ui_pick.wav": "assets/sfx/ui_pick.webm",
+  "assets/sfx/ui_tap.wav": "assets/sfx/ui_tap.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
+ }
+}

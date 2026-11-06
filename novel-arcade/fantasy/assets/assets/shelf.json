@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "title": "灰の竜と三つの名",
+  "note": "cards の id が Episodes.all の本の id と同じなら押せる。無い本は soon の字を出して押せない。本を足す時にここは触らない。",
+  "heading": "灰の竜と三つの名",
+  "subheading": "",
+  "soon": "準備中",
+  "back": "棚へ",
+  "cards": [
+    {
+      "id": "fantasy",
+      "genre": "ファンタジー",
+      "title": "灰の竜と三つの名",
+      "tagline": "聞いた弱点が、次の一手になる",
+      "paper": "#3a5a48",
+      "ink": "#efe6cc",
+      "accent": "#d8b45a"
+    }
+  ],
+  "startBook": "fantasy"
+}
