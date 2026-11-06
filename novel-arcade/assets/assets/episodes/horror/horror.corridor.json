@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "七号棟の通路の値",
-  "note": "happenings は stage の atStep 歩目を終えた時に起きる。knocks = ラップ音の数。figure = behind（真後ろ）/ far（遠くの後ろ）/ ahead（奥に映る）/ none。item = 後ろに落ちている物。",
+  "note": "happenings は stage の atStep 歩目を終えた時に起きる。knocks = ラップ音の数。props は置物（kind・along = 道のり m・side = left / right・height = 壁の物の下端）。figure = behind（真後ろ）/ far（遠くの後ろ）/ ahead（奥に映る）/ none。item = 後ろに落ちている物。",
   "stepSeconds": 0.9,
   "stepLength": 1.0,
   "holdWalkSeconds": 0.25,
@@ -20,6 +20,20 @@
   "stages": [
     { "id": "first", "legA": 9, "legB": 4, "backdrop": "corridor_first", "guideTurn": true },
     { "id": "second", "legA": 7, "legB": 6, "backdrop": "corridor_second" }
+  ],
+  "props": [
+    { "kind": "hydrant", "along": 3.0, "side": "right", "height": 0.55 },
+    { "kind": "meter", "along": 0.4, "side": "right", "height": 1.45 },
+    { "kind": "mail", "along": -1.5, "side": "left", "height": 1.05 },
+    { "kind": "vent", "along": 5.6, "side": "left", "height": 2.0 },
+    { "kind": "poster", "along": 2.9, "side": "left", "height": 1.15 },
+    { "kind": "sign", "along": 6.0, "side": "right", "height": 1.55 },
+    { "kind": "carton", "along": 1.4, "side": "right" },
+    { "kind": "bin", "along": 5.9, "side": "left" },
+    { "kind": "carton", "along": -3.0, "side": "left" },
+    { "kind": "bin", "along": -2.0, "side": "right" },
+    { "kind": "meter", "along": 10.5, "side": "left", "height": 1.45 },
+    { "kind": "carton", "along": 11.2, "side": "right" }
   ],
   "happenings": [
     { "stage": "first", "atStep": 2, "knocks": 2, "figure": "none", "item": "photo" },

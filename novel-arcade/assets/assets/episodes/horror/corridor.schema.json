@@ -27,6 +27,16 @@
         "guideTurn": { "type": "bool", "label": "スワイプの案内を出す" }
       }
     },
+    "props": {
+      "kind": "list", "label": "置物",
+      "fields": {
+        "stage": { "type": "text", "label": "通路（空で全部）" },
+        "kind": { "type": "text", "label": "hydrant / meter / mail / sign / vent / poster / carton / bin" },
+        "along": { "type": "float", "label": "道のり(m)" },
+        "side": { "type": "text", "label": "left / right" },
+        "height": { "type": "float", "label": "下端の高さ(m)" }
+      }
+    },
     "happenings": {
       "kind": "list", "label": "起きる事",
       "fields": {
