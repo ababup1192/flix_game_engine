@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみの深夜のカウンターの値",
+  "note": "客の話・飲みたい一杯・ノートの字・手触りの数。行の who を省くとその客の名前、\"-\" で地の文。needs / unless は人の id（その人の本音を聞けた時・聞けていない時だけ読む）。",
+  "coarseRounds": 2,
+  "fineRounds": 4,
+  "maxRounds": 6,
+  "settleSeconds": 0.45,
+  "pourSeconds": 2.6,
+  "fullFrom": 0.72,
+  "minLevel": 0.2,
+  "sipSeconds": 1.6,
+  "arriveSeconds": 0.7,
+  "leaveSeconds": 0.6,
+  "charsPerSecond": 26,
+  "flickReach": 0.18,
+  "talkTop": 0.6,
+  "textSize": 30,
+  "nameSize": 24,
+  "textMargin": 40,
+  "lineGap": 16,
+  "coarseLabel": "粗い",
+  "fineLabel": "細かい",
+  "pageTitle": "今夜聞けた話",
+  "notes": {
+    "mill": [ { "text": "眠りたい夜は粗く。起きていたい夜は細かく。" } ],
+    "pour": [ { "text": "長くいたい人にはなみなみ。すぐ帰る人には半分。" } ],
+    "extra": [ { "text": "喉にははちみつ。冷えにはミルク。何も言わない人には足さない。" } ]
+  },
+  "stages": [
+    { "id": "first", "backdrop": "counter_night", "guide": true },
+    { "id": "late", "backdrop": "counter_night", "guide": false }
+  ],
+  "people": [
+    { "id": "tatsumi", "name": "辰巳さん" },
+    { "id": "nagi", "name": "凪さん" },
+    { "id": "akari", "name": "灯さん" },
+    { "id": "kuga", "name": "久我さん" }
+  ],
+  "visits": [
+    {
+      "stage": "first", "who": "tatsumi", "grind": "fine", "amount": "full", "extra": "plain",
+      "hint": "細かく挽いて、なみなみ。何も足さない。",
+      "intro": [
+        { "text": "雨の夜は客が増えるって言うけどな。今夜はさっぱりだ。" },
+        { "face": "smile", "text": "いつものを頼むよ。細かく挽いて、なみなみ。何も足さない。" }
+      ],
+      "open": [
+        { "face": "smile", "text": "……これだ。あんたの叔父さんの味がする。" },
+        { "text": "朝まで走るのに、話す相手はラジオだけでな。凪さんの番組が相棒だよ。" },
+        { "text": "そういや久我の旦那、木曜の夜はうちの車に乗るんだ。" },
+        { "face": "smile", "text": "苦いのしか飲まない人でな。細かく挽いたやつだと言ってたよ。" }
+      ],
+      "half": [ { "text": "悪くない。……雨が止むまでには、出るとするか。" } ],
+      "shut": [ { "face": "sad", "text": "……そうか。今夜は、これでいいよ。" } ],
+      "heard": "久我さんは苦いのしか飲まない。細かく挽いたやつ。",
+      "missed": "雨の話だけして、帰っていった。"
+    },
+    {
+      "stage": "first", "who": "nagi", "grind": "fine", "amount": "half", "extra": "honey",
+      "hint": "喉がからから。二時の放送まで、長くはいられない。眠くなったら終わり。",
+      "intro": [
+        { "needs": "tatsumi", "face": "smile", "text": "辰巳さん、すれちがいに笑ってた。何を飲ませたの。" },
+        { "unless": "tatsumi", "text": "こんばんは。今夜は、店の空気が重いね。" },
+        { "face": "sad", "text": "しゃべりすぎて、喉がからからなの。" },
+        { "text": "二時の放送に戻るから、長くはいられない。眠くなったら終わりだしね。" }
+      ],
+      "open": [
+        { "face": "smile", "text": "うん。喉が、ほどけた。" },
+        { "face": "sad", "text": "ここだけの話。番組、今週で終わるんだ。" },
+        { "text": "毎週ハガキをくれる人がいてね。ラジオネームは「半分の人」。" },
+        { "text": "一杯はいつも半分だけ飲む。もう半分は妻の分だから、って。" },
+        { "text": "消印はこの町。……灯ちゃんが来たら、手をさわってあげて。夜勤のあとは氷みたいだから。" }
+      ],
+      "half": [ { "text": "ありがと。行ってくるね。" } ],
+      "shut": [ { "face": "sad", "text": "……ごちそうさま。今夜は、やめとく。" } ],
+      "heard": "番組は今週で終わる。「半分の人」は一杯を半分だけ飲む。",
+      "missed": "放送へ戻っていった。何か言いかけていた。"
+    },
+    {
+      "stage": "late", "who": "akari", "grind": "coarse", "amount": "full", "extra": "milk",
+      "hint": "指の先まで冷たい。帰って眠りたいのに、もう少しここにいたい。",
+      "intro": [
+        { "needs": "nagi", "face": "smile", "text": "凪さんの放送を聞いて、来ました。店の名前は言わなかったけど。" },
+        { "unless": "nagi", "text": "……まだ開いてたんですね。" },
+        { "face": "sad", "text": "夜勤が終わって。指の先まで冷たいんです。" },
+        { "text": "帰って眠らないといけないのに。もう少し、ここにいてもいいですか。" }
+      ],
+      "open": [
+        { "face": "smile", "text": "……あったかい。" },
+        { "face": "sad", "text": "病棟に、久我さんの奥さんがいたんです。最後の夜は、わたしが当番で。" },
+        { "text": "ミルクを一滴だけ入れたコーヒーの匂いが好きだって。ここの匂いだって。" },
+        { "text": "久我さん、夜ごとに店の前まで来て、入らないで帰るんです。" }
+      ],
+      "half": [ { "text": "ありがとうございます。少し、あたたまりました。" } ],
+      "shut": [ { "face": "sad", "text": "……すみません。やっぱり、帰ります。" } ],
+      "heard": "久我さんの奥さんは、ミルクを一滴入れた匂いが好きだった。",
+      "missed": "傘をたたんだまま、雨の中へ戻っていった。"
+    },
+    {
+      "stage": "late", "who": "kuga", "grind": "fine", "amount": "half", "extra": "milk",
+      "hint": "何でもいい。出してくれ。",
+      "intro": [
+        { "who": "-", "text": "鈴の音が、いつもより長く残った。" },
+        { "text": "閉める前に、一度見ておこうと思ってな。" },
+        { "text": "何でもいい。出してくれ。" }
+      ],
+      "open": [
+        { "face": "wide", "text": "……これを、どこで。" },
+        { "face": "sad", "text": "半分でいいんだ。もう半分は、あいつの分だからな。" },
+        { "face": "smile", "text": "誰に聞いた。……そうか。あの人たちか。" }
+      ],
+      "half": [ { "text": "……ふむ。惜しいな。何が、とは言わんが。" } ],
+      "shut": [ { "text": "うまいよ。ごちそうさま。" } ],
+      "notes": {
+        "mill": [ { "needs": "tatsumi", "text": "辰巳さん「苦いのしか飲まない。細かく挽いたやつ」" } ],
+        "pour": [ { "needs": "nagi", "text": "凪さん「一杯はいつも半分だけ。もう半分は妻の分」" } ],
+        "extra": [ { "needs": "akari", "text": "灯さん「ミルクを一滴入れた匂いが好きだった」" } ]
+      },
+      "heard": "半分でいい。もう半分は、奥さんの分。",
+      "missed": "何も言わずに飲んで、帰っていった。"
+    }
+  ]
+}

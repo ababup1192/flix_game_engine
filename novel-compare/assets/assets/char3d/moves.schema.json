@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "title": "凪さんの 3D の動きの一覧",
+  "sections": {
+    "moves": {
+      "kind": "list",
+      "label": "動き",
+      "fields": {
+        "label": {
+          "type": "text",
+          "label": "画面に出す名前"
+        },
+        "eye": {
+          "type": "text",
+          "label": "目のコマ"
+        },
+        "brow": {
+          "type": "text",
+          "label": "眉のコマ"
+        },
+        "mouth": {
+          "type": "text",
+          "label": "口のコマ"
+        },
+        "yaw": {
+          "type": "float",
+          "label": "頭の左右の向き（ラジアン）"
+        },
+        "pitch": {
+          "type": "float",
+          "label": "頭の上下の向き（ラジアン）"
+        },
+        "roll": {
+          "type": "float",
+          "label": "頭の傾き（ラジアン）"
+        },
+        "gazeX": {
+          "type": "float",
+          "label": "視線の左右（−1..1）"
+        },
+        "gazeY": {
+          "type": "float",
+          "label": "視線の上下（−1..1）"
+        },
+        "sweep": {
+          "type": "float",
+          "label": "視線を左右へ動かす幅"
+        },
+        "talk": {
+          "type": "bool",
+          "label": "話す"
+        },
+        "hand": {
+          "type": "text",
+          "label": "手描きの顔"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "title": "コマンドバトルの値",
+  "sections": {
+    "hero": {
+      "kind": "record",
+      "label": "味方の数",
+      "group": "味方",
+      "fields": {
+        "hp": {
+          "type": "int",
+          "label": "灯の数"
+        },
+        "mana": {
+          "type": "int",
+          "label": "魔力の上限"
+        },
+        "strike": {
+          "type": "int",
+          "label": "たたかうの量"
+        },
+        "magicLow": {
+          "type": "int",
+          "label": "魔法（溜めない）"
+        },
+        "magicHigh": {
+          "type": "int",
+          "label": "魔法（溜め切り）"
+        },
+        "manaPerStrike": {
+          "type": "int",
+          "label": "斬って戻る魔力"
+        },
+        "openMagic": {
+          "type": "int",
+          "label": "開いた所への倍率"
+        },
+        "guardLeak": {
+          "type": "float",
+          "label": "受け止めても通る割合"
+        }
+      }
+    },
+    "feel": {
+      "kind": "record",
+      "label": "手触り",
+      "group": "味方",
+      "fields": {
+        "launchHeight": {
+          "type": "float",
+          "label": "離して放つ高さ(px)"
+        },
+        "chargeSeconds": {
+          "type": "float",
+          "label": "溜め切る秒"
+        },
+        "actSeconds": {
+          "type": "float",
+          "label": "1 手の秒"
+        },
+        "hitPause": {
+          "type": "float",
+          "label": "当たって止まる秒"
+        },
+        "shake": {
+          "type": "float",
+          "label": "画面の揺れ(px)"
+        },
+        "endingSeconds": {
+          "type": "float",
+          "label": "決着を見せる秒"
+        }
+      }
+    },
+    "strikeCard": {
+      "kind": "record",
+      "label": "たたかうのカード",
+      "group": "カード",
+      "fields": {
+        "title": {
+          "type": "text",
+          "label": "字"
+        },
+        "note": {
+          "type": "text",
+          "label": "押した時の説明"
+        }
+      }
+    },
+    "magicCard": {
+      "kind": "record",
+      "label": "魔法のカード",
+      "group": "カード",
+      "fields": {
+        "title": {
+          "type": "text",
+          "label": "字"
+        },
+        "note": {
+          "type": "text",
+          "label": "押した時の説明"
+        }
+      }
+    },
+    "guardCard": {
+      "kind": "record",
+      "label": "かばうのカード",
+      "group": "カード",
+      "fields": {
+        "title": {
+          "type": "text",
+          "label": "字"
+        },
+        "note": {
+          "type": "text",
+          "label": "押した時の説明"
+        }
+      }
+    },
+    "pleaCard": {
+      "kind": "record",
+      "label": "説得のカード",
+      "group": "カード",
+      "fields": {
+        "title": {
+          "type": "text",
+          "label": "字"
+        },
+        "note": {
+          "type": "text",
+          "label": "押した時の説明"
+        }
+      }
+    },
+    "words": {
+      "kind": "record",
+      "label": "戦いの中の字",
+      "group": "字",
+      "fields": {
+        "noMana": {
+          "type": "text",
+          "label": "魔力が無い"
+        },
+        "pleaRefused": {
+          "type": "text",
+          "label": "声が届かない"
+        },
+        "nameMissing": {
+          "type": "text",
+          "label": "名を知らない"
+        },
+        "pleaHeard": {
+          "type": "text",
+          "label": "声が届いた"
+        },
+        "guarded": {
+          "type": "text",
+          "label": "受け止めた"
+        },
+        "cutMove": {
+          "type": "text",
+          "label": "手が止まった"
+        },
+        "slain": {
+          "type": "text",
+          "label": "倒した"
+        },
+        "spared": {
+          "type": "text",
+          "label": "説得した"
+        },
+        "fallen": {
+          "type": "text",
+          "label": "灯が尽きた"
+        },
+        "held": {
+          "type": "text",
+          "label": "時間切れ"
+        }
+      }
+    },
+    "moves": {
+      "kind": "list",
+      "label": "敵の手",
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "id"
+        },
+        "pose": {
+          "type": "text",
+          "label": "idle / raise / breath / fold / bow"
+        },
+        "line": {
+          "type": "text",
+          "label": "構えた時の 1 行"
+        },
+        "damage": {
+          "type": "int",
+          "label": "味方へ"
+        },
+        "open": {
+          "type": "bool",
+          "label": "魔法の倍率が掛かる"
+        },
+        "breakable": {
+          "type": "bool",
+          "label": "魔法で止まる"
+        },
+        "listening": {
+          "type": "bool",
+          "label": "説得が届く"
+        },
+        "counter": {
+          "type": "int",
+          "label": "受け止めて打ち返す量"
+        }
+      }
+    },
+    "foes": {
+      "kind": "list",
+      "label": "敵",
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "id"
+        },
+        "name": {
+          "type": "text",
+          "label": "名前"
+        },
+        "look": {
+          "type": "text",
+          "label": "squire / warden / wingLeft / chest / wingRight"
+        },
+        "hp": {
+          "type": "int",
+          "label": "体力"
+        },
+        "heart": {
+          "type": "int",
+          "label": "説得に要る数（0 で不可）"
+        },
+        "main": {
+          "type": "bool",
+          "label": "この敵で決着する"
+        },
+        "pattern": {
+          "type": "text",
+          "label": "手の id の順"
+        },
+        "names": {
+          "type": "text",
+          "label": "順に呼ぶ名（call / line / calling）"
+        }
+      }
+    },
+    "allies": {
+      "kind": "list",
+      "label": "仲間",
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "id"
+        },
+        "name": {
+          "type": "text",
+          "label": "名前"
+        },
+        "aid": {
+          "type": "text",
+          "label": "hammer / song / shield"
+        },
+        "power": {
+          "type": "int",
+          "label": "強さ"
+        },
+        "line": {
+          "type": "text",
+          "label": "動いた時の 1 行"
+        }
+      }
+    },
+    "perks": {
+      "kind": "list",
+      "label": "持ち物（台本の stage の後ろに並べる）",
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "id"
+        },
+        "ally": {
+          "type": "text",
+          "label": "連れている仲間の id"
+        },
+        "strikeBonus": {
+          "type": "int",
+          "label": "たたかうに足す"
+        },
+        "pleaBonus": {
+          "type": "int",
+          "label": "説得に足す"
+        },
+        "names": {
+          "type": "int",
+          "label": "知っている名に足す"
+        }
+      }
+    },
+    "stages": {
+      "kind": "list",
+      "label": "面",
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "台本の stage の頭"
+        },
+        "backdrop": {
+          "type": "text",
+          "label": "始まりの絵と同じ背景の名前"
+        },
+        "aim": {
+          "type": "int",
+          "label": "始めに狙う敵の番号"
+        },
+        "rounds": {
+          "type": "int",
+          "label": "何巡で区切るか"
+        },
+        "flag": {
+          "type": "text",
+          "label": "結果のフラグの頭"
+        },
+        "guideCard": {
+          "type": "bool",
+          "label": "カードのスワイプの案内"
+        },
+        "guideAim": {
+          "type": "bool",
+          "label": "狙いのスワイプの案内"
+        },
+        "names": {
+          "type": "int",
+          "label": "始めから知っている名の数"
+        },
+        "opening": {
+          "type": "text",
+          "label": "始まりの 1 行"
+        },
+        "foes": {
+          "type": "text",
+          "label": "並ぶ敵の id（左から）"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "放課後ひとそろいの文章の色",
+  "note": "字は生成りの紙の上に濃い茶で置く。shade が紙の色で、shadeAlpha を下げると背景が透ける。",
+  "ink": "#46303a",
+  "name": "#b4503f",
+  "shade": "#f6ecd9",
+  "shadeAlpha": 0.94,
+  "choice": "#fff7e6",
+  "choiceInk": "#46303a",
+  "font": ""
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "title": "白い手袋の証言の素材の登録",
+  "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。",
+  "sounds": [
+    {"name": "mys_rail", "path": "assets/episodes/mystery/sfx/mys_rail.wav", "looping": true},
+    {"name": "mys_harbor", "path": "assets/episodes/mystery/sfx/mys_harbor.wav", "looping": true},
+    {"name": "mys_tunnel", "path": "assets/episodes/mystery/sfx/mys_tunnel.wav", "looping": true},
+    {"name": "mys_clock", "path": "assets/episodes/mystery/sfx/mys_clock.wav", "looping": true},
+    {"name": "mys_stare", "path": "assets/episodes/mystery/sfx/mys_stare.wav", "looping": true},
+    {"name": "mys_word", "path": "assets/episodes/mystery/sfx/mys_word.wav", "looping": false},
+    {"name": "mys_flip", "path": "assets/episodes/mystery/sfx/mys_flip.wav", "looping": false},
+    {"name": "mys_lift", "path": "assets/episodes/mystery/sfx/mys_lift.wav", "looping": false},
+    {"name": "mys_throw", "path": "assets/episodes/mystery/sfx/mys_throw.wav", "looping": false},
+    {"name": "mys_tear", "path": "assets/episodes/mystery/sfx/mys_tear.wav", "looping": false},
+    {"name": "mys_thud", "path": "assets/episodes/mystery/sfx/mys_thud.wav", "looping": false},
+    {"name": "mys_shrug", "path": "assets/episodes/mystery/sfx/mys_shrug.wav", "looping": false},
+    {"name": "mys_whistle", "path": "assets/episodes/mystery/sfx/mys_whistle.wav", "looping": false},
+    {"name": "mys_glove", "path": "assets/episodes/mystery/sfx/mys_glove.wav", "looping": false}
+  ],
+  "textures": [],
+  "resources": [
+    {"id": "mystery_story", "pattern": "assets/episodes/mystery/mystery.story.json", "title": "白い手袋の証言の台本", "schema": "assets/story.schema.json", "role": "material"},
+    {"id": "mystery_theme", "pattern": "assets/episodes/mystery/mystery.theme.json", "title": "白い手袋の証言の文章の色", "schema": "assets/book-theme.schema.json", "role": "material"},
+    {"id": "mystery_testimony", "pattern": "assets/episodes/mystery/mystery.testimony.json", "title": "白い手袋の証言の対決の値", "schema": "assets/episodes/mystery/testimony.schema.json", "role": "material"}
+  ]
+}

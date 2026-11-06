@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "title": "君のテンポでの譜面と判定",
+  "sections": {
+    "greatSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "「ぴたり」の幅(秒)",
+      "group": "判定"
+    },
+    "goodSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "「そろった」の幅(秒)",
+      "group": "判定"
+    },
+    "missSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "押して外れと数える幅(秒)",
+      "group": "判定"
+    },
+    "goodPoints": {
+      "kind": "value",
+      "type": "float",
+      "label": "「そろった」の点の割合",
+      "group": "判定"
+    },
+    "leadSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "曲の前の秒",
+      "group": "流れ"
+    },
+    "fallSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "音符が線へ着くまでの秒",
+      "group": "流れ"
+    },
+    "resultSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "結果を見せる秒",
+      "group": "流れ"
+    },
+    "startOffset": {
+      "kind": "value",
+      "type": "float",
+      "label": "音と指のずれの見込み(秒)",
+      "group": "ずれ"
+    },
+    "followRate": {
+      "kind": "value",
+      "type": "float",
+      "label": "押した差を持ち越す割合",
+      "group": "ずれ"
+    },
+    "followSpeed": {
+      "kind": "value",
+      "type": "float",
+      "label": "ずれを直す速さ(秒/秒)",
+      "group": "ずれ"
+    },
+    "maxFollowSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "ずれの上限(秒)",
+      "group": "ずれ"
+    },
+    "flickDistance": {
+      "kind": "value",
+      "type": "float",
+      "label": "払ったと数える移動量(px)",
+      "group": "指"
+    },
+    "dragTolerance": {
+      "kind": "value",
+      "type": "float",
+      "label": "なぞる線の幅(px)",
+      "group": "指"
+    },
+    "dragGraceSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "線から外れてよい秒",
+      "group": "指"
+    },
+    "blindFadeSeconds": {
+      "kind": "value",
+      "type": "float",
+      "label": "にじみ切る線の手前の秒",
+      "group": "にじみ"
+    },
+    "blindGhost": {
+      "kind": "value",
+      "type": "float",
+      "label": "にじみ切った時の濃さ",
+      "group": "にじみ"
+    },
+    "greatWord": {
+      "kind": "value",
+      "type": "text",
+      "label": "「ぴたり」の字",
+      "group": "字"
+    },
+    "goodWord": {
+      "kind": "value",
+      "type": "text",
+      "label": "「そろった」の字",
+      "group": "字"
+    },
+    "missWord": {
+      "kind": "value",
+      "type": "text",
+      "label": "「ずれた」の字",
+      "group": "字"
+    },
+    "scoreWord": {
+      "kind": "value",
+      "type": "text",
+      "label": "点の見出し",
+      "group": "字"
+    },
+    "ranks": {
+      "kind": "list",
+      "label": "段（点の低い順）",
+      "fields": {
+        "score": {
+          "type": "int",
+          "label": "この点から"
+        },
+        "word": {
+          "type": "text",
+          "label": "結果の字"
+        }
+      }
+    },
+    "stages": {
+      "kind": "list",
+      "label": "曲",
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "台本の stage の名前"
+        },
+        "backdrop": {
+          "type": "text",
+          "label": "始まりの絵と同じ背景の名前"
+        },
+        "rain": {
+          "type": "bool",
+          "label": "雨の夜か"
+        },
+        "guides": {
+          "type": "bool",
+          "label": "操作の案内を出す"
+        },
+        "countBeats": {
+          "type": "int",
+          "label": "頭の合図の拍の数"
+        },
+        "endBeat": {
+          "type": "float",
+          "label": "曲の終わりの拍"
+        }
+      }
+    },
+    "tempos": {
+      "kind": "list",
+      "label": "速さ",
+      "fields": {
+        "stage": {
+          "type": "text",
+          "label": "曲"
+        },
+        "beat": {
+          "type": "float",
+          "label": "この拍から"
+        },
+        "bpm": {
+          "type": "float",
+          "label": "BPM"
+        }
+      }
+    },
+    "sections": {
+      "kind": "list",
+      "label": "並びを曲へ置く",
+      "fields": {
+        "stage": {
+          "type": "text",
+          "label": "曲"
+        },
+        "pattern": {
+          "type": "text",
+          "label": "並びの名前"
+        },
+        "beat": {
+          "type": "float",
+          "label": "置く拍"
+        },
+        "blind": {
+          "type": "bool",
+          "label": "音符がにじむ"
+        },
+        "chorus": {
+          "type": "bool",
+          "label": "サビとして数える"
+        }
+      }
+    },
+    "phrases": {
+      "kind": "list",
+      "label": "曲の切れ端",
+      "fields": {
+        "stage": {
+          "type": "text",
+          "label": "曲"
+        },
+        "beat": {
+          "type": "float",
+          "label": "鳴らす拍"
+        },
+        "sound": {
+          "type": "text",
+          "label": "音の名前"
+        }
+      }
+    },
+    "lyrics": {
+      "kind": "list",
+      "label": "歌詞",
+      "fields": {
+        "stage": {
+          "type": "text",
+          "label": "曲"
+        },
+        "beat": {
+          "type": "float",
+          "label": "出す拍"
+        },
+        "text": {
+          "type": "text",
+          "label": "字（空で消す）"
+        }
+      }
+    },
+    "notes": {
+      "kind": "list",
+      "label": "音符",
+      "fields": {
+        "pattern": {
+          "type": "text",
+          "label": "並びの名前"
+        },
+        "beat": {
+          "type": "float",
+          "label": "並びの頭からの拍"
+        },
+        "lane": {
+          "type": "int",
+          "label": "レーン（0 左・1 真ん中・2 右）"
+        },
+        "kind": {
+          "type": "text",
+          "label": "tap / hold / slide / flick"
+        },
+        "length": {
+          "type": "float",
+          "label": "続く拍"
+        },
+        "to": {
+          "type": "int",
+          "label": "slide の行き先のレーン"
+        },
+        "dir": {
+          "type": "text",
+          "label": "flick の向き（left / right / up）"
+        },
+        "pitch": {
+          "type": "int",
+          "label": "音の高さの段（0〜7）"
+        },
+        "mark": {
+          "type": "text",
+          "label": "音符に書く字"
+        },
+        "blind": {
+          "type": "bool",
+          "label": "この音符だけにじむ"
+        }
+      }
+    }
+  }
+}

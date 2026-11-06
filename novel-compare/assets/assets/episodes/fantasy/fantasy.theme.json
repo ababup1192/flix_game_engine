@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "灰の竜と三つの名の文章の色",
+  "note": "字と選択肢の色と、字の後ろの暗がりの濃さ。背景の絵は変わらない。",
+  "ink": "#ece6da",
+  "name": "#eab65c",
+  "shade": "#0a0c18",
+  "shadeAlpha": 0.84,
+  "choice": "#242a44",
+  "choiceInk": "#f3ead6",
+  "font": ""
+}

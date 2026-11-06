@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみのアトラスの目次",
+  "sections": {
+    "width": {
+      "kind": "value",
+      "type": "int",
+      "label": "アトラスの幅",
+      "group": "大きさ"
+    },
+    "height": {
+      "kind": "value",
+      "type": "int",
+      "label": "アトラスの高さ",
+      "group": "大きさ"
+    }
+  }
+}

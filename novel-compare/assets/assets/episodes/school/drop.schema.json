@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "title": "放課後ひとそろいのパズルの値",
+  "sections": {
+    "columns": { "kind": "value", "type": "int", "label": "作業台の列の数", "group": "作業台" },
+    "rows": { "kind": "value", "type": "int", "label": "作業台の行の数", "group": "作業台" },
+    "matchLength": { "kind": "value", "type": "int", "label": "そろうと消える長さ", "group": "作業台" },
+    "pairChance": { "kind": "value", "type": "float", "label": "隣が同じ色になる割合", "group": "作業台" },
+    "spillKeepRows": { "kind": "value", "type": "int", "label": "あふれた時に残す行数", "group": "作業台" },
+    "softDropRatio": { "kind": "value", "type": "float", "label": "下へ押さえた時の速さの倍率", "group": "手触り" },
+    "lockSeconds": { "kind": "value", "type": "float", "label": "着いてから置かれるまでの秒", "group": "手触り" },
+    "clearSeconds": { "kind": "value", "type": "float", "label": "そろってから消えるまでの秒", "group": "手触り" },
+    "settleRowsPerSecond": { "kind": "value", "type": "float", "label": "詰まる速さ（マス/秒）", "group": "手触り" },
+    "dragPixelsPerColumn": { "kind": "value", "type": "float", "label": "1 マス動かす指の量(px)", "group": "手触り" },
+    "hardDropSpeed": { "kind": "value", "type": "float", "label": "はじいたと数える速さ(px/秒)", "group": "手触り" },
+    "workPerTile": { "kind": "value", "type": "float", "label": "飾り 1 つの作業の量", "group": "進み" },
+    "chainBonus": { "kind": "value", "type": "float", "label": "連鎖 1 回で増える倍率", "group": "進み" },
+    "boxBonus": { "kind": "value", "type": "float", "label": "箱を開けた時の作業の量", "group": "進み" },
+    "focusRatio": { "kind": "value", "type": "float", "label": "看板の決まりどおりの倍率", "group": "進み" },
+    "chimeWarnSeconds": { "kind": "value", "type": "float", "label": "チャイムから箱までの秒", "group": "演出" },
+    "barkSeconds": { "kind": "value", "type": "float", "label": "台詞が出ている秒", "group": "演出" },
+    "hurrySeconds": { "kind": "value", "type": "float", "label": "急かす残りの秒", "group": "演出" },
+    "words": {
+      "kind": "record", "label": "絵の中の字",
+      "fields": {
+        "hold": { "type": "text", "label": "手元の皿の字" },
+        "next": { "type": "text", "label": "次の皿の字" },
+        "chain": { "type": "text", "label": "連鎖の数の後ろの語" },
+        "chalkTop": { "type": "text", "label": "黒板の上の字" },
+        "chalkBottom": { "type": "text", "label": "黒板の下の字" },
+        "sign": { "type": "text", "label": "看板の字" },
+        "plainSign": { "type": "text", "label": "間に合わなかった時の紙の字" }
+      }
+    },
+    "hues": {
+      "kind": "list", "label": "飾りの色",
+      "fields": {
+        "hue": { "type": "text", "label": "coral / gold / leaf / wisteria" },
+        "color": { "type": "color", "label": "紙の色" },
+        "weight": { "type": "float", "label": "落ちてくる割合" },
+        "lead": { "type": "text", "label": "仲良くなる相手のフラグの名前" }
+      }
+    },
+    "stages": {
+      "kind": "list", "label": "場面",
+      "fields": {
+        "id": { "type": "text", "label": "台本の stage の名前" },
+        "round": { "type": "text", "label": "結果のフラグの頭の字" },
+        "seconds": { "type": "float", "label": "遊ぶ秒" },
+        "goal": { "type": "float", "label": "進み 100% に要る作業の量" },
+        "backdrop": { "type": "text", "label": "始まりの絵と同じ背景の名前" },
+        "guides": { "type": "bool", "label": "スワイプの案内を出す" },
+        "boxesPerChime": { "type": "int", "label": "チャイムで押し込まれる箱の数" },
+        "startRows": { "type": "int", "label": "始めから積む行数" },
+        "startBoxes": { "type": "int", "label": "始めから積む箱の数" },
+        "fallSeconds": { "type": "float", "label": "1 マス落ちる秒" },
+        "seed": { "type": "int", "label": "色の並びの種" },
+        "focusHue": { "type": "text", "label": "看板の色" },
+        "focusShape": { "type": "text", "label": "看板の並び方 row / column / chain" },
+        "focusGoal": { "type": "int", "label": "看板に要る回数" },
+        "doneText": { "type": "text", "label": "時間切れの字" }
+      }
+    },
+    "barks": {
+      "kind": "list", "label": "仲間の台詞",
+      "fields": {
+        "cue": { "type": "text", "label": "きっかけ" },
+        "round": { "type": "text", "label": "どの回で言うか（空でいつでも）" },
+        "face": { "type": "text", "label": "顔の名前" },
+        "who": { "type": "text", "label": "話し手" },
+        "text": { "type": "text", "label": "字" }
+      }
+    }
+  }
+}

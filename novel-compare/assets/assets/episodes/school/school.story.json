@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "title": "放課後ひとそろい",
+  "note": "上から順に読む。行の書き方は docs/episode-guide.md。ゲームの結果は first_work（進みの %）・first_chain（一番長い連鎖）・first_boxes（開けた箱）・first_spills（あふれた回数）・lead_akane / lead_yuzu / lead_fuji（一番多く飾りにした色の相手）。二回目は頭の字が second_ になり、second_sign が 1 なら看板ができた。",
+  "rows": [
+    { "backdrop": "classroom_day", "hum": "sch_amb_room", "text": "文化祭まで、あと一日。二年三組の教室は、切りかけの色紙で足の踏み場もなかった。" },
+    { "text": "転校してきて三週間。私はまだ、誰の隣にいればいいのか分からない。" },
+    { "who": "朱音", "portrait": "akane_smile", "se": "ui_pick", "text": "ちょうどいいとこに！ 手、空いてるよね？ 飾りが全然足りないの。" },
+    { "who": "朱音", "portrait": "akane", "text": "机に落ちてくる材料を、同じ色で三つ並べて。縦でも横でも、そろえば飾りになるから。" },
+    { "who": "柚", "portrait": "yuzu_smile", "text": "コツは下でそろえること。消えた所に上が落ちて、勝手に次がそろうよ。連鎖ってやつ。" },
+    { "who": "柚", "portrait": "yuzu", "text": "迷ったら、指を止めて押さえてて。手元の皿にしまっておけるから。" },
+    { "who": "藤村", "portrait": "fuji", "text": "……チャイムが鳴ったら気をつけて。先生が段ボールを机に押し込んでくる。上を空けておくといい。" },
+    { "who": "藤村", "portrait": "fuji_smile", "text": "箱は、テープと同じ色を隣でそろえれば開く。開けた分だけ作業が一気に進むよ。" },
+    { "who": "朱音", "portrait": "akane_smile", "text": "よし、やってみよ！ あんたの手が頼りだからね！" },
+    { "backdrop": "table_first", "portrait": "", "hum": "", "text": "長机の上に、模造紙が広げられた。" },
+    { "game": "drop", "stage": "first" },
+
+    { "backdrop": "classroom_dusk", "hum": "sch_amb_dusk", "se": "ui_page", "text": "顔を上げると、窓の色が変わっていた。" },
+    { "when": "first_work>=80", "text": "壁は、もう半分以上が飾りで埋まっている。三週間で、初めて教室が私の場所に見えた。" },
+    { "when": "first_work>=40 & first_work<=79", "text": "壁の飾りは、さっきより確かに増えている。私の切った分も、あそこにある。" },
+    { "when": "first_work<=39", "text": "壁の飾りはまだまばらだ。けれど、さっきまでは一枚もなかった場所に、私の分が貼られている。" },
+    { "when": "first_chain>=3", "who": "柚", "portrait": "yuzu_wow", "text": "さっきの見た！？ 三つも続けて崩れてたよ！ もしかして、やったことある？" },
+    { "when": "first_spills>=1", "who": "柚", "portrait": "yuzu_smile", "text": "あふれた分は気にしないで。そういう時のためにみんながいるんだから。" },
+    { "when": "first_boxes>=2", "who": "藤村", "portrait": "fuji_smile", "text": "箱、ちゃんと開けてくれたんだ。……話、聞いてくれてたんだね。" },
+    { "when": "first_boxes==0", "who": "藤村", "portrait": "fuji", "text": "箱は開かないままか。チャイムの前に、テープの色をよく見て。" },
+    { "portrait": "", "text": "片付けながら数えてみると、私の手元に一番残っていた色は——" },
+    { "when": "lead_akane>=1", "goto": "talk_akane" },
+    { "when": "lead_yuzu>=1", "goto": "talk_yuzu" },
+    { "goto": "talk_fuji" },
+
+    { "label": "talk_akane", "text": "珊瑚色。朱音の花の色だった。" },
+    { "who": "朱音", "portrait": "akane_smile", "text": "あんた、花ばっかり作ってくれたでしょ。うれしくてさ、看板はあんたに頼むって決めた！" },
+    { "who": "朱音", "portrait": "akane", "text": "看板の花は、横に並べて貼るの。珊瑚を横一列でそろえて。縦のは傾くから使えない。三回で足りる。" },
+    { "who": "私", "text": "横に、三回。覚えた。" },
+    { "goto": "go_akane" },
+
+    { "label": "talk_yuzu", "text": "山吹色。柚の提灯の色だった。" },
+    { "who": "柚", "portrait": "yuzu_smile", "text": "提灯、あんなに作ってくれたんだ。ねえ、校門の看板、一緒に仕上げてくれない？" },
+    { "who": "柚", "portrait": "yuzu", "text": "提灯は上からつるすでしょ？ だから山吹は、縦にそろえたのだけ使えるの。三回あれば足りるよ。" },
+    { "who": "私", "text": "縦に、三回。覚えた。" },
+    { "goto": "go_yuzu" },
+
+    { "label": "talk_fuji", "text": "藤色。藤村の輪飾りの色だった。" },
+    { "who": "藤村", "portrait": "fuji_smile", "text": "輪飾り、ありがとう。あれ、地味で誰もやりたがらなくて。……看板の縁にも使いたいんだ。" },
+    { "who": "藤村", "portrait": "fuji", "text": "輪はつながってないと意味がない。だから藤色は、連鎖の二つ目から後でそろえた分だけ使える。一度できれば足りる。" },
+    { "who": "私", "text": "連鎖の中で、一度。覚えた。" },
+    { "goto": "go_fuji" },
+
+    { "label": "go_akane", "backdrop": "table_second", "portrait": "", "hum": "", "text": "最後の模造紙を広げる。下校のチャイムまで、あと少し。" },
+    { "game": "drop", "stage": "second_akane" },
+    { "goto": "after" },
+    { "label": "go_yuzu", "backdrop": "table_second", "portrait": "", "hum": "", "text": "最後の模造紙を広げる。下校のチャイムまで、あと少し。" },
+    { "game": "drop", "stage": "second_yuzu" },
+    { "goto": "after" },
+    { "label": "go_fuji", "backdrop": "table_second", "portrait": "", "hum": "", "text": "最後の模造紙を広げる。下校のチャイムまで、あと少し。" },
+    { "game": "drop", "stage": "second_fuji" },
+
+    { "label": "after", "when": "second_sign>=1", "backdrop": "gate_sign", "hum": "sch_amb_morning", "se": "sch_warm", "text": "次の朝。校門の上に、色紙の看板が掛かっていた。" },
+    { "when": "second_sign>=1", "text": "聞いたとおりに作った板が、朝の光の中で一枚もずれずに並んでいる。" },
+    { "when": "second_sign==0", "backdrop": "gate_morning", "hum": "sch_amb_morning", "text": "次の朝。校門には、裏紙に書いた「二年三組」が一枚だけ貼られていた。" },
+    { "when": "second_sign==0", "text": "看板は間に合わなかった。それでも教室の中には、昨日の飾りが残っている。" },
+    { "when": "second_work>=80", "text": "教室の壁は天井まで飾りで埋まり、廊下から歓声が聞こえた。" },
+    { "when": "second_work<=79", "text": "壁にはまだ空いた所がある。来た人が一枚ずつ貼っていけばいいと、誰かが笑った。" },
+    { "when": "lead_akane>=2", "goto": "end_akane" },
+    { "when": "lead_yuzu>=2", "goto": "end_yuzu" },
+    { "when": "lead_fuji>=2", "goto": "end_fuji" },
+    { "goto": "end_all" },
+
+    { "label": "end_akane", "who": "朱音", "portrait": "akane_smile", "text": "ほら、隣！ 今日は一日、私と一緒に呼び込みね！" },
+    { "portrait": "", "text": "三週間ずっと探していた場所は、思ったより声の大きい人の隣にあった。" },
+    { "goto": "credits" },
+
+    { "label": "end_yuzu", "who": "柚", "portrait": "yuzu_smile", "text": "提灯の下で写真撮ろ。ね、来年も同じクラスだといいな。" },
+    { "portrait": "", "text": "灯りの下に、私の分の場所が空けてあった。" },
+    { "goto": "credits" },
+
+    { "label": "end_fuji", "who": "藤村", "portrait": "fuji_smile", "text": "……輪、もう一本つなごうか。余った紙、取ってある。" },
+    { "portrait": "", "text": "言葉は少ないのに、隣にいるのは少しも苦しくなかった。" },
+    { "goto": "credits" },
+
+    { "label": "end_all", "who": "朱音", "portrait": "akane_smile", "text": "あんた、みんなの飾りを作ってくれたでしょ。ほら、こっち！" },
+    { "who": "柚", "portrait": "yuzu_smile", "text": "三人とも呼んでるんだよ。誰の隣、なんて決めなくていいの。" },
+    { "portrait": "", "text": "三つの色が、同じ紐に並んでいた。私はそこへ、自分の分を足しに走った。" },
+
+    { "label": "credits", "text": "放課後ひとそろい　おわり" },
+    { "end": true }
+  ]
+}

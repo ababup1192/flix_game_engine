@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみの深夜のカウンターの値",
+  "sections": {
+    "coarseRounds": { "kind": "value", "type": "float", "label": "挽き終えられる周の数", "group": "挽く" },
+    "fineRounds": { "kind": "value", "type": "float", "label": "細かくなる周の数", "group": "挽く" },
+    "maxRounds": { "kind": "value", "type": "float", "label": "自動で止める周の数", "group": "挽く" },
+    "settleSeconds": { "kind": "value", "type": "float", "label": "指を離して次へ移る秒", "group": "挽く" },
+    "pourSeconds": { "kind": "value", "type": "float", "label": "空からふちまでの秒", "group": "注ぐ" },
+    "fullFrom": { "kind": "value", "type": "float", "label": "なみなみに数える高さ(1=ふち)", "group": "注ぐ" },
+    "minLevel": { "kind": "value", "type": "float", "label": "注ぎ終えられる高さ", "group": "注ぐ" },
+    "sipSeconds": { "kind": "value", "type": "float", "label": "飲んでいる秒", "group": "間" },
+    "arriveSeconds": { "kind": "value", "type": "float", "label": "来る秒", "group": "間" },
+    "leaveSeconds": { "kind": "value", "type": "float", "label": "帰る秒", "group": "間" },
+    "charsPerSecond": { "kind": "value", "type": "float", "label": "字の速さ", "group": "字" },
+    "flickReach": { "kind": "value", "type": "float", "label": "弾いた時に先へ飛ぶ秒", "group": "間" },
+    "talkTop": { "kind": "value", "type": "float", "label": "字の上の線(画面の高さの割合)", "group": "字" },
+    "textSize": { "kind": "value", "type": "float", "label": "字の大きさ", "group": "字" },
+    "nameSize": { "kind": "value", "type": "float", "label": "話し手の字の大きさ", "group": "字" },
+    "textMargin": { "kind": "value", "type": "float", "label": "字の左右の余白", "group": "字" },
+    "lineGap": { "kind": "value", "type": "float", "label": "行の間", "group": "字" },
+    "coarseLabel": { "kind": "value", "type": "text", "label": "粗い時の字", "group": "字" },
+    "fineLabel": { "kind": "value", "type": "text", "label": "細かい時の字", "group": "字" },
+    "pageTitle": { "kind": "value", "type": "text", "label": "結果のページの見出し", "group": "字" }
+  }
+}

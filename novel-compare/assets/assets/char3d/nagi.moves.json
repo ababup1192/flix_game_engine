@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "title": "凪さんの 3D の動きの一覧",
+  "note": "タップで上から順に見せる。eye = open/half/closed/smile/sad/wide・brow = calm/happy/sad/wide/cross/soft・mouth = calm/smile/a/i/o/sad/open/wavy・yaw/pitch/roll = 頭の向き（ラジアン）・gazeX/gazeY = 視線（−1..1）・sweep = 視線を左右へ動かす幅・talk = 話す・hand = 手描きの顔（calm/smile/sad/wide）。",
+  "moves": [
+    { "label": "待つ", "eye": "open", "brow": "calm", "mouth": "calm", "hand": "calm" },
+    { "label": "話す", "eye": "open", "brow": "soft", "mouth": "calm", "talk": true, "hand": "calm" },
+    { "label": "喜ぶ", "eye": "smile", "brow": "happy", "mouth": "open", "pitch": -0.08, "roll": 0.1, "hand": "smile" },
+    { "label": "困る", "eye": "sad", "brow": "sad", "mouth": "wavy", "pitch": 0.1, "roll": -0.1, "gazeX": -0.6, "gazeY": 0.5, "hand": "sad" },
+    { "label": "驚く", "eye": "wide", "brow": "wide", "mouth": "o", "pitch": -0.05, "hand": "wide" },
+    { "label": "右を向く", "eye": "open", "brow": "calm", "mouth": "smile", "yaw": 0.6, "gazeX": 0.5, "hand": "calm" },
+    { "label": "左を向く", "eye": "open", "brow": "soft", "mouth": "calm", "yaw": -0.6, "pitch": 0.05, "gazeX": -0.5, "hand": "calm" },
+    { "label": "目で追う", "eye": "open", "brow": "calm", "mouth": "calm", "sweep": 0.9, "hand": "calm" }
+  ]
+}

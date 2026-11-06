@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "title": "ノベルアーケード",
+  "designWidth": 540,
+  "designHeight": 1170,
+  "windowWidth": 405,
+  "windowHeight": 878,
+  "clearColor": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0
+  },
+  "maxDeltaTime": 0.05,
+  "textures": [
+    {
+      "name": "cafe_atlas",
+      "path": "assets/episodes/cafe/cafe.atlas.png",
+      "hasAlpha": true
+    }
+  ],
+  "glyphs": "used",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/ShipporiMincho-Regular.subset.ttf",
+      "fontSize": 40.0
+    }
+  ],
+  "sounds": [
+    {
+      "name": "cafe_night",
+      "path": "assets/episodes/cafe/sfx/night.wav",
+      "looping": true
+    },
+    {
+      "name": "cafe_click",
+      "path": "assets/episodes/cafe/sfx/click.wav",
+      "looping": false
+    },
+    {
+      "name": "cafe_slide",
+      "path": "assets/episodes/cafe/sfx/slide.wav",
+      "looping": false
+    }
+  ],
+  "web": {
+    "orientation": "portrait",
+    "portraitDesign": {
+      "width": 540,
+      "minHeight": 960,
+      "maxHeight": 1280
+    }
+  },
+  "editor": {
+    "resources": [
+      {
+        "id": "shell",
+        "pattern": "assets/shell.kind.json",
+        "title": "土台の手触り",
+        "schema": "assets/shell.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "shelf",
+        "pattern": "assets/shelf.json",
+        "title": "棚に並ぶ本",
+        "schema": "assets/shelf.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "episode",
+        "pattern": "assets/episodes/*/*.episode.json",
+        "title": "本の素材の登録",
+        "schema": "assets/episode.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "char3d_moves",
+        "pattern": "assets/char3d/nagi.moves.json",
+        "title": "凪さんの 3D の動きの一覧",
+        "schema": "assets/char3d/moves.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "cafe_story",
+        "pattern": "assets/episodes/cafe/cafe.story.json",
+        "title": "喫茶ひとやすみの台本",
+        "schema": "assets/story.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "cafe_theme",
+        "pattern": "assets/episodes/cafe/cafe.theme.json",
+        "title": "喫茶ひとやすみの文章の色",
+        "schema": "assets/book-theme.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "cafe_night",
+        "pattern": "assets/episodes/cafe/cafe.night.json",
+        "title": "喫茶ひとやすみの深夜のカウンターの値",
+        "schema": "assets/episodes/cafe/night.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "cafe_atlas_index",
+        "pattern": "assets/episodes/cafe/cafe.atlas.json",
+        "title": "喫茶ひとやすみのアトラスの目次",
+        "schema": "assets/episodes/cafe/atlas.schema.json",
+        "role": "material"
+      }
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "title": "白い手袋の証言の対決の値",
+  "note": "statements は証言のカード。tell = 嘘の時に手癖が出る・answer = 崩せる言葉のカード（空なら崩せない）・needsStare = 先に長押しで問い詰めないと崩せない・stared = 問い詰めると変わる文・gives = 問い詰めると手に入るカード。hand は words の id をカンマで並べる。結果は <flag>_broken（崩した数）と hit_<statement の id> がフラグへ足される。",
+  "throwLine": 0.66,
+  "throwSpeed": 900,
+  "stareSeconds": 0.8,
+  "missSeconds": 6,
+  "beatSeconds": 2.4,
+  "flightSeconds": 0.22,
+  "lineSeconds": 3.2,
+  "finishSeconds": 2.2,
+  "urgentSeconds": 15,
+  "words": [
+    { "id": "cups", "text": "二つのカップ" },
+    { "id": "tunnel", "text": "長いトンネル" },
+    { "id": "key", "text": "合い鍵" },
+    { "id": "pairs", "text": "一双きり" },
+    { "id": "starch", "text": "糊の匂い" },
+    { "id": "chips", "text": "星形の切りくず" },
+    { "id": "sea", "text": "海の色" }
+  ],
+  "stages": [
+    { "id": "ayase", "cast": "ayase", "witness": "ayase", "backdrop": "diner_ayase", "seconds": 55, "flag": "first", "hand": "cups,tunnel,key", "guide": true },
+    { "id": "chief_full", "cast": "chief", "witness": "chief", "backdrop": "diner_chief", "seconds": 65, "flag": "second", "hand": "tunnel,starch,chips,key", "guide": false },
+    { "id": "chief_short", "cast": "chief", "witness": "chief", "backdrop": "diner_chief", "seconds": 65, "flag": "second", "hand": "tunnel,starch,key", "guide": false }
+  ],
+  "statements": [
+    { "cast": "ayase", "id": "tea", "text": "十一時に、三号室へ紅茶を一杯お届けしました。", "tell": true, "answer": "cups",
+      "hitLine": "……二つです。カップは、お二つお持ちしました。" },
+    { "cast": "ayase", "id": "hall", "text": "廊下では、どなたにもお会いしておりません。", "stared": "廊下は明るく見通せました。人影はございません。", "tell": true, "answer": "tunnel", "needsStare": true,
+      "coyLine": "それが、廊下と何の関わりが？", "hitLine": "……灯りは消えておりました。真っ暗でした。" },
+    { "cast": "ayase", "id": "shelf", "text": "替えの手袋は、食堂車の棚にしまってあります。", "stared": "……朝は三双ございました。今は、一双きりです。", "gives": "pairs" },
+    { "cast": "ayase", "id": "glove", "text": "手袋は、乗務の初めから替えておりません。", "tell": true, "answer": "pairs",
+      "hitLine": "……替えました。紅茶で、右手を汚したのです。" },
+
+    { "cast": "chief", "id": "rear", "text": "トンネルの間、私は最後尾で検札の記録を書いていた。", "tell": true, "answer": "tunnel",
+      "hitLine": "……灯りの無い所で書ける字は、無いな。" },
+    { "cast": "chief", "id": "same", "text": "この手袋は、乗務の初めから同じ物だ。", "tell": true, "answer": "starch",
+      "hitLine": "鼻の利く見習いだ。……今夜、替えた。" },
+    { "cast": "chief", "id": "room", "text": "夫人とは今夜、顔も合わせていない。", "stared": "三号室には、一歩も入っていない。", "tell": true, "answer": "chips", "needsStare": true,
+      "coyLine": "顔を合わせていない、と言ったはずだ。", "hitLine": "その星形は、私のはさみだ。……入った。" },
+    { "cast": "chief", "id": "fault", "text": "石が消えたのは、車掌長である私の落ち度だ。", "stared": "海の色のあの石を、守れなかったのだから。", "gives": "sea" },
+    { "cast": "chief", "id": "stone", "text": "あの箱の中身など、私は見たこともない。", "tell": true, "answer": "sea",
+      "hitLine": "……色を知るのは、見た者だけ、か。" }
+  ],
+  "tunnels": [
+    { "cast": "chief", "at": 12, "seconds": 5 },
+    { "cast": "chief", "at": 34, "seconds": 5 }
+  ],
+  "missLines": [
+    { "cast": "ayase", "text": "お言葉ですが、それは別のお話かと。" },
+    { "cast": "ayase", "text": "申し上げた通りでございます。" },
+    { "cast": "ayase", "text": "終点まで、お時間がございませんよ。" },
+    { "cast": "chief", "text": "見習い。的を外すな。" },
+    { "cast": "chief", "text": "それで私を止めるつもりか。" },
+    { "cast": "chief", "text": "終点は待ってくれんぞ。" }
+  ],
+  "shrugLines": [
+    { "cast": "ayase", "text": "……それ以上は、ございません。" },
+    { "cast": "chief", "text": "……これ以上、足す言葉は無い。" }
+  ]
+}

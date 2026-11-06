@@ -1,0 +1,89 @@
+{
+ "id": "char3d",
+ "title": "ノベルアーケード",
+ "files": [
+  "assets/OFL.txt",
+  "assets/book-theme.schema.json",
+  "assets/char3d/moves.schema.json",
+  "assets/char3d/nagi.glb",
+  "assets/char3d/nagi.moves.json",
+  "assets/episode.schema.json",
+  "assets/episodes/cafe/atlas.schema.json",
+  "assets/episodes/cafe/cafe.atlas.json",
+  "assets/episodes/cafe/cafe.atlas.png",
+  "assets/episodes/cafe/cafe.episode.json",
+  "assets/episodes/cafe/cafe.night.json",
+  "assets/episodes/cafe/cafe.story.json",
+  "assets/episodes/cafe/cafe.theme.json",
+  "assets/episodes/cafe/night.schema.json",
+  "assets/episodes/fantasy/battle.schema.json",
+  "assets/episodes/fantasy/fantasy.battle.json",
+  "assets/episodes/fantasy/fantasy.episode.json",
+  "assets/episodes/fantasy/fantasy.story.json",
+  "assets/episodes/fantasy/fantasy.theme.json",
+  "assets/episodes/horror/corridor.schema.json",
+  "assets/episodes/horror/horror.corridor.json",
+  "assets/episodes/horror/horror.episode.json",
+  "assets/episodes/horror/horror.story.json",
+  "assets/episodes/horror/horror.theme.json",
+  "assets/episodes/mystery/mystery.episode.json",
+  "assets/episodes/mystery/mystery.story.json",
+  "assets/episodes/mystery/mystery.testimony.json",
+  "assets/episodes/mystery/mystery.theme.json",
+  "assets/episodes/mystery/testimony.schema.json",
+  "assets/episodes/romance/live.schema.json",
+  "assets/episodes/romance/romance.episode.json",
+  "assets/episodes/romance/romance.live.json",
+  "assets/episodes/romance/romance.story.json",
+  "assets/episodes/romance/romance.theme.json",
+  "assets/episodes/school/drop.schema.json",
+  "assets/episodes/school/school.drop.json",
+  "assets/episodes/school/school.episode.json",
+  "assets/episodes/school/school.story.json",
+  "assets/episodes/school/school.theme.json",
+  "assets/novel_arcade.scenes.json",
+  "assets/scenes.schema.json",
+  "assets/shelf.json",
+  "assets/shelf.schema.json",
+  "assets/shell.kind.json",
+  "assets/shell.schema.json",
+  "assets/story.schema.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [
+  "assets/episodes/cafe/cafe.atlas.png"
+ ],
+ "sounds": [
+  {
+   "name": "cafe_night",
+   "path": "assets/episodes/cafe/sfx/night.wav",
+   "looping": true,
+   "seconds": 25.9459410430839
+  },
+  {
+   "name": "cafe_click",
+   "path": "assets/episodes/cafe/sfx/click.wav",
+   "looping": false,
+   "seconds": 0.02997732426303855
+  },
+  {
+   "name": "cafe_slide",
+   "path": "assets/episodes/cafe/sfx/slide.wav",
+   "looping": false,
+   "seconds": 0.24
+  }
+ ],
+ "design": {
+  "w": 540,
+  "h": 1170
+ },
+ "orientation": "portrait",
+ "transcoded": {
+  "assets/episodes/cafe/cafe.atlas.png": "assets/episodes/cafe/cafe.atlas.webp",
+  "assets/episodes/cafe/sfx/click.wav": "assets/episodes/cafe/sfx/click.webm",
+  "assets/episodes/cafe/sfx/night.wav": "assets/episodes/cafe/sfx/night.webm",
+  "assets/episodes/cafe/sfx/slide.wav": "assets/episodes/cafe/sfx/slide.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
+ }
+}
