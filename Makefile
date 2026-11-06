@@ -120,6 +120,8 @@ help:
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
+	@echo "  make crowd2d-cpu          2D の敵の群れの規則だけを回し、近くを探す処理を全部と比べる形と SpatialGrid で比べる (窓は開かない)"
+	@echo "  make crowd2d-bench        同じ群れを実機の窓で描き、1 コマ・規則・描く時間の p50 / p95 を出す (窓が開く・COUNTS=6000,10000 で数を替える)"
 	@echo "  make gen-light3d          光の式の木 (LightModel3d) から CPU の光の関数 engine_tools/src/gen/SoftRaster3dLight.flix と確かめ用の test/gen/SoftRaster3dLightCases.flix を作り直す"
 	@echo "  make gl-capture OUT=<dir> テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える"
 	@echo "  make smoke-devtools [SMOKE_TEMPLATE=<テンプレ>]  隠しウィンドウの DEBUG 起動で、名簿・命令口（/help・/halt・/step・/resume・/perf）・flow の記録・閉じた後の名簿を確かめる"
@@ -368,6 +370,16 @@ scene3d-bench:
 
 scene3d-cpu:
 	@$(MAKE) -C bench/scene3d cpu-time
+
+# 2D の敵の群れ (bench/crowd2d)。近くの敵を探す処理を全部と比べる形と SpatialGrid で比べる。cpu は規則だけを回し
+# (窓を開かない・FlowField と 1 体ずつの経路探索の比べも出す)、bench は実機の窓で描いて 1 コマの時間まで出す。
+# SpatialGrid / FlowField / スプライトの描く道を触ったら回す。時間は機械と負荷で揺れるので門にはしない。
+.PHONY: crowd2d-cpu crowd2d-bench
+crowd2d-cpu:
+	@$(MAKE) -C bench/crowd2d cpu-time
+
+crowd2d-bench:
+	@$(MAKE) -C bench/crowd2d run
 
 # 光の式の木 (engine の LightModel3d) から CPU の描き手が回す関数 (engine_tools/src/gen/SoftRaster3dLight.flix) を作り直す。
 # 木を直したらこれを流す。入っている物と木が食い違うと engine_tools の TestSoftRaster3dLight が落ちる。

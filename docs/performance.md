@@ -535,6 +535,8 @@ GL と CPU の描き手は、カメラの視錐台の外の置いた物とビル
 `bin/fge quadratic` は perf-near-scan として、回すラムダの本体とそこから呼ぶ同じファイルの def の中の `List.filter` / `exists` / `find` を知らせる（止めない。回す物の大きさは字から分からない）。
 小さいと決まった列は `quadratic.local.json` の `exempt` へ理由つきで載せると黙る。
 
+2D の群れで `SpatialGrid` と `FlowField` の得を確かめるのは `make crowd2d-cpu`（窓なし）と `make crowd2d-bench`（窓あり・`bench/crowd2d`）。
+
 `SpatialGrid` の回す順は行が外側、升の中は入れた順で、同じ入力なら毎回同じ。足す順で丸めが変わるので、手書きの升ごとの小計から置き換えると値がわずかに変わる（1 本の蓄積へ直した版とはビット単位で同じ）。
 
 `foldNearIndex` の `f` が畳み込まれているかは `TestSpatialGrid.testInlineLambdaFoldsIntoTheLoop` が割り当てバイトの比で見る。止めるのは畳み込みが丸ごと無くなる退行で、2 割ほどの最適化の差は見えない。

@@ -1,0 +1,21 @@
+{
+  "title": "Crowd 2D Bench",
+  "designWidth": 640,
+  "designHeight": 360,
+  "windowScale": 2,
+  "clearColor": {
+    "r": 0.101961,
+    "g": 0.109804,
+    "b": 0.172549
+  },
+  "maxDeltaTime": 10.0,
+  "textures": [
+    {
+      "name": "enemy",
+      "path": "assets/sprites/enemy.png",
+      "hasAlpha": true
+    }
+  ],
+  "fonts": [],
+  "sounds": []
+}
