@@ -25,7 +25,7 @@
     { "id": "lurk", "pose": "idle", "line": "", "damage": 0 },
     { "id": "raise", "pose": "raise", "line": "番人が大剣を振りかぶった", "damage": 0, "listening": false },
     { "id": "smite", "pose": "raise", "line": "大剣が落ちてくる！", "damage": 12, "counter": 6 },
-    { "id": "stand", "pose": "idle", "line": "番人は、肩で息をしている", "damage": 0, "listening": false },
+    { "id": "stand", "pose": "pant", "line": "番人は、肩で息をしている", "damage": 0, "listening": false },
     { "id": "flap", "pose": "idle", "line": "", "damage": 2 },
     { "id": "still", "pose": "idle", "line": "", "damage": 0 },
     { "id": "breath", "pose": "breath", "line": "竜が息を吸う。胸の鱗が開いた！", "damage": 15, "open": true, "breakable": true },

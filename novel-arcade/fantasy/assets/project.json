@@ -11,7 +11,98 @@
     "b": 0.0
   },
   "maxDeltaTime": 0.05,
-  "textures": [],
+  "textures": [
+    {
+      "name": "fantasy_valley",
+      "path": "assets/episodes/fantasy/art/valley.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_ashfall",
+      "path": "assets/episodes/fantasy/art/ashfall.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_dawn",
+      "path": "assets/episodes/fantasy/art/dawn.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_chapel",
+      "path": "assets/episodes/fantasy/art/chapel.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_bridge",
+      "path": "assets/episodes/fantasy/art/bridge.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_rose",
+      "path": "assets/episodes/fantasy/art/rose.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_rose_warm",
+      "path": "assets/episodes/fantasy/art/rose_warm.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_nagi",
+      "path": "assets/episodes/fantasy/art/nagi.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_isa",
+      "path": "assets/episodes/fantasy/art/isa.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_shion",
+      "path": "assets/episodes/fantasy/art/shion.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_berg",
+      "path": "assets/episodes/fantasy/art/berg.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_tomori",
+      "path": "assets/episodes/fantasy/art/tomori.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_strike",
+      "path": "assets/episodes/fantasy/art/card_strike.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_magic",
+      "path": "assets/episodes/fantasy/art/card_magic.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_guard",
+      "path": "assets/episodes/fantasy/art/card_guard.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_plea",
+      "path": "assets/episodes/fantasy/art/card_plea.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_hud_strip",
+      "path": "assets/episodes/fantasy/art/hud_strip.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_cover",
+      "path": "assets/episodes/fantasy/art/cover.png",
+      "hasAlpha": false
+    }
+  ],
   "glyphs": "used",
   "fonts": [
     {
@@ -188,6 +279,22 @@
       "width": 540,
       "minHeight": 960,
       "maxHeight": 1280
+    },
+    "compress": {
+      "lossyImages": [
+        {
+          "glob": "assets/episodes/fantasy/art/*.png",
+          "quality": 82
+        },
+        {
+          "glob": "assets/episodes/cafe/art/*.png",
+          "quality": 82
+        },
+        {
+          "glob": "assets/episodes/mystery/art/*.png",
+          "quality": 82
+        }
+      ]
     }
   },
   "editor": {
@@ -232,6 +339,13 @@
         "pattern": "assets/episodes/fantasy/fantasy.battle.json",
         "title": "コマンドバトルの値",
         "schema": "assets/episodes/fantasy/battle.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "fantasy_art_index",
+        "pattern": "assets/episodes/fantasy/fantasy.art.json",
+        "title": "灰の竜と三つの名の絵の目次",
+        "schema": "assets/episodes/fantasy/art.schema.json",
         "role": "material"
       }
     ]

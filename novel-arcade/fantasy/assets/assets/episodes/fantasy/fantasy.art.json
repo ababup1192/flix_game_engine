@@ -1,0 +1,115 @@
+{
+ "version": 1,
+ "title": "灰の竜と三つの名の絵の目次",
+ "note": "art/episodes/fantasy/cut.py が書く生成物。いじると絵の大きさがずれるので手で直さない。",
+ "pictures": [
+  {
+   "name": "valley",
+   "w": 640,
+   "h": 1280,
+   "scale": 0.79404
+  },
+  {
+   "name": "ashfall",
+   "w": 640,
+   "h": 1280,
+   "scale": 0.79404
+  },
+  {
+   "name": "dawn",
+   "w": 640,
+   "h": 1280,
+   "scale": 0.79404
+  },
+  {
+   "name": "chapel",
+   "w": 640,
+   "h": 1280,
+   "scale": 0.79404
+  },
+  {
+   "name": "bridge",
+   "w": 700,
+   "h": 1400,
+   "scale": 0.79365
+  },
+  {
+   "name": "rose",
+   "w": 704,
+   "h": 1408,
+   "scale": 0.79279
+  },
+  {
+   "name": "rose_warm",
+   "w": 704,
+   "h": 1408,
+   "scale": 0.79279
+  },
+  {
+   "name": "nagi",
+   "w": 500,
+   "h": 612,
+   "scale": 0.66667
+  },
+  {
+   "name": "isa",
+   "w": 500,
+   "h": 625,
+   "scale": 0.66667
+  },
+  {
+   "name": "shion",
+   "w": 500,
+   "h": 672,
+   "scale": 0.66667
+  },
+  {
+   "name": "berg",
+   "w": 500,
+   "h": 615,
+   "scale": 0.66667
+  },
+  {
+   "name": "tomori",
+   "w": 360,
+   "h": 429,
+   "scale": 0.66667
+  },
+  {
+   "name": "card_strike",
+   "w": 124,
+   "h": 231,
+   "scale": 0.5
+  },
+  {
+   "name": "card_magic",
+   "w": 124,
+   "h": 223,
+   "scale": 0.5
+  },
+  {
+   "name": "card_guard",
+   "w": 124,
+   "h": 242,
+   "scale": 0.5
+  },
+  {
+   "name": "card_plea",
+   "w": 124,
+   "h": 221,
+   "scale": 0.5
+  },
+  {
+   "name": "hud_strip",
+   "w": 540,
+   "h": 97,
+   "scale": 0.66667
+  },
+  {
+   "name": "cover",
+   "w": 540,
+   "h": 180,
+   "scale": 0.66667
+  }
+ ]
+}

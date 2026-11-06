@@ -1,37 +1,250 @@
 {
+  "web3d": true,
   "version": 1,
   "title": "灰の竜と三つの名の素材の登録",
   "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。",
   "sounds": [
-    {"name": "fan_amb_valley", "path": "assets/episodes/fantasy/sfx/fan_amb_valley.wav", "looping": true},
-    {"name": "fan_amb_chapel", "path": "assets/episodes/fantasy/sfx/fan_amb_chapel.wav", "looping": true},
-    {"name": "fan_amb_battle", "path": "assets/episodes/fantasy/sfx/fan_amb_battle.wav", "looping": true},
-    {"name": "fan_amb_dragon", "path": "assets/episodes/fantasy/sfx/fan_amb_dragon.wav", "looping": true},
-    {"name": "fan_amb_dawn", "path": "assets/episodes/fantasy/sfx/fan_amb_dawn.wav", "looping": true},
-    {"name": "fan_charge", "path": "assets/episodes/fantasy/sfx/fan_charge.wav", "looping": true},
-    {"name": "fan_card", "path": "assets/episodes/fantasy/sfx/fan_card.wav", "looping": false},
-    {"name": "fan_aim", "path": "assets/episodes/fantasy/sfx/fan_aim.wav", "looping": false},
-    {"name": "fan_slash", "path": "assets/episodes/fantasy/sfx/fan_slash.wav", "looping": false},
-    {"name": "fan_magic", "path": "assets/episodes/fantasy/sfx/fan_magic.wav", "looping": false},
-    {"name": "fan_charged", "path": "assets/episodes/fantasy/sfx/fan_charged.wav", "looping": false},
-    {"name": "fan_hammer", "path": "assets/episodes/fantasy/sfx/fan_hammer.wav", "looping": false},
-    {"name": "fan_glass", "path": "assets/episodes/fantasy/sfx/fan_glass.wav", "looping": false},
-    {"name": "fan_shatter", "path": "assets/episodes/fantasy/sfx/fan_shatter.wav", "looping": false},
-    {"name": "fan_guard", "path": "assets/episodes/fantasy/sfx/fan_guard.wav", "looping": false},
-    {"name": "fan_hurt", "path": "assets/episodes/fantasy/sfx/fan_hurt.wav", "looping": false},
-    {"name": "fan_roar", "path": "assets/episodes/fantasy/sfx/fan_roar.wav", "looping": false},
-    {"name": "fan_breath", "path": "assets/episodes/fantasy/sfx/fan_breath.wav", "looping": false},
-    {"name": "fan_call", "path": "assets/episodes/fantasy/sfx/fan_call.wav", "looping": false},
-    {"name": "fan_refuse", "path": "assets/episodes/fantasy/sfx/fan_refuse.wav", "looping": false},
-    {"name": "fan_song", "path": "assets/episodes/fantasy/sfx/fan_song.wav", "looping": false},
-    {"name": "fan_win", "path": "assets/episodes/fantasy/sfx/fan_win.wav", "looping": false},
-    {"name": "fan_calm", "path": "assets/episodes/fantasy/sfx/fan_calm.wav", "looping": false},
-    {"name": "fan_fall", "path": "assets/episodes/fantasy/sfx/fan_fall.wav", "looping": false}
+    {
+      "name": "fan_amb_valley",
+      "path": "assets/episodes/fantasy/sfx/fan_amb_valley.wav",
+      "looping": true
+    },
+    {
+      "name": "fan_amb_chapel",
+      "path": "assets/episodes/fantasy/sfx/fan_amb_chapel.wav",
+      "looping": true
+    },
+    {
+      "name": "fan_amb_battle",
+      "path": "assets/episodes/fantasy/sfx/fan_amb_battle.wav",
+      "looping": true
+    },
+    {
+      "name": "fan_amb_dragon",
+      "path": "assets/episodes/fantasy/sfx/fan_amb_dragon.wav",
+      "looping": true
+    },
+    {
+      "name": "fan_amb_dawn",
+      "path": "assets/episodes/fantasy/sfx/fan_amb_dawn.wav",
+      "looping": true
+    },
+    {
+      "name": "fan_charge",
+      "path": "assets/episodes/fantasy/sfx/fan_charge.wav",
+      "looping": true
+    },
+    {
+      "name": "fan_card",
+      "path": "assets/episodes/fantasy/sfx/fan_card.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_aim",
+      "path": "assets/episodes/fantasy/sfx/fan_aim.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_slash",
+      "path": "assets/episodes/fantasy/sfx/fan_slash.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_magic",
+      "path": "assets/episodes/fantasy/sfx/fan_magic.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_charged",
+      "path": "assets/episodes/fantasy/sfx/fan_charged.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_hammer",
+      "path": "assets/episodes/fantasy/sfx/fan_hammer.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_glass",
+      "path": "assets/episodes/fantasy/sfx/fan_glass.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_shatter",
+      "path": "assets/episodes/fantasy/sfx/fan_shatter.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_guard",
+      "path": "assets/episodes/fantasy/sfx/fan_guard.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_hurt",
+      "path": "assets/episodes/fantasy/sfx/fan_hurt.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_roar",
+      "path": "assets/episodes/fantasy/sfx/fan_roar.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_breath",
+      "path": "assets/episodes/fantasy/sfx/fan_breath.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_call",
+      "path": "assets/episodes/fantasy/sfx/fan_call.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_refuse",
+      "path": "assets/episodes/fantasy/sfx/fan_refuse.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_song",
+      "path": "assets/episodes/fantasy/sfx/fan_song.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_win",
+      "path": "assets/episodes/fantasy/sfx/fan_win.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_calm",
+      "path": "assets/episodes/fantasy/sfx/fan_calm.wav",
+      "looping": false
+    },
+    {
+      "name": "fan_fall",
+      "path": "assets/episodes/fantasy/sfx/fan_fall.wav",
+      "looping": false
+    }
   ],
-  "textures": [],
+  "textures": [
+    {
+      "name": "fantasy_valley",
+      "path": "assets/episodes/fantasy/art/valley.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_ashfall",
+      "path": "assets/episodes/fantasy/art/ashfall.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_dawn",
+      "path": "assets/episodes/fantasy/art/dawn.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_chapel",
+      "path": "assets/episodes/fantasy/art/chapel.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_bridge",
+      "path": "assets/episodes/fantasy/art/bridge.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_rose",
+      "path": "assets/episodes/fantasy/art/rose.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_rose_warm",
+      "path": "assets/episodes/fantasy/art/rose_warm.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fantasy_nagi",
+      "path": "assets/episodes/fantasy/art/nagi.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_isa",
+      "path": "assets/episodes/fantasy/art/isa.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_shion",
+      "path": "assets/episodes/fantasy/art/shion.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_berg",
+      "path": "assets/episodes/fantasy/art/berg.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_tomori",
+      "path": "assets/episodes/fantasy/art/tomori.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_strike",
+      "path": "assets/episodes/fantasy/art/card_strike.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_magic",
+      "path": "assets/episodes/fantasy/art/card_magic.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_guard",
+      "path": "assets/episodes/fantasy/art/card_guard.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_card_plea",
+      "path": "assets/episodes/fantasy/art/card_plea.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_hud_strip",
+      "path": "assets/episodes/fantasy/art/hud_strip.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "fantasy_cover",
+      "path": "assets/episodes/fantasy/art/cover.png",
+      "hasAlpha": false
+    }
+  ],
   "resources": [
-    {"id": "fantasy_story", "pattern": "assets/episodes/fantasy/fantasy.story.json", "title": "灰の竜と三つの名の台本", "schema": "assets/story.schema.json", "role": "material"},
-    {"id": "fantasy_theme", "pattern": "assets/episodes/fantasy/fantasy.theme.json", "title": "灰の竜と三つの名の文章の色", "schema": "assets/book-theme.schema.json", "role": "material"},
-    {"id": "fantasy_battle", "pattern": "assets/episodes/fantasy/fantasy.battle.json", "title": "コマンドバトルの値", "schema": "assets/episodes/fantasy/battle.schema.json", "role": "material"}
+    {
+      "id": "fantasy_story",
+      "pattern": "assets/episodes/fantasy/fantasy.story.json",
+      "title": "灰の竜と三つの名の台本",
+      "schema": "assets/story.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "fantasy_theme",
+      "pattern": "assets/episodes/fantasy/fantasy.theme.json",
+      "title": "灰の竜と三つの名の文章の色",
+      "schema": "assets/book-theme.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "fantasy_battle",
+      "pattern": "assets/episodes/fantasy/fantasy.battle.json",
+      "title": "コマンドバトルの値",
+      "schema": "assets/episodes/fantasy/battle.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "fantasy_art_index",
+      "pattern": "assets/episodes/fantasy/fantasy.art.json",
+      "title": "灰の竜と三つの名の絵の目次",
+      "schema": "assets/episodes/fantasy/art.schema.json",
+      "role": "material"
+    }
   ]
 }
