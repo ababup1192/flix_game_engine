@@ -11,7 +11,93 @@
     "b": 0.0
   },
   "maxDeltaTime": 0.05,
-  "textures": [],
+  "textures": [
+    {
+      "name": "romance_bg_dusk_blue",
+      "path": "assets/episodes/romance/art/bg_dusk_blue.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_bg_dusk_pink",
+      "path": "assets/episodes/romance/art/bg_dusk_pink.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_bg_morning_blue",
+      "path": "assets/episodes/romance/art/bg_morning_blue.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_bg_morning_pink",
+      "path": "assets/episodes/romance/art/bg_morning_pink.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_bg_rain_blue",
+      "path": "assets/episodes/romance/art/bg_rain_blue.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_bg_rain_pink",
+      "path": "assets/episodes/romance/art/bg_rain_pink.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_board",
+      "path": "assets/episodes/romance/art/board.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_cover",
+      "path": "assets/episodes/romance/art/cover.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_lane",
+      "path": "assets/episodes/romance/art/lane.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "romance_mio",
+      "path": "assets/episodes/romance/art/mio.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_mio_rain",
+      "path": "assets/episodes/romance/art/mio_rain.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_mio_rain_smile",
+      "path": "assets/episodes/romance/art/mio_rain_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_mio_shy",
+      "path": "assets/episodes/romance/art/mio_shy.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_mio_sing",
+      "path": "assets/episodes/romance/art/mio_sing.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_mio_smile",
+      "path": "assets/episodes/romance/art/mio_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_parts",
+      "path": "assets/episodes/romance/art/parts.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "romance_result",
+      "path": "assets/episodes/romance/art/result.png",
+      "hasAlpha": true
+    }
+  ],
   "glyphs": "used",
   "fonts": [
     {
@@ -253,6 +339,18 @@
       "width": 540,
       "minHeight": 960,
       "maxHeight": 1280
+    },
+    "compress": {
+      "lossyImages": [
+        {
+          "glob": "assets/episodes/cafe/art/*.png",
+          "quality": 82
+        },
+        {
+          "glob": "assets/episodes/romance/art/*.png",
+          "quality": 82
+        }
+      ]
     }
   },
   "editor": {
@@ -297,6 +395,13 @@
         "pattern": "assets/episodes/romance/romance.live.json",
         "title": "君のテンポでの譜面",
         "schema": "assets/episodes/romance/live.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "romance_art_index",
+        "pattern": "assets/episodes/romance/romance.art.json",
+        "title": "君のテンポでの絵の目次",
+        "schema": "assets/episodes/romance/art.schema.json",
         "role": "material"
       }
     ]
