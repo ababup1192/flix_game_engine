@@ -3,6 +3,8 @@
  "title": "放課後ひとそろい",
  "files": [
   "assets/OFL.txt",
+  "assets/episodes/school/models/atlas.rgb",
+  "assets/episodes/school/models/school.glb",
   "assets/episodes/school/school.crate.json",
   "assets/episodes/school/school.episode.json",
   "assets/episodes/school/school.story.json",
