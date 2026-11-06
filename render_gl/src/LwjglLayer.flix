@@ -412,7 +412,7 @@ pub mod LwjglLayer {
         let gl = opened#gl;
         let paint = RenderPaint.create(gl, { designWidth = config#designWidth, designHeight = config#designHeight,
                                          clearColor = config#clearColor, screenFramebuffer = 0,
-                                         scene3d = Render3d.makeRenderer(gl, config), gpuTimer = GpuTimer.frameTimer() });
+                                         scene3d = Render3d.makeRenderer(gl, config, LwjglEnv.drawMode()), gpuTimer = GpuTimer.frameTimer() });
 
         // macOS ではリサイズ中に glfwPollEvents がブロックされるため、
         // フレームバッファサイズ変更コールバックで再描画を行う。

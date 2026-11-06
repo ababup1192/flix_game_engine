@@ -59,7 +59,7 @@ public interface GlContext {
     void vertexAttribDivisor(int index, int divisor);
     void drawArrays(int mode, int first, int count);
     void drawArraysInstanced(int mode, int first, int count, int instanceCount);
-    void drawElements(int mode, int count, int type, int offset);
+    void drawElementsInstanced(int mode, int count, int type, int offset, int instanceCount);
 
     // ── テクスチャと sampler ──
     int createTexture();

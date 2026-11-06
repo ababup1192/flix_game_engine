@@ -3,7 +3,7 @@ mod Render3d.TestCounts {
     import java.lang.System
     use Render3d.Counts.{Counter, Phase}
 
-    def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 64, count = 64 })
+    def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 64, count = 64 }, Render3d.DrawMode.Instanced)
 
     @Test
     def testNewCountersStartAtZero(): Unit \ {Assert, IO} =

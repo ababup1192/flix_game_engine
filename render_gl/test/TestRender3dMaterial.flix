@@ -32,7 +32,7 @@ mod TestRender3dMaterial {
     /// 色は線形へ戻した albedo × tint × light（頂点の色は掛けない）。
     @Test
     def testAlbedoReplacesVertexColor(): Unit \ Assert =
-        Assert.assertTrue(indexOf("r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), uTint, light, emission, uEmissionIntensity, vWorld, true)", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
+        Assert.assertTrue(indexOf("r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true)", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// cutout は α が 0.5 未満を捨てる。
     @Test
@@ -93,7 +93,7 @@ mod TestRender3dMaterial {
     def testUvlessFragmentUsesConstUv(): Unit \ Assert =
         Assert.assertTrue(indexOf("const vec2 vUv = vec2(0.0, 0.0);", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
-    /// uv つきの頂点シェーダーは location 5 の uv と 6 のタンジェントを受け、タンジェントは uModel の左上 3×3 で写して w に行列式の符号を掛ける。
+    /// uv つきの頂点シェーダーは location 5 の uv と 6 のタンジェントを受け、タンジェントは model の左上 3×3 で写して w に行列式の符号を掛ける。
     @Test
     def testUvVertexSourceCarriesTangent(): Unit \ Assert =
         let source = Render3dGlsl.materialVertexSource({ skinned = false, uv = true, lightmap = false });

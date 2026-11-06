@@ -2,28 +2,29 @@
 mod Render3d.Shadow {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{ShadowCaster, ShadowPlan, isSkinned, ShadowLocs, ShadowTarget, ShadowUse, State, drawPosedMesh, matrixArray, maxShadowMapSize,
+    use Render3d.{ShadowCaster, ShadowPlan, isSkinned, ShadowLocs, ShadowTarget, ShadowUse, State, drawBatch, matrixArray, maxShadowMapSize,
                   maxShadowPcfRadius, meshDrawOf, idleTargetFrames, programsOf, blankTextureUnit, shadowTextureUnit, skinnedProgramsOf, useMeshProgram}
-    use Render3d.JointTexture.{PoseRows, withPoseRow}
+    use Render3d.Batch.{MeshBatch, PlannedBatch, shapeBatches}
+    use Render3d.JointTexture.{PoseRows, withBatchPoseRows}
     use Render3d.Counts.{Counter, count}
 
     // ── 影の地図 ──
 
     /// 影を落とすスポットがあれば、影の地図を描く材料を分ける（影だけに映る物の姿勢の行もここで rows へ割り当てる）。無ければ None。
     // WhyNot: 半透明の物に影を落とさせない — 影の地図は 0 か 1 の奥行きで、薄い色ガラスが真っ黒な影を落とす。
-    pub def shadowPlanOf(state: State, rows: Ref[PoseRows, Static], scene: Scene3d.Scene3dCmd): Option[ShadowPlan] \ IO =
+    pub def shadowPlanOf(state: State, rows: Ref[PoseRows, Static], scene: Scene3d.Scene3dCmd): Option[ShadowPlan[PlannedBatch]] \ IO =
         shadowCasterOf(state, scene) |> Option.map(caster -> {
             let outside = Scene3d.isOutsideFrustum(Scene3d.shadowFrustumOf(caster#spot));
             let (skinned, plain) = scene#instances |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)))
                 |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
-            { caster = caster, plain = plain, skinned = List.map(withPoseRow(rows), skinned) }
+            { caster = caster, plain = shapeBatches(state#drawMode, plain), skinned = shapeBatches(state#drawMode, skinned) |> List.map(withBatchPoseRows(rows)) }
         })
 
     /// 場面ごとに、plans（場面と同じ並び）の影の地図を描き、塗りへ渡す物を返す。骨つきの物は今 joint の unit に貼ってある joint texture を読む。
     /// 描き終えたら深度と scissor を切り、program と VAO を外す。描き先は呼ぶ側が戻す。
     // WhyNot: viewport をここで戻さない — glGet で前の値を読まない決まりで、この後に描く Design の場面と
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, plans: List[Option[ShadowPlan]]): List[Option[ShadowUse]] \ IO =
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, plans: List[Option[ShadowPlan[MeshBatch]]]): List[Option[ShadowUse]] \ IO =
         let usedPerSize = Ref.fresh(Static, (Map.empty(): Map[Int32, Int32]));
         let shadows = plans |> List.map(Option.map(plan -> {
             let caster = plan#caster;
@@ -102,7 +103,7 @@ mod Render3d.Shadow {
         else ()
 
     /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。ビルボードは影を落とさない。
-    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, plan: ShadowPlan): Unit \ IO =
+    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, plan: ShadowPlan[MeshBatch]): Unit \ IO =
         let locs = programsOf(gl, state)#depth;
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
         gl.viewport(0, 0, target#size, target#size);
@@ -120,7 +121,7 @@ mod Render3d.Shadow {
             let lightView = matrixArray(Scene3d.shadowMatrix(plan#caster#spot));
             let identity = matrixArray(Mat4.identity());
             useMeshProgram(gl, locs#mesh, lightView, identity);
-            plan#plain |> List.forEach(drawPosedMesh(gl, state, gen, locs#mesh));
+            plan#plain |> List.forEach(drawBatch(gl, state, gen, locs#mesh));
             // 骨つきの物は曲がった形で影を落とす（深度だけの骨つきの版を Output.Depth と共用）。
             if (List.isEmpty(plan#skinned)) ()
             else {
@@ -128,7 +129,7 @@ mod Render3d.Shadow {
                 if (skinnedDepth#mesh#program == 0) ()
                 else {
                     useMeshProgram(gl, skinnedDepth#mesh, lightView, identity);
-                    plan#skinned |> List.forEach(drawPosedMesh(gl, state, gen, skinnedDepth#mesh))
+                    plan#skinned |> List.forEach(drawBatch(gl, state, gen, skinnedDepth#mesh))
                 }
             }
         }

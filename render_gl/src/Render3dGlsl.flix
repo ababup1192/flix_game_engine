@@ -28,7 +28,7 @@ pub mod Render3dGlsl {
             meshVertexSourceOf({ declarations = colorSpaceSource(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
                                  tangent = None, uv2 = false, vertexColorToLinear = true })
 
-    /// 骨つきの版: 位置と法線を joint 行列の重みつきの和（Pose3d.jointMatrices の並び）で曲げてから uModel を掛ける。
+    /// 骨つきの版: 位置と法線を joint 行列の重みつきの和（Pose3d.jointMatrices の並び）で曲げてから model を掛ける。
     // WhyNot: 法線を skin の逆行列の転置で曲げない — 左上 3×3 のままだと倍率が軸ごとに違うジョイントで少し傾くが、
     //   CPU の描き手も同じ式なので GL と CPU の絵は一致する。その差は許す。
     pub def skinnedMeshVertexSource(): String =
@@ -68,16 +68,16 @@ pub mod Render3dGlsl {
         "layout (location = 3) in ivec4 aJoints;\n" +
         "layout (location = 4) in vec4 aWeights;\n" +
         "uniform sampler2D uJointTexture;\n" +
-        "uniform int uPoseRow;\n" +
-        "mat4 jointMatrix(int joint) {\n" +
+        "mat4 jointMatrix(int row, int joint) {\n" +
         "    int x = joint * 4;\n" +
-        "    return mat4(texelFetch(uJointTexture, ivec2(x, uPoseRow), 0), texelFetch(uJointTexture, ivec2(x + 1, uPoseRow), 0),\n" +
-        "                texelFetch(uJointTexture, ivec2(x + 2, uPoseRow), 0), texelFetch(uJointTexture, ivec2(x + 3, uPoseRow), 0));\n" +
+        "    return mat4(texelFetch(uJointTexture, ivec2(x, row), 0), texelFetch(uJointTexture, ivec2(x + 1, row), 0),\n" +
+        "                texelFetch(uJointTexture, ivec2(x + 2, row), 0), texelFetch(uJointTexture, ivec2(x + 3, row), 0));\n" +
         "}\n"
 
     def skinPrelude(): String =
-        "    mat4 skin = aWeights.x * jointMatrix(aJoints.x) + aWeights.y * jointMatrix(aJoints.y)\n" +
-        "              + aWeights.z * jointMatrix(aJoints.z) + aWeights.w * jointMatrix(aJoints.w);\n"
+        "    int poseRow = int(instanceNormal1.w);\n" +
+        "    mat4 skin = aWeights.x * jointMatrix(poseRow, aJoints.x) + aWeights.y * jointMatrix(poseRow, aJoints.y)\n" +
+        "              + aWeights.z * jointMatrix(poseRow, aJoints.z) + aWeights.w * jointMatrix(poseRow, aJoints.w);\n"
 
     def surfaceDeclarations(): String =
         "layout (location = 5) in vec2 aUv;\n" +
@@ -85,19 +85,49 @@ pub mod Render3dGlsl {
         "out vec2 vUv;\n" +
         "out vec4 vTangent;\n"
 
+    /// 頂点シェーダーへ数を渡すテクスチャの幅（texel）。
+    pub def dataTextureWidth(): Int32 = Skin3d.maxJoints() * 4
+
+    /// 1 体ごとの値の 1 体の幅（texel）。
+    pub def texelsPerInstance(): Int32 = 8
+
+    /// 1 体ごとの値のテクスチャの 1 行の体の数（dataTextureWidth は texelsPerInstance で割り切れる）。
+    pub def instancesPerRow(): Int32 = dataTextureWidth() / texelsPerInstance()
+
+    /// 1 体ごとの値のテクスチャの宣言（並びは Render3d.Instancing の頭）。
+    def instanceDeclarations(): String =
+        "uniform sampler2D uInstanceTexture;\n" +
+        "uniform int uInstanceBase;\n" +
+        "flat out vec3 vTint;\n" +
+        "flat out float vEmissionIntensity;\n"
+
+    /// main の頭: 1 体ごとの値を読む。model = world の行列・normalMatrix = 法線の行列。
+    def instancePrelude(): String =
+        let texel = (i: Int32) -> "texelFetch(uInstanceTexture, instanceAt + ivec2(${i}, 0), 0)";
+        "    int instanceIndex = uInstanceBase + gl_InstanceID;\n" +
+        "    ivec2 instanceAt = ivec2((instanceIndex % ${instancesPerRow()}) * ${texelsPerInstance()}, instanceIndex / ${instancesPerRow()});\n" +
+        "    mat4 model = mat4(${texel(0)}, ${texel(1)},\n" +
+        "                      ${texel(2)}, ${texel(3)});\n" +
+        "    vec4 instanceNormal0 = ${texel(4)};\n" +
+        "    vec4 instanceNormal1 = ${texel(5)};\n" +
+        "    vec4 instanceNormal2 = ${texel(6)};\n" +
+        "    mat4 normalMatrix = mat4(vec4(instanceNormal0.xyz, 0.0), vec4(instanceNormal1.xyz, 0.0), vec4(instanceNormal2.xyz, 0.0), vec4(0.0, 0.0, 0.0, 1.0));\n" +
+        "    vTint = ${texel(7)}.rgb;\n" +
+        "    vEmissionIntensity = instanceNormal0.w;\n"
+
     /// 置いた物の頂点シェーダーの組み立て。declarations = 足す属性と uniform・prelude = main の頭・
-    /// position = uModel を掛ける前の形の座標（vec4）・normal = uNormal を掛ける前の法線（vec3）・
-    /// tangent = uModel の左上 3×3 を掛ける前のタンジェントの xyz（vec3。uv の無い形は None で vUv・vTangent を出さない）。
-    /// タンジェントの w には uModel の左上 3×3 の行列式の符号を掛ける（鏡写しの置き方で絵の上の向きを保つ）。
+    /// position = model を掛ける前の形の座標（vec4）・normal = normalMatrix を掛ける前の法線（vec3）・
+    /// tangent = model の左上 3×3 を掛ける前のタンジェントの xyz（vec3。uv の無い形は None で vUv・vTangent を出さない）。
+    /// タンジェントの w には model の左上 3×3 の行列式の符号を掛ける（鏡写しの置き方で絵の上の向きを保つ）。
     /// vertexColorToLinear = 頂点の色を r3d_srgbToLinear3 に通すか（declarations に colorSpaceSource() を入れる）。
-    // WhyNot: タンジェントを uNormal で写さない — 法線の行列は面に垂直な向きを保つための物で、面の上の向きは uModel のまま写る。
+    // WhyNot: タンジェントを normalMatrix で写さない — 法線の行列は面に垂直な向きを保つための物で、面の上の向きは model のまま写る。
     def meshVertexSourceOf(parts: { declarations = String, prelude = String, position = String, normal = String,
                                     tangent = Option[String], uv2 = Bool, vertexColorToLinear = Bool }): String =
         let surfaceBody = match parts#tangent {
             case None    => ""
             case Some(t) =>
                 "    vUv = aUv;\n" +
-                "    mat3 modelLinear = mat3(uModel);\n" +
+                "    mat3 modelLinear = mat3(model);\n" +
                 "    vTangent = vec4(modelLinear * (" + t + "), aTangent.w * sign(determinant(modelLinear)));\n"
         };
         "#version 330 core\n" +
@@ -105,18 +135,18 @@ pub mod Render3dGlsl {
         "layout (location = 1) in vec3 aNormal;\n" +
         "layout (location = 2) in vec3 aColor;\n" +
         parts#declarations +
-        "uniform mat4 uModel;\n" +
+        instanceDeclarations() +
         "uniform mat4 uView;\n" +
         "uniform mat4 uProj;\n" +
-        "uniform mat4 uNormal;\n" +
         "out vec3 vWorld;\n" +
         "out vec3 vNormal;\n" +
         "out vec3 vColor;\n" +
         "void main() {\n" +
+        instancePrelude() +
         parts#prelude +
-        "    vec4 world = uModel * " + parts#position + ";\n" +
+        "    vec4 world = model * " + parts#position + ";\n" +
         "    vWorld = world.xyz;\n" +
-        "    vNormal = (uNormal * vec4(" + parts#normal + ", 0.0)).xyz;\n" +
+        "    vNormal = (normalMatrix * vec4(" + parts#normal + ", 0.0)).xyz;\n" +
         (if (parts#vertexColorToLinear) "    vColor = r3d_srgbToLinear3(aColor);\n" else "    vColor = aColor;\n") +
         surfaceBody +
         (if (parts#uv2) "    vUv2 = aUv2;\n" else "") +
@@ -228,13 +258,13 @@ pub mod Render3dGlsl {
         "in vec3 vWorld;\n" +
         "in vec3 vNormal;\n" +
         "in vec3 vColor;\n" +
+        "flat in vec3 vTint;\n" +
         "out vec4 fragColor;\n" +
-        "uniform vec3 uTint;\n" +
         colorSpaceSource() +
         lightSource() +
         "void main() {\n" +
         "    vec3 n = normalize(vNormal);\n" +
-        "    fragColor = vec4(r3d_surfaceOut(vColor, uTint, lightAt(vWorld, n), vec3(0.0), 1.0, vWorld, true), 1.0);\n" +
+        "    fragColor = vec4(r3d_surfaceOut(vColor, vTint, lightAt(vWorld, n), vec3(0.0), 1.0, vWorld, true), 1.0);\n" +
         "}\n"
 
     /// 材質の frag。光の式は litFragmentSource と同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は
@@ -260,13 +290,13 @@ pub mod Render3dGlsl {
         "in vec3 vWorld;\n" +
         "in vec3 vNormal;\n" +
         "in vec3 vColor;\n" +
+        "flat in vec3 vTint;\n" +
+        "flat in float vEmissionIntensity;\n" +
         (if (surface#uv) "in vec2 vUv;\n" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
         (if (surface#lightmap) "in vec2 vUv2;\n" else "") +
         "out vec4 fragColor;\n" +
-        "uniform vec3 uTint;\n" +
         "uniform int uCutout;\n" +
         "uniform int uDepthOut;\n" +
-        "uniform float uEmissionIntensity;\n" +
         colorSpaceSource() +
         lightSource() +
         depthGraySource() +
@@ -290,7 +320,7 @@ pub mod Render3dGlsl {
             "    vec3 light = lightmapLightAt(vWorld, " + normal + ", lightmapColor());\n"
          else
             "    vec3 light = lightAt(vWorld, " + normal + ");\n") +
-        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), uTint, light, emission, uEmissionIntensity, vWorld, true), " + alpha + ");\n" +
+        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true), " + alpha + ");\n" +
         "}\n"
 
     /// ベイクした光の uniform と、lightmap の絵の読み（lightmapColor）と、lightmap のある面の光の式（lightmapLightSource）。

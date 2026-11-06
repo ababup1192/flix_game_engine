@@ -35,6 +35,10 @@ mod LwjglEnv {
         warnUnreadablePortrait(env, settings);
         settings
 
+    /// 3D の置いた物の描き方。FGE_INSTANCING=off は全部の物を batch にせず、物ごとの材質で来た順に描く（batch の鍵と順の確かめの比べ相手）。
+    pub def drawMode(): Render3d.DrawMode \ IO =
+        if (Map.get("FGE_INSTANCING", snapshot()) == Some("off")) Render3d.DrawMode.OneByOne else Render3d.DrawMode.Instanced
+
     /// 今のプロセスの環境変数を丸ごと表にする（render_gl の中で環境変数を読むのはここだけ）。
     /// mod が pub でないので、ゲームからは見えない（ゲームは engine_world の ProcessEnv.snapshot）。
     // WhyNot: engine_world の ProcessEnv.snapshot を呼ばない — 層は engine と自分のソースしか見ないので、render_gl から engine_world は見えない。

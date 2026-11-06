@@ -60,7 +60,7 @@ public final class LwjglGl implements GlContext {
     public void drawArraysInstanced(int mode, int first, int count, int instanceCount) {
         GL31.glDrawArraysInstanced(mode, first, count, instanceCount);
     }
-    public void drawElements(int mode, int count, int type, int offset) { GL11.glDrawElements(mode, count, type, (long) offset); }
+    public void drawElementsInstanced(int mode, int count, int type, int offset, int instanceCount) { GL31.glDrawElementsInstanced(mode, count, type, (long) offset, instanceCount); }
 
     public int createTexture() { return GL11.glGenTextures(); }
     public void deleteTexture(int texture) { GL11.glDeleteTextures(texture); }

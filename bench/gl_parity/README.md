@@ -18,6 +18,10 @@ make -C bench/gl_parity run   # ここから直接でも同じ
 - 不一致の絵は `debug/diff/` に「GL | Soft | 違いヒート」で並ぶ。
   GL の絵は `debug/gl/`、SoftRaster の絵は `debug/soft/`。
 
+- `FGE_INSTANCING=off make gl-parity` は 3D の物を batch にせず、物ごとの材質で来た順に 1 体ずつ描く。`debug/gl/` の SHA を on と比べる。
+  `sameDepthOrder3d` だけは割れるのが正しい（同じ深さの面の順を見る場面）ので比べから外す。ほかが全部同じなら、`batchKeys3d` が見ている鍵の欄（`params`・`wrap`・`cutout`・法線マップの強さ・絵の名前）に漏れが無い。
+  欄を外すと割れる事は `params` で確かめた（`batchKeys3d` の差 40 → 572 px で `make gl-parity` も落ちる）。ほかの欄は同じ形の場面にしてあるだけで、外して確かめてはいない。
+
 ## 線引き
 
 何が「バイト一致」で何が「近似」かは docs/backend-parity.md の表が正典。

@@ -554,3 +554,40 @@ mip copy（登録の絵の読み戻し）はこのゲームでは一度も起き
 - conduit_hive の写しの測り（前 / 後）: horde-waves300 の submit 4.65 / 4.67 ms・horde1000 の submit 7.15 / 6.91 ms・1 コマ 12.38 / 12.19 ms。悪化は無い。jointUploads の実数はまだ無い。
 - 目標の submit ≤ 4.5 ms は B の時点で届いていない。A で見る。
 - A へ: 行は `MeshDraw#poseRow` に入っている（`uPoseRow` へ入れるのは `drawPosedMesh` の 1 か所）。batch は `Render3d.ScenePlan.planScene` と `Render3d.Shadow.shadowPlanOf` の出口で組める（骨つきの物は `SceneDraws#skinned`。draw の中に残る並べは半透明だけ（A の batch の外）。骨つきの物は今は間引かれない（`isOutsideFrustumFields`）ので、画面の外の敵も描く）。`materialOrderOf` と `SceneDraws#skinned` の姿勢の鍵は、同じ深さの面の勝ち方を変えないためだけに残っている。
+
+## 12. A の結果（2026-11-06）
+
+- 入れた物: `Render3d.Batch`（batch の鍵と分け方・GL は呼ばない）・`Render3d.Instancing`（1 体ごとの値を詰めて上げる）・`Render3d.DataTexture`（joint texture と同じ回し方を共有）。`SceneDraws[b]`・`ShadowPlan[b]`・`MaterialBatch[b]` は、番号を振る前の `PlannedBatch` と後の `MeshBatch` で型が分かれる。GlContext の `drawElements` は `drawElementsInstanced` へ替えた。`uModel`・`uNormal`・`uTint`・`uEmissionIntensity`・`uPoseRow` は消えて、`uInstanceBase`・`uInstanceTexture` だけになった。
+- **置き場は計画の推しと違い RGBA32F texture**（unit 11・1 体 8 texel）。スパイクの数（300 個の形の違う draw・M4 Pro）: デスクトップの GL は属性も texture も submit 0.25 ms で同じ。WebGL2（ANGLE Metal）は属性 0.14 ms・texture 0.04 ms（今の uniform と同じ）で、1 コマの合計も 0.84 / 0.63 ms。300 体 × 4,000 頂点の 1 draw の時間は同じ（0.9 ms）。毎コマの `texSubImage2D` の代金は 5 µs ほど。MAX_VERTEX_ATTRIBS はどちらも 16 で、属性の案は使い切る。mesh の VAO も変えずに済む。
+- 計画との違い: 並びは (batch key, 元の添え字) でなく「batch の頭の物が来た順」。絵の名前は鍵に入れず、同じ鍵の中で材質の木が別の値の時だけ `groupByTextures` で分ける。`FGE_INSTANCING=off` は全部の物を batch にせず、物ごとの材質で来た順に描く（`DrawMode.OneByOne`・材質のプログラムの順にも並べない）。鍵の漏れと順の変化の両方が on / off の差に出る。
+- 確保した高さは縮めない（`DataTexture.takeTexture` の WhyNot）。上の確保は高さが足りない時だけで、高さは 16 から倍々に増える。
+
+### ゲート
+
+- `make baseline-check ONLY_KNOWN=1` は基準と同じ（GL の絵の SHA の差 0 枚）。足した 5 場面（`skinCrowd`・`skinCrowdRows`・`instanceRows`・`batchKeys3d`・`sameDepthOrder3d`）を基準に入れるのは人が認めた（基準の撮り直しはリリースの時）。
+- on / off: gl-parity の 51 枚のうち `sameDepthOrder3d` の 1 枚を除いて SHA が全部同じ。off は A の前（0786d1ca）の描き方で撮った 51 枚と全部同じ。
+- `sameDepthOrder3d`（同じ平面の形 X・Y・X）は on と off の SHA が割れるのが正しいので、全一致の比べから外す。on は X・X・Y の順なので重なりの勝ち方が変わる。CPU との差は A の前と off が 104 px、on が 314 px。この順の変更は人が認めた。
+- off の検出力: `batchKeys3d`（同じ形の板に `params`・`wrap`・`cutout`・法線マップの強さ・絵の名前を 1 つずつ変えた材質）で、鍵から `m#params` を外した版を 1 回組むと、on と off の SHA が `batchKeys3d` で割れ、CPU との差は 40 → 572 px で `make gl-parity` が exit 2 で落ちた（戻してある）。ほかの欄は外して確かめていない。場面を 2 つに分けたのは、X・Y・X を同じ絵に入れると on と off の SHA がいつも割れて、鍵の漏れを SHA で見られないため。
+- 許容は A の前の測りから: `skinCrowd` 797 px → 1000・`skinCrowdRows` 42 px → 100・`instanceRows` 178 px → 250・`batchKeys3d` 40 px → 100・`sameDepthOrder3d` 104 px（on は 314 px）→ 400。
+- `instanceRows` の 600 体で、unit 11 の高さ 16 のテクスチャを 32 へ確保し直す事を GL の控え（`texImageRgba32f 256 32`）で確かめた。
+- 遊びの途中の shaderBuilds: conduit_hive の写しの horde-waves300 の 18 回（A の後 9 回・0.87.0 9 回）と horde50 の 6 回の重いコマの行は全部 `shaders=0`。先に上げた物を描いて `createProgram` が増えない事はテストでも固定した。
+- night_apartment はこの機械に無いので、代わりに `bench/scene3d` の写しへ形の違う箱 300 個（batch にならない draw）を足して測った（/perf の flow でなく bench の窓。交互に 3 回を 2 組）。submit の中央値 1.354 → 1.377 ms（+1.7%）・Split + Draw 0.825 → 0.841 ms。
+- `bench/scene3d`（交互に 3 回を 2 組・2 組目は順を入れ替え。全部で 18 区間ずつ）: p50 の中央値 1.060 → 1.115 ms（+5.2%）・その前の測り 1.085 → 1.135 ms（+4.6%）。**5% の線の上。人が受け入れた。** submit 0.669 → 0.719 ms。Split + Draw は 0.174 → 0.196 ms（+0.02 ms）で、submit から Split と Draw を引いた残りが 0.495 → 0.522 ms（+0.03 ms）。残りは `texSubImage` を止めた版でも 0.533 ms（止めない版の同じ時の測りは 0.532 ms）で変わらないので、送りは原因でない。GL の呼び出しは 1 コマ 135 → 97 本に減っている。原因は分かっていない。
+- ブラウザ: `export-web` の TeaVM の ERROR 0 件。fps3d_lab の写しは getError 0 件（125,032 回の呼び出し）・差 2/255 以下 99.938〜99.943%（線 99.9%）。差 0 の割合は 99.85% から 99.70% へ下がった（一番大きい差は 45/255 のまま）。原因は確かめていない。
+- 未解決: `web-capture` が頁の合図を待ち切れない事が、A の後の頁で約 30 回に 5 回あった（A の前の頁は 11 回に 0 回）。撮り直すと同じ絵が撮れる。頁が止まった理由は調べていない。
+
+### horde-waves300（conduit_hive の写し・60 秒）
+
+下の表は最後の組（0.87.0 と A の最終の版を交互に 3 回ずつ）の幅。前の 2 組（同じく 3 回ずつ）も同じ位置に出た。
+
+| | 0.87.0 | A の後 | 目標 |
+|---|---|---|---|
+| submit の中央値 | 4.41〜4.63 ms | 3.78〜3.90 ms | ≤ 3.5 ms（届いていない） |
+| submit の p95 | 6.95〜7.15 ms | 5.72〜6.19 ms | ≤ 5 ms（届いていない） |
+| work の中央値 | 6.71〜7.05 ms | 6.07〜6.27 ms | ≤ 9.5 ms |
+| work の p95 | 9.50〜9.87 ms | 8.31〜8.88 ms | ≤ 12 ms |
+| draw call | 269〜286 | 136〜148 | ≤ 80（届いていない） |
+
+- horde50（60 秒・交互に 3 回ずつ）: work の中央値は 0.87.0 が 5.11・5.61・4.35 ms、A の後が 5.22・4.36・4.02 ms。回ごとの揺れが大きいが、3 回の中央値で 5.11 → 4.36 ms で、悪化 2% 以内の門は通った。draw call 96 → 51。
+- 前の測りの submit 61.4 ms のコマは再現しなかった（別のレビュー役が動いていた時の値）。submit の最大は、3 組 9 回ずつで A の後 11.1〜24.6 ms・0.87.0 10.4〜32.9 ms。30 ms 前後の遅いコマは 0.87.0 にも出るので、A に固有の物ではない。data texture の確保し直しを疑う数は無いので、確保の作りは変えていない。
+- draw call の内訳（ある回の 400 コマごとの中央値）: 敵は 2 本（56 体と 82 体など）。残りは 半透明 28 本（batch にしない）・材質の物 18 本（ほとんど 1〜3 体の小物）・頂点の色の物 9 本・HUD の 3D 4 本・ビルボード（置いた数の中央値 193。全体から引いた推定で約 80 本。描いた数を直には数えていない）。80 本以下へはビルボードの batch（A2）が要り、半透明は遠い順を守る限り減らない。

@@ -1,33 +1,10 @@
 // joint texture（Render3d.JointTexture）の、行の割り当て・高さ・詰め方と、1 回の prepare につき 1 回だけ上げること。GL は呼び出しを控える偽物。
 mod Render3d.TestJointTexture {
-    import fge.gl.GlContext
-    import fge.gl.GlConst
     import fge.gl.RecordingGl
-    import java.lang.Boolean
-    import java.io.ByteArrayOutputStream
-    import java.io.PrintStream
-    import java.lang.Integer
-    import java.lang.Object
-    import java.lang.RuntimeException
-    import java.lang.System
-    import java.lang.reflect.InvocationHandler
-    import java.lang.reflect.Method
-    import java.lang.reflect.Proxy
     import java.nio.FloatBuffer
-    import java.nio.IntBuffer
-    use Render3d.JointTexture.{assignRow, heightFor, noRows, packRows, upload, withPoseRow}
-
-    def oneJointSkin(): Skin3d.Skin3d =
-        let rest = { translation = Vec3.zero(), rotation = Quat.identity(), scale = Vec3.one() };
-        match Skin3d.make({ names = Vector#{ "root" }, parents = Vector#{ -1 }, rest = Vector#{ rest }, inverseBinds = None, rootTransform = Mat4.identity() }) {
-            case Ok(skin) => skin
-            case Err(e)   => bug!(e)
-        }
-
-    /// ジョイント 1 本を x へ動かした姿勢（joint 行列の 13 個目の数が x）。
-    def poseAt(x: Float64): Pose3d.Pose3d =
-        let rest = { translation = Vec3.zero(), rotation = Quat.identity(), scale = Vec3.one() };
-        Pose3d.compute(oneJointSkin(), Vector#{ { translation = Vec3.v3(x, 0.0, 0.0) | rest } })
+    use Render3d.DataTexture.{heightFor}
+    use Render3d.FakeGl.{cmdOf, dest, freshRecorded, freshState, noTexture, paint, paintTo, passDest, poseAt, recordingGl, sceneOf, shadowSpot, skinnedAt, stderrOf, timesCalled, viewport}
+    use Render3d.JointTexture.{assignRow, noRows, packRows, upload, withPoseRow}
 
     /// n 本のジョイントが親から順につながった姿勢（どの joint 行列も x だけ動く）。
     def poseWithJoints(n: Int32, x: Float64): Pose3d.Pose3d =
@@ -127,89 +104,6 @@ mod Render3d.TestJointTexture {
 
     // ── 上げる（呼び出しを控える偽の GL の上で）──
 
-    /// 控えた呼び出し。calls = 名前（新しい物が頭）・allocated = texImageRgba32f の高さ（新しい物が頭）・
-    /// uploaded = texSubImageRgba32f の (行の数, 行ごとの x)（新しい物が頭）・uploadWidths = texSubImageRgba32f の幅（新しい物が頭）・
-    /// poseRows = uPoseRow へ入れた値（新しい物が頭）・jointBinds = joint の unit へ貼ったテクスチャ（新しい物が頭）・
-    /// activeUnit = 今の unit・targets = 描き先へ戻した bindFramebuffer の番号（新しい物が頭）。
-    type alias Recorded = { calls = Ref[List[String], Static], allocated = Ref[List[Int32], Static], uploaded = Ref[List[(Int32, List[Float32])], Static],
-                            uploadWidths = Ref[List[Int32], Static], poseRows = Ref[List[Int32], Static], jointBinds = Ref[List[Int32], Static],
-                            activeUnit = Ref[Int32, Static], targets = Ref[List[Int32], Static] }
-
-    def freshRecorded(): Recorded \ IO =
-        { calls = Ref.fresh(Static, Nil), allocated = Ref.fresh(Static, Nil), uploaded = Ref.fresh(Static, Nil), uploadWidths = Ref.fresh(Static, Nil),
-          poseRows = Ref.fresh(Static, Nil), jointBinds = Ref.fresh(Static, Nil), activeUnit = Ref.fresh(Static, 0), targets = Ref.fresh(Static, Nil) }
-
-    /// getUniformLocation("uPoseRow") の番号。
-    def poseRowLocation(): Int32 = 77
-
-    def intArg(args: Array[Object, Static], i: Int32): Int32 \ IO =
-        let boxed = Array.get(i, args);
-        (unchecked_cast(boxed as Integer)).intValue()
-
-    def stringArg(args: Array[Object, Static], i: Int32): String \ IO =
-        let boxed = Array.get(i, args);
-        unchecked_cast(boxed as String)
-
-    def bufferArg(args: Array[Object, Static], i: Int32): FloatBuffer \ IO =
-        let boxed = Array.get(i, args);
-        unchecked_cast(boxed as FloatBuffer)
-
-    def note(log: Recorded, name: String, args: Array[Object, Static]): Unit \ IO =
-        Ref.put(name :: Ref.get(log#calls), log#calls);
-        match name {
-            case "texImageRgba32f"    => Ref.put(intArg(args, 1) :: Ref.get(log#allocated), log#allocated)
-            case "texSubImageRgba32f" =>
-                let rowCount = intArg(args, 3);
-                let pixels = bufferArg(args, 4);
-                let stride = intArg(args, 2) * 4;
-                Ref.put(intArg(args, 2) :: Ref.get(log#uploadWidths), log#uploadWidths);
-                Ref.put((rowCount, List.range(0, rowCount) |> List.map(r -> pixels.get(r * stride + 12))) :: Ref.get(log#uploaded), log#uploaded)
-            case "activeTexture"   => Ref.put(intArg(args, 0), log#activeUnit)
-            case "bindTexture"     =>
-                if (Ref.get(log#activeUnit) == GlConst.TEXTURE0 + Render3d.jointTextureUnit()) Ref.put(intArg(args, 1) :: Ref.get(log#jointBinds), log#jointBinds) else ()
-            case "uniform1i"       =>
-                if (intArg(args, 0) == poseRowLocation()) Ref.put(intArg(args, 1) :: Ref.get(log#poseRows), log#poseRows) else ()
-            case "bindFramebuffer" => Ref.put(intArg(args, 1) :: Ref.get(log#targets), log#targets)
-            case _ => ()
-        }
-
-    /// 何も描かない GL。create で始まる呼び出しは連番、FBO の検査は完成、テクスチャの高さの上限は 4096、ほかは 1 と偽を返す。
-    def recordingGl(log: Recorded): GlContext \ IO =
-        let next = Ref.fresh(Static, 1);
-        let answers = new InvocationHandler {
-            def invoke(_this: InvocationHandler, _proxy: Object, method: Method, args: Array[Object, Static]): Object \ IO =
-                let name = method.getName();
-                note(log, name, args);
-                let asksPoseRow = name == "getUniformLocation" and stringArg(args, 1) == "uPoseRow";
-                match method.getReturnType().getName() {
-                    case "int" if String.startsWith(prefix = "create", name) =>
-                        Ref.put(Ref.get(next) + 1, next);
-                        checked_cast(Integer.valueOf(Ref.get(next)))
-                    case "int" if name == "checkFramebufferStatus" => checked_cast(Integer.valueOf(GlConst.FRAMEBUFFER_COMPLETE))
-                    case "int" if name == "getInteger"             => checked_cast(Integer.valueOf(4096))
-                    case "int" if asksPoseRow                      => checked_cast(Integer.valueOf(poseRowLocation()))
-                    case "int"                                     => checked_cast(Integer.valueOf(1))
-                    case "boolean"                                 => checked_cast(Boolean.valueOf(false))
-                    case "java.nio.IntBuffer"                      => checked_cast(IntBuffer.allocate(1))
-                    case "java.nio.FloatBuffer"                    => checked_cast(FloatBuffer.allocate(intArg(args, 0)))
-                    case _                                         => checked_cast(null)
-                }
-        };
-        let recording = (new RecordingGl(unchecked_cast(null as GlContext))).getClass();
-        unchecked_cast(Proxy.newProxyInstance(recording.getClassLoader(), recording.getInterfaces(), answers) as GlContext)
-
-    def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 1, count = 1 })
-
-    /// f が標準エラーへ書いた字（f が投げた例外はそのまま投げ直す）。
-    def stderrOf(f: Unit -> Unit \ IO): String \ IO =
-        let saved = System.err;
-        let buffer = new ByteArrayOutputStream();
-        System.setErr(new PrintStream(buffer, true, "UTF-8"));
-        let failure = try { f(); None } catch { case ex: RuntimeException => Some(ex) };
-        System.setErr(saved);
-        failure |> Option.forEach(ex -> throw ex);
-        buffer.toString("UTF-8")
-
     /// 0.0 から 1.0 ずつ違う姿勢を n 個並べた割り当て。
     def rowsOfCount(n: Int32): Render3d.JointTexture.PoseRows =
         snd(rowsFrom(List.range(0, n) |> List.map(i -> poseAt(Int32.toFloat64(i)))))
@@ -229,9 +123,9 @@ mod Render3d.TestJointTexture {
         let gl = recordingGl(log);
         let state = freshState();
         discard upload(gl, state, 1i64, rowsOfCount(16));
-        Render3d.JointTexture.endFrame(gl, state, 1i64);
-        Render3d.JointTexture.endFrame(gl, state, 2i64);
-        Render3d.JointTexture.endFrame(gl, state, 3i64);
+        Render3d.DataTexture.endFrame(gl, state#joints, 1i64);
+        Render3d.DataTexture.endFrame(gl, state#joints, 2i64);
+        Render3d.DataTexture.endFrame(gl, state#joints, 3i64);
         discard upload(gl, state, 4i64, rowsOfCount(17));
         let (rowCount, xs) = List.head(Ref.get(log#uploaded)) |> Option.getWithDefault((0, Nil));
         Assert.assertEq(expected = (32 :: 16 :: Nil, 17, Some(0.0f32), Some(16.0f32), 1),
@@ -244,9 +138,9 @@ mod Render3d.TestJointTexture {
         let gl = recordingGl(log);
         let state = freshState();
         discard upload(gl, state, 1i64, rowsOfCount(16));
-        Render3d.JointTexture.endFrame(gl, state, 1i64);
-        Render3d.JointTexture.endFrame(gl, state, 2i64);
-        Render3d.JointTexture.endFrame(gl, state, 3i64);
+        Render3d.DataTexture.endFrame(gl, state#joints, 1i64);
+        Render3d.DataTexture.endFrame(gl, state#joints, 2i64);
+        Render3d.DataTexture.endFrame(gl, state#joints, 3i64);
         discard upload(gl, state, 4i64, rowsOfCount(2));
         Assert.assertEq(expected = 16 :: Nil, Ref.get(log#allocated))
 
@@ -292,7 +186,7 @@ mod Render3d.TestJointTexture {
         let frame = (gen: Int64) -> {
             let first = upload(gl, state, gen, rowsOfCount(1));
             let second = upload(gl, state, gen, rowsOfCount(1));
-            Render3d.JointTexture.endFrame(gl, state, gen);
+            Render3d.DataTexture.endFrame(gl, state#joints, gen);
             (first, second)
         };
         let one = frame(1i64);
@@ -309,57 +203,13 @@ mod Render3d.TestJointTexture {
         let gl = recordingGl(log);
         let state = freshState();
         discard upload(gl, state, 1i64, rowsOfCount(1));
-        Render3d.JointTexture.endFrame(gl, state, 1000i64);
+        Render3d.DataTexture.endFrame(gl, state#joints, 1000i64);
         Assert.assertEq(expected = (0, true), (Map.size(Ref.get(state#joints#texturesRef)), List.memberOf("deleteTexture", Ref.get(log#calls))))
 
     // ── 1 回の prepare につき 1 回（Render3d.prepareNumbered を通して）──
 
-    /// ジョイント 1 本で曲げる三角形。
-    def skinnedTriangle(): Mesh3d.Mesh3d =
-        match Mesh3d.fromArrays({ positions = Vector#{ 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0 }, normals = Vector#{ 0.0, 0.0, -1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0 },
-                                  colors = Vector#{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 }, indices = Vector#{ 0, 1, 2 },
-                                  skin = Some({ joints = Vector#{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, weights = Vector#{ 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0 } }) }) {
-            case Ok(mesh) => mesh
-            case Err(e)   => bug!(e)
-        }
-
-    def skinnedAt(pose: Pose3d.Pose3d): Scene3d.Instance3d =
-        Scene3d.meshInstance(skinnedTriangle(), Mat4.identity()) |> Scene3d.withPose(pose)
-
-    def camera(): Camera3d.Camera3d =
-        { eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }
-
-    def sceneOf(instances: List[Scene3d.Instance3d]): Scene3d.Scene3dCmd =
-        { instances = instances | Scene3d.scene(camera(), { x = 64.0, y = 64.0 }) }
-
-    def cmdOf(scene: Scene3d.Scene3dCmd): Scene3d.RenderCmd =
-        { scene = scene, at = Vec2.zero(), clip = None }
-
-    def shadowSpot(): Scene3d.SpotLight =
-        { position = Vec3.v3(0.0, 5.0, 0.0), target = Vec3.zero(), fovY = 1.0, innerFovY = None, color = { r = 1.0, g = 1.0, b = 1.0 },
-          intensity = 1.0, range = 40.0, shadow = Some({ mapSize = 64, bias = 0.001, pcfRadius = 0, strength = 1.0 }) }
-
-    def dest(): Scene3dRenderer.Dest = { framebuffer = 0, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }
-
-    /// HDR の Pass の中で準備する時の描き先。
-    def passDest(): Scene3dRenderer.Dest = { framebuffer = 7, format = RenderTarget.Format.Rgba16Float, samples = 4 }
-
-    def noTexture(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
-
-    def viewport(): Scene3dRenderer.Viewport = { x = 0, y = 0, width = 64, height = 64, scaleX = 1.0, scaleY = 1.0 }
-
-    /// 1 回の prepare で場面を準備して、全部の場面を描く。
-    def paintTo(gl: GlContext, state: Render3d.State, target: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): Unit \ IO =
-        let prepared = Render3d.prepareNumbered(gl, state, 1i64, noTexture, target, cmds);
-        List.range(0, List.length(cmds)) |> List.forEach(i -> prepared#draw(viewport(), i))
-
-    def paint(gl: GlContext, state: Render3d.State, cmds: List[Scene3d.RenderCmd]): Unit \ IO = paintTo(gl, state, dest(), cmds)
-
-    def timesCalled(name: String, log: Recorded): Int32 \ IO =
-        Ref.get(log#calls) |> List.count(called -> called == name)
-
     /// 同じコマに Pass の描き先の場面・Design の場面・影を落とす場面の prepare が 3 回あると、上げるのは 3 回で、テクスチャも 3 枚。
-    /// 同じ姿勢を 4 体描いても増えない。描く数 = Pass 4 + Design 4 + 影の場面の色 4 + 影の地図 4。影の地図を描いた後は描き先を Pass の番号へ戻さず画面へ戻す。
+    /// 同じ姿勢を 4 体描いても増えない。draw は Pass・Design・影の場面の色・影の地図の 1 本ずつで、どれも 4 体。影の地図を描いた後は描き先を Pass の番号へ戻さず画面へ戻す。
     @Test
     def testEachPrepareUploadsOnce(): Unit \ {Assert, IO} =
         let log = freshRecorded();
@@ -370,18 +220,9 @@ mod Render3d.TestJointTexture {
         paintTo(gl, state, passDest(), cmdOf(sceneOf(crowd)) :: Nil);
         paintTo(gl, state, passDest(), cmdOf({ resolution = Scene3d.Resolution.Design | sceneOf(crowd) }) :: Nil);
         paint(gl, state, cmdOf({ spotLights = shadowSpot() :: Nil | sceneOf(crowd) }) :: Nil);
-        Assert.assertEq(expected = (3, 3, 3, 16, 1, Some(0)),
+        Assert.assertEq(expected = (3, 3, 3, 4 :: 4 :: 4 :: 4 :: Nil, 1, Some(0)),
             (Render3d.Counts.takeCounts(state)#jointUploads, List.length(Ref.get(log#uploaded)), Map.size(Ref.get(state#joints#texturesRef)),
-             timesCalled("drawElements", log), timesCalled("texImageDepth24", log), List.head(Ref.get(log#targets))))
-
-    /// 違う姿勢の 2 体は、uPoseRow にそれぞれの行が入る。
-    @Test
-    def testEachDrawPointsAtItsPoseRow(): Unit \ {Assert, IO} =
-        let log = freshRecorded();
-        let gl = recordingGl(log);
-        let state = freshState();
-        paint(gl, state, cmdOf(sceneOf(skinnedAt(poseAt(1.0)) :: skinnedAt(poseAt(2.0)) :: Nil)) :: Nil);
-        Assert.assertEq(expected = 0 :: 1 :: Nil, List.sort(Ref.get(log#poseRows)))
+             Ref.get(log#instanceCounts), timesCalled("texImageDepth24", log), List.head(Ref.get(log#targets))))
 
     /// prepare A → prepare B → A の draw の順でも、A の draw は A のテクスチャを貼ってから描く。
     @Test
@@ -403,7 +244,7 @@ mod Render3d.TestJointTexture {
         let state = freshState();
         let empty = { resolution = Scene3d.Resolution.Design, size = { x = 0.0, y = 0.0 } | sceneOf(skinnedAt(poseAt(1.0)) :: Nil) };
         paint(gl, state, cmdOf(empty) :: Nil);
-        Assert.assertEq(expected = (0, 0, 0), (timesCalled("drawElements", log), timesCalled("drawArrays", log), timesCalled("createFramebuffer", log)))
+        Assert.assertEq(expected = (0, 0, 0), (timesCalled("drawElementsInstanced", log), timesCalled("drawArrays", log), timesCalled("createFramebuffer", log)))
 
     /// 1 画素に満たない Design の場面は 1 画素の描き先へ描く（CPU の描き手と同じ）。
     @Test
@@ -413,7 +254,7 @@ mod Render3d.TestJointTexture {
         let state = freshState();
         let tiny = { resolution = Scene3d.Resolution.Design, size = { x = 0.4, y = 0.4 } | sceneOf(skinnedAt(poseAt(1.0)) :: Nil) };
         discard Render3d.prepareNumbered(gl, state, 1i64, noTexture, dest(), cmdOf(tiny) :: Nil);
-        Assert.assertEq(expected = 1, timesCalled("drawElements", log))
+        Assert.assertEq(expected = 1, timesCalled("drawElementsInstanced", log))
 
     /// 1 回の prepare の 2 つの場面が同じ姿勢なら、行は 1 つで上げるのも 1 回。
     @Test
@@ -433,4 +274,6 @@ mod Render3d.TestJointTexture {
         let state = freshState();
         paint(gl, state, cmdOf(sceneOf(Nil)) :: Nil);
         Assert.assertEq(expected = (0, Nil), (Render3d.Counts.takeCounts(state)#jointUploads, Ref.get(log#allocated)))
+
+
 }

@@ -149,9 +149,9 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"m", "f", "c", "n"}, script = "fgeGl.drawArraysInstanced(m, f, c, n);")
     private static native void jsDrawArraysInstanced(int mode, int first, int count, int instanceCount);
     public void drawArraysInstanced(int mode, int first, int count, int instanceCount) { jsDrawArraysInstanced(mode, first, count, instanceCount); }
-    @JSBody(params = {"m", "c", "t", "o"}, script = "fgeGl.drawElements(m, c, t, o);")
-    private static native void jsDrawElements(int mode, int count, int type, int offset);
-    public void drawElements(int mode, int count, int type, int offset) { jsDrawElements(mode, count, type, offset); }
+    @JSBody(params = {"m", "c", "t", "o", "n"}, script = "fgeGl.drawElementsInstanced(m, c, t, o, n);")
+    private static native void jsDrawElementsInstanced(int mode, int count, int type, int offset, int instanceCount);
+    public void drawElementsInstanced(int mode, int count, int type, int offset, int instanceCount) { jsDrawElementsInstanced(mode, count, type, offset, instanceCount); }
 
     // ── テクスチャと sampler ──
     @JSBody(script = "return fgeNew(fgeGl.createTexture());")

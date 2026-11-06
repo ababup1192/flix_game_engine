@@ -46,7 +46,7 @@ mod Render3d.TestPreload {
 
     def noTexture(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
 
-    def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 1, count = 1 })
+    def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 1, count = 1 }, Render3d.DrawMode.Instanced)
 
     /// cmds を順に上げて、置き場の形の数を返す。
     def meshesAfter(cmds: List[Scene3d.PreloadCmd]): Int32 \ IO =

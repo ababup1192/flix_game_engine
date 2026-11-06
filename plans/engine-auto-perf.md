@@ -112,6 +112,7 @@ pub def withPreload3d(plan: { key = w -> GameEngine.StaticKey, instances = w -> 
 - 足した口: `App.withPreload3d({ key, instances, textures }, app)`。初めて出る物を視錐台の外へ毎コマ置いていたゲームは、その物を `instances` へ、読む `tex3d:` の絵を `textures` へ移して消せる。骨つきの物は姿勢を外さず渡すと、骨つきの版も組める。描く時は今まで通り場面の `textures` にも載せる。
 - 壊れる所: `Platform.Draw3d` に `preload3d` を足した。`handler Platform.Draw3d` を手で書いているテストは `def preload3d(_cmd, k) = k(())` を足す。`Platform.runNoopDraw3d` を使う所は直さなくてよい。
 - `Scene3dRenderer.Renderer` に `preload` の欄を足した。手で組む描き手は `Scene3dRenderer.none()` を土台にするか、`preload = (_, _, _) -> checked_ecast(())` を足す。
+- 絵: 3D の同じ平面に重ねた物の勝ち方が変わる場合がある（同じ形と材質の物をまとめて描くので描く順が変わる）。重ねるなら少しずらす。
 
 ### 5. 自動インスタンス描き（ゲームの変更なし）
 

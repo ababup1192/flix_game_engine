@@ -46,3 +46,6 @@
 [parity] mipSrgbAverage3d B  差 1591 px, max ±3 (許容 2100 px)
 [parity] emissionIntensity3d B  一致 (0 px) (許容 100 px)
 [parity] cullOffscreen3d 描いた数 2（期待 2）一致
+[parity] skinCrowd      B  差 797 px, max ±107 (許容 1000 px)
+[parity] skinCrowdRows  B  差 42 px, max ±131 (許容 100 px)
+[parity] instanceRows   B  差 178 px, max ±220 (許容 250 px)

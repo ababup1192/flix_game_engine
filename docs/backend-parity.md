@@ -22,13 +22,14 @@
 | 場面 | 大きさ | 差 2/255 以下 | 差 0 | 一番大きい差 |
 |---|---|---|---|---|
 | `bench/scene3d` 1・2・3・6 コマ目 | 320×180 | 100.000% | 99.997〜100.000% | 1/255 |
-| fps3d_lab の部屋 45・55・63 コマ目（msaa 4・Rgba16Float の Pass） | 480×270 | 99.938〜99.942% | 99.846〜99.863% | 45/255 |
+| fps3d_lab の部屋 45・55・63 コマ目（msaa 4・Rgba16Float の Pass） | 480×270 | 99.938〜99.943% | 99.699〜99.735% | 45/255 |
 
 2026-11-05・Chrome 156・ANGLE Metal（Apple M4 Pro）。同じ機械のデスクトップの GL の絵と比べた。ほかの機械と Safari・Windows・Android は未測定。
 
 | 確かめた事 | 結果 |
 |---|---|
 | 骨つきの物（RGBA32F の joint texture・`texelFetch`・`vertexAttribIPointer`） | fps3d_lab の部屋の鎧の人物で動いた。`?glcheck=1` の 63 コマ目まで `texSubImage2D` 100 回（字の分を含む）、getError 0 件。上の表の 3 コマに映っている（2026-11-06 に撮り直して同じ数） |
+| 1 体ごとの値（RGBA32F の unit 11・`texelFetch`・`gl_InstanceID`・`drawElementsInstanced`・`flat` の varying） | fps3d_lab の部屋で getError 0 件。`gl_InstanceID` は instance の数えを draw ごとに 0 から数える（baseInstance は WebGL2 に無いので `uInstanceBase` を足す） |
 | glb の絵（`LoadProgress.imageDecoder`） | fps3d_lab で 46 枚を解いた（合計約 210 ms・1 枚 4〜7 ms） |
 | wasm の 1 コマの CPU の中央値 | `bench/scene3d` 1.3 ms・fps3d_lab の部屋 16.6 ms（隠れた内蔵ブラウザの 7 コマ。`requestAnimationFrame` の回数は測れない） |
 | デスクトップの 1 コマの時間（`bench/scene3d`・GlContext へ移す前と後の p50 の中央値） | 前 0.955 ms・後 0.925 ms（同じ測り方で ±10% 揺れる） |
@@ -39,6 +40,15 @@
 | 標本を持つ描き先の cutout | alpha to coverage | discard | **近似**。WebGL2 に `SAMPLE_ALPHA_TO_ONE` が無い（`GlContext.hasAlphaToOne`）。縁のなめらかさが違う |
 | `project.json` の textures の絵 | png のまま | 書き出しの時に WebP | 既定は無劣化。`web.compress` で荒らした絵はその分だけ違う |
 | 字 | 起動の時に作ったアトラス | `font-bake` のアトラス | フォントに無い字は出ない |
+| 3D の同じ深さの面の順 | batch の順（下の節） | 同じ | CPU の描き手は置いた順で、同じ絵を約束しない |
+
+差 0 の割合は 1 体ごとの値を texture で読む形にした時に 99.85% から 99.70% へ下がった。どの画素も差は小さく、一番大きい差は変わらない。
+ANGLE の Metal の式の組み方（積と和の融合）が uniform と texel で違う、というのは見立てで、原因は確かめていない。
+
+### 同じ深さの面の順は約束しない
+
+同じ平面に重ねた物のどちらが勝つかは約束しない。GL は `GL_LESS` で先に描いた物が勝ち、描く順は「頂点の色の物 → 骨つきの物 → 材質の物（プログラムの番号の順）」の中で、batch の頭の物が来た順に batch をまとめて描く（形 X・Y・X は X・X・Y）。
+CPU の描き手は道を分けず、置いた順で先の物が勝つ。重ねて見せるなら少しずらす。
 
 ## なぜ表が要るか
 

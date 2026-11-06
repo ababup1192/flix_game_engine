@@ -50,7 +50,7 @@ mod Scenes {
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
-            :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: Nil
+            :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -70,6 +70,8 @@ mod Scenes {
     /// 散る。白黒の市松の床は段の境目の帯で GPU の混ぜる重みの丸めが ±3 まで出る（灰の市松の mipFloor より濃淡が倍なので差も倍）。
     /// 片方だけ線形へ戻し忘れると、板・ビルボード・遠くの床・光る板の面が丸ごと違い、差は面の画素の数（千 px の桁）になる。
     /// 3D の色を線形の量で計算すると、mipFloor の 3 つは約 720 px・skinNormal は約 330 px（暗い所の丸めの ±1 が sRGB の曲線の傾きで増える）。
+    /// 骨つきの群れの 2 つと四角の群れ（Apple Silicon で skinCrowd 797 px・skinCrowdRows 42 px・instanceRows 178 px）: GL と CPU の三角形の縁の取り方の差で、板の縁と影の縁に出る。
+    /// batch の頭の物の tint か emission で描くと板 1 枚で 300 px を超えて列ごとに違い、行を取り違えると板の曲がりが変わって縁の数が桁で増える。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
@@ -100,6 +102,11 @@ mod Scenes {
         case "linearOverlap3d" => Some(100)
         case "mipSrgbAverage3d" => Some(2100)
         case "emissionIntensity3d" => Some(100)
+        case "skinCrowd"       => Some(1000)
+        case "skinCrowdRows"   => Some(100)
+        case "instanceRows"    => Some(250)
+        case "batchKeys3d"     => Some(100)
+        case "sameDepthOrder3d" => Some(400)
         case _                 => None
     }
 
@@ -1217,5 +1224,103 @@ mod Scenes {
         let base = flatScene({ x = 240.0, y = 140.0 }, 1, left :: right :: Nil, Nil);
         let scene = { environment = { ambient = c8(40, 40, 40) | base#environment } | base };
         { name = "emissionIntensity3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 48: 同じ形の骨つきの物の群れ（GL は同じ材質の物を 1 回の instanced draw にまとめる）。B 段階 ──
+    // 同じ板を 12 枚。上 2 段の 8 枚は頂点の色で tint 2 色・下の段の 4 枚は同じ材質で 1 枚だけ emissionIntensity が違う。姿勢は 3 つを順に回す。
+    // 半透明の板 1 枚と、骨の無い四角 1 つが混ざる。tint や emission を batch の頭の物の値で描くと、列ごとに色が丸ごと違う。
+    // 影を落とすスポットで、影の道の batch も通す。
+
+    def crowdPose(i: Int32): Pose3d.Pose3d = skinBendPose(Int32.toFloat64(Int32.remainder(i, 3) - 1) * 0.6)
+
+    def crowdPlace(column: Int32, row: Int32): Mat4.Mat4 =
+        Mat4.mul(Mat4.translate(Vec3.v3(Int32.toFloat64(column) * 3.0 - 4.5, Int32.toFloat64(row) * 3.2 - 3.2, 2.0)), Mat4.scale(Vec3.v3(0.5, 0.5, 0.5)))
+
+    def crowdGlow(k: Float64): Scene3d.Material3d =
+        Scene3d.material({ name = "parity:crowd", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c8(120, 120, 120)), alpha = ShaderDoc.Field.Const(1.0) }) })
+            |> Scene3d.withEmission(ShaderDoc.Shade.Solid(c8(60, 24, 8)))
+            |> Scene3d.withEmissionIntensity(k)
+
+    def skinCrowd(): Scene =
+        let back = shape(facingQuad(-10.0, 10.0, -7.0, 7.0, 20.0, c8(200, 200, 200)) :: Nil);
+        let colored = List.range(0, 8) |> List.map(i ->
+            Scene3d.meshInstance(skinPlate(), crowdPlace(Int32.remainder(i, 4), 1 + i / 4)) |> Scene3d.withPose(crowdPose(i))
+                |> Scene3d.withTint(if (Int32.remainder(i, 2) == 0) c8(255, 255, 255) else c8(120, 200, 255)));
+        let glowing = List.range(0, 4) |> List.map(i ->
+            Scene3d.meshInstance(skinPlate(), crowdPlace(i, 0)) |> Scene3d.withPose(crowdPose(i))
+                |> Scene3d.withMaterial(crowdGlow(if (i == 2) 6.0 else 1.0)));
+        let pane = shape(facingQuad(-2.2, -0.8, -1.0, 1.0, 5.0, c8(255, 255, 255)) :: Nil)
+            |> Scene3d.withMaterial(glassMaterial("parity:crowd:glass", c8(60, 100, 240), 0.4));
+        let single = shape(facingQuad(2.0, 5.0, 1.0, 4.0, 8.0, c8(220, 180, 60)) :: Nil);
+        let scene = { instances = List.flatten(colored :: glowing :: (back :: pane :: single :: Nil) :: Nil), spotLights = skinBendSpot() :: Nil, zIndex = 1,
+                      environment = { ambient = c8(90, 90, 90), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) };
+        { name = "skinCrowd", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 49: 違う姿勢が joint texture の最低の高さの行を超える群れ。B 段階 ──
+    // 同じ板を 24 枚、全部違う姿勢で並べる。17 行目より後ろの行が読めないと、上の段の板が同じ曲がりにそろうか崩れる。
+    def skinCrowdRows(): Scene =
+        let plates = List.range(0, 24) |> List.map(i ->
+            Scene3d.meshInstance(skinPlate(), Mat4.mul(Mat4.translate(Vec3.v3(Int32.toFloat64(Int32.remainder(i, 8)) * 1.8 - 6.3, Int32.toFloat64(i / 8) * 3.2 - 3.2, 2.0)),
+                                                      Mat4.scale(Vec3.v3(0.4, 0.45, 0.5))))
+                |> Scene3d.withPose(skinBendPose(Int32.toFloat64(i) * 0.06 - 0.7)));
+        let scene = { instances = plates, zIndex = 1,
+                      environment = { ambient = c8(200, 200, 200), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) };
+        { name = "skinCrowdRows", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 50: 1 体ごとの値のテクスチャの 2 行目以降と確保し直しを通す群れ。B 段階 ──
+    // 同じ四角を 30 × 20 = 600 枚、1 枚ごとに違う tint で並べる。1 行 32 体なので 19 行使い、最低の高さ 16 行を超える。前の場面たちが作った高さ 16 のテクスチャを高さ 32 へ確保し直す（どの場面が先かに頼る。GL の控えで unit 11 の texImageRgba32f 256 32 が 1 回出る）。
+    // 2 行目以降の番号の引き方を誤ると、色の階段が 32 枚ごとに崩れる。
+    def instanceRows(): Scene =
+        let tile = Mesh3d.fromPolygons(facingQuad(-0.14, 0.14, -0.14, 0.14, 0.0, c8(255, 255, 255)) :: Nil);
+        let tiles = List.range(0, 600) |> List.map(i -> {
+            let (column, row) = (Int32.remainder(i, 30), i / 30);
+            Scene3d.meshInstance(tile, Mat4.translate(Vec3.v3(Int32.toFloat64(column) * 0.33 - 4.8, Int32.toFloat64(row) * 0.33 - 3.1, 8.0)))
+                |> Scene3d.withTint(c8(40 + column * 7, 40 + row * 10, 240 - Int32.remainder(i, 32) * 7))
+        });
+        let scene = { instances = tiles, zIndex = 1,
+                      environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) };
+        { name = "instanceRows", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 51: batch の鍵の欄。B 段階 ──
+    // 同じ形の板を 2 枚ずつ 5 組。組ごとに鍵の欄を 1 つだけ変えた材質を貼る（上から params・wrap・cutout・法線マップの強さ・絵の名前）。
+    // 鍵から欄が漏れると、右の板が左の板の値で描かれ、組の右の面が丸ごと違う。FGE_INSTANCING=off は物ごとの材質で描くので、on との SHA も割れる。
+    def batchKeys3d(): Scene =
+        let (tex, bump) = (parityTexture(), bumpTexture());
+        let plate = texturedQuad(-1.5, 1.5, -0.55, 0.55, 0.0, -0.25, 1.25);
+        let paramMaterial = (red: Float64) -> Scene3d.material({ name = "parity:keys:param", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Param({ name = "red" }), g = ShaderDoc.Field.Const(0.3), b = ShaderDoc.Field.Const(0.3) }),
+                                       alpha = ShaderDoc.Field.Const(1.0) }) }) |> Scene3d.withParams(Map#{ "red" => red });
+        let textured = (t: Texture3d.Texture3d) -> Scene3d.texturedMaterial(Texture3d.name(t), ShaderDoc.FilterMode.Nearest);
+        let bumped = (strength: Float64) -> bumpMaterial(bump) |> Scene3d.withNormalMap({ texture = Texture3d.name(bump), strength = strength });
+        let pairs = (paramMaterial(0.2), paramMaterial(0.9))
+            :: (textured(tex) |> Scene3d.withWrap(Scene3d.Wrap.Repeat), textured(tex) |> Scene3d.withWrap(Scene3d.Wrap.Clamp))
+            :: (cutoutMaterial() |> Scene3d.withCutout(false), cutoutMaterial())
+            :: (bumped(1.0), bumped(0.15))
+            :: (textured(tex), textured(bump)) :: Nil;
+        let placeAt = (x: Float64, row: Int32, m: Scene3d.Material3d) ->
+            Scene3d.meshInstance(plate, Mat4.translate(Vec3.v3(x, 2.6 - Int32.toFloat64(row) * 1.3, 10.0))) |> Scene3d.withMaterial(m);
+        let plates = pairs |> List.mapWithIndex((row, pair) -> placeAt(-1.7, row, fst(pair)) :: placeAt(1.7, row, snd(pair)) :: Nil) |> List.flatten;
+        let light = { position = Vec3.v3(-7.0, 1.0, 8.0), color = c8(255, 255, 255), intensity = 1.2, range = 20.0 };
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, plates, Nil);
+        let scene = { textures = tex :: bump :: Nil, pointLights = light :: Nil, environment = { ambient = c8(120, 120, 120) | base#environment } | base };
+        { name = "batchKeys3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 52: 同じ平面の形 X・Y・X。B 段階 ──
+    // 同じ深さの面の順は約束しない（docs/backend-parity.md）。GL は X・X・Y の順に描くので右の重なりは X が勝ち、CPU と FGE_INSTANCING=off は来た順なので Y が勝つ。
+    // 差の数は重なりの画素の数で決まる。on と off の SHA が割れるのが正しいので、全一致の比べから外す。
+    def sameDepthOrder3d(): Scene =
+        let x = Mesh3d.fromPolygons(facingQuad(-1.0, 1.0, -1.5, 1.5, 10.0, c8(220, 60, 40)) :: Nil);
+        let y = Mesh3d.fromPolygons(facingQuad(-1.2, 1.2, -1.0, 1.0, 10.0, c8(40, 100, 230)) :: Nil);
+        let placeAt = (mesh: Mesh3d.Mesh3d, at: Float64) -> Scene3d.meshInstance(mesh, Mat4.translate(Vec3.v3(at, 0.0, 0.0)));
+        let scene = flatScene({ x = 240.0, y = 140.0 }, 1, placeAt(x, -2.0) :: placeAt(y, 0.0) :: placeAt(x, 1.0) :: Nil, Nil);
+        { name = "sameDepthOrder3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 }

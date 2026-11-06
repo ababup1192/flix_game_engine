@@ -27,15 +27,15 @@ mod Render3d.TestGlslPinned {
 
     @Test
     def testSolidMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "6315b400ea9929b4efa1020ba8dcdb8b5c273682666a78c4f02c2a44bf2061f4" :: "6315b400ea9929b4efa1020ba8dcdb8b5c273682666a78c4f02c2a44bf2061f4" :: "d06115540306e4257a1ded2f50dd672fbcfa3302a0f40efebc3b5f8de128bcba" :: "d78d5532f473b2578aa81e7df276f94cfb0e62b138e3ff02ef303c9b864bdaaa" :: Nil, fragments(solidGlsl()))
+        Assert.assertEq(expected = "c1d11a1635b77a8a7def74dd648eae374eb25d1e35f264cb10e3c56c42ae2a54" :: "c1d11a1635b77a8a7def74dd648eae374eb25d1e35f264cb10e3c56c42ae2a54" :: "4bda2248dc4dc4bcd56704ae37ca374c29373a7db3543616dba5e8a4dbe4f1d5" :: "4c0f72948d465ef7397a0374469dda6261a18a43ba7567f58483ad676219c7c8" :: Nil, fragments(solidGlsl()))
 
     @Test
     def testMipMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "bbcc9b750b7e2823b60fa24f51b293618f5e6258ad9d97ef57b5c766243ee812" :: "bbcc9b750b7e2823b60fa24f51b293618f5e6258ad9d97ef57b5c766243ee812" :: "744eaccfe5ec85daf0be472d6222ae85f2933529f72db432ba4af4bd209c6f5e" :: "5c32ed4dfb67e6570f30193af67e20fce8d90d753660993ad97263d1a81072d4" :: Nil, fragments(mipGlsl()))
+        Assert.assertEq(expected = "214bbdcdc1d61347913befb23284eccc6d9984db6de007f9931e288e1ab85629" :: "214bbdcdc1d61347913befb23284eccc6d9984db6de007f9931e288e1ab85629" :: "91782d9883a2fca1968a5c17f2d508475967010d1b61b3143cd1d9610c4f5184" :: "96f676acb4e1f96137598113dbae11eda3dceb92948b4f51e5980df13cae85c9" :: Nil, fragments(mipGlsl()))
 
     @Test
     def testMaterialVertexSourcesAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "a5a28ff25b65c8f6ffdfc85e52c79f70310fd9835d0d36210a0329df4cc3adca" :: "9ec186a735502f4e6b192360243cd82e24b6e8da43fe2d00e5ffdd554dd98941" :: "394f4f81d4b8544c79cc32faf02bc11446e005a511184afc383c81b4286012cf" :: "492e0bcfe8d6d304723b3c103b7388bafbb74a112120cf4d757307cc84f22d22" :: Nil,
+        Assert.assertEq(expected = "b0849156f20e2286a70a2ce98f2c7e32bca8c363ce2b89a1ad920cad962266dd" :: "6a48a7e726fcc7cf20600037627e7cd81ddc85fa8444b2416d510b7b425f3c2b" :: "b0ece99f6547ef3115177642db6ffcda482e8c2b56cf6d6cde8d401b9aa5514e" :: "fb100e12ba86de0ad9f71c84e10c4eb69c75a1487b1b2ec8fdb864f365134446" :: Nil,
             ((false, false) :: (true, false) :: (false, true) :: (true, true) :: Nil)
                 |> List.map(k -> { let (skinned, uv) = k; sha256(Render3dGlsl.materialVertexSource({ skinned = skinned, uv = uv, lightmap = false })) }))
 

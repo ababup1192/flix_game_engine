@@ -25,7 +25,7 @@ pub mod WebLayer {
 
     /// Scene3d を描くゲームの入口。
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
-        withProjectUsing(rootDir, Render3d.makeRenderer, f)
+        withProjectUsing(rootDir, (gl, config) -> Render3d.makeRenderer(gl, config, Render3d.DrawMode.Instanced), f)
 
     /// `rootDir` 直下の project.json を読んで withWeb を起動する。読めなければ止める（LwjglLayer.withProject と同じ）。
     def withProjectUsing(rootDir: String, makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
