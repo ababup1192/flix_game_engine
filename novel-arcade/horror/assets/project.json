@@ -11,7 +11,38 @@
     "b": 0.0
   },
   "maxDeltaTime": 0.05,
-  "textures": [],
+  "textures": [
+    {
+      "name": "horror_corridor_atlas",
+      "path": "assets/episodes/horror/corridor/corridor_atlas.jpg",
+      "hasAlpha": false
+    },
+    {
+      "name": "horror_corridor_normal",
+      "path": "assets/episodes/horror/corridor/corridor_normal.jpg",
+      "hasAlpha": false
+    },
+    {
+      "name": "horror_corridor_glow",
+      "path": "assets/episodes/horror/corridor/corridor_glow.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "horror_corridor_contact",
+      "path": "assets/episodes/horror/corridor/corridor_contact.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "horror_corridor_sheen",
+      "path": "assets/episodes/horror/corridor/corridor_sheen.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "horror_corridor_mist",
+      "path": "assets/episodes/horror/corridor/corridor_mist.png",
+      "hasAlpha": true
+    }
+  ],
   "glyphs": "used",
   "fonts": [
     {
@@ -118,6 +149,14 @@
       "width": 540,
       "minHeight": 960,
       "maxHeight": 1280
+    },
+    "compress": {
+      "lossyImages": [
+        {
+          "glob": "assets/episodes/cafe/art/*.png",
+          "quality": 82
+        }
+      ]
     }
   },
   "editor": {

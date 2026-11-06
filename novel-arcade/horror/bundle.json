@@ -3,6 +3,14 @@
  "title": "七号棟",
  "files": [
   "assets/OFL.txt",
+  "assets/episodes/horror/corridor/corridor_atlas.jpg",
+  "assets/episodes/horror/corridor/corridor_contact.png",
+  "assets/episodes/horror/corridor/corridor_figure.glb",
+  "assets/episodes/horror/corridor/corridor_glow.png",
+  "assets/episodes/horror/corridor/corridor_kit.glb",
+  "assets/episodes/horror/corridor/corridor_mist.png",
+  "assets/episodes/horror/corridor/corridor_normal.jpg",
+  "assets/episodes/horror/corridor/corridor_sheen.png",
   "assets/episodes/horror/horror.corridor.json",
   "assets/episodes/horror/horror.episode.json",
   "assets/episodes/horror/horror.story.json",
@@ -13,7 +21,14 @@
   "font-atlas/default.fontatlas",
   "project.json"
  ],
- "images": [],
+ "images": [
+  "assets/episodes/horror/corridor/corridor_atlas.jpg",
+  "assets/episodes/horror/corridor/corridor_normal.jpg",
+  "assets/episodes/horror/corridor/corridor_glow.png",
+  "assets/episodes/horror/corridor/corridor_contact.png",
+  "assets/episodes/horror/corridor/corridor_sheen.png",
+  "assets/episodes/horror/corridor/corridor_mist.png"
+ ],
  "sounds": [
   {
    "name": "amb_shelf",
@@ -130,6 +145,10 @@
  },
  "orientation": "portrait",
  "transcoded": {
+  "assets/episodes/horror/corridor/corridor_contact.png": "assets/episodes/horror/corridor/corridor_contact.webp",
+  "assets/episodes/horror/corridor/corridor_glow.png": "assets/episodes/horror/corridor/corridor_glow.webp",
+  "assets/episodes/horror/corridor/corridor_mist.png": "assets/episodes/horror/corridor/corridor_mist.webp",
+  "assets/episodes/horror/corridor/corridor_sheen.png": "assets/episodes/horror/corridor/corridor_sheen.webp",
   "assets/episodes/horror/sfx/amb_hall.wav": "assets/episodes/horror/sfx/amb_hall.webm",
   "assets/episodes/horror/sfx/amb_night.wav": "assets/episodes/horror/sfx/amb_night.webm",
   "assets/episodes/horror/sfx/follow.wav": "assets/episodes/horror/sfx/follow.webm",
