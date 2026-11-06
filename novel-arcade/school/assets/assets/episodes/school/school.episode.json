@@ -2,7 +2,7 @@
   "web3d": true,
   "version": 1,
   "title": "放課後ひとそろいの素材の登録",
-  "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。",
+  "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。立ち絵: くろしろや https://www.kuroshiroya.com/",
   "sounds": [
     {"name": "sch_amb_room", "path": "assets/episodes/school/sfx/sch_amb_room.wav", "looping": true},
     {"name": "sch_amb_dusk", "path": "assets/episodes/school/sfx/sch_amb_dusk.wav", "looping": true},
@@ -24,7 +24,21 @@
     {"name": "sch_finish", "path": "assets/episodes/school/sfx/sch_finish.wav", "looping": false},
     {"name": "sch_warm", "path": "assets/episodes/school/sfx/sch_warm.wav", "looping": false}
   ],
-  "textures": [],
+  "textures": [
+    {"name": "sch_portrait_akane", "path": "assets/episodes/school/portraits/akane.png", "hasAlpha": true},
+    {"name": "sch_portrait_akane_smile", "path": "assets/episodes/school/portraits/akane_smile.png", "hasAlpha": true},
+    {"name": "sch_portrait_akane_worried", "path": "assets/episodes/school/portraits/akane_worried.png", "hasAlpha": true},
+    {"name": "sch_portrait_akane_wow", "path": "assets/episodes/school/portraits/akane_wow.png", "hasAlpha": true},
+    {"name": "sch_portrait_akane_angry", "path": "assets/episodes/school/portraits/akane_angry.png", "hasAlpha": true},
+    {"name": "sch_portrait_yuzu", "path": "assets/episodes/school/portraits/yuzu.png", "hasAlpha": true},
+    {"name": "sch_portrait_yuzu_smile", "path": "assets/episodes/school/portraits/yuzu_smile.png", "hasAlpha": true},
+    {"name": "sch_portrait_yuzu_worried", "path": "assets/episodes/school/portraits/yuzu_worried.png", "hasAlpha": true},
+    {"name": "sch_portrait_yuzu_wow", "path": "assets/episodes/school/portraits/yuzu_wow.png", "hasAlpha": true},
+    {"name": "sch_portrait_fuji", "path": "assets/episodes/school/portraits/fuji.png", "hasAlpha": true},
+    {"name": "sch_portrait_fuji_smile", "path": "assets/episodes/school/portraits/fuji_smile.png", "hasAlpha": true},
+    {"name": "sch_portrait_fuji_worried", "path": "assets/episodes/school/portraits/fuji_worried.png", "hasAlpha": true},
+    {"name": "sch_portrait_fuji_wow", "path": "assets/episodes/school/portraits/fuji_wow.png", "hasAlpha": true}
+  ],
   "resources": [
     {"id": "school_story", "pattern": "assets/episodes/school/school.story.json", "title": "放課後ひとそろいの台本", "schema": "assets/story.schema.json", "role": "material"},
     {"id": "school_theme", "pattern": "assets/episodes/school/school.theme.json", "title": "放課後ひとそろいの文章の色", "schema": "assets/book-theme.schema.json", "role": "material"},

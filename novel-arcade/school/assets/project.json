@@ -11,7 +11,73 @@
     "b": 0.0
   },
   "maxDeltaTime": 0.05,
-  "textures": [],
+  "textures": [
+    {
+      "name": "sch_portrait_akane",
+      "path": "assets/episodes/school/portraits/akane.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_akane_smile",
+      "path": "assets/episodes/school/portraits/akane_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_akane_worried",
+      "path": "assets/episodes/school/portraits/akane_worried.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_akane_wow",
+      "path": "assets/episodes/school/portraits/akane_wow.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_akane_angry",
+      "path": "assets/episodes/school/portraits/akane_angry.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_yuzu",
+      "path": "assets/episodes/school/portraits/yuzu.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_yuzu_smile",
+      "path": "assets/episodes/school/portraits/yuzu_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_yuzu_worried",
+      "path": "assets/episodes/school/portraits/yuzu_worried.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_yuzu_wow",
+      "path": "assets/episodes/school/portraits/yuzu_wow.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_fuji",
+      "path": "assets/episodes/school/portraits/fuji.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_fuji_smile",
+      "path": "assets/episodes/school/portraits/fuji_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_fuji_worried",
+      "path": "assets/episodes/school/portraits/fuji_worried.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "sch_portrait_fuji_wow",
+      "path": "assets/episodes/school/portraits/fuji_wow.png",
+      "hasAlpha": true
+    }
+  ],
   "glyphs": "used",
   "fonts": [
     {
@@ -163,6 +229,14 @@
       "width": 540,
       "minHeight": 960,
       "maxHeight": 1280
+    },
+    "compress": {
+      "lossyImages": [
+        {
+          "glob": "assets/episodes/cafe/art/*.png",
+          "quality": 82
+        }
+      ]
     }
   },
   "editor": {
