@@ -747,6 +747,8 @@ function fgeError(message) {
   var el = document.getElementById("fge-error");
   if (el) { el.textContent = message; el.style.display = ""; }
   console.error(message);
+  // WhyNot: 撮る道具に待ち切らせない — 止まった頁は合図を出さないので、絵の遅れと見分けが付かないまま上限の秒数を待つ。
+  if (fgeCaptureFrame > 0) window.fgeCaptureError = message;
 }
 window.addEventListener("error", function (e) {
   var err = e.error;

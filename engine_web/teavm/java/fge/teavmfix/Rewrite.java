@@ -21,6 +21,7 @@ import org.teavm.asm.Opcodes;
  *   Arrays.copyOfRange                → CopyOfRange.copyOfRange（to が長さを超えると配列の外を読んで落ちる）
  *   Checksum.update(byte[])           → Checksums.update（interface の default の関数が TeaVM の classlib に無い）
  *   Reference.refersTo                → References.refersTo（Java 16 の関数が無い）
+ *   ByteBuffer.allocateDirect         → DirectBuffers.allocateDirect（64 KiB の倍数の大きさで memory に余裕があっても落ちる）
  *   正規表現の字 "\R"                  → "\r\n|[\n\r]"（TeaVM の正規表現に無い。Flix 標準の String.lines が使う）
  * TeaVM 自身が持つ org/teavm/ の類は jar から落とす（Flix の依存の解決で同じ物が入り、TeaVM の物と二重になる）。
  * 付け替えた数を種類ごとに標準出力へ 1 行ずつ出す。
@@ -97,6 +98,9 @@ public final class Rewrite {
             } else if (name.equals("refersTo") && desc.equals("(Ljava/lang/Object;)Z") && owner.startsWith("java/lang/ref/")) {
                 note("refersTo");
                 super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "References", "refersTo", "(Ljava/lang/ref/Reference;Ljava/lang/Object;)Z", false);
+            } else if (owner.equals("java/nio/ByteBuffer") && name.equals("allocateDirect")) {
+                note("allocateDirect");
+                super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "DirectBuffers", name, desc, false);
             } else {
                 super.visitMethodInsn(op, owner, name, desc, itf);
             }

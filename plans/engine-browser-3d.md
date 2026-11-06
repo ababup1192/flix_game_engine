@@ -77,7 +77,7 @@ pub def withProject3d(rootDir, f) = withProjectUsing(rootDir, Render3d.makeRende
 - `?glcheck=1` の時に毎回 `getError` を見る口を `fge-web.js` に足す。
 - 確かめ方: `bench/scene3d`（obj だけで画像の解読が要らない）の 1 場面が映る。`getError` 0 件。2D テンプレの wasm の大きさが ±0.5% 以内。`export-web` の ERROR 0 件。
 
-### 段 3: 絵の素材と入力（済み・未コミット。本物の pointer lock は人の確認待ち）
+### 段 3: 絵の素材と入力（済み。2026-11-06 に人の別の PC のブラウザで、部屋の視点・Esc の解除・再開と 60 fps を確認）
 
 - `fge.web.WebImages.decode(bytes)` を `@Async` で作る。Blob → `createImageBitmap(premultiplyAlpha:'none', colorSpaceConversion:'none')` → 一時の RGBA8 テクスチャ → FBO で `readPixels` → ARGB の int[]。2D canvas の `getImageData` は使わない（premultiply で色が崩れる）。置き場は `handleLoadProgress` の `imageDecoder`。
 - pointer lock を `setMouseCaptured` へつなぐ。`pointerlockchange` で頼んでいない解除を見たら `fgeLatch.Escape` を立てる。断られたら次の操作で試し直す。

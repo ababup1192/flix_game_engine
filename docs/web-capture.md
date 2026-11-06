@@ -68,6 +68,8 @@ bin/fge export-web bench/scene3d --out <出力>            # 静的なサーバ�
 bin/fge web-capture "http://127.0.0.1:<port>/index.html?capture=6" <出力.png> --size 640x360 --wait 60
 ```
 
+この頁は、止まった時（`fgeError`）に画面の字と同じ物を `fgeCaptureError` へ置く。道具は待ち切らず、その字で exit 1 になる。
+
 同じ `?` に `glcheck=1`（GL の呼び出しごとに `getError` を見て、組ごとに 1 回 console へ言う・`fgeGlCheck` に回数）と
 `loadtime=1`（絵の解読を 1 枚ごとに `console.time`・枚数と合計を `fgeDecodeTimes` へ）を足せる。Mip の時間はデスクトップの F3 と hitch の 3D の区間 `mip` で読む（ブラウザの頁には出ない）。
 実測の結果は [backend-parity.md](backend-parity.md) の「ブラウザ（WebGL2）とデスクトップの絵」。
