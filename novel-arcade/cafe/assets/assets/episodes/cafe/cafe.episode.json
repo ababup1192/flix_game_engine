@@ -96,8 +96,143 @@
   ],
   "textures": [
     {
-      "name": "cafe_atlas",
-      "path": "assets/episodes/cafe/cafe.atlas.png",
+      "name": "cafe_bust_nagi_calm",
+      "path": "assets/episodes/cafe/art/bust_nagi_calm.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_nagi_smile",
+      "path": "assets/episodes/cafe/art/bust_nagi_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_nagi_sad",
+      "path": "assets/episodes/cafe/art/bust_nagi_sad.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_tatsumi_calm",
+      "path": "assets/episodes/cafe/art/bust_tatsumi_calm.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_tatsumi_smile",
+      "path": "assets/episodes/cafe/art/bust_tatsumi_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_tatsumi_sad",
+      "path": "assets/episodes/cafe/art/bust_tatsumi_sad.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_akari_calm",
+      "path": "assets/episodes/cafe/art/bust_akari_calm.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_akari_smile",
+      "path": "assets/episodes/cafe/art/bust_akari_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_akari_sad",
+      "path": "assets/episodes/cafe/art/bust_akari_sad.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_kuga_calm",
+      "path": "assets/episodes/cafe/art/bust_kuga_calm.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_kuga_smile",
+      "path": "assets/episodes/cafe/art/bust_kuga_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_kuga_sad",
+      "path": "assets/episodes/cafe/art/bust_kuga_sad.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bust_kuga_wide",
+      "path": "assets/episodes/cafe/art/bust_kuga_wide.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_room_night",
+      "path": "assets/episodes/cafe/art/room_night.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_room_dawn",
+      "path": "assets/episodes/cafe/art/room_dawn.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_bench",
+      "path": "assets/episodes/cafe/art/bench.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_alley_night",
+      "path": "assets/episodes/cafe/art/alley_night.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_alley_dawn",
+      "path": "assets/episodes/cafe/art/alley_dawn.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_mill",
+      "path": "assets/episodes/cafe/art/mill.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_kettle",
+      "path": "assets/episodes/cafe/art/kettle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_dripper",
+      "path": "assets/episodes/cafe/art/dripper.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_pitcher",
+      "path": "assets/episodes/cafe/art/pitcher.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_honey_jar",
+      "path": "assets/episodes/cafe/art/honey_jar.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_dipper",
+      "path": "assets/episodes/cafe/art/dipper.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_tray_full",
+      "path": "assets/episodes/cafe/art/tray_full.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_tray_empty",
+      "path": "assets/episodes/cafe/art/tray_empty.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_paper",
+      "path": "assets/episodes/cafe/art/paper.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cafe_crank",
+      "path": "assets/episodes/cafe/art/crank.png",
       "hasAlpha": true
     }
   ],
@@ -124,10 +259,10 @@
       "role": "material"
     },
     {
-      "id": "cafe_atlas_index",
-      "pattern": "assets/episodes/cafe/cafe.atlas.json",
-      "title": "喫茶ひとやすみのアトラスの目次",
-      "schema": "assets/episodes/cafe/atlas.schema.json",
+      "id": "cafe_art_index",
+      "pattern": "assets/episodes/cafe/cafe.art.json",
+      "title": "喫茶ひとやすみの絵の目次",
+      "schema": "assets/episodes/cafe/art.schema.json",
       "role": "material"
     }
   ]

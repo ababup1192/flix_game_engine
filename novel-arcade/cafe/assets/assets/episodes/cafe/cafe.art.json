@@ -1,0 +1,175 @@
+{
+ "version": 1,
+ "title": "喫茶ひとやすみの絵の目次",
+ "note": "art/episodes/cafe/cut.py が書く生成物。いじると絵の大きさがずれるので手で直さない。",
+ "pictures": [
+  {
+   "name": "bust_nagi_calm",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_nagi_smile",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_nagi_sad",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_tatsumi_calm",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_tatsumi_smile",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_tatsumi_sad",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_akari_calm",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_akari_smile",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_akari_sad",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_kuga_calm",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_kuga_smile",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_kuga_sad",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_kuga_wide",
+   "w": 460,
+   "h": 489,
+   "scale": 0.5
+  },
+  {
+   "name": "room_night",
+   "w": 540,
+   "h": 650,
+   "scale": 0.5
+  },
+  {
+   "name": "room_dawn",
+   "w": 540,
+   "h": 650,
+   "scale": 0.5
+  },
+  {
+   "name": "bench",
+   "w": 540,
+   "h": 650,
+   "scale": 0.5
+  },
+  {
+   "name": "alley_night",
+   "w": 600,
+   "h": 1300,
+   "scale": 0.704225352112676
+  },
+  {
+   "name": "alley_dawn",
+   "w": 600,
+   "h": 1300,
+   "scale": 0.704225352112676
+  },
+  {
+   "name": "mill",
+   "w": 312,
+   "h": 311,
+   "scale": 0.5
+  },
+  {
+   "name": "kettle",
+   "w": 262,
+   "h": 140,
+   "scale": 0.5
+  },
+  {
+   "name": "dripper",
+   "w": 186,
+   "h": 162,
+   "scale": 0.5
+  },
+  {
+   "name": "pitcher",
+   "w": 150,
+   "h": 123,
+   "scale": 0.5
+  },
+  {
+   "name": "honey_jar",
+   "w": 124,
+   "h": 121,
+   "scale": 0.5
+  },
+  {
+   "name": "dipper",
+   "w": 46,
+   "h": 200,
+   "scale": 0.5
+  },
+  {
+   "name": "tray_full",
+   "w": 132,
+   "h": 76,
+   "scale": 0.5
+  },
+  {
+   "name": "tray_empty",
+   "w": 132,
+   "h": 76,
+   "scale": 0.5
+  },
+  {
+   "name": "paper",
+   "w": 540,
+   "h": 731,
+   "scale": 0.5
+  },
+  {
+   "name": "crank",
+   "w": 260,
+   "h": 260,
+   "scale": 0.5
+  }
+ ]
+}
