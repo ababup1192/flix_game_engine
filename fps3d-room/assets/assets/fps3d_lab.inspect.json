@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "title": "目の先の物に出す文言",
+  "note": "部屋でマウスか向きのキーで向いた先の物に、画面の下に出す字。guard=番兵を見ている時（決定ボタンで敬礼してもらう）/ props=家具の形の名前（layout.json の props の model）→ name 出す名前。ここに無い家具には何も出さない。届く距離は camera.json の talkRange。",
+  "guard": "Guard  -  Enter: salute",
+  "props": {
+    "bookshelf": {
+      "name": "Bookshelf"
+    },
+    "globe": {
+      "name": "Globe"
+    },
+    "altar": {
+      "name": "Altar"
+    },
+    "statue": {
+      "name": "Statue"
+    },
+    "lectern": {
+      "name": "Lectern"
+    },
+    "chest": {
+      "name": "Chest"
+    },
+    "weapon_rack": {
+      "name": "Weapon rack"
+    },
+    "desk": {
+      "name": "Desk"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "//": "fps3d_lab.floors.json の形（Studio の sections 方言）。既定は src/FloorsDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "floors": {
+      "kind": "list",
+      "label": "フロア（部屋ごとに画風で引く）",
+      "fields": {
+        "name": {
+          "type": "string",
+          "order": 1,
+          "required": true,
+          "label": "名前"
+        },
+        "style": {
+          "type": {
+            "enum": [
+              "cave",
+              "meadow",
+              "volcano",
+              "chapel"
+            ]
+          },
+          "order": 3,
+          "label": "画風"
+        },
+        "look": {
+          "type": "string",
+          "order": 4,
+          "label": "光と材質と後処理の Doc のパス"
+        },
+        "wallHeight": {
+          "type": "float",
+          "order": 12,
+          "label": "壁の高さ（0 は dungeon.json の値）"
+        },
+        "outdoor": {
+          "type": "bool",
+          "order": 13,
+          "label": "屋外（壁の外を野原に）"
+        }
+      }
+    }
+  }
+}

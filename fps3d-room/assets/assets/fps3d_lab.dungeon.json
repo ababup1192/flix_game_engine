@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "title": "地図の寸法と高さ",
+  "note": "マスの並びは fps3d_lab.layout.json。いじると何が変わるか: tile=1 マスの大きさ（world の単位）/ wallHeight=壁の高さ / pillar=柱（height 高さ・size 四角の一辺）/ torchHeight=壁の松明の高さ / play=歩く手触り（stepTime 通路で 1 マスを移る秒）/ lavaDepth=溶岩の池を床より沈める深さ",
+  "tile": 24.0,
+  "wallHeight": 46.0,
+  "pillar": {
+    "height": 44.0,
+    "size": 14.0
+  },
+  "torchHeight": 34.0,
+  "play": {
+    "stepTime": 0.2
+  },
+  "lavaDepth": 24.0
+}

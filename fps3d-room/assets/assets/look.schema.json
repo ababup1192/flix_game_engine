@@ -1,0 +1,673 @@
+{
+  "//": "fps3d_lab.look.json の形（Studio の sections 方言）。既定は src の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "torch": {
+      "kind": "record",
+      "label": "松明",
+      "order": 1,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "default": "#ff9a48"
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ",
+          "default": 1.5
+        },
+        "radius": {
+          "type": "float",
+          "label": "届く半径",
+          "default": 150.0
+        },
+        "flicker": {
+          "type": "float",
+          "label": "揺らぎの振れ幅",
+          "default": 0.18
+        },
+        "flickerSpeed": {
+          "type": "float",
+          "label": "揺らぎの速さ",
+          "default": 7.0
+        }
+      }
+    },
+    "brazier": {
+      "kind": "record",
+      "label": "燭台",
+      "order": 2,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "default": "#ffb860"
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ",
+          "default": 1.6
+        },
+        "radius": {
+          "type": "float",
+          "label": "届く半径",
+          "default": 130.0
+        },
+        "flicker": {
+          "type": "float",
+          "label": "揺らぎの振れ幅",
+          "default": 0.14
+        },
+        "flickerSpeed": {
+          "type": "float",
+          "label": "揺らぎの速さ",
+          "default": 5.0
+        }
+      }
+    },
+    "lantern": {
+      "kind": "record",
+      "label": "主人公の灯り",
+      "order": 3,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "default": "#ffd8a0"
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ",
+          "default": 1.1
+        },
+        "radius": {
+          "type": "float",
+          "label": "届く半径",
+          "default": 105.0
+        },
+        "flicker": {
+          "type": "float",
+          "label": "揺らぎの振れ幅",
+          "default": 0.05
+        },
+        "flickerSpeed": {
+          "type": "float",
+          "label": "揺らぎの速さ",
+          "default": 3.0
+        }
+      }
+    },
+    "lanternHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "主人公の灯りの高さ",
+      "order": 4,
+      "default": 28.0
+    },
+    "ambientRoom": {
+      "kind": "field",
+      "type": "color",
+      "label": "環境光（部屋）",
+      "order": 5,
+      "default": "#2a2440"
+    },
+    "ambientCorridor": {
+      "kind": "field",
+      "type": "color",
+      "label": "環境光（通路の奥）",
+      "order": 6,
+      "default": "#08080e"
+    },
+    "shadowInner": {
+      "kind": "field",
+      "type": "float",
+      "label": "柱の影の内の縁",
+      "order": 7,
+      "default": 0.6
+    },
+    "shadowOuter": {
+      "kind": "field",
+      "type": "float",
+      "label": "柱の影の外の縁",
+      "order": 8,
+      "default": 1.25
+    },
+    "lightSteps": {
+      "kind": "field",
+      "type": "int",
+      "label": "明るさの段の数",
+      "order": 9,
+      "default": 10
+    },
+    "lightMax": {
+      "kind": "field",
+      "type": "float",
+      "label": "明るさの上限",
+      "order": 10,
+      "default": 2.0
+    },
+    "lightDither": {
+      "kind": "field",
+      "type": "float",
+      "label": "段の境を散らす量",
+      "order": 11,
+      "default": 0.8
+    },
+    "lightWrap": {
+      "kind": "field",
+      "type": "float",
+      "label": "横からの光の残り",
+      "order": 12,
+      "default": 0.3
+    },
+    "lightFacing": {
+      "kind": "field",
+      "type": "float",
+      "label": "面の向きの効き",
+      "order": 13,
+      "default": 2.2
+    },
+    "floor": {
+      "kind": "record",
+      "label": "床の色",
+      "order": 14,
+      "fields": {
+        "c0": {
+          "type": "color",
+          "label": "目地・暗い所",
+          "default": "#3a3430"
+        },
+        "c1": {
+          "type": "color",
+          "label": "石の色 1",
+          "default": "#857a6c"
+        },
+        "c2": {
+          "type": "color",
+          "label": "石の色 2",
+          "default": "#a89a86"
+        }
+      }
+    },
+    "wall": {
+      "kind": "record",
+      "label": "壁の色",
+      "order": 15,
+      "fields": {
+        "c0": {
+          "type": "color",
+          "label": "目地・暗い所",
+          "default": "#3c3030"
+        },
+        "c1": {
+          "type": "color",
+          "label": "石の色 1",
+          "default": "#7a6458"
+        },
+        "c2": {
+          "type": "color",
+          "label": "石の色 2",
+          "default": "#9a8270"
+        }
+      }
+    },
+    "top": {
+      "kind": "record",
+      "label": "岩の天面の色",
+      "order": 16,
+      "fields": {
+        "c0": {
+          "type": "color",
+          "label": "目地・暗い所",
+          "default": "#1c1a20"
+        },
+        "c1": {
+          "type": "color",
+          "label": "石の色 1",
+          "default": "#2c2830"
+        },
+        "c2": {
+          "type": "color",
+          "label": "石の色 2",
+          "default": "#4a4250"
+        }
+      }
+    },
+    "pillar": {
+      "kind": "record",
+      "label": "柱の色",
+      "order": 17,
+      "fields": {
+        "c0": {
+          "type": "color",
+          "label": "目地・暗い所",
+          "default": "#403a3a"
+        },
+        "c1": {
+          "type": "color",
+          "label": "石の色 1",
+          "default": "#8a8278"
+        },
+        "c2": {
+          "type": "color",
+          "label": "石の色 2",
+          "default": "#b0a690"
+        }
+      }
+    },
+    "moss": {
+      "kind": "field",
+      "type": "color",
+      "label": "苔の色",
+      "order": 18,
+      "default": "#4a6a3a"
+    },
+    "void": {
+      "kind": "field",
+      "type": "color",
+      "label": "地図の外の色",
+      "order": 19,
+      "default": "#07060c"
+    },
+    "contactShadow": {
+      "kind": "field",
+      "type": "float",
+      "label": "足元の影の濃さ",
+      "order": 20,
+      "default": 0.55
+    },
+    "spriteLightMax": {
+      "kind": "field",
+      "type": "float",
+      "label": "人に掛ける光の上限",
+      "order": 21,
+      "default": 1.0
+    },
+    "dustCount": {
+      "kind": "field",
+      "type": "int",
+      "label": "ほこりの粒の数",
+      "order": 22,
+      "default": 40
+    },
+    "dustAlpha": {
+      "kind": "field",
+      "type": "float",
+      "label": "ほこりの濃さ",
+      "order": 23,
+      "default": 0.5
+    },
+    "exposure": {
+      "kind": "field",
+      "type": "float",
+      "label": "露出（stop。1 で 2 倍明るく）",
+      "order": 24,
+      "default": -0.6
+    },
+    "whitePoint": {
+      "kind": "field",
+      "type": "float",
+      "label": "白の点（この明るさで真っ白）",
+      "order": 25,
+      "default": 4.0
+    },
+    "tiltRadius": {
+      "kind": "field",
+      "type": "float",
+      "label": "ぼけの半径",
+      "order": 26,
+      "default": 0.018
+    },
+    "tiltTaps": {
+      "kind": "field",
+      "type": "int",
+      "label": "ぼけの標本の数",
+      "order": 27,
+      "default": 12
+    },
+    "bloomRadius": {
+      "kind": "field",
+      "type": "float",
+      "label": "ブルームの半径",
+      "order": 28,
+      "default": 0.05
+    },
+    "bloomTaps": {
+      "kind": "field",
+      "type": "int",
+      "label": "ブルームの標本の数",
+      "order": 29,
+      "default": 12
+    },
+    "bloomStrength": {
+      "kind": "field",
+      "type": "float",
+      "label": "ブルームの強さ",
+      "order": 30,
+      "default": 0.8
+    },
+    "bloomThreshold": {
+      "kind": "field",
+      "type": "float",
+      "label": "ブルームのしきい（1 を超える所が光る）",
+      "order": 31,
+      "default": 1.0
+    },
+    "bloomKnee": {
+      "kind": "field",
+      "type": "float",
+      "label": "ブルームの幅",
+      "order": 32,
+      "default": 0.6
+    },
+    "bloomScale": {
+      "kind": "field",
+      "type": "float",
+      "label": "明るい所の Pass の倍率",
+      "order": 33,
+      "default": 0.5
+    },
+    "blurScale": {
+      "kind": "field",
+      "type": "float",
+      "label": "ぼけの Pass の倍率",
+      "order": 34,
+      "default": 0.5
+    },
+    "vignette": {
+      "kind": "field",
+      "type": "float",
+      "label": "ビネット",
+      "order": 35,
+      "default": 0.45
+    },
+    "gradeShadow": {
+      "kind": "field",
+      "type": "color",
+      "label": "暗部の色",
+      "order": 36,
+      "default": "#1c1a3a"
+    },
+    "gradeShadowMix": {
+      "kind": "field",
+      "type": "float",
+      "label": "暗部へ寄せる量",
+      "order": 37,
+      "default": 0.35
+    },
+    "gradeHighlight": {
+      "kind": "field",
+      "type": "color",
+      "label": "明部の色",
+      "order": 38,
+      "default": "#ffc078"
+    },
+    "gradeHighlightMix": {
+      "kind": "field",
+      "type": "float",
+      "label": "明部へ寄せる量",
+      "order": 39,
+      "default": 0.12
+    },
+    "gradeLift": {
+      "kind": "field",
+      "type": "float",
+      "label": "底の持ち上げ",
+      "order": 40,
+      "default": 0.02
+    },
+    "gradeSaturation": {
+      "kind": "field",
+      "type": "float",
+      "label": "彩度",
+      "order": 41,
+      "default": 0.1
+    },
+    "sun": {
+      "kind": "record",
+      "label": "日の光",
+      "order": 42,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "default": "#ffd8a0"
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ",
+          "default": 0.0
+        },
+        "x": {
+          "type": "float",
+          "label": "来る向き（東）",
+          "default": -0.5
+        },
+        "y": {
+          "type": "float",
+          "label": "来る向き（上）",
+          "default": 1.0
+        },
+        "z": {
+          "type": "float",
+          "label": "来る向き（北）",
+          "default": -0.6
+        }
+      }
+    },
+    "lava": {
+      "kind": "record",
+      "label": "溶岩の光",
+      "order": 43,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "default": "#ff5a1e"
+        },
+        "glow": {
+          "type": "float",
+          "label": "強さ",
+          "default": 0.0
+        },
+        "pulse": {
+          "type": "float",
+          "label": "脈打つ速さ",
+          "default": 1.2
+        }
+      }
+    },
+    "particle": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "dust",
+          "petal",
+          "ember"
+        ]
+      },
+      "label": "浮遊物の種類",
+      "order": 44,
+      "default": "dust"
+    },
+    "particleColor": {
+      "kind": "field",
+      "type": "color",
+      "label": "浮遊物の色",
+      "order": 45,
+      "default": "#fff0c8"
+    },
+    "heat": {
+      "kind": "field",
+      "type": "float",
+      "label": "熱のゆらぎ",
+      "order": 46,
+      "default": 0.0
+    },
+    "sunShadow": {
+      "kind": "field",
+      "type": "color",
+      "label": "日の影の色",
+      "order": 47,
+      "default": "#6a70a0"
+    },
+    "sunShadowAlpha": {
+      "kind": "field",
+      "type": "float",
+      "label": "日の影の濃さ（0 で描かない）",
+      "order": 48,
+      "default": 0.0
+    },
+    "hazeColor": {
+      "kind": "field",
+      "type": "color",
+      "label": "遠くのかすみの色",
+      "order": 49,
+      "default": "#a8c0e0"
+    },
+    "hazeStart": {
+      "kind": "field",
+      "type": "float",
+      "label": "かすみ始める深さ",
+      "order": 50,
+      "default": 0.3
+    },
+    "hazeAmount": {
+      "kind": "field",
+      "type": "float",
+      "label": "かすみの濃さ（0 でかすませない）",
+      "order": 51,
+      "default": 0.0
+    },
+    "spriteTintSat": {
+      "kind": "field",
+      "type": "float",
+      "label": "人に掛ける光の色みを残す割合",
+      "order": 52,
+      "default": 1.0
+    },
+    "chandelier": {
+      "kind": "record",
+      "label": "シャンデリアの灯り（1 つ分。強さ 0 で灯さない）",
+      "order": 54,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色",
+          "default": "#ffc070"
+        },
+        "intensity": {
+          "type": "float",
+          "label": "強さ",
+          "default": 0.0
+        },
+        "radius": {
+          "type": "float",
+          "label": "届く半径",
+          "default": 160.0
+        },
+        "flicker": {
+          "type": "float",
+          "label": "揺らぎの振れ幅",
+          "default": 0.06
+        },
+        "flickerSpeed": {
+          "type": "float",
+          "label": "揺らぎの速さ",
+          "default": 4.0
+        }
+      }
+    },
+    "swayAngle": {
+      "kind": "field",
+      "type": "float",
+      "label": "シャンデリアの揺れの角（度）",
+      "order": 55,
+      "default": 1.0
+    },
+    "swayPeriod": {
+      "kind": "field",
+      "type": "float",
+      "label": "シャンデリアの揺れの 1 往復の秒",
+      "order": 56,
+      "default": 5.0
+    },
+    "windowTint": {
+      "kind": "field",
+      "type": "color",
+      "label": "窓の前の床に落ちるステンドグラスの光の色",
+      "order": 57,
+      "default": "#ffffff"
+    },
+    "windowTintMix": {
+      "kind": "field",
+      "type": "float",
+      "label": "窓の光に乗せる青みの割合（0 で白い光）",
+      "order": 58,
+      "default": 0.0
+    },
+    "hemisphere": {
+      "kind": "field",
+      "type": "float",
+      "label": "上を向く面ほど明るくする量（部屋の 3D）",
+      "order": 59,
+      "default": 0.28
+    },
+    "windowPool": {
+      "kind": "field",
+      "type": "float",
+      "label": "窓の前の床に落とす色の光の強さ（0 で落とさない）",
+      "order": 60,
+      "default": 0.0
+    },
+    "spot": {
+      "kind": "record",
+      "label": "影を落とすスポットライト（書斎 = 北の壁の松明から・礼拝堂 = 東の高い窓から）",
+      "order": 61,
+      "fields": {
+        "intensity": {
+          "type": "float",
+          "label": "強さ",
+          "default": 4.5
+        },
+        "range": {
+          "type": "float",
+          "label": "届く距離（world の単位。1 m = layout.json の meter）",
+          "default": 420.0
+        }
+      }
+    },
+    "bounce": {
+      "kind": "field",
+      "type": "float",
+      "label": "松明の色の照り返しを環境光へ足す割合（部屋の 3D）",
+      "order": 62,
+      "default": 0.1
+    },
+    "flameGlow": {
+      "kind": "field",
+      "type": "float",
+      "label": "炎が自分で光る強さ（線形の倍率）",
+      "order": 63,
+      "default": 39.0
+    },
+    "doorLamp": {
+      "kind": "record",
+      "label": "扉を引いて出る場面の背中の燭台（色と揺らぎは燭台と同じ）",
+      "order": 64,
+      "fields": {
+        "intensity": {
+          "type": "float",
+          "label": "強さ",
+          "default": 1.0
+        },
+        "range": {
+          "type": "float",
+          "label": "届く距離（m）",
+          "default": 5.8
+        }
+      }
+    }
+  }
+}
