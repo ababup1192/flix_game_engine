@@ -343,11 +343,19 @@
     "compress": {
       "lossyImages": [
         {
+          "glob": "assets/episodes/romance/art/*.png",
+          "quality": 60
+        },
+        {
+          "glob": "assets/episodes/fantasy/art/*.png",
+          "quality": 82
+        },
+        {
           "glob": "assets/episodes/cafe/art/*.png",
           "quality": 82
         },
         {
-          "glob": "assets/episodes/romance/art/*.png",
+          "glob": "assets/episodes/mystery/art/*.png",
           "quality": 82
         }
       ]
