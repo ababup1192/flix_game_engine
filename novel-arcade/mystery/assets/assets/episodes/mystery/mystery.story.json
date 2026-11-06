@@ -35,9 +35,9 @@
     { "when": "second_broken>=2", "goto": "end_part" },
     { "goto": "end_none" },
 
-    { "label": "end_all", "who": "車掌長", "portrait": "chief", "text": "……全部、見られたな。" },
+    { "label": "end_all", "who": "車掌長", "portrait": "chief_broken", "text": "……全部、見られたな。" },
     { "portrait": "word_sea", "se": "mys_glove", "text": "車掌長は右の手袋を外した。指の中から、海の色の石が転がり落ちた。" },
-    { "who": "車掌長", "portrait": "chief", "text": "母の形見だ。三十年前、借金の形に篠宮の家へ渡った。母の墓へ返したかった。それだけだ。" },
+    { "who": "車掌長", "portrait": "chief_broken", "text": "母の形見だ。三十年前、借金の形に篠宮の家へ渡った。母の墓へ返したかった。それだけだ。" },
     { "who": "車掌長", "text": "見習い。手袋はな、汚してから替えるものじゃない。汚れたまま、持って帰れ。" },
     { "portrait": "", "text": "私は石を受け取り、夫人の部屋へ歩いた。白い手袋の中で、石はまだ温かかった。" },
     { "goto": "credits" },

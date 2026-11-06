@@ -1,0 +1,169 @@
+{
+ "version": 1,
+ "title": "白い手袋の証言の絵の目次",
+ "note": "art/episodes/mystery/cut.py が書く生成物。いじると絵の大きさがずれるので手で直さない。",
+ "pictures": [
+  {
+   "name": "bust_ayase_calm",
+   "w": 400,
+   "h": 475,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_ayase_pressed",
+   "w": 400,
+   "h": 475,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_ayase_broken",
+   "w": 400,
+   "h": 475,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_chief_calm",
+   "w": 400,
+   "h": 475,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_chief_pressed",
+   "w": 400,
+   "h": 475,
+   "scale": 0.5
+  },
+  {
+   "name": "bust_chief_broken",
+   "w": 400,
+   "h": 475,
+   "scale": 0.5
+  },
+  {
+   "name": "diner_back",
+   "w": 600,
+   "h": 597,
+   "scale": 0.5263157894736842
+  },
+  {
+   "name": "diner_table",
+   "w": 540,
+   "h": 732,
+   "scale": 0.6206896551724138
+  },
+  {
+   "name": "night_train",
+   "w": 591,
+   "h": 1280,
+   "scale": 0.6936619718309859
+  },
+  {
+   "name": "room3",
+   "w": 591,
+   "h": 1280,
+   "scale": 0.6936619718309859
+  },
+  {
+   "name": "platform_dawn",
+   "w": 591,
+   "h": 1280,
+   "scale": 0.6936619718309859
+  },
+  {
+   "name": "cover",
+   "w": 540,
+   "h": 180,
+   "scale": 0.5
+  },
+  {
+   "name": "glove",
+   "w": 150,
+   "h": 252,
+   "scale": 0.5
+  },
+  {
+   "name": "glove_pinch",
+   "w": 150,
+   "h": 208,
+   "scale": 0.5
+  },
+  {
+   "name": "sleeve",
+   "w": 62,
+   "h": 268,
+   "scale": 0.5
+  },
+  {
+   "name": "ticket",
+   "w": 468,
+   "h": 166,
+   "scale": 0.5
+  },
+  {
+   "name": "word_card",
+   "w": 200,
+   "h": 405,
+   "scale": 0.5
+  },
+  {
+   "name": "seal",
+   "w": 112,
+   "h": 112,
+   "scale": 0.5
+  },
+  {
+   "name": "word_cups",
+   "w": 150,
+   "h": 52,
+   "scale": 0.5
+  },
+  {
+   "name": "word_tunnel",
+   "w": 150,
+   "h": 144,
+   "scale": 0.5
+  },
+  {
+   "name": "word_key",
+   "w": 150,
+   "h": 142,
+   "scale": 0.5
+  },
+  {
+   "name": "word_pairs",
+   "w": 150,
+   "h": 151,
+   "scale": 0.5
+  },
+  {
+   "name": "word_starch",
+   "w": 150,
+   "h": 148,
+   "scale": 0.5
+  },
+  {
+   "name": "word_chips",
+   "w": 150,
+   "h": 171,
+   "scale": 0.5
+  },
+  {
+   "name": "word_sea",
+   "w": 150,
+   "h": 136,
+   "scale": 0.5
+  },
+  {
+   "name": "ticket_left",
+   "w": 234,
+   "h": 176,
+   "scale": 0.5
+  },
+  {
+   "name": "ticket_right",
+   "w": 234,
+   "h": 176,
+   "scale": 0.5
+  }
+ ]
+}

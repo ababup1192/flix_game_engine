@@ -3,25 +3,242 @@
   "title": "白い手袋の証言の素材の登録",
   "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。",
   "sounds": [
-    {"name": "mys_rail", "path": "assets/episodes/mystery/sfx/mys_rail.wav", "looping": true},
-    {"name": "mys_harbor", "path": "assets/episodes/mystery/sfx/mys_harbor.wav", "looping": true},
-    {"name": "mys_tunnel", "path": "assets/episodes/mystery/sfx/mys_tunnel.wav", "looping": true},
-    {"name": "mys_clock", "path": "assets/episodes/mystery/sfx/mys_clock.wav", "looping": true},
-    {"name": "mys_stare", "path": "assets/episodes/mystery/sfx/mys_stare.wav", "looping": true},
-    {"name": "mys_word", "path": "assets/episodes/mystery/sfx/mys_word.wav", "looping": false},
-    {"name": "mys_flip", "path": "assets/episodes/mystery/sfx/mys_flip.wav", "looping": false},
-    {"name": "mys_lift", "path": "assets/episodes/mystery/sfx/mys_lift.wav", "looping": false},
-    {"name": "mys_throw", "path": "assets/episodes/mystery/sfx/mys_throw.wav", "looping": false},
-    {"name": "mys_tear", "path": "assets/episodes/mystery/sfx/mys_tear.wav", "looping": false},
-    {"name": "mys_thud", "path": "assets/episodes/mystery/sfx/mys_thud.wav", "looping": false},
-    {"name": "mys_shrug", "path": "assets/episodes/mystery/sfx/mys_shrug.wav", "looping": false},
-    {"name": "mys_whistle", "path": "assets/episodes/mystery/sfx/mys_whistle.wav", "looping": false},
-    {"name": "mys_glove", "path": "assets/episodes/mystery/sfx/mys_glove.wav", "looping": false}
+    {
+      "name": "mys_rail",
+      "path": "assets/episodes/mystery/sfx/mys_rail.wav",
+      "looping": true
+    },
+    {
+      "name": "mys_harbor",
+      "path": "assets/episodes/mystery/sfx/mys_harbor.wav",
+      "looping": true
+    },
+    {
+      "name": "mys_tunnel",
+      "path": "assets/episodes/mystery/sfx/mys_tunnel.wav",
+      "looping": true
+    },
+    {
+      "name": "mys_clock",
+      "path": "assets/episodes/mystery/sfx/mys_clock.wav",
+      "looping": true
+    },
+    {
+      "name": "mys_stare",
+      "path": "assets/episodes/mystery/sfx/mys_stare.wav",
+      "looping": true
+    },
+    {
+      "name": "mys_word",
+      "path": "assets/episodes/mystery/sfx/mys_word.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_flip",
+      "path": "assets/episodes/mystery/sfx/mys_flip.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_lift",
+      "path": "assets/episodes/mystery/sfx/mys_lift.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_throw",
+      "path": "assets/episodes/mystery/sfx/mys_throw.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_tear",
+      "path": "assets/episodes/mystery/sfx/mys_tear.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_thud",
+      "path": "assets/episodes/mystery/sfx/mys_thud.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_shrug",
+      "path": "assets/episodes/mystery/sfx/mys_shrug.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_whistle",
+      "path": "assets/episodes/mystery/sfx/mys_whistle.wav",
+      "looping": false
+    },
+    {
+      "name": "mys_glove",
+      "path": "assets/episodes/mystery/sfx/mys_glove.wav",
+      "looping": false
+    }
   ],
-  "textures": [],
+  "textures": [
+    {
+      "name": "mystery_bust_ayase_calm",
+      "path": "assets/episodes/mystery/art/bust_ayase_calm.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_bust_ayase_pressed",
+      "path": "assets/episodes/mystery/art/bust_ayase_pressed.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_bust_ayase_broken",
+      "path": "assets/episodes/mystery/art/bust_ayase_broken.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_bust_chief_calm",
+      "path": "assets/episodes/mystery/art/bust_chief_calm.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_bust_chief_pressed",
+      "path": "assets/episodes/mystery/art/bust_chief_pressed.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_bust_chief_broken",
+      "path": "assets/episodes/mystery/art/bust_chief_broken.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_diner_back",
+      "path": "assets/episodes/mystery/art/diner_back.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_diner_table",
+      "path": "assets/episodes/mystery/art/diner_table.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_night_train",
+      "path": "assets/episodes/mystery/art/night_train.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_room3",
+      "path": "assets/episodes/mystery/art/room3.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_platform_dawn",
+      "path": "assets/episodes/mystery/art/platform_dawn.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_cover",
+      "path": "assets/episodes/mystery/art/cover.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_glove",
+      "path": "assets/episodes/mystery/art/glove.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_glove_pinch",
+      "path": "assets/episodes/mystery/art/glove_pinch.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_sleeve",
+      "path": "assets/episodes/mystery/art/sleeve.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_ticket",
+      "path": "assets/episodes/mystery/art/ticket.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_card",
+      "path": "assets/episodes/mystery/art/word_card.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_seal",
+      "path": "assets/episodes/mystery/art/seal.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_cups",
+      "path": "assets/episodes/mystery/art/word_cups.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_tunnel",
+      "path": "assets/episodes/mystery/art/word_tunnel.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_key",
+      "path": "assets/episodes/mystery/art/word_key.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_pairs",
+      "path": "assets/episodes/mystery/art/word_pairs.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_starch",
+      "path": "assets/episodes/mystery/art/word_starch.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_chips",
+      "path": "assets/episodes/mystery/art/word_chips.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_word_sea",
+      "path": "assets/episodes/mystery/art/word_sea.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_ticket_left",
+      "path": "assets/episodes/mystery/art/ticket_left.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "mystery_ticket_right",
+      "path": "assets/episodes/mystery/art/ticket_right.png",
+      "hasAlpha": true
+    }
+  ],
   "resources": [
-    {"id": "mystery_story", "pattern": "assets/episodes/mystery/mystery.story.json", "title": "白い手袋の証言の台本", "schema": "assets/story.schema.json", "role": "material"},
-    {"id": "mystery_theme", "pattern": "assets/episodes/mystery/mystery.theme.json", "title": "白い手袋の証言の文章の色", "schema": "assets/book-theme.schema.json", "role": "material"},
-    {"id": "mystery_testimony", "pattern": "assets/episodes/mystery/mystery.testimony.json", "title": "白い手袋の証言の対決の値", "schema": "assets/episodes/mystery/testimony.schema.json", "role": "material"}
+    {
+      "id": "mystery_story",
+      "pattern": "assets/episodes/mystery/mystery.story.json",
+      "title": "白い手袋の証言の台本",
+      "schema": "assets/story.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "mystery_theme",
+      "pattern": "assets/episodes/mystery/mystery.theme.json",
+      "title": "白い手袋の証言の文章の色",
+      "schema": "assets/book-theme.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "mystery_testimony",
+      "pattern": "assets/episodes/mystery/mystery.testimony.json",
+      "title": "白い手袋の証言の対決の値",
+      "schema": "assets/episodes/mystery/testimony.schema.json",
+      "role": "material"
+    },
+    {
+      "id": "mystery_art_index",
+      "pattern": "assets/episodes/mystery/mystery.art.json",
+      "title": "白い手袋の証言の絵の目次",
+      "schema": "assets/episodes/mystery/art.schema.json",
+      "role": "material"
+    }
   ]
 }
