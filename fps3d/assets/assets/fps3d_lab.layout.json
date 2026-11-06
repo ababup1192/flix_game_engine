@@ -1,0 +1,733 @@
+{
+  "version": 1,
+  "title": "地図と家具",
+  "note": "rows の 1 字が 1 マス: # 岩・. 通路の床・r 部屋の床・D 部屋の扉（壁の中）・T 部屋の壁の松明・t 通路の壁の松明・@ 始まり。props は部屋の家具（model = assets/models/<名前>.obj・x と y はマスの単位の床の点・turn = 向き（度。0 で正面が北）・scale = 大きさの掛け目・stretch = 横だけの掛け目・lift = 床から持ち上げる高さ）。meter = Blender の 1 m が world の何単位か。 actors はジョイントで動く人（model = assets/models/<名前>.glb）。",
+  "meter": 16.0,
+  "rows": [
+    "##########################################",
+    "#######TT####T####TT######################",
+    "######rrrrrrrrrrrrrr######################",
+    "#####Trrrrrrrrrrrrrr######################",
+    "######rrrrrrrrrrrrrrT#####################",
+    "######rrrrrrrrrrrrrr######################",
+    "#####Trrrrrrrrrrrrrr######################",
+    "######rrrrrrrrrrrrrr######################",
+    "#######T##D##T############cccccccccccccc##",
+    "##########.###t######t####ccccCcccCccccc##",
+    "##t......................#cccccccccccCcc##",
+    "###.####################.#cccccccccccccc##",
+    "###.####################.Dcccccccccccccc##",
+    "###..@...................#cccccccccccccc##",
+    "#########t########t#######cccccccccccCcc##",
+    "##########################ccccCcccCccccc##",
+    "##########################cccccccccccccc##",
+    "##########################################",
+    "##########################################",
+    "##########################################",
+    "##########################################"
+  ],
+  "props": [
+    {
+      "model": "rug",
+      "x": 12.5,
+      "y": 5.0,
+      "turn": 0,
+      "scale": 1.6,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "table",
+      "x": 12.5,
+      "y": 5.0,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "bench",
+      "x": 12.5,
+      "y": 4.45,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "bench",
+      "x": 12.5,
+      "y": 5.55,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "desk",
+      "x": 13.5,
+      "y": 2.45,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "chair",
+      "x": 13.5,
+      "y": 3.05,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "bookshelf",
+      "x": 9.35,
+      "y": 2.17,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "bookshelf",
+      "x": 10.05,
+      "y": 2.17,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "bookshelf",
+      "x": 10.75,
+      "y": 2.17,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "bookshelf",
+      "x": 6.17,
+      "y": 3.6,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "desk",
+      "x": 6.45,
+      "y": 6.0,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "chair",
+      "x": 7.05,
+      "y": 6.0,
+      "turn": 270,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "chest",
+      "x": 16.5,
+      "y": 2.3,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "barrel",
+      "x": 19.55,
+      "y": 7.5,
+      "turn": 0.0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "barrel",
+      "x": 19.55,
+      "y": 6.85,
+      "turn": 0.0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "barrel",
+      "x": 18.95,
+      "y": 7.55,
+      "turn": 0,
+      "scale": 0.9,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "beam",
+      "x": 13.0,
+      "y": 3.0,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 21.5,
+      "lift": 40.9
+    },
+    {
+      "model": "beam",
+      "x": 13.0,
+      "y": 5.0,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 21.5,
+      "lift": 40.9
+    },
+    {
+      "model": "beam",
+      "x": 13.0,
+      "y": 7.0,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 21.5,
+      "lift": 40.9
+    },
+    {
+      "model": "candelabra",
+      "x": 13.05,
+      "y": 2.4,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 11.7
+    },
+    {
+      "model": "inkwell",
+      "x": 13.85,
+      "y": 2.35,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 11.7
+    },
+    {
+      "model": "open_book",
+      "x": 12.2,
+      "y": 4.95,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 11.7
+    },
+    {
+      "model": "book_stack",
+      "x": 13.3,
+      "y": 4.9,
+      "turn": 30,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 11.7
+    },
+    {
+      "model": "candle",
+      "x": 11.6,
+      "y": 5.05,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 12.7
+    },
+    {
+      "model": "candle",
+      "x": 13.6,
+      "y": 5.1,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 12.7
+    },
+    {
+      "model": "map_scroll",
+      "x": 6.45,
+      "y": 5.85,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 11.7
+    },
+    {
+      "model": "candle",
+      "x": 6.4,
+      "y": 6.35,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 11.7
+    },
+    {
+      "model": "globe",
+      "x": 8.4,
+      "y": 3.3,
+      "turn": 20,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "stool",
+      "x": 9.3,
+      "y": 3.9,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "potted_plant",
+      "x": 7.0,
+      "y": 2.55,
+      "turn": 0.0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "potted_plant",
+      "x": 19.4,
+      "y": 2.6,
+      "turn": 0.0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "crate",
+      "x": 17.75,
+      "y": 7.45,
+      "turn": 10,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "crate",
+      "x": 17.75,
+      "y": 7.45,
+      "turn": -15,
+      "scale": 0.85,
+      "stretch": 1.0,
+      "lift": 9.6
+    },
+    {
+      "model": "sack",
+      "x": 18.3,
+      "y": 6.55,
+      "turn": 40,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "weapon_rack",
+      "x": 15.6,
+      "y": 7.78,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "banner",
+      "x": 11.5,
+      "y": 2.05,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 9.0
+    },
+    {
+      "model": "banner",
+      "x": 15.5,
+      "y": 2.05,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 9.0
+    },
+    {
+      "model": "shield",
+      "x": 19.97,
+      "y": 5.4,
+      "turn": -90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 16.0
+    },
+    {
+      "model": "jar",
+      "x": 16.25,
+      "y": 2.3,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 9.2
+    },
+    {
+      "model": "bottle",
+      "x": 16.75,
+      "y": 2.25,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 9.2
+    },
+    {
+      "model": "door",
+      "x": 10.5,
+      "y": 7.97,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "carpet_runner",
+      "x": 32.3,
+      "y": 12.5,
+      "turn": 90,
+      "scale": 1.05,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 28.6,
+      "y": 10.7,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 28.6,
+      "y": 14.3,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 30.2,
+      "y": 10.7,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 30.2,
+      "y": 14.3,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 31.8,
+      "y": 10.7,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 31.8,
+      "y": 14.3,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 33.4,
+      "y": 10.7,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "pew",
+      "x": 33.4,
+      "y": 14.3,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 27.6,
+      "y": 8.9,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 27.6,
+      "y": 16.1,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 30.9,
+      "y": 8.9,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 30.9,
+      "y": 16.1,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 34.2,
+      "y": 8.9,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 34.2,
+      "y": 16.1,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 37.4,
+      "y": 8.9,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "column",
+      "x": 37.4,
+      "y": 16.1,
+      "turn": 0,
+      "scale": 1.5,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "altar",
+      "x": 38.2,
+      "y": 12.5,
+      "turn": -90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "vase_flowers",
+      "x": 38.4,
+      "y": 11.0,
+      "turn": -90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "vase_flowers",
+      "x": 38.4,
+      "y": 14.0,
+      "turn": -90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "lectern",
+      "x": 36.3,
+      "y": 14.4,
+      "turn": -90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "statue",
+      "x": 39.3,
+      "y": 9.1,
+      "turn": -90,
+      "scale": 1.2,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "statue",
+      "x": 39.3,
+      "y": 15.9,
+      "turn": -90,
+      "scale": 1.2,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "chandelier",
+      "x": 30.5,
+      "y": 12.5,
+      "turn": 0,
+      "scale": 1.3,
+      "stretch": 1.0,
+      "lift": 42.959999999999994
+    },
+    {
+      "model": "chandelier",
+      "x": 34.5,
+      "y": 12.5,
+      "turn": 0,
+      "scale": 1.3,
+      "stretch": 1.0,
+      "lift": 42.959999999999994
+    },
+    {
+      "model": "stained_window",
+      "x": 29.2,
+      "y": 8.08,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 12.0
+    },
+    {
+      "model": "stained_window",
+      "x": 32.6,
+      "y": 8.08,
+      "turn": 180,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 12.0
+    },
+    {
+      "model": "stained_window",
+      "x": 29.2,
+      "y": 16.92,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 12.0
+    },
+    {
+      "model": "stained_window",
+      "x": 32.6,
+      "y": 16.92,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 12.0
+    },
+    {
+      "model": "door",
+      "x": 26.03,
+      "y": 12.5,
+      "turn": 90,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "candle_stand",
+      "x": 37.5,
+      "y": 10.5,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "candle_stand",
+      "x": 37.5,
+      "y": 14.5,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "candle_stand",
+      "x": 30.5,
+      "y": 9.5,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "candle_stand",
+      "x": 30.5,
+      "y": 15.5,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "candle_stand",
+      "x": 34.5,
+      "y": 9.5,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    },
+    {
+      "model": "candle_stand",
+      "x": 34.5,
+      "y": 15.5,
+      "turn": 0,
+      "scale": 1.0,
+      "stretch": 1.0,
+      "lift": 0.0
+    }
+  ],
+  "actors": [
+    {
+      "model": "guard_textured",
+      "x": 11.7,
+      "y": 6.0,
+      "turn": -90.0,
+      "scale": 1.0
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "title": "操作（キーの割り当て）",
+  "note": "キー割り当て。1 つの操作に複数キーを並べられる(どれを押しても効く)。保存すると即反映。名前は GameEngine.Key の綴り。通路(2D)では up・down・left・right で 1 マスずつ歩く。部屋(3D)では up・down で前後に歩き、left・right で向きを回し、strafeLeft・strafeRight で横へ歩く。",
+  "left": [
+    "Left"
+  ],
+  "right": [
+    "Right"
+  ],
+  "up": [
+    "Up",
+    "W"
+  ],
+  "down": [
+    "Down",
+    "S"
+  ],
+  "strafeLeft": [
+    "A",
+    "Q"
+  ],
+  "strafeRight": [
+    "D",
+    "E"
+  ]
+}

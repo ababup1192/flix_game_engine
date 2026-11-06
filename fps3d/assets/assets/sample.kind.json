@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "title": "手触り（見本の数値）",
+  "note": "手触りの調整例。いじると何が変わるか: speed=主人公の速さ（px/秒。大きいほど速く動く）・quitPrompt=Esc や閉じるボタンで出る終了の確認の文言・loadingLabel=起動の読み込み中の幕の文言（後ろの点は動きで足す）・loadingFade=読み込みが済んでから幕を薄め切るまでの秒。各欄の意味は sample.schema.json の label に。増やしたくなったらフィールドを足し、schema と SampleDoc の defaults も揃える。",
+  "speed": 120.0,
+  "quitPrompt": "Quit?  Enter: yes  /  Esc: no",
+  "loadingLabel": "Loading",
+  "loadingFade": 0.5
+}

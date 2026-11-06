@@ -1,0 +1,63 @@
+{
+  "//": "fps3d_lab.dungeon.json の形（Studio の sections 方言）。既定は src の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "tile": {
+      "kind": "field",
+      "type": "float",
+      "label": "1 マスの大きさ",
+      "order": 4,
+      "default": 24.0
+    },
+    "wallHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "壁の高さ",
+      "order": 12,
+      "default": 30.0
+    },
+    "pillar": {
+      "kind": "record",
+      "label": "柱",
+      "order": 13,
+      "fields": {
+        "height": {
+          "type": "float",
+          "label": "高さ",
+          "default": 44.0
+        },
+        "size": {
+          "type": "float",
+          "label": "四角の一辺",
+          "default": 12.0
+        }
+      }
+    },
+    "torchHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "松明の高さ",
+      "order": 15,
+      "default": 26.0
+    },
+    "play": {
+      "kind": "record",
+      "label": "歩く手触り",
+      "order": 19,
+      "fields": {
+        "stepTime": {
+          "type": "float",
+          "label": "1 マスを移る秒",
+          "default": 0.2
+        }
+      }
+    },
+    "lavaDepth": {
+      "kind": "field",
+      "type": "float",
+      "label": "溶岩の池を沈める深さ",
+      "order": 20,
+      "default": 16.0
+    }
+  }
+}

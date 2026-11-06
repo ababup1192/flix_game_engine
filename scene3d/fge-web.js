@@ -31,11 +31,12 @@ function fgeDeleteProgram(program) {
   if (names !== undefined) { names.forEach(function (id) { if (id >= 0) fgeU[id] = null; }); fgeUByProgram.delete(program); }
 }
 
-// ?glcheck=1 の時だけ、GL の呼び出しのたびに getError を見て、呼び出しと誤りの組ごとに 1 回 console.error へ言う。fgeGlCheck に回数を残す。
 // WhyNot: 普段の起動で見ない — getError は GPU の待ちになり、1 コマが何倍にも延びる。
-var fgeGlCheck = { calls: 0, errors: 0, seen: Object.create(null) };
+function fgeQueryParam(name) { return new URLSearchParams(location.search).get(name); }
+
+var fgeGlCheck = { calls: 0, errors: 0, seen: Object.create(null), counts: Object.create(null) };
 function fgeCheckedGl(gl) {
-  if (new URLSearchParams(location.search).get("glcheck") !== "1") return gl;
+  if (fgeQueryParam("glcheck") !== "1") return gl;
   var wrapped = Object.create(null);
   return new Proxy(gl, {
     get: function (target, name) {
@@ -45,6 +46,7 @@ function fgeCheckedGl(gl) {
       wrapped[name] = function () {
         var result = v.apply(target, arguments);
         fgeGlCheck.calls++;
+        fgeGlCheck.counts[name] = (fgeGlCheck.counts[name] || 0) + 1;
         var code = target.getError();
         if (code !== target.NO_ERROR) {
           fgeGlCheck.errors++;
@@ -83,17 +85,12 @@ function fgeTexImageArgbLevel(level, w, h, argb, from) {
   fgeGl.texImage2D(fgeGl.TEXTURE_2D, level, fgeGl.RGBA8, w, h, 0, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, out.subarray(0, n * 4));
 }
 
-// ?loadtime=1 の時だけ、読み込みの区間（decode・hash・mip）の回数と時間を fgeLoadTimes に足し、絵を解く 1 枚ごとに console.time で出す。
-var fgeLoadTimes = new URLSearchParams(location.search).get("loadtime") === "1" ? Object.create(null) : null;
-function fgeNoteLoadTime(label, ms) {
-  if (fgeLoadTimes === null) return;
-  var t = fgeLoadTimes[label] || (fgeLoadTimes[label] = { count: 0, ms: 0 });
-  t.count++;
-  t.ms += ms;
-}
+var fgeDecodeTimes = fgeQueryParam("loadtime") === "1" ? { count: 0, ms: 0 } : null;
 
 var fgeReadFramebuffer = null;
-function fgeReadTextureArgb(texture, w, h, argb) { fgeReadGlTextureArgb(fgeH[texture], w, h, argb); }
+function fgeReadTextureArgb(texture, w, h, argb) {
+  if (!fgeReadGlTextureArgb(fgeH[texture], w, h, argb)) console.warn("[fge] テクスチャ " + texture + " を読み戻せない（FBO が不完全）— 透明な黒で続ける");
+}
 function fgeReadGlTextureArgb(texture, w, h, argb) {
   if (fgeReadFramebuffer === null) fgeReadFramebuffer = fgeGl.createFramebuffer();
   var n = w * h;
@@ -102,16 +99,20 @@ function fgeReadGlTextureArgb(texture, w, h, argb) {
   var before = fgeGl.getParameter(fgeGl.READ_FRAMEBUFFER_BINDING);
   fgeGl.bindFramebuffer(fgeGl.READ_FRAMEBUFFER, fgeReadFramebuffer);
   fgeGl.framebufferTexture2D(fgeGl.READ_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, texture, 0);
-  fgeGl.readPixels(0, 0, w, h, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bytes);
+  // WhyNot: 確かめずに読まない — 不完全な FBO の readPixels は誤りだけを残し、使い回す置き場の前の絵が成功として返る。
+  var complete = fgeGl.checkFramebufferStatus(fgeGl.READ_FRAMEBUFFER) === fgeGl.FRAMEBUFFER_COMPLETE;
+  if (complete) fgeGl.readPixels(0, 0, w, h, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bytes);
   fgeGl.framebufferTexture2D(fgeGl.READ_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, null, 0);
   fgeGl.bindFramebuffer(fgeGl.READ_FRAMEBUFFER, before);
+  if (!complete) return false;
   for (var i = 0; i < n; i++) {
     var o = i * 4;
     argb[i] = (bytes[o + 3] << 24) | (bytes[o] << 16) | (bytes[o + 1] << 8) | bytes[o + 2];
   }
+  return true;
 }
 
-// ImageBitmap を一時の RGBA8 テクスチャへ上げ、読み戻して ARGB の列にする。
+function fgeDecodeFailed(why) { return { error: "絵を解けない: " + why, width: 0, height: 0, argb: null }; }
 function fgeBitmapArgb(bitmap) {
   var w = bitmap.width, h = bitmap.height;
   var before = fgeGl.getParameter(fgeGl.TEXTURE_BINDING_2D);
@@ -120,10 +121,10 @@ function fgeBitmapArgb(bitmap) {
   fgeGl.pixelStorei(fgeGl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bitmap);
   var argb = new Int32Array(w * h);
-  fgeReadGlTextureArgb(texture, w, h, argb);
+  var read = fgeReadGlTextureArgb(texture, w, h, argb);
   fgeGl.bindTexture(fgeGl.TEXTURE_2D, before);
   fgeGl.deleteTexture(texture);
-  return { error: "", width: w, height: h, argb: argb };
+  return read ? { error: "", width: w, height: h, argb: argb } : fgeDecodeFailed("読み戻しの FBO が不完全");
 }
 
 var fgeDecoded = null;
@@ -131,26 +132,31 @@ var fgeDecodeCount = 0;
 function fgeDecodeImage(bytes, done) {
   var label = "[loadtime] decode " + (++fgeDecodeCount) + "（" + bytes.length + " バイト）";
   var began = performance.now();
-  if (fgeLoadTimes !== null) console.time(label);
+  if (fgeDecodeTimes !== null) console.time(label);
   var finish = function (result) {
     fgeDecoded = result;
-    if (fgeLoadTimes !== null) { console.timeEnd(label); fgeNoteLoadTime("decode", performance.now() - began); }
+    if (fgeDecodeTimes !== null) {
+      console.timeEnd(label);
+      fgeDecodeTimes.count++;
+      fgeDecodeTimes.ms += performance.now() - began;
+    }
     done();
   };
-  // 型は頭のバイトで見る: ゲームの中で読むバイトには道も拡張子も無い。
-  var type = (bytes[0] & 255) === 0x89 ? "image/png" : (bytes[0] & 255) === 0xff ? "image/jpeg" : "";
+  // WhyNot: 型を空にしない — 中身から形式を見分けるのに頼ると、ブラウザによって WebP を絵と見なさない恐れがある。ゲームが読むバイトに道は無いので頭のバイトで決める。
+  var head = bytes[0] & 255;
+  var type = head === 0x89 ? "image/png" : head === 0xff ? "image/jpeg" : head === 0x52 ? "image/webp" : "application/octet-stream";
+  // WhyNot: .then(...).catch(...) の形にしない — done() の先で走るゲームの例外まで受けて、解読の失敗として 2 回目の done() を呼ぶ。
   createImageBitmap(new Blob([bytes], { type: type }), { premultiplyAlpha: "none", colorSpaceConversion: "none" }).then(function (bitmap) {
-    var result = fgeBitmapArgb(bitmap);
+    var result;
+    try { result = fgeBitmapArgb(bitmap); } catch (e) { result = fgeDecodeFailed(e && e.message || e); }
     bitmap.close();
     finish(result);
-  }).catch(function (e) { finish({ error: "絵を解けない: " + (e && e.message || e), width: 0, height: 0, argb: null }); });
+  }, function (e) { finish(fgeDecodeFailed(e && e.message || e)); });
 }
 
 // ── canvas ──
 var fgeCanvas = null;
-// ?capture=<n>: bin/fge web-capture がデスクトップの FLIX_GE_FRAME_SHOT と同じコマを撮る口。canvas を design の大きさにし、
-// dt を 1/60 に固定し、押さずに始め、n コマ目を描き終えた所で読む（docs/web-capture.md の頁の約束）。
-var fgeCaptureFrame = parseInt(new URLSearchParams(location.search).get("capture") || "0", 10) || 0;
+var fgeCaptureFrame = parseInt(fgeQueryParam("capture") || "0", 10) || 0;
 var fgeCaptureDesign = null;
 var fgeDrawnFrames = 0;
 function fgeFrameDrawn() {
@@ -170,8 +176,10 @@ function fgeFrameDrawn() {
 
 function fgeResizeCanvas() {
   if (fgeCaptureFrame > 0 && fgeCaptureDesign !== null) {
-    fgeCanvas.width = fgeCaptureDesign.w;
-    fgeCanvas.height = fgeCaptureDesign.h;
+    if (fgeCanvas.width !== fgeCaptureDesign.w || fgeCanvas.height !== fgeCaptureDesign.h) {
+      fgeCanvas.width = fgeCaptureDesign.w;
+      fgeCanvas.height = fgeCaptureDesign.h;
+    }
     return;
   }
   var dpr = window.devicePixelRatio || 1;
@@ -492,7 +500,6 @@ function fgeGestureCancel(e) {
 
 function fgeNotePointer(e) { fgePointer.touch = e.pointerType === "touch"; }
 
-// マウスの捕まえ（pointer lock）。wanted = ゲームの宣言・asking = 頼んで返事待ち・releasing = 自分で放した直後。
 // WhyNot: 断られたら諦めない — ブラウザは操作の直後しか許さず、Esc で抜けた直後も断るので、次の操作で頼み直す。
 var fgeMouseCapture = { wanted: false, asking: false, releasing: false };
 function fgeRequestMouseCapture() {
@@ -516,13 +523,16 @@ function fgeWireMouseCapture() {
     var c = fgeMouseCapture;
     c.asking = false;
     var locked = document.pointerLockElement === fgeCanvas;
+    // WhyNot: 頼んだ後に宣言が変わった lock を残さない — 返事を待つ間に放すと、lock だけが後から掛かる。
+    if (locked && !c.wanted) { c.releasing = true; document.exitPointerLock(); return; }
     // WhyNot: フォーカスが外れた解除を Esc にしない — 窓を切り替えただけでゲームのメニューが開く。戻って次の操作で掛け直す。
-    if (!locked && c.wanted && !c.releasing && document.hasFocus()) fgeLatch.Escape = true;
+    if (!locked && c.wanted && !c.releasing && document.hasFocus() && document.visibilityState === "visible") fgeLatch.Escape = true;
     if (!locked) c.releasing = false;
   });
   document.addEventListener("pointerlockerror", function () { fgeMouseCapture.asking = false; });
   window.addEventListener("mousedown", fgeRequestMouseCapture);
-  window.addEventListener("keydown", fgeRequestMouseCapture);
+  // WhyNot: Esc で頼み直さない — Esc で放した状態の Esc（メニューの閉じる）で、また掛かる。
+  window.addEventListener("keydown", function (e) { if (e.code !== "Escape") fgeRequestMouseCapture(); });
 }
 
 function fgeWireInput() {
@@ -710,9 +720,8 @@ function fgeProgress(phase, done, total) {
   if (bar) bar.style.width = (total > 0 ? Math.round(100 * done / total) : 100) + "%";
 }
 function fgeShow(id, on) { var el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; }
-// ?fps=1 の時だけ、左上に fps と 1 コマの CPU の中央値を出す。
 function fgeWireFpsOverlay() {
-  if (new URLSearchParams(location.search).get("fps") !== "1") return;
+  if (fgeQueryParam("fps") !== "1") return;
   var el = document.createElement("div");
   el.style.cssText = "position:fixed;left:8px;top:calc(8px + env(safe-area-inset-top,0px));z-index:9999;padding:4px 8px;font:14px/1.3 monospace;color:#fff;background:rgba(0,0,0,.65);pointer-events:none";
   document.body.appendChild(el);
@@ -731,13 +740,15 @@ function fgeWireFpsOverlay() {
 function fgeStarted() {
   fgeShow("fge-boot", false);
   fgeWireFpsOverlay();
-  if (fgeLoadTimes !== null) console.log("[loadtime] 最初のコマまで " + performance.now().toFixed(0) + " ms");
+  if (fgeDecodeTimes !== null) console.log("[loadtime] 最初のコマまで " + performance.now().toFixed(0) + " ms");
 }
 function fgeEnded() { fgeShow("fge-end", true); }
 function fgeError(message) {
   var el = document.getElementById("fge-error");
   if (el) { el.textContent = message; el.style.display = ""; }
   console.error(message);
+  // WhyNot: 撮る道具に待ち切らせない — 止まった頁は合図を出さないので、絵の遅れと見分けが付かないまま上限の秒数を待つ。
+  if (fgeCaptureFrame > 0) window.fgeCaptureError = message;
 }
 window.addEventListener("error", function (e) {
   var err = e.error;
@@ -833,7 +844,8 @@ async function fgeBoot() {
   var files = bundle.files || [];
   var sounds = bundle.sounds || [];
   var images = bundle.images || [];
-  var total = files.length + sounds.length + images.length;
+  var inFiles = new Set(files);
+  var total = files.length + sounds.length + images.filter(function (path) { return !inFiles.has(path); }).length;
   var done = 0;
   // WhyNot: 押した後に音を解かない — 止まったままの AudioContext でも decodeAudioData は使えるので、素材を取る間に解き終えておく。
   var Ctx = window.AudioContext || window.webkitAudioContext;
@@ -843,13 +855,7 @@ async function fgeBoot() {
   fgeProgress("loading", 0, total);
   var jobs = files.map(function (path) {
     return async function () { fgeAssets.set(fgeNormPath(path), await fgeFetchAsset(path)); };
-  }).concat(images.map(function (path) {
-    return async function () {
-      // WhyNot: 型を空にしない — 中身から形式を見分けるのに頼ると、ブラウザによって WebP を絵と見なさない恐れがある。
-      var blob = new Blob([await fgeFetchAsset(path)], { type: fgeImageType(fgeServedPath(path)) });
-      fgeImages.set(fgeNormPath(path), await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
-    };
-  })).concat(sounds.map(function (s) {
+  }).concat(sounds.map(function (s) {
     return async function () {
       var buffer;
       try {
@@ -871,6 +877,14 @@ async function fgeBoot() {
   await fgeEachLimited(jobs, 6, async function (job) {
     await job();
     fgeProgress("loading", ++done, total);
+  });
+  // WhyNot: files にもある絵を取り直さない — 同じ URL を 2 回運ぶ。readBytes のために生のバイトが表に残るメモリは、3D の入口の速さを問わない範囲として受ける。
+  await fgeEachLimited(images, 6, async function (path) {
+    var kept = fgeAssets.get(fgeNormPath(path));
+    // WhyNot: 型を空にしない — 中身から形式を見分けるのに頼ると、ブラウザによって WebP を絵と見なさない恐れがある。
+    var blob = new Blob([kept || await fgeFetchAsset(path)], { type: fgeImageType(fgeServedPath(path)) });
+    fgeImages.set(fgeNormPath(path), await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
+    if (!kept) fgeProgress("loading", ++done, total);
   });
   fgeShow("fge-start", true);
   fgeProgress("click / tap to start", total, total);
