@@ -5,11 +5,36 @@
   "assets/OFL.txt",
   "assets/book-theme.schema.json",
   "assets/episode.schema.json",
+  "assets/episodes/cafe/cafe.counter.json",
+  "assets/episodes/cafe/cafe.episode.json",
+  "assets/episodes/cafe/cafe.story.json",
+  "assets/episodes/cafe/cafe.theme.json",
+  "assets/episodes/cafe/counter.schema.json",
+  "assets/episodes/fantasy/battle.schema.json",
+  "assets/episodes/fantasy/fantasy.battle.json",
+  "assets/episodes/fantasy/fantasy.episode.json",
+  "assets/episodes/fantasy/fantasy.story.json",
+  "assets/episodes/fantasy/fantasy.theme.json",
   "assets/episodes/horror/corridor.schema.json",
   "assets/episodes/horror/horror.corridor.json",
   "assets/episodes/horror/horror.episode.json",
   "assets/episodes/horror/horror.story.json",
   "assets/episodes/horror/horror.theme.json",
+  "assets/episodes/mystery/mystery.episode.json",
+  "assets/episodes/mystery/mystery.story.json",
+  "assets/episodes/mystery/mystery.testimony.json",
+  "assets/episodes/mystery/mystery.theme.json",
+  "assets/episodes/mystery/testimony.schema.json",
+  "assets/episodes/romance/live.schema.json",
+  "assets/episodes/romance/romance.episode.json",
+  "assets/episodes/romance/romance.live.json",
+  "assets/episodes/romance/romance.story.json",
+  "assets/episodes/romance/romance.theme.json",
+  "assets/episodes/school/drop.schema.json",
+  "assets/episodes/school/school.drop.json",
+  "assets/episodes/school/school.episode.json",
+  "assets/episodes/school/school.story.json",
+  "assets/episodes/school/school.theme.json",
   "assets/novel_arcade.scenes.json",
   "assets/scenes.schema.json",
   "assets/shelf.json",
@@ -71,6 +96,252 @@
    "seconds": 1
   },
   {
+   "name": "cafe_amb_noon",
+   "path": "assets/episodes/cafe/sfx/amb_noon.wav",
+   "looping": true,
+   "seconds": 22.857142857142858
+  },
+  {
+   "name": "cafe_amb_rain",
+   "path": "assets/episodes/cafe/sfx/amb_rain.wav",
+   "looping": true,
+   "seconds": 22.857142857142858
+  },
+  {
+   "name": "cafe_grind",
+   "path": "assets/episodes/cafe/sfx/grind.wav",
+   "looping": true,
+   "seconds": 1.6
+  },
+  {
+   "name": "cafe_pour",
+   "path": "assets/episodes/cafe/sfx/pour.wav",
+   "looping": true,
+   "seconds": 1.5
+  },
+  {
+   "name": "cafe_bell",
+   "path": "assets/episodes/cafe/sfx/bell.wav",
+   "looping": false,
+   "seconds": 1.2
+  },
+  {
+   "name": "cafe_beans",
+   "path": "assets/episodes/cafe/sfx/beans.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "cafe_click",
+   "path": "assets/episodes/cafe/sfx/click.wav",
+   "looping": false,
+   "seconds": 0.02997732426303855
+  },
+  {
+   "name": "cafe_notch",
+   "path": "assets/episodes/cafe/sfx/notch.wav",
+   "looping": false,
+   "seconds": 0.3399546485260771
+  },
+  {
+   "name": "cafe_slide",
+   "path": "assets/episodes/cafe/sfx/slide.wav",
+   "looping": false,
+   "seconds": 0.28
+  },
+  {
+   "name": "cafe_lift",
+   "path": "assets/episodes/cafe/sfx/lift.wav",
+   "looping": false,
+   "seconds": 0.08
+  },
+  {
+   "name": "cafe_cup",
+   "path": "assets/episodes/cafe/sfx/cup.wav",
+   "looping": false,
+   "seconds": 0.24
+  },
+  {
+   "name": "cafe_spill",
+   "path": "assets/episodes/cafe/sfx/spill.wav",
+   "looping": false,
+   "seconds": 0.6999546485260771
+  },
+  {
+   "name": "cafe_stamp",
+   "path": "assets/episodes/cafe/sfx/stamp.wav",
+   "looping": false,
+   "seconds": 0.16
+  },
+  {
+   "name": "cafe_coin",
+   "path": "assets/episodes/cafe/sfx/coin.wav",
+   "looping": false,
+   "seconds": 0.3
+  },
+  {
+   "name": "cafe_tip",
+   "path": "assets/episodes/cafe/sfx/tip.wav",
+   "looping": false,
+   "seconds": 0.56
+  },
+  {
+   "name": "cafe_sigh",
+   "path": "assets/episodes/cafe/sfx/sigh.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "cafe_receipt",
+   "path": "assets/episodes/cafe/sfx/receipt.wav",
+   "looping": false,
+   "seconds": 1.14
+  },
+  {
+   "name": "fan_amb_valley",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_valley.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_amb_chapel",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_chapel.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_amb_battle",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_battle.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_amb_dragon",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_dragon.wav",
+   "looping": true,
+   "seconds": 9.6
+  },
+  {
+   "name": "fan_amb_dawn",
+   "path": "assets/episodes/fantasy/sfx/fan_amb_dawn.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "fan_charge",
+   "path": "assets/episodes/fantasy/sfx/fan_charge.wav",
+   "looping": true,
+   "seconds": 2.1
+  },
+  {
+   "name": "fan_card",
+   "path": "assets/episodes/fantasy/sfx/fan_card.wav",
+   "looping": false,
+   "seconds": 0.3
+  },
+  {
+   "name": "fan_aim",
+   "path": "assets/episodes/fantasy/sfx/fan_aim.wav",
+   "looping": false,
+   "seconds": 0.1
+  },
+  {
+   "name": "fan_slash",
+   "path": "assets/episodes/fantasy/sfx/fan_slash.wav",
+   "looping": false,
+   "seconds": 0.5299773242630386
+  },
+  {
+   "name": "fan_magic",
+   "path": "assets/episodes/fantasy/sfx/fan_magic.wav",
+   "looping": false,
+   "seconds": 1.5
+  },
+  {
+   "name": "fan_charged",
+   "path": "assets/episodes/fantasy/sfx/fan_charged.wav",
+   "looping": false,
+   "seconds": 1.3499773242630386
+  },
+  {
+   "name": "fan_hammer",
+   "path": "assets/episodes/fantasy/sfx/fan_hammer.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "fan_glass",
+   "path": "assets/episodes/fantasy/sfx/fan_glass.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "fan_shatter",
+   "path": "assets/episodes/fantasy/sfx/fan_shatter.wav",
+   "looping": false,
+   "seconds": 1.06
+  },
+  {
+   "name": "fan_guard",
+   "path": "assets/episodes/fantasy/sfx/fan_guard.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "fan_hurt",
+   "path": "assets/episodes/fantasy/sfx/fan_hurt.wav",
+   "looping": false,
+   "seconds": 0.4
+  },
+  {
+   "name": "fan_roar",
+   "path": "assets/episodes/fantasy/sfx/fan_roar.wav",
+   "looping": false,
+   "seconds": 1
+  },
+  {
+   "name": "fan_breath",
+   "path": "assets/episodes/fantasy/sfx/fan_breath.wav",
+   "looping": false,
+   "seconds": 1.3999546485260772
+  },
+  {
+   "name": "fan_call",
+   "path": "assets/episodes/fantasy/sfx/fan_call.wav",
+   "looping": false,
+   "seconds": 1.56
+  },
+  {
+   "name": "fan_refuse",
+   "path": "assets/episodes/fantasy/sfx/fan_refuse.wav",
+   "looping": false,
+   "seconds": 0.4
+  },
+  {
+   "name": "fan_song",
+   "path": "assets/episodes/fantasy/sfx/fan_song.wav",
+   "looping": false,
+   "seconds": 1.58
+  },
+  {
+   "name": "fan_win",
+   "path": "assets/episodes/fantasy/sfx/fan_win.wav",
+   "looping": false,
+   "seconds": 1.94
+  },
+  {
+   "name": "fan_calm",
+   "path": "assets/episodes/fantasy/sfx/fan_calm.wav",
+   "looping": false,
+   "seconds": 2.6
+  },
+  {
+   "name": "fan_fall",
+   "path": "assets/episodes/fantasy/sfx/fan_fall.wav",
+   "looping": false,
+   "seconds": 1.6
+  },
+  {
    "name": "amb_night",
    "path": "assets/episodes/horror/sfx/amb_night.wav",
    "looping": true,
@@ -129,6 +400,438 @@
    "path": "assets/episodes/horror/sfx/pickup.wav",
    "looping": false,
    "seconds": 0.9499773242630386
+  },
+  {
+   "name": "mys_rail",
+   "path": "assets/episodes/mystery/sfx/mys_rail.wav",
+   "looping": true,
+   "seconds": 6.1
+  },
+  {
+   "name": "mys_harbor",
+   "path": "assets/episodes/mystery/sfx/mys_harbor.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "mys_tunnel",
+   "path": "assets/episodes/mystery/sfx/mys_tunnel.wav",
+   "looping": true,
+   "seconds": 4
+  },
+  {
+   "name": "mys_clock",
+   "path": "assets/episodes/mystery/sfx/mys_clock.wav",
+   "looping": true,
+   "seconds": 1
+  },
+  {
+   "name": "mys_stare",
+   "path": "assets/episodes/mystery/sfx/mys_stare.wav",
+   "looping": true,
+   "seconds": 1.7500226757369615
+  },
+  {
+   "name": "mys_word",
+   "path": "assets/episodes/mystery/sfx/mys_word.wav",
+   "looping": false,
+   "seconds": 0.66
+  },
+  {
+   "name": "mys_flip",
+   "path": "assets/episodes/mystery/sfx/mys_flip.wav",
+   "looping": false,
+   "seconds": 0.14
+  },
+  {
+   "name": "mys_lift",
+   "path": "assets/episodes/mystery/sfx/mys_lift.wav",
+   "looping": false,
+   "seconds": 0.08
+  },
+  {
+   "name": "mys_throw",
+   "path": "assets/episodes/mystery/sfx/mys_throw.wav",
+   "looping": false,
+   "seconds": 0.24
+  },
+  {
+   "name": "mys_tear",
+   "path": "assets/episodes/mystery/sfx/mys_tear.wav",
+   "looping": false,
+   "seconds": 1.44
+  },
+  {
+   "name": "mys_thud",
+   "path": "assets/episodes/mystery/sfx/mys_thud.wav",
+   "looping": false,
+   "seconds": 0.26
+  },
+  {
+   "name": "mys_shrug",
+   "path": "assets/episodes/mystery/sfx/mys_shrug.wav",
+   "looping": false,
+   "seconds": 0.1999546485260771
+  },
+  {
+   "name": "mys_whistle",
+   "path": "assets/episodes/mystery/sfx/mys_whistle.wav",
+   "looping": false,
+   "seconds": 1.9
+  },
+  {
+   "name": "mys_glove",
+   "path": "assets/episodes/mystery/sfx/mys_glove.wav",
+   "looping": false,
+   "seconds": 0.22
+  },
+  {
+   "name": "rm_cheer",
+   "path": "assets/episodes/romance/sfx/rm_cheer.wav",
+   "looping": false,
+   "seconds": 0.532562358276644
+  },
+  {
+   "name": "rm_city",
+   "path": "assets/episodes/romance/sfx/rm_city.wav",
+   "looping": true,
+   "seconds": 10
+  },
+  {
+   "name": "rm_count",
+   "path": "assets/episodes/romance/sfx/rm_count.wav",
+   "looping": false,
+   "seconds": 0.2
+  },
+  {
+   "name": "rm_first_0",
+   "path": "assets/episodes/romance/sfx/rm_first_0.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_1",
+   "path": "assets/episodes/romance/sfx/rm_first_1.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_2",
+   "path": "assets/episodes/romance/sfx/rm_first_2.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_3",
+   "path": "assets/episodes/romance/sfx/rm_first_3.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_4",
+   "path": "assets/episodes/romance/sfx/rm_first_4.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_5",
+   "path": "assets/episodes/romance/sfx/rm_first_5.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_6",
+   "path": "assets/episodes/romance/sfx/rm_first_6.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_7",
+   "path": "assets/episodes/romance/sfx/rm_first_7.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_first_8",
+   "path": "assets/episodes/romance/sfx/rm_first_8.wav",
+   "looping": false,
+   "seconds": 5.84
+  },
+  {
+   "name": "rm_flick",
+   "path": "assets/episodes/romance/sfx/rm_flick.wav",
+   "looping": false,
+   "seconds": 0.24
+  },
+  {
+   "name": "rm_hold",
+   "path": "assets/episodes/romance/sfx/rm_hold.wav",
+   "looping": true,
+   "seconds": 4
+  },
+  {
+   "name": "rm_miss",
+   "path": "assets/episodes/romance/sfx/rm_miss.wav",
+   "looping": false,
+   "seconds": 0.18
+  },
+  {
+   "name": "rm_morning",
+   "path": "assets/episodes/romance/sfx/rm_morning.wav",
+   "looping": true,
+   "seconds": 10
+  },
+  {
+   "name": "rm_rain",
+   "path": "assets/episodes/romance/sfx/rm_rain.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "rm_rain_0",
+   "path": "assets/episodes/romance/sfx/rm_rain_0.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_1",
+   "path": "assets/episodes/romance/sfx/rm_rain_1.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_2",
+   "path": "assets/episodes/romance/sfx/rm_rain_2.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_3",
+   "path": "assets/episodes/romance/sfx/rm_rain_3.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_4",
+   "path": "assets/episodes/romance/sfx/rm_rain_4.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_5",
+   "path": "assets/episodes/romance/sfx/rm_rain_5.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_6",
+   "path": "assets/episodes/romance/sfx/rm_rain_6.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_7",
+   "path": "assets/episodes/romance/sfx/rm_rain_7.wav",
+   "looping": false,
+   "seconds": 5.04
+  },
+  {
+   "name": "rm_rain_8",
+   "path": "assets/episodes/romance/sfx/rm_rain_8.wav",
+   "looping": false,
+   "seconds": 6.533469387755102
+  },
+  {
+   "name": "rm_rain_9",
+   "path": "assets/episodes/romance/sfx/rm_rain_9.wav",
+   "looping": false,
+   "seconds": 6.067301587301587
+  },
+  {
+   "name": "rm_stamp",
+   "path": "assets/episodes/romance/sfx/rm_stamp.wav",
+   "looping": false,
+   "seconds": 0.26
+  },
+  {
+   "name": "rm_tie",
+   "path": "assets/episodes/romance/sfx/rm_tie.wav",
+   "looping": false,
+   "seconds": 0.44997732426303855
+  },
+  {
+   "name": "rm_tone_0",
+   "path": "assets/episodes/romance/sfx/rm_tone_0.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_1",
+   "path": "assets/episodes/romance/sfx/rm_tone_1.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_2",
+   "path": "assets/episodes/romance/sfx/rm_tone_2.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_3",
+   "path": "assets/episodes/romance/sfx/rm_tone_3.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_4",
+   "path": "assets/episodes/romance/sfx/rm_tone_4.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_5",
+   "path": "assets/episodes/romance/sfx/rm_tone_5.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_6",
+   "path": "assets/episodes/romance/sfx/rm_tone_6.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "rm_tone_7",
+   "path": "assets/episodes/romance/sfx/rm_tone_7.wav",
+   "looping": false,
+   "seconds": 0.5
+  },
+  {
+   "name": "sch_amb_room",
+   "path": "assets/episodes/school/sfx/sch_amb_room.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "sch_amb_dusk",
+   "path": "assets/episodes/school/sfx/sch_amb_dusk.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "sch_amb_morning",
+   "path": "assets/episodes/school/sfx/sch_amb_morning.wav",
+   "looping": true,
+   "seconds": 8
+  },
+  {
+   "name": "sch_bgm",
+   "path": "assets/episodes/school/sfx/sch_bgm.wav",
+   "looping": true,
+   "seconds": 7.272698412698412
+  },
+  {
+   "name": "sch_move",
+   "path": "assets/episodes/school/sfx/sch_move.wav",
+   "looping": false,
+   "seconds": 0.049977324263038546
+  },
+  {
+   "name": "sch_turn",
+   "path": "assets/episodes/school/sfx/sch_turn.wav",
+   "looping": false,
+   "seconds": 0.10997732426303855
+  },
+  {
+   "name": "sch_land",
+   "path": "assets/episodes/school/sfx/sch_land.wav",
+   "looping": false,
+   "seconds": 0.12
+  },
+  {
+   "name": "sch_drop",
+   "path": "assets/episodes/school/sfx/sch_drop.wav",
+   "looping": false,
+   "seconds": 0.24997732426303854
+  },
+  {
+   "name": "sch_hold",
+   "path": "assets/episodes/school/sfx/sch_hold.wav",
+   "looping": false,
+   "seconds": 0.26
+  },
+  {
+   "name": "sch_clear1",
+   "path": "assets/episodes/school/sfx/sch_clear1.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "sch_clear2",
+   "path": "assets/episodes/school/sfx/sch_clear2.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "sch_clear3",
+   "path": "assets/episodes/school/sfx/sch_clear3.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "sch_clear4",
+   "path": "assets/episodes/school/sfx/sch_clear4.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "sch_clear5",
+   "path": "assets/episodes/school/sfx/sch_clear5.wav",
+   "looping": false,
+   "seconds": 0.6
+  },
+  {
+   "name": "sch_box",
+   "path": "assets/episodes/school/sfx/sch_box.wav",
+   "looping": false,
+   "seconds": 0.5299773242630386
+  },
+  {
+   "name": "sch_focus",
+   "path": "assets/episodes/school/sfx/sch_focus.wav",
+   "looping": false,
+   "seconds": 0.8099773242630386
+  },
+  {
+   "name": "sch_chime",
+   "path": "assets/episodes/school/sfx/sch_chime.wav",
+   "looping": false,
+   "seconds": 2.36
+  },
+  {
+   "name": "sch_push",
+   "path": "assets/episodes/school/sfx/sch_push.wav",
+   "looping": false,
+   "seconds": 0.44
+  },
+  {
+   "name": "sch_spill",
+   "path": "assets/episodes/school/sfx/sch_spill.wav",
+   "looping": false,
+   "seconds": 0.9
+  },
+  {
+   "name": "sch_finish",
+   "path": "assets/episodes/school/sfx/sch_finish.wav",
+   "looping": false,
+   "seconds": 1.12
+  },
+  {
+   "name": "sch_warm",
+   "path": "assets/episodes/school/sfx/sch_warm.wav",
+   "looping": false,
+   "seconds": 1.8799546485260772
   }
  ],
  "design": {
@@ -137,6 +840,47 @@
  },
  "orientation": "portrait",
  "transcoded": {
+  "assets/episodes/cafe/sfx/amb_noon.wav": "assets/episodes/cafe/sfx/amb_noon.webm",
+  "assets/episodes/cafe/sfx/amb_rain.wav": "assets/episodes/cafe/sfx/amb_rain.webm",
+  "assets/episodes/cafe/sfx/beans.wav": "assets/episodes/cafe/sfx/beans.webm",
+  "assets/episodes/cafe/sfx/bell.wav": "assets/episodes/cafe/sfx/bell.webm",
+  "assets/episodes/cafe/sfx/click.wav": "assets/episodes/cafe/sfx/click.webm",
+  "assets/episodes/cafe/sfx/coin.wav": "assets/episodes/cafe/sfx/coin.webm",
+  "assets/episodes/cafe/sfx/cup.wav": "assets/episodes/cafe/sfx/cup.webm",
+  "assets/episodes/cafe/sfx/grind.wav": "assets/episodes/cafe/sfx/grind.webm",
+  "assets/episodes/cafe/sfx/lift.wav": "assets/episodes/cafe/sfx/lift.webm",
+  "assets/episodes/cafe/sfx/notch.wav": "assets/episodes/cafe/sfx/notch.webm",
+  "assets/episodes/cafe/sfx/pour.wav": "assets/episodes/cafe/sfx/pour.webm",
+  "assets/episodes/cafe/sfx/receipt.wav": "assets/episodes/cafe/sfx/receipt.webm",
+  "assets/episodes/cafe/sfx/sigh.wav": "assets/episodes/cafe/sfx/sigh.webm",
+  "assets/episodes/cafe/sfx/slide.wav": "assets/episodes/cafe/sfx/slide.webm",
+  "assets/episodes/cafe/sfx/spill.wav": "assets/episodes/cafe/sfx/spill.webm",
+  "assets/episodes/cafe/sfx/stamp.wav": "assets/episodes/cafe/sfx/stamp.webm",
+  "assets/episodes/cafe/sfx/tip.wav": "assets/episodes/cafe/sfx/tip.webm",
+  "assets/episodes/fantasy/sfx/fan_aim.wav": "assets/episodes/fantasy/sfx/fan_aim.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_battle.wav": "assets/episodes/fantasy/sfx/fan_amb_battle.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_chapel.wav": "assets/episodes/fantasy/sfx/fan_amb_chapel.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_dawn.wav": "assets/episodes/fantasy/sfx/fan_amb_dawn.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_dragon.wav": "assets/episodes/fantasy/sfx/fan_amb_dragon.webm",
+  "assets/episodes/fantasy/sfx/fan_amb_valley.wav": "assets/episodes/fantasy/sfx/fan_amb_valley.webm",
+  "assets/episodes/fantasy/sfx/fan_breath.wav": "assets/episodes/fantasy/sfx/fan_breath.webm",
+  "assets/episodes/fantasy/sfx/fan_call.wav": "assets/episodes/fantasy/sfx/fan_call.webm",
+  "assets/episodes/fantasy/sfx/fan_calm.wav": "assets/episodes/fantasy/sfx/fan_calm.webm",
+  "assets/episodes/fantasy/sfx/fan_card.wav": "assets/episodes/fantasy/sfx/fan_card.webm",
+  "assets/episodes/fantasy/sfx/fan_charge.wav": "assets/episodes/fantasy/sfx/fan_charge.webm",
+  "assets/episodes/fantasy/sfx/fan_charged.wav": "assets/episodes/fantasy/sfx/fan_charged.webm",
+  "assets/episodes/fantasy/sfx/fan_fall.wav": "assets/episodes/fantasy/sfx/fan_fall.webm",
+  "assets/episodes/fantasy/sfx/fan_glass.wav": "assets/episodes/fantasy/sfx/fan_glass.webm",
+  "assets/episodes/fantasy/sfx/fan_guard.wav": "assets/episodes/fantasy/sfx/fan_guard.webm",
+  "assets/episodes/fantasy/sfx/fan_hammer.wav": "assets/episodes/fantasy/sfx/fan_hammer.webm",
+  "assets/episodes/fantasy/sfx/fan_hurt.wav": "assets/episodes/fantasy/sfx/fan_hurt.webm",
+  "assets/episodes/fantasy/sfx/fan_magic.wav": "assets/episodes/fantasy/sfx/fan_magic.webm",
+  "assets/episodes/fantasy/sfx/fan_refuse.wav": "assets/episodes/fantasy/sfx/fan_refuse.webm",
+  "assets/episodes/fantasy/sfx/fan_roar.wav": "assets/episodes/fantasy/sfx/fan_roar.webm",
+  "assets/episodes/fantasy/sfx/fan_shatter.wav": "assets/episodes/fantasy/sfx/fan_shatter.webm",
+  "assets/episodes/fantasy/sfx/fan_slash.wav": "assets/episodes/fantasy/sfx/fan_slash.webm",
+  "assets/episodes/fantasy/sfx/fan_song.wav": "assets/episodes/fantasy/sfx/fan_song.webm",
+  "assets/episodes/fantasy/sfx/fan_win.wav": "assets/episodes/fantasy/sfx/fan_win.webm",
   "assets/episodes/horror/sfx/amb_hall.wav": "assets/episodes/horror/sfx/amb_hall.webm",
   "assets/episodes/horror/sfx/amb_night.wav": "assets/episodes/horror/sfx/amb_night.webm",
   "assets/episodes/horror/sfx/follow.wav": "assets/episodes/horror/sfx/follow.webm",
@@ -147,6 +891,78 @@
   "assets/episodes/horror/sfx/step_a.wav": "assets/episodes/horror/sfx/step_a.webm",
   "assets/episodes/horror/sfx/step_b.wav": "assets/episodes/horror/sfx/step_b.webm",
   "assets/episodes/horror/sfx/sting.wav": "assets/episodes/horror/sfx/sting.webm",
+  "assets/episodes/mystery/sfx/mys_clock.wav": "assets/episodes/mystery/sfx/mys_clock.webm",
+  "assets/episodes/mystery/sfx/mys_flip.wav": "assets/episodes/mystery/sfx/mys_flip.webm",
+  "assets/episodes/mystery/sfx/mys_glove.wav": "assets/episodes/mystery/sfx/mys_glove.webm",
+  "assets/episodes/mystery/sfx/mys_harbor.wav": "assets/episodes/mystery/sfx/mys_harbor.webm",
+  "assets/episodes/mystery/sfx/mys_lift.wav": "assets/episodes/mystery/sfx/mys_lift.webm",
+  "assets/episodes/mystery/sfx/mys_rail.wav": "assets/episodes/mystery/sfx/mys_rail.webm",
+  "assets/episodes/mystery/sfx/mys_shrug.wav": "assets/episodes/mystery/sfx/mys_shrug.webm",
+  "assets/episodes/mystery/sfx/mys_stare.wav": "assets/episodes/mystery/sfx/mys_stare.webm",
+  "assets/episodes/mystery/sfx/mys_tear.wav": "assets/episodes/mystery/sfx/mys_tear.webm",
+  "assets/episodes/mystery/sfx/mys_throw.wav": "assets/episodes/mystery/sfx/mys_throw.webm",
+  "assets/episodes/mystery/sfx/mys_thud.wav": "assets/episodes/mystery/sfx/mys_thud.webm",
+  "assets/episodes/mystery/sfx/mys_tunnel.wav": "assets/episodes/mystery/sfx/mys_tunnel.webm",
+  "assets/episodes/mystery/sfx/mys_whistle.wav": "assets/episodes/mystery/sfx/mys_whistle.webm",
+  "assets/episodes/mystery/sfx/mys_word.wav": "assets/episodes/mystery/sfx/mys_word.webm",
+  "assets/episodes/romance/sfx/rm_cheer.wav": "assets/episodes/romance/sfx/rm_cheer.webm",
+  "assets/episodes/romance/sfx/rm_city.wav": "assets/episodes/romance/sfx/rm_city.webm",
+  "assets/episodes/romance/sfx/rm_count.wav": "assets/episodes/romance/sfx/rm_count.webm",
+  "assets/episodes/romance/sfx/rm_first_0.wav": "assets/episodes/romance/sfx/rm_first_0.webm",
+  "assets/episodes/romance/sfx/rm_first_1.wav": "assets/episodes/romance/sfx/rm_first_1.webm",
+  "assets/episodes/romance/sfx/rm_first_2.wav": "assets/episodes/romance/sfx/rm_first_2.webm",
+  "assets/episodes/romance/sfx/rm_first_3.wav": "assets/episodes/romance/sfx/rm_first_3.webm",
+  "assets/episodes/romance/sfx/rm_first_4.wav": "assets/episodes/romance/sfx/rm_first_4.webm",
+  "assets/episodes/romance/sfx/rm_first_5.wav": "assets/episodes/romance/sfx/rm_first_5.webm",
+  "assets/episodes/romance/sfx/rm_first_6.wav": "assets/episodes/romance/sfx/rm_first_6.webm",
+  "assets/episodes/romance/sfx/rm_first_7.wav": "assets/episodes/romance/sfx/rm_first_7.webm",
+  "assets/episodes/romance/sfx/rm_first_8.wav": "assets/episodes/romance/sfx/rm_first_8.webm",
+  "assets/episodes/romance/sfx/rm_flick.wav": "assets/episodes/romance/sfx/rm_flick.webm",
+  "assets/episodes/romance/sfx/rm_hold.wav": "assets/episodes/romance/sfx/rm_hold.webm",
+  "assets/episodes/romance/sfx/rm_miss.wav": "assets/episodes/romance/sfx/rm_miss.webm",
+  "assets/episodes/romance/sfx/rm_morning.wav": "assets/episodes/romance/sfx/rm_morning.webm",
+  "assets/episodes/romance/sfx/rm_rain.wav": "assets/episodes/romance/sfx/rm_rain.webm",
+  "assets/episodes/romance/sfx/rm_rain_0.wav": "assets/episodes/romance/sfx/rm_rain_0.webm",
+  "assets/episodes/romance/sfx/rm_rain_1.wav": "assets/episodes/romance/sfx/rm_rain_1.webm",
+  "assets/episodes/romance/sfx/rm_rain_2.wav": "assets/episodes/romance/sfx/rm_rain_2.webm",
+  "assets/episodes/romance/sfx/rm_rain_3.wav": "assets/episodes/romance/sfx/rm_rain_3.webm",
+  "assets/episodes/romance/sfx/rm_rain_4.wav": "assets/episodes/romance/sfx/rm_rain_4.webm",
+  "assets/episodes/romance/sfx/rm_rain_5.wav": "assets/episodes/romance/sfx/rm_rain_5.webm",
+  "assets/episodes/romance/sfx/rm_rain_6.wav": "assets/episodes/romance/sfx/rm_rain_6.webm",
+  "assets/episodes/romance/sfx/rm_rain_7.wav": "assets/episodes/romance/sfx/rm_rain_7.webm",
+  "assets/episodes/romance/sfx/rm_rain_8.wav": "assets/episodes/romance/sfx/rm_rain_8.webm",
+  "assets/episodes/romance/sfx/rm_rain_9.wav": "assets/episodes/romance/sfx/rm_rain_9.webm",
+  "assets/episodes/romance/sfx/rm_stamp.wav": "assets/episodes/romance/sfx/rm_stamp.webm",
+  "assets/episodes/romance/sfx/rm_tie.wav": "assets/episodes/romance/sfx/rm_tie.webm",
+  "assets/episodes/romance/sfx/rm_tone_0.wav": "assets/episodes/romance/sfx/rm_tone_0.webm",
+  "assets/episodes/romance/sfx/rm_tone_1.wav": "assets/episodes/romance/sfx/rm_tone_1.webm",
+  "assets/episodes/romance/sfx/rm_tone_2.wav": "assets/episodes/romance/sfx/rm_tone_2.webm",
+  "assets/episodes/romance/sfx/rm_tone_3.wav": "assets/episodes/romance/sfx/rm_tone_3.webm",
+  "assets/episodes/romance/sfx/rm_tone_4.wav": "assets/episodes/romance/sfx/rm_tone_4.webm",
+  "assets/episodes/romance/sfx/rm_tone_5.wav": "assets/episodes/romance/sfx/rm_tone_5.webm",
+  "assets/episodes/romance/sfx/rm_tone_6.wav": "assets/episodes/romance/sfx/rm_tone_6.webm",
+  "assets/episodes/romance/sfx/rm_tone_7.wav": "assets/episodes/romance/sfx/rm_tone_7.webm",
+  "assets/episodes/school/sfx/sch_amb_dusk.wav": "assets/episodes/school/sfx/sch_amb_dusk.webm",
+  "assets/episodes/school/sfx/sch_amb_morning.wav": "assets/episodes/school/sfx/sch_amb_morning.webm",
+  "assets/episodes/school/sfx/sch_amb_room.wav": "assets/episodes/school/sfx/sch_amb_room.webm",
+  "assets/episodes/school/sfx/sch_bgm.wav": "assets/episodes/school/sfx/sch_bgm.webm",
+  "assets/episodes/school/sfx/sch_box.wav": "assets/episodes/school/sfx/sch_box.webm",
+  "assets/episodes/school/sfx/sch_chime.wav": "assets/episodes/school/sfx/sch_chime.webm",
+  "assets/episodes/school/sfx/sch_clear1.wav": "assets/episodes/school/sfx/sch_clear1.webm",
+  "assets/episodes/school/sfx/sch_clear2.wav": "assets/episodes/school/sfx/sch_clear2.webm",
+  "assets/episodes/school/sfx/sch_clear3.wav": "assets/episodes/school/sfx/sch_clear3.webm",
+  "assets/episodes/school/sfx/sch_clear4.wav": "assets/episodes/school/sfx/sch_clear4.webm",
+  "assets/episodes/school/sfx/sch_clear5.wav": "assets/episodes/school/sfx/sch_clear5.webm",
+  "assets/episodes/school/sfx/sch_drop.wav": "assets/episodes/school/sfx/sch_drop.webm",
+  "assets/episodes/school/sfx/sch_finish.wav": "assets/episodes/school/sfx/sch_finish.webm",
+  "assets/episodes/school/sfx/sch_focus.wav": "assets/episodes/school/sfx/sch_focus.webm",
+  "assets/episodes/school/sfx/sch_hold.wav": "assets/episodes/school/sfx/sch_hold.webm",
+  "assets/episodes/school/sfx/sch_land.wav": "assets/episodes/school/sfx/sch_land.webm",
+  "assets/episodes/school/sfx/sch_move.wav": "assets/episodes/school/sfx/sch_move.webm",
+  "assets/episodes/school/sfx/sch_push.wav": "assets/episodes/school/sfx/sch_push.webm",
+  "assets/episodes/school/sfx/sch_spill.wav": "assets/episodes/school/sfx/sch_spill.webm",
+  "assets/episodes/school/sfx/sch_turn.wav": "assets/episodes/school/sfx/sch_turn.webm",
+  "assets/episodes/school/sfx/sch_warm.wav": "assets/episodes/school/sfx/sch_warm.webm",
   "assets/sfx/amb_shelf.wav": "assets/sfx/amb_shelf.webm",
   "assets/sfx/game_enter.wav": "assets/sfx/game_enter.webm",
   "assets/sfx/game_leave.wav": "assets/sfx/game_leave.webm",

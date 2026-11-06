@@ -27,6 +27,14 @@
         "guideTurn": { "type": "bool", "label": "スワイプの案内を出す" }
       }
     },
+    "keepsakes": {
+      "kind": "list", "label": "落とし物",
+      "fields": {
+        "id": { "type": "text", "label": "item の名前（photo / letter / bell）" },
+        "title": { "type": "text", "label": "物の名前" },
+        "text": { "type": "text", "label": "拾った時の文" }
+      }
+    },
     "props": {
       "kind": "list", "label": "置物",
       "fields": {

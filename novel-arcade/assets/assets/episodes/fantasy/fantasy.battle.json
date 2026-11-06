@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "title": "コマンドバトルの値",
+  "note": "敵の手の並び（foes の pattern）と数を変えると手応えが変わる。moves の line は構えた時に出る 1 行で、読んだ話の答え合わせになる。台本の stage は「面の id 持ち物の id …」。",
+  "hero": { "hp": 40, "mana": 3, "strike": 9, "magicLow": 5, "magicHigh": 16, "manaPerStrike": 1, "openMagic": 3, "guardLeak": 0.15 },
+  "feel": { "launchHeight": 150, "chargeSeconds": 1.0, "actSeconds": 0.72, "hitPause": 0.07, "shake": 16, "endingSeconds": 2.4 },
+  "strikeCard": { "title": "たたかう", "note": "斬る。魔力が 1 つ戻る" },
+  "magicCard": { "title": "魔法", "note": "押さえて溜めてから放つ。開いた所へ 3 倍" },
+  "guardCard": { "title": "かばう", "note": "この巡の一撃を受け止める" },
+  "pleaCard": { "title": "説得", "note": "受け止めた後か、頭を垂れた時に届く" },
+  "words": {
+    "noMana": "魔力が足りない。斬れば戻る",
+    "pleaRefused": "声は、まだ届かない",
+    "nameMissing": "次の名を、まだ知らない",
+    "pleaHeard": "声が、届いた",
+    "guarded": "受け止めた",
+    "cutMove": "息が止まった",
+    "slain": "砕いた",
+    "spared": "鎮まった",
+    "fallen": "灯が尽きた",
+    "held": "夜が明ける。ここまでだ"
+  },
+  "moves": [
+    { "id": "jab", "pose": "idle", "line": "", "damage": 2 },
+    { "id": "lurk", "pose": "idle", "line": "", "damage": 0 },
+    { "id": "raise", "pose": "raise", "line": "番人が大剣を振りかぶった", "damage": 0, "listening": false },
+    { "id": "smite", "pose": "raise", "line": "大剣が落ちてくる！", "damage": 12, "counter": 6 },
+    { "id": "stand", "pose": "idle", "line": "番人は、肩で息をしている", "damage": 0, "listening": false },
+    { "id": "flap", "pose": "idle", "line": "", "damage": 2 },
+    { "id": "still", "pose": "idle", "line": "", "damage": 0 },
+    { "id": "breath", "pose": "breath", "line": "竜が息を吸う。胸の鱗が開いた！", "damage": 15, "open": true, "breakable": true },
+    { "id": "bow", "pose": "bow", "line": "竜が頭を垂れた", "damage": 0, "listening": true },
+    { "id": "fold", "pose": "fold", "line": "竜が翼をたたんだ。尾が来る！", "damage": 11, "counter": 10 }
+  ],
+  "foes": [
+    { "id": "squire_left", "name": "灰の従者", "look": "squire", "hp": 15, "pattern": ["jab", "lurk"] },
+    { "id": "warden", "name": "橋の番人", "look": "warden", "hp": 52, "heart": 3, "main": true, "pattern": ["raise", "smite", "stand"] },
+    { "id": "squire_right", "name": "灰の従者", "look": "squire", "hp": 15, "pattern": ["lurk", "jab"] },
+    { "id": "wing_left", "name": "左の翼", "look": "wingLeft", "hp": 24, "pattern": ["flap", "still"] },
+    { "id": "chest", "name": "竜の胸", "look": "chest", "hp": 150, "heart": 3, "main": true, "pattern": ["breath", "bow", "fold", "bow"],
+      "names": [
+        { "call": "ハイバミ", "line": "恐れの名に、竜の首が止まった", "calling": "stun" },
+        { "call": "カマモリ", "line": "誓いの名に、胸の鱗がほどけた", "calling": "open" },
+        { "call": "トモリ", "line": "生まれの名を、竜は覚えていた", "calling": "settle" }
+      ] },
+    { "id": "wing_right", "name": "右の翼", "look": "wingRight", "hp": 24, "pattern": ["still", "flap"] }
+  ],
+  "allies": [
+    { "id": "nagi", "name": "ナギ", "aid": "hammer", "power": 6, "line": "ナギの鎚が打つ" },
+    { "id": "isa", "name": "イサ", "aid": "song", "power": 3, "line": "イサの唄が灯を戻す" },
+    { "id": "berg", "name": "ベルク", "aid": "shield", "power": 1, "line": "ベルクが息の前へ立った" }
+  ],
+  "perks": [
+    { "id": "nagi", "ally": "nagi", "strikeBonus": 2 },
+    { "id": "isa", "ally": "isa", "pleaBonus": 1 },
+    { "id": "warden", "ally": "berg", "names": 1 },
+    { "id": "sword", "strikeBonus": 6 }
+  ],
+  "stages": [
+    { "id": "bridge", "backdrop": "bridge_fight", "foes": ["squire_left", "warden", "squire_right"], "aim": 1, "rounds": 9, "flag": "bridge",
+      "guideCard": true, "guideAim": true, "names": 0, "opening": "番人が道をふさいだ" },
+    { "id": "dragon", "backdrop": "dragon_fight", "foes": ["wing_left", "chest", "wing_right"], "aim": 1, "rounds": 11, "flag": "dragon",
+      "guideCard": false, "guideAim": false, "names": 2, "opening": "灰の竜が、窓いっぱいに翼を開いた" }
+  ]
+}

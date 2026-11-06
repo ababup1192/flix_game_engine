@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "君のテンポでの文章の色",
+  "note": "2 色刷りの紙の上に字を置く。字は青の版の濃い色、話し手はピンクの版。shade は紙の色。",
+  "ink": "#25205c",
+  "name": "#d6336f",
+  "shade": "#f6efe2",
+  "shadeAlpha": 0.96,
+  "choice": "#f6efe2",
+  "choiceInk": "#25205c",
+  "font": ""
+}

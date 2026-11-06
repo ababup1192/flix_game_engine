@@ -21,6 +21,11 @@
     { "id": "first", "legA": 9, "legB": 4, "backdrop": "corridor_first", "guideTurn": true },
     { "id": "second", "legA": 7, "legB": 6, "backdrop": "corridor_second" }
   ],
+  "keepsakes": [
+    { "id": "photo", "title": "古い写真", "text": "団地の前に立つ、若い祖母。裏に「数えること」と書いてある。" },
+    { "id": "letter", "title": "封のある手紙", "text": "宛名は四〇七号。差出人は、祖母本人だった。" },
+    { "id": "bell", "title": "小さな鈴", "text": "握ると、背中の重さが少しだけ軽くなる。" }
+  ],
   "props": [
     { "kind": "hydrant", "along": 3.0, "side": "right", "height": 0.55 },
     { "kind": "meter", "along": 0.4, "side": "right", "height": 1.45 },

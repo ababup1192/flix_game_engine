@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみの文章の色",
+  "note": "字は暗がりでなく紙の上に載せる。shade が紙の色・ink が焦げ茶のインク。",
+  "ink": "#3f2519",
+  "name": "#c2461f",
+  "shade": "#f3e8cf",
+  "shadeAlpha": 0.96,
+  "choice": "#4b2d20",
+  "choiceInk": "#f3e8cf",
+  "font": ""
+}

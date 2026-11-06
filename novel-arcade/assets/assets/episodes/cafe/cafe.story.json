@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみ",
+  "note": "上から順に読む。行の書き方は docs/episode-guide.md。ゲームの結果のフラグ: sales（売り上げ）・pleased（常連のぴったり）・perfect・served・left・ok_<人の id>・ng_<人の id>・gone_<人の id>。2 回の営業の分は足し込まれる。",
+  "rows": [
+    { "backdrop": "street_noon", "hum": "cafe_amb_noon", "text": "商店街のはずれに、喫茶ひとやすみはある。" },
+    { "text": "叔父が腰を痛めた。今週だけ、わたしがカウンターに立つ。" },
+    { "backdrop": "cafe_room", "portrait": "master", "who": "叔父", "text": "すまんな。常連の「いつもの」だけは覚えてくれ。" },
+    { "who": "叔父", "text": "田所さんは郵便屋だ。外回りの後だから濃いのをなみなみ。深煎りを細挽きで。" },
+    { "who": "叔父", "text": "小春さんは夜勤明け。眠る前の一杯だ。浅煎りを粗挽きで、半分。" },
+    { "who": "叔父", "text": "千代さんは花屋で話が長い。浅煎りを細挽きで、なみなみ。" },
+    { "who": "わたし", "text": "伝票に書いてくれないんですか。" },
+    { "who": "叔父", "text": "常連は「いつもの」としか言わん。聞き返すな。それが店の顔だ。" },
+    { "who": "叔父", "text": "粗挽きはミルを二周、細挽きは四周。手で覚えろ。" },
+    { "who": "叔父", "text": "……週末に、大家の久我さんが来る。売り上げが戻らなければ、この店は畳む。" },
+    { "portrait": "", "backdrop": "counter_noon", "text": "札を返した。豆を選び、挽いて、注いで、客へ。" },
+    { "game": "counter", "stage": "noon" },
+
+    { "backdrop": "cafe_dusk", "hum": "cafe_amb_rain", "text": "昼の客がひけて、レジを開けた。" },
+    { "when": "sales>=2300", "text": "思ったより重い。叔父の店は、まだ呼吸をしている。" },
+    { "when": "sales<=2299", "text": "軽い。千円札が、指の間を滑って数え終わった。" },
+    { "when": "pleased>=3", "text": "常連の三人は、いつもの顔で帰っていった。" },
+    { "when": "pleased==0", "text": "「いつもの」は、一杯も当たらなかった。" },
+    { "when": "left>=1", "text": "待ちきれずに帰った人の椅子が、少し引かれたままだ。" },
+    { "text": "雨が降り出した。ノートの隅に「久我」とだけある。そこから先は白紙だ。" },
+    { "when": "ok_tadokoro>=1", "portrait": "tadokoro", "who": "田所さん", "text": "さっきのは宗さんの味だった。礼に一つ。久我さんの豆は粗挽きだよ。" },
+    { "when": "ok_chiyo>=1", "portrait": "chiyo", "who": "千代さん", "text": "久我さんはね、昔は夫婦で毎週来てたの。苦いのが好きでね、深煎りよ。" },
+    { "when": "ok_koharu>=1", "portrait": "koharu", "who": "小春さん", "text": "久我さん、うちの病院に通ってました。あの人の一杯は、いつも半分だそうです。" },
+    { "when": "pleased==0", "text": "誰も何も言わなかった。常連の話は、一杯の後にしか聞けないらしい。" },
+    { "portrait": "", "backdrop": "counter_rain", "text": "夕方の雨。久我さんの伝票には、きっと何も書かれない。" },
+    { "game": "counter", "stage": "rain" },
+
+    { "backdrop": "cafe_night", "text": "最後の客が帰り、雨の音だけが残った。" },
+    { "when": "ok_kuga>=1 & sales>=4500", "goto": "end_renewed" },
+    { "when": "pleased>=4", "goto": "end_regulars" },
+    { "when": "sales>=5000", "goto": "end_sales" },
+    { "goto": "end_closing" },
+
+    { "label": "end_renewed", "portrait": "kuga", "who": "久我さん", "text": "半分でいいんだ。もう半分は、妻の分だからな。" },
+    { "who": "久我さん", "text": "誰に聞いた。……そうか。あの人たちか。" },
+    { "who": "久我さん", "text": "判を押そう。この店の「いつもの」は、まだ終わらせたくない。" },
+    { "portrait": "", "backdrop": "street_morning", "hum": "cafe_amb_noon", "text": "朝、叔父が杖をついて帰ってきた。ノートに一行、わたしの字が増えている。" },
+    { "text": "久我さん。深煎りを粗挽きで、半分。それから、もう一杯ぶんの間。" },
+    { "goto": "credits" },
+
+    { "label": "end_regulars", "portrait": "kuga", "who": "久我さん", "text": "あれは出なかったな。数字も足りん。" },
+    { "portrait": "", "backdrop": "street_morning", "hum": "cafe_amb_noon", "text": "翌朝、まだ札を返す前の戸口に、三人が並んでいた。" },
+    { "portrait": "chiyo", "who": "千代さん", "text": "回数券、百枚ちょうだい。三人で割るから。あの人にはそう言っといて。" },
+    { "portrait": "", "text": "久我さんは黙って、更新を来月まで待つと言った。店は、まだ開いている。" },
+    { "goto": "credits" },
+
+    { "label": "end_sales", "portrait": "kuga", "who": "久我さん", "text": "数字は足りている。更新しよう。" },
+    { "portrait": "", "backdrop": "street_morning", "hum": "cafe_amb_noon", "text": "判は押された。店は続く。" },
+    { "text": "それなのに、朝の席が静かだった。「いつもの」と言う声が、もう聞こえない。" },
+    { "text": "叔父のノートの続きを、わたしはまだ一行も書けていない。" },
+    { "goto": "credits" },
+
+    { "label": "end_closing", "portrait": "kuga", "who": "久我さん", "text": "ここまでだな。宗さんには、わたしから話そう。" },
+    { "portrait": "", "backdrop": "street_morning", "hum": "cafe_amb_noon", "text": "月末、札を裏返した。「長い間ありがとうございました」。" },
+    { "text": "最後の日、三人が来て「いつもの」と言った。今度は一杯も間違えなかった。" },
+
+    { "label": "credits", "portrait": "", "text": "喫茶ひとやすみ　おわり" },
+    { "end": true }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "title": "白い手袋の証言",
+  "note": "上から順に読む。行の書き方は docs/episode-guide.md。言葉のカードの字（mystery.testimony.json の words）は、ここに同じ字で書く。portrait の word_<カードの名前> がカードの絵を出す。",
+  "rows": [
+    { "backdrop": "night_train", "hum": "mys_rail", "text": "夜行列車の暁星号は、港町の終点まで、あと二時間の闇を走っていた。" },
+    { "text": "一等三号室の篠宮夫人の宝石が消えた。見習い車掌の私は、真夜中に呼び出された。" },
+    { "backdrop": "room3", "who": "車掌長", "portrait": "chief", "text": "夫人は箱の中身を誰にも見せていない。石の色さえ、知る者はない。" },
+    { "who": "車掌長", "portrait": "word_key", "se": "mys_word", "text": "部屋は閉まっていた。全部の部屋を開けられるのは、車掌の合い鍵だけだ。" },
+    { "portrait": "word_cups", "se": "mys_word", "text": "卓の上には、二つのカップが残っていた。夫人は一人旅のはずだ。" },
+    { "portrait": "word_tunnel", "se": "mys_word", "text": "運転の記録を見る。十一時から十分間、列車は長いトンネルを走った。その間、客車の灯りはすべて落ちる。" },
+    { "who": "車掌長", "portrait": "chief", "text": "紅茶を届けたのは、食堂車の給仕、綾瀬だ。お前が聞け。終点までに片を付けろ。" },
+    { "who": "車掌長", "text": "綾瀬は嘘をつく時、左手で右の手袋を撫でる。手元を見ておけ。" },
+    { "who": "車掌長", "text": "言葉が足りなければ、黙って相手を見続けろ。人は沈黙に負けて、一言足す。" },
+    { "backdrop": "diner_ayase", "portrait": "", "text": "食堂車の灯りの下で、綾瀬は白い手袋を卓にそろえていた。" },
+    { "who": "綾瀬", "text": "お話しできることは、すべてお話しいたします。" },
+    { "game": "testimony", "stage": "ayase" },
+
+    { "text": "窓の外を、小さな駅の灯りが流れて消えた。" },
+    { "when": "first_broken<=1", "who": "綾瀬", "text": "……もうよろしいでしょう。これ以上は、申し上げられません。" },
+    { "when": "first_broken<=1", "text": "話はそこで切れた。それでも綾瀬の手は、卓の下で震えていた。" },
+    { "when": "first_broken>=2", "who": "綾瀬", "text": "暗闇で誰かにぶつかり、紅茶をこぼしました。その時、闇に白い手袋だけが浮かんでいたのです。" },
+    { "when": "first_broken>=2", "who": "綾瀬", "portrait": "word_chips", "se": "mys_word", "text": "お部屋の床には、星形の切りくずが落ちておりました。切符を切った時の、紙の屑です。" },
+    { "when": "first_broken>=2", "portrait": "", "text": "検札のはさみは、一人ずつ穴の形が違う。星形は、車掌長のはさみだ。" },
+    { "when": "hit_glove>=1", "who": "綾瀬", "text": "棚の手袋は二双減りました。私が替えたのは一双だけです。もう一双は、どなたが……" },
+    { "when": "first_broken>=3", "who": "綾瀬", "text": "車掌長は昔から、本当でない事を言う時、右の手袋の指先を引っぱります。暗闇でも、手袋だけは見えますよ。" },
+    { "backdrop": "diner_chief", "portrait": "", "text": "入れ替わりに、車掌長が向かいへ座った。" },
+    { "portrait": "word_starch", "se": "mys_word", "text": "ふと、車掌長の手袋から、真新しい糊の匂いがした。" },
+    { "portrait": "", "who": "車掌長", "text": "報告を聞こう、見習い。この先もトンネルが続く。灯りが落ちても、続けるぞ。" },
+    { "when": "first_broken>=2", "game": "testimony", "stage": "chief_full" },
+    { "when": "first_broken<=1", "game": "testimony", "stage": "chief_short" },
+
+    { "backdrop": "platform_dawn", "hum": "mys_harbor", "se": "mys_whistle", "text": "汽笛が鳴った。終点の港町に、夜明けの色が差していた。" },
+    { "when": "second_broken>=4", "goto": "end_all" },
+    { "when": "second_broken>=2", "goto": "end_part" },
+    { "goto": "end_none" },
+
+    { "label": "end_all", "who": "車掌長", "portrait": "chief", "text": "……全部、見られたな。" },
+    { "portrait": "word_sea", "se": "mys_glove", "text": "車掌長は右の手袋を外した。指の中から、海の色の石が転がり落ちた。" },
+    { "who": "車掌長", "portrait": "chief", "text": "母の形見だ。三十年前、借金の形に篠宮の家へ渡った。母の墓へ返したかった。それだけだ。" },
+    { "who": "車掌長", "text": "見習い。手袋はな、汚してから替えるものじゃない。汚れたまま、持って帰れ。" },
+    { "portrait": "", "text": "私は石を受け取り、夫人の部屋へ歩いた。白い手袋の中で、石はまだ温かかった。" },
+    { "goto": "credits" },
+
+    { "label": "end_part", "who": "車掌長", "portrait": "chief", "text": "石を取ったのは、私だ。理由は聞くな。" },
+    { "when": "hit_stone>=1", "who": "車掌長", "text": "色まで言わされるとは、私も年だな。" },
+    { "text": "車掌長は手袋をはめたまま、石を卓に置いた。何のための盗みだったのか、最後まで話さなかった。" },
+    { "portrait": "", "text": "朝の港に、汽笛だけが長く残った。" },
+    { "goto": "credits" },
+
+    { "label": "end_none", "who": "車掌長", "portrait": "chief", "text": "報告は以上か。ご苦労だった。" },
+    { "text": "車掌長は敬礼して、ホームへ降りていった。石は見つからないままだった。" },
+    { "se": "mys_glove", "portrait": "", "text": "座席に、白い手袋が片方だけ残っていた。糊の匂いが、まだ新しい。" },
+
+    { "label": "credits", "text": "白い手袋の証言　おわり" },
+    { "end": true }
+  ]
+}

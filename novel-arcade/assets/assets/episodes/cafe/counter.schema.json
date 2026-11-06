@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみのカウンターの値",
+  "sections": {
+    "coarseRounds": { "kind": "value", "type": "float", "label": "挽き終えられる周の数", "group": "挽く" },
+    "fineRounds": { "kind": "value", "type": "float", "label": "細挽きになる周の数", "group": "挽く" },
+    "maxRounds": { "kind": "value", "type": "float", "label": "自動で止める周の数", "group": "挽く" },
+    "settleSeconds": { "kind": "value", "type": "float", "label": "指を離して次へ移る秒", "group": "挽く" },
+    "pourSeconds": { "kind": "value", "type": "float", "label": "空からふちまでの秒", "group": "注ぐ" },
+    "halfLevel": { "kind": "value", "type": "float", "label": "半分の高さ(1=ふち)", "group": "注ぐ" },
+    "fullLevel": { "kind": "value", "type": "float", "label": "なみなみの高さ", "group": "注ぐ" },
+    "levelTolerance": { "kind": "value", "type": "float", "label": "許す高さの差", "group": "注ぐ" },
+    "minLevel": { "kind": "value", "type": "float", "label": "注ぎ終えられる高さ", "group": "注ぐ" },
+    "tipPerfect": { "kind": "value", "type": "int", "label": "ぴったりの心付け", "group": "お金" },
+    "tipPerStreak": { "kind": "value", "type": "int", "label": "続けた時の上乗せ", "group": "お金" },
+    "wrongPriceRatio": { "kind": "value", "type": "float", "label": "大きく違った時の代金の割合", "group": "お金" },
+    "drinkSeconds": { "kind": "value", "type": "float", "label": "飲んでいる秒", "group": "間" },
+    "talkSeconds": { "kind": "value", "type": "float", "label": "台詞を出す秒", "group": "間" },
+    "flickReach": { "kind": "value", "type": "float", "label": "弾いた時に先へ飛ぶ秒", "group": "間" },
+    "receiptSeconds": { "kind": "value", "type": "float", "label": "締めのレシートを出す秒", "group": "間" },
+    "stages": {
+      "kind": "list", "label": "営業",
+      "fields": {
+        "id": { "type": "text", "label": "台本の stage の名前" },
+        "backdrop": { "type": "text", "label": "始まりの絵と同じ背景の名前" },
+        "weather": { "type": "text", "label": "clear / rain" },
+        "guide": { "type": "bool", "label": "指の案内を出す" },
+        "hour": { "type": "float", "label": "壁の時計の始まりの時刻" }
+      }
+    },
+    "people": {
+      "kind": "list", "label": "人",
+      "fields": {
+        "id": { "type": "text", "label": "フラグと立ち絵の名前" },
+        "name": { "type": "text", "label": "表示の名前" },
+        "look": { "type": "text", "label": "master / postman / nurse / florist / landlord / student / clerk / painter" },
+        "regular": { "type": "bool", "label": "常連（満足度に数える）" }
+      }
+    },
+    "visits": {
+      "kind": "list", "label": "来店",
+      "fields": {
+        "stage": { "type": "text", "label": "営業" },
+        "atSeconds": { "type": "float", "label": "開店からの秒" },
+        "who": { "type": "text", "label": "人の id" },
+        "seat": { "type": "int", "label": "席(0〜2)" },
+        "ticket": { "type": "text", "label": "伝票の字（空なら注文の絵）" },
+        "bean": { "type": "text", "label": "dark / light" },
+        "grind": { "type": "text", "label": "coarse / fine" },
+        "amount": { "type": "text", "label": "half / full" },
+        "patience": { "type": "float", "label": "待てる秒" },
+        "price": { "type": "int", "label": "代金" },
+        "says": { "type": "text", "label": "入店の台詞" },
+        "thanks": { "type": "text", "label": "ぴったりの台詞" },
+        "wrong": { "type": "text", "label": "違った時の台詞" },
+        "leaves": { "type": "text", "label": "帰る時の台詞" }
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "title": "喫茶ひとやすみの素材の登録",
+  "note": "ここに書いた物は make が project.json へ足す（bin/sync-project.py）。本を足す時に project.json は触らない。",
+  "sounds": [
+    {"name": "cafe_amb_noon", "path": "assets/episodes/cafe/sfx/amb_noon.wav", "looping": true},
+    {"name": "cafe_amb_rain", "path": "assets/episodes/cafe/sfx/amb_rain.wav", "looping": true},
+    {"name": "cafe_grind", "path": "assets/episodes/cafe/sfx/grind.wav", "looping": true},
+    {"name": "cafe_pour", "path": "assets/episodes/cafe/sfx/pour.wav", "looping": true},
+    {"name": "cafe_bell", "path": "assets/episodes/cafe/sfx/bell.wav", "looping": false},
+    {"name": "cafe_beans", "path": "assets/episodes/cafe/sfx/beans.wav", "looping": false},
+    {"name": "cafe_click", "path": "assets/episodes/cafe/sfx/click.wav", "looping": false},
+    {"name": "cafe_notch", "path": "assets/episodes/cafe/sfx/notch.wav", "looping": false},
+    {"name": "cafe_slide", "path": "assets/episodes/cafe/sfx/slide.wav", "looping": false},
+    {"name": "cafe_lift", "path": "assets/episodes/cafe/sfx/lift.wav", "looping": false},
+    {"name": "cafe_cup", "path": "assets/episodes/cafe/sfx/cup.wav", "looping": false},
+    {"name": "cafe_spill", "path": "assets/episodes/cafe/sfx/spill.wav", "looping": false},
+    {"name": "cafe_stamp", "path": "assets/episodes/cafe/sfx/stamp.wav", "looping": false},
+    {"name": "cafe_coin", "path": "assets/episodes/cafe/sfx/coin.wav", "looping": false},
+    {"name": "cafe_tip", "path": "assets/episodes/cafe/sfx/tip.wav", "looping": false},
+    {"name": "cafe_sigh", "path": "assets/episodes/cafe/sfx/sigh.wav", "looping": false},
+    {"name": "cafe_receipt", "path": "assets/episodes/cafe/sfx/receipt.wav", "looping": false}
+  ],
+  "textures": [],
+  "resources": [
+    {"id": "cafe_story", "pattern": "assets/episodes/cafe/cafe.story.json", "title": "喫茶ひとやすみの台本", "schema": "assets/story.schema.json", "role": "material"},
+    {"id": "cafe_theme", "pattern": "assets/episodes/cafe/cafe.theme.json", "title": "喫茶ひとやすみの文章の色", "schema": "assets/book-theme.schema.json", "role": "material"},
+    {"id": "cafe_counter", "pattern": "assets/episodes/cafe/cafe.counter.json", "title": "喫茶ひとやすみのカウンターの値", "schema": "assets/episodes/cafe/counter.schema.json", "role": "material"}
+  ]
+}
