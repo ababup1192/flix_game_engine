@@ -53,6 +53,10 @@
         "hand": {
           "type": "text",
           "label": "手描きの顔"
+        },
+        "shrug": {
+          "type": "float",
+          "label": "肩をすくめる量（0..1）"
         }
       }
     }
