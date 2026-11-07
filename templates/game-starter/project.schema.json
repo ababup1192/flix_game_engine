@@ -74,6 +74,16 @@
           } },
           "label": "書き出しの時だけ素材を小さくする（書かなければ音は Opus・絵は劣化しない WebP）",
           "order": 1
+        },
+        "embed": {
+          "type": { "list": "text" },
+          "label": "符号にして wasm へ埋め込む素材（ゲームの根からの glob・シナリオの dialogue.json など）。ばらのファイルとしては配らず、通信や wasm の字からは読めなくなる",
+          "order": 2
+        },
+        "omit": {
+          "type": { "list": "text" },
+          "label": "配らない素材（ゲームの根からの glob）。実行時に読まない元のファイル（.yarn など）を外す",
+          "order": 3
         }
       }
     }
