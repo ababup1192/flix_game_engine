@@ -905,8 +905,6 @@ func runFontBake(game, dir string) int {
 	return 0
 }
 
-var webScriptRe = regexp.MustCompile(`(<script\s+src=")(fge-web\.js|wasm-gc-runtime\.js)(")`)
-
 // writeWebPage は bundle.json・classes.wasm・js・index.html・version.txt を出し、版のハッシュを返す。
 func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore string) (string, error) {
 	bundle, err := marshalWebBundle(b)
@@ -993,20 +991,58 @@ func webVersionHash(out string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil))[:12], nil
 }
 
-// stampWebIndex は index.html の fge-web.js と wasm-gc-runtime.js の <script src> に ?v=<hash> を付ける。
+// stampWebIndex は index.html の wasm-gc-runtime.js と fge-web.js の <script src> を、版を確かめてから読む小さな起動役に替える。
+// 起動役は version.txt をキャッシュを使わずに取り（13 バイト）、その版の ?v= を付けて 2 つの js を順に読む。
+// 取れない時（オフライン・3 秒で返らない）は書き出した時の版 hash で読む。
+// WhyNot: index.html に版を焼き込むだけにしない — GitHub Pages などの置き先は index.html にも max-age を付けて配り
+// （ゲームの側からは変えられない）、古い index.html が残ると古い ?v= を通して前の版を丸ごと読む。
+// 版の付いた URL（wasm・素材・js）は中身が変わると URL も変わるので、キャッシュに任せたままでよい。
 func stampWebIndex(html, hash string) (string, error) {
 	seen := map[string]bool{}
-	stamped := webScriptRe.ReplaceAllStringFunc(html, func(m string) string {
-		sub := webScriptRe.FindStringSubmatch(m)
-		seen[sub[2]] = true
-		return sub[1] + sub[2] + "?v=" + hash + sub[3]
-	})
+	first := -1
+	for _, loc := range webScriptTagRe.FindAllStringSubmatchIndex(html, -1) {
+		seen[html[loc[2]:loc[3]]] = true
+		if first < 0 {
+			first = loc[0]
+		}
+	}
 	for _, name := range []string{"wasm-gc-runtime.js", "fge-web.js"} {
 		if !seen[name] {
 			return "", fmt.Errorf(`<script src="%s"> が無い。次: index.html の script の行を確かめる`, name)
 		}
 	}
-	return stamped, nil
+	rest := webScriptTagRe.ReplaceAllString(html[first:], "")
+	return html[:first] + webBootScript(hash) + strings.TrimLeft(rest, "\n"), nil
+}
+
+// webScriptTagRe は index.html の 2 つの js を読む行（行末の改行ごと）。
+var webScriptTagRe = regexp.MustCompile(`<script\s+src="(fge-web\.js|wasm-gc-runtime\.js)"></script>\n?`)
+
+// webBootScript は版を確かめてから js を読む起動役（stampWebIndex）。hash = 書き出した時の版（version.txt が取れない時に使う）。
+func webBootScript(hash string) string {
+	return `<script>
+(function () {
+  var baked = "` + hash + `";
+  var started = false;
+  function boot(v) {
+    if (started) return;
+    started = true;
+    ["wasm-gc-runtime.js", "fge-web.js"].forEach(function (name) {
+      var s = document.createElement("script");
+      s.src = name + "?v=" + encodeURIComponent(v || baked);
+      s.async = false;
+      document.body.appendChild(s);
+    });
+  }
+  setTimeout(function () { boot(baked); }, 3000);
+  try {
+    fetch("version.txt", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (t) { boot(/^[0-9a-f]{6,64}$/.test(t.trim()) ? t.trim() : baked); }, function () { boot(baked); });
+  } catch (e) { boot(baked); }
+})();
+</script>
+`
 }
 
 func cleanupExportWork(p exportWebPaths, keep bool) {

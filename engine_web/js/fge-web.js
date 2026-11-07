@@ -937,4 +937,6 @@ async function fgeBoot() {
   }
 }
 
-window.addEventListener("load", function () { fgeBoot().catch(function (e) { fgeError("起動できません: " + (e && e.stack || e)); }); });
+// WhyNot: load だけを待たない — index.html の起動役は version.txt を確かめてからこの js を読むので、読み終えた時には load が済んでいることがある。
+function fgeStart() { fgeBoot().catch(function (e) { fgeError("起動できません: " + (e && e.stack || e)); }); }
+if (document.readyState === "complete") fgeStart(); else window.addEventListener("load", fgeStart);
