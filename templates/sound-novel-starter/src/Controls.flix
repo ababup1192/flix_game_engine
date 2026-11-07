@@ -202,15 +202,32 @@ mod Controls {
     /// 設定: ↑↓ で行、←→ で値、決定で 2 つから選ぶ行を反対側へ・「初期設定に戻す」を押す。
     /// スライダーの帯をクリックするとその位置の値、2 つから選ぶ行はクリックした側になる。
     /// スライダーは押したまま（指なら横へなぞったまま）動かすと、帯の上の位置に付いて値が動く。
+    /// 離すまでは最初に掴んだスライダーだけが動く（縦にずれて隣の行に入っても、隣は動かさない）。
     def settingsInput(res: Res.Res, frame: App.Frame, back: Bool, current: World.Setting, w: World.World): World.World \ Emit[World.Event] =
-        let k = keysOf(res);
         let rows = WorldSettings.settings();
         let hovered = Layout.hitOf(List.length(rows), Layout.settingRow(fitOf(res, frame)), frame#cursor)
             |> Option.flatMap(i -> List.nth(i, rows) |> Option.map(s -> (i, s)));
+        let fit = fitOf(res, frame);
+        let grabbed = (i, slider) -> { grab = World.Grab.Slider(i) | dragSlider(res, i, slider, frame, WorldSettings.pointSetting(World.Setting.Slider(slider), w)) };
+        match (frame#mouseDown, w#grab, hovered) {
+            case (true, World.Grab.Slider(i), _) =>
+                match List.nth(i, rows) {
+                    case Some(World.Setting.Slider(slider)) => grabbed(i, slider)
+                    case _                                  => w
+                }
+            case (true, World.Grab.Free, Some((i, World.Setting.Slider(slider)))) if Layout.contains(Layout.settingBarReach(fit, i), frame#cursor) =>
+                grabbed(i, slider)
+            case _ =>
+                let next = if (frame#mouseDown) World.Grab.Other else World.Grab.Free;
+                let w1 = if (w#grab == next) w else { grab = next | w };
+                settingsRest(res, frame, back, current, hovered, w1)
+        }
+
+    /// 掴んでいない時の設定の入力（クリック・ホバー・キー）。
+    def settingsRest(res: Res.Res, frame: App.Frame, back: Bool, current: World.Setting, hovered: Option[(Int32, World.Setting)], w: World.World): World.World \ Emit[World.Event] =
+        let k = keysOf(res);
         match hovered {
             case Some((i, setting)) if frame#mouseClicked => clickSetting(res, i, setting, frame, WorldSettings.pointSetting(setting, w))
-            case Some((i, World.Setting.Slider(slider))) if frame#mouseDown =>
-                clickSetting(res, i, World.Setting.Slider(slider), frame, WorldSettings.pointSetting(World.Setting.Slider(slider), w))
             case Some((_, setting)) if frame#mouseMoved   => WorldSettings.pointSetting(setting, w)
             case _ =>
                 if (back) World.closePanel(w)
@@ -221,6 +238,13 @@ mod Controls {
                 else if (tapped(k#confirm, frame)) WorldSettings.activate(current, w)
                 else w
         }
+
+    /// 掴んだ i 行目のスライダーを、カーソルの横の位置の値にする（縦の位置は見ない）。
+    def dragSlider(res: Res.Res, i: Int32, slider: World.Slider, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
+        let range = WorldSettings.rangeOf(slider, res#kind);
+        let bar = Layout.settingBar(fitOf(res, frame), i);
+        let t = Float64.max(0.0, Float64.min(1.0, (frame#cursor#x - bar#position#x) / bar#size#x));
+        WorldSettings.withLevel(res, slider, range#min + Float64.round((t * (range#max - range#min)) / range#step) * range#step, w)
 
     /// 設定の行 i をクリックした: スライダーは帯の位置の値、2 つから選ぶ行は押した側、押す行はボタンの上なら確認のウィンドウ。
     def clickSetting(res: Res.Res, i: Int32, setting: World.Setting, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =

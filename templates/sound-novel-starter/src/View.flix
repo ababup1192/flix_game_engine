@@ -377,14 +377,16 @@ mod View {
             :: ((9.0, 4.0) :: (9.0, 9.0) :: (15.0, 9.0) :: (15.0, 4.0) :: Nil)
             :: ((9.0, 20.0) :: (9.0, 14.0) :: (16.0, 14.0) :: (16.0, 20.0) :: Nil) :: Nil
         case World.Button.Menu =>
-            let ring = List.range(0, 13) |> List.map(k -> {
-                let a = Int32.toFloat64(k) * 2.0 * Num.pi() / 12.0;
-                (12.0 + 3.0 * Num.cos(a), 12.0 + 3.0 * Num.sin(a))
+            // 歯車: 8 枚の歯の縁（歯先の半径 9.6・歯元の半径 7.0）を 1 本の閉じた線で回し、真ん中に軸の穴（半径 3.0）。
+            // WhyNot: 輪から短い線を放射状に出さない — 太陽（明るさ）のアイコンに見える。
+            let point = (r, deg) -> { let a = deg * Num.pi() / 180.0; (12.0 + r * Num.cos(a), 12.0 + r * Num.sin(a)) };
+            let teeth = List.range(0, 8) |> List.flatMap(k -> {
+                let c = Int32.toFloat64(k) * 45.0 - 90.0;
+                point(7.0, c - 15.0) :: point(9.6, c - 9.0) :: point(9.6, c + 9.0) :: point(7.0, c + 15.0) :: Nil
             });
-            ring :: ((12.0, 3.0) :: (12.0, 6.0) :: Nil) :: ((12.0, 18.0) :: (12.0, 21.0) :: Nil)
-                 :: ((3.0, 12.0) :: (6.0, 12.0) :: Nil) :: ((18.0, 12.0) :: (21.0, 12.0) :: Nil)
-                 :: ((5.6, 5.6) :: (7.7, 7.7) :: Nil) :: ((16.3, 16.3) :: (18.4, 18.4) :: Nil)
-                 :: ((5.6, 18.4) :: (7.7, 16.3) :: Nil) :: ((16.3, 7.7) :: (18.4, 5.6) :: Nil) :: Nil
+            let rim = List.append(teeth, List.take(1, teeth));
+            let hole = List.range(0, 13) |> List.map(k -> point(3.0, Int32.toFloat64(k) * 30.0));
+            rim :: hole :: Nil
         case _ => Nil
     }
 
