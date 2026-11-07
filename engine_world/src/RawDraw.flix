@@ -45,7 +45,13 @@ pub mod RawDraw {
     /// 通してから渡す。
     pub def polygon(vertices: List[Vec2.Vec2], color: Color, zIndex: Int32): Item =
         Item.Poly({ vertices = vertices, color = color, alpha = 1.0, zIndex = zIndex,
-                    blend = DrawCmd.BlendMode.Normal, grad = None })
+                    blend = DrawCmd.BlendMode.Normal, grad = None, triangles = None })
+
+    /// polygon の、割り方を先に渡す形。order は読み込みの時に Triangulate.indices で 1 度だけ作った列。
+    /// 数百頂点の形を毎フレーム描く絵（イラストの輪郭など）は、これで描くたびの耳切りを省く。絵は polygon と同じ。
+    pub def polygonWithTriangles(vertices: List[Vec2.Vec2], order: Vector[Int32], color: Color, zIndex: Int32): Item =
+        Item.Poly({ vertices = vertices, color = color, alpha = 1.0, zIndex = zIndex,
+                    blend = DrawCmd.BlendMode.Normal, grad = None, triangles = Some(order) })
 
     // ── 図形の語彙（polygon の上に組んだ形。凹も可 — 描画側の耳切りが三角形化する）──
     // 角度はぜんぶ「1 周 = 1.0 の回転量 t」で渡す（t = 0 が真上・時計回り = 画面の見た目どおり）。

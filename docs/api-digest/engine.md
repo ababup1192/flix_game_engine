@@ -1,4 +1,4 @@
-<!-- engine v0.88.0 / 生成: 2026-11-06 -->
+<!-- engine v0.88.1 / 生成: 2026-11-07 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -411,7 +411,9 @@
 - 展開済みの色つき頂点（位置＋色＋濃さ）。バックエンドが三角形の中で線形に混ぜる単位。
   `pub type alias GradVertex = { pos = Vec2.Vec2, color = Color, alpha = Float64 }`
 - 凸多角形の塗り潰し命令。vertices はスクリーン px に変換済みの頂点列を渡す。
-  `pub type alias PolygonRenderCmd = { vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, clip = Option[Rect2.Rect2], blend = BlendMode, grad = Option[List[VertexTint]] }`
+  `pub type alias PolygonRenderCmd = { vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, clip = Option[Rect2.Rect2], blend = BlendMode, grad = Option[List[VertexTint]], triangles = Option[Vector[Int32]] }`
+- 単色の多角形の三角形の列（覚えた割り方があれば耳切りを通らない）。GL と SoftRaster が同じ割り方を見る口。
+  `pub def polygonTriangles(p: PolygonRenderCmd): List[(Vec2.Vec2, Vec2.Vec2, Vec2.Vec2)]`
 - 宣言シェーダーの面 1 枚ぶんの描画依頼（Platform.Draw2d.drawSurface に渡す）。
   `pub type alias SurfaceRenderCmd = { program = GpuHandle.ShaderProgram, texReads = List[(String, ShaderDoc.FilterMode)], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = BlendMode, alpha = Float64, params = List[Float64] }`
 - grad つき多角形を「色つき頂点の三角形列」に展開する。GL と SoftRaster が同じ
@@ -1792,6 +1794,12 @@
 ## Triangulate — `engine/src/core/Triangulate.flix`
 - 多角形を三角形に分割する。3頂点未満は空。凸なら n−2 枚（ファンと同じ枚数）。
   `pub def triangles(points: List[Vec2.Vec2]): List[(Vec2.Vec2, Vec2.Vec2, Vec2.Vec2)]`
+- triangles の割り方を頂点の番号の列（3 つで三角形 1 枚）で返す。同じ座標の頂点は同じ番号になる
+  `pub def indices(points: List[Vec2.Vec2]): Vector[Int32]`
+- 列が頂点の数 n に合っているか（描く側が番号で頂点を引く前に見る）。
+  `pub def fitsIndices(order: Vector[Int32], n: Int32): Bool`
+- indices の列を頂点へ戻す（O(n)）。列が頂点の数に合わなければ triangles で割り直す（fail-open）。
+  `pub def fromIndices(order: Vector[Int32], points: List[Vec2.Vec2]): List[(Vec2.Vec2, Vec2.Vec2, Vec2.Vec2)]`
 - 符号付き面積（靴ひも公式）。正なら run が使う向き。
   `pub def signedArea(points: List[Vec2.Vec2]): Float64`
 

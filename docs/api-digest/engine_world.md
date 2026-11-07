@@ -1,4 +1,4 @@
-<!-- engine v0.88.0 / 生成: 2026-11-06 -->
+<!-- engine v0.88.1 / 生成: 2026-11-07 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1937,6 +1937,8 @@
   `pub def orBoxAt(center: Vec2.Vec2, size: Vec2.Vec2, color: Color, zIndex: Int32, items: List[PlacedItem]): List[PlacedItem]`
 - 単色塗りの多角形。頂点は置き場所からの相対座標で渡す（絶対座標で組みたいときは
   `pub def polygon(vertices: List[Vec2.Vec2], color: Color, zIndex: Int32): Item`
+- polygon の、割り方を先に渡す形。order は読み込みの時に Triangulate.indices で 1 度だけ作った列。
+  `pub def polygonWithTriangles(vertices: List[Vec2.Vec2], order: Vector[Int32], color: Color, zIndex: Int32): Item`
 - 正 n 角形（外接半径 radius・頂点が真上・原点中心）。三角形・ひし形・六角形はこれ。
   `pub def ngon(n: Int32, radius: Float64, color: Color, zIndex: Int32): Item`
 - ngon を中心 center に置く近道。
@@ -1970,7 +1972,7 @@
 
 ## Render — `engine_world/src/Render.flix`
 - 傾き（rotation）の単位は「回転数」— 1 周 = 1.0・正で時計回り。ラジアンへの変換は
-  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64, params = Map[String, Float64] }) case Scene3d(Scene3d.Scene3dCmd) }`
+  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]], triangles = Option[Vector[Int32]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64, params = Map[String, Float64] }) case Scene3d(Scene3d.Scene3dCmd) }`
 - 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
   `pub type alias PlacedItem = { at = Vec2.Vec2, item = Item }`
 - 全テクスチャ・等倍・中心原点のスプライト（最頻ケース）。反転が要るときは spriteFlipped。

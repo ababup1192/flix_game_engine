@@ -552,8 +552,17 @@ pub mod DrawCmd {
         zIndex   = Int32,
         clip     = Option[Rect2.Rect2],
         blend    = BlendMode,
-        grad     = Option[List[VertexTint]]
+        grad     = Option[List[VertexTint]],
+        // 読み込みの時に割っておいた三角形（Triangulate.indices の列）。None = 描くたびに耳切りで割る。
+        triangles = Option[Vector[Int32]]
     }
+
+    /// 単色の多角形の三角形の列（覚えた割り方があれば耳切りを通らない）。GL と SoftRaster が同じ割り方を見る口。
+    pub def polygonTriangles(p: PolygonRenderCmd): List[(Vec2.Vec2, Vec2.Vec2, Vec2.Vec2)] =
+        match p#triangles {
+            case Some(order) => Triangulate.fromIndices(order, p#vertices)
+            case None        => Triangulate.triangles(p#vertices)
+        }
 
     /// 宣言シェーダーの面 1 枚ぶんの描画依頼（Platform.Draw2d.drawSurface に渡す）。
     /// program = Platform.GpuResources.buildProgram が返した GPU ハンドル、rect = 塗る矩形（スクリーン空間 px・uv=0..1 が

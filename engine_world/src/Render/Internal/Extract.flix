@@ -31,10 +31,11 @@ pub mod Render.Internal.Extract {
     /// Poly を置き場所 pos の描画命令へ（全頂点に pos を加算）。
     def polyCmd(pos: Vec2.Vec2,
                 p: { vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32,
-                     blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }): GameEngine.PolygonRenderCmd =
+                     blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]],
+                     triangles = Option[Vector[Int32]] }): GameEngine.PolygonRenderCmd =
         { vertices = List.map(v -> Vec2.add(v, pos), p#vertices),
           color = p#color, alpha = p#alpha, zIndex = p#zIndex, clip = None, blend = p#blend,
-          grad = p#grad }
+          grad = p#grad, triangles = p#triangles }
 
     /// 3D を描けない道で場面の代わりに塗る色。
     pub def scene3dStandIn(): Color = { r = 0.08, g = 0.08, b = 0.1 }

@@ -35,8 +35,10 @@ pub mod Render {
         /// 頂点は置き場所からの相対座標（draw が置き場所を全頂点に加算する）。
         /// grad = Some(色列) で頂点ごとの色になり面の中で滑らかに混ざる（gradPolygon / vgrad で作る。
         /// 扇割りのため凸の形で使う）。None = color 一色。
+        /// triangles = Some(列) は割り方を読み込みの時に済ませた形（RawDraw.polygonWithTriangles）。
         case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32,
-                    blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] })
+                    blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]],
+                    triangles = Option[Vector[Int32]] })
         /// rect（スクリーン空間・design px）で inner を切り抜く。入れ子は交差。
         /// App + withCamera 経路では中身にはカメラが掛かるが、clip 矩形は常にスクリーン固定 —
         /// PiP やパネル内スクロール用（world に追従する clip 矩形は v1 対象外）。
@@ -305,7 +307,8 @@ pub mod Render {
                                      |> Option.getWithDefault(white()),
                     alpha = 1.0, zIndex = zIndex, blend = DrawCmd.BlendMode.Normal,
                     grad = Some(List.map(v -> ({ color = v#color, alpha = v#alpha }: DrawCmd.VertexTint),
-                                         vertices)) })
+                                         vertices)),
+                    triangles = None })
 
     /// 上下 2 色の縦グラデ矩形（左上原点・サイズ指定）。空や夕暮れの背景の定番形。
     /// 濃さも変えたいとき（上へ消える光の帯など）は gradPolygon で頂点ごとに渡す。
@@ -527,7 +530,7 @@ pub mod Render {
                 else Item.Poly({ vertices = { x = 0.0, y = 0.0 } :: { x = b#size#x, y = 0.0 }
                                      :: { x = b#size#x, y = b#size#y } :: { x = 0.0, y = b#size#y } :: Nil,
                                  color = b#color, alpha = b#alpha, zIndex = b#zIndex,
-                                 blend = b#blend, grad = None })
+                                 blend = b#blend, grad = None, triangles = None })
             case other => other
         }, item)
 

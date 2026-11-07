@@ -2,7 +2,8 @@
 /// GL の塗り（GL_TRIANGLES）と SoftRaster（スキャンライン）の絵を一致させるための芯:
 /// ファン分割は凸専用で、星のような凹多角形では凹みを跨いで塗ってしまう。
 /// 純粋関数なので、面積保存（分割前後で面積が変わらない）をテストで釘打ちできる。
-/// 計算量は O(n²)。ゲームの多角形は数十頂点なので毎フレームでも問題にならない。
+/// 計算量は O(n²)。数十頂点の多角形なら毎フレームでも問題にならない。数百頂点の形を毎フレーム描くなら、
+/// 読み込みの時に indices で 1 度だけ割り、fromIndices で頂点へ戻す（動かす・拡大する・回すだけなら割り方は同じ）。
 pub mod Triangulate {
 
     /// 多角形を三角形に分割する。3頂点未満は空。凸なら n−2 枚（ファンと同じ枚数）。
@@ -13,12 +14,44 @@ pub mod Triangulate {
     /// 凸なので、画面に多角形が数千枚出る場面（暗い洞窟の影）ではここが効く。凹（星形など）は
     /// ファンが凹みを跨いで塗るため従来の耳切りに回す。
     pub def triangles(points: List[Vec2.Vec2]): List[(Vec2.Vec2, Vec2.Vec2, Vec2.Vec2)] =
-        if (List.length(points) < 3) Nil
-        else {
-            // 向きを正規化: 符号付き面積が正（この式では反時計回り）に揃えて耳判定の符号を固定する。
-            let oriented = if (signedArea(points) < 0.0) List.reverse(points) else points;
-            if (isConvex(oriented)) fan(oriented) else clip(oriented, Nil, 0)
+        match points {
+            // 3 点はそのまま 1 枚（割った三角形をマスクに並べる形で、数百回通る入口）。
+            case a :: b :: c :: Nil => (a, b, c) :: Nil
+            case _ =>
+                if (List.length(points) < 3) Nil
+                else {
+                    // 向きを正規化: 符号付き面積が正（この式では反時計回り）に揃えて耳判定の符号を固定する。
+                    let oriented = if (signedArea(points) < 0.0) List.reverse(points) else points;
+                    if (isConvex(oriented)) fan(oriented) else clip(oriented, Nil, 0)
+                }
         }
+
+    /// triangles の割り方を頂点の番号の列（3 つで三角形 1 枚）で返す。同じ座標の頂点は同じ番号になる
+    /// （同じ位置なので絵は変わらない）。頂点の並びが同じなら、動かした後の形にも同じ列を使える。
+    pub def indices(points: List[Vec2.Vec2]): Vector[Int32] =
+        let numbers = points |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
+            let (i, p) = pair;
+            Map.insert((p#x, p#y), i, acc)
+        }, Map.empty());
+        let numberOf = (p: Vec2.Vec2) -> Map.getWithDefault((p#x, p#y), 0, numbers);
+        triangles(points)
+            |> List.flatMap(tri -> { let (a, b, c) = tri; numberOf(a) :: numberOf(b) :: numberOf(c) :: Nil })
+            |> List.toVector
+
+    /// 列が頂点の数 n に合っているか（描く側が番号で頂点を引く前に見る）。
+    pub def fitsIndices(order: Vector[Int32], n: Int32): Bool =
+        Int32.remainder(Vector.length(order), 3) == 0 and Vector.forAll(i -> i >= 0 and i < n, order)
+
+    /// indices の列を頂点へ戻す（O(n)）。列が頂点の数に合わなければ triangles で割り直す（fail-open）。
+    pub def fromIndices(order: Vector[Int32], points: List[Vec2.Vec2]): List[(Vec2.Vec2, Vec2.Vec2, Vec2.Vec2)] =
+        let vs = List.toVector(points);
+        let n = Vector.length(vs);
+        if (not fitsIndices(order, n)) triangles(points)
+        else
+            List.range(0, Vector.length(order) / 3) |> List.map(t -> {
+                let at = k -> Vector.get(Vector.get(t * 3 + k, order), vs);
+                (at(0), at(1), at(2))
+            })
 
     /// 反時計回りに正規化済みの多角形が凸か。全ての連続する3点の曲がりが左回り（外積>=0）なら凸。
     /// ちょうど0（一直線）は凸に含める — ファンでは退化三角形（面積0）になり塗りに影響しない。

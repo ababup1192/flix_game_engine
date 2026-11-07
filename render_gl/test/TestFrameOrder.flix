@@ -13,7 +13,7 @@ mod TestFrameOrder {
 
     def polyAt(z: Int32, tag: Float64): DrawCmd.PolygonRenderCmd =
         { vertices = { x = tag, y = 0.0 } :: Nil, color = { r = 0.0, g = 0.0, b = 0.0 },
-          alpha = 1.0, zIndex = z, clip = None, blend = DrawCmd.BlendMode.Normal, grad = None }
+          alpha = 1.0, zIndex = z, clip = None, blend = DrawCmd.BlendMode.Normal, grad = None, triangles = None }
 
     /// 並んだ列を「種類の頭文字 + 目印」の文字列にして読む。
     def trace(items: List[RenderFrame.Merged]): String =

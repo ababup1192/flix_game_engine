@@ -160,7 +160,7 @@ mod RenderSprite {
             case None =>
                 let color = pc#color;
                 let alpha = f32(pc#alpha);
-                let flat = Triangulate.triangles(pc#vertices)
+                let flat = DrawCmd.polygonTriangles(pc)
                     |> List.flatMap(tri -> { let (a, b, c) = tri; a :: b :: c :: Nil });
                 let n = List.length(flat);
                 let vertsRev = List.foldLeft((rest, v) ->
@@ -190,13 +190,21 @@ mod RenderSprite {
                 let g = RenderUtil.f32(color#g);
                 let b = RenderUtil.f32(color#b);
                 let alpha = RenderUtil.f32(pc#alpha);
-                Triangulate.triangles(pc#vertices) |> List.foldLeft((i, tri) -> {
-                    let (v0, v1, v2) = tri;
-                    writeXY(data, i,     v0, r, g, b, alpha);
-                    writeXY(data, i + 1, v1, r, g, b, alpha);
-                    writeXY(data, i + 2, v2, r, g, b, alpha);
-                    i + 3
-                }, firstVert) - firstVert
+                let vs = pc#triangles |> Option.map(_ -> List.toVector(pc#vertices)) |> Option.getWithDefault(Vector#{});
+                match pc#triangles {
+                    // 割り方を覚えた形は、番号で頂点を引いて直に書く（三角形の組の列を毎フレーム作らない）。
+                    case Some(order) if Triangulate.fitsIndices(order, Vector.length(vs)) =>
+                        Vector.forEachWithIndex((k, at) -> writeXY(data, firstVert + k, Vector.get(at, vs), r, g, b, alpha), order);
+                        Vector.length(order)
+                    case _ =>
+                        DrawCmd.polygonTriangles(pc) |> List.foldLeft((i, tri) -> {
+                            let (v0, v1, v2) = tri;
+                            writeXY(data, i,     v0, r, g, b, alpha);
+                            writeXY(data, i + 1, v1, r, g, b, alpha);
+                            writeXY(data, i + 2, v2, r, g, b, alpha);
+                            i + 3
+                        }, firstVert) - firstVert
+                }
             case Some(_) =>
                 DrawCmd.gradTriangles(pc) |> List.foldLeft((i, tri) -> {
                     let (v0, v1, v2) = tri;

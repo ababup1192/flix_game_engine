@@ -25,6 +25,28 @@ mod TestTriangulate {
             { x = r * Num.cos(tau() * t), y = r * Num.sin(tau() * t) }
         })
 
+    // 割り方の列を頂点へ戻すと、耳切りと同じ三角形になる（凹の形でも）。
+    @Test
+    def testIndicesRebuildSameTriangles(): Unit \ Assert =
+        let points = star(5, 10.0, 4.0);
+        Assert.assertEq(expected = Triangulate.triangles(points),
+                        Triangulate.fromIndices(Triangulate.indices(points), points))
+
+    // 形を動かしても、同じ列のまま面積が保たれる（読み込みの時に 1 度割る使い方の根拠）。
+    @Test
+    def testIndicesFollowMovedShape(): Unit \ Assert =
+        let points = star(5, 10.0, 4.0);
+        let moved = points |> List.map(p -> ({ x = p#x + 30.0, y = p#y - 7.0 }: Vec2.Vec2));
+        Assert.assertEq(expected = round4(sumArea(Triangulate.triangles(points))),
+                        round4(sumArea(Triangulate.fromIndices(Triangulate.indices(points), moved))))
+
+    // 列が頂点の数に合わない時は割り直す（fail-open）。
+    @Test
+    def testBrokenIndicesFallBackToTriangles(): Unit \ Assert =
+        let points = star(5, 10.0, 4.0);
+        Assert.assertEq(expected = Triangulate.triangles(points),
+                        Triangulate.fromIndices(Vector#{ 0, 1, 99 }, points))
+
     // 凸（正方形）: 2枚に割れ、面積 1 がそのまま保存される。
     @Test
     def testConvexSquareSplitsInTwo(): Unit \ Assert =

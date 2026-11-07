@@ -404,7 +404,7 @@ pub mod DrawHash {
 
     def putPolygon(out: DataOutputStream, p: GameEngine.PolygonRenderCmd): Unit \ IO = match p {
         case { vertices = vertices, color = color, alpha = alpha, zIndex = zIndex,
-               clip = clip, blend = blend, grad = grad } =>
+               clip = clip, blend = blend, grad = grad, triangles = _ } =>
             putPath(out, vertices);
             putColor(out, color);
             putF(out, alpha);
