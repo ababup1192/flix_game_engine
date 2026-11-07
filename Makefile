@@ -447,7 +447,7 @@ gl-capture:
 	@bin/gl-capture.sh "$(OUT)"
 
 # WhyNot: gl-capture の基準を BASELINE と分ける — 3D の GL の絵は C2 の後で 1 画素変わり、0.78.0 の基準は gl-capture だけを持つ。
-GL_CAPTURE_BASELINE ?= bench/baseline/0.79.0
+GL_CAPTURE_BASELINE ?= bench/baseline/0.88.4
 gl-capture-check:
 	@rm -rf build/gl-capture/a build/gl-capture/b
 	@bin/gl-capture.sh build/gl-capture/a && bin/gl-capture.sh build/gl-capture/b && \
