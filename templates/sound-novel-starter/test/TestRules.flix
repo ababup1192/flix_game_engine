@@ -559,6 +559,21 @@ mod TestRules {
         Assert.assertEq(expected = (range#min, range#max, true), (cps(left), cps(right), KindDoc.isNoWait(cps(right), res#kind)))
 
     @Test
+    def testDragStaysOnTheFirstSlider(): Unit \ {Assert, Fs.FileRead} =
+        // 文字の速さの帯を掴んだまま、下の行（オートの待ち）の帯の右端へずれても、動くのは文字の速さだけ。離すと掴みが外れる。
+        let res = TestKit.res();
+        let fit = Layout.Fit.Regular;
+        let first = Layout.settingBar(fit, 0);
+        let second = Layout.settingBar(fit, 1);
+        let frame = (down, x, y) -> { mouseDown = down, mouseMoved = true, cursor = { x = x, y = y } | App.emptyFrame() };
+        let opened = quiet(() -> WorldSettings.openSettings(w0(res)));
+        let start = Controls.interact(frame(true, first#position#x, first#position#y + first#size#y / 2.0), res, opened);
+        let slid = Controls.interact(frame(true, second#position#x + second#size#x, second#position#y + second#size#y / 2.0), res, start);
+        let released = Controls.interact(frame(false, second#position#x, second#position#y + second#size#y / 2.0), res, slid);
+        let c = Saves.configOf(released#saves);
+        Assert.assertEq(expected = (kind(res)#cpsSlider#max, kind(res)#autoWait, World.Grab.Free), (c#cps, c#autoWait, released#grab))
+
+    @Test
     def testNoWaitShowsTheWholeLineAtOnce(): Unit \ {Assert, Fs.FileRead} =
         // 文字の速さが最大（ノーウェイト）なら、行は出た拍に全部出る（文字送りしない）。
         let res = TestKit.res();
