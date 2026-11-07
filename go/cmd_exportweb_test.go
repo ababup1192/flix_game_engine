@@ -43,12 +43,22 @@ func TestTeavmErrorsLimitsShownEntries(t *testing.T) {
 	}
 }
 
-func TestStampWebIndexAddsVersionToBothScripts(t *testing.T) {
-	html := `<script src="wasm-gc-runtime.js"></script>` + "\n" + `<script src="fge-web.js"></script>`
-	got, err := stampWebIndex(html, "abc")
-	want := `<script src="wasm-gc-runtime.js?v=abc"></script>` + "\n" + `<script src="fge-web.js?v=abc"></script>`
-	if err != nil || got != want {
-		t.Errorf("2 つの script に ?v= が付くはず: %q %v", got, err)
+func TestStampWebIndexReplacesScriptsWithVersionCheck(t *testing.T) {
+	html := "<body>\n" + `<script src="wasm-gc-runtime.js"></script>` + "\n" + `<script src="fge-web.js"></script>` + "\n</body>"
+	got, err := stampWebIndex(html, "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`fetch("version.txt", { cache: "no-store" })`, `var baked = "abc123";`, `"wasm-gc-runtime.js", "fge-web.js"`, "s.async = false;"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("起動役に %q が入るはず: %s", want, got)
+		}
+	}
+	if strings.Contains(got, `<script src="fge-web.js">`) || strings.Contains(got, `<script src="wasm-gc-runtime.js">`) {
+		t.Errorf("元の script の行は消えるはず: %s", got)
+	}
+	if !strings.HasPrefix(got, "<body>\n<script>") || !strings.HasSuffix(got, "</script>\n</body>") {
+		t.Errorf("起動役は元の script の場所に入るはず: %q", got)
 	}
 }
 
