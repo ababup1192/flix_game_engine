@@ -17,7 +17,7 @@ mod TestDrawHash {
     def polygon(grad: Option[List[DrawCmd.VertexTint]]): GameEngine.PolygonRenderCmd =
         { vertices = { x = 0.0, y = 0.0 } :: { x = 10.0, y = 0.0 } :: { x = 0.0, y = 10.0 } :: Nil,
           color = { r = 0.5, g = 0.2, b = 0.1 }, alpha = 1.0, zIndex = 1, clip = None,
-          blend = DrawCmd.BlendMode.Normal, grad = grad }
+          blend = DrawCmd.BlendMode.Normal, grad = grad, triangles = None }
 
     def atlas(advance: Float64): FontAtlas =
         { textureName = "font_ui", fontSize = 16.0, textureSize = 256.0, ascent = 12.0, descent = 4.0,

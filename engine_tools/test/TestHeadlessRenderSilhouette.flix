@@ -15,7 +15,7 @@ mod TestHeadlessRenderSilhouette {
         { vertices = { x = 0.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 0.0, y = 4.0 } :: Nil,
           color = { r = 0.2, g = 0.8, b = 0.4 }, alpha = 0.5, zIndex = z,
           clip = None, blend = DrawCmd.BlendMode.Add,
-          grad = Some({ color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0 } :: Nil) }
+          triangles = None, grad = Some({ color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0 } :: Nil) }
 
     @Test
     def testWorldBandDropsUiAndHud(): Unit \ Assert =

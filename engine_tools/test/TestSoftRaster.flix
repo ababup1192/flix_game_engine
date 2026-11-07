@@ -112,7 +112,7 @@ mod TestSoftRaster {
                   :: { x = 4.0, y = 4.0 } :: { x = 0.0, y = 4.0 } :: Nil,
           color = top, alpha = 1.0, zIndex = 0, clip = None,
           blend = DrawCmd.BlendMode.Normal,
-          grad = Some({ color = top, alpha = 1.0 } :: { color = top, alpha = 1.0 }
+          triangles = None, grad = Some({ color = top, alpha = 1.0 } :: { color = top, alpha = 1.0 }
                    :: { color = bottom, alpha = 1.0 } :: { color = bottom, alpha = 1.0 } :: Nil) }
 
     //   (0,0)黒 ── (4,0)黒
@@ -135,7 +135,7 @@ mod TestSoftRaster {
             { vertices = { x = 0.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 0.0, y = 4.0 } :: Nil,
               color = blue, alpha = 0.5, zIndex = 0, clip = None,
               blend = DrawCmd.BlendMode.Normal,
-              grad = Some({ color = red, alpha = 0.5 } :: Nil) };
+              triangles = None, grad = Some({ color = red, alpha = 0.5 } :: Nil) };
         let tris = DrawCmd.gradTriangles(tri);
         let sampleAt = at -> SoftRaster.gradSample(tris, at)
             |> Option.map(t -> (t#color#r, t#color#b, t#alpha));

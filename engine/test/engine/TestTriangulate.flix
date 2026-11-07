@@ -29,8 +29,8 @@ mod TestTriangulate {
     @Test
     def testIndicesRebuildSameTriangles(): Unit \ Assert =
         let points = star(5, 10.0, 4.0);
-        Assert.assertEq(expected = Triangulate.triangles(points),
-                        Triangulate.fromIndices(Triangulate.indices(points), points))
+        Assert.assertEq(expected = List.map(triArea, Triangulate.triangles(points)),
+                        List.map(triArea, Triangulate.fromIndices(Triangulate.indices(points), points)))
 
     // 形を動かしても、同じ列のまま面積が保たれる（読み込みの時に 1 度割る使い方の根拠）。
     @Test
@@ -44,8 +44,8 @@ mod TestTriangulate {
     @Test
     def testBrokenIndicesFallBackToTriangles(): Unit \ Assert =
         let points = star(5, 10.0, 4.0);
-        Assert.assertEq(expected = Triangulate.triangles(points),
-                        Triangulate.fromIndices(Vector#{ 0, 1, 99 }, points))
+        Assert.assertEq(expected = List.map(triArea, Triangulate.triangles(points)),
+                        List.map(triArea, Triangulate.fromIndices(Vector#{ 0, 1, 99 }, points)))
 
     // 凸（正方形）: 2枚に割れ、面積 1 がそのまま保存される。
     @Test

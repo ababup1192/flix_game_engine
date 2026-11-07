@@ -176,7 +176,7 @@ mod TestRenderPassesHdr {
         let polygon: GameEngine.PolygonRenderCmd =
             { vertices = { x = 2.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 4.0, y = 1.0 } :: { x = 2.0, y = 1.0 } :: Nil,
               color = { r = 0.0, g = 0.0, b = 1.0 }, alpha = 1.0, zIndex = 0,
-              blend = DrawCmd.BlendMode.Normal, clip = None, grad = None };
+              blend = DrawCmd.BlendMode.Normal, clip = None, grad = None, triangles = None };
         HeadlessRender.renderPassImageWith(cfg(1), Map#{ "green" => SoftRaster.PassImage.Rgba8Unorm(greenTex) },
                                            { drawables = drawables, polygons = polygon :: Nil | hdrPass(RenderTarget.LoadOp.Clear(gray(2.0))) }, None)
 

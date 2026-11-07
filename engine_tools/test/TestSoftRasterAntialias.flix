@@ -22,10 +22,10 @@ mod TestSoftRasterAntialias {
         let wedge = { x = 30.0, y = 44.0 } :: { x = 62.0, y = 20.0 } :: { x = 62.0, y = 44.0 } :: Nil;
         ({ vertices = tri,
            color = { r = 0.85, g = 0.72, b = 0.30 }, alpha = 1.0, zIndex = 10,
-           blend = DrawCmd.BlendMode.Normal, clip = None, grad = None }: GameEngine.PolygonRenderCmd) ::
+           blend = DrawCmd.BlendMode.Normal, clip = None, grad = None, triangles = None }: GameEngine.PolygonRenderCmd) ::
         ({ vertices = wedge,
            color = { r = 0.20, g = 0.35, b = 0.55 }, alpha = 1.0, zIndex = 20,
-           blend = DrawCmd.BlendMode.Normal, clip = None, grad = None }: GameEngine.PolygonRenderCmd) :: Nil
+           blend = DrawCmd.BlendMode.Normal, clip = None, grad = None, triangles = None }: GameEngine.PolygonRenderCmd) :: Nil
 
     def cfg(shapes: Bool, text: Bool): HeadlessRender.RenderConfig \ IO =
         let ttf = "../templates/game-starter/assets/Xolonium-Regular.ttf";
