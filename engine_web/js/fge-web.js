@@ -427,6 +427,8 @@ function fgeApplyLayout() {
 }
 
 // canvas の上の指: 離した時にタップ（その位置のクリック）・縦のドラッグはホイール・横に払うとスワイプ・長押し。
+// 横のドラッグの間は、マウスの左ボタンを押したまま動かすのと同じに見せる（位置は指に付いて動き、押しは続くがクリックは出さない）。
+// スライダーを指で動かせるように。離すと押しも離れる。
 // 主な指（isPrimary）だけを追う。
 var fgeTouchSlop = 16;
 var fgeWheelStep = 40;
@@ -451,13 +453,19 @@ function fgeGestureDown(e, canvasXY) {
   }
   fgeGesture = g;
 }
-function fgeGestureMove(e) {
+function fgeGestureMove(e, canvasXY) {
   var g = fgeGesture;
   if (!g || g.id !== e.pointerId) return;
   var dx = e.clientX - g.x0, dy = e.clientY - g.y0;
   if (g.mode === "tap" && dx * dx + dy * dy > fgeTouchSlop * fgeTouchSlop) {
     g.mode = Math.abs(dy) > Math.abs(dx) ? "scroll" : "swipe";
     if (g.timer) { clearTimeout(g.timer); g.timer = 0; }
+  }
+  if (g.mode === "swipe") {
+    // WhyNot: 押した拍（latch）を立てない — 横に払っただけで、払い始めの所のボタンが押される。
+    fgePointer.x = canvasXY.x;
+    fgePointer.y = canvasXY.y;
+    fgePointer.buttons[0] = true;
   }
   if (g.mode === "scroll") {
     // 指を下へ引くと上へ回したホイール（前の行へ）。1 回のドラッグの中で、最初に出た向きと逆の刻みは捨てる（開いた直後に閉じない）。
@@ -476,6 +484,7 @@ function fgeGestureUp(e) {
   if (!g || g.id !== e.pointerId) return;
   fgeGesture = null;
   if (g.timer) clearTimeout(g.timer);
+  if (g.mode === "swipe") fgePointer.buttons[0] = false;
   if (g.mode === "tap") {
     // WhyNot: 離した所で押さない — 指を離す時のずれで隣のボタンを押す。押した時の位置に戻してから押す。
     fgePointer.x = g.px;
@@ -495,6 +504,7 @@ function fgeGestureCancel(e) {
   var g = fgeGesture;
   if (!g || g.id !== e.pointerId) return;
   if (g.timer) clearTimeout(g.timer);
+  if (g.mode === "swipe") fgePointer.buttons[0] = false;
   fgeGesture = null;
 }
 
@@ -566,7 +576,7 @@ function fgeWireInput() {
   };
   fgeCanvas.addEventListener("pointermove", function (e) {
     if (e.pointerType !== "touch") fgeNotePointer(e);
-    if (e.pointerType === "touch") { fgeGestureMove(e); return; }
+    if (e.pointerType === "touch") { fgeGestureMove(e, toCanvas(e)); return; }
     var p = place(e);
     // WhyNot: 位置の差で動きを出さない — 初めの 1 回と、canvas の外から戻った時に跳ぶ。
     if (document.hasFocus()) { fgePointer.dx += (e.movementX || 0) * p.s.sx; fgePointer.dy += (e.movementY || 0) * p.s.sy; }

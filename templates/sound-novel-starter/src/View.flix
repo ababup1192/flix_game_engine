@@ -853,7 +853,7 @@ mod View {
                     at(bar#position#x, bar#position#y, RawDraw.box(bar#size, Color.lighten(t#panel, 0.18), zPanelText()) |> Render.rounded(3.0))
                     :: at(bar#position#x, bar#position#y, RawDraw.box({ x = bar#size#x * filled, y = bar#size#y }, t#accent, zPanelText() + 1) |> Render.rounded(3.0))
                     :: RawDraw.circleAt({ x = knobX, y = bar#position#y + bar#size#y / 2.0 }, if (picked) 8.0 else 7.0, if (picked) t#accent else t#ink, zPanelText() + 2)
-                    :: textRight(row#position#x + row#size#x, row#position#y + text#valueTop, valueText(slider, v), atlas, text#value, t#inkSeen, zPanelText())
+                    :: textRight(row#position#x + row#size#x, row#position#y + text#valueTop, valueText(slider, v, env), atlas, text#value, t#inkSeen, zPanelText())
                     :: Nil) :: Nil)
             case World.Setting.Pair(pair) =>
                 let chosen = WorldSettings.sideOf(pair, config);
@@ -882,7 +882,8 @@ mod View {
         let length = Int32.toFloat64(String.length(sample));
         let cycle = length / Float64.max(1.0, cps) + 1.6;
         let elapsed = realSeconds(env) - Float64.floor(realSeconds(env) / cycle) * cycle;
-        let visible = Float64.tryToInt32(Float64.floor(elapsed * cps)) |> Option.getWithDefault(0) |> Int32.min(String.length(sample));
+        let visible = if (KindDoc.isNoWait(cps, env#res#kind)) String.length(sample)
+                      else Float64.tryToInt32(Float64.floor(elapsed * cps)) |> Option.getWithDefault(0) |> Int32.min(String.length(sample));
         let size = 16.0;
         at(r#position#x, r#position#y,
            Render.vgrad(r#size, { top = t#panel, bottom = Color.darken(t#panel, 0.3) }, zCard()) |> Render.fade(windowAlpha(env))
@@ -905,10 +906,10 @@ mod View {
         case World.Setting.Reset                               => StoryDoc.Label.Reset
     }
 
-    def valueText(slider: World.Slider, v: Float64): String =
+    def valueText(slider: World.Slider, v: Float64, env: Env): String =
         let whole = x -> Float64.tryToInt32(Float64.round(x)) |> Option.getWithDefault(0) |> Int32.toString;
         match slider {
-            case World.Slider.TextSpeed => "${whole(v)} 字/秒"
+            case World.Slider.TextSpeed => if (KindDoc.isNoWait(v, env#res#kind)) "ノーウェイト" else "${whole(v)} 字/秒"
             case World.Slider.AutoWait  => "${Float64.toString(Float64.round(v * 10.0) / 10.0)} 秒"
             case _                      => "${whole(v * 100.0)}%"
         }

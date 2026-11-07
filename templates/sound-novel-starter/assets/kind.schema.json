@@ -196,9 +196,9 @@
         },
         "max": {
           "type": "float",
-          "label": "上限",
+          "label": "上限（ここまで上げるとノーウェイト = 行を一度に全部出す）",
           "order": 2,
-          "default": 120.0
+          "default": 130.0
         },
         "step": {
           "type": "float",

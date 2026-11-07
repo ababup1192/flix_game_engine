@@ -544,6 +544,30 @@ mod TestRules {
         Assert.assertEq(expected = List.map(_ -> (true, true), ends), ends)
 
     @Test
+    def testHeldPointerDragsTheSlider(): Unit \ {Assert, Fs.FileRead} =
+        // 押したまま（指なら横へなぞったまま）帯の上を動かすと、クリックの拍が無くても値が付いて動く。
+        // 帯の左端 → 右端と動かすと、文字の速さは下限 → 上限（= ノーウェイト）になる。
+        let res = TestKit.res();
+        let fit = Layout.Fit.Regular;
+        let bar = Layout.settingBar(fit, 0);
+        let held = x -> { mouseDown = true, mouseMoved = true, cursor = { x = x, y = bar#position#y + bar#size#y / 2.0 } | App.emptyFrame() };
+        let opened = quiet(() -> WorldSettings.openSettings(w0(res)));
+        let left = Controls.interact(held(bar#position#x), res, opened);
+        let right = Controls.interact(held(bar#position#x + bar#size#x), res, left);
+        let cps = cur -> Saves.configOf(cur#saves)#cps;
+        let range = kind(res)#cpsSlider;
+        Assert.assertEq(expected = (range#min, range#max, true), (cps(left), cps(right), KindDoc.isNoWait(cps(right), res#kind)))
+
+    @Test
+    def testNoWaitShowsTheWholeLineAtOnce(): Unit \ {Assert, Fs.FileRead} =
+        // 文字の速さが最大（ノーウェイト）なら、行は出た拍に全部出る（文字送りしない）。
+        let res = TestKit.res();
+        let fast = quiet(() -> WorldSettings.withLevel(res, World.Slider.TextSpeed, kind(res)#cpsSlider#max, w0(res)));
+        let opened = quiet(() -> WorldRead.newGame(res, fast));
+        let shown = opened |> TestKit.stepBy(res, waitOf(opened) + 0.02);
+        Assert.assertTrue(Page.isDone(World.pageOf(shown)))
+
+    @Test
     def testVolumeSettingsReachTheMixer(): Unit \ {Assert, Fs.FileRead} =
         // 全体の音量を 0 にすると、環境音と効果音のどちらのバスも 0 になる。
         let res = TestKit.res();

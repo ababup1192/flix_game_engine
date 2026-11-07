@@ -12,7 +12,7 @@ mod KindDoc {
     /// autoPerChar = オートの待ちに足す 1 字あたりの秒（長い行ほど長く待つ）、skipInterval = スキップで 1 行を出す間（秒）、
     /// logMax = ログに残す行の数、shakeSeconds / shakePx = <<shake>> の長さと揺れ幅、
     /// fireflies = <<fx fireflies>> のパーティクルの数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、
-    /// *Slider = 設定の画面のスライダーの範囲と 1 押しの量。
+    /// *Slider = 設定の画面のスライダーの範囲と 1 押しの量（文字の速さの最大はノーウェイト = isNoWait）。
     pub type alias Rec = {
         version = Int32,
         bodySize = Float64,
@@ -59,7 +59,7 @@ mod KindDoc {
                   advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
                   fireflies = 28, creditsSpeed = 34.0, toastSeconds = 1.6,
-                  cpsSlider = { min = 10.0, max = 120.0, step = 10.0 }, autoWaitSlider = { min = 0.2, max = 4.0, step = 0.2 },
+                  cpsSlider = { min = 10.0, max = 130.0, step = 10.0 }, autoWaitSlider = { min = 0.2, max = 4.0, step = 0.2 },
                   masterVolumeSlider = volume(), ambienceVolumeSlider = volume(), seVolumeSlider = volume(),
                   windowAlphaSlider = { min = 0.2, max = 1.0, step = 0.1 } })
 
@@ -94,6 +94,9 @@ mod KindDoc {
                   ambienceVolumeSlider = slider("ambienceVolumeSlider", d#ambienceVolumeSlider),
                   seVolumeSlider = slider("seVolumeSlider", d#seVolumeSlider),
                   windowAlphaSlider = slider("windowAlphaSlider", d#windowAlphaSlider) })
+
+    /// 文字の速さがスライダーの最大か（= ノーウェイト。行を一度に全部出す）。
+    pub def isNoWait(cps: Float64, kind: Doc): Bool = cps >= rec(kind)#cpsSlider#max
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =
