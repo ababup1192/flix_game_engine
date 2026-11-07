@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "手触りの数。bodySize / rubySize / nameSize = 本文・ルビ・名前の字の大きさ（px）、lineGap = 行の間（ルビが入るので rubySize 以上）、advRows / nvlRows = ADV のウィンドウ・NVL の頁の行の数、cps / autoWait / masterVolume / ambienceVolume / seVolume / windowAlpha = 設定の画面の既定（音量とウィンドウの濃さは 0〜1）（変えた値は saves/novel.json が持つ）、autoPerChar = オートの待ちに足す 1 字あたりの秒、skipInterval = スキップで 1 行を出す間（秒）、logMax = ログに残す行の数、shakeSeconds / shakePx = <<shake>> の長さと揺れ幅、fireflies = 蛍の数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、*Slider = 設定の画面のスライダーの下限・上限・1 押しの量。",
+  "note": "手触りの数。bodySize / rubySize / nameSize = 本文・ルビ・名前の字の大きさ（px）、lineGap = 行の間（ルビが入るので rubySize 以上）、advRows / nvlRows = ADV のウィンドウ・NVL の頁の行の数、cps / autoWait / masterVolume / ambienceVolume / seVolume / windowAlpha = 設定の画面の既定（音量とウィンドウの濃さは 0〜1）（変えた値は saves/novel.json が持つ）、autoPerChar = オートの待ちに足す 1 字あたりの秒、skipInterval = スキップで 1 行を出す間（秒）、logMax = ログに残す行の数、shakeSeconds / shakePx = <<shake>> の長さと揺れ幅、fireflies = 蛍の数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、*Slider = 設定の画面のスライダーの下限・上限・1 押しの量（cpsSlider の上限はノーウェイト = 行を一度に全部出す）。",
   "bodySize": 22.0,
   "rubySize": 11.0,
   "nameSize": 19.0,
@@ -23,7 +23,7 @@
   "toastSeconds": 1.6,
   "cpsSlider": {
     "min": 10.0,
-    "max": 120.0,
+    "max": 130.0,
     "step": 10.0
   },
   "autoWaitSlider": {

@@ -225,7 +225,8 @@ mod WorldRead {
                 case _ => w
             };
             whileReading(cur -> {
-                let fast = cur#playback == World.Playback.Skip and isSkippable(cur, waited);
+                let noWait = KindDoc.isNoWait(World.configOf(waited)#cps, res#kind);
+                let fast = noWait or (cur#playback == World.Playback.Skip and isSkippable(cur, waited));
                 let page = if (fast) Page.revealAll(cur#page)
                            else Page.step(World.configOf(waited)#cps, Clock.dtOf(waited#storyClock), cur#page);
                 let typed = { page = page | cur };

@@ -201,6 +201,7 @@ mod Controls {
 
     /// 設定: ↑↓ で行、←→ で値、決定で 2 つから選ぶ行を反対側へ・「初期設定に戻す」を押す。
     /// スライダーの帯をクリックするとその位置の値、2 つから選ぶ行はクリックした側になる。
+    /// スライダーは押したまま（指なら横へなぞったまま）動かすと、帯の上の位置に付いて値が動く。
     def settingsInput(res: Res.Res, frame: App.Frame, back: Bool, current: World.Setting, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
         let rows = WorldSettings.settings();
@@ -208,6 +209,8 @@ mod Controls {
             |> Option.flatMap(i -> List.nth(i, rows) |> Option.map(s -> (i, s)));
         match hovered {
             case Some((i, setting)) if frame#mouseClicked => clickSetting(res, i, setting, frame, WorldSettings.pointSetting(setting, w))
+            case Some((i, World.Setting.Slider(slider))) if frame#mouseDown =>
+                clickSetting(res, i, World.Setting.Slider(slider), frame, WorldSettings.pointSetting(World.Setting.Slider(slider), w))
             case Some((_, setting)) if frame#mouseMoved   => WorldSettings.pointSetting(setting, w)
             case _ =>
                 if (back) World.closePanel(w)
