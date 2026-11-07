@@ -149,6 +149,11 @@ mod Saves {
         let r = rec(saves);
         Saves.Saves({ slots = Map.insert(keyOf(tab, 0), slot, shifted), serial = Int32.max(r#serial, slot#serial) | r })
 
+    /// どの枠の保存した日時も seconds だけずらす（World 全体の要約で、起動した時刻 clockBase の分を引くのに使う）。
+    pub def withSavedAtShifted(seconds: Int64, saves: Saves): Saves =
+        let r = rec(saves);
+        Saves.Saves({ slots = Map.map(s -> { savedAt = s#savedAt + seconds | s }, r#slots) | r })
+
     pub def withoutSlot(tab: Tab, i: Int32, saves: Saves): Saves = let r = rec(saves); Saves.Saves({ slots = Map.remove(keyOf(tab, i), r#slots) | r })
 
     pub def hasAny(saves: Saves): Bool = not Map.isEmpty(slotsOf(saves))
