@@ -157,8 +157,28 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
-
+	embed, err := resolveWebEmbed(proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	id := o.ID
+	if id == "" {
+		id = filepath.Base(p.Game)
+	}
 	entry := readWebEntry(p.Game)
+	// WhyNot: web.embed の誤りを TeaVM の後まで待って言わない — 組み立てに数分かかった後に止まる。
+	early, err := buildWebBundle(p.Game, id, proj, usesScene3dEntry(entry))
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	embedPlan, err := planWebEmbed(early, embed)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+
 	if line := scene3dEntryWarning(p.Game, entry); line != "" {
 		ewLogf("%s", line)
 	}
@@ -214,6 +234,23 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 1
 	}
 
+	if len(embedPlan.Embedded) > 0 {
+		seed, err := embedSeedOf(p.Game, embedPlan.Embedded)
+		if err != nil {
+			fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+			return 1
+		}
+		embeddedJar := filepath.Join(p.Work, "embedded.jar")
+		embedLog := filepath.Join(p.Work, "embed.log")
+		ewLogf("②' 素材を符号にして wasm へ埋め込む（web.embed %d 本）", len(embedPlan.Embedded))
+		if code := runEmbed(java, asm, p.WebToolsJar, p.WebJar, p.Game, rewritten, embeddedJar, embedLog, embedPlan.Embedded, seed); code != 0 {
+			fmt.Fprintf(errOut, "%s\nfge export-web: 埋め込み（fge.teavmfix.Embed）が失敗した（ログ %s）。\n  次: 上の行を読む（EmbeddedData が無いと言うなら engine の根で make sync-engine-full-web を流して fge-web と fge-web-tools を作り直す）\n",
+				tailFile(embedLog, 20), embedLog)
+			return 1
+		}
+		rewritten = embeddedJar
+	}
+
 	wasmDir := filepath.Join(p.Work, "wasm")
 	teavmLog := filepath.Join(p.Work, "teavm.log")
 	ewLogf("③ TeaVM（wasm-gc・ログ %s）", teavmLog)
@@ -246,14 +283,14 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 2
 	}
-	id := o.ID
-	if id == "" {
-		id = filepath.Base(p.Game)
-	}
 	b, err := buildWebBundle(p.Game, id, proj, usesScene3dEntry(entry))
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
+	}
+	b.Files = embedPlan.withoutHidden(b.Files)
+	if len(embedPlan.Omitted) > 0 {
+		ewLogf("  web.omit で配らない: %s", strings.Join(embedPlan.Omitted, "・"))
 	}
 	b.withTouch(proj, touch)
 	for _, rel := range b.copyList() {
@@ -280,6 +317,19 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
+	}
+	if len(embedPlan.Embedded) > 0 {
+		ewLogf("⑧ 埋め込んだ素材の平文が書き出し先に残っていないか")
+		unchecked, err := checkEmbedLeaks(p.Out, p.Game, embedPlan.Embedded)
+		if err != nil {
+			// WhyNot: 止めた書き出し先を残さない — 頁と版はもう書いてあり、置き場へ写すだけの手順だと平文の残る版が配られる。
+			os.RemoveAll(p.Out)
+			fmt.Fprintf(errOut, "fge export-web: %v\n  書き出し先 %s は消した\n", err, p.Out)
+			return 1
+		}
+		for _, rel := range unchecked {
+			ewLogf("  %s は ASCII でない字が続く所が無く、平文の残りを探せなかった", rel)
+		}
 	}
 	cleanupExportWork(p, o.KeepWork)
 
@@ -1051,6 +1101,7 @@ func cleanupExportWork(p exportWebPaths, keep bool) {
 	}
 	os.RemoveAll(p.Project)
 	os.Remove(filepath.Join(p.Work, "rewritten.jar"))
+	os.Remove(filepath.Join(p.Work, "embedded.jar"))
 	os.RemoveAll(filepath.Join(p.Work, "wasm"))
 }
 

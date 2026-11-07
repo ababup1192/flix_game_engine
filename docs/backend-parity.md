@@ -39,6 +39,7 @@
 |---|---|---|---|
 | 標本を持つ描き先の cutout | alpha to coverage | discard | **近似**。WebGL2 に `SAMPLE_ALPHA_TO_ONE` が無い（`GlContext.hasAlphaToOne`）。縁のなめらかさが違う |
 | `project.json` の textures の絵 | png のまま | 書き出しの時に WebP | 既定は無劣化。`web.compress` で荒らした絵はその分だけ違う |
+| `web.embed` の素材（シナリオの `dialogue.json` など） | assets/ のファイルを読む | wasm に埋め込んだ符号を初めて読む時に戻す | 中身は同じ。`web.omit` の物はブラウザ版に無い（読むと NotFound） |
 | 字 | 起動の時に作ったアトラス | `font-bake` のアトラス | フォントに無い字は出ない |
 | 3D の同じ深さの面の順 | batch の順（下の節） | 同じ | CPU の描き手は置いた順で、同じ絵を約束しない |
 

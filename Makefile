@@ -815,10 +815,11 @@ WEB_TOOLS_JAR      := build/web-jar/fge-web-tools-$(VERSION).jar
 WEB_TOOLS_SRC      := $(shell find $(WEB_DIR)/teavm/java -name '*.java' 2>/dev/null)
 WEB_TOOLS_DEPS     := build/web-jar/deps/teavm-relocated-libs-asm-$(TEAVM_VERSION).jar
 
-$(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS)
+# WhyNot: fge.web.EmbeddedCodec を tools の jar へ写さない — 同じ類が TeaVM の classpath に 2 つ載り、どちらが有効になるか読めない。Embed は fge-web.jar を classpath に足して使う。
+$(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS) $(WEB_JAR)
 	@rm -rf build/web-jar/tools-classes && mkdir -p build/web-jar/tools-classes
 	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/tools-classes \
-		-cp "$(WEB_TOOLS_DEPS)" $(WEB_TOOLS_SRC)
+		-cp "$(WEB_TOOLS_DEPS):$(WEB_JAR)" $(WEB_TOOLS_SRC)
 	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
 
 .PHONY: web-jar sync-engine-full-web
