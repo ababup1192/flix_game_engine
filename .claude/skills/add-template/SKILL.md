@@ -37,6 +37,7 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 - [ ] 5. 画風を宣言した（AGENTS.local.md + View.flix 冒頭の層の並び）
 - [ ] 6. Studio に登録した（Genesis.flix の families の starter）
 - [ ] 7. make swap-jar して Studio を Cmd+Q → 開き直した
+- [ ] 8. project.json の web 欄を決めた（下の「8.」）
 ```
 
 ### 1b. Makefile に共通ターゲットを書かない
@@ -104,6 +105,14 @@ Studio のフォームが「Expecting an OBJECT with a field named `sections`」
 
 `flix_ge_studio` で **`make swap-jar`**（動いている `.app` の同梱 jar を差し替え + 再署名）
 → Studio を Cmd+Q して開き直し。**`make jar` だけでは動いている .app に効かない**。
+
+### 8. ブラウザ版の web 欄を決める
+
+project.json の `web` で、そのジャンルの既定を置く（書き方は engine の `docs/startup.md`）。
+- `startPrompt`: 押す前の画面の文言（日本語のテンプレは「タッチして開始」）
+- `compress.lossyImages`: 写真の背景だけ劣化ありの WebP（例 q85）。ドット絵には付けない
+- `deferred`: タイトルの後に裏で取る素材。待てる場所（暗転）があるジャンルだけ既定で入れ、
+  タイトルの背景と最初に鳴る音は入れない。待てないジャンルは空のまま
 
 ## 複製する
 
