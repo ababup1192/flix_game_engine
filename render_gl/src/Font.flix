@@ -30,7 +30,7 @@ mod RenderFont {
     /// 見た目を 1 画素も変えずに 1 桁以上速くなる。
     ///
     /// 欲しい字をフォントが持っていなくても黙って落とす — 画面からその字が消えるが、
-    /// 起動は止めない。持っているかどうかの見張りはゲーム側の仕事（kaidan の lint-font）。
+    /// 起動は止めない。持っているかどうかの見張りは書き出しの門（`fge font-bake` の字の漏れ）の仕事。
     def fontCodepoints(fontInfo: STBTTFontinfo, wanted: Option[Set[Int32]]): List[Int32] \ IO =
         let candidates = match wanted {
             case Some(cps) => Set.toList(cps)

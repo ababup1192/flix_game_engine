@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"os/exec"
 	"path"
@@ -15,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fontbake"
 	"github.com/ababup1192/flix_game_engine/go/internal/wavfile"
 )
 
@@ -160,20 +163,20 @@ func (c webCompress) uncompressedGlobOf(rel string) *regexp.Regexp {
 	return nil
 }
 
-// webEncoders は見つかった変換の道具の道（空は無い）。
+// webEncoders は見つかった変換の道具の道（空は無い）。Dwebp はアトラスの画素を戻して元と比べるのに使う。
 type webEncoders struct {
-	FFmpeg, Cwebp string
+	FFmpeg, Cwebp, Dwebp string
 }
 
-// findWebEncoders は PATH → engine の devbox の順に、使う種類の道具（ffmpeg は libopus 付き・cwebp）を探す。
+// findWebEncoders は PATH → engine の devbox の順に、使う種類の道具（ffmpeg は libopus 付き・cwebp・dwebp）を探す。
+// WhyNot: images が false でも cwebp を探す — アトラスは劣化なしで、戻した画素が元とバイト一致した時だけ替えるので、絵の圧縮を止める理由が当たらない。
 func findWebEncoders(engine string, c webCompress) webEncoders {
 	var e webEncoders
 	if p := findWebTool("ffmpeg", engine); c.Audio && p != "" && ffmpegHasLibopus(p) {
 		e.FFmpeg = p
 	}
-	if c.Images {
-		e.Cwebp = findWebTool("cwebp", engine)
-	}
+	e.Cwebp = findWebTool("cwebp", engine)
+	e.Dwebp = findWebTool("dwebp", engine)
 	return e
 }
 
@@ -213,7 +216,7 @@ type webJob struct {
 	encode        func(src, dst string) error
 }
 
-// transcodeWebAssets は書き出し先に写した素材のうち、小さくなる物だけを WebP・Opus・gzip へ替え、
+// transcodeWebAssets は書き出し先に写した素材のうち、小さくなる物だけを WebP・Opus・gzip へ替え（アトラスは画素だけ WebP にした形か gzip の小さい方）、
 // b.Transcoded に論理の道 → 配る道を書く。sounds には元の長さとループ点を書く（圧縮しない時も）。
 // 道具が無い種類と、1 本だけ変換に失敗した物は元のまま配り、知らせを report.Notes に積む（書き出しは止めない）。
 func transcodeWebAssets(out string, b *webBundle, atlases []string, c webCompress, enc webEncoders) webTranscodeReport {
@@ -267,9 +270,17 @@ func transcodeWebAssets(out string, b *webBundle, atlases []string, c webCompres
 		os.Remove(j.src)
 	}
 
+	atlasJobs, notes := planWebAtlases(out, atlases, enc)
+	r.Notes = append(r.Notes, notes...)
+	for i, err := range runWebJobs(atlasJobs) {
+		if err != nil {
+			os.Remove(atlasJobs[i].dst)
+			r.Notes = append(r.Notes, fmt.Sprintf("%s の画素を WebP にできなかった — gzip で配る（%v）", atlasJobs[i].rel, err))
+		}
+	}
 	for _, a := range atlases {
-		if err := gzipWebAtlas(out, a, b); err != nil {
-			r.Notes = append(r.Notes, fmt.Sprintf("%s を gzip にできなかった — 元のまま配る（%v）", a, err))
+		if err := settleWebAtlas(out, a, b); err != nil {
+			r.Notes = append(r.Notes, fmt.Sprintf("%s を小さくできなかった — 元のまま配る（%v）", a, err))
 		}
 	}
 
@@ -439,32 +450,173 @@ func opusArgs(src, dst string, kbps int) []string {
 		"-threads", "1", "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact", "-f", "webm", dst}
 }
 
-// gzipWebAtlas はアトラスを <道>.gz にして元を消し、配る道を書く。
-func gzipWebAtlas(out, rel string, b *webBundle) error {
+// webAtlasSuffix は、アトラスの画素だけを WebP にした配り方の、配る道の末尾（<道>.fontatlas-webp）。
+// 中身は fontbake.SplitPixels の残り（頭・字の表・検算）の後ろに、画素を灰色の絵として劣化なしで詰めた WebP を続けた物。
+// 頁（fge-web.js の fgeJoinAtlasPixels）が元のアトラスのバイトに組み直すので、wasm の読み手は gzip の時と同じ物を受け取る。
+// WhyNot: 画素を gzip のまま配らない — 距離場はなめらかな階調で、WebP の劣化なしの予測の方が 4 割ほど小さい。
+// WhyNot: 頭と字の表を別のファイルにしない — 1 本のアトラスを 2 回取りに行くと、片方だけ古い版が残る置き先で組み直しが壊れる。
+const webAtlasSuffix = "-webp"
+
+// planWebAtlases はアトラスの画素を WebP にする変換を組む。cwebp と dwebp が揃わなければ組まない（gzip だけになる）。
+// WhyNot: dwebp が無い時に確かめずに替えない — 戻した画素が 1 バイトでも違うと、ブラウザの読み手は検算で落として組み込みフォントで出す。
+func planWebAtlases(out string, atlases []string, enc webEncoders) ([]webJob, []string) {
+	if len(atlases) == 0 {
+		return nil, nil
+	}
+	if enc.Cwebp == "" || enc.Dwebp == "" {
+		return nil, []string{"アトラスは gzip で配る — cwebp と dwebp（libwebp）が揃っていない。入れ方: brew install webp（Windows は libwebp の cwebp.exe と dwebp.exe を PATH に置く）"}
+	}
+	jobs := make([]webJob, 0, len(atlases))
+	for _, rel := range atlases {
+		cwebp, dwebp := enc.Cwebp, enc.Dwebp
+		jobs = append(jobs, webJob{rel: rel, src: exportAssetPath(out, rel), dst: exportAssetPath(out, rel+webAtlasSuffix),
+			encode: func(src, dst string) error { return encodeWebAtlas(cwebp, dwebp, src, dst) }})
+	}
+	return jobs, nil
+}
+
+// encodeWebAtlas は src のアトラスの画素を WebP にし、dwebp で戻して元とバイト一致した時だけ dst を書く。
+func encodeWebAtlas(cwebp, dwebp, src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	rest, pixels, side, err := fontbake.SplitPixels(data)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dst), ".atlas-webp-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	gray := filepath.Join(tmp, "pixels.png")
+	if err := writeGrayPng(gray, pixels, side); err != nil {
+		return err
+	}
+	webp := filepath.Join(tmp, "pixels.webp")
+	if err := runQuiet(cwebp, cwebpArgs(gray, webp, 0)...); err != nil {
+		return err
+	}
+	back := filepath.Join(tmp, "back.ppm")
+	if err := runQuiet(dwebp, "-quiet", webp, "-ppm", "-o", back); err != nil {
+		return err
+	}
+	if err := sameGrayPixels(back, pixels, side); err != nil {
+		return err
+	}
+	webpBytes, err := os.ReadFile(webp)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, append(rest, webpBytes...), 0o644)
+}
+
+// WhyNot: 一時の png を強く詰めない — すぐ cwebp が読んで消すので、詰める時間がそのまま書き出しの待ちになる。
+func writeGrayPng(path string, pixels []byte, side int) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	img := &image.Gray{Pix: pixels, Stride: side, Rect: image.Rect(0, 0, side, side)}
+	if err := (&png.Encoder{CompressionLevel: png.BestSpeed}).Encode(f, img); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// sameGrayPixels は dwebp が書いた PPM（P6・8bit）の 3 つの色の値が、どの画素でも元の灰色の値と同じかを見る。
+func sameGrayPixels(ppmPath string, pixels []byte, side int) error {
+	data, err := os.ReadFile(ppmPath)
+	if err != nil {
+		return err
+	}
+	w, h, maxv, body, err := splitPpm(data)
+	if err != nil {
+		return fmt.Errorf("dwebp の PPM を読めない: %v", err)
+	}
+	if w != side || h != side || maxv != 255 || len(body) != side*side*3 {
+		return fmt.Errorf("戻した絵が %dx%d（最大 %d・%d バイト）で、元の %dx%d と形が違う", w, h, maxv, len(body), side, side)
+	}
+	for i, v := range pixels {
+		if body[3*i] != v || body[3*i+1] != v || body[3*i+2] != v {
+			return fmt.Errorf("戻した画素が元と違う（%d 番目: 元 %d・戻し %v）", i, v, body[3*i:3*i+3])
+		}
+	}
+	return nil
+}
+
+// splitPpm は P6 の PPM を頭の 3 つの数（幅・高さ・最大値）と画素の並びに分ける（注釈の行は dwebp が書かないので読まない）。
+func splitPpm(data []byte) (w, h, maxv int, body []byte, err error) {
+	fields := make([]int, 0, 3)
+	at := 2
+	if len(data) < 2 || string(data[:2]) != "P6" {
+		return 0, 0, 0, nil, fmt.Errorf("頭が P6 でない")
+	}
+	for len(fields) < 3 {
+		for at < len(data) && (data[at] == ' ' || data[at] == '\n' || data[at] == '\r' || data[at] == '\t') {
+			at++
+		}
+		start := at
+		for at < len(data) && data[at] >= '0' && data[at] <= '9' {
+			at++
+		}
+		if start == at {
+			return 0, 0, 0, nil, fmt.Errorf("頭の数が足りない")
+		}
+		v, _ := strconv.Atoi(string(data[start:at]))
+		fields = append(fields, v)
+	}
+	if at >= len(data) {
+		return 0, 0, 0, nil, fmt.Errorf("画素が無い")
+	}
+	return fields[0], fields[1], fields[2], data[at+1:], nil
+}
+
+// settleWebAtlas は元・gzip・画素を WebP にした形（あれば）のうち一番小さい物を残し、配る道を書く。
+func settleWebAtlas(out, rel string, b *webBundle) error {
 	src := exportAssetPath(out, rel)
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	var buf bytes.Buffer
-	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	gz, err := gzipBytes(data)
 	if err != nil {
 		return err
 	}
-	if _, err := zw.Write(data); err != nil {
-		return err
-	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	if buf.Len() >= len(data) {
+	webpPath := src + webAtlasSuffix
+	webpSize := fileSize(webpPath)
+	switch {
+	case webpSize > 0 && webpSize < int64(len(gz)) && webpSize < int64(len(data)):
+		b.Transcoded[rel] = rel + webAtlasSuffix
+		return os.Remove(src)
+	case len(gz) < len(data):
+		os.Remove(webpPath)
+		if err := os.WriteFile(src+".gz", gz, 0o644); err != nil {
+			return err
+		}
+		b.Transcoded[rel] = rel + ".gz"
+		return os.Remove(src)
+	default:
+		os.Remove(webpPath)
 		return nil
 	}
-	if err := os.WriteFile(src+".gz", buf.Bytes(), 0o644); err != nil {
-		return err
+}
+
+func gzipBytes(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
 	}
-	b.Transcoded[rel] = rel + ".gz"
-	return os.Remove(src)
+	if _, err := zw.Write(data); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func runQuiet(name string, args ...string) error {

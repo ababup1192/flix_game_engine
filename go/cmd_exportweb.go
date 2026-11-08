@@ -309,7 +309,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	b.Files = append(b.Files, atlases...)
 	sort.Strings(b.Files)
 
-	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは gzip）")
+	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは画素を WebP か gzip）")
 	report := transcodeWebAssets(p.Out, &b, atlases, compress, findWebEncoders(p.Engine, compress))
 
 	ewLogf("⑦ 頁")

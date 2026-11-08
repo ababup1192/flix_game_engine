@@ -804,9 +804,35 @@ function fgeServedPath(path) { return fgeTranscoded[path] || path; }
 async function fgeFetchAsset(path) {
   var served = fgeServedPath(path);
   var bytes = await fgeFetchBytes("assets/" + served);
+  if (/\.fontatlas-webp$/.test(served)) return await fgeJoinAtlasPixels(served, bytes);
   if (!/\.gz$/.test(served) || bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;
   var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+// 画素だけを WebP にしたアトラス（go/exportweb_compress.go の webAtlasSuffix）を、元のアトラスのバイトに組み直す。
+// 中身は「頭（52 バイト）・字の表（76 バイト × 字の数）・検算（16 バイト）」の後ろに、辺×辺の灰色の WebP。
+// 組み直した物は RenderFontCache.decode が画素の検算（CRC32）で確かめるので、解き方の誤りは組み込みフォントへの切り替えとして出る。
+// WhyNot: WebGL の readPixels で画素を取らない — 起動前で GL の文脈がまだ無い。2D の canvas は色空間の変換を切った ImageBitmap をそのまま写す。
+async function fgeJoinAtlasPixels(served, bytes) {
+  var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 52 || view.getUint32(0) !== 0x46474546 || view.getUint32(4) !== 0x4F4E5402) throw new Error(served + " はフォントアトラスの形でない");
+  var side = view.getInt32(12);
+  var tableEnd = 52 + view.getInt32(48) * 76;
+  var restEnd = tableEnd + 16;
+  if (side <= 0 || restEnd > bytes.length) throw new Error(served + " の頭の数が長さに合わない");
+  var bitmap = await createImageBitmap(new Blob([bytes.subarray(restEnd)], { type: "image/webp" }),
+    { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+  if (bitmap.width !== side || bitmap.height !== side) throw new Error(served + " の絵が " + bitmap.width + "x" + bitmap.height + "（頭は " + side + "）");
+  var canvas = new OffscreenCanvas(side, side);
+  var ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  var rgba = ctx.getImageData(0, 0, side, side).data;
+  var out = new Uint8Array(restEnd - 16 + side * side + 16);
+  out.set(bytes.subarray(0, tableEnd), 0);
+  for (var i = 0, o = tableEnd; i < side * side; i++, o++) out[o] = rgba[i * 4];
+  out.set(bytes.subarray(tableEnd, restEnd), tableEnd + side * side);
+  return out;
 }
 function fgeImageType(path) {
   var ext = (/\.([a-z0-9]+)$/i.exec(path) || [])[1];
