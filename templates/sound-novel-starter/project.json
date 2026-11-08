@@ -180,6 +180,35 @@
   },
   "web": {
     "startPrompt": "タッチして開始",
+    "compress": {
+      "lossyImages": [
+        {
+          "glob": "assets/bg/*.jpg",
+          "quality": 85
+        }
+      ]
+    },
+    "embed": [
+      "assets/talk/dialogue.json"
+    ],
+    "omit": [
+      "assets/talk/*.yarn",
+      "assets/*.schema.json"
+    ],
+    "// deferred": "押して始めた後に裏で取る素材（シナリオで出てくる順）。タイトルの写真（station）と環境音（evening）、タイトルで鳴る返事の音は起動時に取る。届く前に使う所は暗転で待つ（背景・環境音）か、鳴らさずに進む（一発の音）。",
+    "deferred": [
+      "assets/bg/paddy.jpg",
+      "assets/sfx/ui_choice.wav",
+      "assets/sfx/ui_page.wav",
+      "assets/bg/lane.jpg",
+      "assets/sfx/se_slap.wav",
+      "assets/sfx/amb_night.wav",
+      "assets/bg/engawa.jpg",
+      "assets/sfx/se_furin.wav",
+      "assets/sfx/amb_river.wav",
+      "assets/bg/river.jpg",
+      "assets/sfx/amb_morning.wav"
+    ],
     "keysDoc": "assets/novel.keys.json",
     "touchGestures": {
       "longPress": "back",

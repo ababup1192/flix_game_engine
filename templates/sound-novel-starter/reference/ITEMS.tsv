@@ -3,6 +3,7 @@ ask	dynamic=239	static=0
 choice	dynamic=125	static=0
 credits	dynamic=311	static=0
 engawa	dynamic=275	static=0
+hold	dynamic=296	static=0
 lane	dynamic=203	static=0
 load	dynamic=913	static=0
 log	dynamic=242	static=0

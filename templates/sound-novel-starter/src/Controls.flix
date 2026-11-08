@@ -2,15 +2,23 @@
 // キーは KeysDoc（novel.keys.json）の割り当て、クリックは Layout の矩形（View が描く所と同じ）で当てる。
 // 入力の効き先は「いちばん手前の物」1 つ: 確認のウィンドウ → 開いている画面 → 選択肢 → クイックメニュー → 本文（送る）。
 mod Controls {
-    use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, Rect2, Resources}
+    use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, LoadProgress, Log, Rect2, Resources}
     use fge::GameEngine.Key
 
     // ── 毎フレームの系 ──
 
-    /// 実時間の今を World へ写し、文字送り・待ち・オート・スキップを 1 歩進める。
+    /// 実時間の今を World へ写し、文字送り・待ち・オート・スキップ（素材を待っている間は待ちの段）を 1 歩進める。
     pub def step(frame: App.Frame, res: Res.Res, w: World.World): World.World =
-        let (next, events) = Emit.collectInto(() -> WorldRead.step(res, { realNow = frame#realNow | w }), w#events);
-        { events = events | next }
+        let (next, events) = Emit.collectInto(() -> WorldRead.step(res, frame#dt, { realNow = frame#realNow | w }), w#events);
+        noteGaveUp(res, w, { events = events | next })
+
+    /// このコマで待ち切れずに諦めた素材があれば 1 行知らせる（諦めた事は World の gaveUp に残る）。
+    // WhyNot: WorldRead の中で知らせない — 規則のテストが stderr に出た行で落ちる。
+    def noteGaveUp(res: Res.Res, before: World.World, after: World.World): World.World =
+        let gaveUpOf = (w: World.World) -> World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
+        let fresh = Set.difference(gaveUpOf(after), gaveUpOf(before));
+        if (Set.isEmpty(fresh) or not World.isReading(before)) after
+        else Log.warnThen("[hold] ${Set.join(", ", fresh)} が ${Float64.toString(KindDoc.rec(res#kind)#holdGiveUpSeconds)} 秒待っても届かないので、無いまま進む", after)
 
     /// 入力の解釈。規則が出した出来事は events 欄に溜める（音は sounds が前後の差で読む）。
     pub def interact(frame: App.Frame, res: Res.Res, w: World.World): World.World =
@@ -36,7 +44,8 @@ mod Controls {
         else if (w#panel != World.Panel.Closed) panelInput(res, frame, w)
         else match w#scene {
             case World.Scene.Title(_)      => titleInput(res, frame, w)
-            case World.Scene.Reading(_)    => readingInput(res, frame, w)
+            // WhyNot: 素材を待つ間にメニューやセーブを開かせない — 画面は黒で押せる物が見えず、待ちは長くても数十秒で明ける。
+            case World.Scene.Reading(_)    => if (World.isHolding(w)) w else readingInput(res, frame, w)
             case World.Scene.Credits(_, _) =>
                 let k = keysOf(res);
                 if (World.creditsOver(res, Layout.height(fitOf(res, frame)), w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
@@ -285,13 +294,17 @@ mod Controls {
         case World.Event.Cue(name) => Some(name)
     }
 
-    /// 1 フレームの一発の音（このフレームに溜まった出来事から）。
-    pub def sounds(ws: { before = World.World, after = World.World }): List[String] =
-        Emit.since(ws#before#events, ws#after#events) |> List.filterMap(soundOf)
+    /// 1 フレームの一発の音（このフレームに溜まった出来事から）。missing = まだ届いていない音の名前。
+    pub def sounds(missing: Set[String], ws: { before = World.World, after = World.World }): List[String] =
+        soundsOf(missing, Emit.since(ws#before#events, ws#after#events))
+
+    /// 出来事の列から鳴らす一発の音。まだ届いていない音（missing）は待たず、鳴らさずに進む。
+    pub def soundsOf(missing: Set[String], events: List[World.Event]): List[String] =
+        events |> List.filterMap(soundOf) |> List.filter(name -> not Set.memberOf(name, missing))
 
     /// 鳴り続ける環境音（舞台の ambience。amb_<名前>）。音量はミキサーのバスが決める。
     pub def ambience(res: Res.Res, w: World.World): List[App.Sustain] =
-        World.stageOf(res, w)#ambience |> Option.map(name -> { name = "amb_${name}", volume = 1.0, pitch = 1.0 } :: Nil)
+        World.stageOf(res, w)#ambience |> Option.map(name -> { name = Stage.ambienceSound(name), volume = 1.0, pitch = 1.0 } :: Nil)
             |> Option.getWithDefault(Nil)
 
     /// 音の通り道: novel.mixer.json のバスに、設定の音量（全体 × 環境音 / 効果音）を掛ける。
@@ -301,6 +314,28 @@ mod Controls {
         let base = res#mixer |> AudioMixer.withBusVolume("ambience", c#masterVolume * c#ambienceVolume)
                            |> AudioMixer.withBusVolume("se", c#masterVolume * c#seVolume);
         if (World.isFree(w)) base else AudioMixer.withSnapshot("panel", base)
+
+    // ── 後回しの素材を解く量（ブラウザ版。App.withDecodeBudget） ──
+
+    /// このコマに、届いた後回しの絵を登録してよい量。素材を待っている間（黒へ重ねる・黒のまま・黒から戻す）は Covered(50)、
+    /// 文字送りの途中とクレジット（流れている）は Paused、タップ待ち・選択肢・タイトル・画面を開いている間は Idle(4)。
+    // WhyNot: 背景の写真の重ねの途中を Covered にしない — 見えている写真の重なりが登録の止まりで引っかかる。
+    pub def decodeBudget(h: Resources.With[Res.Res, World.World]): LoadProgress.DecodeBudget =
+        let w = h#world;
+        match w#scene {
+            case World.Scene.Title(_)      => LoadProgress.DecodeBudget.Idle(idleMs())
+            case World.Scene.Credits(_, _) => LoadProgress.DecodeBudget.Paused
+            case World.Scene.Reading(r)    =>
+                if (Option.nonEmpty(r#hold)) LoadProgress.DecodeBudget.Covered(coveredMs())
+                else if (World.isFree(w) and not Page.isDone(r#page)) LoadProgress.DecodeBudget.Paused
+                else LoadProgress.DecodeBudget.Idle(idleMs())
+        }
+
+    /// 画面が動いて見えている間に、1 コマで登録に使ってよい ms（1 本の道は必ず通る）。
+    def idleMs(): Float64 = 4.0
+
+    /// 画面が黒い間に、1 コマで登録に使ってよい ms。
+    def coveredMs(): Float64 = 50.0
 
     // ── Doc の読み込み・読み直し（watchFile / F1） ──
 
@@ -317,7 +352,8 @@ mod Controls {
           smallScreen = SmallScreenDoc.load(SmallScreenDoc.path()),
           portrait = PortraitDoc.load(PortraitDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
-          dialogue = Talk.load() }
+          dialogue = Talk.load(),
+          missing = Set.empty() }
 
     /// Doc の一覧表(DocTable)。watchFile(保存即反映)・F1 の一括リロード・Studio へ名乗る「表示中」の 3 つは、
     /// どれもこの 1 枚から導出する。docId は project.json の editor.resources[] の id と同じ物。

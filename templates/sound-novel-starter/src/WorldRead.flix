@@ -7,6 +7,8 @@
 //
 // オートとスキップは同じ所（autoOrSkip）で決める: 行を出し終えた時刻 doneAt から、オートは「設定の待ち + 字数 × autoPerChar」、
 // スキップは skipInterval ごとに送る。スキップは設定で「既読のみ」なら読んでいない行で止まり、選択肢で止まるかも設定で選ぶ。
+//
+// ブラウザ版で後回しにした背景・環境音が使う時にまだ届いていなければ、暗転して待つ（下の「素材の待ち」の節）。
 mod WorldRead {
     use fge::{Clock, Emit, Log, Yarn, YarnRunner, YarnStorage}
 
@@ -46,19 +48,32 @@ mod WorldRead {
     /// 台詞ごとの戻れる所は、最後のブックマークから「その台詞より後に受けた入力」の数だけ入力を外した物（inputsAfter と markAt）。
     /// [遷移: シナリオが終わる(Done) → Credits]
     def absorb(res: Res.Res, replay: Replay, events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
-        let last = YarnRunner.bookmarkOf(r#talk);
-        List.zip(events, inputsAfter(events)) |> List.foldLeft((acc, pair) -> {
-            let (event, later) = pair;
-            match event {
-                case YarnRunner.Event.Line(line)       =>
-                    whileReading(cur -> showLine(res, replay, markAt(last, later, cur#stage), line, cur, acc), acc)
-                case YarnRunner.Event.Choices(options) =>
-                    World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options) | cur }, acc)
-                case YarnRunner.Event.Command(command) =>
-                    whileReading(cur -> World.withRead(cue(res, replay, command, cur, acc), acc), acc)
-                case YarnRunner.Event.Done             => World.toCredits(res, acc)
-            }
-        }, World.withRead(r, w))
+        absorbFrom(res, replay, YarnRunner.bookmarkOf(r#talk), List.zip(events, inputsAfter(events)), World.withRead(r, w))
+
+    /// 出来事を頭から 1 つずつ反映する。人が読み進めている時（Live）に、まだ届いていない背景・環境音へ切り替えるコマンドに
+    /// 当たったら、そこから先を素材の待ち（Hold）に預けて止まる（届いたら resumeHold が続きから反映する）。
+    def absorbFrom(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], pairs: List[(YarnRunner.Event, Int32)],
+                   w: World.World): World.World \ Emit[World.Event] =
+        match pairs {
+            case Nil => w
+            case (event, later) :: rest =>
+                let waitFor = if (replay == Replay.Live) namesToWait(res, pairs, w) else Nil;
+                if (not List.isEmpty(waitFor)) startHold(waitFor, pairs, last, w)
+                else absorbFrom(res, replay, last, rest, absorbOne(res, replay, last, event, later, w))
+        }
+
+    /// 出来事 1 つ。later = その出来事より後ろに出た台詞と選択肢の数。
+    def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
+                  w: World.World): World.World \ Emit[World.Event] =
+        match event {
+            case YarnRunner.Event.Line(line)       =>
+                whileReading(cur -> showLine(res, replay, markAt(last, later, cur#stage), line, cur, w), w)
+            case YarnRunner.Event.Choices(options) =>
+                World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options) | cur }, w)
+            case YarnRunner.Event.Command(command) =>
+                whileReading(cur -> World.withRead(cue(res, replay, command, cur, w), w), w)
+            case YarnRunner.Event.Done             => World.toCredits(res, w)
+        }
 
     /// 出来事ごとに、それより後ろに出た台詞と選択肢の数（= その所から今までに受けた入力の数）。
     /// 台詞は送る 1 回、選択肢は選ぶ 1 回で次へ進むので、後ろに出た台詞と選択肢の数がそのまま入力の数になる。
@@ -131,7 +146,7 @@ mod WorldRead {
     /// 選択肢を出している間は動かない（pick だけが進める）。オートとスキップは止める（人が押したら人の速さに戻す）。
     pub def advance(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
-            case Some(r) if World.isFree(w) and List.isEmpty(r#choices) =>
+            case Some(r) if World.isFree(w) and List.isEmpty(r#choices) and Option.isEmpty(r#hold) =>
                 let manual = { playback = World.Playback.Manual | r };
                 if (not Page.isDone(r#page)) {
                     Emit.emit(World.Event.Revealed);
@@ -168,7 +183,7 @@ mod WorldRead {
     /// 選択肢 i を選ぶ。選べない選択肢（行末の <<if>> が偽）の番号なら何もしない。[遷移: 選択肢→選んだ中身]
     pub def pick(res: Res.Res, i: Int32, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
-            case Some(r) if World.isFree(w) =>
+            case Some(r) if World.isFree(w) and Option.isEmpty(r#hold) =>
                 match List.nth(i, r#choices) {
                     case Some(option) if option#available =>
                         Emit.emit(World.Event.Picked);
@@ -214,26 +229,32 @@ mod WorldRead {
 
     /// 毎フレーム（App が時計を進めた後）: <<wait>> が明けたら続きを流し、文字送りを進め、出し終えた時刻を記し、オートとスキップを決める。
     /// 画面や確認のウィンドウを開いている間は物語の時計が止まるので、待ちも文字送りもオートも止まる。
-    pub def step(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
-        whileReading(r -> {
-            let waited = match YarnRunner.shownOf(r#talk) {
-                case YarnRunner.Shown.Waiting =>
-                    // スキップ中は待ちも飛ばす（明ける時刻をそのまま渡す）。
-                    let at = if (r#playback == World.Playback.Skip) YarnRunner.waitUntilOf(r#talk) |> Option.getWithDefault(World.now(w)) else World.now(w);
-                    let (talk, events) = YarnRunner.step(YarnRunner.Action.Tick, at, r#talk);
-                    absorb(res, Replay.Live, events, { talk = talk | r }, w)
-                case _ => w
-            };
-            whileReading(cur -> {
-                let noWait = KindDoc.isNoWait(World.configOf(waited)#cps, res#kind);
-                let fast = noWait or (cur#playback == World.Playback.Skip and isSkippable(cur, waited));
-                let page = if (fast) Page.revealAll(cur#page)
-                           else Page.step(World.configOf(waited)#cps, Clock.dtOf(waited#storyClock), cur#page);
-                let typed = { page = page | cur };
-                let stamped = if (Page.isDone(page) and Option.isEmpty(typed#doneAt)) { doneAt = Some(World.now(waited)) | typed } else typed;
-                autoOrSkip(res, stamped, waited)
-            }, waited)
+    /// 素材を待っている間は、待ちの段だけを進める（dt = このフレームの実時間の秒。諦めるまでの秒を数える。確認のウィンドウの間は数えない）。
+    pub def step(res: Res.Res, dt: Float64, w: World.World): World.World \ Emit[World.Event] =
+        whileReading(r -> match r#hold {
+            case Some(hold) => if (World.isFree(w)) stepHold(res, dt, hold, r, w) else w
+            case None       => holdIfMissing(res, readOn(res, r, w))
         }, w)
+
+    /// 待っていない時の 1 歩（<<wait>>・文字送り・出し終えた時刻・オートとスキップ）。
+    def readOn(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        let waited = match YarnRunner.shownOf(r#talk) {
+            case YarnRunner.Shown.Waiting =>
+                // スキップ中は待ちも飛ばす（明ける時刻をそのまま渡す）。
+                let at = if (r#playback == World.Playback.Skip) YarnRunner.waitUntilOf(r#talk) |> Option.getWithDefault(World.now(w)) else World.now(w);
+                let (talk, events) = YarnRunner.step(YarnRunner.Action.Tick, at, r#talk);
+                absorb(res, Replay.Live, events, { talk = talk | r }, w)
+            case _ => w
+        };
+        whileReading(cur -> {
+            let noWait = KindDoc.isNoWait(World.configOf(waited)#cps, res#kind);
+            let fast = noWait or (cur#playback == World.Playback.Skip and isSkippable(cur, waited));
+            let page = if (fast) Page.revealAll(cur#page)
+                       else Page.step(World.configOf(waited)#cps, Clock.dtOf(waited#storyClock), cur#page);
+            let typed = { page = page | cur };
+            let stamped = if (Page.isDone(page) and Option.isEmpty(typed#doneAt)) { doneAt = Some(World.now(waited)) | typed } else typed;
+            autoOrSkip(res, stamped, waited)
+        }, waited)
 
     /// オートとスキップ（行を出し終えてから、決めた間が過ぎたら送る）。
     /// スキップは選択肢で止まるか待つか（設定の「選択肢の後」）、読んでいない行で止まるか（設定の「スキップ」）。
@@ -307,7 +328,8 @@ mod WorldRead {
     pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
         let carried = { shot = mark#shot, ambience = mark#ambience, particles = mark#particles, mode = mark#mode | Stage.empty() };
         let (talk, events) = YarnRunner.resume(res#dialogue, mark#bookmark, World.now(w));
-        settled(absorb(res, Replay.Silent, events, { talk = talk, stage = carried | World.emptyRead() },
+        let gaveUp = World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
+        settled(absorb(res, Replay.Silent, events, { talk = talk, stage = carried, gaveUp = gaveUp | World.emptyRead() },
                        { panel = World.Panel.Closed, ask = None | w }))
 
     /// 当て直した後の形: 演出の途中は終わりの形にし、今のノードはオートセーブ済みとして扱う（戻った所で同じ物を残さない）。
@@ -319,6 +341,92 @@ mod WorldRead {
     pub def screenOf(res: Res.Res, mark: Saves.Mark, w: World.World): World.World =
         let (back, _) = Emit.collect(() -> restore(res, mark, w));
         World.withPointer({ x = -1.0, y = -1.0 }, back)
+
+    // ── 素材の待ち（ブラウザ版で後回しにした背景・環境音がまだ届いていない時） ──
+    //
+    // 待つのは背景と環境音だけ（一発の効果音は待たず、届いていなければ鳴らさない = Controls.sounds）。
+    // 段は FadingOut（黒へ重ねる・物語の時計は動く）→ Waiting（黒のまま・物語の時計を止める = World.paceOf）→ FadingIn（黒から戻す）。
+    // Waiting は実時間で holdGiveUpSeconds まで待ち、届かなければその素材を諦め（gaveUp）、無いまま進む（背景は暗い地で描く）。
+    // 入り口は 2 つ: 読み進めて未着の背景・環境音へ切り替える所（absorbFrom。続きの出来事を預ける）と、
+    // 今の舞台の背景・環境音が未着のまま止まった所（holdIfMissing。スキップが止まった・ロードや「戻る」で戻った）。
+
+    /// pairs の頭が、まだ届いていない背景・環境音へ切り替えるコマンドなら、次の台詞か選択肢までに切り替える背景・環境音のうち
+    /// まだ届いていない物の名前（暗転 1 回でまとめて待つ）。頭がそうでない・スキップ中（止まった所で待つ）なら空。
+    def namesToWait(res: Res.Res, pairs: List[(YarnRunner.Event, Int32)], w: World.World): List[String] =
+        let cues = pairs |> List.map(fst) |> List.takeWhile(isCommand);
+        match World.readOf(w) {
+            case Some(r) if r#playback != World.Playback.Skip =>
+                let head = List.head(cues) |> Option.map(event -> pendingNames(res, r, eventNames(res, event))) |> Option.getWithDefault(Nil);
+                if (List.isEmpty(head)) Nil else pendingNames(res, r, List.flatMap(eventNames(res), cues))
+            case _ => Nil
+        }
+
+    def isCommand(event: YarnRunner.Event): Bool = match event {
+        case YarnRunner.Event.Command(_) => true
+        case _                           => false
+    }
+
+    /// 出来事が切り替える背景・環境音の名前（コマンドでなければ空）。
+    def eventNames(res: Res.Res, event: YarnRunner.Event): List[String] = match event {
+        case YarnRunner.Event.Command(command) =>
+            Stage.cueOf(res#backdrops, command) |> Result.toOption |> Option.map(cueNames(res)) |> Option.getWithDefault(Nil)
+        case _ => Nil
+    }
+
+    /// コマンドの意味が使う背景・環境音の名前（project.json の textures / sounds の name）。
+    def cueNames(res: Res.Res, cue: Stage.Cue): List[String] = match cue {
+        case Stage.Cue.Backdrop(shot, _)   => BackdropDoc.textureOf(shot#photo, res#backdrops) |> Option.toList
+        case Stage.Cue.Ambience(Some(name)) => Stage.ambienceSound(name) :: Nil
+        case _                             => Nil
+    }
+
+    /// 舞台が使っている背景・環境音の名前。
+    def stageNames(res: Res.Res, stage: Stage.Stage): List[String] =
+        let photo = stage#shot |> Option.flatMap(shot -> BackdropDoc.textureOf(shot#photo, res#backdrops)) |> Option.toList;
+        let sound = stage#ambience |> Option.map(Stage.ambienceSound) |> Option.toList;
+        List.append(photo, sound)
+
+    /// names のうち、まだ届いていなくて、諦めてもいない物（重なりは 1 つに）。
+    def pendingNames(res: Res.Res, r: World.Read, names: List[String]): List[String] =
+        names |> List.filter(name -> Set.memberOf(name, res#missing) and not Set.memberOf(name, r#gaveUp)) |> List.distinct
+
+    /// 素材の待ちに入る（黒へ重ね始める）。rest = 届いたら反映する続きの出来事、last = その台詞の戻れる所の元。
+    def startHold(names: List[String], rest: List[(YarnRunner.Event, Int32)], last: Option[YarnRunner.Bookmark], w: World.World): World.World =
+        let hold = { phase = World.HoldPhase.FadingOut, phaseFrom = World.now(w), waited = 0.0, names = names, rest = rest, last = last };
+        World.mapRead(r -> { hold = Some(hold) | r }, w)
+
+    /// 今の舞台の背景・環境音がまだ届いていなければ、ここで待つ（続きは無い。届いたら黒から戻すだけ）。
+    /// スキップ中と、画面や確認のウィンドウを開いている間は入らない（閉じた・止まった所で入る）。
+    def holdIfMissing(res: Res.Res, w: World.World): World.World =
+        match World.readOf(w) {
+            case Some(r) if r#playback != World.Playback.Skip and World.isFree(w) =>
+                let names = pendingNames(res, r, stageNames(res, r#stage));
+                if (List.isEmpty(names)) w else startHold(names, Nil, YarnRunner.bookmarkOf(r#talk), w)
+            case _ => w
+        }
+
+    /// 待ちの段を 1 歩進める。黒へ重ね切ったら Waiting、届いたら（か諦めたら）続きを反映して FadingIn、黒から戻し切ったら待ちを消す。
+    def stepHold(res: Res.Res, dt: Float64, hold: World.Hold, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        let k = KindDoc.rec(res#kind);
+        let faded = Clock.since(hold#phaseFrom, World.now(w)) >= k#holdFadeSeconds;
+        let withHold = (next: Option[World.Hold]) -> World.withRead({ hold = next | r }, w);
+        match hold#phase {
+            case World.HoldPhase.FadingOut => if (faded) withHold(Some({ phase = World.HoldPhase.Waiting, waited = 0.0 | hold })) else w
+            case World.HoldPhase.FadingIn  => if (faded) withHold(None) else w
+            case World.HoldPhase.Waiting   =>
+                let left = pendingNames(res, r, hold#names);
+                let waited = hold#waited + dt;
+                if (List.isEmpty(left)) resumeHold(res, hold, r, w)
+                else if (waited >= k#holdGiveUpSeconds) resumeHold(res, hold, { gaveUp = Set.union(r#gaveUp, List.toSet(left)) | r }, w)
+                else withHold(Some({ waited = waited | hold }))
+        }
+
+    /// 届いた（か諦めた）: 黒から戻し始め、預けておいた続きの出来事を反映する。
+    /// 背景は前の写真から重ねず、黒の下の暗い地から新しい写真を出す（under を捨てる）。
+    def resumeHold(res: Res.Res, hold: World.Hold, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        let opening = World.withRead({ hold = Some({ phase = World.HoldPhase.FadingIn, phaseFrom = World.now(w), rest = Nil | hold }) | r }, w);
+        absorbFrom(res, Replay.Live, hold#last, hold#rest, opening)
+            |> World.mapRead(cur -> { stage = { under = None | cur#stage } | cur })
 
     // ── 始まりの場面（Starts・描き出し） ──
 
@@ -345,7 +453,7 @@ mod WorldRead {
         match YarnRunner.nodeOf(r#talk) {
             case Some(node) if Option.nonEmpty(Yarn.nodeOf(node, res#dialogue)) =>
                 let (talk, events) = YarnRunner.startWith(YarnRunner.storageOf(r#talk), res#dialogue, node, World.now(w));
-                fst(Emit.collect(() -> absorb(res, Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil | r }, w)))
+                fst(Emit.collect(() -> absorb(res, Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil, hold = None | r }, w)))
             case Some(_) => World.toTitle(w)
             case None    => w
         }

@@ -2,7 +2,7 @@
 // （壊れていても既定値で必ず起動する）。App の組み立ては Game.app（flow の入口 E2e とテストも同じ物を使う）。
 // ここで足すのは main だけが知る物（デバッグの印・開発の道具の /render と view=shot・セーブを書く出力・今の時刻）と、外の世界に触れる処理（effect）のハンドラ。
 
-use fge::{App, LwjglLayer, Resources}
+use fge::{App, LoadProgress, LwjglLayer, Resources}
 
 import java.lang.System
 import java.util.TimeZone
@@ -13,8 +13,10 @@ def main(): Unit \ IO =
         run {
             // Doc を読んで App を組む所ごと渡す（flow を記録する make debug の起動でも、ここで読んだ中身を使い Doc を読み直さない）。
             App.loadAndLaunch(() -> {
-                let res = Controls.loadRes();
+                let downloads = LoadProgress.downloads();
+                let res = Res.withMissing(downloads#missing(), Controls.loadRes());
                 Game.app(res, Saves.load(res#kind), localEpochSeconds())
+                    |> Game.withAssetLoading(downloads)
                     // セーブデータ・既読・設定を書く（saveRev が変わった実機のフレームの後でだけ。テスト・flow・描き出しは書かない）。
                     |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
                                                             write = w -> Saves.write(w#saves), onJump = App.OnJump.Skip }))

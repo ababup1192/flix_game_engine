@@ -18,7 +18,7 @@ mod TestKit {
 
     /// 系を直に呼ぶ 1 歩: 実機と同じく、先に物語の時計を dt 秒ぶん進めてから World.step。
     pub def stepBy(res: Res.Res, dt: Float64, w: World.World): World.World =
-        quiet(() -> WorldRead.step(res, tickClocks(res, dt, w)))
+        quiet(() -> WorldRead.step(res, dt, tickClocks(res, dt, w)))
 
     /// 規則が出す返事の出来事（Emit）を捨てて World だけを見る。
     pub def quiet(f: Unit -> World.World \ Emit[World.Event]): World.World = fst(Emit.collect(f))
@@ -41,7 +41,7 @@ mod TestKit {
     /// readUntil と同じ読み方で、途中で規則が出した出来事（返事・<<se>>）も古い順に返す。
     pub def readHearing(res: Res.Res, until: World.World -> Bool, picks: List[Int32], w: World.World): (World.World, List[World.Event]) =
         let heard = (f: Unit -> World.World \ Emit[World.Event]) -> Emit.collect(f);
-        let tick = (cur: World.World) -> heard(() -> WorldRead.step(res, tickClocks(res, 30.0, cur)));
+        let tick = (cur: World.World) -> heard(() -> WorldRead.step(res, 30.0, tickClocks(res, 30.0, cur)));
         def go(fuel: Int32, rest: List[Int32], cur: World.World, acc: List[World.Event]): (World.World, List[World.Event]) =
             if (fuel <= 0 or until(cur) or not World.isReading(cur)) (cur, acc)
             else {

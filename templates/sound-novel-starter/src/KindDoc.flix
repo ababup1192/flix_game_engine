@@ -12,6 +12,8 @@ mod KindDoc {
     /// autoPerChar = オートの待ちに足す 1 字あたりの秒（長い行ほど長く待つ）、skipInterval = スキップで 1 行を出す間（秒）、
     /// logMax = ログに残す行の数、shakeSeconds / shakePx = <<shake>> の長さと揺れ幅、
     /// fireflies = <<fx fireflies>> のパーティクルの数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、
+    /// holdFadeSeconds = 素材を待つ時に黒へ重ねる秒（戻す秒も同じ）、holdGiveUpSeconds = 黒のまま待って諦めるまでの秒、
+    /// holdMarkSeconds = 黒になってから隅に待ちの印を出すまでの秒（ブラウザ版で後回しの背景・環境音がまだ届いていない時）、
     /// *Slider = 設定の画面のスライダーの範囲と 1 押しの量（文字の速さの最大はノーウェイト = isNoWait）。
     pub type alias Rec = {
         version = Int32,
@@ -35,6 +37,9 @@ mod KindDoc {
         fireflies = Int32,
         creditsSpeed = Float64,
         toastSeconds = Float64,
+        holdFadeSeconds = Float64,
+        holdGiveUpSeconds = Float64,
+        holdMarkSeconds = Float64,
         cpsSlider = Slider,
         autoWaitSlider = Slider,
         masterVolumeSlider = Slider,
@@ -59,6 +64,7 @@ mod KindDoc {
                   advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
                   fireflies = 28, creditsSpeed = 34.0, toastSeconds = 1.6,
+                  holdFadeSeconds = 0.4, holdGiveUpSeconds = 20.0, holdMarkSeconds = 0.4,
                   cpsSlider = { min = 10.0, max = 130.0, step = 10.0 }, autoWaitSlider = { min = 0.2, max = 4.0, step = 0.2 },
                   masterVolumeSlider = volume(), ambienceVolumeSlider = volume(), seVolumeSlider = volume(),
                   windowAlphaSlider = { min = 0.2, max = 1.0, step = 0.1 } })
@@ -89,6 +95,9 @@ mod KindDoc {
                   shakeSeconds = num("shakeSeconds", d#shakeSeconds), shakePx = num("shakePx", d#shakePx),
                   fireflies = int("fireflies", d#fireflies), creditsSpeed = num("creditsSpeed", d#creditsSpeed),
                   toastSeconds = num("toastSeconds", d#toastSeconds),
+                  holdFadeSeconds = num("holdFadeSeconds", d#holdFadeSeconds),
+                  holdGiveUpSeconds = num("holdGiveUpSeconds", d#holdGiveUpSeconds),
+                  holdMarkSeconds = num("holdMarkSeconds", d#holdMarkSeconds),
                   cpsSlider = slider("cpsSlider", d#cpsSlider), autoWaitSlider = slider("autoWaitSlider", d#autoWaitSlider),
                   masterVolumeSlider = slider("masterVolumeSlider", d#masterVolumeSlider),
                   ambienceVolumeSlider = slider("ambienceVolumeSlider", d#ambienceVolumeSlider),

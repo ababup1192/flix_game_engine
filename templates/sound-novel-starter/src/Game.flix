@@ -5,7 +5,7 @@
 //   → Controls.step（待ち・文字送り・オート・スキップ = WorldRead.step）→ Controls.interact（入力）→ View.frame / View.hud が描く
 //   → 前後の World の差から音（Controls.sounds）と、鳴り続ける環境音（Controls.ambience）を鳴らす。
 mod Game {
-    use fge::{App, Resources}
+    use fge::{App, LoadProgress, Resources}
 
     /// res = 描く元（Doc とシナリオ）。clockBase = 起動した時のその土地の時刻（1970-01-01 からの秒。セーブの日時の元。テストと描き出しは決めた値）。
     /// App の w は描く元と遊びの状態の組（Resources.With）。系・絵・問いは Resources の口で両方を受ける。
@@ -26,7 +26,7 @@ mod Game {
             |> App.withFullscreen(Resources.read((_, w) -> WorldSettings.isFullscreen(w)))
             // 文章・ウィンドウ・タイトル画面・クレジットは withHudView — 背景の z に隠されない。
             |> App.withHudView(Resources.view(View.hud))
-            |> App.withAudio(ws -> Controls.sounds({ before = ws#before#world, after = ws#after#world }))
+            |> App.withAudio(ws -> Controls.sounds(ws#after#resources#missing, { before = ws#before#world, after = ws#after#world }))
             |> App.withSustained(Resources.read(Controls.ambience))
             |> App.withMixer(Resources.read(Controls.mixerOf))
             |> App.withStarts(Starts.all() |> List.map(Resources.liftStart))
@@ -41,4 +41,15 @@ mod Game {
             |> App.withWorldSummaryMask(Resources.mapWorld((_, w) ->
                 { clockBase = 0i64, saves = Saves.withSavedAtShifted(0i64 - w#clockBase, w#saves) | w }))
             |> App.withStatusLine(Resources.read((r, w) -> "phase=${World.sceneName(w)} panel=${World.panelName(w)} talk=${World.talkNodeOf(w)} line=${World.talkLineOf(w)} mode=${World.stageOf(r, w)#mode} playback=${World.playbackOf(w)} ask=${World.askOf(w)}"))
+
+    /// ブラウザ版で後回しにした絵と音（project.json の web.deferred）が届くたびに Res の missing を書き替え、
+    /// 届いた絵を登録する量（Controls.decodeBudget）を渡す。Main とブラウザの入口だけが足す
+    /// （downloads = 読み込みの頭で LoadProgress.downloads() から受け取った物。デスクトップは missing がいつも空で何もしない）。
+    // WhyNot: Game.app に入れない — テスト・flow・描き出しは全部届いた形（missing が空）で回し、偽の downloads はテストが渡す。
+    pub def withAssetLoading(downloads: LoadProgress.AssetDownloads, app: App.App[Resources.With[Res.Res, World.World], {}]):
+            App.App[Resources.With[Res.Res, World.World], {}] =
+        app
+            |> App.withDecodeBudget(Controls.decodeBudget)
+            |> App.withMissingAssets({ downloads = downloads, missingOf = h -> h#resources#missing,
+                                       withMissing = (missing, h) -> Resources.of(Res.withMissing(missing, h#resources), h#world) })
 }
