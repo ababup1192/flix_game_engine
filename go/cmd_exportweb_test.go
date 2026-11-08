@@ -108,9 +108,7 @@ func bundleFixture(t *testing.T) string {
 func bundleFixtureProject() exportProject {
 	var pr exportProject
 	pr.Title = "t"
-	pr.Textures = append(pr.Textures, struct {
-		Path string `json:"path"`
-	}{"assets/tex.png"})
+	pr.Textures = append(pr.Textures, webTexture{Name: "tex", Path: "assets/tex.png"})
 	pr.Sounds = []webSound{{Name: "hit", Path: "assets/sfx/hit.wav", Looping: true}}
 	return pr
 }

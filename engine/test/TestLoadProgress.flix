@@ -14,6 +14,7 @@ mod TestLoadProgress {
                 def report(phase, done, total, k) = { push(phase, done, total); k(()) }
                 def runTasks(phase, tasks, k) = { LoadProgress.runTasksInOrder(push, phase, tasks); k(()) }
                 def imageDecoder(k) = k(ImageData.failingDecoder("テストの handler は絵を解かない"))
+                def downloads(k) = k(LoadProgress.localDownloads())
             };
             (result, MutList.toList(seen))
         }
@@ -76,6 +77,7 @@ mod TestLoadProgress {
                 k(())
             }
             def imageDecoder(k) = k(ImageData.failingDecoder("テストの handler は絵を解かない"))
+            def downloads(k) = k(LoadProgress.localDownloads())
         };
         (result, Nil)
 
@@ -97,6 +99,7 @@ mod TestLoadProgress {
                 k(())
             }
             def imageDecoder(k) = k(ImageData.failingDecoder("テストの handler は絵を解かない"))
+            def downloads(k) = k(LoadProgress.localDownloads())
         };
         (result, Nil)
 
@@ -109,4 +112,17 @@ mod TestLoadProgress {
     def testRunNoopRunsTasksInOrder(): Unit \ {Assert, IO} =
         let ys = LoadProgress.runNoop(() -> LoadProgress.parMapWithProgress("p", x -> checked_ecast(x * 10), List.range(0, 3)));
         Assert.assertEq(expected = 0 :: 10 :: 20 :: Nil, ys)
+
+    @Test
+    def testLocalDownloadsSaysEveryPathIsLoaded(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = LoadProgress.LoadState.Loaded, (LoadProgress.localDownloads()#stateOf)("assets/bgm/sea.wav"))
+
+    @Test
+    def testLocalDownloadsMissesNothing(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Set.empty(), (LoadProgress.localDownloads()#missing)())
+
+    @Test
+    def testRunNoopHandsOutLocalDownloads(): Unit \ {Assert, IO} =
+        let state = LoadProgress.runNoop(() -> (LoadProgress.downloads()#stateOf)("assets/walk/gate.glb"));
+        Assert.assertEq(expected = LoadProgress.LoadState.Loaded, state)
 }

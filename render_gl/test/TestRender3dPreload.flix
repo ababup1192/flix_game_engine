@@ -241,7 +241,8 @@ mod Render3d.TestPreload {
     @Test
     def testTextureSlotIsFoundOnlyInTheSource(): Unit \ {Assert, IO} =
         let source = sourceWith(texture() :: Nil, "wall");
-        let found = name -> Render3d.Material.textureSlotOf(source, name, Texture3d.TextureUse.MaterialTexture) |> Option.nonEmpty;
+        let gl = fakeGl();
+        let found = name -> Render3d.Material.textureSlotOf(gl, source, name, Texture3d.TextureUse.MaterialTexture) |> Option.nonEmpty;
         Assert.assertEq(expected = (true, true, false, false), (found(Texture3d.name(texture())), found("wall"), found("tex3d:none"), found("none")))
 
     // ── 知らせ ──

@@ -158,10 +158,10 @@ def lmFourByTwo(): Texture3d.Texture3d =
 @Test
 def testLimitSizeHalvesLikeTheMipChain(): Unit \ Assert =
     let t = lmFourByTwo();
-    let mip = Mip.build(Mip.Average.Raw, { width = 4, height = 2, pixels = Texture3d.argb(t) }) |> List.drop(1) |> List.head;
+    let mip = Mip.build(Mip.Average.Raw, { width = 4, height = 2, pixels = TestDecoder.pixelsOf(t) }) |> List.drop(1) |> List.head;
     let small = Texture3d.limitSize(2, t);
     Assert.assertEq(expected = Option.map(m -> (m#width, m#height, m#pixels), mip),
-                    Some((Texture3d.width(small), Texture3d.height(small), Texture3d.argb(small))))
+                    Some((Texture3d.width(small), Texture3d.height(small), TestDecoder.pixelsOf(small))))
 
 @Test
 def testLimitSizeKeepsAFittingTexture(): Unit \ Assert =
@@ -179,7 +179,7 @@ def testBlenderPngChunksAreNotApplied(): Unit \ {Assert, Fs.FileRead, IO} =
     let decoded = Fs.FileRead.readBytes("test/data/testdata/lightmap_srgb_chunks.png")
         |> Result.mapErr(e -> "${e}") |> Result.flatMap(bytes -> Texture3d.decodeUsing(TestDecoder.imageIo(), bytes));
     let expected = Vector.range(0, 16) |> Vector.map(k -> expectedArgb(Int32.remainder(k, 4), k / 4));
-    Assert.assertEq(expected = Ok(expected), decoded |> Result.map(Texture3d.argb))
+    Assert.assertEq(expected = Ok(expected), decoded |> Result.map(TestDecoder.pixelsOf))
 
 // ── 読む mip のレベルの数の上限（UV の島の間から）──
 

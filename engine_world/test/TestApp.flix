@@ -786,6 +786,7 @@ mod TestApp {
                 def report(phase, done, total, k) = { MutList.push((phase, done, total), got); k(()) }
                 def runTasks(_phase, _tasks, _k) = bug!("このテストは仕事を回さない")
                 def imageDecoder(k) = k(ImageData.failingDecoder("このテストは絵を解かない"))
+                def downloads(k) = k(LoadProgress.localDownloads())
             };
             MutList.toList(got)
         };

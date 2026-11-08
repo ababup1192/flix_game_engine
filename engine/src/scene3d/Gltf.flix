@@ -56,6 +56,14 @@ pub mod Gltf {
             Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines), { parts = parts | built#model })
         })
 
+    /// fromGlb の、形の中身の鍵を key から作る版（part ごとに "key#part<番号>"・まとめた形は "key#all"）。
+    /// key は同じ key なら同じバイトだと呼ぶ側が約束できる字（ImageData.ImageDecoder の versionedKey）。
+    // WhyNot: いつも頂点の SHA-256 を取らない — ブラウザでは 1 部屋の形 3 つで 30 ms を超え、部屋を読むたびに積もる。
+    pub def fromGlbKeyed(key: String, bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
+        fromGlb(bytes) |> Result.map(model ->
+            { mesh = Mesh3d.withContentKey("${key}#all", model#mesh),
+              parts = model#parts |> List.mapWithIndex((k, part) -> { mesh = Mesh3d.withContentKey("${key}#part${k}", part#mesh) | part }) | model })
+
     /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
     /// 上限を超える絵は mip と同じ縮め方で半分にしていく。
     pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }

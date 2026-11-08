@@ -24,10 +24,11 @@ pub mod HeadlessLoad {
             def report(phase, done, total, k) = { onReport(phase, done, total); k(()) }
             def runTasks(phase, tasks, k) = { runOnPool(onReport, phase, tasks); k(()) }
             def imageDecoder(k) = k(imageIoDecoder())
+            def downloads(k) = k(LoadProgress.localDownloads())
         }
 
     /// PNG / JPEG を javax.imageio で画素に戻すデコーダー（スレッドをまたいで使える）。
-    pub def imageIoDecoder(): ImageData.ImageDecoder = { decode = decodeImageIo }
+    pub def imageIoDecoder(): ImageData.ImageDecoder = ImageData.decoderOf(decodeImageIo)
 
     // WhyNot: ImageIO の IOException を投げたままにしない — 並列の仕事の中で投げると、読み込みの全部が止まる（壊れた 1 枚は Err で既定値へ）。
     def decodeImageIo(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =

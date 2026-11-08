@@ -1,4 +1,4 @@
-<!-- engine v0.88.4 / 生成: 2026-11-07 -->
+<!-- engine v0.88.4 / 生成: 2026-11-09 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -90,6 +90,20 @@
   `pub def framesOf(dataSize: Int32, channels: Int32, bitsPerSample: Int32): Int32`
 - WAV のループ点（"smpl" チャンクの最初のループ）。返すのは (頭, 終わり) のサンプル番号で、
   `pub def loopPointsOf(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32): Option[(Int32, Int32)] \ ef`
+
+## BackgroundLoad — `engine/src/platform/BackgroundLoad.flix`
+- `pub type alias Group[r: Type, a: Type] = { name = String, keys = List[String], pathsOf = String -> List[String], read = String -> r \ Fs.FileRead, decode = r -> Result[String, a] \ IO, costMs = Float64 }`
+- `pub type alias Pending = { group = String, states = Map[String, LoadProgress.LoadState], sentPriority = List[String], costMs = Float64, idleSinceMs = Float64 }`
+- 鍵の並びが使えるか（Godot の load_threaded_get_status）。判定するだけで待たない。
+  `pub enum Readiness with Eq, ToString { case Ready case Waiting case GaveUp(String) }`
+- 起動の読み込み: 道が全部届いている鍵は read を順に・decode を並列に回し、残りは行列の頭へ頼んで待ちの表に載せる。
+  `pub def start(group: Group[r, a]): (Map[String, Result[String, a]], Pending) \ {Fs.FileRead, IO, LoadProgress}`
+- 鍵 1 つの状態。表に無い鍵は Failed（綴りの誤りを待ち続けにしない）。
+  `pub def stateOf(key: String, pending: Pending): LoadProgress.LoadState`
+- 鍵を解いて使える形になったか。
+  `pub def isLoaded(key: String, pending: Pending): Bool`
+- keys が使えるか。waited = 待ち始めてからの秒・limit = 待つ上限の秒（超えたらその素材なしで進む）。
+  `pub def readiness(keys: List[String], pending: Pending, waited: Float64, limit: Float64): Readiness`
 
 ## BootFont — `engine/src/render2d/BootFont.flix`
 - フォントの登録名。ゲームが project.json で付ける名前と衝突しない綴りにしてある。
@@ -577,6 +591,7 @@
   `pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead`
 - .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
   `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
+- `pub def fromGlbKeyed(key: String, bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
 - 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
   `pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }`
 - 上限なし。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
@@ -617,8 +632,12 @@
 ## ImageData — `engine/src/core/ImageData.flix`
 - width × height・argb = ARGB（行優先・行 0 が絵の上）。数の食い違いは使う側（Texture3d.fromImage など）が確かめる。
   `pub type alias ImageData = { width = Int32, height = Int32, argb = Vector[Int32] }`
-- PNG / JPEG のバイトを画素に戻す。読めないバイトは Err。スレッドをまたいで使える（並列の仕事の中から呼んでよい）。
-  `pub type alias ImageDecoder = { decode = Vector[Int8] -> Result[String, ImageData] \ IO }`
+- 機種が自分の側に解いて持つ絵（ブラウザの ImageBitmap）。key = 描き手が GPU へ上げる時に渡す字（同じ key なら同じ画素）。
+  `pub type alias PlatformImage = { key = String, width = Int32, height = Int32 }`
+- 絵を解く口の組。スレッドをまたいで使える（並列の仕事の中から呼んでよい）。
+  `pub type alias ImageDecoder = { decode = Vector[Int8] -> Result[String, ImageData] \ IO, platformImage = String -> Option[PlatformImage] \ IO, versionedKey = String -> Option[String] \ IO }`
+- decode だけを持つデコーダー（platformImage と versionedKey はいつも None）。デスクトップ・画面なし・テストの handler 用。
+  `pub def decoderOf(decode: Vector[Int8] -> Result[String, ImageData] \ IO): ImageDecoder`
 - 何も解かず、いつも Err を返すデコーダー（絵を読まないテストの handler 用）。
   `pub def failingDecoder(reason: String): ImageDecoder`
 
@@ -677,6 +696,16 @@
   `pub eff LoadProgress { def runTasks(phase: String, tasks: List[Unit -> Unit \ IO]): Unit }`
 - PNG / JPEG を画素に戻すデコーダー。読み込みの関数の頭（本体のスレッド）で受け取り、並列の仕事へ引数で渡す
   `pub eff LoadProgress { def imageDecoder(): ImageData.ImageDecoder }`
+- 後回しの素材（project.json の web.deferred）の取り具合を引く関数の組。読み込みの頭で受け取り、ループの中で使う。
+  `pub eff LoadProgress { def downloads(): LoadProgress.AssetDownloads }`
+- 読み込みの状態（Bevy の LoadState）。Queued = 行列で待つ・Downloading = 取っている・Downloaded = 取れて解く順番待ち・
+  `pub enum LoadState with Eq, ToString { case Queued case Downloading case Downloaded case Loaded case Failed(String) }`
+- 1 コマに解いてよい量（Unity の backgroundLoadingPriority）。Paused = 解かない（文字送り中など画面が動いていて止まりが見える）・
+  `pub enum DecodeBudget with Eq, ToString { case Paused case Idle(Float64) case Covered(Float64) }`
+- 後回しの素材を引く関数の組（どれもループの中で呼べる）。
+  `pub type alias AssetDownloads = { stateOf = String -> LoadState \ IO, missing = Unit -> Set[String] \ IO, request = List[String] -> Unit \ IO, release = List[String] -> Unit \ IO, setBudget = DecodeBudget -> Unit \ IO, spentMs = Unit -> Float64 \ IO }`
+- 後回しの無い機種の組: stateOf はいつも Loaded・missing はいつも空・spentMs はいつも 0・request と release と setBudget は何もしない。
+  `pub def localDownloads(): AssetDownloads`
 - `pub def runNoop(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO`
 - tasks を 1 つずつ回し、最初に (phase, 0, n)・1 つ終わるたびに (phase, 終わった数, n) を report へ渡す（空なら何も渡さない）。
   `pub def runTasksInOrder(report: (String, Int32, Int32) -> Unit \ ef, phase: String, tasks: List[Unit -> Unit \ IO]): Unit \ ef + IO`
@@ -696,6 +725,19 @@
   `pub def pollingViolations(harness: Harness): List[String] \ IO`
 - 例外で抜ける: 最初の仕事が 20 ms で投げ、残りは 3 秒眠る。同じ message の例外で、残りを待たずに（2 秒より前に）抜け、
   `pub def failureViolations(harness: Harness): List[String] \ IO`
+
+## LoadProgress.Deferred — `engine/src/platform/LoadProgress/Deferred.flix`
+- 機種が返す道の状態の字（"queued" / "downloading" / "downloaded" / "loaded" / "failed:理由"）を LoadState へ。知らない字は Failed。
+  `pub def loadStateOfText(text: String): LoadProgress.LoadState`
+- items を道ごとにまとめる。道の並びは最初に出た順・道の中は元の順。
+  `pub def groupByPath(pathOf: a -> String, items: List[a]): List[(String, List[a])]`
+- 届く前の音に言われた事。playing = 鳴らせと言われて止めろと言われていない・ほかは最後に言われた値（言われていなければ None）。
+  `pub type alias PendingSound = { playing = Bool, looping = Option[Bool], volume = Option[Float64], pitch = Option[Float64] }`
+- 届く前の音への呼び出し（GameEngine.Audio の op のうち、届いた時に当て直す物）。
+  `pub enum SoundCall with Eq, ToString { case Play case Stop case SetVolume(Float64) case SetPitch(Float64) case SetLooping(Bool) }`
+- 名前 name の音への呼び出しを覚えた表へ合わせる。Stop は忘れる（届いても鳴らさず、音量も当てない）。
+  `pub def notePendingSound(name: String, call: SoundCall, pending: Map[String, PendingSound]): Map[String, PendingSound]`
+- `pub def playsOnArrival(sound: PendingSound, declaredLooping: Bool): Bool`
 
 ## Log — `engine/src/core/Log.flix`
 - stderr へ 1 行。効果は `unsafe IO` で隠す
@@ -752,7 +794,7 @@
   `pub def fromPolygons(polys: List[Polygon]): Mesh3d`
 - 頂点の並びから作る。positions・normals・colors は頂点ごとに 3 つ、indices は 3 つで三角 1 枚（表は外から見て時計回り）。
   `pub def fromArrays(arrays: { positions = Vector[Float64], normals = Vector[Float64], colors = Vector[Float64], indices = Vector[Int32], skin = Option[SkinWeights] }): Result[String, Mesh3d]`
-- uv を付ける（頂点ごとに u・v の 2 つ）。タンジェントは三角形の辺と uv の差から求める（作る時に 1 回・GL と CPU は同じ値を読む）。
+- uv を付ける（頂点ごとに u・v の 2 つ）。タンジェントは三角形の辺と uv の差から求める（初めて読む時に 1 回・GL と CPU は同じ値を読む）。
   `pub def withUvs(uvs: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
 - 外で求めたタンジェント（頂点ごとに x・y・z・w の 4 つ。glTF の TANGENT）で置き換える。xyz は長さ 1 にそろえる。
   `pub def withTangents(tangents: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
@@ -766,6 +808,7 @@
 - `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
 - 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
   `pub def contentHash(m: Mesh3d): String`
+- `pub def withContentKey(key: String, m: Mesh3d): Mesh3d`
 - 軸にそろった箱（AABB）の最小と最大の角。
   `pub type alias Bounds = { min = Vec3.Vec3, max = Vec3.Vec3 }`
 - 頂点の最小と最大（形の座標）。頂点の無い形は 0。
@@ -1665,27 +1708,31 @@
   `pub def lineCount(advances: List[Float64], wrapWidth: Float64, scale: Float64, lineHeight: Float64): Int32`
 
 ## Texture3d — `engine/src/scene3d/Texture3d.flix`
+- 絵の画素の在りか。Argb = ARGB の並び（行優先・行 0 が絵の上）・PlatformImage(key) = 機種の側に解いて持つ絵
+  `pub enum Source with Eq, ToString { case Argb(Vector[Int32]) case PlatformImage(String) }`
 - `pub type alias Texture3d = Texture3dData`
 - 辺の上限（GL 3.3 が約束する大きさより大きいが、今の GPU なら作れる）。
   `pub def maxSide(): Int32`
 - ARGB（行優先・行 0 が絵の上）から作る。数の食い違い・辺が 0 以下・辺が maxSide() を超える、は Err。
   `pub def fromArgb(width: Int32, height: Int32, argb: Vector[Int32]): Result[String, Texture3d]`
+- 機種の側に解いて持つ絵から作る（ImageData.ImageDecoder の platformImage が返した物）。辺の決まりは fromArgb と同じ。
+  `pub def fromPlatformImage(image: ImageData.PlatformImage): Result[String, Texture3d]`
 - 解いた絵から作る（決まりは fromArgb と同じ）。
   `pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d]`
 - PNG / JPEG のバイトを decoder で画素に戻して作る（decoder は LoadProgress.imageDecoder() で受け取る）。
   `pub def decodeUsing(decoder: ImageData.ImageDecoder, bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
+- `pub def decodeAtUsing(decoder: ImageData.ImageDecoder, path: String, bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
 - `pub def width(t: Texture3d): Int32`
 - `pub def height(t: Texture3d): Int32`
-- ARGB（行優先・行 0 が絵の上）。
-  `pub def argb(t: Texture3d): Vector[Int32]`
-- 中身の鍵（寸法と画素の SHA-256 の 16 進）。同じ画素なら同じ字になる。
+- 画素の在りか。
+  `pub def sourceOf(t: Texture3d): Source`
+- 中身の鍵（16 進）。同じ画素なら同じ字になる。
   `pub def contentHash(t: Texture3d): String`
 - 材質の Tex の読み先の名前（"tex3d:" + contentHash の頭 16 字）。場面の textures に入れた絵はこの名前で引く。
   `pub def name(t: Texture3d): String`
 - 場面の textures から引く名前の頭（GL と CPU が名前の引き分けに使う）。
   `pub def namePrefix(): String`
-- 長い辺が maxSide 以下になるまで半分にした絵（mip の段を作るのと同じ縮め方。もう収まっていれば t のまま）。
-  `pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d`
+- `pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d`
 - 8bit の絵の値の意味。Srgb = sRGB の曲線で書いた値（Blender の PNG・色の絵）・Linear = 値がそのまま量（法線マップ・数値の絵）。
   `pub enum ColorSpace with Eq, Order, Hash, ToString { case Srgb case Linear }`
 - `pub enum TextureUse with Eq, Order, Hash, ToString { case MaterialTexture case NormalMap case Lightmap(ColorSpace) }`

@@ -56,7 +56,7 @@ pub mod App.Internal.Paint {
         match r#staticLayer {
             case None    => Nil
             case Some(sl) =>
-                let (center, z) = App.resolvedCamera(r, world, design);
+                let (center, z) = resolvedCamera(r, world, design);
                 App.composeScene(center, z, design, { world = (sl#build)(world), hud = Nil })
         }
 
@@ -70,7 +70,7 @@ pub mod App.Internal.Paint {
         match r#staticLayer {
             case None    => None
             case Some(sl) =>
-                let (center, z) = App.resolvedCamera(r, world, design);
+                let (center, z) = resolvedCamera(r, world, design);
                 let (viewOffset, viewScale, halfDesign) = match center {
                     case Some(c) => (c, { x = z, y = z }, Vec2.div(design, 2.0))
                     case None    => (Vec2.zero(), { x = 1.0, y = 1.0 }, Vec2.zero())
@@ -143,7 +143,7 @@ pub mod App.Internal.Paint {
         match r#tileLayers {
             case None    => (Nil, cache)
             case Some(f) =>
-                let (center, z) = App.resolvedCamera(r, world, design);
+                let (center, z) = resolvedCamera(r, world, design);
                 let (cmds, nextCache) = List.foldLeft((acc, entry) -> {
                     let (i, spec) = entry;
                     let slot = "${i}";
@@ -187,7 +187,7 @@ pub mod App.Internal.Paint {
         match r#tileLayers {
             case None    => Nil
             case Some(f) =>
-                let (center, z) = App.resolvedCamera(r, world, design);
+                let (center, z) = resolvedCamera(r, world, design);
                 let items = f(world) |> List.flatMap(TileScene.toItems);
                 App.composeScene(center, z, design, { world = items, hud = Nil })
         }
@@ -389,4 +389,32 @@ pub mod App.Internal.Paint {
         case Render.PassPlanIssue.ScaleOutOfRange(name, scale)       =>
             "targets の '${name}' の scale ${scale} は 0 より大きく 1 以下の外 — 1 として描く（画面の画素で描くなら RenderTarget.windowDescriptor()）"
     }
+
+    /// 確定した camera（中心と zoom）を World から 1 回だけ導く: zoom-only の正規化
+    /// （zoomedCenter）→ cameraBounds クランプ。主 view と静的レイヤーがこの同じ値から
+    /// 派生するので、動的な絵と静的な絵の視点が必ず一致する（1px もずれない）。
+    pub def resolvedCamera(r: App.Rec[w, ef], world: w, design: Vec2.Vec2): (Option[Vec2.Vec2], Float64) \ ef =
+        let z = match r#zoom {
+            case None    => 1.0
+            case Some(f) => f(world)
+        };
+        let center0 = match r#camera {
+            case Some(f) => Some(f(world))
+            case None    => None
+        };
+        let center = match (App.zoomedCenter(center0, z, design), r#cameraBounds) {
+            case (Some(c), Some(fb)) =>
+                let seen = Vec2.div(design, CameraRig.safeZoom(z));
+                Some(CameraRig.clampCenter(bounds = fb(world), seen = seen, c))
+            case (c, _) => c
+        };
+        // 画素の升目に吸着させる（静的な絵と動く絵が同じ値を見るので、両者はずれない）。
+        let snap = (r#pixelSnap)(world);
+        // 画面の画素に載せたいので、zoom を掛けた後の値で丸める（world 座標で丸めるだけでは
+        // zoom が整数でないときに半画素ずれが残る）。
+        let unit = snap * CameraRig.safeZoom(z);
+        let snapped = if (not Float64.isFinite(unit) or unit <= 0.0) center
+                      else Option.map(c -> { x = Float64.round(c#x * CameraRig.safeZoom(z)) / CameraRig.safeZoom(z),
+                                             y = Float64.round(c#y * CameraRig.safeZoom(z)) / CameraRig.safeZoom(z) }, center);
+        (snapped, z)
 }

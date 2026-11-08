@@ -84,6 +84,11 @@
           "type": { "list": "text" },
           "label": "配らない素材（ゲームの根からの glob）。実行時に読まない元のファイル（.yarn など）を外す",
           "order": 3
+        },
+        "startPrompt": {
+          "type": "text",
+          "label": "押して始める前の画面の文言（無ければ Tap to start）",
+          "order": 4
         }
       }
     }

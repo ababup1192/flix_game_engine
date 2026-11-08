@@ -32,16 +32,20 @@ mod Render3d.FakeGl {
     /// uploaded = texSubImageRgba32f の (行の数, 行ごとの x)（新しい物が頭）・uploadWidths = texSubImageRgba32f の幅（新しい物が頭）・
     /// textureLimit = getInteger が返すテクスチャの高さの上限・instanceWidths = 1 体ごとの値の texSubImageRgba32f の幅（新しい物が頭）・usedPrograms = useProgram へ渡した 0 でない番号（新しい物が頭）・instanceData = 1 体ごとの値のテクスチャへ上げた float の並び（新しい物が頭）・instanceBinds = 1 体ごとの値の unit へ貼ったテクスチャ（新しい物が頭）・
     /// instanceBases = uInstanceBase へ入れた値（新しい物が頭）・instanceCounts = drawElementsInstanced の instance 数（新しい物が頭）・
-    /// jointBinds = joint の unit へ貼ったテクスチャ（新しい物が頭）・activeUnit = 今の unit・targets = 描き先へ戻した bindFramebuffer の番号（新しい物が頭）。
+    /// jointBinds = joint の unit へ貼ったテクスチャ（新しい物が頭）・activeUnit = 今の unit・targets = 描き先へ戻した bindFramebuffer の番号（新しい物が頭）・
+    /// texParams = texParameteri の (pname, param)（新しい物が頭）・attribs = enableVertexAttribArray の番号（新しい物が頭）・
+    /// booleans = Bool を返す呼び出しの名前ごとの答え（無い名前は偽。prefersGpuMipmap を真にすると GPU の段の描き手になる）。
     pub type alias Recorded = { calls = Ref[List[String], Static], allocated = Ref[List[Int32], Static], uploaded = Ref[List[(Int32, List[Float32])], Static],
                             uploadWidths = Ref[List[Int32], Static], textureLimit = Ref[Int32, Static], instanceData = Ref[List[List[Float32]], Static], instanceWidths = Ref[List[Int32], Static], usedPrograms = Ref[List[Int32], Static], instanceBinds = Ref[List[Int32], Static],
                             instanceBases = Ref[List[Int32], Static], instanceCounts = Ref[List[Int32], Static], jointBinds = Ref[List[Int32], Static],
-                            activeUnit = Ref[Int32, Static], targets = Ref[List[Int32], Static] }
+                            activeUnit = Ref[Int32, Static], targets = Ref[List[Int32], Static], texParams = Ref[List[(Int32, Int32)], Static],
+                            attribs = Ref[List[Int32], Static], booleans = Ref[Map[String, Bool], Static] }
 
     pub def freshRecorded(): Recorded \ IO =
         { calls = Ref.fresh(Static, Nil), allocated = Ref.fresh(Static, Nil), uploaded = Ref.fresh(Static, Nil), uploadWidths = Ref.fresh(Static, Nil), textureLimit = Ref.fresh(Static, 4096),
           instanceData = Ref.fresh(Static, Nil), instanceWidths = Ref.fresh(Static, Nil), usedPrograms = Ref.fresh(Static, Nil), instanceBinds = Ref.fresh(Static, Nil), instanceBases = Ref.fresh(Static, Nil), instanceCounts = Ref.fresh(Static, Nil),
-          jointBinds = Ref.fresh(Static, Nil), activeUnit = Ref.fresh(Static, 0), targets = Ref.fresh(Static, Nil) }
+          jointBinds = Ref.fresh(Static, Nil), activeUnit = Ref.fresh(Static, 0), targets = Ref.fresh(Static, Nil), texParams = Ref.fresh(Static, Nil),
+          attribs = Ref.fresh(Static, Nil), booleans = Ref.fresh(Static, Map.empty()) }
 
     /// getUniformLocation("uInstanceBase") の番号。
     pub def instanceBaseLocation(): Int32 = 77
@@ -83,10 +87,13 @@ mod Render3d.FakeGl {
             case "useProgram"      => if (intArg(args, 0) != 0) Ref.put(intArg(args, 0) :: Ref.get(log#usedPrograms), log#usedPrograms) else ()
             case "drawElementsInstanced" => Ref.put(intArg(args, 4) :: Ref.get(log#instanceCounts), log#instanceCounts)
             case "bindFramebuffer" => Ref.put(intArg(args, 1) :: Ref.get(log#targets), log#targets)
+            case "texParameteri"   => Ref.put((intArg(args, 1), intArg(args, 2)) :: Ref.get(log#texParams), log#texParams)
+            case "enableVertexAttribArray" => Ref.put(intArg(args, 0) :: Ref.get(log#attribs), log#attribs)
             case _ => ()
         }
 
-    /// 何も描かない GL。create で始まる呼び出しは連番、FBO の検査は完成、テクスチャの高さの上限は log#textureLimit、ほかは 1 と偽を返す。
+    /// 何も描かない GL。create で始まる呼び出しは連番、FBO の検査は完成、テクスチャの高さの上限は log#textureLimit、
+    /// Bool は log#booleans の答え、ほかは 1 と偽を返す。
     pub def recordingGl(log: Recorded): GlContext \ IO =
         let next = Ref.fresh(Static, 1);
         let answers = new InvocationHandler {
@@ -102,8 +109,8 @@ mod Render3d.FakeGl {
                     case "int" if name == "getInteger"             => checked_cast(Integer.valueOf(Ref.get(log#textureLimit)))
                     case "int" if asksInstanceBase                 => checked_cast(Integer.valueOf(instanceBaseLocation()))
                     case "int"                                     => checked_cast(Integer.valueOf(1))
-                    case "boolean"                                 => checked_cast(Boolean.valueOf(false))
-                    case "java.nio.IntBuffer"                      => checked_cast(IntBuffer.allocate(1))
+                    case "boolean"                                 => checked_cast(Boolean.valueOf(Map.getWithDefault(name, false, Ref.get(log#booleans))))
+                    case "java.nio.IntBuffer"                      => checked_cast(IntBuffer.allocate(Int32.max(1, intArg(args, 0))))
                     case "java.nio.FloatBuffer"                    => checked_cast(FloatBuffer.allocate(intArg(args, 0)))
                     case _                                         => checked_cast(null)
                 }

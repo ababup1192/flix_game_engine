@@ -75,6 +75,10 @@ public final class LwjglGl implements GlContext {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
         GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, argb);
     }
+    public boolean prefersGpuMipmap() { return false; }
+    public void generateMipmap(int target) { GL30.glGenerateMipmap(target); }
+    public boolean texImagePlatform(String key) { throw new UnsupportedOperationException("デスクトップは機種の側の絵を持たない: " + key); }
+    public boolean copyTextureLevel0(int texture, int width, int height) { throw new UnsupportedOperationException("デスクトップは CPU の段を作るので GPU の中で写さない"); }
     public void texImageArgbZero(int width, int height) {
         texImageArgb(width, height, BufferUtils.createIntBuffer(Math.max(1, width * height)));
     }

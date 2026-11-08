@@ -191,6 +191,20 @@ public final class WebGl2 implements GlContext {
         direct.get(argb, 0, count);
     }
 
+    public boolean prefersGpuMipmap() { return true; }
+
+    @JSBody(params = {"target"}, script = "fgeGl.generateMipmap(target);")
+    private static native void jsGenerateMipmap(int target);
+    public void generateMipmap(int target) { jsGenerateMipmap(target); }
+
+    @JSBody(params = {"key"}, script = "return fgeTexImagePlatform(key);")
+    private static native boolean jsTexImagePlatform(String key);
+    public boolean texImagePlatform(String key) { return jsTexImagePlatform(key); }
+
+    @JSBody(params = {"id", "w", "h"}, script = "return fgeCopyTextureLevel0(id, w, h);")
+    private static native boolean jsCopyTextureLevel0(int texture, int width, int height);
+    public boolean copyTextureLevel0(int texture, int width, int height) { return jsCopyTextureLevel0(texture, width, height); }
+
     @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, w, h, 0, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, null);")
     private static native void jsTexImageArgbZero(int width, int height);
     public void texImageArgbZero(int width, int height) { jsTexImageArgbZero(width, height); }

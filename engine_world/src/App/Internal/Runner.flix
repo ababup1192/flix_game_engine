@@ -296,12 +296,14 @@ pub mod App.Internal.Runner {
         if (collecting) discard Platform.Diagnostics.consumeDiagnostics() else ();
         let (watched, watchedTools, watchFired) = hooks#beginFrame(frame#dt, st#world, st#tools);
         let (reloaded, reloadFired) = applyReload(r, frame, watched, f -> hooks#runReload(watchedTools, "key", f));
+        // WhyNot: 後回しの素材を traceFrame の中で読まない — 系を純粋のまま保ち、trace・台本・/step が同じ World を出すため。
+        let loaded = App.stepBackgroundLoad(app, reloaded);
         // WhyNot: 重ねる App で進めた後の World（advanced）を描かない — 進め終わるのを待ってからでないと描けず、重ねる分が無くなる。
-        if (r#pipelinedRendering) submitTraceFrame(app, frame, st#stepState, reloaded) else ();
-        let paintedEarly = if (r#pipelinedRendering) Some(paintAndPresent(app, st, frame, reloaded, watchFired or reloadFired)) else None;
+        if (r#pipelinedRendering) submitTraceFrame(app, frame, st#stepState, loaded) else ();
+        let paintedEarly = if (r#pipelinedRendering) Some(paintAndPresent(app, st, frame, loaded, watchFired or reloadFired)) else None;
         let waitStart = System.nanoTime();
         // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
-        let (traced, nextStepState) = if (r#pipelinedRendering) joinTraceFrame() else App.traceFrame(app, frame, st#stepState, reloaded);
+        let (traced, nextStepState) = if (r#pipelinedRendering) joinTraceFrame() else App.traceFrame(app, frame, st#stepState, loaded);
         let updatedAt = System.nanoTime();
         let advanced = traced#after;
         hooks#recordFrame(watchedTools, frame, advanced);

@@ -38,6 +38,8 @@
 | 指定 | デスクトップ | ブラウザ | 備考 |
 |---|---|---|---|
 | 標本を持つ描き先の cutout | alpha to coverage | discard | **近似**。WebGL2 に `SAMPLE_ALPHA_TO_ONE` が無い（`GlContext.hasAlphaToOne`）。縁のなめらかさが違う |
+| 3D の場面の絵の段（mipmap） | CPU の `Mip.build`（材質の色の絵は sRGB の曲線で平均） | GPU の `generateMipmap`（8 ビットの値のまま平均。`GlContext.prefersGpuMipmap`） | **近似**。段 0 は同じ。遠くで縮んで読む所の色が少し違う（明暗の細かい模様ほど、ブラウザの方が暗めに出る）。GPU の段は平均の仕方を選べないので、色と法線に貼った同じ絵は 1 枚にまとめる。登録の 2D の絵の段つきの写しも GPU の中で写す（読み戻さない）。wasm の `Mip.build` は 1098×1920 の絵 1 枚で約 130 ms かかるため |
+| 道で読んだ 3D の場面の絵（`Texture3d.decodeAtUsing`） | バイトを解いた ARGB | JS が持つ ImageBitmap をそのまま上げる（`ImageData.PlatformImage`） | 画素は同じ（どちらも premultiply と色空間の変換を切って解く）。ブラウザの絵は CPU の描き手（SoftRaster）では読めず、0（透明な黒）で読んで 1 回言う |
 | `project.json` の textures の絵 | png のまま | 書き出しの時に WebP | 既定は無劣化。`web.compress` で荒らした絵はその分だけ違う |
 | `web.embed` の素材（シナリオの `dialogue.json` など） | assets/ のファイルを読む | wasm に埋め込んだ符号を初めて読む時に戻す | 中身は同じ。`web.omit` の物はブラウザ版に無い（読むと NotFound） |
 | 字 | 起動の時に作ったアトラス | `font-bake` のアトラス | フォントに無い字は出ない |

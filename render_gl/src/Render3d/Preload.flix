@@ -63,7 +63,7 @@ mod Render3d.Preload {
     def uploadTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, reads: List[TextureRead]): Set[TextureSlot] \ IO =
         reads |> List.foldLeft((held, read) -> {
             let (label, name, textureUse) = read;
-            match textureSlotOf(source, name, textureUse) {
+            match textureSlotOf(gl, source, name, textureUse) {
                 case Some(slot) =>
                     discard resolveTextureAs(gl, state, gen, source, label, name, textureUse);
                     Set.insert(slot, held)

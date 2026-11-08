@@ -1,10 +1,16 @@
-// TestDecoder — engine のテストが PNG / JPEG を解くためのデコーダー（engine の src は javax.imageio を持たない）。
+// TestDecoder — engine のテストが PNG / JPEG を解くためのデコーダーと、解いた絵の画素を読む口（engine の src は javax.imageio を持たない）。
 mod TestDecoder {
     import java.awt.image.BufferedImage
     import java.io.ByteArrayInputStream
     import javax.imageio.ImageIO
 
-    pub def imageIo(): ImageData.ImageDecoder = { decode = decode }
+    pub def imageIo(): ImageData.ImageDecoder = ImageData.decoderOf(decode)
+
+    /// 絵の ARGB（機種の側の絵は空）。
+    pub def pixelsOf(t: Texture3d.Texture3d): Vector[Int32] = match Texture3d.sourceOf(t) {
+        case Texture3d.Source.Argb(pixels)    => pixels
+        case Texture3d.Source.PlatformImage(_) => Vector.empty()
+    }
 
     def decode(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =
         let image = ImageIO.read(new ByteArrayInputStream(unchecked_cast(bytes as Array[Int8, Static])));

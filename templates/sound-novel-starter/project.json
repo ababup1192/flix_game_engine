@@ -179,6 +179,7 @@
     ]
   },
   "web": {
+    "startPrompt": "タッチして開始",
     "keysDoc": "assets/novel.keys.json",
     "touchGestures": {
       "longPress": "back",

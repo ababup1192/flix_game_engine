@@ -56,4 +56,9 @@ mod TestHeadlessLoad {
     def testDecoderRejectsGarbage(): Unit \ {Assert, IO} =
         let decoded = HeadlessLoad.handleWith((_, _, _) -> (), () -> (LoadProgress.imageDecoder()#decode)(Vector#{1i8, 2i8, 3i8}));
         Assert.assertTrue(Result.isErr(decoded))
+
+    @Test
+    def testDownloadsHasNothingLeftToFetch(): Unit \ {Assert, IO} =
+        let missing = HeadlessLoad.handleWith((_, _, _) -> (), () -> (LoadProgress.downloads()#missing)());
+        Assert.assertEq(expected = Set.empty(), missing)
 }

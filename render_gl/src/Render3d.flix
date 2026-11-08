@@ -36,11 +36,12 @@ mod Render3d {
 
     /// GPU に置いたメッシュ 1 つ。vbo は位置・法線・色の 9 個ずつを交互に並べた物。lastUsed = 最後に描いたコマの世代（要素 1 つ）。
     /// skin = ジョイントの番号と重みの VBO（ジョイントの無い形は None）。
-    /// surface = uv（location 5）とタンジェント（location 6）を 6 個ずつ交互に並べた VBO（uv の無い形は None）。
+    /// surface = uv（location 5）の VBO（uv の無い形は None）。tangents = タンジェント（location 6）の VBO（要素 1 つ・0 はまだ上げていない）。
     // WhyNot: uv を位置・法線・色の並びへ混ぜない — uv の無い形まで stride が伸び、uv の無い形の頂点バッファの中身が変わる。
+    // WhyNot: タンジェントを uv と同じ VBO で形を上げる時に上げない — 法線マップの材質で描く時まで求めずに済ませる（Mesh3d が初めて読む時に求める）。
     pub type alias MeshEntry = {
-        vao = Int32, vbo = Int32, ibo = Int32, skin = Option[SkinBuffers], surface = Option[Int32], uv2 = Option[Int32], indexCount = Int32, vertexCount = Int32,
-        lastUsed = Array[Int64, Static]
+        vao = Int32, vbo = Int32, ibo = Int32, skin = Option[SkinBuffers], surface = Option[Int32], tangents = Array[Int32, Static], uv2 = Option[Int32],
+        indexCount = Int32, vertexCount = Int32, lastUsed = Array[Int64, Static]
     }
 
     /// 頂点ごとのジョイントの番号（ivec4・location 3）と重み（vec4・location 4）の VBO。
@@ -238,6 +239,8 @@ mod Render3d {
         mipCopiesRef = Ref[Map[String, MipCopy], Static],
         // 見つからない材質の絵に貼る 1 × 1 の透明な黒（0 は未作成）。
         blankTexture = Array[Int32, Static],
+        // 機種の側から上げられなかった場面の絵の鍵 → 最後に試したコマの世代（間を置いて試し直す）。
+        platformRetryRef = Ref[Map[String, Int64], Static],
         // 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）。
         sceneWarnedRef = Ref[Set[String], Static],
         // 前に takeCounts してからの数（添え字は Render3d.Counts.Counter。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
@@ -309,7 +312,7 @@ mod Render3d {
           shadowTargetsRef = Ref.fresh(Static, Map.empty()),
           shadowWarnedRef = Ref.fresh(Static, Set.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
-          blankTexture = Array#{0} @ Static,
+          blankTexture = Array#{0} @ Static, platformRetryRef = Ref.fresh(Static, Map.empty()),
           sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
           preloadRef = Ref.fresh(Static, Render3d.Preload.empty()),
@@ -770,7 +773,8 @@ mod Render3d {
         gl.bindVertexArray(0);
         gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
         gl.bindBuffer(GlConst.ELEMENT_ARRAY_BUFFER, 0);
-        { vao = vao, vbo = vbo, ibo = ibo, skin = skin, surface = surface, uv2 = uv2, indexCount = Vector.length(indices), vertexCount = n, lastUsed = Array#{gen} @ Static }
+        { vao = vao, vbo = vbo, ibo = ibo, skin = skin, surface = surface, tangents = Array#{0} @ Static, uv2 = uv2, indexCount = Vector.length(indices),
+          vertexCount = n, lastUsed = Array#{gen} @ Static }
 
     /// ジョイントの番号と重みを、bind 中の VAO の location 3・4 へ上げる（ジョイントの無い形は None・何もしない）。
     /// 骨の無い版のプログラムはこの 2 つを宣言しないので、同じ VAO のまま曲げずに描ける。
@@ -810,23 +814,38 @@ mod Render3d {
             vbo
         })
 
-    /// uv とタンジェントを、bind 中の VAO の location 5・6 へ上げる（uv の無い形は None・何もしない）。
-    /// 頂点の色と骨の無い版のプログラムはこの 2 つを宣言しないので、同じ VAO のまま描ける。
+    /// uv を、bind 中の VAO の location 5 へ上げる（uv の無い形は None・何もしない）。
+    /// 頂点の色と骨の無い版のプログラムは uv とタンジェントを宣言しないので、同じ VAO のまま描ける。
     def uploadSurface(gl: GlContext, mesh: Mesh3d.Mesh3d): Option[Int32] \ IO =
-        Mesh3d.uvs(mesh) |> Option.flatMap(uvs -> Mesh3d.tangents(mesh) |> Option.map(tangents -> {
-            let n = Vector.length(uvs) / 2;
-            let data = Array.repeat(Static, Int32.max(1, n * 6), 0.0f32);
-            uvs |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), (i / 2) * 6 + Int32.remainder(i, 2), data));
-            tangents |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), (i / 4) * 6 + 2 + Int32.remainder(i, 4), data));
+        Mesh3d.uvs(mesh) |> Option.map(uvs -> {
+            let data = Array.repeat(Static, Int32.max(1, Vector.length(uvs)), 0.0f32);
+            uvs |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, data));
             let vbo = gl.createBuffer();
             gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
             gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.STATIC_DRAW);
             gl.enableVertexAttribArray(5);
-            gl.vertexAttribPointer(5, 2, GlConst.FLOAT, false, 24, 0);
-            gl.enableVertexAttribArray(6);
-            gl.vertexAttribPointer(6, 4, GlConst.FLOAT, false, 24, 8);
+            gl.vertexAttribPointer(5, 2, GlConst.FLOAT, false, 8, 0);
             vbo
-        }))
+        })
+
+    /// 形 mesh のタンジェントを、置き場の VAO の location 6 へ上げる（上げてある・uv の無い形は何もしない）。法線マップの材質で描く前に呼ぶ。
+    /// uv つきで法線マップの無いプログラムも aTangent を宣言するが、読んだ値は色に効かないので、上げていない間の既定の値のままで同じ絵になる。
+    def ensureTangents(gl: GlContext, state: State, gen: Int64, mesh: Mesh3d.Mesh3d): Unit \ IO =
+        let entry = meshEntry(gl, state, gen, mesh);
+        if (Array.get(0, entry#tangents) != 0) ()
+        else Mesh3d.tangents(mesh) |> Option.forEach(tangents -> {
+            let data = Array.repeat(Static, Int32.max(1, Vector.length(tangents)), 0.0f32);
+            tangents |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, data));
+            let vbo = gl.createBuffer();
+            gl.bindVertexArray(entry#vao);
+            gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
+            gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.STATIC_DRAW);
+            gl.enableVertexAttribArray(6);
+            gl.vertexAttribPointer(6, 4, GlConst.FLOAT, false, 16, 0);
+            gl.bindVertexArray(0);
+            gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
+            Array.put(vbo, 0, entry#tangents)
+        })
 
     def interleave(mesh: Mesh3d.Mesh3d, n: Int32): Array[Float32, Static] \ IO =
         let out = Array.repeat(Static, Int32.max(1, n * 9), 0.0f32);
@@ -846,6 +865,7 @@ mod Render3d {
             gl.deleteBuffer(s#weights)
         });
         entry#surface |> Option.forEach(vbo -> gl.deleteBuffer(vbo));
+        if (Array.get(0, entry#tangents) != 0) gl.deleteBuffer(Array.get(0, entry#tangents)) else ();
         entry#uv2 |> Option.forEach(vbo -> gl.deleteBuffer(vbo))
 
     /// 画面のコマを描き終えた後に 1 回呼ぶ。上限を超えた分のメッシュを捨て、毎コマの作り直しを知らせる。
