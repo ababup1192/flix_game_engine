@@ -81,7 +81,7 @@ type webTouch struct {
 }
 
 var webDpadDirs = []string{"up", "down", "left", "right"}
-var webGestureNames = map[string]bool{"longPress": true, "swipeLeft": true, "swipeRight": true}
+var webGestureNames = map[string]bool{"longPress": true, "swipeLeft": true, "swipeRight": true, "swipeUp": true, "swipeDown": true}
 var webOrientations = map[string]bool{"": true, "any": true, "landscape": true, "portrait": true}
 
 // webKeyCodes は GameEngine.Key の名前のうち、KeyboardEvent.code が名前と違う物（engine_web/src/WebLayer.flix の keyCode と同じ表）。
@@ -201,7 +201,7 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 		t.TouchGestures = map[string]string{}
 		for _, name := range sortedKeys(s.TouchGestures) {
 			if !webGestureNames[name] {
-				return t, fmt.Errorf("project.json の web.touchGestures の %q を知らない。\n  次: longPress・swipeLeft・swipeRight のどれかにする", name)
+				return t, fmt.Errorf("project.json の web.touchGestures の %q を知らない。\n  次: longPress・swipeLeft・swipeRight・swipeUp・swipeDown のどれかにする", name)
 			}
 			code, err := codeOf("web.touchGestures."+name, s.TouchGestures[name])
 			if err != nil {

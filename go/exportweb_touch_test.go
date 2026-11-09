@@ -87,9 +87,19 @@ func TestResolveWebTouchRejectsActionWithoutKnownKey(t *testing.T) {
 
 func TestResolveWebTouchRejectsUnknownGesture(t *testing.T) {
 	game := writeTouchGame(t, touchKeys)
-	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "touchGestures": {"swipeUp": "confirm"}}`)
+	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "touchGestures": {"pinch": "confirm"}}`)
 	if _, err := resolveWebTouch(game, raw); err == nil {
 		t.Error("知らないジェスチャーは誤りのはず")
+	}
+}
+
+func TestResolveWebTouchResolvesVerticalSwipes(t *testing.T) {
+	game := writeTouchGame(t, touchKeys)
+	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "touchGestures": {"swipeUp": "confirm", "swipeDown": "confirm"}}`)
+	got, err := resolveWebTouch(game, raw)
+	want := map[string]string{"swipeUp": "KeyZ", "swipeDown": "KeyZ"}
+	if err != nil || !mapsEqual(got.TouchGestures, want) {
+		t.Errorf("上下の払いも操作のキーに解くはず: %v %v", got.TouchGestures, err)
 	}
 }
 

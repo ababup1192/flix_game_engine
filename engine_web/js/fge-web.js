@@ -464,6 +464,7 @@ function fgeApplyLayout() {
 }
 
 // canvas の上の指: 離した時にタップ（その位置のクリック）・縦のドラッグはホイール・横に払うとスワイプ・長押し。
+// 縦のドラッグは、離した時に縦へ払った形なら swipeUp / swipeDown のキーも出す（ホイールは動かしている間に出したまま）。
 // 横のドラッグの間は、マウスの左ボタンを押したまま動かすのと同じに見せる（横と決まった所で押し始め、位置は指に付いて動く。離すと押しも離れる）。
 // スライダーを指で動かせるように。
 // 長押しは、動かさずに fgeLongPressMs 以上置いてから離した時に出す（離した時のタップの代わり）。
@@ -538,6 +539,14 @@ function fgeGestureUp(e) {
     if (!fromEdge && Math.abs(dx) >= fgeSwipeMin && Math.abs(dx) >= Math.abs(dy) * 1.5) {
       var key = fgeGestureKey(dx < 0 ? "swipeLeft" : "swipeRight");
       if (key) fgeTapKey(key);
+    }
+  } else if (g.mode === "scroll") {
+    var sdx = e.clientX - g.x0, sdy = e.clientY - g.y0;
+    // WhyNot: 上下の端から始まった払いを出さない — 通知の引き出しとホームへ戻る指の動きと同じで、両方が起きる。
+    var fromEdgeY = g.y0 < fgeEdgeMargin || g.y0 > innerHeight - fgeEdgeMargin;
+    if (!fromEdgeY && Math.abs(sdy) >= fgeSwipeMin && Math.abs(sdy) >= Math.abs(sdx) * 1.5) {
+      var vkey = fgeGestureKey(sdy < 0 ? "swipeUp" : "swipeDown");
+      if (vkey) fgeTapKey(vkey);
     }
   }
 }

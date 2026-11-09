@@ -126,3 +126,19 @@ App.make(...)
 - step を回すのは実機のふつうのコマだけ（F8 の停止・リモートのコマ・`App.traceFrame`・描き出し・flow は回さない）。
   デスクトップと画面なしは `localDownloads` で `start` が全部読み、表は全部 Loaded なので、step は毎コマ同じ World を返す。
 - テストで偽の downloads を流すなら、コマの間に `App.stepBackgroundLoad(app, w)` を呼ぶ（実機と同じ予算で全部の step を当てる）。
+
+## ブラウザ版の指の操作（`web.touchGestures`）
+
+project.json の `"web": { "keysDoc": "assets/<名前>.keys.json", "touchGestures": { "swipeUp": "advance" } }` の値はキーの Doc の操作の名前。
+`bin/fge export-web` がキーに解き、fge-web.js が canvas の上の指の動きでそのキーを 1 回押す。ゲームの側はキーを読むだけ。
+
+| 名前 | いつ出るか |
+|---|---|
+| `longPress` | 動かさずに 650ms 以上置いてから離した時（タップの代わり） |
+| `swipeLeft` / `swipeRight` | 横へ 60 CSS px 以上・縦の 1.5 倍以上動かして離した時 |
+| `swipeUp` / `swipeDown` | 縦へ 60 CSS px 以上・横の 1.5 倍以上動かして離した時 |
+
+- 画面の端（24 CSS px）から始まった払いは出さない（OS の「戻る」・通知・ホームの指と重なる）。
+- 縦のドラッグは、割り当ての有無に関わらず動かしている間ホイール（40 CSS px で 1 刻み・指を下へ引くと上へ回した向き）を出す。
+  縦の払いで送るゲームは、読む画面でホイールに別の意味（上で履歴を開く など）を持たせない。履歴の画面のスクロールはホイールで受けてよい。
+- 縦のドラッグは左ボタンを押さない（横のドラッグだけ押したまま動かす）ので、払いがクリックとして重ねて届くことはない。
