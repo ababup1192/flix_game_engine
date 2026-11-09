@@ -329,7 +329,7 @@ mod TestGltf {
         let name = ShaderDoc.materialTexReads(materialA(m)#spec, None) |> List.head |> Option.map(fst) |> Option.getWithDefault("");
         let image = m#textures |> List.find(t -> Texture3d.name(t) == name);
         Assert.assertEq(expected = Some((4, 4, -65536)),
-            Option.map(t -> (Texture3d.width(t), Texture3d.height(t), Vector.get(0, Texture3d.argb(t))), image))
+            Option.map(t -> (Texture3d.width(t), Texture3d.height(t), Vector.get(0, TestDecoder.pixelsOf(t))), image))
 
     /// sampler の magFilter が NEAREST の絵は Nearest で読む。
     @Test
@@ -368,4 +368,25 @@ mod TestGltf {
         Assert.assertEq(expected = (true, true, 0),
             (Mesh3d.contentHash(plain#mesh) == Mesh3d.contentHash(textured()#mesh),
              List.forAll(p -> Option.isEmpty(p#material), plain#parts), List.length(plain#textures)))
+
+    // ── 鍵つきの読み込み ──
+
+    def partHashes(model: Model3d.Model3d): List[String] = model#parts |> List.map(p -> Mesh3d.contentHash(p#mesh))
+
+    /// fromGlbKeyed の形の鍵は、同じ key なら同じ。
+    @Test
+    def testFromGlbKeyedHashFollowsKey(): Unit \ Assert =
+        Assert.assertEq(expected = Gltf.fromGlbKeyed("a.glb@v1", triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)) |> Result.map(partHashes),
+            Gltf.fromGlbKeyed("a.glb@v1", triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)) |> Result.map(partHashes))
+
+    /// key が違えば、同じバイトでも形の鍵は違う。
+    @Test
+    def testFromGlbKeyedHashDiffersByKey(): Unit \ Assert =
+        Assert.assertTrue((Gltf.fromGlbKeyed("a.glb@v1", triangleGlb("", "")) |> Result.map(partHashes)) != (Gltf.fromGlbKeyed("a.glb@v2", triangleGlb("", "")) |> Result.map(partHashes)))
+
+    /// fromGlbKeyed は形の中身を変えない（頂点の位置は fromGlb と同じ）。
+    @Test
+    def testFromGlbKeyedKeepsPositions(): Unit \ Assert =
+        Assert.assertEq(expected = Gltf.fromGlb(triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)),
+            Gltf.fromGlbKeyed("a.glb@v1", triangleGlb("", "")) |> Result.map(m -> Mesh3d.positions(m#mesh)))
 }

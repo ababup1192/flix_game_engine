@@ -23,6 +23,10 @@
   （`WorldRead`・`WorldLog`・`WorldSaves`・`WorldSettings`・`WorldMenu`）に置き、外から呼ばない物は pub にしない。
   View の部品は `View.Env` とその場面の payload だけを受ける。
 - **プレイヤーは詰まない**: どの結末もクレジットを経てタイトル画面へ戻る。Doc やシナリオが壊れても fail-open で起動する。
+- **ブラウザ版の書き出しは project.json の web 欄**: 文言 `startPrompt` は「タッチして開始」のまま。写真の背景は
+  `compress.lossyImages` の q85。背景・BGM・効果音を足したら `deferred` に入れるか決める（タイトルの背景と最初に鳴る音は入れない。
+  書き方と届く前のふるまいは engine の `docs/startup.md`）。届く前の背景・環境音で暗転して待つ規則は `WorldRead` の「素材の待ち」の節
+  （入口は `Game.withAssetLoading` で、Main とブラウザの入口だけが足す。テスト・flow・描き出しは全部届いた形のまま）。
 - 文字送り（UiTypewriter）・ルビつきの字の配置と折り返し（RichText.placeRuby）・シナリオの実行（YarnRunner）・
   ミキサー（AudioMixer）はエンジンの物を使う。自前の文字折り・会話の進め方・音量の掛け算を書かない。
 

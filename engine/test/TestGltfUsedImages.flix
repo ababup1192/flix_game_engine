@@ -31,7 +31,7 @@ mod TestGltf.UsedImages {
     def testOnlyTheBaseColorImageIsDecoded(): Unit \ {Assert, IO} =
         let red = -65536;
         Assert.assertEq(expected = Ok(Vector#{red} :: Nil),
-            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(Texture3d.argb)))
+            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
 
     @Test
     def testBaseColorLimitShrinksTheTexture(): Unit \ {Assert, IO} =
@@ -48,7 +48,7 @@ mod TestGltf.UsedImages {
     @Test
     def testUsingDecodesWithTheGivenDecoder(): Unit \ {Assert, IO} =
         let green = -16711936;
-        let decoder = { decode = _ -> checked_ecast(Ok({ width = 1, height = 1, argb = Vector#{green} })) };
+        let decoder = ImageData.decoderOf(_ -> checked_ecast(Ok({ width = 1, height = 1, argb = Vector#{green} })));
         Assert.assertEq(expected = Ok(Vector#{green} :: Nil),
-            Gltf.fromGlbTexturedUsing(decoder, Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(Texture3d.argb)))
+            Gltf.fromGlbTexturedUsing(decoder, Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
 }

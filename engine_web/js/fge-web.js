@@ -112,6 +112,41 @@ function fgeReadGlTextureArgb(texture, w, h, argb) {
   return true;
 }
 
+var fgeCopyFramebuffer = null;
+// WhyNot: copyTexImage2D で写さない — 透けない絵は RGB8 で上げていて、RGB8 の FBO から RGBA8 へは写せない（ES 3.0 の決まり）。blit は形式を替えて写せる。
+// WhyNot: 鋏（SCISSOR_TEST）を付けたまま blit しない — blit も鋏で切られ、描きかけの場面の鋏の外が写らない。
+// WhyNot: colorMask を外さない — blit に効く断片の操作は画素の持ち主の検査と鋏だけ（ES 3.0 の決まり）。
+function fgeCopyTextureLevel0(source, w, h) {
+  var dest = fgeGl.getParameter(fgeGl.TEXTURE_BINDING_2D);
+  fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, w, h, 0, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, null);
+  if (fgeReadFramebuffer === null) fgeReadFramebuffer = fgeGl.createFramebuffer();
+  if (fgeCopyFramebuffer === null) fgeCopyFramebuffer = fgeGl.createFramebuffer();
+  var beforeRead = fgeGl.getParameter(fgeGl.READ_FRAMEBUFFER_BINDING);
+  var beforeDraw = fgeGl.getParameter(fgeGl.DRAW_FRAMEBUFFER_BINDING);
+  var scissor = fgeGl.isEnabled(fgeGl.SCISSOR_TEST);
+  fgeGl.bindFramebuffer(fgeGl.READ_FRAMEBUFFER, fgeReadFramebuffer);
+  fgeGl.framebufferTexture2D(fgeGl.READ_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, fgeH[source], 0);
+  fgeGl.bindFramebuffer(fgeGl.DRAW_FRAMEBUFFER, fgeCopyFramebuffer);
+  fgeGl.framebufferTexture2D(fgeGl.DRAW_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, dest, 0);
+  var complete = fgeGl.checkFramebufferStatus(fgeGl.READ_FRAMEBUFFER) === fgeGl.FRAMEBUFFER_COMPLETE &&
+    fgeGl.checkFramebufferStatus(fgeGl.DRAW_FRAMEBUFFER) === fgeGl.FRAMEBUFFER_COMPLETE;
+  var copied = false;
+  if (complete) {
+    if (scissor) fgeGl.disable(fgeGl.SCISSOR_TEST);
+    // WhyNot: 前に溜まった誤りを残さない — blit の誤りと見分けられず、写せたのに読み戻しへ落ちる。
+    fgeGl.getError();
+    fgeGl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, fgeGl.COLOR_BUFFER_BIT, fgeGl.NEAREST);
+    copied = fgeGl.getError() === fgeGl.NO_ERROR;
+    if (scissor) fgeGl.enable(fgeGl.SCISSOR_TEST);
+  }
+  fgeGl.framebufferTexture2D(fgeGl.DRAW_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, null, 0);
+  fgeGl.framebufferTexture2D(fgeGl.READ_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, null, 0);
+  fgeGl.bindFramebuffer(fgeGl.DRAW_FRAMEBUFFER, beforeDraw);
+  fgeGl.bindFramebuffer(fgeGl.READ_FRAMEBUFFER, beforeRead);
+  if (!copied) console.warn("[fge] テクスチャ " + source + " を GPU の中で写せない（" + (complete ? "blit の誤り" : "FBO が不完全") + "）— 読み戻して写す");
+  return copied;
+}
+
 function fgeDecodeFailed(why) { return { error: "絵を解けない: " + why, width: 0, height: 0, argb: null }; }
 function fgeBitmapArgb(bitmap) {
   var w = bitmap.width, h = bitmap.height;
@@ -125,6 +160,11 @@ function fgeBitmapArgb(bitmap) {
   fgeGl.bindTexture(fgeGl.TEXTURE_2D, before);
   fgeGl.deleteTexture(texture);
   return read ? { error: "", width: w, height: h, argb: argb } : fgeDecodeFailed("読み戻しの FBO が不完全");
+}
+
+function fgeImageTypeOfBytes(bytes) {
+  var head = bytes[0] & 255;
+  return head === 0x89 ? "image/png" : head === 0xff ? "image/jpeg" : head === 0x52 ? "image/webp" : "application/octet-stream";
 }
 
 var fgeDecoded = null;
@@ -143,8 +183,7 @@ function fgeDecodeImage(bytes, done) {
     done();
   };
   // WhyNot: 型を空にしない — 中身から形式を見分けるのに頼ると、ブラウザによって WebP を絵と見なさない恐れがある。ゲームが読むバイトに道は無いので頭のバイトで決める。
-  var head = bytes[0] & 255;
-  var type = head === 0x89 ? "image/png" : head === 0xff ? "image/jpeg" : head === 0x52 ? "image/webp" : "application/octet-stream";
+  var type = fgeImageTypeOfBytes(bytes);
   // WhyNot: .then(...).catch(...) の形にしない — done() の先で走るゲームの例外まで受けて、解読の失敗として 2 回目の done() を呼ぶ。
   createImageBitmap(new Blob([bytes], { type: type }), { premultiplyAlpha: "none", colorSpaceConversion: "none" }).then(function (bitmap) {
     var result;
@@ -418,8 +457,6 @@ function fgeApplyLayout() {
   body.classList.toggle("fge-pad-on", padOn);
   body.classList.toggle("fge-want-landscape", fgeWeb.orientation === "landscape");
   body.classList.toggle("fge-want-portrait", fgeWeb.orientation === "portrait");
-  var start = document.getElementById("fge-start");
-  if (start) start.textContent = coarse ? "タップで始める" : "クリックかキーで始める";
   // WhyNot: orientationchange を待たない — 発火の時にはまだ前の向きの大きさのままの端末がある。大きさの変化（resize）で見る。
   var orientation = innerWidth >= innerHeight ? "landscape" : "portrait";
   if (fgeLastOrientation !== null && orientation !== fgeLastOrientation) fgePadReleaseAll();
@@ -643,10 +680,39 @@ function fgeAssetBytes(path) {
 var fgeImages = new Map();
 function fgeTexImageBitmap(path, alpha) {
   var bmp = fgeImages.get(path);
-  if (!bmp) return;
+  if (!bmp) {
+    console.warn("[fge] 絵 " + path + " の ImageBitmap が無い — 上げない");
+    return false;
+  }
   fgeGl.pixelStorei(fgeGl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   if (alpha) fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bmp);
   else fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGB8, fgeGl.RGB, fgeGl.UNSIGNED_BYTE, bmp);
+  return true;
+}
+
+// 版は道の後ろの最後の @ から。
+function fgePlatformKey(path) { return fgeNormPath(path) + "@" + fgeVersion; }
+function fgeTexImagePlatform(key) { return fgeTexImageBitmap(key.slice(0, key.lastIndexOf("@")), true); }
+// WhyNot: 読み直しを「無い」にしない — 2 つの部屋が同じ jpg を貼ると、後の部屋の読み込みが道を読めずに落ちる。空のバイトでも platformImage が持っている絵を使う。
+var fgeHeldImages = new Set();
+var fgeEmptyBytes = new Uint8Array(0);
+// done は必ず後から 1 回呼ぶ。
+// WhyNot: ImageBitmap にした後も後回しの道の生のバイトを持たない — iOS Safari の 1 タブのメモリに、同じ絵が解いた物と二重に載る。
+// WhyNot: 後回しでない道のバイトは空にしない — 起動の素材はゲームが何度でも読む前提で書かれている。
+function fgeHoldImage(path, done) {
+  var p = fgeNormPath(path);
+  var bytes = fgeAssets.get(p);
+  var label = "[loadtime] hold " + p;
+  if (fgeDecodeTimes !== null) console.time(label);
+  var finish = function () { if (fgeDecodeTimes !== null) console.timeEnd(label); done(); };
+  createImageBitmap(new Blob([bytes], { type: fgeImageTypeOfBytes(bytes) }), { premultiplyAlpha: "none", colorSpaceConversion: "none" }).then(function (bitmap) {
+    fgeImages.set(p, bitmap);
+    if (fgeIsDeferredPath(p)) {
+      fgeHeldImages.add(p);
+      fgeAssets.set(p, fgeEmptyBytes);
+    }
+    finish();
+  }, function (e) { console.warn("[fge] 絵 " + p + " を解けない: " + (e && e.message || e)); finish(); });
 }
 
 // ── 音 ──
@@ -656,6 +722,7 @@ var fgeAudio = {
   play: function (name) {
     var s = this.sounds.get(name);
     if (!s || !this.ctx) return;
+    if (fgeDecodeTimes !== null && fgeDeferred.byName.has(name)) console.log("[loadtime] 後回しの音 " + name + " を鳴らす at " + performance.now().toFixed(0) + " ms");
     this.stop(name);
     var src = this.ctx.createBufferSource();
     src.buffer = s.buffer;
@@ -688,6 +755,7 @@ var fgeAudio = {
     s.loop = !!loop;
     if (s.source) s.source.loop = s.loop;
   },
+  isLooping: function (name) { var s = this.sounds.get(name); return !!(s && s.loop); },
   setMaster: function (g) { if (this.master) this.master.gain.value = Math.max(0, Math.min(1, g)); },
   seconds: function (name) { var s = this.sounds.get(name); return s ? s.buffer.duration : 0; },
   // WhyNot: タブが裏の間も鳴らし続けない — ゲームのループは止まるのに、ループの曲だけ先へ進む。
@@ -726,12 +794,222 @@ var fgeStats = {
   reset: function () { this.cpuRing.reset(); this.lagRing.reset(); }
 };
 
-// ── 起動の進み具合と終わりの画面 ──
+// ── 起動画面（デスクトップの Splash.flix と同じ配置・色・ゲージ・字）──
+// 押す前も押した後（wasm の LoadProgress）も、ここが #fge-splash の canvas に描く 1 枚の絵を出し続ける。
+// 寸法の式は engine/src/render2d/Splash.flix の drawables と同じ（design の座標で組み、描き先へ黒帯ありで広げる）。
+// WhyNot: 押す前の画面を HTML の字とバーで組まない — 押した後の wasm の起動画面とデスクトップがドットの字で描くので、同じ絵に見えない。
+var fgeSplash = {
+  data: null, bundle: null, design: { w: 0, h: 0 }, phase: "", ratio: null, ready: false, tapped: false,
+  font: null, logo: null, glyphs: null, tints: {}, canvas: null, ctx: null,
+  startedAt: performance.now(), drawn: "", running: false, layout: null
+};
+var fgeSplashColors = { backdrop: "#0b0e12", white: "#ffffff", brand: "rgb(158,204,242)", dim: "rgb(140,148,163)" };
 function fgeProgress(phase, done, total) {
-  var bar = document.getElementById("fge-bar");
-  var text = document.getElementById("fge-phase");
-  if (text) text.textContent = phase + (total > 0 ? " " + done + "/" + total : "");
-  if (bar) bar.style.width = (total > 0 ? Math.round(100 * done / total) : 100) + "%";
+  fgeSplash.phase = phase;
+  fgeSplash.ratio = total > 0 ? Math.max(0, Math.min(1, done / total)) : null;
+}
+function fgeSplashInit(bundle) {
+  var data = bundle.splash || {};
+  fgeSplash.data = data;
+  fgeSplash.bundle = bundle;
+  fgeSplash.design = fgeSplashDesign(bundle, data);
+  var prompt = document.getElementById("fge-prompt");
+  if (prompt) prompt.textContent = data.startPrompt || "Tap to start";
+  if (data.glyphs) {
+    fgeSplash.glyphs = new Map();
+    for (var i = 0; i + 14 <= data.glyphs.length; i += 14) {
+      var hex = function (at, n) { return parseInt(data.glyphs.substr(i + at, n), 16) || 0; };
+      fgeSplash.glyphs.set(hex(0, 4), { x: hex(4, 3), y: hex(7, 3), w: hex(10, 2), adv: hex(12, 2) });
+    }
+  }
+  var load = function (url, key) {
+    if (!url) return;
+    var img = new Image();
+    img.onload = function () { fgeSplash[key] = img; fgeSplash.tints = {}; fgeSplash.drawn = ""; };
+    img.src = url;
+  };
+  load(data.font, "font");
+  load(data.logo, "logo");
+  fgeSplashRun();
+}
+// 押した後に WebLayer が選ぶ design と同じ物（縦の design は web.portraitDesign と今の画面の比から ProjectLoader.portraitDesignOf と同じ式で）。
+function fgeSplashDesign(bundle, data) {
+  var spec = data.portraitDesign;
+  if (spec && fgeWantsPortrait() && innerWidth > 0 && innerHeight > 0) {
+    var h = Math.round(spec.width * innerHeight / innerWidth);
+    return { w: spec.width, h: Math.min(spec.maxHeight, Math.max(spec.minHeight, h)) };
+  }
+  if (bundle.design && bundle.design.w > 0 && bundle.design.h > 0) return { w: bundle.design.w, h: bundle.design.h };
+  return { w: Math.max(1, innerWidth), h: Math.max(1, innerHeight) };
+}
+function fgeSplashRun() {
+  if (fgeSplash.running) return;
+  fgeSplash.running = true;
+  var tick = function () {
+    if (!fgeSplash.running) return;
+    fgeSplashDraw();
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+// 後回しの素材の進み具合（配るバイトの割合）。後回しが無ければ null（2 本目の線を出さない）。
+function fgeSplashDeferredRatio() {
+  var all = 0, got = 0;
+  fgeDeferred.entries.forEach(function (e) {
+    all += e.bytes;
+    if (e.state === "downloaded" || e.state === "loaded" || e.state === "released") got += e.bytes;
+  });
+  return all > 0 ? got / all : null;
+}
+function fgeSplashLayout(dw, dh) {
+  var d = fgeSplash.data || {};
+  var scale = Math.max(1, Math.floor(dh / 200));
+  var logoBase = fgeSplash.logo ? fgeSplash.logo.naturalHeight : 0;
+  var logoH = 0;
+  if (logoBase > 0) {
+    logoH = logoBase / 4;
+    [logoBase / 4, logoBase / 2, logoBase, logoBase * 2].forEach(function (h) { if (h <= dh * 0.3) logoH = Math.max(logoH, h); });
+  }
+  var lineH = ((d.ascent || 9) + (d.descent || 2) + (d.lineGap || 0)) * scale;
+  var gaugeH = Math.max(2, 3 * scale);
+  var gap = 4 * scale;
+  var blockH = logoH + gap + lineH + gap * 2 + gaugeH + gap + lineH;
+  var top = Math.floor((dh - blockH) / 2);
+  var cx = Math.floor(dw / 2);
+  var titleTop = top + logoH + gap;
+  var gaugeTop = titleTop + lineH + gap * 2;
+  var gaugeW = Math.floor(Math.min(dw - 16 * scale, dw * 0.6));
+  return { scale: scale, logoH: logoH, lineH: lineH, gaugeH: gaugeH, cx: cx, logoTop: top, titleTop: titleTop,
+           gaugeTop: gaugeTop, gaugeW: gaugeW, gaugeLeft: Math.floor(cx - gaugeW / 2), phaseTop: gaugeTop + gaugeH + gap };
+}
+// 白い字のアトラスを 1 色に塗った写し（色ごとに 1 枚だけ作る）。
+function fgeSplashTint(color) {
+  var t = fgeSplash.tints[color];
+  if (t) return t;
+  var f = fgeSplash.font;
+  t = document.createElement("canvas");
+  t.width = f.naturalWidth; t.height = f.naturalHeight;
+  var c = t.getContext("2d");
+  c.drawImage(f, 0, 0);
+  c.globalCompositeOperation = "source-in";
+  c.fillStyle = color;
+  c.fillRect(0, 0, t.width, t.height);
+  fgeSplash.tints[color] = t;
+  return t;
+}
+function fgeSplashText(ctx, text, L, top, color) {
+  if (!text || !fgeSplash.font || !fgeSplash.glyphs) return;
+  var cellH = (fgeSplash.data && fgeSplash.data.cellH) || 11;
+  var width = 0;
+  for (var i = 0; i < text.length; i++) { var g0 = fgeSplash.glyphs.get(text.charCodeAt(i)); if (g0) width += g0.adv; }
+  var tint = fgeSplashTint(color);
+  var pen = 0;
+  var x0 = L.cx - width * L.scale / 2;
+  for (var j = 0; j < text.length; j++) {
+    var g = fgeSplash.glyphs.get(text.charCodeAt(j));
+    if (!g) continue;
+    if (g.w > 0) ctx.drawImage(tint, g.x, g.y, g.w, cellH, x0 + pen * L.scale, top, g.w * L.scale, cellH * L.scale);
+    pen += g.adv;
+  }
+}
+function fgeSplashDraw() {
+  var canvas = fgeSplash.canvas || (fgeSplash.canvas = document.getElementById("fge-splash"));
+  if (!canvas) return;
+  var dpr = window.devicePixelRatio || 1;
+  var cw = Math.max(1, Math.round(canvas.clientWidth * dpr)), ch = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  // WhyNot: 押した後に design を測り直さない — 押した後の design は WebLayer が main で 1 回だけ決め、その後は回しても変えない。
+  if (!fgeSplash.tapped && fgeSplash.bundle) fgeSplash.design = fgeSplashDesign(fgeSplash.bundle, fgeSplash.data);
+  var dw = fgeSplash.design.w, dh = fgeSplash.design.h;
+  var turns = 0;
+  if (fgeSplash.ratio === null) { var sec = (performance.now() - fgeSplash.startedAt) / 1000; turns = sec - Math.floor(sec); }
+  var sub = fgeSplashDeferredRatio();
+  var key = [cw, ch, dw, dh, fgeSplash.phase, fgeSplash.ratio, turns, sub, !!fgeSplash.font, !!fgeSplash.logo].join("|");
+  if (key === fgeSplash.drawn) return;
+  fgeSplash.drawn = key;
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  var ctx = fgeSplash.ctx || (fgeSplash.ctx = canvas.getContext("2d"));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = fgeSplashColors.backdrop;
+  ctx.fillRect(0, 0, cw, ch);
+  if (dw <= 0 || dh <= 0) return;
+  // 黒帯の付け方は RenderFrame.calcViewport と同じ（design の比のまま描き先に収まる最大の枠）。
+  var vpW, vpH;
+  if (cw / ch > dw / dh) { vpH = ch; vpW = Math.trunc(ch * dw / dh); } else { vpW = cw; vpH = Math.trunc(cw * dh / dw); }
+  var vpX = Math.floor((cw - vpW) / 2), vpY = Math.floor((ch - vpH) / 2), k = vpW / dw;
+  ctx.setTransform(k, 0, 0, k, vpX, vpY);
+  ctx.imageSmoothingEnabled = false;
+  var L = fgeSplashLayout(dw, dh);
+  fgeSplash.layout = { L: L, k: k / dpr, x: vpX / dpr, y: vpY / dpr, dh: dh };
+  if (fgeSplash.logo && L.logoH > 0) {
+    var lw = L.logoH * fgeSplash.logo.naturalWidth / fgeSplash.logo.naturalHeight;
+    ctx.drawImage(fgeSplash.logo, Math.floor(L.cx - lw / 2), L.logoTop, lw, L.logoH);
+  }
+  fgeSplashText(ctx, "Flix_GE", L, L.titleTop, fgeSplashColors.brand);
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = fgeSplashColors.white;
+  ctx.fillRect(L.gaugeLeft, L.gaugeTop, L.gaugeW, L.gaugeH);
+  ctx.globalAlpha = 1;
+  if (fgeSplash.ratio !== null) {
+    var fw = Math.floor(L.gaugeW * fgeSplash.ratio);
+    if (fw >= 1) ctx.fillRect(L.gaugeLeft, L.gaugeTop, fw, L.gaugeH);
+  } else {
+    var bw = Math.floor(L.gaugeW * 0.25);
+    ctx.fillRect(L.gaugeLeft + Math.floor((L.gaugeW - bw) * turns), L.gaugeTop, bw, L.gaugeH);
+  }
+  // 2 本目の細い線: 後回しの素材。押すのを待たせる物ではないので、ゲージより細く薄く。
+  if (sub !== null) {
+    var sh = Math.max(1, Math.floor(L.gaugeH / 4));
+    var sy = L.gaugeTop + L.gaugeH + sh;
+    ctx.globalAlpha = 0.10;
+    ctx.fillRect(L.gaugeLeft, sy, L.gaugeW, sh);
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = fgeSplashColors.brand;
+    ctx.fillRect(L.gaugeLeft, sy, Math.floor(L.gaugeW * sub), sh);
+    ctx.globalAlpha = 1;
+  }
+  fgeSplashText(ctx, fgeSplash.phase, L, L.phaseTop, fgeSplashColors.dim);
+  fgeSplashPlacePrompt();
+}
+// 「押して始める」の文言と指のアイコンを、一行の下の空きへ置く（CSS px）。
+function fgeSplashPlacePrompt() {
+  var el = document.getElementById("fge-start");
+  var at = fgeSplash.layout;
+  if (!el || !at) return;
+  var L = at.L;
+  var below = L.phaseTop + L.lineH;
+  var y = at.y + (below + (at.dh - below) * 0.42) * at.k;
+  var size = Math.max(15, Math.min(28, L.lineH * at.k * 0.55));
+  el.style.top = y.toFixed(1) + "px";
+  el.style.fontSize = size.toFixed(1) + "px";
+}
+function fgeSplashReady() {
+  fgeSplash.ready = true;
+  fgeProgress("ready", 1, 1);
+  fgeShow("fge-start", true);
+  fgeSplash.drawn = "";
+}
+// 触った点からの波紋（Material のリップル）。キーの時は文言の真ん中から。そのまま起動画面のゲージへつなぐ。
+function fgeSplashTapped(e) {
+  fgeSplash.tapped = true;
+  var boot = document.getElementById("fge-boot");
+  var start = document.getElementById("fge-start");
+  var x = innerWidth / 2, y = innerHeight / 2;
+  var point = e && e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e;
+  if (point && typeof point.clientX === "number" && (point.clientX !== 0 || point.clientY !== 0)) { x = point.clientX; y = point.clientY; }
+  else if (start) { var r = start.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
+  if (boot) {
+    var radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    var ripple = document.createElement("div");
+    ripple.className = "fge-ripple";
+    ripple.style.cssText = "left:" + (x - radius) + "px;top:" + (y - radius) + "px;width:" + (2 * radius) + "px;height:" + (2 * radius) + "px";
+    ripple.addEventListener("animationend", function () { ripple.remove(); });
+    boot.appendChild(ripple);
+  }
+  if (start) {
+    start.classList.add("fge-leaving");
+    setTimeout(function () { fgeShow("fge-start", false); }, 220);
+  }
+  fgeProgress("starting up...", 0, 0);
 }
 function fgeShow(id, on) { var el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; }
 function fgeWireFpsOverlay() {
@@ -752,6 +1030,7 @@ function fgeWireFpsOverlay() {
   requestAnimationFrame(tick);
 }
 function fgeStarted() {
+  fgeSplash.running = false;
   fgeShow("fge-boot", false);
   fgeWireFpsOverlay();
   if (fgeDecodeTimes !== null) console.log("[loadtime] 最初のコマまで " + performance.now().toFixed(0) + " ms");
@@ -780,17 +1059,26 @@ var fgeVersion = (function () {
 })();
 function fgeVersioned(path) { return fgeVersion ? path + "?v=" + fgeVersion : path; }
 // WhyNot: 1 回で諦めない — スマホの回線では、大きな束を取る途中で通信が切れる（Failed to fetch）ことがあり、取り直せば通る。
-async function fgeFetchBytes(path) {
+// WhyNot: signal を止めた後は取り直さない — 止めるのは後回しの行列が取り直しへ回す時で、ここで取り直すと同じ道を 2 本取る。
+async function fgeFetchBytes(path, signal) {
   var url = fgeVersioned(encodeURI(path));
   var last = null;
   for (var attempt = 0; attempt < 4; attempt++) {
     if (attempt > 0) await new Promise(function (r) { setTimeout(r, 500 * attempt * attempt); });
+    if (signal && signal.aborted) throw new Error(path + " を取るのを止めた");
     try {
-      var res = await fetch(url);
-      if (res.ok) return new Uint8Array(await res.arrayBuffer());
+      var res = await fetch(url, signal ? { signal: signal } : undefined);
+      if (res.ok) {
+        var got = new Uint8Array(await res.arrayBuffer());
+        fgeLoadLog.bytes += got.length;
+        fgeLoadLog.count++;
+        return got;
+      }
       last = new Error(path + " を取れない（" + res.status + "）");
+      last.status = res.status;
       if (res.status < 500) break;
     } catch (e) {
+      if (signal && signal.aborted) throw e;
       last = new Error(path + " を取れない（" + e.message + "）");
     }
   }
@@ -799,28 +1087,272 @@ async function fgeFetchBytes(path) {
 
 // 書き出しが替えた配る道（WebP・Opus・gzip）。素材の表と画像の表には論理の道（project.json の道）で入れる。
 var fgeTranscoded = {};
+// 取ったバイトの和（?loadtime=1 の「押すまでに取った量」。wasm は TeaVM の load が取るので入らない）。
+var fgeLoadLog = { bytes: 0, count: 0, tapped: false };
 function fgeServedPath(path) { return fgeTranscoded[path] || path; }
 // WhyNot: .gz を名前だけで解かない — 置き先によっては Content-Encoding: gzip を付けて配り、fetch が既に解いた中身が届く。
-async function fgeFetchAsset(path) {
+async function fgeFetchAsset(path, signal) {
   var served = fgeServedPath(path);
-  var bytes = await fgeFetchBytes("assets/" + served);
+  var bytes = await fgeFetchBytes("assets/" + served, signal);
+  if (/\.fontatlas-webp$/.test(served)) return await fgeJoinAtlasPixels(served, bytes);
   if (!/\.gz$/.test(served) || bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;
   var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+// 画素だけを WebP にしたアトラス（go/exportweb_compress.go の webAtlasSuffix）を、元のアトラスのバイトに組み直す。
+// 中身は「頭（52 バイト）・字の表（76 バイト × 字の数）・検算（16 バイト）」の後ろに、辺×辺の灰色の WebP。
+// 組み直した物は RenderFontCache.decode が画素の検算（CRC32）で確かめるので、解き方の誤りは組み込みフォントへの切り替えとして出る。
+// WhyNot: WebGL の readPixels で画素を取らない — 起動前で GL の文脈がまだ無い。2D の canvas は色空間の変換を切った ImageBitmap をそのまま写す。
+async function fgeJoinAtlasPixels(served, bytes) {
+  var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 52 || view.getUint32(0) !== 0x46474546 || view.getUint32(4) !== 0x4F4E5402) throw new Error(served + " はフォントアトラスの形でない");
+  var side = view.getInt32(12);
+  var tableEnd = 52 + view.getInt32(48) * 76;
+  var restEnd = tableEnd + 16;
+  if (side <= 0 || restEnd > bytes.length) throw new Error(served + " の頭の数が長さに合わない");
+  var bitmap = await createImageBitmap(new Blob([bytes.subarray(restEnd)], { type: "image/webp" }),
+    { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+  if (bitmap.width !== side || bitmap.height !== side) throw new Error(served + " の絵が " + bitmap.width + "x" + bitmap.height + "（頭は " + side + "）");
+  var canvas = new OffscreenCanvas(side, side);
+  var ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  var rgba = ctx.getImageData(0, 0, side, side).data;
+  var out = new Uint8Array(restEnd - 16 + side * side + 16);
+  out.set(bytes.subarray(0, tableEnd), 0);
+  for (var i = 0, o = tableEnd; i < side * side; i++, o++) out[o] = rgba[i * 4];
+  out.set(bytes.subarray(tableEnd, restEnd), tableEnd + side * side);
+  return out;
 }
 function fgeImageType(path) {
   var ext = (/\.([a-z0-9]+)$/i.exec(path) || [])[1];
   return { webp: "image/webp", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" }[(ext || "").toLowerCase()] || "";
 }
 // WhyNot: 解けない音で起動を止めない — 古い Safari は Opus を解けない。元の wav があれば取り直し、それも駄目ならその音だけ黙らせる。
-async function fgeDecodeSound(s) {
+async function fgeDecodeSound(s, signal) {
   try {
-    return await fgeAudio.ctx.decodeAudioData((await fgeFetchAsset(s.path)).buffer);
+    return await fgeAudio.ctx.decodeAudioData((await fgeFetchAsset(s.path, signal)).buffer);
   } catch (e) {
-    if (fgeServedPath(s.path) === s.path) throw e;
+    if (fgeServedPath(s.path) === s.path || (signal && signal.aborted)) throw e;
     console.warn("[fge] " + fgeServedPath(s.path) + " を解けないので " + s.path + " を取り直す（" + (e && e.message || e) + "）");
-    return await fgeAudio.ctx.decodeAudioData((await fgeFetchBytes("assets/" + s.path)).buffer);
+    return await fgeAudio.ctx.decodeAudioData((await fgeFetchBytes("assets/" + s.path, signal)).buffer);
   }
+}
+function fgeAddSound(s, buffer) {
+  fgeWarnSoundLength([s], buffer);
+  fgeAddDecodedSound(s, buffer);
+}
+// 圧縮で頭や末尾に詰め物が残るブラウザだと、ループの継ぎ目と seconds() がデスクトップとずれる。
+function fgeWarnSoundLength(sounds, buffer) {
+  var s = sounds[0];
+  if (s.seconds > 0 && Math.abs(buffer.duration - s.seconds) > 2 / buffer.sampleRate) {
+    console.warn("[fge] 音 " + sounds.map(function (x) { return x.name; }).join("・") + " の長さが元と違う（" + buffer.duration.toFixed(5) + " 秒・元は " + s.seconds.toFixed(5) + " 秒）");
+  }
+}
+function fgeAddDecodedSound(s, buffer) {
+  var gain = fgeAudio.ctx.createGain();
+  gain.connect(fgeAudio.master);
+  fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null,
+    loopStart: s.loopStart || 0, loopEnd: s.loopEnd || s.seconds || 0 });
+}
+function fgeBitmapOf(bytes, path) {
+  // WhyNot: 型を空にしない — 中身から形式を見分けるのに頼ると、ブラウザによって WebP を絵と見なさない恐れがある。
+  return createImageBitmap(new Blob([bytes], { type: fgeImageType(fgeServedPath(path)) }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+}
+
+// ── 後回しの素材（bundle.json の deferred）──
+// 状態は queued → downloading → downloaded（files は素材の表・絵は ImageBitmap にある）→ loaded（絵は WebLayer が登録した・音は解いた）。
+// 取れなければ failed。failed は間を置いて queued へ戻す（4xx は戻さない）。
+// 解き終えて生のバイトを捨てた files は released（stateOf は queued と言い、頼まれたら取り直す）。
+var fgeDeferred = { entries: [], byPath: new Map(), byName: new Map(), queue: [], running: 0, started: false, wasmReady: false, bootReady: false, hiddenAt: -1 };
+var fgeDeferredLimit = 2;
+// WhyNot: 隠れていた間の短いタブ切り替えでは取り直さない — デスクトップでは裏でも取り続けていて、途中まで取った分を捨てる。
+var fgeDeferredStaleMs = 2000;
+// WhyNot: 失敗した物をすぐ取り直さない — 回線が落ちている間に毎コマの request で戻すと、取っては失敗するのを繰り返して電池を食う。
+var fgeDeferredRetryMs = 5000;
+// WhyNot: online だけを待たない — iOS Safari は電波が弱い間に online を出さないまま戻り、失敗した物が取られないまま残る。
+var fgeDeferredSweepMs = 30000;
+
+function fgeDeferredPrepare(bundle, files, images, sounds) {
+  (bundle.deferred || []).forEach(function (d) {
+    var e = { path: fgeNormPath(d.path), bytes: d.bytes || 0, names: d.names || [], file: false, image: false, sounds: [],
+              state: "queued", why: "", arrivedAtRelease: false, permanent: false, failedAt: 0, gen: 0, abort: null, startedAt: 0 };
+    fgeDeferred.entries.push(e);
+    fgeDeferred.byPath.set(e.path, e);
+    e.names.forEach(function (name) { fgeDeferred.byName.set(name, e); });
+  });
+  files.forEach(function (path) { var e = fgeDeferred.byPath.get(fgeNormPath(path)); if (e) e.file = true; });
+  images.forEach(function (path) { var e = fgeDeferred.byPath.get(fgeNormPath(path)); if (e) e.image = true; });
+  sounds.forEach(function (s) {
+    var e = fgeDeferred.byPath.get(fgeNormPath(s.path));
+    if (e) { e.sounds.push(s); fgeDeferred.byName.set(s.name, e); }
+  });
+}
+function fgeIsDeferredPath(path) { return fgeDeferred.byPath.has(fgeNormPath(path)); }
+function fgeDeferredIsDeferred(nameOrPath) { return fgeDeferred.byName.has(nameOrPath) || fgeIsDeferredPath(nameOrPath); }
+function fgeDeferredEntry(nameOrPath) { return fgeDeferred.byPath.get(fgeNormPath(nameOrPath)) || fgeDeferred.byName.get(nameOrPath); }
+// 後回しでない道は起動の前に全部そろっているので loaded。
+// WhyNot: released を downloaded と言わない — 別のグループが同じ道を届いたと見て読み、無いバイトで Failed に固まる。
+function fgeDeferredState(nameOrPath) {
+  var e = fgeDeferredEntry(nameOrPath);
+  if (!e) return "loaded";
+  if (e.state === "released") return "queued";
+  return e.state === "failed" ? "failed:" + e.why : e.state;
+}
+// WhyNot: 絵と音を素材の表に入っただけで「届いた」にしない — 絵は WebLayer が登録するまで描けず、音は解くまで鳴らせない。
+function fgeDeferredArrived(e) {
+  if (e.state === "released") return e.arrivedAtRelease;
+  return e.state === "loaded" || (e.state === "downloaded" && !e.image && e.sounds.length === 0);
+}
+function fgeDeferredMissing() {
+  var out = [];
+  fgeDeferred.entries.forEach(function (e) {
+    if (fgeDeferredArrived(e)) return;
+    if (e.names.length > 0) e.names.forEach(function (n) { out.push(n); }); else out.push(e.path);
+  });
+  return out.join("\n");
+}
+function fgeDeferredRetryable(e, minAgeMs) { return e.state === "failed" && !e.permanent && performance.now() - e.failedAt >= minAgeMs; }
+function fgeDeferredRequeue(e) {
+  e.state = "queued";
+  e.why = "";
+}
+// WhyNot: 前から順に頭へ入れない — 頼まれた並びが逆になる。
+function fgeDeferredRequest(joined) {
+  var paths = String(joined).split("\n").filter(function (p) { return p.length > 0; });
+  for (var i = paths.length - 1; i >= 0; i--) {
+    var e = fgeDeferred.byPath.get(fgeNormPath(paths[i]));
+    if (!e) continue;
+    if (fgeDeferredRetryable(e, fgeDeferredRetryMs) || e.state === "released") fgeDeferredRequeue(e);
+    if (e.state !== "queued") continue;
+    var at = fgeDeferred.queue.indexOf(e);
+    if (at >= 0) fgeDeferred.queue.splice(at, 1);
+    fgeDeferred.queue.unshift(e);
+  }
+  fgeDeferredPump();
+}
+function fgeDeferredRetryFailed(minAgeMs) {
+  fgeDeferred.entries.forEach(function (e) {
+    if (!fgeDeferredRetryable(e, minAgeMs)) return;
+    fgeDeferredRequeue(e);
+    fgeDeferred.queue.push(e);
+  });
+  fgeDeferredPump();
+}
+// WhyNot: 2D の絵の ImageBitmap を登録の後も持たない — テクスチャへ上げた後は読まれず、iOS Safari の 1 タブのメモリを食う。files にもある絵は readBytes と platformImage が使うので残す。
+function fgeDeferredMarkLoaded(path) {
+  var e = fgeDeferred.byPath.get(fgeNormPath(path));
+  if (!e || e.state === "loaded") return;
+  e.state = "loaded";
+  if (e.image && !e.file) {
+    var bmp = fgeImages.get(e.path);
+    if (bmp) { bmp.close(); fgeImages.delete(e.path); }
+  }
+  fgeDeferredNote(e);
+}
+// WhyNot: 解き終えた後回しの files の生のバイトを持ち続けない — iOS Safari の 1 タブのメモリに、3D の部屋の glb が解いた形と二重に載る。
+// WhyNot: 後回しでない道は捨てない — 起動の素材はゲームが何度でも読む前提で書かれている。ImageBitmap にした絵は空のバイトのまま残す（fgeHoldImage）。
+function fgeDeferredRelease(joined) {
+  String(joined).split("\n").forEach(function (path) {
+    var p = fgeNormPath(path);
+    var e = fgeDeferred.byPath.get(p);
+    if (!e || fgeHeldImages.has(p) || !fgeAssets.has(p)) return;
+    fgeAssets.delete(p);
+    if (e.state === "downloaded" || e.state === "loaded") {
+      e.arrivedAtRelease = fgeDeferredArrived(e);
+      e.state = "released";
+    }
+  });
+}
+function fgeDeferredNote(e) {
+  if (fgeDecodeTimes === null) return;
+  console.log("[loadtime] deferred " + e.path + " " + e.bytes + " B " + fgeDeferredState(e.path) + " at " + performance.now().toFixed(0) + " ms" +
+    (e.startedAt > 0 ? "（取り始めから " + (performance.now() - e.startedAt).toFixed(0) + " ms）" : ""));
+}
+// WhyNot: wasm の load だけを待って始めない — 起動の素材を取っている最中に回線を取り合い、「タッチして開始」が遅れる。
+// WhyNot: 起動の素材だけを待って始めない — wasm より先に回線を使い、押してから main までが延びる。
+function fgeDeferredStart() {
+  if (fgeDeferred.started || !fgeDeferred.wasmReady || !fgeDeferred.bootReady) return;
+  fgeDeferred.started = true;
+  fgeDeferred.queue = fgeDeferred.entries.filter(function (e) { return e.state === "queued"; });
+  fgeDeferredPump();
+}
+function fgeDeferredPump() {
+  if (!fgeDeferred.started) return;
+  while (fgeDeferred.running < fgeDeferredLimit && fgeDeferred.queue.length > 0) {
+    var e = fgeDeferred.queue.shift();
+    if (e.state === "queued") fgeDeferredFetch(e);
+  }
+}
+// WhyNot: 4xx を取り直さない — 束に無い・道の誤りで、何度取っても同じ答え。408（待ちすぎ）と 429（頼みすぎ）は回線の都合なので取り直す。
+function fgeIsPermanentFailure(err) {
+  var status = err && err.status;
+  return typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429;
+}
+function fgeDeferredFetch(e) {
+  var gen = ++e.gen;
+  var ctl = typeof AbortController === "function" ? new AbortController() : null;
+  e.state = "downloading";
+  e.abort = ctl;
+  e.startedAt = performance.now();
+  fgeDeferred.running++;
+  fgeDeferredReceive(e, gen, ctl ? ctl.signal : undefined).then(function () {
+    if (e.gen === gen) fgeDeferredNote(e);
+  }, function (err) {
+    if (e.gen !== gen) return;
+    e.state = "failed";
+    e.why = String(err && err.message || err);
+    e.permanent = fgeIsPermanentFailure(err);
+    e.failedAt = performance.now();
+    console.warn("[fge] 後回しの素材 " + e.path + (e.sounds.length > 0 ? "（音 " + e.sounds.map(function (s) { return s.name; }).join("・") + "）" : "") + " を取れない — " + (e.permanent ? "取り直さない" : "間を置いて取り直す") + ": " + e.why);
+    fgeDeferredNote(e);
+  }).then(function () {
+    if (e.gen === gen) { e.abort = null; fgeDeferred.running--; }
+    fgeDeferredPump();
+  });
+}
+// WhyNot: 同じ道を名前ごとに解かない — 1 本の音を 2 つの名前で宣言すると、取るのも解くのも 2 回になる。解いた物を全部の名前で使う。
+async function fgeDeferredReceive(e, gen, signal) {
+  if (e.sounds.length > 0) {
+    var buffer = await fgeDecodeSound(e.sounds[0], signal);
+    if (e.gen !== gen) return;
+    fgeWarnSoundLength(e.sounds, buffer);
+    e.sounds.forEach(function (s) { fgeAddDecodedSound(s, buffer); });
+    e.state = "loaded";
+    return;
+  }
+  var bytes = await fgeFetchAsset(e.path, signal);
+  if (e.gen !== gen) return;
+  if (e.file) fgeAssets.set(e.path, bytes);
+  if (e.image) {
+    var bitmap = await fgeBitmapOf(bytes, e.path);
+    if (e.gen !== gen) { bitmap.close(); return; }
+    fgeImages.set(e.path, bitmap);
+  }
+  e.state = "downloaded";
+}
+function fgeDeferredRestart(e) {
+  e.gen++;
+  if (e.abort) e.abort.abort();
+  e.abort = null;
+  e.state = "queued";
+  fgeDeferred.running--;
+  fgeDeferred.queue.unshift(e);
+}
+function fgeWireDeferred() {
+  window.addEventListener("online", function () { fgeDeferredRetryFailed(0); });
+  setInterval(function () { if (!document.hidden) fgeDeferredRetryFailed(fgeDeferredRetryMs); }, fgeDeferredSweepMs);
+  // WhyNot: 裏から戻った時に取りかけの物を待ち続けない — iOS Safari は裏で通信を止め、切れた fetch が返らないままになる事がある。
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { fgeDeferred.hiddenAt = performance.now(); return; }
+    var hiddenAt = fgeDeferred.hiddenAt;
+    fgeDeferred.hiddenAt = -1;
+    fgeDeferredRetryFailed(0);
+    if (hiddenAt < 0 || performance.now() - hiddenAt < fgeDeferredStaleMs) return;
+    fgeDeferred.entries.filter(function (e) { return e.state === "downloading" && e.startedAt < hiddenAt; })
+      .reverse().forEach(fgeDeferredRestart);
+    fgeDeferredPump();
+  });
 }
 
 // WhyNot: 全部を同時に取りに行かない — 数十本を一度に投げると、スマホの回線で途中の物が切れやすくなる。
@@ -851,13 +1383,19 @@ async function fgeBoot() {
     fgeCaptureDesign = bundle.design;
     document.documentElement.style.setProperty("--fge-aspect", String(bundle.design.w / bundle.design.h));
   }
+  fgeSplashInit(bundle);
   if (fgeWeb.virtualPad) fgeBuildPad(fgeWeb.virtualPad);
   fgeApplyLayout();
   window.addEventListener("resize", fgeApplyLayout);
   if (fgeCoarseQuery && fgeCoarseQuery.addEventListener) fgeCoarseQuery.addEventListener("change", fgeApplyLayout);
-  var files = bundle.files || [];
-  var sounds = bundle.sounds || [];
-  var images = bundle.images || [];
+  var allFiles = bundle.files || [];
+  var allSounds = bundle.sounds || [];
+  var allImages = bundle.images || [];
+  fgeDeferredPrepare(bundle, allFiles, allImages, allSounds);
+  fgeWireDeferred();
+  var files = allFiles.filter(function (path) { return !fgeIsDeferredPath(path); });
+  var sounds = allSounds.filter(function (s) { return !fgeIsDeferredPath(s.path); });
+  var images = allImages.filter(function (path) { return !fgeIsDeferredPath(path); });
   var inFiles = new Set(files);
   var total = files.length + sounds.length + images.filter(function (path) { return !inFiles.has(path); }).length;
   var done = 0;
@@ -866,7 +1404,20 @@ async function fgeBoot() {
   fgeAudio.ctx = new Ctx();
   fgeAudio.master = fgeAudio.ctx.createGain();
   fgeAudio.master.connect(fgeAudio.ctx.destination);
-  fgeProgress("loading", 0, total);
+  // WhyNot: wasm を押した後に取らない — 押してから最初のコマまでに取る・compile・instantiate が全部乗る。main は GL の文脈を作った後（押した後）に呼ぶ。
+  var wasmFailed = null;
+  var wasmLoad = TeaVM.wasmGC.load(fgeVersioned("classes.wasm")).then(function (teavm) {
+    if (fgeDecodeTimes !== null) console.log("[loadtime] wasm を読み終えた " + performance.now().toFixed(0) + " ms");
+    fgeDeferred.wasmReady = true;
+    fgeDeferredStart();
+    return teavm;
+  }, function (e) {
+    wasmFailed = "このブラウザは WebAssembly GC に対応していないか、wasm を読めません（Chrome 119 以降・Safari 18.2 以降で開いてください）: " + (e && e.message || e);
+    fgeShow("fge-start", false);
+    fgeError(wasmFailed);
+    return null;
+  });
+  fgeProgress("loading assets...", 0, total);
   var jobs = files.map(function (path) {
     return async function () { fgeAssets.set(fgeNormPath(path), await fgeFetchAsset(path)); };
   }).concat(sounds.map(function (s) {
@@ -878,30 +1429,24 @@ async function fgeBoot() {
         console.error("[fge] 音 " + s.name + "（" + s.path + "）を解けない — この音は鳴らさない: " + (e && e.message || e));
         return;
       }
-      // 圧縮で頭や末尾に詰め物が残るブラウザだと、ループの継ぎ目と seconds() がデスクトップとずれる。
-      if (s.seconds > 0 && Math.abs(buffer.duration - s.seconds) > 2 / buffer.sampleRate) {
-        console.warn("[fge] 音 " + s.name + " の長さが元と違う（" + buffer.duration.toFixed(5) + " 秒・元は " + s.seconds.toFixed(5) + " 秒）");
-      }
-      var gain = fgeAudio.ctx.createGain();
-      gain.connect(fgeAudio.master);
-      fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null,
-        loopStart: s.loopStart || 0, loopEnd: s.loopEnd || s.seconds || 0 });
+      fgeAddSound(s, buffer);
     };
   }));
   await fgeEachLimited(jobs, 6, async function (job) {
     await job();
-    fgeProgress("loading", ++done, total);
+    fgeProgress("loading assets...", ++done, total);
   });
   // WhyNot: files にもある絵を取り直さない — 同じ URL を 2 回運ぶ。readBytes のために生のバイトが表に残るメモリは、3D の入口の速さを問わない範囲として受ける。
   await fgeEachLimited(images, 6, async function (path) {
     var kept = fgeAssets.get(fgeNormPath(path));
-    // WhyNot: 型を空にしない — 中身から形式を見分けるのに頼ると、ブラウザによって WebP を絵と見なさない恐れがある。
-    var blob = new Blob([kept || await fgeFetchAsset(path)], { type: fgeImageType(fgeServedPath(path)) });
-    fgeImages.set(fgeNormPath(path), await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
-    if (!kept) fgeProgress("loading", ++done, total);
+    fgeImages.set(fgeNormPath(path), await fgeBitmapOf(kept || await fgeFetchAsset(path), path));
+    if (!kept) fgeProgress("loading assets...", ++done, total);
   });
-  fgeShow("fge-start", true);
-  fgeProgress("click / tap to start", total, total);
+  fgeDeferred.bootReady = true;
+  fgeDeferredStart();
+  if (wasmFailed !== null) return;
+  fgeSplashReady();
+  if (fgeDecodeTimes !== null) console.log("[loadtime] タッチして開始まで " + performance.now().toFixed(0) + " ms");
   // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。
   // WhyNot: pointerdown で待たない — 指の pointerdown はユーザーの操作に数えられず（HTML の決まり）、Chrome は resume を断る。
   // WhyNot: click だけで待たない — iOS の Safari は押せる要素（ボタン・リンク・cursor: pointer）の上でしか指のタップを click にしないので、最初のタップが届かない。
@@ -914,6 +1459,8 @@ async function fgeBoot() {
       try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* 無い版 */ }
       fgeAudio.ctx.resume();
       fgeAudio.started = true;
+      fgeNoteTap();
+      fgeSplashTapped(e);
       events.forEach(function (name) { window.removeEventListener(name, go); });
       resolve();
     };
@@ -924,7 +1471,6 @@ async function fgeBoot() {
       console.log("[fge] storage.persist: " + (granted ? "granted（セーブは消されにくい）" : "denied（ブラウザが容量に困るとセーブが消えうる）"));
     }, function () { /* 頼めない頁 */ });
   }
-  fgeShow("fge-start", false);
 
   fgeResizeCanvas();
   new ResizeObserver(fgeResizeCanvas).observe(fgeCanvas);
@@ -937,18 +1483,22 @@ async function fgeBoot() {
   fgeGl = fgeCheckedGl(fgeGl);
   fgeWireInput();
   fgeWireMouseCapture();
-  fgeProgress("starting", 0, 0);
-  var teavm;
-  try {
-    teavm = await TeaVM.wasmGC.load(fgeVersioned("classes.wasm"));
-  } catch (e) {
-    throw new Error("このブラウザは WebAssembly GC に対応していないか、wasm を読めません（Chrome 119 以降・Safari 18.2 以降で開いてください）: " + (e && e.message || e));
-  }
+  var teavm = await wasmLoad;
+  if (teavm === null) return;
   try {
     teavm.exports.main([]);
   } catch (e) {
     fgeError("止まりました: " + (e && e.stack || e));
   }
+}
+
+function fgeNoteTap() {
+  if (fgeDecodeTimes === null || fgeLoadLog.tapped) return;
+  fgeLoadLog.tapped = true;
+  var got = fgeDeferred.entries.filter(function (e) { return e.state === "downloaded" || e.state === "loaded"; });
+  var deferredBytes = got.reduce(function (a, e) { return a + e.bytes; }, 0);
+  console.log("[loadtime] 押すまでに取った量 " + fgeLoadLog.bytes + " B（起動の素材 " + (fgeLoadLog.bytes - deferredBytes) + " B・後回し " + got.length + "/" +
+    fgeDeferred.entries.length + " 本 " + deferredBytes + " B・wasm は別）at " + performance.now().toFixed(0) + " ms");
 }
 
 // WhyNot: load だけを待たない — index.html の起動役は version.txt を確かめてからこの js を読むので、読み終えた時には load が済んでいることがある。

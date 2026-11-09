@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fontbake"
 	"github.com/ababup1192/flix_game_engine/go/internal/snd"
 )
 
@@ -120,6 +122,87 @@ func TestTranscodeGzipsAtlasWithoutTools(t *testing.T) {
 	transcodeWebAssets(out, &b, atlases, defaultWebCompress(), webEncoders{})
 	if b.Transcoded["font-atlas/f.fontatlas"] != "font-atlas/f.fontatlas.gz" {
 		t.Fatalf("transcoded = %v", b.Transcoded)
+	}
+}
+
+func TestTranscodeGzipsAtlasWhenDwebpIsMissing(t *testing.T) {
+	out, b, atlases := exportFixture(t)
+	r := transcodeWebAssets(out, &b, atlases, defaultWebCompress(), webEncoders{Cwebp: fakeToolSized(t, 10)})
+	if b.Transcoded["font-atlas/f.fontatlas"] != "font-atlas/f.fontatlas.gz" || !strings.Contains(strings.Join(r.Notes, "\n"), "dwebp") {
+		t.Fatalf("transcoded = %v notes = %v", b.Transcoded, r.Notes)
+	}
+}
+
+// gradientAtlas は RenderFontCache.encode と同じ並びのアトラス（字 2 つ・画素は距離場に似たなめらかな階調）。
+func gradientAtlas(side int) []byte {
+	var d []byte
+	d = binary.BigEndian.AppendUint64(d, 0x46474546_4F4E5402)
+	d = binary.BigEndian.AppendUint32(d, 1)
+	d = binary.BigEndian.AppendUint32(d, uint32(side))
+	d = append(d, make([]byte, 32)...)
+	d = binary.BigEndian.AppendUint32(d, 2)
+	for _, cp := range []uint32{'A', 0x6CC9} {
+		d = binary.BigEndian.AppendUint32(d, cp)
+		d = append(d, bytes.Repeat([]byte{7}, 72)...)
+	}
+	for y := 0; y < side; y++ {
+		for x := 0; x < side; x++ {
+			d = append(d, byte((x*x+y*3)%251))
+		}
+	}
+	return append(d, bytes.Repeat([]byte{9}, 16)...)
+}
+
+// 画素を WebP にした形から、頁と同じ手順（WebP を解いて 1 つの色を画素へ）で組み直すと元のアトラスとバイト一致する。
+func TestWebpAtlasJoinsBackToSameBytes(t *testing.T) {
+	enc := findWebEncoders(engineDirOf(repoRoot()), defaultWebCompress())
+	if enc.Cwebp == "" || enc.Dwebp == "" {
+		t.Skip("cwebp と dwebp が無い")
+	}
+	out := t.TempDir()
+	rel := "font-atlas/g.fontatlas"
+	orig := gradientAtlas(256)
+	if err := os.MkdirAll(filepath.Dir(exportAssetPath(out, rel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exportAssetPath(out, rel), orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := webBundle{}
+	transcodeWebAssets(out, &b, []string{rel}, defaultWebCompress(), enc)
+	if b.Transcoded[rel] != rel+webAtlasSuffix {
+		t.Fatalf("transcoded = %v", b.Transcoded)
+	}
+	served, _ := os.ReadFile(exportAssetPath(out, rel+webAtlasSuffix))
+	restLen := 52 + 2*76 + 16
+	webp := filepath.Join(t.TempDir(), "p.webp")
+	ppm := webp + ".ppm"
+	if err := os.WriteFile(webp, served[restLen:], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runQuiet(enc.Dwebp, "-quiet", webp, "-ppm", "-o", ppm); err != nil {
+		t.Fatal(err)
+	}
+	ppmBytes, _ := os.ReadFile(ppm)
+	_, _, _, rgb, err := splitPpm(ppmBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pixels := make([]byte, len(rgb)/3)
+	for i := range pixels {
+		pixels[i] = rgb[3*i]
+	}
+	back, err := fontbake.JoinPixels(served[:restLen], pixels)
+	if err != nil || !bytes.Equal(back, orig) {
+		t.Fatalf("組み直しが元と違う（%v）", err)
+	}
+}
+
+func TestSameGrayPixelsRejectsOneChangedPixel(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "a.ppm")
+	_ = os.WriteFile(p, append([]byte("P6\n2 1\n255\n"), 5, 5, 5, 6, 6, 7), 0o644)
+	if err := sameGrayPixels(p, []byte{5, 6}, 2); err == nil {
+		t.Fatal("1 画素違うのを通した")
 	}
 }
 

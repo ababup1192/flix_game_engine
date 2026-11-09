@@ -9,6 +9,7 @@ pub mod WebLayer {
     import fge.gl.GlContext
     import fge.web.AnimationFrame
     import fge.web.Browser
+    import fge.web.Deferred
     import fge.web.Keys
     import fge.web.Pointer
     import fge.web.WebAudio
@@ -86,9 +87,13 @@ pub mod WebLayer {
             looping = Ref.fresh(Static, false), closeRequested = Ref.fresh(Static, false),
             lastDt = Ref.fresh(Static, 1.0 / tickRate()), fullscreenAsked = Ref.fresh(Static, FullscreenAsk.NotAsked),
             cursor = Ref.fresh(Static, GameEngine.Cursor.Default), cursorVisible = Ref.fresh(Static, true),
-            yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty())
+            yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty()),
+            budget = Ref.fresh(Static, initialBudget()), spentMs = Ref.fresh(Static, 0.0), pendingTextures = Ref.fresh(Static, Nil),
+            pendingSounds = Ref.fresh(Static, Map.empty())
         };
         let fonts = RenderPaint.loadAssets(gl, paint, WebAssets.loader(), config, showProgress(state));
+        Ref.put(config#textureManifest |> List.filter(e -> Deferred.isDeferred(e#path) and Deferred.state(e#path) != "loaded"), state#pendingTextures);
+        let onPoll = () -> { registerArrivedTextures(gl, paint, state); playArrivedSounds(state) };
         let result =
             handleLoadProgress(state, () ->
             handleAudio(state, () ->
@@ -97,7 +102,7 @@ pub mod WebLayer {
             RenderPaintHandlers.handleDraw3d(paint, () ->
             Platform.runTasksInPlace(() ->
             handleFrameClock(state, () ->
-            handleWindow(state, () ->
+            handleWindow(state, onPoll, () ->
             RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (_, _) -> checked_ecast(()), () ->
             handleInput(state, () ->
             RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))))));
@@ -115,21 +120,31 @@ pub mod WebLayer {
     }
 
     /// handler が分け合う状態。looping = ループが回り始めたか（最初の pollEvents の後）・lastDt = 前のコマからの経過（秒）・
-    /// fullscreenAsked = 前に頼んだ全画面（同じ値を毎コマ頼み直さない）・yieldedAt = 起動中に最後にブラウザへ手を返した時刻（ms）。
+    /// fullscreenAsked = 前に頼んだ全画面（同じ値を毎コマ頼み直さない）・yieldedAt = 起動中に最後にブラウザへ手を返した時刻（ms）・
+    /// budget = 届いた 2D の絵を登録する予算（AssetDownloads#setBudget が替える）・spentMs = このコマに絵の登録に使った ms・
+    /// pendingTextures = まだ登録していない後回しの絵・pendingSounds = 届く前に鳴らせと言われた後回しの音（名前 → 最後に言われた鳴らし方）。
     type alias State = {
         design = Vec2.Vec2, maxDeltaTime = Float64,
         looping = Ref[Bool, Static], closeRequested = Ref[Bool, Static],
         lastDt = Ref[Float64, Static], fullscreenAsked = Ref[FullscreenAsk, Static],
         cursor = Ref[GameEngine.Cursor, Static], cursorVisible = Ref[Bool, Static],
-        yieldedAt = Ref[Float64, Static], warnedSounds = Ref[Set[String], Static]
+        yieldedAt = Ref[Float64, Static], warnedSounds = Ref[Set[String], Static],
+        budget = Ref[LoadProgress.DecodeBudget, Static], spentMs = Ref[Float64, Static], pendingTextures = Ref[List[RenderAsset.TextureEntry], Static],
+        pendingSounds = Ref[Map[String, LoadProgress.Deferred.PendingSound], Static]
     }
 
+    /// 最初の setBudget より前の予算（App.withDecodeBudget の既定と同じ）。
+    // WhyNot: 部屋を解く長さ（100 ms 前後）にしない — 予算を渡さないゲームでは文字送りの間も毎コマ使われ、届いた絵が重なったコマで止まりが見える。1 本の道は必ず登録するので遅れは出ない。
+    def initialBudget(): LoadProgress.DecodeBudget = LoadProgress.DecodeBudget.Idle(4.0)
+
     /// Platform.Window を頁と canvas で受ける。presentFrame で次の描き替えまで待つ（ブラウザが絵を出すのは手を返した後）。
-    def handleWindow(st: State, f: Unit -> a \ ef): a \ (ef - Platform.Window) + IO =
+    /// onPoll = コマの頭（pollEvents）でする事（後から届いた素材を使えるようにする）。
+    def handleWindow(st: State, onPoll: Unit -> Unit \ IO, f: Unit -> a \ ef): a \ (ef - Platform.Window) + IO =
         run f() with handler Platform.Window {
             def pollEvents(k) = {
                 if (not Ref.get(st#looping)) { Ref.put(true, st#looping); Browser.started() } else ();
                 Browser.beginFrame();
+                onPoll();
                 k(())
             }
             def shouldClose(k) = k(Ref.get(st#closeRequested))
@@ -295,26 +310,100 @@ pub mod WebLayer {
         else name
 
     /// GameEngine.Audio を fge.web.WebAudio で受ける。知らない名前は名前ごとに 1 度だけ言って何もしない。
+    /// 後回しでまだ届いていない音は鳴らさず、鳴らし方（playAudio・setLooping・setVolume・setPitch）を覚えて stopAudio で忘れる。
+    /// 届いた時にまだ覚えていて、ループする音なら最後の音量・高さで鳴らす（playArrivedSounds）。取れなかった後回しの音は名前ごとに 1 度言う。
+    /// audioSeconds は届く前の音に 0 を返す（使う側は AssetDownloads#missing で届いていない名前を見る）。
     // WhyNot: setLowpass で高い音を削らない — 今は OpenAL の EFX と同じ聞こえ方にする対応の式が決まっていない（素通しのまま）。
     def handleAudio(st: State, f: Unit -> a \ ef): a \ (ef - GameEngine.Audio) + IO =
-        let known = (op: String, name: String) ->
-            if (WebAudio.has(name)) true
-            else if (Set.memberOf(name, Ref.get(st#warnedSounds))) false
+        let warnOnce = (name: String, message: String) ->
+            if (Set.memberOf(name, Ref.get(st#warnedSounds))) ()
             else {
                 Ref.put(Set.insert(name, Ref.get(st#warnedSounds)), st#warnedSounds);
-                Log.warnThen("audio: 知らない音 '${name}' — ${op} は何もしない（project.json の sounds に同名の宣言があるか確認）", false)
+                Log.warn(message)
             };
+        let known = (op: String, name: String) ->
+            if (WebAudio.has(name)) true
+            else if (Deferred.isDeferred(name)) {
+                match LoadProgress.Deferred.loadStateOfText(Deferred.state(name)) {
+                    case LoadProgress.LoadState.Failed(why) => warnOnce(name, "audio: 後回しの音 '${name}' を取れなかった — ${op} は何もしない（${why}）")
+                    case _                                  => ()
+                };
+                false
+            }
+            else { warnOnce(name, "audio: 知らない音 '${name}' — ${op} は何もしない（project.json の sounds に同名の宣言があるか確認）"); false };
+        let note = (name: String, call: LoadProgress.Deferred.SoundCall) ->
+            if (WebAudio.has(name) or not Deferred.isDeferred(name)) ()
+            else Ref.put(LoadProgress.Deferred.notePendingSound(name, call, Ref.get(st#pendingSounds)), st#pendingSounds);
         run f() with handler GameEngine.Audio {
-            def playAudio(name, k) = { if (known("playAudio", name)) WebAudio.play(name) else (); k(()) }
-            def stopAudio(name, k) = { if (known("stopAudio", name)) WebAudio.stop(name) else (); k(()) }
-            def setVolume(name, volume, k) = { if (known("setVolume", name)) WebAudio.setVolume(name, volume) else (); k(()) }
-            def setPitch(name, pitch, k) = { if (known("setPitch", name)) WebAudio.setPitch(name, pitch) else (); k(()) }
-            def setLooping(name, loop, k) = { if (known("setLooping", name)) WebAudio.setLooping(name, loop) else (); k(()) }
+            def playAudio(name, k) = { note(name, LoadProgress.Deferred.SoundCall.Play); if (known("playAudio", name)) WebAudio.play(name) else (); k(()) }
+            def stopAudio(name, k) = { note(name, LoadProgress.Deferred.SoundCall.Stop); if (known("stopAudio", name)) WebAudio.stop(name) else (); k(()) }
+            def setVolume(name, volume, k) = { note(name, LoadProgress.Deferred.SoundCall.SetVolume(volume)); if (known("setVolume", name)) WebAudio.setVolume(name, volume) else (); k(()) }
+            def setPitch(name, pitch, k) = { note(name, LoadProgress.Deferred.SoundCall.SetPitch(pitch)); if (known("setPitch", name)) WebAudio.setPitch(name, pitch) else (); k(()) }
+            def setLooping(name, loop, k) = { note(name, LoadProgress.Deferred.SoundCall.SetLooping(loop)); if (known("setLooping", name)) WebAudio.setLooping(name, loop) else (); k(()) }
             def setMasterVolume(gain, k) = { WebAudio.setMaster(Float64.max(0.0, Float64.min(1.0, gain))); k(()) }
             def setLowpass(name, _gainHF, k) = { discard known("setLowpass", name); k(()) }
             def audioSeconds(name, k) = k(WebAudio.seconds(name))
             def reloadAudio(_name, _path, k) = k(())
         }
+
+    /// 覚えていた音のうち届いた物に、最後の鳴らし方を当てる（ループする音で鳴らせと言われていれば鳴らす）。
+    def playArrivedSounds(st: State): Unit \ IO =
+        let pending = Ref.get(st#pendingSounds);
+        if (Map.isEmpty(pending)) ()
+        else {
+            let arrived = Map.filterWithKey((name: String, _) -> WebAudio.has(name), pending);
+            Ref.put(Map.filterWithKey((name: String, _) -> not Map.memberOf(name, arrived), pending), st#pendingSounds);
+            Map.forEach((name: String, p: LoadProgress.Deferred.PendingSound) -> {
+                p#looping |> Option.forEach(loop -> WebAudio.setLooping(name, loop));
+                p#volume |> Option.forEach(volume -> WebAudio.setVolume(name, volume));
+                p#pitch |> Option.forEach(pitch -> WebAudio.setPitch(name, pitch));
+                if (LoadProgress.Deferred.playsOnArrival(p, WebAudio.isLooping(name))) WebAudio.play(name) else ()
+            }, arrived)
+        }
+
+    /// 届いた後回しの 2D の絵を、予算の内で道ごとに登録する（Paused なら登録しない・Idle と Covered は 1 本の道は必ず、
+    /// 2 本目からは ms に収まるまで）。1 本の道の名前は全部同じコマで登録し、登録し終えた道を fge-web.js に知らせる。使った ms は spentMs へ。
+    def registerArrivedTextures(gl: GlContext, paint: RenderPaint.Paint, st: State): Unit \ IO =
+        Ref.put(0.0, st#spentMs);
+        let pending = Ref.get(st#pendingTextures);
+        let limit = match Ref.get(st#budget) {
+            case LoadProgress.DecodeBudget.Paused     => None
+            case LoadProgress.DecodeBudget.Idle(ms)    => Some(ms)
+            case LoadProgress.DecodeBudget.Covered(ms) => Some(ms)
+        };
+        match limit {
+            case Some(ms) if not List.isEmpty(pending) =>
+                let (ready, waiting) = List.partition(e -> WebImages.has(e#path), pending);
+                let began = Browser.now();
+                let left = registerWithin(gl, paint, began, ms, true, LoadProgress.Deferred.groupByPath(e -> e#path, ready));
+                Ref.put(Browser.now() - began, st#spentMs);
+                Ref.put(List.append(left, waiting), st#pendingTextures)
+            case _ => ()
+        }
+
+    def registerWithin(gl: GlContext, paint: RenderPaint.Paint, began: Float64, ms: Float64, first: Bool,
+                       ready: List[(String, List[RenderAsset.TextureEntry])]): List[RenderAsset.TextureEntry] \ IO = match ready {
+        case Nil => Nil
+        case (path, entries) :: rest =>
+            if (not first and Browser.now() - began >= ms) List.flatMap(snd, ready)
+            else {
+                entries |> List.forEach(e -> RenderPaint.putTexture(e#name, WebAssets.uploadImageOf(gl, e), paint));
+                Deferred.markLoaded(path);
+                registerWithin(gl, paint, began, ms, false, rest)
+            }
+    }
+
+    /// 後回しの素材を引く関数の組（fge.web.Deferred を包む）。setBudget は登録の予算を替え、spentMs はこのコマの登録に使った ms。
+    def downloadsOf(st: State): LoadProgress.AssetDownloads =
+        { stateOf = path -> LoadProgress.Deferred.loadStateOfText(Deferred.state(path)),
+          missing = () -> linesOf(Deferred.missing()) |> List.toSet,
+          request = paths -> if (List.isEmpty(paths)) () else Deferred.request(String.intercalate("\n", paths)),
+          release = paths -> if (List.isEmpty(paths)) () else Deferred.release(String.intercalate("\n", paths)),
+          setBudget = budget -> Ref.put(budget, st#budget),
+          spentMs = () -> Ref.get(st#spentMs) }
+
+    def linesOf(text: String): List[String] =
+        if (String.isEmpty(text)) Nil else String.split(regex = "\n", text)
 
     /// 起動中に、手を返さずに続けてよい長さ（ms）。
     def yieldMillis(): Float64 = 50.0
@@ -338,8 +427,17 @@ pub mod WebLayer {
         run f() with handler LoadProgress {
             def report(phase, done, total, k) = { report(phase, done, total); k(()) }
             def runTasks(phase, tasks, k) = { LoadProgress.runTasksInOrder(report, phase, tasks); k(()) }
-            def imageDecoder(k) = k({ decode = decodeImage })
+            def imageDecoder(k) = k({ decode = decodeImage, platformImage = platformImageOf, versionedKey = versionedKeyOf })
+            def downloads(k) = k(downloadsOf(st))
         }
+
+    /// 道の絵を ImageBitmap に解いて JS の側に持ち、その key を返す（解くまでゲームのループごと止まる）。束に無い・解けない道は None。
+    def platformImageOf(path: String): Option[ImageData.PlatformImage] \ IO =
+        if (WebImages.holdPlatformImage(path)) Some({ key = WebImages.platformKey(path), width = WebImages.width(path), height = WebImages.height(path) })
+        else None
+
+    /// 道と書き出しの版の字（束の中身は版ごとに変わらない）。
+    def versionedKeyOf(path: String): Option[String] \ IO = Some(WebImages.platformKey(path))
 
     /// PNG か JPEG か WebP のバイトを画素へ解く（WebP は書き出しが替えた絵）。解き終わるまでゲームのループごと止まる。
     def decodeImage(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =

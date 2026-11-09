@@ -10,6 +10,7 @@
 // ── 画面の層（奥から手前へ）──
 //   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ パーティクル（蛍）   … 揺れはこの層だけに掛かる
 //   hud:   NVL の幕 / ADV のウィンドウ → 本文（ルビつき）・名前 → 送りの印 → 選択肢 → クイックメニュー
+//          → 素材を待つ間の黒と待ちの印（ブラウザ版で背景・環境音がまだ届いていない時）
 //          → 画面（バックログ・セーブ・ロード・設定。セーブの枠のサムネはその時の画面を同じ関数で描いて縮める）→ 確認のウィンドウ → 知らせ
 //          タイトルとクレジットも hud（写真の上に字だけを置く画面）
 //
@@ -47,6 +48,9 @@ mod View {
     def zText(): Int32 = 20
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
+    /// 素材を待つ間の黒（本文とボタンの上・画面と確認のウィンドウの下）と、その上の待ちの印。
+    def zHold(): Int32 = 45
+    def zHoldMark(): Int32 = 46
     def zPanel(): Int32 = 50
     def zCard(): Int32 = 52
     /// サムネの縮めた画面は zThumb + 元の z（元は 0..zButtons の少し上）に入る。縁と印は zThumbTop から。
@@ -79,7 +83,8 @@ mod View {
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
             case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden) Nil else reading(atlas, env, r)
         };
-        List.flatten(screen :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
+        let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(env)) |> Option.getWithDefault(Nil);
+        List.flatten(screen :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
     def realSeconds(env: Env): Float64 = Clock.secondsOf(env#realNow)
 
@@ -147,10 +152,43 @@ mod View {
         let top = stage#shot |> Option.map(shot -> layer(shot, Stage.fadeProgress(env#storyNow, stage), 2)) |> Option.getWithDefault(Nil);
         ground :: List.append(under, top)
 
+    /// 写真がまだ届いていなければ None（その層は描かず、下の暗い地が見える）。
     def specOf(shot: Stage.Shot, env: Env): Option[ShaderDoc.Spec] =
-        forM (photo <- BackdropDoc.photoOf(shot#photo, env#res#backdrops);
+        forM (photo <- BackdropDoc.photoOf(shot#photo, env#res#backdrops) |> Option.filter(p -> not Set.memberOf(p#texture, env#res#missing));
               grade <- BackdropDoc.gradeOf(shot#grade, env#res#backdrops))
         yield Backdrop.specOf("${shot#photo}_${shot#grade}", photo, grade)
+
+    // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
+
+    /// 画面を夜の地の色で覆う（黒へ重ねる・黒のまま・黒から戻す）。黒のまま holdMarkSeconds を過ぎたら右下に待ちの印。
+    /// 重ねの進みは物語の時計（画面を開くと止まる）、印の明滅は実時間。
+    def holdLayer(env: Env): World.Hold -> List[Render.PlacedItem] = hold ->
+        let k = kindOf(env);
+        let progress = if (k#holdFadeSeconds <= 0.0) 1.0
+                       else Float64.min(1.0, Float64.max(0.0, Clock.since(hold#phaseFrom, env#storyNow) / k#holdFadeSeconds));
+        let alpha = match hold#phase {
+            case World.HoldPhase.FadingOut => progress
+            case World.HoldPhase.Waiting   => 1.0
+            case World.HoldPhase.FadingIn  => 1.0 - progress
+        };
+        let whole = Layout.screen(env#fit);
+        let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundColor(), zHold()) |> Render.fade(alpha));
+        let marked = hold#phase == World.HoldPhase.Waiting and hold#waited >= k#holdMarkSeconds;
+        let mark = if (marked) waitDots(env, { x = Layout.width(env#fit) - 60.0, y = Layout.height(env#fit) - 36.0 }, 1.0, zHoldMark()) else Nil;
+        veil :: mark
+
+    /// 待ちの印: 金の小さな点 3 つが左から順に息をするように明滅する（蛍と同じ、芯と滲む光）。
+    /// origin = 左の点の中心、scale = 大きさの倍率（サムネは小さく）。
+    def waitDots(env: Env, origin: Vec2.Vec2, scale: Float64, z: Int32): List[Render.PlacedItem] =
+        let color = theme(env)#accent;
+        let t = realSeconds(env);
+        List.range(0, 3) |> List.flatMap(i -> {
+            let pulse = 0.5 + 0.5 * Num.sin(t * 4.2 - Int32.toFloat64(i) * 0.9);
+            let a = 0.2 + 0.8 * pulse * pulse;
+            let center = { x = origin#x + Int32.toFloat64(i) * 14.0 * scale, y = origin#y };
+            RawDraw.circleAt(center, 2.6 * scale, Color.lighten(color, 0.35), z + 1) |> Render.overItem(item -> Render.fade(a, item))
+            :: Render.glowAt(center, 9.0 * scale, color, { alpha = 0.45 * a, blend = DrawCmd.BlendMode.Add }, z)
+        })
 
     // ── パーティクル（蛍） ──
 
@@ -760,7 +798,15 @@ mod View {
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)
             |> List.map(Render.overItem(liftedZ(zThumb()))) |> Render.clippedAll(r);
-        List.append(small, frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumbTop()))
+        // 写真がまだ届いていない枠は、暗い地（backdropsIn が写真を描かない）の右下に待ちの印。
+        let photoMissing = screen |> Option.exists(read -> stagePhotoMissing(env, read#stage));
+        let mark = if (photoMissing) waitDots(env, { x = r#position#x + r#size#x - 30.0, y = r#position#y + r#size#y - 12.0 }, 0.6, zThumbTop() + 1) else Nil;
+        List.flatten(small :: frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumbTop()) :: mark :: Nil)
+
+    /// 舞台の写真が、まだ届いていない後回しの絵か。
+    def stagePhotoMissing(env: Env, stage: Stage.Stage): Bool =
+        stage#shot |> Option.flatMap(shot -> BackdropDoc.textureOf(shot#photo, env#res#backdrops))
+            |> Option.exists(texture -> Set.memberOf(texture, env#res#missing))
 
     /// 絵 1 つの重なり順を dz だけ手前へ（Clipped は中身）。
     def liftedZ(dz: Int32): Render.Item -> Render.Item = item -> match item {

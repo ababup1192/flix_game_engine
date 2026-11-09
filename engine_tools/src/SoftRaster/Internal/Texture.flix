@@ -36,8 +36,7 @@ pub mod SoftRaster.Internal.Texture {
         let billboardKeys = scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> keyOf(Scene3d.billboardFieldsOf(b)#texture, Texture3d.TextureUse.MaterialTexture)));
         let lookup = (name: String) ->
             if (String.startsWith(prefix = Texture3d.namePrefix(), name))
-                Map.get(name, ownTextures) |> Option.map(t ->
-                    ({ width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) }, Some("tex3d:" + Texture3d.contentHash(t))))
+                Map.get(name, ownTextures) |> Option.map(t -> (sceneTexDataOf(warnLog, t), Some("tex3d:" + Texture3d.contentHash(t))))
             else Map.get(name, textures) |> Option.map(img -> (texDataOf(img), fileMipKey(mipSource, name)));
         let mippedSet = List.toSet(mippedKeys);
         let withMaterials = mippedKeys |> List.foldLeft((acc, key) -> match lookup(fst(key)) {
@@ -50,6 +49,17 @@ pub mod SoftRaster.Internal.Texture {
             case Some((td, _)) => Map.insert(key, Vector#{ td }, acc)
             case None          => warnMissingTexture(warnLog, fst(key)); acc
         }, withMaterials)
+
+    /// 場面の絵 t の画素。機種の側の絵（Texture3d.Source.PlatformImage）は画素を持たないので 1 × 1 の透明な黒（無い絵と同じ 0 で読む）にし、
+    /// 絵ごとに 1 度だけ知らせる。
+    def sceneTexDataOf(warnLog: TexWarnLog, t: Texture3d.Texture3d): ShaderEval.TexData \ IO =
+        match Texture3d.sourceOf(t) {
+            case Texture3d.Source.Argb(pixels) => { width = Texture3d.width(t), height = Texture3d.height(t), pixels = pixels }
+            case Texture3d.Source.PlatformImage(key) =>
+                warnSceneOnce(warnLog, "@platform-texture:" + key, "scene3d: 場面の絵 '${Texture3d.name(t)}' は機種の側の絵（${key}）で、"
+                    + "CPU の描き手は画素を読めない — 0（黒・透明）で読む（画面なしで描くなら ImageData.decoderOf のデコーダーで読む）");
+                { width = 1, height = 1, pixels = Vector#{ 0 } }
+        }
 
     /// 段を作る元の絵の出どころ。paths = 名前 → ファイル・rendered = 描き出したばかりの絵の名前（段を作らない）・cache = 書き出し 1 回の間の控え。
     pub type alias MipSource = { paths = Map[String, String], rendered = Set[String], cache = Option[TextureCache] }

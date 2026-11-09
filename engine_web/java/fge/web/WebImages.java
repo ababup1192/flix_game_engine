@@ -34,6 +34,34 @@ public final class WebImages {
     @JSBody(params = {"path", "alpha"}, script = "fgeTexImageBitmap(fgeNormPath(path), alpha);")
     public static native void texImage(String path, boolean alpha);
 
+    /** 道と書き出しの版の字。texImagePlatform（GlContext）へ渡す key で、同じ字なら同じ画素。 */
+    @JSBody(params = {"path"}, script = "return fgePlatformKey(path);")
+    public static native String platformKey(String path);
+
+    @JSBody(params = {"path"}, script = "return fgeAssetHas(path);")
+    private static native boolean assetHas(String path);
+
+    @JSBody(params = {"path", "done"}, script = "fgeHoldImage(path, done);")
+    private static native void startHold(String path, DecodeDone done);
+
+    @Async
+    private static native int waitHold(String path);
+
+    private static void waitHold(String path, AsyncCallback<Integer> callback) {
+        startHold(path, () -> callback.complete(0));
+    }
+
+    /**
+     * 道の画像を ImageBitmap で持つ（起動の前に解いた物はそのまま・素材の表のバイトは解いて足す）。持てたら真。
+     * 解く間はゲームのループごと止まる（待つ間はブラウザへ手を返す）。画素は wasm へ運ばない。
+     */
+    public static boolean holdPlatformImage(String path) {
+        if (has(path)) return true;
+        if (!assetHas(path)) return false;
+        waitHold(path);
+        return has(path);
+    }
+
     /** 解き終わりの知らせ。 */
     @JSFunctor
     private interface DecodeDone extends JSObject {

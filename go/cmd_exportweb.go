@@ -157,6 +157,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	startPrompt, err := resolveWebStartPrompt(proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
 	embed, err := resolveWebEmbed(proj.Web)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
@@ -177,6 +182,20 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
+	}
+	deferredGlobs, err := resolveWebDeferred(proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	textureNames := textureNamesByPath(proj)
+	deferredPlan, err := planWebDeferred(early, deferredGlobs, embedPlan, proj.fontNames(), textureNames)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	for _, line := range deferredPlan.Warnings {
+		ewLogf("知らせ: %s", line)
 	}
 
 	if line := scene3dEntryWarning(p.Game, entry); line != "" {
@@ -293,6 +312,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		ewLogf("  web.omit で配らない: %s", strings.Join(embedPlan.Omitted, "・"))
 	}
 	b.withTouch(proj, touch)
+	splash, warning := buildWebSplash(p.Engine, startPrompt, touch.PortraitDesign)
+	if warning != "" {
+		ewLogf("知らせ: %s", warning)
+	}
+	b.Splash = &splash
 	for _, rel := range b.copyList() {
 		if err := copyFile(filepath.Join(p.Game, filepath.FromSlash(rel)), exportAssetPath(p.Out, rel)); err != nil {
 			fmt.Fprintf(errOut, "fge export-web: 素材を写せない: %v\n", err)
@@ -309,8 +333,9 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	b.Files = append(b.Files, atlases...)
 	sort.Strings(b.Files)
 
-	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは gzip）")
+	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは画素を WebP か gzip）")
 	report := transcodeWebAssets(p.Out, &b, atlases, compress, findWebEncoders(p.Engine, compress))
+	b.Deferred = webDeferredEntries(p.Out, &b, deferredPlan.Paths, textureNames)
 
 	ewLogf("⑦ 頁")
 	hash, err := writeWebPage(p, b, wasm, core)
@@ -734,11 +759,9 @@ type exportProject struct {
 	DesignWidth  int             `json:"designWidth"`
 	DesignHeight int             `json:"designHeight"`
 	Web          json.RawMessage `json:"web"`
-	Textures     []struct {
-		Path string `json:"path"`
-	} `json:"textures"`
-	Sounds []webSound `json:"sounds"`
-	Fonts  []struct {
+	Textures     []webTexture    `json:"textures"`
+	Sounds       []webSound      `json:"sounds"`
+	Fonts        []struct {
 		Name string `json:"name"`
 	} `json:"fonts"`
 }
@@ -765,6 +788,11 @@ func loadExportProject(game string) (exportProject, error) {
 	return pr, nil
 }
 
+type webTexture struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 type webSound struct {
 	Name    string `json:"name"`
 	Path    string `json:"path"`
@@ -788,6 +816,11 @@ type webBundle struct {
 	Orientation   string            `json:"orientation,omitempty"`
 	// Transcoded は論理の道 → 配る道（WebP・Opus・gzip に替えた物だけ）。頁は配る道で取り、論理の道で素材の表へ入れる。
 	Transcoded map[string]string `json:"transcoded,omitempty"`
+	// Deferred は「押して始める」の前に取らず、wasm を読んだ後に裏で取る素材（取る順）。files・images・sounds にも載せたまま。
+	// WhyNot: files などから抜かない — deferred を知らない古い fge-web.js でも、全部を起動の前に取って動く。
+	Deferred []webDeferredEntry `json:"deferred,omitempty"`
+	// Splash は頁が「押して始める」の前に描く起動画面の材料（exportweb_splash.go）。
+	Splash *webSplash `json:"splash,omitempty"`
 }
 
 // withTouch は頁が起動の前に要る物（design の縦横比・パッド・ジェスチャー・向き）を束に足す。
@@ -1159,6 +1192,16 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 		After:  wasm + docs + page + r.Images.After + r.Atlases.After + r.Sounds.After,
 	}
 	fmt.Fprintf(w, "  %-8s %22s  ブラウザが取る量\n", "合計", pair(total))
+	start := webStartupSizeOf(dir, &b)
+	wasmGz := wasm
+	if data, err := os.ReadFile(filepath.Join(dir, "classes.wasm")); err == nil {
+		if gz, err := gzipBytes(data); err == nil {
+			wasmGz = int64(len(gz))
+		}
+	}
+	fmt.Fprintf(w, "  起動 %d 本・%s（wasm の gzip %s を足して %s）／後回し %d 本・%s\n",
+		start.StartCount, humanBytes(start.StartBytes), humanBytes(wasmGz), humanBytes(start.StartBytes+wasmGz),
+		start.DeferredCount, humanBytes(start.DeferredBytes))
 	if r.FallbackBytes > 0 {
 		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
 	}

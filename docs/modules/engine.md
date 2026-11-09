@@ -33,6 +33,7 @@
 | engine の fpkg 読み込みを consumer 側で trigger したい | EngineSentinel |
 | project.json を読み込んでエンジン設定と scene 一覧を得たい | ProjectLoader |
 | 起動の読み込みの進み具合を起動画面へ知らせる・読み込み中もウィンドウを応答させる（区切りごと・並列で読む） | LoadProgress（report / mapWithProgress / parMapWithProgress・絵を解くデコーダーは imageDecoder。描き出し・テストは engine_tools の HeadlessLoad.handle か runNoop。並列の handler の決まりは LoadProgress.Conformance。[startup.md](../startup.md)） |
+| ブラウザ版で後回しにした素材（web.deferred）の 3D の部屋などを、起動で届いている分だけ読み、残りをループの中で予算の内に読む・使えるかを判定する | BackgroundLoad（Group・start・Pending・readiness。毎コマ進めるのは engine_world の App.withBackgroundLoad・予算は App.withDecodeBudget・2D の絵と音の届いていない名前は App.withMissingAssets。[startup.md](../startup.md)） |
 | 解いた絵の画素（幅・高さ・ARGB）と、PNG / JPEG を画素に戻すデコーダーの型 | ImageData（デコーダーは LoadProgress の op の imageDecoder で受け取る。3D の絵は Texture3d.fromImage / decodeUsing） |
 | ファイルから作る重い値を、読んだファイルの中身が同じ間だけ取っておく（窓なしのゲームの初めの World・kit） | ContentCache（loadOrBuild。更新時刻は見ない） |
 | 既定値で続けたことを人へ 1 行知らせたい | Log（文面と出し先の決まりは [error-handling.md](../error-handling.md) の決まり 3） |

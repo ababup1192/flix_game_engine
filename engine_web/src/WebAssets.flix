@@ -5,6 +5,7 @@ mod WebAssets {
     import fge.gl.GlConst
     import fge.gl.GlContext
     import fge.web.AssetTable
+    import fge.web.Deferred
     import fge.web.WebImages
     import java.lang.StringBuilder
 
@@ -16,16 +17,29 @@ mod WebAssets {
     pub def atlasPathOf(entry: RenderAsset.FontEntry): String = "font-atlas/${entry#name}.fontatlas"
 
     /// 絵を全部上げる。表に無い絵は起動時に要る素材なので止める（デスクトップの stb と同じ扱い）。
+    /// 後回しの絵（web.deferred）は、もう届いていれば上げ、まだなら飛ばす（届いた時に WebLayer が登録する）。
     def loadTextures(gl: GlContext, manifest: List[RenderAsset.TextureEntry],
                      onProgress: (Int32, Int32) -> Unit \ IO): RenderAsset.TextureRegistry \ IO =
         let total = List.length(manifest);
         onProgress(0, total);
-        List.zipWithIndex(manifest) |> List.foldLeft((registry, indexed) -> {
+        let registry = List.zipWithIndex(manifest) |> List.foldLeft((acc, indexed) -> {
             let (index, entry) = indexed;
-            let info = uploadImage(gl, entry#path, entry#hasAlpha);
+            let next = if (Deferred.isDeferred(entry#path) and not WebImages.has(entry#path)) acc
+                else Map.insert(entry#name, uploadImageOf(gl, entry), acc);
             onProgress(index + 1, total);
-            Map.insert(entry#name, info, registry)
-        }, Map.empty())
+            next
+        }, Map.empty());
+        markDeferredLoaded(manifest |> List.filter(e -> Map.memberOf(e#name, registry)));
+        registry
+
+    /// 登録した絵のうち後回しの道を、道ごとに 1 回 fge-web.js に知らせる。
+    // WhyNot: 名前ごとに知らせない — 知らせた後に fge-web.js が ImageBitmap を捨てるので、同じ道の 2 つ目の名前が上げられなくなる。
+    def markDeferredLoaded(entries: List[RenderAsset.TextureEntry]): Unit \ IO =
+        entries |> List.map(e -> e#path) |> List.distinct |> List.filter(path -> Deferred.isDeferred(path)) |> List.forEach(path -> Deferred.markLoaded(path))
+
+    /// 解いておいた絵 1 枚を、宣言の hasAlpha で上げる。
+    pub def uploadImageOf(gl: GlContext, entry: RenderAsset.TextureEntry): RenderAsset.TextureInfo \ IO =
+        uploadImage(gl, entry#path, entry#hasAlpha)
 
     /// 解いておいた画像 1 枚を上げる。NEAREST フィルタ + REPEAT（RenderTexture.uploadBytes と同じ）。
     def uploadImage(gl: GlContext, path: String, alpha: Bool): RenderAsset.TextureInfo \ IO =

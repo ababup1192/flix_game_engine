@@ -94,3 +94,25 @@ func TestMountComesFromFlixToml(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestJoinPixelsUndoesSplitPixels(t *testing.T) {
+	data := atlasBytes(4, []rune{'A', '泉'})
+	for i := range 16 {
+		data[headerSize+2*glyphRecord+i] = byte(i * 13)
+	}
+	rest, pixels, side, err := SplitPixels(data)
+	if err != nil || side != 4 {
+		t.Fatalf("side %d %v", side, err)
+	}
+	back, err := JoinPixels(rest, pixels)
+	if err != nil || string(back) != string(data) {
+		t.Fatalf("組み直しが元と違う（%v）", err)
+	}
+}
+
+func TestSplitPixelsLeavesNoPixelsInRest(t *testing.T) {
+	rest, _, _, _ := SplitPixels(atlasBytes(4, []rune{'A'}))
+	if len(rest) != headerSize+glyphRecord+trailerBytes {
+		t.Fatalf("残りが %d バイト", len(rest))
+	}
+}

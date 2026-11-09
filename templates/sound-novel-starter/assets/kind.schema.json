@@ -182,11 +182,38 @@
       "max": 10,
       "default": 1.6
     },
+    "holdFadeSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "素材を待つ時に黒へ重ねる秒・黒から戻す秒（ブラウザ版で後回しの背景・環境音がまだ届いていない時）",
+      "order": 21,
+      "min": 0.05,
+      "max": 3,
+      "default": 0.4
+    },
+    "holdGiveUpSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "素材を待ち切れずに諦めて先へ進むまでの秒（黒のままの間だけ数える）",
+      "order": 22,
+      "min": 1,
+      "max": 120,
+      "default": 20.0
+    },
+    "holdMarkSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "黒になってから隅に待ちの印（点の明滅）を出すまでの秒",
+      "order": 23,
+      "min": 0,
+      "max": 10,
+      "default": 0.4
+    },
     "cpsSlider": {
       "kind": "record",
       "label": "文字の速さのスライダー（字/秒）",
       "group": "設定の画面のスライダー",
-      "order": 21,
+      "order": 24,
       "fields": {
         "min": {
           "type": "float",
@@ -213,7 +240,7 @@
       "kind": "record",
       "label": "オートの待ちのスライダー（秒）",
       "group": "設定の画面のスライダー",
-      "order": 22,
+      "order": 25,
       "fields": {
         "min": {
           "type": "float",
@@ -240,7 +267,7 @@
       "kind": "record",
       "label": "全体の音量のスライダー",
       "group": "設定の画面のスライダー",
-      "order": 23,
+      "order": 26,
       "fields": {
         "min": {
           "type": "float",
@@ -267,7 +294,7 @@
       "kind": "record",
       "label": "環境音の音量のスライダー",
       "group": "設定の画面のスライダー",
-      "order": 24,
+      "order": 27,
       "fields": {
         "min": {
           "type": "float",
@@ -294,7 +321,7 @@
       "kind": "record",
       "label": "効果音の音量のスライダー",
       "group": "設定の画面のスライダー",
-      "order": 25,
+      "order": 28,
       "fields": {
         "min": {
           "type": "float",
@@ -321,7 +348,7 @@
       "kind": "record",
       "label": "ウィンドウの濃さのスライダー",
       "group": "設定の画面のスライダー",
-      "order": 26,
+      "order": 29,
       "fields": {
         "min": {
           "type": "float",

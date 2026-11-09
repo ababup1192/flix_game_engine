@@ -84,6 +84,16 @@
           "type": { "list": "text" },
           "label": "配らない素材（ゲームの根からの glob）。実行時に読まない元のファイル（.yarn など）を外す",
           "order": 3
+        },
+        "startPrompt": {
+          "type": "text",
+          "label": "押して始める前の画面の文言（無ければ Tap to start）",
+          "order": 4
+        },
+        "deferred": {
+          "type": { "list": "text" },
+          "label": "押して始めた後に裏で取る素材（ゲームの根からの glob・取る順）。タイトルの背景と最初に鳴る音は入れない。届く前に使う背景・環境音は暗転で待ち、一発の音は鳴らさずに進む",
+          "order": 5
         }
       }
     }

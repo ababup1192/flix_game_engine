@@ -53,6 +53,9 @@ mod BackdropDoc {
 
     pub def photoOf(name: String, doc: Doc): Option[Photo] = Map.get(name, rec(doc)#photos)
 
+    /// 写真の名前 → project.json の textures の名前（知らない写真なら None）。
+    pub def textureOf(name: String, doc: Doc): Option[String] = photoOf(name, doc) |> Option.map(photo -> photo#texture)
+
     pub def gradeOf(name: String, doc: Doc): Option[Grade] = Map.get(name, rec(doc)#grades)
 
     pub def fromJson(text: String): Option[Doc] =

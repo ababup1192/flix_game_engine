@@ -101,7 +101,7 @@ mod TestMeshArraysFixed {
         List.flatten(
             meshPrints("joints", joints#mesh) :: partPrints("joints", joints) ::
             meshPrints("textured", textured#mesh) :: partPrints("textured", textured) ::
-            (textured#textures |> List.zipWithIndex |> List.map(ti -> { let (i, t) = ti; ("textured.texture${i}", ints(Texture3d.argb(t))) })) :: Nil)
+            (textured#textures |> List.zipWithIndex |> List.map(ti -> { let (i, t) = ti; ("textured.texture${i}", ints(TestDecoder.pixelsOf(t))) })) :: Nil)
 
     /// Mip.build の全部の段の画素の指紋。
     def mipCases(): List[(String, String)] =

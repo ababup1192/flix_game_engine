@@ -33,22 +33,68 @@ func ReadAtlas(name, path string) (*Atlas, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(data) < headerSize || binary.BigEndian.Uint64(data[0:8]) != atlasMagic {
-		return nil, fmt.Errorf("%s: フォントアトラスの形でない（頭の印が違う）", path)
+	l, err := layoutOf(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", path, err)
 	}
-	side := int(int32(binary.BigEndian.Uint32(data[12:16])))
-	fontSize := math.Float64frombits(binary.BigEndian.Uint64(data[16:24]))
-	count := int(int32(binary.BigEndian.Uint32(data[48:52])))
-	want := headerSize + count*glyphRecord + side*side + trailerBytes
-	if side <= 0 || count < 0 || len(data) != want {
-		return nil, fmt.Errorf("%s: 長さ %d が頭の数（辺 %d・字 %d）から決まる %d と違う", path, len(data), side, count, want)
-	}
-	glyphs := make(map[rune]bool, count)
-	for k := 0; k < count; k++ {
+	glyphs := make(map[rune]bool, l.count)
+	for k := 0; k < l.count; k++ {
 		at := headerSize + k*glyphRecord
 		glyphs[rune(int32(binary.BigEndian.Uint32(data[at:at+4])))] = true
 	}
-	return &Atlas{Name: name, Path: path, Side: side, FontSize: fontSize, Glyphs: glyphs, Bytes: int64(len(data))}, nil
+	return &Atlas{Name: name, Path: path, Side: l.side, FontSize: l.fontSize, Glyphs: glyphs, Bytes: int64(len(data))}, nil
+}
+
+// atlasLayout はアトラスのファイルの並び: 頭・字の表（count 件）・画素（side×side・1 画素 1 バイト）・検算。
+type atlasLayout struct {
+	side, count int
+	fontSize    float64
+}
+
+func (l atlasLayout) pixelStart() int { return headerSize + l.count*glyphRecord }
+func (l atlasLayout) pixelEnd() int   { return l.pixelStart() + l.side*l.side }
+
+func layoutOf(data []byte) (atlasLayout, error) {
+	if len(data) < headerSize || binary.BigEndian.Uint64(data[0:8]) != atlasMagic {
+		return atlasLayout{}, fmt.Errorf("フォントアトラスの形でない（頭の magic が違う）")
+	}
+	l := atlasLayout{
+		side:     int(int32(binary.BigEndian.Uint32(data[12:16]))),
+		count:    int(int32(binary.BigEndian.Uint32(data[48:52]))),
+		fontSize: math.Float64frombits(binary.BigEndian.Uint64(data[16:24])),
+	}
+	want := l.pixelEnd() + trailerBytes
+	if l.side <= 0 || l.count < 0 || len(data) != want {
+		return atlasLayout{}, fmt.Errorf("長さ %d が頭の数（辺 %d・字 %d）から決まる %d と違う", len(data), l.side, l.count, want)
+	}
+	return l, nil
+}
+
+// SplitPixels はアトラスのファイルを、距離場の画素（side×side・1 画素 1 バイト）と、それを抜いた残り（頭・字の表・検算）に分ける。
+// JoinPixels と対で、残りの並びは engine_web/js/fge-web.js の fgeJoinAtlasPixels も読む。
+func SplitPixels(data []byte) (rest, pixels []byte, side int, err error) {
+	l, err := layoutOf(data)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	rest = append(append([]byte{}, data[:l.pixelStart()]...), data[l.pixelEnd():]...)
+	return rest, data[l.pixelStart():l.pixelEnd()], l.side, nil
+}
+
+// JoinPixels は SplitPixels の残りへ画素を戻し、元のファイルの並びにする。
+func JoinPixels(rest, pixels []byte) ([]byte, error) {
+	if len(rest) < headerSize {
+		return nil, fmt.Errorf("頭が切れている")
+	}
+	start := headerSize + int(int32(binary.BigEndian.Uint32(rest[48:52])))*glyphRecord
+	if start < headerSize || start > len(rest) {
+		return nil, fmt.Errorf("字の数が残りの長さに合わない")
+	}
+	data := append(append(append([]byte{}, rest[:start]...), pixels...), rest[start:]...)
+	if _, err := layoutOf(data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // Leak はどのフォントのアトラスにも無い字。Dev は開発の道具の所にしか出所が無い字（止めずに知らせる）。

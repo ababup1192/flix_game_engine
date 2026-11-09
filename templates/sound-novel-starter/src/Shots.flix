@@ -13,7 +13,7 @@ mod Shots {
 
     /// 描き出せる場面の名前（make render の SHOT とギャラリーの並びの正）。
     pub def names(): List[String] =
-        "title" :: "nvl" :: "adv" :: "choice" :: "lane" :: "engawa" :: "night" :: "morning" :: "log" :: "save" :: "load" :: "settings" :: "ask" :: "credits" :: Nil
+        "title" :: "nvl" :: "adv" :: "choice" :: "lane" :: "engawa" :: "night" :: "morning" :: "hold" :: "log" :: "save" :: "load" :: "settings" :: "ask" :: "credits" :: Nil
 
     /// 名前 → 描き出しと同じ初めの World（initialOf）から組んだ場面の World。
     pub def worldOf(name: String, res: Res.Res): Option[World.World] = sceneOf(res, name, initialOf(res))
@@ -35,6 +35,8 @@ mod Shots {
             case "engawa"   => Some(at(4.0, nthLine(res, "Engawa", 3, w0)))
             // 朝: 駅へ戻る朝（NVL）。
             case "morning"  => Some(at(4.0, nthLine(res, "Morning", 1, w0)))
+            // 素材の待ち: ブラウザ版で次の写真がまだ届かず、黒のまま待っている所（右下に待ちの印）。
+            case "hold"     => Some(at(4.0, holding(res, nthLine(res, "Station", 7, w0))))
             // 夜: 蛍の川で、条件つきの選択肢が選べる所（$closeness = 2）。
             case "night"    =>
                 let storage = YarnStorage.withArgs(Map#{ "$closeness" => "2" }, res#dialogue, YarnStorage.empty()) |> Result.getWithDefault(YarnStorage.empty());
@@ -55,6 +57,13 @@ mod Shots {
             case "credits"  => Some(at(12.0, World.toCredits(res, w0)))
             case _          => None
         }
+
+    /// 次の写真（Paddy の paddy）を黒のまま待ち続けている形（待ちの印が出る長さだけ待った所）。
+    def holding(res: Res.Res, w: World.World): World.World =
+        let names = BackdropDoc.textureOf("paddy", res#backdrops) |> Option.toList;
+        let hold = { phase = World.HoldPhase.Waiting, phaseFrom = World.now(w), waited = KindDoc.rec(res#kind)#holdMarkSeconds + 1.0,
+                     names = names, rest = Nil, last = None };
+        World.mapRead(r -> { hold = Some(hold) | r }, w)
 
     /// 物語の時計と実時間の今を、どちらも seconds 秒に据える。
     def at(seconds: Float64, w: World.World): World.World =
@@ -102,7 +111,7 @@ mod Shots {
     /// <<wait>> を明かす（描き出しは時計を進めないので、明ける時刻で 1 歩だけ流す）。
     def settleWait(res: Res.Res, w: World.World): World.World =
         match World.readOf(w) |> Option.flatMap(r -> YarnRunner.waitUntilOf(r#talk)) {
-            case Some(until) => quiet(() -> WorldRead.step(res, { storyClock = Clock.startAt(Clock.secondsOf(until)) | w }))
+            case Some(until) => quiet(() -> WorldRead.step(res, 0.0, { storyClock = Clock.startAt(Clock.secondsOf(until)) | w }))
             case None        => w
         }
 }

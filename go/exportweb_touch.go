@@ -74,9 +74,10 @@ type webDesign struct {
 }
 
 type webTouch struct {
-	VirtualPad    *webVirtualPad
-	TouchGestures map[string]string
-	Orientation   string
+	VirtualPad     *webVirtualPad
+	TouchGestures  map[string]string
+	Orientation    string
+	PortraitDesign *webPortraitDesignOut
 }
 
 var webDpadDirs = []string{"up", "down", "left", "right"}
@@ -133,6 +134,7 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 		return t, err
 	}
 	t.Orientation = s.Orientation
+	t.PortraitDesign = portraitDesignOut(s.PortraitDesign)
 	if s.VirtualPad == nil && len(s.TouchGestures) == 0 {
 		return t, nil
 	}

@@ -17,13 +17,16 @@ pub mod Mesh3d {
     /// 頂点ごとの uv（[2i, 2i + 2)。(0, 0) が絵の左上・v は絵の下へ増える）とタンジェント（[4i, 4i + 4)。xyz は u が増える向きの単位ベクトル・
     /// w = ±1 で cross(法線, xyz) × w が絵の上（−v）を向く）。
     // WhyNot: uvs と tangents を別々の Option にしない — uv があるのにタンジェントが無い形を型で作れなくする。
-    type alias UvSet = { uvs = Vector[Float64], tangents = Vector[Float64] }
+    // WhyNot: タンジェントを作る時に求めない — 法線マップの無い材質では読まれず、glb の 1 部屋で 60 ms を超える。
+    type alias UvSet = { uvs = Vector[Float64], tangents = Lazy[Vector[Float64]] }
 
     /// 頂点ごとに 4 つのジョイントの番号（スキンの中の何番目か）と重み（頂点 i の値は [4i, 4i + 4)）。
     pub type alias SkinWeights = { joints = Vector[Int32], weights = Vector[Float64] }
 
-    /// hash = 中身の鍵・baseHash = uv を足す前の鍵（uv の無い形は hash と同じ）。
-    type alias Mesh3dRec = { vertices = Vertices, indices = Vector[Int32], hash = String, baseHash = String, low = Vec3.Vec3, high = Vec3.Vec3,
+    /// hash = 中身の鍵・baseHash = uv を足す前の鍵（uv の無い形は hash と同じ）。どちらも初めて読む時に取る。
+    // WhyNot: 作る時に鍵を取らない — glb から作る形は、描かれない（まとめた形）か withContentKey で鍵を差し替える物が多く、
+    //   取った SHA-256 が捨てられる（ブラウザでは 1 つ 10 ms を超える）。
+    type alias Mesh3dRec = { vertices = Vertices, indices = Vector[Int32], hash = Lazy[String], baseHash = Lazy[String], low = Vec3.Vec3, high = Vec3.Vec3,
                              maxJoint = Option[Int32] }
 
     enum Mesh3dData { case Mesh3dData(Mesh3dRec) }
@@ -64,7 +67,7 @@ pub mod Mesh3d {
             (Array.toVector(pos), Array.toVector(nor), Array.toVector(col), Array.toVector(idx))
         };
         let (low, high) = boundsOfPositions(positions);
-        let hash = hashOf(positions, colors, indices);
+        let hash = lazy hashOf(positions, colors, indices);
         Mesh3dData.Mesh3dData({
             vertices = { positions = positions, normals = normals, colors = colors, skin = None, uvSet = None, uvs2 = None },
             indices = indices,
@@ -96,7 +99,7 @@ pub mod Mesh3d {
             };
             Result.map(skin -> {
                 let (low, high) = boundsOfPositions(positions);
-                let hash = arraysHashOf(positions, arrays#normals, arrays#colors, arrays#indices, skin);
+                let hash = lazy arraysHashOf(positions, arrays#normals, arrays#colors, arrays#indices, skin);
                 Mesh3dData.Mesh3dData({
                     vertices = { positions = positions, normals = arrays#normals, colors = arrays#colors, skin = skin, uvSet = None, uvs2 = None },
                     indices = arrays#indices,
@@ -123,7 +126,7 @@ pub mod Mesh3d {
             case None => Ok({ weights = Vector.mapWithIndex((k, w) -> w / Vector.get(k / 4, sums), sw#weights) | sw })
         }
 
-    /// uv を付ける（頂点ごとに u・v の 2 つ）。タンジェントは三角形の辺と uv の差から求める（作る時に 1 回・GL と CPU は同じ値を読む）。
+    /// uv を付ける（頂点ごとに u・v の 2 つ）。タンジェントは三角形の辺と uv の差から求める（初めて読む時に 1 回・GL と CPU は同じ値を読む）。
     /// uv の決まりの写し: (0, 0) が絵の左上・v は絵の下へ増える（glTF と 2D の面の Uv と同じ）。
     /// 作るのは読み込みの時に 1 回（毎コマ呼ぶと、そのたびに中身の鍵の SHA を取り直す）。
     /// 数が頂点の数 × 2 でない・NaN・無限は Err。
@@ -132,7 +135,7 @@ pub mod Mesh3d {
         let count = Vector.length(r#vertices#positions) / 3;
         if (Vector.length(uvs) != count * 2) Err("Mesh3d.withUvs: uvs の数が頂点の数 × 2（${count * 2}）でない")
         else if (Vector.exists(x -> not isFiniteNumber(x), uvs)) Err("Mesh3d.withUvs: uvs に NaN か無限がある")
-        else Ok(withUvSet({ uvs = uvs, tangents = computeTangents(r#vertices#positions, r#vertices#normals, uvs, r#indices) }, r))
+        else Ok(withUvSet({ uvs = uvs, tangents = lazy computeTangents(r#vertices#positions, r#vertices#normals, uvs, r#indices) }, r))
 
     /// 外で求めたタンジェント（頂点ごとに x・y・z・w の 4 つ。glTF の TANGENT）で置き換える。xyz は長さ 1 にそろえる。
     /// uv が無い・数の食い違い・w が ±1 でない・xyz の長さが 0 か数でない、は Err。
@@ -154,7 +157,7 @@ pub mod Mesh3d {
                             let (n, w) = Vector.get(k, rows);
                             if (c == 3) w else component(c, n)
                         });
-                        Ok(withUvSet({ tangents = unit | set }, r))
+                        Ok(withUvSet({ tangents = lazy unit | set }, r))
                 }
         }
 
@@ -204,11 +207,11 @@ pub mod Mesh3d {
                 let colors = pickRows(sources, 3, v#colors);
                 let skin = Option.map(sw -> { joints = pickRows(sources, 4, sw#joints), weights = pickRows(sources, 4, sw#weights) }, v#skin);
                 let uvs2 = Option.map(pickRows(sources, 2), v#uvs2);
-                let hash = arraysHashOf(positions, normals, colors, split#indices, skin);
+                let hash = lazy arraysHashOf(positions, normals, colors, split#indices, skin);
                 { vertices = { positions = positions, normals = normals, colors = colors, skin = skin, uvSet = None, uvs2 = uvs2 },
                   indices = split#indices, hash = hash, baseHash = hash | r }
             };
-        withUvSet({ uvs = uvs, tangents = computeTangents(moved#vertices#positions, moved#vertices#normals, uvs, moved#indices) }, moved)
+        withUvSet({ uvs = uvs, tangents = lazy computeTangents(moved#vertices#positions, moved#vertices#normals, uvs, moved#indices) }, moved)
 
     /// 元の並び values（頂点ごとに width 個）から、sources の頂点の順に写した並び。
     def pickRows(sources: Vector[Int32], width: Int32, values: Vector[a]): Vector[a] =
@@ -266,7 +269,7 @@ pub mod Mesh3d {
     }
 
     def withUvSet(set: UvSet, r: Mesh3dRec): Mesh3d =
-        Mesh3dData.Mesh3dData({ vertices = { uvSet = Some(set) | r#vertices }, hash = surfaceHashOf(r#baseHash, Some(set), r#vertices#uvs2) | r })
+        Mesh3dData.Mesh3dData({ vertices = { uvSet = Some(set) | r#vertices }, hash = lazySurfaceHash(r#baseHash, Some(set), r#vertices#uvs2) | r })
 
     /// 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ・(0, 0) が絵の左上）を付ける。Unity の uv2・Godot の UV2・
     /// Bevy の ATTRIBUTE_UV_1・glTF の TEXCOORD_1 にあたる。タンジェントは作らない（法線マップは 1 本目の uv で読む）。
@@ -276,16 +279,22 @@ pub mod Mesh3d {
         let count = Vector.length(r#vertices#positions) / 3;
         if (Vector.length(uvs) != count * 2) Err("Mesh3d.withUvs2: uvs の数が頂点の数 × 2（${count * 2}）でない")
         else if (Vector.exists(x -> not isFiniteNumber(x), uvs)) Err("Mesh3d.withUvs2: uvs に NaN か無限がある")
-        else Ok(Mesh3dData.Mesh3dData({ vertices = { uvs2 = Some(uvs) | r#vertices }, hash = surfaceHashOf(r#baseHash, r#vertices#uvSet, Some(uvs)) | r }))
+        else Ok(Mesh3dData.Mesh3dData({ vertices = { uvs2 = Some(uvs) | r#vertices }, hash = lazySurfaceHash(r#baseHash, r#vertices#uvSet, Some(uvs)) | r }))
 
     /// uv の欄（1 本目の uv とタンジェント・2 本目の uv）を足した中身の鍵。withUvSet と withUvs2 のどちらの順で付けても同じ鍵になる。
     // WhyNot: uv の無い形の鍵に uv の欄を足さない — 前からある形の鍵（GL の頂点バッファ・描き出しの鍵）を変えない。2 本目の uv の無い形も同じ。
+    def lazySurfaceHash(baseHash: Lazy[String], set: Option[UvSet], uvs2: Option[Vector[Float64]]): Lazy[String] =
+        match (set, uvs2) {
+            case (None, None) => baseHash
+            case _            => lazy surfaceHashOf(force baseHash, set, uvs2)
+        }
+
     def surfaceHashOf(baseHash: String, set: Option[UvSet], uvs2: Option[Vector[Float64]]): String =
         match (set, uvs2) {
             case (None, None)          => baseHash
-            case (Some(s), None)       => digestOf("uv|${baseHash}", s#uvs :: s#tangents :: Nil, Nil)
+            case (Some(s), None)       => digestOf("uv|${baseHash}", s#uvs :: force s#tangents :: Nil, Nil)
             case (None, Some(second))  => digestOf("uv2|${baseHash}", second :: Nil, Nil)
-            case (Some(s), Some(second)) => digestOf("uv+uv2|${baseHash}", s#uvs :: s#tangents :: second :: Nil, Nil)
+            case (Some(s), Some(second)) => digestOf("uv+uv2|${baseHash}", s#uvs :: force s#tangents :: second :: Nil, Nil)
         }
 
     /// 頂点ごとのタンジェント（x・y・z・w）。三角形ごとに
@@ -500,7 +509,14 @@ pub mod Mesh3d {
         found
 
     /// 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
-    pub def contentHash(m: Mesh3d): String = recOf(m)#hash
+    pub def contentHash(m: Mesh3d): String = force recOf(m)#hash
+
+    /// 中身の鍵を key から作った物に差し替えた形（中身はそのまま）。key は、同じ key なら同じ中身だと呼ぶ側が約束できる字
+    /// （ブラウザの書き出しの道と版 — ImageData.ImageDecoder の versionedKey）。後から uv を付けると、その uv は鍵に足す。
+    // WhyNot: 読み直しで中身が変わりうる道（デスクトップの開発中のファイル）を key にしない — GL が前の中身の頂点バッファを使い続ける。
+    pub def withContentKey(key: String, m: Mesh3d): Mesh3d =
+        let keyed = lazy digestOf("key|${key}", Nil, Nil);
+        Mesh3dData.Mesh3dData({ hash = keyed, baseHash = keyed | recOf(m) })
 
     /// 軸にそろった箱（AABB）の最小と最大の角。
     pub type alias Bounds = { min = Vec3.Vec3, max = Vec3.Vec3 }
@@ -556,5 +572,5 @@ pub mod Mesh3d {
     pub def uvs2(m: Mesh3d): Option[Vector[Float64]] = recOf(m)#vertices#uvs2
 
     /// 頂点のタンジェント（頂点ごとに x・y・z・w の 4 つ。cross(法線, xyz) × w が絵の上を向く）。uv の無い形は None。
-    pub def tangents(m: Mesh3d): Option[Vector[Float64]] = recOf(m)#vertices#uvSet |> Option.map(set -> set#tangents)
+    pub def tangents(m: Mesh3d): Option[Vector[Float64]] = recOf(m)#vertices#uvSet |> Option.map(set -> force set#tangents)
 }

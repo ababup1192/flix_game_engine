@@ -200,4 +200,22 @@ mod TestMesh3dUv {
     def testObjMissingVtMeansNoUv(): Unit \ Assert =
         let obj = "v 0 0 0\nv 0 1 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nf 1/1 2/1 3/1\nf 2 4 3\n";
         Assert.assertEq(expected = Ok(None), Mesh3d.fromObj(obj, "") |> Result.map(Mesh3d.uvs))
+
+    // ── 鍵の差し替え ──
+
+    /// withContentKey は中身の鍵を変える。
+    @Test
+    def testWithContentKeyReplacesHash(): Unit \ Assert =
+        Assert.assertTrue(Mesh3d.contentHash(plate()) != Mesh3d.contentHash(Mesh3d.withContentKey("plate@v1", plate())))
+
+    /// 同じ key なら、中身が違う形でも同じ鍵（同じ中身だと呼ぶ側が約束する字）。
+    @Test
+    def testWithContentKeyDependsOnlyOnKey(): Unit \ Assert =
+        Assert.assertEq(expected = Mesh3d.contentHash(Mesh3d.withContentKey("k", plate())), Mesh3d.contentHash(Mesh3d.withContentKey("k", cube())))
+
+    /// 鍵を差し替えた後に付けた uv は鍵に足す。
+    @Test
+    def testUvsAfterContentKeyChangeHash(): Unit \ Assert =
+        let keyed = Mesh3d.withContentKey("plate@v1", plate());
+        Assert.assertTrue(Ok(Mesh3d.contentHash(keyed)) != (Mesh3d.withUvs(plateUvs(), keyed) |> Result.map(Mesh3d.contentHash)))
 }

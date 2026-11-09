@@ -78,6 +78,27 @@ public interface GlContext {
      */
     void readTextureArgb(int texture, int width, int height, int[] argb);
     /**
+     * 段（mipmap）を GPU に作らせるか。真なら呼ぶ側は段 0 だけを上げて generateMipmap で残りを作る（WebGL2）。
+     * 偽なら CPU の Mip.build で作った段を上げる（デスクトップ。段の中身が CPU の描き出しとそろう）。
+     * WhyNot: ブラウザで CPU の段を作らない — wasm の Mip.build は 1098×1920 の絵 1 枚で 130 ms かかり、最初のコマの後が数秒止まる。
+     *   GPU は 8 ビットの値のまま平均するので、sRGB の曲線で平均する CPU の段と遠くの段の色が少し違う（docs/backend-parity.md の「近似」）。
+     */
+    boolean prefersGpuMipmap();
+    /** 今 bind している target の段 0 から残りの段を作る。 */
+    void generateMipmap(int target);
+    /**
+     * 機種の側に解いて持つ絵（ImageData.PlatformImage の key）を、今 bind している TEXTURE_2D の段 0 へ RGBA8 で上げる。
+     * 行の並びは texImageArgb と同じ（行 0 が絵の上）。key の絵を持っていなければ何も上げずに偽。
+     * 持たない機種（デスクトップ）は UnsupportedOperationException を投げる。
+     */
+    boolean texImagePlatform(String key);
+    /**
+     * texture の段 0（width × height）を、今 bind している TEXTURE_2D の段 0 へ RGBA8 で写す（GPU の中で写し、wasm へ読み戻さない）。
+     * 写せなければ（FBO が不完全）偽。prefersGpuMipmap が真の機種だけが持つ。持たない機種は UnsupportedOperationException を投げる。
+     * WhyNot: readTextureArgb で読んで texImageArgb で上げ直さない — ブラウザでは画素が GPU → wasm → GPU と 2 回運ばれる。
+     */
+    boolean copyTextureLevel0(int texture, int width, int height);
+    /**
      * texImageArgb と同じ形式で置き場を確保し、0（透明な黒）で埋める。
      * WhyNot: GL へ null を渡さない — デスクトップの GL では中身が決まらず、レンダーターゲットの「全画素透明から始まる」が崩れる（WebGL2 は null で 0 になる）。
      */

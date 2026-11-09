@@ -235,6 +235,11 @@ pub mod App {
         pipelinedRendering = Bool,
         // 遊びの時計（addClock で宣言）を 1 フレームぶん進める関数の列・追加順。引数は実時間の dt。
         clocks = List[(Float64, w) -> w],
+        // 後回しの素材を区切って読む step（withBackgroundLoad・withMissingAssets）の列・追加順。実機のふつうのコマに 1 回、
+        // 進める前の World へ当てる。引数はこのコマの予算（decodeBudget）。
+        backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}],
+        // このコマに後回しの素材を解いてよい量を World から導く（withDecodeBudget）。全部の backgroundSteps が同じ値を受ける。
+        decodeBudget = w -> LoadProgress.DecodeBudget,
         // 毎フレームの「マウスの矢印をどう見せたいか」の宣言（withCursor）。None = App は触らない（F8 の十字だけ）。
         cursor = Option[w -> CursorSpec],
         // 毎フレームの「窓をフルスクリーンにしたいか」の宣言（withFullscreen）。None = App は触らない。
@@ -302,6 +307,8 @@ pub mod App {
           fixedStep = None,
           pipelinedRendering = false,
           clocks = Nil,
+          backgroundSteps = Nil,
+          decodeBudget = _ -> LoadProgress.DecodeBudget.Idle(4.0),
           cursor = None,
           fullscreen = None,
           mouseCapture = None,
@@ -658,6 +665,48 @@ pub mod App {
         let tick = (dt, world) -> spec#withClock(Clock.advance(spec#paceOf(world), dt, spec#clockOf(world)), world);
         App.App({ clocks = List.append(r#clocks, tick :: Nil) | r })
 
+    // ── 後回しの素材（web.deferred）をループの中で区切って読む ──
+
+    /// このコマに後回しの素材を解いてよい量を World から導く（既定は Idle(4 ms)）。withBackgroundLoad と withMissingAssets の
+    /// step が同じ値を受け、ブラウザでは届いた 2D の絵を登録する量もこれに従う（登録に使った ms は解く側の ms から引く）。
+    /// 3D の部屋のような重い鍵（1 本 100 ms 前後）を Idle で解きたいゲームだけが、タップ待ち・タイトルの間を Idle(150.0) などへ上げる。
+    /// Paused = 文字送り中など画面が動いている・Idle(ms) = タップ待ち・タイトル（1 回の止まりを許す長さ）・Covered(ms) = 暗転中。
+    /// 純粋な関数（pixelSnap と同じ）。デスクトップでは解く物が無いので効かない。
+    pub def withDecodeBudget(f: w -> LoadProgress.DecodeBudget, app: App[w, ef]): App[w, ef] =
+        App.App({ decodeBudget = f | rec(app) })
+
+    /// BackgroundLoad.start で起動の時に読み残した鍵を、毎コマ予算の内で読む。グループごとに何度でも呼べる。
+    /// downloads = 起動の時に LoadProgress.downloads() で受け取った物・pendingOf / withPending = 待ちの表の読み書き（resources 側の欄）・
+    /// store = 解けた鍵の結果を置く（取れない・解けない鍵は Err で 1 回）・priority = 今の優先順の鍵（Loaded でない鍵がある時だけ引く）。
+    /// 全部の鍵が Loaded なら同じ World を返す（デスクトップと画面なしは起動から全部 Loaded）。
+    /// 回すのは実機のふつうのコマだけ（F8 の停止・リモートのコマ・traceFrame・描き出しは回さない）。テストは stepBackgroundLoad。
+    pub def withBackgroundLoad(spec: { group = BackgroundLoad.Group[r, a],
+                                       downloads = LoadProgress.AssetDownloads,
+                                       pendingOf = w -> BackgroundLoad.Pending,
+                                       withPending = (BackgroundLoad.Pending, w) -> w,
+                                       store = (String, Result[String, a], w) -> w,
+                                       priority = w -> List[String] },
+                               app: App[w, ef]): App[w, ef] =
+        let r = rec(app);
+        App.App({ backgroundSteps = List.append(r#backgroundSteps, App.Internal.BackgroundLoad.groupStep(spec) :: Nil) | r })
+
+    /// 後回しの 2D の絵と音のうち、まだ届いていない名前（AssetDownloads#missing）を World へ写す。
+    /// missingOf = World の今の集まり（起動の時に downloads#missing() で埋めておく）・withMissing = 書き替え。
+    /// 集まりが空なら引かず、変わった時だけ書く（デスクトップは起動から空なので同じ World のまま）。
+    /// 予算（withDecodeBudget）をブラウザへ届けるのもこの step なので、3D のグループが無いゲームもこれだけで予算が効く。
+    pub def withMissingAssets(spec: { downloads = LoadProgress.AssetDownloads,
+                                     missingOf = w -> Set[String],
+                                     withMissing = (Set[String], w) -> w },
+                             app: App[w, ef]): App[w, ef] =
+        let r = rec(app);
+        App.App({ backgroundSteps = List.append(r#backgroundSteps, App.Internal.BackgroundLoad.missingStep(spec) :: Nil) | r })
+
+    /// withBackgroundLoad・withMissingAssets の step を、このコマの予算で宣言の順に 1 回ずつ当てる（実機のふつうのコマが進める前に呼ぶ）。
+    /// 前の step が使った ms を次の step へ渡すので、グループが複数あっても 1 コマの予算は 1 つ。
+    /// テストで偽の downloads を流す時に、実機と同じ当て方を組むのに使う。
+    pub def stepBackgroundLoad(app: App[w, ef], world: w): w \ {IO, Fs.FileRead} =
+        App.Internal.BackgroundLoad.stepAll(rec(app), world)
+
     // ── 外への出力（系は IO を持たず、App が実機のフレームの後でだけ触る）──
 
     /// マウスの矢印の見せ方（withCursor の宣言）。icon = 形・visible = 見せるか。
@@ -969,27 +1018,7 @@ pub mod App {
     /// 系より先に、実時間の時計（Frame#realNow に置く）と addClock の時計を実時間の dt で 1 回進める
     /// （刻みが 0 回のフレームも進む —— 止めていないのに時計が止まると、次のフレームで区間が飛ぶ）。
     pub def advanceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (w, StepState) \ ef =
-        let r = rec(app);
-        let real = Clock.advance(Clock.paceOf(Clock.Run.Running), frame#dt, state#real);
-        let stamped = { realNow = Clock.nowOf(real) | frame };
-        let ticked = tickClocks(app, frame#dt, world);
-        match r#fixedStep {
-            case None => (App.Internal.Frame.applySystems(stamped, r#updateSystems, ticked), { real = real | state })
-            case Some(fixedDt) =>
-                let (steps, nextCarry) = App.Internal.Frame.fixedSteps(state#carry, frame#dt, fixedDt);
-                let merged = App.Internal.Frame.mergeEdges(state#pending, stamped);
-                if (steps == 0)
-                    (ticked, { carry = nextCarry, pending = App.Internal.Frame.pendingOf(merged), real = real })
-                else {
-                    let firstFrame = { dt = fixedDt | merged };
-                    let laterFrame = App.Internal.Frame.suppressEdges(firstFrame);
-                    let advanced = List.range(0, steps) |> List.foldLeft((acc, i) -> {
-                        let subFrame = if (i == 0) firstFrame else laterFrame;
-                        App.Internal.Frame.applySystems(subFrame, r#updateSystems, acc)
-                    }, ticked);
-                    (advanced, { carry = nextCarry, pending = App.Internal.Frame.noPending(), real = real })
-                }
-        }
+        App.Internal.Frame.advance(app, frame, state, world)
 
     /// trace の 1 フレーム: そのフレームの入力・進める前後の World・鳴らす一発の音（同じ名前は 1 つ）・
     /// 鳴り続けていてほしい音の宣言。
@@ -1058,40 +1087,12 @@ pub mod App {
     // WhyNot: sceneItems・resumePoint・worldAt を子（App.Internal.*）へ移さない — 子に置くと兄弟の子と App.RemoteDebug から使うのに
     //   pub が要り、ゲームから引ける。親に非 pub で置けば子からだけ引けて、外の mod からは E0237 で止まる。
 
-    /// 確定した camera（中心と zoom）を World から 1 回だけ導く: zoom-only の正規化
-    /// （zoomedCenter）→ cameraBounds クランプ。主 view と静的レイヤーがこの同じ値から
-    /// 派生するので、動的な絵と静的な絵の視点が必ず一致する（1px もずれない）。
-    def resolvedCamera(r: Rec[w, ef], world: w, design: Vec2.Vec2): (Option[Vec2.Vec2], Float64) \ ef =
-        let z = match r#zoom {
-            case None    => 1.0
-            case Some(f) => f(world)
-        };
-        let center0 = match r#camera {
-            case Some(f) => Some(f(world))
-            case None    => None
-        };
-        let center = match (zoomedCenter(center0, z, design), r#cameraBounds) {
-            case (Some(c), Some(fb)) =>
-                let seen = Vec2.div(design, CameraRig.safeZoom(z));
-                Some(CameraRig.clampCenter(bounds = fb(world), seen = seen, c))
-            case (c, _) => c
-        };
-        // 画素の升目に吸着させる（静的な絵と動く絵が同じ値を見るので、両者はずれない）。
-        let snap = (r#pixelSnap)(world);
-        // 画面の画素に載せたいので、zoom を掛けた後の値で丸める（world 座標で丸めるだけでは
-        // zoom が整数でないときに半画素ずれが残る）。
-        let unit = snap * CameraRig.safeZoom(z);
-        let snapped = if (not Float64.isFinite(unit) or unit <= 0.0) center
-                      else Option.map(c -> { x = Float64.round(c#x * CameraRig.safeZoom(z)) / CameraRig.safeZoom(z),
-                                             y = Float64.round(c#y * CameraRig.safeZoom(z)) / CameraRig.safeZoom(z) }, center);
-        (snapped, z)
-
     /// ViewCtx を 1 つ受けて、view・hudView・視差レイヤの絵に camera を掛けて 1 コマぶん並べる（窓なしで呼べる）。
     /// base の visible は層ごとに見えている矩形へ置き換わり、ほかの欄（字・知らせ・診断）はどの層にも同じ値で渡る。
     pub def buildSceneItems(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w,
                             toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ ef =
         let r = rec(app);
-        let (center, z) = resolvedCamera(r, world, design);
+        let (center, z) = App.Internal.Paint.resolvedCamera(r, world, design);
         let hud = match r#hudView {
             case None    => Nil
             // HUD は画面固定なので、見えている矩形は常に design 全体（原点起点）で zoom も掛けない。

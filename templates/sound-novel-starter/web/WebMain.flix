@@ -2,13 +2,16 @@
 // Main と同じ App を、開発の道具なし（App.DevTools.none）でブラウザの handler 一式（WebLayer・WebFs）の上に走らせる。
 // セーブ・既読・設定は localStorage（saves/ の道のまま。鍵の頭にゲームの id）。
 mod WebMain {
-    use fge::{App, Resources, WebFs, WebLayer}
+    use fge::{App, LoadProgress, Resources, WebFs, WebLayer}
     import fge.web.Browser
 
     pub def main(): Unit \ IO =
         run {
-            let res = Controls.loadRes();
+            // 後回しの絵と音（project.json の web.deferred）は押した後も裏で届く。届いていない名前を Res に置いて始める。
+            let downloads = LoadProgress.downloads();
+            let res = Res.withMissing(downloads#missing(), Controls.loadRes());
             let app = Game.app(res, Saves.load(res#kind), localEpochSeconds())
+                |> Game.withAssetLoading(downloads)
                 |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
                                                         write = w -> Saves.write(w#saves), onJump = App.OnJump.Skip }));
             App.launchWithDevTools(App.DevTools.none(), app)

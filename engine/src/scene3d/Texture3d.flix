@@ -7,8 +7,15 @@ pub mod Texture3d {
     import java.nio.ByteBuffer
     import java.security.MessageDigest
 
-    /// width × height・argb = ARGB（行優先・行 0 が絵の上）・hash = 寸法と画素の SHA-256 の 16 進。
-    type alias Texture3dRec = { width = Int32, height = Int32, argb = Vector[Int32], hash = String }
+    /// 絵の画素の在りか。Argb = ARGB の並び（行優先・行 0 が絵の上）・PlatformImage(key) = 機種の側に解いて持つ絵
+    /// （ブラウザの ImageBitmap。ImageData.PlatformImage の key。画素は GL の描き手だけが GPU へ上げられる）。
+    pub enum Source with Eq, ToString {
+        case Argb(Vector[Int32])
+        case PlatformImage(String)
+    }
+
+    /// width × height・source = 画素の在りか・hash = 中身の鍵（Argb は寸法と画素の SHA-256・PlatformImage は寸法と key の SHA-256。16 進）。
+    type alias Texture3dRec = { width = Int32, height = Int32, source = Source, hash = String }
 
     enum Texture3dData { case Texture3dData(Texture3dRec) }
 
@@ -21,10 +28,21 @@ pub mod Texture3d {
 
     /// ARGB（行優先・行 0 が絵の上）から作る。数の食い違い・辺が 0 以下・辺が maxSide() を超える、は Err。
     pub def fromArgb(width: Int32, height: Int32, argb: Vector[Int32]): Result[String, Texture3d] =
-        if (width <= 0 or height <= 0) Err("Texture3d.fromArgb: 辺が 0 以下（${width} × ${height}）")
-        else if (width > maxSide() or height > maxSide()) Err("Texture3d.fromArgb: 辺が ${maxSide()} を超える（${width} × ${height}）")
-        else if (Vector.length(argb) != width * height) Err("Texture3d.fromArgb: argb の数が ${width} × ${height} でない")
-        else Ok(Texture3dData.Texture3dData({ width = width, height = height, argb = argb, hash = hashOf(width, height, argb) }))
+        checkSides("Texture3d.fromArgb", width, height) |> Result.flatMap(_ ->
+            if (Vector.length(argb) != width * height) Err("Texture3d.fromArgb: argb の数が ${width} × ${height} でない")
+            else Ok(Texture3dData.Texture3dData({ width = width, height = height, source = Source.Argb(argb), hash = hashOf(width, height, argb) })))
+
+    /// 機種の側に解いて持つ絵から作る（ImageData.ImageDecoder の platformImage が返した物）。辺の決まりは fromArgb と同じ。
+    /// 画素を読まないので、中身の鍵は key から作る（同じ key なら同じ画素、という機種の約束に頼る）。
+    pub def fromPlatformImage(image: ImageData.PlatformImage): Result[String, Texture3d] =
+        checkSides("Texture3d.fromPlatformImage", image#width, image#height)
+            |> Result.map(_ -> Texture3dData.Texture3dData({ width = image#width, height = image#height, source = Source.PlatformImage(image#key),
+                                                             hash = keyHashOf(image#width, image#height, image#key) }))
+
+    def checkSides(label: String, width: Int32, height: Int32): Result[String, Unit] =
+        if (width <= 0 or height <= 0) Err("${label}: 辺が 0 以下（${width} × ${height}）")
+        else if (width > maxSide() or height > maxSide()) Err("${label}: 辺が ${maxSide()} を超える（${width} × ${height}）")
+        else Ok(())
 
     /// 解いた絵から作る（決まりは fromArgb と同じ）。
     pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d] = fromArgb(image#width, image#height, image#argb)
@@ -34,14 +52,24 @@ pub mod Texture3d {
     pub def decodeUsing(decoder: ImageData.ImageDecoder, bytes: Vector[Int8]): Result[String, Texture3d] \ IO =
         (decoder#decode)(bytes) |> Result.mapErr(e -> "Texture3d.decodeUsing: ${e}") |> Result.flatMap(fromImage)
 
+    /// 道 path から読んだバイト bytes の絵。機種が道の絵を自分の側に持てるなら（decoder の platformImage）それを使い、
+    /// 持てなければ decodeUsing で bytes を解く。読めない・辺が決まりの外、は Err。
+    // WhyNot: ブラウザでいつも bytes を解かない — 解いた画素を GPU から wasm へ読み戻し、中身の鍵の SHA-256 も取るので、
+    //   1 枚 50 ms ほど止まる。機種の側の絵は GL の描き手がそのまま GPU へ上げる。
+    pub def decodeAtUsing(decoder: ImageData.ImageDecoder, path: String, bytes: Vector[Int8]): Result[String, Texture3d] \ IO =
+        match (decoder#platformImage)(path) {
+            case Some(image) => fromPlatformImage(image)
+            case None        => decodeUsing(decoder, bytes)
+        }
+
     pub def width(t: Texture3d): Int32 = recOf(t)#width
 
     pub def height(t: Texture3d): Int32 = recOf(t)#height
 
-    /// ARGB（行優先・行 0 が絵の上）。
-    pub def argb(t: Texture3d): Vector[Int32] = recOf(t)#argb
+    /// 画素の在りか。
+    pub def sourceOf(t: Texture3d): Source = recOf(t)#source
 
-    /// 中身の鍵（寸法と画素の SHA-256 の 16 進）。同じ画素なら同じ字になる。
+    /// 中身の鍵（16 進）。同じ画素なら同じ字になる。
     pub def contentHash(t: Texture3d): String = recOf(t)#hash
 
     /// 材質の Tex の読み先の名前（"tex3d:" + contentHash の頭 16 字）。場面の textures に入れた絵はこの名前で引く。
@@ -52,13 +80,18 @@ pub mod Texture3d {
 
     /// 長い辺が maxSide 以下になるまで半分にした絵（mip の段を作るのと同じ縮め方。もう収まっていれば t のまま）。
     /// 大きすぎる絵を読み込みの時に縮め、場面の絵の上限（project.json の scene3dTextureBudgetMB）に収めるのに使う。
+    /// 機種の側の絵（PlatformImage）は縮めずに t のまま返して 1 行言う。
+    // WhyNot: 機種の側の絵を読み戻して縮めない — 読み戻しを避けるための絵なので、縮めるなら書き出しの時に小さくする。
     pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d =
         let r = recOf(t);
         if (Int32.max(r#width, r#height) <= maxSide) t
-        else {
-            let small = Mip.shrinkTo(maxSide, { width = r#width, height = r#height, pixels = r#argb });
-            Texture3dData.Texture3dData({ width = small#width, height = small#height, argb = small#pixels,
-                                          hash = hashOf(small#width, small#height, small#pixels) })
+        else match r#source {
+            case Source.Argb(argb) =>
+                let small = Mip.shrinkTo(maxSide, { width = r#width, height = r#height, pixels = argb });
+                Texture3dData.Texture3dData({ width = small#width, height = small#height, source = Source.Argb(small#pixels),
+                                              hash = hashOf(small#width, small#height, small#pixels) })
+            case Source.PlatformImage(key) =>
+                Log.warnThen("Texture3d.limitSize: 機種の側の絵 ${key}（${r#width} × ${r#height}）は ${maxSide} へ縮めない", t)
         }
 
     // ── 色空間（8bit の絵の値の意味）──
@@ -173,6 +206,12 @@ pub mod Texture3d {
     def glslFloat(x: Float64): String =
         let s = Float64.toString(x);
         if (String.contains(substr = ".", s) or String.contains(substr = "E", s)) s else s + ".0"
+
+    def keyHashOf(width: Int32, height: Int32, key: String): String =
+        unsafe IO {
+            let digest = MessageDigest.getInstance("SHA-256").digest(unchecked_cast(String.toBytes("platform|${width}x${height}|${key}") as Array[Int8, Static]));
+            Util.Codec.encodeHex(Array.toVector(digest))
+        }
 
     // WhyNot: 画素を文字列につないでから SHA を取らない — 1024² の絵で数十 MB の字を作ることになる。
     def hashOf(width: Int32, height: Int32, argb: Vector[Int32]): String =

@@ -2,6 +2,8 @@
 mod TestTexture3d {
     import java.awt.image.BufferedImage
     import java.io.ByteArrayOutputStream
+    import java.io.PrintStream
+    import java.lang.System
     import javax.imageio.ImageIO
 
     /// 左上が赤・右上が緑・左下が青・右下が白の 2 × 2（不透明）。
@@ -39,7 +41,7 @@ mod TestTexture3d {
     /// 2 × 2 の PNG を読むと、行 0 が絵の上の ARGB に戻る。
     @Test
     def testDecodeReadsPngRows(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = Ok(quad()), Texture3d.decodeUsing(TestDecoder.imageIo(), pngOf(quad())) |> Result.map(Texture3d.argb))
+        Assert.assertEq(expected = Ok(quad()), Texture3d.decodeUsing(TestDecoder.imageIo(), pngOf(quad())) |> Result.map(TestDecoder.pixelsOf))
 
     /// PNG でも JPEG でもないバイトは Err。
     @Test
@@ -49,8 +51,8 @@ mod TestTexture3d {
     /// decoder が返す画素から作る（バイトを解くのは decoder だけ）。
     @Test
     def testDecodeUsingBuildsFromTheDecodedImage(): Unit \ {Assert, IO} =
-        let decoder = { decode = _ -> checked_ecast(Ok({ width = 2, height = 2, argb = quad() })) };
-        Assert.assertEq(expected = Ok(quad()), Texture3d.decodeUsing(decoder, Vector#{ 1i8 }) |> Result.map(Texture3d.argb))
+        let decoder = ImageData.decoderOf(_ -> checked_ecast(Ok({ width = 2, height = 2, argb = quad() })));
+        Assert.assertEq(expected = Ok(quad()), Texture3d.decodeUsing(decoder, Vector#{ 1i8 }) |> Result.map(TestDecoder.pixelsOf))
 
     /// decoder の Err はそのまま Err。
     @Test
@@ -60,7 +62,7 @@ mod TestTexture3d {
     /// decoder の画素の数が寸法と合わなければ Err（fromArgb と同じ決まり）。
     @Test
     def testDecodeUsingRejectsCountMismatch(): Unit \ {Assert, IO} =
-        let decoder = { decode = _ -> checked_ecast(Ok({ width = 2, height = 2, argb = Vector#{ 0 } })) };
+        let decoder = ImageData.decoderOf(_ -> checked_ecast(Ok({ width = 2, height = 2, argb = Vector#{ 0 } })));
         Assert.assertTrue(Result.isErr(Texture3d.decodeUsing(decoder, Vector#{ 1i8 })))
 
     /// 同じ画素なら同じ鍵、1 画素違えば違う鍵。
@@ -130,4 +132,56 @@ mod TestTexture3d {
         let lut = Texture3d.colorLut();
         Assert.assertEq(expected = (Texture3d.srgbToLinear(1.5), Texture3d.linearToSrgb(2.0), Texture3d.linearToSrgb(-0.5)),
             (Texture3d.srgbToLinearLut(lut, 1.5), Texture3d.linearToSrgbLut(lut, 2.0), Texture3d.linearToSrgbLut(lut, -0.5)))
+
+    // ── 機種の側の絵 ──
+
+    def platformImage(key: String): ImageData.PlatformImage = { key = key, width = 4, height = 2 }
+
+    /// 道の絵を持てる decoder（platformImage は Some(key = 道 + "@v1")・decode はいつも Err）。
+    def holdingDecoder(): ImageData.ImageDecoder =
+        { platformImage = path -> checked_ecast(Some(platformImage("${path}@v1"))) | ImageData.failingDecoder("bytes を解いた") }
+
+    /// 機種の側の絵は key を在りかに持つ。
+    @Test
+    def testFromPlatformImageKeepsTheKey(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(Texture3d.Source.PlatformImage("a.jpg@v1")),
+            Texture3d.fromPlatformImage(platformImage("a.jpg@v1")) |> Result.map(Texture3d.sourceOf))
+
+    /// 同じ key なら同じ中身の鍵。
+    @Test
+    def testPlatformImageHashFollowsKey(): Unit \ Assert =
+        Assert.assertEq(expected = Texture3d.fromPlatformImage(platformImage("a.jpg@v1")) |> Result.map(Texture3d.contentHash),
+            Texture3d.fromPlatformImage(platformImage("a.jpg@v1")) |> Result.map(Texture3d.contentHash))
+
+    /// 版が違えば違う中身の鍵。
+    @Test
+    def testPlatformImageHashDiffersByVersion(): Unit \ Assert =
+        Assert.assertTrue((Texture3d.fromPlatformImage(platformImage("a.jpg@v1")) |> Result.map(Texture3d.contentHash)) != (Texture3d.fromPlatformImage(platformImage("a.jpg@v2")) |> Result.map(Texture3d.contentHash)))
+
+    /// 機種の側の絵も辺が 0 なら Err。
+    @Test
+    def testFromPlatformImageRejectsZeroSide(): Unit \ Assert =
+        Assert.assertTrue(Result.isErr(Texture3d.fromPlatformImage({ key = "a.jpg@v1", width = 0, height = 2 })))
+
+    /// 道の絵を持てる decoder なら、bytes を解かずに機種の側の絵を使う。
+    @Test
+    def testDecodeAtUsingPrefersThePlatformImage(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Ok(Texture3d.Source.PlatformImage("a.jpg@v1")),
+            Texture3d.decodeAtUsing(holdingDecoder(), "a.jpg", Vector#{ 1i8 }) |> Result.map(Texture3d.sourceOf))
+
+    /// 道の絵を持てない decoder なら bytes を解く。
+    @Test
+    def testDecodeAtUsingFallsBackToBytes(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Ok(Texture3d.Source.Argb(quad())),
+            Texture3d.decodeAtUsing(TestDecoder.imageIo(), "a.jpg", pngOf(quad())) |> Result.map(Texture3d.sourceOf))
+
+    /// 機種の側の絵は上限を超えても縮めず、縮めないことを 1 行言う。
+    @Test
+    def testLimitSizeKeepsPlatformImage(): Unit \ {Assert, IO} =
+        let old = System.err;
+        let buf = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(buf, true));
+        let size = Texture3d.fromPlatformImage(platformImage("a.jpg@v1")) |> Result.map(Texture3d.limitSize(1)) |> Result.map(t -> (Texture3d.width(t), Texture3d.height(t)));
+        System.setErr(old);
+        Assert.assertEq(expected = (Ok((4, 2)), true), (size, String.contains(substr = "a.jpg@v1", buf.toString())))
 }

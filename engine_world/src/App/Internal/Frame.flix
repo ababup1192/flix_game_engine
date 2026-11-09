@@ -64,4 +64,29 @@ pub mod App.Internal.Frame {
     /// システムの列を追加順（左から右）に World へ畳み込む。
     pub def applySystems(frame: App.Frame, systems: List[(App.Frame, w) -> w \ ef], world: w): w \ ef =
         List.foldLeft((acc, sys) -> sys(frame, acc), world, systems)
+
+    /// App.advanceFrame の中身。
+    pub def advance(app: App.App[w, ef], frame: App.Frame, state: App.StepState, world: w): (w, App.StepState) \ ef =
+        let r = App.rec(app);
+        let real = Clock.advance(Clock.paceOf(Clock.Run.Running), frame#dt, state#real);
+        let stamped = { realNow = Clock.nowOf(real) | frame };
+        let ticked = App.tickClocks(app, frame#dt, world);
+        match r#fixedStep {
+            case None => (applySystems(stamped, r#updateSystems, ticked), { real = real | state })
+            case Some(fixedDt) =>
+                let (steps, nextCarry) = fixedSteps(state#carry, frame#dt, fixedDt);
+                let merged = mergeEdges(state#pending, stamped);
+                if (steps == 0)
+                    (ticked, { carry = nextCarry, pending = pendingOf(merged), real = real })
+                else {
+                    let firstFrame = { dt = fixedDt | merged };
+                    let laterFrame = suppressEdges(firstFrame);
+                    let advanced = List.range(0, steps) |> List.foldLeft((acc, i) -> {
+                        let subFrame = if (i == 0) firstFrame else laterFrame;
+                        applySystems(subFrame, r#updateSystems, acc)
+                    }, ticked);
+                    (advanced, { carry = nextCarry, pending = noPending(), real = real })
+                }
+        }
+
 }

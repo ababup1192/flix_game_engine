@@ -60,6 +60,9 @@ mod Stage {
     pub def commandNames(): List[String] =
         "bg" :: "nvl" :: "adv" :: "clear" :: "ambience" :: "se" :: "fx" :: "shake" :: Nil
 
+    /// 環境音の名前（<<ambience 名>> の名）→ project.json の sounds の名前。
+    pub def ambienceSound(name: String): String = "amb_${name}"
+
     /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
     pub def particleNames(): List[String] = "fireflies" :: Nil
 
