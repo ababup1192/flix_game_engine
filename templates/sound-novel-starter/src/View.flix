@@ -168,7 +168,7 @@ mod View {
 
     // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
 
-    /// 画面を夜の地の色で覆う（黒へ重ねる・黒のまま・黒から戻す）。黒のまま holdMarkSeconds を過ぎたら待ちの印（形は novel.theme.json の waitMark）。
+    /// 画面を夜の地の色で覆う（黒へ重ねる・黒のまま・黒から戻す）。黒のまま holdMarkSeconds を過ぎたら待ちの印（形は novel.theme.json の loadingMark）。
     /// 重ねの進みは物語の時計（画面を開くと止まる）、印の動きは実時間。
     def holdLayer(atlas: FontAtlas, env: Env): World.Hold -> List[Render.PlacedItem] = hold ->
         let k = kindOf(env);
@@ -182,19 +182,19 @@ mod View {
         let whole = Layout.screen(env#fit);
         let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundColor(), zHold()) |> Render.fade(alpha));
         let marked = hold#phase == World.HoldPhase.Waiting and hold#waited >= k#holdMarkSeconds;
-        let mark = if (marked) loadingMark(atlas, env, theme(env)#waitMark, whole, 1.0, zHoldMark()) else Nil;
+        let mark = if (marked) loadingMark(atlas, env, theme(env)#loadingMark, whole, { x = 60.0, y = 36.0 }, 1.0, zHoldMark()) else Nil;
         veil :: mark
 
-    /// 素材を待つ間の印を矩形 place（画面かサムネの枠）に置く。Dots = 右下の金の点 3 つ、Ring = 真ん中に回る点の輪と字のラベル、Off = 何も描かない。
-    /// scale = 大きさの倍率（サムネは小さく）。
-    def loadingMark(atlas: FontAtlas, env: Env, kind: ThemeDoc.WaitMark, place: Rect2.Rect2, scale: Float64, z: Int32): List[Render.PlacedItem] =
+    /// 素材を待つ間の印を矩形 place（画面かサムネの枠）に置く。Dots = 右下の金の点 3 つ（左の点の中心を右下の角から inset だけ内へ）、
+    /// Ring = 真ん中に回る点の輪と字のラベル、Hidden = 何も描かない。scale = 大きさの倍率（サムネは小さく）。
+    def loadingMark(atlas: FontAtlas, env: Env, kind: ThemeDoc.LoadingMark, place: Rect2.Rect2, inset: Vec2.Vec2, scale: Float64, z: Int32): List[Render.PlacedItem] =
         let right = place#position#x + place#size#x;
         let bottom = place#position#y + place#size#y;
         match kind {
-            case ThemeDoc.WaitMark.Dots => waitDots(env, { x = right - 60.0 * scale, y = bottom - 36.0 * scale }, scale, z)
-            case ThemeDoc.WaitMark.Ring =>
+            case ThemeDoc.LoadingMark.Dots => waitDots(env, { x = right - inset#x, y = bottom - inset#y }, scale, z)
+            case ThemeDoc.LoadingMark.Ring =>
                 ringBadge(atlas, env, { x = place#position#x + place#size#x / 2.0, y = place#position#y + place#size#y / 2.0 }, scale, z)
-            case ThemeDoc.WaitMark.Off  => Nil
+            case ThemeDoc.LoadingMark.Hidden  => Nil
         }
 
     /// 待ちの印: 金の小さな点 3 つが左から順に息をするように明滅する（蛍と同じ、芯と滲む光）。
@@ -480,14 +480,13 @@ mod View {
     /// 指の長押し（Read の tip）は離した後に知らせと同じ秒だけ出す。
     def tooltip(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let all = WorldMenu.buttonsOf(env#fit);
-        let long = Rail.recOf(env#fit)#longPressSeconds;
         let tipped = World.tipOf(env#res, env#realNow, r);
         let pressed = match env#grab {
-            case World.Grab.LongPress(i, since) if Clock.since(since, env#realNow) >= long => Some(i)
-            case _                                                                         => tipped
+            case World.Grab.LongPress(i, since) if Rail.isLong(env#fit, Clock.since(since, env#realNow)) => Some(i)
+            case _                                                                                       => tipped
         };
         pressed |> Option.flatMap(i -> List.nth(i, all) |> Option.map(b -> (i, b)))
-            |> Option.filter(match (_, b) -> WorldMenu.longPressOf(b) == WorldMenu.LongPressDoes.Tooltip)
+            |> Option.filter(match (_, b) -> WorldMenu.longPressOf(b) == WorldMenu.LongPressAction.Tooltip)
             |> Option.map(match (i, b) -> tooltipPlate(atlas, env, Rail.tooltipAnchor(env#fit, i), label(buttonLabel(b), env)))
             |> Option.getWithDefault(Nil)
 
@@ -935,7 +934,7 @@ mod View {
             |> List.map(Render.overItem(liftedZ(zThumb()))) |> Render.clippedAll(r);
         // 写真がまだ届いていない枠は、暗い地（backdropsIn が写真を描かない）に待ちの印。
         let photoMissing = screen |> Option.exists(read -> stagePhotoMissing(env, read#stage));
-        let mark = if (photoMissing) loadingMark(atlas, env, t#waitMark, r, 0.6, zThumbTop() + 1) else Nil;
+        let mark = if (photoMissing) loadingMark(atlas, env, t#loadingMark, r, { x = 30.0, y = 12.0 }, 0.6, zThumbTop() + 1) else Nil;
         List.flatten(small :: frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumbTop()) :: mark :: Nil)
 
     /// 舞台の写真が、まだ届いていない後回しの絵か。

@@ -53,7 +53,7 @@
       "order": 7,
       "required": true
     },
-    "waitMark": {
+    "loadingMark": {
       "kind": "field",
       "type": {
         "enum": [

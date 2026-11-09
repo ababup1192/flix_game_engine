@@ -164,9 +164,9 @@ mod Layout {
     }
 
     /// i 番目のボタン。横は count 個を画面の真ん中に並べる（Small は左右に 8px ずつ残して画面の幅を同じ幅で分ける）。
-    /// 縦は右端の縦の列の i 番目（Rail.button）。
+    /// 縦の画面の列は Rail.button が持つ（ここは呼ばない）。
     pub def button(fit: Fit, i: Int32, count: Int32): Rect2.Rect2 = match fit {
-        case Fit.Portrait(_, _) => Rail.button(fit, i)
+        case Fit.Portrait(_, _) => bug!("Layout.button は横の画面だけ — 縦の列は Rail.button")
         case _ =>
             let n = Int32.toFloat64(Int32.max(1, count));
             let (w, h) = match fit {

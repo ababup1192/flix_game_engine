@@ -358,7 +358,7 @@ mod WorldRead {
         match World.readOf(w) {
             case Some(r) if r#playback != World.Playback.Skip =>
                 let head = List.head(cues) |> Option.map(event -> pendingNames(res, r, eventNames(res, r#stage, event))) |> Option.getWithDefault(Nil);
-                if (List.isEmpty(head)) Nil else pendingNames(res, r, List.flatMap(eventNames(res, r#stage), cues))
+                if (List.isEmpty(head)) Nil else pendingNames(res, r, namesAlong(res, World.now(w), r#stage, cues))
             case _ => Nil
         }
 
@@ -373,6 +373,20 @@ mod WorldRead {
             Stage.cueOf(res, command) |> Result.toOption |> Option.map(cueNames(res, stage)) |> Option.getWithDefault(Nil)
         case _ => Nil
     }
+
+    /// 出来事の列が順に使う背景・環境音・立ち絵の名前。舞台に 1 つずつ当てながら集める
+    /// （<<char a smile>> の後の <<char a left>> は、笑顔のまま左へ出す絵を待つ）。
+    def namesAlong(res: Res.Res, now: Clock.Time[Stage.Story], stage: Stage.Stage, events: List[YarnRunner.Event]): List[String] =
+        let step = (acc, event) -> {
+            let (cur, names) = acc;
+            let cue = match event {
+                case YarnRunner.Event.Command(command) => Stage.cueOf(res, command) |> Result.toOption
+                case _                                 => None
+            };
+            let used = cue |> Option.map(cueNames(res, cur)) |> Option.getWithDefault(Nil);
+            (cue |> Option.map(c -> Stage.applyCue(now, c, cur)) |> Option.getWithDefault(cur), List.append(names, used))
+        };
+        snd(List.foldLeft(step, (stage, Nil), events))
 
     /// コマンドの意味が使う背景・環境音・立ち絵の名前（project.json の textures / sounds の name）。
     def cueNames(res: Res.Res, stage: Stage.Stage, cue: Stage.Cue): List[String] = match cue {

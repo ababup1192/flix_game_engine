@@ -7,7 +7,7 @@ mod CastDoc {
     use Util.Json.Json
 
     /// 列: Character = 人物（1 つの位置に 1 人ずつ、同時に何人も）、Prop = 小物（1 つだけ・人物より手前）。
-    pub enum Lane with Eq, Order, ToString {
+    pub enum Kind with Eq, Order, ToString {
         case Character
         case Prop
     }
@@ -62,9 +62,9 @@ mod CastDoc {
     pub def textureOf(name: String, face: String): String = "cast_${name}_${face}"
 
     /// 列の一覧から名前の項目を引く（人物は cast、小物は props）。
-    pub def entryOf(lane: Lane, name: String, doc: Doc): Option[Entry] = match lane {
-        case Lane.Character => Map.get(name, rec(doc)#cast)
-        case Lane.Prop      => Map.get(name, rec(doc)#props)
+    pub def entryOf(kind: Kind, name: String, doc: Doc): Option[Entry] = match kind {
+        case Kind.Character => Map.get(name, rec(doc)#cast)
+        case Kind.Prop      => Map.get(name, rec(doc)#props)
     }
 
     pub def fromJson(text: String): Option[Doc] =
@@ -91,7 +91,17 @@ mod CastDoc {
                   slots = catalogOr(root, "slots", slotFrom, d#slots),
                   portraitSlots = catalogOr(root, "portraitSlots", slotFrom, d#portraitSlots),
                   cast = catalogOr(root, "cast", entryFrom("center"), d#cast),
-                  props = catalogOr(root, "props", entryFrom("item"), d#props) })
+                  props = catalogOr(root, "props", entryFrom("item"), d#props) }) |> withKnownNames
+
+    /// 項目の既定の表情を faces の中へ、既定の位置を slots の中へ丸める（無ければ faces の頭・slots の鍵の頭）。
+    // WhyNot: 書き損じの名前のまま残さない — 既定の表情から導いたテクスチャは未登録で、出した人が見えなくなる。
+    def withKnownNames(doc: Doc): Doc =
+        let d = rec(doc);
+        let firstSlot = Map.keysOf(d#slots) |> Set.toList |> List.head |> Option.getWithDefault("");
+        let known = (e: Entry) ->
+            { face = if (List.memberOf(e#face, e#faces)) e#face else List.head(e#faces) |> Option.getWithDefault(e#face),
+              slot = if (Map.memberOf(e#slot, d#slots)) e#slot else firstSlot | e };
+        Doc.Doc({ cast = Map.map(known, d#cast), props = Map.map(known, d#props) | d })
 
     /// 名前 → 中身の辞書の欄（読めない項目は落とし、欄が無い・辞書でなければ fallback）。
     def catalogOr(root: Map[String, Json], key: String, decode: Json -> Option[t], fallback: Map[String, t]): Map[String, t] =

@@ -71,8 +71,7 @@ mod Rail {
 
     /// しおりのボタンの列の中の番号。
     def saveLoadIndex(fit: Layout.Fit): Int32 =
-        WorldMenu.buttonsOf(fit) |> List.zipWithIndex |> List.find(match (_, b) -> b == World.Button.SaveLoad)
-            |> Option.map(fst) |> Option.getWithDefault(0)
+        WorldMenu.buttonIndexOf(fit, World.Button.SaveLoad) |> Option.getWithDefault(0)
 
     /// しおりの選びの i 番目（左から [セーブ｜ロード]）。しおりのボタンの左に、丸の高さの真ん中で横に並べる。
     pub def saveLoadItem(fit: Layout.Fit, i: Int32, count: Int32): Rect2.Rect2 =
@@ -114,8 +113,8 @@ mod Rail {
         let pointer = if (frame#mouseClicked) Pointer.Pressed else if (frame#mouseDown) Pointer.Down else Pointer.Up;
         { cursor = frame#cursor, pointer = pointer, touchHold = touchHold }
 
-    /// 判定の結果。Begin(i) = 列の i 番目で押し始めた、Tap(i) = 長押しの秒に届く前に離した、Long(i) = 押したまま長押しの秒を越えている、
-    /// Held(i) = まだ押している（長押しの秒の前）、Released = 長押しの後に離した、TouchLong(i) = 列の i 番目の上で指の長押しが届いた、
+    /// 判定の結果。Begin(i) = 列の i 番目で押し始めた、Tap(i) = 長押しの秒に届く前にボタンの中で離した、Long(i) = 押したまま長押しの秒を越えている、
+    /// Held(i) = まだ押している（長押しの秒の前）、Released = 押さずに離した（長押しの後か、ボタンの外で離した）、TouchLong(i) = 列の i 番目の上で指の長押しが届いた、
     /// MoreOpen = … を押した、Swallow = … の上の指の長押し（何もしない）、Pass = 列とも … とも関係が無い。
     pub enum Outcome with Eq, ToString {
         case Begin(Int32)
@@ -135,11 +134,19 @@ mod Rail {
         case _                              => fresh(fit, input)
     }
 
-    /// 列の i 番目を held 秒押している。
+    /// 列のボタンを長押しと見る秒（novel.rail.json の longPressSeconds）。
+    pub def longPressSecondsOf(fit: Layout.Fit): Float64 = recOf(fit)#longPressSeconds
+
+    /// held 秒押しているのが長押しか（判定と、ツールチップを出す View が同じ線を引く）。
+    pub def isLong(fit: Layout.Fit, held: Float64): Bool = held >= longPressSecondsOf(fit)
+
+    /// 列の i 番目を held 秒押している。ボタンの外で離したら押さない（押し間違えた時に、指をずらして取り消せる）。
+    /// ブラウザ版の指は、fge-web.js が離す時の位置を押した所へ戻して届けるので、指をずらしても取り消しにならない（今までどおり）。
     def pressing(fit: Layout.Fit, input: Input, i: Int32, held: Float64): Outcome =
-        let long = held >= recOf(fit)#longPressSeconds;
+        let long = isLong(fit, held);
         let up = input#pointer == Pointer.Up;
         if (up and long) Outcome.Released
+        else if (up and not Layout.contains(button(fit, i), input#cursor)) Outcome.Released
         else if (up) Outcome.Tap(i)
         else if (long) Outcome.Long(i)
         else Outcome.Held(i)

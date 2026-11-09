@@ -3,7 +3,7 @@
 // 読み込む時に PortraitDoc の rail 欄へ組む（Controls.loadPortrait）。横の画面は読まない。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod RailDoc {
-    use fge::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec, Log}
     use Util.Json.Json
 
     /// 列の積み方。Top(railGap) = 右上の … のすぐ下から下へ積む（… の押せる正方形の下端と列の上端の間が railGap）、
@@ -50,10 +50,11 @@ mod RailDoc {
 
     def defaultBottom(): Float64 = 36.0
 
-    /// "top" / "bottom" と、その積み方だけが使う余白から積み方を作る。知らない字は top。
+    /// "top" / "bottom" と、その積み方だけが使う余白から積み方を作る。知らない字は 1 行知らせて top。
     def anchorOf(name: String, gap: Float64, bottom: Float64): Anchor = match name {
+        case "top"    => Anchor.Top(gap)
         case "bottom" => Anchor.Bottom(bottom)
-        case _        => Anchor.Top(gap)
+        case other    => Log.warnThen("[rail] anchor '${other}' は知らない — top で積む（top / bottom）", Anchor.Top(gap))
     }
 
     pub def fromJson(text: String): Option[Doc] =

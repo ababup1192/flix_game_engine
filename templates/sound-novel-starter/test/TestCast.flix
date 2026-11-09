@@ -5,7 +5,7 @@ mod TestCast {
 
     use fge::{Clock, Display, Render, Yarn, YarnRunner}
     use Util.Json.Json
-    use CastDoc.Lane
+    use CastDoc.Kind
     use TestKit.{advance, begun, quiet, settle, stepBy}
 
     /// テスト用の Doc。
@@ -18,8 +18,8 @@ mod TestCast {
         TestKit.res() |> Res.withCast(doc()) |> Res.withDialogue(Yarn.loadOr(Yarn.empty(), "test/fixtures/talk/dialogue.json"))
 
     /// 項目の既定の表情と位置。
-    def entry(lane: Lane, name: String): CastDoc.Entry \ Fs.FileRead =
-        CastDoc.entryOf(lane, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil })
+    def entry(kind: Kind, name: String): CastDoc.Entry \ Fs.FileRead =
+        CastDoc.entryOf(kind, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil })
 
     /// コマンド 1 つ（<<name args…>>）。
     def command(name: String, args: List[String]): Yarn.Command =
@@ -45,8 +45,8 @@ mod TestCast {
     def leavingOf(layer: Cast.Layer): List[String] = layer#leaving |> List.map(l -> l#figure#name)
 
     def cueTuple(c: Cast.Cue): (String, String, String, String, Bool, Bool, Float64) = match c {
-        case Cast.Cue.Show(lane, f, keep, s) => ("${lane}", f#name, f#face, f#slot, keep#face, keep#slot, s)
-        case Cast.Cue.Hide(lane, name, s)    => ("${lane}", Option.getWithDefault("*", name), "off", "", false, false, s)
+        case Cast.Cue.Show(kind, f, keep, s) => ("${kind}", f#name, f#face, f#slot, keep#face, keep#slot, s)
+        case Cast.Cue.Hide(kind, name, s)    => ("${kind}", Option.getWithDefault("*", name), "off", "", false, false, s)
     }
 
     def markTuple(m: Cast.Mark): (List[(String, String, String)], Option[(String, String, String)]) =
@@ -78,7 +78,7 @@ mod TestCast {
     @Test
     def testOmittedWordsComeFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
         // 省いた表情・位置・秒は Doc の face・slot・fadeSeconds で埋め、表情と位置は「出ていれば今のまま」の印を付ける。
-        let b = entry(Lane.Character, "b");
+        let b = entry(Kind.Character, "b");
         Assert.assertEq(expected = Ok(("Character", "b", b#face, b#slot, true, true, d()#fadeSeconds)),
                         cueOf("char", "b" :: Nil) |> Result.map(cueTuple))
 
@@ -89,26 +89,33 @@ mod TestCast {
                     :: cueOf("char", "a" :: "off" :: "soon" :: Nil) :: cueOf("item", "a" :: Nil) :: Nil) |> List.map(Result.isErr);
         Assert.assertEq(expected = true :: true :: true :: true :: true :: Nil, errs)
 
+    @Test
+    def testDocRoundsDefaultsIntoItsLists(): Unit \ Assert =
+        // Doc の既定の表情が faces に無ければ faces の頭へ、既定の位置が slots に無ければ slots の鍵へ丸めて読む（書き損じで人が見えなくならない）。
+        let read = CastDoc.fromJson("{ \"cast\": { \"x\": { \"face\": \"angry\", \"slot\": \"top\", \"faces\": [\"plain\", \"smile\"] } } }")
+            |> Option.flatMap(doc -> CastDoc.entryOf(Kind.Character, "x", doc) |> Option.map(e -> (e#face, Map.memberOf(e#slot, CastDoc.rec(doc)#slots))));
+        Assert.assertEq(expected = Some(("plain", true)), read)
+
     // ══ 層に反映する ══
 
     @Test
     def testAnotherPersonAtTheSameSlotSendsTheFirstAway(): Unit \ {Assert, Fs.FileRead} =
         // 同じ位置に別の人を出すと、前の人は消えていく物（leaving）に入る。
         let layer = played(("char", "a" :: "center" :: Nil) :: ("char", "b" :: "center" :: Nil) :: Nil);
-        Assert.assertEq(expected = ((("b", entry(Lane.Character, "b")#face, "center") :: Nil), "a" :: Nil), (castOf(layer), leavingOf(layer)))
+        Assert.assertEq(expected = ((("b", entry(Kind.Character, "b")#face, "center") :: Nil), "a" :: Nil), (castOf(layer), leavingOf(layer)))
 
     @Test
     def testReshowWithoutSlotKeepsTheSlotAndChangesTheFace(): Unit \ {Assert, Fs.FileRead} =
         // 位置を省いて出し直すと、位置はそのままで表情だけが替わり、前の表情を下に残す。
         let layer = played(("char", "a" :: "left" :: Nil) :: ("char", "a" :: "smile" :: Nil) :: Nil);
-        Assert.assertEq(expected = (("a", "smile", "left") :: Nil, Some(entry(Lane.Character, "a")#face)),
-                        (castOf(layer), List.head(layer#cast) |> Option.flatMap(s -> s#before) |> Option.map(f -> f#face)))
+        Assert.assertEq(expected = (("a", "smile", "left") :: Nil, Some(entry(Kind.Character, "a")#face)),
+                        (castOf(layer), List.head(layer#cast) |> Option.flatMap(s -> s#before) |> Option.map(u -> u#figure#face)))
 
     @Test
     def testMovingToAnotherSlotFadesOutTheOldSlot(): Unit \ {Assert, Fs.FileRead} =
         // 位置を替えると、前の位置の形は消えていく物になり、新しい位置に出し直す（すべらせない）。
         let layer = played(("char", "a" :: "left" :: Nil) :: ("char", "a" :: "right" :: Nil) :: Nil);
-        Assert.assertEq(expected = (("a", entry(Lane.Character, "a")#face, "right") :: Nil, "a" :: Nil), (castOf(layer), leavingOf(layer)))
+        Assert.assertEq(expected = (("a", entry(Kind.Character, "a")#face, "right") :: Nil, "a" :: Nil), (castOf(layer), leavingOf(layer)))
 
     @Test
     def testOffHidesOneAndCharOffHidesAll(): Unit \ {Assert, Fs.FileRead} =
@@ -140,11 +147,47 @@ mod TestCast {
         Assert.assertEq(expected = ("picture_cast_a_plain" :: "picture_cast_a_smile" :: Nil, 1.0, true),
                         (names, under, over > 0.0 and over < 1.0))
 
+    /// 層を時刻 now に描いた面の濃さの最大（見えている濃さ）。
+    def visibleAt(now: Float64, layer: Cast.Layer): Float64 \ Fs.FileRead =
+        drawn(envAt(now, Set.empty()), layer) |> List.map(snd) |> List.foldLeft(Float64.max, 0.0)
+
+    @Test
+    def testFaceChangeWhileFadingInNeverBrightens(): Unit \ {Assert, Fs.FileRead} =
+        // 出してすぐ（fadeSeconds の 2 割の所で）表情を替えても、替えたコマの濃さは前のコマより上がらない（前の形を濃さ 1 で敷かない）。
+        // 替えた後は前の濃さから濃くなっていく（替えて fadeSeconds の半分の所は、替えた時より濃い）。
+        let fade = d()#fadeSeconds;
+        let at = fade * 0.2;
+        let shown = played(("char", "a" :: Nil) :: Nil);
+        let changed = cueOf("char", "a" :: "smile" :: Nil) |> Result.map(c -> Cast.apply(t(at), c, shown)) |> Result.getWithDefault(shown);
+        let before = visibleAt(at, shown);
+        Assert.assertEq(expected = (true, true, true),
+                        (before > 0.0, visibleAt(at, changed) <= before + 0.000001, visibleAt(at + fade / 2.0, changed) > before))
+
+    @Test
+    def testOffWhileFadingInNeverBrightens(): Unit \ {Assert, Fs.FileRead} =
+        // 出てくる途中（fadeSeconds の 3 割の所）で消すと、消えていく形はその時の濃さから薄くなる（一度濃くならない）。
+        let fade = d()#fadeSeconds;
+        let at = fade * 0.3;
+        let shown = played(("char", "a" :: Nil) :: Nil);
+        let off = cueOf("char", "a" :: "off" :: Nil) |> Result.map(c -> Cast.apply(t(at), c, shown)) |> Result.getWithDefault(shown);
+        let before = visibleAt(at, shown);
+        Assert.assertEq(expected = (true, true, 0.0),
+                        (visibleAt(at, off) <= before + 0.000001, visibleAt(at + fade / 2.0, off) < before, visibleAt(at + fade, off)))
+
+    @Test
+    def testMovingDuringAFaceChangeFadesBothShapes(): Unit \ {Assert, Fs.FileRead} =
+        // 表情を替えている途中で位置を替えると、前の位置の今の形も下に敷いた形も、消えていく物になる（下の形が急に消えない）。
+        let fade = d()#fadeSeconds;
+        let changing = played(("char", "a" :: Nil) :: ("char", "a" :: "smile" :: Nil) :: Nil);
+        let moved = cueOf("char", "a" :: "left" :: Nil) |> Result.map(c -> Cast.apply(t(1.0 + fade * 0.3), c, changing)) |> Result.getWithDefault(changing);
+        Assert.assertEq(expected = ("cast_a_plain" :: "cast_a_smile" :: Nil),
+                        moved#leaving |> List.map(l -> Cast.textureOf(l#figure)))
+
     @Test
     def testSettleEndsCrossfadesAndLeaving(): Unit \ {Assert, Fs.FileRead} =
         // settle は重ねの途中を終わりの形にする: 前の表情を捨て、消えていく物を空にする。
         let layer = Cast.settle(played(("char", "a" :: Nil) :: ("char", "b" :: "center" :: Nil) :: ("char", "b" :: "left" :: Nil) :: Nil));
-        Assert.assertEq(expected = (Nil, 0), (layer#cast |> List.filterMap(s -> s#before) |> List.map(figureTuple), List.length(layer#leaving)))
+        Assert.assertEq(expected = (Nil, 0), (layer#cast |> List.filterMap(s -> s#before) |> List.map(u -> figureTuple(u#figure)), List.length(layer#leaving)))
 
     @Test
     def testPresenceFollowsTheFade(): Unit \ {Assert, Fs.FileRead} =
@@ -238,7 +281,7 @@ mod TestCast {
     def testUnarrivedCastHoldsBeforeTheCue(): Unit \ {Assert, Fs.FileRead} =
         // まだ届いていない立ち絵へ替える所で送ると、黒へ重ね始め（待つ名前はその立ち絵）、立ち絵は前のまま。
         let r = res();
-        let b = entry(Lane.Character, "b");
+        let b = entry(Kind.Character, "b");
         let texture = CastDoc.textureOf("b", b#face);
         let held = Res.withMissing(Set#{texture}, r);
         let l1 = begun(r);
@@ -250,7 +293,7 @@ mod TestCast {
     def testUnarrivedCastIsNotDrawn(): Unit \ {Assert, Fs.FileRead} =
         // まだ届いていない立ち絵は描かない（届いている人は描く）。frame とサムネは同じ層の関数を引く。
         let layer = played(("char", "a" :: Nil) :: ("char", "b" :: "right" :: Nil) :: Nil);
-        let hidden = CastDoc.textureOf("a", entry(Lane.Character, "a")#face);
+        let hidden = CastDoc.textureOf("a", entry(Kind.Character, "a")#face);
         Assert.assertEq(expected = "picture_cast_b_plain" :: Nil, drawn(envAt(10.0, Set#{hidden}), layer) |> List.map(fst))
 
     @Test
@@ -272,7 +315,7 @@ mod TestCast {
     @Test
     def testEverySlotRectStaysOnScreen(): Unit \ {Assert, Fs.FileRead} =
         // 横でも縦でも、どの位置に、位置の高さを超える倍率（b の scale）の人を置いても、矩形は画面の中に収まる。
-        let b = entry(Lane.Character, "b");
+        let b = entry(Kind.Character, "b");
         let fits = Layout.Fit.Regular :: Layout.Fit.Portrait(PortraitDoc.rec(PortraitDoc.defaults()), Display.defaultPortraitView()) :: Nil;
         let inside = (fit: Layout.Fit, slot: CastDoc.Slot) -> {
             let rect = Cast.rectOf(fit, slot, b);

@@ -22,9 +22,13 @@ mod TestRail {
 
     /// 列を画面の下から積む縦の画面（novel.rail.json の anchor = bottom と同じ形）。
     def bottomAnchored(res: Res.Res, design: { x = Float64, y = Float64 }): Layout.Fit = match portraitOf(res, design) {
-        case Layout.Fit.Portrait(p, size) => Layout.Fit.Portrait({ rail = { anchor = RailDoc.Anchor.Bottom(36.0) | p#rail } | p }, size)
+        case Layout.Fit.Portrait(p, size) => Layout.Fit.Portrait({ rail = { anchor = defaultBottomAnchor() | p#rail } | p }, size)
         case other                        => other
     }
+
+    /// novel.rail.json に anchor = bottom だけを書いた時の積み方（余白は RailDoc の既定）。
+    def defaultBottomAnchor(): RailDoc.Anchor =
+        RailDoc.fromJson("{ \"anchor\": \"bottom\" }") |> Option.map(d -> RailDoc.rec(d)#anchor) |> Option.getWithDefault(RailDoc.Anchor.Bottom(0.0))
 
     /// 頁の左の、右の列のボタンにも右上の … にも当たらない所。
     def spot(): { x = Float64, y = Float64 } = { x = 140.0, y = 640.0 }
@@ -33,7 +37,7 @@ mod TestRail {
         { x = r#position#x + r#size#x / 2.0, y = r#position#y + r#size#y / 2.0 }
 
     def indexOf(res: Res.Res, button: World.Button): Int32 =
-        WorldMenu.buttonsOf(portrait(res)) |> List.zipWithIndex |> List.find(match (_, b) -> b == button) |> Option.map(fst) |> Option.getWithDefault(0)
+        WorldMenu.buttonIndexOf(portrait(res), button) |> Option.getWithDefault(0)
 
     def buttonCenter(res: Res.Res, button: World.Button): { x = Float64, y = Float64 } =
         center(Rail.button(portrait(res), indexOf(res, button)))
@@ -54,7 +58,7 @@ mod TestRail {
 
     /// 0 秒に p を押し、長押しの秒を 0.1 秒越えるまで押したままにするフレーム（離さない）。
     def pressLong(res: Res.Res, p: { x = Float64, y = Float64 }): List[App.Frame] =
-        let long = Rail.recOf(portrait(res))#longPressSeconds;
+        let long = Rail.longPressSecondsOf(portrait(res));
         down(0.0, p) :: held(long / 2.0, p) :: held(long + 0.1, p) :: Nil
 
     /// フレームを古い順に Controls.interact へ渡す。
@@ -175,6 +179,26 @@ mod TestRail {
         let p = center(Rail.moreButton(portrait(res))#hit);
         let w = play(res, down(0.0, p) :: up(0.1, p) :: Nil, start);
         Assert.assertEq(expected = ("Menu", World.talkLineOf(start)), (World.panelName(w), World.talkLineOf(w)))
+
+    @Test
+    def testReleasingOffTheButtonCancels(): Unit \ {Assert, Fs.FileRead} =
+        // マウスで列のオートを押し、ボタンの外（頁の上）へずらして離すと、オートは入らず台詞も進まず、掴みも外れる。
+        let res = TestKit.res();
+        let start = begun(res);
+        let p = buttonCenter(res, World.Button.Auto);
+        let w = play(res, down(5.0, p) :: held(5.05, spot()) :: up(5.1, spot()) :: Nil, start);
+        Assert.assertEq(expected = (World.Playback.Manual, World.talkLineOf(start), World.Grab.Free),
+                        (World.playbackOf(w), World.talkLineOf(w), w#grab))
+
+    @Test
+    def testTouchReleaseAtThePressPointStillTaps(): Unit \ {Assert, Fs.FileRead} =
+        // ブラウザ版の指は、動かしている間は指の所に、離す時は押した所に戻して届く（fge-web.js）。その形なら、
+        // 指をずらしても今までどおり押したことになる。
+        let res = TestKit.res();
+        let start = begun(res);
+        let p = buttonCenter(res, World.Button.Auto);
+        let w = play(res, down(5.0, p) :: held(5.05, spot()) :: up(5.1, p) :: Nil, start);
+        Assert.assertEq(expected = World.Playback.Auto, World.playbackOf(w))
 
     @Test
     def testSaveLoadOpensSaveThroughItsPick(): Unit \ {Assert, Fs.FileRead} =

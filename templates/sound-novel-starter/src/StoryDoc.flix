@@ -84,7 +84,7 @@ mod StoryDoc {
         case NoSave
         case NoQuickSave
         case NoRollback
-        // 素材を待つ間の印（novel.theme.json の waitMark = ring のラベル）
+        // 素材を待つ間の印（novel.theme.json の loadingMark = ring のラベル）
         case Waiting
     }
 

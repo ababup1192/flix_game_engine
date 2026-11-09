@@ -203,7 +203,7 @@ mod TestGesture {
         let start = begun(res);
         let fit = Layout.Fit.Regular;
         let all = WorldMenu.buttonsOf(fit);
-        let i = all |> List.zipWithIndex |> List.find(match (_, b) -> b == World.Button.Auto) |> Option.map(fst) |> Option.getWithDefault(0);
+        let i = WorldMenu.buttonIndexOf(fit, World.Button.Auto) |> Option.getWithDefault(0);
         let r = Layout.button(fit, i, List.length(all));
         let p = { x = r#position#x + r#size#x / 2.0, y = r#position#y + r#size#y / 2.0 };
         let w = play(res, down(0.0, p) :: up(0.1, p) :: Nil, start);

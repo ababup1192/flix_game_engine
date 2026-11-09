@@ -19,9 +19,7 @@ mod TestSmallScreen {
 
     /// 下の帯の button の矩形（fit の並べ方）。
     def buttonRect(fit: Layout.Fit, button: World.Button): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
-        let all = WorldMenu.buttons();
-        let i = all |> List.zipWithIndex |> List.find(match (_, b) -> b == button) |> Option.map(fst) |> Option.getWithDefault(0);
-        Layout.button(fit, i, List.length(all))
+        Layout.button(fit, WorldMenu.buttonIndexOf(fit, button) |> Option.getWithDefault(0), List.length(WorldMenu.buttonsOf(fit)))
 
     def titleRect(fit: Layout.Fit, item: World.TitleItem): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
         let all = WorldMenu.titleItems();

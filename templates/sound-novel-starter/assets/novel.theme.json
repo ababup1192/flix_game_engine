@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "字・ウィンドウの色と待ちの印",
-  "note": "字とウィンドウの色と、素材を待つ間の印（写真の色は novel.backdrops.json の時間帯）。ink = 本文、inkSeen = 既読の行（スキップで飛ばせる行）、name = 話し手の名前、accent = 選んでいる物・オートとスキップの点灯、panel = ADV のウィンドウ・選択肢・画面の地（濃さは設定の「ウィンドウの濃さ」）、veil = NVL の頁の下の幕の濃さをウィンドウの濃さに掛ける割合、firefly = 蛍の光、waitMark = ブラウザ版で背景・環境音がまだ届かず黒で待つ間の印（dots = 右下の金の点 3 つの明滅・ring = 真ん中に回る点の輪と字のラベル。字は novel.story.json の labels の waiting・none = 黒だけ）。",
+  "note": "字とウィンドウの色と、素材を待つ間の印（写真の色は novel.backdrops.json の時間帯）。ink = 本文、inkSeen = 既読の行（スキップで飛ばせる行）、name = 話し手の名前、accent = 選んでいる物・オートとスキップの点灯、panel = ADV のウィンドウ・選択肢・画面の地（濃さは設定の「ウィンドウの濃さ」）、veil = NVL の頁の下の幕の濃さをウィンドウの濃さに掛ける割合、firefly = 蛍の光、loadingMark = ブラウザ版で背景・環境音がまだ届かず黒で待つ間の印（dots = 右下の金の点 3 つの明滅・ring = 真ん中に回る点の輪と字のラベル。字は novel.story.json の labels の waiting・none = 黒だけ）。",
   "ink": "#f3eee4",
   "inkSeen": "#c7d3e8",
   "name": "#e9c873",
@@ -9,5 +9,5 @@
   "panel": "#0a0e16",
   "veil": 0.8,
   "firefly": "#d9ff8c",
-  "waitMark": "dots"
+  "loadingMark": "dots"
 }

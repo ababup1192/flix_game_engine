@@ -31,9 +31,7 @@ mod TestPortrait {
         Controls.interact({ justPressed = Set#{key}, down = Set#{key}, viewport = design | App.emptyFrame() }, res, w)
 
     def buttonRect(fit: Layout.Fit, button: World.Button): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
-        let all = WorldMenu.buttonsOf(fit);
-        let i = all |> List.zipWithIndex |> List.find(match (_, b) -> b == button) |> Option.map(fst) |> Option.getWithDefault(0);
-        Rail.button(fit, i)
+        Rail.button(fit, WorldMenu.buttonIndexOf(fit, button) |> Option.getWithDefault(0))
 
     def titleRect(fit: Layout.Fit, item: World.TitleItem): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
         let all = WorldMenu.titleItems();

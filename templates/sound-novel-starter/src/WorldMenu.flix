@@ -77,6 +77,10 @@ mod WorldMenu {
         if (Layout.isPortrait(fit)) World.Button.SaveLoad :: World.Button.Log :: World.Button.Auto :: Nil
         else buttons()
 
+    /// 並べ方の組で出すボタンの中の button の番号（出していなければ None）。
+    pub def buttonIndexOf(fit: Layout.Fit, button: World.Button): Option[Int32] =
+        buttonsOf(fit) |> List.zipWithIndex |> List.find(match (_, b) -> b == button) |> Option.map(fst)
+
     /// 縦の画面の右上の … から開くメニューの項目（上から）。
     pub def menuItems(): List[World.Button] =
         World.Button.Settings :: World.Button.ToTitle :: World.Button.Hide :: Nil
@@ -86,16 +90,16 @@ mod WorldMenu {
 
     /// 縦の画面の右の列のボタンを長押しした時に起きる事。Tooltip = 名前のツールチップを出す（離しても押さない）、
     /// Press(ボタン) = そのボタンを押したのと同じ。
-    pub enum LongPressDoes with Eq, ToString {
+    pub enum LongPressAction with Eq, ToString {
         case Tooltip
         case Press(World.Button)
     }
 
     /// 右の列のボタンの長押し。オートはスキップに入る。
     // WhyNot: オートの長押しでツールチップを出さない — 列にスキップは無く、オートの長押しがスキップの入口なので、名前を待たずにスキップへ入る。
-    pub def longPressOf(button: World.Button): LongPressDoes = match button {
-        case World.Button.Auto => LongPressDoes.Press(World.Button.Skip)
-        case _                 => LongPressDoes.Tooltip
+    pub def longPressOf(button: World.Button): LongPressAction = match button {
+        case World.Button.Auto => LongPressAction.Press(World.Button.Skip)
+        case _                 => LongPressAction.Tooltip
     }
 
     /// 右の列のボタンを短く押して離した。スキップ中のオートはスキップを止める。

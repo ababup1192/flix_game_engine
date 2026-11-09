@@ -2,7 +2,8 @@
 """make lint-cast: assets/novel.cast.json の人物と小物の絵が揃っているかを見る（読むだけ・Pillow は要らない）。
 
 見る物: 全部の表情の「cast_<名前>_<表情>」が project.json の textures にあるか・その path のファイルがあるか・
-PNG の縦横の比が Doc の aspect と 2% より離れていないか（View はテクスチャの大きさを引けないので、比は Doc が持つ）。
+PNG の縦横の比が Doc の aspect と 2% より離れていないか（View はテクスチャの大きさを引けないので、比は Doc が持つ）・
+既定の表情 face が faces の中にあり、既定の位置 slot が slots と portraitSlots の両方にあるか（無いとゲームは faces の頭・slots の頭へ丸める）。
 ずれは 1 行ずつ出して終わりの番号 1。
 """
 import json
@@ -30,6 +31,13 @@ def main() -> int:
     for kind in ("cast", "props"):
         for name, entry in doc.get(kind, {}).items():
             aspect = float(entry.get("aspect", 0.0))
+            face = entry.get("face", "")
+            if face not in entry.get("faces", []):
+                problems.append(f"{kind}.{name}: 既定の表情 face '{face}' が faces {entry.get('faces', [])} に無い")
+            slot = entry.get("slot", "")
+            for key in ("slots", "portraitSlots"):
+                if slot not in doc.get(key, {}):
+                    problems.append(f"{kind}.{name}: 既定の位置 slot '{slot}' が {key} に無い")
             for face in entry.get("faces", []):
                 count += 1
                 texture = f"cast_{name}_{face}"

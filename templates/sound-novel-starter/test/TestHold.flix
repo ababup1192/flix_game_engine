@@ -192,6 +192,15 @@ mod TestHold {
                         (loaded |> Option.map(World.holdPhaseOf), thumb))
 
     @Test
+    def testHoldDropsTheRailLongPress(): Unit \ {Assert, Fs.FileRead} =
+        // 列を押したまま素材を待つ黒に入ったら、長押しを捨てる（明けた最初のフレームで「離した」と読まない）。
+        let res = TestKit.res();
+        let held = missingOf(texture(res, "paddy") :: Nil, res);
+        let pressing = { grab = World.Grab.LongPress(0, Clock.zero()) | waitingForPaddy(res) };
+        let w = Controls.interact({ viewport = Layout.size(Layout.Fit.Regular) | App.emptyFrame() }, held, pressing);
+        Assert.assertEq(expected = World.Grab.Free, w#grab)
+
+    @Test
     def testToTitleDropsTheHold(): Unit \ {Assert, Fs.FileRead} =
         // タイトルへ戻ると待ちは消える（タイトルの写真は後回しにしない決まりなので、タイトルでは待たない）。
         let res = TestKit.res();
@@ -212,11 +221,11 @@ mod TestHold {
                         budgetOf(World.toCredits(res, tapWait)) :: Nil)
 
 
-    // ══ 待ちの印（novel.theme.json の waitMark） ══
+    // ══ 待ちの印（novel.theme.json の loadingMark） ══
 
     /// 待ちの印の形を mark に替えた描く元。
-    def withWaitMark(mark: ThemeDoc.WaitMark, res: Res.Res): Res.Res =
-        Res.withTheme(ThemeDoc.Doc.Doc({ waitMark = mark | ThemeDoc.rec(res#theme) }), res)
+    def withLoadingMark(mark: ThemeDoc.LoadingMark, res: Res.Res): Res.Res =
+        Res.withTheme(ThemeDoc.withLoadingMark(mark, res#theme), res)
 
     /// Paddy の背景を黒のまま待ち、waited 秒待った所。
     def waitedFor(res: Res.Res, waited: Float64): World.World =
@@ -241,14 +250,14 @@ mod TestHold {
 
     @Test
     def testDotsMarkAppearsAfterHoldMarkSeconds(): Unit \ {Assert, Fs.FileRead, IO} =
-        // waitMark = dots: 黒のまま holdMarkSeconds を過ぎると、待ち始めより描き物が増える（点 3 つ）。
-        let (before, after) = markCounts(withWaitMark(ThemeDoc.WaitMark.Dots, TestKit.res()));
+        // loadingMark = dots: 黒のまま holdMarkSeconds を過ぎると、待ち始めより描き物が増える（点 3 つ）。
+        let (before, after) = markCounts(withLoadingMark(ThemeDoc.LoadingMark.Dots, TestKit.res()));
         Assert.assertTrue(after > before)
 
     @Test
     def testRingMarkShowsTheWaitingLabel(): Unit \ {Assert, Fs.FileRead, IO} =
-        // waitMark = ring: holdMarkSeconds を過ぎた hud の字に、labels の waiting が入る。
-        let res = withWaitMark(ThemeDoc.WaitMark.Ring, TestKit.res());
+        // loadingMark = ring: holdMarkSeconds を過ぎた hud の字に、labels の waiting が入る。
+        let res = withLoadingMark(ThemeDoc.LoadingMark.Ring, TestKit.res());
         let held = missingOf(texture(res, "paddy") :: Nil, res);
         let word = StoryDoc.labelOf(StoryDoc.Label.Waiting, res#story);
         let texts = textsOf(hudOf(held, waitedFor(res, kind(res)#holdMarkSeconds + 0.5)));
@@ -256,13 +265,14 @@ mod TestHold {
 
     @Test
     def testNoneMarkDrawsOnlyTheDark(): Unit \ {Assert, Fs.FileRead, IO} =
-        // waitMark = none: holdMarkSeconds を過ぎても描き物は待ち始めと同じ（黒の地だけ）。
-        let (before, after) = markCounts(withWaitMark(ThemeDoc.WaitMark.Off, TestKit.res()));
+        // loadingMark = none: holdMarkSeconds を過ぎても描き物は待ち始めと同じ（黒の地だけ）。
+        let (before, after) = markCounts(withLoadingMark(ThemeDoc.LoadingMark.Hidden, TestKit.res()));
         Assert.assertEq(expected = before, after)
 
     @Test
-    def testUnknownWaitMarkFallsBackToDots(): Unit \ Assert =
-        // 知らない waitMark の字は dots として読む（fail-open）。
-        let read = ThemeDoc.fromJson("{\"version\": 1, \"waitMark\": \"spinner\"}") |> Option.map(d -> ThemeDoc.rec(d)#waitMark);
-        Assert.assertEq(expected = Some(ThemeDoc.WaitMark.Dots), read)
+    def testOnlyTheThreeLoadingMarkWordsAreRead(): Unit \ Assert =
+        // 読める字は dots / ring / none の 3 つだけ（ほかの字は Doc を読む時に 1 行知らせて dots へ落とす）。
+        // WhyNot: 知らない字を fromJson に通して確かめない — 知らせの 1 行が標準エラーに出ると、テストの道具が失敗と数える。
+        let read = ("dots" :: "ring" :: "none" :: "spinner" :: Nil) |> List.map(ThemeDoc.loadingMarkOf);
+        Assert.assertEq(expected = Some(ThemeDoc.LoadingMark.Dots) :: Some(ThemeDoc.LoadingMark.Ring) :: Some(ThemeDoc.LoadingMark.Hidden) :: None :: Nil, read)
 }

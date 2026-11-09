@@ -4,17 +4,20 @@
 mod Cast {
     use fge::{Clock, Curve, JsonCodec, Num, Rect2, Render, ShaderDoc, Sway, Yarn}
     use fge::ShaderDoc.{Field, Out, Shade, TexChan}
-    use CastDoc.Lane
+    use CastDoc.Kind
     use Util.Json.Json
 
     /// 出ている 1 人（か小物 1 つ）の形: 名前・表情・位置の名前。
     pub type alias Figure = { name = String, face = String, slot = String }
 
-    /// 出ている物。now = 今の形、before = 同じ位置で表情を替えている間だけ下に残す前の形、startedAt / seconds = 重ね始めた物語の時刻と長さ。
-    pub type alias Shown = { now = Figure, before = Option[Figure], startedAt = Clock.Time[Stage.Story], seconds = Float64 }
+    /// 下に敷いた形と、その濃さ（敷いた時に見えていた濃さのまま変えない）。
+    pub type alias Under = { figure = Figure, alpha = Float64 }
 
-    /// 消えていく物（消した・同じ位置に別の人が来た・位置を替えた前の位置）。
-    pub type alias Leaving = { lane = Lane, figure = Figure, startedAt = Clock.Time[Stage.Story], seconds = Float64 }
+    /// 出ている物。now = 今の形、before = 同じ位置で表情を替えている間だけ下に敷く前の形、startedAt / seconds = 重ね始めた物語の時刻と長さ。
+    pub type alias Shown = { now = Figure, before = Option[Under], startedAt = Clock.Time[Stage.Story], seconds = Float64 }
+
+    /// 消えていく物（消した・同じ位置に別の人が来た・位置を替えた前の位置）。alpha = 消え始めた時に見えていた濃さ（そこから 0 へ）。
+    pub type alias Leaving = { kind = Kind, figure = Figure, alpha = Float64, startedAt = Clock.Time[Stage.Story], seconds = Float64 }
 
     /// 層。cast = 出ている人物（後ろほど手前）、prop = 出ている小物（人物より手前）、leaving = 消えていく物。
     pub type alias Layer = { cast = List[Shown], prop = Option[Shown], leaving = List[Leaving] }
@@ -27,8 +30,8 @@ mod Cast {
 
     /// コマンド 1 つの意味。Show = 出す・表情や位置を替える（秒）、Hide = 消す（名前が None ならその列を全部）。
     pub enum Cue {
-        case Show(Lane, Figure, Keep, Float64)
-        case Hide(Lane, Option[String], Float64)
+        case Show(Kind, Figure, Keep, Float64)
+        case Hide(Kind, Option[String], Float64)
     }
 
     pub def empty(): Layer = { cast = Nil, prop = None, leaving = Nil }
@@ -39,22 +42,22 @@ mod Cast {
     /// 名前の後ろの語は、位置の名前 → その人の表情の名前 → 数（秒）の順に読み、どれでもなければ Err。
     pub def cueOf(doc: CastDoc.Doc, command: Yarn.Command): Result[String, Cue] =
         let at = " (${Yarn.sourceText(command#source)})";
-        let lane = if (command#name == "item") Lane.Prop else Lane.Character;
+        let kind = if (command#name == "item") Kind.Prop else Kind.Character;
         let d = CastDoc.rec(doc);
         match command#args {
             case Nil                => Err("<<${command#name}>> の名前が無い${at}")
-            case "off" :: rest      => secondsOf(d#fadeSeconds, rest, at) |> Result.map(s -> Cue.Hide(lane, None, s))
-            case name :: "off" :: rest => secondsOf(d#fadeSeconds, rest, at) |> Result.map(s -> Cue.Hide(lane, Some(name), s))
+            case "off" :: rest      => secondsOf(d#fadeSeconds, rest, at) |> Result.map(s -> Cue.Hide(kind, None, s))
+            case name :: "off" :: rest => secondsOf(d#fadeSeconds, rest, at) |> Result.map(s -> Cue.Hide(kind, Some(name), s))
             case name :: rest       =>
-                match CastDoc.entryOf(lane, name, doc) {
-                    case None        => Err("知らない${laneWord(lane)} '${name}'${at}")
-                    case Some(entry) => showOf(d, lane, name, entry, rest, at)
+                match CastDoc.entryOf(kind, name, doc) {
+                    case None        => Err("知らない${kindWord(kind)} '${name}'${at}")
+                    case Some(entry) => showOf(d, kind, name, entry, rest, at)
                 }
         }
 
-    def laneWord(lane: Lane): String = match lane {
-        case Lane.Character => "人物"
-        case Lane.Prop      => "小物"
+    def kindWord(kind: Kind): String = match kind {
+        case Kind.Character => "人物"
+        case Kind.Prop      => "小物"
     }
 
     /// 残りの語の頭が数なら秒（無ければ fallback・数でなければ Err）。
@@ -64,7 +67,7 @@ mod Cast {
     }
 
     /// 名前の後ろの語を 1 つずつ読み、出す形にする。
-    def showOf(d: CastDoc.Rec, lane: Lane, name: String, entry: CastDoc.Entry, words: List[String], at: String): Result[String, Cue] =
+    def showOf(d: CastDoc.Rec, kind: Kind, name: String, entry: CastDoc.Entry, words: List[String], at: String): Result[String, Cue] =
         let start = Ok(({ face = None, slot = None, seconds = d#fadeSeconds }: { face = Option[String], slot = Option[String], seconds = Float64 }));
         let read = words |> List.foldLeft((acc, word) -> acc |> Result.flatMap(got ->
             if (Map.memberOf(word, d#slots)) Ok({ slot = Some(word) | got })
@@ -72,7 +75,7 @@ mod Cast {
             else Float64.fromString(word) |> Option.map(s -> { seconds = Float64.max(0.0, s) | got })
                      |> Option.toOk("知らない位置か表情 '${word}'（${name}）${at}")), start);
         read |> Result.map(got ->
-            Cue.Show(lane, { name = name, face = Option.getWithDefault(entry#face, got#face), slot = Option.getWithDefault(entry#slot, got#slot) },
+            Cue.Show(kind, { name = name, face = Option.getWithDefault(entry#face, got#face), slot = Option.getWithDefault(entry#slot, got#slot) },
                      { face = Option.isEmpty(got#face), slot = Option.isEmpty(got#slot) }, got#seconds))
 
     // ── 層に反映する ──
@@ -81,10 +84,10 @@ mod Cast {
     pub def apply(now: Clock.Time[Stage.Story], cue: Cue, layer: Layer): Layer =
         let pruned = prune(now, layer);
         match cue {
-            case Cue.Show(Lane.Character, figure, keep, seconds) => showCharacter(now, figure, keep, seconds, pruned)
-            case Cue.Show(Lane.Prop, figure, keep, seconds)      => showProp(now, figure, keep, seconds, pruned)
-            case Cue.Hide(Lane.Character, name, seconds)         => hideCharacters(now, name, seconds, pruned)
-            case Cue.Hide(Lane.Prop, name, seconds)              => hideProp(now, name, seconds, pruned)
+            case Cue.Show(Kind.Character, figure, keep, seconds) => showCharacter(now, figure, keep, seconds, pruned)
+            case Cue.Show(Kind.Prop, figure, keep, seconds)      => showProp(now, figure, keep, seconds, pruned)
+            case Cue.Hide(Kind.Character, name, seconds)         => hideCharacters(now, name, seconds, pruned)
+            case Cue.Hide(Kind.Prop, name, seconds)              => hideProp(now, name, seconds, pruned)
         }
 
     /// 省いた語を、出ている形（current）から埋めた形。
@@ -94,14 +97,14 @@ mod Cast {
           slot = kept(keep#slot, f -> f#slot) |> Option.getWithDefault(figure#slot) | figure }
 
     /// コマンドが出す形（出ている人がいればその形から埋める）。
-    pub def targetOf(cue: Cue, layer: Layer): Option[(Lane, Figure)] = match cue {
-        case Cue.Show(lane, figure, keep, _) => Some((lane, resolve(currentOf(lane, figure#name, layer), figure, keep)))
+    pub def targetOf(cue: Cue, layer: Layer): Option[(Kind, Figure)] = match cue {
+        case Cue.Show(kind, figure, keep, _) => Some((kind, resolve(currentOf(kind, figure#name, layer), figure, keep)))
         case Cue.Hide(_, _, _)               => None
     }
 
-    def currentOf(lane: Lane, name: String, layer: Layer): Option[Figure] = match lane {
-        case Lane.Character => layer#cast |> List.find(s -> s#now#name == name) |> Option.map(s -> s#now)
-        case Lane.Prop      => layer#prop |> Option.filter(s -> s#now#name == name) |> Option.map(s -> s#now)
+    def currentOf(kind: Kind, name: String, layer: Layer): Option[Figure] = match kind {
+        case Kind.Character => layer#cast |> List.find(s -> s#now#name == name) |> Option.map(s -> s#now)
+        case Kind.Prop      => layer#prop |> Option.filter(s -> s#now#name == name) |> Option.map(s -> s#now)
     }
 
     pub def sameFigure(a: Figure, b: Figure): Bool = a#name == b#name and a#face == b#face and a#slot == b#slot
@@ -109,13 +112,28 @@ mod Cast {
     def entering(now: Clock.Time[Stage.Story], figure: Figure, seconds: Float64): Shown =
         { now = figure, before = None, startedAt = now, seconds = seconds }
 
-    /// 消えていく物にする（秒が 0 ならその場で消すので残さない）。
-    def leave(lane: Lane, now: Clock.Time[Stage.Story], seconds: Float64, shown: Shown): Option[Leaving] =
-        if (seconds <= 0.0) None else Some({ lane = lane, figure = shown#now, startedAt = now, seconds = seconds })
+    /// 今の形の濃さ（出てくる途中なら 0 と 1 の間）。
+    def nowAlphaOf(now: Clock.Time[Stage.Story], shown: Shown): Float64 = easedOf(progressOf(now, shown#startedAt, shown#seconds))
 
-    /// 同じ位置で表情を替える（前の形を下に残して上から重ねる）。形が同じなら何もしない。
+    /// いちばん濃く見えている形とその濃さ（表情を替えている途中なら、まだ下の形の方が濃いことがある）。
+    def visibleOf(now: Clock.Time[Stage.Story], shown: Shown): Under =
+        let top = { figure = shown#now, alpha = nowAlphaOf(now, shown) };
+        match shown#before {
+            case Some(under) if under#alpha > top#alpha => under
+            case _                                      => top
+        }
+
+    /// 消えていく物にする。見えている濃さから 0 へ消す（出てくる途中で消しても一度濃くしない）。
+    /// 表情を替えている途中なら、下に敷いた形もその濃さから消す。秒が 0 ならその場で消すので残さない。
+    def leave(kind: Kind, now: Clock.Time[Stage.Story], seconds: Float64, shown: Shown): List[Leaving] =
+        let going = (under: Under) -> { kind = kind, figure = under#figure, alpha = under#alpha, startedAt = now, seconds = seconds };
+        let top = { figure = shown#now, alpha = nowAlphaOf(now, shown) };
+        if (seconds <= 0.0) Nil else List.map(going, (shown#before |> Option.toList) ::: (top :: Nil)) |> List.filter(l -> l#alpha > 0.0)
+
+    /// 同じ位置で表情を替える: 見えている形を、見えている濃さのまま下に敷き、新しい形を上から重ねる
+    /// （前の形を濃さ 1 で敷くと、出てくる途中に替えた時に急に濃くなる）。形が同じなら何もしない。
     def recast(now: Clock.Time[Stage.Story], figure: Figure, seconds: Float64, shown: Shown): Shown =
-        if (sameFigure(shown#now, figure)) shown else { now = figure, before = Some(shown#now), startedAt = now, seconds = seconds }
+        if (sameFigure(shown#now, figure)) shown else { now = figure, before = Some(visibleOf(now, shown)), startedAt = now, seconds = seconds }
 
     def showCharacter(now: Clock.Time[Stage.Story], figure: Figure, keep: Keep, seconds: Float64, layer: Layer): Layer =
         let current = layer#cast |> List.find(s -> s#now#name == figure#name);
@@ -125,7 +143,7 @@ mod Cast {
         else {
             let (out, kept) = List.partition(s -> s#now#name == target#name or s#now#slot == target#slot, layer#cast);
             { cast = List.append(kept, entering(now, target, seconds) :: Nil),
-              leaving = List.append(layer#leaving, out |> List.filterMap(leave(Lane.Character, now, seconds))) | layer }
+              leaving = List.append(layer#leaving, out |> List.flatMap(leave(Kind.Character, now, seconds))) | layer }
         }
 
     def showProp(now: Clock.Time[Stage.Story], figure: Figure, keep: Keep, seconds: Float64, layer: Layer): Layer =
@@ -135,15 +153,15 @@ mod Cast {
             { prop = layer#prop |> Option.map(recast(now, target, seconds)) | layer }
         else
             { prop = Some(entering(now, target, seconds)),
-              leaving = List.append(layer#leaving, layer#prop |> Option.flatMap(leave(Lane.Prop, now, seconds)) |> Option.toList) | layer }
+              leaving = List.append(layer#leaving, layer#prop |> Option.toList |> List.flatMap(leave(Kind.Prop, now, seconds))) | layer }
 
     def hideCharacters(now: Clock.Time[Stage.Story], name: Option[String], seconds: Float64, layer: Layer): Layer =
         let (out, kept) = List.partition(s -> name |> Option.forAll(n -> s#now#name == n), layer#cast);
-        { cast = kept, leaving = List.append(layer#leaving, out |> List.filterMap(leave(Lane.Character, now, seconds))) | layer }
+        { cast = kept, leaving = List.append(layer#leaving, out |> List.flatMap(leave(Kind.Character, now, seconds))) | layer }
 
     def hideProp(now: Clock.Time[Stage.Story], name: Option[String], seconds: Float64, layer: Layer): Layer =
         let (out, kept) = layer#prop |> Option.toList |> List.partition(s -> name |> Option.forAll(n -> s#now#name == n));
-        { prop = List.head(kept), leaving = List.append(layer#leaving, out |> List.filterMap(leave(Lane.Prop, now, seconds))) | layer }
+        { prop = List.head(kept), leaving = List.append(layer#leaving, out |> List.flatMap(leave(Kind.Prop, now, seconds))) | layer }
 
     /// 消え終わった物と、重ね終わった前の形を落とす。
     def prune(now: Clock.Time[Stage.Story], layer: Layer): Layer =
@@ -200,11 +218,13 @@ mod Cast {
     /// 進みを、出だしと終わりがゆっくりの濃さにする（0 → 0・1 → 1）。
     def easedOf(progress: Float64): Float64 = 0.5 + Curve.sine(0.5, Num.pi(), Num.pi() * -0.5, progress)
 
-    /// 人物がどれだけ出ているか（0〜1）: 出ている人物の濃さの最大（消えていく人物は 1 − 進み）。縦の頁の覆いを薄くする量に使う。
+    /// 消えていく物の今の濃さ。
+    def leavingAlphaOf(now: Clock.Time[Stage.Story], l: Leaving): Float64 = l#alpha * (1.0 - easedOf(progressOf(now, l#startedAt, l#seconds)))
+
+    /// 人物がどれだけ出ているか（0〜1）: 見えている人物の濃さの最大。縦の頁の覆いを薄くする量に使う。
     pub def presenceOf(now: Clock.Time[Stage.Story], layer: Layer): Float64 =
-        let shown = layer#cast |> List.map(s -> if (Option.isEmpty(s#before)) easedOf(progressOf(now, s#startedAt, s#seconds)) else 1.0);
-        let going = layer#leaving |> List.filter(l -> l#lane == Lane.Character)
-            |> List.map(l -> 1.0 - easedOf(progressOf(now, l#startedAt, l#seconds)));
+        let shown = layer#cast |> List.map(s -> visibleOf(now, s)#alpha);
+        let going = layer#leaving |> List.filter(l -> l#kind == Kind.Character) |> List.map(leavingAlphaOf(now));
         List.append(shown, going) |> List.foldLeft(Float64.max, 0.0)
 
     // ── 置き場所と描き方 ──
@@ -241,11 +261,12 @@ mod Cast {
         { name = "picture_${texture}", cycleRate = 0.0, bindings = Nil,
           out = Out.Fill({ shade = Shade.Rgb({ r = read(TexChan.R), g = read(TexChan.G), b = read(TexChan.B) }), alpha = read(TexChan.A) }) }
 
-    /// 1 つの形を濃さ alpha で描く。知らない名前・位置と、まだ届いていない絵は描かない。
+    /// 1 つの形を濃さ alpha で描く。知らない名前・位置・表情と、まだ届いていない絵は描かない。
+    // WhyNot: Doc の faces に無い表情を貼りに行かない — 未登録のテクスチャは GL では黒（0 番）が貼られ、黒い四角が出る。
     /// 息の揺れは足元を据えたまま高さを僅かに伸び縮みさせる（上下に動かすと足元の下に隙間が覗く）。
-    def figureItem(env: Env, lane: Lane, figure: Figure, alpha: Float64, z: Int32): List[Render.PlacedItem] =
+    def figureItem(env: Env, kind: Kind, figure: Figure, alpha: Float64, z: Int32): List[Render.PlacedItem] =
         let texture = textureOf(figure);
-        let found = forM (entry <- CastDoc.entryOf(lane, figure#name, env#doc);
+        let found = forM (entry <- CastDoc.entryOf(kind, figure#name, env#doc) |> Option.filter(e -> List.memberOf(figure#face, e#faces));
                           slot <- Map.get(figure#slot, slotsOf(env)))
                     yield rectOf(env#fit, slot, entry);
         if (alpha <= 0.0 or Set.memberOf(texture, env#missing)) Nil
@@ -258,16 +279,16 @@ mod Cast {
             Render.shaderFill(pictureSpec(texture), swayed, 0.0, z) |> Render.overItem(Render.fade(alpha))
         }) |> Option.toList
 
-    /// 出ている物 1 つ: 同じ位置で表情を替えている間は、前の形を濃さ 1 で下に敷き、今の形を上から濃くする（途中で背景が透けない）。
-    def shownItems(env: Env, lane: Lane, shown: Shown, z: Int32): List[Render.PlacedItem] =
-        let a = easedOf(progressOf(env#storyNow, shown#startedAt, shown#seconds));
-        let under = shown#before |> Option.map(b -> figureItem(env, lane, b, 1.0, z)) |> Option.getWithDefault(Nil);
-        List.append(under, figureItem(env, lane, shown#now, a, z))
+    /// 出ている物 1 つ: 同じ位置で表情を替えている間は、前の形を敷いた時の濃さで下に残し、今の形を上から濃くする（途中で背景が透けない）。
+    def shownItems(env: Env, kind: Kind, shown: Shown, z: Int32): List[Render.PlacedItem] =
+        let a = nowAlphaOf(env#storyNow, shown);
+        let under = shown#before |> Option.map(b -> figureItem(env, kind, b#figure, b#alpha, z)) |> Option.getWithDefault(Nil);
+        List.append(under, figureItem(env, kind, shown#now, a, z))
 
     /// 層の全部を z に描く（消えていく物 → 人物 → 小物の順で、後ろほど手前）。
     pub def items(env: Env, layer: Layer, z: Int32): List[Render.PlacedItem] =
-        let going = (lane: Lane) -> layer#leaving |> List.filter(l -> l#lane == lane) |> List.flatMap(l ->
-            figureItem(env, lane, l#figure, 1.0 - easedOf(progressOf(env#storyNow, l#startedAt, l#seconds)), z));
-        List.flatten(going(Lane.Character) :: (layer#cast |> List.flatMap(s -> shownItems(env, Lane.Character, s, z)))
-                     :: going(Lane.Prop) :: (layer#prop |> Option.map(s -> shownItems(env, Lane.Prop, s, z)) |> Option.getWithDefault(Nil)) :: Nil)
+        let going = (kind: Kind) -> layer#leaving |> List.filter(l -> l#kind == kind) |> List.flatMap(l ->
+            figureItem(env, kind, l#figure, leavingAlphaOf(env#storyNow, l), z));
+        List.flatten(going(Kind.Character) :: (layer#cast |> List.flatMap(s -> shownItems(env, Kind.Character, s, z)))
+                     :: going(Kind.Prop) :: (layer#prop |> Option.map(s -> shownItems(env, Kind.Prop, s, z)) |> Option.getWithDefault(Nil)) :: Nil)
 }

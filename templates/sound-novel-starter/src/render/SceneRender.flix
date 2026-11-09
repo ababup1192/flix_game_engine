@@ -99,14 +99,13 @@ mod SceneRender {
         case "cast-sample"          => Res.withCast(CastDoc.sample(), res)
         case "portrait-cast-sample" => Res.withCast(CastDoc.sample(), res)
         case "portrait-cast-veil"   => Res.withCast(CastDoc.Doc.Doc({ portraitVeilWithCast = 0.5 | CastDoc.rec(CastDoc.sample()) }), res)
-        case "hold-ring"          => withWaitMark(ThemeDoc.WaitMark.Ring, res)
-        case "portrait-hold-ring" => withWaitMark(ThemeDoc.WaitMark.Ring, res)
-        case "hold-none"          => withWaitMark(ThemeDoc.WaitMark.Off, res)
+        case "hold-ring"          => withLoadingMark(ThemeDoc.LoadingMark.Ring, res)
+        case "portrait-hold-ring" => withLoadingMark(ThemeDoc.LoadingMark.Ring, res)
+        case "hold-none"          => withLoadingMark(ThemeDoc.LoadingMark.Hidden, res)
         case _                    => res
     }
 
-    def withWaitMark(mark: ThemeDoc.WaitMark, res: Res.Res): Res.Res =
-        Res.withTheme(ThemeDoc.Doc.Doc({ waitMark = mark | ThemeDoc.rec(res#theme) }), res)
+    def withLoadingMark(mark: ThemeDoc.LoadingMark, res: Res.Res): Res.Res = Res.withTheme(ThemeDoc.withLoadingMark(mark, res#theme), res)
 
     /// 縦の画面で描く場面: (描き出しの名前, 場面の名前, 画面の大きさ)。World は Shots の同じ場面の物をそのまま使う（menu・saveload・tooltip だけは worldOf）。
     /// 太い縦の画面（360×640）は縦の design の下限の高さで、並べ方がいちばん窮屈になる所を見る。
@@ -138,14 +137,14 @@ mod SceneRender {
 
     /// テスト用の立ち絵の人物を、既定の位置と表情で出し終えた層。
     def sampleLayer(): Cast.Layer =
-        let entry = CastDoc.entryOf(CastDoc.Lane.Character, CastDoc.sampleName(), CastDoc.sample());
+        let entry = CastDoc.entryOf(CastDoc.Kind.Character, CastDoc.sampleName(), CastDoc.sample());
         let figures = entry |> Option.map(e -> { name = CastDoc.sampleName(), face = e#face, slot = e#slot }) |> Option.toList;
         Cast.layerOf({ cast = figures, prop = None })
 
     /// 縦の画面の右の列のログの番号。
     def logIndex(): Int32 =
-        WorldMenu.buttonsOf(Layout.Fit.Portrait(PortraitDoc.rec(PortraitDoc.defaults()), Display.defaultPortraitView()))
-            |> List.zipWithIndex |> List.find(match (_, b) -> b == World.Button.Log) |> Option.map(fst) |> Option.getWithDefault(0)
+        WorldMenu.buttonIndexOf(Layout.Fit.Portrait(PortraitDoc.rec(PortraitDoc.defaults()), Display.defaultPortraitView()), World.Button.Log)
+            |> Option.getWithDefault(0)
 
     /// 描き出せる名前の全部（Shots の場面と、小さい画面と縦の画面の場面）。
     def allNames(): List[String] =

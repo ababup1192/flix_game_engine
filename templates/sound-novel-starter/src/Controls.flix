@@ -48,7 +48,7 @@ mod Controls {
         else match w#scene {
             case World.Scene.Title(_)      => titleInput(res, frame, w)
             // WhyNot: 素材を待つ間にメニューやセーブを開かせない — 画面は黒で押せる物が見えず、待ちは長くても数十秒で明ける。
-            case World.Scene.Reading(_)    => if (World.isHolding(w)) w else readingInput(res, frame, w)
+            case World.Scene.Reading(_)    => if (World.isHolding(w)) dropLongPress(w) else readingInput(res, frame, w)
             case World.Scene.Credits(_, _) =>
                 let k = keysOf(res);
                 if (World.creditsOver(res, Layout.height(fitOf(res, frame)), w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
@@ -57,7 +57,7 @@ mod Controls {
 
     def dropGesture(w: World.World): World.World = { gesture = Gesture.idle() | w }
 
-    /// 列の長押しの途中で画面や確認のウィンドウが開いたら、長押しを捨てる。
+    /// 列の長押しの途中で画面や確認のウィンドウが開いた・素材を待つ黒に入ったら、長押しを捨てる。
     // WhyNot: 残したまま読む間へ戻さない — 戻った最初のフレームで「離した」と読み、開いた覚えの無いボタンを押してしまう。
     def dropLongPress(w: World.World): World.World = match w#grab {
         case World.Grab.LongPress(_, _) => { grab = World.Grab.Free | w }
@@ -144,16 +144,16 @@ mod Controls {
     /// 別のボタンになる物（オート → スキップ）はそのボタンを押して掴みを Other にする（離しても押さない・続けて押さない）。
     def longPress(res: Res.Res, button: World.Button, w: World.World): World.World \ Emit[World.Event] =
         match WorldMenu.longPressOf(button) {
-            case WorldMenu.LongPressDoes.Press(other) => WorldMenu.press(res, other, { grab = World.Grab.Other | w })
-            case WorldMenu.LongPressDoes.Tooltip      => w
+            case WorldMenu.LongPressAction.Press(other) => WorldMenu.press(res, other, { grab = World.Grab.Other | w })
+            case WorldMenu.LongPressAction.Tooltip      => w
         }
 
     /// ブラウザ版の指の長押し（離した時に touchGestures の longPress = touchHold のキーが、押した所のまま届く）が右の列の上だった:
     /// マウスの長押しと同じく、オートはスキップ、ほかは名前のツールチップ（離した後に出す）。
     def touchLongPress(res: Res.Res, frame: App.Frame, button: World.Button, i: Int32, w: World.World): World.World \ Emit[World.Event] =
         match WorldMenu.longPressOf(button) {
-            case WorldMenu.LongPressDoes.Press(other) => WorldMenu.press(res, other, w)
-            case WorldMenu.LongPressDoes.Tooltip      => World.mapRead(r -> { tip = Some((i, frame#realNow)) | r }, w)
+            case WorldMenu.LongPressAction.Press(other) => WorldMenu.press(res, other, w)
+            case WorldMenu.LongPressAction.Tooltip      => World.mapRead(r -> { tip = Some((i, frame#realNow)) | r }, w)
         }
 
     /// 押したボタン（無ければキー・選択肢・送り）。送るのは離した押し（releasedText）とキーの決定だけで、
