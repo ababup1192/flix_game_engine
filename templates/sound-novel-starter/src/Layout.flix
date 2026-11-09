@@ -414,14 +414,17 @@ mod Layout {
         case Fit.Portrait(_, _) => 176.0
     }
 
-    /// 行 i のつまみの帯（左端 = 最小・右端 = 最大）。
+    /// スライダーの値の字で一番長い物の幅（字の大きさを 1 とした時）。「ノーウェイト」の全角 6 字。
+    pub def settingValueEms(): Float64 = 6.0
+
+    /// つまみの帯の右端から値の字の左端までの空き（選んだ時のつまみの半径 8 と、その外の 16）。
+    pub def settingValueGap(): Float64 = 24.0
+
+    /// 行 i のつまみの帯（左端 = 最小・右端 = 最大）。右端は、行の右に寄せた一番長い値の字に、最大にしたつまみが重ならない所。
     pub def settingBar(fit: Fit, i: Int32): Rect2.Rect2 =
         let r = settingRow(fit, i);
-        let w = match fit {
-            case Fit.Regular        => 172.0
-            case Fit.Small(_)       => 150.0
-            case Fit.Portrait(_, _) => r#size#x - settingControlX(fit) - 92.0
-        };
+        let valueWidth = settingValueEms() * settingText(fit)#value;
+        let w = r#size#x - settingControlX(fit) - valueWidth - settingValueGap();
         rect(r#position#x + settingControlX(fit), r#position#y + (r#size#y - 6.0) / 2.0, w, 6.0)
 
     /// 行 i のつまみの帯をクリックで受ける範囲（帯より一回り大きい。Small と縦は行の高さいっぱい）。

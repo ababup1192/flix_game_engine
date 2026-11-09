@@ -2,7 +2,7 @@
 // 当たりの矩形は View が描く所と同じ Layout の関数から引く（座標の数を写さない）。Frame#viewport が縦長なら縦の並べ方になる。
 mod TestPortrait {
 
-    use fge::{App, Clock, Display}
+    use fge::{App, Clock, Display, Rect2}
     use fge::GameEngine.Key
     use TestKit.{begun, w0}
 
@@ -149,6 +149,36 @@ mod TestPortrait {
             r#position#x >= 0.0 and r#position#y >= 0.0 and r#position#x + r#size#x <= Layout.width(fit) and r#position#y + r#size#y <= Layout.height(fit)))
 
     // ── 当たり ──
+
+    /// 設定の行 i で、最大にしたつまみ（選んだ時の半径 8）の矩形と、右に寄せた一番長い値の字「ノーウェイト」（全角 1 字 = 字の大きさ 1 つ分）の矩形。
+    def knobAndLongestValue(fit: Layout.Fit, i: Int32): (Rect2.Rect2, Rect2.Rect2) =
+        let bar = Layout.settingBar(fit, i);
+        let row = Layout.settingRow(fit, i);
+        let text = Layout.settingText(fit);
+        let width = Int32.toFloat64(String.length("ノーウェイト")) * text#value;
+        let knob = { position = { x = bar#position#x + bar#size#x - 8.0, y = bar#position#y + bar#size#y / 2.0 - 8.0 }, size = { x = 16.0, y = 16.0 } };
+        let value = { position = { x = row#position#x + row#size#x - width, y = row#position#y + text#valueTop }, size = { x = width, y = text#value } };
+        (knob, value)
+
+    def sliderRow(i: Int32, setting: World.Setting): Option[Int32] = match setting {
+        case World.Setting.Slider(_) => Some(i)
+        case _                       => None
+    }
+
+    def overlaps(a: Rect2.Rect2, b: Rect2.Rect2): Bool =
+        a#position#x < b#position#x + b#size#x and b#position#x < a#position#x + a#size#x and
+        a#position#y < b#position#y + b#size#y and b#position#y < a#position#y + a#size#y
+
+    @Test
+    def testSliderKnobNeverTouchesTheLongestValueText(): Unit \ {Assert, Fs.FileRead} =
+        // 横・横持ちのスマホ・縦（細長い・太い）のどれでも、どのスライダーの行でも、最大にしたつまみと一番長い値の字が重ならない。
+        let res = TestKit.res();
+        let fits = Layout.Fit.Regular :: Layout.fitOf(Display.SizeClass.Small, Display.Orientation.Landscape, Layout.size(Layout.Fit.Regular), res#smallScreen, res#portrait)
+                   :: portrait(res, tall()) :: portrait(res, short()) :: Nil;
+        let sliders = WorldSettings.settings() |> List.zipWithIndex |> List.filterMap(match (i, setting) -> sliderRow(i, setting));
+        let touching = fits |> List.flatMap(fit -> sliders |> List.map(knobAndLongestValue(fit)))
+                            |> List.count(match (knob, value) -> overlaps(knob, value));
+        Assert.assertEq(expected = 0, touching)
 
     @Test
     def testPortraitLogButtonOpensTheLog(): Unit \ {Assert, Fs.FileRead} =
