@@ -545,14 +545,14 @@ mod TestRules {
 
     @Test
     def testHeldPointerDragsTheSlider(): Unit \ {Assert, Fs.FileRead} =
-        // 押したまま（指なら横へなぞったまま）帯の上を動かすと、クリックの拍が無くても値が付いて動く。
+        // 帯の左端で押し始め、押したまま（指なら横へなぞったまま）帯の上を動かすと、クリックのフレームが無くても値が付いて動く。
         // 帯の左端 → 右端と動かすと、文字の速さは下限 → 上限（= ノーウェイト）になる。
         let res = TestKit.res();
         let fit = Layout.Fit.Regular;
         let bar = Layout.settingBar(fit, 0);
         let held = x -> { mouseDown = true, mouseMoved = true, cursor = { x = x, y = bar#position#y + bar#size#y / 2.0 } | App.emptyFrame() };
         let opened = quiet(() -> WorldSettings.openSettings(w0(res)));
-        let left = Controls.interact(held(bar#position#x), res, opened);
+        let left = Controls.interact({ mouseClicked = true | held(bar#position#x) }, res, opened);
         let right = Controls.interact(held(bar#position#x + bar#size#x), res, left);
         let cps = cur -> Saves.configOf(cur#saves)#cps;
         let range = kind(res)#cpsSlider;
@@ -567,11 +567,26 @@ mod TestRules {
         let second = Layout.settingBar(fit, 1);
         let frame = (down, x, y) -> { mouseDown = down, mouseMoved = true, cursor = { x = x, y = y } | App.emptyFrame() };
         let opened = quiet(() -> WorldSettings.openSettings(w0(res)));
-        let start = Controls.interact(frame(true, first#position#x, first#position#y + first#size#y / 2.0), res, opened);
+        let start = Controls.interact({ mouseClicked = true | frame(true, first#position#x, first#position#y + first#size#y / 2.0) }, res, opened);
         let slid = Controls.interact(frame(true, second#position#x + second#size#x, second#position#y + second#size#y / 2.0), res, start);
         let released = Controls.interact(frame(false, second#position#x, second#position#y + second#size#y / 2.0), res, slid);
         let c = Saves.configOf(released#saves);
         Assert.assertEq(expected = (kind(res)#cpsSlider#max, kind(res)#autoWait, World.Grab.Free), (c#cps, c#autoWait, released#grab))
+
+    @Test
+    def testPressHeldFromThePreviousScreenGrabsNoSlider(): Unit \ {Assert, Fs.FileRead} =
+        // 前の画面で押したまま設定が開くと、指がスライダーの帯の上にあっても、離すまでどのスライダーも掴まない（値は既定のまま）。
+        let res = TestKit.res();
+        let reach = Layout.settingBarReach(Layout.Fit.Regular, 0);
+        let held = { mouseDown = true, mouseMoved = true, cursor = { x = reach#position#x + reach#size#x - 1.0, y = reach#position#y + reach#size#y / 2.0 } | App.emptyFrame() };
+        let opened = quiet(() -> WorldSettings.openSettings(w0(res)));
+        let after = Controls.interact(held, res, Controls.interact(held, res, opened));
+        Assert.assertEq(expected = (kind(res)#cps, false), (Saves.configOf(after#saves)#cps, isSliderGrabbed(after)))
+
+    def isSliderGrabbed(w: World.World): Bool = match w#grab {
+        case World.Grab.Slider(_) => true
+        case _                    => false
+    }
 
     @Test
     def testNoWaitShowsTheWholeLineAtOnce(): Unit \ {Assert, Fs.FileRead} =

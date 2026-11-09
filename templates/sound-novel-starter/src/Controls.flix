@@ -236,6 +236,8 @@ mod Controls {
     /// スライダーの帯をクリックするとその位置の値、2 つから選ぶ行はクリックした側になる。
     /// スライダーは押したまま（指なら横へなぞったまま）動かすと、帯の上の位置に付いて値が動く。
     /// 離すまでは最初に掴んだスライダーだけが動く（縦にずれて隣の行に入っても、隣は動かさない）。
+    // WhyNot: 押しているフレームならいつでも掴む、にしない — 前の画面のボタンを押したまま設定が開くと、
+    //   その指の下のスライダーのバーを掴んで値が勝手に動き、押していないのに返事の音が鳴る。掴むのは押し始めたフレームだけ。
     def settingsInput(res: Res.Res, frame: App.Frame, back: Bool, current: World.Setting, w: World.World): World.World \ Emit[World.Event] =
         let rows = WorldSettings.settings();
         let hovered = Layout.hitOf(List.length(rows), Layout.settingRow(fitOf(res, frame)), frame#cursor)
@@ -248,7 +250,7 @@ mod Controls {
                     case Some(World.Setting.Slider(slider)) => grabbed(i, slider)
                     case _                                  => w
                 }
-            case (true, World.Grab.Free, Some((i, World.Setting.Slider(slider)))) if Layout.contains(Layout.settingBarReach(fit, i), frame#cursor) =>
+            case (true, World.Grab.Free, Some((i, World.Setting.Slider(slider)))) if frame#mouseClicked and Layout.contains(Layout.settingBarReach(fit, i), frame#cursor) =>
                 grabbed(i, slider)
             case _ =>
                 let next = if (frame#mouseDown) World.Grab.Other else World.Grab.Free;
