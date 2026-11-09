@@ -72,7 +72,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | 設定 | スライダーの範囲は `novel.kind.json` の `*Slider` | `WorldSettings.adjust` / `activate` / `withLevel` / `withSide`・`View.settingsPanel` |
 | タイトル画面・クレジット | `assets/novel.story.json`・`assets/novel.credits.json` | `View.title` / `View.credits` |
 | スマホ（横持ち）の字とボタンの大きさ | `assets/novel.small.json` | `Layout.Fit.Small` |
-| ブラウザ版で背景・音をタイトルの後に裏で取る（届く前の背景・環境音は暗転して待ち、20 秒で諦めて進む。一発の効果音は鳴らさず進む） | `project.json` の `web.deferred`（タイトルの写真と最初に鳴る音は入れない）・`web.compress`・秒は `novel.kind.json` の `hold*` | `Game.withAssetLoading`（Main と `web/WebMain.flix` だけが足す）・`WorldRead` の「素材の待ち」・`Controls.decodeBudget`・`View.holdLayer`。確かめ方: `bin/fge export-web` の大きさの表の「起動／後回し」・頁の `?loadtime=1`・描き出しの `hold` |
+| ブラウザ版で背景・音をタイトルの後に裏で取る（届く前の背景・環境音は暗転して待ち、20 秒で諦めて進む。一発の効果音は鳴らさず進む） | `project.json` の `web.deferred`（タイトルの写真と最初に鳴る音は入れない）・`web.compress`・秒は `novel.kind.json` の `hold*`・待つ間の印は `novel.theme.json` の `waitMark`（`dots` = 右下の点 3 つ・`ring` = 真ん中の回る輪と labels の `waiting` の字・`none` = 黒だけ） | `Game.withAssetLoading`（Main と `web/WebMain.flix` だけが足す）・`WorldRead` の「素材の待ち」・`Controls.decodeBudget`・`View.holdLayer`・`View.loadingMark`。確かめ方: `bin/fge export-web` の大きさの表の「起動／後回し」・頁の `?loadtime=1`・描き出しの `hold`・`hold-ring`・`hold-none`・`portrait-hold-ring` |
 | スマホを縦に持った時の縦の画面（沈めた写真の上に画面いっぱいの頁・右端にアイコンの列（しおり・ログ・オート）・右上の … のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json`・列と … の積み方と大きさと長押しの秒は `assets/novel.rail.json` | `Layout.Fit.Portrait`・`Rail`（矩形と押しの判定 `Rail.judge`）・`View.portraitPage` / `portraitButtons` / `menuPanel` / `saveLoadPanel`・`WorldMenu.menuItems` / `saveLoadItems` / `longPressOf`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
 
 ## 読む順

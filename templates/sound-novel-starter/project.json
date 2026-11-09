@@ -124,7 +124,7 @@
       {
         "id": "theme",
         "pattern": "assets/novel.theme.json",
-        "title": "字と窓の色",
+        "title": "字・ウィンドウの色と待ちの印",
         "role": "material",
         "schema": "assets/theme.schema.json"
       },

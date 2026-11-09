@@ -78,6 +78,7 @@
     "resetDone": "初期設定に戻しました",
     "noSave": "セーブデータがありません",
     "noQuickSave": "クイックセーブがありません",
-    "noRollback": "これ以上は戻れません"
+    "noRollback": "これ以上は戻れません",
+    "waiting": "読み込み中"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "//": "novel.theme.json の形の宣言（Studio の sections 方言）。字とウィンドウの色。写真の色は novel.backdrops.json の時間帯。",
+  "//": "novel.theme.json の形の宣言（Studio の sections 方言）。字・ウィンドウの色と待ちの印。写真の色は novel.backdrops.json の時間帯。",
   "version": 1,
   "sections": {
     "ink": {
@@ -52,6 +52,19 @@
       "label": "蛍の光",
       "order": 7,
       "required": true
+    },
+    "waitMark": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "dots",
+          "ring",
+          "none"
+        ]
+      },
+      "label": "素材を待つ間の印（dots = 右下の点 3 つ・ring = 真ん中の回る輪と字・none = 黒だけ）",
+      "order": 8,
+      "default": "dots"
     }
   }
 }

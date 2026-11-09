@@ -85,7 +85,7 @@ mod View {
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
             case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden) Nil else reading(atlas, env, r)
         };
-        let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(env)) |> Option.getWithDefault(Nil);
+        let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
         List.flatten(screen :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
     def realSeconds(env: Env): Float64 = Clock.secondsOf(env#realNow)
@@ -162,9 +162,9 @@ mod View {
 
     // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
 
-    /// 画面を夜の地の色で覆う（黒へ重ねる・黒のまま・黒から戻す）。黒のまま holdMarkSeconds を過ぎたら右下に待ちの印。
-    /// 重ねの進みは物語の時計（画面を開くと止まる）、印の明滅は実時間。
-    def holdLayer(env: Env): World.Hold -> List[Render.PlacedItem] = hold ->
+    /// 画面を夜の地の色で覆う（黒へ重ねる・黒のまま・黒から戻す）。黒のまま holdMarkSeconds を過ぎたら待ちの印（形は novel.theme.json の waitMark）。
+    /// 重ねの進みは物語の時計（画面を開くと止まる）、印の動きは実時間。
+    def holdLayer(atlas: FontAtlas, env: Env): World.Hold -> List[Render.PlacedItem] = hold ->
         let k = kindOf(env);
         let progress = if (k#holdFadeSeconds <= 0.0) 1.0
                        else Float64.min(1.0, Float64.max(0.0, Clock.since(hold#phaseFrom, env#storyNow) / k#holdFadeSeconds));
@@ -176,8 +176,20 @@ mod View {
         let whole = Layout.screen(env#fit);
         let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundColor(), zHold()) |> Render.fade(alpha));
         let marked = hold#phase == World.HoldPhase.Waiting and hold#waited >= k#holdMarkSeconds;
-        let mark = if (marked) waitDots(env, { x = Layout.width(env#fit) - 60.0, y = Layout.height(env#fit) - 36.0 }, 1.0, zHoldMark()) else Nil;
+        let mark = if (marked) loadingMark(atlas, env, theme(env)#waitMark, whole, 1.0, zHoldMark()) else Nil;
         veil :: mark
+
+    /// 素材を待つ間の印を矩形 place（画面かサムネの枠）に置く。Dots = 右下の金の点 3 つ、Ring = 真ん中に回る点の輪と字のラベル、Off = 何も描かない。
+    /// scale = 大きさの倍率（サムネは小さく）。
+    def loadingMark(atlas: FontAtlas, env: Env, kind: ThemeDoc.WaitMark, place: Rect2.Rect2, scale: Float64, z: Int32): List[Render.PlacedItem] =
+        let right = place#position#x + place#size#x;
+        let bottom = place#position#y + place#size#y;
+        match kind {
+            case ThemeDoc.WaitMark.Dots => waitDots(env, { x = right - 60.0 * scale, y = bottom - 36.0 * scale }, scale, z)
+            case ThemeDoc.WaitMark.Ring =>
+                ringBadge(atlas, env, { x = place#position#x + place#size#x / 2.0, y = place#position#y + place#size#y / 2.0 }, scale, z)
+            case ThemeDoc.WaitMark.Off  => Nil
+        }
 
     /// 待ちの印: 金の小さな点 3 つが左から順に息をするように明滅する（蛍と同じ、芯と滲む光）。
     /// origin = 左の点の中心、scale = 大きさの倍率（サムネは小さく）。
@@ -191,6 +203,36 @@ mod View {
             RawDraw.circleAt(center, 2.6 * scale, Color.lighten(color, 0.35), z + 1) |> Render.overItem(item -> Render.fade(a, item))
             :: Render.glowAt(center, 9.0 * scale, color, { alpha = 0.45 * a, blend = DrawCmd.BlendMode.Add }, z)
         })
+
+    /// 待ちの印の輪: 角の丸いラベル（上がわずかに明るい panel の地・差し色の細い縁）に、回る点の輪 8 つと labels の waiting の字。
+    /// 字が空ならラベルを輪の大きさに詰める。center = ラベルの中心。点は 0.1 秒ごとに 1 つ先へ明るさが移る。
+    def ringBadge(atlas: FontAtlas, env: Env, center: Vec2.Vec2, scale: Float64, z: Int32): List[Render.PlacedItem] =
+        let t = theme(env);
+        let word = label(StoryDoc.Label.Waiting, env);
+        let size = captionSize(env, 18.0) * scale;
+        let ring = 9.0 * scale;
+        let gap = if (String.isEmpty(word)) 0.0 else 10.0 * scale;
+        let padX = 16.0 * scale;
+        let h = 40.0 * scale;
+        let textW = if (String.isEmpty(word)) 0.0 else TextDraw.width(word, atlas, size);
+        let w = padX + 2.0 * ring + gap + textW + padX;
+        let left = center#x - w / 2.0;
+        let top = center#y - h / 2.0;
+        let plateSize = { x = w, y = h };
+        let ground = at(left, top, RawDraw.box(plateSize, t#panel, z) |> Render.fade(0.88)
+                                       |> Render.outlineA({ color = t#accent, alpha = 0.35, width = 1.0 }) |> Render.rounded(h / 2.0));
+        let sheen = at(left, top, roundedSheen(plateSize, h / 2.0, t#ink, { top = 0.08, bottom = 0.0 }, z));
+        let hub = { x = left + padX + ring, y = center#y };
+        let head = Float64.tryToInt32(Float64.floor(realSeconds(env) * 10.0)) |> Option.getWithDefault(0);
+        let dots = List.range(0, 8) |> List.map(i -> {
+            let angle = Num.pi() * 2.0 * Int32.toFloat64(i) / 8.0;
+            let a = 1.0 - Int32.toFloat64(Int32.modulo(head - i, 8)) / 8.0;
+            RawDraw.circleAt({ x = hub#x + ring * Num.cos(angle), y = hub#y + ring * Num.sin(angle) }, 1.9 * scale, t#ink, z + 1)
+                |> Render.overItem(item -> Render.fade(0.15 + 0.85 * a, item))
+        });
+        let text = if (String.isEmpty(word)) Nil
+                   else textAt(hub#x + ring + gap, center#y - size / 2.0 - 1.0, word, atlas, size, t#ink, z + 1) :: Nil;
+        ground :: sheen :: List.append(text, dots)
 
     // ── パーティクル（蛍） ──
 
@@ -882,9 +924,9 @@ mod View {
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)
             |> List.map(Render.overItem(liftedZ(zThumb()))) |> Render.clippedAll(r);
-        // 写真がまだ届いていない枠は、暗い地（backdropsIn が写真を描かない）の右下に待ちの印。
+        // 写真がまだ届いていない枠は、暗い地（backdropsIn が写真を描かない）に待ちの印。
         let photoMissing = screen |> Option.exists(read -> stagePhotoMissing(env, read#stage));
-        let mark = if (photoMissing) waitDots(env, { x = r#position#x + r#size#x - 30.0, y = r#position#y + r#size#y - 12.0 }, 0.6, zThumbTop() + 1) else Nil;
+        let mark = if (photoMissing) loadingMark(atlas, env, t#waitMark, r, 0.6, zThumbTop() + 1) else Nil;
         List.flatten(small :: frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumbTop()) :: mark :: Nil)
 
     /// 舞台の写真が、まだ届いていない後回しの絵か。

@@ -84,6 +84,8 @@ mod StoryDoc {
         case NoSave
         case NoQuickSave
         case NoRollback
+        // 素材を待つ間の印（novel.theme.json の waitMark = ring のラベル）
+        case Waiting
     }
 
     pub def labels(): List[Label] =
@@ -97,7 +99,7 @@ mod StoryDoc {
         Label.AmbienceVolume :: Label.SeVolume :: Label.WindowAlpha :: Label.Reset :: Label.Preview :: Label.Yes ::
         Label.No :: Label.AskOverwrite :: Label.AskDelete :: Label.AskLoad :: Label.AskJump :: Label.AskToTitle ::
         Label.AskQuit :: Label.AskReset :: Label.LostNote :: Label.Saved :: Label.QuickSaved :: Label.Loaded ::
-        Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Nil
+        Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Label.Waiting :: Nil
 
     /// novel.story.json の labels の鍵。
     pub def labelKey(label: Label): String = fst(entryOf(label))
@@ -172,6 +174,7 @@ mod StoryDoc {
         case Label.NoSave         => ("noSave", "セーブデータがありません")
         case Label.NoQuickSave    => ("noQuickSave", "クイックセーブがありません")
         case Label.NoRollback     => ("noRollback", "これ以上は戻れません")
+        case Label.Waiting        => ("waiting", "読み込み中")
     }
 
     /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は

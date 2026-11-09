@@ -4,6 +4,8 @@ choice	dynamic=125	static=0
 credits	dynamic=311	static=0
 engawa	dynamic=275	static=0
 hold	dynamic=296	static=0
+hold-none	dynamic=266	static=0
+hold-ring	dynamic=281	static=0
 lane	dynamic=203	static=0
 load	dynamic=913	static=0
 log	dynamic=242	static=0
@@ -13,6 +15,7 @@ nvl	dynamic=255	static=0
 portrait-adv	dynamic=252	static=0
 portrait-ask	dynamic=250	static=0
 portrait-choice	dynamic=339	static=0
+portrait-hold-ring	dynamic=292	static=0
 portrait-lane	dynamic=214	static=0
 portrait-log	dynamic=372	static=0
 portrait-menu	dynamic=263	static=0

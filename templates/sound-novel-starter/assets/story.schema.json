@@ -249,6 +249,9 @@
         },
         "noRollback": {
           "type": "string"
+        },
+        "waiting": {
+          "type": "string"
         }
       },
       "additionalProperties": false

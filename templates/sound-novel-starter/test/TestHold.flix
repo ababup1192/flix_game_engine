@@ -3,7 +3,7 @@
 // 写真・音の名前は Doc（novel.backdrops.json の texture・Stage.ambienceSound）から引き、秒は novel.kind.json から引く。
 mod TestHold {
 
-    use fge::{App, Clock, LoadProgress, Resources}
+    use fge::{App, Clock, LoadProgress, Render, Resources}
     use TestKit.{advance, begun, quiet, readTo, readUntil, stepBy}
 
     def kind(res: Res.Res): KindDoc.Rec = KindDoc.rec(res#kind)
@@ -210,4 +210,59 @@ mod TestHold {
                                    LoadProgress.DecodeBudget.Covered(50.0) :: LoadProgress.DecodeBudget.Paused :: Nil,
                         budgetOf(TestKit.w0(res)) :: budgetOf(tapWait) :: budgetOf(typing) :: budgetOf(waitingForPaddy(res)) ::
                         budgetOf(World.toCredits(res, tapWait)) :: Nil)
+
+
+    // ══ 待ちの印（novel.theme.json の waitMark） ══
+
+    /// 待ちの印の形を mark に替えた描く元。
+    def withWaitMark(mark: ThemeDoc.WaitMark, res: Res.Res): Res.Res =
+        Res.withTheme(ThemeDoc.Doc.Doc({ waitMark = mark | ThemeDoc.rec(res#theme) }), res)
+
+    /// Paddy の背景を黒のまま待ち、waited 秒待った所。
+    def waitedFor(res: Res.Res, waited: Float64): World.World =
+        waitingForPaddy(res) |> World.mapRead(r -> { hold = r#hold |> Option.map(h -> { waited = waited | h }) | r })
+
+    /// 描き出しと同じ字のアトラスで、横の画面の hud を組む。
+    def hudOf(res: Res.Res, w: World.World): List[Render.PlacedItem] \ IO =
+        let ctx = App.viewCtxOf(SceneRender.cfgOf("debug", Map.empty())#fontAtlas, SceneRender.design());
+        View.hud(ctx, res, w)
+
+    def textsOf(items: List[Render.PlacedItem]): List[String] =
+        items |> List.filterMap(placed -> match placed#item {
+            case Render.Item.Text(t) => Some(t#text)
+            case _                   => None
+        })
+
+    /// 印が出る前（待ち始め）と、holdMarkSeconds を過ぎた所の hud の描き物の数。
+    def markCounts(res: Res.Res): (Int32, Int32) \ IO =
+        let marked = kind(res)#holdMarkSeconds + 0.5;
+        let held = missingOf(texture(res, "paddy") :: Nil, res);
+        (List.length(hudOf(held, waitedFor(res, 0.0))), List.length(hudOf(held, waitedFor(res, marked))))
+
+    @Test
+    def testDotsMarkAppearsAfterHoldMarkSeconds(): Unit \ {Assert, Fs.FileRead, IO} =
+        // waitMark = dots: 黒のまま holdMarkSeconds を過ぎると、待ち始めより描き物が増える（点 3 つ）。
+        let (before, after) = markCounts(withWaitMark(ThemeDoc.WaitMark.Dots, TestKit.res()));
+        Assert.assertTrue(after > before)
+
+    @Test
+    def testRingMarkShowsTheWaitingLabel(): Unit \ {Assert, Fs.FileRead, IO} =
+        // waitMark = ring: holdMarkSeconds を過ぎた hud の字に、labels の waiting が入る。
+        let res = withWaitMark(ThemeDoc.WaitMark.Ring, TestKit.res());
+        let held = missingOf(texture(res, "paddy") :: Nil, res);
+        let word = StoryDoc.labelOf(StoryDoc.Label.Waiting, res#story);
+        let texts = textsOf(hudOf(held, waitedFor(res, kind(res)#holdMarkSeconds + 0.5)));
+        Assert.assertTrue(List.memberOf(word, texts))
+
+    @Test
+    def testNoneMarkDrawsOnlyTheDark(): Unit \ {Assert, Fs.FileRead, IO} =
+        // waitMark = none: holdMarkSeconds を過ぎても描き物は待ち始めと同じ（黒の地だけ）。
+        let (before, after) = markCounts(withWaitMark(ThemeDoc.WaitMark.Off, TestKit.res()));
+        Assert.assertEq(expected = before, after)
+
+    @Test
+    def testUnknownWaitMarkFallsBackToDots(): Unit \ Assert =
+        // 知らない waitMark の字は dots として読む（fail-open）。
+        let read = ThemeDoc.fromJson("{\"version\": 1, \"waitMark\": \"spinner\"}") |> Option.map(d -> ThemeDoc.rec(d)#waitMark);
+        Assert.assertEq(expected = Some(ThemeDoc.WaitMark.Dots), read)
 }
