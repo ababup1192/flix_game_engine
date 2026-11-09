@@ -1,5 +1,5 @@
 {
-  "//": "novel.portrait.json の形の宣言（Studio の sections 方言）。縦の画面の時だけ使う字と押せる物の大きさ。置き場所はコード（src/Layout.flix）。既定は src/PortraitDoc.flix の defaults() が正。",
+  "//": "novel.portrait.json の形の宣言（Studio の sections 方言）。縦の画面の時だけ使う字と押せる物の大きさ。置き場所はコード（src/Layout.flix）。右端の操作の列と … の大きさは novel.rail.json（rail.schema.json）。既定は src/PortraitDoc.flix の defaults() が正。",
   "version": 1,
   "sections": {
     "bodySize": {
@@ -42,30 +42,20 @@
       "max": 32,
       "default": 21.0
     },
-    "iconSize": {
+    "pageBottom": {
       "kind": "field",
       "type": "float",
-      "label": "頁の下の操作の丸いアイコンの直径（px）",
-      "group": "読む間",
+      "label": "頁と選択肢の下端から画面の下までの空き（px。下にツールバーを重ねるブラウザが隠す分）",
+      "group": "頁",
       "order": 5,
-      "min": 30,
-      "max": 80,
-      "default": 49.0
-    },
-    "buttonHeight": {
-      "kind": "field",
-      "type": "float",
-      "label": "頁の下の操作の押せる高さと幅（px）",
-      "group": "読む間",
-      "order": 6,
-      "min": 44,
-      "max": 96,
-      "default": 72.0
+      "min": 0,
+      "max": 400,
+      "default": 196.0
     },
     "menuItemTextSize": {
       "kind": "field",
       "type": "float",
-      "label": "歯車のメニューの字（px）",
+      "label": "… のメニューとしおりの選びの字（px）",
       "group": "読む間",
       "order": 7,
       "min": 14,
@@ -75,7 +65,7 @@
     "menuItemHeight": {
       "kind": "field",
       "type": "float",
-      "label": "歯車のメニューの 1 項目の高さ（px）",
+      "label": "… のメニューとしおりの選びの 1 項目の高さ（px）",
       "group": "読む間",
       "order": 8,
       "min": 44,

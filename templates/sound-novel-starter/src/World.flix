@@ -51,7 +51,8 @@ mod World {
     /// 読んでいる間だけの値。talk = シナリオの現在地、stage = 舞台、page = 出している文章、
     /// choices / choiceCursor = 出している選択肢（無ければ空）とそのカーソル、log = バックログ（新しい順）、
     /// playback = 送り方、doneAt = 今の行を出し終えた物語の時刻、autosavedNode = オートセーブを残した最後のノード、
-    /// hold = 素材の待ち（無ければ None）、gaveUp = 待ち切れずに諦めた素材の名前（もう待たない）。
+    /// hold = 素材の待ち（無ければ None）、gaveUp = 待ち切れずに諦めた素材の名前（もう待たない）、
+    /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）。
     pub type alias Read = {
         talk = YarnRunner.Runner[Stage.Story],
         stage = Stage.Stage,
@@ -63,7 +64,8 @@ mod World {
         doneAt = Option[Clock.Time[Stage.Story]],
         autosavedNode = Option[String],
         hold = Option[Hold],
-        gaveUp = Set[String]
+        gaveUp = Set[String],
+        tip = Option[(Int32, Clock.Time[Clock.Real])]
     }
 
     /// 素材の待ち: ブラウザ版で後回しにした背景・環境音が、使う時にまだ届いていない間の暗転（WorldRead の「素材の待ち」）。
@@ -90,10 +92,12 @@ mod World {
 
     /// 場面の上に開いている画面と、その画面だけの値（Closed 以外は物語の時計が止まる）。
     ///   Log(遡った量 px) / SaveSlots・LoadSlots(ページ, 枠のカーソル) / Settings(カーソルの行) / Hidden = 文章のウィンドウを隠して背景だけを見る /
-    ///   Menu(カーソルの項目の番号) = 縦の画面の歯車から開く小さなメニュー（WorldMenu.menuItems）。
+    ///   Menu(カーソルの項目の番号) = 縦の画面の右上の … から開く小さなメニュー（WorldMenu.menuItems）、
+    ///   SaveLoadPick(カーソルの項目の番号) = 縦の画面のしおりのボタンから開く [セーブ｜ロード] の選び（WorldMenu.saveLoadItems）。
     pub enum Panel with Eq {
         case Closed
         case Menu(Int32)
+        case SaveLoadPick(Int32)
         case Log(Float64)
         case SaveSlots(Saves.Tab, Int32)
         case LoadSlots(Saves.Tab, Int32)
@@ -125,7 +129,8 @@ mod World {
         case Quit
     }
 
-    /// 読んでいる間のクイックメニュー（下の帯）。
+    /// 読んでいる間のクイックメニュー（横の画面は下の帯・縦の画面は右端の縦の列と右上の …）。
+    /// Menu = 右上の …、SaveLoad = しおり（押すと [セーブ｜ロード] を選ぶ）。
     pub enum Button with Eq, ToString {
         case Rollback
         case Log
@@ -139,6 +144,7 @@ mod World {
         case Hide
         case ToTitle
         case Menu
+        case SaveLoad
     }
 
     /// 設定の行。操作の形ごとに分けてある: Slider = スライダーで数を選ぶ、Pair = 2 つから選ぶ、Reset = 押すと確認のウィンドウ。
@@ -211,12 +217,14 @@ mod World {
     /// saves = セーブデータ・既読・設定、saveRev = saves を変えた回数（Saves を書く出力の鍵）、pointer = マウスの位置（触れている物を明るくする）、
     /// clockBase = 起動した時のその土地の時刻（秒。セーブの日時の元）、toast = 知らせの言葉と出した実時間、quitting = 終了を決めた、
     /// events = 規則が出した出来事（音の材料）、gesture = 読む画面で押し始めた 1 回の押し（離した時にタップか払いかを決める）。
-    /// 押している間の掴み（設定の画面）。Free = 押していない、Slider(i) = 押し始めた所が i 行目のスライダーの帯、Other = それ以外を押している。
+    /// 押している間の掴み。Free = 押していない、Slider(i) = 設定の画面で押し始めた所が i 行目のスライダーの帯、Other = それ以外を押している、
+    /// LongPress(i, 時刻) = 縦の画面で読む間に右の列の i 番目のボタンを押し始めた実時間（押している秒は今との差で読む）。
     /// 離すまで、最初に掴んだスライダーだけを動かす（指やマウスが隣の行へずれても、そちらは動かさない）。
     pub enum Grab with Eq, ToString {
         case Free
         case Slider(Int32)
         case Other
+        case LongPress(Int32, Clock.Time[Clock.Real])
     }
 
     pub type alias World = {
@@ -246,7 +254,7 @@ mod World {
     /// 読み始める前の Read（舞台・頁・バックログが空）。
     pub def emptyRead(): Read =
         { talk = YarnRunner.closed(), stage = Stage.empty(), page = Page.empty(), choices = Nil, choiceCursor = 0,
-          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty() }
+          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None }
 
     // ── 場面を読む口 ──
 
@@ -301,7 +309,7 @@ mod World {
         case _                   => false
     }
 
-    /// 開いている画面の名前（Closed・Log・SaveSlots・LoadSlots・Settings・Hidden）。
+    /// 開いている画面の名前（Closed・Log・SaveSlots・LoadSlots・Settings・Hidden・Menu・SaveLoadPick）。
     pub def panelName(w: World): String = match w#panel {
         case Panel.Closed          => "Closed"
         case Panel.Log(_)          => "Log"
@@ -310,6 +318,7 @@ mod World {
         case Panel.Settings(_)     => "Settings"
         case Panel.Hidden          => "Hidden"
         case Panel.Menu(_)         => "Menu"
+        case Panel.SaveLoadPick(_) => "SaveLoadPick"
     }
 
     /// 開いているセーブ・ロードの画面のページと枠のカーソル。
@@ -396,15 +405,21 @@ mod World {
     /// 素材を待っているか（3 つの段のどれか。入力を受けない）。
     pub def isHolding(w: World): Bool = Option.nonEmpty(holdPhaseOf(w))
 
-    /// 確認のウィンドウを開く（カーソルは「いいえ」から。決定を押し続けても進まない）。オートとスキップは止める。
+    /// 確認のウィンドウを開く（カーソルは「いいえ」から。決定を押し続けても進まない）。オートとスキップは止め、長押しで出した名前は消す。
     pub def askFor(ask: Ask, w: World): World \ Emit[Event] =
         Emit.emit(Event.Opened);
-        mapRead(r -> { playback = Playback.Manual | r }, { ask = Some((ask, Answer.No)) | w })
+        mapRead(r -> { playback = Playback.Manual, tip = None | r }, { ask = Some((ask, Answer.No)) | w })
 
-    /// 画面を開く（オートとスキップは止める。開いている間は物語の時計も止まる）。
+    /// 画面を開く（オートとスキップは止め、長押しで出した名前は消す。開いている間は物語の時計も止まる）。
     pub def openPanel(panel: Panel, w: World): World \ Emit[Event] =
         Emit.emit(Event.Opened);
-        mapRead(r -> { playback = Playback.Manual | r }, { panel = panel | w })
+        mapRead(r -> { playback = Playback.Manual, tip = None | r }, { panel = panel | w })
+
+    /// 読む間の上に小さなメニューを開く（オートとスキップは止めない。長押しで出した名前は消す）。
+    // WhyNot: openPanel を使わない — … やしおりを開いて何も選ばずに閉じた時に、動いていたオートが止まっている。
+    pub def openPopup(panel: Panel, w: World): World \ Emit[Event] =
+        Emit.emit(Event.Opened);
+        mapRead(r -> { tip = None | r }, { panel = panel | w })
 
     /// 画面を閉じる。
     pub def closePanel(w: World): World \ Emit[Event] =
@@ -430,6 +445,12 @@ mod World {
     pub def toastOf(res: Res.Res, w: World): Option[String] = match w#toast {
         case Some((label, at)) if Clock.since(at, w#realNow) < KindDoc.rec(res#kind)#toastSeconds =>
             Some(StoryDoc.labelOf(label, res#story))
+        case _ => None
+    }
+
+    /// 指の長押しで名前を出している右の列のボタンの番号（出してから知らせと同じ秒を過ぎたら None）。
+    pub def tipOf(res: Res.Res, now: Clock.Time[Clock.Real], r: Read): Option[Int32] = match r#tip {
+        case Some((i, shown)) if Clock.since(shown, now) < KindDoc.rec(res#kind)#toastSeconds => Some(i)
         case _ => None
     }
 

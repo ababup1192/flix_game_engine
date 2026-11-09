@@ -164,6 +164,13 @@
         "schema": "assets/portrait.schema.json"
       },
       {
+        "id": "rail",
+        "pattern": "assets/novel.rail.json",
+        "title": "縦の画面の操作の列",
+        "role": "tuning",
+        "schema": "assets/rail.schema.json"
+      },
+      {
         "id": "mixer",
         "pattern": "assets/novel.mixer.json",
         "title": "音の通り道（環境音と効果音のバス）",
@@ -211,7 +218,7 @@
     ],
     "keysDoc": "assets/novel.keys.json",
     "touchGestures": {
-      "longPress": "back",
+      "longPress": "touchHold",
       "swipeLeft": "rollback",
       "swipeUp": "advance",
       "swipeDown": "advance"

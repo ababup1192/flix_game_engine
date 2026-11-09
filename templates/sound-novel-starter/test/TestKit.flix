@@ -2,7 +2,7 @@
 // シナリオは本物（assets/talk/dialogue.json）。期待値は台本と Doc から導き、行の文字を写さない。
 mod TestKit {
 
-    use fge::{App, Emit, Resources, YarnRunner}
+    use fge::{App, Clock, Emit, Resources, YarnRunner}
 
     /// assets の Doc とシナリオをそのまま読んだ描く元。
     pub def res(): Res.Res \ Fs.FileRead = Controls.loadRes()
@@ -57,6 +57,12 @@ mod TestKit {
                 }
             };
         go(400, picks, w, Nil)
+
+    /// p を押して 0.1 秒後に同じ所で離す 2 フレームを Controls.interact へ渡す（縦の画面の右の列のボタンは離した時に押したことになる）。
+    /// base = 画面の大きさ・端末の区分・実時間の今を入れたフレーム。
+    pub def tapAt(res: Res.Res, base: App.Frame, p: { x = Float64, y = Float64 }, w: World.World): World.World =
+        let pressed = Controls.interact({ mouseClicked = true, mouseDown = true, cursor = p | base }, res, w);
+        Controls.interact({ mouseClicked = false, mouseDown = false, cursor = p, realNow = Clock.after(0.1, base#realNow) | base }, res, pressed)
 
     /// node に入った所まで読む。
     pub def readTo(res: Res.Res, node: String, picks: List[Int32], w: World.World): World.World =

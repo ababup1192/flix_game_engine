@@ -39,7 +39,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | ウィンドウを隠す（写真だけを見る） | H / Esc |
 | セーブ・ロード・設定・タイトルへ | 下の帯のボタン |
 
-ブラウザ版の指: タップと上下の払いで 1 行送る（`web.touchGestures` の `swipeUp` / `swipeDown` が `advance` のキー）・左へ払うと 1 行戻る・長押しでウィンドウを隠す。
+ブラウザ版の指: タップと上下の払いで 1 行送る（`web.touchGestures` の `swipeUp` / `swipeDown` が `advance` のキー）・左へ払うと 1 行戻る・長押しでウィンドウを隠す（`longPress` が指の長押しだけの `touchHold` のキー。縦の画面の右の列の上ならボタンの名前を出し、オートはスキップに入る）。
 
 - **セーブ・ロード**: 枠は 1 ページ 6 枠（2 列 × 3 行）。ページは「オート」「クイック」と番号の 3 ページ（Q / E で切り替え）。
   枠にはセーブした時の画面をそのまま縮めたサムネ・保存した日時・場所・話し手と台詞の頭が出る。上書き・削除（× か Delete）・
@@ -73,7 +73,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | タイトル画面・クレジット | `assets/novel.story.json`・`assets/novel.credits.json` | `View.title` / `View.credits` |
 | スマホ（横持ち）の字とボタンの大きさ | `assets/novel.small.json` | `Layout.Fit.Small` |
 | ブラウザ版で背景・音をタイトルの後に裏で取る（届く前の背景・環境音は暗転して待ち、20 秒で諦めて進む。一発の効果音は鳴らさず進む） | `project.json` の `web.deferred`（タイトルの写真と最初に鳴る音は入れない）・`web.compress`・秒は `novel.kind.json` の `hold*` | `Game.withAssetLoading`（Main と `web/WebMain.flix` だけが足す）・`WorldRead` の「素材の待ち」・`Controls.decodeBudget`・`View.holdLayer`。確かめ方: `bin/fge export-web` の大きさの表の「起動／後回し」・頁の `?loadtime=1`・描き出しの `hold` |
-| スマホを縦に持った時の縦の画面（沈めた写真の上に画面いっぱいの頁・下にアイコンの操作 4 つ・歯車のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json` | `Layout.Fit.Portrait`・`View.portraitPage` / `portraitButtons` / `menuPanel`・`WorldMenu.menuItems`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
+| スマホを縦に持った時の縦の画面（沈めた写真の上に画面いっぱいの頁・右端にアイコンの列（しおり・ログ・オート）・右上の … のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json`・列と … の積み方と大きさと長押しの秒は `assets/novel.rail.json` | `Layout.Fit.Portrait`・`Rail`（矩形と押しの判定 `Rail.judge`）・`View.portraitPage` / `portraitButtons` / `menuPanel` / `saveLoadPanel`・`WorldMenu.menuItems` / `saveLoadItems` / `longPressOf`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
 
 ## 読む順
 

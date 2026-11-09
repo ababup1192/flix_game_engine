@@ -38,8 +38,29 @@ mod TestDocs {
         // novel.portrait.json は読めて、コードの既定値と同じ値から出発している。
         let read = DocJson.readJson(PortraitDoc.path()) |> Result.toOption |> Option.map(_ -> PortraitDoc.rec(PortraitDoc.load(PortraitDoc.path())));
         let d = PortraitDoc.rec(PortraitDoc.defaults());
-        let shape = (r: PortraitDoc.Rec) -> (r#bodySize, r#buttonHeight, r#choiceHeight, r#settingRowHeight, r#tabHeight, r#backHeight);
+        let shape = (r: PortraitDoc.Rec) -> (r#bodySize, r#pageBottom, r#choiceHeight, r#settingRowHeight, r#tabHeight, r#backHeight);
         Assert.assertEq(expected = Some(shape(d)), read |> Option.map(shape))
+
+    /// RailDoc の値の全部（record は比べられないので組にする）。
+    def railShape(r: RailDoc.Rec): ((RailDoc.Anchor, Float64, Float64, Float64, Float64), (Float64, Float64, Float64, Float64, Float64, Float64)) =
+        ((r#anchor, r#iconSize, r#buttonHeight, r#railRight, r#moreTop),
+         (r#moreSize, r#moreHeight, r#longPressSeconds, r#tooltipTextSize, r#saveLoadItemWidth, r#menuWidth))
+
+    @Test
+    def testRailDocMatchesCodeDefaults(): Unit \ {Assert, Fs.FileRead} =
+        // novel.rail.json は読めて、コードの既定値と同じ値から出発している。
+        let read = DocJson.readJson(RailDoc.path()) |> Result.toOption |> Option.map(_ -> railShape(RailDoc.rec(RailDoc.load(RailDoc.path()))));
+        Assert.assertEq(expected = Some(railShape(RailDoc.rec(RailDoc.defaults()))), read)
+
+    @Test
+    def testRailDocFallsOpenAndReachesPortrait(): Unit \ {Assert, Fs.FileRead} =
+        // 無い・壊れた novel.rail.json は既定値で読み、読めた値は縦の画面の Doc の rail 欄に届く（積み方と余白・長押しの秒）。
+        let missing = railShape(RailDoc.rec(RailDoc.load("assets/no-such.rail.json")));
+        let broken = RailDoc.fromJson("{ broken") |> Option.map(d -> railShape(RailDoc.rec(d)));
+        let read = RailDoc.fromJson("{ \"anchor\": \"bottom\", \"railBottom\": 50, \"longPressSeconds\": 0.7 }") |> Option.getWithDefault(RailDoc.defaults());
+        let rail = PortraitDoc.rec(PortraitDoc.withRail(read, PortraitDoc.defaults()))#rail;
+        Assert.assertEq(expected = (railShape(RailDoc.rec(RailDoc.defaults())), None, RailDoc.Anchor.Bottom(50.0), 0.7),
+                        (missing, broken, rail#anchor, rail#longPressSeconds))
 
     @Test
     def testEveryPhotoHasATexture(): Unit \ {Assert, Fs.FileRead} =

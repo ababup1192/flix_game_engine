@@ -1,0 +1,139 @@
+{
+  "//": "novel.rail.json の形の宣言（Studio の sections 方言）。縦の画面の右端の操作の列と右上の … の積み方・大きさ・長押しの秒。並びと置き場所の決まりはコード（src/Rail.flix）。既定は src/RailDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "anchor": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "top",
+          "bottom"
+        ]
+      },
+      "label": "列の積み方（top = … の下から下へ・bottom = 画面の下から上へ）",
+      "group": "列",
+      "order": 1,
+      "default": "top"
+    },
+    "iconSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "列の丸いアイコンの直径（px）",
+      "group": "列",
+      "order": 2,
+      "min": 30,
+      "max": 80,
+      "default": 49.0
+    },
+    "buttonHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "列の 1 段の押せる正方形の辺（px）",
+      "group": "列",
+      "order": 3,
+      "min": 44,
+      "max": 120,
+      "default": 66.0
+    },
+    "railRight": {
+      "kind": "field",
+      "type": "float",
+      "label": "列と … の丸の右端と画面の右端の間（px）",
+      "group": "列",
+      "order": 4,
+      "min": 0,
+      "max": 80,
+      "default": 14.0
+    },
+    "railGap": {
+      "kind": "field",
+      "type": "float",
+      "label": "… と列の間（px。top の時）",
+      "group": "列",
+      "order": 5,
+      "min": 0,
+      "max": 200,
+      "default": 4.0
+    },
+    "railBottom": {
+      "kind": "field",
+      "type": "float",
+      "label": "列と画面の下の間（px。bottom の時）",
+      "group": "列",
+      "order": 6,
+      "min": 0,
+      "max": 600,
+      "default": 36.0
+    },
+    "moreTop": {
+      "kind": "field",
+      "type": "float",
+      "label": "… の押せる正方形の上端と画面の上の間（px）",
+      "group": "…",
+      "order": 7,
+      "min": 0,
+      "max": 200,
+      "default": 12.0
+    },
+    "moreSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "… の丸の直径（px）",
+      "group": "…",
+      "order": 8,
+      "min": 20,
+      "max": 80,
+      "default": 46.0
+    },
+    "moreHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "… の押せる正方形の辺（px）",
+      "group": "…",
+      "order": 9,
+      "min": 44,
+      "max": 120,
+      "default": 66.0
+    },
+    "menuWidth": {
+      "kind": "field",
+      "type": "float",
+      "label": "… から開くメニューの幅（px）",
+      "group": "…",
+      "order": 10,
+      "min": 120,
+      "max": 480,
+      "default": 240.0
+    },
+    "saveLoadItemWidth": {
+      "kind": "field",
+      "type": "float",
+      "label": "しおりから開く [セーブ｜ロード] の 1 つの幅（px）",
+      "group": "…",
+      "order": 11,
+      "min": 60,
+      "max": 240,
+      "default": 120.0
+    },
+    "longPressSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "列のボタンを長押しと見る秒",
+      "group": "長押し",
+      "order": 12,
+      "min": 0.1,
+      "max": 2.0,
+      "default": 0.4
+    },
+    "tooltipTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "長押しで出す名前の字（px）",
+      "group": "長押し",
+      "order": 13,
+      "min": 12,
+      "max": 40,
+      "default": 20.0
+    }
+  }
+}

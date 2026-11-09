@@ -27,6 +27,9 @@ mod StoryDoc {
         case Hide
         case ToTitle
         case Menu
+        // 縦の画面の操作の列と … のメニュー
+        case SaveLoad
+        case BackToTitle
         // 画面の見出しと「戻る」
         case SaveTitle
         case LoadTitle
@@ -86,7 +89,7 @@ mod StoryDoc {
     pub def labels(): List[Label] =
         Label.NewGame :: Label.Continue :: Label.LoadGame :: Label.Settings :: Label.Credits :: Label.Quit ::
         Label.Rollback :: Label.Log :: Label.Auto :: Label.Skip :: Label.QuickSave :: Label.QuickLoad ::
-        Label.Save :: Label.Load :: Label.Config :: Label.Hide :: Label.ToTitle :: Label.Menu :: Label.SaveTitle ::
+        Label.Save :: Label.Load :: Label.Config :: Label.Hide :: Label.ToTitle :: Label.Menu :: Label.SaveLoad :: Label.BackToTitle :: Label.SaveTitle ::
         Label.LoadTitle :: Label.LogTitle :: Label.SettingsTitle :: Label.Back :: Label.TabAuto :: Label.TabQuick ::
         Label.EmptySlot :: Label.NewBadge :: Label.SlotsHint :: Label.LogHint :: Label.GroupText :: Label.GroupSound ::
         Label.TextSpeed :: Label.AutoWait :: Label.SkipScope :: Label.SkipReadOnly :: Label.SkipEverything :: Label.AfterChoice ::
@@ -119,6 +122,8 @@ mod StoryDoc {
         case Label.Hide           => ("hide", "隠す")
         case Label.ToTitle        => ("toTitle", "タイトル")
         case Label.Menu           => ("menu", "メニュー")
+        case Label.SaveLoad       => ("saveLoad", "しおり")
+        case Label.BackToTitle    => ("backToTitle", "タイトルへ")
         case Label.SaveTitle      => ("saveTitle", "セーブ")
         case Label.LoadTitle      => ("loadTitle", "ロード")
         case Label.LogTitle       => ("logTitle", "バックログ")

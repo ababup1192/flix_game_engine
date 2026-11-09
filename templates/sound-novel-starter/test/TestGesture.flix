@@ -151,6 +151,14 @@ mod TestGesture {
     }
 
     @Test
+    def testWheelDownDoesNotAdvance(): Unit \ {Assert, Fs.FileRead} =
+        // 下へのホイールの刻み（ブラウザ版で指を置いたまま上へ動かした時）が来ても、台詞は進まない。
+        let res = TestKit.res();
+        let start = begun(res);
+        let w = play(res, { wheel = -1.0 | App.emptyFrame() } :: { wheel = -2.0 | App.emptyFrame() } :: Nil, start);
+        Assert.assertEq(expected = World.talkLineOf(start), World.talkLineOf(w))
+
+    @Test
     def testAdvanceKeyDoesNothingOnTitle(): Unit \ {Assert, Fs.FileRead} =
         // タイトルで縦に払っても（決定と違って）カーソルの項目を選ばず、タイトルのまま。
         let res = TestKit.res();

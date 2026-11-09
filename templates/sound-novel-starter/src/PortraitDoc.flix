@@ -7,8 +7,8 @@ mod PortraitDoc {
 
     /// どれも design px（幅 540 の中の px）。*TextSize = 字の大きさ、*Height = 押せる高さ。
     /// bodySize / rubySize / nameSize = 頁の本文・ルビ・台詞に添える名前の字、logTextSize = バックログの本文の字、
-    /// iconSize = 頁の下の操作の丸いアイコンの直径、buttonHeight = その押せる高さ（幅も同じ）、
-    /// menuItem* = 歯車から開くメニューの 1 項目、choice* = 選択肢、titleItem* = タイトル画面のメニューの 1 項目、
+    /// pageBottom = 頁と選択肢の下端から画面の下までの空き（下にツールバーを重ねるブラウザの分）、rail = 右端の操作の列と右上の …（novel.rail.json）、
+    /// menuItem* = … から開くメニューとしおりから開く [セーブ｜ロード] の 1 項目、choice* = 選択肢、titleItem* = タイトル画面のメニューの 1 項目、
     /// back* = 画面の右上の「戻る」、tab* = セーブ・ロードのページのタブ、settingTextSize / settingRowHeight = 設定の行の字と高さ、
     /// askButton* = 確認のウィンドウのはい・いいえ。
     pub type alias Rec = {
@@ -17,8 +17,8 @@ mod PortraitDoc {
         rubySize = Float64,
         nameSize = Float64,
         logTextSize = Float64,
-        iconSize = Float64,
-        buttonHeight = Float64,
+        pageBottom = Float64,
+        rail = RailDoc.Rec,
         menuItemTextSize = Float64,
         menuItemHeight = Float64,
         choiceTextSize = Float64,
@@ -45,7 +45,7 @@ mod PortraitDoc {
     /// コード側の既定値（assets/novel.portrait.json と同じ値から出発する）。
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, bodySize = 25.0, rubySize = 12.0, nameSize = 16.0, logTextSize = 21.0,
-                  iconSize = 49.0, buttonHeight = 72.0, menuItemTextSize = 22.0, menuItemHeight = 66.0, choiceTextSize = 23.0, choiceHeight = 76.0,
+                  pageBottom = 196.0, rail = RailDoc.rec(RailDoc.defaults()), menuItemTextSize = 22.0, menuItemHeight = 66.0, choiceTextSize = 23.0, choiceHeight = 76.0,
                   titleItemTextSize = 28.0, titleItemHeight = 68.0, backTextSize = 20.0, backHeight = 66.0,
                   tabTextSize = 20.0, tabHeight = 66.0, settingTextSize = 20.0, settingRowHeight = 66.0,
                   askButtonTextSize = 22.0, askButtonHeight = 66.0 })
@@ -59,7 +59,7 @@ mod PortraitDoc {
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
                   bodySize = num("bodySize", d#bodySize), rubySize = num("rubySize", d#rubySize),
                   nameSize = num("nameSize", d#nameSize), logTextSize = num("logTextSize", d#logTextSize),
-                  iconSize = num("iconSize", d#iconSize), buttonHeight = num("buttonHeight", d#buttonHeight),
+                  pageBottom = num("pageBottom", d#pageBottom), rail = d#rail,
                   menuItemTextSize = num("menuItemTextSize", d#menuItemTextSize), menuItemHeight = num("menuItemHeight", d#menuItemHeight),
                   choiceTextSize = num("choiceTextSize", d#choiceTextSize), choiceHeight = num("choiceHeight", d#choiceHeight),
                   titleItemTextSize = num("titleItemTextSize", d#titleItemTextSize), titleItemHeight = num("titleItemHeight", d#titleItemHeight),
@@ -67,6 +67,9 @@ mod PortraitDoc {
                   tabTextSize = num("tabTextSize", d#tabTextSize), tabHeight = num("tabHeight", d#tabHeight),
                   settingTextSize = num("settingTextSize", d#settingTextSize), settingRowHeight = num("settingRowHeight", d#settingRowHeight),
                   askButtonTextSize = num("askButtonTextSize", d#askButtonTextSize), askButtonHeight = num("askButtonHeight", d#askButtonHeight) })
+
+    /// 読んだ novel.rail.json を rail 欄に組む（Layout と View は Fit.Portrait の Rec から p#rail で引く）。
+    pub def withRail(rail: RailDoc.Doc, portrait: Doc): Doc = Doc.Doc({ rail = RailDoc.rec(rail) | rec(portrait) })
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =

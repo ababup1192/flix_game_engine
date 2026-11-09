@@ -22,6 +22,10 @@ mod TestPortrait {
     def press(res: Res.Res, design: { x = Float64, y = Float64 }, p: { x = Float64, y = Float64 }, w: World.World): World.World =
         Controls.interact({ mouseClicked = true, mouseDown = true, cursor = p, viewport = design, sizeClass = Display.SizeClass.Small | App.emptyFrame() }, res, w)
 
+    /// 縦の design の画面で p を押して離す（右の列のボタンは離した時に押したことになる）。
+    def tapOn(res: Res.Res, design: { x = Float64, y = Float64 }, p: { x = Float64, y = Float64 }, w: World.World): World.World =
+        TestKit.tapAt(res, { viewport = design, sizeClass = Display.SizeClass.Small | App.emptyFrame() }, p, w)
+
     /// 縦の design の画面でキーを押した 1 フレーム。
     def tap(res: Res.Res, design: { x = Float64, y = Float64 }, key: Key, w: World.World): World.World =
         Controls.interact({ justPressed = Set#{key}, down = Set#{key}, viewport = design | App.emptyFrame() }, res, w)
@@ -29,7 +33,7 @@ mod TestPortrait {
     def buttonRect(fit: Layout.Fit, button: World.Button): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
         let all = WorldMenu.buttonsOf(fit);
         let i = all |> List.zipWithIndex |> List.find(match (_, b) -> b == button) |> Option.map(fst) |> Option.getWithDefault(0);
-        Layout.button(fit, i, List.length(all))
+        Rail.button(fit, i)
 
     def titleRect(fit: Layout.Fit, item: World.TitleItem): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
         let all = WorldMenu.titleItems();
@@ -52,9 +56,11 @@ mod TestPortrait {
         case _                           => -1
     }
 
-    /// 縦の画面で押せる物の矩形の全部（読む間の操作・タイトル・確認・戻る・タブ・セーブの枠と削除・設定の行と 2 択・選択肢 3 つ）。
+    /// 縦の画面で押せる物の矩形の全部（右の列・…・しおりの選び・… のメニュー・タイトル・確認・戻る・タブ・セーブの枠と削除・設定の行と 2 択・選択肢 3 つ）。
     def touchTargets(fit: Layout.Fit): List[{ position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } }] =
-        let buttons = WorldMenu.buttonsOf(fit) |> List.zipWithIndex |> List.map(match (i, _) -> Layout.button(fit, i, List.length(WorldMenu.buttonsOf(fit))));
+        let saveLoads = List.length(WorldMenu.saveLoadItems());
+        let buttons = List.range(0, List.length(WorldMenu.buttonsOf(fit))) |> List.map(Rail.button(fit));
+        let more = Rail.moreButton(fit)#hit :: (List.range(0, saveLoads) |> List.map(i -> Rail.saveLoadItem(fit, i, saveLoads)));
         let titles = List.range(0, List.length(WorldMenu.titleItems())) |> List.map(i -> Layout.titleItem(fit, i, List.length(WorldMenu.titleItems())));
         let asks = Layout.sides() |> List.map(Layout.askButton(fit));
         let tabs = List.range(0, 5) |> List.map(Layout.tab(fit, 5));
@@ -62,55 +68,65 @@ mod TestPortrait {
         let rows = List.range(0, List.length(WorldSettings.settings())) |> List.flatMap(i ->
             Layout.settingRow(fit, i) :: (Layout.sides() |> List.map(Layout.settingSide(fit, i))));
         let choices = List.range(0, 3) |> List.map(i -> Layout.choice(fit, i, 3));
-        let menu = List.range(0, List.length(WorldMenu.menuItems())) |> List.map(i ->
-            Layout.menuItem(fit, i, List.length(WorldMenu.menuItems()), List.length(WorldMenu.buttonsOf(fit))));
-        List.flatten(buttons :: titles :: asks :: tabs :: slots :: rows :: choices :: menu :: (Layout.back(fit) :: Nil) :: Nil)
+        let menu = List.range(0, List.length(WorldMenu.menuItems())) |> List.map(Rail.menuItem(fit));
+        List.flatten(buttons :: more :: titles :: asks :: tabs :: slots :: rows :: choices :: menu :: (Layout.back(fit) :: Nil) :: Nil)
 
     def menuRect(fit: Layout.Fit, item: World.Button): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
         let all = WorldMenu.menuItems();
         let i = all |> List.zipWithIndex |> List.find(match (_, b) -> b == item) |> Option.map(fst) |> Option.getWithDefault(0);
-        Layout.menuItem(fit, i, List.length(all), List.length(WorldMenu.buttonsOf(fit)))
+        Rail.menuItem(fit, i)
+
+    /// しおりの選びの item（セーブかロード）の矩形。
+    def saveLoadRect(fit: Layout.Fit, item: World.Button): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
+        let all = WorldMenu.saveLoadItems();
+        let i = all |> List.zipWithIndex |> List.find(match (_, b) -> b == item) |> Option.map(fst) |> Option.getWithDefault(0);
+        Rail.saveLoadItem(fit, i, List.length(all))
+
+    /// 読んでいる所から、しおり → セーブと押してセーブの画面を開く。
+    def openSaveBySaveLoad(res: Res.Res, design: { x = Float64, y = Float64 }, w: World.World): World.World =
+        let fit = portrait(res, design);
+        let picking = tapOn(res, design, center(buttonRect(fit, World.Button.SaveLoad)), w);
+        press(res, design, center(saveLoadRect(fit, World.Button.Save)), picking)
 
     def isMenuOpen(w: World.World): Bool = match w#panel {
         case World.Panel.Menu(_) => true
         case _                   => false
     }
 
-    def isLoadOpen(w: World.World): Bool = match w#panel {
-        case World.Panel.LoadSlots(_, _) => true
-        case _                           => false
-    }
+    /// 右上の … の押せる正方形の真ん中。
+    def moreCenter(res: Res.Res, design: { x = Float64, y = Float64 }): { x = Float64, y = Float64 } =
+        center(Rail.moreButton(portrait(res, design))#hit)
 
     @Test
-    def testGearOpensMenuAndLoadItemOpensLoad(): Unit \ {Assert, Fs.FileRead} =
-        // 縦の画面の歯車でメニューが開き、メニューの「ロード」でロードの画面が開く。
+    def testMoreOpensMenuAndSettingsItemOpensSettings(): Unit \ {Assert, Fs.FileRead} =
+        // 縦の画面の右上の … でメニューが開き、メニューの「設定」で設定の画面が開く。
         let res = TestKit.res();
         let fit = portrait(res, tall());
-        let opened = press(res, tall(), center(buttonRect(fit, World.Button.Menu)), begun(res));
-        let loading = press(res, tall(), center(menuRect(fit, World.Button.Load)), opened);
-        Assert.assertEq(expected = (true, true), (isMenuOpen(opened), isLoadOpen(loading)))
+        let opened = tapOn(res, tall(), moreCenter(res, tall()), begun(res));
+        let setting = press(res, tall(), center(menuRect(fit, World.Button.Settings)), opened);
+        Assert.assertEq(expected = (true, true), (isMenuOpen(opened), isSettingsOpen(setting)))
 
     @Test
-    def testMenuSkipItemStartsSkipAndCloses(): Unit \ {Assert, Fs.FileRead} =
-        // メニューの「スキップ」でメニューが閉じてスキップになる。
+    def testMoreToTitleItemAsksFirst(): Unit \ {Assert, Fs.FileRead} =
+        // … のメニューの「タイトルへ」はメニューを閉じて、タイトルへ戻るかを確認のウィンドウで尋ねる（すぐには戻らない）。
         let res = TestKit.res();
         let fit = portrait(res, tall());
-        let opened = press(res, tall(), center(buttonRect(fit, World.Button.Menu)), begun(res));
-        let skipping = press(res, tall(), center(menuRect(fit, World.Button.Skip)), opened);
-        Assert.assertEq(expected = ("Closed", World.Playback.Skip), (World.panelName(skipping), World.playbackOf(skipping)))
+        let opened = tapOn(res, tall(), moreCenter(res, tall()), begun(res));
+        let asking = press(res, tall(), center(menuRect(fit, World.Button.ToTitle)), opened);
+        Assert.assertEq(expected = ("Closed", Some(World.Ask.ToTitle), "Reading"), (World.panelName(asking), World.askOf(asking), World.sceneName(asking)))
 
     @Test
     def testTapOutsideMenuClosesIt(): Unit \ {Assert, Fs.FileRead} =
-        // メニューの外（頁の上の方）を押すとメニューが閉じる。
+        // … のメニューの外（頁の左下の方）を押すとメニューが閉じる。
         let res = TestKit.res();
-        let opened = press(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Menu)), begun(res));
-        Assert.assertTrue(press(res, tall(), { x = 270.0, y = 200.0 }, opened)#panel == World.Panel.Closed)
+        let opened = tapOn(res, tall(), moreCenter(res, tall()), begun(res));
+        Assert.assertTrue(press(res, tall(), { x = 120.0, y = 700.0 }, opened)#panel == World.Panel.Closed)
 
     @Test
     def testAutoIconStartsAuto(): Unit \ {Assert, Fs.FileRead} =
-        // 縦の画面のオートのアイコンを押すとオートになる。
+        // 縦の画面の右の列のオートを短く押して離すとオートになる。
         let res = TestKit.res();
-        let w = press(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Auto)), begun(res));
+        let w = tapOn(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Auto)), begun(res));
         Assert.assertEq(expected = World.Playback.Auto, World.playbackOf(w))
 
     /// 押せる物の短い辺が、画面の幅 width CSS px の端末で何 CSS px になるかの最小。
@@ -182,9 +198,9 @@ mod TestPortrait {
 
     @Test
     def testPortraitLogButtonOpensTheLog(): Unit \ {Assert, Fs.FileRead} =
-        // 縦の画面の操作の列の「ログ」の真ん中を押すとバックログが開く。
+        // 縦の画面の右の列の「ログ」の真ん中を押して離すとバックログが開く。
         let res = TestKit.res();
-        let w = press(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Log)), begun(res));
+        let w = tapOn(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Log)), begun(res));
         Assert.assertTrue(isLogOpen(w))
 
     @Test
@@ -213,10 +229,10 @@ mod TestPortrait {
 
     @Test
     def testPortraitSaveButtonOpensSaveAndBackCloses(): Unit \ {Assert, Fs.FileRead} =
-        // 縦の画面の「セーブ」でセーブの画面が開き、「戻る」で閉じる。
+        // 縦の画面のしおり → [セーブ｜ロード] の「セーブ」でセーブの画面が開き、「戻る」で閉じる。
         let res = TestKit.res();
         let fit = portrait(res, tall());
-        let opened = press(res, tall(), center(buttonRect(fit, World.Button.Save)), begun(res));
+        let opened = openSaveBySaveLoad(res, tall(), begun(res));
         let closed = press(res, tall(), center(Layout.back(fit)), opened);
         Assert.assertEq(expected = (0, true), (slotCursorOf(opened), closed#panel == World.Panel.Closed))
 
@@ -224,7 +240,7 @@ mod TestPortrait {
     def testPortraitDownKeyMovesOneSlot(): Unit \ {Assert, Fs.FileRead} =
         // 縦の画面のセーブの枠は 1 列なので、下のキーで 1 枠動く。
         let res = TestKit.res();
-        let opened = press(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Save)), begun(res));
+        let opened = openSaveBySaveLoad(res, tall(), begun(res));
         let down = KeysDoc.rec(res#keys)#next |> List.head |> Option.getWithDefault(Key.Down);
         Assert.assertEq(expected = 1, slotCursorOf(tap(res, tall(), down, opened)))
 
@@ -255,11 +271,11 @@ mod TestPortrait {
         Assert.assertEq(expected = "now" :: Nil, kept |> List.map(b -> b#line#text))
 
     @Test
-    def testPageEndsAboveButtonsAndChoices(): Unit \ {Assert, Fs.FileRead} =
-        // 頁の下端は、選択肢が無ければ操作の列の上、選択肢があれば 1 つ目の選択肢の上（太い縦の画面でも）。
+    def testPageEndsAbovePageBottomAndChoices(): Unit \ {Assert, Fs.FileRead} =
+        // 頁の下端は、選択肢が無ければ画面の下から pageBottom より上、選択肢があれば 1 つ目の選択肢の上（太い縦の画面でも）。
         let res = TestKit.res();
         let fit = portrait(res, short());
         let bottom = r -> r#position#y + r#size#y;
-        let buttons = Layout.button(fit, 0, List.length(WorldMenu.buttonsOf(fit)));
-        Assert.assertTrue(bottom(Layout.page(fit, 0)) <= buttons#position#y and bottom(Layout.page(fit, 3)) <= Layout.choice(fit, 0, 3)#position#y)
+        let limit = Layout.height(fit) - PortraitDoc.rec(res#portrait)#pageBottom;
+        Assert.assertTrue(bottom(Layout.page(fit, 0)) <= limit and bottom(Layout.page(fit, 3)) <= Layout.choice(fit, 0, 3)#position#y)
 }

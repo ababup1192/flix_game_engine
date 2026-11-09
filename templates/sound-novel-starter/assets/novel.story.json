@@ -29,6 +29,8 @@
     "hide": "隠す",
     "toTitle": "タイトル",
     "menu": "メニュー",
+    "saveLoad": "しおり",
+    "backToTitle": "タイトルへ",
     "saveTitle": "セーブ",
     "loadTitle": "ロード",
     "logTitle": "バックログ",
