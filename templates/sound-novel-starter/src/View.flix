@@ -532,9 +532,8 @@ mod View {
             let r = Layout.titleItem(fit, i, count);
             at(r#position#x + 50.0, r#position#y + r#size#y - 3.0, RawDraw.box({ x = r#size#x - 100.0, y = 1.0 }, t#accent, zText()) |> Render.fade(0.6))
         }) |> Option.toList;
-        let hint = TextDraw.centered({ text = s#hint, atlas = atlas, size = captionSize(env, 13.0), color = Color.mix(t#ink, t#panel, 0.4), z = zText(),
-                                       centerX = center, y = Layout.titleHintY(fit) });
-        List.flatten((shade :: heading :: sub :: Nil) :: marker :: (hint :: items) :: Nil)
+        // WhyNot: 下に操作の案内を描かない — 項目そのものが押せる物として読め、指の端末で「クリックか Enter」は誤りになる。
+        List.flatten((shade :: heading :: sub :: Nil) :: marker :: items :: Nil)
 
     pub def titleLabel(item: World.TitleItem): StoryDoc.Label = match item {
         case World.TitleItem.NewGame  => StoryDoc.Label.NewGame

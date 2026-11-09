@@ -227,18 +227,18 @@ mod Layout {
         case Fit.Portrait(_, _) => titleHeadingY(fit) + 96.0
     }
 
-    /// タイトル画面の下の案内の高さ。
-    pub def titleHintY(fit: Fit): Float64 = match fit {
+    /// タイトル画面のメニューを並べる下の端（Small と縦は subtitle の下からここまでの真ん中へ寄せる）。
+    pub def titleMenuBottomY(fit: Fit): Float64 = match fit {
         case Fit.Portrait(_, _) => height(fit) - 48.0
         case _                  => 512.0
     }
 
-    /// i 番目（count 個のうち）のメニューの項目。Small と縦は subtitle の下から下の案内の上までの真ん中へ並べる。
+    /// i 番目（count 個のうち）のメニューの項目。Small と縦は subtitle の下から titleMenuBottomY までの真ん中へ並べる。
     pub def titleItem(fit: Fit, i: Int32, count: Int32): Rect2.Rect2 =
         let centered = (itemHeight, x, w) -> {
             let step = itemHeight + 2.0;
             let total = Int32.toFloat64(count) * step - 2.0;
-            let top = (titleSubtitleY(fit) + 22.0 + titleHintY(fit) - 4.0) / 2.0 - total / 2.0;
+            let top = (titleSubtitleY(fit) + 22.0 + titleMenuBottomY(fit) - 4.0) / 2.0 - total / 2.0;
             rect(x, top + Int32.toFloat64(i) * step, w, itemHeight)
         };
         match fit {

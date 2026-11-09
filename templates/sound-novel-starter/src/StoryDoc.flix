@@ -169,13 +169,12 @@ mod StoryDoc {
         case Label.NoRollback     => ("noRollback", "これ以上は戻れません")
     }
 
-    /// title / subtitle / hint = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は
+    /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は
     /// novel.backdrops.json の鍵）と環境音、names = 話し手の id → 呼び名、labels = Label の鍵 → 言葉。
     pub type alias Rec = {
         version = Int32,
         title = String,
         subtitle = String,
-        hint = String,
         titlePhoto = String,
         titleGrade = String,
         titleAmbience = String,
@@ -192,7 +191,7 @@ mod StoryDoc {
 
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, title = "夏草の駅", subtitle = "十年ぶりに、祖母の町へ帰る。",
-                  hint = "クリックか Enter で選ぶ", titlePhoto = "station", titleGrade = "dusk", titleAmbience = "evening",
+                  titlePhoto = "station", titleGrade = "dusk", titleAmbience = "evening",
                   names = Map.empty(), labels = Map.empty() })
 
     /// 鍵の言葉（Doc に無ければ既定の言葉）。
@@ -214,7 +213,6 @@ mod StoryDoc {
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
                   title = JsonCodec.stringOr("title", d#title, root),
                   subtitle = JsonCodec.stringOr("subtitle", d#subtitle, root),
-                  hint = JsonCodec.stringOr("hint", d#hint, root),
                   titlePhoto = JsonCodec.stringOr("titlePhoto", d#titlePhoto, root),
                   titleGrade = JsonCodec.stringOr("titleGrade", d#titleGrade, root),
                   titleAmbience = JsonCodec.stringOr("titleAmbience", d#titleAmbience, root),

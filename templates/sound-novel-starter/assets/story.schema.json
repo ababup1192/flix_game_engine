@@ -23,10 +23,6 @@
       "type": "string",
       "description": "タイトル画面の題の下の 1 行"
     },
-    "hint": {
-      "type": "string",
-      "description": "タイトル画面の下の操作の案内"
-    },
     "titlePhoto": {
       "type": "string",
       "description": "タイトル画面の写真（novel.backdrops.json の photos の鍵）"
