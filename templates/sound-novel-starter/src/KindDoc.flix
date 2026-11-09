@@ -15,7 +15,7 @@ mod KindDoc {
     /// holdFadeSeconds = 素材を待つ時に黒へ重ねる秒（戻す秒も同じ）、holdGiveUpSeconds = 黒のまま待って諦めるまでの秒、
     /// holdMarkSeconds = 黒になってから隅に待ちの印を出すまでの秒（ブラウザ版で後回しの背景・環境音がまだ届いていない時）、
     /// tapSlop / longPressSeconds / swipeMin / swipeSeconds = 読む画面の 1 回の押しを分ける数（Gesture.Limits。押した所から tapSlop px より
-    /// 離れずに離せばタップで送る、longPressSeconds 秒以上置けば長押し、swipeMin px 以上を swipeSeconds 秒の内に動かせば払い。タップの外は送らない）、
+    /// 離れずに離せばタップで送る、longPressSeconds 秒以上置けば長押し、swipeMin px 以上を swipeSeconds 秒の内に動かせば払い。長押しと左の払いの外は離すと送る）、
     /// *Slider = 設定の画面のスライダーの範囲と 1 押しの量（文字の速さの最大はノーウェイト = isNoWait）。
     pub type alias Rec = {
         version = Int32,

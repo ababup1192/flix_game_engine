@@ -1,5 +1,5 @@
 // Gesture — 1 回の押し（押した・動いた・離した）を、離した時にタップ・払い・長押し・ドラッグのどれかに分ける（純粋）。
-// 読む画面の送りはタップだけを使う。押している間はどれにも決めず、離したフレームで 1 度だけ決める。
+// 読む画面は離した時の種類で送るかを決める（送るかは Controls が決める）。押している間はどれにも決めず、離したフレームで 1 度だけ決める。
 // マウスの左ボタンと、ブラウザ版の指（fge-web.js が離した時のタップを 1 フレームの押しに、横に動かす指を押したままの左ボタンに読み替えた物）が同じ道を通る。
 mod Gesture {
     use fge::{App, Clock, Vec2}
@@ -39,11 +39,6 @@ mod Gesture {
     pub def isIdle(track: Track): Bool = match track {
         case Track.Up      => true
         case Track.Down(_) => false
-    }
-
-    pub def isTap(kind: Kind): Bool = match kind {
-        case Kind.Tap(_) => true
-        case _           => false
     }
 
     /// このフレームの入力で記録を進める。離したフレームだけ種類を返す（押し始めを見ていない離しは何も返さない）。

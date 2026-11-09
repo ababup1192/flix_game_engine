@@ -1,11 +1,11 @@
-// 読む画面の 1 回の押しの分け方（Gesture）と、台詞を送るのがタップだけであることをテストする。
+// 読む画面の 1 回の押しの分け方（Gesture）と、離した時だけ台詞を送ること（長押しと左の払いは送らない）をテストする。
 // 押しは実機と同じ Controls.interact に、押した・押したまま動かした・離したのフレームを順に渡して作る。
 // 動いた量と秒は novel.kind.json の数から導く（Doc の値を変えてもテストは壊れない）。
 mod TestGesture {
 
     use fge::{App, Clock}
     use fge::GameEngine.Key
-    use TestKit.{begun, quiet}
+    use TestKit.{begun, quiet, settle}
 
     def kind(res: Res.Res): KindDoc.Rec = KindDoc.rec(res#kind)
 
@@ -87,25 +87,36 @@ mod TestGesture {
         Assert.assertEq(expected = World.talkLineOf(start), World.talkLineOf(w))
 
     @Test
-    def testReleasingADragDoesNotAdvanceButTheNextTapDoes(): Unit \ {Assert, Fs.FileRead} =
-        // 押したまま動かして離しても送らない。一度離して押し直したタップで 1 行送る。
+    def testReleasingADragAdvancesOneLine(): Unit \ {Assert, Fs.FileRead} =
+        // 押したまま動かして離すと、離したフレームで 1 行だけ送る。
         let res = TestKit.res();
         let start = begun(res);
         let k = kind(res);
-        let dragged = play(res, down(0.0, spot()) :: held(1.0, shifted(k#tapSlop * 2.0, 0.0)) :: up(1.2, shifted(k#tapSlop * 2.0, 0.0)) :: Nil, start);
-        let tapped = play(res, down(2.0, spot()) :: up(2.1, spot()) :: Nil, dragged);
-        Assert.assertEq(expected = (World.talkLineOf(start), World.talkLineOf(TestKit.advance(res, start))),
-                        (World.talkLineOf(dragged), World.talkLineOf(tapped)))
+        let w = play(res, down(0.0, spot()) :: held(1.0, shifted(k#tapSlop * 2.0, 0.0)) :: up(1.2, shifted(k#tapSlop * 2.0, 0.0)) :: Nil, start);
+        Assert.assertEq(expected = World.talkLineOf(TestKit.advance(res, start)), World.talkLineOf(w))
 
     @Test
-    def testSwipeDoesNotAdvance(): Unit \ {Assert, Fs.FileRead} =
-        // 払い（swipeMin を払いの秒の内に上へ）は離しても送らない。
+    def testSwipeUpAdvancesOneLine(): Unit \ {Assert, Fs.FileRead} =
+        // 意味を持たない向きの払い（swipeMin を払いの秒の内に上へ）は、ドラッグと同じく離したフレームで 1 行送る。
         let res = TestKit.res();
         let start = begun(res);
         let k = kind(res);
         let far = shifted(0.0, k#swipeMin * 2.0);
         let w = play(res, down(0.0, far) :: held(k#swipeSeconds / 2.0, spot()) :: up(k#swipeSeconds / 2.0, spot()) :: Nil, start);
-        Assert.assertEq(expected = World.talkLineOf(start), World.talkLineOf(w))
+        Assert.assertEq(expected = World.talkLineOf(TestKit.advance(res, start)), World.talkLineOf(w))
+
+    @Test
+    def testSwipeLeftOnlyRollsBack(): Unit \ {Assert, Fs.FileRead} =
+        // 左へ払うと（ブラウザ版は離したフレームで touchGestures の swipeLeft = 戻るのキーも出る）1 行戻るだけで、戻した行から送らない。
+        let res = TestKit.res();
+        let first = begun(res);
+        let second = settle(res, TestKit.advance(res, first));
+        let k = kind(res);
+        let rollback = KeysDoc.rec(res#keys)#rollback |> List.head |> Option.getWithDefault(Key.PageUp);
+        let left = shifted(0.0 - k#swipeMin * 2.0, 0.0);
+        let release = { justPressed = Set#{rollback}, down = Set#{rollback} | up(k#swipeSeconds / 2.0, left) };
+        let w = play(res, down(0.0, spot()) :: held(k#swipeSeconds / 2.0, left) :: release :: Nil, second);
+        Assert.assertEq(expected = World.talkLineOf(first), World.talkLineOf(w))
 
     @Test
     def testLongPressDoesNotAdvance(): Unit \ {Assert, Fs.FileRead} =

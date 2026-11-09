@@ -1,7 +1,7 @@
 // Controls — 入力の解釈・音の宣言・Doc の読み込みと読み直し（純粋。読み込みだけ Fs.FileRead）。
 // キーは KeysDoc（novel.keys.json）の割り当て、クリックは Layout の矩形（View が描く所と同じ）で当てる。
 // 入力の効き先は「いちばん手前の物」1 つ: 確認のウィンドウ → 開いている画面 → 選択肢 → クイックメニュー → 本文（送る）。
-// 本文を送るのはキーの決定と、Gesture がタップと決めた押しだけ（押したまま動かす・払う・長押しは送らない）。
+// 本文を送るのはキーの決定と、Gesture が離した時に決めた押し（タップ・ドラッグ・左の外の払い）。押している間と長押しは送らない。
 mod Controls {
     use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, LoadProgress, Log, Rect2, Resources}
     use fge::GameEngine.Key
@@ -96,7 +96,7 @@ mod Controls {
 
     // ── 読んでいる間 ──
 
-    /// 押した 1 回は Gesture で記録し、離した時にタップと決まった時だけ送る。ボタン・キー・選択肢が受けた押しは記録を捨てる
+    /// 押した 1 回は Gesture で記録し、離した時に advancesOnRelease の種類なら 1 行送る。ボタン・キー・選択肢が受けた押しは記録を捨てる
     /// （オートのボタンを押して離した時に、本文のタップとして台詞まで進めない）。
     def readingInput(res: Res.Res, frame: App.Frame, w0: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
@@ -106,7 +106,7 @@ mod Controls {
         let (gesture, track) = Gesture.step(KindDoc.gestureLimits(res#kind), frame, w0#gesture);
         let tracked = { gesture = track | w0 };
         let w = { gesture = Gesture.idle() | w0 };
-        let tappedText = Option.exists(Gesture.isTap, gesture);
+        let releasedText = Option.exists(advancesOnRelease, gesture);
         match pressed {
             case Some(button) => WorldMenu.press(res, button, w)
             case None =>
@@ -118,9 +118,19 @@ mod Controls {
                 else if (tapped(k#quickLoad, frame)) WorldMenu.press(res, World.Button.QuickLoad, w)
                 else if (tapped(k#hide, frame) or tapped(k#back, frame)) WorldMenu.press(res, World.Button.Hide, w)
                 else if (World.isChoosing(w)) choiceInput(res, frame, w)
-                else if (tappedText or tapped(k#confirm, frame)) WorldRead.advance(res, tracked)
+                else if (releasedText or tapped(k#confirm, frame)) WorldRead.advance(res, tracked)
                 else tracked
         }
+
+    /// 離した押しのうち本文を 1 行送る種類: タップ・ドラッグ・左の外の払い。
+    // WhyNot: 左の払いで送らない — 左へ払うのは 1 行戻る（touchGestures の swipeLeft）で、送ると戻した行へすぐ進む。
+    // WhyNot: 長押しで送らない — 長押しはウィンドウを隠す（touchGestures の longPress）。
+    def advancesOnRelease(kind: Gesture.Kind): Bool = match kind {
+        case Gesture.Kind.Tap(_)    => true
+        case Gesture.Kind.Drag      => true
+        case Gesture.Kind.Swipe(d)  => d != Gesture.Direction.Left
+        case Gesture.Kind.LongPress => false
+    }
 
     /// 選択肢: マウスは動いたフレームだけカーソルを吸い寄せ、クリックした選択肢を選ぶ。キーは ↑↓ と決定。
     def choiceInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
