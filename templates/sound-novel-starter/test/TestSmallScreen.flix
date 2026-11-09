@@ -98,15 +98,20 @@ mod TestSmallScreen {
         let w = press(res, Display.SizeClass.Small, center(Layout.back(small(res))), opened);
         Assert.assertTrue(w#panel == World.Panel.Closed)
 
-    /// 画面の上の端（どちらの並べ方でもボタンも選択肢も無い所）を n 回押して読み進める（選択肢では止まる）。押すたびに待ちと文字送りを使い切る。
+    /// 端末の sizeClass の画面で p を押して、動かさずに離す（本文はこの離した拍に送る）。
+    def tapAt(res: Res.Res, sizeClass: Display.SizeClass, p: { x = Float64, y = Float64 }, w: World.World): World.World =
+        Controls.interact({ cursor = p, sizeClass = sizeClass | App.emptyFrame() }, res, press(res, sizeClass, p, w))
+
+    /// 画面の上の端（どちらの並べ方でもボタンも選択肢も無い所）を n 回タップして読み進める（選択肢では止まる）。タップのたびに待ちと文字送りを使い切る。
     def readByTaps(res: Res.Res, sizeClass: Display.SizeClass, n: Int32, w: World.World): World.World =
-        if (n <= 0) w else readByTaps(res, sizeClass, n - 1, settle(res, press(res, sizeClass, { x = 480.0, y = 20.0 }, w)))
+        if (n <= 0) w else readByTaps(res, sizeClass, n - 1, settle(res, tapAt(res, sizeClass, { x = 480.0, y = 20.0 }, w)))
 
     @Test
     def testReadingResultDoesNotDependOnSizeClass(): Unit \ {Assert, Fs.FileRead} =
-        // 同じ押し方で読み進めた結果（場面・台本の位置・頁に積んだ行の数・バックログの行の数）は Small と Large で同じ。
+        // 同じ押し方で読み進めた結果（場面・台本の位置・頁に積んだ行の数・バックログの行の数）は Small と Large で同じで、読み進んでもいる。
         let res = TestKit.res();
         let summary = (w: World.World) -> (E2e.fingerprint(res, w), List.length(World.pageOf(w)#lines), List.length(World.logOf(w)));
-        Assert.assertEq(expected = summary(readByTaps(res, Display.SizeClass.Large, 16, begun(res))),
-                        summary(readByTaps(res, Display.SizeClass.Small, 16, begun(res))))
+        let large = readByTaps(res, Display.SizeClass.Large, 16, begun(res));
+        Assert.assertEq(expected = (summary(large), true),
+                        (summary(readByTaps(res, Display.SizeClass.Small, 16, begun(res))), List.length(World.logOf(large)) > List.length(World.logOf(begun(res)))))
 }

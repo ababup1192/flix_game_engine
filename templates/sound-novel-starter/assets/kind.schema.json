@@ -209,11 +209,51 @@
       "max": 10,
       "default": 0.4
     },
+    "tapSlop": {
+      "kind": "field",
+      "type": "float",
+      "label": "押した所からこれより離れずに離せばタップ（design px。越えたら払いかドラッグで、送らない）",
+      "group": "読む画面の押し（タップだけが送る）",
+      "order": 24,
+      "min": 1,
+      "max": 80,
+      "default": 12.0
+    },
+    "longPressSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "動かさずにこれ以上置いてから離すと長押し（秒。送らない）",
+      "group": "読む画面の押し（タップだけが送る）",
+      "order": 25,
+      "min": 0.1,
+      "max": 3,
+      "default": 0.65
+    },
+    "swipeMin": {
+      "kind": "field",
+      "type": "float",
+      "label": "押した所から離した所までこれ以上動かすと払い（design px）",
+      "group": "読む画面の押し（タップだけが送る）",
+      "order": 26,
+      "min": 10,
+      "max": 400,
+      "default": 60.0
+    },
+    "swipeSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "払いと見なす長さ（秒。これより遅い動きはドラッグ）",
+      "group": "読む画面の押し（タップだけが送る）",
+      "order": 27,
+      "min": 0.05,
+      "max": 3,
+      "default": 0.5
+    },
     "cpsSlider": {
       "kind": "record",
       "label": "文字の速さのスライダー（字/秒）",
       "group": "設定の画面のスライダー",
-      "order": 24,
+      "order": 28,
       "fields": {
         "min": {
           "type": "float",
@@ -240,7 +280,7 @@
       "kind": "record",
       "label": "オートの待ちのスライダー（秒）",
       "group": "設定の画面のスライダー",
-      "order": 25,
+      "order": 29,
       "fields": {
         "min": {
           "type": "float",
@@ -267,7 +307,7 @@
       "kind": "record",
       "label": "全体の音量のスライダー",
       "group": "設定の画面のスライダー",
-      "order": 26,
+      "order": 30,
       "fields": {
         "min": {
           "type": "float",
@@ -294,7 +334,7 @@
       "kind": "record",
       "label": "環境音の音量のスライダー",
       "group": "設定の画面のスライダー",
-      "order": 27,
+      "order": 31,
       "fields": {
         "min": {
           "type": "float",
@@ -321,7 +361,7 @@
       "kind": "record",
       "label": "効果音の音量のスライダー",
       "group": "設定の画面のスライダー",
-      "order": 28,
+      "order": 32,
       "fields": {
         "min": {
           "type": "float",
@@ -348,7 +388,7 @@
       "kind": "record",
       "label": "ウィンドウの濃さのスライダー",
       "group": "設定の画面のスライダー",
-      "order": 29,
+      "order": 33,
       "fields": {
         "min": {
           "type": "float",

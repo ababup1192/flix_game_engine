@@ -14,6 +14,8 @@ mod KindDoc {
     /// fireflies = <<fx fireflies>> のパーティクルの数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、
     /// holdFadeSeconds = 素材を待つ時に黒へ重ねる秒（戻す秒も同じ）、holdGiveUpSeconds = 黒のまま待って諦めるまでの秒、
     /// holdMarkSeconds = 黒になってから隅に待ちの印を出すまでの秒（ブラウザ版で後回しの背景・環境音がまだ届いていない時）、
+    /// tapSlop / longPressSeconds / swipeMin / swipeSeconds = 読む画面の 1 回の押しを分ける数（Gesture.Limits。押した所から tapSlop px より
+    /// 離れずに離せばタップで送る、longPressSeconds 秒以上置けば長押し、swipeMin px 以上を swipeSeconds 秒の内に動かせば払い。タップの外は送らない）、
     /// *Slider = 設定の画面のスライダーの範囲と 1 押しの量（文字の速さの最大はノーウェイト = isNoWait）。
     pub type alias Rec = {
         version = Int32,
@@ -40,6 +42,10 @@ mod KindDoc {
         holdFadeSeconds = Float64,
         holdGiveUpSeconds = Float64,
         holdMarkSeconds = Float64,
+        tapSlop = Float64,
+        longPressSeconds = Float64,
+        swipeMin = Float64,
+        swipeSeconds = Float64,
         cpsSlider = Slider,
         autoWaitSlider = Slider,
         masterVolumeSlider = Slider,
@@ -65,6 +71,7 @@ mod KindDoc {
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
                   fireflies = 28, creditsSpeed = 34.0, toastSeconds = 1.6,
                   holdFadeSeconds = 0.4, holdGiveUpSeconds = 20.0, holdMarkSeconds = 0.4,
+                  tapSlop = 12.0, longPressSeconds = 0.65, swipeMin = 60.0, swipeSeconds = 0.5,
                   cpsSlider = { min = 10.0, max = 130.0, step = 10.0 }, autoWaitSlider = { min = 0.2, max = 4.0, step = 0.2 },
                   masterVolumeSlider = volume(), ambienceVolumeSlider = volume(), seVolumeSlider = volume(),
                   windowAlphaSlider = { min = 0.2, max = 1.0, step = 0.1 } })
@@ -98,11 +105,18 @@ mod KindDoc {
                   holdFadeSeconds = num("holdFadeSeconds", d#holdFadeSeconds),
                   holdGiveUpSeconds = num("holdGiveUpSeconds", d#holdGiveUpSeconds),
                   holdMarkSeconds = num("holdMarkSeconds", d#holdMarkSeconds),
+                  tapSlop = num("tapSlop", d#tapSlop), longPressSeconds = num("longPressSeconds", d#longPressSeconds),
+                  swipeMin = num("swipeMin", d#swipeMin), swipeSeconds = num("swipeSeconds", d#swipeSeconds),
                   cpsSlider = slider("cpsSlider", d#cpsSlider), autoWaitSlider = slider("autoWaitSlider", d#autoWaitSlider),
                   masterVolumeSlider = slider("masterVolumeSlider", d#masterVolumeSlider),
                   ambienceVolumeSlider = slider("ambienceVolumeSlider", d#ambienceVolumeSlider),
                   seVolumeSlider = slider("seVolumeSlider", d#seVolumeSlider),
                   windowAlphaSlider = slider("windowAlphaSlider", d#windowAlphaSlider) })
+
+    /// 読む画面の 1 回の押しを分ける数。
+    pub def gestureLimits(kind: Doc): Gesture.Limits =
+        let r = rec(kind);
+        { slop = r#tapSlop, longPressSeconds = r#longPressSeconds, swipeMin = r#swipeMin, swipeSeconds = r#swipeSeconds }
 
     /// 文字の速さがスライダーの最大か（= ノーウェイト。行を一度に全部出す）。
     pub def isNoWait(cps: Float64, kind: Doc): Bool = cps >= rec(kind)#cpsSlider#max

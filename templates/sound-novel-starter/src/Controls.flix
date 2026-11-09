@@ -1,6 +1,7 @@
 // Controls — 入力の解釈・音の宣言・Doc の読み込みと読み直し（純粋。読み込みだけ Fs.FileRead）。
 // キーは KeysDoc（novel.keys.json）の割り当て、クリックは Layout の矩形（View が描く所と同じ）で当てる。
 // 入力の効き先は「いちばん手前の物」1 つ: 確認のウィンドウ → 開いている画面 → 選択肢 → クイックメニュー → 本文（送る）。
+// 本文を送るのはキーの決定と、Gesture がタップと決めた押しだけ（押したまま動かす・払う・長押しは送らない）。
 mod Controls {
     use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, LoadProgress, Log, Rect2, Resources}
     use fge::GameEngine.Key
@@ -39,7 +40,9 @@ mod Controls {
     def fitOf(res: Res.Res, frame: App.Frame): Layout.Fit =
         Layout.fitOf(frame#sizeClass, Display.orientationOf(frame#viewport), frame#viewport, res#smallScreen, res#portrait)
 
-    def interpret(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
+    def interpret(res: Res.Res, frame: App.Frame, w0: World.World): World.World \ Emit[World.Event] =
+        // WhyNot: 他の画面で押し始めた押しを持ち越さない — 画面を閉じた押しを読む画面で離すと、タップと見なされて台詞が進む。
+        let w = if (readsText(w0) or Gesture.isIdle(w0#gesture)) w0 else { gesture = Gesture.idle() | w0 };
         if (Option.nonEmpty(w#ask)) askInput(res, frame, w)
         else if (w#panel != World.Panel.Closed) panelInput(res, frame, w)
         else match w#scene {
@@ -51,6 +54,10 @@ mod Controls {
                 if (World.creditsOver(res, Layout.height(fitOf(res, frame)), w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
                 else w
         }
+
+    /// 入力が本文へ届く時か（確認のウィンドウも画面も開いていない・読んでいる・素材を待っていない）。
+    def readsText(w: World.World): Bool =
+        Option.isEmpty(w#ask) and w#panel == World.Panel.Closed and World.isReading(w) and not World.isHolding(w)
 
     // ── 確認のウィンドウ ──
 
@@ -89,11 +96,17 @@ mod Controls {
 
     // ── 読んでいる間 ──
 
-    def readingInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
+    /// 押した 1 回は Gesture で記録し、離した時にタップと決まった時だけ送る。ボタン・キー・選択肢が受けた押しは記録を捨てる
+    /// （オートのボタンを押して離した時に、本文のタップとして台詞まで進めない）。
+    def readingInput(res: Res.Res, frame: App.Frame, w0: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
         let buttons = WorldMenu.buttonsOf(fitOf(res, frame));
         let pressed = Layout.hitOf(List.length(buttons), i -> Layout.button(fitOf(res, frame), i, List.length(buttons)), frame#cursor)
             |> Option.filter(_ -> frame#mouseClicked) |> Option.flatMap(i -> List.nth(i, buttons));
+        let (gesture, track) = Gesture.step(KindDoc.gestureLimits(res#kind), frame, w0#gesture);
+        let tracked = { gesture = track | w0 };
+        let w = { gesture = Gesture.idle() | w0 };
+        let tappedText = Option.exists(Gesture.isTap, gesture);
         match pressed {
             case Some(button) => WorldMenu.press(res, button, w)
             case None =>
@@ -105,8 +118,8 @@ mod Controls {
                 else if (tapped(k#quickLoad, frame)) WorldMenu.press(res, World.Button.QuickLoad, w)
                 else if (tapped(k#hide, frame) or tapped(k#back, frame)) WorldMenu.press(res, World.Button.Hide, w)
                 else if (World.isChoosing(w)) choiceInput(res, frame, w)
-                else if (frame#mouseClicked or tapped(k#confirm, frame)) WorldRead.advance(res, w)
-                else w
+                else if (tappedText or tapped(k#confirm, frame)) WorldRead.advance(res, tracked)
+                else tracked
         }
 
     /// 選択肢: マウスは動いたフレームだけカーソルを吸い寄せ、クリックした選択肢を選ぶ。キーは ↑↓ と決定。
