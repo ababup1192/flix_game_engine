@@ -118,6 +118,59 @@ mod TestGesture {
         let w = play(res, down(0.0, spot()) :: held(k#swipeSeconds / 2.0, left) :: release :: Nil, second);
         Assert.assertEq(expected = World.talkLineOf(first), World.talkLineOf(w))
 
+    /// ブラウザ版で指を縦に払った 1 回: 動かしている間はホイールの刻み（指を下へ = 上へ回した向き = 正）だけが来て、
+    /// 離したフレームで touchGestures の swipeUp / swipeDown = advance のキーが 1 回来る。左ボタンは一度も押さない。
+    def fingerSwipe(res: Res.Res, wheel: Float64, w: World.World): World.World =
+        let advance = KeysDoc.rec(res#keys)#advance |> List.head |> Option.getWithDefault(Key.PageDown);
+        let moving = { wheel = wheel | App.emptyFrame() };
+        let release = { justPressed = Set#{advance}, down = Set#{advance} | App.emptyFrame() };
+        play(res, moving :: moving :: release :: Nil, w)
+
+    @Test
+    def testVerticalFingerSwipesAdvanceOneLineEach(): Unit \ {Assert, Fs.FileRead} =
+        // 下へ払っても上へ払っても、1 行だけ送り、バックログは開かない（離した時の 1 行送りと押しの分け方とで 2 重に送らない）。
+        let res = TestKit.res();
+        let start = begun(res);
+        let pulled = fingerSwipe(res, 1.0, start);
+        let pushed = fingerSwipe(res, -1.0, start);
+        let once = World.talkLineOf(TestKit.advance(res, start));
+        Assert.assertEq(expected = ((once, "Closed"), (once, "Closed")),
+                        ((World.talkLineOf(pulled), World.panelName(pulled)), (World.talkLineOf(pushed), World.panelName(pushed))))
+
+    @Test
+    def testWheelUpWhileReadingDoesNotOpenTheLog(): Unit \ {Assert, Fs.FileRead} =
+        // 読んでいる間に上へホイールを回しても、バックログは開かず台詞も進まない（ログは画面のボタンとキーで開く）。
+        let res = TestKit.res();
+        let start = begun(res);
+        let w = play(res, { wheel = 1.0 | App.emptyFrame() } :: Nil, start);
+        Assert.assertEq(expected = ("Closed", World.talkLineOf(start)), (World.panelName(w), World.talkLineOf(w)))
+
+    def isTitle(w: World.World): Bool = match w#scene {
+        case World.Scene.Title(_) => true
+        case _                    => false
+    }
+
+    @Test
+    def testAdvanceKeyDoesNothingOnTitle(): Unit \ {Assert, Fs.FileRead} =
+        // タイトルで縦に払っても（決定と違って）カーソルの項目を選ばず、タイトルのまま。
+        let res = TestKit.res();
+        let w = fingerSwipe(res, 1.0, TestKit.w0(res));
+        Assert.assertTrue(isTitle(w))
+
+    def logOffsetOf(w: World.World): Float64 = match w#panel {
+        case World.Panel.Log(offset) => offset
+        case _                       => -1.0
+    }
+
+    @Test
+    def testWheelUpScrollsTheLog(): Unit \ {Assert, Fs.FileRead} =
+        // バックログの中で上へホイールを回すと、遡る（閉じない）。
+        let res = TestKit.res();
+        let read = List.range(0, 12) |> List.foldLeft((acc, _) -> settle(res, TestKit.advance(res, acc)), begun(res));
+        let opened = quiet(() -> WorldLog.openLog(read));
+        let w = play(res, { wheel = 1.0 | App.emptyFrame() } :: Nil, opened);
+        Assert.assertTrue(logOffsetOf(w) > logOffsetOf(opened))
+
     @Test
     def testLongPressDoesNotAdvance(): Unit \ {Assert, Fs.FileRead} =
         // 動かさずに長押しの秒まで置いてから離しても送らない。

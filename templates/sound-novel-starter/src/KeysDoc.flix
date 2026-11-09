@@ -8,7 +8,7 @@ mod KeysDoc {
 
     /// 操作ごとのキーの列。confirm = 送る・選ぶ、back = ウィンドウを閉じる・ボタンのウィンドウを開く、prev / next = カーソル、
     /// left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ、hide = ウィンドウを隠す、
-    /// rollback = 1 行戻る、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページを替える、
+    /// rollback = 1 行戻る、advance = 読む画面で 1 行送る（ほかの画面では読まない）、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページを替える、
     /// remove = セーブデータを削除する、quit = タイトルで終了を尋ねる。
     pub type alias Rec = {
         version = Int32,
@@ -23,6 +23,7 @@ mod KeysDoc {
         skip = List[Key],
         hide = List[Key],
         rollback = List[Key],
+        advance = List[Key],
         quickSave = List[Key],
         quickLoad = List[Key],
         tabPrev = List[Key],
@@ -51,6 +52,7 @@ mod KeysDoc {
           skip    = Key.K :: Key.Tab :: Nil,
           hide    = Key.H :: Nil,
           rollback  = Key.PageUp :: Key.R :: Nil,
+          advance   = Key.PageDown :: Nil,
           quickSave = Key.F5 :: Nil,
           quickLoad = Key.F9 :: Nil,
           tabPrev = Key.Q :: Nil,
@@ -73,7 +75,7 @@ mod KeysDoc {
           prev = keys("prev", d#prev), next = keys("next", d#next),
           left = keys("left", d#left), right = keys("right", d#right),
           log = keys("log", d#log), auto = keys("auto", d#auto), skip = keys("skip", d#skip),
-          hide = keys("hide", d#hide), rollback = keys("rollback", d#rollback),
+          hide = keys("hide", d#hide), rollback = keys("rollback", d#rollback), advance = keys("advance", d#advance),
           quickSave = keys("quickSave", d#quickSave), quickLoad = keys("quickLoad", d#quickLoad),
           tabPrev = keys("tabPrev", d#tabPrev), tabNext = keys("tabNext", d#tabNext), remove = keys("remove", d#remove),
           quit = keys("quit", d#quit) })

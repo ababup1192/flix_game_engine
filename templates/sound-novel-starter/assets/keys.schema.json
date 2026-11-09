@@ -761,6 +761,75 @@
       "label": "1 行戻る",
       "order": 11
     },
+    "advance": {
+      "kind": "field",
+      "type": {
+        "list": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z",
+            "Digit0",
+            "Digit1",
+            "Digit2",
+            "Digit3",
+            "Digit4",
+            "Digit5",
+            "Digit6",
+            "Digit7",
+            "Digit8",
+            "Digit9",
+            "Up",
+            "Down",
+            "Left",
+            "Right",
+            "Space",
+            "Enter",
+            "Escape",
+            "Tab",
+            "LeftShift",
+            "RightShift",
+            "LeftCtrl",
+            "RightCtrl",
+            "LeftAlt",
+            "RightAlt",
+            "Backspace",
+            "Menu",
+            "Delete",
+            "PageUp",
+            "PageDown",
+            "F5",
+            "F9"
+          ]
+        }
+      },
+      "widget": "key",
+      "label": "1 行送る（読む画面だけ・ブラウザ版の上下の払い）",
+      "order": 12
+    },
     "quickSave": {
       "kind": "field",
       "type": {
@@ -828,7 +897,7 @@
       },
       "widget": "key",
       "label": "クイックセーブ",
-      "order": 12
+      "order": 13
     },
     "quickLoad": {
       "kind": "field",
@@ -897,7 +966,7 @@
       },
       "widget": "key",
       "label": "クイックロード",
-      "order": 13
+      "order": 14
     },
     "tabPrev": {
       "kind": "field",
@@ -966,7 +1035,7 @@
       },
       "widget": "key",
       "label": "セーブのページを前へ",
-      "order": 14
+      "order": 15
     },
     "tabNext": {
       "kind": "field",
@@ -1035,7 +1104,7 @@
       },
       "widget": "key",
       "label": "セーブのページを次へ",
-      "order": 15
+      "order": 16
     },
     "remove": {
       "kind": "field",
@@ -1104,7 +1173,7 @@
       },
       "widget": "key",
       "label": "セーブデータを削除",
-      "order": 16
+      "order": 17
     },
     "quit": {
       "kind": "field",
@@ -1173,7 +1242,7 @@
       },
       "widget": "key",
       "label": "タイトルで終了を尋ねる（物語の途中では効かない）",
-      "order": 17
+      "order": 18
     }
   }
 }

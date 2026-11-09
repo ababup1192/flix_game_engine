@@ -110,7 +110,8 @@ mod Controls {
         match pressed {
             case Some(button) => WorldMenu.press(res, button, w)
             case None =>
-                if (tapped(k#log, frame) or frame#wheel > 0.0) WorldMenu.press(res, World.Button.Log, w)
+                // WhyNot: 上へのホイールでバックログを開かない — ブラウザ版で指を下へ払って送ると、動かしている間に上へのホイールも出る。
+                if (tapped(k#log, frame)) WorldMenu.press(res, World.Button.Log, w)
                 else if (tapped(k#rollback, frame)) WorldMenu.press(res, World.Button.Rollback, w)
                 else if (tapped(k#auto, frame)) WorldMenu.press(res, World.Button.Auto, w)
                 else if (tapped(k#skip, frame)) WorldMenu.press(res, World.Button.Skip, w)
@@ -118,7 +119,7 @@ mod Controls {
                 else if (tapped(k#quickLoad, frame)) WorldMenu.press(res, World.Button.QuickLoad, w)
                 else if (tapped(k#hide, frame) or tapped(k#back, frame)) WorldMenu.press(res, World.Button.Hide, w)
                 else if (World.isChoosing(w)) choiceInput(res, frame, w)
-                else if (releasedText or tapped(k#confirm, frame)) WorldRead.advance(res, tracked)
+                else if (releasedText or tapped(k#confirm, frame) or tapped(k#advance, frame)) WorldRead.advance(res, tracked)
                 else tracked
         }
 
