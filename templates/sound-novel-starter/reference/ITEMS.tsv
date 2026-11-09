@@ -1,5 +1,6 @@
 adv	dynamic=86	static=0
 ask	dynamic=239	static=0
+cast-sample	dynamic=86	static=0
 choice	dynamic=125	static=0
 credits	dynamic=311	static=0
 engawa	dynamic=275	static=0
@@ -14,6 +15,8 @@ night	dynamic=783	static=0
 nvl	dynamic=255	static=0
 portrait-adv	dynamic=252	static=0
 portrait-ask	dynamic=250	static=0
+portrait-cast-sample	dynamic=252	static=0
+portrait-cast-veil	dynamic=252	static=0
 portrait-choice	dynamic=339	static=0
 portrait-hold-ring	dynamic=292	static=0
 portrait-lane	dynamic=214	static=0

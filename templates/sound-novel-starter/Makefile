@@ -1,6 +1,7 @@
 # ゲーム開発の入口。
 #   make        … ゲームを起動する（ウィンドウが開く）
 #   make help   … 共通の口の一覧（run / test / check / 描き出し / status …）
+#   make lint-cast … 立ち絵と小物の絵が揃っているか（novel.cast.json の表情の textures の登録・ファイル・縦横の比。make lint も流す）
 #
 # エンジンや java の場所はマシンごとに違うので、git に入れない local.mk に書く
 # （make new-game / Studio が生成する。別のマシンで clone したら 1 度だけ書き直す）:
@@ -38,3 +39,11 @@ showcase-video:
 	 ffmpeg -y -loglevel error $$frames -f f64be -ar 44100 -ac 2 -i $$dir/audio.f64 \
 	   -c:v libx264 -pix_fmt yuv420p -crf 20 -r $$fps -c:a aac -b:a 192k -shortest -movflags +faststart debug/video/showcase.mp4
 	@echo "rendered: debug/video/showcase.mp4"
+
+# 立ち絵と小物（assets/novel.cast.json）の絵の登録と縦横の比を見る（読むだけ・標準の python3 で足りる）。
+# 元の絵を縮めて縁を埋めるのは python3 art/cast/prepare.py <元の絵の置き場>（Pillow が要る）。
+.PHONY: lint-cast
+lint-cast:
+	python3 art/cast/lint.py
+
+lint: lint-cast

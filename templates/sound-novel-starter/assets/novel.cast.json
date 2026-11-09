@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "title": "立ち絵と小物",
+  "note": "シナリオの <<char 名前 [表情] [位置] [秒]>>（<<char 名前 off>> でその人・<<char off>> で全員を消す）と <<item 名前 [位置] [秒]>>（<<item off>> で消す）が出す絵。名前の後ろの語は 位置の名前 → その人の表情の名前 → 数（秒）の順に読み、省いた語は出ている形のまま（出ていなければ cast / props の face と slot）。絵は透過 PNG を project.json の textures に「cast_<名前>_<表情>」の名前で登録する（置き場は assets/cast/<名前>_<表情>.png。元の絵を縮めて縁を埋めるのは art/cast/prepare.py・縦横の比 aspect と登録の抜けは make lint-cast）。fadeSeconds = 出入りと入れ替えの既定の秒、sway = 息の揺れの幅（画面の高さに対する割合）、portraitVeilWithCast = 縦の画面で人物が出ている間に頁の覆いへ掛ける倍率（1 = 変えない）、slots / portraitSlots = 横と縦の画面の位置（x = 中心・bottom = 足元・height = 高さ。どれも画面に対する割合）、cast = 人物、props = 小物（同時に 1 つ・人物より手前）。例: \"cast\": { \"chinatsu\": { \"label\": \"千夏\", \"aspect\": 0.42, \"scale\": 1.0, \"face\": \"smile\", \"slot\": \"center\", \"faces\": [\"smile\", \"sad\"] } } と書き、textures に cast_chinatsu_smile と cast_chinatsu_sad を登録すると <<char chinatsu sad left>> が書ける。",
+  "fadeSeconds": 0.4,
+  "sway": 0.002,
+  "portraitVeilWithCast": 1.0,
+  "slots": {
+    "left": {
+      "x": 0.25,
+      "bottom": 1.0,
+      "height": 0.9
+    },
+    "center": {
+      "x": 0.5,
+      "bottom": 1.0,
+      "height": 0.9
+    },
+    "right": {
+      "x": 0.75,
+      "bottom": 1.0,
+      "height": 0.9
+    },
+    "item": {
+      "x": 0.5,
+      "bottom": 0.62,
+      "height": 0.36
+    }
+  },
+  "portraitSlots": {
+    "left": {
+      "x": 0.28,
+      "bottom": 1.0,
+      "height": 0.6
+    },
+    "center": {
+      "x": 0.5,
+      "bottom": 1.0,
+      "height": 0.6
+    },
+    "right": {
+      "x": 0.72,
+      "bottom": 1.0,
+      "height": 0.6
+    },
+    "item": {
+      "x": 0.5,
+      "bottom": 0.55,
+      "height": 0.25
+    }
+  },
+  "cast": {},
+  "props": {}
+}

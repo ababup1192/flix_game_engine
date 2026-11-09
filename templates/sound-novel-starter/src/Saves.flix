@@ -45,14 +45,15 @@ mod Saves {
         display = Display
     }
 
-    /// 戻れる所 1 つ。bookmark = シナリオの位置、shot / ambience / particles / mode = その時の背景・環境音・パーティクル・文章の出し方
+    /// 戻れる所 1 つ。bookmark = シナリオの位置、shot / ambience / particles / mode / cast = その時の背景・環境音・パーティクル・文章の出し方・立ち絵と小物
     /// （ブックマークが当て直すのは今のノードの頭からなので、前のノードで始まった物はここから戻す）。
     pub type alias Mark = {
         bookmark = YarnRunner.Bookmark,
         shot = Option[Stage.Shot],
         ambience = Option[String],
         particles = Option[String],
-        mode = Stage.Mode
+        mode = Stage.Mode,
+        cast = Cast.Mark
     }
 
     /// セーブデータ 1 つ。place = 場所の名前（背景の写真の label）、speaker / excerpt = その時の話し手と台詞、
@@ -205,7 +206,7 @@ mod Saves {
             "photo" => text(s#mark#shot |> Option.map(shot -> shot#photo)),
             "grade" => text(s#mark#shot |> Option.map(shot -> shot#grade)),
             "ambience" => text(s#mark#ambience), "particles" => text(s#mark#particles),
-            "mode" => Json.JString("${s#mark#mode}"),
+            "mode" => Json.JString("${s#mark#mode}"), "cast" => Cast.markToJson(s#mark#cast),
             "place" => Json.JString(s#place), "speaker" => Json.JString(s#speaker), "excerpt" => Json.JString(s#excerpt),
             "savedAt" => num(Int64.toFloat64(s#savedAt)), "serial" => num(Int32.toFloat64(s#serial)) });
         let r = rec(saves);
@@ -234,7 +235,8 @@ mod Saves {
                 let mode = if (text("mode") == Some("Adv")) Stage.Mode.Adv else Stage.Mode.Nvl;
                 { mark = { bookmark = bookmark,
                            shot = forM (photo <- text("photo"); grade <- text("grade")) yield { photo = photo, grade = grade },
-                           ambience = text("ambience"), particles = text("particles"), mode = mode },
+                           ambience = text("ambience"), particles = text("particles"), mode = mode,
+                           cast = Cast.markFromJson(Map.get("cast", obj)) },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),
                   savedAt = Float64.tryToInt64(JsonCodec.floatOr("savedAt", 0.0, obj)) |> Option.getWithDefault(0i64),

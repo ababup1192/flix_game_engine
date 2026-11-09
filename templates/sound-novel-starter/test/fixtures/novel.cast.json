@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "note": "テスト用の立ち絵と小物（TestCast が読む）。人物 2 人（a は表情 2 つ・b は位置の高さを超える scale）と小物 2 つ。絵のファイルは無くてよい（描き出しは CastDoc.sample を使う）。",
+  "fadeSeconds": 0.5,
+  "sway": 0.0,
+  "portraitVeilWithCast": 0.5,
+  "slots": {
+    "left": { "x": 0.25, "bottom": 1.0, "height": 0.9 },
+    "center": { "x": 0.5, "bottom": 1.0, "height": 0.9 },
+    "right": { "x": 0.75, "bottom": 1.0, "height": 0.9 },
+    "item": { "x": 0.5, "bottom": 0.62, "height": 0.36 }
+  },
+  "portraitSlots": {
+    "left": { "x": 0.28, "bottom": 1.0, "height": 0.6 },
+    "center": { "x": 0.5, "bottom": 1.0, "height": 0.6 },
+    "right": { "x": 0.72, "bottom": 1.0, "height": 0.6 },
+    "item": { "x": 0.5, "bottom": 0.55, "height": 0.25 }
+  },
+  "cast": {
+    "a": { "label": "A", "aspect": 0.4, "scale": 1.0, "face": "plain", "slot": "center", "faces": ["plain", "smile"] },
+    "b": { "label": "B", "aspect": 0.5, "scale": 1.2, "face": "plain", "slot": "left", "faces": ["plain"] }
+  },
+  "props": {
+    "cup": { "label": "湯呑み", "aspect": 1.0, "scale": 1.0, "face": "plain", "slot": "item", "faces": ["plain"] },
+    "fan": { "label": "うちわ", "aspect": 0.8, "scale": 1.0, "face": "plain", "slot": "item", "faces": ["plain"] }
+  }
+}

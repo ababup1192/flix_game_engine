@@ -112,4 +112,45 @@ mod TestDocs {
         // コードが開くノードが、build したシナリオにある。
         let res = TestKit.res();
         Assert.assertEq(expected = true, Option.nonEmpty(Yarn.nodeOf(Talk.nodeName(Talk.Node.Opening), res#dialogue)))
+
+
+    // ══ 立ち絵と小物（novel.cast.json） ══
+
+    /// Doc の人物と小物の、全部の表情から導いたテクスチャの名前。
+    def castTextures(doc: CastDoc.Doc): List[String] =
+        let d = CastDoc.rec(doc);
+        List.append(Map.toList(d#cast), Map.toList(d#props))
+            |> List.flatMap(match (name, entry) -> entry#faces |> List.map(face -> CastDoc.textureOf(name, face)))
+
+    @Test
+    def testEveryCastFaceHasATexture(): Unit \ {Assert, Fs.FileRead} =
+        // novel.cast.json と描き出しの見本（CastDoc.sample）の、全部の人物と小物の表情は、
+        // 導いた名前「cast_<名前>_<表情>」で project.json の textures にある（無ければ絵が出ない）。
+        let textures = namesIn("textures");
+        let missing = List.append(castTextures(CastDoc.load(CastDoc.path())), castTextures(CastDoc.sample()))
+            |> List.filter(t -> not Set.memberOf(t, textures));
+        Assert.assertEq(expected = Nil, missing)
+
+    @Test
+    def testCastSlotsMatchInBothOrientations(): Unit \ {Assert, Fs.FileRead} =
+        // 横の位置と縦の位置は、同じ名前の集まり（シナリオの <<char 名前 位置>> は向きを知らずに書く）。
+        let d = CastDoc.rec(CastDoc.load(CastDoc.path()));
+        Assert.assertEq(expected = Map.keysOf(d#slots), Map.keysOf(d#portraitSlots))
+
+    @Test
+    def testFaceNamesNeverShadowSlotNames(): Unit \ {Assert, Fs.FileRead} =
+        // 表情の名前と位置の名前は重ならない（コマンドの語は位置の名前を先に読むので、重なった表情は選べない）。
+        let d = CastDoc.rec(CastDoc.load(CastDoc.path()));
+        let faces = List.append(Map.valuesOf(d#cast), Map.valuesOf(d#props)) |> List.flatMap(e -> e#faces);
+        Assert.assertEq(expected = Nil, faces |> List.filter(f -> Map.memberOf(f, d#slots)))
+
+    @Test
+    def testCastDocFallsOpen(): Unit \ {Assert, Fs.FileRead} =
+        // 無い・壊れた novel.cast.json は既定値（人物なし・既定の位置）で読み、1 欄だけ書いた Doc はその欄だけが入る。
+        let shape = (doc: CastDoc.Doc) -> { let d = CastDoc.rec(doc); (d#fadeSeconds, Map.keysOf(d#slots), Map.size(d#cast)) };
+        let missing = shape(CastDoc.load("assets/no-such.cast.json"));
+        let broken = CastDoc.fromJson("{ broken") |> Option.map(shape);
+        let one = CastDoc.fromJson("{ \"fadeSeconds\": 1.0 }") |> Option.map(shape);
+        let d = shape(CastDoc.defaults());
+        Assert.assertEq(expected = (d, None, Some((1.0, Map.keysOf(CastDoc.rec(CastDoc.defaults())#slots), 0))), (missing, broken, one))
 }

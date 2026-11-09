@@ -1,0 +1,202 @@
+{
+  "//": "novel.cast.json の形の宣言（Studio の sections 方言）。立ち絵と小物の位置・一覧・出入りの秒。出し方と重ね方の決まりはコード（src/Cast.flix）。既定は src/CastDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "fadeSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "出入りと入れ替えの既定の秒",
+      "group": "出し方",
+      "order": 1,
+      "min": 0,
+      "max": 3,
+      "default": 0.4
+    },
+    "sway": {
+      "kind": "field",
+      "type": "float",
+      "label": "息の揺れの幅（画面の高さに対する割合・0 で止める）",
+      "group": "出し方",
+      "order": 2,
+      "min": 0,
+      "max": 0.02,
+      "default": 0.002
+    },
+    "portraitVeilWithCast": {
+      "kind": "field",
+      "type": "float",
+      "label": "縦の画面で人物が出ている間、頁の覆いの濃さに掛ける倍率（1 = 変えない・小さいほど人物がはっきり見える）",
+      "group": "出し方",
+      "order": 3,
+      "min": 0,
+      "max": 1,
+      "default": 1.0
+    },
+    "slots": {
+      "kind": "catalog",
+      "label": "横の画面の位置（<<char>> / <<item>> に書く位置の名前）",
+      "order": 4,
+      "fields": {
+        "x": {
+          "type": "float",
+          "label": "絵の中心の横の位置（画面の幅に対する割合）",
+          "order": 1,
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "required": true
+        },
+        "bottom": {
+          "type": "float",
+          "label": "足元の縦の位置（画面の高さに対する割合。1 = 画面の下）",
+          "order": 2,
+          "default": 1.0,
+          "min": 0,
+          "max": 1,
+          "required": true
+        },
+        "height": {
+          "type": "float",
+          "label": "絵の高さ（画面の高さに対する割合）",
+          "order": 3,
+          "default": 0.9,
+          "min": 0.05,
+          "max": 1.5,
+          "required": true
+        }
+      }
+    },
+    "portraitSlots": {
+      "kind": "catalog",
+      "label": "縦の画面の位置（名前の集まりは slots と同じにする）",
+      "order": 5,
+      "fields": {
+        "x": {
+          "type": "float",
+          "label": "絵の中心の横の位置（画面の幅に対する割合）",
+          "order": 1,
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "required": true
+        },
+        "bottom": {
+          "type": "float",
+          "label": "足元の縦の位置（画面の高さに対する割合。1 = 画面の下）",
+          "order": 2,
+          "default": 1.0,
+          "min": 0,
+          "max": 1,
+          "required": true
+        },
+        "height": {
+          "type": "float",
+          "label": "絵の高さ（画面の高さに対する割合）",
+          "order": 3,
+          "default": 0.9,
+          "min": 0.05,
+          "max": 1.5,
+          "required": true
+        }
+      }
+    },
+    "cast": {
+      "kind": "catalog",
+      "label": "人物（鍵 = <<char 名前>> の名前）",
+      "order": 6,
+      "fields": {
+        "label": {
+          "type": "text",
+          "label": "人に見せる名前",
+          "order": 1,
+          "default": ""
+        },
+        "aspect": {
+          "type": "float",
+          "label": "絵の横 ÷ 縦（実物の PNG と同じにする・make lint-cast が見る）",
+          "order": 2,
+          "default": 0.5,
+          "min": 0.05,
+          "max": 4,
+          "required": true
+        },
+        "scale": {
+          "type": "float",
+          "label": "位置の高さに掛ける倍率",
+          "order": 3,
+          "default": 1.0,
+          "min": 0.1,
+          "max": 3
+        },
+        "face": {
+          "type": "text",
+          "label": "既定の表情（faces のどれか）",
+          "order": 4,
+          "default": ""
+        },
+        "slot": {
+          "type": "text",
+          "label": "既定の位置（slots の名前）",
+          "order": 5,
+          "default": "center"
+        },
+        "faces": {
+          "type": {
+            "list": "text"
+          },
+          "label": "表情の名前（テクスチャは cast_<名前>_<表情>）",
+          "order": 6
+        }
+      }
+    },
+    "props": {
+      "kind": "catalog",
+      "label": "小物（鍵 = <<item 名前>> の名前）",
+      "order": 7,
+      "fields": {
+        "label": {
+          "type": "text",
+          "label": "人に見せる名前",
+          "order": 1,
+          "default": ""
+        },
+        "aspect": {
+          "type": "float",
+          "label": "絵の横 ÷ 縦（実物の PNG と同じにする・make lint-cast が見る）",
+          "order": 2,
+          "default": 0.5,
+          "min": 0.05,
+          "max": 4,
+          "required": true
+        },
+        "scale": {
+          "type": "float",
+          "label": "位置の高さに掛ける倍率",
+          "order": 3,
+          "default": 1.0,
+          "min": 0.1,
+          "max": 3
+        },
+        "face": {
+          "type": "text",
+          "label": "既定の表情（faces のどれか）",
+          "order": 4,
+          "default": ""
+        },
+        "slot": {
+          "type": "text",
+          "label": "既定の位置（slots の名前）",
+          "order": 5,
+          "default": "item"
+        },
+        "faces": {
+          "type": {
+            "list": "text"
+          },
+          "label": "表情の名前（テクスチャは cast_<名前>_<表情>）",
+          "order": 6
+        }
+      }
+    }
+  }
+}

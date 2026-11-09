@@ -2,5 +2,5 @@
   "speakers": ["chinatsu", "me"],
   "nodes": ["Station"],
   "tags": {},
-  "commands": ["bg", "nvl", "adv", "clear", "ambience", "se", "fx", "shake"]
+  "commands": ["bg", "nvl", "adv", "clear", "ambience", "se", "fx", "shake", "char", "item"]
 }

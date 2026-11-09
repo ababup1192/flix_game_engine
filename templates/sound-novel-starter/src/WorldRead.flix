@@ -103,13 +103,13 @@ mod WorldRead {
         last |> Option.map(b -> {
             let kept = Int32.max(0, List.length(b#steps) - later);
             { bookmark = { steps = List.take(kept, b#steps) | b }, shot = stage#shot, ambience = stage#ambience,
-              particles = stage#particles, mode = stage#mode }
+              particles = stage#particles, mode = stage#mode, cast = Cast.markOf(stage#cast) }
         })
 
     /// コマンド 1 つ（wait は実行器が待つので何もしない）。読めないコマンドは 1 行知らせて舞台はそのまま。
     def cue(res: Res.Res, replay: Replay, command: Yarn.Command, r: World.Read, w: World.World): World.Read \ Emit[World.Event] =
         if (command#name == "wait") r
-        else match Stage.cueOf(res#backdrops, command) {
+        else match Stage.cueOf(res, command) {
             case Ok(Stage.Cue.Clear)        => { page = Page.clear(r#page) | r }
             case Ok(Stage.Cue.Se(name))     => if (replay == Replay.Silent) r else { Emit.emit(World.Event.Cue("se_${name}")); r }
             case Ok(Stage.Cue.ToMode(mode)) =>
@@ -326,7 +326,8 @@ mod WorldRead {
     /// 前のノードから持ち越す背景・環境音・パーティクル・文章の出し方は Mark の値から始め、背景の重ねや揺れの途中は終わりの形にする。
     /// 画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
     pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
-        let carried = { shot = mark#shot, ambience = mark#ambience, particles = mark#particles, mode = mark#mode | Stage.empty() };
+        let carried = { shot = mark#shot, ambience = mark#ambience, particles = mark#particles, mode = mark#mode,
+                        cast = Cast.layerOf(mark#cast) | Stage.empty() };
         let (talk, events) = YarnRunner.resume(res#dialogue, mark#bookmark, World.now(w));
         let gaveUp = World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
         settled(absorb(res, Replay.Silent, events, { talk = talk, stage = carried, gaveUp = gaveUp | World.emptyRead() },
@@ -356,8 +357,8 @@ mod WorldRead {
         let cues = pairs |> List.map(fst) |> List.takeWhile(isCommand);
         match World.readOf(w) {
             case Some(r) if r#playback != World.Playback.Skip =>
-                let head = List.head(cues) |> Option.map(event -> pendingNames(res, r, eventNames(res, event))) |> Option.getWithDefault(Nil);
-                if (List.isEmpty(head)) Nil else pendingNames(res, r, List.flatMap(eventNames(res), cues))
+                let head = List.head(cues) |> Option.map(event -> pendingNames(res, r, eventNames(res, r#stage, event))) |> Option.getWithDefault(Nil);
+                if (List.isEmpty(head)) Nil else pendingNames(res, r, List.flatMap(eventNames(res, r#stage), cues))
             case _ => Nil
         }
 
@@ -366,25 +367,26 @@ mod WorldRead {
         case _                           => false
     }
 
-    /// 出来事が切り替える背景・環境音の名前（コマンドでなければ空）。
-    def eventNames(res: Res.Res, event: YarnRunner.Event): List[String] = match event {
+    /// 出来事が切り替える背景・環境音・立ち絵の名前（コマンドでなければ空）。stage = 今の舞台（省いた表情を埋める）。
+    def eventNames(res: Res.Res, stage: Stage.Stage, event: YarnRunner.Event): List[String] = match event {
         case YarnRunner.Event.Command(command) =>
-            Stage.cueOf(res#backdrops, command) |> Result.toOption |> Option.map(cueNames(res)) |> Option.getWithDefault(Nil)
+            Stage.cueOf(res, command) |> Result.toOption |> Option.map(cueNames(res, stage)) |> Option.getWithDefault(Nil)
         case _ => Nil
     }
 
-    /// コマンドの意味が使う背景・環境音の名前（project.json の textures / sounds の name）。
-    def cueNames(res: Res.Res, cue: Stage.Cue): List[String] = match cue {
+    /// コマンドの意味が使う背景・環境音・立ち絵の名前（project.json の textures / sounds の name）。
+    def cueNames(res: Res.Res, stage: Stage.Stage, cue: Stage.Cue): List[String] = match cue {
         case Stage.Cue.Backdrop(shot, _)   => BackdropDoc.textureOf(shot#photo, res#backdrops) |> Option.toList
         case Stage.Cue.Ambience(Some(name)) => Stage.ambienceSound(name) :: Nil
+        case Stage.Cue.Cast(c)             => Cast.targetOf(c, stage#cast) |> Option.map(match (_, figure) -> Cast.textureOf(figure)) |> Option.toList
         case _                             => Nil
     }
 
-    /// 舞台が使っている背景・環境音の名前。
+    /// 舞台が使っている背景・環境音・立ち絵の名前。
     def stageNames(res: Res.Res, stage: Stage.Stage): List[String] =
         let photo = stage#shot |> Option.flatMap(shot -> BackdropDoc.textureOf(shot#photo, res#backdrops)) |> Option.toList;
         let sound = stage#ambience |> Option.map(Stage.ambienceSound) |> Option.toList;
-        List.append(photo, sound)
+        List.flatten(photo :: sound :: Cast.textures(stage#cast) :: Nil)
 
     /// names のうち、まだ届いていなくて、諦めてもいない物（重なりは 1 つに）。
     def pendingNames(res: Res.Res, r: World.Read, names: List[String]): List[String] =
@@ -406,12 +408,17 @@ mod WorldRead {
         }
 
     /// 待ちの段を 1 歩進める。黒へ重ね切ったら Waiting、届いたら（か諦めたら）続きを反映して FadingIn、黒から戻し切ったら待ちを消す。
+    /// Waiting に入る所（黒くなり切った所）で立ち絵の重ねの途中を終わりの形にする（待ちが明けて物語の時計が進み出した時に、半分透けた人物を見せない）。
+    // WhyNot: Stage.settle を丸ごと掛けない — 背景の重ねは resumeHold が黒の下から出し直し、揺れは物語の時計が止まっている間は進まないので、立ち絵だけでよい。
     def stepHold(res: Res.Res, dt: Float64, hold: World.Hold, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let k = KindDoc.rec(res#kind);
         let faded = Clock.since(hold#phaseFrom, World.now(w)) >= k#holdFadeSeconds;
         let withHold = (next: Option[World.Hold]) -> World.withRead({ hold = next | r }, w);
         match hold#phase {
-            case World.HoldPhase.FadingOut => if (faded) withHold(Some({ phase = World.HoldPhase.Waiting, waited = 0.0 | hold })) else w
+            case World.HoldPhase.FadingOut =>
+                if (faded) World.withRead({ hold = Some({ phase = World.HoldPhase.Waiting, waited = 0.0 | hold }),
+                                            stage = { cast = Cast.settle(r#stage#cast) | r#stage } | r }, w)
+                else w
             case World.HoldPhase.FadingIn  => if (faded) withHold(None) else w
             case World.HoldPhase.Waiting   =>
                 let left = pendingNames(res, r, hold#names);

@@ -179,7 +179,7 @@ mod TestRules {
         // 台本のコマンドは全部 Stage が読める（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
         let res = TestKit.res();
         let bad = commandsOf(res#dialogue) |> List.filter(c -> c#name != "wait")
-            |> List.filterMap(c -> match Stage.cueOf(res#backdrops, c) {
+            |> List.filterMap(c -> match Stage.cueOf(res, c) {
                 case Ok(_)    => None
                 case Err(why) => Some(why)
             });

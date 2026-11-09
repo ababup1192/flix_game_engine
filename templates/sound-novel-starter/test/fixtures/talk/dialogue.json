@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が test/fixtures/talk/cast.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "assets/talk/vocab.json",
+  "files": [
+    "test/fixtures/talk/cast.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Station",
+      "file": "test/fixtures/talk/cast.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 5,
+          "name": "adv"
+        },
+        {
+          "kind": "command",
+          "line": 6,
+          "name": "char",
+          "args": [
+            "a"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "me",
+          "text": "一行目。"
+        },
+        {
+          "kind": "command",
+          "line": 8,
+          "name": "char",
+          "args": [
+            "b",
+            "right"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 9,
+          "speaker": "chinatsu",
+          "text": "二行目。"
+        },
+        {
+          "kind": "command",
+          "line": 10,
+          "name": "char",
+          "args": [
+            "a",
+            "smile"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "speaker": "me",
+          "text": "三行目。"
+        },
+        {
+          "kind": "command",
+          "line": 12,
+          "name": "item",
+          "args": [
+            "cup"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "chinatsu",
+          "text": "四行目。"
+        },
+        {
+          "kind": "jump",
+          "line": 14,
+          "node": "Next"
+        }
+      ]
+    },
+    {
+      "title": "Next",
+      "file": "test/fixtures/talk/cast.yarn",
+      "line": 16,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 18,
+          "speaker": "me",
+          "text": "次のノードの一行目。"
+        },
+        {
+          "kind": "command",
+          "line": 19,
+          "name": "char",
+          "args": [
+            "a",
+            "left",
+            "0"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 20,
+          "speaker": "me",
+          "text": "二行目。"
+        },
+        {
+          "kind": "command",
+          "line": 21,
+          "name": "char",
+          "args": [
+            "b",
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 22,
+          "name": "item",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 23,
+          "speaker": "chinatsu",
+          "text": "三行目。"
+        },
+        {
+          "kind": "command",
+          "line": 24,
+          "name": "char",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 25,
+          "speaker": "me",
+          "text": "終わり。"
+        }
+      ]
+    }
+  ]
+}

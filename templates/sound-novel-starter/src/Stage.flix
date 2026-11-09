@@ -8,6 +8,9 @@
 //   <<se 名>>               効果音 se_<名> を 1 回（音は World が出来事にして鳴らす）
 //   <<fx 名>>               画面のパーティクルの演出（fireflies / off）
 //   <<shake>>               画面を短く揺らす
+//   <<char 名前 [表情] [位置] [秒]>>  立ち絵を出す・表情や位置を替える（語の順は問わない。省いた語は出ている形のまま・出ていなければ CastDoc の既定）
+//   <<char 名前 off [秒]>> / <<char off [秒]>>   その人を消す / 全員消す
+//   <<item 名前 [位置] [秒]>> / <<item off [秒]>>  小物を出す（前の小物と入れ替わる）/ 消す（読み方と重ね方は Cast）
 //
 // 引数の読めないコマンドは Err で返し、World が 1 行知らせて舞台はそのまま続ける（シナリオの書き損じで止めない）。
 // セーブから戻る時は YarnRunner.resume が通ったコマンドを全部返すので、同じ applyCue で反映してから settle で
@@ -36,10 +39,12 @@ mod Stage {
         case Se(String)
         case Particles(Option[String])
         case Shake
+        case Cast(Cast.Cue)
     }
 
     /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、
-    /// mode = 文章の出し方、ambience = 鳴り続ける環境音の名前、particles = パーティクルの演出の名前、shakeFrom = 揺れ始めた時刻。
+    /// mode = 文章の出し方、ambience = 鳴り続ける環境音の名前、particles = パーティクルの演出の名前、shakeFrom = 揺れ始めた時刻、
+    /// cast = 立ち絵と小物の層。
     pub type alias Stage = {
         shot = Option[Shot],
         under = Option[Shot],
@@ -48,17 +53,18 @@ mod Stage {
         mode = Mode,
         ambience = Option[String],
         particles = Option[String],
-        shakeFrom = Option[Clock.Time[Story]]
+        shakeFrom = Option[Clock.Time[Story]],
+        cast = Cast.Layer
     }
 
     /// 物語を始める前の舞台（背景なし・NVL・音なし）。
     pub def empty(): Stage =
         { shot = None, under = None, fadeFrom = Clock.never(), fadeSeconds = 0.0, mode = Mode.Nvl,
-          ambience = None, particles = None, shakeFrom = None }
+          ambience = None, particles = None, shakeFrom = None, cast = Cast.empty() }
 
     /// Talk の語彙に載せるコマンドの名前（wait はエンジンが読むので入れない）。
     pub def commandNames(): List[String] =
-        "bg" :: "nvl" :: "adv" :: "clear" :: "ambience" :: "se" :: "fx" :: "shake" :: Nil
+        "bg" :: "nvl" :: "adv" :: "clear" :: "ambience" :: "se" :: "fx" :: "shake" :: "char" :: "item" :: Nil
 
     /// 環境音の名前（<<ambience 名>> の名）→ project.json の sounds の名前。
     pub def ambienceSound(name: String): String = "amb_${name}"
@@ -66,8 +72,9 @@ mod Stage {
     /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
     pub def particleNames(): List[String] = "fireflies" :: Nil
 
-    /// コマンドの意味を読む。写真・時間帯の名前は backdrops にあるかまで見る（無い名前で背景が消えないように）。
-    pub def cueOf(backdrops: BackdropDoc.Doc, command: Yarn.Command): Result[String, Cue] =
+    /// コマンドの意味を読む。写真・時間帯の名前は backdrops に、人物・小物・表情・位置の名前は cast にあるかまで見る（無い名前で舞台が消えないように）。
+    pub def cueOf(res: Res.Res, command: Yarn.Command): Result[String, Cue] =
+        let backdrops = res#backdrops;
         let at = " (${Yarn.sourceText(command#source)})";
         match (command#name, command#args) {
             case ("bg", photo :: grade :: rest) =>
@@ -93,6 +100,8 @@ mod Stage {
                 if (List.memberOf(name, particleNames())) Ok(Cue.Particles(Some(name)))
                 else Err("知らないパーティクルの演出 '${name}'${at}")
             case ("shake", _)           => Ok(Cue.Shake)
+            case ("char", _)            => Cast.cueOf(res#cast, command) |> Result.map(Cue.Cast)
+            case ("item", _)            => Cast.cueOf(res#cast, command) |> Result.map(Cue.Cast)
             case (name, _)              => Err("<<${name}>> の引数が足りない${at}")
         }
 
@@ -104,13 +113,14 @@ mod Stage {
         case Cue.Ambience(name)     => { ambience = name | stage }
         case Cue.Particles(name)    => { particles = name | stage }
         case Cue.Shake              => { shakeFrom = Some(now) | stage }
+        case Cue.Cast(c)            => { cast = Cast.apply(now, c, stage#cast) | stage }
         case Cue.Clear              => stage
         case Cue.Se(_)              => stage
     }
 
     /// 演出の途中を終わりの形にする（セーブから戻った時・描き出しで場面を作る時）。
     pub def settle(stage: Stage): Stage =
-        { under = None, fadeFrom = Clock.never(), shakeFrom = None | stage }
+        { under = None, fadeFrom = Clock.never(), shakeFrom = None, cast = Cast.settle(stage#cast) | stage }
 
     /// 背景の重ねの進み（0〜1。秒が 0 なら 1）。
     pub def fadeProgress(now: Clock.Time[Story], stage: Stage): Float64 =

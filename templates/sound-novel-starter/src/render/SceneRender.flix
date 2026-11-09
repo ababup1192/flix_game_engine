@@ -91,10 +91,14 @@ mod SceneRender {
     /// 描く元を替えて描く横の場面: (描き出しの名前, Shots の場面の名前)。どう替えるかは resFor。
     /// WhyNot: Shots.names に入れない — 実機の START=shot: は World だけを替える口で、Doc（描く元）は替えられない。
     def variantShots(): List[(String, String)] =
-        ("hold-ring", "hold") :: ("hold-none", "hold") :: Nil
+        ("hold-ring", "hold") :: ("hold-none", "hold") :: ("cast-sample", "cast") :: Nil
 
-    /// 描き出しの名前 → その場面で使う描く元。hold-ring / hold-none = 待ちの印を輪 / 無しにした描く元。ほかはそのまま。
+    /// 描き出しの名前 → その場面で使う描く元。hold-ring / hold-none = 待ちの印を輪 / 無しにした描く元、
+    /// cast-sample = テスト用の立ち絵の人物を足した描く元（CastDoc.sample）、portrait-cast-veil = それに縦の頁の覆いを人物が出ている間だけ薄くする倍率を入れた描く元。ほかはそのまま。
     def resFor(name: String, res: Res.Res): Res.Res = match name {
+        case "cast-sample"          => Res.withCast(CastDoc.sample(), res)
+        case "portrait-cast-sample" => Res.withCast(CastDoc.sample(), res)
+        case "portrait-cast-veil"   => Res.withCast(CastDoc.Doc.Doc({ portraitVeilWithCast = 0.5 | CastDoc.rec(CastDoc.sample()) }), res)
         case "hold-ring"          => withWaitMark(ThemeDoc.WaitMark.Ring, res)
         case "portrait-hold-ring" => withWaitMark(ThemeDoc.WaitMark.Ring, res)
         case "hold-none"          => withWaitMark(ThemeDoc.WaitMark.Off, res)
@@ -114,12 +118,13 @@ mod SceneRender {
             :: ("portrait-settings", "settings", tall) :: ("portrait-ask", "ask", tall)
             :: ("portrait-lane", "lane", tall) :: ("portrait-menu", "menu", tall)
             :: ("portrait-saveload", "saveload", tall) :: ("portrait-tooltip", "tooltip", tall)
-            :: ("portrait-hold-ring", "hold", tall)
+            :: ("portrait-hold-ring", "hold", tall) :: ("portrait-cast-sample", "cast", tall) :: ("portrait-cast-veil", "cast", tall)
             :: ("portrait-short-nvl", "nvl", short) :: ("portrait-short-save", "save", short)
             :: ("portrait-short-settings", "settings", short) :: Nil
 
     /// 場面の名前 → World。縦の画面だけの場面（どれも ADV の台詞の上）: menu = オートを点けて右上の … のメニューを開いた所、
-    /// saveload = しおりから [セーブ｜ロード] の選びを開いた所、tooltip = 指の長押しで右の列のログの名前を出した所。
+    /// saveload = しおりから [セーブ｜ロード] の選びを開いた所、tooltip = 指の長押しで右の列のログの名前を出した所、
+    /// cast = テスト用の立ち絵の人物を出した所（横と縦の両方で描く）。
     // WhyNot: 縦の画面だけの場面を Shots.names に入れない — 右の列と … は縦の画面にしか無く、Shots.names は横の描き出しと実機の START=shot: の口でもある。
     def worldOf(scene: String, res: Res.Res): Option[World.World] = match scene {
         case "menu"     =>
@@ -127,8 +132,15 @@ mod SceneRender {
                 World.mapRead(r -> { playback = World.Playback.Auto | r }, { panel = World.Panel.Menu(0) | w }))
         case "saveload" => Shots.worldOf("adv", res) |> Option.map(w -> { panel = World.Panel.SaveLoadPick(0) | w })
         case "tooltip"  => Shots.worldOf("adv", res) |> Option.map(w -> World.mapRead(r -> { tip = Some((logIndex(), w#realNow)) | r }, w))
+        case "cast"     => Shots.worldOf("adv", res) |> Option.map(World.mapRead(r -> { stage = { cast = sampleLayer() | r#stage } | r }))
         case _          => Shots.worldOf(scene, res)
     }
+
+    /// テスト用の立ち絵の人物を、既定の位置と表情で出し終えた層。
+    def sampleLayer(): Cast.Layer =
+        let entry = CastDoc.entryOf(CastDoc.Lane.Character, CastDoc.sampleName(), CastDoc.sample());
+        let figures = entry |> Option.map(e -> { name = CastDoc.sampleName(), face = e#face, slot = e#slot }) |> Option.toList;
+        Cast.layerOf({ cast = figures, prop = None })
 
     /// 縦の画面の右の列のログの番号。
     def logIndex(): Int32 =

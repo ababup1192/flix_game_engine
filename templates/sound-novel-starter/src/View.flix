@@ -8,7 +8,7 @@
 // **これは数ある画風の 1 つでしかない。** 真似してほしいのは「写真を奥へ下げて文章を主役にする」層の分け方。
 //
 // ── 画面の層（奥から手前へ）──
-//   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ パーティクル（蛍）   … 揺れはこの層だけに掛かる
+//   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ パーティクル（蛍）→ 立ち絵 → 小物   … 揺れはこの層だけに掛かる
 //   hud:   NVL の幕 / ADV のウィンドウ → 本文（ルビつき）・名前 → 送りの印 → 選択肢 → クイックメニュー（縦の画面は右の列と … とツールチップ）
 //          → 素材を待つ間の黒と待ちの印（ブラウザ版で背景・環境音がまだ届いていない時）
 //          → 画面（バックログ・セーブ・ロード・設定。セーブの枠のサムネはその時の画面を同じ関数で描いて縮める）→ 確認のウィンドウ → 知らせ
@@ -66,7 +66,7 @@ mod View {
         let stage = World.stageOf(res, w);
         let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
-        List.append(backdrops(env, stage), particles(env, stage))
+        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage) :: Nil)
             |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -159,6 +159,12 @@ mod View {
         forM (photo <- BackdropDoc.photoOf(shot#photo, env#res#backdrops) |> Option.filter(p -> not Set.memberOf(p#texture, env#res#missing));
               grade <- BackdropDoc.gradeOf(shot#grade, env#res#backdrops))
         yield Backdrop.specOf("${shot#photo}_${shot#grade}", photo, grade)
+
+    // ── 立ち絵と小物（Cast） ──
+
+    /// 立ち絵と小物を蛍の手前（z 5）に描く。まだ届いていない絵は描かない（背景の写真と同じ扱い）。
+    def castLayer(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        Cast.items({ doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing }, stage#cast, 5)
 
     // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
 
@@ -363,12 +369,15 @@ mod View {
              y + b#height + Layout.paragraphGap())
         }, (Nil, area#position#y));
         let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
-        List.flatten(portraitVeil(env) :: List.flatten(List.reverse(items)) :: mark :: Nil)
+        List.flatten(portraitVeil(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
 
-    /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べる。
-    def portraitVeil(env: Env): List[Render.PlacedItem] =
+    /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べ、人物が出ている間は novel.cast.json の
+    /// portraitVeilWithCast を、人物の出入りの進みに合わせて掛ける（出ると薄く、消えると戻る）。
+    def portraitVeil(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
         let t = theme(env);
-        let a = windowAlpha(env);
+        let withCast = CastDoc.rec(env#res#cast)#portraitVeilWithCast;
+        let presence = Cast.presenceOf(env#storyNow, stage#cast);
+        let a = windowAlpha(env) * (1.0 + (withCast - 1.0) * presence);
         let stops = (0.0, 0.6 * a) :: (0.3, 1.1 * a) :: (1.0, 1.2 * a) :: Nil;
         let size = Layout.size(env#fit);
         List.zip(stops, List.drop(1, stops)) |> List.map(match ((y0, a0), (y1, a1)) -> {
@@ -919,7 +928,7 @@ mod View {
         // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
         let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
-            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: reading(atlas, away, read) :: Nil))
+            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage) :: reading(atlas, away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)

@@ -11,7 +11,7 @@
     "b": 0.08
   },
   "maxDeltaTime": 0.05,
-  "// textures": "背景の写真（出典は CREDITS.md）。名前は assets/novel.backdrops.json の photos の texture と対。",
+  "// textures": "背景の写真（出典は CREDITS.md）。名前は assets/novel.backdrops.json の photos の texture と対。cast__sample_plain はテスト用の立ち絵（art/cast/sample.py が作る単色の形・描き出しとテストだけが CastDoc.sample で使い、物語には出さない）。立ち絵は cast_<名前>_<表情> の名前で足す。",
   "textures": [
     {
       "name": "bg_station",
@@ -37,6 +37,11 @@
       "name": "bg_river",
       "path": "assets/bg/river.jpg",
       "hasAlpha": false
+    },
+    {
+      "name": "cast__sample_plain",
+      "path": "assets/cast/_sample_plain.png",
+      "hasAlpha": true
     }
   ],
   "// glyphs": "起動時に焼く字。used = ソースとアセットにある字を先に焼く（シナリオの字がそろってからタイトル画面が出る）",
@@ -169,6 +174,13 @@
         "title": "縦の画面の操作の列",
         "role": "tuning",
         "schema": "assets/rail.schema.json"
+      },
+      {
+        "id": "cast",
+        "pattern": "assets/novel.cast.json",
+        "title": "立ち絵と小物",
+        "role": "material",
+        "schema": "assets/cast.schema.json"
       },
       {
         "id": "mixer",
