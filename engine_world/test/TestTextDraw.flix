@@ -54,4 +54,42 @@ mod TestTextDraw {
         Assert.assertEq(
             expected = (100.0 - s#x / 2.0, 50.0 - s#y / 2.0),
             (pos#x, pos#y))
+    // ── wrappedSize ──
+    // advance 10・fontSize 1 のアトラスで size=1 なので、字 1 つ = 幅 10・1 行 = 高さ 1。
+
+    def wrapped(text: String, wrapWidth: Float64): (Float64, Float64) =
+        let s = TextDraw.wrappedSize(text, atlas(), 1.0, wrapWidth);
+        (s#x, s#y)
+
+    /// 幅に収まる字は 1 行分の高さ（行の高さ 1 つ）と、その字の幅。
+    @Test
+    def testWrappedSizeFitsOneLine(): Unit \ Assert =
+        Assert.assertEq(expected = (20.0, 1.0), wrapped("AB", 100.0))
+
+    /// 幅を超える字は次の行へ送られ、幅は一番長い行（3 字 = 30）・高さは 2 行分。
+    @Test
+    def testWrappedSizeBreaksAtWrapWidth(): Unit \ Assert =
+        Assert.assertEq(expected = (30.0, 2.0), wrapped("ABABA", 35.0))
+
+    /// 字の改行（\n）で、幅に余裕があっても行が増える。
+    @Test
+    def testWrappedSizeCountsNewline(): Unit \ Assert =
+        Assert.assertEq(expected = (20.0, 2.0), wrapped("AB\nA", 100.0))
+
+    /// 空の字は何も描かないので高さ 0。
+    @Test
+    def testWrappedSizeEmptyIsZero(): Unit \ Assert =
+        Assert.assertEq(expected = (0.0, 0.0), wrapped("", 100.0))
+
+    /// wrappedSize の行数は、Render.textWrapped が実際に描く字の段数（y の種類）と同じ。
+    @Test
+    def testWrappedSizeRowsMatchDrawnRows(): Unit \ Assert =
+        let text = "ABABABAB";
+        // 大きさ 0 の字は描き物にならないので、この確かめだけ字に大きさを与える。
+        let visible = { glyphs = Map.map(g -> { glyphW = 1.0, glyphH = 1.0 | g }, atlas()#glyphs) | atlas() };
+        let drawn = Render.Internal.Extract.textDrawables(text, visible, 1.0, { r = 1.0, g = 1.0, b = 1.0 },
+                                                          1.0, 0.0, 0, Some(35.0), { x = 0.0, y = 0.0 });
+        let rows = drawn |> List.map(d -> { let DrawCmd.Drawable.Drawable(_, _, py, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) = d; py })
+                         |> List.toSet |> Set.size;
+        Assert.assertEq(expected = Int32.toFloat64(rows), TextDraw.wrappedSize(text, atlas(), 1.0, 35.0)#y)
 }

@@ -1,2 +1,2 @@
-ok testdata/lint/flow-check/clean-passes/input.flow: 18 手
+ok testdata/lint/flow-check/clean-passes/input.flow: 19 手
 [exit=0]

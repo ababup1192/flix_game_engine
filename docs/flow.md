@@ -130,6 +130,7 @@ wait 3f mouse=right ns=…                     右と中のボタンを押して
 hold Down ns=… / release Down ns=…
 wait 1f keys=Left,Z new=Z ns=…               押している物の丸ごと・押した瞬間が差分から出ない時だけ new=
 wait 30f focus=0 ns=…                        窓のフォーカス（Frame#windowFocused）は変わったフレームにだけ focus=0|1
+wait 2f pad lstick=0.5,-0.25 rstick=0.0,1.0   スティックの倒し方（Frame#leftStick・rightStick。長さ 0..1・上が +y・小数 4 桁）は (0, 0) でないコマにだけ書く（書かなければ (0, 0)）
 wait 5f pad padkind=steam ns=…               パッドの機種（Frame#padKind）は pad から出せない時だけ padkind=generic|steam|unknown（書いた後は続く）
 expect fp=1a2b3c4d                           60 フレームごとの指紋（App.withFingerprint）。再生で最初の食い違いの行を指す。閉じる時にも 1 つ
 # fp phase=Playing|lines=3|…                 指紋の元の文字

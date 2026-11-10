@@ -162,4 +162,22 @@ mod TestFlex {
         Assert.assertEq(
             expected = (0.0, 0.0) :: (30.0, 0.0) :: (88.0, 3.0) :: Nil,
             placed |> List.map(p -> (p#at#x, p#at#y)))
+    // ── wrappedText ──
+
+    /// pad 8 の箱に折り返す字を 1 つ置くと、箱の高さは字の高さ + 16（窓が行数に合わせて伸びる）。
+    @Test
+    def testBoxFitsWrappedText(): Unit \ Assert =
+        let atlas = { textureName = "t", fontSize = 1.0, textureSize = 1.0, ascent = 1.0, descent = 0.0,
+                      lineGap = 0.0,
+                      glyphs = Map.insert(65, { xOff = 0.0, yOff = 0.0, glyphW = 0.0, glyphH = 0.0, advance = 10.0,
+                                                s0 = 0.0, t0 = 0.0, s1 = 0.0, t1 = 0.0 }, Map.empty()) };
+        let look = { atlas = atlas, fontSize = 1.0, wrapWidth = 35.0, tint = { r = 1.0, g = 1.0, b = 1.0 }, zIndex = 0 };
+        let style = { padLeft = 8.0, padTop = 8.0, padRight = 8.0, padBottom = 8.0 | Flex.columnStyle() };
+        let inner = TextDraw.wrappedSize("AAAAA", atlas, 1.0, 35.0);
+        // root の大きさは rootRect に上書きされるので、窓は外側の箱の子に置いて測る。
+        let root = Flex.box(Flex.columnStyle(),
+                            Flex.keyed("window", Flex.box(style, Flex.wrappedText(look, "AAAAA") :: Nil)) :: Nil);
+        let r = Map.getWithDefault("window", { position = { x = 0.0, y = 0.0 }, size = { x = 0.0, y = 0.0 } },
+                                   Flex.rectsOf(root, { position = { x = 0.0, y = 0.0 }, size = { x = 200.0, y = 200.0 } }));
+        Assert.assertEq(expected = inner#y + 16.0, r#size#y)
 }

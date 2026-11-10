@@ -147,6 +147,7 @@ mod TestDeterminism {
             def getMousePosition(k)        = k(Vec2.zero())
             def isMouseButtonPressed(_, k) = k(false)
             def isGamepadTouched(k)        = k(false)
+            def gamepadSticks(k)           = k({ left = Vec2.zero(), right = Vec2.zero() })
             def gamepadKind(k)             = k(GamepadMap.PadKind.Unknown)
             def consumeScrollDelta(k)      = k(0.0)
             def consumeMouseDelta(k)       = k(Vec2.zero())
@@ -174,6 +175,52 @@ mod TestDeterminism {
                 Assert.assertEq(expected = ((0.5, false, 0.0) :: (0.5, true, 0.0) :: (0.5, false, 2.0) :: (0.5, false, 0.0) :: Nil, true),
                                 (seen, App.Internal.InputScript.isFinished(player)))
         }
+
+    // InputScript の lstick= / rstick= は、系が読む前の Platform.Input.gamepadSticks に戻る（実機のランナーが毎コマ読む op）。
+    @Test
+    def testDriveAnswersSticksFromScript(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/script-sticks.flow";
+        writeScript(path, "ready off\nwait 1f lstick=0.5,-0.25 rstick=0.0,1.0\nwait 1f\n");
+        match App.Internal.InputScript.load(path) {
+            case Err(why) => bug!(why)
+            case Ok(player) =>
+                let seen = outside(() -> App.Internal.InputScript.drive(player, () ->
+                    List.range(0, 2) |> List.map(_ -> {
+                        discard Platform.FrameClock.getDeltaTime();
+                        let sticks = Platform.Input.gamepadSticks();
+                        ((sticks#left#x, sticks#left#y), (sticks#right#x, sticks#right#y))
+                    })));
+                Assert.assertEq(expected = (((0.5, -0.25), (0.0, 1.0)) :: ((0.0, 0.0), (0.0, 0.0)) :: Nil), seen)
+        }
+
+    /// 見た Frame のスティックを足していく World（左の x と y・右の x と y）。
+    def stickApp(): App.App[List[(Float64, Float64, Float64, Float64)], {}] =
+        App.make(Nil) |> App.addSystem((frame, seen) ->
+            List.append(seen, (frame#leftStick#x, frame#leftStick#y, frame#rightStick#x, frame#rightStick#y) :: Nil))
+
+    def stickFrames(): List[App.Frame] =
+        { leftStick = { x = 0.5, y = -0.25 }, dt = 0.02 | App.emptyFrame() } ::
+        { dt = 0.02 | App.emptyFrame() } ::
+        { rightStick = { x = -1.0, y = 0.0625 }, dt = 0.02 | App.emptyFrame() } :: Nil
+
+    // 記録に残したスティックは、再生で同じ値の Frame が系へ届く。
+    @Test
+    def testRecordedSticksReplay(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/sticks.flow";
+        recordInto(path, stickFrames());
+        Assert.assertEq(expected = Ok((0.5, -0.25, 0.0, 0.0) :: (0.0, 0.0, 0.0, 0.0) :: (0.0, 0.0, -1.0, 0.0625) :: Nil),
+                        replayed(stickApp(), Nil, path))
+
+    // (0, 0) のコマには lstick= も rstick= も書かない（スティックを使わない記録の字は変わらない）。
+    @Test
+    def testRecordOmitsZeroSticks(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/sticks-zero.flow";
+        recordInto(path, stickFrames());
+        let lines = Fs.FileRead.readLines(path) |> Result.getWithDefault(Nil);
+        let withLeft = List.count(line -> String.contains(substr = "lstick=0.5,-0.25", line), lines);
+        let withRight = List.count(line -> String.contains(substr = "rstick=-1.0,0.0625", line), lines);
+        let anyStick = List.count(line -> String.contains(substr = "stick=", line), lines);
+        Assert.assertEq(expected = (1, 1, 2), (withLeft, withRight, anyStick))
 
     // ========================================================================
     // ギャラリーの場面の始まり（App.withShots）

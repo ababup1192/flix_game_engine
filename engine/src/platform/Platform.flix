@@ -26,6 +26,9 @@ pub mod Platform {
         /// 1 台目のゲームパッドの機種（Xbox 配置の一般・Steam Input を通した物・つないでいない）。
         /// App が Frame#padKind に置く。
         def gamepadKind(): GamepadMap.PadKind
+        /// 1 台目のゲームパッドの左右のスティック。遊び（デッドゾーン）を外した値（GamepadMap.stickOf）で、長さ 0..1・右が +x・上が +y。
+        /// つないでいない・読めない時は (0, 0)。読むだけで消費しない（押しっぱなしの状態）。App が Frame#leftStick・rightStick に置く。
+        def gamepadSticks(): { left = Vec2.Vec2, right = Vec2.Vec2 }
         /// 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
         /// 内部アキュムレータを 0 にリセットする。1 ティックぶんの値が +1.0 / -1.0 程度
         /// （プラットフォーム依存）。スクロールアップで正、ダウンで負。

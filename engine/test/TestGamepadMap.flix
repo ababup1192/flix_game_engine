@@ -86,3 +86,42 @@ def testSdlValveVendorIsSteam(): Unit \ Assert =
 @Test
 def testSdlOtherVendorIsGeneric(): Unit \ Assert =
     Assert.assertEq(expected = GamepadMap.PadKind.Generic, GamepadMap.kindOfVendor(0x045e, "Xbox Series X Controller"))
+
+/// 遊びの中は (0, 0)（軸ごとでなく長さで見る: (0.1, 0.1) は長さ 0.14 で遊びの中）
+@Test
+def testStickInsideDeadzoneIsZero(): Unit \ Assert =
+    Assert.assertEq(expected = ((0.0, 0.0), (0.0, 0.0)),
+                    (pairOf(GamepadMap.stickOf(0.18, 0.1, 0.1)), pairOf(GamepadMap.stickOf(0.18, -0.17, 0.0))))
+
+def pairOf(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
+
+/// 遊びの境目のすぐ外は長さがほぼ 0（そこから 1 まで伸ばし直すので、境目で値が跳ばない）
+@Test
+def testStickJustOutsideDeadzoneIsNearZero(): Unit \ Assert =
+    let v = GamepadMap.stickOf(0.18, 0.19, 0.0);
+    Assert.assertTrue(v#x > 0.0 and v#x < 0.02)
+
+/// いっぱいまで倒すと長さ 1、それ以上の生の値（斜めの角で 1 を超える）も 1 で頭打ち
+@Test
+def testStickFullTiltHasLengthOne(): Unit \ Assert =
+    let straight = Vec2.length(GamepadMap.stickOf(0.18, 1.0, 0.0));
+    let corner = Vec2.length(GamepadMap.stickOf(0.18, 1.0, 1.0));
+    Assert.assertEq(expected = (1.0, true), (straight, Float64.abs(corner - 1.0) < 0.0001))
+
+/// 斜め 45 度は向きが保たれる（x と y の大きさが同じ）
+@Test
+def testStickKeepsDiagonalDirection(): Unit \ Assert =
+    let v = GamepadMap.stickOf(0.18, 0.6, 0.6);
+    Assert.assertEq(expected = true, Float64.abs(v#x - Float64.abs(v#y)) < 0.0001 and v#x > 0.0)
+
+/// 生の軸は下が正なので、-1（上いっぱい）は +y になる。右は +x のまま
+@Test
+def testStickRawUpBecomesPositiveY(): Unit \ Assert =
+    Assert.assertEq(expected = ((0.0, 1.0), (1.0, 0.0)),
+                    (pairOf(GamepadMap.stickOf(0.18, 0.0, -1.0)), pairOf(GamepadMap.stickOf(0.18, 1.0, 0.0))))
+
+/// 小数 4 桁に丸め、-0 は出さない（遊んだ記録の字と同じ精度）
+@Test
+def testStickIsRoundedToFourDigits(): Unit \ Assert =
+    let v = GamepadMap.stickOf(0.0, 0.123456, 0.0);
+    Assert.assertEq(expected = ("0.1235", "0.0"), (Float64.toString(v#x), Float64.toString(v#y)))

@@ -130,6 +130,10 @@ pub mod Flow.Record {
             case None       => ()
         }
 
+    /// スティックの付け足し（` lstick=x,y`）。(0, 0) の時は何も書かない。
+    def stickText(name: String, v: Vec2.Vec2): String =
+        if (v#x == 0.0 and v#y == 0.0) "" else " ${name}=${Float64.toString(v#x)},${Float64.toString(v#y)}"
+
     /// 実機のフレーム 1 つ（App.traceFrame に渡した Frame そのもの）と、そのフレームの後の指紋の元。
     /// 60 フレームごとに expect fp= と、指紋の元の文字のコメントを書く。
     pub def frame(rec: Recorder, frame: App.Frame, fingerprint: Option[String]): Unit \ IO =
@@ -156,6 +160,8 @@ pub mod Flow.Record {
             (if (not Set.isEmpty(others)) " mouse=${buttonsText(frame#mouseButtons)}" else if (frame#mouseDown) " mouse" else "") +
             (if (frame#wheel != 0.0) " wheel=${Float64.toString(frame#wheel)}" else "") +
             (if (frame#padTouched) " pad" else "") +
+            stickText("lstick", frame#leftStick) +
+            stickText("rstick", frame#rightStick) +
             (if (kindDiffers) " padkind=${Flow.padKindName(frame#padKind)}" else "") +
             (if (frame#windowFocused != st#focused) (if (frame#windowFocused) " focus=1" else " focus=0") else "") +
             (if (frame#justPressed != derivedNew) " new=${keysText(frame#justPressed)}" else "") +

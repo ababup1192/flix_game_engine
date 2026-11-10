@@ -32,6 +32,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 押す物を見た目の手前から選ぶ（窓の奥を押させない） | 描く木に `ZStack.hit` / `modal` → `SortingLayer.pickFrom` |
 | UI のクリックを描いた所で当てる（字の下に並ぶボタン・字だけの項目） | `UiFocus.hitTestUiWith(atlasOf, ..)`・`UiFocusNav.targetsOfUiWith`（atlasOf は描く時と同じ） |
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
+| 会話の窓・通知の帯の高さを、折り返す文章の行数に合わせる（固定の px で書くと 2 行目が下枠に被る） | `Flex.box`（pad つき）の子に `Flex.wrappedText(look, 文)`・文字送りの途中でも窓を変えないなら `Flex.wrappedTextShowing(look, 全文, 見せる分)`。寸法だけなら `TextDraw.wrappedSize(文, atlas, fontSize, wrapWidth)` |
 | 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
 | 3D の場面を窓の画素で描く・白飛びを HDR とトーンマップで収める・縁を FXAA でならす | `RenderTarget.windowDescriptor()` / `withHdr` の Pass → 本編の面を `PostProcess.tonemappedWith` → 8bit の Pass を `PostProcess.fxaaSpec`（1 で切って白飛びを抑えない） |
@@ -44,6 +45,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の絵が多く「場面の絵が 256 MB を超えて使われている」と出る | `Gltf.loadTexturedUsing(dec, { normal = 1024 \| Gltf.noTextureLimits() }, path)`・`Texture3d.limitSize(1024)` で縮める → それでも足りなければ project.json の `scene3dTextureBudgetMB`・枚数は `scene3dTextureBudgetCount` |
 | 懐中電灯（縁のぼけたスポット）を目から照らす | `Scene3d.spotLight(p, t, fov)` に `innerFovY = Some(..)`（縁を広くぼかす）を `spotLights` へ（点光源で代わりにしない・円錐を広げて range で縁を消さない・engine の `docs/scene3d.md`） |
 | 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない）。落とした数は `ctx#diagnostics`（View・HUD）の `scene3dCounts#droppedPointLights` / `droppedSpotLights`（初めて落とした時に 1 回知らせる）・画面なしのテストでは `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`（GL と CPU で同じ数） |
+| パッドのスティックで 360 度に動かす・右スティックでカメラを回す（キーの 8 方向でなく倒した向きと強さ） | `frame#leftStick` / `frame#rightStick`（長さ 0..1・右が +x・上が +y・遊びは外した値・つないでいなければ (0, 0)）を速さと向きに掛ける。上下左右のキーへの読み替えも残る・遊んだ記録は `lstick=` / `rstick=`（engine の `docs/modules/input.md`） |
 | 一人称でマウスで視点を回す（カーソルを窓にキャプチャする） | `App.withMouseCapture(w -> ..)` + `frame#mouseDelta`（design px）で yaw・pitch を回す。クリックでキャプチャ・Esc で放す（ドラッグの差で代わりにしない・engine の `docs/modules/input.md` の「一人称の視点」） |
 | テストで入力・窓・描く op を偽物にする・機種の handler を自分で書く | 触る役の effect だけを張る: `Platform.Input`・`Platform.Window`・`Platform.FrameClock`・`Platform.Draw2d`・`Platform.Draw3d`・`Platform.GpuResources`・`Platform.Diagnostics`・`Platform.Annotation`（handler は effect ごとに 1 つずつ書く・`Input` は必ず `Platform.Input` と書く） |
 | 自分で `renderCommands` を呼んで窓へ出す（bench・自前のループ） | `Platform.Draw2d.renderCommands` の後に `Platform.Window.presentFrame()`（1 フレームの終わりに 1 回・`renderCommands` は swap しない）。イベントの取り込みは 1 フレームに 1 回 `Platform.Window.pollEvents()`（`shouldClose` は問うだけ） |

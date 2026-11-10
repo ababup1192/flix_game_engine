@@ -73,6 +73,11 @@ pub mod Mat4 {
                         c20 * s, c21 * s, c22 * s, 0.0,
                         0.0,     0.0,     0.0,     1.0 })
 
+    /// 行優先の 16 個（cells[row * 4 + col]）。見方を変えるだけで写さない（判定の熱い所が 1 点ずつ record を作らずに引くため）。
+    pub def asRows(m: Mat4): Vector[Float64] =
+        let Mat4Data.Mat4Data(x) = m;
+        x
+
     /// GL の uniform（glUniformMatrix4fv の transpose = false）に渡す列優先の 16 個。
     pub def toColumns(m: Mat4): Vector[Float64] =
         let Mat4Data.Mat4Data(x) = m;

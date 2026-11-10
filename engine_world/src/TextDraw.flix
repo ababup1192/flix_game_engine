@@ -21,6 +21,14 @@ pub mod TextDraw {
     pub def size(text: String, atlas: FontAtlas, size: Float64): Vec2.Vec2 =
         Text.measure(Text.make(text, atlas, size))
 
+    /// `wrapWidth` で折り返して描いたときの寸法（幅 = 一番長い行・高さ = 行数 × 行の高さ）。
+    /// 折り方は `Render.textWrapped` が描く時と同じ `Text.measure` に委ねる（規則を 2 か所に書かない）。
+    /// 字の改行（`\n`）も行に数える。空の字は何も描かないので高さも 0。
+    /// 窓の高さを中の文章に合わせたい時に使う（`Flex.wrappedText` はこれで葉の大きさを決める）。
+    pub def wrappedSize(text: String, atlas: FontAtlas, fontSize: Float64, wrapWidth: Float64): Vec2.Vec2 =
+        if (text == "") { x = 0.0, y = 0.0 }
+        else Text.measure(Text.make(text, atlas, fontSize) |> Text.setWrapWidth(Some(wrapWidth)))
+
     /// `text` を `centerX` に水平中央で揃えたときの左端 x。中央寄せは「幅の半分だけ左へ
     /// ずらす」だけなので、それを名付けて返す。描画アイテムを作らず座標だけ欲しい宣言 UI
     /// （setAbs 系で位置を渡す）から呼べる。

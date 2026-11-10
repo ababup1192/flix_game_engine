@@ -398,6 +398,7 @@ pub mod GlOffscreen {
             def getMousePosition(k) = k(Vec2.zero())
             def isMouseButtonPressed(_button, k) = k(false)
             def isGamepadTouched(k) = k(false)
+            def gamepadSticks(k) = k({ left = Vec2.zero(), right = Vec2.zero() })
             def gamepadKind(k) = k(GamepadMap.PadKind.Unknown)
             def consumeScrollDelta(k) = k(0.0)
             def consumeMouseDelta(k) = k(Vec2.zero())

@@ -10,6 +10,7 @@ pub mod WebLayer {
     import fge.web.AnimationFrame
     import fge.web.Browser
     import fge.web.Deferred
+    import fge.web.Gamepads
     import fge.web.Keys
     import fge.web.Pointer
     import fge.web.WebAudio
@@ -201,6 +202,8 @@ pub mod WebLayer {
             def getMousePosition(k) = k(canvasToDesign(st#design, Pointer.x(), Pointer.y()))
             def isMouseButtonPressed(button, k) = k(Pointer.isDown(buttonIndex(button)))
             def isGamepadTouched(k) = k(false)
+            def gamepadSticks(k) = k({ left = GamepadMap.stickOf(GamepadMap.defaultDeadzone(), Gamepads.axis(0), Gamepads.axis(1)),
+                                       right = GamepadMap.stickOf(GamepadMap.defaultDeadzone(), Gamepads.axis(2), Gamepads.axis(3)) })
             def gamepadKind(k) = k(GamepadMap.PadKind.Unknown)
             def consumeScrollDelta(k) = k(Pointer.consumeWheel())
             def consumeMouseDelta(k) = {

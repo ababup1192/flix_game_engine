@@ -304,6 +304,15 @@ mod LwjglInput {
         case GamepadMap.PadInput.Start      => padButton(pad, GLFW.GLFW_GAMEPAD_BUTTON_START)
     }
 
+    /// 左（軸 0・1）と右（軸 2・3）のスティック。遊びを外し、上が +y に直した値。つないでいなければ (0, 0)。
+    def padSticks(pad: Pad): { left = Vec2.Vec2, right = Vec2.Vec2 } \ IO =
+        if (not Array.get(0, pad#connected)) { left = Vec2.zero(), right = Vec2.zero() }
+        else {
+            let stick = (xAxis: Int32) ->
+                GamepadMap.stickOf(GamepadMap.defaultDeadzone(), Float32.toFloat64(padAxis(pad, xAxis)), Float32.toFloat64(padAxis(pad, xAxis + 1)));
+            { left = stick(GLFW.GLFW_GAMEPAD_AXIS_LEFT_X), right = stick(GLFW.GLFW_GAMEPAD_AXIS_RIGHT_X) }
+        }
+
     /// 物理キーに当てたパッドの入力が押されているか（対応は GamepadMap.table・1 ボタン = 1 キー）。
     def padPressed(pad: Pad, key: GameEngine.Key): Bool \ IO =
         Array.get(0, pad#connected) and
@@ -366,6 +375,7 @@ mod LwjglInput {
                     k(pushed or tilted)
                 }
             def gamepadKind(k) = k(Array.get(0, d#pad#kind))
+            def gamepadSticks(k) = k(padSticks(d#pad))
             def consumeScrollDelta(k) = {
                 let v = Array.get(0, d#scrollDelta);
                 Array.put(0.0, 0, d#scrollDelta);

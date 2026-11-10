@@ -57,6 +57,24 @@ pub mod GamepadMap {
         if (vendor == 0x28de or String.contains(substr = "Steam", name)) PadKind.Steam
         else PadKind.Generic
 
+    /// スティックの生の軸（GLFW・SDL とも右が +・下が +）から、遊び（デッドゾーン）を外した向きと強さを返す。右が +x・上が +y。
+    /// 丸い遊び: 長さが deadzone 以下なら (0, 0)・超えたら (長さ - deadzone) / (1 - deadzone) へ伸ばし直して向きは保つ。長さは 1 で頭打ち。
+    /// 小数 4 桁に丸めて返す（遊んだ記録の字と同じ精度にして、実機と再生で同じ値にする。-0 は 0 にそろえる）。
+    /// WhyNot: 軸ごとに切らない — 斜めが強く出て、十字に吸い付く。
+    pub def stickOf(deadzone: Float64, rawX: Float64, rawY: Float64): Vec2.Vec2 =
+        let len = Num.sqrt(rawX * rawX + rawY * rawY);
+        if (len <= deadzone or len <= 0.0) Vec2.zero()
+        else {
+            let stretched = Float64.min(1.0, (len - deadzone) / (1.0 - deadzone));
+            { x = round4(rawX / len * stretched), y = round4(-rawY / len * stretched) }
+        }
+
+    /// 小数 4 桁に丸める（-0 は 0 にそろえる）。
+    pub def round4(v: Float64): Float64 = Float64.round(v * 10000.0) / 10000.0 + 0.0
+
+    /// スティックの遊びの既定（0.18）。
+    pub def defaultDeadzone(): Float64 = 0.18
+
     /// GUID の USB のベンダー（4 字の 16 進・小文字）。9〜12 字目に 2 バイトが小さい方から並ぶ。形が違えば None。
     def vendorOf(guid: String): Option[String] =
         if (String.length(guid) != 32) None

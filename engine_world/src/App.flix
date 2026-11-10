@@ -43,6 +43,10 @@ pub mod App {
                                            // 読み替えの表は GamepadMap.table）
         padKind = GamepadMap.PadKind,      // つないだパッドの機種（Generic = Xbox 配置の一般・Steam = Steam Input を通した物・
                                            // Unknown = つないでいない）。案内に出すボタンの絵を機種で替える判断に
+        leftStick = Vec2.Vec2,             // 左スティックの倒した向きと強さ（長さ 0..1・右が +x・上が +y。画面の座標と違い上が正）。遊び（デッドゾーン）は
+                                           // 外した値で、つないでいない時は (0, 0)。上下左右のキーへの読み替えも今までどおり残る。1 台目のパッドだけ。
+                                           // 小数 4 桁に丸めてある（実機と再生で同じ値になる）
+        rightStick = Vec2.Vec2,            // 右スティック。leftStick と同じ決まり
         mouseDelta = Vec2.Vec2,            // 前のフレームからマウスが動いた量（design px・小数・右と下が正）。withMouseCapture で
                                            // キャプチャしている間も窓の端で止まらずに出る（一人称の視点はこれで回す。cursor の差で回さない）。
                                            // キャプチャを切り替えた拍・フォーカスが戻った拍は 0
@@ -947,6 +951,7 @@ pub mod App {
     /// mouseButtons・mouseClickedButtons は左だけで組む（右と中も読むなら withMouseButtons で置き直す）。
     /// mouseDelta は前フレームとの座標の差（最初のフレームは 0。実機のループはキャプチャしても出るバックエンドの量で置き直す）。
     /// realNow は 0 秒で組み、advanceFrame が StepState の実時間の時計で置き直す。
+    /// leftStick・rightStick は (0, 0) で組む（実機のループが置き直す）。
     /// windowFocused は真・sizeClass は Large・diagnostics は None で組む（実機のループが置き直す）。
     pub def frameOf(prev: {prev = Set[GameEngine.Key]},
                     current: {current = Set[GameEngine.Key]}, dt: Float64,
@@ -967,6 +972,8 @@ pub mod App {
           realNow = Clock.zero(),
           padTouched = false,
           padKind = GamepadMap.PadKind.Unknown,
+          leftStick = Vec2.zero(),
+          rightStick = Vec2.zero(),
           mouseDelta = App.Internal.Frame.cursorDelta(cursor#prevCursor, cursor#cursor),
           windowFocused = true,
           sizeClass = Display.SizeClass.Large,

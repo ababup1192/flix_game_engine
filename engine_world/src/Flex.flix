@@ -35,6 +35,22 @@ pub mod Flex {
     pub def leaf(size: Vec2.Vec2, draw: Rect2.Rect2 -> List[Render.PlacedItem]): Node =
         Node.Leaf({ size = size, draw = draw })
 
+    /// 折り返す文章の葉。大きさは `TextDraw.wrappedSize` で決まるので、`box`（pad つき）の子に置けば
+    /// 窓の高さが行数に合わせて伸びる。左上を rect の左上に合わせて描く。
+    pub def wrappedText(look: { atlas = FontAtlas, fontSize = Float64, wrapWidth = Float64,
+                                tint = Color, zIndex = Int32 }, text: String): Node =
+        wrappedTextShowing(look, text, text)
+
+    /// `wrappedText` の文字送り版。大きさは全文 `full` で測り、描くのは見せる分 `shown` だけ。
+    /// 途中まで出している間も窓が伸び縮みしない。
+    pub def wrappedTextShowing(look: { atlas = FontAtlas, fontSize = Float64, wrapWidth = Float64,
+                                       tint = Color, zIndex = Int32 }, full: String, shown: String): Node =
+        leaf(TextDraw.wrappedSize(full, look#atlas, look#fontSize, look#wrapWidth),
+             r -> { at = r#position,
+                    item = Render.textWrapped(shown, look#atlas,
+                                              { fontSize = look#fontSize, wrapWidth = look#wrapWidth,
+                                                tint = look#tint, zIndex = look#zIndex }) } :: Nil)
+
     /// 「中心座標を受けて描く」既存語彙（Render.*At 系）をそのまま挿せる近道。
     pub def leafAtCenter(size: Vec2.Vec2, make: Vec2.Vec2 -> List[Render.PlacedItem]): Node =
         leaf(size, r -> make(Rect2.center(r)))

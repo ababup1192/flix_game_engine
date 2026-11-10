@@ -335,7 +335,7 @@ func mouseButtonSet(text string) string {
 }
 
 func opts(v Vocab, words []string) string {
-	known := []string{"ns=", "dt=", "at=", "look=", "mouse", "mouse=", "wheel=", "pad", "keys=", "new=", "click", "click=", "moved", "focus=", "padkind="}
+	known := []string{"ns=", "dt=", "at=", "look=", "mouse", "mouse=", "wheel=", "pad", "lstick=", "rstick=", "keys=", "new=", "click", "click=", "moved", "focus=", "padkind="}
 	for _, word := range words {
 		switch {
 		case word == "mouse", word == "pad", word == "click", word == "noclick", word == "moved", word == "still":
@@ -372,12 +372,15 @@ func opts(v Vocab, words []string) string {
 			default:
 				return fmt.Sprintf("padkind は generic・steam・unknown（'%s'）", value)
 			}
-		case strings.HasPrefix(word, "at="), strings.HasPrefix(word, "look="):
+		case strings.HasPrefix(word, "at="), strings.HasPrefix(word, "look="), strings.HasPrefix(word, "lstick="), strings.HasPrefix(word, "rstick="):
 			name := word[:strings.Index(word, "=")]
 			xy := strings.Split(word[len(name)+1:], ",")
 			if len(xy) != 2 {
-				if name == "look" {
+				switch name {
+				case "look":
 					return "look は look=dx,dy"
+				case "lstick", "rstick":
+					return name + " は " + name + "=x,y"
 				}
 				return "at は at=x,y"
 			}

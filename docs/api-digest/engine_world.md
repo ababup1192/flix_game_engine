@@ -123,7 +123,7 @@
 - App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
   `pub def rec(app: App[w, ef]): Rec[w, ef]`
 - このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
-  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseButtons = Set[GameEngine.MouseButton], mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind, mouseDelta = Vec2.Vec2, windowFocused = Bool, sizeClass = Display.SizeClass, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
+  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseButtons = Set[GameEngine.MouseButton], mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind, leftStick = Vec2.Vec2, rightStick = Vec2.Vec2, mouseDelta = Vec2.Vec2, windowFocused = Bool, sizeClass = Display.SizeClass, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
 - key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
   `pub def isDown(key: GameEngine.Key, frame: Frame): Bool`
 - key がこのフレームで新しく押されたか（押しっぱなしは false）。決定・発射などの単発入力に。
@@ -1111,6 +1111,10 @@
   `pub enum Node { case Leaf({ size = Vec2.Vec2, draw = Rect2.Rect2 -> List[Render.PlacedItem] }) case Box({ style = UiLayout.Style, draw = Option[Rect2.Rect2 -> List[Render.PlacedItem]], children = List[Node] }) case Keyed({ key = String, inner = Node }) }`
 - 実寸 size の葉。draw はレイアウト確定後の rect（左上原点）を受け取る。
   `pub def leaf(size: Vec2.Vec2, draw: Rect2.Rect2 -> List[Render.PlacedItem]): Node`
+- 折り返す文章の葉。大きさは `TextDraw.wrappedSize` で決まるので、`box`（pad つき）の子に置けば
+  `pub def wrappedText(look: { atlas = FontAtlas, fontSize = Float64, wrapWidth = Float64, tint = Color, zIndex = Int32 }, text: String): Node`
+- `wrappedText` の文字送り版。大きさは全文 `full` で測り、描くのは見せる分 `shown` だけ。
+  `pub def wrappedTextShowing(look: { atlas = FontAtlas, fontSize = Float64, wrapWidth = Float64, tint = Color, zIndex = Int32 }, full: String, shown: String): Node`
 - 「中心座標を受けて描く」既存語彙（Render.*At 系）をそのまま挿せる近道。
   `pub def leafAtCenter(size: Vec2.Vec2, make: Vec2.Vec2 -> List[Render.PlacedItem]): Node`
 - style で子を並べる容器。
@@ -1167,7 +1171,7 @@
 - 長さ: 秒（fps でフレーム数に丸める）かフレーム数。
   `pub enum Span with Eq, ToString { case Secs(Float64) case Frames(Int32) }`
 - フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
-  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool], focus = Option[Bool], padKind = Option[GamepadMap.PadKind] }`
+  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool, lstick = Vec2.Vec2, rstick = Vec2.Vec2, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool], focus = Option[Bool], padKind = Option[GamepadMap.PadKind] }`
 - `pub def noOpt(): Opt`
 - 書いていない間のパッドの機種（pad の付け足しから出す。記録の Flow.Record も同じ物で書くかを決める）。
   `pub def padKindOf(touched: Bool): GamepadMap.PadKind`
@@ -2402,6 +2406,8 @@
   `pub def width(text: String, atlas: FontAtlas, size: Float64): Float64`
 - 与えた atlas 上で `text` を `size` で描いたときの幅と高さ（ピクセル、Vec2）。
   `pub def size(text: String, atlas: FontAtlas, size: Float64): Vec2.Vec2`
+- `wrapWidth` で折り返して描いたときの寸法（幅 = 一番長い行・高さ = 行数 × 行の高さ）。
+  `pub def wrappedSize(text: String, atlas: FontAtlas, fontSize: Float64, wrapWidth: Float64): Vec2.Vec2`
 - `text` を `centerX` に水平中央で揃えたときの左端 x。中央寄せは「幅の半分だけ左へ
   `pub def centerLeft(text: String, atlas: FontAtlas, size: Float64, centerX: Float64): Float64`
 - 一行が `centerX` に水平中央で揃い、上端が `y` になるよう配置したテキスト描画

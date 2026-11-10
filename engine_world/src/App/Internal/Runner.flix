@@ -261,8 +261,9 @@ pub mod App.Internal.Runner {
         let dt = readDt();
         let cursorNow = App.Internal.Frame.heldCursor(st0#captureShown, st0#prevCursor, Platform.Input.getMousePosition());
         let held = mouseButtonsHeld();
+        let sticks = Platform.Input.gamepadSticks();
         App.withMouseButtons(st0#prevMouseButtons, held, { realNow = Clock.nowOf(st0#stepState#real), padTouched = Platform.Input.isGamepadTouched(),
-          padKind = Platform.Input.gamepadKind(), mouseDelta = Platform.Input.consumeMouseDelta(),
+          padKind = Platform.Input.gamepadKind(), leftStick = sticks#left, rightStick = sticks#right, mouseDelta = Platform.Input.consumeMouseDelta(),
           windowFocused = Platform.Input.isWindowFocused(), sizeClass = Platform.Window.getDisplay()#sizeClass,
           diagnostics = st0#lastDiagnostics
           | App.frameOf(prev = st0#prevKeys, current = InputEvent.currentKeys(), dt,

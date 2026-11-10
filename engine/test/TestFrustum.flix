@@ -39,6 +39,25 @@ mod TestFrustum {
             (Frustum.intersectsBox(f, min, max, Mat4.translate(Vec3.v3(10.0, 0.0, 10.0))),
              Frustum.intersectsBox(f, min, max, Mat4.translate(Vec3.v3(13.0, 0.0, 10.0)))))
 
+    /// 回した箱: x に長い箱（x ±3・z ±1）を (14.1, 0, 10) に置く。そのままは横の面の外・+45° 回すと角が面の内側へ入って中・−45° は外のまま
+    /// （回す向きを取り違えて行列を転置すると、この 2 つが入れ替わる）。
+    @Test
+    def testRotatedBoxFollowsTheMatrix(): Unit \ Assert =
+        let f = frustum();
+        let min = Vec3.v3(-3.0, -1.0, -1.0);
+        let max = Vec3.v3(3.0, 1.0, 1.0);
+        let at = Mat4.translate(Vec3.v3(14.1, 0.0, 10.0));
+        let quarter = Num.pi() / 4.0;
+        Assert.assertEq(expected = (false, true, false),
+            (Frustum.intersectsBox(f, min, max, at), Frustum.intersectsBox(f, min, max, Mat4.mul(at, Mat4.rotateY(quarter))),
+             Frustum.intersectsBox(f, min, max, Mat4.mul(at, Mat4.rotateY(0.0 - quarter)))))
+
+    /// asRows は行優先の 16 個（平行移動は 3・7・11 番目）。
+    @Test
+    def testAsRowsIsRowMajor(): Unit \ Assert =
+        let rows = Mat4.asRows(Mat4.translate(Vec3.v3(5.0, 6.0, 7.0)));
+        Assert.assertEq(expected = (16, 5.0, 6.0, 7.0), (Vector.length(rows), Vector.get(3, rows), Vector.get(7, rows), Vector.get(11, rows)))
+
     /// 球は半径の分だけ外へ届く: 中心が横の面から 2 の所の半径 3 は中・半径 1 は外。
     @Test
     def testSphereReachesByRadius(): Unit \ Assert =

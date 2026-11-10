@@ -71,6 +71,7 @@ pub mod App.Internal.InputScript {
             def isMouseButtonPressed(b, k)    = k(Set.memberOf(b, current(p)#mouseButtons))
             def isGamepadTouched(k)           = k(current(p)#padTouched)
             def gamepadKind(k)                = k(current(p)#padKind)
+            def gamepadSticks(k)              = k({ left = current(p)#leftStick, right = current(p)#rightStick })
             def consumeScrollDelta(k)         = k(takeWheel(p))
             def consumeMouseDelta(k)          = k(takeDelta(p))
             def isWindowFocused(k)            = k(current(p)#windowFocused)

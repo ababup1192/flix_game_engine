@@ -180,18 +180,20 @@ pub mod Flow {
 
     /// フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
     /// at = マウスの位置・look = マウスの動いた量（App.Frame の mouseDelta。キャプチャ中は at が止まるので位置の差から出ない時だけ）・
+    /// lstick / rstick = スティックの倒し方（Frame の leftStick / rightStick・長さ 0..1・上が +y・書かなければ (0, 0)）・
     /// mouse = 左ボタンを押している・otherButtons = 押している右と中のボタン・wheel = ホイール・pad = パッドに触っている・
     /// keys = 押しているキーの丸ごと・pressed / click / moved = 前のフレームとの差分から出ない押した瞬間・左のクリック・動き・
     /// otherClicks = 同じく右と中のクリック。focus = 窓のフォーカス（Frame#windowFocused）・padKind = パッドの機種（Frame#padKind）は、
     /// 変わった行にだけ書き、次に書くまで続く（書かなければ focus は真・機種は pad から出す: pad なら Generic、無ければ Unknown）。
     pub type alias Opt = {
         ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool,
+        lstick = Vec2.Vec2, rstick = Vec2.Vec2,
         keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool],
         focus = Option[Bool], padKind = Option[GamepadMap.PadKind]
     }
 
     pub def noOpt(): Opt =
-        { ns = Nil, dt = None, at = None, look = None, mouse = false, otherButtons = Set.empty(), wheel = 0.0, pad = false,
+        { ns = Nil, dt = None, at = None, look = None, mouse = false, otherButtons = Set.empty(), wheel = 0.0, pad = false, lstick = Vec2.zero(), rstick = Vec2.zero(),
           keys = None, pressed = None, click = None, otherClicks = None, moved = None, focus = None, padKind = None }
 
     /// 書いていない間のパッドの機種（pad の付け足しから出す。記録の Flow.Record も同じ物で書くかを決める）。
@@ -525,6 +527,7 @@ pub mod Flow {
                           mouseClickedButtons = withLeft(leftClicked, otherClicks),
                           mouseMoved = opt#moved |> Option.getWithDefault(moved),
                           wheel = opt#wheel, padTouched = opt#pad,
+                          leftStick = opt#lstick, rightStick = opt#rstick,
                           padKind = padKind |> Option.getWithDefault(padKindOf(opt#pad)),
                           windowFocused = focused,
                           mouseDelta = opt#look |> Option.getWithDefault(App.Internal.Frame.cursorDelta(hand#prevCursor, cursor))

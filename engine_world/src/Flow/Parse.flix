@@ -222,6 +222,14 @@ pub mod Flow.Parse {
                 case x :: y :: Nil => forM (a <- number(x); b <- number(y)) yield { look = Some({ x = a, y = b }) | opt }
                 case _             => Err("look は look=dx,dy")
             }
+            else if (String.startsWith(prefix = "lstick=", word)) match String.splitOn({substr = ","}, valueOf("lstick=")) {
+                case x :: y :: Nil => forM (a <- number(x); b <- number(y)) yield { lstick = { x = GamepadMap.round4(a), y = GamepadMap.round4(b) } | opt }
+                case _             => Err("lstick は lstick=x,y")
+            }
+            else if (String.startsWith(prefix = "rstick=", word)) match String.splitOn({substr = ","}, valueOf("rstick=")) {
+                case x :: y :: Nil => forM (a <- number(x); b <- number(y)) yield { rstick = { x = GamepadMap.round4(a), y = GamepadMap.round4(b) } | opt }
+                case _             => Err("rstick は rstick=x,y")
+            }
             else if (String.startsWith(prefix = "focus=", word)) match valueOf("focus=") {
                 case "1" => Ok({ focus = Some(true) | opt })
                 case "0" => Ok({ focus = Some(false) | opt })
@@ -230,7 +238,7 @@ pub mod Flow.Parse {
             else if (String.startsWith(prefix = "padkind=", word))
                 Flow.padKindNamed(valueOf("padkind=")) |> Option.toOk("padkind は generic・steam・unknown（'${valueOf("padkind=")}'）")
                     |> Result.map(kind -> { padKind = Some(kind) | opt })
-            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "look=" :: "mouse" :: "mouse=" :: "wheel=" :: "pad" :: "keys=" :: "new=" :: "click" :: "click=" :: "moved" :: "focus=" :: "padkind=" :: Nil)}")
+            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "look=" :: "mouse" :: "mouse=" :: "wheel=" :: "pad" :: "lstick=" :: "rstick=" :: "keys=" :: "new=" :: "click" :: "click=" :: "moved" :: "focus=" :: "padkind=" :: Nil)}")
         }), Ok(Flow.noOpt()))
 
     /// 問いの式: 名前（真偽）・!式・式&式・名前<数（< <= = >= > !=）・名前=文字。

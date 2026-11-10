@@ -7,7 +7,11 @@ pub mod Frustum {
     /// 面 1 つ = 内向きの法線 n（長さ 1）と d。点 p は n·p + d ≧ −margin の時に面の内側。
     type alias Plane = { nx = Float64, ny = Float64, nz = Float64, d = Float64 }
 
-    enum FrustumData { case FrustumData(List[Plane]) }
+    // 面 6 つを 5 個ずつ（nx, ny, nz, d, marginOf）平らに並べた Float64 の列。
+    // WhyNot: Plane の record を物ごとに引かない — 置いた物 1 つにつき面 6 つ×角 8 つの判定が 1 コマに 3 回走り、record の欄の引きが時間の大半になる。
+    enum FrustumData { case FrustumData(Vector[Float64]) }
+
+    def planeStride(): Int32 = 5
 
     pub type alias Frustum = FrustumData
 
@@ -25,9 +29,10 @@ pub mod Frustum {
             let (a, b, cc, dd) = r;
             normalized(w0 + sign * a, w1 + sign * b, w2 + sign * cc, w3 + sign * dd)
         };
+        let planes = planeOf(1.0, row(0)) :: planeOf(-1.0, row(0)) :: planeOf(1.0, row(1)) :: planeOf(-1.0, row(1))
+            :: planeOf(1.0, row(2)) :: planeOf(-1.0, row(2)) :: Nil;
         FrustumData.FrustumData(
-            planeOf(1.0, row(0)) :: planeOf(-1.0, row(0)) :: planeOf(1.0, row(1)) :: planeOf(-1.0, row(1))
-                :: planeOf(1.0, row(2)) :: planeOf(-1.0, row(2)) :: Nil)
+            planes |> List.flatMap(p -> p#nx :: p#ny :: p#nz :: p#d :: marginOf(p) :: Nil) |> List.toVector)
 
     // WhyNot: 長さ 0 の面で割らない — 潰れた行列（fovY 0 など）の面は全部の点を内側と見なす（間引かない）。
     def normalized(a: Float64, b: Float64, c: Float64, d: Float64): Plane =
@@ -35,18 +40,58 @@ pub mod Frustum {
         if (len < 1.0e-12 or Float64.isNan(len)) { nx = 0.0, ny = 0.0, nz = 0.0, d = 1.0 }
         else { nx = a / len, ny = b / len, nz = c / len, d = d / len }
 
-    def distance(p: Plane, v: Vec3.Vec3): Float64 = p#nx * v#x + p#ny * v#y + p#nz * v#z + p#d
-
     /// 形の座標の箱（min・max）を world で写した物が、視錐台に掛かりうるか。8 つの角が 1 つの面の外に全部あれば偽。
+    // WhyNot: 角を Vec3 の List にして Mat4.apply で写さない — 角と面の組ごとに record を作って引くので、1 コマに何百回も走ると確保と欄の引きが支配する。
+    //   写す式は Mat4.apply と同じ順で足す（丸めを変えない — GL と CPU と影の地図が同じ判定を使う）。
     pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool =
         let FrustumData.FrustumData(planes) = f;
-        let corners = Mesh3d.cornersOf({ min = min, max = max }) |> List.map(Mat4.apply(world));
-        not List.exists(p -> List.forAll(v -> distance(p, v) < 0.0 - marginOf(p), corners), planes)
+        let m = Mat4.asRows(world);
+        let x0 = min#x; let y0 = min#y; let z0 = min#z;
+        let x1 = max#x; let y1 = max#y; let z1 = max#z;
+        let corners = Vector#{ rowAt(m, 0, x0, y0, z0), rowAt(m, 4, x0, y0, z0), rowAt(m, 8, x0, y0, z0),
+                               rowAt(m, 0, x1, y0, z0), rowAt(m, 4, x1, y0, z0), rowAt(m, 8, x1, y0, z0),
+                               rowAt(m, 0, x0, y1, z0), rowAt(m, 4, x0, y1, z0), rowAt(m, 8, x0, y1, z0),
+                               rowAt(m, 0, x1, y1, z0), rowAt(m, 4, x1, y1, z0), rowAt(m, 8, x1, y1, z0),
+                               rowAt(m, 0, x0, y0, z1), rowAt(m, 4, x0, y0, z1), rowAt(m, 8, x0, y0, z1),
+                               rowAt(m, 0, x1, y0, z1), rowAt(m, 4, x1, y0, z1), rowAt(m, 8, x1, y0, z1),
+                               rowAt(m, 0, x0, y1, z1), rowAt(m, 4, x0, y1, z1), rowAt(m, 8, x0, y1, z1),
+                               rowAt(m, 0, x1, y1, z1), rowAt(m, 4, x1, y1, z1), rowAt(m, 8, x1, y1, z1) };
+        not isOutsideSomePlane(planes, corners, 0)
+
+    // 行列の行（cells の o から 4 つ）で点を写した 1 成分。Mat4.apply と同じ足す順。
+    def rowAt(m: Vector[Float64], o: Int32, x: Float64, y: Float64, z: Float64): Float64 =
+        Vector.get(o, m) * x + Vector.get(o + 1, m) * y + Vector.get(o + 2, m) * z + Vector.get(o + 3, m)
+
+    // 面 i（番号）から先に、8 つの角が全部外にある面があるか。
+    def isOutsideSomePlane(planes: Vector[Float64], corners: Vector[Float64], i: Int32): Bool =
+        if (i >= 6) false
+        else {
+            let o = i * planeStride();
+            allBelow(Vector.get(o, planes), Vector.get(o + 1, planes), Vector.get(o + 2, planes), Vector.get(o + 3, planes),
+                     0.0 - Vector.get(o + 4, planes), corners, 0)
+                or isOutsideSomePlane(planes, corners, i + 1)
+        }
+
+    // 角 k（番号）から先の全部が、面 (n, d) への距離 < limit か。
+    def allBelow(nx: Float64, ny: Float64, nz: Float64, d: Float64, limit: Float64, corners: Vector[Float64], k: Int32): Bool =
+        if (k >= 8) true
+        else {
+            let o = k * 3;
+            nx * Vector.get(o, corners) + ny * Vector.get(o + 1, corners) + nz * Vector.get(o + 2, corners) + d < limit
+                and allBelow(nx, ny, nz, d, limit, corners, k + 1)
+        }
 
     /// 中心 center・半径 radius の球が、視錐台に掛かりうるか。
     pub def intersectsSphere(f: Frustum, center: Vec3.Vec3, radius: Float64): Bool =
         let FrustumData.FrustumData(planes) = f;
-        not List.exists(p -> distance(p, center) < 0.0 - Float64.abs(radius) - marginOf(p), planes)
+        let cx = center#x; let cy = center#y; let cz = center#z;
+        let reach = Float64.abs(radius);
+        let outside = (i: Int32) -> {
+            let o = i * planeStride();
+            Vector.get(o, planes) * cx + Vector.get(o + 1, planes) * cy + Vector.get(o + 2, planes) * cz + Vector.get(o + 3, planes)
+                < 0.0 - reach - Vector.get(o + 4, planes)
+        };
+        not (outside(0) or outside(1) or outside(2) or outside(3) or outside(4) or outside(5))
 
     /// 点 p が視錐台の中か（面の上は中）。
     pub def containsPoint(f: Frustum, p: Vec3.Vec3): Bool = intersectsSphere(f, p, 0.0)

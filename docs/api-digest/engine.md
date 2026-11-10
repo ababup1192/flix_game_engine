@@ -498,8 +498,7 @@
 - `pub type alias Frustum = FrustumData`
 - clip の行列（projectionMatrix × viewMatrix）の行から 6 つの面を取り出す（左・右・下・上・near・far）。
   `pub def ofClipMatrix(clip: Mat4.Mat4): Frustum`
-- 形の座標の箱（min・max）を world で写した物が、視錐台に掛かりうるか。8 つの角が 1 つの面の外に全部あれば偽。
-  `pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool`
+- `pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool`
 - 中心 center・半径 radius の球が、視錐台に掛かりうるか。
   `pub def intersectsSphere(f: Frustum, center: Vec3.Vec3, radius: Float64): Bool`
 - 点 p が視錐台の中か（面の上は中）。
@@ -585,6 +584,12 @@
   `pub def kindOf(guid: String, name: String): PadKind`
 - USB のベンダー（数・0 は分からない）とパッドの名前から機種を決める。SDL3 で読む時の形。
   `pub def kindOfVendor(vendor: Int32, name: String): PadKind`
+- スティックの生の軸（GLFW・SDL とも右が +・下が +）から、遊び（デッドゾーン）を外した向きと強さを返す。右が +x・上が +y。
+  `pub def stickOf(deadzone: Float64, rawX: Float64, rawY: Float64): Vec2.Vec2`
+- 小数 4 桁に丸める（-0 は 0 にそろえる）。
+  `pub def round4(v: Float64): Float64`
+- スティックの遊びの既定（0.18）。
+  `pub def defaultDeadzone(): Float64`
 
 ## Gltf — `engine/src/scene3d/Gltf.flix`
 - path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
@@ -764,6 +769,8 @@
 - 点を w = 1 で掛け、出た w で割る（projectionMatrix × viewMatrix の後の NDC）。w が 0 以下（目の後ろ）は None。
   `pub def applyPerspective(m: Mat4, p: Vec3.Vec3): Option[Vec3.Vec3]`
 - `pub def normalMatrix(m: Mat4): Mat4`
+- 行優先の 16 個（cells[row * 4 + col]）。見方を変えるだけで写さない（判定の熱い所が 1 点ずつ record を作らずに引くため）。
+  `pub def asRows(m: Mat4): Vector[Float64]`
 - GL の uniform（glUniformMatrix4fv の transpose = false）に渡す列優先の 16 個。
   `pub def toColumns(m: Mat4): Vector[Float64]`
 - 列優先の 16 個から作る（toColumns の逆・glTF の MAT4 と同じ並び）。長さが 16 でなければ Err。
@@ -917,6 +924,8 @@
   `pub eff Input { def isGamepadTouched(): Bool }`
 - 1 台目のゲームパッドの機種（Xbox 配置の一般・Steam Input を通した物・つないでいない）。
   `pub eff Input { def gamepadKind(): GamepadMap.PadKind }`
+- 1 台目のゲームパッドの左右のスティック。遊び（デッドゾーン）を外した値（GamepadMap.stickOf）で、長さ 0..1・右が +x・上が +y。
+  `pub eff Input { def gamepadSticks(): { left = Vec2.Vec2, right = Vec2.Vec2 } }`
 - 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
   `pub eff Input { def consumeScrollDelta(): Float64 }`
 - 前に呼んでからマウスが動いた量（design px・小数のまま。右と下が正）。キャプチャしている間（Window.setMouseCaptured(true)）も

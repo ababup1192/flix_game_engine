@@ -11,6 +11,7 @@
 | 表示範囲より長い内容をスクロールで覗く（ログ・履歴・一覧） | UiScroll |
 | 文章を幅で行に折る（折り返し・wrap）・描く前に行数を数える | RichText（wrapLinesBy） |
 | 固定スロットに可変個の項目を流し込む | UiSlots |
+| 窓の大きさを中の文章に合わせる（折り返して行が増えても下枠に被らない・文字送り中も窓を伸ばさない） | Flex（wrappedText / wrappedTextShowing）/ TextDraw（wrappedSize） |
 | UI を JSON（ui.json）で宣言する | UiDoc / UiSpec |
 | 宣言した UI の「名前 → 画面上の矩形」を引く（当たり判定を宣言と共有） | UiDoc（rectsOf / renderWithRects）/ Flex（keyed） |
 | UI の箱にドット絵の皮を着せる（九分割スキン。box の skin） | UiExtract（boxPlacedItems）/ UiDoc |

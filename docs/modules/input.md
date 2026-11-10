@@ -15,6 +15,7 @@
 | 複数キーを 1 つの操作にまとめる（WASD と矢印の両対応） | InputMap（実例: `templates/game-starter/src/KeysDoc.flix`） |
 | 素の中心＋幅高の箱どうし・点×箱の重なりを聞く（接するのは外） | Hit.boxBox / pointBox |
 | テスト用の入力フレームを組む | App.frameOf |
+| パッドのスティックで 360 度に動かす・右スティックでカメラを回す | `frame#leftStick` / `frame#rightStick`（長さ 0..1・右が +x・上が +y・遊び 0.18 を外した値・小数 4 桁・パッドが無ければ (0, 0)・1 台目だけ）。上下左右のキーへの読み替え（GamepadMap.table）も今までどおり残る。キーボードからスティックの値は作らない（ゲームの側）・flow は `lstick=x,y` `rstick=x,y` |
 | 一人称でマウスを動かして視点を回す（FPS のように・カーソルを窓にキャプチャする） | App.withMouseCapture + frame#mouseDelta（下の「一人称の視点」） |
 | 右クリック・中ボタンを読む | frame#mouseClickedButtons（押した瞬間）・frame#mouseButtons（押している間）。mouseDown・mouseClicked は左だけ・flow は `mouse=right` |
 | 窓がフォーカスを失った・取り戻したのを知る | frame#windowFocused |
