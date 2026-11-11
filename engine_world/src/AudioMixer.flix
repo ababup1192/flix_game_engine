@@ -146,7 +146,7 @@ pub mod AudioMixer {
 
     /// ダッキングの状態のキー（下げるバスと、下げさせるバスの組）。Doc の ducks の行の並びを
     /// 入れ替えても、by の中の並びを入れ替えても、同じダッキングの倍率が引き継がれる。
-    def duckKeyOf(d: Duck): String = "${d#bus}<-${String.intercalate(",", List.sort(d#by))}"
+    def duckKeyOf(d: Duck): String = "${d#bus}<-${String.intercalate(",", Sort.sortStable(d#by))}"
 
     /// 名前に掛かるクールダウンの秒（cooldowns の prefix の一番長い一致。無ければ 0 = 間引かない）。
     pub def cooldownOf(mixer: Mixer, name: String): Float64 =

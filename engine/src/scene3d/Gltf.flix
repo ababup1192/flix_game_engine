@@ -729,11 +729,10 @@ pub mod Gltf {
                 ) yield List.toVector(mats)
         }
 
-    // WhyNot: List.sortBy に深さだけを渡さない — 安定ソートではないので、同じ深さのジョイントの並びが skin.joints の順にならない。
     def assembleSkin(nodes: Vector[Obj], jointNodes: Vector[Int32], links: Vector[Link],
                      rootGl: Mat4.Mat4, ibmsGl: Vector[Mat4.Mat4]): Result[String, SkinBuild] =
         let count = Vector.length(jointNodes);
-        let order = List.range(0, count) |> List.sortBy(k -> (Vector.get(k, links)#depth, k)) |> List.toVector;
+        let order = List.range(0, count) |> Sort.sortStableBy(k -> Vector.get(k, links)#depth) |> List.toVector;
         let newOfOld = order |> Vector.mapWithIndex((newIndex, old) -> (old, newIndex))
                              |> Vector.foldLeft((m, pair) -> Map.insert(fst(pair), snd(pair), m), Map.empty());
         let newOf = (old: Int32) -> Map.getWithDefault(old, 0, newOfOld);

@@ -2,6 +2,7 @@
 // 盤の絵は 1 マス cell() の盤の座標で組み、最後に fitOf の倍率と置き場所で画面へ写す。
 // 面の中で変わらない岩の段の形（rockLevelsOf）もここで作る。段のずらし量はここ、色と濃さは View.rockLevel。
 mod Layout {
+    use fge::Sort
 
     use fge::{Color, DualGrid, Terrain, Vec2}
 
@@ -100,7 +101,7 @@ mod Layout {
         let flags = Terrain.flagsOf(cells);
         let (full, edge) = corners |> List.filter(corner -> keep(flags(corner)))
             |> List.partition(corner -> DualGrid.caseIndex(flags(corner)) == 15);
-        let runs = full |> List.sortBy(c -> (snd(c), fst(c))) |> List.foldLeft((acc, c) -> match acc {
+        let runs = full |> Sort.sortStableBy(c -> (snd(c), fst(c))) |> List.foldLeft((acc, c) -> match acc {
             case (first, last) :: rest if snd(last) == snd(c) and fst(last) + 1 == fst(c) => (first, c) :: rest
             case _ => (c, c) :: acc
         }, Nil);

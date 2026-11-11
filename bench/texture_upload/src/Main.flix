@@ -13,6 +13,7 @@
 use fge::{App, LwjglLayer}
 
 mod BenchTextureUpload {
+    use fge::Sort
     use fge::{App, GpuHandle, RawDraw, Render, RenderAsset, RenderTexture, RenderUtil}
 
     import java.lang.System
@@ -144,7 +145,7 @@ mod BenchTextureUpload {
     def pctOf(p: Int32, xs: List[Float64]): Float64 =
         match List.length(xs) {
             case 0 => 0.0
-            case n => List.sort(xs)
+            case n => Sort.sortStable(xs)
                 |> List.drop(Int32.min(n - 1, n * p / 100))
                 |> List.head
                 |> Option.getWithDefault(0.0)

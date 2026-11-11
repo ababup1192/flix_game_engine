@@ -23,12 +23,12 @@ mod TestPainter {
         Assert.assertEq(expected = 100 :: 104 :: 108 :: Nil, zs)
 
     // 同距離のタイを 3 組ふくむ 8 要素の並びを具体値で固定する（距離は it mod 3）。
-    // 距離の遠い順というだけでは決まらない、タイの中の並びまで押さえる。
+    // 距離の遠い順というだけでは決まらない、タイの中の並び（渡した順）まで押さえる。
     @Test
     def testTiedDistancesKeepExactOrder(): Unit \ Assert =
         let items = 1 :: 2 :: 3 :: 4 :: 5 :: 6 :: 7 :: 8 :: Nil;
         let ordered = Painter.zOrdered(it -> Int32.toFloat64(Int32.modulo(it, 3)), 0, 1, items);
-        Assert.assertEq(expected = 8 :: 5 :: 2 :: 1 :: 4 :: 7 :: 3 :: 6 :: Nil,
+        Assert.assertEq(expected = 2 :: 5 :: 8 :: 1 :: 4 :: 7 :: 3 :: 6 :: Nil,
             ordered |> List.map(snd))
 
     @Test

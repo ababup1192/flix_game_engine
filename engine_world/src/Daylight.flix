@@ -22,7 +22,7 @@ pub mod Daylight {
 
     /// t（1 日の進み）のときの空気の色と濃さ。節が 1 つも無ければ素通し。
     pub def sample(keys: List[Key], t: Float64): Key =
-        let sorted = List.sortBy(k -> k#at, keys);
+        let sorted = Sort.sortStableBy(k -> k#at, keys);
         match sorted {
             case Nil       => { at = t, color = { r = 1.0, g = 1.0, b = 1.0 }, strength = 0.0 }
             case one :: Nil => { at = t | one }

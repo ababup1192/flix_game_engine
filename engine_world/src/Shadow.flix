@@ -241,9 +241,9 @@ pub mod Shadow {
             |> List.map(entry -> {
                 let ((y, h), row) = entry;
                 { lo = Float64.max(0.0, foot#y - (y + h)), hi = foot#y - y,
-                  spans = spansOf(foot#x, List.sortBy(r -> r#x, row)) }
+                  spans = spansOf(foot#x, Sort.sortStableBy(r -> r#x, row)) }
             })
-            |> List.sortBy(row -> row#lo)
+            |> Sort.sortStableBy(row -> row#lo)
 
     /// 左から順の走りを、端が触れている物どうし 1 つの区間にまとめる（足元の x からの位置で）。
     def spansOf(footX: Float64, sorted: List[PxSprite.Run]): List[(Float64, Float64)] =

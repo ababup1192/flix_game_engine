@@ -74,10 +74,7 @@ pub mod SoftRaster.Internal.DrawList {
                 List.append(
                     List.map(s -> RItem.RSurf(s), surfaces),
                     List.map(c -> RItem.RScene(c), req#scenes))));
-        let sorted = tagged
-            |> List.zipWithIndex
-            |> List.sortBy(ix -> let (idx, item) = ix; (zOf(item), idx))
-            |> List.map(ix -> let (_, item) = ix; item);
+        let sorted = tagged |> Sort.sortStableBy(zOf);
         { textures = textures, fonts = fctx, texEnv = texEnv, sceneTextures = sceneTextures, items = sorted }
 
     /// 面の tex / blur の読み先 name の絵。縮んだ Pass のテクセルの絵（texelsName）→ Pass の絵 → ファイルの絵の順に探す。

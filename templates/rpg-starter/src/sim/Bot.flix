@@ -17,6 +17,7 @@
 // 依存は Bot → BotRoute・BotBattle の一方通行（BotRoute と BotBattle は Bot を使わない）。
 // 会話: 文字送りは決定で進め、はい / いいえ は「はい」（先頭）。
 mod Bot {
+    use fge::Sort
     use fge::{Dir4}
     use fge::GameEngine.Key
     use World.{MenuPage, ShopMode, ShopPage}
@@ -79,7 +80,7 @@ mod Bot {
             case MapDoc.ObjectKind.Crystal(c) => Some((c#order, o#id))
             case _                            => None
         }) |> List.filter(pair -> not isOpenedIn(res, map, snd(pair), w))
-            |> List.sortBy(fst) |> List.head |> Option.map(snd)
+            |> Sort.sortStableBy(fst) |> List.head |> Option.map(snd)
 
     /// 村の中のマップ（宿へ寄ってよい所）。
     def villageMaps(): Set[String] = Set#{"village", "inn", "shop", "chief_house", "smithy"}
@@ -171,7 +172,7 @@ mod Bot {
         let ratioOf = (m, s) -> Int32.toFloat64(s#hp) / Int32.toFloat64(Int32.max(1, Party.maxHpOf(res#party, m, w#party)));
         let hurt = Party.statsList(w#party) |> List.filter(match (_, s) -> s#hp > 0)
             |> List.map(match (m, s) -> (ratioOf(m, s), m)) |> List.filter(pair -> fst(pair) < 0.6)
-            |> List.sortBy(fst) |> List.head |> Option.map(snd);
+            |> Sort.sortStableBy(fst) |> List.head |> Option.map(snd);
         let caster = Party.aliveOf(w#party) |> List.findMap(m -> healSpellOf(res, m, w#party) |> Option.map(id -> (m, id)));
         let byCast = forM (m <- hurt; (who, id) <- caster) yield Goal.Cast(who, m, id);
         Option.withDefault(default = forM (id <- herb; m <- hurt) yield Goal.Heal(m, id), byCast)
@@ -209,7 +210,7 @@ mod Bot {
                 let now = Party.equipOf(m, slot, w#party) |> Option.map(bonusOf) |> Option.getWithDefault(0);
                 WorldMenu.candidatesOf(res, m, slot, w#bag) |> List.filterMap(x -> x)
                     |> List.filter(id -> bonusOf(id) > now)
-                    |> List.map(id -> (bonusOf(id), id)) |> List.sortBy(fst) |> List.reverse |> List.head
+                    |> List.map(id -> (bonusOf(id), id)) |> Sort.sortStableBy(fst) |> List.reverse |> List.head
                     |> Option.map(match (_, id) -> Goal.Equip(m, slot, id))
             })
             |> List.head
@@ -343,7 +344,7 @@ mod Bot {
                         let step = Dir4.all() |> List.filterMap(d -> {
                             let (dx, dy) = Dir4.delta(d);
                             route |> Option.flatMap(rt -> Map.get((r#hero#x + dx, r#hero#y + dy), rt#dist)) |> Option.map(n -> ((n, dx, dy), d))
-                        }) |> List.filter(pair -> dist |> Option.forAll(here -> { let (n, _, _) = fst(pair); n < here })) |> List.sortBy(fst) |> List.head;
+                        }) |> List.filter(pair -> dist |> Option.forAll(here -> { let (n, _, _) = fst(pair); n < here })) |> Sort.sortStableBy(fst) |> List.head;
                         match step {
                             case Some((_, d)) => (keyOf(KeysDoc.dirKeys(k, d)), { tapped = false | st })
                             case None         => (Set.empty(), { tapped = false | st })

@@ -90,7 +90,7 @@ pub mod UiLayout {
     def buildChildIndex(input: LayoutInput): Map[EntityId, List[EntityId]] =
         input#parents
             |> Map.foldLeftWithKey((acc, id, p) -> Map.insertWith((_, kids) -> id :: kids, p, id :: Nil, acc), Map.empty())
-            |> Map.map(kids -> List.sortBy(id -> Option.getWithDefault(0, Map.get(id, input#order)), kids))
+            |> Map.map(kids -> Sort.sortStableBy(id -> Option.getWithDefault(0, Map.get(id, input#order)), kids))
 
     /// 可視な子だけを order 順に返す（visible=false の子はレイアウトから除外＝display:none 相当）。
     /// visible 未登録の子は可視扱い。フロー内・フロー外（abs）を問わず、隠した子は配置対象から外れる。

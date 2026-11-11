@@ -47,7 +47,7 @@ mod TestZStack {
     def drawOrder(items: List[Render.PlacedItem]): List[Int32] =
         items |> List.zipWithIndex
             |> List.map(entry -> { let (i, placed) = entry; ((Render.zOf(placed#item), i), tagOf(placed)) })
-            |> List.sortBy(fst) |> List.map(snd)
+            |> Sort.sortStableBy(fst) |> List.map(snd)
 
     /// 知らせた文面を集める（compose は純粋なので、テストでだけ効果を隠して覚える）。
     def collecting(f: App.ViewCtx -> a): (a, List[String]) \ IO =
@@ -115,7 +115,7 @@ mod TestZStack {
         let again = leaf(box(3, 0) :: Nil);
         let (items, warned) = collecting(ctx -> SortingLayer.compose(ctx, (Tier.Front, front) :: (Tier.Front, again) :: Nil));
         Assert.assertEq(expected = 100 :: 101 :: 102 :: Nil,
-                        zs(items) |> List.sortBy(z -> z));
+                        zs(items) |> Sort.sortStableBy(z -> z));
         Assert.assertEq(expected = 1 :: 3 :: 2 :: Nil, drawOrder(items));
         Assert.assertEq(expected = 2, List.length(warned))
 

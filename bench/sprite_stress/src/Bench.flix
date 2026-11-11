@@ -3,6 +3,7 @@
 // 描画量が揺れて、エンジン改修の差分と見分けが付かなくなるため。
 
 mod Bench {
+    use fge::Sort
     use fge::{App, Color, FontAtlas, RawDraw, Render, RenderUtil}
 
     import java.lang.System
@@ -73,7 +74,7 @@ mod Bench {
             case 0     => println("N=${n} samples=0")
             case count =>
                 let avg = List.foldLeft((acc, x) -> acc + x, 0.0, samples) / Int32.toFloat64(count);
-                let p99 = List.sort(samples)
+                let p99 = Sort.sortStable(samples)
                     |> List.drop(Int32.min(count - 1, count * 99 / 100))
                     |> List.head
                     |> Option.getWithDefault(avg);

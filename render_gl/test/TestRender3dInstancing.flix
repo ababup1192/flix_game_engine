@@ -165,7 +165,7 @@ mod Render3d.TestInstancing {
 
     /// 名前の順の (材質の名前, プログラムの番号) のうち、番号の順に並べた名前。
     def namesInBuildOrder(state: Render3d.State): List[String] \ IO =
-        Ref.get(state#materialsRef) |> Map.valuesOf |> List.map(e -> (e#locs#mesh#program, e#spec#name)) |> List.sortBy(fst) |> List.map(snd)
+        Ref.get(state#materialsRef) |> Map.valuesOf |> List.map(e -> (e#locs#mesh#program, e#spec#name)) |> Sort.sortStableBy(fst) |> List.map(snd)
 
     def threeMaterials(): List[Scene3d.Instance3d] =
         (0.1 :: 0.5 :: 0.9 :: Nil) |> List.map(red -> Scene3d.meshInstance(plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(namedMaterial(red)))

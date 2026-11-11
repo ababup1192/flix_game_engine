@@ -2,6 +2,7 @@
 // 手は push で Beat を 1 つ積む。式（ダメージ・会心・呪文・道具・ぼうぎょ・眠り・にげる）は Battle の冒頭の図。
 // 戦いの値の型と読む口は Battle（ここから Battle を使い、Battle からはここを使わない）。
 mod BattleActs {
+    use fge::Sort
     use FoeMovesDoc.{Act}
     use TextDoc.{BattleText, Placeholder}
 
@@ -363,7 +364,7 @@ mod BattleActs {
             };
             (((0.0 - speed, side, at), actor) :: out, d1)
         }, (Nil, dice));
-        (keyed |> List.sortBy(fst) |> List.map(snd), next)
+        (keyed |> Sort.sortStableBy(fst) |> List.map(snd), next)
 
     /// 手番 1 つ（仲間は allyTurn・敵は foeTurn）。倒れた者の手番は飛ばす。
     def turnOf(res: Res.Res, plans: Map[Member.Member, Battle.Plan], acts: Map[Int32, Act], fleeing: Bool, actor: Actor, turn: Turn): Turn =

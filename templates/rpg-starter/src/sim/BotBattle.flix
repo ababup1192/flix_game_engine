@@ -2,6 +2,7 @@
 // bot はそれをコマンドのページの行へ直してキーにする（battleKeys）。BalanceSim は battlePlans を BattleActs.resolveRound へ直に渡す。
 // 歩きと道筋は知らない（Bot・BotRoute を使わない）。
 mod BotBattle {
+    use fge::Sort
     use fge::GameEngine.Key
     use World.CommandPage
 
@@ -48,7 +49,7 @@ mod BotBattle {
     def weakestOf(b: Battle.Battle): Int32 =
         Battle.aliveFoes(b)
             |> List.filterMap(i -> Vector.nth(i, Battle.rec(b)#foes) |> Option.map(f -> ((f#hp, i), i)))
-            |> List.sortBy(fst) |> List.head |> Option.map(snd) |> Option.getWithDefault(0)
+            |> Sort.sortStableBy(fst) |> List.head |> Option.map(snd) |> Option.getWithDefault(0)
 
     /// 見比べの方針: 行動を選ぶ仲間が全員、HP の一番少ない敵を たたかう（回復も呪文も道具も使わない）。make balance のボスの行が、
     /// 回復と呪文を使う battlePlans とどれだけ勝率が開くかを並べる。
@@ -106,7 +107,7 @@ mod BotBattle {
         let ratioOf = x -> Int32.toFloat64(Party.hpOf(x, party)) / Int32.toFloat64(Int32.max(1, Party.maxHpOf(res#party, x, party)));
         let hurt = Party.aliveOf(party) |> List.filter(x -> not Set.memberOf(x, acc#healing))
             |> List.map(x -> (ratioOf(x), x)) |> List.filter(pair -> fst(pair) < battleHealBelow())
-            |> List.sortBy(fst) |> List.head |> Option.map(snd);
+            |> Sort.sortStableBy(fst) |> List.head |> Option.map(snd);
         hurt |> Option.flatMap(t -> {
             let bySpell = castable(res, b, m, 0, SpellsDoc.Aim.Ally) |> List.head |> Option.map(match (id, _) -> Battle.Plan.Cast(id, Battle.Target.Ally(t)));
             let byItem = bagItemOf(res, b, acc, item -> item#heal > 0) |> Option.map(id -> Battle.Plan.UseItem(id, Battle.Target.Ally(t)));
@@ -119,7 +120,7 @@ mod BotBattle {
         else {
             let keep = castable(res, b, m, 0, SpellsDoc.Aim.Ally) |> List.map(pair -> snd(pair)#mp) |> List.minimum |> Option.getWithDefault(0);
             let target = weakestOf(b);
-            let strongest = spells -> spells |> List.map(match (id, s) -> (0 - s#power, id)) |> List.sortBy(fst) |> List.head |> Option.map(snd);
+            let strongest = spells -> spells |> List.map(match (id, s) -> (0 - s#power, id)) |> Sort.sortStableBy(fst) |> List.head |> Option.map(snd);
             let all = if (List.length(Battle.aliveFoes(b)) >= 2) strongest(castable(res, b, m, keep, SpellsDoc.Aim.AllFoes)) else None;
             let one = strongest(castable(res, b, m, keep, SpellsDoc.Aim.Foe));
             let atk = Party.atkOf(res#party, res#items, m, Battle.rec(b)#party);

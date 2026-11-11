@@ -56,7 +56,7 @@ mod TestGltf.Uvs2 {
         List.range(0, Vector.length(positions) / 3) |> List.map(k ->
             (Vector.slice(start = k * 3, end = k * 3 + 3, positions) |> Vector.toList,
              Vector.slice(start = k * 2, end = k * 2 + 2, uvs2) |> Vector.toList))
-            |> List.sort |> List.distinct
+            |> Sort.sortStable |> List.distinct
 
     @Test
     def testBoxUvsCarryUvs2WithSplitVertices(): Unit \ Assert =

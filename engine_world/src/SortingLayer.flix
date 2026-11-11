@@ -97,11 +97,7 @@ pub mod SortingLayer {
     /// compose と hitsOf の共通の道筋。draw = false なら絵を組まず当たりだけ集める。
     def laidOut(note: String -> Unit, draw: Bool, entries: List[(t, Tree[t, a])]): { items = List[Render.PlacedItem], hits = List[Entry[a]] }
         with SortingLayer[t], ToString[t] =
-        let ranked = entries
-            |> List.zipWithIndex
-            |> List.map(entry -> { let (i, (layer, tree)) = entry; ((bottom(layer), i), (layer, tree)) })
-            |> List.sortBy(fst)
-            |> List.map(snd);
+        let ranked = entries |> Sort.sortStableBy(entry -> bottom(fst(entry)));
         // 1 巡目: 層ごとに自分の木を積む。送った物は描かずに集める。
         let first = List.foldLeft((st, entry) -> {
             let (layer, tree) = entry;
@@ -116,11 +112,7 @@ pub mod SortingLayer {
             { acc = done#acc, hits = done#hits, sends = sends, ends = Map.insert(low, { name = "${layer}", low = low, high = top(layer), next = done#next }, st#ends) }
         }, { acc = Nil, hits = Nil, sends = Nil, ends = Map.empty() }, ranked);
         // 2 巡目: 送った物を送り先の底の順・送った順に 1 回だけ並べ、送り先の層の続きから積む。
-        let sends = List.reverse(first#sends)
-            |> List.zipWithIndex
-            |> List.map(entry -> { let (i, sent) = entry; ((bottom(sent#target), i), sent) })
-            |> List.sortBy(fst)
-            |> List.map(snd);
+        let sends = List.reverse(first#sends) |> Sort.sortStableBy(sent -> bottom(sent#target));
         let second = List.foldLeft((st, sent) -> {
             let low = bottom(sent#target);
             let mark = Map.get(low, st#ends) |> Option.getWithDefault({ name = "${sent#target}", low = low, high = top(sent#target), next = low });
@@ -141,9 +133,7 @@ pub mod SortingLayer {
     /// 描いた木は見ない: ZStack.topLayer で送った物は送り先の層の列に置き、葉の中の z や zIndex の付け替えは前後に効かない。
     pub def pick(point: Vec2.Vec2, entries: List[(t, List[(a, Rect2.Rect2)])]): Option[a] with SortingLayer[t] =
         entries
-            |> List.zipWithIndex
-            |> List.map(entry -> { let (i, (layer, targets)) = entry; ((bottom(layer), i), targets) })
-            |> List.sortBy(fst)
+            |> Sort.sortStableBy(entry -> bottom(fst(entry)))
             |> List.foldLeft((found, entry) -> List.foldLeft((hit, target) -> {
                    let (value, rect) = target;
                    if (Rect2.hasPoint(point, rect)) Some(value) else hit
@@ -272,14 +262,10 @@ pub mod SortingLayer {
             case _ => outer
         }
 
-    /// zIndex の数で子を並べる（1 つも無ければ積んだ順のまま）。List.sortBy は安定でないので元の位置も鍵に含める。
+    /// zIndex の数で子を並べる（1 つも無ければ積んだ順のまま）。
     def ordered(children: List[Tree[t, a]]): List[Tree[t, a]] =
         if (not hasZIndex(children)) children
-        else children
-            |> List.zipWithIndex
-            |> List.map(entry -> { let (i, child) = entry; ((orderOf(child), i), child) })
-            |> List.sortBy(fst)
-            |> List.map(snd)
+        else children |> Sort.sortStableBy(orderOf)
 
     /// 子のどれかに zIndex が付いているか（of の子を 1 巡するだけ）。
     def hasZIndex(children: List[Tree[t, a]]): Bool =

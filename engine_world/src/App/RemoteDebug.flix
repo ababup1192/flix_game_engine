@@ -540,7 +540,7 @@ pub mod App.RemoteDebug {
     /// scene ビューの本文。矩形に重なる描画物を z 順に 1 行ずつ（多すぎる場合は打ち切る）。
     /// worldDump が未配線のゲームでも、何がどこに描かれているかはこれで観測できる。
     pub def sceneBlock(rect: Rect2.Rect2, hitList: List[Annotate.Hit]): String =
-        let sorted = hitList |> List.sortBy(hit -> hit#zIndex);
+        let sorted = hitList |> Sort.sortStableBy(hit -> hit#zIndex);
         let total = List.length(sorted);
         let capped = List.take(sceneLimit(), sorted);
         let header = "[scene] rect=(${fmt1(rect#position#x)},${fmt1(rect#position#y)},"

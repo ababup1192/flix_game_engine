@@ -119,7 +119,7 @@ pub mod App.HitchDetector {
 
     /// 一番重いコマ（無ければ最初のコマ）。
     pub def worstOf(hitch: Hitch): Option[Row] =
-        hitch#rows |> List.sortBy(r -> 0i64 - r#totalNs) |> List.head
+        hitch#rows |> Sort.sortStableBy(r -> 0i64 - r#totalNs) |> List.head
 
     /// 原因を探す起点のコマ: 最初にシェーダーを作ったコマ、無ければ一番重いコマ。
     def anchorOf(hitch: Hitch): Option[Row] =
@@ -257,7 +257,7 @@ pub mod App.HitchDetector {
         let root = new File("debug/perf/hitches");
         discard root.mkdirs();
         let stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-        let runs = listNames(root) |> List.sort |> List.reverse;
+        let runs = listNames(root) |> Sort.sortStable |> List.reverse;
         runs |> List.drop(Int32.max(0, keep - 1)) |> List.forEach(name -> deleteTree(new File(root, name)));
         // 0 件の実行も置き場を作る（make status が前の実行の件数を出し続けないように）。
         let dir = "debug/perf/hitches/${stamp}";

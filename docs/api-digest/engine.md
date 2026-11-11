@@ -1364,7 +1364,8 @@
   `pub def worldBoundsOf(i: Instance3d): Option[Mesh3d.Bounds]`
 - 置いた物の、描く順を決める点（world の境界の真ん中。骨つきと頂点の無い形は world の原点）。
   `pub def drawCenterOf(r: InstanceFields): Vec3.Vec3`
-- `pub def blendOrderOf(eye: Vec3.Vec3, fieldsOf: a -> InstanceFields, xs: List[a]): List[a]`
+- 半透明の物を描く順に並べる（drawCenterOf が目 eye から遠い順・同じ距離なら並びの前）。GL と CPU が同じ物を使う。
+  `pub def blendOrderOf(eye: Vec3.Vec3, fieldsOf: a -> InstanceFields, xs: List[a]): List[a]`
 - 半透明の材質（withAlphaBlend）が付いた置いた物か。
   `pub def isBlendedFields(r: InstanceFields): Bool`
 - 描き手が視錐台 f の外として描かなくてよい物か（迷ったら偽 = 描く）。GL と CPU と影の地図が同じ判定を使う。
@@ -1675,6 +1676,14 @@
 - 逆バインド行列（番号の順）。
   `pub def inverseBinds(s: Skin3d): Vector[Mat4.Mat4]`
 - `pub def rootTransform(s: Skin3d): Mat4.Mat4`
+
+## Sort — `engine/src/core/Sort.flix`
+- 鍵の小さい順。鍵が同じ物は来た順のまま。鍵は 1 要素につき 1 回だけ作る。
+  `pub def sortStableBy(keyOf: a -> k, xs: List[a]): List[a] with Order[k]`
+- 比べる関数で並べる。EqualTo の物は来た順のまま。
+  `pub def sortStableWith(cmp: (a, a) -> Comparison, xs: List[a]): List[a]`
+- 要素そのものの小さい順。同じ物は来た順のまま。
+  `pub def sortStable(xs: List[a]): List[a] with Order[a]`
 
 ## Splash — `engine/src/render2d/Splash.flix`
 - 起動画面 1 枚の見え方。

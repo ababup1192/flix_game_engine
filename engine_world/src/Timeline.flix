@@ -306,7 +306,7 @@ pub mod Timeline {
                 { tag = tag, start = toSeconds(tempo, start), dur = Float64.max(0.0, toSeconds(tempo, length)) }
             });
             let sounds = built#cues
-                |> List.sortWith((x, y) -> {
+                |> Sort.sortStableWith((x, y) -> {
                     let (ax, sx, ox, _) = x;
                     let (ay, sy, oy, _) = y;
                     let byTime = ax <=> ay;
@@ -320,7 +320,7 @@ pub mod Timeline {
             let lastSound = Vector.foldLeft((m, s) -> Float64.max(m, s#at), 0.0, sounds);
             Ok(Timeline.Timeline({
                 clips = clips, segments = built#segments, sounds = sounds,
-                waits = built#waits |> List.sortWith((x, y) -> x <=> y),
+                waits = built#waits |> Sort.sortStableWith((x, y) -> x <=> y),
                 fitted = built#fitted,
                 duration = Float64.max(toSeconds(tempo, built#end), lastSound) }))
         }
@@ -383,7 +383,7 @@ pub mod Timeline {
 
     /// クリップの列（開始の順。同じ時刻は tag の順）。全部のクリップを順に見る所（索引・ログ）に。
     pub def clipsOf(tl: Timeline[a]): List[Clip[a]] = match tl {
-        case Timeline.Timeline(r) => Map.valuesOf(r#clips) |> List.sortWith((x, y) -> x#start <=> y#start)
+        case Timeline.Timeline(r) => Map.valuesOf(r#clips) |> Sort.sortStableWith((x, y) -> x#start <=> y#start)
     }
 
     /// 時刻 t にタグのクリップのどこにいるか。境目は soundsOn と同じ (start で Active・長さ 0 なら After)。

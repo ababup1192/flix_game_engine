@@ -3,6 +3,7 @@
 //       make render SHOT=main → debug/main.png（1 枚だけ）
 //       make atelier-preview → debug/atelier/*.png（スナップショットの外）
 mod SceneRender {
+    use fge::Sort
     use fge::{
         App, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
@@ -178,7 +179,7 @@ mod SceneRender {
         if (Object.isNull(entries)) Nil
         else Array.toList(entries)
             |> List.filter(f -> String.endsWith(suffix = suffix, f))
-            |> List.sort
+            |> Sort.sortStable
 
     def stripJson(f: String): String =
         if (String.endsWith(suffix = ".json", f))

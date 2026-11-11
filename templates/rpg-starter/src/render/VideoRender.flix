@@ -7,6 +7,7 @@
 // 環境変数: VIDEO_FPS（既定 30。60 を割り切る数）・VIDEO_SCALE（design 256×240 の何倍で描くか。既定 3 = 768×720）・
 //           FGE_GPU / FGE_VIDEO_PAINT / FFMPEG（VideoOut.settingsOf）
 mod VideoRender {
+    use fge::Sort
     use fge::{App, AudioMixdown, AudioMixer, Flow, FontAtlas, HeadlessFont, HeadlessRender, ProjectLoader,
               PxSpriteAtlas, Render, Resources, SfxSynth, VideoOut}
 
@@ -86,7 +87,7 @@ mod VideoRender {
         if (not List.isEmpty(lonely)) Err("対の無い印 ${List.join(", ", lonely)}")
         else if (List.isEmpty(pairs)) Err("in_<名前> と out_<名前> の組が 1 つも無い")
         else if (not List.isEmpty(backwards)) Err("終わりが始まりより前の組がある")
-        else Ok(List.sortBy(fst, pairs))
+        else Ok(Sort.sortStableBy(fst, pairs))
 
     // ── 音 ──
 

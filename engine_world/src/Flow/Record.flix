@@ -240,7 +240,7 @@ pub mod Flow.Record {
     /// キーの名前の列（名前の順・空なら -）。
     def keysText(keys: Set[Key]): String =
         if (Set.isEmpty(keys)) "-"
-        else keys |> Set.toList |> List.map(key -> "${key}") |> List.sort |> String.intercalate(",")
+        else keys |> Set.toList |> List.map(key -> "${key}") |> Sort.sortStable |> String.intercalate(",")
 
     /// 始まりの行（引数の値が空白や # を含むか b64: で始まるなら b64: にする）と、読んだファイル。
     pub def startLine(name: String, args: Map[String, String], files: Map[String, Flow.File]): String =

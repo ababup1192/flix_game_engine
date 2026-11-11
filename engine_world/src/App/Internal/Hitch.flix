@@ -159,7 +159,7 @@ pub mod App.Internal.Hitch {
     /// /perf の答え: 分布と数だけ。中身は書いた hitch.md を読む。
     def perfSummary(name: String, config: App.HitchDetector.Config, all: List[App.HitchDetector.Row], files: List[String]): String =
         let rows = List.drop(Int64.tryToInt32(config#warmup) |> Option.getWithDefault(0), all);
-        let sorted = rows |> List.map(r -> r#totalNs) |> List.sort |> List.toVector;
+        let sorted = rows |> List.map(r -> r#totalNs) |> Sort.sortStable |> List.toVector;
         let n = Vector.length(sorted);
         let at = (q: Int32) -> if (n == 0) 0i64 else Vector.get(Int32.min(n - 1, n * q / 100), sorted);
         let builds = rows |> List.foldLeft((acc, r) -> acc + List.length(r#diag#shaderBuilds), 0);
@@ -167,7 +167,7 @@ pub mod App.Internal.Hitch {
             case (Some(x), Some(y)) => "${Int32.toString(x#diag#liveShaders)} → ${Int32.toString(y#diag#liveShaders)}"
             case _                  => "-"
         };
-        let submits = rows |> List.map(r -> r#diag#submitNs) |> List.sort |> List.toVector;
+        let submits = rows |> List.map(r -> r#diag#submitNs) |> Sort.sortStable |> List.toVector;
         let submitAt = (q: Int32) -> if (n == 0) 0i64 else Vector.get(Int32.min(n - 1, n * q / 100), submits);
         let scene3d = List.foldLeft((acc, r) -> FrameDiagnostics.addScene3dCounts(acc, r#diag#scene3dCounts), FrameDiagnostics.emptyScene3dCounts(), rows);
         let lines =

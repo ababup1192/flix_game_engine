@@ -4,6 +4,7 @@
 // 画像の合成は Graphics2D を使わず Raster 直コピーだけ — macOS の -XstartOnFirstThread 下で
 // AWT Toolkit の初期化待ちにハングしうるため（ReferenceDiff.sideBySide と同じ理由）。
 mod PixelDiff {
+    use fge::Sort
     import java.awt.image.BufferedImage
     import java.io.File
     import java.lang.System
@@ -98,7 +99,7 @@ mod PixelDiff {
     def pngNames(dir: String): List[String] \ IO =
         let names = (new File(dir)).list();
         if (Object.isNull(names)) Nil
-        else Array.toList(names) |> List.filter(n -> String.endsWith(suffix = ".png", n)) |> List.sort
+        else Array.toList(names) |> List.filter(n -> String.endsWith(suffix = ".png", n)) |> Sort.sortStable
 
     /// 2 つのフォルダの同じ名前の PNG を比べた 1 行（寸法が違う・読めない時もその旨の 1 行）。
     def dirLine(a: String, b: String, name: String): String \ IO =

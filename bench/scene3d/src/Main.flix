@@ -4,6 +4,7 @@
 use fge::LwjglLayer
 
 mod SceneBench {
+    use fge::Sort
     use fge::{App, LwjglLayer, RenderUtil, Num, Vec2}
 
     import java.lang.System
@@ -48,9 +49,9 @@ mod SceneBench {
         }
 
     def report(segment: Int32, samples: List[Float64], gpuSamples: List[Float64]): Unit \ IO =
-        let sorted = List.sort(samples) |> List.toVector;
+        let sorted = Sort.sortStable(samples) |> List.toVector;
         let count = Vector.length(sorted);
-        let gpuSorted = List.sort(gpuSamples) |> List.toVector;
+        let gpuSorted = Sort.sortStable(gpuSamples) |> List.toVector;
         let gpuCount = Vector.length(gpuSorted);
         // WhyNot: GPU の時間が測れないコマを 0 として数えない — 隠し窓や timer query の無い GL では 0 か None が続き、中央値が嘘になる。
         let gpuText = if (gpuCount == 0) "gpu=測れない"

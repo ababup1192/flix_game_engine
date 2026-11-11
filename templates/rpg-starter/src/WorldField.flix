@@ -4,6 +4,7 @@
 // 1 マスは rules の secondsPerTile 秒。押したままなら着いたフレームで次の 1 マスへ続け、次の歩き始めは
 // 前の歩き始め + secondsPerTile にする（着いたフレームの今を使うと、はみ出したぶん 1 マスごとに遅れが積もる）。
 mod WorldField {
+    use fge::Sort
     use fge::{Clock, Dir4, Emit, Grid, Log}
     use World.{TransitionThen, FieldRec, Stride}
 
@@ -341,7 +342,7 @@ mod WorldField {
             |> List.map(fst)
             |> List.filter(cell -> canEnter(map, occ, cell))
             |> List.map(cell -> ((Int32.max(Int32.abs(cell#x - origin#x), Int32.abs(cell#y - origin#y)), cell#y, cell#x), cell))
-            |> List.sortBy(fst)
+            |> Sort.sortStableBy(fst)
             |> List.head
             |> Option.map(snd)
 }

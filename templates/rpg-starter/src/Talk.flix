@@ -9,6 +9,7 @@
 // World を変えるのはコマンドだけ（意味は WorldTalk.runCommand）。会話の変数 $quest・$mina・$gold・$innPrice は World と Doc から写す一方向で、
 // Yarn の <<set>> で書かない（TestDocs が止める）。
 mod Talk {
+    use fge::Sort
     use fge::{DocJson, Suggest, Yarn}
     use Util.Json.Json
 
@@ -313,7 +314,7 @@ mod Talk {
         { speakers = TextDoc.speakerIds(text),
           nodes = openedNodesOf(maps),
           tags = Nil,
-          commands = commandNames() |> List.sort }
+          commands = commandNames() |> Sort.sortStable }
 
     /// 語彙を assets/talk/vocab.json に書く（make talk-vocab）。
     pub def vocab(): Unit \ IO =
