@@ -1,4 +1,4 @@
-<!-- engine v0.91.0 / 生成: 2026-11-10 -->
+<!-- engine v0.91.0 / 生成: 2026-11-11 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -382,7 +382,7 @@
   `pub type alias SpotShadow = Option[Shadow]`
 - スポットの並びの位置 offset のスポットが、world の点 (px, py, pz) へ届ける光に掛ける割合（影を落とさないスポットは 1）。
   `pub def shadowFactorAt(shadow: SpotShadow, offset: Int32, px: Float64, py: Float64, pz: Float64): Float64`
-- `pub def shadowLitFractionAt(m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, map: Vector[Float64], px: Float64, py: Float64, pz: Float64): Float64`
+- `pub def shadowLitFractionAt(m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, map: Vector[Float64], shift: Float64, px0: Float64, py0: Float64, pz0: Float64, nx: Float64, ny: Float64, nz: Float64): Float64`
 - スポットの並びの位置 offset のスポットが落とす影（引数は shadowLitFractionAt と同じ・strength = 影の濃さ）。
   `pub def spotShadowOf(offset: Int32, m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, strength: Float64, map: Vector[Float64]): SpotShadow`
 - 行列 m の 16 個（行優先）。shadowLitFractionAt の rows の形。
@@ -391,6 +391,11 @@
   `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
   `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+- 置いた物を光の目 eye から見た n × n の深度の地図（buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
+  `pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO`
+- `pub enum Projection { case Perspective(Float64) case Orthographic }`
+- 影の地図を描く光の目。
+  `pub type alias LightEye = { view = Mat4.Mat4, proj = Mat4.Mat4, projection = Projection }`
 - `pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3`
 
 ## SoftRaster3dLight — `engine_tools/src/gen/SoftRaster3dLight.flix`

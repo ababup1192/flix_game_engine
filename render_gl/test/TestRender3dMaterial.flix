@@ -53,7 +53,7 @@ mod TestRender3dMaterial {
     /// bias を引いた画素の z が地図の値以下なら照らされている。
     @Test
     def testLitWhenBiasedDepthNotBehindMap(): Unit \ Assert =
-        Assert.assertTrue(indexOf("if (z <= texelFetch(uShadowMap, t, 0).r) lit++;", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
+        Assert.assertTrue(indexOf("if (z <= texelFetch(map, t, 0).r) lit++;", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// 地図の外（NDC の x・y が −1..1 の外）は影にしない。
     @Test

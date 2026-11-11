@@ -1,4 +1,4 @@
-<!-- engine v0.91.0 / 生成: 2026-11-10 -->
+<!-- engine v0.91.0 / 生成: 2026-11-11 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -784,6 +784,8 @@
   `pub def ofLinearRows(row0: Vec3.Vec3, row1: Vec3.Vec3, row2: Vec3.Vec3): Mat4`
 - GL の透視（右手系の目の座標 → clip。奥行きは near で −1・far で +1。w = −z）。
   `pub def perspective(lens: { xScale = Float64, yScale = Float64, near = Float64, far = Float64 }): Mat4`
+- GL の正射影（右手系の目の座標 → clip。奥行きは near で −1・far で +1。w = 1）。箱は目の座標の left..right・bottom..top と、目の前の向きに測った near..far。
+  `pub def orthographic(box: { left = Float64, right = Float64, bottom = Float64, top = Float64, near = Float64, far = Float64 }): Mat4`
 - Y 軸まわり（ラジアン）。増えると +Z が +X へ回る（カメラの yaw と同じ向き）。
   `pub def rotateY(angle: Float64): Mat4`
 - X 軸まわり（ラジアン）。増えると +Z が −Y へ倒れる（カメラの pitch と同じ「正で下を向く」）。

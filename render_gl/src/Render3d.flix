@@ -60,11 +60,12 @@ mod Render3d {
     /// 影の地図の描き先 1 枚（深度テクスチャだけを付けた FBO）。size = 縦横の画素・lastUsed = 最後に描いたコマの世代。
     type alias ShadowTarget = { fbo = Int32, tex = Int32, size = Int32, lastUsed = Int64 }
 
-    /// 影を落とすスポット（pickLights の後の並びで shadow が Some の最初の 1 本）。
-    type alias ShadowCaster = { spot = Scene3d.SpotLight, shadowMap = Scene3d.ShadowMap, spotIndex = Int32 }
+    /// 影を落とす光 1 つ（光の種類に依らない）。matrix = world → 光の clip（Scene3d が Float64 で出す）・
+    /// frustum = 影を落とす物の間引き・settings = mapSize・bias・pcfRadius・strength。
+    type alias ShadowCaster = { matrix = Mat4.Mat4, frustum = Frustum.Frustum, settings = Scene3d.ShadowMap }
 
-    /// 影の地図を描く材料。plain = 骨の無い物・skinned = 骨つきの物（描く順）。
-    type alias ShadowPlan[b] = { caster = ShadowCaster, plain = List[b], skinned = List[b] }
+    /// 影の地図を描く材料。spotIndex = 影を落とすスポットの pickLights の後の並びの番号。plain = 骨の無い物・skinned = 骨つきの物（描く順）。
+    type alias ShadowPlan[b] = { caster = ShadowCaster, spotIndex = Int32, plain = List[b], skinned = List[b] }
 
     /// 光の uniform の location（頂点の色のプログラムとビルボードのプログラムで同じ名前）。
     type alias LightLocs = {

@@ -40,6 +40,22 @@ def testMat4RotateYQuarterTurnsPlusZToPlusX(): Unit \ Assert =
     let moved = Mat4.apply(Mat4.rotateY(Num.pi() / 2.0), Vec3.v3(0.0, 0.0, 1.0));
     Assert.assertTrue(Vec3.distanceSquared(moved, Vec3.v3(1.0, 0.0, 0.0)) < 1.0e-6)
 
+/// 正射影は、箱の角を NDC の角へ・目の前 near の面を z = −1・far の面を z = +1・その間を一次で写す（透視のような奥の詰まりが無い）。
+@Test
+def testMat4OrthographicMapsBoxToNdcCube(): Unit \ Assert =
+    let m = Mat4.orthographic({ left = -2.0, right = 6.0, bottom = 1.0, top = 3.0, near = 1.0, far = 5.0 });
+    let at = (x: Float64, y: Float64, z: Float64) -> { let p = Mat4.apply(m, Vec3.v3(x, y, z)); (p#x, p#y, p#z) };
+    Assert.assertEq(expected = ((-1.0, -1.0, -1.0), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)),
+                    (at(-2.0, 1.0, -1.0), at(6.0, 3.0, -5.0), at(2.0, 2.0, -3.0)))
+
+/// 正射影の 4 行目は (0, 0, 0, 1)（w が 1 のまま）なので、applyPerspective は apply と同じ値を返す。
+@Test
+def testMat4OrthographicKeepsWAtOne(): Unit \ Assert =
+    let m = Mat4.orthographic({ left = -1.0, right = 1.0, bottom = -1.0, top = 1.0, near = 0.5, far = 9.5 });
+    let p = Vec3.v3(0.25, -0.5, -3.0);
+    let tuple = (v: Vec3.Vec3) -> (v#x, v#y, v#z);
+    Assert.assertEq(expected = Some(tuple(Mat4.apply(m, p))), Mat4.applyPerspective(m, p) |> Option.map(tuple))
+
 /// 倍率 (2, 1, 1) の後、斜めの面の接線 (1, 1, 0) と法線 (1, −1, 0) を写しても直交のまま。
 /// 写した接線 (2, 1, 0)・写した法線 (0.5, −1, 0) で内積 2 × 0.5 − 1 = 0。
 @Test
