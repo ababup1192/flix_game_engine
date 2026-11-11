@@ -78,12 +78,14 @@ def testReflectionSkyWithSkyIsTheSky(): Unit \ Assert =
     Assert.assertEq(expected = (Texture3d.srgbToLinear(0.2), Texture3d.srgbToLinear(0.8), Texture3d.srgbToLinear(0.1), 2.0),
                     (r#zenith#r, r#horizon#g, r#ground#b, r#curve))
 
-/// 金属っぽさの式の GLSL は 5 つの画素ごとの入力を受け、光のループで鏡面を足し、空の映り込みを足す。
+/// 金属っぽさの式の GLSL は 6 つの画素ごとの入力を受け、光のループで鏡面を足し、環境マップがあればその色・無ければ空の映り込みを足す。
 @Test
-def testToGlslPbrModelTakesFivePerPixelInputs(): Unit \ Assert =
+def testToGlslPbrModelTakesSixPerPixelInputs(): Unit \ Assert =
     let glsl = LightModel3d.Codegen.toGlsl("pbrAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.Albedo ::
-                                           LightModel3d.Vec3Input.Light :: LightModel3d.Vec3Input.MetallicRoughness :: Nil, LightModel3d.pbrModel());
-    Assert.assertTrue(String.startsWith(prefix = "vec3 pbrAt(vec3 p, vec3 n, vec3 albedo, vec3 light, vec3 metalRough) {", glsl) and
+                                           LightModel3d.Vec3Input.Light :: LightModel3d.Vec3Input.MetallicRoughness :: LightModel3d.Vec3Input.EnvironmentColor :: Nil,
+                                           LightModel3d.pbrModel());
+    Assert.assertTrue(String.startsWith(prefix = "vec3 pbrAt(vec3 p, vec3 n, vec3 albedo, vec3 light, vec3 metalRough, vec3 envColor) {", glsl) and
+                      String.contains(substr = "uEnvOn", glsl) and
                       String.contains(substr = "for (int i = 0; i < ${Scene3d.maxPointLights()}; i++)", glsl) and
                       String.contains(substr = "for (int i = 0; i < ${Scene3d.maxSpotLights()}; i++)", glsl) and
                       String.contains(substr = "spotShadow(i, p)", glsl) and

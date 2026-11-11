@@ -51,7 +51,7 @@ mod Scenes {
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
-            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: Nil
+            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -75,6 +75,8 @@ mod Scenes {
     /// metallic と roughness の 3 つ（Apple Silicon で pbrSpheres3d 80 px・pbrNoSky3d 34 px・pbrMapped3d 259 px）: 球は鏡面の坂の丸めの ±1 が散る。pbrNoSky3d は toonSteps が 3 なので、
     /// 拡散の段の境目に落ちた画素が Float32 と Float64 の丸めで 1 段（±19 まで）割れる（鏡面は段付けしない）。pbrMapped3d は絵の B と G を読む縁の ±1。
     /// 式を取り違えると球の中（1 個で約 1,700 px）が丸ごと違い、差は千 px を超える。
+    /// 環境マップの 3 つ（Apple Silicon で pbrEnvironment3d 112 px・pbrEnvironmentBox3d 112 px・pbrEnvironmentSky3d 1,323 px）: 球は絵の補間の ±1〜2。
+    /// pbrEnvironmentSky3d は背景の全画素（33,600 px）が絵の補間（Float32 と Float64）の丸めで ±1 割れる。向きを取り違えると背景が丸ごと別の絵になり、max が桁で変わる。
     /// batch の頭の物の tint か emission で描くと板 1 枚で 300 px を超えて列ごとに違い、行を取り違えると板の曲がりが変わって縁の数が桁で増える。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
@@ -115,6 +117,9 @@ mod Scenes {
         case "pbrNoSky3d"      => Some(100)
         case "pbrMapped3d"     => Some(400)
         case "gltfPbr3d"       => Some(400)
+        case "pbrEnvironment3d" => Some(400)
+        case "pbrEnvironmentBox3d" => Some(400)
+        case "pbrEnvironmentSky3d" => Some(2000)
         case _                 => None
     }
 
@@ -1435,5 +1440,50 @@ mod Scenes {
         let lit = pbrLit(plate :: box :: Nil, tex :: Nil);
         let scene = { sky = Some(sky), environment = { background = None | lit#environment } | lit };
         { name = "pbrMapped3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 53〜54: 環境マップ（Scene3d.environmentMap → GL は uEnvMap を textureLod で読む・CPU は SoftRaster3d.Internal.environmentColorAt）。B 段階 ──
+
+    /// 横 128・縦 64 の正距円筒のパノラマ。上半分は青の空・下半分は茶の床・地平の帯は赤と黄の縦縞（東西南北が見分けられる）・南（絵の真ん中）の上に白い窓。
+    def parityPanorama(): Texture3d.Texture3d =
+        let argbOf = (c: Color) -> {
+            let k = (x: Float64) -> Float64.round(x * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+            Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(k(c#r), 16)),
+                            Int32.bitwiseOr(Int32.leftShift(k(c#g), 8), k(c#b)))
+        };
+        let texel = (x: Int32, y: Int32) ->
+            if (x >= 56 and x < 72 and y >= 14 and y < 26) c8(255, 255, 255)
+            else if (y >= 28 and y < 36) (if (Int32.remainder(x / 8, 2) == 0) c8(220, 60, 50) else c8(240, 210, 70))
+            else if (y < 32) c8(70, 110 + y * 2, 200)
+            else c8(110 - (y - 32), 80 - (y - 32) / 2, 50);
+        let pixels = Vector.range(0, 128 * 64) |> Vector.map(k -> argbOf(texel(Int32.remainder(k, 128), k / 128)));
+        match Texture3d.fromArgb(128, 64, pixels) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    // 箱なし: 球の列（metallic 0・0.5・1 × roughness 0.3・0.5・0.75・1）が周りの景色を映す。roughness が大きいほど景色がぼける（段を roughness で選ぶ）。
+    // 式を取り違えると（向き・段・強さ）球の中が丸ごと違う。
+    def pbrEnvironment3d(): Scene =
+        let tex = parityPanorama();
+        let scene = { environmentMap = Some(Scene3d.environmentMap(tex)) | pbrLit(pbrSphereGrid(), tex :: Nil) };
+        { name = "pbrEnvironment3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // 箱つき: 同じ球の列を、球の周りの部屋（12 × 10 × 12）の箱で補正して映す。箱なしと違い、壁に近い球ほど景色の位置がずれる。強さ 0.8。
+    def pbrEnvironmentBox3d(): Scene =
+        let tex = parityPanorama();
+        let box = { min = Vec3.v3(-6.0, -5.0, 8.0), max = Vec3.v3(6.0, 5.0, 20.0), center = Vec3.v3(0.0, 0.0, 14.0) };
+        let env = Scene3d.environmentMap(tex) |> Scene3d.withEnvironmentBox(box) |> Scene3d.withEnvironmentIntensity(0.8);
+        let scene = { environmentMap = Some(env) | pbrLit(pbrSphereGrid(), tex :: Nil) };
+        { name = "pbrEnvironmentBox3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // 背景: 景色を空として描く（asBackground）。球は景色を映し、何も描かれない画素にも同じ景色が出る（段 0・強さ 0.9）。
+    def pbrEnvironmentSky3d(): Scene =
+        let tex = parityPanorama();
+        let env = Scene3d.environmentMap(tex) |> Scene3d.withEnvironmentAsBackground(true) |> Scene3d.withEnvironmentIntensity(0.9);
+        let scene = { environmentMap = Some(env) | pbrLit(pbrSphereGrid(), tex :: Nil) };
+        { name = "pbrEnvironmentSky3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 }

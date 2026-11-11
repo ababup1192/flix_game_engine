@@ -30,7 +30,10 @@ pub mod SoftRaster.Internal.Texture {
             List.append(List.take(Scene3d.maxMaterialTextures(), reads) |> List.map(r -> keyOf(fst(r), Texture3d.TextureUse.MaterialTexture)),
                         f#normalMap |> Option.toList |> List.map(n -> keyOf(n#texture, Texture3d.TextureUse.NormalMap)))
         });
-        let mippedKeys = List.append(materialKeys, lightmapKeys) |> List.distinct;
+        let environmentKeys = scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene))
+            |> List.map(name -> keyOf(name, Texture3d.TextureUse.MaterialTexture));
+        let mippedKeys = List.append(materialKeys, List.append(lightmapKeys, environmentKeys)) |> List.distinct;
+        let environmentOnly = Set.difference(List.toSet(List.map(fst, environmentKeys)), List.toSet(List.map(fst, List.append(materialKeys, lightmapKeys))));
         // WhyNot: 材質も読む名前を lightmap の絵と呼ばない — GL は名前ごとに 1 回だけ知らせ、材質の絵として先に引く。
         let lightmapOnly = Set.difference(List.toSet(List.map(fst, lightmapKeys)), List.toSet(List.map(fst, materialKeys)));
         let billboardKeys = scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> keyOf(Scene3d.billboardFieldsOf(b)#texture, Texture3d.TextureUse.MaterialTexture)));
@@ -43,7 +46,10 @@ pub mod SoftRaster.Internal.Texture {
             case Some((td, cacheKey)) =>
                 let rendered = Set.memberOf(fst(key), mipSource#rendered);
                 Map.insert(key, if (rendered) Vector#{ td } else mipChainOf(mipSource#cache, cacheKey, Texture3d.mipAverageOf(snd(key)), td), acc)
-            case None => warnMissingSceneTexture(warnLog, if (Set.memberOf(fst(key), lightmapOnly)) "lightmap の絵" else "材質の絵", fst(key)); acc
+            case None =>
+                let label = if (Set.memberOf(fst(key), lightmapOnly)) "lightmap の絵" else if (Set.memberOf(fst(key), environmentOnly)) "環境マップの絵" else "材質の絵";
+                warnMissingSceneTexture(warnLog, label, fst(key));
+                acc
         }, Map.empty());
         billboardKeys |> List.distinct |> List.filter(key -> not Set.memberOf(key, mippedSet)) |> List.foldLeft((acc, key) -> match lookup(fst(key)) {
             case Some((td, _)) => Map.insert(key, Vector#{ td }, acc)

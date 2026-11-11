@@ -247,7 +247,7 @@ mod TestRender3dMaterial {
         let plain = sourceOf({ blend = false, doubleSided = false, coverage = false, metallicRoughness = false });
         Assert.assertEq(expected = (true, true, true, false, false),
             (indexOf("materialEval(albedo, emission, metalRough);", glossy) >= 0,
-             indexOf("vec3 lit = pbrAt(vWorld, n, r3d_srgbToLinear3(albedo.rgb) * vTint, light, vec3(metalRough, 0.0));", glossy) >= 0,
+             indexOf("vec3 lit = pbrAt(vWorld, n, base, light, vec3(metalRough, 0.0), envColor);", glossy) >= 0,
              indexOf("r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld)", glossy) >= 0,
              indexOf("pbrAt", plain) >= 0, indexOf("metalRough", plain) >= 0))
 
@@ -258,4 +258,13 @@ mod TestRender3dMaterial {
         let plain = sourceOf({ blend = false, doubleSided = false, coverage = false, metallicRoughness = false });
         Assert.assertEq(expected = (true, false),
             (indexOf("uniform vec3 uZenith;", glossy) >= 0, indexOf("uniform vec3 uZenith;", plain) >= 0))
+
+    /// 環境マップの読みは metallic と roughness を持つ版だけが宣言し、環境マップが無い時（uEnvOn が 1 でない）は絵を読まない。
+    @Test
+    def testEnvironmentReadOnlyInMetallicRoughnessVariantAndGuarded(): Unit \ Assert =
+        let glossy = sourceOf({ blend = false, doubleSided = false, coverage = false, metallicRoughness = true });
+        let plain = sourceOf({ blend = false, doubleSided = false, coverage = false, metallicRoughness = false });
+        Assert.assertEq(expected = (true, true, false),
+            (indexOf("uniform sampler2D uEnvMap;", glossy) >= 0, indexOf("if (uEnvOn == 1) envColor = environmentColorAt(", glossy) >= 0,
+             indexOf("uEnvMap", plain) >= 0))
 }

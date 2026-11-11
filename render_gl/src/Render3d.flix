@@ -29,7 +29,7 @@ mod Render3d {
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{SceneDraws, SceneInputs, SceneItem, SceneTarget, planScenes}
     use Render3d.Shadow.{bindShadowMap, putShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
-    use Render3d.Material.{blankTextureId, budgetEvictions, drawMaterials, resolveTextureAs, sweepMaterials, sweepTextures3d}
+    use Render3d.Material.{bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, drawMaterials, resolveTextureAs, sweepMaterials, sweepTextures3d}
     use Render3d.Counts.{Counter, Phase, count, countDrawCall, countInstances, noteDroppedLights, takeCounts, timed}
 
     // ── 型 ──
@@ -72,7 +72,8 @@ mod Render3d {
         pointCount = Int32, pointPos = Int32, pointColor = Int32, pointRange = Int32,
         spotCount = Int32, spotPos = Int32, spotDir = Int32, spotColor = Int32, spotRange = Int32, spotCone = Int32,
         fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
-        reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32
+        reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32,
+        envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32
     }
 
     /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
@@ -99,7 +100,8 @@ mod Render3d {
 
     /// 空のプログラムの uniform の location。
     type alias SkyLocs = { program = Int32, viewport = Int32, forward = Int32, right = Int32, up = Int32,
-                           zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32 }
+                           zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32,
+                           envOn = Int32, envIntensity = Int32 }
 
     /// 骨つきの版のプログラム。
     type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs }
@@ -197,7 +199,9 @@ mod Render3d {
         spotCount = Int32, spotPos = Array[Float32, Static], spotDir = Array[Float32, Static], spotColor = Array[Float32, Static],
         spotRange = Array[Float32, Static], spotCone = Array[Float32, Static],
         fogOn = Int32, fogColor = Array[Float32, Static], fogRange = Array[Float32, Static], eye = Array[Float32, Static],
-        reflectZenith = Array[Float32, Static], reflectHorizon = Array[Float32, Static], reflectGround = Array[Float32, Static], reflectCurve = Float32
+        reflectZenith = Array[Float32, Static], reflectHorizon = Array[Float32, Static], reflectGround = Array[Float32, Static], reflectCurve = Float32,
+        envOn = Int32, envBoxOn = Int32, envBoxMin = Array[Float32, Static], envBoxMax = Array[Float32, Static], envBoxCenter = Array[Float32, Static],
+        envLevels = Float32, envIntensity = Float32
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshesRef = contentHash → GPU に置いたメッシュ。
@@ -287,6 +291,9 @@ mod Render3d {
 
     /// 影の無い場面で影の地図の代わりに使う unit（1 × 1 の透明な黒を貼ったままにする）。
     def blankTextureUnit(): Int32 = 9
+
+    /// 環境マップ（周りの景色のパノラマ）を貼るテクスチャの unit（1 つの場面に 1 枚）。
+    def environmentTextureUnit(): Int32 = 12
 
     /// joint texture を貼るテクスチャの unit。
     def jointTextureUnit(): Int32 = 10
@@ -495,15 +502,16 @@ mod Render3d {
         let programs = programsOf(gl, state);
         let background = if (area#fillBackground and Option.isEmpty(scene#sky)) scene#environment#background else None;
         beginScene(gl, area#viewport, area#scissor, background);
+        let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
+        let environmentLevels = bindEnvironmentMap(gl, state, gen, source, scene);
         if (area#fillBackground) drawSky(gl, state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         noteDroppedLights(state, scene);
-        let lights = lightDataOf(picked);
+        let lights = lightDataOf(picked, environmentLevels);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let shadow = inputs#shadow;
         let camera = { view = view, proj = proj, lights = lights, shadow = shadow, frustum = frustum };
-        let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let draws = inputs#draws;
         Render3d.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
@@ -521,6 +529,7 @@ mod Render3d {
                 drawMaterials(gl, state, gen, camera, MaterialPass.Depth(dr), source, draws#opaque);
                 drawBillboards(gl, state, textureOf, programs#billboard, camera, scene)
         };
+        releaseEnvironmentMap(gl, scene);
         endScene(gl)
 
     /// 半透明の材質の物を Scene3d.blendOrderOf の順（遠い物から）に、深度を読むが書かずに重ねる。無ければ何もしない。
@@ -580,7 +589,7 @@ mod Render3d {
     /// Output.Depth では白（一番奥）。sky と background が両方 Some なら 1 回だけ知らせる（background は beginScene に渡さない）。
     def drawSky(gl: GlContext, state: State, viewport: PixelBox, scene: Scene3d.Scene3dCmd): Unit \ IO =
         Scene3d.skyWarning(scene) |> Option.forEach(line -> warnSceneOnce(state, "@sky+background", line));
-        scene#sky |> Option.forEach(sky -> {
+        Scene3d.drawnSkyOf(scene) |> Option.forEach(sky -> {
             let locs = skyProgramOf(gl, state);
             if (locs#program == 0) ()
             else {
@@ -598,6 +607,9 @@ mod Render3d {
                 putLinearizedColor(gl, locs#horizon, f#horizon);
                 putLinearizedColor(gl, locs#ground, f#ground);
                 gl.uniform1f(locs#curve, RenderUtil.f32(Scene3d.skyCurveOf(sky)));
+                let background = Scene3d.backgroundEnvironmentOf(scene);
+                gl.uniform1i(locs#envOn, if (Option.isEmpty(background)) 0 else 1);
+                gl.uniform1f(locs#envIntensity, RenderUtil.f32(background |> Option.map(Scene3d.environmentIntensityOf) |> Option.getWithDefault(0.0)));
                 gl.uniform1i(locs#depthOut, match scene#output {
                     case Scene3d.Output.Color    => 0
                     case Scene3d.Output.Depth(_) => 1
@@ -1047,7 +1059,8 @@ mod Render3d {
                 let made = { program = program, viewport = loc(gl, program, "uViewport"), forward = loc(gl, program, "uForward"),
                              right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"), zenith = loc(gl, program, "uZenith"),
                              horizon = loc(gl, program, "uHorizon"), ground = loc(gl, program, "uGround"), curve = loc(gl, program, "uCurve"),
-                             depthOut = loc(gl, program, "uDepthOut") };
+                             depthOut = loc(gl, program, "uDepthOut"), envOn = loc(gl, program, "uEnvOn"), envIntensity = loc(gl, program, "uEnvIntensity") };
+                if (program == 0) () else { gl.useProgram(program); gl.uniform1i(loc(gl, program, "uEnvMap"), environmentTextureUnit()); gl.useProgram(0) };
                 Ref.put(Some(made), state#skyRef);
                 made
         }
@@ -1107,7 +1120,10 @@ mod Render3d {
           fogOn = loc(gl, program, "uFogOn"), fogColor = loc(gl, program, "uFogColor"), fogRange = loc(gl, program, "uFogRange"),
           eye = loc(gl, program, "uEye"),
           reflectZenith = loc(gl, program, "uZenith"), reflectHorizon = loc(gl, program, "uHorizon"), reflectGround = loc(gl, program, "uGround"),
-          reflectCurve = loc(gl, program, "uCurve") }
+          reflectCurve = loc(gl, program, "uCurve"),
+          envOn = loc(gl, program, "uEnvOn"), envBoxOn = loc(gl, program, "uEnvBoxOn"), envBoxMin = loc(gl, program, "uEnvBoxMin"),
+          envBoxMax = loc(gl, program, "uEnvBoxMax"), envBoxCenter = loc(gl, program, "uEnvBoxCenter"),
+          envLevels = loc(gl, program, "uEnvLevels"), envIntensity = loc(gl, program, "uEnvIntensity") }
 
     def shadowLocsOf(gl: GlContext, program: Int32): ShadowLocs \ IO =
         { on = loc(gl, program, "uShadowOn"), spot = loc(gl, program, "uShadowSpot"), matrix = loc(gl, program, "uShadowMatrix"),

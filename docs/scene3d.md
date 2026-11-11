@@ -117,6 +117,37 @@ Scene3d.withMetallicRoughnessTexture("tex3d:orm", gold)                         
   spec の名前が `gltf:vc` の材質まで広げ、`Scene3d.metallicRoughnessOf` の値ごとに束ねる。鏡面が要らない材質は `Scene3d.withoutMetallicRoughness`
 - やらない事: キューブマップ・反射プローブ・スクリーン空間の反射・異方性・クリアコート・occlusionTexture
 
+## 周りの景色を映す（環境マップと箱の補正）
+
+空のグラデーション 3 色だけでは、鏡のような金属（クロム）が「のっぺりした球」になる。周りの景色のパノラマの絵を 1 枚渡すと、metallic と roughness を持つ材質の映り込みが
+その絵を読む（Unity の Skybox（Panoramic）と Reflection Probe の Box Projection・Godot の PanoramaSkyMaterial と ReflectionProbe の box_projection に当たる）。
+
+```flix
+let env = Scene3d.environmentMap(panorama)                      // Texture3d の絵（正距円筒・横 2：縦 1）
+            |> Scene3d.withEnvironmentIntensity(1.0)              // 線形の量に戻した後に掛ける倍率（0 で映り込み無し）
+            |> Scene3d.withEnvironmentBox({ min = Vec3.v3(-4.0, 0.0, -4.0), max = Vec3.v3(4.0, 4.0, 4.0), center = Vec3.v3(0.0, 1.4, 2.0) })  // 室内だけ
+{ environmentMap = Some(env), textures = panorama :: Nil | Scene3d.scene(camera, size) }   // 絵は textures にも載せる（"tex3d:" の名前）
+```
+
+- **絵の作り方**: 部屋の中の 1 点から全方向を、正距円筒（equirectangular）で描く（Blender は Cycles のカメラを Panoramic → Equirectangular）。
+  映したくない物（映る側の球・銃）は隠して描く。8bit の sRGB の絵として読み、段（mipmap）を作る。1 を超える明るさ（光る板）は 1 に頭打ちになるので、
+  足りなければ `withEnvironmentIntensity` で倍にする。Blender は engine と左右が鏡なので、描いた絵の左右を反転して書く
+- **向き**: 座標の約束（X = 東・Y = 上・Z = 北）のまま。向き d（長さ 1）の絵の座標は `u = 0.5 + atan2(d.x, −d.z) / 2π`・`v = 0.5 − asin(d.y) / π`
+  （`LightModel3d.environmentUvOf`）。絵の真ん中が −Z・u = 0.75 が +X・u = 0.25 が −X・継ぎ目（u = 0 と 1）が +Z・上の行が真上
+- **段**: roughness × (段の数 − 1) の段を、段どうしを混ぜて読む（`LightModel3d.environmentLodOf`）。roughness 0 の鏡は一番細かい絵・1 は 1 × 1 の平均。
+  段は微分でなく roughness から決めるので、向きの継ぎ目（atan2 が 1 跳ぶ所）で段が跳ねて縦の筋が出ることは無い。
+  絵は横も縦も Repeat で読む（横の継ぎ目は回り込んで混ざる。縦は真上・真下の 1 画素が反対の極と少し混ざる）
+- **箱の補正**（`withEnvironmentBox`）: 無限に遠い景色として読むと、部屋の中の物が壁の近くでも景色の位置がずれない。箱があれば、点から跳ね返りの向きへ伸ばした線が
+  箱の内側の面と交わる点を求め、`その点 − center` の向きで絵を読む（Unity の Box Projection と同じ）。center は絵を撮った点。
+  部屋の中の物にだけ付ける（屋外の空には要らない）。点が箱の外にある時は、点から見た向きになる
+- **映すもの**: metallic と roughness を持つ材質の映り込み（`Fresnel` を掛けた色）だけ。拡散の光（ambient と hemisphere）は変わらず、鏡面ハイライト（光源の映り）も今まで通り。
+  環境マップの無い場面（`environmentMap = None`）は今までと同じ（空のグラデーションを映す・絵も GL のプログラムの字も同じ）
+- **重さ**: 絵を 1 回読む（画素 × 1 回）と、箱があれば向きの計算が少し増える。環境マップの無い場面は何も増えない
+- やらない事: 環境マップから拡散の光を作る（放射照度の前計算）・エンジン自身で景色を撮る（反射プローブ・キューブマップ）・複数の環境マップの切り替えと混ぜ
+- `Scene3dCmd` に欄 `environmentMap = Option[EnvironmentMap]` が増えた（`Scene3d.scene` は None）。場面のレコードを全部の欄で書いている所は `environmentMap = None` を足す
+- **背景**（`Scene3d.withEnvironmentAsBackground(true, env)`）: 何も描かれない画素にも景色の絵を空として描く（屋外の景色の絵向き・室内の見本の部屋では使わない）。
+  向きは画素の NDC を通る向き（空と同じ）・絵は段 0 で読み、強さも掛かる。`sky` があれば `sky` が勝つ（環境マップの背景は描かず、映り込みだけに使う）
+
 ## 描く量（視錐台の外を間引く）
 
 GL と CPU の描き手は、場面のカメラの視錐台の外の置いた物とビルボードを描かない（ゲームは何も書かなくてよい）。

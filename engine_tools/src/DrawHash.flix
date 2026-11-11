@@ -70,7 +70,8 @@ pub mod DrawHash {
             |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture))
             |> List.toSet;
         let fromMaterials = frame#req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf)) |> List.toSet;
-        Set.union(fromDrawables, Set.union(fromSurfaces, Set.union(fromBillboards, fromMaterials)))
+        let fromEnvironment = frame#req#scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene)) |> List.toSet;
+        Set.union(fromDrawables, Set.union(fromSurfaces, Set.union(fromBillboards, Set.union(fromMaterials, fromEnvironment))))
 
     /// 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
     pub def filesOf(frame: Frame): List[String] =
@@ -190,7 +191,7 @@ pub mod DrawHash {
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
         case { size = size, camera = camera, instances = instances, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, environment = environment,
-               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky } =>
+               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
@@ -213,8 +214,22 @@ pub mod DrawHash {
             };
             out.writeInt(zIndex);
             putSceneTextures(out, textures);
-            sky |> Option.forEach(putSky(out))
+            sky |> Option.forEach(putSky(out));
+            environmentMap |> Option.forEach(putEnvironmentMap(out))
     }
+
+    // WhyNot: 環境マップの無い場面に印を書かない — environmentMap の欄を足す前の鍵の字を保ち、環境マップの無い場面のキャッシュの PNG を塗り直させない。
+    // 絵の名前は中身の指紋（Texture3d.contentHash）から決まるので、名前を書けば絵の中身まで鍵に入る。
+    def putEnvironmentMap(out: DataOutputStream, e: Scene3d.EnvironmentMap): Unit \ IO =
+        let f = Scene3d.environmentMapFieldsOf(e);
+        out.writeByte(0x45);
+        putStr(out, f#texture);
+        putF(out, Scene3d.environmentIntensityOf(e));
+        out.writeByte(if (f#asBackground) 1i32 else 0i32);
+        match f#box {
+            case None    => out.writeByte(0i32)
+            case Some(b) => out.writeByte(1i32); putVec3(out, b#min); putVec3(out, b#max); putVec3(out, b#center)
+        }
 
     // WhyNot: 空の無い場面に印を書かない — sky の欄を足す前の鍵の字を保ち、空の無い場面のキャッシュの PNG を塗り直させない。
     def putSky(out: DataOutputStream, sky: Scene3d.Sky3d): Unit \ IO =

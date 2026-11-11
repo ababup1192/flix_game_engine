@@ -100,7 +100,7 @@ mod ExprRows {
     pub type alias GlRows = {
         tree = List[Vector[Float32]], toon = List[Vector[Float32]], shadowedLight = Vector[Float32], brokenFalloff = Vector[Float32], brokenCone = Vector[Float32],
         shadow = List[Vector[Float32]], tbn = Vector[Float32], lightmap = Vector[Float32],
-        colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]], pbr = List[Vector[Float32]]
+        colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]], pbr = List[Vector[Float32]], envDirection = List[Vector[Float32]]
     }
 
     def f32(x: Float64): Float64 = Float32.toFloat64(Float64.truncateToFloat32(x))
@@ -320,8 +320,36 @@ mod ExprRows {
         "    vec4 b = texelFetch(uIn1, at, 0);\n" +
         "    vec3 c = texelFetch(uIn2, at, 0).xyz;\n" +
         "    vec3 light = texelFetch(uIn3, at, 0).xyz;\n" +
-        "    fragColor = vec4(pbrAt(a.xyz, b.xyz, c, light, vec3(a.w, b.w, 0.0)), 1.0);\n" +
+        "    fragColor = vec4(pbrAt(a.xyz, b.xyz, c, light, vec3(a.w, b.w, 0.0), vec3(0.0)), 1.0);\n" +
         "}\n"
+
+    /// 環境マップを読む向き environmentDirectionAt（a = 点・metallic・b = 法線・roughness・c = albedo。箱の uniform と uEye は呼ぶ側が入れる）。
+    def environmentDirectionFragment(): String =
+        "#version 330 core\n" +
+        "out vec4 fragColor;\n" +
+        "uniform sampler2D uIn0;\n" +
+        "uniform sampler2D uIn1;\n" +
+        "uniform sampler2D uIn2;\n" +
+        Render3dGlsl.colorSpaceSource() +
+        Render3dGlsl.lightSource() +
+        Render3dGlsl.metallicRoughnessSource() +
+        "void main() {\n" +
+        "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
+        "    vec4 a = texelFetch(uIn0, at, 0);\n" +
+        "    vec4 b = texelFetch(uIn1, at, 0);\n" +
+        "    vec3 c = texelFetch(uIn2, at, 0).xyz;\n" +
+        "    fragColor = vec4(environmentDirectionAt(a.xyz, b.xyz, c, vec3(a.w, b.w, 0.0)), 1.0);\n" +
+        "}\n"
+
+    /// 環境マップの箱（箱なしの組と、全部の点が中に入る部屋の箱の組）。
+    def environmentBoxes(): List[Option[Scene3d.EnvironmentBox]] =
+        None :: Some({ min = Vec3.v3(-6.0, -6.0, -6.0), max = Vec3.v3(6.0, 6.0, 6.0), center = Vec3.v3(0.5, 0.3, -0.4) }) :: Nil
+
+    def environmentBoxUniforms(s: LightSet, box: Option[Scene3d.EnvironmentBox]): List[(String, RowUniform)] =
+        let zero = Vec3.v3(0.0, 0.0, 0.0);
+        let b = box |> Option.getWithDefault({ min = zero, max = zero, center = zero });
+        lightUniforms(s, 0, TreeRow.Light) ::: ("uEnvBoxOn", RowUniform.IntValue(if (Option.isEmpty(box)) 0 else 1)) :: ("uEnvBoxMin", vec3U(b#min)) ::
+            ("uEnvBoxMax", vec3U(b#max)) :: ("uEnvBoxCenter", vec3U(b#center)) :: Nil
 
     def colorSpaceModes(): List[Int32] = 0 :: 1 :: Nil
 
@@ -443,11 +471,20 @@ mod ExprRows {
             colorSpace <- GlOffscreen.drawFloatRows(colorSpaceFragment(), count(), rowTexture("uIn0", inputs#colorSpace, pr -> pr#a) :: Nil, colorSpaceSets());
             surface <- GlOffscreen.drawFloatRows(surfaceFragment(), count(), probeTextures(inputs#surface), surfaceSets(inputs));
             pbr <- GlOffscreen.drawFloatRows(pbrFragment(), count(), probeTextures(inputs#pbr) ::: rowTexture("uIn3", inputs#pbrLight, pr -> pr#a) :: Nil,
-                       inputs#sets |> List.map(s -> lightUniforms(s, 0, TreeRow.Light)))
+                       inputs#sets |> List.map(s -> lightUniforms(s, 0, TreeRow.Light)));
+            envDirection <- GlOffscreen.drawFloatRows(environmentDirectionFragment(), count(), probeTextures(inputs#pbr),
+                       environmentBoxes() |> List.map(box -> environmentBoxUniforms(firstSet(inputs), box)))
         ) yield {
             tree = tree, toon = toon, shadowedLight = firstOf(shadowedLight), brokenFalloff = firstOf(brokenFalloff), brokenCone = firstOf(brokenCone),
             shadow = shadow, tbn = firstOf(tbn), lightmap = firstOf(lightmap),
-            colorSpace = colorSpace, surface = surface, pbr = pbr
+            colorSpace = colorSpace, surface = surface, pbr = pbr, envDirection = envDirection
+        }
+
+    /// 最初の光の組（目の位置だけを使う行の入力）。
+    def firstSet(inputs: Inputs): LightSet =
+        match List.head(inputs#sets) {
+            case Some(s) => s
+            case None    => bug!("ExprRows: 光の組が空")
         }
 
     /// 点光源とスポットを共に持つ最初の光の組（壊した式と影の行が使う）。
@@ -648,7 +685,24 @@ mod ExprRows {
                 else Some(relDiff(rgbAt(values, i), SoftRaster3dLight.pbrAt(points, spots, None, px, py, pz, nx, ny, nz, ax, ay, az, lx, ly, lz,
                                                                       metallic, roughness, 0.0, s#eye#x, s#eye#y, s#eye#z,
                                                                       s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
-                                                                      s#ground#x, s#ground#y, s#ground#z, s#curve)))
+                                                                      s#ground#x, s#ground#y, s#ground#z, s#curve, 0.0, 0.0, 0.0, 0.0)))
+            })
+        }))
+
+    /// 環境マップを読む向き（箱なし・箱あり）の CPU の値と GPU の値の差。
+    def environmentDirectionOutcome(inputs: Inputs, rows: GlRows): Outcome =
+        let eye = firstSet(inputs)#eye;
+        outcomeOf(List.zip(environmentBoxes(), rows#envDirection) |> List.flatMap(d -> {
+            let (box, values) = d;
+            let zero = Vec3.v3(0.0, 0.0, 0.0);
+            let b = box |> Option.getWithDefault({ min = zero, max = zero, center = zero });
+            inputs#pbr |> List.mapWithIndex((i, pr) -> {
+                let (px, py, pz, metallic) = pr#a;
+                let (nx, ny, nz, roughness) = pr#b;
+                let (ax, ay, az, _) = pr#c;
+                Some(relDiff(rgbAt(values, i), SoftRaster3dLight.environmentDirectionAt(px, py, pz, nx, ny, nz, ax, ay, az, metallic, roughness, 0.0,
+                                                                                       eye#x, eye#y, eye#z, b#min#x, b#min#y, b#min#z, b#max#x, b#max#y, b#max#z,
+                                                                                       b#center#x, b#center#y, b#center#z, if (Option.isEmpty(box)) 0.0 else 1.0)))
             })
         }))
 
@@ -698,7 +752,8 @@ mod ExprRows {
                     lineOf("exprLightmapLod", lightmapOutcome(inputs, rows), limitTexture()) ::
                     lineOf("exprColorSpace", colorSpaceOutcome(inputs, rows), limitTree()) ::
                     lineOf("exprSurfaceOut", surfaceOutcome(inputs, rows), limitTree()) ::
-                    lineOf("exprPbr", pbrOutcome(inputs, rows), limitTree()) :: Nil;
+                    lineOf("exprPbr", pbrOutcome(inputs, rows), limitTree()) ::
+                    lineOf("exprEnvDirection", environmentDirectionOutcome(inputs, rows), limitTree()) :: Nil;
                 List.forEach(l -> println(fst(l)), lines);
                 List.forAll(snd, lines)
         }

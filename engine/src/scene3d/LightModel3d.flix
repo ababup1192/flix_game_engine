@@ -23,9 +23,12 @@
 ///   F      = F0 + (1 − F0) × (1 − v·h)^5・F0 = mix(0.04, albedo, metallic)             h = normalize(l + v)・v = 目への向き
 ///   映り込み = 空(normalize(mix(r, n, roughness²))) × (F0 + (max(1 − roughness, F0) − F0) × (1 − n·v)^5)    r = reflect(−v, n)
 ///            （粗いほど向きを法線へ寄せる。空の全体の平均へ寄せると、粗い金属が明るく平たく見える）
+///   環境マップがあれば（ScalarInput.EnvironmentOn = 1）、映り込みの「空(…)」は環境マップの色 EnvironmentColor に替わる:
+///     EnvironmentColor = toLinear(絵(environmentUvOf(d), 段 = roughness × (段の数 − 1))) × 強さ・d = environmentDirection
+///     d = 箱が無ければ normalize(mix(r, n, roughness²))・箱があれば p + t × (その向き) の box.center からの向き（t = 向かう側の面までの距離を軸ごとに測った最小・0 以上）
 ///   toon は light だけに掛かり、鏡面と映り込みは段付けしない。lightmap の面も鏡面と映り込みは同じに足す（ベイクした光は拡散の側）。
 ///
-/// 木の外に置く物（2 つの描き手がそれぞれ書く）: 絵を読む所（lightmap の段つきの読み・法線マップの絵）・法線マップの TBN・
+/// 木の外に置く物（2 つの描き手がそれぞれ書く）: 絵を読む所（lightmap の段つきの読み・法線マップの絵・環境マップの絵）・法線マップの TBN・
 /// 影の地図の PCF・裏の面の法線の反転。木はその結果を入力（Vec3Input.Normal・LightmapColor・ScalarInput.ShadowLit）として受ける。
 /// 光を色に掛ける所（色 = 頂点の色か albedo × tint × light）と、かすみの後に emission を足す所は、metallic と roughness を持たない面では木の外（呼ぶ側が書く）。
 /// 持つ面は光を掛ける所まで pbrModel（木の中）が決め、かすみと emission は呼ぶ側が同じに続ける。
@@ -118,6 +121,10 @@ pub mod LightModel3d {
         /// lightmap を Srgb で読むなら 1、Linear なら 0。
         case LightmapSrgb
         case LightmapIntensity
+        /// 環境マップがあれば 1、無ければ 0（pbrModel の映り込みの選び）。
+        case EnvironmentOn
+        /// 環境マップの箱の補正があれば 1、無ければ 0（environmentDirection の選び）。
+        case EnvironmentBoxOn
     }
 
     /// 画素ごと・場面ごとの vec3 の入力。
@@ -144,6 +151,12 @@ pub mod LightModel3d {
         case Light
         /// x = metallic・y = roughness（0..1。z は使わない。pbrModel の入力）。
         case MetallicRoughness
+        /// 環境マップを跳ね返りの向きで読んだ色（線形の量・強さを掛けた後。pbrModel の入力。絵を読むのは木の外）。
+        case EnvironmentColor
+        /// 環境マップの箱（world。environmentDirection の入力）。
+        case EnvironmentBoxMin
+        case EnvironmentBoxMax
+        case EnvironmentBoxCenter
     }
 
     /// 光のループの中で読めるスカラーの欄。
@@ -249,22 +262,61 @@ pub mod LightModel3d {
         let half = ScalarExpr.Mul(ScalarExpr.Num(0.5), alpha);
         ScalarExpr.Div(x, ScalarExpr.Add(ScalarExpr.Mul(x, ScalarExpr.Sub(ScalarExpr.Num(1.0), half)), half))
 
-    /// 空の映り込み（式は頭の説明）。withSurface の中で使う。
+    /// 映り込み（式は頭の説明）。withSurface の中で使う。環境マップがあれば絵から読んだ色（EnvironmentColor）・無ければ空の色。
     def skyReflection(): Vec3Expr =
-        let n = Vec3Expr.In(Vec3Input.Normal);
-        let v = Vec3Expr.Ref("v");
         let nv = ScalarExpr.Ref("nv");
         let roughness = ScalarExpr.Ref("roughness");
         let fZero = Vec3Expr.Ref("fZero");
-        let reflected = Vec3Expr.Sub(Vec3Expr.Scale(n, ScalarExpr.Mul(ScalarExpr.Num(2.0), nv)), v);
-        // 粗いほど跳ね返りの向きを法線の側へ寄せる（r と n の間を roughness² でつなぎ、長さ 1 にそろえる）。
-        let bent = Vec3Expr.Mix(reflected, n, ScalarExpr.Mul(roughness, roughness));
-        let towardNormal = Vec3Expr.Let("q", bent, Vec3Expr.Scale(Vec3Expr.Ref("q"),
-            ScalarExpr.InverseSqrt(ScalarExpr.Max(ScalarExpr.Dot(Vec3Expr.Ref("q"), Vec3Expr.Ref("q")), ScalarExpr.Num(1.0e-12)))));
         let smooth = ScalarExpr.Sub(ScalarExpr.Num(1.0), roughness);
         let ceiling = Vec3Expr.Max(Vec3Expr.Make(smooth, smooth, smooth), fZero);
         let fresnel = Vec3Expr.Add(fZero, Vec3Expr.Scale(Vec3Expr.Sub(ceiling, fZero), fifthPower(ScalarExpr.Sub(ScalarExpr.Num(1.0), nv))));
-        Vec3Expr.Mul(Vec3Expr.Let("r", towardNormal, skyColorToward(Vec3Expr.Ref("r"))), fresnel)
+        let sky = Vec3Expr.Let("r", reflectionDirection(), skyColorToward(Vec3Expr.Ref("r")));
+        let seen = Vec3Expr.Select(Cond.Greater(ScalarExpr.In(ScalarInput.EnvironmentOn), ScalarExpr.Num(0.0)), Vec3Expr.In(Vec3Input.EnvironmentColor), sky);
+        Vec3Expr.Mul(seen, fresnel)
+
+    /// 跳ね返りの向き（長さ 1）。粗いほど向きを法線の側へ寄せる（r と n の間を roughness² でつなぎ、長さ 1 にそろえる）。withSurface の中で使う。
+    def reflectionDirection(): Vec3Expr =
+        let n = Vec3Expr.In(Vec3Input.Normal);
+        let reflected = Vec3Expr.Sub(Vec3Expr.Scale(n, ScalarExpr.Mul(ScalarExpr.Num(2.0), ScalarExpr.Ref("nv"))), Vec3Expr.Ref("v"));
+        let bent = Vec3Expr.Mix(reflected, n, ScalarExpr.Mul(ScalarExpr.Ref("roughness"), ScalarExpr.Ref("roughness")));
+        normalized("q", bent)
+
+    /// 長さ 1 にそろえた v（長さがほぼ 0 の時は 0 のまま。名前 name は一時の Let の名前）。
+    def normalized(name: String, v: Vec3Expr): Vec3Expr =
+        Vec3Expr.Let(name, v, Vec3Expr.Scale(Vec3Expr.Ref(name),
+            ScalarExpr.InverseSqrt(ScalarExpr.Max(ScalarExpr.Dot(Vec3Expr.Ref(name), Vec3Expr.Ref(name)), ScalarExpr.Num(1.0e-12)))))
+
+    /// 環境マップを読む向き（長さ 1・world）。入力は Position・Normal・Albedo・Eye・MetallicRoughness（pbrModel と同じ）と箱の 4 つ（EnvironmentBox…・EnvironmentBoxOn）。
+    /// 箱が無ければ跳ね返りの向き。箱があれば、点から跳ね返りの向きへ伸ばした線が箱の内側の面と交わる点の、箱の center からの向き（Unity の Box Projection と同じ）。
+    pub def environmentDirection(): Vec3Expr =
+        withSurface(Vec3Expr.Select(Cond.Greater(ScalarExpr.In(ScalarInput.EnvironmentBoxOn), ScalarExpr.Num(0.0)),
+                                    boxProjected(), reflectionDirection()))
+
+    /// 点から跳ね返りの向きへ出る線が箱の面（向かう側の面）と交わる所までの距離 t で、箱の中の点 p + r × t の center からの向き（長さ 1）。
+    /// 点が箱の外にあって t が負になる時は 0 にする（点そのものから見る）。軸に平行な線（成分が 1e−9 以下）はその軸の面に当たらない。
+    def boxProjected(): Vec3Expr =
+        let r = Vec3Expr.Ref("reflected");
+        let hit = Vec3Expr.Add(Vec3Expr.In(Vec3Input.Position), Vec3Expr.Scale(r, ScalarExpr.Ref("reach")));
+        let reach = ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Min(slabDistance(ScalarExpr.X), ScalarExpr.Min(slabDistance(ScalarExpr.Y), slabDistance(ScalarExpr.Z))));
+        Vec3Expr.Let("reflected", reflectionDirection(),
+        Vec3Expr.LetScalar("reach", reach,
+            normalized("offset", Vec3Expr.Sub(hit, Vec3Expr.In(Vec3Input.EnvironmentBoxCenter)))))
+
+    /// 1 軸の、点から跳ね返りの向きへ出る線が箱の面に当たるまでの距離（pick = その軸の成分を取る）。向かう側の面（成分が正なら max・負なら min）で測る。
+    def slabDistance(pick: Vec3Expr -> ScalarExpr): ScalarExpr =
+        let r = pick(Vec3Expr.Ref("reflected"));
+        let plane = ScalarExpr.Select(Cond.Greater(r, ScalarExpr.Num(0.0)), pick(Vec3Expr.In(Vec3Input.EnvironmentBoxMax)), pick(Vec3Expr.In(Vec3Input.EnvironmentBoxMin)));
+        let parallel = Cond.Greater(ScalarExpr.Num(1.0e-9), ScalarExpr.Max(r, ScalarExpr.Sub(ScalarExpr.Num(0.0), r)));
+        ScalarExpr.Select(parallel, ScalarExpr.Num(1.0e30), ScalarExpr.Div(ScalarExpr.Sub(plane, pick(Vec3Expr.In(Vec3Input.Position))), r))
+
+    /// 向き d（長さ 1）で環境マップ（正距円筒）を読む座標。u = 0.5 + atan2(d.x, −d.z) / 2π・v = 0.5 − asin(d.y) / π（v = 0 が絵の上 = 真上）。
+    /// 向きは座標の約束（Scene3d の頭）のまま: 絵の真ん中（u = 0.5）が −Z・u = 0.75 が +X・u = 0 と 1 の継ぎ目が +Z。
+    pub def environmentUvOf(d: Vec3.Vec3): (Float64, Float64) =
+        (0.5 + Num.atan2(d#x, 0.0 - d#z) / (2.0 * pi()), 0.5 - Num.asin(Float64.max(-1.0, Float64.min(1.0, d#y))) / pi())
+
+    /// 環境マップを読む段（roughness × 最後の段。levels = 段の数）。GLSL は Render3dGlsl.environmentSource が同じ式を書く。
+    pub def environmentLodOf(roughness: Float64, levels: Int32): Float64 =
+        roughness * Int32.toFloat64(Int32.max(1, levels) - 1)
 
     /// 点光源 1 本の鏡面（withSurface の中の光のループで使う）。
     def pointSpecular(): Vec3Expr =

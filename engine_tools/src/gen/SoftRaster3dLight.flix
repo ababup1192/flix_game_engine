@@ -53,7 +53,7 @@ pub mod SoftRaster3dLight {
         ((horizonX + ((t_0X - horizonX) * t_2)), (horizonY + ((t_0Y - horizonY) * t_2)), (horizonZ + ((t_0Z - horizonZ) * t_2)))
 
     /// pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。
-    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64): (Float64, Float64, Float64) =
+    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64): (Float64, Float64, Float64) =
         let metallic_0 = metalRoughX;
         let roughness_1 = metalRoughY;
         let alpha_2 = Float64.max(0.002, (roughness_1 * roughness_1));
@@ -75,25 +75,75 @@ pub mod SoftRaster3dLight {
         let t_12 = (1.0 - metallic_0);
         let (points_13X, points_13Y, points_13Z) = pbrAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
         let (spots_14X, spots_14Y, spots_14Z) = pbrAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
-        let t_15 = (2.0 * nv_9);
-        let t_16 = ((nX * t_15) - v_8X);
-        let t_17 = ((nY * t_15) - v_8Y);
-        let t_18 = ((nZ * t_15) - v_8Z);
-        let t_19 = (roughness_1 * roughness_1);
-        let q_20X = (t_16 + ((nX - t_16) * t_19));
-        let q_20Y = (t_17 + ((nY - t_17) * t_19));
-        let q_20Z = (t_18 + ((nZ - t_18) * t_19));
-        let t_21 = (1.0 / Num.sqrt(Float64.max((((q_20X * q_20X) + (q_20Y * q_20Y)) + (q_20Z * q_20Z)), 1.0e-12)));
-        let r_22Y = (q_20Y * t_21);
-        let c_24 = (r_22Y >= 0.0);
-        let t_23X = (if (c_24) zenithX else groundX);
-        let t_23Y = (if (c_24) zenithY else groundY);
-        let t_23Z = (if (c_24) zenithZ else groundZ);
-        let t_25 = Float64.min(1.0, Float64.pow(base = Float64.max(r_22Y, (0.0 - r_22Y)), skyCurve));
-        let t_26 = (1.0 - roughness_1);
-        let base_27 = (1.0 - nv_9);
-        let t_28 = (((base_27 * base_27) * (base_27 * base_27)) * base_27);
-        (((((albedoX * lightX) * t_12) + (points_13X + spots_14X)) + ((horizonX + ((t_23X - horizonX) * t_25)) * (fZero_4X + ((Float64.max(t_26, fZero_4X) - fZero_4X) * t_28)))), ((((albedoY * lightY) * t_12) + (points_13Y + spots_14Y)) + ((horizonY + ((t_23Y - horizonY) * t_25)) * (fZero_4Y + ((Float64.max(t_26, fZero_4Y) - fZero_4Y) * t_28)))), ((((albedoZ * lightZ) * t_12) + (points_13Z + spots_14Z)) + ((horizonZ + ((t_23Z - horizonZ) * t_25)) * (fZero_4Z + ((Float64.max(t_26, fZero_4Z) - fZero_4Z) * t_28)))))
+        let (t_26X, t_26Y, t_26Z) = if ((envOn > 0.0)) {
+            (envColorX, envColorY, envColorZ)
+        } else {
+            let t_15 = (2.0 * nv_9);
+            let t_16 = ((nX * t_15) - v_8X);
+            let t_17 = ((nY * t_15) - v_8Y);
+            let t_18 = ((nZ * t_15) - v_8Z);
+            let t_19 = (roughness_1 * roughness_1);
+            let q_20X = (t_16 + ((nX - t_16) * t_19));
+            let q_20Y = (t_17 + ((nY - t_17) * t_19));
+            let q_20Z = (t_18 + ((nZ - t_18) * t_19));
+            let t_21 = (1.0 / Num.sqrt(Float64.max((((q_20X * q_20X) + (q_20Y * q_20Y)) + (q_20Z * q_20Z)), 1.0e-12)));
+            let r_22Y = (q_20Y * t_21);
+            let c_24 = (r_22Y >= 0.0);
+            let t_23X = (if (c_24) zenithX else groundX);
+            let t_23Y = (if (c_24) zenithY else groundY);
+            let t_23Z = (if (c_24) zenithZ else groundZ);
+            let t_25 = Float64.min(1.0, Float64.pow(base = Float64.max(r_22Y, (0.0 - r_22Y)), skyCurve));
+            ((horizonX + ((t_23X - horizonX) * t_25)), (horizonY + ((t_23Y - horizonY) * t_25)), (horizonZ + ((t_23Z - horizonZ) * t_25)))
+        };
+        let t_27 = (1.0 - roughness_1);
+        let base_28 = (1.0 - nv_9);
+        let t_29 = (((base_28 * base_28) * (base_28 * base_28)) * base_28);
+        (((((albedoX * lightX) * t_12) + (points_13X + spots_14X)) + (t_26X * (fZero_4X + ((Float64.max(t_27, fZero_4X) - fZero_4X) * t_29)))), ((((albedoY * lightY) * t_12) + (points_13Y + spots_14Y)) + (t_26Y * (fZero_4Y + ((Float64.max(t_27, fZero_4Y) - fZero_4Y) * t_29)))), ((((albedoZ * lightZ) * t_12) + (points_13Z + spots_14Z)) + (t_26Z * (fZero_4Z + ((Float64.max(t_27, fZero_4Z) - fZero_4Z) * t_29)))))
+
+    /// environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。
+    pub def environmentDirectionAt(pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, _albedoX: Float64, _albedoY: Float64, _albedoZ: Float64, _metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, envBoxMinX: Float64, envBoxMinY: Float64, envBoxMinZ: Float64, envBoxMaxX: Float64, envBoxMaxY: Float64, envBoxMaxZ: Float64, envBoxCenterX: Float64, envBoxCenterY: Float64, envBoxCenterZ: Float64, envBoxOn: Float64): (Float64, Float64, Float64) =
+        let roughness_1 = metalRoughY;
+        let toEye_5X = (eyeX - pX);
+        let toEye_5Y = (eyeY - pY);
+        let toEye_5Z = (eyeZ - pZ);
+        let toEyeSq_6 = (((toEye_5X * toEye_5X) + (toEye_5Y * toEye_5Y)) + (toEye_5Z * toEye_5Z));
+        let invToEye_7 = (if ((1.0e-24 > toEyeSq_6)) 0.0 else (1.0 / Num.sqrt(toEyeSq_6)));
+        let v_8X = (toEye_5X * invToEye_7);
+        let v_8Y = (toEye_5Y * invToEye_7);
+        let v_8Z = (toEye_5Z * invToEye_7);
+        let nv_9 = Float64.max(1.0e-4, (((nX * v_8X) + (nY * v_8Y)) + (nZ * v_8Z)));
+        let (t_30X, t_30Y, t_30Z) = if ((envBoxOn > 0.0)) {
+            let t_12 = (2.0 * nv_9);
+            let t_13 = ((nX * t_12) - v_8X);
+            let t_14 = ((nY * t_12) - v_8Y);
+            let t_15 = ((nZ * t_12) - v_8Z);
+            let t_16 = (roughness_1 * roughness_1);
+            let q_17X = (t_13 + ((nX - t_13) * t_16));
+            let q_17Y = (t_14 + ((nY - t_14) * t_16));
+            let q_17Z = (t_15 + ((nZ - t_15) * t_16));
+            let t_18 = (1.0 / Num.sqrt(Float64.max((((q_17X * q_17X) + (q_17Y * q_17Y)) + (q_17Z * q_17Z)), 1.0e-12)));
+            let reflected_19X = (q_17X * t_18);
+            let reflected_19Y = (q_17Y * t_18);
+            let reflected_19Z = (q_17Z * t_18);
+            let reach_20 = Float64.max(0.0, Float64.min((if ((1.0e-9 > Float64.max(reflected_19X, (0.0 - reflected_19X)))) 1.0e30 else (((if ((reflected_19X > 0.0)) envBoxMaxX else envBoxMinX) - pX) / reflected_19X)), Float64.min((if ((1.0e-9 > Float64.max(reflected_19Y, (0.0 - reflected_19Y)))) 1.0e30 else (((if ((reflected_19Y > 0.0)) envBoxMaxY else envBoxMinY) - pY) / reflected_19Y)), (if ((1.0e-9 > Float64.max(reflected_19Z, (0.0 - reflected_19Z)))) 1.0e30 else (((if ((reflected_19Z > 0.0)) envBoxMaxZ else envBoxMinZ) - pZ) / reflected_19Z)))));
+            let offset_21X = ((pX + (reflected_19X * reach_20)) - envBoxCenterX);
+            let offset_21Y = ((pY + (reflected_19Y * reach_20)) - envBoxCenterY);
+            let offset_21Z = ((pZ + (reflected_19Z * reach_20)) - envBoxCenterZ);
+            let t_22 = (1.0 / Num.sqrt(Float64.max((((offset_21X * offset_21X) + (offset_21Y * offset_21Y)) + (offset_21Z * offset_21Z)), 1.0e-12)));
+            ((offset_21X * t_22), (offset_21Y * t_22), (offset_21Z * t_22))
+        } else {
+            let t_23 = (2.0 * nv_9);
+            let t_24 = ((nX * t_23) - v_8X);
+            let t_25 = ((nY * t_23) - v_8Y);
+            let t_26 = ((nZ * t_23) - v_8Z);
+            let t_27 = (roughness_1 * roughness_1);
+            let q_28X = (t_24 + ((nX - t_24) * t_27));
+            let q_28Y = (t_25 + ((nY - t_25) * t_27));
+            let q_28Z = (t_26 + ((nZ - t_26) * t_27));
+            let t_29 = (1.0 / Num.sqrt(Float64.max((((q_28X * q_28X) + (q_28Y * q_28Y)) + (q_28Z * q_28Z)), 1.0e-12)));
+            ((q_28X * t_29), (q_28Y * t_29), (q_28Z * t_29))
+        };
+        (t_30X, t_30Y, t_30Z)
 
     def lightAtPoints(lights: Vector[Float64], i: Int32, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
         if (i + 7 > Vector.length(lights)) (accX, accY, accZ)

@@ -278,6 +278,22 @@ mod TestDrawHash {
         let at = (s: Option[Scene3d.Sky3d]) -> keyOf(inputs(), { req = { scenes = { scene = { sky = s | base#scene } | base } :: Nil | f#req } | f });
         Assert.assertTrue(at(None) != at(Some(sky)) and at(Some(sky)) != at(Some(Scene3d.withSkyCurve(2.0, sky))))
 
+    // 環境マップを付けると鍵が変わり、強さ・箱・絵が違っても鍵が変わる。None の鍵が付ける前と同じ字のままなのは、下の固定の鍵の比べ（Pinned）が守る。
+    @Test
+    def testEnvironmentMapChangesKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let panorama = (c: Int32) -> match Texture3d.fromArgb(2, 1, Vector#{ c, c }) {
+            case Ok(t)  => t
+            case Err(_) => bug!("TestDrawHash: 絵が作れない")
+        };
+        let env = Scene3d.environmentMap(panorama(-16777216));
+        let at = (e: Option[Scene3d.EnvironmentMap]) -> keyOf(inputs(), { req = { scenes = { scene = { environmentMap = e | base#scene } | base } :: Nil | f#req } | f });
+        let box = { min = Vec3.v3(-1.0, 0.0, -1.0), max = Vec3.v3(1.0, 2.0, 1.0), center = Vec3.zero() };
+        Assert.assertTrue(at(None) != at(Some(env)) and at(Some(env)) != at(Some(Scene3d.withEnvironmentIntensity(0.5, env)))
+                          and at(Some(env)) != at(Some(Scene3d.withEnvironmentBox(box, env)))
+                          and at(Some(env)) != at(Some(Scene3d.environmentMap(panorama(-1)))))
+
     // pose の無い置いた物の鍵は、pose の欄を足す前の字のまま（3D の場面のキャッシュの PNG を塗り直させない）。
     @Test
     def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =

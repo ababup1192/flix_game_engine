@@ -7,7 +7,7 @@ mod Render3d.Material {
     use Render3d.Light.{putLights}
     use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs,
                   MaterialPass, MeshDraw, State, Texture3dEntry, TextureSlot, TextureSource, bindDataTextureUnits, drawBatch, ensureTangents, hasUv, isSkinned,
-                  lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit,
+                  environmentTextureUnit, lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit,
                   putDepthRange, shadowLocsOf, useMeshProgram, warnDroppedTextures, warnSceneOnce}
     use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, batchKeyOf, batchOf, groupByTextures, groupInOrder}
     use Scene3dRenderer.{RegisteredTexture}
@@ -161,6 +161,26 @@ mod Render3d.Material {
             gl.uniform1i(d#entry#locs#lightmapSrgb, if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1 else 0);
             gl.uniform1f(d#entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity))
         })
+
+    /// 場面の環境マップを環境マップの unit に貼り、絵の段の数を返す（無ければ 0・何も貼らない）。名前が場面の textures に無い絵は 0（黒）の 1 段で読み、
+    /// 名前ごとに 1 回知らせる。Repeat・段つきの Linear で読む（横の継ぎ目を回り込んで混ぜる）。場面を描く前に 1 回呼ぶ（絵を上げる時に今の unit へ貼るので、unit を選んでから引く）。
+    // WhyNot: 場面の材質ごとに貼らない — 絵は場面に 1 枚で、材質のプログラムが何本あっても同じ unit を読む。
+    pub def bindEnvironmentMap(gl: GlContext, state: State, gen: Int64, source: TextureSource, scene: Scene3d.Scene3dCmd): Int32 \ IO =
+        match scene#environmentMap {
+            case None    => 0
+            case Some(e) =>
+                let unit = environmentTextureUnit();
+                gl.activeTexture(GlConst.TEXTURE0 + unit);
+                let bound = resolveTextureAs(gl, state, gen, source, "環境マップの絵", Scene3d.environmentMapFieldsOf(e)#texture, Texture3d.TextureUse.MaterialTexture);
+                gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
+                gl.bindSampler(unit, materialSampler(gl, state, Scene3d.Wrap.Repeat, ShaderDoc.FilterMode.Linear, bound#levels > 1));
+                gl.activeTexture(GlConst.TEXTURE0);
+                bound#levels
+        }
+
+    /// 環境マップの unit の sampler を外す（ビルボードと 2D の面は貼り直さず unit の物を読む）。貼っていなければ何もしない。
+    pub def releaseEnvironmentMap(gl: GlContext, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        if (Option.isEmpty(scene#environmentMap)) () else gl.bindSampler(environmentTextureUnit(), 0)
 
     /// 法線マップを法線マップの unit に貼る（材質の wrap・Linear で読む）。法線マップを当てないプログラムは何もしない。
     def bindNormalMap(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialBatch[MeshBatch]): Unit \ IO =
@@ -562,7 +582,7 @@ mod Render3d.Material {
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
         };
         bindDataTextureUnits(gl, program);
-        bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap);
+        bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap, kind#metallicRoughness);
         { spec = m#spec, emission = m#emission, metallicRoughness = m#metallicRoughnessShade,
           known = (m#spec, m#emission, m#metallicRoughnessShade) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
           lightmapped = kind#lightmap, coverage = kind#coverage,
@@ -570,10 +590,11 @@ mod Render3d.Material {
 
     /// uTexN を unit N へ、uNormalMap を法線マップの unit へ向ける（プログラムごとに 1 回。組めなかったプログラムと、
     /// 絵も法線マップも無い材質は何もしない）。
-    def bindTextureUnits(gl: GlContext, program: Int32, count: Int32, normalMap: Bool, lightmap: Bool): Unit \ IO =
-        if (program == 0 or (count == 0 and not normalMap and not lightmap)) ()
+    def bindTextureUnits(gl: GlContext, program: Int32, count: Int32, normalMap: Bool, lightmap: Bool, environment: Bool): Unit \ IO =
+        if (program == 0 or (count == 0 and not normalMap and not lightmap and not environment)) ()
         else {
             gl.useProgram(program);
+            if (environment) gl.uniform1i(loc(gl, program, "uEnvMap"), environmentTextureUnit()) else ();
             List.range(0, count) |> List.forEach(unit -> gl.uniform1i(loc(gl, program, "uTex${unit}"), unit));
             if (normalMap) gl.uniform1i(loc(gl, program, "uNormalMap"), normalMapTextureUnit()) else ();
             if (lightmap) gl.uniform1i(loc(gl, program, "uLightmap"), lightmapTextureUnit()) else ();

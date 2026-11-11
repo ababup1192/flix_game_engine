@@ -94,7 +94,8 @@ pub mod SoftRaster.Internal.DrawList {
         let fromDrawables = req#drawables |> List.map(DrawCmd.textureOf);
         let fromBillboards = req#scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture));
         let fromMaterials = req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf));
-        List.toSet(List.append(fromDrawables, List.append(fromBillboards, fromMaterials)))
+        let fromEnvironment = req#scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene));
+        List.toSet(List.append(fromDrawables, List.append(fromBillboards, List.append(fromMaterials, fromEnvironment))))
 
     /// Pass の絵の 8bit の形（Rgba8Unorm はそのまま・Rgba16Float は names にある物だけ 0..1 に切って写す）。
     /// WhyNot: Rgba16Float の Pass を全部写さない — 1 枚の写しは全画素ぶんで、sprite で貼らない Pass（面だけが読む）にまで払うと桁で遅い。

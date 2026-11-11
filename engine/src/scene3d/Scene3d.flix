@@ -479,11 +479,12 @@ pub mod Scene3d {
 
     /// 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
     /// textures = 材質が "tex3d:" の名前（Texture3d.name）で読む絵・
-    /// sky = 何も描かれない画素に描く空（gradientSky。Some なら environment の background は使わない）。
+    /// sky = 何も描かれない画素に描く空（gradientSky。Some なら environment の background は使わない）・
+    /// environmentMap = metallic と roughness を持つ材質の映り込みが読む周りの景色（environmentMap。None なら空のグラデーションを映す）。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
-                                  textures = List[Texture3d.Texture3d], sky = Option[Sky3d] }
+                                  textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }
 
     /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし）。
     /// time = 材質の ShaderDoc の時刻（秒）（ゲームの遊びの時計を渡すと、ポーズやヒットストップで材質の動きも止まる）。
@@ -492,7 +493,75 @@ pub mod Scene3d {
     pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd =
         { size = size, camera = camera, instances = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
-          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None }
+          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None }
+
+    // ── 環境マップ ──
+
+    /// 環境マップの箱。室内の壁の位置（world）。min・max = 箱の対角の 2 点・center = 絵を撮った点（景色の向きの中心）。
+    pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }
+
+    /// 環境マップの中身。texture = 場面の textures の絵の名前（Texture3d.name）・intensity = 線形の量に戻した後に掛ける倍率・
+    /// box = 室内の壁の補正（None なら無限に遠い景色）・asBackground = 空の代わりに背景へも描くか。
+    pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool }
+
+    enum EnvironmentMapData { case EnvironmentMapData(EnvironmentMapFields) }
+
+    /// 周りの景色のパノラマの絵（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。environmentMap から作り、with… で足す。
+    /// Unity の Skybox（Panoramic）と Reflection Probe の Box Projection・Godot の PanoramaSkyMaterial と ReflectionProbe の box_projection に当たる。
+    pub type alias EnvironmentMap = EnvironmentMapData
+
+    /// 正距円筒（横 2：縦 1）のパノラマの絵 texture を景色にする。絵は Scene3dCmd の textures にも載せる（"tex3d:" の名前）。
+    /// 色は sRGB の絵として読み、強さ 1・箱なし・背景には描かない。向きと絵の座標は LightModel3d.environmentUvOf。
+    /// 映るのは metallic と roughness を持つ材質の映り込みだけで、拡散の光（ambient と hemisphere）は変わらない。
+    pub def environmentMap(texture: Texture3d.Texture3d): EnvironmentMap =
+        EnvironmentMapData.EnvironmentMapData({ texture = Texture3d.name(texture), intensity = 1.0, box = None, asBackground = false })
+
+    /// 映り込みの強さの倍率（線形の量に戻した後に掛ける。0 で映り込み無し。負・NaN は 0 として描く）。
+    pub def withEnvironmentIntensity(k: Float64, e: EnvironmentMap): EnvironmentMap =
+        let EnvironmentMapData.EnvironmentMapData(r) = e;
+        EnvironmentMapData.EnvironmentMapData({ intensity = k | r })
+
+    /// 室内の壁の補正（Box Projection）。跳ね返りの線を点から伸ばして箱の内側の面と交わる点を、center から見た向きで絵を読む。
+    /// 部屋の中の物に使い、屋外の空には付けない（景色が無限に遠いので補正が要らない）。
+    pub def withEnvironmentBox(box: EnvironmentBox, e: EnvironmentMap): EnvironmentMap =
+        let EnvironmentMapData.EnvironmentMapData(r) = e;
+        EnvironmentMapData.EnvironmentMapData({ box = Some(box) | r })
+
+    /// 真なら、何も描かれない画素に景色の絵を空として描く（屋外の景色の絵向き。向きは映り込みと同じ・段 0 で読み、強さも掛かる。sky があればそちらが勝つ）。
+    pub def withEnvironmentAsBackground(on: Bool, e: EnvironmentMap): EnvironmentMap =
+        let EnvironmentMapData.EnvironmentMapData(r) = e;
+        EnvironmentMapData.EnvironmentMapData({ asBackground = on | r })
+
+    /// 環境マップの中身を読む（GL・CPU・鍵が使う）。intensity は描き手が environmentIntensityOf で直した値を読む。
+    pub def environmentMapFieldsOf(e: EnvironmentMap): EnvironmentMapFields =
+        let EnvironmentMapData.EnvironmentMapData(r) = e;
+        r
+
+    /// 描く時に使う強さ（負・NaN・無限は 0）。GL と CPU が同じ値を使う。
+    pub def environmentIntensityOf(e: EnvironmentMap): Float64 =
+        let k = environmentMapFieldsOf(e)#intensity;
+        if (Float64.isFinite(k) and k > 0.0) k else 0.0
+
+    /// 場面の環境マップが読む絵の名前（無ければ空）。描き出しが読む絵の組・描き出しの鍵の絵の一覧は、材質の絵（textureNamesOf）とこれから数える。
+    pub def environmentTextureNamesOf(scene: Scene3dCmd): List[String] =
+        scene#environmentMap |> Option.toList |> List.map(e -> environmentMapFieldsOf(e)#texture)
+
+    /// 空の代わりに背景へ景色を描く時の環境マップ（asBackground が真で、sky が無い時だけ Some。sky があれば sky が勝つ）。
+    pub def backgroundEnvironmentOf(scene: Scene3dCmd): Option[EnvironmentMap] =
+        if (Option.nonEmpty(scene#sky)) None
+        else scene#environmentMap |> Option.filter(e -> environmentMapFieldsOf(e)#asBackground)
+
+    /// 描き手が空として塗る物（sky があれば sky・無くて景色を背景に描くなら黒の空 — 色は景色の絵が上書きするので使われない）。
+    pub def drawnSkyOf(scene: Scene3dCmd): Option[Sky3d] =
+        match scene#sky {
+            case Some(s) => Some(s)
+            case None    => backgroundEnvironmentOf(scene) |> Option.map(_ -> gradientSky(Color.rgb(0.0, 0.0, 0.0), Color.rgb(0.0, 0.0, 0.0), Color.rgb(0.0, 0.0, 0.0)))
+        }
+
+    /// 環境マップの箱の 3 点を GL の uniform と CPU の引数に渡す形にそろえる（min と max は軸ごとに小さい方を min に）。
+    pub def environmentBoxOf(b: EnvironmentBox): EnvironmentBox =
+        { min = Vec3.v3(Float64.min(b#min#x, b#max#x), Float64.min(b#min#y, b#max#y), Float64.min(b#min#z, b#max#z)),
+          max = Vec3.v3(Float64.max(b#min#x, b#max#x), Float64.max(b#min#y, b#max#y), Float64.max(b#min#z, b#max#z)) | b }
 
     // ── 空 ──
 

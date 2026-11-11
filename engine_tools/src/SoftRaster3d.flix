@@ -504,8 +504,13 @@ pub mod SoftRaster3d {
         });
         let sky = hoist(rc, scene#sky |> Option.map(sk -> (linearSkyColorsOf(sk), Scene3d.skyBasisOf(scene))));
         let reflection = hoist(rc, reflectionColorsOf(scene));
-        let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, lut = lut, reflection = reflection });
-        let fillAt = (x: Int32, y: Int32) -> skyFill(sky, lut, isDepth, (lw, lh), (x, y)) |> Option.getWithDefault(background);
+        let environment = hoist(rc, SoftRaster3d.Internal.environmentLookupOf(textures, scene));
+        let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, lut = lut, reflection = reflection, environment = environment });
+        let backgroundMap = hoist(rc, Scene3d.backgroundEnvironmentOf(scene) |> Option.flatMap(_ -> environment) |> Option.map(e -> (e, Scene3d.skyBasisOf(scene))));
+        let fillAt = (x: Int32, y: Int32) -> match backgroundMap {
+            case Some((e, basis)) => SoftRaster3d.Internal.environmentBackgroundAt(e, basis, isDepth, (lw, lh), (x, y))
+            case None             => skyFill(sky, lut, isDepth, (lw, lh), (x, y)) |> Option.getWithDefault(background)
+        };
         let depthBand = hoist(rc, match scene#output {
             case Scene3d.Output.Color    => None
             case Scene3d.Output.Depth(d) => Some((d#near, d#range))
@@ -1106,8 +1111,9 @@ pub mod SoftRaster3d {
 
     /// 画素の色を塗る時に場面ごとに決まっている物。lut = 頂点ごと・画素ごとの色の変換の表。
     /// reflection = metallic と roughness を持つ材質の映り込みに使う空の 3 色と curve（線形の量。LightModel3d.reflectionSkyOf）。
+    /// environment = 場面の環境マップ（Some なら映り込みは空の 3 色の代わりに絵を読む）。
     type alias ShadeEnv = { time = Float64, lights = Lights, fog = Fog, eye = (Float64, Float64, Float64), lut = Texture3d.ColorLut,
-                            reflection = SkyColors }
+                            reflection = SkyColors, environment = Option[SoftRaster3d.Internal.EnvironmentLookup] }
 
     /// 材質 material の三角形 tri の画面の重み (l0, l1) の画素の色（線形の量のまま — 呼び手が画面の値へ戻す）と α（α は材質の α。不透明の物を塗る呼び手は捨てる）。
     /// 裏の三角形（画面で反時計回り。両面の材質の物だけが残る）は、光の計算の法線を裏返す（spec の Normal は裏返さない）。
@@ -1132,8 +1138,14 @@ pub mod SoftRaster3d {
             let (br, bg, bb) = base;
             let Lights.Lights(_, _, _, _, _, points, spots, shadow) = env#lights;
             let SkyColors.SkyColors(zr, zg, zb, hr, hg, hb, gr, gg, gb, curve) = env#reflection;
+            let normal = (lightNormal#x, lightNormal#y, lightNormal#z);
+            let (er, eg, eb) = match env#environment {
+                case Some(e) => SoftRaster3d.Internal.environmentColorAt(e, (px, py, pz), normal, base, (metallic, roughness), env#eye)
+                case None    => (0.0, 0.0, 0.0)
+            };
             let (cr, cg, cb) = SoftRaster3dLight.pbrAt(points, spots, shadow, px, py, pz, lightNormal#x, lightNormal#y, lightNormal#z, br, bg, bb, lr, lg, lb,
-                                                       metallic, roughness, 0.0, ex, ey, ez, zr, zg, zb, hr, hg, hb, gr, gg, gb, curve);
+                                                       metallic, roughness, 0.0, ex, ey, ez, zr, zg, zb, hr, hg, hb, gr, gg, gb, curve,
+                                                       er, eg, eb, if (Option.isEmpty(env#environment)) 0.0 else 1.0);
             applyFog(env#fog, ex, ey, ez, px, py, pz, cr, cg, cb)
         };
         materialColor(material, env#lut, env#time, point, neighbors, litFogged, glossyFogged)

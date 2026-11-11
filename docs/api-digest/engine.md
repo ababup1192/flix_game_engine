@@ -665,9 +665,9 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn }`
 - 画素ごと・場面ごとの vec3 の入力。
-  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness }`
+  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter }`
 - 光のループの中で読めるスカラーの欄。
   `pub enum ScalarLightField with Eq { case RangeSquared case OuterCos case InnerCos }`
 - 光のループの中で読める vec3 の欄。
@@ -682,6 +682,12 @@
   `pub def skyModel(): Vec3Expr`
 - metallic と roughness を持つ材質の、かすみの前の色（式は頭の説明）。入力は Albedo・Light・MetallicRoughness（画素ごと）と、
   `pub def pbrModel(): Vec3Expr`
+- 環境マップを読む向き（長さ 1・world）。入力は Position・Normal・Albedo・Eye・MetallicRoughness（pbrModel と同じ）と箱の 4 つ（EnvironmentBox…・EnvironmentBoxOn）。
+  `pub def environmentDirection(): Vec3Expr`
+- 向き d（長さ 1）で環境マップ（正距円筒）を読む座標。u = 0.5 + atan2(d.x, −d.z) / 2π・v = 0.5 − asin(d.y) / π（v = 0 が絵の上 = 真上）。
+  `pub def environmentUvOf(d: Vec3.Vec3): (Float64, Float64)`
+- 環境マップを読む段（roughness × 最後の段。levels = 段の数）。GLSL は Render3dGlsl.environmentSource が同じ式を書く。
+  `pub def environmentLodOf(roughness: Float64, levels: Int32): Float64`
 - 映り込みに使う空の 3 色（線形の量）と curve。場面に空があればその空・無ければ ambient + hemisphere の色（真っ黒にしない）。
   `pub def reflectionSkyOf(scene: Scene3d.Scene3dCmd): { zenith = Color, horizon = Color, ground = Color, curve = Float64 }`
 - 点光源 1 本の欄の数（位置 3・color × intensity 3・range²）。
@@ -1382,8 +1388,34 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d] }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
+- 環境マップの箱。室内の壁の位置（world）。min・max = 箱の対角の 2 点・center = 絵を撮った点（景色の向きの中心）。
+  `pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }`
+- 環境マップの中身。texture = 場面の textures の絵の名前（Texture3d.name）・intensity = 線形の量に戻した後に掛ける倍率・
+  `pub type alias EnvironmentMapFields = { texture = String, intensity = Float64, box = Option[EnvironmentBox], asBackground = Bool }`
+- 周りの景色のパノラマの絵（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。environmentMap から作り、with… で足す。
+  `pub type alias EnvironmentMap = EnvironmentMapData`
+- 正距円筒（横 2：縦 1）のパノラマの絵 texture を景色にする。絵は Scene3dCmd の textures にも載せる（"tex3d:" の名前）。
+  `pub def environmentMap(texture: Texture3d.Texture3d): EnvironmentMap`
+- 映り込みの強さの倍率（線形の量に戻した後に掛ける。0 で映り込み無し。負・NaN は 0 として描く）。
+  `pub def withEnvironmentIntensity(k: Float64, e: EnvironmentMap): EnvironmentMap`
+- 室内の壁の補正（Box Projection）。跳ね返りの線を点から伸ばして箱の内側の面と交わる点を、center から見た向きで絵を読む。
+  `pub def withEnvironmentBox(box: EnvironmentBox, e: EnvironmentMap): EnvironmentMap`
+- 真なら、何も描かれない画素に景色の絵を空として描く（屋外の景色の絵向き。向きは映り込みと同じ・段 0 で読み、強さも掛かる。sky があればそちらが勝つ）。
+  `pub def withEnvironmentAsBackground(on: Bool, e: EnvironmentMap): EnvironmentMap`
+- 環境マップの中身を読む（GL・CPU・鍵が使う）。intensity は描き手が environmentIntensityOf で直した値を読む。
+  `pub def environmentMapFieldsOf(e: EnvironmentMap): EnvironmentMapFields`
+- 描く時に使う強さ（負・NaN・無限は 0）。GL と CPU が同じ値を使う。
+  `pub def environmentIntensityOf(e: EnvironmentMap): Float64`
+- 場面の環境マップが読む絵の名前（無ければ空）。描き出しが読む絵の組・描き出しの鍵の絵の一覧は、材質の絵（textureNamesOf）とこれから数える。
+  `pub def environmentTextureNamesOf(scene: Scene3dCmd): List[String]`
+- 空の代わりに背景へ景色を描く時の環境マップ（asBackground が真で、sky が無い時だけ Some。sky があれば sky が勝つ）。
+  `pub def backgroundEnvironmentOf(scene: Scene3dCmd): Option[EnvironmentMap]`
+- 描き手が空として塗る物（sky があれば sky・無くて景色を背景に描くなら黒の空 — 色は景色の絵が上書きするので使われない）。
+  `pub def drawnSkyOf(scene: Scene3dCmd): Option[Sky3d]`
+- 環境マップの箱の 3 点を GL の uniform と CPU の引数に渡す形にそろえる（min と max は軸ごとに小さい方を min に）。
+  `pub def environmentBoxOf(b: EnvironmentBox): EnvironmentBox`
 - 空の中身。zenith = 真上の色・horizon = 地平の色・ground = 真下の色・curve = 地平から真上（真下）へ向かう色の寄り方
   `pub type alias SkyFields = { zenith = Color, horizon = Color, ground = Color, curve = Float64 }`
 - 3D の場面の空（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。gradientSky から作り、with… で替える。

@@ -320,7 +320,10 @@ pub mod Render3dGlsl {
         (if (surface#metallicRoughness)
             "    vec3 n = " + normal + ";\n" +
             (if (surface#lightmap) "    vec3 light = lightmapLightAt(vWorld, n, lightmapColor());\n" else "    vec3 light = lightAt(vWorld, n);\n") +
-            "    vec3 lit = pbrAt(vWorld, n, r3d_srgbToLinear3(albedo.rgb) * vTint, light, vec3(metalRough, 0.0));\n" +
+            "    vec3 base = r3d_srgbToLinear3(albedo.rgb) * vTint;\n" +
+            "    vec3 envColor = vec3(0.0);\n" +
+            "    if (uEnvOn == 1) envColor = environmentColorAt(vWorld, n, base, vec3(metalRough, 0.0));\n" +
+            "    vec3 lit = pbrAt(vWorld, n, base, light, vec3(metalRough, 0.0), envColor);\n" +
             "    fragColor = vec4(r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld), " + alpha + ");\n"
          else
             (if (surface#lightmap)
@@ -341,11 +344,44 @@ pub mod Render3dGlsl {
         "uniform vec3 uHorizon;\n" +
         "uniform vec3 uGround;\n" +
         "uniform float uCurve;\n" +
-        LightModel3d.Codegen.toGlsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness :: Nil,
+        environmentSource() +
+        LightModel3d.Codegen.toGlsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness ::
+                                             Vec3Input.EnvironmentColor :: Nil,
                                     LightModel3d.pbrModel()) +
         "vec3 r3d_surfaceOutLit(vec3 lit, vec3 emission, float intensity, vec3 p) {\n" +
         "    vec3 c = fogged(lit, p);\n" +
         "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
+        "}\n"
+
+    /// 環境マップの uniform と、跳ね返りの向き（LightModel3d.environmentDirection の木から作る environmentDirectionAt）で絵を読む
+    /// environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（線形の量・強さを掛けた色。CPU の描き手は SoftRaster3d.Internal.environmentColorAt）。
+    /// 絵は向き → 座標（LightModel3d.environmentUvOf）で、段は roughness × (段の数 − 1)（LightModel3d.environmentLodOf）を明示して読む。
+    /// uEnvOn = 0 のプログラムは読まない（呼ぶ側が分ける）。
+    // WhyNot: sg_texMip（微分で段を選ぶ読み）を使わない — 向きの atan2 は継ぎ目（u = 0 と 1）で値が 1 跳び、その画素だけ段が最大になって縦の筋が出る。
+    // WhyNot: 極（向きが真上・真下）の atan を GLSL に任せない — 引数が両方 0 の atan は値が決まらない。Flix の atan2 は 0 を返すので、同じ 0 にそろえる。
+    def environmentSource(): String =
+        "uniform int uEnvOn;\n" +
+        "uniform int uEnvBoxOn;\n" +
+        "uniform vec3 uEnvBoxMin;\n" +
+        "uniform vec3 uEnvBoxMax;\n" +
+        "uniform vec3 uEnvBoxCenter;\n" +
+        "uniform sampler2D uEnvMap;\n" +
+        "uniform float uEnvLevels;\n" +
+        "uniform float uEnvIntensity;\n" +
+        LightModel3d.Codegen.toGlsl("environmentDirectionAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.MetallicRoughness :: Nil,
+                                    LightModel3d.environmentDirection()) +
+        environmentUvSource() +
+        "vec3 environmentColorAt(vec3 p, vec3 n, vec3 albedo, vec3 metalRough) {\n" +
+        "    vec3 d = environmentDirectionAt(p, n, albedo, metalRough);\n" +
+        "    float lod = metalRough.y * (uEnvLevels - 1.0);\n" +
+        "    return r3d_srgbToLinear3(textureLod(uEnvMap, environmentUv(d), lod).rgb) * uEnvIntensity;\n" +
+        "}\n"
+
+    /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（LightModel3d.environmentUvOf と同じ式）。
+    def environmentUvSource(): String =
+        "vec2 environmentUv(vec3 d) {\n" +
+        "    float azimuth = (abs(d.x) + abs(d.z) < 1e-12) ? 0.0 : atan(d.x, -d.z);\n" +
+        "    return vec2(0.5 + azimuth / 6.283185307179586, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793);\n" +
         "}\n"
 
     /// ベイクした光の uniform と、lightmap の絵の読み（lightmapColor）と、lightmap のある面の光の式（lightmapLightSource）。
@@ -457,6 +493,7 @@ pub mod Render3dGlsl {
         "}\n"
 
     /// 空の frag（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。
+    /// uEnvOn = 1 なら空の代わりに環境マップの絵を段 0 で読む（Scene3d.backgroundEnvironmentOf。CPU の描き手は SoftRaster3d.Internal.environmentBackgroundAt）。
     pub def skyFragmentSource(): String =
         "#version 330 core\n" +
         "in vec2 vUv;\n" +
@@ -466,8 +503,12 @@ pub mod Render3dGlsl {
         "uniform vec3 uRight;\n" +
         "uniform vec3 uUp;\n" +
         "uniform int uDepthOut;\n" +
+        "uniform int uEnvOn;\n" +
+        "uniform sampler2D uEnvMap;\n" +
+        "uniform float uEnvIntensity;\n" +
         colorSpaceSource() +
         skyLightSource() +
+        environmentUvSource() +
         "void main() {\n" +
         "    if (uDepthOut == 1) {\n" +
         "        fragColor = vec4(1.0, 1.0, 1.0, 1.0);\n" +
@@ -475,6 +516,10 @@ pub mod Render3dGlsl {
         "    }\n" +
         "    vec2 ndc = (gl_FragCoord.xy - uViewport.xy) / uViewport.zw * 2.0 - 1.0;\n" +
         "    vec3 d = normalize(uForward + uRight * ndc.x + uUp * ndc.y);\n" +
+        "    if (uEnvOn == 1) {\n" +
+        "        fragColor = vec4(r3d_linearToSrgb3(r3d_srgbToLinear3(textureLod(uEnvMap, environmentUv(d), 0.0).rgb) * uEnvIntensity), 1.0);\n" +
+        "        return;\n" +
+        "    }\n" +
         "    fragColor = vec4(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
         "}\n"
 

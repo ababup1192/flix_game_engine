@@ -6,7 +6,7 @@
 // WhyNot: 木と同じファイルに置かない — 木と式は GL と CPU の約束で、コード生成は engine_tools と Render3d の名前を字で知る。触る人と理由が違う。
 pub mod LightModel3d.Codegen {
     use LightModel3d.{ScalarExpr, Vec3Expr, Cond, ScalarInput, Vec3Input, ScalarLightField, Vec3LightField, LightKind}
-    use LightModel3d.{lightingModel, lightmapLightingModel, fogModel, skyModel, pbrModel, strideOf, vec3FieldOffset, scalarFieldOffset}
+    use LightModel3d.{lightingModel, lightmapLightingModel, fogModel, skyModel, pbrModel, environmentDirection, strideOf, vec3FieldOffset, scalarFieldOffset}
 
     // ════════════════════════════════════════════════════════
     // コード生成（2 つの出口が共に使う）
@@ -101,6 +101,8 @@ pub mod LightModel3d.Codegen {
         case (Target.Glsl, ScalarInput.SkyCurve)          => "uCurve"
         case (Target.Glsl, ScalarInput.LightmapSrgb)      => "float(uLightmapSrgb)"
         case (Target.Glsl, ScalarInput.LightmapIntensity) => "uLightmapIntensity"
+        case (Target.Glsl, ScalarInput.EnvironmentOn)     => "float(uEnvOn)"
+        case (Target.Glsl, ScalarInput.EnvironmentBoxOn)  => "float(uEnvBoxOn)"
     }
 
     def scalarInputName(input: ScalarInput): String = match input {
@@ -111,6 +113,8 @@ pub mod LightModel3d.Codegen {
         case ScalarInput.SkyCurve          => "skyCurve"
         case ScalarInput.LightmapSrgb      => "lightmapSrgb"
         case ScalarInput.LightmapIntensity => "lightmapIntensity"
+        case ScalarInput.EnvironmentOn     => "envOn"
+        case ScalarInput.EnvironmentBoxOn  => "envBoxOn"
     }
 
     def vec3InputName(input: Vec3Input): String = match input {
@@ -128,6 +132,10 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.Albedo        => "albedo"
         case Vec3Input.Light         => "light"
         case Vec3Input.MetallicRoughness => "metalRough"
+        case Vec3Input.EnvironmentColor     => "envColor"
+        case Vec3Input.EnvironmentBoxMin    => "envBoxMin"
+        case Vec3Input.EnvironmentBoxMax    => "envBoxMax"
+        case Vec3Input.EnvironmentBoxCenter => "envBoxCenter"
     }
 
     /// GLSL で画素ごとに関数の引数として受ける入力か（ほかは uniform）。
@@ -146,6 +154,10 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.Albedo        => true
         case Vec3Input.Light         => true
         case Vec3Input.MetallicRoughness => true
+        case Vec3Input.EnvironmentColor     => true
+        case Vec3Input.EnvironmentBoxMin    => false
+        case Vec3Input.EnvironmentBoxMax    => false
+        case Vec3Input.EnvironmentBoxCenter => false
     }
 
     /// GLSL で入力を読む名前（画素ごとの入力は関数の引数の名前・ほかは uniform）。
@@ -164,6 +176,10 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.Albedo        => vec3InputName(input)
         case Vec3Input.Light         => vec3InputName(input)
         case Vec3Input.MetallicRoughness => vec3InputName(input)
+        case Vec3Input.EnvironmentColor     => vec3InputName(input)
+        case Vec3Input.EnvironmentBoxMin    => "uEnvBoxMin"
+        case Vec3Input.EnvironmentBoxMax    => "uEnvBoxMax"
+        case Vec3Input.EnvironmentBoxCenter => "uEnvBoxCenter"
     }
 
     def axisSuffix(t: Target, axis: Int32): String = match (t, axis) {
@@ -615,7 +631,13 @@ pub mod LightModel3d.Codegen {
         { name = "pbrAt", model = pbrModel(), doc = "pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。",
           params = Param.Points :: Param.Spots :: Param.Shadow :: p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.Light) ::
                    Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.SkyZenith) ::
-                   Param.Vec3Param(Vec3Input.SkyHorizon) :: Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) :: Nil } :: Nil
+                   Param.Vec3Param(Vec3Input.SkyHorizon) :: Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) ::
+                   Param.Vec3Param(Vec3Input.EnvironmentColor) :: Param.ScalarParam(ScalarInput.EnvironmentOn) :: Nil } ::
+        { name = "environmentDirectionAt", model = environmentDirection(),
+          doc = "environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。",
+          params = p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) ::
+                   Param.Vec3Param(Vec3Input.EnvironmentBoxMin) :: Param.Vec3Param(Vec3Input.EnvironmentBoxMax) ::
+                   Param.Vec3Param(Vec3Input.EnvironmentBoxCenter) :: Param.ScalarParam(ScalarInput.EnvironmentBoxOn) :: Nil } :: Nil
 
     /// 生成した CPU の光の関数（engine_tools の gen/SoftRaster3dLight.flix）のソースの全部（engine の開発用。ゲームは使わない）。
     /// 光の種類ごと（点光源の輪・スポットの輪）に関数を分けて出す。
