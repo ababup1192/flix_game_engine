@@ -243,6 +243,31 @@ pub mod Render3dGlsl {
         "float spotShadow(int i, vec3 p) {\n" +
         "    if (uShadowOn == 0 || i != uShadowSpot) return 1.0;\n" +
         "    return 1.0 - uShadowStrength * (1.0 - shadowLitFraction(uShadowMap, uShadowMatrix, uShadowBias, uShadowPcf, 0.0, vec3(0.0), p));\n" +
+        "}\n" +
+        sunShadowSource()
+
+    /// 太陽の uniform（向き・color × intensity）と、その影の割合 sunLitAt(p, g, n)（Scene3d.directionalShadowOf の doc の約束・LightModel3d の SunLit。
+    /// CPU の描き手は SoftRaster3d.Sun.litAt）。g = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・n = 光の計算の法線。
+    /// 光の式の木は r3d_sunLit（frag の main が先に代入する。ビルボードは 1 のまま）を読む。uSunShadowOn = 0 のプログラムは 1 を返す。
+    // WhyNot: 太陽へ背を向けた点（n·l ≤ 0）で地図を引かない — facing が 0 なので結果は同じで、pcf の (2r+1)² 回が無駄になる。
+    def sunShadowSource(): String =
+        "uniform vec3 uSunDir;\n" +
+        "uniform vec3 uSunColor;\n" +
+        "uniform int uSunShadowOn;\n" +
+        "uniform mat4 uSunMatrix;\n" +
+        "uniform sampler2D uSunMap;\n" +
+        "uniform float uSunBias;\n" +
+        "uniform float uSunNormalShift;\n" +
+        "uniform int uSunPcf;\n" +
+        "uniform float uSunStrength;\n" +
+        "uniform vec3 uSunForward;\n" +
+        "uniform vec2 uSunFade;\n" +
+        "float r3d_sunLit = 1.0;\n" +
+        "float sunLitAt(vec3 p, vec3 g, vec3 n) {\n" +
+        "    if (uSunShadowOn == 0 || dot(n, uSunDir) <= 0.0) return 1.0;\n" +
+        "    float fade = clamp((uSunFade.x - dot(p - uEye, uSunForward)) / uSunFade.y, 0.0, 1.0);\n" +
+        "    if (fade <= 0.0) return 1.0;\n" +
+        "    return 1.0 - uSunStrength * fade * (1.0 - shadowLitFraction(uSunMap, uSunMatrix, uSunBias, uSunPcf, uSunNormalShift, g, p));\n" +
         "}\n"
 
     /// Output.Depth の灰色（目からの距離で near が黒・near + range が白）。uEye は呼ぶ側の frag が宣言する。
@@ -264,6 +289,7 @@ pub mod Render3dGlsl {
         lightSource() +
         "void main() {\n" +
         "    vec3 n = normalize(vNormal);\n" +
+        "    r3d_sunLit = sunLitAt(vWorld, n, n);\n" +
         "    fragColor = vec4(r3d_surfaceOut(vColor, vTint, lightAt(vWorld, n), vec3(0.0), 1.0, vWorld, true), 1.0);\n" +
         "}\n"
 
@@ -317,8 +343,9 @@ pub mod Render3dGlsl {
         "        return;\n" +
         "    }\n" +
         facing +
+        "    vec3 n = " + normal + ";\n" +
+        "    r3d_sunLit = sunLitAt(vWorld, " + faceNormal + ", n);\n" +
         (if (surface#metallicRoughness)
-            "    vec3 n = " + normal + ";\n" +
             (if (surface#lightmap) "    vec3 light = lightmapLightAt(vWorld, n, lightmapColor());\n" else "    vec3 light = lightAt(vWorld, n);\n") +
             "    vec3 base = r3d_srgbToLinear3(albedo.rgb) * vTint;\n" +
             "    vec3 envColor = vec3(0.0);\n" +
@@ -327,9 +354,9 @@ pub mod Render3dGlsl {
             "    fragColor = vec4(r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld), " + alpha + ");\n"
          else
             (if (surface#lightmap)
-                "    vec3 light = lightmapLightAt(vWorld, " + normal + ", lightmapColor());\n"
+                "    vec3 light = lightmapLightAt(vWorld, n, lightmapColor());\n"
              else
-                "    vec3 light = lightAt(vWorld, " + normal + ");\n") +
+                "    vec3 light = lightAt(vWorld, n);\n") +
             "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true), " + alpha + ");\n") +
         "}\n"
 

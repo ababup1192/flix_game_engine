@@ -53,6 +53,125 @@ pub mod Scene3d {
         let innerCos = Num.cos(innerHalf);
         { outerCos = outerCos, innerCos = if (innerCos == outerCos) innerCos + 0.000001 else innerCos }
 
+    /// 太陽の光（平行光源。Unity・Unreal の Directional Light・Godot の DirectionalLight3D と同じ）。direction = 光が進む向き（長さは問わない。描く時に長さ 1 にする）・
+    /// color = 光の色（画面の値）・intensity = 線形の量・shadow が Some なら影を落とす。場面に 1 つまで（Scene3dCmd の directionalLight）。
+    /// 字で全部の欄を書かず、directionalLight(direction) を `{ intensity = 1.2 | Scene3d.directionalLight(d) }` の形で替える。
+    /// 拡散は 点光源と同じ facing（clamp01(n·l)）に color × intensity を掛け、metallic と roughness を持つ材質には鏡面も足す。
+    /// lightmap の面には拡散を足さず（ベイクに含める）、鏡面だけ足す。ビルボード（lit）は点光源と同じく法線をカメラへ向けて光を受け、影は受けない。
+    /// Scene3d.scene() の ambient は白なので、太陽を足したら ambient を下げる（白く飛ぶ）。
+    pub type alias DirectionalLight = { direction = Vec3.Vec3, color = Color, intensity = Float64, shadow = Option[DirectionalShadow] }
+
+    /// 太陽の影（カスケード 1 段）。mapSize = 一辺の画素数（0 以下なら影なし）・bias と normalBias は world の長さ（m）・
+    /// bias = 自分の面に影を落とさないための奥行きのずらし（描く時に bias / 奥行きの幅 の値へ直す）・
+    /// normalBias = 受ける点を、法線の向きに normalBias × 地図の 1 画素の world の幅だけずらしてから地図を引く量（法線マップを当てる前の法線で）・
+    /// pcfRadius = 周りを平均する幅（画素）・strength = 影の濃さ（0〜1）・
+    /// distance = カメラからどこまでに影を落とすか（Unity の Shadow Distance。min(distance, カメラの far) を使う）・
+    /// casterReach = 光の側へ、影を落とす物を拾う箱をどこまで延ばすか（画面の外の高い建物の影を拾う）。
+    pub type alias DirectionalShadow = { mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64,
+                                         distance = Float64, casterReach = Float64 }
+
+    /// 白・intensity 1・影なしの太陽。ほかの値は `{ intensity = 1.2, shadow = Some(Scene3d.directionalShadow()) | Scene3d.directionalLight(d) }` の形で替える。
+    pub def directionalLight(direction: Vec3.Vec3): DirectionalLight =
+        { direction = direction, color = Color.rgb(1.0, 1.0, 1.0), intensity = 1.0, shadow = None }
+
+    /// mapSize 2048・bias 0.05 m・normalBias 1・pcfRadius 1・strength 0.8・distance 150 m・casterReach 200 m の太陽の影。
+    pub def directionalShadow(): DirectionalShadow =
+        { mapSize = 2048, bias = 0.05, normalBias = 1.0, pcfRadius = 1, strength = 0.8, distance = 150.0, casterReach = 200.0 }
+
+    /// 描く時に使う太陽（使える時だけ Some。direction は長さ 1 にした光の進む向き）。GL・CPU・描き出しの鍵はこれだけを読む。
+    /// 向きの長さが 0 か有限でない・intensity が 0 以下か有限でない・色が黒の時は None（太陽なしと同じ。影の地図も描かない）。
+    pub def directionalLightOf(scene: Scene3dCmd): Option[DirectionalLight] =
+        scene#directionalLight |> Option.filter(l -> Option.isEmpty(directionalLightProblem(l)))
+            |> Option.map(l -> { direction = Vec3.normalized(l#direction) | l })
+
+    /// 太陽を使わない理由（1 行）。使える時と、太陽が無い時は None。毎コマ通るので、呼ぶ側が鍵（"@sun:direction"）ごとに初回 1 回だけ出す
+    /// （GL は warnSceneOnce・CPU の描き出しも同じ文面）。
+    // WhyNot: 純粋な関数の中で Log.warnThen を使わない — 毎コマ通る道で初回だけを覚えられない。
+    pub def directionalLightWarning(scene: Scene3dCmd): Option[String] =
+        scene#directionalLight |> Option.flatMap(directionalLightProblem)
+
+    def directionalLightProblem(l: DirectionalLight): Option[String] =
+        let d = l#direction;
+        let length = Vec3.length(d);
+        if (not (Float64.isFinite(length)) or length < 0.000001) Some("scene3d: 太陽の direction の長さが 0 か有限でない — 太陽なしで描く")
+        else if (not (Float64.isFinite(l#intensity)) or l#intensity <= 0.0) Some("scene3d: 太陽の intensity が 0 以下か有限でない — 太陽なしで描く")
+        else if (not (l#color#r > 0.0 or l#color#g > 0.0 or l#color#b > 0.0)) Some("scene3d: 太陽の色が黒 — 太陽なしで描く")
+        else None
+
+    /// 太陽の光（directionalLightOf の値）が、点から光源へ向かう向き（長さ 1）と、線形の量にした color × intensity。GL の uniform と CPU の引数に同じ値を入れる。
+    pub def sunTermsOf(l: DirectionalLight): { toward = Vec3.Vec3, color = Vec3.Vec3 } =
+        let c = Texture3d.srgbToLinearColor(l#color);
+        { toward = Vec3.mul(l#direction, -1.0), color = Vec3.v3(c#r * l#intensity, c#g * l#intensity, c#b * l#intensity) }
+
+    /// 太陽の影の地図を描く材料。matrix = world → 光の clip（正射影・Float64）・frustum = 影を落とす物の間引き（matrix の箱）・
+    /// mapSize と pcfRadius は上限（maxShadowMapSize・maxShadowPcfRadius）で頭打ちにした値・strength = 影の濃さ・
+    /// depthBias = 地図の値（z × 0.5 + 0.5）から引く量（bias / 奥行きの幅）・normalShift = 受ける点を法線の向きへずらす world の長さ（normalBias × 地図の 1 画素の幅）・
+    /// forward = カメラの前の向き・distance = min(distance, カメラの far)・fadeWidth = distance の手前から影を薄める幅・radius = 箱の横の半径（world）。
+    pub type alias SunShadowSetup = { matrix = Mat4.Mat4, frustum = Frustum.Frustum, mapSize = Int32, pcfRadius = Int32, strength = Float64,
+                                      depthBias = Float64, normalShift = Float64, forward = Vec3.Vec3, distance = Float64, fadeWidth = Float64,
+                                      radius = Float64 }
+
+    /// 太陽の影の地図の約束（GL と CPU で同じ。スポットの shadowMatrix の判定 1〜4 と同じ読み方で、行列だけ正射影）:
+    ///   箱の横: カメラの視錐台のうち、目の前の向きの奥行き d が near..D（D = min(distance, far)）の部分の 8 つの角を囲む球。
+    ///     k = sqrt(1 + aspect²) × tan(fovY / 2)・k² ≥ (D − near) / (D + near) なら 中心 = 目 + 前 × D・r = D × k、
+    ///     ほかは 中心 = 目 + 前 × (D + near) / 2 × (1 + k²)・r = sqrt((D − near)² + 2 (D² + near²) k² + (D + near)² k⁴) / 2。
+    ///     r はカメラの向きに依らない（回しても地図の幅が変わらない）。
+    ///   箱の奥行き: 光の向きに 球の中心の奥行き − r − casterReach（光の側へ延ばす）から 球の中心の奥行き + r まで。
+    ///   丸め: 地図の 1 画素の幅 = 2r / mapSize。光の空間（光の向きの軸・原点は world の原点）での球の中心の x・y を floor(c / 幅) × 幅 に。
+    ///     カメラを動かしても world の点が地図の画素の中で動かない（ちらつかない）。太陽の向きを毎コマ変える場面は、軸が回るのでちらつく。
+    ///   判定: 点を normalShift だけ法線へずらして matrix で写し、NDC の x・y が −1..1 の外なら影にしない。z × 0.5 + 0.5 − depthBias が地図の値以下なら照らされる。
+    ///   薄め: カメラの前の向きの深さ d で fade = clamp01((distance − d) / fadeWidth)。受ける点の光の量に 1 − strength × fade × (1 − 照らされる割合) を掛ける。
+    /// Output.Depth・置いた物の無い場面・mapSize が 0 以下・太陽を使えない時・distance が near 以下の時は None。
+    pub def directionalShadowOf(scene: Scene3dCmd): Option[SunShadowSetup] =
+        let castsShadow = match scene#output {
+            case Output.Color    => not List.isEmpty(scene#instances)
+            case Output.Depth(_) => false
+        };
+        if (not castsShadow) None
+        else directionalLightOf(scene) |> Option.flatMap(l ->
+            l#shadow |> Option.filter(s -> s#mapSize > 0) |> Option.flatMap(sunShadowSetupOf(scene, l#direction)))
+
+    def sunShadowSetupOf(scene: Scene3dCmd, direction: Vec3.Vec3, s: DirectionalShadow): Option[SunShadowSetup] =
+        let cam = scene#camera;
+        let distance = Float64.min(s#distance, cam#far);
+        if (not (Float64.isFinite(distance) and Float64.isFinite(cam#near) and cam#near > 0.0 and distance > cam#near)) None
+        else {
+            let (center, radius) = frustumSphereOf(cam, aspectOf(scene), distance);
+            let size = Int32.min(s#mapSize, maxShadowMapSize());
+            let texel = 2.0 * radius / Int32.toFloat64(size);
+            let view = sunViewMatrix(direction);
+            let c = Mat4.apply(view, center);
+            let snappedX = Float64.floor(c#x / texel) * texel;
+            let snappedY = Float64.floor(c#y / texel) * texel;
+            let depth = 0.0 - c#z;
+            let reach = Float64.max(0.0, s#casterReach);
+            let proj = Mat4.orthographic({ left = snappedX - radius, right = snappedX + radius, bottom = snappedY - radius, top = snappedY + radius,
+                                           near = depth - radius - reach, far = depth + radius });
+            let matrix = Mat4.mul(proj, view);
+            Some({ matrix = matrix, frustum = Frustum.ofClipMatrix(matrix), mapSize = size,
+                   pcfRadius = Int32.max(0, Int32.min(s#pcfRadius, maxShadowPcfRadius())), strength = s#strength,
+                   depthBias = Float64.max(0.0, s#bias) / (reach + 2.0 * radius), normalShift = Float64.max(0.0, s#normalBias) * texel,
+                   forward = Camera3d.forward(cam), distance = distance, fadeWidth = Float64.max(distance * 0.1, 0.000001), radius = radius })
+        }
+
+    /// カメラの視錐台のうち、前の向きの奥行きが near..far の部分を囲む球（中心, 半径）。式は directionalShadowOf の doc。
+    def frustumSphereOf(cam: Camera3d.Camera3d, aspect: Float64, far: Float64): (Vec3.Vec3, Float64) =
+        let half = cam#fovY / 2.0;
+        let tanHalf = Num.sin(half) / Num.cos(half);
+        let k2 = (1.0 + aspect * aspect) * tanHalf * tanHalf;
+        let near = cam#near;
+        let (reach, radius) = if (k2 >= (far - near) / (far + near)) (far, far * Num.sqrt(k2))
+            else ((far + near) / 2.0 * (1.0 + k2),
+                  Num.sqrt((far - near) * (far - near) + 2.0 * (far * far + near * near) * k2 + (far + near) * (far + near) * k2 * k2) / 2.0);
+        (Vec3.add(cam#eye, Vec3.mul(Camera3d.forward(cam), reach)), radius)
+
+    /// 光の進む向き direction（長さ 1）を前にした、原点の目の行列（world → 光の目の座標。回転だけ）。
+    // WhyNot: 光の目を箱の中心に置かない — 中心が動くたびに目の座標の原点が動き、地図の画素の丸め（directionalShadowOf の doc）が効かなくなる。
+    def sunViewMatrix(direction: Vec3.Vec3): Mat4.Mat4 =
+        let flat = Num.sqrt(direction#x * direction#x + direction#z * direction#z);
+        Camera3d.viewMatrix({ eye = Vec3.zero(), yaw = Num.atan2(direction#x, direction#z), pitch = Num.atan2(0.0 - direction#y, flat),
+                              fovY = 1.0, near = 1.0, far = 2.0 })
+
     /// 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
     pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }
 
@@ -480,9 +599,10 @@ pub mod Scene3d {
     /// 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
     /// textures = 材質が "tex3d:" の名前（Texture3d.name）で読む絵・
     /// sky = 何も描かれない画素に描く空（gradientSky。Some なら environment の background は使わない）・
-    /// environmentMap = metallic と roughness を持つ材質の映り込みが読む周りの景色（environmentMap。None なら空のグラデーションを映す）。
+    /// environmentMap = metallic と roughness を持つ材質の映り込みが読む周りの景色（environmentMap。None なら空のグラデーションを映す）・
+    /// directionalLight = 太陽（1 つまで。None なら無し。使うかどうかは directionalLightOf で決める）。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d],
-                                  pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d,
+                                  pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
                                   textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }
 
@@ -491,7 +611,7 @@ pub mod Scene3d {
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
     pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd =
-        { size = size, camera = camera, instances = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil,
+        { size = size, camera = camera, instances = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
           resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None }
 

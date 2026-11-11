@@ -4,7 +4,9 @@
 ///
 /// 式（木は下を足す順まで写す。CPU の描き手は生成した SoftRaster3dLight でこの木をそのまま回す）:
 ///
-///   light  = toon(ambient + hemisphere × max(0, n.y) + Σ 点光源 + Σ スポット)
+///   light  = toon(ambient + hemisphere × max(0, n.y) + Σ 点光源 + Σ スポット + 太陽)
+///   太陽   = SunColor × facing × sunLit                        SunColor = color × intensity・facing = clamp01(wrap + n·l)・l = 点から太陽への向き（SunDirection）
+///   sunLit = n·l > 0 かつ影の地図がある時だけ 1 − strength × fade × (1 − 照らされる割合)（ほかは 1。木の外で画素ごとに 1 回。Scene3d.directionalShadowOf）
 ///   点光源 = color × intensity × att × facing
 ///   スポット = color × intensity × att × facing × cone × shadowLit
 ///   att    = (max(0, 1 − d² / max(range², 1e−12)))²            d = 光の位置 − 点・range² = max(range, 1e−6)²
@@ -17,8 +19,9 @@
 ///   空     = horizon + (toward − horizon) × min(1, |dir.y|^curve)・toward = dir.y ≥ 0 なら zenith、ほかは ground
 ///
 /// metallic と roughness を持つ材質（pbrModel）の色は、上の light を入力にして次の順で足す（かすみと emission はこの後に今までどおり）:
-///   色     = albedo × (1 − metallic) × light + Σ 鏡面（点光源・スポット）+ 映り込み        albedo = 材質の色 × tint（線形の量）
+///   色     = albedo × (1 − metallic) × light + Σ 鏡面（点光源・スポット）+ 太陽の鏡面 + 映り込み        albedo = 材質の色 × tint（線形の量）
 ///   鏡面   = color × intensity × att × cone × shadowLit × F × D × G / (4 × n·v)           n·l は D × G × F / (4 × n·l × n·v) の n·l と相殺して消す
+///   太陽の鏡面 = SunColor × sunLit × F × D × G / (4 × n·v)（facing が正の時だけ。lightmap の面にも足す）
 ///   α      = max(roughness², 0.002)・D = α² / (π × ((n·h)² × (α² − 1) + 1)²)・G = G1(n·l) × G1(n·v)・G1(x) = x / (x × (1 − α / 2) + α / 2)
 ///   F      = F0 + (1 − F0) × (1 − v·h)^5・F0 = mix(0.04, albedo, metallic)             h = normalize(l + v)・v = 目への向き
 ///   映り込み = 空(normalize(mix(r, n, roughness²))) × (F0 + (max(1 − roughness, F0) − F0) × (1 − n·v)^5)    r = reflect(−v, n)
@@ -29,7 +32,7 @@
 ///   toon は light だけに掛かり、鏡面と映り込みは段付けしない。lightmap の面も鏡面と映り込みは同じに足す（ベイクした光は拡散の側）。
 ///
 /// 木の外に置く物（2 つの描き手がそれぞれ書く）: 絵を読む所（lightmap の段つきの読み・法線マップの絵・環境マップの絵）・法線マップの TBN・
-/// 影の地図の PCF・裏の面の法線の反転。木はその結果を入力（Vec3Input.Normal・LightmapColor・ScalarInput.ShadowLit）として受ける。
+/// 影の地図の PCF（スポットの ShadowLit・太陽の SunLit）・裏の面の法線の反転。木はその結果を入力（Vec3Input.Normal・LightmapColor・ScalarInput.ShadowLit・SunLit）として受ける。
 /// 光を色に掛ける所（色 = 頂点の色か albedo × tint × light）と、かすみの後に emission を足す所は、metallic と roughness を持たない面では木の外（呼ぶ側が書く）。
 /// 持つ面は光を掛ける所まで pbrModel（木の中）が決め、かすみと emission は呼ぶ側が同じに続ける。
 // WhyNot: enum を `Vec3`・`Scalar` と名付けない — mod の中で上の `Vec3` モジュールを隠し、Vec3.v3 などが引けなくなる。
@@ -114,6 +117,8 @@ pub mod LightModel3d {
         case Hemisphere
         /// 今のスポットの光に掛ける影の割合（SumSpots の中だけ・影を落とさないスポットは 1）。
         case ShadowLit
+        /// 太陽の光に掛ける影の割合（太陽の拡散と鏡面の両方が読む。影を落とさない・届く光が無い・ビルボードは 1。木の外で画素ごとに 1 回だけ求める）。
+        case SunLit
         case FogNear
         case FogFar
         /// Scene3d.skyCurveOf の値。
@@ -157,6 +162,10 @@ pub mod LightModel3d {
         case EnvironmentBoxMin
         case EnvironmentBoxMax
         case EnvironmentBoxCenter
+        /// 点から太陽へ向かう向き（長さ 1。太陽が無い時は 0 — 拡散も鏡面も 0 になる）。
+        case SunDirection
+        /// 太陽の color × intensity（線形の量。太陽が無い時は 0）。
+        case SunColor
     }
 
     /// 光のループの中で読めるスカラーの欄。
@@ -189,10 +198,10 @@ pub mod LightModel3d {
     pub def lightingModel(): Vec3Expr =
         Vec3Expr.LetScalar("sky", ScalarExpr.Mul(ScalarExpr.In(ScalarInput.Hemisphere),
                                                  ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Y(Vec3Expr.In(Vec3Input.Normal)))),
-            Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.In(Vec3Input.Ambient),
+            Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.In(Vec3Input.Ambient),
                                                                  Vec3Expr.Make(ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"))),
                                                     Vec3Expr.SumPoints(pointLight())),
-                                       Vec3Expr.SumSpots(spotLight()))))
+                                       Vec3Expr.SumSpots(spotLight())), sunLight())))
 
     /// lightmap のある面に当たる光（ambient と hemisphere の代わりにベイクした光を足す）。
     pub def lightmapLightingModel(): Vec3Expr =
@@ -228,7 +237,7 @@ pub mod LightModel3d {
     pub def pbrModel(): Vec3Expr =
         let light = Vec3Expr.In(Vec3Input.Light);
         let diffuse = Vec3Expr.Scale(Vec3Expr.Mul(Vec3Expr.In(Vec3Input.Albedo), light), ScalarExpr.Sub(ScalarExpr.Num(1.0), ScalarExpr.Ref("metallic")));
-        withSurface(Vec3Expr.Add(Vec3Expr.Add(diffuse, Vec3Expr.Add(Vec3Expr.SumPoints(pointSpecular()), Vec3Expr.SumSpots(spotSpecular()))),
+        withSurface(Vec3Expr.Add(Vec3Expr.Add(diffuse, Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.SumPoints(pointSpecular()), Vec3Expr.SumSpots(spotSpecular())), sunSpecular())),
                                  skyReflection()))
 
     /// 面の値（metallic・roughness・α・α²・F0・目への向き v・n·v・見る側の項 viewTerm・分布の係数 dScale）を body の中で使えるようにする。
@@ -328,6 +337,23 @@ pub mod LightModel3d {
             specularTerm(
                 Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("att")), ScalarExpr.Ref("cone")),
                                ScalarExpr.Ref("lit")))))
+
+    /// 太陽の鏡面（withSurface の中。点光源・スポットと同じ式で、l = 太陽への向き・power = SunColor × SunLit）。太陽が無い時は l = 0 で facing = 0 になり、重い式を飛ばす。
+    def sunSpecular(): Vec3Expr =
+        Vec3Expr.Let("l", Vec3Expr.In(Vec3Input.SunDirection),
+        Vec3Expr.LetScalar("facing", sunFacing(),
+            whenReached(Cond.Greater(ScalarExpr.Ref("facing"), ScalarExpr.Num(0.0)),
+                        specularTerm(Vec3Expr.Scale(Vec3Expr.In(Vec3Input.SunColor), ScalarExpr.In(ScalarInput.SunLit))))))
+
+    /// 太陽の拡散（lightingModel の足し算の最後・Toon の内側）。color × intensity × facing × sunLit。lightmap の面（lightmapLightingModel）には足さない
+    /// （ベイクに含めるのが普通で二重になる。鏡面は足す）。太陽が無い時は SunColor = 0 なので 0 を足すだけ。
+    def sunLight(): Vec3Expr =
+        Vec3Expr.LetScalar("sunFacing", sunFacing(),
+            Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.In(Vec3Input.SunColor), ScalarExpr.Ref("sunFacing")), ScalarExpr.In(ScalarInput.SunLit)))
+
+    /// 太陽の facing = clamp01(wrap + n·l)（点光源・スポットと同じ形）。
+    def sunFacing(): ScalarExpr =
+        ScalarExpr.Clamp01(ScalarExpr.Add(ScalarExpr.Num(wrap()), ScalarExpr.Dot(Vec3Expr.In(Vec3Input.Normal), Vec3Expr.In(Vec3Input.SunDirection))))
 
     /// reached が真の時だけ body を計算し、偽なら 0（光が届かない・面が光に背を向けている時に、鏡面の重い式を飛ばす。値は変わらない — facing か att か cone が 0 なら鏡面も 0）。
     def whenReached(reached: Cond, body: Vec3Expr): Vec3Expr =

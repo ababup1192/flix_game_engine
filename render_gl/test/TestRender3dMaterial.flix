@@ -124,7 +124,7 @@ mod TestRender3dMaterial {
         let source = normalMappedSource();
         Assert.assertEq(expected = (true, true, true),
             (indexOf("uniform sampler2D uNormalMap;", source) >= 0, indexOf("in vec4 vTangent;", source) >= 0,
-             indexOf("lightAt(vWorld, normalMapped(normalize(vNormal)))", source) >= 0))
+             indexOf("vec3 n = normalMapped(normalize(vNormal));", source) >= 0 and indexOf("lightAt(vWorld, n)", source) >= 0))
 
     /// 傾ける式は B = cross(N, T) × w・緑（c.y）を B に掛ける（OpenGL 流）。
     @Test
@@ -163,7 +163,7 @@ mod TestRender3dMaterial {
     /// lightmap の版は lightmapLightAt に lightmap の絵から読んだ色を渡し、lightAt（環境光と hemisphere を足す方）を main で呼ばない。
     @Test
     def testLightmapUsesBakedLight(): Unit \ Assert =
-        Assert.assertTrue(indexOf("vec3 light = lightmapLightAt(vWorld, normalize(vNormal), lightmapColor());",
+        Assert.assertTrue(indexOf("vec3 light = lightmapLightAt(vWorld, n, lightmapColor());",
             Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false })) >= 0)
 
     /// lightmap の版の光の式は LightModel3d の木から作った lightmapLightAt をそのまま持つ。
@@ -224,7 +224,7 @@ mod TestRender3dMaterial {
     def testDoubleSidedVariantFlipsBackFaceNormal(): Unit \ Assert =
         let source = sourceOf({ blend = false, doubleSided = true, coverage = false, metallicRoughness = false });
         Assert.assertTrue(indexOf("gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal)", source) >= 0
-                          and indexOf("lightAt(vWorld, facingNormal)", source) >= 0)
+                          and indexOf("vec3 n = facingNormal;", source) >= 0 and indexOf("lightAt(vWorld, n)", source) >= 0)
 
     /// alpha to coverage の版は discard せず、α を縁の幅で立ち上げて出す。
     @Test

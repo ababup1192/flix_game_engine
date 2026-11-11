@@ -2,13 +2,10 @@
 mod Render3d.Material {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.Shadow.{putShadow}
+    use Render3d.Shadow.{putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
-    use Render3d.Light.{putLights}
-    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs,
-                  MaterialPass, MeshDraw, State, Texture3dEntry, TextureSlot, TextureSource, bindDataTextureUnits, drawBatch, ensureTangents, hasUv, isSkinned,
-                  environmentTextureUnit, lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit,
-                  putDepthRange, shadowLocsOf, useMeshProgram, warnDroppedTextures, warnSceneOnce}
+    use Render3d.Light.{lightLocsOf, putLights}
+    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, Texture3dEntry, TextureSlot, TextureSource, bindDataTextureUnits, drawBatch, ensureTangents, hasUv, isSkinned, environmentTextureUnit, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
     use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, batchKeyOf, batchOf, groupByTextures, groupInOrder}
     use Scene3dRenderer.{RegisteredTexture}
     use Render3d.Counts.{Counter, Phase, count, noteMaterialBuild, timed}
@@ -102,7 +99,8 @@ mod Render3d.Material {
     def useMaterialProgram(gl: GlContext, state: State, camera: CameraData, pass: MaterialPass, locs: MaterialLocs): Unit \ IO =
         useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
         putLights(gl, locs#light, camera#lights);
-        putShadow(gl, locs#shadow, camera#shadow);
+        putShadow(gl, locs#shadow, camera#shadows#spot);
+        putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
         gl.uniform1f(locs#time, RenderUtil.f32(Array.get(0, state#timeHolder)));
         match pass {
             case MaterialPass.Color     => gl.uniform1i(locs#depthOut, 0)
@@ -616,7 +614,7 @@ mod Render3d.Material {
 
     def materialLocsOf(gl: GlContext, program: Int32, paramNames: List[String], texCount: Int32): MaterialLocs \ IO =
         { mesh = meshLocsOf(gl, program), light = lightLocsOf(gl, program), shadow = shadowLocsOf(gl, program),
-          time = loc(gl, program, "uTime"), cutout = loc(gl, program, "uCutout"),
+          sunShadow = sunShadowLocsOf(gl, program), time = loc(gl, program, "uTime"), cutout = loc(gl, program, "uCutout"),
           depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"),
           params = paramNames |> List.mapWithIndex((i, _) -> loc(gl, program, "uParam${i}")),
           texFlips = List.range(0, texCount) |> List.map(i -> loc(gl, program, "uTexFlip${i}")),

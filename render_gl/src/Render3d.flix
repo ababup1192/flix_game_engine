@@ -7,7 +7,7 @@
 //   色 = 頂点の色 × tint × light。
 //   材質のある物は 色 = fog(albedo × tint × light) + emission（頂点の色は掛けない）。cutout なら α < 0.5 を捨てる。
 //   材質の Tex は unit 0〜5（ShaderDoc.materialTexReads の並び・上限 Scene3d.maxMaterialTextures()）に貼り、材質を描いた後に
-//   その unit の sampler を外して unit 0 へ戻す（ビルボードと 2D の面が unit 0 で読む）。法線マップは unit 6・影の地図は unit 7。
+//   その unit の sampler を外して unit 0 へ戻す（ビルボードと 2D の面が unit 0 で読む）。法線マップは unit 6・スポットの影の地図は unit 7・太陽の影の地図は unit 13。
 //   骨つきの物の joint 行列は unit 10 の絵（Render3d.JointTexture）を頂点シェーダーが読む。行は prepare の中で 1 回だけ決めて MeshDraw に持たせる。
 //   同じ形と材質の物は batch （Render3d.Batch）にして 1 回の instanced draw で描き、batch にならない物も instance 数 1 で同じプログラムで描く。world・法線の行列・tint・emissionIntensity・joint の行は
 //   1 体ごとの値で、unit 11 の絵（Render3d.Instancing）を頂点シェーダーが uInstanceBase + gl_InstanceID で読む。
@@ -28,7 +28,7 @@ mod Render3d {
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{SceneDraws, SceneInputs, SceneItem, SceneTarget, planScenes}
-    use Render3d.Shadow.{bindShadowMap, putShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
+    use Render3d.Shadow.{bindShadowMap, putShadow, putSunShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, drawMaterials, resolveTextureAs, sweepMaterials, sweepTextures3d}
     use Render3d.Counts.{Counter, Phase, count, countDrawCall, countInstances, noteDroppedLights, takeCounts, timed}
 
@@ -57,6 +57,22 @@ mod Render3d {
         tex = Int32, matrix = Array[Float32, Static], bias = Float64, pcfRadius = Int32, strength = Float64, spotIndex = Int32
     }
 
+    /// 塗りのシェーダーへ渡す太陽の影（Scene3d.directionalShadowOf の値）。bias = 地図の値から引く量（z の単位）・
+    /// normalShift = 受ける点を法線の向きへずらす world の長さ・forward = カメラの前の向き・fade = (distance, fadeWidth)。
+    pub type alias SunShadowUse = {
+        tex = Int32, matrix = Array[Float32, Static], bias = Float64, normalShift = Float64, pcfRadius = Int32, strength = Float64,
+        forward = Array[Float32, Static], distance = Float64, fadeWidth = Float64
+    }
+
+    /// 場面 1 つの影の地図（影を落とすスポットと、太陽。無ければ None）。
+    pub type alias SceneShadows = { spot = Option[ShadowUse], sun = Option[SunShadowUse] }
+
+    /// 影の地図を落とす光の種類。Spot = pickLights の後のスポットの並びの番号・Sun = 太陽（その地図の約束 Scene3d.directionalShadowOf の値）。
+    enum ShadowLight {
+        case Spot(Int32)
+        case Sun(Scene3d.SunShadowSetup)
+    }
+
     /// 影の地図の描き先 1 枚（深度テクスチャだけを付けた FBO）。size = 縦横の画素・lastUsed = 最後に描いたコマの世代。
     type alias ShadowTarget = { fbo = Int32, tex = Int32, size = Int32, lastUsed = Int64 }
 
@@ -64,29 +80,34 @@ mod Render3d {
     /// frustum = 影を落とす物の間引き・settings = mapSize・bias・pcfRadius・strength。
     type alias ShadowCaster = { matrix = Mat4.Mat4, frustum = Frustum.Frustum, settings = Scene3d.ShadowMap }
 
-    /// 影の地図を描く材料。spotIndex = 影を落とすスポットの pickLights の後の並びの番号。plain = 骨の無い物・skinned = 骨つきの物（描く順）。
-    type alias ShadowPlan[b] = { caster = ShadowCaster, spotIndex = Int32, plain = List[b], skinned = List[b] }
+    /// 影の地図を描く材料。light = 影を落とす光・plain = 骨の無い物・skinned = 骨つきの物（描く順）。
+    type alias ShadowPlan[b] = { caster = ShadowCaster, light = ShadowLight, plain = List[b], skinned = List[b] }
 
     /// 光の uniform の location（頂点の色のプログラムとビルボードのプログラムで同じ名前）。
-    type alias LightLocs = {
+    pub type alias LightLocs = {
         ambient = Int32, hemisphere = Int32, toonSteps = Int32,
         pointCount = Int32, pointPos = Int32, pointColor = Int32, pointRange = Int32,
         spotCount = Int32, spotPos = Int32, spotDir = Int32, spotColor = Int32, spotRange = Int32, spotCone = Int32,
         fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
         reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32,
-        envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32
+        envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32,
+        sunDir = Int32, sunColor = Int32
     }
 
     /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
     type alias MeshLocs = { program = Int32, view = Int32, proj = Int32, instanceBase = Int32 }
 
     /// 影の uniform の location（頂点の色のプログラムと材質のプログラム。ビルボードは影を受けない）。
-    type alias ShadowLocs = { on = Int32, spot = Int32, matrix = Int32, map = Int32, bias = Int32, pcf = Int32, strength = Int32 }
+    pub type alias ShadowLocs = { on = Int32, spot = Int32, matrix = Int32, map = Int32, bias = Int32, pcf = Int32, strength = Int32 }
 
-    type alias LitLocs = { mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs }
+    /// 太陽の影の uniform の location（ShadowLocs と同じ決まり。on = uSunShadowOn）。
+    pub type alias SunShadowLocs = { on = Int32, matrix = Int32, map = Int32, bias = Int32, normalShift = Int32, pcf = Int32, strength = Int32,
+                                 forward = Int32, fade = Int32 }
+
+    type alias LitLocs = { mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs }
 
     /// 1 つの場面の目と光と影（置いた物を描くプログラムへ渡す物）。
-    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadow = Option[ShadowUse],
+    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadows = SceneShadows,
                               frustum = Frustum.Frustum }
 
     type alias DepthLocs = { mesh = MeshLocs, eye = Int32, depthRange = Int32 }
@@ -114,7 +135,7 @@ mod Render3d {
     /// 材質のプログラムの uniform の location。params = uParamN の location（paramNames の並び）・
     /// texFlips = uTexFlipN の location（texReads の並び）。
     type alias MaterialLocs = {
-        mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, time = Int32, cutout = Int32,
+        mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, time = Int32, cutout = Int32,
         depthOut = Int32, depthRange = Int32, params = List[Int32], texFlips = List[Int32],
         normalStrength = Int32, normalFlip = Int32, texLevels = List[Int32], normalLevels = Int32,
         lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32
@@ -202,7 +223,8 @@ mod Render3d {
         fogOn = Int32, fogColor = Array[Float32, Static], fogRange = Array[Float32, Static], eye = Array[Float32, Static],
         reflectZenith = Array[Float32, Static], reflectHorizon = Array[Float32, Static], reflectGround = Array[Float32, Static], reflectCurve = Float32,
         envOn = Int32, envBoxOn = Int32, envBoxMin = Array[Float32, Static], envBoxMax = Array[Float32, Static], envBoxCenter = Array[Float32, Static],
-        envLevels = Float32, envIntensity = Float32
+        envLevels = Float32, envIntensity = Float32,
+        sunDir = Array[Float32, Static], sunColor = Array[Float32, Static]
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshesRef = contentHash → GPU に置いたメッシュ。
@@ -283,6 +305,9 @@ mod Render3d {
 
     /// 影の地図を貼るテクスチャの unit（2D の Shader 面は 0 から順に使い、描いた後に unit 0 へ戻す）。
     def shadowTextureUnit(): Int32 = 7
+
+    /// 太陽の影の地図を貼るテクスチャの unit（0〜12 は使用中。GL 3.3 と WebGL2 が約束する 16 の内）。
+    def sunShadowTextureUnit(): Int32 = 13
 
     /// 材質の法線マップを貼るテクスチャの unit（材質の絵は 0〜5）。
     def normalMapTextureUnit(): Int32 = 6
@@ -371,11 +396,11 @@ mod Render3d {
             (numbered, joints, instances)
         });
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, List.map(plan -> plan#shadowPlan, plans)));
+        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, List.map(plan -> plan#shadowPlans, plans)));
         let designCount = Array#{0} @ Static;
         let items = List.zip(plans, shadows) |> List.map(ps -> {
             let (plan, shadow) = ps;
-            let inputs = { draws = plan#draws, shadow = shadow, jointTexture = jointTexture, instanceTexture = instanceTexture };
+            let inputs = { draws = plan#draws, shadows = shadow, jointTexture = jointTexture, instanceTexture = instanceTexture };
             let target = match plan#cmd#scene#resolution {
                 case Scene3d.Resolution.Native => SceneTarget.Native(inputs)
                 case Scene3d.Resolution.Design =>
@@ -385,7 +410,7 @@ mod Render3d {
             };
             { cmd = plan#cmd, target = target }
         });
-        let movedTarget = Array.get(0, designCount) > 0 or List.exists(Option.nonEmpty, shadows);
+        let movedTarget = Array.get(0, designCount) > 0 or List.exists(s -> Option.nonEmpty(s#spot) or Option.nonEmpty(s#sun), shadows);
         if (movedTarget) gl.bindFramebuffer(GlConst.FRAMEBUFFER, dest#framebuffer) else ();
         items
 
@@ -511,20 +536,20 @@ mod Render3d {
         let lights = lightDataOf(picked, environmentLevels);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
-        let shadow = inputs#shadow;
-        let camera = { view = view, proj = proj, lights = lights, shadow = shadow, frustum = frustum };
+        let shadows = inputs#shadows;
+        let camera = { view = view, proj = proj, lights = lights, shadows = shadows, frustum = frustum };
         let draws = inputs#draws;
         Render3d.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
         noteCulled(gl, state, gen, source, List.length(scene#instances), List.append(draws#plain, draws#skinned), List.append(draws#opaque, draws#blended));
         match scene#output {
             case Scene3d.Output.Color =>
-                bindShadowMap(gl, shadow);
+                bindShadowMap(gl, shadows);
                 drawInstancesLit(gl, state, gen, programs#lit, camera, draws);
                 drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, draws#opaque);
                 drawBillboards(gl, state, textureOf, programs#billboard, camera, scene);
                 drawBlended(gl, state, gen, camera, source, scene#camera#eye, draws#blended);
-                unbindShadowMap(gl, shadow)
+                unbindShadowMap(gl, shadows)
             case Scene3d.Output.Depth(dr) =>
                 drawInstancesDepth(gl, state, gen, programs#depth, camera, scene#camera#eye, dr, draws);
                 drawMaterials(gl, state, gen, camera, MaterialPass.Depth(dr), source, draws#opaque);
@@ -668,7 +693,8 @@ mod Render3d {
         else {
             useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
             putLights(gl, locs#light, camera#lights);
-            putShadow(gl, locs#shadow, camera#shadow);
+            putShadow(gl, locs#shadow, camera#shadows#spot);
+            putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
             batches |> List.forEach(drawBatch(gl, state, gen, locs#mesh))
         }
 
@@ -1094,7 +1120,7 @@ mod Render3d {
         }
 
     def litLocsOf(gl: GlContext, program: Int32): LitLocs \ IO =
-        { mesh = meshLocsOf(gl, program), light = lightLocsOf(gl, program), shadow = shadowLocsOf(gl, program) }
+        { mesh = meshLocsOf(gl, program), light = Render3d.Light.lightLocsOf(gl, program), shadow = Render3d.Shadow.shadowLocsOf(gl, program), sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program) }
 
     def depthLocsOf(gl: GlContext, program: Int32): DepthLocs \ IO =
         { mesh = meshLocsOf(gl, program), eye = loc(gl, program, "uEye"), depthRange = loc(gl, program, "uDepthRange") }
@@ -1106,30 +1132,11 @@ mod Render3d {
                 Log.warnThen("scene3d: プログラム '${label}' が組めなかった — この種類の 3D の描き物は描かない", 0)
         }
 
-    def loc(gl: GlContext, program: Int32, name: String): Int32 \ IO =
+    pub def loc(gl: GlContext, program: Int32, name: String): Int32 \ IO =
         if (program == 0) -1 else gl.getUniformLocation(program, name)
 
     def meshLocsOf(gl: GlContext, program: Int32): MeshLocs \ IO =
         { program = program, view = loc(gl, program, "uView"), proj = loc(gl, program, "uProj"), instanceBase = loc(gl, program, "uInstanceBase") }
-
-    def lightLocsOf(gl: GlContext, program: Int32): LightLocs \ IO =
-        { ambient = loc(gl, program, "uAmbient"), hemisphere = loc(gl, program, "uHemisphere"), toonSteps = loc(gl, program, "uToonSteps"),
-          pointCount = loc(gl, program, "uPointCount"), pointPos = loc(gl, program, "uPointPos"),
-          pointColor = loc(gl, program, "uPointColor"), pointRange = loc(gl, program, "uPointRange"),
-          spotCount = loc(gl, program, "uSpotCount"), spotPos = loc(gl, program, "uSpotPos"), spotDir = loc(gl, program, "uSpotDir"),
-          spotColor = loc(gl, program, "uSpotColor"), spotRange = loc(gl, program, "uSpotRange"), spotCone = loc(gl, program, "uSpotCone"),
-          fogOn = loc(gl, program, "uFogOn"), fogColor = loc(gl, program, "uFogColor"), fogRange = loc(gl, program, "uFogRange"),
-          eye = loc(gl, program, "uEye"),
-          reflectZenith = loc(gl, program, "uZenith"), reflectHorizon = loc(gl, program, "uHorizon"), reflectGround = loc(gl, program, "uGround"),
-          reflectCurve = loc(gl, program, "uCurve"),
-          envOn = loc(gl, program, "uEnvOn"), envBoxOn = loc(gl, program, "uEnvBoxOn"), envBoxMin = loc(gl, program, "uEnvBoxMin"),
-          envBoxMax = loc(gl, program, "uEnvBoxMax"), envBoxCenter = loc(gl, program, "uEnvBoxCenter"),
-          envLevels = loc(gl, program, "uEnvLevels"), envIntensity = loc(gl, program, "uEnvIntensity") }
-
-    def shadowLocsOf(gl: GlContext, program: Int32): ShadowLocs \ IO =
-        { on = loc(gl, program, "uShadowOn"), spot = loc(gl, program, "uShadowSpot"), matrix = loc(gl, program, "uShadowMatrix"),
-          map = loc(gl, program, "uShadowMap"), bias = loc(gl, program, "uShadowBias"), pcf = loc(gl, program, "uShadowPcf"),
-          strength = loc(gl, program, "uShadowStrength") }
 
     def billboardLocsOf(gl: GlContext, program: Int32): BillboardLocs \ IO =
         if (program == 0) () else {
@@ -1141,7 +1148,7 @@ mod Render3d {
           center = loc(gl, program, "uCenter"), right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"),
           anchor = loc(gl, program, "uAnchor"), size = loc(gl, program, "uSize"), uvRect = loc(gl, program, "uUvRect"),
           tint = loc(gl, program, "uTint"), lit = loc(gl, program, "uLit"), facing = loc(gl, program, "uFacing"),
-          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"), light = lightLocsOf(gl, program) }
+          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"), light = Render3d.Light.lightLocsOf(gl, program) }
 
     /// 四角の 6 頂点（角の 0〜1。y は下向き = 絵の上が 0）。ビルボードと Design の重ねで共有する。
     def buildQuad(gl: GlContext): (Int32, Int32) \ IO =

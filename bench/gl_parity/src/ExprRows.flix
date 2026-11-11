@@ -27,7 +27,7 @@
 //   わざと壊した式（減衰の 2 乗を外す → 差 0.31・cone の内と外を入れ替える → 差 1.08）は、光の行の差が brokenAtLeast() = 1e−2 を
 //   超えることを毎回確かめる（上限が緩すぎて式の食い違いを見逃していないことの確かめ）。
 mod ExprRows {
-    use fge::{Color, GlOffscreen, LightModel3d, Mat4, Render3dGlsl, Scene3d, ShaderEval, SoftRaster3d, SoftRaster3dLight, Texture3d, Vec3}
+    use fge::{Color, GlOffscreen, LightModel3d, Mat4, Mesh3d, Render3dGlsl, Scene3d, ShaderEval, SoftRaster3d, SoftRaster3dLight, Texture3d, Vec3}
     use fge::GlOffscreen.{RowUniform, RowTexels, RowTexture}
     import java.util.Random
     import java.lang.{Math => JMath}
@@ -93,14 +93,22 @@ mod ExprRows {
         light = List[Probe], sets = List[LightSet], shadowPoints = List[Probe], shadow = ShadowCase,
         tbn = List[Probe], strength = Float64, lightmapUv = List[Probe], chain = Vector[ShaderEval.TexData],
         colorSpace = List[Probe], surface = List[Probe], surfaceDraws = List[SurfaceDraw],
-        pbr = List[Probe], pbrLight = List[Probe]
+        pbr = List[Probe], pbrLight = List[Probe], sun = SunCase
+    }
+
+    /// 太陽の行の入力。terms = 光の組ごとの (点から太陽への向き, color × intensity)・litProbes = 光の行の入力の a = 点・b = 法線・c の x = 影の割合・
+    /// shadow = 影の行の設定（Scene3d.directionalShadowOf の値。地図は shadow の map と同じ 64 × 64）・shadowProbes = a = 点・b = 法線をずらす向き・c = 光の法線。
+    type alias SunCase = {
+        terms = List[(Vec3.Vec3, Vec3.Vec3)], shadowSetup = Scene3d.SunShadowSetup, shadowEye = Vec3.Vec3, shadowToward = Vec3.Vec3,
+        shadowProbes = List[Probe], litValues = List[Float64]
     }
 
     /// GPU で読み返した値（行ごと・描きごとに 256 × 4 個）。
     pub type alias GlRows = {
         tree = List[Vector[Float32]], toon = List[Vector[Float32]], shadowedLight = Vector[Float32], brokenFalloff = Vector[Float32], brokenCone = Vector[Float32],
         shadow = List[Vector[Float32]], tbn = Vector[Float32], lightmap = Vector[Float32],
-        colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]], pbr = List[Vector[Float32]], envDirection = List[Vector[Float32]]
+        colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]], pbr = List[Vector[Float32]], envDirection = List[Vector[Float32]],
+        sunLight = List[Vector[Float32]], sunPbr = List[Vector[Float32]], sunLit = Vector[Float32]
     }
 
     def f32(x: Float64): Float64 = Float32.toFloat64(Float64.truncateToFloat32(x))
@@ -177,10 +185,37 @@ mod ExprRows {
             { a = withW(p, metallic), b = withW(n, roughness), c = withW(albedo, 0.0) }
         });
         let pbrLight = List.range(0, count()) |> List.map(_ -> { let l = vec3In(rng, 0.0, 2.0); { a = withW(l, 0.0), b = (0.0, 0.0, 0.0, 0.0), c = (0.0, 0.0, 0.0, 0.0) } });
+        let sun = sunCase(rng);
         { light = light, sets = sets, shadowPoints = shadowPoints,
           shadow = { matrix = Scene3d.shadowMatrix(caster), size = size, bias = 0.002, map = map },
           tbn = tbn, strength = 1.5, lightmapUv = lightmapUv, chain = chain,
-          colorSpace = colorSpace, surface = surface, surfaceDraws = surfaceDraws, pbr = pbr, pbrLight = pbrLight }
+          colorSpace = colorSpace, surface = surface, surfaceDraws = surfaceDraws, pbr = pbr, pbrLight = pbrLight, sun = sun }
+
+    /// 太陽の行の入力（並びの最後で引く）。影は 64 × 64 の地図・pcf 1・distance 8 の太陽で、カメラは原点から +z を見る（点は箱の中・distance の薄めの帯・外・カメラの後ろに散る）。
+    def sunCase(rng: Random): SunCase \ IO =
+        let terms = List.range(0, 8) |> List.map(_ -> {
+            let toward = direction(rng);
+            let color = vec3In(rng, 0.1, 1.5);
+            (toward, color)
+        });
+        let towardShadow = direction(rng);
+        let camera = { eye = Vec3.v3(0.0, 0.0, 0.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.5, far = 100.0 };
+        let light = { shadow = Some({ mapSize = 64, bias = 0.01, normalBias = 1.5, pcfRadius = 1, strength = 0.8, distance = 8.0, casterReach = 10.0 | Scene3d.directionalShadow() })
+                      | Scene3d.directionalLight(Vec3.mul(towardShadow, -1.0)) };
+        let scene = { instances = Scene3d.meshInstance(Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 1.0) :: Vec3.v3(1.0, 0.0, 1.0) :: Vec3.v3(0.0, 1.0, 1.0) :: Nil, color = Color.rgb(1.0, 1.0, 1.0) } :: Nil), Mat4.identity()) :: Nil,
+                      directionalLight = Some(light) | Scene3d.scene(camera, { x = 160.0, y = 90.0 }) };
+        let setup = match Scene3d.directionalShadowOf(scene) {
+            case Some(s) => s
+            case None    => bug!("ExprRows: 太陽の影の設定が作れない")
+        };
+        let shadowProbes = List.range(0, count()) |> List.map(_ -> {
+            let p = Vec3.v3(uniform(rng, -6.0, 6.0), uniform(rng, -4.0, 4.0), uniform(rng, -1.0, 10.0));
+            let g = direction(rng);
+            let n = direction(rng);
+            { a = withW(p, 0.0), b = withW(g, 0.0), c = withW(n, 0.0) }
+        });
+        let litValues = List.range(0, count()) |> List.map(_ -> uniform(rng, 0.0, 1.0));
+        { terms = terms, shadowSetup = setup, shadowEye = Vec3.v3(0.0, 0.0, 0.0), shadowToward = towardShadow, shadowProbes = shadowProbes, litValues = litValues }
 
     /// k 番目の光の組（点光源とスポットの数を組ごとに変える。0 本の組も持つ）。
     def lightSet(rng: Random, k: Int32): LightSet \ IO =
@@ -473,12 +508,103 @@ mod ExprRows {
             pbr <- GlOffscreen.drawFloatRows(pbrFragment(), count(), probeTextures(inputs#pbr) ::: rowTexture("uIn3", inputs#pbrLight, pr -> pr#a) :: Nil,
                        inputs#sets |> List.map(s -> lightUniforms(s, 0, TreeRow.Light)));
             envDirection <- GlOffscreen.drawFloatRows(environmentDirectionFragment(), count(), probeTextures(inputs#pbr),
-                       environmentBoxes() |> List.map(box -> environmentBoxUniforms(firstSet(inputs), box)))
+                       environmentBoxes() |> List.map(box -> environmentBoxUniforms(firstSet(inputs), box)));
+            sunLight <- GlOffscreen.drawFloatRows(sunLightFragment(), count(), sunLightTextures(inputs), sunSets(inputs));
+            sunPbr <- GlOffscreen.drawFloatRows(sunPbrFragment(), count(), probeTextures(inputs#pbr) ::: sunPbrLightTexture(inputs) :: Nil, sunSets(inputs));
+            sunLit <- GlOffscreen.drawFloatRows(sunLitFragment(), count(), probeTextures(inputs#sun#shadowProbes) ::: sunMapTexture(inputs) :: Nil,
+                                                (sunShadowUniforms(inputs) :: Nil))
         ) yield {
             tree = tree, toon = toon, shadowedLight = firstOf(shadowedLight), brokenFalloff = firstOf(brokenFalloff), brokenCone = firstOf(brokenCone),
             shadow = shadow, tbn = firstOf(tbn), lightmap = firstOf(lightmap),
-            colorSpace = colorSpace, surface = surface, pbr = pbr, envDirection = envDirection
+            colorSpace = colorSpace, surface = surface, pbr = pbr, envDirection = envDirection,
+            sunLight = sunLight, sunPbr = sunPbr, sunLit = firstOf(sunLit)
         }
+
+    // ── 太陽の行の GPU ──
+
+    /// 太陽の拡散つきの lightAt（a = 点・b = 法線・c の x = 太陽の影の割合）。r3d_sunLit は木の外で決まる値なので、frag の main が入力から入れる。
+    def sunLightFragment(): String =
+        "#version 330 core\n" +
+        "out vec4 fragColor;\n" +
+        "uniform sampler2D uIn0;\n" +
+        "uniform sampler2D uIn1;\n" +
+        "uniform sampler2D uIn2;\n" +
+        Render3dGlsl.colorSpaceSource() +
+        Render3dGlsl.lightSource() +
+        "void main() {\n" +
+        "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
+        "    r3d_sunLit = texelFetch(uIn2, at, 0).x;\n" +
+        "    fragColor = vec4(lightAt(texelFetch(uIn0, at, 0).xyz, texelFetch(uIn1, at, 0).xyz), 1.0);\n" +
+        "}\n"
+
+    /// 太陽の鏡面つきの pbrAt（入力は pbrFragment と同じ。uIn3 の w = 太陽の影の割合）。
+    def sunPbrFragment(): String =
+        "#version 330 core\n" +
+        "out vec4 fragColor;\n" +
+        "uniform sampler2D uIn0;\n" +
+        "uniform sampler2D uIn1;\n" +
+        "uniform sampler2D uIn2;\n" +
+        "uniform sampler2D uIn3;\n" +
+        Render3dGlsl.colorSpaceSource() +
+        Render3dGlsl.lightSource() +
+        Render3dGlsl.metallicRoughnessSource() +
+        "void main() {\n" +
+        "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
+        "    vec4 a = texelFetch(uIn0, at, 0);\n" +
+        "    vec4 b = texelFetch(uIn1, at, 0);\n" +
+        "    vec3 c = texelFetch(uIn2, at, 0).xyz;\n" +
+        "    vec4 l = texelFetch(uIn3, at, 0);\n" +
+        "    r3d_sunLit = l.w;\n" +
+        "    fragColor = vec4(pbrAt(a.xyz, b.xyz, c, l.xyz, vec3(a.w, b.w, 0.0), vec3(0.0)), 1.0);\n" +
+        "}\n"
+
+    /// 太陽の影の割合 sunLitAt(点, 点をずらす向きの法線, 光の法線)。
+    def sunLitFragment(): String =
+        "#version 330 core\n" +
+        "out vec4 fragColor;\n" +
+        "uniform sampler2D uIn0;\n" +
+        "uniform sampler2D uIn1;\n" +
+        "uniform sampler2D uIn2;\n" +
+        Render3dGlsl.colorSpaceSource() +
+        Render3dGlsl.lightSource() +
+        "void main() {\n" +
+        "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
+        "    fragColor = vec4(sunLitAt(texelFetch(uIn0, at, 0).xyz, texelFetch(uIn1, at, 0).xyz, texelFetch(uIn2, at, 0).xyz), 0.0, 0.0, 1.0);\n" +
+        "}\n"
+
+    /// 光の組ごとの uniform（光の組の lightUniforms の後に、その組の太陽の向きと色）。
+    def sunSets(inputs: Inputs): List[List[(String, RowUniform)]] =
+        List.zip(inputs#sets, inputs#sun#terms) |> List.map(st -> {
+            let (s, t) = st;
+            let (toward, color) = t;
+            lightUniforms(s, 0, TreeRow.Light) ::: ("uSunDir", vec3U(toward)) :: ("uSunColor", vec3U(color)) :: Nil
+        })
+
+    /// 太陽の影の行の uniform（Scene3d.directionalShadowOf の値を 3D の描き手と同じ形で渡す）。
+    def sunShadowUniforms(inputs: Inputs): List[(String, RowUniform)] =
+        let sun = inputs#sun;
+        let setup = sun#shadowSetup;
+        ("uSunShadowOn", RowUniform.IntValue(1)) :: ("uSunDir", vec3U(sun#shadowToward)) :: ("uSunMatrix", RowUniform.Matrix(setup#matrix)) ::
+        ("uSunBias", RowUniform.FloatValue(setup#depthBias)) :: ("uSunNormalShift", RowUniform.FloatValue(setup#normalShift)) ::
+        ("uSunPcf", RowUniform.IntValue(setup#pcfRadius)) :: ("uSunStrength", RowUniform.FloatValue(setup#strength)) ::
+        ("uSunForward", vec3U(setup#forward)) :: ("uSunFade", RowUniform.Vec2Value(setup#distance, setup#fadeWidth)) :: ("uEye", vec3U(sun#shadowEye)) :: Nil
+
+    /// 太陽の影の地図（影の行の地図 64 × 64 を、太陽の地図の sampler で渡す）。
+    def sunMapTexture(inputs: Inputs): RowTexture = { sampler = "uSunMap" | shadowMapTexture(inputs#shadow) }
+
+    def sunLightTextures(inputs: Inputs): List[RowTexture] =
+        let litProbes = inputs#sun#litValues |> List.map(v -> { a = (v, 0.0, 0.0, 0.0), b = (0.0, 0.0, 0.0, 0.0), c = (0.0, 0.0, 0.0, 0.0) });
+        rowTexture("uIn0", inputs#light, pr -> pr#a) :: rowTexture("uIn1", inputs#light, pr -> pr#b) :: rowTexture("uIn2", litProbes, pr -> pr#a) :: Nil
+
+    /// pbrFragment の拡散の光（uIn3）に、w として太陽の影の割合を足した入力。
+    def sunPbrLightProbes(inputs: Inputs): List[Probe] =
+        List.zip(inputs#pbrLight, inputs#sun#litValues) |> List.map(pair -> {
+            let (lr, v) = pair;
+            let (lx, ly, lz, _) = lr#a;
+            { a = (lx, ly, lz, v), b = (0.0, 0.0, 0.0, 0.0), c = (0.0, 0.0, 0.0, 0.0) }
+        })
+
+    def sunPbrLightTexture(inputs: Inputs): RowTexture = rowTexture("uIn3", sunPbrLightProbes(inputs), pr -> pr#a)
 
     /// 最初の光の組（目の位置だけを使う行の入力）。
     def firstSet(inputs: Inputs): LightSet =
@@ -516,7 +642,8 @@ mod ExprRows {
         let points = LightModel3d.packPointLights(s#points);
         let spots = LightModel3d.packSpotLights(s#spots);
         match row {
-            case TreeRow.Light => SoftRaster3dLight.lightAt(steps, points, spots, shadow, p#x, p#y, p#z, n#x, n#y, n#z, s#ambient#x, s#ambient#y, s#ambient#z, s#hemisphere)
+            case TreeRow.Light => SoftRaster3dLight.lightAt(steps, points, spots, shadow, p#x, p#y, p#z, n#x, n#y, n#z, s#ambient#x, s#ambient#y, s#ambient#z, s#hemisphere,
+                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
             case TreeRow.LightmapLight => SoftRaster3dLight.lightmapLightAt(steps, points, spots, shadow, p#x, p#y, p#z, n#x, n#y, n#z, e#x, e#y, e#z,
                                                         if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity)
             case TreeRow.Fog => SoftRaster3dLight.fogAt(p#x, p#y, p#z, s#eye#x, s#eye#y, s#eye#z, e#x, e#y, e#z, s#fogColor#x, s#fogColor#y, s#fogColor#z, s#fogNear, s#fogFar)
@@ -685,9 +812,92 @@ mod ExprRows {
                 else Some(relDiff(rgbAt(values, i), SoftRaster3dLight.pbrAt(points, spots, None, px, py, pz, nx, ny, nz, ax, ay, az, lx, ly, lz,
                                                                       metallic, roughness, 0.0, s#eye#x, s#eye#y, s#eye#z,
                                                                       s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
-                                                                      s#ground#x, s#ground#y, s#ground#z, s#curve, 0.0, 0.0, 0.0, 0.0)))
+                                                                      s#ground#x, s#ground#y, s#ground#z, s#curve, 0.0, 0.0, 0.0, 0.0,
+                                                                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)))
             })
         }))
+
+    /// 太陽の拡散つきの lightAt（GPU は sunLightFragment）と CPU の SoftRaster3d.lightWithSunAt の差。太陽が光の量を動かした組の数も返す（0 なら太陽の項を通っていない）。
+    def sunLightOutcome(inputs: Inputs, rows: GlRows): (Outcome, Int32) =
+        let cases = List.zip(List.zip(inputs#sets, inputs#sun#terms), rows#sunLight);
+        let outcome = outcomeOf(cases |> List.flatMap(d -> {
+            let ((s, t), values) = d;
+            List.zip(inputs#light, inputs#sun#litValues) |> List.mapWithIndex((i, pair) -> {
+                let (pr, v) = pair;
+                if (nearEdge(s, xyz(pr#a))) None
+                else { let c = cpuSunLight(s, t, v, pr); Some(relDiff(rgbAt(values, i), c)) }
+            })
+        }));
+        let active = cases |> List.flatMap(d -> {
+            let ((s, t), _) = d;
+            List.zip(inputs#light, inputs#sun#litValues) |> List.map(pair -> {
+                let (pr, v) = pair;
+                relDiff(cpuSunLight(s, t, v, pr), cpuTree(s, 0, TreeRow.Light, pr)) > 1.0e-6
+            })
+        }) |> List.count(x -> x);
+        (outcome, active)
+
+    def cpuSunLight(s: LightSet, t: (Vec3.Vec3, Vec3.Vec3), sunLit: Float64, pr: Probe): (Float64, Float64, Float64) =
+        let (toward, color) = t;
+        let env = { ambient = colorOf(s#ambient), hemisphere = s#hemisphere, toonSteps = 0, fog = None, background = None };
+        let c = SoftRaster3d.lightWithSunAt(env, s#points, s#spots, toward, color, sunLit, xyz(pr#a), xyz(pr#b));
+        (c#r, c#g, c#b)
+
+    /// 太陽の鏡面つきの pbrAt（GPU は sunPbrFragment）と CPU の SoftRaster3dLight.pbrAt の差。太陽の鏡面が色を動かした組の数も返す。
+    def sunPbrOutcome(inputs: Inputs, rows: GlRows): (Outcome, Int32) =
+        let cases = List.zip(List.zip(inputs#sets, inputs#sun#terms), rows#sunPbr);
+        let cpu = (s: LightSet, t: (Vec3.Vec3, Vec3.Vec3), pr: Probe, lr: Probe, sunLit: Float64, withSun: Bool) -> {
+            let (toward, color) = t;
+            let (px, py, pz, metallic) = pr#a;
+            let (nx, ny, nz, roughness) = pr#b;
+            let (ax, ay, az, _) = pr#c;
+            let (lx, ly, lz, _) = lr#a;
+            let (tx, ty, tz, cr, cg, cb) = if (withSun) (toward#x, toward#y, toward#z, color#x, color#y, color#z) else (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            SoftRaster3dLight.pbrAt(LightModel3d.packPointLights(s#points), LightModel3d.packSpotLights(s#spots), None, px, py, pz, nx, ny, nz, ax, ay, az, lx, ly, lz,
+                                    metallic, roughness, 0.0, s#eye#x, s#eye#y, s#eye#z,
+                                    s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
+                                    s#ground#x, s#ground#y, s#ground#z, s#curve, 0.0, 0.0, 0.0, 0.0, tx, ty, tz, cr, cg, cb, sunLit)
+        };
+        let probes = List.zip(inputs#pbr, List.zip(inputs#pbrLight, inputs#sun#litValues));
+        let outcome = outcomeOf(cases |> List.flatMap(d -> {
+            let ((s, t), values) = d;
+            probes |> List.mapWithIndex((i, q) -> {
+                let (pr, (lr, v)) = q;
+                let (px, py, pz, _) = pr#a;
+                if (nearEdge(s, Vec3.v3(px, py, pz))) None else Some(relDiff(rgbAt(values, i), cpu(s, t, pr, lr, v, true)))
+            })
+        }));
+        let active = cases |> List.flatMap(d -> {
+            let ((s, t), _) = d;
+            probes |> List.map(q -> { let (pr, (lr, v)) = q; relDiff(cpu(s, t, pr, lr, v, true), cpu(s, t, pr, lr, v, false)) > 1.0e-6 })
+        }) |> List.count(x -> x);
+        (outcome, active)
+
+    /// 太陽の影の割合 sunLitAt（GPU）と SoftRaster3d.Sun.litAt（CPU）の比べ。1 の組（背を向けた点・箱の外・distance の外）は 1 のままか、
+    /// 影のかかった組は PCF の 1 段（strength / (2r + 1)²）以内か。(行の字, 合否)。
+    def sunLitLine(inputs: Inputs, rows: GlRows): (String, Bool) =
+        let sun = inputs#sun;
+        let setup = sun#shadowSetup;
+        let shadow = SoftRaster3d.Sun.shadowOf(setup, sun#shadowEye, inputs#shadow#map);
+        let light = SoftRaster3d.Sun.raw(sun#shadowToward, Vec3.v3(1.0, 1.0, 1.0), Some(shadow));
+        let side = Int32.toFloat64(2 * setup#pcfRadius + 1);
+        let forward = setup#forward;
+        let pairs = sun#shadowProbes |> List.mapWithIndex((i, pr) -> {
+            let p = xyz(pr#a);
+            let g = xyz(pr#b);
+            let n = xyz(pr#c);
+            let (gl, _, _) = rgbAt(rows#sunLit, i);
+            let depth = Vec3.dot(Vec3.sub(p, sun#shadowEye), forward);
+            let fade = Float64.max(0.0, Float64.min(1.0, (setup#distance - depth) / setup#fadeWidth));
+            (gl, SoftRaster3d.Sun.litAt(light, p#x, p#y, p#z, g#x, g#y, g#z, n#x, n#y, n#z), fade)
+        });
+        let exactBad = pairs |> List.count(t -> { let (gl, cpu, _) = t; cpu == 1.0 and Float64.abs(gl - 1.0) > 1.0e-6 });
+        let stepWorst = pairs |> List.filter(t -> { let (_, cpu, _) = t; cpu < 1.0 })
+            |> List.map(t -> { let (gl, cpu, _) = t; Float64.abs(gl - cpu) * side * side / setup#strength }) |> List.foldLeft(Float64.max, 0.0);
+        let shaded = pairs |> List.count(t -> { let (_, cpu, _) = t; cpu < 1.0 });
+        let faded = pairs |> List.count(t -> { let (_, _, fade) = t; fade > 0.0 and fade < 1.0 });
+        let ok = exactBad == 0 and stepWorst <= pcfStepsLimit() and shaded > 0 and faded > 0;
+        ("[parity] ${pad("exprSunLit")} E  ${verdict(ok)} (影の掛かった組 ${shaded}/${count()}・薄めの帯の組 ${faded}・最大の差 ${sci(stepWorst)} 段・上限 1 段・1 のはずが違う組 ${exactBad})", ok)
 
     /// 環境マップを読む向き（箱なし・箱あり）の CPU の値と GPU の値の差。
     def environmentDirectionOutcome(inputs: Inputs, rows: GlRows): Outcome =
@@ -725,6 +935,13 @@ mod ExprRows {
         let skipped = if (o#skipped == 0) "" else "・外した組 ${o#skipped}/${o#total}";
         ("[parity] ${pad(name)} E  ${verdict(ok)} (最大の差 ${sci(o#worst)}・上限 ${sci(limit)}${skipped})", ok)
 
+    /// 太陽の行（差が上限の中で、太陽が値を動かした組が 1 つ以上ある）。
+    def sunLine(name: String, r: (Outcome, Int32)): (String, Bool) =
+        let (o, active) = r;
+        let ok = o#worst <= limitTree() and active > 0;
+        let skipped = if (o#skipped == 0) "" else "・外した組 ${o#skipped}/${o#total}";
+        ("[parity] ${pad(name)} E  ${verdict(ok)} (最大の差 ${sci(o#worst)}・上限 ${sci(limitTree())}${skipped}・太陽が動かした組 ${active})", ok)
+
     /// 全部の式の行を CPU と比べて 1 行ずつ出し、全部が上限の中なら真。
     pub def report(inputs: Inputs, gl: Result[String, GlRows]): Bool \ IO =
         match gl {
@@ -753,7 +970,10 @@ mod ExprRows {
                     lineOf("exprColorSpace", colorSpaceOutcome(inputs, rows), limitTree()) ::
                     lineOf("exprSurfaceOut", surfaceOutcome(inputs, rows), limitTree()) ::
                     lineOf("exprPbr", pbrOutcome(inputs, rows), limitTree()) ::
-                    lineOf("exprEnvDirection", environmentDirectionOutcome(inputs, rows), limitTree()) :: Nil;
+                    lineOf("exprEnvDirection", environmentDirectionOutcome(inputs, rows), limitTree()) ::
+                    sunLine("exprSunLight", sunLightOutcome(inputs, rows)) ::
+                    sunLine("exprSunPbr", sunPbrOutcome(inputs, rows)) ::
+                    sunLitLine(inputs, rows) :: Nil;
                 List.forEach(l -> println(fst(l)), lines);
                 List.forAll(snd, lines)
         }

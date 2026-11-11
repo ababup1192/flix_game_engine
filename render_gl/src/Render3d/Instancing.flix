@@ -31,7 +31,7 @@ mod Render3d.Instancing {
         { cmd = plan#cmd,
           draws = { plain = List.map(lit, draws#plain), skinned = List.map(lit, draws#skinned),
                     opaque = List.map(material, draws#opaque), blended = List.map(material, draws#blended) },
-          shadowPlan = plan#shadowPlan |> Option.map(s -> { caster = s#caster, spotIndex = s#spotIndex, plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) }) }
+          shadowPlans = plan#shadowPlans |> List.map(s -> { plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) | s }) }
 
     /// plan の batch の描く物の数の合計。
     def countOf(plan: ScenePlan[PlannedBatch]): Int32 =
@@ -39,7 +39,7 @@ mod Render3d.Instancing {
         let meshes = (bs: List[PlannedBatch]) -> List.sumWith(b -> b#count, bs);
         let materials = (ds: List[MaterialBatch[PlannedBatch]]) -> List.sumWith(d -> d#batch#count, ds);
         meshes(draws#plain) + meshes(draws#skinned) + materials(draws#opaque) + materials(draws#blended)
-            + (plan#shadowPlan |> Option.map(s -> meshes(s#plain) + meshes(s#skinned)) |> Option.getWithDefault(0))
+            + List.sumWith(s -> meshes(s#plain) + meshes(s#skinned), plan#shadowPlans)
 
     /// 今の prepare の全部の batch に番号を振り、1 体ごとの値をテクスチャへ 1 回で上げて、振り終えた plans とテクスチャの番号を返す。描く物が無ければテクスチャを作らず None。
     /// テクスチャに入り切らない batch の物は描かない（1 回知らせる）。

@@ -90,4 +90,41 @@ pub mod SoftRaster3d.Internal {
     pub def ceilInt(x: Float64): Int32 = Float64.tryToInt32(Float64.ceil(clampForInt(x))) |> Option.getWithDefault(0)
 
     pub def roundInt(x: Float64): Int32 = floorInt(x + 0.5)
+
+    /// 層の画素 (x, y) の空の色（sky が None なら None・Output.Depth なら白）。向きは画素の真ん中の NDC を通る向き（Scene3d.skyDirectionOf）。
+    pub def skyFill(sky:Option[(SkyColors, Scene3d.SkyBasis)], lut: Texture3d.ColorLut, isDepth: Bool, layer: (Int32, Int32), pixel: (Int32, Int32)): Option[(Float64, Float64, Float64, Float64)] =
+        let (lw, lh) = layer;
+        let (x, y) = pixel;
+        sky |> Option.map(sb -> {
+            let (colors, basis) = sb;
+            if (isDepth) (1.0, 1.0, 1.0, 1.0)
+            else {
+                let ndc = { x = (Int32.toFloat64(x) + 0.5) / Int32.toFloat64(lw) * 2.0 - 1.0,
+                            y = 1.0 - (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(lh) * 2.0 };
+                let (r, g, b) = SoftRaster3d.toSrgbColor(lut, skyColorWith(colors, Scene3d.skyDirectionOf(basis, ndc)));
+                (r, g, b, 1.0)
+            }
+        })
+
+    pub enum SkyColors { case SkyColors(Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64) }
+
+    /// 3 色を線形の量へ戻して並べる（空は線形の量の中で混ぜる）。
+    pub def linearSkyColorsOf(s: Scene3d.Sky3d): SkyColors = skyColorsWith(Texture3d.srgbToLinearColor, s)
+
+    /// 3 色を convert に通して並べる。
+    pub def skyColorsWith(convert: Color -> Color, s: Scene3d.Sky3d): SkyColors =
+        let f = Scene3d.skyFieldsOf(s);
+        let (zenith, horizon, ground) = (convert(f#zenith), convert(f#horizon), convert(f#ground));
+        SkyColors.SkyColors(zenith#r, zenith#g, zenith#b, horizon#r, horizon#g, horizon#b,
+                            ground#r, ground#g, ground#b, Scene3d.skyCurveOf(s))
+
+    /// 材質の映り込みに使う空の 3 色（線形の量）。場面に空が無ければ ambient + hemisphere の色（LightModel3d.reflectionSkyOf）。
+    pub def reflectionColorsOf(scene: Scene3d.Scene3dCmd): SkyColors =
+        let r = LightModel3d.reflectionSkyOf(scene);
+        SkyColors.SkyColors(r#zenith#r, r#zenith#g, r#zenith#b, r#horizon#r, r#horizon#g, r#horizon#b, r#ground#r, r#ground#g, r#ground#b, r#curve)
+
+    /// 目から見た向き dir（長さ 1）の空の色（LightModel3d.skyModel）。
+    pub def skyColorWith(colors: SkyColors, dir: Vec3.Vec3): (Float64, Float64, Float64) =
+        let SkyColors.SkyColors(zr, zg, zb, hr, hg, hb, gr, gg, gb, curve) = colors;
+        SoftRaster3dLight.skyAt(dir#x, dir#y, dir#z, zr, zg, zb, hr, hg, hb, gr, gg, gb, curve)
 }

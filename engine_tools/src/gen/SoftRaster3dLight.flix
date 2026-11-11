@@ -18,12 +18,13 @@ pub mod SoftRaster3dLight {
             Float64.floor(x * s + 0.5) / s
         }
 
-    /// lightingModel の光の量（toon の丸めまで済ませた値）。
-    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64): (Float64, Float64, Float64) =
+    /// lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。
+    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64): (Float64, Float64, Float64) =
         let sky_0 = (hemisphere * Float64.max(0.0, nY));
         let (points_1X, points_1Y, points_1Z) = lightAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
         let (spots_2X, spots_2Y, spots_2Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
-        (toon(steps, (((ambientX + sky_0) + points_1X) + spots_2X)), toon(steps, (((ambientY + sky_0) + points_1Y) + spots_2Y)), toon(steps, (((ambientZ + sky_0) + points_1Z) + spots_2Z)))
+        let sunFacing_3 = clamp01((0.0 + (((nX * sunDirX) + (nY * sunDirY)) + (nZ * sunDirZ))));
+        (toon(steps, ((((ambientX + sky_0) + points_1X) + spots_2X) + ((sunColorX * sunFacing_3) * sunLit))), toon(steps, ((((ambientY + sky_0) + points_1Y) + spots_2Y) + ((sunColorY * sunFacing_3) * sunLit))), toon(steps, ((((ambientZ + sky_0) + points_1Z) + spots_2Z) + ((sunColorZ * sunFacing_3) * sunLit))))
 
     /// lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
     pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64): (Float64, Float64, Float64) =
@@ -53,7 +54,7 @@ pub mod SoftRaster3dLight {
         ((horizonX + ((t_0X - horizonX) * t_2)), (horizonY + ((t_0Y - horizonY) * t_2)), (horizonZ + ((t_0Z - horizonZ) * t_2)))
 
     /// pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。
-    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64): (Float64, Float64, Float64) =
+    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64): (Float64, Float64, Float64) =
         let metallic_0 = metalRoughX;
         let roughness_1 = metalRoughY;
         let alpha_2 = Float64.max(0.002, (roughness_1 * roughness_1));
@@ -75,30 +76,50 @@ pub mod SoftRaster3dLight {
         let t_12 = (1.0 - metallic_0);
         let (points_13X, points_13Y, points_13Z) = pbrAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
         let (spots_14X, spots_14Y, spots_14Z) = pbrAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
-        let (t_26X, t_26Y, t_26Z) = if ((envOn > 0.0)) {
+        let l_15X = sunDirX;
+        let l_15Y = sunDirY;
+        let l_15Z = sunDirZ;
+        let facing_16 = clamp01((0.0 + (((nX * sunDirX) + (nY * sunDirY)) + (nZ * sunDirZ))));
+        let (t_26X, t_26Y, t_26Z) = if ((facing_16 > 0.0)) {
+            let h_17X = (l_15X + v_8X);
+            let h_17Y = (l_15Y + v_8Y);
+            let h_17Z = (l_15Z + v_8Z);
+            let hSq_18 = (((h_17X * h_17X) + (h_17Y * h_17Y)) + (h_17Z * h_17Z));
+            let invH_19 = (if ((1.0e-24 > hSq_18)) 0.0 else (1.0 / Num.sqrt(hSq_18)));
+            let nh_20 = Float64.max(0.0, ((((nX * h_17X) + (nY * h_17Y)) + (nZ * h_17Z)) * invH_19));
+            let vh_21 = Float64.max(0.0, ((((v_8X * h_17X) + (v_8Y * h_17Y)) + (v_8Z * h_17Z)) * invH_19));
+            let spread_22 = (((nh_20 * nh_20) * (alphaSq_3 - 1.0)) + 1.0);
+            let base_23 = (1.0 - vh_21);
+            let t_24 = (((base_23 * base_23) * (base_23 * base_23)) * base_23);
+            let t_25 = ((dScale_11 / (spread_22 * spread_22)) * ((facing_16 / ((facing_16 * (1.0 - (0.5 * alpha_2))) + (0.5 * alpha_2))) * viewTerm_10));
+            ((((sunColorX * sunLit) * (fZero_4X + ((1.0 - fZero_4X) * t_24))) * t_25), (((sunColorY * sunLit) * (fZero_4Y + ((1.0 - fZero_4Y) * t_24))) * t_25), (((sunColorZ * sunLit) * (fZero_4Z + ((1.0 - fZero_4Z) * t_24))) * t_25))
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        let (t_38X, t_38Y, t_38Z) = if ((envOn > 0.0)) {
             (envColorX, envColorY, envColorZ)
         } else {
-            let t_15 = (2.0 * nv_9);
-            let t_16 = ((nX * t_15) - v_8X);
-            let t_17 = ((nY * t_15) - v_8Y);
-            let t_18 = ((nZ * t_15) - v_8Z);
-            let t_19 = (roughness_1 * roughness_1);
-            let q_20X = (t_16 + ((nX - t_16) * t_19));
-            let q_20Y = (t_17 + ((nY - t_17) * t_19));
-            let q_20Z = (t_18 + ((nZ - t_18) * t_19));
-            let t_21 = (1.0 / Num.sqrt(Float64.max((((q_20X * q_20X) + (q_20Y * q_20Y)) + (q_20Z * q_20Z)), 1.0e-12)));
-            let r_22Y = (q_20Y * t_21);
-            let c_24 = (r_22Y >= 0.0);
-            let t_23X = (if (c_24) zenithX else groundX);
-            let t_23Y = (if (c_24) zenithY else groundY);
-            let t_23Z = (if (c_24) zenithZ else groundZ);
-            let t_25 = Float64.min(1.0, Float64.pow(base = Float64.max(r_22Y, (0.0 - r_22Y)), skyCurve));
-            ((horizonX + ((t_23X - horizonX) * t_25)), (horizonY + ((t_23Y - horizonY) * t_25)), (horizonZ + ((t_23Z - horizonZ) * t_25)))
+            let t_27 = (2.0 * nv_9);
+            let t_28 = ((nX * t_27) - v_8X);
+            let t_29 = ((nY * t_27) - v_8Y);
+            let t_30 = ((nZ * t_27) - v_8Z);
+            let t_31 = (roughness_1 * roughness_1);
+            let q_32X = (t_28 + ((nX - t_28) * t_31));
+            let q_32Y = (t_29 + ((nY - t_29) * t_31));
+            let q_32Z = (t_30 + ((nZ - t_30) * t_31));
+            let t_33 = (1.0 / Num.sqrt(Float64.max((((q_32X * q_32X) + (q_32Y * q_32Y)) + (q_32Z * q_32Z)), 1.0e-12)));
+            let r_34Y = (q_32Y * t_33);
+            let c_36 = (r_34Y >= 0.0);
+            let t_35X = (if (c_36) zenithX else groundX);
+            let t_35Y = (if (c_36) zenithY else groundY);
+            let t_35Z = (if (c_36) zenithZ else groundZ);
+            let t_37 = Float64.min(1.0, Float64.pow(base = Float64.max(r_34Y, (0.0 - r_34Y)), skyCurve));
+            ((horizonX + ((t_35X - horizonX) * t_37)), (horizonY + ((t_35Y - horizonY) * t_37)), (horizonZ + ((t_35Z - horizonZ) * t_37)))
         };
-        let t_27 = (1.0 - roughness_1);
-        let base_28 = (1.0 - nv_9);
-        let t_29 = (((base_28 * base_28) * (base_28 * base_28)) * base_28);
-        (((((albedoX * lightX) * t_12) + (points_13X + spots_14X)) + (t_26X * (fZero_4X + ((Float64.max(t_27, fZero_4X) - fZero_4X) * t_29)))), ((((albedoY * lightY) * t_12) + (points_13Y + spots_14Y)) + (t_26Y * (fZero_4Y + ((Float64.max(t_27, fZero_4Y) - fZero_4Y) * t_29)))), ((((albedoZ * lightZ) * t_12) + (points_13Z + spots_14Z)) + (t_26Z * (fZero_4Z + ((Float64.max(t_27, fZero_4Z) - fZero_4Z) * t_29)))))
+        let t_39 = (1.0 - roughness_1);
+        let base_40 = (1.0 - nv_9);
+        let t_41 = (((base_40 * base_40) * (base_40 * base_40)) * base_40);
+        (((((albedoX * lightX) * t_12) + ((points_13X + spots_14X) + t_26X)) + (t_38X * (fZero_4X + ((Float64.max(t_39, fZero_4X) - fZero_4X) * t_41)))), ((((albedoY * lightY) * t_12) + ((points_13Y + spots_14Y) + t_26Y)) + (t_38Y * (fZero_4Y + ((Float64.max(t_39, fZero_4Y) - fZero_4Y) * t_41)))), ((((albedoZ * lightZ) * t_12) + ((points_13Z + spots_14Z) + t_26Z)) + (t_38Z * (fZero_4Z + ((Float64.max(t_39, fZero_4Z) - fZero_4Z) * t_41)))))
 
     /// environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。
     pub def environmentDirectionAt(pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, _albedoX: Float64, _albedoY: Float64, _albedoZ: Float64, _metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, envBoxMinX: Float64, envBoxMinY: Float64, envBoxMinZ: Float64, envBoxMaxX: Float64, envBoxMaxY: Float64, envBoxMaxZ: Float64, envBoxCenterX: Float64, envBoxCenterY: Float64, envBoxCenterZ: Float64, envBoxOn: Float64): (Float64, Float64, Float64) =

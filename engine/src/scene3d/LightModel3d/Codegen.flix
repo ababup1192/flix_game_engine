@@ -95,6 +95,8 @@ pub mod LightModel3d.Codegen {
                 case Target.Glsl => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
             }
         case (Target.Flix, _) => scalarInputName(input)
+        // WhyNot: 太陽の影の割合を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が先に求めて渡す（地図を引くのは木の外）。
+        case (Target.Glsl, ScalarInput.SunLit)            => "r3d_sunLit"
         case (Target.Glsl, ScalarInput.Hemisphere)        => "uHemisphere"
         case (Target.Glsl, ScalarInput.FogNear)           => "uFogRange.x"
         case (Target.Glsl, ScalarInput.FogFar)            => "uFogRange.y"
@@ -108,7 +110,8 @@ pub mod LightModel3d.Codegen {
     def scalarInputName(input: ScalarInput): String = match input {
         case ScalarInput.Hemisphere        => "hemisphere"
         case ScalarInput.ShadowLit         => "shadowLit"
-        case ScalarInput.FogNear           => "fogNear"
+        case ScalarInput.SunLit            => "sunLit"
+        case ScalarInput.FogNear          => "fogNear"
         case ScalarInput.FogFar            => "fogFar"
         case ScalarInput.SkyCurve          => "skyCurve"
         case ScalarInput.LightmapSrgb      => "lightmapSrgb"
@@ -136,6 +139,8 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.EnvironmentBoxMin    => "envBoxMin"
         case Vec3Input.EnvironmentBoxMax    => "envBoxMax"
         case Vec3Input.EnvironmentBoxCenter => "envBoxCenter"
+        case Vec3Input.SunDirection         => "sunDir"
+        case Vec3Input.SunColor             => "sunColor"
     }
 
     /// GLSL で画素ごとに関数の引数として受ける入力か（ほかは uniform）。
@@ -158,6 +163,8 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.EnvironmentBoxMin    => false
         case Vec3Input.EnvironmentBoxMax    => false
         case Vec3Input.EnvironmentBoxCenter => false
+        case Vec3Input.SunDirection         => false
+        case Vec3Input.SunColor             => false
     }
 
     /// GLSL で入力を読む名前（画素ごとの入力は関数の引数の名前・ほかは uniform）。
@@ -180,6 +187,8 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.EnvironmentBoxMin    => "uEnvBoxMin"
         case Vec3Input.EnvironmentBoxMax    => "uEnvBoxMax"
         case Vec3Input.EnvironmentBoxCenter => "uEnvBoxCenter"
+        case Vec3Input.SunDirection         => "uSunDir"
+        case Vec3Input.SunColor             => "uSunColor"
     }
 
     def axisSuffix(t: Target, axis: Int32): String = match (t, axis) {
@@ -617,8 +626,9 @@ pub mod LightModel3d.Codegen {
         let p = Param.Vec3Param(Vec3Input.Position);
         let n = Param.Vec3Param(Vec3Input.Normal);
         let lights = Param.Steps :: Param.Points :: Param.Spots :: Param.Shadow :: p :: n :: Nil;
-        { name = "lightAt", model = lightingModel(), doc = "lightingModel の光の量（toon の丸めまで済ませた値）。",
-          params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: Nil } ::
+        let sun = Param.Vec3Param(Vec3Input.SunDirection) :: Param.Vec3Param(Vec3Input.SunColor) :: Param.ScalarParam(ScalarInput.SunLit) :: Nil;
+        { name = "lightAt", model = lightingModel(), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。",
+          params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: sun } ::
         { name = "lightmapLightAt", model = lightmapLightingModel(), doc = "lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。",
           params = lights ::: Param.Vec3Param(Vec3Input.LightmapColor) :: Param.ScalarParam(ScalarInput.LightmapSrgb) ::
                    Param.ScalarParam(ScalarInput.LightmapIntensity) :: Nil } ::
@@ -632,7 +642,7 @@ pub mod LightModel3d.Codegen {
           params = Param.Points :: Param.Spots :: Param.Shadow :: p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.Light) ::
                    Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.SkyZenith) ::
                    Param.Vec3Param(Vec3Input.SkyHorizon) :: Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) ::
-                   Param.Vec3Param(Vec3Input.EnvironmentColor) :: Param.ScalarParam(ScalarInput.EnvironmentOn) :: Nil } ::
+                   Param.Vec3Param(Vec3Input.EnvironmentColor) :: Param.ScalarParam(ScalarInput.EnvironmentOn) :: sun } ::
         { name = "environmentDirectionAt", model = environmentDirection(),
           doc = "environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。",
           params = p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) ::

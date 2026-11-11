@@ -43,6 +43,45 @@ let flashlight = { color = Color.rgb(1.0, 0.95, 0.85), intensity = 3.0, range = 
   描き手が `Scene3d.pickLights` で目に近い 8 本を選ぶ（同じ距離なら並びの前）。ゲームの側で近い順に選び直さない
 - 8 番目と 9 番目の境をまたぐと、遠い光が点いたり消えたりする。気になる時は、離れた小さな光をまとめる・減らす
 
+### 太陽（平行光源）と、その影
+
+屋外の町・都市・野原の光は、遠くの 1 つの光（太陽）で足りる。Unity・Unreal の Directional Light・Godot の DirectionalLight3D に当たる。
+
+```flix
+let sun = { intensity = 1.2, color = Color.rgb(1.0, 0.96, 0.88),
+            shadow = Some({ distance = 600.0 | Scene3d.directionalShadow() })
+          | Scene3d.directionalLight(Vec3.v3(-0.4, -1.0, -0.3)) };
+let base = Scene3d.scene(camera, size);
+{ directionalLight = Some(sun), environment = { ambient = Color.rgb(0.35, 0.37, 0.42) | base#environment } | base }
+```
+
+- `direction` = 光が進む向き（長さは問わない。描く時に長さ 1 にする）。場面に 1 つまで（`directionalLight`。既定は `None`）
+- **`Scene3d.scene()` の `ambient` は白なので、太陽を足すと白く飛ぶ。** 上の例のように `ambient` を下げる
+- 拡散は 点光源と同じ `facing`（面が光へ向く度合い）に `color × intensity` を掛ける。`metallic` と `roughness` を持つ材質には鏡面も足す
+- **lightmap の面には拡散を足さない**（ベイクに太陽を含めるのが普通で二重になる）。鏡面は足す（ベイクに入るのは拡散だけ）
+- ビルボード（lit）は点光源と同じく法線をカメラへ向けて光を受ける。影は受けない
+- 向きの長さが 0・`intensity` が 0 以下・色が黒の太陽は、太陽なしと同じに描く（影の地図も描かない。理由は 1 回だけ知らせる）。
+  描き手が使う太陽は `Scene3d.directionalLightOf(scene)` 1 つで決まる
+
+影（`shadow = Some(..)`。`Scene3d.directionalShadow()` の既定値を `{ .. | }` で替える）はカスケード 1 段の影の地図で、スポットの影と並べて使える:
+
+| 欄 | 既定 | 意味 |
+|---|---|---|
+| `mapSize` | 2048 | 地図の一辺の画素（0 以下で影なし。4096 まで） |
+| `bias` | 0.05 | **world の長さ（m）**。自分の面に影を落とさないための奥行きのずらし（描く時に `bias / 奥行きの幅` の値へ直す） |
+| `normalBias` | 1.0 | 受ける点を、法線の向きに `normalBias × 地図の 1 画素の world の幅` だけずらしてから地図を引く（法線マップを当てる前の法線で） |
+| `pcfRadius` | 1 | 周りを平均する幅（画素。8 まで） |
+| `strength` | 0.8 | 影の濃さ（0〜1） |
+| `distance` | 150 | カメラからどこまでに影を落とすか（Unity の Shadow Distance）。`min(distance, カメラの far)`。手前の 1 割で影を薄める |
+| `casterReach` | 200 | 光の側へ、影を落とす物を拾う箱をどこまで延ばすか（画面の外の高い建物の影を拾う） |
+
+- 地図の箱は、カメラの視錐台の `near..distance` の部分を囲む球から決める（半径はカメラの向きで変わらない）。地図の 1 画素の幅
+  （`2r / mapSize`）に丸めるので、カメラを動かしても影の縁が画素の中で動かない。**太陽の向きを毎コマ変える場面（日没の動画）は軸が回るのでちらつく**
+  （向きを変えながら撮る時は `mapSize` を大きくして `pcfRadius` で縁をならす）。式は `Scene3d.directionalShadowOf` の doc
+- 半透明の物は影を落とさない。cutout の穴の影は埋まる（スポットの影と同じ）
+- 影の地図の draw は `drawCalls`・時間は `Phase.Shadows` に入る。1 つの場面にスポットの影と太陽の影があれば地図は 2 枚
+- `Scene3dCmd` を丸ごと書いているゲームは、欄 `directionalLight = None` を足す（`{ .. | Scene3d.scene(..) }` で替えているゲームは何も要らない）
+
 ## glb のノードを名前で引く
 
 `Gltf.load` / `loadTexturedUsing` は、glTF のノードを全部（mesh の無い empty・ライト・カメラも）`model#nodes` に入れる。

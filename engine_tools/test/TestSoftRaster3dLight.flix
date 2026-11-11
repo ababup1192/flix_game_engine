@@ -47,7 +47,7 @@ mod SoftRaster3d.TestSoftRaster3dLight {
         Scene3d.gradientSky(Color.rgb(0.0, 0.0, 1.0), Color.rgb(1.0, 1.0, 1.0), Color.rgb(0.5, 0.25, 0.0))
 
     def skyColorOf(s: Scene3d.Sky3d, dir: Vec3.Vec3): (Float64, Float64, Float64) =
-        SoftRaster3d.skyColorWith(SoftRaster3d.skyColorsWith(c -> c, s), dir)
+        SoftRaster3d.Internal.skyColorWith(SoftRaster3d.Internal.skyColorsWith(c -> c, s), dir)
 
     /// 真上を向くと zenith の色。
     @Test

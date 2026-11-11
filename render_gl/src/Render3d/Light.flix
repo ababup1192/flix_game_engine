@@ -36,7 +36,8 @@ mod Render3d.Light {
         let reflection = LightModel3d.reflectionSkyOf(scene);
         let reflectArray = (c: Color) -> { let a = Array.repeat(Static, 3, 0.0f32); fillVec3(a, 0, colorVec(c)); a };
         let environment = environmentUniforms(scene, environmentLevels);
-        { ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
+        let sun = sunUniforms(scene);
+        { sunDir = sun#direction, sunColor = sun#color, ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
           spotCount = List.length(spots), spotPos = spot#position, spotDir = spot#direction, spotColor = spot#color,
           spotRange = spot#range, spotCone = spot#cone,
@@ -45,6 +46,17 @@ mod Render3d.Light {
           reflectCurve = RenderUtil.f32(reflection#curve),
           envOn = environment#on, envBoxOn = environment#boxOn, envBoxMin = environment#boxMin, envBoxMax = environment#boxMax,
           envBoxCenter = environment#boxCenter, envLevels = environment#levels, envIntensity = environment#intensity }
+
+    /// 太陽の uniform（点から太陽への向きと color × intensity。式は Scene3d.sunTermsOf）。太陽が無い場面は両方 0（拡散も鏡面も 0 になる）。
+    def sunUniforms(scene: Scene3d.Scene3dCmd): { direction = Array[Float32, Static], color = Array[Float32, Static] } \ IO =
+        let direction = Array.repeat(Static, 3, 0.0f32);
+        let color = Array.repeat(Static, 3, 0.0f32);
+        Scene3d.directionalLightOf(scene) |> Option.forEach(l -> {
+            let t = Scene3d.sunTermsOf(l);
+            fillVec3(direction, 0, t#toward);
+            fillVec3(color, 0, t#color)
+        });
+        { direction = direction, color = color }
 
     /// 環境マップの uniform（強さ・箱・段の数）。環境マップが無い場面は on = 0（箱の値は使われない）。
     def environmentUniforms(scene: Scene3d.Scene3dCmd, levels: Int32): { on = Int32, boxOn = Int32, boxMin = Array[Float32, Static], boxMax = Array[Float32, Static],
@@ -104,6 +116,8 @@ mod Render3d.Light {
         gl.uniform3fv(locs#fogColor, d#fogColor);
         gl.uniform2fv(locs#fogRange, d#fogRange);
         gl.uniform3fv(locs#eye, d#eye);
+        gl.uniform3fv(locs#sunDir, d#sunDir);
+        gl.uniform3fv(locs#sunColor, d#sunColor);
         putReflection(gl, locs, d)
 
     /// 映り込みに使う空の 3 色と curve を渡す（metallic と roughness を持つ材質のプログラムだけが宣言している。無いプログラムは何も呼ばない）。
@@ -126,4 +140,19 @@ mod Render3d.Light {
                 gl.uniform1f(locs#envIntensity, d#envIntensity)
             }
         }
+
+    pub def lightLocsOf(gl: GlContext, program: Int32): Render3d.LightLocs \ IO =
+        { ambient = Render3d.loc(gl, program, "uAmbient"), hemisphere = Render3d.loc(gl, program, "uHemisphere"), toonSteps = Render3d.loc(gl, program, "uToonSteps"),
+          pointCount = Render3d.loc(gl, program, "uPointCount"), pointPos = Render3d.loc(gl, program, "uPointPos"),
+          pointColor = Render3d.loc(gl, program, "uPointColor"), pointRange = Render3d.loc(gl, program, "uPointRange"),
+          spotCount = Render3d.loc(gl, program, "uSpotCount"), spotPos = Render3d.loc(gl, program, "uSpotPos"), spotDir = Render3d.loc(gl, program, "uSpotDir"),
+          spotColor = Render3d.loc(gl, program, "uSpotColor"), spotRange = Render3d.loc(gl, program, "uSpotRange"), spotCone = Render3d.loc(gl, program, "uSpotCone"),
+          fogOn = Render3d.loc(gl, program, "uFogOn"), fogColor = Render3d.loc(gl, program, "uFogColor"), fogRange = Render3d.loc(gl, program, "uFogRange"),
+          eye = Render3d.loc(gl, program, "uEye"),
+          reflectZenith = Render3d.loc(gl, program, "uZenith"), reflectHorizon = Render3d.loc(gl, program, "uHorizon"), reflectGround = Render3d.loc(gl, program, "uGround"),
+          reflectCurve = Render3d.loc(gl, program, "uCurve"),
+          envOn = Render3d.loc(gl, program, "uEnvOn"), envBoxOn = Render3d.loc(gl, program, "uEnvBoxOn"), envBoxMin = Render3d.loc(gl, program, "uEnvBoxMin"),
+          envBoxMax = Render3d.loc(gl, program, "uEnvBoxMax"), envBoxCenter = Render3d.loc(gl, program, "uEnvBoxCenter"),
+          envLevels = Render3d.loc(gl, program, "uEnvLevels"), envIntensity = Render3d.loc(gl, program, "uEnvIntensity"),
+          sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor") }
 }

@@ -190,7 +190,7 @@ pub mod DrawHash {
 
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
         case { size = size, camera = camera, instances = instances, billboards = billboards,
-               pointLights = pointLights, spotLights = spotLights, environment = environment,
+               pointLights = pointLights, spotLights = spotLights, directionalLight = _, environment = environment,
                resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap } =>
             out.writeDouble(time);
             putVec2(out, size);
@@ -215,8 +215,29 @@ pub mod DrawHash {
             out.writeInt(zIndex);
             putSceneTextures(out, textures);
             sky |> Option.forEach(putSky(out));
-            environmentMap |> Option.forEach(putEnvironmentMap(out))
+            environmentMap |> Option.forEach(putEnvironmentMap(out));
+            Scene3d.directionalLightOf(scene) |> Option.forEach(putDirectionalLight(out))
     }
+
+    // WhyNot: 太陽の無い場面に印を書かない — directionalLight の欄を足す前の鍵の字を保ち、太陽の無い場面のキャッシュの PNG を塗り直させない。
+    // 使わない太陽（directionalLightOf が None）も書かない: 太陽なしと同じ絵なので、同じ鍵にして使い回す。
+    def putDirectionalLight(out: DataOutputStream, l: Scene3d.DirectionalLight): Unit \ IO =
+        out.writeByte(0x53);
+        putVec3(out, l#direction);
+        putColor(out, l#color);
+        putF(out, l#intensity);
+        match l#shadow {
+            case None    => out.writeByte(0i32)
+            case Some(s) =>
+                out.writeByte(1i32);
+                out.writeInt(s#mapSize);
+                putF(out, s#bias);
+                putF(out, s#normalBias);
+                out.writeInt(s#pcfRadius);
+                putF(out, s#strength);
+                putF(out, s#distance);
+                putF(out, s#casterReach)
+        }
 
     // WhyNot: 環境マップの無い場面に印を書かない — environmentMap の欄を足す前の鍵の字を保ち、環境マップの無い場面のキャッシュの PNG を塗り直させない。
     // 絵の名前は中身の指紋（Texture3d.contentHash）から決まるので、名前を書けば絵の中身まで鍵に入る。

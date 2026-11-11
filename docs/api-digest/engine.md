@@ -665,9 +665,9 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn }`
 - 画素ごと・場面ごとの vec3 の入力。
-  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter }`
+  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter case SunDirection case SunColor }`
 - 光のループの中で読めるスカラーの欄。
   `pub enum ScalarLightField with Eq { case RangeSquared case OuterCos case InnerCos }`
 - 光のループの中で読める vec3 の欄。
@@ -1269,6 +1269,23 @@
   `pub def spotInnerRatio(): Float64`
 - スポットの円錐の縁の cos（GL と CPU が同じ物を使う）。cone = smoothstep(outerCos, innerCos, dot(−l, スポットの向き))。
   `pub def spotConeOf(spot: SpotLight): { outerCos = Float64, innerCos = Float64 }`
+- 太陽の光（平行光源。Unity・Unreal の Directional Light・Godot の DirectionalLight3D と同じ）。direction = 光が進む向き（長さは問わない。描く時に長さ 1 にする）・
+  `pub type alias DirectionalLight = { direction = Vec3.Vec3, color = Color, intensity = Float64, shadow = Option[DirectionalShadow] }`
+- 太陽の影（カスケード 1 段）。mapSize = 一辺の画素数（0 以下なら影なし）・bias と normalBias は world の長さ（m）・
+  `pub type alias DirectionalShadow = { mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64, distance = Float64, casterReach = Float64 }`
+- 白・intensity 1・影なしの太陽。ほかの値は `{ intensity = 1.2, shadow = Some(Scene3d.directionalShadow()) | Scene3d.directionalLight(d) }` の形で替える。
+  `pub def directionalLight(direction: Vec3.Vec3): DirectionalLight`
+- mapSize 2048・bias 0.05 m・normalBias 1・pcfRadius 1・strength 0.8・distance 150 m・casterReach 200 m の太陽の影。
+  `pub def directionalShadow(): DirectionalShadow`
+- 描く時に使う太陽（使える時だけ Some。direction は長さ 1 にした光の進む向き）。GL・CPU・描き出しの鍵はこれだけを読む。
+  `pub def directionalLightOf(scene: Scene3dCmd): Option[DirectionalLight]`
+- `pub def directionalLightWarning(scene: Scene3dCmd): Option[String]`
+- 太陽の光（directionalLightOf の値）が、点から光源へ向かう向き（長さ 1）と、線形の量にした color × intensity。GL の uniform と CPU の引数に同じ値を入れる。
+  `pub def sunTermsOf(l: DirectionalLight): { toward = Vec3.Vec3, color = Vec3.Vec3 }`
+- 太陽の影の地図を描く材料。matrix = world → 光の clip（正射影・Float64）・frustum = 影を落とす物の間引き（matrix の箱）・
+  `pub type alias SunShadowSetup = { matrix = Mat4.Mat4, frustum = Frustum.Frustum, mapSize = Int32, pcfRadius = Int32, strength = Float64, depthBias = Float64, normalShift = Float64, forward = Vec3.Vec3, distance = Float64, fadeWidth = Float64, radius = Float64 }`
+- 太陽の影の地図の約束（GL と CPU で同じ。スポットの shadowMatrix の判定 1〜4 と同じ読み方で、行列だけ正射影）:
+  `pub def directionalShadowOf(scene: Scene3dCmd): Option[SunShadowSetup]`
 - 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
   `pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }`
 - 場面全体の光。ambient = どこにでも当たる光の色・hemisphere = 上を向く面ほど明るくする量（0 で無し）・
@@ -1390,7 +1407,7 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
 - 環境マップの箱。室内の壁の位置（world）。min・max = 箱の対角の 2 点・center = 絵を撮った点（景色の向きの中心）。
   `pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }`

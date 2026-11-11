@@ -1,23 +1,23 @@
 // Render3d.ScenePlan — 3D の描き手（Render3d）の、prepare の中で場面を描く物へ分ける所。半透明を除く描く順と姿勢の行はここで決まる。約束は Render3d.flix の頭。
 mod Render3d.ScenePlan {
     import fge.gl.GlContext
-    use Render3d.{DrawMode, ShadowPlan, ShadowUse, State, inDrawOrder, isSkinned}
+    use Render3d.{DrawMode, SceneShadows, ShadowPlan, State, inDrawOrder, isSkinned}
     use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch}
     use Render3d.DataTexture.{rowLimit}
     use Render3d.JointTexture.{PoseRows, noRows, withBatchPoseRows}
     use Render3d.Material.{splitByMaterial}
-    use Render3d.Shadow.{shadowPlanOf}
+    use Render3d.Shadow.{shadowPlansOf}
 
     /// 場面 1 つを描く材料を batch に分け終えた物（半透明の物の順だけは draw で決める。ほかは描く順に並べてある）。plain = 材質の無い骨の無い物・skinned = 材質の無い骨つきの物・
     /// opaque = 不透明の材質の物（Output.Depth では材質で描く物）・blended = 半透明の材質の物（1 体ずつの batch。Output.Depth では空）。
     pub type alias SceneDraws[b] = { plain = List[b], skinned = List[b], opaque = List[MaterialBatch[b]], blended = List[MaterialBatch[b]] }
 
-    /// prepare の中で分け終えた場面 1 つ。shadowPlan = 影の地図を描く材料（影を落とす光が無ければ None）。
-    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, draws = SceneDraws[b], shadowPlan = Option[ShadowPlan[b]] }
+    /// prepare の中で分け終えた場面 1 つ。shadowPlans = 影の地図を描く材料（影を落とす光ごとに 1 つ。無ければ空。スポットの次に太陽）。
+    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, draws = SceneDraws[b], shadowPlans = List[ShadowPlan[b]] }
 
-    /// 場面を描く時に場面の外から渡す物。shadow = 先に描いておいた影の地図（無ければ None）・jointTexture = その prepare の joint texture（姿勢が無ければ None）・
+    /// 場面を描く時に場面の外から渡す物。shadows = 先に描いておいた影の地図（スポットと太陽。無ければ None）・jointTexture = その prepare の joint texture（姿勢が無ければ None）・
     /// instanceTexture = その prepare の 1 体ごとの値のテクスチャ（描く物が無ければ None）。
-    pub type alias SceneInputs = { draws = SceneDraws[MeshBatch], shadow = Option[ShadowUse], jointTexture = Option[Int32], instanceTexture = Option[Int32] }
+    pub type alias SceneInputs = { draws = SceneDraws[MeshBatch], shadows = SceneShadows, jointTexture = Option[Int32], instanceTexture = Option[Int32] }
 
     /// 場面をどう 2D の並びへ出すか。Native = その場で描く・Design = 先に描いておいた描き先を貼る（大きさの無い場面は None で、何も出さない）。
     pub enum SceneTarget {
@@ -41,7 +41,7 @@ mod Render3d.ScenePlan {
             case Scene3d.Resolution.Native => dest#samples > 1 and gl.hasAlphaToOne()
             case Scene3d.Resolution.Design => false
         };
-        { cmd = cmd, draws = withPoseRows(rows, sceneDrawsOf(gl, state, gen, coverage, cmd#scene)), shadowPlan = shadowPlanOf(state, rows, cmd#scene) }
+        { cmd = cmd, draws = withPoseRows(rows, sceneDrawsOf(gl, state, gen, coverage, cmd#scene)), shadowPlans = shadowPlansOf(state, rows, cmd#scene) }
 
     /// 描く骨つきの物に姿勢の行を割り当てる。
     def withPoseRows(rows: Ref[PoseRows, Static], draws: SceneDraws[PlannedBatch]): SceneDraws[PlannedBatch] \ IO =

@@ -294,6 +294,21 @@ mod TestDrawHash {
                           and at(Some(env)) != at(Some(Scene3d.withEnvironmentBox(box, env)))
                           and at(Some(env)) != at(Some(Scene3d.environmentMap(panorama(-1)))))
 
+    // 太陽を付けると鍵が変わり、向き・強さ・影の設定が違っても変わる。使わない太陽（intensity 0）は付けない時と同じ鍵（太陽なしと同じ絵なので使い回す）。
+    @Test
+    def testDirectionalLightChangesKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let at = (sun: Option[Scene3d.DirectionalLight]) ->
+            keyOf(inputs(), { req = { scenes = { scene = { directionalLight = sun | base#scene } | base } :: Nil | f#req } | f });
+        let sun = Scene3d.directionalLight(Vec3.v3(0.0, -1.0, 0.0));
+        let shadowed = { shadow = Some(Scene3d.directionalShadow()) | sun };
+        Assert.assertTrue(at(None) != at(Some(sun)) and at(Some(sun)) != at(Some({ intensity = 2.0 | sun }))
+                          and at(Some(sun)) != at(Some(Scene3d.directionalLight(Vec3.v3(1.0, -1.0, 0.0))))
+                          and at(Some(sun)) != at(Some(shadowed))
+                          and at(Some(shadowed)) != at(Some({ shadow = Some({ mapSize = 512 | Scene3d.directionalShadow() }) | sun }))
+                          and at(None) == at(Some({ intensity = 0.0 | sun })))
+
     // pose の無い置いた物の鍵は、pose の欄を足す前の字のまま（3D の場面のキャッシュの PNG を塗り直させない）。
     @Test
     def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =

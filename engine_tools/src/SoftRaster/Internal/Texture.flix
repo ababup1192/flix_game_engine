@@ -21,6 +21,7 @@ pub mod SoftRaster.Internal.Texture {
         scenes |> List.flatMap(c -> c#scene#instances) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
         scenes |> List.flatMap(c -> c#scene#instances) |> List.forEach(warnUnusedLightmap(warnLog));
         scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
+        scenes |> List.filterMap(c -> Scene3d.directionalLightWarning(c#scene)) |> List.forEach(line -> warnSceneOnce(warnLog, "@sun:direction", line));
         let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, Texture3d.mipSpaceOf(textureUse));
         let lightmapKeys = scenes |> List.flatMap(c -> c#scene#instances |> List.filterMap(Scene3d.lightmapOf))
             |> List.map(lm -> keyOf(lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace)));

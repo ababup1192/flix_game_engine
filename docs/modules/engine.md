@@ -74,6 +74,7 @@
 | 3D のカメラに写る範囲（視錐台）で光や物を間引く・数える | Frustum（Camera3d.frustum で作る。置いた物とビルボードは描き手が Scene3d.isOutsideFrustum で間引く・docs/scene3d.md の「描く量」） |
 | 3D の部屋や物を 1 つの描き物（Render.Item.Scene3d）にまとめる・灯り・霧・影 | Scene3d（shadowMatrix の約束は Scene3d.flix の doc・3D の口の案内は docs/scene3d.md） |
 | 懐中電灯のような縁のぼけたスポットライトを置く（内側の角） | Scene3d.spotLight(p, t, fov) に innerFovY = Some(..)（直し方は Scene3d.spotConeOf・docs/scene3d.md） |
+| 屋外の 3D に太陽の光と影を足す（町・都市・野原。向き 1 つの平行光源） | Scene3d の directionalLight（Scene3d.directionalLight(direction) を `directionalLight = Some(..)` へ。影は shadow = Some(Scene3d.directionalShadow())・太陽を足したら ambient を下げる・docs/scene3d.md） |
 | 3D の点光源が 8 本を超える（遠い灯りまで全部置きたい） | Scene3d の pointLights に全部入れる（描き手が Scene3d.pickLights で目に近い 8 本を選ぶ。ゲームで選び直さない） |
 | 3D の光・かすみ・空の式を読む・直す（GL と CPU の描き手が同じ木から出す） | LightModel3d（式の木と lightingModel・fogModel・skyModel。コード生成は LightModel3d.Codegen。直したら make gen-light3d で engine_tools の SoftRaster3dLight を作り直す。ゲームは使わない） |
 | 3D の形に骨を入れる（関節の並び・頂点ごとの重み） | Skin3d |

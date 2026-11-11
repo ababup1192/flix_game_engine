@@ -51,7 +51,8 @@ mod Scenes {
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
-            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d() :: Nil
+            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d()
+            :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -77,6 +78,8 @@ mod Scenes {
     /// 式を取り違えると球の中（1 個で約 1,700 px）が丸ごと違い、差は千 px を超える。
     /// 環境マップの 3 つ（Apple Silicon で pbrEnvironment3d 112 px・pbrEnvironmentBox3d 112 px・pbrEnvironmentSky3d 1,323 px）: 球は絵の補間の ±1〜2。
     /// pbrEnvironmentSky3d は背景の全画素（33,600 px）が絵の補間（Float32 と Float64）の丸めで ±1 割れる。向きを取り違えると背景が丸ごと別の絵になり、max が桁で変わる。
+    /// 太陽の 4 つ（Apple Silicon で sunLit3d 0 px・sunShadow3d 0 px・sunSpotShadow3d 45 px・sunPbr3d 87 px）: 影の縁の画素が地図の奥行きの比べ（Float32 と Float64）で割れるのと、
+    /// 球の鏡面の坂の丸め（±3 まで）。太陽の項か影の地図の箱を取り違えると、床の面（数千 px）が丸ごと違い、桁が変わる。
     /// batch の頭の物の tint か emission で描くと板 1 枚で 300 px を超えて列ごとに違い、行を取り違えると板の曲がりが変わって縁の数が桁で増える。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
@@ -120,6 +123,10 @@ mod Scenes {
         case "pbrEnvironment3d" => Some(400)
         case "pbrEnvironmentBox3d" => Some(400)
         case "pbrEnvironmentSky3d" => Some(2000)
+        case "sunLit3d"        => Some(100)
+        case "sunShadow3d"     => Some(100)
+        case "sunSpotShadow3d" => Some(200)
+        case "sunPbr3d"        => Some(300)
         case _                 => None
     }
 
@@ -598,6 +605,47 @@ mod Scenes {
         { name = "spotShadow", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 0.0, y = 0.0 }, shadowScene(true)) ::
             Render.scene3d({ x = 160.0, y = 0.0 }, shadowScene(false)) :: Nil }
+
+    // ── 太陽（平行光源）。B 段階 ──
+    // 太陽の向きは斜め下（+z の奥へ進む）。影の地図は mapSize 512・pcf 1。distance は目から 40（床の奥まで入る）。
+
+    /// 太陽。withShadow が真なら影を落とす。
+    def sunOf(withShadow: Bool): Scene3d.DirectionalLight =
+        { intensity = 1.1, color = c8(255, 240, 215),
+          shadow = if (withShadow) Some({ mapSize = 512, pcfRadius = 1, distance = 40.0, casterReach = 30.0 | Scene3d.directionalShadow() }) else None
+          | Scene3d.directionalLight(Vec3.v3(0.35, -1.0, 0.45)) }
+
+    def sunScene(sun: Scene3d.DirectionalLight, withBoard: Bool, withSpot: Bool): Scene3d.Scene3dCmd =
+        { spotLights = if (withSpot) shadowSpot() :: Nil else Nil, directionalLight = Some(sun) | shadowScene(withBoard) }
+
+    // 影なしの太陽: 床と板の上の面が拡散で明るい（左）。右は intensity 0 の太陽 = 太陽なしと同じ絵（ambient だけ）。
+    def sunLit3d(): Scene =
+        { name = "sunLit3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, sunScene(sunOf(false), true, false)) ::
+            Render.scene3d({ x = 160.0, y = 0.0 }, sunScene({ intensity = 0.0 | sunOf(false) }, true, false)) :: Nil }
+
+    // 太陽の影: 板の影が床に落ちる（左）。右は板なし（影なし）。
+    def sunShadow3d(): Scene =
+        { name = "sunShadow3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, sunScene(sunOf(true), true, false)) ::
+            Render.scene3d({ x = 160.0, y = 0.0 }, sunScene(sunOf(true), false, false)) :: Nil }
+
+    // 太陽の影とスポットの影が 1 つの場面に並ぶ（地図が 2 枚）: 左は板あり・右は板なし。
+    def sunSpotShadow3d(): Scene =
+        { name = "sunSpotShadow3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, sunScene(sunOf(true), true, true)) ::
+            Render.scene3d({ x = 160.0, y = 0.0 }, sunScene(sunOf(true), false, true)) :: Nil }
+
+    // 太陽と PBR の球: 鏡面ハイライトが太陽の向きに出て、球どうしが影を落とす。
+    def sunPbr3d(): Scene =
+        let sky = Scene3d.gradientSky(c8(70, 110, 200), c8(220, 200, 170), c8(60, 50, 40)) |> Scene3d.withSkyCurve(0.8);
+        let lit = pbrLit(pbrSphereGrid(), Nil);
+        let sun = { intensity = 1.4, shadow = Some({ mapSize = 512, pcfRadius = 1, distance = 40.0, casterReach = 20.0 | Scene3d.directionalShadow() })
+                    | Scene3d.directionalLight(Vec3.v3(-0.5, -0.6, 0.7)) };
+        let scene = { sky = Some(sky), pointLights = Nil, spotLights = Nil, directionalLight = Some(sun),
+                      environment = { background = None, ambient = c8(60, 60, 70) | lit#environment } | lit };
+        { name = "sunPbr3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── scene 20: ジョイントで曲げた板（Scene3d.withPose → GL は骨つきの版のプログラム・CPU は SoftRaster3d のスキニング）。B 段階 ──
     // 縦に長い板 2 枚を、根のジョイント（下の端）と上のジョイント（真ん中）で曲げる。左は頂点の色・右は材質（縞）で、
