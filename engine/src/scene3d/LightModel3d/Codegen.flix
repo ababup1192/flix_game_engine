@@ -6,7 +6,7 @@
 // WhyNot: 木と同じファイルに置かない — 木と式は GL と CPU の約束で、コード生成は engine_tools と Render3d の名前を字で知る。触る人と理由が違う。
 pub mod LightModel3d.Codegen {
     use LightModel3d.{ScalarExpr, Vec3Expr, Cond, ScalarInput, Vec3Input, ScalarLightField, Vec3LightField, LightKind}
-    use LightModel3d.{lightingModel, lightmapLightingModel, fogModel, skyModel, strideOf, vec3FieldOffset, scalarFieldOffset}
+    use LightModel3d.{lightingModel, lightmapLightingModel, fogModel, skyModel, pbrModel, strideOf, vec3FieldOffset, scalarFieldOffset}
 
     // ════════════════════════════════════════════════════════
     // コード生成（2 つの出口が共に使う）
@@ -36,8 +36,8 @@ pub mod LightModel3d.Codegen {
         case BindBool(String, String)
         /// 条件・受ける名前・真の時の文と値・偽の時の文と値。
         case IfElse(String, List[String], List[Stmt], List[String], List[Stmt], List[String])
-        /// 光の種類・受ける名前 3 つ・1 本の光の文・足す値 3 つ・1 本の光が読む引数。
-        case Loop(LightKind, List[String], List[Stmt], List[String], Set[Param])
+        /// 光の種類・受ける名前 3 つ・1 本の光の文・足す値 3 つ・1 本の光が読む引数・ループの外で束ねた名前のうち 1 本の光が読む物（Float64 の名前。CPU は引数で渡す）。
+        case Loop(LightKind, List[String], List[Stmt], List[String], Set[Param], List[String])
     }
 
     /// コード生成の途中の名前の表。light = 今いる光のループ・shadowFunction = CPU の影の割合の関数の名前（GLSL では使わない）。
@@ -125,6 +125,9 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.SkyZenith     => "zenith"
         case Vec3Input.SkyHorizon    => "horizon"
         case Vec3Input.SkyGround     => "ground"
+        case Vec3Input.Albedo        => "albedo"
+        case Vec3Input.Light         => "light"
+        case Vec3Input.MetallicRoughness => "metalRough"
     }
 
     /// GLSL で画素ごとに関数の引数として受ける入力か（ほかは uniform）。
@@ -140,6 +143,9 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.SkyZenith     => false
         case Vec3Input.SkyHorizon    => false
         case Vec3Input.SkyGround     => false
+        case Vec3Input.Albedo        => true
+        case Vec3Input.Light         => true
+        case Vec3Input.MetallicRoughness => true
     }
 
     /// GLSL で入力を読む名前（画素ごとの入力は関数の引数の名前・ほかは uniform）。
@@ -155,6 +161,9 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.LightmapColor => vec3InputName(input)
         case Vec3Input.Color         => vec3InputName(input)
         case Vec3Input.SkyDirection  => vec3InputName(input)
+        case Vec3Input.Albedo        => vec3InputName(input)
+        case Vec3Input.Light         => vec3InputName(input)
+        case Vec3Input.MetallicRoughness => vec3InputName(input)
     }
 
     def axisSuffix(t: Target, axis: Int32): String = match (t, axis) {
@@ -434,21 +443,32 @@ pub mod LightModel3d.Codegen {
         case Vec3Expr.Ref(name) => (Nil, lookupVec3(env, name))
     }
 
-    /// 光のループ。中の式は外の名前を読まない（入力と光の欄だけ）ので、名前の数え始めも外と分ける。
+    /// 光のループ。中の式は、入力と光の欄のほかに、外の Let の名前も読める（ループの外で 1 回だけ計算した値を、光の数だけ計算し直さない）。
+    /// 外の名前のうち中の文が読む物は Stmt.Loop の captured に控える（GLSL は同じ関数の中なので名前のまま・CPU は引数で渡す）。
+    /// 名前の数え始めは外と分ける。
     // WhyNot: ループの中の名前を外と続けて数えない — 同じ中身のループ（lightingModel と lightmapLightingModel の点光源）が同じ字になり、1 つの関数で済む。
     def loopCode(t: Target, fresh: Ref[(String, Int32), r], env: Env, kind: LightKind, body: Vec3Expr): (List[Stmt], (String, String, String)) \ r =
         if (Option.nonEmpty(env#light)) bug!("LightModel3d: 光のループの中に光のループは置けない")
         else region inner {
             let innerFresh = Ref.fresh(inner, ("l", 0));
-            let (sb, (x, y, z)) = vec3Code(t, innerFresh, { light = Some(kind) | envFor(env#shadowFunction) }, body);
+            let innerEnv = { light = Some(kind), scalars = env#scalars, vecs = env#vecs | envFor(env#shadowFunction) };
+            let (sb, (x, y, z)) = vec3Code(t, innerFresh, innerEnv, body);
+            let read = namesReadBy(sb, x :: y :: z :: Nil);
+            let captured = outerNamesOf(env) |> List.filter(n -> Set.memberOf(n, read));
             let base = freshName(fresh, match kind {
                 case LightKind.Point => "points"
                 case LightKind.Spot  => "spots"
             });
             let names = ("${base}X", "${base}Y", "${base}Z");
             let (nx, ny, nz) = names;
-            (Stmt.Loop(kind, nx :: ny :: nz :: Nil, sb, x :: y :: z :: Nil, paramsOfVec3(body)) :: Nil, names)
+            (Stmt.Loop(kind, nx :: ny :: nz :: Nil, sb, x :: y :: z :: Nil, paramsOfVec3(body), captured) :: Nil, names)
         }
+
+    /// 外の Let が生成した名前（スカラーはその名前・vec3 は X・Y・Z の 3 つ）。並びは名前の順。
+    def outerNamesOf(env: Env): List[String] =
+        let scalars = Map.toList(env#scalars) |> List.map(snd);
+        let vecs = Map.toList(env#vecs) |> List.map(snd) |> List.flatMap(v -> { let (x, y, z) = v; x :: y :: z :: Nil });
+        List.append(scalars, vecs) |> List.distinct |> List.sort
 
     // ── 使う引数 ─────────────────────────────────────────
 
@@ -538,11 +558,11 @@ pub mod LightModel3d.Codegen {
                 let needs = Set.union(identifiersIn(c), Set.union(namesReadBy(yes, yesVals), namesReadBy(no, noVals)));
                 Some((Stmt.IfElse(c, markUnused(used, names), yes, yesVals, no, noVals), needs))
             }
-        case Stmt.Loop(kind, names, bodyStmts, vals, params) =>
+        case Stmt.Loop(kind, names, bodyStmts, vals, params, captured) =>
             if (not List.exists(n -> Set.memberOf(n, used), names)) None
             else {
                 let body = pruneStmts(bodyStmts, identifiersInAll(vals));
-                Some((Stmt.Loop(kind, markUnused(used, names), body, vals, params), Set.empty()))
+                Some((Stmt.Loop(kind, markUnused(used, names), body, vals, params, captured), List.toSet(captured)))
             }
     }
 
@@ -561,7 +581,7 @@ pub mod LightModel3d.Codegen {
         case Stmt.BindBool(_, e) => identifiersIn(e)
         case Stmt.IfElse(c, _, yesStmts, yesVals, noStmts, noVals) =>
             Set.union(identifiersIn(c), Set.union(namesReadBy(yesStmts, yesVals), namesReadBy(noStmts, noVals)))
-        case Stmt.Loop(_, _, _, _, _) => Set.empty()
+        case Stmt.Loop(_, _, _, _, _, captured) => List.toSet(captured)
     }
 
     // ════════════════════════════════════════════════════════
@@ -591,7 +611,11 @@ pub mod LightModel3d.Codegen {
                    Param.ScalarParam(ScalarInput.FogNear) :: Param.ScalarParam(ScalarInput.FogFar) :: Nil } ::
         { name = "skyAt", model = skyModel(), doc = "skyModel の空の色。",
           params = Param.Vec3Param(Vec3Input.SkyDirection) :: Param.Vec3Param(Vec3Input.SkyZenith) :: Param.Vec3Param(Vec3Input.SkyHorizon) ::
-                   Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) :: Nil } :: Nil
+                   Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) :: Nil } ::
+        { name = "pbrAt", model = pbrModel(), doc = "pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。",
+          params = Param.Points :: Param.Spots :: Param.Shadow :: p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.Light) ::
+                   Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.SkyZenith) ::
+                   Param.Vec3Param(Vec3Input.SkyHorizon) :: Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) :: Nil } :: Nil
 
     /// 生成した CPU の光の関数（engine_tools の gen/SoftRaster3dLight.flix）のソースの全部（engine の開発用。ゲームは使わない）。
     /// 光の種類ごと（点光源の輪・スポットの輪）に関数を分けて出す。
@@ -744,14 +768,14 @@ pub mod LightModel3d.Codegen {
                 let branch = (bs: List[Stmt], vals: List[String]) ->
                     "{\n" + flixStmts(rc, hooks, loops, entry, depth + 1, bs) + indent(depth + 1) + tupleOf(vals) + "\n${pad}}";
                 "${pad}let ${tupleOf(names)} = if (${c}) ${branch(yesStmts, yesVals)} else ${branch(noStmts, noVals)};\n"
-            case Stmt.Loop(kind, names, bodyStmts, vals, used) =>
+            case Stmt.Loop(kind, names, bodyStmts, vals, used, captured) =>
                 let params = entry#params |> List.filter(p -> Set.memberOf(p, used));
-                let fname = flixLoopDef(rc, hooks, loops, entry, kind, bodyStmts, vals, params);
+                let fname = flixLoopDef(rc, hooks, loops, entry, kind, bodyStmts, vals, params, captured);
                 let lightsArg = match kind {
                     case LightKind.Point => "points"
                     case LightKind.Spot  => "spots"
                 };
-                let args = (lightsArg :: "0" :: List.flatMap(flixParamNames, params)) ::: ("0.0" :: "0.0" :: "0.0" :: Nil);
+                let args = (lightsArg :: "0" :: List.flatMap(flixParamNames, params)) ::: captured ::: ("0.0" :: "0.0" :: "0.0" :: Nil);
                 "${pad}let ${tupleOf(names)} = ${fname}(${List.join(", ", args)});\n"
         }
 
@@ -762,7 +786,7 @@ pub mod LightModel3d.Codegen {
 
     /// 光のループの関数の名前（同じ中身のループが前にあれば、その名前）。
     def flixLoopDef(rc: Region[r], hooks: CpuHooks, loops: Ref[List[(String, String, String)], r], entry: CpuEntry, kind: LightKind,
-                    bodyStmts: List[Stmt], vals: List[String], params: List[Param]): String \ r =
+                    bodyStmts: List[Stmt], vals: List[String], params: List[Param], captured: List[String]): String \ r =
         let suffix = match kind {
             case LightKind.Point => "Points"
             case LightKind.Spot  => "Spots"
@@ -780,8 +804,9 @@ pub mod LightModel3d.Codegen {
                 case _                  => bug!("LightModel3d: ループの値は 3 つ")
             };
             let inner = flixStmts(rc, hooks, loops, entry, 3, bodyStmts) +
-                "            ${fname}(${List.join(", ", ("lights" :: "i + ${stride}" :: args) ::: ("(accX + ${x})" :: "(accY + ${y})" :: "(accZ + ${z})" :: Nil))})\n";
-            let decls = ("lights: Vector[Float64]" :: "i: Int32" :: flixParamDecls(hooks, params, inner)) ::: ("accX: Float64" :: "accY: Float64" :: "accZ: Float64" :: Nil);
+                "            ${fname}(${List.join(", ", ("lights" :: "i + ${stride}" :: args) ::: captured ::: ("(accX + ${x})" :: "(accY + ${y})" :: "(accZ + ${z})" :: Nil))})\n";
+            let decls = ("lights: Vector[Float64]" :: "i: Int32" :: flixParamDecls(hooks, params, inner)) ::: (captured |> List.map(n -> "${n}: Float64"))
+                ::: ("accX: Float64" :: "accY: Float64" :: "accZ: Float64" :: Nil);
             "    def ${fname}(${List.join(", ", decls)}): (Float64, Float64, Float64) =\n" +
             "        if (i + ${stride} > Vector.length(lights)) (accX, accY, accZ)\n" +
             "        else {\n" + inner + "        }\n"
@@ -809,8 +834,8 @@ pub mod LightModel3d.Codegen {
     // GLSL の出口
     // ════════════════════════════════════════════════════════
 
-    /// 式 e を GLSL の関数 `vec3 name(…)` に生成した字。画素ごとの入力（点・法線・lightmap の色・かすみの前の色・空の向き）は
-    /// 引数（p・n・lightmap・color・dir）で受け、ほかは Render3dGlsl が宣言する uniform の名前（uAmbient・uPointPos の i 番目など）で読む。
+    /// 式 e を GLSL の関数 `vec3 name(…)` に生成した字。画素ごとの入力（点・法線・lightmap の色・かすみの前の色・空の向き・albedo・拡散の光・metallic と roughness）は
+    /// 引数（p・n・lightmap・color・dir・albedo・light・metalRough）で受け、ほかは Render3dGlsl が宣言する uniform の名前（uAmbient・uPointPos の i 番目など）で読む。
     /// 光のループは Scene3d.maxPointLights()・maxSpotLights() 回の for で、uPointCount・uSpotCount で抜ける。
     /// 影は spotShadow(i, p)、lightmap の色の空間は r3d_srgbToLinear・r3d_linearToSrgb（float → float の関数。Texture3d.srgbToLinearGlsl・linearToSrgbGlsl で作る）を呼ぶ。engine の開発用（ゲームは使わない）。
     /// perPixel = 関数の引数の並び（引数の順はこの並びで決まり、enum の宣言の順に頼らない。木が読む画素ごとの入力が無ければ止める）。
@@ -844,7 +869,7 @@ pub mod LightModel3d.Codegen {
                 (names |> List.map(n -> "${pad}float ${n};\n") |> List.join("")) +
                 "${pad}if (${c}) {\n" + glslStmts(depth + 1, yesStmts) + assign(yesVals) +
                 "${pad}} else {\n" + glslStmts(depth + 1, noStmts) + assign(noVals) + "${pad}}\n"
-            case Stmt.Loop(kind, names, bodyStmts, vals, _) =>
+            case Stmt.Loop(kind, names, bodyStmts, vals, _, _) =>
                 let (count, limit) = match kind {
                     case LightKind.Point => ("uPointCount", Scene3d.maxPointLights())
                     case LightKind.Spot  => ("uSpotCount", Scene3d.maxSpotLights())

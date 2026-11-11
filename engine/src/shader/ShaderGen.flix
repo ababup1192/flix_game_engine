@@ -193,19 +193,23 @@ pub mod ShaderGen {
     def eqSpecTree(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
         eqSpecWith(sameName, a, b) or region rc { eqSpecWith(namePairing(rc), a, b) }
 
-    /// 2 つの材質（spec と自分で光る色 emission）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
-    /// emission の uTexN の番号は spec と emission をつないだ並びで決まる（ShaderDoc.materialTexReads）ので、名前の対応は spec と emission を通して 1 本で取る。
+    /// 2 つの材質（spec・自分で光る色 emission・metallic と roughness の場 metallicRoughness）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
+    /// emission と metallicRoughness の uTexN の番号は spec・emission・metallicRoughness をつないだ並びで決まる（ShaderDoc.materialTexReads）ので、
+    /// 名前の対応は 3 つを通して 1 本で取る。
     /// WhyNot: spec が同じ物というだけで抜けない — spec の名前が対応に入らないまま emission を比べると、spec と同じ名前を読む emission と
     ///   別の名前を読む emission を同じと答える。
-    pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade],
-                       specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool =
-        (isSameSpec(specA, specB) and isSameEmission(emissionA, emissionB))
-            or eqMaterialWith(sameName, specA, emissionA, specB, emissionB)
-            or region rc { eqMaterialWith(namePairing(rc), specA, emissionA, specB, emissionB) }
+    pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], metallicRoughnessA: Option[ShaderDoc.Shade],
+                       specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade], metallicRoughnessB: Option[ShaderDoc.Shade]): Bool =
+        (isSameSpec(specA, specB) and isSameEmission(emissionA, emissionB) and isSameEmission(metallicRoughnessA, metallicRoughnessB))
+            or eqMaterialWith(sameName, specA, emissionA, metallicRoughnessA, specB, emissionB, metallicRoughnessB)
+            or region rc { eqMaterialWith(namePairing(rc), specA, emissionA, metallicRoughnessA, specB, emissionB, metallicRoughnessB) }
 
-    def eqMaterialWith(names: (String, String) -> Bool \ ef, specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade],
-                       specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool \ ef =
-        eqSpecWith(names, specA, specB) and match (emissionA, emissionB) {
+    def eqMaterialWith(names: (String, String) -> Bool \ ef, specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], metallicRoughnessA: Option[ShaderDoc.Shade],
+                       specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade], metallicRoughnessB: Option[ShaderDoc.Shade]): Bool \ ef =
+        eqSpecWith(names, specA, specB) and eqOptionShade(names, emissionA, emissionB) and eqOptionShade(names, metallicRoughnessA, metallicRoughnessB)
+
+    def eqOptionShade(names: (String, String) -> Bool \ ef, a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool \ ef =
+        match (a, b) {
             case (None, None)         => true
             case (Some(sa), Some(sb)) => eqShade(names, sa, sb)
             case _                    => false
@@ -242,7 +246,7 @@ pub mod ShaderGen {
             held.refersTo(unchecked_cast(b as JObject))
         }
 
-    /// 2 つの emission が同じ物か（両方無いか、参照が同じ）。
+    /// 2 つの色（emission か metallicRoughness）が同じ物か（両方無いか、参照が同じ）。
     pub def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool =
         match (a, b) {
             case (None, None)         => true
@@ -391,14 +395,15 @@ pub mod ShaderGen {
 
     // ── 材質の中身の鍵（hashMaterial）──
 
-    /// 材質（spec と自分で光る色 emission）の中身の鍵。eqMaterial が真の 2 つは必ず同じ値になる。
+    /// 材質（spec・emission・metallicRoughness）の中身の鍵。eqMaterial が真の 2 つは必ず同じ値になる。
+    /// metallicRoughness が無い材質は、それを足す前と同じ値（無い時は何も入れない）。
     /// 違う中身が同じ値になることはありうるので、鍵で引き当てた後は eqMaterial で確かめる（render_gl の材質の program キャッシュ）。
     /// テクスチャの名前は字を入れず、spec → emission の順に木をたどって初めて出た順の番号を入れる（eqMaterial の名前の対応と同じ決まり）。
     /// spec の名前・bindings の名前・Param と Ref の名前は字のまま入れる（eqSpec が字のまま比べる）。
     /// 浮動小数は -0.0 を 0.0 にそろえてからビットを入れる（== で等しい 2 つを同じ値にする）。
     // WhyNot: SHA-256 の字にしない — 鍵を求めるのはコマごとに材質を作り直すゲームでは描くたびで、64 bit で足りる（衝突は eqMaterial が見つけて組み直すだけ）。
     // WhyNot: 木を JSON の字にして hash しない — 字を組む確保が木の大きさだけ乗り、テクスチャの名前を番号に替える手間も別に要る。
-    pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): Int64 = region rc {
+    pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): Int64 = region rc {
         let acc = Ref.fresh(rc, -3750763034362895579i64);
         let names: Ref[Map[String, Int32], rc] = Ref.fresh(rc, Map.empty());
         let tok = (t: Int64) -> Ref.put(hashStep(Ref.get(acc), t), acc);
@@ -416,6 +421,10 @@ pub mod ShaderGen {
         match emission {
             case None    => tok(0i64)
             case Some(s) => tok(1i64); hashShade(tok, tex, s)
+        };
+        match metallicRoughness {
+            case None    => ()
+            case Some(s) => tok(2i64); hashShade(tok, tex, s)
         };
         Ref.get(acc)
     }
@@ -563,6 +572,7 @@ pub mod ShaderGen {
     ///             Param の `uniform float uParamN;`（N は paramNames の並び）。
     /// functions = ノイズの関数と `void materialEval(out vec4 albedo, out vec3 emission)` の定義。
     ///             albedo = 光を当てる前の色と α（Out の Fill）・emission = 自分で光る色（無ければ 0）。
+    ///             metallicRoughness が Some の材質だけ、引数がもう 1 つ増える: `out vec2 metalRough`（x = metallic・y = roughness・0..1 に丸めた値）。
     /// paramNames = uParamN に渡す値の名前の並び（ShaderDoc.materialParamNames と同じ）。
     /// texReads = uTexN に貼る (テクスチャ名, 補間) の並び（ShaderDoc.materialTexReads と同じ）。
     /// 差し込む側の約束: `in vec3 vWorld;`（画素の world の点）・`in vec3 vNormal;`（外向きの法線・長さは問わない）・
@@ -573,13 +583,13 @@ pub mod ShaderGen {
     pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String],
                                     texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }
 
-    /// 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
+    /// 3D の材質（spec・自分で光る色 emission・metallic と roughness を RGB の r と g に入れた色 metallicRoughness）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
     /// uv は vUv を読む。tex / blur は uTexN を読む（unit の数に収めるのは呼ぶ側 — ShaderDoc.limitMaterialTexReads）。
     /// tex は読む座標の画面の微分から段を選んで読む（sg_texMip。式は Mip.lodOf と同じ）。blur と cutout の α は段 0 で読む。
-    /// emission の場は spec の bindings を Ref で読める。cycleRate は emission の色にも掛かる。
-    pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): MaterialGlsl =
-        let reads = ShaderDoc.materialTexReads(spec, emission);
-        let params = ShaderDoc.materialParamNames(spec, emission);
+    /// emission と metallicRoughness の場は spec の bindings を Ref で読める。cycleRate は emission の色には掛かり、metallicRoughness には掛からない。
+    pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): MaterialGlsl =
+        let reads = ShaderDoc.materialTexReads(spec, emission, metallicRoughness);
+        let params = ShaderDoc.materialParamNames(spec, emission, metallicRoughness);
         let tex = withParamScope(params, texScopeFrom(reads));
         let mipTex = Map.insert(mipModeKey(), 0, tex);
         let baseEnv = Map#{ worldKey() => "vWorld", normalKey() => "sg_normal", colorKey() => "vColor" };
@@ -593,7 +603,11 @@ pub mod ShaderGen {
             case Some(shade) => "emission = " + shadeExpr(spec#cycleRate, shade, uv, env, mipTex) + ";"
             case None        => "emission = vec3(0.0, 0.0, 0.0);"
         };
-        let body = finishReads(List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: Nil));
+        let metalStmts = match metallicRoughness {
+            case Some(shade) => ("metalRough = clamp((" + shadeExpr(0.0, shade, uv, env, mipTex) + ").xy, 0.0, 1.0);") :: Nil
+            case None        => Nil
+        };
+        let body = finishReads(List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: metalStmts));
         let readsTextures = not List.isEmpty(reads);
         let indent = (stmts: List[String]) -> stmts |> List.map(st -> "    " + st + "\n") |> joinParts;
         let cutoutFunction = if (not readsTextures) "" else {
@@ -613,7 +627,7 @@ pub mod ShaderGen {
               preludeSource() ::
               (if (readsTextures) blurSourceWith(e -> "textureLod(tex, " + e + ", 0.0)") + texMipSource() else "") ::
               divSource() ::
-              "void materialEval(out vec4 albedo, out vec3 emission) {\n" ::
+              "void materialEval(out vec4 albedo, out vec3 emission" + (if (Option.nonEmpty(metallicRoughness)) ", out vec2 metalRough" else "") + ") {\n" ::
               "    vec2 sg_uv = vUv;\n" ::
               "    vec3 sg_normal = normalize(vNormal);\n" ::
               indent(body) ::

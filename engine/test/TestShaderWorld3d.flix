@@ -35,7 +35,7 @@ mod TestShaderWorld3d {
 
     /// 絵の無い材質の組み直し。
     def material(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], params: Map[String, Float64]): ShaderEval.CompiledSpec =
-        ShaderEval.compileMaterial({ spec = spec, emission = emission, params = params, textures = Map.empty(), repeat = true })
+        ShaderEval.compileMaterial({ spec = spec, emission = emission, metallicRoughness = None, params = params, textures = Map.empty(), repeat = true })
 
     def up(): Vec3.Vec3 = v3(0.0, 1.0, 0.0)
 
@@ -137,7 +137,7 @@ mod TestShaderWorld3d {
     @Test
     def testCompile3dReadsVaryings(): Unit \ Assert =
         let spec = alphaSpec(Field.Bin({ op = BinOp.Add, a = world(Axis3.X), b = normal(Axis3.Y) }));
-        let fns = ShaderGen.compile3d(spec, None)#functions;
+        let fns = ShaderGen.compile3d(spec, None, None)#functions;
         Assert.assertEq(expected = (true, true, true),
             (String.contains({ substr = "vec3 sg_normal = normalize(vNormal);" }, fns),
              String.contains({ substr = "albedo = vec4(vec3(0.5, 0.5, 0.5), (vWorld.x + sg_normal.y));" }, fns),
@@ -146,7 +146,7 @@ mod TestShaderWorld3d {
     /// compile3d の uv は vUv — Uv を読む場は sg_uv（= vUv）を読む。
     @Test
     def testCompile3dUvReadsVUv(): Unit \ Assert =
-        let fns = ShaderGen.compile3d(alphaSpec(Field.Uv({ axis = ShaderDoc.Axis.U })), None)#functions;
+        let fns = ShaderGen.compile3d(alphaSpec(Field.Uv({ axis = ShaderDoc.Axis.U })), None, None)#functions;
         Assert.assertEq(expected = (true, true),
             (String.contains({ substr = "vec2 sg_uv = vUv;" }, fns),
              String.contains({ substr = "(sg_uv).x" }, fns)))
@@ -155,7 +155,7 @@ mod TestShaderWorld3d {
     @Test
     def testCompile3dParamUniformsIncludeEmission(): Unit \ Assert =
         let glow = Shade.Rgb({ r = Field.Param({ name = "b" }), g = Field.Param({ name = "a" }), b = Field.Const(0.0) });
-        let m = ShaderGen.compile3d(alphaSpec(Field.Param({ name = "a" })), Some(glow));
+        let m = ShaderGen.compile3d(alphaSpec(Field.Param({ name = "a" })), Some(glow), None);
         Assert.assertEq(expected = ("a" :: "b" :: Nil,
                                     "uniform float uTime;\nuniform float uParam0;\nuniform float uParam1;\n", true),
             (m#paramNames, m#uniforms, String.contains({ substr = "emission = vec3(uParam1, uParam0, 0.0);" }, m#functions)))
@@ -163,7 +163,7 @@ mod TestShaderWorld3d {
     /// 3D の材質の tex は uTex0 を sg_uv で段つきで読み（sg_texMip）、sampler の uniform を宣言する。
     @Test
     def testCompile3dReadsTexture(): Unit \ Assert =
-        let m = ShaderGen.compile3d(alphaSpec(Field.Tex({ name = "a", chan = ShaderDoc.TexChan.R })), None);
+        let m = ShaderGen.compile3d(alphaSpec(Field.Tex({ name = "a", chan = ShaderDoc.TexChan.R })), None, None);
         Assert.assertEq(expected = (true, true, ("a", ShaderDoc.FilterMode.Nearest) :: Nil),
             (String.contains({ substr = "uniform sampler2D uTex0;\nuniform float uTexFlip0;\n" }, m#uniforms),
              String.contains({ substr = "sg_texMip(uTex0, uTexFlip0, uTexLevels0, (sg_uv))" }, m#functions),
@@ -175,14 +175,14 @@ mod TestShaderWorld3d {
         let tex = (c: ShaderDoc.TexChan) -> Field.Tex({ name = "a", chan = c });
         let spec = { out = Out.Fill({ shade = Shade.Rgb({ r = tex(ShaderDoc.TexChan.R), g = tex(ShaderDoc.TexChan.G), b = tex(ShaderDoc.TexChan.B) }),
                                       alpha = Field.Const(1.0) }) | alphaSpec(Field.Const(1.0)) };
-        let fns = ShaderGen.compile3d(spec, None)#functions;
+        let fns = ShaderGen.compile3d(spec, None, None)#functions;
         Assert.assertEq(expected = (true, false),
             (String.contains({ substr = "vec4 sg_r0 = sg_texMip(uTex0" }, fns), String.contains({ substr = "⟦" }, fns)))
 
     /// 3D の VertexColor は varying の vColor を読む。
     @Test
     def testCompile3dVertexColorReadsVColor(): Unit \ Assert =
-        let fns = ShaderGen.compile3d(alphaSpec(Field.VertexColor({ chan = ShaderDoc.TexChan.G })), None)#functions;
+        let fns = ShaderGen.compile3d(alphaSpec(Field.VertexColor({ chan = ShaderDoc.TexChan.G })), None, None)#functions;
         Assert.assertEq(expected = true, String.contains({ substr = "albedo = vec4(vec3(0.5, 0.5, 0.5), vColor.g);" }, fns))
 
     /// 2D の面の VertexColor は 1.0 の字になる。
@@ -197,9 +197,9 @@ mod TestShaderWorld3d {
         let glow = a -> Some(Shade.Rgb({ r = world(a), g = Field.Const(0.0), b = Field.Const(0.0) }));
         let spec = alphaSpec(Field.Const(1.0));
         Assert.assertEq(expected = (false, true, false),
-            (ShaderGen.eqMaterial(spec, glow(Axis3.X), spec, glow(Axis3.Y)),
-             ShaderGen.eqMaterial(spec, glow(Axis3.X), spec, glow(Axis3.X)),
-             ShaderGen.eqMaterial(spec, glow(Axis3.X), spec, None)))
+            (ShaderGen.eqMaterial(spec, glow(Axis3.X), None, spec, glow(Axis3.Y), None),
+             ShaderGen.eqMaterial(spec, glow(Axis3.X), None, spec, glow(Axis3.X), None),
+             ShaderGen.eqMaterial(spec, glow(Axis3.X), None, spec, None, None)))
 
     // ════════════════════════════════════════════════════════════════════
     // JSON（ShaderJson）
@@ -251,7 +251,7 @@ mod TestShaderWorld3d {
     def rampAlpha(linear: Bool, repeat: Bool, uv: Vec2.Vec2): Float64 =
         let read = Field.Tex({ name = "ramp", chan = ShaderDoc.TexChan.R });
         let field = if (linear) Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = read }) else read;
-        let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(field), emission = None, params = Map.empty(),
+        let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(field), emission = None, metallicRoughness = None, params = Map.empty(),
                                                     textures = Map#{ "ramp" => Vector#{ redRamp() } }, repeat = repeat });
         ShaderEval.evalMaterial3(compiled, { uv = uv | point(v3(0.0, 0.0, 0.0), up()) }, 0.0)#alpha
 
@@ -298,7 +298,7 @@ mod TestShaderWorld3d {
         let glow = Shade.Rgb({ r = Field.Tex({ name = "b", chan = ShaderDoc.TexChan.R }), g = Field.Tex({ name = "a", chan = ShaderDoc.TexChan.R }),
                                b = Field.Const(0.0) });
         Assert.assertEq(expected = ("a", ShaderDoc.FilterMode.Nearest) :: ("b", ShaderDoc.FilterMode.Nearest) :: Nil,
-            ShaderDoc.materialTexReads(alphaSpec(Field.Tex({ name = "a", chan = ShaderDoc.TexChan.A })), Some(glow)))
+            ShaderDoc.materialTexReads(alphaSpec(Field.Tex({ name = "a", chan = ShaderDoc.TexChan.A })), Some(glow), None))
 
     /// 上限を超えた組（7 組目）を読む tex は 0 の Const になり、6 組目までは残る。
     @Test
@@ -306,7 +306,7 @@ mod TestShaderWorld3d {
         let tex = (n: Int32) -> Field.Tex({ name = "t${n}", chan = ShaderDoc.TexChan.R });
         let sum = List.range(1, 8) |> List.map(tex) |> List.reduceLeft((a, b) -> Field.Bin({ op = BinOp.Add, a = a, b = b }))
             |> Option.getWithDefault(Field.Const(0.0));
-        let (limited, _) = ShaderDoc.limitMaterialTexReads(6, alphaSpec(sum), None);
+        let (limited, _, _) = ShaderDoc.limitMaterialTexReads(6, alphaSpec(sum), None, None);
         Assert.assertEq(expected = List.range(1, 7) |> List.map(n -> "t${n}"), ShaderDoc.texNames(limited))
 
     // ════════════════════════════════════════════════════════════════════
@@ -318,7 +318,7 @@ mod TestShaderWorld3d {
     def rampMipAlpha(linear: Bool, repeat: Bool, u: Float64, du: Float64): Float64 =
         let read = Field.Tex({ name = "ramp", chan = ShaderDoc.TexChan.R });
         let field = if (linear) Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = read }) else read;
-        let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(field), emission = None, params = Map.empty(),
+        let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(field), emission = None, metallicRoughness = None, params = Map.empty(),
                                                     textures = Map#{ "ramp" => List.toVector(Mip.build(Mip.Average.Raw, redRamp())) }, repeat = repeat });
         let at = (x: Float64) -> { uv = { x = x, y = 0.5 } | point(v3(0.0, 0.0, 0.0), up()) };
         ShaderEval.evalMaterial3Mip(compiled, at(u), at(u + du), at(u), 0.0)#alpha
@@ -348,7 +348,7 @@ mod TestShaderWorld3d {
     /// 絵を読む材質の cutout の α は段 0 で読み直す（materialCutoutAlpha の textureLod(…, 0.0)）。段の数の uniform も宣言する。
     @Test
     def testCompile3dCutoutAlphaReadsLevelZero(): Unit \ Assert =
-        let m = ShaderGen.compile3d(alphaSpec(Field.Tex({ name = "a", chan = ShaderDoc.TexChan.A })), None);
+        let m = ShaderGen.compile3d(alphaSpec(Field.Tex({ name = "a", chan = ShaderDoc.TexChan.A })), None, None);
         Assert.assertEq(expected = ("materialCutoutAlpha()", true, true),
             (m#cutoutAlpha, String.contains({ substr = "return textureLod(uTex0, vec2((sg_uv).x" }, m#functions),
              String.contains({ substr = "uniform float uTexLevels0;" }, m#uniforms)))
@@ -356,7 +356,7 @@ mod TestShaderWorld3d {
     /// 絵を読まない材質の cutout は albedo.a のまま（段の関数も足さない）。
     @Test
     def testCompile3dCutoutAlphaWithoutTextureIsAlbedo(): Unit \ Assert =
-        let m = ShaderGen.compile3d(alphaSpec(Field.Const(0.25)), None);
+        let m = ShaderGen.compile3d(alphaSpec(Field.Const(0.25)), None, None);
         Assert.assertEq(expected = ("albedo.a", false), (m#cutoutAlpha, String.contains({ substr = "sg_texMip" }, m#functions)))
 
     /// 2D の面の tex は段を読まず、今の texture() の字のまま。

@@ -316,17 +316,25 @@ mod TestGltf {
     def testTexturedPartsPerPrimitive(): Unit \ {Assert, Fs.FileRead, IO} =
         Assert.assertEq(expected = 2, List.length(textured()#parts))
 
-    /// 絵のある材質 A の板だけが材質を持ち、絵の無い材質 B の板は None（頂点の色で描く）。
+    /// 絵のある材質 A の板だけが材質を持ち、絵の無い材質 B の板は None（頂点の色で描く。metallicFactor を書いてあっても既存の口は付けない）。
     @Test
     def testOnlyTexturedMaterialBecomesMaterial(): Unit \ {Assert, Fs.FileRead, IO} =
         let m = textured();
         Assert.assertEq(expected = (true, false), (Option.nonEmpty(partAt(m, 0)#material), Option.nonEmpty(partAt(m, 1)#material)))
 
+    /// metallic・roughness を読む口では、材質 B の板も頂点の色の土台（"gltf:vc"）の材質を持ち、metallic 0・roughness 0.5 が付く。
+    @Test
+    def testPbrLoaderGivesMaterialBMetallicRoughness(): Unit \ {Assert, Fs.FileRead, IO} =
+        let m = okOrBug(Gltf.loadTexturedPbrUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), "test/data/textured_two_materials.glb"));
+        let b = partAt(m, 1)#material |> Option.map(Scene3d.materialFieldsOf);
+        Assert.assertEq(expected = (Some("gltf:vc"), Some(Some((0.0, 0.5)))),
+            (b |> Option.map(f -> f#spec#name), b |> Option.map(f -> f#metallicRoughness |> Option.map(mr -> (mr#metallic, mr#roughness)))))
+
     /// 材質 A の絵は 4 × 4 で、左上のテクセルが赤。
     @Test
     def testBaseColorImageTopLeftIsRed(): Unit \ {Assert, Fs.FileRead, IO} =
         let m = textured();
-        let name = ShaderDoc.materialTexReads(materialA(m)#spec, None) |> List.head |> Option.map(fst) |> Option.getWithDefault("");
+        let name = ShaderDoc.materialTexReads(materialA(m)#spec, None, None) |> List.head |> Option.map(fst) |> Option.getWithDefault("");
         let image = m#textures |> List.find(t -> Texture3d.name(t) == name);
         Assert.assertEq(expected = Some((4, 4, -65536)),
             Option.map(t -> (Texture3d.width(t), Texture3d.height(t), Vector.get(0, TestDecoder.pixelsOf(t))), image))
@@ -335,7 +343,7 @@ mod TestGltf {
     @Test
     def testNearestSamplerReadsNearest(): Unit \ {Assert, Fs.FileRead, IO} =
         Assert.assertEq(expected = Some(ShaderDoc.FilterMode.Nearest),
-            ShaderDoc.materialTexReads(materialA(textured())#spec, None) |> List.head |> Option.map(snd))
+            ShaderDoc.materialTexReads(materialA(textured())#spec, None, None) |> List.head |> Option.map(snd))
 
     /// normalTexture は法線マップになり、strength は scale（0.5）。
     @Test

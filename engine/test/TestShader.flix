@@ -1614,7 +1614,7 @@ def testTexSizeEqSpecComparesByIndexAndAxis(): Unit \ Assert =
 @Test
 def testTexSizeInMaterialIsLevelZero(): Unit \ Assert =
     let level = (n: Int32) -> ({ width = n, height = n, pixels = List.toVector(List.repeat(n * n, -1)) }: ShaderEval.TexData);
-    let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(texSizeOf("t", ShaderDoc.Axis.U)), emission = None, params = Map.empty(),
+    let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(texSizeOf("t", ShaderDoc.Axis.U)), emission = None, metallicRoughness = None, params = Map.empty(),
                                                 textures = Map#{ "t" => Vector#{ level(4), level(2) } }, repeat = false });
     let point = { world = Vec3.zero(), normal = Vec3.zero(), uv = { x = 0.5, y = 0.5 }, color = { r = 1.0, g = 1.0, b = 1.0 } };
     Assert.assertEq(expected = 4.0, ShaderEval.evalMaterial3(compiled, point, 0.0)#alpha)

@@ -71,7 +71,8 @@ mod Render3d {
         ambient = Int32, hemisphere = Int32, toonSteps = Int32,
         pointCount = Int32, pointPos = Int32, pointColor = Int32, pointRange = Int32,
         spotCount = Int32, spotPos = Int32, spotDir = Int32, spotColor = Int32, spotRange = Int32, spotCone = Int32,
-        fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32
+        fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
+        reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32
     }
 
     /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
@@ -116,13 +117,14 @@ mod Render3d {
         lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32
     }
 
-    /// 組んだ材質のプログラム 1 つ。spec と emission は組んだ時の物（次に来た材質と比べる）。
+    /// 組んだ材質のプログラム 1 つ。spec・emission・metallicRoughness（材質の metallicRoughnessShade）は組んだ時の物（次に来た材質と比べる）。
     /// known = 同じ GLSL を生むと確かめた材質の参照（最近使った順・Render3d.Material.knownMaterialLimit 個まで。参照が合えば木を比べない）。
     /// paramNames = ShaderGen.compile3d が uParamN に割り当てた名前の並び・texReads = uTexN に貼る (名前, 補間) の並び
     /// （組んだ時の材質の名前。同じプログラムを名前だけ違う材質が使うので、貼る名前は描く材質から引き直す）。
     /// locs#mesh#program が 0 なら組めなかった。
     type alias MaterialEntry = {
-        spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], known = List[(ShaderDoc.Spec, Option[ShaderDoc.Shade])], paramNames = List[String],
+        spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], metallicRoughness = Option[ShaderDoc.Shade],
+        known = List[(ShaderDoc.Spec, Option[ShaderDoc.Shade], Option[ShaderDoc.Shade])], paramNames = List[String],
         texReads = List[(String, ShaderDoc.FilterMode)], normalMapped = Bool, lightmapped = Bool, coverage = Bool, locs = MaterialLocs, lastUsed = Int64
     }
 
@@ -151,10 +153,12 @@ mod Render3d {
     /// 材質のプログラムを分ける形。skinned = 骨つき・uv = uv とタンジェントを持つ・normalMap = 法線マップを当てる（uv つきの時だけ真）・
     /// lightmap = ベイクした光を 2 本目の uv で読む（Scene3d.lightmapOfFields が Some の時だけ真。骨つきには付かない）・
     /// blend = 半透明（出す α を材質の α に）・doubleSided = 裏の面の光の法線を裏返す・
-    /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）。
-    // WhyNot: blend・doubleSided・coverage を uniform で切り替えない — 使わない材質の GLSL の字が変わり、どの GPU でも同じ絵になる保証が崩れる。
+    /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）・
+    /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）。
+    // WhyNot: blend・doubleSided・coverage・metallicRoughness を uniform で切り替えない — 使わない材質の GLSL の字が変わり、どの GPU でも同じ絵になる保証が崩れる。
     //   どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
-    pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool }
+    pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
+                                   metallicRoughness = Bool }
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
     /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。
@@ -162,6 +166,7 @@ mod Render3d {
     pub def materialKey(m: Scene3d.MaterialFields, kind: ProgramKind): String =
         "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
             + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
+            + (if (kind#metallicRoughness) "+mr" else "")
             + ":" + Int64.toString(force m#shaderHash)
 
     /// 置いた物をどう描くか。Instanced = batch にして 1 回の instanced draw・OneByOne = 全部の物を batch にせず、物ごとの材質で来た順に描く（batch の鍵と順の確かめの比べ相手）。
@@ -191,7 +196,8 @@ mod Render3d {
         pointCount = Int32, pointPos = Array[Float32, Static], pointColor = Array[Float32, Static], pointRange = Array[Float32, Static],
         spotCount = Int32, spotPos = Array[Float32, Static], spotDir = Array[Float32, Static], spotColor = Array[Float32, Static],
         spotRange = Array[Float32, Static], spotCone = Array[Float32, Static],
-        fogOn = Int32, fogColor = Array[Float32, Static], fogRange = Array[Float32, Static], eye = Array[Float32, Static]
+        fogOn = Int32, fogColor = Array[Float32, Static], fogRange = Array[Float32, Static], eye = Array[Float32, Static],
+        reflectZenith = Array[Float32, Static], reflectHorizon = Array[Float32, Static], reflectGround = Array[Float32, Static], reflectCurve = Float32
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshesRef = contentHash → GPU に置いたメッシュ。
@@ -544,7 +550,7 @@ mod Render3d {
     /// プログラム entry と材質 m で頭の物 head の batch を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
     def materialTextureNames(entry: MaterialEntry, m: Scene3d.MaterialFields, head: MeshDraw): List[TextureRead] =
         let reads = if (List.isEmpty(entry#texReads)) Nil
-                    else ShaderDoc.materialTexReads(m#spec, m#emission) |> List.take(Scene3d.maxMaterialTextures())
+                    else ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.take(Scene3d.maxMaterialTextures())
                         |> List.map(nf -> ("材質の絵", fst(nf), Texture3d.TextureUse.MaterialTexture));
         let normal = if (entry#normalMapped) m#normalMap |> Option.toList |> List.map(n -> ("材質の絵", n#texture, Texture3d.TextureUse.NormalMap)) else Nil;
         let baked = if (entry#lightmapped) Scene3d.lightmapOfFields(head#fields) |> Option.toList
@@ -1099,7 +1105,9 @@ mod Render3d {
           spotCount = loc(gl, program, "uSpotCount"), spotPos = loc(gl, program, "uSpotPos"), spotDir = loc(gl, program, "uSpotDir"),
           spotColor = loc(gl, program, "uSpotColor"), spotRange = loc(gl, program, "uSpotRange"), spotCone = loc(gl, program, "uSpotCone"),
           fogOn = loc(gl, program, "uFogOn"), fogColor = loc(gl, program, "uFogColor"), fogRange = loc(gl, program, "uFogRange"),
-          eye = loc(gl, program, "uEye") }
+          eye = loc(gl, program, "uEye"),
+          reflectZenith = loc(gl, program, "uZenith"), reflectHorizon = loc(gl, program, "uHorizon"), reflectGround = loc(gl, program, "uGround"),
+          reflectCurve = loc(gl, program, "uCurve") }
 
     def shadowLocsOf(gl: GlContext, program: Int32): ShadowLocs \ IO =
         { on = loc(gl, program, "uShadowOn"), spot = loc(gl, program, "uShadowSpot"), matrix = loc(gl, program, "uShadowMatrix"),

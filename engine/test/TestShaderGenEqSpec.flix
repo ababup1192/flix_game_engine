@@ -334,7 +334,7 @@ mod TestShaderGenEqSpec {
 
     // ── hashMaterial: eqSpec が偽になる組は鍵も違う（1 欄の違いを鍵が落とすと、GL が違う材質に同じプログラムを引きに行く）──
 
-    def hashOf(spec: ShaderDoc.Spec): Int64 = ShaderGen.hashMaterial(spec, None)
+    def hashOf(spec: ShaderDoc.Spec): Int64 = ShaderGen.hashMaterial(spec, None, None)
 
     @Test
     def testFieldChangesChangeHash(): Unit \ Assert =
@@ -380,6 +380,6 @@ mod TestShaderGenEqSpec {
     def testEmissionChangesHash(): Unit \ Assert =
         let glow = c -> Some(Shade.Solid(c));
         Assert.assertEq(expected = (false, false),
-                        (ShaderGen.hashMaterial(baseSpec(), None) == ShaderGen.hashMaterial(baseSpec(), glow(col1())),
-                         ShaderGen.hashMaterial(baseSpec(), glow(col1())) == ShaderGen.hashMaterial(baseSpec(), glow(col2()))))
+                        (ShaderGen.hashMaterial(baseSpec(), None, None) == ShaderGen.hashMaterial(baseSpec(), glow(col1()), None),
+                         ShaderGen.hashMaterial(baseSpec(), glow(col1()), None) == ShaderGen.hashMaterial(baseSpec(), glow(col2()), None)))
 }

@@ -81,6 +81,42 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
   `KHR_materials_emissive_strength`（Blender の強さ 40 など）は線形の倍率として `emissionIntensity` に入る。spec の名前には factor だけが入る
   （強さだけ違う材質は同じプログラムを使う）。`Scene3d.withoutEmission` は `emissionIntensity` も 1 に戻す
 
+## 金属っぽさと粗さ（鏡面ハイライトと空の映り込み）
+
+材質に metallic（0 で絶縁体・1 で金属）と roughness（0 で鏡・1 でざらざら）を付けると、点光源とスポットの鏡面ハイライトと、空の映り込みが足される
+（Unity の Standard・Godot の StandardMaterial3D と同じ 2 つの値）。付けない材質は今までどおり拡散光だけで、絵も GL のプログラムも変わらない。
+
+```flix
+let gold = Scene3d.material(spec) |> Scene3d.withMetallicRoughness(1.0, 0.25)   // 値は 0..1 に丸める
+let matte = Scene3d.withoutMetallicRoughness(gold)                                   // glb の材質を今までの絵に戻す時
+Scene3d.metallicRoughnessOf(gold)                                                    // Option[{ metallic, roughness, texture }]
+Scene3d.withMetallicRoughnessTexture("tex3d:orm", gold)                              // 絵で決める（B = metallic・G = roughness。値は絵に掛ける係数）
+```
+
+- **glb は使う時だけ読む**: `Gltf.loadTexturedPbrUsing`（引数は `loadTexturedUsing` と同じ・バイトの版は `fromGlbTexturedPbrUsing`）が、`pbrMetallicRoughness` があり
+  `metallicFactor`・`roughnessFactor`・`metallicRoughnessTexture` のどれかが書いてある材質に付ける（書いていない値は glTF の既定の 1。Blender は metallic 1 の時に
+  `metallicFactor` を書かないので、この扱いで合う）。`pbrMetallicRoughness` が無い材質と baseColor だけの材質には付けない（色だけの古い glb が全部金属に見えるのを避ける）。
+  絵が無く emissive も無い材質も、付く時は頂点の色の材質（`gltf:vc`）になる。既存の `loadTexturedUsing` は読まない（材質・鍵・絵は今までと同じ。
+  `part#gltfMaterial` の `metallic`・`roughness` の値だけ載る）。
+  PBR の口は `baseColorFactor` と `emissiveFactor` を glTF の決まりどおり線形の値として読む（`baseColorTexture` の画素は今までどおり sRGB の絵）。
+  // WhyNot: 既存の口は線形として読まない — OBJ の Kd と同じく画面の値として読んでいて、変えると既存のゲームの色が変わる。PBR の口まで画面の値として読むと、
+  //   金・赤が濃く、暗い色が黒く潰れて Blender の手本と合わない。
+  // WhyNot: 既定で読まない — Blender の書き出しは絵も emissive も無い材質にも metallic 0・roughness 0.5 を書くので、読むと今まで頂点の色だけ（`part#material` が `None`）
+  //   だった part が材質を持つ物になり、鏡面のプログラムを使い、part を束ねるゲームの条件も外れる（箱庭の町は 473 → 1283 draw/コマ・1 コマ 5.3 → 13 ms）。使うかはゲームが選ぶ。
+- **絵**: `metallicRoughnessTexture` は texCoord が 0 で読めた時だけ付く（絵の上限は `TextureLimits#baseColor`）。読めない時は値だけにして材質ごとに 1 行知らせる。
+  TEXCOORD_0 の無い形には絵を付けず値だけの材質を付ける。`part#gltfMaterial` に `metallic`・`roughness`（書いていなければ 1）と `metallicRoughnessTexture` が載る
+- **式**（`LightModel3d.pbrModel`・GL のシェーダーと CPU の描き手は同じ木から作る）: `色 = albedo × (1 − metallic) × light + Σ 鏡面 + 映り込み`、その後に今までどおりかすみ → emission。
+  鏡面は GGX の分布・Smith（Schlick-GGX）・Schlick の Fresnel（F0 = mix(0.04, albedo, metallic)・α = roughness²・0.002 より小さくしない）で、
+  光の color × intensity × 減衰（スポットは cone と影も）を掛ける。映り込みは `reflect(−目への向き, 法線)` の向きを roughness² で法線の側へ寄せ
+  （粗いほど面の向きに応じた明暗になる）、その向きの空の色に roughness 込みの Fresnel を掛ける。ベイクした光（lightmap）は拡散の側で、鏡面と映り込みは同じに足す
+- **空が無い場面**: 映り込みの色は ambient + hemisphere（真っ黒にしない）。`LightModel3d.reflectionSkyOf` が GL と CPU の入力を決める
+- **toon**（`toonSteps`）は拡散の光だけを段にし、鏡面と映り込みは段付けしない（決めた事）
+- **重さ**: 持つ材質だけが別のプログラム（`+mr`）を使い、光に届く 1 本ごとに鏡面の式が増える（届かない光と背を向けた面は式を飛ばす）。値（metallic・roughness）は
+  params で渡すので、値だけ違う材質は同じプログラムを使い回す（batch は値ごとに分かれる）。絵の有無は別のプログラム
+- **`loadTexturedPbrUsing` を使うゲームの注意**: 上のとおり `None` だった part が材質を持つ。`None` を目印に part を束ねているなら、束ねる条件を `part#material` が `None` か
+  spec の名前が `gltf:vc` の材質まで広げ、`Scene3d.metallicRoughnessOf` の値ごとに束ねる。鏡面が要らない材質は `Scene3d.withoutMetallicRoughness`
+- やらない事: キューブマップ・反射プローブ・スクリーン空間の反射・異方性・クリアコート・occlusionTexture
+
 ## 描く量（視錐台の外を間引く）
 
 GL と CPU の描き手は、場面のカメラの視錐台の外の置いた物とビルボードを描かない（ゲームは何も書かなくてよい）。

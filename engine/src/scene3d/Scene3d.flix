@@ -89,12 +89,19 @@ pub mod Scene3d {
     /// blend = 真なら spec の α で下の絵に重ねる半透明（深度は読むが書かない。描く順は blendOrderOf）・
     /// doubleSided = 真なら裏の面も描く（裏の面は光の計算の法線を裏返す）・
     /// emissionIntensity = emission を線形の量に戻した後に掛ける倍率（PointLight の intensity と同じ意味・既定 1）・
-    /// shaderHash = GLSL を決める中身（spec と emission）の鍵（ShaderGen.hashMaterial。params・cutout などは入れない。GL が材質のプログラムを引く。初めて読んだ時に求める）。
+    /// metallicRoughness = 金属っぽさと粗さ（None なら今までどおり拡散光だけ。withMetallicRoughness で付ける）・
+    /// metallicRoughnessShade = metallicRoughness から作る、光の計算に渡す色の場（r = metallic・g = roughness。値は params の pbrParamMetallic・pbrParamRoughness の Param、
+    /// 絵があれば Tex の B・G を掛ける。描き手が読む。None と同時に None）・
+    /// shaderHash = GLSL を決める中身（spec・emission・metallicRoughnessShade）の鍵（ShaderGen.hashMaterial。params・cutout などは入れない。GL が材質のプログラムを引く。初めて読んだ時に求める）。
     /// spec の Tex の名前は、"tex3d:" で始まれば場面の textures（Texture3d.name）、ほかは全体の登録（project.json の textures・
     /// レンダーターゲット）から引く。無い名前は 0（黒・透明）。1 つの材質が読める (名前, 補間) の組は maxMaterialTextures() まで。
     pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
                                       normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64,
-                                      shaderHash = Lazy[Int64] }
+                                      metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64] }
+
+    /// 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
+    /// texture = 絵の名前（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness。絵の値に metallic・roughness を掛ける）・None なら値だけ。
+    pub type alias MetallicRoughness = { metallic = Float64, roughness = Float64, texture = Option[String] }
 
     enum MaterialData { case MaterialData(MaterialFields) }
 
@@ -104,19 +111,21 @@ pub mod Scene3d {
     /// spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
     pub def material(spec: ShaderDoc.Spec): Material3d =
         MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat,
-                                    blend = false, doubleSided = false, emissionIntensity = 1.0, shaderHash = shaderHashOf(spec, None) })
+                                    blend = false, doubleSided = false, emissionIntensity = 1.0,
+                                    metallicRoughness = None, metallicRoughnessShade = None, shaderHash = shaderHashOf(spec, None, None) })
 
     /// spec と emission の鍵を、初めて読まれた時に求める形で持つ。
     // WhyNot: 作る時にすぐ求めない — View で毎コマ材質を組み直すゲームでは、CPU の描き出しのように鍵を読まない描き手でも払うことになる。
     // WhyNot: 鍵のための lock の表（memo）を置かない — Flix の Lazy は force を lock で守って 1 回だけ求め、鍵は材質の値が持つので、
     //   別のスレッドから材質を読んでも表の取り合いが起きない。
-    def shaderHashOf(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): Lazy[Int64] =
-        lazy ShaderGen.hashMaterial(spec, emission)
+    def shaderHashOf(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): Lazy[Int64] =
+        lazy ShaderGen.hashMaterial(spec, emission, metallicRoughness)
 
     /// spec の Param に渡す値（Unity のマテリアルの float の値を渡すのと同じ。渡さない名前は 0）。
+    /// withMetallicRoughness の値（pbrParamMetallic・pbrParamRoughness の名前）は p に同じ名前があっても残る。
     pub def withParams(p: Map[String, Float64], m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
-        MaterialData.MaterialData({ params = p | r })
+        MaterialData.MaterialData({ params = withPbrParams(r#metallicRoughness, p) | r })
 
     /// on が真なら α が 0.5 未満の画素を捨てる（深度も書かない）。
     pub def withCutout(on: Bool, m: Material3d): Material3d =
@@ -141,12 +150,12 @@ pub mod Scene3d {
     /// emissionIntensity はそのまま残る（glb の emissive_strength の付いた材質で差し替えた色も、その倍率で光る。戻すなら withEmissionIntensity(1.0, ..)）。
     pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
-        MaterialData.MaterialData({ emission = Some(s), shaderHash = shaderHashOf(r#spec, Some(s)) | r })
+        MaterialData.MaterialData({ emission = Some(s), shaderHash = shaderHashOf(r#spec, Some(s), r#metallicRoughnessShade) | r })
 
     /// emission を外す（glb の emissive で光らせたくない時）。emissionIntensity も 1 に戻す。
     pub def withoutEmission(m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
-        MaterialData.MaterialData({ emission = None, emissionIntensity = 1.0, shaderHash = shaderHashOf(r#spec, None) | r })
+        MaterialData.MaterialData({ emission = None, emissionIntensity = 1.0, shaderHash = shaderHashOf(r#spec, None, r#metallicRoughnessShade) | r })
 
     /// emission を線形の量に戻した後に掛ける倍率 k（既定 1。Godot の emission_energy_multiplier・Unity の Emission Intensity と同じ分け方）。
     /// 1 を超える明るさ（glTF の emissive_strength など）は emission の Spec に書かずにここで渡す — Spec は画面の値（sRGB の値）で、
@@ -160,7 +169,70 @@ pub mod Scene3d {
     pub def withSpecName(name: String, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
         let spec = { name = name | r#spec };
-        MaterialData.MaterialData({ spec = spec, shaderHash = shaderHashOf(spec, r#emission) | r })
+        MaterialData.MaterialData({ spec = spec, shaderHash = shaderHashOf(spec, r#emission, r#metallicRoughnessShade) | r })
+
+    /// 金属っぽさ metallic と粗さ roughness を付ける（Unity の Standard・Godot の StandardMaterial3D と同じ 2 つの値。どちらも 0..1 に丸める）。
+    /// 鏡面ハイライトと空の映り込みが付き、拡散光は (1 − metallic) 倍になる。付けない材質の絵は変わらない。
+    /// 絵（withMetallicRoughnessTexture）が付いていれば、絵の値に掛ける係数になる。毎コマ変えてもプログラムを組み直さない（params の値）。
+    /// glb の材質は、pbrMetallicRoughness に metallicFactor・roughnessFactor・metallicRoughnessTexture のどれかがあれば読み込む時に付く。
+    // WhyNot: 場面の環境（Environment3d）に metallic を置かない — 材質ごとの値で、同じ場面に金属と木が並ぶ。
+    pub def withMetallicRoughness(metallic: Float64, roughness: Float64, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        let texture = r#metallicRoughness |> Option.flatMap(mr -> mr#texture);
+        withMetallicRoughnessOf({ metallic = unitOf(metallic), roughness = unitOf(roughness), texture = texture }, r)
+
+    /// metallic と roughness を絵 texture から読む（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness）。
+    /// 付いている metallic・roughness は絵の値に掛ける係数のまま残り、まだ無ければ 1・1（glTF の既定）。名前の決まりは Texture の Tex と同じ
+    /// （"tex3d:" で始まれば場面の textures）。絵は材質の絵の上限（maxMaterialTextures）の 1 組に数える。
+    pub def withMetallicRoughnessTexture(texture: String, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        let (metallic, roughness) = r#metallicRoughness |> Option.map(mr -> (mr#metallic, mr#roughness)) |> Option.getWithDefault((1.0, 1.0));
+        withMetallicRoughnessOf({ metallic = metallic, roughness = roughness, texture = Some(texture) }, r)
+
+    /// metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。
+    pub def withoutMetallicRoughness(m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ metallicRoughness = None, metallicRoughnessShade = None, params = withoutPbrParams(r#params),
+                                    shaderHash = shaderHashOf(r#spec, r#emission, None) | r })
+
+    /// 付いている metallic と roughness（無ければ None）。
+    pub def metallicRoughnessOf(m: Material3d): Option[MetallicRoughness] = materialFieldsOf(m)#metallicRoughness
+
+    def withMetallicRoughnessOf(mr: MetallicRoughness, r: MaterialFields): Material3d =
+        let shade = metallicRoughnessShadeOf(mr#texture);
+        MaterialData.MaterialData({ metallicRoughness = Some(mr), metallicRoughnessShade = Some(shade), params = withPbrParams(Some(mr), r#params),
+                                    shaderHash = shaderHashOf(r#spec, r#emission, Some(shade)) | r })
+
+    /// 0..1 に丸める（NaN は 0）。
+    def unitOf(x: Float64): Float64 = if (Float64.isNan(x)) 0.0 else Float64.max(0.0, Float64.min(1.0, x))
+
+    /// metallicRoughnessShade の中の Param の名前（ほかの Param と重ならない字）。
+    pub def pbrParamMetallic(): String = "pbr:metallic"
+
+    pub def pbrParamRoughness(): String = "pbr:roughness"
+
+    /// r = metallic・g = roughness の色。形は絵の名前だけで決まる（値は Param なので、値を替えても GLSL は同じ）。
+    // WhyNot: 値を Const で書かない — Const は GLSL の字に入り、値ごとに別のプログラムを組む（球を粗さで 10 個並べると 10 本）。
+    def metallicRoughnessShadeOf(texture: Option[String]): ShaderDoc.Shade =
+        let factor = (name: String) -> ShaderDoc.Field.Param({ name = name });
+        let read = (name: String, chan: ShaderDoc.TexChan) -> match texture {
+            case None    => factor(name)
+            case Some(t) =>
+                ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = factor(name),
+                                      b = ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear,
+                                                                   of = ShaderDoc.Field.Tex({ name = t, chan = chan }) }) })
+        };
+        ShaderDoc.Shade.Rgb({ r = read(pbrParamMetallic(), ShaderDoc.TexChan.B), g = read(pbrParamRoughness(), ShaderDoc.TexChan.G),
+                              b = ShaderDoc.Field.Const(0.0) })
+
+    /// params に metallic・roughness の値を入れた物（mr が None なら入れない）。
+    def withPbrParams(mr: Option[MetallicRoughness], params: Map[String, Float64]): Map[String, Float64] = match mr {
+        case None     => params
+        case Some(v)  => Map.insert(pbrParamRoughness(), v#roughness, Map.insert(pbrParamMetallic(), v#metallic, params))
+    }
+
+    def withoutPbrParams(params: Map[String, Float64]): Map[String, Float64] =
+        Map.remove(pbrParamRoughness(), Map.remove(pbrParamMetallic(), params))
 
     pub def withNormalMap(n: NormalMap, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
@@ -367,7 +439,7 @@ pub mod Scene3d {
     pub def textureNamesOf(i: Instance3d): List[String] =
         let fromMaterial = instanceFieldsOf(i)#material |> Option.toList |> List.flatMap(m -> {
             let f = materialFieldsOf(m);
-            List.append(ShaderDoc.materialTexReads(f#spec, f#emission) |> List.map(fst), f#normalMap |> Option.toList |> List.map(n -> n#texture))
+            List.append(ShaderDoc.materialTexReads(f#spec, f#emission, f#metallicRoughnessShade) |> List.map(fst), f#normalMap |> Option.toList |> List.map(n -> n#texture))
         });
         List.append(fromMaterial, lightmapOf(i) |> Option.toList |> List.map(lm -> lm#texture))
 

@@ -21,6 +21,9 @@
 //     測った最大 2.0e−7 → 上限 limitTree()。
 //   色を作る最後の組み立て（exprSurfaceOut）: r3d_surfaceOut をかすみありで SoftRaster3d.surfaceOutAt と比べる。
 //     測った最大 3.3e−7 → 上限 limitTree()。かすみの色は surfaceOutAt が中で線形へ戻すので、GL の uFogColor には戻した値を入れる。
+//   metallic と roughness を持つ材質の色（exprPbr）: pbrAt（拡散の光 × albedo × (1 − metallic) + 点光源・スポットの鏡面 + 空の映り込み）を CPU の SoftRaster3dLight.pbrAt と比べる。
+//     入力の roughness は 0.3〜1（α が 0.09 を下回る鋭い光の点は、Float32 と Float64 の丸めの差が D の 1 / α² 倍に伸びて絵の 8 bit に出る。
+//     鋭さの下限は絵の行 pbrSpheres3d の roughness の列が見る）。range の端と cone の縁の組は光の行と同じに外す。上限は limitTree()。
 //   わざと壊した式（減衰の 2 乗を外す → 差 0.31・cone の内と外を入れ替える → 差 1.08）は、光の行の差が brokenAtLeast() = 1e−2 を
 //   超えることを毎回確かめる（上限が緩すぎて式の食い違いを見逃していないことの確かめ）。
 mod ExprRows {
@@ -89,14 +92,15 @@ mod ExprRows {
     pub type alias Inputs = {
         light = List[Probe], sets = List[LightSet], shadowPoints = List[Probe], shadow = ShadowCase,
         tbn = List[Probe], strength = Float64, lightmapUv = List[Probe], chain = Vector[ShaderEval.TexData],
-        colorSpace = List[Probe], surface = List[Probe], surfaceDraws = List[SurfaceDraw]
+        colorSpace = List[Probe], surface = List[Probe], surfaceDraws = List[SurfaceDraw],
+        pbr = List[Probe], pbrLight = List[Probe]
     }
 
     /// GPU で読み返した値（行ごと・描きごとに 256 × 4 個）。
     pub type alias GlRows = {
         tree = List[Vector[Float32]], toon = List[Vector[Float32]], shadowedLight = Vector[Float32], brokenFalloff = Vector[Float32], brokenCone = Vector[Float32],
         shadow = List[Vector[Float32]], tbn = Vector[Float32], lightmap = Vector[Float32],
-        colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]]
+        colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]], pbr = List[Vector[Float32]]
     }
 
     def f32(x: Float64): Float64 = Float32.toFloat64(Float64.truncateToFloat32(x))
@@ -163,10 +167,20 @@ mod ExprRows {
             let intensity = uniform(rng, 0.5, 4.0);
             { tint = tint, intensity = intensity }
         });
+        // 色の組み立ての行より後ろで引く（並びの順を変えない）。a = 点・metallic・b = 法線・roughness・c = albedo。拡散の光は pbrLight の a。
+        let pbr = List.range(0, count()) |> List.map(_ -> {
+            let p = vec3In(rng, -4.0, 4.0);
+            let n = direction(rng);
+            let albedo = vec3In(rng, 0.0, 1.0);
+            let metallic = uniform(rng, 0.0, 1.0);
+            let roughness = uniform(rng, 0.3, 1.0);
+            { a = withW(p, metallic), b = withW(n, roughness), c = withW(albedo, 0.0) }
+        });
+        let pbrLight = List.range(0, count()) |> List.map(_ -> { let l = vec3In(rng, 0.0, 2.0); { a = withW(l, 0.0), b = (0.0, 0.0, 0.0, 0.0), c = (0.0, 0.0, 0.0, 0.0) } });
         { light = light, sets = sets, shadowPoints = shadowPoints,
           shadow = { matrix = Scene3d.shadowMatrix(caster), size = size, bias = 0.002, map = map },
           tbn = tbn, strength = 1.5, lightmapUv = lightmapUv, chain = chain,
-          colorSpace = colorSpace, surface = surface, surfaceDraws = surfaceDraws }
+          colorSpace = colorSpace, surface = surface, surfaceDraws = surfaceDraws, pbr = pbr, pbrLight = pbrLight }
 
     /// k 番目の光の組（点光源とスポットの数を組ごとに変える。0 本の組も持つ）。
     def lightSet(rng: Random, k: Int32): LightSet \ IO =
@@ -289,6 +303,26 @@ mod ExprRows {
         "    fragColor = vec4(r3d_surfaceOut(b.xyz, uTint, vec3(a.w, b.w, c.w), c.xyz, uEmissionIntensity, a.xyz, true), 1.0);\n" +
         "}\n"
 
+    /// metallic と roughness を持つ材質の色 pbrAt（a = 点・metallic・b = 法線・roughness・c = albedo・uIn3 = 拡散の光）。
+    def pbrFragment(): String =
+        "#version 330 core\n" +
+        "out vec4 fragColor;\n" +
+        "uniform sampler2D uIn0;\n" +
+        "uniform sampler2D uIn1;\n" +
+        "uniform sampler2D uIn2;\n" +
+        "uniform sampler2D uIn3;\n" +
+        Render3dGlsl.colorSpaceSource() +
+        Render3dGlsl.lightSource() +
+        Render3dGlsl.metallicRoughnessSource() +
+        "void main() {\n" +
+        "    ivec2 at = ivec2(int(gl_FragCoord.x), 0);\n" +
+        "    vec4 a = texelFetch(uIn0, at, 0);\n" +
+        "    vec4 b = texelFetch(uIn1, at, 0);\n" +
+        "    vec3 c = texelFetch(uIn2, at, 0).xyz;\n" +
+        "    vec3 light = texelFetch(uIn3, at, 0).xyz;\n" +
+        "    fragColor = vec4(pbrAt(a.xyz, b.xyz, c, light, vec3(a.w, b.w, 0.0)), 1.0);\n" +
+        "}\n"
+
     def colorSpaceModes(): List[Int32] = 0 :: 1 :: Nil
 
     def colorSpaceSets(): List[List[(String, RowUniform)]] =
@@ -407,11 +441,13 @@ mod ExprRows {
             lightmap <- GlOffscreen.drawFloatRows(lightmapFragment(), count(),
                             rowTexture("uIn0", inputs#lightmapUv, pr -> pr#a) :: chainTexture(inputs#chain) :: Nil, Nil :: Nil);
             colorSpace <- GlOffscreen.drawFloatRows(colorSpaceFragment(), count(), rowTexture("uIn0", inputs#colorSpace, pr -> pr#a) :: Nil, colorSpaceSets());
-            surface <- GlOffscreen.drawFloatRows(surfaceFragment(), count(), probeTextures(inputs#surface), surfaceSets(inputs))
+            surface <- GlOffscreen.drawFloatRows(surfaceFragment(), count(), probeTextures(inputs#surface), surfaceSets(inputs));
+            pbr <- GlOffscreen.drawFloatRows(pbrFragment(), count(), probeTextures(inputs#pbr) ::: rowTexture("uIn3", inputs#pbrLight, pr -> pr#a) :: Nil,
+                       inputs#sets |> List.map(s -> lightUniforms(s, 0, TreeRow.Light)))
         ) yield {
             tree = tree, toon = toon, shadowedLight = firstOf(shadowedLight), brokenFalloff = firstOf(brokenFalloff), brokenCone = firstOf(brokenCone),
             shadow = shadow, tbn = firstOf(tbn), lightmap = firstOf(lightmap),
-            colorSpace = colorSpace, surface = surface
+            colorSpace = colorSpace, surface = surface, pbr = pbr
         }
 
     /// 点光源とスポットを共に持つ最初の光の組（壊した式と影の行が使う）。
@@ -596,6 +632,26 @@ mod ExprRows {
             })
         }))
 
+    /// pbrAt の CPU の値と GPU の値の差（range の端と cone の縁の組は外す）。
+    def pbrOutcome(inputs: Inputs, rows: GlRows): Outcome =
+        outcomeOf(List.zip(inputs#sets, rows#pbr) |> List.flatMap(d -> {
+            let (s, values) = d;
+            let points = LightModel3d.packPointLights(s#points);
+            let spots = LightModel3d.packSpotLights(s#spots);
+            List.zip(inputs#pbr, inputs#pbrLight) |> List.mapWithIndex((i, pair) -> {
+                let (pr, lr) = pair;
+                let (px, py, pz, metallic) = pr#a;
+                let (nx, ny, nz, roughness) = pr#b;
+                let (ax, ay, az, _) = pr#c;
+                let (lx, ly, lz, _) = lr#a;
+                if (nearEdge(s, Vec3.v3(px, py, pz))) None
+                else Some(relDiff(rgbAt(values, i), SoftRaster3dLight.pbrAt(points, spots, None, px, py, pz, nx, ny, nz, ax, ay, az, lx, ly, lz,
+                                                                      metallic, roughness, 0.0, s#eye#x, s#eye#y, s#eye#z,
+                                                                      s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
+                                                                      s#ground#x, s#ground#y, s#ground#z, s#curve)))
+            })
+        }))
+
     /// 行の合否の字。
     def verdict(ok: Bool): String = if (ok) "一致" else "違う"
 
@@ -641,7 +697,8 @@ mod ExprRows {
                     lineOf("exprTbn", tbnOutcome(inputs, rows), limitTree()) ::
                     lineOf("exprLightmapLod", lightmapOutcome(inputs, rows), limitTexture()) ::
                     lineOf("exprColorSpace", colorSpaceOutcome(inputs, rows), limitTree()) ::
-                    lineOf("exprSurfaceOut", surfaceOutcome(inputs, rows), limitTree()) :: Nil;
+                    lineOf("exprSurfaceOut", surfaceOutcome(inputs, rows), limitTree()) ::
+                    lineOf("exprPbr", pbrOutcome(inputs, rows), limitTree()) :: Nil;
                 List.forEach(l -> println(fst(l)), lines);
                 List.forAll(snd, lines)
         }

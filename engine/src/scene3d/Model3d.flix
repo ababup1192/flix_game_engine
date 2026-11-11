@@ -39,9 +39,13 @@ pub mod Model3d {
     /// - alphaMode・alphaCutoff（既定 0.5）・doubleSided = glTF の欄のまま（loadTextured は alphaMode を材質に当てる — BLEND は半透明・MASK は 0.5 で抜く。doubleSided は当てない）
     /// - baseColorTexture・normalTexture・emissiveTexture = 読めた絵の名前（Texture3d.name。絵を読まない Gltf.load と、読めなかった絵は None）
     /// - emissive = emissiveFactor × KHR_materials_emissive_strength（既定 0。factor は画面の値〔sRGB の値〕として読み、strength は線形の倍率）
+    /// - metallic・roughness = pbrMetallicRoughness の metallicFactor・roughnessFactor（書いていなければ glTF の既定の 1。材質に付いたかは part#material を
+    ///   Scene3d.metallicRoughnessOf で見る — pbrMetallicRoughness が無い・baseColorFactor だけの材質は付かない）
+    /// - metallicRoughnessTexture = 読めた metallicRoughnessTexture の絵の名前（Texture3d.name。絵を読まない Gltf.load と、読めなかった絵は None）
     pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool,
                                     baseColorTexture = Option[String], normalTexture = Option[String],
-                                    emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 } }
+                                    emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 },
+                                    metallic = Float64, roughness = Float64, metallicRoughnessTexture = Option[String] }
 
     /// 名前が name のノード（同じ名前が複数あれば nodes の並びの前）。たくさん引く時は nodesByName を 1 回作って引く。
     pub def findNode(name: String, model: Model3d): Option[ModelNode] =

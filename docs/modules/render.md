@@ -10,6 +10,7 @@
 | 箱や丸を並べて物・キャラを作りたくなった | PxSprite（+PxShade）/ gradPolygon / Terrain。RawDraw は下地とデバッグ用 |
 | 描画物を矩形で切り抜く（スクロールの表示範囲・PiP。スクリーン空間） | Render（clipped / clippedAll）（実例: `templates/sound-novel-starter/src/View.flix`） |
 | 画面を覆う・晴らす切り替え演出（フェード・ワイプ） | Transition |
+| 3D の材質に金属・磨いた石・濡れた床の光沢（鏡面ハイライトと空の映り込み）を付ける | Scene3d（withMetallicRoughness / withMetallicRoughnessTexture / withoutMetallicRoughness）・glb は Gltf.loadTexturedPbrUsing で読んだ時だけ付く（[scene3d.md](../scene3d.md)） |
 | Scene3d のゲームをブラウザで描く | WebLayer.withProject3d（web/WebMain.flix の入口。2D の withProject は 3D を描かず 1 回知らせる・[対応表](../backend-parity.md)） |
 | 絵を傾ける・集まりを丸ごと傾ける（カードの傾き・振り子） | Render（turned / turnedAll）/ ui.json の rotation |
 | スプライトが無い・読めないとき仮色の板にする（穴を開けない） | RawDraw.orBoxAt |

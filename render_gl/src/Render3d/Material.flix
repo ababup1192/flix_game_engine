@@ -66,7 +66,8 @@ mod Render3d.Material {
                 "scene3d: uv の無い形に法線マップの材質 '${m#spec#name}' が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
         else ();
         { skinned = isSkinned(d), uv = uv, normalMap = wantsNormalMap and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
-          blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m) }
+          blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
+          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade) }
 
     /// 材質の batch を draws の順に描く（呼び手が並べる: 不透明はプログラムの番号で並べて切り替えを減らす・半透明は遠い物から）。
     /// 続く物が同じプログラムなら組み直さない。描き終えたら、絵を貼った unit（材質の絵と法線マップ）の sampler を外して unit 0 へ戻す。
@@ -181,7 +182,7 @@ mod Render3d.Material {
     def bindMaterialTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialBatch[MeshBatch]): Int32 \ IO =
         if (List.isEmpty(d#entry#texReads)) 0
         else {
-            let reads = ShaderDoc.materialTexReads(d#material#spec, d#material#emission) |> List.take(Scene3d.maxMaterialTextures());
+            let reads = ShaderDoc.materialTexReads(d#material#spec, d#material#emission, d#material#metallicRoughnessShade) |> List.take(Scene3d.maxMaterialTextures());
             List.zip(reads, List.zip(d#entry#locs#texFlips, d#entry#locs#texLevels)) |> List.forEachWithIndex((unit, pair) -> {
                 let ((name, filter), (flipLoc, levelsLoc)) = pair;
                 // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
@@ -498,19 +499,19 @@ mod Render3d.Material {
         if (entry#locs#mesh#program == 0) None else Some(entry)
 
     def sameMaterial(entry: MaterialEntry, m: Scene3d.MaterialFields): Bool =
-        ShaderGen.eqMaterial(entry#spec, entry#emission, m#spec, m#emission)
+        ShaderGen.eqMaterial(entry#spec, entry#emission, entry#metallicRoughness, m#spec, m#emission, m#metallicRoughnessShade)
 
     /// 同じ鍵の found を使い続けるか組み直すか。前に同じと確かめた参照なら木を比べない。
     def reuseOrRebuild(gl: GlContext, state: State, gen: Int64, slot: { key = String, kind = ProgramKind }, found: MaterialEntry,
                        m: Scene3d.MaterialFields): MaterialEntry \ IO =
         match knownAfterHit(m, found#known) {
             case Some(known)                    => { known = known, lastUsed = gen | found }
-            case None if sameMaterial(found, m) => { known = List.take(knownMaterialLimit(), (m#spec, m#emission) :: found#known), lastUsed = gen | found }
+            case None if sameMaterial(found, m) => { known = List.take(knownMaterialLimit(), (m#spec, m#emission, m#metallicRoughnessShade) :: found#known), lastUsed = gen | found }
             case None                           => rebuildMaterial(gl, state, gen, slot, Some(found), m)
         }
 
     /// m の参照が known にあれば、それを頭へ動かした known（頭なら並べ直さない）。無ければ None。
-    def knownAfterHit(m: Scene3d.MaterialFields, known: List[(ShaderDoc.Spec, Option[ShaderDoc.Shade])]): Option[List[(ShaderDoc.Spec, Option[ShaderDoc.Shade])]] =
+    def knownAfterHit(m: Scene3d.MaterialFields, known: List[(ShaderDoc.Spec, Option[ShaderDoc.Shade], Option[ShaderDoc.Shade])]): Option[List[(ShaderDoc.Spec, Option[ShaderDoc.Shade], Option[ShaderDoc.Shade])]] =
         match known {
             case k :: _ if isSameRef(m, k) => Some(known)
             case _                         =>
@@ -518,8 +519,9 @@ mod Render3d.Material {
                 if (List.isEmpty(hit)) None else Some(List.append(hit, rest))
         }
 
-    def isSameRef(m: Scene3d.MaterialFields, k: (ShaderDoc.Spec, Option[ShaderDoc.Shade])): Bool =
-        ShaderGen.isSameSpec(fst(k), m#spec) and ShaderGen.isSameEmission(snd(k), m#emission)
+    def isSameRef(m: Scene3d.MaterialFields, k: (ShaderDoc.Spec, Option[ShaderDoc.Shade], Option[ShaderDoc.Shade])): Bool =
+        let (spec, emission, metallicRoughness) = k;
+        ShaderGen.isSameSpec(spec, m#spec) and ShaderGen.isSameEmission(emission, m#emission) and ShaderGen.isSameEmission(metallicRoughness, m#metallicRoughnessShade)
 
     /// 鍵ごとに覚えておく、同じと確かめた材質の参照の数。
     // WhyNot: 最後に来た 1 つだけを覚えない — 同じプログラムを使う別の材質（絵の名前だけ違う物）が交互に来ると、1 つごとに木を比べ直す。
@@ -533,7 +535,7 @@ mod Render3d.Material {
             if (e#lastUsed == gen) warnMaterialThrash(state, slot#key, m#spec#name) else ();
             retireMaterial(state, e)
         });
-        let reason = if (Option.isEmpty(old)) FrameDiagnostics.BuildReason.First else FrameDiagnostics.BuildReason.Changed("spec か emission の木");
+        let reason = if (Option.isEmpty(old)) FrameDiagnostics.BuildReason.First else FrameDiagnostics.BuildReason.Changed("spec か emission か metallicRoughness の木");
         buildMaterial(gl, state, gen, m, slot#kind, reason)
 
     /// 材質のプログラムを組み、組んだ理由 reason と一緒に診断へ控える。読む絵の組が Scene3d.maxMaterialTextures() を超える材質は、
@@ -541,16 +543,16 @@ mod Render3d.Material {
     def buildMaterial(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind,
                       reason: FrameDiagnostics.BuildReason): MaterialEntry \ IO =
         Array.put(1, 2, state#materialStreak);
-        let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission));
+        let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade));
         if (readCount > Scene3d.maxMaterialTextures())
             warnSceneOnce(state, "limit:" + m#spec#name, "scene3d: 材質 '${m#spec#name}' が読む絵の組が ${readCount} 組ある"
                 + " — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
         else ();
-        let (spec, emission) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), m#spec, m#emission);
-        let glsl = ShaderGen.compile3d(spec, emission);
+        let (spec, emission, metallicRoughness) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), m#spec, m#emission, m#metallicRoughnessShade);
+        let glsl = ShaderGen.compile3d(spec, emission, metallicRoughness);
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
             + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
-            + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + ":${m#spec#name}";
+            + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "") + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
         let vertex = materialVertexSource({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap });
         let fragment = materialFragmentSource(glsl, kind);
@@ -561,7 +563,8 @@ mod Render3d.Material {
         };
         bindDataTextureUnits(gl, program);
         bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap);
-        { spec = m#spec, emission = m#emission, known = (m#spec, m#emission) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
+        { spec = m#spec, emission = m#emission, metallicRoughness = m#metallicRoughnessShade,
+          known = (m#spec, m#emission, m#metallicRoughnessShade) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
           lightmapped = kind#lightmap, coverage = kind#coverage,
           locs = materialLocsOf(gl, program, glsl#paramNames, List.length(glsl#texReads)), lastUsed = gen }
 

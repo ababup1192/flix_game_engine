@@ -25,7 +25,7 @@ pub mod SoftRaster.Internal.Texture {
         let lightmapKeys = scenes |> List.flatMap(c -> c#scene#instances |> List.filterMap(Scene3d.lightmapOf))
             |> List.map(lm -> keyOf(lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace)));
         let materialKeys = materials |> List.flatMap(f -> {
-            let reads = ShaderDoc.materialTexReads(f#spec, f#emission);
+            let reads = ShaderDoc.materialTexReads(f#spec, f#emission, f#metallicRoughnessShade);
             warnTooManyMaterialTextures(warnLog, f#spec#name, List.length(reads));
             List.append(List.take(Scene3d.maxMaterialTextures(), reads) |> List.map(r -> keyOf(fst(r), Texture3d.TextureUse.MaterialTexture)),
                         f#normalMap |> Option.toList |> List.map(n -> keyOf(n#texture, Texture3d.TextureUse.NormalMap)))

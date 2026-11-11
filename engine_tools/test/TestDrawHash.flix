@@ -324,10 +324,26 @@ mod TestDrawHash {
         let f = frame();
         keyOf(inputs(), { req = { scenes = { scene = { instances = instances, textures = model#textures | base#scene } | base } :: Nil | f#req } | f })
 
-    // emissive の無い glb を loadTextured で読んだ場面の鍵は、glb の emissive を読む前の字のまま（材質と spec 名が変わらない）。
+    // emissive の無い glb を loadTextured で読んだ場面の鍵は、glb の emissive を読む前の字のまま（材質と spec 名が変わらない。metallic・roughness は既存の口では読まない）。
     @Test
     def testSceneKeyWithGlbWithoutEmissiveIsPinned(): Unit \ IO + Assert =
         Assert.assertEq(expected = "7526b5c5a18093650c60055b2853cf65241680a9253f3465571a88a6e8204ef1", keyWithTexturedGlb())
+
+    /// 材質 m を付けた赤い三角形 1 つの場面の鍵。
+    def keyWithMaterial(m: Scene3d.Material3d): String =
+        let f = frame();
+        keyOf(inputs(), { req = { scenes = sceneWith(Scene3d.meshInstance(redTriangle(), Mat4.identity()) |> Scene3d.withMaterial(m)) :: Nil | f#req } | f })
+
+    // metallic・roughness の値・絵の有無・付けるかどうかが、描き出しの鍵に入る（入らないと、付けた物の古い絵が出る）。
+    @Test
+    def testMetallicRoughnessChangesKey(): Unit \ Assert =
+        let plain = Scene3d.material(ShaderDoc.demoSurface());
+        let glossy = Scene3d.withMetallicRoughness(0.5, 0.25, plain);
+        Assert.assertEq(expected = (false, false, false, true),
+            (keyWithMaterial(plain) == keyWithMaterial(glossy),
+             keyWithMaterial(glossy) == keyWithMaterial(Scene3d.withMetallicRoughness(0.5, 0.75, plain)),
+             keyWithMaterial(glossy) == keyWithMaterial(Scene3d.withMetallicRoughnessTexture("orm", glossy)),
+             keyWithMaterial(plain) == keyWithMaterial(Scene3d.withoutMetallicRoughness(glossy))))
 
     // innerFovY を付けると鍵が変わる（縁のぼけ方が絵に出る）。
     @Test

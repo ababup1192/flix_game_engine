@@ -249,3 +249,64 @@ def testSpotConeOfClampsWiderInnerToFovY(): Unit \ Assert =
 @Test
 def testSpotConeOfNegativeAndNanBecomeZero(): Unit \ Assert =
     Assert.assertEq(expected = (1.0, 1.0), (snd(coneWith(Some(-1.0))), snd(coneWith(Some(Float64.nan())))))
+
+// ════════════════════════════════════════════════════════════════════
+// metallic と roughness（Scene3d.withMetallicRoughness）
+// ════════════════════════════════════════════════════════════════════
+
+def plainMaterial(): Scene3d.Material3d = Scene3d.material(ShaderDoc.demoSurface())
+
+/// 値は 0..1 に丸める（NaN は 0）。
+@Test
+def testMetallicRoughnessIsClampedToUnit(): Unit \ Assert =
+    let read = (m: Float64, r: Float64) -> Scene3d.metallicRoughnessOf(Scene3d.withMetallicRoughness(m, r, plainMaterial()))
+        |> Option.map(mr -> (mr#metallic, mr#roughness));
+    Assert.assertEq(expected = (Some((1.0, 0.0)), Some((0.0, 1.0)), Some((0.25, 0.5))),
+                    (read(1.5, -0.2), read(Float64.nan(), 7.0), read(0.25, 0.5)))
+
+/// 付けていない材質は None。
+@Test
+def testPlainMaterialHasNoMetallicRoughness(): Unit \ Assert =
+    Assert.assertEq(expected = false, Option.nonEmpty(Scene3d.metallicRoughnessOf(plainMaterial())))
+
+/// 付ける・外すで鍵が変わる。外した物は付ける前と同じ鍵（持たない材質の鍵は今と同じ）。
+@Test
+def testMaterialKeyFollowsMetallicRoughness(): Unit \ Assert =
+    let base = plainMaterial();
+    let glossy = Scene3d.withMetallicRoughness(1.0, 0.25, base);
+    Assert.assertEq(expected = (false, true),
+                    (keyOf(base) == keyOf(glossy), keyOf(Scene3d.withoutMetallicRoughness(glossy)) == keyOf(base)))
+
+/// metallic と roughness の値は params の側で渡すので、値だけ違う材質は同じ鍵（同じプログラム）。絵を足すと鍵が変わる。
+@Test
+def testMaterialKeyIgnoresMetallicRoughnessValues(): Unit \ Assert =
+    let base = plainMaterial();
+    let a = Scene3d.withMetallicRoughness(0.1, 0.2, base);
+    let b = Scene3d.withMetallicRoughness(0.9, 0.8, base);
+    Assert.assertEq(expected = (true, false),
+                    (keyOf(a) == keyOf(b), keyOf(a) == keyOf(Scene3d.withMetallicRoughnessTexture("tex3d:orm", a))))
+
+/// 値は params に入り、withParams で params を替えても残る。外すと params からも消える。
+@Test
+def testMetallicRoughnessSurvivesWithParams(): Unit \ Assert =
+    let glossy = Scene3d.withMetallicRoughness(0.5, 0.25, plainMaterial()) |> Scene3d.withParams(Map#{"k" => 1.0});
+    let params = Scene3d.materialFieldsOf(glossy)#params;
+    let dropped = Scene3d.materialFieldsOf(Scene3d.withoutMetallicRoughness(glossy))#params;
+    Assert.assertEq(expected = (Some(0.5), Some(0.25), Some(1.0), None),
+                    (Map.get(Scene3d.pbrParamMetallic(), params), Map.get(Scene3d.pbrParamRoughness(), params), Map.get("k", params),
+                     Map.get(Scene3d.pbrParamMetallic(), dropped)))
+
+/// 値を後から替えても絵は残る。絵だけ付けると係数は 1・1。
+@Test
+def testTextureKeepsFactors(): Unit \ Assert =
+    let textured = Scene3d.withMetallicRoughnessTexture("tex3d:orm", plainMaterial());
+    let rewritten = Scene3d.withMetallicRoughness(0.3, 0.6, textured);
+    Assert.assertEq(expected = (Some((1.0, 1.0, Some("tex3d:orm"))), Some((0.3, 0.6, Some("tex3d:orm")))),
+                    (Scene3d.metallicRoughnessOf(textured) |> Option.map(mr -> (mr#metallic, mr#roughness, mr#texture)),
+                     Scene3d.metallicRoughnessOf(rewritten) |> Option.map(mr -> (mr#metallic, mr#roughness, mr#texture))))
+
+/// 絵は Scene3d.textureNamesOf に入る（描き出しの鍵が絵の中身を読む）。
+@Test
+def testTextureNamesIncludeTheMetallicRoughnessTexture(): Unit \ Assert =
+    let m = Scene3d.withMetallicRoughnessTexture("tex3d:orm", plainMaterial());
+    Assert.assertEq(expected = true, List.memberOf("tex3d:orm", Scene3d.textureNamesOf(Scene3d.meshInstance(Mesh3d.fromPolygons(Nil), Mat4.identity()) |> Scene3d.withMaterial(m))))

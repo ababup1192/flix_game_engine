@@ -668,14 +668,20 @@ pub mod ShaderDoc {
             case _               => found
         }, false, field))
 
-    /// 材質（Spec と自分で光る色 emission）の中の Param の名前。Spec の paramNames の後ろに、emission にだけ出てくる名前を
+    /// 材質（Spec・自分で光る色 emission・metallic と roughness の場 metallicRoughness）の中の Param の名前。Spec の paramNames の後ろに、emission にだけ出てくる名前を
     /// 初出順で足す。この並びが 3D の GLSL の uniform 番号（uParam0…）の正典（ShaderGen.compile3d）。
-    pub def materialParamNames(spec: Spec, emission: Option[Shade]): List[String] =
-        paramNamesIn(List.append(fieldsOf(spec), Option.getWithDefault(Nil, Option.map(shadeFieldsOf, emission))))
+    pub def materialParamNames(spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): List[String] =
+        paramNamesIn(materialFields(spec, emission, metallicRoughness))
 
     /// 材質に渡された値の表から、materialParamNames の順に値を並べる（表に無い名前は 0）。
-    pub def materialParamValues(spec: Spec, emission: Option[Shade], params: Map[String, Float64]): List[Float64] =
-        materialParamNames(spec, emission) |> List.map(n -> Map.getWithDefault(n, 0.0, params))
+    pub def materialParamValues(spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade], params: Map[String, Float64]): List[Float64] =
+        materialParamNames(spec, emission, metallicRoughness) |> List.map(n -> Map.getWithDefault(n, 0.0, params))
+
+    /// 材質の全部の場（spec → emission → metallicRoughness の順。この並びが Param と Tex の番号の正典）。
+    // WhyNot: metallicRoughness を emission の Option[Shade] に混ぜない — 同じ型の 2 つを取り違えても型で止まらない。並びの 3 番目に固定する。
+    def materialFields(spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): List[Field] =
+        let shadeFields = (s: Option[Shade]) -> Option.getWithDefault(Nil, Option.map(shadeFieldsOf, s));
+        List.append(fieldsOf(spec), List.append(shadeFields(emission), shadeFields(metallicRoughness)))
 
     /// 色の Param を値の表の値の Const に置き換える（bindParams の色の版。emission を CPU で評価する前に通す）。
     pub def bindShadeParams(params: Map[String, Float64], shade: Shade): Shade =
@@ -686,14 +692,15 @@ pub mod ShaderDoc {
 
     /// 材質（Spec と emission）の中の (テクスチャ名, 補間) の組。Spec の texReads の後ろに、emission にだけ出てくる組を
     /// 初出順で足す。この並びが 3D の GLSL の sampler の番号（uTex0…）と GL の unit の番号の正典（ShaderGen.compile3d）。
-    pub def materialTexReads(spec: Spec, emission: Option[Shade]): List[(String, FilterMode)] =
-        texReadsIn(List.append(fieldsOf(spec), Option.getWithDefault(Nil, Option.map(shadeFieldsOf, emission))))
+    pub def materialTexReads(spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): List[(String, FilterMode)] =
+        texReadsIn(materialFields(spec, emission, metallicRoughness))
 
     /// 材質の tex / blur のうち、materialTexReads の limit 組目より後ろの組を読む物を 0 の Const に置き換える
     /// （GL の unit の数に収める。GL と CPU は同じ物を描く）。limit 組に収まる材質はそのまま返す。
-    pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade]): (Spec, Option[Shade]) =
-        let reads = materialTexReads(spec, emission);
-        if (List.length(reads) <= limit) (spec, emission)
+    pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade],
+                                  metallicRoughness: Option[Shade]): (Spec, Option[Shade], Option[Shade]) =
+        let reads = materialTexReads(spec, emission, metallicRoughness);
+        if (List.length(reads) <= limit) (spec, emission, metallicRoughness)
         else {
             let kept = List.take(limit, reads);
             let zeroDropped = rewriteFieldScoped((filter, node) -> match node {
@@ -702,7 +709,8 @@ pub mod ShaderDoc {
                 case Field.TexSize(ts) => if (List.exists(read -> fst(read) == ts#name, kept)) node else Field.Const(0.0)
                 case other             => other
             }, FilterMode.Nearest);
-            (mapSpecFields(zeroDropped, spec), Option.map(mapShadeFields(zeroDropped), emission))
+            (mapSpecFields(zeroDropped, spec), Option.map(mapShadeFields(zeroDropped), emission),
+             Option.map(mapShadeFields(zeroDropped), metallicRoughness))
         }
 
     def smoothstepF(lo: Float64, hi: Float64, x: Float64): Float64 =

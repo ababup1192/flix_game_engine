@@ -1,10 +1,15 @@
 // loadTextured は材質の baseColorTexture と normalTexture が指す画像だけを絵に戻す（metallicRoughness の画像は decode しない）。
+// loadTexturedPbr は、metallic・roughness を付ける材質（Gltf.wantsMetallicRoughness）の metallicRoughnessTexture の画像も絵に戻す
+// （occlusion の画像は decode しない。texCoord が 0 でない metallicRoughnessTexture は TestGltf.Metallic）。
 mod TestGltf.UsedImages {
 
     /// 三角 1 つ・uv つき・材質 1 つ（baseColorTexture = 画像 0・metallicRoughnessTexture = 画像 1）の .glb。
     def baseAndOrmGlb(): Vector[Int8] \ IO = baseAndOrmGlbOfSide(1)
 
-    def baseAndOrmGlbOfSide(side: Int32): Vector[Int8] \ IO =
+    def baseAndOrmGlbOfSide(side: Int32): Vector[Int8] \ IO = baseAndOrmGlbWith(side, "")
+
+    /// ormExtra = metallicRoughnessTexture の欄に足す JSON（",\"texCoord\":1" など）。
+    def baseAndOrmGlbWith(side: Int32, ormExtra: String): Vector[Int8] \ IO =
         let base = TestGltf.padded(0i8, TestGltf.squarePng(side, -65536));
         let orm = TestGltf.padded(0i8, TestGltf.onePixelPng(-16711936));
         let geometry = TestGltf.f32s(-1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: Nil) ++
@@ -14,7 +19,7 @@ mod TestGltf.UsedImages {
         let ormAt = baseAt + List.length(base);
         let json = "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{\"mesh\":0}]," +
             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2},\"material\":0}]}]," +
-            "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0},\"metallicRoughnessTexture\":{\"index\":1}}}]," +
+            "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0},\"metallicRoughnessTexture\":{\"index\":1${ormExtra}}}}]," +
             "\"textures\":[{\"source\":0},{\"source\":1}]," +
             "\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"},{\"bufferView\":4,\"mimeType\":\"image/png\"}]," +
             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
@@ -32,6 +37,13 @@ mod TestGltf.UsedImages {
         let red = -65536;
         Assert.assertEq(expected = Ok(Vector#{red} :: Nil),
             Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
+
+    @Test
+    def testPbrLoaderDecodesTheMetallicRoughnessImageToo(): Unit \ {Assert, IO} =
+        let red = -65536;
+        let green = -16711936;
+        Assert.assertEq(expected = Ok(Vector#{red} :: Vector#{green} :: Nil),
+            Gltf.fromGlbTexturedPbrUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(TestDecoder.pixelsOf)))
 
     @Test
     def testBaseColorLimitShrinksTheTexture(): Unit \ {Assert, IO} =

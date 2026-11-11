@@ -81,25 +81,25 @@ mod ShaderGen.TestPairing {
 
     @Test
     def testEmissionReadingAnotherNameIsNotEqual(): Unit \ Assert =
-        Assert.assertFalse(ShaderGen.eqMaterial(specReading("a"), glow("a"), specReading("a"), glow("g")))
+        Assert.assertFalse(ShaderGen.eqMaterial(specReading("a"), glow("a"), None, specReading("a"), glow("g"), None))
 
     @Test
     def testSameSpecValueWithAnotherEmissionNameIsNotEqual(): Unit \ Assert =
         let spec = specReading("a");
-        Assert.assertFalse(ShaderGen.eqMaterial(spec, glow("a"), spec, glow("g")))
+        Assert.assertFalse(ShaderGen.eqMaterial(spec, glow("a"), None, spec, glow("g"), None))
 
     @Test
     def testMaterialRenamedTogetherIsEqual(): Unit \ Assert =
-        Assert.assertTrue(ShaderGen.eqMaterial(specReading("a"), glow("e"), specReading("p"), glow("q")))
+        Assert.assertTrue(ShaderGen.eqMaterial(specReading("a"), glow("e"), None, specReading("p"), glow("q"), None))
 
     @Test
     def testSpecTexSizeOnlyAndEmissionTexRenamedIsEqual(): Unit \ Assert =
         let sized = n -> specWith(Nil, solid(), Field.TexSize({ name = n, axis = Axis.U }));
-        Assert.assertTrue(ShaderGen.eqMaterial(sized("s"), glow("e"), sized("x"), glow("y")))
+        Assert.assertTrue(ShaderGen.eqMaterial(sized("s"), glow("e"), None, sized("x"), glow("y"), None))
 
     @Test
     def testEmissionOnOneSideOnlyIsNotEqual(): Unit \ Assert =
-        Assert.assertFalse(ShaderGen.eqMaterial(specReading("a"), glow("a"), specReading("a"), None))
+        Assert.assertFalse(ShaderGen.eqMaterial(specReading("a"), glow("a"), None, specReading("a"), None, None))
 
     // ── hashMaterial は名前の対応で eqSpec・eqMaterial と同じ答え（真の組は同じ鍵・偽の組は違う鍵）──
 
@@ -109,7 +109,7 @@ mod ShaderGen.TestPairing {
             let (x, y) = names;
             let left = make("a", "b");
             let right = make(x, y);
-            let sameKey = ShaderGen.hashMaterial(left, None) == ShaderGen.hashMaterial(right, None);
+            let sameKey = ShaderGen.hashMaterial(left, None, None) == ShaderGen.hashMaterial(right, None, None);
             if (sameKey == ShaderGen.eqSpec(left, right)) None else Some(label)
         })
 
@@ -124,7 +124,7 @@ mod ShaderGen.TestPairing {
             :: (specReading("a"), glow("a"), specReading("a"), None) :: Nil;
         let disagree = pairs |> List.filter(t -> {
             let (sa, ea, sb, eb) = t;
-            (ShaderGen.hashMaterial(sa, ea) == ShaderGen.hashMaterial(sb, eb)) != ShaderGen.eqMaterial(sa, ea, sb, eb)
+            (ShaderGen.hashMaterial(sa, ea, None) == ShaderGen.hashMaterial(sb, eb, None)) != ShaderGen.eqMaterial(sa, ea, None, sb, eb, None)
         });
         Assert.assertEq(expected = 0, List.length(disagree))
 }

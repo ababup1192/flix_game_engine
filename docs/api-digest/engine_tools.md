@@ -1,4 +1,4 @@
-<!-- engine v0.91.0 / 生成: 2026-11-10 -->
+<!-- engine v0.91.0 / 生成: 2026-11-11 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -402,6 +402,8 @@
   `pub def fogAt(pX: Float64, pY: Float64, pZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, colorX: Float64, colorY: Float64, colorZ: Float64, fogColorX: Float64, fogColorY: Float64, fogColorZ: Float64, fogNear: Float64, fogFar: Float64): (Float64, Float64, Float64)`
 - skyModel の空の色。
   `pub def skyAt(_dirX: Float64, dirY: Float64, _dirZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64): (Float64, Float64, Float64)`
+- pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。
+  `pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64): (Float64, Float64, Float64)`
 
 ## ToolsProcessEnv — `engine_tools/src/ToolsProcessEnv.flix`
 - 今のプロセスの環境変数を丸ごと表にする。

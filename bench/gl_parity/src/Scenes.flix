@@ -50,7 +50,8 @@ mod Scenes {
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
-            :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d() :: Nil
+            :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
+            :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -71,6 +72,9 @@ mod Scenes {
     /// 片方だけ線形へ戻し忘れると、板・ビルボード・遠くの床・光る板の面が丸ごと違い、差は面の画素の数（千 px の桁）になる。
     /// 3D の色を線形の量で計算すると、mipFloor の 3 つは約 720 px・skinNormal は約 330 px（暗い所の丸めの ±1 が sRGB の曲線の傾きで増える）。
     /// 骨つきの群れの 2 つと四角の群れ（Apple Silicon で skinCrowd 797 px・skinCrowdRows 42 px・instanceRows 178 px）: GL と CPU の三角形の縁の取り方の差で、板の縁と影の縁に出る。
+    /// metallic と roughness の 3 つ（Apple Silicon で pbrSpheres3d 80 px・pbrNoSky3d 34 px・pbrMapped3d 259 px）: 球は鏡面の坂の丸めの ±1 が散る。pbrNoSky3d は toonSteps が 3 なので、
+    /// 拡散の段の境目に落ちた画素が Float32 と Float64 の丸めで 1 段（±19 まで）割れる（鏡面は段付けしない）。pbrMapped3d は絵の B と G を読む縁の ±1。
+    /// 式を取り違えると球の中（1 個で約 1,700 px）が丸ごと違い、差は千 px を超える。
     /// batch の頭の物の tint か emission で描くと板 1 枚で 300 px を超えて列ごとに違い、行を取り違えると板の曲がりが変わって縁の数が桁で増える。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
@@ -107,6 +111,10 @@ mod Scenes {
         case "instanceRows"    => Some(250)
         case "batchKeys3d"     => Some(100)
         case "sameDepthOrder3d" => Some(400)
+        case "pbrSpheres3d"    => Some(200)
+        case "pbrNoSky3d"      => Some(100)
+        case "pbrMapped3d"     => Some(400)
+        case "gltfPbr3d"       => Some(400)
         case _                 => None
     }
 
@@ -847,6 +855,14 @@ mod Scenes {
             case Err(e) => bug!(e)
         }
 
+    /// texturedModel の、metallic・roughness も読む口（loadTexturedPbrUsing）の版。
+    def texturedPbrModel(path: String): Model3d.Model3d =
+        let loaded = unsafe IO { run Gltf.loadTexturedPbrUsing(HeadlessLoad.imageIoDecoder(), Gltf.noTextureLimits(), path) with Fs.FileRead.runWithIO };
+        match loaded {
+            case Ok(m)  => m
+            case Err(e) => bug!(e)
+        }
+
     /// model の parts を world で置き、材質のある part に材質を付ける。
     def placedParts(model: Model3d.Model3d, world: Mat4.Mat4): List[Scene3d.Instance3d] =
         model#parts |> List.map(part -> {
@@ -866,6 +882,18 @@ mod Scenes {
         let scene = { textures = model#textures, pointLights = light :: Nil,
                       environment = { ambient = c8(170, 170, 170) | base#environment } | base };
         { name = "gltfTextured", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // glb の metallic・roughness（loadTexturedPbrUsing）: gltfTextured と同じ glb・同じ光を、metallic 0・roughness 0.5 の材質（板 B は頂点の色の土台）で。
+    // 白いハイライトと空の映り込みが、gltfTextured より足される。
+    def gltfPbr3d(): Scene =
+        let model = texturedPbrModel("assets/textured_two_materials.glb");
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, -0.5, 4.0)), Mat4.rotateY(Num.pi()));
+        let light = { position = Vec3.v3(0.0, 2.0, 1.0), color = c8(255, 255, 255), intensity = 0.6, range = 10.0 };
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, placedParts(model, world), Nil);
+        let scene = { textures = model#textures, pointLights = light :: Nil,
+                      environment = { ambient = c8(170, 170, 170) | base#environment } | base };
+        { name = "gltfPbr3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 
     // ── scene 28: 描き先の画素を基準にした Pass（RenderTarget.windowDescriptor）の中に 3D の場面を描き、後処理の面で画面に出す。B 段階 ──
@@ -1322,5 +1350,90 @@ mod Scenes {
         let placeAt = (mesh: Mesh3d.Mesh3d, at: Float64) -> Scene3d.meshInstance(mesh, Mat4.translate(Vec3.v3(at, 0.0, 0.0)));
         let scene = flatScene({ x = 240.0, y = 140.0 }, 1, placeAt(x, -2.0) :: placeAt(y, 0.0) :: placeAt(x, 1.0) :: Nil, Nil);
         { name = "sameDepthOrder3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 50〜52: metallic と roughness（Scene3d.withMetallicRoughness → GL は +mr のプログラム・CPU は SoftRaster3dLight.pbrAt）。B 段階 ──
+
+    /// 半径 1 の球（緯度 14 分割・経度 20 分割・滑らかな法線）。
+    def sphereMesh(): Mesh3d.Mesh3d =
+        let rings = 14;
+        let segments = 20;
+        let point = (i: Int32, j: Int32) -> {
+            let theta = Num.pi() * Int32.toFloat64(i) / Int32.toFloat64(rings);
+            let phi = 2.0 * Num.pi() * Int32.toFloat64(j) / Int32.toFloat64(segments);
+            Vec3.v3(Num.sin(theta) * Num.cos(phi), Num.cos(theta), Num.sin(theta) * Num.sin(phi))
+        };
+        let index = (i: Int32, j: Int32) -> i * (segments + 1) + j;
+        let vertices = List.range(0, rings + 1) |> List.flatMap(i -> List.range(0, segments + 1) |> List.map(j -> point(i, j)));
+        let triple = (v: Vec3.Vec3) -> v#x :: v#y :: v#z :: Nil;
+        let coords = vertices |> List.flatMap(triple) |> List.toVector;
+        // 三角形は外から見て時計回り（cross(b − a, c − a) が外を向く）になるよう、向きを見て b と c を入れ替える。
+        let facing = (a: Int32, b: Int32, c: Int32) -> {
+            let va = Vec3.v3(Vector.get(a * 3, coords), Vector.get(a * 3 + 1, coords), Vector.get(a * 3 + 2, coords));
+            let vb = Vec3.v3(Vector.get(b * 3, coords), Vector.get(b * 3 + 1, coords), Vector.get(b * 3 + 2, coords));
+            let vc = Vec3.v3(Vector.get(c * 3, coords), Vector.get(c * 3 + 1, coords), Vector.get(c * 3 + 2, coords));
+            let outward = Vec3.dot(Vec3.cross(Vec3.sub(vb, va), Vec3.sub(vc, va)), Vec3.add(va, Vec3.add(vb, vc)));
+            if (outward >= 0.0) a :: b :: c :: Nil else a :: c :: b :: Nil
+        };
+        let triangles = List.range(0, rings) |> List.flatMap(i -> List.range(0, segments) |> List.flatMap(j ->
+            List.append(facing(index(i, j), index(i, j + 1), index(i + 1, j)), facing(index(i, j + 1), index(i + 1, j + 1), index(i + 1, j)))));
+        let white = vertices |> List.flatMap(_ -> 1.0 :: 1.0 :: 1.0 :: Nil) |> List.toVector;
+        match Mesh3d.fromArrays({ positions = coords, normals = coords, colors = white, indices = List.toVector(triangles), skin = None }) {
+            case Ok(mesh) => mesh
+            case Err(e)   => bug!(e)
+        }
+
+    /// 色 c の材質（Solid）。
+    def solidMaterial(name: String, c: Color): Scene3d.Material3d =
+        Scene3d.material({ name = name, cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c), alpha = ShaderDoc.Field.Const(1.0) }) })
+
+    /// 球を metallic（左から 0・0.5・1）× roughness（上から 0.3・0.5・0.75・1）で 3 列 × 4 行に並べた置いた物。
+    def pbrSphereGrid(): List[Scene3d.Instance3d] =
+        let gold = solidMaterial("parity:pbr", c8(230, 180, 70));
+        List.range(0, 4) |> List.flatMap(row -> List.range(0, 3) |> List.map(column -> {
+            let metallic = Int32.toFloat64(column) * 0.5;
+            let roughness = Vector.get(row, Vector#{0.3, 0.5, 0.75, 1.0});
+            let world = Mat4.mul(Mat4.translate(Vec3.v3((Int32.toFloat64(column) - 1.0) * 2.2, (1.5 - Int32.toFloat64(row)) * 2.0, 14.0)),
+                                 Mat4.scale(Vec3.v3(0.85, 0.85, 0.85)));
+            Scene3d.meshInstance(sphereMesh(), world) |> Scene3d.withMaterial(gold |> Scene3d.withMetallicRoughness(metallic, roughness))
+        }))
+
+    /// 球の列を照らす光（左上の点光源と右の spot）と環境。
+    def pbrLit(instances: List[Scene3d.Instance3d], textures: List[Texture3d.Texture3d]): Scene3d.Scene3dCmd =
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, instances, Nil);
+        { pointLights = { position = Vec3.v3(-6.0, 6.0, 6.0), color = c8(255, 240, 220), intensity = 1.6, range = 40.0 } :: Nil,
+          spotLights = { color = c8(200, 220, 255), intensity = 1.2, range = 40.0 | Scene3d.spotLight(Vec3.v3(7.0, 4.0, 5.0), Vec3.v3(0.0, 0.0, 14.0), 1.2) } :: Nil,
+          textures = textures,
+          environment = { ambient = c8(60, 60, 70), hemisphere = 0.2 | base#environment } | base }
+
+    // 空あり: 球の鏡面ハイライトと空の映り込み（球の上は天頂の青・下は地面の茶）。roughness が大きいほど平均の色へ寄り、metallic が大きいほど拡散が消えて albedo の色が映る。
+    // 式を取り違えると、球の中（1 個で約 1,700 px）が丸ごと違う。
+    def pbrSpheres3d(): Scene =
+        let sky = Scene3d.gradientSky(c8(70, 110, 200), c8(220, 200, 170), c8(60, 50, 40)) |> Scene3d.withSkyCurve(0.8);
+        let scene = { sky = Some(sky), environment = { background = None | pbrLit(pbrSphereGrid(), Nil)#environment } | pbrLit(pbrSphereGrid(), Nil) };
+        { name = "pbrSpheres3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // 空なし: 映り込みの色は ambient + hemisphere（真っ黒にしない）。toonSteps 3 でも鏡面は段付けしない（拡散だけが段になる）。
+    def pbrNoSky3d(): Scene =
+        let lit = pbrLit(pbrSphereGrid(), Nil);
+        let scene = { environment = { toonSteps = 3 | lit#environment } | lit };
+        { name = "pbrNoSky3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // 絵で読む: 市松の絵の B が metallic・G が roughness（glTF の metallicRoughnessTexture と同じ決まり）。回した板と箱に、絵 × 係数で付ける。
+    def pbrMapped3d(): Scene =
+        let tex = parityTexture();
+        let mapped = solidMaterial("parity:pbrmap", c8(200, 200, 210)) |> Scene3d.withMetallicRoughness(1.0, 1.0) |> Scene3d.withMetallicRoughnessTexture(Texture3d.name(tex));
+        let plate = Scene3d.meshInstance(texturedQuad(-2.0, 2.0, -2.2, 2.2, 0.0, 0.0, 1.0), Mat4.mul(Mat4.translate(Vec3.v3(-3.2, 0.0, 12.0)), Mat4.rotateY(0.5)))
+            |> Scene3d.withMaterial(mapped);
+        let box = Scene3d.meshInstance(Mesh3d.withBoxUvs(0.5, boxMesh()),
+                                       Mat4.mul(Mat4.translate(Vec3.v3(3.2, 0.0, 12.0)), Mat4.mul(Mat4.rotateX(0.4), Mat4.mul(Mat4.rotateY(0.6), Mat4.scale(Vec3.v3(1.6, 1.6, 1.6))))))
+            |> Scene3d.withMaterial(mapped);
+        let sky = Scene3d.gradientSky(c8(70, 110, 200), c8(220, 200, 170), c8(60, 50, 40));
+        let lit = pbrLit(plate :: box :: Nil, tex :: Nil);
+        let scene = { sky = Some(sky), environment = { background = None | lit#environment } | lit };
+        { name = "pbrMapped3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 }

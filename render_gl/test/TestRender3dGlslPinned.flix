@@ -19,7 +19,7 @@ mod Render3d.TestGlslPinned {
 
     def fragments(glsl: ShaderGen.MaterialGlsl): List[String] =
         ((false, false) :: (false, true) :: (true, false) :: (true, true) :: Nil)
-            |> List.map(k -> { let (uv, nm) = k; sha256(Render3dGlsl.materialFragmentSource(glsl, { skinned = false, uv = uv, normalMap = nm, lightmap = false, blend = false, doubleSided = false, coverage = false })) })
+            |> List.map(k -> { let (uv, nm) = k; sha256(Render3dGlsl.materialFragmentSource(glsl, { skinned = false, uv = uv, normalMap = nm, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false })) })
 
     @Test
     def testLightSourceIsUnchanged(): Unit \ Assert =
@@ -50,7 +50,7 @@ mod Render3d.TestGlslPinned {
     /// 材質が sg_texMip を持つ時も、法線マップと lightmap の版で sg_texMip の定義は 1 回だけ。
     @Test
     def testTexMipOnceWhenTheMaterialHasIt(): Unit \ Assert =
-        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false })))
+        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false })))
 
     /// uv の無い形の lightmap の版の頂点シェーダーも、location 7 の 2 本目の uv を vUv2 へ渡す。
     @Test
@@ -62,13 +62,13 @@ mod Render3d.TestGlslPinned {
     @Test
     def testLightmapKeyDiffers(): Unit \ Assert =
         let m = Scene3d.materialFieldsOf(Scene3d.texturedMaterial("t", ShaderDoc.FilterMode.Linear));
-        Assert.assertFalse(Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })
-                           == Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false }))
+        Assert.assertFalse(Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false })
+                           == Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false }))
 
     /// lightmap の GLSL の sRGB の式は、Texture3d の 1 か所の関数から組まれる。
     @Test
     def testSrgbGlslComesFromTexture3d(): Unit \ Assert =
-        let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false });
+        let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false });
         Assert.assertEq(expected = (1, 1),
             (count(Texture3d.srgbToLinearGlsl("r3d_srgbToLinear"), source), count(Texture3d.linearToSrgbGlsl("r3d_linearToSrgb"), source)))
 
@@ -77,7 +77,7 @@ mod Render3d.TestGlslPinned {
     /// lit・材質・ビルボード・空の frag は色の変換の部品（r3d_srgbToLinear3 の定義）を 1 回だけ持つ。
     @Test
     def testFragmentsDeclareColorSpaceOnce(): Unit \ Assert =
-        let material = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false });
+        let material = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false });
         Assert.assertEq(expected = 1 :: 1 :: 1 :: 1 :: Nil,
             (Render3dGlsl.litFragmentSource() :: material :: Render3dGlsl.billboardFragmentSource() :: Render3dGlsl.skyFragmentSource() :: Nil)
                 |> List.map(count("vec3 r3d_srgbToLinear3(vec3 c)")))
@@ -85,7 +85,7 @@ mod Render3d.TestGlslPinned {
     /// lightmap の版の材質の frag でも、vec3 の変換の関数は 1 回だけ定義される。
     @Test
     def testVec3ConversionDefinedOnce(): Unit \ Assert =
-        let source = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false });
+        let source = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false });
         Assert.assertEq(expected = (1, 1), (count("vec3 r3d_srgbToLinear3(vec3 c)", source), count("vec3 r3d_linearToSrgb3(vec3 c)", source)))
 
     /// 頂点の色を線形へ戻すのは lit の頂点シェーダー（骨なし・骨つき）だけ。

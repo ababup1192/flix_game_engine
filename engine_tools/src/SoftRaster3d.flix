@@ -361,9 +361,9 @@ pub mod SoftRaster3d {
     def matOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], materialTextures: Map[String, Vector[ShaderEval.TexData]],
               tint: Color, hasUv: Bool, m: Scene3d.Material3d): Mat =
         let f = Scene3d.materialFieldsOf(m);
-        let (spec, emission) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), f#spec, f#emission);
+        let (spec, emission, metallicRoughness) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), f#spec, f#emission, f#metallicRoughnessShade);
         let repeat = f#wrap == Scene3d.Wrap.Repeat;
-        let compiled = ShaderEval.compileMaterial({ spec = spec, emission = emission, params = f#params, textures = materialTextures,
+        let compiled = ShaderEval.compileMaterial({ spec = spec, emission = emission, metallicRoughness = metallicRoughness, params = f#params, textures = materialTextures,
                                                     repeat = repeat });
         let normal = if (not hasUv) None else f#normalMap |> Option.map(n ->
             { texture = Map.getWithDefault((n#texture, Texture3d.mipSpaceOf(Texture3d.TextureUse.NormalMap)), blackTexture(), textures),
@@ -503,7 +503,8 @@ pub mod SoftRaster3d {
             case None    => (0.0, 0.0, 0.0, 0.0)
         });
         let sky = hoist(rc, scene#sky |> Option.map(sk -> (linearSkyColorsOf(sk), Scene3d.skyBasisOf(scene))));
-        let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, lut = lut });
+        let reflection = hoist(rc, reflectionColorsOf(scene));
+        let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, lut = lut, reflection = reflection });
         let fillAt = (x: Int32, y: Int32) -> skyFill(sky, lut, isDepth, (lw, lh), (x, y)) |> Option.getWithDefault(background);
         let depthBand = hoist(rc, match scene#output {
             case Scene3d.Output.Color    => None
@@ -547,6 +548,11 @@ pub mod SoftRaster3d {
         let (zenith, horizon, ground) = (convert(f#zenith), convert(f#horizon), convert(f#ground));
         SkyColors.SkyColors(zenith#r, zenith#g, zenith#b, horizon#r, horizon#g, horizon#b,
                             ground#r, ground#g, ground#b, Scene3d.skyCurveOf(s))
+
+    /// 材質の映り込みに使う空の 3 色（線形の量）。場面に空が無ければ ambient + hemisphere の色（LightModel3d.reflectionSkyOf）。
+    def reflectionColorsOf(scene: Scene3d.Scene3dCmd): SkyColors =
+        let r = LightModel3d.reflectionSkyOf(scene);
+        SkyColors.SkyColors(r#zenith#r, r#zenith#g, r#zenith#b, r#horizon#r, r#horizon#g, r#horizon#b, r#ground#r, r#ground#g, r#ground#b, r#curve)
 
     /// 目から見た向き dir（長さ 1）の空の色（LightModel3d.skyModel）。
     def skyColorWith(colors: SkyColors, dir: Vec3.Vec3): (Float64, Float64, Float64) =
@@ -1099,7 +1105,9 @@ pub mod SoftRaster3d {
         }
 
     /// 画素の色を塗る時に場面ごとに決まっている物。lut = 頂点ごと・画素ごとの色の変換の表。
-    type alias ShadeEnv = { time = Float64, lights = Lights, fog = Fog, eye = (Float64, Float64, Float64), lut = Texture3d.ColorLut }
+    /// reflection = metallic と roughness を持つ材質の映り込みに使う空の 3 色と curve（線形の量。LightModel3d.reflectionSkyOf）。
+    type alias ShadeEnv = { time = Float64, lights = Lights, fog = Fog, eye = (Float64, Float64, Float64), lut = Texture3d.ColorLut,
+                            reflection = SkyColors }
 
     /// 材質 material の三角形 tri の画面の重み (l0, l1) の画素の色（線形の量のまま — 呼び手が画面の値へ戻す）と α（α は材質の α。不透明の物を塗る呼び手は捨てる）。
     /// 裏の三角形（画面で反時計回り。両面の材質の物だけが残る）は、光の計算の法線を裏返す（spec の Normal は裏返さない）。
@@ -1116,10 +1124,19 @@ pub mod SoftRaster3d {
         let facingPoint = if (area < 0.0) { normal = Vec3.mul(point#normal, -1.0) | point } else point;
         let lightNormal = mappedNormal(normalMappingOf(material), facingPoint, neighbors, tangentAt(v, weights));
         let (lr, lg, lb) = materialLight(bake, env#lights, v, weights, nextWeights, (px, py, pz), lightNormal);
-        materialColor(material, env#lut, env#time, point, neighbors, base -> {
+        let litFogged = (base: (Float64, Float64, Float64)) -> {
             let (br, bg, bb) = base;
             applyFog(env#fog, ex, ey, ez, px, py, pz, br * lr, bg * lg, bb * lb)
-        })
+        };
+        let glossyFogged = (base: (Float64, Float64, Float64), metallic: Float64, roughness: Float64) -> {
+            let (br, bg, bb) = base;
+            let Lights.Lights(_, _, _, _, _, points, spots, shadow) = env#lights;
+            let SkyColors.SkyColors(zr, zg, zb, hr, hg, hb, gr, gg, gb, curve) = env#reflection;
+            let (cr, cg, cb) = SoftRaster3dLight.pbrAt(points, spots, shadow, px, py, pz, lightNormal#x, lightNormal#y, lightNormal#z, br, bg, bb, lr, lg, lb,
+                                                       metallic, roughness, 0.0, ex, ey, ez, zr, zg, zb, hr, hg, hb, gr, gg, gb, curve);
+            applyFog(env#fog, ex, ey, ez, px, py, pz, cr, cg, cb)
+        };
+        materialColor(material, env#lut, env#time, point, neighbors, litFogged, glossyFogged)
 
     /// ビルボードの絵の (u, v) の色（線形の量へ戻す）に tint を掛け、lit なら光とかすみを当てる。
     def inkColor(lut: Texture3d.ColorLut, ink: Ink, u: Float64, v: Float64,
@@ -1133,8 +1150,10 @@ pub mod SoftRaster3d {
     /// 材質の色と α: albedo × tint に光とかすみを当ててから emission × emissionIntensity を足す（GL の Render3d と同じ順）。α は材質の α のまま。
     /// Spec の出口の albedo.rgb と emission を線形の量へ戻してから計算する（色は線形の量のまま返す）。
     // WhyNot: emission にかすみを掛けない — 自分で光る物（溶岩・目）は遠くでもかすみに沈まずに見えてほしい。
+    /// metallic と roughness を持つ材質（sample#metallicRoughness が Some）は、litFogged の代わりに glossyFogged（albedo × tint・metallic・roughness）で光を当てる。
     def materialColor(m: Mat, lut: Texture3d.ColorLut, time: Float64, point: ShaderEval.SurfacePoint, neighbors: (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint),
-                      litFogged: ((Float64, Float64, Float64)) -> (Float64, Float64, Float64)): (Float64, Float64, Float64, Float64) =
+                      litFogged: ((Float64, Float64, Float64)) -> (Float64, Float64, Float64),
+                      glossyFogged: ((Float64, Float64, Float64), Float64, Float64) -> (Float64, Float64, Float64)): (Float64, Float64, Float64, Float64) =
         let Mat.Mat(compiled, _, tr, tg, tb, _, intensity) = m;
         let (nextX, nextY) = neighbors;
         let sample = ShaderEval.evalMaterial3Mip(compiled, point, nextX, nextY, time);
@@ -1142,7 +1161,11 @@ pub mod SoftRaster3d {
         let e = sample#emission;
         // WhyNot: emission の無い材質（0 の色）を変換に通さない — 0 は変換しても 0 で、材質の画素ごとに 3 回の表引きが無駄になる。
         let glows = not (e#r == 0.0 and e#g == 0.0 and e#b == 0.0);
-        let (r, g, b) = litFogged((Texture3d.srgbToLinearLut(lut, a#r) * tr, Texture3d.srgbToLinearLut(lut, a#g) * tg, Texture3d.srgbToLinearLut(lut, a#b) * tb));
+        let base = (Texture3d.srgbToLinearLut(lut, a#r) * tr, Texture3d.srgbToLinearLut(lut, a#g) * tg, Texture3d.srgbToLinearLut(lut, a#b) * tb);
+        let (r, g, b) = match sample#metallicRoughness {
+            case None                    => litFogged(base)
+            case Some((metallic, rough)) => glossyFogged(base, metallic, rough)
+        };
         if (glows) (r + Texture3d.srgbToLinearLut(lut, e#r) * intensity, g + Texture3d.srgbToLinearLut(lut, e#g) * intensity,
                     b + Texture3d.srgbToLinearLut(lut, e#b) * intensity, sample#alpha)
         else (r, g, b, sample#alpha)

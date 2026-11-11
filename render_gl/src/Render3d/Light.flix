@@ -32,11 +32,15 @@ mod Render3d.Light {
         fillVec3(ambient, 0, colorVec(env#ambient));
         let eyeArray = Array.repeat(Static, 3, 0.0f32);
         fillVec3(eyeArray, 0, eye);
+        let reflection = LightModel3d.reflectionSkyOf(scene);
+        let reflectArray = (c: Color) -> { let a = Array.repeat(Static, 3, 0.0f32); fillVec3(a, 0, colorVec(c)); a };
         { ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
           spotCount = List.length(spots), spotPos = spot#position, spotDir = spot#direction, spotColor = spot#color,
           spotRange = spot#range, spotCone = spot#cone,
-          fogOn = if (Option.isEmpty(env#fog)) 0 else 1, fogColor = fogColor, fogRange = fogRange, eye = eyeArray }
+          fogOn = if (Option.isEmpty(env#fog)) 0 else 1, fogColor = fogColor, fogRange = fogRange, eye = eyeArray,
+          reflectZenith = reflectArray(reflection#zenith), reflectHorizon = reflectArray(reflection#horizon), reflectGround = reflectArray(reflection#ground),
+          reflectCurve = RenderUtil.f32(reflection#curve) }
 
     def spotArrays(spots: List[Scene3d.SpotLight]): { position = Array[Float32, Static], direction = Array[Float32, Static],
                                                        color = Array[Float32, Static], range = Array[Float32, Static],
@@ -82,5 +86,17 @@ mod Render3d.Light {
         gl.uniform1i(locs#fogOn, d#fogOn);
         gl.uniform3fv(locs#fogColor, d#fogColor);
         gl.uniform2fv(locs#fogRange, d#fogRange);
-        gl.uniform3fv(locs#eye, d#eye)
+        gl.uniform3fv(locs#eye, d#eye);
+        putReflection(gl, locs, d)
+
+    /// 映り込みに使う空の 3 色と curve を渡す（metallic と roughness を持つ材質のプログラムだけが宣言している。無いプログラムは何も呼ばない）。
+    // WhyNot: location が -1 のままで GL を呼ばない — 持たないプログラムが大半で、毎回 4 回の無駄な呼び出しになる。
+    def putReflection(gl: GlContext, locs: LightLocs, d: LightData): Unit \ IO =
+        if (locs#reflectZenith < 0) ()
+        else {
+            gl.uniform3fv(locs#reflectZenith, d#reflectZenith);
+            gl.uniform3fv(locs#reflectHorizon, d#reflectHorizon);
+            gl.uniform3fv(locs#reflectGround, d#reflectGround);
+            gl.uniform1f(locs#reflectCurve, d#reflectCurve)
+        }
 }

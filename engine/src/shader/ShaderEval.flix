@@ -92,10 +92,10 @@ pub mod ShaderEval {
     /// compile が組み直した面 1 枚（外からは作らせない — compile で作る）。
     /// bindings は前から順の場（Ref は添字で読む）、shade は色、alpha は α の場、cycleRate、
     /// 画素ごとの値の置き場の大きさ、World / Normal / VertexColor の置き場を先頭に取るか（取るなら添字 0..8・bindings はその後ろ）、
-    /// emission は 3D の材質の自分で光る色、段つきの絵を読む節（MipTex）の数。
+    /// emission は 3D の材質の自分で光る色、metallicRoughness は 3D の材質の metallic（r）と roughness（g）の色、段つきの絵を読む節（MipTex）の数。
     /// MipTex のある面は、値の置き場の後ろに lod を求めるための区画（節ごとに右隣と下隣の座標の 4 つ・最後に読み方の番号）を取る。
     enum Compiled {
-        case Compiled(List[Node], CShade, Node, Float64, Int32, Bool, Option[CShade], Int32)
+        case Compiled(List[Node], CShade, Node, Float64, Int32, Bool, Option[CShade], Option[CShade], Int32)
     }
 
     /// 組み直した面。compile で作り、evalCompiled に画素ごとに渡す。
@@ -162,19 +162,21 @@ pub mod ShaderEval {
     /// 書き写す（@DontInline でも止まらない）ので、組み立てが画素ごとに走る。組み直しはデータ
     /// （CompiledSpec）で返し、呼ぶ側は画素ループの外で受ける（SoftRaster.onceOutsideLoop）。
     pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexImage]): CompiledSpec =
-        compileWith(spec, None, clampSampling(), texEnv)
+        compileWith(spec, None, None, clampSampling(), texEnv)
 
     /// 3D の材質を組み直す材料。textures = tex / blur の読み先の絵の段の列（名前 → Mip.build の段。段 0 が元の絵。
     /// 段が 1 つなら lod を求めずに段 0 を読む。無い名前は 0）・repeat = 0..1 の外の uv を繰り返すか（偽なら端の色を伸ばす）。
-    pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], params = Map[String, Float64],
+    pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], metallicRoughness = Option[ShaderDoc.Shade],
+                                     params = Map[String, Float64],
                                      textures = Map[String, Vector[TexData]], repeat = Bool }
 
-    /// 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換える
+    /// 3D の材質（Scene3d.Material3d の spec・emission・metallicRoughness・params）を組み直す。Param は params の値の Const に置き換える
     /// （ShaderDoc.bindParams）。evalCompiled3 / evalMaterial3 に画素ごとに渡す。
     pub def compileMaterial(input: MaterialInput): CompiledSpec =
         let mips = input#textures |> Map.filter(chain -> Vector.length(chain) > 1);
         let level0 = input#textures |> Map.filterMap(Vector.head);
         compileWith(ShaderDoc.bindParams(input#params, input#spec), Option.map(ShaderDoc.bindShadeParams(input#params), input#emission),
+                    Option.map(ShaderDoc.bindShadeParams(input#params), input#metallicRoughness),
                     { linear = false, repeat = input#repeat, mips = mips }, Map.map(TexImage.Rgba8Unorm, level0))
 
     /// tex / blur の読み方。linear = Linear で読むか（Sampler の内側）・repeat = 0..1 の外の uv を繰り返すか（3D の材質の Wrap）・
@@ -186,9 +188,11 @@ pub mod ShaderEval {
 
     def clampSampling(): Sampling = { linear = false, repeat = false, mips = Map.empty() }
 
-    def compileWith(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], sampling: Sampling, texEnv: Map[String, TexImage]): CompiledSpec = region rc {
+    def compileWith(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], sampling: Sampling,
+                    texEnv: Map[String, TexImage]): CompiledSpec = region rc {
         let ids = Ref.fresh(rc, 0);
-        let withInputs = readsSurface(spec) or Option.exists(shade -> readsSurface(specOfShade(shade)), emission);
+        let withInputs = readsSurface(spec) or Option.exists(shade -> readsSurface(specOfShade(shade)), emission)
+            or Option.exists(shade -> readsSurface(specOfShade(shade)), metallicRoughness);
         let first = if (withInputs) inputSlots() else 0;
         let (revBindings, scope, next) = List.foldLeft((acc, nf) -> {
             let (nodes, sc, i) = acc;
@@ -203,9 +207,10 @@ pub mod ShaderEval {
                     case Some(e) => Some(compileShade(sampling, ids, scope, texEnv, e))
                     case None    => None
                 };
+                let metal = Option.map(m -> compileShade(sampling, ids, scope, texEnv, m), metallicRoughness);
                 let mipCount = Ref.get(ids);
                 let size = if (mipCount > 0) next + mipCount * 4 + 1 else next;
-                Compiled.Compiled(List.reverse(revBindings), shade, alpha, spec#cycleRate, size, withInputs, glow, mipCount)
+                Compiled.Compiled(List.reverse(revBindings), shade, alpha, spec#cycleRate, size, withInputs, glow, metal, mipCount)
         }
     }
 
@@ -247,7 +252,7 @@ pub mod ShaderEval {
     /// World / Normal は 0・VertexColor は 1（2D の面）。
     pub def evalCompiled(compiled: CompiledSpec, u: Float64, v: Float64, t: Float64): (Float64, Float64, Float64, Float64) =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _, _) => region rc {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _, _, _) => region rc {
                 let env: Array[Float64, rc] = Array.empty(rc, size);
                 if (withInputs) putInputs(flatPoint(u, v), env) else ();
                 fillEnv(bindings, if (withInputs) inputSlots() else 0, u, v, t, env);
@@ -268,7 +273,7 @@ pub mod ShaderEval {
     /// 場は point の uv で読む（ShaderGen.compile3d の sg_uv = vUv と同じ）。法線は長さ 1 にそろえてから読む（長さ 0 なら 0 のまま）。
     pub def evalCompiled3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): (Float64, Float64, Float64, Float64) =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _, _) => region rc {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _, _, _) => region rc {
                 let env = env3(bindings, size, withInputs, point, t, rc);
                 let (u, v) = (point#uv#x, point#uv#y);
                 let (r, g, b) = evalAlbedo(shade, cycleRate, u, v, t, env);
@@ -277,15 +282,16 @@ pub mod ShaderEval {
         }
 
     /// 3D の材質の画素 1 つ: 光を当てる前の色（albedo）・α・自分で光る色（emission。無ければ黒）。
-    pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color }
+    /// metallicRoughness は材質が持つ時だけ Some（metallic, roughness。0..1 に丸めた値）。
+    pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color, metallicRoughness = Option[(Float64, Float64)] }
 
     /// evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
     /// 光の計算は呼び手（SoftRaster3d）が albedo に掛け、その後に emission を足す。
     pub def evalMaterial3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): MaterialSample =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission, _) => region rc {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission, metal, _) => region rc {
                 let env = env3(bindings, size, withInputs, point, t, rc);
-                sampleMaterial(shade, alpha, emission, cycleRate, point, t, env)
+                sampleMaterial(shade, alpha, emission, metal, cycleRate, point, t, env)
             }
         }
 
@@ -296,13 +302,13 @@ pub mod ShaderEval {
     // WhyNot: 真ん中の bindings の値を隣の評価に使い回さない — atWorld を shared に書く形では座標が bindings で決まり、差が 0 になって段 0 に落ちる。
     pub def evalMaterial3Mip(compiled: CompiledSpec, center: SurfacePoint, nextX: SurfacePoint, nextY: SurfacePoint, t: Float64): MaterialSample =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission, mipCount) => region rc {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission, metal, mipCount) => region rc {
                 let env: Array[Float64, rc] = Array.repeat(rc, size, 0.0);
                 let pass = (point: SurfacePoint, mode: Float64) -> {
                     if (mipCount > 0) Array.put(mode, size - 1, env) else ();
                     if (withInputs) putInputs(point, env) else ();
                     fillEnv(bindings, if (withInputs) inputSlots() else 0, point#uv#x, point#uv#y, t, env);
-                    sampleMaterial(shade, alpha, emission, cycleRate, point, t, env)
+                    sampleMaterial(shade, alpha, emission, metal, cycleRate, point, t, env)
                 };
                 if (mipCount == 0) pass(center, modeLevel0())
                 else {
@@ -313,7 +319,7 @@ pub mod ShaderEval {
             }
         }
 
-    def sampleMaterial(shade: CShade, alpha: Node, emission: Option[CShade], cycleRate: Float64, point: SurfacePoint, t: Float64,
+    def sampleMaterial(shade: CShade, alpha: Node, emission: Option[CShade], metal: Option[CShade], cycleRate: Float64, point: SurfacePoint, t: Float64,
                        env: Array[Float64, r]): MaterialSample \ r =
         let (u, v) = (point#uv#x, point#uv#y);
         let (cr, cg, cb) = evalAlbedo(shade, cycleRate, u, v, t, env);
@@ -324,7 +330,13 @@ pub mod ShaderEval {
                 (Float64.max(0.0, gr), Float64.max(0.0, gg), Float64.max(0.0, gb))
             case None       => (0.0, 0.0, 0.0)
         };
-        { albedo = { r = cr, g = cg, b = cb }, alpha = evalNode(alpha, u, v, t, env), emission = { r = er, g = eg, b = eb } }
+        // metallicRoughness の色は cycleRate を掛けない（ShaderGen.compile3d と同じ）。0..1 に切る。
+        let metallicRoughness = metal |> Option.map(m -> {
+            let (mr, mg, _) = evalShade(m, 0.0, u, v, t, env);
+            (Num.clamp01(mr), Num.clamp01(mg))
+        });
+        { albedo = { r = cr, g = cg, b = cb }, alpha = evalNode(alpha, u, v, t, env), emission = { r = er, g = eg, b = eb },
+          metallicRoughness = metallicRoughness }
 
     // MipTex の読み方の番号（値の置き場の最後に置く）: 段 0 を読む・右隣の座標を控える・下隣の座標を控える・控えから lod を求めて読む。
     def modeLevel0(): Float64 = 0.0

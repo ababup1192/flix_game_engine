@@ -49,9 +49,9 @@ pub mod Gltf {
     /// .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
     /// TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
     pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
-        parseAndBuild(bytes) |> Result.map(gb -> {
+        parseAndBuild(false, bytes) |> Result.map(gb -> {
             let (glb, built) = gb;
-            let infoOnly = (material: Obj) -> { withUv = None, withoutUv = None, info = gltfMaterialOf(noTextureNames(), material), lines = Nil, noUvLine = None };
+            let infoOnly = (material: Obj) -> { withUv = None, withoutUv = None, info = gltfMaterialOf(noTextureNames(), material), lines = Nil, noUvLines = Nil };
             let (parts, lines) = attachMaterials(built, objectsOf("materials", glb#json) |> Vector.map(infoOnly));
             Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines), { parts = parts | built#model })
         })
@@ -85,20 +85,31 @@ pub mod Gltf {
 
     /// loadTexturedUsing のバイトの版。
     pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedBy(Texture3d.decodeUsing(decoder), limits, bytes)
+        fromGlbTexturedBy(Texture3d.decodeUsing(decoder), limits, false, bytes)
 
-    def fromGlbTexturedBy(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, limits: TextureLimits,
+    /// loadTexturedUsing に、材質の metallic・roughness も読んで付ける版（Scene3d.withMetallicRoughness。付く条件・既定値・絵の読み方は materialOf の説明）。
+    /// metallicRoughnessTexture の画像もデコードする（上限は TextureLimits#baseColor）。引数は loadTexturedUsing と同じ。
+    // WhyNot: loadTexturedUsing が既定で読まない — Blender の書き出しは絵も emissive も無い材質にも metallic・roughness を書くので、読むと今まで頂点の色だけだった
+    //   part が材質を持つ物になり、part を束ねるゲームの条件（material が None）が外れて draw が増える。鏡面のプログラムも使う。ゲームが選んで読む。
+    pub def loadTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
+        loadWith(fromGlbTexturedPbrUsing(decoder, limits), path)
+
+    /// loadTexturedPbrUsing のバイトの版。
+    pub def fromGlbTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        fromGlbTexturedBy(Texture3d.decodeUsing(decoder), limits, true, bytes)
+
+    def fromGlbTexturedBy(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, limits: TextureLimits, pbr: Bool,
                           bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        match parseAndBuild(bytes) {
+        match parseAndBuild(pbr, bytes) {
             case Err(e) => Err(e)
             case Ok((glb, built)) =>
-                let used = usedImages(limits, glb#json);
+                let used = usedImages(limits, pbr, glb#json);
                 let images = objectsOf("images", glb#json) |> Vector.mapWithIndex((k, image) -> match Map.get(k, used) {
                     case Some(maxSide) => decodeImage(decode, glb, image) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
                     case None          => (None, Nil)
                 });
                 let decoded = images |> Vector.map(fst);
-                let materials = objectsOf("materials", glb#json) |> Vector.mapWithIndex(materialOf(glb, decoded));
+                let materials = objectsOf("materials", glb#json) |> Vector.mapWithIndex(materialOf(glb, decoded, pbr));
                 let (parts, attachLines) = attachMaterials(built, materials);
                 let lines = List.flatten((Vector.toList(images) |> List.flatMap(snd)) :: attachLines :: Nil) |> List.distinct;
                 Ok(Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines),
@@ -111,17 +122,19 @@ pub mod Gltf {
             |> Result.mapErr(e -> "${path}: 読めない（${e}）")
             |> Result.flatMap(bytes -> fromBytes(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
 
-    def parseAndBuild(bytes: Vector[Int8]): Result[String, (Glb, Built)] =
+    /// linear = baseColorFactor を glTF の決まりどおり線形の値として読むか（偽なら画面の値として読む。baseColorOf の WhyNot）。
+    def parseAndBuild(linear: Bool, bytes: Vector[Int8]): Result[String, (Glb, Built)] =
         forM (
             glb <- parseGlb(bytes);
             _ <- checkBuffers(glb#json);
-            built <- buildModel(glb)
+            built <- buildModel(linear, glb)
         ) yield (glb, built)
 
     /// 材質の番号ごとに 1 回作った物。withUv = TEXCOORD_0 のある primitive に付ける材質・withoutUv = 無い primitive に付ける材質
-    /// （emissiveTexture は uv で読むので、無い primitive には emission を外した材質）・noUvLine = withoutUv を使った時の知らせ。
+    /// （emissiveTexture と metallicRoughnessTexture は uv で読むので、無い primitive には emission を外し、metallic・roughness は値だけにした材質）・
+    /// noUvLines = withoutUv を使った時の知らせ。
     type alias MaterialBuild = { withUv = Option[Scene3d.Material3d], withoutUv = Option[Scene3d.Material3d], info = Model3d.GltfMaterial,
-                                 lines = List[String], noUvLine = Option[String] }
+                                 lines = List[String], noUvLines = List[String] }
 
     /// built の parts に、材質の番号ごとの materials を付ける。材質の知らせと、uv の無い part に withoutUv を付けた知らせも返す。
     def attachMaterials(built: Built, materials: Vector[MaterialBuild]): (List[Model3d.ModelPart], List[String]) =
@@ -135,8 +148,8 @@ pub mod Gltf {
     def assignMaterial(part: Model3d.ModelPart, build: Option[MaterialBuild]): (Model3d.ModelPart, List[String]) =
         let hasUv = Option.nonEmpty(Mesh3d.uvs(part#mesh));
         let material = build |> Option.flatMap(b -> if (hasUv) b#withUv else b#withoutUv);
-        let line = if (hasUv) Nil else build |> Option.flatMap(b -> b#noUvLine) |> Option.toList;
-        ({ material = material, gltfMaterial = Option.map(b -> b#info, build) | part }, line)
+        let lines = if (hasUv) Nil else build |> Option.map(b -> b#noUvLines) |> Option.getWithDefault(Nil);
+        ({ material = material, gltfMaterial = Option.map(b -> b#info, build) | part }, lines)
 
     /// emissive が 0 でなく texCoord が 0 の emissiveTexture（光らせるのに読む絵）と、その上限。
     def emissiveImageOf(limits: TextureLimits, material: Obj): List[(Obj, Int32)] =
@@ -144,15 +157,22 @@ pub mod Gltf {
         if (isZeroColor(emissiveOf(material)) or Option.getWithDefault(0, intOf("texCoord", info)) != 0) Nil
         else (info, limits#baseColor) :: Nil
 
-    /// 材質の baseColorTexture・normalTexture・emissiveTexture（emissive が 0 でない材質だけ）が指す画像の番号 → その絵の長い辺の上限
+    /// metallic・roughness を付ける材質の texCoord が 0 の metallicRoughnessTexture（読む絵）と、その上限（baseColor と同じ）。
+    def metallicRoughnessImageOf(limits: TextureLimits, pbr: Bool, material: Obj): List[(Obj, Int32)] =
+        let info = objectOf("metallicRoughnessTexture", objectOf("pbrMetallicRoughness", material));
+        if (not pbr or not wantsMetallicRoughness(material) or Option.getWithDefault(0, intOf("texCoord", info)) != 0) Nil
+        else (info, limits#baseColor) :: Nil
+
+    /// 材質の baseColorTexture・normalTexture・emissiveTexture（emissive が 0 でない材質だけ）・metallicRoughnessTexture（metallic・roughness を付ける材質だけ）が指す画像の番号 → その絵の長い辺の上限
     /// （2 つ以上から指されたら大きい方）。
-    // WhyNot: 全部の画像を decode しない — metallicRoughness・occlusion の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。
-    def usedImages(limits: TextureLimits, json: Obj): Map[Int32, Int32] =
+    // WhyNot: 全部の画像を decode しない — occlusion の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。metallicRoughnessTexture は
+    //   metallic・roughness を付ける材質（wantsMetallicRoughness）だけ読む。
+    def usedImages(limits: TextureLimits, pbr: Bool, json: Obj): Map[Int32, Int32] =
         let textures = objectsOf("textures", json);
         objectsOf("materials", json) |> Vector.toList
             |> List.flatMap(material -> (objectOf("baseColorTexture", objectOf("pbrMetallicRoughness", material)), limits#baseColor)
                                         :: (objectOf("normalTexture", material), limits#normal)
-                                        :: emissiveImageOf(limits, material))
+                                        :: List.append(emissiveImageOf(limits, material), metallicRoughnessImageOf(limits, pbr, material)))
             |> List.filterMap(entry -> { let (info, maxSide) = entry; intOf("index", info) |> Option.map(k -> (k, maxSide)) })
             |> List.filterMap(entry -> { let (k, maxSide) = entry; Vector.nth(k, textures) |> Option.flatMap(texture -> intOf("source", texture)) |> Option.map(src -> (src, maxSide)) })
             |> List.foldLeft((acc, entry) -> { let (src, maxSide) = entry; Map.insertWith((a, b) -> Int32.max(a, b), src, maxSide, acc) }, Map.empty())
@@ -188,19 +208,26 @@ pub mod Gltf {
     /// | 無い | 0 でない | 頂点の色の材質 + emission・spec の名前は "gltf:vc:<emissive>" |
     /// | 無い | 0 | None（頂点の色で描く） |
     ///
+    /// metallic・roughness は、loadTexturedPbrUsing の時だけ読む。pbrMetallicRoughness があり metallicFactor・roughnessFactor・metallicRoughnessTexture のどれかが書いてある材質に
+    /// Scene3d.withMetallicRoughness で付く（書いていない値は glTF の既定の 1。pbrMetallicRoughness が無い・baseColorFactor だけの材質は付けない — 色だけの古い glb が
+    /// 全部金属に見えるのを避ける）。絵が無く emissive も無い材質も、付く時は材質になる（"gltf:vc"・頂点の色の土台）。
+    /// metallicRoughnessTexture は texCoord が 0 で読めた時だけ Scene3d.withMetallicRoughnessTexture（読めない時は値だけにして知らせる）。
+    ///
     /// texturedMaterial の絵の読み方は sampler の magFilter（NEAREST なら Nearest・ほかは Linear）、wrapS か wrapT が CLAMP_TO_EDGE なら Clamp。
     /// 法線マップは baseColorTexture のある材質にだけ足す（strength = scale・既定 1）。読み飛ばした物の知らせも返す。
     /// alphaMode（材質のある物だけ）: BLEND → Scene3d.withAlphaBlend(true)・MASK → Scene3d.withCutout(true)（alphaCutoff は 0.5 の固定。
     /// 0.5 でなければ 1 行知らせる）・OPAQUE → そのまま。doubleSided は当てない（Blender の書き出しは全部の材質を真にするので、
     /// 両面で描く物はゲームが gltfMaterial を見て Scene3d.withDoubleSided を当てる）。
-    def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], index: Int32, material: Obj): MaterialBuild =
+    def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], readPbr: Bool, index: Int32, material: Obj): MaterialBuild =
         let pbr = objectOf("pbrMetallicRoughness", material);
         let base = textureRefOf(glb, images, objectOf("baseColorTexture", pbr));
         let normal = textureRefOf(glb, images, objectOf("normalTexture", material));
-        let emission = emissionOf(glb, images, index, material);
+        let emission = emissionOf(glb, images, readPbr, index, material);
+        let metal = metallicRoughnessOf(glb, images, readPbr, material);
         let names = { base = fst(base) |> Option.map(r -> Texture3d.name(r#texture)),
                       normal = fst(normal) |> Option.map(r -> Texture3d.name(r#texture)),
-                      emissive = emission#texture |> Option.map(r -> Texture3d.name(r#texture)) };
+                      emissive = emission#texture |> Option.map(r -> Texture3d.name(r#texture)),
+                      metallicRoughness = metal |> Option.flatMap(b -> b#texture) |> Option.map(r -> Texture3d.name(r#texture)) };
         let surface = fst(base) |> Option.map(ref -> {
             let textured = Scene3d.texturedMaterial(Texture3d.name(ref#texture), ref#filter) |> Scene3d.withWrap(ref#wrap);
             match fst(normal) {
@@ -212,20 +239,67 @@ pub mod Gltf {
         });
         let baseName = fst(base) |> Option.map(r -> "tex:${ToString.toString(r#filter)}") |> Option.getWithDefault("vc");
         let lit = (e: Option[EmissionBuild]) -> match (surface, e) {
+            case (None, None)       => metal |> Option.map(b -> vertexColorMaterial("gltf:vc") |> Scene3d.withWrap(metalWrapOf(b)))
             case (_, None)          => surface
             case (Some(m), Some(b)) => Some(m |> Scene3d.withEmission(b#shade) |> Scene3d.withEmissionIntensity(b#strength) |> Scene3d.withSpecName("gltf:${baseName}:${b#name}"))
             case (None, Some(b))    => Some(vertexColorMaterial("gltf:${baseName}:${b#name}") |> Scene3d.withEmission(b#shade) |> Scene3d.withEmissionIntensity(b#strength) |> Scene3d.withWrap(b#wrap))
         };
         let usesTexture = Option.nonEmpty(emission#texture);
+        let usesMetalTexture = Option.nonEmpty(names#metallicRoughness);
         let info = gltfMaterialOf(names, material);
         let withAlpha = (m: Option[Scene3d.Material3d]) -> m |> Option.map(withAlphaModeOf(info#alphaMode));
-        let withUv = withAlpha(lit(emission#build));
+        let withUv = withAlpha(lit(emission#build) |> Option.map(withMetallicRoughnessOf(metal, true)));
         // WhyNot: 材質の無い（頂点の色で描く）物の alphaCutoff を知らせない — α を持たないので抜く所が無い。
         let cutoffLine = if (Option.isEmpty(withUv)) Nil else alphaCutoffLine(index, material, info);
-        { withUv = withUv, withoutUv = withAlpha(lit(if (usesTexture) None else emission#build)),
+        let emissiveNoUv = if (usesTexture) "glTF: 材質 ${materialLabel(index, material)} の emissiveTexture を、TEXCOORD_0 の無い形では光らせない（uv で読む絵）" :: Nil else Nil;
+        let metalNoUv = if (usesMetalTexture) "glTF: 材質 ${materialLabel(index, material)} の metallicRoughnessTexture を、TEXCOORD_0 の無い形では読まず値だけにする（uv で読む絵）" :: Nil else Nil;
+        { withUv = withUv, withoutUv = withAlpha(lit(if (usesTexture) None else emission#build) |> Option.map(withMetallicRoughnessOf(metal, false))),
           info = info,
-          lines = List.flatten(snd(base) :: snd(normal) :: emission#lines :: emissiveFactorLine(index, material) :: cutoffLine :: Nil),
-          noUvLine = if (usesTexture) Some("glTF: 材質 ${materialLabel(index, material)} の emissiveTexture を、TEXCOORD_0 の無い形では光らせない（uv で読む絵）") else None }
+          lines = List.flatten(snd(base) :: snd(normal) :: emission#lines :: metalLines(index, material, metal) :: emissiveFactorLine(index, material) :: cutoffLine :: Nil),
+          noUvLines = List.append(emissiveNoUv, metalNoUv) }
+
+    /// metallic・roughness の付く材質か（式は materialOf の説明）。
+    def wantsMetallicRoughness(material: Obj): Bool =
+        let pbr = objectOf("pbrMetallicRoughness", material);
+        Map.memberOf("pbrMetallicRoughness", material)
+            and (Map.memberOf("metallicFactor", pbr) or Map.memberOf("roughnessFactor", pbr) or Option.nonEmpty(intOf("index", objectOf("metallicRoughnessTexture", pbr))))
+
+    /// 材質に付ける metallic・roughness。metallic・roughness = metallicFactor・roughnessFactor（既定 1）・texture = 読めた metallicRoughnessTexture。
+    type alias MetalBuild = { metallic = Float64, roughness = Float64, texture = Option[TextureRef], unreadable = Bool, lines = List[String] }
+
+    /// material の metallic・roughness（付けない材質は None）。絵を指しているのに読めない時は texture = None・unreadable = true。
+    def metallicRoughnessOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], enabled: Bool, material: Obj): Option[MetalBuild] =
+        if (not enabled or not wantsMetallicRoughness(material)) None
+        else {
+            let pbr = objectOf("pbrMetallicRoughness", material);
+            let info = objectOf("metallicRoughnessTexture", pbr);
+            let (ref, lines) = textureRefOf(glb, images, info);
+            Some({ metallic = numberAt("metallicFactor", pbr) |> Option.getWithDefault(1.0),
+                   roughness = numberAt("roughnessFactor", pbr) |> Option.getWithDefault(1.0),
+                   texture = ref, unreadable = Option.nonEmpty(intOf("index", info)) and Option.isEmpty(ref), lines = lines })
+        }
+
+    /// 絵の無い材質（頂点の色の土台）の wrap は metallicRoughnessTexture の sampler に合わせる。
+    def metalWrapOf(b: MetalBuild): Scene3d.Wrap = b#texture |> Option.map(r -> r#wrap) |> Option.getWithDefault(Scene3d.Wrap.Repeat)
+
+    /// 材質 m に metal の metallic・roughness を付ける（metal が None なら m のまま）。useTexture が偽なら絵は付けず値だけ。
+    def withMetallicRoughnessOf(metal: Option[MetalBuild], useTexture: Bool, m: Scene3d.Material3d): Scene3d.Material3d = match metal {
+        case None    => m
+        case Some(b) =>
+            let valued = m |> Scene3d.withMetallicRoughness(b#metallic, b#roughness);
+            match b#texture {
+                case Some(ref) if useTexture => valued |> Scene3d.withMetallicRoughnessTexture(Texture3d.name(ref#texture))
+                case _                       => valued
+            }
+    }
+
+    /// metallicRoughnessTexture が読めない時の知らせと、絵の読み飛ばしの知らせ。
+    def metalLines(index: Int32, material: Obj, metal: Option[MetalBuild]): List[String] = match metal {
+        case None    => Nil
+        case Some(b) =>
+            let unreadable = if (b#unreadable) "glTF: 材質 ${materialLabel(index, material)} の metallicRoughnessTexture が読めないので、metallicFactor・roughnessFactor の値だけで読む" :: Nil else Nil;
+            List.append(b#lines, unreadable)
+    }
 
     /// glTF の alphaMode を材質に当てる（BLEND は半透明・MASK は α 0.5 で抜く・OPAQUE はそのまま）。
     def withAlphaModeOf(mode: Model3d.AlphaMode, m: Scene3d.Material3d): Scene3d.Material3d = match mode {
@@ -263,8 +337,11 @@ pub mod Gltf {
     /// emissive の色 c = emissiveFactor。emissiveTexture を指していなければ Solid(c)、指していて読めれば 絵の rgb × c。strength は木に入れない
     /// （線形へ戻した後に掛ける倍率。強さだけ違う材質が同じプログラムを使う）。光るかどうかは emissiveFactor × strength が 0 でないかで決める。
     /// 指しているのに読めない時は付けない（Solid へ倒すと、Blender の書き出しの factor (1, 1, 1) × 強さで物全体が真っ白に光る）。
-    def emissionOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], index: Int32, material: Obj): EmissionOf =
-        let c = emissiveFactorOf(material);
+    /// linear が真（PBR の口）なら emissiveFactor を線形の値として読み、画面の値へ戻して持つ（baseColorOf と同じ理由）。
+    def emissionOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], linear: Bool, index: Int32, material: Obj): EmissionOf =
+        let raw = emissiveFactorOf(material);
+        let screen = (v: Float64) -> if (linear) Texture3d.linearToSrgb(v) else v;
+        let c = { r = screen(raw#r), g = screen(raw#g), b = screen(raw#b) };
         let strength = emissiveStrengthOf(material);
         let info = objectOf("emissiveTexture", material);
         let digits = "(${Float64.toString(c#r)},${Float64.toString(c#g)},${Float64.toString(c#b)})";
@@ -314,9 +391,9 @@ pub mod Gltf {
     def isZeroColor(c: { r = Float64, g = Float64, b = Float64 }): Bool = c#r <= 0.0 and c#g <= 0.0 and c#b <= 0.0
 
     /// GltfMaterial の絵の名前の欄（読めた絵の Texture3d.name）。
-    type alias TextureNames = { base = Option[String], normal = Option[String], emissive = Option[String] }
+    type alias TextureNames = { base = Option[String], normal = Option[String], emissive = Option[String], metallicRoughness = Option[String] }
 
-    def noTextureNames(): TextureNames = { base = None, normal = None, emissive = None }
+    def noTextureNames(): TextureNames = { base = None, normal = None, emissive = None, metallicRoughness = None }
 
     /// glTF の材質の欄を読む（alphaMode は MASK・BLEND の他は Opaque・alphaCutoff 既定 0.5・doubleSided 既定 偽）。
     def gltfMaterialOf(names: TextureNames, material: Obj): Model3d.GltfMaterial =
@@ -329,7 +406,10 @@ pub mod Gltf {
           alphaCutoff = numberAt("alphaCutoff", material) |> Option.getWithDefault(0.5),
           doubleSided = Map.get("doubleSided", material) == Some(Util.Json.Json.JBool(true)),
           baseColorTexture = names#base, normalTexture = names#normal, emissiveTexture = names#emissive,
-          emissive = emissiveOf(material) }
+          emissive = emissiveOf(material),
+          metallic = numberAt("metallicFactor", objectOf("pbrMetallicRoughness", material)) |> Option.getWithDefault(1.0),
+          roughness = numberAt("roughnessFactor", objectOf("pbrMetallicRoughness", material)) |> Option.getWithDefault(1.0),
+          metallicRoughnessTexture = names#metallicRoughness }
 
     /// textureInfo（{ index, texCoord, extensions }）が指す絵と、sampler の読み方。
     type alias TextureRef = { texture = Texture3d.Texture3d, filter = ShaderDoc.FilterMode, wrap = Scene3d.Wrap }
@@ -550,16 +630,6 @@ pub mod Gltf {
 
     // ── ノードと座標の写し方 ─────────────────────────────────
 
-    def mirror(): Mat4.Mat4 = Mat4.scale(Vec3.v3(-1.0, 1.0, 1.0))
-
-    /// S·M·S（glTF の座標の行列 → engine の座標の行列）。
-    def mirrorMat4(m: Mat4.Mat4): Mat4.Mat4 = Mat4.mul(mirror(), Mat4.mul(m, mirror()))
-
-    def mirrorPose(p: Skin3d.JointPose): Skin3d.JointPose =
-        { translation = Vec3.v3(0.0 - p#translation#x, p#translation#y, p#translation#z),
-          rotation = { x = p#rotation#x, y = 0.0 - p#rotation#y, z = 0.0 - p#rotation#z, w = p#rotation#w },
-          scale = p#scale }
-
     /// ノードの局所の姿勢（glTF の座標）。matrix のノードは平行移動・回転・倍率に分ける。
     def nodePose(node: Obj): Result[String, Skin3d.JointPose] =
         forM (
@@ -568,11 +638,11 @@ pub mod Gltf {
             r <- numbersOf("rotation", 4, node);
             s <- numbersOf("scale", 3, node)
         ) yield match matrix {
-            case Some(cells) => decompose(cells)
+            case Some(cells) => Gltf.Internal.decompose(cells)
             case None =>
-                { translation = Option.map(v -> vec3At(v, 0), t) |> Option.getWithDefault(Vec3.zero()),
-                  rotation = Option.map(v -> quatOf(v), r) |> Option.getWithDefault(Quat.identity()),
-                  scale = Option.map(v -> vec3At(v, 0), s) |> Option.getWithDefault(Vec3.one()) }
+                { translation = Option.map(v -> Gltf.Internal.vec3At(v, 0), t) |> Option.getWithDefault(Vec3.zero()),
+                  rotation = Option.map(v -> Gltf.Internal.quatOf(v), r) |> Option.getWithDefault(Quat.identity()),
+                  scale = Option.map(v -> Gltf.Internal.vec3At(v, 0), s) |> Option.getWithDefault(Vec3.one()) }
         }
 
     def nodeMatrix(node: Obj): Result[String, Mat4.Mat4] =
@@ -580,40 +650,6 @@ pub mod Gltf {
             case Some(cells) => Mat4.ofColumns(cells)
             case None => Result.map(Skin3d.jointPoseToMat4, nodePose(node))
         }, numbersOf("matrix", 16, node))
-
-    /// 列優先の 16 個を平行移動・回転・倍率に分ける（行列式が負なら x の倍率を負にする）。
-    def decompose(cells: Vector[Float64]): Skin3d.JointPose =
-        let c = i -> Vector.get(i, cells);
-        let len = (i: Int32) -> Num.sqrt(c(i) * c(i) + c(i + 1) * c(i + 1) + c(i + 2) * c(i + 2));
-        let det = c(0) * (c(5) * c(10) - c(9) * c(6)) - c(4) * (c(1) * c(10) - c(9) * c(2)) + c(8) * (c(1) * c(6) - c(5) * c(2));
-        let sx = if (det < 0.0) 0.0 - len(0) else len(0);
-        let sy = len(4);
-        let sz = len(8);
-        let safe = s -> if (Float64.abs(s) < 1.0e-12) 1.0 else s;
-        let m = (row: Int32, col: Int32) -> c(col * 4 + row) / safe(if (col == 0) sx else if (col == 1) sy else sz);
-        { translation = Vec3.v3(c(12), c(13), c(14)), rotation = quatOfRotation(m), scale = Vec3.v3(sx, sy, sz) }
-
-    def quatOfRotation(m: (Int32, Int32) -> Float64): Quat.Quat =
-        let trace = m(0, 0) + m(1, 1) + m(2, 2);
-        let q =
-            if (trace > 0.0) {
-                let s = Num.sqrt(trace + 1.0) * 2.0;
-                { x = (m(2, 1) - m(1, 2)) / s, y = (m(0, 2) - m(2, 0)) / s, z = (m(1, 0) - m(0, 1)) / s, w = 0.25 * s }
-            } else if (m(0, 0) > m(1, 1) and m(0, 0) > m(2, 2)) {
-                let s = Num.sqrt(1.0 + m(0, 0) - m(1, 1) - m(2, 2)) * 2.0;
-                { x = 0.25 * s, y = (m(0, 1) + m(1, 0)) / s, z = (m(0, 2) + m(2, 0)) / s, w = (m(2, 1) - m(1, 2)) / s }
-            } else if (m(1, 1) > m(2, 2)) {
-                let s = Num.sqrt(1.0 + m(1, 1) - m(0, 0) - m(2, 2)) * 2.0;
-                { x = (m(0, 1) + m(1, 0)) / s, y = 0.25 * s, z = (m(1, 2) + m(2, 1)) / s, w = (m(0, 2) - m(2, 0)) / s }
-            } else {
-                let s = Num.sqrt(1.0 + m(2, 2) - m(0, 0) - m(1, 1)) * 2.0;
-                { x = (m(0, 2) + m(2, 0)) / s, y = (m(1, 2) + m(2, 1)) / s, z = 0.25 * s, w = (m(1, 0) - m(0, 1)) / s }
-            };
-        Quat.normalized(q)
-
-    def vec3At(v: Vector[Float64], k: Int32): Vec3.Vec3 = Vec3.v3(Vector.get(k, v), Vector.get(k + 1, v), Vector.get(k + 2, v))
-
-    def quatOf(v: Vector[Float64]): Quat.Quat = { x = Vector.get(0, v), y = Vector.get(1, v), z = Vector.get(2, v), w = Vector.get(3, v) }
 
     /// ノードの番号 → 親のノードの番号。
     def parentsOfNodes(nodes: Vector[Obj]): Map[Int32, Int32] =
@@ -712,8 +748,8 @@ pub mod Gltf {
                           Vector.nth(Vector.get(old, jointNodes), nodes) |> Option.toOk("glTF: ジョイントのノードが無い") |> Result.flatMap(nodePose));
             bindWorlds <- Vector.toList(bindsGl) |> Result.traverse(m ->
                               Mat4.inverse(m) |> Option.toOk("glTF: 逆バインド行列に逆行列が無い"));
-            skin <- Skin3d.make({ names = names, parents = parents, rest = List.toVector(List.map(mirrorPose, restGl)),
-                                  inverseBinds = Some(Vector.map(mirrorMat4, bindsGl)), rootTransform = mirrorMat4(rootGl) })
+            skin <- Skin3d.make({ names = names, parents = parents, rest = List.toVector(List.map(Gltf.Internal.mirrorPose, restGl)),
+                                  inverseBinds = Some(Vector.map(Gltf.Internal.mirrorMat4, bindsGl)), rootTransform = Gltf.Internal.mirrorMat4(rootGl) })
         ) yield {
             skin = skin,
             jointOfNode = Vector.range(0, count) |> Vector.foldLeft((m, old) -> Map.insert(Vector.get(old, jointNodes), newOf(old), m), Map.empty()),
@@ -723,7 +759,7 @@ pub mod Gltf {
 
     // ── メッシュ ────────────────────────────────────────────
 
-    def buildModel(glb: Glb): Result[String, Built] =
+    def buildModel(linear: Bool, glb: Glb): Result[String, Built] =
         let nodes = objectsOf("nodes", glb#json);
         let parentOf = parentsOfNodes(nodes);
         let meshNodes = Vector.range(0, Vector.length(nodes)) |> Vector.filter(i -> Map.memberOf("mesh", Vector.get(i, nodes)));
@@ -736,7 +772,7 @@ pub mod Gltf {
             };
             forM (
                 skinBuild <- skinR;
-                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(glb, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
+                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(linear, glb, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
                 parts <- Ok(nested |> List.flatMap(snd));
                 mesh <- meshOfParts(parts, Option.nonEmpty(skinBuild));
                 partMeshes <- parts |> Result.traverse(part -> partMeshOf(part, Option.nonEmpty(skinBuild)));
@@ -774,7 +810,7 @@ pub mod Gltf {
             let node = Vector.get(i, nodes);
             let local = Vector.get(i, localsGl);
             { name = stringOf("name", node) |> Option.getWithDefault(""), parent = Map.get(i, parentOf),
-              local = mirrorMat4(local), world = mirrorMat4(Map.getWithDefault(i, local, worldsGl)),
+              local = Gltf.Internal.mirrorMat4(local), world = Gltf.Internal.mirrorMat4(Map.getWithDefault(i, local, worldsGl)),
               localBounds = intOf("mesh", node) |> Option.flatMap(localBoundsOfMesh(glb)),
               parts = Map.getWithDefault(i, Nil, partsOf) }
         })
@@ -803,7 +839,7 @@ pub mod Gltf {
             acc <- objectAt("accessors", accessorIndex, glb#json) |> Result.toOption;
             low <- numbersOf("min", 3, acc) |> Result.toOption |> Option.flatMap(identity);
             high <- numbersOf("max", 3, acc) |> Result.toOption |> Option.flatMap(identity)
-        ) yield (vec3At(low, 0), vec3At(high, 0));
+        ) yield (Gltf.Internal.vec3At(low, 0), Gltf.Internal.vec3At(high, 0));
         let glBounds = match declared {
             case Some(b) => Some(b)
             case None    => readAccessorWidth(glb, accessorIndex, 3, "POSITION") |> Result.toOption |> Option.flatMap(a -> scannedBounds(a#values))
@@ -828,7 +864,7 @@ pub mod Gltf {
     ///   - skin のあるノード: 変換を無視し（仕様の MUST）、JOINTS_0 / WEIGHTS_0 を読む
     ///   - ジョイントの子孫: バインドの時のジョイントの world 行列 × ジョイントから下の局所の鎖で写し、そのジョイントに重み 1
     ///   - ほか: world 行列を焼き込む（スキンがあれば根のジョイントに重み 1）
-    def nodeParts(glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinBuild: Option[SkinBuild], i: Int32): Result[String, List[Part]] =
+    def nodeParts(linear: Bool, glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], skinBuild: Option[SkinBuild], i: Int32): Result[String, List[Part]] =
         let node = Vector.get(i, nodes);
         let jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty());
         let placementR: Result[String, (Mat4.Mat4, Binding)] = match (skinBuild, intOf("skin", node)) {
@@ -850,10 +886,10 @@ pub mod Gltf {
             placement <- placementR;
             meshIndex <- intOf("mesh", node) |> Option.toOk("glTF: nodes[${i}] の mesh が数でない");
             meshObj <- objectAt("meshes", meshIndex, glb#json);
-            parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(glb, fst(placement), snd(placement), prim))
+            parts <- objectsOf("primitives", meshObj) |> Vector.toList |> Result.traverse(prim -> readPrimitive(linear, glb, fst(placement), snd(placement), prim))
         ) yield parts
 
-    def readPrimitive(glb: Glb, transform: Mat4.Mat4, binding: Binding, prim: Obj): Result[String, Part] =
+    def readPrimitive(linear: Bool, glb: Glb, transform: Mat4.Mat4, binding: Binding, prim: Obj): Result[String, Part] =
         let attributes = objectOf("attributes", prim);
         let mode = Option.getWithDefault(4, intOf("mode", prim));
         forM (
@@ -863,7 +899,7 @@ pub mod Gltf {
             normals <- traverseOpt(intOf("NORMAL", attributes), k -> readAccessorWidth(glb, k, 3, "NORMAL"));
             indices <- traverseOpt(intOf("indices", prim), k -> readAccessorWidth(glb, k, 1, "indices"));
             skin <- readSkinAttributes(glb, attributes, binding, positions#count);
-            color <- baseColorOf(glb, prim)
+            color <- baseColorOf(linear, glb, prim)
         ) yield {
             let count = positions#count;
             let uvs = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
@@ -874,9 +910,9 @@ pub mod Gltf {
                 case None => Vector.range(0, count)
             };
             let normalMat = Mat4.normalMatrix(transform);
-            let placedPositions = flatXyz(Vector.range(0, count) |> Vector.map(v -> Mat4.apply(transform, vec3At(positions#values, v * 3))));
+            let placedPositions = flatXyz(Vector.range(0, count) |> Vector.map(v -> Mat4.apply(transform, Gltf.Internal.vec3At(positions#values, v * 3))));
             let placedNormals = Option.map(n -> flatXyz(Vector.range(0, count) |> Vector.map(v ->
-                Vec3.normalized(Mat4.applyDir(normalMat, vec3At(n#values, v * 3))))), normals);
+                Vec3.normalized(Mat4.applyDir(normalMat, Gltf.Internal.vec3At(n#values, v * 3))))), normals);
             let placedTangents = forM (_ <- uvs; t <- tangents) yield placeTangents(transform, t#values);
             let part = { positions = placedPositions, normals = Option.getWithDefault(Vector.empty(), placedNormals),
                          colors = rowsOf(count, Vector.length(color), (_, c) -> Vector.get(c, color)), indices = indexList,
@@ -909,7 +945,7 @@ pub mod Gltf {
         let col = (j: Int32) -> Vec3.v3(Vector.get(j * 4, c), Vector.get(j * 4 + 1, c), Vector.get(j * 4 + 2, c));
         let flip = if (Vec3.dot(col(0), Vec3.cross(col(1), col(2))) < 0.0) -1.0 else 1.0;
         let count = Vector.length(values) / 4;
-        let placed = Vector.range(0, count) |> Vector.map(v -> Vec3.normalized(Mat4.applyDir(transform, vec3At(values, v * 4))));
+        let placed = Vector.range(0, count) |> Vector.map(v -> Vec3.normalized(Mat4.applyDir(transform, Gltf.Internal.vec3At(values, v * 4))));
         rowsOf(count, 4, (v, axis) -> if (axis == 3) Vector.get(v * 4 + 3, values) * flip else component(axis, Vector.get(v, placed)))
 
     def traverseOpt(o: Option[Int32], f: Int32 -> Result[String, a]): Result[String, Option[a]] = match o {
@@ -939,16 +975,19 @@ pub mod Gltf {
             }
         }
 
-    /// baseColorFactor をそのまま頂点の色にする。材質や baseColorFactor が無ければ白。
-    // WhyNot: glTF の決まりどおり線形の値として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
-    //   片方だけ直すと同じ Blender の色が形式で違って見える。COLOR_0 と emissiveFactor も同じく画面の値として読む。
-    def baseColorOf(glb: Glb, prim: Obj): Result[String, Vector[Float64]] =
+    /// baseColorFactor を頂点の色にする。材質や baseColorFactor が無ければ白。linear が偽なら値をそのまま（画面の値として）、
+    /// 真なら glTF の決まりどおり線形の値として読み、頂点の色（画面の値）へ戻して書く（描き手は頂点の色を線形へ戻すので、元の線形の値に戻る）。
+    // WhyNot: 既存の口（loadTexturedUsing）は線形として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
+    //   片方だけ直すと同じ Blender の色が形式で違って見え、既存のゲームの色が変わる。COLOR_0 と emissiveFactor も同じく画面の値として読む。
+    // WhyNot: PBR の口（loadTexturedPbrUsing）は線形として読む — 画面の値として読むと、金・赤が濃く、暗い色が黒く潰れて Blender の手本と合わない。
+    def baseColorOf(linear: Bool, glb: Glb, prim: Obj): Result[String, Vector[Float64]] =
         let white = Vector#{ 1.0, 1.0, 1.0 };
         match intOf("material", prim) {
             case None => Ok(white)
             case Some(k) => Result.flatMap(material ->
                 Result.map(factor -> match factor {
                     case Some(rgba) => Vector.take(3, rgba) |> Vector.map(c -> Float64.max(0.0, Float64.min(1.0, c)))
+                        |> Vector.map(c -> if (linear) Texture3d.linearToSrgb(c) else c)
                     case None => white
                 }, numbersOf("baseColorFactor", 4, objectOf("pbrMetallicRoughness", material))), objectAt("materials", k, glb#json))
         }
@@ -959,7 +998,7 @@ pub mod Gltf {
         let corner = (t: Int32, c: Int32) -> Vector.get(t * 3 + c, part#indices);
         let corners = Vector.range(0, tris * 3) |> Vector.map(k -> corner(k / 3, k - (k / 3) * 3));
         let faceNormals = Vector.range(0, tris) |> Vector.map(t -> {
-            let p = c -> vec3At(part#positions, corner(t, c) * 3);
+            let p = c -> Gltf.Internal.vec3At(part#positions, corner(t, c) * 3);
             Vec3.normalized(Vec3.cross(Vec3.sub(p(1), p(0)), Vec3.sub(p(2), p(0))))
         });
         let hasSkin = not Vector.isEmpty(part#joints);

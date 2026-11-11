@@ -305,10 +305,11 @@ pub mod Render3dGlsl {
         (if (needsMip) ShaderGen.texMipSource() else "") +
         (if (normalMapped) normalMapSource() else "") +
         (if (surface#lightmap) lightmapSource() else "") +
+        (if (surface#metallicRoughness) metallicRoughnessSource() else "") +
         "void main() {\n" +
         "    vec4 albedo;\n" +
         "    vec3 emission;\n" +
-        "    materialEval(albedo, emission);\n" +
+        (if (surface#metallicRoughness) "    vec2 metalRough;\n    materialEval(albedo, emission, metalRough);\n" else "    materialEval(albedo, emission);\n") +
         cutout +
         "    if (uDepthOut == 1) {\n" +
         "        float g = depthGray(vWorld);\n" +
@@ -316,11 +317,35 @@ pub mod Render3dGlsl {
         "        return;\n" +
         "    }\n" +
         facing +
-        (if (surface#lightmap)
-            "    vec3 light = lightmapLightAt(vWorld, " + normal + ", lightmapColor());\n"
+        (if (surface#metallicRoughness)
+            "    vec3 n = " + normal + ";\n" +
+            (if (surface#lightmap) "    vec3 light = lightmapLightAt(vWorld, n, lightmapColor());\n" else "    vec3 light = lightAt(vWorld, n);\n") +
+            "    vec3 lit = pbrAt(vWorld, n, r3d_srgbToLinear3(albedo.rgb) * vTint, light, vec3(metalRough, 0.0));\n" +
+            "    fragColor = vec4(r3d_surfaceOutLit(lit, emission, vEmissionIntensity, vWorld), " + alpha + ");\n"
          else
-            "    vec3 light = lightAt(vWorld, " + normal + ");\n") +
-        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true), " + alpha + ");\n" +
+            (if (surface#lightmap)
+                "    vec3 light = lightmapLightAt(vWorld, " + normal + ", lightmapColor());\n"
+             else
+                "    vec3 light = lightAt(vWorld, " + normal + ");\n") +
+            "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true), " + alpha + ");\n") +
+        "}\n"
+
+    /// metallic と roughness を持つ材質の色 pbrAt(p, n, albedo × tint, 拡散の光, vec3(metallic, roughness, 0))（LightModel3d.pbrModel の木から作る）と、
+    /// それが読む空の uniform と、かすみ → emission の組み立て r3d_surfaceOutLit(pbrAt の色, emission, intensity, p)。
+    /// 色 = albedo × (1 − metallic) × light + 鏡面 + 映り込みをかすみに通してから、線形へ戻した emission × intensity を足して画面の値へ戻した物
+    /// （CPU の描き手は SoftRaster3d.materialPixel と materialColor）。lightSource と colorSpaceSource() の後に置く。
+    // WhyNot: r3d_surfaceOut を使い回さない — あちらは albedo × tint × light を中で掛けるので、鏡面を足すには掛け算の前後を別に書く必要があり、
+    //   持たない材質の GLSL の字を変えることになる。
+    pub def metallicRoughnessSource(): String =
+        "uniform vec3 uZenith;\n" +
+        "uniform vec3 uHorizon;\n" +
+        "uniform vec3 uGround;\n" +
+        "uniform float uCurve;\n" +
+        LightModel3d.Codegen.toGlsl("pbrAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.Light :: Vec3Input.MetallicRoughness :: Nil,
+                                    LightModel3d.pbrModel()) +
+        "vec3 r3d_surfaceOutLit(vec3 lit, vec3 emission, float intensity, vec3 p) {\n" +
+        "    vec3 c = fogged(lit, p);\n" +
+        "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
         "}\n"
 
     /// ベイクした光の uniform と、lightmap の絵の読み（lightmapColor）と、lightmap のある面の光の式（lightmapLightSource）。

@@ -56,3 +56,35 @@ def testLightmapGlslKeepsBakedLinear(): Unit \ Assert =
     let lightmap = LightModel3d.Codegen.toGlsl("lightmapLightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.LightmapColor :: Nil,
                                                 LightModel3d.lightmapLightingModel());
     Assert.assertFalse(String.contains(substr = "r3d_linearToSrgb", lightmap))
+
+def emptyScene(): Scene3d.Scene3dCmd =
+    Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, Vec2.zero())
+
+/// 空が無い場面の映り込みの色は ambient + hemisphere（線形の量・3 色とも同じ・曲がり 1）。
+@Test
+def testReflectionSkyWithoutSkyIsAmbientPlusHemisphere(): Unit \ Assert =
+    let base = emptyScene();
+    let scene = { environment = { ambient = Color.rgb(0.5, 0.5, 0.5), hemisphere = 0.25 | base#environment } | base };
+    let r = LightModel3d.reflectionSkyOf(scene);
+    let linear = Texture3d.srgbToLinear(0.5) + 0.25;
+    Assert.assertEq(expected = (linear, linear, linear, 1.0), (r#zenith#r, r#horizon#g, r#ground#b, r#curve))
+
+/// 空がある場面の映り込みは、その空の 3 色（線形の量）と曲がり。
+@Test
+def testReflectionSkyWithSkyIsTheSky(): Unit \ Assert =
+    let sky = Scene3d.gradientSky(Color.rgb(0.2, 0.4, 0.8), Color.rgb(0.9, 0.8, 0.7), Color.rgb(0.1, 0.1, 0.1)) |> Scene3d.withSkyCurve(2.0);
+    let scene = { sky = Some(sky) | emptyScene() };
+    let r = LightModel3d.reflectionSkyOf(scene);
+    Assert.assertEq(expected = (Texture3d.srgbToLinear(0.2), Texture3d.srgbToLinear(0.8), Texture3d.srgbToLinear(0.1), 2.0),
+                    (r#zenith#r, r#horizon#g, r#ground#b, r#curve))
+
+/// 金属っぽさの式の GLSL は 5 つの画素ごとの入力を受け、光のループで鏡面を足し、空の映り込みを足す。
+@Test
+def testToGlslPbrModelTakesFivePerPixelInputs(): Unit \ Assert =
+    let glsl = LightModel3d.Codegen.toGlsl("pbrAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.Albedo ::
+                                           LightModel3d.Vec3Input.Light :: LightModel3d.Vec3Input.MetallicRoughness :: Nil, LightModel3d.pbrModel());
+    Assert.assertTrue(String.startsWith(prefix = "vec3 pbrAt(vec3 p, vec3 n, vec3 albedo, vec3 light, vec3 metalRough) {", glsl) and
+                      String.contains(substr = "for (int i = 0; i < ${Scene3d.maxPointLights()}; i++)", glsl) and
+                      String.contains(substr = "for (int i = 0; i < ${Scene3d.maxSpotLights()}; i++)", glsl) and
+                      String.contains(substr = "spotShadow(i, p)", glsl) and
+                      String.contains(substr = "uZenith", glsl) and String.contains(substr = "uEye", glsl))

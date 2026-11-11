@@ -43,7 +43,7 @@ mod Render3d.Batch {
     /// 鍵に入るプログラムの版（lightmap と blend は batch にしないので入らない）。
     def kindBits(kind: ProgramKind): Int32 =
         let bit = (on, value) -> if (on) value else 0;
-        bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#doubleSided, 8) + bit(kind#coverage, 16)
+        bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#doubleSided, 8) + bit(kind#coverage, 16) + bit(kind#metallicRoughness, 32)
 
     /// xs を同じ bucketOf の字で同じ keyOf の物ごとにまとめる。keyOf が None の物は 1 体の batch。batch の中は来た順・batch どうしは頭の物が来た順。bucketOf = 形の鍵の字。
     // WhyNot: 鍵を Flix の Map だけで引かない — batch にならない物の多い場面で、物ごとに木の節を作り直す代金が prepare に出る。形の鍵の字は Java の String で hashCode を覚えている。
@@ -88,13 +88,15 @@ mod Render3d.Batch {
         }
 
     def hasSameTree(a: Option[Scene3d.MaterialFields], b: Option[Scene3d.MaterialFields]): Bool = match (a, b) {
-        case (Some(x), Some(y)) => ShaderGen.isSameSpec(x#spec, y#spec) and ShaderGen.isSameEmission(x#emission, y#emission)
+        case (Some(x), Some(y)) =>
+            ShaderGen.isSameSpec(x#spec, y#spec) and ShaderGen.isSameEmission(x#emission, y#emission)
+                and ShaderGen.isSameEmission(x#metallicRoughnessShade, y#metallicRoughnessShade)
         case (None, None)       => true
         case _                  => false
     }
 
     def textureNamesOf(material: Option[Scene3d.MaterialFields]): List[String] =
-        material |> Option.toList |> List.flatMap(m -> ShaderDoc.materialTexReads(m#spec, m#emission) |> List.map(fst))
+        material |> Option.toList |> List.flatMap(m -> ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.map(fst))
 
     /// members（来た順）の batch。間引いた物は描かない。
     pub def batchOf(head: MeshDraw, members: List[MeshDraw]): PlannedBatch =

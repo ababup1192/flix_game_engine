@@ -22,7 +22,7 @@ mod Render3d.TestBatch {
     def solidFields(): Scene3d.MaterialFields = Scene3d.materialFieldsOf(solidMaterial())
 
     def plainKind(): Render3d.ProgramKind =
-        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false }
+        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false }
 
     def surfaceKey(m: Scene3d.MaterialFields, kind: Render3d.ProgramKind): Option[BatchKey] =
         batchKeyOf(DrawMode.Instanced, plainDraw(1.0, false), Some((m, kind)))
@@ -78,12 +78,12 @@ mod Render3d.TestBatch {
         let bumped = (s: Float64) -> keyOf({ normalMap = Some({ texture = "n", strength = s }) | solidFields() });
         Assert.assertTrue(bumped(1.0) != bumped(0.5))
 
-    /// プログラムの版の欄（skinned・uv・normalMap・doubleSided・coverage）は、どの 2 つも違う鍵になる。
+    /// プログラムの版の欄（skinned・uv・normalMap・doubleSided・coverage・metallicRoughness）は、どの 2 つも違う鍵になる。
     @Test
     def testEveryProgramKindFieldSplits(): Unit \ Assert =
         let base = plainKind();
-        let kinds = base :: { skinned = true | base } :: { uv = true | base } :: { normalMap = true | base } :: { doubleSided = true | base } :: { coverage = true | base } :: Nil;
-        Assert.assertEq(expected = 6, kinds |> List.map(k -> surfaceKey(solidFields(), k)) |> List.toSet |> Set.size)
+        let kinds = base :: { skinned = true | base } :: { uv = true | base } :: { normalMap = true | base } :: { doubleSided = true | base } :: { coverage = true | base } :: { metallicRoughness = true | base } :: Nil;
+        Assert.assertEq(expected = 7, kinds |> List.map(k -> surfaceKey(solidFields(), k)) |> List.toSet |> Set.size)
 
     /// 半透明の物は batch にしない。
     @Test

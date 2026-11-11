@@ -1,4 +1,4 @@
-<!-- engine v0.91.0 / 生成: 2026-11-10 -->
+<!-- engine v0.91.0 / 生成: 2026-11-11 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -605,6 +605,9 @@
   `pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - loadTexturedUsing のバイトの版。
   `pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
+- `pub def loadTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
+- loadTexturedPbrUsing のバイトの版。
+  `pub def fromGlbTexturedPbrUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
@@ -664,7 +667,7 @@
 - 画素ごと・場面ごとのスカラーの入力。
   `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity }`
 - 画素ごと・場面ごとの vec3 の入力。
-  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround }`
+  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness }`
 - 光のループの中で読めるスカラーの欄。
   `pub enum ScalarLightField with Eq { case RangeSquared case OuterCos case InnerCos }`
 - 光のループの中で読める vec3 の欄。
@@ -677,6 +680,10 @@
   `pub def fogModel(): Vec3Expr`
 - 向き SkyDirection の空の色。
   `pub def skyModel(): Vec3Expr`
+- metallic と roughness を持つ材質の、かすみの前の色（式は頭の説明）。入力は Albedo・Light・MetallicRoughness（画素ごと）と、
+  `pub def pbrModel(): Vec3Expr`
+- 映り込みに使う空の 3 色（線形の量）と curve。場面に空があればその空・無ければ ambient + hemisphere の色（真っ黒にしない）。
+  `pub def reflectionSkyOf(scene: Scene3d.Scene3dCmd): { zenith = Color, horizon = Color, ground = Color, curve = Float64 }`
 - 点光源 1 本の欄の数（位置 3・color × intensity 3・range²）。
   `pub def pointStride(): Int32`
 - スポット 1 本の欄の数（位置 3・向き 3・外の cos・内の cos・color × intensity 3・range²）。
@@ -864,7 +871,7 @@
 - glTF の材質の alphaMode。Opaque = 不透明・Mask = alphaCutoff で抜く・Blend = 半透明。
   `pub enum AlphaMode with Eq, ToString { case Opaque case Mask case Blend }`
 - glTF の材質の情報（読むだけ。描き方を決めるのは part#material）。
-  `pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool, baseColorTexture = Option[String], normalTexture = Option[String], emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 } }`
+  `pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool, baseColorTexture = Option[String], normalTexture = Option[String], emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 }, metallic = Float64, roughness = Float64, metallicRoughnessTexture = Option[String] }`
 - 名前が name のノード（同じ名前が複数あれば nodes の並びの前）。たくさん引く時は nodesByName を 1 回作って引く。
   `pub def findNode(name: String, model: Model3d): Option[ModelNode]`
 - 名前 → ノード（同じ名前が複数あれば nodes の並びの前）。
@@ -1266,7 +1273,9 @@
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
   `pub type alias NormalMap = { texture = String, strength = Float64 }`
 - 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, shaderHash = Lazy[Int64] }`
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64] }`
+- 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
+  `pub type alias MetallicRoughness = { metallic = Float64, roughness = Float64, texture = Option[String] }`
 - 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
   `pub type alias Material3d = MaterialData`
 - spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
@@ -1287,6 +1296,16 @@
   `pub def withEmissionIntensity(k: Float64, m: Material3d): Material3d`
 - spec の名前だけを替える（知らせの文面・GL のプログラムの名前に出る）。木の違う材質に別の名前を付けなくてよい
   `pub def withSpecName(name: String, m: Material3d): Material3d`
+- `pub def withMetallicRoughness(metallic: Float64, roughness: Float64, m: Material3d): Material3d`
+- metallic と roughness を絵 texture から読む（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness）。
+  `pub def withMetallicRoughnessTexture(texture: String, m: Material3d): Material3d`
+- metallic と roughness を外す（glb の材質を今までのマットな絵に戻す時）。
+  `pub def withoutMetallicRoughness(m: Material3d): Material3d`
+- 付いている metallic と roughness（無ければ None）。
+  `pub def metallicRoughnessOf(m: Material3d): Option[MetallicRoughness]`
+- metallicRoughnessShade の中の Param の名前（ほかの Param と重ならない字）。
+  `pub def pbrParamMetallic(): String`
+- `pub def pbrParamRoughness(): String`
 - `pub def withNormalMap(n: NormalMap, m: Material3d): Material3d`
 - `pub def withWrap(w: Wrap, m: Material3d): Material3d`
 - 材質の中身を読む（GL・CPU・鍵が使う）。
@@ -1482,16 +1501,16 @@
   `pub def atWorld(plane: (Axis3, Axis3), field: Field): Field`
 - Spec が World か Normal を読むか（2D の面に置くと 0 になるので知らせる物）。
   `pub def usesWorld3d(spec: Spec): Bool`
-- 材質（Spec と自分で光る色 emission）の中の Param の名前。Spec の paramNames の後ろに、emission にだけ出てくる名前を
-  `pub def materialParamNames(spec: Spec, emission: Option[Shade]): List[String]`
+- 材質（Spec・自分で光る色 emission・metallic と roughness の場 metallicRoughness）の中の Param の名前。Spec の paramNames の後ろに、emission にだけ出てくる名前を
+  `pub def materialParamNames(spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): List[String]`
 - 材質に渡された値の表から、materialParamNames の順に値を並べる（表に無い名前は 0）。
-  `pub def materialParamValues(spec: Spec, emission: Option[Shade], params: Map[String, Float64]): List[Float64]`
+  `pub def materialParamValues(spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade], params: Map[String, Float64]): List[Float64]`
 - 色の Param を値の表の値の Const に置き換える（bindParams の色の版。emission を CPU で評価する前に通す）。
   `pub def bindShadeParams(params: Map[String, Float64], shade: Shade): Shade`
 - 材質（Spec と emission）の中の (テクスチャ名, 補間) の組。Spec の texReads の後ろに、emission にだけ出てくる組を
-  `pub def materialTexReads(spec: Spec, emission: Option[Shade]): List[(String, FilterMode)]`
+  `pub def materialTexReads(spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): List[(String, FilterMode)]`
 - 材質の tex / blur のうち、materialTexReads の limit 組目より後ろの組を読む物を 0 の Const に置き換える
-  `pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade]): (Spec, Option[Shade])`
+  `pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): (Spec, Option[Shade], Option[Shade])`
 
 ## ShaderEval — `engine/src/shader/ShaderEval.flix`
 - テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
@@ -1527,8 +1546,8 @@
 - Spec を面 1 枚ぶん組み直す。texEnv の名前もここで引いておく（画素ごとに Map を引かない）。
   `pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexImage]): CompiledSpec`
 - 3D の材質を組み直す材料。textures = tex / blur の読み先の絵の段の列（名前 → Mip.build の段。段 0 が元の絵。
-  `pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], params = Map[String, Float64], textures = Map[String, Vector[TexData]], repeat = Bool }`
-- 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換える
+  `pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], metallicRoughness = Option[ShaderDoc.Shade], params = Map[String, Float64], textures = Map[String, Vector[TexData]], repeat = Bool }`
+- 3D の材質（Scene3d.Material3d の spec・emission・metallicRoughness・params）を組み直す。Param は params の値の Const に置き換える
   `pub def compileMaterial(input: MaterialInput): CompiledSpec`
 - 画素 1 つ（uv = (u, v)・時刻 t）の (r, g, b, α)。値は evalPixelAlphaTex と同じ。
   `pub def evalCompiled(compiled: CompiledSpec, u: Float64, v: Float64, t: Float64): (Float64, Float64, Float64, Float64)`
@@ -1537,7 +1556,7 @@
 - 3D のメッシュの画素 1 つ（時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
   `pub def evalCompiled3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): (Float64, Float64, Float64, Float64)`
 - 3D の材質の画素 1 つ: 光を当てる前の色（albedo）・α・自分で光る色（emission。無ければ黒）。
-  `pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color }`
+  `pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color, metallicRoughness = Option[(Float64, Float64)] }`
 - evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
   `pub def evalMaterial3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): MaterialSample`
 - `pub def evalMaterial3Mip(compiled: CompiledSpec, center: SurfacePoint, nextX: SurfacePoint, nextY: SurfacePoint, t: Float64): MaterialSample`
@@ -1551,19 +1570,19 @@
   `pub def preludeSource(): String`
 - Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので
   `pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
-- 2 つの材質（spec と自分で光る色 emission）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
-  `pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool`
+- 2 つの材質（spec・自分で光る色 emission・metallic と roughness の場 metallicRoughness）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
+  `pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], metallicRoughnessA: Option[ShaderDoc.Shade], specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade], metallicRoughnessB: Option[ShaderDoc.Shade]): Bool`
 - a と b が同じ物か（中身ではなく参照）。
   `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
-- 2 つの emission が同じ物か（両方無いか、参照が同じ）。
+- 2 つの色（emission か metallicRoughness）が同じ物か（両方無いか、参照が同じ）。
   `pub def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool`
-- `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): Int64`
+- `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): Int64`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`
 - 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。
   `pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
-- 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
-  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): MaterialGlsl`
+- 3D の材質（spec・自分で光る色 emission・metallic と roughness を RGB の r と g に入れた色 metallicRoughness）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
+  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): MaterialGlsl`
 - `pub def texMipSource(): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
 
