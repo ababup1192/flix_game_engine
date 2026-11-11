@@ -31,7 +31,7 @@ mod Render3d.Instancing {
         { cmd = plan#cmd,
           draws = { plain = List.map(lit, draws#plain), skinned = List.map(lit, draws#skinned),
                     opaque = List.map(material, draws#opaque), blended = List.map(material, draws#blended) },
-          shadowPlan = plan#shadowPlan |> Option.map(s -> { caster = s#caster, plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) }) }
+          shadowPlan = plan#shadowPlan |> Option.map(s -> { caster = s#caster, spotIndex = s#spotIndex, plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) }) }
 
     /// plan の batch の描く物の数の合計。
     def countOf(plan: ScenePlan[PlannedBatch]): Int32 =

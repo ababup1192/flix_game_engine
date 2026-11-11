@@ -146,16 +146,20 @@ pub mod SoftRaster3d {
     /// スポットの並びの位置 offset のスポットが、world の点 (px, py, pz) へ届ける光に掛ける割合（影を落とさないスポットは 1）。
     pub def shadowFactorAt(shadow: SpotShadow, offset: Int32, px: Float64, py: Float64, pz: Float64): Float64 = match shadow {
         case Some(Shadow.Shadow(at, m, n, bias, radius, strength, map)) if at == offset =>
-            1.0 - strength * (1.0 - shadowLitFractionAt(m, n, bias, radius, map, px, py, pz))
+            1.0 - strength * (1.0 - shadowLitFractionAt(m, n, bias, radius, map, 0.0, px, py, pz, 0.0, 0.0, 0.0))
         case _ => 1.0
     }
 
-    /// world の点 (px, py, pz) が影の地図で照らされている割合（pcf の (2r+1)² 画素のうち照らされている数の割合。地図の外と光の後ろは 1）。
-    /// m = shadowMatrix の 16 個（行優先・rowMajorOf）・地図 map は n × n（行 0 が NDC の y = −1 側）・r = pcfRadius。
+    /// world の点 (px, py, pz) を法線 (nx, ny, nz) の向きに shift だけずらした点が、影の地図で照らされている割合
+    /// （pcf の (2r+1)² 画素のうち照らされている数の割合。地図の外と光の後ろは 1。スポットは shift = 0 で、点を動かさない）。
+    /// m = 光の行列の 16 個（行優先・rowMajorOf）・地図 map は n × n（行 0 が NDC の y = −1 側）・r = pcfRadius。
     /// GL の shadowLitFraction（Render3dGlsl）と同じ数え方で、gl-parity の式の行が値をそろえて確かめる。
     // WhyNot: 地図と値をレコードにまとめて渡さない — 画素 × スポットの数だけレコードを作ることになる。
-    pub def shadowLitFractionAt(m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, map: Vector[Float64],
-                                px: Float64, py: Float64, pz: Float64): Float64 =
+    pub def shadowLitFractionAt(m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, map: Vector[Float64], shift: Float64,
+                                px0: Float64, py0: Float64, pz0: Float64, nx: Float64, ny: Float64, nz: Float64): Float64 =
+        let px = px0 + nx * shift;
+        let py = py0 + ny * shift;
+        let pz = pz0 + nz * shift;
         let row = k -> Vector.get(k * 4, m) * px + Vector.get(k * 4 + 1, m) * py + Vector.get(k * 4 + 2, m) * pz + Vector.get(k * 4 + 3, m);
         let w = row(3);
         let (sx, sy, sz) = if (w <= 0.0) (2.0, 2.0, 0.0) else (row(0) / w, row(1) / w, row(2) / w);
@@ -163,7 +167,7 @@ pub mod SoftRaster3d {
         else {
             let r = Int32.max(0, pcfRadius);
             let side = 2 * r + 1;
-            let lit = countLit(map, n, mapTexel(n, sx) - r, mapTexel(n, sy) - r, side, sz * 0.5 + 0.5 - bias, 0, 0);
+            let lit = SoftRaster3d.Internal.countLit(map, n, SoftRaster3d.Internal.mapTexel(n, sx) - r, SoftRaster3d.Internal.mapTexel(n, sy) - r, side, sz * 0.5 + 0.5 - bias, 0, 0);
             Int32.toFloat64(lit) / Int32.toFloat64(side * side)
         }
 
@@ -176,19 +180,6 @@ pub mod SoftRaster3d {
     pub def rowMajorOf(m: Mat4.Mat4): Vector[Float64] =
         let c = Mat4.toColumns(m);
         Vector.range(0, 16) |> Vector.map(k -> { let row = k / 4; Vector.get((k - row * 4) * 4 + row, c) })
-
-    /// NDC の x か y（−1..1）が落ちる地図の画素（0..n−1）。
-    def mapTexel(n: Int32, ndc: Float64): Int32 =
-        Int32.max(0, Int32.min(n - 1, floorInt((ndc * 0.5 + 0.5) * Int32.toFloat64(n))))
-
-    /// 左下 (x0, y0) から side × side の地図の画素のうち、depth が地図の値以下の画素の数（地図の外は端の画素を読む）。
-    def countLit(map: Vector[Float64], n: Int32, x0: Int32, y0: Int32, side: Int32, depth: Float64, k: Int32, acc: Int32): Int32 =
-        if (k >= side * side) acc
-        else {
-            let x = Int32.max(0, Int32.min(n - 1, x0 + (k - (k / side) * side)));
-            let y = Int32.max(0, Int32.min(n - 1, y0 + k / side));
-            countLit(map, n, x0, y0, side, depth, k + 1, if (depth <= Vector.get(y * n + x, map)) acc + 1 else acc)
-        }
 
     // fog があるか・色 r, g, b・near・far。
     enum Fog { case Fog(Bool, Float64, Float64, Float64, Float64, Float64) }
@@ -241,7 +232,7 @@ pub mod SoftRaster3d {
             let (lw, lh) = match scene#resolution {
                 case Scene3d.Resolution.Native => (dw, dh)
                 case Scene3d.Resolution.Design =>
-                    (Int32.max(1, roundInt(scene#size#x)), Int32.max(1, roundInt(scene#size#y)))
+                    (Int32.max(1, SoftRaster3d.Internal.roundInt(scene#size#x)), Int32.max(1, SoftRaster3d.Internal.roundInt(scene#size#y)))
             };
             let layer: Array[Int32, Static] = Array.repeat(Static, lw * lh, 0);
             renderLayer(scene, lw, lh, textures, time, LayerOut.Argb(layer));
@@ -283,7 +274,7 @@ pub mod SoftRaster3d {
             let (lw, lh) = match scene#resolution {
                 case Scene3d.Resolution.Native => (dw, dh)
                 case Scene3d.Resolution.Design =>
-                    (Int32.max(1, roundInt(scene#size#x)), Int32.max(1, roundInt(scene#size#y)))
+                    (Int32.max(1, SoftRaster3d.Internal.roundInt(scene#size#x)), Int32.max(1, SoftRaster3d.Internal.roundInt(scene#size#y)))
             };
             let layer: Array[Float64, Static] = Array.repeat(Static, lw * lh * 4, 0.0);
             renderLayer(scene, lw, lh, textures, time, LayerOut.Rgba(layer));
@@ -317,7 +308,7 @@ pub mod SoftRaster3d {
     /// 出力の画素 o（0..outN−1）が拾う層の画素（0..srcN−1）。同じ数なら o のまま。
     def nearestIndex(o: Int32, outN: Int32, srcN: Int32): Int32 =
         if (outN == srcN) o
-        else Int32.max(0, Int32.min(srcN - 1, floorInt((Int32.toFloat64(o) + 0.5) * Int32.toFloat64(srcN) / Int32.toFloat64(outN))))
+        else Int32.max(0, Int32.min(srcN - 1, SoftRaster3d.Internal.floorInt((Int32.toFloat64(o) + 0.5) * Int32.toFloat64(srcN) / Int32.toFloat64(outN))))
 
     // ════════════════════════════════════════════════════════
     // 場面 1 つを lw × lh の ARGB へ
@@ -447,7 +438,7 @@ pub mod SoftRaster3d {
         let picked = Scene3d.pickLights(cam#eye, scene);
         let view = Camera3d.viewMatrix(cam);
         let proj = Camera3d.projectionMatrix(cam, Scene3d.aspectOf(scene));
-        let screen = { w = Int32.toFloat64(lw), h = Int32.toFloat64(lh), near = cam#near };
+        let screen = { w = Int32.toFloat64(lw), h = Int32.toFloat64(lh), projection = Projection.Perspective(cam#near) };
         let frustum = Scene3d.frustumOf(scene);
         let materialTextures = materialTexturesOf(textures);
         // WhyNot: 表を場面ごとに作り直すのを JVM で 1 つに控えない — Flix に top-level の値が無く、作るのは 8194 回の pow（場面 1 つに 1 回）で済む。
@@ -638,8 +629,8 @@ pub mod SoftRaster3d {
         let own2 = ownsEdge(clockwise, x0, y0, x1, y1);
         let inside = (l: Float64, owns: Bool) -> l > 0.0 or (l == 0.0 and owns);
         let py = Int32.toFloat64(y) + 0.5;
-        let lo = Int32.max(0, ceilInt(Float64.min(x0, Float64.min(x1, x2)) - 0.5));
-        let hi = Int32.min(lw - 1, floorInt(Float64.max(x0, Float64.max(x1, x2)) - 0.5));
+        let lo = Int32.max(0, SoftRaster3d.Internal.ceilInt(Float64.min(x0, Float64.min(x1, x2)) - 0.5));
+        let hi = Int32.min(lw - 1, SoftRaster3d.Internal.floorInt(Float64.max(x0, Float64.max(x1, x2)) - 0.5));
         let material = Vector.get(mat, blended#mats);
         def loop(x: Int32): Unit \ r =
             if (x > hi) ()
@@ -650,7 +641,7 @@ pub mod SoftRaster3d {
                 let l2 = 1.0 - l0 - l1;
                 let z = l0 * z0 + l1 * z1 + l2 * z2;
                 let covered = inside(l0, own0) and inside(l1, own1) and inside(l2, own2) and z >= -1.0 and z <= 1.0 and z < Array.get(x, depth);
-                if (covered and not isCutAway(material, blended#env#time, v, perspectiveWeights(l0, l1, l2, q0, q1, q2))) {
+                if (covered and not isCutAway(material, blended#env#time, v, SoftRaster3d.Internal.perspectiveWeights(l0, l1, l2, q0, q1, q2))) {
                     let (lr, lg, lb, sa) = materialPixel(tri, material, Vector.get(mat, blended#bakes), blended#env, (x, y), l0, l1);
                     let (sr, sg, sb) = toSrgbColor(blended#env#lut, (lr, lg, lb));
                     let a = clamp01(sa);
@@ -703,18 +694,26 @@ pub mod SoftRaster3d {
                 let rows = rowMajorOf(Scene3d.shadowMatrix(spot));
                 let size = Int32.min(sm#mapSize, Scene3d.maxShadowMapSize());
                 let pcf = Int32.min(sm#pcfRadius, Scene3d.maxShadowPcfRadius());
-                spotShadowOf(index * LightModel3d.spotStride(), rows, size, sm#bias, pcf, sm#strength, buildShadowMap(instances, spot, size))
+                let cam = Scene3d.shadowCamera(spot);
+                let eye = { view = Camera3d.viewMatrix(cam), proj = Camera3d.projectionMatrix(cam, 1.0), projection = Projection.Perspective(cam#near) };
+                let map = buildShadowMap(instances, eye, Scene3d.shadowFrustumOf(spot), size);
+                spotShadowOf(index * LightModel3d.spotStride(), rows, size, sm#bias, pcf, sm#strength, map)
         }
 
+    /// 置いた物を光の目 eye から見た n × n の深度の地図（buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
+    /// engine の開発用の口: 正射影の三角形の道を gl-parity と単体テストが確かめる。
+    pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO =
+        buildShadowMap(instances |> List.map(placedOf), eye, Frustum.ofClipMatrix(Mat4.mul(eye#proj, eye#view)), n)
+
     /// 光から見た n × n の地図（一番近い面の NDC の z × 0.5 + 0.5。何も無い画素は 1。行 0 が NDC の y = −1 側）。
+    /// eye =光の目（view → proj の順に掛ける。正射影の光は view を単位行列にして proj に world → clip の行列を渡してよい）・
+    /// frustum = 影を落とす物の間引き（目に見えない物も影は落とす）。スポットと平行光源で共有する。
     // WhyNot: 裏の面を捨てない — 薄い板や片面だけの物は、光へ裏を向けていても影を落としてほしい。
     // WhyNot: cutout の材質の α を見ない — 材質を画素ごとに評価すると地図が場面の塗りと同じくらい重くなる。抜いた穴の影は今は埋まる。
-    def buildShadowMap(instances: List[Placed], spot: Scene3d.SpotLight, n: Int32): Vector[Float64] \ IO = region rc {
-        let cam = Scene3d.shadowCamera(spot);
-        let view = Camera3d.viewMatrix(cam);
-        let proj = Camera3d.projectionMatrix(cam, 1.0);
-        let screen = { w = Int32.toFloat64(n), h = Int32.toFloat64(n), near = cam#near };
-        let frustum = Scene3d.shadowFrustumOf(spot);
+    def buildShadowMap(instances: List[Placed], eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO = region rc {
+        let view = eye#view;
+        let proj = eye#proj;
+        let screen = { w = Int32.toFloat64(n), h = Int32.toFloat64(n), projection = eye#projection };
         let tris = hoist(rc, instances |> List.filter(f -> not Scene3d.isOutsideFrustumFields(frustum, f#fields))
             |> List.flatMap(f -> instanceTris(view, proj, screen, None, false, f, -1)) |> List.toVector);
         let bins = hoist(rc, binRows(rc, n, tris));
@@ -739,24 +738,38 @@ pub mod SoftRaster3d {
 
     def inkOf(tex: ShaderEval.TexData, f: Scene3d.BillboardFields): Ink =
         let r = f#regionRect;
-        let x0 = Int32.max(0, Int32.min(tex#width - 1, floorInt(r#position#x)));
-        let y0 = Int32.max(0, Int32.min(tex#height - 1, floorInt(r#position#y)));
-        let x1 = Int32.max(x0 + 1, Int32.min(tex#width, floorInt(r#position#x + r#size#x)));
-        let y1 = Int32.max(y0 + 1, Int32.min(tex#height, floorInt(r#position#y + r#size#y)));
+        let x0 = Int32.max(0, Int32.min(tex#width - 1, SoftRaster3d.Internal.floorInt(r#position#x)));
+        let y0 = Int32.max(0, Int32.min(tex#height - 1, SoftRaster3d.Internal.floorInt(r#position#y)));
+        let x1 = Int32.max(x0 + 1, Int32.min(tex#width, SoftRaster3d.Internal.floorInt(r#position#x + r#size#x)));
+        let y1 = Int32.max(y0 + 1, Int32.min(tex#height, SoftRaster3d.Internal.floorInt(r#position#y + r#size#y)));
         let tint = Texture3d.srgbToLinearColor(f#tint);
         Ink.Ink(tex, x0, y0, x1, y1, tint#r, tint#g, tint#b, f#lit)
 
     // ── 三角形を組む ─────────────────────────────────────
 
-    type alias Screen = { w = Float64, h = Float64, near = Float64 }
+    /// 三角形の道の射影の種類。Perspective(near) は w = 目の座標の −z で w ≥ near の側を残す・Orthographic は w = 1 で z ≥ −w の側を残す。
+    // WhyNot: 正射影の道を Mat4 の 4 行目から読み分けない — Mat4 は閉じた型で 4 行目を読めない。
+    pub enum Projection {
+        case Perspective(Float64)
+        case Orthographic
+    }
 
-    /// clip の段の頂点（stride() 個）。w は目の座標の −z（Mat4.perspective の 4 行目が (0, 0, −1, 0)）。
+    type alias Screen = { w = Float64, h = Float64, projection = Projection }
+
+    /// 影の地図を描く光の目。
+    pub type alias LightEye = { view = Mat4.Mat4, proj = Mat4.Mat4, projection = Projection }
+
+    /// clip の段の頂点（stride() 個）。w は透視なら目の座標の −z（Mat4.perspective の 4 行目が (0, 0, −1, 0)）・正射影なら 1。
     /// rest = 色 3・uv 2・タンジェント 4・2 本目の uv 2 の欄。
     // WhyNot: proj × view の 1 本の行列で w を出さない — Mat4 は閉じた型で 4 行目を読めず、apply は w を返さない。
-    def clipVertex(view: Mat4.Mat4, proj: Mat4.Mat4, p: Vec3.Vec3, n: Vec3.Vec3, rest: Vector[Float64]): Vector[Float64] =
+    def clipVertex(projection: Projection, view: Mat4.Mat4, proj: Mat4.Mat4, p: Vec3.Vec3, n: Vec3.Vec3, rest: Vector[Float64]): Vector[Float64] =
         let e = Mat4.apply(view, p);
         let c = Mat4.apply(proj, e);
-        Vector.append(Vector#{ c#x, c#y, c#z, 0.0 - e#z, p#x, p#y, p#z, n#x, n#y, n#z }, rest)
+        let w = match projection {
+            case Projection.Perspective(_) => 0.0 - e#z
+            case Projection.Orthographic   => 1.0
+        };
+        Vector.append(Vector#{ c#x, c#y, c#z, w, p#x, p#y, p#z, n#x, n#y, n#z }, rest)
 
     /// 置いた物 placed の三角形（頂点は placedOf で曲げた後の物）。mat = 材質の番号（−1 なら頂点の色 × tint を色の欄に、それ以外は頂点の色だけを入れる）。
     /// lut が Some なら、材質の無い物の頂点の色と tint を線形の量へ戻してから掛ける（材質のある物の頂点の色は戻さない — Spec の出口で戻す）。
@@ -767,7 +780,7 @@ pub mod SoftRaster3d {
         let f = placed#fields;
         let world = f#world;
         let nm = Mat4.normalMatrix(world);
-        let flip = if (linearDeterminant(world) < 0.0) -1.0 else 1.0;
+        let flip = if (SoftRaster3d.Internal.linearDeterminant(world) < 0.0) -1.0 else 1.0;
         let cs = match (mat < 0, lut) {
             case (true, Some(table)) => Mesh3d.colors(f#mesh) |> Vector.map(c -> Texture3d.srgbToLinearLut(table, c))
             case _                   => Mesh3d.colors(f#mesh)
@@ -794,7 +807,7 @@ pub mod SoftRaster3d {
                      u, v, t#x, t#y, t#z, w, u2, v2 }
         };
         let vertices = List.range(0, Mesh3d.vertexCount(f#mesh)) |> List.map(k ->
-            clipVertex(view, proj, Mat4.apply(world, vec3At(placed#positions, k)), Vec3.normalized(Mat4.applyDir(nm, vec3At(placed#normals, k))),
+            clipVertex(screen#projection, view, proj, Mat4.apply(world, vec3At(placed#positions, k)), Vec3.normalized(Mat4.applyDir(nm, vec3At(placed#normals, k))),
                        surfaceAt(k)))
             |> List.toVector;
         let idx = Mesh3d.indices(f#mesh);
@@ -803,12 +816,6 @@ pub mod SoftRaster3d {
                        Vector.get(Vector.get(t * 3, idx), vertices) ::
                        Vector.get(Vector.get(t * 3 + 1, idx), vertices) ::
                        Vector.get(Vector.get(t * 3 + 2, idx), vertices) :: Nil))
-
-    /// m の左上 3×3 の行列式（負なら鏡写しにする行列）。
-    def linearDeterminant(m: Mat4.Mat4): Float64 =
-        let c = Mat4.toColumns(m);
-        let col = (j: Int32) -> Vec3.v3(Vector.get(j * 4, c), Vector.get(j * 4 + 1, c), Vector.get(j * 4 + 2, c));
-        Vec3.dot(col(0), Vec3.cross(col(1), col(2)))
 
     /// ビルボード 1 枚の三角形 2 枚。四角はカメラの right / up に沿って立て、anchor の点を position に合わせる。
     /// uv の欄には絵の px（region の中）を入れる。
@@ -822,7 +829,7 @@ pub mod SoftRaster3d {
         let corner = (u: Float64, v: Float64) -> {
             let p = Vec3.add(f#position, Vec3.add(Vec3.mul(right, (u - f#anchor#x) * f#size#x),
                                                   Vec3.mul(up, (f#anchor#y - v) * f#size#y)));
-            clipVertex(view, proj, p, facing, Vector#{ 1.0, 1.0, 1.0, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 })
+            clipVertex(screen#projection, view, proj, p, facing, Vector#{ 1.0, 1.0, 1.0, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 })
         };
         let tl = corner(0.0, 0.0);
         let tr = corner(1.0, 0.0);
@@ -831,35 +838,40 @@ pub mod SoftRaster3d {
         List.append(screenTris(screen, false, index, -1, tl :: tr :: br :: Nil),
                     screenTris(screen, false, index, -1, tl :: br :: bl :: Nil))
 
-    /// clip の段の三角形を near で切り、扇に割って画面へ写す。cull が真なら画面で反時計回り（裏）の物を捨てる。
+    /// clip の段の三角形を手前の面で切り（clipNear）、扇に割って画面へ写す。cull が真なら画面で反時計回り（裏）の物を捨てる。
     def screenTris(screen: Screen, cull: Bool, ink: Int32, mat: Int32, tri: List[Vector[Float64]]): List[Tri] =
-        match List.map(projectVertex(screen), clipNear(screen#near, tri)) {
+        match List.map(projectVertex(screen), clipNear(screen#projection, tri)) {
             case v0 :: rest =>
                 List.zip(rest, List.drop(1, rest)) |> List.filterMap(pair -> {
                     let (v1, v2) = pair;
-                    let area = signedArea(v0, v1, v2);
+                    let area = SoftRaster3d.Internal.signedArea(v0, v1, v2);
                     if (Float64.abs(area) < 1.0e-12 or (cull and area < 0.0)) None
                     else Some(Tri.Tri(Vector.append(v0, Vector.append(v1, v2)), area, ink, mat))
                 })
             case Nil => Nil
         }
 
-    /// 画面（y は下へ）で頂点が時計回りなら正。
-    def signedArea(a: Vector[Float64], b: Vector[Float64], c: Vector[Float64]): Float64 =
-        let ax = Vector.get(0, a);
-        let ay = Vector.get(1, a);
-        (Vector.get(0, b) - ax) * (Vector.get(1, c) - ay) - (Vector.get(0, c) - ax) * (Vector.get(1, b) - ay)
-
-    /// 多角形を w ≥ near の側だけ残して切る（Sutherland–Hodgman。欄は全部 clip 空間でまっすぐつなぐ）。
-    def clipNear(near: Float64, poly: List[Vector[Float64]]): List[Vector[Float64]] =
-        let inside = (v: Vector[Float64]) -> Vector.get(3, v) >= near;
+    /// 多角形を手前の面の内側だけ残して切る（Sutherland–Hodgman。欄は全部 clip 空間でまっすぐつなぐ）。
+    /// 透視は w ≥ near・正射影は z ≥ −w（far 側は切らない — どちらも今の道が奥を切らない）。
+    def clipNear(projection: Projection, poly: List[Vector[Float64]]): List[Vector[Float64]] =
+        let inside = (v: Vector[Float64]) -> match projection {
+            case Projection.Perspective(near) => Vector.get(3, v) >= near
+            case Projection.Orthographic      => Vector.get(2, v) + Vector.get(3, v) >= 0.0
+        };
         let next = List.append(List.drop(1, poly), List.take(1, poly));
         List.zip(poly, next) |> List.flatMap(edge -> {
             let (a, b) = edge;
             let cut = _ -> {
-                let wa = Vector.get(3, a);
-                let wb = Vector.get(3, b);
-                let t = (near - wa) / (wb - wa);
+                let t = match projection {
+                    case Projection.Perspective(near) =>
+                        let wa = Vector.get(3, a);
+                        let wb = Vector.get(3, b);
+                        (near - wa) / (wb - wa)
+                    case Projection.Orthographic      =>
+                        let da = Vector.get(2, a) + Vector.get(3, a);
+                        let db = Vector.get(2, b) + Vector.get(3, b);
+                        da / (da - db)
+                };
                 Vector.zipWith((x, y) -> x + (y - x) * t, a, b)
             };
             match (inside(a), inside(b)) {
@@ -886,8 +898,8 @@ pub mod SoftRaster3d {
             let Tri.Tri(v, _, _, _) = Vector.get(ti, tris);
             let s = stride();
             let ys = Vector.get(1, v) :: Vector.get(1 + s, v) :: Vector.get(1 + s * 2, v) :: Nil;
-            let lo = Int32.max(0, ceilInt(List.foldLeft(Float64.min, 1.0e18, ys) - 0.5));
-            let hi = Int32.min(lh - 1, floorInt(List.foldLeft(Float64.max, -1.0e18, ys) - 0.5));
+            let lo = Int32.max(0, SoftRaster3d.Internal.ceilInt(List.foldLeft(Float64.min, 1.0e18, ys) - 0.5));
+            let hi = Int32.min(lh - 1, SoftRaster3d.Internal.floorInt(List.foldLeft(Float64.max, -1.0e18, ys) - 0.5));
             List.range(lo, hi + 1) |> List.forEach(y -> Array.put(ti :: Array.get(y, bins), y, bins))
         });
         Array.toVector(bins)
@@ -904,8 +916,8 @@ pub mod SoftRaster3d {
         let (x0, y0, z0, q0) = (Vector.get(0, v), Vector.get(1, v), Vector.get(2, v), Vector.get(3, v));
         let (x1, y1, z1, q1) = (Vector.get(s, v), Vector.get(s + 1, v), Vector.get(s + 2, v), Vector.get(s + 3, v));
         let (x2, y2, z2, q2) = (Vector.get(s * 2, v), Vector.get(s * 2 + 1, v), Vector.get(s * 2 + 2, v), Vector.get(s * 2 + 3, v));
-        let lo = Int32.max(0, ceilInt(Float64.min(x0, Float64.min(x1, x2)) - 0.5));
-        let hi = Int32.min(lw - 1, floorInt(Float64.max(x0, Float64.max(x1, x2)) - 0.5));
+        let lo = Int32.max(0, SoftRaster3d.Internal.ceilInt(Float64.min(x0, Float64.min(x1, x2)) - 0.5));
+        let hi = Int32.min(lw - 1, SoftRaster3d.Internal.floorInt(Float64.max(x0, Float64.max(x1, x2)) - 0.5));
         def loop(x: Int32): Unit \ r =
             if (x > hi) ()
             else {
@@ -918,7 +930,7 @@ pub mod SoftRaster3d {
                 let keep = covered and (ink < 0 or {
                     let (u, uv) = perspectiveUv(v, l0, l1, l2, q0, q1, q2);
                     alphaOf(sampleInk(Vector.get(ink, inks), u, uv)) >= billboardCutoff()
-                }) and (mat < 0 or not isCutAway(Vector.get(mat, mats), time, v, perspectiveWeights(l0, l1, l2, q0, q1, q2)));
+                }) and (mat < 0 or not isCutAway(Vector.get(mat, mats), time, v, SoftRaster3d.Internal.perspectiveWeights(l0, l1, l2, q0, q1, q2)));
                 if (keep) {
                     Array.put(z, x, depth);
                     Array.put(ti, x, winner);
@@ -928,14 +940,6 @@ pub mod SoftRaster3d {
                 loop(x + 1)
             };
         loop(lo)
-
-    /// 画面の段の重み λ を、奥行きで補正した重み b へ（b_i = λ_i / w_i ÷ Σ λ_j / w_j）。和の逆数（目からの奥行き）も返す。
-    def perspectiveWeights(l0: Float64, l1: Float64, l2: Float64, q0: Float64, q1: Float64, q2: Float64): (Float64, Float64, Float64, Float64) =
-        let a = l0 * q0;
-        let b = l1 * q1;
-        let c = l2 * q2;
-        let sum = a + b + c;
-        if (sum <= 0.0) (l0, l1, l2, 0.0) else (a / sum, b / sum, c / sum, 1.0 / sum)
 
     /// 頂点の欄 k を奥行きで補正して補間する。
     def attr(v: Vector[Float64], k: Int32, b0: Float64, b1: Float64, b2: Float64): Float64 =
@@ -988,7 +992,7 @@ pub mod SoftRaster3d {
         let (x0, y0, q0) = (Vector.get(0, v), Vector.get(1, v), Vector.get(3, v));
         let (x1, y1, q1) = (Vector.get(s, v), Vector.get(s + 1, v), Vector.get(s + 3, v));
         let (x2, y2, q2) = (Vector.get(s * 2, v), Vector.get(s * 2 + 1, v), Vector.get(s * 2 + 3, v));
-        let at = (a: Float64, b: Float64) -> perspectiveWeights(a, b, 1.0 - a - b, q0, q1, q2);
+        let at = (a: Float64, b: Float64) -> SoftRaster3d.Internal.perspectiveWeights(a, b, 1.0 - a - b, q0, q1, q2);
         (at(l0 - sx * (y2 - y1) / area, l1 - sx * (y0 - y2) / area), at(l0 + sy * (x2 - x1) / area, l1 + sy * (x0 - x2) / area))
 
     /// 頂点の欄 v の、横隣と縦隣の画素（neighborWeights の重み）の材質が読む入力。
@@ -1065,13 +1069,13 @@ pub mod SoftRaster3d {
 
     def perspectiveUv(v: Vector[Float64], l0: Float64, l1: Float64, l2: Float64,
                       q0: Float64, q1: Float64, q2: Float64): (Float64, Float64) =
-        let (b0, b1, b2, _) = perspectiveWeights(l0, l1, l2, q0, q1, q2);
+        let (b0, b1, b2, _) = SoftRaster3d.Internal.perspectiveWeights(l0, l1, l2, q0, q1, q2);
         (attr(v, uvSlot(), b0, b1, b2), attr(v, uvSlot() + 1, b0, b1, b2))
 
     def sampleInk(ink: Ink, u: Float64, v: Float64): Int32 =
         let Ink.Ink(tex, x0, y0, x1, y1, _, _, _, _) = ink;
-        let ix = Int32.max(x0, Int32.min(x1 - 1, floorInt(u)));
-        let iy = Int32.max(y0, Int32.min(y1 - 1, floorInt(v)));
+        let ix = Int32.max(x0, Int32.min(x1 - 1, SoftRaster3d.Internal.floorInt(u)));
+        let iy = Int32.max(y0, Int32.min(y1 - 1, SoftRaster3d.Internal.floorInt(v)));
         Vector.get(iy * tex#width + ix, tex#pixels)
 
     def alphaOf(argb: Int32): Float64 = Int32.toFloat64(SoftRaster.channelOf(24, argb)) / 255.0
@@ -1087,7 +1091,7 @@ pub mod SoftRaster3d {
                    l0: Float64, l1: Float64): (Float64, Float64, Float64, Float64) =
         let Tri.Tri(v, _, ink, mat) = tri;
         let s = stride();
-        let weights = perspectiveWeights(l0, l1, 1.0 - l0 - l1, Vector.get(3, v), Vector.get(s + 3, v), Vector.get(s * 2 + 3, v));
+        let weights = SoftRaster3d.Internal.perspectiveWeights(l0, l1, 1.0 - l0 - l1, Vector.get(3, v), Vector.get(s + 3, v), Vector.get(s * 2 + 3, v));
         let (b0, b1, b2, _) = weights;
         let (px, py, pz) = (attr(v, 4, b0, b1, b2), attr(v, 5, b0, b1, b2), attr(v, 6, b0, b1, b2));
         let (ex, ey, ez) = eye;
@@ -1121,7 +1125,7 @@ pub mod SoftRaster3d {
                       l0: Float64, l1: Float64): (Float64, Float64, Float64, Float64) =
         let Tri.Tri(v, area, _, _) = tri;
         let s = stride();
-        let weights = perspectiveWeights(l0, l1, 1.0 - l0 - l1, Vector.get(3, v), Vector.get(s + 3, v), Vector.get(s * 2 + 3, v));
+        let weights = SoftRaster3d.Internal.perspectiveWeights(l0, l1, 1.0 - l0 - l1, Vector.get(3, v), Vector.get(s + 3, v), Vector.get(s * 2 + 3, v));
         let point = surfaceAt(v, weights);
         let (px, py, pz) = (point#world#x, point#world#y, point#world#z);
         let (ex, ey, ez) = env#eye;
@@ -1184,11 +1188,4 @@ pub mod SoftRaster3d {
 
     // ── 数の小物 ─────────────────────────────────────────
 
-    def clampForInt(x: Float64): Float64 = Float64.max(-1.0e9, Float64.min(1.0e9, x))
-
-    def floorInt(x: Float64): Int32 = Float64.tryToInt32(Float64.floor(clampForInt(x))) |> Option.getWithDefault(0)
-
-    def ceilInt(x: Float64): Int32 = Float64.tryToInt32(Float64.ceil(clampForInt(x))) |> Option.getWithDefault(0)
-
-    def roundInt(x: Float64): Int32 = floorInt(x + 0.5)
 }

@@ -49,4 +49,45 @@ pub mod SoftRaster3d.Internal {
         let lod = LightModel3d.environmentLodOf(roughness, Vector.length(env#chain));
         let (r, g, b) = ShaderEval.sampleMipRgb(env#chain, { linear = true, repeat = true }, lod, u, v);
         (Texture3d.srgbToLinear(r) * env#intensity, Texture3d.srgbToLinear(g) * env#intensity, Texture3d.srgbToLinear(b) * env#intensity)
+
+    /// NDC の x か y（−1..1）が落ちる地図の画素（0..n−1）。
+    pub def mapTexel(n: Int32, ndc: Float64): Int32 =
+        Int32.max(0, Int32.min(n - 1, floorInt((ndc * 0.5 + 0.5) * Int32.toFloat64(n))))
+
+    /// 左下 (x0, y0) から side × side の地図の画素のうち、depth が地図の値以下の画素の数（地図の外は端の画素を読む）。
+    pub def countLit(map: Vector[Float64], n: Int32, x0: Int32, y0: Int32, side: Int32, depth: Float64, k: Int32, acc: Int32): Int32 =
+        if (k >= side * side) acc
+        else {
+            let x = Int32.max(0, Int32.min(n - 1, x0 + (k - (k / side) * side)));
+            let y = Int32.max(0, Int32.min(n - 1, y0 + k / side));
+            countLit(map, n, x0, y0, side, depth, k + 1, if (depth <= Vector.get(y * n + x, map)) acc + 1 else acc)
+        }
+
+    /// m の左上 3×3 の行列式（負なら鏡写しにする行列）。
+    pub def linearDeterminant(m: Mat4.Mat4): Float64 =
+        let c = Mat4.toColumns(m);
+        let col = (j: Int32) -> Vec3.v3(Vector.get(j * 4, c), Vector.get(j * 4 + 1, c), Vector.get(j * 4 + 2, c));
+        Vec3.dot(col(0), Vec3.cross(col(1), col(2)))
+
+    /// 画面（y は下へ）で頂点が時計回りなら正。
+    pub def signedArea(a: Vector[Float64], b: Vector[Float64], c: Vector[Float64]): Float64 =
+        let ax = Vector.get(0, a);
+        let ay = Vector.get(1, a);
+        (Vector.get(0, b) - ax) * (Vector.get(1, c) - ay) - (Vector.get(0, c) - ax) * (Vector.get(1, b) - ay)
+
+    /// 画面の段の重み λ を、奥行きで補正した重み b へ（b_i = λ_i / w_i ÷ Σ λ_j / w_j）。和の逆数（目からの奥行き）も返す。
+    pub def perspectiveWeights(l0: Float64, l1: Float64, l2: Float64, q0: Float64, q1: Float64, q2: Float64): (Float64, Float64, Float64, Float64) =
+        let a = l0 * q0;
+        let b = l1 * q1;
+        let c = l2 * q2;
+        let sum = a + b + c;
+        if (sum <= 0.0) (l0, l1, l2, 0.0) else (a / sum, b / sum, c / sum, 1.0 / sum)
+
+    pub def clampForInt(x: Float64): Float64 = Float64.max(-1.0e9, Float64.min(1.0e9, x))
+
+    pub def floorInt(x: Float64): Int32 = Float64.tryToInt32(Float64.floor(clampForInt(x))) |> Option.getWithDefault(0)
+
+    pub def ceilInt(x: Float64): Int32 = Float64.tryToInt32(Float64.ceil(clampForInt(x))) |> Option.getWithDefault(0)
+
+    pub def roundInt(x: Float64): Int32 = floorInt(x + 0.5)
 }

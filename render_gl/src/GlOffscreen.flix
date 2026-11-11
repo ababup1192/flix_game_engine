@@ -22,6 +22,7 @@ pub mod GlOffscreen {
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12
     import org.lwjgl.opengl.GL13
+    import org.lwjgl.opengl.GL15
     import org.lwjgl.opengl.GL20
     import org.lwjgl.opengl.GL30
     import org.lwjgl.opengl.GL33
@@ -549,10 +550,13 @@ pub mod GlOffscreen {
         "}\n"
 
     /// width × 1 の RGBA32F の FBO（bind したまま返す）。
-    def createRowTarget(width: Int32): (Int32, Int32) \ IO =
+    def createRowTarget(width: Int32): (Int32, Int32) \ IO = createFloatTarget(width, 1)
+
+    /// width × height の RGBA32F の FBO（bind したまま返す）。
+    def createFloatTarget(width: Int32, height: Int32): (Int32, Int32) \ IO =
         let tex = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, width, 1, 0, GL11.GL_RGBA, GL11.GL_FLOAT, 0i64);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, width, height, 0, GL11.GL_RGBA, GL11.GL_FLOAT, 0i64);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
         let fbo = GL30.glGenFramebuffers();
@@ -613,11 +617,85 @@ pub mod GlOffscreen {
         Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, out), values);
         out
 
-    def readRowFloats(width: Int32): Vector[Float32] \ IO =
-        let buf = MemoryUtil.memAllocFloat(width * 4);
+    /// 今の糸の GL の文脈で、三角形（positions = 頂点の xyz・indices = 3 つで 1 枚）を行列 matrix（world → clip）で size × size の描き先へ
+    /// 深度つきで塗り、画素の深度（gl_FragCoord.z = NDC の z × 0.5 + 0.5。何も無い画素は 1）を size × size 個の Float32 で返す。
+    /// 行 0 が NDC の y = −1 側（3D の描き手の影の地図と同じ）。面は表も裏も塗る。組めなければ Err(理由)。
+    /// 塗った後は描き先を 0（既定の FBO）・program と VAO を 0 にし、深度の判定は切る。viewport と面の裏の間引きは戻さない（呼ぶ側が置き直す）。
+    /// 正射影の三角形の道（SoftRaster3d.depthMapOf）と GL の clip を gl-parity が突き合わせる口。
+    pub def drawDepthTriangles(positions: Vector[Float64], indices: Vector[Int32], matrix: Mat4.Mat4,
+                               size: Int32): Result[String, Vector[Float32]] \ IO =
+        let vertex = "#version 330 core\nlayout(location = 0) in vec3 aPos;\nuniform mat4 uMatrix;\nvoid main() {\n    gl_Position = uMatrix * vec4(aPos, 1.0);\n}\n";
+        let fragment = "#version 330 core\nout vec4 fragColor;\nvoid main() {\n    fragColor = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0);\n}\n";
+        match RenderShader.tryCreateProgram(GlCallLog.plain(), vertex, fragment, "gl-parity:depth") {
+            case None          => Err("深度の塗りのプログラムが組めない（GLSL のエラーは上の行）")
+            case Some(program) =>
+                let target = createFloatTarget(size, size);
+                let depthBuffer = GL30.glGenRenderbuffers();
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depthBuffer);
+                GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH_COMPONENT24, size, size);
+                GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL30.GL_RENDERBUFFER, depthBuffer);
+                if (GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER) == GL30.GL_FRAMEBUFFER_COMPLETE) {
+                    let values = drawDepthInto(program, size, positions, indices, matrix);
+                    GL30.glDeleteRenderbuffers(depthBuffer);
+                    deleteRowTarget(target);
+                    GL20.glDeleteProgram(program);
+                    Ok(values)
+                } else {
+                    GL30.glDeleteRenderbuffers(depthBuffer);
+                    deleteRowTarget(target);
+                    GL20.glDeleteProgram(program);
+                    Err("深度つきの RGBA32F の描き先を作れない GL")
+                }
+        }
+
+    def drawDepthInto(program: Int32, size: Int32, positions: Vector[Float64], indices: Vector[Int32], matrix: Mat4.Mat4): Vector[Float32] \ IO =
+        let vao = GL30.glGenVertexArrays();
+        GL30.glBindVertexArray(vao);
+        let vbo = GL15.glGenBuffers();
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
+        let vertexBuf = MemoryUtil.memAllocFloat(Int32.max(1, Vector.length(positions)));
+        Vector.forEach(v -> discard vertexBuf.put(RenderUtil.f32(v)), positions);
+        discard vertexBuf.flip();
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertexBuf, GL15.GL_STATIC_DRAW);
+        MemoryUtil.memFree(vertexBuf);
+        GL20.glEnableVertexAttribArray(0);
+        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 12, 0i64);
+        let ibo = GL15.glGenBuffers();
+        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ibo);
+        let indexBuf = MemoryUtil.memAllocInt(Int32.max(1, Vector.length(indices)));
+        Vector.forEach(i -> discard indexBuf.put(i), indices);
+        discard indexBuf.flip();
+        GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuf, GL15.GL_STATIC_DRAW);
+        MemoryUtil.memFree(indexBuf);
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glViewport(0, 0, size, size);
+        GL11.glClearColor(1.0f32, 1.0f32, 1.0f32, 1.0f32);
+        GL11.glClearDepth(1.0);
+        GL11.glDepthMask(true);
+        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT + GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthFunc(GL11.GL_LESS);
+        GL20.glUseProgram(program);
+        GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program, "uMatrix"), false, floatArrayOf(Mat4.toColumns(matrix)));
+        GL11.glDrawElements(GL11.GL_TRIANGLES, Vector.length(indices), GL11.GL_UNSIGNED_INT, 0i64);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        let depths = readRowFloatsOf(size, size);
+        GL30.glBindVertexArray(0);
+        GL20.glUseProgram(0);
+        GL30.glDeleteVertexArrays(vao);
+        GL15.glDeleteBuffers(vbo);
+        GL15.glDeleteBuffers(ibo);
+        Vector.range(0, size * size) |> Vector.map(k -> Vector.get(k * 4, depths))
+
+    def readRowFloatsOf(width: Int32, height: Int32): Vector[Float32] \ IO =
+        let buf = MemoryUtil.memAllocFloat(width * height * 4);
         GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4);
-        GL11.glReadPixels(0, 0, width, 1, GL11.GL_RGBA, GL11.GL_FLOAT, buf);
-        let values = Vector.range(0, width * 4) |> Vector.map(i -> buf.get(i));
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_FLOAT, buf);
+        let values = Vector.range(0, width * height * 4) |> Vector.map(i -> buf.get(i));
         MemoryUtil.memFree(buf);
         values
+
+    def readRowFloats(width: Int32): Vector[Float32] \ IO = readRowFloatsOf(width, 1)
 }

@@ -168,6 +168,16 @@ pub mod Mat4 {
                         0.0,         0.0,         (f + n) / (n - f), 2.0 * f * n / (n - f),
                         0.0,         0.0,         -1.0,              0.0 })
 
+    /// GL の正射影（右手系の目の座標 → clip。奥行きは near で −1・far で +1。w = 1）。箱は目の座標の left..right・bottom..top と、目の前の向きに測った near..far。
+    pub def orthographic(box: { left = Float64, right = Float64, bottom = Float64, top = Float64, near = Float64, far = Float64 }): Mat4 =
+        let w = box#right - box#left;
+        let h = box#top - box#bottom;
+        let d = box#far - box#near;
+        ofRows(Vector#{ 2.0 / w, 0.0,     0.0,      0.0 - (box#right + box#left) / w,
+                        0.0,     2.0 / h, 0.0,      0.0 - (box#top + box#bottom) / h,
+                        0.0,     0.0,     -2.0 / d, 0.0 - (box#far + box#near) / d,
+                        0.0,     0.0,     0.0,      1.0 })
+
     /// Y 軸まわり（ラジアン）。増えると +Z が +X へ回る（カメラの yaw と同じ向き）。
     pub def rotateY(angle: Float64): Mat4 =
         let s = Num.sin(angle);

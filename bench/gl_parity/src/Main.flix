@@ -184,10 +184,10 @@ mod ParityMain {
 
     pub def go(): Unit \ IO =
         let exprInputs = ExprRows.inputs();
-        let (counted, exprGl) = run {
+        let (counted, exprGl, orthoGl) = run {
             Platform.Diagnostics.setDiagnosticsEnabled(true);
             let shot = Scenes.all() |> List.filterMap(sc -> glShootCounted(sc));
-            (shot, ExprRows.drawGl(exprInputs))
+            (shot, ExprRows.drawGl(exprInputs), OrthoBox.drawGl())
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO;
         renameFrames();
@@ -201,7 +201,8 @@ mod ParityMain {
         Scenes.all() |> List.filter(is3d) |> List.forEach(sc -> println("[parity3d] ${sc#name}"));
         List.forEach(c -> println(fst(c)), counted);
         let exprOk = ExprRows.report(exprInputs, exprGl);
-        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted) or not exprOk) System.exit(1) else ()
+        let orthoOk = OrthoBox.report(orthoGl);
+        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted) or not exprOk or not orthoOk) System.exit(1) else ()
 }
 
 def main(): Unit \ IO =

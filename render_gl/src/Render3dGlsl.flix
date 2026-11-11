@@ -220,21 +220,21 @@ pub mod Render3dGlsl {
         "uniform float uShadowBias;\n" +
         "uniform int uShadowPcf;\n" +
         "uniform float uShadowStrength;\n" +
-        "float shadowLitFraction(vec3 p) {\n" +
-        "    vec4 c = uShadowMatrix * vec4(p, 1.0);\n" +
+        "float shadowLitFraction(sampler2D map, mat4 lightMatrix, float bias, int pcf, float shift, vec3 n, vec3 p) {\n" +
+        "    vec4 c = lightMatrix * vec4(p + n * shift, 1.0);\n" +
         "    if (c.w <= 0.0) return 1.0;\n" +
         "    vec3 ndc = c.xyz / c.w;\n" +
         "    if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0) return 1.0;\n" +
-        "    float z = (ndc.z * 0.5 + 0.5) - uShadowBias;\n" +
-        "    ivec2 size = textureSize(uShadowMap, 0);\n" +
+        "    float z = (ndc.z * 0.5 + 0.5) - bias;\n" +
+        "    ivec2 size = textureSize(map, 0);\n" +
         "    ivec2 last = size - ivec2(1);\n" +
         "    ivec2 center = clamp(ivec2(floor((ndc.xy * 0.5 + 0.5) * vec2(size))), ivec2(0), last);\n" +
         "    int lit = 0;\n" +
         "    int total = 0;\n" +
-        "    for (int dy = -uShadowPcf; dy <= uShadowPcf; dy++) {\n" +
-        "        for (int dx = -uShadowPcf; dx <= uShadowPcf; dx++) {\n" +
+        "    for (int dy = -pcf; dy <= pcf; dy++) {\n" +
+        "        for (int dx = -pcf; dx <= pcf; dx++) {\n" +
         "            ivec2 t = clamp(center + ivec2(dx, dy), ivec2(0), last);\n" +
-        "            if (z <= texelFetch(uShadowMap, t, 0).r) lit++;\n" +
+        "            if (z <= texelFetch(map, t, 0).r) lit++;\n" +
         "            total++;\n" +
         "        }\n" +
         "    }\n" +
@@ -242,7 +242,7 @@ pub mod Render3dGlsl {
         "}\n" +
         "float spotShadow(int i, vec3 p) {\n" +
         "    if (uShadowOn == 0 || i != uShadowSpot) return 1.0;\n" +
-        "    return 1.0 - uShadowStrength * (1.0 - shadowLitFraction(p));\n" +
+        "    return 1.0 - uShadowStrength * (1.0 - shadowLitFraction(uShadowMap, uShadowMatrix, uShadowBias, uShadowPcf, 0.0, vec3(0.0), p));\n" +
         "}\n"
 
     /// Output.Depth の灰色（目からの距離で near が黒・near + range が白）。uEye は呼ぶ側の frag が宣言する。

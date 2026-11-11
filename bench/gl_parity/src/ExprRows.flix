@@ -245,7 +245,7 @@ mod ExprRows {
         Render3dGlsl.colorSpaceSource() +
         Render3dGlsl.lightSource() +
         "void main() {\n" +
-        "    fragColor = vec4(shadowLitFraction(texelFetch(uIn0, ivec2(int(gl_FragCoord.x), 0), 0).xyz), 0.0, 0.0, 1.0);\n" +
+        "    fragColor = vec4(shadowLitFraction(uShadowMap, uShadowMatrix, uShadowBias, uShadowPcf, 0.0, vec3(0.0), texelFetch(uIn0, ivec2(int(gl_FragCoord.x), 0), 0).xyz), 0.0, 0.0, 1.0);\n" +
         "}\n"
 
     def tbnFragment(): String =
@@ -611,7 +611,7 @@ mod ExprRows {
             let side = Int32.toFloat64(2 * r + 1);
             inputs#shadowPoints |> List.mapWithIndex((i, pr) -> {
                 let p = xyz(pr#a);
-                let cpu = SoftRaster3d.shadowLitFractionAt(rowsMajor, sc#size, sc#bias, r, sc#map, p#x, p#y, p#z);
+                let cpu = SoftRaster3d.shadowLitFractionAt(rowsMajor, sc#size, sc#bias, r, sc#map, 0.0, p#x, p#y, p#z, 0.0, 0.0, 0.0);
                 let (g, _, _) = rgbAt(row, i);
                 Float64.abs(g - cpu) * side * side
             })
@@ -623,7 +623,7 @@ mod ExprRows {
         let m = SoftRaster3d.rowMajorOf(sc#matrix);
         shadowRadii() |> List.map(r -> inputs#shadowPoints |> List.count(pr -> {
             let p = xyz(pr#a);
-            let lit = SoftRaster3d.shadowLitFractionAt(m, sc#size, sc#bias, r, sc#map, p#x, p#y, p#z);
+            let lit = SoftRaster3d.shadowLitFractionAt(m, sc#size, sc#bias, r, sc#map, 0.0, p#x, p#y, p#z, 0.0, 0.0, 0.0);
             lit > 0.0 and lit < 1.0
         })) |> List.sum
 
