@@ -276,15 +276,8 @@ pub mod Scene3d {
 
     /// 半透明の物を描く順に並べる（drawCenterOf が目 eye から遠い順・同じ距離なら並びの前）。GL と CPU が同じ物を使う。
     /// fieldsOf = 要素から置いた物の中身を引く関数。
-    // WhyNot: List.sortBy に距離だけを渡さない — 安定ソートではないので、同じ距離の物の重なり方がコマごと・描き手ごとに入れ替わりうる。
     pub def blendOrderOf(eye: Vec3.Vec3, fieldsOf: a -> InstanceFields, xs: List[a]): List[a] =
-        List.zipWithIndex(xs)
-            |> List.map(entry -> {
-                let (index, x) = entry;
-                ((0.0 - Vec3.distanceSquared(drawCenterOf(fieldsOf(x)), eye), index), x)
-            })
-            |> List.sortBy(fst)
-            |> List.map(snd)
+        xs |> Sort.sortStableBy(x -> 0.0 - Vec3.distanceSquared(drawCenterOf(fieldsOf(x)), eye))
 
     /// 半透明の材質（withAlphaBlend）が付いた置いた物か。
     pub def isBlendedFields(r: InstanceFields): Bool =
@@ -538,16 +531,13 @@ pub mod Scene3d {
         (if (d#points > 0) ("@lights:point", line("点光源", List.length(cmd#pointLights), maxPointLights())) :: Nil else Nil)
             ::: (if (d#spots > 0) ("@lights:spot", line("スポットライト", List.length(cmd#spotLights), maxSpotLights())) :: Nil else Nil)
 
-    // WhyNot: List.sortBy に距離だけを渡さない — 安定ソートではないので、同じ距離の光の選ばれ方が並びの順にならない。
     def nearest(limit: Int32, eye: Vec3.Vec3, positionOf: a -> Vec3.Vec3, lights: List[a]): List[a] =
         if (List.length(lights) <= limit) lights
         else
             List.zip(List.range(0, List.length(lights)), lights)
-                |> List.map(pair -> ((Vec3.distanceSquared(positionOf(snd(pair)), eye), fst(pair)), pair))
-                |> List.sortBy(fst)
+                |> Sort.sortStableBy(pair -> Vec3.distanceSquared(positionOf(snd(pair)), eye))
                 |> List.take(limit)
-                |> List.map(snd)
-                |> List.sortBy(fst)
+                |> Sort.sortStableBy(fst)
                 |> List.map(snd)
 
     /// Shader 効果へ渡す場面 1 つ。at = 描き物の左上（画面の px）・clip = 切り抜く矩形（画面の px）。

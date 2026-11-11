@@ -434,7 +434,7 @@ mod Render3d.Material {
         if (n <= budget#count and size <= budget#size) Nil
         else {
             let inDropOrder = entries |> List.filter(ke -> snd(ke)#lastUsed < keepFrom)
-                |> List.map(ke -> ((snd(ke)#preloaded, snd(ke)#lastUsed, fst(ke)), ke)) |> List.sortBy(fst) |> List.map(snd);
+                |> Sort.sortStableBy(ke -> (snd(ke)#preloaded, snd(ke)#lastUsed, fst(ke)));
             let (victims, _, _) = inDropOrder |> List.foldLeft((acc, ke) -> {
                 let (picked, leftN, leftSize) = acc;
                 let (k, e) = ke;

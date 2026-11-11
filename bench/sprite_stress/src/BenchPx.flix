@@ -7,6 +7,7 @@
 // アトラスは project.json の "px_atlas"(assets/sprites/px_atlas.png)として起動時に
 // 読み込まれる — GL 実行時とヘッドレス(bakeAtlas の PNG)が同一ソース(PxSpriteAtlas.bake)。
 mod BenchPx {
+    use fge::Sort
     use fge::{
         App, Color, LwjglLayer, PxSprite, PxSpriteAtlas, PxSpriteDoc, Render,
         RenderUtil, SoftRaster, Vec2
@@ -111,7 +112,7 @@ mod BenchPx {
             case 0     => println("N=${n} mode=${mode} samples=0")
             case count =>
                 let avg = List.foldLeft((acc, x) -> acc + x, 0.0, samples) / Int32.toFloat64(count);
-                let p99 = List.sort(samples)
+                let p99 = Sort.sortStable(samples)
                     |> List.drop(Int32.min(count - 1, count * 99 / 100))
                     |> List.head
                     |> Option.getWithDefault(avg);

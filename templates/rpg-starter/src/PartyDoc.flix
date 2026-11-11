@@ -2,6 +2,7 @@
 // 顔ぶれ（誰がいるか）はコードの Member.Member。ここは仲間ごとの値だけ。
 // fail-open — 読めない・欠けた行は、その仲間だけコードの既定の値で出す。
 mod PartyDoc {
+    use fge::Sort
     use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
@@ -107,7 +108,7 @@ mod PartyDoc {
                 let read = rows |> List.map(json -> JsonCodec.expectObject(json) |> Option.flatMap(obj ->
                     forM (lv <- Map.get("lv", obj) |> Option.flatMap(JsonCodec.expectInt);
                           total <- Map.get("total", obj) |> Option.flatMap(JsonCodec.expectInt)) yield (lv, total)));
-                let good = read |> List.filterMap(x -> x) |> List.sortBy(fst);
+                let good = read |> List.filterMap(x -> x) |> Sort.sortStableBy(fst);
                 let bad = read |> List.filter(Option.isEmpty) |> List.map(_ -> "[party] exp の行を読めない（lv と total の数）ので飛ばす");
                 (good, bad)
         }

@@ -1,5 +1,6 @@
 // 窓を開かずに規則だけを回す入口。描く仕事が混ざらない時間を見る。
 mod CrowdCpu {
+    use fge::Sort
     use fge::{FlowField, SpatialGrid, Steering}
     use Crowd.NearSearch
 
@@ -22,7 +23,7 @@ mod CrowdCpu {
     def tileRows(): Int32 = 23
 
     pub def time(): Unit \ IO =
-        List.sort(500 :: 700 :: Crowd.counts()) |> List.forEach(timeCount)
+        Sort.sortStable(500 :: 700 :: Crowd.counts()) |> List.forEach(timeCount)
 
     def timeCount(n: Int32): Unit \ IO = {
         let settled = settle(settleFrames(), Crowd.start(n));

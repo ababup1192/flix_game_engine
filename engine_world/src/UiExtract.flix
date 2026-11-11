@@ -57,7 +57,7 @@ pub mod UiExtract {
                 Map.get(id, rects) |> Option.map(rect -> (id, z, Vec2.add(rect#position, off), item))
             })
             |> List.map(entry -> {let (id, z, _pos, _item) = entry; (sortKeyOf(id, z, ui), entry)})
-            |> List.sortBy(fst)
+            |> Sort.sortStableBy(fst)
             |> List.map(pair -> {let (_id, _z, pos, item) = snd(pair); { at = pos, item = item }})
 
     /// hovered 名前パスに対応する entity（未設定・パス消滅は None）。
@@ -127,7 +127,7 @@ pub mod UiExtract {
                     (id, rect#position, offsetPoly(hoverPoly(hoverFor(ui, hoveredId, id), poly), rect#position)))
             })
             |> List.map(entry -> {let (id, _pos, poly) = entry; (sortKeyOf(id, poly#zIndex, ui), entry)})
-            |> List.sortBy(fst)
+            |> Sort.sortStableBy(fst)
             |> List.map(snd)
 
     /// shape entity を PlacedItem 列へ射影する。可視かつ rect 確定のみ。
@@ -144,7 +144,7 @@ pub mod UiExtract {
                 Map.get(id, rects) |> Option.map(rect -> (id, s, rect))
             })
             |> List.map(entry -> {let (id, s, _rect) = entry; (sortKeyOf(id, s#zIndex, ui), entry)})
-            |> List.sortBy(fst)
+            |> Sort.sortStableBy(fst)
             |> List.flatMap(pair -> {let (id, s, rect) = snd(pair); UiShape.placedItems(hoverShape(hoverFor(ui, hoveredId, id), s), rect)})
 
     /// PolyComp の全サブポリの各頂点にレイアウト矩形左上 origin を足し、ローカル座標を design 空間の

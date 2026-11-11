@@ -1,5 +1,6 @@
 // Bag — ふくろ（道具 → 個数）とお金。3 人で 1 つ。個数 0 の道具は持たない。種類は maxKinds まで。
 mod Bag {
+    use fge::Sort
 
     pub type alias Rec = { items = Map[ItemsDoc.ItemId, Int32], gold = Int32 }
 
@@ -31,7 +32,7 @@ mod Bag {
     pub def listOf(items: ItemsDoc.Doc, b: Bag): List[(ItemsDoc.ItemId, Int32)] =
         itemsOf(b)
             |> List.map(entry -> (ItemsDoc.itemOf(items, fst(entry)) |> Option.map(item -> (kindRank(item#kind), item#price)) |> Option.getWithDefault((4, 0)), entry))
-            |> List.sortBy(match ((rank, price), (id, _)) -> (rank, price, ItemsDoc.keyOf(id)))
+            |> Sort.sortStableBy(match ((rank, price), (id, _)) -> (rank, price, ItemsDoc.keyOf(id)))
             |> List.map(snd)
 
     def kindRank(kind: ItemsDoc.Kind): Int32 = match kind {

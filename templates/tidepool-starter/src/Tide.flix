@@ -1,6 +1,7 @@
 // Tide — 水の決まり（抜け口の高さ d と、1 手ごとの水位の更新）。どれも純粋な関数。
 // 水位の表 Water は盤の中の全マスを持ち、w(c) ≥ h(c)。w(c) > h(c) のマスが沈んでいる。
 mod Tide {
+    use fge::Sort
 
     use Board.Cell
 
@@ -35,7 +36,7 @@ mod Tide {
         let fromSea = Board.cells(b) |> List.filter(c -> Board.isEdge(c, b) and tide > Board.heightAt(c, b)
             and not Set.memberOf(c, pebbles)) |> List.map(c -> (c, tide));
         let sources = List.append(kept, fromSea);
-        let levels = sources |> List.map(snd) |> List.distinct |> List.sort |> List.reverse;
+        let levels = sources |> List.map(snd) |> List.distinct |> Sort.sortStable |> List.reverse;
         let reached = levels |> List.foldLeft((acc, v) -> {
             let isOpen = c -> Board.isInside(c, b) and not Set.memberOf(c, pebbles)
                 and Board.heightAt(c, b) < v and not Map.memberOf(c, acc);

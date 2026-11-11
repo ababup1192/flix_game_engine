@@ -37,7 +37,7 @@ mod RenderFrameStats {
 
     /// 平均と p99（ミリ秒・小数 2 桁）。
     def summary(samples: Array[Int64, Static]): String \ IO =
-        let sorted = Array.toList(samples) |> List.sort;
+        let sorted = Array.toList(samples) |> Sort.sortStable;
         let total = List.foldLeft((acc, v) -> acc + v, 0i64, sorted);
         let ms = (v: Int64) -> Int64.toFloat64(v) / 1000000.0;
         let p99 = List.drop(window() * 99 / 100, sorted) |> List.head |> Option.getWithDefault(0i64);

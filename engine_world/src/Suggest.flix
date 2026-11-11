@@ -34,10 +34,9 @@ pub mod Suggest {
                 let (d, candidate) = entry;
                 d <= limit or (String.length(name) >= 2 and String.startsWith(prefix = lower, String.toLowerCase(candidate)))
             })
-            |> List.zipWithIndex
-            |> List.sortBy(entry -> { let (index, (d, _)) = entry; d * 10000 + index })
+            |> Sort.sortStableBy(fst)
             |> List.take(3)
-            |> List.map(entry -> { let (_, (_, candidate)) = entry; candidate })
+            |> List.map(snd)
 
     /// 知らせの後ろに付ける 1 句: 近い名前があれば「（もしかして: a / b）」、無ければ使える名前を 12 個まで。
     pub def hint(name: String, known: List[String]): String =

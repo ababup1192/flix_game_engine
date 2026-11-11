@@ -162,7 +162,7 @@ pub mod Yarn {
             }
         };
         let (_, _, done) = List.foldLeft(step, (0, Nil, Nil), line#parts);
-        done |> List.sortWith((a, b) -> a#start <=> b#start)
+        done |> Sort.sortStableWith((a, b) -> a#start <=> b#start)
 
     /// 行のルビ（[ruby=よみ]字[/ruby]）を RichText.placeRuby に渡す形で。
     pub def rubiesOf(line: Line): List[RichText.Ruby] =

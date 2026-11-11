@@ -389,6 +389,20 @@
       "skip": ["lib/", "build/"],
       "pattern": "\"scene3dLinearColor\"\\s*:",
       "hint": "scene3dLinearColor は 0.84.0 で消えた（3D の色は線形の計算だけ・書いても効かない）。キーを消し、0.78 の見え方に合わせるなら ambient・光の intensity と range を線形の目盛りで合わせ直す（engine の docs/migrations/0.79.0.md）"
+    },
+    {
+      "id": "list-sort-quadratic",
+      "suffixes": [".flix"],
+      "skip": ["engine_full/", "lib/", "build/"],
+      "pattern": "\\bList\\.sort(By|With)?\\b",
+      "hint": "標準の List.sort・sortBy・sortWith は並んだ入力と鍵が全部同じ入力で二乗になり、安定でもない。Sort.sortStable・Sort.sortStableBy(鍵の関数, 列)・Sort.sortStableWith(比べる関数, 列) へ（どんな入力でも n log n・同じ鍵は来た順）。来た順の番号を鍵に足していた所は外せる"
+    },
+    {
+      "id": "vector-array-sort-quadratic",
+      "suffixes": [".flix"],
+      "skip": ["engine_full/", "lib/", "build/"],
+      "pattern": "\\b(Vector|Array|Chain|MutList|Nel)\\.sort(By|With|Within)?\\b",
+      "hint": "標準の Vector・Array・Chain・MutList・Nel の sort 族も List と同じ単純なクイックソートで、並んだ入力で二乗になる。List.toList などで列にして Sort.sortStable・sortStableBy・sortStableWith を通し、戻す（どんな入力でも n log n・安定）"
     }
   ],
   "exempt": {

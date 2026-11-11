@@ -54,7 +54,7 @@ pub mod WorldHash {
         let name = c.getName();
         if (c.isArray() or name == "java.lang.String" or isValueClass(name) or isOpaque(name) or String.startsWith(prefix = "Lazy$", name)) Nil
         else if (String.startsWith(prefix = "RecordExtend$", name)) recordFields(o) |> Map.toList
-        else instanceFields(c, Nil) |> List.sortBy(fst) |> List.map(match (key, f) -> {
+        else instanceFields(c, Nil) |> Sort.sortStableBy(fst) |> List.map(match (key, f) -> {
             f.setAccessible(true);
             (String.splitOn({substr = "."}, key) |> List.last |> Option.getWithDefault(key), f.get(o))
         })
@@ -171,7 +171,7 @@ pub mod WorldHash {
         f.get(o)
 
     def objectDigest(memo: IdentityHashMap[JObject, JObject], o: JObject, c: Class[JObject]): Bytes \ IO =
-        let fields = instanceFields(c, Nil) |> List.sortBy(fst);
+        let fields = instanceFields(c, Nil) |> Sort.sortStableBy(fst);
         combine("o:${stableName(c.getName())}", fields |> List.flatMap(match (key, f) -> {
             f.setAccessible(true);
             shaOfText(key) :: digestOf(memo, f.get(o)) :: Nil

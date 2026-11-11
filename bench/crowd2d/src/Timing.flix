@@ -1,5 +1,6 @@
 // Timing — 計測の値を並べて読む小物。
 mod Timing {
+    use fge::Sort
     use fge::RenderUtil
 
     import java.lang.System
@@ -13,7 +14,7 @@ mod Timing {
 
     /// 値の列の q パーセント点（q は 0〜100）。空なら 0。
     pub def percentile(q: Int32, samples: List[Float64]): Float64 =
-        let sorted = List.sort(samples) |> List.toVector;
+        let sorted = Sort.sortStable(samples) |> List.toVector;
         let count = Vector.length(sorted);
         if (count == 0) 0.0 else Vector.get(Int32.min(count - 1, count * q / 100), sorted)
 

@@ -701,9 +701,14 @@ mod Render3d {
     def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
 
     /// 描く順の鍵で並べる。鍵が同じ物は来た順（同じ入力はいつも同じ順）。
-    // WhyNot: List.sortBy に鍵だけを渡さない — 安定ソートではなく、鍵の同じ物どうしの順が並びの中身で変わる。
+    // WhyNot: 並べ替えにしない — 鍵（program）はほとんど並んで来る入力で、1 棟 1 個の都市では鍵の種類が物の数に近い。
+    // 鍵ごとに集めて小さい順につなげば、並び方に関わらず物の数 × log(鍵の種類) で済む。
     def inDrawOrder(keyOf: a -> Int32, xs: List[a]): List[a] =
-        xs |> List.mapWithIndex((i, x) -> ((keyOf(x), i), x)) |> List.sortBy(fst) |> List.map(snd)
+        let byKey = List.foldLeft((m, x) -> {
+            let key = keyOf(x);
+            Map.insert(key, x :: Map.getWithDefault(key, Nil, m), m)
+        }, (Map.empty(): Map[Int32, List[a]]), xs);
+        Map.foldRightWithKey((_, group, acc) -> List.reverse(group) ::: acc, Nil, byKey)
 
     def hasUv(d: MeshDraw): Bool = Option.nonEmpty(Mesh3d.uvs(d#fields#mesh))
 

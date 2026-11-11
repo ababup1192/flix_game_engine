@@ -124,8 +124,8 @@ mod TestSpatialGrid {
         let differing = List.range(0, 300) |> List.filter(i -> {
             let x = Vector.get(i, xs);
             let y = Vector.get(i, ys);
-            (nearIndices(grid, x, y, 0.7) |> List.sort) != nearByScan(xs, ys, x, y, 0.7) or
-            (nearIndices(grid, x, y, 2.5) |> List.sort) != nearByScan(xs, ys, x, y, 2.5)
+            (nearIndices(grid, x, y, 0.7) |> Sort.sortStable) != nearByScan(xs, ys, x, y, 0.7) or
+            (nearIndices(grid, x, y, 2.5) |> Sort.sortStable) != nearByScan(xs, ys, x, y, 2.5)
         });
         Assert.assertEq(expected = Nil, differing)
 

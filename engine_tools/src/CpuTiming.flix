@@ -28,7 +28,7 @@ pub mod CpuTiming {
 
     /// 時間の列（ミリ秒）を中央値と幅にまとめる。偶数個の中央値は真ん中の 2 つの平均。
     pub def summarize(samples: Nel[Float64]): Summary =
-        let sorted = Nel.toList(samples) |> List.sort |> List.toVector;
+        let sorted = Nel.toList(samples) |> Sort.sortStable |> List.toVector;
         let count = Vector.length(sorted);
         let at = i -> Vector.get(i, sorted);
         let median = if (Int32.modulo(count, 2) == 1) at(count / 2) else (at(count / 2 - 1) + at(count / 2)) / 2.0;

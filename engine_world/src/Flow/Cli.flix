@@ -86,7 +86,7 @@ pub mod Flow.Cli {
     /// 始まりと mark の場所（何フレーム目か）を 1 行に。
     def placesText(outcome: Flow.Outcome[w]): String =
         let starts = outcome#starts |> List.map(match (at, name) -> "start ${name} @${Int32.toString(at)}");
-        let marks = outcome#marks |> Map.toList |> List.sortBy(snd) |> List.map(match (name, at) -> "mark ${name} @${Int32.toString(at)}");
+        let marks = outcome#marks |> Map.toList |> Sort.sortStableBy(snd) |> List.map(match (name, at) -> "mark ${name} @${Int32.toString(at)}");
         let all = List.append(starts, marks);
         if (List.isEmpty(all)) "  （start・mark なし）" else "  " + String.intercalate(" / ", all)
 

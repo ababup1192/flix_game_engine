@@ -10,7 +10,7 @@ pub mod UiHierarchy {
     pub def childrenOf(parent: EntityId, parents: Map[EntityId, EntityId], order: Map[EntityId, Int32]): List[EntityId] =
         parents
             |> Map.foldLeftWithKey((acc, id, p) -> if (p == parent) id :: acc else acc, Nil)
-            |> List.sortBy(id -> Option.getWithDefault(0, Map.get(id, order)))
+            |> Sort.sortStableBy(id -> Option.getWithDefault(0, Map.get(id, order)))
 
     /// entity の階層深さ（root=0）。parents をたどった回数。
     pub def depthOf(id: EntityId, parents: Map[EntityId, EntityId]): Int32 =
@@ -40,7 +40,7 @@ pub mod UiHierarchy {
     def buildChildIndex(parents: Map[EntityId, EntityId], order: Map[EntityId, Int32]): Map[EntityId, List[EntityId]] =
         parents
             |> Map.foldLeftWithKey((acc, id, p) -> Map.insertWith((_, kids) -> id :: kids, p, id :: Nil, acc), Map.empty())
-            |> Map.map(kids -> List.sortBy(id -> Option.getWithDefault(0, Map.get(id, order)), kids))
+            |> Map.map(kids -> Sort.sortStableBy(id -> Option.getWithDefault(0, Map.get(id, order)), kids))
 
     /// 親を隠すと子も隠れる、を反映した各要素の実際の表示可否。
     /// 表示可否が未登録の entity は表示扱い。root から下へ「親が見えるか」を掛け合わせて伝える。

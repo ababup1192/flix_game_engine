@@ -28,7 +28,7 @@ mod RenderShaderCache {
                     let (key, program, usedAt) = e;
                     if (Set.memberOf(program, args#pinned)) None else Some((usedAt, key))
                 })
-                |> List.sortBy(fst)
+                |> Sort.sortStableBy(fst)
                 |> List.take(excess)
                 |> List.map(snd)
 

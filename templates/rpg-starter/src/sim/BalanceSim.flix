@@ -5,6 +5,7 @@
 // 外れたら Doc（敵の値・出会いの組・経験値）の数だけで直して流し直す。式は直さない（直す時は docs/DESIGN.md の 4.4 を先に直す）。
 //   BALANCE_SEEDS=n … 1 組あたりの種の数（既定 500）
 mod BalanceSim {
+    use fge::Sort
     use fge::App
 
     import java.lang.System
@@ -245,7 +246,7 @@ mod BalanceSim {
 
     /// 値の並びの q の位置の値（並べ替えて、切り上げた番目）。
     def quantile(q: Float64, xs: List[Float64]): Float64 =
-        let sorted = List.sort(xs) |> List.toVector;
+        let sorted = Sort.sortStable(xs) |> List.toVector;
         let n = Vector.length(sorted);
         if (n == 0) 0.0
         else {

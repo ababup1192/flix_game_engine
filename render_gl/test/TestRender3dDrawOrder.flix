@@ -15,6 +15,19 @@ mod Render3d.TestDrawOrder {
         let order = () -> Render3d.inDrawOrder(fst, xs) |> List.map(snd);
         Assert.assertEq(expected = order(), order())
 
+    /// 空の入力は空のまま。
+    @Test
+    def testEmptyInputStaysEmpty(): Unit \ Assert =
+        Assert.assertEq(expected = (Nil: List[Int32]), Render3d.inDrawOrder(identity, Nil))
+
+    /// 並んだ入力・鍵が全部同じ入力が 10 万個でも来た順のまま返る。
+    @Test
+    def testHugeSortedAndSameKeyInputsKeepOrder(): Unit \ Assert =
+        let sorted = List.range(0, 100000);
+        let same = List.map(i -> (0, i), sorted);
+        Assert.assertEq(expected = (true, true),
+            (Render3d.inDrawOrder(identity, sorted) == sorted, Render3d.inDrawOrder(fst, same) == same))
+
     // ── 置き場の上限 ──
 
     def entry(lastUsed: Int64, size: Int64, counted: Bool): Render3d.Material.BudgetEntry =

@@ -273,7 +273,7 @@ pub mod ViewProjection {
             let y1 = Int32.min(spec#rows - 1, ceilInt(maxOf(ys)) + m#bottom);
             let cells = forM (y <- List.range(y0, y1 + 1); x <- List.range(x0, x1 + 1))
                 yield ({ x = x, y = y }: Grid.Cell);
-            cells |> List.sortBy(c -> (c#x + c#y, c#x))
+            cells |> Sort.sortStableBy(c -> (c#x + c#y, c#x))
         }
 
     def minOf(vs: List[Float64]): Float64 = List.minimum(vs) |> Option.getWithDefault(0.0)
