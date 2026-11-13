@@ -8,7 +8,7 @@
 //   fps.txt   … コマの速さ（flow の fps）
 //   tape.json … 付箋の頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・ノードをまたぐ flow では書かずに理由を出す）
 mod FlowVideo {
-    use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Render, Resources, VideoOut}
+    use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Rect2, Render, Resources, VideoOut}
 
     import java.io.BufferedOutputStream
     import java.io.DataOutputStream
@@ -83,7 +83,8 @@ mod FlowVideo {
             case Flow.Step.Mark(name) => Some(name)
             case _                    => None
         });
-        let flowRun = { game = (new File(".")).getCanonicalFile().getName(), flow = path, fps = script#fps, marks = marks, outcome = outcome };
+        let flowRun = { game = (new File(".")).getCanonicalFile().getName(), flow = path, fps = script#fps, design = SceneRender.design(),
+                        marks = marks, outcome = outcome };
         match TapeOut.toJson(tapeTable(outcome#last), flowRun) {
             case Ok(text) => writeText("${out}/tape.json", text)
             case Err(why) => println("tape: ${why}（${out}/tape.json は書かない）")
@@ -99,7 +100,58 @@ mod FlowVideo {
           msg = advMsg(h),
           probes = "phase" :: "mode" :: "photo" :: "logSize" :: Nil,
           probeNames = Map#{ "phase" => "場面", "mode" => "出し方", "photo" => "背景", "logSize" => "ログ" },
-          playUrl = "" }
+          playUrl = "",
+          objects = h1 -> objectsOf(Layout.Fit.Regular, h1#resources, h1#world) }
+
+    /// 画面に出ている物（付箋の「物を選ぶ」）。タイトルは題字とメニュー、読む間は背景・立ち絵と小物・メッセージウィンドウ・選択肢・クイックメニュー。
+    /// 置き場は View と同じ Layout・Cast の関数から引く（描いた所と枠がずれない）。
+    pub def objectsOf(fit: Layout.Fit, res: Res.Res, w: World.World): List[TapeOut.ScreenObject] =
+        let thing = (id, name, r) -> { id = id, name = name, rect = r };
+        match w#scene {
+            case World.Scene.Title(_) =>
+                let count = List.length(WorldMenu.titleItems());
+                let top = Layout.titleHeadingY(fit);
+                thing("title_logo", "題字", rectOf(Layout.width(fit) * 0.2, top, Layout.width(fit) * 0.6, Layout.titleSubtitleY(fit) + 22.0 - top)) ::
+                thing("title_menu", "タイトルのメニュー", boxOf(List.range(0, count) |> List.map(i -> Layout.titleItem(fit, i, count)))) :: Nil
+            case World.Scene.Credits(_, _) => thing("credits", "クレジット", Layout.screen(fit)) :: Nil
+            case World.Scene.Reading(r) =>
+                let backdrop = r#stage#shot |> Option.map(shot -> {
+                    let label = BackdropDoc.photoOf(shot#photo, res#backdrops) |> Option.map(p -> p#label) |> Option.filter(l -> not String.isEmpty(l));
+                    thing("backdrop", "背景（${Option.getWithDefault(shot#photo, label)}）", Layout.screen(fit))
+                }) |> Option.toList;
+                let castEnv = { doc = res#cast, fit = fit, storyNow = World.now(w), realNow = w#realNow, missing = res#missing };
+                let cast = Cast.placedOf(castEnv, r#stage#cast) |> List.map(p -> thing(p#figure#name, if (String.isEmpty(p#label)) p#figure#name else p#label, p#rect));
+                let hud = if (View.coversScreen(w#panel) or w#panel == World.Panel.Hidden) Nil else readingHud(fit, r);
+                List.flatten(backdrop :: cast :: hud :: Nil)
+        }
+
+    def readingHud(fit: Layout.Fit, r: World.Read): List[TapeOut.ScreenObject] =
+        let choiceCount = List.length(r#choices);
+        let buttonCount = List.length(WorldMenu.buttonsOf(fit));
+        let message = if (Layout.isPortrait(fit)) Layout.page(fit, choiceCount)
+            else match r#stage#mode {
+                case Stage.Mode.Adv => Layout.advPanel(fit)
+                case Stage.Mode.Nvl =>
+                    let area = Layout.nvlText();
+                    rectOf(area#x, area#y, area#width, Layout.height(fit) - 2.0 * area#y)
+            };
+        let buttons = List.range(0, buttonCount) |> List.map(i -> if (Layout.isPortrait(fit)) Rail.button(fit, i) else Layout.button(fit, i, buttonCount));
+        let choices = if (choiceCount == 0) Nil
+            else { id = "choices", name = "選択肢", rect = boxOf(List.range(0, choiceCount) |> List.map(i -> Layout.choice(fit, i, choiceCount))) } :: Nil;
+        List.flatten(({ id = "message", name = "メッセージウィンドウ", rect = message } :: Nil) :: choices ::
+                     ({ id = "quick_menu", name = "クイックメニュー", rect = boxOf(buttons) } :: Nil) :: Nil)
+
+    /// 矩形を全部囲む矩形（空なら大きさ 0）。
+    def boxOf(rects: List[Rect2.Rect2]): Rect2.Rect2 =
+        let xs0 = rects |> List.map(r -> r#position#x);
+        let ys0 = rects |> List.map(r -> r#position#y);
+        let xs1 = rects |> List.map(r -> r#position#x + r#size#x);
+        let ys1 = rects |> List.map(r -> r#position#y + r#size#y);
+        let lo = vs -> List.minimum(vs) |> Option.getWithDefault(0.0);
+        let hi = vs -> List.maximum(vs) |> Option.getWithDefault(0.0);
+        rectOf(lo(xs0), lo(ys0), hi(xs1) - lo(xs0), hi(ys1) - lo(ys0))
+
+    def rectOf(x: Float64, y: Float64, w: Float64, h: Float64): Rect2.Rect2 = { position = { x = x, y = y }, size = { x = w, y = h } }
 
     /// 横の ADV のウィンドウの寸法を画面の割合に（Layout と novel.kind.json から導く）。
     def advMsg(h: AppState): TapeOut.Msg =

@@ -73,14 +73,7 @@ mod View {
         let atlas = ctx#atlas;
         let env = envOf(fitOfCtx(ctx, res), res, w);
         // 画面（バックログ・セーブ・設定）の間は下の画面を描かない（幕越しに字が二重に透けて読みにくい）。背景の写真は frame が描き続ける。
-        let covered = match w#panel {
-            case World.Panel.Closed => false
-            case World.Panel.Hidden => false
-            case World.Panel.Menu(_) => false
-            case World.Panel.SaveLoadPick(_) => false
-            case _                  => true
-        };
-        let screen = if (covered) Nil else match w#scene {
+        let screen = if (coversScreen(w#panel)) Nil else match w#scene {
             case World.Scene.Title(item)      => title(atlas, env, item)
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
             case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden) Nil else reading(atlas, env, r)
@@ -133,6 +126,15 @@ mod View {
     /// 揺れても画面の端が覗かないよう、背景は画面より一回り大きく敷く。縦の画面は写真の横長の比のまま高さに合わせ、
     /// 左右のはみ出しを捨てる（真ん中を見せる）。
     // WhyNot: 縦の画面で写真を画面の比に縮めない — 横長の写真が縦に潰れる。
+    /// 画面（バックログ・セーブ・設定）が下の画面を覆うか。
+    pub def coversScreen(panel: World.Panel): Bool = match panel {
+        case World.Panel.Closed          => false
+        case World.Panel.Hidden          => false
+        case World.Panel.Menu(_)         => false
+        case World.Panel.SaveLoadPick(_) => false
+        case _                           => true
+    }
+
     def backdropRect(fit: Layout.Fit): Rect2.Rect2 =
         let w = Layout.width(fit);
         let h = Layout.height(fit);

@@ -2,7 +2,7 @@
 // シナリオは小さな見本（下の program）: 時間を取らないコマンド・時間を取る <<bg>>・<<wait>>・鳴り続ける音を 1 つずつ並べる。
 mod TestTape {
 
-    use fge::{App, DocJson, Flow, JsonCodec, Resources, Yarn}
+    use fge::{App, DocJson, Flow, JsonCodec, Rect2, Resources, Yarn}
     use Util.Json.Json
 
     type alias AppState = Resources.With[Res.Res, World.World]
@@ -70,7 +70,8 @@ mod TestTape {
         { title = "見本", sceneNames = Map#{ "opening" => "はじめ" }, soundLabels = Map#{ "se_slap" => "叩く" },
           hiddenSounds = Set#{ "ui_open" },
           msg = { x0 = 0.1, x1 = 0.9, cy = 0.8, lh = 0.05, padTop = 0.1, padBot = 0.1, font = 0.04, cps = 30.0 },
-          probes = "logSize" :: Nil, probeNames = Map.empty(), playUrl = "" }
+          probes = "logSize" :: Nil, probeNames = Map.empty(), playUrl = "",
+          objects = h -> FlowVideo.objectsOf(Layout.Fit.Regular, h#resources, h#world) }
 
     /// flow を流して tape.json を作り、JSON の木にする（流せない・作れない時は理由の Err）。
     def tapeOf(marks: List[String]): Result[String, Map[String, Json]] \ Fs.FileRead =
@@ -83,7 +84,7 @@ mod TestTape {
             script  <- parsed;
             outcome <- Flow.play(app, { design = design, limit = 600 }, script, { world = title, state = App.freshStepState() })
                        |> Result.mapErr(failure -> failure#why);
-            text    <- TapeOut.toJson(table(), { game = "g", flow = "tape-test.flow", fps = script#fps, marks = marks, outcome = outcome });
+            text    <- TapeOut.toJson(table(), { game = "g", flow = "tape-test.flow", fps = script#fps, design = design, marks = marks, outcome = outcome });
             root    <- DocJson.parse(text) |> Option.flatMap(JsonCodec.expectObject) |> Option.toOk("tape.json が JSON でない")
         ) yield root
 
@@ -144,4 +145,56 @@ mod TestTape {
             |> Option.map(obj -> arrayAt("logSize", obj)) |> Option.getWithDefault(Nil) |> List.last |> Option.map(secondOf)
             |> Option.flatMap(JsonCodec.expectInt));
         Assert.assertEq(expected = Ok(Some(3)), last)
+
+    // ── 画面に出ている物（objects） ──
+
+    def box(x: Float64, y: Float64, w: Float64, h: Float64): Rect2.Rect2 = { position = { x = x, y = y }, size = { x = w, y = h } }
+
+    def thing(id: String, r: Rect2.Rect2): TapeOut.ScreenObject = { id = id, name = id, rect = r }
+
+    def asTuple(f: TapeOut.Fraction): (Float64, Float64, Float64, Float64) = (f#x, f#y, f#w, f#h)
+
+    @Test
+    def testRectBecomesFractionOfTheScreen(): Unit \ Assert =
+        // design の px を画面の幅と高さで割る（960×540 の (96, 54, 480, 270) → 0.1, 0.1, 0.5, 0.5）。
+        Assert.assertEq(expected = Some((0.1, 0.1, 0.5, 0.5)),
+                        TapeOut.fractionOf({ x = 960.0, y = 540.0 }, box(96.0, 54.0, 480.0, 270.0)) |> Option.map(asTuple))
+
+    @Test
+    def testFractionIsClampedToTheScreenAndRoundedToThreeDigits(): Unit \ Assert =
+        // はみ出す分は画面の端で切り、小数 3 桁に丸める（-12 → 0・1/3 → 0.333）。
+        Assert.assertEq(expected = Some((0.0, 0.0, 0.333, 1.0)),
+                        TapeOut.fractionOf({ x = 960.0, y = 540.0 }, box(-12.0, -12.0, 332.0, 564.0)) |> Option.map(asTuple))
+
+    @Test
+    def testSameObjectInARowFoldsIntoOneSpan(): Unit \ Assert =
+        // 続けて出ている間は 1 行（from = 出たフレーム、to = 消えたフレーム）。10fps で a は 0〜3 フレーム目、b は 2〜4 フレーム目（最後まで）。
+        let a = thing("a", box(0.0, 0.0, 96.0, 54.0));
+        let b = thing("b", box(96.0, 54.0, 96.0, 54.0));
+        let spans = TapeOut.spansOf(10.0, { x = 960.0, y = 540.0 }, (a :: Nil) :: (a :: Nil) :: (a :: b :: Nil) :: (b :: Nil) :: Nil)
+            |> List.map(s -> (s#id, s#startAt, s#endAt));
+        Assert.assertEq(expected = ("a", 0.0, 0.3) :: ("b", 0.2, 0.4) :: Nil, spans)
+
+    @Test
+    def testMovedObjectStartsANewSpan(): Unit \ Assert =
+        // 同じ id でも矩形が変われば別の行（動いた先の位置で付箋を指せるように）。
+        let here = thing("girl", box(0.0, 0.0, 96.0, 54.0));
+        let there = thing("girl", box(0.0, 270.0, 96.0, 54.0));
+        let spans = TapeOut.spansOf(10.0, { x = 960.0, y = 540.0 }, (here :: Nil) :: (there :: Nil) :: Nil)
+            |> List.map(s -> (s#startAt, s#rect#y));
+        Assert.assertEq(expected = (0.0, 0.0) :: (0.1, 0.5) :: Nil, spans)
+
+    @Test
+    def testMessageWindowIsListedAsMessage(): Unit \ {Assert, Fs.FileRead} =
+        // 読み始めるとメッセージウィンドウが id message で載る（付箋の頁が直した台詞を重ねる所）。
+        let ids = tapeOf(Nil) |> Result.map(root -> arrayAt("objects", root) |> List.map(row -> textAt("id", row)));
+        Assert.assertEq(expected = Ok(true), ids |> Result.map(List.memberOf("message")))
+
+    @Test
+    def testTitleMenuIsListedFromTheFirstFrame(): Unit \ {Assert, Fs.FileRead} =
+        // タイトル画面のメニューは 0 秒から載る。
+        let first = tapeOf(Nil) |> Result.map(root -> arrayAt("objects", root)
+            |> List.find(row -> textAt("id", row) == "title_menu")
+            |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(obj -> Map.get("from", obj)) |> Option.flatMap(JsonCodec.expectInt));
+        Assert.assertEq(expected = Ok(Some(0)), first)
 }

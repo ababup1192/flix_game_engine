@@ -2,7 +2,7 @@
 // 書くのは FlowVideo（debug/video/<名前>/tape.json）。欄の名前・型・単位は plans/tape/mock.html の TAPE に合わせる。
 // commit・video・strip・stripPerSec は束ねる側（bin/fge tape）が足すので、ここでは書かない。
 mod TapeOut {
-    use fge::{Color, Flow, JsonCodec, Resources, Yarn}
+    use fge::{Color, Flow, JsonCodec, Rect2, Resources, Vec2, Yarn}
     use Util.Json.Json
 
     /// App の w（描く元と World の組）。
@@ -13,10 +13,19 @@ mod TapeOut {
     /// font = 字の大きさ（ここまでは画面の高さに対する割合）、cps = 1 秒に出す字の数。
     pub type alias Msg = { x0 = Float64, x1 = Float64, cy = Float64, lh = Float64, padTop = Float64, padBot = Float64, font = Float64, cps = Float64 }
 
+    /// 画面に出ている物 1 つ。id = 物の名前（同じ物は同じ id。メッセージウィンドウは message）、name = 人に見せる名前、rect = design の px。
+    pub type alias ScreenObject = { id = String, name = String, rect = Rect2.Rect2 }
+
+    /// 同じ物が続いて出ていた間。startAt / endAt = 秒（tape.json の from / to。endAt のフレームにはもう出ていない）、rect = 画面に対する割合（左上が 0,0・小数 3 桁）。
+    pub type alias Span = { id = String, name = String, startAt = Float64, endAt = Float64, rect = Fraction }
+
+    /// 画面に対する割合の矩形。
+    pub type alias Fraction = { x = Float64, y = Float64, w = Float64, h = Float64 }
+
     /// ゲームが渡す表。title = 題名、sceneNames = flow の mark の名前 → 人に見せる名前（無ければ mark の名前）、
     /// soundLabels = 音の素材の論理名 → 人に見せる名前（無ければ論理名）、hiddenSounds = 載せない音（UI の返事など）、
     /// msg = メッセージウィンドウの寸法、probes = 載せる flow の問いの名前、probeNames = 問いの表示名の上書き
-    /// （無ければ問いの doc の頭）、playUrl = 遊べる所の URL（無ければ空）。
+    /// （無ければ問いの doc の頭）、playUrl = 遊べる所の URL（無ければ空）、objects = そのフレームの画面に出ている物。
     pub type alias Table = {
         title = String,
         sceneNames = Map[String, String],
@@ -25,12 +34,13 @@ mod TapeOut {
         msg = Msg,
         probes = List[String],
         probeNames = Map[String, String],
-        playUrl = String
+        playUrl = String,
+        objects = AppState -> List[ScreenObject]
     }
 
-    /// 流した 1 回。game = ゲームのフォルダ名、flow = flow のパス、fps = flow の fps、
+    /// 流した 1 回。game = ゲームのフォルダ名、flow = flow のパス、fps = flow の fps、design = 画面の大きさ（物の矩形を割る）、
     /// marks = flow に書いた mark の名前（書いた順。同じ名前は数えて止めるため Outcome の Map とは別に持つ）、outcome = 流した結果（途中で止まった時はそこまで）。
-    pub type alias Run = { game = String, flow = String, fps = Float64, marks = List[String], outcome = Flow.Outcome[AppState] }
+    pub type alias Run = { game = String, flow = String, fps = Float64, design = Vec2.Vec2, marks = List[String], outcome = Flow.Outcome[AppState] }
 
     /// tape.json の文字。同じ名前の mark・ノードをまたぐ flow・知らない問いは Err（理由の 1 行）。
     pub def toJson(table: Table, flowRun: Run): Result[String, String] =
@@ -60,7 +70,7 @@ mod TapeOut {
                 "speaker" => Json.JObject(speakerRows(res) |> List.map(s -> (s#name, Json.JString(s#id))) |> List.toMap),
                 "speakers" => Json.JArray(speakerRows(res) |> List.map(speakerJson) |> List.toVector),
                 "sounds" => Json.JArray(soundsOf(table, flowRun#fps, frames) |> List.toVector),
-                "objects" => Json.JArray(Vector.empty()),
+                "objects" => Json.JArray(spansOf(flowRun#fps, flowRun#design, worlds |> List.map(table#objects)) |> List.map(spanJson) |> List.toVector),
                 "branches" => Json.JArray(Vector.empty()),
                 "probes" => Json.JObject(probes),
                 "probeNames" => Json.JObject(probeNamesOf(table) |> List.map(match (name, shown) -> (name, Json.JString(shown))) |> List.toMap),
@@ -172,6 +182,44 @@ mod TapeOut {
             (List.reverse(here) ::: out, now)
         }, (Nil, Set.empty()));
         List.reverse(rows)
+
+    /// 出ている物を、同じ物（id・名前・割合の矩形が同じ）が続く間ごとに 1 行へ畳む（出た順）。画面の外だけにある物は載せない。
+    pub def spansOf(fps: Float64, design: Vec2.Vec2, frames: List[List[ScreenObject]]): List[Span] =
+        let keyed = frames |> List.map(objects -> objects |> List.filterMap(o ->
+            fractionOf(design, o#rect) |> Option.map(r -> (o#id, o#name, (r#x, r#y, r#w, r#h)))) |> List.distinct);
+        let (open, closed, _) = keyed |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
+            let (opened, done, seq) = acc;
+            let (i, now) = pair;
+            let here = List.toSet(now);
+            let (kept, ending) = opened |> List.partition(match (key, _, _) -> Set.memberOf(key, here));
+            let keptKeys = kept |> List.map(match (key, _, _) -> key) |> List.toSet;
+            let starting = now |> List.filter(key -> not Set.memberOf(key, keptKeys)) |> List.zipWithIndex
+                |> List.map(match (j, key) -> (key, i, seq + j));
+            (List.append(kept, starting),
+             List.append(ending |> List.map(match (key, since, order) -> (key, since, i, order)), done),
+             seq + List.length(starting))
+        }, (Nil, Nil, 0));
+        let n = List.length(frames);
+        List.append(open |> List.map(match (key, since, order) -> (key, since, n, order)), closed)
+            |> List.sortBy(match (_, _, _, order) -> order)
+            |> List.map(match ((id, name, (x, y, w, h)), since, until, _) ->
+                { id = id, name = name, startAt = secondsAt(fps, since), endAt = secondsAt(fps, until), rect = { x = x, y = y, w = w, h = h } })
+
+    /// design の px の矩形を、画面に収めてから画面に対する割合（小数 3 桁）に。画面の外だけなら None。
+    pub def fractionOf(design: Vec2.Vec2, r: Rect2.Rect2): Option[Fraction] =
+        let clamp = v -> Float64.max(0.0, Float64.min(1.0, v));
+        let round3 = v -> Float64.round(v * 1000.0) / 1000.0;
+        let x0 = clamp(r#position#x / design#x);
+        let y0 = clamp(r#position#y / design#y);
+        let x1 = clamp((r#position#x + r#size#x) / design#x);
+        let y1 = clamp((r#position#y + r#size#y) / design#y);
+        let f = { x = round3(x0), y = round3(y0), w = round3(x1 - x0), h = round3(y1 - y0) };
+        if (f#w <= 0.0 or f#h <= 0.0) None else Some(f)
+
+    def spanJson(s: Span): Json =
+        Json.JObject(Map#{ "id" => Json.JString(s#id), "name" => Json.JString(s#name), "from" => numJson(s#startAt), "to" => numJson(s#endAt),
+                           "rect" => Json.JObject(Map#{ "x" => numJson(s#rect#x), "y" => numJson(s#rect#y),
+                                                        "w" => numJson(s#rect#w), "h" => numJson(s#rect#h) }) })
 
     /// 選んだ問いをフレームごとに読み、変わった所だけ [秒, 値] に。
     def probesOf(table: Table, fps: Float64, worlds: List[AppState]): Result[String, Map[String, Json]] =
