@@ -22,8 +22,8 @@ pub mod App.DevTools {
         let kept = List.filter(pair -> { let (key, _) = pair; not String.isEmpty(key) and not Set.memberOf(key, pageKeys) }, pairs);
         List.head(kept) |> Option.map(first -> (fst(first), List.toMap(kept)))
 
-    /// ブラウザ版の頁（fge-web.js）が自分で読む URL の鍵。始まりの引数に混ぜない。
     // WhyNot: fge-web.js の側で外さない — 外す一覧を Flix のテストで確かめられる所に 1 つだけ置く。頁に鍵を足したらここにも足す。
+    /// ブラウザ版の頁（fge-web.js）が自分で読む URL の鍵。始まりの引数に混ぜない。
     pub def pageQueryKeys(): Set[String] =
         Set#{"input", "size", "orientation", "glcheck", "loadtime", "capture", "fps"}
 

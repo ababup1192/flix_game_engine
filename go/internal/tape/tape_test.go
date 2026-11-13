@@ -62,7 +62,7 @@ var mockFixes = [][2]string{
 		".frame { position: relative; height: 100%; aspect-ratio: var(--frame-ratio, auto); max-width: 100%; }"},
 	{"const box = () => canvas.getBoundingClientRect();\nfunction redraw() {\n",
 		"const box = () => canvas.getBoundingClientRect();\n" +
-			"// 枠より動画が横長・縦長の時は、動画が映っている矩形（object-fit: contain の内側）に canvas を重ねる。枠と動画の比が同じなら枠いっぱいのまま\n" +
+			"// WhyNot: canvas を枠いっぱいのままにしない — 枠より横長・縦長の動画は object-fit: contain で内側に映るので、割合の矩形が映っていない所へずれる\n" +
 			"function fitCanvas() {\n" +
 			"  const f = $(\"frame\"), fw = f.clientWidth, fh = f.clientHeight, vw = video.videoWidth, vh = video.videoHeight;\n" +
 			"  if (!fw || !fh || !vw || !vh || Math.abs(fw / fh - vw / vh) < .01) { canvas.style.left = canvas.style.top = canvas.style.width = canvas.style.height = \"\"; return; }\n" +

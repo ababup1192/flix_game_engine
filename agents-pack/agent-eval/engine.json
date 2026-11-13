@@ -218,7 +218,7 @@
     },
     {
       "id": "tape-publish",
-      "prompt": "debug/tape/intro に作ったテープの頁を、テープ用の GitHub Pages のリポジトリ ababup1192/tapes に置いて、レビュワーに渡す URL を出したい。まだ push はしないで、何が置かれて何が消えるかだけ見せて",
+      "prompt": "debug/tape/intro に作ったテープの頁を、テープ用の GitHub Pages のリポジトリ ababup1192/flix_ge_tapes に置いて、レビュワーに渡す URL を出したい。まだ push はしないで、何が置かれて何が消えるかだけ見せて",
       "expect": [
         {"re": "fge tape publish", "why": "bin/fge tape publish が置き場に置いて URL を出す"}
       ],

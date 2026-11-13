@@ -1,4 +1,4 @@
-<!-- engine v0.92.0 / 生成: 2026-11-13 -->
+<!-- engine v0.92.0 / 生成: 2026-11-14 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -355,7 +355,8 @@
   `pub def browser(pairs: List[(String, String)]): App.DevTools[w, {}]`
 - URL のクエリを始まりの名前と引数に変える（browser の読み方）。頁が使う鍵と、名前の無い鍵を外し、残りが無ければ None。
   `pub def startOfQuery(pairs: List[(String, String)]): Option[(String, Map[String, String])]`
-- `pub def pageQueryKeys(): Set[String]`
+- ブラウザ版の頁（fge-web.js）が自分で読む URL の鍵。始まりの引数に混ぜない。
+  `pub def pageQueryKeys(): Set[String]`
 - デスクトップの道具の組。env は入口の頭で読んだ環境変数の表（ProcessEnv.snapshot()。DEBUG_HTTP_PORT・FLOW_RECORD・START を読む）。
   `pub def desktop(env: Map[String, String]): App.DevTools[w, Platform.Annotation]`
 

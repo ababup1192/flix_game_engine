@@ -426,7 +426,7 @@ function seek(t) { video.pause(); video.currentTime = t; follow(t); onTime(t); }
 
 // ── 動画の上 ──
 const box = () => canvas.getBoundingClientRect();
-// 枠より動画が横長・縦長の時は、動画が映っている矩形（object-fit: contain の内側）に canvas を重ねる。枠と動画の比が同じなら枠いっぱいのまま
+// WhyNot: canvas を枠いっぱいのままにしない — 枠より横長・縦長の動画は object-fit: contain で内側に映るので、割合の矩形が映っていない所へずれる
 function fitCanvas() {
   const f = $("frame"), fw = f.clientWidth, fh = f.clientHeight, vw = video.videoWidth, vh = video.videoHeight;
   if (!fw || !fh || !vw || !vh || Math.abs(fw / fh - vw / vh) < .01) { canvas.style.left = canvas.style.top = canvas.style.width = canvas.style.height = ""; return; }
