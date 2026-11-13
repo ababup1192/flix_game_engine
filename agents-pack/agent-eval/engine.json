@@ -229,6 +229,16 @@
       ]
     },
     {
+      "id": "tape-branches",
+      "prompt": "田んぼの選択肢で「千夏？」を選んだ道と「……ちいちゃん」を選んだ道を、それぞれテープにしてレビュワーに見せたい。頁の中で、もう片方の道へ切り替えて見られるようにして",
+      "expect": [
+        {"re": "FLOWS=|fge tape --group", "why": "結末ごとの flow を make tape FLOWS=… でまとめて撮り、bin/fge tape --group で分岐のカードをつなぐ"}
+      ],
+      "avoid": [
+        {"re": "branches\\s*[:=]\\s*\\[\\s*\\{", "why": "branches を手で書かない（--group が choices から組み立てる）"}
+      ]
+    },
+    {
       "id": "heavy-game-long-target",
       "prompt": "このゲームに 40 分かかるシミュレーションの make の口 sim-sweep を足した。ほかのエージェントが重い処理の鍵で流すとき、毎回印を付けてもらわなくても長い物として扱われるようにしたい。今日どの待ちが長かったかも見たい",
       "expect": [

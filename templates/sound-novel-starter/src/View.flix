@@ -1156,14 +1156,28 @@ mod View {
         if (not edits#edited) Nil
         else {
             let t = theme(env);
-            let size = captionSize(env, 13.0);
-            let height = size + 9.0;
             let width = Layout.width(env#fit);
-            let skipped = if (edits#skipped == 0) "" else "。${label(StoryDoc.Label.ScriptEditsSkipped, env)}（${Int32.toString(edits#skipped)} 行）";
+            let skipped = if (edits#skipped == 0) Nil else "${label(StoryDoc.Label.ScriptEditsSkipped, env)}（${Int32.toString(edits#skipped)} 行）" :: Nil;
+            let notices = label(StoryDoc.Label.ScriptEdited, env) :: skipped;
+            let (rows, size) = bannerRows((text, s) -> TextDraw.width(text, atlas, s), width - 16.0, captionSize(env, 13.0), notices);
+            let lineHeight = size + 4.0;
+            let height = lineHeight * Int32.toFloat64(List.length(rows)) + 5.0;
             let ground = at(0.0, 0.0, Render.vgrad({ x = width, y = height }, { top = Color.darken(t#panel, 0.2), bottom = t#panel }, zBanner()) |> Render.fade(0.9));
             let rim = at(0.0, height - 1.0, RawDraw.box({ x = width, y = 1.0 }, t#accent, zBanner() + 1) |> Render.fade(0.7));
-            ground :: rim :: TextDraw.centered({ text = label(StoryDoc.Label.ScriptEdited, env) + skipped, atlas = atlas, size = size, color = t#accent,
-                                                 z = zBanner() + 2, centerX = width / 2.0, y = 4.0 }) :: Nil
+            let texts = rows |> List.zipWithIndex |> List.map(match (i, row) ->
+                TextDraw.centered({ text = row, atlas = atlas, size = size, color = t#accent,
+                                    z = zBanner() + 2, centerX = width / 2.0, y = 4.0 + lineHeight * Int32.toFloat64(i) }));
+            ground :: rim :: texts
+        }
+
+    /// バナーに出す行と字の大きさ。知らせを「。」でつないで room に入れば 1 行、入らなければ知らせごとに 1 行、
+    /// それでも一番長い行が room を越えれば、その行が room に収まるまで字を縮める。measure = (字, 大きさ) → 幅。
+    pub def bannerRows(measure: (String, Float64) -> Float64, room: Float64, size: Float64, notices: List[String]): (List[String], Float64) =
+        let joined = String.intercalate("。", notices);
+        if (measure(joined, size) <= room) (joined :: Nil, size)
+        else {
+            let widest = notices |> List.map(n -> measure(n, size)) |> List.maximum |> Option.getWithDefault(0.0);
+            if (widest <= room) (notices, size) else (notices, size * room / widest)
         }
 
     def toast(atlas: FontAtlas, env: Env, shown: Option[String]): List[Render.PlacedItem] =

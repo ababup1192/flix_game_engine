@@ -1,59 +1,74 @@
 {
   "branches": [],
+  "choices": [],
   "duration": 12.033,
   "flow": "e2e/tape.flow",
   "fps": 30,
   "game": "sound-novel-starter",
   "lines": {
     "22": {
-      "cmd": "<<ambience evening>>"
+      "cmd": "<<ambience evening>>",
+      "node": "Station"
     },
     "23": {
-      "cmd": "<<bg station dusk 2.5>>"
+      "cmd": "<<bg station dusk 2.5>>",
+      "node": "Station"
     },
     "24": {
-      "cmd": "<<nvl>>"
+      "cmd": "<<nvl>>",
+      "node": "Station"
     },
     "25": {
-      "cmd": "<<wait 1.5>>"
+      "cmd": "<<wait 1.5>>",
+      "node": "Station"
     },
     "26": {
+      "node": "Station",
       "text": "十年ぶりに降りた駅は、私が覚えているよりずっと小さかった。",
       "who": "地の文"
     },
     "27": {
+      "node": "Station",
       "text": "改札はとうに無く、錆びた運賃箱がひとつ、ホームの端で口を開けている。",
       "who": "地の文"
     },
     "28": {
+      "node": "Station",
       "text": "線路の向こうから蜩の声が押し寄せてきて、走り去る電車の音をあっという間に呑みこんだ。",
       "who": "地の文"
     },
     "29": {
+      "node": "Station",
       "text": "祖母の家を片付けに来た。それだけの用事のはずだった。",
       "who": "地の文"
     },
     "30": {
-      "cmd": "<<clear>>"
+      "cmd": "<<clear>>",
+      "node": "Station"
     },
     "31": {
+      "node": "Station",
       "text": "鞄の底で、鍵がひとつ鳴った。",
       "who": "地の文"
     },
     "32": {
+      "node": "Station",
       "text": "家の鍵ではない。祖母が「なくさないでね」と私の手に握らせた、小さな真鍮の鍵だ。",
       "who": "地の文"
     },
     "33": {
+      "node": "Station",
       "text": "何の鍵なのか、とうとう聞きそびれたまま、祖母は春に逝った。",
       "who": "地の文"
     },
     "34": {
+      "node": "Station",
       "text": "ホームの端で、夏草が背伸びをするように揺れている。",
       "who": "地の文"
     },
     "35": {
-      "cmd": "<<jump Paddy>>"
+      "cmd": "<<jump Paddy>>",
+      "node": "Station"
     }
   },
   "msg": {
@@ -63,11 +78,11 @@
     "lh": 0.0667,
     "padBot": 0.1593,
     "padTop": 0.137,
-    "x0": 0.075,
-    "x1": 0.925,
     "when": {
       "mode": "Adv"
-    }
+    },
+    "x0": 0.075,
+    "x1": 0.925
   },
   "node": "Station",
   "objects": [

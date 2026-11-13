@@ -2,13 +2,14 @@
 // シナリオは小さな見本（下の program）。行の番号は t.yarn の行。
 mod TestScriptEdits {
 
-    use fge::{App, Render, Resources, Yarn}
+    use fge::{App, Display, Render, Resources, TextDraw, Yarn}
 
     type alias AppState = Resources.With[Res.Res, World.World]
 
     /// 見本のシナリオ（t.yarn・ノード Station）。
     ///   10 地の文「こいつを持っていきな」 11 地の文「二つ目の行」 12 <<se slap>>
-    ///   13 <<if>> の中に 14「枝の中の行」 15 選択肢 16「選ぶ」→ 17「選んだ後」 18「最後」
+    ///   13 <<if>> の中に 14「枝の中の行」 15 選択肢 16「選ぶ」→ 17「選んだ後」 18「最後」 19 <<jump Field>>
+    ///   ノード Field（21）: 23「野原の行」
     def programText(): String =
         "{\"version\": 3, \"files\": [\"t.yarn\"], \"variables\": [], \"nodes\": [{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
         "{\"kind\": \"line\", \"line\": 10, \"text\": \"こいつを持っていきな\"}," +
@@ -16,7 +17,10 @@ mod TestScriptEdits {
         "{\"kind\": \"command\", \"line\": 12, \"name\": \"se\", \"args\": [\"slap\"]}," +
         "{\"kind\": \"if\", \"line\": 13, \"clauses\": [{\"body\": [{\"kind\": \"line\", \"line\": 14, \"text\": \"枝の中の行\"}]}]}," +
         "{\"kind\": \"options\", \"line\": 15, \"options\": [{\"line\": 16, \"text\": \"選ぶ\", \"body\": [{\"kind\": \"line\", \"line\": 17, \"text\": \"選んだ後\"}]}]}," +
-        "{\"kind\": \"line\", \"line\": 18, \"text\": \"最後\"}]}]}"
+        "{\"kind\": \"line\", \"line\": 18, \"text\": \"最後\"}," +
+        "{\"kind\": \"jump\", \"line\": 19, \"node\": \"Field\"}]}," +
+        "{\"title\": \"Field\", \"file\": \"t.yarn\", \"line\": 21, \"headers\": [], \"body\": [" +
+        "{\"kind\": \"line\", \"line\": 23, \"text\": \"野原の行\"}]}]}"
 
     def res(): Res.Res \ Fs.FileRead =
         let program = Yarn.fromJson(programText()) |> Option.getWithDefault(Yarn.empty());
@@ -143,6 +147,24 @@ mod TestScriptEdits {
         let options = World.choicesOf(asking) |> List.map(option -> option#line#text);
         let picked = TestKit.settle(r, TestKit.pick(r, 0, TestKit.settle(r, asking)));
         Assert.assertEq(expected = ("直した選択肢" :: Nil, "直した選んだ後"), (options, textOf(Resources.of(r, picked))))
+
+    @Test
+    def testEditInAnotherNodeOfTheSameFileIsReplaced(): Unit \ {Assert, Fs.FileRead} =
+        // 始めたノードから <<jump>> で入った別のノードの行も、ファイルの行の番号で引いて替わる。
+        let h = started(Map#{ "line" => "18", "at" => hash("最後"), "edit.23" => "直した野原", "was.23" => hash("野原の行") });
+        let r = h#resources;
+        let next = TestKit.advance(r, TestKit.settle(r, h#world));
+        Assert.assertEq(expected = "直した野原", textOf(Resources.of(r, next)))
+
+    @Test
+    def testBannerFitsTheWidthOfAPortraitScreen(): Unit \ {Assert, IO} =
+        // 縦の画面の幅でも、バナーの行はどれも幅に収まる（2 つの知らせをつなぐと入らないので、知らせごとの行にするか字を縮める）。
+        let atlas = SceneRender.cfgOf("debug", Map.empty())#fontAtlas;
+        let room = Layout.width(Layout.Fit.Portrait(PortraitDoc.rec(PortraitDoc.defaults()), Display.defaultPortraitView())) - 16.0;
+        let notices = "直した台本で遊んでいます" :: "台本が変わっていたので直しを当てていません（3 行）" :: Nil;
+        let measure = (text, size) -> TextDraw.width(text, atlas, size);
+        let (rows, size) = View.bannerRows(measure, room, 13.0 * 1.25, notices);
+        Assert.assertTrue(rows |> List.forAll(row -> measure(row, size) <= room + 0.01))
 
     @Test
     def testEditedStartShowsTheBanner(): Unit \ {Assert, Fs.FileRead, IO} =

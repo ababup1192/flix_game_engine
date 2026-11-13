@@ -6,7 +6,7 @@
 //   audio.f64 … 左右 2 本の 44.1kHz の音（64bit 浮動小数・ビッグエンディアン・左右交互）。
 //               実機と同じミキサー（Controls.mixerOf）で、そのフレームに鳴った音と鳴り続ける環境音を AudioMixdown が混ぜる。
 //   fps.txt   … コマの速さ（flow の fps）
-//   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・ノードをまたぐ flow では書かずに理由を出す）
+//   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・2 つ以上の .yarn にまたがる flow では書かずに理由を出す）
 mod FlowVideo {
     use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Rect2, Render, Resources, VideoOut}
 
@@ -77,7 +77,7 @@ mod FlowVideo {
                       encoders = Nil };
         discard VideoOut.writeFrames(settings, video, Flow.worldsOf(outcome))
 
-    /// tape.json（flow が途中で止まった時もそこまで）。書けない理由（同じ名前の mark・ノードをまたぐ）は 1 行出す。
+    /// tape.json（flow が途中で止まった時もそこまで）。書けない理由（同じ名前の mark・2 つ以上の .yarn にまたがる）は 1 行出す。
     def writeTape(path: String, script: Flow.Script, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
         let marks = script#lines |> List.filterMap(line -> match line#step {
             case Flow.Step.Mark(name) => Some(name)

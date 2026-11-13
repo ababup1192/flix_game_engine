@@ -1,0 +1,34 @@
+{
+  "game": "lighthouse", "title": "灯台守の夜（分岐）", "flow": "e2e/light.flow", "fps": 30, "duration": 6.2,
+  "yarn": "assets/talk/night.yarn", "node": "Shore", "playUrl": "https://example.test/game/",
+  "scenes": [
+    { "id": "title", "name": "はじまり", "t": 0 }, { "id": "shore", "name": "浜辺", "t": 1.5 }, { "id": "tower", "name": "灯台", "t": 4 }
+  ],
+  "timeline": [[0, null], [1.5, 3], [2, 4], [3.2, 10], [4, 13], [5.5, null]],
+  "lines": {
+    "3": { "cmd": "<<bg shore>>", "node": "Shore" },
+    "4": { "who": "灯台守", "text": "今夜は風が強い。／船は来るだろうか", "node": "Shore" },
+    "10": { "who": "地の文", "text": "灯をともす", "node": "Shore" },
+    "11": { "who": "地の文", "text": "眠る", "node": "Shore" },
+    "12": { "cmd": "<<jump Tower>>", "node": "Shore" },
+    "13": { "who": "地の文", "text": "灯台守は階段を上った", "node": "Tower" }
+  },
+  "speaker": { "灯台守": "keeper", "地の文": "" },
+  "speakers": [
+    { "id": "keeper", "name": "灯台守", "color": "#7fd3a8", "ink": "#c6f2db" },
+    { "id": "", "name": "地の文", "color": "#dddddd", "ink": "#f6f6f6" }
+  ],
+  "sounds": [
+    { "t": 1.5, "name": "amb_wind", "kind": "ambience", "line": 3, "label": "風" }
+  ],
+  "objects": [
+    { "id": "message", "name": "メッセージウィンドウ", "from": 2, "to": 5.5, "rect": { "x": 0.05, "y": 0.7, "w": 0.9, "h": 0.25 } }
+  ],
+  "branches": [],
+  "choices": [{ "t": 3.2, "line": 10, "node": "Shore", "options": ["灯をともす", "眠る"], "picked": 0, "question": "今夜は風が強い。／船は来るだろうか" }],
+  "probes": {
+    "phase": [[0, "Title"], [1.5, "Reading"]]
+  },
+  "probeNames": { "phase": "場面" },
+  "msg": { "x0": 0.05, "x1": 0.95, "cy": 0.82, "lh": 0.05, "padTop": 0.04, "padBot": 0.03, "font": 0.03, "cps": 20 }
+}

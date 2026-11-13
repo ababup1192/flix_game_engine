@@ -1,0 +1,12 @@
+# 分岐の見本（make tape FLOWS="e2e/tape_chinatsu.flow e2e/tape_chiichan.flow"）。田んぼの最初の選択肢で「千夏？」を選ぶ道。
+# もう 1 本（tape_chiichan.flow）は同じ始まりから「……ちいちゃん」を選ぶ。2 本の頁は分岐のカードでつながる。
+fps 30
+start talk node=Paddy
+mark paddy
+drive reader until choice max 60
+wait 1
+mark choice
+tap confirm                            # 「千夏？」
+drive reader until talk=Lane max 60
+mark lane
+wait 1.5

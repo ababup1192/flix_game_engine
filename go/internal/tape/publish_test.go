@@ -2,6 +2,7 @@ package tape
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,7 +80,7 @@ func publishTo(t *testing.T, bare string, yes bool) PublishResult {
 	t.Helper()
 	src := filepath.Join(t.TempDir(), "debug", "tape", "intro")
 	writeTapeDir(t, src)
-	res, err := Publish(PublishOptions{Dir: src, Repo: "owner/tapes", Remote: bare, Yes: yes, Now: publishNow})
+	res, err := Publish(PublishOptions{Dirs: []string{src}, Repo: "owner/tapes", Remote: bare, Yes: yes, Now: publishNow})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func TestPublishDoesNotTouchGameRepo(t *testing.T) {
 	git(t, game, "add", "-A")
 	git(t, game, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "game")
 	before := git(t, game, "for-each-ref") + git(t, game, "status", "--porcelain")
-	if _, err := Publish(PublishOptions{Dir: src, Repo: "owner/tapes", Remote: bare, Yes: true, Now: publishNow}); err != nil {
+	if _, err := Publish(PublishOptions{Dirs: []string{src}, Repo: "owner/tapes", Remote: bare, Yes: true, Now: publishNow}); err != nil {
 		t.Fatal(err)
 	}
 	if after := git(t, game, "for-each-ref") + git(t, game, "status", "--porcelain"); after != before {
@@ -211,7 +212,7 @@ func TestPublishRefusesGameRepoAsTarget(t *testing.T) {
 	git(t, game, "remote", "add", "origin", "git@github.com:owner/game.git")
 	src := filepath.Join(game, "debug", "tape", "intro")
 	writeTapeDir(t, src)
-	_, err := Publish(PublishOptions{Dir: src, Repo: "owner/game", Remote: seedBare(t), Now: publishNow})
+	_, err := Publish(PublishOptions{Dirs: []string{src}, Repo: "owner/game", Remote: seedBare(t), Now: publishNow})
 	if err == nil {
 		t.Fatal("ゲームのリポジトリを置き場にしても止まらなかった")
 	}
@@ -220,7 +221,7 @@ func TestPublishRefusesGameRepoAsTarget(t *testing.T) {
 func TestPublishStopsWhenPagesDisabled(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "intro")
 	writeTapeDir(t, src)
-	_, err := Publish(PublishOptions{Dir: src, Repo: "owner/tapes", Remote: seedBare(t), Now: publishNow,
+	_, err := Publish(PublishOptions{Dirs: []string{src}, Repo: "owner/tapes", Remote: seedBare(t), Now: publishNow,
 		CheckPages: func(string) error { return os.ErrNotExist }})
 	if err == nil {
 		t.Fatal("Pages が無効でも止まらなかった")
@@ -299,7 +300,7 @@ func TestPublishLogLineWritten(t *testing.T) {
 	bare := seedBare(t)
 	src := filepath.Join(t.TempDir(), "debug", "tape", "intro")
 	writeTapeDir(t, src)
-	opt := PublishOptions{Dir: src, Repo: "owner/tapes", Remote: bare, Yes: true, Now: publishNow}
+	opt := PublishOptions{Dirs: []string{src}, Repo: "owner/tapes", Remote: bare, Yes: true, Now: publishNow}
 	res, err := Publish(opt)
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +330,7 @@ func publishWith(t *testing.T, bare string, opt PublishOptions) (PublishResult, 
 	t.Helper()
 	src := filepath.Join(t.TempDir(), "debug", "tape", "intro")
 	writeTapeDir(t, src)
-	opt.Dir, opt.Repo, opt.Remote, opt.Now = src, "owner/tapes", bare, publishNow
+	opt.Dirs, opt.Repo, opt.Remote, opt.Now = []string{src}, "owner/tapes", bare, publishNow
 	return Publish(opt)
 }
 
@@ -382,5 +383,126 @@ func TestHasRefMatchesWholeName(t *testing.T) {
 	}
 	if !hasRef(out+"\n89ab\trefs/heads/main", "refs/heads/main") {
 		t.Fatal("refs/heads/main を見落とした")
+	}
+}
+
+// publishMany は light と dark の 2 つのフォルダを 1 回の publish で置く。
+func publishMany(t *testing.T) (PublishResult, PublishOptions, string) {
+	t.Helper()
+	bare := seedBare(t)
+	root := filepath.Join(t.TempDir(), "debug", "tape")
+	a, b := filepath.Join(root, "light"), filepath.Join(root, "dark")
+	writeTapeDir(t, a)
+	writeTapeDir(t, b)
+	opt := PublishOptions{Dirs: []string{a, b}, Repo: "owner/tapes", Remote: bare, Yes: true, Now: publishNow}
+	res, err := Publish(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res, opt, bare
+}
+
+func TestPublishManyPutsTheFirstUnderOneName(t *testing.T) {
+	// 2 つ以上のフォルダは 1 つの乱数のフォルダの下にフォルダ名で並ぶ（1 つ目）。
+	res, _, bare := publishMany(t)
+	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/light/"+VideoFile) {
+		t.Fatalf("tapes/%s/light/video.mp4 が置き場に無い", res.Name)
+	}
+}
+
+func TestPublishManyPutsTheSecondUnderTheSameName(t *testing.T) {
+	// 2 つ目も同じ乱数のフォルダの下に並ぶ。
+	res, _, bare := publishMany(t)
+	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/dark/"+VideoFile) {
+		t.Fatalf("tapes/%s/dark/video.mp4 が置き場に無い", res.Name)
+	}
+}
+
+func TestPublishManyGivesOneURLPerTape(t *testing.T) {
+	// URL はフォルダごとに 1 つ、渡した並びで出る。
+	res, _, _ := publishMany(t)
+	want := PagesURL("owner/tapes", res.Name) + "light/ " + PagesURL("owner/tapes", res.Name) + "dark/"
+	if got := strings.Join(res.URLs, " "); got != want {
+		t.Fatalf("URL: %s（want %s）", got, want)
+	}
+}
+
+func TestPublishManyStopsOnSameFolderName(t *testing.T) {
+	// フォルダ名が同じ 2 つは並べて置けないので止める。
+	a, b := filepath.Join(t.TempDir(), "intro"), filepath.Join(t.TempDir(), "intro")
+	writeTapeDir(t, a)
+	writeTapeDir(t, b)
+	if _, err := Publish(PublishOptions{Dirs: []string{a, b}, Repo: "owner/tapes", Remote: seedBare(t), Now: publishNow}); err == nil {
+		t.Fatal("同じフォルダ名を 2 つ並べて置こうとした")
+	}
+}
+
+// publishedLines は publish を 2 本で流して published.jsonl に書いた行。
+func publishedLines(t *testing.T) []string {
+	t.Helper()
+	res, opt, _ := publishMany(t)
+	if err := appendPublished(opt, res); err != nil {
+		t.Fatal(err)
+	}
+	raw := readFile(t, filepath.Join(filepath.Dir(opt.Dirs[0]), PublishedLog))
+	return strings.Split(strings.TrimSpace(string(raw)), "\n")
+}
+
+func TestPublishedLogGetsOneLinePerTape(t *testing.T) {
+	// published.jsonl にはテープごとに 1 行。
+	if lines := publishedLines(t); len(lines) != 2 {
+		t.Fatalf("published.jsonl: %v", lines)
+	}
+}
+
+func TestPublishedLogLineCarriesThatTapesURL(t *testing.T) {
+	// 2 行目は 2 つ目のテープの URL。
+	if lines := publishedLines(t); !strings.Contains(lines[len(lines)-1], `/dark/"`) {
+		t.Fatalf("published.jsonl: %v", lines)
+	}
+}
+
+// publishLogWithRoute は、../dark/ への分岐の道を持つ light を、others と一緒に dry run で置いた時の言葉。
+func publishLogWithRoute(t *testing.T, others ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	a := filepath.Join(root, "light")
+	writeTapeDir(t, a)
+	tp := parsed(t, forkTape(t, 0))
+	branches := []Branch{{T: 3.2, Line: 10, Question: "q", Routes: []Route{{Label: "灯をともす", Note: "このテープ", Here: true},
+		{Label: "眠る", Note: "dark のテープ", Href: "../dark/index.html#t=3.2"}}}}
+	b, _ := json.Marshal(branches)
+	tp.raw["branches"] = b
+	page, err := Render(tp, "abc1234", sampleStrip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a, IndexFile), page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dirs := []string{a}
+	for _, o := range others {
+		d := filepath.Join(root, o)
+		writeTapeDir(t, d)
+		dirs = append(dirs, d)
+	}
+	var log bytes.Buffer
+	if _, err := Publish(PublishOptions{Dirs: dirs, Repo: "owner/tapes", Remote: seedBare(t), Now: publishNow, Log: &log}); err != nil {
+		t.Fatal(err)
+	}
+	return log.String()
+}
+
+func TestPublishWarnsWhenRouteTargetIsNotPlaced(t *testing.T) {
+	// 分岐の道の先のフォルダを一緒に置かなければ 1 行言う。
+	if log := publishLogWithRoute(t); !strings.Contains(log, "注意: light の分岐の道の先 dark") {
+		t.Fatalf("言葉: %s", log)
+	}
+}
+
+func TestPublishDoesNotWarnWhenRouteTargetIsPlaced(t *testing.T) {
+	// 道の先のフォルダを一緒に置くなら言わない。
+	if log := publishLogWithRoute(t, "dark"); strings.Contains(log, "注意:") {
+		t.Fatalf("言葉: %s", log)
 	}
 }

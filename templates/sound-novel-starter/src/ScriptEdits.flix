@@ -27,6 +27,11 @@ mod ScriptEdits {
     /// ノードの行（選択肢と <<if>> の中も。書いた順）。<<set>> と <<stop>> は字を持たないので載せない。
     pub def rowsOf(node: Yarn.Node): List[Row] = statementRows(node#body)
 
+    /// file に書いたノード全部の行。
+    // WhyNot: 始めたノードの行だけにしない — 直しはファイルの行の番号で渡るので、<<jump>> の先のノードの行にも当てる。
+    pub def fileRows(file: String, program: Yarn.Program): List[Row] =
+        Yarn.nodeNames(program) |> List.filterMap(name -> Yarn.nodeOf(name, program)) |> List.filter(n -> n#source#file == file) |> List.flatMap(rowsOf)
+
     def statementRows(body: List[Yarn.Statement]): List[Row] =
         body |> List.flatMap(statement -> match statement {
             case Yarn.Statement.Say(line)        => sayRow(line) :: Nil
@@ -53,13 +58,14 @@ mod ScriptEdits {
             found |> Option.map(r -> r#line) |> Option.getWithDefault(0)
     }
 
-    /// 引数の edit.<行>=<後の文> を、was.<行> が今の台詞の文のハッシュに合う行にだけ当てる。file = ノードを書いたファイル。
+    /// 引数の edit.<行>=<後の文> を、was.<行> が今の台詞の文のハッシュに合う行にだけ当てる。file = rows を書いたファイル（rows は fileRows）。
     pub def applyArgs(file: String, rows: List[Row], args: Map[String, String]): Applied =
         let edits = args |> Map.toList |> List.filterMap(match (key, after) ->
             String.stripPrefix({substr = "edit."}, key) |> Option.map(n -> (n, after)));
+        let byLine = rows |> List.map(r -> (r#line, r)) |> List.toMap;
         let fits = (n: String) -> forM (
             line <- Int32.fromString(n);
-            row  <- rows |> List.find(r -> r#line == line);
+            row  <- Map.get(line, byLine);
             _    <- row#say;
             was  <- Map.get("was.${n}", args);
             if fnv1a(row#text) == was
