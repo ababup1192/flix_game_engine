@@ -38,8 +38,14 @@ func writeTapeDir(t *testing.T, dir string) {
 	}
 }
 
-// seedBare は置き場に見立てた bare リポジトリを作り、names のテープと README を 1 コミットで置く。
+// seedBare は置き場に見立てた bare リポジトリを作り、目印（.fge-tapes）と names のテープと README を 1 コミットで置く。
 func seedBare(t *testing.T, names ...string) string {
+	t.Helper()
+	return seedRepo(t, true, "seed", names...)
+}
+
+// seedRepo は bare リポジトリに 1 コミットを置く。marker なら .fge-tapes も置く。msg = コミットの文。
+func seedRepo(t *testing.T, marker bool, msg string, names ...string) string {
 	t.Helper()
 	root := t.TempDir()
 	bare := filepath.Join(root, "tapes.git")
@@ -54,9 +60,17 @@ func seedBare(t *testing.T, names ...string) string {
 	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("tapes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(work, ".nojekyll"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if marker {
+		if err := os.WriteFile(filepath.Join(work, MarkerFile), []byte("tapes"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	git(t, work, "init", "--quiet", "-b", DefaultBranch)
 	git(t, work, "add", "-A")
-	git(t, work, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "seed")
+	git(t, work, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", msg)
 	git(t, work, "push", "--quiet", bare, "HEAD:refs/heads/"+DefaultBranch)
 	return bare
 }
@@ -308,5 +322,65 @@ func TestRunPublishWithoutYesSaysNothingPushed(t *testing.T) {
 	t.Log(out.String())
 	if code != 0 || !strings.Contains(out.String(), "push していない") {
 		t.Fatalf("dry run の知らせが出ない（code %d）: %s%s", code, out.String(), errOut.String())
+	}
+}
+
+func publishWith(t *testing.T, bare string, opt PublishOptions) (PublishResult, error) {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "debug", "tape", "intro")
+	writeTapeDir(t, src)
+	opt.Dir, opt.Repo, opt.Remote, opt.Now = src, "owner/tapes", bare, publishNow
+	return Publish(opt)
+}
+
+func TestPublishRefusesBranchWithoutMarker(t *testing.T) {
+	bare := seedRepo(t, false, "置き場を作る")
+	if _, err := publishWith(t, bare, PublishOptions{Yes: true}); err == nil {
+		t.Fatal("目印の無い枝に push した")
+	}
+	if got := git(t, bare, "log", "-1", "--format=%s", DefaultBranch); got != "置き場を作る" {
+		t.Fatalf("止まったはずの枝が書き換わった: %s", got)
+	}
+}
+
+func TestPublishInitAcceptsBranchWithoutMarker(t *testing.T) {
+	bare := seedRepo(t, false, "置き場を作る")
+	if _, err := publishWith(t, bare, PublishOptions{Yes: true, Init: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !hasPath(treeOf(t, bare), MarkerFile) {
+		t.Fatalf("--init で置いた後に %s が無い: %v", MarkerFile, treeOf(t, bare))
+	}
+}
+
+func TestPublishCommitStartsWithTapePrefix(t *testing.T) {
+	bare := seedBare(t)
+	publishTo(t, bare, true)
+	if got := git(t, bare, "log", "-1", "--format=%s", DefaultBranch); !strings.HasPrefix(got, CommitPrefix) {
+		t.Fatalf("publish のコミットの文が %q で始まらない: %s", CommitPrefix, got)
+	}
+}
+
+func TestPublishAcceptsTapeCommitWithoutMarkerFile(t *testing.T) {
+	bare := seedRepo(t, false, "tape: 前に置いた")
+	if _, err := publishWith(t, bare, PublishOptions{Yes: true}); err != nil {
+		t.Fatalf("文が tape: で始まる枝を止めた: %v", err)
+	}
+}
+
+func TestPublishDryRunListsFilesOutsideTapes(t *testing.T) {
+	res := publishTo(t, seedBare(t), false)
+	if strings.Join(res.Outside, " ") != ".fge-tapes .nojekyll README.md" {
+		t.Fatalf("tapes/ の外で残す物: %v", res.Outside)
+	}
+}
+
+func TestHasRefMatchesWholeName(t *testing.T) {
+	out := "0123\trefs/heads/x/main\n4567\trefs/heads/main-old"
+	if hasRef(out, "refs/heads/main") {
+		t.Fatal("refs/heads/x/main と refs/heads/main-old を refs/heads/main と取り違えた")
+	}
+	if !hasRef(out+"\n89ab\trefs/heads/main", "refs/heads/main") {
+		t.Fatal("refs/heads/main を見落とした")
 	}
 }

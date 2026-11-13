@@ -20,16 +20,19 @@ import (
 )
 
 const (
-	TapesDir      = "tapes"
-	PublishedLog  = "published.jsonl"
-	ConfigFile    = "tape.publish.json"
+	TapesDir     = "tapes"
+	PublishedLog = "published.jsonl"
+	ConfigFile   = "tape.publish.json"
+	// MarkerFile は置き場の目印。publish はこれがあるか、HEAD のコミットの文が CommitPrefix で始まる枝にだけ push する。
+	MarkerFile    = ".fge-tapes"
+	CommitPrefix  = "tape:"
 	KeepDays      = 30
 	DefaultBranch = "main"
 	waitLimit     = 10 * time.Minute
 	waitEvery     = 10 * time.Second
 )
 
-const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ> [--repo <owner/name>] [--yes] [--wait]
+const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ> [--repo <owner/name>] [--yes] [--wait] [--init]
 
   bin/fge tape --dir が作ったフォルダ（index.html・video.mp4・strip.jpg）を、
   GitHub Pages を出す置き場のリポジトリの tapes/<YYYYMMDD>-<乱数 16 桁>/ に置き、公開の URL を出す。
@@ -41,13 +44,18 @@ const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>
   --branch <名前>      Pages が出す枝（既定 main）
   --yes                本当に push する（置き場の枝は履歴を残さず force push で 1 コミットに置き換わる）
   --wait               push の後、URL が開ける（200）まで待つ（最長 10 分）
+  --init               目印の無い枝を初めて置き場にする（下の「置き場の目印」）
   --remote <url>       push 先の git の URL（既定 git@github.com:<owner/name>.git。
                        付けた時は GitHub の Pages の設定を確かめない）
 
   置く時に index.html の <head> へ noindex を足す。置き場の一覧の頁は作らない。
   30 日を過ぎたテープは publish のたびに置き場から外す。
   置いた物の一覧はテープのフォルダの隣の published.jsonl（手元だけ）に 1 行ずつ足す。
-  Pages の公開の設定はしない（置き場の Settings → Pages で、枝の / を出す形にしておく）。`
+  Pages の公開の設定はしない（置き場の Settings → Pages で、枝の / を出す形にしておく）。
+
+  置き場の目印: 枝の直下に .fge-tapes があるか、HEAD のコミットの文が "tape:" で始まる枝にだけ push する。
+  どちらでも無い既存の枝（別の用途のリポジトリを --repo に取り違えた時など）は止める。初めての置き場だけ --init で通す。
+  publish が作るコミットは文を "tape:" で始め、.fge-tapes も必ず置く。`
 
 // PublishOptions は Publish の指定。
 type PublishOptions struct {
@@ -57,6 +65,7 @@ type PublishOptions struct {
 	Branch string
 	Yes    bool
 	Wait   bool
+	Init   bool // 目印の無い既存の枝を置き場にしてよい
 	Now    time.Time
 	// Name は置くフォルダ名。空なら日付と crypto/rand の 16 桁で作る。
 	Name string
@@ -71,6 +80,7 @@ type PublishResult struct {
 	URL     string
 	Kept    []string
 	Removed []string
+	Outside []string // tapes/ の外で残す物（置き場の直下の名前）
 	Pushed  bool
 }
 
@@ -112,14 +122,15 @@ func ParseName(name string) (time.Time, bool) {
 	return d, true
 }
 
-// IsExpired は name の日付が now から KeepDays 日より前なら true。
+// IsExpired は name の日付が now の日付から KeepDays 日より前なら true（ちょうど KeepDays 日前は残す）。
+// WhyNot: 時刻の差を 24 時間で割らない — 夏時間の切り替わりをまたぐと 1 日が 23・25 時間になり、境目の日がずれる。
 func IsExpired(name string, now time.Time) bool {
 	d, ok := ParseName(name)
 	if !ok {
 		return false
 	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	return today.Sub(d) > KeepDays*24*time.Hour
+	return d.AddDate(0, 0, KeepDays).Before(today)
 }
 
 // PagesURL は置いたテープの公開の URL。
@@ -215,6 +226,8 @@ func parsePublishArgs(args []string) (PublishOptions, bool, error) {
 			opt.Yes = true
 		case a == "--wait":
 			opt.Wait = true
+		case a == "--init":
+			opt.Init = true
 		case a == "--repo":
 			opt.Repo, err = value(&i, a)
 		case strings.HasPrefix(a, "--repo="):
@@ -318,20 +331,36 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	defer os.RemoveAll(work)
 	site := filepath.Join(work, "site")
 
-	heads, err := gitOut("", "ls-remote", "--heads", remote, opt.Branch)
+	ref := "refs/heads/" + opt.Branch
+	heads, err := gitOut("", "ls-remote", remote, ref)
 	if err != nil {
 		return res, fmt.Errorf("置き場 %s を読めない（リポジトリがあるか・手元から git で読めるかを確かめる）: %w", remote, err)
 	}
-	if strings.TrimSpace(heads) == "" {
+	if !hasRef(heads, ref) {
 		fmt.Fprintf(log, "置き場の枝 %s はまだ無い。新しく作る。\n", opt.Branch)
 		if err := os.MkdirAll(site, 0o755); err != nil {
 			return res, err
 		}
-	} else if _, err := gitOut("", "clone", "--quiet", "--depth", "1", "--branch", opt.Branch, remote, site); err != nil {
-		return res, fmt.Errorf("置き場を clone できない: %w", err)
+	} else {
+		if _, err := gitOut("", "clone", "--quiet", "--depth", "1", "--branch", opt.Branch, remote, site); err != nil {
+			return res, fmt.Errorf("置き場を clone できない: %w", err)
+		}
+		if err := guardTapesBranch(site, opt, log); err != nil {
+			return res, err
+		}
 	}
 	if err := os.RemoveAll(filepath.Join(site, ".git")); err != nil {
 		return res, err
+	}
+	if err := os.WriteFile(filepath.Join(site, MarkerFile), []byte("この枝は bin/fge tape publish が置くテープの置き場（publish はこの印がある枝にだけ push する）\n"), 0o644); err != nil {
+		return res, err
+	}
+	if top, err := os.ReadDir(site); err == nil {
+		for _, e := range top {
+			if e.Name() != TapesDir {
+				res.Outside = append(res.Outside, e.Name())
+			}
+		}
 	}
 
 	tapes := filepath.Join(site, TapesDir)
@@ -359,7 +388,7 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 		_, err := gitOut(site, append([]string{"-c", "user.name=fge tape", "-c", "user.email=fge-tape@localhost", "-c", "commit.gpgsign=false"}, args...)...)
 		return err
 	}
-	msg := fmt.Sprintf("tape: %s を置く（%d 本を残し、%d 本を外す）", name, len(res.Kept), len(res.Removed))
+	msg := fmt.Sprintf("%s %s を置く（%d 本を残し、%d 本を外す）", CommitPrefix, name, len(res.Kept), len(res.Removed))
 	if err := git("init", "--quiet", "-b", opt.Branch); err != nil {
 		return res, err
 	}
@@ -374,6 +403,7 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	fmt.Fprintf(log, "置く:   %s/%s/  ← %s\n", TapesDir, name, opt.Dir)
 	fmt.Fprintf(log, "残す:   %d 本 %s\n", len(res.Kept), strings.Join(res.Kept, " "))
 	fmt.Fprintf(log, "外す:   %d 本 %s（%d 日を過ぎた物）\n", len(res.Removed), strings.Join(res.Removed, " "), KeepDays)
+	fmt.Fprintf(log, "tapes/ の外で残す物: %s\n", strings.Join(res.Outside, " "))
 	fmt.Fprintf(log, "URL:    %s\n", res.URL)
 	if !opt.Yes {
 		return res, nil
@@ -383,6 +413,36 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	}
 	res.Pushed = true
 	return res, nil
+}
+
+// hasRef は ls-remote の出力に ref と完全に同じ名前の行があるか（refs/heads/main と refs/heads/x/main を取り違えない）。
+func hasRef(lsRemote, ref string) bool {
+	for _, line := range strings.Split(lsRemote, "\n") {
+		if f := strings.Fields(line); len(f) == 2 && f[1] == ref {
+			return true
+		}
+	}
+	return false
+}
+
+// guardTapesBranch は clone した枝が置き場の目印を持つかを確かめる。目印が無い枝は opt.Init の時だけ通す。
+func guardTapesBranch(site string, opt PublishOptions, log io.Writer) error {
+	if _, err := os.Stat(filepath.Join(site, MarkerFile)); err == nil {
+		return nil
+	}
+	subject, err := gitOut(site, "log", "-1", "--format=%s")
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(subject, CommitPrefix) {
+		return nil
+	}
+	if opt.Init {
+		fmt.Fprintf(log, "枝 %s に置き場の目印（%s・%q で始まるコミット）が無いが、--init なので置き場にする。\n", opt.Branch, MarkerFile, CommitPrefix)
+		return nil
+	}
+	return fmt.Errorf("枝 %s は置き場の目印（直下の %s か、文が %q で始まる HEAD のコミット）を持たない（HEAD: %q）。"+
+		"別の用途のリポジトリなら --repo を確かめる。テープの置き場として初めて使うなら --init を付けて流す", opt.Branch, MarkerFile, CommitPrefix, subject)
 }
 
 // guardNotGameRepo はテープのフォルダがあるゲームのリポジトリへ置こうとしていないかを確かめる。
