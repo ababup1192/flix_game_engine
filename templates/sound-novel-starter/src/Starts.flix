@@ -22,7 +22,7 @@ mod Starts {
             let found = Yarn.nodeOf(node, res#dialogue);
             let rows = found |> Option.map(ScriptEdits.rowsOf) |> Option.getWithDefault(Nil);
             let file = found |> Option.map(n -> n#source#file) |> Option.getWithDefault("");
-            let edited = Res.withScriptEdits(ScriptEdits.applyArgs(file, rows, args), res);
+            let edited = Res.withScriptEdits(ScriptEdits.applyArgs(file, ScriptEdits.fileRows(file, res#dialogue), args), res);
             let line = match Map.get("line", args) {
                 case Some(text) => Int32.fromString(text) |> Option.toOk("line は .yarn の行番号（数）: '${text}'") |> Result.map(Some)
                 case None       => Ok(None)

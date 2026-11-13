@@ -44,15 +44,21 @@ mod TapeOut {
     /// marks = flow に書いた mark の名前（書いた順。同じ名前は数えて止めるため Outcome の Map とは別に持つ）、outcome = 流した結果（途中で止まった時はそこまで）。
     pub type alias Run = { game = String, flow = String, fps = Float64, design = Vec2.Vec2, marks = List[String], outcome = Flow.Outcome[AppState] }
 
-    /// tape.json の文字。同じ名前の mark・ノードをまたぐ flow・知らない問いは Err（理由の 1 行）。
+    /// 選択肢を選んだ所。at = 選択肢が出たフレーム、line = 最初の選択肢の行、node = そのノード、
+    /// options = 選択肢の字（出した順）、picked = 選んだ番号（options の何番目か）。
+    pub type alias Choice = { at = Int32, line = Int32, node = String, options = List[String], picked = Int32 }
+
+    /// tape.json の文字。同じ名前の mark・2 つ以上の .yarn にまたがる flow・知らない問いは Err（理由の 1 行）。
     pub def toJson(table: Table, flowRun: Run): Result[String, String] =
         let frames = flowRun#outcome#frames;
         let worlds = frames |> List.map(played -> played#step#after);
         let res = flowRun#outcome#last#resources;
         let cursors = worlds |> List.map(h -> World.talkCursorOf(h#world));
+        let nodes = nodesOf(worlds);
+        let node = List.head(nodes) |> Option.getWithDefault("");
         forM (
             _      <- uniqueMarks(flowRun#marks);
-            node   <- singleNode(worlds);
+            _      <- singleFile(nodes, res);
             _      <- msgWhenKnown(table);
             probes <- probesOf(table, flowRun#fps, worlds)
         ) yield {
@@ -69,12 +75,13 @@ mod TapeOut {
                 "playUrl" => Json.JString(table#playUrl),
                 "scenes" => Json.JArray(scenesOf(table, flowRun) |> List.toVector),
                 "timeline" => Json.JArray(changesOf(cursors) |> List.map(match (i, cursor) -> pairJson(timeOf(i), lineJson(cursor))) |> List.toVector),
-                "lines" => Json.JObject(linesOf(node, res)),
+                "lines" => Json.JObject(nodes |> List.flatMap(n -> linesOf(n, res)) |> List.toMap),
                 "speaker" => Json.JObject(speakerRows(res) |> List.map(s -> (s#name, Json.JString(s#id))) |> List.toMap),
                 "speakers" => Json.JArray(speakerRows(res) |> List.map(speakerJson) |> List.toVector),
                 "sounds" => Json.JArray(soundsOf(table, flowRun#fps, frames) |> List.toVector),
                 "objects" => Json.JArray(spansOf(flowRun#fps, flowRun#design, worlds |> List.map(table#objects)) |> List.map(spanJson) |> List.toVector),
                 "branches" => Json.JArray(Vector.empty()),
+                "choices" => Json.JArray(choicesOf(worlds) |> List.map(choiceJson(flowRun#fps)) |> List.toVector),
                 "probes" => Json.JObject(probes),
                 "probeNames" => Json.JObject(probeNamesOf(table) |> List.map(match (name, shown) -> (name, Json.JString(shown))) |> List.toMap),
                 "msg" => msgJson(table#msg)
@@ -90,14 +97,15 @@ mod TapeOut {
         if (List.isEmpty(twice)) Ok(())
         else Err("同じ名前の mark がある: ${String.intercalate(", ", twice)}（テープのシーンは名前で引くので、mark の名前は 1 つずつにする）")
 
-    /// 流した間に開いたノード（1 本のテープは 1 ノードだけ。開いていなければ空）。
-    def singleNode(worlds: List[AppState]): Result[String, String] =
-        let nodes = worlds |> List.map(h -> World.talkNodeOf(h#world)) |> List.filter(n -> not String.isEmpty(n)) |> changesOf |> List.map(snd);
-        match List.distinct(nodes) {
-            case Nil         => Ok("")
-            case node :: Nil => Ok(node)
-            case _           => Err("flow がノードをまたいでいる: ${String.intercalate(" → ", nodes)}（1 本のテープは 1 ノードだけ。ノードの中で止める flow にする）")
-        }
+    /// 流した間に開いたノード（開いた順・1 つずつ。開いていなければ空）。
+    def nodesOf(worlds: List[AppState]): List[String] =
+        worlds |> List.map(h -> World.talkNodeOf(h#world)) |> List.filter(n -> not String.isEmpty(n)) |> changesOf |> List.map(snd) |> List.distinct
+
+    /// 開いたノードが 1 つの .yarn に収まっているか（tape.json の行の番号は 1 つのファイルの行）。
+    def singleFile(nodes: List[String], res: Res.Res): Result[String, Unit] =
+        let files = nodes |> List.filterMap(n -> Yarn.nodeOf(n, res#dialogue) |> Option.map(found -> found#source#file)) |> List.distinct;
+        if (List.length(files) <= 1) Ok(())
+        else Err("flow が 2 つ以上の .yarn にまたがっている: ${String.intercalate(", ", files)}（tape.json の行の番号は 1 つのファイルの行。1 つの .yarn の中で止める flow にする）")
 
     // ── 欄ごと ──
 
@@ -148,16 +156,52 @@ mod TapeOut {
 
     /// ノードの文を行の番号 → {who, text} / {cmd} に（選択肢と <<if>> の中も）。字は ScriptEdits.rowsOf と同じ
     /// （「ここから遊ぶ」の前の文のハッシュをこの字で作る）。
-    def linesOf(node: String, res: Res.Res): Map[String, Json] =
+    def linesOf(node: String, res: Res.Res): List[(String, Json)] =
         let names = speakerRows(res) |> List.map(s -> (s#id, s#name)) |> List.toMap;
         Yarn.nodeOf(node, res#dialogue) |> Option.map(ScriptEdits.rowsOf) |> Option.getWithDefault(Nil)
-            |> List.map(row -> (Int32.toString(row#line), rowJson(names, row))) |> List.toMap
+            |> List.map(row -> (Int32.toString(row#line), rowJson(names, node, row)))
 
-    def rowJson(names: Map[String, String], row: ScriptEdits.Row): Json = match row#say {
+    def rowJson(names: Map[String, String], node: String, row: ScriptEdits.Row): Json = match row#say {
         case Some(line) => Json.JObject(Map#{ "who" => Json.JString(Map.getWithDefault(line#speaker, line#speaker, names)),
-                                              "text" => Json.JString(row#text) })
-        case None       => Json.JObject(Map#{ "cmd" => Json.JString(row#text) })
+                                              "text" => Json.JString(row#text), "node" => Json.JString(node) })
+        case None       => Json.JObject(Map#{ "cmd" => Json.JString(row#text), "node" => Json.JString(node) })
     }
+
+    /// 選択肢を選んだ所（2 つ以上の選択肢だけ）: 選択肢が出ていたフレームの次で、出ていた選択肢が消え、バックログの一番新しい「選んだ」行がその中の 1 つの字になった所。
+    // WhyNot: バックログの頭だけを見ない — 選んだのと同じフレームで次の台詞まで進むと、頭はその台詞の行になる。
+    // WhyNot: 次のフレームのカーソルだけで選んだ番号を決めない — 指で押す時はカーソルを動かさずにその番号を選ぶので、カーソルは前の場所のまま残る。
+    pub def choicesOf(worlds: List[AppState]): List[Choice] =
+        let (found, _, _) = worlds |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
+            let (out, prev, since) = acc;
+            let (i, h) = pair;
+            let now = optionTexts(h#world);
+            let shownSince = if (Option.map(p -> optionTexts(p#world), prev) == Some(now)) since else i;
+            let chosen = prev |> Option.flatMap(p -> pickedIn(p#world, h#world)) |> Option.map(c -> { at = since | c });
+            (Option.toList(chosen) ::: out, Some(h), shownSince)
+        }, (Nil, None, 0));
+        List.reverse(found)
+
+    def optionTexts(w: World.World): List[String] = World.choicesOf(w) |> List.map(option -> option#line#text)
+
+    /// before で出ていた 2 つ以上の選択肢を after で選んでいれば、その選んだ所（at は呼ぶ側が埋める）。
+    def pickedIn(before: World.World, after: World.World): Option[Choice] =
+        let options = optionTexts(before);
+        let cursor = World.readOf(before) |> Option.map(r -> r#choiceCursor) |> Option.getWithDefault(0);
+        forM (
+            _      <- if (List.length(options) >= 2 and optionTexts(after) != options) Some(()) else None;
+            text   <- World.logOf(after) |> List.findMap(choseText);
+            picked <- if (List.nth(cursor, options) == Some(text)) Some(cursor) else List.indexOf(text, options);
+            first  <- List.head(World.choicesOf(before))
+        ) yield { at = 0, line = first#line#source#line, node = World.talkNodeOf(before), options = options, picked = picked }
+
+    def choseText(entry: World.Entry): Option[String] = match entry {
+        case World.Entry.Chose(text) => Some(text)
+        case _                       => None
+    }
+
+    def choiceJson(fps: Float64, c: Choice): Json =
+        Json.JObject(Map#{ "t" => numJson(secondsAt(fps, c#at)), "line" => intJson(c#line), "node" => Json.JString(c#node),
+                           "options" => Json.JArray(c#options |> List.map(Json.JString) |> List.toVector), "picked" => intJson(c#picked) })
 
     /// 鳴った音: 一発の音（ambience 以外は se）と、鳴り続ける音の鳴り始め（前のフレームに無かった物 = ambience）。line = 同じフレームの実行位置。
     def soundsOf(table: Table, fps: Float64, frames: List[Flow.Played[AppState]]): List[Json] =

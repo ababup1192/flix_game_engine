@@ -47,7 +47,7 @@ showcase-video:
 # テープの頁（make tape FLOW=e2e/tape.flow → debug/tape/tape/index.html）。
 # ① FlowVideo が flow を流してコマ・音（debug/video/<名前>）と tape.json を書き、② showcase-video と同じ ffmpeg で video.mp4 に束ね、
 # ③ bin/fge tape が strip.jpg と index.html を作る。debug/tape/<名前> には頁に要る物（tape.json・video.mp4・strip.jpg・index.html）だけを置く。
-# tape.json が書けない（同じ名前の mark・ノードをまたぐ flow）時は FlowVideo が理由を出し、ここで止める。
+# tape.json が書けない（同じ名前の mark・2 つ以上の .yarn にまたがる flow）時は FlowVideo が理由を出し、ここで止める。
 # flow が途中で止まった時も、そこまでの頁を作ってから止まった印（終了コード 1）を返す。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
 .PHONY: tape

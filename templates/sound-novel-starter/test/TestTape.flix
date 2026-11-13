@@ -29,8 +29,10 @@ mod TestTape {
     // WhyNot: 1 字にしない —— 1 フレームで出し終わると、読み手の drive が同じフレームで送ってしまい、その行がシナリオの位置に載らない。
     def longText(): String = "夏草の駅に降りると、蜩の声が押し寄せてきた。"
 
-    def res(): Res.Res \ Fs.FileRead =
-        let program = Yarn.fromJson(programText()) |> Option.getWithDefault(Yarn.empty());
+    def res(): Res.Res \ Fs.FileRead = resOf(programText())
+
+    def resOf(text: String): Res.Res \ Fs.FileRead =
+        let program = Yarn.fromJson(text) |> Option.getWithDefault(Yarn.empty());
         Res.withDialogue(program, TestKit.res())
 
     // ── シナリオの位置（World.talkCursorOf） ──
@@ -79,11 +81,11 @@ mod TestTape {
 
     /// flow の文から tape.json の木を作る。untilStop なら flow が途中で止まってもそこまでの分で作る（FlowVideo と同じ）。
     def tapeFrom(flow: String, marks: List[String], untilStop: Bool): Result[String, Map[String, Json]] \ Fs.FileRead =
-        tapeWith(table(), flow, marks, untilStop)
+        tapeWith(table(), programText(), flow, marks, untilStop)
 
     /// 表を差し替えて tapeFrom と同じく作る。
-    def tapeWith(tbl: TapeOut.Table, flow: String, marks: List[String], untilStop: Bool): Result[String, Map[String, Json]] \ Fs.FileRead =
-        let r = res();
+    def tapeWith(tbl: TapeOut.Table, program: String, flow: String, marks: List[String], untilStop: Bool): Result[String, Map[String, Json]] \ Fs.FileRead =
+        let r = resOf(program);
         let app = TestKit.app(r, TestKit.w0(r));
         let design = Layout.size(Layout.Fit.Regular);
         let title = Resources.of(r, TestKit.w0(r));
@@ -169,7 +171,7 @@ mod TestTape {
     def testMsgCarriesItsWhenCondition(): Unit \ {Assert, Fs.FileRead} =
         // msg の when（問い → 値）がそのまま tape.json の msg に載る。
         let tbl = { msg = { when = Map#{ "logSize" => "3" } | table()#msg } | table() };
-        let when = tapeWith(tbl, flowText(Nil), Nil, false) |> Result.map(root -> Map.get("msg", root) |> Option.flatMap(JsonCodec.expectObject)
+        let when = tapeWith(tbl, programText(), flowText(Nil), Nil, false) |> Result.map(root -> Map.get("msg", root) |> Option.flatMap(JsonCodec.expectObject)
             |> Option.flatMap(Map.get("when")) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(obj -> JsonCodec.stringOr("logSize", "", obj)));
         Assert.assertEq(expected = Ok(Some("3")), when)
 
@@ -177,7 +179,73 @@ mod TestTape {
     def testMsgWhenOnAProbeNotListedStops(): Unit \ {Assert, Fs.FileRead} =
         // msg の when が probes に無い問いを見ていたら tape.json を作らない。
         let tbl = { msg = { when = Map#{ "mode" => "Adv" } | table()#msg } | table() };
-        Assert.assertTrue(Result.isErr(tapeWith(tbl, flowText(Nil), Nil, false)))
+        Assert.assertTrue(Result.isErr(tapeWith(tbl, programText(), flowText(Nil), Nil, false)))
+
+    // ── ノードをまたぐ flow と選択肢（choices） ──
+
+    /// ノード 2 つ・選択肢 2 つの見本（t.yarn）。
+    ///   Station（8）: 10 地の文 11 選択肢 12「右へ」→ 13 <<jump Field>> / 14「左へ」→ 15 地の文 16 <<jump Field>>
+    ///   Field（18）: 20 地の文
+    def forkText(): String =
+        "{\"version\": 3, \"files\": [\"t.yarn\"], \"variables\": [], \"nodes\": [" +
+        "{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
+        "{\"kind\": \"line\", \"line\": 10, \"text\": \"" + longText() + "\"}," +
+        "{\"kind\": \"options\", \"line\": 11, \"options\": [" +
+        "{\"line\": 12, \"text\": \"右へ\", \"body\": [{\"kind\": \"jump\", \"line\": 13, \"node\": \"Field\"}]}," +
+        "{\"line\": 14, \"text\": \"左へ\", \"body\": [{\"kind\": \"line\", \"line\": 15, \"text\": \"" + longText() + "\"}," +
+        "{\"kind\": \"jump\", \"line\": 16, \"node\": \"Field\"}]}]}]}," +
+        "{\"title\": \"Field\", \"file\": \"t.yarn\", \"line\": 18, \"headers\": [], \"body\": [" +
+        "{\"kind\": \"line\", \"line\": 20, \"text\": \"" + longText() + "\"}]}]}"
+
+    /// 選択肢まで読み、カーソルを 2 つ目へ動かして選び、Field の行まで読む flow。
+    def forkFlow(): String =
+        "fps 10\nwait 0.5\ntap confirm\ndrive reader until choice max 30\nwait 0.3\ntap next\nwait 0.3\ntap confirm\n" +
+        "drive reader until talkLine=t.yarn:20 max 30\nwait 0.5\n"
+
+    def forkTape(): Result[String, Map[String, Json]] \ Fs.FileRead = tapeWith(table(), forkText(), forkFlow(), Nil, false)
+
+    def objectAt(key: String, root: Map[String, Json]): Map[String, Json] =
+        Map.get(key, root) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
+
+    @Test
+    def testLinesAcrossNodesCarryTheirNode(): Unit \ {Assert, Fs.FileRead} =
+        // ノードをまたいでも作れて、行ごとにそのノードが載り、top の node は最初のノード。
+        let nodes = forkTape() |> Result.map(root -> {
+            let lines = objectAt("lines", root);
+            (textAt("node", Json.JObject(root)), Map.get("10", lines) |> Option.map(textAt("node")), Map.get("20", lines) |> Option.map(textAt("node")))
+        });
+        Assert.assertEq(expected = Ok(("Station", Some("Station"), Some("Field"))), nodes)
+
+    @Test
+    def testChoiceRecordsItsOptionsAndThePickedOne(): Unit \ {Assert, Fs.FileRead} =
+        // 2 つの選択肢を出して 2 つ目を選ぶと、choices に 1 行: 最初の選択肢の行・ノード・字の並び・選んだ番号。
+        let rows = forkTape() |> Result.map(root -> arrayAt("choices", root) |> List.filterMap(JsonCodec.expectObject) |> List.map(row -> (
+            Map.get("line", row) |> Option.flatMap(JsonCodec.expectInt),
+            JsonCodec.stringOr("node", "", row),
+            arrayAt("options", row) |> List.filterMap(JsonCodec.expectString),
+            Map.get("picked", row) |> Option.flatMap(JsonCodec.expectInt))));
+        Assert.assertEq(expected = Ok((Some(12), "Station", "右へ" :: "左へ" :: Nil, Some(1)) :: Nil), rows)
+
+    @Test
+    def testChoiceTimeIsWhenTheOptionsAppeared(): Unit \ {Assert, Fs.FileRead} =
+        // 選んだ所の秒は、選択肢が出たフレーム（シナリオの位置が最初の選択肢の行になった秒と同じ）。
+        let times = forkTape() |> Result.map(root -> {
+            let shown = arrayAt("timeline", root) |> List.find(pair -> lineOf(secondOf(pair)) == 12) |> Option.flatMap(firstOf);
+            let chosen = arrayAt("choices", root) |> List.head |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(Map.get("t"));
+            (shown, chosen)
+        });
+        Assert.assertEq(expected = true, times |> Result.map(match (a, b) -> not Option.isEmpty(a) and a == b) |> Result.getWithDefault(false))
+
+    /// [秒, 値] の秒の側。
+    def firstOf(pair: Json): Option[Json] = match pair {
+        case Json.JArray(items) => Vector.nth(0, items)
+        case _                  => None
+    }
+
+    @Test
+    def testFlowWithoutChoicesHasNoChoices(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢の無い flow では choices は空。
+        Assert.assertEq(expected = Ok(Nil), tapeOf(Nil) |> Result.map(root -> arrayAt("choices", root)))
 
     // ── 画面に出ている物（objects） ──
 
