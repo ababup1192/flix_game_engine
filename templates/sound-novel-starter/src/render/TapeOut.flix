@@ -2,7 +2,7 @@
 // 書くのは FlowVideo（debug/video/<名前>/tape.json）。欄の名前・型・単位は plans/tape/mock.html の TAPE に合わせる。
 // commit・video・strip・stripPerSec は束ねる側（bin/fge tape）が足すので、ここでは書かない。
 mod TapeOut {
-    use fge::{Color, Flow, JsonCodec, Rect2, Resources, Sort, Vec2, Yarn}
+    use fge::{App, Color, Flow, JsonCodec, Rect2, Resources, Sort, Vec2, Yarn}
     use Util.Json.Json
 
     /// App の w（描く元と World の組）。
@@ -45,8 +45,8 @@ mod TapeOut {
     pub type alias Run = { game = String, flow = String, fps = Float64, design = Vec2.Vec2, marks = List[String], outcome = Flow.Outcome[AppState] }
 
     /// 選択肢を選んだ所。at = 選択肢が出たフレーム、line = 最初の選択肢の行、node = そのノード、
-    /// options = 選択肢の字（出した順）、picked = 選んだ番号（options の何番目か）。
-    pub type alias Choice = { at = Int32, line = Int32, node = String, options = List[String], picked = Int32 }
+    /// options = 選択肢の字（出した順）、picked = 選んだ番号（options の何番目か）、question = 選択肢を出していた時の台詞（無ければ空）。
+    pub type alias Choice = { at = Int32, line = Int32, node = String, options = List[String], picked = Int32, question = String }
 
     /// tape.json の文字。同じ名前の mark・2 つ以上の .yarn にまたがる flow・知らない問いは Err（理由の 1 行）。
     pub def toJson(table: Table, flowRun: Run): Result[String, String] =
@@ -81,7 +81,7 @@ mod TapeOut {
                 "sounds" => Json.JArray(soundsOf(table, flowRun#fps, frames) |> List.toVector),
                 "objects" => Json.JArray(spansOf(flowRun#fps, flowRun#design, worlds |> List.map(table#objects)) |> List.map(spanJson) |> List.toVector),
                 "branches" => Json.JArray(Vector.empty()),
-                "choices" => Json.JArray(choicesOf(worlds) |> List.map(choiceJson(flowRun#fps)) |> List.toVector),
+                "choices" => Json.JArray(choicesOf(frames) |> List.map(choiceJson(flowRun#fps)) |> List.toVector),
                 "probes" => Json.JObject(probes),
                 "probeNames" => Json.JObject(probeNamesOf(table) |> List.map(match (name, shown) -> (name, Json.JString(shown))) |> List.toMap),
                 "msg" => msgJson(table#msg)
@@ -167,32 +167,46 @@ mod TapeOut {
         case None       => Json.JObject(Map#{ "cmd" => Json.JString(row#text), "node" => Json.JString(node) })
     }
 
-    /// 選択肢を選んだ所（2 つ以上の選択肢だけ）: 選択肢が出ていたフレームの次で、出ていた選択肢が消え、バックログの一番新しい「選んだ」行がその中の 1 つの字になった所。
-    // WhyNot: バックログの頭だけを見ない — 選んだのと同じフレームで次の台詞まで進むと、頭はその台詞の行になる。
-    // WhyNot: 次のフレームのカーソルだけで選んだ番号を決めない — 指で押す時はカーソルを動かさずにその番号を選ぶので、カーソルは前の場所のまま残る。
-    pub def choicesOf(worlds: List[AppState]): List[Choice] =
-        let (found, _, _) = worlds |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
-            let (out, prev, since) = acc;
-            let (i, h) = pair;
-            let now = optionTexts(h#world);
-            let shownSince = if (Option.map(p -> optionTexts(p#world), prev) == Some(now)) since else i;
-            let chosen = prev |> Option.flatMap(p -> pickedIn(p#world, h#world)) |> Option.map(c -> { at = since | c });
-            (Option.toList(chosen) ::: out, Some(h), shownSince)
-        }, (Nil, None, 0));
+    /// 選択肢を選んだ所（2 つ以上の選択肢だけ・選んだ順）。
+    // WhyNot: 選択肢が消えたことで選んだと決めない — 同じ選択肢へすぐ戻る作りでは消えず、バックログで戻った時やロードした時は選ばずに消える。
+    // 選んだ時だけ鳴る返事の音（Controls.soundOf の Picked）をそのフレームの音から読む。
+    pub def choicesOf(frames: List[Flow.Played[AppState]]): List[Choice] =
+        let pickSound = Controls.soundOf(World.Event.Picked);
+        let (found, _, _) = frames |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
+            let (out, shown, since) = acc;
+            let (i, played) = pair;
+            let chosen = if (pickedDuring(pickSound, played#step)) pickedIn(played#step) |> Option.map(c -> { at = since | c }) else None;
+            let now = optionTexts(played#step#after#world);
+            let shownSince = if (now == shown and Option.isEmpty(chosen)) since else i;
+            (Option.toList(chosen) ::: out, now, shownSince)
+        }, (Nil, Nil, 0));
         List.reverse(found)
 
     def optionTexts(w: World.World): List[String] = World.choicesOf(w) |> List.map(option -> option#line#text)
 
-    /// before で出ていた 2 つ以上の選択肢を after で選んでいれば、その選んだ所（at は呼ぶ側が埋める）。
-    def pickedIn(before: World.World, after: World.World): Option[Choice] =
-        let options = optionTexts(before);
+    /// このフレームの中で選択肢を選んだか。
+    // WhyNot: 返事の音を鳴らさないゲーム（soundOf の Picked が None）でも数え落とさないよう、その時だけバックログの「選んだ」行の数が増えたかで見る。
+    def pickedDuring(pickSound: Option[String], step: App.TraceStep[AppState]): Bool = match pickSound {
+        case Some(name) => step#sounds |> List.exists(s -> s == name)
+        case None       => choseCount(step#after#world) > choseCount(step#before#world)
+    }
+
+    def choseCount(w: World.World): Int32 = World.logOf(w) |> List.count(entry -> Option.nonEmpty(choseText(entry)))
+
+    /// 選んだフレームの前に出ていた 2 つ以上の選択肢と、選んだ番号（at は呼ぶ側が埋める）。
+    // WhyNot: カーソルだけで番号を決めない — 指で押す時はカーソルを動かさずにその番号を選ぶ。選んだ字（バックログの一番新しい「選んだ」行）で引き、同じ字が 2 つある時だけカーソルを使う。
+    def pickedIn(step: App.TraceStep[AppState]): Option[Choice] =
+        let before = step#before#world;
+        let offered = World.choicesOf(before);
+        let options = offered |> List.map(option -> option#line#text);
         let cursor = World.readOf(before) |> Option.map(r -> r#choiceCursor) |> Option.getWithDefault(0);
         forM (
-            _      <- if (List.length(options) >= 2 and optionTexts(after) != options) Some(()) else None;
-            text   <- World.logOf(after) |> List.findMap(choseText);
+            _      <- if (List.length(options) >= 2) Some(()) else None;
+            text   <- World.logOf(step#after#world) |> List.findMap(choseText);
             picked <- if (List.nth(cursor, options) == Some(text)) Some(cursor) else List.indexOf(text, options);
-            first  <- List.head(World.choicesOf(before))
-        ) yield { at = 0, line = first#line#source#line, node = World.talkNodeOf(before), options = options, picked = picked }
+            first  <- List.head(offered)
+        ) yield { at = 0, line = first#line#source#line, node = World.talkNodeOf(before), options = options, picked = picked,
+                  question = World.pageOf(before)#current |> Option.map(line -> line#text) |> Option.getWithDefault("") }
 
     def choseText(entry: World.Entry): Option[String] = match entry {
         case World.Entry.Chose(text) => Some(text)
@@ -201,7 +215,8 @@ mod TapeOut {
 
     def choiceJson(fps: Float64, c: Choice): Json =
         Json.JObject(Map#{ "t" => numJson(secondsAt(fps, c#at)), "line" => intJson(c#line), "node" => Json.JString(c#node),
-                           "options" => Json.JArray(c#options |> List.map(Json.JString) |> List.toVector), "picked" => intJson(c#picked) })
+                           "options" => Json.JArray(c#options |> List.map(Json.JString) |> List.toVector), "picked" => intJson(c#picked),
+                           "question" => Json.JString(c#question) })
 
     /// 鳴った音: 一発の音（ambience 以外は se）と、鳴り続ける音の鳴り始め（前のフレームに無かった物 = ambience）。line = 同じフレームの実行位置。
     def soundsOf(table: Table, fps: Float64, frames: List[Flow.Played[AppState]]): List[Json] =

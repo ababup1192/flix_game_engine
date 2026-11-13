@@ -208,13 +208,23 @@ mod TestTape {
         Map.get(key, root) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
 
     @Test
-    def testLinesAcrossNodesCarryTheirNode(): Unit \ {Assert, Fs.FileRead} =
-        // ノードをまたいでも作れて、行ごとにそのノードが載り、top の node は最初のノード。
-        let nodes = forkTape() |> Result.map(root -> {
-            let lines = objectAt("lines", root);
-            (textAt("node", Json.JObject(root)), Map.get("10", lines) |> Option.map(textAt("node")), Map.get("20", lines) |> Option.map(textAt("node")))
-        });
-        Assert.assertEq(expected = Ok(("Station", Some("Station"), Some("Field"))), nodes)
+    def testTopNodeIsTheFirstNodeOpened(): Unit \ {Assert, Fs.FileRead} =
+        // ノードをまたいだ flow でも作れて、top の node は最初に開いたノード。
+        Assert.assertEq(expected = Ok("Station"), forkTape() |> Result.map(root -> textAt("node", Json.JObject(root))))
+
+    /// lines の行 n の node（無ければ空）。
+    def lineNode(n: String, root: Map[String, Json]): String =
+        Map.get(n, objectAt("lines", root)) |> Option.map(textAt("node")) |> Option.getWithDefault("")
+
+    @Test
+    def testLineOfTheFirstNodeCarriesItsNode(): Unit \ {Assert, Fs.FileRead} =
+        // 最初のノードの行には、そのノードの名前が載る。
+        Assert.assertEq(expected = Ok("Station"), forkTape() |> Result.map(lineNode("10")))
+
+    @Test
+    def testLineAfterTheJumpCarriesTheNextNode(): Unit \ {Assert, Fs.FileRead} =
+        // <<jump>> の先のノードの行には、先のノードの名前が載る。
+        Assert.assertEq(expected = Ok("Field"), forkTape() |> Result.map(lineNode("20")))
 
     @Test
     def testChoiceRecordsItsOptionsAndThePickedOne(): Unit \ {Assert, Fs.FileRead} =
@@ -225,6 +235,100 @@ mod TestTape {
             arrayAt("options", row) |> List.filterMap(JsonCodec.expectString),
             Map.get("picked", row) |> Option.flatMap(JsonCodec.expectInt))));
         Assert.assertEq(expected = Ok((Some(12), "Station", "右へ" :: "左へ" :: Nil, Some(1)) :: Nil), rows)
+
+    /// choices の picked の並び（作れなければ Err）。
+    def pickedOf(tape: Result[String, Map[String, Json]]): Result[String, List[Int32]] =
+        tape |> Result.map(root -> arrayAt("choices", root) |> List.filterMap(JsonCodec.expectObject)
+            |> List.filterMap(row -> Map.get("picked", row) |> Option.flatMap(JsonCodec.expectInt)))
+
+    @Test
+    def testChoiceCarriesTheLineShownWithTheOptions(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢を出していた時の台詞（頁の今の行）が question に載る。
+        let questions = forkTape() |> Result.map(root -> arrayAt("choices", root) |> List.map(textAt("question")));
+        Assert.assertEq(expected = Ok(longText() :: Nil), questions)
+
+    @Test
+    def testFingerTapOnTheSecondOptionIsPickedOne(): Unit \ {Assert, Fs.FileRead} =
+        // カーソルを動かさず 2 つ目の選択肢を指で押しても、picked は 1。
+        let box = Layout.choice(Layout.Fit.Regular, 1, 2);
+        let x = Float64.round(box#position#x + box#size#x / 2.0);
+        let y = Float64.round(box#position#y + box#size#y / 2.0);
+        let tap = "tap ${Float64.toString(x)},${Float64.toString(y)}";
+        let flow = "fps 10\nwait 0.5\ntap confirm\ndrive reader until choice max 30\nwait 0.3\n${tap}\n" +
+                   "drive reader until talkLine=t.yarn:20 max 30\nwait 0.5\n";
+        Assert.assertEq(expected = Ok(1 :: Nil), pickedOf(tapeWith(table(), forkText(), flow, Nil, false)))
+
+    /// 選ぶとすぐ同じ選択肢へ戻る見本（t.yarn）。
+    ///   Station（8）: 10 地の文 11 <<jump Loop>>
+    ///   Loop（13）: 15 選択肢 16「回る」→ 17 <<jump Loop>> / 18「出る」→ 19 <<jump Field>>
+    ///   Field（21）: 23 地の文
+    def loopText(): String =
+        "{\"version\": 3, \"files\": [\"t.yarn\"], \"variables\": [], \"nodes\": [" +
+        "{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
+        "{\"kind\": \"line\", \"line\": 10, \"text\": \"" + longText() + "\"}," +
+        "{\"kind\": \"jump\", \"line\": 11, \"node\": \"Loop\"}]}," +
+        "{\"title\": \"Loop\", \"file\": \"t.yarn\", \"line\": 13, \"headers\": [], \"body\": [" +
+        "{\"kind\": \"options\", \"line\": 15, \"options\": [" +
+        "{\"line\": 16, \"text\": \"回る\", \"body\": [{\"kind\": \"jump\", \"line\": 17, \"node\": \"Loop\"}]}," +
+        "{\"line\": 18, \"text\": \"出る\", \"body\": [{\"kind\": \"jump\", \"line\": 19, \"node\": \"Field\"}]}]}]}," +
+        "{\"title\": \"Field\", \"file\": \"t.yarn\", \"line\": 21, \"headers\": [], \"body\": [" +
+        "{\"kind\": \"line\", \"line\": 23, \"text\": \"" + longText() + "\"}]}]}"
+
+    @Test
+    def testSameOptionsShownAgainRightAfterPickingAreTwoChoices(): Unit \ {Assert, Fs.FileRead} =
+        // 選んだ同じフレームで同じ選択肢がまた出ても、選ぶたびに 1 行ずつ載る（1 回目は「回る」、2 回目は「出る」）。
+        let flow = "fps 10\nwait 0.5\ntap confirm\ndrive reader until choice max 30\nwait 0.3\ntap confirm\nwait 0.3\n" +
+                   "tap next\nwait 0.3\ntap confirm\ndrive reader until talkLine=t.yarn:23 max 30\nwait 0.5\n";
+        Assert.assertEq(expected = Ok(0 :: 1 :: Nil), pickedOf(tapeWith(table(), loopText(), flow, Nil, false)))
+
+    /// 同じ字の選択肢を 2 回出す見本（t.yarn・ノード Station）。
+    ///   10 地の文 11 選択肢 12「右へ」→ 13 地の文 / 14「左へ」→ 15 地の文
+    ///   16 地の文 17 選択肢 18「右へ」→ 19 地の文 / 20「左へ」→ 21 地の文 22 地の文
+    def twiceText(): String =
+        let say = (n: Int32) -> "{\"kind\": \"line\", \"line\": ${Int32.toString(n)}, \"text\": \"" + longText() + "\"}";
+        let ask = (n: Int32) -> "{\"kind\": \"options\", \"line\": ${Int32.toString(n)}, \"options\": [" +
+            "{\"line\": ${Int32.toString(n + 1)}, \"text\": \"右へ\", \"body\": [" + say(n + 2) + "]}," +
+            "{\"line\": ${Int32.toString(n + 3)}, \"text\": \"左へ\", \"body\": [" + say(n + 4) + "]}]}";
+        "{\"version\": 3, \"files\": [\"t.yarn\"], \"variables\": [], \"nodes\": [" +
+        "{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
+        say(10) + "," + ask(11) + "," + say(16) + "," + ask(17) + "," + say(22) + "]}]}"
+
+    /// 1 フレーム分の流した結果を手で組む（音は events の返事の音）。
+    def played(r: Res.Res, before: World.World, after: World.World, events: List[World.Event]): Flow.Played[AppState] =
+        { step = { frame = App.emptyFrame(), before = Resources.of(r, before), after = Resources.of(r, after),
+                   sounds = events |> List.filterMap(Controls.soundOf), sustained = Nil },
+          state = App.freshStepState() }
+
+    /// 同じ字の選択肢の 1 回目で「右へ」を選び、2 回目の選択肢を出している所までの 2 フレームと、その時の World。
+    def pickedOnceThenAsked(r: Res.Res): (List[Flow.Played[AppState]], World.World) =
+        let asked = TestKit.readUntil(r, World.isChoosing, Nil, TestKit.begun(r));
+        let chose = TestKit.pick(r, 0, asked);
+        let again = TestKit.readUntil(r, World.isChoosing, Nil, chose);
+        (played(r, asked, chose, World.Event.Picked :: Nil) :: played(r, chose, again, Nil) :: Nil, again)
+
+    def pickedIndexes(frames: List[Flow.Played[AppState]]): List[Int32] = TapeOut.choicesOf(frames) |> List.map(c -> c#picked)
+
+    @Test
+    def testJumpingBackFromTheLogIsNotAPick(): Unit \ {Assert, Fs.FileRead} =
+        // 2 回目の選択肢からバックログで前の行へ戻ると選択肢は消えるが、選んだ所には数えない（1 回目の「右へ」だけ）。
+        let r = resOf(twiceText());
+        let (frames, again) = pickedOnceThenAsked(r);
+        let back = TestKit.quiet(() -> WorldLog.jumpTo(r, 0, again));
+        Assert.assertEq(expected = 0 :: Nil, pickedIndexes(List.append(frames, played(r, again, back, World.Event.Rolled :: Nil) :: Nil)))
+
+    @Test
+    def testJumpingBackFromTheLogHidesTheOptions(): Unit \ {Assert, Fs.FileRead} =
+        // 上の見本の前提: 2 回目の選択肢からバックログの一番新しい行へ戻ると、選択肢は出ていない。
+        let r = resOf(twiceText());
+        let (_, again) = pickedOnceThenAsked(r);
+        Assert.assertFalse(World.isChoosing(TestKit.quiet(() -> WorldLog.jumpTo(r, 0, again))))
+
+    @Test
+    def testLeavingForTheTitleIsNotAPick(): Unit \ {Assert, Fs.FileRead} =
+        // 2 回目の選択肢を出したままタイトルへ戻っても、選んだ所には数えない。
+        let r = resOf(twiceText());
+        let (frames, again) = pickedOnceThenAsked(r);
+        Assert.assertEq(expected = 0 :: Nil, pickedIndexes(List.append(frames, played(r, again, World.toTitle(again), Nil) :: Nil)))
 
     @Test
     def testChoiceTimeIsWhenTheOptionsAppeared(): Unit \ {Assert, Fs.FileRead} =

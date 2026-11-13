@@ -2,6 +2,8 @@ package tape
 
 import (
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +32,8 @@ const questionRunes = 14
 
 // GroupBranches は同じ始まりから撮った複数のテープ（並びは names と同じ）から、各テープの branches を作る。
 // 同じ行の選択肢を 2 本以上のテープが通り、選んだ番号が分かれた所だけを分岐にする。names はフォルダ名（隣の頁への道に使う）。
+// 1 本のテープが同じ行の選択肢を 2 回以上通った時は最後の 1 回を使う。
+// WhyNot: 最初の 1 回を使わない — 選択肢へ戻って選び直す作りでは、先へ進んだ道（最後に選んだ方）がそのテープの道になる。
 func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 	type pick struct {
 		tape   int
@@ -37,14 +41,16 @@ func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 	}
 	byLine := map[int][]pick{}
 	for i, t := range tapes {
-		seen := map[int]bool{}
+		last := map[int]Choice{}
 		for _, ch := range t.Choices {
-			if seen[ch.Line] {
-				continue
-			}
-			seen[ch.Line] = true
-			byLine[ch.Line] = append(byLine[ch.Line], pick{i, ch})
+			last[ch.Line] = ch
 		}
+		for ln, ch := range last {
+			byLine[ln] = append(byLine[ln], pick{i, ch})
+		}
+	}
+	for ln := range byLine {
+		sort.Slice(byLine[ln], func(a, b int) bool { return byLine[ln][a].tape < byLine[ln][b].tape })
 	}
 	out := make([][]Branch, len(tapes))
 	for i := range out {
@@ -73,12 +79,13 @@ func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 				if j == p.choice.Picked {
 					r.Here, r.Note = true, "このテープ"
 				} else if other, ok := firstBy[j]; ok {
-					r.Href = "../" + names[other.tape] + "/#t=" + strconv.FormatFloat(other.choice.T, 'f', -1, 64)
+					// WhyNot: 「../<フォルダ>/#t=」にしない — file:// で開いた頁ではフォルダの道が index.html を開かない。
+					r.Href = "../" + url.PathEscape(names[other.tape]) + "/" + IndexFile + "#t=" + strconv.FormatFloat(other.choice.T, 'f', -1, 64)
 					r.Note = names[other.tape] + " のテープ"
 				}
 				routes[j] = r
 			}
-			out[p.tape] = append(out[p.tape], Branch{T: p.choice.T, Line: ln, Question: tapes[p.tape].questionBefore(p.choice), Routes: routes})
+			out[p.tape] = append(out[p.tape], Branch{T: p.choice.T, Line: ln, Question: tapes[p.tape].questionOf(p.choice), Routes: routes})
 		}
 	}
 	for i := range out {
@@ -87,16 +94,12 @@ func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 	return out
 }
 
-// questionBefore は選択肢が出る直前の台詞の最初の文（無ければノードの名前）を、カードの 1 行に収まる長さで返す。
-func (t *Tape) questionBefore(ch Choice) string {
-	text := ""
-	for _, r := range t.timeline {
-		if r.T >= ch.T-1e-6 {
-			break
-		}
-		if l, ok := t.lines[r.Line]; ok && l.Text != nil {
-			text = *l.Text
-		}
+// questionOf は分岐のカードに出す問い。ゲームが書いた question（選択肢を出していた時の台詞）が無ければ、
+// timeline で選択肢が出る直前の台詞を使い、それも無ければノードの名前。最初の文を、カードの 1 行に収まる長さで返す。
+func (t *Tape) questionOf(ch Choice) string {
+	text := ch.Question
+	if text == "" {
+		text = t.textBefore(ch.T)
 	}
 	if text == "" {
 		return ch.Node
@@ -111,9 +114,24 @@ func (t *Tape) questionBefore(ch Choice) string {
 	return text
 }
 
+// textBefore は timeline で sec より前に出ていた最後の台詞の字（無ければ空）。
+func (t *Tape) textBefore(sec float64) string {
+	text := ""
+	for _, r := range t.timeline {
+		if r.T >= sec-1e-6 {
+			break
+		}
+		if l, ok := t.lines[r.Line]; ok && l.Text != nil {
+			text = *l.Text
+		}
+	}
+	return text
+}
+
 // BuildGroup は複数のテープのフォルダを、互いの分岐をつないだ頁にする（各フォルダの index.html の道を返す）。
 // 同じ game・同じ .yarn のテープだけを束ねる。フォルダ名は隣の頁への道になるので重ねない。
-func BuildGroup(dirs []string, commit, ffmpeg string) ([]string, error) {
+// 分岐が 1 つもできなかった時は warn に 1 行言う（頁は作る）。
+func BuildGroup(dirs []string, commit, ffmpeg string, warn io.Writer) ([]string, error) {
 	if len(dirs) < 2 {
 		return nil, fmt.Errorf("--group には 2 つ以上のフォルダが要る（1 つなら --dir）")
 	}
@@ -139,6 +157,9 @@ func BuildGroup(dirs []string, commit, ffmpeg string) ([]string, error) {
 		}
 	}
 	branches := GroupBranches(names, tapes)
+	if total := countBranches(branches); total == 0 && warn != nil {
+		fmt.Fprintf(warn, "tape: 分岐が 1 つもできなかった（同じ行の選択肢で、別の番号を選んだテープが無い。flow ごとに違う選択肢を選んでいるか、tape.json の choices を確かめる）\n")
+	}
 	out := make([]string, len(dirs))
 	for i, d := range dirs {
 		b := branches[i]
@@ -149,4 +170,12 @@ func BuildGroup(dirs []string, commit, ffmpeg string) ([]string, error) {
 		out[i] = index
 	}
 	return out, nil
+}
+
+func countBranches(branches [][]Branch) int {
+	n := 0
+	for _, b := range branches {
+		n += len(b)
+	}
+	return n
 }

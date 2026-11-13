@@ -64,7 +64,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if len(opt.Group) > 0 {
-		outs, err := BuildGroup(opt.Group, opt.Commit, opt.FFmpeg)
+		outs, err := BuildGroup(opt.Group, opt.Commit, opt.FFmpeg, stderr)
 		if err != nil {
 			fmt.Fprintln(stderr, "tape:", err)
 			return 1

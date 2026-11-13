@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -327,6 +328,7 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 			seen[subs[i]] = d
 		}
 	}
+	warnMissingRoutes(srcs, subs, log)
 	if opt.CheckPages != nil {
 		if err := opt.CheckPages(opt.Repo); err != nil {
 			return res, err
@@ -445,6 +447,33 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	}
 	res.Pushed = true
 	return res, nil
+}
+
+var routeHrefRe = regexp.MustCompile(`"href":"\.\./([^/"]+)/`)
+
+// warnMissingRoutes は、頁の分岐の道（../<フォルダ>/…）の先が一緒に置くフォルダに無ければ 1 行ずつ言う（止めない）。
+func warnMissingRoutes(srcs, subs []string, log io.Writer) {
+	placed := map[string]bool{}
+	for _, sub := range subs {
+		if sub != "" {
+			placed[sub] = true
+		}
+	}
+	for _, src := range srcs {
+		page, err := os.ReadFile(filepath.Join(src, IndexFile))
+		if err != nil {
+			continue
+		}
+		told := map[string]bool{}
+		for _, m := range routeHrefRe.FindAllSubmatch(page, -1) {
+			name, err := url.PathUnescape(string(m[1]))
+			if err != nil || placed[name] || told[name] {
+				continue
+			}
+			told[name] = true
+			fmt.Fprintf(log, "注意: %s の分岐の道の先 %s が一緒に置くフォルダに無い。公開した頁ではその道へ移れない（同じ publish に並べて渡す）\n", filepath.Base(src), name)
+		}
+	}
 }
 
 // hasRef は ls-remote の出力に ref と完全に同じ名前の行があるか（refs/heads/main と refs/heads/x/main を取り違えない）。

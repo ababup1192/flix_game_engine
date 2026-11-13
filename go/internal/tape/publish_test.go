@@ -385,39 +385,9 @@ func TestHasRefMatchesWholeName(t *testing.T) {
 	}
 }
 
-// 2 つ以上のフォルダは 1 つの乱数のフォルダの下にフォルダ名で並び、URL もその数だけ出る。
-func TestPublishManyPutsEachUnderOneName(t *testing.T) {
-	bare := seedBare(t)
-	root := filepath.Join(t.TempDir(), "debug", "tape")
-	a, b := filepath.Join(root, "light"), filepath.Join(root, "dark")
-	writeTapeDir(t, a)
-	writeTapeDir(t, b)
-	res, err := Publish(PublishOptions{Dirs: []string{a, b}, Repo: "owner/tapes", Remote: bare, Yes: true, Now: publishNow})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree := treeOf(t, bare)
-	for _, sub := range []string{"light", "dark"} {
-		if !hasPath(tree, TapesDir+"/"+res.Name+"/"+sub+"/"+VideoFile) {
-			t.Fatalf("tapes/%s/%s/video.mp4 が置き場に無い: %v", res.Name, sub, tree)
-		}
-	}
-	want := []string{PagesURL("owner/tapes", res.Name) + "light/", PagesURL("owner/tapes", res.Name) + "dark/"}
-	if strings.Join(res.URLs, " ") != strings.Join(want, " ") {
-		t.Fatalf("URL: %v（want %v）", res.URLs, want)
-	}
-}
-
-func TestPublishManyStopsOnSameFolderName(t *testing.T) {
-	a, b := filepath.Join(t.TempDir(), "intro"), filepath.Join(t.TempDir(), "intro")
-	writeTapeDir(t, a)
-	writeTapeDir(t, b)
-	if _, err := Publish(PublishOptions{Dirs: []string{a, b}, Repo: "owner/tapes", Remote: seedBare(t), Now: publishNow}); err == nil {
-		t.Fatal("同じフォルダ名を 2 つ並べて置こうとした")
-	}
-}
-
-func TestPublishedLogGetsOneLinePerTape(t *testing.T) {
+// publishMany は light と dark の 2 つのフォルダを 1 回の publish で置く。
+func publishMany(t *testing.T) (PublishResult, PublishOptions, string) {
+	t.Helper()
 	bare := seedBare(t)
 	root := filepath.Join(t.TempDir(), "debug", "tape")
 	a, b := filepath.Join(root, "light"), filepath.Join(root, "dark")
@@ -428,11 +398,102 @@ func TestPublishedLogGetsOneLinePerTape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return res, opt, bare
+}
+
+func TestPublishManyPutsTheFirstUnderOneName(t *testing.T) {
+	// 2 つ以上のフォルダは 1 つの乱数のフォルダの下にフォルダ名で並ぶ（1 つ目）。
+	res, _, bare := publishMany(t)
+	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/light/"+VideoFile) {
+		t.Fatalf("tapes/%s/light/video.mp4 が置き場に無い", res.Name)
+	}
+}
+
+func TestPublishManyPutsTheSecondUnderTheSameName(t *testing.T) {
+	// 2 つ目も同じ乱数のフォルダの下に並ぶ。
+	res, _, bare := publishMany(t)
+	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/dark/"+VideoFile) {
+		t.Fatalf("tapes/%s/dark/video.mp4 が置き場に無い", res.Name)
+	}
+}
+
+func TestPublishManyGivesOneURLPerTape(t *testing.T) {
+	// URL はフォルダごとに 1 つ、渡した並びで出る。
+	res, _, _ := publishMany(t)
+	want := PagesURL("owner/tapes", res.Name) + "light/ " + PagesURL("owner/tapes", res.Name) + "dark/"
+	if got := strings.Join(res.URLs, " "); got != want {
+		t.Fatalf("URL: %s（want %s）", got, want)
+	}
+}
+
+func TestPublishManyStopsOnSameFolderName(t *testing.T) {
+	// フォルダ名が同じ 2 つは並べて置けないので止める。
+	a, b := filepath.Join(t.TempDir(), "intro"), filepath.Join(t.TempDir(), "intro")
+	writeTapeDir(t, a)
+	writeTapeDir(t, b)
+	if _, err := Publish(PublishOptions{Dirs: []string{a, b}, Repo: "owner/tapes", Remote: seedBare(t), Now: publishNow}); err == nil {
+		t.Fatal("同じフォルダ名を 2 つ並べて置こうとした")
+	}
+}
+
+// publishedLines は publish を 2 本で流して published.jsonl に書いた行。
+func publishedLines(t *testing.T) []string {
+	t.Helper()
+	res, opt, _ := publishMany(t)
 	if err := appendPublished(opt, res); err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(readFile(t, filepath.Join(root, PublishedLog)))), "\n")
-	if len(lines) != 2 || !strings.Contains(lines[1], `/dark/"`) {
+	raw := readFile(t, filepath.Join(filepath.Dir(opt.Dirs[0]), PublishedLog))
+	return strings.Split(strings.TrimSpace(string(raw)), "\n")
+}
+
+func TestPublishedLogGetsOneLinePerTape(t *testing.T) {
+	// published.jsonl にはテープごとに 1 行。
+	if lines := publishedLines(t); len(lines) != 2 {
 		t.Fatalf("published.jsonl: %v", lines)
+	}
+}
+
+func TestPublishedLogLineCarriesThatTapesURL(t *testing.T) {
+	// 2 行目は 2 つ目のテープの URL。
+	if lines := publishedLines(t); !strings.Contains(lines[len(lines)-1], `/dark/"`) {
+		t.Fatalf("published.jsonl: %v", lines)
+	}
+}
+
+// publishLogWithRoute は、../dark/ への分岐の道を持つ light を、others と一緒に dry run で置いた時の言葉。
+func publishLogWithRoute(t *testing.T, others ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	a := filepath.Join(root, "light")
+	writeTapeDir(t, a)
+	page := "<!doctype html>\n<html><head>\n<title>t</title></head><body><script>const TAPE={\"branches\":[{\"routes\":[{\"href\":\"../dark/index.html#t=3.2\"}]}]};</script></body></html>"
+	if err := os.WriteFile(filepath.Join(a, IndexFile), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dirs := []string{a}
+	for _, o := range others {
+		d := filepath.Join(root, o)
+		writeTapeDir(t, d)
+		dirs = append(dirs, d)
+	}
+	var log bytes.Buffer
+	if _, err := Publish(PublishOptions{Dirs: dirs, Repo: "owner/tapes", Remote: seedBare(t), Now: publishNow, Log: &log}); err != nil {
+		t.Fatal(err)
+	}
+	return log.String()
+}
+
+func TestPublishWarnsWhenRouteTargetIsNotPlaced(t *testing.T) {
+	// 分岐の道の先のフォルダを一緒に置かなければ 1 行言う。
+	if log := publishLogWithRoute(t); !strings.Contains(log, "注意: light の分岐の道の先 dark") {
+		t.Fatalf("言葉: %s", log)
+	}
+}
+
+func TestPublishDoesNotWarnWhenRouteTargetIsPlaced(t *testing.T) {
+	// 道の先のフォルダを一緒に置くなら言わない。
+	if log := publishLogWithRoute(t, "dark"); strings.Contains(log, "注意:") {
+		t.Fatalf("言葉: %s", log)
 	}
 }

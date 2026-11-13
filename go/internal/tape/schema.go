@@ -54,13 +54,15 @@ type Tape struct {
 	raw      map[string]json.RawMessage
 }
 
-// Choice は tape.json の choices の 1 つ（選択肢を選んだ所）。T = 選択肢が出た秒、Line = 最初の選択肢の行、Picked = 選んだ番号。
+// Choice は tape.json の choices の 1 つ（選択肢を選んだ所）。T = 選択肢が出た秒、Line = 最初の選択肢の行、Picked = 選んだ番号、
+// Question = 選択肢を出していた時の台詞（前の版のテンプレートでは無い）。
 type Choice struct {
-	T       float64  `json:"t"`
-	Line    int      `json:"line"`
-	Node    string   `json:"node"`
-	Options []string `json:"options"`
-	Picked  int      `json:"picked"`
+	T        float64  `json:"t"`
+	Line     int      `json:"line"`
+	Node     string   `json:"node"`
+	Options  []string `json:"options"`
+	Picked   int      `json:"picked"`
+	Question string   `json:"question,omitempty"`
 }
 
 type timelineRow struct {

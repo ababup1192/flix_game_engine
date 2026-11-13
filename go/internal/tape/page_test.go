@@ -310,6 +310,8 @@ func TestPageMatchesMockOnPhone(t *testing.T) {
 	if err := p.Eval(annotateAndExport, &tapeMD); err != nil {
 		t.Fatal(err)
 	}
+	// reproduce.talk はノードをまたぐテープのために行のノードを指す書き方へ直した（mockFixes にある）。モックの側もその字にそろえて比べる。
+	mockMD = strings.Replace(mockMD, "start talk node=Lair line=", "start talk node=<script.node> line=", 1)
 	if tapeMD != mockMD {
 		t.Errorf("書き出した .md がモックと違う\n雛形:\n%s\nモック:\n%s", tapeMD, mockMD)
 	}

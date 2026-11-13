@@ -152,8 +152,8 @@
   .mini { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 700; color: #111; }
   .forkcard { margin: 6px 0 6px 0; padding: 10px 12px; border-radius: 12px; background: #0c0c0d; border: 1px dashed rgba(255,255,255,.18); }
   .forkcard .q { font-size: 12px; color: var(--dim); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-  .routes { display: flex; gap: 6px; }
-  .route { flex: 1; min-height: 44px; border-radius: 10px; background: var(--raised); padding: 6px 10px; text-align: left; }
+  .routes { display: flex; flex-wrap: wrap; gap: 6px; }
+  .route { flex: 1; min-width: 40%; min-height: 44px; border-radius: 10px; background: var(--raised); padding: 6px 10px; text-align: left; }
   .route b { display: block; font-size: 13px; }
   .route span { font-size: 10px; color: var(--faint); }
   .route.on { background: #fff; color: #111; }
@@ -340,7 +340,8 @@ const THUMB_W = Math.round(60 * TAPE.strip.w / TAPE.strip.h), CHAP_W = Math.roun
 const thumbPos = t => `${-Math.min(TAPE.strip.count - 1, Math.floor(t * TAPE.stripPerSec)) * THUMB_W}px 0`;
 function toast(m) { const e = $("toast"); e.textContent = m; e.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => e.classList.remove("on"), 1800); }
 const scriptRef = ln => { if (!ln) return null; const l = TAPE.lines[ln] || {};
-  return l.cmd ? { file: TAPE.yarn, node: TAPE.node, line: ln, command: l.cmd } : { file: TAPE.yarn, node: TAPE.node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };
+  const node = l.node ?? TAPE.node;
+  return l.cmd ? { file: TAPE.yarn, node, line: ln, command: l.cmd } : { file: TAPE.yarn, node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };
 const annTrack = a => a.kind === "sound" ? "sound" : a.kind === "script" ? "script" : "video";
 
 // ── タイムライン ──
@@ -387,7 +388,7 @@ function openChapters(toFork, fork = 0) {
   TAPE.scenes.forEach(s => {
     rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * CHAP_W}px 0"></div>
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
-    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach(br => {
+    TAPE.branches.filter(br => (br.t >= s.t || s === TAPE.scenes[0]) && br.t < sceneEnd(s)).forEach(br => {
       const i = TAPE.branches.indexOf(br);
       rows.push(`<div class="forkcard" id="fork${i}" data-b="${i}"><div class="q"><span class="fork" style="position:relative;left:9px;top:0;margin-right:10px"><i>分</i></span>${esc(br.question)} · ${yarn}:${br.line}${br.example ? ' <span class="example">例</span>' : ""}</div>
         <div class="routes">${br.routes.map((r, j) => `<button class="route ${r.here ? "on" : ""}" data-r="${j}"><b>${r.here ? "✓ " : ""}${esc(r.label)}</b><span>${esc(r.note)}</span></button>`).join("")}</div></div>`);
@@ -674,7 +675,7 @@ function openInfo() {
   const t = video.currentTime, ln = lineAt(t), l = TAPE.lines[ln] || {}, p = probesAt(t);
   const names = TAPE.probeNames;
   $("infoBody").innerHTML = `<div class="ctxline">${where(t)} · f${frameOf(t)}</div>
-    <dl class="kv">${Object.entries(p).map(([k, v]) => `<dt>${names[k] || k}</dt><dd>${esc(v)}</dd>`).join("")}<dt>ノード</dt><dd>${TAPE.node}</dd></dl>
+    <dl class="kv">${Object.entries(p).map(([k, v]) => `<dt>${names[k] || k}</dt><dd>${esc(v)}</dd>`).join("")}<dt>ノード</dt><dd>${esc(l.node ?? TAPE.node)}</dd></dl>
     <div class="label">出ている物</div><div class="ctxline">${objectsAt(t).map(o => tag("video", o.name)).join("") || "—"}</div>`;
   open("infoSheet");
 }
@@ -732,7 +733,7 @@ function buildPrompt() {
     list.forEach(a => out.push(`- [${label(a)} · ${TAPE.scenes.find(s => s.id === a.scene).name} ${mmss(a.seconds)}${a.script ? " · " + yarn + ":" + a.script.line : ""}] ${a.note}`));
   });
   const json = { game: TAPE.game, commit: TAPE.commit, flow: TAPE.flow, fps: TAPE.fps,
-    reproduce: { flow: `${TAPE.flow} をコマ frame まで流すと同じ瞬間`, talk: `start talk node=${TAPE.node} line=<script.line> で台本の行から始められる` },
+    reproduce: { flow: `${TAPE.flow} をコマ frame まで流すと同じ瞬間`, talk: "start talk node=<script.node> line=<script.line> で台本の行から始められる" },
     scriptEdits: edited.map(ln => ({ file: TAPE.yarn, node: TAPE.lines[ln].node ?? TAPE.node, line: ln, speaker: TAPE.speaker[TAPE.lines[ln].who] ?? TAPE.lines[ln].who, before: TAPE.lines[ln].text, after: edits[ln] })),
     annotations: anns.map((a, i) => ({ id: i + 1, track: annTrack(a), kind: a.kind, target: a.target, scene: a.scene, frame: a.frame, seconds: a.seconds, rect: a.rect, script: a.script, note: a.note, probes: a.probes })) };
   out.push("", "```json", JSON.stringify(json, null, 2), "```", "");

@@ -52,7 +52,7 @@ showcase-video:
 # 分岐: 結末ごとに 1 本ずつ flow を書き（同じ始まりから別の選択肢を選ぶ）、make tape FLOWS="e2e/a.flow e2e/b.flow" で
 # まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐のカードにして隣の頁へつなぐ。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
-# 1 本の flow（$(1)）を撮って debug/tape/$(2) に tape.json と video.mp4 を置くシェルの 1 文。flow が途中で止まったら code=1。
+# WhyNot: flow が途中で止まっても exit しない — そこまでの頁を作ってから、最後に終了コード 1 を返す（code）。
 tape-shoot = rm -rf debug/video/$(2) debug/tape/$(2); mkdir -p debug/tape/$(2); \
 	FLOW=$(1) FLOW_OUT=debug/video/$(2) $(HEADLESS_RUN) FlowVideo.play || code=1; \
 	test -f debug/video/$(2)/tape.json || { echo "tape: debug/video/$(2)/tape.json を書けなかった"; exit 1; }; \
@@ -61,6 +61,9 @@ tape-shoot = rm -rf debug/video/$(2) debug/tape/$(2); mkdir -p debug/tape/$(2); 
 .PHONY: tape
 tape:
 	@test -n "$(TAPE_NAME)$(FLOWS)" || { echo "make tape FLOW=e2e/<名前>.flow（分岐は FLOWS=\"e2e/a.flow e2e/b.flow\"）"; exit 2; }
+	@test -z "$(FLOW)" -o -z "$(FLOWS)" || { echo "tape: FLOW と FLOWS はどちらか 1 つ（分岐は FLOWS だけに並べる）"; exit 2; }
+	@dup=$$(for f in $(FLOWS); do basename $$f .flow; done | sort | uniq -d); \
+	 test -z "$$dup" || { echo "tape: FLOWS に同じ名前の flow がある: $$dup（debug/tape/<名前> が重なるので名前を分ける）"; exit 2; }
 	@code=0; \
 	 if [ -n "$(FLOWS)" ]; then \
 	   dirs=""; \

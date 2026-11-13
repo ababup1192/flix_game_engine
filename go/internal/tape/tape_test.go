@@ -113,12 +113,20 @@ var mockFixes = [][2]string{
 	{"  $(\"forks\").querySelectorAll(\".fork\").forEach(n => n.onclick = () => openChapters(true));\n}\nfunction openChapters(toFork) {",
 		"  $(\"forks\").querySelectorAll(\".fork\").forEach(n => n.onclick = () => openChapters(true, +n.dataset.i));\n}\nfunction openChapters(toFork, fork = 0) {"},
 	{"    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach((br, i) => {\n      rows.push(`<div class=\"forkcard\" id=\"fork${i}\"><div",
-		"    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"fork${i}\" data-b=\"${i}\"><div"},
+		"    TAPE.branches.filter(br => (br.t >= s.t || s === TAPE.scenes[0]) && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"fork${i}\" data-b=\"${i}\"><div"},
 	{"    const r = TAPE.branches[0].routes[+n.dataset.r];\n" +
 		"    if (r.here) { close(); seek(TAPE.branches[0].t + .05); } else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n",
 		"    const br = TAPE.branches[+n.closest(\".forkcard\").dataset.b], r = br.routes[+n.dataset.r];\n" +
 			"    if (r.here) { close(); seek(br.t + .05); } else if (r.href) location.href = r.href; else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n"},
 	{"  if (toFork) setTimeout(() => $(\"fork0\")?.scrollIntoView(", "  if (toFork) setTimeout(() => $(\"fork\" + fork)?.scrollIntoView("},
+	{"  .routes { display: flex; gap: 6px; }\n  .route { flex: 1; min-height: 44px;",
+		"  .routes { display: flex; flex-wrap: wrap; gap: 6px; }\n  .route { flex: 1; min-width: 40%; min-height: 44px;"},
+	{"  return l.cmd ? { file: TAPE.yarn, node: TAPE.node, line: ln, command: l.cmd } : { file: TAPE.yarn, node: TAPE.node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };",
+		"  const node = l.node ?? TAPE.node;\n  return l.cmd ? { file: TAPE.yarn, node, line: ln, command: l.cmd } : { file: TAPE.yarn, node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };"},
+	{"<dt>ノード</dt><dd>${TAPE.node}</dd></dl>",
+		"<dt>ノード</dt><dd>${esc(l.node ?? TAPE.node)}</dd></dl>"},
+	{"talk: `start talk node=${TAPE.node} line=<script.line> で台本の行から始められる` },",
+		"talk: \"start talk node=<script.node> line=<script.line> で台本の行から始められる\" },"},
 	{"scriptEdits: edited.map(ln => ({ file: TAPE.yarn, node: TAPE.node, line: ln,", "scriptEdits: edited.map(ln => ({ file: TAPE.yarn, node: TAPE.lines[ln].node ?? TAPE.node, line: ln,"},
 }
 

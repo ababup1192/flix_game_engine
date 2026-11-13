@@ -27,7 +27,8 @@ mod ScriptEdits {
     /// ノードの行（選択肢と <<if>> の中も。書いた順）。<<set>> と <<stop>> は字を持たないので載せない。
     pub def rowsOf(node: Yarn.Node): List[Row] = statementRows(node#body)
 
-    /// file に書いたノード全部の行（ノードの名前の順）。直しはノードをまたいでファイルの行の番号で当てる。
+    /// file に書いたノード全部の行。
+    // WhyNot: 始めたノードの行だけにしない — 直しはファイルの行の番号で渡るので、<<jump>> の先のノードの行にも当てる。
     pub def fileRows(file: String, program: Yarn.Program): List[Row] =
         Yarn.nodeNames(program) |> List.filterMap(name -> Yarn.nodeOf(name, program)) |> List.filter(n -> n#source#file == file) |> List.flatMap(rowsOf)
 
