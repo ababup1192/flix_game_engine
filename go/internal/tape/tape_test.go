@@ -17,7 +17,7 @@ const (
 	otherPath  = "testdata/other.tape.json"
 )
 
-var sampleStrip = Strip{File: StripFile, Count: 88, W: StripW, H: StripH}
+var sampleStrip = Strip{File: StripFile, Count: 88, W: 54, H: 96}
 
 func readFile(t *testing.T, p string) []byte {
 	t.Helper()
@@ -51,6 +51,21 @@ var mockFixes = [][2]string{
 	{".thumb { width: 34px; height: 60px; border-radius: 4px; flex: none; background-image: url(strip.jpg); background-size: 2992px 60px; position: relative; }",
 		".thumb { width: var(--thumb-w); height: 60px; border-radius: 4px; flex: none; background-image: var(--strip); background-size: var(--thumb-bg); position: relative; }"},
 	{".chap .thumb { width: 30px; height: 53px; background-size: 2640px 53px; }", ".chap .thumb { width: var(--chap-w); height: 53px; background-size: var(--chap-bg); }"},
+	{"video.onseeked = () => onTime(video.currentTime);\n",
+		"video.onseeked = () => onTime(video.currentTime);\n" +
+			"video.addEventListener(\"loadedmetadata\", () => { document.documentElement.style.setProperty(\"--frame-ratio\", `${video.videoWidth} / ${video.videoHeight}`); redraw(); });\n"},
+	{".frame { position: relative; height: 100%; aspect-ratio: 540 / 960; max-width: 100%; }",
+		".frame { position: relative; height: 100%; aspect-ratio: var(--frame-ratio); max-width: 100%; }"},
+	{"const box = () => canvas.getBoundingClientRect();\nfunction redraw() {\n",
+		"const box = () => canvas.getBoundingClientRect();\n" +
+			"// 枠より動画が横長・縦長の時は、動画が映っている矩形（object-fit: contain の内側）に canvas を重ねる。枠と動画の比が同じなら枠いっぱいのまま\n" +
+			"function fitCanvas() {\n" +
+			"  const f = $(\"frame\"), fw = f.clientWidth, fh = f.clientHeight, vw = video.videoWidth || TAPE.strip.w, vh = video.videoHeight || TAPE.strip.h;\n" +
+			"  if (!fw || !fh || Math.abs(fw / fh - vw / vh) < .01) { canvas.style.left = canvas.style.top = canvas.style.width = canvas.style.height = \"\"; return; }\n" +
+			"  const k = Math.min(fw / vw, fh / vh), w = vw * k, h = vh * k;\n" +
+			"  Object.assign(canvas.style, { left: (fw - w) / 2 + \"px\", top: (fh - h) / 2 + \"px\", width: w + \"px\", height: h + \"px\" });\n" +
+			"}\n" +
+			"function redraw() {\n  fitCanvas();\n"},
 	{`<b>血鱗 序章</b><span class="mock">MOCK</span><br>`, `<b id="tapeTitle"></b><br>`},
 	{`<b id="tcNow">0:00.0</b> / 0:43.6</div>`, `<b id="tcNow">0:00.0</b> / <span id="tcDur"></span></div>`},
 	{`const WHO = { "魔女": "var(--witch)", "少女": "var(--girl)", "地の文": "var(--narr)" };`,
@@ -81,6 +96,7 @@ var mockFixes = [][2]string{
 		"  const root = document.documentElement.style;\n" +
 		"  TAPE.speakers.forEach((s, i) => root.setProperty(`--speaker-${i}`, s.color));\n" +
 		"  root.setProperty(\"--strip\", `url(\"${encodeURI(TAPE.strip.file)}\")`);\n" +
+		"  root.setProperty(\"--frame-ratio\", `${TAPE.strip.w} / ${TAPE.strip.h}`);\n" +
 		"  root.setProperty(\"--thumb-w\", THUMB_W + \"px\"); root.setProperty(\"--thumb-bg\", `${THUMB_W * TAPE.strip.count}px 60px`);\n" +
 		"  root.setProperty(\"--chap-w\", CHAP_W + \"px\"); root.setProperty(\"--chap-bg\", `${CHAP_W * TAPE.strip.count}px 53px`);\n" +
 		"  $(\"tapeTitle\").textContent = TAPE.title; $(\"tcDur\").textContent = mmss(TAPE.duration);\n" +
@@ -131,7 +147,7 @@ func TestSampleRenderEqualsMockExceptListedFixes(t *testing.T) {
 }
 
 func TestOtherSampleLeavesNoMockNames(t *testing.T) {
-	page := renderFile(t, otherPath, Strip{File: StripFile, Count: 13, W: StripW, H: StripH})
+	page := renderFile(t, otherPath, Strip{File: StripFile, Count: 13, W: 54, H: 96})
 	for _, word := range []string{"kesshou", "血鱗", "MOCK", "2992", "魔女"} {
 		if strings.Contains(page, word) {
 			t.Errorf("書き出した頁に %q が残っている", word)
@@ -157,7 +173,7 @@ func TestRenderEscapesScriptCloseInText(t *testing.T) {
 }
 
 func TestRenderAddedFieldsOverrideGameValues(t *testing.T) {
-	page := renderFile(t, samplePath, Strip{File: StripFile, Count: 5, W: StripW, H: StripH})
+	page := renderFile(t, samplePath, Strip{File: StripFile, Count: 5, W: 54, H: 96})
 	if !strings.Contains(page, `"strip":{"file":"strip.jpg","count":5,"w":54,"h":96}`) {
 		t.Fatal("strip が Render の値になっていない")
 	}
@@ -274,12 +290,18 @@ func TestParseArgsTakesDirEquals(t *testing.T) {
 // makeVideo は ffmpeg の試験用の絵で secs 秒の 540×960 の mp4 を作る。ffmpeg が無ければ飛ばす。
 func makeVideo(t *testing.T, path string, secs float64) {
 	t.Helper()
+	makeVideoSized(t, path, secs, "540x960")
+}
+
+// makeVideoSized は size（"幅x高さ"）の試験の動画を作る。
+func makeVideoSized(t *testing.T, path string, secs float64, size string) {
+	t.Helper()
 	ff, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		t.Skip("ffmpeg が無い")
 	}
 	out, err := exec.Command(ff, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", fmt.Sprintf("testsrc2=size=540x960:rate=30:duration=%g", secs),
+		"-i", fmt.Sprintf("testsrc2=size=%s:rate=30:duration=%g", size, secs),
 		"-pix_fmt", "yuv420p", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("試験の動画を作れない: %v\n%s", err, out)

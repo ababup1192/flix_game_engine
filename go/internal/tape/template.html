@@ -32,7 +32,7 @@
 
   /* 動画 */
   .preview { flex: 1 1 auto; min-height: 120px; position: relative; display: flex; align-items: center; justify-content: center; padding: 0 0 6px; }
-  .frame { position: relative; height: 100%; aspect-ratio: 540 / 960; max-width: 100%; }
+  .frame { position: relative; height: 100%; aspect-ratio: var(--frame-ratio); max-width: 100%; }
   .frame video, .frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   .frame video { object-fit: contain; border-radius: 8px; }
   .frame canvas { touch-action: none; }
@@ -416,7 +416,15 @@ function seek(t) { video.pause(); video.currentTime = t; follow(t); onTime(t); }
 
 // ── 動画の上 ──
 const box = () => canvas.getBoundingClientRect();
+// 枠より動画が横長・縦長の時は、動画が映っている矩形（object-fit: contain の内側）に canvas を重ねる。枠と動画の比が同じなら枠いっぱいのまま
+function fitCanvas() {
+  const f = $("frame"), fw = f.clientWidth, fh = f.clientHeight, vw = video.videoWidth || TAPE.strip.w, vh = video.videoHeight || TAPE.strip.h;
+  if (!fw || !fh || Math.abs(fw / fh - vw / vh) < .01) { canvas.style.left = canvas.style.top = canvas.style.width = canvas.style.height = ""; return; }
+  const k = Math.min(fw / vw, fh / vh), w = vw * k, h = vh * k;
+  Object.assign(canvas.style, { left: (fw - w) / 2 + "px", top: (fh - h) / 2 + "px", width: w + "px", height: h + "px" });
+}
 function redraw() {
+  fitCanvas();
   const b = box(), dpr = devicePixelRatio || 1, t = video.currentTime, f = frameOf(t);
   canvas.width = b.width * dpr; canvas.height = b.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, b.width, b.height);
   drawEdited(b, t);
@@ -730,6 +738,7 @@ function applyTape() {
   const root = document.documentElement.style;
   TAPE.speakers.forEach((s, i) => root.setProperty(`--speaker-${i}`, s.color));
   root.setProperty("--strip", `url("${encodeURI(TAPE.strip.file)}")`);
+  root.setProperty("--frame-ratio", `${TAPE.strip.w} / ${TAPE.strip.h}`);
   root.setProperty("--thumb-w", THUMB_W + "px"); root.setProperty("--thumb-bg", `${THUMB_W * TAPE.strip.count}px 60px`);
   root.setProperty("--chap-w", CHAP_W + "px"); root.setProperty("--chap-bg", `${CHAP_W * TAPE.strip.count}px 53px`);
   $("tapeTitle").textContent = TAPE.title; $("tcDur").textContent = mmss(TAPE.duration);
@@ -742,6 +751,7 @@ function refresh() {
   renderTracks(); renderNow(video.currentTime); if (sel) renderActs(); redraw();
 }
 video.onseeked = () => onTime(video.currentTime);
+video.addEventListener("loadedmetadata", () => { document.documentElement.style.setProperty("--frame-ratio", `${video.videoWidth} / ${video.videoHeight}`); redraw(); });
 addEventListener("resize", redraw);
 
 applyTape();

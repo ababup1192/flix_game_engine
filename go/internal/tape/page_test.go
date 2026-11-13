@@ -359,3 +359,59 @@ func TestOtherTapeHasNoForkAndExportsAllFields(t *testing.T) {
 	}
 	noErrors(t, p, "other")
 }
+
+// 横長の動画（960×540）: strip のコマが横長になり、canvas が動画の映っている矩形に重なり、枠が頁の外へ出ない。
+func TestLandscapeVideoOverlaysWhereItIsShown(t *testing.T) {
+	p := openTapePage(t)
+	dir := t.TempDir()
+	makeVideoSized(t, filepath.Join(dir, VideoFile), 6.2, "960x540")
+	if err := os.WriteFile(filepath.Join(dir, TapeFile), readFile(t, otherPath), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(Options{Dir: dir, Commit: "abc1234"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
+	t.Cleanup(srv.Close)
+	if err := p.Navigate(srv.URL + "/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor(`document.readyState === "complete" && typeof video !== "undefined" && video.readyState >= 1`, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	seekTo(t, p, 2.5)
+	if err := p.Eval(`select({track: "video"}), setMode("pick"), redraw(), true`, nil); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		StripW, StripH                     float64
+		CanvasL, CanvasT, CanvasW, CanvasH float64
+		ShownL, ShownT, ShownW, ShownH     float64
+		FrameR, PageW                      float64
+		Mid                                struct{ X, Y float64 }
+	}
+	if err := p.Eval(`(() => {
+	  const c = canvas.getBoundingClientRect(), v = video.getBoundingClientRect(), f = $("frame").getBoundingClientRect();
+	  const k = Math.min(v.width / video.videoWidth, v.height / video.videoHeight), w = video.videoWidth * k, h = video.videoHeight * k;
+	  return {StripW: TAPE.strip.w, StripH: TAPE.strip.h, CanvasL: c.left, CanvasT: c.top, CanvasW: c.width, CanvasH: c.height,
+	    ShownL: v.left + (v.width - w) / 2, ShownT: v.top + (v.height - h) / 2, ShownW: w, ShownH: h,
+	    FrameR: f.right, PageW: innerWidth, Mid: toN({clientX: c.left + c.width / 2, clientY: c.top + c.height / 2})};
+	})()`, &got); err != nil {
+		t.Fatal(err)
+	}
+	savePNG(t, filepath.Join(shotsDir(t), "landscape-pick-02.5.png"), shot(t, p))
+	if got.StripW != 96 || got.StripH != 54 {
+		t.Errorf("strip の 1 コマが %vx%v（横長の動画なら 96x54）", got.StripW, got.StripH)
+	}
+	near := func(a, b float64) bool { return a-b < 1 && b-a < 1 }
+	if !near(got.CanvasL, got.ShownL) || !near(got.CanvasT, got.ShownT) || !near(got.CanvasW, got.ShownW) || !near(got.CanvasH, got.ShownH) {
+		t.Errorf("canvas が動画の映っている矩形に重なっていない: %+v", got)
+	}
+	if got.FrameR > got.PageW+0.5 {
+		t.Errorf("枠が頁の外へ出る: 右端 %v / 頁の幅 %v", got.FrameR, got.PageW)
+	}
+	if !near(got.Mid.X*100, 50) || !near(got.Mid.Y*100, 50) {
+		t.Errorf("動画の真ん中が割合の (0.5, 0.5) にならない: %+v", got.Mid)
+	}
+	noErrors(t, p, "landscape")
+}
