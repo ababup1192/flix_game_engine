@@ -31,6 +31,14 @@ function fgeDeleteProgram(program) {
   if (names !== undefined) { names.forEach(function (id) { if (id >= 0) fgeU[id] = null; }); fgeUByProgram.delete(program); }
 }
 
+// URL のクエリの鍵と値を並び順に [鍵1, 値1, 鍵2, 値2, …]（デコード済み）。WebLayer.devTools が始まりの名前と引数にする。
+// WhyNot: 頁が自分で読む鍵（input・size…）をここで外さない — 外す一覧は App.DevTools.pageQueryKeys の 1 か所。
+function fgeQueryPairs() {
+  var out = [];
+  new URLSearchParams(location.search).forEach(function (value, key) { out.push(key, value); });
+  return out;
+}
+
 // WhyNot: 普段の起動で見ない — getError は GPU の待ちになり、1 コマが何倍にも延びる。
 function fgeQueryParam(name) { return new URLSearchParams(location.search).get(name); }
 
