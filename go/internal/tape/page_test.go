@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -414,4 +415,54 @@ func TestLandscapeVideoOverlaysWhereItIsShown(t *testing.T) {
 		t.Errorf("動画の真ん中が割合の (0.5, 0.5) にならない: %+v", got.Mid)
 	}
 	noErrors(t, p, "landscape")
+}
+
+func fnvHex(s string) string {
+	h := fnv.New32a()
+	io.WriteString(h, s)
+	return fmt.Sprintf("%08x", h.Sum32())
+}
+
+// 「ここから遊ぶ」の URL に、直した行が edit.<行>（後の文）と was.<行>（前の文のハッシュ）で乗る。
+func TestPlayLinkCarriesEdits(t *testing.T) {
+	p := openTapePage(t)
+	s := buildSite(t)
+	load(t, p, s.otherURL)
+	var got struct {
+		Href    string
+		Dropped int
+	}
+	if err := p.Eval(`(() => { edits[4] = "今夜は風が凪いだ。／船は来る"; edits[8] = "灯台守は灯りを点けた"; return playLink(2.5); })()`, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := "&edit.4=" + url.PathEscape("今夜は風が凪いだ。／船は来る") + "&was.4=" + fnvHex("今夜は風が強い。／船は来るだろうか") +
+		"&edit.8=" + url.PathEscape("灯台守は灯りを点けた") + "&was.8=" + fnvHex("灯台守は階段を上った")
+	if got.Dropped != 0 || !strings.HasSuffix(got.Href, want) {
+		t.Errorf("直しが URL に乗っていない\n got: %s（落とした %d）\nwant の終わり: %s", got.Href, got.Dropped, want)
+	}
+	noErrors(t, p, "other")
+}
+
+// 直しが長くて URL が 8000 字を超える時は、超えない所まで載せ、載せられなかった数をトーストで言う。
+func TestPlayLinkDropsEditsPastTheLimit(t *testing.T) {
+	p := openTapePage(t)
+	s := buildSite(t)
+	load(t, p, s.otherURL)
+	var got struct {
+		Len     int
+		Dropped int
+		Has4    bool
+		Toast   string
+	}
+	if err := p.Eval(`(() => { const long = "あ".repeat(400); edits[4] = long; edits[6] = long; edits[8] = long;
+	  const link = playLink(2.5); $("playHereBtn").onclick();
+	  return {Len: link.href.length, Dropped: link.dropped, Has4: link.href.includes("&edit.4="), Toast: $("toast").textContent}; })()`, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Len > 8000 || got.Dropped != 1 || !got.Has4 {
+		t.Errorf("8000 字までで削っていない: %+v", got)
+	}
+	if got.Toast != "直しの一部（1 件）は URL に乗らないので当てずに開きます" {
+		t.Errorf("トースト %q", got.Toast)
+	}
 }

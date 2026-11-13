@@ -84,14 +84,9 @@ var mockFixes = [][2]string{
 	{"if (!ln || edits[ln] === undefined || t < 8) {", `if (!ln || edits[ln] === undefined || !objectsAt(t).some(o => o.id === "message")) {`},
 	{`  const names = { phase: "場面", witch: "魔女", item: "小物", ambience: "環境音", logSize: "ログ" };`, "  const names = TAPE.probeNames;"},
 	{"function playHref(t) { const ln = lineAt(t) || 18; return `${TAPE.playUrl}?talk=${TAPE.node}&line=${ln}`; }",
-		"function playHref(t) {\n" +
-			"  const ln = lineAt(t), node = encodeURIComponent(TAPE.node);\n" +
-			"  if (!ln) return `${TAPE.playUrl}?talk=${node}`;\n" +
-			"  const l = TAPE.lines[ln];\n" +
-			"  return `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}`;\n" +
-			"}\n" +
-			`function fnv1a(s) { let h = 0x811c9dc5; for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0; return h.toString(16).padStart(8, "0"); }`},
-	{`toast("別のタブでゲームを開きます（モックでは最初から）");`, `toast("別のタブでゲームを開きます");`},
+		"// 直した行は edit.<行>（後の文）と was.<行>（前の文のハッシュ）で渡す。URL が長すぎると開けない端末があるので、MAX_URL を超える分は載せずに数える\nconst MAX_URL = 8000;\nfunction playLink(t) {\n  const ln = lineAt(t), node = encodeURIComponent(TAPE.node);\n  const l = ln && TAPE.lines[ln];\n  let href = ln ? `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}` : `${TAPE.playUrl}?talk=${node}`, dropped = 0;\n  Object.keys(edits).map(Number).sort((a, b) => a - b).forEach(e => {\n    const part = `&edit.${e}=${encodeURIComponent(edits[e])}&was.${e}=${fnv1a(TAPE.lines[e].text)}`;\n    if (href.length + part.length > MAX_URL) dropped++; else href += part;\n  });\n  return { href, dropped };\n}\nconst playHref = t => playLink(t).href;\nfunction fnv1a(s) { let h = 0x811c9dc5; for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0; return h.toString(16).padStart(8, \"0\"); }"},
+	{"$(\"playHereBtn\").onclick = () => { video.pause(); $(\"playHereBtn\").href = playHref(video.currentTime); toast(\"別のタブでゲームを開きます（モックでは最初から）\"); };",
+		"$(\"playHereBtn\").onclick = () => {\n  video.pause(); const link = playLink(video.currentTime); $(\"playHereBtn\").href = link.href;\n  toast(link.dropped ? `直しの一部（${link.dropped} 件）は URL に乗らないので当てずに開きます` : \"別のタブでゲームを開きます\");\n};"},
 	{"function refresh() {", "function applyTape() {\n" +
 		"  const root = document.documentElement.style;\n" +
 		"  TAPE.speakers.forEach((s, i) => root.setProperty(`--speaker-${i}`, s.color));\n" +
@@ -330,5 +325,15 @@ func TestBuildStopsWithoutVideo(t *testing.T) {
 	_, err := Build(Options{Dir: dir, Commit: "abc1234"})
 	if err == nil || !strings.Contains(err.Error(), VideoFile) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRenderedPageBuildsPlayLinkWithEditsAndLimit(t *testing.T) {
+	page := renderFile(t, otherPath, Strip{File: StripFile, Count: 13, W: StripW, H: StripH})
+	for _, want := range []string{"const MAX_URL = 8000;", "&edit.${e}=${encodeURIComponent(edits[e])}&was.${e}=${fnv1a(TAPE.lines[e].text)}",
+		"直しの一部（${link.dropped} 件）は URL に乗らないので当てずに開きます"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("頁に %q が無い", want)
+		}
 	}
 }

@@ -690,14 +690,24 @@ function renderList() {
 }
 
 $("chapBtn").onclick = () => openChapters(false);
-function playHref(t) {
+// 直した行は edit.<行>（後の文）と was.<行>（前の文のハッシュ）で渡す。URL が長すぎると開けない端末があるので、MAX_URL を超える分は載せずに数える
+const MAX_URL = 8000;
+function playLink(t) {
   const ln = lineAt(t), node = encodeURIComponent(TAPE.node);
-  if (!ln) return `${TAPE.playUrl}?talk=${node}`;
-  const l = TAPE.lines[ln];
-  return `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}`;
+  const l = ln && TAPE.lines[ln];
+  let href = ln ? `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}` : `${TAPE.playUrl}?talk=${node}`, dropped = 0;
+  Object.keys(edits).map(Number).sort((a, b) => a - b).forEach(e => {
+    const part = `&edit.${e}=${encodeURIComponent(edits[e])}&was.${e}=${fnv1a(TAPE.lines[e].text)}`;
+    if (href.length + part.length > MAX_URL) dropped++; else href += part;
+  });
+  return { href, dropped };
 }
+const playHref = t => playLink(t).href;
 function fnv1a(s) { let h = 0x811c9dc5; for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0; return h.toString(16).padStart(8, "0"); }
-$("playHereBtn").onclick = () => { video.pause(); $("playHereBtn").href = playHref(video.currentTime); toast("別のタブでゲームを開きます"); };
+$("playHereBtn").onclick = () => {
+  video.pause(); const link = playLink(video.currentTime); $("playHereBtn").href = link.href;
+  toast(link.dropped ? `直しの一部（${link.dropped} 件）は URL に乗らないので当てずに開きます` : "別のタブでゲームを開きます");
+};
 
 // ── 書き出す ──
 function buildPrompt() {
