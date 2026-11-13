@@ -86,6 +86,9 @@ mod StoryDoc {
         case NoRollback
         // 素材を待つ間の印（novel.theme.json の loadingMark = ring のラベル）
         case Waiting
+        // 始まりの引数で直したシナリオを遊んでいる間のバナー（Starts の talk の edit.*）
+        case ScriptEdited
+        case ScriptEditsSkipped
     }
 
     pub def labels(): List[Label] =
@@ -99,7 +102,8 @@ mod StoryDoc {
         Label.AmbienceVolume :: Label.SeVolume :: Label.WindowAlpha :: Label.Reset :: Label.Preview :: Label.Yes ::
         Label.No :: Label.AskOverwrite :: Label.AskDelete :: Label.AskLoad :: Label.AskJump :: Label.AskToTitle ::
         Label.AskQuit :: Label.AskReset :: Label.LostNote :: Label.Saved :: Label.QuickSaved :: Label.Loaded ::
-        Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Label.Waiting :: Nil
+        Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Label.Waiting ::
+        Label.ScriptEdited :: Label.ScriptEditsSkipped :: Nil
 
     /// novel.story.json の labels の鍵。
     pub def labelKey(label: Label): String = fst(entryOf(label))
@@ -175,6 +179,8 @@ mod StoryDoc {
         case Label.NoQuickSave    => ("noQuickSave", "クイックセーブがありません")
         case Label.NoRollback     => ("noRollback", "これ以上は戻れません")
         case Label.Waiting        => ("waiting", "読み込み中")
+        case Label.ScriptEdited   => ("scriptEdited", "直した台本で遊んでいます")
+        case Label.ScriptEditsSkipped => ("scriptEditsSkipped", "台本が変わっていたので直しを当てていません")
     }
 
     /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は

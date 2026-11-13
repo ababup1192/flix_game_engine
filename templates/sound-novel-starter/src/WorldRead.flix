@@ -66,9 +66,11 @@ mod WorldRead {
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
                   w: World.World): World.World \ Emit[World.Event] =
         match event {
-            case YarnRunner.Event.Line(line)       =>
+            case YarnRunner.Event.Line(said)       =>
+                let line = ScriptEdits.editLine(res#scriptEdits, said);
                 whileReading(cur -> showLine(res, replay, markAt(last, later, cur#stage), line, { cursor = Some(line#source) | cur }, w), w)
-            case YarnRunner.Event.Choices(options) =>
+            case YarnRunner.Event.Choices(offered) =>
+                let options = offered |> List.map(option -> { line = ScriptEdits.editLine(res#scriptEdits, option#line) | option });
                 let at = List.head(options) |> Option.map(option -> option#line#source);
                 World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options), cursor = if (Option.isEmpty(at)) cur#cursor else at | cur }, w)
             case YarnRunner.Event.Command(command) =>

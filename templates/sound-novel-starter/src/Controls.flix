@@ -455,7 +455,8 @@ mod Controls {
           cast = CastDoc.load(CastDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
           dialogue = Talk.load(),
-          missing = Set.empty() }
+          missing = Set.empty(),
+          scriptEdits = ScriptEdits.none() }
 
     /// 縦の画面の Doc（novel.portrait.json に novel.rail.json を rail 欄として組んだ物）。
     def loadPortrait(): PortraitDoc.Doc \ Fs.FileRead =

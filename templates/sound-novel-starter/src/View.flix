@@ -59,6 +59,7 @@ mod View {
     def zThumbTop(): Int32 = 110
     def zPanelText(): Int32 = 120
     def zAsk(): Int32 = 140
+    def zBanner(): Int32 = 150
     def zToast(): Int32 = 160
 
     pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -79,7 +80,7 @@ mod View {
             case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden) Nil else reading(atlas, env, r)
         };
         let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
-        List.flatten(screen :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
+        List.flatten(screen :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
     def realSeconds(env: Env): Float64 = Clock.secondsOf(env#realNow)
 
@@ -1147,6 +1148,23 @@ mod View {
     }
 
     // ── 知らせ ──
+
+    /// シナリオの直し（Starts の talk の edit.*）で開いた間ずっと、画面の上の端に細いバナーを出す。前の文が合わず当てなかった行があればそれも言う。
+    // WhyNot: 画面を覆う幕にしない — 直した台詞を遊んで確かめる所なので、文章のウィンドウとボタンに被せない。
+    def editedBanner(atlas: FontAtlas, env: Env): List[Render.PlacedItem] =
+        let edits = env#res#scriptEdits;
+        if (not edits#edited) Nil
+        else {
+            let t = theme(env);
+            let size = captionSize(env, 13.0);
+            let height = size + 9.0;
+            let width = Layout.width(env#fit);
+            let skipped = if (edits#skipped == 0) "" else "。${label(StoryDoc.Label.ScriptEditsSkipped, env)}（${Int32.toString(edits#skipped)} 行）";
+            let ground = at(0.0, 0.0, Render.vgrad({ x = width, y = height }, { top = Color.darken(t#panel, 0.2), bottom = t#panel }, zBanner()) |> Render.fade(0.9));
+            let rim = at(0.0, height - 1.0, RawDraw.box({ x = width, y = 1.0 }, t#accent, zBanner() + 1) |> Render.fade(0.7));
+            ground :: rim :: TextDraw.centered({ text = label(StoryDoc.Label.ScriptEdited, env) + skipped, atlas = atlas, size = size, color = t#accent,
+                                                 z = zBanner() + 2, centerX = width / 2.0, y = 4.0 }) :: Nil
+        }
 
     def toast(atlas: FontAtlas, env: Env, shown: Option[String]): List[Render.PlacedItem] =
         match shown {

@@ -80,12 +80,12 @@ mod TapeOut {
 
     // ── 止める所 ──
 
-    /// 同じ名前の mark が無いか（付箋のシーンは名前で引くので、2 つ目が 1 つ目を黙って上書きしないように止める）。
+    /// 同じ名前の mark が無いか（テープのシーンは名前で引くので、2 つ目が 1 つ目を黙って上書きしないように止める）。
     def uniqueMarks(marks: List[String]): Result[String, Unit] =
         let counts = marks |> List.foldLeft((acc, name) -> Map.insertWith((a, b) -> a + b, name, 1, acc), Map.empty());
         let twice = counts |> Map.filter(n -> n > 1) |> Map.keysOf |> Set.toList;
         if (List.isEmpty(twice)) Ok(())
-        else Err("同じ名前の mark がある: ${String.intercalate(", ", twice)}（付箋のシーンは名前で引くので、mark の名前は 1 つずつにする）")
+        else Err("同じ名前の mark がある: ${String.intercalate(", ", twice)}（テープのシーンは名前で引くので、mark の名前は 1 つずつにする）")
 
     /// 流した間に開いたノード（1 本のテープは 1 ノードだけ。開いていなければ空）。
     def singleNode(worlds: List[AppState]): Result[String, String] =
@@ -143,28 +143,18 @@ mod TapeOut {
         Json.JObject(Map#{ "id" => Json.JString(s#id), "name" => Json.JString(s#name),
                            "color" => Json.JString(Color.toHex(s#color)), "ink" => Json.JString(Color.toHex(s#ink)) })
 
-    /// ノードの文を行の番号 → {who, text} / {cmd} に（選択肢と <<if>> の中も）。
+    /// ノードの文を行の番号 → {who, text} / {cmd} に（選択肢と <<if>> の中も）。字は ScriptEdits.rowsOf と同じ
+    /// （「ここから遊ぶ」の前の文のハッシュをこの字で作る）。
     def linesOf(node: String, res: Res.Res): Map[String, Json] =
         let names = speakerRows(res) |> List.map(s -> (s#id, s#name)) |> List.toMap;
-        Yarn.nodeOf(node, res#dialogue) |> Option.map(n -> statementLines(names, n#body)) |> Option.getWithDefault(Nil)
-            |> List.map(match (line, json) -> (Int32.toString(line), json)) |> List.toMap
+        Yarn.nodeOf(node, res#dialogue) |> Option.map(ScriptEdits.rowsOf) |> Option.getWithDefault(Nil)
+            |> List.map(row -> (Int32.toString(row#line), rowJson(names, row))) |> List.toMap
 
-    def statementLines(names: Map[String, String], body: List[Yarn.Statement]): List[(Int32, Json)] =
-        body |> List.flatMap(statement -> match statement {
-            case Yarn.Statement.Say(line)        => sayLine(names, line) :: Nil
-            case Yarn.Statement.Command(command) => (command#source#line, cmdJson(command#name :: command#args)) :: Nil
-            case Yarn.Statement.Jump(target, at) => (at#line, cmdJson("jump" :: target :: Nil)) :: Nil
-            case Yarn.Statement.Choose(choices)  => choices |> List.flatMap(c -> sayLine(names, c#line) :: statementLines(names, c#body))
-            case Yarn.Statement.If(branches, _)  => branches |> List.flatMap(b -> statementLines(names, b#body))
-            case Yarn.Statement.Stop(_)          => Nil
-            case Yarn.Statement.Set(_, _, _)     => Nil
-        })
-
-    def sayLine(names: Map[String, String], line: Yarn.Line): (Int32, Json) =
-        (line#source#line, Json.JObject(Map#{ "who" => Json.JString(Map.getWithDefault(line#speaker, line#speaker, names)),
-                                              "text" => Json.JString(line#text) }))
-
-    def cmdJson(words: List[String]): Json = Json.JObject(Map#{ "cmd" => Json.JString("<<${String.intercalate(" ", words)}>>") })
+    def rowJson(names: Map[String, String], row: ScriptEdits.Row): Json = match row#say {
+        case Some(line) => Json.JObject(Map#{ "who" => Json.JString(Map.getWithDefault(line#speaker, line#speaker, names)),
+                                              "text" => Json.JString(row#text) })
+        case None       => Json.JObject(Map#{ "cmd" => Json.JString(row#text) })
+    }
 
     /// 鳴った音: 一発の音（ambience 以外は se）と、鳴り続ける音の鳴り始め（前のフレームに無かった物 = ambience）。line = 同じフレームの実行位置。
     def soundsOf(table: Table, fps: Float64, frames: List[Flow.Played[AppState]]): List[Json] =
