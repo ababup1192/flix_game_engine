@@ -6,6 +6,7 @@
 //   audio.f64 … 左右 2 本の 44.1kHz の音（64bit 浮動小数・ビッグエンディアン・左右交互）。
 //               実機と同じミキサー（Controls.mixerOf）で、そのフレームに鳴った音と鳴り続ける環境音を AudioMixdown が混ぜる。
 //   fps.txt   … コマの速さ（flow の fps）
+//   tape.json … 付箋の頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・ノードをまたぐ flow では書かずに理由を出す）
 mod FlowVideo {
     use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Render, Resources, VideoOut}
 
@@ -39,17 +40,19 @@ mod FlowVideo {
                 case Err(problems) => Err(Flow.Parse.problemsText(problems))
                 case Ok(script)    =>
                     let start = { world = Flow.Cli.startWorld(app, design, fresh, script), state = App.freshStepState() };
-                    Ok((script#fps, Flow.play(app, { design = design, limit = frameCap() }, script, start)))
+                    Ok((script, Flow.play(app, { design = design, limit = frameCap() }, script, start)))
             }
         } with Fs.FileRead.runWithIO;
         match played {
             case Err(why) => println("FAIL ${path} を読めない\n${why}"); 2
-            case Ok((fps, Ok(outcome))) =>
-                write(settings, fps, out, outcome);
+            case Ok((script, Ok(outcome))) =>
+                write(settings, script#fps, out, outcome);
+                writeTape(path, script, out, outcome);
                 println("rendered: ${out} (${Int32.toString(List.length(outcome#frames))} frames)");
                 0
-            case Ok((fps, Err(failure))) =>
-                write(settings, fps, out, failure#upTo);
+            case Ok((script, Err(failure))) =>
+                write(settings, script#fps, out, failure#upTo);
+                writeTape(path, script, out, failure#upTo);
                 println("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: ${failure#why}");
                 println("    ${failure#at#text}");
                 1
@@ -73,6 +76,53 @@ mod FlowVideo {
                       images = Nil, scene = fonts -> h -> sceneOf(fonts, h), wanted = _ -> true, bakeSurfaces = false,
                       encoders = Nil };
         discard VideoOut.writeFrames(settings, video, Flow.worldsOf(outcome))
+
+    /// 付箋の tape.json（flow が途中で止まった時もそこまで）。書けない理由（同じ名前の mark・ノードをまたぐ）は 1 行出す。
+    def writeTape(path: String, script: Flow.Script, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
+        let marks = script#lines |> List.filterMap(line -> match line#step {
+            case Flow.Step.Mark(name) => Some(name)
+            case _                    => None
+        });
+        let flowRun = { game = (new File(".")).getCanonicalFile().getName(), flow = path, fps = script#fps, marks = marks, outcome = outcome };
+        match TapeOut.toJson(tapeTable(outcome#last), flowRun) {
+            case Ok(text) => writeText("${out}/tape.json", text)
+            case Err(why) => println("tape: ${why}（${out}/tape.json は書かない）")
+        }
+
+    /// 付箋に渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは横の ADV のウィンドウ。
+    def tapeTable(h: AppState): TapeOut.Table \ IO =
+        { title = projectTitle(),
+          sceneNames = Map#{ "title" => "タイトル", "station" => "無人の駅", "clear" => "頁をめくる" },
+          soundLabels = Map#{ "amb_evening" => "夕方の環境音", "amb_night" => "夜の環境音", "amb_river" => "川の環境音",
+                              "amb_morning" => "朝の環境音", "se_slap" => "背中を叩く", "se_furin" => "風鈴" },
+          hiddenSounds = soundFiles() |> List.map(match (name, _, _) -> name) |> List.filter(String.startsWith({prefix = "ui_"})) |> List.toSet,
+          msg = advMsg(h),
+          probes = "phase" :: "mode" :: "photo" :: "logSize" :: Nil,
+          probeNames = Map#{ "phase" => "場面", "mode" => "出し方", "photo" => "背景", "logSize" => "ログ" },
+          playUrl = "" }
+
+    /// 横の ADV のウィンドウの寸法を画面の割合に（Layout と novel.kind.json から導く）。
+    def advMsg(h: AppState): TapeOut.Msg =
+        let fit = Layout.Fit.Regular;
+        let size = Layout.size(fit);
+        let k = KindDoc.rec(h#resources#kind);
+        let panel = Layout.advPanel(fit);
+        let text = Layout.advText(fit);
+        let body = Layout.advTextSizes(fit, k)#body;
+        let firstBase = text#y + body;
+        { x0 = text#x / size#x, x1 = (text#x + text#width) / size#x,
+          cy = (panel#position#y + panel#size#y * 0.5) / size#y,
+          lh = (body + k#lineGap * body / k#bodySize) / size#y,
+          padTop = (firstBase - panel#position#y) / size#y,
+          padBot = (panel#position#y + panel#size#y - firstBase) / size#y,
+          font = body / size#y,
+          cps = World.configOf(h#world)#cps }
+
+    /// project.json の title（読めなければ空）。
+    def projectTitle(): String \ IO =
+        let root = run { DocJson.readJson("project.json") } with Fs.FileRead.runWithIO;
+        root |> Result.toOption |> Option.flatMap(JsonCodec.expectObject)
+             |> Option.map(obj -> JsonCodec.stringOr("title", "", obj)) |> Option.getWithDefault("")
 
     /// 1 コマの絵（SceneRender.shoot と同じ合流: 背景は frame、文章とウィンドウは hud）。
     def sceneOf(fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] =

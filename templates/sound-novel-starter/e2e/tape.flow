@@ -1,0 +1,12 @@
+# 付箋の見本（make tape FLOW=e2e/tape.flow → debug/video/tape/tape.json）。タイトル → はじめから → 駅の NVL を 2 頁。
+# mark がシーンの切れ目（名前は 1 つずつ）。1 本のテープは 1 ノードだけなので、駅のノードの中で止める。
+fps 30
+start title
+mark title
+wait 2
+tap confirm                                                     # はじめから: 背景が重なる間は <<bg>> の行がシナリオの位置になる
+mark station
+drive reader until talkLine=assets/talk/natsukusa.yarn:31 max 30
+mark clear
+drive reader until talkLine=assets/talk/natsukusa.yarn:33 max 20
+wait 1

@@ -40,6 +40,16 @@ showcase-video:
 	   -c:v libx264 -pix_fmt yuv420p -crf 20 -r $$fps -c:a aac -b:a 192k -shortest -movflags +faststart debug/video/showcase.mp4
 	@echo "rendered: debug/video/showcase.mp4"
 
+# 付箋の素（make tape FLOW=e2e/tape.flow → debug/video/<名前>/tape.json）。FlowVideo が flow を流してコマ・音と一緒に書く。
+# tape.json が書けない（同じ名前の mark・ノードをまたぐ flow）時は FlowVideo が理由を出し、ここで止める。
+.PHONY: tape
+tape:
+	@test -n "$(FLOW)" || { echo "make tape FLOW=e2e/<名前>.flow"; exit 2; }
+	@out=debug/video/$(basename $(notdir $(FLOW))); rm -f $$out/tape.json; \
+	 FLOW=$(FLOW) FLOW_OUT=$$out $(HEADLESS_RUN) FlowVideo.play; code=$$?; \
+	 test -f $$out/tape.json || { echo "tape: $$out/tape.json を書けなかった"; exit 1; }; \
+	 echo "tape: $$out/tape.json"; exit $$code
+
 # 立ち絵と小物（assets/novel.cast.json）の絵の登録と縦横の比を見る（読むだけ・標準の python3 で足りる）。
 # 元の絵を縮めて縁を埋めるのは python3 art/cast/prepare.py <元の絵の置き場>（Pillow が要る）。
 .PHONY: lint-cast
