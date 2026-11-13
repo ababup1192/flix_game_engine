@@ -154,6 +154,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |
 | flow で撮った動画にスマホで注釈を付けてもらい、AI 向けのプロンプトにする頁を作る | sound-novel-starter の子では `make tape FLOW=e2e/tape.flow`（中で `bin/fge tape --dir debug/tape/<名前>` が strip.jpg と index.html を書く） |
+| 選択肢で分かれた道ごとにテープを撮り、頁の分岐のカードで隣の道へ移れるようにする | 結末ごとに同じ始まりの flow を 1 本ずつ書き、`make tape FLOWS="e2e/a.flow e2e/b.flow"`（中で `bin/fge tape --group debug/tape/a debug/tape/b` が tape.json の choices から branches を組む）。公開は `bin/fge tape publish debug/tape/a debug/tape/b`（1 つの URL の下に並ぶ） |
 | 作ったテープの頁を GitHub Pages に置き、URL をレビュワーに渡す | `bin/fge tape publish debug/tape/<名前> --repo <owner/name>`（既定は dry run。push は `--yes`・反映待ちは `--wait`・目印の無い置き場の初回は `--init`） |
 | ドット絵を描く・直す（台本・絵の種類で検査が決まる） | `/pixel-art` → `*.px.star` か `*.pxsrc.json`（`"kind"`）を `bin/fge px build` |
 | 絵の周回を残す・戻す（次の手は next・止め時は stop） | `bin/fge px snap` / `rounds snap` / `restore`（出る案内に従う） |

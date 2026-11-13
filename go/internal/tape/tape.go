@@ -45,8 +45,11 @@ type Strip struct {
 // Options は Build の指定。
 type Options struct {
 	Dir    string
-	Commit string // 空なら Dir で git rev-parse --short HEAD
-	FFmpeg string // 空なら環境変数 FFMPEG、それも無ければ PATH の ffmpeg
+	Group  []string // --group のフォルダ（2 つ以上。Dir の代わり）
+	Commit string   // 空なら Dir で git rev-parse --short HEAD
+	FFmpeg string   // 空なら環境変数 FFMPEG、それも無ければ PATH の ffmpeg
+	// Branches は頁の branches をこの値にする（--group が組み立てた物）。nil なら tape.json の値のまま。
+	Branches *[]Branch
 }
 
 // Run は bin/fge tape の本体。
@@ -60,6 +63,15 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
+	if len(opt.Group) > 0 {
+		outs, err := BuildGroup(opt.Group, opt.Commit, opt.FFmpeg)
+		if err != nil {
+			fmt.Fprintln(stderr, "tape:", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, strings.Join(outs, "\n"))
+		return 0
+	}
 	out, err := Build(opt)
 	if err != nil {
 		fmt.Fprintln(stderr, "tape:", err)
@@ -69,7 +81,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く）\n       bin/fge tape publish <フォルダ>   （Pages の置き場へ置いて URL を出す。詳しくは publish --help）"
+const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く）\n" +
+	"       bin/fge tape --group <フォルダ> <フォルダ>…   （同じ始まりから撮った複数のテープ。選んだ道が分かれた所を分岐のカードにして、隣の頁へつなぐ。フォルダは並べて置く）\n" +
+	"       bin/fge tape publish <フォルダ>…   （Pages の置き場へ置いて URL を出す。詳しくは publish --help）"
 
 func parseArgs(args []string) (Options, error) {
 	var opt Options
@@ -81,14 +95,25 @@ func parseArgs(args []string) (Options, error) {
 			i++
 		case strings.HasPrefix(a, "--dir="):
 			opt.Dir = strings.TrimPrefix(a, "--dir=")
+		case a == "--group":
+			for i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				opt.Group = append(opt.Group, args[i+1])
+				i++
+			}
 		case a == "-h" || a == "--help":
 			return opt, errors.New("")
 		default:
 			return opt, fmt.Errorf("知らない引数: %s", a)
 		}
 	}
-	if opt.Dir == "" {
-		return opt, errors.New("--dir が要る")
+	if opt.Dir != "" && len(opt.Group) > 0 {
+		return opt, errors.New("--dir と --group はどちらか 1 つ")
+	}
+	if len(opt.Group) == 1 {
+		return opt, errors.New("--group には 2 つ以上のフォルダが要る（1 つなら --dir）")
+	}
+	if opt.Dir == "" && len(opt.Group) == 0 {
+		return opt, errors.New("--dir か --group が要る")
 	}
 	return opt, nil
 }
@@ -103,11 +128,16 @@ func Build(opt Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return build(opt, t)
+}
+
+func build(opt Options, t *Tape) (string, error) {
 	video := filepath.Join(opt.Dir, VideoFile)
 	if _, err := os.Stat(video); err != nil {
 		return "", fmt.Errorf("%s が無い（ゲームの Makefile の動画の手順が作る）: %w", video, err)
 	}
 	commit := opt.Commit
+	var err error
 	if commit == "" {
 		if commit, err = gitShortHead(opt.Dir); err != nil {
 			return "", err
@@ -116,6 +146,13 @@ func Build(opt Options) (string, error) {
 	strip, err := MakeStrip(opt.FFmpeg, video, filepath.Join(opt.Dir, StripFile), t.Duration)
 	if err != nil {
 		return "", err
+	}
+	if opt.Branches != nil {
+		b, err := json.Marshal(*opt.Branches)
+		if err != nil {
+			return "", err
+		}
+		t.raw["branches"] = b
 	}
 	page, err := Render(t, commit, strip)
 	if err != nil {

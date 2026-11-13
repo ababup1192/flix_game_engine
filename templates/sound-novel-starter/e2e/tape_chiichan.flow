@@ -1,0 +1,13 @@
+# 分岐の見本（make tape FLOWS="e2e/tape_chinatsu.flow e2e/tape_chiichan.flow"）。田んぼの最初の選択肢で「……ちいちゃん」を選ぶ道。
+fps 30
+start talk node=Paddy
+mark paddy
+drive reader until choice max 60
+wait 1
+mark choice
+tap next
+wait 0.5
+tap confirm                            # 「……ちいちゃん」
+drive reader until talk=Lane max 60
+mark lane
+wait 1.5

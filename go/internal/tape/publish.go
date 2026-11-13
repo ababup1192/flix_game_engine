@@ -32,10 +32,12 @@ const (
 	waitEvery     = 10 * time.Second
 )
 
-const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ> [--repo <owner/name>] [--yes] [--wait] [--init]
+const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>… [--repo <owner/name>] [--yes] [--wait] [--init]
 
   bin/fge tape --dir が作ったフォルダ（index.html・video.mp4・strip.jpg）を、
   GitHub Pages を出す置き場のリポジトリの tapes/<YYYYMMDD>-<乱数 16 桁>/ に置き、公開の URL を出す。
+  フォルダを 2 つ以上渡すと（bin/fge tape --group で分岐をつないだテープ）、1 つの乱数のフォルダの下に
+  tapes/<YYYYMMDD>-<乱数 16 桁>/<フォルダ名>/ で並べて置き、URL を全部出す（分岐の道のボタンが隣の頁へ移れる）。
 
   既定は dry run: 何を置き、何を外すかを出して止まる（push しない）。--yes を付けた時だけ push する。
 
@@ -59,7 +61,7 @@ const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>
 
 // PublishOptions は Publish の指定。
 type PublishOptions struct {
-	Dir    string
+	Dirs   []string // 1 つなら tapes/<Name>/ に、2 つ以上なら tapes/<Name>/<フォルダ名>/ に並べる
 	Repo   string // owner/name
 	Remote string // 空なら git@github.com:<Repo>.git
 	Branch string
@@ -77,7 +79,7 @@ type PublishOptions struct {
 // PublishResult は Publish が置いた物。
 type PublishResult struct {
 	Name    string
-	URL     string
+	URLs    []string // Dirs と同じ並び
 	Kept    []string
 	Removed []string
 	Outside []string // tapes/ の外で残す物（置き場の直下の名前）
@@ -173,7 +175,7 @@ func RunPublish(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if opt.Repo == "" {
-		repo, err := repoFromConfig(opt.Dir)
+		repo, err := repoFromConfig(opt.Dirs[0])
 		if err != nil {
 			fmt.Fprintln(stderr, "tape publish:", err)
 			return 2
@@ -197,11 +199,15 @@ func RunPublish(args []string, stdout, stderr io.Writer) int {
 	if err := appendPublished(opt, res); err != nil {
 		fmt.Fprintln(stderr, "tape publish: push はできたが一覧を書けない:", err)
 	}
-	fmt.Fprintln(stdout, res.URL)
+	for _, u := range res.URLs {
+		fmt.Fprintln(stdout, u)
+	}
 	if opt.Wait {
-		if err := waitFor(res.URL, stdout); err != nil {
-			fmt.Fprintln(stderr, "tape publish:", err)
-			return 1
+		for _, u := range res.URLs {
+			if err := waitFor(u, stdout); err != nil {
+				fmt.Fprintln(stderr, "tape publish:", err)
+				return 1
+			}
 		}
 	}
 	return 0
@@ -238,16 +244,14 @@ func parsePublishArgs(args []string) (PublishOptions, bool, error) {
 			opt.Remote, err = value(&i, a)
 		case strings.HasPrefix(a, "-"):
 			err = fmt.Errorf("知らない引数: %s", a)
-		case opt.Dir == "":
-			opt.Dir = a
 		default:
-			err = fmt.Errorf("テープのフォルダは 1 つだけ: %s", a)
+			opt.Dirs = append(opt.Dirs, a)
 		}
 		if err != nil {
 			return opt, false, err
 		}
 	}
-	if opt.Dir == "" {
+	if len(opt.Dirs) == 0 {
 		return opt, false, errors.New("テープのフォルダが要る（bin/fge tape --dir が作ったフォルダ）")
 	}
 	if opt.Wait && !opt.Yes {
@@ -295,17 +299,33 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	if remote == "" {
 		remote = "git@github.com:" + opt.Repo + ".git"
 	}
-	src, err := filepath.Abs(opt.Dir)
-	if err != nil {
-		return res, err
+	if len(opt.Dirs) == 0 {
+		return res, errors.New("テープのフォルダが要る（bin/fge tape --dir が作ったフォルダ）")
 	}
-	for _, f := range []string{IndexFile, VideoFile, StripFile} {
-		if _, err := os.Stat(filepath.Join(src, f)); err != nil {
-			return res, fmt.Errorf("%s に %s が無い（先に bin/fge tape --dir %s）", opt.Dir, f, opt.Dir)
+	srcs := make([]string, len(opt.Dirs))
+	subs := make([]string, len(opt.Dirs))
+	seen := map[string]string{}
+	for i, d := range opt.Dirs {
+		src, err := filepath.Abs(d)
+		if err != nil {
+			return res, err
 		}
-	}
-	if err := guardNotGameRepo(src, opt.Repo, remote); err != nil {
-		return res, err
+		for _, f := range []string{IndexFile, VideoFile, StripFile} {
+			if _, err := os.Stat(filepath.Join(src, f)); err != nil {
+				return res, fmt.Errorf("%s に %s が無い（先に bin/fge tape --dir %s）", d, f, d)
+			}
+		}
+		if err := guardNotGameRepo(src, opt.Repo, remote); err != nil {
+			return res, err
+		}
+		srcs[i] = src
+		if len(opt.Dirs) > 1 {
+			subs[i] = filepath.Base(src)
+			if prev, ok := seen[subs[i]]; ok {
+				return res, fmt.Errorf("フォルダ名 %s が 2 つある（%s と %s）。並べて置く時はフォルダ名で分けるので、名前を分ける", subs[i], prev, d)
+			}
+			seen[subs[i]] = d
+		}
 	}
 	if opt.CheckPages != nil {
 		if err := opt.CheckPages(opt.Repo); err != nil {
@@ -313,6 +333,7 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 		}
 	}
 	name := opt.Name
+	var err error
 	if name == "" {
 		if name, err = NewName(opt.Now); err != nil {
 			return res, err
@@ -322,7 +343,13 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 		return res, fmt.Errorf("フォルダ名の形が違う: %s（<YYYYMMDD>-<16 桁の 16 進>）", name)
 	}
 	res.Name = name
-	res.URL = PagesURL(opt.Repo, name)
+	for _, sub := range subs {
+		u := PagesURL(opt.Repo, name)
+		if sub != "" {
+			u += sub + "/"
+		}
+		res.URLs = append(res.URLs, u)
+	}
 
 	work, err := os.MkdirTemp("", "fge-tape-publish-")
 	if err != nil {
@@ -379,9 +406,10 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	sort.Strings(res.Kept)
 	sort.Strings(res.Removed)
 
-	dst := filepath.Join(tapes, name)
-	if err := copyTape(src, dst); err != nil {
-		return res, err
+	for i, src := range srcs {
+		if err := copyTape(src, filepath.Join(tapes, name, subs[i])); err != nil {
+			return res, err
+		}
 	}
 
 	git := func(args ...string) error {
@@ -400,11 +428,15 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	}
 
 	fmt.Fprintf(log, "置き場: %s（枝 %s・履歴を残さず 1 コミットで置き換える）\n", remote, opt.Branch)
-	fmt.Fprintf(log, "置く:   %s/%s/  ← %s\n", TapesDir, name, opt.Dir)
+	for i, d := range opt.Dirs {
+		fmt.Fprintf(log, "置く:   %s  ← %s\n", filepath.Join(TapesDir, name, subs[i])+"/", d)
+	}
 	fmt.Fprintf(log, "残す:   %d 本 %s\n", len(res.Kept), strings.Join(res.Kept, " "))
 	fmt.Fprintf(log, "外す:   %d 本 %s（%d 日を過ぎた物）\n", len(res.Removed), strings.Join(res.Removed, " "), KeepDays)
 	fmt.Fprintf(log, "tapes/ の外で残す物: %s\n", strings.Join(res.Outside, " "))
-	fmt.Fprintf(log, "URL:    %s\n", res.URL)
+	for _, u := range res.URLs {
+		fmt.Fprintf(log, "URL:    %s\n", u)
+	}
 	if !opt.Yes {
 		return res, nil
 	}
@@ -537,12 +569,25 @@ func checkPagesWithGh(repo string) error {
 
 var commitRe = regexp.MustCompile(`"commit":"([^"]*)"`)
 
+// appendPublished は置いたテープ 1 本ごとに 1 行を、そのフォルダの隣の published.jsonl へ足す。
 func appendPublished(opt PublishOptions, res PublishResult) error {
-	src, _ := filepath.Abs(opt.Dir)
+	for i, d := range opt.Dirs {
+		if i >= len(res.URLs) {
+			break
+		}
+		if err := appendPublishedOne(opt, res.Name, res.URLs[i], d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func appendPublishedOne(opt PublishOptions, name, url, dir string) error {
+	src, _ := filepath.Abs(dir)
 	rec := Published{
 		At:     opt.Now.Format(time.RFC3339),
-		Name:   res.Name,
-		URL:    res.URL,
+		Name:   name,
+		URL:    url,
 		Source: src,
 		Repo:   opt.Repo,
 	}

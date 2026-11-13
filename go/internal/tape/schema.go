@@ -13,7 +13,7 @@ import (
 var fieldOrder = []string{
 	"game", "title", "flow", "commit", "fps", "duration", "yarn", "node", "playUrl", "stripPerSec",
 	"scenes", "timeline", "lines", "speaker", "sounds", "objects", "branches", "probes",
-	"speakers", "probeNames", "msg", "video", "strip",
+	"speakers", "probeNames", "msg", "choices", "video", "strip",
 }
 
 // required はゲームの tape.json が持つ欄と、無かった時に言う出どころ。
@@ -38,14 +38,34 @@ var required = []struct{ key, from string }{
 	{"branches", "分岐（今は []）"},
 }
 
-// optional は無くてもよい欄。commit 以下は Build が上書きする。
-var optional = map[string]bool{"playUrl": true, "commit": true, "video": true, "stripPerSec": true, "strip": true}
+// optional は無くてもよい欄。choices は選択肢を選ばない flow や前の版のテンプレートでは無い。commit 以下は Build が上書きする。
+var optional = map[string]bool{"playUrl": true, "choices": true, "commit": true, "video": true, "stripPerSec": true, "strip": true}
 
-// Tape は検査を通った tape.json。頁へは raw をそのまま渡し、型は検査のためだけに読む。
+// Tape は検査を通った tape.json。頁へは raw をそのまま渡し、型は検査と分岐の組み立てのためだけに読む。
 type Tape struct {
 	Title    string
 	Duration float64
+	Game     string
+	Yarn     string
+	Node     string
+	Choices  []Choice
+	lines    map[int]line
+	timeline []timelineRow
 	raw      map[string]json.RawMessage
+}
+
+// Choice は tape.json の choices の 1 つ（選択肢を選んだ所）。T = 選択肢が出た秒、Line = 最初の選択肢の行、Picked = 選んだ番号。
+type Choice struct {
+	T       float64  `json:"t"`
+	Line    int      `json:"line"`
+	Node    string   `json:"node"`
+	Options []string `json:"options"`
+	Picked  int      `json:"picked"`
+}
+
+type timelineRow struct {
+	T    float64
+	Line int // 0 は空（null）
 }
 
 type scene struct {
@@ -58,6 +78,7 @@ type line struct {
 	Who  *string `json:"who"`
 	Text *string `json:"text"`
 	Cmd  *string `json:"cmd"`
+	Node *string `json:"node"`
 }
 
 type speakerColor struct {
@@ -119,11 +140,11 @@ func Parse(data []byte) (*Tape, error) {
 	}
 	c := &checker{raw: raw}
 	t := &Tape{raw: raw}
-	c.str("game", nil)
+	c.str("game", &t.Game)
 	c.str("title", &t.Title)
 	c.str("flow", nil)
-	c.str("yarn", nil)
-	c.str("node", nil)
+	c.str("yarn", &t.Yarn)
+	c.str("node", &t.Node)
 	if _, ok := raw["playUrl"]; ok {
 		c.str("playUrl", nil)
 	}
@@ -136,13 +157,17 @@ func Parse(data []byte) (*Tape, error) {
 	c.checkScenes()
 	lines := c.checkLines()
 	speakers := c.checkSpeakers()
-	c.checkTimeline(lines)
+	t.lines = lines
+	t.timeline = c.checkTimeline(lines)
 	c.checkWho(lines, speakers)
 	c.checkSpeakerMap()
 	c.checkSounds()
 	c.checkObjects()
 	c.checkProbes()
 	c.checkMsg()
+	if _, ok := raw["choices"]; ok {
+		t.Choices = c.checkChoices(lines)
+	}
 	var branches []json.RawMessage
 	c.decode("branches", &branches, "配列")
 	if c.err != nil {
@@ -268,34 +293,60 @@ func (c *checker) checkSpeakers() map[string]bool {
 	return names
 }
 
-func (c *checker) checkTimeline(lines map[int]line) {
+func (c *checker) checkTimeline(lines map[int]line) []timelineRow {
 	var rows [][]json.RawMessage
 	if !c.decode("timeline", &rows, " [[秒, 行|null]] の配列") {
-		return
+		return nil
 	}
 	if len(rows) == 0 {
 		c.fail("\"timeline\" が空（0 秒の行 [0, null] から始める）")
-		return
+		return nil
 	}
+	out := make([]timelineRow, 0, len(rows))
 	for i, r := range rows {
 		var t float64
 		if len(r) != 2 || json.Unmarshal(r[0], &t) != nil {
 			c.fail("\"timeline\"[%d] は [秒, 行|null]", i)
-			return
+			return nil
 		}
 		if bytes.Equal(r[1], []byte("null")) {
+			out = append(out, timelineRow{T: t})
 			continue
 		}
 		var n int
 		if json.Unmarshal(r[1], &n) != nil {
 			c.fail("\"timeline\"[%d] の行は整数か null", i)
-			return
+			return nil
 		}
 		if _, ok := lines[n]; !ok {
 			c.fail("\"timeline\"[%d] の行 %d が \"lines\" に無い", i, n)
-			return
+			return nil
+		}
+		out = append(out, timelineRow{T: t, Line: n})
+	}
+	return out
+}
+
+func (c *checker) checkChoices(lines map[int]line) []Choice {
+	var list []Choice
+	if !c.decode("choices", &list, " {t, line, node, options, picked} の配列") {
+		return nil
+	}
+	for i, ch := range list {
+		if len(ch.Options) < 2 {
+			c.fail("\"choices\"[%d] の options が 2 つより少ない（選べる道が 1 つの所は載せない）", i)
+			return nil
+		}
+		if ch.Picked < 0 || ch.Picked >= len(ch.Options) {
+			c.fail("\"choices\"[%d] の picked %d が options の外（0〜%d）", i, ch.Picked, len(ch.Options)-1)
+			return nil
+		}
+		if _, ok := lines[ch.Line]; !ok {
+			c.fail("\"choices\"[%d] の行 %d が \"lines\" に無い", i, ch.Line)
+			return nil
 		}
 	}
+	return list
 }
 
 func (c *checker) checkWho(lines map[int]line, speakers map[string]bool) {

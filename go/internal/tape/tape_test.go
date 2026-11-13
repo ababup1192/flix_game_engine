@@ -91,7 +91,7 @@ var mockFixes = [][2]string{
 		"function msgBox(n) {"},
 	{`  const names = { phase: "場面", witch: "魔女", item: "小物", ambience: "環境音", logSize: "ログ" };`, "  const names = TAPE.probeNames;"},
 	{"function playHref(t) { const ln = lineAt(t) || 18; return `${TAPE.playUrl}?talk=${TAPE.node}&line=${ln}`; }",
-		"// 直した行は edit.<行>（後の文）と was.<行>（前の文のハッシュ）で渡す。URL が長すぎると開けない端末があるので、MAX_URL を超える分は載せずに数える\nconst MAX_URL = 8000;\nfunction playLink(t) {\n  const ln = lineAt(t), node = encodeURIComponent(TAPE.node);\n  const l = ln && TAPE.lines[ln];\n  let href = ln ? `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}` : `${TAPE.playUrl}?talk=${node}`, dropped = 0;\n  Object.keys(edits).map(Number).sort((a, b) => a - b).forEach(e => {\n    const part = `&edit.${e}=${encodeURIComponent(edits[e])}&was.${e}=${fnv1a(TAPE.lines[e].text)}`;\n    if (href.length + part.length > MAX_URL) dropped++; else href += part;\n  });\n  return { href, dropped };\n}\nconst playHref = t => playLink(t).href;\nfunction fnv1a(s) { let h = 0x811c9dc5; for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0; return h.toString(16).padStart(8, \"0\"); }"},
+		"// 直した行は edit.<行>（後の文）と was.<行>（前の文のハッシュ）で渡す。URL が長すぎると開けない端末があるので、MAX_URL を超える分は載せずに数える\nconst MAX_URL = 8000;\nfunction playLink(t) {\n  const ln = lineAt(t), l = ln && TAPE.lines[ln], node = encodeURIComponent((l && l.node) ?? TAPE.node);\n  let href = ln ? `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}` : `${TAPE.playUrl}?talk=${node}`, dropped = 0;\n  Object.keys(edits).map(Number).sort((a, b) => a - b).forEach(e => {\n    const part = `&edit.${e}=${encodeURIComponent(edits[e])}&was.${e}=${fnv1a(TAPE.lines[e].text)}`;\n    if (href.length + part.length > MAX_URL) dropped++; else href += part;\n  });\n  return { href, dropped };\n}\nconst playHref = t => playLink(t).href;\nfunction fnv1a(s) { let h = 0x811c9dc5; for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0; return h.toString(16).padStart(8, \"0\"); }"},
 	{"$(\"playHereBtn\").onclick = () => { video.pause(); $(\"playHereBtn\").href = playHref(video.currentTime); toast(\"別のタブでゲームを開きます（モックでは最初から）\"); };",
 		"$(\"playHereBtn\").onclick = () => {\n  video.pause(); const link = playLink(video.currentTime); $(\"playHereBtn\").href = link.href;\n  toast(link.dropped ? `直しの一部（${link.dropped} 件）は URL に乗らないので当てずに開きます` : \"別のタブでゲームを開きます\");\n};"},
 	{"function refresh() {", "function applyTape() {\n" +
@@ -107,7 +107,19 @@ var mockFixes = [][2]string{
 	{"setIcon(); buildTimeline(); refresh(); onTime(0);\n" +
 		`fetch("kesshou.mp4").then(r => r.blob()).then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = "kesshou.mp4"; });`,
 		"applyTape();\nsetIcon(); buildTimeline(); refresh(); onTime(0);\n" +
-			"fetch(TAPE.video).then(r => r.blob()).then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = TAPE.video; });"},
+			"fetch(TAPE.video).then(r => r.blob()).then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = TAPE.video; });\n" +
+			"const startAt = +(/^#t=([\\d.]+)$/.exec(location.hash) || [])[1];\n" +
+			"if (startAt > 0) video.addEventListener(\"loadedmetadata\", () => seek(Math.min(startAt, TAPE.duration - .01)), { once: true });"},
+	{"  $(\"forks\").querySelectorAll(\".fork\").forEach(n => n.onclick = () => openChapters(true));\n}\nfunction openChapters(toFork) {",
+		"  $(\"forks\").querySelectorAll(\".fork\").forEach(n => n.onclick = () => openChapters(true, +n.dataset.i));\n}\nfunction openChapters(toFork, fork = 0) {"},
+	{"    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach((br, i) => {\n      rows.push(`<div class=\"forkcard\" id=\"fork${i}\"><div",
+		"    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"fork${i}\" data-b=\"${i}\"><div"},
+	{"    const r = TAPE.branches[0].routes[+n.dataset.r];\n" +
+		"    if (r.here) { close(); seek(TAPE.branches[0].t + .05); } else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n",
+		"    const br = TAPE.branches[+n.closest(\".forkcard\").dataset.b], r = br.routes[+n.dataset.r];\n" +
+			"    if (r.here) { close(); seek(br.t + .05); } else if (r.href) location.href = r.href; else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n"},
+	{"  if (toFork) setTimeout(() => $(\"fork0\")?.scrollIntoView(", "  if (toFork) setTimeout(() => $(\"fork\" + fork)?.scrollIntoView("},
+	{"scriptEdits: edited.map(ln => ({ file: TAPE.yarn, node: TAPE.node, line: ln,", "scriptEdits: edited.map(ln => ({ file: TAPE.yarn, node: TAPE.lines[ln].node ?? TAPE.node, line: ln,"},
 }
 
 // tapeLiteral は頁の「const TAPE = …;」の右辺を返す（モックは JS の書き方、雛形は JSON なので比べずに差し替える）。

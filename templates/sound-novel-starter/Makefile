@@ -49,16 +49,27 @@ showcase-video:
 # ③ bin/fge tape が strip.jpg と index.html を作る。debug/tape/<名前> には頁に要る物（tape.json・video.mp4・strip.jpg・index.html）だけを置く。
 # tape.json が書けない（同じ名前の mark・2 つ以上の .yarn にまたがる flow）時は FlowVideo が理由を出し、ここで止める。
 # flow が途中で止まった時も、そこまでの頁を作ってから止まった印（終了コード 1）を返す。
+# 分岐: 結末ごとに 1 本ずつ flow を書き（同じ始まりから別の選択肢を選ぶ）、make tape FLOWS="e2e/a.flow e2e/b.flow" で
+# まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐のカードにして隣の頁へつなぐ。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
+# 1 本の flow（$(1)）を撮って debug/tape/$(2) に tape.json と video.mp4 を置くシェルの 1 文。flow が途中で止まったら code=1。
+tape-shoot = rm -rf debug/video/$(2) debug/tape/$(2); mkdir -p debug/tape/$(2); \
+	FLOW=$(1) FLOW_OUT=debug/video/$(2) $(HEADLESS_RUN) FlowVideo.play || code=1; \
+	test -f debug/video/$(2)/tape.json || { echo "tape: debug/video/$(2)/tape.json を書けなかった"; exit 1; }; \
+	cp debug/video/$(2)/tape.json debug/tape/$(2)/tape.json; \
+	{ $(call flow-mp4,debug/video/$(2),debug/tape/$(2)/video.mp4); } || exit 1
 .PHONY: tape
 tape:
-	@test -n "$(TAPE_NAME)" || { echo "make tape FLOW=e2e/<名前>.flow"; exit 2; }
-	@rm -rf debug/video/$(TAPE_NAME) debug/tape/$(TAPE_NAME); mkdir -p debug/tape/$(TAPE_NAME); \
-	 FLOW=$(FLOW) FLOW_OUT=debug/video/$(TAPE_NAME) $(HEADLESS_RUN) FlowVideo.play; code=$$?; \
-	 test -f debug/video/$(TAPE_NAME)/tape.json || { echo "tape: debug/video/$(TAPE_NAME)/tape.json を書けなかった"; exit 1; }; \
-	 cp debug/video/$(TAPE_NAME)/tape.json debug/tape/$(TAPE_NAME)/tape.json; \
-	 { $(call flow-mp4,debug/video/$(TAPE_NAME),debug/tape/$(TAPE_NAME)/video.mp4); } || exit 1; \
-	 "$(ENGINE)/bin/fge" tape --dir debug/tape/$(TAPE_NAME) || exit 1; \
+	@test -n "$(TAPE_NAME)$(FLOWS)" || { echo "make tape FLOW=e2e/<名前>.flow（分岐は FLOWS=\"e2e/a.flow e2e/b.flow\"）"; exit 2; }
+	@code=0; \
+	 if [ -n "$(FLOWS)" ]; then \
+	   dirs=""; \
+	   for f in $(FLOWS); do n=$$(basename $$f .flow); $(call tape-shoot,$$f,$$n); dirs="$$dirs debug/tape/$$n"; done; \
+	   "$(ENGINE)/bin/fge" tape --group $$dirs || exit 1; \
+	 else \
+	   $(call tape-shoot,$(FLOW),$(TAPE_NAME)); \
+	   "$(ENGINE)/bin/fge" tape --dir debug/tape/$(TAPE_NAME) || exit 1; \
+	 fi; \
 	 exit $$code
 
 # 立ち絵と小物（assets/novel.cast.json）の絵の登録と縦横の比を見る（読むだけ・標準の python3 で足りる）。
