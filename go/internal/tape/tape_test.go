@@ -341,3 +341,32 @@ func TestRenderedPageBuildsPlayLinkWithEditsAndLimit(t *testing.T) {
 		}
 	}
 }
+
+// starterPath はテンプレ（sound-novel-starter）の make tape FLOW=e2e/tape.flow が書いた本物の tape.json。
+// テンプレの TapeOut を変えたら、作り直してここへ写す。
+const starterPath = "testdata/starter.tape.json"
+
+func TestStarterTapeFromMakeTapeParses(t *testing.T) {
+	tp, err := Parse(readFile(t, starterPath))
+	if err != nil {
+		t.Fatalf("テンプレの make tape が書いた tape.json が通らない: %v", err)
+	}
+	if tp.Title == "" {
+		t.Fatal("題名が空")
+	}
+}
+
+func TestStarterTapeHasMessageObject(t *testing.T) {
+	var m struct {
+		Objects []struct{ ID string } `json:"objects"`
+	}
+	if err := json.Unmarshal(readFile(t, starterPath), &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range m.Objects {
+		if o.ID == "message" {
+			return
+		}
+	}
+	t.Fatalf("objects に message が無い: %+v", m.Objects)
+}
