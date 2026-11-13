@@ -1,0 +1,35 @@
+{
+  "game": "lighthouse", "title": "灯台守の夜", "flow": "e2e/tape.flow", "fps": 30, "duration": 6.2,
+  "yarn": "assets/talk/night.yarn", "node": "Shore",
+  "scenes": [
+    { "id": "title", "name": "はじまり", "t": 0 }, { "id": "shore", "name": "浜辺", "t": 1.5 }, { "id": "lamp", "name": "灯をともす", "t": 4 }
+  ],
+  "timeline": [[0, null], [1.5, 3], [2, 4], [3.2, 6], [4, 8], [5.5, null]],
+  "lines": {
+    "3": { "cmd": "<<bg shore>>" },
+    "4": { "who": "灯台守", "text": "今夜は風が強い。／船は来るだろうか" },
+    "6": { "who": "猫", "text": "にゃあ" },
+    "8": { "who": "地の文", "text": "灯台守は階段を上った" }
+  },
+  "speaker": { "灯台守": "keeper", "猫": "cat", "地の文": "" },
+  "speakers": [
+    { "id": "keeper", "name": "灯台守", "color": "#7fd3a8", "ink": "#c6f2db" },
+    { "id": "cat", "name": "猫", "color": "#f0a3c4", "ink": "#ffd6e7" },
+    { "id": "", "name": "地の文", "color": "#dddddd", "ink": "#f6f6f6" }
+  ],
+  "sounds": [
+    { "t": 1.5, "name": "amb_wind", "kind": "ambience", "line": 2, "label": "風" },
+    { "t": 3.2, "name": "se_meow", "kind": "se", "line": 6, "label": "鳴き声" }
+  ],
+  "objects": [
+    { "id": "keeper", "name": "灯台守", "from": 1.5, "to": 6.2, "rect": { "x": 0.1, "y": 0.5, "w": 0.3, "h": 0.4 } },
+    { "id": "message", "name": "メッセージウィンドウ", "from": 2, "to": 5.5, "rect": { "x": 0.05, "y": 0.7, "w": 0.9, "h": 0.25 } }
+  ],
+  "branches": [],
+  "probes": {
+    "phase": [[0, "Title"], [1.5, "Reading"]],
+    "lamp": [[0, "off"], [4.5, "on"]]
+  },
+  "probeNames": { "phase": "場面", "lamp": "灯" },
+  "msg": { "x0": 0.05, "x1": 0.95, "cy": 0.82, "lh": 0.05, "padTop": 0.04, "padBot": 0.03, "font": 0.03, "cps": 20 }
+}

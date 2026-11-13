@@ -152,6 +152,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |
+| flow で撮った動画にスマホで注釈を付けてもらい、AI 向けのプロンプトにする頁を作る | `make tape FLOW=e2e/tape.flow`（中で `bin/fge tape --dir debug/tape/<名前>` が strip.jpg と index.html を書く） |
 | ドット絵を描く・直す（台本・絵の種類で検査が決まる） | `/pixel-art` → `*.px.star` か `*.pxsrc.json`（`"kind"`）を `bin/fge px build` |
 | 絵の周回を残す・戻す（次の手は next・止め時は stop） | `bin/fge px snap` / `rounds snap` / `restore`（出る案内に従う） |
 | AI が素材（絵・音）を作る・直す | `atelier/` に書く（`assets/` はスロット。採用は swap） |
