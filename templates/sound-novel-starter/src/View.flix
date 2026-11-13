@@ -293,10 +293,15 @@ mod View {
 
     def fadeTo(alpha: Float64): Render.PlacedItem -> Render.PlacedItem = placed -> Render.overItem(item -> Render.fade(alpha, item), placed)
 
-    /// 今の行を既に読んでいれば既読の色。
+    /// 今の行を既に読んでいれば既読の色、まだなら話し手の本文の色。
     def inkOf(line: Page.Line, env: Env, r: World.Read): Color =
         let isCurrent = Option.exists(c -> c#source == line#source, r#page#current);
-        if (isCurrent and Saves.isSeen(line#source, env#saves)) theme(env)#inkSeen else theme(env)#ink
+        if (isCurrent and Saves.isSeen(line#source, env#saves)) theme(env)#inkSeen else speakerOf(line, env)#ink
+
+    /// 行の話し手の色（novel.theme.json の speakers。地の文は空の id）。
+    def speakerOf(line: Page.Line, env: Env): ThemeDoc.Speaker =
+        let id = if (String.isEmpty(line#speaker)) "" else StoryDoc.idOfName(line#speaker, env#res#story);
+        ThemeDoc.speakerOf(id, env#res#theme)
 
     /// 1 行が頁に占める高さ（行の数 × (字 + 行の間)）。行の間は本文の字に比べて novel.kind.json の lineGap の割合（placeLine と同じ）。
     def lineHeight(env: Env, sizes: { body = Float64, ruby = Float64 }, width: Float64, line: Page.Line): Float64 =
@@ -333,7 +338,7 @@ mod View {
             case None => ground :: rim :: Nil
             case Some(line) =>
                 let name = if (String.isEmpty(line#speaker)) Nil
-                    else { at = Layout.advName(env#fit), item = Render.textTinted(line#speaker, atlas, sizes#name, t#name, zText() + 1) } :: Nil;
+                    else { at = Layout.advName(env#fit), item = Render.textTinted(line#speaker, atlas, sizes#name, speakerOf(line, env)#color, zText() + 1) } :: Nil;
                 let body = placeLine(atlas, { x = text#x, y = text#y }, text#width, { body = sizes#body, ruby = sizes#ruby }, inkOf(line, env, r),
                                      Page.visibleCount(r#page), line, env);
                 List.flatten((ground :: rim :: name) :: body ::
@@ -363,8 +368,9 @@ mod View {
         let shown = keepLatest(area#size#y, List.append(older, current));
         let (items, endY) = shown |> List.foldLeft((acc, b) -> {
             let (done, y) = acc;
-            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(t#ink, t#panel, 0.12);
-            let nameInk = if (b#isCurrent) t#name else Color.mix(t#name, t#panel, 0.45);
+            let speaker = speakerOf(b#line, env);
+            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(speaker#ink, t#panel, 0.12);
+            let nameInk = if (b#isCurrent) speaker#color else Color.mix(speaker#color, t#panel, 0.45);
             (portraitBlock(atlas, sizes, { x = area#position#x, y = y }, area#size#x, { body = ink, name = nameInk }, b#visible, b#line, env) :: done,
              y + b#height + Layout.paragraphGap())
         }, (Nil, area#position#y));
@@ -822,10 +828,11 @@ mod View {
                 let baseY = top + 6.0 + nameRow;
                 let (name, ink) = match entry {
                     case World.Entry.Said(line, _) =>
+                        let speaker = speakerOf(line, env);
                         let n = if (String.isEmpty(line#speaker)) Nil
-                                else if (nameRow > 0.0) textAt(text#x, top + 6.0, line#speaker, atlas, size * 0.75, t#name, zPanelText()) :: Nil
-                                else textRight(Layout.logNameRight(), baseY + rowHeight - size, line#speaker, atlas, size * 0.9, t#name, zPanelText()) :: Nil;
-                        (n, if (lit) Color.lighten(t#ink, 0.1) else t#ink)
+                                else if (nameRow > 0.0) textAt(text#x, top + 6.0, line#speaker, atlas, size * 0.75, speaker#color, zPanelText()) :: Nil
+                                else textRight(Layout.logNameRight(), baseY + rowHeight - size, line#speaker, atlas, size * 0.9, speaker#color, zPanelText()) :: Nil;
+                        (n, if (lit) Color.lighten(speaker#ink, 0.1) else speaker#ink)
                     case World.Entry.Chose(_) =>
                         (at(text#x - 12.0, baseY + 4.0, RawDraw.box({ x = 2.0, y = h - 22.0 - nameRow }, t#accent, zPanelText())) :: Nil, t#accent)
                 };

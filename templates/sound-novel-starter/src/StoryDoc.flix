@@ -206,6 +206,10 @@ mod StoryDoc {
     pub def labelOf(label: Label, doc: Doc): String =
         Map.get(labelKey(label), rec(doc)#labels) |> Option.getWithDefault(snd(entryOf(label)))
 
+    /// 呼び名の話し手の id（nameOf の逆。Doc に無い呼び名はそのまま）。
+    pub def idOfName(name: String, doc: Doc): String =
+        rec(doc)#names |> Map.toList |> List.find(match (_, shown) -> shown == name) |> Option.map(fst) |> Option.getWithDefault(name)
+
     /// 話し手の id の呼び名（地の文の空の id は空・Doc に無い id はそのまま）。
     pub def nameOf(id: String, doc: Doc): String =
         Map.getWithDefault(id, id, rec(doc)#names)
