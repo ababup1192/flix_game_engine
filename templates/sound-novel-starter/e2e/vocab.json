@@ -11,6 +11,7 @@
     {"name": "logSize", "kind": "num", "doc": "バックログの行の数"},
     {"name": "talk", "kind": "text", "doc": "開いているシナリオのノード（閉じていれば空）"},
     {"name": "talkLine", "kind": "text", "doc": "今出している行のシナリオの行（ファイル:行）"},
+    {"name": "talkCursor", "kind": "text", "doc": "シナリオの実行位置（ファイル:行。<<wait>> の間は前の時間を取る演出の行・読んでいなければ空）"},
     {"name": "mode", "kind": "text", "doc": "文章の出し方（Nvl・Adv）"},
     {"name": "photo", "kind": "text", "doc": "今の背景の写真の名前（無ければ空）"},
     {"name": "lineDone", "kind": "flag", "doc": "今の行を出し終えた"},

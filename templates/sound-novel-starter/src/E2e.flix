@@ -53,6 +53,7 @@ mod E2e {
               { name = "logSize", doc = "バックログの行の数", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(List.length(World.logOf(w))))) } ::
               { name = "talk", doc = "開いているシナリオのノード（閉じていれば空）", read = Flow.Probe.Text(onWorld(World.talkNodeOf)) } ::
               { name = "talkLine", doc = "今出している行のシナリオの行（ファイル:行）", read = Flow.Probe.Text(onWorld(World.talkLineOf)) } ::
+              { name = "talkCursor", doc = "シナリオの実行位置（ファイル:行。<<wait>> の間は前の時間を取る演出の行・読んでいなければ空）", read = Flow.Probe.Text(onWorld(World.talkCursorOf)) } ::
               { name = "mode", doc = "文章の出し方（Nvl・Adv）", read = Flow.Probe.Text(Resources.read((res, w) -> "${World.stageOf(res, w)#mode}")) } ::
               { name = "photo", doc = "今の背景の写真の名前（無ければ空）", read = Flow.Probe.Text(Resources.read((res, w) -> World.stageOf(res, w)#shot |> Option.map(s -> s#photo) |> Option.getWithDefault(""))) } ::
               { name = "lineDone", doc = "今の行を出し終えた", read = Flow.Probe.Flag(onWorld(w -> Page.isDone(World.pageOf(w)))) } ::
