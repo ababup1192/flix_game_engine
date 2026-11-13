@@ -51,6 +51,9 @@ type Options struct {
 
 // Run は bin/fge tape の本体。
 func Run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "publish" {
+		return RunPublish(args[1:], stdout, stderr)
+	}
 	opt, err := parseArgs(args)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -66,7 +69,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く）"
+const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く）\n       bin/fge tape publish <フォルダ>   （Pages の置き場へ置いて URL を出す。詳しくは publish --help）"
 
 func parseArgs(args []string) (Options, error) {
 	var opt Options
