@@ -4,28 +4,27 @@ pub mod App.Internal.Runner {
     import java.lang.System
     import java.lang.{Object => JObject}
 
-    /// 起動の World: 登録簿が無ければ init + 起動時の系、あれば START（無ければ先頭の始まり）。
+    /// 起動の World: 登録簿が無ければ init + 起動時の系、あれば頼まれた始まり（Ok(None) なら先頭の始まり）。
     /// 始まりの下地は、reread なら freshWorld（Doc を全部読み直す）、そうでなければ init + 起動時の系。
-    /// 返すのは起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
+    /// 返すのは起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。誤りの訳には出どころ（START など）を付けない。
     // WhyNot: 記録しない起動で Doc を読み直さない — main が読んだばかりの物をもう一度読むだけで、重い Doc（3D の形）では起動が秒単位で延びる。
-    /// START がギャラリーの場面（shot:）なら、DEBUG の起動の時だけ通す。
-    def bootWorld(app: App[w, ef], design: Vec2.Vec2, env: Map[String, String], reread: Bool): App.Internal.DevTools.Booted[w] \ ef + Fs.FileRead =
+    /// 始まりがギャラリーの場面（shot:）なら、DEBUG の起動の時だけ通す。
+    def bootFrom(app: App[w, ef], design: Vec2.Vec2, request: App.Internal.DevTools.StartRequest, reread: Bool): App.Internal.DevTools.Booted[w] \ ef + Fs.FileRead =
         let r = App.rec(app);
         let base = () -> if (reread) App.freshWorld(app, design) else App.initialWorld(app, design);
-        let line = String.trim(Map.getWithDefault("START", "", env));
-        let wanted = if (String.isEmpty(line) or (List.isEmpty(r#starts) and List.isEmpty(r#shots))) Ok(List.head(r#starts) |> Option.map(first -> (first#name, Map.empty())))
-                     else App.parseStartLine(line) |> Result.mapErr(why -> "START: ${why}") |> Result.map(chosen -> {
-                         // 登録簿の無いゲームが START を置いても、今までどおり init から始める（ギャラリーの場面だけは引く）。
-                         let (name, _) = chosen;
-                         if (List.isEmpty(r#starts) and not App.isShotName(name)) None else Some(chosen)
+        let first = List.head(r#starts) |> Option.map(start -> (start#name, Map.empty()));
+        let wanted = if (List.isEmpty(r#starts) and List.isEmpty(r#shots)) Ok(None)
+                     else request |> Result.map(asked -> match asked {
+                         case None => first
+                         // 登録簿の無いゲームが始まりを頼んでも、今までどおり init から始める（ギャラリーの場面だけは引く）。
+                         case Some((name, args)) => if (List.isEmpty(r#starts) and not App.isShotName(name)) None else Some((name, args))
                      });
         match wanted {
             case Err(why)    => Err(why)
             case Ok(None)    => Ok((App.initialWorld(app, design), None))
             case Ok(Some((name, args))) =>
-                if (App.isShotName(name) and not r#debug) Err("START=${name}: ギャラリーの場面は DEBUG の起動だけで開ける（make debug・SHOT=<名前> make run）")
-                else App.buildStartOn(app, base(), name, args) |> Result.mapErr(why -> "START: ${why}")
-                    |> Result.map(world -> (world, Some((name, args))))
+                if (App.isShotName(name) and not r#debug) Err("ギャラリーの場面 ${name} は DEBUG の起動だけで開ける（make debug・SHOT=<名前> make run）")
+                else App.buildStartOn(app, base(), name, args) |> Result.map(world -> (world, Some((name, args))))
         }
 
     /// 開発の道具（hooks）を開いて起動の World を組み、閉じるまでループを回し、道具を閉じる。
@@ -34,7 +33,7 @@ pub mod App.Internal.Runner {
         // 長い下ごしらえは、ゲームが LoadProgress.report で区切りを知らせ、バックエンドの handler が起動画面を進める。
         // WhyNot: ここで起動画面を出し直さない — 間引きも中止スイッチも持たない 2 つ目の経路が生まれる。
         let design = Platform.Window.getViewportRect()#size;
-        let (booted, opened) = hooks#open((env, reread) -> bootWorld(app, design, env, reread));
+        let (booted, opened) = hooks#open((request, reread) -> bootFrom(app, design, request, reread));
         let (closing, last) = match booted {
             // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。
             case Err(why)  => System.err.println("[App] ${why}"); (opened, None)
