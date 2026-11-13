@@ -9,7 +9,7 @@ mod Res {
     /// keys = キーの割り当て・smallScreen = 小さい画面（スマホ）の時の字と押せる物の大きさ・
     /// portrait = 縦の画面（縦の design で起動した時）の字と押せる物の大きさ・cast = 立ち絵と小物（位置・一覧・出入りの秒）・mixer = 音のバス・dialogue = シナリオの木・
     /// missing = ブラウザ版で後回しにした絵と音のうち、まだ届いていない物の名前（textures / sounds の name。デスクトップ・描き出し・テストは空）・
-    /// scriptEdits = 始まりの引数（edit.<行>）で当てた台本の直し（ふだんは空）。
+    /// scriptEdits = 始まりの引数（edit.<行>）で当てたシナリオの直し（ふだんは空）。
     pub type alias Res = {
         story = StoryDoc.Doc,
         kind = KindDoc.Doc,
@@ -51,7 +51,7 @@ mod Res {
     /// まだ届いていない絵と音の名前を差し替える（Game.withAssetLoading が届くたびに写す）。
     pub def withMissing(missing: Set[String], res: Res): Res = { missing = missing | res }
 
-    /// 台本の直しを差し替える（Starts の talk が引数から作る）。
+    /// シナリオの直しを差し替える（Starts の talk が引数から作る）。
     pub def withScriptEdits(edits: ScriptEdits.Applied, res: Res): Res = { scriptEdits = edits | res }
 
     /// シナリオの木を差し替える（読んでいる所を新しい木へ収め直すのは WorldRead.settleDialogue）。

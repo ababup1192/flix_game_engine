@@ -14,7 +14,7 @@ mod ThemeDoc {
     }
 
     /// 話し手 1 人の色。id = シナリオの話し手の id（地の文は空）、name = 人に見せる名前（空なら novel.story.json の names）、
-    /// color = 名前の字（付箋のシナリオの帯の色も同じ）、ink = 本文の字。
+    /// color = 名前の字（テープの頁でシナリオの行を塗る色も同じ）、ink = 本文の字。
     pub type alias Speaker = { id = String, name = String, color = Color, ink = Color }
 
     /// ink = 本文の字、inkSeen = 既読の行の字（スキップで飛ばせる行だと分かる色）、name = 話し手の名前、

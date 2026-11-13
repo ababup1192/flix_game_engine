@@ -1,4 +1,4 @@
-// 付箋の tape.json（TapeOut）と、そのシナリオの位置（World.talkCursorOf）。
+// tape.json（TapeOut）と、そのシナリオの位置（World.talkCursorOf）。
 // シナリオは小さな見本（下の program）: 時間を取らないコマンド・時間を取る <<bg>>・<<wait>>・鳴り続ける音を 1 つずつ並べる。
 mod TestTape {
 
@@ -75,15 +75,23 @@ mod TestTape {
 
     /// flow を流して tape.json を作り、JSON の木にする（流せない・作れない時は理由の Err）。
     def tapeOf(marks: List[String]): Result[String, Map[String, Json]] \ Fs.FileRead =
+        tapeFrom(flowText(marks), marks, false)
+
+    /// flow の文から tape.json の木を作る。untilStop なら flow が途中で止まってもそこまでの分で作る（FlowVideo と同じ）。
+    def tapeFrom(flow: String, marks: List[String], untilStop: Bool): Result[String, Map[String, Json]] \ Fs.FileRead =
         let r = res();
         let app = TestKit.app(r, TestKit.w0(r));
         let design = Layout.size(Layout.Fit.Regular);
         let title = Resources.of(r, TestKit.w0(r));
-        let parsed = Flow.Parse.parseText(Flow.vocabOf(app, title), "tape-test.flow", flowText(marks)) |> Result.mapErr(Flow.Parse.problemsText);
+        let parsed = Flow.Parse.parseText(Flow.vocabOf(app, title), "tape-test.flow", flow) |> Result.mapErr(Flow.Parse.problemsText);
+        let upTo = (played: Result[Flow.Failure[AppState], Flow.Outcome[AppState]]) -> match played {
+            case Ok(outcome)                => Ok(outcome)
+            case Err(failure) if untilStop  => Ok(failure#upTo)
+            case Err(failure)               => Err(failure#why)
+        };
         forM (
             script  <- parsed;
-            outcome <- Flow.play(app, { design = design, limit = 600 }, script, { world = title, state = App.freshStepState() })
-                       |> Result.mapErr(failure -> failure#why);
+            outcome <- upTo(Flow.play(app, { design = design, limit = 600 }, script, { world = title, state = App.freshStepState() }));
             text    <- TapeOut.toJson(table(), { game = "g", flow = "tape-test.flow", fps = script#fps, design = design, marks = marks, outcome = outcome });
             root    <- DocJson.parse(text) |> Option.flatMap(JsonCodec.expectObject) |> Option.toOk("tape.json が JSON でない")
         ) yield root
@@ -134,6 +142,13 @@ mod TestTape {
         Assert.assertEq(expected = Ok(("se_slap", "叩く") :: ("se_furin", "se_furin") :: ("se_slap", "叩く") :: Nil), shots)
 
     @Test
+    def testStoppedFlowStillWritesTheFramesSoFar(): Unit \ {Assert, Fs.FileRead} =
+        // flow が途中で止まっても（届かない until）、止まるまでの分で tape.json を作る。読み始めた 13 行目は載る。
+        let stopping = "fps 10\nwait 0.5\ntap confirm\ndrive reader until talkLine=t.yarn:99 max 2\n";
+        let lines = tapeFrom(stopping, Nil, true) |> Result.map(root -> arrayAt("timeline", root) |> List.map(pair -> lineOf(secondOf(pair))));
+        Assert.assertEq(expected = Ok(true), lines |> Result.map(List.memberOf(13)))
+
+    @Test
     def testSameMarkNameTwiceStops(): Unit \ {Assert, Fs.FileRead} =
         // 同じ名前の mark が 2 つあると tape.json を作らない。
         Assert.assertTrue(Result.isErr(tapeOf("start" :: "start" :: Nil)))
@@ -177,7 +192,7 @@ mod TestTape {
 
     @Test
     def testMovedObjectStartsANewSpan(): Unit \ Assert =
-        // 同じ id でも矩形が変われば別の行（動いた先の位置で付箋を指せるように）。
+        // 同じ id でも矩形が変われば別の行（動いた先の位置で注釈を付けられるように）。
         let here = thing("girl", box(0.0, 0.0, 96.0, 54.0));
         let there = thing("girl", box(0.0, 270.0, 96.0, 54.0));
         let spans = TapeOut.spansOf(10.0, { x = 960.0, y = 540.0 }, (here :: Nil) :: (there :: Nil) :: Nil)
@@ -186,7 +201,7 @@ mod TestTape {
 
     @Test
     def testMessageWindowIsListedAsMessage(): Unit \ {Assert, Fs.FileRead} =
-        // 読み始めるとメッセージウィンドウが id message で載る（付箋の頁が直した台詞を重ねる所）。
+        // 読み始めるとメッセージウィンドウが id message で載る（テープの頁が直した台詞を重ねる所）。
         let ids = tapeOf(Nil) |> Result.map(root -> arrayAt("objects", root) |> List.map(row -> textAt("id", row)));
         Assert.assertEq(expected = Ok(true), ids |> Result.map(List.memberOf("message")))
 

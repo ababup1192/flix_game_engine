@@ -1,4 +1,4 @@
-// TapeOut — flow を流した結果（Flow.Outcome）から、付箋の頁が読む tape.json の文字を作る（純粋）。
+// TapeOut — flow を流した結果（Flow.Outcome）から、テープの頁が読む tape.json の文字を作る（純粋）。
 // 書くのは FlowVideo（debug/video/<名前>/tape.json）。欄の名前・型・単位は plans/tape/mock.html の TAPE に合わせる。
 // commit・video・strip・stripPerSec は束ねる側（bin/fge tape）が足すので、ここでは書かない。
 mod TapeOut {
@@ -8,7 +8,7 @@ mod TapeOut {
     /// App の w（描く元と World の組）。
     type alias AppState = Resources.With[Res.Res, World.World]
 
-    /// メッセージウィンドウの寸法（付箋の頁が直した台詞を重ねる所）。x0 / x1 = 字の左右の端（画面の幅に対する割合）、
+    /// メッセージウィンドウの寸法（テープの頁が直した台詞を重ねる所）。x0 / x1 = 字の左右の端（画面の幅に対する割合）、
     /// cy = ウィンドウの縦の真ん中、lh = 行の高さ、padTop / padBot = 最初の行の字の下端までと最後の行の下の空き、
     /// font = 字の大きさ（ここまでは画面の高さに対する割合）、cps = 1 秒に出す字の数。
     pub type alias Msg = { x0 = Float64, x1 = Float64, cy = Float64, lh = Float64, padTop = Float64, padBot = Float64, font = Float64, cps = Float64 }
@@ -99,10 +99,10 @@ mod TapeOut {
     // ── 欄ごと ──
 
     /// i フレーム目の秒（小数 3 桁に丸める）。
-    pub def secondsAt(fps: Float64, i: Int32): Float64 = Float64.round(Int32.toFloat64(i) / fps * 1000.0) / 1000.0
+    def secondsAt(fps: Float64, i: Int32): Float64 = Float64.round(Int32.toFloat64(i) / fps * 1000.0) / 1000.0
 
     /// 値が変わったフレームだけ（先頭のフレームは必ず載る）。
-    pub def changesOf(values: List[a]): List[(Int32, a)] with Eq[a] =
+    def changesOf(values: List[a]): List[(Int32, a)] with Eq[a] =
         let (kept, _) = values |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
             let (out, prev) = acc;
             let (i, v) = pair;
@@ -111,7 +111,7 @@ mod TapeOut {
         List.reverse(kept)
 
     /// 「ファイル:行」の行の番号（空・読めなければ None）。
-    pub def lineNumberOf(cursor: String): Option[Int32] =
+    def lineNumberOf(cursor: String): Option[Int32] =
         String.splitOn({substr = ":"}, cursor) |> List.last |> Option.flatMap(Int32.fromString)
 
     def lineJson(cursor: String): Json = lineNumberOf(cursor) |> Option.map(intJson) |> Option.getWithDefault(Json.JNull)
@@ -239,7 +239,7 @@ mod TapeOut {
         table#probes |> List.map(name -> (name, Map.get(name, table#probeNames)
             |> Option.getWithDefault(shortDoc(Map.getWithDefault(name, name, docs)))))
 
-    pub def shortDoc(doc: String): String =
+    def shortDoc(doc: String): String =
         let cut = (sep, text) -> String.splitOn({substr = sep}, text) |> List.head |> Option.getWithDefault(text);
         cut("。", cut("（", doc))
 

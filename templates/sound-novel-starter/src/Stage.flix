@@ -119,7 +119,7 @@ mod Stage {
     }
 
     /// 画面の上で時間をかけて変わる演出か（背景の重ね・揺れ・立ち絵と小物の出入り）。音・文章の出し方・頁・パーティクルは同じフレームで終わる。
-    /// 付箋のシナリオの位置（World.talkCursorOf）は、時間を取る演出の後の <<wait>> の間だけその演出の行を指す。
+    /// テープのシナリオの位置（World.talkCursorOf）は、時間を取る演出の後の <<wait>> の間だけその演出の行を指す。
     pub def hasDuration(cue: Cue): Bool = match cue {
         case Cue.Backdrop(_, _) => true
         case Cue.Shake          => true

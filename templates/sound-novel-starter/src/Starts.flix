@@ -1,5 +1,5 @@
 // Starts — 始まりの登録簿（App.withStarts）。名前と引数から、新しく作った初期の World を場面へ組む。
-// talk は台本の直しを描く元（Res）へ当てるので組（Resources.With）の行のまま書き、World だけを組む title は Resources.liftStart で持ち上げる。
+// talk はシナリオの直しを描く元（Res）へ当てるので組（Resources.With）の行のまま書き、World だけを組む title は Resources.liftStart で持ち上げる。
 // 起動（START="talk node=River"）・リモートの POST /start・flow の `start talk`・テストの App.startOrBug・
 // ブラウザ版の URL のクエリ（?talk=Station&line=31&at=…。WebLayer.devTools）が同じ表を引く。
 // ノードの名前はシナリオ assets/talk/natsukusa.yarn の title:。知らない名前は近い名前の案つきで断る。

@@ -1,4 +1,4 @@
-// 付箋の頁の「ここから遊ぶ」が渡す始まりの行とシナリオの直し（Starts の talk・ScriptEdits）。
+// テープの頁の「ここから遊ぶ」が渡す始まりの行とシナリオの直し（Starts の talk・ScriptEdits）。
 // シナリオは小さな見本（下の program）。行の番号は t.yarn の行。
 mod TestScriptEdits {
 
@@ -47,7 +47,36 @@ mod TestScriptEdits {
         // 頁の fnv1a と Go のテストに置いた組と同じ値。
         Assert.assertEq(expected = "e05227c0", ScriptEdits.fnv1a("こいつを持っていきな"))
 
+    @Test
+    def testFnv1aOfEmptyTextIsTheOffsetBasis(): Unit \ Assert =
+        // 空の字は FNV-1a の初めの値のまま（Go の page_test の fnvPairs と同じ組）。
+        Assert.assertEq(expected = "811c9dc5", ScriptEdits.fnv1a(""))
+
+    @Test
+    def testFnv1aOfAscii(): Unit \ Assert =
+        // ASCII の字（Go の page_test の fnvPairs と同じ組）。
+        Assert.assertEq(expected = "1a47e90b", ScriptEdits.fnv1a("abc"))
+
+    @Test
+    def testFnv1aOfTextWithLineBreakMark(): Unit \ Assert =
+        // 「／」（行の折り返し）入りの台詞（Go の page_test の fnvPairs と同じ組）。
+        Assert.assertEq(expected = "db27e017", ScriptEdits.fnv1a("今夜は風が強い。／船は来るだろうか"))
+
     // ── 始める行 ──
+
+    @Test
+    def testAtPointingAtACommandStartsFromThatCommand(): Unit \ {Assert, Fs.FileRead} =
+        // at が演出コマンドの字（<<se slap>>）と合えば、その行から進めて次の台詞（<<if>> の中の 14）を出す。ノードの頭へは戻らない。
+        let h = started(Map#{ "line" => "12", "at" => hash("<<se slap>>") });
+        Assert.assertEq(expected = "t.yarn:14", lineOf(h))
+
+    @Test
+    def testCursorPointsAtTheFirstChoiceWhileChoosing(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢を出している間、シナリオの位置（talkCursor）は最初の選択肢の行。
+        let h = started(Map#{ "line" => "14", "at" => hash("枝の中の行") });
+        let r = h#resources;
+        let asking = TestKit.advance(r, TestKit.settle(r, h#world));
+        Assert.assertEq(expected = "t.yarn:16", World.talkCursorOf(asking))
 
     @Test
     def testLineAndMatchingAtStartThere(): Unit \ {Assert, Fs.FileRead} =

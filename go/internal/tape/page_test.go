@@ -30,13 +30,15 @@ const (
 )
 
 // fnvPair は頁の fnv1a とゲームの側の FNV-1a 32bit が同じ字に同じ 8 桁を出すことを確かめる組。
+// fnvPairs はその他の組（空・ASCII・「／」入り）。ゲームの側（テンプレの TestScriptEdits）にも同じ組を置く。
 var fnvPair = [2]string{"こいつを持っていきな", "e05227c0"}
+var fnvPairs = [][2]string{fnvPair, {"", "811c9dc5"}, {"abc", "1a47e90b"}, {"今夜は風が強い。／船は来るだろうか", "db27e017"}}
 
 func TestFNV1aPairMatchesGoHash(t *testing.T) {
-	h := fnv.New32a()
-	io.WriteString(h, fnvPair[0])
-	if got := fmt.Sprintf("%08x", h.Sum32()); got != fnvPair[1] {
-		t.Fatalf("got %s", got)
+	for _, pair := range fnvPairs {
+		if got := fnvHex(pair[0]); got != pair[1] {
+			t.Errorf("%q: got %s（want %s）", pair[0], got, pair[1])
+		}
 	}
 }
 
@@ -295,12 +297,14 @@ func TestPageMatchesMockOnPhone(t *testing.T) {
 	if lanes.Film == 0 || lanes.Clips == 0 || lanes.Sounds == 0 || lanes.Forks != 1 {
 		t.Errorf("3 つのトラックと分岐のマーカー: %+v", lanes)
 	}
-	var hash string
-	if err := p.Eval(fmt.Sprintf("fnv1a(%q)", fnvPair[0]), &hash); err != nil {
-		t.Fatal(err)
-	}
-	if hash != fnvPair[1] {
-		t.Errorf("頁の fnv1a = %s（want %s）", hash, fnvPair[1])
+	for _, pair := range fnvPairs {
+		var hash string
+		if err := p.Eval(fmt.Sprintf("fnv1a(%q)", pair[0]), &hash); err != nil {
+			t.Fatal(err)
+		}
+		if hash != pair[1] {
+			t.Errorf("頁の fnv1a(%q) = %s（want %s）", pair[0], hash, pair[1])
+		}
 	}
 	var tapeMD string
 	if err := p.Eval(annotateAndExport, &tapeMD); err != nil {

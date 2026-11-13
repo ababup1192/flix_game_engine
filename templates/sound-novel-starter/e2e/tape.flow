@@ -1,4 +1,4 @@
-# 付箋の見本（make tape FLOW=e2e/tape.flow → debug/video/tape/tape.json）。タイトル → はじめから → 駅の NVL を 2 頁。
+# テープの見本（make tape FLOW=e2e/tape.flow → debug/video/tape/tape.json）。タイトル → はじめから → 駅の NVL を 2 頁。
 # mark がシーンの切れ目（名前は 1 つずつ）。1 本のテープは 1 ノードだけなので、駅のノードの中で止める。
 fps 30
 start title

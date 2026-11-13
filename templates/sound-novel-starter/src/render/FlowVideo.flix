@@ -6,7 +6,7 @@
 //   audio.f64 … 左右 2 本の 44.1kHz の音（64bit 浮動小数・ビッグエンディアン・左右交互）。
 //               実機と同じミキサー（Controls.mixerOf）で、そのフレームに鳴った音と鳴り続ける環境音を AudioMixdown が混ぜる。
 //   fps.txt   … コマの速さ（flow の fps）
-//   tape.json … 付箋の頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・ノードをまたぐ flow では書かずに理由を出す）
+//   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・ノードをまたぐ flow では書かずに理由を出す）
 mod FlowVideo {
     use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Rect2, Render, Resources, VideoOut}
 
@@ -77,7 +77,7 @@ mod FlowVideo {
                       encoders = Nil };
         discard VideoOut.writeFrames(settings, video, Flow.worldsOf(outcome))
 
-    /// 付箋の tape.json（flow が途中で止まった時もそこまで）。書けない理由（同じ名前の mark・ノードをまたぐ）は 1 行出す。
+    /// tape.json（flow が途中で止まった時もそこまで）。書けない理由（同じ名前の mark・ノードをまたぐ）は 1 行出す。
     def writeTape(path: String, script: Flow.Script, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
         let marks = script#lines |> List.filterMap(line -> match line#step {
             case Flow.Step.Mark(name) => Some(name)
@@ -90,7 +90,7 @@ mod FlowVideo {
             case Err(why) => println("tape: ${why}（${out}/tape.json は書かない）")
         }
 
-    /// 付箋に渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは横の ADV のウィンドウ。
+    /// テープに渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは横の ADV のウィンドウ。
     def tapeTable(h: AppState): TapeOut.Table \ IO =
         { title = projectTitle(),
           sceneNames = Map#{ "title" => "タイトル", "station" => "無人の駅", "clear" => "頁をめくる" },
@@ -103,7 +103,7 @@ mod FlowVideo {
           playUrl = "",
           objects = h1 -> objectsOf(Layout.Fit.Regular, h1#resources, h1#world) }
 
-    /// 画面に出ている物（付箋の「物を選ぶ」）。タイトルは題字とメニュー、読む間は背景・立ち絵と小物・メッセージウィンドウ・選択肢・クイックメニュー。
+    /// 画面に出ている物（テープの頁の「物を選ぶ」）。タイトルは題字とメニュー、読む間は背景・立ち絵と小物・メッセージウィンドウ・選択肢・クイックメニュー。
     /// 置き場は View と同じ Layout・Cast の関数から引く（描いた所と枠がずれない）。
     pub def objectsOf(fit: Layout.Fit, res: Res.Res, w: World.World): List[TapeOut.ScreenObject] =
         let thing = (id, name, r) -> { id = id, name = name, rect = r };
