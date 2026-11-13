@@ -44,6 +44,10 @@ func renderFile(t *testing.T, p string, strip Strip) string {
 // mockFixes は mock.html から雛形へ直した所の全部（plans/tape/plan.md の「TAPE から引くように直す所」）。
 // ここに無い違いが出たら、雛形がモックから外れている。
 var mockFixes = [][2]string{
+	{"const PPS = 56, TILE = PPS / TAPE.stripPerSec, KEY = \"tape4:\" + TAPE.game + \":\" + TAPE.commit;",
+		"// WhyNot: 鍵を game と commit だけにしない — 同じ origin（Pages）に同じゲームのテープが flow ごと・置き場ごとに並び、別の頁の注釈を読み合う\nconst PPS = 56, TILE = PPS / TAPE.stripPerSec, KEY = \"tape4:\" + location.pathname + \":\" + TAPE.flow + \":\" + TAPE.game + \":\" + TAPE.commit;"},
+	{"try { const s = JSON.parse(localStorage.getItem(KEY) || \"{}\"); anns = s.anns || []; edits = s.edits || {}; } catch {}",
+		"try { const s = JSON.parse(localStorage.getItem(KEY) || \"{}\"); anns = (s.anns || []).filter(knownAnn); edits = Object.fromEntries(Object.entries(s.edits || {}).filter(([ln, v]) => typeof v === \"string\" && TAPE.lines[ln]?.text !== undefined)); } catch {}\n// WhyNot: 読んだ注釈をそのまま信じない — 古い版の頁が書いた物や手で直した物が、今の TAPE に無い scene・行・音を指すと、一覧と書き出しが落ちる\nfunction knownAnn(a) {\n  if (!a || typeof a !== \"object\" || !a.target || !TAPE.scenes.some(s => s.id === a.scene) || !(a.seconds >= 0 && a.seconds <= TAPE.duration)) return false;\n  if (a.kind === \"scene\") return TAPE.scenes.some(s => s.id === a.target.id);\n  if (a.kind === \"object\") return TAPE.objects.some(o => o.id === a.target.id);\n  if (a.kind === \"sound\") return TAPE.sounds.some(s => s.name === a.target.name);\n  if (a.kind === \"script\") return TAPE.lines[a.target.line] !== undefined;\n  return a.kind === \"rect\" && !!a.rect;\n}"},
 	{"<title>テープ（モック）— 血鱗 序章</title>", "<title>テープ — 血鱗 序章</title>"},
 	{"    --witch: #c8a6ff; --girl: #ffb46b; --narr: #e6e6e6;\n", ""},
 	{"  .mock { font-size: 9px; font-weight: 700; color: #1a1300; background: var(--accent); border-radius: 3px; padding: 0 3px; margin-left: 4px; vertical-align: 2px; }\n", ""},

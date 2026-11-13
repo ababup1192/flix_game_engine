@@ -466,3 +466,100 @@ func TestPlayLinkDropsEditsPastTheLimit(t *testing.T) {
 		t.Errorf("トースト %q", got.Toast)
 	}
 }
+
+// twoTapesOneOrigin は同じ tape.json の頁を 1 つの origin の /a/ と /b/ に置き、その URL を返す（Pages に何本も並ぶ形）。
+func twoTapesOneOrigin(t *testing.T) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	a := filepath.Join(root, "a")
+	if err := os.Mkdir(a, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	makeVideo(t, filepath.Join(a, VideoFile), 6.2)
+	if err := os.WriteFile(filepath.Join(a, TapeFile), readFile(t, otherPath), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(Options{Dir: a, Commit: "abc1234"}); err != nil {
+		t.Fatal(err)
+	}
+	b := filepath.Join(root, "b")
+	if err := os.Mkdir(b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{VideoFile, TapeFile, StripFile, IndexFile} {
+		copyFile(t, filepath.Join(a, f), filepath.Join(b, f))
+	}
+	srv := httptest.NewServer(http.FileServer(http.Dir(root)))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/a/", srv.URL + "/b/"
+}
+
+func loadPlain(t *testing.T, p *cdp.Page, url string) {
+	t.Helper()
+	if err := p.Navigate(url); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor(`document.readyState === "complete" && typeof video !== "undefined" && video.readyState >= 1`, 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 同じ origin の別の頁（別のテープ）の注釈と直しは読まない。
+func TestOtherPageOnSameOriginDoesNotShareNotes(t *testing.T) {
+	p := openTapePage(t)
+	a, b := twoTapesOneOrigin(t)
+	loadPlain(t, p, a)
+	if err := p.Eval(`(() => { seek(2.5); $("sceneNote").click(); $("noteText").value = "a の注釈"; $("noteSave").click();
+	  seek(2.5); openEdit(4); $("editText").value = "a の直し"; $("editSave").click(); return true; })()`, nil); err != nil {
+		t.Fatal(err)
+	}
+	loadPlain(t, p, b)
+	var n struct{ Anns, Edits int }
+	if err := p.Eval(`({Anns: anns.length, Edits: Object.keys(edits).length})`, &n); err != nil {
+		t.Fatal(err)
+	}
+	if n.Anns != 0 || n.Edits != 0 {
+		t.Errorf("/b/ が /a/ の注釈と直しを読んだ: %+v", n)
+	}
+	loadPlain(t, p, a)
+	if err := p.Eval(`({Anns: anns.length, Edits: Object.keys(edits).length})`, &n); err != nil {
+		t.Fatal(err)
+	}
+	if n.Anns != 1 || n.Edits != 1 {
+		t.Errorf("/a/ に戻ると自分の注釈と直しが残っているはず: %+v", n)
+	}
+	noErrors(t, p, "a")
+}
+
+// 今の TAPE に無い scene・行・音を指す注釈と直しは、読んだ時に捨てる（書き出しが落ちない）。
+func TestStoredNotesPointingAtUnknownThingsAreDropped(t *testing.T) {
+	p := openTapePage(t)
+	a, _ := twoTapesOneOrigin(t)
+	loadPlain(t, p, a)
+	if err := p.Eval(`(() => { localStorage.setItem(KEY, JSON.stringify({
+	    anns: [
+	      { kind: "scene", target: { id: "gone", name: "消えたシーン" }, scene: "gone", seconds: 1, frame: 30, note: "古い" },
+	      { kind: "sound", target: { name: "se_gone" }, scene: TAPE.scenes[0].id, seconds: 1, frame: 30, note: "古い音" },
+	      { kind: "script", target: { line: 999 }, scene: TAPE.scenes[0].id, seconds: 1, frame: 30, note: "古い行" },
+	      { kind: "scene", target: { id: TAPE.scenes[0].id, name: TAPE.scenes[0].name }, scene: TAPE.scenes[0].id, seconds: 1, frame: 30, note: "今もある" }
+	    ],
+	    edits: { 999: "消えた行の直し", 3: "演出コマンドの直し", 4: "今もある行の直し" } })); return true; })()`, nil); err != nil {
+		t.Fatal(err)
+	}
+	loadPlain(t, p, a)
+	var got struct {
+		Notes []string
+		Edits []string
+		MD    string
+	}
+	if err := p.Eval(`({Notes: anns.map(a => a.note), Edits: Object.keys(edits), MD: buildPrompt()})`, &got); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got.Notes, ",") != "今もある" || strings.Join(got.Edits, ",") != "4" {
+		t.Errorf("知らない物を指す注釈と直しが残った: %+v", got)
+	}
+	if !strings.Contains(got.MD, "今もある") {
+		t.Errorf("残った注釈が書き出しに無い:\n%s", got.MD)
+	}
+	noErrors(t, p, "a")
+}
