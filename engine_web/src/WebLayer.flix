@@ -1,7 +1,7 @@
 // WebLayer — ブラウザ版の handler 一式（LwjglLayer と同じ役）。canvas の WebGL2 へ同じ塗りのコア（RenderPaint）で描き、
 // キー・マウス・音・時計を fge.web（JS を閉じ込めた Java）から受ける。ゲームのループは止まる形のまま回り、
 // presentFrame でブラウザの描き替え（requestAnimationFrame）まで待つ間だけブラウザへ手を返す。
-// 利用例（web/WebMain.flix）: `run { ... App.launchWithDevTools(App.DevTools.none(), app) } with WebLayer.withProject(".") with WebFs.runFileRead with WebFs.runFileWrite`
+// 利用例（web/WebMain.flix）: `run { ... App.launchWithDevTools(WebLayer.devTools(), app) } with WebLayer.withProject(".") with WebFs.runFileRead with WebFs.runFileWrite`
 // Scene3d を描くゲームは withProject の代わりに withProject3d を使う。
 // WhyNot: 開発の道具（注釈・RemoteDebug・Doc の監視）の handler を持たない — ブラウザ版は配る出力先の 1 つで、開発はデスクトップでする。
 pub mod WebLayer {
@@ -16,6 +16,17 @@ pub mod WebLayer {
     import fge.web.WebAudio
     import fge.web.WebImages
     import fge.web.WebGl2
+
+    /// ブラウザ版の開発の道具の組。頁の URL のクエリを始まりの名前と引数として読む（読み方は App.DevTools.browser）。
+    /// web/WebMain.flix で `App.launchWithDevTools(WebLayer.devTools(), app)` と渡す。
+    pub def devTools(): App.DevTools[w, {}] \ IO =
+        App.DevTools.browser(pairUp(Array.toList(Browser.queryPairs())))
+
+    /// [鍵1, 値1, 鍵2, 値2, …] を (鍵, 値) の並びに。端の 1 つ余りは捨てる。
+    def pairUp(flat: List[String]): List[(String, String)] = match flat {
+        case key :: value :: rest => (key, value) :: pairUp(rest)
+        case _                    => Nil
+    }
 
     /// 1 秒に進めるコマの上限。速い画面（120Hz・165Hz）では描き替えを間引いてこの数に近づける（遊びの速さは dt で同じ・電池のため）。
     pub def tickRate(): Float64 = 60.0

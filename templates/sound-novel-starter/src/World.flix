@@ -52,7 +52,8 @@ mod World {
     /// choices / choiceCursor = 出している選択肢（無ければ空）とそのカーソル、log = バックログ（新しい順）、
     /// playback = 送り方、doneAt = 今の行を出し終えた物語の時刻、autosavedNode = オートセーブを残した最後のノード、
     /// hold = 素材の待ち（無ければ None）、gaveUp = 待ち切れずに諦めた素材の名前（もう待たない）、
-    /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）。
+    /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）、
+    /// cursor = シナリオの実行位置（今の台詞・選択肢か、<<wait>> で待っている演出コマンドの行。talkCursorOf）。
     pub type alias Read = {
         talk = YarnRunner.Runner[Stage.Story],
         stage = Stage.Stage,
@@ -65,7 +66,8 @@ mod World {
         autosavedNode = Option[String],
         hold = Option[Hold],
         gaveUp = Set[String],
-        tip = Option[(Int32, Clock.Time[Clock.Real])]
+        tip = Option[(Int32, Clock.Time[Clock.Real])],
+        cursor = Option[Yarn.Source]
     }
 
     /// 素材の待ち: ブラウザ版で後回しにした背景・環境音が、使う時にまだ届いていない間の暗転（WorldRead の「素材の待ち」）。
@@ -254,7 +256,7 @@ mod World {
     /// 読み始める前の Read（舞台・頁・バックログが空）。
     pub def emptyRead(): Read =
         { talk = YarnRunner.closed(), stage = Stage.empty(), page = Page.empty(), choices = Nil, choiceCursor = 0,
-          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None }
+          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None }
 
     // ── 場面を読む口 ──
 
@@ -462,6 +464,11 @@ mod World {
 
     /// 今出している行のシナリオの行（ファイル:行。無ければ空）。
     pub def talkLineOf(w: World): String = pageOf(w)#current |> Option.map(line -> line#source) |> Option.getWithDefault("")
+
+    /// シナリオの実行位置（ファイル:行。読んでいなければ空）。今の台詞・選択肢の行か、<<wait>> の間はその前の時間を取る演出コマンドの行。
+    /// 時間を取らないコマンドは同じフレームで次へ進むので載らない（WorldRead.absorbOne が cursor を動かす）。
+    pub def talkCursorOf(w: World): String =
+        readOf(w) |> Option.flatMap(r -> r#cursor) |> Option.map(Yarn.sourceText) |> Option.getWithDefault("")
 
     /// 今の行を読んだことがあるか（既読の色で描くか）。
     pub def isCurrentSeen(w: World): Bool =

@@ -59,6 +59,7 @@ mod View {
     def zThumbTop(): Int32 = 110
     def zPanelText(): Int32 = 120
     def zAsk(): Int32 = 140
+    def zBanner(): Int32 = 150
     def zToast(): Int32 = 160
 
     pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -73,20 +74,13 @@ mod View {
         let atlas = ctx#atlas;
         let env = envOf(fitOfCtx(ctx, res), res, w);
         // 画面（バックログ・セーブ・設定）の間は下の画面を描かない（幕越しに字が二重に透けて読みにくい）。背景の写真は frame が描き続ける。
-        let covered = match w#panel {
-            case World.Panel.Closed => false
-            case World.Panel.Hidden => false
-            case World.Panel.Menu(_) => false
-            case World.Panel.SaveLoadPick(_) => false
-            case _                  => true
-        };
-        let screen = if (covered) Nil else match w#scene {
+        let screen = if (coversScreen(w#panel)) Nil else match w#scene {
             case World.Scene.Title(item)      => title(atlas, env, item)
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
             case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden) Nil else reading(atlas, env, r)
         };
         let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
-        List.flatten(screen :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
+        List.flatten(screen :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
     def realSeconds(env: Env): Float64 = Clock.secondsOf(env#realNow)
 
@@ -133,6 +127,15 @@ mod View {
     /// 揺れても画面の端が覗かないよう、背景は画面より一回り大きく敷く。縦の画面は写真の横長の比のまま高さに合わせ、
     /// 左右のはみ出しを捨てる（真ん中を見せる）。
     // WhyNot: 縦の画面で写真を画面の比に縮めない — 横長の写真が縦に潰れる。
+    /// 画面（バックログ・セーブ・設定）が下の画面を覆うか。
+    pub def coversScreen(panel: World.Panel): Bool = match panel {
+        case World.Panel.Closed          => false
+        case World.Panel.Hidden          => false
+        case World.Panel.Menu(_)         => false
+        case World.Panel.SaveLoadPick(_) => false
+        case _                           => true
+    }
+
     def backdropRect(fit: Layout.Fit): Rect2.Rect2 =
         let w = Layout.width(fit);
         let h = Layout.height(fit);
@@ -293,10 +296,15 @@ mod View {
 
     def fadeTo(alpha: Float64): Render.PlacedItem -> Render.PlacedItem = placed -> Render.overItem(item -> Render.fade(alpha, item), placed)
 
-    /// 今の行を既に読んでいれば既読の色。
+    /// 今の行を既に読んでいれば既読の色、まだなら話し手の本文の色。
     def inkOf(line: Page.Line, env: Env, r: World.Read): Color =
         let isCurrent = Option.exists(c -> c#source == line#source, r#page#current);
-        if (isCurrent and Saves.isSeen(line#source, env#saves)) theme(env)#inkSeen else theme(env)#ink
+        if (isCurrent and Saves.isSeen(line#source, env#saves)) theme(env)#inkSeen else speakerOf(line, env)#ink
+
+    /// 行の話し手の色（novel.theme.json の speakers。地の文は空の id）。
+    def speakerOf(line: Page.Line, env: Env): ThemeDoc.Speaker =
+        let id = if (String.isEmpty(line#speaker)) "" else StoryDoc.idOfName(line#speaker, env#res#story);
+        ThemeDoc.speakerOf(id, env#res#theme)
 
     /// 1 行が頁に占める高さ（行の数 × (字 + 行の間)）。行の間は本文の字に比べて novel.kind.json の lineGap の割合（placeLine と同じ）。
     def lineHeight(env: Env, sizes: { body = Float64, ruby = Float64 }, width: Float64, line: Page.Line): Float64 =
@@ -333,7 +341,7 @@ mod View {
             case None => ground :: rim :: Nil
             case Some(line) =>
                 let name = if (String.isEmpty(line#speaker)) Nil
-                    else { at = Layout.advName(env#fit), item = Render.textTinted(line#speaker, atlas, sizes#name, t#name, zText() + 1) } :: Nil;
+                    else { at = Layout.advName(env#fit), item = Render.textTinted(line#speaker, atlas, sizes#name, speakerOf(line, env)#color, zText() + 1) } :: Nil;
                 let body = placeLine(atlas, { x = text#x, y = text#y }, text#width, { body = sizes#body, ruby = sizes#ruby }, inkOf(line, env, r),
                                      Page.visibleCount(r#page), line, env);
                 List.flatten((ground :: rim :: name) :: body ::
@@ -363,8 +371,9 @@ mod View {
         let shown = keepLatest(area#size#y, List.append(older, current));
         let (items, endY) = shown |> List.foldLeft((acc, b) -> {
             let (done, y) = acc;
-            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(t#ink, t#panel, 0.12);
-            let nameInk = if (b#isCurrent) t#name else Color.mix(t#name, t#panel, 0.45);
+            let speaker = speakerOf(b#line, env);
+            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(speaker#ink, t#panel, 0.12);
+            let nameInk = if (b#isCurrent) speaker#color else Color.mix(speaker#color, t#panel, 0.45);
             (portraitBlock(atlas, sizes, { x = area#position#x, y = y }, area#size#x, { body = ink, name = nameInk }, b#visible, b#line, env) :: done,
              y + b#height + Layout.paragraphGap())
         }, (Nil, area#position#y));
@@ -822,10 +831,11 @@ mod View {
                 let baseY = top + 6.0 + nameRow;
                 let (name, ink) = match entry {
                     case World.Entry.Said(line, _) =>
+                        let speaker = speakerOf(line, env);
                         let n = if (String.isEmpty(line#speaker)) Nil
-                                else if (nameRow > 0.0) textAt(text#x, top + 6.0, line#speaker, atlas, size * 0.75, t#name, zPanelText()) :: Nil
-                                else textRight(Layout.logNameRight(), baseY + rowHeight - size, line#speaker, atlas, size * 0.9, t#name, zPanelText()) :: Nil;
-                        (n, if (lit) Color.lighten(t#ink, 0.1) else t#ink)
+                                else if (nameRow > 0.0) textAt(text#x, top + 6.0, line#speaker, atlas, size * 0.75, speaker#color, zPanelText()) :: Nil
+                                else textRight(Layout.logNameRight(), baseY + rowHeight - size, line#speaker, atlas, size * 0.9, speaker#color, zPanelText()) :: Nil;
+                        (n, if (lit) Color.lighten(speaker#ink, 0.1) else speaker#ink)
                     case World.Entry.Chose(_) =>
                         (at(text#x - 12.0, baseY + 4.0, RawDraw.box({ x = 2.0, y = h - 22.0 - nameRow }, t#accent, zPanelText())) :: Nil, t#accent)
                 };
@@ -1138,6 +1148,23 @@ mod View {
     }
 
     // ── 知らせ ──
+
+    /// シナリオの直し（Starts の talk の edit.*）で開いた間ずっと、画面の上の端に細いバナーを出す。前の文が合わず当てなかった行があればそれも言う。
+    // WhyNot: 画面を覆う幕にしない — 直した台詞を遊んで確かめる所なので、文章のウィンドウとボタンに被せない。
+    def editedBanner(atlas: FontAtlas, env: Env): List[Render.PlacedItem] =
+        let edits = env#res#scriptEdits;
+        if (not edits#edited) Nil
+        else {
+            let t = theme(env);
+            let size = captionSize(env, 13.0);
+            let height = size + 9.0;
+            let width = Layout.width(env#fit);
+            let skipped = if (edits#skipped == 0) "" else "。${label(StoryDoc.Label.ScriptEditsSkipped, env)}（${Int32.toString(edits#skipped)} 行）";
+            let ground = at(0.0, 0.0, Render.vgrad({ x = width, y = height }, { top = Color.darken(t#panel, 0.2), bottom = t#panel }, zBanner()) |> Render.fade(0.9));
+            let rim = at(0.0, height - 1.0, RawDraw.box({ x = width, y = 1.0 }, t#accent, zBanner() + 1) |> Render.fade(0.7));
+            ground :: rim :: TextDraw.centered({ text = label(StoryDoc.Label.ScriptEdited, env) + skipped, atlas = atlas, size = size, color = t#accent,
+                                                 z = zBanner() + 2, centerX = width / 2.0, y = 4.0 }) :: Nil
+        }
 
     def toast(atlas: FontAtlas, env: Env, shown: Option[String]): List[Render.PlacedItem] =
         match shown {

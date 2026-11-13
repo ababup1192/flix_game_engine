@@ -266,9 +266,7 @@ mod Cast {
     /// 息の揺れは足元を据えたまま高さを僅かに伸び縮みさせる（上下に動かすと足元の下に隙間が覗く）。
     def figureItem(env: Env, kind: Kind, figure: Figure, alpha: Float64, z: Int32): List[Render.PlacedItem] =
         let texture = textureOf(figure);
-        let found = forM (entry <- CastDoc.entryOf(kind, figure#name, env#doc) |> Option.filter(e -> List.memberOf(figure#face, e#faces));
-                          slot <- Map.get(figure#slot, slotsOf(env)))
-                    yield rectOf(env#fit, slot, entry);
+        let found = placementOf(env, kind, figure) |> Option.map(snd);
         if (alpha <= 0.0 or Set.memberOf(texture, env#missing)) Nil
         else found |> Option.map(r -> {
             let size = Layout.size(env#fit);
@@ -278,6 +276,19 @@ mod Cast {
                            size = { x = r#size#x * (1.0 + grow), y = r#size#y + breath } };
             Render.shaderFill(pictureSpec(texture), swayed, 0.0, z) |> Render.overItem(Render.fade(alpha))
         }) |> Option.toList
+
+    /// Doc の項目と置き場の矩形（知らない名前・位置・表情なら None）。
+    def placementOf(env: Env, kind: Kind, figure: Figure): Option[(CastDoc.Entry, Rect2.Rect2)] =
+        forM (entry <- CastDoc.entryOf(kind, figure#name, env#doc) |> Option.filter(e -> List.memberOf(figure#face, e#faces));
+              slot <- Map.get(figure#slot, slotsOf(env)))
+        yield (entry, rectOf(env#fit, slot, entry))
+
+    /// 出ている人物と小物の置き場（消えていく物と、描かない物 = 知らない名前・まだ届いていない絵は除く）。label = Doc の人に見せる名前。
+    pub def placedOf(env: Env, layer: Layer): List[{ kind = Kind, figure = Figure, label = String, rect = Rect2.Rect2 }] =
+        let shown = List.append(layer#cast |> List.map(s -> (Kind.Character, s#now)), layer#prop |> Option.map(s -> (Kind.Prop, s#now)) |> Option.toList);
+        shown |> List.filter(match (_, figure) -> not Set.memberOf(textureOf(figure), env#missing))
+              |> List.filterMap(match (kind, figure) -> placementOf(env, kind, figure)
+                     |> Option.map(match (entry, r) -> { kind = kind, figure = figure, label = entry#label, rect = r }))
 
     /// 出ている物 1 つ: 同じ位置で表情を替えている間は、前の形を敷いた時の濃さで下に残し、今の形を上から濃くする（途中で背景が透けない）。
     def shownItems(env: Env, kind: Kind, shown: Shown, z: Int32): List[Render.PlacedItem] =

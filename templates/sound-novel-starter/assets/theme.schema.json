@@ -65,6 +65,35 @@
       "label": "素材を待つ間の印（dots = 右下の点 3 つ・ring = 真ん中の回る輪と字・none = 黒だけ）",
       "order": 8,
       "default": "dots"
+    },
+    "speakers": {
+      "kind": "list",
+      "label": "話し手の色（id = シナリオの話し手の id・地の文は空）",
+      "order": 9,
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "話し手の id（地の文は空）",
+          "order": 1
+        },
+        "name": {
+          "type": "text",
+          "label": "人に見せる名前（空なら novel.story.json の names）",
+          "order": 2
+        },
+        "color": {
+          "type": "color",
+          "label": "名前の字",
+          "order": 3,
+          "required": true
+        },
+        "ink": {
+          "type": "color",
+          "label": "本文の字",
+          "order": 4,
+          "required": true
+        }
+      }
     }
   }
 }

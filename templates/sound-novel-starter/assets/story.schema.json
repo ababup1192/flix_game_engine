@@ -252,6 +252,12 @@
         },
         "waiting": {
           "type": "string"
+        },
+        "scriptEdited": {
+          "type": "string"
+        },
+        "scriptEditsSkipped": {
+          "type": "string"
         }
       },
       "additionalProperties": false

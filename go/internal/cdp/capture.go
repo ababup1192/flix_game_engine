@@ -49,67 +49,19 @@ type probe struct {
 
 // Capture は Chrome を起こして URL を開き、頁の合図を待って画素を受け取り、Chrome を止める。
 func Capture(opt Options) (*Result, error) {
-	if opt.Width <= 0 {
-		opt.Width = 800
-	}
-	if opt.Height <= 0 {
-		opt.Height = 600
-	}
 	if opt.Wait <= 0 {
 		opt.Wait = 30 * time.Second
 	}
-	exe := opt.Chrome
-	if exe == "" {
-		found, err := FindChrome()
-		if err != nil {
-			return nil, err
-		}
-		exe = found
-	}
-	b, err := launchChrome(exe, opt.Width, opt.Height, 20*time.Second)
+	page, err := OpenPage(PageOptions{Chrome: opt.Chrome, Width: opt.Width, Height: opt.Height})
 	if err != nil {
 		return nil, err
 	}
-	defer b.stop()
-
-	version := browserVersion(b)
-	wsURL, err := b.pageWS(10 * time.Second)
-	if err != nil {
+	defer page.Close()
+	if err := page.Navigate(opt.URL); err != nil {
 		return nil, err
 	}
-	ws, err := dialWebSocket(wsURL, 5*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("頁の CDP につながらない: %w", err)
-	}
-	defer ws.close()
-	c := &client{ws: ws}
-
+	c := page.c
 	const step = 10 * time.Second
-	// WhyNot: 起動時の頁は --headless=new でも visibilityState が hidden のままで rAF が一度も回らない（Chrome 156・macOS で確認）。
-	// 前へ出して focus も装わないと、rAF の中で描く頁は合図を出せない。
-	if _, err := c.call("Page.bringToFront", nil, step); err != nil {
-		return nil, err
-	}
-	if _, err := c.call("Emulation.setFocusEmulationEnabled", map[string]any{"enabled": true}, step); err != nil {
-		return nil, err
-	}
-	if _, err := c.call("Emulation.setDeviceMetricsOverride", map[string]any{
-		"width": opt.Width, "height": opt.Height, "deviceScaleFactor": 1, "mobile": false,
-	}, step); err != nil {
-		return nil, err
-	}
-	nav, err := c.call("Page.navigate", map[string]any{"url": opt.URL}, step)
-	if err != nil {
-		return nil, err
-	}
-	var navRes struct {
-		ErrorText string `json:"errorText"`
-	}
-	_ = json.Unmarshal(nav, &navRes)
-	if navRes.ErrorText != "" {
-		return nil, fmt.Errorf("頁を開けない %s: %s", opt.URL, navRes.ErrorText)
-	}
-
 	if err := waitReady(c, opt.Wait); err != nil {
 		return nil, err
 	}
@@ -121,7 +73,7 @@ func Capture(opt Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Image: img, Renderer: renderer, Chrome: exe, Version: version}, nil
+	return &Result{Image: img, Renderer: renderer, Chrome: page.Chrome, Version: page.Version}, nil
 }
 
 func waitReady(c *client, wait time.Duration) error {

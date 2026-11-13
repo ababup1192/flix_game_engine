@@ -1,4 +1,4 @@
-<!-- engine v0.92.0 / 生成: 2026-11-11 -->
+<!-- engine v0.92.0 / 生成: 2026-11-14 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -351,6 +351,12 @@
 ## App.DevTools — `engine_world/src/App/DevTools.flix`
 - 道具なしの組。命令口・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出しのどれも動かさず、
   `pub def none(): App.DevTools[w, {}]`
+- ブラウザ版の組。道具なし（none）と同じだが、URL のクエリ（鍵と値の並び・デコード済み）を始まりとして読む:
+  `pub def browser(pairs: List[(String, String)]): App.DevTools[w, {}]`
+- URL のクエリを始まりの名前と引数に変える（browser の読み方）。頁が使う鍵と、名前の無い鍵を外し、残りが無ければ None。
+  `pub def startOfQuery(pairs: List[(String, String)]): Option[(String, Map[String, String])]`
+- ブラウザ版の頁（fge-web.js）が自分で読む URL の鍵。始まりの引数に混ぜない。
+  `pub def pageQueryKeys(): Set[String]`
 - デスクトップの道具の組。env は入口の頭で読んだ環境変数の表（ProcessEnv.snapshot()。DEBUG_HTTP_PORT・FLOW_RECORD・START を読む）。
   `pub def desktop(env: Map[String, String]): App.DevTools[w, Platform.Annotation]`
 

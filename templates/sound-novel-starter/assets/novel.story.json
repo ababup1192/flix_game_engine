@@ -79,6 +79,8 @@
     "noSave": "セーブデータがありません",
     "noQuickSave": "クイックセーブがありません",
     "noRollback": "これ以上は戻れません",
-    "waiting": "読み込み中"
+    "waiting": "読み込み中",
+    "scriptEdited": "直した台本で遊んでいます",
+    "scriptEditsSkipped": "台本が変わっていたので直しを当てていません"
   }
 }

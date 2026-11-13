@@ -66,13 +66,24 @@ mod WorldRead {
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
                   w: World.World): World.World \ Emit[World.Event] =
         match event {
-            case YarnRunner.Event.Line(line)       =>
-                whileReading(cur -> showLine(res, replay, markAt(last, later, cur#stage), line, cur, w), w)
-            case YarnRunner.Event.Choices(options) =>
-                World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options) | cur }, w)
+            case YarnRunner.Event.Line(said)       =>
+                let line = ScriptEdits.editLine(res#scriptEdits, said);
+                whileReading(cur -> showLine(res, replay, markAt(last, later, cur#stage), line, { cursor = Some(line#source) | cur }, w), w)
+            case YarnRunner.Event.Choices(offered) =>
+                let options = offered |> List.map(option -> { line = ScriptEdits.editLine(res#scriptEdits, option#line) | option });
+                let at = List.head(options) |> Option.map(option -> option#line#source);
+                World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options), cursor = if (Option.isEmpty(at)) cur#cursor else at | cur }, w)
             case YarnRunner.Event.Command(command) =>
-                whileReading(cur -> World.withRead(cue(res, replay, command, cur, w), w), w)
+                whileReading(cur -> World.withRead(cue(res, replay, command, { cursor = cursorAfter(res, command, cur#cursor) | cur }, w), w), w)
             case YarnRunner.Event.Done             => World.toCredits(res, w)
+        }
+
+    /// コマンドを通った後の実行位置。時間を取る演出コマンド（Stage.hasDuration）だけが位置を取り、<<wait>> と
+    /// 時間を取らないコマンドは前の位置のまま（<<wait>> は直前の演出の続き）。
+    def cursorAfter(res: Res.Res, command: Yarn.Command, cursor: Option[Yarn.Source]): Option[Yarn.Source] =
+        match Stage.cueOf(res, command) {
+            case Ok(c) if command#name != "wait" and Stage.hasDuration(c) => Some(command#source)
+            case _ => cursor
         }
 
     /// 出来事ごとに、それより後ろに出た台詞と選択肢の数（= その所から今までに受けた入力の数）。

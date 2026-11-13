@@ -29,7 +29,7 @@ mod Game {
             |> App.withAudio(ws -> Controls.sounds(ws#after#resources#missing, { before = ws#before#world, after = ws#after#world }))
             |> App.withSustained(Resources.read(Controls.ambience))
             |> App.withMixer(Resources.read(Controls.mixerOf))
-            |> App.withStarts(Starts.all() |> List.map(Resources.liftStart))
+            |> App.withStarts(Starts.all())
             |> App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))

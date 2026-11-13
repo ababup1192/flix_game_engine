@@ -10,6 +10,10 @@ public final class Browser {
     @JSBody(script = "return performance.now();")
     public static native double now();
 
+    /** 頁の URL のクエリの鍵と値（デコード済み・並び順）を [鍵1, 値1, 鍵2, 値2, …] に並べた物。 */
+    @JSBody(script = "return fgeQueryPairs();")
+    public static native String[] queryPairs();
+
     /** 頁の URL に ?capture=<n> があるか（dt を固定して撮る時）。 */
     @JSBody(script = "return fgeCaptureFrame > 0;")
     public static native boolean isFrameCapture();

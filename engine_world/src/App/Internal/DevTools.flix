@@ -21,6 +21,10 @@ pub mod App.Internal.DevTools {
     /// 起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
     pub type alias Booted[w] = Result[String, (w, Option[(String, Map[String, String])])]
 
+    /// 起動で頼む始まり。Ok(None) は先頭の始まり、Ok(Some((名前, 引数))) はその始まり、Err は頼みを読めなかった訳。
+    // WhyNot: START の行の文字列で渡さない — 行は空白で引数を切るので、空白や改行の入った値（ブラウザ版の URL の直しの文）が壊れる。
+    pub type alias StartRequest = Result[String, Option[(String, Map[String, String])]]
+
     /// 命令口の 1 件を捌くのに要る、ループの今の状態。
     pub type alias RemoteInput[w] = {
         world = w, anno = Annotate.State, history = List[w], stepState = App.StepState,
@@ -36,9 +40,9 @@ pub mod App.Internal.DevTools {
     }
 
     /// ループが呼ぶフックの組。ef はアプリの系の effect、efTools は道具が加える effect（F8 の注釈の書き出し）。
-    /// open の boot は、環境変数の表と「Doc を読み直すか」から起動の World を組む関数（Runner.bootWorld）。
+    /// open の boot は、頼む始まりと「Doc を読み直すか」から起動の World を組む関数（Runner.bootFrom）。
     pub type alias Hooks[w: Type, ef: Eff, efTools: Eff] = {
-        open = ((Map[String, String], Bool) -> Booted[w] \ ef + Fs.FileRead) -> (Booted[w], State) \ ef + Fs.FileRead + IO,  // 起動の World を組み、記録と命令口を開く
+        open = ((StartRequest, Bool) -> Booted[w] \ ef + Fs.FileRead) -> (Booted[w], State) \ ef + Fs.FileRead + IO,  // 起動の World を組み、記録と命令口を開く
         start = State -> State \ Platform.Diagnostics + IO,                          // 最初のコマの前（窓の宣言を当てた後）: 保存検知とヒッチの見張りを始める
         close = (State, Option[w]) -> Unit \ IO,                                     // ループを抜けた後: 命令口を止め、最後の World（起動できなければ None）の確かめを書いて記録を閉じる
         holdsControl = State -> Bool,                                                // 命令口が止める主導権を持っているか（真の間 F8 は効かない）
@@ -63,7 +67,7 @@ pub mod App.Internal.DevTools {
 
     // ── 道具なし ──
 
-    /// 道具を持たないフックの組（ブラウザ版・bench）。起動の World は環境変数を読まずに組み、ほかは何もしない。
+    /// 道具を持たないフックの組（bench・配る版）。起動の World は環境変数を読まずに組み、ほかは何もしない。
     pub def none(): Hooks[w, ef, {}] = {
         open           = openNone,
         start          = st -> checked_ecast(st),
@@ -80,10 +84,47 @@ pub mod App.Internal.DevTools {
         copyRecordInto = (_, _, _) -> checked_ecast(())
     }
 
-    def openNone(boot: (Map[String, String], Bool) -> Booted[w] \ ef + Fs.FileRead): (Booted[w], State) \ ef + Fs.FileRead + IO =
-        checked_ecast((boot(Map.empty(), false), emptyState()))
+    def openNone(boot: (StartRequest, Bool) -> Booted[w] \ ef + Fs.FileRead): (Booted[w], State) \ ef + Fs.FileRead + IO =
+        checked_ecast((boot(Ok(None), false), emptyState()))
+
+    // ── ブラウザ版 ──
+
+    /// ブラウザ版のフックの組。start は URL のクエリから組んだ始まり（None なら先頭の始まり）。ほかは道具なしと同じ。
+    pub def browserOf(start: Option[(String, Map[String, String])]): Hooks[w, ef, {}] =
+        browserWith(start, line -> System.err.println(line))
+
+    /// browserOf の、始まりを組めなかった時の 1 行の出し先を渡す形（TeaVM では System.err が console.error に届く）。
+    pub def browserWith(start: Option[(String, Map[String, String])], warn: String -> Unit \ IO): Hooks[w, ef, {}] =
+        { open = boot -> openBrowser(start, warn, boot) | none() }
+
+    /// 頼まれた始まりで起動の World を組み、組めなければ warn に訳を出して先頭の始まりで組み直す。
+    // WhyNot: 組めない時に止めない — 遊ぶ人が URL を書き換えただけで黒い画面になる。デスクトップの START と違い、直すのは作った人でない。
+    def openBrowser(start: Option[(String, Map[String, String])], warn: String -> Unit \ IO,
+                    boot: (StartRequest, Bool) -> Booted[w] \ ef + Fs.FileRead): (Booted[w], State) \ ef + Fs.FileRead + IO =
+        let booted = match start {
+            case None    => boot(Ok(None), false)
+            case Some(_) => orFirstStart(boot(Ok(start), false), warn, boot)
+        };
+        (booted, emptyState())
+
+    def orFirstStart(asked: Booted[w], warn: String -> Unit \ IO, boot: (StartRequest, Bool) -> Booted[w] \ ef + Fs.FileRead): Booted[w] \ ef + Fs.FileRead + IO =
+        match asked {
+            case Ok(booted) => Ok(booted)
+            case Err(why)   =>
+                warn("[App] " ++ Log.fellBackLine("start", "URL のクエリの始まり", "先頭の始まり", why));
+                boot(Ok(None), false)
+        }
 
     // ── デスクトップの道具 ──
+
+    /// 環境変数の表の START（`名前 key=value…`）を読んだ始まり。空なら先頭の始まり。訳には START を付けない。
+    pub def startOfEnv(env: Map[String, String]): StartRequest =
+        let line = String.trim(Map.getWithDefault("START", "", env));
+        if (String.isEmpty(line)) Ok(None) else App.parseStartLine(line) |> Result.map(Some)
+
+    /// 環境変数の表の START で boot を呼ぶ関数（引数は Doc を読み直すか）。誤りの訳の頭に START: を付ける。
+    pub def bootOfEnv(env: Map[String, String], boot: (StartRequest, Bool) -> Booted[w] \ ef, reread: Bool): Booted[w] \ ef =
+        boot(startOfEnv(env), reread) |> Result.mapErr(why -> "START: ${why}")
 
     /// デスクトップの道具のフックの組を、App を受けて作る関数。env は入口の頭で読んだ環境変数の表、
     /// captured は App を組む間に読んだファイルの中身（控えていなければ None。flow の記録の start の行に載せる）。
@@ -106,11 +147,12 @@ pub mod App.Internal.DevTools {
     /// 記録を開き（DEBUG で FLOW_RECORD が 0 でない時）、起動の World を組み、通ったら記録の頭を書いて命令口を開く。
     /// FLIX_GE_INPUT_SCRIPT があれば台本を読む（読めなければ起動の誤りにする — 台本のつもりで実機の入力のまま走ると、門が何も確かめずに通る）。
     def openDesktop(env: Map[String, String], captured: Option[Map[String, Flow.File]], app: App[w, {}],
-                    boot: (Map[String, String], Bool) -> Booted[w] \ Fs.FileRead): (Booted[w], State) \ Fs.FileRead + IO =
+                    boot: (StartRequest, Bool) -> Booted[w] \ Fs.FileRead): (Booted[w], State) \ Fs.FileRead + IO =
+        let bootStart = bootOfEnv(env, boot);
         match scriptOf(env) {
             case Err(why)   => (Err("FLIX_GE_INPUT_SCRIPT: ${why}"), emptyState())
             case Ok(script) =>
-                let (booted, opened) = openRecorded(env, captured, app, boot);
+                let (booted, opened) = openRecorded(env, captured, app, bootStart);
                 (booted, { script = script | opened })
         }
 
@@ -122,13 +164,13 @@ pub mod App.Internal.DevTools {
         }
 
     def openRecorded(env: Map[String, String], captured: Option[Map[String, Flow.File]], app: App[w, {}],
-                     boot: (Map[String, String], Bool) -> Booted[w] \ Fs.FileRead): (Booted[w], State) \ Fs.FileRead + IO =
+                     boot: Bool -> Booted[w] \ Fs.FileRead): (Booted[w], State) \ Fs.FileRead + IO =
         let r = App.rec(app);
         let recorder = if (r#debug) Flow.Record.pathOf(env) |> Option.flatMap(Flow.Record.open) else None;
         // 記録するなら、起動の World を組む間に読んだ中身も拾い、start の行に載せる（再生が同じ Doc で始まる）。
         let (booted, files) = match recorder {
-            case Some(_) => buildBootRecord(app, captured, reread -> boot(env, reread))
-            case None    => (boot(env, false), Map.empty())
+            case Some(_) => buildBootRecord(app, captured, boot)
+            case None    => (boot(false), Map.empty())
         };
         let opened = { recorder = recorder | emptyState() };
         match booted {
