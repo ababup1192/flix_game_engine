@@ -25,7 +25,7 @@
     { "id": "message", "name": "メッセージウィンドウ", "from": 2, "to": 5.5, "rect": { "x": 0.05, "y": 0.7, "w": 0.9, "h": 0.25 } }
   ],
   "branches": [],
-  "choices": [{ "t": 3.2, "line": 10, "node": "Shore", "options": ["灯をともす", "眠る"], "picked": 0 }],
+  "choices": [{ "t": 3.2, "line": 10, "node": "Shore", "options": ["灯をともす", "眠る"], "picked": 0, "question": "今夜は風が強い。／船は来るだろうか" }],
   "probes": {
     "phase": [[0, "Title"], [1.5, "Reading"]]
   },

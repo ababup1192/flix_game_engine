@@ -21,6 +21,9 @@ import (
 //go:embed template.html
 var templateHTML string
 
+// tapeDecl は雛形で TAPE の JSON を置く所の前の字（publish が置いた頁の branches を読み返す時にも引く）。
+const tapeDecl = "const TAPE = "
+
 const (
 	TapeFile  = "tape.json"
 	VideoFile = "video.mp4"
@@ -213,7 +216,7 @@ func Render(t *Tape, commit string, strip Strip) ([]byte, error) {
 	var safe bytes.Buffer
 	json.HTMLEscape(&safe, buf.Bytes())
 
-	page := strings.Replace(templateHTML, "__TAPE_JSON__", safe.String(), 1)
+	page := strings.Replace(templateHTML, tapeDecl+"__TAPE_JSON__", tapeDecl+safe.String(), 1)
 	page = strings.Replace(page, "__TAPE_TITLE__", html.EscapeString(t.Title), 1)
 	return []byte(page), nil
 }

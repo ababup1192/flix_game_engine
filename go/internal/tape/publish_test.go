@@ -2,6 +2,7 @@ package tape
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -467,8 +468,16 @@ func publishLogWithRoute(t *testing.T, others ...string) string {
 	root := t.TempDir()
 	a := filepath.Join(root, "light")
 	writeTapeDir(t, a)
-	page := "<!doctype html>\n<html><head>\n<title>t</title></head><body><script>const TAPE={\"branches\":[{\"routes\":[{\"href\":\"../dark/index.html#t=3.2\"}]}]};</script></body></html>"
-	if err := os.WriteFile(filepath.Join(a, IndexFile), []byte(page), 0o644); err != nil {
+	tp := parsed(t, forkTape(t, 0))
+	branches := []Branch{{T: 3.2, Line: 10, Question: "q", Routes: []Route{{Label: "灯をともす", Note: "このテープ", Here: true},
+		{Label: "眠る", Note: "dark のテープ", Href: "../dark/index.html#t=3.2"}}}}
+	b, _ := json.Marshal(branches)
+	tp.raw["branches"] = b
+	page, err := Render(tp, "abc1234", sampleStrip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a, IndexFile), page, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	dirs := []string{a}

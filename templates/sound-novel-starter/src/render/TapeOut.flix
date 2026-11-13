@@ -2,7 +2,7 @@
 // 書くのは FlowVideo（debug/video/<名前>/tape.json）。欄の名前・型・単位は plans/tape/mock.html の TAPE に合わせる。
 // commit・video・strip・stripPerSec は束ねる側（bin/fge tape）が足すので、ここでは書かない。
 mod TapeOut {
-    use fge::{App, Color, Flow, JsonCodec, Rect2, Resources, Sort, Vec2, Yarn}
+    use fge::{App, Color, Emit, Flow, JsonCodec, Rect2, Resources, Sort, Vec2, Yarn}
     use Util.Json.Json
 
     /// App の w（描く元と World の組）。
@@ -169,13 +169,11 @@ mod TapeOut {
 
     /// 選択肢を選んだ所（2 つ以上の選択肢だけ・選んだ順）。
     // WhyNot: 選択肢が消えたことで選んだと決めない — 同じ選択肢へすぐ戻る作りでは消えず、バックログで戻った時やロードした時は選ばずに消える。
-    // 選んだ時だけ鳴る返事の音（Controls.soundOf の Picked）をそのフレームの音から読む。
     pub def choicesOf(frames: List[Flow.Played[AppState]]): List[Choice] =
-        let pickSound = Controls.soundOf(World.Event.Picked);
         let (found, _, _) = frames |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
             let (out, shown, since) = acc;
             let (i, played) = pair;
-            let chosen = if (pickedDuring(pickSound, played#step)) pickedIn(played#step) |> Option.map(c -> { at = since | c }) else None;
+            let chosen = if (pickedDuring(played#step)) pickedIn(played#step) |> Option.map(c -> { at = since | c }) else None;
             let now = optionTexts(played#step#after#world);
             let shownSince = if (now == shown and Option.isEmpty(chosen)) since else i;
             (Option.toList(chosen) ::: out, now, shownSince)
@@ -184,14 +182,9 @@ mod TapeOut {
 
     def optionTexts(w: World.World): List[String] = World.choicesOf(w) |> List.map(option -> option#line#text)
 
-    /// このフレームの中で選択肢を選んだか。
-    // WhyNot: 返事の音を鳴らさないゲーム（soundOf の Picked が None）でも数え落とさないよう、その時だけバックログの「選んだ」行の数が増えたかで見る。
-    def pickedDuring(pickSound: Option[String], step: App.TraceStep[AppState]): Bool = match pickSound {
-        case Some(name) => step#sounds |> List.exists(s -> s == name)
-        case None       => choseCount(step#after#world) > choseCount(step#before#world)
-    }
-
-    def choseCount(w: World.World): Int32 = World.logOf(w) |> List.count(entry -> Option.nonEmpty(choseText(entry)))
+    /// このフレームの中で選択肢を選んだか（このフレームに溜まった World の出来事に Picked があるか）。
+    def pickedDuring(step: App.TraceStep[AppState]): Bool =
+        Emit.since(step#before#world#events, step#after#world#events) |> List.exists(e -> e == World.Event.Picked)
 
     /// 選んだフレームの前に出ていた 2 つ以上の選択肢と、選んだ番号（at は呼ぶ側が埋める）。
     // WhyNot: カーソルだけで番号を決めない — 指で押す時はカーソルを動かさずにその番号を選ぶ。選んだ字（バックログの一番新しい「選んだ」行）で引き、同じ字が 2 つある時だけカーソルを使う。

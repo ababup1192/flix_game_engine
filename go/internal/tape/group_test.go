@@ -120,12 +120,37 @@ func TestGroupHrefEscapesTheFolderName(t *testing.T) {
 	}
 }
 
-func TestGroupQuestionPrefersTheGamesQuestion(t *testing.T) {
-	// ゲームが choices に書いた question があれば、その最初の文を問いにする。
-	asked := forkTapeWith(t, func(m map[string]any) { firstChoice(m)["question"] = "灯をともすか迷った。風が強い" })
-	got := GroupBranches([]string{"light", "dark"}, []*Tape{parsed(t, asked), parsed(t, forkTape(t, 1))})
-	if q := got[0][0].Question; q != "灯をともすか迷った" {
+func TestGroupQuestionFallsBackToTheNode(t *testing.T) {
+	// choices に question が無ければ、問いはノードの名前。
+	silent := forkTapeWith(t, func(m map[string]any) { delete(firstChoice(m), "question") })
+	got := GroupBranches([]string{"light", "dark"}, []*Tape{parsed(t, silent), parsed(t, forkTape(t, 1))})
+	if q := got[0][0].Question; q != "Shore" {
 		t.Fatalf("問い: %q", q)
+	}
+}
+
+func TestGroupQuestionIsCutToALineOfTheCard(t *testing.T) {
+	// 長い問いは 14 字目を「…」にして切る。
+	long := forkTapeWith(t, func(m map[string]any) {
+		firstChoice(m)["question"] = "灯台の階段は長く、いくら上っても先が見えない"
+	})
+	got := GroupBranches([]string{"light", "dark"}, []*Tape{parsed(t, long), parsed(t, forkTape(t, 1))})
+	if q := got[0][0].Question; q != "灯台の階段は長く、いくら上…" {
+		t.Fatalf("問い: %q", q)
+	}
+}
+
+func TestRouteTargetsReadsTheBranchesOfThePage(t *testing.T) {
+	// 置いた頁の branches から、道の先のフォルダ名を逃がしを戻して読む（この頁の道と移り先の無い道は数えない）。
+	tp := parsed(t, forkTape(t, 0))
+	b, _ := json.Marshal([]Branch{{Routes: []Route{{Here: true}, {Href: "../dark%20night/index.html#t=3.2"}, {Note: "まだ撮っていない"}}}})
+	tp.raw["branches"] = b
+	page, err := Render(tp, "abc1234", sampleStrip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(routeTargets(page), ","); got != "dark night" {
+		t.Fatalf("道の先: %q", got)
 	}
 }
 

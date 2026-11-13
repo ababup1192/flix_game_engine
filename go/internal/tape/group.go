@@ -94,13 +94,10 @@ func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 	return out
 }
 
-// questionOf は分岐のカードに出す問い。ゲームが書いた question（選択肢を出していた時の台詞）が無ければ、
-// timeline で選択肢が出る直前の台詞を使い、それも無ければノードの名前。最初の文を、カードの 1 行に収まる長さで返す。
+// questionOf は分岐のカードに出す問い。ゲームが書いた question（選択肢を出していた時の台詞）の最初の文を、
+// カードの 1 行に収まる長さで返す。question が無ければノードの名前。
 func (t *Tape) questionOf(ch Choice) string {
 	text := ch.Question
-	if text == "" {
-		text = t.textBefore(ch.T)
-	}
 	if text == "" {
 		return ch.Node
 	}
@@ -110,20 +107,6 @@ func (t *Tape) questionOf(ch Choice) string {
 	}
 	if rs := []rune(text); len(rs) > questionRunes {
 		return string(rs[:questionRunes-1]) + "…"
-	}
-	return text
-}
-
-// textBefore は timeline で sec より前に出ていた最後の台詞の字（無ければ空）。
-func (t *Tape) textBefore(sec float64) string {
-	text := ""
-	for _, r := range t.timeline {
-		if r.T >= sec-1e-6 {
-			break
-		}
-		if l, ok := t.lines[r.Line]; ok && l.Text != nil {
-			text = *l.Text
-		}
 	}
 	return text
 }

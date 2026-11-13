@@ -49,8 +49,6 @@ type Tape struct {
 	Yarn     string
 	Node     string
 	Choices  []Choice
-	lines    map[int]line
-	timeline []timelineRow
 	raw      map[string]json.RawMessage
 }
 
@@ -63,11 +61,6 @@ type Choice struct {
 	Options  []string `json:"options"`
 	Picked   int      `json:"picked"`
 	Question string   `json:"question,omitempty"`
-}
-
-type timelineRow struct {
-	T    float64
-	Line int // 0 は空（null）
 }
 
 type scene struct {
@@ -159,8 +152,7 @@ func Parse(data []byte) (*Tape, error) {
 	c.checkScenes()
 	lines := c.checkLines()
 	speakers := c.checkSpeakers()
-	t.lines = lines
-	t.timeline = c.checkTimeline(lines)
+	c.checkTimeline(lines)
 	c.checkWho(lines, speakers)
 	c.checkSpeakerMap()
 	c.checkSounds()
@@ -295,38 +287,34 @@ func (c *checker) checkSpeakers() map[string]bool {
 	return names
 }
 
-func (c *checker) checkTimeline(lines map[int]line) []timelineRow {
+func (c *checker) checkTimeline(lines map[int]line) {
 	var rows [][]json.RawMessage
 	if !c.decode("timeline", &rows, " [[秒, 行|null]] の配列") {
-		return nil
+		return
 	}
 	if len(rows) == 0 {
 		c.fail("\"timeline\" が空（0 秒の行 [0, null] から始める）")
-		return nil
+		return
 	}
-	out := make([]timelineRow, 0, len(rows))
 	for i, r := range rows {
 		var t float64
 		if len(r) != 2 || json.Unmarshal(r[0], &t) != nil {
 			c.fail("\"timeline\"[%d] は [秒, 行|null]", i)
-			return nil
+			return
 		}
 		if bytes.Equal(r[1], []byte("null")) {
-			out = append(out, timelineRow{T: t})
 			continue
 		}
 		var n int
 		if json.Unmarshal(r[1], &n) != nil {
 			c.fail("\"timeline\"[%d] の行は整数か null", i)
-			return nil
+			return
 		}
 		if _, ok := lines[n]; !ok {
 			c.fail("\"timeline\"[%d] の行 %d が \"lines\" に無い", i, n)
-			return nil
+			return
 		}
-		out = append(out, timelineRow{T: t, Line: n})
 	}
-	return out
 }
 
 func (c *checker) checkChoices(lines map[int]line) []Choice {

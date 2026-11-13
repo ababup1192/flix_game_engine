@@ -2,7 +2,7 @@
 // シナリオは小さな見本（下の program）: 時間を取らないコマンド・時間を取る <<bg>>・<<wait>>・鳴り続ける音を 1 つずつ並べる。
 mod TestTape {
 
-    use fge::{App, DocJson, Flow, JsonCodec, Rect2, Resources, Yarn}
+    use fge::{App, DocJson, Emit, Flow, JsonCodec, Rect2, Resources, Yarn}
     use Util.Json.Json
 
     type alias AppState = Resources.With[Res.Res, World.World]
@@ -293,28 +293,46 @@ mod TestTape {
         "{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
         say(10) + "," + ask(11) + "," + say(16) + "," + ask(17) + "," + say(22) + "]}]}"
 
-    /// 1 フレーム分の流した結果を手で組む（音は events の返事の音）。
-    def played(r: Res.Res, before: World.World, after: World.World, events: List[World.Event]): Flow.Played[AppState] =
-        { step = { frame = App.emptyFrame(), before = Resources.of(r, before), after = Resources.of(r, after),
-                   sounds = events |> List.filterMap(Controls.soundOf), sustained = Nil },
+    /// 1 フレーム分の流した結果を手で組む（出来事は before と after の World の溜めの差）。
+    def played(r: Res.Res, before: World.World, after: World.World): Flow.Played[AppState] =
+        { step = { frame = App.emptyFrame(), before = Resources.of(r, before), after = Resources.of(r, after), sounds = Nil, sustained = Nil },
           state = App.freshStepState() }
+
+    /// f を走らせ、その間に出た出来事を World の溜めに足す（ゲームの 1 フレームと同じ溜め方）。
+    // WhyNot: TestKit.pick を使わない — 出来事を捨てるので、溜めから選んだことを読む TapeOut.choicesOf に渡せない。
+    def recorded(f: Unit -> World.World \ Emit[World.Event], w: World.World): World.World =
+        let (next, events) = Emit.collectInto(f, w#events);
+        { events = events | next }
+
+    def pickRecorded(r: Res.Res, i: Int32, w: World.World): World.World = recorded(() -> WorldRead.pick(r, i, w), w)
 
     /// 同じ字の選択肢の 1 回目で「右へ」を選び、2 回目の選択肢を出している所までの 2 フレームと、その時の World。
     def pickedOnceThenAsked(r: Res.Res): (List[Flow.Played[AppState]], World.World) =
         let asked = TestKit.readUntil(r, World.isChoosing, Nil, TestKit.begun(r));
-        let chose = TestKit.pick(r, 0, asked);
+        let chose = pickRecorded(r, 0, asked);
         let again = TestKit.readUntil(r, World.isChoosing, Nil, chose);
-        (played(r, asked, chose, World.Event.Picked :: Nil) :: played(r, chose, again, Nil) :: Nil, again)
+        (played(r, asked, chose) :: played(r, chose, again) :: Nil, again)
 
     def pickedIndexes(frames: List[Flow.Played[AppState]]): List[Int32] = TapeOut.choicesOf(frames) |> List.map(c -> c#picked)
+
+    @Test
+    def testSecondTimeOfTheSameOptionsStartsWhenTheyAppearedAgain(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢が 0 フレーム目に出て 2 フレーム目に「回る」を選ぶと同じフレームでまた出る。2 回目（4 フレーム目に「出る」）の at はまた出た 2。
+        let r = resOf(loopText());
+        let asked = TestKit.readUntil(r, World.isChoosing, Nil, TestKit.begun(r));
+        let again = pickRecorded(r, 0, asked);
+        let left = pickRecorded(r, 1, again);
+        let frames = played(r, asked, asked) :: played(r, asked, asked) :: played(r, asked, again) ::
+                     played(r, again, again) :: played(r, again, left) :: Nil;
+        Assert.assertEq(expected = 0 :: 2 :: Nil, TapeOut.choicesOf(frames) |> List.map(c -> c#at))
 
     @Test
     def testJumpingBackFromTheLogIsNotAPick(): Unit \ {Assert, Fs.FileRead} =
         // 2 回目の選択肢からバックログで前の行へ戻ると選択肢は消えるが、選んだ所には数えない（1 回目の「右へ」だけ）。
         let r = resOf(twiceText());
         let (frames, again) = pickedOnceThenAsked(r);
-        let back = TestKit.quiet(() -> WorldLog.jumpTo(r, 0, again));
-        Assert.assertEq(expected = 0 :: Nil, pickedIndexes(List.append(frames, played(r, again, back, World.Event.Rolled :: Nil) :: Nil)))
+        let back = recorded(() -> WorldLog.jumpTo(r, 0, again), again);
+        Assert.assertEq(expected = 0 :: Nil, pickedIndexes(List.append(frames, played(r, again, back) :: Nil)))
 
     @Test
     def testJumpingBackFromTheLogHidesTheOptions(): Unit \ {Assert, Fs.FileRead} =
@@ -328,7 +346,7 @@ mod TestTape {
         // 2 回目の選択肢を出したままタイトルへ戻っても、選んだ所には数えない。
         let r = resOf(twiceText());
         let (frames, again) = pickedOnceThenAsked(r);
-        Assert.assertEq(expected = 0 :: Nil, pickedIndexes(List.append(frames, played(r, again, World.toTitle(again), Nil) :: Nil)))
+        Assert.assertEq(expected = 0 :: Nil, pickedIndexes(List.append(frames, played(r, again, World.toTitle(again)) :: Nil)))
 
     @Test
     def testChoiceTimeIsWhenTheOptionsAppeared(): Unit \ {Assert, Fs.FileRead} =
