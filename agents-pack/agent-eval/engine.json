@@ -217,6 +217,18 @@
       ]
     },
     {
+      "id": "tape-publish",
+      "prompt": "debug/tape/intro に作ったテープの頁を、テープ用の GitHub Pages のリポジトリ ababup1192/tapes に置いて、レビュワーに渡す URL を出したい。まだ push はしないで、何が置かれて何が消えるかだけ見せて",
+      "expect": [
+        {"re": "fge tape publish", "why": "bin/fge tape publish が置き場に置いて URL を出す"}
+      ],
+      "avoid": [
+        {"re": "--yes", "why": "既定が dry run。push しない依頼なので --yes を付けない"},
+        {"re": "git push", "why": "手で push しない（履歴を残さない置き方は publish が持つ）"},
+        {"re": "gh repo create|gh api .*pages", "why": "リポジトリ作りと Pages の設定は人がやる"}
+      ]
+    },
+    {
       "id": "heavy-game-long-target",
       "prompt": "このゲームに 40 分かかるシミュレーションの make の口 sim-sweep を足した。ほかのエージェントが重い処理の鍵で流すとき、毎回印を付けてもらわなくても長い物として扱われるようにしたい。今日どの待ちが長かったかも見たい",
       "expect": [
