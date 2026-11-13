@@ -206,6 +206,17 @@
       ]
     },
     {
+      "id": "tape-review-page",
+      "prompt": "e2e の flow で撮った動画をレビュワーにスマホで見てもらい、気になったコマや台詞に注釈を付けて、AI に渡すプロンプトとして返してもらいたい。その頁を作って",
+      "expect": [
+        {"re": "make tape|fge tape", "why": "make tape（中で bin/fge tape）"},
+        {"re": "tape\\.json|FLOW=", "why": "flow から tape.json を書かせる"}
+      ],
+      "avoid": [
+        {"re": "fge proposal", "why": "案を選ばせる頁とは別物"}
+      ]
+    },
+    {
       "id": "heavy-game-long-target",
       "prompt": "このゲームに 40 分かかるシミュレーションの make の口 sim-sweep を足した。ほかのエージェントが重い処理の鍵で流すとき、毎回印を付けてもらわなくても長い物として扱われるようにしたい。今日どの待ちが長かったかも見たい",
       "expect": [
