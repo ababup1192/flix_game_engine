@@ -2,7 +2,7 @@
 // 書くのは FlowVideo（debug/video/<名前>/tape.json）。欄の名前・型・単位は plans/tape/mock.html の TAPE に合わせる。
 // commit・video・strip・stripPerSec は束ねる側（bin/fge tape）が足すので、ここでは書かない。
 mod TapeOut {
-    use fge::{Color, Flow, JsonCodec, Rect2, Resources, Vec2, Yarn}
+    use fge::{Color, Flow, JsonCodec, Rect2, Resources, Sort, Vec2, Yarn}
     use Util.Json.Json
 
     /// App の w（描く元と World の組）。
@@ -183,7 +183,7 @@ mod TapeOut {
         }, (Nil, Set.empty()));
         List.reverse(rows)
 
-    /// 出ている物を、同じ物（id・名前・割合の矩形が同じ）が続く間ごとに 1 行へ畳む（出た順）。画面の外だけにある物は載せない。
+    /// 出ている物を、同じ物（id・名前・割合の矩形が同じ）が続く間ごとに 1 行へまとめる（出た順）。画面の外だけにある物は載せない。
     pub def spansOf(fps: Float64, design: Vec2.Vec2, frames: List[List[ScreenObject]]): List[Span] =
         let keyed = frames |> List.map(objects -> objects |> List.filterMap(o ->
             fractionOf(design, o#rect) |> Option.map(r -> (o#id, o#name, (r#x, r#y, r#w, r#h)))) |> List.distinct);
@@ -191,17 +191,16 @@ mod TapeOut {
             let (opened, done, seq) = acc;
             let (i, now) = pair;
             let here = List.toSet(now);
-            let (kept, ending) = opened |> List.partition(match (key, _, _) -> Set.memberOf(key, here));
-            let keptKeys = kept |> List.map(match (key, _, _) -> key) |> List.toSet;
-            let starting = now |> List.filter(key -> not Set.memberOf(key, keptKeys)) |> List.zipWithIndex
-                |> List.map(match (j, key) -> (key, i, seq + j));
-            (List.append(kept, starting),
-             List.append(ending |> List.map(match (key, since, order) -> (key, since, i, order)), done),
+            let ending = Map.filterWithKey((key, _) -> not Set.memberOf(key, here), opened);
+            let starting = now |> List.filterMap(key -> if (Map.memberOf(key, opened)) None else Some(key)) |> List.zipWithIndex
+                |> List.map(match (j, key) -> (key, (i, seq + j)));
+            (Map.union(Map.filterWithKey((key, _) -> Set.memberOf(key, here), opened), List.toMap(starting)),
+             List.append(Map.toList(ending) |> List.map(match (key, (since, order)) -> (key, since, i, order)), done),
              seq + List.length(starting))
-        }, (Nil, Nil, 0));
+        }, (Map.empty(), Nil, 0));
         let n = List.length(frames);
-        List.append(open |> List.map(match (key, since, order) -> (key, since, n, order)), closed)
-            |> List.sortBy(match (_, _, _, order) -> order)
+        List.append(Map.toList(open) |> List.map(match (key, (since, order)) -> (key, since, n, order)), closed)
+            |> Sort.sortStableBy(match (_, _, _, order) -> order)
             |> List.map(match ((id, name, (x, y, w, h)), since, until, _) ->
                 { id = id, name = name, startAt = secondsAt(fps, since), endAt = secondsAt(fps, until), rect = { x = x, y = y, w = w, h = h } })
 
