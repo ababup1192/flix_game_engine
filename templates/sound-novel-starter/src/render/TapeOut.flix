@@ -10,8 +10,10 @@ mod TapeOut {
 
     /// メッセージウィンドウの寸法（テープの頁が直した台詞を重ねる所）。x0 / x1 = 字の左右の端（画面の幅に対する割合）、
     /// cy = ウィンドウの縦の真ん中、lh = 行の高さ、padTop / padBot = 最初の行の字の下端までと最後の行の下の空き、
-    /// font = 字の大きさ（ここまでは画面の高さに対する割合）、cps = 1 秒に出す字の数。
-    pub type alias Msg = { x0 = Float64, x1 = Float64, cy = Float64, lh = Float64, padTop = Float64, padBot = Float64, font = Float64, cps = Float64 }
+    /// font = 字の大きさ（ここまでは画面の高さに対する割合）、cps = 1 秒に出す字の数、
+    /// when = 重ねてよいフレームの条件（問いの名前 → 値。全部そろう時だけ重ねる。空ならいつでも）。
+    pub type alias Msg = { x0 = Float64, x1 = Float64, cy = Float64, lh = Float64, padTop = Float64, padBot = Float64, font = Float64, cps = Float64,
+                           when = Map[String, String] }
 
     /// 画面に出ている物 1 つ。id = 物の名前（同じ物は同じ id。メッセージウィンドウは message）、name = 人に見せる名前、rect = design の px。
     pub type alias ScreenObject = { id = String, name = String, rect = Rect2.Rect2 }
@@ -51,6 +53,7 @@ mod TapeOut {
         forM (
             _      <- uniqueMarks(flowRun#marks);
             node   <- singleNode(worlds);
+            _      <- msgWhenKnown(table);
             probes <- probesOf(table, flowRun#fps, worlds)
         ) yield {
             let yarn = yarnOf(node, cursors, res);
@@ -245,7 +248,15 @@ mod TapeOut {
 
     def msgJson(m: Msg): Json =
         Json.JObject(Map#{ "x0" => numJson(m#x0), "x1" => numJson(m#x1), "cy" => numJson(m#cy), "lh" => numJson(m#lh),
-                           "padTop" => numJson(m#padTop), "padBot" => numJson(m#padBot), "font" => numJson(m#font), "cps" => numJson(m#cps) })
+                           "padTop" => numJson(m#padTop), "padBot" => numJson(m#padBot), "font" => numJson(m#font), "cps" => numJson(m#cps),
+                           "when" => Json.JObject(Map.map(Json.JString, m#when)) })
+
+    /// msg の when が見る問いは、載せる問い（probes）の中に無いと頁で読めない。
+    def msgWhenKnown(table: Table): Result[String, Unit] =
+        let probes = List.toSet(table#probes);
+        Map.keysOf(table#msg#when) |> Set.toList |> List.find(name -> not Set.memberOf(name, probes))
+            |> Option.map(name -> Err("msg の when の問い '${name}' が probes に無い"))
+            |> Option.getWithDefault(Ok())
 
     def pairJson(t: Float64, v: Json): Json = Json.JArray(Vector#{ numJson(t), v })
 

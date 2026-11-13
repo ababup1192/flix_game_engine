@@ -752,7 +752,7 @@ $("playHereBtn").onclick = () => { video.pause(); $("playHereBtn").href = playHr
 function buildPrompt() {
   const edited = Object.keys(edits).map(Number).sort((a, b) => a - b);
   const out = [`${TAPE.title}（${TAPE.game}・${TAPE.commit}）の動画を見て、直してほしい所をまとめました。`, "注釈は 映像・台本・音 のどれかに付いています。rect は画面に対する割合（左上が 0,0）です。"];
-  if (edited.length) { out.push("", "## 台本の直し（このとおりに書き換えてください）"); edited.forEach(ln => out.push(`- ${yarn}:${ln}（${TAPE.lines[ln].who}）\n  前: ${TAPE.lines[ln].text}\n  後: ${edits[ln]}`)); }
+  if (edited.length) { out.push("", "## 台本の直し（このとおりに書き換えてください）"); out.push("台本が変わっていたら、行番号でなく「前」の文章で探してください。"); edited.forEach(ln => out.push(`- ${yarn}:${ln}（${TAPE.lines[ln].who}）\n  前: ${TAPE.lines[ln].text}\n  後: ${edits[ln]}`)); }
   ["video", "script", "sound"].forEach(k => {
     const list = anns.filter(a => annTrack(a) === k); if (!list.length) return;
     out.push("", `## ${TRACK[k].name}への注釈`);

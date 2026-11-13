@@ -447,6 +447,8 @@ function redraw() {
 const MSG = TAPE.msg;
 const SPEAKER_INK = Object.fromEntries(TAPE.speakers.map(s => [s.name, s.ink]));
 let comparing = false;
+// msg.when の問いの値が全部そろうコマだけ重ねる（NVL のように別の形のウィンドウの時は重ねない）
+function msgOn(t) { const p = probesAt(t); return Object.entries(MSG.when || {}).every(([k, v]) => String(p[k]) === v); }
 function msgBox(n) { const h = (n - 1) * MSG.lh + MSG.padTop + MSG.padBot; return { top: MSG.cy - h / 2, h }; }
 function wrapLines(text, maxW) {
   const out = [];
@@ -459,7 +461,7 @@ function wrapLines(text, maxW) {
 }
 function drawEdited(b, t) {
   const ln = lineAt(t), pill = $("editPill");
-  if (!ln || edits[ln] === undefined || !objectsAt(t).some(o => o.id === "message")) { pill.style.display = "none"; return; }
+  if (!ln || edits[ln] === undefined || !msgOn(t) || !objectsAt(t).some(o => o.id === "message")) { pill.style.display = "none"; return; }
   pill.style.display = "block";
   if (comparing) { pill.textContent = "元の文章（指を離すと直した文章）"; pill.classList.add("orig"); return; }
   pill.textContent = "直した文章を重ねています · 長押しで元と比べる"; pill.classList.remove("orig");
@@ -723,7 +725,7 @@ $("playHereBtn").onclick = () => {
 function buildPrompt() {
   const edited = Object.keys(edits).map(Number).sort((a, b) => a - b);
   const out = [`${TAPE.title}（${TAPE.game}・${TAPE.commit}）の動画を見て、直してほしい所をまとめました。`, "注釈は 映像・台本・音 のどれかに付いています。rect は画面に対する割合（左上が 0,0）です。"];
-  if (edited.length) { out.push("", "## 台本の直し（このとおりに書き換えてください）"); edited.forEach(ln => out.push(`- ${yarn}:${ln}（${TAPE.lines[ln].who}）\n  前: ${TAPE.lines[ln].text}\n  後: ${edits[ln]}`)); }
+  if (edited.length) { out.push("", "## 台本の直し（このとおりに書き換えてください）"); out.push("台本が変わっていたら、行番号でなく「前」の文章で探してください。"); edited.forEach(ln => out.push(`- ${yarn}:${ln}（${TAPE.lines[ln].who}）\n  前: ${TAPE.lines[ln].text}\n  後: ${edits[ln]}`)); }
   ["video", "script", "sound"].forEach(k => {
     const list = anns.filter(a => annTrack(a) === k); if (!list.length) return;
     out.push("", `## ${TRACK[k].name}への注釈`);

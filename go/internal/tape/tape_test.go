@@ -85,7 +85,10 @@ var mockFixes = [][2]string{
 	{"const MSG = { x0: .028, x1: .972, cy: 466 / 960, lh: 43.6 / 960, padTop: 47 / 960, padBot: 32 / 960, font: 25 / 960, cps: 28 };\n" +
 		`const SPEAKER_INK = { "魔女": "#e2c2ff", "少女": "#ffd29a", "地の文": "#f4f4f4" };`,
 		"const MSG = TAPE.msg;\nconst SPEAKER_INK = Object.fromEntries(TAPE.speakers.map(s => [s.name, s.ink]));"},
-	{"if (!ln || edits[ln] === undefined || t < 8) {", `if (!ln || edits[ln] === undefined || !objectsAt(t).some(o => o.id === "message")) {`},
+	{"if (!ln || edits[ln] === undefined || t < 8) {", `if (!ln || edits[ln] === undefined || !msgOn(t) || !objectsAt(t).some(o => o.id === "message")) {`},
+	{"function msgBox(n) {", "// msg.when の問いの値が全部そろうコマだけ重ねる（NVL のように別の形のウィンドウの時は重ねない）\n" +
+		"function msgOn(t) { const p = probesAt(t); return Object.entries(MSG.when || {}).every(([k, v]) => String(p[k]) === v); }\n" +
+		"function msgBox(n) {"},
 	{`  const names = { phase: "場面", witch: "魔女", item: "小物", ambience: "環境音", logSize: "ログ" };`, "  const names = TAPE.probeNames;"},
 	{"function playHref(t) { const ln = lineAt(t) || 18; return `${TAPE.playUrl}?talk=${TAPE.node}&line=${ln}`; }",
 		"// 直した行は edit.<行>（後の文）と was.<行>（前の文のハッシュ）で渡す。URL が長すぎると開けない端末があるので、MAX_URL を超える分は載せずに数える\nconst MAX_URL = 8000;\nfunction playLink(t) {\n  const ln = lineAt(t), node = encodeURIComponent(TAPE.node);\n  const l = ln && TAPE.lines[ln];\n  let href = ln ? `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}` : `${TAPE.playUrl}?talk=${node}`, dropped = 0;\n  Object.keys(edits).map(Number).sort((a, b) => a - b).forEach(e => {\n    const part = `&edit.${e}=${encodeURIComponent(edits[e])}&was.${e}=${fnv1a(TAPE.lines[e].text)}`;\n    if (href.length + part.length > MAX_URL) dropped++; else href += part;\n  });\n  return { href, dropped };\n}\nconst playHref = t => playLink(t).href;\nfunction fnv1a(s) { let h = 0x811c9dc5; for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0; return h.toString(16).padStart(8, \"0\"); }"},
@@ -246,6 +249,20 @@ func TestParseRejectsSpeakerWithoutColor(t *testing.T) {
 func TestParseRejectsMsgWithoutKey(t *testing.T) {
 	err := withEdit(t, func(m map[string]any) { delete(m["msg"].(map[string]any), "cps") })
 	if err == nil || !strings.Contains(err.Error(), "cps") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestParseRejectsMsgWhenOnUnknownProbe(t *testing.T) {
+	err := withEdit(t, func(m map[string]any) { m["msg"].(map[string]any)["when"] = map[string]any{"nope": "Adv"} })
+	if err == nil || !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestParseRejectsMsgWhenWithNonTextValue(t *testing.T) {
+	err := withEdit(t, func(m map[string]any) { m["msg"].(map[string]any)["when"] = map[string]any{"mode": 1} })
+	if err == nil || !strings.Contains(err.Error(), "when") {
 		t.Fatalf("got %v", err)
 	}
 }

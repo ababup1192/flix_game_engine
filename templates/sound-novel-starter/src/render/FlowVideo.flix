@@ -90,7 +90,7 @@ mod FlowVideo {
             case Err(why) => println("tape: ${why}（${out}/tape.json は書かない）")
         }
 
-    /// テープに渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは横の ADV のウィンドウ。
+    /// テープに渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは横の ADV のウィンドウ（NVL の間は重ねない）。
     def tapeTable(h: AppState): TapeOut.Table \ IO =
         { title = projectTitle(),
           sceneNames = Map#{ "title" => "タイトル", "station" => "無人の駅", "clear" => "頁をめくる" },
@@ -168,7 +168,8 @@ mod FlowVideo {
           padTop = (firstBase - panel#position#y) / size#y,
           padBot = (panel#position#y + panel#size#y - firstBase) / size#y,
           font = body / size#y,
-          cps = World.configOf(h#world)#cps }
+          cps = World.configOf(h#world)#cps,
+          when = Map#{ "mode" => "Adv" } }
 
     /// project.json の title（読めなければ空）。
     def projectTitle(): String \ IO =

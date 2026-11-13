@@ -64,7 +64,10 @@
     "padBot": 0.1593,
     "padTop": 0.137,
     "x0": 0.075,
-    "x1": 0.925
+    "x1": 0.925,
+    "when": {
+      "mode": "Adv"
+    }
   },
   "node": "Station",
   "objects": [

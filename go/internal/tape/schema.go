@@ -381,4 +381,21 @@ func (c *checker) checkMsg() {
 			return
 		}
 	}
+	raw, ok := m["when"]
+	if !ok {
+		return
+	}
+	var when map[string]string
+	if json.Unmarshal(raw, &when) != nil {
+		c.fail("\"msg\" の \"when\" は {問いの名前: 値の文字} のオブジェクト")
+		return
+	}
+	var probes map[string]json.RawMessage
+	_ = json.Unmarshal(c.raw["probes"], &probes)
+	for name := range when {
+		if _, ok := probes[name]; !ok {
+			c.fail("\"msg\" の \"when\" の問い %q が \"probes\" に無い", name)
+			return
+		}
+	}
 }

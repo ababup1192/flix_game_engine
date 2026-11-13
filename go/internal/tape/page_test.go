@@ -447,6 +447,26 @@ func TestPlayLinkCarriesEdits(t *testing.T) {
 	noErrors(t, p, "other")
 }
 
+// msg.when の問いの値が今のコマと違う時（NVL のウィンドウなど）は、直した台詞を重ねず帯も出さない。そろう時は重ねる。
+func TestEditOverlayFollowsMsgWhen(t *testing.T) {
+	p := openTapePage(t)
+	s := buildSite(t)
+	load(t, p, s.otherURL)
+	var got struct{ Off, On string }
+	if err := p.Eval(`(() => {
+	  const k = Object.keys(TAPE.probes)[0], now = String(probesAt(2.5)[k]);
+	  edits[4] = "今夜は風が凪いだ"; seek(2.5);
+	  MSG.when = { [k]: now + "_別" }; redraw(); const off = getComputedStyle($("editPill")).display;
+	  MSG.when = { [k]: now }; redraw(); const on = getComputedStyle($("editPill")).display;
+	  return { Off: off, On: on }; })()`, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Off != "none" || got.On == "none" {
+		t.Errorf("when に従っていない: そろわない時 %s・そろう時 %s", got.Off, got.On)
+	}
+	noErrors(t, p, "other")
+}
+
 // 直しが長くて URL が 8000 字を超える時は、超えない所まで載せ、載せられなかった数をトーストで言う。
 func TestPlayLinkDropsEditsPastTheLimit(t *testing.T) {
 	p := openTapePage(t)

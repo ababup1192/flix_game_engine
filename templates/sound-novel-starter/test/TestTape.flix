@@ -69,7 +69,7 @@ mod TestTape {
     def table(): TapeOut.Table =
         { title = "見本", sceneNames = Map#{ "opening" => "はじめ" }, soundLabels = Map#{ "se_slap" => "叩く" },
           hiddenSounds = Set#{ "ui_open" },
-          msg = { x0 = 0.1, x1 = 0.9, cy = 0.8, lh = 0.05, padTop = 0.1, padBot = 0.1, font = 0.04, cps = 30.0 },
+          msg = { x0 = 0.1, x1 = 0.9, cy = 0.8, lh = 0.05, padTop = 0.1, padBot = 0.1, font = 0.04, cps = 30.0, when = Map.empty() },
           probes = "logSize" :: Nil, probeNames = Map.empty(), playUrl = "",
           objects = h -> FlowVideo.objectsOf(Layout.Fit.Regular, h#resources, h#world) }
 
@@ -79,6 +79,10 @@ mod TestTape {
 
     /// flow の文から tape.json の木を作る。untilStop なら flow が途中で止まってもそこまでの分で作る（FlowVideo と同じ）。
     def tapeFrom(flow: String, marks: List[String], untilStop: Bool): Result[String, Map[String, Json]] \ Fs.FileRead =
+        tapeWith(table(), flow, marks, untilStop)
+
+    /// 表を差し替えて tapeFrom と同じく作る。
+    def tapeWith(tbl: TapeOut.Table, flow: String, marks: List[String], untilStop: Bool): Result[String, Map[String, Json]] \ Fs.FileRead =
         let r = res();
         let app = TestKit.app(r, TestKit.w0(r));
         let design = Layout.size(Layout.Fit.Regular);
@@ -92,7 +96,7 @@ mod TestTape {
         forM (
             script  <- parsed;
             outcome <- upTo(Flow.play(app, { design = design, limit = 600 }, script, { world = title, state = App.freshStepState() }));
-            text    <- TapeOut.toJson(table(), { game = "g", flow = "tape-test.flow", fps = script#fps, design = design, marks = marks, outcome = outcome });
+            text    <- TapeOut.toJson(tbl, { game = "g", flow = "tape-test.flow", fps = script#fps, design = design, marks = marks, outcome = outcome });
             root    <- DocJson.parse(text) |> Option.flatMap(JsonCodec.expectObject) |> Option.toOk("tape.json が JSON でない")
         ) yield root
 
@@ -160,6 +164,20 @@ mod TestTape {
             |> Option.map(obj -> arrayAt("logSize", obj)) |> Option.getWithDefault(Nil) |> List.last |> Option.map(secondOf)
             |> Option.flatMap(JsonCodec.expectInt));
         Assert.assertEq(expected = Ok(Some(3)), last)
+
+    @Test
+    def testMsgCarriesItsWhenCondition(): Unit \ {Assert, Fs.FileRead} =
+        // msg の when（問い → 値）がそのまま tape.json の msg に載る。
+        let tbl = { msg = { when = Map#{ "logSize" => "3" } | table()#msg } | table() };
+        let when = tapeWith(tbl, flowText(Nil), Nil, false) |> Result.map(root -> Map.get("msg", root) |> Option.flatMap(JsonCodec.expectObject)
+            |> Option.flatMap(Map.get("when")) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(obj -> JsonCodec.stringOr("logSize", "", obj)));
+        Assert.assertEq(expected = Ok(Some("3")), when)
+
+    @Test
+    def testMsgWhenOnAProbeNotListedStops(): Unit \ {Assert, Fs.FileRead} =
+        // msg の when が probes に無い問いを見ていたら tape.json を作らない。
+        let tbl = { msg = { when = Map#{ "mode" => "Adv" } | table()#msg } | table() };
+        Assert.assertTrue(Result.isErr(tapeWith(tbl, flowText(Nil), Nil, false)))
 
     // ── 画面に出ている物（objects） ──
 
