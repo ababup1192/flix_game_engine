@@ -360,7 +360,7 @@ func TestOtherTapeHasNoForkAndExportsAllFields(t *testing.T) {
 	noErrors(t, p, "other")
 }
 
-// 横長の動画（960×540）: strip のコマが横長になり、canvas が動画の映っている矩形に重なり、枠が頁の外へ出ない。
+// 横長の動画（960×540）: strip のコマは帯の枠の比のまま（真ん中を切り抜く）、canvas が動画の映っている矩形に重なり、枠が頁の外へ出ない。
 func TestLandscapeVideoOverlaysWhereItIsShown(t *testing.T) {
 	p := openTapePage(t)
 	dir := t.TempDir()
@@ -400,8 +400,8 @@ func TestLandscapeVideoOverlaysWhereItIsShown(t *testing.T) {
 		t.Fatal(err)
 	}
 	savePNG(t, filepath.Join(shotsDir(t), "landscape-pick-02.5.png"), shot(t, p))
-	if got.StripW != 96 || got.StripH != 54 {
-		t.Errorf("strip の 1 コマが %vx%v（横長の動画なら 96x54）", got.StripW, got.StripH)
+	if got.StripW != 54 || got.StripH != 96 {
+		t.Errorf("strip の 1 コマが %vx%v（動画の比によらず帯の枠の 54x96）", got.StripW, got.StripH)
 	}
 	near := func(a, b float64) bool { return a-b < 1 && b-a < 1 }
 	if !near(got.CanvasL, got.ShownL) || !near(got.CanvasT, got.ShownT) || !near(got.CanvasW, got.ShownW) || !near(got.CanvasH, got.ShownH) {

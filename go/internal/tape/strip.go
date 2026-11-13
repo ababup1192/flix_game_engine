@@ -14,7 +14,7 @@ func StripCount(duration float64) int {
 	return int(math.Ceil(duration*StripPerSec - 1e-9))
 }
 
-// MakeStrip は動画から 0.5 秒ごとのコマを、長い辺 StripLong・動画の比のまま縮めて横 1 列に並べた jpg を書く。
+// MakeStrip は動画から 0.5 秒ごとのコマを StripW×StripH に縮めて（比が違えば真ん中から切り抜いて）横 1 列に並べた jpg を書く。
 func MakeStrip(ffmpeg, video, out string, duration float64) (Strip, error) {
 	if ffmpeg == "" {
 		ffmpeg = os.Getenv("FFMPEG")
@@ -30,7 +30,7 @@ func MakeStrip(ffmpeg, video, out string, duration float64) (Strip, error) {
 	if n < 1 {
 		n = 1
 	}
-	vf := fmt.Sprintf("fps=%d,scale='if(gte(iw,ih),%d,-2)':'if(gte(iw,ih),-2,%d)',tile=%dx1", StripPerSec, StripLong, StripLong, n)
+	vf := fmt.Sprintf("fps=%d,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,tile=%dx1", StripPerSec, StripW, StripH, StripW, StripH, n)
 	cmd := exec.Command(ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", video,
 		"-vf", vf, "-frames:v", "1", "-q:v", "4", out)
 	if msg, err := cmd.CombinedOutput(); err != nil {
@@ -45,9 +45,8 @@ func MakeStrip(ffmpeg, video, out string, duration float64) (Strip, error) {
 	if err != nil {
 		return Strip{}, fmt.Errorf("書いた %s を読めない: %w", out, err)
 	}
-	w, h := cfg.Width/n, cfg.Height
-	if cfg.Width%n != 0 || max(w, h) != StripLong {
-		return Strip{}, fmt.Errorf("%s の大きさが %dx%d（%d 枚で長い辺 %d のはず）", out, cfg.Width, cfg.Height, n, StripLong)
+	if cfg.Width != n*StripW || cfg.Height != StripH {
+		return Strip{}, fmt.Errorf("%s の大きさが %dx%d（%d 枚なら %dx%d のはず）", out, cfg.Width, cfg.Height, n, n*StripW, StripH)
 	}
-	return Strip{File: StripFile, Count: n, W: w, H: h}, nil
+	return Strip{File: StripFile, Count: n, W: StripW, H: StripH}, nil
 }

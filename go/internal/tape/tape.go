@@ -29,8 +29,9 @@ const (
 
 	// StripPerSec は strip のコマの間隔（0.5 秒ごと）。頁の欄の名前 stripPerSec はモックのまま。
 	StripPerSec = 2
-	// StripLong は strip の 1 コマの長い辺（px）。短い辺は動画の比から（縦長 540×960 なら 54×96、横長 960×540 なら 96×54）。
-	StripLong = 96
+	// StripW・StripH は strip の 1 コマ（帯とサムネの枠の比）。動画の比が違えば真ん中から切り抜く（横長の動画は左右が落ちる）。
+	StripW = 54
+	StripH = 96
 )
 
 // Strip は頁の TAPE.strip。

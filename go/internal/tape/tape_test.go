@@ -17,7 +17,7 @@ const (
 	otherPath  = "testdata/other.tape.json"
 )
 
-var sampleStrip = Strip{File: StripFile, Count: 88, W: 54, H: 96}
+var sampleStrip = Strip{File: StripFile, Count: 88, W: StripW, H: StripH}
 
 func readFile(t *testing.T, p string) []byte {
 	t.Helper()
@@ -55,13 +55,13 @@ var mockFixes = [][2]string{
 		"video.onseeked = () => onTime(video.currentTime);\n" +
 			"video.addEventListener(\"loadedmetadata\", () => { document.documentElement.style.setProperty(\"--frame-ratio\", `${video.videoWidth} / ${video.videoHeight}`); redraw(); });\n"},
 	{".frame { position: relative; height: 100%; aspect-ratio: 540 / 960; max-width: 100%; }",
-		".frame { position: relative; height: 100%; aspect-ratio: var(--frame-ratio); max-width: 100%; }"},
+		".frame { position: relative; height: 100%; aspect-ratio: var(--frame-ratio, auto); max-width: 100%; }"},
 	{"const box = () => canvas.getBoundingClientRect();\nfunction redraw() {\n",
 		"const box = () => canvas.getBoundingClientRect();\n" +
 			"// 枠より動画が横長・縦長の時は、動画が映っている矩形（object-fit: contain の内側）に canvas を重ねる。枠と動画の比が同じなら枠いっぱいのまま\n" +
 			"function fitCanvas() {\n" +
-			"  const f = $(\"frame\"), fw = f.clientWidth, fh = f.clientHeight, vw = video.videoWidth || TAPE.strip.w, vh = video.videoHeight || TAPE.strip.h;\n" +
-			"  if (!fw || !fh || Math.abs(fw / fh - vw / vh) < .01) { canvas.style.left = canvas.style.top = canvas.style.width = canvas.style.height = \"\"; return; }\n" +
+			"  const f = $(\"frame\"), fw = f.clientWidth, fh = f.clientHeight, vw = video.videoWidth, vh = video.videoHeight;\n" +
+			"  if (!fw || !fh || !vw || !vh || Math.abs(fw / fh - vw / vh) < .01) { canvas.style.left = canvas.style.top = canvas.style.width = canvas.style.height = \"\"; return; }\n" +
 			"  const k = Math.min(fw / vw, fh / vh), w = vw * k, h = vh * k;\n" +
 			"  Object.assign(canvas.style, { left: (fw - w) / 2 + \"px\", top: (fh - h) / 2 + \"px\", width: w + \"px\", height: h + \"px\" });\n" +
 			"}\n" +
@@ -96,7 +96,6 @@ var mockFixes = [][2]string{
 		"  const root = document.documentElement.style;\n" +
 		"  TAPE.speakers.forEach((s, i) => root.setProperty(`--speaker-${i}`, s.color));\n" +
 		"  root.setProperty(\"--strip\", `url(\"${encodeURI(TAPE.strip.file)}\")`);\n" +
-		"  root.setProperty(\"--frame-ratio\", `${TAPE.strip.w} / ${TAPE.strip.h}`);\n" +
 		"  root.setProperty(\"--thumb-w\", THUMB_W + \"px\"); root.setProperty(\"--thumb-bg\", `${THUMB_W * TAPE.strip.count}px 60px`);\n" +
 		"  root.setProperty(\"--chap-w\", CHAP_W + \"px\"); root.setProperty(\"--chap-bg\", `${CHAP_W * TAPE.strip.count}px 53px`);\n" +
 		"  $(\"tapeTitle\").textContent = TAPE.title; $(\"tcDur\").textContent = mmss(TAPE.duration);\n" +
@@ -147,7 +146,7 @@ func TestSampleRenderEqualsMockExceptListedFixes(t *testing.T) {
 }
 
 func TestOtherSampleLeavesNoMockNames(t *testing.T) {
-	page := renderFile(t, otherPath, Strip{File: StripFile, Count: 13, W: 54, H: 96})
+	page := renderFile(t, otherPath, Strip{File: StripFile, Count: 13, W: StripW, H: StripH})
 	for _, word := range []string{"kesshou", "血鱗", "MOCK", "2992", "魔女"} {
 		if strings.Contains(page, word) {
 			t.Errorf("書き出した頁に %q が残っている", word)
@@ -173,7 +172,7 @@ func TestRenderEscapesScriptCloseInText(t *testing.T) {
 }
 
 func TestRenderAddedFieldsOverrideGameValues(t *testing.T) {
-	page := renderFile(t, samplePath, Strip{File: StripFile, Count: 5, W: 54, H: 96})
+	page := renderFile(t, samplePath, Strip{File: StripFile, Count: 5, W: StripW, H: StripH})
 	if !strings.Contains(page, `"strip":{"file":"strip.jpg","count":5,"w":54,"h":96}`) {
 		t.Fatal("strip が Render の値になっていない")
 	}
