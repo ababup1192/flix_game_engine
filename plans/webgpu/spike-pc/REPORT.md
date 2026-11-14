@@ -266,3 +266,12 @@ dylib をそのまま配れる wgpu-native（ただし前の試作で jWebGPU �
 
 sha256（jar）: webgpu-jni `7a0ff4a5…71fda`・webgpu-desktop-jni `c6deada2…1aa3`・…-dawn_mac_arm64 `bdc37dc3…65db`・…-wgpu_mac_arm64 `226eb451…0548`・webgpu-core `8c645ac5…ca3f`・
 api-core `de339e8b…a97a9e`・loader-core `df891003…36361`・runtime-jni `2913c911…6596f`・runtime-desktop-jni_mac_arm64 `d04e8dea…1dc1793`。
+
+### 第 2 回の追記: 画面のロックを外して撮った（2026-11-14）
+
+画面のロックを人に外してもらい、`WinCheck` を BGRA8Unorm と BGRA8UnormSrgb で 1 回ずつ回した（`logs/wincheck_unlocked_*.log`）。
+
+- `screencapture -l` と ScreenCaptureKit の両方で窓が撮れ、三角形の割合 0.1250・地 0.8746・黒 0.0004 で、2 つとも OK。前の試作で絵が黒かったのは、画面のロックで撮れなかったためと確かめた。
+- 撮った絵の三角形の中は 235,133,78（BGRA8Unorm）・243,190,143（Srgb）で、読み戻した値（255,128,64・255,188,137）から少しずれる。地の灰はずれない。撮った絵には画面の色の設定（ColorSync）が掛かるためと見ている【推】。絵が合っているかの門は、読み戻した値で見る。
+- 1 コマの間隔は中央値 6.05 ms（この時の画面は約 165 Hz）。fails=0・GPU の error 0。
+- Retina の 2 倍は、この起動でも倍率 1.0 で【未確認】のまま。

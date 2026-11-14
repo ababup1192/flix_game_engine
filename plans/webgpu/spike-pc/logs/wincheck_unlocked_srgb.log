@@ -1,0 +1,30 @@
+main thread=main JAVA_STARTED_ON_FIRST_THREAD=1
+NSWindow=0x76b89c0500 windowNumber=23933 backingScale=1.0 layer(before)=NSViewBackingLayer
+natives from /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-a401f8c67617afc2b/plans/webgpu/spike-pc/native/dawn/jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+device status Success 
+device+surface made on thread main
+layer(after)=CAMetalLayer contentsScale=1.0
+surface formats: BGRA8Unorm BGRA8UnormSrgb RGBA16Float RGB10A2Unorm 
+framebuffer 640x360 fmt=BGRA8UnormSrgb present=Fifo
+RESULT readback 640x360 OK (192,251)=255,188,137 (320,216)=255,188,137 (192,108)=124,124,124 (3,3)=124,124,124 -> shots/win_readback.png
+RESULT present Fifo: frame interval median=6.053 ms p10=5.989 p90=6.127 (frames 10..120) status=1=120 (1=SuccessOptimal 2=SuccessSuboptimal 3=Timeout 4=Outdated 5=Lost 6=Error)
+RESULT present Fifo: acquire+encode+submit median=5.999 ms max=6.321 | present() median=0.015 ms max=0.049
+screencapture exit=0
+preflight=true
+onscreen=1 layer=0 alpha=1 bounds={
+    Height = 388;
+    Width = 640;
+    X = 1189;
+    Y = "-1694";
+} sharing=1
+sck: wrote shots/win_sck.png 640x388 onScreen=true
+out/wincap exit=0
+RESULT capture 640x388 scale=1.00 content-top=28 tri=0.1250 clear=0.8746 black=0.0004 in=243,190,143 out=124,124,124 (expect tri~[255, 188, 137] clear~[124, 124, 124]) OK -> shots/win_screencapture.png
+RESULT capture 640x388 scale=1.00 content-top=28 tri=0.1250 clear=0.8746 black=0.0004 in=243,190,143 out=124,124,124 (expect tri~[255, 188, 137] clear~[124, 124, 124]) OK -> shots/win_sck.png
+resized window to 800x450 pt, framebuffer 800x450
+before reconfigure: getCurrentTexture status=1=1 (1=SuccessOptimal 2=SuccessSuboptimal 3=Timeout 4=Outdated 5=Lost 6=Error)
+after reconfigure: status=1=1 (1=SuccessOptimal 2=SuccessSuboptimal 3=Timeout 4=Outdated 5=Lost 6=Error)
+RESULT resized 800x450 OK (240,315)=255,188,137 (400,270)=255,188,137 (240,135)=124,124,124 (3,3)=124,124,124 -> shots/win_resized_readback.png
+RESULT wincheck fmt=BGRA8UnormSrgb retina=true visible=true present=Fifo fails=0 gpuErrors=0
