@@ -2,8 +2,9 @@
 // ソフトウェアラスタライザ。GL を使わないので GL コンテキストの無い場所（スナップショット
 // テスト、将来の IDE ビューポートのプレビュー）で描画結果を目視確認できる。
 //
-// 描画規約（box/textured/font/polygon の扱い、z 順）は render_gl/Frame.drawSprite と
-// 一致させてある — 各関数のコメントに規約を記す。design を `scale` 倍に拡大して出力する。
+// 描画規約（box/textured/font/polygon の扱い、z 順）は render_gl の instanced スプライトの
+// シェーダー（RenderShader.spriteInstancedFragmentShaderSource）と一致させてある — 各関数のコメントに
+// 規約を記す。突き合わせは gl-parity が画素で見る。design を `scale` 倍に拡大して出力する。
 pub mod SoftRaster {
     import java.awt.RenderingHints
     import java.awt.image.BufferedImage
