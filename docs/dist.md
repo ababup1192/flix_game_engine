@@ -26,7 +26,7 @@ make dist-macos DIST_OUT=~/dist-out    # 1 つだけ・書き出す先を替え�
 | Windows x64 | `<名前>-<版>-windows-x64.zip` | `run.bat` | `%LOCALAPPDATA%\<名前>\` |
 
 - jar は `make run` と同じ物（`bin/headless-run --build-only`）。LWJGL の native は 3 つの OS の分が全部入っている。
-- JRE は Temurin 21 の版を 3 つの OS でそろえて固定する（版と SHA-256 は `go/internal/dist/targets.go` の `Targets`）。
+- JRE は Temurin 25 の版を 3 つの OS でそろえて固定する（版と SHA-256 は `go/internal/dist/targets.go` の `Targets`）。
   1 回目だけ落とし（各 50 MB ほど）、OS のキャッシュ置き場の `fge-jre/` に置く。SHA-256 が合わなければ止まる。
 - 起動は、書く物をユーザーの置き場へ回し、読む物（assets/・project.json）は配布物の中を指させてから、そこへ移って
   `FGE_ENTRY=main` で jar を流す（Linux と macOS は symlink・Windows はフォルダを junction・ファイルは写し）。

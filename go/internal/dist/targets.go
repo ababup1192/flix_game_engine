@@ -50,16 +50,16 @@ type Target struct {
 // JRE の版は 3 つの OS でそろえる。上げる時は Adoptium の API（api.adoptium.net/v3/assets/version/...）の
 // binaries[].package の link と checksum を写す。
 // WhyNot: latest を引かない — 同じ engine の版で作った配布物の中身が日によって変わり、実機で起きた事を手元で再現できない。
-const jreVersion = "21.0.12.1+1"
+const jreVersion = "25.0.5+8"
 
-const jreBase = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/"
+const jreBase = "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/"
 
 // Targets は配れる OS。キーは fge dist の引数。
 var Targets = map[string]Target{
 	"linux": {
 		Key: "linux", Arch: "x64", Format: "tar.gz",
-		JRE: JRESpec{Version: jreVersion, URL: jreBase + "OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz",
-			SHA256: "2413149700df0f7d440500a84a8f764c535f21e5a5e87d38328b64eec2c5b500"},
+		JRE: JRESpec{Version: jreVersion, URL: jreBase + "OpenJDK25U-jre_x64_linux_hotspot_25.0.5_8.tar.gz",
+			SHA256: "6fac98f0c8202efc3135a9e9e42aa61963ec42d1c5cbb40caf231e7b14a24ef6"},
 		root: func(meta) string { return "" },
 		java: "bin/java",
 		files: func(m meta) ([]genFile, error) {
@@ -76,8 +76,8 @@ var Targets = map[string]Target{
 	},
 	"macos": {
 		Key: "macos", Arch: "arm64", Format: "zip",
-		JRE: JRESpec{Version: jreVersion, URL: jreBase + "OpenJDK21U-jre_aarch64_mac_hotspot_21.0.12.1_1.tar.gz",
-			SHA256: "dec50fc6f9fcd4fe3ae8cabf5a5fa68f6afc48841f7698e468e9aa5d54beed84", Root: "Contents/Home"},
+		JRE: JRESpec{Version: jreVersion, URL: jreBase + "OpenJDK25U-jre_aarch64_mac_hotspot_25.0.5_8.tar.gz",
+			SHA256: "72ebd76b502c849e88dea39afae51baf5f82f2b5b1b6389c28ea707b20451bce", Root: "Contents/Home"},
 		root: func(m meta) string { return m.Name + ".app/Contents/Resources" },
 		java: "bin/java",
 		files: func(m meta) ([]genFile, error) {
@@ -101,8 +101,8 @@ var Targets = map[string]Target{
 	},
 	"windows": {
 		Key: "windows", Arch: "x64", Format: "zip",
-		JRE: JRESpec{Version: jreVersion, URL: jreBase + "OpenJDK21U-jre_x64_windows_hotspot_21.0.12.1_1.zip",
-			SHA256: "d35f31e712f0fcf6ac5a093edc90204fbff22f720ba3950bd09d331d5e621636"},
+		JRE: JRESpec{Version: jreVersion, URL: jreBase + "OpenJDK25U-jre_x64_windows_hotspot_25.0.5_8.zip",
+			SHA256: "da78d54a2fcdbba1e92d5e3f07dd30236f96297891c4a21a781c3f38f5c0beae"},
 		root: func(meta) string { return "" },
 		java: "bin/java.exe",
 		files: func(m meta) ([]genFile, error) {

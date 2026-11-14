@@ -45,7 +45,7 @@ esac
 
 # コンパイラ jar の入手は devbox (flix.nix) に任せ、実行は手元の java で行う。
 # flix.nix の flix コマンドを直に exec しないのは、それが自分専用の JRE を同梱していて
-# こちらの jdk (devbox の jdk@21) と別マイナー版になり、フォント計測がわずかにズレて
+# こちらの jdk (devbox の jdk@25) と別マイナー版になり、フォント計測がわずかにズレて
 # 描画スナップショットが崩れるため。jar だけ nix store から借り、JRE は固定する。
 # 見つけ方: PATH 上の flix コマンドのうち /nix/store 実体に解決されるものを取り、
 # その隣の share/java/flix/flix.jar を使う (nixpkgs の flix パッケージの配置)。
@@ -103,12 +103,22 @@ fi
 # 「Java を入れてください」と言うだけのスタブが居て、本物と見分けが付かないため。
 # Studio の .app から起こした make は PATH が /usr/bin:/bin:... しか無く、必ずこれを掴む。
 JAVA_CMD="java"
-if ! java -version >/dev/null 2>&1; then
+if ! JAVA_VERSION_OUT="$("$JAVA_CMD" -version 2>&1)"; then
     JAVA_CMD="$PROJECT_ROOT/.devbox/nix/profile/default/bin/java"
+    if ! JAVA_VERSION_OUT="$("$JAVA_CMD" -version 2>&1)"; then
+        echo "java が見つかりません。devbox shell に入るか、PATH に JDK を通してください。" >&2
+        exit 127
+    fi
 fi
-if ! "$JAVA_CMD" -version >/dev/null 2>&1; then
-    echo "java が見つかりません。devbox shell に入るか、PATH に JDK を通してください。" >&2
-    exit 127
+# WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
+# この旗を知らず起動しない。LWJGL の sun.misc.Unsafe の警告が出るのは 24 からなので 24 で切る。
+# 版は上の -version の出力から読む。release ファイルや java -XshowSettings を別に起こすと、
+# macOS の /usr/bin/java（実体を辿れない入口）で道が取れないか、JVM をもう 1 本起こす。
+JAVA_MAJOR="${JAVA_VERSION_OUT#*version \"}"
+JAVA_MAJOR="${JAVA_MAJOR%%[!0-9]*}"
+FLAGS="--enable-native-access=ALL-UNNAMED $FLAGS"
+if [ -n "$JAVA_MAJOR" ] && [ "$JAVA_MAJOR" -ge 24 ]; then
+    FLAGS="--sun-misc-unsafe-memory-access=allow $FLAGS"
 fi
 # WhyNot: JVM の既定のスタックに任せないのは、Flix の型検査が式の深さぶんだけ
 # 再帰するため。既定は OS で違い、Linux は macOS より小さいので、手元で通るソースが

@@ -264,39 +264,49 @@
         }
       }
     },
-    "jdk@21": {
-      "last_modified": "2025-10-22T20:59:19Z",
-      "resolved": "github:NixOS/nixpkgs/01b6809f7f9d1183a2b3e081f0a1e6f8f415cb09#jdk",
+    "jdk@25": {
+      "last_modified": "2026-11-07T08:52:32Z",
+      "resolved": "github:NixOS/nixpkgs/085af13c1607f4f73ab1e7a51071faf6577a7e87#jdk25",
       "source": "devbox-search",
-      "version": "21.0.9+8",
+      "version": "25.0.3",
       "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/1vv59r63zic4f2l274qanhn29x83hm2g-zulu-ca-jdk-25.0.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/1vv59r63zic4f2l274qanhn29x83hm2g-zulu-ca-jdk-25.0.3"
+        },
         "aarch64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/gxjm3qjq9kyvi5hv7r4s8ngbkg1d94df-openjdk-21.0.9+8",
+              "path": "/nix/store/l02w684183cvz9zqx3ixlqvqqvgdxlfs-openjdk-25.0.5.0.3+1",
               "default": true
             },
             {
               "name": "debug",
-              "path": "/nix/store/sz9izpfkgi9nw3s9fz8vik9qn01vkx4d-openjdk-21.0.9+8-debug"
+              "path": "/nix/store/vky0qn9sn7qlgaqqra3a5xmljrnbr9pw-openjdk-25.0.5.0.3+1-debug"
             }
           ],
-          "store_path": "/nix/store/gxjm3qjq9kyvi5hv7r4s8ngbkg1d94df-openjdk-21.0.9+8"
+          "store_path": "/nix/store/l02w684183cvz9zqx3ixlqvqqvgdxlfs-openjdk-25.0.5.0.3+1"
         },
         "x86_64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/l5z1hqq6l223379w6f25fibniz16g2s9-openjdk-21.0.9+8",
+              "path": "/nix/store/a50pz8nryi04kiz32hs35rx0zhfryqif-openjdk-25.0.5.0.3+1",
               "default": true
             },
             {
               "name": "debug",
-              "path": "/nix/store/pgkj2381fcdrbx9w85h162cigdgyn7j2-openjdk-21.0.9+8-debug"
+              "path": "/nix/store/9snifm69yv0nkp5j8awlmkgav37ar8sx-openjdk-25.0.5.0.3+1-debug"
             }
           ],
-          "store_path": "/nix/store/l5z1hqq6l223379w6f25fibniz16g2s9-openjdk-21.0.9+8"
+          "store_path": "/nix/store/a50pz8nryi04kiz32hs35rx0zhfryqif-openjdk-25.0.5.0.3+1"
         }
       }
     },
