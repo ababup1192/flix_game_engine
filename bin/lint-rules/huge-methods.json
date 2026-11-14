@@ -1,0 +1,21 @@
+{
+  "note": "lint-huge-methods（ビルドした jar か class の中に、JVM が JIT しない大きさの Flix の関数が無いか）の規約データ。この JSON が source of truth で、bin/fge huge-methods はこれを読んで動く。HotSpot は bytecode が 8,000 バイトを超えるメソッドを JIT せず、インタプリタのまま回す。Flix はラムダを渡した def を呼ぶ所へインライン展開するので、ソースでは短いループが膨らむ。超えている物は exempt（\"モジュール.関数::huge-methods\" と理由 1 行）に載せて通す。ゲームの除外は huge-methods.local.json。探し方と直し方は docs/performance.md の 13 節。",
+  "maxBytes": 8000,
+  "hint": "ループの 1 個ぶんの仕事を別の def に出して @DontInline を付ける（ループのラムダはその def を呼ぶだけにする。docs/performance.md の 13 節）。",
+  "exempt": {
+    "App.Internal.Runner.runningStep::huge-methods": "1 コマに 1 回だけ通る（物の数だけ回るループの中身ではない）。1 コマの段取りを 1 か所で読めるようにまとめてある",
+    "App.Internal.Paint.renderFrame::huge-methods": "1 コマに 1 回だけ通る（物の数だけ回るループの中身ではない）",
+    "App.Internal.Halt.pausedStep::huge-methods": "ポーズ中に 1 コマに 1 回だけ通る",
+    "ShaderGen.fieldExpr::huge-methods": "シェーダーの字を作る時だけ通る（cache に入った後は通らない）",
+    "ShaderEval.compileField::huge-methods": "ShaderDoc の木を CPU の関数へ直す時だけ通る（cache に入った後は通らない）",
+    "ShaderJson.fieldToJson::huge-methods": "Doc の書き出しの時だけ通る",
+    "LightModel3d.Codegen.vec3Code::huge-methods": "光の式の木から字を作る時だけ通る",
+    "LightModel3d.Codegen.scalarCode::huge-methods": "光の式の木から字を作る時だけ通る",
+    "ShaderGen.eqMaterial::huge-methods": "【直す候補】3D の material 1 つにつき毎コマ通る（Render3d.Material.reuseOrRebuild が前のコマの material と比べる）。重さは未計測。JFR で確かめてから直すか決める",
+    "ShaderGen.eqSpecTree::huge-methods": "【直す候補】eqMaterial から通る。同上",
+    "ShaderGen.eqSpecWith::huge-methods": "【直す候補】eqMaterial から通る。同上",
+    "ShaderGen.eqShade::huge-methods": "【直す候補】eqMaterial から通る。同上",
+    "ShaderGen.eqOptField::huge-methods": "【直す候補】eqMaterial から通る。同上",
+    "ShaderGen.eqOut::huge-methods": "【直す候補】eqMaterial から通る。同上"
+  }
+}
