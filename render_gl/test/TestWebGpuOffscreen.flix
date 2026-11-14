@@ -25,6 +25,18 @@ mod WebGpuOffscreen.TestWebGpuOffscreen {
         copyRowsFlipped(src, 8, dst, 4, 3, 0);
         List.range(0, 12) |> List.map(i -> Int8.toInt32(dst.get(i)))
 
+    /// device を開けない handler の上で open した結果（開けた時は "opened"）。
+    def openWithoutDevice(): Result[String, String] \ IO =
+        run {
+            WebGpuOffscreen.open({ width = 8, height = 8 }) |> Result.map(_ -> "opened")
+        } with handler WebGpuOffscreen.GpuDevice {
+            def requestDevice(k) = k(Err("no device here"))
+        }
+
+    @Test
+    def testOpenReturnsTheHandlersErrorWhenNoDevice(): Unit \ Assert =
+        Assert.assertEq(expected = Err("no device here"), unchecked_cast(openWithoutDevice() as _ \ {}))
+
     @Test
     def testRowsAreCopiedBottomFirstWithoutPadding(): Unit \ Assert =
         Assert.assertEq(expected = 16 :: 17 :: 18 :: 19 :: 8 :: 9 :: 10 :: 11 :: 0 :: 1 :: 2 :: 3 :: Nil,

@@ -41,6 +41,8 @@
     cpu_frames: 1, cpu_mean: 1, cpu_p50: 1, cpu_p95: 1, raf_lag_p50: 1 };
 
   function resultLine(r) {
+    // WhyNot: 門の結果（bench/webgpu_check の頁）に測りの欄を並べない — 測った値を持たず、undefined が並ぶだけになる。
+    if (typeof r.ok === "boolean") return (r.ok ? "OK " : "NG ") + r.name + "\n  " + r.detail;
     var knobs = Object.keys(r).filter(function (k) { return !metricKeys[k] && k !== "bench"; })
       .map(function (k) { return k + "=" + r[k]; }).join(" ");
     var line = knobs + "\n  cpu p50 " + r.cpu_p50 + " / p95 " + r.cpu_p95 + " ms   frame p50 " + r.frame_p50 + " / p95 " + r.frame_p95 +

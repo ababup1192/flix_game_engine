@@ -1,16 +1,20 @@
-// WebGpuOffscreen — ウィンドウを使わず WebGPU（PC は Dawn）の texture へ描いて読む session（GlOffscreen の WebGPU 版の土台）。
+// WebGpuOffscreen — ウィンドウを使わず WebGPU の texture へ描いて読む session（GlOffscreen の WebGPU 版の土台）。
 // 持つのは device・描き先・読み戻し・式の行の突き合わせ（塗りのコア RenderPaint は持たない）。
+// device は GpuDevice の handler が開く（PC は WebGpuOffscreen.runDawn・ブラウザは WebLayer.runWebGpu）。session を使うコードは PC とブラウザで同じ。
 //
 // 使い方（open から close まで同じ糸で呼ぶ）:
-//   match WebGpuOffscreen.open({ width = 320, height = 180 }) {
-//       case Err(why)    => WebGPU の無い所（SoftRaster か GL の道へ）
-//       case Ok(session) =>
-//           WebGpuOffscreen.gpuOf(session) と targetOf(session) で描く;
-//           WebGpuOffscreen.readRgba(session, buf);
-//           WebGpuOffscreen.close(session)
-//   }
+//   run {
+//       match WebGpuOffscreen.open({ width = 320, height = 180 }) {
+//           case Err(why)    => WebGPU の無い所（SoftRaster か GL の道へ）
+//           case Ok(session) =>
+//               WebGpuOffscreen.gpuOf(session) と targetOf(session) で描く;
+//               WebGpuOffscreen.readRgba(session, buf);
+//               WebGpuOffscreen.close(session)
+//       }
+//   } with WebGpuOffscreen.runDawn
 //
 // WhyNot: GLFW の隠しウィンドウの surface に描かない — 隠したウィンドウでも画面に出す待ち（約 8 ms）が毎コマ入り、描き出しが遅くなる。
+// WhyNot: open の中で実装（Dawn か JSO）を選ばない — ブラウザの書き出しに Dawn の JNI が、PC に JSO が届く。選ぶのは入口で差す handler の 1 か所。
 pub mod WebGpuOffscreen {
     import fge.webgpu.AddressMode
     import fge.webgpu.BindGroupDesc
@@ -50,18 +54,37 @@ pub mod WebGpuOffscreen {
 
     pub type alias Session = SessionData
 
-    /// Dawn の device と width × height の RGBA8 の描き先を作る。device を開けない・大きさが 1 から device の 2D の上限の外なら Err(理由)。
-    pub def open(cfg: { width = Int32, height = Int32 }): Result[String, Session] \ IO =
+    /// WebGPU の device を取る口。handler が機種ごとの実装を開く（PC は runDawn・ブラウザは WebLayer.runWebGpu）。
+    pub eff GpuDevice {
+        /// device を開く。開けなければ Err(理由)。開いた device は呼び手が持ち、destroy する。
+        def requestDevice(): Result[String, WebGpu]
+    }
+
+    /// GpuDevice を Dawn（PC・ネイティブは既定の置き場）で受ける。
+    pub def runDawn(f: Unit -> a \ ef): a \ (ef - GpuDevice) + IO =
+        run f() with handler GpuDevice {
+            def requestDevice(k) = k(openDawn())
+        }
+
+    def openDawn(): Result[String, WebGpu] \ IO =
         try {
             let gpu: WebGpu = checked_cast(DawnWebGpu.open(""));
-            let largest = gpu.limits().maxTextureDimension2D();
-            if (cfg#width < 1 or cfg#height < 1 or cfg#width > largest or cfg#height > largest) {
-                gpu.destroy();
-                Err("描き先の大きさ ${cfg#width}x${cfg#height} は 1〜${largest} の外")
-            } else Ok(withDevice(gpu, cfg))
+            Ok(gpu)
         } catch {
             case e: Throwable => Err("WebGPU の device を開けない: ${e.toString()}")
         }
+
+    /// device を取り、width × height の RGBA8 の描き先を作る。device を開けない・大きさが 1 から device の 2D の上限の外なら Err(理由)。
+    pub def open(cfg: { width = Int32, height = Int32 }): Result[String, Session] \ IO + GpuDevice =
+        GpuDevice.requestDevice() |> Result.flatMap(gpu -> sized(gpu, cfg))
+
+    /// 大きさが device の 2D の上限の内なら描き先を作る。外なら device を捨てて Err。
+    def sized(gpu: WebGpu, cfg: { width = Int32, height = Int32 }): Result[String, Session] \ IO =
+        let largest = gpu.limits().maxTextureDimension2D();
+        if (cfg#width < 1 or cfg#height < 1 or cfg#width > largest or cfg#height > largest) {
+            gpu.destroy();
+            Err("描き先の大きさ ${cfg#width}x${cfg#height} は 1〜${largest} の外")
+        } else Ok(withDevice(gpu, cfg))
 
     /// 開いた device の上に描き先を作る（device を作り直した後に session を組み直す時に使う）。
     pub def withDevice(gpu: WebGpu, cfg: { width = Int32, height = Int32 }): Session \ IO =

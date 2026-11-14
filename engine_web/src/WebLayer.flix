@@ -16,11 +16,29 @@ pub mod WebLayer {
     import fge.web.WebAudio
     import fge.web.WebImages
     import fge.web.WebGl2
+    import fge.web.webgpu.BrowserWebGpu
+    import fge.webgpu.WebGpu
+    import java.lang.Throwable
 
     /// ブラウザ版の開発の道具の組。頁の URL のクエリを始まりの名前と引数として読む（読み方は App.DevTools.browser）。
     /// web/WebMain.flix で `App.launchWithDevTools(WebLayer.devTools(), app)` と渡す。
     pub def devTools(): App.DevTools[w, {}] \ IO =
         App.DevTools.browser(pairUp(Array.toList(Browser.queryPairs())))
+
+    /// WebGpuOffscreen.GpuDevice をブラウザの navigator.gpu で受ける（PC の WebGpuOffscreen.runDawn と対）。
+    /// 待つ所（adapter・device・読み戻し）は Java の中で待ち、f は止まる形のまま書く。
+    pub def runWebGpu(f: Unit -> a \ ef): a \ (ef - WebGpuOffscreen.GpuDevice) + IO =
+        run f() with handler WebGpuOffscreen.GpuDevice {
+            def requestDevice(k) = k(openWebGpu())
+        }
+
+    def openWebGpu(): Result[String, WebGpu] \ IO =
+        try {
+            let gpu: WebGpu = checked_cast(BrowserWebGpu.open());
+            Ok(gpu)
+        } catch {
+            case e: Throwable => Err("WebGPU の device を開けない: ${e.toString()}")
+        }
 
     /// [鍵1, 値1, 鍵2, 値2, …] を (鍵, 値) の並びに。端の 1 つ余りは捨てる。
     def pairUp(flat: List[String]): List[(String, String)] = match flat {

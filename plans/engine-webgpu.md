@@ -589,3 +589,20 @@ dual-source blending・mask は ref を進める形・GL との比べの門・�
 - main で確かめた物: テスト 4 層（engine 960・render_gl 305・engine_world 1473・engine_tools 305）とテンプレート 3 本の reference-check が緑。gl-parity の castShadow「差 565 px」は JDK 21 の main でも同じ（B 段階の既知の差）。
 - GC（bench/scene3d の field 12,000 個・-Xlog:gc・2 回ずつ交互）: JDK 21 は停止 55 回 491 ms・96 回 674 ms、JDK 25 は 68 回 550 ms・62 回 547 ms。frame p50 は 21 が 16.3〜16.8 ms、25 が 15.7〜16.6 ms。どちらも揺れの中で、前の試しで見えた「25 の方が GC が多い」は出なかった。
 - 残り: Studio が同梱する JRE を 25 へ上げる（別リポ）。配る物を実際に組んで起動する確かめ・Linux の CI で jdk@25 が入るかは【未確認】。
+
+### 12.12 P4b で入った物（2026-11-15・この Mac・Chrome 156 だけ）
+
+- ブラウザの実装は `engine_web/java/fge/web/webgpu`（`BrowserWebGpu`・`BrowserObjects`・`BrowserFormats`。Dawn の 3 本と対）。TeaVM 0.16 の JSO を使い、
+  足りない所（device の上限を全部求める descriptor・canvas の webgpu の文脈・読み戻しの写し・null の見分け）だけ `@JSBody`。
+  置き場を `fge/webgpu/browser` にしなかったのは、lint-forbid の `teavm-jso-outside-fge-web`（JSO の import は `engine_web/java/fge/web/` の下だけ）に合わせたため。
+  `fge.webgpu` の interface は変えていない（render_gl/java は触らず、GL の層の jar のハッシュも同じ）。
+- 実装を選ぶ所: `WebGpuOffscreen.GpuDevice`（op は `requestDevice`）を足し、`WebGpuOffscreen.open` はこれで device を取る。handler は
+  PC が `WebGpuOffscreen.runDawn`・ブラウザが `WebLayer.runWebGpu`。入口で差すだけで、session を使うコードは同じ（Fs の handler と同じ形）。
+- 待つ所（requestAdapter・requestDevice・getCompilationInfo・mapAsync・onSubmittedWorkDone）は Java の中で `JSPromise.await()`。
+  `errorCount` は submit した仕事の終わりを待ってからイベントの輪へ 1 度手を返す（uncapturederror がタスクで届くため）。
+- 確かめる口は `make webgpu-check-web`（`bench/webgpu_check/web/WebMain.flix` を `bench-web` の道で書き出し、ヘッドレスの Chrome で流す）。
+  ウィンドウを使わない門は `bench/webgpu_check/src/Checks.flix` に移し、PC（`make webgpu-check`）と同じコードを流す。ブラウザだけの門は canvas の描き先。
+- PC とブラウザで同じだった物: 三角形 2 枚の readRgba の digest・式の行（drawFloatRows）の値・firstInstance の 20,000 本の絵の digest。
+  違う物は上限だけ（Chrome は maxBufferSize と storage の binding を 4 GiB − 4・uniform の binding を 64 KiB・sampled texture を 48 に絞る）。
+- firstInstance の 20,000 本（1 本ずつ draw）: Chrome で CPU 0.5 ms（3 回とも同じ。`performance.now` の刻みが 0.1 ms）・GPU 0.33 ms。PC の Dawn は CPU 1.4 ms。
+- 【未確認】Safari（Mac・iPhone）・Windows・Linux・WebGPU の無いブラウザでの起動（選び分けは V1）。

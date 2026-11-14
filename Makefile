@@ -120,6 +120,7 @@ help:
 	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く・SCENE=field COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1 で物を並べた場面)"
 	@echo "  make webgpu-check         WebGPU の PC の実装 (Dawn) を Flix から通して描いて読み戻す門 (窓なし・2 プロセス・窓。NG で exit 1)"
+	@echo "  make webgpu-check-web     同じ門をブラウザの実装 (navigator.gpu) でヘッドレスの Chrome に流す (PC と同じ Flix のコード・canvas。NG で exit 1)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make crowd2d-cpu          2D の敵の群れの規則だけを回し、近くを探す処理を全部と比べる形と SpatialGrid で比べる (窓は開かない)"
@@ -361,6 +362,17 @@ gl-parity-cpu:
 webgpu-check:
 	@$(MAKE) -C bench/webgpu_check check run two window
 
+# 同じ門のブラウザ版 (navigator.gpu・TeaVM の JSO)。ウィンドウを使わない門を PC と同じ Flix のコード (bench/webgpu_check/src/Checks.flix) で
+# ヘッドレスの Chrome に流し、canvas の描き先も見る。結果の JSON は build/bench-web/webgpu_check.json。どれかが NG なら exit 1。
+# 先に make sync-engine-full-web。書き出しを省いて頁だけ開き直すなら BENCH_WEB_EXPORT=off。
+WEBGPU_CHECK_WEB_OUT := build/bench-web/webgpu_check.json
+.PHONY: webgpu-check-web
+webgpu-check-web:
+	@$(MAKE) --no-print-directory bench-web BENCH=webgpu_check OUT=$(WEBGPU_CHECK_WEB_OUT)
+	@grep -q '"name":"webgpu-check","ok":true' $(WEBGPU_CHECK_WEB_OUT) \
+	  || { echo "[webgpu-check-web] NG あり ($(WEBGPU_CHECK_WEB_OUT))"; exit 1; }
+	@echo "[webgpu-check-web] OK ($(WEBGPU_CHECK_WEB_OUT))"
+
 # シェーダープログラムのキャッシュの上限 (bench/shader_cache_soak)。隠しウィンドウで
 # 数値だけが違う Spec を 200 本投げ、LRU の追い出しでキャッシュが上限に留まるかを見る。
 # 頭打ちにならなければ exit 1。ShaderCache / buildProgram / ShaderGen を触ったら回す。
@@ -414,10 +426,12 @@ BENCH_WEB_SIZE_crowd2d       := 1280x720
 BENCH_WEB_SIZE_scene3d       := 960x540
 BENCH_WEB_SIZE   ?= $(or $(BENCH_WEB_SIZE_$(BENCH)),960x540)
 BENCH_WEB_WAIT   ?= 600
+# WhyNot: webgpu_check の書き出しで ⑨ を流さない — ⑨ は App のコマ（?capture）を待つが、この頁はコマを回さず門を流して終わる。wasm を読めるかは門そのものが見る。
+BENCH_WEB_EXPORT_FLAGS_webgpu_check := --no-browser-check
 .PHONY: bench-web-export bench-web
 bench-web-export:
-	@if [ ! -d "bench/$(BENCH)/web" ]; then echo "usage: make bench-web-export BENCH=<sprite_stress|crowd2d|scene3d>"; exit 2; fi
-	@bin/fge export-web bench/$(BENCH) --out $(BENCH_WEB_DIR)
+	@if [ ! -d "bench/$(BENCH)/web" ]; then echo "usage: make bench-web-export BENCH=<sprite_stress|crowd2d|scene3d|webgpu_check>"; exit 2; fi
+	@bin/fge export-web bench/$(BENCH) --out $(BENCH_WEB_DIR) $(BENCH_WEB_EXPORT_FLAGS_$(BENCH))
 	@cp bench/common/bench-overlay.js $(BENCH_WEB_DIR)/bench-overlay.js
 	@perl -0pi -e 's|</body>|<script src="bench-overlay.js"></script>\n</body>|' $(BENCH_WEB_DIR)/index.html
 	@grep -q 'bench-overlay.js' $(BENCH_WEB_DIR)/index.html || { echo "[bench-web-export] index.html に </body> が無く、script を差し込めない"; exit 1; }
