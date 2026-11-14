@@ -602,3 +602,52 @@ GL と CPU の描き手は、カメラの視錐台の外の置いた物とビル
 `SpatialGrid` の回す順は行が外側、升の中は入れた順で、同じ入力なら毎回同じ。足す順で丸めが変わるので、手書きの升ごとの小計から置き換えると値がわずかに変わる（1 本の蓄積へ直した版とはビット単位で同じ）。
 
 `foldNearIndex` の `f` が畳み込まれているかは `TestSpatialGrid.testInlineLambdaFoldsIntoTheLoop` が割り当てバイトの比で見る。止めるのは畳み込みが丸ごと無くなる退行で、2 割ほどの最適化の差は見えない。
+
+---
+
+## 13. 物が多い時の .flix の書き方（ループを JIT に乗せる）
+
+1 コマに 1 万個を超える物を回すループは、**JVM が JIT したかどうか**で 1 個あたりの時間が 5〜10 倍変わる。
+Flix 0.78 の出すバイトコードには JIT から外れる形が 2 つあり、値も絵も変わらないのでテストも絵の比べも気づかない。
+2026-11-14 に `bench/sprite_stress`（同じ絵のスプライト 20,000 個）で 1 コマ 30 ms → 8 ms になった直しは、どれも下の形だった
+（数字は `bench/sprite_stress/RESULTS.md` の「描く物の列を作る所の直し」）。エンジンの .flix にもゲームの .flix にも当てはまる。
+
+| 形 | 何が起きるか | 直し方 | 直した所と前後 |
+|---|---|---|---|
+| ループの 1 個ぶんが大きい（ラムダを渡した def の中で、さらに大きな関数を呼ぶ） | Flix はラムダを渡した def を呼ぶ所へインライン展開する。1 個ぶんのメソッドが **8,000 バイト**を超えると JVM は JIT しない（インタプリタのまま） | 1 個ぶんを別の def に出して `@DontInline` を付ける。ループのラムダはその def を呼ぶだけにする | `Render.Internal.Extract.drawInto` → `pushPlaced`。Item → Drawable が 1 個 約 1,040 ns → 約 210 ns |
+| ループの中から呼ぶ関数が、別の関数の呼び出しで終わる（末尾呼び出し） | 末尾呼び出しは続き（Thunk）を返し、呼んだ側がその場の while で回す。JVM はその while の位置からループを JIT（OSR）しようとして「stack not empty」で諦める。1 コマに 1 回しか呼ばれないループは、何百コマもインタプリタのまま回る | ループから直に呼ぶ関数の末尾を、呼び出しでない式にする（値を `let` に受けて `if` で返す・Unit なら `;` の後に `()`）。自分自身への末尾再帰はそのままでよい | `RenderFrame.emitMerged` → `emitOne`（1 個 176 ns → 86 ns）。`SpatialGrid.cellIndexOf`（crowd2d 10,000 体の規則 10.3 ms → 8.5 ms） |
+| 逆順に `::` で積んで、最後に `List.reverse` | 積んだ cons がほかの値の間に散らばり、戻す 1 巡が 1 個ごとにキャッシュを外す | 個数が多い所は `region` の中の `MutList` へ `push` して `MutList.toList`。小さな列は今までどおり `::` と `List.reverse` でよい | `drawInto`（20,000 個で 約 1.6 ms → 0.3 ms） |
+| ループの 1 個ぶんが、effect を持つ def を呼ぶ（`\ ef` の関数を受けて回す形） | effect を持つ def は、呼ぶたびに続きを運ぶ入れ物を割り当てる。PC は JIT が消すことがあるが、ブラウザ版（wasm）はそのまま時間に出る | 数の多い種類だけ、effect の無い def で先に済ませる。残りを effect のある def へ回す | `drawInto` → `pushPlain`（Sprite と Box）。ブラウザ版の cpu p50 34.3 → 29.9 ms（main は 31.4）。PC は 7.6 ms の回と、ほかの負荷が重なった回があり、測り直しが要る |
+
+**PC だけで測らない。** 上の 1 つ目の直しは PC で 3 倍速く、ブラウザ版では 9% 遅くなった（4 つ目で戻した）。
+描く道を直したら `make bench-web` でも前後を 1 組測る。
+
+- **ゲームの側でも同じ。** `bench/crowd2d` の 1 体ごとのループ（`Crowd.moveByGrid`）は、中から呼ぶ engine の `SpatialGrid.cellIndexOf` が
+  末尾呼び出しで終わっていたせいでインタプリタのまま回っていた（engine の側を直して規則が 16% 速くなった。ベンチの .flix は直していない）。
+  `bench/sprite_stress` の `List.range(0, n) |> List.map(i -> placedOf(i, t))` も、直した後の標本でインタプリタの frame に残っている
+  （1 コマの 約 5%。`placedOf` の片方の枝が `RawDraw.boxAt(…)` の呼び出しで終わる。直して確かめてはいない）。
+- **record の欄は今も 1 個ずつ名前で探す。** `Render.Item.Sprite` の 12 欄を全部読むのに 1 個 約 140 ns かかり、直した後の 20,000 個では 1 コマの 3 割を占める。
+  内側のループだけの値は enum に平らに並べる（`DrawCmd.Drawable`）か配列で運ぶ。
+- 標準の並べ替えを毎コマの道に置かない（`Sort.sortStable*` か、鍵が小さな整数なら数えて振り分ける。§7）。
+
+### JIT から外れたループの見つけ方
+
+時間や割り当てでは見分けにくい。**どのメソッドがインタプリタで回っているか**を直に見る。ゲームのフォルダで:
+
+```sh
+# 1. JIT が諦めた所（OSR）を出す。行にメソッドの名前が入る
+JAVA_TOOL_OPTIONS="-XX:+PrintCompilation" make run | grep "COMPILE SKIPPED"
+
+# 2. 走っている間の標本を取り、インタプリタで回っているメソッドを数える（type が Interpreted の frame）
+JAVA_TOOL_OPTIONS="-XX:StartFlightRecording=filename=/tmp/rec.jfr,settings=profile" make run
+jfr print --json --events jdk.ExecutionSample /tmp/rec.jfr \
+  | jq -r '.recording.events[].values | select(.sampledThread.javaName=="main") | .stackTrace.frames[0]
+           | select(.type=="Interpreted") | .method.type.name + "." + .method.name' \
+  | sort | uniq -c | sort -rn | head
+```
+
+8,000 バイトを超えたメソッドは `flix build-jar` で作った jar の中のクラスを `javap -c` で開くと分かる（`Code` の最後の番地）。
+
+- スレッドダンプ（jstack）でも当たりは付くが、インタプリタのメソッドに偏って止まる。割合は JFR の標本で読む。
+- `-XX:-DontCompileHugeMethods` を付けて速くなるなら 1 つ目の形。**旗で直さない**（ブラウザ版には効かない）。確かめにだけ使う。
+- メソッドの名前の `$数字` は、インライン展開でできたラムダ。行の番号（`List.flix:798` は `foldLeft`）と、呼んでいる def の名前で元の場所を探す。
