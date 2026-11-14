@@ -26,7 +26,7 @@
 | ログ | `~/.local/share/<名前>/logs/run.log`（1 つ前は `run.prev.log`）。ゲームモードでは端末が見えないので、落ちた時はまずここ |
 | X11 / Wayland | X11 にそろえる（`DISPLAY` があれば `WAYLAND_DISPLAY` を外す）。`FGE_WAYLAND=1` で Wayland |
 | LWJGL の native | `~/.cache/<名前>/lwjgl/` に解く（`/tmp` が noexec の機械で落ちないように） |
-| java の旗 | `make run` と同じ（`-Xss32m -XX:MaxRAMPercentage=50`）。足すなら `FGE_JAVA_OPTS` |
+| java の旗 | `make run` と同じ（`--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Xss32m -XX:MaxRAMPercentage=50`）。足すなら `FGE_JAVA_OPTS` |
 
 ## Deck に置いて遊ぶ
 

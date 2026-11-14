@@ -84,10 +84,10 @@ layout. `make new-game` copies a template into a new repository of your own.
 
 ## Requirements
 
-- **devbox** (required — fetches JDK 25, GNU make, and the Flix 0.75.1 compiler automatically)
+- **devbox** (required — fetches JDK 25, GNU make, and the Flix 0.78.0 compiler automatically)
 - Supported OS: macOS (Apple Silicon / Intel) / Windows x86_64
 
-The Flix **0.75.1** compiler is provided via [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix)
+The Flix **0.78.0** compiler is provided via [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix)
 (pinned in `devbox.json`), so no manual jar download is needed. The `bin/flix` wrapper runs that
 jar with devbox's JDK 25 (adding `-XstartOnFirstThread` / headless flags as needed).
 
@@ -316,10 +316,10 @@ LWJGL（OpenGL 3.3 Core / GLFW / OpenAL）を直接叩く自前実装。エン�
 
 ## 必要環境
 
-- **devbox**（必須。JDK 25 + GNU make + Flix 0.75.1 コンパイラを自動取得）
+- **devbox**（必須。JDK 25 + GNU make + Flix 0.78.0 コンパイラを自動取得）
 - 対応 OS: macOS（Apple Silicon / Intel）/ Windows x86_64
 
-Flix **0.75.1** コンパイラは [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix) 経由で提供され
+Flix **0.78.0** コンパイラは [Cj-bc/flix.nix](https://github.com/Cj-bc/flix.nix) 経由で提供され
 （`devbox.json` に固定）、jar の手動ダウンロードは不要。`bin/flix` ラッパがその jar を
 devbox の JDK 25 で実行する（必要に応じて `-XstartOnFirstThread`・headless フラグを付与）。
 

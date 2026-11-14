@@ -18,9 +18,11 @@
 |---|---|
 | jar を作る時間 | 65 秒（`build/headless/last-build-seconds`）。版を上げた直後の 1 回目は、lib へ依存を落とす分で長くなる |
 | jar の大きさ | 41.3 MB（lwjgl の native は macOS・Linux・Windows の arm64 / x64 が全部入っている） |
-| jar の中身の形 | Java 21 の class（class の版 65。版は Flix が決め、組む JDK を 25 にしても同じ）。Studio の jre（21.0.12）でも端末の java（devbox の 25）でも動く |
+| jar の中身の形 | Java 21 の class（class の版 65）。Studio の jre（21.0.12）でも端末の java（21.0.8）でも動く |
 | ゲームの master への push | 1 日 49 回・7 日 391 回（first-parent）。直近の 60 回のうち、src・flix.toml・packages.lock が変わったのは 39 回 |
 | この Mac mini の作業場 | `id-x-*` が数十あり、同じ指紋の jar を作業場ごとに作り直している |
+
+注: class の版は Flix が決める。engine の devbox の JDK を 25 にした後に組んだ jar も版 65 のまま（2026-11-15 に確かめた）。
 
 最後の行が大事です。いちばん効くのは「Mac mini の外へ配る」より先に、**同じ機械の作業場どうしで同じ指紋の jar を分け合う**所です
 （1 節の段 1）。

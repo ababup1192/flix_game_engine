@@ -113,11 +113,12 @@ fi
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
 # この旗を知らず起動しない。LWJGL の sun.misc.Unsafe の警告が出るのは 24 からなので 24 で切る。
 # 版は上の -version の出力から読む。release ファイルや java -XshowSettings を別に起こすと、
-# macOS の /usr/bin/java（実体を辿れない入口）で道が取れないか、JVM をもう 1 本起こす。
+# macOS の /usr/bin/java（実体を辿れない入口）でパスが取れないか、JVM をもう 1 本起こす。
+# 版の切り出しは bin/headless-run と同じ字。片方を直したらもう片方も直す。
 JAVA_MAJOR="${JAVA_VERSION_OUT#*version \"}"
 JAVA_MAJOR="${JAVA_MAJOR%%[!0-9]*}"
 FLAGS="--enable-native-access=ALL-UNNAMED $FLAGS"
-if [ -n "$JAVA_MAJOR" ] && [ "$JAVA_MAJOR" -ge 24 ]; then
+if [ "$JAVA_MAJOR" -ge 24 ] 2>/dev/null; then
     FLAGS="--sun-misc-unsafe-memory-access=allow $FLAGS"
 fi
 # WhyNot: JVM の既定のスタックに任せないのは、Flix の型検査が式の深さぶんだけ

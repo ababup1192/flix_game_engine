@@ -489,11 +489,13 @@ if ! java_version_out="$("$java_cmd" -version 2>&1)"; then
 fi
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
 # この旗を知らず起動しない。版は上の -version の出力から読み、JVM を別に起こさない（bin/flix と同じ）。
+# WhyNot: 窓なしの経路には付けない — LWJGL の native を読まないので警告が出ず、常駐（resident の JavaArgs）と旗がずれる。
+# 版の切り出しは bin/flix と同じ字。片方を直したらもう片方も直す。
 java_major="${java_version_out#*version \"}"
 java_major="${java_major%%[!0-9]*}"
-java_base_flags="--enable-native-access=ALL-UNNAMED"
-if [ -n "$java_major" ] && [ "$java_major" -ge 24 ]; then
-    java_base_flags="$java_base_flags --sun-misc-unsafe-memory-access=allow"
+java_gl_flags="--enable-native-access=ALL-UNNAMED"
+if [ "$java_major" -ge 24 ] 2>/dev/null; then
+    java_gl_flags="$java_gl_flags --sun-misc-unsafe-memory-access=allow"
 fi
 
 # jar を作り直した回は、語彙を書き出す入口（名前が .vocab で終わる物。flow の E2e.vocab など）を全部流す。
@@ -503,7 +505,7 @@ if [ "${built_ok:-0}" = 1 ]; then
     # pipefail と set -e で何も言わずに抜ける。
     printf '%s\n' "$entries" | { grep -E '\.vocab$' || true; } | while IFS= read -r vocab; do
         [ "$vocab" = "$entry" ] && continue
-        FGE_ENTRY="$vocab" "$java_cmd" $java_base_flags -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
+        FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
     done
 fi
 if [ "$mode" = build ]; then
@@ -526,10 +528,10 @@ fi
 # 窓なしは headless に固定（-XstartOnFirstThread の下で AWT が AppKit を待って固まらないため）。
 # GL を開く入口は bin/flix の run と同じく、Darwin だけ -XstartOnFirstThread を付けて headless にしない。
 if [ "$gl" = 1 ]; then
-    java_flags="$java_base_flags -Xss32m -XX:MaxRAMPercentage=50"
+    java_flags="$java_gl_flags -Xss32m -XX:MaxRAMPercentage=50"
     if [ "$(uname)" = Darwin ]; then java_flags="$java_flags -XstartOnFirstThread"; fi
 else
-    java_flags="$java_base_flags -Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true"
+    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086
