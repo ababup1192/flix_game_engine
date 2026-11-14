@@ -569,13 +569,16 @@ mod RenderFrame {
     def newRenderList(instances: FloatBuffer): RenderList \ IO =
         { instances = instances, rows = Array#{Array.empty(Static, rowsHead() + 16 * rowStride())} @ Static }
 
-    def rowCountOf(list: RenderList): Int32 \ IO = Array.get(0, Array.get(0, list#rows))
+    def rowCountOf(list: RenderList): Int32 \ IO = Array.get(0, rowsOf(list))
 
-    def nextInstanceOf(list: RenderList): Int32 \ IO = Array.get(1, Array.get(0, list#rows))
+    def nextInstanceOf(list: RenderList): Int32 \ IO = Array.get(1, rowsOf(list))
+
+    /// 頭と行を並べた Int32 の配列（広げると差し替わるので、行を足した後は取り直す）。
+    def rowsOf(list: RenderList): Array[Int32, Static] \ IO = Array.get(0, list#rows)
 
     /// 行 row の欄 col（並びは RenderList の上のコメント）。
-    def rowAt(list: RenderList, row: Int32, col: Int32): Int32 \ IO =
-        Array.get(rowsHead() + row * rowStride() + col, Array.get(0, list#rows))
+    def rowAt(rows: Array[Int32, Static], row: Int32, col: Int32): Int32 \ IO =
+        Array.get(rowsHead() + row * rowStride() + col, rows)
 
     /// 行を全部捨てる（instances の書く位置も頭へ戻す）。
     def clearRenderList(list: RenderList): Unit \ IO =
@@ -641,15 +644,16 @@ mod RenderFrame {
     // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
     def drawRow(gl: GlContext, st: Array[Int32, Static], list: RenderList, row: Int32): Unit \ IO =
-        let first = rowAt(list, row, 1);
-        let count = rowAt(list, row, 2);
-        let texId = rowAt(list, row, 3);
-        let blendC = rowAt(list, row, 4);
-        let clipFlag = rowAt(list, row, 5);
-        let x0 = rowAt(list, row, 6);
-        let y0 = rowAt(list, row, 7);
-        let x1 = rowAt(list, row, 8);
-        let y1 = rowAt(list, row, 9);
+        let rows = rowsOf(list);
+        let first = rowAt(rows, row, 1);
+        let count = rowAt(rows, row, 2);
+        let texId = rowAt(rows, row, 3);
+        let blendC = rowAt(rows, row, 4);
+        let clipFlag = rowAt(rows, row, 5);
+        let x0 = rowAt(rows, row, 6);
+        let y0 = rowAt(rows, row, 7);
+        let x1 = rowAt(rows, row, 8);
+        let y1 = rowAt(rows, row, 9);
         let instances = list#instances;
         setScissorAt(gl, st, clipFlag, x0, y0, x1, y1);
         discard instances.position(first * instanceFloats());

@@ -4,7 +4,7 @@
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
     use RenderFrame.{RenderList, blendCode, clearRenderList, closeSpriteRun, emitSprite, instanceFloats, kindSprite,
-                     newRenderList, nextInstanceOf, rowAt, rowCountOf, stateSize, writeInstAt}
+                     newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, stateSize, writeInstAt}
 
     // ── 組み立て ──
 
@@ -38,9 +38,12 @@ mod RenderFrame.TestRenderList {
         closeSpriteRun(st, list);
         list
 
+    /// 行 row の欄 col。
+    def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = rowAt(rowsOf(list), row, col)
+
     /// 行 row の instances（1 体 38 個）の n 体目。
     def instanceFloatsAt(list: RenderList, row: Int32, n: Int32): List[Float32] \ IO =
-        let base = (rowAt(list, row, 1) + n) * instanceFloats();
+        let base = (cell(list, row, 1) + n) * instanceFloats();
         List.range(0, instanceFloats()) |> List.map(i -> list#instances.get(base + i))
 
     /// writeInstAt が 1 体を頭に書いた 38 個（行を作る道とは別の道）。
@@ -64,12 +67,12 @@ mod RenderFrame.TestRenderList {
     @Test
     def testRowCountsSpritesOfRun(): Unit \ {Assert, IO} =
         let sprites = sprite("a", 0.0) :: sprite("a", 1.0) :: sprite("a", 2.0) :: Nil;
-        Assert.assertEq(expected = List.length(sprites), rowAt(listOf(sprites), 0, 2))
+        Assert.assertEq(expected = List.length(sprites), cell(listOf(sprites), 0, 2))
 
     /// 行の種類はスプライトの run。
     @Test
     def testRowKindIsSprite(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindSprite(), rowAt(listOf(sprite("a", 0.0) :: Nil), 0, 0))
+        Assert.assertEq(expected = kindSprite(), cell(listOf(sprite("a", 0.0) :: Nil), 0, 0))
 
     /// 絵が交互の 3 個は 3 行。
     @Test
@@ -79,24 +82,24 @@ mod RenderFrame.TestRenderList {
     /// 行の絵の番号は、表に登録した絵の番号。
     @Test
     def testRowTextureIsRegisteredId(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = textureIdOf("b"), rowAt(listOf(alternating(2)), 1, 3))
+        Assert.assertEq(expected = textureIdOf("b"), cell(listOf(alternating(2)), 1, 3))
 
     /// 絵の無い箱の行の絵の番号は 0。
     @Test
     def testBoxRowHasNoTexture(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = 0, rowAt(listOf(sprite("", 0.0) :: Nil), 0, 3))
+        Assert.assertEq(expected = 0, cell(listOf(sprite("", 0.0) :: Nil), 0, 3))
 
     /// 2 行目の先頭の instance は、1 行目の後ろ。
     @Test
     def testNextRowStartsAfterPrevious(): Unit \ {Assert, IO} =
         let list = listOf(sprite("a", 0.0) :: sprite("a", 1.0) :: sprite("b", 2.0) :: Nil);
-        Assert.assertEq(expected = rowAt(list, 0, 1) + rowAt(list, 0, 2), rowAt(list, 1, 1))
+        Assert.assertEq(expected = cell(list, 0, 1) + cell(list, 0, 2), cell(list, 1, 1))
 
     /// 同じ絵で blend だけ替わると次の行になり、その行の blend は Add。
     @Test
     def testBlendChangeStartsRow(): Unit \ {Assert, IO} =
         let added = spriteWith({ texture = "a", x = 1.0, blend = DrawCmd.BlendMode.Add, clip = None });
-        Assert.assertEq(expected = blendCode(DrawCmd.BlendMode.Add), rowAt(listOf(sprite("a", 0.0) :: added :: Nil), 1, 4))
+        Assert.assertEq(expected = blendCode(DrawCmd.BlendMode.Add), cell(listOf(sprite("a", 0.0) :: added :: Nil), 1, 4))
 
     /// 切り抜きの矩形を持つ行は、DrawCmd.clipPixels の画素の矩形を持つ。
     @Test
@@ -104,7 +107,7 @@ mod RenderFrame.TestRenderList {
         let clipped = spriteWith({ texture = "a", x = 0.0, blend = DrawCmd.BlendMode.Normal, clip = Some(clipRect()) });
         let list = listOf(clipped :: Nil);
         Assert.assertEq(expected = (1, DrawCmd.clipPixels({ scaleX = 1.0, scaleY = 1.0 }, clipRect())),
-                        (rowAt(list, 0, 5), (rowAt(list, 0, 6), rowAt(list, 0, 7), rowAt(list, 0, 8), rowAt(list, 0, 9))))
+                        (cell(list, 0, 5), (cell(list, 0, 6), cell(list, 0, 7), cell(list, 0, 8), cell(list, 0, 9))))
 
     /// 表に無い絵のスプライトは行を作らない。
     @Test
