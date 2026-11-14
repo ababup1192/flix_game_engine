@@ -270,7 +270,7 @@ func forkSite(t *testing.T) string {
 
 func TestRouteWithHrefMovesToTheOtherPage(t *testing.T) {
 	// 撮った道のボタンは、その道の頁へ #t= 付きで移る。
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	base := forkSite(t)
 	loadPlain(t, p, base+"/light/")
 	if err := p.Eval(`(() => { openChapters(true); document.querySelector('.route[data-r="1"]').click(); return true; })()`, nil); err != nil {
@@ -284,7 +284,7 @@ func TestRouteWithHrefMovesToTheOtherPage(t *testing.T) {
 // startTimeOf は url を開いて動画が読めた後の秒。
 func startTimeOf(t *testing.T, url string) float64 {
 	t.Helper()
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	loadPlain(t, p, url)
 	time.Sleep(500 * time.Millisecond)
 	var sec float64
@@ -318,7 +318,7 @@ func TestHashTimeZeroStartsAtZero(t *testing.T) {
 
 func TestRouteHereSeeksOnThisPage(t *testing.T) {
 	// この頁の道のボタンは、頁を移らずにその選択肢の秒へ送る。
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	loadPlain(t, p, forkSite(t)+"/light/")
 	var sec float64
 	if err := p.Eval(`(() => { seek(0.5); openChapters(true); document.querySelector('.route[data-r="0"]').click(); return location.pathname === "/light/" ? video.currentTime : -1; })()`, &sec); err != nil {
@@ -332,7 +332,7 @@ func TestRouteHereSeeksOnThisPage(t *testing.T) {
 // evalOnFork は light の頁を開いて js の値を返す。
 func evalOnFork[T any](t *testing.T, js string) T {
 	t.Helper()
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	loadPlain(t, p, forkSite(t)+"/light/")
 	var v T
 	if err := p.Eval(js, &v); err != nil {

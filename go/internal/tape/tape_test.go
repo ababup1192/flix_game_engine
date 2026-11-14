@@ -247,7 +247,7 @@ func TestSampleRenderEqualsMockExceptListedFixes(t *testing.T) {
 
 func TestOtherSampleLeavesNoMockNames(t *testing.T) {
 	page := renderFile(t, otherPath, Strip{File: StripFile, Count: 13, W: StripW, H: StripH})
-	for _, word := range []string{"kesshou", "血鱗", "MOCK", "2992", "魔女"} {
+	for _, word := range []string{"kesshou", "血鱗", "MOCK", "2992", "魔女", "* 88", "/ 54"} {
 		if strings.Contains(page, word) {
 			t.Errorf("書き出した頁に %q が残っている", word)
 		}

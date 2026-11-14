@@ -17,6 +17,8 @@ type PageOptions struct {
 	Width  int    // 0 なら 800
 	Height int    // 0 なら 600
 	Mobile bool   // viewport の meta とタッチを機種のとおりに効かせる
+	// Touch は指の機種にする（SetTouch(true) と同じ。pointer: coarse・hover: none）。
+	Touch bool
 	// InitScript は頁のどの script よりも先に、頁を開くたびに流す（console を拾う仕掛けなど）。
 	InitScript string
 }
@@ -83,6 +85,11 @@ func (p *Page) setup(opt PageOptions) error {
 		"width": opt.Width, "height": opt.Height, "deviceScaleFactor": 1, "mobile": opt.Mobile,
 	}, pageStep); err != nil {
 		return err
+	}
+	if opt.Touch {
+		if err := p.SetTouch(true); err != nil {
+			return err
+		}
 	}
 	if opt.InitScript != "" {
 		if _, err := p.c.call("Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": opt.InitScript}, pageStep); err != nil {

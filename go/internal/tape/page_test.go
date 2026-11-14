@@ -50,9 +50,9 @@ addEventListener("unhandledrejection", e => window.__errs.push("rejection: " + e
 const __ce = console.error; console.error = (...a) => { window.__errs.push("console: " + a.join(" ")); __ce(...a); };
 `
 
-// posterCSS は <video> を隠して同じポスター画像を下に置く（UI だけを比べるため）。
+// posterCSS は <video> を隠して同じポスター画像を下に置き、入力欄の caret も消す（UI だけを比べる。caret は点滅で 2 つの頁の絵が揺れる）。
 const posterCSS = `(() => { const s = document.createElement("style");
-  s.textContent = ".frame video{visibility:hidden}.frame{background:url(poster.png) center/contain no-repeat;border-radius:8px}";
+  s.textContent = ".frame video{visibility:hidden}.frame{background:url(poster.png) center/contain no-repeat;border-radius:8px}*{caret-color:transparent!important}";
   document.head.appendChild(s); return true; })()`
 
 type site struct {
@@ -125,7 +125,21 @@ func buildSite(t *testing.T) site {
 	return site{root: root, mockURL: serve("mock"), tapeURL: serve("tape"), otherURL: serve("other")}
 }
 
-func openTapePage(t *testing.T) *cdp.Page {
+// view は頁を開くウィンドウの大きさと機種（mobile は viewport の meta を効かせる・touch は pointer: coarse と hover: none）。
+type view struct {
+	w, h          int
+	mobile, touch bool
+}
+
+var (
+	phone    = view{viewW, viewH, true, false}
+	desktop  = view{1440, 900, false, false}
+	laptop   = view{1180, 820, false, false}
+	tablet   = view{820, 1180, true, true}
+	smallWin = view{900, 700, false, false}
+)
+
+func openTapePage(t *testing.T, v view) *cdp.Page {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("-short では Chrome を起こさない")
@@ -133,7 +147,7 @@ func openTapePage(t *testing.T) *cdp.Page {
 	if _, err := cdp.FindChrome(); err != nil {
 		t.Skip(err)
 	}
-	p, err := cdp.OpenPage(cdp.PageOptions{Width: viewW, Height: viewH, Mobile: true, InitScript: initScript})
+	p, err := cdp.OpenPage(cdp.PageOptions{Width: v.w, Height: v.h, Mobile: v.mobile, Touch: v.touch, InitScript: initScript})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +265,7 @@ const annotateAndExport = `(() => {
 const maxDiff = 0.002
 
 func TestPageMatchesMockOnPhone(t *testing.T) {
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	s := buildSite(t)
 	dir := shotsDir(t)
 	times := []float64{3.0, 8.0, 17.5, 31.8}
@@ -331,7 +345,7 @@ var exportKeys = []string{`"game"`, `"commit"`, `"flow"`, `"fps"`, `"reproduce"`
 	`"file"`, `"node"`, `"line"`, `"speaker"`, `"before"`, `"after"`}
 
 func TestOtherTapeHasNoForkAndExportsAllFields(t *testing.T) {
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	s := buildSite(t)
 	load(t, p, s.otherURL)
 	var got struct {
@@ -368,12 +382,12 @@ func TestOtherTapeHasNoForkAndExportsAllFields(t *testing.T) {
 	noErrors(t, p, "other")
 }
 
-// 横長の動画（960×540）: strip のコマは帯の枠の比のまま（真ん中を切り抜く）、canvas が動画の映っている矩形に重なり、枠が頁の外へ出ない。
-func TestLandscapeVideoOverlaysWhereItIsShown(t *testing.T) {
-	p := openTapePage(t)
+// builtSite は tapePath のテープを size（"幅x高さ"）・secs 秒の試験の動画で Build して置き、その URL を返す。
+func builtSite(t *testing.T, tapePath string, secs float64, size string) string {
+	t.Helper()
 	dir := t.TempDir()
-	makeVideoSized(t, filepath.Join(dir, VideoFile), 6.2, "960x540")
-	if err := os.WriteFile(filepath.Join(dir, TapeFile), readFile(t, otherPath), 0o644); err != nil {
+	makeVideoSized(t, filepath.Join(dir, VideoFile), secs, size)
+	if err := os.WriteFile(filepath.Join(dir, TapeFile), readFile(t, tapePath), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Build(Options{Dir: dir, Commit: "abc1234"}); err != nil {
@@ -381,12 +395,13 @@ func TestLandscapeVideoOverlaysWhereItIsShown(t *testing.T) {
 	}
 	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
 	t.Cleanup(srv.Close)
-	if err := p.Navigate(srv.URL + "/"); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.WaitFor(`document.readyState === "complete" && typeof video !== "undefined" && video.readyState >= 1`, 30*time.Second); err != nil {
-		t.Fatal(err)
-	}
+	return srv.URL + "/"
+}
+
+// 横長の動画（960×540）: strip のコマは帯の枠の比のまま（真ん中を切り抜く）、canvas が動画の映っている矩形に重なり、枠が頁の外へ出ない。
+func TestLandscapeVideoOverlaysWhereItIsShown(t *testing.T) {
+	p := openTapePage(t, phone)
+	loadPlain(t, p, builtSite(t, otherPath, 6.2, "960x540"))
 	seekTo(t, p, 2.5)
 	if err := p.Eval(`select({track: "video"}), setMode("pick"), redraw(), true`, nil); err != nil {
 		t.Fatal(err)
@@ -432,7 +447,7 @@ func fnvHex(s string) string {
 
 // 「ここから遊ぶ」の URL に、直した行が edit.<行>（後の文）と was.<行>（前の文のハッシュ）で乗る。
 func TestPlayLinkCarriesEdits(t *testing.T) {
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	s := buildSite(t)
 	load(t, p, s.otherURL)
 	var got struct {
@@ -452,7 +467,7 @@ func TestPlayLinkCarriesEdits(t *testing.T) {
 
 // msg.when の問いの値が今のコマと違う時（NVL のウィンドウなど）は、直した台詞を重ねず帯も出さない。そろう時は重ねる。
 func TestEditOverlayFollowsMsgWhen(t *testing.T) {
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	s := buildSite(t)
 	load(t, p, s.otherURL)
 	var got struct{ Off, On string }
@@ -472,7 +487,7 @@ func TestEditOverlayFollowsMsgWhen(t *testing.T) {
 
 // 直しが長くて URL が 8000 字を超える時は、超えない所まで載せ、載せられなかった数をトーストで言う。
 func TestPlayLinkDropsEditsPastTheLimit(t *testing.T) {
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	s := buildSite(t)
 	load(t, p, s.otherURL)
 	var got struct {
@@ -533,7 +548,7 @@ func loadPlain(t *testing.T, p *cdp.Page, url string) {
 
 // 同じ origin の別の頁（別のテープ）の注釈と直しは読まない。
 func TestOtherPageOnSameOriginDoesNotShareNotes(t *testing.T) {
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	a, b := twoTapesOneOrigin(t)
 	loadPlain(t, p, a)
 	if err := p.Eval(`(() => { seek(2.5); $("sceneNote").click(); $("noteText").value = "a の注釈"; $("noteText").dispatchEvent(new Event("input")); $("noteSave").click();
@@ -560,7 +575,7 @@ func TestOtherPageOnSameOriginDoesNotShareNotes(t *testing.T) {
 
 // 今の TAPE に無い scene・行・音を指す注釈と直しは、読んだ時に捨てる（書き出しが落ちない）。
 func TestStoredNotesPointingAtUnknownThingsAreDropped(t *testing.T) {
-	p := openTapePage(t)
+	p := openTapePage(t, phone)
 	a, _ := twoTapesOneOrigin(t)
 	loadPlain(t, p, a)
 	if err := p.Eval(`(() => { localStorage.setItem(KEY, JSON.stringify({

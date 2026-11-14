@@ -59,9 +59,9 @@ func steppedVideo(t *testing.T, length bool, parts []float64, step <-chan struct
 	}
 }
 
-func openSplashPage(t *testing.T, url string) *cdp.Page {
+func openSplashPage(t *testing.T, v view, url string) *cdp.Page {
 	t.Helper()
-	p := openTapePage(t)
+	p := openTapePage(t, v)
 	if err := p.Navigate(url); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func litAt(t *testing.T, p *cdp.Page, ratio float64) int {
 
 func TestSplashGaugeGrowsAsVideoArrives(t *testing.T) {
 	step := make(chan struct{})
-	p := openSplashPage(t, videoServer(t, steppedVideo(t, true, []float64{.3, .7, 1}, step)))
+	p := openSplashPage(t, phone, videoServer(t, steppedVideo(t, true, []float64{.3, .7, 1}, step)))
 	early := litAt(t, p, .29)
 	step <- struct{}{}
 	late := litAt(t, p, .69)
@@ -102,7 +102,7 @@ func TestSplashGaugeGrowsAsVideoArrives(t *testing.T) {
 }
 
 func TestSplashLeavesWhenVideoIsFetched(t *testing.T) {
-	p := openSplashPage(t, videoServer(t, steppedVideo(t, true, []float64{1}, nil)))
+	p := openSplashPage(t, phone, videoServer(t, steppedVideo(t, true, []float64{1}, nil)))
 	if err := p.WaitFor(`document.readyState === "complete" && !document.getElementById("splash")`, 20*time.Second); err != nil {
 		t.Errorf("動画を取り終えても起動画面が残る: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestSplashLeavesWhenVideoIsFetched(t *testing.T) {
 func TestSplashGaugeHasNoRatioWithoutContentLength(t *testing.T) {
 	step := make(chan struct{})
 	t.Cleanup(func() { close(step) })
-	p := openSplashPage(t, videoServer(t, steppedVideo(t, false, []float64{.3, 1}, step)))
+	p := openSplashPage(t, phone, videoServer(t, steppedVideo(t, false, []float64{.3, 1}, step)))
 	if err := p.WaitFor("typeof splash !== 'undefined' && splash.got > 0", 20*time.Second); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestSplashGaugeHasNoRatioWithoutContentLength(t *testing.T) {
 }
 
 func TestSplashFallsBackToVideoSrcWhenFetchFails(t *testing.T) {
-	p := openSplashPage(t, videoServer(t, func(w http.ResponseWriter, r *http.Request) {
+	p := openSplashPage(t, phone, videoServer(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusInternalServerError)
 	}))
 	if err := p.WaitFor(`document.readyState === "complete" && !document.getElementById("splash")`, 20*time.Second); err != nil {
@@ -159,7 +159,7 @@ func TestSplashGaugeUsesVideoBytesWithoutContentLength(t *testing.T) {
 	step := make(chan struct{})
 	t.Cleanup(func() { close(step) })
 	page := strings.Replace(renderFile(t, otherPath, sampleStrip), "const TAPE = {", "const TAPE = {\"videoBytes\":"+strconv.Itoa(videoBytes)+",", 1)
-	p := openSplashPage(t, pageServer(t, page, steppedVideo(t, false, []float64{.3, 1}, step)))
+	p := openSplashPage(t, phone, pageServer(t, page, steppedVideo(t, false, []float64{.3, 1}, step)))
 	if err := p.WaitFor("typeof splash !== 'undefined' && splash.ratio >= 0.29", 20*time.Second); err != nil {
 		t.Errorf("videoBytes があるのに割合が出ない: %v", err)
 	}
