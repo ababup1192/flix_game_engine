@@ -627,8 +627,12 @@ dual-source blending・mask は ref を進める形・GL との比べの門・�
   PC の Dawn の 1.048576 ms も同じ刻みの 16 倍）。どちらも刻みより細かい差は読めない。
 - 【未確認】Safari（Mac・iPhone）・Windows・Linux・WebGPU の無いブラウザでの起動（起動の時の選び分けと WebGL2 版の起動は V1）。
 
-### 12.13 V1 の設計（2026-11-15・未レビュー）
+### 12.13 V1 の設計（2026-11-15・第 2 版。第 1 版のレビューは 78 点で、指摘は全部入れた）
 
-V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関わる決め事: 書き出しは 1 つ（wasm 1 本に両方を入れて起動で選ぶ。5.5 の「2 つ作る」を改める。
-`bench/webgpu_check` の wasm が丸ごと 419,903 バイトで、増える分は rpg-starter の 4〜7% の見込み【推】）・WebGPU の流し方は `RenderFrame` の子の mod に置き `RenderFrame` の pub を増やさない・
-instance の 38 float は instance の頂点バッファでそのまま読む・Pass のお題は `bench/gl_parity` の `passPaste` で代える案（伺い中）。形のレビューへの持ち越しは同じ文書の 12 章。
+V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関わる決め事:
+- 書き出しは 1 つ（wasm 1 本に両方を入れて起動で選ぶ。5.5 の「2 つ作る」を改める。増える分は rpg-starter の 4〜7% の見込み【推】で、段階 4 で 2 つに分けて測る）。
+- WebGPU の流し方は `RenderFrame.Internal.WebGpuRows` に置き、`RenderFrame` の関数を pub に開かない（子孫の mod から先祖の pub でない物が見える【確】）。増える pub は同じ文書の 0 章の表。
+- instance の 38 float は instance の頂点バッファでそのまま読む。
+- 読み込みは V1 の仮の道（CPU の側の pub だけを共有し、上げる所を WebGPU の側に別に書く。同じ文書の 3.1）。PC で起動の後に字を足すのは V1 の外。
+- 決めた事: Pass のお題は `bench/gl_parity` の `passPaste` などで代える・Dawn の macOS arm64 のネイティブを V1 で `engine_full` に載せる・PC の 3D は描かずに知らせる・GL へ落ちた理由は画面に出さない。
+- 形のレビューへの持ち越しは同じ文書の 12 章（17 件）。
