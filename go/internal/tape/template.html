@@ -91,7 +91,8 @@
   .acts-head { display: flex; align-items: center; gap: 8px; height: 22px; margin-bottom: 8px; }
   .acts-head .badge { height: 20px; padding: 0 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #111; flex: none; }
   .acts-head .what { flex: 1; min-width: 0; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .acts-head .x { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--raised); flex: none; }
+  .acts-head .x { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--raised); flex: none; position: relative; }
+  .acts-head .x::after { content: ""; position: absolute; inset: -8px; }
   .acts-row { display: flex; gap: 6px; }
   .act { flex: 1; height: 44px; border-radius: 12px; background: var(--raised); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 600; }
   .act.main { color: #111; }
@@ -103,11 +104,26 @@
   .scrim.on { opacity: 1; pointer-events: auto; }
   .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 11; background: var(--raised); border-radius: 18px 18px 0 0;
     padding: 8px 16px calc(14px + env(safe-area-inset-bottom)); transform: translateY(102%); transition: transform .28s cubic-bezier(.2,.8,.2,1);
-    max-height: 78dvh; display: flex; flex-direction: column; }
-  .sheet.on { transform: none; }
+    max-height: calc(78dvh - var(--kb, 0px)); display: flex; flex-direction: column; }
+  .sheet textarea { flex: 0 1 auto; min-height: 64px; }
+  .sheet.on { transform: none; bottom: var(--kb, 0px); }
   .grab { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.2); margin: 0 auto 8px; flex: none; }
-  .sheet-head { display: flex; align-items: center; margin-bottom: 10px; flex: none; }
-  .sheet-head h3 { flex: 1; margin: 0; font-size: 15px; font-weight: 600; text-align: center; }
+  .sheet-head { display: flex; align-items: center; margin-bottom: 8px; flex: none; min-height: 32px; }
+  .sheet-head h3 { flex: 1; margin: 0; font-size: 16px; font-weight: 700; text-align: left; }
+  .xbtn { width: 44px; height: 44px; margin: -6px -10px -6px 0; display: grid; place-items: center; flex: none; color: var(--dim); }
+  .xbtn span { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.1); display: grid; place-items: center; }
+  .xbtn:active span { background: rgba(255,255,255,.2); }
+  .sheet-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; flex: none; }
+  .sheet-foot .left { margin-right: auto; }
+  .confirm { height: 44px; padding: 0 18px 0 14px; border-radius: 12px; background: var(--accent); color: #1a1300; font-size: 15px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 6px; }
+  .confirm:disabled { opacity: .35; cursor: default; }
+  .confirm:not(:disabled):active { transform: scale(.98); }
+  .ghost { height: 44px; padding: 0 12px; border-radius: 12px; font-size: 14px; color: var(--dim); }
+  .ghost:active { background: var(--hair); }
+  .kbd-hint { display: none; font-size: 11px; color: var(--faint); }
+  .kbd-hint kbd, .keys kbd { display: inline-block; min-width: 17px; height: 17px; line-height: 17px; padding: 0 4px; margin-right: 3px; border-radius: 4px; background: rgba(255,255,255,.08);
+    color: var(--dim); font: inherit; font-size: 10px; font-weight: 700; text-align: center; }
   .sheet-body { overflow: auto; min-height: 0; overscroll-behavior: contain; }
   .tb { font-size: 14px; color: var(--dim); padding: 8px 4px; min-width: 56px; text-align: left; }
   .tb.go { color: var(--accent); font-weight: 700; text-align: right; }
@@ -158,6 +174,7 @@
   .route span { font-size: 10px; color: var(--faint); }
   .route.on { background: #fff; color: #111; }
   .route.on span { color: #555; }
+  .route.none { opacity: .55; }
   .example { font-size: 10px; font-weight: 700; color: #1a1300; background: var(--accent); border-radius: 3px; padding: 0 4px; }
   .scenenote { position: absolute; right: 10px; bottom: 10px; height: 38px; padding: 0 14px 0 11px; border-radius: 99px; display: none; align-items: center; gap: 6px;
     background: rgba(255,255,255,.94); color: #111; font-size: 13px; font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2; }
@@ -171,6 +188,87 @@
   .toast { position: fixed; left: 50%; top: calc(52px + env(safe-area-inset-top)); transform: translate(-50%, -8px); padding: 8px 14px; border-radius: 99px;
     background: rgba(40,40,42,.94); backdrop-filter: blur(12px); font-size: 13px; z-index: 30; opacity: 0; transition: all .2s; pointer-events: none; white-space: nowrap; }
   .toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ── 広い画面（幅 720 以上）。body の form-* / input-* は JS が matchMedia で付ける。スマホの形には何も効かせない ── */
+  .bin, .insp, .ruler, .marks, .zoombox, .keys, .lbn, .tip { display: none; }
+  body.wide .app { display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; }
+  body.form-three .app { grid-template-columns: 248px minmax(0, 1fr) 340px; grid-template-areas: "top top top" "bin view insp" "tl tl tl"; }
+  body.form-three.wide-video .app { grid-template-columns: 216px minmax(0, 1fr) 300px; }
+  body.form-two .app, body.form-portrait .app { grid-template-columns: minmax(0, 1fr) 300px; grid-template-areas: "top top" "view insp" "tl tl"; }
+  body.wide .top { grid-area: top; border-bottom: 1px solid var(--hair); }
+  body.form-three #listBtn { visibility: hidden; }
+  body.wide .preview { grid-area: view; min-height: 0; padding: 12px; }
+  body.wide.wide-video .frame { aspect-ratio: var(--frame-ratio); height: auto; width: 100%; max-height: 100%; background: #0c0c0d; border-radius: 8px; }
+  body.wide .timeline { grid-area: tl; }
+  body.form-three .bin { grid-area: bin; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--hair); }
+  body.wide .insp { grid-area: insp; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--hair); }
+  .panel-h { flex: none; height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 11px; color: var(--faint); letter-spacing: .06em; border-bottom: 1px solid var(--hair); }
+  .bin-body { flex: 1; min-height: 0; overflow: auto; padding: 2px 12px 12px; position: relative; z-index: 0; }
+  .bin-body .chap .tm { flex-wrap: wrap; row-gap: 3px; }
+  .bin-body .mini { white-space: nowrap; }
+  .bin-body .flash { outline: 2px solid #fff; outline-offset: 2px; border-radius: 8px; }
+  body.wide.input-mouse .keys { display: grid; flex: none; grid-template-columns: repeat(3, auto); justify-content: space-between; gap: 5px 8px; padding: 9px 12px;
+    border-bottom: 1px solid var(--hair); font-size: 11px; color: var(--faint); }
+  .keys span { white-space: nowrap; }
+  .keys kbd { background: var(--raised); }
+  .insp .dock { flex: none; border-top: 0; padding: 10px 12px; background: none; border-bottom: 1px solid var(--hair); }
+  .insp .now { grid-template-columns: 1fr; }
+  .insp .card { height: auto; min-height: 52px; gap: 4px; }
+  .insp .card .v { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.45; }
+  .insp .acts-head { height: auto; align-items: flex-start; }
+  .insp .acts-head .what { white-space: normal; line-height: 1.5; padding-top: 1px; }
+  .insp .acts-row { flex-wrap: wrap; }
+  .insp .act { flex: 1 1 40%; }
+  .insp .sheet { position: static; transform: none; transition: none; display: none; z-index: auto; border-radius: 0; background: none; max-height: none;
+    padding: 8px 12px 12px; border-bottom: 1px solid var(--hair); flex: 0 1 auto; min-height: 0; }
+  .insp .sheet.on { display: flex; }
+  .insp .grab { display: none; }
+  .insp .sheet-head { margin-bottom: 8px; }
+  .insp .sheet-head h3 { font-size: 14px; }
+  .insp .textarea, .insp textarea { font-size: 15px; }
+  body:not(.form-three) .insp:has(> .sheet.on) > .dock, body.form-three .insp:has(> .sheet.on:not(#listSheet)) > .dock { display: none; }
+  .insp #listSheet.on { flex: 1 1 0; border-bottom: 0; }
+  body.form-three #listSheet .xbtn { visibility: hidden; }
+  body.wide.input-mouse .kbd-hint { display: inline-flex; align-items: center; }
+  body.wide.input-mouse .item .del { opacity: 0; transition: opacity .12s; }
+  body.wide.input-mouse .item:hover .del, body.wide.input-mouse .item .del[data-armed] { opacity: 1; }
+  body.wide #exportSheet, body.wide #playSheet { left: 50%; right: auto; bottom: auto; top: 50%; width: min(640px, 90vw); max-height: 80vh; border-radius: 18px;
+    transform: translate(-50%, -46%); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+  body.wide #exportSheet.on, body.wide #playSheet.on { transform: translate(-50%, -50%); opacity: 1; pointer-events: auto; }
+  body.wide #exportSheet .grab, body.wide #playSheet .grab { display: none; }
+  body.wide:not([data-open="exportSheet"]):not([data-open="playSheet"]) .scrim { display: none; }
+
+  /* 広い画面のタイムライン: 上にルーラー（時刻と注釈のマーカー）、段は字が読める太さで固定 */
+  body.wide .tl-body { height: 166px; }
+  body.wide .ruler { display: block; position: absolute; left: 0; top: 0; height: 22px; border-bottom: 1px solid var(--hair); background-repeat: no-repeat; background-position: 0 100%; }
+  .ruler span { position: absolute; top: 3px; padding-left: 3px; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  body.wide .marks { display: block; position: absolute; left: 0; top: 0; height: 22px; }
+  .mk { position: absolute; top: 9px; width: 10px; height: 12px; margin-left: -5px; border-radius: 3px 3px 5px 5px; box-shadow: 0 0 0 1.5px var(--surface); z-index: 3; cursor: pointer; }
+  body.wide #dots { display: none; }
+  body.wide .film, body.wide .scene { top: 28px; height: 62px; }
+  body.wide .scene span { font-size: 11px; }
+  body.wide #scriptRow { top: 96px !important; height: 30px !important; }
+  body.wide #soundRow { top: 132px !important; height: 26px !important; }
+  body.wide .clip { height: 30px; line-height: 30px; font-size: 12px; border-radius: 6px; padding: 0 8px; }
+  body.wide .clip.edited::after { top: 8px; }
+  body.wide .snd { height: 26px; font-size: 12px; border-radius: 13px; padding: 0 9px 0 7px; }
+  body.wide .fork { top: 30px; }
+  body.wide .labels { width: 92px; background: linear-gradient(90deg, var(--surface) 82%, transparent); }
+  body.wide .labels div { gap: 6px; }
+  body.wide .labels div:nth-child(1) { top: 48px !important; }
+  body.wide .labels div:nth-child(2) { top: 100px !important; }
+  body.wide .labels div:nth-child(3) { top: 134px !important; }
+  body.wide .lbn { display: inline; font-size: 11px; font-weight: 700; }
+  body.wide .zoombox { display: flex; position: absolute; right: 0; top: 0; height: 22px; z-index: 5; align-items: center; gap: 6px; padding: 0 10px 0 22px;
+    background: linear-gradient(90deg, transparent, var(--surface) 18px); font-size: 10px; color: var(--faint); }
+  .zoombox input { width: 96px; height: 14px; margin: 0; accent-color: var(--text); }
+  body.wide .playhead::before { content: ""; position: absolute; left: -5px; top: 0; width: 12px; height: 11px; background: #fff; clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); }
+  body.wide.input-mouse .clip:hover, body.wide.input-mouse .snd:hover { opacity: .9; }
+  body.wide.input-mouse .card:hover { border-color: rgba(255,255,255,.16); }
+  body.wide.input-mouse .tip.on { display: block; }
+  .tip { position: fixed; z-index: 35; max-width: 320px; padding: 8px 10px; border-radius: 10px; background: rgba(40,40,42,.96); box-shadow: 0 6px 20px rgba(0,0,0,.4);
+    font-size: 12px; line-height: 1.6; white-space: pre-wrap; pointer-events: none; }
+  .tip .m { color: var(--faint); font-size: 11px; }
   #splash { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; background: #0b0e12; transition: opacity .2s; }
   #splash.gone { opacity: 0; pointer-events: none; }
 </style>
@@ -209,6 +307,8 @@
     </div>
     <div class="tl-body">
       <div class="scroller" id="scroller"><div class="wrap"><div class="lanes" id="lanes">
+        <div class="ruler" id="ruler"></div>
+        <div class="marks" id="marks"></div>
         <div class="row film" id="film"></div>
         <div id="scenes"></div>
         <div class="row" id="scriptRow" style="top:56px;height:20px"></div>
@@ -217,11 +317,12 @@
         <div id="forks"></div>
       </div></div></div>
       <div class="labels">
-        <div style="top:17px"><span id="lbVideo"></span></div>
-        <div style="top:55px"><span id="lbScript"></span></div>
-        <div style="top:81px"><span id="lbSound"></span></div>
+        <div style="top:17px"><span id="lbVideo"></span><b class="lbn" style="color:var(--c-video)">映像</b></div>
+        <div style="top:55px"><span id="lbScript"></span><b class="lbn" style="color:var(--c-script)">台本</b></div>
+        <div style="top:81px"><span id="lbSound"></span><b class="lbn" style="color:var(--c-sound)">音</b></div>
       </div>
       <div class="playhead"></div>
+      <div class="zoombox"><span>ズーム</span><input type="range" id="zoom" min="0" max="100" step="1" aria-label="帯のズーム"></div>
     </div>
   </div>
 
@@ -237,46 +338,59 @@
       <div class="acts-row" id="actsRow"></div>
     </div>
   </div>
+
+  <aside class="bin" id="bin"><div class="panel-h">チャプター</div><div class="bin-body" id="binBody"></div></aside>
+  <aside class="insp" id="insp">
+    <div class="keys" id="keys">
+      <span><kbd>Space</kbd>再生</span><span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd>送り</span><span><kbd>←</kbd><kbd>→</kbd>1 コマ</span>
+      <span><kbd>[</kbd><kbd>]</kbd>前後の行</span><span><kbd>↑</kbd><kbd>↓</kbd>帯を替える</span><span><kbd>M</kbd>注釈</span>
+      <span><kbd>E</kbd>直す</span><span><kbd>R</kbd>囲む</span><span><kbd>O</kbd>物を選ぶ</span><span><kbd>P</kbd>ここから遊ぶ</span>
+      <span><kbd>Esc</kbd>やめる</span><span><kbd class="mod">⌘</kbd><kbd>↵</kbd>付ける</span><span><kbd class="mod">⌘</kbd><kbd>S</kbd>書き出す</span>
+    </div>
+    <div class="panel-h">インスペクタ</div>
+  </aside>
 </div>
 
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="noteSheet"><div class="grab"></div>
-  <div class="sheet-head"><button class="tb" data-close>やめる</button><h3>注釈</h3><button class="tb go" id="noteSave">付ける</button></div>
+  <div class="sheet-head"><h3>注釈</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="ctxline" id="noteCtx"></div>
   <textarea id="noteText" rows="3" placeholder="気になったこと・こうしてほしいこと"></textarea>
+  <div class="sheet-foot"><span class="kbd-hint"><kbd class="mod">⌘</kbd><kbd>↵</kbd></span><button class="confirm" id="noteSave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>追加</button></div>
 </div>
 <div class="sheet" id="editSheet"><div class="grab"></div>
-  <div class="sheet-head"><button class="tb" data-close>やめる</button><h3>文章を直す</h3><button class="tb go" id="editSave">直す</button></div>
+  <div class="sheet-head"><h3>文章を直す</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="ctxline" id="editCtx"></div>
   <textarea id="editText" class="mincho" rows="6"></textarea>
   <div class="before" id="editBefore"></div>
-  <button class="secondary" id="editRevert" style="display:none">元の文章に戻す</button>
+  <div class="sheet-foot"><button class="ghost left" id="editRevert" style="display:none">元の文章に戻す</button><span class="kbd-hint"><kbd class="mod">⌘</kbd><kbd>↵</kbd></span><button class="confirm" id="editSave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>適用</button></div>
 </div>
 <div class="sheet" id="listSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>注釈と直し</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>注釈と直し</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="listBody"></div>
 </div>
 <div class="sheet" id="infoSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>このコマ</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>このコマ</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="infoBody"></div>
 </div>
 <div class="sheet" id="exportSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>書き出す</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>書き出す</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="ctxline" id="exportSum"></div>
   <div class="sheet-body"><pre id="exportText"></pre></div>
-  <button class="primary" id="saveBtn">ファイルに保存</button>
   <button class="secondary" id="copyBtn">コピー</button>
+  <div class="sheet-foot"><span class="kbd-hint"><kbd class="mod">⌘</kbd><kbd>S</kbd></span><button class="confirm" id="saveBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>保存</button></div>
 </div>
 <div class="sheet" id="chapSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>チャプター</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>チャプター</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="chapBody"></div>
 </div>
 <div class="sheet" id="playSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>ここから遊ぶ</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>ここから遊ぶ</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="playBody"></div>
 </div>
 <div class="toast" id="toast"></div>
 <canvas id="splash"></canvas>
+<div class="tip" id="tip"></div>
 
 <script>
 const TAPE = __TAPE_JSON__;
@@ -305,8 +419,9 @@ const WHO = Object.fromEntries(TAPE.speakers.map((s, i) => [s.name, `var(--speak
 
 const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d"), scroller = $("scroller"), dock = $("dock");
+let PPS = 56;
 // WhyNot: 鍵を game と commit だけにしない — 同じ origin（Pages）に同じゲームのテープが flow ごと・置き場ごとに並び、別の頁の注釈を読み合う
-const PPS = 56, TILE = PPS / TAPE.stripPerSec, KEY = "tape4:" + location.pathname + ":" + TAPE.flow + ":" + TAPE.game + ":" + TAPE.commit;
+const KEY = "tape4:" + location.pathname + ":" + TAPE.flow + ":" + TAPE.game + ":" + TAPE.commit;
 let anns = [], edits = {};
 try { const s = JSON.parse(localStorage.getItem(KEY) || "{}"); anns = (s.anns || []).filter(knownAnn); edits = Object.fromEntries(Object.entries(s.edits || {}).filter(([ln, v]) => typeof v === "string" && TAPE.lines[ln]?.text !== undefined)); } catch {}
 // WhyNot: 読んだ注釈をそのまま信じない — 古い版の頁が書いた物や手で直した物が、今の TAPE に無い scene・行・音を指すと、一覧と書き出しが落ちる
@@ -349,14 +464,30 @@ const annTrack = a => a.kind === "sound" ? "sound" : a.kind === "script" ? "scri
 
 // ── タイムライン ──
 function buildTimeline() {
-  const W = TAPE.duration * PPS;
-  $("lanes").style.width = W + "px";
-  const film = $("film"); film.style.width = W + "px"; film.style.backgroundSize = `${TILE * TAPE.strip.count}px 44px`;
-  $("scenes").innerHTML = TAPE.scenes.map(s => `<div class="scene" data-id="${s.id}" style="left:${s.t * PPS}px;width:${(sceneEnd(s) - s.t) * PPS}px"><span>${esc(s.name)}</span></div>`).join("");
-  $("scenes").querySelectorAll(".scene").forEach(n => n.onclick = () => { const s = TAPE.scenes.find(x => x.id === n.dataset.id); seek(s.t + .05); select({ track: "video" }); });
+  layoutTimeline();
   ["video", "script", "sound"].forEach(k => { const lb = $("lb" + k[0].toUpperCase() + k.slice(1)); lb.innerHTML = SVG[k](TRACK[k].hex); lb.style.background = TRACK[k].hex + "22"; });
   document.querySelectorAll("[data-icon]").forEach(i => i.outerHTML = SVG[i.dataset.icon](TRACK[i.dataset.icon].hex));
   renderTracks(); renderForks();
+}
+// 帯の横の長さは PPS（1 秒の幅）で決まる。広い画面ではズームで PPS が変わるたびに引き直す
+function layoutTimeline() {
+  const W = TAPE.duration * PPS, TILE = PPS / TAPE.stripPerSec, wide = form !== "phone";
+  $("lanes").style.width = W + "px";
+  const film = $("film"); film.style.width = W + "px";
+  // 広い段では絵の縦横比を保ち、はみ出た上下を切る（引き伸ばすと人の顔が潰れて読めない）
+  if (wide) { film.style.backgroundSize = `${TILE * TAPE.strip.count}px ${Math.max(62, TILE * TAPE.strip.h / TAPE.strip.w)}px`; film.style.backgroundPosition = "0 50%"; }
+  else { film.style.backgroundSize = `${TILE * TAPE.strip.count}px 44px`; film.style.backgroundPosition = ""; }
+  $("scenes").innerHTML = TAPE.scenes.map(s => `<div class="scene" data-id="${s.id}" style="left:${s.t * PPS}px;width:${(sceneEnd(s) - s.t) * PPS}px"><span>${esc(s.name)}</span></div>`).join("");
+  $("scenes").querySelectorAll(".scene").forEach(n => n.onclick = () => { const s = TAPE.scenes.find(x => x.id === n.dataset.id); seek(s.t + .05); select({ track: "video" }); });
+  if (wide) layoutRuler(W);
+}
+function layoutRuler(W) {
+  const step = [1, 2, 5, 10, 15].find(s => s * PPS >= 64) || 30, minor = PPS >= 10 ? PPS : step * PPS;
+  const r = $("ruler"); r.style.width = W + "px";
+  r.style.backgroundImage = `repeating-linear-gradient(90deg, rgba(255,255,255,.3) 0 1px, transparent 1px ${step * PPS}px), repeating-linear-gradient(90deg, rgba(255,255,255,.14) 0 1px, transparent 1px ${minor}px)`;
+  r.style.backgroundSize = `${W}px 9px, ${W}px 4px`;
+  const labels = []; for (let t = 0; t < TAPE.duration; t += step) labels.push(`<span style="left:${t * PPS}px">${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</span>`);
+  r.innerHTML = labels.join("");
 }
 function renderTracks() {
   const rows = TAPE.timeline;
@@ -374,6 +505,7 @@ function renderTracks() {
   ];
   const top = { video: 4, script: 52, sound: 78 };
   $("dots").innerHTML = marks.map(m => `<div class="dot" style="left:${m.t * PPS}px;top:${top[m.track]}px;background:${TRACK[m.track].c}"></div>`).join("");
+  if (form !== "phone") renderMarks();
   markSelection();
 }
 function renderForks() {
@@ -382,6 +514,14 @@ function renderForks() {
 }
 function openChapters(toFork, fork = 0) {
   video.pause();
+  if (form === "three") { focusBin(toFork, fork); return; }
+  renderChapters($("chapBody"), "fork");
+  open("chapSheet");
+  if (toFork) setTimeout(() => $("fork" + fork)?.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+  else setTimeout(() => $("chapBody").querySelector(".chap.cur")?.scrollIntoView({ block: "center" }), 300);
+}
+function renderChapters(body, forkId) { body.innerHTML = chaptersHtml(forkId); wireChapters(body); }
+function chaptersHtml(forkId) {
   const t = video.currentTime, cur = sceneAt(t).id;
   const cnt = s => {
     const by = k => anns.filter(a => annTrack(a) === k && sceneAt(a.seconds).id === s.id).length + (k === "script" ? Object.keys(edits).filter(n => sceneAt(lineStart(+n)).id === s.id).length : 0);
@@ -393,19 +533,18 @@ function openChapters(toFork, fork = 0) {
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
     TAPE.branches.filter(br => (br.t >= s.t || s === TAPE.scenes[0]) && br.t < sceneEnd(s)).forEach(br => {
       const i = TAPE.branches.indexOf(br);
-      rows.push(`<div class="forkcard" id="fork${i}" data-b="${i}"><div class="q"><span class="fork" style="position:relative;left:9px;top:0;margin-right:10px"><i>分</i></span>${esc(br.question)} · ${yarn}:${br.line}${br.example ? ' <span class="example">例</span>' : ""}</div>
-        <div class="routes">${br.routes.map((r, j) => `<button class="route ${r.here ? "on" : ""}" data-r="${j}"><b>${r.here ? "✓ " : ""}${esc(r.label)}</b><span>${esc(r.note)}</span></button>`).join("")}</div></div>`);
+      rows.push(`<div class="forkcard" id="${forkId}${i}" data-b="${i}"><div class="q"><span class="fork" style="position:relative;left:9px;top:0;margin-right:10px"><i>分</i></span>${esc(br.question)} · ${yarn}:${br.line}${br.example ? ' <span class="example">例</span>' : ""}</div>
+        <div class="routes">${br.routes.map((r, j) => `<button class="route ${r.here ? "on" : "none"}" data-r="${j}"><b>${r.here ? "✓ " : ""}${esc(r.label)}</b><span>${esc(r.note)}</span></button>`).join("")}</div></div>`);
     });
   });
-  $("chapBody").innerHTML = `<div class="ctxline">通し · ${TAPE.scenes.length} シーン${TAPE.branches.length ? ` · 分岐 ${TAPE.branches.length}${TAPE.branches.some(br => br.example) ? "（例の分岐は見せ方を試すための仮の物です）" : ""}` : ""}</div>` + rows.join("");
-  $("chapBody").querySelectorAll(".chap").forEach(n => n.onclick = () => { close(); seek(+n.dataset.t + .05); });
-  $("chapBody").querySelectorAll(".route").forEach(n => n.onclick = () => {
+  return `<div class="ctxline">通し · ${TAPE.scenes.length} シーン${TAPE.branches.length ? ` · 分岐 ${TAPE.branches.length}${TAPE.branches.some(br => br.example) ? "（例の分岐は見せ方を試すための仮の物です）" : ""}` : ""}</div>` + rows.join("");
+}
+function wireChapters(body) {
+  body.querySelectorAll(".chap").forEach(n => n.onclick = () => { close(); seek(+n.dataset.t + .05); });
+  body.querySelectorAll(".route").forEach(n => n.onclick = () => {
     const br = TAPE.branches[+n.closest(".forkcard").dataset.b], r = br.routes[+n.dataset.r];
     if (r.here) { close(); seek(br.t + .05); } else if (r.href) location.href = r.href; else toast("この枝の動画はまだありません（撮ると、ここから切り替わります）");
   });
-  open("chapSheet");
-  if (toFork) setTimeout(() => $("fork" + fork)?.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
-  else setTimeout(() => $("chapBody").querySelector(".chap.cur")?.scrollIntoView({ block: "center" }), 300);
 }
 function markSelection() {
   document.querySelectorAll(".sel").forEach(n => n.classList.remove("sel"));
@@ -560,6 +699,7 @@ function onTime(t, scrubbing) {
   if (s.id !== last.scene) {
     last.scene = s.id; $("sceneName").textContent = s.name;
     document.querySelectorAll(".scene").forEach(n => n.classList.toggle("cur", n.dataset.id === s.id));
+    if (form === "three") renderBin();
   }
   if (ln !== last.ln) { last.ln = ln; document.querySelectorAll(".clip").forEach(n => n.classList.toggle("cur", +n.dataset.ln === ln)); }
   // 帯を送ったら、選んでいる物も今のコマに合わせて移す（違う物を指したまま操作させない）
@@ -622,8 +762,8 @@ function setMode(m) {
   mode = m; syncSceneNote();
   dock.classList.toggle("mode", !!m);
   const p = $("pill");
-  if (m) { video.pause(); p.style.display = "block"; p.style.color = TRACK.video.c; p.textContent = m === "rect" ? "気になる所を指で囲む" : "注釈を付ける物をタップ";
-    $("selWhat").textContent = m === "rect" ? "画面を指で囲んでください" : "画面の物をタップしてください"; }
+  if (m) { video.pause(); p.style.display = "block"; p.style.color = TRACK.video.c; p.textContent = m === "rect" ? (extras() ? "気になる所をドラッグして囲む · Esc でやめる" : "気になる所を指で囲む") : (extras() ? "注釈を付ける物をクリック · Esc でやめる" : "注釈を付ける物をタップ");
+    $("selWhat").textContent = m === "rect" ? (extras() ? "画面をドラッグして囲んでください" : "画面を指で囲んでください") : (extras() ? "画面の物をクリックしてください" : "画面の物をタップしてください"); }
   else { p.style.display = "none"; if (sel) renderActs(); }
   redraw();
 }
@@ -632,8 +772,11 @@ function listen(s) { video.currentTime = Math.max(0, s.t - .4); video.play(); se
 // ── シート ──
 let openId = null;
 let openedAt = 0;
-function open(id) { openedAt = performance.now(); if (openId) $(openId).classList.remove("on"); openId = id; $("scrim").classList.add("on"); $(id).classList.add("on"); }
-function close() { if (openId) $(openId).classList.remove("on"); openId = null; $("scrim").classList.remove("on"); pending = null; redraw(); }
+function open(id) { openedAt = performance.now(); if (openId) $(openId).classList.remove("on"); openId = id; $("scrim").classList.add("on"); $(id).classList.add("on"); document.body.dataset.open = id; }
+function close() {
+  if (openId && !(form === "three" && openId === "listSheet")) $(openId).classList.remove("on");
+  openId = null; $("scrim").classList.remove("on"); pending = null; delete document.body.dataset.open; redraw();
+}
 $("scrim").onclick = () => { if (performance.now() - openedAt > 450) close(); };
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = close);
 const tag = (k, text) => `<span class="tag" style="background:${TRACK[k].c}">${esc(text)}</span>`;
@@ -651,8 +794,13 @@ function askNote(kind, target, rect, at) {
   pending = { kind, target, rect: rect ? r3(rect) : null, seconds: Math.round(t * 10) / 10, frame: frameOf(t), scene: sceneAt(t).id };
   const k = kind === "script" || kind === "sound" ? kind : "video";
   $("noteCtx").innerHTML = tag(k, `${TRACK[k].name}: ${label(pending)}`) + `<span>${where(t)}</span>`;
-  $("noteText").value = ""; setMode(null); open("noteSheet"); setTimeout(() => $("noteText").focus(), 280);
+  $("noteText").value = ""; syncNote(); setMode(null); open("noteSheet"); setTimeout(() => $("noteText").focus(), 280);
 }
+// 確定のボタンは、入力が空・変えていない時は押せない（押してから叱らない）
+const syncNote = () => { $("noteSave").disabled = !$("noteText").value.trim(); };
+const editValue = () => $("editText").value.trim().replace(/\n+/g, "／");
+const syncEdit = () => { const v = editValue(); $("editSave").disabled = !v || editing == null || v === textOf(editing); };
+$("noteText").addEventListener("input", syncNote); $("editText").addEventListener("input", syncEdit);
 $("noteSave").onclick = () => {
   const note = $("noteText").value.trim(); if (!pending) return; if (!note) { toast("一言書いてください"); return; }
   anns.push({ ...pending, note, script: scriptRef(lineAt(pending.seconds)), probes: probesAt(pending.seconds) });
@@ -665,6 +813,7 @@ function openEdit(ln) {
   $("editText").value = textOf(ln).replace(/／/g, "\n");
   $("editBefore").innerHTML = edits[ln] !== undefined ? `元の文章: ${esc(flat(l.text))}` : "改行が台本の「／」（行の折り返し）になります";
   $("editRevert").style.display = edits[ln] !== undefined ? "" : "none";
+  syncEdit();
   open("editSheet"); setTimeout(() => $("editText").focus(), 280);
 }
 $("editSave").onclick = () => {
@@ -685,9 +834,8 @@ function openInfo() {
 
 $("listBtn").onclick = () => { video.pause(); renderList(); open("listSheet"); };
 function renderList() {
-  const edited = Object.keys(edits).map(Number);
-  const items = [...anns.map(a => ({ a, t: a.seconds, k: annTrack(a) })), ...edited.map(ln => ({ ln, t: lineStart(ln) + .3, k: "script" }))].sort((x, y) => x.t - y.t);
-  if (!items.length) { $("listBody").innerHTML = `<div class="empty">まだありません。<br>下の札（映像・台本・音）か、タイムラインの帯をタップして選ぶと、付けられる物が出ます。</div>`; return; }
+  const items = markItems().sort((x, y) => x.t - y.t);
+  if (!items.length) { $("listBody").innerHTML = `<div class="empty">まだありません。<br>${form === "phone" ? "下の" : "インスペクタの"}札（映像・台本・音）か、タイムラインの帯をタップして選ぶと、付けられる物が出ます。</div>`; return; }
   $("listBody").innerHTML = items.map((it, i) => {
     const thumb = `<div class="thumb" style="background-position:${thumbPos(it.t)}"><i style="background:${TRACK[it.k].c}">${TRACK[it.k].name[0]}</i></div>`;
     if (it.a) return `<div class="item" data-i="${i}">${thumb}<div class="main"><div class="meta">${TRACK[it.k].name}: ${esc(label(it.a))} · ${where(it.t)}</div><div class="note">${esc(it.a.note)}</div></div><button class="del" data-del>${SVG.trash}</button></div>`;
@@ -702,8 +850,16 @@ function renderList() {
       persist(); refresh(); renderList(); return;
     }
     close(); seek(it.t);
-    select(it.k === "script" ? { track: "script", ln: it.ln ?? it.a.target?.line ?? lineAt(it.t) } : it.k === "sound" ? { track: "sound", sound: TAPE.sounds.find(s => s.name === it.a.target.name && Math.abs(s.t - it.t) < .05) } : { track: "video" });
+    selectItem(it);
   });
+}
+// WhyNot: 注釈に音の番号の欄を足さない — .md と localStorage の形が変わる。名前が同じ音のうち時刻が一番近い物で足りる
+const soundOf = a => TAPE.sounds.filter(s => s.name === a.target.name).reduce((b, s) => !b || Math.abs(s.t - a.seconds) < Math.abs(b.t - a.seconds) ? s : b, undefined);
+function selectItem(it) {
+  if (it.k === "script") { select({ track: "script", ln: it.ln ?? it.a.target?.line ?? lineAt(it.t) }); return; }
+  if (it.k === "video") { select({ track: "video" }); return; }
+  const s = soundOf(it.a);
+  if (s) select({ track: "sound", sound: s });
 }
 
 $("chapBtn").onclick = () => openChapters(false);
@@ -755,7 +911,8 @@ $("saveBtn").onclick = async () => {
   const text = $("exportText").textContent, name = fileName();
   if (downloads) { try { await downloads.save({ filename: name, data: text }); toast("保存しました"); return; } catch (e) { if (e && e.code === "declined") { toast("保存をやめました"); return; } } }
   const file = new File([text], name, { type: "text/markdown" });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
+  // WhyNot: マウスの広い形では共有シートを出さない — PC の共有シートはファイルを置く先を選べず、保存のつもりで押した人が迷う
+  if (!extras() && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
   const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast("ダウンロードしました");
 };
 $("copyBtn").onclick = async () => { try { await navigator.clipboard.writeText($("exportText").textContent); toast("コピーしました"); } catch { toast("コピーできませんでした"); } };
@@ -774,12 +931,238 @@ function refresh() {
   $("listCount").style.display = n ? "" : "none"; $("listCount").textContent = n;
   $("exportBtn").disabled = !n; $("exportBtn").textContent = n ? `書き出す（${n}）` : "書き出す";
   renderTracks(); renderNow(video.currentTime); if (sel) renderActs(); redraw();
+  if (form === "three") { renderList(); renderBin(); }
 }
 video.onseeked = () => onTime(video.currentTime);
-video.addEventListener("loadedmetadata", () => { document.documentElement.style.setProperty("--frame-ratio", `${video.videoWidth} / ${video.videoHeight}`); redraw(); });
+video.addEventListener("loadedmetadata", () => {
+  document.documentElement.style.setProperty("--frame-ratio", `${video.videoWidth} / ${video.videoHeight}`);
+  document.body.classList.toggle("wide-video", video.videoWidth > video.videoHeight);
+  redraw(); relayout();
+});
+if (window.visualViewport) {
+  const kb = () => { const v = visualViewport, h = Math.max(0, innerHeight - v.height - v.offsetTop); document.documentElement.style.setProperty("--kb", h > 1 ? h + "px" : "0px"); };
+  visualViewport.addEventListener("resize", kb); visualViewport.addEventListener("scroll", kb);
+}
 addEventListener("resize", redraw);
 
-applyTape();
+// ── 広い画面（幅 720 以上）: 形を決め、ドックとシートを右の欄（インスペクタ）へ移す。スマホの形では何もしない ──
+const MQ = {
+  phone: matchMedia("(max-width: 719.98px)"),
+  portrait: matchMedia("(min-width: 720px) and (orientation: portrait)"),
+  three: matchMedia("(min-width: 1024px) and (orientation: landscape)"),
+  mouse: matchMedia("(hover: hover) and (pointer: fine)")
+};
+let form = "phone", mouse = false;
+const IN_PANEL = ["dock", "noteSheet", "editSheet", "infoSheet", "chapSheet", "listSheet"];
+const homes = IN_PANEL.map(id => { const n = $(id); return { n, parent: n.parentNode, next: n.nextSibling }; });
+const extras = () => form !== "phone" && mouse;
+
+function applyForm() {
+  const f = MQ.phone.matches ? "phone" : MQ.portrait.matches ? "portrait" : MQ.three.matches ? "three" : "two", b = document.body;
+  mouse = MQ.mouse.matches;
+  b.classList.toggle("input-mouse", mouse); b.classList.toggle("input-touch", !mouse);
+  if (f === form) return;
+  // WhyNot: 書きかけのシートを閉じない — iPad を回す・窓が 1024 をまたぐだけで書いた字が消える。
+  // 書きかけでないシートは閉じる（2 列で開いたチャプターは、3 列では左の欄と同じ中身が 2 つ並ぶ）
+  const draft = openId === "noteSheet" || openId === "editSheet", focused = document.activeElement;
+  if (!draft) close();
+  form = f;
+  ["phone", "portrait", "two", "three"].forEach(x => b.classList.toggle("form-" + x, x === f));
+  b.classList.toggle("wide", f !== "phone");
+  homes.forEach(h => {
+    if (f === "phone" || (f === "three" && h.n.id === "chapSheet")) h.parent.insertBefore(h.n, h.next);
+    else $("insp").appendChild(h.n);
+  });
+  $("listSheet").classList.toggle("on", f === "three");
+  if (draft && f === "phone") $("scrim").classList.add("on");
+  if (draft && focused && focused.tagName === "TEXTAREA") focused.focus({ preventScroll: true });
+  // 広い画面はクリップの字が読める幅（1 秒 96px）から始める。スマホへ戻ったら元の 56px
+  PPS = f === "phone" ? 56 : 96;
+  if (f !== "phone") $("zoom").value = zoomToSlider(PPS);
+  relayout();
+  if (f === "three") { renderList(); renderBin(); }
+}
+function relayout() { const t = video.currentTime; layoutTimeline(); renderTracks(); renderForks(); follow(t); last = {}; onTime(t); }
+addEventListener("resize", applyForm);
+document.querySelectorAll(".mod").forEach(k => k.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl");
+
+// 左の欄（チャプター）。チャプターのシートと同じ中身を常に出す
+let binHtml = "", binScrolledAt = -Infinity;
+function renderBin() {
+  const body = $("binBody"), html = chaptersHtml("bfork");
+  if (html === binHtml) return;
+  const top = body.scrollTop;
+  binHtml = html; body.innerHTML = html; wireChapters(body); body.scrollTop = top;
+  // WhyNot: 手で欄を送った直後は今のシーンへ引き戻さない — 再生中はシーンが変わるたびに、読んでいた所から飛ばされる
+  if (performance.now() - binScrolledAt > 1500) body.querySelector(".chap.cur")?.scrollIntoView({ block: "nearest" });
+}
+["wheel", "touchstart", "pointerdown"].forEach(ev => $("binBody").addEventListener(ev, () => { binScrolledAt = performance.now(); }, { passive: true }));
+function focusBin(toFork, fork) {
+  renderBin();
+  const n = toFork ? $("bfork" + fork) : $("binBody").querySelector(".chap.cur");
+  if (!n) return;
+  n.scrollIntoView({ block: "center", behavior: "smooth" });
+  n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 900);
+}
+
+// ルーラーの上の注釈のマーカー（押すとその時刻へ行き、その物を選ぶ）
+function markItems() {
+  return [...anns.map(a => ({ t: a.seconds, k: annTrack(a), a })), ...Object.keys(edits).map(ln => ({ t: lineStart(+ln) + .3, k: "script", ln: +ln }))];
+}
+function renderMarks() {
+  const items = markItems();
+  $("marks").innerHTML = items.map((m, i) => `<div class="mk" data-i="${i}" style="left:${m.t * PPS}px;background:${TRACK[m.k].c}"></div>`).join("");
+  $("marks").querySelectorAll(".mk").forEach(n => n.onclick = () => { const m = items[+n.dataset.i]; seek(m.t); selectItem(m); });
+}
+
+// ズーム: ルーラーの右端のスライダー・Ctrl/⌘＋ホイール・指のピンチ。1 秒の幅を 14〜240px の間で替える
+const Z_MIN = 14, Z_MAX = 240;
+const zoomToSlider = p => Math.round(100 * Math.log(p / Z_MIN) / Math.log(Z_MAX / Z_MIN));
+function setZoom(p) {
+  PPS = Math.max(Z_MIN, Math.min(Z_MAX, p));
+  $("zoom").value = zoomToSlider(PPS);
+  relayout();
+}
+$("zoom").addEventListener("input", e => setZoom(Z_MIN * Math.pow(Z_MAX / Z_MIN, e.target.value / 100)));
+scroller.addEventListener("wheel", e => {
+  if (!extras()) return;
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) { setZoom(PPS * Math.exp(-e.deltaY * .01)); return; }
+  scroller.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+}, { passive: false });
+let pinch = null;
+const span2 = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+scroller.addEventListener("touchstart", e => { if (form !== "phone" && e.touches.length === 2) pinch = { d: span2(e.touches), p: PPS }; }, { passive: true });
+scroller.addEventListener("touchmove", e => { if (!pinch || e.touches.length !== 2) return; e.preventDefault(); setZoom(pinch.p * span2(e.touches) / pinch.d); }, { passive: false });
+scroller.addEventListener("touchend", e => { if (e.touches.length < 2) pinch = null; });
+
+// J / K / L の送り。戻し再生は video が負の速さを持てないので、コマを戻して見せる
+let shut = null;
+function shuttle(dir) {
+  setMode(null);
+  if (shut && shut.dir === dir) shut.speed = Math.min(4, shut.speed * 2);
+  else { stopShuttle(); shut = { dir, speed: 1 }; }
+  toast(`${dir > 0 ? "▶" : "◀"} ${shut.speed}×`);
+  if (dir > 0) { if (video.paused) togglePlay(); video.playbackRate = shut.speed; return; }
+  if (sel) select(null); else video.pause();
+  shut.last = performance.now();
+  const tick = now => {
+    if (!shut || shut.dir > 0) return;
+    const t = Math.max(0, video.currentTime - (now - shut.last) / 1000 * shut.speed);
+    shut.last = now; video.currentTime = t; follow(t); onTime(t);
+    if (t <= 0) { stopShuttle(); return; }
+    shut.raf = requestAnimationFrame(tick);
+  };
+  shut.raf = requestAnimationFrame(tick);
+}
+function stopShuttle() { if (!shut) return; cancelAnimationFrame(shut.raf); shut = null; video.playbackRate = 1; }
+video.addEventListener("pause", () => { if (shut && shut.dir > 0) stopShuttle(); });
+
+const stepFrames = n => { stopShuttle(); seek(Math.max(0, Math.min(TAPE.duration - .01, (frameOf(video.currentTime) + n) / TAPE.fps))); };
+const stepSeconds = n => { stopShuttle(); seek(Math.max(0, Math.min(TAPE.duration - .01, video.currentTime + n))); };
+function jumpLine(d) {
+  stopShuttle();
+  const t = video.currentTime, starts = TAPE.timeline.filter(r => r[1]).map(r => r[0]);
+  const target = d > 0 ? starts.find(s => s > t + .06) : starts.filter(s => s < t - .3).pop();
+  if (target === undefined) return;
+  seek(target + .05);
+  const ln = lineAt(target + .05);
+  if (sel && sel.track === "script" && TAPE.lines[ln]) select({ track: "script", ln });
+}
+const ORDER = ["video", "script", "sound"];
+function cycleTrack(d) {
+  stopShuttle();
+  let i = sel ? ORDER.indexOf(sel.track) : d > 0 ? -1 : ORDER.length;
+  for (let n = 0; n < 3; n++) {
+    i = (i + d + 3) % 3;
+    const card = $("card" + ORDER[i][0].toUpperCase() + ORDER[i].slice(1));
+    if (!card.disabled) { card.onclick(); return; }
+  }
+}
+function noteHere() {
+  stopShuttle(); video.pause();
+  const t = video.currentTime;
+  if (sel && sel.track === "script") { const l = TAPE.lines[sel.ln]; askNote("script", l.cmd ? { line: sel.ln, command: l.cmd } : { line: sel.ln }, null, t); return; }
+  if (sel && sel.track === "sound") { const s = sel.sound; askNote("sound", { name: s.name, kind: s.kind, label: s.label, line: s.line }, null, s.t); return; }
+  const s = sceneAt(t); askNote("scene", { id: s.id, name: s.name, from: s.t, to: sceneEnd(s) }, null);
+}
+function startMode(m) { stopShuttle(); if (!sel || sel.track !== "video") select({ track: "video" }); setMode(m); }
+function cancelSomething() {
+  if (mode) setMode(null); else if (openId) close(); else if (sel) select(null);
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+}
+function saveShortcut() {
+  if (openId === "noteSheet" || openId === "editSheet") { toast("先に付けるか閉じてください"); return; }
+  if (openId === "exportSheet") { $("saveBtn").click(); return; }
+  if ($("exportBtn").disabled) { toast("まだ書き出す物がありません"); return; }
+  $("exportBtn").onclick(); $("saveBtn").focus();
+}
+const KEYS = {
+  " ": () => { stopShuttle(); togglePlay(); },
+  k: () => { stopShuttle(); video.pause(); },
+  j: () => shuttle(-1), l: () => shuttle(1),
+  ArrowLeft: e => e.shiftKey ? stepSeconds(-1) : stepFrames(-1),
+  ArrowRight: e => e.shiftKey ? stepSeconds(1) : stepFrames(1),
+  Home: () => { stopShuttle(); seek(0); }, End: () => { stopShuttle(); seek(TAPE.duration - .05); },
+  "[": () => jumpLine(-1), "]": () => jumpLine(1),
+  ArrowUp: () => cycleTrack(-1), ArrowDown: () => cycleTrack(1),
+  n: noteHere, m: noteHere,
+  e: () => { if (sel && sel.track === "script" && TAPE.lines[sel.ln].text) openEdit(sel.ln); else toast("台詞を選んでいる時に直せます（↑↓ で台本を選ぶ）"); },
+  r: () => startMode("rect"), o: () => startMode("pick"),
+  p: () => { if (TAPE.playUrl) $("playHereBtn").click(); }
+};
+addEventListener("keydown", e => {
+  if (!extras()) return;
+  // WhyNot: 変換中のキーを拾わない — Esc で変換を取り消したつもりがシートを閉じ、確定の Enter が付けるになる。Safari は確定のキーを isComposing 偽・keyCode 229 で送る
+  if (e.isComposing || e.keyCode === 229) return;
+  const mod = e.metaKey || e.ctrlKey, typing = e.target.tagName === "TEXTAREA" || (e.target.tagName === "INPUT" && e.target.type !== "range");
+  if (mod && e.key === "Enter") { e.preventDefault(); if (openId === "noteSheet") $("noteSave").click(); else if (openId === "editSheet") $("editSave").click(); return; }
+  if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveShortcut(); return; }
+  if (e.key === "Escape") { e.preventDefault(); cancelSomething(); return; }
+  if (typing || mod || e.altKey || e.target.type === "range") return;
+  const fn = KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (!fn) return;
+  e.preventDefault();
+  if (document.activeElement && document.activeElement.tagName === "BUTTON") document.activeElement.blur();
+  fn(e);
+});
+
+// ホバーで札・帯のクリップ・マーカーの中身を出す（マウスの時だけ）
+const tip = $("tip");
+function tipFor(n) {
+  if (n.classList.contains("clip")) {
+    const ln = +n.dataset.ln, l = TAPE.lines[ln];
+    if (l.cmd) return `<span class="m">演出 · ${yarn}:${ln}</span>\n${esc(l.cmd)}`;
+    return `<span class="m"><b style="color:${WHO[l.who]}">${esc(l.who)}</b> · ${yarn}:${ln}${edits[ln] !== undefined ? " · 直した文章" : ""}</span>\n<span class="mincho">${esc(textOf(ln).replace(/／/g, "\n"))}</span>`;
+  }
+  if (n.classList.contains("snd")) { const s = TAPE.sounds[+n.dataset.i]; return `♪ ${esc(s.label)}\n<span class="m">${s.name} · ${s.kind === "ambience" ? "環境音" : "効果音"} · ${mmss(s.t)} · ${yarn}:${s.line}</span>`; }
+  if (n.classList.contains("scene")) { const s = TAPE.scenes.find(x => x.id === n.dataset.id); return `${esc(s.name)}\n<span class="m">${mmss(s.t)} – ${mmss(sceneEnd(s))}</span>`; }
+  if (n.classList.contains("mk")) {
+    const m = markItems()[+n.dataset.i];
+    if (m.a) return `<span class="m">${TRACK[m.k].name}: ${esc(label(m.a))} · ${mmss(m.t)}</span>\n${esc(m.a.note)}`;
+    return `<span class="m">台本: 文章の直し · ${yarn}:${m.ln}</span>\n<span class="mincho">${esc(edits[m.ln].replace(/／/g, "\n"))}</span>`;
+  }
+  if (n.classList.contains("fork")) { const br = TAPE.branches[+n.dataset.i]; return `分岐: ${esc(br.question)}\n<span class="m">${br.routes.map(r => (r.here ? "✓ " : "") + esc(r.label)).join(" / ")}</span>`; }
+  if (n.classList.contains("card") && !n.disabled) return esc(n.querySelector(".v").textContent);
+  return "";
+}
+function placeTip(e) {
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + 14, y = e.clientY + 18;
+  if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+  tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+}
+document.addEventListener("mouseover", e => {
+  if (!extras()) return;
+  const n = e.target.closest(".clip,.snd,.scene,.mk,.fork,.card"), html = n ? tipFor(n) : "";
+  if (!html) { tip.classList.remove("on"); return; }
+  tip.innerHTML = html; tip.classList.add("on"); placeTip(e);
+});
+document.addEventListener("mousemove", e => { if (tip.classList.contains("on")) placeTip(e); });
+scroller.addEventListener("scroll", () => tip.classList.remove("on"));
+
+applyTape(); applyForm();
 setIcon(); buildTimeline(); refresh(); onTime(0);
 
 // ── 起動画面: 動画を取っている間、ゲームのブラウザ版（fge-web.js の fgeSplash）と同じ配置・色・ゲージ・ドットの字で描く ──

@@ -44,41 +44,17 @@ func renderFile(t *testing.T, p string, strip Strip) string {
 // mockFixes は mock.html から雛形へ直した所の全部（plans/tape/plan.md の「TAPE から引くように直す所」）。
 // ここに無い違いが出たら、雛形がモックから外れている。
 var mockFixes = [][2]string{
-	{"const PPS = 56, TILE = PPS / TAPE.stripPerSec, KEY = \"tape4:\" + TAPE.game + \":\" + TAPE.commit;",
-		"// WhyNot: 鍵を game と commit だけにしない — 同じ origin（Pages）に同じゲームのテープが flow ごと・置き場ごとに並び、別の頁の注釈を読み合う\nconst PPS = 56, TILE = PPS / TAPE.stripPerSec, KEY = \"tape4:\" + location.pathname + \":\" + TAPE.flow + \":\" + TAPE.game + \":\" + TAPE.commit;"},
+	{"const KEY = \"tape4:\" + TAPE.game + \":\" + TAPE.commit;",
+		"// WhyNot: 鍵を game と commit だけにしない — 同じ origin（Pages）に同じゲームのテープが flow ごと・置き場ごとに並び、別の頁の注釈を読み合う\nconst KEY = \"tape4:\" + location.pathname + \":\" + TAPE.flow + \":\" + TAPE.game + \":\" + TAPE.commit;"},
 	{"try { const s = JSON.parse(localStorage.getItem(KEY) || \"{}\"); anns = s.anns || []; edits = s.edits || {}; } catch {}",
 		"try { const s = JSON.parse(localStorage.getItem(KEY) || \"{}\"); anns = (s.anns || []).filter(knownAnn); edits = Object.fromEntries(Object.entries(s.edits || {}).filter(([ln, v]) => typeof v === \"string\" && TAPE.lines[ln]?.text !== undefined)); } catch {}\n// WhyNot: 読んだ注釈をそのまま信じない — 古い版の頁が書いた物や手で直した物が、今の TAPE に無い scene・行・音を指すと、一覧と書き出しが落ちる\nfunction knownAnn(a) {\n  if (!a || typeof a !== \"object\" || !a.target || !TAPE.scenes.some(s => s.id === a.scene) || !(a.seconds >= 0 && a.seconds <= TAPE.duration)) return false;\n  if (a.kind === \"scene\") return TAPE.scenes.some(s => s.id === a.target.id);\n  if (a.kind === \"object\") return TAPE.objects.some(o => o.id === a.target.id);\n  if (a.kind === \"sound\") return TAPE.sounds.some(s => s.name === a.target.name);\n  if (a.kind === \"script\") return TAPE.lines[a.target.line] !== undefined;\n  return a.kind === \"rect\" && !!a.rect;\n}"},
-	{"<title>テープ（モック）— 血鱗 序章</title>", "<title>テープ — 血鱗 序章</title>"},
+	{"<title>テープ（モック・広い画面）— 血鱗 序章</title>", "<title>テープ — 血鱗 序章</title>"},
 	{"    --witch: #c8a6ff; --girl: #ffb46b; --narr: #e6e6e6;\n", ""},
 	{"  .mock { font-size: 9px; font-weight: 700; color: #1a1300; background: var(--accent); border-radius: 3px; padding: 0 3px; margin-left: 4px; vertical-align: 2px; }\n", ""},
-	{"background-image: url(strip.jpg); background-repeat: no-repeat; }", "background-image: var(--strip); background-repeat: no-repeat; }"},
-	{".thumb { width: 34px; height: 60px; border-radius: 4px; flex: none; background-image: url(strip.jpg); background-size: 2992px 60px; position: relative; }",
-		".thumb { width: var(--thumb-w); height: 60px; border-radius: 4px; flex: none; background-image: var(--strip); background-size: var(--thumb-bg); position: relative; }"},
-	{".chap .thumb { width: 30px; height: 53px; background-size: 2640px 53px; }", ".chap .thumb { width: var(--chap-w); height: 53px; background-size: var(--chap-bg); }"},
-	{"video.onseeked = () => onTime(video.currentTime);\n",
-		"video.onseeked = () => onTime(video.currentTime);\n" +
-			"video.addEventListener(\"loadedmetadata\", () => { document.documentElement.style.setProperty(\"--frame-ratio\", `${video.videoWidth} / ${video.videoHeight}`); redraw(); });\n"},
-	{".frame { position: relative; height: 100%; aspect-ratio: 540 / 960; max-width: 100%; }",
-		".frame { position: relative; height: 100%; aspect-ratio: var(--frame-ratio, auto); max-width: 100%; }"},
-	{"const box = () => canvas.getBoundingClientRect();\nfunction redraw() {\n",
-		"const box = () => canvas.getBoundingClientRect();\n" +
-			"// WhyNot: canvas を枠いっぱいのままにしない — 枠より横長・縦長の動画は object-fit: contain で内側に映るので、割合の矩形が映っていない所へずれる\n" +
-			"function fitCanvas() {\n" +
-			"  const f = $(\"frame\"), fw = f.clientWidth, fh = f.clientHeight, vw = video.videoWidth, vh = video.videoHeight;\n" +
-			"  if (!fw || !fh || !vw || !vh || Math.abs(fw / fh - vw / vh) < .01) { canvas.style.left = canvas.style.top = canvas.style.width = canvas.style.height = \"\"; return; }\n" +
-			"  const k = Math.min(fw / vw, fh / vh), w = vw * k, h = vh * k;\n" +
-			"  Object.assign(canvas.style, { left: (fw - w) / 2 + \"px\", top: (fh - h) / 2 + \"px\", width: w + \"px\", height: h + \"px\" });\n" +
-			"}\n" +
-			"function redraw() {\n  fitCanvas();\n"},
 	{`<b>血鱗 序章</b><span class="mock">MOCK</span><br>`, `<b id="tapeTitle"></b><br>`},
 	{`<b id="tcNow">0:00.0</b> / 0:43.6</div>`, `<b id="tcNow">0:00.0</b> / <span id="tcDur"></span></div>`},
 	{`const WHO = { "魔女": "var(--witch)", "少女": "var(--girl)", "地の文": "var(--narr)" };`,
 		"const WHO = Object.fromEntries(TAPE.speakers.map((s, i) => [s.name, `var(--speaker-${i})`]));"},
-	{"const thumbPos = t => `${-Math.min(87, Math.floor(t * TAPE.stripPerSec)) * 34}px 0`;",
-		"const THUMB_W = Math.round(60 * TAPE.strip.w / TAPE.strip.h), CHAP_W = Math.round(53 * TAPE.strip.w / TAPE.strip.h);\n" +
-			"const thumbPos = t => `${-Math.min(TAPE.strip.count - 1, Math.floor(t * TAPE.stripPerSec)) * THUMB_W}px 0`;"},
-	{"film.style.backgroundSize = `${TILE * 88}px 44px`;", "film.style.backgroundSize = `${TILE * TAPE.strip.count}px 44px`;"},
-	{`style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * 30}px 0"`, `style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * CHAP_W}px 0"`},
 	{"`<div class=\"ctxline\">通し · ${TAPE.scenes.length} シーン · 分岐 ${TAPE.branches.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>`",
 		"`<div class=\"ctxline\">通し · ${TAPE.scenes.length} シーン${TAPE.branches.length ? ` · 分岐 ${TAPE.branches.length}${TAPE.branches.some(br => br.example) ? \"（例の分岐は見せ方を試すための仮の物です）\" : \"\"}` : \"\"}</div>`"},
 	{"// 枠の寸法は動画から測った値: 横は画面の 2.8%〜97.2%、縦は 1 行目の中心から 47px 上〜最終行の中心から 32px 下、行の間 43.6px、中心は 466px（540×960 で）\n", ""},
@@ -94,36 +70,30 @@ var mockFixes = [][2]string{
 		"// 直した行は edit.<行>（後の文）と was.<行>（前の文のハッシュ）で渡す。URL が長すぎると開けない端末があるので、MAX_URL を超える分は載せずに数える\nconst MAX_URL = 8000;\nfunction playLink(t) {\n  const ln = lineAt(t), l = ln && TAPE.lines[ln], node = encodeURIComponent((l && l.node) ?? TAPE.node);\n  let href = ln ? `${TAPE.playUrl}?talk=${node}&line=${ln}&at=${fnv1a(l.text ?? l.cmd)}` : `${TAPE.playUrl}?talk=${node}`, dropped = 0;\n  Object.keys(edits).map(Number).sort((a, b) => a - b).forEach(e => {\n    const part = `&edit.${e}=${encodeURIComponent(edits[e])}&was.${e}=${fnv1a(TAPE.lines[e].text)}`;\n    if (href.length + part.length > MAX_URL) dropped++; else href += part;\n  });\n  return { href, dropped };\n}\nconst playHref = t => playLink(t).href;\nfunction fnv1a(s) { let h = 0x811c9dc5; for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0; return h.toString(16).padStart(8, \"0\"); }"},
 	{"$(\"playHereBtn\").onclick = () => { video.pause(); $(\"playHereBtn\").href = playHref(video.currentTime); toast(\"別のタブでゲームを開きます（モックでは最初から）\"); };",
 		"$(\"playHereBtn\").onclick = () => {\n  video.pause(); const link = playLink(video.currentTime); $(\"playHereBtn\").href = link.href;\n  toast(link.dropped ? `直しの一部（${link.dropped} 件）は URL に乗らないので当てずに開きます` : \"別のタブでゲームを開きます\");\n};"},
-	{"function refresh() {", "function applyTape() {\n" +
-		"  const root = document.documentElement.style;\n" +
-		"  TAPE.speakers.forEach((s, i) => root.setProperty(`--speaker-${i}`, s.color));\n" +
-		"  root.setProperty(\"--strip\", `url(\"${encodeURI(TAPE.strip.file)}\")`);\n" +
-		"  root.setProperty(\"--thumb-w\", THUMB_W + \"px\"); root.setProperty(\"--thumb-bg\", `${THUMB_W * TAPE.strip.count}px 60px`);\n" +
+	{"function applyTape() {\n  const root = document.documentElement.style;\n",
+		"function applyTape() {\n  const root = document.documentElement.style;\n  TAPE.speakers.forEach((s, i) => root.setProperty(`--speaker-${i}`, s.color));\n"},
+	{"  root.setProperty(\"--chap-w\", CHAP_W + \"px\"); root.setProperty(\"--chap-bg\", `${CHAP_W * TAPE.strip.count}px 53px`);\n}\n",
 		"  root.setProperty(\"--chap-w\", CHAP_W + \"px\"); root.setProperty(\"--chap-bg\", `${CHAP_W * TAPE.strip.count}px 53px`);\n" +
-		"  $(\"tapeTitle\").textContent = TAPE.title; $(\"tcDur\").textContent = mmss(TAPE.duration);\n" +
-		"  if (!TAPE.playUrl) $(\"playHereBtn\").style.display = \"none\";\n" +
-		"}\n" +
-		"function refresh() {"},
+			"  $(\"tapeTitle\").textContent = TAPE.title; $(\"tcDur\").textContent = mmss(TAPE.duration);\n" +
+			"  if (!TAPE.playUrl) $(\"playHereBtn\").style.display = \"none\";\n" +
+			"}\n"},
 	{"setIcon(); buildTimeline(); refresh(); onTime(0);\n" +
 		`fetch("kesshou.mp4").then(r => r.blob()).then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = "kesshou.mp4"; });`,
-		"applyTape();\nsetIcon(); buildTimeline(); refresh(); onTime(0);\n" +
+		"setIcon(); buildTimeline(); refresh(); onTime(0);\n" +
 			splashScript +
 			"const startAt = +(/^#t=([\\d.]+)$/.exec(location.hash) || [])[1];\n" +
 			"if (startAt > 0) video.addEventListener(\"loadedmetadata\", () => seek(Math.min(startAt, TAPE.duration - .01)), { once: true });"},
-	{"  .toast.on { opacity: 1; transform: translate(-50%, 0); }\n</style>",
-		"  .toast.on { opacity: 1; transform: translate(-50%, 0); }\n" +
+	{"  .tip .m { color: var(--faint); font-size: 11px; }\n</style>",
+		"  .tip .m { color: var(--faint); font-size: 11px; }\n" +
 			"  #splash { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; background: #0b0e12; transition: opacity .2s; }\n" +
 			"  #splash.gone { opacity: 0; pointer-events: none; }\n</style>"},
 	{"<div class=\"toast\" id=\"toast\"></div>\n", "<div class=\"toast\" id=\"toast\"></div>\n<canvas id=\"splash\"></canvas>\n"},
-	{"  $(\"forks\").querySelectorAll(\".fork\").forEach(n => n.onclick = () => openChapters(true));\n}\nfunction openChapters(toFork) {",
-		"  $(\"forks\").querySelectorAll(\".fork\").forEach(n => n.onclick = () => openChapters(true, +n.dataset.i));\n}\nfunction openChapters(toFork, fork = 0) {"},
-	{"    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach((br, i) => {\n      rows.push(`<div class=\"forkcard\" id=\"fork${i}\"><div",
-		"    TAPE.branches.filter(br => (br.t >= s.t || s === TAPE.scenes[0]) && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"fork${i}\" data-b=\"${i}\"><div"},
+	{"    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"${forkId}${i}\"><div",
+		"    TAPE.branches.filter(br => (br.t >= s.t || s === TAPE.scenes[0]) && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"${forkId}${i}\" data-b=\"${i}\"><div"},
 	{"    const r = TAPE.branches[0].routes[+n.dataset.r];\n" +
 		"    if (r.here) { close(); seek(TAPE.branches[0].t + .05); } else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n",
 		"    const br = TAPE.branches[+n.closest(\".forkcard\").dataset.b], r = br.routes[+n.dataset.r];\n" +
 			"    if (r.here) { close(); seek(br.t + .05); } else if (r.href) location.href = r.href; else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n"},
-	{"  if (toFork) setTimeout(() => $(\"fork0\")?.scrollIntoView(", "  if (toFork) setTimeout(() => $(\"fork\" + fork)?.scrollIntoView("},
 	{"  .routes { display: flex; gap: 6px; }\n  .route { flex: 1; min-height: 44px;",
 		"  .routes { display: flex; flex-wrap: wrap; gap: 6px; }\n  .route { flex: 1; min-width: 40%; min-height: 44px;"},
 	{"  return l.cmd ? { file: TAPE.yarn, node: TAPE.node, line: ln, command: l.cmd } : { file: TAPE.yarn, node: TAPE.node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };",

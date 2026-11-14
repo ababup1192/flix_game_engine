@@ -243,8 +243,8 @@ func noErrors(t *testing.T, p *cdp.Page, name string) {
 
 // 同じ手順で注釈を 1 つ・直しを 1 つ付け、書き出す .md を返す。
 const annotateAndExport = `(() => {
-  seek(9.5); $("sceneNote").click(); $("noteText").value = "泡が多すぎる"; $("noteSave").click();
-  seek(8.6); openEdit(25); $("editText").value = "おや、あんた海の者でないね。\nすぐ分かるさ"; $("editSave").click();
+  seek(9.5); $("sceneNote").click(); $("noteText").value = "泡が多すぎる"; $("noteText").dispatchEvent(new Event("input")); $("noteSave").click();
+  seek(8.6); openEdit(25); $("editText").value = "おや、あんた海の者でないね。\nすぐ分かるさ"; $("editText").dispatchEvent(new Event("input")); $("editSave").click();
   seek(8.6); return buildPrompt();
 })()`
 
@@ -355,8 +355,8 @@ func TestOtherTapeHasNoForkAndExportsAllFields(t *testing.T) {
 	}
 	var md string
 	if err := p.Eval(`(() => {
-	  seek(2.5); $("sceneNote").click(); $("noteText").value = "風の音が小さい"; $("noteSave").click();
-	  seek(2.5); openEdit(4); $("editText").value = "今夜は風が強い"; $("editSave").click();
+	  seek(2.5); $("sceneNote").click(); $("noteText").value = "風の音が小さい"; $("noteText").dispatchEvent(new Event("input")); $("noteSave").click();
+	  seek(2.5); openEdit(4); $("editText").value = "今夜は風が強い"; $("editText").dispatchEvent(new Event("input")); $("editSave").click();
 	  return buildPrompt(); })()`, &md); err != nil {
 		t.Fatal(err)
 	}
@@ -536,8 +536,8 @@ func TestOtherPageOnSameOriginDoesNotShareNotes(t *testing.T) {
 	p := openTapePage(t)
 	a, b := twoTapesOneOrigin(t)
 	loadPlain(t, p, a)
-	if err := p.Eval(`(() => { seek(2.5); $("sceneNote").click(); $("noteText").value = "a の注釈"; $("noteSave").click();
-	  seek(2.5); openEdit(4); $("editText").value = "a の直し"; $("editSave").click(); return true; })()`, nil); err != nil {
+	if err := p.Eval(`(() => { seek(2.5); $("sceneNote").click(); $("noteText").value = "a の注釈"; $("noteText").dispatchEvent(new Event("input")); $("noteSave").click();
+	  seek(2.5); openEdit(4); $("editText").value = "a の直し"; $("editText").dispatchEvent(new Event("input")); $("editSave").click(); return true; })()`, nil); err != nil {
 		t.Fatal(err)
 	}
 	loadPlain(t, p, b)
