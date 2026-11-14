@@ -52,8 +52,10 @@ fi
 {{- end}}
 
 export FGE_ENTRY="${FGE_ENTRY:-main}"
+# WhyNot: --sun-misc-unsafe-memory-access の前に java の版を見ない — 同梱の JRE は targets.go で 25 に固定してあり、
+# JDK 22 以前でこの旗が起動を止める事は配る物では起きない。
 # WhyNot: LWJGL の native を一時置き場へ解かせない — /tmp を noexec で載せる Linux があり、そこでは dlopen が落ちる。
 # shellcheck disable=SC2086
-exec "$here/jre/bin/java" {{.JavaFlags}}-Xss32m -XX:MaxRAMPercentage=50 \
+exec "$here/jre/bin/java" {{.JavaFlags}}--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Xss32m -XX:MaxRAMPercentage=50 \
     -Dorg.lwjgl.system.SharedLibraryExtractPath="$cache/lwjgl" \
     ${FGE_JAVA_OPTS:-} -jar "$here/game/game.jar"

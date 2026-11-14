@@ -42,15 +42,15 @@ const fakeJava = `#!/bin/sh
 // writeFakeJRE は Target と同じ形（tar.gz か zip・頭のフォルダ・root）の小さな JRE を作る。
 func writeFakeJRE(t *testing.T, tg Target, extra ...fakeEntry) (string, string) {
 	t.Helper()
-	pre := "jdk-21-jre/"
+	pre := "jdk-jre/"
 	if tg.JRE.Root != "" {
 		pre += tg.JRE.Root + "/"
 	}
 	entries := []fakeEntry{
-		{name: "jdk-21-jre/", typeflag: tar.TypeDir, mode: 0o755},
+		{name: "jdk-jre/", typeflag: tar.TypeDir, mode: 0o755},
 		{name: pre + tg.java, typeflag: tar.TypeReg, body: fakeJava, mode: 0o755},
 		{name: pre + "lib/libjli.so", typeflag: tar.TypeSymlink, link: "server/libjli.so"},
-		{name: "jdk-21-jre/Contents/MacOS/libjli.dylib", typeflag: tar.TypeReg, body: "x", mode: 0o755},
+		{name: "jdk-jre/Contents/MacOS/libjli.dylib", typeflag: tar.TypeReg, body: "x", mode: 0o755},
 	}
 	entries = append(entries, extra...)
 	var buf bytes.Buffer
@@ -456,21 +456,21 @@ func TestIncludeOutsideTheGameStops(t *testing.T) {
 }
 
 func TestJRENameLeavingTheFolderStops(t *testing.T) {
-	_, err := buildFake(t, "linux", nil, fakeEntry{name: "jdk-21-jre/../../x", typeflag: tar.TypeReg, mode: 0o644})
+	_, err := buildFake(t, "linux", nil, fakeEntry{name: "jdk-jre/../../x", typeflag: tar.TypeReg, mode: 0o644})
 	if err == nil || !strings.Contains(err.Error(), "外へ出る名前") {
 		t.Errorf("err = %v", err)
 	}
 }
 
 func TestJRESymlinkLeavingTheFolderStops(t *testing.T) {
-	_, err := buildFake(t, "linux", nil, fakeEntry{name: "jdk-21-jre/lib/x.so", typeflag: tar.TypeSymlink, link: "../../../etc/passwd"})
+	_, err := buildFake(t, "linux", nil, fakeEntry{name: "jdk-jre/lib/x.so", typeflag: tar.TypeSymlink, link: "../../../etc/passwd"})
 	if err == nil || !strings.Contains(err.Error(), "外を指しています") {
 		t.Errorf("err = %v", err)
 	}
 }
 
 func TestJREHardlinkStops(t *testing.T) {
-	_, err := buildFake(t, "linux", nil, fakeEntry{name: "jdk-21-jre/bin/java2", typeflag: tar.TypeLink, link: "jdk-21-jre/bin/java"})
+	_, err := buildFake(t, "linux", nil, fakeEntry{name: "jdk-jre/bin/java2", typeflag: tar.TypeLink, link: "jdk-jre/bin/java"})
 	if err == nil || !strings.Contains(err.Error(), "運べない種類") {
 		t.Errorf("err = %v", err)
 	}

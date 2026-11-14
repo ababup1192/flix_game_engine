@@ -36,4 +36,4 @@ for %%F in ("%HERE%game\*") do if /i not "%%~nxF"=="game.jar" copy /y "%%~fF" "%
 cd /d "%DATA%"
 
 if not defined FGE_ENTRY set "FGE_ENTRY=main"
-"%HERE%jre\bin\java.exe" -Xss32m -XX:MaxRAMPercentage=50 "-Dorg.lwjgl.system.SharedLibraryExtractPath=%DATA%\cache\lwjgl" %FGE_JAVA_OPTS% -jar "%HERE%game\game.jar" >>"%LOG%" 2>&1
+"%HERE%jre\bin\java.exe" --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Xss32m -XX:MaxRAMPercentage=50 "-Dorg.lwjgl.system.SharedLibraryExtractPath=%DATA%\cache\lwjgl" %FGE_JAVA_OPTS% -jar "%HERE%game\game.jar" >>"%LOG%" 2>&1

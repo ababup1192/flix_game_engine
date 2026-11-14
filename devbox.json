@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
   "packages": [
-    "jdk@21",
+    "jdk@25",
     "gnumake@latest",
     "path:./nix/flix#flix_0_78_0",
     "ffmpeg@latest",

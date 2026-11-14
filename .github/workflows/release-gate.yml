@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # devbox が nix 経由で JDK21 / Flix コンパイラ / make を用意する（ローカルと同じ環境）。
+      # devbox が nix 経由で JDK25 / Flix コンパイラ / make を用意する（ローカルと同じ環境）。
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.13.0
 

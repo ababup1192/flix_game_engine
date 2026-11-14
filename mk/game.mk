@@ -29,7 +29,9 @@ JAVA   ?= java
 # 引けない。checkd が教わるまで Windows では素の check を使う。
 CHECKD := 0
 # -Xss64m: View の式が深く入れ子になると、既定のスタックでは型検査が StackOverflow で落ちる。
-FLIX   := "$(JAVA)" -Xss64m -jar "$(ENGINE)/bin/flix.jar"
+# WhyNot: --sun-misc-unsafe-memory-access を付けない — ここの java は Studio が同梱する JRE 21 のことがあり、
+# 21 はこの旗を知らず起動しない（版を見て付けるのは bash の bin/flix と headless-run だけ）。
+FLIX   := "$(JAVA)" --enable-native-access=ALL-UNNAMED -Xss64m -jar "$(ENGINE)/bin/flix.jar"
 else
 FLIX   := "$(ENGINE)/bin/flix"
 endif
