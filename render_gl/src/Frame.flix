@@ -505,9 +505,14 @@ mod RenderFrame {
         }
 
     /// この描き先で数えた数を、今のコマの数へ足し込む。
-    def addCountsTo(holder: RenderDrawCounts.Holder, st: Array[Int32, Static]): Unit \ IO =
-        List.range(0, RenderDrawCounts.slots()) |> List.forEach(i ->
-            Array.put(Array.get(i, holder) + Array.get(countBase() + i, st), i, holder))
+    def addCountsTo(holder: RenderDrawCounts.Holder, st: Array[Int32, Static]): Unit \ IO = addCountsFrom(0, holder, st)
+
+    def addCountsFrom(i: Int32, holder: RenderDrawCounts.Holder, st: Array[Int32, Static]): Unit \ IO =
+        if (i >= RenderDrawCounts.slots()) ()
+        else {
+            Array.put(Array.get(i, holder) + Array.get(countBase() + i, st), i, holder);
+            addCountsFrom(i + 1, holder, st)
+        }
 
     /// BlendMode ⇄ Int32（run 状態の入れ物が Int32 配列のため）。
     def blendCode(b: DrawCmd.BlendMode): Int32 =

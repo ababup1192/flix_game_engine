@@ -35,13 +35,18 @@ mod RenderDrawCounts {
                           blend = at(blendSlot()), clip = at(clipSlot()), mask = at(maskSlot()) } }
 
     /// 画面へ塗り終えた: 今のコマの数を「最後のコマ」へ写し、取り出しを待つ合計へ足して、今のコマを 0 に戻す。
-    pub def endScreenFrame(holder: Holder): Unit \ IO =
-        List.range(0, slots()) |> List.forEach(i -> {
+    pub def endScreenFrame(holder: Holder): Unit \ IO = endScreenFrameFrom(0, holder)
+
+    // WhyNot: List.range と閉包で回さない — 診断を集めていなくても毎コマ通る所で、列と閉包の割り当てを足さない。
+    def endScreenFrameFrom(i: Int32, holder: Holder): Unit \ IO =
+        if (i >= slots()) ()
+        else {
             let n = Array.get(i, holder);
             Array.put(n, lastBase() + i, holder);
             Array.put(Array.get(totalBase() + i, holder) + n, totalBase() + i, holder);
-            Array.put(0, i, holder)
-        })
+            Array.put(0, i, holder);
+            endScreenFrameFrom(i + 1, holder)
+        }
 
     /// 前に取り出してから塗り終えたコマの合計を返し、0 に戻す。
     pub def take(holder: Holder): FrameDiagnostics.Draw2dCounts \ IO =
@@ -50,8 +55,14 @@ mod RenderDrawCounts {
         counts
 
     /// 取り出しを待つ合計を 0 に戻す（誰も取り出さない間に溜め続けない）。
-    pub def discardTotal(holder: Holder): Unit \ IO =
-        List.range(0, slots()) |> List.forEach(i -> Array.put(0, totalBase() + i, holder))
+    pub def discardTotal(holder: Holder): Unit \ IO = discardTotalFrom(0, holder)
+
+    def discardTotalFrom(i: Int32, holder: Holder): Unit \ IO =
+        if (i >= slots()) ()
+        else {
+            Array.put(0, totalBase() + i, holder);
+            discardTotalFrom(i + 1, holder)
+        }
 
     /// 最後に画面へ塗り終えたコマの数（取り出した後でも読める）。
     pub def lastScreenFrame(holder: Holder): FrameDiagnostics.Draw2dCounts \ IO = countsAt(lastBase(), holder)
