@@ -103,7 +103,8 @@ JFR（2026-11-14 21:42・直す前）でメインスレッドの標本 908 の�
 ```
 
 大きさ（1,242 バイト）ではなく、1 コマに 1 回しか呼ばれない関数の中のループを途中から JIT（OSR）できない形だった。
-`Render3d.Material.splitByMaterial` の `List.map` のラムダ（呼び出しで終わる）が `sceneDrawsOf` の中へ展開されていた。
+`Render3d.Material.splitByMaterial` の `List.map` のラムダが `sceneDrawsOf` の中へ展開されていた。
+ラムダの末尾は record で、呼び出しでは終わっていない。それでも OSR を諦めた理由は【不明】（ラムダの中身を def に出すと諦めが消える事だけ確かめた）。
 ラムダの中身を `@DontInline` の `placedDrawOf`（末尾は record）へ出し、ベンチの `Field.instancesAt` も同じ形で `instanceAt` へ出した。
 直した後の JFR（22:21）は標本 684 のうちインタプリタの frame が 35（直す前は 908 のうち 292）。
 

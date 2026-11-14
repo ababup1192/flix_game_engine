@@ -30,9 +30,8 @@ mod Render3d.Material {
     })
 
     /// 置いた物 1 つを batch へ分ける材料にする（lightmap と法線マップの食い違いは形ごとに 1 回知らせる）。
-    // WhyNot: splitByMaterial の List.map のラムダへ書き下さない — ラムダは呼んだ関数の中へ展開され、1 コマに 1 回しか呼ばれない関数の
-    //   ループになる。JVM はそのループを途中から JIT（OSR）できず、物の数だけインタプリタで回る（docs/performance.md の 13 節）。
-    //   末尾を record で終えるのも同じ理由（呼び出しで終えると続きを返し、呼ぶ側のループが JIT から外れる）。
+    // WhyNot: splitByMaterial の List.map のラムダへ書き下さない — ラムダは 1 コマに 1 回しか呼ばれない関数の中へ展開され、JVM がそのループを
+    //   途中から JIT（OSR）するのを「stack not empty」で諦め、物の数だけインタプリタで回る（docs/performance.md の 13 節）。
     @DontInline
     def placedDrawOf(state: State, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                      i: Scene3d.Instance3d): PlacedDraw \ IO =

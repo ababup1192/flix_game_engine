@@ -99,6 +99,7 @@ pub mod Render.Internal.Extract {
     pub def toDrawablesAtlas(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                          item: Render.Item, pos: Vec2.Vec2): List[GameEngine.Drawable] \ ef =
         match item {
+            // WhyNot: region の無い絵も regionUv に通して済ませない — 寸法を引く textureInfoOf（effect）を 1 個ごとに払う。
             case Render.Item.Sprite(s) if Option.isEmpty(s#regionRect) => Render.toDrawables(item, pos)
             case Render.Item.Sprite(s) =>
                 let (uvOff, uvScl) = regionUv(s#regionRect, textureInfoOf(s#texture));

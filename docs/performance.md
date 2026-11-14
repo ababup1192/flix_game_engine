@@ -617,14 +617,15 @@ Flix 0.78 の出すバイトコードには JIT から外れる形が 2 つあ�
 | 形 | 何が起きるか | 直し方 | 直した所と前後 |
 |---|---|---|---|
 | ループの 1 個ぶんが大きい（ラムダを渡した def の中で、さらに大きな関数を呼ぶ） | Flix はラムダを渡した def を呼ぶ所へインライン展開する。1 個ぶんのメソッドが **8,000 バイト**を超えると JVM は JIT しない（インタプリタのまま） | 1 個ぶんを別の def に出して `@DontInline` を付ける。ループのラムダはその def を呼ぶだけにする | `Render.Internal.Extract.drawInto` → `pushPlaced`。Item → Drawable が 1 個 約 1,040 ns → 約 190 ns |
-| ループの中から呼ぶ関数が、別の関数の呼び出しで終わる（末尾呼び出し） | 末尾呼び出しは続き（Thunk）を返し、呼んだ側がその場の while で回す。JVM はその while の位置からループを JIT（OSR）しようとして「stack not empty」で諦める。1 コマに 1 回しか呼ばれないループは、何百コマもインタプリタのまま回る | ループから直に呼ぶ関数の末尾を、呼び出しでない式にする（値を `let` に受けて `if` で返す・Unit なら `;` の後に `()`）。自分自身への末尾再帰はそのままでよい | `RenderFrame.emitMerged` → `emitOne`（1 個 177 ns → 92 ns）。`SpatialGrid.cellIndexOf`（crowd2d 10,000 体の規則 9.06 / 8.88 → 7.67 / 7.63 ms）。`Render3d.Material.splitByMaterial` → `placedDrawOf`（3D の field 12,000 個で frame p50 22.7〜24.0 → 18.5〜18.9 ms・`bench/scene3d/RESULTS.md`） |
+| ループの中から呼ぶ関数が、別の関数の呼び出しで終わる（末尾呼び出し） | 末尾呼び出しは続き（Thunk）を返し、呼んだ側がその場の while で回す。JVM はその while の位置からループを JIT（OSR）しようとして「stack not empty」で諦める。1 コマに 1 回しか呼ばれないループは、何百コマもインタプリタのまま回る | ループから直に呼ぶ関数の末尾を、呼び出しでない式にする（Unit なら `;` の後に `()`・値なら `if` の枝を値にするか、Option に包んで `match` で開く）。`let` に受けて返すだけの形は Flix がたたんで末尾呼び出しに戻す事がある【未確認】自分自身への末尾再帰はそのままでよい | `RenderFrame.emitMerged` → `emitOne`（1 個 177 ns → 92 ns）。`SpatialGrid.cellIndexOf`（crowd2d 10,000 体の規則 9.06 / 8.88 → 7.67 / 7.63 ms） |
+| 1 コマに 1 回しか呼ばれない関数の中の長いループ（ラムダの末尾が呼び出しでなくても起きた） | JVM が同じ「stack not empty」で OSR を諦める。末尾呼び出しが無いのに起きた理由は【不明】 | ループのラムダの中身を `@DontInline` の def に出し、ラムダはその def を呼ぶだけにする。`-XX:+PrintCompilation` で `COMPILE SKIPPED` の行が消えた事を確かめる | `Render3d.Material.splitByMaterial` → `placedDrawOf`（3D の field 12,000 個で frame p50 22.7〜24.0 → 18.5〜18.9 ms・`bench/scene3d/RESULTS.md`） |
 
 ### それ以外（JIT されていても 1 個ごとに払う物）
 
 | 形 | 何が起きるか | 直し方 | 直した所と前後 |
 |---|---|---|---|
 | 逆順に `::` で積んで、最後に `List.reverse` | 積んだ cons がほかの値の間に散らばり、戻す 1 巡が 1 個ごとにキャッシュを外す | 個数が多い所は `region` の中の `MutList` へ `push` して `MutList.toList`。小さな列は今までどおり `::` と `List.reverse` でよい | `drawInto`（20,000 個で `List.reverse` の 約 1.6 ms が消えた。代わりに List にする所の時間は出していない） |
-| ループの 1 個ぶんが、effect を持つ def を呼ぶ（`\ ef` の関数を受けて回す形） | effect を持つ def は、呼ぶたびに続きを運ぶ入れ物を割り当てる。PC は JIT が消すことがあるが、ブラウザ版（wasm）はそのまま時間に出る | 数の多い種類だけ、effect の無い def で先に済ませる。残りを effect のある def へ回す | `drawInto` → `pushPlain`（Sprite と Box）。ブラウザ版の cpu p50 34.3 → 29.9 ms（main は 31.4）。PC は静かな状態の 4 回で frame p50 7.9〜8.6 ms が 3 回・11.8 ms が 1 回（main は 31.0〜32.1） |
+| ループの 1 個ぶんが、effect を持つ def を呼ぶ（`\ ef` の関数を受けて回す形） | effect を持つ def は、呼ぶたびに続きを運ぶ入れ物を割り当てる。PC は JIT が消すことがあるが、ブラウザ版（wasm）はそのまま時間に出る | 数の多い種類だけ、effect の無い def で先に済ませる。残りを effect のある def へ回す | `drawInto` → `pushPlain`（Sprite と Box）。ブラウザ版の cpu p50 34.3 → 29.9 ms（main は 31.3〜31.5）。PC は静かな状態の 4 回で frame p50 7.9〜8.6 ms が 3 回・11.8 ms が 1 回（main は 31.0〜32.1） |
 
 **PC だけで測らない。** 「JIT から外れる形」の 1 つ目の直しは PC で 3 倍速く、ブラウザ版では 9% 遅くなった（「それ以外」の 2 つ目で戻した）。
 描く道を直したら `make bench-web` でも前後を 1 組測る。
@@ -632,9 +633,9 @@ Flix 0.78 の出すバイトコードには JIT から外れる形が 2 つあ�
 - **ゲームの側でも同じ。** `bench/crowd2d` の 1 体ごとのループ（`Crowd.moveByGrid`）は、中から呼ぶ engine の `SpatialGrid.cellIndexOf` が
   末尾呼び出しで終わっていたせいでインタプリタのまま回っていた（engine の側を直して規則が 16% 速くなった。ベンチの .flix は直していない）。
   `bench/sprite_stress` の `List.range(0, n) |> List.map(i -> placedOf(i, t))` も、直した後の標本でインタプリタの frame に残っている
-  （1 コマの 約 5%。`placedOf` の片方の枝が `RawDraw.boxAt(…)` の呼び出しで終わる。直して確かめてはいない）。
+  （`placedOf` の片方の枝が `RawDraw.boxAt(…)` の呼び出しで終わる。直して確かめてはいない）。
   `bench/scene3d/src/Field.flix` の `instancesAt`（`List.map` のラムダが片方の枝で呼び出しで終わる）は、1 個ぶんを `@DontInline` の def に出して直した
-  （PrintCompilation の「stack not empty at OSR entry point」の行が出なくなり、インタプリタの標本も消えた）。
+  （PrintCompilation の「stack not empty at OSR entry point」の行が出なくなった）。
 - **record の欄は今も 1 個ずつ名前で探す。** `Render.Item.Sprite` の 12 欄を全部読むのに 1 個 約 150 ns かかり、直した後の 20,000 個では 1 コマの 35% を占める。
   内側のループだけの値は enum に平らに並べる（`DrawCmd.Drawable`）か配列で運ぶ。
 - 標準の並べ替えを毎コマの道に置かない（`Sort.sortStable*` か、鍵が小さな整数なら数えて振り分ける。§7）。
