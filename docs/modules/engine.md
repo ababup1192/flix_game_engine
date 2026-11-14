@@ -46,7 +46,8 @@
 | 入力・ウィンドウ・時計・描く・GPU の資源の effect を知りたい（テストの偽物を役割ごとに張る） | Platform（`Platform.Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`Annotation`、束は `Platform.Services`） |
 | シェーダー面を描く・GPU のプログラムを作る effect を知りたい | Platform.Draw2d.drawSurface・Platform.GpuResources.buildProgram（型は DrawCmd.SurfaceRenderCmd） |
 | 1 コマで作ったシェーダー・足した字・塗りと swap の時間を知りたい（ヒッチの記録の材料） | FrameDiagnostics |
-| GPU と CPU の 1 コマの時間・3D の置いた物と draw call の数を画面の隅に出す（2D と 3D で共通） | engine_world の App.withDiagnostics → frame#diagnostics → FrameDiagnostics.summaryLines（gpuNs・gpuPasses・scene3dCounts） |
+| draw call の数が多い・重い時に、まとまらなかった（切れた）理由を見る（絵が違う・種類が違う・blend が違う・切り抜き・mask・描き先。3D は形・材質・半透明・影） | FrameDiagnostics の `draw2dCounts`（`Draw2dCounts`・`Draw2dBatchBreaks`）と `scene3dCounts#batchBreaks`（`Scene3dBatchBreaks`）・1 行にするのは `breaksText(draw2dBreakList(..))`・一番多い理由は `topBreak`。読み方は docs/performance.md の 11 節 |
+| GPU と CPU の 1 コマの時間・3D の置いた物と draw call の数を画面の隅に出す（2D と 3D で共通） | engine_world の App.withDiagnostics → frame#diagnostics → FrameDiagnostics.summaryLines（gpuNs・gpuPasses・draw2dCounts・scene3dCounts） |
 | 位置ベクトルの足し引き・長さ・回転を計算したい | Vec2 |
 | (x, y) から Vec2 を 1 行で作りたい（リスト内の型注釈を消す） | Vec2.v2 |
 | マス目やピクセルなど整数の (x, y) を計算したい | Vec2i |
@@ -126,7 +127,7 @@
 - **ShaderJson** — シェーダー面の宣言（ShaderDoc.Spec）を JSON と相互変換する codec。engine を触らず `*.shader.json` の保存だけで調整できる（App.watchFile によるホットリロードの受け皿）。
 - **PostProcess** — 画面の仕上げの面を ShaderDoc の Spec で組む部品（Unity URP / Unreal の Post Process と同じ並び）。`PostProcess.tonemapped` / `tonemappedWith`（AcesFitted・Reinhard。既定は `defaultExposure()` = 0.4 stop・`defaultWhitePoint()` = 4.0）・`PostProcess.fxaaSpec`（FXAA 3.11 の PC の簡単な版）・`PostProcess.luma709`。今の場と bindings だけで組むので GPU と CPU が同じ木を評価する。
 - **Display** — 今ゲームを映している画面の情報（大きさ・画素の細かさ・最後の pointer・端末の区分 `SizeClass`・起動の時に選んだ design の向き `Orientation`）。`Platform.Window.getDisplay` が返し、App が `ViewCtx#display` と `Frame#sizeClass` に置く。区分は `sizeClassOf`、向きは `orientationOf(design)`。窓の無い所の既定は `desktop(design)`（Large・Mouse）と `phonePortrait(view, design)`（縦のスマホ）。縦の design の決め方は ProjectLoader の `portraitDesignOf` / `portraitConfigOf`。
-- **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・3D の数）。2D と 3D で共通。`Platform.Diagnostics.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
+- **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・2D の draw call の数と切れた理由・3D の数と draw call が分かれた理由）。2D と 3D で共通。`Platform.Diagnostics.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
 - **Platform** — 機種（ウィンドウ・入力・GPU・時計）に触る effect を役割ごとに分けた所。関数の型に触る effect だけが出て、op を足しても止まるのはその役割の handler だけ。`Draw2d.drawSurface` と `Draw3d.drawScene3d` は積むだけで `Draw2d.renderCommands` が出すので、`Draw2d`・`Draw3d`・`GpuResources` は同じ handler の組から張る。
 
 ## レンダーターゲット（RenderTarget）

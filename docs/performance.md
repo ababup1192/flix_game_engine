@@ -497,14 +497,57 @@ GC か swap が半分以上を占める 1 コマだけの重さ（単発）は 1
 遊びながら 1 コマの重さを見たい時は、`App.withDiagnostics()` を足して `frame#diagnostics`（前のコマの `FrameDiagnostics`）を
 World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品で debug の表示として描く（F3 で出すなど。出す所はゲームが決める）。
 出るのは CPU（GL へ送る・swap）・**GPU**（`gpuNs` = 描き先ごとの `GL_TIME_ELAPSED` の query の合計（描き先の間の GPU の空きは入らない）と描き先ごとの `gpuPasses`。
-結果が出た query だけを GPU を待たずに読むので 1〜2 コマ遅れの値・query を作れない GL と測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
-`FLIX_GE_FRAME_STATS=1` の println は窓ごとの平均を標準出力へ書くだけで GPU を含まない。こちらはゲームの画面に出せて、GPU を含む。
+結果が出た query だけを GPU を待たずに読む。query を作れない GL・ブラウザ・CPU の描き出しでは None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）・
+2D の draw call の数と切れた理由（`draw2dCounts`。下の節）。
+`FLIX_GE_FRAME_STATS=1` の println は 600 コマごとの平均と、その行を出したコマの 2D の draw call の数と切れた理由を標準出力へ書く（GPU を含まない。
+`App.withDiagnostics` を足していないゲームでも出る）。こちらはゲームの画面に出せて、GPU を含む。
 自前で `System.nanoTime` を測って出さない（GPU の仕事は CPU の時計では swap の待ちに混ざって見えない）。
+
+**GPU の時間は 16 コマに 1 回だけ測る。** 間のコマの `gpuNs`・`gpuPasses` には最後に読めた値がそのまま入る（60 fps で 1 秒に 4 回ほど替わる）。
+毎コマ測ると `glEndQuery` がドライバに溜めた命令を流させ、GPU の仕事が軽い場面で 1 コマが倍になった（診断を付けた時だけ遅いゲームになる）。
+毎コマの値が要る時（GPU のスパイクを 1 コマずつ追う時）は `FLIX_GE_GPU_TIMER_EVERY=1` で起動する（数は何コマに 1 回か）。
+測るコマは他のコマより長いので、`frame_p99` のような端の値には測るコマが混ざる。CPU の ms を比べる時は診断を付けない回（ベンチの `DIAG=0`）を基準にする。
+
+### draw call がまとまらない時の読み方（draw2dCounts・scene3dCounts#batchBreaks）
+
+描き手は、続けて来た同じ状態の物を 1 つの draw call にまとめる。まとまらなかった所は、理由ごとに数えて診断に出る
+（`FrameDiagnostics.summaryLines` の「2D draw calls 96 / top break blend 72」の行・ヒッチの報告の「一番重いコマの draw call」・ベンチの JSON の `draw2d_breaks`・`draw3d_breaks`）。
+draw call の数が多くて重い時は、**一番多い理由から**ゲームの側を直す。数え方の決まりは `FrameDiagnostics.Draw2dBatchBreaks`・`Scene3dBatchBreaks` の doc。
+
+**2D**（`draw2dCounts#batchBreaks`）: 描き物は z の順に 1 列に並び、前の draw call に続けられなかった所で 1 つ数える。1 つの切れ目に理由は 1 つだけ
+（`target` → `kind` → `texture` → `blend` → `clip` → `mask` の順で先に当てはまった物）。コマの最初の draw call は数えないので、合計は `drawCalls − 1`。
+
+| 理由 | 起きている事 | ゲームの側で直す所 |
+|---|---|---|
+| `texture` | スプライトの絵（テクスチャ）が前と違う。箱（絵なし）と字（フォントのアトラス）と絵が z の順で交互に来ても切れる | 一緒に出る絵を 1 枚のアトラスにまとめて uv で切り出す。同じ絵の物を同じ z にして続けて並べる（窓の箱を全部描いてから字を全部描く、など） |
+| `kind` | 種類（スプライト・多角形・タイル層・static の範囲・Shader の面・3D の場面）が前と違う。タイル層・static の範囲・Shader の面は 1 つで 1 draw call | 同じ種類を続けて並べる（多角形の飾りを 1 つの z にまとめる）。細かい多角形の絵はスプライト 1 枚の絵にして描く。Shader の面は枚数を減らす |
+| `blend` | blend（Normal・Add・Multiply）が前と違う | Multiply や Add の物を 1 つの層（同じ z）にまとめ、Normal の物と交互に重ねない。影や水の濃淡を 1 枚の絵にまとめる |
+| `clip` | 切り抜きの矩形（scissor）が前と違う | 同じ矩形で切り抜く物を続けて並べる。切り抜きの要らない物に矩形を付けない |
+| `mask` | mask つき（stencil へ描く分・mask つきの本体・その次の draw call）。mask つき 1 個で draw call が 2〜3 増える | mask を付ける物を減らす。形が決まっているなら、抜いた後の絵を先に作っておく |
+| `target` | 描き先（Pass か画面）が変わった最初の draw call | Pass の数を減らす（使っていない Pass を宣言しない） |
+
+**3D**（`scene3dCounts#batchBreaks`）: 3D は同じ形・同じ材質の物を鍵でまとめてから描くので、draw call 1 つを 1 つの理由に数える（合計は `drawCalls`）。
+優先の順は `shadowPass` → `billboard` → `sky` → `transparent` → `lightmap` → `skinned` → `material` → `mesh`。
+
+| 理由 | 起きている事 | ゲームの側で直す所 |
+|---|---|---|
+| `mesh` | 材質は同じ（か無い）で、形が違う | 同じ形（`Mesh3d` の同じ値）を使い回して world と tint だけ変える。細かい形は 1 つの形につないでおく |
+| `material` | 材質（プログラム・材質の木・params・絵の組）が前の batch と違う | 色の違いは `tint` で付ける（tint は 1 体ごとの値で batch を分けない）。絵は 1 枚のアトラスにまとめる |
+| `skinned` | 骨つきの物の batch（骨の無い物とはプログラムが別） | 同じ形・同じ材質の骨つきの物はまとまる。形と材質の種類を減らす |
+| `lightmap` | lightmap つきの物（物ごとに絵が違うので 1 体ずつ） | 動かない部屋は 1 つの形につないで lightmap を 1 枚にする |
+| `transparent` | 半透明の物（遠い順に 1 体ずつ） | 半透明にする物を減らす。抜くだけなら cutout（`withCutout`）にする |
+| `billboard` | ビルボード（1 枚で 1 draw call） | 数を減らす・視錐台の外は描かれない |
+| `shadowPass` | 影の地図へ描いた分（影を落とす光ごとに、形の batch の数だけ） | 影を落とす光を減らす（スポットの `shadow`・太陽の影）。形の種類を減らす |
+| `sky` | 空（場面 1 つで 1 draw call） | 直す所は無い |
+
+draw call を減らして効くのは、数が数百を超える場面（細かい多角形と Multiply を交互に重ねる画・絵が 1 個ごとに替わる群れ・形が物ごとに違う 3D）。
+1 コマに 10 前後の画面は、1 つにまとめても 0.1 ms も変わらない（§3 の足切り）。
 
 ### 描き手を直す前後で比べるベンチ（bench/）
 
 描き手・描く物の列の作り方を直す時は、直す前と後で同じベンチを背中合わせに回して比べる。3 つとも区間ごとに 1 行の JSON（`[bench] result {…}`）を出す
-（1 コマの avg / p50 / p95 / p99・GL へ送る時間・GPU・3D は draw call と `cpuPhases`。形は `bench/common/BenchRun.flix`）。
+（1 コマの avg / p50 / p95 / p99・GL へ送る時間・GPU・3D は draw call と `cpuPhases`・2D の draw call の数 `draw2d_calls` と
+まとまらなかった理由ごとの数 `draw2d_breaks`・`draw3d_breaks`。形は `bench/common/BenchRun.flix`）。
 
 | 口 | 測る物 | つまみ |
 |---|---|---|
