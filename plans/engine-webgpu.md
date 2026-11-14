@@ -501,6 +501,28 @@ P1（描き手より上の直し）で、同じ絵のスプライト 20,000 個�
 - 点光源の減り方は `(1 − d²/range²)²` で、逆二乗の項が無い（`LightModel3d.bindAttenuationAndFacing`）。
 - WebGPU へ移す時に式を変えない（backend の比べの門が 0 px でなくなる）。式を標準へ寄せるのは、移した後の別の段にする。
 
+### 12.7 後半の危ない所の試作（2026-11-14・この Mac だけ。`spike-pc/REPORT.md`・`spike-web/REPORT.md` の「第 2 回」「追試」）
+
+確かめた（10 章の危険のうち 2 つの山が消えた）:
+
+- **PC の窓**: engine と同じ LWJGL 3.4.1 の GLFW の窓（旗は `GLFW_NO_API` だけ変える）に Dawn で描き、読み戻しと画面からの撮影（`screencapture`・ScreenCaptureKit）の両方で絵が出ている事を確かめた。前の試作の黒い絵は画面のロックのため。LWJGL と jWebGPU のネイティブはぶつからない
+- **PC の `firstInstance`**: 20,000 本で CPU 1.6 ms（3 回中 2 回。1 回 2.5 ms）・GPU 1.05 ms。合格線の内
+- **ブラウザの engine 全体**: rpg-starter の書き出しを TeaVM 0.16 で訳して穴 0 件。0.14.1 と絵の SHA が同じ。書き出しの時間は変わらず、wasm は +4.5%。engine の側を直す所は無く、直すのは書き出しの入口（`TeaVMRunner` → `TeaVMTool`・jar の一覧）だけ。P2 の「JDK のクラスを見せない ClassLoader」は要らない
+- **ブラウザの `firstInstance`**: 20,000 本を JS との行き来 1 本で積んで CPU 1.0 ms
+- **Flix から持つ**: PC もブラウザも、WebGPU の物を Flix の record・`Map` に入れて運べた。ブラウザの非同期は effect の handler から `JSPromise.await()` で待てる
+- jWebGPU の癖 4 つは原因と手当てが分かった（ネイティブの置き場を版と backend ごとに分ける・u64 の上限を直に読む・名前の無い機能は数で要る・jar は `[mvn-dependencies]` に書けば取れる）
+
+新しく分かった危ない所（段の門に足す）:
+
+- PC: 画面に出す待ちは次の描き先をもらう所（`getCurrentTexture`）で起き、隠した窓でも待たされる。1 コマの時間の測り方を直す。headless は窓を使わず texture に描く。窓の大きさが変わっても Dawn は知らせないので、GLFW の側で受けて作り直す
+- ブラウザ: draw を 1 本ずつ積むと GPU のプロセスに 3.2 ms 残る（instanced なら 0.4 ms）。まとめて描く段（P6）の値打ちの裏付け
+- ブラウザ: WebGPU の物を `Object` を受ける所へ渡すと、TeaVM は通るのにブラウザが wasm を読む所で落ちる（真っ白）。Java の型に包んで渡す。書き出しの門に「ブラウザで wasm を読めるか」を入れる
+- 撮った絵には画面の色の設定が掛かる。絵の門は読み戻した値で見る
+
+まだ【未確認】: Retina の 2 倍・窓を引っぱる間の動き・入力を入れた後の場面・古いブラウザの下限・Safari と iPhone・Windows と Linux（判断 9）。
+
+PC の橋は jWebGPU のまま P4a を進め、`WebGpu` の裏に隠して後で Panama へ替えられる形にする（Panama は JDK 21 の preview で GPU の情報と上限まで読めた。Dawn の公式の配布は dylib が無く、自分で組む）。
+
 ## 版ごとに直した事
 
 **第 5 版**（第 4 版のレビュー 84 点の指摘 14 件。**この版はレビューを通していない**）: V1 のお題をスプライトだけの画面に・画面なしの session を P4a に前倒しし、
