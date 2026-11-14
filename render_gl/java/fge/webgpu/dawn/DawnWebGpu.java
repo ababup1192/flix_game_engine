@@ -6,6 +6,8 @@ import fge.webgpu.*;
 import fge.webgpu.dawn.DawnObjects.*;
 import java.io.File;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 import org.lwjgl.system.MemoryUtil;
 
 /**
@@ -13,10 +15,8 @@ import org.lwjgl.system.MemoryUtil;
  * device lost の知らせは jWebGPU 0.3.4 に無いので、捨てた後は {@link #reopen()} で同じ instance の adapter から取り直す。
  */
 public final class DawnWebGpu implements WebGpu {
-    /** jWebGPU の版。ネイティブの置き場の名前に入れる。 */
+    /** jWebGPU の版。ネイティブの置き場の名前に入れる（3 つの flix.toml と Makefile の GL_JAR_JWEBGPU と同じ。gl-jar を組む所が検査する）。 */
     public static final String JWEBGPU_VERSION = "0.3.4";
-
-    private static boolean nativesLoaded;
 
     private final WGPUInstance instance;
     private final WGPUAdapter adapter;
@@ -28,10 +28,12 @@ public final class DawnWebGpu implements WebGpu {
     private final String adapterInfo;
     private int errors;
     private String lastError = "";
+    private boolean destroyed;
     // WhyNot: callback を局所の変数にしない — Java の側の物が GC で消えると、ネイティブが呼び返す先が無くなる。
     private WGPUUncapturedErrorCallback errorCallback;
-    private WGPUBuffer idleSrc;
-    private WGPUBuffer idleDst;
+    private DawnBuffer idleSrc;
+    private DawnBuffer idleDst;
+    private final ByteBuffer idleRead = ByteBuffer.allocateDirect(16);
 
     private DawnWebGpu(WGPUInstance instance, WGPUAdapter adapter, WGPUDevice device, Limits limits,
                        boolean timestampQuery, boolean coreFeaturesAndLimits, String adapterInfo) {
@@ -48,11 +50,11 @@ public final class DawnWebGpu implements WebGpu {
     // ── 開く ──
 
     /**
-     * ネイティブを読み、Dawn の device を開く。nativeDir が空なら版と backend ごとの既定の置き場（{@link #defaultNativeDir()}）。
-     * 開けなければ IllegalStateException。
+     * ネイティブを読み、Dawn の device を開く。nativeDir が空なら、読み済みの置き場か、まだなら版と backend ごとの既定の置き場（{@link #defaultNativeDir()}）。
+     * 開けなければ IllegalStateException。ネイティブを読んだ後に別の置き場を名指ししても IllegalStateException。
      */
     public static DawnWebGpu open(String nativeDir) {
-        loadNatives(nativeDir.isEmpty() ? defaultNativeDir() : nativeDir);
+        DawnNatives.load(nativeDir, defaultNativeDir());
         WGPUInstance instance = WGPU.setupInstance(new WGPUInstanceDescriptor());
         if (instance == null || !instance.isValid()) throw new IllegalStateException("WebGPU の instance を作れない");
         return openOn(instance);
@@ -71,25 +73,6 @@ public final class DawnWebGpu implements WebGpu {
         return System.getProperty("java.io.tmpdir") + File.separator + "flix_game_engine-" + System.getProperty("user.name", "user") + File.separator + leaf;
     }
 
-    // WhyNot: jParser の既定の置き場（${java.io.tmpdir}/jParser${user.name}）のままにしない — 版や backend の違う物が
-    // 同じ名前の dylib をその場で上書きし、開いている側のプロセスを macOS が署名の不一致で落とす。
-    // WhyNot: java.io.tmpdir を差し替えたままにしない — 同じプロセスの他の部品（音・画像の一時ファイル）の置き場まで動く。
-    private static synchronized void loadNatives(String dir) {
-        if (nativesLoaded) return;
-        new File(dir).mkdirs();
-        String saved = System.getProperty("java.io.tmpdir");
-        boolean[] ok = {false};
-        Throwable[] why = {null};
-        System.setProperty("java.io.tmpdir", dir);
-        try {
-            JWebGPULoader.init(JWebGPUBackend.DAWN, (success, e) -> { ok[0] = success; why[0] = e; });
-        } finally {
-            System.setProperty("java.io.tmpdir", saved);
-        }
-        if (!ok[0]) throw new IllegalStateException("jWebGPU のネイティブを読めない（" + dir + "）", why[0]);
-        nativesLoaded = true;
-    }
-
     private static DawnWebGpu openOn(WGPUInstance instance) {
         WGPUAdapter[] gotAdapter = {null};
         boolean[] adapterDone = {false};
@@ -103,6 +86,7 @@ public final class DawnWebGpu implements WebGpu {
         options.setPowerPreference(WGPUPowerPreference.HighPerformance);
         instance.requestAdapter(options, WGPUCallbackMode.AllowProcessEvents, adapterCallback);
         pump(instance, adapterDone);
+        options.dispose();
         WGPUAdapter adapter = gotAdapter[0];
         if (adapter == null) throw new IllegalStateException("WebGPU の adapter が無い");
 
@@ -113,12 +97,12 @@ public final class DawnWebGpu implements WebGpu {
         deviceDesc.setLabel("fge device");
         // WhyNot: requiredLimits を渡さない形にしない — 渡さないと device の上限は仕様の既定（2D の texture 8192 など）に下がる。
         deviceDesc.setRequiredLimits(adapterLimits);
-        boolean wantCore = adapter.hasFeature(coreFeaturesAndLimitsName());
-        boolean wantTimestamp = adapter.hasFeature(WGPUFeatureName.TimestampQuery);
         WGPUVectorFeatureName features = new WGPUVectorFeatureName();
-        // WhyNot: core-features-and-limits を名前で要らない — jWebGPU の enum に名前が無く、数でしか渡せない。
-        if (wantCore) features.push_back(coreFeaturesAndLimitsName());
-        if (wantTimestamp) features.push_back(WGPUFeatureName.TimestampQuery);
+        synchronized (DawnFormats.SHARED) {
+            // WhyNot: core-features-and-limits を名前で要らない — jWebGPU の enum に名前が無く、数でしか渡せない。
+            if (adapter.hasFeature(WGPUFeatureName.CUSTOM.setValue(0x1))) features.push_back(WGPUFeatureName.CUSTOM.setValue(0x1));
+        }
+        if (adapter.hasFeature(WGPUFeatureName.TimestampQuery)) features.push_back(WGPUFeatureName.TimestampQuery);
         deviceDesc.setRequiredFeatures(features);
 
         DawnWebGpu[] made = {null};
@@ -140,20 +124,25 @@ public final class DawnWebGpu implements WebGpu {
         };
         adapter.requestDevice(deviceDesc, WGPUCallbackMode.AllowProcessEvents, deviceCallback, errorCallback);
         pump(instance, deviceDone);
+        deviceDesc.dispose();
+        features.dispose();
+        adapterLimits.dispose();
         WGPUDevice device = gotDevice[0];
-        if (device == null) throw new IllegalStateException("WebGPU の device を作れない: " + deviceMessage[0]);
+        if (device == null) {
+            adapter.release();
+            throw new IllegalStateException("WebGPU の device を作れない: " + deviceMessage[0]);
+        }
 
         WGPULimits deviceLimits = new WGPULimits();
         device.getLimits(deviceLimits);
+        Limits limits = readLimits(deviceLimits);
+        deviceLimits.dispose();
         boolean[] has = deviceFeatures(device);
-        DawnWebGpu gpu = new DawnWebGpu(instance, adapter, device, readLimits(deviceLimits), has[1], has[0], describe(adapter));
+        DawnWebGpu gpu = new DawnWebGpu(instance, adapter, device, limits, has[1], has[0], describe(adapter));
         gpu.errorCallback = errorCallback;
         made[0] = gpu;
         return gpu;
     }
-
-    // WhyNot: CUSTOM を使い回したまま返さない — jWebGPU の CUSTOM は 1 つの値を持ち回る作りで、次に setValue した所で値が変わる。
-    private static WGPUFeatureName coreFeaturesAndLimitsName() { return WGPUFeatureName.CUSTOM.setValue(0x1); }
 
     /** [core-features-and-limits, timestamp-query] を device が持つか。 */
     private static boolean[] deviceFeatures(WGPUDevice device) {
@@ -161,19 +150,24 @@ public final class DawnWebGpu implements WebGpu {
         device.getFeatures(supported);
         boolean core = false;
         boolean timestamp = false;
-        for (int i = 0; i < supported.getFeatureCount(); i++) {
-            WGPUFeatureName name = supported.getFeatureAt(i);
-            if (name == WGPUFeatureName.CUSTOM && name.getValue() == 0x1) core = true;
-            if (name == WGPUFeatureName.TimestampQuery) timestamp = true;
+        synchronized (DawnFormats.SHARED) {
+            for (int i = 0; i < supported.getFeatureCount(); i++) {
+                WGPUFeatureName name = supported.getFeatureAt(i);
+                if (name == WGPUFeatureName.CUSTOM && name.getValue() == 0x1) core = true;
+                if (name == WGPUFeatureName.TimestampQuery) timestamp = true;
+            }
         }
+        supported.dispose();
         return new boolean[]{core, timestamp};
     }
 
     private static String describe(WGPUAdapter adapter) {
         WGPUAdapterInfo info = new WGPUAdapterInfo();
-        if (!adapter.getInfo(info)) return "?";
-        return "Dawn " + info.getBackendType() + " " + info.getAdapterType() + " " + info.getDevice().c_str()
-            + " (" + info.getDescription().c_str() + ")";
+        String text = adapter.getInfo(info)
+            ? "Dawn " + info.getBackendType() + " " + info.getAdapterType() + " " + info.getDevice().c_str() + " (" + info.getDescription().c_str() + ")"
+            : "?";
+        info.dispose();
+        return text;
     }
 
     // WGPULimits の native の並び（webgpu.h・Dawn 2025 以降）。u64 は 8 バイト境界。
@@ -246,7 +240,18 @@ public final class DawnWebGpu implements WebGpu {
 
     @Override public String lastError() { return lastError; }
 
-    @Override public void destroy() { device.destroy(); }
+    /** device と、device が持つ物（待つための buffer・queue・adapter）を手放す。2 回目は何もしない。 */
+    @Override public void destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        if (idleSrc != null) idleSrc.destroy();
+        if (idleDst != null) idleDst.destroy();
+        device.destroy();
+        instance.processEvents();
+        queue.release();
+        device.release();
+        adapter.release();
+    }
 
     // ── 物を作る ──
 
@@ -254,10 +259,12 @@ public final class DawnWebGpu implements WebGpu {
         WGPUBufferDescriptor desc = new WGPUBufferDescriptor();
         desc.setLabel(label);
         desc.setSize(size);
-        desc.setUsage(WGPUBufferUsage.CUSTOM.setValue(usage));
         desc.setMappedAtCreation(false);
         WGPUBuffer buffer = new WGPUBuffer();
-        device.createBuffer(desc, buffer);
+        synchronized (DawnFormats.SHARED) {
+            desc.setUsage(DawnFormats.bufferUsage(usage));
+            device.createBuffer(desc, buffer);
+        }
         desc.dispose();
         return new DawnBuffer(buffer, size);
     }
@@ -266,29 +273,28 @@ public final class DawnWebGpu implements WebGpu {
                                                       int mipLevelCount, int sampleCount) {
         WGPUTextureDescriptor desc = new WGPUTextureDescriptor();
         desc.setLabel(label);
-        desc.setUsage(WGPUTextureUsage.CUSTOM.setValue(usage));
         desc.setDimension(WGPUTextureDimension._2D);
         desc.getSize().setWidth(width);
         desc.getSize().setHeight(height);
         desc.getSize().setDepthOrArrayLayers(1);
-        desc.setFormat(textureFormat(format));
+        desc.setFormat(DawnFormats.textureFormat(format));
         desc.setMipLevelCount(mipLevelCount);
         desc.setSampleCount(sampleCount);
         desc.setViewFormats(WGPUVectorTextureFormat.NULL);
         WGPUTexture texture = new WGPUTexture();
-        device.createTexture(desc, texture);
+        synchronized (DawnFormats.SHARED) {
+            desc.setUsage(DawnFormats.textureUsage(usage));
+            device.createTexture(desc, texture);
+        }
         desc.dispose();
         return new DawnTexture(texture, width, height, format, true);
     }
 
+    // WhyNot: 比べる sampler（compare）を作れる形にしない — 使う所がまだ無く、bind group の項目の種類からも外してそろえた。
     @Override public fge.webgpu.Sampler createSampler(String label, FilterMode filter, FilterMode mipmapFilter, AddressMode address) {
         WGPUSamplerDescriptor desc = new WGPUSamplerDescriptor();
         desc.setLabel(label);
-        WGPUAddressMode mode = switch (address) {
-            case CLAMP_TO_EDGE -> WGPUAddressMode.ClampToEdge;
-            case REPEAT -> WGPUAddressMode.Repeat;
-            case MIRROR_REPEAT -> WGPUAddressMode.MirrorRepeat;
-        };
+        WGPUAddressMode mode = DawnFormats.addressMode(address);
         desc.setAddressModeU(mode);
         desc.setAddressModeV(mode);
         desc.setAddressModeW(mode);
@@ -341,51 +347,45 @@ public final class DawnWebGpu implements WebGpu {
 
     @Override public fge.webgpu.BindGroupLayout createBindGroupLayout(BindGroupLayoutDesc desc) {
         WGPUVectorBindGroupLayoutEntry entries = new WGPUVectorBindGroupLayoutEntry();
-        for (BindGroupLayoutDesc.Entry e : desc.entries()) {
-            WGPUBindGroupLayoutEntry entry = new WGPUBindGroupLayoutEntry();
-            entry.setNextInChain(WGPUChainedStruct.NULL);
-            entry.setBinding(e.binding);
-            entry.setVisibility(WGPUShaderStage.CUSTOM.setValue(e.visibility));
-            // WhyNot: 使わない種類の欄を書かずに済ませない — 0 で埋まる保証が無く、残った値で別の種類の項目と読まれる。
-            entry.getBuffer().setType(WGPUBufferBindingType.BindingNotUsed);
-            entry.getBuffer().setHasDynamicOffset(0);
-            entry.getBuffer().setMinBindingSize(0);
-            entry.getSampler().setType(WGPUSamplerBindingType.BindingNotUsed);
-            entry.getTexture().setSampleType(WGPUTextureSampleType.BindingNotUsed);
-            entry.getTexture().setViewDimension(WGPUTextureViewDimension._2D);
-            entry.getTexture().setMultisampled(0);
-            entry.getStorageTexture().setAccess(WGPUStorageTextureAccess.BindingNotUsed);
-            switch (e.kind) {
-                case BUFFER -> entry.getBuffer().setType(switch (e.bufferType) {
-                    case UNIFORM -> WGPUBufferBindingType.Uniform;
-                    case STORAGE -> WGPUBufferBindingType.Storage;
-                    case READ_ONLY_STORAGE -> WGPUBufferBindingType.ReadOnlyStorage;
-                });
-                case TEXTURE -> entry.getTexture().setSampleType(switch (e.sampleType) {
-                    case FLOAT -> WGPUTextureSampleType.Float;
-                    case UNFILTERABLE_FLOAT -> WGPUTextureSampleType.UnfilterableFloat;
-                    case DEPTH -> WGPUTextureSampleType.Depth;
-                    case SINT -> WGPUTextureSampleType.Sint;
-                    case UINT -> WGPUTextureSampleType.Uint;
-                });
-                case SAMPLER -> entry.getSampler().setType(switch (e.samplerType) {
-                    case FILTERING -> WGPUSamplerBindingType.Filtering;
-                    case NON_FILTERING -> WGPUSamplerBindingType.NonFiltering;
-                    case COMPARISON -> WGPUSamplerBindingType.Comparison;
-                });
-            }
-            entries.push_back(entry);
-        }
-        WGPUBindGroupLayoutDescriptor d = new WGPUBindGroupLayoutDescriptor();
-        d.setLabel(desc.label());
-        d.setEntries(entries);
+        List<WGPUBindGroupLayoutEntry> made = new ArrayList<>();
         WGPUBindGroupLayout layout = new WGPUBindGroupLayout();
-        device.createBindGroupLayout(d, layout);
+        WGPUBindGroupLayoutDescriptor d = new WGPUBindGroupLayoutDescriptor();
+        synchronized (DawnFormats.SHARED) {
+            for (BindGroupLayoutDesc.Entry e : desc.entries()) {
+                WGPUBindGroupLayoutEntry entry = new WGPUBindGroupLayoutEntry();
+                entry.setNextInChain(WGPUChainedStruct.NULL);
+                entry.setBinding(e.binding);
+                entry.setVisibility(DawnFormats.shaderStage(e.visibility));
+                // WhyNot: 使わない種類の欄を書かずに済ませない — 0 で埋まる保証が無く、残った値で別の種類の項目と読まれる。
+                entry.getBuffer().setType(WGPUBufferBindingType.BindingNotUsed);
+                entry.getBuffer().setHasDynamicOffset(0);
+                entry.getBuffer().setMinBindingSize(0);
+                entry.getSampler().setType(WGPUSamplerBindingType.BindingNotUsed);
+                entry.getTexture().setSampleType(WGPUTextureSampleType.BindingNotUsed);
+                entry.getTexture().setViewDimension(WGPUTextureViewDimension._2D);
+                entry.getTexture().setMultisampled(0);
+                entry.getStorageTexture().setAccess(WGPUStorageTextureAccess.BindingNotUsed);
+                switch (e.kind) {
+                    case BUFFER -> entry.getBuffer().setType(DawnFormats.bufferBinding(e.bufferType));
+                    case TEXTURE -> entry.getTexture().setSampleType(DawnFormats.sampleType(e.sampleType));
+                    case SAMPLER -> entry.getSampler().setType(DawnFormats.samplerBinding(e.samplerType));
+                }
+                entries.push_back(entry);
+                made.add(entry);
+            }
+            d.setLabel(desc.label());
+            d.setEntries(entries);
+            device.createBindGroupLayout(d, layout);
+        }
+        d.dispose();
+        entries.dispose();
+        made.forEach(NativeObject::dispose);
         return new DawnBindGroupLayout(layout);
     }
 
     @Override public fge.webgpu.BindGroup createBindGroup(BindGroupDesc desc) {
         WGPUVectorBindGroupEntry entries = new WGPUVectorBindGroupEntry();
+        List<WGPUBindGroupEntry> made = new ArrayList<>();
         for (BindGroupDesc.Entry e : desc.entries()) {
             WGPUBindGroupEntry entry = new WGPUBindGroupEntry();
             entry.reset();
@@ -398,6 +398,7 @@ public final class DawnWebGpu implements WebGpu {
             if (e.view != null) entry.setTextureView(((DawnTextureView) e.view).view);
             if (e.sampler != null) entry.setSampler(((DawnSampler) e.sampler).sampler);
             entries.push_back(entry);
+            made.add(entry);
         }
         WGPUBindGroupDescriptor d = new WGPUBindGroupDescriptor();
         d.setLabel(desc.label());
@@ -405,35 +406,44 @@ public final class DawnWebGpu implements WebGpu {
         d.setEntries(entries);
         WGPUBindGroup group = new WGPUBindGroup();
         device.createBindGroup(d, group);
+        d.dispose();
+        entries.dispose();
+        made.forEach(NativeObject::dispose);
         return new DawnBindGroup(group);
     }
 
     @Override public fge.webgpu.RenderPipeline createRenderPipeline(RenderPipelineDesc desc) {
+        // 作り終わるまで生かし、最後にまとめて手放す物（頂点の buffer の形は属性の列の中身を指すだけ）。
+        List<NativeObject> scratch = new ArrayList<>();
         WGPUVectorBindGroupLayout layouts = new WGPUVectorBindGroupLayout();
+        scratch.add(layouts);
         for (fge.webgpu.BindGroupLayout l : desc.bindGroupLayouts()) layouts.push_back(((DawnBindGroupLayout) l).layout);
         WGPUPipelineLayoutDescriptor layoutDesc = new WGPUPipelineLayoutDescriptor();
+        scratch.add(layoutDesc);
         layoutDesc.setLabel(desc.label());
         layoutDesc.setBindGroupLayouts(layouts);
         WGPUPipelineLayout layout = new WGPUPipelineLayout();
         device.createPipelineLayout(layoutDesc, layout);
 
         WGPURenderPipelineDescriptor d = new WGPURenderPipelineDescriptor();
+        scratch.add(d);
         d.setLabel(desc.label());
         d.setLayout(layout);
         WGPUVectorVertexBufferLayout buffers = new WGPUVectorVertexBufferLayout();
-        // WhyNot: 属性の列をループの中の局所に捨てない — 頂点の buffer の形は列の中身を指すだけで、作り終わるまで生きている必要がある。
-        java.util.List<WGPUVectorVertexAttribute> keep = new java.util.ArrayList<>();
+        scratch.add(buffers);
         for (RenderPipelineDesc.VertexBuffer vb : desc.vertexBuffers()) {
             WGPUVectorVertexAttribute attributes = new WGPUVectorVertexAttribute();
+            scratch.add(attributes);
             for (RenderPipelineDesc.Attribute at : vb.attributes) {
                 WGPUVertexAttribute attribute = new WGPUVertexAttribute();
-                attribute.setFormat(vertexFormat(at.format));
+                scratch.add(attribute);
+                attribute.setFormat(DawnFormats.vertexFormat(at.format));
                 attribute.setOffset(at.offset);
                 attribute.setShaderLocation(at.location);
                 attributes.push_back(attribute);
             }
-            keep.add(attributes);
             WGPUVertexBufferLayout bl = new WGPUVertexBufferLayout();
+            scratch.add(bl);
             bl.setArrayStride(vb.arrayStride);
             bl.setStepMode(vb.perInstance ? WGPUVertexStepMode.Instance : WGPUVertexStepMode.Vertex);
             bl.setAttributes(attributes);
@@ -445,36 +455,28 @@ public final class DawnWebGpu implements WebGpu {
         d.getVertex().setConstants(WGPUVectorConstantEntry.NULL);
         d.getVertex().setBuffers(desc.vertexBuffers().isEmpty() ? WGPUVectorVertexBufferLayout.NULL : buffers);
         d.getPrimitive().setNextInChain(WGPUChainedStruct.NULL);
-        d.getPrimitive().setTopology(switch (desc.topology()) {
-            case TRIANGLE_LIST -> WGPUPrimitiveTopology.TriangleList;
-            case TRIANGLE_STRIP -> WGPUPrimitiveTopology.TriangleStrip;
-            case LINE_LIST -> WGPUPrimitiveTopology.LineList;
-            case LINE_STRIP -> WGPUPrimitiveTopology.LineStrip;
-            case POINT_LIST -> WGPUPrimitiveTopology.PointList;
-        });
+        d.getPrimitive().setTopology(DawnFormats.topology(desc.topology()));
         d.getPrimitive().setStripIndexFormat(WGPUIndexFormat.Undefined);
         d.getPrimitive().setFrontFace(desc.frontFace() == FrontFace.CCW ? WGPUFrontFace.CCW : WGPUFrontFace.CW);
-        d.getPrimitive().setCullMode(switch (desc.cullMode()) {
-            case NONE -> WGPUCullMode.None;
-            case FRONT -> WGPUCullMode.Front;
-            case BACK -> WGPUCullMode.Back;
-        });
+        d.getPrimitive().setCullMode(DawnFormats.cullMode(desc.cullMode()));
 
-        WGPUFragmentState fragment = new WGPUFragmentState();
-        WGPUVectorColorTargetState targets = new WGPUVectorColorTargetState();
-        java.util.List<WGPUBlendState> blends = new java.util.ArrayList<>();
         if (desc.fragmentModule() != null) {
+            WGPUFragmentState fragment = new WGPUFragmentState();
+            scratch.add(fragment);
+            WGPUVectorColorTargetState targets = new WGPUVectorColorTargetState();
+            scratch.add(targets);
             for (RenderPipelineDesc.ColorTarget ct : desc.colorTargets()) {
                 WGPUColorTargetState target = new WGPUColorTargetState();
+                scratch.add(target);
                 target.setNextInChain(WGPUChainedStruct.NULL);
-                target.setFormat(textureFormat(ct.format));
+                target.setFormat(DawnFormats.textureFormat(ct.format));
                 target.setWriteMask(WGPUColorWriteMask.All);
                 if (ct.color != null) {
                     WGPUBlendState blend = new WGPUBlendState();
+                    scratch.add(blend);
                     setBlend(blend.getColor(), ct.color);
                     setBlend(blend.getAlpha(), ct.alpha);
                     target.setBlend(blend);
-                    blends.add(blend);
                 } else target.setBlend(WGPUBlendState.NULL);
                 targets.push_back(target);
             }
@@ -486,13 +488,13 @@ public final class DawnWebGpu implements WebGpu {
             d.setFragment(fragment);
         } else d.setFragment(WGPUFragmentState.NULL);
 
-        WGPUDepthStencilState depth = null;
         if (desc.depthFormat() != null) {
-            depth = new WGPUDepthStencilState();
+            WGPUDepthStencilState depth = new WGPUDepthStencilState();
+            scratch.add(depth);
             depth.setNextInChain(WGPUChainedStruct.NULL);
-            depth.setFormat(textureFormat(desc.depthFormat()));
+            depth.setFormat(DawnFormats.textureFormat(desc.depthFormat()));
             depth.setDepthWriteEnabled(desc.depthWrite() ? WGPUOptionalBool.True : WGPUOptionalBool.False);
-            depth.setDepthCompare(compare(desc.depthCompare()));
+            depth.setDepthCompare(DawnFormats.compare(desc.depthCompare()));
             RenderPipelineDesc.Stencil s = desc.stencilState();
             setStencilFace(depth.getStencilFront(), s);
             setStencilFace(depth.getStencilBack(), s);
@@ -510,28 +512,23 @@ public final class DawnWebGpu implements WebGpu {
 
         WGPURenderPipeline pipeline = new WGPURenderPipeline();
         device.createRenderPipeline(d, pipeline);
-        keep.clear();
-        blends.clear();
+        // WhyNot: pipeline layout を pipeline と一緒に持ち回らない — pipeline が自分で参照を持つので、ここで手放してよい。
+        layout.release();
+        scratch.forEach(NativeObject::dispose);
         return new DawnRenderPipeline(pipeline);
     }
 
     private static void setBlend(WGPUBlendComponent c, RenderPipelineDesc.BlendComponent b) {
-        c.setSrcFactor(blendFactor(b.src));
-        c.setDstFactor(blendFactor(b.dst));
-        c.setOperation(switch (b.operation) {
-            case ADD -> WGPUBlendOperation.Add;
-            case SUBTRACT -> WGPUBlendOperation.Subtract;
-            case REVERSE_SUBTRACT -> WGPUBlendOperation.ReverseSubtract;
-            case MIN -> WGPUBlendOperation.Min;
-            case MAX -> WGPUBlendOperation.Max;
-        });
+        c.setSrcFactor(DawnFormats.blendFactor(b.src));
+        c.setDstFactor(DawnFormats.blendFactor(b.dst));
+        c.setOperation(DawnFormats.blendOperation(b.operation));
     }
 
     private static void setStencilFace(WGPUStencilFaceState face, RenderPipelineDesc.Stencil s) {
-        face.setCompare(s == null ? WGPUCompareFunction.Always : compare(s.compare));
-        face.setFailOp(s == null ? WGPUStencilOperation.Keep : stencilOp(s.failOp));
-        face.setDepthFailOp(s == null ? WGPUStencilOperation.Keep : stencilOp(s.depthFailOp));
-        face.setPassOp(s == null ? WGPUStencilOperation.Keep : stencilOp(s.passOp));
+        face.setCompare(s == null ? WGPUCompareFunction.Always : DawnFormats.compare(s.compare));
+        face.setFailOp(s == null ? WGPUStencilOperation.Keep : DawnFormats.stencilOp(s.failOp));
+        face.setDepthFailOp(s == null ? WGPUStencilOperation.Keep : DawnFormats.stencilOp(s.depthFailOp));
+        face.setPassOp(s == null ? WGPUStencilOperation.Keep : DawnFormats.stencilOp(s.passOp));
     }
 
     @Override public fge.webgpu.QuerySet createTimestampQuerySet(String label, int count) {
@@ -546,8 +543,11 @@ public final class DawnWebGpu implements WebGpu {
     }
 
     @Override public fge.webgpu.CommandEncoder createCommandEncoder(String label) {
+        WGPUCommandEncoderDescriptor desc = new WGPUCommandEncoderDescriptor();
+        desc.setLabel(label);
         WGPUCommandEncoder encoder = new WGPUCommandEncoder();
-        device.createCommandEncoder(WGPUCommandEncoderDescriptor.NULL, encoder);
+        device.createCommandEncoder(desc, encoder);
+        desc.dispose();
         return new DawnCommandEncoder(encoder, this);
     }
 
@@ -560,7 +560,7 @@ public final class DawnWebGpu implements WebGpu {
     private final WGPURenderPassDepthStencilAttachment depthScratch = new WGPURenderPassDepthStencilAttachment();
 
     fge.webgpu.RenderPass beginRenderPass(WGPUCommandEncoder encoder, RenderPassDesc desc) {
-        java.util.List<RenderPassDesc.ColorAttachment> colors = desc.colors();
+        List<RenderPassDesc.ColorAttachment> colors = desc.colors();
         if (colors.size() > colorScratch.length) throw new IllegalArgumentException("色の描き先は 4 枚まで");
         for (int i = 0; i < colors.size(); i++) {
             RenderPassDesc.ColorAttachment c = colors.get(i);
@@ -592,22 +592,29 @@ public final class DawnWebGpu implements WebGpu {
             depthScratch.setStencilReadOnly(false);
             passDesc.setDepthStencilAttachment(depthScratch);
         } else passDesc.setDepthStencilAttachment(WGPURenderPassDepthStencilAttachment.NULL);
-        if (desc.timestamps() != null) {
-            // WhyNot: 欄に 1 つ持たない — jWebGPU はこの型を obtain（共有の 1 個）でしか作らせない。
-            WGPUPassTimestampWrites timestampScratch = WGPUPassTimestampWrites.obtain();
-            timestampScratch.setQuerySet(((DawnQuerySet) desc.timestamps()).querySet);
-            timestampScratch.setBeginningOfPassWriteIndex(desc.timestampBegin());
-            timestampScratch.setEndOfPassWriteIndex(desc.timestampEnd());
-            passDesc.setTimestampWrites(timestampScratch);
-        } else passDesc.setTimestampWrites(WGPUPassTimestampWrites.NULL);
         WGPURenderPassEncoder pass = new WGPURenderPassEncoder();
-        encoder.beginRenderPass(passDesc, pass);
+        if (desc.timestamps() != null) {
+            synchronized (DawnFormats.SHARED) {
+                // WhyNot: 欄に 1 つ持たない — jWebGPU はこの型を obtain（共有の 1 個）でしか作らせない。
+                WGPUPassTimestampWrites timestampScratch = WGPUPassTimestampWrites.obtain();
+                timestampScratch.setQuerySet(((DawnQuerySet) desc.timestamps()).querySet);
+                timestampScratch.setBeginningOfPassWriteIndex(desc.timestampBegin());
+                timestampScratch.setEndOfPassWriteIndex(desc.timestampEnd());
+                passDesc.setTimestampWrites(timestampScratch);
+                encoder.beginRenderPass(passDesc, pass);
+            }
+        } else {
+            passDesc.setTimestampWrites(WGPUPassTimestampWrites.NULL);
+            encoder.beginRenderPass(passDesc, pass);
+        }
         return new DawnRenderPass(pass);
     }
 
     // ── queue ──
 
     @Override public void writeBuffer(fge.webgpu.Buffer buffer, long offset, ByteBuffer data, int dataOffset, int size) {
+        if (dataOffset < 0 || size < 0 || dataOffset + size > data.capacity())
+            throw new IllegalArgumentException("writeBuffer の data が短い: " + dataOffset + "+" + size + " > " + data.capacity());
         // WhyNot: data の position で範囲を渡さない — jWebGPU は ByteBuffer の先頭の番地をそのまま使い、position を見ない。
         ByteBuffer from = dataOffset == 0 ? data : data.slice(dataOffset, size);
         queue.writeBuffer(((DawnBuffer) buffer).buffer, Math.toIntExact(offset), from, size);
@@ -615,8 +622,11 @@ public final class DawnWebGpu implements WebGpu {
 
     @Override public void writeTexture(fge.webgpu.Texture texture, int mip, int x, int y, int width, int height,
                                        ByteBuffer data, int dataOffset, int bytesPerRow) {
-        int size = bytesPerRow * height;
-        ByteBuffer from = dataOffset == 0 ? data : data.slice(dataOffset, Math.min(size, data.capacity() - dataOffset));
+        int size = bytesPerRow * (height - 1) + width * texture.format().bytesPerTexel();
+        // WhyNot: 足りない data を切り詰めて渡さない — 下の行が黙って欠けた絵になり、どこで欠けたかが分からない。
+        if (dataOffset < 0 || dataOffset + size > data.capacity())
+            throw new IllegalArgumentException("writeTexture の data が短い: " + dataOffset + "+" + size + " > " + data.capacity());
+        ByteBuffer from = data.slice(dataOffset, size);
         WGPUTexelCopyTextureInfo dst = new WGPUTexelCopyTextureInfo();
         dst.setTexture(((DawnTexture) texture).texture);
         dst.setMipLevel(mip);
@@ -630,7 +640,7 @@ public final class DawnWebGpu implements WebGpu {
         extent.setWidth(width);
         extent.setHeight(height);
         extent.setDepthOrArrayLayers(1);
-        queue.writeTexture(dst, from, Math.min(size, from.capacity()), layout, extent);
+        queue.writeTexture(dst, from, size, layout, extent);
         dst.dispose();
         layout.dispose();
         extent.dispose();
@@ -665,13 +675,13 @@ public final class DawnWebGpu implements WebGpu {
     // WhyNot: queue.onSubmittedWorkDone で待たない — jWebGPU 0.3.4 に関数が無い。小さな写しを map して、その前の仕事が終わったとみなす。
     @Override public void waitIdle() {
         if (idleSrc == null) {
-            idleSrc = ((DawnBuffer) createBuffer("fge idle src", 16, BufferUsage.COPY_SRC | BufferUsage.COPY_DST)).buffer;
-            idleDst = ((DawnBuffer) createBuffer("fge idle dst", 16, BufferUsage.COPY_DST | BufferUsage.MAP_READ)).buffer;
+            idleSrc = (DawnBuffer) createBuffer("fge idle src", 16, BufferUsage.COPY_SRC | BufferUsage.COPY_DST);
+            idleDst = (DawnBuffer) createBuffer("fge idle dst", 16, BufferUsage.COPY_DST | BufferUsage.MAP_READ);
         }
         fge.webgpu.CommandEncoder encoder = createCommandEncoder("fge idle");
-        ((DawnCommandEncoder) encoder).encoder.copyBufferToBuffer(idleSrc, 0, idleDst, 0, 16);
+        encoder.copyBufferToBuffer(idleSrc, 0, idleDst, 0, 16);
         submit(encoder.finish());
-        readBuffer(new DawnBuffer(idleDst, 16), 0, 16, ByteBuffer.allocateDirect(16));
+        readBuffer(idleDst, 0, 16, idleRead);
     }
 
     // ── ウィンドウ（macOS） ──
@@ -682,85 +692,5 @@ public final class DawnWebGpu implements WebGpu {
         WGPUSurface surface = instance.createMacSurface(handle);
         if (surface == null) throw new IllegalStateException("surface を作れない");
         return new DawnSurface(surface, adapter, device);
-    }
-
-    // ── 形の対応 ──
-
-    static WGPUTextureFormat textureFormat(TextureFormat f) {
-        return switch (f) {
-            case R8_UNORM -> WGPUTextureFormat.R8Unorm;
-            case RGBA8_UNORM -> WGPUTextureFormat.RGBA8Unorm;
-            case RGBA8_UNORM_SRGB -> WGPUTextureFormat.RGBA8UnormSrgb;
-            case BGRA8_UNORM -> WGPUTextureFormat.BGRA8Unorm;
-            case BGRA8_UNORM_SRGB -> WGPUTextureFormat.BGRA8UnormSrgb;
-            case RGBA16_FLOAT -> WGPUTextureFormat.RGBA16Float;
-            case RGBA32_FLOAT -> WGPUTextureFormat.RGBA32Float;
-            case DEPTH24_PLUS -> WGPUTextureFormat.Depth24Plus;
-            case DEPTH24_PLUS_STENCIL8 -> WGPUTextureFormat.Depth24PlusStencil8;
-            case DEPTH32_FLOAT -> WGPUTextureFormat.Depth32Float;
-            case STENCIL8 -> WGPUTextureFormat.Stencil8;
-        };
-    }
-
-    /** Dawn の形をこちらの形へ。こちらに無い形は null。 */
-    static TextureFormat fromTextureFormat(WGPUTextureFormat f) {
-        for (TextureFormat t : TextureFormat.values()) if (textureFormat(t) == f) return t;
-        return null;
-    }
-
-    private static WGPUVertexFormat vertexFormat(VertexFormat f) {
-        return switch (f) {
-            case FLOAT32 -> WGPUVertexFormat.Float32;
-            case FLOAT32X2 -> WGPUVertexFormat.Float32x2;
-            case FLOAT32X3 -> WGPUVertexFormat.Float32x3;
-            case FLOAT32X4 -> WGPUVertexFormat.Float32x4;
-            case UINT32 -> WGPUVertexFormat.Uint32;
-            case UINT32X2 -> WGPUVertexFormat.Uint32x2;
-            case UINT32X4 -> WGPUVertexFormat.Uint32x4;
-            case UNORM8X4 -> WGPUVertexFormat.Unorm8x4;
-        };
-    }
-
-    private static WGPUBlendFactor blendFactor(BlendFactor f) {
-        return switch (f) {
-            case ZERO -> WGPUBlendFactor.Zero;
-            case ONE -> WGPUBlendFactor.One;
-            case SRC -> WGPUBlendFactor.Src;
-            case ONE_MINUS_SRC -> WGPUBlendFactor.OneMinusSrc;
-            case SRC_ALPHA -> WGPUBlendFactor.SrcAlpha;
-            case ONE_MINUS_SRC_ALPHA -> WGPUBlendFactor.OneMinusSrcAlpha;
-            case DST -> WGPUBlendFactor.Dst;
-            case ONE_MINUS_DST -> WGPUBlendFactor.OneMinusDst;
-            case DST_ALPHA -> WGPUBlendFactor.DstAlpha;
-            case ONE_MINUS_DST_ALPHA -> WGPUBlendFactor.OneMinusDstAlpha;
-            case CONSTANT -> WGPUBlendFactor.Constant;
-            case ONE_MINUS_CONSTANT -> WGPUBlendFactor.OneMinusConstant;
-        };
-    }
-
-    private static WGPUCompareFunction compare(CompareFunction f) {
-        return switch (f) {
-            case NEVER -> WGPUCompareFunction.Never;
-            case LESS -> WGPUCompareFunction.Less;
-            case EQUAL -> WGPUCompareFunction.Equal;
-            case LESS_EQUAL -> WGPUCompareFunction.LessEqual;
-            case GREATER -> WGPUCompareFunction.Greater;
-            case NOT_EQUAL -> WGPUCompareFunction.NotEqual;
-            case GREATER_EQUAL -> WGPUCompareFunction.GreaterEqual;
-            case ALWAYS -> WGPUCompareFunction.Always;
-        };
-    }
-
-    private static WGPUStencilOperation stencilOp(StencilOperation o) {
-        return switch (o) {
-            case KEEP -> WGPUStencilOperation.Keep;
-            case ZERO -> WGPUStencilOperation.Zero;
-            case REPLACE -> WGPUStencilOperation.Replace;
-            case INVERT -> WGPUStencilOperation.Invert;
-            case INCREMENT_CLAMP -> WGPUStencilOperation.IncrementClamp;
-            case DECREMENT_CLAMP -> WGPUStencilOperation.DecrementClamp;
-            case INCREMENT_WRAP -> WGPUStencilOperation.IncrementWrap;
-            case DECREMENT_WRAP -> WGPUStencilOperation.DecrementWrap;
-        };
     }
 }

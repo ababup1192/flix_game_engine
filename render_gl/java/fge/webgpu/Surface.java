@@ -10,11 +10,15 @@ public interface Surface {
 
     void configure(int width, int height, TextureFormat format, PresentMode presentMode, int textureUsage);
 
-    /** 次の描き先。取れない時は null（理由は lastStatus）。画面に出す待ちはここで起きる。 */
+    /**
+     * 次の描き先。取れない時は null（理由は lastStatus）。画面に出す待ちはここで起きる。
+     * present の前にもう一度呼ぶと、前に渡した texture は手放される（同じコマに 2 枚は持たない）。描くのは defaultView で。
+     */
     Texture getCurrentTexture();
 
     SurfaceStatus lastStatus();
 
+    /** 描き先を画面へ出し、getCurrentTexture で渡した texture と view を手放す。ブラウザでは何もしない（コマの終わりに出る）。 */
     void present();
 
     void release();

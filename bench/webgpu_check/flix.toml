@@ -4,3 +4,7 @@ flix        = "0.78.0"
 
 [dependencies]
 "github:ababup1192/flix_game_engine" = { version = "0.95.0", mount = "fge", security = "unrestricted" }
+
+# WebGPU の門だけが Dawn のネイティブを持つ（engine_full は API の jar だけを配る）。版は render_gl/flix.toml と同じ。
+[mvn-dependencies]
+"com.github.xpenatan.jWebGPU:webgpu-desktop-jni-dawn_mac_arm64" = "0.3.4"

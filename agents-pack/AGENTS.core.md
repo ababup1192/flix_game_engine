@@ -60,7 +60,6 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 敵が多くて 1 コマが重い（規則の計算と描くのを重ねて縮める） | `app \|> App.withPipelinedRendering`（効果の無い `App[w, {}]` だけ。画面は 1 コマ前の World を描き、入力が画面に出るまでが 1 コマ遅れる。自前でスレッドを立てない）・60 fps より上を測るのは `FLIX_GE_NO_VSYNC=1`（垂直同期を待たない） |
 | たくさんの物から近くの物だけを引く（群れの押し合い・範囲の当たり） | `SpatialGrid.buildBy` + `foldNearIndex`（`f` はその場のラムダ） |
 | 群れが同じ相手を追う・共有の歩数の地図（塗り直しは秒で間引く） | `FlowField.build` + `downhill` / `stepsAt`・間引きは `Clock.tick` |
-| WebGPU で窓なしで描いて画素を読む（エンジンの描き手の移行の確かめ。ゲームの絵はまだ GL） | `WebGpuOffscreen.open` → `gpuOf`（`fge.webgpu.WebGpu`）・`readRgba` / `drawFloatRows`・engine の `make webgpu-check` |
 | 3D で初めて出る物のコマが跳ねる（形・絵・材質のプログラムを先に GPU へ上げる） | `App.withPreload3d`（`key` は毎コマ・`instances` と `textures` は変わった時だけ読む） |
 | F3 の診断の行を出す・出さないを切り替える | World には切り替えの `Bool` だけを置き、行は View か HUD で `ctx#diagnostics \|> Option.map(FrameDiagnostics.summaryLines)` から描く（系で `frame#diagnostics` を World へ写すと lint-forbid の `frame-diagnostics-in-system` が止める。再生と食い違うため） |
 | 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTexturedUsing(dec, Gltf.noTextureLimits(), path)`（`dec` は読み込みの頭で `LoadProgress.imageDecoder()`）→ 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap`・glb の emissive（`KHR_materials_emissive_strength` つき）も読んで光る（止めるなら `Scene3d.withoutEmission`・emission を差し替えても名前は替えなくてよい・差し替えても glb の強さ `emissionIntensity` は残る）・材質の情報は `part#gltfMaterial` |

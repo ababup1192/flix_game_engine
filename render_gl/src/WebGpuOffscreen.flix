@@ -1,5 +1,5 @@
 // WebGpuOffscreen — ウィンドウを使わず WebGPU（PC は Dawn）の texture へ描いて読む session（GlOffscreen の WebGPU 版の土台）。
-// 塗りのコア（RenderPaint）はまだ WebGPU を通らないので、ここにあるのは device・描き先・読み戻し・式の行の突き合わせだけ。
+// 持つのは device・描き先・読み戻し・式の行の突き合わせ（塗りのコア RenderPaint は持たない）。
 //
 // 使い方（open から close まで同じ糸で呼ぶ）:
 //   match WebGpuOffscreen.open({ width = 320, height = 180 }) {
@@ -50,11 +50,15 @@ pub mod WebGpuOffscreen {
 
     pub type alias Session = SessionData
 
-    /// Dawn の device と width × height の RGBA8 の描き先を作る。作れなければ Err(理由)。
+    /// Dawn の device と width × height の RGBA8 の描き先を作る。device を開けない・大きさが 1 から device の 2D の上限の外なら Err(理由)。
     pub def open(cfg: { width = Int32, height = Int32 }): Result[String, Session] \ IO =
         try {
             let gpu: WebGpu = checked_cast(DawnWebGpu.open(""));
-            Ok(withDevice(gpu, cfg))
+            let largest = gpu.limits().maxTextureDimension2D();
+            if (cfg#width < 1 or cfg#height < 1 or cfg#width > largest or cfg#height > largest) {
+                gpu.destroy();
+                Err("描き先の大きさ ${cfg#width}x${cfg#height} は 1〜${largest} の外")
+            } else Ok(withDevice(gpu, cfg))
         } catch {
             case e: Throwable => Err("WebGPU の device を開けない: ${e.toString()}")
         }
@@ -138,7 +142,10 @@ pub mod WebGpuOffscreen {
             let errorsBefore = gpu.errorCount();
             let module = gpu.createShaderModule("fge rows", rowVertexSource() + fragment);
             let info = gpu.getCompilationInfo(module);
-            if (String.contains({substr = "Error"}, info)) Err("WGSL が組めない: ${info}")
+            if (String.contains({substr = "Error"}, info)) {
+                module.release();
+                Err("WGSL が組めない: ${info}")
+            }
             else drawRowsWith(gpu, module, width, textures, uniformSets, errorsBefore)
         }
 
@@ -174,7 +181,7 @@ pub mod WebGpuOffscreen {
         let groupDesc = new BindGroupDesc("fge rows", layout).buffer(0, uniforms, 0i64, Int32.toInt64(uniformBytes));
         uploaded |> List.forEachWithIndex((k, ts) -> {
             let (texture, sampler) = ts;
-            discard groupDesc.textureView(1 + 2 * k, texture.createView());
+            discard groupDesc.textureView(1 + 2 * k, texture.defaultView());
             discard groupDesc.sampler(2 + 2 * k, sampler)
         });
         let group = gpu.createBindGroup(groupDesc);
@@ -182,12 +189,11 @@ pub mod WebGpuOffscreen {
         let readback = gpu.createBuffer("fge rows readback", Int32.toInt64(bytesPerRow), Int32.bitwiseOr(BufferUsage.COPY_DST, BufferUsage.MAP_READ));
         let uniformData = ByteBuffer.allocateDirect(uniformBytes).order(ByteOrder.LITTLE_ENDIAN);
         let rowData = ByteBuffer.allocateDirect(bytesPerRow).order(ByteOrder.LITTLE_ENDIAN);
-        let view = target.createView();
         let rows = uniformSets |> List.map(set -> {
             putFloats(uniformData, set);
             gpu.writeBuffer(uniforms, 0i64, uniformData, 0, uniformBytes);
             let encoder = gpu.createCommandEncoder("fge rows");
-            let pass = encoder.beginRenderPass(new RenderPassDesc("fge rows").clearColor(view, 0.0, 0.0, 0.0, 0.0));
+            let pass = encoder.beginRenderPass(new RenderPassDesc("fge rows").clearColor(target.defaultView(), 0.0, 0.0, 0.0, 0.0));
             pass.setPipeline(pipeline);
             pass.setBindGroup(0, group);
             pass.draw(3, 1, 0, 0);
@@ -197,7 +203,11 @@ pub mod WebGpuOffscreen {
             gpu.readBuffer(readback, 0i64, bytesPerRow, rowData);
             Vector.range(0, width * 4) |> Vector.map(i -> rowData.getFloat(i * 4))
         });
-        uploaded |> List.forEach(ts -> { let (texture, _) = ts; texture.destroy() });
+        group.release();
+        pipeline.release();
+        layout.release();
+        module.release();
+        uploaded |> List.forEach(ts -> { let (texture, sampler) = ts; texture.destroy(); sampler.release() });
         target.destroy();
         uniforms.destroy();
         readback.destroy();

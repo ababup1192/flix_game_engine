@@ -6,7 +6,9 @@ import java.nio.ByteBuffer;
  * WebGPU の backend が呼ぶ device と queue の API。実装は PC の Dawn（{@link fge.webgpu.dawn.DawnWebGpu}）と、後でブラウザの JSO。
  * 名前は WebGPU の語をそのまま使う（RenderPipeline・BindGroup・RenderPass・Buffer・Texture・Sampler）。
  * 物は実装ごとの物を包む小さな型（このパッケージの interface）で運び、別の実装の物を混ぜて渡さない。
- * 呼ぶのは全部同じスレッドから。
+ * 呼ぶのは全部同じスレッドから。物の寿命は呼び手が持つ（release・destroy を呼ぶ。JNI の実装は GC では手放さない）。
+ * 待つ関数（readBuffer・getCompilationInfo・waitIdle）は結果が出るまで返らない。ブラウザではコマの描き（requestAnimationFrame）の外、
+ * effect の handler の中でしか呼べない。
  *
  * WhyNot: WebGPU の全部を写さない — backend が使う物だけにし、要る物はその段で足す（compute・render bundle・storage texture はまだ無い）。
  * WhyNot: descriptor を配列で渡さない — Flix から Java の物の配列を組む形は型が合わせにくいので、つないで書く Desc の類で渡す。

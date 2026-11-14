@@ -26,6 +26,8 @@ mod WebGpuCheck {
     import fge.webgpu.TextureUsage
     import fge.webgpu.WebGpu
     import fge.webgpu.dawn.DawnWebGpu
+    import java.io.File
+    import java.lang.IllegalStateException
     import java.lang.System
     import java.lang.Thread
     import java.nio.ByteBuffer
@@ -35,6 +37,22 @@ mod WebGpuCheck {
     def nativeDir(): String \ IO =
         let dir = System.getenv("WEBGPU_NATIVE_DIR");
         if (Object.isNull(dir)) "" else dir
+
+    /// WEBGPU_BARRIER のファイルができるまで待つ（2 プロセスの門が、device を開く直前でそろえる）。無ければすぐ返る。
+    def waitBarrier(): Unit \ IO =
+        let path = System.getenv("WEBGPU_BARRIER");
+        if (Object.isNull(path)) () else {
+            let waitedFrom = System.currentTimeMillis();
+            waitFor(new File(path), System.nanoTime());
+            println("BARRIER waited=${System.currentTimeMillis() - waitedFrom} ms released-at=${System.currentTimeMillis()}")
+        }
+
+    def waitFor(file: File, start: Int64): Unit \ IO =
+        if (file.exists() or System.nanoTime() - start > 60000000000i64) ()
+        else {
+            Thread.onSpinWait();
+            waitFor(file, start)
+        }
 
     // ── 結果の行 ──────────────────────────────
 
@@ -76,12 +94,14 @@ mod WebGpuCheck {
         let desc = new RenderPipelineDesc("check triangles");
         discard desc.vertex(module, "vs_main").fragment(module, "fs_main").colorTarget(format);
         discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CCW, cull);
-        gpu.createRenderPipeline(desc)
+        let pipeline = gpu.createRenderPipeline(desc);
+        module.release();
+        pipeline
 
     /// target を灰色（0.2）で消して頂点 vertexCount 個を描き、submit する。
     def drawTriangles(gpu: WebGpu, target: Texture, pipeline: RenderPipeline, vertexCount: Int32): Unit \ IO =
         let encoder = gpu.createCommandEncoder("check triangles");
-        let pass = encoder.beginRenderPass(new RenderPassDesc("check triangles").clearColor(target.createView(), 0.2, 0.2, 0.2, 1.0));
+        let pass = encoder.beginRenderPass(new RenderPassDesc("check triangles").clearColor(target.defaultView(), 0.2, 0.2, 0.2, 1.0));
         pass.setPipeline(pipeline);
         pass.draw(vertexCount, 1, 0, 0);
         pass.end();
@@ -91,7 +111,9 @@ mod WebGpuCheck {
     def checkTriangles(session: WebGpuOffscreen.Session, name: String, cull: CullMode, rightDrawn: Bool): Bool \ IO =
         let gpu = WebGpuOffscreen.gpuOf(session);
         let (w, h) = WebGpuOffscreen.sizeOf(session);
-        drawTriangles(gpu, WebGpuOffscreen.targetOf(session), trianglePipeline(gpu, TextureFormat.RGBA8_UNORM, cull), 6);
+        let pipeline = trianglePipeline(gpu, TextureFormat.RGBA8_UNORM, cull);
+        drawTriangles(gpu, WebGpuOffscreen.targetOf(session), pipeline, 6);
+        pipeline.release();
         let buf = ByteBuffer.allocateDirect(w * h * 4);
         WebGpuOffscreen.readRgba(session, buf);
         // readRgba は下の行から: 描き先の行 y は buf の行 h - 1 - y。
@@ -141,6 +163,52 @@ mod WebGpuCheck {
             case Ok(rows) => report("float-rows", rows == expected, "got=${rows} expected=${expected}")
         }
 
+    def mipFragment(): String =
+        "@group(0) @binding(0) var<uniform> u: vec4f;\n" +
+        "@group(0) @binding(1) var tex0: texture_2d<f32>;\n" +
+        "@group(0) @binding(2) var smp0: sampler;\n" +
+        "@group(0) @binding(3) var tex1: texture_2d<f32>;\n" +
+        "@group(0) @binding(4) var smp1: sampler;\n" +
+        "@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n" +
+        "    let between = textureSampleLevel(tex1, smp1, vec2f(0.5, 0.5), 0.0);\n" +
+        "    let small = textureSampleLevel(tex1, smp1, vec2f(0.5, 0.5), 1.0);\n" +
+        "    let first = textureSampleLevel(tex0, smp0, vec2f(0.125, 0.5), 0.0);\n" +
+        "    return vec4f(between.r, small.g, small.r, first.r + u.x);\n" +
+        "}\n"
+
+    /// Argb8 の絵（2 × 1 と 1 × 1 の 2 段・linear の sampler）を Float32 の絵と並べて読む:
+    /// 段 0 の 2 画素（r = 0 と 1）の真ん中は 0.5 前後・段 1 は (r, g) = (0, 1) がそのまま・Float32 の絵の左端は 0.125。
+    def checkArgbMipRows(session: WebGpuOffscreen.Session): Bool \ IO =
+        let floatTex = { sampler = "tex0", levels = { width = 4, height = 1, texels = GlOffscreen.RowTexels.Float32Rgba(
+                             Vector#{0.125f32, 0.0f32, 0.0f32, 1.0f32, 0.5f32, 0.0f32, 0.0f32, 1.0f32,
+                                     0.5f32, 0.0f32, 0.0f32, 1.0f32, 0.5f32, 0.0f32, 0.0f32, 1.0f32}) } :: Nil, linear = false };
+        let argbTex = { sampler = "tex1",
+                        levels = { width = 2, height = 1, texels = GlOffscreen.RowTexels.Argb8(Vector#{-16777216, -65536}) } ::
+                                 { width = 1, height = 1, texels = GlOffscreen.RowTexels.Argb8(Vector#{-16711936}) } :: Nil,
+                        linear = true };
+        match WebGpuOffscreen.drawFloatRows(session, mipFragment(), 1, floatTex :: argbTex :: Nil, Vector#{0.25f32, 0.0f32, 0.0f32, 0.0f32} :: Nil) {
+            case Err(why) => report("float-rows-argb-mip", false, why)
+            case Ok(rows) =>
+                let row = List.head(rows) |> Option.getWithDefault(Vector.empty());
+                let at = i -> Vector.nth(i, row) |> Option.map(Float32.toFloat64) |> Option.getWithDefault(-99.0);
+                let ok = Float64.abs(at(0) - 0.5) <= 0.01 and at(1) == 1.0 and at(2) == 0.0 and at(3) == 0.375;
+                report("float-rows-argb-mip", ok, "got=${row} expected=0.5(±0.01),1.0,0.0,0.375")
+        }
+
+    // ── 公開の入口の誤りの道 ──────────────────────────────
+
+    /// 大きさ 0 の描き先は Err（開いた device は手放す）。
+    def checkOpenErr(): Bool \ IO = match WebGpuOffscreen.open({ width = 0, height = 64 }) {
+        case Err(why) => report("open-err-size", true, why)
+        case Ok(s)    => WebGpuOffscreen.close(s); report("open-err-size", false, "大きさ 0 で開けた")
+    }
+
+    /// ネイティブを読んだ後に別の置き場を渡すと、黙って無視せず誤りになる。
+    def checkNativeDirMismatch(): Bool \ IO =
+        let other = "${System.getProperty("java.io.tmpdir")}/fge-webgpu-check-other-dir";
+        let outcome = try { DawnWebGpu.open(other).destroy(); "開けた" } catch { case e: IllegalStateException => "誤り: ${e.getMessage()}" };
+        report("native-dir-mismatch", String.startsWith({prefix = "誤り"}, outcome), outcome)
+
     // ── firstInstance で 1 本ずつ積む形の速さ ──────────────────────────────
 
     def quadsWgsl(): String =
@@ -185,7 +253,7 @@ mod WebGpuCheck {
                    perInstance: Bool, timing: Option[(QuerySet, Buffer, Buffer)], tsBuf: ByteBuffer): FrameTime \ IO =
         let t0 = System.nanoTime();
         let encoder = gpu.createCommandEncoder("check bench");
-        let passDesc = new RenderPassDesc("check bench").clearColor(target.createView(), 0.05, 0.05, 0.08, 1.0);
+        let passDesc = new RenderPassDesc("check bench").clearColor(target.defaultView(), 0.05, 0.05, 0.08, 1.0);
         timing |> Option.forEach(t -> { let (qs, _, _) = t; discard passDesc.timestampWrites(qs, 0, 1) });
         let pass = encoder.beginRenderPass(passDesc);
         pass.setPipeline(pipeline);
@@ -253,6 +321,13 @@ mod WebGpuCheck {
         let eachGpu = median(each |> List.map(f -> f#gpuMs));
         let sameImage = instImage.mismatch(eachImage) == -1;
         let ok = sameImage and eachCpu <= 3.0 and gpu.errorCount() == 0;
+        timing |> Option.forEach(t -> { let (qs, resolve, read) = t; qs.destroy(); resolve.destroy(); read.destroy() });
+        group.release();
+        pipeline.release();
+        module.release();
+        layout.release();
+        rows.destroy();
+        target.destroy();
         report("first-instance", ok,
                "N=${n} frames=${measured} | draw(6,N) cpu med=${fmt(instCpu)} ms gpu med=${fmt(instGpu)} ms | draw(6,1,0,k)×N cpu med=${fmt(eachCpu)} ms gpu med=${fmt(eachGpu)} ms (limit 3 ms) | same image=${sameImage} errors=${gpu.errorCount()}")
 
@@ -270,8 +345,8 @@ mod WebGpuCheck {
 
     // ── device を捨てて取り直す ──────────────────────────────
 
-    def checkReopen(dawn: DawnWebGpu, session: WebGpuOffscreen.Session): Bool \ IO =
-        WebGpuOffscreen.close(session);
+    def checkReopen(dawn: DawnWebGpu): Bool \ IO =
+        dawn.destroy();
         let again = dawn.reopen();
         let gpu: WebGpu = checked_cast(again);
         let fresh = WebGpuOffscreen.withDevice(gpu, { width = 64, height = 64 });
@@ -281,22 +356,32 @@ mod WebGpuCheck {
 
     // ── ウィンドウなしの門 ──────────────────────────────
 
+    // WhyNot: 公開の入口（WebGpuOffscreen.open）より先に DawnWebGpu.open を呼ぶ — 2 プロセスの門は置き場を名指しし、その置き場で読ませたい。
     def offscreen(): Bool \ IO =
+        waitBarrier();
         let dawn = DawnWebGpu.open(nativeDir());
-        let gpu: WebGpu = checked_cast(dawn);
-        let session = WebGpuOffscreen.withDevice(gpu, { width = 64, height = 64 });
-        let results =
-            checkLimits(gpu) ::
-            checkTriangles(session, "triangle-cull-back", CullMode.BACK, false) ::
-            checkTriangles(session, "triangle-cull-none", CullMode.NONE, true) ::
-            checkFloatRows(session) ::
-            checkFirstInstance(gpu) ::
-            checkReopen(dawn, session) :: Nil;
-        List.forAll(identity, results)
+        let dirOk = checkNativeDirMismatch();
+        match WebGpuOffscreen.open({ width = 64, height = 64 }) {
+            case Err(why)    => report("open", false, why)
+            case Ok(session) =>
+                let gpu = WebGpuOffscreen.gpuOf(session);
+                let results =
+                    dirOk ::
+                    report("open", true, "64x64") ::
+                    checkOpenErr() ::
+                    checkLimits(gpu) ::
+                    checkTriangles(session, "triangle-cull-back", CullMode.BACK, false) ::
+                    checkTriangles(session, "triangle-cull-none", CullMode.NONE, true) ::
+                    checkFloatRows(session) ::
+                    checkArgbMipRows(session) ::
+                    checkFirstInstance(gpu) :: Nil;
+                WebGpuOffscreen.close(session);
+                List.forAll(identity, checkReopen(dawn) :: results)
+        }
 
     // ── ウィンドウの門 ──────────────────────────────
 
-    /// ウィンドウの三角形（WinCheck と同じ形）: 中は (1.0, 0.5, 0.25)・地は 0.2。
+    /// ウィンドウの三角形: 中は (1.0, 0.5, 0.25)・地は 0.2。
     def windowWgsl(): String =
         "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n" +
         "    var p = vec2f(0.0, 0.5);\n" +
@@ -309,7 +394,9 @@ mod WebGpuCheck {
         let module = gpu.createShaderModule("check window", windowWgsl());
         let desc = new RenderPipelineDesc("check window");
         discard desc.vertex(module, "vs_main").fragment(module, "fs_main").colorTarget(format);
-        gpu.createRenderPipeline(desc)
+        let pipeline = gpu.createRenderPipeline(desc);
+        module.release();
+        pipeline
 
     /// 描き先を取り、三角形を描いて submit する（present はしない）。取れなければ None。
     def drawWindowFrame(gpu: WebGpu, surface: Surface, pipeline: RenderPipeline): Option[Texture] \ IO =
@@ -374,10 +461,13 @@ mod WebGpuCheck {
     def reportScale(win: WebGpuWindow.Window): Bool \ IO =
         let (ww, wh) = WebGpuWindow.windowSizeOf(win);
         let (fw, fh) = WebGpuWindow.sizeOf(win);
-        let scale = WebGpuWindow.backingScaleOf(win);
-        let expectedW = Float64.round(Int32.toFloat64(ww) * scale);
-        report("window-scale", Int32.toFloat64(fw) == expectedW,
-               "window=${ww}x${wh}pt framebuffer=${fw}x${fh}px backingScaleFactor=${scale}")
+        match WebGpuWindow.backingScaleOf(win) {
+            case Err(why)  => report("window-scale", false, why)
+            case Ok(scale) =>
+                let expectedW = Float64.round(Int32.toFloat64(ww) * scale);
+                report("window-scale", Int32.toFloat64(fw) == expectedW,
+                       "window=${ww}x${wh}pt framebuffer=${fw}x${fh}px backingScaleFactor=${scale}")
+        }
 
     /// 1 コマ描いて present の前に読み、present する。
     def checkOneFrame(gpu: WebGpu, surface: Surface, pipeline: RenderPipeline, name: String): Bool \ IO =

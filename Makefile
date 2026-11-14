@@ -359,7 +359,7 @@ gl-parity-cpu:
 # (present の前の読み戻し・大きさの作り直し)。どれかが NG なら exit 1。GPU の要る門なので CI には載せない。先に make sync-engine-full。
 .PHONY: webgpu-check
 webgpu-check:
-	@$(MAKE) -C bench/webgpu_check run two window
+	@$(MAKE) -C bench/webgpu_check check run two window
 
 # シェーダープログラムのキャッシュの上限 (bench/shader_cache_soak)。隠しウィンドウで
 # 数値だけが違う Spec を 200 本投げ、LRU の追い出しでキャッシュが上限に留まるかを見る。
@@ -757,6 +757,10 @@ gl-jar-hash-ok:
 
 # WhyNot: --date を外さない — 外すと組むたびに中の時刻が変わり、同じソースでも別のバイトになる。
 $(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_CHECK) $(GL_JAR_DEPS) | gl-jar-hash-ok
+	@# jWebGPU の版は Java の定数（ネイティブの置き場の名前）・3 つの flix.toml・ここの GL_JAR_JWEBGPU の 5 か所でそろえる。
+	@v=$$(sed -n 's/.*JWEBGPU_VERSION = "\(.*\)";/\1/p' $(RENDER_GL_DIR)/java/fge/webgpu/dawn/DawnWebGpu.java); \
+	 bad=$$(grep -H 'jWebGPU:' $(GL_JAR_TOMLS) bench/webgpu_check/flix.toml | grep -v "= *\"$(GL_JAR_JWEBGPU)\""); \
+	 [ "$$v" = "$(GL_JAR_JWEBGPU)" ] && [ -z "$$bad" ] || { echo "[gl-jar] jWebGPU の版がそろっていません: Java=$$v Makefile=$(GL_JAR_JWEBGPU) $$bad"; exit 1; }
 	@rm -rf build/gl-jar/classes && mkdir -p build/gl-jar/classes
 	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/classes \
 		-cp "$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(GL_JAR_SRC)

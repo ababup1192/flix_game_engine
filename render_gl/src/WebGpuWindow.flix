@@ -1,5 +1,4 @@
-// WebGpuWindow — WebGPU（PC は Dawn）で描く GLFW のウィンドウ（LwjglLayer と同じ LWJGL の GLFW。旗は GLFW_NO_API）。
-// まだゲームは通らない（LwjglLayer の GL のウィンドウを置き換える道はまだ無い）。
+// WebGpuWindow — PC（Dawn）だけ。WebGPU で描く GLFW のウィンドウ（LwjglLayer と同じ LWJGL の GLFW。旗は GLFW_NO_API）。
 //
 // 使い方（macOS は -XstartOnFirstThread の最初の糸で。LwjglLayer.ensureMainThread を先に呼ぶ）:
 //   match WebGpuWindow.open(gpu, { width = 640, height = 360, title = "x", visible = true, presentMode = PresentMode.FIFO }, redraw) {
@@ -125,17 +124,15 @@ pub mod WebGpuWindow {
         GLFW.glfwGetWindowSize(w#window, ww, hh);
         (Array.get(0, ww), Array.get(0, hh))
 
-    /// ウィンドウが載っている表示の倍率（NSWindow の backingScaleFactor）。
-    pub def backingScaleOf(win: Window): Float64 \ IO =
+    /// ウィンドウが載っている表示の倍率（NSWindow の backingScaleFactor）。macOS だけ（ほかの OS は Err）。
+    pub def backingScaleOf(win: Window): Result[String, Float64] \ IO =
         let WindowData.WindowData(w) = win;
-        let msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
-        JNI.invokePPD(w#nsWindow, ObjCRuntime.sel_getUid("backingScaleFactor"), msgSend)
-
-    /// screencapture -l に渡すウィンドウの番号（NSWindow の windowNumber）。
-    pub def windowNumberOf(win: Window): Int64 \ IO =
-        let WindowData.WindowData(w) = win;
-        let msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
-        JNI.invokePPP(w#nsWindow, ObjCRuntime.sel_getUid("windowNumber"), msgSend)
+        let osName = System.getProperty("os.name");
+        if (Object.isNull(osName) or not String.startsWith({prefix = "Mac"}, osName)) Err("backingScaleFactor は macOS だけ")
+        else {
+            let msgSend = ObjCRuntime.getLibrary().getFunctionAddress("objc_msgSend");
+            Ok(JNI.invokePPD(w#nsWindow, ObjCRuntime.sel_getUid("backingScaleFactor"), msgSend))
+        }
 
     /// ウィンドウの大きさ（ポイント）を変える。描き先の作り直しは callback が pollEvents の中で行う。
     pub def setWindowSize(win: Window, width: Int32, height: Int32): Unit \ IO =

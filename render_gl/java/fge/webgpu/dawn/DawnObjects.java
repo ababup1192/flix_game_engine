@@ -10,6 +10,7 @@ final class DawnObjects {
     static final class DawnBuffer implements fge.webgpu.Buffer {
         final WGPUBuffer buffer;
         final long size;
+        private boolean destroyed;
 
         DawnBuffer(WGPUBuffer buffer, long size) {
             this.buffer = buffer;
@@ -19,6 +20,8 @@ final class DawnObjects {
         @Override public long size() { return size; }
 
         @Override public void destroy() {
+            if (destroyed) return;
+            destroyed = true;
             buffer.destroy();
             buffer.release();
         }
@@ -29,8 +32,10 @@ final class DawnObjects {
         final int width;
         final int height;
         final TextureFormat format;
-        /** surface の texture は surface が持ち主なので destroy しない。 */
+        /** surface の texture は surface が持ち主（present が手放す）。 */
         final boolean owned;
+        private DawnTextureView defaultView;
+        private boolean destroyed;
 
         DawnTexture(WGPUTexture texture, int width, int height, TextureFormat format, boolean owned) {
             this.texture = texture;
@@ -50,51 +55,111 @@ final class DawnObjects {
             return new DawnTextureView(view);
         }
 
+        @Override public fge.webgpu.TextureView defaultView() {
+            if (defaultView == null) defaultView = (DawnTextureView) createView();
+            return defaultView;
+        }
+
         @Override public void destroy() {
-            if (owned) texture.destroy();
+            if (destroyed) return;
+            destroyed = true;
+            if (defaultView != null) defaultView.release();
+            if (owned) {
+                texture.destroy();
+                texture.release();
+            }
+        }
+
+        /** surface が present の後に呼ぶ（呼び手が destroy した後でも 2 回は手放さない）。 */
+        void releaseSurfaceTexture() {
+            if (!destroyed && defaultView != null) defaultView.release();
+            destroyed = true;
             texture.release();
         }
     }
 
     static final class DawnTextureView implements fge.webgpu.TextureView {
         final WGPUTextureView view;
+        private boolean released;
 
         DawnTextureView(WGPUTextureView view) { this.view = view; }
+
+        @Override public void release() {
+            if (released) return;
+            released = true;
+            view.release();
+        }
     }
 
     static final class DawnSampler implements fge.webgpu.Sampler {
         final WGPUSampler sampler;
+        private boolean released;
 
         DawnSampler(WGPUSampler sampler) { this.sampler = sampler; }
+
+        @Override public void release() {
+            if (released) return;
+            released = true;
+            sampler.release();
+        }
     }
 
     static final class DawnShaderModule implements fge.webgpu.ShaderModule {
         final WGPUShaderModule module;
+        private boolean released;
 
         DawnShaderModule(WGPUShaderModule module) { this.module = module; }
+
+        @Override public void release() {
+            if (released) return;
+            released = true;
+            module.release();
+        }
     }
 
     static final class DawnBindGroupLayout implements fge.webgpu.BindGroupLayout {
         final WGPUBindGroupLayout layout;
+        private boolean released;
 
         DawnBindGroupLayout(WGPUBindGroupLayout layout) { this.layout = layout; }
+
+        @Override public void release() {
+            if (released) return;
+            released = true;
+            layout.release();
+        }
     }
 
     static final class DawnBindGroup implements fge.webgpu.BindGroup {
         final WGPUBindGroup group;
+        private boolean released;
 
         DawnBindGroup(WGPUBindGroup group) { this.group = group; }
+
+        @Override public void release() {
+            if (released) return;
+            released = true;
+            group.release();
+        }
     }
 
     static final class DawnRenderPipeline implements fge.webgpu.RenderPipeline {
         final WGPURenderPipeline pipeline;
+        private boolean released;
 
         DawnRenderPipeline(WGPURenderPipeline pipeline) { this.pipeline = pipeline; }
+
+        @Override public void release() {
+            if (released) return;
+            released = true;
+            pipeline.release();
+        }
     }
 
     static final class DawnQuerySet implements fge.webgpu.QuerySet {
         final WGPUQuerySet querySet;
         final int count;
+        private boolean destroyed;
 
         DawnQuerySet(WGPUQuerySet querySet, int count) {
             this.querySet = querySet;
@@ -104,6 +169,8 @@ final class DawnObjects {
         @Override public int count() { return count; }
 
         @Override public void destroy() {
+            if (destroyed) return;
+            destroyed = true;
             querySet.destroy();
             querySet.release();
         }
@@ -163,6 +230,7 @@ final class DawnObjects {
         @Override public void end() {
             pass.end();
             pass.release();
+            blendConstant.dispose();
         }
     }
 
@@ -240,42 +308,37 @@ final class DawnObjects {
         @Override public TextureFormat preferredFormat() {
             WGPUSurfaceCapabilities caps = new WGPUSurfaceCapabilities();
             surface.getCapabilities(adapter, caps);
+            TextureFormat found = TextureFormat.BGRA8_UNORM;
             for (int i = 0; i < caps.getFormats().size(); i++) {
-                TextureFormat f = DawnWebGpu.fromTextureFormat(caps.getFormats().get(i));
-                if (f != null) return f;
+                TextureFormat f = DawnFormats.fromTextureFormat(caps.getFormats().get(i));
+                if (f != null) { found = f; break; }
             }
-            return TextureFormat.BGRA8_UNORM;
+            caps.dispose();
+            return found;
         }
 
         @Override public void configure(int width, int height, TextureFormat format, PresentMode presentMode, int textureUsage) {
             this.width = width;
             this.height = height;
             this.format = format;
-            config.setNextInChain(WGPUChainedStruct.NULL);
-            config.setWidth(width);
-            config.setHeight(height);
-            config.setFormat(DawnWebGpu.textureFormat(format));
-            config.setViewFormats(WGPUVectorTextureFormat.NULL);
-            config.setUsage(WGPUTextureUsage.CUSTOM.setValue(textureUsage));
-            config.setDevice(device);
-            config.setPresentMode(switch (presentMode) {
-                case FIFO -> WGPUPresentMode.Fifo;
-                case IMMEDIATE -> WGPUPresentMode.Immediate;
-                case MAILBOX -> WGPUPresentMode.Mailbox;
-            });
-            config.setAlphaMode(WGPUCompositeAlphaMode.Auto);
-            surface.configure(config);
+            synchronized (DawnFormats.SHARED) {
+                config.setNextInChain(WGPUChainedStruct.NULL);
+                config.setWidth(width);
+                config.setHeight(height);
+                config.setFormat(DawnFormats.textureFormat(format));
+                config.setViewFormats(WGPUVectorTextureFormat.NULL);
+                config.setUsage(DawnFormats.textureUsage(textureUsage));
+                config.setDevice(device);
+                config.setPresentMode(DawnFormats.presentMode(presentMode));
+                config.setAlphaMode(WGPUCompositeAlphaMode.Auto);
+                surface.configure(config);
+            }
         }
 
         @Override public fge.webgpu.Texture getCurrentTexture() {
+            dropCurrent();
             surface.getCurrentTexture(surfaceTexture);
-            WGPUSurfaceGetCurrentTextureStatus s = surfaceTexture.getStatus();
-            status = s == WGPUSurfaceGetCurrentTextureStatus.SuccessOptimal ? SurfaceStatus.SUCCESS_OPTIMAL
-                   : s == WGPUSurfaceGetCurrentTextureStatus.SuccessSuboptimal ? SurfaceStatus.SUCCESS_SUBOPTIMAL
-                   : s == WGPUSurfaceGetCurrentTextureStatus.Timeout ? SurfaceStatus.TIMEOUT
-                   : s == WGPUSurfaceGetCurrentTextureStatus.Outdated ? SurfaceStatus.OUTDATED
-                   : s == WGPUSurfaceGetCurrentTextureStatus.Lost ? SurfaceStatus.LOST
-                   : SurfaceStatus.ERROR;
+            status = DawnFormats.surfaceStatus(surfaceTexture.getStatus());
             WGPUTexture texture = new WGPUTexture();
             surfaceTexture.getTexture(texture);
             if (!texture.isValid()) return null;
@@ -283,17 +346,22 @@ final class DawnObjects {
             return current;
         }
 
-        @Override public SurfaceStatus lastStatus() { return status; }
-
-        @Override public void present() {
-            surface.present();
+        private void dropCurrent() {
             if (current != null) {
-                current.texture.release();
+                current.releaseSurfaceTexture();
                 current = null;
             }
         }
 
+        @Override public SurfaceStatus lastStatus() { return status; }
+
+        @Override public void present() {
+            surface.present();
+            dropCurrent();
+        }
+
         @Override public void release() {
+            dropCurrent();
             surface.unconfigure();
             surface.release();
         }
