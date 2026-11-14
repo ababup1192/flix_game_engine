@@ -1,87 +1,75 @@
-// 入口。実機の窓で毎コマ同じ部屋を描き、カメラを左右へゆっくり振る。300 コマごとに 1 コマの p50 / p95 と GPU の時間の p50
-// （FrameDiagnostics.gpuNs・1〜2 コマ遅れの値）を出し、4 区間で閉じる。
+// 入口。実機の窓で場面を毎コマ描き、区間ごとに 1 行の JSON（BenchRun）を出して閉じる。場面は 2 つ:
+//   部屋（既定）… 固定の部屋をカメラを左右へゆっくり振りながら描く
+//   物を並べた場面（SCENE=field）… Field のつまみ（Makefile の頭）で物の数・形・材質・動く割合・半透明・影を替える
 // 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Platform.Draw3d.drawScene3d）。
 use fge::LwjglLayer
 
 mod SceneBench {
-    use fge::Sort
-    use fge::{App, LwjglLayer, RenderUtil, Num, Vec2}
+    use fge::{App, LwjglLayer, Num, Render}
 
     import java.lang.System
-    import org.lwjgl.glfw.GLFW
 
-    pub type alias World = { t = Float64, segment = Int32, frameInSegment = Int32, samples = List[Float64], gpuSamples = List[Float64], done = Bool }
+    /// 描く場面。
+    pub enum Scene {
+        case Room(Room.Kit)
+        case Field(Field.Kit)
+    }
 
-    pub def initialWorld(): World = { t = 0.0, segment = 0, frameInSegment = 0, samples = Nil, gpuSamples = Nil, done = false }
+    pub type alias World = { t = Float64, progress = BenchRun.Run }
 
-    def segmentCount(): Int32 = 4
-
-    def framesPerSegment(): Int32 = 300
+    pub def initialWorld(): World = { t = 0.0, progress = BenchRun.start() }
 
     /// 起動直後は JIT とメッシュの初めての上げで dt が荒れるため、各区間の頭を捨てる。
     def warmup(): Int32 = 60
 
+    /// つまみの表の repeat = 同じ条件を続けて測る回数（揺れを見る）。
+    pub def planOf(knobs: Map[String, String]): BenchRun.Plan =
+        BenchRun.planOf({ warmup = warmup(), frames = 240, segments = BenchRun.intKnob("repeat", 4, knobs) }, knobs)
+
+    /// つまみの表の scene が field かどうか。
+    pub def isField(knobs: Map[String, String]): Bool = Map.get("scene", knobs) == Some("field")
+
     /// カメラの yaw（ラジアン）。正面（北）を中心に ±0.6 を 16 秒ほどで往復する。
     pub def yawAt(t: Float64): Float64 = 0.6 * Num.sin(t * 0.4)
 
-    /// エンジンには手を入れない決まりなので、垂直同期はゲーム側から GLFW を直接叩いて切る。
-    // WhyNot: 起動直後に 1 回だけ切らない — macOS では描くループの前に呼んでも 60fps に張り付いたままだった。
-    def vsyncOff(): Unit \ IO = GLFW.glfwSwapInterval(0)
-
-    pub def step(frame: App.Frame, w: World): World \ IO =
-        if (w#done) w
-        else {
-            if (w#frameInSegment < warmup()) vsyncOff() else ();
-            let measured = w#frameInSegment >= warmup();
-            let sampled = if (measured) frame#dt :: w#samples else w#samples;
-            let gpu = frame#diagnostics |> Option.flatMap(d -> d#gpuNs) |> Option.filter(ns -> ns > 0i64);
-            let gpuSampled = match gpu {
-                case Some(ns) if measured => Int64.toFloat64(ns) / 1.0e9 :: w#gpuSamples
-                case _                    => w#gpuSamples
-            };
-            let t = w#t + frame#dt;
-            if (w#frameInSegment + 1 >= framesPerSegment()) {
-                report(w#segment, sampled, gpuSampled);
-                let next = w#segment + 1;
-                { t = t, segment = next, frameInSegment = 0, samples = Nil, gpuSamples = Nil, done = next >= segmentCount() }
-            } else
-                { t = t, frameInSegment = w#frameInSegment + 1, samples = sampled, gpuSamples = gpuSampled | w }
+    def knobsOf(scene: Scene, segment: Int32): List[(String, String)] =
+        let head = ("bench", BenchRun.quoted("scene3d")) :: ("segment", Int32.toString(segment)) :: Nil;
+        match scene {
+            case Scene.Room(_)    => List.append(head, ("scene", BenchRun.quoted("room")) :: Nil)
+            case Scene.Field(kit) => List.append(head, ("scene", BenchRun.quoted("field")) :: Field.knobFields(kit#config))
         }
 
-    def report(segment: Int32, samples: List[Float64], gpuSamples: List[Float64]): Unit \ IO =
-        let sorted = Sort.sortStable(samples) |> List.toVector;
-        let count = Vector.length(sorted);
-        let gpuSorted = Sort.sortStable(gpuSamples) |> List.toVector;
-        let gpuCount = Vector.length(gpuSorted);
-        // WhyNot: GPU の時間が測れないコマを 0 として数えない — 隠し窓や timer query の無い GL では 0 か None が続き、中央値が嘘になる。
-        let gpuText = if (gpuCount == 0) "gpu=測れない"
-                      else "gpu p50=${fmt2(Vector.get(gpuCount / 2, gpuSorted) * 1000.0)}ms（${Int32.toString(gpuCount)} コマ）";
-        if (count == 0) println("[scene3d] 区間 ${Int32.toString(segment)}: 測れたコマが無い")
-        else {
-            let at = q -> Vector.get(Int32.min(count - 1, count * q / 100), sorted) * 1000.0;
-            println("[scene3d] 区間 ${Int32.toString(segment)}: p50=${fmt2(at(50))}ms p95=${fmt2(at(95))}ms（${Int32.toString(count)} コマ） ${gpuText}")
-        }
+    pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO =
+        if (w#progress#done) w
+        else { t = w#t + frame#dt, progress = BenchRun.advance(plan, emit, knobsOf(scene), BenchRun.sampleOf(frame, 0.0), w#progress) }
 
-    /// Float64 をそのまま補間すると桁が長すぎてログが読めないため、小数 2 桁で切る。
-    def fmt2(x: Float64): String =
-        let cents = RenderUtil.floatToInt32(x * 100.0);
-        let frac = Int32.modulo(cents, 100);
-        let fracText = if (frac < 10) "0${frac}" else "${frac}";
-        "${cents / 100}.${fracText}"
+    pub def items(scene: Scene, w: World): List[Render.PlacedItem] = match scene {
+        case Scene.Room(kit)  => Room.items(kit, yawAt(w#t))
+        case Scene.Field(kit) => Field.items(kit, w#t)
+    }
+
+    /// デスクトップとブラウザの入口が同じ App を組む。
+    pub def app(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene): App.App[World, IO] =
+        App.make(initialWorld())
+            |> App.addSystem(step(plan, emit, scene))
+            |> BenchRun.withDiagnostics(plan)
+            |> App.withView((_ctx, w) -> checked_ecast(items(scene, w)))
+
+    def loadScene(knobs: Map[String, String]): Result[String, Scene] \ Fs.FileRead =
+        if (isField(knobs)) Ok(Scene.Field(Field.kitOf(Field.configOf(knobs))))
+        else Room.loadMeshes() |> Result.map(meshes -> Scene.Room(Room.kitOf(meshes)))
 
     pub def go(): Unit \ IO =
+        let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
+                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: Nil);
         run {
-            match Room.loadMeshes() {
+            match loadScene(knobs) {
                 case Err(why) =>
                     println("[scene3d] 家具を読めない: ${why}");
                     System.exit(1)
-                case Ok(meshes) =>
-                    let kit = Room.kitOf(meshes);
-                    App.make(initialWorld())
-                        |> App.addSystem(step)
-                        |> App.withDiagnostics
-                        |> App.withView((_ctx, w) -> checked_ecast(Room.items(kit, yawAt(w#t))))
-                        |> App.quitWhen((_frame, w) -> checked_ecast(w#done))
+                case Ok(scene) =>
+                    app(planOf(knobs), BenchEnv.emit, scene)
+                        |> App.quitWhen((_frame, w) -> checked_ecast(w#progress#done))
                         |> App.launchForBench
             }
         } with LwjglLayer.withProject(".")

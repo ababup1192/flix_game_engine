@@ -117,11 +117,13 @@ help:
 	@echo "  make gl-parity            GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせ (不一致で exit 1)"
 	@echo "  make shader-cache-soak    シェーダープログラムのキャッシュが上限で頭打ちになるかを隠しウィンドウで確認 (増え続ければ exit 1)"
 	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
-	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く)"
+	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く・SCENE=field COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1 で物を並べた場面)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make crowd2d-cpu          2D の敵の群れの規則だけを回し、近くを探す処理を全部と比べる形と SpatialGrid で比べる (窓は開かない)"
-	@echo "  make crowd2d-bench        同じ群れを実機の窓で描き、1 コマ・規則・描く時間の p50 / p95 を出す (窓が開く・COUNTS=6000,10000 で数を替える)"
+	@echo "  make crowd2d-bench        同じ群れを実機の窓で描き、1 コマ・規則・描く時間の p50 / p95 を出す (窓が開く・COUNTS=6000,20000 SEARCH=grid FRAMES=300 で数・探し方・コマ数を替える)"
+	@echo "  make sprite-stress-bench  2D のスプライトを数だけ実機の窓で描き、1 コマの avg / p50 / p95 / p99 を出す (窓が開く・COUNTS=1000,5000,20000 TEX=16 BLEND=alt で数・絵の種類・blend の混在を替える)"
+	@echo "  make bench-web BENCH=<名前> ARGS='n=20000&tex=16'  ベンチ (sprite_stress / crowd2d / scene3d) をブラウザ版へ書き出し、ヘッドレスの Chrome で測って JSON を出す (OUT=<file> で保存)"
 	@echo "  make gen-light3d          光の式の木 (LightModel3d) から CPU の光の関数 engine_tools/src/gen/SoftRaster3dLight.flix と確かめ用の test/gen/SoftRaster3dLightCases.flix を作り直す"
 	@echo "  make gl-capture OUT=<dir> テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える"
 	@echo "  make smoke-devtools [SMOKE_TEMPLATE=<テンプレ>]  隠しウィンドウの DEBUG 起動で、名簿・命令口（/help・/halt・/step・/resume・/perf）・flow の記録・閉じた後の名簿を確かめる"
@@ -380,6 +382,41 @@ crowd2d-cpu:
 
 crowd2d-bench:
 	@$(MAKE) -C bench/crowd2d run
+
+# 2D のスプライトの数・絵の種類・blend の混在 (bench/sprite_stress)。つまみは bench/sprite_stress/Makefile の頭。
+.PHONY: sprite-stress-bench
+sprite-stress-bench:
+	@$(MAKE) -C bench/sprite_stress run
+
+# 3 つのベンチが共通に使う BenchRun.flix・BenchEnv.flix (bench/common) を各ベンチの src へ写す。直すのは bench/common の物。
+.PHONY: bench-common
+bench-common:
+	@for b in sprite_stress crowd2d scene3d; do cp bench/common/BenchRun.flix bench/common/BenchEnv.flix bench/$$b/src/; done
+	@echo "[bench-common] bench/common の 2 本を 3 つのベンチの src へ写した"
+
+# ベンチのブラウザ版。bench-web-export は bench/<BENCH> を build/bench-web/<BENCH> へ書き出し、結果を頁の上と window.__bench に出す
+# script (bench/common/bench-overlay.js) を index.html に差し込む。bench-web は書き出してからヘッドレスの Chrome で開き、測り終えた結果を JSON で出す。
+# つまみは URL の query (ARGS)。スマホでは build/bench-web/<BENCH> を静的なサーバーで配り、index.html?<ARGS> を開く。
+# 先に make sync-engine-full-web (engine を直したら流し直す)。書き出しに数分かかるので、つまみだけ替える時は BENCH_WEB_EXPORT=off。
+# WhyNot: script を engine_web の index.html に入れない — ゲームの頁にベンチの表示が入る。
+BENCH_WEB_DIR     = build/bench-web/$(BENCH)
+BENCH_WEB_SIZE_sprite_stress := 960x720
+BENCH_WEB_SIZE_crowd2d       := 1280x720
+BENCH_WEB_SIZE_scene3d       := 960x540
+BENCH_WEB_SIZE   ?= $(or $(BENCH_WEB_SIZE_$(BENCH)),960x540)
+BENCH_WEB_WAIT   ?= 600
+.PHONY: bench-web-export bench-web
+bench-web-export:
+	@if [ ! -d "bench/$(BENCH)/web" ]; then echo "usage: make bench-web-export BENCH=<sprite_stress|crowd2d|scene3d>"; exit 2; fi
+	@bin/fge export-web bench/$(BENCH) --out $(BENCH_WEB_DIR)
+	@cp bench/common/bench-overlay.js $(BENCH_WEB_DIR)/bench-overlay.js
+	@perl -0pi -e 's|</body>|<script src="bench-overlay.js"></script>\n</body>|' $(BENCH_WEB_DIR)/index.html
+	@grep -q 'bench-overlay.js' $(BENCH_WEB_DIR)/index.html || { echo "[bench-web-export] index.html に </body> が無く、script を差し込めない"; exit 1; }
+	@echo "[bench-web-export] $(BENCH_WEB_DIR)（静的なサーバーで配って index.html?<つまみ> を開く）"
+
+bench-web:
+	@if [ "$(BENCH_WEB_EXPORT)" != off ]; then $(MAKE) --no-print-directory bench-web-export BENCH=$(BENCH); fi
+	@bin/fge web-bench $(BENCH_WEB_DIR) --query '$(ARGS)' --size $(BENCH_WEB_SIZE) --wait $(BENCH_WEB_WAIT) $(if $(OUT),--out $(OUT)) $(if $(JSONL),--jsonl $(JSONL))
 
 # 光の式の木 (engine の LightModel3d) から CPU の描き手が回す関数 (engine_tools/src/gen/SoftRaster3dLight.flix) を作り直す。
 # 木を直したらこれを流す。入っている物と木が食い違うと engine_tools の TestSoftRaster3dLight が落ちる。

@@ -402,7 +402,7 @@ N が定数なので実害は無いと判断している。**N を決めるの�
 - `polyVertCap` / `List.length(sprites)` — GL のバッファを確保する前の見積もりで、
   描画の実行より前に確定させる必要がある
 - `emitMerged` — 描画の実行そのもの。順序に依存する
-- `App.resolvedCamera` の `safeZoom` — 1 フレームに 1 回しか走らない。N に依存しない
+- `App.Internal.Paint.resolvedCamera` の `safeZoom` — 1 フレームに 1 回しか走らない。N に依存しない
 - ~~`ShaderEval.envOf`~~ の画素ごとの `Map` — 測って打ち切り済み（`docs/backlog.md`）
 
 ---
@@ -500,6 +500,25 @@ World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品
 結果が出た query だけを GPU を待たずに読むので 1〜2 コマ遅れの値・query を作れない GL と測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
 `FLIX_GE_FRAME_STATS=1` の println は窓ごとの平均を標準出力へ書くだけで GPU を含まない。こちらはゲームの画面に出せて、GPU を含む。
 自前で `System.nanoTime` を測って出さない（GPU の仕事は CPU の時計では swap の待ちに混ざって見えない）。
+
+### 描き手を直す前後で比べるベンチ（bench/）
+
+描き手・描く物の列の作り方を直す時は、直す前と後で同じベンチを背中合わせに回して比べる。3 つとも区間ごとに 1 行の JSON（`[bench] result {…}`）を出す
+（1 コマの avg / p50 / p95 / p99・GL へ送る時間・GPU・3D は draw call と `cpuPhases`。形は `bench/common/BenchRun.flix`）。
+
+| 口 | 測る物 | つまみ |
+|---|---|---|
+| `make sprite-stress-bench` | 2D のスプライトの数・絵の種類・blend の混在 | `COUNTS=1000,5000,20000 TEX=1/16/256 BLEND=alt` |
+| `make crowd2d-bench` | 2D の群れ（規則 + 描く） | `COUNTS=6000,10000,20000 SEARCH=grid` |
+| `make scene3d-bench` | 3D の部屋。`SCENE=field` で物を並べた場面 | `COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1` |
+| `make bench-web BENCH=<名前> ARGS='n=20000&tex=16'` | 同じ 3 つのブラウザ版（ヘッドレスの Chrome・WebGL2） | URL の query（鍵は小文字。`n`・`tex`・`blend`・`search`・`scene`・`shapes`・`mats`・`moving`・`alpha`・`shadow`） |
+
+- 共通のつまみ: `FRAMES`（1 区間で測るコマ数）・`DIAG=0`（診断を付けない。GPU の時間の query の重さを見る時）。ブラウザは `frames`・`diag`。
+- ブラウザ版は `make sync-engine-full-web` の後。頁は結果を上に字で出し、`window.__bench` に JSON で置く。スマホでは `build/bench-web/<名前>` を
+  静的なサーバーで配って `index.html?<つまみ>` を開く。ブラウザは rAF に合わせて待つので、比べるのは `cpu_p50`（wasm が 1 コマに使った時間）。
+- 決まった組を通しで回すのは `bench/baseline.sh <出力> [pc|web|all]`（同じ組を 2 回。1 本ごとにプロセスを分けて間を空ける）。
+  基準の生の数字は `bench/baseline/<版>/pc.jsonl`・`web.jsonl`、表は `bench/<名前>/RESULTS.md`。
+- 熱で 4 割遅く出ることがある。重い区間の直後に軽い区間を測らない・同じ条件の 2 回の差を揺れとして読む（`bench/sprite_stress/RESULTS.md`）。
 
 ### 規則と描くのを重ねる（App.withPipelinedRendering）
 
