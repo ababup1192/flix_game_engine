@@ -553,6 +553,7 @@ P4b で片づけた物: 6（`TestWebGpuOffscreen` を `\ {Assert, IO}` で書き
 9. `make two` の `-Dorg.lwjgl.system.SharedLibraryExtractDirectory=$(CURDIR)/build/lwjgl` が相対扱いになり、`bench/webgpu_check/Users/…` に空の木ができる
 10. `bin/fge export-web` は java を PATH から探すので、devbox の無い worktree では `/usr/bin/java` のスタブを掴んで止まる（bin/flix のように engine の `.devbox` の java へ落とさない）
 11. `bin/fge refactor` の索引に `engine_web`・`bench`・`render_gl/test` が入っておらず、search・usages が実在の呼び手を落とす
+12. `lastError` の文の形が実装で違う（Dawn は `Validation: …`、ブラウザは `GPUValidationError: …`）。今は字で比べる所が無い。P6 で突き合わせる時に揃える
 
 ## 版ごとに直した事
 
