@@ -579,3 +579,13 @@ dual-source blending・mask は ref を進める形・GL との比べの門・�
 - merge の後の main で、rpg-starter の書き出しが 43 秒で通り ⑨ も緑。wasm は 8,256,469 バイト（0.14.1 から約 +4.5%）。頁を開いて題名の画面まで動くのを目で見た。
 - 古い版のブラウザでは確かめていない（判断 12）。
 - Maven Central が 429 を返した時は、`build/engine_full_web/lib/cache` に TeaVM の一式を手で置けば `make sync-engine-full-web` が通る（P4a の jWebGPU と同じ）。
+
+### 12.11 JDK 25 の段（2026-11-15・この Mac だけ）
+
+- main は devbox の jdk@25（mac は Zulu 25.0.3・Linux は OpenJDK 25.0.5）。配る物の JRE は Temurin 25.0.5+8。GL の層の jar は `--release 17` のままで、ハッシュは変わらない。
+- `--enable-native-access=ALL-UNNAMED` は窓を開く経路に無条件。`--sun-misc-unsafe-memory-access=allow` は bin/flix と headless-run が java の major ≥ 24 を見た時だけ足す（Studio が同梱する JRE 21 でも起動が落ちない）。Windows の make は native access の旗だけ。
+- compact object headers は入れない。
+- devbox.lock に x86_64-darwin の行は無い（nixpkgs のその rev が外している。go・ffmpeg も同じ）。
+- main で確かめた物: テスト 4 層（engine 960・render_gl 305・engine_world 1473・engine_tools 305）とテンプレート 3 本の reference-check が緑。gl-parity の castShadow「差 565 px」は JDK 21 の main でも同じ（B 段階の既知の差）。
+- GC（bench/scene3d の field 12,000 個・-Xlog:gc・2 回ずつ交互）: JDK 21 は停止 55 回 491 ms・96 回 674 ms、JDK 25 は 68 回 550 ms・62 回 547 ms。frame p50 は 21 が 16.3〜16.8 ms、25 が 15.7〜16.6 ms。どちらも揺れの中で、前の試しで見えた「25 の方が GC が多い」は出なかった。
+- 残り: Studio が同梱する JRE を 25 へ上げる（別リポ）。配る物を実際に組んで起動する確かめ・Linux の CI で jdk@25 が入るかは【未確認】。
