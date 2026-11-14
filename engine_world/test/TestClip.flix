@@ -113,6 +113,18 @@ mod TestClip {
                         5 :: Nil),
             drawnTuple(Render.draw(mixedItems())))
 
+    /// draw が Sprite と Box から作る Drawable は、1 個ずつ Render.toDrawables で作った物と全部の欄が同じ
+    /// （薄めて Multiply にしたスプライトと、箱）。
+    @Test
+    def testDrawMatchesToDrawablesPerItem(): Unit \ Assert =
+        let sprite = Render.sprite("flag", 7) |> Render.blended(DrawCmd.BlendMode.Multiply) |> Render.fade(0.5);
+        let box = RawDraw.box({ x = 10.0, y = 20.0 }, { r = 1.0, g = 0.5, b = 0.0 }, 3);
+        let (ds, _) = Render.draw({ at = { x = 1.0, y = 2.0 }, item = sprite } :: { at = { x = 3.0, y = 4.0 }, item = box } :: Nil);
+        Assert.assertEq(
+            expected = List.append(Render.toDrawables(sprite, { x = 1.0, y = 2.0 }), Render.toDrawables(box, { x = 3.0, y = 4.0 }))
+                           |> List.map(d -> "${d}"),
+            ds |> List.map(d -> "${d}"))
+
     /// region を使わない列では、drawWith は draw と同じ 2 列を返す。
     @Test
     def testDrawWithMatchesDrawWithoutRegions(): Unit \ Assert =

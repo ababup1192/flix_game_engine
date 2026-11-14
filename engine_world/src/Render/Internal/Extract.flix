@@ -14,8 +14,25 @@ pub mod Render.Internal.Extract {
         region rc {
             let ds: MutList[GameEngine.Drawable, rc] = MutList.empty(rc);
             let ps: MutList[GameEngine.PolygonRenderCmd, rc] = MutList.empty(rc);
-            List.forEach(placed -> pushPlaced(toDs, ds, ps, placed), items);
+            List.forEach(placed -> if (pushPlain(ds, placed)) () else pushPlaced(toDs, ds, ps, placed), items);
             (MutList.toList(ds), MutList.toList(ps))
+        }
+
+    /// placed が clip も region も無い Sprite か Box なら、その Drawable を ds の末尾へ積んで true。ほかは積まずに false。
+    /// 積む値は draw の toDs（Render.toDrawables）とも drawWith の toDs（toDrawablesAtlas）とも同じ。
+    // WhyNot: 全部を pushPlaced に任せない — toDs は effect を持つので、呼ぶたびに続きを運ぶ入れ物を作る。数の多い 2 種類だけ、
+    //   effect の無い道で先に済ませる（ブラウザ版はこの入れ物の割り当てがそのまま 1 コマの時間に出る）。
+    @DontInline
+    def pushPlain(ds: MutList[GameEngine.Drawable, rc], placed: Render.PlacedItem): Bool \ rc =
+        match placed#item {
+            case Render.Item.Sprite(s) if Option.isEmpty(s#regionRect) =>
+                MutList.push(spriteDrawable(s#texture, s#tint, s#alpha, s#scale, s#rotation, s#centered, s#flipH, s#flipV,
+                                            None, s#zIndex, s#blend, s#maskPolys, placed#at), ds);
+                true
+            case Render.Item.Box(b) =>
+                MutList.push(boxDrawable(b#size, b#color, b#alpha, b#rotation, b#style, b#zIndex, b#blend, placed#at), ds);
+                true
+            case _ => false
         }
 
     /// placed 1 個ぶんの描画命令を、2 列の末尾へ積む。
