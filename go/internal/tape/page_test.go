@@ -146,7 +146,8 @@ func load(t *testing.T, p *cdp.Page, url string) {
 	if err := p.Navigate(url); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.WaitFor(`document.readyState === "complete" && typeof video !== "undefined" && video.readyState >= 1`, 30*time.Second); err != nil {
+	// WhyNot: 起動画面が消える前に撮らない — 動画を渡してから .2 秒で消えるので、モックに無い黒い面が絵に混ざる。
+	if err := p.WaitFor(`document.readyState === "complete" && typeof video !== "undefined" && video.readyState >= 1 && !document.getElementById("splash")`, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.Eval(`document.fonts.ready.then(() => true)`, nil); err != nil {

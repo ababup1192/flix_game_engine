@@ -70,3 +70,12 @@ def logoHex(): List[String] = "0" :: Nil`
 		t.Error("bitsHex の桁が一辺に足りなければ誤りのはず")
 	}
 }
+
+// テープの頁に渡す起動画面の材料は、ゲームのブラウザ版の bundle.json と同じ字のアトラスを持つ。
+func TestTapeSplashCarriesSameFontAsWebSplash(t *testing.T) {
+	web, _ := buildWebSplash("..", "", nil)
+	got, warning := tapeSplash("..")
+	if warning != "" || got.Font == "" || got.Font != web.Font {
+		t.Errorf("テープの頁の字のアトラスがゲームのブラウザ版と違う（知らせ %q・%d 字）", warning, len(got.Font))
+	}
+}

@@ -113,8 +113,9 @@ func (t *Tape) questionOf(ch Choice) string {
 
 // BuildGroup は複数のテープのフォルダを、互いの分岐をつないだ頁にする（各フォルダの index.html の道を返す）。
 // 同じ game・同じ .yarn のテープだけを束ねる。フォルダ名は隣の頁への道になるので重ねない。
-// 分岐が 1 つもできなかった時は warn に 1 行言う（頁は作る）。
-func BuildGroup(dirs []string, commit, ffmpeg string, warn io.Writer) ([]string, error) {
+// 分岐が 1 つもできなかった時は warn に 1 行言う（頁は作る）。opt.Group がフォルダ、Commit・FFmpeg・Splash は全部の頁に同じ物を使う。
+func BuildGroup(opt Options, warn io.Writer) ([]string, error) {
+	dirs := opt.Group
 	if len(dirs) < 2 {
 		return nil, fmt.Errorf("--group には 2 つ以上のフォルダが要る（1 つなら --dir）")
 	}
@@ -146,7 +147,7 @@ func BuildGroup(dirs []string, commit, ffmpeg string, warn io.Writer) ([]string,
 	out := make([]string, len(dirs))
 	for i, d := range dirs {
 		b := branches[i]
-		index, err := build(Options{Dir: d, Commit: commit, FFmpeg: ffmpeg, Branches: &b}, tapes[i])
+		index, err := build(Options{Dir: d, Commit: opt.Commit, FFmpeg: opt.FFmpeg, Splash: opt.Splash, Branches: &b}, tapes[i])
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", d, err)
 		}

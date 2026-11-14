@@ -145,7 +145,7 @@ func TestRouteTargetsReadsTheBranchesOfThePage(t *testing.T) {
 	tp := parsed(t, forkTape(t, 0))
 	b, _ := json.Marshal([]Branch{{Routes: []Route{{Here: true}, {Href: "../dark%20night/index.html#t=3.2"}, {Note: "まだ撮っていない"}}}})
 	tp.raw["branches"] = b
-	page, err := Render(tp, "abc1234", sampleStrip)
+	page, err := Render(tp, "abc1234", sampleStrip, Splash{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestBuildGroupWarnsWhenNoBranchIsMade(t *testing.T) {
 	// 分岐が 1 つもできなければ 1 行言う（頁は作る）。
 	dirs := writeForkDirs(t, t.TempDir(), []string{"a", "b"}, [][]byte{forkTape(t, 0), forkTape(t, 0)})
 	var warn bytes.Buffer
-	if _, err := BuildGroup(dirs, "abc1234", "", &warn); err != nil {
+	if _, err := BuildGroup(Options{Group: dirs, Commit: "abc1234"}, &warn); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Count(warn.String(), "\n") != 1 || !strings.Contains(warn.String(), "分岐が 1 つもできなかった") {
@@ -224,7 +224,7 @@ func TestBuildGroupStopsOnDifferentGame(t *testing.T) {
 	// game の違うテープは束ねない。
 	other := forkTapeWith(t, func(m map[string]any) { m["game"] = "another" })
 	dirs := writeForkDirs(t, t.TempDir(), []string{"a", "b"}, [][]byte{forkTape(t, 0), other})
-	if _, err := BuildGroup(dirs, "abc1234", "", nil); err == nil || !strings.Contains(err.Error(), "another") {
+	if _, err := BuildGroup(Options{Group: dirs, Commit: "abc1234"}, nil); err == nil || !strings.Contains(err.Error(), "another") {
 		t.Fatalf("game の違うテープを束ねた: %v", err)
 	}
 }
@@ -233,7 +233,7 @@ func TestBuildGroupStopsOnDifferentYarn(t *testing.T) {
 	// .yarn の違うテープは束ねない。
 	other := forkTapeWith(t, func(m map[string]any) { m["yarn"] = "assets/talk/day.yarn" })
 	dirs := writeForkDirs(t, t.TempDir(), []string{"a", "b"}, [][]byte{forkTape(t, 0), other})
-	if _, err := BuildGroup(dirs, "abc1234", "", nil); err == nil || !strings.Contains(err.Error(), "day.yarn") {
+	if _, err := BuildGroup(Options{Group: dirs, Commit: "abc1234"}, nil); err == nil || !strings.Contains(err.Error(), "day.yarn") {
 		t.Fatalf(".yarn の違うテープを束ねた: %v", err)
 	}
 }
@@ -250,7 +250,7 @@ func TestBuildGroupStopsOnSameFolderName(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := BuildGroup([]string{a, b}, "abc1234", "", nil); err == nil || !strings.Contains(err.Error(), "intro") {
+	if _, err := BuildGroup(Options{Group: []string{a, b}, Commit: "abc1234"}, nil); err == nil || !strings.Contains(err.Error(), "intro") {
 		t.Fatalf("同じフォルダ名を通した: %v", err)
 	}
 }
@@ -260,7 +260,7 @@ func forkSite(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	dirs := writeForkDirs(t, root, []string{"light", "dark"}, [][]byte{forkTape(t, 0), forkTape(t, 1)})
-	if _, err := BuildGroup(dirs, "abc1234", "", nil); err != nil {
+	if _, err := BuildGroup(Options{Group: dirs, Commit: "abc1234"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(http.FileServer(http.Dir(root)))
