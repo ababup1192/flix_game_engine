@@ -87,9 +87,9 @@ JDK は engine の devbox の Zulu 21.0.8。走らせる段の前に毎回 `guar
 
 生の記録は `logs/`。絵は `shots/`（git には入れない。上の口で作り直せる）。
 
-## 1. 窓に絵が本当に出るか — 半分通った
+## 1. ウィンドウに絵が本当に出るか — 半分通った
 
-**通った所【確】**: LWJGL 3.4.1 の GLFW（`GLFW_NO_API`）の窓に Dawn で三角形を描き、**present の直前に surface の texture を `copyTextureToBuffer` で読み戻して**、
+**通った所【確】**: LWJGL 3.4.1 の GLFW（`GLFW_NO_API`）のウィンドウに Dawn で三角形を描き、**present の直前に surface の texture を `copyTextureToBuffer` で読み戻して**、
 中・外・上下を見る 4 点が期待の値と 1/255 以内で一致した（`logs/wincheck_*.log`）。
 
 | 設定 | 三角形の中 (0.3w,0.7h)・(0.5w,0.6h) | 外 (0.3w,0.3h)・隅 | 期待 |
@@ -108,34 +108,34 @@ JDK は engine の devbox の Zulu 21.0.8。走らせる段の前に毎回 `guar
   そのうち「描き先の取得〜encode〜submit」が 7.8〜8.7 ms、`present()` 自体は 0.013〜0.03 ms。Immediate・Mailbox でも同じ 8 ms 前後。
   window server が約 8 ms ごとに drawable を受け取って返している、という間接の証拠にはなる【推】。
   前の試作で 120 コマが 25 ms で回ったのとは違う（前と何が違ったかは【不明】）。
-- 窓を広げた直後、configure し直す前の getCurrentTexture は **SuccessOptimal のまま**（Suboptimal も Outdated も返らない）。
+- ウィンドウを広げた直後、configure し直す前の getCurrentTexture は **SuccessOptimal のまま**（Suboptimal も Outdated も返らない）。
   **大きさが変わった事は Dawn からは来ない。GLFW の framebuffer size の callback で configure し直す形が要る**【確】。
 
 **通らなかった所【未確認】: 画面に出た絵を外から撮る事。**
 - `screencapture -l <windowNumber>` は「could not create image from window」、ScreenCaptureKit（`tools/wincap.swift`）は SCStreamError -3811 で、どちらも撮れなかった。
 - 原因は**画面のロック**: `ioreg` の `CGSSessionScreenIsLocked=Yes`（22:30:29 にロック）・`system_profiler` で 2 枚の表示とも `Display Asleep: Yes`。
   画面の収録の権限は有る（`CGPreflightScreenCaptureAccess()=true`）。全画面の `screencapture` も真っ黒だった。
-- window server の側では窓は `kCGWindowIsOnscreen=1`・alpha 1（撮れないが、出ている扱い）。
+- window server の側ではウィンドウは `kCGWindowIsOnscreen=1`・alpha 1（撮れないが、出ている扱い）。
 - 前の試作の「撮った絵が黒」も同じ原因の見込みが高い【推】（前の試作の時刻にロックされていたかは【不明】）。
 - **次に試す事**: 画面のロックが外れている時に `WinCheck` を回すだけ。`screencapture` と ScreenCaptureKit の 2 通りで撮り、中身の帯の中の三角形の割合（期待 1/8）と
   中と外の 1 点ずつを確かめる処理は書いてある。人の操作は要らないが、ロックが外れている時間に走らせる必要がある。
-- Retina の 2 倍【未確認】: この起動ではどの窓も `backingScaleFactor=1.0`（表示が眠っている間の値か、外付けの表示が 1 倍なのかは【不明】）。
+- Retina の 2 倍【未確認】: この起動ではどのウィンドウも `backingScaleFactor=1.0`（表示が眠っている間の値か、外付けの表示が 1 倍なのかは【不明】）。
   `GLFW_COCOA_RETINA_FRAMEBUFFER` の有無で framebuffer の大きさは変わらなかった。configure は framebuffer の大きさで渡すので、2 倍でも同じ道で動く見込み【推】。
 
-## 2. engine と同じ窓の作り方で載るか — 通った【確】
+## 2. engine と同じウィンドウの作り方で載るか — 通った【確】
 
-- engine は render_gl の `LwjglLayer.withLwjgl` で LWJGL 3.4.1 の GLFW の窓を作り、macOS では `ensureMainThread` が `-XstartOnFirstThread` を付けて起動し直す。
-  試作も同じ版・同じ起動で、`JAVA_STARTED_ON_FIRST_THREAD_<pid>=1`・main thread で窓と surface を作った。
+- engine は render_gl の `LwjglLayer.withLwjgl` で LWJGL 3.4.1 の GLFW のウィンドウを作り、macOS では `ensureMainThread` が `-XstartOnFirstThread` を付けて起動し直す。
+  試作も同じ版・同じ起動で、`JAVA_STARTED_ON_FIRST_THREAD_<pid>=1`・main thread でウィンドウと surface を作った。
   WebGPU の時に変わるのは hint だけ（`GLFW_CLIENT_API=GLFW_NO_API`。GL の版・stencil・depth の hint が要らない）。
 - `glfwGetCocoaWindow` の NSWindow をそのまま `createMacSurface` に渡せば、Dawn が CAMetalLayer を付ける（自前の Objective-C は要らない）。
 - **ネイティブはぶつからない**: 同じ JVM で開いた dylib は LWJGL の `$TMPDIR/lwjgl_abab/3.4.1+2/arm64/{liblwjgl,libglfw}.dylib` と、
   jWebGPU の `libjWebGPUarm64.dylib`・`libruntimearm64.dylib` で、名前も置き場も別（`-Dlsof=true` の出力）。
   Dawn の dylib は Dawn を中に抱え、外へは Cocoa・Metal・QuartzCore・IOSurface・IOKit・libc++ だけを引く（`otool -L`）。GLFW とは共有しない。
 - engine と同じく `-Djava.awt.headless=true` を付けても動いた。
-- 隠した窓（engine の隠しウィンドウの形・`GLFW_VISIBLE=false`・Retina 切り）でも surface に描け、読み戻しが合った（GPU の error 0）。
-  ただし**隠した窓でも 1 コマ約 8 ms で待たされる**。今の GL の隠しウィンドウ（vsync 切り）の代わりに surface を使うと harness が遅くなるので、
+- 隠したウィンドウ（engine の隠しウィンドウの形・`GLFW_VISIBLE=false`・Retina 切り）でも surface に描け、読み戻しが合った（GPU の error 0）。
+  ただし**隠したウィンドウでも 1 コマ約 8 ms で待たされる**。今の GL の隠しウィンドウ（vsync 切り）の代わりに surface を使うと harness が遅くなるので、
   画面なしの session（texture へ描く）を使うのが良い【推・設計の 5.3 と同じ】。
-- device と surface を main 以外のスレッド（`-DsurfaceThread=worker`）で作っても落ちず、描画と読み戻しも合った。窓の物は main で扱う決まりなので、engine は今どおり main で作る。
+- device と surface を main 以外のスレッド（`-DsurfaceThread=worker`）で作っても落ちず、描画と読み戻しも合った。ウィンドウの物は main で扱う決まりなので、engine は今どおり main で作る。
 
 ## 3. `firstInstance` で 1 本ずつ draw を積む形の速さ — 通った【確】
 
@@ -216,39 +216,39 @@ instance を作る → requestAdapter（callback を upcall で受ける・struc
 | 要る JDK | 21（今のまま） | 22 以上（devbox と配る JRE を上げる。Flix 0.78 が 22 以上で動くかは未確認） |
 | 配る物（macOS arm64） | jar 2.58 MB（展開後 9.4 MB）+ Java 側 0.5 MB | wgpu-native: dylib 6.9 MB（zip 13.7 MB）／Dawn: 自分で作る dylib 11 MB。どちらも jar に入れて自分で展開する（置き場は自分で決められる） |
 | 保守 | 1 人の保守（最後の commit 2026-09-20）。enum が古い・u64 の getter が切れる・ネイティブの置き場の癖。上流の Dawn の版を選べない | 上流（Dawn は毎日・wgpu-native は数か月ごと）をそのまま使う。webgpu.h が変わるたびに手の struct（か jextract の生成物）を直す |
-| 窓のつなぎ方 | `createMacSurface(NSWindow)` が CAMetalLayer まで作る（確かめた） | `WGPUSurfaceSourceMetalLayer` に CAMetalLayer を渡す。layer は自分で作って NSView に付ける（LWJGL の `ObjCRuntime` と `JNI.invokePPP` で書ける。`src/Mac.java` に下書きあり） |
+| ウィンドウのつなぎ方 | `createMacSurface(NSWindow)` が CAMetalLayer まで作る（確かめた） | `WGPUSurfaceSourceMetalLayer` に CAMetalLayer を渡す。layer は自分で作って NSView に付ける（LWJGL の `ObjCRuntime` と `JNI.invokePPP` で書ける。`src/Mac.java` に下書きあり） |
 | 手間 | 包む型だけ（このフォルダの `Wg` で約 200 行） | 使う struct と関数の宣言（手なら数百行・jextract なら生成）+ 包む型 + OS ごとのネイティブを配る段取り |
 | 速さ | JNI 1 回約 3.7 ns。20,000 本の draw で 1.6〜2.5 ms（大半は Dawn の中） | 【未確認】。FFM の 1 回の代金は JNI と同じ桁の見込み【推】。Dawn の中の代金は同じ |
 | 壊れた所の逃げ道 | 壊れた getter は native の中身を直に読んで避けられた。直せない所が出たら fork か Panama | 自分で直せる |
 
-見立て【推】: **P4a は jWebGPU のまま進めて良い**（JDK を上げずに、窓・読み戻し・Flix からの持ち方・`firstInstance` の速さが全部通り、癖は全部手当てが見つかった）。
+見立て【推】: **P4a は jWebGPU のまま進めて良い**（JDK を上げずに、ウィンドウ・読み戻し・Flix からの持ち方・`firstInstance` の速さが全部通り、癖は全部手当てが見つかった）。
 `WebGpu` の interface の裏に隠すので、jWebGPU が止まった時・Dawn の新しい機能が要る時に Panama の実装へ替える。その時の候補は、
-dylib をそのまま配れる wgpu-native（ただし前の試作で jWebGPU 同梱の wgpu は窓で落ちた。公式の v29 で窓が通るかは【未確認】）か、
+dylib をそのまま配れる wgpu-native（ただし前の試作で jWebGPU 同梱の wgpu はウィンドウで落ちた。公式の v29 でウィンドウが通るかは【未確認】）か、
 上流に近い Dawn（dylib を自分で組む段取りが増える）。
 
 ## 設計（P4a・10 章）への反映
 
 **「確かめた」に変わった物**
-- P4a「Dawn の実装で三角形・読み戻し・ウィンドウ」: 窓の surface へ描いた絵を present の前に読み戻して一致（画面の上の絵は下の【未確認】）。
+- P4a「Dawn の実装で三角形・読み戻し・ウィンドウ」: ウィンドウの surface へ描いた絵を present の前に読み戻して一致（画面の上の絵は下の【未確認】）。
 - P4a「limit を Dawn から正しく読める事」: 読める（u64 の 3 つは native の中身から直に。requiredLimits に adapter の値を渡す）。
 - P4a「2 プロセス同時に起動して落ちない事」: 同じ backend・同じ版なら落ちない。違う物が同じ場所に書くと落ちる → ネイティブの置き場を版ごとに分けると落ちない。
 - P4a「`firstInstance` の試作」: 20,000 本で 1.6〜2.5 ms（合格線 3 ms 以下・dynamic offset の 3.4〜3.9 ms より速い）。
 - 5.2「物を Flix の record や Map に入れて運べる事」: 運べる（PC の側）。
 - 5.2「`core-features-and-limits` を求め、`timestamp-query` をあれば使う」: どちらも要れられる（前者は数で）。
 - 10 章の jWebGPU の癖 4 つ: 原因と手当てが分かった（上の 5 の表）。「依存に出ない jar」は Flix の Maven の解決では起きない。
-- 10 章「PC のウィンドウに絵が出ない」のうち、LWJGL の GLFW の窓との相性・main thread の決まり・ネイティブのぶつかり: 問題なし。
+- 10 章「PC のウィンドウに絵が出ない」のうち、LWJGL の GLFW のウィンドウとの相性・main thread の決まり・ネイティブのぶつかり: 問題なし。
 
 **「危ない」と分かった・設計に足す物**
 - present の待ちが getCurrentTexture に来る（`glfwSwapBuffers` の位置ではない）。1 コマの時間の測り方と、`finishAfterSwap` の置き換え（5.3 の表）に響く。
-- 隠した窓でも約 8 ms ごとに待たされる。headless の harness は surface を使わず、画面なしの session（texture へ描く）にする。
-- 窓の大きさが変わっても Dawn は SuccessOptimal を返し続ける。GLFW の callback で configure し直す（5.3 の「作り直す（リサイズ）」の行の実装の決まり）。
+- 隠したウィンドウでも約 8 ms ごとに待たされる。headless の harness は surface を使わず、画面なしの session（texture へ描く）にする。
+- ウィンドウの大きさが変わっても Dawn は SuccessOptimal を返し続ける。GLFW の callback で configure し直す（5.3 の「作り直す（リサイズ）」の行の実装の決まり）。
 - timestamp-query は約 65.5 µs 刻み。GPU の時間の診断の細かさに限りがある。
 - jWebGPU の版を上げる時は、ネイティブの置き場の名前に版を入れないと、古い版のゲームが動いている間に新しい版が起動すると落ちる。
 
 **まだ【未確認】**
 - 画面に出た絵を外から撮って確かめる事（画面のロックで撮れなかった。ロックが外れている時に `WinCheck` を回せば機械で決まる）。
 - Retina の 2 倍の時の大きさ（この起動では倍率 1）。
-- 人が窓の縁を掴んで広げている間（live resize）の描き直し。
+- 人がウィンドウの縁を掴んで広げている間（live resize）の描き直し。
 - Windows・Linux（人の判断でやらない）。
 - Panama で三角形を描いて読み戻す所・JDK 22 以上での Flix。
 
