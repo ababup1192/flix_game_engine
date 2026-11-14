@@ -171,6 +171,8 @@
   .toast { position: fixed; left: 50%; top: calc(52px + env(safe-area-inset-top)); transform: translate(-50%, -8px); padding: 8px 14px; border-radius: 99px;
     background: rgba(40,40,42,.94); backdrop-filter: blur(12px); font-size: 13px; z-index: 30; opacity: 0; transition: all .2s; pointer-events: none; white-space: nowrap; }
   .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  #splash { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; background: #0b0e12; transition: opacity .2s; }
+  #splash.gone { opacity: 0; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -274,6 +276,7 @@
   <div class="sheet-body" id="playBody"></div>
 </div>
 <div class="toast" id="toast"></div>
+<canvas id="splash"></canvas>
 
 <script>
 const TAPE = __TAPE_JSON__;
@@ -778,7 +781,106 @@ addEventListener("resize", redraw);
 
 applyTape();
 setIcon(); buildTimeline(); refresh(); onTime(0);
-fetch(TAPE.video).then(r => r.blob()).then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = TAPE.video; });
+
+// ── 起動画面: 動画を取っている間、ゲームのブラウザ版（fge-web.js の fgeSplash）と同じ配置・色・ゲージ・ドットの字で描く ──
+// design はゲームの縦画面の既定（540×960）に固定し、ゲームと同じく黒帯ありで画面へ広げる。
+// WhyNot: 画面の CSS px をそのまま design にしない — ロゴと字の大きさの段がゲームの起動画面と変わり、並べると別の絵に見える
+const SPLASH = __SPLASH_JSON__;
+const SPLASH_COLORS = { backdrop: "#0b0e12", white: "#ffffff", brand: "rgb(158,204,242)", dim: "rgb(140,148,163)" };
+const SPLASH_DESIGN = { w: 540, h: 960 };
+const splash = { el: $("splash"), got: 0, ratio: null, phase: "loading...", font: null, logo: null, glyphs: new Map(), tints: {}, startedAt: performance.now(), on: true, layout: null, view: null };
+for (let i = 0; i + 14 <= (SPLASH.glyphs || "").length; i += 14) {
+  const hex = (at, n) => parseInt(SPLASH.glyphs.substr(i + at, n), 16) || 0;
+  splash.glyphs.set(hex(0, 4), { x: hex(4, 3), y: hex(7, 3), w: hex(10, 2), adv: hex(12, 2) });
+}
+[["font", SPLASH.font], ["logo", SPLASH.logo]].forEach(([key, url]) => {
+  if (!url) return;
+  const img = new Image(); img.onload = () => { splash[key] = img; splash.tints = {}; }; img.src = url;
+});
+const splashDrawable = s => !!s && [...s].every(c => splash.glyphs.has(c.charCodeAt(0)));
+// WhyNot: 題名をそのまま描かない — 組み込みのドットの字は英数字だけで、日本語の題名は 1 字も出ない。描けなければゲームの名前、それも無理ならエンジンの名前
+const splashTitle = () => [TAPE.title, TAPE.game].find(splashDrawable) || "Flix_GE";
+function splashLayout(dw, dh) {
+  const scale = Math.max(1, Math.floor(dh / 200)), logoBase = splash.logo ? splash.logo.naturalHeight : 0;
+  let logoH = 0;
+  if (logoBase > 0) {
+    logoH = logoBase / 4;
+    [logoBase / 4, logoBase / 2, logoBase, logoBase * 2].forEach(h => { if (h <= dh * .3) logoH = Math.max(logoH, h); });
+  }
+  const lineH = ((SPLASH.ascent || 9) + (SPLASH.descent || 2) + (SPLASH.lineGap || 0)) * scale, gaugeH = Math.max(2, 3 * scale), gap = 4 * scale;
+  const top = Math.floor((dh - (logoH + gap + lineH + gap * 2 + gaugeH + gap + lineH)) / 2), cx = Math.floor(dw / 2);
+  const titleTop = top + logoH + gap, gaugeTop = titleTop + lineH + gap * 2, gaugeW = Math.floor(Math.min(dw - 16 * scale, dw * .6));
+  return { scale, logoH, cx, logoTop: top, titleTop, gaugeTop, gaugeW, gaugeH, gaugeLeft: Math.floor(cx - gaugeW / 2), phaseTop: gaugeTop + gaugeH + gap };
+}
+function splashTint(color) {
+  if (splash.tints[color]) return splash.tints[color];
+  const f = splash.font, t = document.createElement("canvas");
+  t.width = f.naturalWidth; t.height = f.naturalHeight;
+  const c = t.getContext("2d");
+  c.drawImage(f, 0, 0); c.globalCompositeOperation = "source-in"; c.fillStyle = color; c.fillRect(0, 0, t.width, t.height);
+  return splash.tints[color] = t;
+}
+function splashText(c, text, L, top, color) {
+  if (!text || !splash.font) return;
+  const cellH = SPLASH.cellH || 11, tint = splashTint(color);
+  const width = [...text].reduce((w, ch) => w + (splash.glyphs.get(ch.charCodeAt(0))?.adv || 0), 0);
+  let pen = 0;
+  for (const ch of text) {
+    const g = splash.glyphs.get(ch.charCodeAt(0));
+    if (!g) continue;
+    if (g.w > 0) c.drawImage(tint, g.x, g.y, g.w, cellH, L.cx - width * L.scale / 2 + pen * L.scale, top, g.w * L.scale, cellH * L.scale);
+    pen += g.adv;
+  }
+}
+function splashDraw() {
+  const el = splash.el, dpr = devicePixelRatio || 1, dw = SPLASH_DESIGN.w, dh = SPLASH_DESIGN.h;
+  const cw = Math.max(1, Math.round(el.clientWidth * dpr)), ch = Math.max(1, Math.round(el.clientHeight * dpr));
+  if (el.width !== cw || el.height !== ch) { el.width = cw; el.height = ch; }
+  const c = el.getContext("2d"), L = splashLayout(dw, dh);
+  c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = SPLASH_COLORS.backdrop; c.fillRect(0, 0, cw, ch);
+  const vpW = cw / ch > dw / dh ? Math.trunc(ch * dw / dh) : cw, vpH = cw / ch > dw / dh ? ch : Math.trunc(cw * dh / dw);
+  const k = vpW / dw, x = Math.floor((cw - vpW) / 2), y = Math.floor((ch - vpH) / 2);
+  splash.layout = L; splash.view = { k, x, y };
+  c.setTransform(k, 0, 0, k, x, y); c.imageSmoothingEnabled = false;
+  if (splash.logo && L.logoH > 0) {
+    const lw = L.logoH * splash.logo.naturalWidth / splash.logo.naturalHeight;
+    c.drawImage(splash.logo, Math.floor(L.cx - lw / 2), L.logoTop, lw, L.logoH);
+  }
+  splashText(c, splashTitle(), L, L.titleTop, SPLASH_COLORS.brand);
+  c.globalAlpha = .18; c.fillStyle = SPLASH_COLORS.white; c.fillRect(L.gaugeLeft, L.gaugeTop, L.gaugeW, L.gaugeH); c.globalAlpha = 1;
+  if (splash.ratio !== null) {
+    const fw = Math.floor(L.gaugeW * splash.ratio);
+    if (fw >= 1) c.fillRect(L.gaugeLeft, L.gaugeTop, fw, L.gaugeH);
+  } else {
+    const sec = (performance.now() - splash.startedAt) / 1000, bw = Math.floor(L.gaugeW * .25);
+    c.fillRect(L.gaugeLeft + Math.floor((L.gaugeW - bw) * (sec - Math.floor(sec))), L.gaugeTop, bw, L.gaugeH);
+  }
+  splashText(c, splash.phase, L, L.phaseTop, SPLASH_COLORS.dim);
+}
+(function splashLoop() { if (splash.on) { splashDraw(); requestAnimationFrame(splashLoop); } })();
+function splashProgress(done, total) {
+  splash.got = done; splash.ratio = total > 0 ? Math.max(0, Math.min(1, done / total)) : null;
+  splash.phase = splash.ratio === null ? "loading..." : "loading " + Math.floor(splash.ratio * 100) + "%";
+}
+function splashHide() {
+  if (!splash.on) return;
+  splash.on = false; splash.el.classList.add("gone"); setTimeout(() => splash.el.remove(), 200);
+}
+// WhyNot: r.blob() で一息に取らない — 45MB ほどの動画を取り終えるまで何割取れたかが分からず、起動画面のゲージが進まない
+async function fetchVideo() {
+  const r = await fetch(TAPE.video);
+  if (!r.ok) throw new Error(TAPE.video + ": " + r.status);
+  const total = +r.headers.get("Content-Length") || 0;
+  if (!r.body?.getReader) return r.blob();
+  const reader = r.body.getReader(), parts = [];
+  let got = 0;
+  splashProgress(0, total);
+  for (let part = await reader.read(); !part.done; part = await reader.read()) {
+    parts.push(part.value); got += part.value.length; splashProgress(got, total);
+  }
+  return new Blob(parts, { type: r.headers.get("Content-Type") || "video/mp4" });
+}
+fetchVideo().then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = TAPE.video; }).finally(splashHide);
 const startAt = +(/^#t=([\d.]+)$/.exec(location.hash) || [])[1];
 if (startAt > 0) video.addEventListener("loadedmetadata", () => seek(Math.min(startAt, TAPE.duration - .01)), { once: true });
 </script>

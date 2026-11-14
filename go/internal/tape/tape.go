@@ -24,6 +24,9 @@ var templateHTML string
 // tapeDecl は雛形で TAPE の JSON を置く所の前の字（publish が置いた頁の branches を読み返す時にも引く）。
 const tapeDecl = "const TAPE = "
 
+// splashDecl は雛形で SPLASH の JSON を置く所の前の字。
+const splashDecl = "const SPLASH = "
+
 const (
 	TapeFile  = "tape.json"
 	VideoFile = "video.mp4"
@@ -53,10 +56,26 @@ type Options struct {
 	FFmpeg string   // 空なら環境変数 FFMPEG、それも無ければ PATH の ffmpeg
 	// Branches は頁の branches をこの値にする（--group が組み立てた物）。nil なら tape.json の値のまま。
 	Branches *[]Branch
+	// Splash は動画を取っている間に頁が描く起動画面の材料（bin/fge が engine の BootFontData から作って渡す）。
+	Splash Splash
 }
 
-// Run は bin/fge tape の本体。
-func Run(args []string, stdout, stderr io.Writer) int {
+// Splash は頁の SPLASH。ゲームのブラウザ版の bundle.json の splash と同じ形（ロゴと組み込みフォントの PNG・字の表・字の寸法）。
+// WhyNot: 頁の system-ui の字で起動画面を描かない — ゲームの起動画面はドットの字で描くので、並べた時に同じ絵に見えない。
+// WhyNot: ここで BootFontData.flix を読まない — 読み解きは書き出し（export-web）の側に 1 つだけ置き、2 つに割らない。
+type Splash struct {
+	Logo     string  `json:"logo,omitempty"`
+	Font     string  `json:"font,omitempty"`
+	Glyphs   string  `json:"glyphs,omitempty"`
+	FontSize float64 `json:"fontSize,omitempty"`
+	Ascent   float64 `json:"ascent,omitempty"`
+	Descent  float64 `json:"descent,omitempty"`
+	LineGap  float64 `json:"lineGap,omitempty"`
+	CellH    int     `json:"cellH,omitempty"`
+}
+
+// Run は bin/fge tape の本体。splash は作る頁に埋める起動画面の材料（publish では使わない）。
+func Run(args []string, splash Splash, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "publish" {
 		return RunPublish(args[1:], stdout, stderr)
 	}
@@ -66,8 +85,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
+	opt.Splash = splash
 	if len(opt.Group) > 0 {
-		outs, err := BuildGroup(opt.Group, opt.Commit, opt.FFmpeg, stderr)
+		outs, err := BuildGroup(opt, stderr)
 		if err != nil {
 			fmt.Fprintln(stderr, "tape:", err)
 			return 1
@@ -157,7 +177,7 @@ func build(opt Options, t *Tape) (string, error) {
 		}
 		t.raw["branches"] = b
 	}
-	page, err := Render(t, commit, strip)
+	page, err := Render(t, commit, strip, opt.Splash)
 	if err != nil {
 		return "", err
 	}
@@ -176,8 +196,8 @@ func gitShortHead(dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// Render は雛形の HTML に TAPE を差し込む。足す欄（commit・video・stripPerSec・strip）はゲームの値より優先する。
-func Render(t *Tape, commit string, strip Strip) ([]byte, error) {
+// Render は雛形の HTML に TAPE と SPLASH を差し込む。足す欄（commit・video・stripPerSec・strip）はゲームの値より優先する。
+func Render(t *Tape, commit string, strip Strip, splash Splash) ([]byte, error) {
 	added := map[string]any{"commit": commit, "video": VideoFile, "stripPerSec": StripPerSec, "strip": strip}
 	var buf bytes.Buffer
 	buf.WriteByte('{')
@@ -216,7 +236,12 @@ func Render(t *Tape, commit string, strip Strip) ([]byte, error) {
 	var safe bytes.Buffer
 	json.HTMLEscape(&safe, buf.Bytes())
 
+	splashJSON, err := json.Marshal(splash)
+	if err != nil {
+		return nil, err
+	}
 	page := strings.Replace(templateHTML, tapeDecl+"__TAPE_JSON__", tapeDecl+safe.String(), 1)
+	page = strings.Replace(page, splashDecl+"__SPLASH_JSON__", splashDecl+string(splashJSON), 1)
 	page = strings.Replace(page, "__TAPE_TITLE__", html.EscapeString(t.Title), 1)
 	return []byte(page), nil
 }
