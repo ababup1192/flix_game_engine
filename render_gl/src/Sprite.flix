@@ -47,86 +47,6 @@ mod RenderSprite {
     pub def multiplyFlag(blend: DrawCmd.BlendMode): Int32 =
         if (blend == DrawCmd.BlendMode.Multiply) 1 else 0
 
-    /// 1 スプライトを描画する。
-    /// rotation は center 周りのラジアン回転。useTex = false で純色矩形。
-    /// uniforms は起動時に 1 回だけ引いた location 一式（RenderShader.spriteUniformsOf）。
-    pub def drawSprite(gl: GlContext, shader: Int32, vao: Int32, uniforms: RenderShader.SpriteUniforms,
-                        params: RenderType.DrawSpriteParams): Unit \ IO =
-        // 1 レコードからローカルへ束ね直す（以降の描画ロジックは従来どおり）。
-        let texture = params#texture;
-        let pos     = params#position;
-        let size    = params#scale;
-        let color   = params#color;
-        let alpha   = params#alpha;
-        let uvOff   = params#uvOffset;
-        let uvSc    = params#uvScale;
-        let rot     = params#rotation;
-        let useTex  = params#useTexture;
-        let style   = params#style;
-        let sdf     = params#sdf;
-        let f32 = RenderUtil.f32;
-        let cosF = RenderUtil.cosF;
-        let sinF = RenderUtil.sinF;
-        gl.useProgram(shader);
-        let c = cosF(rot);
-        let s = sinF(rot);
-        let sx = size#x;
-        let sy = size#y;
-        let tx = pos#x + sx / 2.0 - c * sx / 2.0 + s * sy / 2.0;
-        let ty = pos#y + sy / 2.0 - s * sx / 2.0 - c * sy / 2.0;
-        let model = Array#{
-            f32(c * sx), f32(s * sx), 0.0f32, 0.0f32,
-            f32(-1.0 * s * sy), f32(c * sy), 0.0f32, 0.0f32,
-            0.0f32, 0.0f32, 1.0f32, 0.0f32,
-            f32(tx), f32(ty), 0.0f32, 1.0f32
-        } @ Static;
-        gl.uniformMatrix4fv(uniforms#model, false, model);
-        gl.uniform3f(uniforms#spriteColor, f32(color#r), f32(color#g), f32(color#b));
-        gl.uniform1f(uniforms#spriteAlpha, f32(alpha));
-        gl.uniform2f(uniforms#uvOffset, f32(uvOff#x), f32(uvOff#y));
-        gl.uniform2f(uniforms#uvScale, f32(uvSc#x), f32(uvSc#y));
-        gl.uniform1i(uniforms#useTexture, if (useTex) 1 else 0);
-        // SDF テキスト uniform。テキスト以外は 0 にして GL state 持ち越しを防ぐ。
-        gl.uniform1i(uniforms#sdfText, if (sdf) 1 else 0);
-        // drawPolygon と同じシェーダを共有するため、premultiply スイッチも明示 0 にして持ち越しを防ぐ。
-        gl.uniform1i(uniforms#multiplyBlend, 0);
-        // 角丸＋枠スタイル uniform。Some のとき styleEnabled=1（単色矩形のみシェーダ側で適用）。
-        match style {
-            case Some(st) =>
-                let DrawCmd.BoxStyle.BoxStyle(rad, bw, br, bg, bb, ba,
-                                              sr, sg, sb, sa, sw, sp, sd,
-                                              kr, kg, kb, ka, kc) = st;
-                gl.uniform1i(uniforms#styleEnabled, 1);
-                gl.uniform2f(uniforms#rectSize, f32(size#x), f32(size#y));
-                gl.uniform1f(uniforms#cornerRadius, f32(rad));
-                gl.uniform1f(uniforms#borderWidth, f32(bw));
-                gl.uniform3f(uniforms#borderColor, f32(br), f32(bg), f32(bb));
-                gl.uniform1f(uniforms#borderAlpha, f32(ba));
-                // 斜線ハッチ uniform。幅・濃さ・周期がすべて正のときのみ有効化(SoftRaster と同じ判定)。
-                let hatchOn = sw > 0.0 and sa > 0.0 and sp > 0.0;
-                gl.uniform1i(uniforms#hatchEnabled, if (hatchOn) 1 else 0);
-                gl.uniform3f(uniforms#hatchColor, f32(sr), f32(sg), f32(sb));
-                gl.uniform1f(uniforms#hatchAlpha, f32(sa));
-                gl.uniform1f(uniforms#hatchWidth, f32(sw));
-                gl.uniform1f(uniforms#hatchPeriod, f32(sp));
-                gl.uniform1i(uniforms#hatchDir, sd);
-                // 市松 uniform。有効判定 (cell>0 かつ alpha>0) はシェーダ側で行う。
-                gl.uniform3f(uniforms#checkerColor, f32(kr), f32(kg), f32(kb));
-                gl.uniform1f(uniforms#checkerAlpha, f32(ka));
-                gl.uniform1f(uniforms#checkerCell, f32(kc))
-            case None =>
-                gl.uniform1i(uniforms#styleEnabled, 0);
-                gl.uniform1i(uniforms#hatchEnabled, 0);
-                gl.uniform1f(uniforms#checkerCell, 0.0f32)
-        };
-        if (useTex) {
-            gl.activeTexture(GlConst.TEXTURE0);
-            gl.bindTexture(GlConst.TEXTURE_2D, texture)
-        } else ();
-        gl.bindVertexArray(vao);
-        gl.drawArrays(GlConst.TRIANGLES, 0, 6);
-        gl.bindVertexArray(0)
-
     // ========================================================================
     // Polygon Batch Rendering — 同じ blend / 切り抜き clip 矩形の多角形を 1 draw call で
     // ========================================================================
@@ -593,30 +513,11 @@ mod RenderSprite {
         gl.bindVertexArray(0);
         (vao, instanceVbo)
 
-    /// 同じテクスチャのスプライト count 体を 1 回の instanced draw で描画する。
-    /// data は 1 体 38 floats を列順に並べた instance データ（RenderFrame が組む）。
-    /// 毎フレーム glBufferData で丸ごと差し替える（orphaning。drawPolygon と同方式）。
+    /// 同じテクスチャのスプライト count 体を 1 回の instanced draw で描く。data は 1 体 38 floats
+    /// （RenderFrame が組む）で、data の position の位置から count 体を流す（入れ物から直に流す）。
     /// texId = 0 は単色矩形の run で、シェーダはテクスチャを読まないので bind しない。
     /// blend は run 内で均一（RenderFrame が blend 変化で run を切る）。multiplyBlendLoc は
     /// instanced シェーダの premultiply スイッチの location（起動時に 1 回引いたもの）。
-    pub def drawSpriteInstanced(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
-                                 multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode,
-                                 data: Array[Float32, Static], count: Int32): Unit \ IO =
-        gl.useProgram(shader);
-        applyBlend(gl, blend);
-        gl.uniform1i(multiplyBlendLoc, multiplyFlag(blend));
-        if (texId != 0) {
-            gl.activeTexture(GlConst.TEXTURE0);
-            gl.bindTexture(GlConst.TEXTURE_2D, texId)
-        } else ();
-        gl.bindVertexArray(vao);
-        gl.bindBuffer(GlConst.ARRAY_BUFFER, instanceVbo);
-        gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.DYNAMIC_DRAW);
-        gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
-        gl.drawArraysInstanced(GlConst.TRIANGLES, 0, 6, count);
-        gl.bindVertexArray(0)
-
-    /// 溜めた instance [0, count) を 1 回の instanced draw で描く（入れ物から直に流す）。
     /// 流し終えたら書ける範囲を元に戻す — 上限を切ったままだと次の書き込みが弾かれる。
     pub def drawSpriteInstancedBuf(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
                                     multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode,
@@ -630,8 +531,7 @@ mod RenderSprite {
         } else ();
         gl.bindVertexArray(vao);
         gl.bindBuffer(GlConst.ARRAY_BUFFER, instanceVbo);
-        discard data.position(0);
-        discard data.limit(count * 38);
+        discard data.limit(data.position() + count * 38);
         gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.DYNAMIC_DRAW);
         discard data.clear();
         gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
@@ -640,7 +540,7 @@ mod RenderSprite {
 
     /// スプライト 1 体を maskPolys（スクリーン px の多角形）の内側だけに抜いて描く。
     /// 手順は drawShaderSurfaceMasked と同じステンシル流用: mask を描き込む（色は書かない）→
-    /// EQUAL テスト付きで instance 1 体だけ描く → 後始末。instData には slot 0 に
+    /// EQUAL テスト付きで instance 1 体だけ描く → 後始末。instData には position の位置に
     /// 1 体ぶんが書き込み済みの前提（RenderFrame が writeInstAt で書く）。
     /// mask が退化（頂点 3 未満）ならステンシルを触らずそのまま 1 体描く。返すのは出した draw call の数。
     pub def drawSpriteMasked(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
