@@ -232,7 +232,7 @@ baking entirely. A damaged or outdated cache is ignored and simply re-baked.
 
 ## Tech stack
 
-- **Flix 0.75.1** — functional programming language
+- **Flix 0.78.0** — functional programming language
 - **LWJGL** — OpenGL / GLFW / STB / OpenAL bindings
 - **OpenGL 3.3 Core Profile** — shader-based 2D rendering
 - **OpenAL** — sound effects and BGM playback
@@ -460,7 +460,7 @@ GL の用意ができた時点ですぐ画面を地の色で塗り、ロゴ・�
 
 ## 技術スタック
 
-- **Flix 0.75.1** — 関数型プログラミング言語
+- **Flix 0.78.0** — 関数型プログラミング言語
 - **LWJGL** — OpenGL / GLFW / STB / OpenAL バインディング
 - **OpenGL 3.3 Core Profile** — シェーダーベースの 2D レンダリング
 - **OpenAL** — 効果音・BGM 再生
