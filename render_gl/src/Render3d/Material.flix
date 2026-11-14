@@ -8,7 +8,7 @@ mod Render3d.Material {
     use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, Texture3dEntry, TextureSlot, TextureSource, bindDataTextureUnits, drawBatch, ensureTangents, hasUv, isSkinned, environmentTextureUnit, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
     use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, batchKeyOf, batchOf, groupByTextures, groupInOrder}
     use Scene3dRenderer.{RegisteredTexture}
-    use Render3d.Counts.{Counter, Phase, count, noteMaterialBuild, timed}
+    use Render3d.Counts.{BatchBreak, Counter, Phase, count, noteMaterialBuild, timed}
 
     // ── 材質のある置いた物 ──
 
@@ -71,14 +71,16 @@ mod Render3d.Material {
     pub def drawMaterials(gl: GlContext, state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
                       draws: List[MaterialBatch[MeshBatch]]): Unit \ IO =
         let bound = Array#{0, 0, 0, 0} @ Static;
-        draws |> List.forEach(d -> if (d#batch#count == 0) drawBatch(gl, state, gen, d#entry#locs#mesh, d#batch) else {
+        let previous: Ref[Option[MaterialBatch[MeshBatch]], Static] = Ref.fresh(Static, None);
+        draws |> List.forEach(d -> if (d#batch#count == 0) drawBatch(gl, state, gen, d#entry#locs#mesh, BatchBreak.Material, d#batch) else {
             let locs = d#entry#locs;
             if (locs#mesh#program == Array.get(0, bound)) ()
             else {
                 Array.put(locs#mesh#program, 0, bound);
                 useMaterialProgram(gl, state, camera, pass, locs)
             };
-            let units = drawMaterialBatch(gl, state, gen, source, d#entry#coverage, d);
+            let units = drawMaterialBatch(gl, state, gen, source, d#entry#coverage, batchBreakOf(Ref.get(previous), d), d);
+            Ref.put(Some(d), previous);
             Array.put(Int32.max(units, Array.get(1, bound)), 1, bound);
             if (d#entry#normalMapped) Array.put(1, 2, bound) else ();
             if (d#entry#lightmapped) Array.put(1, 3, bound) else ()
@@ -114,9 +116,27 @@ mod Render3d.Material {
     pub def isCoverageCutout(coverage: Bool, m: Scene3d.MaterialFields): Bool =
         coverage and m#cutout and not m#blend
 
+    /// 材質の batch d が 1 つの draw call に分かれた理由（優先の順は FrameDiagnostics.Scene3dBatchBreaks）。previous = 同じ並びで前に描いた batch。
+    /// 形が前と違って材質が同じ時だけ Mesh（形も材質も同じで分かれたのは、材質の絵の組が違う時）。
+    def batchBreakOf(previous: Option[MaterialBatch[MeshBatch]], d: MaterialBatch[MeshBatch]): BatchBreak =
+        if (d#material#blend) BatchBreak.Transparent
+        else if (d#entry#lightmapped) BatchBreak.Lightmap
+        else if (isSkinned(d#batch#head)) BatchBreak.Skinned
+        else if (Option.exists(p -> isSameMaterial(p, d) and not isSameMesh(p, d), previous)) BatchBreak.Mesh
+        else BatchBreak.Material
+
+    /// プログラム・材質の木の鍵・params が同じか。
+    def isSameMaterial(a: MaterialBatch[MeshBatch], b: MaterialBatch[MeshBatch]): Bool =
+        a#entry#locs#mesh#program == b#entry#locs#mesh#program
+            and force a#material#shaderHash == force b#material#shaderHash
+            and a#material#params == b#material#params
+
+    def isSameMesh(a: MaterialBatch[MeshBatch], b: MaterialBatch[MeshBatch]): Bool =
+        Mesh3d.contentHash(a#batch#head#fields#mesh) == Mesh3d.contentHash(b#batch#head#fields#mesh)
+
     /// 材質の batch 1 つを描き、絵を貼った unit の数を返す。coverage = cutout を discard でなく alpha to coverage で抜く
     /// （出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。
-    def drawMaterialBatch(gl: GlContext, state: State, gen: Int64, source: TextureSource, coverage: Bool, d: MaterialBatch[MeshBatch]): Int32 \ IO =
+    def drawMaterialBatch(gl: GlContext, state: State, gen: Int64, source: TextureSource, coverage: Bool, why: BatchBreak, d: MaterialBatch[MeshBatch]): Int32 \ IO =
         let locs = d#entry#locs;
         gl.uniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
         // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
@@ -135,9 +155,9 @@ mod Render3d.Material {
         } else ();
         if (d#material#doubleSided) {
             gl.disable(GlConst.CULL_FACE);
-            drawBatch(gl, state, gen, locs#mesh, d#batch);
+            drawBatch(gl, state, gen, locs#mesh, why, d#batch);
             gl.enable(GlConst.CULL_FACE)
-        } else drawBatch(gl, state, gen, locs#mesh, d#batch);
+        } else drawBatch(gl, state, gen, locs#mesh, why, d#batch);
         if (coverage) {
             gl.disable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);
             gl.disable(GlConst.SAMPLE_ALPHA_TO_ONE)

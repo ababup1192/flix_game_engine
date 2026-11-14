@@ -150,11 +150,18 @@ pub mod App.HitchDetector {
                     "- ${pressLine(hitch)}" ::
                     "- 数: シェーダーを作った ${Int32.toString(List.length(List.flatMap(r -> r#diag#shaderBuilds, rows)))}・消した ${Int32.toString(List.foldLeft((acc, r) -> acc + r#diag#shaderDeletes, 0, rows))}・GPU にあるシェーダー ${Int32.toString(first#diag#liveShaders)} → ${Int32.toString(last#diag#liveShaders)}・足した字 ${Int32.toString(List.foldLeft((acc, r) -> acc + r#diag#glyphsAdded, 0, rows))}・上げ直したテクスチャ ${Int32.toString(List.length(List.flatMap(r -> r#diag#textureUploads, rows)))}・GC ${Int32.toString(List.foldLeft((acc, r) -> acc + r#gc, 0, rows))} 回 ${ms(sumBy(r -> r#gcMs * 1000000i64, rows))}ms" ::
                     "- 3D の上げ直しと捨てた物: ${FrameDiagnostics.uploadsText(scene3dTotal(rows))}・3D の CPU の区間: ${FrameDiagnostics.cpuPhasesText(scene3dTotal(rows))}" ::
+                    "- 一番重いコマの draw call: ${drawCallsLine(worst#diag)}" ::
                     "" :: "## 推定原因" :: "" :: Nil;
                 let causes = guesses(config, rows) |> List.map(line -> "- ${line}");
                 String.intercalate("\n", header ::: causes ::: ("" :: Nil) ::: shaderSection(rows) ::: table(config, hitch) ::: replaySection(replay)) + "\n"
             case _ => ""
         }
+
+    /// 1 コマの 2D と 3D の draw call の数と、まとまらなかった理由ごとの数。
+    def drawCallsLine(d: FrameDiagnostics.Diagnostics): String =
+        let (flat, scene) = (d#draw2dCounts, d#scene3dCounts);
+        "2D ${Int32.toString(flat#drawCalls)}（${FrameDiagnostics.breaksText(FrameDiagnostics.draw2dBreakList(flat#batchBreaks))}）・" +
+        "3D ${Int32.toString(scene#drawCalls)}（${FrameDiagnostics.breaksText(FrameDiagnostics.scene3dBreakList(scene#batchBreaks))}）"
 
     /// 行の 3D の数の合計。
     def scene3dTotal(rows: List[Row]): FrameDiagnostics.Scene3dCounts =

@@ -721,7 +721,7 @@ pub mod LwjglLayer {
                 Ref.put(None, ws#screenPainted);
                 let swapFrom = System.nanoTime();
                 let (fbW, fbH) = Array.get(0, ws#framebufferSize);
-                Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo), ws#frameStats);
+                Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, () -> RenderPaint.lastDraw2dCounts(ws#paint)), ws#frameStats);
                 frameShot(ws#frameShotDir, fbW, fbH, ws#frameShotTaken);
                 GLFW.glfwSwapBuffers(ws#window);
                 if (ws#finishAfterSwap) GL11.glFinish() else ();

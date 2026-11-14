@@ -6,7 +6,7 @@ mod Render3d.Shadow {
                   maxShadowPcfRadius, meshDrawOf, idleTargetFrames, programsOf, blankTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram, loc}
     use Render3d.Batch.{MeshBatch, PlannedBatch, shapeBatches}
     use Render3d.JointTexture.{PoseRows, withBatchPoseRows}
-    use Render3d.Counts.{Counter, count}
+    use Render3d.Counts.{BatchBreak, Counter, count}
 
     // ── 影の地図 ──
 
@@ -164,7 +164,7 @@ mod Render3d.Shadow {
             let lightView = matrixArray(plan#caster#matrix);
             let identity = matrixArray(Mat4.identity());
             useMeshProgram(gl, locs#mesh, lightView, identity);
-            plan#plain |> List.forEach(drawBatch(gl, state, gen, locs#mesh));
+            plan#plain |> List.forEach(drawBatch(gl, state, gen, locs#mesh, BatchBreak.ShadowPass));
             // 骨つきの物は曲がった形で影を落とす（深度だけの骨つきの版を Output.Depth と共用）。
             if (List.isEmpty(plan#skinned)) ()
             else {
@@ -172,7 +172,7 @@ mod Render3d.Shadow {
                 if (skinnedDepth#mesh#program == 0) ()
                 else {
                     useMeshProgram(gl, skinnedDepth#mesh, lightView, identity);
-                    plan#skinned |> List.forEach(drawBatch(gl, state, gen, skinnedDepth#mesh))
+                    plan#skinned |> List.forEach(drawBatch(gl, state, gen, skinnedDepth#mesh, BatchBreak.ShadowPass))
                 }
             }
         }

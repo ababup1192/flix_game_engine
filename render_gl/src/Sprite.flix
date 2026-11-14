@@ -499,18 +499,19 @@ mod RenderSprite {
     /// 宣言シェーダー面を maskPolys（スクリーン px の多角形）の内側だけに抜いて描く。
     /// mask を GL のステンシルに焼き（色は書かない・内側を 1 に）、EQUAL テスト付きで矩形を塗る。
     /// これで丸い池形など任意の形に水面を切り抜ける（矩形の隅がはみ出さない）。
-    /// mask が退化（頂点 3 未満）なら素直に矩形そのまま描く。
+    /// mask が退化（頂点 3 未満）なら素直に矩形そのまま描く。返すのは出した draw call の数。
     pub def drawShaderSurfaceMasked(gl: GlContext, program: Int32, vao: Int32, uniforms: SurfaceUniforms,
                                     texBinds: List[SurfaceTexBind],
                                     rect: Rect2.Rect2, time: Float64, alpha: Float64, blend: DrawCmd.BlendMode,
                                     polyShader: Int32, polyVao: Int32, polyVbo: Int32,
                                     polyUniforms: RenderShader.PolyBatchUniforms,
-                                    maskPolys: List[List[Vec2.Vec2]]): Unit \ IO =
+                                    maskPolys: List[List[Vec2.Vec2]]): Int32 \ IO =
         let (maskData, maskCount) = buildMaskData(maskPolys);
-        if (maskCount < 3)
+        if (maskCount < 3) {
             drawShaderSurface(gl, program, vao, uniforms, texBinds,
-                              rect, time, alpha, blend)
-        else {
+                              rect, time, alpha, blend);
+            1
+        } else {
             // 1) mask を stencil に描き込む（色は書かず内側を 1 に）。この面ぶんだけ使うので毎回 clear。
             gl.enable(GlConst.STENCIL_TEST);
             gl.stencilMask(255i32);
@@ -530,7 +531,8 @@ mod RenderSprite {
                               rect, time, alpha, blend);
             // 3) 後始末（次の描画にステンシル状態を持ち越さない）。
             gl.stencilMask(255i32);
-            gl.disable(GlConst.STENCIL_TEST)
+            gl.disable(GlConst.STENCIL_TEST);
+            2
         }
 
     // ========================================================================
@@ -640,18 +642,19 @@ mod RenderSprite {
     /// 手順は drawShaderSurfaceMasked と同じステンシル流用: mask を描き込む（色は書かない）→
     /// EQUAL テスト付きで instance 1 体だけ描く → 後始末。instData には slot 0 に
     /// 1 体ぶんが書き込み済みの前提（RenderFrame が writeInstAt で書く）。
-    /// mask が退化（頂点 3 未満）ならステンシルを触らずそのまま 1 体描く。
+    /// mask が退化（頂点 3 未満）ならステンシルを触らずそのまま 1 体描く。返すのは出した draw call の数。
     pub def drawSpriteMasked(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
                              multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode,
                              instData: FloatBuffer,
                              polyShader: Int32, polyVao: Int32, polyVbo: Int32,
                              polyUniforms: RenderShader.PolyBatchUniforms,
-                             maskPolys: List[List[Vec2.Vec2]]): Unit \ IO =
+                             maskPolys: List[List[Vec2.Vec2]]): Int32 \ IO =
         let (maskData, maskCount) = buildMaskData(maskPolys);
-        if (maskCount < 3)
+        if (maskCount < 3) {
             drawSpriteInstancedBuf(gl, shader, vao, instanceVbo, texId, multiplyBlendLoc, blend,
-                                   instData, 1)
-        else {
+                                   instData, 1);
+            1
+        } else {
             // 1) mask を stencil に描き込む（色は書かず内側を 1 に）。この 1 体ぶんだけ使うので毎回 clear。
             gl.enable(GlConst.STENCIL_TEST);
             gl.stencilMask(255i32);
@@ -671,7 +674,8 @@ mod RenderSprite {
                                    instData, 1);
             // 3) 後始末（次の描画にステンシル状態を持ち越さない）。
             gl.stencilMask(255i32);
-            gl.disable(GlConst.STENCIL_TEST)
+            gl.disable(GlConst.STENCIL_TEST);
+            2
         }
 
 }

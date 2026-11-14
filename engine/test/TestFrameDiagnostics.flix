@@ -11,7 +11,8 @@ mod TestFrameDiagnostics {
                   | FrameDiagnostics.empty() };
         Assert.assertEq(expected = "CPU submit 2.00 ms / swap 0.50 ms" :: "GPU 1.23 ms (bloom 1.00, screen 0.23)"
                                    :: "3D placed 12 / drawn 12 / draw calls 30" :: "2D draw items 40 / shaders 5"
-                                   :: "3D uploads -" :: "3D cpu -" :: Nil,
+                                   :: "2D draw calls 0"
+                                   :: "3D uploads -" :: "3D cpu -" :: "3D batch breaks -" :: Nil,
                         FrameDiagnostics.summaryLines(d))
 
     // 上限を超えて落とした光があれば、3D の行の末尾に種類ごとの数が出る。
@@ -36,10 +37,50 @@ mod TestFrameDiagnostics {
         let isAscii = (line: String) -> String.toList(line) |> List.forAll(ch -> Char.toBmpCodePoint(ch) < 128);
         Assert.assertTrue(FrameDiagnostics.summaryLines(d) |> List.forAll(isAscii))
 
-    // 3D を置かないコマ（2D だけのゲーム）は、上げ直しと CPU の区間の行を出さない。
+    // 3D を置かないコマ（2D だけのゲーム）は、上げ直し・CPU の区間・3D の理由の行を出さない（2D までの 5 行）。
     @Test
-    def testSummaryLinesWithout3dHaveFourLines(): Unit \ Assert =
-        Assert.assertEq(expected = 4, List.length(FrameDiagnostics.summaryLines(FrameDiagnostics.empty())))
+    def testSummaryLinesWithout3dHaveFiveLines(): Unit \ Assert =
+        Assert.assertEq(expected = 5, List.length(FrameDiagnostics.summaryLines(FrameDiagnostics.empty())))
+
+    // 2D の行は draw call の数と、切れた理由のうち一番多い物（blend 72）を出す。
+    @Test
+    def testSummaryLinesShowTopDraw2dBreak(): Unit \ Assert =
+        let breaks = { blend = 72, kind = 19, mask = 4 | FrameDiagnostics.emptyDraw2dCounts()#batchBreaks };
+        let d = { draw2dCounts = { drawCalls = 96, batchBreaks = breaks } | FrameDiagnostics.empty() };
+        Assert.assertEq(expected = Some("2D draw calls 96 / top break blend 72"), List.nth(4, FrameDiagnostics.summaryLines(d)))
+
+    // 理由ごとの数は 0 でない欄だけを、Draw2dBatchBreaks の欄の順に並べる。
+    @Test
+    def testBreaksTextShowsNonZeroInFieldOrder(): Unit \ Assert =
+        let breaks = { mask = 4, kind = 19, blend = 72 | FrameDiagnostics.emptyDraw2dCounts()#batchBreaks };
+        Assert.assertEq(expected = "kind 19 / blend 72 / mask 4", FrameDiagnostics.breaksText(FrameDiagnostics.draw2dBreakList(breaks)))
+
+    // 一番多い理由が同じ数で並ぶ時は、欄の順で先の物（kind が texture より先）。
+    @Test
+    def testTopBreakPrefersEarlierFieldOnTie(): Unit \ Assert =
+        let breaks = { kind = 3, texture = 3 | FrameDiagnostics.emptyDraw2dCounts()#batchBreaks };
+        Assert.assertEq(expected = Some(("kind", 3)), FrameDiagnostics.topBreak(FrameDiagnostics.draw2dBreakList(breaks)))
+
+    // 切れ目が無ければ、一番多い理由は無い（"top break" を出さない）。
+    @Test
+    def testTopBreakIsNoneWithoutBreaks(): Unit \ Assert =
+        Assert.assertEq(expected = None, FrameDiagnostics.topBreak(FrameDiagnostics.draw2dBreakList(FrameDiagnostics.emptyDraw2dCounts()#batchBreaks)))
+
+    // 2 コマぶんの 2D の数を足すと、draw call も理由も欄ごとの和になる（1 + 3 = 4・texture 0 + 2 = 2）。
+    @Test
+    def testAddDraw2dCountsSumsFields(): Unit \ Assert =
+        let a = { drawCalls = 1 | FrameDiagnostics.emptyDraw2dCounts() };
+        let b = { drawCalls = 3, batchBreaks = { texture = 2 | FrameDiagnostics.emptyDraw2dCounts()#batchBreaks } };
+        let sum = FrameDiagnostics.addDraw2dCounts(a, b);
+        Assert.assertEq(expected = (4, 2), (sum#drawCalls, sum#batchBreaks#texture))
+
+    // 2 コマぶんの 3D の数を足すと、分かれた理由も欄ごとの和になる（material 2 + 3 = 5）。
+    @Test
+    def testAddScene3dCountsSumsBatchBreaks(): Unit \ Assert =
+        let a = { batchBreaks = { material = 2 | FrameDiagnostics.emptyScene3dBatchBreaks() } | FrameDiagnostics.emptyScene3dCounts() };
+        let b = { batchBreaks = { material = 3, mesh = 1 | FrameDiagnostics.emptyScene3dBatchBreaks() } | FrameDiagnostics.emptyScene3dCounts() };
+        let sum = FrameDiagnostics.addScene3dCounts(a, b)#batchBreaks;
+        Assert.assertEq(expected = (5, 1), (sum#material, sum#mesh))
 
     // 上げ直した物と捨てた物は 0 でない欄だけを、Scene3dCounts の欄の順に並べる。
     @Test

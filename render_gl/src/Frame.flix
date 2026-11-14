@@ -275,7 +275,8 @@ mod RenderFrame {
         surfaces = List[DrawCmd.SurfaceRenderCmd],
         // シェーダー面 1 枚を実際に GL へ描くクロージャ（program の uniform location を知る
         // バックエンド側が提供する）。renderFrameMixed は z の合流だけを受け持つ。
-        drawSurface = (GlContext, DrawCmd.SurfaceRenderCmd) -> Unit \ IO,
+        // 返すのは出した draw call の数（mask つきは stencil へ描く分が足される）。
+        drawSurface = (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
         // 先に準備した 3D の場面の並び。番号ごとの z で 2D の並びに混ぜ、同じ z の中では surfaces の後に描く。
         scenes = Scene3dRenderer.Prepared,
         // None = 画面へのフレーム（黒帯 + design 領域の 2 段階の clear）。Some(op) = レンダー
@@ -288,7 +289,9 @@ mod RenderFrame {
         targetNames = Set[String],
         // テクスチャが registry に無くて描かなかった名前の控え。フレームをまたいで残るものを
         // バックエンドが持って毎フレーム貸す — 毎フレーム作り直すと同じ知らせが 60 回/秒 出る。
-        texWarnLog = Ref[Set[String], Static]
+        texWarnLog = Ref[Set[String], Static],
+        // 2D の draw call の数と切れた理由の数を足し込む先（描き先をまたいで溜め、塗りのコアが取り出す）。
+        drawCounts = RenderDrawCounts.Holder
     }
 
     /// テクスチャが登録されていない描画物を飛ばしたことを、名前ごとに 1 度だけ知らせる。
@@ -411,7 +414,100 @@ mod RenderFrame {
     //              7=vpX 8=vpY 9=vpW 10=vpH 26=tileShader
     // スプライト run: 11=texId 12=clip有無 13-16=clip矩形 17=blend 18=体数
     // 多角形 run:     19=clip有無 20-23=clip矩形 24=blend 25=頂点数
-    def stateSize(): Int32 = 27
+    // draw call の数え: 27=前の draw call の種類（kind*・0 = まだ無い） 28=この描き先でまだ draw call を出していない
+    //              29=前の draw call が mask つき 30=このコマで先に draw call が出ている
+    //              31-37=前に出したスプライトの鍵（texId・clip有無・clip矩形・blend） 38-43=前に出した多角形の鍵（clip有無・clip矩形・blend）
+    //              44-50=この描き先で数えた数（並びは RenderDrawCounts の slot）
+    def stateSize(): Int32 = 51
+
+    def kindSprite(): Int32 = 1
+    def kindPoly(): Int32 = 2
+    def kindTile(): Int32 = 3
+    def kindStatic(): Int32 = 4
+    def kindSurface(): Int32 = 5
+    def kindScene3d(): Int32 = 6
+
+    def countBase(): Int32 = 44
+
+    /// この描き先の数 slot を n 足す。
+    def bump(st: Array[Int32, Static], slot: Int32, n: Int32): Unit \ IO =
+        let i = countBase() + slot;
+        Array.put(Array.get(i, st) + n, i, st)
+
+    /// draw call を 1 つ出したと数え、前の draw call に続けられなかった理由を 1 つ数える。
+    /// kind = 今の draw call の種類・sameKindReason = 前も同じ種類だった時の理由の slot。コマの最初の draw call は理由を数えない。
+    def countDraw(st: Array[Int32, Static], kind: Int32, sameKindReason: Int32): Unit \ IO =
+        bump(st, RenderDrawCounts.drawCallsSlot(), 1);
+        if (Array.get(28, st) == 1) {
+            Array.put(0, 28, st);
+            if (Array.get(30, st) == 1) bump(st, RenderDrawCounts.targetSlot(), 1) else ()
+        } else if (Array.get(27, st) != kind) bump(st, RenderDrawCounts.kindSlot(), 1)
+        else bump(st, sameKindReason, 1);
+        Array.put(kind, 27, st)
+
+    /// スプライトの draw call が、前に出したスプライトの draw call に続けられなかった理由の slot。
+    /// masked = 今の draw call が mask つき。鍵が全部同じで mask も絡まないのは、間に描かない物（別の種類）が挟まった時。
+    def spriteBreakOf(st: Array[Int32, Static], texId: Int32, clipFlag: Int32,
+                      x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32, masked: Bool): Int32 \ IO =
+        if (Array.get(31, st) != texId) RenderDrawCounts.textureSlot()
+        else if (Array.get(37, st) != blendC) RenderDrawCounts.blendSlot()
+        else if (Array.get(32, st) != clipFlag
+                 or (clipFlag != 0 and (Array.get(33, st) != x0 or Array.get(34, st) != y0
+                                        or Array.get(35, st) != x1 or Array.get(36, st) != y1))) RenderDrawCounts.clipSlot()
+        else if (masked or Array.get(29, st) == 1) RenderDrawCounts.maskSlot()
+        else RenderDrawCounts.kindSlot()
+
+    /// スプライトの draw call を数え、その鍵を「前に出したスプライトの鍵」に控える。draws = 出した draw call の数（mask つきは 2）。
+    def countSpriteDraw(st: Array[Int32, Static], texId: Int32, clipFlag: Int32,
+                        x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32, masked: Bool, draws: Int32): Unit \ IO =
+        countDraw(st, kindSprite(), spriteBreakOf(st, texId, clipFlag, x0, y0, x1, y1, blendC, masked));
+        if (draws > 1) {
+            bump(st, RenderDrawCounts.drawCallsSlot(), draws - 1);
+            bump(st, RenderDrawCounts.maskSlot(), draws - 1)
+        } else ();
+        Array.put(if (masked) 1 else 0, 29, st);
+        Array.put(texId, 31, st);
+        Array.put(clipFlag, 32, st);
+        Array.put(x0, 33, st);
+        Array.put(y0, 34, st);
+        Array.put(x1, 35, st);
+        Array.put(y1, 36, st);
+        Array.put(blendC, 37, st)
+
+    /// 今の多角形 run の draw call を数え、その鍵を「前に出した多角形の鍵」に控える。
+    def countPolyDraw(st: Array[Int32, Static]): Unit \ IO =
+        let clipFlag = Array.get(19, st);
+        let reason =
+            if (Array.get(43, st) != Array.get(24, st)) RenderDrawCounts.blendSlot()
+            else if (Array.get(38, st) != clipFlag
+                     or (clipFlag != 0 and (Array.get(39, st) != Array.get(20, st) or Array.get(40, st) != Array.get(21, st)
+                                            or Array.get(41, st) != Array.get(22, st) or Array.get(42, st) != Array.get(23, st)))) RenderDrawCounts.clipSlot()
+            else RenderDrawCounts.kindSlot();
+        countDraw(st, kindPoly(), reason);
+        Array.put(0, 29, st);
+        Array.put(clipFlag, 38, st);
+        Array.put(Array.get(20, st), 39, st);
+        Array.put(Array.get(21, st), 40, st);
+        Array.put(Array.get(22, st), 41, st);
+        Array.put(Array.get(23, st), 42, st);
+        Array.put(Array.get(24, st), 43, st)
+
+    /// 1 つで 1 draw call の種類（タイル層・static の範囲・Shader の面）を数える。draws = 出した draw call の数（0 なら数えない・mask つきの面は 2）。
+    def countSingleDraw(st: Array[Int32, Static], kind: Int32, draws: Int32): Unit \ IO =
+        if (draws <= 0) ()
+        else {
+            countDraw(st, kind, RenderDrawCounts.kindSlot());
+            if (draws > 1) {
+                bump(st, RenderDrawCounts.drawCallsSlot(), draws - 1);
+                bump(st, RenderDrawCounts.maskSlot(), draws - 1)
+            } else ();
+            Array.put(0, 29, st)
+        }
+
+    /// この描き先で数えた数を、コマをまたぐ入れ物へ足し込む。
+    def addCountsTo(holder: RenderDrawCounts.Holder, st: Array[Int32, Static]): Unit \ IO =
+        List.range(0, RenderDrawCounts.slots()) |> List.forEach(i ->
+            Array.put(Array.get(i, holder) + Array.get(countBase() + i, st), i, holder))
 
     /// BlendMode ⇄ Int32（run 状態の入れ物が Int32 配列のため）。
     def blendCode(b: DrawCmd.BlendMode): Int32 =
@@ -458,6 +554,8 @@ mod RenderFrame {
                                                 Array.get(2, st), Array.get(11, st),
                                                 Array.get(3, st), blendOf(Array.get(17, st)),
                                                 instData, count);
+            countSpriteDraw(st, Array.get(11, st), Array.get(12, st), Array.get(13, st), Array.get(14, st),
+                            Array.get(15, st), Array.get(16, st), Array.get(17, st), false, 1);
             Array.put(0, 18, st)
         }
 
@@ -471,6 +569,7 @@ mod RenderFrame {
             RenderSprite.drawPolygonBatchBuf(gl, Array.get(4, st), Array.get(5, st),
                                              Array.get(6, st), uniforms,
                                              blendOf(Array.get(24, st)), polyData, count);
+            countPolyDraw(st);
             Array.put(0, 25, st)
         }
 
@@ -654,18 +753,20 @@ mod RenderFrame {
                                       _cr, _cg, _cb, _a, _cen,
                                       _uox, _uoy, _usx, _usy, _z,
                                       _style, clip, blend, mask) = drawable;
-        match clip {
-            case None    => setScissorAt(gl, st, 0, 0, 0, 0, 0)
+        let (clipFlag, x0, y0, x1, y1) = match clip {
+            case None    => (0, 0, 0, 0, 0)
             case Some(r) =>
-                let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
-                setScissorAt(gl, st, 1, x0, y0, x1, y1)
+                let (cx0, cy0, cx1, cy1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
+                (1, cx0, cy0, cx1, cy1)
         };
+        setScissorAt(gl, st, clipFlag, x0, y0, x1, y1);
         writeInstAt(instData, 0, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
-        RenderSprite.drawSpriteMasked(gl, Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
-                                      Array.get(3, st), blend, instData,
-                                      Array.get(4, st), Array.get(5, st), Array.get(6, st),
-                                      polyUniforms,
-                                      maskToScreen(rot, posX, posY, sizeX, sizeY, mask))
+        let draws = RenderSprite.drawSpriteMasked(gl, Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
+                                                  Array.get(3, st), blend, instData,
+                                                  Array.get(4, st), Array.get(5, st), Array.get(6, st),
+                                                  polyUniforms,
+                                                  maskToScreen(rot, posX, posY, sizeX, sizeY, mask));
+        countSpriteDraw(st, texId, clipFlag, x0, y0, x1, y1, blendCode(blend), true, draws)
 
     /// mask 頂点（表示クアッドのローカル design px・原点 = 左上・回転前）を、writeInstAt と
     /// 同じ model 変換（回転中心 = クアッド中心）でスクリーン px へ写す。頂点を size の
@@ -713,7 +814,8 @@ mod RenderFrame {
                 setScissorAt(gl, st, 1, x0, y0, x1, y1)
         };
         RenderSprite.drawStaticRange(gl, Array.get(4, st), r#vao, uniforms, r#blend,
-                                     r#viewOffset, r#viewScale, r#halfDesign, r#first, r#count)
+                                     r#viewOffset, r#viewScale, r#halfDesign, r#first, r#count);
+        countSingleDraw(st, kindStatic(), if (r#count < 3) 0 else 1)
 
     /// 安定ソート済みの列を先頭から 1 本ずつ処理する（末尾再帰）。
     /// スプライト run と多角形 run を並行して溜め、種類が切り替わる瞬間に
@@ -732,7 +834,7 @@ mod RenderFrame {
                    warnLog: Ref[Set[String], Static],
                    tileUniforms: RenderShader.TileUniforms,
                    polyBatchUniforms: RenderShader.PolyBatchUniforms,
-                   drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Unit \ IO,
+                   drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
                    drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
                    items: List[Merged]): Unit \ IO =
         match items {
@@ -755,7 +857,8 @@ mod RenderFrame {
                                                      GpuHandle.tileVaoInt(tm#tileVaoId),
                                                      tileUniforms,
                                                      tm#position, tm#tileSize, tm#tileScale,
-                                                     tm#color, tm#tileCount)
+                                                     tm#color, tm#tileCount);
+                                countSingleDraw(st, kindTile(), 1)
                             // texture 未登録は描かない（穴も開けない）。
                             case None => warnMissingTexture(warnLog, tm#textureName)
                         }
@@ -788,13 +891,15 @@ mod RenderFrame {
                         flushSprites(gl, st, instData);
                         flushPolys(gl, st, polyData, polyBatchUniforms);
                         setScissorAt(gl, st, 0, 0, 0, 0, 0);
-                        drawSurface(gl, s)
+                        countSingleDraw(st, kindSurface(), drawSurface(gl, s))
                     case Merged.MScene3d(i) =>
                         // 場面も両 run を吐いてから描く（深度で前後を決めるのは場面の中だけ）。
                         flushSprites(gl, st, instData);
                         flushPolys(gl, st, polyData, polyBatchUniforms);
                         drawScene({ x = Array.get(7, st), y = Array.get(8, st), width = Array.get(9, st),
-                                    height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, i)
+                                    height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, i);
+                        // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
+                        Array.put(kindScene3d(), 27, st)
                 };
                 emitMerged(gl, st, instData, polyData, scaleX, scaleY, registry, targetNames,
                            warnLog, tileUniforms, polyBatchUniforms, drawSurface, drawScene, rest)
@@ -911,11 +1016,14 @@ mod RenderFrame {
             Array.put(vpW, 9, st);
             Array.put(vpH, 10, st);
             Array.put(tileShader, 26, st);
+            Array.put(1, 28, st);
+            Array.put(if (Array.get(RenderDrawCounts.drawCallsSlot(), args#drawCounts) > 0) 1 else 0, 30, st);
             emitMerged(gl, st, instData, polyData, scaleX, scaleY, registry, args#targetNames,
                        args#texWarnLog, tileUniforms, polyBatchUniforms, drawSurface, args#scenes#draw, sortedMerged);
             // どちらか片方だけが非空（切替時に相手を吐いているため）。空 flush は no-op。
             flushSprites(gl, st, instData);
             flushPolys(gl, st, polyData, polyBatchUniforms);
+            addCountsTo(args#drawCounts, st);
             // フレーム末尾で必ず scissor を解除する — 有効なまま持ち越すと、次フレームの
             // 全画面 clear や F8 注釈のスクリーンショット再描画が小矩形に切られる。
             gl.disable(GlConst.SCISSOR_TEST);

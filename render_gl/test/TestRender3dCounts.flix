@@ -1,7 +1,7 @@
 // 3D の描き手の 1 コマの数と CPU の区間（Render3d.Counts）。GL を呼ばずに State だけで決まる所。
 mod Render3d.TestCounts {
     import java.lang.System
-    use Render3d.Counts.{Counter, Phase}
+    use Render3d.Counts.{BatchBreak, Counter, Phase}
 
     def freshState(): Render3d.State \ IO = Render3d.fresh({ megabytes = 64, count = 64 }, Render3d.DrawMode.Instanced)
 
@@ -16,9 +16,32 @@ mod Render3d.TestCounts {
         let s = freshState();
         Render3d.Counts.count(s, Counter.JointUploads, 3);
         Render3d.Counts.count(s, Counter.MipCopies, 1);
-        Render3d.Counts.countDrawCall(s);
+        Render3d.Counts.countDrawCall(s, BatchBreak.Mesh);
         let c = Render3d.Counts.takeCounts(s);
         Assert.assertEq(expected = (3, 1, 1), (c#jointUploads, c#mipCopies, c#drawCalls))
+
+    /// draw call を 3 つ（影の地図 1・ビルボード 2）数えると、理由ごとの数の合計が drawCalls と同じ 3 になる。
+    @Test
+    def testDrawCallsAreCountedByReason(): Unit \ {Assert, IO} =
+        let s = freshState();
+        Render3d.Counts.countDrawCall(s, BatchBreak.ShadowPass);
+        Render3d.Counts.countDrawCall(s, BatchBreak.Billboard);
+        Render3d.Counts.countDrawCall(s, BatchBreak.Billboard);
+        let c = Render3d.Counts.takeCounts(s);
+        Assert.assertEq(expected = (3, "shadowPass 1 / billboard 2"),
+                        (c#drawCalls, FrameDiagnostics.breaksText(FrameDiagnostics.scene3dBreakList(c#batchBreaks))))
+
+    /// 材質の無い三角形 2 個（同じ形）と骨つきの三角形 1 個の場面は draw call 2 つで、形の batch が mesh・骨つきの batch が skinned。
+    @Test
+    def testPlainAndSkinnedBatchesAreCountedByReason(): Unit \ {Assert, IO} =
+        let s = freshState();
+        let gl = Render3d.FakeGl.recordingGl(Render3d.FakeGl.freshRecorded());
+        let plain = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity());
+        let skinned = Render3d.FakeGl.skinnedAt(Render3d.FakeGl.poseAt(0.0));
+        Render3d.FakeGl.paint(gl, s, Render3d.FakeGl.cmdOf(Render3d.FakeGl.sceneOf(plain :: plain :: skinned :: Nil)) :: Nil);
+        let c = Render3d.Counts.takeCounts(s);
+        Assert.assertEq(expected = (2, "skinned 1 / mesh 1"),
+                        (c#drawCalls, FrameDiagnostics.breaksText(FrameDiagnostics.scene3dBreakList(c#batchBreaks))))
 
     @Test
     def testTakeCountsResetsToZero(): Unit \ {Assert, IO} =

@@ -474,9 +474,31 @@
 
 ## FrameDiagnostics — `engine/src/core/FrameDiagnostics.flix`
 - 1 コマの診断。時間はナノ秒。
-  `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String], gpuNs = Option[Int64], gpuPasses = List[(String, Int64)], scene3dCounts = Scene3dCounts }`
+  `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String], gpuNs = Option[Int64], gpuPasses = List[(String, Int64)], draw2dCounts = Draw2dCounts, scene3dCounts = Scene3dCounts }`
+- 2D の draw call の数（Diagnostics#draw2dCounts）。
+  `pub type alias Draw2dCounts = { drawCalls = Int32, batchBreaks = Draw2dBatchBreaks }`
+- 2D の draw call が前の draw call に続けられなかった理由ごとの数。1 つの draw call につき 1 つだけ数える。
+  `pub type alias Draw2dBatchBreaks = { target = Int32, kind = Int32, texture = Int32, blend = Int32, clip = Int32, mask = Int32 }`
+- 2D を描かないコマの数（全部 0）。
+  `pub def emptyDraw2dCounts(): Draw2dCounts`
+- 2 コマぶんの数を足す。
+  `pub def addDraw2dCounts(a: Draw2dCounts, b: Draw2dCounts): Draw2dCounts`
+- 理由の名前と数（Draw2dBatchBreaks の欄の順）。
+  `pub def draw2dBreakList(b: Draw2dBatchBreaks): List[(String, Int32)]`
+- 理由の名前と数（Scene3dBatchBreaks の欄の順）。
+  `pub def scene3dBreakList(b: Scene3dBatchBreaks): List[(String, Int32)]`
+- 理由ごとの数を 1 行に（0 の理由は出さない・どれも 0 なら "-"）。breaks = draw2dBreakList か scene3dBreakList。
+  `pub def breaksText(breaks: List[(String, Int32)]): String`
+- 一番多い理由と数（同じ数なら欄の順で先の物・どれも 0 なら None）。
+  `pub def topBreak(breaks: List[(String, Int32)]): Option[(String, Int32)]`
 - 3D の場面の数（Diagnostics#scene3dCounts）。
-  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32, meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild], jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)] }`
+  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32, meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild], jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks }`
+- 3D の draw call が分かれた理由ごとの数。3D は batch を鍵でまとめてから描くので、draw call 1 つを 1 つの理由に数える（合計は drawCalls）。
+  `pub type alias Scene3dBatchBreaks = { shadowPass = Int32, billboard = Int32, sky = Int32, transparent = Int32, lightmap = Int32, skinned = Int32, material = Int32, mesh = Int32 }`
+- どの理由も 0。
+  `pub def emptyScene3dBatchBreaks(): Scene3dBatchBreaks`
+- 2 コマぶんの理由ごとの数を足す。
+  `pub def addScene3dBatchBreaks(a: Scene3dBatchBreaks, b: Scene3dBatchBreaks): Scene3dBatchBreaks`
 - 3D を描かないコマの数（全部 0）。
   `pub def emptyScene3dCounts(): Scene3dCounts`
 - 上げ直した物と捨てた物の数を 1 行に（どれも 0 なら "-"）。並びは Scene3dCounts の欄の順。

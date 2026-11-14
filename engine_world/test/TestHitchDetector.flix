@@ -126,6 +126,14 @@ mod TestHitchDetector {
         let rows = calm(0i64, 3i64) ::: (posed(row(3i64, 45i64)) :: calm(4i64, 2i64));
         Assert.assertTrue(String.contains(substr = "| joints 300 | draw 4.00 |", reportOf(rows)))
 
+    // 一番重いコマの 2D の draw call の数（96）と、切れた理由（blend 72・mask 4）が報告の頭に出る。3D を描かないコマは 0 と "-"。
+    @Test
+    def testReportShowsDrawCallsOfWorstFrame(): Unit \ Assert =
+        let breaks = { blend = 72, mask = 4 | FrameDiagnostics.emptyDraw2dCounts()#batchBreaks };
+        let busy = (r: Row) -> { diag = { draw2dCounts = { drawCalls = 96, batchBreaks = breaks } | r#diag } | r };
+        let rows = calm(0i64, 3i64) ::: (busy(row(3i64, 45i64)) :: calm(4i64, 2i64));
+        Assert.assertTrue(String.contains(substr = "一番重いコマの draw call: 2D 96（blend 72 / mask 4）・3D 0（-）", reportOf(rows)))
+
     @Test
     def testReportTellsLeakWhenNothingIsDeleted(): Unit \ Assert =
         let live = (n: Int32, r: Row) -> { diag = { liveShaders = n | r#diag } | r };

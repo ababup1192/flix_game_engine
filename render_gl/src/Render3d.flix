@@ -30,7 +30,7 @@ mod Render3d {
     use Render3d.ScenePlan.{SceneDraws, SceneInputs, SceneItem, SceneTarget, planScenes}
     use Render3d.Shadow.{bindShadowMap, putShadow, putSunShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, drawMaterials, resolveTextureAs, sweepMaterials, sweepTextures3d}
-    use Render3d.Counts.{Counter, Phase, count, countDrawCall, countInstances, noteDroppedLights, takeCounts, timed}
+    use Render3d.Counts.{BatchBreak, Counter, Phase, count, countDrawCall, countInstances, noteDroppedLights, takeCounts, timed}
 
     // ── 型 ──
 
@@ -642,7 +642,7 @@ mod Render3d {
                 });
                 gl.bindVertexArray(programsOf(gl, state)#quadVao);
                 gl.drawArrays(GlConst.TRIANGLES, 0, 6);
-                countDrawCall(state);
+                countDrawCall(state, BatchBreak.Sky);
                 gl.bindVertexArray(0);
                 gl.useProgram(0);
                 gl.enable(GlConst.CULL_FACE);
@@ -685,35 +685,35 @@ mod Render3d {
 
     /// 骨の無い物を locs で、骨つきの物を骨つきの版で描く（骨つきの版は骨つきの物がある時だけ組む）。
     def drawInstancesLit(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, draws: SceneDraws[MeshBatch]): Unit \ IO =
-        drawLitWith(gl, state, gen, locs, camera, draws#plain);
-        if (List.isEmpty(draws#skinned)) () else drawLitWith(gl, state, gen, skinnedProgramsOf(gl, state)#lit, camera, draws#skinned)
+        drawLitWith(gl, state, gen, locs, camera, BatchBreak.Mesh, draws#plain);
+        if (List.isEmpty(draws#skinned)) () else drawLitWith(gl, state, gen, skinnedProgramsOf(gl, state)#lit, camera, BatchBreak.Skinned, draws#skinned)
 
-    def drawLitWith(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, batches: List[MeshBatch]): Unit \ IO =
+    def drawLitWith(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, why: BatchBreak, batches: List[MeshBatch]): Unit \ IO =
         if (List.isEmpty(batches) or locs#mesh#program == 0) ()
         else {
             useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
             putLights(gl, locs#light, camera#lights);
             putShadow(gl, locs#shadow, camera#shadows#spot);
             putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
-            batches |> List.forEach(drawBatch(gl, state, gen, locs#mesh))
+            batches |> List.forEach(drawBatch(gl, state, gen, locs#mesh, why))
         }
 
     /// Output.Depth の灰色で描く。骨の分け方は drawInstancesLit と同じ。
     def drawInstancesDepth(gl: GlContext, state: State, gen: Int64, locs: DepthLocs, camera: CameraData, eye: Vec3.Vec3,
                            depthRange: { near = Float64, range = Float64 }, draws: SceneDraws[MeshBatch]): Unit \ IO =
         let pass = { camera = camera, eye = eye, depthRange = depthRange };
-        drawDepthWith(gl, state, gen, locs, pass, draws#plain);
-        if (List.isEmpty(draws#skinned)) () else drawDepthWith(gl, state, gen, skinnedProgramsOf(gl, state)#depth, pass, draws#skinned)
+        drawDepthWith(gl, state, gen, locs, pass, BatchBreak.Mesh, draws#plain);
+        if (List.isEmpty(draws#skinned)) () else drawDepthWith(gl, state, gen, skinnedProgramsOf(gl, state)#depth, pass, BatchBreak.Skinned, draws#skinned)
 
     def drawDepthWith(gl: GlContext, state: State, gen: Int64, locs: DepthLocs,
                       pass: { camera = CameraData, eye = Vec3.Vec3, depthRange = { near = Float64, range = Float64 } },
-                      batches: List[MeshBatch]): Unit \ IO =
+                      why: BatchBreak, batches: List[MeshBatch]): Unit \ IO =
         if (List.isEmpty(batches) or locs#mesh#program == 0) ()
         else {
             useMeshProgram(gl, locs#mesh, pass#camera#view, pass#camera#proj);
             gl.uniform3f(locs#eye, RenderUtil.f32(pass#eye#x), RenderUtil.f32(pass#eye#y), RenderUtil.f32(pass#eye#z));
             putDepthRange(gl, locs#depthRange, pass#depthRange);
-            batches |> List.forEach(drawBatch(gl, state, gen, locs#mesh))
+            batches |> List.forEach(drawBatch(gl, state, gen, locs#mesh, why))
         }
 
     def putColor(gl: GlContext, loc: Int32, c: Color): Unit \ IO =
@@ -731,16 +731,16 @@ mod Render3d {
         gl.uniformMatrix4fv(locs#view, false, view);
         gl.uniformMatrix4fv(locs#proj, false, proj)
 
-    /// batch b を描く（形が置き場に無ければ上げる）。描く物の無い batch は、形を今のコマで使った物として置き場に数えるだけ。
+    /// batch b を描く（形が置き場に無ければ上げる）。why = この batch が 1 つの draw call に分かれた理由（数えるだけ）。描く物の無い batch は、形を今のコマで使った物として置き場に数えるだけ。
     // WhyNot: 間引いた batch を meshEntry に通さずに飛ばさない — 置き場があふれると最後に使ったのが古い形から捨てるので、間引いた物から消え、振り向くたびに頂点を上げ直す。
-    def drawBatch(gl: GlContext, state: State, gen: Int64, locs: MeshLocs, b: MeshBatch): Unit \ IO =
+    def drawBatch(gl: GlContext, state: State, gen: Int64, locs: MeshLocs, why: BatchBreak, b: MeshBatch): Unit \ IO =
         let entry = meshEntry(gl, state, gen, b#head#fields#mesh);
         if (entry#indexCount <= 0 or b#count <= 0) ()
         else {
             gl.uniform1i(locs#instanceBase, b#first);
             gl.bindVertexArray(entry#vao);
             gl.drawElementsInstanced(GlConst.TRIANGLES, entry#indexCount, GlConst.UNSIGNED_INT, 0, b#count);
-            countDrawCall(state)
+            countDrawCall(state, why)
         }
 
     def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
@@ -1028,7 +1028,7 @@ mod Render3d {
                 putLinearizedColor(gl, locs#tint, b#tint);
                 gl.uniform1i(locs#lit, if (b#lit) 1 else 0);
                 gl.drawArrays(GlConst.TRIANGLES, 0, 6);
-                countDrawCall(state)
+                countDrawCall(state, BatchBreak.Billboard)
         }
 
     /// 貼る範囲の uv（左上 u・v と幅・高さ）。レンダーターゲットは行 0 が下なので v を反転する。

@@ -241,11 +241,12 @@ mod RenderPaint {
                 });
             // mask が空なら矩形そのまま、非空なら多角形の内側だけにステンシルで抜く
             // （多角形描画は poly バッチ経路を借りる）。
-            if (List.isEmpty(cmd#mask))
+            if (List.isEmpty(cmd#mask)) {
                 RenderSprite.drawShaderSurface(surfaceGl, program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
                                                texBinds,
-                                               cmd#rect, cmd#time, cmd#alpha, cmd#blend)
-            else
+                                               cmd#rect, cmd#time, cmd#alpha, cmd#blend);
+                1
+            } else
                 RenderSprite.drawShaderSurfaceMasked(surfaceGl, program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
                                                texBinds,
                                                cmd#rect, cmd#time, cmd#alpha, cmd#blend,
@@ -271,7 +272,8 @@ mod RenderPaint {
             surfaces = Nil, drawSurface = drawSurface,
             scenes = Scene3dRenderer.noScenes(),
             targetClear = None, targetNames = Set.empty(),
-            texWarnLog = missingTextureRef
+            texWarnLog = missingTextureRef,
+            drawCounts = RenderDrawCounts.fresh()
         };
         { screenW = screenW, screenH = screenH, screenFramebuffer = cfg#screenFramebuffer, frameArgsBase = frameArgsBase,
           quadVBO = quadVBO, fallbackShader = fallbackShader,
@@ -395,6 +397,7 @@ mod RenderPaint {
                 // いる面」という数え方が壊れる。
                 Array.put(Array.get(0, paint#frameGenHolder) + 1i64, 0, paint#frameGenHolder);
                 timedSpan(paint, "screen", () -> paintFrame(gl, paint, fbW, fbH, frame));
+                RenderDrawCounts.markScreenFrame(paint#frameArgsBase#drawCounts);
                 paint#scene3d#endFrame(Array.get(0, paint#frameGenHolder));
                 noteGpuTime(paint);
                 true
@@ -406,10 +409,12 @@ mod RenderPaint {
         else paint#gpuTimer#measure(name, f)
 
     /// 画面のコマの終わりに、結果の出た一番新しいコマの GPU の時間を診断へ入れる。
-    /// 集めていない間は 3D の数を捨てるだけ（誰も引き取らない数を溜め続けない）。
+    /// 集めていない間は 2D と 3D の数を捨てるだけ（誰も引き取らない数を溜め続けない）。
     def noteGpuTime(paint: Paint): Unit \ IO =
-        if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) discard paint#scene3d#takeCounts()
-        else match paint#gpuTimer#endFrame() {
+        if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) {
+            RenderDrawCounts.reset(paint#frameArgsBase#drawCounts);
+            discard paint#scene3d#takeCounts()
+        } else match paint#gpuTimer#endFrame() {
             case Some(t) => noteDiagnostics(paint, d -> { gpuNs = Some(t#gpuNs), gpuPasses = t#passes | d })
             case None    => ()
         }
@@ -434,6 +439,10 @@ mod RenderPaint {
             ({ texId = GpuHandle.textureIdInt(info#id), width = info#width, height = info#height,
                flipped = Map.memberOf(name, Ref.get(targetsRef)),
                version = Map.getWithDefault(name, "", Ref.get(textureKeyRef)) }: Scene3dRenderer.RegisteredTexture))
+
+    /// 最後に画面へ塗り終えた時の 2D の draw call の数（診断を集めていなくても読める）。
+    pub def lastDraw2dCounts(paint: Paint): FrameDiagnostics.Draw2dCounts \ IO =
+        RenderDrawCounts.lastScreenFrame(paint#frameArgsBase#drawCounts)
 
     /// 最後に画面へ塗ったコマの命令。
     pub def lastFrame(paint: Paint): Frame \ IO = Array.get(0, paint#lastFrameHolder)
@@ -723,17 +732,18 @@ mod RenderPaint {
     pub def setDiagnosticsEnabled(paint: Paint, on: Bool): Unit \ IO =
         Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, paint#diagnosticsRef)
 
-    /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・scene3dCounts は前に取り出してからの 3D の数。
+    /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・draw2dCounts と scene3dCounts は前に取り出してからの数。
     /// shaderBuilds は 2D のシェーダーの後ろに 3D の材質のプログラムを足す（liveShaders には 3D の材質を数えない）。
     pub def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
         let counts = paint#scene3d#takeCounts();
+        let draw2d = RenderDrawCounts.take(paint#frameArgsBase#drawCounts);
         match Ref.get(paint#diagnosticsRef) {
             case None    => FrameDiagnostics.empty()
             case Some(d) =>
                 Ref.put(Some(FrameDiagnostics.empty()), paint#diagnosticsRef);
                 let live = Array.get(0, paint#shaderLifeHolder) - Array.get(1, paint#shaderLifeHolder);
                 { shaderBuilds = List.append(List.reverse(d#shaderBuilds), counts#materialBuilds), textureUploads = List.reverse(d#textureUploads), liveShaders = live,
-                  scene3dCounts = counts | d }
+                  draw2dCounts = draw2d, scene3dCounts = counts | d }
         }
 
     /// 塗り（submit = 命令を出し終えるまで）と入れ替え（swap）の時間を診断に足す。呼ぶのは renderCommands（塗り）と presentFrame（swap）。

@@ -9,6 +9,22 @@ mod Render3d.Counts {
              MeshUploads, MeshEvictions, Texture3dUploads, MipCopies, JointUploads, TargetRebuilds
     }
 
+    /// draw call が分かれた理由（FrameDiagnostics.Scene3dBatchBreaks の欄）。並びは countsHolder の添え字（breakSlotOf）。
+    pub enum BatchBreak {
+        case ShadowPass, Billboard, Sky, Transparent, Lightmap, Skinned, Material, Mesh
+    }
+
+    def breakSlotOf(b: BatchBreak): Int32 = match b {
+        case BatchBreak.ShadowPass  => 11
+        case BatchBreak.Billboard   => 12
+        case BatchBreak.Sky         => 13
+        case BatchBreak.Transparent => 14
+        case BatchBreak.Lightmap    => 15
+        case BatchBreak.Skinned     => 16
+        case BatchBreak.Material    => 17
+        case BatchBreak.Mesh        => 18
+    }
+
     /// CPU の区間。並びは phaseNsHolder の添え字（phaseSlotOf）。
     pub enum Phase {
         case Shadows, Split, Draw, EndFrame, Mip, Preload
@@ -29,7 +45,7 @@ mod Render3d.Counts {
     }
 
     /// countsHolder の長さ。
-    pub def counterSlots(): Int32 = 11
+    pub def counterSlots(): Int32 = 19
 
     def phaseSlotOf(p: Phase): Int32 = match p {
         case Phase.Shadows  => 0
@@ -76,6 +92,7 @@ mod Render3d.Counts {
     pub def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
         let h = state#countsHolder;
         let at = (c: Counter) -> Array.get(slotOf(c), h);
+        let breakAt = (b: BatchBreak) -> Array.get(breakSlotOf(b), h);
         let ns = state#phaseNsHolder;
         let counts = {
             instances = at(Counter.Instances), drawn = at(Counter.Drawn), drawCalls = at(Counter.DrawCalls),
@@ -83,7 +100,10 @@ mod Render3d.Counts {
             meshUploads = at(Counter.MeshUploads), meshEvictions = at(Counter.MeshEvictions), texture3dUploads = at(Counter.Texture3dUploads),
             mipCopies = at(Counter.MipCopies), materialBuilds = List.reverse(Ref.get(state#materialBuildsRef)), jointUploads = at(Counter.JointUploads),
             targetRebuilds = at(Counter.TargetRebuilds),
-            cpuPhases = phases() |> List.filterMap(p -> { let v = Array.get(phaseSlotOf(p), ns); if (v == 0i64) None else Some((phaseName(p), v)) })
+            cpuPhases = phases() |> List.filterMap(p -> { let v = Array.get(phaseSlotOf(p), ns); if (v == 0i64) None else Some((phaseName(p), v)) }),
+            batchBreaks = { shadowPass = breakAt(BatchBreak.ShadowPass), billboard = breakAt(BatchBreak.Billboard), sky = breakAt(BatchBreak.Sky),
+                            transparent = breakAt(BatchBreak.Transparent), lightmap = breakAt(BatchBreak.Lightmap), skinned = breakAt(BatchBreak.Skinned),
+                            material = breakAt(BatchBreak.Material), mesh = breakAt(BatchBreak.Mesh) }
         };
         Ref.put(Nil, state#materialBuildsRef);
         List.range(0, Array.length(h)) |> List.forEach(i -> Array.put(0, i, h));
@@ -106,6 +126,10 @@ mod Render3d.Counts {
     pub def noteMaterialBuild(state: State, name: String, reason: FrameDiagnostics.BuildReason): Unit \ IO =
         Ref.put({ name = name, reason = reason } :: Ref.get(state#materialBuildsRef), state#materialBuildsRef)
 
-    /// 3D の draw call を 1 つ数える。
-    pub def countDrawCall(state: State): Unit \ IO = count(state, Counter.DrawCalls, 1)
+    /// 3D の draw call を 1 つ数え、それが 1 つの draw call に分かれた理由 why も 1 つ数える。
+    pub def countDrawCall(state: State, why: BatchBreak): Unit \ IO =
+        count(state, Counter.DrawCalls, 1);
+        let h = state#countsHolder;
+        let i = breakSlotOf(why);
+        Array.put(Array.get(i, h) + 1, i, h)
 }
