@@ -4,7 +4,7 @@
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
     use RenderFrame.{RenderList, blendCode, clearRenderList, closeSpriteRun, emitSprite, instanceFloats, kindSprite,
-                     newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, stateSize, writeInstAt}
+                     newRenderList, nextInstanceOf, pushSpriteKeyed, rowAt, rowCountOf, rowsOf, stateSize, writeInstAt}
 
     // ── 組み立て ──
 
@@ -117,7 +117,32 @@ mod RenderFrame.TestRenderList {
     /// 初めに取った行の数（16）を超えても、行は描き物の数だけできる。
     @Test
     def testRowsGrowPastFirstRoom(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = 40, rowCountOf(listOf(alternating(40))))
+        let sprites = alternating(40);
+        Assert.assertEq(expected = List.length(sprites), rowCountOf(listOf(sprites)))
+
+    /// 倍に広げた後も、16 番目の行（絵 "b"）の絵の番号は表の番号のまま。
+    @Test
+    def testGrownRowsKeepContents(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = textureIdOf("b"), cell(listOf(alternating(40)), 15, 3))
+
+    /// 絵も blend も同じで、切り抜きの矩形だけが替わると次の行になる。
+    @Test
+    def testClipChangeStartsRow(): Unit \ {Assert, IO} =
+        let other = { position = { x = 5.0, y = 5.0 }, size = { x = 10.0, y = 10.0 } };
+        let first = spriteWith({ texture = "a", x = 0.0, blend = DrawCmd.BlendMode.Normal, clip = Some(clipRect()) });
+        let second = spriteWith({ texture = "a", x = 1.0, blend = DrawCmd.BlendMode.Normal, clip = Some(other) });
+        Assert.assertEq(expected = 2, rowCountOf(listOf(first :: second :: Nil)))
+
+    /// 切り抜きが無いどうしは、run の鍵に残った矩形の数が違っても 1 行のまま。
+    @Test
+    def testNoClipIgnoresLeftoverRect(): Unit \ {Assert, IO} =
+        let st: Array[Int32, Static] = Array.empty(Static, stateSize());
+        let list = newRenderList(FloatBuffer.allocate(2 * instanceFloats()));
+        let d = sprite("a", 0.0);
+        pushSpriteKeyed(st, list, 5, 0, 1, 2, 30, 40, 0, 0.0, 0.0, 8.0, 8.0, d, true, false);
+        pushSpriteKeyed(st, list, 5, 0, 7, 8, 9, 10, 0, 1.0, 0.0, 8.0, 8.0, d, true, false);
+        closeSpriteRun(st, list);
+        Assert.assertEq(expected = 1, rowCountOf(list))
 
     // ── instances ──
 
@@ -127,6 +152,13 @@ mod RenderFrame.TestRenderList {
         let b = sprite("b", 2.0);
         let list = listOf(sprite("a", 0.0) :: sprite("a", 1.0) :: b :: Nil);
         Assert.assertEq(expected = writtenAlone(2.0, 8.0, b, true), instanceFloatsAt(list, 1, 0))
+
+    /// 2 行目の 2 体目の値は、同じスプライトを writeInstAt で 1 体だけ書いた値と同じ。
+    @Test
+    def testSecondInstanceOfRowMatchesWriteInstAt(): Unit \ {Assert, IO} =
+        let last = sprite("b", 2.0);
+        let list = listOf(sprite("a", 0.0) :: sprite("b", 1.0) :: last :: Nil);
+        Assert.assertEq(expected = writtenAlone(2.0, 8.0, last, true), instanceFloatsAt(list, 1, 1))
 
     // ── 空にする ──
 

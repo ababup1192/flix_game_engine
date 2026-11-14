@@ -238,7 +238,6 @@ mod RenderFrame {
     /// 順番を取り違えても気づけない。名前で渡せば取り違いが起きない。
     /// 利用例: 実行環境（LWJGL 等）のフレームループがこの1件を組んで renderFrameMixed へ渡す。
     pub type alias FrameArgs = {
-        spriteShader = Int32,
         tileShader = Int32,
         vao = Int32,
         registry = RenderAsset.TextureRegistry,
@@ -266,7 +265,6 @@ mod RenderFrame {
         // （バックエンドが起動時に 1 つずつ作って毎フレーム貸す）。
         instBuf = RenderBuf.Buf,
         polyBuf = RenderBuf.Buf,
-        spriteUniforms = RenderShader.SpriteUniforms,
         tileUniforms = RenderShader.TileUniforms,
         // instanced シェーダの premultiply スイッチ（Multiply ブレンド用）の uniform location。
         instMultiplyBlend = Int32,
@@ -307,9 +305,8 @@ mod RenderFrame {
                 + "（project.json の textures に同名の宣言があるか確認）")
         }
 
-    /// drawSprite が uniform に詰める model 行列と同じ式を CPU 側で計算して、
-    /// instance 属性 (38 floats・シェーダ loc1-10 と同並び) を入れ物の slot 番目へ直に書く
-    /// （絵が per-draw 経路と一致することを式の同一性で保証）。
+    /// 1 体ぶんの model 行列（回転×スケール＋平行移動）を CPU 側で計算して、
+    /// instance 属性 (instanceFloats() 個・シェーダ loc1-10 と同並び) を入れ物の slot 番目へ直に書く。
     /// style も per-instance 属性に載せる: 単色矩形は常に style 付きで届く
     /// (RawDraw.box が solidStyle を持たせる) ため、style をバッチ分割条件に
     /// すると矩形が全部 1 枚ずつ描かれて一括化が骨抜きになる（実測で発覚）。
@@ -333,7 +330,7 @@ mod RenderFrame {
         let s = RenderUtil.sinF(rot);
         let tx = posX + sizeX / 2.0 - c * sizeX / 2.0 + s * sizeY / 2.0;
         let ty = posY + sizeY / 2.0 - s * sizeX / 2.0 - c * sizeY / 2.0;
-        let base = slot * 38;
+        let base = slot * instanceFloats();
         discard data.put(base + 0, f32(c * sizeX));
         discard data.put(base + 1, f32(s * sizeX));
         discard data.put(base + 2, f32(-1.0 * s * sizeY));
@@ -378,7 +375,7 @@ mod RenderFrame {
                 let DrawCmd.BoxStyle.BoxStyle(rad, bw, br, bg, bb, ba,
                                               sr, sg, sb, sa, sw, sp, sd,
                                               kr, kg, kb, ka, kc) = st;
-                // hatch の有効判定は drawSprite の hatchOn と同式(period<=0 は GLSL の mod が未定義なので無効扱い)。
+                // hatch の有効判定は SoftRaster と同式(period<=0 は GLSL の mod が未定義なので無効扱い)。
                 let hatch = if (sw > 0.0 and sa > 0.0 and sp > 0.0) 1.0f32 else 0.0f32;
                 discard data.put(base + 16, 1.0f32);
                 discard data.put(base + 17, hatch);
@@ -564,6 +561,7 @@ mod RenderFrame {
 
     def rowsHead(): Int32 = 2
 
+    // WhyNot: RenderSprite の同じ数を呼ばない — 別のモジュールの pub でない関数は呼べず、pub に開くことになる。
     def instanceFloats(): Int32 = 38
 
     def newRenderList(instances: FloatBuffer): RenderList \ IO =
@@ -656,9 +654,8 @@ mod RenderFrame {
         let y1 = rowAt(rows, row, 9);
         let instances = list#instances;
         setScissorAt(gl, st, clipFlag, x0, y0, x1, y1);
-        discard instances.position(first * instanceFloats());
         RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
-                                            Array.get(3, st), blendOf(blendC), instances, count);
+                                            Array.get(3, st), blendOf(blendC), instances, first, count);
         countSpriteDraw(st, texId, clipFlag, x0, y0, x1, y1, blendC, false, 1);
         ()
 
@@ -871,9 +868,8 @@ mod RenderFrame {
         };
         setScissorAt(gl, st, clipFlag, x0, y0, x1, y1);
         writeInstAt(instData, 0, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
-        discard instData.position(0);
         let draws = RenderSprite.drawSpriteMasked(gl, Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
-                                                  Array.get(3, st), blend, instData,
+                                                  Array.get(3, st), blend, instData, 0,
                                                   Array.get(4, st), Array.get(5, st), Array.get(6, st),
                                                   polyUniforms,
                                                   maskToScreen(rot, posX, posY, sizeX, sizeY, mask));
@@ -1126,7 +1122,7 @@ mod RenderFrame {
             // 固定費が積み上がり、数千体で描画時間のほとんどを占めてしまうため。
             // 書き溜める先は 1 フレーム 1 本の使い回し。RenderList の行は GL を直に呼ぶ種類の手前まで溜まるので、
             // スプライトの数ぶん取る（行を流すたびに先頭へ戻る）。
-            RenderBuf.ensure(gl, instBuf, Int32.max(1, List.length(sprites)) * 38);
+            RenderBuf.ensure(gl, instBuf, Int32.max(1, List.length(sprites)) * instanceFloats());
             RenderBuf.ensure(gl, polyBuf, Int32.max(3, polyVertCap(polygons)) * 6);
             let instData = RenderBuf.buffer(instBuf);
             let polyData = RenderBuf.buffer(polyBuf);

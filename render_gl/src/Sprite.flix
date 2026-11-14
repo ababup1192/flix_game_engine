@@ -176,7 +176,7 @@ mod RenderSprite {
     /// 三角形化済みの多角形頂点をまとめて 1 回の draw call で塗る。
     /// data は 1 頂点 6 floats（位置 2 + 色 4）を列順に並べたもの（RenderFrame が組む）。
     /// blend は run 内で均一（RenderFrame が blend / 切り抜き clip 矩形の変化で run を切る）。
-    /// glBufferData で丸ごと差し替える（orphaning。drawSpriteInstanced と同方式）。
+    /// glBufferData で丸ごと差し替える（orphaning。drawSpriteInstancedBuf と同方式）。
     pub def drawPolygonBatch(gl: GlContext, shader: Int32, vao: Int32, vbo: Int32,
                               uniforms: RenderShader.PolyBatchUniforms, blend: DrawCmd.BlendMode,
                               data: Array[Float32, Static], vertexCount: Int32): Unit \ IO =
@@ -459,6 +459,9 @@ mod RenderSprite {
     // Sprite Instanced Rendering — 連続する同テクスチャのスプライトを 1 draw call で
     // ========================================================================
 
+    /// instanced sprite の 1 体ぶんの float の数（下の VAO の stride 152 bytes = 38 floats）。
+    def instanceFloats(): Int32 = 38
+
     /// instanced sprite 用の VAO と instance VBO を構築する（起動時に 1 回）。
     /// loc 0: 共有 quad VBO (vertex.xy = 局所座標, vertex.zw = UV)
     /// loc 1-10: per-instance VBO (divisor=1)。1 instance = 38 floats / 152 bytes:
@@ -513,15 +516,15 @@ mod RenderSprite {
         gl.bindVertexArray(0);
         (vao, instanceVbo)
 
-    /// 同じテクスチャのスプライト count 体を 1 回の instanced draw で描く。data は 1 体 38 floats
-    /// （RenderFrame が組む）で、data の position の位置から count 体を流す（入れ物から直に流す）。
+    /// 同じテクスチャのスプライト count 体を 1 回の instanced draw で描く。data は 1 体 instanceFloats() 個
+    /// （RenderFrame が組む）で、first 体目から count 体を流す（入れ物から直に流す）。
     /// texId = 0 は単色矩形の run で、シェーダはテクスチャを読まないので bind しない。
     /// blend は run 内で均一（RenderFrame が blend 変化で run を切る）。multiplyBlendLoc は
     /// instanced シェーダの premultiply スイッチの location（起動時に 1 回引いたもの）。
     /// 流し終えたら書ける範囲を元に戻す — 上限を切ったままだと次の書き込みが弾かれる。
     pub def drawSpriteInstancedBuf(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
                                     multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode,
-                                    data: FloatBuffer, count: Int32): Unit \ IO =
+                                    data: FloatBuffer, first: Int32, count: Int32): Unit \ IO =
         gl.useProgram(shader);
         applyBlend(gl, blend);
         gl.uniform1i(multiplyBlendLoc, multiplyFlag(blend));
@@ -531,7 +534,8 @@ mod RenderSprite {
         } else ();
         gl.bindVertexArray(vao);
         gl.bindBuffer(GlConst.ARRAY_BUFFER, instanceVbo);
-        discard data.limit(data.position() + count * 38);
+        discard data.limit((first + count) * instanceFloats());
+        discard data.position(first * instanceFloats());
         gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.DYNAMIC_DRAW);
         discard data.clear();
         gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
@@ -540,19 +544,19 @@ mod RenderSprite {
 
     /// スプライト 1 体を maskPolys（スクリーン px の多角形）の内側だけに抜いて描く。
     /// 手順は drawShaderSurfaceMasked と同じステンシル流用: mask を描き込む（色は書かない）→
-    /// EQUAL テスト付きで instance 1 体だけ描く → 後始末。instData には position の位置に
+    /// EQUAL テスト付きで instance 1 体だけ描く → 後始末。instData には first 体目に
     /// 1 体ぶんが書き込み済みの前提（RenderFrame が writeInstAt で書く）。
     /// mask が退化（頂点 3 未満）ならステンシルを触らずそのまま 1 体描く。返すのは出した draw call の数。
     pub def drawSpriteMasked(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
                              multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode,
-                             instData: FloatBuffer,
+                             instData: FloatBuffer, first: Int32,
                              polyShader: Int32, polyVao: Int32, polyVbo: Int32,
                              polyUniforms: RenderShader.PolyBatchUniforms,
                              maskPolys: List[List[Vec2.Vec2]]): Int32 \ IO =
         let (maskData, maskCount) = buildMaskData(maskPolys);
         if (maskCount < 3) {
             drawSpriteInstancedBuf(gl, shader, vao, instanceVbo, texId, multiplyBlendLoc, blend,
-                                   instData, 1);
+                                   instData, first, 1);
             1
         } else {
             // 1) mask を stencil に描き込む（色は書かず内側を 1 に）。この 1 体ぶんだけ使うので毎回 clear。
@@ -571,7 +575,7 @@ mod RenderSprite {
             gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.KEEP);
             gl.stencilMask(0i32);
             drawSpriteInstancedBuf(gl, shader, vao, instanceVbo, texId, multiplyBlendLoc, blend,
-                                   instData, 1);
+                                   instData, first, 1);
             // 3) 後始末（次の描画にステンシル状態を持ち越さない）。
             gl.stencilMask(255i32);
             gl.disable(GlConst.STENCIL_TEST);

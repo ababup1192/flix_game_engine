@@ -106,11 +106,6 @@ mod RenderPaint {
         let screenW = Int32.toFloat64(cfg#designWidth);
         let screenH = Int32.toFloat64(cfg#designHeight);
 
-        let spriteShader = RenderShader.createShaderProgram(gl, 
-            RenderShader.vertexShaderSource(),
-            RenderShader.fragmentShaderSource());
-        RenderShader.setProjectionMatrix(gl, spriteShader, screenW, screenH);
-
         let tileShader = RenderShader.createShaderProgram(gl, 
             RenderShader.tileVertexShaderSource(),
             RenderShader.tileFragmentShaderSource());
@@ -128,8 +123,7 @@ mod RenderPaint {
             RenderShader.polyBatchFragmentShaderSource());
         RenderShader.setProjectionMatrix(gl, polyBatchShader, screenW, screenH);
 
-        // location はリンク後に不変なので起動時に 1 回だけ引く（RenderShader.spriteUniformsOf 参照）。
-        let spriteUniforms = RenderShader.spriteUniformsOf(gl, spriteShader);
+        // location はリンク後に不変なので起動時に 1 回だけ引く。
         let tileUniforms = RenderShader.tileUniformsOf(gl, tileShader);
         let instMultiplyBlend = gl.getUniformLocation(instShader, "multiplyBlend");
         let polyBatchUniforms = RenderShader.polyBatchUniformsOf(gl, polyBatchShader);
@@ -258,7 +252,7 @@ mod RenderPaint {
         // registry / targetNames は毎フレーム育つ Ref から読むため、ベースの値は仮
         // （空）に置き、呼び出し時に必ず上書きする。
         let frameArgsBase: RenderFrame.FrameArgs = {
-            spriteShader = spriteShader, tileShader = tileShader, vao = vao,
+            tileShader = tileShader, vao = vao,
             registry = Map.empty(), clearColor = cfg#clearColor,
             designW = screenW, designH = screenH, fbW = 0, fbH = 0,
             sprites = Nil, tileMaps = Nil, polygons = Nil,
@@ -267,7 +261,7 @@ mod RenderPaint {
             polyBatchVbo = polyBatchVbo, polyBatchUniforms = polyBatchUniforms,
             instShader = instShader, instVao = instVao, instVbo = instVbo,
             instBuf = instBuf, polyBuf = polyBuf,
-            spriteUniforms = spriteUniforms, tileUniforms = tileUniforms,
+            tileUniforms = tileUniforms,
             instMultiplyBlend = instMultiplyBlend,
             surfaces = Nil, drawSurface = drawSurface,
             scenes = Scene3dRenderer.noScenes(),
