@@ -1,0 +1,301 @@
+package fge.webgpu.dawn;
+
+import com.github.xpenatan.webgpu.*;
+import fge.webgpu.*;
+
+/** Dawn の物を包む小さな型。外へは fge.webgpu の interface で見せる。 */
+final class DawnObjects {
+    private DawnObjects() {}
+
+    static final class DawnBuffer implements fge.webgpu.Buffer {
+        final WGPUBuffer buffer;
+        final long size;
+
+        DawnBuffer(WGPUBuffer buffer, long size) {
+            this.buffer = buffer;
+            this.size = size;
+        }
+
+        @Override public long size() { return size; }
+
+        @Override public void destroy() {
+            buffer.destroy();
+            buffer.release();
+        }
+    }
+
+    static final class DawnTexture implements fge.webgpu.Texture {
+        final WGPUTexture texture;
+        final int width;
+        final int height;
+        final TextureFormat format;
+        /** surface の texture は surface が持ち主なので destroy しない。 */
+        final boolean owned;
+
+        DawnTexture(WGPUTexture texture, int width, int height, TextureFormat format, boolean owned) {
+            this.texture = texture;
+            this.width = width;
+            this.height = height;
+            this.format = format;
+            this.owned = owned;
+        }
+
+        @Override public int width() { return width; }
+        @Override public int height() { return height; }
+        @Override public TextureFormat format() { return format; }
+
+        @Override public fge.webgpu.TextureView createView() {
+            WGPUTextureView view = new WGPUTextureView();
+            texture.createView(WGPUTextureViewDescriptor.NULL, view);
+            return new DawnTextureView(view);
+        }
+
+        @Override public void destroy() {
+            if (owned) texture.destroy();
+            texture.release();
+        }
+    }
+
+    static final class DawnTextureView implements fge.webgpu.TextureView {
+        final WGPUTextureView view;
+
+        DawnTextureView(WGPUTextureView view) { this.view = view; }
+    }
+
+    static final class DawnSampler implements fge.webgpu.Sampler {
+        final WGPUSampler sampler;
+
+        DawnSampler(WGPUSampler sampler) { this.sampler = sampler; }
+    }
+
+    static final class DawnShaderModule implements fge.webgpu.ShaderModule {
+        final WGPUShaderModule module;
+
+        DawnShaderModule(WGPUShaderModule module) { this.module = module; }
+    }
+
+    static final class DawnBindGroupLayout implements fge.webgpu.BindGroupLayout {
+        final WGPUBindGroupLayout layout;
+
+        DawnBindGroupLayout(WGPUBindGroupLayout layout) { this.layout = layout; }
+    }
+
+    static final class DawnBindGroup implements fge.webgpu.BindGroup {
+        final WGPUBindGroup group;
+
+        DawnBindGroup(WGPUBindGroup group) { this.group = group; }
+    }
+
+    static final class DawnRenderPipeline implements fge.webgpu.RenderPipeline {
+        final WGPURenderPipeline pipeline;
+
+        DawnRenderPipeline(WGPURenderPipeline pipeline) { this.pipeline = pipeline; }
+    }
+
+    static final class DawnQuerySet implements fge.webgpu.QuerySet {
+        final WGPUQuerySet querySet;
+        final int count;
+
+        DawnQuerySet(WGPUQuerySet querySet, int count) {
+            this.querySet = querySet;
+            this.count = count;
+        }
+
+        @Override public int count() { return count; }
+
+        @Override public void destroy() {
+            querySet.destroy();
+            querySet.release();
+        }
+    }
+
+    static final class DawnCommandBuffer implements fge.webgpu.CommandBuffer {
+        final WGPUCommandBuffer commands;
+
+        DawnCommandBuffer(WGPUCommandBuffer commands) { this.commands = commands; }
+    }
+
+    static final class DawnRenderPass implements fge.webgpu.RenderPass {
+        final WGPURenderPassEncoder pass;
+        private final WGPUColor blendConstant = new WGPUColor();
+
+        DawnRenderPass(WGPURenderPassEncoder pass) { this.pass = pass; }
+
+        @Override public void setPipeline(fge.webgpu.RenderPipeline pipeline) {
+            pass.setPipeline(((DawnRenderPipeline) pipeline).pipeline);
+        }
+
+        @Override public void setBindGroup(int index, fge.webgpu.BindGroup group) {
+            pass.setBindGroup(index, ((DawnBindGroup) group).group);
+        }
+
+        @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
+            pass.setVertexBuffer(slot, ((DawnBuffer) buffer).buffer, Math.toIntExact(offset), Math.toIntExact(size));
+        }
+
+        @Override public void setIndexBuffer(fge.webgpu.Buffer buffer, fge.webgpu.IndexFormat format, long offset, long size) {
+            pass.setIndexBuffer(((DawnBuffer) buffer).buffer,
+                format == fge.webgpu.IndexFormat.UINT16 ? WGPUIndexFormat.Uint16 : WGPUIndexFormat.Uint32,
+                Math.toIntExact(offset), Math.toIntExact(size));
+        }
+
+        @Override public void setViewport(double x, double y, double width, double height, double minDepth, double maxDepth) {
+            pass.setViewport((float) x, (float) y, (float) width, (float) height, (float) minDepth, (float) maxDepth);
+        }
+
+        @Override public void setScissorRect(int x, int y, int width, int height) { pass.setScissorRect(x, y, width, height); }
+
+        @Override public void setStencilReference(int reference) { pass.setStencilReference(reference); }
+
+        @Override public void setBlendConstant(double r, double g, double b, double a) {
+            blendConstant.setColor((float) r, (float) g, (float) b, (float) a);
+            pass.setBlendConstant(blendConstant);
+        }
+
+        @Override public void draw(int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
+            pass.draw(vertexCount, instanceCount, firstVertex, firstInstance);
+        }
+
+        @Override public void drawIndexed(int indexCount, int instanceCount, int firstIndex, int baseVertex, int firstInstance) {
+            pass.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        }
+
+        @Override public void end() {
+            pass.end();
+            pass.release();
+        }
+    }
+
+    static final class DawnCommandEncoder implements fge.webgpu.CommandEncoder {
+        final WGPUCommandEncoder encoder;
+        private final DawnWebGpu gpu;
+
+        DawnCommandEncoder(WGPUCommandEncoder encoder, DawnWebGpu gpu) {
+            this.encoder = encoder;
+            this.gpu = gpu;
+        }
+
+        @Override public fge.webgpu.RenderPass beginRenderPass(RenderPassDesc desc) {
+            return gpu.beginRenderPass(encoder, desc);
+        }
+
+        @Override public void copyBufferToBuffer(fge.webgpu.Buffer src, long srcOffset, fge.webgpu.Buffer dst, long dstOffset, long size) {
+            encoder.copyBufferToBuffer(((DawnBuffer) src).buffer, Math.toIntExact(srcOffset),
+                ((DawnBuffer) dst).buffer, Math.toIntExact(dstOffset), Math.toIntExact(size));
+        }
+
+        @Override public void copyTextureToBuffer(fge.webgpu.Texture src, int mip, int x, int y, int width, int height,
+                                                  fge.webgpu.Buffer dst, long dstOffset, int bytesPerRow) {
+            WGPUTexelCopyTextureInfo from = new WGPUTexelCopyTextureInfo();
+            from.setTexture(((DawnTexture) src).texture);
+            from.setMipLevel(mip);
+            from.getOrigin().set(x, y, 0);
+            from.setAspect(WGPUTextureAspect.All);
+            WGPUTexelCopyBufferInfo to = new WGPUTexelCopyBufferInfo();
+            to.setBuffer(((DawnBuffer) dst).buffer);
+            to.getLayout().setOffset(Math.toIntExact(dstOffset));
+            to.getLayout().setBytesPerRow(bytesPerRow);
+            to.getLayout().setRowsPerImage(height);
+            WGPUExtent3D extent = new WGPUExtent3D();
+            extent.setWidth(width);
+            extent.setHeight(height);
+            extent.setDepthOrArrayLayers(1);
+            encoder.copyTextureToBuffer(from, to, extent);
+            from.dispose();
+            to.dispose();
+            extent.dispose();
+        }
+
+        @Override public void resolveQuerySet(fge.webgpu.QuerySet querySet, int first, int count, fge.webgpu.Buffer dst, long dstOffset) {
+            encoder.resolveQuerySet(((DawnQuerySet) querySet).querySet, first, count, ((DawnBuffer) dst).buffer, Math.toIntExact(dstOffset));
+        }
+
+        @Override public fge.webgpu.CommandBuffer finish() {
+            WGPUCommandBuffer commands = new WGPUCommandBuffer();
+            encoder.finish(WGPUCommandBufferDescriptor.NULL, commands);
+            encoder.release();
+            return new DawnCommandBuffer(commands);
+        }
+    }
+
+    /** GLFW のウィンドウの描き先。 */
+    static final class DawnSurface implements fge.webgpu.Surface {
+        private final WGPUSurface surface;
+        private final WGPUAdapter adapter;
+        private final WGPUDevice device;
+        private final WGPUSurfaceTexture surfaceTexture = new WGPUSurfaceTexture();
+        private final WGPUSurfaceConfiguration config = new WGPUSurfaceConfiguration();
+        private int width;
+        private int height;
+        private TextureFormat format = TextureFormat.BGRA8_UNORM;
+        private SurfaceStatus status = SurfaceStatus.SUCCESS_OPTIMAL;
+        private DawnTexture current;
+
+        DawnSurface(WGPUSurface surface, WGPUAdapter adapter, WGPUDevice device) {
+            this.surface = surface;
+            this.adapter = adapter;
+            this.device = device;
+        }
+
+        @Override public TextureFormat preferredFormat() {
+            WGPUSurfaceCapabilities caps = new WGPUSurfaceCapabilities();
+            surface.getCapabilities(adapter, caps);
+            for (int i = 0; i < caps.getFormats().size(); i++) {
+                TextureFormat f = DawnWebGpu.fromTextureFormat(caps.getFormats().get(i));
+                if (f != null) return f;
+            }
+            return TextureFormat.BGRA8_UNORM;
+        }
+
+        @Override public void configure(int width, int height, TextureFormat format, PresentMode presentMode, int textureUsage) {
+            this.width = width;
+            this.height = height;
+            this.format = format;
+            config.setNextInChain(WGPUChainedStruct.NULL);
+            config.setWidth(width);
+            config.setHeight(height);
+            config.setFormat(DawnWebGpu.textureFormat(format));
+            config.setViewFormats(WGPUVectorTextureFormat.NULL);
+            config.setUsage(WGPUTextureUsage.CUSTOM.setValue(textureUsage));
+            config.setDevice(device);
+            config.setPresentMode(switch (presentMode) {
+                case FIFO -> WGPUPresentMode.Fifo;
+                case IMMEDIATE -> WGPUPresentMode.Immediate;
+                case MAILBOX -> WGPUPresentMode.Mailbox;
+            });
+            config.setAlphaMode(WGPUCompositeAlphaMode.Auto);
+            surface.configure(config);
+        }
+
+        @Override public fge.webgpu.Texture getCurrentTexture() {
+            surface.getCurrentTexture(surfaceTexture);
+            WGPUSurfaceGetCurrentTextureStatus s = surfaceTexture.getStatus();
+            status = s == WGPUSurfaceGetCurrentTextureStatus.SuccessOptimal ? SurfaceStatus.SUCCESS_OPTIMAL
+                   : s == WGPUSurfaceGetCurrentTextureStatus.SuccessSuboptimal ? SurfaceStatus.SUCCESS_SUBOPTIMAL
+                   : s == WGPUSurfaceGetCurrentTextureStatus.Timeout ? SurfaceStatus.TIMEOUT
+                   : s == WGPUSurfaceGetCurrentTextureStatus.Outdated ? SurfaceStatus.OUTDATED
+                   : s == WGPUSurfaceGetCurrentTextureStatus.Lost ? SurfaceStatus.LOST
+                   : SurfaceStatus.ERROR;
+            WGPUTexture texture = new WGPUTexture();
+            surfaceTexture.getTexture(texture);
+            if (!texture.isValid()) return null;
+            current = new DawnTexture(texture, width, height, format, false);
+            return current;
+        }
+
+        @Override public SurfaceStatus lastStatus() { return status; }
+
+        @Override public void present() {
+            surface.present();
+            if (current != null) {
+                current.texture.release();
+                current = null;
+            }
+        }
+
+        @Override public void release() {
+            surface.unconfigure();
+            surface.release();
+        }
+    }
+}

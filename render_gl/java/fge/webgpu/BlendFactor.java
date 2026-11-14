@@ -1,0 +1,6 @@
+package fge.webgpu;
+
+/** blend の係数。 */
+public enum BlendFactor {
+    ZERO, ONE, SRC, ONE_MINUS_SRC, SRC_ALPHA, ONE_MINUS_SRC_ALPHA, DST, ONE_MINUS_DST, DST_ALPHA, ONE_MINUS_DST_ALPHA, CONSTANT, ONE_MINUS_CONSTANT
+}

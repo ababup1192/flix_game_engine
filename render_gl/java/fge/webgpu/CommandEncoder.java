@@ -1,0 +1,16 @@
+package fge.webgpu;
+
+/** 1 回の submit に積む命令を組む物。finish の後は使わない。 */
+public interface CommandEncoder {
+    RenderPass beginRenderPass(RenderPassDesc desc);
+
+    void copyBufferToBuffer(Buffer src, long srcOffset, Buffer dst, long dstOffset, long size);
+
+    /** texture の段 mip の (x, y)-(x + width, y + height) を dst の dstOffset から行ごと bytesPerRow 刻みで写す（bytesPerRow は 256 の倍数）。 */
+    void copyTextureToBuffer(Texture src, int mip, int x, int y, int width, int height,
+                             Buffer dst, long dstOffset, int bytesPerRow);
+
+    void resolveQuerySet(QuerySet querySet, int first, int count, Buffer dst, long dstOffset);
+
+    CommandBuffer finish();
+}
