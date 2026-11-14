@@ -80,4 +80,42 @@ mod TestClip {
             { at = { x = 0.0, y = 0.0 }, item = Render.clipped(rect(10.0, 10.0, 20.0, 20.0), box) };
         let aabb = Annotate.itemAabb(_ -> None, placed);
         Assert.assertEq(expected = (10.0, 10.0, 20.0, 20.0), rectTuple(aabb))
+
+    // ---------------------------------------------------------------
+    // 並びの順と 2 列への振り分け
+    // ---------------------------------------------------------------
+
+    /// 箱・多角形・スプライト・clip つきスプライト・箱を x = 1〜5 に置いた列。
+    def mixedItems(): List[Render.PlacedItem] =
+        let red = { r = 1.0, g = 0.0, b = 0.0 };
+        let box = RawDraw.box({ x = 10.0, y = 10.0 }, red, 3);
+        let tri = RawDraw.polygon({ x = 0.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 0.0, y = 4.0 } :: Nil, red, 5);
+        let sprite = Render.sprite("flag", 7);
+        { at = { x = 1.0, y = 0.0 }, item = box }
+            :: { at = { x = 2.0, y = 0.0 }, item = tri }
+            :: { at = { x = 3.0, y = 0.0 }, item = sprite }
+            :: { at = { x = 4.0, y = 0.0 }, item = Render.clipped(rect(1.0, 2.0, 3.0, 4.0), sprite) }
+            :: { at = { x = 5.0, y = 0.0 }, item = box }
+            :: Nil
+
+    /// 描画命令 2 列を ((絵, x, z, clip) の列, 多角形の z の列) へ射影。
+    def drawnTuple(drawn: (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])):
+            (List[(String, Float64, Int32, Option[(Float64, Float64, Float64, Float64)])], List[Int32]) =
+        let (ds, ps) = drawn;
+        (ds |> List.map(d -> (DrawCmd.textureOf(d), DrawCmd.positionOf(d)#x, DrawCmd.zIndexOf(d), Option.map(rectTuple, DrawCmd.clipOf(d)))),
+         ps |> List.map(p -> p#zIndex))
+
+    /// draw は Drawable を列の並びのまま返し、多角形だけを 2 本目の列へ分ける（z で並べ替えない）。
+    @Test
+    def testDrawKeepsItemOrderAcrossKinds(): Unit \ Assert =
+        Assert.assertEq(
+            expected = (("", 1.0, 3, None) :: ("flag", 3.0, 7, None) :: ("flag", 4.0, 7, Some((1.0, 2.0, 3.0, 4.0))) :: ("", 5.0, 3, None) :: Nil,
+                        5 :: Nil),
+            drawnTuple(Render.draw(mixedItems())))
+
+    /// region を使わない列では、drawWith は draw と同じ 2 列を返す。
+    @Test
+    def testDrawWithMatchesDrawWithoutRegions(): Unit \ Assert =
+        Assert.assertEq(expected = drawnTuple(Render.draw(mixedItems())),
+            drawnTuple(Render.drawWith(_ -> None, mixedItems())))
 }

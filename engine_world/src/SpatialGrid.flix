@@ -88,7 +88,12 @@ pub mod SpatialGrid {
         let at = (value - origin) / size;
         if (at <= 0.0) 0
         else if (at >= Int32.toFloat64(count)) count - 1
-        else Num.clampInt(0, count - 1, Num.floorInt(at))
+        else {
+            // WhyNot: Num.clampInt(…) の呼び出しで終えない — 末尾の呼び出しは続き（Thunk）を返し、これを呼ぶループ（countCells・
+            //   ゲームの側の 1 体ごとのループ）を JVM が途中から JIT できなくなる（docs/performance.md の 13 節）。
+            let cell = Num.floorInt(at);
+            if (cell < 0) 0 else if (cell > count - 1) count - 1 else cell
+        }
 
     /// 物 i から n の手前までの升を cells へ書き、升ごとの数を starts の 1 つ後ろへ足す。
     def countCells(xs: Vector[Float64], ys: Vector[Float64], minX: Float64, minY: Float64, size: Float64, cols: Int32, rows: Int32,

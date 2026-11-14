@@ -6,27 +6,39 @@ pub mod Render.Internal.Extract {
     /// しておかないと、Clipped の扱いが 2 経路で割れる。
     /// 2 列は 1 回の走査で同時に積む。列ごとに走査を分けると、描く物 1 個につき
     /// Clipped の剥がしと葉の振り分けが 2 度ずつ走る（物量の多い画面では、その 2 度目が
-    /// そのままフレーム時間に乗る）。積むのは逆順の cons で、最後に一度ずつ戻す。
+    /// そのままフレーム時間に乗る）。
+    // WhyNot: 逆順の cons で積んで最後に List.reverse しない — 積んだ cons は Drawable の間に散らばり、戻す 1 巡が
+    //   物 1 個につきキャッシュの外れを 1 回払う（20,000 個で 1.6 ms）。並んだ入れ物へ積み、後ろから List にする。
     pub def drawInto(toDs: (Render.Item, Vec2.Vec2) -> List[GameEngine.Drawable] \ ef,
                  items: List[Render.PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
-        let (dsRev, psRev) = items |> List.foldLeft((acc, placed) -> {
-            let (ds, ps) = acc;
-            let (leaf, clip) = Render.unwrapClip(placed#item, None);
-            // clip 矩形が無いときは刻まない。作りたての Drawable / 描画命令は clip = None なので、
-            // ここで None を書き直すと、同じ値を入れ直すためだけにフィールドの
-            // 抜き差しが描く物の数だけ走る（clip 矩形を使う画面はごく一部）。
-            match (leaf, clip) {
-                case (Render.Item.Poly(p), None)    => (ds, polyCmd(placed#at, p) :: ps)
-                case (Render.Item.Poly(p), Some(_)) => (ds, { clip = clip | polyCmd(placed#at, p) } :: ps)
-                case (other, None)                  =>
-                    (toDs(other, placed#at)
-                        |> List.foldLeft((rest, d) -> d :: rest, ds), ps)
-                case (other, Some(_))               =>
-                    (toDs(other, placed#at)
-                        |> List.foldLeft((rest, d) -> DrawCmd.withClip(clip, d) :: rest, ds), ps)
-            }
-        }, ((Nil, Nil): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])));
-        (List.reverse(dsRev), List.reverse(psRev))
+        region rc {
+            let ds: MutList[GameEngine.Drawable, rc] = MutList.empty(rc);
+            let ps: MutList[GameEngine.PolygonRenderCmd, rc] = MutList.empty(rc);
+            List.forEach(placed -> pushPlaced(toDs, ds, ps, placed), items);
+            (MutList.toList(ds), MutList.toList(ps))
+        }
+
+    /// placed 1 個ぶんの描画命令を、2 列の末尾へ積む。
+    // WhyNot: drawInto のループのラムダへ書き下さない — ループは呼んだ関数の中へインライン展開され、toDs の中身まで 1 つのメソッドに入ると
+    //   8000 バイトを超えて JVM が JIT しない。末尾を呼び出しで終えないのは、ループを途中から JIT（OSR）させるため
+    //   （docs/performance.md の 13 節）。
+    @DontInline
+    def pushPlaced(toDs: (Render.Item, Vec2.Vec2) -> List[GameEngine.Drawable] \ ef,
+                   ds: MutList[GameEngine.Drawable, rc], ps: MutList[GameEngine.PolygonRenderCmd, rc],
+                   placed: Render.PlacedItem): Unit \ ef + rc =
+        let at = placed#at;
+        let (leaf, clip) = Render.unwrapClip(placed#item, None);
+        // clip 矩形が無いときは刻まない。作りたての Drawable / 描画命令は clip = None なので、
+        // ここで None を書き直すと、同じ値を入れ直すためだけにフィールドの
+        // 抜き差しが描く物の数だけ走る（clip 矩形を使う画面はごく一部）。
+        match (leaf, clip) {
+            case (Render.Item.Poly(p), None)    => MutList.push(polyCmd(at, p), ps)
+            case (Render.Item.Poly(p), Some(_)) => MutList.push({ clip = clip | polyCmd(at, p) }, ps)
+            case (other, None)                  => toDs(other, at) |> List.forEach(d -> MutList.push(d, ds))
+            case (other, Some(_))               =>
+                toDs(other, at) |> List.forEach(d -> MutList.push(DrawCmd.withClip(clip, d), ds))
+        };
+        ()
 
     /// Poly を置き場所 pos の描画命令へ（全頂点に pos を加算）。
     def polyCmd(pos: Vec2.Vec2,
@@ -50,6 +62,8 @@ pub mod Render.Internal.Extract {
     /// region atlas 対応の射影（drawWith のため）。textureSize を引いて UV を計算する
     /// （uvOffset = regionPos/texSize, uvScale = regionSize/texSize）。
     /// 非 region スプライト・text・box は pure 経路と同一。
+    // WhyNot: 呼ぶ所へインライン展開させない — ループの 1 個ぶんに Shader 面の判定まで入り、メソッドが JIT の上限を超える。
+    @DontInline
     pub def toDrawablesAtlas(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                          item: Render.Item, pos: Vec2.Vec2): List[GameEngine.Drawable] \ ef =
         match item {

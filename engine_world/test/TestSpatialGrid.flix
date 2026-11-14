@@ -62,6 +62,11 @@ mod TestSpatialGrid {
     def testFoldNearIndexFromOutsideTheGrid(): Unit \ Assert =
         Assert.assertEq(expected = 0 :: Nil, nearIndices(fourPoints(), -2.0, 0.0, 2.0))
 
+    /// 格子の右の外の点からは、右端の升の物が通る（(5, 0) から (3, 0) は 2）。
+    @Test
+    def testFoldNearIndexFromBeyondTheLastColumn(): Unit \ Assert =
+        Assert.assertEq(expected = 2 :: Nil, nearIndices(fourPoints(), 5.0, 0.0, 2.0))
+
     // ---------------------------------------------------------------
     // 回す順
     // ---------------------------------------------------------------
