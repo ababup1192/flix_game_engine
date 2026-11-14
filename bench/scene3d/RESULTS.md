@@ -55,3 +55,36 @@ engine 0.95.0（コミット cd7a7ce2 の上にベンチの直しだけ）/ 垂�
   ブラウザの部屋は 1.3〜2.2 ms で、時計の刻み（0.1 ms）と軽さのために比が大きく出る（69%）。
 - `gl-capture` の scene3d の 6 コマは、ベンチを直す前と後でバイトまで同じ（同じ機械・同じ日の 2 回）。
   `bench/baseline/0.88.4/gl-capture.sha256` の scene3d の行とは違う（直す前のソースで撮っても違う。0.88.4 の後の engine の変更による物で、基準の取り直しは別の話）。
+
+## draw call が分かれた理由・診断の重さ（0.95.0 の後・P0 の後半）
+
+測った日 2026-11-14 / 同じ機械（Apple M4 Pro・GL）/ 垂直同期なし・音なし。基準（`bench/baseline/0.95.0/`）は取り直していない。
+engine は「draw call がまとまらなかった理由を診断に出す」「GPU の時間の query を 16 コマに 1 回に間引く」の 2 つを入れた物（直す前 = main の 0af3e8b5）。
+
+### draw call が分かれた理由（`draw3d_breaks`。1 コマの値・区間の中央値。3D は draw call 1 つを 1 つの理由に数えるので合計 = draw call）
+
+| 条件 | draw call | 分かれた理由 |
+|---|---|---|
+| room | 10 | mesh 10 |
+| field n=12000 shapes=1 mats=1 | 2 | material 1 / mesh 1 |
+| field n=12000 shapes=16 mats=16 | 257 | material 16 / mesh 241 |
+| field n=12000 shapes=each mats=1 | 12001 | material 1 / mesh 12000 |
+| field n=12000 shapes=1 mats=1 alpha=10 | 1202 | transparent 1200 / material 1 / mesh 1 |
+| field n=12000 shapes=1 mats=1 shadow=1 | 4 | shadowPass 2 / material 1 / mesh 1 |
+
+- draw call の数は基準の表と同じ（10・2・257・12001・1202・4）。
+- 形 16 × 材質 16 は、前の batch と材質が違う draw call が 16・材質は前と同じで形が違う draw call が 241。
+  数え方の決まり（先に当てはまった 1 つ・`material` は `mesh` より先）は `FrameDiagnostics.Scene3dBatchBreaks` の doc。
+- 場面を 2D の並びへ貼る所は 2D の draw call に数えない（`draw2d_calls` は 0）。
+
+### 診断を付けた時の重さ（frame p50・ms。直す前と後を入れ替えながら 6 本ずつ = 部屋 24 区間・field 12 区間の中央）
+
+| 条件 | 直す前 診断なし | 直す前 診断あり | 後 診断なし | 後 診断あり | 後の あり ÷ なし |
+|---|---|---|---|---|---|
+| room | 0.49 | 1.01 | 0.50 | 0.52 | 1.04 |
+| field n=12000 shapes=1 mats=1 moving=100 | 20.11 | 21.61 | 20.08 | 20.27 | 1.01 |
+
+- 直す前の部屋は診断を付けると 2.1 倍（0.49 → 1.01 ms）。後は 1.04 倍。
+- 診断なしどうし（数える所を足した代金）は 部屋 +1.5%・field −0.2%。
+- **field 12,000 は起動ごとに 16.3〜16.7 ms の回と 18.9〜20.9 ms の回がある**（診断なしで、直す前も後も 6 本のうち 1 本が速い回。理由は【不明】。基準の表の「動く割合 10%」の揺れと同じ形）。
+  1 回ずつの比べでは ±20% に見えるので、入れ替えながら何本か取って中央で読む。

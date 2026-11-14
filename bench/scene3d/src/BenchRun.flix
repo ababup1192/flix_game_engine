@@ -76,7 +76,8 @@ mod BenchRun {
         // WhyNot: 測れないコマを 0 として数えない — timer query の結果が出ないコマが続くと中央値が嘘になる。
         let gpu = diagnostics |> List.filterMap(d -> d#gpuNs) |> List.filter(ns -> ns > 0i64) |> List.map(nsToMs);
         let counts = diagnostics |> List.map(d -> d#scene3dCounts);
-        let middle = pick -> Int32.toString(RenderUtil.floatToInt32(percentile(50, List.map(x -> Int32.toFloat64(pick(x)), counts))));
+        let draw2d = diagnostics |> List.map(d -> d#draw2dCounts);
+        let middle = pick -> middleOf(List.map(pick, counts));
         ("diag", if (List.isEmpty(diagnostics)) "0" else "1") ::
         ("frames", Int32.toString(List.length(samples))) ::
         ("frame_avg", fmt3(mean(frames))) :: ("frame_p50", fmt3(percentile(50, frames))) ::
@@ -88,7 +89,22 @@ mod BenchRun {
         ("gpu_frames", Int32.toString(List.length(gpu))) ::
         ("draw_items", Int32.toString(diagnostics |> List.head |> Option.map(d -> d#drawItems) |> Option.getWithDefault(0))) ::
         ("instances", middle(c -> c#instances)) :: ("drawn", middle(c -> c#drawn)) :: ("draw_calls", middle(c -> c#drawCalls)) ::
-        ("cpu_phases", jsonObject(phaseFields(counts))) :: Nil
+        ("cpu_phases", jsonObject(phaseFields(counts))) ::
+        ("draw2d_calls", middleOf(List.map(c -> c#drawCalls, draw2d))) ::
+        ("draw2d_breaks", jsonObject(breakFields(List.map(c -> FrameDiagnostics.draw2dBreakList(c#batchBreaks), draw2d)))) ::
+        ("draw3d_breaks", jsonObject(breakFields(List.map(c -> FrameDiagnostics.scene3dBreakList(c#batchBreaks), counts)))) :: Nil
+
+    /// 数の列の中央値の字（空なら 0）。
+    def middleOf(values: List[Int32]): String =
+        Int32.toString(RenderUtil.floatToInt32(percentile(50, List.map(Int32.toFloat64, values))))
+
+    /// draw call がまとまらなかった理由ごとの中央値（コマごとの (理由, 数) の並びから。0 の理由は出さない・理由の順は診断の欄の順）。
+    def breakFields(frames: List[List[(String, Int32)]]): List[(String, String)] =
+        let byName = frames
+            |> List.flatten
+            |> List.foldLeft((acc, reason) -> Map.insertWith(List.append, fst(reason), snd(reason) :: Nil, acc), Map.empty());
+        let names = frames |> List.head |> Option.getWithDefault(Nil) |> List.map(fst);
+        names |> List.map(name -> (name, middleOf(Map.getWithDefault(name, Nil, byName)))) |> List.filter(field -> snd(field) != "0")
 
     /// 3D の描き手の CPU の区間ごとの中央値（初めて出た順）。
     def phaseFields(counts: List[FrameDiagnostics.Scene3dCounts]): List[(String, String)] =

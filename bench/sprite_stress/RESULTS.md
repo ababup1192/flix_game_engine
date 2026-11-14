@@ -164,3 +164,51 @@ engine 0.95.0（コミット cd7a7ce2 の上にベンチの直しだけ）/ 垂�
 - 診断を外すと（`DIAG=0`）20,000 個・絵 1 種類で 30.2 → 25.1 ms（1.2 倍）。draw が 1 本の場面でこの差。
 - 2D の draw の数は診断に無い（`drawItems` は物の数）。draw の数と切れた理由は engine の診断に足す話が別に進んでいる。
 - 揺れは 0〜9%（`mixed` の 500 個だけ 12%）。1 回目の 5,000 個・絵 1 種類の p99 47.7 ms は 1 回きりの跳ね（2 回目は 12.0 ms）。
+
+## draw call の数と切れた理由・診断の重さ（0.95.0 の後・P0 の後半）
+
+測った日 2026-11-14 / 同じ機械（Apple M4 Pro・GL）/ 垂直同期なし・音なし。基準（`bench/baseline/0.95.0/`）は取り直していない。
+engine は「draw call がまとまらなかった理由を診断に出す」「GPU の時間の query を 16 コマに 1 回に間引く」の 2 つを入れた物（直す前 = main の 0af3e8b5）。
+
+### draw call の数と切れた理由（`draw2d_calls`・`draw2d_breaks`。1 コマの値・区間の中央値）
+
+| 条件 | 2D の物 | draw call | 切れた理由 |
+|---|---|---|---|
+| kinds n=5000 tex=1 blend=normal | 5000 | 1 | — |
+| kinds n=5000 tex=16 blend=normal | 5000 | 5000 | texture 4999 |
+| kinds n=5000 tex=1 blend=alt | 5000 | 5000 | blend 4999 |
+| mixed n=5000 | 5259 | 3 | texture 2 |
+| crowd2d n=6000 search=grid | 6000 | 1 | — |
+
+テンプレの場面（`SHOT=<場面> FLIX_GE_FRAME_STATS=1 FLIX_GE_NO_VSYNC=1 make run`。F8 で止めた 1 コマ・`[frame-stats]` の行の末尾）:
+
+| 場面 | draw call | 切れた理由 | GL のログから数えた時（`plans/webgpu/survey/G-2d-baseline.md`） |
+|---|---|---|---|
+| rpg title | 7 | texture 6 | 7・texture 6 |
+| rpg village | 8 | texture 4 / kind 3 | 8・texture 4 / kind 3 |
+| rpg world | 3 | texture 1 / kind 1 | 3・texture 1 / kind 1 |
+| rpg battle | 12 | texture 11 | 12・texture 11 |
+| tidepool title | 96 | blend 72 / kind 18 / mask 5 | 96・blend 72 / kind 19 / mask 4 |
+| tidepool play | 140 | blend 99 / kind 27 / texture 8 / mask 5 | 140・同じ |
+| tidepool flood | 174 | blend 129 / kind 31 / texture 8 / mask 5 | 174・同じ |
+| novel title | 6 | kind 3 / texture 2 | 6・texture 1〜3 / kind 3〜5 |
+| novel adv | 7 | kind 5 / texture 1 | 7・同上 |
+| novel nvl | 6 | kind 4 / texture 1 | 6・同上 |
+| novel choice | 9 | kind 5 / texture 3 | 9・同上 |
+
+- draw call の数は 11 場面とも GL のログから数えた数と同じ。理由の内訳は tidepool title の 1 つだけ違う（mask つきの面の 1 つを、こちらは mask・ログの集計は kind に数えた）。
+- 数え方の決まり（1 つの切れ目に理由は 1 つ・`target` → `kind` → `texture` → `blend` → `clip` → `mask` の順）は `FrameDiagnostics.Draw2dBatchBreaks` の doc。
+  読み方は `docs/performance.md` の 11 節「draw call がまとまらない時の読み方」。
+
+### 診断を付けた時の重さ（frame p50・ms・「a / b」は 1 回目 / 2 回目。直す前と後を 1 本ずつ交互に測った）
+
+| 条件 | 直す前 診断なし | 直す前 診断あり | 後 診断なし | 後 診断あり | 後の あり ÷ なし |
+|---|---|---|---|---|---|
+| kinds n=5000 tex=1 | 8.10 / 8.36 | 10.19 / 11.41 | 7.56 / 7.75 | 7.73 / 7.58 | 1.00 |
+| kinds n=20000 tex=1 | 28.55 / 29.44 | 34.16 / 33.78 | 28.79 / 29.35 | 29.09 / 28.98 | 1.00 |
+| kinds n=5000 tex=16 | 16.89 / 17.11 | 18.19 / 18.28 | 17.43 / 17.02 | 17.04 / 17.25 | 1.00 |
+| kinds n=20000 tex=16 | 65.78 / 66.27 | 67.39 / 67.92 | 65.19 / 66.88 | 65.90 / 67.11 | 1.01 |
+
+- 直す前は診断を付けると 5,000 個で 1.31 倍・20,000 個で 1.17 倍（絵 1 種類）。後は 1.00〜1.01 倍。GPU の時間は 16 コマに 1 回だけ測り、間は最後の値を返す
+  （`gpu_frames` は値の入ったコマの数で、測ったコマの数ではない）。毎コマ測るのは `FLIX_GE_GPU_TIMER_EVERY=1`。
+- 診断なしどうし（数える所を足した代金）は −7.0%・+0.3%・+1.3%・0.0%（p50 の 2 回の中央）。5,000 個・絵 1 種類の −7% は揺れの内（基準の揺れ 8%）。

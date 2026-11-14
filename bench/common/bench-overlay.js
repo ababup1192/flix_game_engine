@@ -37,6 +37,7 @@
   // 結果の行のうち、つまみとして頭に出さない鍵（集計の値）。
   var metricKeys = { frames: 1, frame_avg: 1, frame_p50: 1, frame_p95: 1, frame_p99: 1, work_p50: 1, work_p95: 1, submit_p50: 1, submit_p95: 1,
     swap_p50: 1, gpu_p50: 1, gpu_frames: 1, draw_items: 1, instances: 1, drawn: 1, draw_calls: 1, cpu_phases: 1,
+    draw2d_calls: 1, draw2d_breaks: 1, draw3d_breaks: 1,
     cpu_frames: 1, cpu_mean: 1, cpu_p50: 1, cpu_p95: 1, raf_lag_p50: 1 };
 
   function resultLine(r) {
@@ -47,7 +48,16 @@
     if (r.work_p50 > 0) line += "   work p50 " + r.work_p50 + " ms";
     line += r.draw_calls > 0 ? "\n  3D draw " + r.draw_calls + "（物 " + r.drawn + "/" + r.instances + "）" : "\n  2D の物 " + r.draw_items;
     var phases = Object.keys(r.cpu_phases || {}).map(function (k) { return k + " " + r.cpu_phases[k]; }).join(" / ");
-    return phases && r.draw_calls > 0 ? line + "   " + phases : line;
+    if (phases && r.draw_calls > 0) line += "   " + phases;
+    if (r.draw_calls > 0) line += "\n  3D の draw が分かれた理由 " + breaksText(r.draw3d_breaks);
+    if (r.draw2d_calls > 0) line += "\n  2D draw " + r.draw2d_calls + "（切れた理由 " + breaksText(r.draw2d_breaks) + "）";
+    return line;
+  }
+
+  // 理由ごとの数（draw2d_breaks・draw3d_breaks）を 1 行に。古い engine の結果には欄が無い。
+  function breaksText(breaks) {
+    var names = Object.keys(breaks || {});
+    return names.length === 0 ? "-" : names.map(function (k) { return k + " " + breaks[k]; }).join(" / ");
   }
 
   function render() {
