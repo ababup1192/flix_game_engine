@@ -1,22 +1,16 @@
-// エントリーポイント。Bench の世界を App に繋ぎ、4 区間を走り切ったら自動終了する。
-// HUD=1 で HUD あり構成（withHudView = HUD の範囲持ち上げ + 範囲別ソート経路）の計測になる。
+// エントリーポイント。Bench の世界を App に繋ぎ、区間を走り切ったら自動終了する。つまみは環境変数（Makefile の頭）。
 
 use fge::{App, LwjglLayer}
 
 def main(): Unit \ IO =
     if (LwjglLayer.ensureMainThread()) ()
     else {
-        let withHud = Bench.hudEnabled();
+        let config = Bench.configOf(BenchEnv.knobs(
+            ("COUNTS", "n") :: ("TEX", "tex") :: ("BLEND", "blend") :: ("FRAMES", "frames") :: ("HUD", "hud") :: ("DIAG", "diag") :: Nil));
         run {
-            let app = App.make(Bench.initialWorld())
-                |> App.addSystem(Bench.step)
-                |> App.withView((ctx, w) -> checked_ecast(Bench.view(ctx, w)))
-                |> App.quitWhen((_frame, w) -> checked_ecast(w#done));
-            if (withHud)
-                app |> App.withHudView((ctx, w) -> checked_ecast(Bench.hud(ctx, w)))
-                    |> App.launchForBench
-            else
-                app |> App.launchForBench
+            Bench.app(BenchEnv.emit, config)
+                |> App.quitWhen((_frame, w) -> checked_ecast(w#progress#done))
+                |> App.launchForBench
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO
           with Fs.FileWrite.runWithIO

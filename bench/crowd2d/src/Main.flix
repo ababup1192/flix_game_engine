@@ -1,71 +1,56 @@
-// 入口。敵の数 × 探し方の区間を順に回し、区間ごとに時間を出して閉じる。
+// 入口。敵の数 × 探し方の区間を順に回し、区間ごとに 1 行の JSON（BenchRun）を出して閉じる。
 use fge::LwjglLayer
 
 mod CrowdBench {
     use fge::{App, LwjglLayer, Render}
     use Crowd.NearSearch
 
-    import java.lang.System
+    /// つまみ。segments = 区間ごとの敵の数と近くの敵の探し方・plan = 区間の段取り。
+    pub type alias Config = { segments = Vector[(Int32, NearSearch)], plan = BenchRun.Plan }
 
-    /// 1 コマの時間（ms）。frameMs = 前のコマの全部・stepMs = 規則・submitMs = GL へ送る・swapMs = 画面の入れ替え・gpuMs = GPU。
-    type alias Sample = { frameMs = Float64, stepMs = Float64, submitMs = Float64, swapMs = Float64, gpuMs = Option[Float64], drawItems = Int32 }
+    /// 外から来る物。now = 今の時刻（ms）・emit = 結果の行の出し先。
+    pub type alias Host = { now = Unit -> Float64 \ IO, emit = String -> Unit \ IO }
 
-    pub type alias World = { segments = Vector[(Int32, NearSearch)], crowd = Crowd.Crowd, segment = Int32, frameInSegment = Int32, samples = List[Sample], nearSum = Float64, done = Bool }
+    pub type alias World = { segments = Vector[(Int32, NearSearch)], plan = BenchRun.Plan, crowd = Crowd.Crowd, progress = BenchRun.Run, nearSum = Float64 }
 
-    /// 環境変数 COUNTS（例: `COUNTS=6000,10000`）があればその敵の数で、無ければ Crowd.counts で回す。
-    def loadCounts(): List[Int32] \ IO =
-        let text = System.getenv("COUNTS");
-        if (Object.isNull(text) or text == "") Crowd.counts()
-        else String.split(regex = ",", text) |> List.filterMap(Int32.fromString)
-
-    def segmentsOf(counts: List[Int32]): Vector[(Int32, NearSearch)] =
-        counts
-            |> List.flatMap(n -> (n, NearSearch.ScanAll) :: (n, NearSearch.Grid) :: Nil)
-            |> List.toVector
-
-    def measuredFrames(): Int32 = 300
+    /// つまみの表（n = 敵の数のカンマ区切り・search = scan / grid / both・frames = 測るコマ数）を読む。
+    // WhyNot: 全部と比べる形を既定から外さない — SpatialGrid の得を見るベンチで、比べる相手が黙って消える。20,000 体では search=grid を付ける。
+    pub def configOf(knobs: Map[String, String]): Config =
+        let searches = match Map.get("search", knobs) {
+            case Some("scan") => NearSearch.ScanAll :: Nil
+            case Some("grid") => NearSearch.Grid :: Nil
+            case _            => NearSearch.ScanAll :: NearSearch.Grid :: Nil
+        };
+        let segments = BenchRun.intsKnob("n", Crowd.counts(), knobs)
+            |> List.flatMap(n -> searches |> List.map(search -> (n, search))) |> List.toVector;
+        { segments = segments, plan = BenchRun.planOf({ warmup = warmupFrames(), frames = 300, segments = Vector.length(segments) }, knobs) }
 
     /// 区間の頭の JIT と、群れが目標へ寄る前の形を捨てる。
     def warmupFrames(): Int32 = 120
 
-    pub def initialWorld(segments: Vector[(Int32, NearSearch)]): World =
-        { segments = segments, crowd = Crowd.start(fst(Vector.get(0, segments))), segment = 0, frameInSegment = 0, samples = Nil, nearSum = 0.0, done = false }
+    pub def initialWorld(config: Config): World =
+        { segments = config#segments, plan = config#plan,
+          crowd = Crowd.start(fst(Vector.get(0, config#segments))), progress = BenchRun.start(), nearSum = 0.0 }
 
-    def nsToMs(ns: Int64): Float64 = Int64.toFloat64(ns) / 1.0e6
+    def knobsOf(w: World, segment: Int32): List[(String, String)] =
+        let (n, search) = Vector.get(segment, w#segments);
+        let near = w#nearSum / Int32.toFloat64(Int32.max(1, w#plan#measured));
+        ("bench", BenchRun.quoted("crowd2d")) :: ("n", Int32.toString(n)) :: ("search", BenchRun.quoted("${search}")) ::
+        ("near", BenchRun.fmt3(near)) :: Nil
 
-    def sampleOf(frame: App.Frame, stepMs: Float64): Sample =
-        let d = frame#diagnostics;
-        { frameMs = frame#dt * 1000.0,
-          stepMs = stepMs,
-          submitMs = d |> Option.map(x -> nsToMs(x#submitNs)) |> Option.getWithDefault(0.0),
-          swapMs = d |> Option.map(x -> nsToMs(x#swapNs)) |> Option.getWithDefault(0.0),
-          gpuMs = d |> Option.flatMap(x -> x#gpuNs) |> Option.filter(ns -> ns > 0i64) |> Option.map(nsToMs),
-          drawItems = d |> Option.map(x -> x#drawItems) |> Option.getWithDefault(0) }
-
-    pub def step(frame: App.Frame, w: World): World \ IO =
-        if (w#done) w
+    /// work = 規則 1 コマの時間。
+    pub def step(host: Host, frame: App.Frame, w: World): World \ IO =
+        if (w#progress#done) w
         else {
-            let (moved, stepMs) = Timing.measureMs(() -> checked_ecast(Crowd.advance(snd(Vector.get(w#segment, w#segments)), w#crowd)));
-            let measured = w#frameInSegment >= warmupFrames();
-            let samples = if (measured) sampleOf(frame, stepMs) :: w#samples else w#samples;
-            let nearSum = if (measured) w#nearSum + Crowd.nearPerEnemy(moved) else w#nearSum;
-            if (w#frameInSegment + 1 >= warmupFrames() + measuredFrames()) {
-                report(Vector.get(w#segment, w#segments), samples, nearSum);
-                let next = w#segment + 1;
-                let done = next >= Vector.length(w#segments);
-                { crowd = if (done) moved else Crowd.start(fst(Vector.get(next, w#segments))), segment = next, frameInSegment = 0, samples = Nil, nearSum = 0.0, done = done | w }
-            }
-            else { crowd = moved, frameInSegment = w#frameInSegment + 1, samples = samples, nearSum = nearSum | w }
+            let search = snd(Vector.get(w#progress#segment, w#segments));
+            let (moved, stepMs) = BenchRun.timed(host#now, () -> checked_ecast(Crowd.advance(search, w#crowd)));
+            let measuring = w#progress#frameInSegment >= w#plan#warmup;
+            let counted = { nearSum = if (measuring) w#nearSum + Crowd.nearPerEnemy(moved) else w#nearSum | w };
+            let progress = BenchRun.advance(w#plan, host#emit, knobsOf(counted), BenchRun.sampleOf(frame, stepMs), w#progress);
+            if (progress#segment == w#progress#segment) { crowd = moved, progress = progress | counted }
+            else { crowd = if (progress#done) moved else Crowd.start(fst(Vector.get(progress#segment, w#segments))),
+                   progress = progress, nearSum = 0.0 | w }
         }
-
-    def report(segment: (Int32, NearSearch), samples: List[Sample], nearSum: Float64): Unit \ IO =
-        let read = (pick, q) -> Timing.fmt3(Timing.percentile(q, samples |> List.map(pick)));
-        let gpuSamples = samples |> List.filterMap(s -> s#gpuMs);
-        // WhyNot: 測れないコマを 0 として数えない — timer query の結果が出ないコマが続くと中央値が嘘になる。
-        let gpuText = if (List.isEmpty(gpuSamples)) "none" else Timing.fmt3(Timing.percentile(50, gpuSamples));
-        let drawn = samples |> List.head |> Option.map(s -> s#drawItems) |> Option.getWithDefault(0);
-        let near = Timing.fmt3(nearSum / Int32.toFloat64(Int32.max(1, List.length(samples))));
-        println("[crowd2d] n=${fst(segment)} search=${snd(segment)} frame_p50=${read(s -> s#frameMs, 50)} frame_p95=${read(s -> s#frameMs, 95)} step_p50=${read(s -> s#stepMs, 50)} step_p95=${read(s -> s#stepMs, 95)} submit_p50=${read(s -> s#submitMs, 50)} swap_p50=${read(s -> s#swapMs, 50)} gpu_p50=${gpuText} draw_items=${drawn} near=${near}")
 
     pub def view(w: World): List[Render.PlacedItem] =
         let xs = w#crowd#xs;
@@ -74,13 +59,14 @@ mod CrowdBench {
             |> List.map(i -> { at = { x = Vector.get(i, xs), y = Vector.get(i, ys) }, item = Render.sprite("enemy", 10) })
 
     pub def go(): Unit \ IO =
-        let segments = segmentsOf(loadCounts());
+        let config = configOf(BenchEnv.knobs(("COUNTS", "n") :: ("SEARCH", "search") :: ("FRAMES", "frames") :: ("DIAG", "diag") :: Nil));
+        let host = { now = BenchEnv.nowMs, emit = BenchEnv.emit };
         run {
-            App.make(initialWorld(segments))
-                |> App.addSystem(step)
-                |> App.withDiagnostics
+            App.make(initialWorld(config))
+                |> App.addSystem(step(host))
+                |> BenchRun.withDiagnostics(config#plan)
                 |> App.withView((_ctx, w) -> checked_ecast(view(w)))
-                |> App.quitWhen((_frame, w) -> checked_ecast(w#done))
+                |> App.quitWhen((_frame, w) -> checked_ecast(w#progress#done))
                 |> App.launchForBench
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO
