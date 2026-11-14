@@ -42,6 +42,21 @@ mod TestGpuTimer {
         Assert.assertEq(expected = Some((1300i64, ("bloom", 300i64) :: ("screen", 1000i64) :: Nil)),
                         GpuTimer.summarize(id -> Map.getWithDefault(id, 0i64, times), frame) |> Option.map(t -> (t#gpuNs, t#passes)))
 
+    // ── 囲むコマを間引く ──
+
+    // 16 コマに 1 回なら、囲むのは通し番号 0 と 16 で、間の 1 と 15 は囲まない。
+    @Test
+    def testSamplesOneFrameInSixteen(): Unit \ Assert =
+        Assert.assertEq(expected = (true, false, false, true),
+                        (GpuTimer.isSampledFrame(16, 0), GpuTimer.isSampledFrame(16, 1), GpuTimer.isSampledFrame(16, 15), GpuTimer.isSampledFrame(16, 16)))
+
+    // 環境変数が無い・数でない時は既定の間隔、1 未満は毎コマ（1）、数ならその間隔。
+    @Test
+    def testSampleIntervalFallsBackToDefault(): Unit \ Assert =
+        Assert.assertEq(expected = (GpuTimer.defaultSampleInterval(), GpuTimer.defaultSampleInterval(), 1, 4),
+                        (GpuTimer.sampleIntervalOf(None), GpuTimer.sampleIntervalOf(Some("often")),
+                         GpuTimer.sampleIntervalOf(Some("0")), GpuTimer.sampleIntervalOf(Some("4"))))
+
     // 描き先を 1 つも囲まなかったコマは時間を出さない（0 ms と言わない）。
     @Test
     def testSummarizeEmptyFrameIsNone(): Unit \ Assert =

@@ -82,8 +82,8 @@ mod RenderPaint {
         gpuTimer = FrameTimer
     }
 
-    /// GPU の時間を測る口。measure(name, f) = f の中の GL の仕事の時間を描き先 name の分として測る・
-    /// endFrame() = 画面のコマの終わりに、結果の出た一番新しいコマの GPU の時間（無ければ None）。
+    /// GPU の時間を測る口。measure(name, f) = f の中の GL の仕事の時間を描き先 name の分として測る（測るコマを間引いてよい）・
+    /// endFrame() = 画面のコマの終わりに、最後に結果を読めたコマの GPU の時間（まだ無ければ None）。
     /// 3D の描き手と同じく作る側が渡す（測る GL の関数は GL 3.3 と WebGL2 で持ち方が違う）。
     pub type alias FrameTimer = {
         measure = (String, Unit -> Unit \ IO) -> Unit \ IO,
@@ -408,7 +408,7 @@ mod RenderPaint {
         if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) f()
         else paint#gpuTimer#measure(name, f)
 
-    /// 画面のコマの終わりに、結果の出た一番新しいコマの GPU の時間を診断へ入れる。
+    /// 画面のコマの終わりに、最後に結果を読めたコマの GPU の時間を診断へ入れる。
     /// 集めていない間は 2D と 3D の数を捨てるだけ（誰も引き取らない数を溜め続けない）。
     def noteGpuTime(paint: Paint): Unit \ IO =
         if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) {

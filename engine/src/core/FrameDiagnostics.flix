@@ -14,8 +14,8 @@ pub mod FrameDiagnostics {
     /// - glyphsAdded: フォントのアトラスへ足した字の数
     /// - textureUploads: 画素を上げ直したテクスチャの名前
     /// - gpuNs: GPU がコマの描き先（Pass と画面）を描くのにかけた時間の合計（描き先の間の GPU の空きは含まない）。
-    ///   GPU を待たずに読むので 1〜2 コマ前の値。測れない描き手（CPU の描き出し・時間の query を作れない GL）と、
-    ///   まだ結果が出ていないコマは None
+    ///   GPU を待たずに読み、測るのも数コマに 1 回なので、最後に読めた値（何コマか前の値）が続けて入る。
+    ///   測れない描き手（CPU の描き出し・時間の query を作れない GL・ブラウザ）と、まだ 1 つも結果が出ていない間は None
     /// - gpuPasses: 描き先ごとの GPU の時間（Pass の名前・画面は "screen"。描いた順）。gpuNs と同じコマの値
     /// - draw2dCounts: 2D の draw call の数と、前の draw に続けられなかった理由ごとの数（欄の意味は Draw2dCounts・Draw2dBatchBreaks）。
     ///   3D の場面の中の draw call は含まない（scene3dCounts#drawCalls）
