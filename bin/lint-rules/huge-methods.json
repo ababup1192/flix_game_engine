@@ -16,6 +16,7 @@
     "ShaderGen.eqSpecWith::huge-methods": "【直す候補】eqMaterial から通る。同上",
     "ShaderGen.eqShade::huge-methods": "【直す候補】eqMaterial から通る。同上",
     "ShaderGen.eqOptField::huge-methods": "【直す候補】eqMaterial から通る。同上",
-    "ShaderGen.eqOut::huge-methods": "【直す候補】eqMaterial から通る。同上"
+    "ShaderGen.eqOut::huge-methods": "【直す候補】eqMaterial から通る。同上",
+    "SceneBench.go::osr-skipped": "ベンチの 1 コマごとの外側のループ。1 回ごとに重い関数を呼ぶだけで、物の数だけ回るループではない"
   }
 }

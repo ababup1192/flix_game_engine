@@ -339,6 +339,9 @@ func report(out, errOut *strings.Builder, rules *Rules, s *scan, stale bool) int
 		//   除外の関数が「直った」のか「この jar に入っていないだけ」かは、全部の関数が届く jar を渡した人にしか分からない。
 		var gone []string
 		for k := range rules.exempt.Why {
+			if !strings.HasSuffix(k, "::"+Name) {
+				continue
+			}
 			if _, ok := s.hits[strings.TrimSuffix(k, "::"+Name)]; !ok {
 				gone = append(gone, k)
 			}

@@ -17,3 +17,15 @@ func cmdHugeMethods(out, errOut *strings.Builder, rest []string, _ bool) int {
 	code, err := hugemethod.Run(out, errOut, root, rest)
 	return orAbort(errOut, code, err)
 }
+
+func init() {
+	register("osr-skipped",
+		"-XX:+PrintCompilation の出力から、JVM が途中から JIT（OSR）するのを諦めたままの Flix のループを拾う（8,000 バイト未満でも起きる物）",
+		cmdOSRSkipped)
+}
+
+func cmdOSRSkipped(out, errOut *strings.Builder, rest []string, _ bool) int {
+	root, rest := declRootFlag(rest)
+	code, err := hugemethod.RunOSR(out, errOut, root, rest)
+	return orAbort(errOut, code, err)
+}

@@ -645,8 +645,8 @@ Flix 0.78 の出すバイトコードには JIT から外れる形が 2 つあ�
 時間や割り当てでは見分けにくい。**どのメソッドがインタプリタで回っているか**を直に見る。ゲームのフォルダで:
 
 ```sh
-# 1. JIT が諦めた所（OSR）を出す。行にメソッドの名前が入る
-JAVA_TOOL_OPTIONS="-XX:+PrintCompilation" make run | grep "COMPILE SKIPPED"
+# 1. JIT が途中から切り替えるのを諦めたまま（OSR）のループを出す。Flix の関数の名前に直し、後から通った物は外す
+JAVA_TOOL_OPTIONS="-XX:+PrintCompilation" make run | bin/fge osr-skipped -
 
 # 2. 走っている間の標本を取り、インタプリタで回っているメソッドを数える（type が Interpreted の frame）
 JAVA_TOOL_OPTIONS="-XX:StartFlightRecording=filename=/tmp/rec.jfr,settings=profile" make run
@@ -658,7 +658,7 @@ jfr print --json --events jdk.ExecutionSample /tmp/rec.jfr \
 
 8,000 バイトを超えたメソッドは `make lint-huge-methods` で数える（ゲームは遊ぶ時と同じ jar を作って数える。engine はベンチの jar を見るので、ベンチを流した後に打つ）。
 超えていて良い物（1 コマに 1 回・毎コマ通らない）は `bin/lint-rules/huge-methods.json`（ゲームは `huge-methods.local.json`）の exempt に理由 1 行で載せる。
-大きさが 8,000 バイト未満でも、1 コマに 1 回しか呼ばれない関数の中のループは OSR を諦める事がある。こちらは lint では拾えないので、上の 1 の `COMPILE SKIPPED` で見る。
+大きさが 8,000 バイト未満でも、1 コマに 1 回しか呼ばれない関数の中のループは OSR を諦める事がある。こちらは class の大きさでは分からないので、上の 1 の `bin/fge osr-skipped` で見る（1 コマに 1 回だけ回る外側のループは、同じ exempt に `"モジュール.関数::osr-skipped"` で載せる）。
 
 - スレッドダンプ（jstack）でも当たりは付くが、インタプリタのメソッドに偏って止まる。割合は JFR の標本で読む。
 - `-XX:-DontCompileHugeMethods` を付けて速くなるなら 1 つ目の形。**旗で直さない**（ブラウザ版には効かない）。確かめにだけ使う。
