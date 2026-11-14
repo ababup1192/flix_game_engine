@@ -975,7 +975,7 @@ if (window.visualViewport) {
 }
 addEventListener("resize", redraw);
 
-// ── 広い画面（幅 720 以上）: 形を決め、ドックとシートを右の欄（インスペクタ）へ移す。スマホの形では何もしない ──
+// ── 広い画面（幅 720 以上・高さ 500 以上）: 形を決め、ドックとシートを右の欄（インスペクタ）へ移す。スマホの形では何もしない ──
 const MQ = {
   // WhyNot: 幅だけで決めない — 横向きのスマホは幅が 720 を超えるが、広い形にすると動画の枠がほとんど残らない
   phone: matchMedia("(max-width: 719.98px), (max-height: 499.98px)"),
@@ -1060,7 +1060,7 @@ scroller.addEventListener("wheel", e => {
 }, { passive: false });
 let pinch = null;
 const span2 = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
-const pinchMove = e => { if (e.touches.length !== 2) return; e.preventDefault(); setZoom(pinch.p * span2(e.touches) / pinch.d); };
+const pinchMove = e => { if (e.touches.length !== 2 || form === "phone") return; e.preventDefault(); setZoom(pinch.p * span2(e.touches) / pinch.d); };
 const pinchEnd = e => {
   if (e.touches.length >= 2) return;
   pinch.on.forEach(n => { n.removeEventListener("touchmove", pinchMove); n.removeEventListener("touchend", pinchEnd); n.removeEventListener("touchcancel", pinchEnd); });

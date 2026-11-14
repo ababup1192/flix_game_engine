@@ -389,6 +389,9 @@ var formChangeCases = []uiCase{
 	{name: "書きかけの直しはスマホから 3 列へ字を持って移る", v: phone, steps: []step{js(editLine), js(typeEdit), resize(desktop)},
 		check: `openId === "editSheet" && $("editText").value === "直した文章" && $("editSheet").parentNode.id === "insp"`},
 	{name: "書きかけの直しはスマホから 3 列へ focus を持って移る", v: phone, steps: []step{js(editLine), js(typeEdit), resize(desktop)}, check: `document.activeElement.id === "editText"`},
+	{name: "横向きのタブレットの高さが 500 を切っても書きかけの注釈の字が残る", v: tabletWide, steps: []step{js(`noteHere();`), js(typeNote), resize(view{1180, 400, true, true})},
+		check: `form === "phone" && openId === "noteSheet" && $("noteText").value === "書きかけ"`},
+	{name: "横向きのタブレットの高さが 500 を切っても書きかけの注釈の focus が残る", v: tabletWide, steps: []step{js(`noteHere();`), js(typeNote), resize(view{1180, 400, true, true})}, check: `document.activeElement.id === "noteText"`},
 	{name: "iPad を縦から横へ回しても書きかけの注釈の字が残る", v: tablet, steps: []step{js(`noteHere();`), js(typeNote), resize(tabletWide)},
 		check: `form === "three" && openId === "noteSheet" && $("noteText").value === "書きかけ"`},
 	{name: "iPad を縦から横へ回しても書きかけの注釈に focus が残る", v: tablet, steps: []step{js(`noteHere();`), js(typeNote), resize(tabletWide)},
@@ -453,8 +456,8 @@ var zoomCases = []uiCase{
 	{name: "直しのマーカーにホバーすると直した文章が出る", v: desktop, setup: hasEdit + `renderMarks();`, steps: []step{hover(`#marks .mk`)}, check: tipShown + ` && $("tip").textContent.includes("直した文章")`},
 	{name: "分岐にホバーすると問いと道が出る", v: desktop, at: 16.2, steps: []step{hover(`#forks .fork`)}, check: tipShown + ` && $("tip").textContent.includes("小瓶を差し出された") && $("tip").textContent.includes("✓ 受け取る")`},
 	{name: "音にホバーすると音の名前が出る", v: desktop, at: 8.6, steps: []step{hover(`.snd[data-i="2"]`)}, check: tipShown + ` && $("tip").textContent.includes("♪ 泡")`},
-	{name: "指の形ではカードの吹き出しも出ない", v: tablet, steps: []step{hover(`#cardScript`)}, check: `getComputedStyle($("tip")).display === "none"`},
-	{name: "指の形ではホバーの吹き出しが出ない", v: tablet, at: 8.4, steps: []step{hover(`.clip[data-ln="25"]`)}, check: `getComputedStyle($("tip")).display === "none"`},
+	{name: "指の形ではカードの吹き出しも出ない", v: tablet, steps: []step{hover(`#cardScript`)}, check: `getComputedStyle($("tip")).display === "none" && !$("tip").classList.contains("on")`},
+	{name: "指の形ではホバーの吹き出しが出ない", v: tablet, at: 8.4, steps: []step{hover(`.clip[data-ln="25"]`)}, check: `getComputedStyle($("tip")).display === "none" && !$("tip").classList.contains("on")`},
 }
 
 // scrollEndCases は 4 つの形のそれぞれで、タイムラインを一番右まで送った所が終わりの秒になることを見る。
