@@ -1,0 +1,38 @@
+Info: Running script "java" on /Users/abab/Desktop/flix_game_engine
+loader cb true null
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+device status Success 
+INFO backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+FEATURES DepthClipControl Depth32FloatStencil8 TimestampQuery TextureCompressionBC TextureCompressionBCSliced3D TextureCompressionETC2 TextureCompressionASTC TextureCompressionASTCSliced3D IndirectFirstInstance ShaderF16 RG11B10UfloatRenderable BGRA8UnormStorage Float32Filterable Float32Blendable ClipDistances DualSourceBlending
+LIMIT MaxDynamicUniformBuffersPerPipelineLayout 11
+LIMIT MaxDynamicStorageBuffersPerPipelineLayout 11
+LIMIT MaxBindGroupsPlusVertexBuffers 24
+LIMIT MaxSampledTexturesPerShaderStage 16
+LIMIT MaxStorageBuffersPerShaderStage 10
+LIMIT MaxStorageTexturesPerShaderStage 8
+LIMIT MaxUniformBuffersPerShaderStage 12
+LIMIT MinUniformBufferOffsetAlignment 256
+LIMIT MinStorageBufferOffsetAlignment 256
+LIMIT MaxInterStageShaderVariables 31
+LIMIT MaxColorAttachmentBytesPerSample 128
+LIMIT MaxComputeWorkgroupStorageSize 32768
+LIMIT MaxComputeInvocationsPerWorkgroup 1024
+LIMIT MaxComputeWorkgroupsPerDimension 65535
+LIMIT MaxTextureDimension1D 16384
+LIMIT MaxTextureDimension2D 16384
+LIMIT MaxTextureDimension3D 2048
+LIMIT MaxTextureArrayLayers 2048
+LIMIT MaxBindingsPerBindGroup 1000
+LIMIT MaxSamplersPerShaderStage 16
+LIMIT MaxUniformBufferBindingSize -1202585600
+LIMIT MaxStorageBufferBindingSize -1202585600
+LIMIT MaxVertexBufferArrayStride 2048
+LIMIT MaxComputeWorkgroupSizeX 1024
+LIMIT MaxComputeWorkgroupSizeY 1024
+LIMIT MaxComputeWorkgroupSizeZ 1024
+LIMIT MaxBindGroups 4
+LIMIT MaxVertexBuffers 8
+LIMIT MaxBufferSize -1202585600
+LIMIT MaxVertexAttributes 30
+LIMIT MaxColorAttachments 8
