@@ -71,8 +71,13 @@ func shootCase(t *testing.T, url string, c wideCase, mock bool) *image.NRGBA {
 	if err := p.Eval(c.act, nil); err != nil {
 		t.Fatal(err)
 	}
-	// WhyNot: すぐ撮らない — 入力欄の focus は 280ms 後、左の欄の scrollIntoView は smooth で動く
-	time.Sleep(1200 * time.Millisecond)
+	// WhyNot: すぐ撮らない — 入力欄の focus は 280ms 後、左の欄の scrollIntoView は smooth で動き、着いた所のハイライト（.flash）は 900ms 残る
+	if err := p.WaitFor(`(!openId || performance.now() - openedAt > 300) && !document.querySelector(".flash") && document.getAnimations().every(a => a.playState !== "running")`, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Eval(nextFrame, nil); err != nil {
+		t.Fatal(err)
+	}
 	noErrors(t, p, c.name)
 	return shot(t, p)
 }
@@ -121,7 +126,9 @@ func resizeTo(t *testing.T, p *cdp.Page, w, h int, mobile bool) {
 	if err := p.WaitFor(fmt.Sprintf("innerWidth === %d && innerHeight === %d", w, h), 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	if err := p.Eval(nextFrame, nil); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestFormFollowsWindowSizeAtTheEdges(t *testing.T) {

@@ -41,7 +41,7 @@ func renderFile(t *testing.T, p string, strip Strip) string {
 	return string(page)
 }
 
-// mockFixes は mock.html から雛形へ直した所の全部（plans/tape/plan.md の「TAPE から引くように直す所」）。
+// mockFixes は mock.html から雛形へ直した所の全部（plans/tape/plan.md の「TAPE から引くように直す所」と、plans/tape/plan-wide.md）。
 // ここに無い違いが出たら、雛形がモックから外れている。
 var mockFixes = [][2]string{
 	{"const KEY = \"tape4:\" + TAPE.game + \":\" + TAPE.commit;",

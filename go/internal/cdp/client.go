@@ -8,7 +8,7 @@ import (
 
 // client は 1 つの target（頁）の WebSocket に CDP の命令を送って返事を待つ。
 //
-// WhyNot: 返事を待つ間に届くイベントは捨てる。合図は Runtime.evaluate で頁を覗いて取るので、
+// WhyNot: 返事を待つ間に届くイベントは（dialog が開いた知らせを除いて）捨てる。合図は Runtime.evaluate で頁を覗いて取るので、
 // イベントの購読（Page.loadEventFired など）に頼らない — 頁の load と「絵が描けた」は別の時刻だから。
 type client struct {
 	ws     *wsConn
@@ -53,6 +53,12 @@ func (c *client) call(method string, params any, timeout time.Duration) (json.Ra
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			return nil, fmt.Errorf("CDP の返事が JSON でない: %w", err)
 		}
+		// WhyNot: dialog を開いたままにしない — headless では、alert・confirm を誰かが閉じるまで頁が止まり、次の命令の返事が来ない
+		if msg.Method == "Page.javascriptDialogOpening" {
+			if err := c.acceptDialog(); err != nil {
+				return nil, err
+			}
+		}
 		if msg.Method != "" || msg.ID != id {
 			continue
 		}
@@ -61,6 +67,19 @@ func (c *client) call(method string, params any, timeout time.Duration) (json.Ra
 		}
 		return msg.Result, nil
 	}
+}
+
+// acceptDialog は開いた dialog を OK で閉じる命令を送る（返事は call が id の違う物として読み捨てる）。
+func (c *client) acceptDialog() error {
+	c.nextID++
+	req, err := json.Marshal(map[string]any{"id": c.nextID, "method": "Page.handleJavaScriptDialog", "params": map[string]any{"accept": true}})
+	if err != nil {
+		return err
+	}
+	if err := c.ws.writeText(req); err != nil {
+		return fmt.Errorf("dialog を閉じられない: %w", err)
+	}
+	return nil
 }
 
 type remoteObject struct {

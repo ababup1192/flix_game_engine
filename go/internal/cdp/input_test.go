@@ -96,3 +96,64 @@ func TestPressKeyRejectsUnknownName(t *testing.T) {
 		t.Fatal("知らないキーを通した")
 	}
 }
+
+// scriptPage は body の script で window.__seen に window.__init を写す頁を開く。
+func scriptPage(t *testing.T, p *Page) {
+	t.Helper()
+	if err := p.Navigate(`data:text/html,<script>window.__seen = window.__init === undefined ? "none" : window.__init</script>`); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor(`window.__seen !== undefined`, pageStep); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInitScriptOptionRunsBeforePageScripts(t *testing.T) {
+	p := keyPage(t, PageOptions{InitScript: `window.__init = "option"`})
+	scriptPage(t, p)
+	if !evalBool(t, p, `__seen === "option"`) {
+		t.Fatal("頁の script が流れた時に InitScript の値がまだ無い")
+	}
+}
+
+func TestAddInitScriptRunsBeforePageScripts(t *testing.T) {
+	p := keyPage(t, PageOptions{})
+	if err := p.AddInitScript(`window.__init = "added"`); err != nil {
+		t.Fatal(err)
+	}
+	scriptPage(t, p)
+	if !evalBool(t, p, `__seen === "added"`) {
+		t.Fatal("頁の script が流れた時に AddInitScript の値がまだ無い")
+	}
+}
+
+func TestMoveMouseHoversTheElementUnderIt(t *testing.T) {
+	p := keyPage(t, PageOptions{Width: 400, Height: 300})
+	if err := p.Eval(`(() => { const d = document.createElement("div"); d.id = "box"; d.style.cssText = "position:fixed;left:100px;top:100px;width:50px;height:50px";
+	  d.addEventListener("mouseover", e => { window.__over = [e.clientX, e.clientY, e.isTrusted].join(","); }); document.body.appendChild(d); return true; })()`, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.MoveMouse(120, 130); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor(`window.__over === "120,130,true"`, pageStep); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAlertDoesNotStopThePage(t *testing.T) {
+	p := keyPage(t, PageOptions{})
+	if err := p.Eval(`setTimeout(() => { alert("止まらない"); window.__after = true; }, 0), true`, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor(`window.__after === true`, pageStep); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfirmIsAnsweredWithOK(t *testing.T) {
+	p := keyPage(t, PageOptions{})
+	if !evalBool(t, p, `confirm("続ける？")`) {
+		t.Fatal("confirm が OK で閉じていない")
+	}
+}

@@ -108,13 +108,3 @@ func (p *Page) MoveMouse(x, y float64) error {
 	_, err := p.c.call("Input.dispatchMouseEvent", map[string]any{"type": "mouseMoved", "x": x, "y": y}, pageStep)
 	return err
 }
-
-// Click はマウスの左ボタンで (x, y) を押して離す。
-func (p *Page) Click(x, y float64) error {
-	for _, typ := range []string{"mousePressed", "mouseReleased"} {
-		if _, err := p.c.call("Input.dispatchMouseEvent", map[string]any{"type": typ, "x": x, "y": y, "button": "left", "clickCount": 1}, pageStep); err != nil {
-			return err
-		}
-	}
-	return nil
-}

@@ -139,7 +139,7 @@ var (
 	smallWin = view{900, 700, false, false}
 )
 
-func openTapePage(t *testing.T, v view) *cdp.Page {
+func skipWithoutChrome(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("-short では Chrome を起こさない")
@@ -147,7 +147,16 @@ func openTapePage(t *testing.T, v view) *cdp.Page {
 	if _, err := cdp.FindChrome(); err != nil {
 		t.Skip(err)
 	}
-	p, err := cdp.OpenPage(cdp.PageOptions{Width: v.w, Height: v.h, Mobile: v.mobile, Touch: v.touch, InitScript: initScript})
+}
+
+func newTapePage(v view) (*cdp.Page, error) {
+	return cdp.OpenPage(cdp.PageOptions{Width: v.w, Height: v.h, Mobile: v.mobile, Touch: v.touch, InitScript: initScript})
+}
+
+func openTapePage(t *testing.T, v view) *cdp.Page {
+	t.Helper()
+	skipWithoutChrome(t)
+	p, err := newTapePage(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,6 +255,10 @@ func savePNG(t *testing.T, path string, img image.Image) {
 
 func noErrors(t *testing.T, p *cdp.Page, name string) {
 	t.Helper()
+	// WhyNot: __errs が無い頁を「エラー無し」にしない — initScript が流れていない頁は、例外が出ていても空に見える
+	if !evalBool(t, p, `Array.isArray(window.__errs)`) {
+		t.Fatalf("%s で initScript が流れていない（window.__errs が無い）", name)
+	}
 	var errs []string
 	if err := p.Eval(`window.__errs`, &errs); err != nil {
 		t.Fatal(err)

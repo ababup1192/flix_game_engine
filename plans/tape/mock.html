@@ -57,7 +57,7 @@
   .labels span { width: 26px; height: 22px; border-radius: 7px; display: grid; place-items: center; }
   .scroller { position: absolute; inset: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; }
   .scroller::-webkit-scrollbar { display: none; }
-  .wrap { position: relative; height: 100%; padding: 0 50vw; }
+  .wrap { position: relative; height: 100%; padding: 0 50vw; width: max-content; }
   .lanes { position: relative; height: 100%; }
   .row { position: absolute; left: 0; }
   .film { top: 6px; height: 44px; border-radius: 6px; overflow: hidden; background-image: var(--strip); background-repeat: no-repeat; }
@@ -519,12 +519,11 @@ function buildTimeline() {
   document.querySelectorAll("[data-icon]").forEach(i => i.outerHTML = SVG[i.dataset.icon](TRACK[i.dataset.icon].hex));
   renderTracks(); renderForks();
 }
-// 帯の横の長さは PPS（1 秒の幅）で決まる。広い画面ではズームで PPS が変わるたびに引き直す
 function layoutTimeline() {
   const W = TAPE.duration * PPS, TILE = PPS / TAPE.stripPerSec, wide = form !== "phone";
   $("lanes").style.width = W + "px";
   const film = $("film"); film.style.width = W + "px";
-  // 広い段では絵の縦横比を保ち、はみ出た上下を切る（引き伸ばすと人の顔が潰れて読めない）
+  // WhyNot: 広い形の映像のトラックの絵を、トラックの高さへ引き伸ばさない — 人の顔が潰れて読めない
   if (wide) { film.style.backgroundSize = `${TILE * TAPE.strip.count}px ${Math.max(62, TILE * TAPE.strip.h / TAPE.strip.w)}px`; film.style.backgroundPosition = "0 50%"; }
   else { film.style.backgroundSize = `${TILE * TAPE.strip.count}px 44px`; film.style.backgroundPosition = ""; }
   $("scenes").innerHTML = TAPE.scenes.map(s => `<div class="scene" data-id="${s.id}" style="left:${s.t * PPS}px;width:${(sceneEnd(s) - s.t) * PPS}px"><span>${esc(s.name)}</span></div>`).join("");
@@ -845,7 +844,7 @@ function askNote(kind, target, rect, at) {
   $("noteCtx").innerHTML = tag(k, `${TRACK[k].name}: ${label(pending)}`) + `<span>${where(t)}</span>`;
   $("noteText").value = ""; syncNote(); setMode(null); open("noteSheet"); setTimeout(() => $("noteText").focus(), 280);
 }
-// 確定のボタンは、入力が空・変えていない時は押せない（押してから叱らない）
+// WhyNot: 入力が空・変えていない時の確定を押させてから叱らない — 押せない事は押す前に見えていた方がよい
 const syncNote = () => { $("noteSave").disabled = !$("noteText").value.trim(); };
 const editValue = () => $("editText").value.trim().replace(/\n+/g, "／");
 const syncEdit = () => { const v = editValue(); $("editSave").disabled = !v || editing == null || v === textOf(editing); };
@@ -1007,7 +1006,7 @@ function applyForm() {
   $("listSheet").classList.toggle("on", f === "three");
   if (draft && f === "phone") $("scrim").classList.add("on");
   if (draft && focused && focused.tagName === "TEXTAREA") focused.focus({ preventScroll: true });
-  // 広い画面はクリップの字が読める幅（1 秒 96px）から始める。スマホへ戻ったら元の 56px
+  // WhyNot: 広い形を 1 秒 56px のまま始めない — クリップの字が読めない
   PPS = f === "phone" ? 56 : 96;
   if (f !== "phone") $("zoom").value = zoomToSlider(PPS);
   relayout();
@@ -1017,7 +1016,6 @@ function relayout() { const t = video.currentTime; layoutTimeline(); renderTrack
 addEventListener("resize", applyForm);
 document.querySelectorAll(".mod").forEach(k => k.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl");
 
-// 左の欄（チャプター）。チャプターのシートと同じ中身を常に出す
 let binHtml = "", binScrolledAt = -Infinity;
 function renderBin() {
   const body = $("binBody"), html = chaptersHtml("bfork");
@@ -1036,7 +1034,6 @@ function focusBin(toFork, fork) {
   n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 900);
 }
 
-// ルーラーの上の注釈のマーカー（押すとその時刻へ行き、その物を選ぶ）
 function markItems() {
   return [...anns.map(a => ({ t: a.seconds, k: annTrack(a), a })), ...Object.keys(edits).map(ln => ({ t: lineStart(+ln) + .3, k: "script", ln: +ln }))];
 }
@@ -1046,7 +1043,6 @@ function renderMarks() {
   $("marks").querySelectorAll(".mk").forEach(n => n.onclick = () => { const m = items[+n.dataset.i]; seek(m.t); selectItem(m); });
 }
 
-// ズーム: ルーラーの右端のスライダー・Ctrl/⌘＋ホイール・指のピンチ。1 秒の幅を 14〜240px の間で替える
 const Z_MIN = 14, Z_MAX = 240;
 const zoomToSlider = p => Math.round(100 * Math.log(p / Z_MIN) / Math.log(Z_MAX / Z_MIN));
 function setZoom(p) {
@@ -1067,7 +1063,7 @@ scroller.addEventListener("touchstart", e => { if (form !== "phone" && e.touches
 scroller.addEventListener("touchmove", e => { if (!pinch || e.touches.length !== 2) return; e.preventDefault(); setZoom(pinch.p * span2(e.touches) / pinch.d); }, { passive: false });
 scroller.addEventListener("touchend", e => { if (e.touches.length < 2) pinch = null; });
 
-// J / K / L の送り。戻し再生は video が負の速さを持てないので、コマを戻して見せる
+// WhyNot: 戻し再生に playbackRate を使わない — video は負の速さを持てない
 let shut = null;
 function shuttle(dir) {
   setMode(null);
@@ -1158,7 +1154,7 @@ addEventListener("keydown", e => {
   fn(e);
 });
 
-// ホバーで札・帯のクリップ・マーカーの中身を出す（マウスの時だけ）
+// ホバーでカード・タイムラインのクリップ・マーカーの中身を出す（マウスの時だけ）
 const tip = $("tip");
 function tipFor(n) {
   if (n.classList.contains("clip")) {
