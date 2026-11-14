@@ -65,7 +65,7 @@
   function render() {
     var canvas = document.getElementById("fge-canvas");
     if (canvas) bench.env.canvas = canvas.width + "x" + canvas.height;
-    var name = bench.results.length > 0 ? bench.results[0].bench : "bench";
+    var name = bench.results.length > 0 ? (bench.results[0].bench || bench.results[0].name) : "bench";
     var state = bench.done ? "終わり" : (bench.measuring ? "測っている（区間 " + (bench.results.length + 1) + "）" : "温めている");
     text.textContent = name + " " + location.search + " — " + state + "\n" + bench.env.renderer + " / canvas " + bench.env.canvas +
       " / dpr " + bench.env.devicePixelRatio + "\n" + bench.results.map(resultLine).join("\n");

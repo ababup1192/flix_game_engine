@@ -25,10 +25,10 @@ pub mod WebLayer {
     pub def devTools(): App.DevTools[w, {}] \ IO =
         App.DevTools.browser(pairUp(Array.toList(Browser.queryPairs())))
 
-    /// WebGpuOffscreen.GpuDevice をブラウザの navigator.gpu で受ける（PC の WebGpuOffscreen.runDawn と対）。
+    /// WebGpuDevice をブラウザの navigator.gpu で受ける（PC の WebGpuDevice.runDawn と対）。
     /// 待つ所（adapter・device・読み戻し）は Java の中で待ち、f は止まる形のまま書く。
-    pub def runWebGpu(f: Unit -> a \ ef): a \ (ef - WebGpuOffscreen.GpuDevice) + IO =
-        run f() with handler WebGpuOffscreen.GpuDevice {
+    pub def runBrowserWebGpu(f: Unit -> a \ ef): a \ (ef - WebGpuDevice) + IO =
+        run f() with handler WebGpuDevice {
             def requestDevice(k) = k(openWebGpu())
         }
 

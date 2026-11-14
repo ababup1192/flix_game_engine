@@ -121,7 +121,9 @@ public final class BrowserWebGpu implements WebGpu {
     @Override public boolean hasTimestampQuery() { return timestampQuery; }
     @Override public boolean hasCoreFeaturesAndLimits() { return coreFeaturesAndLimits; }
 
-    // WhyNot: 数えるだけで返さない — uncapturederror はブラウザのタスクで届き、submit した仕事が終わってイベントの輪へ 1 度手を返すまで数に入らない。
+    // WhyNot: 待たずに数を返さない — uncapturederror はブラウザのタスクで届き、submit した仕事が終わってイベントの輪へ 1 度手を返すまで数に入らない。
+    //   Chrome では wire の順で onSubmittedWorkDone より先に届く。他のブラウザは【未確認】。
+    //   submit した仕事の終わりまで待つので毎コマ呼ばない（門と読み戻しの後に 1 回）。
     @Override public int errorCount() {
         if (!destroyed) {
             queue.onSubmittedWorkDone().await();
@@ -495,8 +497,11 @@ public final class BrowserWebGpu implements WebGpu {
             throw new IllegalStateException("buffer を map できない: " + e);
         }
         ByteBuffer direct = dst.isDirect() ? dst : ByteBuffer.allocateDirect(dst.capacity()).order(ByteOrder.nativeOrder());
-        copyMapped(b.getMappedRange(offset, size), bytesOf(direct), size);
-        b.unmap();
+        try {
+            copyMapped(b.getMappedRange(offset, size), bytesOf(direct), size);
+        } finally {
+            b.unmap();
+        }
         if (direct != dst) {
             ByteBuffer from = direct.duplicate();
             from.position(0).limit(size);

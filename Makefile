@@ -121,6 +121,7 @@ help:
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く・SCENE=field COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1 で物を並べた場面)"
 	@echo "  make webgpu-check         WebGPU の PC の実装 (Dawn) を Flix から通して描いて読み戻す門 (窓なし・2 プロセス・窓。NG で exit 1)"
 	@echo "  make webgpu-check-web     同じ門をブラウザの実装 (navigator.gpu) でヘッドレスの Chrome に流す (PC と同じ Flix のコード・canvas。NG で exit 1)"
+	@echo "  make webgpu-check-same    PC とブラウザの門を同じ機械で流し、三角形と firstInstance の絵の digest が同じかを比べる (違えば exit 1)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make crowd2d-cpu          2D の敵の群れの規則だけを回し、近くを探す処理を全部と比べる形と SpatialGrid で比べる (窓は開かない)"
@@ -373,6 +374,23 @@ webgpu-check-web:
 	  || { echo "[webgpu-check-web] NG あり ($(WEBGPU_CHECK_WEB_OUT))"; exit 1; }
 	@echo "[webgpu-check-web] OK ($(WEBGPU_CHECK_WEB_OUT))"
 
+# PC とブラウザで同じ画素か: 同じ機械で両方の門を流し、三角形 2 枚と firstInstance の絵の digest を並べて比べる。違えば exit 1。
+WEBGPU_CHECK_PC_OUT := build/bench-web/webgpu_check-pc.txt
+WEBGPU_CHECK_SAME   := triangle-cull-back triangle-cull-none first-instance
+.PHONY: webgpu-check-same
+webgpu-check-same: webgpu-check-web
+	@mkdir -p $(dir $(WEBGPU_CHECK_PC_OUT))
+	@$(MAKE) --no-print-directory -C bench/webgpu_check run > $(WEBGPU_CHECK_PC_OUT) 2>&1 \
+	  || { echo "[webgpu-check-same] PC の門が NG ($(WEBGPU_CHECK_PC_OUT))"; exit 1; }
+	@bad=; for n in $(WEBGPU_CHECK_SAME); do \
+		pc=$$(grep "^RESULT $$n " $(WEBGPU_CHECK_PC_OUT) | grep -oE 'digest=-?[0-9]+'); \
+		web=$$(grep -oE "\"name\":\"$$n\"[^}]*" $(WEBGPU_CHECK_WEB_OUT) | grep -oE 'digest=-?[0-9]+'); \
+		echo "[webgpu-check-same] $$n PC $${pc:-無い} ブラウザ $${web:-無い}"; \
+		if [ -z "$$pc" ] || [ "$$pc" != "$$web" ]; then bad="$$bad $$n"; fi; \
+	done; \
+	[ -z "$$bad" ] || { echo "[webgpu-check-same] 違う:$$bad"; exit 1; }; \
+	echo "[webgpu-check-same] OK"
+
 # シェーダープログラムのキャッシュの上限 (bench/shader_cache_soak)。隠しウィンドウで
 # 数値だけが違う Spec を 200 本投げ、LRU の追い出しでキャッシュが上限に留まるかを見る。
 # 頭打ちにならなければ exit 1。ShaderCache / buildProgram / ShaderGen を触ったら回す。
@@ -425,7 +443,8 @@ BENCH_WEB_SIZE_sprite_stress := 960x720
 BENCH_WEB_SIZE_crowd2d       := 1280x720
 BENCH_WEB_SIZE_scene3d       := 960x540
 BENCH_WEB_SIZE   ?= $(or $(BENCH_WEB_SIZE_$(BENCH)),960x540)
-BENCH_WEB_WAIT   ?= 600
+BENCH_WEB_WAIT_webgpu_check := 120
+BENCH_WEB_WAIT   ?= $(or $(BENCH_WEB_WAIT_$(BENCH)),600)
 # WhyNot: webgpu_check の書き出しで ⑨ を流さない — ⑨ は App のコマ（?capture）を待つが、この頁はコマを回さず門を流して終わる。wasm を読めるかは門そのものが見る。
 BENCH_WEB_EXPORT_FLAGS_webgpu_check := --no-browser-check
 .PHONY: bench-web-export bench-web

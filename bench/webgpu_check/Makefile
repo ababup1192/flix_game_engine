@@ -1,4 +1,6 @@
-# webgpu_check — WebGPU の PC の実装（Dawn）を Flix から WebGpu の interface を通して確かめる門の入口。
+# webgpu_check — WebGPU の実装（PC は Dawn・ブラウザは navigator.gpu）を Flix から WebGpu の interface を通して確かめる門の入口。
+# ウィンドウなしの門の本体は src/Checks.flix で、PC（src/Main.flix）とブラウザ（web/WebMain.flix）が同じコードを流す。
+# ブラウザの門はエンジンの root で make webgpu-check-web（書き出してヘッドレスの Chrome）・PC と画素を比べるのは make webgpu-check-same。
 #   make run      … ウィンドウなしの門（公開の入口と誤りの道・上限・三角形と面の向き・readRgba・式の行・firstInstance の 20,000 本・device の取り直し）
 #   make window   … GLFW のウィンドウの門（描き先の形・120 コマ・present の前の読み戻し・Retina の倍率・大きさの作り直し）
 #   make two      … ウィンドウなしの門を 2 プロセス同時に（空の置き場から 3 回・書き出し済みの置き場で 1 回）

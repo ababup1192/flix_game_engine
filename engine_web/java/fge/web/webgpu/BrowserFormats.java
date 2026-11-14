@@ -1,6 +1,7 @@
 package fge.web.webgpu;
 
 import fge.webgpu.TextureFormat;
+import java.util.Locale;
 
 /** fge.webgpu の enum を WebGPU の JS の字の値へ（Dawn の側は DawnFormats）。 */
 final class BrowserFormats {
@@ -11,7 +12,7 @@ final class BrowserFormats {
      * WhyNot: TextureFormat に使わない — "rgba8unorm" のように区切りを持たない名前があり、この規則では作れない。
      */
     static String token(Enum<?> value) {
-        return value.name().toLowerCase().replace('_', '-');
+        return value.name().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
     static String textureFormat(TextureFormat format) {

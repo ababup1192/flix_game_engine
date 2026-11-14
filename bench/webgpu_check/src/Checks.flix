@@ -1,8 +1,8 @@
-// PC とブラウザで同じに流す門（ウィンドウを使わない物）。device は入口が差す WebGpuOffscreen.GpuDevice の handler が開き、
+// PC とブラウザで同じに流す門（ウィンドウを使わない物）。device は入口が差す WebGpuDevice の handler が開き、
 // 結果の 1 行は CheckLog の handler が出す（PC は標準出力の "RESULT …"・ブラウザは console の "[bench] result {…}"）。
 // 画素は読み戻した中身の digest も出し、PC とブラウザの行を並べて同じ画素かを見る。
-mod WebGpuChecks {
-    use fge::{GlOffscreen, Sort, WebGpuOffscreen}
+mod WebGpuSharedChecks {
+    use fge::{GlOffscreen, Sort, WebGpuDevice, WebGpuOffscreen}
 
     import fge.webgpu.BindGroup
     import fge.webgpu.BindGroupDesc
@@ -55,10 +55,10 @@ mod WebGpuChecks {
         let (r, g, b, a) = p;
         "${r},${g},${b},${a}"
 
-    pub def usage2(a: Int32, b: Int32): Int32 = Int32.bitwiseOr(a, b)
+    def usage2(a: Int32, b: Int32): Int32 = Int32.bitwiseOr(a, b)
 
     /// buf の先頭 bytes バイトを 4 バイトずつ混ぜた数（PC とブラウザの画素を 1 つの数で比べる）。
-    pub def digest(buf: ByteBuffer, bytes: Int32): Int32 \ IO = digestFrom(buf, bytes / 4, 0, 17)
+    def digest(buf: ByteBuffer, bytes: Int32): Int32 \ IO = digestFrom(buf, bytes / 4, 0, 17)
 
     def digestFrom(buf: ByteBuffer, count: Int32, i: Int32, acc: Int32): Int32 \ IO =
         if (i >= count) acc
@@ -115,7 +115,7 @@ mod WebGpuChecks {
 
     // ── 上限 ──────────────────────────────
 
-    pub def checkLimits(gpu: WebGpu): Bool \ IO + CheckLog =
+    def checkLimits(gpu: WebGpu): Bool \ IO + CheckLog =
         let l = gpu.limits();
         let fourGiB = 4294967296i64;
         // WhyNot: 4 GiB を超える事を門にしない — 上限が 4 GiB 以下の GPU もあり、この機械の値を見るのは下の 1 行。
@@ -136,7 +136,7 @@ mod WebGpuChecks {
         "}\n"
 
     /// 4 × 1 の行を uniform の組 2 つで塗り、式の値と入力の絵の値がそのまま返るか（8 bit に丸めない）。
-    pub def checkFloatRows(session: WebGpuOffscreen.Session): Bool \ IO + CheckLog =
+    def checkFloatRows(session: WebGpuOffscreen.Session): Bool \ IO + CheckLog =
         let texels = Vector#{0.125f32, 1.5f32, 0.0f32, 1.0f32, 2.25f32, -3.0f32, 0.0f32, 1.0f32,
                              0.375f32, 7.0f32, 0.0f32, 1.0f32, -0.5f32, 0.03125f32, 0.0f32, 1.0f32};
         let texture = { sampler = "tex0", levels = { width = 4, height = 1, texels = GlOffscreen.RowTexels.Float32Rgba(texels) } :: Nil, linear = false };
@@ -165,7 +165,7 @@ mod WebGpuChecks {
 
     /// Argb8 の絵（2 × 1 と 1 × 1 の mip 2 つ・linear の sampler）を Float32 の絵と並べて読む:
     /// mip 0 の 2 画素（r = 0 と 1）の真ん中は 0.5 前後・mip 1 は (r, g) = (0, 1) がそのまま・Float32 の絵の左端は 0.125。
-    pub def checkArgbMipRows(session: WebGpuOffscreen.Session): Bool \ IO + CheckLog =
+    def checkArgbMipRows(session: WebGpuOffscreen.Session): Bool \ IO + CheckLog =
         let floatTex = { sampler = "tex0", levels = { width = 4, height = 1, texels = GlOffscreen.RowTexels.Float32Rgba(
                              Vector#{0.125f32, 0.0f32, 0.0f32, 1.0f32, 0.5f32, 0.0f32, 0.0f32, 1.0f32,
                                      0.5f32, 0.0f32, 0.0f32, 1.0f32, 0.5f32, 0.0f32, 0.0f32, 1.0f32}) } :: Nil, linear = false };
@@ -185,7 +185,7 @@ mod WebGpuChecks {
     // ── 公開の入口の誤りの道 ──────────────────────────────
 
     /// 大きさ 0 の描き先は Err（開いた device は手放す）。
-    pub def checkOpenErr(): Bool \ IO + WebGpuOffscreen.GpuDevice + CheckLog = match WebGpuOffscreen.open({ width = 0, height = 64 }) {
+    def checkOpenErr(): Bool \ IO + WebGpuDevice + CheckLog = match WebGpuOffscreen.open({ width = 0, height = 64 }) {
         case Err(why) => report("open-err-size", true, why)
         case Ok(s)    => WebGpuOffscreen.close(s); report("open-err-size", false, "大きさ 0 で開けた")
     }
@@ -270,7 +270,7 @@ mod WebGpuChecks {
     pub def fmt(x: Float64): String = Float64.toString(Float64.round(x * 1000.0) / 1000.0)
 
     /// 20,000 体を「draw 1 本」と「firstInstance で 1 体ずつ draw」で描き、絵が同じかと 1 体ずつの CPU の時間（合格線 3 ms）を見る。
-    pub def checkFirstInstance(gpu: WebGpu): Bool \ IO + CheckLog =
+    def checkFirstInstance(gpu: WebGpu): Bool \ IO + CheckLog =
         let n = 20000;
         let size = 1024;
         let rowsBytes = n * 16;
@@ -301,6 +301,7 @@ mod WebGpuChecks {
         let eachCpu = median(each |> List.map(f -> f#cpuMs));
         let instGpu = median(inst |> List.map(f -> f#gpuMs));
         let eachGpu = median(each |> List.map(f -> f#gpuMs));
+        // WhyNot: ByteBuffer.mismatch で比べない — TeaVM に無く、ブラウザで同じコードが組めない。
         let sameImage = instDigest == eachDigest;
         let errors = gpu.errorCount();
         let ok = sameImage and eachCpu <= 3.0 and errors == 0;
@@ -312,11 +313,19 @@ mod WebGpuChecks {
         rows.destroy();
         target.destroy();
         report("first-instance", ok,
-               "N=${n} frames=${measured} | draw(6,N) cpu med=${fmt(instCpu)} ms gpu med=${fmt(instGpu)} ms | draw(6,1,0,k)×N cpu med=${fmt(eachCpu)} ms gpu med=${fmt(eachGpu)} ms (limit 3 ms) | same image=${sameImage} digest=${eachDigest} errors=${errors}")
+               "N=${n} frames=${measured} | draw(6,N) cpu med=${fmt(instCpu)} ms gpu med=${fmt(instGpu)} ms | draw(6,1,0,k)×N cpu med=${fmt(eachCpu)} ms gpu med=${fmt(eachGpu)} ms (limit 3 ms) | same image=${sameImage} digest=${eachDigest} errors=${errors}" +
+               " | draw(6,1,0,k)×N smallest cpu=${smallest(each |> List.map(f -> f#cpuMs))} gpu=${smallest(each |> List.map(f -> f#gpuMs))}")
 
-    /// texture を読み戻す（行は 256 バイトにそろえたまま）。
+    /// 測った値のうち小さい方から 6 つ（重なりは 1 つに）。時計の刻みを見るため丸めない。
+    def smallest(xs: List[Float64]): String =
+        List.toSet(xs) |> Set.toList |> List.take(6) |> List.map(Float64.toString) |> String.intercalate(",")
+
+    /// 4 バイトの画素 width 個の行を readTexture が返す時の 1 行のバイト数（256 の倍数）。
+    pub def paddedRowBytes(width: Int32): Int32 = (width * 4 + 255) / 256 * 256
+
+    /// texture を読み戻す（行は paddedRowBytes にそろえたまま）。
     pub def readTexture(gpu: WebGpu, texture: Texture, width: Int32, height: Int32): ByteBuffer \ IO =
-        let bytesPerRow = (width * 4 + 255) / 256 * 256;
+        let bytesPerRow = paddedRowBytes(width);
         let out = gpu.createBuffer("check read", Int32.toInt64(bytesPerRow * height), usage2(BufferUsage.COPY_DST, BufferUsage.MAP_READ));
         let encoder = gpu.createCommandEncoder("check read");
         encoder.copyTextureToBuffer(texture, 0, 0, 0, width, height, out, 0i64, bytesPerRow);
@@ -329,7 +338,7 @@ mod WebGpuChecks {
     // ── まとめ ──────────────────────────────
 
     /// ウィンドウを使わない門を全部流し、全部通ったかを返す。
-    pub def offscreen(): Bool \ IO + WebGpuOffscreen.GpuDevice + CheckLog =
+    pub def offscreen(): Bool \ IO + WebGpuDevice + CheckLog =
         match WebGpuOffscreen.open({ width = 64, height = 64 }) {
             case Err(why)    => report("open", false, why)
             case Ok(session) =>

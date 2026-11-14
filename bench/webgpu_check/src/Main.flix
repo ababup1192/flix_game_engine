@@ -3,8 +3,8 @@
 // ウィンドウを使わない門の本体は Checks.flix（ブラウザの入口 web/WebMain.flix と同じコード）。ここにあるのは PC だけの門。
 // 門ごとに "RESULT <名前> OK|NG …" を 1 行出し、1 つでも NG なら exit 1。
 mod WebGpuCheck {
-    use fge::{LwjglLayer, WebGpuOffscreen, WebGpuWindow}
-    use WebGpuChecks.{checkTriangles, drawTriangles, fmt, median, near, readTexture, report, rgbaAt, showPixel}
+    use fge::{LwjglLayer, WebGpuDevice, WebGpuOffscreen, WebGpuWindow}
+    use WebGpuSharedChecks.{checkTriangles, drawTriangles, fmt, median, near, paddedRowBytes, readTexture, report, rgbaAt, showPixel}
 
     import fge.webgpu.CullMode
     import fge.webgpu.PresentMode
@@ -43,14 +43,14 @@ mod WebGpuCheck {
 
 
     /// ネイティブを読んだ後に別の置き場を渡すと、黙って無視せず誤りになる。
-    def checkNativeDirMismatch(): Bool \ IO + WebGpuChecks.CheckLog =
+    def checkNativeDirMismatch(): Bool \ IO + WebGpuSharedChecks.CheckLog =
         let other = "${System.getProperty("java.io.tmpdir")}/fge-webgpu-check-other-dir";
         let outcome = try { DawnWebGpu.open(other).destroy(); "開けた" } catch { case e: IllegalStateException => "誤り: ${e.getMessage()}" };
         report("native-dir-mismatch", String.startsWith({prefix = "誤り"}, outcome), outcome)
 
     // ── device を捨てて取り直す ──────────────────────────────
 
-    def checkReopen(dawn: DawnWebGpu): Bool \ IO + WebGpuChecks.CheckLog =
+    def checkReopen(dawn: DawnWebGpu): Bool \ IO + WebGpuSharedChecks.CheckLog =
         dawn.destroy();
         let again = dawn.reopen();
         let gpu: WebGpu = checked_cast(again);
@@ -62,11 +62,11 @@ mod WebGpuCheck {
     // ── ウィンドウなしの門 ──────────────────────────────
 
     // WhyNot: 公開の入口（WebGpuOffscreen.open）より先に DawnWebGpu.open を呼ぶ — 2 プロセスの門は置き場を名指しし、その置き場で読ませたい。
-    def offscreen(): Bool \ IO + WebGpuChecks.CheckLog =
+    def offscreen(): Bool \ IO + WebGpuSharedChecks.CheckLog =
         waitBarrier();
         let dawn = DawnWebGpu.open(nativeDir());
         let dirOk = checkNativeDirMismatch();
-        let shared = run WebGpuChecks.offscreen() with WebGpuOffscreen.runDawn;
+        let shared = run WebGpuSharedChecks.offscreen() with WebGpuDevice.runDawn;
         List.forAll(identity, dirOk :: shared :: checkReopen(dawn) :: Nil)
 
     // ── ウィンドウの門 ──────────────────────────────
@@ -98,10 +98,10 @@ mod WebGpuCheck {
         }
 
     /// present の前に描き先を読み、三角形の中 2 点・外 2 点を見る（BGRA の並び）。
-    def checkSurfacePixels(gpu: WebGpu, texture: Texture, name: String): Bool \ IO + WebGpuChecks.CheckLog =
+    def checkSurfacePixels(gpu: WebGpu, texture: Texture, name: String): Bool \ IO + WebGpuSharedChecks.CheckLog =
         let w = texture.width();
         let h = texture.height();
-        let bytesPerRow = (w * 4 + 255) / 256 * 256;
+        let bytesPerRow = paddedRowBytes(w);
         let buf = readTexture(gpu, texture, w, h);
         let bgra = p -> { let (b, g, r, a) = p; (r, g, b, a) };
         let inA = bgra(rgbaAt(buf, bytesPerRow, w * 3 / 10, h * 7 / 10));
@@ -114,7 +114,7 @@ mod WebGpuCheck {
         report(name, ok, "${w}x${h} in=${showPixel(inA)}/${showPixel(inB)} out=${showPixel(outA)}/${showPixel(outB)}")
 
     /// ウィンドウの門: 描き先の形・120 コマの間隔・present の前の読み戻し・Retina の倍率・大きさを変えた後の作り直し。
-    def window(): Bool \ IO + WebGpuChecks.CheckLog =
+    def window(): Bool \ IO + WebGpuSharedChecks.CheckLog =
         let dawn = DawnWebGpu.open(nativeDir());
         let gpu: WebGpu = checked_cast(dawn);
         // WhyNot: pipeline をウィンドウを開く前に作らない — 描き先の形はウィンドウの surface を作ってからでないと分からない。
@@ -148,7 +148,7 @@ mod WebGpuCheck {
                 opened and framed and readOk and resized and resizedRead
         }
 
-    def reportScale(win: WebGpuWindow.Window): Bool \ IO + WebGpuChecks.CheckLog =
+    def reportScale(win: WebGpuWindow.Window): Bool \ IO + WebGpuSharedChecks.CheckLog =
         let (ww, wh) = WebGpuWindow.windowSizeOf(win);
         let (fw, fh) = WebGpuWindow.sizeOf(win);
         match WebGpuWindow.backingScaleOf(win) {
@@ -160,7 +160,7 @@ mod WebGpuCheck {
         }
 
     /// 1 コマ描いて present の前に読み、present する。
-    def checkOneFrame(gpu: WebGpu, surface: Surface, pipeline: RenderPipeline, name: String): Bool \ IO + WebGpuChecks.CheckLog =
+    def checkOneFrame(gpu: WebGpu, surface: Surface, pipeline: RenderPipeline, name: String): Bool \ IO + WebGpuSharedChecks.CheckLog =
         WebGpuWindow.pollEvents();
         match drawWindowFrame(gpu, surface, pipeline) {
             case None          => report(name, false, "描き先を取れない status=${surface.lastStatus().toString()}")
@@ -192,7 +192,7 @@ mod WebGpuCheck {
         else {
             let ok = run {
                 if (windowMode) window() else offscreen()
-            } with handler WebGpuChecks.CheckLog {
+            } with handler WebGpuSharedChecks.CheckLog {
                 def result(name, passed, detail, k) = { println("RESULT ${name} ${if (passed) "OK" else "NG"} ${detail}"); k() }
             };
             println("RESULT webgpu-check ${if (ok) "OK" else "NG"}");

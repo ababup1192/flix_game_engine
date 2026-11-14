@@ -357,7 +357,7 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 3 | R1a | **2D のスプライト・字・箱だけ `DrawList` に。** 呼び手の無い道を消す → `emitMerged` のスプライトの run が描く 1 行を出し、GL の backend が流す。ほかの種類は今のまま | `gl-parity` 0 px・テンプレの `reference`・`gl-capture-check`。P0 のベンチで 5% 以内。**GL の呼び出しの並びは同じでなくてよい**（門は画素） | 4〜6 時間 |
 | 3 | P2 | （R1a と並べて）**TeaVM を 0.16 へ。** `export-web` の呼び方を `TeaVMTool` に替え、JDK の本物のクラスが流れ込まない ClassLoader を組む。足している部品 6 本と runtime を合わせる。WebGL2 のまま全部のテンプレが動く事 | `web-capture` の絵が、**R1a を入れる前のコミット**で 0.14.1 と 0.16 を比べて同じ。書き出しの大きさと時間の前後。古い版のブラウザで WebGL2 版が動く（5.5） | 5〜8 時間。危険あり |
 | 4 | P4a | **`WebGpu` と PC の門。** interface を決め、Dawn の実装で三角形（cull の向きの確かめを含む）・読み戻し・ウィンドウ（5.3 の「backend に聞く口」）。**画面なしの session**（今の `GlOffscreen` の open・readRgba・drawFloatRows に当たる物。P5・P6 の門が使う）。ウィンドウに出た絵を機械で確かめる。2 プロセス同時に起動して落ちない事。limit を Dawn から正しく読める事。**`firstInstance` の試作**: 形ごとに `draw(…, firstInstance)` を数千本・`instance_index` で行を引く形の 1 コマの時間。Windows と Linux で同じ試作 | Flix から interface を通して描いた絵が期待と同じ。3 つの OS で通る。通らない時は人に伺う（11 章の 3）。`firstInstance` の形が 20,000 本で 3 ms を超えたら（`setBindGroup` を毎回呼ぶ形と同じかそれより遅い）、決まり 1・2 の前提が崩れるので、次の手（頂点を storage buffer から引いて 1 回で描く形）と一緒に人に伺う | 9〜13 時間 + 別の機械 |
-| 5 | P4b | **ブラウザの実装**（P2 の後）。同じ interface を TeaVM の JSO で。物を Flix の record に入れて運べる事。起動の時の選び分け（5.5）。`firstInstance` の試作を Chrome と iPhone の Safari で | PC と同じ Flix のコードで同じ絵。WebGPU の無いブラウザで WebGL2 版が起動する。`firstInstance` の合格線は P4a と同じ（ブラウザは 20,000 本で 3 ms） | 4〜6 時間 |
+| 5 | P4b | **ブラウザの実装**（P2 の後）。同じ interface を TeaVM の JSO で。物を Flix の record に入れて運べる事。起動の時の選び分け（5.5）。`firstInstance` の試作を Chrome と iPhone の Safari で。**起動の時の選び分けと WebGL2 版の起動は V1 へ回した（12.12）** | PC と同じ Flix のコードで同じ絵。WebGPU の無いブラウザで WebGL2 版が起動する（V1 へ）。`firstInstance` の合格線は P4a と同じ（ブラウザは 20,000 本で 3 ms） | 4〜6 時間 |
 | 6 | V1 | **縦に 1 本（2D）。** WebGPU の backend にスプライト・字・箱（WGSL は手書き。この 3 つは今も 1 つのプログラム）と、それに要る最小の「絵とフォントのアトラスを上げる」「Pass を 1 つ挟む」。お題は rpg のテンプレの題名の画面（スプライト 7 個だけ・多角形と面が無い）と、それを Pass 1 つに通した物。PC とブラウザで出す | GL の backend と画素を比べる。`sprite_stress` の同じ絵 20,000 個が GL より遅くない | 6〜9 時間 |
 | 7 | | **`DrawList` の形のレビュー（2D）**: GL と WebGPU の backend の行数・ベンチ・書き味の見本を並べ、**スプライトの行と pass の区切りと「上げる行」の形**を確定する（9.1）。ほかの種類の形は、下の交互の進め方で 1 つずつ確かめる | レビュー役 90 点・人の了承 | 1〜2 時間 |
 | 8 | R1b ⇄ P6 | **2D の残りを、種類ごとに「GL でリファクタ → すぐ WebGPU の backend に足す」を交互に。** 順: 物の上げ下ろしと寿命の表（5.3）→ 多角形とタイルと static layer → history と MSAA の resolve → mask（比べる値を進める形・8 章）→ 3D の場面を貼る → （P5 の後）面。GL と形が一番違う所（pass・history・mask）を早く WebGPU に通す。「送るのを 1 コマ 1 回に」（決まり 6）は、GL では測って得な時だけ（GL 3.3 / WebGL2 に baseInstance が無く、run ごとに頂点の属性を付け直す事になるため）。アトラスの頁（決まり 3）・読み戻しと F8・動画もここ | 種類ごとに、GL は `gl-parity` 0 px・`reference`・`gl-capture-check`・ベンチ 5% 以内。WebGPU は GL の backend と同じ機械で `gl-capture` の場面を比べる（許容は場面ごとに理由を書く。既定は差 0・丸めが出る場面だけ 2/255）と SoftRaster との `gl-parity`（画面なしの session）。終わりに: テンプレ 3 本が PC とブラウザで GL より遅くない（5% 以内）・ブラウザは `?capture` を自動で回す門 | 18〜26 時間 |
@@ -545,6 +545,15 @@ PC の橋は jWebGPU のまま P4a を進め、`WebGpu` の裏に隠して後で
 6. `TestWebGpuOffscreen` の `unchecked_cast(… as _ \ {})` で IO を型の上で消している。テストを `\ {Assert, IO}` で書けるなら替える
 7. `readRgba`・`drawFloatRows` の中の例外（10 秒の待ち越え・短い data）は Err にしていない。device lost を Err にするかを P10 までに決める
 
+P4b で片づけた物: 6（`TestWebGpuOffscreen` を `\ {Assert, IO}` で書き、`unchecked_cast` を外した）。
+残した物: 1〜5・7（1・3・4 は Dawn の側で、P4b は `render_gl/java` を触らなかった。2 は `make two`・5 は Studio の手順・7 は P10 まで）。P4b のレビューで足した物:
+
+8. 次に `render_gl/java` を触る時に、`WebGpu.errorCount` の doc へ「ブラウザでは submit した仕事の終わりまで待つ（イベントの輪へ 1 度手を返す）ので毎コマ呼ばない」と書く。
+   今は書いていない（GL の層の jar のハッシュは文書を含むソースから出るので、コメントだけでも置き直しになる）。同じ時に doc の「後でブラウザの JSO」を `fge.web.webgpu.BrowserWebGpu` に直す
+9. `make two` の `-Dorg.lwjgl.system.SharedLibraryExtractDirectory=$(CURDIR)/build/lwjgl` が相対扱いになり、`bench/webgpu_check/Users/…` に空の木ができる
+10. `bin/fge export-web` は java を PATH から探すので、devbox の無い worktree では `/usr/bin/java` のスタブを掴んで止まる（bin/flix のように engine の `.devbox` の java へ落とさない）
+11. `bin/fge refactor` の索引に `engine_web`・`bench`・`render_gl/test` が入っておらず、search・usages が実在の呼び手を落とす
+
 ## 版ごとに直した事
 
 **第 5 版**（第 4 版のレビュー 84 点の指摘 14 件。**この版はレビューを通していない**）: V1 のお題をスプライトだけの画面に・画面なしの session を P4a に前倒しし、
@@ -593,16 +602,26 @@ dual-source blending・mask は ref を進める形・GL との比べの門・�
 ### 12.12 P4b で入った物（2026-11-15・この Mac・Chrome 156 だけ）
 
 - ブラウザの実装は `engine_web/java/fge/web/webgpu`（`BrowserWebGpu`・`BrowserObjects`・`BrowserFormats`。Dawn の 3 本と対）。TeaVM 0.16 の JSO を使い、
-  足りない所（device の上限を全部求める descriptor・canvas の webgpu の文脈・読み戻しの写し・null の見分け）だけ `@JSBody`。
+  宣言に無い所だけ `@JSBody`: device の上限を全部求める descriptor・null の見分け・`hasFeature`（device の features）・`describe`（adapter の info）・
+  `errorMessage`（uncapturederror の文）・`setTimeout(0)` の Promise（`errorCount` の待ち）・読み戻しの写し（`Uint8Array.set`）・
+  `getPreferredCanvasFormat`・canvas の大きさ・canvas の webgpu の文脈。
   置き場を `fge/webgpu/browser` にしなかったのは、lint-forbid の `teavm-jso-outside-fge-web`（JSO の import は `engine_web/java/fge/web/` の下だけ）に合わせたため。
   `fge.webgpu` の interface は変えていない（render_gl/java は触らず、GL の層の jar のハッシュも同じ）。
-- 実装を選ぶ所: `WebGpuOffscreen.GpuDevice`（op は `requestDevice`）を足し、`WebGpuOffscreen.open` はこれで device を取る。handler は
-  PC が `WebGpuOffscreen.runDawn`・ブラウザが `WebLayer.runWebGpu`。入口で差すだけで、session を使うコードは同じ（Fs の handler と同じ形）。
+- 実装を選ぶ所: effect `WebGpuDevice`（op は `requestDevice`・`render_gl/src/WebGpuDevice.flix`）。`WebGpuOffscreen.open` はこれで device を取る。handler は
+  PC が `WebGpuDevice.runDawn`・ブラウザが `WebLayer.runBrowserWebGpu`。入口で差すだけで、session を使うコードは同じ（Fs の handler と同じ形）。
+  `docs/flix-conventions.md` の「層を置く物差し」の表に行を足した。AGENTS.md の「新しい機種の切れ目」の行は変えていない
+  （この境目は GlContext と同じく PC とブラウザの 2 つのための物で、新しい機種は今までどおり `Platform.Services` などの handler の高さで切る）。
 - 待つ所（requestAdapter・requestDevice・getCompilationInfo・mapAsync・onSubmittedWorkDone）は Java の中で `JSPromise.await()`。
-  `errorCount` は submit した仕事の終わりを待ってからイベントの輪へ 1 度手を返す（uncapturederror がタスクで届くため）。
-- 確かめる口は `make webgpu-check-web`（`bench/webgpu_check/web/WebMain.flix` を `bench-web` の道で書き出し、ヘッドレスの Chrome で流す）。
-  ウィンドウを使わない門は `bench/webgpu_check/src/Checks.flix` に移し、PC（`make webgpu-check`）と同じコードを流す。ブラウザだけの門は canvas の描き先。
-- PC とブラウザで同じだった物: 三角形 2 枚の readRgba の digest・式の行（drawFloatRows）の値・firstInstance の 20,000 本の絵の digest。
-  違う物は上限だけ（Chrome は maxBufferSize と storage の binding を 4 GiB − 4・uniform の binding を 64 KiB・sampled texture を 48 に絞る）。
-- firstInstance の 20,000 本（1 本ずつ draw）: Chrome で CPU 0.5 ms（3 回とも同じ。`performance.now` の刻みが 0.1 ms）・GPU 0.33 ms。PC の Dawn は CPU 1.4 ms。
-- 【未確認】Safari（Mac・iPhone）・Windows・Linux・WebGPU の無いブラウザでの起動（選び分けは V1）。
+  `errorCount` は submit した仕事の終わりを待ってからイベントの輪へ 1 度手を返す（uncapturederror がタスクで届くため）。毎コマは呼ばない（12.9 の 8）。
+- 確かめる口: `make webgpu-check-web`（`bench/webgpu_check/web/WebMain.flix` を `bench-web` の道で書き出し、ヘッドレスの Chrome で流す。待つ上限 120 秒・
+  例外でも NG の行と終わりの合図を出す）と `make webgpu-check-same`（同じ機械で PC とブラウザの門を流して digest を比べる）。
+  ウィンドウを使わない門は `bench/webgpu_check/src/Checks.flix`（`WebGpuSharedChecks`）にあり、PC（`make webgpu-check`）と同じコードを流す。ブラウザだけの門は canvas の描き先。
+- PC とブラウザで同じだった物（`make webgpu-check-same`）: digest は triangle-cull-back が −1039704047・triangle-cull-none が −638468079・
+  firstInstance の 20,000 本の絵が −225122287（PC も Chrome も同じ値）。式の行（drawFloatRows）の 2 行 16 個の値も同じ。
+- 違う物は上限だけ。`make webgpu-check-same` の同じ回の limits の行（PC は `build/bench-web/webgpu_check-pc.txt`・Chrome は `build/bench-web/webgpu_check.json`）で、
+  Chrome は maxBufferSize と maxStorageBufferBindingSize を 4,294,967,292（PC の Dawn は 41,747,087,360）・maxUniformBufferBindingSize を 65,536 に絞り、
+  maxSampledTexturesPerShaderStage は 48（PC は 16）。
+- firstInstance の 20,000 本（1 本ずつ draw）: Chrome で CPU 0.5 ms（3 回とも同じ）・GPU 0.33 ms。PC の Dawn は CPU 1.4〜1.5 ms・GPU 1.05 ms。
+  刻み: 各コマの値の小さい方は CPU が 0.4・0.5・0.6・0.7 ms（`performance.now` の 0.1 ms 刻み）、GPU が 0.262144・0.32768 ms（timestamp が 65.536 µs = 2^16 ns 刻み。
+  PC の Dawn の 1.048576 ms も同じ刻みの 16 倍）。どちらも刻みより細かい差は読めない。
+- 【未確認】Safari（Mac・iPhone）・Windows・Linux・WebGPU の無いブラウザでの起動（起動の時の選び分けと WebGL2 版の起動は V1）。
