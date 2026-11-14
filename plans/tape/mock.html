@@ -93,7 +93,8 @@
   .acts-head { display: flex; align-items: center; gap: 8px; height: 22px; margin-bottom: 8px; }
   .acts-head .badge { height: 20px; padding: 0 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #111; flex: none; }
   .acts-head .what { flex: 1; min-width: 0; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .acts-head .x { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--raised); flex: none; }
+  .acts-head .x { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--raised); flex: none; position: relative; }
+  .acts-head .x::after { content: ""; position: absolute; inset: -8px; }
   .acts-row { display: flex; gap: 6px; }
   .act { flex: 1; height: 44px; border-radius: 12px; background: var(--raised); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 600; }
   .act.main { color: #111; }
@@ -105,11 +106,26 @@
   .scrim.on { opacity: 1; pointer-events: auto; }
   .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 11; background: var(--raised); border-radius: 18px 18px 0 0;
     padding: 8px 16px calc(14px + env(safe-area-inset-bottom)); transform: translateY(102%); transition: transform .28s cubic-bezier(.2,.8,.2,1);
-    max-height: 78dvh; display: flex; flex-direction: column; }
-  .sheet.on { transform: none; }
+    max-height: calc(78dvh - var(--kb, 0px)); display: flex; flex-direction: column; }
+  .sheet textarea { flex: 0 1 auto; min-height: 64px; }
+  .sheet.on { transform: none; bottom: var(--kb, 0px); }
   .grab { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.2); margin: 0 auto 8px; flex: none; }
-  .sheet-head { display: flex; align-items: center; margin-bottom: 10px; flex: none; }
-  .sheet-head h3 { flex: 1; margin: 0; font-size: 15px; font-weight: 600; text-align: center; }
+  .sheet-head { display: flex; align-items: center; margin-bottom: 8px; flex: none; min-height: 32px; }
+  .sheet-head h3 { flex: 1; margin: 0; font-size: 16px; font-weight: 700; text-align: left; }
+  .xbtn { width: 44px; height: 44px; margin: -6px -10px -6px 0; display: grid; place-items: center; flex: none; color: var(--dim); }
+  .xbtn span { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.1); display: grid; place-items: center; }
+  .xbtn:active span { background: rgba(255,255,255,.2); }
+  .sheet-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; flex: none; }
+  .sheet-foot .left { margin-right: auto; }
+  .confirm { height: 44px; padding: 0 18px 0 14px; border-radius: 12px; background: var(--accent); color: #1a1300; font-size: 15px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 6px; }
+  .confirm:disabled { opacity: .35; cursor: default; }
+  .confirm:not(:disabled):active { transform: scale(.98); }
+  .ghost { height: 44px; padding: 0 12px; border-radius: 12px; font-size: 14px; color: var(--dim); }
+  .ghost:active { background: var(--hair); }
+  .kbd-hint { display: none; font-size: 11px; color: var(--faint); }
+  .kbd-hint kbd, .keys kbd { display: inline-block; min-width: 17px; height: 17px; line-height: 17px; padding: 0 4px; margin-right: 3px; border-radius: 4px; background: rgba(255,255,255,.08);
+    color: var(--dim); font: inherit; font-size: 10px; font-weight: 700; text-align: center; }
   .sheet-body { overflow: auto; min-height: 0; overscroll-behavior: contain; }
   .tb { font-size: 14px; color: var(--dim); padding: 8px 4px; min-width: 56px; text-align: left; }
   .tb.go { color: var(--accent); font-weight: 700; text-align: right; }
@@ -160,6 +176,7 @@
   .route span { font-size: 10px; color: var(--faint); }
   .route.on { background: #fff; color: #111; }
   .route.on span { color: #555; }
+  .route.none { opacity: .55; }
   .example { font-size: 10px; font-weight: 700; color: #1a1300; background: var(--accent); border-radius: 3px; padding: 0 4px; }
   .scenenote { position: absolute; right: 10px; bottom: 10px; height: 38px; padding: 0 14px 0 11px; border-radius: 99px; display: none; align-items: center; gap: 6px;
     background: rgba(255,255,255,.94); color: #111; font-size: 13px; font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2; }
@@ -241,38 +258,39 @@
 
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="noteSheet"><div class="grab"></div>
-  <div class="sheet-head"><button class="tb" data-close>やめる</button><h3>注釈</h3><button class="tb go" id="noteSave">付ける</button></div>
+  <div class="sheet-head"><h3>注釈</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="ctxline" id="noteCtx"></div>
   <textarea id="noteText" rows="3" placeholder="気になったこと・こうしてほしいこと"></textarea>
+  <div class="sheet-foot"><span class="kbd-hint"><kbd class="mod">⌘</kbd><kbd>↵</kbd></span><button class="confirm" id="noteSave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>追加</button></div>
 </div>
 <div class="sheet" id="editSheet"><div class="grab"></div>
-  <div class="sheet-head"><button class="tb" data-close>やめる</button><h3>文章を直す</h3><button class="tb go" id="editSave">直す</button></div>
+  <div class="sheet-head"><h3>文章を直す</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="ctxline" id="editCtx"></div>
   <textarea id="editText" class="mincho" rows="6"></textarea>
   <div class="before" id="editBefore"></div>
-  <button class="secondary" id="editRevert" style="display:none">元の文章に戻す</button>
+  <div class="sheet-foot"><button class="ghost left" id="editRevert" style="display:none">元の文章に戻す</button><span class="kbd-hint"><kbd class="mod">⌘</kbd><kbd>↵</kbd></span><button class="confirm" id="editSave"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>適用</button></div>
 </div>
 <div class="sheet" id="listSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>注釈と直し</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>注釈と直し</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="listBody"></div>
 </div>
 <div class="sheet" id="infoSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>このコマ</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>このコマ</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="infoBody"></div>
 </div>
 <div class="sheet" id="exportSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>書き出す</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>書き出す</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="ctxline" id="exportSum"></div>
   <div class="sheet-body"><pre id="exportText"></pre></div>
-  <button class="primary" id="saveBtn">ファイルに保存</button>
   <button class="secondary" id="copyBtn">コピー</button>
+  <div class="sheet-foot"><span class="kbd-hint"><kbd class="mod">⌘</kbd><kbd>S</kbd></span><button class="confirm" id="saveBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>保存</button></div>
 </div>
 <div class="sheet" id="chapSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>チャプター</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>チャプター</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="chapBody"></div>
 </div>
 <div class="sheet" id="playSheet"><div class="grab"></div>
-  <div class="sheet-head"><span class="tb"></span><h3>ここから遊ぶ</h3><button class="tb go" data-close>閉じる</button></div>
+  <div class="sheet-head"><h3>ここから遊ぶ</h3><button class="xbtn" data-close aria-label="閉じる"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
   <div class="sheet-body" id="playBody"></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -441,7 +459,7 @@ function openChapters(toFork) {
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
     TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach((br, i) => {
       rows.push(`<div class="forkcard" id="fork${i}"><div class="q"><span class="fork" style="position:relative;left:9px;top:0;margin-right:10px"><i>分</i></span>${esc(br.question)} · ${yarn}:${br.line}${br.example ? ' <span class="example">例</span>' : ""}</div>
-        <div class="routes">${br.routes.map((r, j) => `<button class="route ${r.here ? "on" : ""}" data-r="${j}"><b>${r.here ? "✓ " : ""}${esc(r.label)}</b><span>${esc(r.note)}</span></button>`).join("")}</div></div>`);
+        <div class="routes">${br.routes.map((r, j) => `<button class="route ${r.here ? "on" : "none"}" data-r="${j}"><b>${r.here ? "✓ " : ""}${esc(r.label)}</b><span>${esc(r.note)}</span></button>`).join("")}</div></div>`);
     });
   });
   $("chapBody").innerHTML = `<div class="ctxline">通し · ${TAPE.scenes.length} シーン · 分岐 ${TAPE.branches.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>` + rows.join("");
@@ -689,8 +707,13 @@ function askNote(kind, target, rect, at) {
   pending = { kind, target, rect: rect ? r3(rect) : null, seconds: Math.round(t * 10) / 10, frame: frameOf(t), scene: sceneAt(t).id };
   const k = kind === "script" || kind === "sound" ? kind : "video";
   $("noteCtx").innerHTML = tag(k, `${TRACK[k].name}: ${label(pending)}`) + `<span>${where(t)}</span>`;
-  $("noteText").value = ""; setMode(null); open("noteSheet"); setTimeout(() => $("noteText").focus(), 280);
+  $("noteText").value = ""; syncNote(); setMode(null); open("noteSheet"); setTimeout(() => $("noteText").focus(), 280);
 }
+// 確定のボタンは、入力が空・変えていない時は押せない（押してから叱らない）
+const syncNote = () => { $("noteSave").disabled = !$("noteText").value.trim(); };
+const editValue = () => $("editText").value.trim().replace(/\n+/g, "／");
+const syncEdit = () => { const v = editValue(); $("editSave").disabled = !v || editing == null || v === textOf(editing); };
+$("noteText").addEventListener("input", syncNote); $("editText").addEventListener("input", syncEdit);
 $("noteSave").onclick = () => {
   const note = $("noteText").value.trim(); if (!pending) return; if (!note) { toast("一言書いてください"); return; }
   anns.push({ ...pending, note, script: scriptRef(lineAt(pending.seconds)), probes: probesAt(pending.seconds) });
@@ -703,6 +726,7 @@ function openEdit(ln) {
   $("editText").value = textOf(ln).replace(/／/g, "\n");
   $("editBefore").innerHTML = edits[ln] !== undefined ? `元の文章: ${esc(flat(l.text))}` : "改行が台本の「／」（行の折り返し）になります";
   $("editRevert").style.display = edits[ln] !== undefined ? "" : "none";
+  syncEdit();
   open("editSheet"); setTimeout(() => $("editText").focus(), 280);
 }
 $("editSave").onclick = () => {
@@ -790,6 +814,10 @@ function refresh() {
   renderTracks(); renderNow(video.currentTime); if (sel) renderActs(); redraw();
 }
 video.onseeked = () => onTime(video.currentTime);
+if (window.visualViewport) {
+  const kb = () => { const v = visualViewport, h = Math.max(0, innerHeight - v.height - v.offsetTop); document.documentElement.style.setProperty("--kb", h > 1 ? h + "px" : "0px"); };
+  visualViewport.addEventListener("resize", kb); visualViewport.addEventListener("scroll", kb);
+}
 addEventListener("resize", redraw);
 
 setIcon(); buildTimeline(); refresh(); onTime(0);
