@@ -870,7 +870,7 @@ function splashHide() {
 async function fetchVideo() {
   const r = await fetch(TAPE.video);
   if (!r.ok) throw new Error(TAPE.video + ": " + r.status);
-  const total = +r.headers.get("Content-Length") || 0;
+  const total = +r.headers.get("Content-Length") || TAPE.videoBytes || 0;
   if (!r.body?.getReader) return r.blob();
   const reader = r.body.getReader(), parts = [];
   let got = 0;

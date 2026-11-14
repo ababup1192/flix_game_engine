@@ -18,7 +18,12 @@ const videoBytes = 1 << 20
 // videoServer は index.html を返し、video.mp4 は serve に任せるサーバーを立てて URL を返す。
 func videoServer(t *testing.T, serve http.HandlerFunc) string {
 	t.Helper()
-	page := renderFile(t, otherPath, sampleStrip)
+	return pageServer(t, renderFile(t, otherPath, sampleStrip), serve)
+}
+
+// pageServer は page を返し、video.mp4 は serve に任せるサーバーを立てて URL を返す。
+func pageServer(t *testing.T, page string, serve http.HandlerFunc) string {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -146,5 +151,16 @@ func TestRenderEmbedsSplashMaterials(t *testing.T) {
 	}
 	if want := `const SPLASH = {"logo":"data:image/png;base64,TE9HTw==","glyphs":"0041","cellH":11};`; !strings.Contains(string(page), want) {
 		t.Errorf("頁に %s が無い", want)
+	}
+}
+
+func TestSplashGaugeUsesVideoBytesWithoutContentLength(t *testing.T) {
+	// Content-Length が無くても、頁に書いた動画の大きさ（videoBytes）で割合を出す。
+	step := make(chan struct{})
+	t.Cleanup(func() { close(step) })
+	page := strings.Replace(renderFile(t, otherPath, sampleStrip), "const TAPE = {", "const TAPE = {\"videoBytes\":"+strconv.Itoa(videoBytes)+",", 1)
+	p := openSplashPage(t, pageServer(t, page, steppedVideo(t, false, []float64{.3, 1}, step)))
+	if err := p.WaitFor("typeof splash !== 'undefined' && splash.ratio >= 0.29", 20*time.Second); err != nil {
+		t.Errorf("videoBytes があるのに割合が出ない: %v", err)
 	}
 }

@@ -13,7 +13,7 @@ import (
 var fieldOrder = []string{
 	"game", "title", "flow", "commit", "fps", "duration", "yarn", "node", "playUrl", "stripPerSec",
 	"scenes", "timeline", "lines", "speaker", "sounds", "objects", "branches", "probes",
-	"speakers", "probeNames", "msg", "choices", "video", "strip",
+	"speakers", "probeNames", "msg", "choices", "video", "videoBytes", "strip",
 }
 
 // required はゲームの tape.json が持つ欄と、無かった時に言う出どころ。

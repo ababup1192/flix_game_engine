@@ -156,11 +156,13 @@ func Build(opt Options) (string, error) {
 
 func build(opt Options, t *Tape) (string, error) {
 	video := filepath.Join(opt.Dir, VideoFile)
-	if _, err := os.Stat(video); err != nil {
+	info, err := os.Stat(video)
+	if err != nil {
 		return "", fmt.Errorf("%s が無い（ゲームの Makefile の動画の手順が作る）: %w", video, err)
 	}
+	// WhyNot: 頁で返事の Content-Length だけに頼らない — GitHub Pages は大きな mp4 を Content-Length 無しで返すことがあり、割合が出せない。
+	t.raw["videoBytes"] = json.RawMessage(fmt.Sprint(info.Size()))
 	commit := opt.Commit
-	var err error
 	if commit == "" {
 		if commit, err = gitShortHead(opt.Dir); err != nil {
 			return "", err

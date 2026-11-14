@@ -225,7 +225,7 @@ function splashHide() {
 async function fetchVideo() {
   const r = await fetch(TAPE.video);
   if (!r.ok) throw new Error(TAPE.video + ": " + r.status);
-  const total = +r.headers.get("Content-Length") || 0;
+  const total = +r.headers.get("Content-Length") || TAPE.videoBytes || 0;
   if (!r.body?.getReader) return r.blob();
   const reader = r.body.getReader(), parts = [];
   let got = 0;
@@ -463,6 +463,26 @@ func TestBuildWritesStripAndIndex(t *testing.T) {
 	page := string(readFile(t, filepath.Join(dir, IndexFile)))
 	if !strings.Contains(page, `"strip":{"file":"strip.jpg","count":13,"w":54,"h":96}`) || !strings.Contains(page, `"commit":"abc1234"`) {
 		t.Fatal("index.html に strip と commit が入っていない")
+	}
+}
+
+func TestBuildWritesVideoBytes(t *testing.T) {
+	// 頁に動画のファイルの大きさを videoBytes として書く（Content-Length が無い返事でも割合を出すため）。
+	dir := t.TempDir()
+	video := filepath.Join(dir, VideoFile)
+	makeVideo(t, video, 1)
+	if err := os.WriteFile(filepath.Join(dir, TapeFile), readFile(t, otherPath), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(Options{Dir: dir, Commit: "abc1234"}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(video)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := string(readFile(t, filepath.Join(dir, IndexFile))); !strings.Contains(page, fmt.Sprintf(`"videoBytes":%d`, info.Size())) {
+		t.Errorf("index.html に videoBytes %d が入っていない", info.Size())
 	}
 }
 
