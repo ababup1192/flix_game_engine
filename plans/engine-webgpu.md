@@ -30,6 +30,7 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
 | 7 | 形は最初に決め切らない。ベンチマークを取り、書き味（ゲームの側のコードがどう書けるか）のレビューを見ながら、良い形を探す |
 | 8 | 先にリファクタするなど、やり方の工夫で工数を減らす |
 | 9 | OS ごとの確かめは、いったん Mac でできる範囲でやる（2026-11-14）。Windows と Linux は P4a の門に入れず、実機か CI で確かめるまで「未確認」と書いて進める |
+| 12 | P2 でブラウザの下限を上げる（2026-11-15）。TeaVM 0.16 の wasm は例外が exnref の `try_table` になり、読めるのは Chrome 137・Firefox 131・iOS Safari 18.4 以降【推・MDN と caniuse から。古い実機では未確認】。WebGPU 版はどのみちこれより新しいブラウザが要るので、WebGL2 版だけ 0.14.1 で訳す道（5.5）は作らない。書き出しは 1 通りのまま |
 | 11 | JDK は上げてよい（2026-11-14）。PC の WebGPU を jWebGPU（JNI）に頼り切らず、wgpu-native か Dawn の C の API を Panama（Foreign Function & Memory API・JDK 22 で正式）で直に呼ぶ道を選べる。上げる版と時期は、Flix・Studio が同梱する JRE・配布物・ベンチの基準の取り直しまで含めて段を 1 つ立てて決める |
 | 10 | 11 章の残りの伺い事は「全部おまかせ」（2026-11-14）。おすすめの案で進める。リリースと push は、その時に改めて伺う |
 
@@ -260,8 +261,7 @@ device を作る時は `core-features-and-limits` を求め、選べる機能は
   `core-features-and-limits` がある・頂点の段の storage buffer が要る本数だけ取れる。1 つでも欠ければ WebGL2 版。
   今の「入口の字で 2D と 3D を分ける」作りの延長。同じソースの木に両方のレイヤーを置き、入口だけ分ける（ビルドの時にモジュールを差し替えない）。
 - 2 つとも普段の型検査を通す門を足す（`make check` の相手に WebGPU の入口を足す）。
-- **WebGL2 版が動くブラウザの下限を上げない。** TeaVM 0.15 以降は WASM の例外の命令が変わっている【推】。古い端末が fallback の相手なので、
-  P2 の門で古い実機（か古い版のブラウザ）で WebGL2 版が動く事を確かめる。動かなければ、WebGL2 版だけ 0.14.1 で訳す道を残す。
+- ~~WebGL2 版が動くブラウザの下限を上げない。~~ 判断 12 で下限を上げると決めた（0.14.1 の道は作らない）。
 
 ### 5.6 配る物
 
@@ -570,3 +570,12 @@ bind group 3 つ・storage buffer 8 本まで・dual-source blending を取ら�
 render pass の切り方（5.3）を決めた・2D を 1 pipeline に寄せる話をアトラスの頁と「頂点の形は 2 つ残す」に改めた・mip を自分で作る事・試作の表を「最悪の形」と書き直した・
 門に合格線と目標・P4 を PC とブラウザに分けた・見積もりを 120〜175 時間に・pipeline を作る時間・危険 6 件・GL だけの直しを P1 から外した・static group の制約・
 dual-source blending・mask は ref を進める形・GL との比べの門・覆す決め事 4 件・名前・配る物（5.5）・細かい数字の誤り・レビュー役と agents-pack の置き場。
+
+### 12.10 P2 で入った物（2026-11-15・この Mac だけ）
+
+- `export-web` は TeaVM 0.16.0 を `fge.teavmfix.BuildWasm`（`TeaVMTool`）で呼ぶ。`CopyOfRange` の付け替えは外した。手順は `docs/migrations/0.96.0.md`。
+- 書き出しの最後に ⑨ を足した。ヘッドレスの Chrome で頁を開き、wasm の compile と最初の 3 コマで止まれば exit 1（`--no-browser-check` で飛ばす）。
+- rpg-starter と sound-novel-starter の `?capture` の絵 12 枚が、0.14.1 とバイトまで同じ（題名の画面と、キーを入れた後の場面）。
+- merge の後の main で、rpg-starter の書き出しが 43 秒で通り ⑨ も緑。wasm は 8,256,469 バイト（0.14.1 から約 +4.5%）。頁を開いて題名の画面まで動くのを目で見た。
+- 古い版のブラウザでは確かめていない（判断 12）。
+- Maven Central が 429 を返した時は、`build/engine_full_web/lib/cache` に TeaVM の一式を手で置けば `make sync-engine-full-web` が通る（P4a の jWebGPU と同じ）。
