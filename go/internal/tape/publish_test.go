@@ -12,6 +12,9 @@ import (
 
 var publishNow = time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
 
+// docsTapes は置き場の中でテープを置くフォルダ。
+const docsTapes = DocsDir + "/" + TapesDir
+
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	out, err := gitOut(dir, args...)
@@ -30,7 +33,7 @@ func writeTapeDir(t *testing.T, dir string) {
 		IndexFile: "<!doctype html>\n<html><head>\n<title>t</title></head><body><script>const TAPE={\"game\":\"g\",\"commit\":\"abc1234\"};</script></body></html>",
 		VideoFile: "mp4",
 		StripFile: "jpg",
-		TapeFile:  `{"game":"g"}`,
+		TapeFile:  `{"game":"g","title":"題","flow":"e2e/` + filepath.Base(dir) + `.flow"}`,
 	}
 	for n, c := range files {
 		if err := os.WriteFile(filepath.Join(dir, n), []byte(c), 0o644); err != nil {
@@ -111,7 +114,7 @@ const (
 func TestPublishPutsNewTapeUnderTapesDir(t *testing.T) {
 	bare := seedBare(t)
 	res := publishTo(t, bare, true)
-	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/"+VideoFile) {
+	if !hasPath(treeOf(t, bare), docsTapes+"/"+res.Name+"/"+VideoFile) {
 		t.Fatalf("tapes/%s/video.mp4 が置き場に無い: %v", res.Name, treeOf(t, bare))
 	}
 }
@@ -126,7 +129,7 @@ func TestPublishNewNameHasDateAndHex(t *testing.T) {
 func TestPublishRemovesExpiredTape(t *testing.T) {
 	bare := seedBare(t, oldTape, recent)
 	publishTo(t, bare, true)
-	if hasPath(treeOf(t, bare), TapesDir+"/"+oldTape+"/"+IndexFile) {
+	if hasPath(treeOf(t, bare), docsTapes+"/"+oldTape+"/"+IndexFile) {
 		t.Fatal("30 日を過ぎたテープが残った")
 	}
 }
@@ -134,7 +137,7 @@ func TestPublishRemovesExpiredTape(t *testing.T) {
 func TestPublishKeepsRecentTape(t *testing.T) {
 	bare := seedBare(t, oldTape, recent)
 	publishTo(t, bare, true)
-	if !hasPath(treeOf(t, bare), TapesDir+"/"+recent+"/"+IndexFile) {
+	if !hasPath(treeOf(t, bare), docsTapes+"/"+recent+"/"+IndexFile) {
 		t.Fatal("30 日以内のテープが消えた")
 	}
 }
@@ -159,7 +162,7 @@ func TestPublishCreatesBranchOnEmptyRepo(t *testing.T) {
 	bare := filepath.Join(t.TempDir(), "empty.git")
 	git(t, "", "init", "--quiet", "--bare", "-b", DefaultBranch, bare)
 	res := publishTo(t, bare, true)
-	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/"+IndexFile) {
+	if !hasPath(treeOf(t, bare), docsTapes+"/"+res.Name+"/"+IndexFile) {
 		t.Fatal("空の置き場に枝を作れなかった")
 	}
 }
@@ -167,7 +170,7 @@ func TestPublishCreatesBranchOnEmptyRepo(t *testing.T) {
 func TestPublishAddsNoindex(t *testing.T) {
 	bare := seedBare(t)
 	res := publishTo(t, bare, true)
-	page := git(t, bare, "show", DefaultBranch+":"+TapesDir+"/"+res.Name+"/"+IndexFile)
+	page := git(t, bare, "show", DefaultBranch+":"+docsTapes+"/"+res.Name+"/"+IndexFile)
 	if !strings.Contains(page, `<meta name="robots" content="noindex">`) {
 		t.Fatal("置いた index.html に noindex が無い")
 	}
@@ -369,10 +372,11 @@ func TestPublishAcceptsTapeCommitWithoutMarkerFile(t *testing.T) {
 	}
 }
 
-func TestPublishDryRunListsFilesOutsideTapes(t *testing.T) {
+func TestPublishDryRunListsFilesOutsideDocs(t *testing.T) {
+	// 根で残すのは目印だけ（README.md は作り直し、.nojekyll は docs/ へ移る）。
 	res := publishTo(t, seedBare(t), false)
-	if strings.Join(res.Outside, " ") != ".fge-tapes .nojekyll README.md" {
-		t.Fatalf("tapes/ の外で残す物: %v", res.Outside)
+	if strings.Join(res.Outside, " ") != MarkerFile {
+		t.Fatalf("根で残す物: %v", res.Outside)
 	}
 }
 
@@ -405,7 +409,7 @@ func publishMany(t *testing.T) (PublishResult, PublishOptions, string) {
 func TestPublishManyPutsTheFirstUnderOneName(t *testing.T) {
 	// 2 つ以上のフォルダは 1 つの乱数のフォルダの下にフォルダ名で並ぶ（1 つ目）。
 	res, _, bare := publishMany(t)
-	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/light/"+VideoFile) {
+	if !hasPath(treeOf(t, bare), docsTapes+"/"+res.Name+"/light/"+VideoFile) {
 		t.Fatalf("tapes/%s/light/video.mp4 が置き場に無い", res.Name)
 	}
 }
@@ -413,7 +417,7 @@ func TestPublishManyPutsTheFirstUnderOneName(t *testing.T) {
 func TestPublishManyPutsTheSecondUnderTheSameName(t *testing.T) {
 	// 2 つ目も同じ乱数のフォルダの下に並ぶ。
 	res, _, bare := publishMany(t)
-	if !hasPath(treeOf(t, bare), TapesDir+"/"+res.Name+"/dark/"+VideoFile) {
+	if !hasPath(treeOf(t, bare), docsTapes+"/"+res.Name+"/dark/"+VideoFile) {
 		t.Fatalf("tapes/%s/dark/video.mp4 が置き場に無い", res.Name)
 	}
 }

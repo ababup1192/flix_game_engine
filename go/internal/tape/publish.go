@@ -21,7 +21,10 @@ import (
 )
 
 const (
-	TapesDir     = "tapes"
+	TapesDir = "tapes"
+	// DocsDir は Pages が出すフォルダ。テープはこの下の tapes/ に置き、一覧（tapes.json・README.md・games/）は外に置く。
+	DocsDir      = "docs"
+	NojekyllFile = ".nojekyll"
 	PublishedLog = "published.jsonl"
 	ConfigFile   = "tape.publish.json"
 	// MarkerFile は置き場の目印。publish はこれがあるか、HEAD のコミットの文が CommitPrefix で始まる枝にだけ push する。
@@ -33,14 +36,16 @@ const (
 	waitEvery     = 10 * time.Second
 )
 
-const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>… [--repo <owner/name>] [--yes] [--wait] [--init]
+const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>… [--repo <owner/name>] [--yes] [--wait] [--init] [--seed-from <published.jsonl>]
+       bin/fge tape publish --reindex --repo <owner/name> [--seed-from <published.jsonl>] [--yes]
 
   bin/fge tape --dir が作ったフォルダ（index.html・video.mp4・strip.jpg）を、
-  GitHub Pages を出す置き場のリポジトリの tapes/<YYYYMMDD>-<乱数 16 桁>/ に置き、公開の URL を出す。
+  GitHub Pages を出す置き場のリポジトリの docs/tapes/<YYYYMMDD>-<乱数 16 桁>/ に置き、公開の URL を出す。
+  Pages は枝の /docs を出すので、URL は https://<owner>.github.io/<name>/tapes/<YYYYMMDD>-<乱数 16 桁>/。
   フォルダを 2 つ以上渡すと（bin/fge tape --group で分岐をつないだテープ）、1 つの乱数のフォルダの下に
-  tapes/<YYYYMMDD>-<乱数 16 桁>/<フォルダ名>/ で並べて置き、URL を全部出す（分岐の道のボタンが隣の頁へ移れる）。
+  docs/tapes/<YYYYMMDD>-<乱数 16 桁>/<フォルダ名>/ で並べて置き、URL を全部出す（分岐の道のボタンが隣の頁へ移れる）。
 
-  既定は dry run: 何を置き、何を外すかを出して止まる（push しない）。--yes を付けた時だけ push する。
+  既定は dry run: 何を置き、何を外し、どんな一覧を作るかを出して止まる（push しない）。--yes を付けた時だけ push する。
 
   --repo <owner/name>  置き場のリポジトリ。省くと環境変数 FGE_TAPE_REPO、
                        それも無ければゲームのリポジトリ直下の tape.publish.json の {"repo": "owner/name"}
@@ -50,11 +55,21 @@ const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>
   --init               目印の無い枝を初めて置き場にする（下の「置き場の目印」）
   --remote <url>       push 先の git の URL（既定 git@github.com:<owner/name>.git。
                        付けた時は GitHub の Pages の設定を確かめない）
+  --reindex            テープを置かずに、移し替えと 30 日の掃除と一覧の作り直しだけをする
+  --seed-from <file>   published.jsonl の行から、tapes.json に無い公開を一覧へ埋める（何度でも付けられる）。
+                       渡したテープのフォルダの隣の published.jsonl は付けなくても読む
 
-  置く時に index.html の <head> へ noindex を足す。置き場の一覧の頁は作らない。
-  30 日を過ぎたテープは publish のたびに置き場から外す。
+  置く時に index.html の <head> へ noindex を足す。30 日を過ぎたテープは publish のたびに置き場から外す。
   置いた物の一覧はテープのフォルダの隣の published.jsonl（手元だけ）に 1 行ずつ足す。
-  Pages の公開の設定はしない（置き場の Settings → Pages で、枝の / を出す形にしておく）。
+
+  置き場の一覧: 根の tapes.json（1 件 = 乱数のフォルダ 1 つ: 日付・game・題名・commit・ゲームのリポジトリ・テープごとの URL と flow）を
+  publish のたびに更新し、そこから根の README.md（ゲームごとの見出し）と games/<game>.md（日付・テープ・撮った版の
+  ゲームのリポジトリへのリンク）を作り直す。どれも docs/ の外なので Pages では配られない（README は手で書き足さない）。
+  ゲームのリポジトリはテープのフォルダの git の remote origin から取る。撮った commit が remote のどの枝にも
+  無ければ 1 行言い、games/ の頁に「(push されていない)」と添える。
+
+  移し替え: 根に古い置き方の tapes/ や .nojekyll があれば docs/ の下へ移す。
+  Pages の設定はしない（置き場の Settings → Pages で、枝の /docs を出す形にしておく。/ のままなら --yes を止める）。
 
   置き場の目印: 枝の直下に .fge-tapes があるか、HEAD のコミットの文が "tape:" で始まる枝にだけ push する。
   どちらでも無い既存の枝（別の用途のリポジトリを --repo に取り違えた時など）は止める。初めての置き場だけ --init で通す。
@@ -62,14 +77,18 @@ const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>
 
 // PublishOptions は Publish の指定。
 type PublishOptions struct {
-	Dirs   []string // 1 つなら tapes/<Name>/ に、2 つ以上なら tapes/<Name>/<フォルダ名>/ に並べる
+	Dirs   []string // 1 つなら docs/tapes/<Name>/ に、2 つ以上なら docs/tapes/<Name>/<フォルダ名>/ に並べる
 	Repo   string   // owner/name
 	Remote string   // 空なら git@github.com:<Repo>.git
 	Branch string
 	Yes    bool
 	Wait   bool
 	Init   bool // 目印の無い既存の枝を置き場にしてよい
-	Now    time.Time
+	// Reindex はテープを置かずに、移し替え・掃除・一覧の作り直しだけをする（Dirs は空）。
+	Reindex bool
+	// SeedFrom は tapes.json に無い公開を埋める published.jsonl。Dirs の隣の published.jsonl は付けなくても読む。
+	SeedFrom []string
+	Now      time.Time
 	// Name は置くフォルダ名。空なら日付と crypto/rand の 16 桁で作る。
 	Name string
 	// CheckPages は push の前に Pages が有効かを確かめる。nil なら確かめない。
@@ -83,7 +102,13 @@ type PublishResult struct {
 	URLs    []string // Dirs と同じ並び
 	Kept    []string
 	Removed []string
-	Outside []string // tapes/ の外で残す物（置き場の直下の名前）
+	Outside []string // 置き場の直下で docs/ と一覧のほかに残す物
+	Moved   []string // 古い置き方の根から docs/ へ移した物（置き場の直下からの相対パス）
+	Entries []IndexEntry
+	Seeded  []string          // published.jsonl から埋めた件の乱数のフォルダ名
+	Dropped []string          // tapes.json から外した件（30 日を過ぎた・フォルダが無い）
+	Files   map[string]string // 作り直した一覧（相対パス → 本文）
+	Paths   []string          // Files の書いた順
 	Pushed  bool
 }
 
@@ -139,6 +164,7 @@ func IsExpired(name string, now time.Time) bool {
 // PagesURL は置いたテープの公開の URL。
 func PagesURL(repo, name string) string {
 	owner, rname, _ := strings.Cut(repo, "/")
+	// WhyNot: URL に docs/ を入れない — Pages は枝の /docs を根として出す。
 	return fmt.Sprintf("https://%s.github.io/%s/%s/%s/", strings.ToLower(owner), rname, TapesDir, name)
 }
 
@@ -176,7 +202,11 @@ func RunPublish(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if opt.Repo == "" {
-		repo, err := repoFromConfig(opt.Dirs[0])
+		from := "."
+		if len(opt.Dirs) > 0 {
+			from = opt.Dirs[0]
+		}
+		repo, err := repoFromConfig(from)
 		if err != nil {
 			fmt.Fprintln(stderr, "tape publish:", err)
 			return 2
@@ -194,7 +224,11 @@ func RunPublish(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if !res.Pushed {
-		fmt.Fprintln(stdout, "\ndry run なので push していない。置くなら --yes を付けて流し直す（フォルダ名はその時に作り直す）。")
+		if opt.Reindex {
+			fmt.Fprintln(stdout, "\ndry run なので push していない。作り直すなら --yes を付けて流し直す。")
+		} else {
+			fmt.Fprintln(stdout, "\ndry run なので push していない。置くなら --yes を付けて流し直す（フォルダ名はその時に作り直す）。")
+		}
 		return 0
 	}
 	if err := appendPublished(opt, res); err != nil {
@@ -235,6 +269,12 @@ func parsePublishArgs(args []string) (PublishOptions, bool, error) {
 			opt.Wait = true
 		case a == "--init":
 			opt.Init = true
+		case a == "--reindex":
+			opt.Reindex = true
+		case a == "--seed-from":
+			var v string
+			v, err = value(&i, a)
+			opt.SeedFrom = append(opt.SeedFrom, v)
 		case a == "--repo":
 			opt.Repo, err = value(&i, a)
 		case strings.HasPrefix(a, "--repo="):
@@ -252,8 +292,11 @@ func parsePublishArgs(args []string) (PublishOptions, bool, error) {
 			return opt, false, err
 		}
 	}
-	if len(opt.Dirs) == 0 {
-		return opt, false, errors.New("テープのフォルダが要る（bin/fge tape --dir が作ったフォルダ）")
+	if opt.Reindex && len(opt.Dirs) > 0 {
+		return opt, false, errors.New("--reindex はテープを置かない口なので、テープのフォルダと一緒に使わない")
+	}
+	if len(opt.Dirs) == 0 && !opt.Reindex {
+		return opt, false, errors.New("テープのフォルダが要る（bin/fge tape --dir が作ったフォルダ）。置かずに一覧だけ作り直すなら --reindex")
 	}
 	if opt.Wait && !opt.Yes {
 		return opt, false, errors.New("--wait は --yes と一緒に使う（dry run では何も置かない）")
@@ -282,8 +325,8 @@ func repoFromConfig(dir string) (string, error) {
 	return "", errors.New("置き場のリポジトリが決まっていない。--repo <owner/name> を付けるか、FGE_TAPE_REPO か、ゲームのリポジトリ直下の tape.publish.json に {\"repo\": \"owner/name\"} を書く")
 }
 
-// Publish は置き場を浅く clone し、30 日以内のテープと新しいテープを並べた木を、
-// 親の無い 1 つのコミットにする。Yes の時だけ force push する。
+// Publish は置き場を浅く clone し、古い置き方を docs/ へ移し、30 日以内のテープと新しいテープを並べ、
+// 一覧（tapes.json・README.md・games/）を作り直した木を、親の無い 1 つのコミットにする。Yes の時だけ force push する。
 func Publish(opt PublishOptions) (PublishResult, error) {
 	var res PublishResult
 	log := opt.Log
@@ -300,7 +343,10 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	if remote == "" {
 		remote = "git@github.com:" + opt.Repo + ".git"
 	}
-	if len(opt.Dirs) == 0 {
+	if opt.Reindex && len(opt.Dirs) > 0 {
+		return res, errors.New("--reindex はテープを置かない口なので、テープのフォルダと一緒に使わない")
+	}
+	if len(opt.Dirs) == 0 && !opt.Reindex {
 		return res, errors.New("テープのフォルダが要る（bin/fge tape --dir が作ったフォルダ）")
 	}
 	srcs := make([]string, len(opt.Dirs))
@@ -331,26 +377,33 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	warnMissingRoutes(srcs, subs, log)
 	if opt.CheckPages != nil {
 		if err := opt.CheckPages(opt.Repo); err != nil {
-			return res, err
+			var nd pagesNotDocsError
+			if !errors.As(err, &nd) || opt.Yes {
+				return res, err
+			}
+			fmt.Fprintf(log, "注意: %v（dry run なので続ける）\n", err)
 		}
 	}
-	name := opt.Name
-	var err error
-	if name == "" {
-		if name, err = NewName(opt.Now); err != nil {
-			return res, err
+	name := ""
+	if !opt.Reindex {
+		name = opt.Name
+		var err error
+		if name == "" {
+			if name, err = NewName(opt.Now); err != nil {
+				return res, err
+			}
 		}
-	}
-	if _, ok := ParseName(name); !ok {
-		return res, fmt.Errorf("フォルダ名の形が違う: %s（<YYYYMMDD>-<16 桁の 16 進>）", name)
-	}
-	res.Name = name
-	for _, sub := range subs {
-		u := PagesURL(opt.Repo, name)
-		if sub != "" {
-			u += sub + "/"
+		if _, ok := ParseName(name); !ok {
+			return res, fmt.Errorf("フォルダ名の形が違う: %s（<YYYYMMDD>-<16 桁の 16 進>）", name)
 		}
-		res.URLs = append(res.URLs, u)
+		res.Name = name
+		for _, sub := range subs {
+			u := PagesURL(opt.Repo, name)
+			if sub != "" {
+				u += sub + "/"
+			}
+			res.URLs = append(res.URLs, u)
+		}
 	}
 
 	work, err := os.MkdirTemp("", "fge-tape-publish-")
@@ -384,15 +437,14 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	if err := os.WriteFile(filepath.Join(site, MarkerFile), []byte("この枝は bin/fge tape publish が置くテープの置き場（publish はこの印がある枝にだけ push する）\n"), 0o644); err != nil {
 		return res, err
 	}
-	if top, err := os.ReadDir(site); err == nil {
-		for _, e := range top {
-			if e.Name() != TapesDir {
-				res.Outside = append(res.Outside, e.Name())
-			}
-		}
+	if res.Moved, err = migrateToDocs(site); err != nil {
+		return res, err
+	}
+	if err := os.WriteFile(filepath.Join(site, DocsDir, NojekyllFile), nil, 0o644); err != nil {
+		return res, err
 	}
 
-	tapes := filepath.Join(site, TapesDir)
+	tapes := filepath.Join(site, DocsDir, TapesDir)
 	entries, _ := os.ReadDir(tapes)
 	for _, e := range entries {
 		n := e.Name()
@@ -414,11 +466,27 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 		}
 	}
 
+	if err := updateIndex(site, opt, srcs, subs, &res, log); err != nil {
+		return res, err
+	}
+	if top, err := os.ReadDir(site); err == nil {
+		for _, e := range top {
+			switch e.Name() {
+			case DocsDir, IndexJSON, ReadmeFile, GamesDir:
+			default:
+				res.Outside = append(res.Outside, e.Name())
+			}
+		}
+	}
+
 	git := func(args ...string) error {
 		_, err := gitOut(site, append([]string{"-c", "user.name=fge tape", "-c", "user.email=fge-tape@localhost", "-c", "commit.gpgsign=false"}, args...)...)
 		return err
 	}
 	msg := fmt.Sprintf("%s %s を置く（%d 本を残し、%d 本を外す）", CommitPrefix, name, len(res.Kept), len(res.Removed))
+	if opt.Reindex {
+		msg = fmt.Sprintf("%s 一覧を作り直す（%d 本を残し、%d 本を外す）", CommitPrefix, len(res.Kept), len(res.Removed))
+	}
 	if err := git("init", "--quiet", "-b", opt.Branch); err != nil {
 		return res, err
 	}
@@ -430,16 +498,32 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	}
 
 	fmt.Fprintf(log, "置き場: %s（枝 %s・履歴を残さず 1 コミットで置き換える）\n", remote, opt.Branch)
+	for _, m := range res.Moved {
+		fmt.Fprintf(log, "移す:   %s\n", m)
+	}
 	for i, d := range opt.Dirs {
-		fmt.Fprintf(log, "置く:   %s  ← %s\n", filepath.Join(TapesDir, name, subs[i])+"/", d)
+		fmt.Fprintf(log, "置く:   %s  ← %s\n", filepath.Join(DocsDir, TapesDir, name, subs[i])+"/", d)
 	}
 	fmt.Fprintf(log, "残す:   %d 本 %s\n", len(res.Kept), strings.Join(res.Kept, " "))
 	fmt.Fprintf(log, "外す:   %d 本 %s（%d 日を過ぎた物）\n", len(res.Removed), strings.Join(res.Removed, " "), KeepDays)
-	fmt.Fprintf(log, "tapes/ の外で残す物: %s\n", strings.Join(res.Outside, " "))
+	fmt.Fprintf(log, "一覧:   %s に %d 件（埋めた: %s・外した: %s）\n", IndexJSON, len(res.Entries), orNone(res.Seeded), orNone(res.Dropped))
+	for _, e := range res.Entries {
+		if e.Unpushed {
+			fmt.Fprintf(log, "注意: %s の commit %s はゲームのリポジトリ %s の remote のどの枝にも無い（games/ の頁に「push されていない」と添える）\n", e.Name, e.Commit, e.GameRepo)
+		}
+	}
+	fmt.Fprintf(log, "作る:   %s\n", strings.Join(res.Paths, " "))
+	fmt.Fprintf(log, "根で残す物: %s\n", strings.Join(res.Outside, " "))
 	for _, u := range res.URLs {
 		fmt.Fprintf(log, "URL:    %s\n", u)
 	}
 	if !opt.Yes {
+		for _, p := range res.Paths {
+			if p == IndexJSON {
+				continue
+			}
+			fmt.Fprintf(log, "\n----- %s -----\n%s", p, res.Files[p])
+		}
 		return res, nil
 	}
 	if _, err := gitOut(site, "push", "--quiet", "--force", remote, "HEAD:refs/heads/"+opt.Branch); err != nil {
@@ -447,6 +531,122 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	}
 	res.Pushed = true
 	return res, nil
+}
+
+func orNone(xs []string) string {
+	if len(xs) == 0 {
+		return "無し"
+	}
+	return strings.Join(xs, " ")
+}
+
+// migrateToDocs は根の古い置き方（tapes/・.nojekyll）を docs/ の下へ移し、移した物を返す。
+// docs/tapes/ に同じ名前が既にあれば docs/ の方を残す。
+func migrateToDocs(site string) ([]string, error) {
+	var moved []string
+	docsTapes := filepath.Join(site, DocsDir, TapesDir)
+	if err := os.MkdirAll(docsTapes, 0o755); err != nil {
+		return nil, err
+	}
+	old := filepath.Join(site, TapesDir)
+	if st, err := os.Stat(old); err == nil && st.IsDir() {
+		entries, err := os.ReadDir(old)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			from, to := filepath.Join(old, e.Name()), filepath.Join(docsTapes, e.Name())
+			line := fmt.Sprintf("%s/%s/ → %s/%s/%s/", TapesDir, e.Name(), DocsDir, TapesDir, e.Name())
+			if _, err := os.Stat(to); err == nil {
+				line += "（docs/ に同じ名前があるので docs/ の方を残す）"
+			} else if err := os.Rename(from, to); err != nil {
+				return nil, err
+			}
+			moved = append(moved, line)
+		}
+		if err := os.RemoveAll(old); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := os.Stat(filepath.Join(site, NojekyllFile)); err == nil {
+		if err := os.Rename(filepath.Join(site, NojekyllFile), filepath.Join(site, DocsDir, NojekyllFile)); err != nil {
+			return nil, err
+		}
+		moved = append(moved, NojekyllFile+" → "+DocsDir+"/"+NojekyllFile)
+	}
+	return moved, nil
+}
+
+// updateIndex は tapes.json を読み、外したテープの件を落とし、published.jsonl から埋め、今回の件を足して、一覧を書き直す。
+func updateIndex(site string, opt PublishOptions, srcs, subs []string, res *PublishResult, log io.Writer) error {
+	have, err := loadIndex(site)
+	if err != nil {
+		return err
+	}
+	placed := func(name string) bool {
+		st, err := os.Stat(filepath.Join(site, DocsDir, TapesDir, name))
+		return err == nil && st.IsDir()
+	}
+	var kept []IndexEntry
+	known := map[string]bool{}
+	for _, e := range have {
+		if IsExpired(e.Name, opt.Now) || !placed(e.Name) {
+			res.Dropped = append(res.Dropped, e.Name)
+			continue
+		}
+		kept = append(kept, e)
+		known[e.Name] = true
+	}
+	type seedLog struct {
+		path     string
+		explicit bool
+	}
+	var logs []seedLog
+	for _, l := range opt.SeedFrom {
+		logs = append(logs, seedLog{l, true})
+	}
+	for _, src := range srcs {
+		logs = append(logs, seedLog{filepath.Join(filepath.Dir(src), PublishedLog), false})
+	}
+	seenLog := map[string]bool{}
+	for _, l := range logs {
+		abs, _ := filepath.Abs(l.path)
+		if seenLog[abs] {
+			continue
+		}
+		seenLog[abs] = true
+		recs, err := readPublishedLog(abs)
+		if err != nil {
+			return err
+		}
+		if len(recs) == 0 && l.explicit {
+			fmt.Fprintf(log, "注意: --seed-from %s が無いか空\n", l.path)
+		}
+		for _, e := range entriesFromPublished(recs, opt.Repo) {
+			if known[e.Name] || !placed(e.Name) || IsExpired(e.Name, opt.Now) {
+				continue
+			}
+			kept = append(kept, e)
+			known[e.Name] = true
+			res.Seeded = append(res.Seeded, e.Name)
+		}
+	}
+	if len(srcs) > 0 {
+		first := readTapeMeta(srcs[0])
+		e := IndexEntry{At: opt.Now.Format(time.RFC3339), Name: res.Name, Game: first.Game, Title: first.Title,
+			Commit: first.Commit, GameRepo: first.GameRepo, Unpushed: first.Unpushed}
+		if e.Title == "" {
+			e.Title = e.Game
+		}
+		for i, src := range srcs {
+			e.Tapes = append(e.Tapes, IndexTape{Folder: subs[i], URL: res.URLs[i], Flow: readTapeMeta(src).Flow})
+		}
+		kept = append(kept, e)
+	}
+	sortEntries(kept)
+	res.Entries = kept
+	res.Paths, res.Files, err = writeListings(site, kept)
+	return err
 }
 
 // warnMissingRoutes は、頁の分岐の道（../<フォルダ>/…）の先が一緒に置くフォルダに無ければ 1 行ずつ言う（止めない）。
@@ -605,18 +805,29 @@ func gitOut(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// pagesNotDocsError は Pages が枝の /docs を出していない時の誤り（dry run では止めずに言うだけ）。
+type pagesNotDocsError struct{ repo, path string }
+
+func (e pagesNotDocsError) Error() string {
+	return fmt.Sprintf("置き場 %s の GitHub Pages が枝の %s を出している。テープは docs/tapes/ に置くので、Settings → Pages で /docs を出す形に変える（publish は Pages の設定をしない）", e.repo, e.path)
+}
+
 func checkPagesWithGh(repo string) error {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return nil
 	}
-	cmd := exec.Command("gh", "api", "repos/"+repo+"/pages", "--jq", ".status")
+	cmd := exec.Command("gh", "api", "repos/"+repo+"/pages", "--jq", ".source.path")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if _, err := cmd.Output(); err != nil {
+	out, err := cmd.Output()
+	if err != nil {
 		if strings.Contains(stderr.String(), "404") {
-			return fmt.Errorf("置き場 %s の GitHub Pages が有効でない。置き場の Settings → Pages で、枝の / を出す形にしてから流し直す（publish は Pages の設定をしない）", repo)
+			return fmt.Errorf("置き場 %s の GitHub Pages が有効でない。置き場の Settings → Pages で、枝の /docs を出す形にしてから流し直す（publish は Pages の設定をしない）", repo)
 		}
 		return fmt.Errorf("置き場 %s の Pages の設定を gh で読めない（gh auth status を確かめる）: %s", repo, strings.TrimSpace(stderr.String()))
+	}
+	if path := strings.TrimSpace(string(out)); path != "" && path != "/"+DocsDir {
+		return pagesNotDocsError{repo, path}
 	}
 	return nil
 }
