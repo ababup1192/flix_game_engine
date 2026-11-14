@@ -1,8 +1,8 @@
-# WebGPU 移行の段階 V1（縦に 1 本・2D）— 設計（第 2 版・未着手）
+# WebGPU 移行の段階 V1（縦に 1 本・2D）— 設計（第 3 版・未着手）
 
 親の文書は `plans/engine-webgpu.md`（以下「親」。章の番号は親の物）。V1 の中身は親の 9 章の表の V1 の行と、P4b から回した「起動の時の選び分け」（親 5.5・12.12）。
 【確】= コードか手元の試しで確かめた ／【推】= 読みや割り算からの見積もり ／【未確認】= まだ確かめていない。
-レビュー: 第 1 版 78 点（指摘は「実装に入れない」6 件・「直した方が良い」17 件・好み 4 件）。第 2 版は全部を入れた物で、末尾に対応の一覧。
+レビュー: 第 1 版 78 点（指摘は「実装に入れない」6 件・「直した方が良い」17 件・好み 4 件）→ 第 2 版で全部入れて 91 点（合格）→ 第 3 版で残りの 6 件（A3 の開き直し・lint の skip・`RenderPaint.Internal`・隠したウィンドウ・足す字の門・`Frame.flix` の下の Internal）を入れた。
 
 ## 0. 何を作るか（範囲）
 
@@ -17,22 +17,24 @@
 
 | パッケージ | 増える名前 |
 |---|---|
-| render_gl（`Internal` の下） | `RenderFrame.Internal`（中身の無い親）・`RenderFrame.Internal.WebGpuRows.renderFrame`・`LwjglLayer.Internal`（中身の無い親）・`LwjglLayer.Internal.WebGpuWindowLayer.withWindow` |
-| render_gl | `WebGpuShader.spriteWgsl`・`WebGpuShader.presentWgsl` |
-| render_gl | `WebGpuPaint` の `Paint`（型）・`create`・`uploadRgba`・`uploadBgra`・`uploadR8`・`putTexture`・`present`・`readFrame`・`resize`・`repaintLast`・`submitCount`・handler 5 本（`handleDraw2d`・`handleDraw3d`・`handleGpuResources`・`handleDiagnostics`・`handleTarget`） |
+| render_gl（`Internal` の下） | `RenderFrame.Internal`（中身の無い親）・`RenderFrame.Internal.WebGpuRows.renderFrame`・`LwjglLayer.Internal`（中身の無い親）・`LwjglLayer.Internal.WebGpuWindowLayer.withWindow`・`RenderPaint.Internal`（中身の無い親） |
+| render_gl（`Internal` の下） | `RenderPaint.Internal.WebGpuShader.spriteWgsl`・`presentWgsl` |
+| render_gl（`Internal` の下） | `RenderPaint.Internal.WebGpuPaint` の `Paint`（型）・`create`・`uploadRgba`・`uploadBgra`・`uploadR8`・`putTexture`・`present`・`readFrame`・`resize`・`repaintLast`・`submitCount`・handler 5 本（`handleDraw2d`・`handleDraw3d`・`handleGpuResources`・`handleDiagnostics`・`handleTarget`） |
 | render_gl | `LwjglEnv.Backend`（enum: `Gl`・`WebGpu`）と `LwjglEnv.Settings` の欄 `backend` |
 | engine_web（`Internal` の下） | `WebLayer.Internal`（中身の無い親）・`WebLayer.Internal.WebGpuLayer.withWeb` |
 | engine_web の Java（public） | `BrowserWebGpu.copyImageBitmap`・`BrowserWebGpu.onDeviceLost`・`Browser.backendRequest`・`Browser.initWebGl2`・`Browser.publishCapture` |
 
-  `RenderFrame.Internal`・`LwjglLayer.Internal`・`WebLayer.Internal` は lint-forbid の `app-internal` の正規表現に足す（ゲームから呼ぶと止まる）。`docs/api-digest` には載せない（`App.Internal` と同じ）。
+  `RenderFrame.Internal`・`LwjglLayer.Internal`・`RenderPaint.Internal`・`WebLayer.Internal` は `bin/lint-rules/forbid.json` の `app-internal` の正規表現に足す（ゲームから呼ぶと止まる）。
+  `WebLayer.Internal` を足すので、同じ規則の `skip` に `engine_web/`（索引の道で引っかかるなら `src/engine_web/` も）を足す（engine_web の自分の中から呼ぶため）。`docs/api-digest` には載せない（`App.Internal` と同じ）。
+  以下、`RenderPaint.Internal.WebGpuPaint` を `WebGpuPaint`、`RenderPaint.Internal.WebGpuShader` を `WebGpuShader` と略す。
 
 ## 1. 置き場とモジュールの分け方
 
 | 新しい物 | 置き場 | 中身 |
 |---|---|---|
 | `RenderFrame.Internal.WebGpuRows` | `render_gl/src/RenderFrame/Internal/WebGpuRows.flix`（親は `RenderFrame/Internal.flix`） | 1 回の `renderCommands` を、GL と同じ前半（`mergedByZ` → `emitSprite` が `RenderList` を作る）で行にし、行を WebGPU の render pass へ流す |
-| `WebGpuShader` | `render_gl/src/WebGpuShader.flix` | WGSL の字（スプライト・字・箱を 1 本、画面へ写す 1 本）。`RenderShader`（GLSL）と対 |
-| `WebGpuPaint` | `render_gl/src/WebGpuPaint.flix` | `RenderPaint` と `RenderPaintHandlers` の V1 の分: device・pipeline・buffer・絵の表・描き先・1 コマの encoder・画面へ出す・5 つの handler |
+| `RenderPaint.Internal.WebGpuShader` | `render_gl/src/RenderPaint/Internal/WebGpuShader.flix`（親は `RenderPaint/Internal.flix`） | WGSL の字（スプライト・字・箱を 1 本、画面へ写す 1 本）。`RenderShader`（GLSL）と対 |
+| `RenderPaint.Internal.WebGpuPaint` | `render_gl/src/RenderPaint/Internal/WebGpuPaint.flix` | `RenderPaint` と `RenderPaintHandlers` の V1 の分: device・pipeline・buffer・絵の表・描き先・1 コマの encoder・画面へ出す・5 つの handler |
 | `LwjglLayer.Internal.WebGpuWindowLayer` | `render_gl/src/LwjglLayer/Internal/WebGpuWindowLayer.flix` | PC のウィンドウの WebGPU 版（5.1） |
 | `WebLayer.Internal.WebGpuLayer` | `engine_web/src/WebLayer/Internal/WebGpuLayer.flix` | ブラウザの WebGPU 版（5.2・6.2） |
 | Java・JS | `engine_web/java/fge/web/webgpu/BrowserWebGpu.java`・`engine_web/java/fge/web/Browser.java`・`engine_web/js/fge-web.js` | 6.2 |
@@ -48,6 +50,8 @@ Flix 0.78 では**子孫の mod から先祖の pub でない物が見える**�
 - 試し【確】（`build/vis-test`・commit しない・`java -jar bin/flix.jar run`・Flix 0.78.0）: `src/Outer.flix` の `mod Outer` の pub でない `type alias` と `def` を、
   `src/Outer/Internal/WebGpuRows.flix` の `pub mod Outer.Internal.WebGpuRows` から呼んで `42` が出た。親の `src/Outer/Internal.flix`（`pub mod Outer.Internal {}`）が無いと「Orphaned module」、
   子を `pub` でない `mod` にすると「inaccessible module」、ファイル名が mod 名と合わないと「unexpected location」で止まる。
+- `mod RenderFrame` は `Frame.flix`、`mod RenderPaint` は `Paint.flix` にあり、ファイル名と mod 名が違う。その下に `RenderFrame/Internal.flix` を置いて「unexpected location」が出ないかを試した【確】:
+  `src/Frame.flix` の `mod Outer` に対し `src/Outer/Internal.flix`・`src/Outer/Internal/WebGpuRows.flix` を置いて `42` が出た（同じ `build/vis-test`）。ファイル名の決まりは `pub mod` を自分のファイルに置く子にだけ掛かる。段階 1 の最初に render_gl でもう 1 度確かめる。
 - 名前を `RenderFrame.WebGpu` にしないのは、Java の `fge.webgpu.WebGpu` を import する mod の中で同じ名前が上の名前を覆い隠すため（mod の中の同名の eff が top-level の module を覆い隠した前例がある）。
   `<元>.Internal.<役>` は `docs/flix-conventions.md` の決まり。
 
@@ -65,7 +69,11 @@ trait・関数の record・backend の enum は足さない（「層を置く物
 
 ### 1.4 `RenderPaint` との重なり
 
-登録簿・`ensureTexture` の key・描き先の表・溜めた面と場面・`lastFrame` は V1 では写す（約 300 行の見込み【推】）。1 本にまとめるのは親の R1b の「物の上げ下ろしと寿命の表」（12 章の 5）。
+`WebGpuPaint` を `RenderPaint.Internal` の下に置くので `RenderPaint` の pub でない物も見えるが、見直すと写さずに呼べる物はほとんど無い:
+`RenderPaint` の pub でない関数（`sameShape`・`sameTexture`・`warnTargetOnce`・`warnFormatFallback`・`dropHistory`・`takeScenes`・`timedSpan` など）は、どれも GL の `Paint` の record か `RenderTargetGl.Entry` を受ける。
+pub の `noteDiagnostics`・`consumeDiagnostics`・`putTexture` も GL の `Paint` を受ける。呼べるのは `Paint` を受けない `pixelScaleOf` の式（`calcViewport` を使う 2 行）くらいで、これは `RenderFrame.calcViewport`（pub）から書く。
+そこで登録簿・`ensureTexture` の key・描き先の表・溜めた面と場面・`lastFrame`・診断の溜め方は V1 では写す（約 300 行の見込み【推】）。`RenderPaint.Internal` に置く得は pub の面を増やさない事。
+1 本にまとめるのは親の R1b の「物の上げ下ろしと寿命の表」（12 章の 5）で、その時に GL の `Paint` から CPU の側の表を外へ出せば、両方が同じ関数を呼べる。
 置き場を render_gl にするのは親 11 章の 7 と同じ。ブラウザの書き出しに Dawn は入らない（Dawn を名指すのは `LwjglLayer.Internal.WebGpuWindowLayer` と `WebGpuDevice.runDawn` だけ）。
 
 ## 2. 1 コマの流れ（`RenderList` の行 → WebGPU）
@@ -243,6 +251,7 @@ PC は理由を 1 行出して終わる（コマの途中で GL へ移るには�
 
 - 隠して起動（`FLIX_GE_HIDDEN`）: 中間の texture を design の大きさで作り、**surface を作らず present もしない**（ウィンドウは GLFW の隠したウィンドウのまま）。
   `getCurrentTexture` の待ちと `IMMEDIATE` の有無に門が縛られない。frame shot は中間の texture から読む。
+  `WebGpuWindow.open` は必ず surface を付ける所（`attachSurface`）まで進むので、隠した時は `WebGpuWindowLayer` が GLFW の隠したウィンドウ（`GLFW_NO_API`）を直に作り、`WebGpuWindow` を使わない。
 - Retina: framebuffer の大きさで中間の texture を画素の大きさで作る。ウィンドウを見せて Retina で絵が正しく出るかは【未確認】（12.7 の残り）。段階 3 で目で見る。
 - vsync: 既定は `FIFO`。`FLIX_GE_NO_VSYNC`・読み込みの間は `IMMEDIATE`（GL の `glfwSwapInterval(0)` と同じ所）。Dawn の Metal で `IMMEDIATE` が使えるかは【未確認】。
   使えなければ `FIFO` のまま 1 行知らせる（`sprite_stress` の比べが vsync に縛られるので、段階 5 の前に確かめる）。
@@ -283,7 +292,9 @@ PC は理由を 1 行出して終わる（コマの途中で GL へ移るには�
   `BrowserWebGpu.open()` → `core-features-and-limits` → shader module と `getCompilationInfo`・pipeline（形式は `getPreferredCanvasFormat()` で決まるので canvas の文脈は要らない）・
   中間の texture・instance buffer を作り、`errorCount` が 0 → ここまで通ったら `createCanvasSurface("fge-canvas")`。
   どこかで落ちたら作った物を捨て、`Browser.initWebGl2()`（今の `fgeBoot` の L1496〜1500 を関数に出した物）で webgl2 の文脈を取り、GL の枝へ進む。canvas はまだ `webgpu` の文脈を持たないので取れる。
-  `getContext("webgpu")` と `configure` の後で落ちた時は GL へ戻さず、device lost と同じ案内を出す（同じ canvas から webgl2 は取れない。canvas を作り直す手順は入力と大きさの購読を全部付け直すことになるので V1 では取らない）。
+  `getContext("webgpu")` と `configure` の後で落ちた時は、同じ canvas から webgl2 は取れないので、`backend` を外した URL で `location.replace` して GL で開き直す
+  （次の読み込みは `?backend=webgpu` が無いので同じ失敗を繰り返さない。親の決め事「使えない時は GL へ」を満たす）。開き直す前に理由を `console.warn` に出し、
+  `sessionStorage` に 1 行残して開き直した頁の `console.warn` でももう 1 度出す。canvas を作り直す手順は入力と大きさの購読を全部付け直すことになるので取らない。
 - 知らせ: `console.warn("[backend] WebGPU を使えない: <理由> — WebGL2 で起動する")`。`?capture` の `renderer` にも出る（2.7）。画面には出さない（11 章の 4）。
 - `WebLayer.withProject3d` は頼まれても GL のまま起動し、同じ形で理由を知らせる（親 9 章のリリース 2 の行）。
 
@@ -365,6 +376,7 @@ WebGPU の無いブラウザで GL の道ごと読めない【未確認】。段
   PNG を `image.NRGBA` に直して成分ごとの差の最大と差のある画素の数を出し、差がある時は `writePair` で差の絵も書く。入口は `fge-go pixel-diff <A> <B> [--tolerance tsv]`。
 - **gl-capture**: `reset_env` に `FLIX_GE_BACKEND` を足す（呼ぶ人の環境の値で撮り分けが変わらないように）。撮り分けは明示の旗 `bin/gl-capture.sh --backend webgpu`（その時だけ `FLIX_GE_BACKEND=webgpu` を置く）。
   撮った側の起動のログに `[backend] webgpu:` の行が無ければ止める（GL へ落ちた絵を比べて緑にしない）。
+  同じログに「足す字」の知らせ（3.1 で V1 は起動の後に字を足さない）が出ていない事も確かめる（出ていれば字が欠けた絵を比べている）。
 - 門の順:
   1. **WebGPU どうし 2 回で同じ**（`gl-capture-check` の WebGPU 版。`--backend webgpu` で 2 回撮って SHA が同じ）。揺れがあれば GL との比べより先に分かる
   2. **GL と WebGPU**: 同じ機械で既定と `--backend webgpu` を撮り、`pixel-diff` で比べる
