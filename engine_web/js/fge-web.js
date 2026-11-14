@@ -1429,7 +1429,7 @@ async function fgeBoot() {
     fgeDeferredStart();
     return teavm;
   }, function (e) {
-    wasmFailed = "このブラウザは WebAssembly GC に対応していないか、wasm を読めません（Chrome 119 以降・Safari 18.2 以降で開いてください）: " + (e && e.message || e);
+    wasmFailed = "このブラウザは WebAssembly GC か wasm の例外の新しい形（exnref）に対応していないか、wasm を読めません（Chrome・Edge・Firefox・Safari を最新の版にして開いてください）: " + (e && e.message || e);
     fgeShow("fge-start", false);
     fgeError(wasmFailed);
     return null;

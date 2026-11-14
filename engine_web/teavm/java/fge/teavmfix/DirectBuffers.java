@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
  * 大きさがちょうど 64 KiB の倍数の時（512x512 の ARGB など）、ちょうどの分だけ memory を伸ばす。伸ばした所から record の頭の 8 byte が
  * 引かれるので足りず、null を返して OutOfMemoryError になる。memory には余裕がある。
  * 末尾が 8 byte 足りない空きになった後のもう 1 回は、memory を 1 page 伸ばして通る。
+ * WhyNot: TeaVM 0.16.0 に上げても外さない — 0.16.0 で直ったかを確かめる形（64 KiB の倍数で落ちる並び）をまだ作れていない。
  */
 public final class DirectBuffers {
     private DirectBuffers() { }

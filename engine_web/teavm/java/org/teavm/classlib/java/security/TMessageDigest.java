@@ -3,7 +3,7 @@ package org.teavm.classlib.java.security;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * TeaVM 0.14.1 の classlib に無い MessageDigest（Mesh3d と Texture3d の中身の鍵が使う）。
+ * TeaVM 0.16.0 の classlib に無い MessageDigest（Mesh3d と Texture3d の中身の鍵が使う）。
  * SHA-256 だけを持つ。ほかの名前は JDK と同じく NoSuchAlgorithmException で断る。
  */
 public final class TMessageDigest {

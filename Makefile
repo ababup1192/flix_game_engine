@@ -794,7 +794,7 @@ sync-engine-full: gl-jar
 # 生成物なので build/ の下に作る。flix.toml は engine_full の物に TeaVM の JSO と fge-web の jar を足して作る（版を二重に持たない）。
 WEB_DIR          := engine_web
 WEB_FULL_DIR     := build/engine_full_web
-TEAVM_VERSION    := 0.14.1
+TEAVM_VERSION    := 0.16.0
 WEB_JAR_NAME     := fge-web-$(VERSION).jar
 WEB_JAR          := build/web-jar/$(WEB_JAR_NAME)
 WEB_JAR_SRC      := $(shell find $(WEB_DIR)/java -name '*.java' 2>/dev/null)
@@ -810,16 +810,16 @@ $(WEB_JAR): $(WEB_JAR_SRC) $(WEB_JAR_DEPS) $(GL_JAR)
 		-cp "$(GL_JAR):$(subst $(eval) ,:,$(WEB_JAR_DEPS))" $(WEB_JAR_SRC)
 	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/classes .
 
-# TeaVM の穴の手当て（classlib に無い類の shim と、jar のバイトコードの付け替え Rewrite）。書き出しの道具が TeaVM の classpath の頭に置く。
+# TeaVM の穴の手当て（classlib に無い類の shim と、jar のバイトコードの付け替え Rewrite）と、TeaVM を呼ぶ BuildWasm。書き出しの道具が TeaVM の classpath の頭に置く。
 WEB_TOOLS_JAR      := build/web-jar/fge-web-tools-$(VERSION).jar
 WEB_TOOLS_SRC      := $(shell find $(WEB_DIR)/teavm/java -name '*.java' 2>/dev/null)
-WEB_TOOLS_DEPS     := build/web-jar/deps/teavm-relocated-libs-asm-$(TEAVM_VERSION).jar
+WEB_TOOLS_DEPS     := $(foreach m,relocated-libs-asm core tooling,build/web-jar/deps/teavm-$(m)-$(TEAVM_VERSION).jar)
 
 # WhyNot: fge.web.EmbeddedCodec を tools の jar へ写さない — 同じ類が TeaVM の classpath に 2 つ載り、どちらが有効になるか読めない。Embed は fge-web.jar を classpath に足して使う。
 $(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS) $(WEB_JAR)
 	@rm -rf build/web-jar/tools-classes && mkdir -p build/web-jar/tools-classes
 	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/tools-classes \
-		-cp "$(WEB_TOOLS_DEPS):$(WEB_JAR)" $(WEB_TOOLS_SRC)
+		-cp "$(subst $(eval) ,:,$(WEB_TOOLS_DEPS)):$(WEB_JAR)" $(WEB_TOOLS_SRC)
 	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
 
 .PHONY: web-jar sync-engine-full-web

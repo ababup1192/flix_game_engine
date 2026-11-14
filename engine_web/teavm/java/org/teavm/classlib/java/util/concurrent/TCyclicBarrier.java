@@ -1,6 +1,6 @@
 package org.teavm.classlib.java.util.concurrent;
 
-/** TeaVM 0.14.1 の classlib に無い CyclicBarrier（Flix 標準の Channel が par の中で使う）。TeaVM の緑スレッドのモニタで待つ。 */
+/** TeaVM 0.16.0 の classlib に無い CyclicBarrier（Flix 標準の Channel が par の中で使う）。TeaVM の緑スレッドのモニタで待つ。 */
 public class TCyclicBarrier {
     private final int parties;
     private int waiting;

@@ -1,7 +1,7 @@
 package org.teavm.classlib.java.util.concurrent.locks;
 
 /**
- * TeaVM 0.14.1 の classlib に無い ReentrantLock（Flix 標準の Channel が par の中で使う）。
+ * TeaVM 0.16.0 の classlib に無い ReentrantLock（Flix 標準の Channel が par の中で使う）。
  * ブラウザの wasm は 1 本の糸の上の緑スレッドなので、モニタの wait と notify で足りる。
  */
 public class TReentrantLock {

@@ -177,7 +177,7 @@ func TestCopyGameTreeSkipsExcludedTopLevel(t *testing.T) {
 }
 
 func TestFindTeavmJarMatchesBothNamings(t *testing.T) {
-	jars := []string{"/a/teavm-core-0.14.1.jar", "/b/teavm-relocated-libs-asm.jar", "/b/teavm-relocated-libs-asm-tree.jar"}
+	jars := []string{"/a/teavm-core-" + teavmVersion + ".jar", "/b/teavm-relocated-libs-asm.jar", "/b/teavm-relocated-libs-asm-tree.jar"}
 	if findTeavmJar(jars, "teavm-core") != jars[0] || findTeavmJar(jars, "teavm-relocated-libs-asm") != jars[1] {
 		t.Error("版のある名前と版の無い名前の両方を引けるはず（asm-tree と取り違えない）")
 	}
