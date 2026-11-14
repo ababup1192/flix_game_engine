@@ -2,6 +2,7 @@ package tape
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,13 +11,15 @@ import (
 
 // 広い画面のキー・シートのボタン・保存・キーボード・横長の動画を、本物の頁で 1 つずつ確かめる（plans/tape/spec-wide.md の「決まった事」）。
 
-// step は 1 手。key があれば trusted なキーを押し、js があれば頁で流し、to があればウィンドウの大きさを変え、hover があればその selector の物の真ん中へマウスを動かす。
+// step は 1 手。key があれば trusted なキーを押し、js があれば頁で流し、to があればウィンドウの大きさを変え、hover があればその selector の物の真ん中へマウスを動かし、
+// pinch があればタイムラインの上で 2 本の指の間をその倍率に広げる（縮める）。
 type step struct {
 	key   string
 	mods  int
 	js    string
 	to    *view
 	hover string
+	pinch float64
 }
 
 func key(k string) step              { return step{key: k} }
@@ -24,6 +27,7 @@ func keyMod(k string, mods int) step { return step{key: k, mods: mods} }
 func js(s string) step               { return step{js: s} }
 func resize(v view) step             { return step{to: &v} }
 func hover(sel string) step          { return step{hover: sel} }
+func pinch(scale float64) step       { return step{pinch: scale} }
 
 // uiCase は 1 つの確かめ。v の大きさで開き、at 秒へ送って setup を流し、steps の後で check が true になる。
 type uiCase struct {
@@ -49,6 +53,10 @@ func runUICases(t *testing.T, url string, cases []uiCase) {
 		t.Run(c.name, func(t *testing.T) {
 			p := pageForCase(t, pages, c)
 			load(t, p, url)
+			// WhyNot: 使い回しの頁をそのまま信じない — 前の 1 本の注釈・大きさ・機種が残っていても、たまたま通る 1 本は気付かれずに通る
+			if !evalBool(t, p, freshState(c.v)) {
+				t.Fatalf("始まりの状態でない（前の 1 本の物が残っている）: %s", evalString(t, p, uiState))
+			}
 			at := c.at
 			if at == 0 {
 				at = 8.0
@@ -71,6 +79,24 @@ func runUICases(t *testing.T, url string, cases []uiCase) {
 	}
 }
 
+// formOf は v の大きさで頁が選ぶ形（template.html の MQ と同じ境目）。
+func formOf(v view) string {
+	switch {
+	case v.w < 720:
+		return "phone"
+	case v.h >= v.w:
+		return "portrait"
+	case v.w >= 1024:
+		return "three"
+	}
+	return "two"
+}
+
+// freshState は開いたばかりの頁で真になる式（注釈も直しも無く、v の形と入力で、シートが開いていない）。
+func freshState(v view) string {
+	return fmt.Sprintf(`anns.length === 0 && Object.keys(edits).length === 0 && form === %q && mouse === %t && openId === null`, formOf(v), !v.touch)
+}
+
 // pageForCase は c の view の頁を返す。使い回す頁は、前の 1 本の物（localStorage・大きさ・機種・マウスの位置）を消してから渡す。
 func pageForCase(t *testing.T, pages map[view]*cdp.Page, c uiCase) *cdp.Page {
 	t.Helper()
@@ -82,29 +108,44 @@ func pageForCase(t *testing.T, pages map[view]*cdp.Page, c uiCase) *cdp.Page {
 		}
 		return p
 	}
-	p, ok := pages[c.v]
-	if !ok {
-		opened, err := newTapePage(c.v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pages[c.v] = opened
-		return opened
+	// WhyNot: ピンチの 1 本に使い回しの頁を渡さない — 2 本の指を 1 度送った Chrome は、頁を開き直しても次の touch を頁へ渡さない
+	if slices.ContainsFunc(c.steps, func(s step) bool { return s.pinch != 0 }) {
+		return openTapePage(t, c.v)
 	}
+	if p, ok := pages[c.v]; ok {
+		err := resetPage(p, c.v)
+		if err == nil {
+			return p
+		}
+		// WhyNot: 掃除の失敗で Fatal にしない — 頁が落ちた 1 本の後ろで、同じ view の全部が同じ壊れた頁を渡されて落ちる
+		t.Logf("頁を開き直す（掃除に失敗: %v）", err)
+		p.Close()
+		delete(pages, c.v)
+	}
+	opened, err := newTapePage(c.v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages[c.v] = opened
+	return opened
+}
+
+// resetPage は使い回す頁から前の 1 本の物を消す。
+func resetPage(p *cdp.Page, v view) error {
 	// WhyNot: about:blank を挟む — 同じ URL を開き直すだけだと、load の合図が前の頁で真になり、新しい頁を待たずに進む
-	for _, err := range []error{
-		p.Eval(`(() => { try { localStorage.clear(); } catch {} return true; })()`, nil),
-		p.Navigate("about:blank"),
-		p.WaitFor(`location.href === "about:blank"`, 10*time.Second),
-		p.SetTouch(c.v.touch),
-		p.SetViewport(c.v.w, c.v.h, c.v.mobile),
-		p.MoveMouse(2, 2),
+	for _, do := range []func() error{
+		func() error { return p.Eval(`(() => { try { localStorage.clear(); } catch {} return true; })()`, nil) },
+		func() error { return p.Navigate("about:blank") },
+		func() error { return p.WaitFor(`location.href === "about:blank"`, 10*time.Second) },
+		func() error { return p.SetTouch(v.touch) },
+		func() error { return p.SetViewport(v.w, v.h, v.mobile) },
+		func() error { return p.MoveMouse(2, 2) },
 	} {
-		if err != nil {
-			t.Fatal(err)
+		if err := do(); err != nil {
+			return err
 		}
 	}
-	return p
+	return nil
 }
 
 func mustEval(t *testing.T, p *cdp.Page, expr string) {
@@ -136,15 +177,36 @@ func doStep(t *testing.T, p *cdp.Page, s step) {
 		if err := p.MoveMouse(at.X, at.Y); err != nil {
 			t.Fatal(err)
 		}
+	case s.pinch != 0:
+		doPinch(t, p, s.pinch)
 	}
-	// WhyNot: すぐ次の手を打たない — シートを開くと入力欄の focus は 280ms 後に移り、その前のキーは body に届く
+	// WhyNot: すぐ次の手を打たない — シートを開くと入力欄の focus は少し後に移り、その前のキーは body に届く
 	if err := p.Eval(nextFrame, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.WaitFor(`!openId || performance.now() - openedAt > 300`, 5*time.Second); err != nil {
-		t.Fatal(err)
+	if err := p.WaitFor(draftFocused, 5*time.Second); err != nil {
+		t.Fatalf("書きかけのシートの入力欄に focus が無い: %s", evalString(t, p, uiState))
 	}
 }
+
+// doPinch はタイムラインの真ん中に 2 本の指を 100px 離して置き、間を scale 倍にしてから離す（trusted な touch の event）。
+func doPinch(t *testing.T, p *cdp.Page, scale float64) {
+	t.Helper()
+	var c struct{ X, Y float64 }
+	if err := p.Eval(`(() => { const r = scroller.getBoundingClientRect(); return {X: r.left + r.width / 2, Y: r.top + r.height / 2}; })()`, &c); err != nil {
+		t.Fatal(err)
+	}
+	at := func(half float64) [][2]float64 { return [][2]float64{{c.X - half, c.Y}, {c.X + half, c.Y}} }
+	for _, err := range []error{p.Touch("touchStart", at(50)...), p.Touch("touchMove", at(50*scale)...), p.Touch("touchEnd")} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// draftFocused は、注釈・直しのシートが開いているなら、その入力欄に focus が来ている時に真。
+// WhyNot: 開いてからの時間で推さない — focus を移す setTimeout は遅い機械で後ろへずれ、時計が先に真になる
+const draftFocused = `(!["noteSheet", "editSheet"].includes(openId) || document.activeElement === $(openId).querySelector("textarea"))`
 
 // nextFrame は頁が 2 コマ描くまで待つ（resize の listener・保存の await・マウスの移動が頁に届いた後になる）。
 const nextFrame = `new Promise(res => requestAnimationFrame(() => requestAnimationFrame(() => res(true))))`
@@ -167,6 +229,10 @@ const (
 	clickItem   = `$("listBody").querySelector(".item").click();`
 	draftToast  = `$("toast").textContent === "先に付けるか閉じてください"`
 	ctrlWheel   = `scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: %d, ctrlKey: true, bubbles: true, cancelable: true }));`
+	plainWheel  = `scroller.dispatchEvent(new WheelEvent("wheel", { deltaX: %d, deltaY: %d, bubbles: true, cancelable: true }));`
+	selectSound = `select({ track: "sound", sound: TAPE.sounds[2] });`
+	selectCmd   = `select({ track: "script", ln: +Object.keys(TAPE.lines).find(k => TAPE.lines[k].cmd) });`
+	tipShown    = `getComputedStyle($("tip")).display === "block"`
 	metaWheel   = `scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: %d, metaKey: true, bubbles: true, cancelable: true }));`
 )
 
@@ -193,6 +259,15 @@ var keyCases = []uiCase{
 	{name: "↑ で音のトラック", v: desktop, steps: []step{key("ArrowUp")}, check: `sel?.track === "sound"`},
 	{name: "N で注釈を開く", v: desktop, steps: []step{key("n")}, check: `openId === "noteSheet"`},
 	{name: "M で注釈を開く", v: desktop, steps: []step{key("m")}, check: `openId === "noteSheet"`},
+	{name: "J の送りを K で止める", v: desktop, steps: []step{key("j"), key("k")}, check: `shut === null && video.paused`},
+	{name: "J の 2 倍を K で止めた後の J は 1 倍から", v: desktop, steps: []step{key("j"), key("j"), key("k"), key("j")}, check: `!!shut && shut.dir < 0 && shut.speed === 1`},
+	{name: "L の 2 倍を K で止めると速さが 1 に戻る", v: desktop, steps: []step{key("l"), key("l"), key("k")}, check: `shut === null && video.paused && video.playbackRate === 1`},
+	{name: "L の 4 倍を K で止めた後の L は等速から", v: desktop, steps: []step{key("l"), key("l"), key("l"), key("k"), key("l")}, check: `!video.paused && video.playbackRate === 1`},
+	{name: "N は何も選んでいなければシーン全体に付ける", v: desktop, steps: []step{key("n")}, check: `pending?.kind === "scene" && pending.target.id === sceneAt(8).id`},
+	{name: "N は選んでいる台詞に付ける", v: desktop, setup: selectLine, steps: []step{key("n")}, check: `pending?.kind === "script" && pending.target.line === 25 && pending.target.command === undefined`},
+	{name: "N は選んでいる演出の行にコマンドを入れて付ける", v: desktop, setup: selectCmd, steps: []step{key("n")},
+		check: `pending?.kind === "script" && !!pending.target.command && pending.target.command === TAPE.lines[pending.target.line].cmd`},
+	{name: "N は選んでいる音に、その音の秒で付ける", v: desktop, setup: selectSound, steps: []step{key("n")}, check: `pending?.kind === "sound" && pending.target.name === "bubble" && pending.seconds === 9`},
 	{name: "E で選んだ台詞を直す", v: desktop, setup: selectLine, steps: []step{key("e")}, check: `openId === "editSheet"`},
 	{name: "E は台詞を選んでいないとトーストだけ", v: desktop, steps: []step{key("e")}, check: `openId === null && $("toast").textContent.startsWith("台詞を選んでいる時に直せます")`},
 	{name: "R で囲む", v: desktop, steps: []step{key("r")}, check: `mode === "rect"`},
@@ -251,6 +326,18 @@ var formChangeCases = []uiCase{
 	{name: "書きかけの直しはスマホから 3 列へ字を持って移る", v: phone, steps: []step{js(editLine), js(typeEdit), resize(desktop)},
 		check: `openId === "editSheet" && $("editText").value === "直した文章" && $("editSheet").parentNode.id === "insp"`},
 	{name: "書きかけの直しはスマホから 3 列へ focus を持って移る", v: phone, steps: []step{js(editLine), js(typeEdit), resize(desktop)}, check: `document.activeElement.id === "editText"`},
+	{name: "iPad を縦から横へ回しても書きかけの注釈の字が残る", v: tablet, steps: []step{js(`noteHere();`), js(typeNote), resize(tabletWide)},
+		check: `form === "three" && openId === "noteSheet" && $("noteText").value === "書きかけ"`},
+	{name: "iPad を縦から横へ回しても書きかけの注釈に focus が残る", v: tablet, steps: []step{js(`noteHere();`), js(typeNote), resize(tabletWide)},
+		check: `form === "three" && document.activeElement.id === "noteText"`},
+	{name: "iPad を横から縦へ回しても書きかけの注釈の字が残る", v: tabletWide, steps: []step{js(`noteHere();`), js(typeNote), resize(tablet)},
+		check: `form === "portrait" && openId === "noteSheet" && $("noteText").value === "書きかけ"`},
+	{name: "iPad を横から縦へ回しても書きかけの注釈に focus が残る", v: tabletWide, steps: []step{js(`noteHere();`), js(typeNote), resize(tablet)},
+		check: `form === "portrait" && document.activeElement.id === "noteText"`},
+	{name: "iPad を縦から横へ回しても書きかけの直しの字が残る", v: tablet, steps: []step{js(editLine), js(typeEdit), resize(tabletWide)},
+		check: `form === "three" && openId === "editSheet" && $("editText").value === "直した文章"`},
+	{name: "iPad を横から縦へ回しても書きかけの直しに focus が残る", v: tabletWide, steps: []step{js(editLine), js(typeEdit), resize(tablet)},
+		check: `form === "portrait" && document.activeElement.id === "editText"`},
 	{name: "2 列で一覧を開いたまま 3 列になると閉じる", v: smallWin, steps: []step{js(`$("listBtn").onclick();`), resize(desktop)}, check: `openId === null`},
 	{name: "3 列でこのコマを開いたままスマホになると閉じる", v: desktop, steps: []step{js(`openInfo();`), resize(phone)}, check: `openId === null && !$("infoSheet").classList.contains("on")`},
 	{name: "スマホで書き出しを開いたまま 3 列になると閉じる", v: phone, setup: hasEdit, steps: []step{js(`$("exportBtn").onclick();`), resize(desktop)},
@@ -274,10 +361,25 @@ var zoomCases = []uiCase{
 	{name: "⌘＋ホイールの上で広がる", v: desktop, steps: []step{js(fmt.Sprintf(metaWheel, -50))}, check: `PPS > 96`},
 	{name: "Ctrl＋ホイールの下で縮む", v: desktop, steps: []step{js(fmt.Sprintf(ctrlWheel, 50))}, check: `PPS < 96`},
 	{name: "指の形では Ctrl＋ホイールでズームしない", v: tablet, steps: []step{js(fmt.Sprintf(ctrlWheel, 50))}, check: `PPS === 96`},
+	{name: "ホイールでタイムラインを送る", v: desktop, steps: []step{js(fmt.Sprintf(plainWheel, 0, 96))}, check: `Math.abs(scroller.scrollLeft - (8 * PPS + 96)) < 1`},
+	{name: "ホイールで送ると動画の秒が付いて来る", v: desktop, steps: []step{js(fmt.Sprintf(plainWheel, 0, 96))}, check: `Math.abs(video.currentTime - 9) < .05`},
+	{name: "横のホイールでもタイムラインを送る", v: desktop, steps: []step{js(fmt.Sprintf(plainWheel, -96, 10))}, check: `Math.abs(scroller.scrollLeft - (8 * PPS - 96)) < 1`},
+	{name: "ホイールで送ってもズームは変わらない", v: desktop, steps: []step{js(fmt.Sprintf(plainWheel, 0, 96))}, check: `PPS === 96 && scroller.scrollLeft > 8 * PPS`},
+	{name: "指のピンチで広げるとズームが広がる", v: tablet, steps: []step{pinch(2)}, check: `Math.abs(PPS - 192) < 1`},
+	{name: "指のピンチで縮めるとズームが縮む", v: tablet, steps: []step{pinch(.5)}, check: `Math.abs(PPS - 48) < 1`},
+	{name: "指のピンチでズームしても秒が動かない", v: tablet, steps: []step{pinch(2)}, check: `Math.abs(PPS - 192) < 1 && Math.abs(video.currentTime - 8) < .05 && Math.abs(scroller.scrollLeft / PPS - 8) < .05`},
+	{name: "スマホの形ではピンチでズームしない", v: phoneTouch, steps: []step{pinch(2)}, check: `PPS === 56`},
 	{name: "操作の早見はマウスの広い形で出る", v: desktop, check: `getComputedStyle($("keys")).display === "grid"`},
 	{name: "操作の早見は指の形で出ない", v: tablet, check: `getComputedStyle($("keys")).display === "none"`},
 	{name: "操作の早見はスマホで出ない", v: phone, check: `getComputedStyle($("keys")).display === "none"`},
 	{name: "クリップにホバーすると吹き出しが出る", v: desktop, at: 8.4, steps: []step{hover(`.clip[data-ln="25"]`)}, check: `getComputedStyle($("tip")).display === "block" && $("tip").textContent.includes(":25")`},
+	{name: "クリップから外れると吹き出しが消える", v: desktop, at: 8.4, steps: []step{hover(`.clip[data-ln="25"]`), hover(`#tcNow`)}, check: `getComputedStyle($("tip")).display === "none"`},
+	{name: "カードにホバーすると選ぶ物の中身が出る", v: desktop, steps: []step{hover(`#cardScript`)}, check: tipShown + ` && $("tip").textContent === $("cardScript").querySelector(".v").textContent`},
+	{name: "注釈のマーカーにホバーすると注釈の文が出る", v: desktop, at: 33.0, setup: sinkNote, steps: []step{hover(`#marks .mk`)}, check: tipShown + ` && $("tip").textContent.includes("2 つ目の沈む音")`},
+	{name: "直しのマーカーにホバーすると直した文章が出る", v: desktop, setup: hasEdit + `renderMarks();`, steps: []step{hover(`#marks .mk`)}, check: tipShown + ` && $("tip").textContent.includes("直した文章")`},
+	{name: "分岐にホバーすると問いと道が出る", v: desktop, at: 16.2, steps: []step{hover(`#forks .fork`)}, check: tipShown + ` && $("tip").textContent.includes("小瓶を差し出された") && $("tip").textContent.includes("✓ 受け取る")`},
+	{name: "音にホバーすると音の名前が出る", v: desktop, at: 8.6, steps: []step{hover(`.snd[data-i="2"]`)}, check: tipShown + ` && $("tip").textContent.includes("♪ 泡")`},
+	{name: "指の形ではカードの吹き出しも出ない", v: tablet, steps: []step{hover(`#cardScript`)}, check: `getComputedStyle($("tip")).display === "none"`},
 	{name: "指の形ではホバーの吹き出しが出ない", v: tablet, at: 8.4, steps: []step{hover(`.clip[data-ln="25"]`)}, check: `getComputedStyle($("tip")).display === "none"`},
 }
 

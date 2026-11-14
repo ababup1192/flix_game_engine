@@ -141,6 +141,19 @@ func TestMoveMouseHoversTheElementUnderIt(t *testing.T) {
 	}
 }
 
+func TestTouchSendsTwoTrustedPoints(t *testing.T) {
+	p := keyPage(t, PageOptions{Width: 400, Height: 300, Mobile: true, Touch: true})
+	if err := p.Eval(`(addEventListener("touchstart", e => { window.__touch = [e.touches.length, e.touches[1].clientX, e.isTrusted].join(","); }), true)`, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Touch("touchStart", [2]float64{100, 100}, [2]float64{200, 100}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor(`window.__touch === "2,200,true"`, pageStep); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAlertDoesNotStopThePage(t *testing.T) {
 	p := keyPage(t, PageOptions{})
 	if err := p.Eval(`setTimeout(() => { alert("止まらない"); window.__after = true; }, 0), true`, nil); err != nil {

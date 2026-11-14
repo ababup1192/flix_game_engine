@@ -132,11 +132,14 @@ type view struct {
 }
 
 var (
-	phone    = view{viewW, viewH, true, false}
-	desktop  = view{1440, 900, false, false}
-	laptop   = view{1180, 820, false, false}
-	tablet   = view{820, 1180, true, true}
-	smallWin = view{900, 700, false, false}
+	phone   = view{viewW, viewH, true, false}
+	desktop = view{1440, 900, false, false}
+	laptop  = view{1180, 820, false, false}
+	tablet  = view{820, 1180, true, true}
+	// tabletWide は tablet を横へ回した大きさ。phoneTouch は指のスマホ
+	tabletWide = view{1180, 820, true, true}
+	phoneTouch = view{viewW, viewH, true, true}
+	smallWin   = view{900, 700, false, false}
 )
 
 func skipWithoutChrome(t *testing.T) {
@@ -189,8 +192,36 @@ func seekTo(t *testing.T, p *cdp.Page, sec float64) {
 	if err := p.WaitFor(fmt.Sprintf("!video.seeking && Math.abs(video.currentTime - %g) < 0.05", sec), 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	// WhyNot: 「注釈」ボタンの出る動き（.18 秒）が終わる前に撮ると、2 つの頁で途中の絵が違う。
-	time.Sleep(400 * time.Millisecond)
+	// WhyNot: 「注釈」ボタンの出る動きが終わる前に撮ると、2 つの頁で途中の絵が違う。
+	waitStill(t, p, "true")
+}
+
+// running は動いている animation・transition の並び。
+const running = `document.getAnimations().filter(a => a.playState === "running")`
+
+// waitStill は cond が真で、動いている animation・transition が無くなるまで待つ。
+// WhyNot: 決めた時間だけ寝ない — 遅い機械では動きの途中で進み、速い機械では要らない分だけ全量が延びる
+func waitStill(t *testing.T, p *cdp.Page, cond string) {
+	t.Helper()
+	// WhyNot: すぐ覗かない — class を付けた直後は style がまだ計算されておらず、これから始まる動きが並びに無い
+	if err := p.Eval(nextFrame, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor("("+cond+") && "+running+".length === 0", 10*time.Second); err != nil {
+		t.Fatalf("%v（残っている animation: %s）", err, evalString(t, p,
+			running+`.map(a => (a.animationName || a.transitionProperty || "animation") + "@" + (a.effect?.target?.id || a.effect?.target?.className || a.effect?.target?.tagName)).join(", ")`))
+	}
+}
+
+// waitSeeked は頁を開いた時のシーク（#t=）が済むまで待つ。
+func waitSeeked(t *testing.T, p *cdp.Page) {
+	t.Helper()
+	if err := p.WaitFor(`!video.seeking && video.readyState >= 2`, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Eval(nextFrame, nil); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func shot(t *testing.T, p *cdp.Page) *image.NRGBA {

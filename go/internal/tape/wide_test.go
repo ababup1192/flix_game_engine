@@ -71,10 +71,8 @@ func shootCase(t *testing.T, url string, c wideCase, mock bool) *image.NRGBA {
 	if err := p.Eval(c.act, nil); err != nil {
 		t.Fatal(err)
 	}
-	// WhyNot: すぐ撮らない — 入力欄の focus は 280ms 後、左の欄の scrollIntoView は smooth で動き、着いた所のハイライト（.flash）は 900ms 残る
-	if err := p.WaitFor(`(!openId || performance.now() - openedAt > 300) && !document.querySelector(".flash") && document.getAnimations().every(a => a.playState !== "running")`, 10*time.Second); err != nil {
-		t.Fatal(err)
-	}
+	// WhyNot: すぐ撮らない — 入力欄の focus は少し後に移り、左の欄の scrollIntoView は smooth で動き、着いた所のハイライト（.flash）はしばらく残る
+	waitStill(t, p, draftFocused+` && !document.querySelector(".flash")`)
 	if err := p.Eval(nextFrame, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +189,7 @@ func hashStart(t *testing.T, url string, v view) (float64, float64, string) {
 	t.Helper()
 	p := openTapePage(t, v)
 	loadPlain(t, p, url)
-	time.Sleep(500 * time.Millisecond)
+	waitSeeked(t, p)
 	noErrors(t, p, url)
 	return evalFloat(t, p, "video.currentTime"), evalFloat(t, p, "scroller.scrollLeft / PPS"), evalString(t, p, "form")
 }

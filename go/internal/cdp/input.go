@@ -108,3 +108,14 @@ func (p *Page) MoveMouse(x, y float64) error {
 	_, err := p.c.call("Input.dispatchMouseEvent", map[string]any{"type": "mouseMoved", "x": x, "y": y}, pageStep)
 	return err
 }
+
+// Touch は指の点を trusted な touch の event として送る（kind は touchStart・touchMove・touchEnd。points は今触れている点の CSS px で、touchEnd は空）。
+// 指の機種（SetTouch(true)）の頁にだけ届く。
+func (p *Page) Touch(kind string, points ...[2]float64) error {
+	touches := make([]map[string]any, len(points))
+	for i, pt := range points {
+		touches[i] = map[string]any{"x": pt[0], "y": pt[1], "id": i}
+	}
+	_, err := p.c.call("Input.dispatchTouchEvent", map[string]any{"type": kind, "touchPoints": touches}, pageStep)
+	return err
+}

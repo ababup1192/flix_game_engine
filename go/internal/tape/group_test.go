@@ -286,7 +286,7 @@ func startTimeOf(t *testing.T, url string) float64 {
 	t.Helper()
 	p := openTapePage(t, phone)
 	loadPlain(t, p, url)
-	time.Sleep(500 * time.Millisecond)
+	waitSeeked(t, p)
 	var sec float64
 	if err := p.Eval(`video.currentTime`, &sec); err != nil {
 		t.Fatal(err)
