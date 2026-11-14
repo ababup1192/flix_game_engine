@@ -90,3 +90,30 @@ engine は「draw call がまとまらなかった理由を診断に出す」「
   field は 20.08 → 20.29 ms（+1.0%・4 区間ずつ）。
 - **field 12,000 は起動ごとに 16.3〜16.7 ms の回と 18.9〜20.9 ms の回がある**（診断なしで、直す前も後も 6 本のうち 1 本が速い回。理由は【不明】。基準の表の「動く割合 10%」の揺れと同じ形）。
   1 回ずつの比べでは ±20% に見えるので、入れ替えながら何本か取って中央で読む。
+
+### 置いた物を batch へ分ける所の直し（field 12,000・`SCENE=field COUNT=12000 REPEAT=2`）
+
+JFR（2026-11-14 21:42・直す前）でメインスレッドの標本 908 のうち 204 が `Render3d.ScenePlan.sceneDrawsOf` の複製 1 つのインタプリタの frame、
+56 が `Field.instancesAt` のインタプリタの frame だった。`-XX:+PrintCompilation` を付けた回（21:59・直す前）の行:
+
+```
+7850 21640 %     3       $pkg$github$ababup1192$flix_game_engine.Render3d.ScenePlan.Def$sceneDrawsOf$1063480::staticApply @ 71 (1242 bytes)   COMPILE SKIPPED: stack not empty at OSR entry point (retry at different tier)
+7803 21605 %     3       Field.Def$instancesAt$1064993::staticApply @ 110 (261 bytes)   COMPILE SKIPPED: stack not empty at OSR entry point (retry at different tier)
+7842 21637 %     4       Field.Def$instancesAt$1064993::staticApply @ 110 (261 bytes)   COMPILE SKIPPED: OSR starts with non-empty stack (retry at different tier)
+```
+
+大きさ（1,242 バイト）ではなく、1 コマに 1 回しか呼ばれない関数の中のループを途中から JIT（OSR）できない形だった。
+`Render3d.Material.splitByMaterial` の `List.map` のラムダ（呼び出しで終わる）が `sceneDrawsOf` の中へ展開されていた。
+ラムダの中身を `@DontInline` の `placedDrawOf`（末尾は record）へ出し、ベンチの `Field.instancesAt` も同じ形で `instanceAt` へ出した。
+直した後の JFR（22:21）は標本 684 のうちインタプリタの frame が 35（直す前は 908 のうち 292）。
+
+main（6855cdb2）と直した engine を 1 本ずつ交互に 2 本ずつ（2026-11-14 22:18〜22:24・1 本は 2 区間）。main の側のベンチにも `Field.instanceAt` の直しを当てたので、差は engine の直しの分。時間は ms。
+
+| engine | frame p50（4 区間） | `cpu_phases` の `split` |
+|---|---|---|
+| main（6855cdb2） | 24.00・24.02・22.95・22.67 | 17.73〜18.16 |
+| 直した後 | 18.78・18.93・18.49・18.55 | 14.57〜14.89 |
+
+- 直した後も標本の 34% は record の欄の引き当て（先頭が `String.equals` か `RecordExtend.lookupField`）。呼び手の def で多いのは
+  `Render3d.Batch.hasSameTree`（`MaterialFields` の `spec`・`emission`・`metallicRoughnessShade`）・`Render3d.Batch.kindBits`（`ProgramKind` の Bool の 6 欄）・
+  `Render3d.Batch.batchOf`・`Render3d.Instancing.packDraw`（`MeshDraw` の `fields`・`world`・`tint`）。JIT の中のインライン展開で行がずれる事があり、欄までは確かめていない。直していない。
