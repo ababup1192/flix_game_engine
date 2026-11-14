@@ -12,14 +12,16 @@ import (
 // 広い画面のキー・シートのボタン・保存・キーボード・横長の動画を、本物の頁で 1 つずつ確かめる（plans/tape/spec-wide.md の「決まった事」）。
 
 // step は 1 手。key があれば trusted なキーを押し、js があれば頁で流し、to があればウィンドウの大きさを変え、hover があればその selector の物の真ん中へマウスを動かし、
-// pinch があればタイムラインの上で 2 本の指の間をその倍率に広げる（縮める）。
+// pinch があればタイムラインの上で 2 本の指の間を 100px からその px へ 1 手ずつ動かし、swipe があれば指 1 本をその px だけ横へ送り、tap があればその selector の物を指で叩く。
 type step struct {
 	key   string
 	mods  int
 	js    string
 	to    *view
 	hover string
-	pinch float64
+	pinch []float64
+	swipe float64
+	tap   string
 }
 
 func key(k string) step              { return step{key: k} }
@@ -27,7 +29,9 @@ func keyMod(k string, mods int) step { return step{key: k, mods: mods} }
 func js(s string) step               { return step{js: s} }
 func resize(v view) step             { return step{to: &v} }
 func hover(sel string) step          { return step{hover: sel} }
-func pinch(scale float64) step       { return step{pinch: scale} }
+func pinch(spans ...float64) step    { return step{pinch: spans} }
+func swipe(dx float64) step          { return step{swipe: dx} }
+func tap(sel string) step            { return step{tap: sel} }
 
 // uiCase は 1 つの確かめ。v の大きさで開き、at 秒へ送って setup を流し、steps の後で check が true になる。
 type uiCase struct {
@@ -109,7 +113,7 @@ func pageForCase(t *testing.T, pages map[view]*cdp.Page, c uiCase) *cdp.Page {
 		return p
 	}
 	// WhyNot: ピンチの 1 本に使い回しの頁を渡さない — 2 本の指を 1 度送った Chrome は、頁を開き直しても次の touch を頁へ渡さない
-	if slices.ContainsFunc(c.steps, func(s step) bool { return s.pinch != 0 }) {
+	if slices.ContainsFunc(c.steps, func(s step) bool { return s.pinch != nil }) {
 		return openTapePage(t, c.v)
 	}
 	if p, ok := pages[c.v]; ok {
@@ -177,8 +181,12 @@ func doStep(t *testing.T, p *cdp.Page, s step) {
 		if err := p.MoveMouse(at.X, at.Y); err != nil {
 			t.Fatal(err)
 		}
-	case s.pinch != 0:
+	case s.pinch != nil:
 		doPinch(t, p, s.pinch)
+	case s.swipe != 0:
+		doSwipe(t, p, s.swipe)
+	case s.tap != "":
+		touchAll(t, p, [][][2]float64{{visibleCenterOf(t, p, s.tap)}, {}})
 	}
 	// WhyNot: すぐ次の手を打たない — シートを開くと入力欄の focus は少し後に移り、その前のキーは body に届く
 	if err := p.Eval(nextFrame, nil); err != nil {
@@ -189,19 +197,74 @@ func doStep(t *testing.T, p *cdp.Page, s step) {
 	}
 }
 
-// doPinch はタイムラインの真ん中に 2 本の指を 100px 離して置き、間を scale 倍にしてから離す（trusted な touch の event）。
-func doPinch(t *testing.T, p *cdp.Page, scale float64) {
+// doPinch はタイムラインの真ん中に 2 本の指を 100px 離して置き、間を spans の px へ 1 手ずつ動かしてから離す（trusted な touch の event）。
+// 手ごとのズームを頁の pinchSeen に残す。
+func doPinch(t *testing.T, p *cdp.Page, spans []float64) {
 	t.Helper()
-	var c struct{ X, Y float64 }
-	if err := p.Eval(`(() => { const r = scroller.getBoundingClientRect(); return {X: r.left + r.width / 2, Y: r.top + r.height / 2}; })()`, &c); err != nil {
-		t.Fatal(err)
+	c := centerOf(t, p, "scroller")
+	at := func(span float64) [][2]float64 { return [][2]float64{{c[0] - span/2, c[1]}, {c[0] + span/2, c[1]}} }
+	mustEval(t, p, `window.pinchSeen = [];`)
+	touchAll(t, p, [][][2]float64{at(100)})
+	for _, span := range spans {
+		touchAll(t, p, [][][2]float64{at(span)})
+		// WhyNot: すぐ PPS を読まない — Chrome は touchmove をコマに合わせて頁へ渡すので、送った直後はまだ届いていない
+		if err := p.Eval(nextFrame, nil); err != nil {
+			t.Fatal(err)
+		}
+		mustEval(t, p, `pinchSeen.push(Math.round(PPS));`)
 	}
-	at := func(half float64) [][2]float64 { return [][2]float64{{c.X - half, c.Y}, {c.X + half, c.Y}} }
-	for _, err := range []error{p.Touch("touchStart", at(50)...), p.Touch("touchMove", at(50*scale)...), p.Touch("touchEnd")} {
-		if err != nil {
+	touchAll(t, p, [][][2]float64{{}})
+}
+
+// doSwipe はタイムラインの真ん中に指を 1 本置き、dx の px だけ横へ 8 手で送ってから離す。
+func doSwipe(t *testing.T, p *cdp.Page, dx float64) {
+	t.Helper()
+	c := centerOf(t, p, "scroller")
+	frames := [][][2]float64{}
+	for i := 0; i <= 8; i++ {
+		frames = append(frames, [][2]float64{{c[0] + dx*float64(i)/8, c[1]}})
+	}
+	touchAll(t, p, append(frames, [][2]float64{}))
+}
+
+// touchAll は frames を順に送る（最初が touchStart・空が touchEnd・他は touchMove）。
+func touchAll(t *testing.T, p *cdp.Page, frames [][][2]float64) {
+	t.Helper()
+	for i, f := range frames {
+		kind := "touchMove"
+		switch {
+		case len(f) == 0:
+			kind = "touchEnd"
+		case i == 0:
+			kind = "touchStart"
+		}
+		if err := p.Touch(kind, f...); err != nil {
 			t.Fatal(err)
 		}
 	}
+}
+
+// centerOf は頁の式 el の物の真ん中（CSS px）。
+func centerOf(t *testing.T, p *cdp.Page, el string) [2]float64 {
+	t.Helper()
+	return pointOf(t, p, fmt.Sprintf(`(() => { const r = (%s).getBoundingClientRect(); return {X: r.left + r.width / 2, Y: r.top + r.height / 2}; })()`, el))
+}
+
+// visibleCenterOf は selector の物の、タイムラインに見えている所の真ん中（CSS px）。
+// WhyNot: 物の真ん中にしない — 広げたクリップは画面より長く、真ん中が画面の外に出る
+func visibleCenterOf(t *testing.T, p *cdp.Page, sel string) [2]float64 {
+	t.Helper()
+	return pointOf(t, p, fmt.Sprintf(`(() => { const r = document.querySelector(%q).getBoundingClientRect(), s = scroller.getBoundingClientRect();
+  return {X: (Math.max(r.left, s.left) + Math.min(r.right, s.right)) / 2, Y: r.top + r.height / 2}; })()`, sel))
+}
+
+func pointOf(t *testing.T, p *cdp.Page, expr string) [2]float64 {
+	t.Helper()
+	var c struct{ X, Y float64 }
+	if err := p.Eval(expr, &c); err != nil {
+		t.Fatal(err)
+	}
+	return [2]float64{c.X, c.Y}
 }
 
 // draftFocused は、注釈・直しのシートが開いているなら、その入力欄に focus が来ている時に真。
@@ -352,6 +415,9 @@ var soundNoteCases = []uiCase{
 	{name: "TAPE に無い音の注釈の一覧は時刻だけ移す", v: desktop, setup: unknownNote, steps: []step{js(clickItem)}, check: `sel === null && Math.abs(video.currentTime - 20) < .05`},
 }
 
+// pinchOut は指の間を 100px から 2 倍まで広げる手。
+var pinchOut = []float64{120, 140, 160, 200}
+
 var zoomCases = []uiCase{
 	{name: "ズームは 1 秒 240px で止まる", v: desktop, steps: []step{js(`setZoom(1e6);`)}, check: `PPS === 240`},
 	{name: "ズームは 1 秒 14px で止まる", v: desktop, steps: []step{js(`setZoom(0);`)}, check: `PPS === 14`},
@@ -365,10 +431,13 @@ var zoomCases = []uiCase{
 	{name: "ホイールで送ると動画の秒が付いて来る", v: desktop, steps: []step{js(fmt.Sprintf(plainWheel, 0, 96))}, check: `Math.abs(video.currentTime - 9) < .05`},
 	{name: "横のホイールでもタイムラインを送る", v: desktop, steps: []step{js(fmt.Sprintf(plainWheel, -96, 10))}, check: `Math.abs(scroller.scrollLeft - (8 * PPS - 96)) < 1`},
 	{name: "ホイールで送ってもズームは変わらない", v: desktop, steps: []step{js(fmt.Sprintf(plainWheel, 0, 96))}, check: `PPS === 96 && scroller.scrollLeft > 8 * PPS`},
-	{name: "指のピンチで広げるとズームが広がる", v: tablet, steps: []step{pinch(2)}, check: `Math.abs(PPS - 192) < 1`},
-	{name: "指のピンチで縮めるとズームが縮む", v: tablet, steps: []step{pinch(.5)}, check: `Math.abs(PPS - 48) < 1`},
-	{name: "指のピンチでズームしても秒が動かない", v: tablet, steps: []step{pinch(2)}, check: `Math.abs(PPS - 192) < 1 && Math.abs(video.currentTime - 8) < .05 && Math.abs(scroller.scrollLeft / PPS - 8) < .05`},
-	{name: "スマホの形ではピンチでズームしない", v: phoneTouch, steps: []step{pinch(2)}, check: `PPS === 56`},
+	{name: "指のピンチで広げ続けるとズームが手ごとに広がる", v: tablet, steps: []step{pinch(pinchOut...)}, check: `pinchSeen.join() === "115,134,154,192"`},
+	{name: "指のピンチで縮め続けるとズームが手ごとに縮む", v: tablet, steps: []step{pinch(90, 80, 65, 50)}, check: `pinchSeen.join() === "86,77,62,48"`},
+	{name: "指のピンチは 1 秒 240px で止まる", v: tablet, steps: []step{pinch(200, 300)}, check: `pinchSeen.join() === "192,240"`},
+	{name: "指のピンチでズームしても秒が動かない", v: tablet, steps: []step{pinch(pinchOut...)}, check: `Math.abs(PPS - 192) < 1 && Math.abs(video.currentTime - 8) < .05 && Math.abs(scroller.scrollLeft / PPS - 8) < .05`},
+	{name: "指のピンチの後に指 1 本でタイムラインを送れる", v: tablet, steps: []step{pinch(pinchOut...), swipe(-192)}, check: `Math.abs(PPS - 192) < 1 && scroller.scrollLeft > 8 * PPS + 96 && video.currentTime > 8.2`},
+	{name: "指のピンチの後にクリップをタップで選べる", v: tablet, steps: []step{pinch(pinchOut...), tap(`.clip[data-ln="25"]`)}, check: `Math.abs(PPS - 192) < 1 && sel && sel.track === "script" && sel.ln === 25`},
+	{name: "スマホの形ではピンチでズームしない", v: phoneTouch, steps: []step{pinch(pinchOut...)}, check: `PPS === 56`},
 	{name: "操作の早見はマウスの広い形で出る", v: desktop, check: `getComputedStyle($("keys")).display === "grid"`},
 	{name: "操作の早見は指の形で出ない", v: tablet, check: `getComputedStyle($("keys")).display === "none"`},
 	{name: "横向きのスマホはスマホの形", v: phoneWide, check: `form === "phone" && !document.body.classList.contains("wide")`},

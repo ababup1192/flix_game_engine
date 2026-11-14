@@ -1060,9 +1060,18 @@ scroller.addEventListener("wheel", e => {
 }, { passive: false });
 let pinch = null;
 const span2 = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
-scroller.addEventListener("touchstart", e => { if (form !== "phone" && e.touches.length === 2) pinch = { d: span2(e.touches), p: PPS }; }, { passive: true });
-scroller.addEventListener("touchmove", e => { if (!pinch || e.touches.length !== 2) return; e.preventDefault(); setZoom(pinch.p * span2(e.touches) / pinch.d); }, { passive: false });
-scroller.addEventListener("touchend", e => { if (e.touches.length < 2) pinch = null; });
+const pinchMove = e => { if (e.touches.length !== 2) return; e.preventDefault(); setZoom(pinch.p * span2(e.touches) / pinch.d); };
+const pinchEnd = e => {
+  if (e.touches.length >= 2) return;
+  pinch.on.forEach(n => { n.removeEventListener("touchmove", pinchMove); n.removeEventListener("touchend", pinchEnd); n.removeEventListener("touchcancel", pinchEnd); });
+  pinch = null; endTouch();
+};
+// WhyNot: touchmove・touchend を scroller で受けない — ズームの relayout が指の下のクリップを作り直し、DOM から外れた target の event は scroller まで上がって来ない
+scroller.addEventListener("touchstart", e => {
+  if (pinch || form === "phone" || e.touches.length !== 2) return;
+  pinch = { d: span2(e.touches), p: PPS, on: [...new Set([...e.touches].map(t => t.target))] };
+  pinch.on.forEach(n => { n.addEventListener("touchmove", pinchMove, { passive: false }); n.addEventListener("touchend", pinchEnd); n.addEventListener("touchcancel", pinchEnd); });
+}, { passive: true });
 
 // WhyNot: 戻し再生に playbackRate を使わない — video は負の速さを持てない
 let shut = null;
