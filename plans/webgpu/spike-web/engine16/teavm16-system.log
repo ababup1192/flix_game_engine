@@ -1,0 +1,9 @@
+INFO: Running TeaVM
+INFO: Output file successfully built
+INFO: Classes compiled: 8514
+INFO: Methods compiled: 28771
+problems=0 severe=0
+ms=51165
+real 51.87
+user 95.39
+sys 1.08

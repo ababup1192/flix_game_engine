@@ -1,0 +1,8 @@
+INFO: Running TeaVM
+INFO: Output file built with errors
+problems=4 severe=4
+SEVERE Class {{c0}} was not found | [java.util.concurrent.ConcurrentLinkedQueue]
+SEVERE Class {{c0}} was not found | [java.util.concurrent.ConcurrentLinkedQueue]
+SEVERE Class {{c0}} was not found | [java.util.concurrent.locks.ReentrantLock]
+SEVERE Class {{c0}} was not found | [java.util.concurrent.CyclicBarrier]
+ms=8278
