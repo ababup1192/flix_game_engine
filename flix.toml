@@ -21,6 +21,10 @@ repository  = "github:ababup1192/flix_game_engine"
 "org.lwjgl:lwjgl-glfw"   = "3.4.1"
 "org.lwjgl:lwjgl-sdl"    = "3.4.1"
 
+# WebGPU の PC の実装（fge.webgpu.dawn・jWebGPU の JNI 版の Dawn）。ルートは組むだけなのでネイティブは持たない。
+# webgpu-core は書かない（入れるとネイティブの無い類が先に読まれて落ちる）。
+"com.github.xpenatan.jWebGPU:webgpu-desktop-jni"                = "0.3.4"
+
 # GL の層の jar（render_gl/java・make gl-jar が lib/external に置く）。行は make gl-jar-pin が書く（名前は render_gl/java のハッシュ）。
 [jar-dependencies]
-"fge-gl-5222df2e0d55.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/fge-gl-5222df2e0d55/fge-gl-5222df2e0d55.jar"
+"fge-gl-9261957f995f.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/fge-gl-9261957f995f/fge-gl-9261957f995f.jar"

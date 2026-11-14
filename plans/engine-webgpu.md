@@ -337,7 +337,7 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 動画・1 枚撮り（今の `GlOffscreen` の役） | 同期 | PC の Dawn で `mapAsync` を待つ。待つ間コマを進めないので絵は同じ |
 | 3D の材質が 2D の絵の mip の写しを読む | PC だけ同期で読む | GPU の上で写す（読み戻さない） |
 | GPU の時間（`GpuTimer`） | `glBeginQuery`（毎コマ。重い） | timestamp-query がある時だけ（98.8%）。pass の前後だけを測り、数コマに 1 回に間引く。無い端末では出さない |
-| GPU の物の解放 | GL の番号を消す | GC に任せず、`destroy()` を描き手が呼ぶ（WASM GC と JS の物の寿命は別。テクスチャとバッファは明示で消す） |
+| GPU の物の解放 | GL の番号を消す | GC に任せず、`destroy()` を描き手が呼ぶ（WASM GC と JS の物の寿命は別。テクスチャとバッファは明示で消す）。PC の JNI の側は view・bind group・pipeline・sampler・shader module・bind group layout も `release()` で明示で手放す（jWebGPU は GC では手放さない。ブラウザの実装の `release()` は何もしない） |
 | device lost | 頁の読み直しの案内 | 同じ |
 | mask の途中の stencil のクリア | pass の途中でクリア | stencil は残し、mask ごとに比べる値（ref）を 1 ずつ進める。pass の途中のクリアが要らなくなり、絵は変わらない（1 つの pass で 255 個まで。超えたら pass を分ける）。mask の絵をシェーダーで掛ける案は絵の縁が変わり得るので取らない |
 
@@ -522,6 +522,18 @@ P1（描き手より上の直し）で、同じ絵のスプライト 20,000 個�
 まだ【未確認】: Retina の 2 倍・窓を引っぱる間の動き・入力を入れた後の場面・古いブラウザの下限・Safari と iPhone・Windows と Linux（判断 9）。
 
 PC の橋は jWebGPU のまま P4a を進め、`WebGpu` の裏に隠して後で Panama へ替えられる形にする（Panama は JDK 21 の preview で GPU の情報と上限まで読めた。Dawn の公式の配布は dylib が無く、自分で組む）。
+
+### 12.8 P4a で入った物（2026-11-15・この Mac だけ）
+
+- `render_gl/java/fge/webgpu`（interface `WebGpu` と物の型・Desc の類）と `fge/webgpu/dawn`（jWebGPU 0.3.4 の Dawn）。Flix の側は
+  `WebGpuOffscreen`（ウィンドウなしの session・`readRgba`・`drawFloatRows`）と `WebGpuWindow`（PC だけ・`GLFW_NO_API`）。
+- 確かめる口は engine の `make webgpu-check`（`bench/webgpu_check`。上限・三角形と面の向き・readRgba・式の行・firstInstance の 20,000 本・
+  device の取り直し・ネイティブの置き場の誤り・2 プロセス同時・ウィンドウの読み戻しと作り直し）。GPU が要るので CI には載せない。
+- ゲームへ配る物（agents-pack の早見表と eval のお題）には、ゲームが WebGPU を選べるようになる「リリース 2」まで載せない。
+  その時に足すお題の案: 「ウィンドウを開かずに WebGPU の device で三角形を描き、画素を読み戻して期待の色と比べる」→ 期待は `WebGpuOffscreen`、
+  避けるのは `glReadPixels`・`LwjglGl`。
+- Dawn のネイティブ（macOS arm64 で 2.6 MB）は `render_gl` と `bench/webgpu_check` の flix.toml だけが持つ。`engine_full` は API の jar だけ
+  （リリース 2 でネイティブの行を足す。その時に Windows・Linux の jar の行も）。
 
 ## 版ごとに直した事
 

@@ -18,12 +18,17 @@ repository  = "github:ababup1192/flix_game_engine"
 "org.lwjgl:lwjgl-glfw"   = "3.4.1"
 "org.lwjgl:lwjgl-sdl"    = "3.4.1"
 
+# WebGPU の PC の実装（fge.webgpu.dawn・jWebGPU の JNI 版の Dawn）の API だけ。webgpu-core は書かない（入れるとネイティブの無い類が先に読まれて落ちる）。
+# WhyNot: Dawn のネイティブ（macOS arm64 で 2.6 MB）をここに書かない — ゲームが WebGPU を選べるようになるまで、全部のゲームの配る物に載るだけになる。
+# ネイティブは render_gl/flix.toml と bench/webgpu_check/flix.toml だけが持つ。
+"com.github.xpenatan.jWebGPU:webgpu-desktop-jni"                = "0.3.4"
+
 # LWJGL ネイティブは複数プラットフォームを同一 classpath に同居させても無害。
 # 実行時に os.name/os.arch を見て、自分の OS に合う1つだけが選ばれる仕組みだから。
 # Windows / macOS(Intel, ARM) / Linux(x64, ARM) を全部宣言しておけば、
 # どの OS でビルドしても追加設定なしでそのまま動く。
 [jar-dependencies]
-"fge-gl-5222df2e0d55.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/fge-gl-5222df2e0d55/fge-gl-5222df2e0d55.jar"
+"fge-gl-9261957f995f.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/fge-gl-9261957f995f/fge-gl-9261957f995f.jar"
 "lwjgl-3.4.1-natives-macos-arm64.jar"        = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-macos-arm64.jar"
 "lwjgl-opengl-3.4.1-natives-macos-arm64.jar" = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-macos-arm64.jar"
 "lwjgl-stb-3.4.1-natives-macos-arm64.jar"    = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-macos-arm64.jar"

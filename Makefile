@@ -119,6 +119,7 @@ help:
 	@echo "  make shader-cache-soak    シェーダープログラムのキャッシュが上限で頭打ちになるかを隠しウィンドウで確認 (増え続ければ exit 1)"
 	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く・SCENE=field COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1 で物を並べた場面)"
+	@echo "  make webgpu-check         WebGPU の PC の実装 (Dawn) を Flix から通して描いて読み戻す門 (窓なし・2 プロセス・窓。NG で exit 1)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make crowd2d-cpu          2D の敵の群れの規則だけを回し、近くを探す処理を全部と比べる形と SpatialGrid で比べる (窓は開かない)"
@@ -352,6 +353,13 @@ gl-parity:
 # 基準は bench/baseline/<版>/gl-parity-cpu.tsv。時間は機械と負荷で揺れるので門にはせず、同じ機械で前後を並べて見る。
 gl-parity-cpu:
 	@$(MAKE) -C bench/gl_parity cpu-time
+
+# WebGPU の PC の実装 (bench/webgpu_check)。Flix から fge.webgpu.WebGpu を通して Dawn で描き、読み戻した画素を期待と比べる:
+# 上限・三角形と面の向き・readRgba・式の行・firstInstance の 20,000 本 (3 ms)・device の取り直し・2 プロセス同時・GLFW の窓
+# (present の前の読み戻し・大きさの作り直し)。どれかが NG なら exit 1。GPU の要る門なので CI には載せない。先に make sync-engine-full。
+.PHONY: webgpu-check
+webgpu-check:
+	@$(MAKE) -C bench/webgpu_check check run two window
 
 # シェーダープログラムのキャッシュの上限 (bench/shader_cache_soak)。隠しウィンドウで
 # 数値だけが違う Spec を 200 本投げ、LRU の追い出しでキャッシュが上限に留まるかを見る。
@@ -705,9 +713,12 @@ clean-font-cache:
 GL_JAR_SRC  := $(sort $(shell find $(RENDER_GL_DIR)/java -name '*.java' 2>/dev/null))
 GL_JAR_CHECK := $(RENDER_GL_DIR)/java-check/GlConstantsCheck.java
 GL_JAR_LWJGL := 3.4.1
+# WebGPU の PC の実装（render_gl/java/fge/webgpu/dawn）を組む相手。版は 3 つの flix.toml の jWebGPU の行と同じにする。
+GL_JAR_JWEBGPU := 0.3.4
+GL_JAR_JPARSER := 1.2.8
 GL_JAR_JAVA_RELEASE := 17
 GL_JAR_HASH := $(if $(GL_JAR_SRC),$(shell { for f in $(GL_JAR_SRC); do echo "== $$f"; tr -d '\r' < "$$f"; done; \
-	echo "release $(GL_JAR_JAVA_RELEASE) lwjgl $(GL_JAR_LWJGL)"; } | shasum -a 256 | cut -c1-12))
+	echo "release $(GL_JAR_JAVA_RELEASE) lwjgl $(GL_JAR_LWJGL) jwebgpu $(GL_JAR_JWEBGPU) jparser $(GL_JAR_JPARSER)"; } | shasum -a 256 | cut -c1-12))
 GL_JAR_TAG  := fge-gl-$(GL_JAR_HASH)
 GL_JAR_NAME := $(GL_JAR_TAG).jar
 GL_JAR      := build/gl-jar/$(GL_JAR_NAME)
@@ -716,6 +727,8 @@ GL_JAR_URL  := https://github.com/$(GL_JAR_REPO)/releases/download/$(GL_JAR_TAG)
 GL_JAR_PIN_LINE := "$(GL_JAR_NAME)" = "url:$(GL_JAR_URL)"
 GL_JAR_TOMLS := flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml
 GL_JAR_DEPS := build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar build/gl-jar/deps/lwjgl-opengl-$(GL_JAR_LWJGL).jar
+GL_JAR_DEPS += build/gl-jar/deps/webgpu-jni-$(GL_JAR_JWEBGPU).jar \
+	$(foreach m,api-core loader-core runtime-jni,build/gl-jar/deps/$(m)-$(GL_JAR_JPARSER).jar)
 JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
 JAR_TOOL := $(dir $(JAVAC))jar
 GL_JAR_USERS = $(LAYER_ROOT)/$(RENDER_GL_DIR) . $(ENGINE_FULL_DIR) \
@@ -729,6 +742,14 @@ build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar:
 	@mkdir -p $(dir $@)
 	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar
 
+build/gl-jar/deps/webgpu-jni-$(GL_JAR_JWEBGPU).jar:
+	@mkdir -p $(dir $@)
+	curl -fsSL -o $@ https://repo1.maven.org/maven2/com/github/xpenatan/jWebGPU/webgpu-jni/$(GL_JAR_JWEBGPU)/webgpu-jni-$(GL_JAR_JWEBGPU).jar
+
+build/gl-jar/deps/%-$(GL_JAR_JPARSER).jar:
+	@mkdir -p $(dir $@)
+	curl -fsSL -o $@ https://repo1.maven.org/maven2/com/github/xpenatan/jParser/$*/$(GL_JAR_JPARSER)/$*-$(GL_JAR_JPARSER).jar
+
 .PHONY: gl-jar gl-jar-hash-ok gl-jar-pin gl-jar-pin-check gl-jar-publish
 # WhyNot: ハッシュが空のまま進めない — fge-gl-.jar という名前で組み、pin がそれを書き込む。
 gl-jar-hash-ok:
@@ -736,6 +757,10 @@ gl-jar-hash-ok:
 
 # WhyNot: --date を外さない — 外すと組むたびに中の時刻が変わり、同じソースでも別のバイトになる。
 $(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_CHECK) $(GL_JAR_DEPS) | gl-jar-hash-ok
+	@# jWebGPU の版は Java の定数（ネイティブの置き場の名前）・3 つの flix.toml・ここの GL_JAR_JWEBGPU の 5 か所でそろえる。
+	@v=$$(sed -n 's/.*JWEBGPU_VERSION = "\(.*\)";/\1/p' $(RENDER_GL_DIR)/java/fge/webgpu/dawn/DawnWebGpu.java); \
+	 bad=$$(grep -H 'jWebGPU:' $(GL_JAR_TOMLS) bench/webgpu_check/flix.toml | grep -v "= *\"$(GL_JAR_JWEBGPU)\""); \
+	 [ "$$v" = "$(GL_JAR_JWEBGPU)" ] && [ -z "$$bad" ] || { echo "[gl-jar] jWebGPU の版がそろっていません: Java=$$v Makefile=$(GL_JAR_JWEBGPU) $$bad"; exit 1; }
 	@rm -rf build/gl-jar/classes && mkdir -p build/gl-jar/classes
 	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/classes \
 		-cp "$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(GL_JAR_SRC)
