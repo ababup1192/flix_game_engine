@@ -1,7 +1,7 @@
 ---
 name: critique-render
 description: "描き出し系ターゲット（make render SHOT=<場面名> / make render-all 等）を実行し、debug/gallery の PNG・WAV 可視化（sounds.png / music.png）を目視・目聴して、設計原則と絵の下限 5 性質に照らした批評レポートを返す。絵や音を作った・直した直後、報告の前の自己批評として、「見た目はどう？」「音はどう？」と聞かれたとき、スナップショットを更新する前に使う。"
-sync: 2026-10-16
+sync: 2026-11-14
 ---
 
 # critique-render — 描き出して批評する
@@ -25,6 +25,9 @@ sync: 2026-10-16
    fade・wipe など戻らない演出は対象外。造形が怪しい絵（何の形か読めない・接続や
    接地が変）は、シルエットの描き出し（`HeadlessRender.silhouettePng` — 対象を黒・背景を白）で
    形だけを取り出して確かめる（docs/drawing-floor.md）。
+   3D の場面や post process（bloom・tonemap・被写界深度）が白っぽい・暗い・にじみすぎる時は、最後の 1 枚だけで批評しない。
+   `HeadlessRender.renderPassImage` / `renderPassImageWith` で途中の Pass（`scene`・`bright`・`bloomB`・`post`）を 1 枚ずつ出し、
+   どの Pass から崩れたかを挙げる（奥行きの絵は場面の `output = Scene3d.Output.Depth`。切り分けの表は `docs/art-ref/visual-dict/reference-3d.md`）。
 4. 設計原則に照らして批評する。観点の例:
    - 原則違反（禁止事項に触れていないか）
    - **絵の下限**（`.claude/rules/drawing.md` の 5 つの性質。満たさない場面は場面名を挙げる）

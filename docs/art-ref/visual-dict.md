@@ -29,6 +29,8 @@
 
 **5 性質の欄に `RawDraw.box` / `RawDraw.circle` しか書けなかったら、まだ辞書を引いていない。**
 先に [reference.md](visual-dict/reference.md) と [unused-parts.md](visual-dict/unused-parts.md) を読む。
+**3D の場面（`Scene3d`）や post process（HDR・tonemap・bloom・被写界深度）を使う画面は、光と露出の値を決める前に
+[reference-3d.md](visual-dict/reference-3d.md) を引く**（見た目の名前 → 値の組・Pass の並びの手本・途中の Pass の絵の出し方）。
 
 ### 各手順の中身
 
@@ -59,6 +61,8 @@ AGENTS.local.md に人の注文（/style-interview の聞き取り）があれ�
 - **[reference.md](visual-dict/reference.md)** — web の技法 → エンジンの部品の対応表（グロー・グラデ・
   残像・粒・霧・コースティクス・画面揺れ・イージング・ドット絵・タイル地形・枠）と、
   実証済みの癖。**部品を選ぶときは必ずここを開く。**
+- **[reference-3d.md](visual-dict/reference-3d.md)** — 3D の場面と post process の対応表（夕方の屋外・夜の部屋・洞窟などの
+  光・空・かすみ・露出・bloom の値の組と、Pass の並びの手本・見た目が悪い時の切り分け）。**2D の表には無い。**
 - **[unused-parts.md](visual-dict/unused-parts.md)** — 実装もテストもあるのに採用ゼロ〜1 の部品一覧。
   **「無いから手組み」の前にここを見る。**
 - **[recipes.md](visual-dict/recipes.md)** — 同じ下限の性質をまったく違う手で満たした実例 4 つ。

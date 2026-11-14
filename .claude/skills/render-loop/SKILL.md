@@ -84,6 +84,13 @@ docs/headless-render-recipe.md。リファレンス画像の更新は `make -C t
 守ることは 2 つ: 調整中の画は `debug/` 行きの別 entrypoint に分けてリファレンス画像を汚さない・
 テストは検証だけ（描き出しは `SceneRender.all` の仕事）。
 
+## 3D と post process は途中の Pass の絵で切り分ける
+
+3D の場面や post process（bloom・tonemap・被写界深度）の見た目を直す時は、最後の 1 枚だけで当たりを付けない。
+`HeadlessRender.renderPassImage` / `renderPassImageWith` で Pass を 1 枚ずつ `debug/` に出し、`scene` → `bright` → `bloomB` → `post` の順に
+どこから崩れたかを見てから 1 つだけ直す（奥行きの絵は場面の `output = Scene3d.Output.Depth`）。値の出発点と切り分けの表は
+`docs/art-ref/visual-dict/reference-3d.md`。MSAA は描き出しに出ないので、物の輪郭のぎざぎざの直しは実機で確かめる。
+
 ## 手順
 
 ```

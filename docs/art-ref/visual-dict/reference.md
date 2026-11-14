@@ -19,6 +19,10 @@
 - 光の帯 / ハードシャドウ
 - 角丸パネル / 枠
 - UI の文字（枠に収める）
+- 足元の y で重なり順（y ソート・人が木の裏に回る）
+- 絵を回す・傾ける / 絵を左右に反転する（向きを変える）
+
+3D の場面と post process（HDR・tonemap・bloom・被写界深度）は [reference-3d.md](reference-3d.md)。
 
 根拠: 6 ジャンル（弾幕STG / 森ARPG / レース / ホラーADV / 海中パズル / 雪山ローグ）を
 canvas の狙い絵 → 実エンジンのヘッドレス生成（静止画 + 完全ループ GIF）で再現した実験。
@@ -43,3 +47,6 @@ canvas の狙い絵 → 実エンジンのヘッドレス生成（静止画 + �
 | 光の帯 / ハードシャドウ | 半透明ポリゴン（`Light` / `Shadow`） | 影は光源と反対へ伸ばす。長さは距離の逆数で減らすと自然 |
 | 角丸パネル / 枠 | `DrawCmd.BoxStyle` / `Render.outline` / `outlineA` **[新]** | 半透明の枠は `Render.outlineA`（α を渡す）。`Render.outline` は枠 α=1 固定なので、0.12.1 以前は Item.Box + BoxStyle を直組みしていた |
 | UI の文字（枠に収める） | `Text.measure`（採寸）/ `UiExtract.measureTexts`（world-entity UI の採寸口）/ `RichText.wrapLinesBy`（maxWidth で文字境界折り） | **文字を枠に入れるときは先に `Text.measure` で採寸してから枠を決める。** 枠が先に固定なら「折り返す(wrap)・fontSize を落とす・文言を縮める」のどれかを**明示的に選ぶ**（黙ってはみ出させない）。UiDialog 本文の折りは `RichText.wrapLinesBy`(maxWidth) が本番稼働中。ui.json の text ウィジェットは `"wrap": "auto"`（自分のレイアウト矩形の幅で折る）か数値（折り返し幅 px）、`"fit": true`（収まらなければ fontSize を段階的に縮める）を宣言すれば部品側で折れる（既定は off）。engine を直呼びするなら `Text.setWrapWidth` |
+| 足元の y で重なり順（y ソート・人が木の裏に回る・奥行きで前後を決める） | `ZStack.zIndex(Depth.orderAt(足元の y), ZStack.leaf(人))` | 見下ろしの画面で「足元が下にある物ほど手前」。人も木も同じ `ZStack.of` の中で、それぞれ自分の足元の y を渡す。z を数で直に書かない・列を y で並べ替えて描く順を作らない |
+| 絵を回す・傾ける（スプライト・箱・字） | `Render.turned(t, item)`（1 つ）/ `Render.turnedAll(t, pivot, items)`（集まりを丸ごと） | 単位は回転数（1 周 = 1.0・度でもラジアンでもない）。**`Render.rotated(t, vertices)` / `rotatedAround` は多角形の頂点の列用**で、Item には使えない |
+| 絵を左右に反転する（キャラの向きを変える） | `Render.spriteFlipped(texture, z, { flipH = true, flipV = false })` | **`Render.flipH(vertices)` / `flipV` は多角形の頂点の列用**。スプライトの向きはこちら（左向きの絵を別に用意しない） |
