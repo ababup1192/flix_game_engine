@@ -58,7 +58,7 @@ endif
 # JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
 RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
 
-.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-rules-link video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -86,6 +86,7 @@ help:
 	@echo "  make lint-doc-refs      docs/**/*.md・NOTES.md・AGENTS.local.md が指す Mod.name・パス・path:行 が実在するか"
 	@echo "  make lint-record-wrap   World の形（大きな record を包む・Doc と描く元は Resources へ・一番上の欄の数）と古い除外"
 	@echo "  make lint-flixlint      lint/rules.flix の規則（View が World を受けない・依存の向き・テストの形）を型つきの AST で見る（上限は lint/limits/<規則>.json）"
+	@echo "  make lint-huge-methods  JVM が JIT しない大きさ（8,000 バイト超）の関数が無いか（jar を作るので lint には入れていない。毎コマ通らない物は bin/lint-rules/huge-methods.local.json へ）"
 	@echo "  make lint               エンジンの軽い検査（render-lint・lint-doc-refs・lint-record-wrap・lint/rules.flix があれば lint-flixlint）＋ゲームの Makefile が「lint: 口」で足した検査"
 	@echo "  make video-entries      動画の見回りが流す入口の一覧を Makefile の \$$(call video,…) から書き直す"
 	@echo "  make flow FLOW=e2e/<名前>.flow  flow を画面なしで最後まで流す（失敗は行番号つき。Flix は組み直さない）"
@@ -296,6 +297,14 @@ lint-doc-refs: $(LINT_RULES_LINK)
 # 古い書き方を 1 行の正規表現で止める（engine の forbid.json + ゲームの bin/lint-rules/forbid.local.json）。
 lint-forbid: $(LINT_RULES_LINK)
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" forbid --all --root .
+
+# JVM は bytecode が 8,000 バイトを超えるメソッドを JIT しないので、毎コマ通る関数が超えるとインタプリタのまま回る
+# （engine の docs/performance.md の 13 節）。大きさはインライン展開の後に決まるので、遊ぶ時と同じ jar を数える。
+# WhyNot: lint に束ねない — jar を作り直すと数十秒かかり、保存のたびに流す軽い検査の列に入れられない。
+# Windows では流せない（jar を作る headless-run が bash）。
+lint-huge-methods: $(LINT_RULES_LINK)
+	@FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --build-only
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" huge-methods --root . build/headless/headless.jar
 
 # engine リポの中のテンプレートは規約（bin/lint-rules/<名前>.json）を持たない（生成したゲームには new-game が写す）。
 # 無い規約だけ engine の物へのリンクを張り、生成したゲームと同じ形で lint を流す。

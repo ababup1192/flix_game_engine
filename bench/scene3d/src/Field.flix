@@ -131,7 +131,18 @@ mod Field {
 
     def instancesAt(kit: Kit, t: Float64): List[Scene3d.Instance3d] =
         if (kit#config#movingPercent <= 0) kit#allResting
-        else kit#placed |> List.map(p -> if (p#moves) movedInstance(p, t) else p#resting)
+        else kit#placed |> List.map(instanceAt(t))
+
+    /// p の t 秒の姿（動かない物は置いた時の姿）。
+    // WhyNot: instancesAt の List.map のラムダへ書き下さない・movedInstance の呼び出しで終えない — 呼び出しで終わる関数は続き（Thunk）を返し、
+    //   1 コマに 1 回しか呼ばれないループを JVM が途中から JIT できず、物の数だけインタプリタで回る（docs/performance.md の 13 節）。
+    // WhyNot: let に受けて返すだけの形にしない — Flix がたたむと movedInstance の呼び出しで終わる形に戻りうる（たたむかは確かめていない）。Option に包めば呼び出しの後に match が残る。
+    @DontInline
+    def instanceAt(t: Float64, p: Placed): Scene3d.Instance3d =
+        match (if (p#moves) Some(movedInstance(p, t)) else None) {
+            case Some(moved) => moved
+            case None        => p#resting
+        }
 
     // ── 場面 ──
 

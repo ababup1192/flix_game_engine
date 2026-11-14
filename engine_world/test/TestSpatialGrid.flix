@@ -62,6 +62,41 @@ mod TestSpatialGrid {
     def testFoldNearIndexFromOutsideTheGrid(): Unit \ Assert =
         Assert.assertEq(expected = 0 :: Nil, nearIndices(fourPoints(), -2.0, 0.0, 2.0))
 
+    /// 格子の右の外の点からは、右端の升の物が通る（(5, 0) から (3, 0) は 2）。
+    @Test
+    def testFoldNearIndexFromBeyondTheLastColumn(): Unit \ Assert =
+        Assert.assertEq(expected = 2 :: Nil, nearIndices(fourPoints(), 5.0, 0.0, 2.0))
+
+    /// 格子の上限ちょうどに居る物（x・y とも一番大きい物）も、自分の位置から通る。全員を比べた答えと同じ。
+    @Test
+    def testFoldNearIndexAtUpperBoundMatchesFullScan(): Unit \ Assert =
+        let xs = Vector#{0.0, 1.5, 3.0};
+        let ys = Vector#{0.0, 1.5, 3.0};
+        Assert.assertEq(expected = nearByScan(xs, ys, 3.0, 3.0, 0.5), nearIndices(SpatialGrid.build(1.0, xs, ys), 3.0, 3.0, 0.5))
+
+    /// 上限ちょうどから升 1 つより大きな半径で引いても、全員を比べた答えと同じ。
+    @Test
+    def testFoldNearIndexAtUpperBoundWideRadiusMatchesFullScan(): Unit \ Assert =
+        let xs = Vector#{0.0, 1.5, 3.0};
+        let ys = Vector#{0.0, 1.5, 3.0};
+        Assert.assertEq(expected = nearByScan(xs, ys, 3.0, 3.0, 2.5), nearIndices(SpatialGrid.build(1.0, xs, ys), 3.0, 3.0, 2.5))
+
+    /// 引く位置が NaN でも止まらず、全員を比べた答え（何も通らない）と同じ。
+    @Test
+    def testFoldNearIndexNaNCenterMatchesFullScan(): Unit \ Assert =
+        let xs = Vector#{0.0, 1.5, 3.0};
+        let ys = Vector#{0.0, 1.5, 3.0};
+        let nan = 0.0 / 0.0;
+        Assert.assertEq(expected = nearByScan(xs, ys, nan, 1.5, 2.0), nearIndices(SpatialGrid.build(1.0, xs, ys), nan, 1.5, 2.0))
+
+    /// 引く半径が NaN でも止まらず、全員を比べた答え（何も通らない）と同じ。
+    @Test
+    def testFoldNearIndexNaNRadiusMatchesFullScan(): Unit \ Assert =
+        let xs = Vector#{0.0, 1.5, 3.0};
+        let ys = Vector#{0.0, 1.5, 3.0};
+        let nan = 0.0 / 0.0;
+        Assert.assertEq(expected = nearByScan(xs, ys, 1.5, 1.5, nan), nearIndices(SpatialGrid.build(1.0, xs, ys), 1.5, 1.5, nan))
+
     // ---------------------------------------------------------------
     // 回す順
     // ---------------------------------------------------------------

@@ -125,6 +125,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
 | ブラウザ（WebGL2）で描いた canvas の画素を PNG に撮る | `bin/fge web-capture <URL> <出力.png> [--wait 秒] [--size WxH]`（頁が `window.fgeCaptureReady` と `fgeCapture()` を出す・`export-web` の頁は `?capture=<n>` で dt を固定した n コマ目を撮らせる・engine の `docs/web-capture.md`） |
 | 遊んでいて重くなる（動いた瞬間のカクつき）の原因を探す・直したか確かめる | `make debug`（音なしは `FLIX_GE_MUTE=1`）で遊ぶと重いコマだけ `debug/perf/hitches/<起動時刻>/f<コマ>/hitch.md` に出る（`make status` に件数）→ 読んで直す → 同じ手を `POST /perf?path=<flow>`（隠しウィンドウは `FLIX_GE_HIDDEN=1`）で流し、作ったシェーダーの数で比べる（engine の `docs/performance.md` の 11 節） |
+| 1 コマに 1 万個を超える物を回すループが、数に比べて重い（物が多くて重い時の書き方） | 1 個ぶんの仕事を別の def に出して `@DontInline`（1 個ぶんのメソッドが 8,000 バイトを超えると JVM が JIT しない）・ループから直に呼ぶ関数を別の関数の呼び出しで終えない（末尾呼び出しは Thunk を返し、ループがインタプリタのまま残る。Unit なら `; ()`・値なら Option に包んで `match`）・多い列は逆順の `::` と `List.reverse` でなく `MutList.push` と `MutList.toList`。見つけ方は `make lint-huge-methods`（8,000 バイト超）・`JAVA_TOOL_OPTIONS="-XX:+PrintCompilation" make run` の `COMPILE SKIPPED`（それ未満でも OSR を諦めたループ）と JFR（engine の `docs/performance.md` の 13 節） |
 | 動画が最後まで撮れたか（途中で止まった動画を見つける） | `bin/fge videos status`（Studio のギャラリーの動画） |
 | 動画のコマ・自前のギャラリーで同じ絵を塗り直さない | `RenderCache.writeFramePng`（`SoftRaster.render*` は自動。docs/render-cache.md） |
 | 人が見る動画・会話のプレビューを GPU で塗る | 動画 `VideoOut.writeFrames`（Pass を使う画面は `writeFramesWithPasses`）・1 枚 `GpuShot.shotOf`（`FGE_GPU`） |

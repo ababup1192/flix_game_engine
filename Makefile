@@ -100,6 +100,7 @@ help:
 	@echo "  make lint-value-discard   値を let _ = で捨てていないか検査 (純粋な式だと Flix が呼び出しごと消す)"
 	@echo "  make lint                 engine の lint のうち 0 件の物をまとめて (forbid・max-lines・value-discard・hoist・record-wrap・state-shape・doc-refs・z-table・f32)"
 	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
+	@echo "  make lint-huge-methods    JVM が JIT しない大きさ (8,000 バイト超) の Flix の関数を jar から数える (JARS=<jar…>。既定はベンチの jar のうち在る物。bin/lint-rules/huge-methods.json)"
 	@echo "  make lint-max-lines       engine の src の .flix の行数の上限 (bin/lint-rules/max-lines.json。超えた物は除外の一覧)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)・ループの中の List 探しを知らせる (perf-near-scan)"
 	@echo "  make lint-hoist           ループの外に置いた式がループの中へ書き写される形が無いか検査 (全量)"
@@ -614,6 +615,17 @@ lint:
 .PHONY: lint-forbid
 lint-forbid:
 	@bin/fge forbid --all
+
+# ── 検査: JVM が JIT しない大きさの関数 ───────────────────────
+# bytecode が 8,000 バイトを超えるメソッドはインタプリタのまま回る (docs/performance.md の 13 節)。超えていて良い物は huge-methods.json の exempt。
+# WhyNot: make lint に束ねない — 見るのは組んだ jar で、ソースを直しても jar を作り直すまで結果が変わらない。
+# WhyNot: jar をここで作らない — Flix は main から届く関数だけを jar に入れるので、どの jar を見るかは測る場面で決まる。ベンチを流した後に打つ。
+HUGE_METHODS_JARS ?= $(wildcard bench/sprite_stress/artifact/*.jar bench/crowd2d/artifact/*.jar bench/scene3d/build/headless/headless.jar)
+.PHONY: lint-huge-methods
+lint-huge-methods:
+	@jars="$(if $(JARS),$(JARS),$(HUGE_METHODS_JARS))"; \
+	if [ -z "$$jars" ]; then echo "[lint-huge-methods] 見る jar がありません。ベンチを 1 回流すか JARS=<jar> で渡してください"; exit 2; fi; \
+	bin/fge huge-methods $$jars
 
 # ── ゲート: engine のソースの 1 ファイルの行数 ─────────────────
 # engine の 4 パッケージの src の .flix が上限 (bin/lint-rules/max-lines.json の maxLines) を超えていないか。

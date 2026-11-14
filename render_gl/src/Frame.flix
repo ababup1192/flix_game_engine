@@ -845,70 +845,89 @@ mod RenderFrame {
         match items {
             case Nil => ()
             case item :: rest =>
-                match item {
-                    case Merged.MTile(tm) =>
-                        // タイル層が来たら両 run を吐いてから 1 draw call で描く（列順を守る）。
-                        // 層は画面全体に敷くので scissor は viewport 全体へ戻し、blend は
-                        // TileMapRenderCmd が blend を持たない（常に Normal）ため明示的に戻す
-                        // （前 run の Add/Multiply を持ち越さない）。
-                        flushSprites(gl, st, instData);
-                        flushPolys(gl, st, polyData, polyBatchUniforms);
-                        setScissorAt(gl, st, 0, 0, 0, 0, 0);
-                        RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
-                        match Map.get(tm#textureName, registry) {
-                            case Some(texInfo) =>
-                                RenderSprite.drawTileMapInstanced(gl, Array.get(26, st),
-                                                     GpuHandle.textureIdInt(texInfo#id),
-                                                     GpuHandle.tileVaoInt(tm#tileVaoId),
-                                                     tileUniforms,
-                                                     tm#position, tm#tileSize, tm#tileScale,
-                                                     tm#color, tm#tileCount);
-                                countSingleDraw(st, kindTile(), 1)
-                            // texture 未登録は描かない（穴も開けない）。
-                            case None => warnMissingTexture(warnLog, tm#textureName)
-                        }
-                    case Merged.MSprite(drawable) =>
-                        // スプライトが来たら溜まっている多角形 run を先に吐く（列順を守る）。
-                        flushPolys(gl, st, polyData, polyBatchUniforms);
-                        if (List.isEmpty(DrawCmd.maskOf(drawable)))
-                            emitSprite(gl, st, instData, scaleX, scaleY, registry, targetNames,
-                                       warnLog, drawable)
-                        else {
-                            // mask 付きはステンシルへの描き込みが draw の前後に要るため、
-                            // 一括 run に混ぜられない — 自分の run も吐いてから単発で描く。
-                            flushSprites(gl, st, instData);
-                            emitSpriteMasked(gl, st, instData, scaleX, scaleY, registry, targetNames,
-                                             warnLog, polyBatchUniforms, drawable)
-                        }
-                    case Merged.MPoly(pc) =>
-                        // 多角形が来たら溜まっているスプライト run を先に吐く（列順を守る）。
-                        flushSprites(gl, st, instData);
-                        emitPoly(gl, st, polyData, polyBatchUniforms, scaleX, scaleY, pc)
-                    case Merged.MStatic(r) =>
-                        // 静的レンジが来たら両 run を吐いてから 1 draw call で描く（列順を守る）。
-                        flushSprites(gl, st, instData);
-                        flushPolys(gl, st, polyData, polyBatchUniforms);
-                        emitStatic(gl, st, scaleX, scaleY, polyBatchUniforms, r)
-                    case Merged.MSurface(s) =>
-                        // シェーダー面が来たら両 run を吐いてから 1 枚描く（列順＝重なり順を守る）。
-                        // 面は矩形全体を塗るので scissor は viewport 全体に戻す
-                        // （前 run の clip 矩形を持ち越さない）。
-                        flushSprites(gl, st, instData);
-                        flushPolys(gl, st, polyData, polyBatchUniforms);
-                        setScissorAt(gl, st, 0, 0, 0, 0, 0);
-                        countSingleDraw(st, kindSurface(), drawSurface(gl, s))
-                    case Merged.MScene3d(i) =>
-                        // 場面も両 run を吐いてから描く（深度で前後を決めるのは場面の中だけ）。
-                        flushSprites(gl, st, instData);
-                        flushPolys(gl, st, polyData, polyBatchUniforms);
-                        drawScene({ x = Array.get(7, st), y = Array.get(8, st), width = Array.get(9, st),
-                                    height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, i);
-                        // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
-                        Array.put(kindScene3d(), 27, st)
-                };
+                emitOne(gl, st, instData, polyData, scaleX, scaleY, registry, targetNames,
+                        warnLog, tileUniforms, polyBatchUniforms, drawSurface, drawScene, item);
                 emitMerged(gl, st, instData, polyData, scaleX, scaleY, registry, targetNames,
                            warnLog, tileUniforms, polyBatchUniforms, drawSurface, drawScene, rest)
         }
+
+    /// 列の 1 個ぶんを描く（run へ積むか、溜めた run を吐いて単発で描く）。
+    // WhyNot: emitMerged のループの中へ書き下さない・末尾を呼び出しで終えない — ループの中の呼び出しが末尾呼び出しの続き（Thunk）を返すと、
+    //   JVM はループを途中から JIT（OSR）できず、1 コマに 1 回しか呼ばれないループがインタプリタのまま回る（docs/performance.md の 13 節）。
+    @DontInline
+    def emitOne(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer, polyData: FloatBuffer,
+                scaleX: Float64, scaleY: Float64,
+                registry: RenderAsset.TextureRegistry,
+                targetNames: Set[String],
+                warnLog: Ref[Set[String], Static],
+                tileUniforms: RenderShader.TileUniforms,
+                polyBatchUniforms: RenderShader.PolyBatchUniforms,
+                drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
+                drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
+                item: Merged): Unit \ IO =
+        match item {
+            case Merged.MTile(tm) =>
+                // タイル層が来たら両 run を吐いてから 1 draw call で描く（列順を守る）。
+                // 層は画面全体に敷くので scissor は viewport 全体へ戻し、blend は
+                // TileMapRenderCmd が blend を持たない（常に Normal）ため明示的に戻す
+                // （前 run の Add/Multiply を持ち越さない）。
+                flushSprites(gl, st, instData);
+                flushPolys(gl, st, polyData, polyBatchUniforms);
+                setScissorAt(gl, st, 0, 0, 0, 0, 0);
+                RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
+                match Map.get(tm#textureName, registry) {
+                    case Some(texInfo) =>
+                        RenderSprite.drawTileMapInstanced(gl, Array.get(26, st),
+                                             GpuHandle.textureIdInt(texInfo#id),
+                                             GpuHandle.tileVaoInt(tm#tileVaoId),
+                                             tileUniforms,
+                                             tm#position, tm#tileSize, tm#tileScale,
+                                             tm#color, tm#tileCount);
+                        countSingleDraw(st, kindTile(), 1)
+                    // texture 未登録は描かない（穴も開けない）。
+                    case None => warnMissingTexture(warnLog, tm#textureName)
+                }
+            case Merged.MSprite(drawable) =>
+                // スプライトが来たら溜まっている多角形 run を先に吐く（列順を守る）。
+                flushPolys(gl, st, polyData, polyBatchUniforms);
+                if (List.isEmpty(DrawCmd.maskOf(drawable)))
+                    emitSprite(gl, st, instData, scaleX, scaleY, registry, targetNames,
+                               warnLog, drawable)
+                else {
+                    // mask 付きはステンシルへの描き込みが draw の前後に要るため、
+                    // 一括 run に混ぜられない — 自分の run も吐いてから単発で描く。
+                    flushSprites(gl, st, instData);
+                    emitSpriteMasked(gl, st, instData, scaleX, scaleY, registry, targetNames,
+                                     warnLog, polyBatchUniforms, drawable)
+                }
+            case Merged.MPoly(pc) =>
+                // 多角形が来たら溜まっているスプライト run を先に吐く（列順を守る）。
+                flushSprites(gl, st, instData);
+                emitPoly(gl, st, polyData, polyBatchUniforms, scaleX, scaleY, pc)
+            case Merged.MStatic(r) =>
+                // 静的レンジが来たら両 run を吐いてから 1 draw call で描く（列順を守る）。
+                flushSprites(gl, st, instData);
+                flushPolys(gl, st, polyData, polyBatchUniforms);
+                emitStatic(gl, st, scaleX, scaleY, polyBatchUniforms, r)
+            case Merged.MSurface(s) =>
+                // シェーダー面が来たら両 run を吐いてから 1 枚描く（列順＝重なり順を守る）。
+                // 面は矩形全体を塗るので scissor は viewport 全体に戻す
+                // （前 run の clip 矩形を持ち越さない）。
+                flushSprites(gl, st, instData);
+                flushPolys(gl, st, polyData, polyBatchUniforms);
+                setScissorAt(gl, st, 0, 0, 0, 0, 0);
+                countSingleDraw(st, kindSurface(), drawSurface(gl, s))
+            case Merged.MScene3d(i) =>
+                // 場面も両 run を吐いてから描く（深度で前後を決めるのは場面の中だけ）。
+                flushSprites(gl, st, instData);
+                flushPolys(gl, st, polyData, polyBatchUniforms);
+                drawScene({ x = Array.get(7, st), y = Array.get(8, st), width = Array.get(9, st),
+                            height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, i);
+                // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
+                Array.put(kindScene3d(), 27, st)
+        };
+        // WhyNot: この () を消さない — match の枝の呼び出しが末尾になり、emitMerged のループが JIT から外れる。
+        ()
 
     /// 多角形を三角形へほどいたときの頂点数の上限（1 個 n 頂点なら 3(n-2) 以下）。
     /// 入れ物をこの数で先に広げておけば、溜めている途中で取り直す

@@ -22,19 +22,25 @@ mod Render3d.Material {
     /// coverage = 描き先が標本を持ち、色の段で描く（cutout の材質を alpha to coverage の版で組む）。
     pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                         instances: List[Scene3d.Instance3d]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]]) \ IO = timed(state, Phase.Split, () -> {
-        let placed = instances |> List.map(i -> {
-            Scene3d.lightmapWarning(i) |> Option.forEach(line ->
-                warnSceneOnce(state, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh), line));
-            let draw = meshDrawOf(state, outside, i);
-            let surface = draw#fields#material |> Option.map(Scene3d.materialFieldsOf) |> Option.filter(wants)
-                |> Option.map(m -> (m, vertexKindOf(state, coverage, draw, m)));
-            { draw = draw, surface = surface }
-        });
+        let placed = instances |> List.map(placedDrawOf(state, outside, wants, coverage));
         let (plain, materials) = groupInOrder(p -> Mesh3d.contentHash(p#draw#fields#mesh), p -> batchKeyOf(state#drawMode, p#draw, p#surface), placed)
             |> List.flatMap(groupByTextures(p -> Option.map(fst, p#surface)))
             |> List.foldLeft(addPlaced(gl, state, gen), (Nil, Nil));
         (List.reverse(plain), List.reverse(materials))
     })
+
+    /// 置いた物 1 つを batch へ分ける材料にする（lightmap と法線マップの食い違いは形ごとに 1 回知らせる）。
+    // WhyNot: splitByMaterial の List.map のラムダへ書き下さない — ラムダは 1 コマに 1 回しか呼ばれない関数の中へ展開され、JVM がそのループを
+    //   途中から JIT（OSR）するのを「stack not empty」で諦め、物の数だけインタプリタで回る（docs/performance.md の 13 節）。
+    @DontInline
+    def placedDrawOf(state: State, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
+                     i: Scene3d.Instance3d): PlacedDraw \ IO =
+        Scene3d.lightmapWarning(i) |> Option.forEach(line ->
+            warnSceneOnce(state, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh), line));
+        let draw = meshDrawOf(state, outside, i);
+        let surface = draw#fields#material |> Option.map(Scene3d.materialFieldsOf) |> Option.filter(wants)
+            |> Option.map(m -> (m, vertexKindOf(state, coverage, draw, m)));
+        { draw = draw, surface = surface }
 
     /// members の batch を acc の頭へ足す: 材質のプログラムが組めたら右の列へ、ほかは左の列へ。
     def addPlaced(gl: GlContext, state: State, gen: Int64, acc: (List[PlannedBatch], List[MaterialBatch[PlannedBatch]]),
