@@ -626,3 +626,9 @@ dual-source blending・mask は ref を進める形・GL との比べの門・�
   刻み: 各コマの値の小さい方は CPU が 0.4・0.5・0.6・0.7 ms（`performance.now` の 0.1 ms 刻み）、GPU が 0.262144・0.32768 ms（timestamp が 65.536 µs = 2^16 ns 刻み。
   PC の Dawn の 1.048576 ms も同じ刻みの 16 倍）。どちらも刻みより細かい差は読めない。
 - 【未確認】Safari（Mac・iPhone）・Windows・Linux・WebGPU の無いブラウザでの起動（起動の時の選び分けと WebGL2 版の起動は V1）。
+
+### 12.13 V1 の設計（2026-11-15・未レビュー）
+
+V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関わる決め事: 書き出しは 1 つ（wasm 1 本に両方を入れて起動で選ぶ。5.5 の「2 つ作る」を改める。
+`bench/webgpu_check` の wasm が丸ごと 419,903 バイトで、増える分は rpg-starter の 4〜7% の見込み【推】）・WebGPU の流し方は `RenderFrame` の子の mod に置き `RenderFrame` の pub を増やさない・
+instance の 38 float は instance の頂点バッファでそのまま読む・Pass のお題は `bench/gl_parity` の `passPaste` で代える案（伺い中）。形のレビューへの持ち越しは同じ文書の 12 章。
