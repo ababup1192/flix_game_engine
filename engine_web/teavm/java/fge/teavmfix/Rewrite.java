@@ -14,11 +14,10 @@ import org.teavm.asm.MethodVisitor;
 import org.teavm.asm.Opcodes;
 
 /**
- * TeaVM 0.14.1 に無い・壊れている JDK の呼び出しを、jar のバイトコードの中で付け替える（書き出しの道具の②）。
+ * TeaVM 0.16.0 に無い・壊れている JDK の呼び出しを、jar のバイトコードの中で付け替える（書き出しの道具の②）。
  * 使い方: java -cp teavm-relocated-libs-asm.jar:fge-web-tools.jar fge.teavmfix.Rewrite 入る.jar 出る.jar
  * 付け替える物:
  *   Thread.startVirtualThread         → VirtualThreads.startVirtualThread（TeaVM の Thread は緑スレッド）
- *   Arrays.copyOfRange                → CopyOfRange.copyOfRange（to が長さを超えると配列の外を読んで落ちる）
  *   Checksum.update(byte[])           → Checksums.update（interface の default の関数が TeaVM の classlib に無い）
  *   Reference.refersTo                → References.refersTo（Java 16 の関数が無い）
  *   ByteBuffer.allocateDirect         → DirectBuffers.allocateDirect（64 KiB の倍数の大きさで memory に余裕があっても落ちる）
@@ -89,9 +88,6 @@ public final class Rewrite {
             if (owner.equals("java/lang/Thread") && name.equals("startVirtualThread")) {
                 note("startVirtualThread");
                 super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "VirtualThreads", name, desc, false);
-            } else if (owner.equals("java/util/Arrays") && name.equals("copyOfRange") && desc.contains("II)")) {
-                note("copyOfRange");
-                super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "CopyOfRange", name, desc, false);
             } else if (owner.equals("java/util/zip/Checksum") && name.equals("update") && desc.equals("([B)V")) {
                 note("Checksum.update");
                 super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "Checksums", "update", "(Ljava/util/zip/Checksum;[B)V", false);

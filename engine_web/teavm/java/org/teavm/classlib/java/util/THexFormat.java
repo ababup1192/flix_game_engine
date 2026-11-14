@@ -1,7 +1,7 @@
 package org.teavm.classlib.java.util;
 
 /**
- * TeaVM 0.14.1 の classlib に無い HexFormat（Flix 標準の Util.Codec.encodeHex が使う）。
+ * TeaVM 0.16.0 の classlib に無い HexFormat（Flix 標準の Util.Codec.encodeHex が使う）。
  * of と formatHex だけを持つ。
  */
 public final class THexFormat {

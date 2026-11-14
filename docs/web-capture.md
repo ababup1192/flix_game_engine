@@ -74,6 +74,19 @@ bin/fge web-capture "http://127.0.0.1:<port>/index.html?capture=6" <出力.png> 
 `loadtime=1`（絵の解読を 1 枚ごとに `console.time`・枚数と合計を `fgeDecodeTimes` へ）を足せる。Mip の時間はデスクトップの F3 と hitch の 3D の区間 `mip` で読む（ブラウザの頁には出ない）。
 実測の結果は [backend-parity.md](backend-parity.md) の「ブラウザ（WebGL2）とデスクトップの絵」。
 
+## 書き出しの門（ブラウザで wasm を読めるか）
+
+`bin/fge export-web` は頁を書いた後の最後の段（⑨）で、書き出し先を 127.0.0.1 の使い捨てのサーバーで配り、ヘッドレスの Chrome で
+`index.html?capture=3` を開く。上の約束のとおり 3 コマ目が撮れたら通り、`fgeCaptureError` が出たら（wasm の compile・instantiate・
+`main` の例外）exit 1 で止まる。書き出し先は消さずに残す。1 回およそ 1 秒（rpg-starter・M4 Pro・Chrome 156）。
+
+- 止めたい形: TeaVM は穴 0 件で訳し終えるのに、ブラウザが wasm を読む所でモジュールごと落ちる（頁は真っ白）。
+  JSO の物を `Object` を受ける所へ渡すと起きる（Flix の `Object.isNull(jsoの値)` の 1 行でも）。どの書き方で落ちるかは前もって読みにくいので、
+  JSO は `fge.web` の Java の普通の類に包んで渡す。
+- Chrome が見つからない機械では確かめずに 1 行知らせて通す（探し方は上の `FGE_CHROME` と同じ）。`--no-browser-check` で飛ばせる。
+  待つ上限は既定 90 秒・`FLIX_GE_WEB_CHECK_WAIT`（秒）で替える。
+- 確かめ: `go test -run CheckWebLoads ./`（`go/`。壊れた wasm を compile させる頁で赤になる事と、通る頁で緑になる事）。
+
 ## gl_parity とのつなぎ（案）
 
 今の物差し（[backend-parity.md](backend-parity.md) の「機械での突き合わせ」）: `make gl-parity` が A 段階の scene を

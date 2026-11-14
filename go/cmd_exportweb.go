@@ -22,7 +22,7 @@ import (
 )
 
 const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--out <dir>] [--check] [--id <名前>] [--font-atlas-dir <dir>]
-                       [--work <dir>] [--engine <dir>] [--keep-work]
+                       [--work <dir>] [--engine <dir>] [--keep-work] [--no-browser-check]
   ゲームをブラウザ版（TeaVM の WASM GC）へ書き出す。出力の既定は <ゲーム>/build/web。
   --check           作業フォルダで flix check だけ流す（web/WebMain.flix の型検査）
   --id              bundle.json の id（既定はゲームのフォルダの名前）
@@ -30,8 +30,10 @@ const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--
   --work            作業フォルダ（既定 <ゲーム>/build/web-export）。中の project/ にゲームを写して組む
   --engine          engine の根（既定は bin/fge-go の置き場から引く）
   --keep-work       終わった後も作業フォルダの project/ を残す
-  環境変数: FLIX_GE_TEAVM_DIR（TeaVM の jar のフォルダ。無ければ Maven から取る）・JAVA・FLIX_JAR
-  終わりの番号: 0 書き出せた / 1 組み立てか TeaVM か素材で失敗 / 2 呼び方の誤りか下ごしらえが無い`
+  --no-browser-check  最後の「ヘッドレスの Chrome で頁を開き、wasm を読んで数コマ回せるか」を飛ばす
+  環境変数: FLIX_GE_TEAVM_DIR（TeaVM の jar のフォルダ。無ければ Maven から取る）・JAVA・FLIX_JAR・
+            FGE_CHROME（確かめに使う Chrome）・FLIX_GE_WEB_CHECK_WAIT（確かめで待つ秒・既定 90）
+  終わりの番号: 0 書き出せた / 1 組み立てか TeaVM か素材かブラウザでの読み込みで失敗 / 2 呼び方の誤りか下ごしらえが無い`
 
 func init() {
 	register("export-web", "ゲームをブラウザ版（TeaVM の WASM GC）へ書き出す。export-web --help", cmdExportWeb)
@@ -39,7 +41,7 @@ func init() {
 
 type exportWebOptions struct {
 	Game, Out, Work, Engine, ID, FontAtlasDir string
-	Check, KeepWork                           bool
+	Check, KeepWork, NoBrowserCheck           bool
 }
 
 // exportWebCopyExcludes はゲームの根の直下で写さない物。
@@ -92,6 +94,10 @@ func parseExportWebArgs(args []string) (exportWebOptions, error) {
 		}
 		if a == "--keep-work" {
 			o.KeepWork = true
+			continue
+		}
+		if a == "--no-browser-check" {
+			o.NoBrowserCheck = true
 			continue
 		}
 		if a == "--json" {
@@ -282,8 +288,8 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 2
 	}
 	cp := strings.Join(append(append([]string{p.WebToolsJar}, jars...), rewritten), string(os.PathListSeparator))
-	teavmCode := runLogged(p.Work, teavmLog, false, java, "-Xmx"+teavmHeap(), "-cp", cp, "org.teavm.cli.TeaVMRunner",
-		"-t", "wasm-gc", "-O", "2", "-d", wasmDir, "-f", "classes.wasm", "Main")
+	teavmCode := runLogged(p.Work, teavmLog, false, java, "-Xmx"+teavmHeap(), "-cp", cp, "fge.teavmfix.BuildWasm",
+		"Main", wasmDir, "classes.wasm")
 	logText, _ := os.ReadFile(teavmLog)
 	if errs, shown := teavmErrors(string(logText), 5); errs > 0 {
 		fmt.Fprintf(errOut, "%s\nfge export-web: TeaVM の ERROR が %d 件（ログ %s）。\n  次: 上の行のクラス・メソッドを engine_web の shim か付け替えで手当てする\n",
@@ -292,7 +298,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	}
 	wasm := filepath.Join(wasmDir, "classes.wasm")
 	if teavmCode != 0 || !fileExists(wasm) {
-		fmt.Fprintf(errOut, "%s\nfge export-web: TeaVM が classes.wasm を出さなかった（終わりの番号 %d・ログ %s）。\n  次: ログの最後を読む（メモリ不足なら FLIX_GE_TEAVM_XMX で TeaVM の上限を上げる・今は "+teavmHeap()+"）\n",
+		fmt.Fprintf(errOut, "%s\nfge export-web: TeaVM が classes.wasm を出さなかった（終わりの番号 %d・ログ %s）。\n  次: ログの最後を読む（メモリ不足なら FLIX_GE_TEAVM_XMX で TeaVM の上限を上げる・今は "+teavmHeap()+"。fge.teavmfix.BuildWasm が無いと言うなら engine の根で make sync-engine-full-web を流して fge-web-tools を作り直す）\n",
 			tailFile(teavmLog, 20), teavmCode, teavmLog)
 		return 1
 	}
@@ -354,6 +360,22 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 		for _, rel := range unchecked {
 			ewLogf("  %s は ASCII でない字が続く所が無く、平文の残りを探せなかった", rel)
+		}
+	}
+	if o.NoBrowserCheck {
+		ewLogf("⑨ ブラウザで wasm を読めるか: --no-browser-check で飛ばした")
+	} else {
+		ewLogf("⑨ ブラウザで wasm を読めるか（ヘッドレスの Chrome で ?capture=%d）", webLoadCheckFrames)
+		skipped, err := checkWebLoads(p.Out, webLoadCheckFrames, webLoadCheckWait())
+		if err != nil {
+			fmt.Fprintf(errOut, "fge export-web: 書き出した頁をブラウザで開くと止まる: %v\n"+
+				"  書き出し先 %s は残してある（配ると真っ白になる）。\n"+
+				"  次: CompileError なら TeaVM は通るのにブラウザが wasm を読めない形（JSO の物を Object を受ける所へ渡す等。JSO は fge.web の Java の類に包んで渡す）。"+
+				"それ以外は頁を開いて開発者の道具の console を読む\n", err, p.Out)
+			return 1
+		}
+		if skipped != "" {
+			ewLogf("知らせ: %s", skipped)
 		}
 	}
 	cleanupExportWork(p, o.KeepWork)

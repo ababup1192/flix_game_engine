@@ -14,37 +14,37 @@ import (
 	"time"
 )
 
-const teavmVersion = "0.14.1"
+const teavmVersion = "0.16.0"
 
 // teavmArtifact は TeaVM で wasm を作るのに要る jar 1 本（Maven の座標と、取った後に照合する SHA-256）。
 type teavmArtifact struct {
 	Group, Artifact, Version, SHA256 string
 }
 
-// teavmArtifacts は TeaVM 0.14.1 の CLI が要る jar の一式。
+// teavmArtifacts は TeaVM 0.16.0 の TeaVMTool（fge.teavmfix.BuildWasm が呼ぶ）が要る jar の一式。
 // WhyNot: Maven の依存の解決（pom を読んで推移先をたどる）を書かないのは、版を固定して照合するためには一覧を
 // ソースに持つ方が確かで、解決器を持つと TeaVM の pom が変わったときに知らせずに別の jar を取りうるため。
 var teavmArtifacts = []teavmArtifact{
-	{"org.teavm", "teavm-classlib", teavmVersion, "e64a8688d379731ab3af2faea18baf2a42ffa83b2ec8a8dc9d99c9bdb1d03b37"},
-	{"org.teavm", "teavm-cli", teavmVersion, "50d43b18a797d659a441c8de4f10cd749b952093ded4118a7d0a4bc94b1812b9"},
-	{"org.teavm", "teavm-core", teavmVersion, "de8037b4cb01003945e2ed8e651641c330835e98368a789019f82b322f26151c"},
-	{"org.teavm", "teavm-interop", teavmVersion, "ba95d80349e3ba842f6f9cfc834184b0253dfc37f5cae110b7e48d73d2fa8892"},
-	{"org.teavm", "teavm-jso", teavmVersion, "421b848c79d161c34e9f178d3d37b35e8efaadada487056c3fd3d4d3de1c172c"},
-	{"org.teavm", "teavm-jso-apis", teavmVersion, "171abaff01d9c029218df911470184ed8e30e6b511be6bb03381a924ec4a8c3c"},
-	{"org.teavm", "teavm-jso-impl", teavmVersion, "3cf0fabf3c1fbc1362c24d69c7016c31d5a24793e62ea1ffc8eaa3e8fd0d97b3"},
-	{"org.teavm", "teavm-metaprogramming-api", teavmVersion, "f7188cb258c6afb69b00d8d3d46c9eec73836882cdd347f17a409d0eaa548e74"},
-	{"org.teavm", "teavm-metaprogramming-impl", teavmVersion, "c6c9856887ee6b012dba1c107e26ef5b417ea0d4af8179b409238cb909cc1f96"},
-	{"org.teavm", "teavm-platform", teavmVersion, "f03d22d0e144980e3d9e98b03ca171aeede260c4de4f1991cae27fa81a846c9e"},
-	{"org.teavm", "teavm-tooling", teavmVersion, "f36e1ea7e080b5c021c7126688315bb973e7421094ffbf58fb2ce101bb81d577"},
-	{"org.teavm", "teavm-relocated-libs-asm", teavmVersion, "400496e463dddd878fed2b9b25a66deca2126f71bb68e41f82244b4315006018"},
-	{"org.teavm", "teavm-relocated-libs-asm-analysis", teavmVersion, "6bb5ef62ab00d557061d9b04dc4571f711fbe11d339783e55029b37b75d5159c"},
-	{"org.teavm", "teavm-relocated-libs-asm-commons", teavmVersion, "d49685681db5039075f2fde01568f2bb6df14a99ef88d39b29df8e701e12e140"},
-	{"org.teavm", "teavm-relocated-libs-asm-tree", teavmVersion, "6b475fd62b8ddedfa0808c0c412c311f000a80a13123b6ba07f5da531164fd5b"},
-	{"org.teavm", "teavm-relocated-libs-asm-util", teavmVersion, "a41247ca7f023959712be0e713d3f2f5687b4dfeda6b112b2d976494d52cdc57"},
-	{"org.teavm", "teavm-relocated-libs-commons-cli", teavmVersion, "0df3cce00582ebeed6f37efb475fe30f76d378642d1268dc7ebbb8049171419d"},
-	{"org.teavm", "teavm-relocated-libs-commons-io", teavmVersion, "5e1a666948a40dada1d3fbce41503bad6ce86035662bf131c8df227b30859a79"},
+	{"org.teavm", "teavm-classlib", teavmVersion, "329fd2a9cfb3afb453070cb97c12adb5c0ee7b0d943b357188d7dbf9c6bf3dd5"},
+	{"org.teavm", "teavm-core", teavmVersion, "c94539912c1b951fa741aecfcb6b4acad75c2e2360dc8859b1edd0c44175608a"},
+	{"org.teavm", "teavm-extension-apis", teavmVersion, "9e867f3760b1c8d86cdb18ec70e429c23fd933021c8c3bb0cc0b727eac3202c0"},
+	{"org.teavm", "teavm-extension-spi", teavmVersion, "e280bbc31e8d26de2915954990e260871462c146418c7b901249502a1994dde5"},
+	{"org.teavm", "teavm-extension-spi-util", teavmVersion, "d94e8d4478c4186d18b657cb67654851d38b9f51d372dc7e7e54e0f3a24347c9"},
+	{"org.teavm", "teavm-interop", teavmVersion, "5c8511d71ae6f6d2ca913130393b64a959303e521727b2d9c1a9b1e14519216f"},
+	{"org.teavm", "teavm-jso", teavmVersion, "58b337b93924106bf819c45890c7c231a0c740145afe77795f1e0f099f621d71"},
+	{"org.teavm", "teavm-jso-apis", teavmVersion, "32d28e39957a41404f53a14c2447d980c7b5074a92414d0972014f448a46fcb2"},
+	{"org.teavm", "teavm-jso-impl", teavmVersion, "12688d04e7d2d73036adacd72b74fd8fb44f10283004075fbe68706ccb223b75"},
+	{"org.teavm", "teavm-metaprogramming-api", teavmVersion, "00f053ad35ff78312e48eebbf4e1c6cf5f7a1e759b2432ba0b60d6f111bb3bdd"},
+	{"org.teavm", "teavm-metaprogramming-impl", teavmVersion, "616d30aa28f7b0180a61c2289b11c77bf84c715bd79f255e1e42400edb5b6d70"},
+	{"org.teavm", "teavm-platform", teavmVersion, "999d369ab15aa83c17987d048ba59560759169891de7e13a5a1c2bd93dd060a8"},
+	{"org.teavm", "teavm-tooling", teavmVersion, "8335feb227d299bf51ba3862e84eb3a2723ff2e9840a885a7537f6454d44ee31"},
+	{"org.teavm", "teavm-relocated-libs-asm", teavmVersion, "59deba713805038fb9ceb76f002e3ae0e9660ec9815875917f08e0a235b7b1a2"},
+	{"org.teavm", "teavm-relocated-libs-asm-analysis", teavmVersion, "8ce092f26dc44cffbfd6a23067b0ae43e32f9ddb29efd6e4eed93095a454b04a"},
+	{"org.teavm", "teavm-relocated-libs-asm-commons", teavmVersion, "b877abd3af4f9ae2650aa0cb3577fcbdd66a9a1a1181d545d5f1f20070ea5924"},
+	{"org.teavm", "teavm-relocated-libs-asm-tree", teavmVersion, "e0bd21e6734b1f060c0553c66fe20292f49d146858aec1f1ecfe21f6417885f6"},
+	{"org.teavm", "teavm-relocated-libs-asm-util", teavmVersion, "c69ce1813eaa66643361b70b3f07c13ca924185280c237c832774a2f85eaf431"},
 	{"org.teavm", "teavm-relocated-libs-hppc", teavmVersion, "7b82fedf747e0bf5d7a50acece86a8a684901e469165a3c5621c653128df4cd6"},
-	{"org.teavm", "teavm-relocated-libs-rhino", teavmVersion, "49cedc9bfcdd44d30b8bc8d1d46d78fb7f8f2044b8c85c9c3f1ece33e94ee7e9"},
+	{"org.teavm", "teavm-relocated-libs-rhino", teavmVersion, "ea776a11f0233ba9e3fd12faf81cca2101b42443d0d22084e2627898fd7ee76e"},
 	{"commons-io", "commons-io", "2.20.0", "df90bba0fe3cb586b7f164e78fe8f8f4da3f2dd5c27fa645f888100ccc25dd72"},
 	{"joda-time", "joda-time", "2.12.2", "8d4d807adc8e92a83913d9ccd61e634b4907c78d88f3016d06b3b3d2b4795a02"},
 	{"com.jcraft", "jzlib", "1.1.3", "89b1360f407381bf61fde411019d8cbd009ebb10cff715f3669017a031027560"},
