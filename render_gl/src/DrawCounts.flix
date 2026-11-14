@@ -3,8 +3,10 @@
 // 理由の決まり（優先の順）は FrameDiagnostics.Draw2dBatchBreaks。
 mod RenderDrawCounts {
 
-    /// 数の入れ物。前半（0〜6）= 前に取り出してからの数・後半（7〜13）= 最後に画面へ塗り終えた時の数の写し。
-    /// 並びは drawCalls・target・kind・texture・blend・clip・mask。
+    /// 数の入れ物。slots() 個ずつ 3 組: 今のコマ（Pass と画面を描いている途中の数）・最後に画面へ塗り終えたコマの数・
+    /// 前に取り出してから塗り終えたコマの合計。組の中の並びは drawCalls・target・kind・texture・blend・clip・mask。
+    // WhyNot: 取り出す時に今のコマの数を 0 に戻さない — 誰も取り出さない間（診断を集めていても App が止まっている時）に数がコマをまたいで溜まり、
+    //   コマの最初の draw call が target の切れ目に数えられる。コマの区切りは画面へ塗り終えた時だけにする。
     pub type alias Holder = Array[Int32, Static]
 
     /// 数の種類の数（drawCalls と理由 6 つ）。
@@ -18,8 +20,12 @@ mod RenderDrawCounts {
     pub def clipSlot(): Int32 = 5
     pub def maskSlot(): Int32 = 6
 
+    def lastBase(): Int32 = slots()
+
+    def totalBase(): Int32 = 2 * slots()
+
     /// 全部 0 の入れ物。
-    pub def fresh(): Holder \ IO = Array.repeat(Static, 2 * slots(), 0)
+    pub def fresh(): Holder \ IO = Array.repeat(Static, 3 * slots(), 0)
 
     /// holder の offset から slots() 個の数を読む。
     def countsAt(offset: Int32, holder: Holder): FrameDiagnostics.Draw2dCounts \ IO =
@@ -28,20 +34,25 @@ mod RenderDrawCounts {
           batchBreaks = { target = at(targetSlot()), kind = at(kindSlot()), texture = at(textureSlot()),
                           blend = at(blendSlot()), clip = at(clipSlot()), mask = at(maskSlot()) } }
 
-    /// 前に取り出してからの数を返し、0 に戻す。
+    /// 画面へ塗り終えた: 今のコマの数を「最後のコマ」へ写し、取り出しを待つ合計へ足して、今のコマを 0 に戻す。
+    pub def endScreenFrame(holder: Holder): Unit \ IO =
+        List.range(0, slots()) |> List.forEach(i -> {
+            let n = Array.get(i, holder);
+            Array.put(n, lastBase() + i, holder);
+            Array.put(Array.get(totalBase() + i, holder) + n, totalBase() + i, holder);
+            Array.put(0, i, holder)
+        })
+
+    /// 前に取り出してから塗り終えたコマの合計を返し、0 に戻す。
     pub def take(holder: Holder): FrameDiagnostics.Draw2dCounts \ IO =
-        let counts = countsAt(0, holder);
-        reset(holder);
+        let counts = countsAt(totalBase(), holder);
+        discardTotal(holder);
         counts
 
-    /// 前に取り出してからの数を 0 に戻す（写しは残す）。
-    pub def reset(holder: Holder): Unit \ IO =
-        List.range(0, slots()) |> List.forEach(i -> Array.put(0, i, holder))
+    /// 取り出しを待つ合計を 0 に戻す（誰も取り出さない間に溜め続けない）。
+    pub def discardTotal(holder: Holder): Unit \ IO =
+        List.range(0, slots()) |> List.forEach(i -> Array.put(0, totalBase() + i, holder))
 
-    /// 今の数を「最後に画面へ塗り終えた時の数」として写す。
-    pub def markScreenFrame(holder: Holder): Unit \ IO =
-        List.range(0, slots()) |> List.forEach(i -> Array.put(Array.get(i, holder), slots() + i, holder))
-
-    /// 最後に画面へ塗り終えた時の数（取り出した後でも読める）。
-    pub def lastScreenFrame(holder: Holder): FrameDiagnostics.Draw2dCounts \ IO = countsAt(slots(), holder)
+    /// 最後に画面へ塗り終えたコマの数（取り出した後でも読める）。
+    pub def lastScreenFrame(holder: Holder): FrameDiagnostics.Draw2dCounts \ IO = countsAt(lastBase(), holder)
 }

@@ -397,7 +397,7 @@ mod RenderPaint {
                 // いる面」という数え方が壊れる。
                 Array.put(Array.get(0, paint#frameGenHolder) + 1i64, 0, paint#frameGenHolder);
                 timedSpan(paint, "screen", () -> paintFrame(gl, paint, fbW, fbH, frame));
-                RenderDrawCounts.markScreenFrame(paint#frameArgsBase#drawCounts);
+                RenderDrawCounts.endScreenFrame(paint#frameArgsBase#drawCounts);
                 paint#scene3d#endFrame(Array.get(0, paint#frameGenHolder));
                 noteGpuTime(paint);
                 true
@@ -412,7 +412,7 @@ mod RenderPaint {
     /// 集めていない間は 2D と 3D の数を捨てるだけ（誰も引き取らない数を溜め続けない）。
     def noteGpuTime(paint: Paint): Unit \ IO =
         if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) {
-            RenderDrawCounts.reset(paint#frameArgsBase#drawCounts);
+            RenderDrawCounts.discardTotal(paint#frameArgsBase#drawCounts);
             discard paint#scene3d#takeCounts()
         } else match paint#gpuTimer#endFrame() {
             case Some(t) => noteDiagnostics(paint, d -> { gpuNs = Some(t#gpuNs), gpuPasses = t#passes | d })
@@ -732,7 +732,7 @@ mod RenderPaint {
     pub def setDiagnosticsEnabled(paint: Paint, on: Bool): Unit \ IO =
         Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, paint#diagnosticsRef)
 
-    /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・draw2dCounts と scene3dCounts は前に取り出してからの数。
+    /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・draw2dCounts は前に取り出してから画面へ塗り終えたコマの数・scene3dCounts は前に取り出してからの数。
     /// shaderBuilds は 2D のシェーダーの後ろに 3D の材質のプログラムを足す（liveShaders には 3D の材質を数えない）。
     pub def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
         let counts = paint#scene3d#takeCounts();

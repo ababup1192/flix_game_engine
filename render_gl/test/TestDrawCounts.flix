@@ -44,10 +44,11 @@ mod TestDrawCounts {
                                              screenFramebuffer = 0, scene3d = Scene3dRenderer.none(), gpuTimer = RenderPaint.noFrameTimer() });
         (gl, { registry = registry(), fbW = 320, fbH = 240 | paint#frameArgsBase })
 
-    /// 画面へ 1 コマ塗って、溜まった数を (drawCalls, target, kind, texture, blend, clip, mask) で返す。
+    /// 画面へ 1 コマ塗り終えて、溜まった数を (drawCalls, target, kind, texture, blend, clip, mask) で返す。
     def countsOf(change: RenderFrame.FrameArgs -> RenderFrame.FrameArgs): (Int32, Int32, Int32, Int32, Int32, Int32, Int32) \ IO =
         let (gl, args) = fresh();
         RenderFrame.renderFrameMixed(gl, change(args));
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
         tupleOf(RenderDrawCounts.take(args#drawCounts))
 
     def tupleOf(c: FrameDiagnostics.Draw2dCounts): (Int32, Int32, Int32, Int32, Int32, Int32, Int32) =
@@ -131,7 +132,30 @@ mod TestDrawCounts {
         let drawn = { sprites = sprite("a", 0) :: Nil | args };
         RenderFrame.renderFrameMixed(gl, { targetClear = Some(RenderTarget.LoadOp.ClearTransparent) | drawn });
         RenderFrame.renderFrameMixed(gl, drawn);
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
         Assert.assertEq(expected = (2, 1, 0, 0, 0, 0, 0), tupleOf(RenderDrawCounts.take(args#drawCounts)))
+
+    /// 誰も数を取り出さないまま 2 コマ塗っても、2 コマ目の最初の draw call は target の切れ目にならない（最後のコマの数は 1 コマ分）。
+    @Test
+    def testFramesDoNotLeakIntoNextFrame(): Unit \ {Assert, IO} =
+        let (gl, args) = fresh();
+        let drawn = { sprites = sprite("a", 0) :: sprite("b", 1) :: Nil | args };
+        RenderFrame.renderFrameMixed(gl, drawn);
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
+        RenderFrame.renderFrameMixed(gl, drawn);
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
+        Assert.assertEq(expected = (2, 0, 0, 1, 0, 0, 0), tupleOf(RenderDrawCounts.lastScreenFrame(args#drawCounts)))
+
+    /// 取り出さずに 2 コマ塗ると、取り出す数は 2 コマの合計（draw call 4・texture 2）。
+    @Test
+    def testTakeSumsFramesSinceLastTake(): Unit \ {Assert, IO} =
+        let (gl, args) = fresh();
+        let drawn = { sprites = sprite("a", 0) :: sprite("b", 1) :: Nil | args };
+        RenderFrame.renderFrameMixed(gl, drawn);
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
+        RenderFrame.renderFrameMixed(gl, drawn);
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
+        Assert.assertEq(expected = (4, 0, 0, 2, 0, 0, 0), tupleOf(RenderDrawCounts.take(args#drawCounts)))
 
     // ── 取り出し ──
 
@@ -140,6 +164,7 @@ mod TestDrawCounts {
     def testTakeResetsCounts(): Unit \ {Assert, IO} =
         let (gl, args) = fresh();
         RenderFrame.renderFrameMixed(gl, { sprites = sprite("a", 0) :: sprite("b", 1) :: Nil | args });
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
         discard RenderDrawCounts.take(args#drawCounts);
         Assert.assertEq(expected = (0, 0, 0, 0, 0, 0, 0), tupleOf(RenderDrawCounts.take(args#drawCounts)))
 
@@ -148,7 +173,7 @@ mod TestDrawCounts {
     def testLastScreenFrameSurvivesTake(): Unit \ {Assert, IO} =
         let (gl, args) = fresh();
         RenderFrame.renderFrameMixed(gl, { sprites = sprite("a", 0) :: sprite("b", 1) :: Nil | args });
-        RenderDrawCounts.markScreenFrame(args#drawCounts);
+        RenderDrawCounts.endScreenFrame(args#drawCounts);
         discard RenderDrawCounts.take(args#drawCounts);
         Assert.assertEq(expected = (2, 0, 0, 1, 0, 0, 0), tupleOf(RenderDrawCounts.lastScreenFrame(args#drawCounts)))
 }

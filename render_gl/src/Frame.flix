@@ -290,7 +290,7 @@ mod RenderFrame {
         // テクスチャが registry に無くて描かなかった名前の控え。フレームをまたいで残るものを
         // バックエンドが持って毎フレーム貸す — 毎フレーム作り直すと同じ知らせが 60 回/秒 出る。
         texWarnLog = Ref[Set[String], Static],
-        // 2D の draw call の数と切れた理由の数を足し込む先（描き先をまたいで溜め、塗りのコアが取り出す）。
+        // 2D の draw call の数と切れた理由の数を足し込む先（コマの中の描き先をまたいで溜め、塗りのコアが画面へ塗り終えた時に締める）。
         drawCounts = RenderDrawCounts.Holder
     }
 
@@ -504,7 +504,7 @@ mod RenderFrame {
             Array.put(0, 29, st)
         }
 
-    /// この描き先で数えた数を、コマをまたぐ入れ物へ足し込む。
+    /// この描き先で数えた数を、今のコマの数へ足し込む。
     def addCountsTo(holder: RenderDrawCounts.Holder, st: Array[Int32, Static]): Unit \ IO =
         List.range(0, RenderDrawCounts.slots()) |> List.forEach(i ->
             Array.put(Array.get(i, holder) + Array.get(countBase() + i, st), i, holder))
