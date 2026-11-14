@@ -138,6 +138,7 @@ func TestFormFollowsWindowSizeAtTheEdges(t *testing.T) {
 		want string
 	}{
 		{719, 600, "phone"}, {720, 600, "two"}, {1023, 700, "two"}, {1024, 700, "three"}, {720, 1000, "portrait"}, {719, 1000, "phone"},
+		{1024, 499, "phone"}, {1024, 500, "three"}, {900, 500, "two"}, {900, 499, "phone"},
 	} {
 		t.Run(fmt.Sprintf("%dx%d", c.w, c.h), func(t *testing.T) {
 			resizeTo(t, p, c.w, c.h, false)
@@ -145,6 +146,20 @@ func TestFormFollowsWindowSizeAtTheEdges(t *testing.T) {
 				t.Errorf("形 %s（want %s）", got, c.want)
 			}
 		})
+	}
+}
+
+func TestSidewaysPhoneKeepsTheVideoInView(t *testing.T) {
+	// 横向きのスマホ（844×390・指）はスマホの形になり、動画の枠が画面の中に残る。絵は FGE_TAPE_SHOTS へ置く。
+	s := buildSite(t)
+	p := openTapePage(t, phoneWide)
+	load(t, p, s.tapeURL)
+	seekTo(t, p, 8.0)
+	savePNG(t, filepath.Join(shotsDir(t), "landscape-phone-844x390.png"), shot(t, p))
+	rect := evalString(t, p, `(() => { const r = $("frame").getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(","); })()`)
+	t.Logf("動画の枠（left,top,width,height）: %s", rect)
+	if !evalBool(t, p, `(() => { const r = $("frame").getBoundingClientRect(); return form === "phone" && r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= innerHeight; })()`) {
+		t.Fatalf("形 %s・動画の枠 %s（画面は 844×390）", evalString(t, p, "form"), rect)
 	}
 }
 

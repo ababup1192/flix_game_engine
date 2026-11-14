@@ -139,7 +139,10 @@ var (
 	// tabletWide は tablet を横へ回した大きさ。phoneTouch は指のスマホ
 	tabletWide = view{1180, 820, true, true}
 	phoneTouch = view{viewW, viewH, true, true}
-	smallWin   = view{900, 700, false, false}
+	// phoneWide は横向きのスマホ。shortWin は背の低いマウスのウィンドウ（どちらも幅は広いが高さが 500 に足りない）
+	phoneWide = view{844, 390, true, true}
+	shortWin  = view{1024, 499, false, false}
+	smallWin  = view{900, 700, false, false}
 )
 
 func skipWithoutChrome(t *testing.T) {

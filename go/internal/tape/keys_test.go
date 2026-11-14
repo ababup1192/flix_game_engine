@@ -82,7 +82,7 @@ func runUICases(t *testing.T, url string, cases []uiCase) {
 // formOf は v の大きさで頁が選ぶ形（template.html の MQ と同じ境目）。
 func formOf(v view) string {
 	switch {
-	case v.w < 720:
+	case v.w < 720 || v.h < 500:
 		return "phone"
 	case v.h >= v.w:
 		return "portrait"
@@ -371,6 +371,11 @@ var zoomCases = []uiCase{
 	{name: "スマホの形ではピンチでズームしない", v: phoneTouch, steps: []step{pinch(2)}, check: `PPS === 56`},
 	{name: "操作の早見はマウスの広い形で出る", v: desktop, check: `getComputedStyle($("keys")).display === "grid"`},
 	{name: "操作の早見は指の形で出ない", v: tablet, check: `getComputedStyle($("keys")).display === "none"`},
+	{name: "横向きのスマホはスマホの形", v: phoneWide, check: `form === "phone" && !document.body.classList.contains("wide")`},
+	{name: "横向きのスマホではシートが下からせり上がる", v: phoneWide, steps: []step{js(`noteHere();`)},
+		check: `(() => { const r = $("noteSheet").getBoundingClientRect(); return $("noteSheet").parentNode.id !== "insp" && $("scrim").classList.contains("on") && Math.abs(r.bottom - innerHeight) < 1; })()`},
+	{name: "操作の早見は横向きのスマホで出ない", v: phoneWide, check: `getComputedStyle($("keys")).display === "none"`},
+	{name: "背の低いマウスのウィンドウではキーが効かない", v: shortWin, steps: []step{key(" ")}, check: `form === "phone" && video.paused`},
 	{name: "操作の早見はスマホで出ない", v: phone, check: `getComputedStyle($("keys")).display === "none"`},
 	{name: "クリップにホバーすると吹き出しが出る", v: desktop, at: 8.4, steps: []step{hover(`.clip[data-ln="25"]`)}, check: `getComputedStyle($("tip")).display === "block" && $("tip").textContent.includes(":25")`},
 	{name: "クリップから外れると吹き出しが消える", v: desktop, at: 8.4, steps: []step{hover(`.clip[data-ln="25"]`), hover(`#tcNow`)}, check: `getComputedStyle($("tip")).display === "none"`},

@@ -977,7 +977,8 @@ addEventListener("resize", redraw);
 
 // ── 広い画面（幅 720 以上）: 形を決め、ドックとシートを右の欄（インスペクタ）へ移す。スマホの形では何もしない ──
 const MQ = {
-  phone: matchMedia("(max-width: 719.98px)"),
+  // WhyNot: 幅だけで決めない — 横向きのスマホは幅が 720 を超えるが、広い形にすると動画の枠がほとんど残らない
+  phone: matchMedia("(max-width: 719.98px), (max-height: 499.98px)"),
   portrait: matchMedia("(min-width: 720px) and (orientation: portrait)"),
   three: matchMedia("(min-width: 1024px) and (orientation: landscape)"),
   mouse: matchMedia("(hover: hover) and (pointer: fine)")
