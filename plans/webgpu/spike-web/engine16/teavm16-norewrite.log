@@ -1,0 +1,17 @@
+INFO: Running TeaVM
+INFO: Output file built with errors
+problems=13 severe=13
+SEVERE Method {{m0}} was not found | [java.util.zip.Checksum.update([B)V]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.Thread.startVirtualThread(Ljava/lang/Runnable;)Ljava/lang/Thread;]
+SEVERE Method {{m0}} was not found | [java.lang.ref.Reference.refersTo(Ljava/lang/Object;)Z]
+ms=8336

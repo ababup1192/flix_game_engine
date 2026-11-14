@@ -1,0 +1,38 @@
+[export-web] ① ゲームを /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-ab1577ba06a34018d/plans/webgpu/spike-web/engine16/work-0.14.1/project へ写す（engine_full_web 0.95.0）
+[export-web] ① flix build-fatjar（ログ /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-ab1577ba06a34018d/plans/webgpu/spike-web/engine16/work-0.14.1/fatjar.log）
+[export-web] ② バイトコードの付け替え
+[export-web]   rewrite Checksum.update 1
+[export-web]   rewrite allocateDirect 9
+[export-web]   rewrite copyOfRange 41
+[export-web]   rewrite refersTo 1
+[export-web]   rewrite regex-R 1
+[export-web]   rewrite startVirtualThread 22
+[export-web] ③ TeaVM（wasm-gc・ログ /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-ab1577ba06a34018d/plans/webgpu/spike-web/engine16/work-0.14.1/teavm.log）
+[export-web] ④ アセットの束 → /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-ab1577ba06a34018d/plans/webgpu/spike-web/engine16/out-0.14.1
+[export-web] ⑤ フォントアトラス
+[font-bake] 生成する入口の jar を組む（engine か flix.toml が変わった時だけ・1〜数分）
+[RenderFont] 'default': 436 グリフ → 780x780 アトラス
+[RenderFont] 'default': 436 グリフを 0.138330292 秒で焼きました
+[font-bake] 集めた字 434（ASCII を足して 439）
+[font-bake] default      436 字  780x780  626.6 KB（gzip で 63.0 KB）  集めた字のうち無い字 3
+[font-bake] 知らせ: 止めない字 3 字がアトラスに無い（開発の道具の所にしか無い字か、私用領域の字。遊ぶ画面に出すなら直す）:
+  '—' U+2014  src/sim/BotRun.flix:231
+  '⚠' U+26A0  src/sim/BalanceSim.flix:223, src/sim/BalanceSim.flix:233, src/sim/BalanceSim.flix:93
+  '〜' U+301C  src/Starts.flix:15, src/sim/BalanceSim.flix:84, src/sim/BalanceSim.flix:86（ほか 3 か所）
+[font-bake] 漏れ無し — /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-ab1577ba06a34018d/plans/webgpu/spike-web/engine16/work-0.14.1/font-atlas へ 1 本書いた
+[export-web] ⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは画素を WebP か gzip）
+[export-web] ⑦ 頁
+export-web: /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-ab1577ba06a34018d/plans/webgpu/spike-web/engine16/out-0.14.1（版 825268862ca7）
+  wasm                     7.5 MB  classes.wasm
+  素材                     652.5 KB  Doc など 45 本
+  絵                           0 B  0 枚
+  アトラス         626.6 KB → 60.4 KB  1 本
+  音             5.4 MB → 998.0 KB  40 本
+  頁                      140.1 KB  index.html・js・bundle.json
+  合計             14.3 MB → 9.3 MB  ブラウザが取る量
+  起動 86 本・1.7 MB（wasm の gzip 1.7 MB を足して 3.4 MB）／後回し 0 本・0 B
+  置き場には元の wav（5.4 MB）も残す — Opus を解けないブラウザだけが取る
+  束に入れたのは project.json と assets/ の下だけ（assets/ の外を読むゲームはブラウザで読めない）
+real 56.76
+user 171.35
+sys 11.08

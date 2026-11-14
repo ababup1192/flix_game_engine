@@ -1,0 +1,7 @@
+natives from /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-a401f8c67617afc2b/plans/webgpu/spike-pc/native/dawn/jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+device status Success 
+RESULT sto/DAWN N=1000 cpu_submit_ms median=0.036 p90=0.093 | with_gpu_wait median=3.102 | fill(excluded) median=0.098 | us/object(cpu)=0.036
+RESULT sto/DAWN N=5000 cpu_submit_ms median=0.050 p90=0.145 | with_gpu_wait median=3.117 | fill(excluded) median=0.037 | us/object(cpu)=0.010
+RESULT sto/DAWN N=20000 cpu_submit_ms median=0.213 p90=0.251 | with_gpu_wait median=3.318 | fill(excluded) median=0.314 | us/object(cpu)=0.011

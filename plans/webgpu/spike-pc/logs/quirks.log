@@ -1,0 +1,39 @@
+natives from /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-a401f8c67617afc2b/plans/webgpu/spike-pc/native/dawn/jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+device status Success 
+adapter.getLimits status=Success native address adapter=0x771cc145a0
+limit                                           adapter.get     device.get      adapter.raw       device.raw
+LIMIT maxTextureDimension1D                           16384           8192            16384             8192
+LIMIT maxTextureDimension2D                           16384           8192            16384             8192
+LIMIT maxTextureDimension3D                            2048           2048             2048             2048
+LIMIT maxTextureArrayLayers                            2048            256             2048              256
+LIMIT maxBindGroups                                       4              4                4                4
+LIMIT maxBindGroupsPlusVertexBuffers                     24             24               24               24
+LIMIT maxBindingsPerBindGroup                          1000           1000             1000             1000
+LIMIT maxDynamicUniformBuffersPerPipelineLayout             11              8               11                8
+LIMIT maxDynamicStorageBuffersPerPipelineLayout             11              4               11                4
+LIMIT maxSampledTexturesPerShaderStage                   16             16               16               16
+LIMIT maxSamplersPerShaderStage                          16             16               16               16
+LIMIT maxStorageBuffersPerShaderStage                    10              8               10                8
+LIMIT maxStorageTexturesPerShaderStage                    8              4                8                4
+LIMIT maxUniformBuffersPerShaderStage                    12             12               12               12
+LIMIT maxUniformBufferBindingSize               -1202585600          65536      41747087360            65536   <- getter differs from raw
+LIMIT maxStorageBufferBindingSize               -1202585600      134217728      41747087360        134217728   <- getter differs from raw
+LIMIT minUniformBufferOffsetAlignment                   256            256              256              256
+LIMIT minStorageBufferOffsetAlignment                   256            256              256              256
+LIMIT maxVertexBuffers                                    8              8                8                8
+LIMIT maxBufferSize                             -1202585600      268435456      41747087360        268435456   <- getter differs from raw
+LIMIT maxVertexAttributes                                30             16               30               16
+LIMIT maxVertexBufferArrayStride                       2048           2048             2048             2048
+LIMIT maxInterStageShaderVariables                       31             16               31               16
+LIMIT maxColorAttachments                                 8              8                8                8
+LIMIT maxColorAttachmentBytesPerSample                  128             32              128               32
+DEVICE FEATURES (1): CUSTOM(0x1) 
+ADAPTER hasFeature over 16 enum names: DepthClipControl Depth32FloatStencil8 TimestampQuery TextureCompressionBC TextureCompressionBCSliced3D TextureCompressionETC2 TextureCompressionASTC TextureCompressionASTCSliced3D IndirectFirstInstance ShaderF16 RG11B10UfloatRenderable BGRA8UnormStorage Float32Filterable Float32Blendable ClipDistances DualSourceBlending 
+device2 status Success 
+DEVICE2 maxTextureDimension2D getter=16384 raw=16384
+DEVICE2 maxStorageBufferBindingSize getter=-1202585600 raw=41747087360
+DEVICE2 maxBufferSize getter=-1202585600 raw=41747087360
+DEVICE2 maxSampledTexturesPerShaderStage getter=16 raw=16
+DEVICE2 FEATURES (2): CUSTOM(0x1) TimestampQuery 

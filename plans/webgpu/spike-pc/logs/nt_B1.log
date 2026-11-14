@@ -1,0 +1,6 @@
+natives from /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-a401f8c67617afc2b/plans/webgpu/spike-pc/native/wgpu/jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor= arch= device=Apple M4 Pro desc=
+device status Success 
+init ms=65.603875
+wrote shots/nt_B1.png center=ff0066ff corner=ff1a1a1a

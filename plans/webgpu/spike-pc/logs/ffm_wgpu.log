@@ -1,0 +1,2 @@
+RESULT ffm info status=1 device=Apple M4 Pro desc= backendType=0x5
+RESULT ffm limits status=1 maxTextureDimension2D=16384 maxStorageBufferBindingSize=4294967292 maxBufferSize=41747087360

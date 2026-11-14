@@ -1,0 +1,6 @@
+device: Metal Apple M4 Pro rows=65536B pipelines=orange,teal
+RESULT flix orange pixel=ff8040ff expected=ff8040ff OK
+RESULT flix teal pixel=8080ff expected=8080ff OK
+RESULT flix orange pixel=ff8040ff expected=ff8040ff OK
+RESULT flix moved-record teal-removed=true errors=0
+RESULT flix all=true

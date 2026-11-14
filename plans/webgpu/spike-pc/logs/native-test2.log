@@ -1,0 +1,14 @@
+== D1
+./native-test2.sh: line 7: 73259 Killed: 9               env BACK=$back "$@" JOPTS="-Djava.awt.headless=true" ./run.sh Bench sto $back > logs/nt_$tag.log 2>&1
+D1b(wgpu) exit=137 0 results
+D1a(dawn) exit=0 3 results
+== E1
+E1a(dawn) exit=0 3 results
+E1b(wgpu) exit=0 3 results
+== D2
+./native-test2.sh: line 7: 73374 Killed: 9               env BACK=$back "$@" JOPTS="-Djava.awt.headless=true" ./run.sh Bench sto $back > logs/nt_$tag.log 2>&1
+D2b(wgpu) exit=137 0 results
+D2a(dawn) exit=0 3 results
+== E2
+E2a(dawn) exit=0 3 results
+E2b(wgpu) exit=0 3 results

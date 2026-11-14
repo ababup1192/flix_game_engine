@@ -12,12 +12,30 @@ public final class Gpu {
     private WGPURequestDeviceCallback dcb;
     private WGPUUncapturedErrorCallback ecb;
 
-    public static Gpu init(JWebGPUBackend backend) {
-        Gpu g = new Gpu();
+    public boolean timestamps;
+    public static volatile int errors;
+
+    /** jParser は ${java.io.tmpdir}/jParser${user.name}/ に同じ名前で書き出す。-Dspike.nativeDir があれば読み込みの間だけ tmpdir を差し替える。 */
+    static void loadNatives(JWebGPUBackend backend) {
         boolean[] ok = {false};
         Throwable[] err = {null};
-        JWebGPULoader.init(backend, (success, e) -> { System.out.println("loader cb "+success+" "+e); if(e!=null) e.printStackTrace(); ok[0] = success; err[0] = e; });
+        String dir = System.getProperty("spike.nativeDir");
+        String saved = System.getProperty("java.io.tmpdir");
+        if (dir != null) { new java.io.File(dir).mkdirs(); System.setProperty("java.io.tmpdir", dir); }
+        try {
+            JWebGPULoader.init(backend, (success, e) -> { ok[0] = success; err[0] = e; });
+        } finally {
+            System.setProperty("java.io.tmpdir", saved);
+        }
         if (!ok[0]) throw new RuntimeException("loader init failed", err[0]);
+        System.out.println("natives from " + (dir != null ? dir : saved) + "/jParser" + System.getProperty("user.name"));
+    }
+
+    public static Gpu init(JWebGPUBackend backend) { return init(backend, false); }
+
+    public static Gpu init(JWebGPUBackend backend, boolean wantTimestamps) {
+        Gpu g = new Gpu();
+        loadNatives(backend);
         WGPUInstanceDescriptor d = new WGPUInstanceDescriptor();
         WGPUBackendType bt = backend == JWebGPUBackend.WGPU ? WGPUBackendType.Metal : WGPUBackendType.Undefined;
         g.instance = WGPU.setupInstance(d);
@@ -43,6 +61,12 @@ public final class Gpu {
         }
         WGPUDeviceDescriptor dd = WGPUDeviceDescriptor.obtain();
         dd.setLabel("spike device");
+        if (wantTimestamps && g.adapter.hasFeature(WGPUFeatureName.TimestampQuery)) {
+            WGPUVectorFeatureName fs = WGPUVectorFeatureName.obtain();
+            fs.push_back(WGPUFeatureName.TimestampQuery);
+            dd.setRequiredFeatures(fs);
+            g.timestamps = true;
+        }
         g.dcb = new WGPURequestDeviceCallback() {
             @Override protected void onCallback(WGPURequestDeviceStatus status, WGPUDevice device, String message) {
                 System.out.println("device status " + status + " " + message);
@@ -51,7 +75,7 @@ public final class Gpu {
             }
         };
         g.ecb = new WGPUUncapturedErrorCallback() {
-            @Override protected void onCallback(WGPUErrorType t, String m) { System.err.println("GPU ERROR " + t + ": " + m); }
+            @Override protected void onCallback(WGPUErrorType t, String m) { errors++; System.err.println("GPU ERROR " + t + ": " + m); }
         };
         g.adapter.requestDevice(dd, WGPUCallbackMode.AllowProcessEvents, g.dcb, g.ecb);
         pump(g, g.deviceDone);
@@ -124,6 +148,11 @@ public final class Gpu {
     }
 
     public WGPURenderPassEncoder beginPass(WGPUCommandEncoder enc, WGPUTextureView view, float r, float g, float b) {
+        return beginPass(enc, view, r, g, b, null);
+    }
+
+    /** qs があれば pass の始めと終わりの時刻を qs の 0・1 番に書く。 */
+    public WGPURenderPassEncoder beginPass(WGPUCommandEncoder enc, WGPUTextureView view, float r, float g, float b, WGPUQuerySet qs) {
         WGPURenderPassColorAttachment ca = WGPURenderPassColorAttachment.obtain();
         ca.setView(view);
         ca.setResolveTarget(WGPUTextureView.NULL);
@@ -135,7 +164,12 @@ public final class Gpu {
         WGPURenderPassDescriptor rd = WGPURenderPassDescriptor.obtain();
         rd.setColorAttachments(v);
         rd.setDepthStencilAttachment(WGPURenderPassDepthStencilAttachment.NULL);
-        rd.setTimestampWrites(WGPUPassTimestampWrites.NULL);
+        if (qs == null) rd.setTimestampWrites(WGPUPassTimestampWrites.NULL);
+        else {
+            WGPUPassTimestampWrites tw = WGPUPassTimestampWrites.obtain();
+            tw.setQuerySet(qs); tw.setBeginningOfPassWriteIndex(0); tw.setEndOfPassWriteIndex(1);
+            rd.setTimestampWrites(tw);
+        }
         WGPURenderPassEncoder pass = WGPURenderPassEncoder.obtain();
         enc.beginRenderPass(rd, pass);
         return pass;
@@ -172,6 +206,29 @@ public final class Gpu {
         submit(enc);
         readMapped(syncDst, 16);
     }
+
+    /** texture の (0,0)-(w,h) を読み戻す。行は 256 バイトにそろえて返すので、bytesPerRow は rowBytes(w)。 */
+    public java.nio.ByteBuffer readTexture(WGPUTexture tex, int w, int h) {
+        int bpr = rowBytes(w);
+        WGPUBuffer out = buffer((long) bpr * h, WGPUBufferUsage.CopyDst.or(WGPUBufferUsage.MapRead));
+        WGPUCommandEncoder enc = new WGPUCommandEncoder();
+        device.createCommandEncoder(WGPUCommandEncoderDescriptor.NULL, enc);
+        WGPUTexelCopyTextureInfo src = WGPUTexelCopyTextureInfo.obtain();
+        src.setTexture(tex); src.setMipLevel(0); src.setAspect(WGPUTextureAspect.All);
+        src.getOrigin().setX(0); src.getOrigin().setY(0); src.getOrigin().setZ(0);
+        WGPUTexelCopyBufferInfo dst = WGPUTexelCopyBufferInfo.obtain();
+        dst.setBuffer(out);
+        dst.getLayout().setOffset(0); dst.getLayout().setBytesPerRow(bpr); dst.getLayout().setRowsPerImage(h);
+        WGPUExtent3D ext = WGPUExtent3D.obtain();
+        ext.setWidth(w); ext.setHeight(h); ext.setDepthOrArrayLayers(1);
+        enc.copyTextureToBuffer(src, dst, ext);
+        submit(enc);
+        java.nio.ByteBuffer px = readMapped(out, bpr * h);
+        out.release();
+        return px;
+    }
+
+    public static int rowBytes(int w) { return (w * 4 + 255) / 256 * 256; }
 
     /** MapRead のバッファを map して direct ByteBuffer へ写す。 */
     public java.nio.ByteBuffer readMapped(WGPUBuffer b, int size) {

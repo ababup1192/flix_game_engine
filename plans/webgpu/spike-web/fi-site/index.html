@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>running</title></head><body>
+<p>TeaVM 0.16 wasm-gc probe. title becomes "done"; result in window.__result (also POSTed to /post/result)</p>
+<script src="wasm-gc-runtime.js"></script>
+<script>
+TeaVM.wasmGC.load("classes.wasm").then(function (t) { return t.exports.main([]); })
+  .catch(function (e) {
+    window.__result = { error: 'load: ' + e }; document.title = 'error';
+    fetch('/post/result', { method: 'POST', body: JSON.stringify(window.__result) });
+  });
+</script></body></html>

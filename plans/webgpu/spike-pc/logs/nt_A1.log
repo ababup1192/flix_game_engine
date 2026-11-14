@@ -1,0 +1,6 @@
+natives from /var/folders/tw/mq5trfy50733dc8dqj4th9p80000gn/T//jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor= arch= device=Apple M4 Pro desc=
+device status Success 
+init ms=459.135792
+wrote shots/nt_A1.png center=ff0066ff corner=ff1a1a1a

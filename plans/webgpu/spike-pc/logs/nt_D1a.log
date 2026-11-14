@@ -1,0 +1,7 @@
+natives from /var/folders/tw/mq5trfy50733dc8dqj4th9p80000gn/T//jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+device status Success 
+RESULT sto/DAWN N=1000 cpu_submit_ms median=0.098 p90=0.160 | with_gpu_wait median=3.200 | fill(excluded) median=0.151 | us/object(cpu)=0.098
+RESULT sto/DAWN N=5000 cpu_submit_ms median=0.148 p90=0.193 | with_gpu_wait median=3.274 | fill(excluded) median=0.079 | us/object(cpu)=0.030
+RESULT sto/DAWN N=20000 cpu_submit_ms median=0.049 p90=0.210 | with_gpu_wait median=3.086 | fill(excluded) median=0.056 | us/object(cpu)=0.002

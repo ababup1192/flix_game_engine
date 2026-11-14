@@ -1,0 +1,10 @@
+[package]
+version     = "0.1.0"
+flix        = "0.78.0"
+
+# The jars are placed by hand in lib/external (build.sh); the url is never fetched.
+[jar-dependencies]
+"wgpu-probe.jar" = "url:http://127.0.0.1:9/wgpu-probe.jar"
+"teavm-jso-0.16.0.jar" = "url:https://repo1.maven.org/maven2/org/teavm/teavm-jso/0.16.0/teavm-jso-0.16.0.jar"
+"teavm-jso-apis-0.16.0.jar" = "url:https://repo1.maven.org/maven2/org/teavm/teavm-jso-apis/0.16.0/teavm-jso-apis-0.16.0.jar"
+"teavm-interop-0.16.0.jar" = "url:https://repo1.maven.org/maven2/org/teavm/teavm-interop/0.16.0/teavm-interop-0.16.0.jar"

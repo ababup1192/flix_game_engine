@@ -1,0 +1,4 @@
+instance=MemorySegment{ heapBase: Optional.empty address:4381519504 limit: 0 }
+adapter callback status=1
+RESULT ffm info status=1 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434) backendType=0x5
+RESULT ffm limits status=1 maxTextureDimension2D=16384 maxStorageBufferBindingSize=4294967292 maxBufferSize=4294967295

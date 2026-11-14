@@ -1,0 +1,21 @@
+natives from /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-a401f8c67617afc2b/plans/webgpu/spike-pc/native/dawn/jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+device status Success 
+timestamp-query=true
+RESULT fi inst N=1000 frames=200 | writeBuffer med=0.015 | encode med=0.037 p90=0.102 | finish+submit med=0.043 | cpu(enc+submit) med=0.077 | gpu pass med=0.131 p90=0.131 | wait med=3.064 | img=e78ebf8e556b50e5
+RESULT fi fi N=1000 frames=200 | writeBuffer med=0.008 | encode med=0.041 p90=0.196 | finish+submit med=0.088 | cpu(enc+submit) med=0.129 | gpu pass med=0.131 p90=0.197 | wait med=3.025 | img=e78ebf8e556b50e5
+RESULT fi fi_bg N=1000 frames=200 | writeBuffer med=0.027 | encode med=0.348 p90=0.373 | finish+submit med=0.564 | cpu(enc+submit) med=0.915 | gpu pass med=0.131 p90=0.197 | wait med=3.055 | img=e78ebf8e556b50e5
+RESULT fi fi_mix N=1000 frames=200 | writeBuffer med=0.008 | encode med=0.044 p90=0.205 | finish+submit med=0.099 | cpu(enc+submit) med=0.144 | gpu pass med=0.197 p90=0.197 | wait med=3.019 | img=9c95b7559caa317d
+RESULT fi dyn N=1000 frames=200 | writeBuffer med=0.009 | encode med=0.086 p90=0.445 | finish+submit med=0.131 | cpu(enc+submit) med=0.216 | gpu pass med=0.131 p90=0.197 | wait med=3.019 | img=e78ebf8e556b50e5
+RESULT fi inst N=5000 frames=200 | writeBuffer med=0.017 | encode med=0.028 p90=0.049 | finish+submit med=0.039 | cpu(enc+submit) med=0.065 | gpu pass med=0.197 p90=0.197 | wait med=3.024 | img=07e5da8f66af4b94
+RESULT fi fi N=5000 frames=200 | writeBuffer med=0.022 | encode med=0.121 p90=0.293 | finish+submit med=0.367 | cpu(enc+submit) med=0.489 | gpu pass med=0.328 p90=0.328 | wait med=3.033 | img=07e5da8f66af4b94
+RESULT fi fi_bg N=5000 frames=200 | writeBuffer med=0.019 | encode med=0.300 p90=0.453 | finish+submit med=0.391 | cpu(enc+submit) med=0.691 | gpu pass med=0.328 p90=0.328 | wait med=3.035 | img=07e5da8f66af4b94
+RESULT fi fi_mix N=5000 frames=200 | writeBuffer med=0.014 | encode med=0.137 p90=0.164 | finish+submit med=0.407 | cpu(enc+submit) med=0.547 | gpu pass med=0.393 p90=0.393 | wait med=3.026 | img=99563defc3d1cfd8
+RESULT fi dyn N=5000 frames=200 | writeBuffer med=0.040 | encode med=0.386 p90=0.465 | finish+submit med=0.610 | cpu(enc+submit) med=0.990 | gpu pass med=0.328 p90=0.328 | wait med=3.035 | img=07e5da8f66af4b94
+RESULT fi inst N=20000 frames=200 | writeBuffer med=0.037 | encode med=0.035 p90=0.069 | finish+submit med=0.047 | cpu(enc+submit) med=0.084 | gpu pass med=0.328 p90=0.393 | wait med=3.031 | img=9c2fdbd2f36a013d
+RESULT fi fi N=20000 frames=200 | writeBuffer med=0.037 | encode med=0.336 p90=0.405 | finish+submit med=1.256 | cpu(enc+submit) med=1.593 | gpu pass med=1.049 p90=1.114 | wait med=4.547 | img=9c2fdbd2f36a013d
+RESULT fi fi_bg N=20000 frames=200 | writeBuffer med=0.044 | encode med=1.170 p90=1.323 | finish+submit med=1.508 | cpu(enc+submit) med=2.681 | gpu pass med=1.049 p90=1.114 | wait med=4.556 | img=9c2fdbd2f36a013d
+RESULT fi fi_mix N=20000 frames=200 | writeBuffer med=0.042 | encode med=0.627 p90=0.752 | finish+submit med=2.022 | cpu(enc+submit) med=2.648 | gpu pass med=1.311 p90=1.376 | wait med=4.554 | img=a5c1148abeac0c73
+RESULT fi dyn N=20000 frames=200 | writeBuffer med=0.388 | encode med=1.529 p90=1.588 | finish+submit med=2.379 | cpu(enc+submit) med=3.912 | gpu pass med=1.049 p90=1.114 | wait med=4.552 | img=9c2fdbd2f36a013d
+gpuErrors=0
