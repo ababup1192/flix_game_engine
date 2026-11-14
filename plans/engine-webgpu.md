@@ -535,6 +535,16 @@ PC の橋は jWebGPU のまま P4a を進め、`WebGpu` の裏に隠して後で
 - Dawn のネイティブ（macOS arm64 で 2.6 MB）は `render_gl` と `bench/webgpu_check` の flix.toml だけが持つ。`engine_full` は API の jar だけ
   （リリース 2 でネイティブの行を足す。その時に Windows・Linux の jar の行も）。
 
+### 12.9 P4a の後に直す物（2 回目のレビュー 91 点の残り。P4b か P6 の頭で）
+
+1. `DawnNatives.markLoaded` は jParser の内側の表に名前を入れる。jParser が名前の作り方を変えると、init が自分の置き場へ書き出してもう一度読み、門は緑のまま同じ dylib が 2 回読まれる。init の後に表の大きさが 2 のままかを見て、増えていたら止める。Studio の中で別の class loader から読む形になったら確かめ直す
+2. `make two` の待ち合わせが 2 秒の決め打ち。2 つが「用意ができた」ファイルを置くまで待ってから放つか、両方の `waited` が 0 より大きい事を合格の条件にする。Makefile の `java` は PATH のままなので、engine の devbox の jdk へ落とす
+3. `DawnWebGpu.destroy()` の後に `DawnSurface` が手放した adapter を使いうる（窓を先に閉じる順を doc に書くか、surface に adapter を持たせない）。`open` のたびに `WGPUInstance` を作って手放していない。`getCurrentTexture` で無効な texture の包みを捨てている
+4. `defaultView()` の返り値を呼び手が `release()` すると壊れる。返り値の `release()` を何もしない形にするか、`TextureView.release` の doc にも書く
+5. Studio の Maven の種を、jWebGPU と jParser を含めて取り直す（リリースの手順に入れる）。2026-11-15 に Maven Central が 429 を返し、merge 後の main の sync が jWebGPU を取れずに止まった（手元のキャッシュから写して通した）
+6. `TestWebGpuOffscreen` の `unchecked_cast(… as _ \ {})` で IO を型の上で消している。テストを `\ {Assert, IO}` で書けるなら替える
+7. `readRgba`・`drawFloatRows` の中の例外（10 秒の待ち越え・短い data）は Err にしていない。device lost を Err にするかを P10 までに決める
+
 ## 版ごとに直した事
 
 **第 5 版**（第 4 版のレビュー 84 点の指摘 14 件。**この版はレビューを通していない**）: V1 のお題をスプライトだけの画面に・画面なしの session を P4a に前倒しし、
