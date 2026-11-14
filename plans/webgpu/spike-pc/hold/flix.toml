@@ -1,0 +1,15 @@
+[package]
+version     = "0.1.0"
+flix        = "0.78.0"
+
+# jWebGPU は Maven Central から。依存の木: webgpu-desktop-jni → webgpu-jni → runtime-jni・api-core・loader-core、
+# ネイティブの jar（…-dawn_mac_arm64）→ runtime-desktop-jni_mac_arm64（scope は runtime）。
+# 機種ごとのネイティブの jar は木に出ないので、OS の数だけ名前で書く（LWJGL の natives と同じ形）。
+[mvn-dependencies]
+"com.github.xpenatan.jWebGPU:webgpu-desktop-jni"                 = "0.3.4"
+"com.github.xpenatan.jWebGPU:webgpu-desktop-jni-dawn_mac_arm64"  = "0.3.4"
+
+# spike-wg.jar は hold/build-wg.sh が lib/external/ に置く手作りの jar。Flix は宣言の無い jar を classpath に入れないので
+# 名前だけ宣言する（同じ名前の file が lib/external/ にあれば取りに行かない）。
+[jar-dependencies]
+"spike-wg.jar" = "url:https://example.invalid/spike-wg.jar"

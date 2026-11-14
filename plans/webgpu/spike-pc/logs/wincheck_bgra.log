@@ -1,0 +1,31 @@
+main thread=main JAVA_STARTED_ON_FIRST_THREAD=1
+NSWindow=0x7686fb0500 windowNumber=23737 backingScale=1.0 layer(before)=NSViewBackingLayer
+natives from /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-a401f8c67617afc2b/plans/webgpu/spike-pc/native/dawn/jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor=apple arch=metal-3 device=Apple M4 Pro desc=Metal driver on macOS Version 27.0.1 (Build 26A434)
+device status Success 
+device+surface made on thread main
+layer(after)=CAMetalLayer contentsScale=1.0
+surface formats: BGRA8Unorm BGRA8UnormSrgb RGBA16Float RGB10A2Unorm 
+framebuffer 640x360 fmt=BGRA8Unorm present=Fifo
+RESULT readback 640x360 OK (192,251)=255,128,64 (320,216)=255,128,64 (192,108)=51,51,51 (3,3)=51,51,51 -> shots/win_bgra_readback.png
+RESULT present Fifo: frame interval median=8.702 ms p10=7.623 p90=9.001 (frames 10..120) status=1=120 (1=SuccessOptimal 2=SuccessSuboptimal 3=Timeout 4=Outdated 5=Lost 6=Error)
+RESULT present Fifo: acquire+encode+submit median=8.660 ms max=9.284 | present() median=0.013 ms max=0.186
+could not create image from window
+screencapture exit=1
+preflight=true
+onscreen=1 layer=0 alpha=1 bounds={
+    Height = 350;
+    Width = 576;
+    X = 1221;
+    Y = "-1633";
+} sharing=1
+sck: error Error Domain=com.apple.ScreenCaptureKit.SCStreamErrorDomain Code=-3811 "オーディオ/ビデオの取り込みがうまくいかなかったため、ストリーミングを開始できませんでした" UserInfo={NSLocalizedDescription=オーディオ/ビデオの取り込みがうまくいかなかったため、ストリーミングを開始できませんでした}
+out/wincap exit=0
+RESULT capture NG: file missing
+RESULT capture NG: file missing
+resized window to 800x450 pt, framebuffer 800x450
+before reconfigure: getCurrentTexture status=1=1 (1=SuccessOptimal 2=SuccessSuboptimal 3=Timeout 4=Outdated 5=Lost 6=Error)
+after reconfigure: status=1=1 (1=SuccessOptimal 2=SuccessSuboptimal 3=Timeout 4=Outdated 5=Lost 6=Error)
+RESULT resized 800x450 OK (240,315)=255,128,64 (400,270)=255,128,64 (240,135)=51,51,51 (3,3)=51,51,51 -> shots/win_bgra_resized_readback.png
+RESULT wincheck fmt=BGRA8Unorm retina=true visible=true present=Fifo fails=2 gpuErrors=0

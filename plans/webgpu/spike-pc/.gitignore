@@ -1,0 +1,14 @@
+libs/
+out/
+logs/*.tmp
+shots/*.png
+native/
+hold/build/
+hold/lib/
+hold/wgout/
+hold/.flix*
+hold/native/
+hold/*.jar
+panama/out/
+panama/gen/
+panama/dl/

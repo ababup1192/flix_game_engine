@@ -1,0 +1,7 @@
+natives from /Users/abab/Desktop/flix_game_engine/.claude/worktrees/agent-a401f8c67617afc2b/plans/webgpu/spike-pc/native/wgpu/jParserabab
+adapter status Success 
+ADAPTER: backend=Metal type=IntegratedGPU vendor= arch= device=Apple M4 Pro desc=
+device status Success 
+RESULT sto/WGPU N=1000 cpu_submit_ms median=0.187 p90=0.306 | with_gpu_wait median=3.317 | fill(excluded) median=0.133 | us/object(cpu)=0.187
+RESULT sto/WGPU N=5000 cpu_submit_ms median=0.095 p90=0.442 | with_gpu_wait median=3.161 | fill(excluded) median=0.037 | us/object(cpu)=0.019
+RESULT sto/WGPU N=20000 cpu_submit_ms median=0.733 p90=0.870 | with_gpu_wait median=3.914 | fill(excluded) median=0.314 | us/object(cpu)=0.037
