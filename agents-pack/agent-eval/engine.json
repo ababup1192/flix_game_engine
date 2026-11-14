@@ -229,6 +229,18 @@
       ]
     },
     {
+      "id": "tape-reindex",
+      "prompt": "テープの置き場 ababup1192/flix_ge_tapes の README とゲームごとの一覧の頁を作り直したい。新しいテープは置かない。前に置いた分は debug/tape/published.jsonl に記録がある。push はまだしないで中身だけ見せて",
+      "expect": [
+        {"re": "fge tape publish", "why": "一覧は bin/fge tape publish が置き場の tapes.json から作る"},
+        {"re": "--reindex", "why": "テープを置かずに一覧だけ作り直す口"}
+      ],
+      "avoid": [
+        {"re": "--yes", "why": "push しない依頼なので既定の dry run のまま"},
+        {"re": "git push", "why": "手で push しない（履歴を残さない置き方は publish が持つ）"}
+      ]
+    },
+    {
       "id": "tape-branches",
       "prompt": "田んぼの選択肢で「千夏？」を選んだ道と「……ちいちゃん」を選んだ道を、それぞれテープにしてレビュワーに見せたい。頁の中で、もう片方の道へ切り替えて見られるようにして",
       "expect": [
