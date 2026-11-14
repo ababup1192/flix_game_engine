@@ -125,9 +125,111 @@ mod TestClip {
                            |> List.map(d -> "${d}"),
             ds |> List.map(d -> "${d}"))
 
-    /// region を使わない列では、drawWith は draw と同じ 2 列を返す。
+    /// region を使わない列では、drawWith は draw と全部の欄が同じ 2 列を返す。
     @Test
     def testDrawWithMatchesDrawWithoutRegions(): Unit \ Assert =
-        Assert.assertEq(expected = drawnTuple(Render.draw(mixedItems())),
-            drawnTuple(Render.drawWith(_ -> None, mixedItems())))
+        Assert.assertEq(expected = allFields(Render.draw(mixedItems())),
+            allFields(Render.drawWith(_ -> None, mixedItems())))
+
+    // ---------------------------------------------------------------
+    // drawInto の近道（clip も region も無い Sprite と Box）が、1 個ずつ作る道と同じ値を積む
+    // ---------------------------------------------------------------
+
+    /// 描画命令 2 列を (Drawable の全部の欄の字, 多角形の (z, clip)) へ射影。
+    def allFields(drawn: (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])):
+            (List[String], List[(Int32, Option[(Float64, Float64, Float64, Float64)])]) =
+        let (ds, ps) = drawn;
+        (ds |> List.map(d -> "${d}"), ps |> List.map(p -> (p#zIndex, Option.map(rectTuple, p#clip))))
+
+    /// 列の 1 個ずつを Render.toDrawables で作ってつないだ字の列（draw の比べる相手）。
+    def perItemFields(items: List[Render.PlacedItem]): List[String] =
+        items |> List.flatMap(placed -> Render.toDrawables(placed#item, placed#at)) |> List.map(d -> "${d}")
+
+    /// 列の 1 個ずつを toDrawablesAtlas で作ってつないだ字の列（drawWith の比べる相手）。
+    def perItemAtlasFields(items: List[Render.PlacedItem]): List[String] =
+        items |> List.flatMap(placed -> Render.Internal.Extract.toDrawablesAtlas(sheetInfo, placed#item, placed#at))
+              |> List.map(d -> "${d}")
+
+    /// "sheet" だけが 64 × 32 の絵として引ける。
+    def sheetInfo(name: String): Option[GameEngine.TextureInfo] =
+        if (name == "sheet") Some({ id = GpuHandle.wrapTextureId(1), width = 64.0, height = 32.0 }) else None
+
+    /// 欄を全部、既定でない値にした Sprite（反転 2 つ・傾き・左上原点・拡大・型抜き・色・濃さ・Add）。
+    def busySprite(texture: String, regionRect: Option[Rect2.Rect2]): Render.Item =
+        Render.Item.Sprite({ texture = texture, tint = { r = 0.25, g = 0.5, b = 0.75 }, alpha = 0.5,
+                             scale = { x = 2.0, y = 3.0 }, rotation = 0.125, centered = false,
+                             flipH = true, flipV = true, regionRect = regionRect, zIndex = 9,
+                             blend = DrawCmd.BlendMode.Add,
+                             maskPolys = ({ x = 0.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 0.0, y = 4.0 } :: Nil) :: Nil })
+
+    /// 角丸の style を付けて傾けた Box。
+    def busyBox(): Render.Item =
+        let color = { r = 0.25, g = 0.5, b = 0.75 };
+        Render.Item.Box({ size = { x = 10.0, y = 20.0 }, color = color, alpha = 0.5, rotation = 0.25,
+                          style = Some(DrawCmd.defaultStyle(color) |> DrawCmd.withCornerRadius(4.0)), zIndex = 4,
+                          blend = DrawCmd.BlendMode.Multiply })
+
+    /// 'A' 1 字だけを持つフォント。
+    def oneGlyphFont(): FontAtlas =
+        { textureName = "font", fontSize = 16.0, textureSize = 64.0, ascent = 12.0, descent = 4.0, lineGap = 0.0,
+          glyphs = Map#{ 65 => { xOff = 0.0, yOff = 0.0, glyphW = 8.0, glyphH = 12.0, advance = 9.0,
+                                 s0 = 0.0, t0 = 0.0, s1 = 0.125, t1 = 0.1875 } } }
+
+    def placedAt(x: Float64, item: Render.Item): Render.PlacedItem = { at = { x = x, y = 2.0 }, item = item }
+
+    /// 欄が全部既定でない Sprite も、draw は 1 個ずつ作る道と全部の欄が同じ。
+    @Test
+    def testDrawMatchesToDrawablesForBusySprite(): Unit \ Assert =
+        let items = placedAt(1.0, busySprite("flag", None)) :: Nil;
+        Assert.assertEq(expected = perItemFields(items), fst(allFields(Render.draw(items))))
+
+    /// style を付けて傾けた Box も、draw は 1 個ずつ作る道と全部の欄が同じ。
+    @Test
+    def testDrawMatchesToDrawablesForBusyBox(): Unit \ Assert =
+        let items = placedAt(1.0, busyBox()) :: Nil;
+        Assert.assertEq(expected = perItemFields(items), fst(allFields(Render.draw(items))))
+
+    /// Clipped に包んだ Box と Sprite は近道を通らず、1 個ずつ作る道と全部の欄が同じ（clip 矩形も）。
+    @Test
+    def testDrawMatchesToDrawablesForClippedPlainItems(): Unit \ Assert =
+        let items = placedAt(1.0, Render.clipped(rect(1.0, 2.0, 3.0, 4.0), busyBox()))
+                 :: placedAt(2.0, Render.clipped(rect(1.0, 2.0, 3.0, 4.0), busySprite("flag", None))) :: Nil;
+        Assert.assertEq(expected = perItemFields(items), fst(allFields(Render.draw(items))))
+
+    /// 近道を通る物の間に Text を挟んでも、Drawable は列の並びのまま（Box・字・Sprite・字・Box）。
+    @Test
+    def testDrawKeepsTextBetweenPlainItems(): Unit \ Assert =
+        let label = Render.text("AA", oneGlyphFont(), 16.0, 6);
+        let items = placedAt(1.0, busyBox()) :: placedAt(2.0, label) :: placedAt(3.0, busySprite("flag", None))
+                 :: placedAt(4.0, label) :: placedAt(5.0, busyBox()) :: Nil;
+        Assert.assertEq(expected = perItemFields(items), fst(allFields(Render.draw(items))))
+
+    /// 上の列の字は実際に Drawable になっている（字が 0 個だと、順番の比べが何も見ていない）。
+    @Test
+    def testOneGlyphFontDrawsEachLetter(): Unit \ Assert =
+        Assert.assertEq(expected = 2,
+            List.length(Render.toDrawables(Render.text("AA", oneGlyphFont(), 16.0, 6), { x = 0.0, y = 0.0 })))
+
+    /// region つき・region 無し・Box を混ぜた列で、drawWith は 1 個ずつ toDrawablesAtlas で作る道と全部の欄が同じ。
+    @Test
+    def testDrawWithMatchesToDrawablesAtlasPerItem(): Unit \ Assert =
+        let items = placedAt(1.0, busySprite("sheet", Some(rect(16.0, 8.0, 32.0, 16.0))))
+                 :: placedAt(2.0, busySprite("sheet", None)) :: placedAt(3.0, busyBox()) :: Nil;
+        Assert.assertEq(expected = perItemAtlasFields(items), fst(allFields(Render.drawWith(sheetInfo, items))))
+
+    /// region つき Sprite の UV は、region を絵の寸法（64 × 32）で割った始点と大きさ。ほかの欄は region 無しと同じ。
+    @Test
+    def testDrawWithRegionSpriteUv(): Unit \ Assert =
+        let whole = Render.toDrawables(busySprite("sheet", None), { x = 1.0, y = 2.0 });
+        let (ds, _) = Render.drawWith(sheetInfo, placedAt(1.0, busySprite("sheet", Some(rect(16.0, 8.0, 32.0, 16.0)))) :: Nil);
+        Assert.assertEq(
+            expected = whole |> List.map(DrawCmd.withUv({ x = 16.0 / 64.0, y = 8.0 / 32.0 }, { x = 32.0 / 64.0, y = 16.0 / 32.0 }))
+                             |> List.map(d -> "${d}"),
+            ds |> List.map(d -> "${d}"))
+
+    /// 寸法を引けない絵の region は、絵の全体を指す UV になる。
+    @Test
+    def testDrawWithRegionOfUnknownTextureUsesWholeTexture(): Unit \ Assert =
+        let (ds, _) = Render.drawWith(sheetInfo, placedAt(1.0, busySprite("missing", Some(rect(16.0, 8.0, 32.0, 16.0)))) :: Nil);
+        Assert.assertEq(expected = perItemFields(placedAt(1.0, busySprite("missing", None)) :: Nil), ds |> List.map(d -> "${d}"))
 }

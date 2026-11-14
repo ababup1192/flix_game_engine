@@ -7,8 +7,12 @@ pub mod Render.Internal.Extract {
     /// 2 列は 1 回の走査で同時に積む。列ごとに走査を分けると、描く物 1 個につき
     /// Clipped の剥がしと葉の振り分けが 2 度ずつ走る（物量の多い画面では、その 2 度目が
     /// そのままフレーム時間に乗る）。
+    /// clip も region も無い Sprite と Box は toDs を通らない（Render.toDrawables と同じ値を直に積む）。
+    /// toDs はその 2 つについて Render.toDrawables と同じ値を返す物に限る。
     // WhyNot: 逆順の cons で積んで最後に List.reverse しない — 積んだ cons は Drawable の間に散らばり、戻す 1 巡が
-    //   物 1 個につきキャッシュの外れを 1 回払う（20,000 個で 1.6 ms）。並んだ入れ物へ積み、後ろから List にする。
+    //   物 1 個につきキャッシュの外れを 1 回払う。並んだ入れ物へ積み、後ろから List にする。
+    // WhyNot: ループのラムダを別の def へ出さない — ラムダは List.forEach のループの中へ展開されるので、pushPlaced の呼び出しの後に
+    //   ループの続きが来て末尾呼び出しにならない。def に出すと、その def が呼び出しで終わる形（JIT から外れる形）になる。
     pub def drawInto(toDs: (Render.Item, Vec2.Vec2) -> List[GameEngine.Drawable] \ ef,
                  items: List[Render.PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
         region rc {
@@ -22,6 +26,8 @@ pub mod Render.Internal.Extract {
     /// 積む値は draw の toDs（Render.toDrawables）とも drawWith の toDs（toDrawablesAtlas）とも同じ。
     // WhyNot: 全部を pushPlaced に任せない — toDs は effect を持つので、呼ぶたびに続きを運ぶ入れ物を作る。数の多い 2 種類だけ、
     //   effect の無い道で先に済ませる（ブラウザ版はこの入れ物の割り当てがそのまま 1 コマの時間に出る）。
+    // WhyNot: 欄を並べる所を Render.toDrawables と共有の def に寄せない — 寄せた形は同じ絵 20,000 個で 1 コマが目に見えて遅くなった
+    //   （bench/sprite_stress/RESULTS.md）。2 つの道が同じ値を作る事は TestClip が欄を全部比べて守る。
     @DontInline
     def pushPlain(ds: MutList[GameEngine.Drawable, rc], placed: Render.PlacedItem): Bool \ rc =
         match placed#item {
@@ -55,6 +61,7 @@ pub mod Render.Internal.Extract {
             case (other, Some(_))               =>
                 toDs(other, at) |> List.forEach(d -> MutList.push(DrawCmd.withClip(clip, d), ds))
         };
+        // WhyNot: この () を消さない — match の枝の呼び出しが末尾になり、drawInto のループが JIT から外れる。
         ()
 
     /// Poly を置き場所 pos の描画命令へ（全頂点に pos を加算）。
@@ -76,6 +83,14 @@ pub mod Render.Internal.Extract {
             case Some(r) => Some(Rect2.intersect(rect, r))
         }
 
+    /// 絵の中の範囲 region を UV の (始点, 大きさ) へ。region か絵の寸法が無ければ絵の全体。
+    def regionUv(regionRect: Option[Rect2.Rect2], info: Option[GameEngine.TextureInfo]): (Vec2.Vec2, Vec2.Vec2) =
+        match (regionRect, info) {
+            case (Some(rect), Some(ti)) => ({x = rect#position#x / ti#width, y = rect#position#y / ti#height},
+                                            {x = rect#size#x / ti#width, y = rect#size#y / ti#height})
+            case _                      => ({x = 0.0, y = 0.0}, {x = 1.0, y = 1.0})
+        }
+
     /// region atlas 対応の射影（drawWith のため）。textureSize を引いて UV を計算する
     /// （uvOffset = regionPos/texSize, uvScale = regionSize/texSize）。
     /// 非 region スプライト・text・box は pure 経路と同一。
@@ -84,15 +99,9 @@ pub mod Render.Internal.Extract {
     pub def toDrawablesAtlas(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                          item: Render.Item, pos: Vec2.Vec2): List[GameEngine.Drawable] \ ef =
         match item {
+            case Render.Item.Sprite(s) if Option.isEmpty(s#regionRect) => Render.toDrawables(item, pos)
             case Render.Item.Sprite(s) =>
-                let (uvOff, uvScl) = match s#regionRect {
-                    case None       => ({x = 0.0, y = 0.0}, {x = 1.0, y = 1.0})
-                    case Some(rect) => match textureInfoOf(s#texture) {
-                        case Some(ti) => ({x = rect#position#x / ti#width, y = rect#position#y / ti#height},
-                                          {x = rect#size#x / ti#width, y = rect#size#y / ti#height})
-                        case None     => ({x = 0.0, y = 0.0}, {x = 1.0, y = 1.0})
-                    }
-                };
+                let (uvOff, uvScl) = regionUv(s#regionRect, textureInfoOf(s#texture));
                 DrawCmd.fromParts(
                    s#texture, pos,
                    {x = s#scale#x * flipSign(s#flipH), y = s#scale#y * flipSign(s#flipV)},
