@@ -78,6 +78,10 @@ func (p *Page) setup(opt PageOptions) error {
 	if _, err := p.c.call("Page.bringToFront", nil, pageStep); err != nil {
 		return err
 	}
+	// WhyNot: Page.enable を省かない — 省くと addScriptToEvaluateOnNewDocument が受け付けられるだけで、開いた頁で一度も流れない
+	if _, err := p.c.call("Page.enable", nil, pageStep); err != nil {
+		return err
+	}
 	if _, err := p.c.call("Emulation.setFocusEmulationEnabled", map[string]any{"enabled": true}, pageStep); err != nil {
 		return err
 	}
