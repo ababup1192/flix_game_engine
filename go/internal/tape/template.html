@@ -224,6 +224,7 @@
   .glink b { color: var(--c-script); font-weight: 700; }
   .glink small { margin-left: 6px; font-size: 10px; color: var(--faint); }
   .glink:active { background: rgba(255,255,255,.14); }
+  .glink.gone { color: #ff7a59; cursor: default; }
   .grows { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; line-height: 1.5; }
   .grows li { display: grid; grid-template-columns: 30px 1fr; gap: 6px; padding: 2px 0; border-top: 1px solid var(--hair); }
   .grows .ln { color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
@@ -354,7 +355,7 @@
   </div>
 
   <div class="gview" id="graphView">
-    <div class="gv-head"><div class="ttl" id="gvTitle"></div><button class="zb" id="zoomOut" aria-label="縮める">−</button><button class="zb" id="zoomIn" aria-label="広げる">＋</button><button class="zb fit" id="zoomFit">全体</button><button class="scriptdl" id="gvScript">読み台本 .md</button>
+    <div class="gv-head"><div class="ttl" id="gvTitle"></div><button class="zb" id="zoomOut" aria-label="縮める">−</button><button class="zb" id="zoomIn" aria-label="広げる">＋</button><button class="zb fit" id="zoomFit">全体</button><button class="scriptdl" id="gvScript">シナリオ原稿 .md</button>
       <button class="xbtn" id="gvClose" aria-label="映像へ戻る"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
     <div class="gwrap" id="gwrap"></div>
     <div class="npanel" id="nodePanel"></div>
@@ -603,7 +604,7 @@ function wireChapters(body) {
   body.querySelectorAll(".chap").forEach(n => n.onclick = () => { close(); seek(+n.dataset.t + .05); });
   body.querySelectorAll(".scriptdl").forEach(n => n.onclick = () => saveFile(TAPE.script, `${TAPE.game}.md`));
 }
-// ── 分岐のグラフ: 「映像 / グラフ」で見る物を切り替える。bin/fge yarn graph と同じ置き場で箱と矢印を描き、
+// ── 分岐のグラフ: 「映像 / グラフ」で見る物を切り替える（シナリオの全体を見る）。bin/fge yarn graph と同じ置き場で箱と矢印を描き、
 // 箱を押すとそのノードの行を出す。このテープに映るノードは「この場面へ」で映像に戻ってその秒へ送る ──
 const GRAPH = TAPE.graph || null;
 let viewMode = "video", gPick = null, gZoom = null;
@@ -611,20 +612,15 @@ const nodeOfLine = ln => (TAPE.lines[ln] && TAPE.lines[ln].node) || TAPE.node;
 function nodeStart(node) { const r = TAPE.timeline.find(([, ln]) => ln != null && nodeOfLine(ln) === node); return r ? r[0] : null; }
 function nodeAtTime(t) { const ln = lineAt(t); return ln ? nodeOfLine(ln) : null; }
 const branchNode = br => TAPE.lines[br.line] ? nodeOfLine(br.line) : nodeAtTime(br.t);
-const nodeHref = node => `${TAPE.playUrl}?talk=${encodeURIComponent(node)}`;
-// このテープに映らないノードへ入る選択肢を、別のテープで撮った道（branches の routes）
+// WhyNot: playUrl に ?talk= を字でつながない — playUrl が既に ? を持つと ??talk= になって開けない
+function nodeHref(node) { const u = new URL(TAPE.playUrl, location.href); u.searchParams.set("talk", node); return u.href; }
+// このテープに映らないノードを映した隣のテープ（branches の routes の starts）と、その頁でのノードの最初の秒
 function routeTo(node) {
-  for (const br of TAPE.branches) {
-    const from = branchNode(br);
-    for (const r of br.routes) {
-      if (r.here || !r.href) continue;
-      const e = GRAPH.edges.filter(e => e.choice === r.label && e.from === from && e.line > br.line).sort((a, b) => a.line - b.line)[0];
-      if (e && e.to === node) return r;
-    }
+  for (const br of TAPE.branches) for (const r of br.routes) {
+    if (!r.here && r.href && r.starts && r.starts[node] !== undefined) return { note: r.note, href: r.href.replace(/#t=.*$/, "") + "#t=" + r.starts[node] };
   }
   return null;
 }
-GRAPH && (GRAPH.edges = GRAPH.h.edges);
 // 全体に合わせた時の倍率。WhyNot: 高さに収まるまで縮めきらない — 長い台本では字が読めない点になる。.7 より下は送って見る
 function fitScale(L) { const w = $("gwrap"); return Math.min(1, (w.clientWidth - 16) / L.w, Math.max((w.clientHeight - 16) / L.h, .7)); }
 // WhyNot: いつも横に並べない — スマホと縦長の窓では横に長いグラフが 1 箱ずつしか見えない。縦と横の大きく収まる方を使う
@@ -643,7 +639,6 @@ function svgHtml(L, k, cur, pick) {
 function renderGraph(center) {
   if (!GRAPH || viewMode !== "graph") return;
   const L = graphLayout(), k = gZoom ?? fitScale(L), cur = nodeAtTime(video.currentTime), pick = gPick || cur || TAPE.node;
-  GRAPH.edges = L.edges;
   $("gwrap").innerHTML = svgHtml(L, k, cur, pick);
   $("gwrap").querySelectorAll(".gbox").forEach(n => n.onclick = () => pickNode(n.dataset.node));
   $("gvTitle").innerHTML = `分岐のグラフ<small>${GRAPH.v.nodes.length} ノード · ${Math.round(k * 100)}%</small>`;
@@ -662,7 +657,8 @@ function nodeHtml(node) {
   const play = TAPE.playUrl ? `<a class="gact" target="_blank" rel="noopener" href="${esc(nodeHref(node))}">ここから遊ぶ</a>` : "";
   const rows = d.rows.map(r => `<li class="${here.has(r.l) ? "here" : ""}" data-ln="${r.l}"><span class="ln">${r.l}</span><span class="k-${r.c}" style="padding-left:${r.d * 10}px">${esc(r.t)}</span></li>`).join("");
   // 矢印の先と元は箱と同じ冒頭の文で出し、押すとその箱へ移る（ノード名は小さく添える）
-  const link = (to, pre) => `<button class="glink" data-node="${esc(to)}">${pre}${esc(GRAPH.detail[to]?.head_text ?? to)}<small>${esc(to)}</small></button>`;
+  const link = (to, pre) => GRAPH.detail[to] ? `<button class="glink" data-node="${esc(to)}">${pre}${esc(GRAPH.detail[to].head_text)}<small>${esc(to)}</small></button>`
+    : `<div class="glink gone">${pre}無いノード<small>${esc(to)}</small></div>`;
   const outs = d.out.map(o => link(o.to, o.choice ? `<b>「${esc(o.choice)}」</b>→ ` : "→ ")).join("") || `<span class="gnone">${d.rows.some(r => r.c === "end") ? "結末" : "行き先なし"}</span>`;
   const ins = d.incoming.map(i => link(i.from, "← ")).join("") || `<span class="gnone">最初のノード</span>`;
   return `<div class="nm">${esc(n.head)}<small>${esc(node)} · ${esc(d.file)}</small></div><div class="gacts">${go}${play}</div>` +
@@ -709,7 +705,7 @@ $("gwrap").addEventListener("touchmove", e => {
 }, { passive: false });
 $("gwrap").addEventListener("touchend", () => { gPinch = null; });
 $("gwrap").addEventListener("wheel", e => { if (!e.ctrlKey) return; e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : .9); }, { passive: false });
-function scriptRow() { return TAPE.script ? `<div class="scriptrow"><div class="label">台本 · ${esc(yarn)}</div><button class="scriptdl">読み台本 .md</button></div>` : ""; }
+function scriptRow() { return TAPE.script ? `<div class="scriptrow"><div class="label">シナリオ · ${esc(yarn)}</div><button class="scriptdl">シナリオ原稿 .md</button></div>` : ""; }
 function markSelection() {
   document.querySelectorAll(".sel").forEach(n => n.classList.remove("sel"));
   if (!sel) return;

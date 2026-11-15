@@ -262,14 +262,14 @@ func TestSplashCoversTheWholeWideWindow(t *testing.T) {
 }
 
 func TestGraphInLeftPanelMovesToTheOtherPage(t *testing.T) {
-	// 広い画面ではノードの欄が右の欄（インスペクタ）に出て、隣のテープで撮った道のノードは、その道の頁へ #t= 付きで移る。
+	// 広い画面ではノードの欄が右の欄（インスペクタ）に出て、隣のテープで撮った道のノードは、その頁のそのノードの秒（#t=）へ移る。
 	p := openTapePage(t, desktop)
 	base := forkSite(t)
 	loadPlain(t, p, base+"/light/")
 	if err := p.Eval(`(() => { openChapters(true); pickNode("Sleep"); $("insp").querySelector('#nodePanel .gact[data-href]').click(); return true; })()`, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.WaitFor(`location.pathname.startsWith("/dark/") && location.hash === "#t=3.2"`, 30*time.Second); err != nil {
+	if err := p.WaitFor(`location.pathname.startsWith("/dark/") && location.hash === "#t=4"`, 30*time.Second); err != nil {
 		t.Fatalf("dark の頁へ移っていない: %v", err)
 	}
 }

@@ -1,9 +1,11 @@
 package yarn
 
-// fge yarn script: .yarn から、ライターが読む台本（Markdown）を書き出し、直した台本を今の .yarn と照らして写し方を出す。
-// 見出し（headingOf）・ノードのコメント（NodeComments）・読み方（loadGroup）は graph と同じ物を使う。
+// fge yarn script: .yarn から、ライターが読むシナリオ原稿（Markdown）を書き出し、直した原稿を今の .yarn と比べて反映のしかたを出す。
+// 見出し（headingOf・commentHeading）・ノードのコメント（NodeComments）・読み方（loadGroup）は graph と同じ物を使う。
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,32 +14,35 @@ import (
 	"strings"
 )
 
-// ScriptRef は読み台本の 1 行が指す .yarn の行。Kind は node・line・cmds・gate・choice・option・jump・stop・flow のどれか。
+// ScriptRef はシナリオ原稿の 1 行が指す .yarn の行。Kind は node・comment・line・cmds・gate・choice・option・jump・stop・flow のどれか。
+// Tags は元の行のタグ（反映する行に付け直す）、Speaker は台詞の話し手の id（地の文は空）。
 type ScriptRef struct {
 	File    string
 	Line    int
 	Node    string
 	Kind    string
 	Speaker string
+	Tags    []Tag
 }
 
-// ScriptLine は読み台本の 1 行（Ref は .yarn の行を指さない行なら nil）。
+// ScriptLine はシナリオ原稿の 1 行（Ref は .yarn の行を指さない行なら nil）。
 type ScriptLine struct {
 	Text string
 	Ref  *ScriptRef
 }
 
-// ScriptSource は読み台本を作る材料。Comments はノード名 → title: の前の // ── コメント（NodeComments）、
-// Names は話し手の id → 表示の名前、Notes は演出コマンドの注釈の言葉。
+// ScriptSource はシナリオ原稿を作る材料。Comments はノード名 → title: の前の // ── コメント（NodeComments）、
+// Names は話し手の id → 表示の名前、Notes は演出コマンドの注釈の言葉、Hash は .yarn の中身の指紋（scriptHash）。
 type ScriptSource struct {
 	Title    string
+	Hash     string
 	Prog     *Program
 	Comments map[string]string
 	Names    map[string]string
 	Notes    Notes
 }
 
-// Notes は演出コマンド → 読み台本の〔〕の言葉。File（script-notes.json）を先に、Comment（.yarn の冒頭のコメント）を後に引く。
+// Notes は演出コマンド → シナリオ原稿の〔〕の言葉。File（script-notes.json）を先に、Comment（.yarn の冒頭のコメント）を後に引く。
 // 鍵は「名前」か「名前 引数」。名前だけの鍵の言葉に {args} があれば引数で置き換え、無ければ引数を（）で後ろに付ける。
 type Notes struct {
 	File    map[string]string
@@ -162,14 +167,28 @@ func CommentNotes(text string) map[string]string {
 	return out
 }
 
-// 払いの向き（#act: の値）→ 読み台本の印。
+// 払いの向き（#act: の値）→ シナリオ原稿の印。
 var (
 	actLabels = map[string]string{"up": "↑ 上へ払う", "down": "↓ 下へ払う", "left": "← 左へ払う", "right": "→ 右へ払う", "tap": "● タップ"}
 	actMarks  = map[string]string{"up": "↑", "down": "↓", "left": "←", "right": "→", "tap": "●"}
 )
 
-const scriptIntro = "〔〕は演出の注釈、（）は間。字は自由に直してください。演出を足したい・変えたい所は〔〕で書けば、AI が台本へ写します。\n" +
-	"話し手の名前は「」の前。地の文は名前を書きません。改行はそのまま画面の改行です。ルビは ｜字《よみ》。"
+// WhyNot: Markdown のプレビューで読ませない — 1 行ずつの改行が画面の改行なのに、プレビューは行をつなげて見せる。
+const scriptIntro = "〔〕は演出の注釈、（）は間。字は自由に直してください。演出を足したい・変えたい所は〔〕で書けば、AI がシナリオへ反映します。\n" +
+	"話し手の名前は「」の前。地の文は名前を書きません。改行はそのまま画面の改行です（Markdown のプレビューでは行がつながるので、テキストのまま読んでください）。ルビは ｜字《よみ》。"
+
+// hashMark は原稿の頭に書く、元の .yarn の指紋の行の書き出し。
+const hashMark = "<!-- yarn: "
+
+// scriptHash は .yarn の中身の指紋（原稿を書いた後にシナリオが変わったかを --diff が見る）。
+func scriptHash(texts []string) string {
+	h := sha256.New()
+	for _, t := range texts {
+		h.Write([]byte(t))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:12]
+}
 
 type scriptWriter struct {
 	src     ScriptSource
@@ -179,14 +198,11 @@ type scriptWriter struct {
 	lines   []ScriptLine
 }
 
-// BuildScript は読み台本の行（各行が指す .yarn の行つき）を作る。ノードは木の並び（ファイルの名前順・ファイルの中の順）。
+// BuildScript はシナリオ原稿の行（各行が指す .yarn の行つき）を作る。ノードは木の並び（ファイルの名前順・ファイルの中の順）。
 func BuildScript(src ScriptSource) []ScriptLine {
 	w := &scriptWriter{src: src, heads: map[string]string{}, number: map[string]int{}, byTitle: map[string]*Node{}}
 	for k, v := range src.Comments {
-		if i := strings.IndexAny(v, ":："); i >= 0 {
-			v = strings.TrimSpace(v[:i])
-		}
-		w.heads[k] = v
+		w.heads[k] = commentHeading(v)
 	}
 	var nodes []*Node
 	for _, n := range src.Prog.Nodes {
@@ -197,7 +213,10 @@ func BuildScript(src ScriptSource) []ScriptLine {
 		nodes = append(nodes, n)
 		w.number[n.Title] = len(nodes)
 	}
-	title := "# 読み台本"
+	if src.Hash != "" {
+		w.emit(hashMark+src.Hash+" -->", nil)
+	}
+	title := "# シナリオ原稿"
 	if src.Title != "" {
 		title += " — " + src.Title
 	}
@@ -210,7 +229,7 @@ func BuildScript(src ScriptSource) []ScriptLine {
 	for _, n := range nodes {
 		w.emit(fmt.Sprintf("## %s　〔%s〕", w.label(n.Title), n.Title), &ScriptRef{File: n.File, Line: n.Line, Node: n.Title, Kind: "node"})
 		if c := src.Comments[n.Title]; c != "" {
-			w.emit("> "+c, nil)
+			w.emit("> "+c, &ScriptRef{File: n.File, Line: n.Line, Node: n.Title, Kind: "comment"})
 		}
 		w.emit("", nil)
 		w.walk(n.Body, n, 0)
@@ -219,7 +238,7 @@ func BuildScript(src ScriptSource) []ScriptLine {
 	return w.lines
 }
 
-// RenderScript は読み台本の行を Markdown の字にする。
+// RenderScript はシナリオ原稿の行を Markdown の字にする。
 func RenderScript(lines []ScriptLine) string {
 	var b strings.Builder
 	for _, l := range lines {
@@ -244,14 +263,14 @@ func (w *scriptWriter) label(title string) string {
 
 func (w *scriptWriter) walk(body []*Stmt, node *Node, depth int) {
 	pad := strings.Repeat("　", depth)
-	ref := func(line int, kind string) *ScriptRef {
-		return &ScriptRef{File: node.File, Line: line, Node: node.Title, Kind: kind}
+	ref := func(line int, kind string, tags []Tag) *ScriptRef {
+		return &ScriptRef{File: node.File, Line: line, Node: node.Title, Kind: kind, Tags: tags}
 	}
 	var buf []string
 	first := 0
 	flush := func() {
 		if len(buf) > 0 {
-			w.emit(pad+strings.Join(buf, ""), ref(first, "cmds"))
+			w.emit(pad+strings.Join(buf, ""), ref(first, "cmds", nil))
 			buf = nil
 		}
 	}
@@ -270,7 +289,7 @@ func (w *scriptWriter) walk(body []*Stmt, node *Node, depth int) {
 		flush()
 		switch s.Kind {
 		case "line":
-			r := ref(s.Line, "line")
+			r := ref(s.Line, "line", s.Tags)
 			r.Speaker = s.Speaker
 			w.speech(pad, s.Speaker, readingOf(s.Text, s.Parts), r)
 			w.emit("", nil)
@@ -286,25 +305,25 @@ func (w *scriptWriter) walk(body []*Stmt, node *Node, depth int) {
 				if _, mute := tags["mute"]; !mute {
 					shown = "　案内「" + strings.Join(readingOf(o.Text, o.Parts), "／") + "」"
 				}
-				w.emit(pad+"【"+act+where+"】"+shown, ref(o.Line, "gate"))
+				w.emit(pad+"【"+act+where+"】"+shown, ref(o.Line, "gate", o.Tags))
 				w.walk(o.Body, node, depth+1)
 				continue
 			}
-			w.emit(pad+"◆ 選ぶ", ref(s.Line, "choice"))
+			w.emit(pad+"◆ 選ぶ", ref(s.Line, "choice", nil))
 			for _, o := range s.Options {
 				mark := ""
 				if m := actMarks[tagMap(o.Tags)["act"]]; m != "" {
 					mark = "（" + m + "）"
 				}
-				w.emit(pad+"　・"+strings.Join(readingOf(o.Text, o.Parts), "／")+mark, ref(o.Line, "option"))
+				w.emit(pad+"　・"+strings.Join(readingOf(o.Text, o.Parts), "／")+mark, ref(o.Line, "option", o.Tags))
 				w.walk(o.Body, node, depth+2)
 			}
 		case "jump":
-			w.emit(pad+"→ "+w.label(s.Node)+" へ", ref(s.Line, "jump"))
+			w.emit(pad+"→ "+w.label(s.Node)+" へ", ref(s.Line, "jump", nil))
 		case "stop":
-			w.emit(pad+"■ おわり", ref(s.Line, "stop"))
+			w.emit(pad+"■ おわり", ref(s.Line, "stop", nil))
 		case "set":
-			w.emit(pad+"〔"+s.Name+" を "+exprText(s.Expr)+" にする〕", ref(s.Line, "flow"))
+			w.emit(pad+"〔"+s.Name+" を "+exprText(s.Expr)+" にする〕", ref(s.Line, "flow", nil))
 		case "if":
 			for i, c := range s.Clauses {
 				head := "〔それ以外〕"
@@ -314,11 +333,11 @@ func (w *scriptWriter) walk(body []*Stmt, node *Node, depth int) {
 				case c.Condition != nil:
 					head = "〔そうでなく、もし " + exprText(c.Condition) + "〕"
 				}
-				w.emit(pad+head, ref(c.Line, "flow"))
+				w.emit(pad+head, ref(c.Line, "flow", nil))
 				w.walk(c.Body, node, depth+1)
 			}
 		default:
-			w.emit(pad+"〔"+s.Kind+"〕", ref(s.Line, "flow"))
+			w.emit(pad+"〔"+s.Kind+"〕", ref(s.Line, "flow", nil))
 		}
 	}
 	flush()
@@ -354,7 +373,7 @@ func tagMap(tags []Tag) map[string]string {
 	return m
 }
 
-// readingOf は行の字を読み台本の行に割る（／ と強制の改行で割り、ルビは ｜字《よみ》）。
+// readingOf は行の字をシナリオ原稿の行に割る（／ と強制の改行で割り、ルビは ｜字《よみ》）。
 func readingOf(text string, parts []*Part) []string {
 	if len(parts) > 0 {
 		var b strings.Builder
@@ -378,14 +397,41 @@ func readingOf(text string, parts []*Part) []string {
 	return strings.FieldsFunc(text, func(r rune) bool { return r == '／' || r == '\n' })
 }
 
-var readingRubyRe = regexp.MustCompile(`｜([^《]+)《([^》]+)》`)
+var (
+	readingRubyRe = regexp.MustCompile(`｜([^《]+)《([^》]+)》`)
+	// keepRe はライターの字のうちエスケープしない所（ルビと、$ を含む {式}）。
+	keepRe = regexp.MustCompile(`｜[^《]+《[^》]+》|\{[^{}]*\$[^{}]*\}`)
+)
 
-// yarnText は読み台本の塊の行を、.yarn の 1 行の字に戻す（行は sep でつなぎ、ルビは [ruby=よみ]字[/ruby]）。
-func yarnText(lines []string, sep string) string {
-	for i, l := range lines {
-		lines[i] = strings.TrimSpace(l)
+// escapeYarn は .yarn で意味を持つ字（\ : # / { } [ ] < >）の前に \ を置く（台詞の字として読ませる）。
+func escapeYarn(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune(`\:#/{}[]<>`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
 	}
-	return readingRubyRe.ReplaceAllString(strings.Join(lines, sep), "[ruby=$2]$1[/ruby]")
+	return b.String()
+}
+
+// yarnText はシナリオ原稿の段落の行を、.yarn の 1 行の字に戻す（行は sep でつなぎ、ルビは [ruby=よみ]字[/ruby]、
+// {式} はそのまま、他の .yarn の記号はエスケープする）。
+func yarnText(lines []string, sep string) string {
+	parts := make([]string, len(lines))
+	for i, l := range lines {
+		l = strings.TrimSpace(l)
+		var b strings.Builder
+		at := 0
+		for _, m := range keepRe.FindAllStringIndex(l, -1) {
+			b.WriteString(escapeYarn(l[at:m[0]]))
+			b.WriteString(readingRubyRe.ReplaceAllString(l[m[0]:m[1]], "[ruby=$2]$1[/ruby]"))
+			at = m[1]
+		}
+		b.WriteString(escapeYarn(l[at:]))
+		parts[i] = b.String()
+	}
+	return strings.Join(parts, sep)
 }
 
 // lineSeparator は .yarn の台詞が画面の改行に使う書き方（／ か \n）。どちらも無ければ ／。
@@ -403,7 +449,7 @@ func lineSeparator(prog *Program) string {
 	return "／"
 }
 
-// noteMarks は、1 行で 1 つの塊にする行の頭（注釈・間・ゲート・jump・選択肢・おわり・見出し・コメント）。
+// noteMarks は、1 行で 1 つの段落にする行の頭（注釈・間・ゲート・jump・選択肢・おわり・見出し・コメント）。
 var noteMarks = []string{"〔", "（間", "【", "→", "◆", "・", "■", "#", ">"}
 
 func isNoteLine(text string) bool {
@@ -416,29 +462,45 @@ func isNoteLine(text string) bool {
 	return false
 }
 
+// paragraph は比べる単位。key は行ごとに前後の空白を落とした字（Word などが行頭の全角の空白を落としても同じ段落と見る）。
 type paragraph struct {
-	text string
-	ref  *ScriptRef
+	text, key string
+	ref       *ScriptRef
 }
 
-// paragraphs は読み台本を塊にする（空行で区切る。noteMarks で始まる行は 1 行で 1 塊。塊の行き先は最初の行の行き先）。
+// paragraphs はシナリオ原稿を段落にする（最初の ## から先だけ。空行で区切り、noteMarks で始まる行は 1 行で 1 段落。
+// 段落の行き先は最初の行の行き先）。
 func paragraphs(lines []ScriptLine) []paragraph {
 	var out []paragraph
 	var cur []string
 	var ref *ScriptRef
+	add := func(text []string, r *ScriptRef) {
+		keys := make([]string, len(text))
+		for i, t := range text {
+			keys[i] = strings.TrimSpace(t)
+		}
+		out = append(out, paragraph{strings.Join(text, "\n"), strings.Join(keys, "\n"), r})
+	}
 	end := func() {
 		if len(cur) > 0 {
-			out = append(out, paragraph{strings.Join(cur, "\n"), ref})
+			add(cur, ref)
 		}
 		cur, ref = nil, nil
 	}
+	started := false
 	for _, l := range lines {
+		if !started {
+			started = strings.HasPrefix(strings.TrimSpace(l.Text), "## ")
+			if !started {
+				continue
+			}
+		}
 		switch {
 		case strings.TrimSpace(l.Text) == "":
 			end()
 		case isNoteLine(l.Text):
 			end()
-			out = append(out, paragraph{l.Text, l.Ref})
+			add([]string{l.Text}, l.Ref)
 		default:
 			if len(cur) == 0 {
 				ref = l.Ref
@@ -473,16 +535,6 @@ func diffOps(a, b []string) []diffOp {
 	}
 	var ops []diffOp
 	i, j := 0, 0
-	gap := func(i2, j2 int) {
-		switch {
-		case i2 > i && j2 > j:
-			ops = append(ops, diffOp{"replace", i, i2, j, j2})
-		case i2 > i:
-			ops = append(ops, diffOp{"delete", i, i2, j, j2})
-		case j2 > j:
-			ops = append(ops, diffOp{"insert", i, i2, j, j2})
-		}
-	}
 	for i < n || j < m {
 		i2, j2 := i, j
 		for i2 < n && j2 < m && a[i2] != b[j2] {
@@ -492,13 +544,22 @@ func diffOps(a, b []string) []diffOp {
 				j2++
 			}
 		}
-		for i2 < n && j2 == m {
-			i2++
+		if i2 == n || j2 == m {
+			i2, j2 = n, m
 		}
-		for j2 < m && i2 == n {
-			j2++
+		switch {
+		case i2 > i && j2 > j && i2-i == j2-j:
+			// WhyNot: 隣り合う書き替えを 1 件にまとめない — 1 対 1 に組めるなら、段落ごとに .yarn の行を出せる
+			for k := 0; k < i2-i; k++ {
+				ops = append(ops, diffOp{"replace", i + k, i + k + 1, j + k, j + k + 1})
+			}
+		case i2 > i && j2 > j:
+			ops = append(ops, diffOp{"replace", i, i2, j, j2})
+		case i2 > i:
+			ops = append(ops, diffOp{"delete", i, i2, j, j2})
+		case j2 > j:
+			ops = append(ops, diffOp{"insert", i, i2, j, j2})
 		}
-		gap(i2, j2)
 		i, j = i2, j2
 		if i < n && j < m {
 			ops = append(ops, diffOp{"equal", i, i + 1, j, j + 1})
@@ -509,9 +570,13 @@ func diffOps(a, b []string) []diffOp {
 	return ops
 }
 
-var speakerHeadRe = regexp.MustCompile(`^\s*([^「」\s]+)「`)
+var (
+	speakerHeadRe = regexp.MustCompile(`^([^「」\s　]+)「`)
+	choiceMarkRe  = regexp.MustCompile(`（[↑↓←→●]）$`)
+	guideRe       = regexp.MustCompile(`案内「(.*)」$`)
+)
 
-// DiffScript は今の .yarn から作った読み台本 base と、人か AI が直した読み台本 edited を塊ごとに比べ、
+// DiffScript は今の .yarn から作ったシナリオ原稿 base と、人か AI が直した原稿 edited を段落ごとに比べ、
 // .yarn のどの行をどう直すかを Markdown で返す。names は話し手の id → 表示の名前、sep は台詞の改行の書き方。
 func DiffScript(base []ScriptLine, edited string, names map[string]string, sep string) string {
 	idOf := map[string]string{}
@@ -523,17 +588,17 @@ func DiffScript(base []ScriptLine, edited string, names map[string]string, sep s
 		editedLines = append(editedLines, ScriptLine{Text: l})
 	}
 	pa, pb := paragraphs(base), paragraphs(editedLines)
-	ta, tb := make([]string, len(pa)), make([]string, len(pb))
+	ka, kb := make([]string, len(pa)), make([]string, len(pb))
 	for i, p := range pa {
-		ta[i] = p.text
+		ka[i] = p.key
 	}
 	for i, p := range pb {
-		tb[i] = p.text
+		kb[i] = p.key
 	}
-	out := []string{"# 読み台本の直し → Yarn への写し方", ""}
+	out := []string{"# シナリオ原稿の直し → Yarn への反映", ""}
 	count := 0
 	kinds := map[string]string{"insert": "書き足し（この行の後へ）", "delete": "消した", "replace": "書き替え"}
-	for _, op := range diffOps(ta, tb) {
+	for _, op := range diffOps(ka, kb) {
 		if op.kind == "equal" {
 			continue
 		}
@@ -557,10 +622,18 @@ func DiffScript(base []ScriptLine, edited string, names map[string]string, sep s
 			out = append(out, "前:")
 			out = append(out, indented(p.text)...)
 		}
+		var was *ScriptRef
+		if op.kind == "replace" && op.a2-op.a1 == 1 {
+			was = pa[op.a1].ref
+		}
 		for _, p := range pb[op.b1:op.b2] {
 			out = append(out, "後:")
 			out = append(out, indented(p.text)...)
-			out = append(out, "  → "+yarnAdvice(p.text, idOf, sep))
+			if was != nil {
+				out = append(out, "  → "+replaceAdvice(p.text, was, idOf, sep))
+			} else {
+				out = append(out, "  → "+insertAdvice(p.text, idOf, sep))
+			}
 		}
 		out = append(out, "")
 	}
@@ -568,6 +641,16 @@ func DiffScript(base []ScriptLine, edited string, names map[string]string, sep s
 		out = append(out, "直しはありません。")
 	}
 	return strings.Join(out, "\n") + "\n"
+}
+
+// EditedHash は直した原稿の頭の指紋（無ければ空）。
+func EditedHash(edited string) string {
+	for _, l := range strings.Split(edited, "\n") {
+		if t := strings.TrimSpace(l); strings.HasPrefix(t, hashMark) {
+			return strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(t, hashMark), "-->"))
+		}
+	}
+	return ""
 }
 
 func indented(text string) []string {
@@ -578,8 +661,73 @@ func indented(text string) []string {
 	return out
 }
 
-// yarnAdvice は直した後の塊 1 つの写し方。台詞と地の文はそのまま貼れる .yarn の行、それ以外は何を直すか。
-func yarnAdvice(text string, idOf map[string]string, sep string) string {
+func tagsSuffix(tags []Tag) string {
+	if t := tagsText(tags); t != "" {
+		return " " + t
+	}
+	return ""
+}
+
+// speechLine は段落を .yarn の台詞の行にする。名前「…」の名前は、byName が id を返す時だけ話し手とみなす。
+func speechLine(text string, byName func(string) (string, bool), sep string, tags []Tag) string {
+	lines := strings.Split(text, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimLeft(lines[i], " \t　")
+	}
+	speaker := ""
+	if m := speakerHeadRe.FindStringSubmatchIndex(lines[0]); m != nil {
+		if id, ok := byName(lines[0][m[2]:m[3]]); ok {
+			speaker = id
+			lines[0] = lines[0][m[1]:]
+			last := len(lines) - 1
+			lines[last] = strings.TrimSuffix(strings.TrimRight(lines[last], " 　"), "」")
+		}
+	}
+	line := yarnText(lines, sep)
+	if speaker != "" {
+		line = speaker + ": " + line
+	}
+	return "Yarn の行: `" + line + tagsSuffix(tags) + "`"
+}
+
+// replaceAdvice は書き替えた段落の反映のしかた。何を直すかは元の段落の行の種類（ScriptRef.Kind）で決める。
+func replaceAdvice(text string, was *ScriptRef, idOf map[string]string, sep string) string {
+	t := strings.TrimSpace(text)
+	switch was.Kind {
+	case "line":
+		// WhyNot: 地の文の「」を話し手と読まない — 元が地の文なら、直した字に「」があっても地の文のまま
+		byName := func(name string) (string, bool) {
+			if was.Speaker == "" {
+				return "", false
+			}
+			return orDefault(idOf[name], was.Speaker), true
+		}
+		return speechLine(text, byName, sep, was.Tags)
+	case "option":
+		body := choiceMarkRe.ReplaceAllString(strings.TrimPrefix(t, "・"), "")
+		return "Yarn の選択肢の行: `-> " + yarnText([]string{body}, sep) + tagsSuffix(was.Tags) + "`"
+	case "gate":
+		if m := guideRe.FindStringSubmatch(t); m != nil {
+			return "Yarn の選択肢の行: `-> " + yarnText([]string{m[1]}, sep) + tagsSuffix(was.Tags) + "`（払いの向き・当たる物は #act: と #at: を直す）"
+		}
+		return "払いの行。.yarn の -> の行の #act:・#at:・#mute を直す。"
+	case "flow":
+		if strings.HasPrefix(t, "〔もし") || strings.HasPrefix(t, "〔そうでなく") || strings.HasPrefix(t, "〔それ以外") {
+			return "条件の直し。.yarn の <<if>>・<<elseif>>・<<else>> の式を直す。"
+		}
+		return "変数の直し。.yarn の <<set>> を直す。"
+	case "cmds":
+		return "演出の要望。.yarn の冒頭の演出の一覧（か script-notes.json）から当たるコマンドを選んで書く。"
+	case "node", "comment":
+		return "見出しの直し。title: の上の // ── コメントを直す（冒頭の文の見出しは本文の最初の行から作る）。"
+	case "choice", "jump", "stop":
+		return "流れの直し。.yarn の -> と <<jump>> と <<stop>> を手で直す。"
+	}
+	return insertAdvice(text, idOf, sep)
+}
+
+// insertAdvice は書き足した段落の反映のしかた（元の行が無いので、段落の頭の字で決める）。
+func insertAdvice(text string, idOf map[string]string, sep string) string {
 	t := strings.TrimSpace(text)
 	switch {
 	case strings.HasPrefix(t, "〔"):
@@ -589,20 +737,8 @@ func yarnAdvice(text string, idOf map[string]string, sep string) string {
 	case isNoteLine(t):
 		return "流れの行（ゲート・選択肢・jump・おわり・見出し）。.yarn の -> と <<jump>> と <<stop>> を手で直す。"
 	}
-	lines := strings.Split(text, "\n")
-	speaker := ""
-	if m := speakerHeadRe.FindStringSubmatchIndex(lines[0]); m != nil {
-		name := lines[0][m[2]:m[3]]
-		speaker = orDefault(idOf[name], name)
-		lines[0] = lines[0][m[1]:]
-		last := len(lines) - 1
-		lines[last] = strings.TrimSuffix(strings.TrimRight(lines[last], " 　"), "」")
-	}
-	line := yarnText(lines, sep)
-	if speaker != "" {
-		line = speaker + ": " + line
-	}
-	return "Yarn の行: `" + line + "`"
+	byName := func(name string) (string, bool) { id, ok := idOf[name]; return id, ok }
+	return speechLine(text, byName, sep, nil)
 }
 
 // storyNames はゲームの assets/novel.story.json の names（話し手の id → 表示の名前）。無ければ空。
@@ -617,12 +753,12 @@ func storyNames(root string) map[string]string {
 	return story.Names
 }
 
-// scriptNotesName は台本のフォルダに置く注釈の言葉の表（無くてよい）。
+// scriptNotesName はシナリオのフォルダに置く注釈の言葉の表（無くてよい）。
 const scriptNotesName = "script-notes.json"
 
-// scriptSource は読んだフォルダの読み台本の材料（話し手の名前・注釈の言葉の 2 つの出所・ノードのコメント）。
+// scriptSource は読んだフォルダのシナリオ原稿の材料（話し手の名前・注釈の言葉の 2 つの出所・ノードのコメント）。
 func (l *loaded) scriptSource() (ScriptSource, error) {
-	src := ScriptSource{Title: gameTitleOf(l.root), Prog: l.prog, Comments: map[string]string{}, Names: storyNames(l.root),
+	src := ScriptSource{Title: gameTitleOf(l.root), Hash: scriptHash(l.texts), Prog: l.prog, Comments: map[string]string{}, Names: storyNames(l.root),
 		Notes: Notes{File: map[string]string{}, Comment: map[string]string{}}}
 	if data, err := os.ReadFile(filepath.Join(l.dir, scriptNotesName)); err == nil {
 		m, err := ParseScriptNotes(data)
@@ -644,7 +780,7 @@ func (l *loaded) scriptSource() (ScriptSource, error) {
 	return src, nil
 }
 
-// ForTape は dir（.yarn のあるフォルダ）を読み、テープの頁に埋めるグラフと読み台本の Markdown を返す。
+// ForTape は dir（.yarn のあるフォルダ）を読み、テープの頁に埋めるグラフとシナリオ原稿の Markdown を返す。
 // dir に .yarn が無ければ (nil, "", nil)。
 func ForTape(dir string) (*TapeGraph, string, error) {
 	groups, err := groupsOf(dir, []string{dir})
@@ -664,13 +800,14 @@ func ForTape(dir string) (*TapeGraph, string, error) {
 
 const scriptUsage = `使い方: bin/fge yarn script <フォルダか x.yarn> [--out <md>]
        bin/fge yarn script --diff <直した.md> <フォルダか x.yarn> [--out <md>]
-  1 つのフォルダの .yarn から、ライターが読む台本（Markdown）を書く（既定 <ゲームのルート>/build/yarn-script.md）。
+  1 つのフォルダの .yarn（シナリオ）から、ライターが読むシナリオ原稿（Markdown）を書く（既定 <ゲームのルート>/build/yarn-script.md）。
   ノードは「## 番号「冒頭の文」　〔ノード名〕」、話し手は表示の名前（assets/novel.story.json の names）で 名前「…」、
   演出は〔注釈〕・wait は（間 N 秒）・払いのゲートは【…】・選択肢は ◆・jump は →・<<stop>> は ■。／ は画面の改行、ルビは ｜字《よみ》。
-  〔〕の言葉の出所: (1) 台本のフォルダの script-notes.json（{"se": "効果音 {args}", "witch on": "魔女が現れる"}）
+  〔〕の言葉の出所: (1) シナリオのフォルダの script-notes.json（{"se": "効果音 {args}", "witch on": "魔女が現れる"}）
     (2) .yarn の冒頭のコメントの「//   <<名前 …>>  説明」の行（説明の頭）  (3) どちらにも無ければコマンドの字。
-  --diff は直した台本を今の .yarn から作った台本と塊（空行で区切る。〔 （間 【 → ◆ ・ ■ # > で始まる行は 1 行ずつ）で比べ、
-  書き替え・書き足し・消したを .yarn のファイル:行（ノード）と前・後で出す（台詞と地の文はそのまま貼れる .yarn の行も）。既定は標準出力。
+  --diff は直した原稿と今の .yarn から作った原稿の差分（diff）を段落（空行で区切る。〔 （間 【 → ◆ ・ ■ # > で始まる行は 1 行ずつ）で取り、
+  書き替え・書き足し・消したを .yarn のファイル:行（ノード）と前・後で出す（台詞・地の文・選択肢はそのまま貼れる .yarn の行も）。既定は標準出力。
+  原稿の頭の <!-- yarn: … --> は書いた時の .yarn の指紋。今の .yarn と違えば --diff が知らせる（行の番号がずれている）。
 `
 
 // runScript は fge yarn script の入口。
@@ -717,7 +854,7 @@ func runScript(out, errOut *strings.Builder, cwd string, args []string) int {
 		return 2
 	}
 	if len(groups) != 1 {
-		errOut.WriteString(fmt.Sprintf("読み台本は 1 つのフォルダずつ作る（.yarn のあるフォルダが %d 個ある）\n", len(groups)))
+		errOut.WriteString(fmt.Sprintf("シナリオ原稿は 1 つのフォルダずつ作る（.yarn のあるフォルダが %d 個ある）\n", len(groups)))
 		return 2
 	}
 	l, err := loadGroup(groups[0], cwd, "", false)
@@ -733,15 +870,19 @@ func runScript(out, errOut *strings.Builder, cwd string, args []string) int {
 
 func writeScript(out, errOut *strings.Builder, l *loaded, src ScriptSource, outPath, edited string) int {
 	lines := BuildScript(src)
+	// WhyNot: 注意を標準出力に混ぜない — --diff を標準出力へ出す時、報告の Markdown の頭に注意の行が入る
 	for _, p := range l.checked {
-		fmt.Fprintf(out, "注意: %s\n", p.String())
+		fmt.Fprintf(errOut, "注意: %s\n", p.String())
 	}
 	var text string
 	if edited != "" {
 		data, err := os.ReadFile(edited)
 		if err != nil {
-			errOut.WriteString(fmt.Sprintf("直した台本を読めない: %v\n", err))
+			errOut.WriteString(fmt.Sprintf("直した原稿を読めない: %v\n", err))
 			return 2
+		}
+		if h := EditedHash(string(data)); h != "" && h != src.Hash {
+			fmt.Fprintf(errOut, "注意: 原稿を書いた後にシナリオが変わっている（原稿 %s・今 %s）。行の番号がずれていれば「前」の字で探す\n", h, src.Hash)
 		}
 		text = DiffScript(lines, string(data), src.Names, lineSeparator(l.prog))
 		if outPath == "" {
@@ -761,7 +902,7 @@ func writeScript(out, errOut *strings.Builder, l *loaded, src ScriptSource, outP
 	if edited == "" {
 		fmt.Fprintf(out, "[yarn script] %d ノード・%d 行を書いた %s\n", countNodes(lines), len(lines), outPath)
 	} else {
-		fmt.Fprintf(out, "[yarn script] 照らした結果を書いた %s\n", outPath)
+		fmt.Fprintf(out, "[yarn script] 差分を書いた %s\n", outPath)
 	}
 	return 0
 }

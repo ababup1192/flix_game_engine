@@ -1,6 +1,6 @@
 package yarn
 
-// fge yarn graph: フォルダの .yarn から、ノードと jump のグラフ・ノードごとの演出の帯・検査を作る。
+// fge yarn graph: フォルダの .yarn から、ノードと jump のグラフ・ノードごとの演出の並びと行・検査を作る（HTML は行を、--json は演出の並びも出す）。
 // 中身は Graph（--json で書く形）に集め、HTML は graph_html.go がそれから描く。
 
 import (
@@ -332,15 +332,21 @@ func NodeComments(text string) map[string]string {
 	return out
 }
 
-// CommentHeadings は NodeComments の「:」より前（箱と読み台本の見出しに使う短い名前）。
+// CommentHeadings は NodeComments の見出し（commentHeading）。
 func CommentHeadings(text string) map[string]string {
 	out := NodeComments(text)
 	for k, v := range out {
-		if i := strings.IndexAny(v, ":："); i >= 0 {
-			out[k] = strings.TrimSpace(v[:i])
-		}
+		out[k] = commentHeading(v)
 	}
 	return out
+}
+
+// commentHeading は // ── コメントの「:」より前（箱とシナリオ原稿の見出しに使う短い名前）。
+func commentHeading(comment string) string {
+	if i := strings.IndexAny(comment, ":："); i >= 0 {
+		return strings.TrimSpace(comment[:i])
+	}
+	return comment
 }
 
 // layoutDepths は最初のノードたちから jump を辿った最短の数を Depth に入れる。
@@ -542,9 +548,9 @@ func clip(s string, n int) string {
 }
 
 const graphUsage = `使い方: bin/fge yarn graph <フォルダか x.yarn>... [--out <html>] [--json <json>|-] [--vocab <パス> | --no-vocab] [--stage a,b,…]
-  1 つのフォルダの .yarn から、分岐のグラフ（ノード = 箱・<<jump>> = 矢印）と、ノードごとの演出の帯・全部の行・検査を書き出す。
+  1 つのフォルダの .yarn から、分岐のグラフ（ノード = 箱・<<jump>> = 矢印）と、ノードを押すと出る舞台・矢印・全部の行と、検査を書き出す。
   既定の書き先は <ゲームのルート>/build/yarn-graph.html（1 ファイルで開ける。外の物を読まない）。
-  --json はグラフの中身（ノード・矢印・帯・検査。行の本文は入れない）を書く（- か書き先を省くと標準出力）。--json だけなら HTML は書かない。
+  --json はグラフの中身（ノード・矢印・演出の並び・検査。行の本文は入れない）を書く（- か書き先を省くと標準出力）。--json だけなら HTML は書かない。
   最初のノードは語彙（vocab.json）の nodes（コードが開くノード）。語彙が無ければ最初のファイルの最初のノード。
   演出の色は既定の表に、vocab.json の "graph": {"categories": {"actor": ["girl"]}} を重ねる（分類: stage actor sound fx wait end。無い名前は other）。
   舞台（ノードを越えて残る物）は --stage か vocab.json の graph.stage、無ければ scene bg bgm ambience lights。
