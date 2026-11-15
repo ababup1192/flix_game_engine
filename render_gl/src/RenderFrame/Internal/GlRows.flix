@@ -1,11 +1,12 @@
 // RenderFrame.Internal.GlRows — RenderList の行を GL へ流す（GL の backend）。pass を開いて閉じ（clear・viewport・後始末）、
-// instance と頂点の入れ物を貸し、行 1 つを instanced draw 1 回にする。
+// instance と頂点の入れ物を貸し、行 1 つを draw 1 回にする（スプライトの run・多角形の run・タイルの層・static layer の範囲）。
 pub mod RenderFrame.Internal.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use RenderFrame.{FrameArgs, blendOf, countSpriteDraw, emitFrameMixed, polyVertCap, upsideDownTargetsOf}
+    use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, upsideDownTargetsOf}
     use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
-                                         instanceFloats, newRenderList, rowAt, rowCountOf, rowsOf, screenPass, targetPass, vertexFloats}
+                                         instanceFloats, kindPoly, kindStatic, kindTile, newRenderList, rowAt, rowCountOf, rowsOf, screenPass,
+                                         targetPass, valuesOf, vertexFloats}
 
     /// GL の描き先（FBO）は行 0 が下で、上下逆に格納される。
     pub def targetUpsideDown(): Bool = true
@@ -83,12 +84,22 @@ pub mod RenderFrame.Internal.GlRows {
     // ── GL の backend の状態（Int32 の配列 1 本・gs）──
     // 0=instShader 1=instVao 2=instVbo 3=instMultiplyBlend 4=polyBatchShader 5=polyBatchVao 6=polyBatchVbo
     // 7-10=viewport (x, y, 幅, 高さ・GL の左下原点) 11=tileShader
+    // 12-15=多角形のシェーダーの uniform location（multiplyBlend・viewOffset・viewScale・halfDesign）
+    // 16-19=tile シェーダーの uniform location（layerPos・tileSize・tileScale・layerColor）
     // WhyNot: record で持ち回らない — 1 item ごとに record の欄を辿る代金が物量の画面で 1 コマに出る（RenderFrame の st と同じ形）。
     def glStateOf(args: FrameArgs, pass: PassSpec): Array[Int32, Static] \ IO =
         let (vpX, vpY, vpW, vpH) = glViewportOf(pass);
+        let poly = args#polyBatchUniforms;
+        let tile = args#tileUniforms;
         Array#{args#instShader, args#instVao, args#instVbo, args#instMultiplyBlend,
                args#polyBatchShader, args#polyBatchVao, args#polyBatchVbo,
-               vpX, vpY, vpW, vpH, args#tileShader} @ Static
+               vpX, vpY, vpW, vpH, args#tileShader,
+               poly#multiplyBlend, poly#viewOffset, poly#viewScale, poly#halfDesign,
+               tile#layerPos, tile#tileSize, tile#tileScale, tile#layerColor} @ Static
+
+    def polyLocsAt(): Int32 = 12
+
+    def tileLocsAt(): Int32 = 16
 
     /// scissor を張り替える。y は GL の左下原点へ反転し、viewport と交差する
     /// （clip が画面外へ食み出しても letterbox の黒帯を侵さない）。
@@ -123,24 +134,50 @@ pub mod RenderFrame.Internal.GlRows {
             drawRowsFrom(gl, gs, st, list, row + 1, n)
         }
 
-    /// スプライトの行 1 つを 1 回の instanced draw で描き、draw call を数える。
+    /// 行 1 つを draw 1 回で描き、draw call を数える（種類ごとの描き方は drawPolyRow などへ）。
     // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
     def drawRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList, row: Int32): Unit \ IO =
         let rows = rowsOf(list);
-        let first = rowAt(rows, row, 1);
-        let count = rowAt(rows, row, 2);
+        let kind = rowAt(rows, row, 0);
+        setScissorAt(gl, gs, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9));
+        if (kind == kindPoly()) drawPolyRow(gl, gs, st, list, rows, row)
+        else if (kind == kindTile()) drawTileRow(gl, gs, st, list, rows, row)
+        else if (kind == kindStatic()) drawStaticRow(gl, gs, st, list, rows, row)
+        else drawSpriteRow(gl, gs, st, list, rows, row);
+        ()
+
+    /// スプライトの行（instances の run）を 1 回の instanced draw で描く。
+    def drawSpriteRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
+                      rows: Array[Int32, Static], row: Int32): Unit \ IO =
         let texId = rowAt(rows, row, 3);
         let blendC = rowAt(rows, row, 4);
-        let clipFlag = rowAt(rows, row, 5);
-        let x0 = rowAt(rows, row, 6);
-        let y0 = rowAt(rows, row, 7);
-        let x1 = rowAt(rows, row, 8);
-        let y1 = rowAt(rows, row, 9);
-        let instances = list#instances;
-        setScissorAt(gl, gs, clipFlag, x0, y0, x1, y1);
         RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
-                                            Array.get(3, gs), blendOf(blendC), instances, first, count);
-        countSpriteDraw(st, texId, clipFlag, x0, y0, x1, y1, blendC, false, 1);
-        ()
+                                            Array.get(3, gs), blendOf(blendC), list#instances, rowAt(rows, row, 1), rowAt(rows, row, 2));
+        countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
+                        blendC, false, 1)
+
+    /// 多角形の行（vertices の run）を 1 回の draw で描く。
+    def drawPolyRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
+                    rows: Array[Int32, Static], row: Int32): Unit \ IO =
+        let blendC = rowAt(rows, row, 4);
+        RenderSprite.drawPolygonRange(gl, Array.get(4, gs), Array.get(5, gs), Array.get(6, gs), gs, polyLocsAt(), blendOf(blendC),
+                                      valuesOf(list), rowAt(rows, row, 11), list#vertices, rowAt(rows, row, 1), rowAt(rows, row, 2));
+        countPolyDraw(st, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9), blendC)
+
+    /// タイルの層の行を 1 回の instanced draw で描く。TileMapRenderCmd は blend を持たない（いつも Normal）ので、前の行の Add / Multiply を戻す。
+    def drawTileRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
+                    rows: Array[Int32, Static], row: Int32): Unit \ IO =
+        RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
+        RenderSprite.drawTileMapInstanced(gl, Array.get(11, gs), rowAt(rows, row, 3), rowAt(rows, row, 10), gs, tileLocsAt(),
+                                          valuesOf(list), rowAt(rows, row, 11), rowAt(rows, row, 2));
+        countSingleDraw(st, kindTile(), 1)
+
+    /// static layer の範囲の行を、頂点の buffer（VAO）の範囲で 1 回の draw で描く（上げも三角形化もしない）。
+    def drawStaticRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
+                      rows: Array[Int32, Static], row: Int32): Unit \ IO =
+        let count = rowAt(rows, row, 2);
+        RenderSprite.drawStaticRange(gl, Array.get(4, gs), rowAt(rows, row, 10), gs, polyLocsAt(), blendOf(rowAt(rows, row, 4)),
+                                     valuesOf(list), rowAt(rows, row, 11), rowAt(rows, row, 1), count);
+        countSingleDraw(st, kindStatic(), if (count < 3) 0 else 1)
 }

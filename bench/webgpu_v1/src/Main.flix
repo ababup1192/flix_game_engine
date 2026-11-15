@@ -16,13 +16,22 @@ mod V1Main {
     // ── 場面を描く（GL と WebGPU で同じ）──
 
     /// 1 場面を 1 コマ描く: Pass を描いてから本編を渡し、画面へ出す。
+    // WhyNot: Pass と本編を 1 つの def に書き下さない — effect の続きが畳み込まれて 8,000 バイトを超え、lint-huge-methods がこの jar で鳴る。
     def drawScene(sc: V1Scenes.Scene): Unit \ Platform.Rendering + RenderTarget.Target + Platform.Window =
+        drawPasses(sc);
+        submitMain(sc);
+        Platform.Window.presentFrame()
+
+    @DontInline
+    def drawPasses(sc: V1Scenes.Scene): Unit \ Platform.Rendering + RenderTarget.Target =
         let design = { x = V1Scenes.designW(), y = V1Scenes.designH() };
         if (List.isEmpty(sc#passes)) ()
-        else discard App.Internal.Paint.drawPassPlan(_ -> (), design, Set.empty(), { targets = sc#targets | Render.passPlan(sc#passes) });
+        else discard App.Internal.Paint.drawPassPlan(_ -> (), design, Set.empty(), { targets = sc#targets | Render.passPlan(sc#passes) })
+
+    @DontInline
+    def submitMain(sc: V1Scenes.Scene): Unit \ Platform.Rendering =
         let items = sc#items();
-        App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None);
-        Platform.Window.presentFrame()
+        App.Internal.Paint.submitGpuItems(_ -> (), items, sc#tiles(), sc#staticLayer)
 
     // ── GL ──
 
@@ -62,7 +71,7 @@ mod V1Main {
                     WebGpuPaint.readFrame(paint, buf);
                     { pixels = buf, submits = WebGpuPaint.submitCount(paint) }
                 });
-                // V1 で描かない物（多角形・mask つきスプライト）を 2 コマ渡す: 名前ごとに 1 回だけ知らせ、誤りを出さずに捨てる。
+                // まだ描かない物（mask つきスプライト）を 2 コマ渡す: 名前ごとに 1 回だけ知らせ、誤りを出さずに捨てる。
                 handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
                 handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
                 let result = (shots, gpu.errorCount(), gpu.lastError(), gpu.adapterInfo());

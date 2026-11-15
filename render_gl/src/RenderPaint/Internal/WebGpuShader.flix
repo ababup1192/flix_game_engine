@@ -1,6 +1,6 @@
-// RenderPaint.Internal.WebGpuShader — WebGPU の 2D の道の WGSL（スプライト・字・箱を 1 本、中間の texture を画面へ写す 1 本）。
-// 対の GLSL は RenderShader.spriteInstancedVertexShaderSource・spriteInstancedFragmentShaderSource で、式は 1 行ずつ同じに書く。
-// 頂点の属性（location 1〜10・stride 152 バイト）は RenderFrame.writeInstAt の並びのまま instance の頂点バッファから読む。
+// RenderPaint.Internal.WebGpuShader — WebGPU の 2D の道の WGSL（スプライト・字・箱を 1 本、多角形を 1 本、タイルの層を 1 本、中間の texture を画面へ写す 1 本）。
+// 対の GLSL は RenderShader の同じ種類の物で、式は 1 行ずつ同じに書く。
+// スプライトの頂点の属性（location 1〜10・stride 152 バイト）は RenderFrame.writeInstAt の並びのまま instance の頂点バッファから読む。
 pub mod RenderPaint.Internal.WebGpuShader {
 
     /// スプライト・字・箱の WGSL。入口は vs_main・fs_main・fs_multiply（Multiply の blend の時の rgb × a）。
@@ -105,6 +105,71 @@ pub mod RenderPaint.Internal.WebGpuShader {
         "@fragment fn fs_multiply(i: VsOut) -> @location(0) vec4f {\n" +
         "    let c = shade(i);\n" +
         "    return vec4f(c.rgb * c.a, c.a);\n" +
+        "}\n"
+
+    /// 多角形（動く物と static layer）の WGSL。入口は vs_main・fs_main・fs_multiply。対の GLSL は RenderShader.polyBatchVertexShaderSource と
+    /// polyBatchFragmentShaderSource。頂点の属性: location 0〜1 = 頂点（位置・色。1 頂点 24 バイト）・
+    /// location 2〜4 = view（viewOffset・viewScale・halfDesign。stride 0 の instance の buffer で、draw ごとに offset を替える）。
+    // WhyNot: view を uniform で受けない — draw ごとの uniform は bind group を offset ごとに作るか dynamic offset が要る。
+    //   stride 0 の頂点の buffer なら setVertexBuffer の offset だけで替えられる（4 バイト刻みでよい）。
+    pub def polyWgsl(): String =
+        "struct Frame { projection: mat4x4f };\n" +
+        "@group(0) @binding(0) var<uniform> frame: Frame;\n" +
+        "struct VsOut {\n" +
+        "    @builtin(position) position: vec4f,\n" +
+        "    @location(0) color: vec4f,\n" +
+        "};\n" +
+        "@vertex fn vs_main(@location(0) vertex: vec2f, @location(1) vColor: vec4f,\n" +
+        "                   @location(2) viewOffset: vec2f, @location(3) viewScale: vec2f, @location(4) halfDesign: vec2f) -> VsOut {\n" +
+        "    var o: VsOut;\n" +
+        "    let screenPos = (vertex - viewOffset) * viewScale + halfDesign;\n" +
+        "    o.position = frame.projection * vec4f(screenPos, 0.0, 1.0);\n" +
+        "    o.color = vColor;\n" +
+        "    return o;\n" +
+        "}\n" +
+        "@fragment fn fs_main(i: VsOut) -> @location(0) vec4f { return i.color; }\n" +
+        "@fragment fn fs_multiply(i: VsOut) -> @location(0) vec4f {\n" +
+        "    return vec4f(i.color.rgb * i.color.a, i.color.a);\n" +
+        "}\n"
+
+    /// タイルの層の WGSL。入口は vs_main・fs_main。対の GLSL は RenderShader.tileVertexShaderSource と tileFragmentShaderSource。
+    /// group 0 = 射影の行列・group 1 = 絵の view と sampler。頂点の属性: location 1〜5 = タイル 1 枚（TileTable.instanceFloats の並び・40 バイト）・
+    /// location 6〜9 = 層の値（layerPos・tileSize・tileScale・layerColor。stride 0 の instance の buffer）。四角は spriteWgsl と同じ 6 頂点。
+    // WhyNot: 標本を discard の分岐の中で取らない — WGSL は値で分かれる分岐の中で textureSample を呼べない（式の値は GLSL と同じ）。
+    pub def tileWgsl(): String =
+        "struct Frame { projection: mat4x4f };\n" +
+        "@group(0) @binding(0) var<uniform> frame: Frame;\n" +
+        "@group(1) @binding(0) var image: texture_2d<f32>;\n" +
+        "@group(1) @binding(1) var imageSampler: sampler;\n" +
+        "struct VsOut {\n" +
+        "    @builtin(position) position: vec4f,\n" +
+        "    @location(0) texCoords: vec2f,\n" +
+        "    @location(1) alpha: f32,\n" +
+        "    @location(2) tint: vec3f,\n" +
+        "    @location(3) layerColor: vec3f,\n" +
+        "};\n" +
+        "@vertex fn vs_main(@builtin(vertex_index) vi: u32,\n" +
+        "                   @location(1) instPos: vec2f, @location(2) instUVO: vec2f, @location(3) instUVS: vec2f,\n" +
+        "                   @location(4) instA: f32, @location(5) instTint: vec3f,\n" +
+        "                   @location(6) layerPos: vec2f, @location(7) tileSize: f32, @location(8) tileScale: vec2f,\n" +
+        "                   @location(9) layerColor: vec3f) -> VsOut {\n" +
+        "    var quad = array<vec4f, 6>(vec4f(0.0, 1.0, 0.0, 1.0), vec4f(1.0, 0.0, 1.0, 0.0), vec4f(0.0, 0.0, 0.0, 0.0),\n" +
+        "                               vec4f(0.0, 1.0, 0.0, 1.0), vec4f(1.0, 1.0, 1.0, 1.0), vec4f(1.0, 0.0, 1.0, 0.0));\n" +
+        "    let vertex = quad[vi];\n" +
+        "    var o: VsOut;\n" +
+        "    let screenPos = layerPos + (instPos + vertex.xy * tileSize) * tileScale;\n" +
+        "    o.position = frame.projection * vec4f(screenPos, 0.0, 1.0);\n" +
+        "    o.texCoords = instUVO + vertex.zw * instUVS;\n" +
+        "    o.alpha = instA;\n" +
+        "    o.tint = instTint;\n" +
+        "    o.layerColor = layerColor;\n" +
+        "    return o;\n" +
+        "}\n" +
+        "@fragment fn fs_main(i: VsOut) -> @location(0) vec4f {\n" +
+        "    let t = textureSample(image, imageSampler, i.texCoords);\n" +
+        "    let color = vec4f(i.layerColor * i.tint * t.rgb, t.a * i.alpha);\n" +
+        "    if (color.a < 0.01) { discard; }\n" +
+        "    return color;\n" +
         "}\n"
 
     /// 中間の texture を画面の texture へ写す WGSL（全面の三角形 1 枚）。入口は vs_present・fs_present。group 0 = 中間の texture。

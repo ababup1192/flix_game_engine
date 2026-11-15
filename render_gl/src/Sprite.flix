@@ -150,28 +150,35 @@ mod RenderSprite {
         writeXY(data, vert, v#pos, RenderUtil.f32(color#r), RenderUtil.f32(color#g),
                 RenderUtil.f32(color#b), RenderUtil.f32(v#alpha))
 
-    /// 溜めた頂点 [0, vertexCount) を 1 回の draw call で塗る（入れ物から直に流す）。
+    /// 溜めた頂点 [first, first + count) を 1 回の draw call で塗る（入れ物から直に流す）。
+    /// locs の [locAt, locAt + 4) = 多角形のシェーダーの uniform location（multiplyBlend・viewOffset・viewScale・halfDesign の順）・
+    /// values の [at, at + 6) = view（RenderList の values の並び）。
     /// 流し終えたら書ける範囲を元に戻す — 上限を切ったままだと次の書き込みが弾かれる。
-    pub def drawPolygonBatchBuf(gl: GlContext, shader: Int32, vao: Int32, vbo: Int32,
-                                 uniforms: RenderShader.PolyBatchUniforms, blend: DrawCmd.BlendMode,
-                                 data: FloatBuffer, vertexCount: Int32): Unit \ IO =
-        if (vertexCount < 3) () else {
-            gl.useProgram(shader);
-            applyBlend(gl, blend);
-            gl.uniform1i(uniforms#multiplyBlend, multiplyFlag(blend));
-            gl.uniform2f(uniforms#viewOffset, 0.0f32, 0.0f32);
-            gl.uniform2f(uniforms#viewScale, 1.0f32, 1.0f32);
-            gl.uniform2f(uniforms#halfDesign, 0.0f32, 0.0f32);
+    pub def drawPolygonRange(gl: GlContext, shader: Int32, vao: Int32, vbo: Int32, locs: Array[Int32, Static], locAt: Int32,
+                             blend: DrawCmd.BlendMode, values: Array[Float32, Static], at: Int32,
+                             data: FloatBuffer, first: Int32, count: Int32): Unit \ IO =
+        if (count < 3) () else {
+            usePolyProgram(gl, shader, locs, locAt, blend, values, at);
             gl.bindVertexArray(vao);
             gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
-            discard data.position(0);
-            discard data.limit(vertexCount * 6);
+            discard data.limit((first + count) * 6);
+            discard data.position(first * 6);
             gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.DYNAMIC_DRAW);
             discard data.clear();
             gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
-            gl.drawArrays(GlConst.TRIANGLES, 0, vertexCount);
+            gl.drawArrays(GlConst.TRIANGLES, 0, count);
             gl.bindVertexArray(0)
         }
+
+    /// 多角形のシェーダーを使い、blend と view の uniform を差す（locs と values は drawPolygonRange と同じ）。
+    def usePolyProgram(gl: GlContext, shader: Int32, locs: Array[Int32, Static], locAt: Int32, blend: DrawCmd.BlendMode,
+                       values: Array[Float32, Static], at: Int32): Unit \ IO =
+        gl.useProgram(shader);
+        applyBlend(gl, blend);
+        gl.uniform1i(Array.get(locAt, locs), multiplyFlag(blend));
+        gl.uniform2f(Array.get(locAt + 1, locs), Array.get(at, values), Array.get(at + 1, values));
+        gl.uniform2f(Array.get(locAt + 2, locs), Array.get(at + 2, values), Array.get(at + 3, values));
+        gl.uniform2f(Array.get(locAt + 3, locs), Array.get(at + 4, values), Array.get(at + 5, values))
 
     /// 三角形化済みの多角形頂点をまとめて 1 回の draw call で塗る。
     /// data は 1 頂点 6 floats（位置 2 + 色 4）を列順に並べたもの（RenderFrame が組む）。
@@ -223,18 +230,11 @@ mod RenderSprite {
     /// 永続 VBO の [first, first+count) の頂点範囲を 1 回の draw call で塗る（アップロードなし）。
     /// camera（viewOffset/viewScale/halfDesign）を uniform で当てる。blend / scissor は
     /// 呼び側（RenderFrame）が設定済み。
-    pub def drawStaticRange(gl: GlContext, shader: Int32, vao: Int32,
-                             uniforms: RenderShader.PolyBatchUniforms, blend: DrawCmd.BlendMode,
-                             viewOffset: Vec2.Vec2, viewScale: Vec2.Vec2, halfDesign: Vec2.Vec2,
-                             first: Int32, count: Int32): Unit \ IO =
+    /// locs と values は drawPolygonRange と同じ。
+    pub def drawStaticRange(gl: GlContext, shader: Int32, vao: Int32, locs: Array[Int32, Static], locAt: Int32, blend: DrawCmd.BlendMode,
+                            values: Array[Float32, Static], at: Int32, first: Int32, count: Int32): Unit \ IO =
         if (count < 3) () else {
-            let f32 = RenderUtil.f32;
-            gl.useProgram(shader);
-            applyBlend(gl, blend);
-            gl.uniform1i(uniforms#multiplyBlend, multiplyFlag(blend));
-            gl.uniform2f(uniforms#viewOffset, f32(viewOffset#x), f32(viewOffset#y));
-            gl.uniform2f(uniforms#viewScale, f32(viewScale#x), f32(viewScale#y));
-            gl.uniform2f(uniforms#halfDesign, f32(halfDesign#x), f32(halfDesign#y));
+            usePolyProgram(gl, shader, locs, locAt, blend, values, at);
             gl.bindVertexArray(vao);
             gl.drawArrays(GlConst.TRIANGLES, first, count);
             gl.bindVertexArray(0)
@@ -249,40 +249,17 @@ mod RenderSprite {
     // Tile Map Instanced Rendering
     // ========================================================================
 
-    /// タイルインスタンスデータ用の VBO を新規に作り、中身をアップロードする。
-    /// 各インスタンスは 10 floats:
-    /// instPos(2) + instUVO(2) + instUVS(2) + instA(1) + instTint(3) = 40 bytes
-    pub def buildTileInstanceVBO(gl: GlContext, instances: List[RenderType.TileInstance]): Int32 \ IO =
+    /// タイルの instance の VBO を新規に作り、floats（TileTable.instanceFloats の並び・1 枚 10 個 = 40 bytes）を上げる。
+    pub def buildTileInstanceVBO(gl: GlContext, floats: Array[Float32, Static]): Int32 \ IO =
         let vbo = gl.createBuffer();
-        uploadTileInstances(gl, vbo, instances);
+        uploadTileInstances(gl, vbo, floats);
         vbo
 
     /// 既存のインスタンス VBO へ中身を入れ直す（glBufferData の作り直し —
     /// 古い領域はドライバが回収する）。作り直しの多いタイル層が VBO を積み増さないための関数。
-    pub def uploadTileInstances(gl: GlContext, vbo: Int32, instances: List[RenderType.TileInstance]): Unit \ IO =
-        let f32 = RenderUtil.f32;
-        let count = List.length(instances);
-        let data = Array.empty(Static, count * 10);
-        discard List.foldLeft((i, inst) -> {
-            let base = i * 10;
-            let px = inst#px;
-            Array.put(f32(px#x),       base + 0, data);
-            Array.put(f32(px#y),       base + 1, data);
-            let uvOff = inst#uvOff;
-            Array.put(f32(uvOff#x),    base + 2, data);
-            Array.put(f32(uvOff#y),    base + 3, data);
-            let uvSc = inst#uvSc;
-            Array.put(f32(uvSc#x),     base + 4, data);
-            Array.put(f32(uvSc#y),     base + 5, data);
-            Array.put(f32(inst#alpha), base + 6, data);
-            let tint = inst#tint;
-            Array.put(f32(tint#r),     base + 7, data);
-            Array.put(f32(tint#g),     base + 8, data);
-            Array.put(f32(tint#b),     base + 9, data);
-            i + 1
-        }, 0, instances);
+    pub def uploadTileInstances(gl: GlContext, vbo: Int32, floats: Array[Float32, Static]): Unit \ IO =
         gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
-        gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.STATIC_DRAW);
+        gl.bufferData(GlConst.ARRAY_BUFFER, floats, GlConst.STATIC_DRAW);
         gl.bindBuffer(GlConst.ARRAY_BUFFER, 0)
 
     /// TileLayer 専用 VAO を構築する。
@@ -317,18 +294,15 @@ mod RenderSprite {
         vao
 
     /// 1 draw call で TileLayer のすべてのタイルを描画する。
-    /// uniforms は起動時に 1 回だけ引いた location 一式（RenderShader.tileUniformsOf）。
-    pub def drawTileMapInstanced(gl: GlContext, tileShader: Int32, texId: Int32, tileVao: Int32,
-                                  uniforms: RenderShader.TileUniforms,
-                                  layerPos: Vec2.Vec2, tileSize: Float64,
-                                  tileScale: Vec2.Vec2,
-                                  color: Color, tileCount: Int32): Unit \ IO =
-        let f32 = RenderUtil.f32;
+    /// locs の [locAt, locAt + 4) = tile シェーダーの uniform location（layerPos・tileSize・tileScale・layerColor の順・起動時に 1 回だけ引いた物）・
+    /// values の [at, at + 8) = 層の値（RenderList の values のタイルの並び）。
+    pub def drawTileMapInstanced(gl: GlContext, tileShader: Int32, texId: Int32, tileVao: Int32, locs: Array[Int32, Static], locAt: Int32,
+                                 values: Array[Float32, Static], at: Int32, tileCount: Int32): Unit \ IO =
         gl.useProgram(tileShader);
-        gl.uniform2f(uniforms#layerPos, f32(layerPos#x), f32(layerPos#y));
-        gl.uniform1f(uniforms#tileSize, f32(tileSize));
-        gl.uniform2f(uniforms#tileScale, f32(tileScale#x), f32(tileScale#y));
-        gl.uniform3f(uniforms#layerColor, f32(color#r), f32(color#g), f32(color#b));
+        gl.uniform2f(Array.get(locAt, locs), Array.get(at, values), Array.get(at + 1, values));
+        gl.uniform1f(Array.get(locAt + 1, locs), Array.get(at + 2, values));
+        gl.uniform2f(Array.get(locAt + 2, locs), Array.get(at + 3, values), Array.get(at + 4, values));
+        gl.uniform3f(Array.get(locAt + 3, locs), Array.get(at + 5, values), Array.get(at + 6, values), Array.get(at + 7, values));
         gl.activeTexture(GlConst.TEXTURE0);
         gl.bindTexture(GlConst.TEXTURE_2D, texId);
         gl.bindVertexArray(tileVao);

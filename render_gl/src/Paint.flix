@@ -15,6 +15,7 @@ mod RenderPaint {
     use RenderFrame.Internal.RenderList
     use RenderPaint.Internal.TargetTable
     use RenderPaint.Internal.TextureTable
+    use RenderPaint.Internal.TileTable
 
     /// 1 コマの描く命令（画面へのコマ。リサイズで描き直す時・注釈のスクショも同じ物を使う）。
     pub type alias Frame = {
@@ -40,7 +41,8 @@ mod RenderPaint {
         quadVBO = Int32,
         // 組めなかった Spec が落ちる単色のプログラム（追い出さない）。
         fallbackShader = Int32,
-        // タイル VAO → インスタンス VBO（updateTileBuffer が入れ直す先）。
+        // 作ったタイル VAO の表（入れ直すか作るかを決める）と、タイル VAO → インスタンス VBO（updateTileBuffer が入れ直す先）。
+        tiles = TileTable.Table,
         tileVboRegistry = Ref[Map[Int32, Int32], Static],
         // Spec の name → (組んだ時の Spec, プログラム + uniform location)。
         shaderProgramCache = Ref[Map[String, (ShaderDoc.Spec, RenderShaderCache.ProgramEntry)], Static],
@@ -72,6 +74,8 @@ mod RenderPaint {
         textureKeyRef = Ref[Map[String, String], Static],
         // 静的多角形バッファのキャッシュ（RenderStatic.resolve）。
         staticCacheCell = Array[Option[RenderStatic.Entry], Static],
+        // static layer の VAO → VBO（捨てる時に両方 delete する）。
+        staticVbos = Ref[Map[Int32, Int32], Static],
         // 最後に画面へ塗ったコマの命令（リサイズの描き直し・LRU の pin・注釈のスクショ）。
         lastFrameHolder = Array[Frame, Static],
         // 1 コマぶんの診断（setDiagnosticsEnabled の間だけ Some。consumeDiagnostics が取り出す）。
@@ -271,7 +275,7 @@ mod RenderPaint {
         };
         { screenW = screenW, screenH = screenH, screenFramebuffer = cfg#screenFramebuffer, frameArgsBase = frameArgsBase,
           quadVBO = quadVBO, fallbackShader = fallbackShader,
-          tileVboRegistry = tileVboRegistry, shaderProgramCache = shaderProgramCache,
+          tiles = TileTable.fresh(), tileVboRegistry = tileVboRegistry, shaderProgramCache = shaderProgramCache,
           frameGenHolder = frameGenHolder, programUsedAtRef = programUsedAtRef,
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
           pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, scene3d = cfg#scene3d,
@@ -279,7 +283,7 @@ mod RenderPaint {
           targets = targets, targetEntries = Ref.fresh(Static, Map.empty()),
           targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
-          staticCacheCell = staticCacheCell, lastFrameHolder = Array#{emptyFrame()} @ Static,
+          staticCacheCell = staticCacheCell, staticVbos = Ref.fresh(Static, Map.empty()), lastFrameHolder = Array#{emptyFrame()} @ Static,
           diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
           retiredProgramsRef = Ref.fresh(Static, Set.empty()), gpuTimer = cfg#gpuTimer }
 
@@ -291,7 +295,7 @@ mod RenderPaint {
     pub def paintFrame(gl: GlContext, paint: Paint, fbW: Int32, fbH: Int32, frame: Frame): Unit \ IO =
         let staticRanges = match frame#staticLayer {
             case None    => Nil
-            case Some(l) => RenderStatic.resolve(gl, paint#staticCacheCell, l)
+            case Some(l) => RenderStatic.resolve(glStaticAllocator(gl, paint), paint#staticCacheCell, l)
         };
         // WhyNot: 画面に標本の数を問わない — 窓は GLFW_SAMPLES を頼まずに作る（窓の MSAA は 2D の縁も変える）。
         let prepared = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }, frame#scenes);
@@ -553,21 +557,34 @@ mod RenderPaint {
 
     /// Game.initTileBuffer の中身: インスタンス VBO と VAO を作り、(VAO, 個数) を返す。
     pub def initTileBuffer(gl: GlContext, paint: Paint, instances: List[GameEngine.TileInstance]): (GpuHandle.TileVao, Int32) \ IO =
-        let instanceVBO = RenderSprite.buildTileInstanceVBO(gl, instances);
-        let tileVao = RenderSprite.buildTileMapVAO(gl, paint#quadVBO, instanceVBO);
-        Ref.put(Map.insert(tileVao, instanceVBO, Ref.get(paint#tileVboRegistry)), paint#tileVboRegistry);
-        (GpuHandle.wrapTileVao(tileVao), List.length(instances))
+        TileTable.init(glTileAllocator(gl, paint), paint#tiles, instances)
 
     /// Game.updateTileBuffer の中身: 既にある VAO の VBO へ入れ直す（知らない VAO なら作って返す）。
     pub def updateTileBuffer(gl: GlContext, paint: Paint, vaoId: GpuHandle.TileVao, instances: List[GameEngine.TileInstance]): (GpuHandle.TileVao, Int32) \ IO =
-        let tileVao = GpuHandle.tileVaoInt(vaoId);
-        match Map.get(tileVao, Ref.get(paint#tileVboRegistry)) {
-            case Some(vbo) =>
-                RenderSprite.uploadTileInstances(gl, vbo, instances);
-                (vaoId, List.length(instances))
-            // レジストリに無い VAO（理論上来ない）: 新規に作って返す。
-            case None => initTileBuffer(gl, paint, instances)
-        }
+        TileTable.update(glTileAllocator(gl, paint), paint#tiles, vaoId, instances)
+
+    /// GL でタイルの instance の buffer を作る・入れ直す関数の組。番号は共有の四角を読む VAO。
+    def glTileAllocator(gl: GlContext, paint: Paint): TileTable.TileAllocator =
+        { create = (floats, _) -> {
+              let instanceVBO = RenderSprite.buildTileInstanceVBO(gl, floats);
+              let tileVao = RenderSprite.buildTileMapVAO(gl, paint#quadVBO, instanceVBO);
+              Ref.put(Map.insert(tileVao, instanceVBO, Ref.get(paint#tileVboRegistry)), paint#tileVboRegistry);
+              tileVao
+          },
+          write = (tileVao, floats, _) ->
+              Map.get(tileVao, Ref.get(paint#tileVboRegistry)) |> Option.forEach(vbo -> RenderSprite.uploadTileInstances(gl, vbo, floats)) }
+
+    /// GL で static layer の頂点の buffer を作る・捨てる関数の組。番号は VAO。
+    def glStaticAllocator(gl: GlContext, paint: Paint): RenderStatic.StaticAllocator =
+        { create = (data, count) -> {
+              let (vao, vbo) = RenderSprite.buildStaticPolyVBO(gl, data, count);
+              Ref.put(Map.insert(vao, vbo, Ref.get(paint#staticVbos)), paint#staticVbos);
+              vao
+          },
+          destroy = vao -> {
+              Map.get(vao, Ref.get(paint#staticVbos)) |> Option.forEach(vbo -> RenderSprite.freeStaticPolyVBO(gl, vao, vbo));
+              Ref.put(Map.remove(vao, Ref.get(paint#staticVbos)), paint#staticVbos)
+          } }
 
     // ── シェーダー面 ──
 

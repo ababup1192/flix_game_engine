@@ -378,6 +378,57 @@ mod WebGpuSharedChecks {
         out.destroy();
         buf
 
+    // ── stride 0 の instance の頂点の buffer（draw ごとの値を offset だけ替えて読む形・2D の多角形とタイルの層が使う）──
+
+    /// 左と右の三角形を別の draw で描き、色は stride 0 の instance の buffer（頂点の buffer の 0 番）から読む。
+    def constantColorWgsl(): String =
+        "struct VsOut { @builtin(position) position: vec4f, @location(0) color: vec4f };\n" +
+        "@vertex fn vs_main(@builtin(vertex_index) i: u32, @location(0) color: vec4f) -> VsOut {\n" +
+        "    var p = array<vec2f, 6>(vec2f(-0.9, -0.9), vec2f(-0.1, -0.9), vec2f(-0.5, -0.1),\n" +
+        "                            vec2f(0.1, -0.9), vec2f(0.9, -0.9), vec2f(0.5, -0.1));\n" +
+        "    var o: VsOut;\n" +
+        "    o.position = vec4f(p[i], 0.0, 1.0);\n" +
+        "    o.color = color;\n" +
+        "    return o;\n" +
+        "}\n" +
+        "@fragment fn fs_main(i: VsOut) -> @location(0) vec4f { return i.color; }\n"
+
+    /// 色 2 つ（16 バイトずつ）の buffer を、左の draw は offset 0・右の draw は offset 16 で付け、右の draw は firstInstance 3・2 体にする
+    /// （stride 0 なら firstInstance と instance の番号に関わらず同じ色を読む）。
+    def checkConstantAttribute(session: WebGpuOffscreen.Session): Bool \ IO + CheckLog =
+        let gpu = WebGpuOffscreen.gpuOf(session);
+        let (w, h) = WebGpuOffscreen.sizeOf(session);
+        let module = gpu.createShaderModule("check stride 0", constantColorWgsl());
+        let desc = new RenderPipelineDesc("check stride 0");
+        discard desc.vertex(module, "vs_main").fragment(module, "fs_main").colorTarget(TextureFormat.RGBA8_UNORM);
+        discard desc.vertexBuffer(0, true).attribute(VertexFormat.FLOAT32X4, 0, 0);
+        let pipeline = gpu.createRenderPipeline(desc);
+        let colors = ByteBuffer.allocateDirect(32).order(ByteOrder.LITTLE_ENDIAN);
+        List.forEach(v -> discard colors.putFloat(v), 1.0f32 :: 0.0f32 :: 0.0f32 :: 1.0f32 :: 0.0f32 :: 1.0f32 :: 0.0f32 :: 1.0f32 :: Nil);
+        discard colors.flip();
+        let buffer = gpu.createBuffer("check stride 0", 32i64, usage2(BufferUsage.VERTEX, BufferUsage.COPY_DST));
+        gpu.writeBuffer(buffer, 0i64, colors, 0, 32);
+        let encoder = gpu.createCommandEncoder("check stride 0");
+        let pass = encoder.beginRenderPass(new RenderPassDesc("check stride 0").clearColor(WebGpuOffscreen.targetOf(session).defaultView(), 0.2, 0.2, 0.2, 1.0));
+        pass.setPipeline(pipeline);
+        pass.setVertexBuffer(0, buffer, 0i64, 16i64);
+        pass.draw(3, 1, 0, 0);
+        pass.setVertexBuffer(0, buffer, 16i64, 16i64);
+        pass.draw(3, 2, 3, 3);
+        pass.end();
+        gpu.submit(encoder.finish());
+        let buf = ByteBuffer.allocateDirect(w * h * 4);
+        WebGpuOffscreen.readRgba(session, buf);
+        buffer.destroy();
+        pipeline.release();
+        module.release();
+        let row = y -> h - 1 - y;
+        let left = rgbaAt(buf, w * 4, w / 4, row(h * 7 / 8));
+        let right = rgbaAt(buf, w * 4, w * 3 / 4, row(h * 7 / 8));
+        let errors = gpu.errorCount();
+        let ok = near(left, (255, 0, 0, 255)) and near(right, (0, 255, 0, 255)) and errors == 0;
+        report("stride0-instance-attribute", ok, "left=${showPixel(left)} right=${showPixel(right)} errors=${errors}")
+
     // ── まとめ ──────────────────────────────
 
     /// ウィンドウを使わない門を全部流し、全部通ったかを返す。
@@ -394,6 +445,7 @@ mod WebGpuSharedChecks {
                     checkTriangles(session, "triangle-cull-none", CullMode.NONE, true) ::
                     checkFloatRows(session) ::
                     checkArgbMipRows(session) ::
+                    checkConstantAttribute(session) ::
                     checkFirstInstance(gpu) :: Nil;
                 WebGpuOffscreen.close(session);
                 List.forAll(identity, results)
