@@ -1,9 +1,10 @@
 // 立ち絵と小物（Cast）: シナリオの <<show>> / <<hide>> の読み方、出し入れと重ね方、セーブ・ロード・バックログから戻る時の持ち越し、
-// 素材の待ちとのつなぎ、置き場所。人物と位置の名前はテスト用の Doc（test/fixtures/novel.cast.json）、
-// シナリオはテスト用の木（test/fixtures/talk/cast.yarn を build した物）から引き、期待値は Doc から導く。
+// 舞台の全部と頁がどの台詞からも同じに戻ること、ノードに着いた時の舞台、素材の待ちとのつなぎ、置き場所。
+// 人物と位置の名前はテスト用の Doc（test/fixtures/novel.cast.json）、シナリオはテスト用の木
+// （test/fixtures/talk/cast.yarn と stage.yarn を build した物）から引き、期待値は Doc と台本から導く。
 mod TestCast {
 
-    use fge::{Clock, Display, Render, Yarn, YarnRunner}
+    use fge::{Clock, Display, JsonCodec, Render, Yarn, YarnRunner, YarnStorage}
     use Util.Json.Json
     use CastDoc.Kind
     use TestKit.{advance, begun, quiet, settle, stepBy}
@@ -240,41 +241,211 @@ mod TestCast {
         let bookmark = WorldRead.slotHere(r, begun(r)) |> Option.map(s -> YarnRunner.bookmarkToJson(s#mark#bookmark));
         let old = bookmark |> Option.map(bm -> Json.JObject(Map#{ "slots" => Json.JObject(Map#{ "0" => Json.JObject(Map#{ "bookmark" => bm, "mode" => Json.JString("Adv") }) }) }));
         let read = old |> Option.map(Saves.fromJson(fresh))
-            |> Option.flatMap(s -> Map.get(0, Saves.rec(s)#slots)) |> Option.map(s -> markTuple(s#mark#cast));
+            |> Option.flatMap(s -> Map.get(0, Saves.rec(s)#slots)) |> Option.map(s -> markTuple(Cast.markOf(Stage.fromSnapshot(s#mark#stage)#cast)));
         Assert.assertEq(expected = Some((Nil, None)), read)
+
+    @Test
+    def testVersion2SaveReadsIntoTheStage(): Unit \ {Assert, Fs.FileRead} =
+        // version 2 の枠の欄（photo・grade・mode・cast・ambienceSound・particles）は、戻す舞台に読み替える。頁は無い。
+        let r = res();
+        let bookmark = WorldRead.slotHere(r, begun(r)) |> Option.map(s -> YarnRunner.bookmarkToJson(s#mark#bookmark));
+        let cast = Cast.markToJson({ cast = { name = "a", face = "smile", slot = "left" } :: Nil, prop = None });
+        let old = bookmark |> Option.map(bm -> Json.JObject(Map#{ "version" => Json.JNumber(JsonCodec.intToBd(2)), "slots" => Json.JObject(Map#{ "0" => Json.JObject(Map#{
+            "bookmark" => bm, "photo" => Json.JString("p"), "grade" => Json.JString("g"), "mode" => Json.JString("Adv"), "cast" => cast,
+            "ambienceSound" => Json.JString("amb_x"), "particles" => Json.JString("fireflies") }) }) }));
+        let read = old |> Option.map(Saves.fromJson(Saves.fresh(r#kind)))
+            |> Option.flatMap(s -> Map.get(0, Saves.rec(s)#slots)) |> Option.map(s -> {
+                let st = Stage.fromSnapshot(s#mark#stage);
+                (st#shot |> Option.map(shot -> (shot#photo, shot#grade)), st#mode, markTuple(Cast.markOf(st#cast)), Stage.ambienceOf(Clock.zero(), st), Stage.particlesOf(Clock.zero(), st), Option.isEmpty(s#mark#page))
+            });
+        Assert.assertEq(expected = Some((Some(("p", "g")), Stage.Mode.Adv, (("a", "smile", "left") :: Nil, None), Some("amb_x"), Some("fireflies"), true)), read)
 
     // ══ ロード・バックログから戻る時の持ち越し（テスト用のシナリオ） ══
 
     /// 台詞を出し終えた所から送って、次の台詞を出し終えた所。
     def next(r: Res.Res, w: World.World): World.World = settle(r, advance(r, w))
 
-    /// 送るたびの、読み進めた舞台と、その行の戻れる所（バックログの一番新しい行）から戻した舞台の (立ち絵の形, 戻した立ち絵の形)。
-    def liveAndRestored(r: Res.Res, w: World.World): (List[(String, String, String)], Option[(String, String, String)], List[(String, String, String)], Option[(String, String, String)]) =
-        let mark = World.logOf(w) |> List.head |> Option.flatMap(e -> match e {
-            case World.Entry.Said(_, m) => m
-            case _                      => None
-        });
-        let live = markTuple(Cast.markOf(Cast.settle(World.stageOf(r, w)#cast)));
-        let back = mark |> Option.map(m -> settle(r, quiet(() -> WorldRead.restore(r, m, w))))
-            |> Option.map(b -> markTuple(Cast.markOf(Cast.settle(World.stageOf(r, b)#cast)))) |> Option.getWithDefault((Nil, None));
-        (fst(live), snd(live), fst(back), snd(back))
+    /// 舞台（settle した物）と頁（出し終えた形）の JSON の字。
+    def shapeOf(r: Res.Res, w: World.World): (String, String) =
+        (Util.Json.toPrettyString(2, Stage.snapshotToJson(Stage.snapshotOf(World.stageOf(r, w)))),
+         Util.Json.toPrettyString(2, Page.toJson(Page.revealAll(World.pageOf(w)))))
+
+    /// 読み進めた舞台と頁と、その台詞の戻れる所（バックログの一番新しい行）から戻した舞台と頁。
+    def liveAndRestored(r: Res.Res, w: World.World): ((String, String), (String, String)) =
+        let back = WorldRead.headMarkOf(World.logOf(w)) |> Option.map(m -> settle(r, quiet(() -> WorldRead.restore(r, m, w))))
+            |> Option.map(shapeOf(r)) |> Option.getWithDefault(("", ""));
+        (shapeOf(r, w), back)
+
+    /// はじめから読み、選択肢では picks の頭を選んで、台詞を出し終えた所を全部（古い順。シナリオが終わるか picks が尽きた選択肢まで）。
+    def everyLine(r: Res.Res, picks: List[Int32]): List[World.World] =
+        def go(fuel: Int32, rest: List[Int32], cur: World.World, acc: List[World.World]): List[World.World] =
+            if (fuel <= 0 or not World.isReading(cur)) List.reverse(acc)
+            else if (World.isChoosing(cur)) match rest {
+                case i :: tail => go(fuel - 1, tail, settle(r, TestKit.pick(r, i, cur)), acc)
+                case Nil       => List.reverse(acc)
+            }
+            else go(fuel - 1, rest, next(r, cur), cur :: acc);
+        go(100, picks, begun(r), Nil)
+
+    /// 左の道を読んだ時の、今の行が prefix を含む所。
+    def lineWith(r: Res.Res, prefix: String): World.World =
+        everyLine(r, 0 :: Nil)
+            |> List.find(w -> World.pageOf(w)#current |> Option.exists(line -> String.contains(substr = prefix, line#text)))
+            |> Option.getWithDefault(World.toTitle(begun(r)))
+
+    /// 左の道を読んだ時の、今の行が prefix を含む所の頁の数。
+    def pagesAt(r: Res.Res, prefix: String): Int32 = World.stageOf(r, lineWith(r, prefix))#pages
 
     @Test
     def testLiveStageMatchesTheRestoredStageOnEveryLine(): Unit \ {Assert, Fs.FileRead} =
-        // テスト用のシナリオの全部の台詞で、読み進めた立ち絵と、その行の戻れる所から戻した立ち絵が同じ（前のノードで出した人も戻る）。
+        // テスト用のシナリオの全部の台詞で（選択肢はどの道も。自分へ戻るメニューも通る）、読み進めた舞台の全部と頁が、その行の戻れる所から戻した物と同じ
+        // （前のノードで出した人・前のノードの型・頁の数・ノードをまたいで続く NVL の頁も戻る）。
         let r = res();
-        let l1 = begun(r);
-        let l2 = next(r, l1);
-        let l3 = next(r, l2);
-        let l4 = next(r, l3);
-        let l5 = next(r, l4);
-        let l6 = next(r, l5);
-        let l7 = next(r, l6);
-        let l8 = next(r, l7);
-        let pairs = (l1 :: l2 :: l3 :: l4 :: l5 :: l6 :: l7 :: l8 :: Nil) |> List.map(liveAndRestored(r));
+        let pairs = (everyLine(r, 0 :: Nil) :: everyLine(r, 1 :: 0 :: 1 :: Nil) :: Nil) |> List.flatten |> List.map(liveAndRestored(r));
         // 4 行目（Station の最後）は 2 人と小物が出ている所（空どうしの一致で通らないことの確かめ）。
-        Assert.assertEq(expected = (pairs |> List.map(match (c, p, _, _) -> (c, p, c, p)), (shownAtL4(), Some(("cup", "plain", "item")))),
-                        (pairs, stageMark(l4)))
+        let l4 = List.nth(3, everyLine(r, Nil)) |> Option.map(stageMark) |> Option.getWithDefault((Nil, None));
+        Assert.assertEq(expected = (pairs |> List.map(match (live, _) -> (live, live)), (shownAtL4(), Some(("cup", "plain", "item")))),
+                        (pairs, l4))
+
+    @Test
+    def testEveryLineSurvivesTheSaveJson(): Unit \ {Assert, Fs.FileRead} =
+        // 全部の台詞で、セーブの道（slotHere）で残し、JSON に書いて読み直してから戻すと、読み進めた舞台の全部と頁に戻る。
+        let r = res();
+        let throughJson = (w: World.World) -> WorldRead.slotHere(r, w)
+            |> Option.map(slot -> Saves.withPushed(Saves.Tab.Quick, slot, Saves.fresh(r#kind)))
+            |> Option.map(s -> Saves.fromJson(Saves.fresh(r#kind), Saves.toJson(s)))
+            |> Option.flatMap(s -> Saves.slotOf(Saves.Tab.Quick, 0, s))
+            |> Option.map(slot -> shapeOf(r, settle(r, quiet(() -> WorldRead.restore(r, slot#mark, World.toTitle(w))))))
+            |> Option.getWithDefault(("", ""));
+        let lines = everyLine(r, 0 :: Nil);
+        Assert.assertEq(expected = lines |> List.map(shapeOf(r)), lines |> List.map(throughJson))
+
+    @Test
+    def testLogJumpAfterALoadKeepsWhatTheNodeChangedLater(): Unit \ {Assert, Fs.FileRead} =
+        // Next の三行目（b と小物を消した後）でセーブしてロードし、バックログで Next の一行目へ戻ると、b と小物が出ている
+        // （当て直しはノードに入った時の舞台から始まるので、ノードの途中で替えた物が前の台詞へ早く入らない）。
+        let r = res();
+        let third = List.nth(6, everyLine(r, Nil)) |> Option.getWithDefault(begun(r));
+        let saved = quiet(() -> WorldSaves.writeSlot(r, Saves.Tab.Numbered(1), 0, third));
+        let loaded = settle(r, quiet(() -> WorldSaves.loadFrom(r, Saves.Tab.Numbered(1), 0, World.toTitle(saved))));
+        let asked = quiet(() -> WorldLog.askJump(2, quiet(() -> WorldLog.openLog(loaded))));
+        let jumped = settle(r, quiet(() -> WorldMenu.answer(r, World.Answer.Yes, asked)));
+        Assert.assertEq(expected = (shownAtL4(), Some(("cup", "plain", "item"))), stageMark(jumped))
+
+    @Test
+    def testLogJumpAfterALoadKeepsThePageFromTheEarlierNode(): Unit \ {Assert, Fs.FileRead} =
+        // PagesNext の「枠は台詞で戻る」でセーブしてロードし、バックログで「前のノードの頁に続く地の文」へ戻ると、
+        // 頁には前のノード（Pages）の行が残っている（当て直しはノードに入る直前の頁から始まる）。
+        let r = res();
+        let saved = quiet(() -> WorldSaves.writeSlot(r, Saves.Tab.Numbered(1), 0, lineWith(r, "枠は台詞で戻る")));
+        let loaded = settle(r, quiet(() -> WorldSaves.loadFrom(r, Saves.Tab.Numbered(1), 0, World.toTitle(saved))));
+        let asked = quiet(() -> WorldLog.askJump(1, quiet(() -> WorldLog.openLog(loaded))));
+        let jumped = settle(r, quiet(() -> WorldMenu.answer(r, World.Answer.Yes, asked)));
+        let before = lineWith(r, "前のノードの頁に続く");
+        Assert.assertEq(expected = (shapeOf(r, before), false), (shapeOf(r, jumped), List.isEmpty(World.pageOf(before)#lines)))
+
+    @Test
+    def testSavingDuringAWaitAfterAChoiceTellsItCannotSave(): Unit \ {Assert, Fs.FileRead} =
+        // セーブできない待ちの間にクイックセーブを押すと、クイックのページは空のまま「今はセーブできません」を知らせる。
+        let r = res();
+        let waiting = TestKit.pick(r, 0, next(r, lineWith(r, "枠は台詞で戻る")));
+        let pressed = quiet(() -> WorldSaves.quickSave(r, waiting));
+        Assert.assertEq(expected = (Some(StoryDoc.labelOf(StoryDoc.Label.NoSaveNow, r#story)), true),
+                        (World.toastOf(r, pressed), Option.isEmpty(Saves.slotOf(Saves.Tab.Quick, 0, pressed#saves))))
+
+    @Test
+    def testPagesCountTheTypeChange(): Unit \ {Assert, Fs.FileRead} =
+        // 型の切り替え（下のウィンドウ → nvl）で頁の数が 1 増える。
+        let r = res();
+        Assert.assertEq(expected = pagesAt(r, "前のノードの型のまま") + 1, pagesAt(r, "一つ目"))
+
+    @Test
+    def testPagesCountTheOverflow(): Unit \ {Assert, Fs.FileRead} =
+        // NVL で 3 つ目の長い行が頁に入り切らない時に頁の数が 1 増える。
+        let r = res();
+        Assert.assertEq(expected = pagesAt(r, "二つ目") + 1, pagesAt(r, "三つ目"))
+
+    @Test
+    def testPagesCountTheClear(): Unit \ {Assert, Fs.FileRead} =
+        // <<window clear>> で頁の数が 1 増える。
+        let r = res();
+        Assert.assertEq(expected = pagesAt(r, "三つ目") + 1, pagesAt(r, "頁を替えた後"))
+
+    @Test
+    def testSavingDuringAWaitWithTheWindowOffReturnsToTheLine(): Unit \ {Assert, Fs.FileRead} =
+        // <<window off>> の後の <<wait>> の間は文字の枠を消している。そこでセーブして戻すと、待つ前の台詞を枠のある形で出す。
+        let r = res();
+        let before = lineWith(r, "前のノードの頁に続く");
+        let waiting = advance(r, before);
+        let hidden = (w: World.World) -> Stage.isWindowHidden(World.now(w), World.stageOf(r, w));
+        let back = WorldRead.slotHere(r, waiting) |> Option.map(slot -> settle(r, quiet(() -> WorldRead.restore(r, slot#mark, waiting))));
+        Assert.assertEq(expected = (true, Some(false), Some(shapeOf(r, before))),
+                        (hidden(waiting), back |> Option.map(hidden), back |> Option.map(shapeOf(r))))
+
+    @Test
+    def testNoSaveDuringAWaitBeforeTheFirstLine(): Unit \ {Assert, Fs.FileRead} =
+        // バックログが空のまま待っている間（はじめから読んだ頭の <<wait>>）は、今の所のデータが無い（セーブしない）。
+        let r = TestKit.res();
+        let waiting = quiet(() -> WorldRead.newGame(r, TestKit.w0(r)));
+        Assert.assertEq(expected = (true, true), (TestKit.isWaiting(waiting), Option.isEmpty(WorldRead.slotHere(r, waiting))))
+
+    @Test
+    def testNoSaveDuringAWaitRightAfterAChoice(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢を選んだ直後の <<wait>> の間（バックログの一番新しい行が選んだ選択肢）は、今の所のデータが無い（選ぶ前へ戻さない）。
+        let r = res();
+        let atChoices = next(r, lineWith(r, "枠は台詞で戻る"));
+        let waiting = TestKit.pick(r, 0, atChoices);
+        Assert.assertEq(expected = (true, true, true),
+                        (World.isChoosing(atChoices), TestKit.isWaiting(waiting), Option.isEmpty(WorldRead.slotHere(r, waiting))))
+
+    // ══ ノードに着いた時の舞台 ══
+
+    @Test
+    def testEntryIsTheStageWhereTheNodeIsFirstReached(): Unit \ {Assert, Fs.FileRead} =
+        // Next に着いた時の舞台は、Station の最後の台詞の舞台（前のノードで出した人と小物が居る）。
+        // どこからも jump しない Island のほかは、選択肢のどの道のノードにも着く。
+        let r = res();
+        let entries = WorldRead.buildEntriesWithin(WorldRead.entryFuel(), r);
+        let atL4 = List.nth(3, everyLine(r, Nil)) |> Option.map(w -> Stage.snapshotToJson(Stage.snapshotOf(World.stageOf(r, w))));
+        Assert.assertEq(expected = (atL4, Yarn.nodeNames(r#dialogue) |> List.filter(name -> name != "Island")),
+                        (Map.get("Next", entries) |> Option.map(Stage.snapshotToJson), Map.keysOf(entries) |> Set.toList))
+
+    @Test
+    def testEntryWalkStopsAtTheFuel(): Unit \ {Assert, Fs.FileRead} =
+        // 歩数の上限に当たると、そこまでに着いたノードだけを返す。Station の 4 行を送ると Next に着き、選択肢の先には着かない。
+        let r = res();
+        let few = WorldRead.buildEntriesWithin(4, r);
+        Assert.assertEq(expected = (true, true, false, false),
+                        (Map.memberOf("Station", few), Map.memberOf("Next", few), Map.memberOf("Left", few), Map.memberOf("Right", few)))
+
+    @Test
+    def testSelfJumpingMenuDoesNotUseUpTheFuel(): Unit \ {Assert, Fs.FileRead} =
+        // 自分へ jump して戻るメニュー（Menu の「聞く」）の道はそこで止まり、少ない歩数でも出口の先（Through・Exit）に着く。
+        let r = res();
+        let entries = WorldRead.buildEntriesWithin(200, r);
+        Assert.assertEq(expected = (true, true), (Map.memberOf("Through", entries), Map.memberOf("Exit", entries)))
+
+    @Test
+    def testEntryCarriesCommandsInsideIfAndPassThroughNodes(): Unit \ {Assert, Fs.FileRead} =
+        // Exit に着いた時の舞台には、コマンドだけで通り過ぎる Through の <<if>> の枝の中の <<window bottom>> と <<show b>> が入っている。
+        let r = res();
+        let exit = Map.get("Exit", WorldRead.buildEntriesWithin(WorldRead.entryFuel(), r)) |> Option.map(Stage.fromSnapshot);
+        Assert.assertEq(expected = Some((Stage.Mode.Adv, "b" :: Nil)),
+                        exit |> Option.map(st -> (st#mode, castOf(st#cast) |> List.map(match (n, _, _) -> n))))
+
+    @Test
+    def testUnreachedNodeHasNoEntry(): Unit \ {Assert, Fs.FileRead} =
+        // どこからも jump しないノード（Island）には着かない（buildEntryStage はそのノードを空の舞台から始め、1 行言う）。
+        let r = res();
+        Assert.assertEq(expected = (false, true),
+                        (Map.memberOf("Island", WorldRead.buildEntriesWithin(WorldRead.entryFuel(), r)), Option.nonEmpty(Yarn.nodeOf("Island", r#dialogue))))
+
+    @Test
+    def testOpenAtStartsFromTheEntryStage(): Unit \ {Assert, Fs.FileRead} =
+        // ノードの頭から開くと、前のノードから持ち越す人物と小物が出ている（台本の頭で言い直さなくてよい）。
+        let r = res();
+        let opened = quiet(() -> WorldRead.openAt(r, YarnStorage.empty(), "Next", 0, World.toTitle(begun(r))));
+        Assert.assertEq(expected = (shownAtL4(), Some(("cup", "plain", "item"))), stageMark(opened))
 
     /// テスト用のシナリオの 4 行目（Station の最後）で出ている人物: a は笑顔で真ん中・b は右。
     def shownAtL4(): List[(String, String, String)] = ("a", "smile", "center") :: ("b", "plain", "right") :: Nil

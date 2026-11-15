@@ -1,5 +1,5 @@
 // 演出コマンドの表（Commands）をテストする: 表の全部のコマンドが必須の引数だけで当たること・名前が重ならないこと・
-// 頁と音の出来事（Out）・当て直し（Silent）で音が落ちること・時間を取るか（timing）・待つ素材の名前。
+// 頁と音の出来事（Out）・当て直し（Silent）で音が落ちること・時間を取るか（timing）・待つ素材の名前・文字の枠を消す・読んだ引数の表。
 // 写真・時間帯・音の名前は Doc（novel.backdrops.json・project.json）から引く。
 mod TestCommands {
 
@@ -59,6 +59,27 @@ mod TestCommands {
                          outsOf(res, Commands.Replay.Live, "window", "clear" :: Nil, nvl)))
 
     @Test
+    def testWindowOffHidesTheWindowUntilNvlOrBottom(): Unit \ {Assert, Fs.FileRead} =
+        // <<window off>> は文字の枠と字を消し、<<window bottom>> と <<window nvl>> は出す。off は頁をめくらない。
+        let res = TestKit.res();
+        let hiddenAfter = (r: Result[String, (Stage.Stage, List[Out])]) -> r |> Result.map(match (st, outs) -> (Stage.isWindowHidden(Clock.zero(), st), outs));
+        let off = exec(res, Commands.Replay.Live, "window", "off" :: Nil, Stage.empty());
+        let thenShown = (mode: String) -> off |> Result.flatMap(p -> exec(res, Commands.Replay.Live, "window", mode :: Nil, fst(p)))
+            |> Result.map(p -> Stage.isWindowHidden(Clock.zero(), fst(p)));
+        Assert.assertEq(expected = (Ok((true, Nil)), Ok(false), Ok(false)), (hiddenAfter(off), thenShown("bottom"), thenShown("nvl")))
+
+    @Test
+    def testArgsTableIsReadAgainWhenTheLineHoldsAnotherCommand(): Unit \ {Assert, Fs.FileRead} =
+        // 読んだ引数の表に同じ行の別のコマンドがあっても、来たコマンドを読み直して当てる（表の古い引数で当てない）。
+        let res = TestKit.res();
+        let source = Talk.commandsOf(res#dialogue) |> List.find(c -> c#name == "window") |> Option.map(c -> c#source)
+            |> Option.getWithDefault({ file = "test", line = 1 });
+        let clear = { name = "window", args = "clear" :: Nil, tags = Nil, source = source };
+        let bottom = { name = "window", args = "bottom" :: Nil, tags = Nil, source = source };
+        let outs = (c: Yarn.Command) -> Commands.execute(Commands.Replay.Live, ctx(res), c, { mode = Stage.Mode.Adv | Stage.empty() }) |> Result.map(snd);
+        Assert.assertEq(expected = (Ok(Out.ClearPage :: Nil), Ok(Nil)), (outs(clear), outs(bottom)))
+
+    @Test
     def testBackdropTurnsThePageOnlyInAdv(): Unit \ {Assert, Fs.FileRead} =
         // ADV の時の <<bg>> は頁を送る。NVL では送らない（NVL の頁の切れ目は <<window clear>> と行の数が決める）。
         let res = TestKit.res();
@@ -98,7 +119,7 @@ mod TestCommands {
         let res = TestKit.res();
         let timed = ("bg", photoOf(res) :: "grade=${gradeOf(res)}" :: Nil) :: ("shake", Nil) :: ("show", "a" :: Nil) :: ("hide", "all" :: Nil) :: Nil;
         let instant = ("window", "nvl" :: Nil) :: ("audio", "se" :: "se_slap" :: Nil) :: ("fx", "off" :: Nil) :: Nil;
-        let timingOf = (pair: (String, List[String])) -> Commands.timingOf(command(fst(pair), snd(pair)));
+        let timingOf = (pair: (String, List[String])) -> Commands.timingOf(res, command(fst(pair), snd(pair)));
         Assert.assertEq(expected = (List.repeat(4, Commands.Timing.Timed), List.repeat(3, Commands.Timing.Instant)),
                         (timed |> List.map(timingOf), instant |> List.map(timingOf)))
 

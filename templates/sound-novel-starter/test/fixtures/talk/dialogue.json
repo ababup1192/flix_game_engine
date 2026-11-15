@@ -1,9 +1,10 @@
 {
-  "version": 1,
-  "note": "bin/fge yarn build が test/fixtures/talk/cast.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "version": 2,
+  "note": "bin/fge yarn build が test/fixtures/talk/cast.yarn test/fixtures/talk/stage.yarn から書いた木。手で直さない（.yarn を直して build する）",
   "vocab": "",
   "files": [
-    "test/fixtures/talk/cast.yarn"
+    "test/fixtures/talk/cast.yarn",
+    "test/fixtures/talk/stage.yarn"
   ],
   "nodes": [
     {
@@ -148,6 +149,333 @@
           "line": 25,
           "speaker": "me",
           "text": "終わり。"
+        },
+        {
+          "kind": "jump",
+          "line": 26,
+          "node": "Pages"
+        }
+      ]
+    },
+    {
+      "title": "Pages",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 5,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "me",
+          "text": "前のノードの型のまま（下のウィンドウ）の一行目。"
+        },
+        {
+          "kind": "command",
+          "line": 8,
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 9,
+          "text": "一つ目。川沿いの道を歩きながら、遠くの山の稜線が夕日に染まっていくのを眺めていた。風は少し冷たく、草の匂いが混じっている。川沿いの道を歩きながら、遠くの山の稜線が夕日に染まっていくのを眺めていた。風は少し冷たく、草の匂いが混じっている。"
+        },
+        {
+          "kind": "line",
+          "line": 10,
+          "text": "二つ目。川沿いの道を歩きながら、遠くの山の稜線が夕日に染まっていくのを眺めていた。風は少し冷たく、草の匂いが混じっている。川沿いの道を歩きながら、遠くの山の稜線が夕日に染まっていくのを眺めていた。風は少し冷たく、草の匂いが混じっている。"
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "text": "三つ目。川沿いの道を歩きながら、遠くの山の稜線が夕日に染まっていくのを眺めていた。風は少し冷たく、草の匂いが混じっている。川沿いの道を歩きながら、遠くの山の稜線が夕日に染まっていくのを眺めていた。風は少し冷たく、草の匂いが混じっている。"
+        },
+        {
+          "kind": "command",
+          "line": 12,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "me",
+          "text": "頁を替えた後の一行目。"
+        },
+        {
+          "kind": "command",
+          "line": 14,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 15,
+          "speaker": "me",
+          "text": "下のウィンドウの一行目。"
+        },
+        {
+          "kind": "command",
+          "line": 16,
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 17,
+          "speaker": "me",
+          "text": "画面いっぱいに戻した一行目。"
+        },
+        {
+          "kind": "jump",
+          "line": 18,
+          "node": "PagesNext"
+        }
+      ]
+    },
+    {
+      "title": "PagesNext",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 20,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 22,
+          "text": "前のノードの頁に続く地の文。"
+        },
+        {
+          "kind": "command",
+          "line": 23,
+          "name": "window",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 24,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 25,
+          "speaker": "me",
+          "text": "枠は台詞で戻る。"
+        },
+        {
+          "kind": "options",
+          "line": 26,
+          "options": [
+            {
+              "line": 26,
+              "text": "左へ",
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 27,
+                  "node": "Left"
+                }
+              ]
+            },
+            {
+              "line": 28,
+              "text": "右へ",
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 29,
+                  "node": "Right"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Left",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 31,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 33,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 34,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 35,
+          "speaker": "me",
+          "text": "左の道。"
+        }
+      ]
+    },
+    {
+      "title": "Right",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 37,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 39,
+          "speaker": "me",
+          "text": "右の道。"
+        },
+        {
+          "kind": "jump",
+          "line": 40,
+          "node": "Menu"
+        }
+      ]
+    },
+    {
+      "title": "Menu",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 42,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 44,
+          "speaker": "me",
+          "text": "どうする？"
+        },
+        {
+          "kind": "options",
+          "line": 45,
+          "options": [
+            {
+              "line": 45,
+              "text": "聞く",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 46,
+                  "speaker": "me",
+                  "text": "聞いた。"
+                },
+                {
+                  "kind": "jump",
+                  "line": 47,
+                  "node": "Menu"
+                }
+              ]
+            },
+            {
+              "line": 48,
+              "text": "行く",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 49,
+                  "speaker": "me",
+                  "text": "行こう。"
+                },
+                {
+                  "kind": "jump",
+                  "line": 50,
+                  "node": "Through"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Through",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 52,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 54,
+          "clauses": [
+            {
+              "line": 54,
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": [
+                {
+                  "kind": "command",
+                  "line": 55,
+                  "name": "window",
+                  "args": [
+                    "bottom"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 57,
+          "name": "show",
+          "args": [
+            "b"
+          ]
+        },
+        {
+          "kind": "jump",
+          "line": 58,
+          "node": "Exit"
+        }
+      ]
+    },
+    {
+      "title": "Exit",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 60,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 62,
+          "speaker": "me",
+          "text": "出口。"
+        }
+      ]
+    },
+    {
+      "title": "Island",
+      "file": "test/fixtures/talk/stage.yarn",
+      "line": 64,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 66,
+          "speaker": "me",
+          "text": "どこからも来ない。"
         }
       ]
     }

@@ -27,7 +27,7 @@ mod WorldSaves {
             case Some(slot) =>
                 Emit.emit(World.Event.Saved);
                 World.notice(StoryDoc.Label.Saved, World.withSaves(Saves.withSlot(tab, i, slot, w#saves), w))
-            case None => w
+            case None => World.notice(StoryDoc.Label.NoSaveNow, w)
         }
 
     /// クイックセーブ（クイックのページの先頭へ。前の物は後ろへ押す）。
@@ -36,7 +36,7 @@ mod WorldSaves {
             case Some(slot) =>
                 Emit.emit(World.Event.Saved);
                 World.notice(StoryDoc.Label.QuickSaved, World.withSaves(Saves.withPushed(Saves.Tab.Quick, slot, w#saves), w))
-            case None => w
+            case None => World.notice(StoryDoc.Label.NoSaveNow, w)
         }
 
     /// 今のページの i 枠目を選ぶ（セーブ: 空なら書き、あれば上書きを尋ねる。ロード: タイトルからはすぐ読み、読んでいる途中なら尋ねる）。

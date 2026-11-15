@@ -6,7 +6,8 @@
 // NVL は行を頁に積み、入り切らなくなったら頁をめくる（数え方は rowsOf。描く時の折り方 RichText.placeRuby と
 // 同じ決まりを、字幅の近似で数える — 描くまで atlas が無い所でも頁の割りが決まる）。ADV は今の 1 行だけ。
 mod Page {
-    use fge::{RichText, UiTypewriter, Yarn}
+    use fge::{JsonCodec, RichText, UiTypewriter, Yarn}
+    use Util.Json.Json
 
     /// 1 行。speaker = 話し手の呼び名（地の文は空）、text = 出す字（台詞は「」込み）、source = .yarn の「ファイル:行」。
     pub type alias Line = { speaker = String, text = String, rubies = List[RichText.Ruby], source = String }
@@ -41,15 +42,23 @@ mod Page {
     /// fits = 頁に積んだ行と新しい行が入り切るか（World が rowsOf と novel.kind.json の nvlRows で決める）。
     // WhyNot: ADV の行を捨てずに積む — 縦の画面は ADV の台詞も頁に積んで読ませる。横の ADV のウィンドウは今の 1 行だけを描くので見た目は変わらない。
     pub def show(mode: Stage.Mode, fits: List[Line] -> Bool, line: Line, page: Page): Page =
-        let kept = match (page#next, page#current) {
-            case (NextLine.Append, Some(prev)) => List.append(page#lines, prev :: Nil)
-            case _                        => Nil
-        };
+        let kept = keptOf(page);
         let lines = match mode {
             case Stage.Mode.Nvl => if (fits(List.append(kept, line :: Nil))) kept else Nil
             case Stage.Mode.Adv => latestFitting(fits, line, kept)
         };
         { lines = lines, current = Some(line), reveal = UiTypewriter.start(line#text), next = NextLine.Append }
+
+    /// 次の行を出す時に頁に残る行（今の行を積んだ物。場面が変わった後は空）。
+    def keptOf(page: Page): List[Line] = match (page#next, page#current) {
+        case (NextLine.Append, Some(prev)) => List.append(page#lines, prev :: Nil)
+        case _                             => Nil
+    }
+
+    /// line を出すと show が NVL の頁をめくるか（積んだ行があり、新しい行と一緒に入り切らない）。
+    pub def isFullFor(mode: Stage.Mode, fits: List[Line] -> Bool, line: Line, page: Page): Bool =
+        let kept = keptOf(page);
+        mode == Stage.Mode.Nvl and not List.isEmpty(kept) and not fits(List.append(kept, line :: Nil))
 
     /// 積んだ行 kept のうち、新しい行 line と一緒に入り切る新しい方の行（入り切るまで古い行から落とす）。
     def latestFitting(fits: List[Line] -> Bool, line: Line, kept: List[Line]): List[Line] =
@@ -80,4 +89,41 @@ mod Page {
         let charWidth = ch -> if (Char.toBmpCodePoint(ch) < 128) size * 0.5 else size;
         let rubyWidth = text -> Int32.toFloat64(String.length(text)) * rubySize;
         RichText.rubyLineCountBy(charWidth, rubyWidth, rubySize, maxWidth, line#rubies, RichText.plain(line#text) :: Nil)
+
+    // ── 残す形（セーブ） ──
+
+    def lineToJson(line: Line): Json =
+        let ruby = (r: RichText.Ruby) -> Json.JObject(Map#{ "start" => Json.JNumber(JsonCodec.intToBd(r#start)),
+                                                            "length" => Json.JNumber(JsonCodec.intToBd(r#length)), "text" => Json.JString(r#text) });
+        Json.JObject(Map#{ "speaker" => Json.JString(line#speaker), "text" => Json.JString(line#text),
+                           "rubies" => JsonCodec.encodeList(ruby, line#rubies), "source" => Json.JString(line#source) })
+
+    def lineFromJson(json: Json): Option[Line] =
+        let rubyOf = j -> JsonCodec.expectObject(j) |> Option.map(obj ->
+            { start = JsonCodec.intOr("start", 0, obj), length = JsonCodec.intOr("length", 0, obj), text = JsonCodec.stringOr("text", "", obj) });
+        JsonCodec.expectObject(json) |> Option.flatMap(obj -> forM (
+            text <- Map.get("text", obj) |> Option.flatMap(JsonCodec.expectString);
+            rubies <- Map.get("rubies", obj) |> Option.getWithDefault(Json.JArray(Vector.empty())) |> JsonCodec.decodeList(rubyOf)
+        ) yield { speaker = JsonCodec.stringOr("speaker", "", obj), text = text, rubies = rubies, source = JsonCodec.stringOr("source", "", obj) })
+
+    /// セーブの枠の "page" に書く値: { "lines": [行…], "current": 行か null, "next": "Append" か "NewPage" }。文字送りは出し終えた形で残す。
+    pub def toJson(page: Page): Json =
+        Json.JObject(Map#{ "lines" => JsonCodec.encodeList(lineToJson, page#lines),
+                           "current" => page#current |> Option.map(lineToJson) |> Option.getWithDefault(Json.JNull),
+                           "next" => Json.JString("${page#next}") })
+
+    /// toJson の形から（今の行は出し終えた形）。行が 1 つでも読めなければ None（呼ぶ側は当て直しで作った頁を使う）。
+    pub def fromJson(json: Json): Option[Page] =
+        JsonCodec.expectObject(json) |> Option.flatMap(obj -> forM (
+            lines <- Map.get("lines", obj) |> Option.flatMap(JsonCodec.decodeList(lineFromJson));
+            current <- match Map.get("current", obj) {
+                case None              => Some(None)
+                case Some(Json.JNull)  => Some(None)
+                case Some(j)           => lineFromJson(j) |> Option.map(Some)
+            }
+        ) yield {
+            let next = if (JsonCodec.stringOr("next", "", obj) == "${NextLine.NewPage}") NextLine.NewPage else NextLine.Append;
+            { lines = lines, current = current, next = next,
+              reveal = UiTypewriter.done(current |> Option.map(line -> line#text) |> Option.getWithDefault("")) }
+        })
 }

@@ -190,11 +190,12 @@
           "values": [
             "nvl",
             "bottom",
-            "clear"
+            "clear",
+            "off"
           ]
         }
       ],
-      "summary": "文字の出し方を替える（nvl = 画面いっぱい・bottom = 下のウィンドウ）・NVL の頁をめくる（clear）"
+      "summary": "文字の出し方を替える（nvl = 画面いっぱい・bottom = 下のウィンドウ）・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）"
     }
   },
   "nodeRefs": {
