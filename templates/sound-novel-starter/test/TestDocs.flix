@@ -177,4 +177,10 @@ mod TestDocs {
     def testShotNotInTheDocBuildsNothing(): Unit \ {Assert, Fs.FileRead} =
         // novel.shots.json に無い名前の場面は組まない（描き出しは名前の誤りとして断る）。
         Assert.assertEq(expected = true, Option.isEmpty(Shots.worldOf("nvll", TestKit.res())))
+
+    @Test
+    def testShotNamesDoNotOverlapRenderOnlyNames(): Unit \ {Assert, Fs.FileRead} =
+        // Doc の場面の名前は、描き出しだけの名前（menu・saveload・tooltip・cast・small-*・portrait-* など）と重ならない。
+        let doc = Shots.names(TestKit.res()) |> List.toSet;
+        Assert.assertEq(expected = Nil, SceneRender.renderOnlyNames() |> List.filter(name -> Set.memberOf(name, doc)))
 }

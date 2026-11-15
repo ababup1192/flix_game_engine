@@ -148,9 +148,15 @@ mod SceneRender {
             |> Option.getWithDefault(0)
 
     /// 描き出せる名前の全部（Shots の場面と、小さい画面と縦の画面の場面）。
-    def allNames(res: Res.Res): List[String] =
-        List.flatten(Shots.names(res) :: (variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
+    def allNames(res: Res.Res): List[String] = Shots.names(res) ::: variantNames()
+
+    def variantNames(): List[String] =
+        List.flatten((variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
                      :: (portraitShots() |> List.map(match (name, _, _) -> name)) :: Nil)
+
+    /// 描き出しだけの名前（novel.shots.json の場面の名前と重なると、どちらを描くか読み違える）: worldOf だけが組む場面と、
+    /// 描く元を替えた場面・小さい画面・縦の画面の描き出しの名前。
+    pub def renderOnlyNames(): List[String] = ("menu" :: "saveload" :: "tooltip" :: "cast" :: Nil) ::: variantNames()
 
     def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();

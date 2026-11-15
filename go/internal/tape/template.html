@@ -231,6 +231,7 @@
   .grows li.here { cursor: pointer; }
   .grows li.here .ln { color: var(--c-video); font-weight: 700; }
   .grows span { word-break: break-word; }
+  .raw { font-family: ui-monospace, Menlo, monospace; font-size: .78em; color: var(--faint); font-weight: 400; margin-left: 4px; }
   .grows .k-stage { color: #7aa7f0; } .grows .k-actor { color: #d68cc4; } .grows .k-sound { color: #5cc4a4; } .grows .k-fx { color: #f08a66; }
   .grows .k-wait, .grows .k-other { color: var(--faint); } .grows .k-end { color: var(--accent); font-weight: 700; } .grows .k-gate { color: #a98bf0; }
   .grows .k-choice, .grows .k-jump { color: var(--accent); }
@@ -607,6 +608,9 @@ function wireChapters(body) {
 // ── 分岐のグラフ: 「映像 / グラフ」で見る物を切り替える（シナリオの全体を見る）。bin/fge yarn graph と同じ置き場で箱と矢印を描き、
 // 箱を押すとそのノードの行を出す。このテープに映るノードは「この場面へ」で映像に戻ってその秒へ送る ──
 const GRAPH = TAPE.graph || null;
+// 変数の表示名（ゲームの Doc の vars）。行の $名前 は表示名を主に出し、$名前 を小さく添える（esc 済みの HTML に当てる）
+const VAR_NAMES = (GRAPH && GRAPH.vars) || {};
+const withVarNames = html => html.replace(/\$[A-Za-z_][A-Za-z0-9_]*/g, v => VAR_NAMES[v] ? `${esc(VAR_NAMES[v])}<span class="raw">${v}</span>` : v);
 let viewMode = "video", gPick = null, gZoom = null;
 const nodeOfLine = ln => (TAPE.lines[ln] && TAPE.lines[ln].node) || TAPE.node;
 function nodeStart(node) { const r = TAPE.timeline.find(([, ln]) => ln != null && nodeOfLine(ln) === node); return r ? r[0] : null; }
@@ -655,7 +659,7 @@ function nodeHtml(node) {
   const go = at !== null ? `<button class="gact go" data-go="${at}">▶ この場面へ ${mmss(at)}</button>`
     : route ? `<button class="gact" data-href="${esc(route.href)}">${esc(route.note)}で見る</button>` : `<span class="gnone">このテープには映っていない</span>`;
   const play = TAPE.playUrl ? `<a class="gact" target="_blank" rel="noopener" href="${esc(nodeHref(node))}">ここから遊ぶ</a>` : "";
-  const rows = d.rows.map(r => `<li class="${here.has(r.l) ? "here" : ""}" data-ln="${r.l}"><span class="ln">${r.l}</span><span class="k-${r.c}" style="padding-left:${r.d * 10}px">${esc(r.t)}</span></li>`).join("");
+  const rows = d.rows.map(r => `<li class="${here.has(r.l) ? "here" : ""}" data-ln="${r.l}"><span class="ln">${r.l}</span><span class="k-${r.c}" style="padding-left:${r.d * 10}px">${withVarNames(esc(r.t))}</span></li>`).join("");
   // 矢印の先と元は箱と同じ冒頭の文で出し、押すとその箱へ移る（ノード名は小さく添える）
   const link = (to, pre) => GRAPH.detail[to] ? `<button class="glink" data-node="${esc(to)}">${pre}${esc(GRAPH.detail[to].head_text)}<small>${esc(to)}</small></button>`
     : `<div class="glink gone">${pre}無いノード<small>${esc(to)}</small></div>`;

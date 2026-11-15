@@ -87,6 +87,7 @@ func CheckProgram(prog *Program, vocab *Vocab, vocabPath string) []Problem {
 	}
 	sort.Strings(tagKeys)
 	commands := append([]string{waitCommand}, vocab.Commands...)
+	known := setOf(commands)
 	speakers := setOf(vocab.Speakers)
 	for _, n := range prog.Nodes {
 		file := n.File
@@ -125,9 +126,13 @@ func CheckProgram(prog *Program, vocab *Vocab, vocabPath string) []Problem {
 					checkTags(o.Line, o.Tags)
 				}
 			case "command":
-				if !setOf(commands)[s.Name] {
+				if !known[s.Name] {
 					out = append(out, Problem{File: file, Line: s.Line,
 						Msg: fmt.Sprintf("知らないコマンド <<%s>>%s（演出の順番はゲームのコードで決める）", s.Name, suggest.Hint(s.Name, commands))})
+				} else if spec := vocab.Specs[s.Name]; spec != nil {
+					if msg := CheckArgs(s.Name, spec, s.Args); msg != "" {
+						out = append(out, Problem{File: file, Line: s.Line, Msg: msg})
+					}
 				}
 			}
 			checkTags(s.Line, s.Tags)

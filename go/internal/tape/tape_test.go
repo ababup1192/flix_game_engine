@@ -95,6 +95,14 @@ var mockFixes = [][2]string{
 	{"talk: `start talk node=${TAPE.node} line=<script.line> で台本の行から始められる` },",
 		"talk: \"start talk node=<script.node> line=<script.line> で台本の行から始められる\" },"},
 	{"scriptEdits: edited.map(ln => ({ file: TAPE.yarn, node: TAPE.node, line: ln,", "scriptEdits: edited.map(ln => ({ file: TAPE.yarn, node: TAPE.lines[ln].node ?? TAPE.node, line: ln,"},
+	// グラフの行の $名前 を変数の表示名で出し、$名前 を小さく添える（plans/tape/mock-state.html の varHtml と .raw の形）。
+	{"  .grows span { word-break: break-word; }\n", "  .grows span { word-break: break-word; }\n" +
+		"  .raw { font-family: ui-monospace, Menlo, monospace; font-size: .78em; color: var(--faint); font-weight: 400; margin-left: 4px; }\n"},
+	{"const GRAPH = TAPE.graph || null;\n", "const GRAPH = TAPE.graph || null;\n" +
+		"// 変数の表示名（ゲームの Doc の vars）。行の $名前 は表示名を主に出し、$名前 を小さく添える（esc 済みの HTML に当てる）\n" +
+		"const VAR_NAMES = (GRAPH && GRAPH.vars) || {};\n" +
+		"const withVarNames = html => html.replace(/\\$[A-Za-z_][A-Za-z0-9_]*/g, v => VAR_NAMES[v] ? `${esc(VAR_NAMES[v])}<span class=\"raw\">${v}</span>` : v);\n"},
+	{"style=\"padding-left:${r.d * 10}px\">${esc(r.t)}</span>", "style=\"padding-left:${r.d * 10}px\">${withVarNames(esc(r.t))}</span>"},
 }
 
 // splashScript は動画を全部取ってから渡していた所を、取りの割合を起動画面に出す形へ直した script（SPLASH は Splash{} を渡した時の字）。

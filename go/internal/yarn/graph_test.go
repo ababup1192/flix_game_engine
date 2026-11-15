@@ -214,3 +214,20 @@ func TestGraphHeadingWithoutTextOrCommentSaysSo(t *testing.T) {
 		t.Fatalf("文もコメントも無いノードの見出しは（文なし）のはず: %q", h)
 	}
 }
+
+// 語彙の vars の表示名がグラフの JSON とテープの頁に埋める形に入り、HTML は行の $名前 を表示名で出す。
+func TestGraphCarriesVariableDisplayNames(t *testing.T) {
+	root := writeGame(t, map[string]string{"assets/talk/main.yarn": "title: Station\n---\n<<declare $closeness = 0>>\n<<if $closeness >= 2>>\nchinatsu: やあ\n<<endif>>\n===\n"})
+	var out, errOut strings.Builder
+	if code := Run(&out, &errOut, root, []string{"graph", "assets/talk", "--out", "g.html", "--json", "g.json"}); code != 0 {
+		t.Fatalf("code %d: %s%s", code, out.String(), errOut.String())
+	}
+	var g Graph
+	data, _ := os.ReadFile(filepath.Join(root, "g.json"))
+	page, _ := os.ReadFile(filepath.Join(root, "g.html"))
+	tape, _, err := ForTape(filepath.Join(root, "assets", "talk"))
+	if json.Unmarshal(data, &g) != nil || g.Vars["$closeness"] != "親しさ" || err != nil || tape == nil || tape.Vars["$closeness"] != "親しさ" ||
+		!strings.Contains(string(page), `const VARS = {"$closeness":"親しさ"};`) {
+		t.Errorf("vars %v / tape %v %v", g.Vars, tape, err)
+	}
+}
