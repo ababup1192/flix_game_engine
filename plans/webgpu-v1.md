@@ -457,6 +457,7 @@ TeaVM がコマの途中で手を返した時の中間の texture の扱い（�
 1. 描き先の上下を `targetNames` で知らせている（V1 は空の Set を渡して済ませた）→ 前半が backend に聞く capability（親 5.3）。
 2. `RenderList` の instance の番号が `renderCommands` ごとに 0 から → WebGPU はコマで 1 本の buffer の位置を足している。前半がコマで 1 本の入れ物に書く形か、行に起点を持つか。
 3. run の状態の配列 `st` に GL の物（program・VAO・buffer の番号・欄 0〜6 と 26）と前半の run の状態と draw の数が同居している → 分ける。
+   実装: WebGpuRows.renderFrame は draw の数えの欄 28・30 の初めの値を renderFrameMixed から書き写している（分けた時に 1 か所へ）。
 4. `RenderBuf` が `gl.allocFloats` で入れ物を作る → instance の入れ物の持ち主を backend にするか、前半にするか（バイト順は 3.3）。
 5. `RenderPaint` と `WebGpuPaint` の重なり（登録簿・`ensureTexture` の key・描き先の表・溜めた面と場面・`lastFrame`）→ CPU の側の表を前半へ（親 R1b の寿命の表）。
 6. 読み込みが `GlContext` を受ける（`AssetLoader`・`LwjglAssets.loadTexture`・`RenderFont.bakeFontAtlases`・`RenderGlyphGrow.ensure`・`RenderSplash.install`・`loadAssets` の `RadialBuiltin`・`WebAssets.uploadImageOf`）→
@@ -476,16 +477,19 @@ TeaVM がコマの途中で手を返した時の中間の texture の扱い（�
     bench/webgpu_v1 の木（engine_full/src と bench の src をファイルごとの symlink で 1 つのパッケージにする形）のままにするか。
 19. `copyImageBitmap` は一時の texture へ写してから読み戻す（WebGpuPaint に外で作った texture を載せる口が無い）→ 絵の表に texture を載せる口を足して、読み戻しを省くか。
 20. WebGPU の窓の診断に `swapNs` と GPU の時間を足していない（`noteFrame` の pub が無い）。`FLIX_GE_FRAME_STATS` の行の終わりの `submits` だけ。
-21. PC の `FLIX_GE_GLYPHS=auto` のゲーム（rpg-starter）は、V1 の WebGPU では起動の後に字を足さないので字が欠ける。gl-capture の `--backend webgpu` は既定で `GLYPHS=used` にした。
-22. Pass の history（`<名前>@prev`）は専用の知らせを出さず、登録簿に無い絵として `texture '…' が見つからない` が名前ごとに 1 回出るだけ。
+21. （済み）PC の `glyphs=auto` のゲームは、WebGPU の枝の中だけ used として起動の時に字を用意する（V1 は起動の後に字を足さない）。
+22. （済み）Pass の history（`<名前>@history`）のスプライトは WebGpuRows が「Pass の history」として 1 回知らせて描かない。
 23. `make gl-capture-check` の基準（bench/baseline/0.88.4）と sound-novel・tidepool・scene3d の 5 場面・30 枚が違う。V1 の前の engine（設計だけの fef4a2da を
     `git archive` して撮った 54 枚）は今の engine の 54 枚とバイトまで同じで、同じ 30 枚が基準と違うので、V1 の外。基準の撮り直しは人の判断。
-24. Studio の Maven の種（flix_ge_studio の server/lib・`--maven-seed`）に jWebGPU（webgpu-desktop-jni・webgpu-jni・jParser の runtime）と
+24. **【リリースの前に必須】** Studio の Maven の種（flix_ge_studio の server/lib・`--maven-seed`）に jWebGPU（webgpu-desktop-jni・webgpu-jni・jParser の runtime）と
     Dawn の macOS arm64 のネイティブが無い。engine_full/flix.toml が求めるので、手元のキャッシュに無い機械で新しいゲームを作ると Maven から取りに行く。
-    Studio のリポジトリで、server/flix.toml の engine を今の版へ上げて server/lib を取り直す（別のリポジトリの作業。V1 では手順だけ）。
+    Studio のリポジトリで、server/flix.toml の engine を今の版へ上げて server/lib を取り直し、`make studio-parity` を通す（別のリポジトリの作業。V1 では手順だけ）。
     `make studio-parity` は Studio の clone へ git の操作をするので、この作業場からは流していない。
 25. `make lint-huge-methods` は ShaderGen.hashMaterial・hashOptField・SoftRaster3d.renderLayer の 3 件で落ちる。V1 の前の engine（fef4a2da）の
     bench/scene3d の jar でも同じ 3 件が出るので V1 の外。V1 で増えた withGl・runWindow は起動の時に 1 回だけ通るので exempt に載せた。
+26. 早見表（agents-pack/AGENTS.core.md）と agent-eval のお題は、既定が GL の間（リリース 2 まで）は載せない（P4a と同じ扱い。ゲームが WebGPU を選ぶ口がまだ開発用の環境変数だけのため）。
+27. ブラウザの device lost は `BrowserWebGpu.onDeviceLost` で受けて頁に案内を出す。PC は Dawn の device lost の callback を jWebGPU から取れるかを確かめておらず、
+    受けていない。代わりに WebGpuWindowLayer が画面へ出したコマごとに誤りの数を見て、増えたら最後の誤りの文を 1 行出す。
 
 ## 実装で分かった事（段階 1〜5・2026-11-15）
 
@@ -504,6 +508,8 @@ commit: 段階 1 `4aff67b0`・段階 2 `6eee79e1`・段階 3 `92205618`・段階
 | WebGpuRows の `setPipeline`・`setTexture` | 番号だけを受ける | `(RenderPass, 番号)` を受ける | pass は `openPass` の後にしか無い |
 | 起動の選び分けの関数 | — | `withGl`・`withWebGpuOrGl`・`withWindow`・`runWindow`（と WebLayer の対）に `@DontInline` | 付けないと rpg-starter の main の閉包が `MethodTooLargeException` で組めなかった |
 | `Browser.initWebGl2` | 引数無し | 理由を受け、webgpu の文脈を取った後なら頁を開き直して偽を返す | GL へ落ちる道の 1 本で、取る前と取った後の両方を受ける |
+| ブラウザの WGSL の確かめ | 準備で shader module の `getCompilationInfo` を見る | 見ていない。準備の終わりに `errorCount` が 0 かだけを見る（WGSL は PC の Dawn で組める事を門が見ている） | `WebGpuPaint` は shader module を外へ出さず、`create` の中で pipeline まで作る |
+| PC の誤りの知らせ | — | 画面へ出したコマごとに `errorCount` を見て、増えたら `lastError` を 1 行出す | device lost を受けられないので（12 章の 27） |
 | gl_parity の WebGPU の scene | passChain も | boxes・spriteNearest・passPaste・radial・veil の 5 つ | passChain は面（ShaderDoc）を使う |
 
 ### 測った数字

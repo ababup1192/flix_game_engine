@@ -11,7 +11,7 @@
 # FLIX_GE_FIXED_DT（dt を固定。2 コマ目以降もバイトで比べられる）・FLIX_GE_MUTE・START（App.withStarts の場面から起動）。
 # 撮る engine はゲームの lib の fpkg（engine の作業場では make sync-engine-full が配った物）。dt の固定を知らない古い fpkg で
 # 撮ると 2 コマ目から揃わないので、起動のログに dt を固定した知らせの行が無ければ止める。
-# 環境変数: GLYPHS（FLIX_GE_GLYPHS に置く値・--backend webgpu の既定は used・ほかは置かない）・FRAMES（撮るコマ数・既定 6）・DT（既定 1/60。off で固定しない＝実時間の dt。比べられるのは頭のコマだけになる）・
+# 環境変数: CAPTURE_GLYPHS（FLIX_GE_GLYPHS に置く値・--backend webgpu の既定は used・ほかは置かない）・FRAMES（撮るコマ数・既定 6）・DT（既定 1/60。off で固定しない＝実時間の dt。比べられるのは頭のコマだけになる）・
 #           WAIT_SECONDS（jar を作った後の、1 場面の起動から撮り終えるまでの上限・既定 180）。
 # 撮る間は、絵や時間を変えうる呼ぶ人の環境変数（下の reset_env）を外す。
 #
@@ -102,8 +102,8 @@ reset_env=(FLIX_GE_SPLASH_SHOT FLIX_GE_FRAME_STATS FLIX_GE_NO_SPLASH FLIX_GE_GLY
 	FGE_SOFT_SERIAL DEBUG FLOW_RECORD HEADLESS_RESIDENT HEADLESS_JAVA_OPTS JAVA_TOOL_OPTIONS FLIX_GE_CACHE_DIR START
 	FLIX_GE_BACKEND FLIX_GE_WEBGPU_FAIL)
 # 起動の時に用意する字（FLIX_GE_GLYPHS）。WebGPU の V1 は起動の後に字を足さないので、--backend webgpu の既定は used（出しうる字を起動の時に先に作る）。
-# GL と画素で比べる時は、GL の側も同じ GLYPHS で撮る（字のアトラスの並びが変わるので、GLYPHS の無い撮り置きの SHA とは比べない）。
-glyphs=${GLYPHS:-}
+# GL と画素で比べる時は、GL の側も同じ CAPTURE_GLYPHS で撮る（字のアトラスの並びが変わるので、GLYPHS の無い撮り置きの SHA とは比べない）。
+glyphs=${CAPTURE_GLYPHS:-}
 if [ "$backend" = webgpu ] && [ -z "$glyphs" ]; then glyphs=used; fi
 
 capture_one() {
@@ -156,7 +156,7 @@ capture_one() {
 			return 1
 		fi
 		if grep -aq '起動の後に足す字' "$dir/run.log"; then
-			echo "[gl-capture] ${game}: WebGPU が起動の後に足す字を描かなかった（字の欠けた絵。GLYPHS=used で撮る。${dir}/run.log）" >&2
+			echo "[gl-capture] ${game}: WebGPU が起動の後に足す字を描かなかった（字の欠けた絵。CAPTURE_GLYPHS=used で撮る。${dir}/run.log）" >&2
 			return 1
 		fi
 	fi

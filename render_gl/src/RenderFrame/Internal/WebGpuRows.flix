@@ -64,32 +64,25 @@ pub mod RenderFrame.Internal.WebGpuRows {
             let (vpX, vpY, _, _) = vp;
             pass.setViewport(Int32.toFloat64(vpX), Int32.toFloat64(viewportTop(fbH, vpY, vpH)),
                              Int32.toFloat64(vpW), Int32.toFloat64(vpH), 0.0, 1.0);
-            // 0 = 今の pipeline の blend・1 = 今の絵（-1 = まだ積んでいない）
-            let bound: Array[Int32, Static] = Array#{-1, -1} @ Static;
+            let setPipeline = cfg#setPipeline;
+            let geom = geometryOf(fbW, fbH, vp, base, cfg#readsForbidden);
             if (letterboxed) {
-                bindPipeline(pass, bound, cfg#setPipeline, 0);
+                bindPipeline(pass, geom, setPipeline, 0);
                 pass.setScissorRect(0, 0, fbW, fbH);
                 pass.draw(6, 1, 0, base + used)
             } else ();
-            let rows = rowsOf(list);
-            drawRowsFrom(pass, st, rows, { fb = (fbW, fbH), vp = vp, base = base, readsForbidden = cfg#readsForbidden,
-                                           setPipeline = cfg#setPipeline, setTexture = cfg#setTexture, skip = cfg#skip,
-                                           bound = bound }, 0, rowCountOf(list));
+            drawRowsFrom(pass, st, rowsOf(list), geom, setPipeline, cfg#setTexture, skip, 0, rowCountOf(list));
             pass.end();
             addCountsTo(cfg#drawCounts, st)
         }
 
-    /// 行を流す間ずっと同じ物（描き先と viewport の大きさ・送った位置・鍵を積む口・今積んである鍵）。
-    type alias RowSink = {
-        fb = (Int32, Int32),
-        vp = (Int32, Int32, Int32, Int32),
-        base = Int32,
-        readsForbidden = Int32,
-        setPipeline = (RenderPass, Int32) -> Unit \ IO,
-        setTexture = (RenderPass, Int32) -> Unit \ IO,
-        skip = String -> Unit \ IO,
-        bound = Array[Int32, Static]
-    }
+    // ── 行を流す間ずっと同じ値の入れ物（Int32 の配列 1 本）──
+    // 0=描き先の幅 1=描き先の高さ 2-5=viewport (x, y, 幅, 高さ・GL の左下原点) 6=行の instance を送った位置 7=描き先と同じ絵の番号
+    // 8=今積んである pipeline の blend 9=今積んである絵（どちらも -1 = まだ積んでいない） 10-13=今の行の scissor (x, y, 幅, 高さ)
+    // WhyNot: record や組で持ち回らない — 行が描く物の数だけある画面で、行ごとに record の欄を辿る代金と組の割り当てが 1 コマに出る（RenderFrame の st と同じ形）。
+    def geometryOf(fbW: Int32, fbH: Int32, vp: (Int32, Int32, Int32, Int32), base: Int32, readsForbidden: Int32): Array[Int32, Static] \ IO =
+        let (vpX, vpY, vpW, vpH) = vp;
+        Array#{fbW, fbH, vpX, vpY, vpW, vpH, base, readsForbidden, -1, -1, 0, 0, 0, 0} @ Static
 
     def emitAll(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                 registry: RenderAsset.TextureRegistry, warnLog: Ref[Set[String], Static],
@@ -108,9 +101,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
                  registry: RenderAsset.TextureRegistry, warnLog: Ref[Set[String], Static],
                  skip: String -> Unit \ IO, item: Merged): Unit \ IO =
         match item {
-            case Merged.MSprite(d) =>
-                if (List.isEmpty(DrawCmd.maskOf(d))) emitSprite(st, list, scaleX, scaleY, registry, Set.empty(), warnLog, d)
-                else skip("mask つきスプライト")
+            case Merged.MSprite(d) => emitPlainSprite(st, list, scaleX, scaleY, registry, warnLog, skip, d)
             case Merged.MTile(_)    => skip("タイルの層")
             case Merged.MPoly(_)    => skip("多角形")
             case Merged.MStatic(_)  => skip("static layer")
@@ -119,62 +110,81 @@ pub mod RenderFrame.Internal.WebGpuRows {
         };
         ()
 
-    def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], sink: RowSink,
-                     row: Int32, n: Int32): Unit \ IO =
+    /// mask の無い・Pass の history でないスプライトを行へ積む（ほかは知らせて飛ばす）。
+    def emitPlainSprite(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
+                        registry: RenderAsset.TextureRegistry, warnLog: Ref[Set[String], Static],
+                        skip: String -> Unit \ IO, d: RenderType.Drawable): Unit \ IO =
+        if (not List.isEmpty(DrawCmd.maskOf(d))) skip("mask つきスプライト")
+        else if (isHistoryName(DrawCmd.textureOf(d))) skip("Pass の history")
+        else emitSprite(st, list, scaleX, scaleY, registry, Set.empty(), warnLog, d)
+
+    /// Pass の前のコマの写しの名前か（RenderTarget.historyName で作る名前）。
+    def isHistoryName(name: String): Bool = String.endsWith({suffix = RenderTarget.historyName("")}, name)
+
+    def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
+                     setPipeline: (RenderPass, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
+                     skip: String -> Unit \ IO, row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
-            drawRow(pass, st, rows, sink, row);
-            drawRowsFrom(pass, st, rows, sink, row + 1, n)
+            drawRow(pass, st, rows, geom, setPipeline, setTexture, skip, row);
+            drawRowsFrom(pass, st, rows, geom, setPipeline, setTexture, skip, row + 1, n)
         }
 
     /// 行 1 つを draw 1 本にし、draw call を GL と同じ物差しで数える（幅か高さが 0 の scissor は draw を出さずに 1 と数える）。
     // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
-    def drawRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], sink: RowSink, row: Int32): Unit \ IO =
-        let (blendC, texId, firstInstance, count) = drawArgsAt(rows, row, sink#base);
+    def drawRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
+                setPipeline: (RenderPass, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
+                skip: String -> Unit \ IO, row: Int32): Unit \ IO =
+        let blendC = rowAt(rows, row, 4);
+        let texId = rowAt(rows, row, 3);
         let clipFlag = rowAt(rows, row, 5);
         let x0 = rowAt(rows, row, 6);
         let y0 = rowAt(rows, row, 7);
         let x1 = rowAt(rows, row, 8);
         let y1 = rowAt(rows, row, 9);
-        if (texId != 0 and texId == sink#readsForbidden) sink#skip("描き先と同じ絵を読むスプライト")
+        if (texId != 0 and texId == Array.get(7, geom)) skip("描き先と同じ絵を読むスプライト")
         else {
-            let (sx, sy, sw, sh) = scissorOf(sink#fb, sink#vp, clipFlag, x0, y0, x1, y1);
-            bindPipeline(pass, sink#bound, sink#setPipeline, blendC);
-            if (texId == 0 or Array.get(1, sink#bound) == texId) ()
+            scissorInto(geom, clipFlag, x0, y0, x1, y1);
+            bindPipeline(pass, geom, setPipeline, blendC);
+            if (texId == 0 or Array.get(9, geom) == texId) ()
             else {
-                sink#setTexture(pass, texId);
-                Array.put(texId, 1, sink#bound)
+                setTexture(pass, texId);
+                Array.put(texId, 9, geom)
             };
+            let sw = Array.get(12, geom);
+            let sh = Array.get(13, geom);
             if (sw > 0 and sh > 0) {
-                pass.setScissorRect(sx, sy, sw, sh);
-                pass.draw(6, count, 0, firstInstance)
+                pass.setScissorRect(Array.get(10, geom), Array.get(11, geom), sw, sh);
+                pass.draw(6, rowAt(rows, row, 2), 0, firstInstanceAt(rows, row, Array.get(6, geom)))
             } else ();
             countSpriteDraw(st, texId, clipFlag, x0, y0, x1, y1, blendC, false, 1)
         };
         ()
 
     /// blend の番号の pipeline を積む（前と同じなら積まない）。
-    def bindPipeline(pass: RenderPass, bound: Array[Int32, Static], setPipeline: (RenderPass, Int32) -> Unit \ IO,
+    def bindPipeline(pass: RenderPass, geom: Array[Int32, Static], setPipeline: (RenderPass, Int32) -> Unit \ IO,
                      blendC: Int32): Unit \ IO =
-        if (Array.get(0, bound) == blendC) ()
+        if (Array.get(8, geom) == blendC) ()
         else {
             setPipeline(pass, blendC);
-            Array.put(blendC, 0, bound)
+            Array.put(blendC, 8, geom)
         }
 
-    /// 行 row の draw の引数: (blend の番号, 絵の番号, firstInstance, 体数)。base = 行の instance を送った位置の instance の番号。
-    def drawArgsAt(rows: Array[Int32, Static], row: Int32, base: Int32): (Int32, Int32, Int32, Int32) \ IO =
-        (rowAt(rows, row, 4), rowAt(rows, row, 3), base + rowAt(rows, row, 1), rowAt(rows, row, 2))
+    /// 行 row の draw の firstInstance。base = 行の instance を送った位置の instance の番号。
+    def firstInstanceAt(rows: Array[Int32, Static], row: Int32, base: Int32): Int32 \ IO = base + rowAt(rows, row, 1)
 
-    /// 行の clip 矩形（viewport の左上が原点の px）を、描き先の左上が原点の scissor (x, y, 幅, 高さ) にする。
+    /// 行の clip 矩形（viewport の左上が原点の px）を、描き先の左上が原点の scissor (x, y, 幅, 高さ) にして geom の 10〜13 へ置く。
     /// viewport と交わし、描き先の外へ出た分を切る（WebGPU は描き先の外へ出た scissor で pass ごと誤りになる）。clip が無ければ描き先の全面。
-    def scissorOf(fb: (Int32, Int32), vp: (Int32, Int32, Int32, Int32), clipFlag: Int32,
-                  x0: Int32, y0: Int32, x1: Int32, y1: Int32): (Int32, Int32, Int32, Int32) =
-        let (fbW, fbH) = fb;
-        if (clipFlag == 0) (0, 0, fbW, fbH)
+    def scissorInto(geom: Array[Int32, Static], clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
+        let fbW = Array.get(0, geom);
+        let fbH = Array.get(1, geom);
+        if (clipFlag == 0) putScissor(geom, 0, 0, fbW, fbH)
         else {
-            let (vpX, vpY, vpW, vpH) = vp;
+            let vpX = Array.get(2, geom);
+            let vpY = Array.get(3, geom);
+            let vpW = Array.get(4, geom);
+            let vpH = Array.get(5, geom);
             let cx0 = Int32.max(0, x0);
             let cx1 = Int32.min(vpW, x1);
             let cy0 = Int32.max(0, y0);
@@ -185,8 +195,14 @@ pub mod RenderFrame.Internal.WebGpuRows {
             let y = within(fbH, top);
             let right = within(fbW, left + Int32.max(0, cx1 - cx0));
             let bottom = within(fbH, top + Int32.max(0, cy1 - cy0));
-            (x, y, Int32.max(0, right - x), Int32.max(0, bottom - y))
+            putScissor(geom, x, y, Int32.max(0, right - x), Int32.max(0, bottom - y))
         }
+
+    def putScissor(geom: Array[Int32, Static], x: Int32, y: Int32, w: Int32, h: Int32): Unit \ IO =
+        Array.put(x, 10, geom);
+        Array.put(y, 11, geom);
+        Array.put(w, 12, geom);
+        Array.put(h, 13, geom)
 
     /// v を [0, limit] に収める。
     def within(limit: Int32, v: Int32): Int32 = Int32.max(0, Int32.min(limit, v))

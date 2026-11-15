@@ -34,7 +34,7 @@ mod LwjglEnv {
     }
 
     /// FLIX_GE_BACKEND の字を道にする（無い・空・"gl" は Gl・"webgpu" は WebGpu・ほかは Err）。大文字と小文字は区別しない。
-    pub def parseBackend(text: Option[String]): Result[String, Backend] =
+    def parseBackend(text: Option[String]): Result[String, Backend] =
         match text |> Option.map(t -> String.toLowerCase(String.trim(t))) {
             case None           => Ok(Backend.Gl)
             case Some("")       => Ok(Backend.Gl)

@@ -112,7 +112,5 @@ mod TestLwjglEnv {
     /// 知らない値は GL で起動する（起動を止めない。知らせは load が出す）。
     @Test
     def testUnknownBackendFallsBackToGl(): Unit \ Assert =
-        Assert.assertEq(expected = (LwjglEnv.Backend.Gl, true),
-                        (LwjglEnv.fromMap(Map#{"FLIX_GE_BACKEND" => "vulkan"})#backend,
-                         Result.isErr(LwjglEnv.parseBackend(Some("vulkan")))))
+        Assert.assertEq(expected = LwjglEnv.Backend.Gl, LwjglEnv.fromMap(Map#{"FLIX_GE_BACKEND" => "vulkan"})#backend)
 }

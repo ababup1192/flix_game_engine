@@ -374,3 +374,17 @@ WebGPU の swap は診断に足していない（`swap_p50` は 0）。測る前
 - WebGPU で描いた事は、頁が出す `[backend] webgpu: WebGPU apple metal-3 ()` の行（bench-overlay が `env.backend` に置く）で見た。
   `env.renderer` は overlay が自分で取った WebGL2 の名前なので、どちらの回も ANGLE と出る。
 - WebGL2 の回 1 の submit 15.3 は 1 回だけ高い（幅の大半）。
+
+### draw の多い場面（`make run TEX=16 COUNTS=20000,20000`・絵 16 種で 20,000 draw・WebGpuRows の行を配列 1 本で流す形にした後）
+
+| 回 | GL frame p50 | GL submit p50 | WebGPU frame p50 | WebGPU submit p50 |
+|---|---|---|---|---|
+| 1 | 42.232 | 36.756 | 16.901 | 9.029 |
+| 2 | 41.437 | 36.048 | 13.660 | 5.896 |
+| 3 | 42.416 | 36.973 | 14.351 | 6.235 |
+| 中央値 | 42.232 | 36.756 | 14.351 | 6.235 |
+| 幅 | 0.979（2.3%） | 0.925（2.5%） | 3.241（23%） | 3.133（50%） |
+
+- WebGPU / GL: frame 0.34 倍・submit 0.17 倍。GL は draw 1 本ごとに状態を積み直す代金が出る。
+- WebGPU の幅が 5% を超えた（1 回目が高い）が、3 回とも GL の半分より速く、どちらが速いかは揺らがない。
+- 3 回目の WebGPU の前に、ほかの java が 1 本動いていた（`pgrep -fl java`。並行の作業員の検査と見られる）。

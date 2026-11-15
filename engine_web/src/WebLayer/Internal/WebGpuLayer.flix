@@ -52,41 +52,62 @@ pub mod WebLayer.Internal.WebGpuLayer {
                 }
         }
 
-    /// 塗りのコアを作り、絵とフォントを上げ、誤りが無ければ canvas に描き先を作って f を回す。
+    /// 塗りのコアを作り、絵とフォントを上げ、誤りが無ければ canvas に描き先を作って f を回す。落ちたら作った物を捨てて Err。
+    /// 頁の ?webgpuFail=prepare|canvas は、webgpu の文脈を取る前・取った後に落ちる道を起こす（GL へ落ちる道の確かめ用。無ければ何もしない）。
     @DontInline
     def prepare(config: GameEngine.EngineConfig, gpu: BrowserWebGpu, f: Unit -> a \ ef): Result[String, a] \ ef - Platform.Services - LoadProgress + IO =
-        let webGpu: WebGpu = checked_cast(gpu);
         let design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) };
         let state = freshState(config, design);
         let size = (Int32.max(1, Browser.canvasWidth()), Int32.max(1, Browser.canvasHeight()));
-        let paint = WebGpuPaint.create(webGpu, { designWidth = config#designWidth, designHeight = config#designHeight,
-                                                 clearColor = config#clearColor, width = fst(size), height = snd(size) });
-        let progress = showProgress(state);
-        println("Loading textures...");
-        let loaded = try { Ok(loadTextures(gpu, paint, config#textureManifest, (done, total) -> progress("loading images...", done, total))) } catch {
-            case e: Throwable => Err("絵を上げられない: ${e.toString()}")
-        };
-        let fonts = loadFonts(paint, config#fontManifest, progress);
-        let errors = webGpu.errorCount();
-        match loaded {
+        let queryPairs = Array.toList(Browser.queryPairs());
+        let failMode = queryValueOf("webgpuFail", queryPairs);
+        let ready = prepareAssets(config, gpu, size, showProgress(state), failMode)
+            |> Result.flatMap(assets -> attachOrRelease(gpu, assets, size, failMode));
+        match ready {
             case Err(why) =>
                 gpu.destroy();
                 Err(why)
-            case Ok(_) if errors > 0 =>
-                let why = webGpu.lastError();
-                gpu.destroy();
-                Err("準備で WebGPU の誤りが ${Int32.toString(errors)} 個（${why}）")
-            case Ok(_) =>
-                match attachCanvas(gpu, size) {
-                    case Err(why) =>
-                        gpu.destroy();
-                        Err(why)
-                    case Ok((surface, format)) =>
-                        Ref.put(config#textureManifest |> List.filter(e -> Deferred.isDeferred(e#path) and Deferred.state(e#path) != "loaded"), state#pendingTextures);
-                        let screen = { gpu = gpu, paint = paint, surface = surface, format = format, size = Ref.fresh(Static, size),
-                                       drawn = Ref.fresh(Static, 0), captureFrame = captureFrameOf(Array.toList(Browser.queryPairs())) };
-                        Ok(runPage(state, screen, fonts, f))
-                }
+            case Ok((paint, fonts, surface, format)) =>
+                Ref.put(config#textureManifest |> List.filter(e -> Deferred.isDeferred(e#path) and Deferred.state(e#path) != "loaded"), state#pendingTextures);
+                let screen = { gpu = gpu, paint = paint, surface = surface, format = format, size = Ref.fresh(Static, size),
+                               drawn = Ref.fresh(Static, 0),
+                               captureFrame = queryValueOf("capture", queryPairs) |> Int32.fromString |> Option.getWithDefault(0) };
+                Ok(runPage(state, screen, fonts, f))
+        }
+
+    /// 塗りのコア（pipeline）を作り、絵とフォントを上げ、誤りの数を見る（全部 canvas の webgpu の文脈を取る前）。落ちたら塗りのコアを手放して Err。
+    def prepareAssets(config: GameEngine.EngineConfig, gpu: BrowserWebGpu, size: (Int32, Int32),
+                      progress: (String, Int32, Int32) -> Unit \ IO, failMode: String): Result[String, (WebGpuPaint.Paint, RenderPaint.Fonts)] \ IO =
+        let webGpu: WebGpu = checked_cast(gpu);
+        let made: Ref[Option[WebGpuPaint.Paint], Static] = Ref.fresh(Static, None);
+        let outcome = try {
+            let paint = WebGpuPaint.create(webGpu, { designWidth = config#designWidth, designHeight = config#designHeight,
+                                                     clearColor = config#clearColor, width = fst(size), height = snd(size) });
+            Ref.put(Some(paint), made);
+            println("Loading textures...");
+            loadTextures(gpu, paint, config#textureManifest, (done, total) -> progress("loading images...", done, total));
+            let fonts = loadFonts(paint, config#fontManifest, progress);
+            let errors = webGpu.errorCount();
+            if (failMode == "prepare") Err("準備で落ちた（?webgpuFail=prepare で起こした）")
+            else if (errors > 0) Err("準備で WebGPU の誤りが ${Int32.toString(errors)} 個（${webGpu.lastError()}）")
+            else Ok((paint, fonts))
+        } catch {
+            case e: Throwable => Err("準備で落ちた: ${e.toString()}")
+        };
+        if (Result.isErr(outcome)) Option.forEach(WebGpuPaint.release, Ref.get(made)) else ();
+        outcome
+
+    /// canvas に描き先を作る。作れなければ塗りのコアを手放して Err。
+    def attachOrRelease(gpu: BrowserWebGpu, assets: (WebGpuPaint.Paint, RenderPaint.Fonts), size: (Int32, Int32), failMode: String):
+            Result[String, (WebGpuPaint.Paint, RenderPaint.Fonts, Surface, TextureFormat)] \ IO =
+        let (paint, fonts) = assets;
+        let attached = attachCanvas(gpu, size)
+            |> Result.flatMap(sf -> if (failMode == "canvas") Err("canvas の描き先を作った後に落ちた（?webgpuFail=canvas で起こした）") else Ok(sf));
+        match attached {
+            case Ok((surface, format)) => Ok((paint, fonts, surface, format))
+            case Err(why) =>
+                WebGpuPaint.release(paint);
+                Err(why)
         }
 
     /// canvas（fge-canvas）の webgpu の文脈を取って configure する。これより後に落ちた時は、同じ canvas から WebGL2 を取れない。
@@ -100,11 +121,10 @@ pub mod WebLayer.Internal.WebGpuLayer {
             case e: Throwable => Err("canvas の描き先を作れない: ${e.toString()}")
         }
 
-    /// 頁の URL の ?capture=<n> の n（無ければ 0）。
-    def captureFrameOf(flat: List[String]): Int32 = match flat {
-        case "capture" :: value :: _ => Int32.fromString(value) |> Option.getWithDefault(0)
-        case _ :: _ :: rest          => captureFrameOf(rest)
-        case _                       => 0
+    /// 頁の URL のクエリ（[鍵1, 値1, 鍵2, 値2, …]）の key の値（無ければ空）。
+    def queryValueOf(key: String, flat: List[String]): String = match flat {
+        case k :: value :: rest => if (k == key) value else queryValueOf(key, rest)
+        case _                  => ""
     }
 
     @DontInline
@@ -126,6 +146,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
             handleInput(state, () ->
             WebGpuPaint.handleGpuResources(paint, fonts, f)))))))))));
         Browser.ended();
+        WebGpuPaint.release(paint);
         result
 
     // ── 絵とフォント ──
@@ -156,16 +177,9 @@ pub mod WebLayer.Internal.WebGpuLayer {
             let width = WebImages.width(path);
             let height = WebImages.height(path);
             let rgba = ByteBuffer.allocateDirect(Int32.max(4, width * height * 4));
-            gpu.copyImageBitmap(path, rgba);
-            if (entry#hasAlpha) () else fillOpaque(rgba, width * height, 0);
+            gpu.copyImageBitmap(path, width, height, rgba);
+            if (entry#hasAlpha) () else WebGpuPaint.makeOpaque(rgba, width * height);
             WebGpuPaint.uploadRgba(paint, width, height, rgba)
-        }
-
-    def fillOpaque(data: ByteBuffer, count: Int32, i: Int32): Unit \ IO =
-        if (i >= count) ()
-        else {
-            discard data.put(i * 4 + 3, -1i8);
-            fillOpaque(data, count, i + 1)
         }
 
     /// 書き出しが事前生成したアトラスを読んで R8 で上げる。読めないフォントは 1 行言って飛ばす（組み込みフォントで代わりに出す）。
@@ -232,7 +246,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
         }
 
     /// コマを締めて canvas へ出し、?capture=<n> の n コマ目なら中間の texture を読んで頁に置く。
-    def presentScreen(screen: Screen): Unit \ IO =
+    def presentToCanvas(screen: Screen): Unit \ IO =
         WebGpuPaint.present(screen#paint, Some(screen#surface.getCurrentTexture()));
         screen#surface.present();
         let drawn = Ref.get(screen#drawn) + 1;
@@ -260,7 +274,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
             def getViewportRect(k) = k({ position = Vec2.zero(), size = st#design })
             def getDisplay(k) = k(display(st#design))
             def presentFrame(k) = {
-                presentScreen(screen);
+                presentToCanvas(screen);
                 let dt = AnimationFrame.waitTick(tickRate());
                 Ref.put(if (Browser.isFrameCapture()) 1.0 / tickRate() else dt, st#lastDt);
                 k(())

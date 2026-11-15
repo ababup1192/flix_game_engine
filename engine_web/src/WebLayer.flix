@@ -61,7 +61,7 @@ pub mod WebLayer {
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
-        if (Browser.backendRequest() == "webgpu") withGlAfter("3D の入口（WebLayer.withProject3d）は WebGL2 で描く", makeRenderer, config, f)
+        if (Browser.backendRequest() == "webgpu") withGlFallback("3D の入口（WebLayer.withProject3d）は WebGL2 で描く", makeRenderer, config, f)
         else withWeb(makeRenderer, config, f)
 
     /// `rootDir` 直下の project.json を読んで起動に使う設定にする。読めなければ止める（LwjglLayer.withProject と同じ）。
@@ -76,12 +76,12 @@ pub mod WebLayer {
     def withWebGpuOrGl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
         match WebLayer.Internal.WebGpuLayer.withWeb(config, f) {
             case Ok(result) => result
-            case Err(why)   => withGlAfter(why, (_, _) -> makeWarningRenderer(), config, f)
+            case Err(why)   => withGlFallback(why, (_, _) -> makeWarningRenderer(), config, f)
         }
 
     /// WebGPU を使えなかった理由を出して WebGL2 の文脈を取り、GL で描く。canvas が既に webgpu の文脈を持っていれば、頁が開き直すのを待つ。
     @DontInline
-    def withGlAfter(reason: String, makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
+    def withGlFallback(reason: String, makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
                     config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
         if (Browser.initWebGl2(reason)) withWeb(makeRenderer, config, f) else waitForReload()
 

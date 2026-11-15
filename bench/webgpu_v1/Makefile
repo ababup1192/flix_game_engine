@@ -20,9 +20,9 @@ JAVA_OPTS := -Dorg.lwjgl.system.SharedLibraryExtractDirectory=$(CURDIR)/build/lw
 # WhyNot: フォルダごとに symlink を張らない — flix はフォルダの symlink の中を探さず、何も組まずに緑を返す。ファイルごとに張る。
 tree:
 	@rm -rf $(TREE)/src && mkdir -p $(TREE)/src $(TREE)/lib/external build
-	@for root in ../../engine_full/src src; do \
+	@for pair in engine:../../engine_full/src bench:src; do role=$${pair%%:*}; root=$${pair#*:}; \
 		(cd "$$root" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-			dest="$(TREE)/src/$$(basename $$root)/$$f"; mkdir -p "$$(dirname "$$dest")"; \
+			dest="$(TREE)/src/$$role/$$f"; mkdir -p "$$(dirname "$$dest")"; \
 			ln -sfn "$(CURDIR)/$$root/$$f" "$$dest"; \
 		done; \
 	done

@@ -324,6 +324,45 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         discard bytes.asIntBuffer().put(arr);
         bytes
 
+    /// RGBA（1 画素 4 バイト）の頭 count 画素の alpha を 255 で埋める（hasAlpha が偽の絵。GL が RGB8 で上げて alpha を 1 で読むのと同じ）。
+    pub def makeOpaque(rgba: ByteBuffer, count: Int32): Unit \ IO = fillAlphaFrom(rgba, count, 0)
+
+    def fillAlphaFrom(rgba: ByteBuffer, count: Int32, i: Int32): Unit \ IO =
+        if (i >= count) ()
+        else {
+            discard rgba.put(i * 4 + 3, -1i8);
+            fillAlphaFrom(rgba, count, i + 1)
+        }
+
+    /// device の上に作った物（pipeline・sampler・layout・bind group・texture・buffer・shader module）を全部手放す。device は呼ぶ側が捨てる。
+    /// この後 paint は使えない。
+    pub def release(paint: Paint): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        Array.put(None, 0, p#encoder);
+        Map.forEach((_, slot) -> { slot#group.release(); slot#texture.destroy() }, Ref.get(p#slots));
+        Ref.put(Map.empty(), p#slots);
+        Ref.put(Map.empty(), p#targetsRef);
+        p#blank#group.release();
+        p#blank#texture.destroy();
+        Option.forEach(g -> g.release(), Ref.get(p#presentGroup));
+        Ref.put(None, p#presentGroup);
+        Option.forEach(fp -> snd(fp).release(), Ref.get(p#presentPipeline));
+        Ref.put(None, p#presentPipeline);
+        Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(p#pipelines));
+        Ref.put(Map.empty(), p#pipelines);
+        Array.get(0, p#frameTexture).destroy();
+        Array.get(0, p#instanceBuffer).destroy();
+        p#frameGroup.release();
+        p#uniform.destroy();
+        p#nearestRepeat.release();
+        p#linearRepeat.release();
+        p#nearestClamp.release();
+        p#frameLayout.release();
+        p#imageLayout.release();
+        p#presentLayout.release();
+        p#spriteModule.release();
+        p#presentModule.release()
+
     /// 1 枚を名前で置く（同じ名前は置き換える）。
     pub def putTexture(name: String, info: RenderAsset.TextureInfo, paint: Paint): Unit \ IO =
         let PaintData.PaintData(p) = paint;
@@ -487,10 +526,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         if (Option.isEmpty(staticLayer)) () else skip(paint, "static layer");
         match Array.get(0, p#activeTarget) {
             case Some(spec) =>
-                match Map.get(spec#name, Ref.get(p#targetsRef)) {
-                    case Some(t) => paintInto(paint, t#texture, t#format, (t#width, t#height), Some(spec#clear), t#id, sprites)
-                    case None    => ()
-                };
+                paintTarget(paint, spec, sprites);
                 false
             case None =>
                 let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer | RenderPaint.emptyFrame() };
@@ -500,6 +536,12 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 if (Option.isEmpty(Ref.get(p#diagnosticsRef))) RenderDrawCounts.discardTotal(p#drawCounts) else ();
                 true
         }
+
+    /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。
+    def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        Map.get(spec#name, Ref.get(p#targetsRef))
+            |> Option.forEach(t -> paintInto(paint, t#texture, t#format, (t#width, t#height), Some(spec#clear), t#id, sprites))
 
     def paintScreen(paint: Paint, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;

@@ -302,26 +302,27 @@ pub mod LwjglLayer {
             println("GLFW init failed");
             bug!("GLFW failed")
         } else ();
-        match LwjglEnv.parseBackend(Map.get("FLIX_GE_BACKEND", LwjglEnv.snapshot())) {
-            case Ok(LwjglEnv.Backend.WebGpu) => withWebGpuOrGl(config, f)
-            case _                           => withGl(config, f)
+        let env = LwjglEnv.load();
+        match env#backend {
+            case LwjglEnv.Backend.WebGpu => withWebGpuOrGl(config, env, f)
+            case LwjglEnv.Backend.Gl     => withGl(config, env, f)
         }
 
     /// WebGPU のウィンドウで起動する。開く前に落ちたら（Dawn のネイティブ・device・ウィンドウ）理由を 1 行言い、GLFW の hint を戻して GL で起動する。
     @DontInline
-    def withWebGpuOrGl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
-        match LwjglLayer.Internal.WebGpuWindowLayer.withWindow(config, f) {
+    def withWebGpuOrGl(config: GameEngine.EngineConfig, env: LwjglEnv.Settings, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
+        match LwjglLayer.Internal.WebGpuWindowLayer.withWindow(config, env, f) {
             case Ok(result) => result
             case Err(why)   =>
                 println("[backend] WebGPU を使えない: ${why} — GL で起動する");
                 // WhyNot: hint を戻さずに GL の枝へ入らない — GLFW_NO_API が残ると GL のウィンドウに context が付かない。
                 GLFW.glfwDefaultWindowHints();
-                withGl(config, f)
+                withGl(config, env, f)
         }
 
-    /// GL のウィンドウで起動する（GLFW は初期化済み）。
+    /// GL のウィンドウで起動する（GLFW は初期化済み・env は withLwjgl の頭で読んだ環境変数）。
     @DontInline
-    def withGl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
+    def withGl(config: GameEngine.EngineConfig, env: LwjglEnv.Settings, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3);
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 3);
         GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
@@ -336,7 +337,6 @@ pub mod LwjglLayer {
         // 隠しウィンドウモード（GL 突き合わせ harness 用）。Retina の 2 倍化を切るのは、
         // フレームバッファ = design 寸に固定しないと letterbox 補間が乗り、
         // 画素の突き合わせが成立しないため。
-        let env = LwjglEnv.load();
         let hidden = env#hidden;
         // 音を消して起動するか（計測や見回りで隠し窓を流す時）。音の処理は動かしたまま、全体の音量だけ 0 に止める。
         let muted = env#muted;

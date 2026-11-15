@@ -296,25 +296,20 @@ function fgeFallbackToWebGl2(reason) {
   return true;
 }
 
-// 起動の前に解いた ImageBitmap を copyExternalImageToTexture で GPU へ写し、読み戻して dst へ RGBA（上の行から）で置く。
+// 起動の前に解いた ImageBitmap を copyExternalImageToTexture で GPU へ写し、buffer へ行を row バイトずつで写す命令を submit する（待たない）。
+// 返すのは誤りの文（無ければ空）。読み戻しは wasm の側の readBuffer が待って読む。
 // WhyNot: GPUTextureUsage などの大域の名前を書かない — WebGPU の無いブラウザで js を読む時に落ちないよう、数で書く。
-async function fgeCopyImageBitmap(device, path, dst) {
+function fgeCopyImageBitmap(device, path, buffer, row) {
   var bmp = fgeImages.get(fgeNormPath(path));
-  if (!bmp) throw new Error("ImageBitmap が無い");
+  if (!bmp) return "ImageBitmap が無い";
   var w = bmp.width, h = bmp.height;
   var texture = device.createTexture({ size: [w, h], format: "rgba8unorm", usage: 0x01 | 0x02 | 0x10 });
   device.queue.copyExternalImageToTexture({ source: bmp }, { texture: texture, premultipliedAlpha: false }, [w, h]);
-  var row = Math.ceil(w * 4 / 256) * 256;
-  var buffer = device.createBuffer({ size: row * h, usage: 0x0008 | 0x0001 });
   var encoder = device.createCommandEncoder();
   encoder.copyTextureToBuffer({ texture: texture }, { buffer: buffer, bytesPerRow: row }, [w, h]);
   device.queue.submit([encoder.finish()]);
-  await buffer.mapAsync(1);
-  var src = new Uint8Array(buffer.getMappedRange());
-  for (var y = 0; y < h; y++) dst.set(src.subarray(y * row, y * row + w * 4), y * w * 4);
-  buffer.unmap();
-  buffer.destroy();
   texture.destroy();
+  return "";
 }
 
 // 人の決定（device lost）: WebGL の文脈を失った時と同じく、戻すのは頁の読み直しとセーブから。

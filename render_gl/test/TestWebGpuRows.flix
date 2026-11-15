@@ -3,43 +3,59 @@
 // WhyNot: mod TestWebGpuRows にしない — 固定したい関数は WebGpuRows の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     import java.nio.FloatBuffer
-    use RenderFrame.{closeSpriteRun, emitSprite, instanceFloats, newRenderList, rowsOf, stateSize}
-    use RenderFrame.Internal.WebGpuRows.{drawArgsAt, needsLetterbox, scissorOf, viewportTop}
+    use RenderFrame.{closeSpriteRun, emitSprite, instanceFloats, newRenderList, rowAt, rowsOf, stateSize}
+    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isHistoryName, loadOpOf, needsLetterbox, scissorInto, viewportTop}
 
     def fb(): (Int32, Int32) = (320, 200)
 
     def vp(): (Int32, Int32, Int32, Int32) = (0, 10, 320, 180)
 
+    /// scissorInto が置いた (x, y, 幅, 高さ) を組で読む。
+    def scissorOf(fb: (Int32, Int32), vp: (Int32, Int32, Int32, Int32), clipFlag: Int32,
+                  x0: Int32, y0: Int32, x1: Int32, y1: Int32): (Int32, Int32, Int32, Int32) \ IO =
+        let geom = geometryOf(fst(fb), snd(fb), vp, 0, -1);
+        scissorInto(geom, clipFlag, x0, y0, x1, y1);
+        (Array.get(10, geom), Array.get(11, geom), Array.get(12, geom), Array.get(13, geom))
+
+    /// LoadOp を比べられる形に（Clear は色の 8 bit・ClearTransparent は -1・Keep は -2）。
+    def opOf(op: RenderTarget.LoadOp): (Int32, Int32, Int32) = match op {
+        case RenderTarget.LoadOp.Clear(c)         => (Float64.round(c#r * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                                      Float64.round(c#g * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                                      Float64.round(c#b * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0))
+        case RenderTarget.LoadOp.ClearTransparent => (-1, -1, -1)
+        case RenderTarget.LoadOp.Keep             => (-2, -2, -2)
+    }
+
     // ── scissor ──
 
     /// clip の無い行は描き先の全面。
     @Test
-    def testScissorWithoutClipIsWholeTarget(): Unit \ Assert =
+    def testScissorWithoutClipIsWholeTarget(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (0, 0, 320, 200), scissorOf(fb(), vp(), 0, 0, 0, 0, 0))
 
     /// viewport の中の clip は、viewport の上の端（10 px）だけ下へずれる。
     @Test
-    def testScissorShiftsByViewportTop(): Unit \ Assert =
+    def testScissorShiftsByViewportTop(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (10, 30, 40, 40), scissorOf(fb(), vp(), 1, 10, 20, 50, 60))
 
     /// viewport の右下からはみ出た clip は viewport の端で切れる（黒帯に掛からない）。
     @Test
-    def testScissorStopsAtViewportEdge(): Unit \ Assert =
+    def testScissorStopsAtViewportEdge(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (300, 180, 20, 10), scissorOf(fb(), vp(), 1, 300, 170, 400, 250))
 
     /// 幅 0 の clip は幅 0 の scissor（draw を出さない行）。
     @Test
-    def testScissorOfZeroWidthClip(): Unit \ Assert =
+    def testScissorOfZeroWidthClip(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (50, 30, 0, 40), scissorOf(fb(), vp(), 1, 50, 20, 50, 60))
 
     /// viewport の左上の外だけにある clip は幅も高さも 0。
     @Test
-    def testScissorOutsideViewportIsEmpty(): Unit \ Assert =
+    def testScissorOutsideViewportIsEmpty(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (0, 10, 0, 0), scissorOf(fb(), vp(), 1, -50, -50, -10, -10))
 
     /// viewport（100 × 100・上の端 0）が描き先（50 × 50）より大きくても、scissor は描き先の中に収まる（右下の 40〜90 は 40〜50 に切れる）。
     @Test
-    def testScissorStaysInsideTarget(): Unit \ Assert =
+    def testScissorStaysInsideTarget(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (40, 40, 10, 10), scissorOf((50, 50), (0, -50, 100, 100), 1, 40, 40, 90, 90))
 
     // ── viewport と黒帯 ──
@@ -67,7 +83,8 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
         emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, spriteOf("a"));
         emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, spriteOf("b"));
         closeSpriteRun(st, list);
-        Assert.assertEq(expected = (0, 6, 101, 1), drawArgsAt(rowsOf(list), 1, 100))
+        let rows = rowsOf(list);
+        Assert.assertEq(expected = (0, 6, 101, 1), (rowAt(rows, 1, 4), rowAt(rows, 1, 3), firstInstanceAt(rows, 1, 100), rowAt(rows, 1, 2)))
 
     def spriteOf(texture: String): DrawCmd.Drawable =
         DrawCmd.make({
@@ -75,4 +92,19 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
           rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
           zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
+
+    // ── render pass の頭の始末と Pass の history ──
+
+    /// 画面は黒帯があれば黒・無ければ clearColor で始め、Pass は頼まれた op のまま（clearColor = (51, 102, 153)/255）。
+    @Test
+    def testLoadOpOfScreenAndPass(): Unit \ Assert =
+        let c = { r = 51.0 / 255.0, g = 102.0 / 255.0, b = 153.0 / 255.0 };
+        Assert.assertEq(expected = ((0, 0, 0), (51, 102, 153), (-2, -2, -2), (-1, -1, -1)),
+                        (opOf(loadOpOf(None, true, c)), opOf(loadOpOf(None, false, c)),
+                         opOf(loadOpOf(Some(RenderTarget.LoadOp.Keep), true, c)), opOf(loadOpOf(Some(RenderTarget.LoadOp.ClearTransparent), false, c))))
+
+    /// Pass の前のコマの写しの名前（RenderTarget.historyName）だけを history と見る。
+    @Test
+    def testHistoryNameIsRecognized(): Unit \ Assert =
+        Assert.assertEq(expected = (true, false), (isHistoryName(RenderTarget.historyName("bloom")), isHistoryName("bloom")))
 }

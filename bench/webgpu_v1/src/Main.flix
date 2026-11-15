@@ -1,19 +1,17 @@
 // 入口。同じ場面（V1Scenes）を GL（GlOffscreen）と WebGPU（RenderPaint.Internal.WebGpuPaint・Dawn）の両方で、ウィンドウを開かずに 1 コマずつ描き、
 // 画素を比べて 1 行 1 場面の表を出す（"[webgpu-v1] <場面> …"）。場面ごとの許す差は tolerance.tsv（無ければ 0）。
 // 許す差を超えた場面がある・WebGPU の誤りの数が 0 でない・submit の数が場面の期待と違う、のどれかで exit 1。
+// 絵は debug/gl・debug/webgpu に書く。差の所の絵は bin/fge pixel-diff debug/gl/<場面>.png debug/webgpu/<場面>.png で見る。
 // WebGPU の側の読み込みは実機のウィンドウと同じ 3.1 の PC の道（LwjglLayer.Internal.WebGpuWindowLayer）: 絵は stb で 4 成分・hasAlpha が偽なら alpha を 255 で埋めて RGBA8・
 // フォントは RenderFontCache.loadOrBake の距離場を R8。組み込みの字・ロゴ・放射の絵と生成の絵（BGRA8）は WebGpuPaint が上げる。
 mod V1Main {
     use RenderPaint.Internal.WebGpuPaint
 
-    import java.awt.image.BufferedImage
-    import java.io.File
     import java.lang.System
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.nio.file.Files
     import java.nio.file.Paths
-    import javax.imageio.ImageIO
 
     // ── 場面を描く（GL と WebGPU で同じ）──
 
@@ -148,44 +146,15 @@ mod V1Main {
             })
             |> List.toMap
 
-    /// RGBA（下の行から）の i 番目の画素を ARGB の int にする。
-    def argbAt(pixels: ByteBuffer, i: Int32): Int32 \ IO =
-        let byteAt = k -> Int32.bitwiseAnd(Int8.toInt32(pixels.get(i * 4 + k)), 255);
-        argbOf(byteAt(3), byteAt(0), byteAt(1), byteAt(2))
-
-    /// 成分（0〜255）を ARGB の int に並べる。
-    def argbOf(a: Int32, r: Int32, g: Int32, b: Int32): Int32 = a * 16777216 + r * 65536 + g * 256 + b
-
-    /// 左上原点の (x, y) の色を colorAt で決めて PNG に書く（colorAt が受けるのは下の行からの画素の番号）。
-    def writePng(colorAt: Int32 -> Int32 \ IO, width: Int32, height: Int32, path: String): Unit \ IO = region rc {
-        let image = new BufferedImage(width, height, 2i32);
-        let argb: Array[Int32, rc] = Array.empty(rc, width * height);
-        List.range(0, height) |> List.forEach(y -> List.range(0, width) |> List.forEach(x ->
-            Array.put(colorAt((height - 1 - y) * width + x), y * width + x, argb)));
-        image.setRGB(0, 0, width, height, argb, 0, width);
-        let file = new File(path);
-        discard file.getParentFile().mkdirs();
-        discard ImageIO.write(image, "png", file)
-    }
-
-    /// 差のある画素だけ赤く塗った色（ほかは GL の絵を暗くした物）。
-    def diffColorAt(gl: ByteBuffer, gpu: ByteBuffer, i: Int32): Int32 \ IO =
-        let same = channelDelta(gl, gpu, i * 4) + channelDelta(gl, gpu, i * 4 + 1)
-            + channelDelta(gl, gpu, i * 4 + 2) + channelDelta(gl, gpu, i * 4 + 3) == 0;
-        let byteAt = k -> Int32.bitwiseAnd(Int8.toInt32(gl.get(i * 4 + k)), 255);
-        if (same) argbOf(255, byteAt(0) / 4, byteAt(1) / 4, byteAt(2) / 4)
-        else argbOf(255, 255, 0, 0)
-
     def pad(s: String, n: Int32): String = if (String.length(s) >= n) s else pad(s + " ", n)
 
     /// 1 場面の表の行と合否。
     def judge(width: Int32, height: Int32, limits: Map[String, Int32],
               sc: V1Scenes.Scene, gl: ByteBuffer, gpu: GpuShot): (String, Bool) \ IO =
-        writePng(i -> argbAt(gl, i), width, height, "debug/gl/${sc#name}.png");
-        writePng(i -> argbAt(gpu#pixels, i), width, height, "debug/webgpu/${sc#name}.png");
+        LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gl, width, height, "debug/gl/${sc#name}.png");
+        LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gpu#pixels, width, height, "debug/webgpu/${sc#name}.png");
         let diff = diffOf(gl, gpu#pixels, width * height);
         let limit = Map.getWithDefault(sc#name, 0, limits);
-        if (diff#pixels > 0) writePng(i -> diffColorAt(gl, gpu#pixels, i), width, height, "debug/diff/${sc#name}.png") else ();
         let submitsOk = Option.forAll(n -> n == gpu#submits, sc#submits);
         let ok = diff#maxDelta <= limit and submitsOk;
         let verdict = if (ok) "OK" else "NG";
