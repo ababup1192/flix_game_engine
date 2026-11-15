@@ -76,6 +76,9 @@ mod V1Main {
                     WebGpuPaint.readFrame(paint, buf);
                     { pixels = buf, submits = WebGpuPaint.submitCount(paint) }
                 });
+                // まだ描かない物（面と 3D の場面）を 2 コマ渡す: 名前ごとに 1 回だけ知らせ、誤りを出さずに捨てる。
+                handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
+                handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
                 let result = (shots, gpu.errorCount(), gpu.lastError(), gpu.adapterInfo());
                 gpu.destroy();
                 Ok(result)

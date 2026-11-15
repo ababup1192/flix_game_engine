@@ -417,12 +417,15 @@ mod RenderFrame {
     //              19-25=前に出したスプライトの鍵（texId・clip有無・clip矩形・blend） 26-31=前に出した多角形の鍵（clip有無・clip矩形・blend）
     //              32-38=この描き先で数えた数（並びは RenderDrawCounts の slot）
     // mask:       41=この pass で前の mask に使った stencil の値（0 = まだ無いか、stencil を 0 に戻す前提が崩れた）
-    def stateSize(): Int32 = 42
+    //              42=この pass に stencil を使う行を積んだ（1 = 積んだ）
+    def stateSize(): Int32 = 43
 
     def maskRefSlot(): Int32 = 41
 
+    def stencilUsedSlot(): Int32 = 42
+
     /// この pass の行に stencil を使う mask があるか（WebGPU が stencil つきの pass を開くかを決める）。
-    def usesStencil(st: Array[Int32, Static]): Bool \ IO = Array.get(maskRefSlot(), st) > 0
+    def usesStencil(st: Array[Int32, Static]): Bool \ IO = Array.get(stencilUsedSlot(), st) == 1
 
     def runFirstSlot(): Int32 = 39
 
@@ -753,17 +756,23 @@ mod RenderFrame {
         let written = RenderSprite.writeMaskVerts(list#vertices, maskFirst, maskToScreen(rot, posX, posY, sizeX, sizeY, mask));
         let maskCount = if (written < 3) 0 else written;
         let ref = if (maskCount == 0) 0 else nextMaskRef(Array.get(maskRefSlot(), st));
-        if (ref > 0) Array.put(ref, maskRefSlot(), st) else ();
+        if (ref > 0) {
+            Array.put(ref, maskRefSlot(), st);
+            Array.put(1, stencilUsedSlot(), st)
+        } else ();
         appendMaskRow(list, instanceAt, maskFirst, maskCount, texId, blendCode(blend), clipFlag, x0, y0, x1, y1, ref)
 
-    /// sprites の mask を三角形へほどいた時の頂点数の上限（1 個 n 頂点の多角形は 3(n-2) 以下）。polyVertCap と同じく入れ物を先に広げておく数。
-    def maskVertCap(sprites: List[RenderType.Drawable]): Int32 =
-        List.foldLeft((acc, d) -> acc + maskVertsOf(DrawCmd.maskOf(d)), 0, sprites)
+    /// sprites の (体数, mask を三角形へほどいた時の頂点数の上限) を 1 回の周回で数える（1 個 n 頂点の多角形は 3(n-2) 以下）。
+    /// polyVertCap と同じく、入れ物を先に広げておく数。
+    def spriteCaps(sprites: List[RenderType.Drawable]): (Int32, Int32) = spriteCapsFrom(sprites, 0, 0)
 
-    def maskVertsOf(mask: List[List[Vec2.Vec2]]): Int32 = match mask {
-        case Nil => 0
-        case _   => 3 * List.foldLeft((acc, poly) -> acc + List.length(poly), 0, mask)
+    // WhyNot: 組を溜める値にした foldLeft にしない — 1 体ごとに組を 1 つ作る。
+    def spriteCapsFrom(sprites: List[RenderType.Drawable], count: Int32, verts: Int32): (Int32, Int32) = match sprites {
+        case Nil       => (count, verts)
+        case d :: rest => spriteCapsFrom(rest, count + 1, verts + maskVertsOf(DrawCmd.maskOf(d)))
     }
+
+    def maskVertsOf(mask: List[List[Vec2.Vec2]]): Int32 = 3 * List.foldLeft((acc, poly) -> acc + List.length(poly), 0, mask)
 
     /// mask 頂点（表示クアッドのローカル design px・原点 = 左上・回転前）を、writeInstAt と
     /// 同じ model 変換（回転中心 = クアッド中心）でスクリーン px へ写す。頂点を size の

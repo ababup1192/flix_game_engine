@@ -180,7 +180,8 @@ pub mod RenderFrame.Internal.RenderList {
     /// 1 つの pass の中で、前の mask の値 last（0 = この pass でまだ無い）の次の mask の値。1 から 1 ずつ進み、上限の次は 1 に戻る。
     /// 値が 1 の行の前で、backend は stencil を全部 0 にする（pass の頭か、上限まで使い切った後）。それ以外の値は前の mask が書いたどの値よりも
     /// 大きいので、stencil を 0 に戻さなくても前の mask の形と取り違えない。
-    // WhyNot: mask ごとに stencil を 0 に戻さない — WebGPU は pass の途中で stencil だけを clear できない。
+    // WhyNot: mask ごとに stencil を 0 に戻さない — WebGPU は pass の途中で stencil だけを clear する口が無く、戻すたびに design の全面の draw が 1 本増える。
+    //   GL でも mask ごとに全面の clear を払う。
     pub def nextMaskRef(last: Int32): Int32 =
         if (last <= 0 or last >= maxMaskRef()) 1 else last + 1
 

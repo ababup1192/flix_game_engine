@@ -4,7 +4,7 @@ pub mod RenderFrame.Internal.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
     import java.nio.FloatBuffer
-    use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSingleDraw, countSpriteDraw, emitFrameMixed, maskVertCap, polyVertCap, upsideDownTargetsOf}
+    use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, spriteCaps, upsideDownTargetsOf}
     use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, PassHistory, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
                                          instanceFloats, kindMask, kindPoly, kindStatic, kindTile, newRenderList, rowAt, rowCountOf, rowsOf, screenPass,
                                          targetPass, valuesOf, vertexFloats}
@@ -79,8 +79,9 @@ pub mod RenderFrame.Internal.GlRows {
     def prepareRenderList(gl: GlContext, args: FrameArgs): RenderList \ IO =
         let instBuf = args#instBuf;
         let polyBuf = args#polyBuf;
-        RenderBuf.ensure(gl, instBuf, Int32.max(1, List.length(args#sprites)) * instanceFloats());
-        RenderBuf.ensure(gl, polyBuf, Int32.max(3, polyVertCap(args#polygons) + maskVertCap(args#sprites)) * vertexFloats());
+        let (spriteCount, maskVerts) = spriteCaps(args#sprites);
+        RenderBuf.ensure(gl, instBuf, Int32.max(1, spriteCount) * instanceFloats());
+        RenderBuf.ensure(gl, polyBuf, Int32.max(3, polyVertCap(args#polygons) + maskVerts) * vertexFloats());
         newRenderList(RenderBuf.buffer(instBuf), RenderBuf.buffer(polyBuf))
 
     // ── GL の backend の状態（Int32 の配列 1 本・gs）──

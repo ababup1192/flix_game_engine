@@ -407,6 +407,14 @@ mod V1Scenes {
           targets = targetsWith("mtog", 4), submits = Some(1),
           items = still(pasteQuarter("mtog", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mtog"), 160.0, 90.0, 1) :: Nil) }
 
+    /// WebGPU がまだ描かない物だけの場面（面と 3D の場面）。GL とは比べない。
+    pub def unsupported(): Scene =
+        let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
+        { name = "unsupported", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = None, items = still(
+            Render.shaderFill(ShaderDoc.demoSurface(), { position = v(20.0, 20.0), size = v(60.0, 40.0) }, 0.0, 1) ::
+            Render.scene3d(v(120.0, 60.0), { zIndex = 2 | Scene3d.scene(camera, v(100.0, 50.0)) }) ::
+            Nil) }
+
     // ── mask つきスプライト（stencil の比べる値を 1 ずつ進める・RenderList.nextMaskRef）──
     // mask の形は絵の大きさのローカル座標（左上が原点・回転と反転は絵と同じに掛かる）。絵は市松のアトラス（16 × 16）を 4 倍の 64 × 64 で。
 
