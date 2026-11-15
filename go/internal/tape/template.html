@@ -621,7 +621,7 @@ function routeTo(node) {
   }
   return null;
 }
-// 全体に合わせた時の倍率。WhyNot: 高さに収まるまで縮めきらない — 長い台本では字が読めない点になる。.7 より下は送って見る
+// 全体に合わせた時の倍率。WhyNot: 高さに収まるまで縮めきらない — 長いシナリオでは字が読めない点になる。.7 より下は送って見る
 function fitScale(L) { const w = $("gwrap"); return Math.min(1, (w.clientWidth - 16) / L.w, Math.max((w.clientHeight - 16) / L.h, .7)); }
 // WhyNot: いつも横に並べない — スマホと縦長の窓では横に長いグラフが 1 箱ずつしか見えない。縦と横の大きく収まる方を使う
 function graphLayout() { return form === "phone" || fitScale(GRAPH.v) > fitScale(GRAPH.h) ? GRAPH.v : GRAPH.h; }
@@ -650,7 +650,7 @@ function nodeHtml(node) {
   const d = GRAPH.detail[node], n = GRAPH.v.nodes.find(x => x.id === node);
   if (!d || !n) return "";
   const at = nodeStart(node), route = at === null ? routeTo(node) : null;
-  // WhyNot: 別のファイルの行番号でテープの行を引かない — 台本が 2 つ以上の .yarn に分かれると同じ番号が別の行を指す
+  // WhyNot: 別のファイルの行番号でテープの行を引かない — シナリオが 2 つ以上の .yarn に分かれると同じ番号が別の行を指す
   const here = new Set(d.file === TAPE.yarn ? TAPE.timeline.map(r => r[1]).filter(ln => ln != null) : []);
   const go = at !== null ? `<button class="gact go" data-go="${at}">▶ この場面へ ${mmss(at)}</button>`
     : route ? `<button class="gact" data-href="${esc(route.href)}">${esc(route.note)}で見る</button>` : `<span class="gnone">このテープには映っていない</span>`;

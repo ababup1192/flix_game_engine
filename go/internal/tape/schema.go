@@ -39,7 +39,7 @@ var required = []struct{ key, from string }{
 }
 
 // optional は無くてもよい欄。choices は選択肢を選ばない flow や前の版のテンプレートでは無い。commit 以下は Build が上書きする
-// （graph と script は yarn の台本のフォルダが見つかった時だけ）。
+// （graph と script は シナリオのフォルダが見つかった時だけ）。
 var optional = map[string]bool{"playUrl": true, "choices": true, "commit": true, "video": true, "stripPerSec": true, "strip": true,
 	"graph": true, "script": true}
 
