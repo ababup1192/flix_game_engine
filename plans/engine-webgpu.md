@@ -761,9 +761,10 @@ history の寿命（作る・形が変われば作り直す・描き先を作り
   - GL: `RenderPaint.applyHistory`（`prepareHistory` を置き換え・写すか塗るかは前半の答え）・resolve を pass の終わりへ・描く標本の数は `glTargetAllocator` が `RenderTargetGl.sampleCounts` と `drawSamplesOf` で決めて `createWithSamples` へ渡す・
     `GlOffscreen.withHistoryKept`（render_gl の pub を 1 つ足した。窓と同じく history に前のコマを写す session。`bench/webgpu_v1` が GL と WebGPU の写しを比べるのに使う）。
   - WebGPU: history（`applyHistory`・`copyInto`・`copyGroupOf`（写す元の bind group は描き先を捨てるまで使い回す）・`copyPipelineOf`。history を読むスプライトを「まだ描かない」で捨てていたのをやめた）・
-    MSAA（標本つきの描き先と標本の数 `msaaTargets`・pipeline の鍵に標本・`openPass` の `resolveTo`・標本つきの描き先を作った時にその pipeline 6 本を先に作る）。
+    MSAA（標本つきの描き先と標本の数 `msaaTargets`・pipeline の鍵に標本・`openPass` の `resolveTo`）。
     WebGPU の描き手は窓とその撮影でしか動かないので、1 枚撮りの「history は毎回透明」（GL の `keepHistory = false`）は持たない。
 - 門（この Mac・2026-11-15）: `webgpu-shape-review-2d.md` の 7.8。
 - 持ち越し: ブラウザでの history と MSAA の絵の門（`bench/webgpu_v1` の場面をブラウザで回す口が無い・R1b-2 から）・Safari と Firefox・history の入れ替え（P10 の計測次第）・copyTextureToTexture（jar を開ける時）・
   P8 の cutout の縁の門の形・1 回の begin〜end に renderCommands が 2 回来る時の resolve が 2 回になる事（今のゲームには無い）。
+  （P10）標本つきの pipeline は初めてその Pass を描くコマの中で作る（ブラウザの試作で 1 本 65〜93 ms・4.3）ので、そのコマが詰まる。本当に避けるには読み込みの間に作る。
   その時は 2 回目の renderCommands が history を読むと、写るのは前のコマの最後でなく、同じコマの 1 回目を描いた後の中身になる（GL も前から同じ）。

@@ -591,9 +591,9 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 | 任意 | `RenderTargetGl` が `TargetTable` を呼ぶ逆向きの依存 | 数の決まりを `RenderList.drawSamplesOf` へ移し、`glTargetAllocator` が `RenderTargetGl.sampleCounts` から決めて `createWithSamples` へ渡す |
 | 任意 | コメントの経緯の言い回し | `targetPass` と `copyInto` の WhyNot から消した |
 | 任意 | 写すたびの `createBindGroup` | `copyGroupOf`（描き先を捨てるまで使い回す） |
-| 任意 | 初めの MSAA のコマで pipeline を作る | 標本つきの描き先を作った時に、その形式と標本の数のスプライトと多角形の pipeline 6 本を作る |
+| 任意 | 初めの MSAA のコマで pipeline を作る | 一度入れたが、2 回目のレビュー（89 点）で「描き先を作るのも初めて描くコマの中なので詰まりは避けられない」と指摘され、消した。読み込みの間に作るのは P10 の持ち越し（親の 12.19） |
 | 任意 | `targetPass` の color の型 | `RenderList.TargetColor` |
-| 任意 | テスト | `spritesReadHistory` 3 本・描き先の大きさを変えた後のコマで新しい history へ写す 1 本・`drawSamplesOf` 6 本（2 を 4 へ・GL の上限で頭打ち・1 しか描けない時） |
+| 任意 | テスト | `spritesReadHistory` 3 本・描き先の大きさを変えた後のコマで新しい history へ写す 1 本・`drawSamplesOf` 6 本（2 を 4 へ・GL の上限で頭打ち・1 しか描けない時。`TestRenderList` に置く） |
 
 2 回目のコミットの門: render_gl 414 緑・`gl-parity` 緑（castShadow 565 px は前から）・`webgpu-v1-check` 緑（22 場面。`msaaTwo` だけ許す差 56 で 492 px・±56、ほかは 0 px・WebGPU の標本 2 と 4 の差 0 px）・
 `webgpu-v1-check-web` 緑・`lint-huge-methods` 緑・テンプレ 3 本の `reference-check` 緑・`gl-jar-pin-check` 緑。engine は触っていないので `make test-engine` は流していない。

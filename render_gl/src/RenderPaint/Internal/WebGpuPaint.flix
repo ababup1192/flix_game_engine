@@ -914,7 +914,6 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// spec の 1 標本の texture（読む側が引く・history を写す元）を作り、標本が 2 以上なら標本つきの描き先も作って msaaTargets へ置く。
     /// 標本の数は 1 か 4（RenderList.drawSamplesOf）。頼まれた数と違う時（標本 2 を 4 で描く）は名前ごとに 1 回知らせる。
-    /// 標本つきの描き先を作った時に、その形式と標本の数の pipeline も作っておく（初めて描くコマで作り始めると、そのコマが詰まる）。
     def createTargetSlot(paint: Paint, spec: RenderTarget.TargetSpec): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
         flushPending(paint);
@@ -925,11 +924,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let samples = RenderList.drawSamplesOf(spec#samples, 1 :: 4 :: Nil);
         if (samples > 1) {
             let msaa = p#gpu.createTexture("fge pass ${spec#name} msaa", spec#width, spec#height, format, TextureUsage.RENDER_ATTACHMENT, 1, samples);
-            Ref.put(Map.insert(id, (msaa, samples), Ref.get(p#msaaTargets)), p#msaaTargets);
-            List.forEach(b -> {
-                discard pipelineOf(paint, WebGpuRows.shapeSprite(), b, spec#format, samples);
-                discard pipelineOf(paint, WebGpuRows.shapePoly(), b, spec#format, samples)
-            }, 0 :: 1 :: 2 :: Nil)
+            Ref.put(Map.insert(id, (msaa, samples), Ref.get(p#msaaTargets)), p#msaaTargets)
         } else ();
         if (samples > spec#samples and spec#samples > 1) warnMsaaRounded(paint, spec#name, spec#samples, samples) else ();
         id

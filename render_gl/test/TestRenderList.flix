@@ -4,7 +4,7 @@
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
     use RenderFrame.{blendCode, calcViewport, closeSpriteRun, emitSprite, pushSpriteKeyed, stateSize, writeInstAt}
-    use RenderFrame.Internal.RenderList.{DepthStencil, PassHistory, PassSpec, RenderList, resolveTargetOf, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassHistory, PassSpec, RenderList, drawSamplesOf, resolveTargetOf, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
                                          loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenClearColorOf, screenPass,
                                          targetFormatOf, targetPass, targetTextureOf}
 
@@ -278,4 +278,36 @@ mod RenderFrame.TestRenderList {
     @Test
     def testTargetPassCarriesHistory(): Unit \ Assert =
         Assert.assertEq(expected = PassHistory.CopyTo(9), passTo(RenderTarget.LoadOp.Keep)#history)
+
+    // ── 標本の数（RenderList.drawSamplesOf）──
+
+    /// WebGPU（1 と 4）は 8 を 4 に。
+    @Test
+    def testEightBecomesFourOnWebGpu(): Unit \ Assert =
+        Assert.assertEq(expected = 4, drawSamplesOf(8, 1 :: 4 :: Nil))
+
+    /// WebGPU（1 と 4）は 2 を 4 に上げる（1 へは下げない）。
+    @Test
+    def testTwoBecomesFourOnWebGpu(): Unit \ Assert =
+        Assert.assertEq(expected = 4, drawSamplesOf(2, 1 :: 4 :: Nil))
+
+    /// 描ける数に頼んだ数があればそのまま。
+    @Test
+    def testSupportedCountIsKept(): Unit \ Assert =
+        Assert.assertEq(expected = 2, drawSamplesOf(2, 1 :: 2 :: 4 :: 8 :: Nil))
+
+    /// GL の上限で頭打ち（上限 4 で 8 を頼むと 4）。
+    @Test
+    def testCappedByMaxSamples(): Unit \ Assert =
+        Assert.assertEq(expected = 4, drawSamplesOf(8, 1 :: 2 :: 4 :: Nil))
+
+    /// 1 標本しか描けなければ 1。
+    @Test
+    def testOnlySingleSampleStaysOne(): Unit \ Assert =
+        Assert.assertEq(expected = 1, drawSamplesOf(4, 1 :: Nil))
+
+    /// 1 未満を頼まれたら 1。
+    @Test
+    def testBelowOneBecomesOne(): Unit \ Assert =
+        Assert.assertEq(expected = 1, drawSamplesOf(0, 1 :: 4 :: Nil))
 }
