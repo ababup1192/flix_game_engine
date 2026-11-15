@@ -809,3 +809,42 @@ history の寿命（作る・形が変われば作り直す・描き先を作り
   `spriteCaps` が毎コマ全部のスプライトの mask を数える分（P10 の前の計測で）・面に mask を付ける時に比べる値を面の行にも持たせるか（面の小分けで）。
   - `render_gl/java/fge/webgpu/dawn/DawnWebGpu.java` の 590 行目は stencil を Store で書き出すが、pass の後に stencil を読む物は無いので捨てる設定（Discard）で足りる（jar に触るので今は直さない）。
   - 起動の時に作る pipeline が 11 本増える重さは、mask を使わないゲームにも掛かる。P10 の前に測り、重ければ非同期で作る案（8 章の pipeline の行）と比べる。
+
+### 12.21 R1b-5: 3D の場面を貼る（2026-11-15・この Mac・Dawn の Metal だけ）
+
+表の 8 行目の 5 つ目の種類。3D の場面を貼る所を `RenderList` の行（`kindScene3d`・1 番 = 場面の番号）にし、GL と WebGPU の backend が同じ行を流す形にした。GL を直に呼ぶ種類は面だけになった。
+WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backend は貼る行を z の位置まで並べてから描かずに知らせる（「まだ描かない: 3D の場面」を 1 回）。
+
+- **決めた事 1 — GL は行の所で場面を直に描く形を残す**（`webgpu-shape-review-2d.md` の 3.0 の「今どおり 2D の途中で場面を直に描く形を残すか」）。
+  GL の backend は貼る行で `Scene3dRenderer.Prepared#draw` を呼び、Native の解像度の場面は今どおり描き先へ直に、Design の解像度の場面は先に描いた texture を貼る（`Render3d.drawItem` は変えていない）。
+  別の案「Native の場面も先に自分の texture（場面の矩形の画素の大きさ・透明から）へ描いて、Design と同じく α を掛けた後の値として貼る」を GL で動かした（`drawItem` の Native の枝だけを書き替えた試し・commit していない）:
+  `gl-parity` は msaaEdges が 652 px → 3,362 px（許容 1,200）で落ちた（中間の texture は標本 1 で、標本 4 の Pass の中の場面の MSAA が消える）。ほかに mipFloor・mipFloorScaled が 724 → 722 px・spotSoftEdge3d が 26 → 23 px と、
+  GL の絵が SoftRaster との差の中で動いた（中間の 8 bit で丸めてから重ねるため）。`gl-capture` の bench/scene3d は 6 枚のうち 1 枚が 1 px・±1 違った。
+  合わせるには中間の texture も標本つきにして resolve する道と、場面ごとの描き先の付け替えと全面の貼り 1 回が要る（5.4 の「代金は場面 1 つにつき全画面の貼り 1 回」は WebGPU の話で、GL に払わせる得が無い）。
+  親 5.4 の「3D は先に自分のテクスチャへ描き、z の位置で貼る」は WebGPU の形で、今は WebGPU が場面を描かないので崩れていない。GL の形は 3.0 のとおり backend ごとに選べる。
+- **決めた事 2 — 貼る行の欄は場面の番号だけ**。5.1 の表の欄（場面の描き先の番号・矩形）のうち、矩形と clip は番号で引く場面の命令（`Scene3d.RenderCmd`）が持ち、GL は `Render3d.drawItem` がそこから出す。行にも写すと 2 か所が食い違いうる。
+  描き先の番号は、V2 で WebGPU の前半が場面の組（`(PassSpec, 行)`）を 2D の組の前に作る時に、行の 3 番（絵の番号）へ入れる見込み。矩形を行に要るのもその時で、`planScenes` を `gl` から外す R2a の後になる。
+- **決めた事 3 — WebGPU の「1 回知らせて捨てる」を行の道へ移した**。前は `handleDraw3d` が場面をその場で捨てていたので、WebGPU の 2D の並びに場面の z が無く、場面を挟んだスプライトの run が GL と違う所で切れた（draw の数が GL と合わない）。
+  今は `WebGpuPaint` が GL の `RenderPaint` と同じく場面を溜め（`pendingScenes`）、`renderCommands` で `mergedByZ` に場面の z を渡し、貼る行で `skip` して数え（`countSceneRow`。次の 2D の draw call が kind で切れる）を GL と同じにする。
+  先に上げる物の宣言（`preload3d`）は今どおり捨てる（知らせの名前は「3D の場面の preload」に分けた）。
+- **`emitItem` の `discard emitRowItem(...)`（R1b-4 のレビューの持ち越し）**: 場面は行になる（`emitRowItem` が真）ので、偽が返るのは面だけになった。WebGPU は面を `mergedByZ` に渡さないので今は通らない。
+  面の小分け（P5 の後）で面も行にし、そこで `emitRowItem` の Bool をやめる（skip にも bug! にも戻さない）。それまでの間に面を `mergedByZ` へ渡す変更が入ると黙って捨てるので、面の小分けの最初に Bool をやめる。
+- 入れた物（render_gl の中だけ・engine の pub は増えていない）:
+  - 前半: `RenderList.appendSceneRow`・`emitRowItem` の `MScene3d` の枝（run を閉じて行を足す）・`RenderFrame.countSceneRow`。`emitOne` の場面の枝と、場面の前の `flushRows` が無くなった。
+  - GL: `GlRows.drawSceneRow`。`drawRenderList`・`flushRows`・`emitMerged`・`emitOne` は場面を番号で描く関数（`Int32 -> Unit`。viewport と倍率は `emitFrameMixed` が 1 回だけ閉じ込める）を受ける。
+  - WebGPU: `WebGpuRows.renderFrame` の `sceneZs`・`drawSceneRow`・`WebGpuPaint` の `pendingScenes`（`RenderPaint.Frame#scenes` に入れ、Pass の中の場面も同じく並べる）。`WebGpuPaint.flix` は 1,015 行。
+- 振る舞いの変化（絵は変わらない）: GL は場面の前で溜めた行を流さず、場面の行も同じ列で流す（GL の呼び出しの順は同じ・instance と頂点の入れ物の位置が場面の後も頭へ戻らないだけ）。draw の数え方は同じ。
+- テスト: `TestShapeRows` の「3D の場面は行にならない」を「行になる」へ替え、場面の番号の欄・スプライトと多角形の run を場面の前で閉じる事・GL の backend が行の順に場面の番号で描かせる事（何も描かない GL）の 4 本を足した。
+  `TestMaskRows.testMaskAfterMaskedSurfaceRestartsRef` に「面の所で flushRows が列を空にするので、残る行 0 が面の後の mask」と前提を 1 行書いた（R1b-4 のレビューの持ち越し）。
+- `bench/webgpu_v1` に `sceneBetween`（同じ色の箱の間に、何も置かず地の色も無い 3D の場面・その後に Add の箱と市松の絵）を足した。GL では場面が画素を変えないので GL と比べられ、
+  場面の行の後の 2D が前と同じ状態（blend・scissor・viewport）で描かれる事を見る。WebGPU は場面を描かずに知らせる。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-15）:
+  - render_gl のテスト 436 緑（`.layers/render_gl` の flix test。前の 432 から「場面は行にならない」1 本を替え、4 本を足した）。偽の GL を通る `TestDrawCounts` の「場面がスプライトの間で kind で切る」はそのまま緑。
+  - `make gl-parity` 緑。全部の場面の行が変える前と 1 字も同じ（castShadow の 565 px は前からの B）。
+  - `make webgpu-v1-check` 緑: 28 場面とも許す差の内（足した `sceneBetween` は 0 px・submit 1）・WebGPU の誤り 0・「まだ描かない: 3D の場面」は 1 回。rpg の題名の画面の窓と GL の比べ・gl_parity の V1 の場面も緑。
+  - `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。
+  - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数・同じ 5 場面）。bench/scene3d の 6 枚は変える前の木で撮った物とバイトまで同じ。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）・`make lint-huge-methods` 緑（sprite_stress の jar を作り直し、`bench/webgpu_v1` と bench/scene3d の jar も渡して）・`make lint-max-lines` 緑・`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+  - 速さの前後は人の方針（12.16）で回していない。毎コマの変化: GL は場面の前で行を流さなくなった分、`drawRenderList` の呼び出しが場面 1 つにつき 1 回減る。WebGPU は場面のあるコマで 2D の run が場面の所で切れる（GL と同じ）。
+- 持ち越し: WebGPU で場面を描く（V2: 場面の組を 2D の組の前に積み、貼る行は resolve 済みの texture を α を掛けた後の値として重ねる。行の 3 番に描き先の番号）・GL を直に呼ぶ面（P5 の後の面の小分けで行にし、`emitRowItem` の Bool をやめる）・
+  場面に色の付いた物を置いた場面を GL と WebGPU で比べる門（V2）・`bench/scene3d` で 5.4 の貼りの代金を測る事（V2）。

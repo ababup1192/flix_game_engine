@@ -12,7 +12,7 @@ mod RenderFrame {
     import java.nio.FloatBuffer
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.GlRows.{drawRenderList, setScissorAt}
-    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, appendMaskRow, appendPolyRow, appendSpriteRow, appendStaticRow, appendTileRow, instanceFloats,
+    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, appendMaskRow, appendPolyRow, appendSceneRow, appendSpriteRow, appendStaticRow, appendTileRow, instanceFloats,
                                          kindPoly, kindScene3d, kindSprite, kindSurface, nextInstanceOf, nextMaskRef, nextVertexOf, rowCountOf}
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
@@ -560,10 +560,14 @@ mod RenderFrame {
         closeSpriteRun(st, list);
         closePolyRun(st, list)
 
-    /// run を閉じ、溜まった行を GL へ流す。GL を直に呼ぶ種類（面・mask つきスプライト・3D の場面）を描く前と、pass の終わりに呼ぶ。
-    def flushRows(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList): Unit \ IO =
+    /// run を閉じ、溜まった行を GL へ流す。GL を直に呼ぶ種類（面）を描く前と、pass の終わりに呼ぶ。drawScene = 3D の場面を貼る行で番号の場面を描く。
+    def flushRows(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList, drawScene: Int32 -> Unit \ IO): Unit \ IO =
         closeRuns(st, list);
-        if (rowCountOf(list) == 0) () else drawRenderList(gl, gs, st, list)
+        if (rowCountOf(list) == 0) () else drawRenderList(gl, gs, st, list, drawScene)
+
+    /// 3D の場面を貼る行を描いた事を数えに残す（GL と WebGPU で同じ数え方にする）。
+    // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
+    def countSceneRow(st: Array[Int32, Static]): Unit \ IO = Array.put(kindScene3d(), 15, st)
 
     /// 積むときにその場で RenderList の instances へ書く。テクスチャ・clip 矩形・重ね方が変わるところでは
     /// **先に**溜めた run を 1 行にして閉じる — 新しい run の先頭はその行の後ろなので、
@@ -835,8 +839,8 @@ mod RenderFrame {
                 appendStaticRow(list, r#buffer, r#first, r#count, blendCode(r#blend), 1, x0, y0, x1, y1, view)
         }
 
-    /// 並べた 1 個が行になる種類（スプライト・多角形・タイルの層・static layer）なら行へ積んで true。
-    /// GL を直に呼ぶ種類（面・3D の場面）は何もせず false（呼び側が溜めた行を流してから描く）。
+    /// 並べた 1 個が行になる種類（スプライト・多角形・タイルの層・static layer・3D の場面）なら行へ積んで true。
+    /// GL を直に呼ぶ種類（面）は何もせず false（呼び側が溜めた行を流してから描く）。
     // WhyNot: 末尾を呼び出しで終えない — 呼ぶ側のループ（emitOne・WebGpuRows.emitItem）が JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
     def emitRowItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
@@ -860,8 +864,11 @@ mod RenderFrame {
             case Merged.MStatic(r) =>
                 emitStatic(st, list, scaleX, scaleY, r);
                 true
+            case Merged.MScene3d(i) =>
+                closeRuns(st, list);
+                appendSceneRow(list, i);
+                true
             case Merged.MSurface(_) => false
-            case Merged.MScene3d(_) => false
         };
         done
 
@@ -881,7 +888,7 @@ mod RenderFrame {
                    upsideDownTargets: Set[String],
                    warnLog: Ref[Set[String], Static],
                    drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
-                   drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
+                   drawScene: Int32 -> Unit \ IO,
                    items: List[Merged]): Unit \ IO =
         match items {
             case Nil => ()
@@ -893,6 +900,7 @@ mod RenderFrame {
         }
 
     /// 列の 1 個ぶんを描く（行になる種類は run へ積むか RenderList の行にする・GL を直に呼ぶ種類は溜めた行を流してから単発で描く）。
+    /// drawScene = 3D の場面を貼る行で番号の場面を描く（行を流す時に呼ぶ）。
     // WhyNot: emitMerged のループの中へ書き下さない・末尾を呼び出しで終えない — ループの中の呼び出しが末尾呼び出しの続き（Thunk）を返すと、
     //   JVM はループを途中から JIT（OSR）できず、1 コマに 1 回しか呼ばれないループがインタプリタのまま回る（docs/performance.md の 13 節）。
     @DontInline
@@ -902,11 +910,11 @@ mod RenderFrame {
                 upsideDownTargets: Set[String],
                 warnLog: Ref[Set[String], Static],
                 drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
-                drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
+                drawScene: Int32 -> Unit \ IO,
                 item: Merged): Unit \ IO =
         if (emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, item)) ()
         else {
-            flushRows(gl, gs, st, list);
+            flushRows(gl, gs, st, list, drawScene);
             match item {
                 case Merged.MSurface(s) =>
                     // WhyNot: 前の行の clip 矩形を残さない — 面は矩形全体を塗るので、残すと切れる。
@@ -914,15 +922,11 @@ mod RenderFrame {
                     countSingleDraw(st, kindSurface(), drawSurface(gl, s));
                     // mask つきの面は stencil を自分で 0 にして 1 を書く（mask が 3 頂点未満なら触らない）ので、次の mask は stencil を 0 に戻してから描く。
                     if (List.isEmpty(s#mask)) () else Array.put(0, maskRefSlot(), st)
-                case Merged.MScene3d(i) =>
-                    drawScene({ x = Array.get(7, gs), y = Array.get(8, gs), width = Array.get(9, gs),
-                                height = Array.get(10, gs), scaleX = scaleX, scaleY = scaleY }, i);
-                    // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
-                    Array.put(kindScene3d(), 15, st)
-                case Merged.MSprite(_) => ()
-                case Merged.MTile(_)   => ()
-                case Merged.MPoly(_)   => ()
-                case Merged.MStatic(_) => ()
+                case Merged.MScene3d(_) => ()
+                case Merged.MSprite(_)  => ()
+                case Merged.MTile(_)    => ()
+                case Merged.MPoly(_)    => ()
+                case Merged.MStatic(_)  => ()
             }
         };
         // WhyNot: この () を消さない — match の枝の呼び出しが末尾になり、emitMerged のループが JIT から外れる。
@@ -972,9 +976,13 @@ mod RenderFrame {
         // instanced draw にまとめる（run 収集 → flush）。1 要素 1 draw call だと呼び出しの
         // 固定費が積み上がり、数千体で描画時間のほとんどを占めてしまうため。
         let st = newRunState(args#drawCounts);
+        let drawPrepared = args#scenes#draw;
+        let sceneViewport = { x = Array.get(7, gs), y = Array.get(8, gs), width = Array.get(9, gs), height = Array.get(10, gs),
+                              scaleX = scaleX, scaleY = scaleY };
+        let drawScene = i -> drawPrepared(sceneViewport, i);
         emitMerged(gl, gs, st, list, scaleX, scaleY, args#registry, upsideDownTargets,
-                   args#texWarnLog, args#drawSurface, args#scenes#draw, sortedMerged);
-        flushRows(gl, gs, st, list);
+                   args#texWarnLog, args#drawSurface, drawScene, sortedMerged);
+        flushRows(gl, gs, st, list, drawScene);
         addCountsTo(args#drawCounts, st)
 
 }

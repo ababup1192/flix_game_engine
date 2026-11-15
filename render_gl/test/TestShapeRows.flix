@@ -1,10 +1,11 @@
-// 多角形の run・タイルの層・static layer の範囲が RenderList の行になる所（GL を呼ばない前半）を固定する。
+// 多角形の run・タイルの層・static layer の範囲・3D の場面を貼る所が RenderList の行になる所（GL を呼ばない前半）と、場面の行を GL の backend が流す順を固定する。
 // 並べた物（Merged）を emitRowItem へ順に渡して run を閉じ、行の欄と values を読む（倍率 1・Pass の絵は無し）。
 // WhyNot: mod TestShapeRows にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestShapeRows {
     import java.nio.FloatBuffer
     use RenderFrame.{Merged, blendCode, closeRuns, emitRowItem, stateSize}
-    use RenderFrame.Internal.RenderList.{RenderList, clearRenderList, instanceFloats, kindPoly, kindSprite, kindStatic, kindTile, newRenderList,
+    use RenderFrame.Internal.GlRows
+    use RenderFrame.Internal.RenderList.{RenderList, clearRenderList, instanceFloats, kindPoly, kindScene3d, kindSprite, kindStatic, kindTile, newRenderList,
                                          nextVertexOf, rowAt, rowCountOf, rowsOf, valueCountOf, valuesOf, vertexFloats, viewValueFloats}
 
     // ── 組み立て ──
@@ -207,10 +208,37 @@ mod RenderFrame.TestShapeRows {
         let made = emitRowItem(st, list, 1.0, 1.0, registry(), Set.empty(), Ref.fresh(Static, Set.empty()), item);
         (made, rowCountOf(list))
 
-    /// 3D の場面は行にならない（emitRowItem が false を返し、行を足さない）。
+    // ── 3D の場面を貼る行 ──
+
+    /// 3D の場面は 1 行になる（emitRowItem が true を返す）。
     @Test
-    def testSceneIsNotARow(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = (false, 0), madeRow(Merged.MScene3d(0)))
+    def testSceneIsARow(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (true, 1), madeRow(Merged.MScene3d(0)))
+
+    /// 場面の行は種類 kindScene3d と、1 番の欄に場面の番号を持つ。
+    @Test
+    def testSceneRowHoldsSceneNumber(): Unit \ {Assert, IO} =
+        let list = listOf(Merged.MScene3d(5) :: Nil);
+        Assert.assertEq(expected = (kindScene3d(), 5), (cell(list, 0, 0), cell(list, 0, 1)))
+
+    /// 同じ絵の箱の間に場面が入ると、箱の run は場面の前で閉じる（箱・場面・箱の 3 行）。
+    @Test
+    def testSceneSplitsSpriteRun(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = kindSprite() :: kindScene3d() :: kindSprite() :: Nil, kindsOf(listOf(box() :: Merged.MScene3d(0) :: box() :: Nil)))
+
+    /// 多角形の run も場面の前で閉じる。
+    @Test
+    def testSceneSplitsPolyRun(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = kindPoly() :: kindScene3d() :: kindPoly() :: Nil, kindsOf(listOf(poly() :: Merged.MScene3d(0) :: poly() :: Nil)))
+
+    /// GL の backend は場面の行で、行の順に場面の番号を渡して描かせる。
+    @Test
+    def testGlDrawsScenesInRowOrder(): Unit \ {Assert, IO} =
+        let list = listOf(Merged.MScene3d(1) :: box() :: Merged.MScene3d(0) :: Nil);
+        let drawn = Ref.fresh(Static, (Nil: List[Int32]));
+        let st: Array[Int32, Static] = Array.empty(Static, stateSize());
+        GlRows.drawRenderList(FakeGl.silent(), Array.empty(Static, 32), st, list, i -> Ref.put(i :: Ref.get(drawn), drawn));
+        Assert.assertEq(expected = 1 :: 0 :: Nil, List.reverse(Ref.get(drawn)))
 
 
     /// 面（ShaderDoc）は行にならない。
