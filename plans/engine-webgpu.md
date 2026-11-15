@@ -554,6 +554,7 @@ P4b で片づけた物: 6（`TestWebGpuOffscreen` を `\ {Assert, IO}` で書き
 10. `bin/fge export-web` は java を PATH から探すので、devbox の無い worktree では `/usr/bin/java` のスタブを掴んで止まる（bin/flix のように engine の `.devbox` の java へ落とさない）
 11. `bin/fge refactor` の索引に `engine_web`・`bench`・`render_gl/test` が入っておらず、search・usages が実在の呼び手を落とす
 12. `lastError` の文の形が実装で違う（Dawn は `Validation: …`、ブラウザは `GPUValidationError: …`）。今は字で比べる所が無い。P6 で突き合わせる時に揃える
+13. `bin/fge refactor usages --unused` の字の出力は、更新時刻で `build/refactor/last-usages.txt` を拾う。同じ checkout で別の usages が同時に走ると、後ろに足す「別のソースツリーから使われている物」に関係の無い行が混じる（ルートの答えと終了コードは正しい）。一覧のパスをその回だけの物にする
 
 ## 版ごとに直した事
 
