@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebGPU の上限</title>
+<style>
+  body { margin: 0; padding: 12px; background: #111; color: #ddd; font: 13px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  button { font: inherit; font-size: 15px; padding: 8px 18px; margin: 4px 0 10px; }
+  pre { white-space: pre-wrap; word-break: break-all; font: 11px/1.4 monospace; background: #000; padding: 8px; border-radius: 4px; }
+  #state { color: #7f7; }
+</style>
+</head>
+<body>
+<h1>WebGPU の上限と機能</h1>
+<div id="state">調べています…</div>
+<button id="copy" disabled>結果をコピー</button>
+<pre id="out"></pre>
+<script>
+(async function () {
+  var state = document.getElementById("state"), out = document.getElementById("out"), copy = document.getElementById("copy");
+  var result = { userAgent: navigator.userAgent, at: new Date().toISOString() };
+  function show() { out.textContent = JSON.stringify(result, null, 2); copy.disabled = false; }
+  function limitsOf(l) { var o = {}; for (var k in l) { var v = l[k]; if (typeof v === "number") o[k] = v; } return o; }
+  try {
+    if (!navigator.gpu) { result.error = "navigator.gpu が無い"; state.textContent = "このブラウザは WebGPU を使えません"; show(); return; }
+    result.preferredCanvasFormat = navigator.gpu.getPreferredCanvasFormat();
+    var adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) { result.error = "requestAdapter が null"; state.textContent = "GPU を取れませんでした"; show(); return; }
+    var info = adapter.info || {};
+    result.adapter = { vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description, isFallbackAdapter: adapter.isFallbackAdapter };
+    result.adapterFeatures = Array.from(adapter.features).sort();
+    result.adapterLimits = limitsOf(adapter.limits);
+    var required = {};
+    for (var k in result.adapterLimits) required[k] = result.adapterLimits[k];
+    var device = await adapter.requestDevice({ requiredLimits: required, requiredFeatures: Array.from(adapter.features) });
+    result.deviceLimits = limitsOf(device.limits);
+    result.deviceFeatures = Array.from(device.features).sort();
+    state.textContent = "取れました。下の「結果をコピー」で送ってください";
+  } catch (e) {
+    result.error = String(e && e.message || e);
+    state.textContent = "途中で止まりました（下に理由）";
+  }
+  show();
+  copy.onclick = async function () {
+    try { await navigator.clipboard.writeText(out.textContent); copy.textContent = "コピーしました"; }
+    catch (e) { var r = document.createRange(); r.selectNodeContents(out); var s = getSelection(); s.removeAllRanges(); s.addRange(r); copy.textContent = "選択したのでコピーしてください"; }
+  };
+})();
+</script>
+</body>
+</html>
