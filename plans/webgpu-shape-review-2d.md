@@ -618,7 +618,7 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 
 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal）:
 
-- テスト: render_gl 432 緑（`.layers/render_gl` の flix test。`TestMaskRows` 18 本を足し、`TestShapeRows` の「mask つきスプライトは行にならない」1 本を消した）。偽の GL を通る `TestDrawCounts` の mask の 2 本はそのまま緑。
+- テスト: render_gl 432 緑（`.layers/render_gl` の flix test。`TestMaskRows` 19 本を足し、`TestShapeRows` の「mask つきスプライトは行にならない」1 本を消した）。偽の GL を通る `TestDrawCounts` の mask の 2 本はそのまま緑。
   `TestMaskRows` のうち 2 本は何も描かない GL で `emitOne` を通し、「mask → mask つきの面」の後も `usesStencil` が真のままである事と、面の後の mask の比べる値が 1 に戻る事を見る。
 - `make gl-parity` 緑（castShadow の 565 px は前からの B。SoftRaster と GL の `passMask` は 0 px）。テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）。`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
 - `make webgpu-v1-check` 緑: 画面なしの比べは 27 場面とも許す差の内（足した mask の 5 場面は 0 px・submit 1・WebGPU の誤り 0・許す差は足していない）。足した場面:
@@ -645,6 +645,18 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 | 任意 | `testMaxRefFitsEightBits` が `testRefWrapsAfterMax` と重なる | 消した |
 | 任意 | `WebGpuPaint.flix` が上限に近い | pipeline と stencil の所を `RenderPaint.Internal.WebGpuPipelines`（202 行）へ |
 | 任意 | 持ち越しの 2 行 | 親の 12.20 に（Dawn の stencil の store・起動の pipeline の重さ） |
+
+### 7.10 R1b-5: 3D の場面を貼る（2026-11-15）
+
+決めた事・比べた別案・門は親の 12.21。3 章との対応:
+
+| 所 | 3 章の案 | 入れた形 |
+|---|---|---|
+| 3.0 の GL（「今どおり 2D の途中で場面を直に描く形を残すかは R1b の『3D を貼る』で決める」） | front-end が場面の組を作らず、貼る行が場面を描く。capability で切り替える | 残した。貼る行（`kindScene3d`）は GL と WebGPU で同じ形で、GL の backend は行の所で場面を直に描く（Design の解像度は今どおり先に描いた texture を貼る）。WebGPU は貼る行を描かずに知らせる。場面の組（`(PassSpec, 行)`）はまだ作らないので、capability の切り替えも V2 まで要らない |
+| 3.0 の WebGPU | 場面の組を 2D の pass の前に積み、貼る行は resolve 済みの texture を読む | V2 で足す。行の 1 番（場面の番号）から、場面の組の描き先を引く |
+| 親 5.1 の表の「2D: 3D の場面を貼る」（欄: 場面の描き先の番号・矩形） | — | 欄は場面の番号だけ。矩形と clip は番号で引く場面の命令が持つ（行に写すと 2 か所が食い違いうる）。描き先の番号は V2 で WebGPU の場面の組を作る時に足す |
+
+7.1 の #7（GL の scissor の控え）: GL を直に呼ぶ種類は面だけになった。面の小分け（P5 の後）で面を行にすれば消える。
 
 ## 第 1 版のレビュー（74 点）への対応
 

@@ -3,7 +3,7 @@
 // コマは中間の texture（RGBA8・描き先の画素の大きさ）へ描き、present で画面の texture へ 1 回写す。encoder はコマに 1 つで、submit はコマの終わり。
 // ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
 // 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
-// まだ描かない物（面・3D の場面・起動の後に足す字）は名前ごとに 1 回知らせて捨てる。
+// まだ描かない物（面・3D の場面・起動の後に足す字）は名前ごとに 1 回知らせて捨てる。3D の場面は 2D の並びの z の位置まで行にしてから捨てる（WebGpuRows）。
 //
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
@@ -103,6 +103,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             // history へ写す元の bind group（写す元の描き先の slots の番号 → bind group。描き先を捨てる時に手放す）。
             copyGroups = Ref[Map[Int32, BindGroup], Static],
             lastFrame = Array[RenderPaint.Frame, Static],
+            // このコマ（か Pass）に溜まった 3D の場面（drawScene3d が積み、submitFrame が取り出す。新しい順）。
+            pendingScenes = Array[List[Scene3d.RenderCmd], Static],
             // スプライトの instance・多角形の頂点・draw ごとの値（RenderList の values）の Stream。
             instances = Stream,
             vertices = Stream,
@@ -169,6 +171,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             registryRef = Ref.fresh(Static, Map.empty()), textureKeyRef = Ref.fresh(Static, Map.empty()),
             targets = TargetTable.fresh(), msaaTargets = Ref.fresh(Static, Map.empty()), copyGroups = Ref.fresh(Static, Map.empty()),
             lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
+            pendingScenes = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static,
             instances = freshStream(gpu, "fge instances", 4096 * instanceBytes()),
             vertices = freshStream(gpu, "fge vertices", 4096 * 4 * RenderList.vertexFloats()),
             values = freshStream(gpu, "fge values", 4096 * 4),
@@ -556,6 +559,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         };
         WebGpuRows.renderFrame({
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons, staticRanges = staticRanges,
+            sceneZs = List.toVector(List.map(cmd -> cmd#scene#zIndex, frame#scenes)),
             registry = Ref.get(p#registryRef),
             designW = p#designW, designH = p#designH, pass = pass,
             texWarnLog = p#texWarnLog, drawCounts = p#drawCounts,
@@ -652,7 +656,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def submitFrame(paint: Paint, sprites: List[RenderType.Drawable], tileMaps: List[RenderType.TileMapRenderCmd],
                     polygons: List[RenderType.PolygonCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Bool \ IO =
         let PaintData.PaintData(p) = paint;
-        let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer | RenderPaint.emptyFrame() };
+        let scenes = List.reverse(Array.get(0, p#pendingScenes));
+        Array.put(Nil, 0, p#pendingScenes);
+        let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer, scenes = scenes | RenderPaint.emptyFrame() };
         match TargetTable.activeSpec(p#targets) {
             case Some(spec) =>
                 // タイルの層と static layer は画面のコマの物（GL の RenderPaint.paintTarget と同じく Pass には乗せない）。
@@ -774,6 +780,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Array.put(Array.get(3, counters) + 1, 3, counters);
         if (submits >= 2) Array.put(Array.get(4, counters) + 1, 4, counters) else ();
         Array.put(Int32.max(submits, Array.get(5, counters)), 5, counters)
+
+    /// 最後に画面へ描き終えたコマの 2D の draw call の数（GL の RenderPaint.lastDraw2dCounts と同じ物差し）。
+    pub def lastDraw2dCounts(paint: Paint): FrameDiagnostics.Draw2dCounts \ IO =
+        let PaintData.PaintData(p) = paint;
+        RenderDrawCounts.lastScreenFrame(p#drawCounts)
 
     /// 前のコマ（present まで）の submit の数。
     pub def submitCount(paint: Paint): Int32 \ IO =
@@ -967,15 +978,16 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             }
         }
 
-    /// 3D の場面は V1 では描かない（1 回知らせて捨てる）。
+    /// 3D の場面は溜めて、次の renderCommands の 2D の並びに z の位置で混ぜる（貼る行は描かずに 1 回知らせる・WebGpuRows）。先に上げる物の宣言は捨てる。
     pub def handleDraw3d(paint: Paint, f: Unit -> a \ ef): a \ (ef - Platform.Draw3d) + IO =
         run f() with handler Platform.Draw3d {
-            def drawScene3d(_cmd, k) = {
-                skip(paint, "3D の場面");
+            def drawScene3d(cmd, k) = {
+                let PaintData.PaintData(p) = paint;
+                Array.put(cmd :: Array.get(0, p#pendingScenes), 0, p#pendingScenes);
                 k(())
             }
             def preload3d(_cmd, k) = {
-                skip(paint, "3D の場面");
+                skip(paint, "3D の場面の preload");
                 k(())
             }
         }

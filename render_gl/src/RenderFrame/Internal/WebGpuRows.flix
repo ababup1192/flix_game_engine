@@ -1,12 +1,13 @@
 // RenderFrame.Internal.WebGpuRows — 1 回の renderCommands を、GL と同じ前半（mergedByZ → emitRowItem が RenderList を作る）で行にし、
 // 行を WebGPU の render pass へ流す。device・pipeline・絵と頂点の buffer の表・instance と頂点と values の buffer は呼ぶ側（WebGpuPaint）が持ち、関数の record で渡す。
-// 描くのはスプライト・字・箱（mask つきを含む）・多角形・タイルの層・static layer。面と 3D の場面は受け取らない（呼ぶ側が名前ごとに知らせて捨てる）。
+// 描くのはスプライト・字・箱（mask つきを含む）・多角形・タイルの層・static layer。3D の場面を貼る行は z の位置まで並べ、描かずに知らせる（skip）。
+// 面は受け取らない（呼ぶ側が名前ごとに知らせて捨てる）。
 pub mod RenderFrame.Internal.WebGpuRows {
     import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, addCountsTo, closeRuns, countPolyDraw, countSingleDraw, countSpriteDraw, emitRowItem, mergedByZ, newRunState,
+    use RenderFrame.{Merged, addCountsTo, closeRuns, countPolyDraw, countSceneRow, countSingleDraw, countSpriteDraw, emitRowItem, mergedByZ, newRunState,
                      polyVertCap, spriteCaps, upsideDownTargetsOf, usesStencil, writeInstAt}
-    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, RenderList, glViewportOf, hasLetterbox, kindMask, kindPoly, kindSprite, kindStatic, kindTile,
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, RenderList, glViewportOf, hasLetterbox, kindMask, kindPoly, kindScene3d, kindSprite, kindStatic, kindTile,
                                          newRenderList, nextInstanceOf, nextVertexOf, rowAt, rowCountOf, rowsOf, screenClearColorOf,
                                          targetTextureOf, valueCountOf, valuesOf}
 
@@ -28,6 +29,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     /// 1 回の renderCommands を pass 1 つへ流す。
     /// cfg の欄:
     ///   sprites・tileMaps・polygons・staticRanges・registry = 描き物と絵の表（GL の FrameArgs と同じ物）・designW/H = 射影の寸
+    ///   sceneZs = 3D の場面の z（i 番目 = 番号 i の場面。GL の Scene3dRenderer.Prepared#zIndexes と同じ並び）
     ///   pass = 描き先と、その始末・viewport（描き先と同じ絵を読む行は描かずに知らせる）
     ///   instancesFor(n)・verticesFor(n) = n 体・n 頂点ぶん書ける入れ物（呼ぶ側の LITTLE_ENDIAN の ByteBuffer の float の見方）
     ///   upload(体数, 頂点数, values, values の数) = 入れ物の頭と values を GPU へ送る。返すのは送った位置（instance の番号, 頂点の番号, values の bytes）
@@ -43,6 +45,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
         tileMaps = List[RenderType.TileMapRenderCmd],
         polygons = List[RenderType.PolygonCmd],
         staticRanges = List[RenderStatic.Range],
+        sceneZs = Vector[Int32],
         registry = RenderAsset.TextureRegistry,
         designW = Float64,
         designH = Float64,
@@ -79,7 +82,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
             // WhyNot: 描き先の表の名前を渡さない — targetUpsideDown が偽なので upsideDownTargetsOf は表を引かない。
             let upsideDown = upsideDownTargetsOf(targetUpsideDown(), () -> Set.empty());
             emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog,
-                    mergedByZ(cfg#tileMaps, cfg#sprites, cfg#polygons, cfg#staticRanges, Nil, Vector.empty()));
+                    mergedByZ(cfg#tileMaps, cfg#sprites, cfg#polygons, cfg#staticRanges, Nil, cfg#sceneZs));
             closeRuns(st, list);
             let used = nextInstanceOf(list);
             if (letterboxed) writeInstAt(instances, used, 0.0, 0.0, cfg#designW, cfg#designH,
@@ -133,7 +136,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
         }
 
     /// 並べた 1 個を行へ積む。
-    /// 面と 3D の場面は mergedByZ に渡さない（まだ描かない種類で、知らせて捨てるのは WebGpuPaint）ので、emitRowItem は false を返さない。
+    /// 面は mergedByZ に渡さない（まだ描かない種類で、知らせて捨てるのは WebGpuPaint）ので、emitRowItem は false を返さない。
     // WhyNot: 末尾を呼び出しで終えない・emitAll のループの中へ書き下さない — ループが JIT から外れる（docs/performance.md の 13 節。RenderFrame.emitOne と同じ形）。
     @DontInline
     def emitItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
@@ -172,6 +175,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
             else if (kind == kindTile()) drawTileRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, warnLog, row, visible)
             else if (kind == kindStatic()) drawStaticRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
             else if (kind == kindMask()) drawMaskRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, row, visible)
+            else if (kind == kindScene3d()) drawSceneRow(st, skip)
             else drawSpriteRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, row, visible)
         };
         ()
@@ -220,6 +224,13 @@ pub mod RenderFrame.Internal.WebGpuRows {
         } else ();
         countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
                         blendC, true, if (ref > 0) 2 else 1)
+
+    /// 3D の場面を貼る行: まだ描かない（知らせるだけ）。数えは GL と同じく、次の 2D の draw call を kind で切る。
+    // WhyNot: 2D の pass の途中で閉じて場面の pass を開かない — 2D の pass を閉じて開き直すと、viewport・積んだ pipeline と buffer の控え・黒帯の箱と
+    //   stencil を張り直す道が要り、標本つきの描き先は閉じるたびに resolve する。V2 では場面を 2D の pass の前に自分の texture へ描き、この行で貼る（plans/engine-webgpu.md の 5.4）。
+    def drawSceneRow(st: Array[Int32, Static], skip: String -> Unit \ IO): Unit \ IO =
+        skip("3D の場面");
+        countSceneRow(st)
 
     /// stencil を全部 0 に戻す: design の全面の 6 頂点を、stencil へ値 0 を書く pipeline で描く。scissor は描き先の全面にし、行の scissor は次の applyScissor が戻す。
     // WhyNot: pass を閉じて stencil を clear して開き直さない — 開き直すと viewport・積んだ pipeline と buffer の控え・黒帯の箱を全部張り直す道が要り、

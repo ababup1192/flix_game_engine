@@ -154,7 +154,7 @@ mod RenderFrame.TestMaskRows {
         let gl = FakeGl.silent();
         let gs: Array[Int32, Static] = Array.empty(Static, 32);
         List.forEach(item -> emitOne(gl, gs, st, list, 1.0, 1.0, Map.empty(), Set.empty(), Ref.fresh(Static, Set.empty()),
-                                     (_, _) -> checked_ecast(2), (_, _) -> checked_ecast(()), item), items);
+                                     (_, _) -> checked_ecast(2), _ -> checked_ecast(()), item), items);
         closeRuns(st, list);
         (st, list)
 
@@ -164,6 +164,7 @@ mod RenderFrame.TestMaskRows {
         Assert.assertTrue(usesStencil(fst(emittedThroughGl(masked() :: surfaceWith(triangle()) :: Nil))))
 
     /// mask つきの面の後の mask は、比べる値が 1 に戻る（stencil を 0 に戻してから描く）。
+    /// 面の所で flushRows が列を空にするので、残る行 0 が面の後の mask。
     @Test
     def testMaskAfterMaskedSurfaceRestartsRef(): Unit \ {Assert, IO} =
         let list = snd(emittedThroughGl(masked() :: masked() :: surfaceWith(triangle()) :: masked() :: Nil));

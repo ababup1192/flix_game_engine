@@ -44,7 +44,7 @@ mod Scenes {
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: veil()
             :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead()
-            :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: materialStripes() :: spotShadow() :: skinBend()
+            :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: sceneBetweenBoxes() :: materialStripes() :: spotShadow() :: skinBend()
             :: texturedBox() :: normalBump() :: skinNormal()
             :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
@@ -538,6 +538,15 @@ mod Scenes {
             Render.shaderFillMasked(solid, { position = { x = 120.0, y = 20.0 }, size = { x = 180.0, y = 140.0 } },
                 rect(130.0, 30.0, 60.0, 40.0) :: rect(220.0, 100.0, 60.0, 50.0) :: Nil, 0.0, 3) ::
             Render.shaderFill(passthroughSpec("atlas"), { position = { x = 208.0, y = 152.0 }, size = { x = 48.0, y = 24.0 } }, 0.0, 3) ::
+            Nil }
+
+    // 同じ色・同じ blend の 2 つの箱で、地の色だけの 3D の場面（z = 2）を挟む。前の箱（z = 1）は場面の下に隠れ、後の箱（z = 3）は場面の上に出る。
+    // 2 つの箱が場面をまたいで 1 つの run にまとまると、後の箱も場面より先に描かれて隠れ、重なりの 40 × 40 が地の色になる。
+    def sceneBetweenBoxes(): Scene =
+        { name = "sceneBetweenBoxes", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = true, passes = Nil, items =
+            at(40.0, 40.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(240, 200, 40), 1)) ::
+            Render.scene3d({ x = 100.0, y = 60.0 }, flatScene({ x = 120.0, y = 80.0 }, 2, Nil, Nil)) ::
+            at(180.0, 100.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(240, 200, 40), 3)) ::
             Nil }
 
     /// z の平面に立つ、目の側（−Z）を向く uv つきの四角。左上の角が uv (lo, lo)・右下の角が (hi, hi)（0..1 の外は wrap で読む）。

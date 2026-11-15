@@ -1,5 +1,5 @@
 // RenderFrame.Internal.RenderList — 1 回の renderCommands で描く行の列（GL と WebGPU が同じ物を流す）と、その行を描く pass の指定。
-// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲・mask つきスプライト 1 体。面と 3D の場面は GL を直に呼ぶ）。
+// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲・mask つきスプライト 1 体・3D の場面を貼る所。面は GL を直に呼ぶ）。
 // GL の物（program・VAO・buffer）を持たず、絵と頂点の buffer は backend の表の番号（GL の backend ではテクスチャ・VAO の番号）で持つ。
 // rows の頭: 0=行の数 1=次に書く instance の番号 2=次に書く頂点の番号。その後ろに 1 行 rowStride() 個:
 //   0=種類（kind*） 1=先頭（スプライトは instance・多角形と static は頂点の番号） 2=数（体数・頂点数・タイルの数）
@@ -7,6 +7,7 @@
 //   10=頂点の buffer の番号（タイルの instance・static の頂点。backend の表の番号。ほかは 0） 11=values の先頭（draw ごとの値。スプライトは 0）
 //   mask つきスプライト（kindMask）だけ欄の意味が違う: 1=instance の番号（1 体） 2=mask の頂点の数（三角形にほどいた物・3 未満なら 0） 10=mask の先頭の頂点の番号
 //   11=stencil に書いて比べる値（nextMaskRef が決める・0 = mask が 3 頂点未満で stencil を使わずに描く）。mask の頂点は values の頭の identity の view で描く。
+//   3D の場面を貼る行（kindScene3d）: 1=場面の番号（Scene3dRenderer.Prepared の番号）。ほかの欄は 0。
 // instances は 1 体 instanceFloats() 個（RenderFrame.writeInstAt の並び）。スプライトの行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
 // vertices は多角形の頂点（1 頂点 6 個・RenderSprite.writePolyVerts の並び）。instances も vertices も backend が貸す入れ物で、GPU へそのまま送る。
 // values は draw ごとの値（front-end の並び。GL は uniform へ差し、WebGPU は詰め直さずに stride 0 の頂点の buffer として読む）。頭の viewValueFloats() 個はいつも identity の view（多角形の行が指す）。
@@ -184,6 +185,12 @@ pub mod RenderFrame.Internal.RenderList {
     //   GL でも mask ごとに全面の clear を払う。
     pub def nextMaskRef(last: Int32): Int32 =
         if (last <= 0 or last >= maxMaskRef()) 1 else last + 1
+
+    /// 3D の場面を貼る所を 1 行として足す。scene = Scene3dRenderer.Prepared の番号。
+    // WhyNot: 場面の矩形と clip を欄に入れない — 番号で引ける場面の命令が持ち、GL は Render3d.drawItem がそこから出す。行にも写すと 2 か所が食い違いうる。
+    pub def appendSceneRow(list: RenderList, scene: Int32): Unit \ IO =
+        let rows = rowsWithRoom(list);
+        putRow(rows, Array.get(0, rows), kindScene3d(), scene, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
     /// 行の欄を書いて行の数を 1 進める（rows は rowsWithRoom で取った物）。
     def putRow(rows: Array[Int32, Static], n: Int32, kind: Int32, first: Int32, count: Int32, texId: Int32, blendC: Int32,

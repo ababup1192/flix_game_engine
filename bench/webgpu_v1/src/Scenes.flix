@@ -1,5 +1,5 @@
 // GL と WebGPU の両方で描く場面。WebGPU が描く物（スプライト・字・箱・Pass・生成の絵・多角形・タイルの層・static layer・Pass の history・MSAA・
-// mask つきスプライト）だけで組む。
+// mask つきスプライト）だけで組む。3D の場面は、GL でも画素を変えない空の場面だけを置く（sceneBetween）。
 // 箱・スプライト・幕・放射の 4 つは bench/gl_parity の同じ名前の場面と同じ中身（色は 8 bit で割り切れる k/255）。
 // lint-view: 対象外 — GL と WebGPU の描き手の画素の一致を見る門の場面。丸めの差を混ぜないよう単色の箱を主にしている。画面に出す絵ではない。
 mod V1Scenes {
@@ -31,7 +31,7 @@ mod V1Scenes {
         boxes() :: spriteNearest() :: veil() :: radial() :: text() :: passPaste() :: passHalf() :: generated() :: passThenGenerated() ::
         polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() ::
         historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() ::
-        maskBasic() :: maskNested() :: maskPass() :: maskMsaa() :: maskOverflow() :: Nil
+        maskBasic() :: maskNested() :: maskPass() :: maskMsaa() :: maskOverflow() :: sceneBetween() :: Nil
 
     def c8(r: Int32, g: Int32, b: Int32): Color =
         { r = Int32.toFloat64(r) / 255.0, g = Int32.toFloat64(g) / 255.0, b = Int32.toFloat64(b) / 255.0 }
@@ -406,6 +406,18 @@ mod V1Scenes {
           tiles = noTiles(), staticLayer = None, passes = pass(historyOf("mtog", 0.0, 45.0, 1.0, 1) :: fractionalItems(100.0, c8(240, 80, 200))) :: Nil,
           targets = targetsWith("mtog", 4), submits = Some(1),
           items = still(pasteQuarter("mtog", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mtog"), 160.0, 90.0, 1) :: Nil) }
+
+    /// 3D の場面を貼る行が 2D の並びの途中に入る場面: 同じ色・同じ blend の 2 つの箱の間に、何も置かず地の色も無い 3D の場面（GL でも画素を変えない）。
+    /// 2 つの箱の run が切れる理由は場面だけで、GL と WebGPU の draw の数が同じ所で切れる事を Main が見る（期待は Main.expectedDraws）。
+    /// 場面の行の後の箱と市松の絵が、場面の前と同じ状態（blend・scissor・viewport）で描かれる事も見る。WebGPU は場面を描かずに知らせる。
+    def sceneBetween(): Scene =
+        let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
+        { name = "sceneBetween", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 1)) ::
+            Render.scene3d(v(60.0, 40.0), { zIndex = 2 | Scene3d.scene(camera, v(160.0, 100.0)) }) ::
+            at(100.0, 60.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 3)) ::
+            at(240.0, 100.0, maskedSprite({ tint = c8(255, 255, 255), rotation = 0.0, flipH = false, blend = DrawCmd.BlendMode.Normal, z = 3, mask = Nil })) ::
+            Nil) }
 
     /// WebGPU がまだ描かない物だけの場面（面と 3D の場面）。GL とは比べない。
     pub def unsupported(): Scene =
