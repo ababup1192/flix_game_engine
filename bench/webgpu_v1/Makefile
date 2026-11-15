@@ -3,7 +3,7 @@
 # 1 つでも許す差を超えるか、WebGPU の誤りの数が 0 でないか、submit の数が場面の期待と違えば exit 1。GPU が要るので CI には載せない（webgpu-check と同じ）。
 #   make run    … 門（描いた絵は debug/gl・debug/webgpu・差は debug/diff）
 #   make check  … 型検査だけ
-# 先にエンジンの root で make sync-engine-full（engine_full/src の symlink 集を使う）。
+# 先にエンジンの root で make sync-engine-full（engine_full/src の symlink 集と、Dawn のネイティブを持つ engine_full/flix.toml を使う）。
 #
 # WhyNot: engine を fpkg の依存（mount = "fge"）で組まない — RenderPaint は pub でない mod で、その子の RenderPaint.Internal.WebGpuPaint は
 #   別のパッケージから見えない。engine の pub を増やさずに呼ぶため、engine_full/src と src/ を 1 つのパッケージの木（build/tree）に束ねて組む。
@@ -26,8 +26,7 @@ tree:
 			ln -sfn "$(CURDIR)/$$root/$$f" "$$dest"; \
 		done; \
 	done
-	@awk '{ print } /^\[mvn-dependencies\]/ { print "\"com.github.xpenatan.jWebGPU:webgpu-desktop-jni-dawn_mac_arm64\" = \"0.3.4\"" }' \
-		../../engine_full/flix.toml | grep -v '^repository' > $(TREE)/flix.toml
+	@grep -v '^repository' ../../engine_full/flix.toml > $(TREE)/flix.toml
 	@[ -d $(TREE)/lib/cache ] || { [ -d ../../engine_full/lib/cache ] && cp -R ../../engine_full/lib/cache $(TREE)/lib/; } || true
 	@[ -d ../webgpu_check/lib/cache ] && cp -Rn ../webgpu_check/lib/cache/ $(TREE)/lib/cache/ 2>/dev/null || true
 	@cp -n ../../engine_full/lib/external/* $(TREE)/lib/external/ 2>/dev/null || true

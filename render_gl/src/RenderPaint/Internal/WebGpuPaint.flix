@@ -651,8 +651,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             }
         }
 
-    /// 2D の描き物の列を paint で描く。onScreen = 画面（Pass の外）へ描いた時に、描き始めと描き終わりの時刻（System.nanoTime）を受け取る。
-    pub def handleDraw2d(paint: Paint, onScreen: (Int64, Int64) -> Unit \ fx, f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + fx + IO =
+    /// 2D の描き物の列を paint で描く。onScreen = 画面（Pass の外）へ描いた時に、描き始めと描き終わりの時刻（System.nanoTime）と、
+    /// そのコマの 2D の draw call の数を読む口（FrameStats が行を出す時だけ読む）を受け取る。
+    pub def handleDraw2d(paint: Paint, onScreen: (Int64, Int64, Unit -> FrameDiagnostics.Draw2dCounts \ IO) -> Unit \ fx,
+                         f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + fx + IO =
         run f() with handler Platform.Draw2d {
             def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
                 let paintFrom = System.nanoTime();
@@ -660,7 +662,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 let paintTo = System.nanoTime();
                 noteDiagnostics(paint, d -> { submitNs = d#submitNs + (paintTo - paintFrom),
                                               drawItems = d#drawItems + List.length(sprites) | d });
-                if (toScreen) onScreen(paintFrom, paintTo) else ();
+                if (toScreen) {
+                    let PaintData.PaintData(p) = paint;
+                    onScreen(paintFrom, paintTo, () -> RenderDrawCounts.lastScreenFrame(p#drawCounts))
+                } else ();
                 k(())
             }
             def drawSurface(_cmd, k) = {

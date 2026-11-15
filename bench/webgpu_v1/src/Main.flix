@@ -1,7 +1,7 @@
 // 入口。同じ場面（V1Scenes）を GL（GlOffscreen）と WebGPU（RenderPaint.Internal.WebGpuPaint・Dawn）の両方で、ウィンドウを開かずに 1 コマずつ描き、
 // 画素を比べて 1 行 1 場面の表を出す（"[webgpu-v1] <場面> …"）。場面ごとの許す差は tolerance.tsv（無ければ 0）。
 // 許す差を超えた場面がある・WebGPU の誤りの数が 0 でない・submit の数が場面の期待と違う、のどれかで exit 1。
-// WebGPU の側の読み込みは 3.1 の PC の道（plans/webgpu-v1.md）: 絵は stb で 4 成分に解いて hasAlpha が偽なら alpha を 255 で埋め RGBA8・
+// WebGPU の側の読み込みは実機のウィンドウと同じ 3.1 の PC の道（LwjglLayer.Internal.WebGpuWindowLayer）: 絵は stb で 4 成分・hasAlpha が偽なら alpha を 255 で埋めて RGBA8・
 // フォントは RenderFontCache.loadOrBake の距離場を R8。組み込みの字・ロゴ・放射の絵と生成の絵（BGRA8）は WebGpuPaint が上げる。
 mod V1Main {
     use RenderPaint.Internal.WebGpuPaint
@@ -14,8 +14,6 @@ mod V1Main {
     import java.nio.file.Files
     import java.nio.file.Paths
     import javax.imageio.ImageIO
-    import org.lwjgl.stb.STBImage
-    import org.lwjgl.system.MemoryStack
 
     // ── 場面を描く（GL と WebGPU で同じ）──
 
@@ -59,8 +57,7 @@ mod V1Main {
                 let height = config#designHeight;
                 let paint = WebGpuPaint.create(gpu, { designWidth = width, designHeight = height, clearColor = config#clearColor,
                                                       width = width, height = height });
-                List.forEach(entry -> WebGpuPaint.putTexture(entry#name, loadImage(paint, entry), paint), config#textureManifest);
-                let fonts = loadFonts(paint, config);
+                let fonts = LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.loadAll(paint, config);
                 let shots = V1Scenes.all() |> List.map(sc -> {
                     handle(paint, fonts, () -> drawScene(sc));
                     let buf = ByteBuffer.allocateDirect(width * height * 4);
@@ -75,43 +72,6 @@ mod V1Main {
                 Ok(result)
         }
 
-    /// 絵を stb で 4 成分に解き、hasAlpha が偽なら alpha を 255 で埋めて RGBA8 で上げる。
-    def loadImage(paint: WebGpuPaint.Paint, entry: RenderAsset.TextureEntry): RenderAsset.TextureInfo \ IO =
-        let stack = MemoryStack.stackPush();
-        let w = stack.mallocInt(1);
-        let h = stack.mallocInt(1);
-        let c = stack.mallocInt(1);
-        STBImage.stbi_set_flip_vertically_on_load(false);
-        let data = STBImage.stbi_load(entry#path, w, h, c, 4);
-        if (Object.isNull(data)) {
-            discard MemoryStack.stackPop();
-            bug!("Failed to load texture: ${entry#path}")
-        } else {
-            let (width, height) = (w.get(0), h.get(0));
-            if (entry#hasAlpha) () else fillOpaque(data, width * height, 0);
-            let info = WebGpuPaint.uploadRgba(paint, width, height, data);
-            STBImage.stbi_image_free(data);
-            discard MemoryStack.stackPop();
-            info
-        }
-
-    def fillOpaque(data: ByteBuffer, count: Int32, i: Int32): Unit \ IO =
-        if (i >= count) ()
-        else {
-            discard data.put(i * 4 + 3, -1i8);
-            fillOpaque(data, count, i + 1)
-        }
-
-    /// project.json のフォントを、GL と同じ「出しうる字」で RenderFontCache.loadOrBake から作り、距離場を R8 で上げる。
-    def loadFonts(paint: WebGpuPaint.Paint, config: GameEngine.EngineConfig): RenderPaint.Fonts \ IO =
-        let wanted = RenderFont.startupGlyphs(config#rootDir, config#glyphs);
-        let atlases = config#fontManifest |> List.foldLeft((acc, entry) -> {
-            let baked = RenderFontCache.loadOrBake(entry, wanted, (_, _) -> checked_ecast(()));
-            WebGpuPaint.putTexture(baked#atlas#textureName, WebGpuPaint.uploadR8(paint, baked#side, baked#side, baked#pixels), paint);
-            Map.insert(entry#name, baked#atlas, acc)
-        }, Map#{BootFont.name() => BootFont.atlas()});
-        { atlases = Ref.fresh(Static, atlases), grow = (_, atlas, _) -> checked_ecast(atlas), missing = Ref.fresh(Static, Set.empty()) }
-
     /// f の中の Platform の effect と Target を WebGpuPaint で受ける。入力・ウィンドウの問いには「何も起きていない」で答え、presentFrame でコマを締める。
     def handle(paint: WebGpuPaint.Paint, fonts: RenderPaint.Fonts,
                f: Unit -> a \ ef): a \ (ef - GlOffscreen.HandledEffects) + IO =
@@ -120,7 +80,7 @@ mod V1Main {
         WebGpuPaint.handleDiagnostics(paint, () ->
         Platform.runTasksInPlace(() ->
         WebGpuPaint.handleDraw3d(paint, () ->
-        WebGpuPaint.handleDraw2d(paint, (_, _) -> (), () ->
+        WebGpuPaint.handleDraw2d(paint, (_, _, _) -> (), () ->
         WebGpuPaint.handleGpuResources(paint, fonts, f)))))))
 
     def windowless(paint: WebGpuPaint.Paint, f: Unit -> a \ ef):
