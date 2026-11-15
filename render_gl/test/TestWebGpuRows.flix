@@ -3,7 +3,8 @@
 // WhyNot: mod TestWebGpuRows にしない — 固定したい関数は WebGpuRows の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     import java.nio.FloatBuffer
-    use RenderFrame.{closeSpriteRun, emitSprite, instanceFloats, newRenderList, rowAt, rowsOf, stateSize}
+    use RenderFrame.{closeSpriteRun, emitSprite, instanceFloats, stateSize}
+    use RenderFrame.Internal.RenderList.{newRenderList, rowAt, rowsOf}
     use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isHistoryName, loadOpOf, needsLetterbox, scissorInto, viewportTop}
 
     def fb(): (Int32, Int32) = (320, 200)

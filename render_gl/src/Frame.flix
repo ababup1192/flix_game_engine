@@ -10,6 +10,9 @@ mod RenderFrame {
     import fge.gl.GlContext
     import fge.gl.GlConst
     import java.nio.FloatBuffer
+    use RenderFrame.Internal.GlRows.drawRenderList
+    use RenderFrame.Internal.RenderList.{RenderList, appendSpriteRow, kindPoly, kindScene3d, kindSprite, kindStatic, kindSurface,
+                                         kindTile, newRenderList, nextInstanceOf, rowCountOf}
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず
@@ -419,12 +422,8 @@ mod RenderFrame {
 
     def runFirstSlot(): Int32 = 51
 
-    def kindSprite(): Int32 = 1
-    def kindPoly(): Int32 = 2
-    def kindTile(): Int32 = 3
-    def kindStatic(): Int32 = 4
-    def kindSurface(): Int32 = 5
-    def kindScene3d(): Int32 = 6
+    // WhyNot: RenderSprite の同じ数を呼ばない — 別のモジュールの pub でない関数は呼べず、pub に開くことになる。
+    def instanceFloats(): Int32 = 38
 
     def countBase(): Int32 = 44
 
@@ -547,74 +546,6 @@ mod RenderFrame {
                            Int32.max(0, cx1 - cx0), Int32.max(0, cy1 - cy0))
         }
 
-    // ── RenderList: 1 回の renderFrameMixed で描く行の列 ──────────────
-    // 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run だけ。ほかの種類は GL を直に呼ぶ）。GL の物（program・VAO・buffer）を持たず、
-    // 絵は backend の表の番号（GL の backend ではテクスチャの番号）で持つ。行は Int32 の配列、1 体ぶんの値は instances の Float32 に置く。
-    // rows の頭: 0=行の数 1=次に書く instance の番号。その後ろに 1 行 rowStride() 個:
-    //   0=種類（kind*） 1=先頭の instance の番号 2=体数 3=絵の番号（0 = 絵の無い箱） 4=blend 5=clip有無 6-9=clip矩形（viewport の左上原点の px）
-    // instances は 1 体 38 個（writeInstAt の並び）。行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
-    // WhyNot: 行ごとに record や enum を作らない — 絵が 1 個ごとに替わると行は描く物の数だけでき、その割り当てが 1 コマに乗る。
-    // WhyNot: 兄弟のモジュールに出さない — 兄弟の mod からは pub でない関数を呼べず（子孫の RenderFrame.Internal.* からは見える）、行を作る関数と流す関数を pub に開くことになる（render_gl の pub を増やさない）。
-    type alias RenderList = { instances = FloatBuffer, rows = Array[Array[Int32, Static], Static] }
-
-    def rowStride(): Int32 = 10
-
-    def rowsHead(): Int32 = 2
-
-    // WhyNot: RenderSprite の同じ数を呼ばない — 別のモジュールの pub でない関数は呼べず、pub に開くことになる。
-    def instanceFloats(): Int32 = 38
-
-    def newRenderList(instances: FloatBuffer): RenderList \ IO =
-        { instances = instances, rows = Array#{Array.empty(Static, rowsHead() + 16 * rowStride())} @ Static }
-
-    def rowCountOf(list: RenderList): Int32 \ IO = Array.get(0, rowsOf(list))
-
-    def nextInstanceOf(list: RenderList): Int32 \ IO = Array.get(1, rowsOf(list))
-
-    /// 頭と行を並べた Int32 の配列（広げると差し替わるので、行を足した後は取り直す）。
-    def rowsOf(list: RenderList): Array[Int32, Static] \ IO = Array.get(0, list#rows)
-
-    /// 行 row の欄 col（並びは RenderList の上のコメント）。
-    def rowAt(rows: Array[Int32, Static], row: Int32, col: Int32): Int32 \ IO =
-        Array.get(rowsHead() + row * rowStride() + col, rows)
-
-    /// 行を全部捨てる（instances の書く位置も頭へ戻す）。
-    def clearRenderList(list: RenderList): Unit \ IO =
-        let rows = Array.get(0, list#rows);
-        Array.put(0, 0, rows);
-        Array.put(0, 1, rows)
-
-    /// 1 行足せる大きさの rows を返す（足りなければ倍に広げて写す）。
-    def rowsWithRoom(list: RenderList): Array[Int32, Static] \ IO =
-        let rows = Array.get(0, list#rows);
-        let need = rowsHead() + (Array.get(0, rows) + 1) * rowStride();
-        if (Array.length(rows) >= need) rows
-        else {
-            let grown = Array.empty(Static, Int32.max(need, 2 * Array.length(rows)));
-            Array.copyInto(srcPos = 0, dstPos = 0, len = Array.length(rows), src = rows, grown);
-            Array.put(grown, 0, list#rows);
-            grown
-        }
-
-    /// スプライトの run を 1 行として足す。次の run の instance は、この run の後ろから始まる。
-    def appendSpriteRow(list: RenderList, first: Int32, count: Int32, texId: Int32, blendC: Int32,
-                        clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
-        let rows = rowsWithRoom(list);
-        let n = Array.get(0, rows);
-        let at = rowsHead() + n * rowStride();
-        Array.put(kindSprite(), at + 0, rows);
-        Array.put(first, at + 1, rows);
-        Array.put(count, at + 2, rows);
-        Array.put(texId, at + 3, rows);
-        Array.put(blendC, at + 4, rows);
-        Array.put(clipFlag, at + 5, rows);
-        Array.put(x0, at + 6, rows);
-        Array.put(y0, at + 7, rows);
-        Array.put(x1, at + 8, rows);
-        Array.put(y1, at + 9, rows);
-        Array.put(n + 1, 0, rows);
-        Array.put(first + count, 1, rows)
-
     /// 溜めているスプライトの run を 1 行にして閉じる（空 run は行にしない）。
     def closeSpriteRun(st: Array[Int32, Static], list: RenderList): Unit \ IO =
         let count = Array.get(18, st);
@@ -623,41 +554,6 @@ mod RenderFrame {
                             Array.get(12, st), Array.get(13, st), Array.get(14, st), Array.get(15, st), Array.get(16, st));
             Array.put(0, 18, st)
         }
-
-    // ── RenderList の GL の backend ──────────────────────────────
-
-    /// 行を順に GL へ流し、列を空にする。
-    def drawRenderList(gl: GlContext, st: Array[Int32, Static], list: RenderList): Unit \ IO =
-        drawRowsFrom(gl, st, list, 0, rowCountOf(list));
-        clearRenderList(list)
-
-    def drawRowsFrom(gl: GlContext, st: Array[Int32, Static], list: RenderList, row: Int32, n: Int32): Unit \ IO =
-        if (row >= n) ()
-        else {
-            drawRow(gl, st, list, row);
-            drawRowsFrom(gl, st, list, row + 1, n)
-        }
-
-    /// スプライトの行 1 つを 1 回の instanced draw で描き、draw call を数える。
-    // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
-    @DontInline
-    def drawRow(gl: GlContext, st: Array[Int32, Static], list: RenderList, row: Int32): Unit \ IO =
-        let rows = rowsOf(list);
-        let first = rowAt(rows, row, 1);
-        let count = rowAt(rows, row, 2);
-        let texId = rowAt(rows, row, 3);
-        let blendC = rowAt(rows, row, 4);
-        let clipFlag = rowAt(rows, row, 5);
-        let x0 = rowAt(rows, row, 6);
-        let y0 = rowAt(rows, row, 7);
-        let x1 = rowAt(rows, row, 8);
-        let y1 = rowAt(rows, row, 9);
-        let instances = list#instances;
-        setScissorAt(gl, st, clipFlag, x0, y0, x1, y1);
-        RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
-                                            Array.get(3, st), blendOf(blendC), instances, first, count);
-        countSpriteDraw(st, texId, clipFlag, x0, y0, x1, y1, blendC, false, 1);
-        ()
 
     /// 溜めているスプライトの run を閉じ、溜まった行を GL へ流す。GL を直に呼ぶ種類（多角形・タイル・面など）を描く前に呼ぶ。
     def flushSprites(gl: GlContext, st: Array[Int32, Static], list: RenderList): Unit \ IO =

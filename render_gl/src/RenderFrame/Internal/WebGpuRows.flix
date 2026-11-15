@@ -4,8 +4,9 @@
 pub mod RenderFrame.Internal.WebGpuRows {
     import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, RenderList, addCountsTo, calcViewport, closeSpriteRun, countSpriteDraw, emitSprite,
-                     mergedByZ, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, stateSize, writeInstAt}
+    use RenderFrame.{Merged, addCountsTo, calcViewport, closeSpriteRun, countSpriteDraw, emitSprite,
+                     mergedByZ, stateSize, writeInstAt}
+    use RenderFrame.Internal.RenderList.{RenderList, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf}
 
     /// 1 回の renderCommands を描き先の render pass 1 つへ流す。
     /// cfg の欄:

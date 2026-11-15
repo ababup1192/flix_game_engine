@@ -3,8 +3,8 @@
 // WhyNot: mod TestRenderList にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
-    use RenderFrame.{RenderList, blendCode, clearRenderList, closeSpriteRun, emitSprite, instanceFloats, kindSprite,
-                     newRenderList, nextInstanceOf, pushSpriteKeyed, rowAt, rowCountOf, rowsOf, stateSize, writeInstAt}
+    use RenderFrame.{blendCode, closeSpriteRun, emitSprite, instanceFloats, pushSpriteKeyed, stateSize, writeInstAt}
+    use RenderFrame.Internal.RenderList.{RenderList, clearRenderList, kindSprite, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf}
 
     // ── 組み立て ──
 
