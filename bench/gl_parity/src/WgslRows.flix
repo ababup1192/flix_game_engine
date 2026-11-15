@@ -15,7 +15,9 @@ mod WgslRows {
     import java.lang.System
 
     /// 環境変数 PARITY_WGSL_ROWS が 1 か。
-    pub def isAsked(): Bool \ IO = System.getenv("PARITY_WGSL_ROWS") == "1"
+    pub def isAsked(): Bool \ IO =
+        let value = System.getenv("PARITY_WGSL_ROWS");
+        not Object.isNull(value) and value == "1"
 
     def width(): Int32 = 256
 

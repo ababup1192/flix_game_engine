@@ -11,7 +11,8 @@ pub mod Render3dWgsl {
 
     /// 場面の値の struct と、場面の絵の宣言（group 0）。欄の名前は Render3dGlsl の uniform と同じ。
     /// f32 と vec2 の光の配列は、uniform の配列の 16 バイト刻みに合わせて vec4 の配列にした（x・y を読む。LightModel3d.Codegen の WGSL の欄と同じ）。
-    /// 詰める側は WGSL の並びの決まり（vec3 と vec4 と mat4 は 16 バイトそろえ・vec2 は 8）に従う。vec3 の後ろの 4 バイトに f32 か i32 を 1 つ入れてある。
+    /// 詰める側は WGSL の並びの決まり（vec3 と vec4 と mat4 は 16 バイトそろえ・vec2 は 8）に従う。vec3 の後ろの 4 バイトに f32 か i32 を 1 つ入れ、
+    /// mat4 の前の隙間は pad0〜pad2 で埋めてあるので、欄は書いた順に 4 バイトずつ続く（uShadowMatrix は 272 バイト目）。
     pub def sceneDeclarations(): String =
         let p = Scene3d.maxPointLights();
         let s = Scene3d.maxSpotLights();
@@ -32,7 +33,7 @@ pub mod Render3dWgsl {
         "    uEnvBoxCenter: vec3f, uShadowOn: i32,\n" +
         "    uDepthRange: vec2f, uShadowSpot: i32, uShadowPcf: i32,\n" +
         "    uShadowBias: f32, uShadowStrength: f32, uDepthOut: i32, uLightmapSrgb: i32,\n" +
-        "    uLightmapIntensity: f32,\n" +
+        "    uLightmapIntensity: f32, pad0: f32, pad1: f32, pad2: f32,\n" +
         "    uShadowMatrix: mat4x4f,\n" +
         "    uSunMatrix: mat4x4f,\n" +
         "    uPointPos: array<vec4f, ${p}>,\n" +

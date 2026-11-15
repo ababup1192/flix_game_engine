@@ -2,7 +2,7 @@
 // ここに置くのは文の形が GLSL と違う所（ノイズの関数・ぼかし・mip のレベルを選ぶ読み・uniform の struct・入口）だけ。
 
 /// 2D の面と 3D の材質の WGSL。draw ごとの値は 1 つの struct（`SgValues`・`var<uniform> sg`）に、欄を全部 f32 で並べる。
-/// 欄の並び（`slots`）の i 番目が uniform buffer の i × 4 バイト目（struct の大きさは WGSL が 16 の倍数に丸める。buffer はその大きさで取る）。
+/// 欄の並び（`slots`）の i 番目が uniform buffer の i × 4 バイト目（struct の大きさは欄の数 × 4 バイト。buffer はそれ以上の大きさで取る）。
 /// 絵の k 番目（texReads の並び）は binding 1 + 2k の texture_2d<f32>（`uTexK`）と 2 + 2k の sampler（`uTexKSampler`）。
 /// GL の描き先と違い、WebGPU の描き先の texture は上の行が先なので、読む uv の上下は返さない（GLSL の uTexFlipN は無い）。
 pub mod ShaderGen.Wgsl {
@@ -158,6 +158,10 @@ pub mod ShaderGen.Wgsl {
     pub def prelude(): String = joinParts(
         "fn sg_mod(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }\n" ::
         "fn sg_mod2(x: vec2f, y: vec2f) -> vec2f { return x - y * floor(x / y); }\n" ::
+        "fn sg_smoothstep(lo: f32, hi: f32, x: f32) -> f32 {\n" ::
+        "    if (hi == lo) { return select(1.0, 0.0, x < lo); }\n" ::
+        "    return smoothstep(lo, hi, x);\n" ::
+        "}\n" ::
         "fn sg_hash1(p: vec2f, seed: f32) -> f32 {\n" ::
         "    return fract(sin(dot(p, vec2f(127.1, 311.7)) + seed * 0.017) * 43758.5453123);\n" ::
         "}\n" ::

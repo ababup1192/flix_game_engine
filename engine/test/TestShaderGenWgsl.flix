@@ -40,10 +40,13 @@ mod TestShaderGenWgsl {
         Assert.assertTrue(String.contains(substr = "(atan2((vUv).y - 0.5, (vUv).x - 0.25)",
                                           ShaderGen.Wgsl.compile(fill(Nil, Field.Angle({ cx = 0.25, cy = 0.5 })))#module))
 
-    /// 式は GLSL と同じ所から出る: GLSL の main の出口の文と、WGSL の `let outColor` の右辺が同じ字。
+    /// 式は GLSL と同じ所から出る: GLSL の main の出口の文と、WGSL の `let outColor` の右辺が同じ字（smoothstep と絵の読みと atan の無い面）。
     @Test
     def testOutputExpressionIsTheSameTextAsGlsl(): Unit \ Assert =
-        let spec = ShaderDoc.waterVeins();
+        let veins = Field.Warp({ amount = 0.08, scale = 4.0, seed = 7, of = Field.Worley({ scale = 5.0, seed = 42, out = ShaderDoc.WorleyOut.F2mF1 }) });
+        let spec = { name = "t", cycleRate = 0.25, bindings = Nil,
+                     out = Out.Fill({ shade = Shade.Ramp({ lo = { r = 0.35, g = 0.55, b = 0.6 }, hi = { r = 0.8, g = 0.95, b = 0.98 }, field = veins }),
+                                      alpha = Field.Fbm({ octaves = 3, scale = 2.0, seed = 1 }) }) };
         let glsl = ShaderGen.compileBody(spec);
         Assert.assertTrue(String.contains(substr = "let " + glsl, ShaderGen.Wgsl.compile(spec)#module))
 
@@ -81,6 +84,23 @@ mod TestShaderGenWgsl {
     @Test
     def testLightRangeReadsTheXOfAVec4Array(): Unit \ Assert =
         Assert.assertTrue(String.contains(substr = "(r3d.uPointRange[i].x * r3d.uPointRange[i].x)", lightAt()))
+
+    /// 端が定数の smoothstep は sg_smoothstep を通す（端が等しい時に組み込みの smoothstep を定数で呼ばない）。
+    @Test
+    def testDiskWithZeroFeatherUsesTheEqualEdgeSafeSmoothstep(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "(1.0 - sg_smoothstep(0.3, 0.3, ",
+                                          ShaderGen.Wgsl.compile(fill(Nil, Field.Disk({ cx = 0.5, cy = 0.5, radius = 0.3, feather = 0.0 })))#module))
+
+    @Test
+    def testGlslKeepsTheBuiltinSmoothstep(): Unit \ Assert =
+        Assert.assertFalse(String.contains(substr = "sg_smoothstep",
+                                           ShaderGen.compile(fill(Nil, Field.Disk({ cx = 0.5, cy = 0.5, radius = 0.3, feather = 0.0 })))))
+
+    /// 影の割合（PCF）を読む側は select に入れず if の文にする（select は選ばない側も計算する）。
+    @Test
+    def testSpotShadowIsNotComputedInsideSelect(): Unit \ Assert =
+        let lines = String.lines(lightAt()) |> List.filter(l -> String.contains(substr = "spotShadow(", l));
+        Assert.assertEq(expected = (Nil: List[String]), lines |> List.filter(l -> String.contains(substr = "select(", l)))
 
     @Test
     def testLightHasNoTernaryOrGlslNames(): Unit \ Assert =

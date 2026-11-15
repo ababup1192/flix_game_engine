@@ -23,6 +23,7 @@
     "App.RemoteDebug.remoteFlow::huge-methods": "開発ツールの POST /flow を受けた時だけ通る",
     "App.Internal.Hitch.perfRun::huge-methods": "開発ツールの POST /perf を受けた時だけ通る（1 コマごとの塗りは別の関数）",
     "ExprRows.drawGl::huge-methods": "GL の突き合わせ（bench/gl_parity）で式の行を 1 回読み返すだけ",
+    "ShaderJson.parseField::huge-methods": "ShaderDoc の JSON を読み込む時と保存し直した時だけ通る（毎コマは通らない）",
     "ParityMain.glShoot::huge-methods": "GL の突き合わせ（bench/gl_parity）で場面 1 つにつき 1 回",
     "SceneBench.go::osr-skipped": "ベンチの 1 コマごとの外側のループ。1 回ごとに重い関数を呼ぶだけで、物の数だけ回るループではない"
   }

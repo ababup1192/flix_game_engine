@@ -116,6 +116,15 @@ mod TestWgslDawn {
         fill("blur-by-texture", 0.0, Nil, Shade.Solid(red()),
              Field.TexBlur({ name = "photo", chan = TexChan.A, radius = { x = 0.01, y = 0.01 }, taps = 16, amount = amount }))
 
+    /// smoothstep の端が等しい・逆の面（Disk の feather 0・同じ位置の stop・lo == hi と lo > hi で x まで定数）。
+    /// 引数が全部定数の組み込みの smoothstep は、端が等しいとシェーダーを作る所で誤りになりうる形。
+    def equalEdgeSpecs(): List[ShaderDoc.Spec] =
+        let world = Field.World({ axis = Axis3.X });
+        fill("disk-feather-0", 0.0, Nil, Shade.Solid(red()), Field.Disk({ cx = 0.5, cy = 0.5, radius = 0.3, feather = 0.0 })) ::
+        fill("gradient-same-stop", 0.0, Nil, Shade.Gradient({ field = world, stops = (0.0, red()) :: (0.5, blue()) :: (0.5, red()) :: Nil }), c(1.0)) ::
+        fill("smoothstep-equal-const", 0.0, Nil, Shade.Solid(red()), Field.Smoothstep({ lo = 0.5, hi = 0.5, of = world })) ::
+        fill("smoothstep-reversed-const", 0.0, Nil, Shade.Solid(red()), Field.Smoothstep({ lo = 0.8, hi = 0.2, of = c(0.4) })) :: Nil
+
     /// エンジンが持つ面（例・後がけ）。
     def engineSpecs(): List[ShaderDoc.Spec] =
         ShaderDoc.demoSurface() :: ShaderDoc.waterVeins() :: ShaderDoc.lavaVeins() ::
@@ -255,7 +264,7 @@ mod TestWgslDawn {
             case Err(e) => Some(("template", e))
             case Ok(_)  => None
         });
-        let surfaces = List.append(allKindsSpecs(), nonUniformBlurSpec() :: List.append(engineSpecs(), fromTemplates |> List.filterMap(Result.toOption)));
+        let surfaces = allKindsSpecs() ::: nonUniformBlurSpec() :: equalEdgeSpecs() ::: engineSpecs() ::: (fromTemplates |> List.filterMap(Result.toOption));
         let surfaceFails = surfaces |> List.map(s -> (s#name, surfaceErrors(gpu, s)));
         let materialFails = materialVariants() |> List.map(v -> {
             let (name, spec, glow, metal) = v;

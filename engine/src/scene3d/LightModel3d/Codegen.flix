@@ -93,7 +93,8 @@ pub mod LightModel3d.Codegen {
             else match t {
                 case Target.Flix => "${env#shadowFunction}(shadow, i, ${vec3InputCode(t, Vec3Input.Position, 0)}, ${vec3InputCode(t, Vec3Input.Position, 1)}, ${vec3InputCode(t, Vec3Input.Position, 2)})"
                 // GLSL の i はスポットの番号（Flix の i は並びの欄の位置）。spotShadow はその番号で uShadowSpot と比べる。
-                case _           => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
+                case Target.Glsl => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
+                case Target.Wgsl => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
             }
         case (Target.Flix, _) => scalarInputName(input)
         // WhyNot: 太陽の影の割合を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が先に求めて渡す（地図を引くのは木の外）。
@@ -282,17 +283,20 @@ pub mod LightModel3d.Codegen {
 
     def call1(t: Target, flixName: String, glslName: String, a: String): String = match t {
         case Target.Flix => "${flixName}(${a})"
-        case _           => "${glslName}(${a})"
+        case Target.Glsl => "${glslName}(${a})"
+        case Target.Wgsl => "${glslName}(${a})"
     }
 
     def maxCode(t: Target, a: String, b: String): String = match t {
         case Target.Flix => "Float64.max(${a}, ${b})"
-        case _           => "max(${a}, ${b})"
+        case Target.Glsl => "max(${a}, ${b})"
+        case Target.Wgsl => "max(${a}, ${b})"
     }
 
     def minCode(t: Target, a: String, b: String): String = match t {
         case Target.Flix => "Float64.min(${a}, ${b})"
-        case _           => "min(${a}, ${b})"
+        case Target.Glsl => "min(${a}, ${b})"
+        case Target.Wgsl => "min(${a}, ${b})"
     }
 
     def srgbCode(t: Target, toLinear: Bool, a: String): String = match (t, toLinear) {
@@ -309,6 +313,21 @@ pub mod LightModel3d.Codegen {
         case Target.Wgsl => "select(${b}, ${a}, ${c})"
     }
 
+    /// WGSL の select が、選ばない側の関数の呼び出し（影の PCF など）まで計算することになるか。GLSL の三項と Flix の if は選んだ側だけを計算する。
+    def selectComputesCall(t: Target, yes: String, no: String): Bool = match t {
+        case Target.Wgsl => hasCall(yes) or hasCall(no)
+        case Target.Glsl => false
+        case Target.Flix => false
+    }
+
+    /// 字に関数の呼び出し（名前の直後の開き括弧）があるか。
+    def hasCall(code: String): Bool =
+        let chars = String.toList(code);
+        List.zip(chars, List.drop(1, chars)) |> List.exists(p -> {
+            let (a, b) = p;
+            b == '(' and (Char.isLetter(a) or Char.isDigit(a) or a == '_')
+        })
+
     def condCode(t: Target, fresh: Ref[(String, Int32), r], env: Env, c: Cond): (List[Stmt], String) \ r = match c {
         case Cond.Greater(a, b) => binary(t, fresh, env, a, b, (x, y) -> "(${x} > ${y})")
         case Cond.AtLeast(a, b) => binary(t, fresh, env, a, b, (x, y) -> "(${x} >= ${y})")
@@ -317,7 +336,8 @@ pub mod LightModel3d.Codegen {
             let (sr, cr) = condCode(t, fresh, env, r);
             let op = match t {
                 case Target.Flix => "and"
-                case _           => "&&"
+                case Target.Glsl => "&&"
+                case Target.Wgsl => "&&"
             };
             // WhyNot: 右の文を左より前に流さない — 左が偽の時に右を計算しない約束が崩れる。右は文の要らない形だけを受ける。
             if (not List.isEmpty(sr)) bug!("LightModel3d: Cond.And の右に Let・文の要る Select は置けない")
@@ -349,7 +369,7 @@ pub mod LightModel3d.Codegen {
         let (sc, c) = cond;
         let (sy, y) = yes;
         let (sn, n) = no;
-        if (List.isEmpty(sy) and List.isEmpty(sn)) (sc, selectCode(t, c, y, n))
+        if (List.isEmpty(sy) and List.isEmpty(sn) and not selectComputesCall(t, y, n)) (sc, selectCode(t, c, y, n))
         else {
             let name = freshName(fresh, "t");
             (sc ::: Stmt.IfElse(c, name :: Nil, sy, y :: Nil, sn, n :: Nil) :: Nil, name)
@@ -367,7 +387,8 @@ pub mod LightModel3d.Codegen {
         case ScalarExpr.Min(a, b)     => binary(t, fresh, env, a, b, (x, y) -> minCode(t, x, y))
         case ScalarExpr.Pow(a, b)     => binary(t, fresh, env, a, b, (x, y) -> match t {
             case Target.Flix => "Float64.pow(base = ${x}, ${y})"
-            case _           => "pow(${x}, ${y})"
+            case Target.Glsl => "pow(${x}, ${y})"
+            case Target.Wgsl => "pow(${x}, ${y})"
         })
         case ScalarExpr.Sqrt(a) =>
             let (sa, ca) = scalarCode(t, fresh, env, a);
@@ -383,7 +404,8 @@ pub mod LightModel3d.Codegen {
             let (sa, ca) = scalarCode(t, fresh, env, a);
             (sa, match t {
                 case Target.Flix => "clamp01(${ca})"
-                case _           => "clamp(${ca}, 0.0, 1.0)"
+                case Target.Glsl => "clamp(${ca}, 0.0, 1.0)"
+                case Target.Wgsl => "clamp(${ca}, 0.0, 1.0)"
             })
         case ScalarExpr.Smoothstep(lo, hi, x) =>
             let (sl, cl) = scalarCode(t, fresh, env, lo);
@@ -485,7 +507,7 @@ pub mod LightModel3d.Codegen {
             let names = ("${base}X", "${base}Y", "${base}Z");
             let (nx, ny, nz) = names;
             // WhyNot: 文の無い両側を組（タプル）で選ばない — 画素ごとに組を 1 つ作ることになる。成分ごとに選べば作らない。
-            if (List.isEmpty(sa) and List.isEmpty(sb)) {
+            if (List.isEmpty(sa) and List.isEmpty(sb) and not selectComputesCall(t, ax + ay + az, bx + by + bz)) {
                 let cond = freshName(fresh, "c");
                 let pick = (n: String, x: String, y: String) -> Stmt.Bind(n, selectCode(t, cond, x, y));
                 (sc ::: Stmt.BindBool(cond, cc) :: pick(nx, ax, bx) :: pick(ny, ay, by) :: pick(nz, az, bz) :: Nil, names)

@@ -719,13 +719,13 @@ pub mod ShaderGen {
             case Some(shade) => ("metalRough = " + clampUnit2(tex, "(" + shadeExpr(0.0, shade, uv, env, mipTex) + ").xy") + ";") :: Nil
             case None        => Nil
         };
-        let eval = finishReads(vec4Decl(tex), List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: metalStmts));
+        let eval = finishReads(vec4BindingHead(tex), List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: metalStmts));
         let cutout = if (not readsTextures) None else {
             let level0 = Map.insert(level0ModeKey(), 0, tex);
             let alphaExpr = match spec#out {
                 case ShaderDoc.Out.Fill(f) => "return " + fieldExpr(f#alpha, uv, env, level0) + ";"
             };
-            Some(finishReads(vec4Decl(tex), List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, level0)), alphaExpr :: Nil)))
+            Some(finishReads(vec4BindingHead(tex), List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, level0)), alphaExpr :: Nil)))
         };
         { eval = eval, cutout = cutout }
 
@@ -860,7 +860,7 @@ pub mod ShaderGen {
     def mainStatements(spec: ShaderDoc.Spec, uv: String, baseEnv: Map[String, String], tex: Map[String, Int32]): List[String] =
         let rev = bindingStatements(spec#bindings, uv, baseEnv, tex);
         let out = outStmt(spec#cycleRate, spec#out, uv, bindingEnv(spec#bindings, baseEnv), tex);
-        finishReads(vec4Decl(tex), List.reverse(out :: rev))
+        finishReads(vec4BindingHead(tex), List.reverse(out :: rev))
 
     /// binding の宣言の文（逆順）。
     def bindingStatements(bindings: List[(String, ShaderDoc.Field)], uv: String, baseEnv: Map[String, String],
@@ -868,7 +868,7 @@ pub mod ShaderGen {
         let (rev, _) = List.foldLeft((acc, nf) -> {
             let (out, env) = acc;
             let (name, field) = nf;
-            let line = floatDecl(tex) + "sg_b_" + name + " = " + fieldExpr(field, uv, env, tex) + ";";
+            let line = floatBindingHead(tex) + "sg_b_" + name + " = " + fieldExpr(field, uv, env, tex) + ";";
             (line :: out, Map.insert(name, "sg_b_" + name, env))
         }, (Nil, baseEnv), bindings);
         rev
@@ -1000,7 +1000,7 @@ pub mod ShaderGen {
                         f(cycleRate) + " * uTime) * 2.0 - 1.0), 0.0, 1.0)";
                 // 先頭色から始め、隣り合う区切りごとに mix(..., 次の色, smoothstep(前,次,f)) を入れ子で重ねる
                 // （sg_gradient は作らず素の mix/smoothstep を直書き＝prelude を増やさない）。
-                gradientExpr(g#stops, factor)
+                gradientExpr(smoothstepName(tex), g#stops, factor)
             case ShaderDoc.Shade.Cosine(cs) =>
                 // t = field（cycleRate>0 なら uTime を足して位相を回す。clamp しない＝cos の周期で色が巡る）。
                 let t =
@@ -1018,7 +1018,7 @@ pub mod ShaderGen {
 
     /// stops を先頭色から入れ子 mix にする GLSL 式。区切りが 2 つなら
     /// mix(mix(c0, c1, smoothstep(s0,s1,f)), c2, smoothstep(s1,s2,f)) の形。
-    def gradientExpr(stops: List[(Float64, Color)], factor: String): String =
+    def gradientExpr(smooth: String, stops: List[(Float64, Color)], factor: String): String =
         match stops {
             case Nil => "vec3(0.0, 0.0, 0.0)"
             case (_, c0) :: rest =>
@@ -1027,7 +1027,7 @@ pub mod ShaderGen {
                 let (tails, _) = List.foldLeft((acc, sc) -> {
                     let (out, prevPos) = acc;
                     let (pos, col) = sc;
-                    let w = "smoothstep(" + f(prevPos) + ", " + f(pos) + ", " + factor + ")";
+                    let w = smooth + "(" + f(prevPos) + ", " + f(pos) + ", " + factor + ")";
                     ((", " + vec3Lit(col) + ", " + w + ")") :: out, pos)
                 }, (Nil, gradientFirstPos(stops)), rest);
                 joinParts(List.append(List.map(_ -> "mix(", rest),
@@ -1065,7 +1065,7 @@ pub mod ShaderGen {
                 "sg_fbmTile((" + uv + ") * " + f(b#scale) + ", vec2(" + f(b#period#x) + ", " +
                 f(b#period#y) + "), " + iLit(b#octaves) + ", " + fSeed(b#seed) + ")"
             case ShaderDoc.Field.Smoothstep(s) =>
-                "smoothstep(" + f(s#lo) + ", " + f(s#hi) + ", " + fieldExpr(s#of, uv, env, tex) + ")"
+                smoothstepName(tex) + "(" + f(s#lo) + ", " + f(s#hi) + ", " + fieldExpr(s#of, uv, env, tex) + ")"
             case ShaderDoc.Field.Scaled(s) =>
                 // inner の見る座標を factor 倍 + uTime*scroll で差し替える。
                 let uv2 = "((" + uv + ") * " + f(s#factor) + " + vec2(" +
@@ -1097,7 +1097,7 @@ pub mod ShaderGen {
                 "clamp(" + fieldExpr(bl#by, uv, env, tex) + ", 0.0, 1.0))"
             case ShaderDoc.Field.Disk(d) =>
                 // 中心からの距離が radius 以内で 1、radius→radius+feather で 0 へ soft fade。
-                "(1.0 - smoothstep(" + f(d#radius) + ", " + f(d#radius + d#feather) + ", " +
+                "(1.0 - " + smoothstepName(tex) + "(" + f(d#radius) + ", " + f(d#radius + d#feather) + ", " +
                 "length((" + uv + ") - vec2(" + f(d#cx) + ", " + f(d#cy) + "))))"
             case ShaderDoc.Field.Radial(rd) =>
                 // 中心からの生の距離（クランプしない — 呼び側の Smoothstep がカーブを決める）。
@@ -1222,7 +1222,7 @@ pub mod ShaderGen {
                     case ShaderDoc.TexChan.B => ".b"
                     case ShaderDoc.TexChan.A => ".a"
                 };
-                markRead("sg_blur(uTex${i}, " + texSecondArg(i, tex) + ", (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
+                markRead("sg_blur(uTex${i}, " + texSamplerOrFlipArg(i, tex) + ", (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
                     ") * (" + fieldExpr(bl#amount, uv, env, tex) + "), " + iLit(ShaderDoc.blurTaps(bl#taps)) + ")") + chan
             // 番号は texReads の正典順なので表に必ずある。無い場合の 0.0 は保険。
             // WhyNot: 寸法を uniform で渡さない — 縮んだ Pass に registry の design の寸法を入れる取り違えが起きうる。
@@ -1240,7 +1240,7 @@ pub mod ShaderGen {
     /// uTexN を uv で読む GLSL の呼び出し（2D の面は texture・3D の材質は段つきの sg_texMip・cutout の α は段 0 の textureLod）。
     def texReadCall(i: Int32, uv: String, tex: Map[String, Int32]): String =
         let flipped = "vec2((" + uv + ").x, mix((" + uv + ").y, 1.0 - (" + uv + ").y, uTexFlip${i}))";
-        if (Map.memberOf(mipModeKey(), tex)) "sg_texMip(uTex${i}, " + texSecondArg(i, tex) + ", uTexLevels${i}, (" + uv + "))"
+        if (Map.memberOf(mipModeKey(), tex)) "sg_texMip(uTex${i}, " + texSamplerOrFlipArg(i, tex) + ", uTexLevels${i}, (" + uv + "))"
         else if (isWgsl(tex)) "textureSampleLevel(uTex${i}, uTex${i}Sampler, (" + uv + "), 0.0)"
         else if (Map.memberOf(level0ModeKey(), tex)) "textureLod(uTex${i}, " + flipped + ", 0.0)"
         else "texture(uTex${i}, " + flipped + ")"
@@ -1254,14 +1254,19 @@ pub mod ShaderGen {
 
     def isWgsl(tex: Map[String, Int32]): Bool = Map.memberOf(wgslModeKey(), tex)
 
-    def floatDecl(tex: Map[String, Int32]): String = if (isWgsl(tex)) "let " else "float "
+    def floatBindingHead(tex: Map[String, Int32]): String = if (isWgsl(tex)) "let " else "float "
 
-    def vec4Decl(tex: Map[String, Int32]): String = if (isWgsl(tex)) "let " else "vec4 "
+    def vec4BindingHead(tex: Map[String, Int32]): String = if (isWgsl(tex)) "let " else "vec4 "
 
     def atan2Name(tex: Map[String, Int32]): String = if (isWgsl(tex)) "atan2" else "atan"
 
+    /// 端が定数の smoothstep の名前（WGSL は ShaderGen.Wgsl の sg_smoothstep）。
+    // WhyNot: WGSL で組み込みの smoothstep を直に書かない — 端が等しい（Disk の feather 0・同じ位置の stop）と、引数が全部定数の時に
+    //   シェーダーを作る所で誤りになりうる。sg_smoothstep は CPU（ShaderEval）と同じく端が等しい時に x < lo で 0・ほかは 1 を返す。
+    def smoothstepName(tex: Map[String, Int32]): String = if (isWgsl(tex)) "sg_smoothstep" else "smoothstep"
+
     /// sg_blur・sg_texMip の 2 つ目の引数（GLSL は上下を返す uTexFlipN・WGSL は sampler）。
-    def texSecondArg(i: Int32, tex: Map[String, Int32]): String = if (isWgsl(tex)) "uTex${i}Sampler" else "uTexFlip${i}"
+    def texSamplerOrFlipArg(i: Int32, tex: Map[String, Int32]): String = if (isWgsl(tex)) "uTex${i}Sampler" else "uTexFlip${i}"
 
     /// 寸法を float で読む式の頭（閉じ括弧は呼ぶ側）。
     def texSizeCall(i: Int32, tex: Map[String, Int32]): String =
@@ -1324,7 +1329,7 @@ pub mod ShaderGen {
     def vec3Lit(c: Color): String =
         "vec3(" + f(c#r) + ", " + f(c#g) + ", " + f(c#b) + ")"
 
-    /// GLSL の float リテラル（決定論のため必ず小数点を含める）。
+    /// GLSL と WGSL の float リテラル（決定論のため必ず小数点を含める）。
     def f(x: Float64): String =
         let s = "${x}";
         if (String.contains({ substr = "." }, s) or String.contains({ substr = "E" }, s)) s else s + ".0"
