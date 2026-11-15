@@ -51,20 +51,44 @@ pub mod WebLayer {
 
     /// 2D のゲームの入口。3D の描き手を持たないので、Scene3d の場面は描かず初回に 1 回知らせる。
     // WhyNot: 2D の入口を withProject3d に寄せて 1 本にしない — ここから Render3d へ届くと、3D を使わないゲームの wasm まで太る。
+    /// 頁が ?backend=webgpu で開かれていれば WebGPU で描く（V1 は 2D だけ。使えなければ理由を console に出して WebGL2 で描く）。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
-        withProjectUsing(rootDir, (_, _) -> makeWarningRenderer(), f)
+        let config = loadBootConfigOrBug(rootDir);
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(config, f)
+        else withWeb((_, _) -> makeWarningRenderer(), config, f)
 
-    /// Scene3d を描くゲームの入口。
+    /// Scene3d を描くゲームの入口。?backend=webgpu でも WebGL2 で描き、理由を console に出す（V1 の WebGPU は 3D を描かない）。
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
-        withProjectUsing(rootDir, (gl, config) -> Render3d.makeRenderer(gl, config, Render3d.DrawMode.Instanced), f)
+        let config = loadBootConfigOrBug(rootDir);
+        let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
+        if (Browser.backendRequest() == "webgpu") withGlAfter("3D の入口（WebLayer.withProject3d）は WebGL2 で描く", makeRenderer, config, f)
+        else withWeb(makeRenderer, config, f)
 
-    /// `rootDir` 直下の project.json を読んで withWeb を起動する。読めなければ止める（LwjglLayer.withProject と同じ）。
-    def withProjectUsing(rootDir: String, makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
-                         f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
+    /// `rootDir` 直下の project.json を読んで起動に使う設定にする。読めなければ止める（LwjglLayer.withProject と同じ）。
+    def loadBootConfigOrBug(rootDir: String): GameEngine.EngineConfig \ IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
-            case Ok(proj) => withWeb(makeRenderer, bootConfigOf(proj), f)
+            case Ok(proj) => bootConfigOf(proj)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
         }
+
+    /// WebGPU で描く。webgpu の文脈を取る前に落ちたら、理由を console に出して WebGL2 で描く。
+    @DontInline
+    def withWebGpuOrGl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
+        match WebLayer.Internal.WebGpuLayer.withWeb(config, f) {
+            case Ok(result) => result
+            case Err(why)   => withGlAfter(why, (_, _) -> makeWarningRenderer(), config, f)
+        }
+
+    /// WebGPU を使えなかった理由を出して WebGL2 の文脈を取り、GL で描く。canvas が既に webgpu の文脈を持っていれば、頁が開き直すのを待つ。
+    @DontInline
+    def withGlAfter(reason: String, makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
+                    config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
+        if (Browser.initWebGl2(reason)) withWeb(makeRenderer, config, f) else waitForReload()
+
+    /// 頁が開き直すまで、描き替えのたびに手を返して待つ（戻らない）。
+    def waitForReload(): a \ IO =
+        discard AnimationFrame.waitFrame();
+        waitForReload()
 
     /// 場面を描かない描き手。場面が来たら初回に 1 回だけ、withProject3d へ替えるよう知らせる。
     def makeWarningRenderer(): Scene3dRenderer.Renderer \ IO =
@@ -112,15 +136,7 @@ pub mod WebLayer {
         RenderPaint.addTextures(RenderSplash.install(gl), paint);
         let design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) };
         let framebufferSize = () -> (Browser.canvasWidth(), Browser.canvasHeight());
-        let state = {
-            design = design, maxDeltaTime = config#maxDeltaTime,
-            looping = Ref.fresh(Static, false), closeRequested = Ref.fresh(Static, false),
-            lastDt = Ref.fresh(Static, 1.0 / tickRate()), fullscreenAsked = Ref.fresh(Static, FullscreenAsk.NotAsked),
-            cursor = Ref.fresh(Static, GameEngine.Cursor.Default), cursorVisible = Ref.fresh(Static, true),
-            yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty()),
-            budget = Ref.fresh(Static, initialBudget()), spentMs = Ref.fresh(Static, 0.0), pendingTextures = Ref.fresh(Static, Nil),
-            pendingSounds = Ref.fresh(Static, Map.empty())
-        };
+        let state = freshState(config, design);
         let fonts = RenderPaint.loadAssets(gl, paint, WebAssets.loader(), config, showProgress(state));
         Ref.put(config#textureManifest |> List.filter(e -> Deferred.isDeferred(e#path) and Deferred.state(e#path) != "loaded"), state#pendingTextures);
         let onPoll = () -> { registerArrivedTextures(gl, paint, state); playArrivedSounds(state) };
@@ -162,6 +178,16 @@ pub mod WebLayer {
         budget = Ref[LoadProgress.DecodeBudget, Static], spentMs = Ref[Float64, Static], pendingTextures = Ref[List[RenderAsset.TextureEntry], Static],
         pendingSounds = Ref[Map[String, LoadProgress.Deferred.PendingSound], Static]
     }
+
+    /// 起動の時の State（WebGL2 と WebGPU の頁で同じ物）。
+    def freshState(config: GameEngine.EngineConfig, design: Vec2.Vec2): State \ IO =
+        { design = design, maxDeltaTime = config#maxDeltaTime,
+          looping = Ref.fresh(Static, false), closeRequested = Ref.fresh(Static, false),
+          lastDt = Ref.fresh(Static, 1.0 / tickRate()), fullscreenAsked = Ref.fresh(Static, FullscreenAsk.NotAsked),
+          cursor = Ref.fresh(Static, GameEngine.Cursor.Default), cursorVisible = Ref.fresh(Static, true),
+          yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty()),
+          budget = Ref.fresh(Static, initialBudget()), spentMs = Ref.fresh(Static, 0.0), pendingTextures = Ref.fresh(Static, Nil),
+          pendingSounds = Ref.fresh(Static, Map.empty()) }
 
     /// 最初の setBudget より前の予算（App.withDecodeBudget の既定と同じ）。
     // WhyNot: 部屋を解く長さ（100 ms 前後）にしない — 予算を渡さないゲームでは文字送りの間も毎コマ使われ、届いた絵が重なったコマで止まりが見える。1 本の道は必ず登録するので遅れは出ない。

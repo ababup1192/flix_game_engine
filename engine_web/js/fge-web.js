@@ -99,19 +99,28 @@ var fgeReadFramebuffer = null;
 function fgeReadTextureArgb(texture, w, h, argb) {
   if (!fgeReadGlTextureArgb(fgeH[texture], w, h, argb)) console.warn("[fge] テクスチャ " + texture + " を読み戻せない（FBO が不完全）— 透明な黒で続ける");
 }
-function fgeReadGlTextureArgb(texture, w, h, argb) {
-  if (fgeReadFramebuffer === null) fgeReadFramebuffer = fgeGl.createFramebuffer();
+// gl を省くと canvas の文脈（fgeGl）。読み戻しの FBO は文脈ごとに持つ（別の文脈の物は使えない）。
+function fgeReadGlTextureArgb(texture, w, h, argb, gl) {
+  gl = gl || fgeGl;
+  var readFramebuffer;
+  if (gl === fgeGl) {
+    if (fgeReadFramebuffer === null) fgeReadFramebuffer = gl.createFramebuffer();
+    readFramebuffer = fgeReadFramebuffer;
+  } else {
+    if (fgeDecodeReadFramebuffer === null) fgeDecodeReadFramebuffer = gl.createFramebuffer();
+    readFramebuffer = fgeDecodeReadFramebuffer;
+  }
   var n = w * h;
   var bytes = fgeArgbBytes(n).subarray(0, n * 4);
   // WhyNot: FRAMEBUFFER へ付けない — 描画の途中で呼ばれるので、描き先まで替わる。読む側の READ_FRAMEBUFFER だけを替えて戻す。
-  var before = fgeGl.getParameter(fgeGl.READ_FRAMEBUFFER_BINDING);
-  fgeGl.bindFramebuffer(fgeGl.READ_FRAMEBUFFER, fgeReadFramebuffer);
-  fgeGl.framebufferTexture2D(fgeGl.READ_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, texture, 0);
+  var before = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, readFramebuffer);
+  gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
   // WhyNot: 確かめずに読まない — 不完全な FBO の readPixels は誤りだけを残し、使い回す置き場の前の絵が成功として返る。
-  var complete = fgeGl.checkFramebufferStatus(fgeGl.READ_FRAMEBUFFER) === fgeGl.FRAMEBUFFER_COMPLETE;
-  if (complete) fgeGl.readPixels(0, 0, w, h, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bytes);
-  fgeGl.framebufferTexture2D(fgeGl.READ_FRAMEBUFFER, fgeGl.COLOR_ATTACHMENT0, fgeGl.TEXTURE_2D, null, 0);
-  fgeGl.bindFramebuffer(fgeGl.READ_FRAMEBUFFER, before);
+  var complete = gl.checkFramebufferStatus(gl.READ_FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  if (complete) gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+  gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, before);
   if (!complete) return false;
   for (var i = 0; i < n; i++) {
     var o = i * 4;
@@ -156,17 +165,31 @@ function fgeCopyTextureLevel0(source, w, h) {
 }
 
 function fgeDecodeFailed(why) { return { error: "絵を解けない: " + why, width: 0, height: 0, argb: null }; }
-function fgeBitmapArgb(bitmap) {
+// 絵を解く WebGL2 の文脈。canvas の文脈（fgeGl）が無い時（WebGPU で描く頁）は、隠した OffscreenCanvas の webgl2 を初めて要った時に作る。
+// WhyNot: WebGPU で ImageBitmap を ARGB へ解かない — 読み戻しの mapAsync を待つ間にゲームのループへ手が戻り、解く道（ゲームの中で読んだバイト）が止まる形のまま書けない。
+var fgeDecodeGlContext = null;
+var fgeDecodeReadFramebuffer = null;
+function fgeDecodeGl() {
+  if (fgeGl) return fgeGl;
+  if (fgeDecodeGlContext === null) {
+    fgeDecodeGlContext = new OffscreenCanvas(1, 1).getContext("webgl2", { premultipliedAlpha: false });
+    if (!fgeDecodeGlContext) throw new Error("絵を解く WebGL2 の文脈を取れない");
+    fgeDecodeGlContext.pixelStorei(fgeDecodeGlContext.UNPACK_COLORSPACE_CONVERSION_WEBGL, fgeDecodeGlContext.NONE);
+  }
+  return fgeDecodeGlContext;
+}
+function fgeBitmapArgb(bitmap, gl) {
+  gl = gl || fgeDecodeGl();
   var w = bitmap.width, h = bitmap.height;
-  var before = fgeGl.getParameter(fgeGl.TEXTURE_BINDING_2D);
-  var texture = fgeGl.createTexture();
-  fgeGl.bindTexture(fgeGl.TEXTURE_2D, texture);
-  fgeGl.pixelStorei(fgeGl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-  fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bitmap);
+  var before = gl.getParameter(gl.TEXTURE_BINDING_2D);
+  var texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
   var argb = new Int32Array(w * h);
-  var read = fgeReadGlTextureArgb(texture, w, h, argb);
-  fgeGl.bindTexture(fgeGl.TEXTURE_2D, before);
-  fgeGl.deleteTexture(texture);
+  var read = fgeReadGlTextureArgb(texture, w, h, argb, gl);
+  gl.bindTexture(gl.TEXTURE_2D, before);
+  gl.deleteTexture(texture);
   return read ? { error: "", width: w, height: h, argb: argb } : fgeDecodeFailed("読み戻しの FBO が不完全");
 }
 
@@ -219,6 +242,87 @@ function fgeFrameDrawn() {
                renderer: info ? fgeGl.getParameter(info.UNMASKED_RENDERER_WEBGL) : fgeGl.getParameter(fgeGl.VERSION) };
   window.fgeCapture = function () { return shot; };
   window.fgeCaptureReady = true;
+}
+
+// WebGPU で描く頁の ?capture=<n>: n コマ目の画素は wasm が中間の texture から読み、ここへ置く（下の行から・fgeFrameDrawn と同じ形）。
+// WhyNot: 中間の texture の alpha をそのまま渡さない — canvas は opaque（WebGL2 の alpha: false と同じ）で、見える絵の alpha はいつも 1。
+function fgePublishCapture(rgba, w, h, renderer) {
+  for (var a = 3; a < rgba.length; a += 4) rgba[a] = 255;
+  var text = "";
+  for (var i = 0; i < rgba.length; i += 8192) text += String.fromCharCode.apply(null, rgba.subarray(i, i + 8192));
+  var shot = { width: w, height: h, rgba: btoa(text), origin: "bottom-left", renderer: renderer };
+  window.fgeCapture = function () { return shot; };
+  window.fgeCaptureReady = true;
+}
+
+// ── 描き手の選び分け（?backend=webgpu）──
+// WhyNot: navigator.gpu の無い頁で WebGPU を頼まない — wasm は WebGPU を知らないブラウザでも読めるが、頼めば GL へ戻すまでに一手間かかる。
+var fgeBackendFallbackKey = "fge-backend-fallback";
+var fgeWantWebGpu = fgeQueryParam("backend") === "webgpu" && !!navigator.gpu;
+var fgeWebGpuTaken = false;
+if (fgeQueryParam("backend") === "webgpu" && !navigator.gpu) {
+  console.warn("[backend] WebGPU を使えない: このブラウザには navigator.gpu が無い — WebGL2 で起動する");
+}
+(function () {
+  try {
+    var why = sessionStorage.getItem(fgeBackendFallbackKey);
+    if (why) { sessionStorage.removeItem(fgeBackendFallbackKey); console.warn("[backend] 前の頁で WebGPU を使えなかった: " + why + " — WebGL2 で開き直した"); }
+  } catch (e) { /* sessionStorage を使えない頁 */ }
+})();
+
+// canvas の WebGL2 の文脈を取る（GL の道の頭）。
+function fgeInitWebGl2() {
+  // alpha を持たない（ページの背景が透けない）・MSAA を切る（ドット絵がにじまない）・ステンシルを取る（多角形のマスク）。
+  fgeGl = fgeCanvas.getContext("webgl2", { alpha: false, antialias: false, stencil: true, depth: true, premultipliedAlpha: false, preserveDrawingBuffer: false });
+  if (!fgeGl) throw new Error("このブラウザは WebGL2 を使えない");
+  fgeGl.getExtension("EXT_color_buffer_float");
+  fgeGl.pixelStorei(fgeGl.UNPACK_COLORSPACE_CONVERSION_WEBGL, fgeGl.NONE);
+  fgeGl = fgeCheckedGl(fgeGl);
+}
+
+// WebGPU を使えなかった時: 理由を console に出して WebGL2 の文脈を取る。canvas が既に webgpu の文脈を持っていれば同じ canvas から WebGL2 は取れないので、
+// ?backend を外した URL で開き直し（理由は sessionStorage に残して開き直した頁でも出す）、偽を返す。
+// WhyNot: canvas を作り直して続けない — 入力と大きさの購読を全部付け直すことになる。
+function fgeFallbackToWebGl2(reason) {
+  console.warn("[backend] WebGPU を使えない: " + reason + " — WebGL2 で起動する");
+  if (window.fgeWebGpuTaken) {
+    try { sessionStorage.setItem(fgeBackendFallbackKey, reason); } catch (e) { /* sessionStorage を使えない頁 */ }
+    var url = new URL(location.href);
+    url.searchParams.delete("backend");
+    location.replace(url.toString());
+    return false;
+  }
+  fgeInitWebGl2();
+  return true;
+}
+
+// 起動の前に解いた ImageBitmap を copyExternalImageToTexture で GPU へ写し、読み戻して dst へ RGBA（上の行から）で置く。
+// WhyNot: GPUTextureUsage などの大域の名前を書かない — WebGPU の無いブラウザで js を読む時に落ちないよう、数で書く。
+async function fgeCopyImageBitmap(device, path, dst) {
+  var bmp = fgeImages.get(fgeNormPath(path));
+  if (!bmp) throw new Error("ImageBitmap が無い");
+  var w = bmp.width, h = bmp.height;
+  var texture = device.createTexture({ size: [w, h], format: "rgba8unorm", usage: 0x01 | 0x02 | 0x10 });
+  device.queue.copyExternalImageToTexture({ source: bmp }, { texture: texture, premultipliedAlpha: false }, [w, h]);
+  var row = Math.ceil(w * 4 / 256) * 256;
+  var buffer = device.createBuffer({ size: row * h, usage: 0x0008 | 0x0001 });
+  var encoder = device.createCommandEncoder();
+  encoder.copyTextureToBuffer({ texture: texture }, { buffer: buffer, bytesPerRow: row }, [w, h]);
+  device.queue.submit([encoder.finish()]);
+  await buffer.mapAsync(1);
+  var src = new Uint8Array(buffer.getMappedRange());
+  for (var y = 0; y < h; y++) dst.set(src.subarray(y * row, y * row + w * 4), y * w * 4);
+  buffer.unmap();
+  buffer.destroy();
+  texture.destroy();
+}
+
+// 人の決定（device lost）: WebGL の文脈を失った時と同じく、戻すのは頁の読み直しとセーブから。
+function fgeWatchDeviceLost(device) {
+  device.lost.then(function (info) {
+    if (info && info.reason === "destroyed") return;
+    fgeError("画面の描き先（WebGPU）が失われました。頁を読み直すと、最後のセーブから続けられます。");
+  });
 }
 
 function fgeResizeCanvas() {
@@ -1492,12 +1596,8 @@ async function fgeBoot() {
   fgeResizeCanvas();
   new ResizeObserver(fgeResizeCanvas).observe(fgeCanvas);
   window.addEventListener("resize", fgeResizeCanvas);
-  // alpha を持たない（ページの背景が透けない）・MSAA を切る（ドット絵がにじまない）・ステンシルを取る（多角形のマスク）。
-  fgeGl = fgeCanvas.getContext("webgl2", { alpha: false, antialias: false, stencil: true, depth: true, premultipliedAlpha: false, preserveDrawingBuffer: false });
-  if (!fgeGl) throw new Error("このブラウザは WebGL2 を使えない");
-  fgeGl.getExtension("EXT_color_buffer_float");
-  fgeGl.pixelStorei(fgeGl.UNPACK_COLORSPACE_CONVERSION_WEBGL, fgeGl.NONE);
-  fgeGl = fgeCheckedGl(fgeGl);
+  // WebGPU で描く頁は文脈を取らずに main を呼ぶ（main が準備を全部済ませてから webgpu の文脈を取る。準備で落ちれば Browser.initWebGl2 が取る）。
+  if (!fgeWantWebGpu) fgeInitWebGl2();
   fgeWireInput();
   fgeWireMouseCapture();
   var teavm = await wasmLoad;

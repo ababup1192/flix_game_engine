@@ -116,4 +116,25 @@ public final class Browser {
      */
     @JSBody(script = "fgeBeginFrame();")
     public static native void beginFrame();
+
+    /** 頁が WebGPU で描くことを頼まれているか（?backend=webgpu で、navigator.gpu もある時だけ "webgpu"・ほかは空）。頼まれた時、頁は WebGL2 の文脈を取らずに main を呼ぶ。 */
+    @JSBody(script = "return fgeWantWebGpu ? 'webgpu' : '';")
+    public static native String backendRequest();
+
+    /**
+     * WebGPU を使えなかった理由を console に出し、canvas の WebGL2 の文脈を取る（GL の道へ入る前に呼ぶ）。取れたら真。
+     * canvas が既に webgpu の文脈を持つ時は同じ canvas から WebGL2 を取れないので、?backend を外した URL で頁を開き直して偽を返す。
+     */
+    @JSBody(params = {"reason"}, script = "return fgeFallbackToWebGl2(reason);")
+    public static native boolean initWebGl2(String reason);
+
+    /** ?capture=<n> の画素を置く（rgba は width × height × 4 バイト・下の行から。renderer は描き手の名前）。web-capture が読む。 */
+    public static void publishCapture(java.nio.ByteBuffer rgba, int width, int height, String renderer) {
+        java.nio.ByteBuffer whole = rgba.duplicate();
+        whole.position(0).limit(width * height * 4);
+        putCapture(org.teavm.jso.typedarrays.Uint8Array.fromJavaBuffer(whole), width, height, renderer);
+    }
+
+    @JSBody(params = {"rgba", "width", "height", "renderer"}, script = "fgePublishCapture(rgba, width, height, renderer);")
+    private static native void putCapture(org.teavm.jso.typedarrays.Uint8Array rgba, int width, int height, String renderer);
 }

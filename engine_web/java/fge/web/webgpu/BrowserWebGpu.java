@@ -546,6 +546,33 @@ public final class BrowserWebGpu implements WebGpu {
     @JSBody(params = {"id"}, script =
         "var c = document.getElementById(id);"
         + "if (!c) { c = document.createElement('canvas'); c.id = id; document.body.appendChild(c); }"
-        + "return c.getContext('webgpu');")
+        + "var ctx = c.getContext('webgpu'); if (ctx) window.fgeWebGpuTaken = true; return ctx;")
     private static native GPUCanvasContext canvasContext(String id);
+
+    // ── 頁の素材と知らせ ──
+
+    /**
+     * 頁が起動の前に解いておいた道の絵（ImageBitmap）を、copyExternalImageToTexture（premultipliedAlpha: false）で GPU へ写してから読み戻し、
+     * dst へ RGBA（1 画素 4 バイト・上の行から）で置く（読めるまで待つ）。dst は direct で幅 × 高さ × 4 バイト以上。絵が無ければ IllegalStateException。
+     * WhyNot: 写した texture をそのまま描く絵にしない — 描く側（WebGpuPaint）の絵の表に載せる口が無く、上げる口は画素を受ける形だけ。
+     */
+    public void copyImageBitmap(String path, ByteBuffer dst) {
+        if (!dst.isDirect()) throw new IllegalArgumentException("copyImageBitmap の dst は direct の ByteBuffer");
+        ByteBuffer whole = dst.duplicate();
+        whole.position(0).limit(whole.capacity());
+        try {
+            copyBitmap(device, path, Uint8Array.fromJavaBuffer(whole)).await();
+        } catch (Throwable e) {
+            throw new IllegalStateException("絵 " + path + " を写せない: " + e);
+        }
+    }
+
+    @JSBody(params = {"device", "path", "dst"}, script = "return fgeCopyImageBitmap(device, path, dst);")
+    private static native JSPromise<JSUndefined> copyBitmap(GPUDevice device, String path, Uint8Array dst);
+
+    /** device を失ったら、頁に WebGL の時と同じ文で読み直しを案内する。 */
+    public void onDeviceLost() { watchLost(device); }
+
+    @JSBody(params = {"device"}, script = "fgeWatchDeviceLost(device);")
+    private static native void watchLost(GPUDevice device);
 }
