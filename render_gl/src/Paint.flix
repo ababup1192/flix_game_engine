@@ -13,6 +13,7 @@ mod RenderPaint {
     import java.lang.System
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.RenderList
+    use RenderPaint.Internal.TextureTable
 
     /// 1 コマの描く命令（画面へのコマ。リサイズで描き直す時・注釈のスクショも同じ物を使う）。
     pub type alias Frame = {
@@ -498,16 +499,7 @@ mod RenderPaint {
         // 起動画面の分（組み込みフォント・ロゴ）を残したままゲームのテクスチャを足す。
         addTextures(registry, paint);
 
-        // 組み込みの放射テクスチャ（Render.lightAt / darkAt が引く）。ゲームの manifest には
-        // 載らない名前なので、ここで足さないと「アセット配線をしたゲームだけ光が出る」に
-        // なってしまう — どのゲームでも配線ゼロで使えるよう起動時に必ず上げる。
-        let radialSide = RadialBuiltin.size();
-        let radialLight = RenderTexture.loadTextureFromPixels(gl, radialSide, radialSide,
-            RadialBuiltin.lightPixels());
-        let radialDark = RenderTexture.loadTextureFromPixels(gl, radialSide, radialSide,
-            RadialBuiltin.darkPixels());
-        putTexture(RadialBuiltin.lightName(), radialLight, paint);
-        putTexture(RadialBuiltin.darkName(), radialDark, paint);
+        TextureTable.putRadialBuiltins(glUploads(gl), textureTables(paint));
 
         { atlases = fontAtlasesRef, grow = loaded#grow,
           missing = Ref.fresh(Static, Set.empty()) }
@@ -552,46 +544,24 @@ mod RenderPaint {
 
     /// 1 枚を名前で置く（同じ名前は置き換える）。
     pub def putTexture(name: String, info: RenderAsset.TextureInfo, paint: Paint): Unit \ IO =
-        Ref.put(Map.insert(name, info, Ref.get(paint#registryRef)), paint#registryRef)
+        TextureTable.putTexture(textureTables(paint), name, info)
 
-    /// Game.ensureTexture の中身。key が前と同じなら何もしない（毎フレーム呼ばれる前提の関数）。
+    /// Game.ensureTexture の中身。key が前と同じなら何もしない（毎フレーム呼ばれる前提の関数。決まりは TextureTable.ensureTexture）。
     pub def ensureTexture(gl: GlContext, paint: Paint, name: String, key: String, width: Int32, height: Int32,
                           argb: Vector[Int32]): Unit \ IO =
-        let registryRef = paint#registryRef;
-        let textureKeyRef = paint#textureKeyRef;
-        if (Map.get(name, Ref.get(textureKeyRef)) == Some(key)) ()
-        else {
-            noteDiagnostics(paint, d -> { textureUploads = name :: d#textureUploads | d });
-            let prev = Map.get(name, Ref.get(registryRef));
-            let sameSize = Option.exists(info ->
-                info#width == Int32.toFloat64(width)
-                    and info#height == Int32.toFloat64(height), prev);
-            // 辺長が同じなら画素だけ差し替える（GL ハンドルを作り直さない）。
-            // 名前の取り違え避け: マニフェストで読んだ絵と同じ名前だと、辺長が同じ
-            // ときに元の絵の中身を上書きしてしまう。key を持たない名前 = 生成した
-            // アトラスではないので、そこへは書かない。
-            let taken = not Option.isEmpty(prev)
-                and Option.isEmpty(Map.get(name, Ref.get(textureKeyRef)));
-            if (taken) {
-                println("[ensureTexture] 名前 '${name}' はすでに別の絵が使っています（上書きしません）")
-            } else {
-                let info = match prev {
-                    case Some(old) =>
-                        if (sameSize) {
-                            RenderTexture.updateTexturePixels(gl, old, width, height, argb);
-                            old
-                        } else {
-                            // 辺長が変わったので作り直す。古い方は捨てる（漏らすと作り直す
-                            // たびに GPU のメモリが増え続ける）。
-                            RenderTexture.deleteTexture(gl, old);
-                            RenderTexture.loadTextureFromPixels(gl, width, height, argb)
-                        }
-                    case None => RenderTexture.loadTextureFromPixels(gl, width, height, argb)
-                };
-                Ref.put(Map.insert(name, info, Ref.get(registryRef)), registryRef);
-                Ref.put(Map.insert(name, key, Ref.get(textureKeyRef)), textureKeyRef)
-            }
-        }
+        TextureTable.ensureTexture(glUploads(gl), textureTables(paint),
+                                   () -> noteDiagnostics(paint, d -> { textureUploads = name :: d#textureUploads | d }),
+                                   name, key, width, height, argb)
+
+    /// GL で絵を上げる関数の組。
+    def glUploads(gl: GlContext): TextureTable.Uploads =
+        { createArgb = (width, height, argb) -> RenderTexture.loadTextureFromPixels(gl, width, height, argb),
+          writeArgb = (info, width, height, argb) -> RenderTexture.updateTexturePixels(gl, info, width, height, argb),
+          drop = info -> RenderTexture.deleteTexture(gl, info) }
+
+    /// 絵の CPU の側の表。
+    def textureTables(paint: Paint): TextureTable.Tables =
+        { registryRef = paint#registryRef, textureKeyRef = paint#textureKeyRef }
 
     // ── タイル層 ──
 
