@@ -1,6 +1,30 @@
 <!doctype html>
 <html lang="ja">
 <head>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  if (!q.has("hud")) return;
+  var lines = [], fps = "", d = null;
+  function render() { if (d) d.textContent = "URL: " + (q.get("backend") === "webgpu" ? "webgpu" : "gl") + "  " + fps + (lines.length ? "\n" + lines.join("\n") : ""); }
+  ["log", "warn", "info"].forEach(function (k) {
+    var o = console[k];
+    console[k] = function () {
+      try { var s = Array.prototype.join.call(arguments, " "); if (s.indexOf("[backend]") >= 0) { lines.push(s.slice(0, 140)); render(); } } catch (e) {}
+      return o.apply(console, arguments);
+    };
+  });
+  document.addEventListener("DOMContentLoaded", function () {
+    d = document.createElement("div");
+    d.style.cssText = "position:fixed;left:4px;top:4px;z-index:40;font:11px/1.3 monospace;color:#7f7;background:rgba(0,0,0,.65);padding:2px 5px;pointer-events:none;white-space:pre-wrap;max-width:96vw";
+    document.body.appendChild(d); render();
+  });
+  var n = 0, t0 = performance.now();
+  function tick(t) { n++; if (t - t0 >= 1000) { fps = (n * 1000 / (t - t0)).toFixed(1) + " fps"; n = 0; t0 = t; render(); } requestAnimationFrame(tick); }
+  requestAnimationFrame(tick);
+})();
+</script>
+
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>game</title>
@@ -14,10 +38,40 @@
   #fge-canvas { position: fixed; left: env(safe-area-inset-left); top: 0;
                 width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)); height: 100dvh; display: block; outline: none; }
   .fge-layer { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
-  #fge-boot { background: #000; }
-  #fge-track { width: min(60vw, 360px); height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
-  #fge-bar { width: 0; height: 100%; background: #ddd; }
-  #fge-start { font-size: 18px; }
+  /* ── 起動画面（絵は fge-web.js が #fge-splash に描く。色はデスクトップの Splash.flix と同じ）── */
+  #fge-boot { background: #0b0e12; overflow: hidden; }
+  #fge-splash { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #fge-start { position: absolute; left: 0; right: 0; top: 70%; display: flex; flex-direction: column; align-items: center;
+               transform: translateY(-50%); color: #fff; font-size: 18px; font-weight: 600; letter-spacing: .08em;
+               pointer-events: none; transition: opacity .2s ease-out; }
+  #fge-start.fge-leaving { opacity: 0; }
+  .fge-prompt { animation: fge-breathe 1.6s ease-in-out infinite; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); }
+  .fge-hint { position: relative; width: 3em; height: 3em; margin-bottom: .5em; }
+  .fge-hand { position: absolute; inset: 0; width: 100%; height: 100%; fill: #fff; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .5));
+              transform-origin: 48% 25%; animation: fge-press 1.6s infinite; }
+  /* 輪の真ん中は指先（手の絵の 24 マスの (11.5, 6)）。 */
+  .fge-ring { position: absolute; left: 48%; top: 25%; width: 1.6em; height: 1.6em; margin: -.8em 0 0 -.8em; border-radius: 50%;
+              border: 2px solid rgba(255, 255, 255, .85); box-sizing: border-box; opacity: 0; animation: fge-ring 1.6s ease-out infinite; }
+  .fge-ring + .fge-ring { animation-delay: .2s; }
+  /* 1.6 秒の 1 回: 1.0 秒まで止まり、120ms で押し込み、200ms で行き過ぎながら戻る。輪は押し切った所から広がって消える。 */
+  @keyframes fge-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @keyframes fge-press {
+    0%, 62.5% { transform: translateY(0) scale(1); animation-timing-function: ease-in; }
+    70% { transform: translateY(8%) scale(.86); animation-timing-function: cubic-bezier(.34, 1.8, .64, 1); }
+    82.5%, 100% { transform: translateY(0) scale(1); }
+  }
+  @keyframes fge-ring {
+    0%, 70% { transform: scale(.35); opacity: 0; }
+    71% { transform: scale(.35); opacity: .9; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+  .fge-ripple { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, .22); pointer-events: none;
+                transform: scale(0); animation: fge-ripple .3s cubic-bezier(.4, 0, .2, 1) forwards; }
+  @keyframes fge-ripple { 0% { transform: scale(0); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .fge-prompt { animation: none; }
+    .fge-hint, .fge-ripple { display: none; }
+  }
   #fge-end { background: rgba(0, 0, 0, .85); }
   #fge-end button, #fge-rotate button { font: inherit; font-size: 16px; padding: 10px 24px; }
   #fge-error { position: fixed; left: 8px; right: 8px; bottom: 8px; padding: 8px; background: #400; color: #fdd;
@@ -85,9 +139,14 @@
 <canvas id="fge-canvas" tabindex="0"></canvas>
 <div id="fge-pad"></div>
 <div id="fge-boot" class="fge-layer">
-  <div id="fge-phase">loading</div>
-  <div id="fge-track"><div id="fge-bar"></div></div>
-  <div id="fge-start" style="display: none">クリックかキーで始める</div>
+  <canvas id="fge-splash"></canvas>
+  <div id="fge-start" style="display: none">
+    <div class="fge-hint" aria-hidden="true">
+      <span class="fge-ring"></span><span class="fge-ring"></span>
+      <svg class="fge-hand" viewBox="0 0 24 24"><path d="M18.84 15.87l-4.54-2.26c-.17-.07-.35-.11-.54-.11H13v-6c0-.83-.67-1.5-1.5-1.5S10 6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 0-.62-.38-1.16-.91-1.38z"/></svg>
+    </div>
+    <div id="fge-prompt" class="fge-prompt">Tap to start</div>
+  </div>
 </div>
 <div id="fge-end" class="fge-layer" style="display: none">
   <div>おわり</div>
@@ -99,7 +158,27 @@
   <button type="button" onclick="document.body.classList.add('fge-rotate-ok')">このまま遊ぶ</button>
 </div>
 <div id="fge-error" style="display: none"></div>
-<script src="wasm-gc-runtime.js?v=72cd9fb4e20e"></script>
-<script src="fge-web.js?v=72cd9fb4e20e"></script>
+<script>
+(function () {
+  var baked = "89df63becc1d";
+  var started = false;
+  function boot(v) {
+    if (started) return;
+    started = true;
+    ["wasm-gc-runtime.js", "fge-web.js"].forEach(function (name) {
+      var s = document.createElement("script");
+      s.src = name + "?v=" + encodeURIComponent(v || baked);
+      s.async = false;
+      document.body.appendChild(s);
+    });
+  }
+  setTimeout(function () { boot(baked); }, 3000);
+  try {
+    fetch("version.txt", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (t) { boot(/^[0-9a-f]{6,64}$/.test(t.trim()) ? t.trim() : baked); }, function () { boot(baked); });
+  } catch (e) { boot(baked); }
+})();
+</script>
 </body>
 </html>

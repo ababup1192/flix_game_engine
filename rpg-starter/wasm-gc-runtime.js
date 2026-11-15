@@ -538,7 +538,7 @@
       createClass(name, parent, constructor) {
         name = sanitizeName(name ?? "JavaObject");
         let action;
-        const fn = renameConstructor(name, function(marker, javaObject) {
+        const fn = renameConstructor(name, function javajava(marker, javaObject) {
           if (marker === wrapperCallMarkerSymbol) {
             action.call(this, javaObject);
           } else if (constructor === null) {
