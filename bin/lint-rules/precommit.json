@@ -272,7 +272,8 @@
           {
             "basenames": [
               "dialogue.json",
-              "vocab.json"
+              "vocab.json",
+              "vocab.std.json"
             ]
           },
           {

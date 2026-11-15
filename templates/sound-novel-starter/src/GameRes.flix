@@ -1,4 +1,4 @@
-// GameRes — このゲームだけの描く元（ゲームの Doc と、読み込んだ素材の表）。Res#game に入り、GameView・GameCommands・GameBoot が読む。
+// GameRes — このゲームだけの描く元（ゲームの Doc と、読み込んだ素材の表）。Res#game に入る（描く物・命令・起動の口の値）。
 // テンプレートは中身を見ない。欄は Rec に足し、読み込みは load、保存即反映は docRows に書く（テンプレートの Controls と Res は直さない）。
 //   pub type alias Rec = { scenes = ScenesDoc.Doc, rooms = Rooms.Table, roomsPending = BackgroundLoad.Pending }
 //   pub def docRows() = Resources.reloadUnnamedRow(ScenesDoc.path(), res -> Res.withGame(withScenes(ScenesDoc.load(ScenesDoc.path()), res#game), res), (_, w) -> w) :: Nil

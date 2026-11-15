@@ -18,7 +18,7 @@
 //   <<shake [強さ] [on=screen|window|名前] [time=秒]>>   揺らす（強さは novel.kind.json の shakes の名前か px・省くと shakeSeconds / shakePx）
 //   <<overlay 濃さ [color=black|white|#rrggbb] [from=] [layer=stage|screen] [time=0] [ease=]>>   画面に色を被せる（同じ濃さへは何もしない）
 //   <<camera [zoom=] [x=] [y=] [time=0.5] [ease=]>>   world の層を寄せる・ずらす（文字の枠と HUD には掛けない）
-//   <<tween game.<鍵> 値 [from=] [time=0.5] [ease=smoothstep]>>   ゲームの数の値（GameView が読む game. の鍵）を秒かけて動かす（3D のカメラの道筋の進みなど）
+//   <<tween game.<鍵> 値 [from=] [time=0.5] [ease=smoothstep]>>   ゲームの数の値（game. で始まる鍵）を秒かけて動かす（3D のカメラの道筋の進みなど）
 //   <<show 名前 [表情] [at=位置] [from=left|right|top|bottom] [x=] [y=] [scale=] [alpha=] [time=秒] [ease=]>>
 //                                              立ち絵か小物（novel.cast.json の cast / props）を出す・表情や位置を替える。何人・何個でも出せ、
 //                                              exclusive の位置にだけは 1 つ（後から出した物が前の物を消す）。省いた物は出ている形のまま
@@ -165,7 +165,7 @@ mod Commands {
             done <- c#apply(ctx, args, st) |> Result.mapErr(why -> "${text} ${why}")
         ) yield done
 
-    /// applyText で当てる 1 行が、当てる前に届いていてほしい絵と音の名前（読めない行は空）。GameCommands の needs から呼ぶ。
+    /// applyText で当てる 1 行が、当てる前に届いていてほしい絵と音の名前（読めない行は空。GameCommands の needs に使う）。
     pub def needsOfText(res: Res.Res, text: String, st: Stage.Stage): List[String] =
         let found = forM (command <- commandOfText(text) |> Result.toOption; c <- lookup(command#name); args <- YarnCommands.parse(c#spec, command) |> Result.toOption)
             yield c#needs(res, args, st);

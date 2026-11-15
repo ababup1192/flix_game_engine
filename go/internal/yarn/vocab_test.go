@@ -67,7 +67,7 @@ func writeGame(t *testing.T, files map[string]string) string {
 func loadV2(t *testing.T, root string) (*Vocab, []string) {
 	t.Helper()
 	path := filepath.Join(root, "assets", "talk", "vocab.json")
-	data, err := os.ReadFile(path)
+	data, err := readVocab(path)
 	if err != nil {
 		t.Fatal(err)
 	}

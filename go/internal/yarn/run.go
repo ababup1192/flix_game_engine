@@ -245,7 +245,7 @@ func groupsOf(workRoot string, paths []string) ([]group, error) {
 // isDocPath は語彙の from が指しうる Doc（.json のうち、語彙と木そのものでない物）。
 func isDocPath(path string) bool {
 	base := filepath.Base(path)
-	return strings.HasSuffix(base, ".json") && base != vocabName && base != outName
+	return strings.HasSuffix(base, ".json") && base != vocabName && base != stdVocabName && base != outName
 }
 
 // vocabDirsReferring は doc と同じゲーム（project.json のあるフォルダ）の中で、doc を from に書いた vocab.json のフォルダ。
@@ -280,7 +280,7 @@ func vocabIndexOf(root string) map[string][]string {
 		if d.Name() != vocabName {
 			return nil
 		}
-		data, readErr := os.ReadFile(path)
+		data, readErr := readVocab(path)
 		if readErr != nil {
 			return nil
 		}
@@ -363,11 +363,16 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 		} else if !filepath.IsAbs(vocabPath) {
 			vocabPath = filepath.Join(workRoot, vocabPath)
 		}
-		data, err := os.ReadFile(vocabPath)
-		if err != nil {
+		if _, err := os.Stat(vocabPath); err != nil {
 			msg := fmt.Sprintf("語彙が無い — %s で書き出す（語彙を見ずに組むなら --no-vocab）", remake)
 			fmt.Fprintf(out, "%s: %s\n", rel(workRoot, vocabPath), msg)
 			rep.Problems = append(rep.Problems, ReportLine{File: rel(workRoot, vocabPath), Msg: msg})
+			return 1
+		}
+		data, err := readVocab(vocabPath)
+		if err != nil {
+			fmt.Fprintf(out, "%s: %v\n", rel(workRoot, vocabPath), err)
+			rep.Problems = append(rep.Problems, ReportLine{File: rel(workRoot, vocabPath), Msg: err.Error()})
 			return 1
 		}
 		v, notes, err := ParseVocab(data, vocabPath, workRoot)
