@@ -3,7 +3,7 @@
 下調べ 8 本と試作 2 本は `plans/webgpu/` にある（`survey/A〜H`・`spike-pc/`・`spike-web/`）。この文書の数字はそこから引いた。
 【確】= 生の記録かコードで確かめた ／【推】= 割り算や読みからの見積もり ／【不明】= まだ測っていない ／【目標】= これから目指す値。
 レビューは第 1 版 68 点・第 3 版 78 点・第 4 版 84 点（3 回で 90 に届かず。判定は「P0・P1 は着手してよい。R1a 以降は残りの指摘を入れてから」）。
-第 5 版は 3 回目の指摘 14 件を入れた物で、**この版はレビューを通していない**（末尾）。第 3 版は、工数を減らす工夫（`DrawList` を挟む・5.1）と、
+第 5 版は 3 回目の指摘 14 件を入れた物で、**この版はレビューを通していない**（末尾）。第 3 版は、工数を減らす工夫（`RenderList` を挟む・5.1）と、
 WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味を見ながら形を決める」進め方（2 章の 7・9.1）を入れた。
 
 ## 1. 何のためにやるか
@@ -22,7 +22,7 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
 | # | 判断 |
 |---|---|
 | 1 | PC もブラウザも、本線は WebGPU に統一する |
-| 2 | WebGPU の無いブラウザは、今の GL の描き手（WebGL2）で起動する。当初は「機能を止めた fallback」と決めたが、第 3 版では**同じ `DrawList` を流す GL の backend** に改めた（5.1。止めなくても 2 本持ちの手間が増えないため。会話で伝え済み・11 章の 1 で改めて伺う） |
+| 2 | WebGPU の無いブラウザは、今の GL の描き手（WebGL2）で起動する。当初は「機能を止めた fallback」と決めたが、第 3 版では**同じ `RenderList` を流す GL の backend** に改めた（5.1。止めなくても 2 本持ちの手間が増えないため。会話で伝え済み・11 章の 1 で改めて伺う） |
 | 3 | 小さな試作で確かめてから進める（PC とブラウザの 2 本は済み） |
 | 4 | エンジンの側でなるべくまとめる操作を優先する API にする。2D も 3D も性能が上がる事を優先する |
 | 5 | 性能の物差しは、物を足していくベンチマーク。今ある `bench/sprite_stress`・`bench/crowd2d`・`bench/scene3d` を広げる（新しく作らない）。都市は最後の確かめ |
@@ -42,7 +42,7 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
 | ブラウザの 3D は WebGPU・インスタンス描き・スマホ向けの速さをやらない | `plans/engine-browser-3d.md:9` | 「軽い 3D が動けばよい」フェーズは済んだ。次として WebGPU をやる |
 | TeaVM は 0.14.1。0.16 へは WebGPU のフェーズで上げる | `plans/engine-browser.md`（決定 2） | そのフェーズが今（P2） |
 | 0.88.0 で性能は区切り（間引き・動かない物の送り・Par は見送り） | 人の判断（2026-11 上旬） | 動かない物の送り（static group）だけ、WebGPU の描き手の中で再開する（P9）。間引きと Par は見送りのまま |
-| 層を置く物差しの表（境目 3 つ） | `docs/flix-conventions.md:193-215` | 表に `DrawList` の backend と `WebGpu`（5 章）を足し、`GlContext` の行に「GL の backend 用」と書く。「新しい機種の切れ目は `Platform.Services` の高さ」の文は、描画については「`DrawList` の backend の高さ」に書き換える（P10）。物差しそのもの（実装が 2 つある所にだけ置く）は変えない |
+| 層を置く物差しの表（境目 3 つ） | `docs/flix-conventions.md:193-215` | 表に `RenderList` の backend と `WebGpu`（5 章）を足し、`GlContext` の行に「GL の backend 用」と書く。「新しい機種の切れ目は `Platform.Services` の高さ」の文は、描画については「`RenderList` の backend の高さ」に書き換える（P10）。物差しそのもの（実装が 2 つある所にだけ置く）は変えない |
 | `docs/backend-parity.md` は GL と SoftRaster の 2 列 | 同 | WebGPU を足して 3 列にする |
 | Pass の MSAA の標本数は 1・2・4・8 | `RenderTarget` | WebGPU は 1 と 4 だけ。2 と 8 は 4 にする（絵が変わる。11 章で伺う） |
 | context が失われたら頁の読み直し | `plans/engine-browser.md`（決定 8） | **変えない。** device lost も同じ扱い |
@@ -142,7 +142,7 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
    描き手の前半（1 本・Flix）… 何を描くかを決める
         │   2D: z の並べ・run の切り方・絵の頁への割り当て ／ 3D: ScenePlan・Batch・材質の鍵・LightData
         ▼
-   DrawList（値）… 1 コマの「描く呼び出し」の列。pass の区切り・pipeline の鍵・行のバッファの範囲・形・絵
+   RenderList（値）… 1 コマの「描く呼び出し」の列。pass の区切り・pipeline の鍵・行のバッファの範囲・形・絵
         │                                   ← 新しい差し替えの高さ（実装 2 つ）
         ├─ WebGPU の backend（本線）
         │     WebGpu（Java の interface・WebGPU の形）
@@ -151,24 +151,24 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
         └─ GL の backend（fallback）
               GlContext ─ WebGl2（WebGPU の無いブラウザ）／ LwjglGl（fallback の検査を PC で回す・移行の間の PC）
 
-   SoftRaster（CPU の描き手。絵の答え合わせの相手。今のまま。DrawList は通らない）
+   SoftRaster（CPU の描き手。絵の答え合わせの相手。今のまま。RenderList は通らない）
 ```
 
 名前は仮（11 章で伺う）。`Gpu` だけの名前は今の `GpuResources`・`GpuHandle`・`GpuTimer` と紛れるので使わない。
 
-### 5.1 `DrawList` を挟む（第 3 版からの柱。工数を減らすための工夫）
+### 5.1 `RenderList` を挟む（第 3 版からの柱。工数を減らすための工夫）
 
 今の描き手は「何を描くか決める」と「GL を呼ぶ」が同じ関数に混ざっている（`Sprite.flix` に GL の呼び出しが 238・`Render3d.flix` に 166【確】）。
 このまま WebGPU 版をもう 1 本書くと、2D と 3D の全部が書き直しになる。そこで順番を変える。
 
-1. **先に今の描き手をリファクタする。** GL を直に呼ぶ代わりに `DrawList`（描く呼び出しの列）を作り、それを GL で流す実行役（backend）を別に置く。
+1. **先に今の描き手をリファクタする。** GL を直に呼ぶ代わりに `RenderList`（描く呼び出しの列）を作り、それを GL で流す実行役（backend）を別に置く。
    **絵は 1 画素も変わらない**ので、今ある門（`gl-parity` 0 px・テンプレの `reference`・`gl-capture-check`）でそのまま守れる。
 2. **WebGPU は backend だけを新しく書く。** 「何を描くか」は書き直さない。
-3. fallback は「止まった別の描き手」ではなく、同じ `DrawList` を流すもう 1 つの backend になる。
+3. fallback は「止まった別の描き手」ではなく、同じ `RenderList` を流すもう 1 つの backend になる。
 
 今のコードは既にこの形に近い。2D は `emitMerged` が 6 種類を run にまとめて流す時に run の状態（`st` の欄 11〜18 と Float32 の配列）を持ち、
 3D は `SceneDraws[MeshBatch]`・`MeshBatch{head, count, first}`（`first` は行の起点で、`firstInstance` と同じ考え）を持つ【確】。
-**新しい型を 1 から足すのでなく、この 2 つを「GL の物を含まない形」に広げる。** この文書では、広げた後の物をまとめて `DrawList`、その 1 行を「描く 1 行」と呼ぶ（型の名前は 11 章の 7）。
+**新しい型を 1 から足すのでなく、この 2 つを「GL の物を含まない形」に広げる。** この文書では、広げた後の物をまとめて `RenderList`、その 1 行を「描く 1 行」と呼ぶ（型の名前は 11 章の 7）。
 
 **描く 1 行の高さは「物の集まりを 1 回描く」**にする。WebGPU の命令（`setBindGroup` など）の高さにはしない。1 行が GPU の draw 何本かになる事はある（mask つきは 2 本）。
 診断の「draw の数」は backend が実際に出した数を数える（今の `Counter.DrawCalls` のまま）。
@@ -189,14 +189,19 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
 | 物の上げ下ろし | `GpuResources` の handler・`meshEntry`・フォントの部分更新 | 作る・中身を書く・消す（下の「物の寿命」） |
 | 読み戻しの依頼 | F8・frame shot | 描き先の番号と矩形・届け先 |
 
+**判断 13（形のレビュー（2D）・2026-11-15）で改めた所**: 上の表の「pass の区切り」と「物の上げ下ろし」は行の種類にしない。
+1 回の `renderCommands` は `(PassSpec, 行)` の組の列を出し、pass は組ごとの型のついた record（`PassSpec`: 描き先・depth/stencil・標本数・viewport・history の写し）で渡す。
+upload は GL と WebGPU が同じ形で受ける関数の record（`TextureTable.Uploads`）にして、list を作る前に呼ぶ（record は list を作る def へ渡さない）。
+スプライトの行は今の形（Int32 の行・1 行 10 欄・1 体 38 個の Float32）。R1b-0 で入れた（`webgpu-shape-review-2d.md` の 3 章・7 章）。
+
 - **行と draw ごとの値の持ち方は backend が決める。** WebGPU は draw ごとの値も行に入れて storage buffer に置き、`firstInstance` で引く（dynamic offset は使わない）。
   GL は今と同じ（instance 用の頂点バッファ・データ用テクスチャ・uniform）。だから「古い方に合わせて新しい方の手を縛る」事にならない。
 - **面と材質は、draw ごとの値の並びがシェーダーごとに変わる。** 並び（WGSL の struct）は `ShaderGen` が出す（P5）。P5 の前の「縦に 1 本」は、並びが固定の組み込み（スプライト・字・箱）だけで通す。
-- **持ち方は配列。** `DrawList` は Int32 の配列（種類と番号と範囲）と Float32 の配列（行と値）で持つ（今の `st` と同じ流儀）。絵が 1 個ごとに交互の 20,000 個でも record を 20,000 個作らない。
+- **持ち方は配列。** `RenderList` は Int32 の配列（種類と番号と範囲）と Float32 の配列（行と値）で持つ（今の `st` と同じ流儀）。絵が 1 個ごとに交互の 20,000 個でも record を 20,000 個作らない。
   後で「配列を JS へ 1 回で渡す」形（9 章の「後」）がそのまま乗る。
 - **いつ流すか: `renderCommands` 1 回につき 1 つの列を、その場で流す。** 今の即時の順（`renderCommands` のたびに描く・Pass は `beginTarget`〜`endTarget` の別の呼び出し・
   間に `GpuResources` の操作が同期で番号を返す）を変えない。コマ全体を溜めて最後に流す形は、Pass の間のテクスチャ更新の順を列に入れる決まりが要るので取らない（9.1 で測って見直せる）。
-  WebGPU の backend は 1 コマ分の行を 1 本の大きなバッファに順に詰める（列ごとに重ならない範囲へ `writeBuffer`。submit はコマの終わりに 1 回）。
+  WebGPU の backend は 1 コマ分の行を 1 本の大きなバッファに順に詰める（列ごとに重ならない範囲へ `writeBuffer`。submit はコマの終わりに 1 回。ただし upload の前にそのコマに積んだ pass を submit するので、1 コマに 2 回以上になる場面がある。P6 で staging buffer を比べるまで許す・判断 13）。
 - 手本は Dear ImGui の draw list と backend、Bevy の phase item、Unreal の mesh draw command。
 - **層を置く物差し**: 実装は最初から 2 つ（GL・WebGPU）。3 つ目は家庭用ゲーム機の backend（その時は `Platform.Services` の高さでなく、この高さで足せる。物差しの文は P10 で書き換える）。
 
@@ -216,7 +221,7 @@ device を作る時は `core-features-and-limits` を求め、選べる機能は
 | 描き先の絵の上下・clip の z の範囲 | 前半が知っている（`emitMerged` の `targetNames`・`RegisteredTexture#flipped`）。射影行列と影の行列も前半が作る | backend の capability に「描き先の絵が上下逆か」「clip の z が 0〜1 か」を足し、前半はそれを見て uv と行列を作る |
 | 2D: テクスチャの登録簿・フォントのアトラスの中身（名前 → アトラスの Map） | render_gl | CPU の側の表は前半。GPU の物は backend |
 | 3D: `planScenes`・`Batch`・`Counts`・`LightData`・材質の鍵 | `Render3d.*`（`planScenes` は `gl` と GL の `State` を受ける） | 前半（R2 で `gl` を外す）。backend に聞く物は 3 つ: capability（alpha to coverage が使えるか・行の上限）・材質の鍵ごとの**順の番号**（今は GL のプログラムの番号で描く順を決めている。同じ深さの面の勝ち方が変わらないよう、GL の backend は今と同じ番号を返す）・材質の状態（使える / 作成中 / 失敗） |
-| **GPU の物の寿命**（形・絵・影の描き先・Design の描き先・シェーダー・static layer のバッファ・タイルのバッファ） | `meshEntry`・`Material.flix` の後半（約 300 行）・`ShaderCache`・`RenderStatic`・`RenderTargetGl` | **置き場の表（鍵・世代・予算・捨てる順・preload・知らせ）は前半、「作る・中身を書く・消す」だけ backend。** 今は描く時に上げているので（`drawBatch` → `meshEntry`）、R2 で「上げる行」を `DrawList` の先頭に出す形に直す |
+| **GPU の物の寿命**（形・絵・影の描き先・Design の描き先・シェーダー・static layer のバッファ・タイルのバッファ） | `meshEntry`・`Material.flix` の後半（約 300 行）・`ShaderCache`・`RenderStatic`・`RenderTargetGl` | **置き場の表（鍵・世代・予算・捨てる順・preload・知らせ）は前半、「作る・中身を書く・消す」だけ backend。** 今は描く時に上げているので（`drawBatch` → `meshEntry`）、R2 で「上げる行」を `RenderList` の先頭に出す形に直す |
 | 材質が組めない時 | 計画の中で頂点の色の batch へ落とす（`materialEntry` が `None`） | 同じにそろえる。WebGPU で pipeline が作成中の間も「頂点の色へ落とす」（8 章）。計画は backend の「材質の状態」を聞いて決める |
 | GL の番号の漏れ | `Dest#framebuffer`・`RegisteredTexture#texId`・engine の pub の `GpuHandle`（`TextureId`・`TileVao`・`ShaderProgram`。effect の戻り値でゲームまで出る）・`GpuHandle.StaticVao(Int32, Int32)`（vao と vbo の組。使うのは `RenderStatic` だけ）・`RenderStatic.Range#vao`・`RenderTargetGl.Entry`（25 か所）・`SceneInputs#jointTexture / instanceTexture`・`MaterialBatch#entry`（uniform の番号の束） | `GpuHandle` は **Int32 のまま「backend の表の番号」と読み替える**（engine の pub を変えない）。render_gl の中の物（`Entry`・`entry`・`vao`・`jointTexture`）は backend の中へ移す（R1・R2） |
 | GL の呼び出し（`RenderSprite`・`Target`・`RenderTexture`・`Render3d` の draw・`Shadow`・`Material` の bind・`DataTexture`・`Instancing`・`JointTexture`） | render_gl | GL の backend にまとめる（R1・R2）。WebGPU の backend は新しく書く（P6・P8） |
@@ -233,7 +238,7 @@ device を作る時は `core-features-and-limits` を求め、選べる機能は
 | 読み戻し（F8・frame shot・隠して起動した時の隅の 1 画素） | `GlReadback`（同期） | 次のコマで届く（8 章） |
 | 描き手を作る（`RenderPaint.create`・`Render3d.makeRenderer`・`RenderSplash.install`） | `gl` を渡す | backend を渡す |
 | GPU の時間 | `GpuTimer`（間引く） | timestamp-query（あれば） |
-| 呼び出しのログ（`GlCallLog`） | GL の backend だけ | 無し（`DrawList` を書き出す口を別に持つ） |
+| 呼び出しのログ（`GlCallLog`） | GL の backend だけ | 無し（`RenderList` を書き出す口を別に持つ） |
 | 起動の時の初期の状態（viewport・クリア・blend。`LwjglLayer.flix:368-402`） | GL の呼び出し | pass を開く時の値として持つ |
 | 画面へ出した後に待つ（`finishAfterSwap` の `glFinish`） | `glFinish` | submit した仕事の終わりを待つ（`onSubmittedWorkDone`） |
 
@@ -292,7 +297,7 @@ device を作る時は `core-features-and-limits` を求め、選べる機能は
 4. **2D の頂点の形は 2 つ残す**（instance の四角 = スプライト・字・箱／三角形の列 = 多角形）。種類が入れ替わる所では draw が切れる（tidepool で 27）。
    四角を三角形の列へ開いて 1 本にする案は、スプライト 1 個の送る量が 4 倍になるので取らない。P0 のベンチで切れ目が重いと分かった時に見直す。
 5. **1 個だけ描く口を作らない。** 描き手の内側の API は物の集まりを受ける。ビルボード（今は 1 枚 1 draw）も集まりにする。
-6. **送るのは 1 コマ 1 回。** 頂点と行のバッファは 1 コマ分を 1 本に詰めて 1 回で送る（今は run ごとに `bufferData`。tidepool で 1 コマ 133 回）。
+6. **行と頂点は 1 コマぶんを 1 本に詰める（upload は除く）。** 頂点と行のバッファは 1 コマ分を 1 本のバッファに詰める（今の GL は run ごとに `bufferData`。tidepool で 1 コマ 133 回）。送る回数は list ごとに `writeBuffer` 1 回で、1 コマ 1 回ではない（判断 13。upload はその前に submit する）。
 7. **mip は自分で作る。** WebGPU に `generateMipmap` が無いので、小さくしながら描く render pass を回す（ブラウザの 3D は今 GPU の mip に頼っている）。
 8. **まとまらなかった理由を見えるようにする。** 診断に draw の数と、切れた理由（pipeline・頂点の形・絵・半透明の順・描き先）の内訳を出す。
 
@@ -347,35 +352,35 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 各フェーズは今の GL 版を動かしたまま進める。フェーズの終わりに同じベンチを背中合わせで回す（`bench/sprite_stress/RESULTS.md` の流儀）。
 見積もりは実時間で、下位モデルの作業と私の検証を含む（行数からの見立て【推】）。
 
-**進め方の工夫**: (1) 先にリファクタして `DrawList` を挟む（5.1）。(2) 呼び手の無い道を先に消す。
-(3) **形を早く確かめる** — リファクタを全部終える前に、スプライトだけで GL と WebGPU の両方を縦に 1 本通し、そこで `DrawList` の形をレビューして確定する。3D も同じ順（不透明だけで通してから残り）。
+**進め方の工夫**: (1) 先にリファクタして `RenderList` を挟む（5.1）。(2) 呼び手の無い道を先に消す。
+(3) **形を早く確かめる** — リファクタを全部終える前に、スプライトだけで GL と WebGPU の両方を縦に 1 本通し、そこで `RenderList` の形をレビューして確定する。3D も同じ順（不透明だけで通してから残り）。
 
 | 順 | # | 中身 | 門（合格線） | 見積もり |
 |---|---|---|---|---|
 | 1 | P0 | **ベンチを広げる。** `sprite_stress` に絵の種類（1 / 16 / 256）と blend の混在、`crowd2d` を 20,000 まで、`scene3d` に物の数・形の種類・材質の種類・動く割合・半透明・影のつまみ。3 つともブラウザの入口。2D の draw の数と切れた理由を診断に出す（決まり 8。engine の pub の `FrameDiagnostics` を広げる。`Frame.flix` に入れる数え方は R1a で書き直しになる）。診断の `glEndQuery` を間引く。PC・ブラウザ・スマホ（S24 Ultra・iPhone）で基準を取る。**スマホの実機で WebGPU の limit と feature の一覧を取る**（小さな頁）。agents-pack の早見表と eval（新しい診断の口） | 基準の数字が `bench/baseline/` と `RESULTS.md` に残る。診断を付けても 1 コマが 1.1 倍以内 | 8〜12 時間 |
 | 2 | P1 | **描き手より上の直し**（決まり 9）。effect より上（engine_world が描く物の列を作る所。2D 20,000 個で約 25 ms）から record の欄の引き当てを外す。render_gl の中（3D の `planScene` 系）は R2 が同じ関数を作り替えるので、ここでは触らない | `gl-parity` 0 px・テンプレの `reference`。2D 同じ絵 20,000 個: 32 ms → 20 ms 以下【目標】 | 5〜8 時間 |
 | — | | **リリース 1**（WebGPU を待たずに速くなる分） | リリースの門 | — |
-| 3 | R1a | **2D のスプライト・字・箱だけ `DrawList` に。** 呼び手の無い道を消す → `emitMerged` のスプライトの run が描く 1 行を出し、GL の backend が流す。ほかの種類は今のまま | `gl-parity` 0 px・テンプレの `reference`・`gl-capture-check`。P0 のベンチで 5% 以内。**GL の呼び出しの並びは同じでなくてよい**（門は画素） | 4〜6 時間 |
+| 3 | R1a | **2D のスプライト・字・箱だけ `RenderList` に。** 呼び手の無い道を消す → `emitMerged` のスプライトの run が描く 1 行を出し、GL の backend が流す。ほかの種類は今のまま | `gl-parity` 0 px・テンプレの `reference`・`gl-capture-check`。P0 のベンチで 5% 以内。**GL の呼び出しの並びは同じでなくてよい**（門は画素） | 4〜6 時間 |
 | 3 | P2 | （R1a と並べて）**TeaVM を 0.16 へ。** `export-web` の呼び方を `TeaVMTool` に替え、JDK の本物のクラスが流れ込まない ClassLoader を組む。足している部品 6 本と runtime を合わせる。WebGL2 のまま全部のテンプレが動く事 | `web-capture` の絵が、**R1a を入れる前のコミット**で 0.14.1 と 0.16 を比べて同じ。書き出しの大きさと時間の前後。古い版のブラウザで WebGL2 版が動く（5.5） | 5〜8 時間。危険あり |
 | 4 | P4a | **`WebGpu` と PC の門。** interface を決め、Dawn の実装で三角形（cull の向きの確かめを含む）・読み戻し・ウィンドウ（5.3 の「backend に聞く口」）。**画面なしの session**（今の `GlOffscreen` の open・readRgba・drawFloatRows に当たる物。P5・P6 の門が使う）。ウィンドウに出た絵を機械で確かめる。2 プロセス同時に起動して落ちない事。limit を Dawn から正しく読める事。**`firstInstance` の試作**: 形ごとに `draw(…, firstInstance)` を数千本・`instance_index` で行を引く形の 1 コマの時間。Windows と Linux で同じ試作 | Flix から interface を通して描いた絵が期待と同じ。3 つの OS で通る。通らない時は人に伺う（11 章の 3）。`firstInstance` の形が 20,000 本で 3 ms を超えたら（`setBindGroup` を毎回呼ぶ形と同じかそれより遅い）、決まり 1・2 の前提が崩れるので、次の手（頂点を storage buffer から引いて 1 回で描く形）と一緒に人に伺う | 9〜13 時間 + 別の機械 |
 | 5 | P4b | **ブラウザの実装**（P2 の後）。同じ interface を TeaVM の JSO で。物を Flix の record に入れて運べる事。起動の時の選び分け（5.5）。`firstInstance` の試作を Chrome と iPhone の Safari で。**起動の時の選び分けと WebGL2 版の起動は V1 へ回した（12.12）** | PC と同じ Flix のコードで同じ絵。WebGPU の無いブラウザで WebGL2 版が起動する（V1 へ）。`firstInstance` の合格線は P4a と同じ（ブラウザは 20,000 本で 3 ms） | 4〜6 時間 |
 | 6 | V1 | **縦に 1 本（2D）。** WebGPU の backend にスプライト・字・箱（WGSL は手書き。この 3 つは今も 1 つのプログラム）と、それに要る最小の「絵とフォントのアトラスを上げる」「Pass を 1 つ挟む」。お題は rpg のテンプレの題名の画面（スプライト 7 個だけ・多角形と面が無い）と、それを Pass 1 つに通した物。PC とブラウザで出す | GL の backend と画素を比べる。`sprite_stress` の同じ絵 20,000 個が GL より遅くない | 6〜9 時間 |
-| 7 | | **`DrawList` の形のレビュー（2D）**: GL と WebGPU の backend の行数・ベンチ・書き味の見本を並べ、**スプライトの行と pass の区切りと「上げる行」の形**を確定する（9.1）。ほかの種類の形は、下の交互の進め方で 1 つずつ確かめる | レビュー役 90 点・人の了承 | 1〜2 時間 |
+| 7 | | **`RenderList` の形のレビュー（2D）**: GL と WebGPU の backend の行数・ベンチ・書き味の見本を並べ、**スプライトの行と pass の区切りと「上げる行」の形**を確定する（9.1）。ほかの種類の形は、下の交互の進め方で 1 つずつ確かめる | レビュー役 90 点・人の了承 | 1〜2 時間 |
 | 8 | R1b ⇄ P6 | **2D の残りを、種類ごとに「GL でリファクタ → すぐ WebGPU の backend に足す」を交互に。** 順: 物の上げ下ろしと寿命の表（5.3）→ 多角形とタイルと static layer → history と MSAA の resolve → mask（比べる値を進める形・8 章）→ 3D の場面を貼る → （P5 の後）面。GL と形が一番違う所（pass・history・mask）を早く WebGPU に通す。「送るのを 1 コマ 1 回に」（決まり 6）は、GL では測って得な時だけ（GL 3.3 / WebGL2 に baseInstance が無く、run ごとに頂点の属性を付け直す事になるため）。アトラスの頁（決まり 3）・読み戻しと F8・動画もここ | 種類ごとに、GL は `gl-parity` 0 px・`reference`・`gl-capture-check`・ベンチ 5% 以内。WebGPU は GL の backend と同じ機械で `gl-capture` の場面を比べる（許容は場面ごとに理由を書く。既定は差 0・丸めが出る場面だけ 2/255）と SoftRaster との `gl-parity`（画面なしの session）。終わりに: テンプレ 3 本が PC とブラウザで GL より遅くない（5% 以内）・ブラウザは `?capture` を自動で回す門 | 18〜26 時間 |
 | 9 | P5 | （上の交互の途中で、面の前に）**WGSL の出口**（7 章）。`Codegen.Target.Wgsl`・`ShaderGen` の書き手と、面と材質の draw ごとの値の並び（struct）・組み込み | Dawn で全部の変種が通るテスト。式の行の突き合わせ（画面なしの session の drawFloatRows） | 10〜16 時間 |
 | — | | **リリース 2**: 2D のゲームは WebGPU を「試しに選べる」。選ぶ口は、PC は環境変数（`FLIX_GE_BACKEND=webgpu`）、ブラウザは URL の `?backend=webgpu`。何も付けなければ今までどおり GL。入口が 3D（`withProject3d`）のゲームは、付けても GL のまま起動して理由を知らせる | | |
-| 11 | R2a | **3D の不透明の batch だけ `DrawList` に。** `planScenes` から `gl` と GL の `State` を外す（capability・順の番号・材質の状態を backend に聞く）。`MaterialBatch#entry` を材質の鍵に替える。形と絵の「上げる行」。**`planScene` 系を配列で運ぶ**（決まり 9 の 3D の分。record の欄の引き当てを内側の輪から出す） | `gl-parity` 0 px・**偽の GL を通るテスト 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload。うち GL の呼び出しの並びまで比べるのは 3 ファイル）はそのまま門に残す**（`DrawList` を見るテストは足す）・fps3d_lab が 5% 以内。`bench/scene3d` の動く割合 100%・12,000 個と、東京 1 棟ずつ: 137 ms → 100 ms 以下【目標】 | 8〜11 時間 |
+| 11 | R2a | **3D の不透明の batch だけ `RenderList` に。** `planScenes` から `gl` と GL の `State` を外す（capability・順の番号・材質の状態を backend に聞く）。`MaterialBatch#entry` を材質の鍵に替える。形と絵の「上げる行」。**`planScene` 系を配列で運ぶ**（決まり 9 の 3D の分。record の欄の引き当てを内側の輪から出す） | `gl-parity` 0 px・**偽の GL を通るテスト 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload。うち GL の呼び出しの並びまで比べるのは 3 ファイル）はそのまま門に残す**（`RenderList` を見るテストは足す）・fps3d_lab が 5% 以内。`bench/scene3d` の動く割合 100%・12,000 個と、東京 1 棟ずつ: 137 ms → 100 ms 以下【目標】 | 8〜11 時間 |
 | 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定** | 6〜9 時間 |
-| 13 | R2b | **3D の残りを `DrawList` に。** 小分け: 材質と絵の組／影／骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／環境マップ・空・lightmap／ビルボード・半透明・後がけ／寿命の表 | R2a と同じ門 | 8〜12 時間 |
+| 13 | R2b | **3D の残りを `RenderList` に。** 小分け: 材質と絵の組／影／骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／環境マップ・空・lightmap／ビルボード・半透明・後がけ／寿命の表 | R2a と同じ門 | 8〜12 時間 |
 | 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
 | 16 | P10 | **切り替え。** PC の既定を WebGPU に（画面なしの描き出し・テスト・動画の既定も）。`gl-capture` の基準を取り直す（Dawn の版を pin）。`docs/flix-conventions.md`・`backend-parity.md`・agents-pack・eval・migrations。外のゲームの追随 | リリースの門を全部。CI（GPU が無い）で回る門と手元だけの門を分けて書く | 6〜10 時間 |
 | — | | **リリース 3**: WebGPU が既定 | | |
-| 後 | | スプライトの集まりの口（決まり 11）・粒子（決まり 12）・GPU の上での間引き（compute で引数のバッファを書く。引数は 1 本のバッファに詰める）・ブラウザで `DrawList` の配列を JS へ 1 回で渡す形（draw が 100 本を超える場面が残った時） | 別に計画して伺う | — |
+| 後 | | スプライトの集まりの口（決まり 11）・粒子（決まり 12）・GPU の上での間引き（compute で引数のバッファを書く。引数は 1 本のバッファに詰める）・ブラウザで `RenderList` の配列を JS へ 1 回で渡す形（draw が 100 本を超える場面が残った時） | 別に計画して伺う | — |
 
 **見積もりの合計**: フェーズの足し算で 117〜176 時間。これに 9.1 の比べ（候補を小さく 2 つ作って測る。11 件 × 1〜2 時間 = 11〜22 時間）と、
 レビュー役（R1b ⇄ P6・P5・R2b・P8・P10 の終わりと形のレビュー（3D）。直しを含めて 8〜12 時間）を足して、**合わせて 136〜210 時間**【推】。
-同じ数え方をすると、第 2 版（描き手をもう 1 本書く形）は 139〜207 時間で、**時間はほぼ同じ**。`DrawList` を挟む得は時間でなく危険の下がり方:
+同じ数え方をすると、第 2 版（描き手をもう 1 本書く形）は 139〜207 時間で、**時間はほぼ同じ**。`RenderList` を挟む得は時間でなく危険の下がり方:
 リファクタは今の門で 1 画素まで守られ、WebGPU の側で合わせる相手は backend だけになり、形の誤りが V1・V2 と交互の進め方で早く出る。fallback も止まった描き手にならない。
 リリースは 3 回（表の行）。リファクタだけの版は、次の定例のリリースに混ぜる。
 
@@ -386,11 +391,11 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 
 | 決める物 | いつ | 候補 | 比べ方 |
 |---|---|---|---|
-| `DrawList` の 1 行の欄と高さ | R1a と V1 の後（2D）・R2a と V2 の後（3D） | 「物の集まり」の高さ／もう少し低い高さ（bind group まで決める） | GL の backend と WebGPU の backend の行数・ベンチ |
-| `DrawList` をいつ流すか（5.1） | V1 の後 | `renderCommands` 1 回ごとにその場で流す／コマ全体を溜めて最後に流す | ブラウザの JS との行き来の回数・Pass のある場面のベンチ |
+| `RenderList` の 1 行の欄と高さ | R1a と V1 の後（2D）・R2a と V2 の後（3D） | 「物の集まり」の高さ／もう少し低い高さ（bind group まで決める） | GL の backend と WebGPU の backend の行数・ベンチ |
+| `RenderList` をいつ流すか（5.1） | V1 の後 | `renderCommands` 1 回ごとにその場で流す／コマ全体を溜めて最後に流す | ブラウザの JS との行き来の回数・Pass のある場面のベンチ |
 | 面と材質の draw ごとの値の並びを誰が決めるか（5.1） | P5 の最初 | `ShaderGen` が struct を出す／前半が決めた並びにシェーダーを合わせる | `ShaderGen` の行数・材質を足す時の書き味 |
 | GPU の物の寿命の持ち主（5.3） | R1b の「上げ下ろし」の小分け | 表は前半・作る消すだけ backend／全部 backend | backend 2 つの行数・preload のテスト |
-| `DrawList` の持ち方（5.1） | R1a | Int32 と Float32 の配列／record の列 | `sprite_stress` の絵が交互の 20,000 個 |
+| `RenderList` の持ち方（5.1） | R1a | Int32 と Float32 の配列／record の列 | `sprite_stress` の絵が交互の 20,000 個 |
 | 2D の絵のまとめ方（決まり 3） | P6 の最初 | アトラスの頁（texture array）／1 つの bind group に 16 枚 | `sprite_stress` の絵 16 / 256 種類・詰め直しの時間・絵のにじみ |
 | 2D の頂点の形（決まり 4） | P6 の途中 | 2 つ残す／storage buffer から頂点を引いて 1 本にする | tidepool の draw の数・`sprite_stress` |
 | WGSL の出し方（7 章） | P5 の最初 | 書き手を挟む／2 本目を書く | `ShaderGen` の行数の増え方・式の行の突き合わせの通り方 |
@@ -398,6 +403,10 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 動かない物の宣言（決まり 10） | P9 の前 | `Scene3d.staticGroup`（static group の計画の形）／物ごとのフラグ／エンジンが変わらない物を自分で見つける | `bench/scene3d` の動く割合・都市の見本コード（書き味） |
 | PC の cutout の縁（3 章） | P8 の材質の小分け | discard（今のブラウザと同じ）／塗りの段の `sample_mask` で標本を自分で決める | MSAA の縁の絵（今の GL と比べる） |
 | 3D を 2D へ貼る形（5.4） | V2 | 先に自分のテクスチャへ描いて貼る／pass を閉じて開き直す | `bench/scene3d` の 1 コマ・MSAA の縁の絵（fps3d_lab は P8 の終わりに） |
+
+**形のレビュー（2D）で決めた物（2026-11-15・判断 13・`webgpu-shape-review-2d.md`）**: `RenderList` の 1 行の欄と高さ（2D）は今の「物の集まり」の高さ・1 行 10 欄（3.1）。
+いつ流すかは `renderCommands` 1 回ごとにその場で流す（JS へ 1 回で渡す得は list ごとに取れ、ブラウザの絵 16 種で submit −15%。6.3）。持ち方は Int32 と Float32 の配列。
+pass の区切りは組ごとの `PassSpec`、upload は関数の record（6.2・6.4 で別の案と比べた上で）。3D の欄は R2a と V2 の後に決める。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
@@ -420,19 +429,19 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | CI に GPU が無い | 中 | CI は SoftRaster と WGSL の検査（Dawn の Tint だけ・GPU は要らない【推・P4a で確かめる】）まで。絵の門は手元（今の `gl-capture-check`・`smoke-devtools` と同じ扱い） |
 | fallback が腐る | 中 | リリースの門に WebGL2 版の `?capture` を残す。新しい機能を使ったゲームを書き出す時に「WebGPU の無い端末では絵が欠ける」と知らせる |
 | 書き出しが 2 つになって遅い | 低 | 書き出しの時間を P2 で測る（今は記録が無い） |
-| `DrawList` を挟んで今より遅くなる・R1 と R2 の途中で絵がずれる | 低〜中 | 小分けごとに `gl-parity` 0 px と P0 のベンチ（5% 以内）。遅くなったら行の持ち方を直してから次へ |
-| `DrawList` の形が合わず、WebGPU の backend を書く時に作り直しになる | 中 | リファクタを全部終える前に V1（2D）・V2（3D）で縦に 1 本通し、形のレビューで確定してから残りを進める（9 章の順） |
+| `RenderList` を挟んで今より遅くなる・R1 と R2 の途中で絵がずれる | 低〜中 | 小分けごとに `gl-parity` 0 px と P0 のベンチ（5% 以内）。遅くなったら行の持ち方を直してから次へ |
+| `RenderList` の形が合わず、WebGPU の backend を書く時に作り直しになる | 中 | リファクタを全部終える前に V1（2D）・V2（3D）で縦に 1 本通し、形のレビューで確定してから残りを進める（9 章の順） |
 | GL の backend がいつまでも残る（新しい機能ごとに backend 2 つと SoftRaster を触る） | 中 | やめる条件を決めておく: WebGPU の無いブラウザの割合が十分小さくなり（数字は人に伺う・11 章の 1）、Studio が WebGPU で動くようになった時。Studio は当面 GL のまま（別のリポジトリ。P10 の後に別に計画） |
 
 ## 11. 人に伺う事
 
-1. **古い端末の扱い**: fallback は同じ `DrawList` を流す GL の backend になる。GL の backend をやめる時の目安（WebGPU の無いブラウザが何 % を切ったら）も伺う。前半に足した機能は fallback でも動くが、WebGPU でしかできない物（粒子の計算・storage buffer が前提の量）は古い端末で欠けるか遅い。これで良いか。
+1. **古い端末の扱い**: fallback は同じ `RenderList` を流す GL の backend になる。GL の backend をやめる時の目安（WebGPU の無いブラウザが何 % を切ったら）も伺う。前半に足した機能は fallback でも動くが、WebGPU でしかできない物（粒子の計算・storage buffer が前提の量）は古い端末で欠けるか遅い。これで良いか。
 2. **PC のバインディング**: jWebGPU の Dawn 版を本線にする（ウィンドウまで通ったのがこちらだけ・Chrome と同じ実装）。外の小さなプロジェクトに頼り、配る物が約 13 MB 増える。
 3. **P4a が通らない時**: PC だけ GL に残すか（判断 1 と食い違う）、通るまで別のバインディングを試すか。その時に伺う。
 4. **スプライトの集まりの口**（決まり 11）: effect と pub が増える。P1 の後に候補を小さく作って数字と見本を出し（9.1）、入れるかどうかと形を伺う。入れる作業は P10 の後。
 5. **動かない物の宣言の形**: `plans/engine-static-group.md` の 3 つの問いを、P9 の前に改めて伺う。
 6. **絵が変わる物**: MSAA の 2 と 8 が 4 になる。PC の cutout の縁が discard になる（alpha to coverage が使えない）。丸めで 1〜2 階調ずれる場面が出る。門の許容を場面ごとに書いて、その一覧をお見せする。
-7. **名前**: この文書の `DrawList` は仮の呼び名。今ある名前と紛れる物がある — engine の mod `DrawCmd`・診断の `Counter.DrawCalls`（GPU の draw の数）・`Scene3d.RenderCmd`。型は今ある物を広げる（3D は `SceneDraws`・`MeshBatch`、2D は run の状態）。候補: `Batch`（今の語を 2D にも使う）／Bevy の phase item／Unreal の mesh draw command。V1 の形のレビューで決める。interface は `WebGpu`、実行役は backend。パッケージは分けず render_gl の中に置く（名前は P10 で見直す）。
+7. **名前**: 決めた — `RenderList`（判断 13・`webgpu-shape-review-2d.md` の 3.6）。Godot の RenderingDevice の render list と three.js の `WebGLRenderList` も、1 コマに描く物を並べた list を同じ名前で呼ぶ。第 5 版までの仮の呼び名 `DrawList` は、engine_tools の `SoftRaster.Internal.DrawList`・engine の mod `DrawCmd`・診断の `Counter.DrawCalls` と字が重なり grep で混ざるので取らない。置き場は `RenderFrame.Internal.RenderList`（pub にしない）。interface は `WebGpu`、実行役は backend。パッケージは分けず render_gl の中に置く（名前は P10 で見直す）。
 8. **目標の数字**: 「東京・1 棟ずつが 60 fps（16 ms）」を P9 の目標に置く。
 9. **リリースの切り方**: P1 の後（今の GL のままの高速化）・P6 の後（2D で WebGPU を試しに選べる）・P10（既定にする）の 3 回。リファクタだけの版は定例のリリースに混ぜる。
 10. **Windows と Linux の確かめ**: 手元に機械があるか。無ければ CI の機械で試作を回す。 → **判断 9: いったん Mac でできる範囲で進める。**
@@ -452,7 +461,7 @@ P1（描き手より上の直し）で、同じ絵のスプライト 20,000 個�
 | 速さの元 | 中身 | 効く所 | 取る段 |
 |---|---|---|---|
 | 罠を外す | JIT されないループ（8,000 バイトを超えるメソッド・末尾呼び出しで OSR を諦める）・毎回の `Map[String]` の引き当て・record の欄の引き当て | PC（JVM）だけ。wasm には JIT が無いので効かない | WebGPU と独立。先に取る |
-| 割り当てを減らす | effect を呼ぶたびの続きの入れ物・Java と JS の行き来の回数 | ブラウザ（wasm）で効く。PC は JIT が消す分がある | R1a・R1b で `DrawList` へ詰める時に一緒に取る |
+| 割り当てを減らす | effect を呼ぶたびの続きの入れ物・Java と JS の行き来の回数 | ブラウザ（wasm）で効く。PC は JIT が消す分がある | R1a・R1b で `RenderList` へ詰める時に一緒に取る |
 | 仕事を減らす | まとめて描く（draw call）・動かない物を送り直さない・見えない物を描かない | PC もブラウザも。数が増えるほど効く | P6・P9・P10（WebGPU の backend） |
 
 - 4.4 の「今の重さ」は P1 の前の値。R1a の前に、P1 の後の値で表を作り直す（どの段が残っているかが変わった）。
@@ -462,11 +471,11 @@ P1（描き手より上の直し）で、同じ絵のスプライト 20,000 個�
 
 ### 12.2 2D と 3D で共通にする所・分ける所
 
-`DrawList` の命令を 2D と 3D で 1 つの形にまとめない。共通にするのは入れ物と下の層だけにする。
+`RenderList` の命令を 2D と 3D で 1 つの形にまとめない。共通にするのは入れ物と下の層だけにする。
 
 | 層 | 共通か | 理由 |
 |---|---|---|
-| `DrawList` の入れ物（Int32 と Float32 の配列・種類ごとの enum・1 コマぶんを使い回す） | 共通 | 割り当てを減らす手が同じ |
+| `RenderList` の入れ物（Int32 と Float32 の配列・種類ごとの enum・1 コマぶんを使い回す） | 共通 | 割り当てを減らす手が同じ |
 | backend の下（buffer・texture・pipeline の cache・bind group・render pass の開け閉め） | 共通 | WebGPU の命令は 2D も 3D も同じ |
 | 命令の種類（スプライトの集まり・多角形・タイル層 / mesh の集まり・影の pass） | 分ける | まとめる鍵が違う（2D は重なり順が先・3D は material と mesh が先）。1 つにすると、どちらの最適な並べ方も取れない |
 | 並べ方 | 分ける | 2D は z の順を守る。3D の不透明は順を入れ替えて良い（depth が前後を決める） |
@@ -474,7 +483,7 @@ P1（描き手より上の直し）で、同じ絵のスプライト 20,000 個�
 
 ### 12.3 構造の決まりに足す 2 つ（`analysis-render-structure.md` から）
 
-- **描き先を 1 枚と決め打ちしない。** 3D の場面は今、色 1 枚だけを出す。`DrawList` と render pass の形は、名前つきの attachment（depth・normal）を後から足せる形にしておく（足すのは WebGPU の backend の後。輪郭線・SSAO・被写界深度が読む）。
+- **描き先を 1 枚と決め打ちしない。** 3D の場面は今、色 1 枚だけを出す。`RenderList` と render pass の形は、名前つきの attachment（depth・normal）を後から足せる形にしておく（足すのは WebGPU の backend の後。輪郭線・SSAO・被写界深度が読む）。
 - **手書きのシェーダーの字を、式の木へ寄せる。** GLSL を字で持つ所（`Render3dGlsl` など）は、WGSL を足す時に 2 本になる。P5 で、型のついた式の木 1 本から GLSL・WGSL・CPU を出す形へ寄せる。全部を render graph にはしない。
 - 取らない物: 前のコマとの差分を自動で追う形（View が毎コマ値を返す作りと合わない。動かない物は、ゲームが static と宣言する）。GPU の側の間引きは、CPU の描き手と絵がずれない範囲だけ。
 
@@ -565,14 +574,14 @@ R1b と P6 を種類ごとに交互に・3D の `planScene` 系を配列で運�
 表裏は【不明】として P4a で確かめる・cutout の縁の候補・3D を貼る形を測る場所・P0 を 8〜12 時間に・「試しに選べる」口・`firstInstance` の合格線と次の手・伺う事 4 件。
 
 **第 4 版**（第 3 版のレビュー 78 点の指摘）: 描く 1 行を種類ごとの enum にし「draw ごとの値」「絵の組」を足した・GPU の物の寿命は表が前半で作る消すだけ backend・
-`DrawList` は `renderCommands` 1 回ごとにその場で流す・GL の番号の漏れの一覧と `GpuHandle` の読み替え・`LwjglLayer` が backend に聞く口の表・
+`RenderList` は `renderCommands` 1 回ごとにその場で流す・GL の番号の漏れの一覧と `GpuHandle` の読み替え・`LwjglLayer` が backend に聞く口の表・
 順を「スプライトだけリファクタ → 縦に 1 本 → 形のレビュー → 残り」に（V1・V2・R1a/b・R2a/b）・`firstInstance` は未試作と認めて P4a・P4b の門に試作を足した・
 alpha-to-one が無い事と clip の z と表裏・古い番号の食い違い・GL では「1 コマ 1 回で送る」を測ってからに・描く順の番号と材質の状態を backend に聞く・
 偽の GL を通るテスト 6 ファイルを R2 の門に残す・新しい型を足さず今の `SceneDraws` と run の状態を広げる・配列で持つ・P1 を effect より上に絞る・
 起動の選び分けの条件・目的 1 の文と GL の backend をやめる条件・見積もりに比べとレビューを入れた（115〜180 時間）・9.1 に 4 行と見本の形。
 
-**第 3 版**: `DrawList` を挟み、先に今の描き手をリファクタしてから WebGPU の backend だけを書く形にした（5.1・R1・R2）。パッケージを分ける引っ越し（第 2 版の P3・P7）をやめた。
-fallback は止まった別の描き手でなく、同じ `DrawList` を流す GL の backend にした。WebGPU の命令の再調査（`survey/H`）を入れた（`firstInstance`・dynamic offset を使わない・
+**第 3 版**: `RenderList` を挟み、先に今の描き手をリファクタしてから WebGPU の backend だけを書く形にした（5.1・R1・R2）。パッケージを分ける引っ越し（第 2 版の P3・P7）をやめた。
+fallback は止まった別の描き手でなく、同じ `RenderList` を流す GL の backend にした。WebGPU の命令の再調査（`survey/H`）を入れた（`firstInstance`・dynamic offset を使わない・
 bind group 3 つ・storage buffer 8 本まで・dual-source blending を取らない・render bundle の制約・引数のバッファは 1 本）。測りながら・書き味を見ながら決める表（9.1）。見積もりを 100〜150 時間に。
 
 **第 2 版**（第 1 版のレビュー 68 点の指摘 21 件）:
@@ -639,3 +648,12 @@ V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関�
 - 決めた事: Pass のお題は `bench/gl_parity` の `passPaste` などで代える・Dawn の macOS arm64 のネイティブを V1 で `engine_full` に載せる・PC の 3D は描かずに知らせる・GL へ落ちた理由は画面に出さない。
 - ブラウザで `getContext("webgpu")` の後に落ちたら、`backend` を外した URL で `location.replace` して GL で開き直す（同じ canvas から webgl2 は取れないため）。
 - 形のレビューへの持ち越しは同じ文書の 12 章（17 件）。
+
+### 12.14 形のレビュー（2D）と R1b-0（2026-11-15・この Mac だけ）
+
+- 判断 13 で 5.1 の表を改めた（上の 5.1 の「判断 13 で改めた所」）。名前は `RenderList`（11 章の 7）。6.1 の決まり 6 は「行と頂点は 1 コマぶんを 1 本に詰める（upload は除く）」へ書き直した。
+- R1b-0 で入れた物: 行の型と GL の流し方を `RenderFrame.Internal.RenderList`・`GlRows` へ出した・front-end の状態（`st`）と backend の状態を分けた・instance と頂点の入れ物は backend が貸す・
+  描き先の上下は backend に聞く（`targetUpsideDown`）・`PassSpec`・ensureTexture の表と upload の関数の record（`TextureTable`）・PC の `FLIX_GE_FRAME_STATS` に 1 コマの submit が 2 回以上のコマの数。
+  絵は gl-parity・テンプレの reference・gl-capture・webgpu-v1-check（PC とブラウザ）で前と同じ。sprite_stress は前と後で 5% の内。
+- 3 章と食い違った所と持ち越しは `webgpu-shape-review-2d.md` の 7 章（`FrameArgs` が pub なので `targetNames`・`targetClear` が残る・描き先の表と `lastFrame` は共有していない・
+  読み込みの record・`copyImageBitmap`・sprite_stress の JSON の `submits` は engine の拡張の相談）。
