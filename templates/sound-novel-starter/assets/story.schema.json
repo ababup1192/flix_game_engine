@@ -262,6 +262,9 @@
         "noRollback": {
           "type": "string"
         },
+        "noSaveNow": {
+          "type": "string"
+        },
         "waiting": {
           "type": "string"
         },

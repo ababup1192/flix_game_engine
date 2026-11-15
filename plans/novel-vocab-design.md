@@ -353,13 +353,15 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 - 血鱗の `StageAudit`（122 行）の 2 つの検査のうち、「ノードの頭の 4 文」と「生きて読んだ舞台と頭だけ当てた舞台の比べ」は要らなくなる。「前のノードが scene の頁の上限（cap）に着いているか」は血鱗だけの決まりなので、ゲームのテストに残す。
 - 代わりに、テンプレートの既存の `TestCast.testLiveStageMatchesTheRestoredStageOnEveryLine`（今は立ち絵だけを比べる）を広げ、舞台の全部（Snapshot）と頁を全部の台詞で比べる（O4）。
 
-### 4.4 段 7 で入れた形（実装と、計画とのずれ。1 回目のレビュー 84 点の直しまで）
+### 4.4 段 7 で入れた形（実装と、計画とのずれ。2 回目のレビュー 88 点の直しまで）
 
-- **Mark**: `{ bookmark, stage = Stage.Snapshot, page = Option[Page.Page], entry = Option[Stage.Snapshot] }`。`Stage.Snapshot` は外から作らせない型（非 pub の enum + `pub type alias`）で、作る口は `Stage.snapshotOf`（settle してから包む）と、セーブの JSON を読む所の `Stage.makeSnapshot`。`page` と `entry` は、それを書く前のセーブ（version 2 と、`entry` の無い version 3）では None。
-- **ずれ: Mark にノードに入った時の舞台（`entry`）も持つ**（4.1 の (a) の情報を、YarnRunner を変えずに持つ形）。生きて読む時も当て直しも、出来事の .yarn の行で居るノードを引き（`Res#nodesBySource`・`Talk.nodesBySource`）、別のノードの行か、同じノードで前に通った行より上の行（自分への jump）に来た所でノードに入ったと見て、入る直前の舞台を `Read#entry`（`World.NodeEntry`）に残す（`WorldRead.trackEntry`。`absorbOne` の頭で毎回）。`restore` は `entry` から当て直すので、ロードした直後のバックログの前の台詞の戻れる所に、ノードの途中で替えた物（立ち絵・背景・型・小物・props）が早く入らない。`entry` の無い枠は今までどおり Mark の舞台から当て直す。
-- **JSON は version 3**: 枠に `"stage": { "bg": {photo, grade} か null, "mode", "pages", "props", "cast" }`・`"page": { "lines", "current", "next" }`・`"entry"`（stage と同じ形か null）。version 2 か 3 かは根の `version` でなく、枠に `stage` の鍵があるかで見る（枠ごとに読み替える）。version 2 の欄（photo・grade・環境音・particles・mode・cast）は `Saves.stageOf` が `Stage.makeSnapshot` で組む。読めない欄はその欄の既定で続ける。
+- **Mark**: `{ bookmark, stage = Stage.Snapshot, page = Option[Page.Page], entry = Option[Saves.NodeStart] }`（`NodeStart = { stage = Stage.Snapshot, page = Page.Page }`）。`Stage.Snapshot` は外から作らせない型（非 pub の enum + `pub type alias`）で、作る口は `Stage.snapshotOf`（settle してから包む）と、セーブの JSON を読む所の `Stage.makeSnapshot`。`page` と `entry` は、それを書く前のセーブ（version 2 と、`entry` の無い version 3）では None。
+- **ずれ: Mark にノードに入った時の舞台（`entry`）も持つ**（4.1 の (a) の情報を、YarnRunner を変えずに持つ形）。生きて読む時も当て直しも、出来事の .yarn の行で居るノードを引き（`Res#nodesBySource`・`Talk.nodesBySource`）、別のノードの行か、同じノードで前に通った行より上の行（自分への jump）に来た所でノードに入ったと見て、入る直前の舞台と頁（出し終えた形）を `Read#entry`（`World.NodeEntry`）に残す（`WorldRead.trackEntry`。`absorbOne` の頭で毎回）。`restore` は `entry` の舞台と頁から当て直すので、ロードした直後のバックログの前の台詞の戻れる所に、ノードの途中で替えた物（立ち絵・背景・型・小物・props）が早く入らず、前のノードの頁に続く NVL の台詞へ戻っても頁の行が落ちない。`entry` の無い枠は今までどおり Mark の舞台と空の頁から当て直す。
+- **自分への jump の見分けは行だけ**: 同じノードで `<<if not $v>>` の枝が上・`<<else>>` が下の形だと、1 回目の入り直しの最初の出来事の行が前に通った行より下になり、入り直しと見分けられない（その入り直しの後の台詞の戻れる所は、前の入り口の舞台から当て直す）。ブックマークの steps が空に戻ったかで見る形は取れない。実行器は 1 回の送りの出来事をまとめて返し、その後のブックマークしか見えないので、列のどこで入り直したかが分からないため。
+- **シナリオを差し替えた後（`settleDialogue`）**: `Read#entry` の `lastLine` は古い台本の行のまま残る。開き直したノードの最初の出来事が、その行より上なら入り直しと見て舞台を取り直し、下ならそのまま続く。作る人の手元（保存即反映）だけの話なので直さない。
+- **JSON は version 3**: 枠に `"stage": { "bg": {photo, grade} か null, "mode", "pages", "props", "cast" }`・`"page": { "lines", "current", "next" }`・`"entry": { "stage", "page" }` か null（頁が読めなければ entry ごと無い物として読む）。version 2 か 3 かは根の `version` でなく、枠に `stage` の鍵があるかで見る（枠ごとに読み替える）。version 2 の欄（photo・grade・環境音・particles・mode・cast）は `Saves.stageOf` が `Stage.makeSnapshot` で組む。読めない欄はその欄の既定で続ける。
 - **restore**: `entry`（無ければ Mark の舞台）から当て直してバックログと選択肢を作り、`settled` の後に舞台と頁を Mark の値で置き換える。
-- **ずれ: セーブの道（`slotHere`）は、`<<wait>>` の間はバックログの頭の項目だけを見る**（`WorldRead.markHere`・`headMarkOf`）。頭が戻れる所つきの台詞ならそれを使い、選んだ選択肢か空（はじめから読んだ頭の待ち・選択肢を選んだ直後の待ち）なら None で、その間はセーブしない。今のブックマークで作ると、当て直しが待ちを飛ばして次の台詞まで進むのに、舞台と頁は待つ前の物で置き換えるので食い違う。選んだ選択肢より前の台詞へさかのぼると、選ぶ前に戻る。台詞と選択肢を出している間は計画どおり今のブックマーク・舞台・頁で作る。
+- **ずれ: セーブの道（`slotHere`）は、`<<wait>>` の間はバックログの頭の項目だけを見る**（`WorldRead.markHere`・`headMarkOf`）。頭が戻れる所つきの台詞ならそれを使い、選んだ選択肢か空（はじめから読んだ頭の待ち・選択肢を選んだ直後の待ち）なら None で、その間はセーブしない。今のブックマークで作ると、当て直しが待ちを飛ばして次の台詞まで進むのに、舞台と頁は待つ前の物で置き換えるので食い違う。選んだ選択肢より前の台詞へさかのぼると、選ぶ前に戻る。台詞と選択肢を出している間は計画どおり今のブックマーク・舞台・頁で作る。セーブできない待ちの間にセーブ（画面の枠・クイック）を押すと「今はセーブできません」（labels の `noSaveNow`）を知らせる（ボタンを効かない見た目にしなかったのは、ほかの知らせ（`noSave`・`noRollback`）と同じ作りにそろえたため）。
 - **ずれ: `window off`（`window.hidden`）は次の台詞・選択肢と `window nvl|bottom` で戻る**（`Stage.withWindowShown`。Ren'Py の window hide と同じ）。消したまま台詞を出すと、押せば進むのに何も読めない画面になるため。値は `props` の数の鍵 `window.hidden`（1 = 消す）で、名前の鍵にしなかったのは、後で `window off time=` で薄くする時に tween で書けるから。View は `Stage.isWindowHidden` が真の間、読む画面の層（文字の枠・字・クイックメニュー）を描かない（画面の Hidden と同じ層）。このため「前のノードで消したまま jump した後の台詞から戻す」写しのテストは意味を失い、代わりに「消して待つ間にセーブして戻すと、待つ前の台詞を枠のある形で出す」を見る。
 - **`Stage.pages`**: 足すのは `Out.ClearPage`（`window clear` と型の切り替え）と NVL で入り切らずにめくった時（`Page.isFullFor`）の 2 か所で、どちらも `WorldRead` の中（`takeOut` と `showLine`）。ADV の頁送り（`TurnPage`）は数えない（血鱗の「頁で沈む」は NVL の頁）。
 - **O2（台本を読んだ時に 1 回だけ引数を読む表）**: `Commands.ArgsTable`（鍵は「ファイル:行」。中は外から作れない）を `Res#commandArgs` に置き、`Res.withDialogue` と `Controls.loadRes` が作る（`Res#nodesBySource` も同じ所で作る）。引く時は行の鍵に加えて名前と引数の字が同じかを見て、違えば読み直す（差し替え前の表・テストが組んだコマンド）。`ScriptEdits` は台詞だけを直すので作り直さない。`Commands.timingOf` は `res` を取るようになった。
@@ -434,7 +436,7 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 合計 25〜32 時間。
 
 **段 7 からの持ち越し**:
-- ロード直後のバックログの穴は、Mark にノードに入った時の舞台を持たせて直した（4.4）。`entry` の無い古い枠だけ前の形で戻る。
+- ロード直後のバックログの穴は、Mark にノードに入る直前の舞台と頁を持たせて直した（4.4）。`entry` の無い古い枠と、`<<if not>>` が上・`<<else>>` が下の自分への jump の 1 回目の入り直しだけ前の形で戻る（4.4）。
 - 血鱗の `StageAudit` の 2 つの検査を消すのと、台本の頭の言い直しを機械で消すのは、ゲームが移る N4 の後（4.3・6 章）。
 - `window off time=`（薄くして消す）は入れていない（`window.hidden` は数の値なので tween で書ける）。
 

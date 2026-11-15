@@ -46,15 +46,18 @@ mod Saves {
     }
 
     /// 戻れる所 1 つ。bookmark = シナリオの位置、stage = その時の舞台（settle した物）、page = その台詞を出した後の頁、
-    /// entry = そのノードに入った時の舞台（当て直しの始まり）。page と entry は、それを書く前のセーブから読んだ枠では None
-    /// （頁は当て直しで作った物を使い、当て直しは stage から始める）。
+    /// entry = そのノードに入る直前の舞台と頁（当て直しの始まり）。page と entry は、それを書く前のセーブから読んだ枠では None
+    /// （頁は当て直しで作った物を使い、当て直しは stage と空の頁から始める）。
     /// 戻す時は entry からブックマークを当て直してバックログを作り、舞台と頁はこの値で置き換える（WorldRead.restore）。
     pub type alias Mark = {
         bookmark = YarnRunner.Bookmark,
         stage = Stage.Snapshot,
         page = Option[Page.Page],
-        entry = Option[Stage.Snapshot]
+        entry = Option[NodeStart]
     }
+
+    /// ノードに入る直前の舞台と頁（頁は文字送りを出し終えた形）。
+    pub type alias NodeStart = { stage = Stage.Snapshot, page = Page.Page }
 
     /// セーブデータ 1 つ。place = 場所の名前（背景の写真の label）、speaker / excerpt = その時の話し手と台詞、
     /// savedAt = 保存した日時（その土地の時刻の 1970-01-01 からの秒）、serial = 保存した順の通し番号（大きいほど新しい）。
@@ -204,7 +207,7 @@ mod Saves {
             "bookmark" => YarnRunner.bookmarkToJson(s#mark#bookmark),
             "stage" => Stage.snapshotToJson(s#mark#stage),
             "page" => s#mark#page |> Option.map(Page.toJson) |> Option.getWithDefault(Json.JNull),
-            "entry" => s#mark#entry |> Option.map(Stage.snapshotToJson) |> Option.getWithDefault(Json.JNull),
+            "entry" => s#mark#entry |> Option.map(nodeStartToJson) |> Option.getWithDefault(Json.JNull),
             "place" => Json.JString(s#place), "speaker" => Json.JString(s#speaker), "excerpt" => Json.JString(s#excerpt),
             "savedAt" => num(Int64.toFloat64(s#savedAt)), "serial" => num(Int32.toFloat64(s#serial)) });
         let r = rec(saves);
@@ -223,11 +226,16 @@ mod Saves {
                                            "display" => Json.JString("${c#display}") })
         })
 
-    /// 欄の舞台（null は None）。
-    def snapshotIn(json: Json): Option[Stage.Snapshot] = match json {
-        case Json.JNull => None
-        case _          => Some(Stage.snapshotFromJson(json))
-    }
+    /// 枠の "entry" に書く値: { "stage": 舞台, "page": 頁 }。
+    def nodeStartToJson(start: NodeStart): Json =
+        Json.JObject(Map#{ "stage" => Stage.snapshotToJson(start#stage), "page" => Page.toJson(start#page) })
+
+    /// 枠の "entry" の値から（null・object でない・頁が読めない時は None で、当て直しは Mark の舞台と空の頁から始める）。
+    def nodeStartIn(json: Json): Option[NodeStart] =
+        JsonCodec.expectObject(json) |> Option.flatMap(obj -> forM (
+            stage <- Map.get("stage", obj);
+            page <- Map.get("page", obj) |> Option.flatMap(Page.fromJson)
+        ) yield { stage = Stage.snapshotFromJson(stage), page = page })
 
     /// 枠の舞台。"stage" の鍵（version 3）が無ければ、version 2 の欄（photo・grade・環境音・particles・mode・cast）から作る。
     def stageOf(obj: Map[String, Json]): Stage.Snapshot = match Map.get("stage", obj) {
@@ -255,7 +263,7 @@ mod Saves {
                 bookmark <- Map.get("bookmark", obj) |> Option.flatMap(YarnRunner.bookmarkFromJson)
             ) yield {
                 { mark = { bookmark = bookmark, stage = stageOf(obj), page = Map.get("page", obj) |> Option.flatMap(Page.fromJson),
-                           entry = Map.get("entry", obj) |> Option.flatMap(snapshotIn) },
+                           entry = Map.get("entry", obj) |> Option.flatMap(nodeStartIn) },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),
                   savedAt = Float64.tryToInt64(JsonCodec.floatOr("savedAt", 0.0, obj)) |> Option.getWithDefault(0i64),

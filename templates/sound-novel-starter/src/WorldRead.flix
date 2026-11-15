@@ -114,15 +114,18 @@ mod WorldRead {
 
     /// bookmark と、今の舞台と頁（文字送りは出し終えた形）と、今のノードに入った時の舞台で作る戻れる所。
     def markOf(bookmark: YarnRunner.Bookmark, r: World.Read): Saves.Mark =
-        { bookmark = bookmark, stage = Stage.snapshotOf(r#stage), page = Some(Page.revealAll(r#page)), entry = Some(r#entry#stage) }
+        { bookmark = bookmark, stage = Stage.snapshotOf(r#stage), page = Some(Page.revealAll(r#page)), entry = Some(r#entry#start) }
 
     /// 出来事を反映する前に、ノードに入ったかを見る。別のノードの行か、同じノードで前に通った行より上の行（自分への jump）なら、
-    /// 入る直前の舞台を entry に残す。
+    /// 入る直前の舞台と頁を entry に残す。
+    // WhyNot: ブックマークの steps が空に戻ったかで自分への jump を見分けない — 実行器は 1 回の送りの出来事をまとめて返し、
+    //         その後のブックマークしか見えないので、列のどこで入り直したかが分からない。
     def trackEntry(res: Res.Res, event: YarnRunner.Event, r: World.Read): World.Read =
         let place = Talk.eventSourceOf(event) |> Option.flatMap(source -> Map.get(Yarn.sourceText(source), res#nodesBySource) |> Option.map(node -> (node, source#line)));
         match place {
             case Some((node, line)) if node != r#entry#node or line <= r#entry#lastLine =>
-                { entry = { node = node, lastLine = line, visits = r#entry#visits + 1, stage = Stage.snapshotOf(r#stage) } | r }
+                { entry = { node = node, lastLine = line, visits = r#entry#visits + 1,
+                            start = { stage = Stage.snapshotOf(r#stage), page = Page.revealAll(r#page) } } | r }
             case Some((_, line)) => { entry = { lastLine = line | r#entry } | r }
             case None            => r
         }
@@ -365,16 +368,17 @@ mod WorldRead {
 
     // ── 戻れる所へ戻す ──
 
-    /// 戻れる所へ戻す: そのノードに入った時の舞台（Mark の entry）からブックマークを当て直し、通ったコマンドを音を出さずに反映して
-    /// バックログと選択肢を作り直し、最後に舞台と頁を Mark の値で置き換える。entry の無い枠は Mark の舞台から当て直し、
+    /// 戻れる所へ戻す: そのノードに入る直前の舞台と頁（Mark の entry）からブックマークを当て直し、通ったコマンドを音を出さずに反映して
+    /// バックログと選択肢を作り直し、最後に舞台と頁を Mark の値で置き換える。entry の無い枠は Mark の舞台と空の頁から当て直し、
     /// 頁の無い枠は当て直しで作った頁のまま。画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
     // WhyNot: 当て直した舞台をそのまま使わない — 数え足す値（頁の数など）は当て直しの始まりに頼り、entry の無い枠では合わない。
     pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
         let saved = Stage.fromSnapshot(mark#stage);
-        let start = mark#entry |> Option.map(Stage.fromSnapshot) |> Option.getWithDefault(saved);
+        let start = mark#entry |> Option.map(e -> Stage.fromSnapshot(e#stage)) |> Option.getWithDefault(saved);
+        let startPage = mark#entry |> Option.map(e -> e#page) |> Option.getWithDefault(Page.empty());
         let (talk, events) = YarnRunner.resume(res#dialogue, mark#bookmark, World.now(w));
         let gaveUp = World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
-        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = start, gaveUp = gaveUp | World.emptyRead() },
+        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = start, page = startPage, gaveUp = gaveUp | World.emptyRead() },
                        { panel = World.Panel.Closed, ask = None | w }))
             |> World.mapRead(r -> { stage = saved, page = Option.getWithDefault(r#page, mark#page) | r })
 
@@ -535,7 +539,7 @@ mod WorldRead {
             let entered = World.readOf(next) |> Option.filter(_ -> visitsOf(next) != visitsOf(t#w)) |> Option.map(r -> r#entry);
             match entered {
                 case Some(e) if Map.memberOf(e#node, t#found) => { w = next, revisited = true | t }
-                case Some(e) => { w = next, found = Map.insert(e#node, e#stage, t#found) | t }
+                case Some(e) => { w = next, found = Map.insert(e#node, e#start#stage, t#found) | t }
                 case None    => { w = next | t }
             }
         };

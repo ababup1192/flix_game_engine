@@ -73,8 +73,8 @@ mod World {
     }
 
     /// 今のノードに入った時の記録。node = ノードの名前、lastLine = そのノードで最後に通った .yarn の行、
-    /// visits = ノードに入った回数（自分への jump も 1 回）、stage = 入る直前の舞台。
-    pub type alias NodeEntry = { node = String, lastLine = Int32, visits = Int32, stage = Stage.Snapshot }
+    /// visits = ノードに入った回数（自分への jump も 1 回）、start = 入る直前の舞台と頁。
+    pub type alias NodeEntry = { node = String, lastLine = Int32, visits = Int32, start = Saves.NodeStart }
 
     /// 素材の待ち: ブラウザ版で後回しにした背景・環境音が、使う時にまだ届いていない間の暗転（WorldRead の「素材の待ち」）。
     /// phase = 今の段、phaseFrom = その段に入った物語の時刻（黒へ重ねる進みの元）、waited = Waiting に居た実時間の秒、
@@ -265,7 +265,7 @@ mod World {
     pub def emptyRead(): Read =
         { talk = YarnRunner.closed(), stage = Stage.empty(), page = Page.empty(), choices = Nil, choiceCursor = 0,
           log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None,
-          entry = { node = "", lastLine = 0, visits = 0, stage = Stage.snapshotOf(Stage.empty()) } }
+          entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(Stage.empty()), page = Page.empty() } } }
 
     // ── 場面を読む口 ──
 

@@ -333,6 +333,27 @@ mod TestCast {
         Assert.assertEq(expected = (shownAtL4(), Some(("cup", "plain", "item"))), stageMark(jumped))
 
     @Test
+    def testLogJumpAfterALoadKeepsThePageFromTheEarlierNode(): Unit \ {Assert, Fs.FileRead} =
+        // PagesNext の「枠は台詞で戻る」でセーブしてロードし、バックログで「前のノードの頁に続く地の文」へ戻ると、
+        // 頁には前のノード（Pages）の行が残っている（当て直しはノードに入る直前の頁から始まる）。
+        let r = res();
+        let saved = quiet(() -> WorldSaves.writeSlot(r, Saves.Tab.Numbered(1), 0, lineWith(r, "枠は台詞で戻る")));
+        let loaded = settle(r, quiet(() -> WorldSaves.loadFrom(r, Saves.Tab.Numbered(1), 0, World.toTitle(saved))));
+        let asked = quiet(() -> WorldLog.askJump(1, quiet(() -> WorldLog.openLog(loaded))));
+        let jumped = settle(r, quiet(() -> WorldMenu.answer(r, World.Answer.Yes, asked)));
+        let before = lineWith(r, "前のノードの頁に続く");
+        Assert.assertEq(expected = (shapeOf(r, before), false), (shapeOf(r, jumped), List.isEmpty(World.pageOf(before)#lines)))
+
+    @Test
+    def testSavingDuringAWaitAfterAChoiceTellsItCannotSave(): Unit \ {Assert, Fs.FileRead} =
+        // セーブできない待ちの間にクイックセーブを押すと、クイックのページは空のまま「今はセーブできません」を知らせる。
+        let r = res();
+        let waiting = TestKit.pick(r, 0, next(r, lineWith(r, "枠は台詞で戻る")));
+        let pressed = quiet(() -> WorldSaves.quickSave(r, waiting));
+        Assert.assertEq(expected = (Some(StoryDoc.labelOf(StoryDoc.Label.NoSaveNow, r#story)), true),
+                        (World.toastOf(r, pressed), Option.isEmpty(Saves.slotOf(Saves.Tab.Quick, 0, pressed#saves))))
+
+    @Test
     def testPagesCountTheTypeChange(): Unit \ {Assert, Fs.FileRead} =
         // 型の切り替え（下のウィンドウ → nvl）で頁の数が 1 増える。
         let r = res();
