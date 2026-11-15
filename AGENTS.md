@@ -89,7 +89,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 - engine_world の「やりたいこと → モジュール」逆引き: `make module Q=<語>` で 1 行ずつ引く（分野の目次は [docs/module-index.md](docs/module-index.md)・本文は `docs/modules/<分野>.md`）
 - **API の型・引数はソースを grep する前に** [docs/api-digest.md](docs/api-digest.md)（全 pub 宣言の生成物）を引く
 - headless の描き出しを新しい場所で組むときの写経元: [docs/headless-render-recipe.md](docs/headless-render-recipe.md)
-- 音の付け方（効果音づくり・鳴らす配線・音の下限チェックリスト・外から持ってくる BGM と効果音のフリー素材の候補（ノベル・RPG・ファミコン風）と規約）: [docs/audio.md](docs/audio.md)
+- 音の付け方（効果音づくり・鳴らす配線・音の下限チェックリスト・外から持ってくる BGM と効果音のフリー素材の候補（ノベル・RPG・ファミコン風・RPGツクールの付属素材）と規約）: [docs/audio.md](docs/audio.md)
 - 時計（遊び・物語・実時間を型で分ける・ポーズ・ヒットストップ・止まる誤りと止まらない誤り）: [docs/clock.md](docs/clock.md)
 
 複雑で大規模な変更の場合は、いきなり実装をせず、レビュー役を立てて、壁打ちして80~90点以上を目指してください。
