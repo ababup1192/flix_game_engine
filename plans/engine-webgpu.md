@@ -750,7 +750,7 @@ history の寿命（作る・形が変われば作り直す・描き先を作り
   GL は 1・2・4・8 のうち `GL_MAX_SAMPLES` 以下（前と同じ答え）、WebGPU は 1 と 4（core の device が必ず持つ数）なので、**WebGPU は標本 2 を 4 で描く**（8 は 4）。
   1 回目のレビュー（84 点）で「2 を 1 にするのは engine の `RenderTarget.withMsaa` の doc（1・2・4・8 に下へ丸め・GPU の上限で頭打ち）の範囲と言えない（4 が描けるのに MSAA が消え、backend で絵が変わる）」と指摘され、
   親が相談事として (b)「WebGPU では 2 を 4 に上げる」に決めた。2 を 4 で描く時は名前ごとに 1 回 `Log.fellBack`。
-  engine の `withMsaa` の doc に「WebGPU は 1 と 4 しか描けないので、2 は 4 で描く」を 1 行足すのは、この担当では engine の編集が許しで止められたので**まだ足していない**（親か人が足す）。
+  engine の `withMsaa` の doc に「WebGPU の描き手は 1 と 4 しか描けないので、2 は 4 で描く」を 1 行足した（人の「おまかせ」・型と動きは変えない）。
   `bench/webgpu_v1` の `msaaTwo`（標本 2）は GL（2 標本）と WebGPU（4 標本）で縁の画素が違うので、許す差を 56/255 にして理由を `tolerance.tsv` に書いた（既定 0 の例外）。
   代わりに、WebGPU の `msaaTwo` の絵が標本 4 の `msaaPass` と画素まで同じ事を Main が見る。
 - **GL と比べて分かった事**: GL の描き先は上下逆に格納されるので、標本の位置が中身に対して上下に返り、**斜めの縁の MSAA は GL と WebGPU で 1〜2 標本ずれる**（多角形の場面で 89 px・最大 ±51）。
