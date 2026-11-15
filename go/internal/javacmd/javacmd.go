@@ -1,6 +1,7 @@
-// Package javacmd は bin/fge が java を起こす時の java の決め方（bin/flix と同じ順）を 1 か所に持つ。
+// Package javacmd は bin/fge が java を起こす時の java の決め方を 1 か所に持つ。bin/flix と bin/headless-run が読む
+// bin/java-resolve.sh と同じ順（片方を直したらもう片方も直す）:
 //
-//	JAVA（名指し）→ PATH の java（-version が通る物）→ engine の devbox の jdk → main の checkout の devbox の jdk → java
+//	JAVA → PATH の java → engine の devbox の jdk → main の checkout の devbox の jdk（どれも java -version が通る物だけ）
 //
 // WhyNot: PATH の java を在るかどうか（LookPath）で決めない。macOS には /usr/bin/java という「Java を入れてください」と
 // 言うだけの入口が必ず在り、devbox の外（Studio の .app・素のターミナル・devbox の無い worktree）ではそれを掴んで止まる。
@@ -16,36 +17,63 @@ import (
 	"sync"
 )
 
-// pathJavaWorks は PATH の java が -version で通るか（1 つの走行で 1 度だけ起こす）。テストが替える。
-var pathJavaWorks = sync.OnceValue(func() bool {
-	return exec.Command("java", "-version").Run() == nil
-})
+var versionChecked sync.Map
 
-// Resolve は engine（engine の根）から見た java の呼び方。PATH の java が通れば "java"、devbox の jdk なら絶対パス。
-// どれも無ければ "java"（起こした所で止まり、誤りはそこで出る）。
+// javaWorks は cmd -version が通るか（同じ cmd は 1 つの走行で 1 度だけ起こす）。テストが替える。
+var javaWorks = func(cmd string) bool {
+	if v, ok := versionChecked.Load(cmd); ok {
+		return v.(bool)
+	}
+	ok := exec.Command(cmd, "-version").Run() == nil
+	versionChecked.Store(cmd, ok)
+	return ok
+}
+
+// Resolve は engine（engine のルート）から見た java の呼び方。PATH の java なら "java"、devbox の jdk なら絶対パス。
+// どれも通らなければ JAVA（無ければ "java"）を返す（起こした所で止まり、誤りはそこで出る）。
 func Resolve(engine string) string {
-	if j := os.Getenv("JAVA"); j != "" {
-		return j
+	named := os.Getenv("JAVA")
+	cands := []string{named, "java"}
+	for _, bin := range devboxBins(engine) {
+		cands = append(cands, filepath.Join(bin, exe()))
 	}
-	if pathJavaWorks() {
-		return "java"
+	for _, c := range cands {
+		if c != "" && javaWorks(c) {
+			return c
+		}
 	}
-	if bin := DevboxBin(engine); bin != "" {
-		return filepath.Join(bin, exe())
+	if named != "" {
+		return named
 	}
 	return "java"
 }
 
 // PathWorks は PATH の java が -version で通るか（PATH を替えて flixlint などに java を渡す所が使う）。
-func PathWorks() bool { return pathJavaWorks() }
+func PathWorks() bool { return javaWorks("java") }
+
+// devboxBins は java を探す devbox の bin を使う順に（engine の物・devbox.json が同じなら main の checkout の物）。
+func devboxBins(engine string) []string {
+	if engine == "" {
+		return nil
+	}
+	out := []string{devboxBinPath(engine)}
+	if main := MainCheckout(engine); main != "" && sameFile(filepath.Join(engine, "devbox.json"), filepath.Join(main, "devbox.json")) {
+		out = append(out, devboxBinPath(main))
+	}
+	return out
+}
+
+func devboxBinPath(root string) string {
+	return filepath.Join(root, ".devbox", "nix", "profile", "default", "bin")
+}
 
 // DevboxBin は java の居る devbox の bin（engine の物、無ければ main の checkout の物）。無ければ ""。
 //
 // main の checkout の物を見るのは、engine が git の worktree で、その devbox.json が main の checkout の物と同じ時だけ。
 // WhyNot: worktree の .devbox を待たない。.devbox は checkout ごとの生成物（git に入らず、作るのに nix の取得が要る）で、
 // エージェントの worktree には無い。devbox.json が同じなら jdk の版も同じなので、main の物を借りて違いは出ない。
-// WhyNot: devbox.json が違う時は借りない。jdk の版を替えた枝で前の版の jdk を黙って使うと、フォントの計測がずれて
-// 描き出しのスナップショットが崩れる（bin/flix が jdk を固定する理由と同じ）。
+// WhyNot: devbox.json が違う時は借りない。jdk の版を替えた枝で前の版の jdk を知らせずに使うと、フォントの計測がずれて
+// 描き出しのスナップショットが崩れる。
 func DevboxBin(engine string) string {
 	if engine == "" {
 		return ""
@@ -61,14 +89,14 @@ func DevboxBin(engine string) string {
 }
 
 func devboxBinOf(root string) string {
-	bin := filepath.Join(root, ".devbox", "nix", "profile", "default", "bin")
+	bin := devboxBinPath(root)
 	if info, err := os.Stat(filepath.Join(bin, exe())); err == nil && !info.IsDir() {
 		return bin
 	}
 	return ""
 }
 
-// MainCheckout は engine が git の worktree の時、main の checkout の根（git の common dir の親）。worktree でなければ ""。
+// MainCheckout は engine が git の worktree の時、main の checkout のルート（git の common dir の親）。worktree でなければ ""。
 // git を起こさず .git のファイル（gitdir:）と commondir を読む。
 func MainCheckout(engine string) string {
 	b, err := os.ReadFile(filepath.Join(engine, ".git"))

@@ -33,6 +33,12 @@
       "why": "mk/game.mk の HEADLESS_RUN（render-all・render・ゲームの動画の口）が叩く。jar を 1 回だけ作って使い回す"
     },
     {
+      "src": "bin/java-resolve.sh",
+      "dest": "bin/java-resolve.sh",
+      "skipOnWindows": true,
+      "why": "bin/flix と bin/headless-run が java と devbox を決める時に読む"
+    },
+    {
       "src": "bin/githooks/pre-commit",
       "dest": "bin/githooks/pre-commit",
       "why": "生まれたゲームの pre-commit ゲートの実体"

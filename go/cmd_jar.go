@@ -279,7 +279,7 @@ func jarInputs(verb, dir string, flags map[string]string) (jarshare.Inputs, erro
 	return jarshare.Inputs{Source: source, Dispatcher: string(dispatcher), FlixJarSHA: flixSHA, Revision: flags["--revision"]}, nil
 }
 
-// toolPath は tool の道。java は javacmd.Resolve（PATH の /usr/bin/java の入口を掴まない）。
+// toolPath は tool のパス。java は javacmd.Resolve（PATH の /usr/bin/java の入口を掴まない）。
 func toolPath(tool string) (string, error) {
 	if tool != "java" {
 		return exec.LookPath(tool)

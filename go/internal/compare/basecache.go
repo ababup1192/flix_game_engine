@@ -114,7 +114,7 @@ var envRefRe = regexp.MustCompile(envRefPattern)
 
 const envRefPattern = `\$[({]([A-Z][A-Z0-9_]*)[)}:-]|getenv\("([A-Z][A-Z0-9_]*)"|envOr\("([A-Z][A-Z0-9_]*)"`
 
-// javaCmd は描き出しが使う java（headless-run と同じ順。javacmd.Resolve）。
+// javaCmd は描き出しが使う java（javacmd.Resolve。bin/headless-run も同じ bin/java-resolve.sh の順で決める）。
 func javaCmd(engineDir string) string {
 	return javacmd.Resolve(engineDir)
 }
