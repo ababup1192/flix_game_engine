@@ -231,6 +231,47 @@ func TestRevisitSwappedFramesDiffTwice(t *testing.T) {
 	}
 }
 
+// 台詞の無い場面転換のノード（Fade）を 2 回通り、新しい版から 1 回目の途中のコマを消す。
+func TestSilentNodeRevisitMissingFrameStops(t *testing.T) {
+	b := baseRec()
+	b.tape["frames"] = []any{
+		map[string]any{"file": "frames/f0.png", "t": 2.5, "node": "Fade", "seq": -1, "kind": "mid", "cmd": "bg", "step": 0, "at": 0.5, "layer": "world"},
+		map[string]any{"file": "frames/f1.png", "t": 4.5, "node": "Fade", "seq": -1, "kind": "mid", "cmd": "bg", "step": 0, "at": 0.5, "layer": "world"},
+	}
+	b.frames = map[string]*image.NRGBA{"frames/f0.png": gradient(100, 100), "frames/f1.png": gradient(100, 100)}
+	c := b.clone()
+	c.tape["frames"] = c.tape["frames"].([]any)[1:]
+	if newWorld(t, b, c).run(t).Passed {
+		t.Fatal("台詞の無いノードの 1 回目のコマを消しても通した")
+	}
+}
+
+// 同じノードへ続けて入り直し（<<jump 自分>>）、新しい版から 1 回目のコマを消す。
+func TestSelfLoopMissingFrameStops(t *testing.T) {
+	b, c := revisitRecs(t)
+	b.tape["events"] = []any{
+		map[string]any{"t": 1.0, "node": "Start", "kind": "line", "seq": 0, "who": "少女", "text": "はじめの台詞", "probes": map[string]any{"mood": "calm"}},
+		map[string]any{"t": 5.0, "node": "Start", "kind": "line", "seq": 0, "who": "少女", "text": "はじめの台詞", "probes": map[string]any{"mood": "calm"}},
+	}
+	delete(b.tape, "choices")
+	c = b.clone()
+	c.tape["frames"] = c.tape["frames"].([]any)[1:]
+	if newWorld(t, b, c).run(t).Passed {
+		t.Fatal("続けて入り直したノードの 1 回目のコマを消しても通した")
+	}
+}
+
+func TestDuplicateFrameKeyAtSameTimeStops(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	frames := c.tape["frames"].([]any)
+	c.tape["frames"] = append(frames, frames[0])
+	r := newWorld(t, b, c).run(t)
+	if r.Passed || len(diffsOf(r, WhatMissing)) != 1 {
+		t.Fatalf("同じ鍵のコマが同じ時刻に 2 枚あっても止まらない: %+v", r.Diffs)
+	}
+}
+
 // ---- 画面の物 ----
 
 func TestObjectDiffCarriesPlace(t *testing.T) {
@@ -288,6 +329,33 @@ func TestObjectCountDiffIsReview(t *testing.T) {
 	}
 }
 
+// ---- 音の組 ----
+
+func TestSoundsMovedIntoSameFramePass(t *testing.T) {
+	b := baseRec()
+	b.tape["sounds"] = []any{
+		map[string]any{"t": 10.0 / 30, "name": "se_z", "kind": "se", "label": "z"},
+		map[string]any{"t": 11.0 / 30, "name": "se_a", "kind": "se", "label": "a"},
+	}
+	c := b.clone()
+	c.tape["sounds"] = []any{
+		map[string]any{"t": 11.0 / 30, "name": "se_a", "kind": "se", "label": "a"},
+		map[string]any{"t": 11.0 / 30, "name": "se_z", "kind": "se", "label": "z"},
+	}
+	if d := diffsOf(newWorld(t, b, c).run(t), WhatSound); len(d) != 0 {
+		t.Fatalf("1 フレームずれて同じフレームに入った音で止まった: %+v", d)
+	}
+}
+
+func TestExtraSoundInNewStops(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	c.tape["sounds"] = append(c.tape["sounds"].([]any), map[string]any{"t": 5.0, "name": "se_x", "kind": "se", "label": "x"})
+	if newWorld(t, b, c).run(t).Passed {
+		t.Fatal("新しい版にだけある音で止まらない")
+	}
+}
+
 // ---- 音の並べ直し ----
 
 func TestSameFrameSoundsInOtherOrderPass(t *testing.T) {
@@ -328,16 +396,49 @@ func TestFrameSizeMismatchStops(t *testing.T) {
 	}
 }
 
-func TestMissingFrameCannotBeApproved(t *testing.T) {
+func TestMissingDoneFrameCannotBeApproved(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	c.tape["frames"] = c.tape["frames"].([]any)[1:]
+	w := newWorld(t, b, c)
+	w.acc.Entries = []Entry{{ID: "a1", Kind: KindIntended, Flow: "route", What: WhatFrame, Node: "Start", Seq: intp(0), Why: "x", Approved: true}}
+	r := w.run(t)
+	if r.Passed || len(diffsOf(r, WhatMissing)) != 1 {
+		t.Fatalf("撮っていない演出の後のコマを承認で通した: %+v", r.Diffs)
+	}
+}
+
+func TestMissingMidFrameStopsWithoutEntry(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	c.tape["frames"] = c.tape["frames"].([]any)[:1]
+	r := newWorld(t, b, c).run(t)
+	d := diffsOf(r, WhatFrame)
+	if r.Passed || len(d) != 1 || d[0].Review {
+		t.Fatalf("撮っていない途中のコマが止める差にならない: %+v", r.Diffs)
+	}
+}
+
+func TestMissingMidFrameCanBeApproved(t *testing.T) {
 	b := baseRec()
 	c := b.clone()
 	c.tape["frames"] = c.tape["frames"].([]any)[:1]
 	w := newWorld(t, b, c)
 	from, to := 0.0, 1.0
-	w.acc.Entries = []Entry{{ID: "a1", Kind: KindIntended, Flow: "route", What: WhatFrame, From: &from, To: &to, Why: "x", Approved: true}}
-	r := w.run(t)
-	if r.Passed || len(diffsOf(r, WhatMissing)) != 1 {
-		t.Fatalf("撮っていないコマを承認で通した: %+v", r.Diffs)
+	w.acc.Entries = []Entry{{ID: "a1", Kind: KindIntended, Flow: "route", What: WhatFrame, From: &from, To: &to, Why: "bg の 2 つの命令を 1 つにまとめた", Approved: true}}
+	if r := w.run(t); !r.Passed {
+		t.Fatalf("承認した撮っていない途中のコマで落ちた: %+v", r.Diffs)
+	}
+}
+
+func TestMissingMidFrameIsNotSystematic(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	c.tape["frames"] = c.tape["frames"].([]any)[:1]
+	w := newWorld(t, b, c)
+	w.acc.Entries = []Entry{{ID: "s1", Kind: KindSystematic, What: WhatFrame, Command: "bg", Why: "ease", Approved: true}}
+	if w.run(t).Passed {
+		t.Fatal("撮っていない途中のコマを系統の違いで通した")
 	}
 }
 

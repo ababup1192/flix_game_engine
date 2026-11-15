@@ -177,7 +177,7 @@ func (c *comparer) tape(flow, size string, a, b *Tape) {
 	c.probes(flow, size, a, b)
 	place := func(at float64) (string, int) { return placeAt(b, at) }
 	c.objects(flow, size, a.Objects, b.Objects, frameTol(a), screenOf(a), screenOf(b), place)
-	c.frames(flow, size, frameSide{a.Frames, a.Dir, visitsOf(a)}, frameSide{b.Frames, b.Dir, visitsOf(b)}, false)
+	c.frames(flow, size, frameSide{a.Frames, a.Dir}, frameSide{b.Frames, b.Dir}, false)
 }
 
 func frameTol(t *Tape) float64 { return 1/t.FPS + 1e-6 }
@@ -341,22 +341,36 @@ func placeAt(t *Tape, at float64) (string, int) {
 
 // ---- 2. 音 ----
 
-// soundOrder は同じフレームで鳴った音を (フレーム, kind, name) で並べ直した写し。
-// WhyNot: 書いた順のまま比べない — 同じフレームの中の順は命令を当てる順で決まり、移行で替わっても聞こえ方は同じ。
-func soundOrder(t *Tape) []Sound {
-	out := append([]Sound(nil), t.Sounds...)
-	frame := func(s Sound) int { return int(math.Round(s.T * t.FPS)) }
-	sort.SliceStable(out, func(i, j int) bool {
-		fi, fj := frame(out[i]), frame(out[j])
-		if fi != fj {
-			return fi < fj
-		}
-		if out[i].Kind != out[j].Kind {
-			return out[i].Kind < out[j].Kind
-		}
-		return out[i].Name < out[j].Name
-	})
+// byTime は音を時刻の順に並べた写し（同じ時刻は書いた順のまま）。
+func byTime(list []Sound) []Sound {
+	out := append([]Sound(nil), list...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].T < out[j].T })
 	return out
+}
+
+// pairSound は前の版の音 x の組を、新しい版の組になっていない音から探す。探すのは、組になっていない最初の音から
+// 1 フレームの窓の中の、名前と kind が同じ物（無ければ -1）。
+// WhyNot: 両方を名前で並べ直してから順に比べない — 1 フレームずれて同じフレームに入った音どうしの順が入れ替わり、偽の「音が違う」で止まる。
+func pairSound(x Sound, sb []Sound, used []bool, tol float64) int {
+	first := -1
+	for k := range sb {
+		if !used[k] {
+			first = k
+			break
+		}
+	}
+	if first < 0 {
+		return -1
+	}
+	if sb[first].Name == x.Name && sb[first].Kind == x.Kind {
+		return first
+	}
+	for k := first + 1; k < len(sb) && sb[k].T <= sb[first].T+tol; k++ {
+		if !used[k] && sb[k].Name == x.Name && sb[k].Kind == x.Kind {
+			return k
+		}
+	}
+	return -1
 }
 
 func (c *comparer) sounds(flow, size string, a, b *Tape) {
@@ -364,29 +378,38 @@ func (c *comparer) sounds(flow, size string, a, b *Tape) {
 		c.skip(flow, size, WhatSound, "sounds が無い")
 		return
 	}
-	sa, sb := soundOrder(a), soundOrder(b)
+	sa, sb := byTime(a.Sounds), byTime(b.Sounds)
+	used := make([]bool, len(sb))
 	tol := frameTol(a)
-	for i := 0; i < len(sa) || i < len(sb); i++ {
-		if i >= len(sa) || i >= len(sb) {
-			s, side := sa, "前"
-			if i >= len(sa) {
-				s, side = sb, "後"
+	for i, x := range sa {
+		k := pairSound(x, sb, used, tol)
+		if k < 0 {
+			node, seq := placeAt(b, x.T)
+			got := "無い"
+			for j := range sb {
+				if !used[j] {
+					got = sb[j].Kind + " " + sb[j].Name
+					break
+				}
 			}
-			node, seq := placeAt(b, s[i].T)
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: s[i].T,
-				Detail: fmt.Sprintf("音の数が違う（前 %d・後 %d）。%d 番目から先は%sにだけある（%s %s）", len(sa), len(sb), i, side, s[i].Kind, s[i].Name)})
+			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: x.T,
+				Detail: fmt.Sprintf("%d 番目の音が違う（前 %s %s / 後のその所 %s）。後ろの音は比べない", i, x.Kind, x.Name, got)})
 			return
 		}
-		x, y := sa[i], sb[i]
-		node, seq := placeAt(b, y.T)
-		if x.Name != y.Name || x.Kind != y.Kind {
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: y.T,
-				Detail: fmt.Sprintf("%d 番目の音が違う（前 %s %s / 後 %s %s）。後ろの音は比べない", i, x.Kind, x.Name, y.Kind, y.Name)})
-			return
-		}
+		used[k] = true
+		y := sb[k]
 		if math.Abs(x.T-y.T) > tol {
+			node, seq := placeAt(b, y.T)
 			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: y.T, Review: true,
 				Detail: fmt.Sprintf("%s の鳴った時刻が %.3f 秒ずれた（前 %.3f / 後 %.3f・許すのは 1 フレーム）", x.Name, y.T-x.T, x.T, y.T)})
+		}
+	}
+	for k, y := range sb {
+		if !used[k] {
+			node, seq := placeAt(b, y.T)
+			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: y.T,
+				Detail: fmt.Sprintf("音の数が違う（前 %d・後 %d）。%s %s は新しい版にだけある", len(sa), len(sb), y.Kind, y.Name)})
+			return
 		}
 	}
 }

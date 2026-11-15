@@ -102,43 +102,43 @@ func objectDiff(a, b Object, tol float64, sa, sb *Size, px float64, rectFree boo
 
 // ---- 5. コマ ----
 
-// visitsOf はコマがそのノードの何回目の訪問（0 から）にあるかを、出来事の並びから数える。
-// 出来事の並びが前と後で一致した後に引くので、前と後で同じ数え方になる。
-func visitsOf(t *Tape) func(Frame) int {
-	type entry struct {
-		node string
-		t    float64
-	}
-	var entries []entry
-	prev := ""
-	for _, e := range eventsOf(t) {
-		if e.Node != prev {
-			entries = append(entries, entry{e.Node, e.T})
-			prev = e.Node
-		}
-	}
-	return func(f Frame) int {
-		n := 0
-		for _, e := range entries {
-			if e.node == f.Node && e.t <= f.T+1e-9 {
-				n++
-			}
-		}
-		if f.Seq >= 0 {
-			return max(n-1, 0)
-		}
-		return n
-	}
-}
-
-// frameSide は片方の版のコマと、その読み方。
+// frameSide は片方の版のコマ。
 type frameSide struct {
 	frames []Frame
 	dir    string
-	visit  func(Frame) int
 }
 
-func noVisits(Frame) int { return 0 }
+// keyed はコマを時刻の順に並べ、鍵の土台に「同じ土台の何回目か」を足した鍵で引けるようにする。
+// 同じ土台で同じ時刻のコマが 2 枚あれば、どちらを組にするか決まらないので dup に返す。
+// WhyNot: ノードの訪問の回数を出来事の並びから数えない — 台詞の無いノード（場面転換）や同じノードへの続けての入り直しを数えられない。
+func keyed(frames []Frame) (byKey map[string]Frame, order []string, dup []Frame) {
+	idx := make([]int, len(frames))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(i, j int) bool { return frames[idx[i]].T < frames[idx[j]].T })
+	byKey = map[string]Frame{}
+	count := map[string]int{}
+	last := map[string]float64{}
+	for _, i := range idx {
+		f := frames[i]
+		base := f.Key()
+		if n := count[base]; n > 0 && math.Abs(last[base]-f.T) < 1e-9 {
+			dup = append(dup, f)
+			continue
+		}
+		key := fmt.Sprintf("%s/%d", base, count[base])
+		count[base]++
+		last[base] = f.T
+		if _, ok := byKey[key]; ok {
+			dup = append(dup, f)
+			continue
+		}
+		byKey[key] = f
+		order = append(order, key)
+	}
+	return byKey, order, dup
+}
 
 type framePair struct {
 	idx    int
@@ -150,20 +150,26 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 		c.skip(flow, size, WhatFrame, "前の版に frames が無い")
 		return
 	}
-	byKey := map[string]Frame{}
-	for _, f := range b.frames {
-		byKey[f.Key(b.visit(f))] = f
+	byA, orderA, dupA := keyed(a.frames)
+	byB, _, dupB := keyed(b.frames)
+	for _, side := range []struct {
+		name string
+		dup  []Frame
+	}{{"前", dupA}, {"後", dupB}} {
+		for _, f := range side.dup {
+			c.add(&Diff{Flow: flow, Size: size, Step: 5, What: WhatMissing, Node: f.Node, Seq: f.Seq, T: f.T, FrameKind: f.Kind,
+				Detail: fmt.Sprintf("%sの版の記録の中で、同じ鍵（%s）のコマが同じ時刻に 2 枚ある（どれを組にするか決まらない）", side.name, f.Key())})
+		}
 	}
 	var pairs []framePair
-	for i, fa := range a.frames {
+	for i, key := range orderA {
+		fa := byA[key]
 		if fa.Layer != "world" {
 			continue
 		}
-		key := fa.Key(a.visit(fa))
-		fb, ok := byKey[key]
+		fb, ok := byB[key]
 		if !ok {
-			c.add(&Diff{Flow: flow, Size: size, Step: 5, What: WhatMissing, Node: fa.Node, Seq: fa.Seq, T: fa.T, FrameKind: fa.Kind, Cmd: fa.Cmd,
-				Before: filepath.Join(a.dir, fa.File), Detail: "新しい版でこのコマを撮っていない（" + key + "）"})
+			c.add(c.missingFrame(flow, size, fa, a.dir, key, restore))
 			continue
 		}
 		pairs = append(pairs, framePair{i, fa, fb})
@@ -192,6 +198,18 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 			c.add(d)
 		}
 	}
+}
+
+// missingFrame は新しい版で撮っていないコマの差。途中のコマは命令を組み替えると生まれない事があるので、
+// 止める側のまま intended で承認できる差にする。演出の後のコマと古いセーブのコマは撮れていない記録（承認できない）。
+func (c *comparer) missingFrame(flow, size string, fa Frame, dir, key string, restore bool) *Diff {
+	d := &Diff{Flow: flow, Size: size, Step: 5, What: WhatMissing, Node: fa.Node, Seq: fa.Seq, T: fa.T, FrameKind: fa.Kind, Cmd: fa.Cmd,
+		Before: filepath.Join(dir, fa.File), Detail: "新しい版でこのコマを撮っていない（" + key + "）"}
+	if fa.Kind == "mid" && !restore {
+		d.What = WhatFrame
+		d.Detail += "。命令を組み替えて生まれなくなった途中のコマなら what: frame の intended で承認する"
+	}
+	return d
 }
 
 // frame は 1 組のコマを比べ、10.3 の線を超えた時だけ差を返す（並べて走るので c.r には書かない）。
@@ -320,7 +338,7 @@ func (c *comparer) restore(name string, ra, rb *Restore) {
 	before := len(c.r.Diffs)
 	place := func(float64) (string, int) { return ra.Node, ra.Seq }
 	c.objects(flow, SingleSize, ra.Objects, rb.Objects, math.Inf(1), sa, sb, place)
-	c.frames(flow, SingleSize, frameSide{ra.Frames, ra.Dir, noVisits}, frameSide{rb.Frames, rb.Dir, noVisits}, true)
+	c.frames(flow, SingleSize, frameSide{ra.Frames, ra.Dir}, frameSide{rb.Frames, rb.Dir}, true)
 	for _, d := range c.r.Diffs[before:] {
 		d.Step = 6
 	}

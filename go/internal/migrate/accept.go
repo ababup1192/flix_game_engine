@@ -189,7 +189,8 @@ func (e Entry) matches(d *Diff, lim Limits) bool {
 	case KindNoBaseline:
 		return d.What == WhatNoBaseline
 	case KindSystematic:
-		return d.What == WhatFrame && d.FrameKind == "mid" && d.Cmd == e.Command && d.Mean <= lim.SystematicMean
+		// WhyNot: 撮っていない途中のコマ（After が空）を系統の違いで通さない — 差の大きさが測れず、上限の 6/255 が効かない。
+		return d.What == WhatFrame && d.FrameKind == "mid" && d.After != "" && d.Cmd == e.Command && d.Mean <= lim.SystematicMean
 	}
 	if e.What != d.What {
 		return false

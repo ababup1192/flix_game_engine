@@ -99,13 +99,13 @@ type Frame struct {
 	Backdrop3d bool    `json:"backdrop3d,omitempty"`
 }
 
-// Key は前と後のコマを組にする鍵。visit はそのノードの何回目の訪問か（seq はノードに入り直すと 0 に戻るので、無いと 2 回目が 1 回目と重なる）。
+// Key は前と後のコマを組にする鍵の土台（同じノードへ入り直すと同じ土台が何度も出るので、組にする時は何回目かを足す）。
 // WhyNot: 時刻を鍵に入れない — 版で揺れる。
-func (f Frame) Key(visit int) string {
+func (f Frame) Key() string {
 	if f.Kind == "mid" {
-		return fmt.Sprintf("%s|%s@%d#%d|mid|%d@%g", f.Layer, f.Node, visit, f.Seq, f.Step, f.At)
+		return fmt.Sprintf("%s|%s#%d|mid|%d@%g", f.Layer, f.Node, f.Seq, f.Step, f.At)
 	}
-	return fmt.Sprintf("%s|%s@%d#%d|%s", f.Layer, f.Node, visit, f.Seq, f.Kind)
+	return fmt.Sprintf("%s|%s#%d|%s", f.Layer, f.Node, f.Seq, f.Kind)
 }
 
 // BusPoint はバスの音量の変わり目。DB が nil なら無音。
