@@ -4,6 +4,7 @@
 // WhyNot: 表を backend ごとに持たない — 作り直しの鍵・history の捨て方・registry への載せ方が 2 本に分かれ、片方だけ直す事になる。
 //   GPU を呼ばずに表の振る舞いをテストできるのもこの形だけ。
 pub mod RenderPaint.Internal.TargetTable {
+    use RenderFrame.Internal.RenderList.PassHistory
     use RenderPaint.Internal.TextureTable
 
     /// ターゲット 1 枚の控え。texture = backend の表の番号（registry に載るテクスチャの番号と同じ）。width・height・format・samples = 頼まれた形（作り直しの鍵）。
@@ -86,6 +87,25 @@ pub mod RenderPaint.Internal.TargetTable {
         Ref.put(Map.insert(historyName, row, Ref.get(table#targetsRef)), table#targetsRef);
         putDesignSized(textures, design, historyName, row);
         row
+
+    /// 開いているターゲット spec へ 1 回の renderCommands を描く前の history の始末（pass を開く前に backend がする事）。
+    /// reads = その描き物が spec の history を読むか・keep = 前のコマの絵を写すか（偽 = 透明で塗る。1 枚撮りと動画は前のコマを持たない）。
+    /// 読まないコマは history を作らず触らない（作ってある history は捨てずに置き、次に読むコマで写し直す）。
+    /// 読むコマが初めてなら history を作る。写すのは、その renderCommands を描く前の描き先の中身（1 コマに 1 回なら前のコマの最後）。
+    // WhyNot: 2 枚を描き先と history で毎コマ入れ替えない — LoadOp.Keep の描き先は前のコマの絵から描き足すので写しが要り、
+    //   入れ替えと写しの 2 つの道と、標本つきの描き先を名前の側に付け替える表が要る（plans/webgpu/samples/history-msaa.md）。
+    pub def historyFor(allocator: TargetAllocator, textures: TextureTable.Tables, table: Table, design: (Float64, Float64),
+                       spec: RenderTarget.TargetSpec, reads: Bool, keep: Bool): PassHistory \ IO =
+        if (not reads) PassHistory.NoHistory
+        else {
+            let history = ensureHistory(allocator, textures, table, design, spec);
+            if (keep) PassHistory.CopyTo(history#texture) else PassHistory.ClearTransparent(history#texture)
+        }
+
+    /// sprites のどれかがターゲット name の history を読むか（GL は面と 3D の場面の読みも足して見る）。
+    pub def spritesReadHistory(name: String, sprites: List[RenderType.Drawable]): Bool =
+        let history = RenderTarget.historyName(name);
+        List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
 
     /// 表を空にする（backend が自分の物を全部まとめて捨てた後。ここからは destroy を呼ばない）。
     pub def clear(table: Table): Unit \ IO =

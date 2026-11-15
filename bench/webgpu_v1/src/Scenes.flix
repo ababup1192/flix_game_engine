@@ -1,4 +1,4 @@
-// GL と WebGPU の両方で 1 コマずつ描く場面。WebGPU が描く物（スプライト・字・箱・Pass・生成の絵・多角形・タイルの層・static layer）だけで組む。
+// GL と WebGPU の両方で描く場面。WebGPU が描く物（スプライト・字・箱・Pass・生成の絵・多角形・タイルの層・static layer・Pass の history・MSAA）だけで組む。
 // 箱・スプライト・幕・放射の 4 つは bench/gl_parity の同じ名前の場面と同じ中身（色は 8 bit で割り切れる k/255）。
 // lint-view: 対象外 — GL と WebGPU の描き手の画素の一致を見る門の場面。丸めの差を混ぜないよう単色の箱を主にしている。画面に出す絵ではない。
 mod V1Scenes {
@@ -6,8 +6,10 @@ mod V1Scenes {
     /// 1 場面。passes = 本編より先に描く Pass・items = 本編の描き物（生成の絵を上げる物は、ここで ensureTexture を呼ぶ）。
     /// tiles = 本編のタイルの層（ここで initTileBuffer を呼ぶ）・staticLayer = 本編の static layer。
     /// submits = 描いたコマの submit の数の期待（None = 見ない）。
+    /// warmup = 比べるコマの前に描くコマ（コマごとに Pass と描き先の作り方を替える。本編は同じ物）。比べるのは最後のコマだけ。
     pub type alias Scene = {
         name = String,
+        warmup = List[Step],
         tiles = Unit -> List[GameEngine.TileMapRenderCmd] \ Platform.GpuResources,
         staticLayer = Option[GameEngine.StaticLayerCmd],
         passes = List[Render.Pass],
@@ -17,13 +19,17 @@ mod V1Scenes {
         submits = Option[Int32]
     }
 
+    /// 比べるコマの前に描く 1 コマの Pass と、その描き先の作り方。
+    pub type alias Step = { passes = List[Render.Pass], targets = Map[String, RenderTarget.Descriptor] }
+
     pub def designW(): Float64 = 320.0
 
     pub def designH(): Float64 = 180.0
 
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: veil() :: radial() :: text() :: passPaste() :: passHalf() :: generated() :: passThenGenerated() ::
-        polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() :: Nil
+        polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() ::
+        historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() :: Nil
 
     def c8(r: Int32, g: Int32, b: Int32): Color =
         { r = Int32.toFloat64(r) / 255.0, g = Int32.toFloat64(g) / 255.0, b = Int32.toFloat64(b) / 255.0 }
@@ -39,7 +45,7 @@ mod V1Scenes {
     // ── 箱（塗り・並び順・blend の式・軸に沿った縞・市松）──
 
     def boxes(): Scene =
-        { name = "boxes", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "boxes", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(8.0, 8.0, RawDraw.box({ x = 16.0, y = 16.0 }, c8(255, 64, 64), 10)) ::
             at(40.0, 30.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(40, 80, 200), 1)) ::
             at(80.0, 60.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(40, 180, 90), 2)) ::
@@ -71,7 +77,7 @@ mod V1Scenes {
     def origin(): Vec2.Vec2 = { x = 0.0, y = 0.0 }
 
     def spriteNearest(): Scene =
-        { name = "spriteNearest", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "spriteNearest", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(40.0, 40.0, atlasSprite("atlas", { srcPos = origin(), srcSize = full(), sx = 1.0, fH = false, fV = false })) ::
             at(80.0, 40.0, atlasSprite("atlas", { srcPos = origin(), srcSize = { x = 8.0, y = 8.0 }, sx = 2.0, fH = false, fV = false })) ::
             at(120.0, 40.0, atlasSprite("atlas", { srcPos = { x = 8.0, y = 0.0 }, srcSize = { x = 8.0, y = 8.0 }, sx = 3.0, fH = false, fV = false })) ::
@@ -86,7 +92,7 @@ mod V1Scenes {
     // ── 半透明の幕（α 0.5）──
 
     def veil(): Scene =
-        { name = "veil", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "veil", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(200, 120, 60), 1)) ::
             at(160.0, 40.0, RawDraw.box({ x = 100.0, y = 100.0 }, c8(40, 160, 220), 1)) ::
             at(60.0, 110.0, atlasSprite("atlas", { srcPos = origin(), srcSize = full(), sx = 4.0, fH = false, fV = false })) ::
@@ -96,7 +102,7 @@ mod V1Scenes {
     // ── 組み込みの放射の絵（Render.lightAt の Add・darkAt の Multiply）──
 
     def radial(): Scene =
-        { name = "radial", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "radial", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(192.0, 0.0, RawDraw.box({ x = 128.0, y = 180.0 }, c8(255, 255, 255), 2)) ::
             Render.darkAt({ at = { x = 256.0, y = 128.0 }, radius = 128.0, strength = 1.0, z = 3 }) ::
             Render.lightAt({ at = { x = 128.0, y = 128.0 }, radius = 128.0, color = c8(255, 255, 255), strength = 1.0, z = 4 }) ::
@@ -106,7 +112,7 @@ mod V1Scenes {
     // ── 字（ゲームのフォントの距離場・組み込みの字のビットマップ・切り抜き）──
 
     def text(): Scene =
-        { name = "text", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
+        { name = "text", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
             let ui = Platform.GpuResources.getFontAtlas("ui");
             let boot = Platform.GpuResources.getFontAtlas(BootFont.name());
             at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(24, 28, 40), 0)) ::
@@ -135,12 +141,12 @@ mod V1Scenes {
                             at = { x = 160.0, y = 90.0 }, size = { x = 160.0, y = 90.0 }, z = 2 })
 
     def passPaste(): Scene =
-        { name = "passPaste", tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "passPaste", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(4.0, 4.0, RawDraw.box({ x = 60.0, y = 30.0 }, c8(90, 90, 90), 1)) :: pastedP3() :: Nil) }
 
     /// 同じ Pass を Rgba16Float の描き先で（pipeline はその Pass で初めて作る）。8 bit で割り切れる色なので読む値は Rgba8 と同じ。
     def passHalf(): Scene =
-        { name = "passHalf", tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map#{"p3" => RenderTarget.withHdr(RenderTarget.defaultDescriptor())},
+        { name = "passHalf", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map#{"p3" => RenderTarget.withHdr(RenderTarget.defaultDescriptor())},
           submits = Some(1), items = still(pastedP3() :: Nil) }
 
 
@@ -160,7 +166,7 @@ mod V1Scenes {
 
     /// 同じコマで 2 回上げる（2 回目は大きさが同じなので書き替え）。半透明の画素も持つ。
     def generated(): Scene =
-        { name = "generated", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
+        { name = "generated", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = () -> {
             Platform.GpuResources.ensureTexture("gen", "first", 8, 8, checkerArgb(8, argb(255, 255, 64, 64), argb(128, 32, 32, 128)));
             Platform.GpuResources.ensureTexture("gen", "second", 8, 8, checkerArgb(8, argb(255, 64, 255, 64), argb(128, 255, 255, 255)));
             at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(60, 60, 60), 0)) ::
@@ -174,7 +180,7 @@ mod V1Scenes {
     def passThenGenerated(): Scene =
         let pg: Render.Pass = { name = "pg", clear = RenderTarget.LoadOp.Clear(c8(30, 30, 30)), items =
             at(10.0, 10.0, generatedSprite("gen", 8.0)) :: Nil };
-        { name = "passThenGenerated", tiles = noTiles(), staticLayer = None, passes = pg :: Nil, targets = Map.empty(), submits = Some(2), items = () -> {
+        { name = "passThenGenerated", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pg :: Nil, targets = Map.empty(), submits = Some(2), items = () -> {
             Platform.GpuResources.ensureTexture("gen", "third", 8, 8, checkerArgb(8, argb(255, 64, 128, 255), argb(255, 255, 208, 64)));
             Render.blitRegion({ name = "pg", design = { x = designW(), y = designH() },
                                 src = { position = { x = 0.0, y = 0.0 }, size = { x = 160.0, y = 90.0 } },
@@ -211,13 +217,13 @@ mod V1Scenes {
         Nil
 
     def polygons(): Scene =
-        { name = "polygons", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1),
+        { name = "polygons", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1),
           items = still(polygonItems()) }
 
     /// 多角形を Pass に描いて本編へ貼る（Pass の描き先へも多角形の行が流れる）。
     def polygonPass(): Scene =
         let pp: Render.Pass = { name = "pp", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = polygonItems() };
-        { name = "polygonPass", tiles = noTiles(), staticLayer = None, passes = pp :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+        { name = "polygonPass", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pp :: Nil, targets = Map.empty(), submits = Some(1), items = still(
             Render.blitRegion({ name = "pp", design = { x = designW(), y = designH() },
                                 src = { position = v(0.0, 0.0), size = v(160.0, 90.0) },
                                 at = v(80.0, 45.0), size = v(160.0, 90.0), z = 2 }) :: Nil) }
@@ -235,7 +241,7 @@ mod V1Scenes {
     /// 本編はその後ろに入らないので submit してから頭から送る（submit は本編の前の 1 回と、コマの終わりの 1 回）。
     def polygonFlood(): Scene =
         let pf: Render.Pass = { name = "pf", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = ngonGrid(1) };
-        { name = "polygonFlood", tiles = noTiles(), staticLayer = None, passes = pf :: Nil, targets = Map.empty(), submits = Some(2), items = still(
+        { name = "polygonFlood", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pf :: Nil, targets = Map.empty(), submits = Some(2), items = still(
             List.append(ngonGrid(1),
                 Render.blitRegion({ name = "pf", design = { x = designW(), y = designH() },
                                     src = { position = v(0.0, 0.0), size = v(160.0, 90.0) },
@@ -262,7 +268,7 @@ mod V1Scenes {
           tileVaoId = fst(handle), tileCount = snd(handle) }
 
     def tiles(): Scene =
-        { name = "tiles", passes = Nil, targets = Map.empty(), submits = Some(1), staticLayer = None,
+        { name = "tiles", warmup = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), staticLayer = None,
           tiles = () -> {
               let ground = Platform.GpuResources.initTileBuffer(tileGrid(12, 6));
               let small = Platform.GpuResources.initTileBuffer(tileGrid(3, 2));
@@ -290,7 +296,7 @@ mod V1Scenes {
         Nil
 
     def staticLayer(): Scene =
-        { name = "staticLayer", passes = Nil, targets = Map.empty(), submits = Some(1), tiles = noTiles(),
+        { name = "staticLayer", warmup = Nil, passes = Nil, targets = Map.empty(), submits = Some(1), tiles = noTiles(),
           staticLayer = Some({ key = "v1-static", polys = () -> staticPolys(),
                                viewOffset = v(20.0, 10.0), viewScale = v(1.5, 1.5), halfDesign = v(designW() / 2.0, designH() / 2.0) }),
           items = still(
@@ -298,9 +304,110 @@ mod V1Scenes {
               at(150.0, 90.0, RawDraw.box({ x = 40.0, y = 40.0 }, c8(200, 60, 200), 2)) ::
               Nil) }
 
+    // ── Pass の history（前のコマの描き先の絵）と MSAA ──
+    // history の場面はコマを続けて描き、窓と同じく前のコマの絵を写す（GL は GlOffscreen.withHistoryKept）。
+    // history の写しが 1 コマずれる（前の前のコマを読む・今のコマの途中を読む）と、重ねた箱の濃さが変わる。
+
+    def designSize(): Vec2.Vec2 = v(designW(), designH())
+
+    /// Pass name の history を (x, y) から等倍で、alpha で重ねる。
+    def historyOf(name: String, x: Float64, y: Float64, alpha: Float64, z: Int32): Render.PlacedItem =
+        at(x, y, Render.Item.Sprite({ texture = RenderTarget.historyName(name), tint = { r = 1.0, g = 1.0, b = 1.0 }, alpha = alpha,
+            scale = { x = 1.0, y = 1.0 }, rotation = 0.0, centered = false, flipH = false, flipV = false, regionRect = None,
+            zIndex = z, blend = DrawCmd.BlendMode.Normal, maskPolys = Nil }))
+
+    /// Pass（か history）name の左上 160 × 90 を、本編の (x, y) を左上にして等倍で貼る（blitRegion の at は貼る先の中心）。
+    def pasteQuarter(name: String, x: Float64, y: Float64, z: Int32): Render.PlacedItem =
+        Render.blitRegion({ name = name, design = designSize(), src = { position = v(0.0, 0.0), size = v(160.0, 90.0) },
+                            at = v(x + 80.0, y + 45.0), size = v(160.0, 90.0), z = z })
+
+    def boxAt(x: Float64, y: Float64, color: Color, z: Int32): Render.PlacedItem = at(x, y, RawDraw.box(v(30.0, 30.0), color, z))
+
+    def step(passes: List[Render.Pass]): Step = { passes = passes, targets = Map.empty() }
+
+    /// 3 コマとも自分の history を半分の濃さで重ねてから箱を 1 つ足す（1 コマ目は history を作った直後で透明）。
+    /// 最後のコマの赤は 1/4・緑は 1/2・青はそのままの濃さになる。本編の右に history（= 2 コマ目の絵）を並べる。
+    def historyFade(): Scene =
+        let pass = (color, x) -> ({ name = "hfade", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)),
+                                    items = historyOf("hfade", 0.0, 0.0, 0.5, 1) :: boxAt(x, 20.0, color, 2) :: Nil }: Render.Pass);
+        { name = "historyFade", warmup = step(pass(c8(240, 40, 40), 10.0) :: Nil) :: step(pass(c8(40, 240, 40), 50.0) :: Nil) :: Nil,
+          tiles = noTiles(), staticLayer = None, passes = pass(c8(40, 40, 240), 90.0) :: Nil, targets = Map.empty(), submits = Some(1),
+          items = still(pasteQuarter("hfade", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("hfade"), 160.0, 0.0, 1) :: Nil) }
+
+    /// 1 コマ目は history を読まず（history はまだ無い）、2 コマ目で初めて読む: 作った history へ 1 コマ目の絵を写してから描く。
+    def historyLate(): Scene =
+        let first: Render.Pass = { name = "hlate", clear = RenderTarget.LoadOp.Clear(c8(20, 40, 60)),
+                                   items = boxAt(10.0, 10.0, c8(240, 200, 40), 1) :: Nil };
+        let second: Render.Pass = { name = "hlate", clear = RenderTarget.LoadOp.Clear(c8(20, 40, 60)),
+                                    items = historyOf("hlate", 40.0, 30.0, 1.0, 1) :: boxAt(100.0, 10.0, c8(40, 200, 240), 2) :: Nil };
+        { name = "historyLate", warmup = step(first :: Nil) :: Nil, tiles = noTiles(), staticLayer = None, passes = second :: Nil,
+          targets = Map.empty(), submits = Some(1),
+          items = still(pasteQuarter("hlate", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("hlate"), 160.0, 90.0, 1) :: Nil) }
+
+    /// LoadOp.Keep の描き先が自分の history を読む: 前のコマの絵に、history を右へ 40 px ずらして重ねて足していく。
+    def historyKeep(): Scene =
+        let pass = (color, y) -> ({ name = "hkeep", clear = RenderTarget.LoadOp.Keep,
+                                    items = historyOf("hkeep", 40.0, 0.0, 1.0, 1) :: boxAt(0.0, y, color, 2) :: Nil }: Render.Pass);
+        { name = "historyKeep", warmup = step(pass(c8(240, 40, 40), 0.0) :: Nil) :: step(pass(c8(40, 240, 40), 30.0) :: Nil) :: Nil,
+          tiles = noTiles(), staticLayer = None, passes = pass(c8(40, 40, 240), 60.0) :: Nil, targets = Map.empty(), submits = Some(1),
+          items = still(pasteQuarter("hkeep", 0.0, 0.0, 1) :: Nil) }
+
+    // MSAA の場面は、縁を軸に沿った端数の位置に置く（縁の画素は標本の数ぶんの段の濃さ）。端数は画素の中心（0.5）と標本の位置（1/8 の奇数倍）を避ける
+    // （ちょうど乗ると、覆うかどうかを決める規則が上下に返した描き先で逆の側を取る）。
+    // WhyNot: 斜めの縁で GL と比べない — GL の描き先は上下逆に格納され、標本の位置が中身に対して上下に返る（標準の 4 標本の並びは
+    //   上下に返すと別の並びになる）ので、斜めの縁の画素は 1〜2 標本ずれる（試した多角形で 89 px・最大 ±51）。軸に沿った縁は、
+    //   標本の x の組と y の組が上下に返しても同じなので、覆う標本の数が GL と WebGPU で同じになる。
+
+    def targetsWith(name: String, samples: Int32): Map[String, RenderTarget.Descriptor] =
+        Map#{name => RenderTarget.withMsaa(samples, RenderTarget.defaultDescriptor())}
+
+    /// 端数の位置と大きさの箱と、同じく端数の頂点の四角形の多角形（スプライトの行と多角形の行の両方の縁）。
+    def fractionalItems(dx: Float64, color: Color): List[Render.PlacedItem] =
+        at(dx + 10.3, 5.2, RawDraw.box(v(30.4, 20.6), color, 2)) ::
+        at(dx + 12.7, 35.3, RawDraw.polygon(v(0.0, 0.0) :: v(26.2, 0.0) :: v(26.2, 15.4) :: v(0.0, 15.4) :: Nil, color, 2)) ::
+        Nil
+
+    def msaaItems(): List[Render.PlacedItem] =
+        List.append(fractionalItems(0.0, c8(240, 200, 40)), List.append(fractionalItems(50.0, c8(40, 200, 240)), fractionalItems(100.0, c8(240, 80, 200))))
+
+    def msaaPassWith(name: String, samples: Int32): Scene =
+        let pass: Render.Pass = { name = name, clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = msaaItems() };
+        { name = name, warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pass :: Nil, targets = targetsWith(name, samples), submits = Some(1),
+          items = still(pasteQuarter(name, 0.0, 0.0, 1) :: Nil) }
+
+    /// 端数の縁を標本 4 の Pass へ描いて本編へ貼る（縁の画素は標本の平均）。
+    def msaaPass(): Scene = msaaPassWith("msaaPass", 4)
+
+    /// msaaPass と同じ物を標本 2 で（GL は 2 標本・WebGPU は 1 と 4 しか描けないので 4 標本。縁の画素の濃さの段が違う — tolerance.tsv）。
+    def msaaTwo(): Scene = msaaPassWith("msaaTwo", 2)
+
+    /// msaaPass と同じ物を標本 1 で（Main がこの 2 つの絵が違う事を見る — 両方の描き手が MSAA を掛けずに同じ絵になる誤りを拾う）。
+    def msaaOff(): Scene = msaaPassWith("msaaOff", 1)
+
+    /// 標本 4 の LoadOp.Keep の描き先へ 3 コマ描き足し、2 コマ目からは自分の history（resolve 済みの絵）を半分の濃さで下へずらして重ねる。
+    /// 標本を持つ描き先の中身がコマをまたいで残る事と、history が resolve の後の絵から写る事を見る。
+    def msaaKeep(): Scene =
+        let pass = items -> ({ name = "mkeep", clear = RenderTarget.LoadOp.Keep, items = items }: Render.Pass);
+        let targets = targetsWith("mkeep", 4);
+        { name = "msaaKeep",
+          warmup = { passes = pass(fractionalItems(0.0, c8(240, 200, 40))) :: Nil, targets = targets } ::
+                   { passes = pass(historyOf("mkeep", 0.0, 45.0, 0.5, 1) :: fractionalItems(50.0, c8(40, 200, 240))) :: Nil, targets = targets } :: Nil,
+          tiles = noTiles(), staticLayer = None, passes = pass(historyOf("mkeep", 0.0, 45.0, 0.5, 1) :: fractionalItems(100.0, c8(240, 80, 200))) :: Nil,
+          targets = targets, submits = Some(1), items = still(pasteQuarter("mkeep", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mkeep"), 160.0, 0.0, 1) :: Nil) }
+
+    /// 同じ名前の描き先の標本を 4 → 1 → 4 と替える（替わるたびに作り直し、中身と history は捨てる）。LoadOp.Keep と history の読みを混ぜる。
+    def msaaToggle(): Scene =
+        let pass = items -> ({ name = "mtog", clear = RenderTarget.LoadOp.Keep, items = items }: Render.Pass);
+        { name = "msaaToggle",
+          warmup = { passes = pass(fractionalItems(0.0, c8(240, 200, 40))) :: Nil, targets = targetsWith("mtog", 4) } ::
+                   { passes = pass(historyOf("mtog", 0.0, 45.0, 1.0, 1) :: fractionalItems(50.0, c8(40, 200, 240))) :: Nil, targets = Map.empty() } :: Nil,
+          tiles = noTiles(), staticLayer = None, passes = pass(historyOf("mtog", 0.0, 45.0, 1.0, 1) :: fractionalItems(100.0, c8(240, 80, 200))) :: Nil,
+          targets = targetsWith("mtog", 4), submits = Some(1),
+          items = still(pasteQuarter("mtog", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mtog"), 160.0, 90.0, 1) :: Nil) }
+
     /// WebGPU がまだ描かない物だけの場面（mask つきスプライト）。GL とは比べない。
     pub def unsupported(): Scene =
-        { name = "unsupported", tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = None, items = still(
+        { name = "unsupported", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = None, items = still(
             at(120.0, 60.0, Render.Item.Sprite({ texture = "atlas", tint = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
                 scale = { x = 2.0, y = 2.0 }, rotation = 0.0, centered = true, flipH = false, flipV = false, regionRect = None,
                 zIndex = 1, blend = DrawCmd.BlendMode.Normal,

@@ -3,6 +3,7 @@
 
 mod TestTargetTable {
     use RenderPaint.Internal.TargetTable
+    use RenderFrame.Internal.RenderList.PassHistory
     use RenderPaint.Internal.TargetTable.{TargetAllocator}
     use RenderPaint.Internal.TextureTable
 
@@ -143,4 +144,93 @@ mod TestTargetTable {
         let history = RenderTarget.historyName("fx");
         Assert.assertEq(expected = ("destroy 101" :: "destroy 102" :: "create fx 32x32 s1" :: Nil, false, false),
                         (List.reverse(Ref.get(log)), TargetTable.isTarget(table, history), Map.memberOf(history, Ref.get(textures#registryRef))))
+
+    // ── 描く前の history の始末（historyFor）──
+
+    /// "fx" を開き、1 コマずつ (reads, keep) で historyFor を呼んだ答えの列と、呼ばれた順の控え（古い順）。
+    def historyCalls(frames: List[(Bool, Bool)]): (List[PassHistory], List[String]) \ IO =
+        let log = Ref.fresh(Static, Nil);
+        let allocator = recordingAllocator(log);
+        let textures = freshTextures();
+        let table = TargetTable.fresh();
+        let answers = List.map(match (reads, keep) -> {
+            discard TargetTable.begin(allocator, textures, table, design(), spec(64, 1));
+            let answer = TargetTable.historyFor(allocator, textures, table, design(), spec(64, 1), reads, keep);
+            discard TargetTable.end(table);
+            answer
+        }, frames);
+        (answers, List.reverse(Ref.get(log)))
+
+    /// 読まないコマは history を作らない。
+    @Test
+    def testNoReadMakesNoHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = ("create fx 64x64 s1" :: Nil), snd(historyCalls((false, true) :: Nil)))
+
+    /// 読まないコマの答えは NoHistory。
+    @Test
+    def testNoReadAnswersNoHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.NoHistory :: Nil, fst(historyCalls((false, true) :: Nil)))
+
+    /// 初めて読むコマで history（番号 102）を作り、窓では今の中身をそこへ写す。
+    @Test
+    def testFirstReadCreatesAndCopies(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (PassHistory.CopyTo(102) :: Nil, "create fx 64x64 s1" :: "create fx 64x64 s1" :: Nil),
+                        historyCalls((true, true) :: Nil))
+
+    /// 読むコマが続いても history は作り直さず、毎コマ同じ番号へ写す。
+    @Test
+    def testEveryReadCopiesIntoSameHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.CopyTo(102) :: PassHistory.CopyTo(102) :: Nil,
+                        fst(historyCalls((true, true) :: (true, true) :: Nil)))
+
+    /// 読まないコマを挟んでも history は捨てず、次に読むコマで同じ番号へ写し直す。
+    @Test
+    def testSkippedFrameKeepsHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.CopyTo(102) :: PassHistory.NoHistory :: PassHistory.CopyTo(102) :: Nil,
+                        fst(historyCalls((true, true) :: (false, true) :: (true, true) :: Nil)))
+
+    /// 前のコマを持たない描き方（1 枚撮り・動画）では、写さずに透明で塗る。
+    @Test
+    def testNotKeptClearsHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.ClearTransparent(102) :: Nil, fst(historyCalls((true, false) :: Nil)))
+
+    /// 描き先の大きさが変わったコマは、作り直した history（番号 104）へ写す（前の history 102 は描き先と一緒に捨てた）。
+    @Test
+    def testResizeCopiesIntoNewHistory(): Unit \ {Assert, IO} =
+        let log = Ref.fresh(Static, Nil);
+        let allocator = recordingAllocator(log);
+        let textures = freshTextures();
+        let table = TargetTable.fresh();
+        let frame = side -> {
+            discard TargetTable.begin(allocator, textures, table, design(), spec(side, 1));
+            let answer = TargetTable.historyFor(allocator, textures, table, design(), spec(side, 1), true, true);
+            discard TargetTable.end(table);
+            answer
+        };
+        discard frame(64);
+        Assert.assertEq(expected = PassHistory.CopyTo(104), frame(32))
+
+    // ── history を読むか（spritesReadHistory）──
+
+    def spriteOf(texture: String): DrawCmd.Drawable =
+        DrawCmd.make({
+          texture = texture, position = { x = 0.0, y = 0.0 }, scale = { x = 1.0, y = 1.0 },
+          rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
+          centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
+          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
+
+    /// 自分の history を貼るスプライトがあれば真。
+    @Test
+    def testOwnHistoryIsRead(): Unit \ Assert =
+        Assert.assertTrue(TargetTable.spritesReadHistory("fx", spriteOf("atlas") :: spriteOf(RenderTarget.historyName("fx")) :: Nil))
+
+    /// ほかの描き先の history は読まない扱い。
+    @Test
+    def testOtherHistoryIsNotRead(): Unit \ Assert =
+        Assert.assertFalse(TargetTable.spritesReadHistory("fx", spriteOf(RenderTarget.historyName("bloom")) :: Nil))
+
+    /// 描き先の名前そのものは history ではない。
+    @Test
+    def testTargetNameItselfIsNotHistory(): Unit \ Assert =
+        Assert.assertFalse(TargetTable.spritesReadHistory("fx", spriteOf("fx") :: Nil))
 }

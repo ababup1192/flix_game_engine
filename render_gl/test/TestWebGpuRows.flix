@@ -5,7 +5,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     import java.nio.FloatBuffer
     use RenderFrame.{closeSpriteRun, emitSprite, stateSize}
     use RenderFrame.Internal.RenderList.{instanceFloats, newRenderList, rowAt, rowsOf}
-    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isHistoryName, isSameScissor, noteScissor, putScissor, scissorInto, viewportTop}
+    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isSameScissor, noteScissor, putScissor, scissorInto, viewportTop}
 
     def fb(): (Int32, Int32) = (320, 200)
 
@@ -91,11 +91,4 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
           rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
           zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
-
-    // ── Pass の history ──
-
-    /// Pass の前のコマの写しの名前（RenderTarget.historyName）だけを history と見る。
-    @Test
-    def testHistoryNameIsRecognized(): Unit \ Assert =
-        Assert.assertEq(expected = (true, false), (isHistoryName(RenderTarget.historyName("bloom")), isHistoryName("bloom")))
 }

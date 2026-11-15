@@ -5,7 +5,7 @@ pub mod RenderFrame.Internal.GlRows {
     import fge.gl.GlContext
     import java.nio.FloatBuffer
     use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, upsideDownTargetsOf}
-    use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
+    use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, PassHistory, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
                                          instanceFloats, kindPoly, kindStatic, kindTile, newRenderList, rowAt, rowCountOf, rowsOf, screenPass,
                                          targetPass, valuesOf, vertexFloats}
 
@@ -14,12 +14,13 @@ pub mod RenderFrame.Internal.GlRows {
 
     /// args#targetClear から pass を作る（None = 画面）。Pass の描き先の番号と形式は問わない（GL は bind 済みの framebuffer へ描く）。
     /// GL の描き先はいつも stencil を持つ（窓は GLFW_STENCIL_BITS・Pass は RenderTargetGl の renderbuffer）。
-    // WhyNot: Pass の標本の数を描き先から引かない — samples = 1 で MSAA の Pass とずれるが、GL の backend は pass の samples を読まない（bind 済みの FBO が決める）。
+    // WhyNot: Pass の標本の数を描き先から引かない — renderFrameMixed（テストが組む）には描き先の表が無い。resolve と history は RenderPaint.paintTarget が
+    //   自分で組んだ pass から読むので、ここの pass は描き先の始末と viewport にだけ使う。
     pub def passOfArgs(args: FrameArgs): PassSpec =
         match args#targetClear {
             case None     => screenPass((args#fbW, args#fbH), (args#designW, args#designH), args#clearColor, DepthStencil.DepthAndStencil)
-            case Some(op) => targetPass((args#fbW, args#fbH), { texture = -1, format = RenderTarget.Format.Rgba8Unorm, load = op, resolveTo = None },
-                                        DepthStencil.DepthAndStencil, 1)
+            case Some(op) => targetPass((args#fbW, args#fbH), { texture = -1, format = RenderTarget.Format.Rgba8Unorm, load = op },
+                                        DepthStencil.DepthAndStencil, 1, PassHistory.NoHistory)
         }
 
     /// pass 1 つを今 bind されている framebuffer へ描く。描き先の始末と viewport は pass で決める（args#targetClear は読まない）。

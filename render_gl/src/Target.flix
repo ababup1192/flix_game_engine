@@ -33,17 +33,18 @@ mod RenderTargetGl {
             { format = format | fallback }
         }
 
-    /// create に、samples（RenderTarget.samplesOf の答え）が 1 より大きければ標本を持つ描き先を足した物。
-    /// 標本の数は GPU の上限（GL_MAX_SAMPLES）で頭打ちにする。標本つきの FBO が完成しない時は MSAA なしで続け、
+    /// create に、drawn（描く標本の数・呼び手が sampleCounts から決める）が 1 より大きければ標本を持つ描き先を足した物。
+    /// samples = 頼まれた標本の数（作り直しの鍵として控える）。標本つきの FBO が完成しない時は MSAA なしで続け、
     /// msaa が None のまま返す（知らせるのは呼び手 — isMsaaFallback）。
-    pub def createWithSamples(gl: GlContext, width: Int32, height: Int32, format: RenderTarget.Format, samples: Int32): Entry \ IO =
+    pub def createWithSamples(gl: GlContext, width: Int32, height: Int32, format: RenderTarget.Format, samples: Int32, drawn: Int32): Entry \ IO =
         let made = create(gl, width, height, format);
-        if (samples <= 1) { samples = samples | made }
-        else {
-            let wanted = Int32.min(samples, RenderTarget.samplesAtMost(gl.getInteger(GlConst.MAX_SAMPLES)));
-            if (wanted <= 1) { samples = samples | made }
-            else { samples = samples, msaa = createMsaa(gl, width, height, made#storedFormat, wanted) | made }
-        }
+        if (drawn <= 1) { samples = samples | made }
+        else { samples = samples, msaa = createMsaa(gl, width, height, made#storedFormat, drawn) | made }
+
+    /// この GL が描ける標本の数（1・2・4・8 のうち GL_MAX_SAMPLES 以下）。
+    pub def sampleCounts(gl: GlContext): List[Int32] \ IO =
+        let most = gl.getInteger(GlConst.MAX_SAMPLES);
+        List.filter(n -> n <= most, 1 :: 2 :: 4 :: 8 :: Nil)
 
     /// 頼まれたのに標本を持つ描き先を作れなかったか（GPU が 1 標本しか持てない・FBO が完成しない）。
     pub def isMsaaFallback(e: Entry): Bool = e#samples > 1 and Option.isEmpty(e#msaa)
