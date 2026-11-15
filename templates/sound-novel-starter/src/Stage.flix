@@ -51,7 +51,7 @@ mod Stage {
     pub def windowHiddenKey(): PropertyTween.NumKey = PropertyTween.numKey("window.hidden")
 
     /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
-    pub def particleNames(): List[String] = "fireflies" :: Nil
+    pub def particleNames(): List[String] = "fireflies" :: "snow" :: Nil
 
     /// 背景を shot に替え、seconds かけて前の背景の上に重ねる。
     pub def withBackdrop(now: Clock.Time[Story], shot: Shot, seconds: Float64, stage: Stage): Stage =
@@ -85,6 +85,9 @@ mod Stage {
 
     /// now のパーティクルの演出。
     pub def particlesOf(now: Clock.Time[Story], stage: Stage): Option[String] = PropertyTween.nameAt(now, particlesKey(), stage#props)
+
+    /// now のパーティクルの演出に替わってからの秒（一度も替えていなければ None）。
+    pub def particlesSince(now: Clock.Time[Story], stage: Stage): Option[Float64] = PropertyTween.nameSince(now, particlesKey(), stage#props)
 
     /// 演出の途中を終わりの形にする（セーブから戻った時・描き出しで場面を作る時）。
     pub def settle(stage: Stage): Stage =

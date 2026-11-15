@@ -59,8 +59,8 @@ mod E2e {
               { name = "lineDone", doc = "今の行を出し終えた", read = Flow.Probe.Flag(onWorld(w -> Page.isDone(World.pageOf(w)))) } ::
               { name = "choice", doc = "選択肢を出している", read = Flow.Probe.Flag(onWorld(World.isChoosing)) } ::
               { name = "cursor", doc = "一番手前のカーソルの番号（0 から。確認のウィンドウ → 画面 → 選択肢 → タイトルの順に見る）", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(cursorOf(w)))) } ::
-              { name = "stayed", doc = "シナリオの変数 $stayed（true の結末へ向かっている）", read = Flow.Probe.Flag(onWorld(w -> World.variableOf("$stayed", w) == "True")) } ::
-              { name = "closeness", doc = "シナリオの変数 $closeness", read = Flow.Probe.Num(onWorld(w -> World.variableOf("$closeness", w) |> Float64.fromString |> Option.getWithDefault(0.0))) } :: Nil,
+              { name = "ownPace", doc = "シナリオの変数 $own_pace（最初の手紙で歩調を伝えた）", read = Flow.Probe.Flag(onWorld(w -> World.variableOf("$own_pace", w) == "True")) } ::
+              { name = "sharedTiredness", doc = "シナリオの変数 $shared_tiredness（2 通目で休む日を伝えた）", read = Flow.Probe.Flag(onWorld(w -> World.variableOf("$shared_tiredness", w) == "True")) } :: Nil,
           drives =
               { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・ウィンドウ・タイトル画面では押さない）",
                 act = (waited, h) -> Resources.read((_, w) ->

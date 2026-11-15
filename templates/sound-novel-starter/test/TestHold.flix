@@ -14,9 +14,9 @@ mod TestHold {
     /// 写真の名前 → project.json の textures の名前。
     def texture(res: Res.Res, photo: String): String = BackdropDoc.textureOf(photo, res#backdrops) |> Option.getWithDefault("")
 
-    /// 全部届いている描く元で、送れば Paddy のノードへ入る所（Station の最後の行を出し終えた所）。
-    def beforePaddy(res: Res.Res): World.World =
-        readUntil(res, cur -> World.talkNodeOf(advance(res, cur)) == "Paddy", Nil, begun(res))
+    /// 全部届いている描く元で、送れば FirstLetter のノードへ入る所（WinterRoute の最後の行を出し終えた所）。
+    def beforeLetter(res: Res.Res): World.World =
+        readUntil(res, cur -> World.talkNodeOf(advance(res, cur)) == "FirstLetter", Nil, begun(res))
 
     /// 今の背景の写真の名前。
     def photoOf(w: World.World): Option[String] =
@@ -26,10 +26,10 @@ mod TestHold {
 
     def gaveUpOf(w: World.World): Set[String] = World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty())
 
-    /// Paddy の背景（paddy）が届いていない描く元で送り、黒へ重ね切った所（Waiting）。
-    def waitingForPaddy(res: Res.Res): World.World =
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
-        advance(held, beforePaddy(res)) |> stepBy(held, kind(res)#holdFadeSeconds + 0.01)
+    /// FirstLetter の背景（desk_room）が届いていない描く元で送り、黒へ重ね切った所（Waiting）。
+    def waitingForLetter(res: Res.Res): World.World =
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
+        advance(held, beforeLetter(res)) |> stepBy(held, kind(res)#holdFadeSeconds + 0.01)
 
     /// dt 秒ずつ系を回し、until が真になった所（fuel で必ず止まる）。
     def stepsUntil(res: Res.Res, dt: Float64, until: World.World -> Bool, w: World.World): World.World =
@@ -67,8 +67,8 @@ mod TestHold {
     def testUnarrivedBackdropHoldsBeforeTheCue(): Unit \ {Assert, Fs.FileRead} =
         // 届いていない写真へ切り替える所で送ると、黒へ重ね始め（FadingOut）、背景も行も前のまま（切り替えは届いてから）。
         let res = TestKit.res();
-        let before = beforePaddy(res);
-        let w = advance(missingOf(texture(res, "paddy") :: Nil, res), before);
+        let before = beforeLetter(res);
+        let w = advance(missingOf(texture(res, "desk_room") :: Nil, res), before);
         Assert.assertEq(expected = (Some(World.HoldPhase.FadingOut), photoOf(before), World.talkLineOf(before)),
                         (World.holdPhaseOf(w), photoOf(w), World.talkLineOf(w)))
 
@@ -76,8 +76,8 @@ mod TestHold {
     def testHoldStopsTheStoryClockOnlyOnceDark(): Unit \ {Assert, Fs.FileRead} =
         // 黒へ重ねる間（holdFadeSeconds）は物語の時計が動き、重ね切ったら Waiting で止まる（1 秒回しても進まない）。
         let res = TestKit.res();
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
-        let fading = advance(held, beforePaddy(res));
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
+        let fading = advance(held, beforeLetter(res));
         let dark = stepBy(held, kind(res)#holdFadeSeconds + 0.01, fading);
         let later = stepBy(held, 1.0, dark);
         Assert.assertEq(expected = (Some(World.HoldPhase.Waiting), true, storyNow(dark)),
@@ -87,8 +87,8 @@ mod TestHold {
     def testHoldIgnoresAdvanceAndAuto(): Unit \ {Assert, Fs.FileRead} =
         // 待つ間は送っても動かず、オートも送らない（物語の時計が止まり、実行器も進めない）。
         let res = TestKit.res();
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
-        let dark = waitingForPaddy(res) |> World.mapRead(r -> { playback = World.Playback.Auto | r });
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
+        let dark = waitingForLetter(res) |> World.mapRead(r -> { playback = World.Playback.Auto | r });
         let w = advance(held, dark) |> stepBy(held, 5.0);
         Assert.assertEq(expected = (Some(World.HoldPhase.Waiting), World.talkLineOf(dark), World.Playback.Auto),
                         (World.holdPhaseOf(w), World.talkLineOf(w), World.playbackOf(w)))
@@ -96,24 +96,24 @@ mod TestHold {
     @Test
     def testArrivalFromTheDownloadsResumesTheCue(): Unit \ {Assert, Fs.FileRead, IO} =
         // 実機と同じ繋ぎ（Game.withAssetLoading と偽の downloads）: 黒のまま待つ間の予算は Covered、
-        // 写真が届くと次のコマで missing が空になり、黒から戻し始め（FadingIn）、預けていた切り替えが当たって Paddy の写真と ADV になる。
+        // 写真が届くと次のコマで missing が空になり、黒から戻し始め（FadingIn）、預けていた切り替えが当たって FirstLetter の写真と NVL になる。
         let res = TestKit.res();
-        let paddy = texture(res, "paddy");
-        let fake = fakeOf(Set#{paddy});
+        let desk = texture(res, "desk_room");
+        let fake = fakeOf(Set#{desk});
         let app = Game.withAssetLoading(fake#downloads, TestKit.app(res, TestKit.w0(res)));
-        let dark = Resources.of(missingOf(paddy :: Nil, res), waitingForPaddy(res)) |> App.stepBackgroundLoad(app);
+        let dark = Resources.of(missingOf(desk :: Nil, res), waitingForLetter(res)) |> App.stepBackgroundLoad(app);
         let budget = List.head(Ref.get(fake#budgets));
         Ref.put(Set.empty(), fake#missing);
         let arrived = App.stepBackgroundLoad(app, dark);
         let w = stepBy(arrived#resources, 1.0 / 60.0, arrived#world);
-        Assert.assertEq(expected = (Some(LoadProgress.DecodeBudget.Covered(50.0)), Set.empty(), Some(World.HoldPhase.FadingIn), Some("paddy"), Stage.Mode.Adv),
+        Assert.assertEq(expected = (Some(LoadProgress.DecodeBudget.Covered(50.0)), Set.empty(), Some(World.HoldPhase.FadingIn), Some("desk_room"), Stage.Mode.Nvl),
                         (budget, arrived#resources#missing, World.holdPhaseOf(w), photoOf(w), World.stageOf(res, w)#mode))
 
     @Test
     def testFadingInEndsTheHold(): Unit \ {Assert, Fs.FileRead} =
         // 届いた後、黒から戻す間はまだ送れず、戻し切ると（holdFadeSeconds）待ちが消えて、送れば文字送りの途中の行を全部出す。
         let res = TestKit.res();
-        let resumed = stepBy(res, 1.0 / 60.0, waitingForPaddy(res));
+        let resumed = stepBy(res, 1.0 / 60.0, waitingForLetter(res));
         let w = stepBy(res, kind(res)#holdFadeSeconds + 0.01, resumed);
         let revealed = (cur: World.World) -> Page.isDone(World.pageOf(advance(res, cur)));
         Assert.assertEq(expected = (Some(World.HoldPhase.FadingIn), false, false, true),
@@ -124,19 +124,19 @@ mod TestHold {
         // 黒のまま holdGiveUpSeconds 待っても届かなければ、その写真を諦めて（gaveUp）無いまま切り替えを当て、黒から戻す。
         // 諦める手前の 1 秒前はまだ待っている。
         let res = TestKit.res();
-        let paddy = texture(res, "paddy");
-        let held = missingOf(paddy :: Nil, res);
-        let almost = stepBy(held, kind(res)#holdGiveUpSeconds - 1.0, waitingForPaddy(res));
+        let desk = texture(res, "desk_room");
+        let held = missingOf(desk :: Nil, res);
+        let almost = stepBy(held, kind(res)#holdGiveUpSeconds - 1.0, waitingForLetter(res));
         let w = stepBy(held, 1.01, almost);
-        Assert.assertEq(expected = (Some(World.HoldPhase.Waiting), Some(World.HoldPhase.FadingIn), Some("paddy"), true),
-                        (World.holdPhaseOf(almost), World.holdPhaseOf(w), photoOf(w), Set.memberOf(paddy, gaveUpOf(w))))
+        Assert.assertEq(expected = (Some(World.HoldPhase.Waiting), Some(World.HoldPhase.FadingIn), Some("desk_room"), true),
+                        (World.holdPhaseOf(almost), World.holdPhaseOf(w), photoOf(w), Set.memberOf(desk, gaveUpOf(w))))
 
     @Test
     def testGaveUpPhotoIsNotWaitedForAgain(): Unit \ {Assert, Fs.FileRead} =
         // 諦めた写真は、黒から戻した後も待ち直さない（届かないまま読み進める）。
         let res = TestKit.res();
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
-        let w = stepBy(held, kind(res)#holdGiveUpSeconds + 0.01, waitingForPaddy(res))
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
+        let w = stepBy(held, kind(res)#holdGiveUpSeconds + 0.01, waitingForLetter(res))
             |> stepBy(held, kind(res)#holdFadeSeconds + 0.01) |> stepBy(held, 1.0 / 60.0);
         Assert.assertEq(expected = false, World.isHolding(w))
 
@@ -144,24 +144,23 @@ mod TestHold {
 
     @Test
     def testUnarrivedAmbienceHoldsWithTheBackdrop(): Unit \ {Assert, Fs.FileRead} =
-        // Engawa の頭は環境音と写真を続けて替える。どちらも届いていなければ、暗転 1 回で両方を待つ。
+        // LastDelivery の頭は環境音と写真を続けて替える。どちらも届いていなければ、暗転 1 回で両方を待つ。
         let res = TestKit.res();
-        let names = "amb_night" :: texture(res, "engawa") :: Nil;
+        let names = "amb_winter_wind" :: texture(res, "studio_eaves") :: Nil;
         let held = missingOf(names, res);
-        let lane = readTo(res, "Lane", 0 :: Nil, begun(res));
-        let w = readUntil(held, World.isHolding, Nil, lane);
-        Assert.assertEq(expected = (Some(List.toSet(names)), "Engawa"),
+        let letters = readTo(res, "Reply", 0 :: Nil, begun(res));
+        let w = readUntil(held, World.isHolding, 0 :: Nil, letters);
+        Assert.assertEq(expected = (Some(List.toSet(names)), "LastDelivery"),
                         (World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(h -> List.toSet(h#names)), World.talkNodeOf(w)))
 
     @Test
     def testUnarrivedSeIsSkippedSilently(): Unit \ {Assert, Fs.FileRead} =
         // 一発の効果音（<<audio se se_slap>>）は届いていなくても待たずに読み進め、鳴らす音からは外す（届いていれば鳴る）。
-        let res = TestKit.res();
+        let res = TestKit.fixtureRes("test/fixtures/sound", "Sound");
         let slap = "se_slap";
         let held = missingOf(slap :: Nil, res);
-        let lane = readTo(res, "Lane", 0 :: Nil, begun(res));
-        let (w, heard) = TestKit.readHearing(held, cur -> World.talkNodeOf(cur) == "Engawa", Nil, lane);
-        Assert.assertEq(expected = ("Engawa", false, true),
+        let (w, heard) = TestKit.readHearing(held, cur -> World.talkNodeOf(cur) == "SoundAfter", Nil, begun(res));
+        Assert.assertEq(expected = ("SoundAfter", false, true),
                         (World.talkNodeOf(w), List.memberOf(slap, Controls.soundsOf(Set#{slap}, heard)), List.memberOf(slap, Controls.soundsOf(Set.empty(), heard))))
 
     // ══ スキップ・ロード・タイトル・サムネ ══
@@ -170,11 +169,11 @@ mod TestHold {
     def testSkipPassesTheCueAndHoldsWhereItStops(): Unit \ {Assert, Fs.FileRead} =
         // スキップ中（設定で未読も飛ばす）は届いていない写真へ切り替えても待たずに進み、選択肢で止まった所で待ちに入る（続きは無い）。
         let res = TestKit.res();
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
-        let everything = quiet(() -> WorldSettings.withSide(World.Pair.SkipScope, Layout.Side.Right, beforePaddy(res)));
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
+        let everything = quiet(() -> WorldSettings.withSide(World.Pair.SkipScope, Layout.Side.Right, beforeLetter(res)));
         let skipping = quiet(() -> WorldRead.togglePlayback(World.Playback.Skip, everything));
         let w = stepsUntil(held, 0.1, World.isHolding, skipping);
-        Assert.assertEq(expected = (true, World.Playback.Manual, Some("paddy"), Some(0)),
+        Assert.assertEq(expected = (true, World.Playback.Manual, Some("desk_room"), Some(0)),
                         (World.isChoosing(w), World.playbackOf(w), photoOf(w),
                          World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(h -> List.length(h#rest))))
 
@@ -183,11 +182,11 @@ mod TestHold {
         // タイトルからロードで戻った所の写真が届いていなければ、次のコマで待ちに入る。
         // 同じ所のサムネ（screenOf）は待ちを持たない（暗い地で描くだけで、パネルの絵は止まらない）。
         let res = TestKit.res();
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
-        let atPaddy = readTo(res, "Paddy", Nil, begun(res));
-        let mark = WorldRead.slotHere(res, atPaddy) |> Option.map(slot -> slot#mark);
-        let loaded = mark |> Option.map(m -> quiet(() -> WorldRead.restore(held, m, World.toTitle(atPaddy))) |> stepBy(held, 1.0 / 60.0));
-        let thumb = mark |> Option.map(m -> World.isHolding(WorldRead.screenOf(held, m, atPaddy)));
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
+        let atLetter = readTo(res, "FirstLetter", Nil, begun(res));
+        let mark = WorldRead.slotHere(res, atLetter) |> Option.map(slot -> slot#mark);
+        let loaded = mark |> Option.map(m -> quiet(() -> WorldRead.restore(held, m, World.toTitle(atLetter))) |> stepBy(held, 1.0 / 60.0));
+        let thumb = mark |> Option.map(m -> World.isHolding(WorldRead.screenOf(held, m, atLetter)));
         Assert.assertEq(expected = (Some(Some(World.HoldPhase.FadingOut)), Some(false)),
                         (loaded |> Option.map(World.holdPhaseOf), thumb))
 
@@ -195,8 +194,8 @@ mod TestHold {
     def testHoldDropsTheRailLongPress(): Unit \ {Assert, Fs.FileRead} =
         // 列を押したまま素材を待つ黒に入ったら、長押しを捨てる（明けた最初のフレームで「離した」と読まない）。
         let res = TestKit.res();
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
-        let pressing = { grab = World.Grab.LongPress(0, Clock.zero()) | waitingForPaddy(res) };
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
+        let pressing = { grab = World.Grab.LongPress(0, Clock.zero()) | waitingForLetter(res) };
         let w = Controls.interact({ viewport = Layout.size(Layout.Fit.Regular) | App.emptyFrame() }, held, pressing);
         Assert.assertEq(expected = World.Grab.Free, w#grab)
 
@@ -204,7 +203,7 @@ mod TestHold {
     def testToTitleDropsTheHold(): Unit \ {Assert, Fs.FileRead} =
         // タイトルへ戻ると待ちは消える（タイトルの写真は後回しにしない決まりなので、タイトルでは待たない）。
         let res = TestKit.res();
-        Assert.assertEq(expected = false, World.isHolding(World.toTitle(waitingForPaddy(res))))
+        Assert.assertEq(expected = false, World.isHolding(World.toTitle(waitingForLetter(res))))
 
     // ══ 届いた絵を登録する予算 ══
 
@@ -217,7 +216,7 @@ mod TestHold {
         let typing = advance(res, tapWait) |> stepBy(res, 0.01);
         Assert.assertEq(expected = LoadProgress.DecodeBudget.Idle(4.0) :: LoadProgress.DecodeBudget.Idle(4.0) :: LoadProgress.DecodeBudget.Paused ::
                                    LoadProgress.DecodeBudget.Covered(50.0) :: LoadProgress.DecodeBudget.Paused :: Nil,
-                        budgetOf(TestKit.w0(res)) :: budgetOf(tapWait) :: budgetOf(typing) :: budgetOf(waitingForPaddy(res)) ::
+                        budgetOf(TestKit.w0(res)) :: budgetOf(tapWait) :: budgetOf(typing) :: budgetOf(waitingForLetter(res)) ::
                         budgetOf(World.toCredits(res, tapWait)) :: Nil)
 
 
@@ -227,9 +226,9 @@ mod TestHold {
     def withLoadingMark(mark: ThemeDoc.LoadingMark, res: Res.Res): Res.Res =
         Res.withTheme(ThemeDoc.withLoadingMark(mark, res#theme), res)
 
-    /// Paddy の背景を黒のまま待ち、waited 秒待った所。
+    /// FirstLetter の背景を黒のまま待ち、waited 秒待った所。
     def waitedFor(res: Res.Res, waited: Float64): World.World =
-        waitingForPaddy(res) |> World.mapRead(r -> { hold = r#hold |> Option.map(h -> { waited = waited | h }) | r })
+        waitingForLetter(res) |> World.mapRead(r -> { hold = r#hold |> Option.map(h -> { waited = waited | h }) | r })
 
     /// 描き出しと同じ字のアトラスで、横の画面の hud を組む。
     def hudOf(res: Res.Res, w: World.World): List[Render.PlacedItem] \ IO =
@@ -245,7 +244,7 @@ mod TestHold {
     /// 印が出る前（待ち始め）と、holdMarkSeconds を過ぎた所の hud の描き物の数。
     def markCounts(res: Res.Res): (Int32, Int32) \ IO =
         let marked = kind(res)#holdMarkSeconds + 0.5;
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
         (List.length(hudOf(held, waitedFor(res, 0.0))), List.length(hudOf(held, waitedFor(res, marked))))
 
     @Test
@@ -258,7 +257,7 @@ mod TestHold {
     def testRingMarkShowsTheWaitingLabel(): Unit \ {Assert, Fs.FileRead, IO} =
         // loadingMark = ring: holdMarkSeconds を過ぎた hud の字に、labels の waiting が入る。
         let res = withLoadingMark(ThemeDoc.LoadingMark.Ring, TestKit.res());
-        let held = missingOf(texture(res, "paddy") :: Nil, res);
+        let held = missingOf(texture(res, "desk_room") :: Nil, res);
         let word = StoryDoc.labelOf(StoryDoc.Label.Waiting, res#story);
         let texts = textsOf(hudOf(held, waitedFor(res, kind(res)#holdMarkSeconds + 0.5)));
         Assert.assertTrue(List.memberOf(word, texts))

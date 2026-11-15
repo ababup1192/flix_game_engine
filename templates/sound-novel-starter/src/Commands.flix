@@ -8,7 +8,7 @@
 //                                              文字の枠と字を消す（次の台詞・選択肢か nvl・bottom で戻る）
 //   <<audio ambience 音|off>>                 鳴り続ける環境音を替える・止める（音は project.json の sounds の名前）
 //   <<audio se 音>>                           効果音を 1 回
-//   <<fx fireflies|off>>                      画面のパーティクルの演出
+//   <<fx fireflies|snow|off>>                 画面のパーティクルの演出
 //   <<shake>>                                 画面を短く揺らす（長さと幅は novel.kind.json）
 //   <<show 名前 [表情] [at=位置] [time=秒]>>  立ち絵か小物（novel.cast.json の cast / props）を出す・表情や位置を替える。
 //                                              省いた物は出ている形のまま（出ていなければ Doc の face・slot）。小物は同時に 1 つ

@@ -1,34 +1,32 @@
-# 見せ場をつないだ紹介の動画（make showcase-video）。タイトル → 駅の NVL → 田んぼの ADV と選択肢 →
-# セーブ画面（その時の画面のサムネ）→ 蛍の川 → 設定 → 朝からクレジットへ。
+# 見せ場をつないだ紹介の動画（make showcase-video）。タイトル → 冬の坂の NVL → 工房の軒先の ADV と冬馬の立ち絵 →
+# セーブ画面（その時の画面のサムネ）→ 雪の降り始める夕方 → 設定 → 工房の誘い（条件つきの選択肢）→ 一杯のお茶の結末からクレジットへ。
 fps 30
 start title
 wait 3
-tap confirm                            # はじめから: 駅の写真がピントを合わせながら入り、NVL の頁に字が流れる
-drive reader until logSize>=4 max 20   # NVL の頁に 4 行積む
+tap confirm                                     # はじめから: 文字の枠を消したまま坂の絵を見せ、NVL の頁に字が流れる
+drive reader until logSize>=4 max 20            # NVL の頁に 4 行積む
 wait 1
-start talk node=Paddy
-drive reader until choice max 30       # 田んぼ（ADV）の選択肢まで
+start talk node=StudioWindow
+drive reader until logSize>=4 max 30            # 工房の軒先（ADV）で冬馬が出る
 wait 1.2
-tap next
-wait 0.8
-tap confirm                            # 「……ちいちゃん」
-wait 2.5
-tap 544,524                            # クイックメニューのセーブ
+tap 544,524                                     # クイックメニューのセーブ
 expect panel=SaveSlots
 wait 1.2
-tap confirm                            # 空の枠へセーブ: その時の画面がサムネになる
+tap confirm                                     # 空の枠へセーブ: その時の画面がサムネになる
 expect panel=SaveSlots&ask=
 wait 2.8
 tap back
-start talk node=River
-wait 4                                 # 夜の川へ重なり、蛍が漂う
-drive reader until logSize>=2 max 12
-wait 1.5
-tap 672,524                            # クイックメニューの設定
+start talk node=LastDelivery
+drive reader until logSize>=6 max 30            # 夕方の軒先に雪が降り始める
+wait 4
+tap 672,524                                     # クイックメニューの設定
 expect panel=Settings
 wait 2.5
 tap back
 wait 1
-start talk node=Morning
-drive reader until phase=Credits max 60
+start talk node=Invitation
+drive reader until choice max 60                # 1 つ目は手紙の条件がそろわないと選べない
+wait 1.5
+tap confirm                                     # 「今日は、一杯だけお茶をご一緒に」
+drive reader until phase=Credits max 120
 wait 6

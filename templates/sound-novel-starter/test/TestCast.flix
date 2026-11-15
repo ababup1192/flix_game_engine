@@ -16,7 +16,7 @@ mod TestCast {
 
     /// テスト用の Doc とシナリオに差し替えた描く元。
     def res(): Res.Res \ Fs.FileRead =
-        TestKit.res() |> Res.withCast(doc()) |> Res.withDialogue(Yarn.loadOr(Yarn.empty(), "test/fixtures/talk/dialogue.json"))
+        TestKit.fixtureRes("test/fixtures/talk", "Station") |> Res.withCast(doc())
 
     /// 項目の既定の表情と位置。
     def entry(kind: Kind, name: String): CastDoc.Entry \ Fs.FileRead =

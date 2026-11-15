@@ -95,11 +95,11 @@ mod SceneRender {
         ("hold-ring", "hold") :: ("hold-none", "hold") :: ("cast-sample", "cast") :: Nil
 
     /// 描き出しの名前 → その場面で使う描く元。hold-ring / hold-none = 待ちの印を輪 / 無しにした描く元、
-    /// cast-sample = テスト用の立ち絵の人物を足した描く元（CastDoc.sample）、portrait-cast-veil = それに縦の頁の覆いを人物が出ている間だけ薄くする倍率を入れた描く元。ほかはそのまま。
+    /// cast-sample = テスト用の立ち絵の人物を物語の人物に足した描く元（CastDoc.withSample）、portrait-cast-veil = それに縦の頁の覆いを人物が出ている間だけ薄くする倍率を入れた描く元。ほかはそのまま。
     def resFor(name: String, res: Res.Res): Res.Res = match name {
-        case "cast-sample"          => Res.withCast(CastDoc.sample(), res)
-        case "portrait-cast-sample" => Res.withCast(CastDoc.sample(), res)
-        case "portrait-cast-veil"   => Res.withCast(CastDoc.Doc.Doc({ portraitVeilWithCast = 0.5 | CastDoc.rec(CastDoc.sample()) }), res)
+        case "cast-sample"          => Res.withCast(CastDoc.withSample(res#cast), res)
+        case "portrait-cast-sample" => Res.withCast(CastDoc.withSample(res#cast), res)
+        case "portrait-cast-veil"   => Res.withCast(CastDoc.Doc.Doc({ portraitVeilWithCast = 0.5 | CastDoc.rec(CastDoc.withSample(res#cast)) }), res)
         case "hold-ring"          => withLoadingMark(ThemeDoc.LoadingMark.Ring, res)
         case "portrait-hold-ring" => withLoadingMark(ThemeDoc.LoadingMark.Ring, res)
         case "hold-none"          => withLoadingMark(ThemeDoc.LoadingMark.Hidden, res)
@@ -116,7 +116,7 @@ mod SceneRender {
         ("portrait-title", "title", tall) :: ("portrait-nvl", "nvl", tall) :: ("portrait-adv", "adv", tall)
             :: ("portrait-choice", "choice", tall) :: ("portrait-log", "log", tall) :: ("portrait-save", "save", tall)
             :: ("portrait-settings", "settings", tall) :: ("portrait-ask", "ask", tall)
-            :: ("portrait-lane", "lane", tall) :: ("portrait-menu", "menu", tall)
+            :: ("portrait-eaves", "eaves", tall) :: ("portrait-menu", "menu", tall)
             :: ("portrait-saveload", "saveload", tall) :: ("portrait-tooltip", "tooltip", tall)
             :: ("portrait-hold-ring", "hold", tall) :: ("portrait-cast-sample", "cast", tall) :: ("portrait-cast-veil", "cast", tall)
             :: ("portrait-short-nvl", "nvl", short) :: ("portrait-short-save", "save", short)

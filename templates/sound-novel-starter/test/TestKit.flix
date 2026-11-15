@@ -1,11 +1,19 @@
 // テストの共通部品: 実機と同じ App（Game.app）と Doc・シナリオで組んだ始まりの World と、系を直に呼ぶ 1 歩。
-// シナリオは本物（assets/talk/dialogue.json）。期待値は台本と Doc から導き、行の文字を写さない。
+// シナリオは本物（assets/talk/dialogue.json）。効果音のように本物のシナリオに無い物だけはテスト用の木（fixtureRes）で見る。期待値は台本と Doc から導き、行の文字を写さない。
 mod TestKit {
 
-    use fge::{App, Clock, Emit, Resources, YarnRunner}
+    use fge::{App, Clock, Emit, Resources, Yarn, YarnRunner}
 
     /// assets の Doc とシナリオをそのまま読んだ描く元。
     pub def res(): Res.Res \ Fs.FileRead = Controls.loadRes()
+
+    /// シナリオをテスト用の木（dir の dialogue.json。test/fixtures/talk・test/fixtures/sound）に替え、「はじめから」を opening のノードにした描く元。
+    pub def fixtureRes(dir: String, opening: String): Res.Res \ Fs.FileRead =
+        res() |> Res.withDialogue(Yarn.loadOr(Yarn.empty(), "${dir}/dialogue.json")) |> withOpening(opening)
+
+    /// 「はじめから」で開くノードを node にした描く元（テスト用の木は手本のシナリオと違うノードから始まる）。
+    pub def withOpening(node: String, r: Res.Res): Res.Res =
+        Res.withStory(StoryDoc.Doc.Doc({ opening = node | StoryDoc.rec(r#story) }), r)
 
     /// タイトルの World（セーブデータは空・ファイルは書かない・時刻は 0）。
     pub def w0(res: Res.Res): World.World = World.initial(Saves.fresh(res#kind), 0i64)

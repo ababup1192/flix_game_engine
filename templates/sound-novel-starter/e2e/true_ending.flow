@@ -1,27 +1,26 @@
-# タイトルから読み始め、3 つの選択でどれも近づく方を選ぶと、川で「何も言わずに」が選べて $stayed が立ち、朝を経てクレジットへ。
+# タイトルから読み始め、2 通の手紙で歩調と休む日を伝えると、工房の誘いで条件つきの「春からも手紙を」が選べ、
+# 期限を決めない文通の結末（最後に坂の後ろ姿の一枚絵）を経てクレジットへ。
 start title
-tap confirm                            # タイトル → はじめから
-expect talk=Station&mode=Nvl&photo=station
-drive reader until choice max 90       # 駅（NVL）から田んぼ（ADV）の最初の選択肢まで
-expect talk=Paddy&mode=Adv
-tap next                               # 「……ちいちゃん」
-tap confirm
-expect closeness=1
-mark paddy
-tap log                                # ログを開いて閉じる（物語の時計は止まる）
+tap confirm                                     # タイトル → はじめから
+expect talk=WinterRoute&mode=Nvl&photo=slope
+drive reader until choice max 90                # 冬の坂（NVL）から最初の手紙の選択肢まで
+expect talk=FirstLetter&mode=Nvl
+tap confirm                                     # 「私は、坂をゆっくり上がります」と添える
+drive reader until ownPace max 30
+mark letter
+tap log                                         # ログを開いて閉じる（物語の時計は止まる）
 expect panel=Log
 tap back
 expect panel=Closed
-drive reader until choice max 90       # 坂道・縁側の選択肢まで
-expect talk=Engawa
-tap next                               # 「まだ、決めてない」
+drive reader until choice max 120               # 工房の軒先を経て、2 通目の選択肢まで
+expect talk=Reply
+tap confirm                                     # 疲れて休んでいたと書く
+drive reader until sharedTiredness max 30
+drive reader until choice max 120               # 最後の配達（雪）を経て、工房の誘い
+expect talk=Invitation&cursor=0                 # 条件つきの 1 つ目が選べる
 tap confirm
-expect closeness=2
-drive reader until choice max 90       # 蛍の川
-expect talk=River
-tap next                               # 条件つきの 2 つ目が選べる
-expect cursor=1
-tap confirm
-expect stayed
-mark river
-drive reader until phase=Credits max 120
+drive reader until talk=SlowLetters max 30
+mark slow_letters
+drive reader until photo=still_akari_slope max 120
+expect photo=still_akari_slope
+drive reader until phase=Credits max 60

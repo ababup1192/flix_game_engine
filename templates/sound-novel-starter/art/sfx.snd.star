@@ -1,9 +1,9 @@
-# 演出の音 2 つ・返事の音 5 つ・川の環境音（Controls.soundOf と、シナリオの <<audio se>> <<audio ambience>>）。
+# 返事の音 5 つ（Controls.soundOf）。
 # bin/fge snd build art/sfx.snd.star で art/sfx/*.sndsrc.json を書き、検査を通った物を atelier/sfx/<名前>.wav へ書く
 # （採用した物を assets/sfx へ移し、project.json の sounds に載せる）。
-# 夕方の蜩・夜の鈴虫・朝の鶯は合成でなく実際の録音（Wikimedia Commons。出典と切り出した所は CREDITS.md）。
-# 虫の声は矩形波の粒を並べるとブザーに聞こえる（倍音が高い所まで梯子に立ち、粒ごとに頭がはじける）ので、合成しない。
+# 冬の風の環境音は合成でなく実際の録音（効果音ラボ。出典は CREDITS.md）。
 # 返事の音は正弦に近い柔らかい音（矩形波を音の高さで 4 段絞って倍音を落とす）にし、ゲームの電子音に聞こえさせない。
+# 演出の効果音を合成で足す時は、sound(名前, [...], kind = "sfx") の形で足す（hiss・bell・rustle の組み合わせ）。
 
 def sine(hz, ms, at = 0, amp = 0.4, decay = 80, to_hz = None, attack = 4):
     return {"at": at, "ops": [op.pulse(hz = hz, ms = ms, amp = amp, duty = 0.5, to_hz = to_hz, accumulate = to_hz != None),
@@ -50,22 +50,6 @@ def ambience(name, ms, voices, room = 0.5, wet = 0.2):
     })
 
 def main():
-    # 蛍の川（12 秒）: 低く籠もった流れと、少し上のさざめきだけ（はじけの粒を足すと、水滴の電子音に聞こえる）。
-    ambience("amb_river", 12000,
-             [bed(12000, 0.30, 600, stages = 3), bed(12000, 0.05, 1500)],
-             room = 0.6, wet = 0.25)
-
-    # 手を打つ（坂道で千夏が背中を叩く）: 乾いた雑音の一打と、低い胴の鳴り。
-    sound("se_slap", [hiss(90, amp = 0.6, hz = 4000, decay = 25, attack = 0.5), sine(180, 80, amp = 0.3, decay = 30)], kind = "sfx", room = 0.3, wet = 0.08)
-    # 風鈴「チリーン」: 舌が縁に細かく 3 度当たって（チリ）、最後の 1 打が長く伸びる（ーン）。
-    # 硝子の鈴は高さの近い部分音が 2 本あってうなるので、基音に 3 Hz ずらした音を重ねて余韻を揺らす。
-    rim = [(1.0, 1.0, 1.0), (1.0013, 0.7, 1.0), (2.27, 0.35, 0.45), (3.92, 0.12, 0.22)]
-    def strike(at, amp, decay):
-        return bell(3150, at = at, amp = amp, decay = decay, partials = rim) + \
-               [rustle(8, 7500, 7500, at = at, amp = amp * 0.4, decay = 3, attack = 0.3, q = 0.3)]
-    sound("se_furin", strike(0, 0.30, 70) + strike(85, 0.18, 60) + strike(150, 0.24, 80) + strike(260, 0.40, 900),
-          kind = "sfx", room = 0.6, wet = 0.22)
-
     sound("ui_page", [rustle(140, 2600, 1400, amp = 0.5, decay = 55, attack = 18)])                 # 戻る（ロールバック）: 紙の擦れ。文の送りは鳴らさない（Controls.soundOf）
     sound("ui_cursor", [sine(1568, 40, amp = 0.25, decay = 14, attack = 2)])                         # カーソル: 小さな木の粒
     sound("ui_choice", bell(880, decay = 220) + bell(1319, at = 90, amp = 0.32, decay = 300))       # 選んだ: 柔らかい鈴を 2 つ

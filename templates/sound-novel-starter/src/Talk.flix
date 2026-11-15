@@ -4,7 +4,7 @@
 // bin/fge yarn build の check は assets/talk/vocab.json を読み、名前を Doc から集め、コマンドの引数を表で検査する
 // （vocab.json が書くのは Doc のどこを見るかとコマンドの表だけ。書き直すのは make talk-vocab。TestDocs が一致を見る）。
 //
-//   assets/talk/natsukusa.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ World#dialogue
+//   assets/talk/yukidoke.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ World#dialogue
 mod Talk {
     use fge::{JsonCodec, Yarn, YarnCommands, YarnRunner}
     use Util.Json.Json

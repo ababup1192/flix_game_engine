@@ -24,7 +24,7 @@ mod CreditsDoc {
 
     pub def path(): String = "assets/novel.credits.json"
 
-    pub def defaults(): Doc = Doc.Doc({ version = 1, rows = { text = "夏草の駅", style = Style.Heading } :: Nil })
+    pub def defaults(): Doc = Doc.Doc({ version = 1, rows = { text = "雪どけを待たない便り", style = Style.Heading } :: Nil })
 
     pub def styleOf(text: String): Style = match text {
         case "heading" => Style.Heading

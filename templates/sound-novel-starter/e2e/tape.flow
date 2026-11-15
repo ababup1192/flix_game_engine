@@ -1,12 +1,12 @@
-# テープの見本（make tape FLOW=e2e/tape.flow → debug/video/tape/tape.json）。タイトル → はじめから → 駅の NVL を 2 頁。
+# テープの見本（make tape FLOW=e2e/tape.flow → debug/video/tape/tape.json）。タイトル → はじめから → 冬の坂の NVL を 2 頁。
 # mark がシーンの切れ目（名前は 1 つずつ）。ノードをまたいでよい（1 つの .yarn の中なら）。
 fps 30
 start title
 mark title
 wait 2
-tap confirm                                                     # はじめから: 背景が重なる間は <<bg>> の行がシナリオの位置になる
-mark station
-drive reader until talkLine=assets/talk/natsukusa.yarn:31 max 30
+tap confirm                                                     # はじめから: 文字の枠を消したまま坂の絵を 2 秒見せてから NVL
+mark slope
+drive reader until talkLine=assets/talk/yukidoke.yarn:35 max 30
 mark clear
-drive reader until talkLine=assets/talk/natsukusa.yarn:33 max 20
+drive reader until talkLine=assets/talk/yukidoke.yarn:37 max 20
 wait 1

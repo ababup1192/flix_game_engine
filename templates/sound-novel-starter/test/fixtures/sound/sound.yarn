@@ -1,0 +1,16 @@
+// テスト用のシナリオ（TestRules・TestHold の効果音）。<<audio se>> が出来事になること・届いていない効果音を待たずに進むこと・
+// ロードで通り過ぎた効果音を鳴らさないことを見る。手本のシナリオに効果音が無くても、効果音の決まりはここで確かめる。
+// 直したら: bin/fge yarn build test/fixtures/sound --no-vocab
+title: Sound
+---
+<<window bottom>>
+me: 鳴る前の行。
+<<audio se se_slap>>
+me: 鳴った後の行。
+<<jump SoundAfter>>
+===
+title: SoundAfter
+---
+me: 次のノードの一行目。
+me: 次のノードの二行目。
+===

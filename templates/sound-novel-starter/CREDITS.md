@@ -1,21 +1,25 @@
 # 素材の出典とライセンス
 
-このテンプレートの背景の写真・環境音の録音・フォントは、自由に使える許諾の物を使っています。
+このテンプレートの背景・立ち絵・小物は画像生成で作った物、冬の風は効果音ラボの録音、フォントは SIL OFL の物を使っています。
 ゲームの中のクレジット（タイトル画面の「クレジット」と、物語を読み終えた後）にも同じ表記を流します（`assets/novel.credits.json`）。
-写真や録音を差し替えたら、ここと `assets/novel.credits.json` の両方を書き直してください。
+絵や音を差し替えたら、ここと `assets/novel.credits.json` の両方を書き直してください。
 
-## 背景の写真（Wikimedia Commons）
+## 背景・一枚絵・立ち絵・小物（画像生成）
 
-どれも 16:9 に切り抜き、960×540 に縮めて `assets/bg/` に置いています。ゲームの中ではさらに、
-シェーダーでぼかし、時間帯の色（夕暮れ・夜・朝）に色を変えて表示します（`src/Backdrop.flix`）。
+どれも画像生成（OpenAI の画像生成）で、このテンプレートのために作った物です。
 
-| ファイル | 元の写真 | 作者 | ライセンス |
-|---|---|---|---|
-| `assets/bg/station.jpg` | [Onuma Quasi-National Park - Onuma544.jpg](https://commons.wikimedia.org/wiki/File:Onuma_Quasi-National_Park_-_Onuma544.jpg) | lumoplank | [CC0 1.0](http://creativecommons.org/publicdomain/zero/1.0/deed.en) |
-| `assets/bg/paddy.jpg` | [Japanese Summer (14646910072).jpg](https://commons.wikimedia.org/wiki/File:Japanese_Summer_(14646910072).jpg) | Tagosaku | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0) |
-| `assets/bg/lane.jpg` | [滝の下 古民家 - panoramio.jpg](https://commons.wikimedia.org/wiki/File:%E6%BB%9D%E3%81%AE%E4%B8%8B_%E5%8F%A4%E6%B0%91%E5%AE%B6_-_panoramio.jpg) | 田村淳 | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0) |
-| `assets/bg/engawa.jpg` | [Shikokumura19s3200.jpg](https://commons.wikimedia.org/wiki/File:Shikokumura19s3200.jpg) | 663highland | [CC BY 2.5](https://creativecommons.org/licenses/by/2.5) |
-| `assets/bg/river.jpg` | [中世木川と田んぼ.jpg](https://commons.wikimedia.org/wiki/File:%E4%B8%AD%E4%B8%96%E6%9C%A8%E5%B7%9D%E3%81%A8%E7%94%B0%E3%82%93%E3%81%BC.jpg) | Spedi-sit | [CC0 1.0](http://creativecommons.org/publicdomain/zero/1.0/deed.en) |
+| ファイル | 中身 | 作り方 |
+|---|---|---|
+| `assets/bg/slope.jpg` | 冬の集落の坂（冬の坂） | 昼の自然光の実写風に生成し、960×540 に切り抜き |
+| `assets/bg/desk_room.jpg` | 木机のある部屋（灯の部屋） | 同上 |
+| `assets/bg/studio_eaves.jpg` | 工房の軒先 | 同上 |
+| `assets/bg/studio.jpg` | 工房の中 | 同上 |
+| `assets/bg/still_akari_slope.jpg` | 雪の坂道の灯の後ろ姿（結末の一枚絵） | 同上 |
+| `assets/cast/toma_plain.png`・`toma_puzzled.png`・`toma_smile.png` | 冬馬の立ち絵（3 表情） | 透過で生成し、`art/cast/prepare.py` で縮めてふちを埋めた物 |
+| `assets/cast/map_plain.png` | 手描きの地図（小物） | 同上 |
+
+背景はゲームの中でさらに、シェーダーでぼかし、時間帯の色（夕方・灯り・夜・朝）に色を変えて表示します（`src/Backdrop.flix`）。
+`assets/cast/_sample_plain.png` はテスト用の単色の形（`art/cast/sample.py` が作る）で、物語には出しません。
 
 ## フォント
 
@@ -26,14 +30,8 @@
 
 ## 音
 
-夕方・夜・朝の環境音は、Wikimedia Commons の録音を切り出して使っています。どれも低い音を削り、
-継ぎ目が聞こえないよう頭と尾を重ねてループにし、音量をそろえて 22050 Hz のモノラルに書き出しています
-（朝の鶯は、さらに背景の雑音を減らしています）。
-
-| ファイル | 元の録音（切り出した所） | 作者 | ライセンス |
+| ファイル | 元の音 | 出典 | 規約 |
 |---|---|---|---|
-| `assets/sfx/amb_evening.wav` | [Tanna japonensis v01.ogg](https://commons.wikimedia.org/wiki/File:Tanna_japonensis_v01.ogg)（16〜48 秒） | Σ64（ゲームの中のクレジットは字がフォントに無いので Sigma64） | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0) |
-| `assets/sfx/amb_night.wav` | [Suzumushi 06z3286.ogg](https://commons.wikimedia.org/wiki/File:Suzumushi_06z3286.ogg)（1〜15.5 秒） | ISAKA Yoji | [CC BY 2.1 JP](https://creativecommons.org/licenses/by/2.1/jp/deed.en) |
-| `assets/sfx/amb_morning.wav` | [SND 4458a.ogg](https://commons.wikimedia.org/wiki/File:SND_4458a.ogg)（2〜44 秒） | Fg2 | パブリックドメイン |
+| `assets/sfx/amb_winter_wind.wav` | 「風が吹く1」（30 秒に切り出し、継ぎ目が聞こえないようループにして 22050 Hz のモノラルに書き出し） | [効果音ラボ](https://soundeffect-lab.info/) | [効果音ラボの利用規約](https://soundeffect-lab.info/agreement/)（クレジットは任意。音のファイルの再配布・音を自由に鳴らせる画面は不可） |
 
-川の環境音・風鈴・手を打つ音・返事の音（`amb_river`・`se_*`・`ui_*`）は、`art/sfx.snd.star` から `bin/fge snd build` で合成した物です。
+返事の音（`ui_*`）は、`art/sfx.snd.star` から `bin/fge snd build` で合成した物です。

@@ -247,7 +247,7 @@ mod View {
                    else textAt(hub#x + ring + gap, center#y - size / 2.0 - 1.0, word, atlas, size, t#ink, z + 1) :: Nil;
         ground :: sheen :: List.append(text, dots)
 
-    // ── パーティクル（蛍） ──
+    // ── パーティクル（蛍・雪） ──
 
     /// 蛍: 番号と実時間だけから位置と明滅を導く（どこにも保存しない = 巻き戻しても同じ絵）。
     /// 草むらの高さ（画面の下 6 割）をゆっくり漂い、息をするように明滅する。
@@ -267,8 +267,53 @@ mod View {
                              |> Render.overItem(item -> item |> Render.fade(fly#a) |> Render.blended(DrawCmd.BlendMode.Add))
                          :: Render.glowAt({ x = fly#x, y = fly#y }, fly#r * 5.0, color,
                                           { alpha = 0.55 * fly#a, blend = DrawCmd.BlendMode.Add }, 3))
+            case Some("snow") => snow(env, stage)
             case _ => Nil
         }
+
+    /// 雪: 蛍と同じく番号と実時間だけから位置を導く。上から下へゆっくり落ち、横に少し揺れ、画面の下で上へ戻る。
+    /// 粒子ごとに速さ・大きさ・濃さを散らし、遠い粒子（小さく遅い）ほど薄くして奥行きを出す。
+    /// 降り始めは粒子ごとに出る時刻をずらして少しずつ増やす（物語の時計で数えるので、セーブから戻した所は全部そろっている）。
+    /// 光は粒子の周りの薄いにじみだけ。手前の大きな粒子と灯りの側の粒子が、粒子ごとにばらつく間で時々にじみを強める。
+    def snow(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        let k = kindOf(env)#snow;
+        let w = Layout.width(env#fit);
+        let h = Layout.height(env#fit);
+        let margin = 12.0;
+        let span = h + margin * 2.0;
+        let ink = Color.lighten(theme(env)#ink, 0.6);
+        let ramp = Stage.particlesSince(env#storyNow, stage)
+            |> Option.map(since -> if (k#fadeIn <= 0.0) 1.0 else Float64.min(1.0, since / k#fadeIn)) |> Option.getWithDefault(1.0);
+        let lit = stage#shot |> Option.exists(shot -> List.memberOf(shot#photo, k#warmPhotos));
+        Fx.derive(k#count, realSeconds(env), (_i, rand, t) -> {
+            let depth = rand(2);
+            let fall = rand(1) * span + t * k#fallSpeed * (0.6 + depth * 0.8);
+            let y = fall - span * Float64.floor(fall / span) - margin;
+            let x = rand(0) * w + Num.sin(t * (0.35 + rand(3) * 0.45) + rand(4) * 6.28) * k#sway * (0.5 + depth * 0.5);
+            let warmth = if (lit) clamp01((x / w - k#warmFromX) / Float64.max(0.01, 1.0 - k#warmFromX)) else 0.0;
+            let catches = Float64.max(warmth, clamp01((depth - 0.6) / 0.4));
+            let glint = catches * snowGlint(k, t, rand(5), rand(6), rand(7));
+            { x = x, y = y, r = k#size * (0.5 + depth * 0.8), a = (0.45 + depth * 0.5) * clamp01((ramp - rand(8)) * 6.0),
+              glint = glint, color = Color.mix(ink, k#warmColor, warmth * k#warmStrength) }
+        }) |> List.filter(flake -> flake#a > 0.01) |> List.flatMap(flake ->
+            Render.glowAt({ x = flake#x, y = flake#y }, flake#r * k#glowRadius, flake#color,
+                          { alpha = k#glow * flake#a * (1.0 + k#twinkleGain * flake#glint), blend = DrawCmd.BlendMode.Add }, 3)
+            |> List.append(RawDraw.circleAt({ x = flake#x, y = flake#y }, flake#r, flake#color, 4)
+                               |> Render.overItem(item -> Render.fade(Float64.min(1.0, flake#a + 0.1 * flake#glint), item)) :: Nil))
+
+    /// 1 つの粒子が今どれだけ光を拾っているか（0〜1）。間は粒子ごとに twinkleEvery の 0.5〜1.5 倍で、
+    /// その間のどこで光るかも回ごとに変えるので、同じ粒子でも規則的には光らない。spread / phase / seed = 粒子ごとの乱数。
+    def snowGlint(k: KindDoc.Snow, t: Float64, spread: Float64, phase: Float64, seed: Float64): Float64 =
+        let period = Float64.max(k#twinkleSeconds * 2.0, k#twinkleEvery * (0.5 + spread));
+        let shifted = t + phase * period;
+        let cycle = Float64.floor(shifted / period);
+        let roll = fract(Num.sin(cycle * 12.9898 + seed * 78.233) * 43758.5453);
+        let u = (shifted - cycle * period - roll * (period - k#twinkleSeconds)) / Float64.max(0.01, k#twinkleSeconds);
+        if (u < 0.0 or u >= 1.0) 0.0 else Num.sin(Num.pi() * u)
+
+    def fract(x: Float64): Float64 = x - Float64.floor(x)
+
+    def clamp01(x: Float64): Float64 = Float64.max(0.0, Float64.min(1.0, x))
 
     // ── 読んでいる間の画面（本文・選択肢・クイックメニュー） ──
 

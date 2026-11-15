@@ -123,6 +123,10 @@ mod PropertyTween {
     pub def nameAt(now: Clock.Time[c], k: NameKey, t: Table[c]): Option[String] =
         lastStarted(now, x -> x#startsAt, Map.getWithDefault(nameName(k), Nil, tracks(t)#names)) |> Option.flatMap(x -> x#value)
 
+    /// k の now の値に替わってからの秒（まだ一度も書いていなければ None・セーブから戻した値はとても大きな秒）。
+    pub def nameSince(now: Clock.Time[c], k: NameKey, t: Table[c]): Option[Float64] =
+        lastStarted(now, x -> x#startsAt, Map.getWithDefault(nameName(k), Nil, tracks(t)#names)) |> Option.map(x -> Clock.since(x#startsAt, now))
+
     /// k が now に起きていれば、始まってからの秒（始まる前・終わった後は None）。
     pub def triggerAt(now: Clock.Time[c], k: TriggerKey, t: Table[c]): Option[Float64] =
         lastStarted(now, x -> x#startsAt, Map.getWithDefault(triggerName(k), Nil, tracks(t)#triggers))
