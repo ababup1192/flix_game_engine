@@ -164,6 +164,19 @@ capture_one() {
 	while [ -e "$dir/frame-$n.png" ]; do rm -f "$dir/frame-$n.png"; n=$((n + 1)); done
 }
 
+# WhyNot: 撮る前にセーブを脇へ移して戻す形にしない — 途中で落ちると人のセーブが戻らない。見つけたら止めて、外すのは人に任せる。
+saves_found=
+for scene in "${scenes[@]}"; do
+	for f in "$engine/${scene%%:*}"/saves/*.json; do
+		[ -e "$f" ] && saves_found="$saves_found $f"
+	done
+done
+if [ -n "$saves_found" ]; then
+	echo "[gl-capture] セーブがあると起動の絵（タイトルの「つづきから」など）が変わるので止めた。外してから撮る:" >&2
+	printf '%s\n' $saves_found | sort -u | sed 's/^/  /' >&2
+	exit 2
+fi
+
 captured=()
 for scene in "${scenes[@]}"; do
 	capture_one "${scene%%:*}" "${scene#*:}"
