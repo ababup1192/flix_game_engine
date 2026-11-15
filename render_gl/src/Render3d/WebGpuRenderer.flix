@@ -4,6 +4,8 @@
 // 行を流すのは Render3d.WebGpuRows。式は GL と同じ WGSL（Render3dWgsl の頂点の色の頂点シェーダーと frag）。
 // 描くのは不透明の頂点の色の物と光（点光源・スポット・太陽・環境光・hemisphere・かすみ）。材質・骨つき・ビルボード・空・影・Output.Depth は描かずに名前ごとに 1 回知らせる
 // （材質の物は GL が「使えない」と答えた材質と同じく頂点の色で描く）。
+// WhyNot: 兄弟（Render3d.GlRows など）と同じく pub を外さない — 呼び手の RenderPaint.Internal.WebGpuPaint は Render3d の子孫でなく、pub でない子の mod には届かない
+//   （親の Render3d が pub でないので、別のパッケージのゲームからは見えない）。
 pub mod Render3d.WebGpuRenderer {
     import fge.webgpu.AddressMode
     import fge.webgpu.BindGroup
@@ -59,16 +61,22 @@ pub mod Render3d.WebGpuRenderer {
     /// flush = 積んだ pass があれば submit する（submit したら afterSubmit が呼ばれる）・skip = 描かない物を名前ごとに 1 回知らせる。
     pub type alias Host = { encoder = Unit -> CommandEncoder \ IO, notePass = Unit -> Unit \ IO, flush = Unit -> Unit \ IO, skip = String -> Unit \ IO }
 
-    /// 場面を描く描き先。key = 2D の描き手の描き先の鍵（画面は 0）・format・samples = 2D の pass の形式と標本・
+    /// 場面を描く描き先。key = 2D の描き手の描き先の鍵（画面は 0）・format・samples = 2D の pass の形式と標本（WebGPU の描き先の標本は 1 か 4）・
     /// viewport = 描き先の中の design 領域（GL の左下が原点）と倍率・height = 描き先の高さ（画素）。
     pub type alias Dest = { key = Int32, format = RenderTarget.Format, samples = Int32, viewport = Scene3dRenderer.Viewport, height = Int32 }
 
-    /// 場面 1 つを貼る物。group = 貼る形の group 1・scissor = 貼る矩形 ∩ clip ∩ design 領域（描き先の左上が原点の x・y・幅・高さ）。
-    pub type alias Paste = { group = BindGroup, scissor = (Int32, Int32, Int32, Int32) }
+    /// 場面 1 つを貼る物。group = 貼る形の group 1・scissor = 貼る矩形 ∩ clip ∩ design 領域（描き先の左上が原点の x・y・幅・高さ）・
+    /// key = 描き先の鍵（貼った時に notePasted へ渡す）。
+    pub type alias Paste = { group = BindGroup, scissor = (Int32, Int32, Int32, Int32), key = (Int32, Int32) }
 
     /// prepare の答え（i 番目 = 番号 i の場面を貼る物。描く物の無い場面は None）。
     pub type alias Prepared = Vector[Option[Paste]]
 
+    /// 描き手の状態。欄の中身:
+    /// pipelines = (形式の番号, 標本の数) → 頂点の色の pipeline・blankDepth と blankImage = 影の地図と環境マップの代わり（場面の値が影と環境マップを切っているので読まれない）・
+    /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
+    /// instanceUsed = 今の encoder で使ったそのバイト数・cpuInstances・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
+    /// （cpuInstances は足りなければ倍に作り直す）・gen = 画面のコマの世代（endFrame で進む）。
     enum RendererData {
         case RendererData({
             gpu = WebGpu,
@@ -77,20 +85,20 @@ pub mod Render3d.WebGpuRenderer {
             pasteLayout = BindGroupLayout,
             vertexModule = ShaderModule,
             fragmentModule = ShaderModule,
-            // (形式の番号 × 2 + 標本つきなら 1) → 頂点の色の pipeline。
-            pipelines = Ref[Map[Int32, RenderPipeline], Static],
-            // 影の地図と環境マップの代わり（場面の値が影と環境マップを切っているので読まれない）。
+            pipelines = Ref[Map[(Int32, Int32), RenderPipeline], Static],
             blankDepth = Texture,
             blankImage = Texture,
             environmentSampler = Sampler,
             meshes = MeshTable,
             targets = Ref[Map[(Int32, Int32), SceneTarget], Static],
-            // 今の encoder（submit まで）で値を書いた描き先の鍵。
             written = Ref[Set[(Int32, Int32)], Static],
-            // 1 体ごとの値の buffer（頂点の buffer の 1 番）と、今の encoder で使ったバイト数。
             instances = Array[Buffer, Static],
             instanceUsed = Array[Int32, Static],
-            // 画面のコマの世代（endFrame で進む）。
+            cpuInstances = Array[ByteBuffer, Static],
+            cpuScene = ByteBuffer,
+            cpuCamera = ByteBuffer,
+            cpuPaste = ByteBuffer,
+            scratch = Array[Float32, Static],
             gen = Array[Int64, Static]
         })
     }
@@ -113,7 +121,7 @@ pub mod Render3d.WebGpuRenderer {
         let blankImage = gpu.createTexture("fge scene3d blank", 1, 1, TextureFormat.RGBA8_UNORM,
                                            Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
         gpu.writeTexture(blankImage, 0, 0, 0, 1, 1, ByteBuffer.allocateDirect(4), 0, 4);
-        RendererData.RendererData({
+        let r = RendererData.RendererData({
             gpu = gpu, planner = freshPlanner(Render3d.DrawMode.Instanced),
             sceneLayout = gpu.createBindGroupLayout(layoutDesc), pasteLayout = pasteLayout,
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource()),
@@ -124,8 +132,17 @@ pub mod Render3d.WebGpuRenderer {
             environmentSampler = gpu.createSampler("fge scene3d environment", FilterMode.LINEAR, FilterMode.LINEAR, AddressMode.REPEAT),
             meshes = freshMeshes(), targets = Ref.fresh(Static, Map.empty()), written = Ref.fresh(Static, Set.empty()),
             instances = Array#{createInstanceBuffer(gpu, initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
-            instanceUsed = Array#{0} @ Static, gen = Array#{1i64} @ Static
-        })
+            instanceUsed = Array#{0} @ Static,
+            cpuInstances = Array#{directBytes(initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
+            cpuScene = directBytes(sceneValueBytes()), cpuCamera = directBytes(128), cpuPaste = directBytes(16),
+            scratch = Array.repeat(Static, Render3dWgsl.instanceBytes() / 4, 0.0f32),
+            gen = Array#{1i64} @ Static
+        });
+        // WhyNot: 画面（RGBA8・標本 1）の pipeline を初めて場面が出たコマで作らない — Dawn は pipeline を作り終えるまで待つので、そのコマが詰まる（WebGpuPipelines.buildStartupPipelines と同じ）。
+        discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1);
+        r
+
+    def directBytes(bytes: Int32): ByteBuffer \ IO = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN)
 
     def createInstanceBuffer(gpu: WebGpu, bytes: Int32): Buffer \ IO =
         gpu.createBuffer("fge scene3d instances", Int32.toInt64(bytes), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST))
@@ -151,6 +168,12 @@ pub mod Render3d.WebGpuRenderer {
         let RendererData.RendererData(s) = r;
         Array.put(0, 0, s#instanceUsed);
         Ref.put(Set.empty(), s#written)
+
+    /// 2D の pass に paste を貼った時に呼ぶ（その描き先の値を、今の encoder の中で使い中と控える）。
+    // WhyNot: prepare で書いた時の控えだけで済ませない — prepare から 2D の pass を積むまでの間に submit が入る（1 体ごとの値の buffer があふれる・
+    //   2D の Stream を伸ばす）と控えが消え、同じ encoder で同じ描き先がもう一度来た時に、まだ submit していない pass の貼る矩形と場面の値を先回りして書き換える。
+    //   貼るのは pass の中で、pass を閉じるまで submit は入らない。
+    pub def notePasted(r: Renderer, paste: Paste): Unit \ IO = noteWritten(r, paste#key)
 
     /// 画面のコマを締めて submit した後に 1 回呼ぶ。頂点の上限を超えた形と、しばらく描かなかった場面の描き先を捨てて、世代を進める。
     pub def endFrame(r: Renderer): Unit \ IO =
@@ -201,7 +224,7 @@ pub mod Render3d.WebGpuRenderer {
             drawInto(r, host, target, members, plan);
             writePaste(r, target, topLeftOf(dest#height, rect));
             noteWritten(r, (dest#key, index));
-            Some({ group = target#pasteGroup, scissor = topLeftOf(dest#height, scissor) })
+            Some({ group = target#pasteGroup, scissor = topLeftOf(dest#height, scissor), key = (dest#key, index) })
         }
 
     def isColorOutput(scene: Scene3d.Scene3dCmd): Bool = match scene#output {
@@ -278,16 +301,27 @@ pub mod Render3d.WebGpuRenderer {
     /// 場面の頂点の色の batch に 1 体ごとの値の番号を振って 1 体ごとの値の buffer へ送り、行の列と、送った位置（体の番号）を返す。
     /// 骨つきの batch は描く物を 0 にする（形も上げない）。材質の batch は無い（prepare が材質を全部「使えない」と答える）。
     def numberInstances(r: Renderer, host: Host, members: MutList[MeshDraw, Static], draws: SceneDraws[SpanBatch]): (SceneList, Int32) \ IO =
+        let RendererData.RendererData(s) = r;
         let total = List.sumWith(b -> b#count, draws#plain);
         let bytes = total * Render3dWgsl.instanceBytes();
-        let raw = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN);
+        let raw = cpuInstancesFor(r, bytes);
         let out = raw.asFloatBuffer();
-        let scratch = Array.repeat(Static, Render3dWgsl.instanceBytes() / 4, 0.0f32);
         let next = Array#{0} @ Static;
-        let plain = List.map(numberSpan(out, scratch, Int32.maxValue(), next, members, PackMode.Lit), draws#plain);
+        let plain = List.map(numberSpan(out, s#scratch, Int32.maxValue(), next, members, PackMode.Lit), draws#plain);
         let unseen = (b: SpanBatch) -> ({ head = b#head, count = 0, first = 0 }: MeshBatch);
         let list = buildSceneList({ plain = plain, skinned = List.map(unseen, draws#skinned), opaque = Nil, blended = Nil });
         (list, sendInstances(r, host, raw, bytes))
+
+    /// bytes を書ける 1 体ごとの値の CPU の入れ物（足りなければ要る大きさか倍の大きい方へ作り直す）。
+    def cpuInstancesFor(r: Renderer, bytes: Int32): ByteBuffer \ IO =
+        let RendererData.RendererData(s) = r;
+        let held = Array.get(0, s#cpuInstances);
+        if (held.capacity() >= bytes) held
+        else {
+            let grown = directBytes(Int32.max(bytes, 2 * held.capacity()));
+            Array.put(grown, 0, s#cpuInstances);
+            grown
+        }
 
     /// bytes の 1 体ごとの値を buffer の空きへ書き、書いた位置（体の番号）を返す。空きに入らなければ積んだ pass を submit して頭から書き、
     /// 頭からでも入らなければ buffer を要る大きさか倍の大きい方へ作り直す。
@@ -318,10 +352,10 @@ pub mod Render3d.WebGpuRenderer {
     def writeSceneValues(r: Renderer, target: SceneTarget, scene: Scene3d.Scene3dCmd): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
-        let values = ByteBuffer.allocateDirect(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
+        let values = s#cpuScene;
         packSceneValues(values, lightDataOf(picked, 0));
         s#gpu.writeBuffer(target#sceneValues, 0i64, values, 0, sceneValueBytes());
-        let camera = ByteBuffer.allocateDirect(128).order(ByteOrder.LITTLE_ENDIAN);
+        let camera = s#cpuCamera;
         let floats = camera.asFloatBuffer();
         discard floats.put(matrixArray(Camera3d.viewMatrix(scene#camera)));
         discard floats.put(matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene))));
@@ -384,7 +418,7 @@ pub mod Render3d.WebGpuRenderer {
     def writePaste(r: Renderer, target: SceneTarget, rect: (Int32, Int32, Int32, Int32)): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let (x, y, w, h) = rect;
-        let data = ByteBuffer.allocateDirect(16).order(ByteOrder.LITTLE_ENDIAN);
+        let data = s#cpuPaste;
         discard data.putFloat(0, Int32.toFloat32(x)).putFloat(4, Int32.toFloat32(y));
         discard data.putFloat(8, RenderUtil.f32(Int32.toFloat64(target#width) / Int32.toFloat64(Int32.max(1, w))));
         discard data.putFloat(12, RenderUtil.f32(Int32.toFloat64(target#height) / Int32.toFloat64(Int32.max(1, h))));
@@ -453,7 +487,7 @@ pub mod Render3d.WebGpuRenderer {
     /// 形式 format・標本 samples の頂点の色の pipeline（無ければ作る）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
     def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32): RenderPipeline \ IO =
         let RendererData.RendererData(s) = r;
-        let key = WebGpuPipelines.formatCode(format) * 2 + (if (samples > 1) 1 else 0);
+        let key = (WebGpuPipelines.formatCode(format), samples);
         match Map.get(key, Ref.get(s#pipelines)) {
             case Some(p) => p
             case None =>

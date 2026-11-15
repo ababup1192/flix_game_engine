@@ -587,6 +587,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let scenes = Render3d.WebGpuRenderer.prepare(p#scenes3d, sceneHost(paint),
                                                      { key = stencilKey, format = format, samples = samples, viewport = sceneViewportOf(paint, pass), height = pass#height },
                                                      frame#scenes);
+        // WhyNot: 診断の 3D の数を黙って 0 で出さない — bench の JSON で「描いた物が 0」と読み違える（数えるのは P8）。
+        if (List.isEmpty(frame#scenes) or Option.isEmpty(Ref.get(p#diagnosticsRef))) ()
+        else skip(paint, "3D の数を数える事（診断の scene3dCounts は 0 のまま・未計測）");
         WebGpuRows.renderFrame({
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons, staticRanges = staticRanges, surfaces = frame#surfaces,
             sceneZs = List.toVector(List.map(cmd -> cmd#scene#zIndex, frame#scenes)),
@@ -604,15 +607,19 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             drawSurface = (pass1, rows, row, reads, stencil, bytes) ->
                 WebGpuSurfaces.draw(surfaces, pass1, (format, samples), stencil, Array.get(0, p#values#gpuBuffer), bytes, textureOf, name -> skip(paint, name),
                                     rows, row, reads),
-            drawScene = (pass1, index, stencil) -> pasteScene(pipes, (format, samples), Vector.get(index, scenes), pass1, stencil),
+            drawScene = (pass1, index, stencil) -> pasteScene(paint, (format, samples), Vector.get(index, scenes), pass1, stencil),
             skip = name -> skip(paint, name)
         })
 
-    /// 先に描いた場面 1 つ（Render3d.WebGpuRenderer.prepare の答え）を、場面の矩形の scissor で貼る（描く物の無い場面は何もしない）。
-    def pasteScene(pipes: WebGpuPipelines.Pipelines, target: (RenderTarget.Format, Int32), scene: Option[Render3d.WebGpuRenderer.Paste],
+    /// 先に描いた場面 1 つ（Render3d.WebGpuRenderer.prepare の答え）を、場面の矩形の scissor で貼り、その描き先の値を今の encoder の中で使い中と控える
+    /// （描く物の無い場面は何もしない）。
+    def pasteScene(paint: Paint, target: (RenderTarget.Format, Int32), scene: Option[Render3d.WebGpuRenderer.Paste],
                    pass: RenderPass, stencil: Int32): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        let pipes = p#pipes;
         let (format, samples) = target;
         scene |> Option.forEach(paste -> {
+            Render3d.WebGpuRenderer.notePasted(p#scenes3d, paste);
             let (x, y, w, h) = paste#scissor;
             pass.setPipeline(WebGpuPipelines.pipelineOf(pipes, WebGpuRows.shapeScene(), WebGpuRows.blendScene(), format, samples, stencil));
             pass.setBindGroup(1, paste#group);

@@ -73,7 +73,8 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
                 discard pipelineOf(pipes, WebGpuRows.shapeSprite(), b, RenderTarget.Format.Rgba8Unorm, 1, stencil);
                 discard pipelineOf(pipes, WebGpuRows.shapePoly(), b, RenderTarget.Format.Rgba8Unorm, 1, stencil)
             }, 0 :: 1 :: 2 :: Nil);
-            discard pipelineOf(pipes, WebGpuRows.shapeTile(), 0, RenderTarget.Format.Rgba8Unorm, 1, stencil)
+            discard pipelineOf(pipes, WebGpuRows.shapeTile(), 0, RenderTarget.Format.Rgba8Unorm, 1, stencil);
+            discard pipelineOf(pipes, WebGpuRows.shapeScene(), WebGpuRows.blendScene(), RenderTarget.Format.Rgba8Unorm, 1, stencil)
         }, WebGpuRows.stencilNone() :: WebGpuRows.stencilKeep() :: Nil);
         List.forEach(b -> discard pipelineOf(pipes, WebGpuRows.shapeSprite(), b, RenderTarget.Format.Rgba8Unorm, 1, WebGpuRows.stencilEqual()),
                      0 :: 1 :: 2 :: Nil);

@@ -249,8 +249,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
             } else ();
             applyScissor(pass, geom);
             drawSurface(pass, rows, row, reads, if (ref > 0) stencilEqual() else Array.get(24, geom), Array.get(22, geom) + 4 * rowAt(rows, row, 11));
-            Array.put(-1, 8, geom);
-            Array.put(-1, 9, geom)
+            forgetBindings(geom)
         };
         countSingleDraw(st, kindSurface(), if (ref > 0) 2 else 1)
 
@@ -267,10 +266,14 @@ pub mod RenderFrame.Internal.WebGpuRows {
     def drawSceneRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static], drawScene: SceneDrawer,
                      row: Int32): Unit \ IO =
         drawScene(pass, rowAt(rows, row, 1), Array.get(24, geom));
-        Array.put(-1, 8, geom);
-        Array.put(-1, 9, geom);
+        forgetBindings(geom);
         Array.put(-1, 16, geom);
         countSceneRow(st)
+
+    /// 積んだ pipeline と group 1 の控えを捨てる（行の外の口がその 2 つを替えた後。次の行が自分の物を積み直す）。
+    def forgetBindings(geom: Array[Int32, Static]): Unit \ IO =
+        Array.put(-1, 8, geom);
+        Array.put(-1, 9, geom)
 
     /// stencil を全部 0 に戻す: design の全面の 6 頂点を、stencil へ値 0 を書く pipeline で描く。scissor は描き先の全面にし、行の scissor は次の applyScissor が戻す。
     // WhyNot: pass を閉じて stencil を clear して開き直さない — 開き直すと viewport・積んだ pipeline と buffer の控え・黒帯の箱を全部張り直す道が要り、
