@@ -287,7 +287,7 @@
   .st-row { display: grid; grid-template-columns: minmax(96px, auto) 1fr; column-gap: 10px; row-gap: 1px; align-items: baseline; padding: 6px 2px; border-bottom: 1px solid var(--hair); font-size: 13px; }
   .st-row:last-child { border-bottom: 0; }
   .st-row .nm { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .st-row .nm.var { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--text); }
+  .st-row .nm.var { font-size: 13px; color: var(--text); }
   .st-row .val { min-width: 0; word-break: break-word; }
   .st-row .val.off { color: var(--faint); }
   .st-row .val.on { color: var(--c-state); font-weight: 700; }
@@ -308,7 +308,12 @@
   .conds code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
   .conds .ok { color: var(--c-state); }
   .why { display: block; width: 100%; text-align: left; margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(142,230,176,.08); font-size: 11.5px; line-height: 1.6; color: var(--dim); }
-  .why b { color: var(--c-state); font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
+  .why b { color: var(--c-state); font-weight: 700; }
+  .raw { font-family: ui-monospace, Menlo, monospace; font-size: .78em; color: var(--faint); font-weight: 400; margin-left: 4px; }
+  .st-row .nm.var { white-space: normal; }
+  .st-row .nm.var .raw { display: block; margin: 1px 0 0; font-size: 10px; }
+  .stc .raw { color: rgba(142,230,176,.55); margin-left: 3px; }
+  .why b .raw, .conds .raw, .st-fork .raw { color: var(--faint); }
   body.wide .tl-body { height: 196px; }
   body.wide #stateRow { top: 164px !important; height: 26px !important; }
   body.wide .stc { height: 26px; line-height: 26px; font-size: 11.5px; padding: 0 8px 0 6px; border-radius: 6px; }
@@ -518,6 +523,8 @@ const TAPE = {
   // 舞台の値は kesshou.yarn の演出コマンドから、シーンの時刻に合わせて作った。行 [時刻, 値, 台本の行, 演出コマンド]
   state: {
     example: true,
+    // 表示の名前: 本物はゲームの Doc assets/novel.story.json の vars（話し手の names と同じ形）から引く
+    varNames: { closeness: "親しさ", wish: "願い", took_bottle: "小瓶を受け取った", has_knife: "ナイフを持っている", warned: "忠告された" },
     vars: [
       { name: "$closeness", kind: "var", rows: [[0, 0, 12, "<<declare $closeness = 0>>"], [9, 1, 28, "<<set $closeness += 1>>"], [15, 2, 33, "<<set $closeness += 1>>"]] },
       { name: "$wish", kind: "var", rows: [[0, "undecided", 13, '<<declare $wish = "undecided">>'], [12, "soul", 30, '<<set $wish to "soul">>']] },
@@ -865,7 +872,7 @@ function renderNow(t) {
   $("cardScript").disabled = !ln;
   $("vSound").textContent = snd ? snd.label : "—"; $("nSound").textContent = count("sound");
   $("cardSound").disabled = !snd;
-  const ch = changeAt(t); $("vState").textContent = ch ? `${ch.name.slice(1)} ${fmtVal(ch.to)}` : "—";
+  const ch = changeAt(t); $("vState").textContent = ch ? `${varLabel(ch.name)} ${showVal(ch.to)}` : "—";
 }
 $("cardVideo").onclick = () => select({ track: "video" });
 $("cardScript").onclick = () => { const ln = lineAt(video.currentTime); if (ln) select({ track: "script", ln }); };
@@ -883,7 +890,7 @@ $("selClose").onclick = () => select(null);
 function renderActs() {
   const t = video.currentTime, k = sel.track, T = TRACK[k];
   $("selBadge").innerHTML = SVG[k]("#111") + T.name; $("selBadge").style.background = T.c;
-  let what = "", acts = [];
+  let what = "", whatHtml = "", acts = [];
   if (k === "video") {
     what = `${sceneAt(t).name} · ${mmss(t)}`;
     acts = [["rect", SVG.rect, "囲む", () => setMode("rect")], ["pick", SVG.pick, "物を選ぶ", () => setMode("pick")], ["info", SVG.info, "このコマ", openInfo]];
@@ -894,14 +901,14 @@ function renderActs() {
                   : [["note", SVG.note, "この演出に注釈", () => askNote("script", { line: sel.ln, command: l.cmd }, null, t), true]];
   } else if (k === "state") {
     const ch = sel.ch;
-    what = `${ch.name} ${fmtVal(ch.from)} → ${fmtVal(ch.to)}（${yarn}:${ch.line} ${ch.cmd}） · ${mmss(ch.t)}`;
+    whatHtml = `${varHtml(ch.name)} ${esc(showVal(ch.from))} → ${esc(showVal(ch.to))}（${yarn}:${ch.line} <span class="raw" style="margin:0">${esc(ch.cmd)}</span>） · ${mmss(ch.t)}`;
     acts = [["table", SVG.state("#111"), "状態の表", () => openState(), true], ["note", SVG.note, "この行に注釈", () => askNote("script", { line: ch.line, command: ch.cmd }, null, ch.t)]];
   } else {
     const s = sel.sound;
     what = `${s.label}（${s.name}） · ${mmss(s.t)}`;
     acts = [["note", SVG.note, "この音に注釈", () => askNote("sound", { name: s.name, kind: s.kind, label: s.label, line: s.line }, null, s.t), true], ["listen", SVG.listen, "聴く", () => listen(s)]];
   }
-  $("selWhat").textContent = what;
+  if (whatHtml) $("selWhat").innerHTML = whatHtml; else $("selWhat").textContent = what;
   $("actsRow").innerHTML = acts.map(([id, ic, label, , main]) => `<button class="act ${main ? "main" : ""}" data-a="${id}" style="${main ? `background:${T.c}` : ""}">${ic}${label}</button>`).join("");
   acts.forEach(([id, , , fn]) => $("actsRow").querySelector(`[data-a="${id}"]`).onclick = fn);
 }
@@ -919,6 +926,21 @@ function listen(s) { video.currentTime = Math.max(0, s.t - .4); video.play(); se
 // ── 状態（変数・フラグ・舞台の値）: 時刻から引く。帯の 4 段目・札・シート・右の欄が同じ物を使う ──
 const ST = TAPE.state;
 const fmtVal = v => v === true ? "true" : v === false ? "false" : typeof v === "string" ? `"${v}"` : String(v);
+const VAR_NAMES = ST.varNames || {};
+const varLabel = name => VAR_NAMES[name.replace(/^\$/, "")] || name;
+// 表に無い変数は $名前 だけ（同じ字を 2 度並べない）
+const varHtml = name => varLabel(name) === name ? esc(name) : `${esc(varLabel(name))}<span class="raw">${esc(name)}</span>`;
+const showVal = v => v === true ? "はい" : v === false ? "いいえ" : fmtVal(v);
+const OPS = { ">=": "≥", "<=": "≤", "==": "=", "!=": "≠", ">": ">", "<": "<" };
+const litJp = raw => raw === "true" ? "はい" : raw === "false" ? "いいえ" : raw;
+const condJp = cond => cond.split(/\s+and\s+/).map(term => {
+  let m;
+  if ((m = term.match(/^not\s+(\$\w+)$/))) return `${varLabel(m[1])} = いいえ`;
+  if ((m = term.match(/^(\$\w+)$/))) return `${varLabel(m[1])} = はい`;
+  if ((m = term.match(/^(\$\w+)\s*(>=|<=|==|!=|>|<)\s*(.+)$/))) return `${varLabel(m[1])} ${OPS[m[2]]} ${litJp(m[3].trim())}`;
+  return term;
+}).join(" かつ ");
+const condHtml = cond => `${esc(condJp(cond))}<span class="raw">${esc(cond)}</span>`;
 // 変わった時刻の一覧（宣言の 0 秒は帯に出さない — 全部が頭に重なって読めない）
 const STATE_CHANGES = ST.vars.flatMap(v => v.rows.slice(1).map((r, i) => ({ name: v.name, kind: v.kind, t: r[0], to: r[1], from: v.rows[i][1], line: r[2], cmd: r[3] }))).sort((a, b) => a.t - b.t);
 const rowAt = (rows, t) => { let r = rows[0]; for (const x of rows) if (t >= x[0] - 1e-6) r = x; return r; };
@@ -939,7 +961,7 @@ function evalCond(cond, vals) {
   });
 }
 const condVars = cond => [...new Set(cond.match(/\$\w+/g) || [])];
-const condsHtml = br => br.routes.some(r => r.cond) ? `<div class="conds">${br.routes.map(r => `<div class="${evalCond(r.cond, varsAt(br.t)) ? "ok" : "ng"}">${evalCond(r.cond, varsAt(br.t)) ? "✓" : "×"} <code>${esc(r.cond)}</code> → ${esc(r.label)}</div>`).join("")}</div>` : "";
+const condsHtml = br => br.routes.some(r => r.cond) ? `<div class="conds">${br.routes.map(r => `<div class="${evalCond(r.cond, varsAt(br.t)) ? "ok" : "ng"}">${evalCond(r.cond, varsAt(br.t)) ? "✓" : "×"} ${condHtml(r.cond)} → ${esc(r.label)}</div>`).join("")}</div>` : "";
 // 選んだ道の式に出てくる変数を、最後に変えた行まで辿る（「なぜこの分岐に入ったか」）
 function whyRows(br) {
   const r = br.routes.find(x => x.here); if (!r || !r.cond) return [];
@@ -947,12 +969,12 @@ function whyRows(br) {
 }
 function whyHtml(br) {
   const r = br.routes.find(x => x.here), rows = whyRows(br); if (!rows.length) return "";
-  return `<div class="why-wrap">${rows.map(w => `<button class="why" data-t="${w.t}">なぜ『${esc(r.label)}』: <b>${esc(w.name)} = ${esc(fmtVal(w.val))}</b> ← ${mmss(w.t)} · ${yarn}:${w.line} <code>${esc(w.cmd)}</code></button>`).join("")}</div>`;
+  return `<div class="why-wrap">${rows.map(w => `<button class="why" data-t="${w.t}">なぜ『${esc(r.label)}』: <b>${varHtml(w.name)} = ${esc(showVal(w.val))}</b> ← ${mmss(w.t)} · ${yarn}:${w.line} <code>${esc(w.cmd)}</code></button>`).join("")}</div>`;
 }
-const forkWhyText = br => whyRows(br).map(w => `\n<span class="m">なぜ: ${esc(w.name)} = ${esc(fmtVal(w.val))} ← ${mmss(w.t)} · ${yarn}:${w.line}</span>`).join("");
+const forkWhyText = br => whyRows(br).map(w => `\n<span class="m">なぜ: ${esc(varLabel(w.name))} = ${esc(showVal(w.val))} ← ${mmss(w.t)} · ${yarn}:${w.line}</span>`).join("");
 
 function renderStateRow() {
-  $("stateRow").innerHTML = STATE_CHANGES.map((c, i) => `<div class="stc ${c.kind === "flag" ? "flag" : ""}" data-i="${i}" style="left:${c.t * PPS}px">${esc(c.name.slice(1))} ${esc(fmtVal(c.from))}→${esc(fmtVal(c.to))}</div>`).join("");
+  $("stateRow").innerHTML = STATE_CHANGES.map((c, i) => `<div class="stc ${c.kind === "flag" ? "flag" : ""}" data-i="${i}" style="left:${c.t * PPS}px">${esc(varLabel(c.name))} ${esc(showVal(c.from))}→${esc(showVal(c.to))}${varLabel(c.name) === c.name ? "" : `<span class="raw">${esc(c.name)}</span>`}</div>`).join("");
   $("stateRow").querySelectorAll(".stc").forEach(n => n.onclick = () => { const c = STATE_CHANGES[+n.dataset.i]; seek(c.t + .02); select({ track: "state", ch: c }); });
 }
 function stateRowsHtml(t) {
@@ -960,12 +982,12 @@ function stateRowsHtml(t) {
   const when = r => r[0] > 0 || r[2] ? `<span class="when" data-t="${r[0]}">${r[0] > 0 ? mmss(r[0]) : "初期値"}${r[2] ? ` · ${yarn}:${r[2]}` : ""}${r[3] ? ` <code>${esc(r[3])}</code>` : ""}</span>` : `<span class="when"></span>`;
   const varRow = v => { const r = rowAt(v.rows, t), val = r[1];
     const cls = v.kind === "flag" ? (val ? "on" : "off") : "";
-    return `<div class="st-row ${here(r[0]) ? "here" : ""}" data-k="${esc(v.name)}" data-v="${esc(fmtVal(val))}"><span class="nm var">${esc(v.name)}</span><span class="val ${cls}">${v.kind === "flag" ? (val ? "✓ true" : "false") : esc(fmtVal(val))}</span>${when(r)}</div>`; };
+    return `<div class="st-row ${here(r[0]) ? "here" : ""}" data-k="${esc(v.name)}" data-v="${esc(fmtVal(val))}"><span class="nm var">${varHtml(v.name)}</span><span class="val ${cls}">${v.kind === "flag" ? (val ? "✓ はい" : "いいえ") : esc(fmtVal(val))}</span>${when(r)}</div>`; };
   const stageRow = g => { const r = rowAt(g.rows, t), off = /^—/.test(r[1]);
     return `<div class="st-row ${here(r[0]) ? "here" : ""}" data-k="${esc(g.name)}" data-v="${esc(r[1])}"><span class="nm">${esc(g.name)}</span><span class="val ${off ? "off" : ""}">${esc(r[1])}</span>${when(r)}</div>`; };
   const forks = TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s));
   const forkHtml = forks.map(br => { const vals = varsAt(br.t), r = br.routes.find(x => x.here);
-    return `<div class="st-fork">分岐 <b>${esc(br.question)}</b>（${mmss(br.t)} · ${yarn}:${br.line}）<br>${br.routes.map(x => `${x.here ? "✓" : "　"} ${esc(x.label)} <code class="cond" style="display:inline">${esc(x.cond)}</code>`).join("<br>")}<br>その時: ${condVars(r.cond).map(n => `<code class="cond" style="display:inline;color:var(--c-state)">${esc(n)} = ${esc(fmtVal(vals[n]))}</code>`).join(" ")}</div>`; }).join("");
+    return `<div class="st-fork">分岐 <b>${esc(br.question)}</b>（${mmss(br.t)} · ${yarn}:${br.line}）<br>${br.routes.map(x => `${x.here ? "✓" : "　"} ${esc(x.label)} <span class="cond" style="display:inline;font-family:inherit;font-size:11.5px">${condHtml(x.cond)}</span>`).join("<br>")}<br>その時: ${condVars(r.cond).map(n => `<span style="color:var(--c-state)">${varHtml(n)} = ${esc(showVal(vals[n]))}</span>`).join(" ")}</div>`; }).join("");
   return `<div class="st-sec">変数</div>${ST.vars.filter(v => v.kind === "var").map(varRow).join("")}
     <div class="st-sec">フラグ</div>${ST.vars.filter(v => v.kind === "flag").map(varRow).join("")}
     ${forkHtml ? `<div class="st-sec">このシーンの分岐</div>${forkHtml}` : ""}
@@ -1355,8 +1377,8 @@ function tipFor(n) {
     if (m.a) return `<span class="m">${TRACK[m.k].name}: ${esc(label(m.a))} · ${mmss(m.t)}</span>\n${esc(m.a.note)}`;
     return `<span class="m">台本: 文章の直し · ${yarn}:${m.ln}</span>\n<span class="mincho">${esc(edits[m.ln].replace(/／/g, "\n"))}</span>`;
   }
-  if (n.classList.contains("fork")) { const br = TAPE.branches[+n.dataset.i]; if (!br) return ""; return `分岐: ${esc(br.question)}\n<span class="m">${br.routes.map(r => (r.here ? "✓ " : "") + esc(r.label) + (r.cond ? `  ${esc(r.cond)}` : "")).join("\n")}</span>${forkWhyText(br)}`; }
-  if (n.classList.contains("stc")) { const ch = STATE_CHANGES[+n.dataset.i]; return `<b style="color:var(--c-state)">${esc(ch.name)}</b> ${esc(fmtVal(ch.from))} → ${esc(fmtVal(ch.to))}\n<span class="m">${mmss(ch.t)} · ${yarn}:${ch.line} ${esc(ch.cmd)}</span>`; }
+  if (n.classList.contains("fork")) { const br = TAPE.branches[+n.dataset.i]; if (!br) return ""; return `分岐: ${esc(br.question)}\n<span class="m">${br.routes.map(r => (r.here ? "✓ " : "") + esc(r.label) + (r.cond ? `  ${esc(condJp(r.cond))}（${esc(r.cond)}）` : "")).join("\n")}</span>${forkWhyText(br)}`; }
+  if (n.classList.contains("stc")) { const ch = STATE_CHANGES[+n.dataset.i]; return `<b style="color:var(--c-state)">${esc(varLabel(ch.name))}</b> ${esc(showVal(ch.from))} → ${esc(showVal(ch.to))}\n<span class="m">${varLabel(ch.name) === ch.name ? "" : esc(ch.name) + " · "}${mmss(ch.t)} · ${yarn}:${ch.line} ${esc(ch.cmd)}</span>`; }
   if (n.classList.contains("card") && !n.disabled) return esc(n.querySelector(".v").textContent);
   return "";
 }
