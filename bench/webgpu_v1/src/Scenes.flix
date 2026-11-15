@@ -1,5 +1,5 @@
 // GL と WebGPU の両方で描く場面。WebGPU が描く物（スプライト・字・箱・Pass・生成の絵・多角形・タイルの層・static layer・Pass の history・MSAA・
-// mask つきスプライト）だけで組む。3D の場面は、GL でも画素を変えない空の場面だけを置く（sceneBetween）。
+// mask つきスプライト・面）だけで組む。3D の場面は、GL でも画素を変えない空の場面だけを置く（sceneBetween）。
 // 箱・スプライト・幕・放射の 4 つは bench/gl_parity の同じ名前の場面と同じ中身（色は 8 bit で割り切れる k/255）。
 // lint-view: 対象外 — GL と WebGPU の描き手の画素の一致を見る門の場面。丸めの差を混ぜないよう単色の箱を主にしている。画面に出す絵ではない。
 mod V1Scenes {
@@ -31,7 +31,9 @@ mod V1Scenes {
         boxes() :: spriteNearest() :: veil() :: radial() :: text() :: passPaste() :: passHalf() :: generated() :: passThenGenerated() ::
         polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() ::
         historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() ::
-        maskBasic() :: maskNested() :: maskPass() :: maskMsaa() :: maskOverflow() :: sceneBetween() :: Nil
+        maskBasic() :: maskNested() :: maskPass() :: maskMsaa() :: maskOverflow() :: sceneBetween() ::
+        surfaceFill() :: surfaceBetween() :: surfaceTexture() :: surfaceMask() :: surfacePass() :: surfaceMsaa() ::
+        surfaceAfterOverflow() :: surfaceHistory() :: Nil
 
     def c8(r: Int32, g: Int32, b: Int32): Color =
         { r = Int32.toFloat64(r) / 255.0, g = Int32.toFloat64(g) / 255.0, b = Int32.toFloat64(b) / 255.0 }
@@ -419,13 +421,121 @@ mod V1Scenes {
             at(240.0, 100.0, maskedSprite({ tint = c8(255, 255, 255), rotation = 0.0, flipH = false, blend = DrawCmd.BlendMode.Normal, z = 3, mask = Nil })) ::
             Nil) }
 
-    /// WebGPU がまだ描かない物だけの場面（面と 3D の場面）。GL とは比べない。
+    /// WebGPU がまだ描かない物だけの場面（3D の場面）。GL とは比べない。
     pub def unsupported(): Scene =
         let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
         { name = "unsupported", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = None, items = still(
-            Render.shaderFill(ShaderDoc.demoSurface(), { position = v(20.0, 20.0), size = v(60.0, 40.0) }, 0.0, 1) ::
             Render.scene3d(v(120.0, 60.0), { zIndex = 2 | Scene3d.scene(camera, v(100.0, 50.0)) }) ::
             Nil) }
+
+    // ── 面（ShaderDoc の面: 面の値（rect・time・alpha・params）・blend・絵の読み・mask・Pass・MSAA）──
+    // 面は箱と同じ z の列に混ざり、z の位置で溜めた run を閉じる。Spec の名前は場面をまたいで中身ごとに別にする（同じ名前で中身が違うと組み直しになる）。
+
+    def fillSpec(name: String, shade: ShaderDoc.Shade, alpha: ShaderDoc.Field): ShaderDoc.Spec =
+        { name = name, cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) }
+
+    def solidSpec(name: String, color: Color): ShaderDoc.Spec = fillSpec(name, ShaderDoc.Shade.Solid(color), ShaderDoc.Field.Const(1.0))
+
+    /// 左から右へ 2 色の間をなめらかにつなぐ面（uv の u）。
+    def rampSpec(): ShaderDoc.Spec =
+        fillSpec("v1_ramp", ShaderDoc.Shade.Ramp({ lo = c8(240, 60, 40), hi = c8(40, 80, 240), field = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.U }) }),
+                 ShaderDoc.Field.Const(1.0))
+
+    /// params の red と green を赤と緑にする面。
+    def paramSpec(): ShaderDoc.Spec =
+        fillSpec("v1_param", ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Param({ name = "red" }), g = ShaderDoc.Field.Param({ name = "green" }),
+                                                   b = ShaderDoc.Field.Const(0.0) }), ShaderDoc.Field.Const(1.0))
+
+    /// time × 0.25 を赤にする面。
+    def timeSpec(): ShaderDoc.Spec =
+        fillSpec("v1_time", ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Time({ scale = 0.25, offset = ShaderDoc.Field.Const(0.0) }),
+                                                  g = ShaderDoc.Field.Const(0.5), b = ShaderDoc.Field.Const(0.25) }), ShaderDoc.Field.Const(1.0))
+
+    /// 絵 texName を filter で読む面（色と alpha をそのまま）。
+    def readSpec(name: String, texName: String, filter: ShaderDoc.FilterMode): ShaderDoc.Spec =
+        let read = chan -> ShaderDoc.Field.Sampler({ filter = filter, of = ShaderDoc.Field.Tex({ name = texName, chan = chan }) });
+        fillSpec(name, ShaderDoc.Shade.Rgb({ r = read(ShaderDoc.TexChan.R), g = read(ShaderDoc.TexChan.G), b = read(ShaderDoc.TexChan.B) }),
+                 read(ShaderDoc.TexChan.A))
+
+    def rectAt(x: Float64, y: Float64, w: Float64, h: Float64): Rect2.Rect2 = { position = v(x, y), size = v(w, h) }
+
+    def surfaceAt(spec: ShaderDoc.Spec, r: Rect2.Rect2, z: Int32): Render.PlacedItem = Render.shaderFill(spec, r, 0.0, z)
+
+    def withItem(f: Render.Item -> Render.Item, placed: Render.PlacedItem): Render.PlacedItem = { item = f(placed#item) | placed }
+
+    /// 単色・箱との重なり順・uv・params・time・Add・Multiply・α 0.5。
+    def surfaceFill(): Scene =
+        { name = "surfaceFill", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
+            surfaceAt(solidSpec("v1_red", c8(220, 60, 60)), rectAt(10.0, 10.0, 60.0, 40.0), 1) ::
+            at(40.0, 30.0, RawDraw.box(v(40.0, 30.0), c8(60, 200, 120), 2)) ::
+            surfaceAt(solidSpec("v1_blue", c8(60, 80, 220)), rectAt(50.0, 40.0, 40.0, 30.0), 3) ::
+            surfaceAt(rampSpec(), rectAt(110.0, 10.0, 80.0, 40.0), 1) ::
+            (surfaceAt(paramSpec(), rectAt(200.0, 10.0, 50.0, 40.0), 1) |> Render.withShaderParams(Map#{"red" => 0.6, "green" => 0.2})) ::
+            Render.shaderFill(timeSpec(), rectAt(260.0, 10.0, 50.0, 40.0), 2.0, 1) ::
+            at(10.0, 80.0, RawDraw.box(v(220.0, 60.0), c8(200, 200, 200), 1)) ::
+            withItem(Render.blended(DrawCmd.BlendMode.Add), surfaceAt(solidSpec("v1_add", c8(40, 40, 120)), rectAt(20.0, 90.0, 50.0, 40.0), 2)) ::
+            withItem(Render.blended(DrawCmd.BlendMode.Multiply), surfaceAt(solidSpec("v1_mul", c8(128, 64, 255)), rectAt(80.0, 90.0, 50.0, 40.0), 2)) ::
+            withItem(Render.fade(0.5), surfaceAt(solidSpec("v1_half", c8(255, 255, 0)), rectAt(160.0, 90.0, 60.0, 40.0), 2)) ::
+            Nil) }
+
+    /// 同じ色・同じ blend の 2 つの箱の間に面が 1 枚（2 つの箱の run が切れる理由は面だけ。期待は Main.expectedDraws）。
+    def surfaceBetween(): Scene =
+        { name = "surfaceBetween", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(20.0, 20.0, RawDraw.box(v(120.0, 80.0), c8(40, 80, 200), 1)) ::
+            surfaceAt(solidSpec("v1_between", c8(240, 200, 40)), rectAt(60.0, 40.0, 60.0, 40.0), 2) ::
+            at(100.0, 60.0, RawDraw.box(v(120.0, 80.0), c8(40, 80, 200), 3)) ::
+            Nil) }
+
+    /// 絵の読み: アトラスを Nearest と Linear で・Pass（GL では上下逆に格納される描き先）を Nearest で・無い名前（不透明な黒）。
+    def surfaceTexture(): Scene =
+        { name = "surfaceTexture", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = p3() :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(60, 60, 60), 0)) ::
+            surfaceAt(readSpec("v1_read_nearest", "atlas", ShaderDoc.FilterMode.Nearest), rectAt(10.0, 10.0, 64.0, 64.0), 1) ::
+            surfaceAt(readSpec("v1_read_linear", "atlas", ShaderDoc.FilterMode.Linear), rectAt(90.0, 10.0, 64.0, 64.0), 1) ::
+            surfaceAt(readSpec("v1_read_pass", "p3", ShaderDoc.FilterMode.Nearest), rectAt(170.0, 10.0, 140.0, 80.0), 1) ::
+            surfaceAt(readSpec("v1_read_missing", "v1_no_such_texture", ShaderDoc.FilterMode.Nearest), rectAt(10.0, 100.0, 60.0, 40.0), 1) ::
+            Nil) }
+
+    /// mask つきの面: mask つきスプライトとの交互（比べる値の続き）・前の面の mask の内側に小さい mask のスプライト・三角形にならない mask・
+    /// 2 つの矩形の mask で絵を読む面。
+    def surfaceMask(): Scene =
+        let tri = (x, y) -> (v(x + 2.0, y + 2.0) :: v(x + 62.0, y + 6.0) :: v(x + 10.0, y + 58.0) :: Nil) :: Nil;
+        { name = "surfaceMask", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
+            at(8.0, 8.0, plainMask(white(), 1, triangleMask())) ::
+            Render.shaderFillMasked(solidSpec("v1_mask_green", c8(60, 200, 120)), rectAt(80.0, 8.0, 64.0, 64.0), tri(80.0, 8.0), 0.0, 1) ::
+            at(80.0, 8.0, plainMask(c8(255, 160, 80), 2, rectMask(20.0, 20.0, 30.0, 30.0) :: Nil)) ::
+            at(160.0, 8.0, plainMask(white(), 1, triangleMask())) ::
+            Render.shaderFillMasked(solidSpec("v1_mask_red", c8(220, 60, 60)), rectAt(232.0, 8.0, 64.0, 64.0),
+                                    (v(232.0, 8.0) :: v(290.0, 8.0) :: Nil) :: Nil, 0.0, 1) ::
+            Render.shaderFillMasked(readSpec("v1_mask_read", "atlas", ShaderDoc.FilterMode.Nearest), rectAt(8.0, 100.0, 128.0, 64.0),
+                                    rectMask(12.0, 104.0, 40.0, 30.0) :: rectMask(70.0, 120.0, 50.0, 40.0) :: Nil, 0.0, 1) ::
+            Nil) }
+
+    /// 面を Pass に描いて本編へ貼る（Pass の pass も面の mask の stencil を持つ）。
+    def surfacePass(): Scene =
+        let ps: Render.Pass = { name = "ps", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items =
+            surfaceAt(solidSpec("v1_pass_solid", c8(200, 60, 140)), rectAt(10.0, 10.0, 60.0, 40.0), 1) ::
+            at(40.0, 30.0, RawDraw.box(v(40.0, 30.0), c8(60, 200, 120), 2)) ::
+            surfaceAt(rampSpec(), rectAt(90.0, 10.0, 60.0, 30.0), 1) ::
+            Render.shaderFillMasked(solidSpec("v1_pass_mask", c8(240, 200, 40)), rectAt(10.0, 50.0, 140.0, 35.0),
+                                    rectMask(20.0, 55.0, 30.0, 20.0) :: rectMask(100.0, 60.0, 40.0, 20.0) :: Nil, 0.0, 1) ::
+            Nil };
+        { name = "surfacePass", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = ps :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+            pasteQuarter("ps", 0.0, 0.0, 1) ::
+            surfaceAt(solidSpec("v1_pass_main", c8(40, 160, 220)), rectAt(200.0, 100.0, 80.0, 50.0), 2) ::
+            Nil) }
+
+    /// 端数の位置の面と、端数の矩形の mask の面を標本 4 の Pass へ描いて貼る（面の pipeline の標本 4・mask の stencil も標本 4。MSAA の場面の WhyNot と同じく軸に沿った縁）。
+    def surfaceMsaa(): Scene =
+        let pm: Render.Pass = { name = "psmsaa", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items =
+            surfaceAt(solidSpec("v1_msaa_solid", c8(240, 200, 40)), rectAt(10.3, 5.2, 30.4, 20.6), 1) ::
+            Render.shaderFillMasked(solidSpec("v1_msaa_mask", c8(40, 200, 240)), rectAt(50.0, 0.0, 100.0, 80.0),
+                                    rectMask(60.3, 5.2, 40.4, 30.6) :: rectMask(102.7, 40.3, 20.2, 30.4) :: Nil, 0.0, 1) ::
+            Nil };
+        { name = "surfaceMsaa", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pm :: Nil, targets = targetsWith("psmsaa", 4), submits = Some(1),
+          items = still(pasteQuarter("psmsaa", 0.0, 0.0, 1) :: Nil) }
 
     // ── mask つきスプライト（stencil の比べる値を 1 ずつ進める・RenderList.nextMaskRef）──
     // mask の形は絵の大きさのローカル座標（左上が原点・回転と反転は絵と同じに掛かる）。絵は市松のアトラス（16 × 16）を 4 倍の 64 × 64 で。
@@ -500,13 +610,38 @@ mod V1Scenes {
     /// 1 つの pass に mask つきを 300 個（比べる値の上限 255 を超える）。どれも同じ 64 × 64 の場所に置き、mask は 20 × 15 のセルの 1 つずつ（セルごとに色を替える）。
     /// 256 個目（値 1 に戻る）の前に stencil を 0 に戻さないと、1 個目の mask のセルにも 256 個目の色が出る。
     def maskOverflow(): Scene =
-        let cell = i -> {
-            let col = Int32.remainder(i, 20);
-            let row = i / 20;
-            rectMask(Int32.toFloat64(col) * 3.0 + 2.0, Int32.toFloat64(row) * 4.0 + 2.0, 3.0, 4.0) :: Nil
-        };
-        let tintOf = i -> c8(55 + Int32.remainder(i * 37, 200), 55 + Int32.remainder(i * 91, 200), 55 + Int32.remainder(i * 53, 200));
         { name = "maskOverflow", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) :: overflowMasks(300)) }
+
+    /// (40, 40) の 64 × 64 に重ねた mask つき n 体（mask は 20 × 15 のセルの i 番目・セルごとに色を替える）。
+    def overflowMasks(n: Int32): List[Render.PlacedItem] =
+        List.range(0, n) |> List.map(i -> at(40.0, 40.0, plainMask(overflowTint(i), 1, overflowCell(i))))
+
+    def overflowCell(i: Int32): List[List[Vec2.Vec2]] =
+        let col = Int32.remainder(i, 20);
+        let row = i / 20;
+        rectMask(Int32.toFloat64(col) * 3.0 + 2.0, Int32.toFloat64(row) * 4.0 + 2.0, 3.0, 4.0) :: Nil
+
+    def overflowTint(i: Int32): Color = c8(55 + Int32.remainder(i * 37, 200), 55 + Int32.remainder(i * 91, 200), 55 + Int32.remainder(i * 53, 200))
+
+    /// mask つきスプライト 255 体（比べる値を使い切る）の後に、同じ 64 × 64 を塗る mask つきの面（値 1 に戻る）と、その後の mask つきスプライト（値 2）。
+    /// 面の mask は 1 体目のセルを含まない右下の矩形。面の前に stencil を 0 に戻さないと、1 体目のセル（値 1 のまま）にも面の色が出る。期待は Main.expectedDraws。
+    def surfaceAfterOverflow(): Scene =
+        { name = "surfaceAfterOverflow", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
-            (List.range(0, 300) |> List.map(i -> at(40.0, 40.0, plainMask(tintOf(i), 1, cell(i)))))) }
+            List.append(overflowMasks(255),
+                Render.shaderFillMasked(solidSpec("v1_overflow", c8(240, 240, 240)), rectAt(40.0, 40.0, 64.0, 64.0),
+                                        rectMask(70.0, 70.0, 30.0, 30.0) :: Nil, 0.0, 1) ::
+                at(40.0, 40.0, plainMask(c8(255, 80, 80), 2, rectMask(50.0, 2.0, 12.0, 12.0) :: Nil)) :: Nil)) }
+
+    /// Pass の面が自分の history（前のコマの描き先の絵）を半分の濃さで読み、箱を 1 つ足す（historyFade の面の版）。3 コマ描いて、最後のコマの赤は 1/4・緑は 1/2。
+    /// 面が history を読む事でも、pass を開く前に前のコマの絵を写す（TargetTable.isHistoryRead）。
+    def surfaceHistory(): Scene =
+        let pass = (color, x) -> ({ name = "shist", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)),
+                                    items = withItem(Render.fade(0.5), surfaceAt(readSpec("v1_history", RenderTarget.historyName("shist"), ShaderDoc.FilterMode.Nearest),
+                                                                                 rectAt(0.0, 0.0, designW(), designH()), 1)) ::
+                                            boxAt(x, 20.0, color, 2) :: Nil }: Render.Pass);
+        { name = "surfaceHistory", warmup = step(pass(c8(240, 40, 40), 10.0) :: Nil) :: step(pass(c8(40, 240, 40), 50.0) :: Nil) :: Nil,
+          tiles = noTiles(), staticLayer = None, passes = pass(c8(40, 40, 240), 90.0) :: Nil, targets = Map.empty(), submits = Some(1),
+          items = still(pasteQuarter("shist", 0.0, 0.0, 1) :: Nil) }
 }

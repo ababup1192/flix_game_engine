@@ -181,7 +181,7 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
 | 2D: 多角形の run | `RenderSprite.drawPolygonBatch` | 頂点の範囲・blend・切り抜き |
 | 2D: タイルの層 | `RenderSprite.drawTileMapInstanced` | タイルのバッファの番号・**draw ごとの値**（position・tileSize・tileScale・color）・絵 |
 | 2D: static layer の範囲 | `Static.flix` | 置き場の番号と範囲・**draw ごとの値**（viewOffset・viewScale・halfDesign） |
-| 2D: 面（`ShaderDoc`） | `RenderSprite.drawShaderSurface` | シェーダーの鍵・**draw ごとの値**（rect・time・alpha・`params` の列）・**絵の組**（`texReads` の列と補間）・mask の形 |
+| 2D: 面（`ShaderDoc`） | `RenderSprite.drawShaderSurface` | シェーダーの鍵・**draw ごとの値**（rect・time・alpha・`params` の列）・**絵の組**（`texReads` の列と補間）・mask の形（R1b-6: program の番号・values の 64 個の倍数の位置・`reads` の範囲・mask の頂点の範囲・比べる値。12.22） |
 | 2D: 3D の場面を貼る | `MScene3d` | 場面の描き先の番号・矩形（今は場面の番号だけ・12.21） |
 | 3D: 形の batch（不透明・材質・半透明・影） | `MeshBatch`・`MaterialBatch` | 材質の鍵・形の番号と範囲・行の起点と数・**draw ごとの値**（`uParamN`・cutout）・**絵の組**（材質の絵の列・sampler・normal map・lightmap） |
 | 3D: ビルボードの集まり・空・後がけ | `drawBillboards` ほか | 行の範囲・絵・draw ごとの値 |
@@ -423,6 +423,11 @@ design の全面を値 0 で描いて stencil を戻す（pass を閉じて開�
 
 **R1b-5 で決めた物（2026-11-15）**: 3D の場面を貼る所は GL と WebGPU で同じ行（`kindScene3d`・欄は場面の番号だけ）にし、GL は行の所で今どおり場面を直に描く
 （Native の場面も中間の texture に描いてから貼る形と比べた。GL では標本つきの描き先で MSAA が消え、絵が動いた）。WebGPU は場面を z の位置まで並べて描かずに知らせ、run の切れ目と draw の数は GL と同じ。12.21。
+
+**R1b-6 で決めた物（2026-11-15）**: 面は GL と WebGPU で同じ行（`kindSurface`）にし、`emitRowItem` の Bool をやめた（GL を直に呼ぶ種類は 2D に無くなった）。
+面の値は values に置き、WebGPU は values の buffer を uniform としても bind して、面ごとに 256 バイトの倍数の位置で読む（ShaderGen が出す `var<uniform> sg` のまま。storage にするのは engine の変更）。
+bind group は draw ごとに作って submit の後に手放す（番号と位置と絵で控えて使い回す形と比べた。速さは揺れの内で、控えを外す決まりが要る）。pipeline は program × blend × 形式 × 標本 × stencil の鍵で控える（draw ごとに作る形と比べた）。
+mask つきの面も比べる値を mask つきスプライトと同じく前半が進めて行に書く（面ごとに stencil を 0 に戻す今の GL の形と比べた。絵は同じで、WebGPU は戻すたびに全面の draw が 1 本増える）。12.22・`samples/surface-values.md`。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
@@ -858,3 +863,80 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
 - 持ち越し: WebGPU で場面を描く（V2: 場面の組を 2D の組の前に積み、貼る行は resolve 済みの texture を α を掛けた後の値として重ねる。行の 3 番に描き先の番号）・GL を直に呼ぶ面（P5 の後の面の小分けで行にし、`emitRowItem` の Bool をやめる）・
   場面に色の付いた物を置いた場面を GL と WebGPU で比べる門（V2）・`bench/scene3d` で 5.4 の貼りの代金を測る事（V2）。
   - GL の `RenderPaint.paintTarget` は、場面のビルボードが Pass の history を読むか（`scene3d#readsTexture`）も見て history の要否を決めるが、WebGPU の `paintTarget` はスプライトしか見ていない（V2 で場面を描く時に要る）。
+
+### 12.22 R1b-6: 面（2026-11-15・この Mac・Dawn の Metal だけ）
+
+表の 8 行目の 6 つ目（最後）の種類。面（`ShaderDoc` の面・`Render.shaderFill` と `shaderFillMasked`）を `RenderList` の行（`kindSurface`・1 枚 = 1 行）にし、GL と WebGPU の backend が同じ行を流す形にした。
+**2D で GL を直に呼ぶ種類は無くなった**。WebGPU の backend は面を描く（P5 の前半で入った `ShaderGen.Wgsl.compile` の WGSL と `SgValues` の並びをそのまま使う）。
+12.21 の持ち越しのとおり、最初に `emitRowItem` の Bool をやめた（Unit。GL の `emitOne` と WebGPU の `emitAll`・`emitItem` を消し、GL と WebGPU が同じ `RenderFrame.emitMerged` を呼ぶ）。
+
+- **面の行の欄**: 1 = program（backend の表の番号）・2 = values に書いた値の数・4 = blend・5 = 0（面は clip を持たない）・6 と 7 = 絵の組（`reads`）の範囲・8 と 9 = mask の頂点の範囲・10 = 比べる値・11 = values の先頭。
+  絵の組は行に入らないので `RenderList` に `reads`（Int32 の配列・1 つ 3 個: 絵の番号・補間・上下逆）を足した。名前から番号を引くのと、無い名前を名前ごとに 1 回知らせるのは前半（前は GL の閉包）。
+  上下逆の印は前半の `upsideDownTargets`（GL だけが Pass の名前を入れる）から書き、GL は今どおり `uTexFlipN` へ差す。WebGPU は読まない。
+- **決めた事 1 — 面の値は values に置き、WebGPU は values の buffer を uniform としても読む**（見本の 1）。ShaderGen が `var<uniform> sg` を出すので、bind する位置は 256 バイト（core の `minUniformBufferOffsetAlignment` の上限）の倍数でないといけない。
+  前半（`RenderList.appendSurfaceRow`）が面の値を values の 64 個の倍数の位置へ置き（間と残りは 0 で埋める）、WebGPU の `upload` は values を送る位置を 256 バイトにそろえる。values の buffer の usage に `UNIFORM` を足した。
+  比べた別の案: 面だけの uniform の buffer（4 本目の Stream）は同じく 256 バイトの倍数になり、本が 1 本増えるだけ。storage にして instance の番号で引く形は `ShaderGen.Wgsl` の変更（engine）なので取らない。面 200 枚で余る bytes は 1 コマ 約 45 KB。
+  送る位置のそろえを外すと `surfaceTexture` が 55,200 px 違い WebGPU の誤り 6 で落ちる事を確かめた（Pass の後の本編の面の位置がずれる）。
+- **決めた事 2 — bind group は draw ごとに作り、submit の後に手放す**（見本の 2）。別の案「(位置・buffer・絵の番号) を鍵に控えて使い回す」を動かした: 面 200 枚（絵 1 枚を読む・同じ Spec）の 1 コマ（300 コマの平均）が
+  作る形 645〜846 µs・控える形 535〜744 µs で、差は 1 面 0.5 µs ほど（同じ形でも回ごとに 200 µs 揺れる）。控える形は buffer を作り直した後に古い group を読み、`surfaceMask` が 592 px 違った（外す決まりが要る）。ブラウザの代金は測っていない。
+- **決めた事 3 — pipeline は program × blend × 描き先の形式 × 標本 × stencil の鍵で控える**（見本の 3）。draw ごとに作る形は面 200 枚の 1 コマが 1,065〜1,294 µs（Dawn は中で同じ形を使い回すので差が小さい。ブラウザは 1 本 65〜93 ms・4.3）。
+  違う Spec 200 個を初めて描くコマは 38.8 ms（WGSL の組み立て・shader module・pipeline を 200 回）。8 章の「コマの途中で同期では作らない」は持ち越し。blend の因子と stencil は `WebGpuPipelines.describeTarget`（スプライトの形と同じ物。Multiply は GL の面と同じく `fs_multiply` を通さない）。
+- **決めた事 4 — mask つきの面の比べる値も前半が進めて行に書く**（12.20 の持ち越しの答え・見本の 4）。mask つきスプライトと同じ `nextMaskRef` で、GL の「mask つきの面は自分で stencil を 0 にして 1 を書き、前半の前の値を 0 に戻す」をやめた。
+  別の案（面は毎回値 1・前の値を 0 に戻す）も動かした: 面の 6 場面とも GL と 0 px だが、WebGPU は面ごとに stencil を 0 に戻す全面の draw が 1 本と、面の後の最初の mask つきスプライトの前に 1 本増える（`surfaceMask` で 3 本）。
+  GL の mask の書き込みは mask つきスプライトと同じ関数にまとめた（`RenderSprite.writeStencilMask`・`endStencilMask`。`drawSpriteMaskedRange`・`drawShaderSurfaceMasked`・`buildMaskData`・`drawPolygonBatch` は消した）。
+- **program の表**（`RenderPaint.Internal.WebGpuSurfaces`）: Spec の名前で引き、中身が同じなら作り直さない（GL の `buildProgram` と同じ `isSameSpec`・`eqSpec`）。中身が違えば組み直し、前の番号はコマの終わり（present の submit の後）に手放す（最後に画面へ描いたコマの面が指す番号は、大きさが変わった時の描き直しが使うので、そのコマが替わるまで残す）。
+  組めない Spec（`getCompilationInfo` に Error の行）は単色の代わり（`WebGpuShader.surfaceFallbackWgsl`・GL の `fallbackFragmentSource` と同じ色）で塗り、名前ごとに 1 回 `Log.fellBack`。group 0 の layout は読む絵の数ごとに 1 つ。
+  組めない Spec を 1 つ置いた試し（`Const(1.0e40)`。WGSL は f32 に収まらない定数を誤りにする）: WebGPU は単色の代わり（128, 51, 51）で塗るが、`createShaderModule` の誤りは error scope で受けないと device の誤りに数えられ、
+  `errorCount` が 1 増えた（scope を開く口は `render_gl/java` の `WebGpu` に無い）。GL は同じ Spec を組めて（255, 128, 128）を塗った（12.17 の持ち越しの「f32 に収まらない `Const`」と同じ根）。
+  params が Spec の欄より少ない面は、GL は足りない `uParamN` に前に差した値（初めは 0）が残り、WebGPU は 0 を読む（行が取った values の残りは 0 で埋めてある）。engine_world の `Render` は欄の数だけ params を作るので今は起きない。
+  無い名前の絵は不透明な黒（GL が絵の無い unit で読む値）。読む絵に描き先と同じ絵があれば描かずに知らせる（WebGPU は pass ごと誤りにする）。
+  GL の LRU（`evictShaderPrograms`）に当たる物はまだ無い（名前の数だけ増える）。
+- **P5 の後半の持ち越しのうち 2D の面の分**: 2D の組み込みの残りは単色の代わりだけが要った（多角形とタイルは R1b-2）。`TestWgslDawn` に足して 365 本。
+  2D の面の絵の mip の読みは「レベル 0」のままでよいと決めた: GL の面は sampler の object で MIN_FILTER を NEAREST か LINEAR（mip を使わない）にしているのでいつもレベル 0 を読み、WebGPU の 2D の絵も mip 1 段で作る。3D の物（頂点シェーダー・ビルボード・空・`R3dScene` を詰める所ほか）は V2・P8 に残す。
+- 入れた物（render_gl の中だけ・engine の pub は増えていない）:
+  - 前半: `RenderList.kindSurface` の行・`appendSurfaceRow`・`reads`・`readsOf`・`readFields`・`surfaceValueAlign`・`stencilRefOf`。`RenderFrame.emitSurface`・`surfaceTextureOf`・`surfaceMaskCap`（mask の頂点の入れ物を先に広げる）。
+    `emitRowItem` は Unit・`emitMerged` は GL を受けない。`blendOf` を pub に（塗りのコアの面の閉包が使う）。`TargetTable.spritesReadHistory` を `isHistoryRead`（面の読みも見る）にして GL と WebGPU の両方が呼ぶ。
+  - GL: `GlRows.RowDrawers`（場面と面を描く口の record。行のループの外で 1 回だけ欄を引く）・`SurfaceDrawer`・`drawSurfaceRow`。`FrameArgs#drawSurface` は面の行 1 つを塗る閉包（`GlRows.SurfaceDrawer`）。
+  - WebGPU: `WebGpuRows.drawSurfaceRow`・`hasTextureIn`・`SurfaceDrawer`・`renderFrame` の `surfaces` と `drawSurface`。`WebGpuPaint` の `pendingSurfaces`・`linearClamp`・`buildProgram` と `drawSurface` の handler（「まだ描かない: 面」を消した）。
+    `WebGpuPipelines.targetKeyOf`（pipeline の鍵の描き先と重ね方の分。スプライトの形と面で同じ物）。`WebGpuSurfaces`（228 行）。`WebGpuPaint.flix` は 1,048 行。
+    group 1 の控えは `WebGpuRows` が持つ（面の draw は group 0 だけ戻し、`drawSurfaceRow` が絵の控えを捨てて、次の行が空の絵か自分の絵を積み直す）。
+- 振る舞いの変化（絵は変わらない）: GL は面の前で行を流さず、面も同じ列で流す（GL の呼び出しの並びは変わる・draw の順と数と数え方は同じ）。GL の mask つきの面は stencil の clear が pass の頭と 255 個ごとになった。
+  面の値は前は `Float64` から f32 にして差していたのを、前半が f32 にして values に置いた物を差す（同じ値）。
+- テスト: render_gl 445 緑（`.layers/render_gl` の flix test。前の 437 から「面は行にならない」「mask の後の mask つきの面も stencil を使ったまま」「mask つきの面の後は値が 1 に戻る」の 3 本を消し、
+  面の行 6 本（`TestShapeRows`）・mask つきの面 4 本（`TestMaskRows`）・面の history の読み 1 本（`TestTargetTable`）を足した。`TestWgslDawn` は単色の代わりを足して 365 本）。
+  核の主張を直しを外して確かめた: 前半で面の前の run を閉じないと `testSurfaceSplitsSpriteRun` と `testGlDrawsSurfaceInRowOrder`（GL の backend が面を塗る時に前の箱が 1 本だけ出ている）が落ちる。
+  WebGPU の面の mask を描かないと `surfaceMask`・`surfacePass`・`surfaceMsaa` が 3,150〜6,926 px 違い、draw の数も GL と合わずに落ちる。
+- `bench/webgpu_v1` に面の 6 場面を足した（許す差は足していない・どれも既定の 0）: `surfaceFill`（単色・箱との重なり順・uv・params・time・Add・Multiply・α）・`surfaceBetween`（同じ箱の間の面・期待 draw 3・kind 2）・
+  `surfaceTexture`（アトラスを Nearest と Linear で・GL では上下逆の Pass・無い名前）・`surfaceMask`（mask つきスプライトとの交互・前の面の mask の内側の小さい mask・三角形にならない mask・2 つの矩形の mask で絵を読む。期待 draw 12・kind 4・texture 1・mask 6）・
+  `surfacePass`（Pass の中の面と mask つきの面）・`surfaceMsaa`（標本 4 の Pass の端数の位置の面と mask つきの面）。`unsupported` は 3D の場面だけにした。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-15）:
+  - render_gl のテスト 445 緑（上）・`TestWgslDawn` 365 本を Dawn で組んで誤り 0。
+  - `make gl-parity` 緑。81 行が変える前の木（R1b-5）で流した物と 1 字も同じ（castShadow の 565 px は前からの B。面の場面 `texField`・`passMask`・`paramRead` は A 段階で 0 px）。
+  - `make webgpu-v1-check` 緑: 画面なしの比べは 34 場面とも許す差の内（足した面の 6 場面は 0 px・submit 1）・2D の draw の数と切れた理由も 34 場面とも GL と同じで、
+    `surfaceBetween`・`surfaceMask` は期待とも同じ。WebGPU の誤り 0・「まだ描かない: 3D の場面」は 1 回。後半の rpg の題名の窓の 2 回撮り・GL との比べ・gl_parity の V1 の場面も緑。
+  - `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。面の場面をブラウザで回す口はまだ無い。
+  - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数・同じ 5 場面）。main の控え（11-15 21:08）とは sound-novel-starter の title の 6 枚だけ違い、7.6 の今のソースのハッシュ（`c367c77d…`）と同じ（R1b-3 からの状態）。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）・`make lint-huge-methods` 緑（sprite_stress の jar を作り直し、`bench/webgpu_v1` の jar も渡して）・`make lint-max-lines` 緑・`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+  - 速さの前後は人の方針（12.16）で回していない（比べの数字は面 200 枚の試しの場面だけ）。
+- 持ち越し: 組めない Spec が device の誤りに数えられる事（error scope の口・jar を開ける時）・面の pipeline をコマの途中で同期で作る事（8 章・P10。作るまで単色で描く形）・WebGPU の面の program の LRU と診断（`shaderBuilds`・`liveShaders`）・ブラウザで面の絵を GL と比べる門（R1b-2 からの、`bench/webgpu_v1` の場面をブラウザで回す口）・
+  ブラウザで draw ごとの bind group を作る代金（P10 の前の計測）・面 1 枚に 256 バイト取る values の余り（面が数千枚の画面が出たら、engine と相談して storage へ）。
+- 1 回目のレビュー（87 点）への対応（2 回目のコミット）:
+
+  | # | 指摘 | 直した所 |
+  |---|---|---|
+  | 必須 1 | 値 1 の面で stencil を戻す道が門を通っていない | `TestMaskRows` に `stencilRefOf` が面の行で 10 番を読む 1 本と、255 体の後の面が値 1 になる 1 本。`bench/webgpu_v1` に `surfaceAfterOverflow`（255 体の後に、1 体目のセルを含まない mask の面と mask つきスプライト。期待 draw 515・kind 2・texture 1・mask 511）。`stencilRefOf` を kindMask だけに戻すと 2 本落ち、場面が 24 px ±231 で落ちる。GL の `clearStencil` を消しても場面が 24 px ±231 で落ちる |
+  | 必須 2 | 組めない Spec の道を確かめていない | 試した（上の program の表の項）。誤りは 1 つ数えられ、WebGPU は単色の代わり・GL は組めて別の色。java の口は変えず、`compileProgram` の WhyNot と持ち越しへ。試しの場面は門に入れていない（誤り 0 の門が落ちる） |
+  | 必須 3 | `buildProgram` の match の入れ子 | `old \|> Option.map(snd) \|> Option.filter(…) \|> Option.forEach(…)` |
+  | 必須 4 | `TestWgslDawn` の doc の置き違い | `builtinSurfaces` を `sceneFunctions` の doc の前へ |
+  | 任意 5 | Pass で面が自分の history を読む場面 | `surfaceHistory`（historyFade の面の版・3 コマ・0 px） |
+  | 任意 6 | 名前 | `groupOf` → `buildDrawGroup`・`readsTexture` → `hasTextureIn`・`readsHistory` → `isHistoryRead` |
+  | 任意 7 | `fallbackProgram` の pub | 外した |
+  | 任意 8 | 長い関数の型 | `GlRows.SurfaceDrawer`（GlRows 4 か所・Frame 1 か所）・`WebGpuRows.SurfaceDrawer`（4 か所） |
+  | 任意 9 | pipeline の鍵の重複 | `WebGpuPipelines.targetKeyOf`・`targetKeys`（形の pipeline と面の pipeline と retire の割り算が使う） |
+  | 任意 10 | sampler の持ち主 | `linearClamp` も `WebGpuPaint` が作って手放す（`WebGpuSurfaces.fresh` は 2 つを受けるだけ）。`nearestClamp` の行は元の位置へ |
+  | 任意 11 | params が少ない時・128 個の道と描かない道のテスト | 上の program の表の項に 1 行。`TestShapeRows.testLongSurfaceTakesTwoSteps`・新しい `TestSurfaceValues`（`canReadValues` 4 本） |
+  | 任意 12 | group 1 の後始末の重複 | 面の draw は group 0 だけ戻す。group 1 の控えは `WebGpuRows` が持ち、面の後は -1 にして、次の行が絵（0 の絵は空の絵）を積み直す（控えの初めの値は空の絵の 0） |
+  | 任意 13 | 行数・空行・WhyNot の番号・retire した program の描き直し | 行数を今の数へ・`TestShapeRows` の末尾の空行・「st の 41 番」を消した。retire は直した: `endFrame` が最後に画面へ描いたコマの面の program を残す |
+
+  2 回目の門（同じ機械・2026-11-15）: render_gl 452 緑（7 本足した）・`TestWgslDawn` 365 本・`make gl-parity` 緑（81 行が R1b-5 の木と 1 字も同じ）・`make webgpu-v1-check` 緑（36 場面とも許す差の内・面の 8 場面は 0 px・draw の数も GL と同じ・誤り 0）・
+  `make webgpu-v1-check-web` 緑（前と同じ）・`make gl-capture-check`（54 枚が a と b で同じ・基準との差 30 枚で前と同じ）・テンプレ 3 本の `reference-check` 緑・`lint-huge-methods`・`lint-max-lines`・`gl-jar-pin-check` 緑。

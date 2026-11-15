@@ -25,7 +25,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     use RenderPaint.Internal.WebGpuShader
 
     /// pipeline と stencil の表。frameLayout と imageLayout は WebGpuPaint の持ち物（ここでは手放さない）。
-    /// pipelines の鍵 = (((形 × 4 + blend の番号) × 2 + 形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方。
+    /// pipelines の鍵 = 形 × targetKeys() + targetKeyOf（blend・形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）・標本・stencil の使い方）。
     /// stencils = 描き先の鍵 → DEPTH24_PLUS_STENCIL8 の texture と、その幅・高さ・標本の数。
     pub type alias Pipelines = {
         gpu = WebGpu,
@@ -75,6 +75,14 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         pipes#polyModule.release();
         pipes#tileModule.release()
 
+    /// pipeline の鍵のうち描き先と重ね方の分: ((blend の番号 × 2 + 形式) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方（0 以上 targetKeys() 未満）。
+    /// 鍵の残り（形か面の program の番号）は × targetKeys() して足す。
+    pub def targetKeyOf(blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): Int32 =
+        ((blendC * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil
+
+    /// targetKeyOf が取る値の数（blend 3 × 形式 2 × 標本 2 × stencil 4 = 48 を収める）。
+    pub def targetKeys(): Int32 = 64
+
     pub def formatCode(format: RenderTarget.Format): Int32 = match format {
         case RenderTarget.Format.Rgba8Unorm  => 0
         case RenderTarget.Format.Rgba16Float => 1
@@ -88,7 +96,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     /// 形（WebGpuRows.shape*）と blend の番号（RenderFrame.blendCode）と描き先の形式と標本の数（1 か 4）と stencil の使い方（WebGpuRows.stencil*）の
     /// pipeline（無ければ作る）。
     pub def pipelineOf(pipes: Pipelines, shape: Int32, blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): RenderPipeline \ IO =
-        let key = (((shape * 4 + blendC) * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil;
+        let key = shape * targetKeys() + targetKeyOf(blendC, format, samples, stencil);
         match Map.get(key, Ref.get(pipes#pipelines)) {
             case Some(pipeline) => pipeline
             case None =>
@@ -104,18 +112,23 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     // WhyNot: Write で色の書き込みの mask を 0 にしない — render_gl/java の RenderPipelineDesc に色の書き込みの mask の口が無く、足すと GL の層の jar のハッシュと
     //   ブラウザの実装が動く。
     def buildPipeline(pipes: Pipelines, shape: Int32, blendC: Int32, format: TextureFormat, samples: Int32, stencil: Int32): RenderPipeline \ IO =
-        let (src, dst, entry) =
-            if (stencil == WebGpuRows.stencilWrite()) (BlendFactor.ZERO, BlendFactor.ONE, "fs_main")
-            else if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE, "fs_main")
-            else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_multiply")
-            else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_main");
+        let entry = if (blendC == 2 and stencil != WebGpuRows.stencilWrite()) "fs_multiply" else "fs_main";
         let desc = new RenderPipelineDesc("fge ${Int32.toString(shape)} ${entry} ${Int32.toString(blendC)} ${Int32.toString(stencil)}");
         if (shape == WebGpuRows.shapePoly()) describePoly(pipes#frameLayout, pipes#polyModule, entry, desc)
         else if (shape == WebGpuRows.shapeTile()) describeTile(pipes#frameLayout, pipes#imageLayout, pipes#tileModule, desc)
         else describeSprite(pipes#frameLayout, pipes#imageLayout, pipes#spriteModule, entry, desc);
-        discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD).multisample(samples);
-        describeStencil(stencil, desc);
+        describeTarget(blendC, format, samples, stencil, desc);
         pipes#gpu.createRenderPipeline(desc)
+
+    /// 描き先の形式・標本の数・blend の因子・stencil の使い方を pipeline に書く（スプライトの形と面で同じ物）。
+    pub def describeTarget(blendC: Int32, format: TextureFormat, samples: Int32, stencil: Int32, desc: RenderPipelineDesc): Unit \ IO =
+        let (src, dst) =
+            if (stencil == WebGpuRows.stencilWrite()) (BlendFactor.ZERO, BlendFactor.ONE)
+            else if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE)
+            else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA)
+            else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA);
+        discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD).multisample(samples);
+        describeStencil(stencil, desc)
 
     /// stencil の使い方（WebGpuRows.stencil*）を pipeline に書く。None は depth と stencil を持たない。表と裏は同じ・深度は比べず書かない。
     def describeStencil(stencil: Int32, desc: RenderPipelineDesc): Unit \ IO =

@@ -180,37 +180,12 @@ mod RenderSprite {
         gl.uniform2f(Array.get(locAt + 2, locs), Array.get(at + 2, values), Array.get(at + 3, values));
         gl.uniform2f(Array.get(locAt + 3, locs), Array.get(at + 4, values), Array.get(at + 5, values))
 
-    /// 三角形化済みの多角形頂点をまとめて 1 回の draw call で塗る。
-    /// data は 1 頂点 6 floats（位置 2 + 色 4）を列順に並べたもの（RenderFrame が組む）。
-    /// blend は run 内で均一（RenderFrame が blend / 切り抜き clip 矩形の変化で run を切る）。
-    /// glBufferData で丸ごと差し替える（orphaning。drawSpriteInstancedBuf と同方式）。
-    pub def drawPolygonBatch(gl: GlContext, shader: Int32, vao: Int32, vbo: Int32,
-                              uniforms: RenderShader.PolyBatchUniforms, blend: DrawCmd.BlendMode,
-                              data: Array[Float32, Static], vertexCount: Int32): Unit \ IO =
-        if (vertexCount < 3) () else {
-            gl.useProgram(shader);
-            applyBlend(gl, blend);
-            gl.uniform1i(uniforms#multiplyBlend, multiplyFlag(blend));
-            // 動的多角形は既に centerOn 済みのスクリーン座標で来るので camera uniform は恒等。
-            // 静的レンジ描画が設定した値が持ち越されないよう毎 draw call で明示リセットする
-            // （sprite の multiplyBlend が毎回 0 明示されるのと同じ作法）。
-            gl.uniform2f(uniforms#viewOffset, 0.0f32, 0.0f32);
-            gl.uniform2f(uniforms#viewScale, 1.0f32, 1.0f32);
-            gl.uniform2f(uniforms#halfDesign, 0.0f32, 0.0f32);
-            gl.bindVertexArray(vao);
-            gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
-            gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.DYNAMIC_DRAW);
-            gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
-            gl.drawArrays(GlConst.TRIANGLES, 0, vertexCount);
-            gl.bindVertexArray(0)
-        }
-
     // ========================================================================
     // Static Polygon Retained Rendering — 三角形化済み頂点を 1 度だけ GPU に載せ使い回す
     // ========================================================================
 
     /// 三角形化済みの静的多角形頂点を永続 VBO へアップロードする（キー変化時に 1 度だけ）。
-    /// vertex layout は drawPolygonBatch と同じ 6 floats（位置 2 + 色 4 / 24 bytes）。
+    /// vertex layout は drawPolygonRange と同じ 6 floats（位置 2 + 色 4 / 24 bytes）。
     /// GL_STATIC_DRAW で載せ、毎フレームは範囲だけ流して drawStaticRange で描く。
     /// 戻り値: (vao, vbo)。free 時に両方 delete する。
     pub def buildStaticPolyVBO(gl: GlContext, data: Array[Float32, Static], _vertexCount: Int32): (Int32, Int32) \ IO =
@@ -334,29 +309,27 @@ mod RenderSprite {
     /// 宣言シェーダー面の uniform の location（無い uniform は -1。glUniform は -1 を無視する）。
     pub type alias SurfaceUniforms = { rectPos = Int32, rectSize = Int32, time = Int32, alpha = Int32 }
 
-    /// 宣言シェーダー面 1 枚を描く。共有 quad VAO（loc0 = x,y,u,v）を使い、
-    /// rect（スクリーン px）と time を uniform で差して 1 draw call で塗る。
+    /// 宣言シェーダー面 1 枚を描く。共有 quad VAO（loc0 = x,y,u,v）を使い、values の [at, at + 6)（RenderList の面の値の並び:
+    /// rect の位置 2・大きさ 2（スクリーン px）・time・alpha）を uniform で差して 1 draw call で塗る。
     /// projection は起動時に setProjectionMatrix 済みの前提（program ごとに1回）。
     /// texBinds が非空なら各 unit へテクスチャ + sampler を bind し、描画後は使った全 unit
     ///（unit 0 含む）の sampler を解除して unit 0 へ戻す — unit 0 は sprite / tile / static /
     /// font が glActiveTexture を触らず共用するため、残すとフォント作り直しやアトラス
     /// 差し替えが別 unit へ上がる事故になる。
     pub def drawShaderSurface(gl: GlContext, program: Int32, vao: Int32, uniforms: SurfaceUniforms,
-                              texBinds: List[SurfaceTexBind],
-                              rect: Rect2.Rect2, time: Float64, alpha: Float64, blend: DrawCmd.BlendMode): Unit \ IO =
-        let f32 = RenderUtil.f32;
+                              texBinds: List[SurfaceTexBind], values: Array[Float32, Static], at: Int32, blend: DrawCmd.BlendMode): Unit \ IO =
         gl.useProgram(program);
         applyBlend(gl, blend);
-        gl.uniform2f(uniforms#rectPos, f32(rect#position#x), f32(rect#position#y));
-        gl.uniform2f(uniforms#rectSize, f32(rect#size#x), f32(rect#size#y));
-        gl.uniform1f(uniforms#time, f32(time));
+        gl.uniform2f(uniforms#rectPos, Array.get(at, values), Array.get(at + 1, values));
+        gl.uniform2f(uniforms#rectSize, Array.get(at + 2, values), Array.get(at + 3, values));
+        gl.uniform1f(uniforms#time, Array.get(at + 4, values));
         // 毎回差す。program は面どうしで共有され、差さないと前の面の濃さ（初めは 0.0 = 透明）が残る。
-        gl.uniform1f(uniforms#alpha, f32(alpha));
+        gl.uniform1f(uniforms#alpha, Array.get(at + 5, values));
         List.forEach(tb -> {
             gl.activeTexture(GlConst.TEXTURE0 + tb#texUnit);
             gl.bindTexture(GlConst.TEXTURE_2D, tb#texId);
             gl.bindSampler(tb#texUnit, tb#sampler);
-            gl.uniform1f(tb#flipLoc, f32(tb#flip))
+            gl.uniform1f(tb#flipLoc, RenderUtil.f32(tb#flip))
         }, texBinds);
         gl.bindVertexArray(vao);
         gl.drawArrays(GlConst.TRIANGLES, 0, 6);
@@ -365,67 +338,6 @@ mod RenderSprite {
         else {
             List.forEach(tb -> gl.bindSampler(tb#texUnit, 0), texBinds);
             gl.activeTexture(GlConst.TEXTURE0)
-        }
-
-    /// マスク多角形（スクリーン px）を三角形化し、drawPolygonBatch が食う頂点配列
-    /// （頂点ごとに x,y,r,g,b,a の 6 float・色はステンシルにしか使わないので白）へ。
-    /// 戻り値 = (頂点配列, 頂点数)。
-    def buildMaskData(maskPolys: List[List[Vec2.Vec2]]): (Array[Float32, Static], Int32) \ IO =
-        let f32 = RenderUtil.f32;
-        let flat = maskPolys |> List.flatMap(poly ->
-            Triangulate.triangles(poly) |> List.flatMap(tri -> {
-                let (a, b, c) = tri; a :: b :: c :: Nil }));
-        let n = List.length(flat);
-        let data = Array.empty(Static, n * 6);
-        discard List.foldLeft((i, v) -> {
-            let base = i * 6;
-            Array.put(f32(v#x), base + 0, data);
-            Array.put(f32(v#y), base + 1, data);
-            Array.put(1.0f32, base + 2, data);
-            Array.put(1.0f32, base + 3, data);
-            Array.put(1.0f32, base + 4, data);
-            Array.put(1.0f32, base + 5, data);
-            i + 1
-        }, 0, flat);
-        (data, n)
-
-    /// 宣言シェーダー面を maskPolys（スクリーン px の多角形）の内側だけに抜いて描く。
-    /// mask を GL のステンシルに焼き（色は書かない・内側を 1 に）、EQUAL テスト付きで矩形を塗る。
-    /// これで丸い池形など任意の形に水面を切り抜ける（矩形の隅がはみ出さない）。
-    /// mask が退化（頂点 3 未満）なら素直に矩形そのまま描く。返すのは出した draw call の数。
-    pub def drawShaderSurfaceMasked(gl: GlContext, program: Int32, vao: Int32, uniforms: SurfaceUniforms,
-                                    texBinds: List[SurfaceTexBind],
-                                    rect: Rect2.Rect2, time: Float64, alpha: Float64, blend: DrawCmd.BlendMode,
-                                    polyShader: Int32, polyVao: Int32, polyVbo: Int32,
-                                    polyUniforms: RenderShader.PolyBatchUniforms,
-                                    maskPolys: List[List[Vec2.Vec2]]): Int32 \ IO =
-        let (maskData, maskCount) = buildMaskData(maskPolys);
-        if (maskCount < 3) {
-            drawShaderSurface(gl, program, vao, uniforms, texBinds,
-                              rect, time, alpha, blend);
-            1
-        } else {
-            // 1) mask を stencil に描き込む（色は書かず内側を 1 に）。この面ぶんだけ使うので毎回 clear。
-            gl.enable(GlConst.STENCIL_TEST);
-            gl.stencilMask(255i32);
-            gl.clearStencil(0);
-            gl.clear(GlConst.STENCIL_BUFFER_BIT);
-            gl.stencilFunc(GlConst.ALWAYS, 1i32, 255i32);
-            gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.REPLACE);
-            gl.colorMask(false, false, false, false);
-            drawPolygonBatch(gl, polyShader, polyVao, polyVbo, polyUniforms,
-                             DrawCmd.BlendMode.Normal, maskData, maskCount);
-            gl.colorMask(true, true, true, true);
-            // 2) stencil==1 の画素だけシェーダー矩形を塗る（stencil は書かない）。
-            gl.stencilFunc(GlConst.EQUAL, 1i32, 255i32);
-            gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.KEEP);
-            gl.stencilMask(0i32);
-            drawShaderSurface(gl, program, vao, uniforms, texBinds,
-                              rect, time, alpha, blend);
-            // 3) 後始末（次の描画にステンシル状態を持ち越さない）。
-            gl.stencilMask(255i32);
-            gl.disable(GlConst.STENCIL_TEST);
-            2
         }
 
     // ========================================================================
@@ -532,14 +444,12 @@ mod RenderSprite {
         gl.clearStencil(0);
         gl.clear(GlConst.STENCIL_BUFFER_BIT)
 
-    /// instances の first 体目 1 体を、vertices の [maskFirst, maskFirst + maskCount) の三角形の内側だけに描く。
-    /// mask を stencil へ値 ref で書き（色は書かない・view は values の at からの 6 個）、stencil が ref の画素だけスプライトを描いて、stencil の検査を外す。
+    /// vertices の [maskFirst, maskFirst + maskCount) の三角形を stencil へ値 ref で書き（色は書かない・view は values の at からの 6 個）、
+    /// この後の draw を stencil が ref の画素だけにする（mask つきスプライトと mask つきの面の 1 本目。2 本目を描いたら endStencilMask）。
     /// locs の [locAt, locAt + 4) = 多角形のシェーダーの uniform location（drawPolygonRange と同じ）。
-    pub def drawSpriteMaskedRange(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
-                                  multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode, instances: FloatBuffer, first: Int32,
-                                  polyShader: Int32, polyVao: Int32, polyVbo: Int32, locs: Array[Int32, Static], locAt: Int32,
-                                  values: Array[Float32, Static], at: Int32, vertices: FloatBuffer, maskFirst: Int32, maskCount: Int32,
-                                  ref: Int32): Unit \ IO =
+    pub def writeStencilMask(gl: GlContext, polyShader: Int32, polyVao: Int32, polyVbo: Int32, locs: Array[Int32, Static], locAt: Int32,
+                             values: Array[Float32, Static], at: Int32, vertices: FloatBuffer, maskFirst: Int32, maskCount: Int32,
+                             ref: Int32): Unit \ IO =
         gl.enable(GlConst.STENCIL_TEST);
         gl.stencilMask(255i32);
         gl.stencilFunc(GlConst.ALWAYS, ref, 255i32);
@@ -549,8 +459,10 @@ mod RenderSprite {
         gl.colorMask(true, true, true, true);
         gl.stencilFunc(GlConst.EQUAL, ref, 255i32);
         gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.KEEP);
-        gl.stencilMask(0i32);
-        drawSpriteInstancedBuf(gl, shader, vao, instanceVbo, texId, multiplyBlendLoc, blend, instances, first, 1);
+        gl.stencilMask(0i32)
+
+    /// writeStencilMask の後始末（stencil の検査を外し、書き込みの mask を戻す）。
+    pub def endStencilMask(gl: GlContext): Unit \ IO =
         gl.stencilMask(255i32);
         gl.disable(GlConst.STENCIL_TEST)
 

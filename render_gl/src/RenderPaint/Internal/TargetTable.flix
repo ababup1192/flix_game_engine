@@ -102,10 +102,11 @@ pub mod RenderPaint.Internal.TargetTable {
             if (keep) PassHistory.CopyTo(history#texture) else PassHistory.ClearTransparent(history#texture)
         }
 
-    /// sprites のどれかがターゲット name の history を読むか（GL は面と 3D の場面の読みも足して見る）。
-    pub def spritesReadHistory(name: String, sprites: List[RenderType.Drawable]): Bool =
+    /// sprites と surfaces のどれかがターゲット name の history を読むか（GL は 3D の場面の読みも足して見る）。
+    pub def isHistoryRead(name: String, sprites: List[RenderType.Drawable], surfaces: List[DrawCmd.SurfaceRenderCmd]): Bool =
         let history = RenderTarget.historyName(name);
         List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
+            or List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)
 
     /// 表を空にする（backend が自分の物を全部まとめて捨てた後。ここからは destroy を呼ばない）。
     pub def clear(table: Table): Unit \ IO =

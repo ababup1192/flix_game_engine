@@ -8,12 +8,11 @@
 
 mod RenderFrame {
     import fge.gl.GlContext
-    import fge.gl.GlConst
     import java.nio.FloatBuffer
     use RenderFrame.Internal.GlRows
-    use RenderFrame.Internal.GlRows.{drawRenderList, setScissorAt}
-    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, appendMaskRow, appendPolyRow, appendSceneRow, appendSpriteRow, appendStaticRow, appendTileRow, instanceFloats,
-                                         kindPoly, kindScene3d, kindSprite, kindSurface, nextInstanceOf, nextMaskRef, nextVertexOf, rowCountOf}
+    use RenderFrame.Internal.GlRows.drawRenderList
+    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, appendMaskRow, appendPolyRow, appendSceneRow, appendSpriteRow, appendStaticRow, appendSurfaceRow,
+                                         appendTileRow, instanceFloats, kindPoly, kindScene3d, kindSprite, nextInstanceOf, nextMaskRef, nextVertexOf, rowCountOf}
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず
@@ -275,10 +274,9 @@ mod RenderFrame {
         // 宣言シェーダー面の描画依頼列。sprites/polygons/静的レンジと同じ z 安定ソート列に
         // 第 4 の run 種として混ぜ、各面の zIndex の位置で描く（水を床の上・壁の下に置ける）。
         surfaces = List[DrawCmd.SurfaceRenderCmd],
-        // シェーダー面 1 枚を実際に GL へ描くクロージャ（program の uniform location を知る
-        // バックエンド側が提供する）。renderFrameMixed は z の合流だけを受け持つ。
-        // 返すのは出した draw call の数（mask つきは stencil へ描く分が足される）。
-        drawSurface = (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
+        // 面の行 1 つの面を GL へ描くクロージャ（program の uniform location を知る塗りのコアが提供する。GlRows.RowDrawers#surface）。
+        // stencil の始末と draw call の数えは GlRows が受け持つ。
+        drawSurface = GlRows.SurfaceDrawer,
         // 先に準備した 3D の場面の並び。番号ごとの z で 2D の並びに混ぜ、同じ z の中では surfaces の後に描く。
         scenes = Scene3dRenderer.Prepared,
         // None = 画面へのフレーム・Some(op) = レンダーターゲット（FBO）へのフレームで、op が前の中身の始末（RenderTarget.LoadOp の doc）。
@@ -532,7 +530,7 @@ mod RenderFrame {
             case DrawCmd.BlendMode.Multiply => 2
         }
 
-    def blendOf(code: Int32): DrawCmd.BlendMode =
+    pub def blendOf(code: Int32): DrawCmd.BlendMode =
         if (code == 1) DrawCmd.BlendMode.Add
         else if (code == 2) DrawCmd.BlendMode.Multiply
         else DrawCmd.BlendMode.Normal
@@ -560,10 +558,10 @@ mod RenderFrame {
         closeSpriteRun(st, list);
         closePolyRun(st, list)
 
-    /// run を閉じ、溜まった行を GL へ流す。GL を直に呼ぶ種類（面）を描く前と、pass の終わりに呼ぶ。drawScene = 3D の場面を貼る行で番号の場面を描く。
-    def flushRows(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList, drawScene: Int32 -> Unit \ IO): Unit \ IO =
+    /// run を閉じ、溜まった行を GL へ流す（pass の終わりに呼ぶ）。draw = 3D の場面と面を描く口（GlRows.RowDrawers）。
+    def flushRows(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList, draw: GlRows.RowDrawers): Unit \ IO =
         closeRuns(st, list);
-        if (rowCountOf(list) == 0) () else drawRenderList(gl, gs, st, list, drawScene)
+        if (rowCountOf(list) == 0) () else drawRenderList(gl, gs, st, list, draw)
 
     /// 3D の場面を貼る行を描いた事を数えに残す（GL と WebGPU で同じ数え方にする）。
     // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
@@ -839,38 +837,77 @@ mod RenderFrame {
                 appendStaticRow(list, r#buffer, r#first, r#count, blendCode(r#blend), 1, x0, y0, x1, y1, view)
         }
 
-    /// 並べた 1 個が行になる種類（スプライト・多角形・タイルの層・static layer・3D の場面）なら行へ積んで true。
-    /// GL を直に呼ぶ種類（面）は何もせず false（呼び側が溜めた行を流してから描く）。
-    // WhyNot: 末尾を呼び出しで終えない — 呼ぶ側のループ（emitOne・WebGpuRows.emitItem）が JIT から外れる（docs/performance.md の 13 節）。
+    /// 面 1 枚を行にする: 溜めている run を閉じ（列順を守る）、読む絵を名前から backend の表の番号へ引き、mask を三角形の頂点へほどいて vertices へ書き、
+    /// stencil の値（RenderList.nextMaskRef。mask つきスプライトと同じ数え方）を進めて行を足す。mask が 3 頂点未満なら値を進めず 0 にする。
+    // WhyNot: mask つきの面だけ stencil を自分で 0 に戻して 1 を書く形にしない — WebGPU は pass の途中で stencil を 0 に戻すたびに design の全面の
+    //   draw が 1 本増え、前半の値の数えも面の後で 0 に戻す枝が要る。
+    def emitSurface(st: Array[Int32, Static], list: RenderList, registry: RenderAsset.TextureRegistry, upsideDownTargets: Set[String],
+                    warnLog: Ref[Set[String], Static], s: DrawCmd.SurfaceRenderCmd): Unit \ IO =
+        closeRuns(st, list);
+        let reads = s#texReads |> List.map(read -> {
+            let (name, filter) = read;
+            (surfaceTextureOf(registry, warnLog, name), if (filter == ShaderDoc.FilterMode.Linear) 1 else 0,
+             if (Set.memberOf(name, upsideDownTargets)) 1 else 0)
+        });
+        let maskFirst = nextVertexOf(list);
+        let written = if (List.isEmpty(s#mask)) 0 else RenderSprite.writeMaskVerts(list#vertices, maskFirst, s#mask);
+        let maskCount = if (written < 3) 0 else written;
+        let ref = if (maskCount == 0) 0 else nextMaskRef(Array.get(maskRefSlot(), st));
+        if (ref > 0) {
+            Array.put(ref, maskRefSlot(), st);
+            Array.put(1, stencilUsedSlot(), st)
+        } else ();
+        let f32 = RenderUtil.f32;
+        let rect = s#rect;
+        appendSurfaceRow(list, GpuHandle.shaderProgramInt(s#program), blendCode(s#blend),
+                         { x = f32(rect#position#x), y = f32(rect#position#y), width = f32(rect#size#x), height = f32(rect#size#y),
+                           time = f32(s#time), alpha = f32(s#alpha) },
+                         s#params, reads, maskFirst, maskCount, ref)
+
+    /// 面が読む絵 name の backend の表の番号。無い名前は 0（GL は黒・WebGPU は不透明な黒）を読ませ、名前ごとに 1 回だけ知らせる
+    /// （Pass の名前をこのコマで宣言せずに読むと、ずっと 0 のまま）。
+    def surfaceTextureOf(registry: RenderAsset.TextureRegistry, warnLog: Ref[Set[String], Static], name: String): Int32 \ IO =
+        match Map.get(name, registry) {
+            case Some(info) => GpuHandle.textureIdInt(info#id)
+            case None =>
+                let key = "shader tex " + name;
+                if (Set.memberOf(key, Ref.get(warnLog))) ()
+                else {
+                    Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
+                    Log.warn("shader tex '${name}' が見つからない — 黒(0)を貼る（pass ならこのフレームで宣言されているか確認）")
+                };
+                0
+        }
+
+    /// 面の mask を三角形へほどいた時の頂点数の上限（polyVertCap と同じく、入れ物を先に広げておく数）。
+    def surfaceMaskCap(surfaces: List[DrawCmd.SurfaceRenderCmd]): Int32 =
+        List.foldLeft((acc, s) -> acc + maskVertsOf(s#mask), 0, surfaces)
+
+    /// 並べた 1 個を行へ積む（スプライトと多角形は run へ溜め、ほかは溜めた run を閉じてから 1 行にする）。
+    // WhyNot: 末尾を呼び出しで終えない — 呼ぶ側のループ（emitMerged）が JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
     def emitRowItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                     registry: RenderAsset.TextureRegistry, upsideDownTargets: Set[String],
-                    warnLog: Ref[Set[String], Static], item: Merged): Bool \ IO =
-        let done = match item {
+                    warnLog: Ref[Set[String], Static], item: Merged): Unit \ IO =
+        match item {
             case Merged.MSprite(drawable) =>
                 if (List.isEmpty(DrawCmd.maskOf(drawable))) {
                     // スプライトが来たら溜まっている多角形 run を先に閉じる（列順を守る）。
                     closePolyRun(st, list);
                     emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable)
-                } else emitSpriteMasked(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable);
-                true
+                } else emitSpriteMasked(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable)
             case Merged.MPoly(pc) =>
                 closeSpriteRun(st, list);
-                emitPoly(st, list, scaleX, scaleY, pc);
-                true
-            case Merged.MTile(tm) =>
-                emitTile(st, list, registry, warnLog, tm);
-                true
-            case Merged.MStatic(r) =>
-                emitStatic(st, list, scaleX, scaleY, r);
-                true
-            case Merged.MScene3d(i) =>
+                emitPoly(st, list, scaleX, scaleY, pc)
+            case Merged.MTile(tm)     => emitTile(st, list, registry, warnLog, tm)
+            case Merged.MStatic(r)    => emitStatic(st, list, scaleX, scaleY, r)
+            case Merged.MScene3d(i)   =>
                 closeRuns(st, list);
-                appendSceneRow(list, i);
-                true
-            case Merged.MSurface(_) => false
+                appendSceneRow(list, i)
+            case Merged.MSurface(s)   => emitSurface(st, list, registry, upsideDownTargets, warnLog, s)
         };
-        done
+        // WhyNot: この () を消さない — match の枝の呼び出しが末尾になり、emitMerged のループが JIT から外れる。
+        ()
 
     /// 安定ソート済みの列を先頭から 1 本ずつ処理する（末尾再帰）。
     /// スプライト run と多角形 run を並行して溜め、種類が切り替わる瞬間に
@@ -882,55 +919,21 @@ mod RenderFrame {
     /// run をまたいでテクスチャごとに再グループ化するのは禁止: アルファブレンドは
     /// 描画順に依存するので、同 zIndex の bg 矩形とテキスト最後の文字が入れ替わって
     /// 文字が消える実バグが過去に起きた。
-    def emitMerged(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
+    /// GL と WebGPU の backend が同じ物を呼ぶ（行は backend の入れ物 list へ積むだけで、GL も WebGPU も呼ばない）。
+    // WhyNot: ループの中の 1 個の処理（emitRowItem）を書き下さない — ループの中の呼び出しが末尾呼び出しの続き（Thunk）を返すと、
+    //   JVM はループを途中から JIT（OSR）できず、1 コマに 1 回しか呼ばれないループがインタプリタのまま回る（docs/performance.md の 13 節）。
+    def emitMerged(st: Array[Int32, Static], list: RenderList,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
                    upsideDownTargets: Set[String],
                    warnLog: Ref[Set[String], Static],
-                   drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
-                   drawScene: Int32 -> Unit \ IO,
                    items: List[Merged]): Unit \ IO =
         match items {
             case Nil => ()
             case item :: rest =>
-                emitOne(gl, gs, st, list, scaleX, scaleY, registry, upsideDownTargets,
-                        warnLog, drawSurface, drawScene, item);
-                emitMerged(gl, gs, st, list, scaleX, scaleY, registry, upsideDownTargets,
-                           warnLog, drawSurface, drawScene, rest)
+                emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, item);
+                emitMerged(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, rest)
         }
-
-    /// 列の 1 個ぶんを描く（行になる種類は run へ積むか RenderList の行にする・GL を直に呼ぶ種類は溜めた行を流してから単発で描く）。
-    /// drawScene = 3D の場面を貼る行で番号の場面を描く（行を流す時に呼ぶ）。
-    // WhyNot: emitMerged のループの中へ書き下さない・末尾を呼び出しで終えない — ループの中の呼び出しが末尾呼び出しの続き（Thunk）を返すと、
-    //   JVM はループを途中から JIT（OSR）できず、1 コマに 1 回しか呼ばれないループがインタプリタのまま回る（docs/performance.md の 13 節）。
-    @DontInline
-    def emitOne(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
-                scaleX: Float64, scaleY: Float64,
-                registry: RenderAsset.TextureRegistry,
-                upsideDownTargets: Set[String],
-                warnLog: Ref[Set[String], Static],
-                drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
-                drawScene: Int32 -> Unit \ IO,
-                item: Merged): Unit \ IO =
-        if (emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, item)) ()
-        else {
-            flushRows(gl, gs, st, list, drawScene);
-            match item {
-                case Merged.MSurface(s) =>
-                    // WhyNot: 前の行の clip 矩形を残さない — 面は矩形全体を塗るので、残すと切れる。
-                    setScissorAt(gl, gs, 0, 0, 0, 0, 0);
-                    countSingleDraw(st, kindSurface(), drawSurface(gl, s));
-                    // mask つきの面は stencil を自分で 0 にして 1 を書く（mask が 3 頂点未満なら触らない）ので、次の mask は stencil を 0 に戻してから描く。
-                    if (List.isEmpty(s#mask)) () else Array.put(0, maskRefSlot(), st)
-                case Merged.MScene3d(_) => ()
-                case Merged.MSprite(_)  => ()
-                case Merged.MTile(_)    => ()
-                case Merged.MPoly(_)    => ()
-                case Merged.MStatic(_)  => ()
-            }
-        };
-        // WhyNot: この () を消さない — match の枝の呼び出しが末尾になり、emitMerged のループが JIT から外れる。
-        ()
 
     /// 多角形を三角形へほどいたときの頂点数の上限（1 個 n 頂点なら 3(n-2) 以下）。
     /// 入れ物をこの数で先に広げておけば、溜めている途中で取り直す
@@ -979,10 +982,9 @@ mod RenderFrame {
         let drawPrepared = args#scenes#draw;
         let sceneViewport = { x = Array.get(7, gs), y = Array.get(8, gs), width = Array.get(9, gs), height = Array.get(10, gs),
                               scaleX = scaleX, scaleY = scaleY };
-        let drawScene = i -> drawPrepared(sceneViewport, i);
-        emitMerged(gl, gs, st, list, scaleX, scaleY, args#registry, upsideDownTargets,
-                   args#texWarnLog, args#drawSurface, drawScene, sortedMerged);
-        flushRows(gl, gs, st, list, drawScene);
+        let draw = { scene = i -> drawPrepared(sceneViewport, i), surface = args#drawSurface };
+        emitMerged(st, list, scaleX, scaleY, args#registry, upsideDownTargets, args#texWarnLog, sortedMerged);
+        flushRows(gl, gs, st, list, draw);
         addCountsTo(args#drawCounts, st)
 
 }

@@ -172,6 +172,22 @@ pub mod RenderPaint.Internal.WebGpuShader {
         "    return color;\n" +
         "}\n"
 
+    /// 組めなかった面の代わりに塗る単色の WGSL（対の GLSL は RenderShader.fallbackFragmentSource と ShaderGen.vertexSource）。
+    /// 入口と bind group の並びは ShaderGen.Wgsl.compile の面と同じ（group 0 = 面の値・group 1 = 射影の行列・入口は vs_main・fs_main）で、絵を読まない。
+    // WhyNot: ShaderGen.Wgsl で単色の Spec を組んで代わりにしない — 代わりは ShaderGen の出口が壊れた時に塗る物で、同じ出口を通すと一緒に壊れる。
+    pub def surfaceFallbackWgsl(): String =
+        "struct SgValues { uRectPosX: f32, uRectPosY: f32, uRectSizeX: f32, uRectSizeY: f32, uTime: f32, uAlpha: f32 };\n" +
+        "@group(0) @binding(0) var<uniform> sg: SgValues;\n" +
+        "struct SgFrame { projection: mat4x4f };\n" +
+        "@group(1) @binding(0) var<uniform> sgFrame: SgFrame;\n" +
+        ShaderGen.Wgsl.clipFromGlSource() +
+        "@vertex fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {\n" +
+        "    var quad = array<vec2f, 6>(vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(0.0, 0.0), vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0));\n" +
+        "    let screenPos = vec2f(sg.uRectPosX, sg.uRectPosY) + quad[vi] * vec2f(sg.uRectSizeX, sg.uRectSizeY);\n" +
+        "    return sg_clipFromGl(sgFrame.projection * vec4f(screenPos, 0.0, 1.0));\n" +
+        "}\n" +
+        "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(0.5, 0.2, 0.2, 1.0); }\n"
+
     /// 中間の texture を画面の texture へ写す WGSL（全面の三角形 1 枚）。入口は vs_present・fs_present。group 0 = 中間の texture。
     // WhyNot: textureSample で読まない — 標本と sampler を通すと filter の差が出うる。整数の座標で 1 画素ずつ写す。
     pub def presentWgsl(): String =

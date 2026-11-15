@@ -76,7 +76,7 @@ mod V1Main {
                     WebGpuPaint.readFrame(paint, buf);
                     { pixels = buf, submits = WebGpuPaint.submitCount(paint), draws = WebGpuPaint.lastDraw2dCounts(paint) }
                 });
-                // まだ描かない物（面と 3D の場面）を 2 コマ渡す: 名前ごとに 1 回だけ知らせ、誤りを出さずに捨てる。
+                // まだ描かない物（3D の場面）を 2 コマ渡す: 名前ごとに 1 回だけ知らせ、誤りを出さずに捨てる。
                 handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
                 handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
                 let result = (shots, gpu.errorCount(), gpu.lastError(), gpu.adapterInfo());
@@ -175,8 +175,15 @@ mod V1Main {
     /// 場面ごとの 2D の draw call の数の期待（GL と WebGPU の両方がこの数である事）。無い場面は GL と WebGPU が同じかだけを見る。
     /// sceneBetween: 箱・箱・市松の絵の 3 本。同じ色・同じ blend の 2 つの箱の間に 3D の場面があるので、後の箱は kind で切れる
     ///   （場面が無ければ 2 つの箱は 1 本にまとまる）。市松の絵は絵が替わるので texture で切れる。
+    /// surfaceBetween: 箱・面・箱の 3 本。面と後の箱が kind で切れる（面が無いか、面を run の外で描けば 2 つの箱は 1 本にまとまる）。
+    /// surfaceMask: 同じ z では面がスプライトの後なので、地の箱 1・mask つきスプライト 2 × 2・mask つきの面 2・三角形にならない mask の面 1・mask つきの面 2・
+    ///   z 2 の mask つきスプライト 2 の 12 本。kind の切れ目は 3 枚の面と最後のスプライト（4）・texture は最初のスプライト（1）・
+    ///   mask は mask つきの 2 本目の 5 本と、前も mask つきの 2 体目のスプライト（6）。
+    /// surfaceAfterOverflow: 地の箱 1・mask つきスプライト 255 × 2・mask つきの面 2・mask つきスプライト 2 の 515 本。kind は面と最後のスプライト（2）・
+    ///   texture は最初のスプライト（1）・mask は mask つきの 2 本目 257 本と、前も mask つきの 2 体目からのスプライト 254 本（511）。
     def expectedDraws(): Map[String, (Int32, Int32, Int32, Int32, Int32, Int32, Int32)] =
-        Map#{"sceneBetween" => (3, 0, 1, 1, 0, 0, 0)}
+        Map#{"sceneBetween" => (3, 0, 1, 1, 0, 0, 0), "surfaceBetween" => (3, 0, 2, 0, 0, 0, 0), "surfaceMask" => (12, 0, 4, 1, 0, 0, 6),
+             "surfaceAfterOverflow" => (515, 0, 2, 1, 0, 0, 511)}
 
     /// 1 場面の表の行と合否。
     def judge(width: Int32, height: Int32, limits: Map[String, Int32],

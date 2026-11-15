@@ -1,5 +1,5 @@
 // RenderFrame.Internal.RenderList — 1 回の renderCommands で描く行の列（GL と WebGPU が同じ物を流す）と、その行を描く pass の指定。
-// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲・mask つきスプライト 1 体・3D の場面を貼る所。面は GL を直に呼ぶ）。
+// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲・mask つきスプライト 1 体・面 1 枚・3D の場面を貼る所）。
 // GL の物（program・VAO・buffer）を持たず、絵と頂点の buffer は backend の表の番号（GL の backend ではテクスチャ・VAO の番号）で持つ。
 // rows の頭: 0=行の数 1=次に書く instance の番号 2=次に書く頂点の番号。その後ろに 1 行 rowStride() 個:
 //   0=種類（kind*） 1=先頭（スプライトは instance・多角形と static は頂点の番号） 2=数（体数・頂点数・タイルの数）
@@ -8,6 +8,10 @@
 //   mask つきスプライト（kindMask）だけ欄の意味が違う: 1=instance の番号（1 体） 2=mask の頂点の数（三角形にほどいた物・3 未満なら 0） 10=mask の先頭の頂点の番号
 //   11=stencil に書いて比べる値（nextMaskRef が決める・0 = mask が 3 頂点未満で stencil を使わずに描く）。mask の頂点は values の頭の identity の view で描く。
 //   3D の場面を貼る行（kindScene3d）: 1=場面の番号（Scene3dRenderer.Prepared の番号）。ほかの欄は 0。
+//   面の行（kindSurface・ShaderDoc の面 1 枚）: 1=program（backend の表の番号） 2=values に書いた値の数（rect 4・time・alpha・params の順） 3=0 4=blend
+//   5=0（面は clip を持たない） 6=reads の先頭（絵の組の 1 つ目の番号） 7=絵の数 8=mask の先頭の頂点の番号 9=mask の頂点の数（3 未満なら 0）
+//   10=stencil に書いて比べる値（nextMaskRef・0 = mask が無い） 11=values の先頭（surfaceValueAlign() の倍数）。
+// reads は面が読む絵の組（1 つ readFields() 個: 0=絵の番号（無い名前は 0） 1=補間（0 = Nearest・1 = Linear） 2=上下逆に格納された描き先なら 1）。
 // instances は 1 体 instanceFloats() 個（RenderFrame.writeInstAt の並び）。スプライトの行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
 // vertices は多角形の頂点（1 頂点 6 個・RenderSprite.writePolyVerts の並び）。instances も vertices も backend が貸す入れ物で、GPU へそのまま送る。
 // values は draw ごとの値（front-end の並び。GL は uniform へ差し、WebGPU は詰め直さずに stride 0 の頂点の buffer として読む）。頭の viewValueFloats() 個はいつも identity の view（多角形の行が指す）。
@@ -24,7 +28,9 @@ pub mod RenderFrame.Internal.RenderList {
         vertices = FloatBuffer,
         rows = Array[Array[Int32, Static], Static],
         values = Array[Array[Float32, Static], Static],
-        valueCount = Array[Int32, Static]
+        valueCount = Array[Int32, Static],
+        reads = Array[Array[Int32, Static], Static],
+        readCount = Array[Int32, Static]
     }
 
     /// instance の 1 体の float の数。
@@ -53,10 +59,24 @@ pub mod RenderFrame.Internal.RenderList {
     /// values の 1 つのタイルの層の float の数。
     pub def tileValueFloats(): Int32 = 8
 
+    /// 面の値を置く values の位置と、面 1 枚に取る values の数の刻み（float の数）。
+    // WhyNot: 面の値を詰めて置かない — WebGPU の backend は面の値を uniform の buffer として読み、bind する位置は 256 バイト
+    //   （core の minUniformBufferOffsetAlignment の上限）の倍数でないといけない。dynamic offset で 1 つの bind group を使い回す道は
+    //   render_gl/java の WebGpu の口（setBindGroup の offset）が要る。
+    pub def surfaceValueAlign(): Int32 = 64
+
+    /// 値を count 個書いた面の行が values に取っている数（surfaceValueAlign の倍数。読む側はこの数まで読んでよい）。
+    pub def surfaceValuesTaken(count: Int32): Int32 =
+        Int32.max(surfaceValueAlign(), (count + surfaceValueAlign() - 1) / surfaceValueAlign() * surfaceValueAlign())
+
+    /// reads の 1 つの絵の Int32 の数。
+    pub def readFields(): Int32 = 3
+
     /// 空の列。instances と vertices は backend が貸す入れ物（描く物の数ぶん書ける大きさ）。
     pub def newRenderList(instances: FloatBuffer, vertices: FloatBuffer): RenderList \ IO =
         let list = { instances = instances, vertices = vertices, rows = Array#{Array.empty(Static, rowsHead() + 16 * rowStride())} @ Static,
-                     values = Array#{Array.empty(Static, 64)} @ Static, valueCount = Array#{0} @ Static };
+                     values = Array#{Array.empty(Static, 64)} @ Static, valueCount = Array#{0} @ Static,
+                     reads = Array#{Array.empty(Static, 4 * readFields())} @ Static, readCount = Array#{0} @ Static };
         clearRenderList(list);
         list
 
@@ -71,6 +91,9 @@ pub mod RenderFrame.Internal.RenderList {
 
     /// values に書いた float の数（頭の identity の view を含む）。
     pub def valueCountOf(list: RenderList): Int32 \ IO = Array.get(0, list#valueCount)
+
+    /// 面の絵の組の配列（広げると差し替わるので、行を足した後は取り直す）。
+    pub def readsOf(list: RenderList): Array[Int32, Static] \ IO = Array.get(0, list#reads)
 
     /// 頭と行を並べた Int32 の配列（広げると差し替わるので、行を足した後は取り直す）。
     pub def rowsOf(list: RenderList): Array[Int32, Static] \ IO = Array.get(0, list#rows)
@@ -92,7 +115,8 @@ pub mod RenderFrame.Internal.RenderList {
         Array.put(1.0f32, 3, values);
         Array.put(0.0f32, 4, values);
         Array.put(0.0f32, 5, values);
-        Array.put(viewValueFloats(), 0, list#valueCount)
+        Array.put(viewValueFloats(), 0, list#valueCount);
+        Array.put(0, 0, list#readCount)
 
     /// n 個書ける values と、書き始める位置を返し、書く位置を n 進める（足りなければ倍に広げて写す）。
     def reserveValues(list: RenderList, n: Int32): (Array[Float32, Static], Int32) \ IO =
@@ -105,6 +129,37 @@ pub mod RenderFrame.Internal.RenderList {
             let grown = Array.empty(Static, Int32.max(need, 2 * Array.length(values)));
             Array.copyInto(srcPos = 0, dstPos = 0, len = at, src = values, grown);
             Array.put(grown, 0, list#values);
+            (grown, at)
+        }
+
+    /// 書く位置を surfaceValueAlign の倍数へ進め、値 n 個の面の分（surfaceValuesTaken）を取る。取った所（進めた分を含む）を 0 で埋めて (values, 書き始める位置) を返す。
+    def reserveSurfaceValues(list: RenderList, n: Int32): (Array[Float32, Static], Int32) \ IO =
+        let align = surfaceValueAlign();
+        let start = Array.get(0, list#valueCount);
+        let at = (start + align - 1) / align * align;
+        let taken = surfaceValuesTaken(n);
+        let (values, _) = reserveValues(list, at - start + taken);
+        fillZero(values, start, at + taken);
+        (values, at)
+
+    def fillZero(values: Array[Float32, Static], i: Int32, stop: Int32): Unit \ IO =
+        if (i >= stop) ()
+        else {
+            Array.put(0.0f32, i, values);
+            fillZero(values, i + 1, stop)
+        }
+
+    /// count 個の絵を書ける reads と、書き始める番号を返し、書く位置を count 進める（足りなければ倍に広げて写す）。
+    def reserveReads(list: RenderList, count: Int32): (Array[Int32, Static], Int32) \ IO =
+        let reads = Array.get(0, list#reads);
+        let at = Array.get(0, list#readCount);
+        let need = (at + count) * readFields();
+        Array.put(at + count, 0, list#readCount);
+        if (Array.length(reads) >= need) (reads, at)
+        else {
+            let grown = Array.empty(Static, Int32.max(need, 2 * Array.length(reads)));
+            Array.copyInto(srcPos = 0, dstPos = 0, len = at * readFields(), src = reads, grown);
+            Array.put(grown, 0, list#reads);
             (grown, at)
         }
 
@@ -191,6 +246,42 @@ pub mod RenderFrame.Internal.RenderList {
     pub def appendSceneRow(list: RenderList, scene: Int32): Unit \ IO =
         let rows = rowsWithRoom(list);
         putRow(rows, Array.get(0, rows), kindScene3d(), scene, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+    /// 面 1 枚を 1 行として足す。program = backend の表の番号・surface と params = 面の値（values へ rect・time・alpha・params の順に書く）・
+    /// reads = 絵の組（(絵の番号, 補間, 上下逆なら 1)）・maskFirst と maskCount = vertices に書いた mask の三角形の頂点・
+    /// ref = stencil に書いて比べる値（maskCount が 3 未満なら 0）。次の頂点は、この行の後ろから始まる。
+    pub def appendSurfaceRow(list: RenderList, program: Int32, blendC: Int32,
+                             surface: { x = Float32, y = Float32, width = Float32, height = Float32, time = Float32, alpha = Float32 },
+                             params: List[Float64], reads: List[(Int32, Int32, Int32)],
+                             maskFirst: Int32, maskCount: Int32, ref: Int32): Unit \ IO =
+        let count = 6 + List.length(params);
+        let (values, at) = reserveSurfaceValues(list, count);
+        Array.put(surface#x, at + 0, values);
+        Array.put(surface#y, at + 1, values);
+        Array.put(surface#width, at + 2, values);
+        Array.put(surface#height, at + 3, values);
+        Array.put(surface#time, at + 4, values);
+        Array.put(surface#alpha, at + 5, values);
+        List.forEachWithIndex((k, p) -> Array.put(RenderUtil.f32(p), at + 6 + k, values), params);
+        let readCount = List.length(reads);
+        let (readArray, readsAt) = reserveReads(list, readCount);
+        List.forEachWithIndex((k, read) -> {
+            let (texId, filter, flip) = read;
+            let base = (readsAt + k) * readFields();
+            Array.put(texId, base, readArray);
+            Array.put(filter, base + 1, readArray);
+            Array.put(flip, base + 2, readArray)
+        }, reads);
+        let rows = rowsWithRoom(list);
+        putRow(rows, Array.get(0, rows), kindSurface(), program, count, 0, blendC, 0, readsAt, readCount, maskFirst, maskCount, ref, at);
+        Array.put(maskFirst + maskCount, 2, rows)
+
+    /// 行 row が stencil に書いて比べる値（mask つきスプライトと面の行。ほかの行と、mask が 3 頂点未満の行は 0）。
+    pub def stencilRefOf(rows: Array[Int32, Static], row: Int32): Int32 \ IO =
+        let kind = rowAt(rows, row, 0);
+        if (kind == kindMask()) rowAt(rows, row, 11)
+        else if (kind == kindSurface()) rowAt(rows, row, 10)
+        else 0
 
     /// 行の欄を書いて行の数を 1 進める（rows は rowsWithRoom で取った物）。
     def putRow(rows: Array[Int32, Static], n: Int32, kind: Int32, first: Int32, count: Int32, texId: Int32, blendC: Int32,

@@ -1,11 +1,11 @@
-// mask つきスプライトが RenderList の行になる所と、stencil の比べる値の決まり（GL を呼ばない前半）を固定する。
-// 並べた物（Merged）を emitRowItem（GL を直に呼ぶ面を混ぜる時は、何も描かない GL で emitOne）へ順に渡して run を閉じ、行の欄を読む（倍率 1・絵は箱だけ）。
+// mask つきスプライトと mask つきの面が RenderList の行になる所と、stencil の比べる値の決まり（GL を呼ばない前半）を固定する。
+// 並べた物（Merged）を emitRowItem へ順に渡して run を閉じ、行の欄を読む（倍率 1・絵は箱だけ）。
 // WhyNot: mod TestMaskRows にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestMaskRows {
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, closeRuns, emitOne, emitRowItem, stateSize, usesStencil}
+    use RenderFrame.{Merged, closeRuns, emitRowItem, stateSize, usesStencil}
     use RenderFrame.Internal.RenderList.{RenderList, instanceFloats, kindMask, kindSprite, maxMaskRef, newRenderList, nextInstanceOf, nextMaskRef,
-                                         nextVertexOf, rowAt, rowCountOf, rowsOf, vertexFloats}
+                                         nextVertexOf, rowAt, rowCountOf, rowsOf, stencilRefOf, vertexFloats}
 
     // ── 組み立て ──
 
@@ -37,7 +37,7 @@ mod RenderFrame.TestMaskRows {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let n = List.length(items) + 1;
         let list = newRenderList(FloatBuffer.allocate(instanceFloats() * n), FloatBuffer.allocate(vertexFloats() * 12 * n));
-        List.forEach(item -> discard emitRowItem(st, list, 1.0, 1.0, Map.empty(), Set.empty(), Ref.fresh(Static, Set.empty()), item), items);
+        List.forEach(item -> emitRowItem(st, list, 1.0, 1.0, Map.empty(), Set.empty(), Ref.fresh(Static, Set.empty()), item), items);
         closeRuns(st, list);
         (st, list)
 
@@ -139,36 +139,47 @@ mod RenderFrame.TestMaskRows {
     def testRefAfterMaxIsOne(): Unit \ Assert =
         Assert.assertEq(expected = 1, nextMaskRef(maxMaskRef()))
 
-    // ── GL を直に呼ぶ mask つきの面の後（何も描かない GL で emitOne を通す）──
+    // ── mask つきの面（比べる値は mask つきスプライトと同じ数え方）──
 
     /// 箱 10 × 10 の面。mask = 面を切り抜く多角形の列。
     def surfaceWith(mask: List[List[Vec2.Vec2]]): Merged =
         Merged.MSurface({ program = GpuHandle.wrapShaderProgram(1), texReads = Nil, rect = { position = v(0.0, 0.0), size = v(10.0, 10.0) },
                           mask = mask, time = 0.0, zIndex = 0, blend = DrawCmd.BlendMode.Normal, alpha = 1.0, params = Nil })
 
-    /// 並べた物を emitOne へ順に渡した後の (状態, 列)（GL は何も描かない・面は draw 2 つと数える）。
-    def emittedThroughGl(items: List[Merged]): (Array[Int32, Static], RenderList) \ IO =
-        let st: Array[Int32, Static] = Array.empty(Static, stateSize());
-        let n = List.length(items) + 1;
-        let list = newRenderList(FloatBuffer.allocate(instanceFloats() * n), FloatBuffer.allocate(vertexFloats() * 12 * n));
-        let gl = FakeGl.silent();
-        let gs: Array[Int32, Static] = Array.empty(Static, 32);
-        List.forEach(item -> emitOne(gl, gs, st, list, 1.0, 1.0, Map.empty(), Set.empty(), Ref.fresh(Static, Set.empty()),
-                                     (_, _) -> checked_ecast(2), _ -> checked_ecast(()), item), items);
-        closeRuns(st, list);
-        (st, list)
-
-    /// mask の後に mask つきの面が来ても、その pass は stencil を使ったまま。
+    /// mask つきの面だけでも、その pass は stencil を使う。
     @Test
-    def testMaskedSurfaceKeepsStencilUsed(): Unit \ {Assert, IO} =
-        Assert.assertTrue(usesStencil(fst(emittedThroughGl(masked() :: surfaceWith(triangle()) :: Nil))))
+    def testMaskedSurfaceUsesStencil(): Unit \ {Assert, IO} =
+        Assert.assertTrue(usesStencil(fst(emitted(surfaceWith(triangle()) :: Nil))))
 
-    /// mask つきの面の後の mask は、比べる値が 1 に戻る（stencil を 0 に戻してから描く）。
-    /// 面の所で flushRows が列を空にするので、残る行 0 が面の後の mask。
+    /// mask の無い面は stencil を使わず、比べる値 0。
     @Test
-    def testMaskAfterMaskedSurfaceRestartsRef(): Unit \ {Assert, IO} =
-        let list = snd(emittedThroughGl(masked() :: masked() :: surfaceWith(triangle()) :: masked() :: Nil));
-        Assert.assertEq(expected = 1, cell(list, 0, 11))
+    def testPlainSurfaceDoesNotUseStencil(): Unit \ {Assert, IO} =
+        let (st, list) = emitted(surfaceWith(Nil) :: Nil);
+        Assert.assertEq(expected = (false, 0), (usesStencil(st), cell(list, 0, 10)))
+
+    /// mask つきの面の値も mask つきスプライトの値の続き（スプライト 1・2・面 3・スプライト 4）で、面の後に 1 へ戻さない。
+    @Test
+    def testMaskedSurfaceContinuesRef(): Unit \ {Assert, IO} =
+        let list = listOf(masked() :: masked() :: surfaceWith(triangle()) :: masked() :: Nil);
+        Assert.assertEq(expected = (3, 4), (cell(list, 2, 10), cell(list, 3, 11)))
+
+    /// 三角形にならない mask の面は値を進めない（スプライト 1・面 0・スプライト 2）。
+    @Test
+    def testDegenerateSurfaceMaskKeepsRef(): Unit \ {Assert, IO} =
+        let list = listOf(masked() :: surfaceWith(degenerate()) :: masked() :: Nil);
+        Assert.assertEq(expected = (0, 2), (cell(list, 1, 10), cell(list, 2, 11)))
+
+    /// backend が stencil を 0 に戻すかを読む値（stencilRefOf）は、mask つきスプライトの行は 11 番・面の行は 10 番・mask の無いスプライトの行は 0。
+    @Test
+    def testStencilRefOfReadsSurfaceRow(): Unit \ {Assert, IO} =
+        let rows = rowsOf(listOf(masked() :: surfaceWith(triangle()) :: plain() :: Nil));
+        Assert.assertEq(expected = (1, 2, 0), (stencilRefOf(rows, 0), stencilRefOf(rows, 1), stencilRefOf(rows, 2)))
+
+    /// 255 体の mask つきの後の mask つきの面は値 1 に戻る（backend はその行の前で stencil を 0 に戻す）。
+    @Test
+    def testSurfaceAfterMaxIsOne(): Unit \ {Assert, IO} =
+        let rows = rowsOf(listOf(List.append(List.repeat(maxMaskRef(), masked()), surfaceWith(triangle()) :: Nil)));
+        Assert.assertEq(expected = 1, stencilRefOf(rows, maxMaskRef()))
 
     /// 行の数（上の testRefWrapsAfterMax の前提）。
     @Test
