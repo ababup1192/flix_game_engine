@@ -20,8 +20,8 @@ mod Stage {
     }
 
     /// ゲームが持つ背景の切り替え（GameCommands.backdropSwitch が決める）。seconds = 切り替えの秒（その間は次の台詞を出さない）、
-    /// sounds = 切り替えを始めてからの秒と、その時に鳴らす効果音の名前（project.json の sounds）。
-    pub type alias GameSwitch = { seconds = Float64, sounds = List[(Float64, String)] }
+    /// sounds = 切り替えを始めてからの秒 at に鳴らす効果音 sound（project.json の sounds の名前）。
+    pub type alias GameSwitch = { seconds = Float64, sounds = List[{ at = Float64, sound = String }] }
 
     /// 背景の替え方: transition = 切り替えの種類、ease = 進みの曲線、pace = 3D の道筋の歩き方、
     /// game = ゲームが持つ切り替え（Some の間はテンプレートが前と今の背景を重ねず、今の背景を GameView.backdrop にそのまま描かせる）。
@@ -263,7 +263,7 @@ mod Stage {
             case Some(g) if stage#fadeFrom != Clock.never() =>
                 let lo = Clock.since(stage#fadeFrom, before);
                 let hi = Clock.since(stage#fadeFrom, now);
-                g#sounds |> List.filter(match (t, _) -> t > lo and t <= hi) |> List.map(snd)
+                g#sounds |> List.filter(s -> s#at > lo and s#at <= hi) |> List.map(s -> s#sound)
             case _ => Nil
         }
 

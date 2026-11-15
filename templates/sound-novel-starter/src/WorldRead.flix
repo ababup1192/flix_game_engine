@@ -148,7 +148,7 @@ mod WorldRead {
         }
 
     /// コマンドの表の apply が読む物。
-    def ctxOf(res: Res.Res, r: World.Read, w: World.World): Commands.Ctx =
+    pub def ctxOf(res: Res.Res, r: World.Read, w: World.World): Commands.Ctx =
         { now = World.now(w), node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault(""), res = res, instant = r#playback == World.Playback.Skip }
 
     /// コマンドが出した出来事 1 つ（Silent の時の音と合図と待ちは Commands.execute が落としてある）。

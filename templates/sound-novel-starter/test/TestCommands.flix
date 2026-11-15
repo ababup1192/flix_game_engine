@@ -26,7 +26,7 @@ mod TestCommands {
     /// 表のコマンドごとに、必須の引数だけを書いた 1 行（人物と小物はテスト用の Doc の名前）。
     def samples(res: Res.Res): List[(String, List[String])] =
         ("bg", photoOf(res) :: "grade=${gradeOf(res)}" :: Nil) :: ("window", "nvl" :: Nil) :: ("text", "speed=1" :: Nil) :: ("speak", "cup" :: Nil) :: ("audio", "ambience" :: ambienceOf(res) :: Nil)
-        :: ("fx", "off" :: Nil) :: ("shake", Nil) :: ("overlay", "0.5" :: Nil) :: ("camera", Nil) :: ("tween", "game.t" :: "1" :: Nil) :: ("show", "a" :: Nil) :: ("hide", "all" :: Nil) :: ("move", "a" :: "from=left" :: Nil) :: Nil
+        :: ("fx", "off" :: Nil) :: ("shake", Nil) :: ("overlay", "0.5" :: Nil) :: ("camera", Nil) :: ("tween", "t" :: "1" :: Nil) :: ("show", "a" :: Nil) :: ("hide", "all" :: Nil) :: ("move", "a" :: "from=left" :: Nil) :: Nil
 
     def castRes(): Res.Res \ Fs.FileRead = TestKit.res() |> Res.withCast(CastDoc.load("test/fixtures/novel.cast.json"))
 

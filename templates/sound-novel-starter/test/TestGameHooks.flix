@@ -1,9 +1,10 @@
 // ゲームの口（GameView.backdrop・GameCommands.backdropSwitch・GameView.hud・GameView.objects・Commands.applyText・<<tween>>）と
-// novel.backdrops.json の initial・title・aspect: ゲームが差した物が使われることと、差さなければ今までどおりであること。
-// ゲームの口は差し替えの形（ViewStage.backdropsWith・Commands.bgWith・View.gameHudOf・FlowVideo.objectsWith）に偽の関数を渡して見る。
+// novel.backdrops.json の initial・title・aspect の配線: 差し替えの形（ViewStage.backdropsUsing・Commands.bgUsing・Commands.executeUsing・
+// View.gameHudUsing・FlowVideo.objectsUsing）に偽の関数を差して、差した物が使われることを見る。
+// このファイルはテンプレートの持ち物で、ゲームが口を埋めても落ちないように、テンプレートの既定（None・Nil）や Doc の中身には頼らない。
 mod TestGameHooks {
 
-    use fge::{Clock, Color, RawDraw, Render, Yarn, YarnCommands}
+    use fge::{Clock, Emit, Num, RawDraw, Rect2, Render, Yarn, YarnCommands, YarnRunner}
     use Commands.Out
     use TestKit.begun
 
@@ -25,8 +26,30 @@ mod TestGameHooks {
 
     def grade(r: Res.Res): String = BackdropDoc.rec(r#backdrops)#grades |> Map.keysOf |> Set.toList |> List.head |> Option.getWithDefault("")
 
+    type alias SwitchOf = (Commands.Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch]
+
+    def noSwitch(): SwitchOf = (_, _, _, _) -> None
+
+    def walk(seconds: Float64): SwitchOf =
+        (_, _, _, _) -> Some({ seconds = seconds, sounds = { at = 0.2, sound = "se_a" } :: { at = 1.5, sound = "se_b" } :: Nil })
+
+    /// switchOf を差した <<bg>> を at 秒に当てる（ゲームの GameCommands に左右されない）。
+    def bgBy(r: Res.Res, switchOf: SwitchOf, instant: Bool, at: Float64, args: List[String], st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
+        let c = Commands.bgUsing(switchOf);
+        forM (a <- YarnCommands.parse(c#spec, command("bg", args)); done <- c#apply({ instant = instant | ctxAt(r, at) }, a, st)) yield done
+
+    def bgTo(r: Res.Res, at: Float64, args: List[String], st: Stage.Stage): Stage.Stage =
+        bgBy(r, noSwitch(), false, at, args, st) |> Result.map(fst) |> Result.getWithDefault(st)
+
     /// 写真 0 番へすぐ替えた舞台。
-    def firstShown(r: Res.Res): Stage.Stage = applied(r, 0.0, "bg", photoAt(r, 0) :: "grade=${grade(r)}" :: "transition=cut" :: Nil, Stage.empty())
+    def firstShown(r: Res.Res): Stage.Stage = bgTo(r, 0.0, photoAt(r, 0) :: "grade=${grade(r)}" :: "transition=cut" :: Nil, Stage.empty())
+
+    /// 写真 0 番から 1 番へ、1.0 秒に switchOf で替えた時（args = transition などの足す引数）。
+    def ownedBy(r: Res.Res, switchOf: SwitchOf, instant: Bool, args: List[String]): Result[String, (Stage.Stage, List[Out])] =
+        bgBy(r, switchOf, instant, 1.0, photoAt(r, 1) :: args, firstShown(r))
+
+    def ownedStage(r: Res.Res, args: List[String]): Stage.Stage =
+        ownedBy(r, walk(3.0), false, args) |> Result.map(fst) |> Result.getWithDefault(Stage.empty())
 
     def envOf(r: Res.Res, at: Float64): View.Env = { storyNow = t(at) | View.envOf(Layout.Fit.Regular, r, TestKit.w0(r)) }
 
@@ -34,18 +57,19 @@ mod TestGameHooks {
 
     def withInitial(r: Res.Res): Res.Res = withBackdrops(d -> { initial = Some({ photo = photoAt(r, 1), grade = grade(r) }) | d }, r)
 
+    def withoutInitial(r: Res.Res): Res.Res = withBackdrops(d -> { initial = None | d }, r)
+
+    def screenArea(): Option[Float64] -> Rect2.Rect2 = _ -> Layout.screen(Layout.Fit.Regular)
+
     /// photo 1 番だけ x = 1000、ほかは x = 2000 に、z 1 の印を置くゲームの絵。
     def marker(r: Res.Res): ViewStage.BackdropPainter = (_, _, photo, _) ->
-        Some(View.at(if (photo == photoAt(r, 1)) 1000.0 else 2000.0, 0.0, RawDraw.box({ x = 1.0, y = 1.0 }, Color.hex("#ff00ff") |> Option.getWithDefault({ r = 1.0, g = 0.0, b = 1.0 }), 1)) :: Nil)
+        Some(View.at(if (photo == photoAt(r, 1)) 1000.0 else 2000.0, 0.0, RawDraw.box({ x = 1.0, y = 1.0 }, { r = 1.0, g = 0.0, b = 1.0 }, 1)) :: Nil)
 
     def noPaint(): ViewStage.BackdropPainter = (_, _, _, _) -> None
 
     def xsOf(items: List[Render.PlacedItem]): List[Float64] = items |> List.map(p -> p#at#x)
 
     def zOfBox(items: List[Render.PlacedItem], x: Float64): List[Int32] = items |> List.filter(p -> p#at#x == x) |> List.map(p -> ViewStage.zOf(p#item))
-
-    def walk(seconds: Float64): (Commands.Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch] =
-        (_, _, _, _) -> Some({ seconds = seconds, sounds = (0.0, "se_a") :: (1.5, "se_b") :: Nil })
 
     // ══ novel.backdrops.json の initial・title・aspect ══
 
@@ -65,23 +89,18 @@ mod TestGameHooks {
         Assert.assertEq(expected = Some((Some(0.5), None)), doc |> Option.map(d -> (BackdropDoc.aspectOf("a", d), BackdropDoc.aspectOf("b", d))))
 
     @Test
-    def testTheTemplateDocHasNoInitialNorTitle(): Unit \ {Assert, Fs.FileRead} =
-        let d = res()#backdrops;
-        Assert.assertEq(expected = (true, true), (Option.isEmpty(BackdropDoc.initialOf(d)), Option.isEmpty(BackdropDoc.titleOf(d))))
-
-    @Test
     def testInitialIsShownWhileThereIsNoBackdrop(): Unit \ {Assert, Fs.FileRead} =
         let r = withInitial(res());
         Assert.assertEq(expected = Some(photoAt(r, 1)), Stage.shownShot(r#backdrops, Stage.empty()) |> Option.map(s -> s#photo))
 
     @Test
     def testWithoutInitialNothingIsShownBeforeTheFirstBg(): Unit \ {Assert, Fs.FileRead} =
-        Assert.assertTrue(Option.isEmpty(Stage.shownShot(res()#backdrops, Stage.empty())))
+        Assert.assertTrue(Option.isEmpty(Stage.shownShot(withoutInitial(res())#backdrops, Stage.empty())))
 
     @Test
     def testTheFirstBgCrossesFromTheInitialBackdrop(): Unit \ {Assert, Fs.FileRead} =
         let r = withInitial(res());
-        let st = applied(r, 0.0, "bg", photoAt(r, 0) :: Nil, Stage.empty());
+        let st = bgTo(r, 0.0, photoAt(r, 0) :: Nil, Stage.empty());
         Assert.assertEq(expected = (Some(photoAt(r, 1)), Some(grade(r))), (st#under |> Option.map(s -> s#photo), st#shot |> Option.map(s -> s#grade)))
 
     @Test
@@ -89,7 +108,7 @@ mod TestGameHooks {
         // aspect 0.5 の写真は、横の画面の幅を覆い、上下をはみ出して真ん中に置く。
         let base = res();
         let r = withBackdrops(d -> { photos = Map.adjust(p -> { aspect = Some(0.5) | p }, photoAt(base, 0), d#photos) | d }, base);
-        let surfaces = ViewStage.frame(envOf(r, 10.0), firstShown(r), true) |> List.filterMap(p -> match p#item {
+        let surfaces = ViewStage.backdropsUsing(noPaint(), ViewStage.photoRect(Layout.Fit.Regular), envOf(r, 10.0), firstShown(r)) |> List.filterMap(p -> match p#item {
             case Render.Item.Shader(x) => Some((p#at#y, x#rect#size#y))
             case _                     => None
         });
@@ -98,120 +117,192 @@ mod TestGameHooks {
 
     @Test
     def testTitleFrameWithoutTitleIsTheFrame(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
+        let r = withBackdrops(d -> { title = None | d }, res());
         let st = firstShown(r);
         Assert.assertEq(expected = xsOf(ViewStage.frame(envOf(r, 1.0), st, true)), xsOf(ViewStage.titleFrame(envOf(r, 1.0), st)))
 
     @Test
     def testTitleScalesAndDriftsTheBackdrop(): Unit \ {Assert, Fs.FileRead} =
-        let base = res();
-        let r = withBackdrops(d -> { title = Some({ scale = 1.05, drift = { amp = { x = 10.0, y = 6.0 }, rate = { x = 0.13, y = 0.09 }, phase = { x = 0.0, y = 1.0 } } }) | d }, base);
+        // 実時間 0 秒（envOf の realNow）の漂いは sin(0 × 0.13 + 0.4) × 10。画面の真ん中を軸に 1.05 倍してからずらす。
+        let r = withBackdrops(d -> { title = Some({ scale = 1.05, drift = { amp = { x = 10.0, y = 6.0 }, rate = { x = 0.13, y = 0.09 }, phase = { x = 0.4, y = 1.0 } } }) | d }, res());
         let st = firstShown(r);
-        Assert.assertFalse(xsOf(ViewStage.frame(envOf(r, 1.0), st, true)) == xsOf(ViewStage.titleFrame(envOf(r, 1.0), st)))
+        let env = envOf(r, 1.0);
+        let cx = Layout.width(Layout.Fit.Regular) * 0.5;
+        let drift = Num.sin(View.realSeconds(env) * 0.13 + 0.4) * 10.0;
+        let expected = xsOf(ViewStage.frame(env, st, true)) |> List.map(x -> cx + (x - cx) * 1.05 + drift);
+        let actual = xsOf(ViewStage.titleFrame(env, st));
+        Assert.assertTrue(List.length(expected) == List.length(actual) and List.zip(expected, actual) |> List.forAll(match (e, a) -> TestKit.near(e, a)))
 
     // ══ GameView.backdrop ══
 
     @Test
-    def testGamePaintedBackdropIsDrawn(): Unit \ {Assert, Fs.FileRead} =
+    def testGamePaintedBackdropIsDrawnInTheCurrentBand(): Unit \ {Assert, Fs.FileRead} =
         let r = res();
-        let st = applied(r, 0.0, "bg", photoAt(r, 1) :: "grade=${grade(r)}" :: "transition=cut" :: Nil, Stage.empty());
-        let items = ViewStage.backdropsWith(marker(r), _ -> Layout.screen(Layout.Fit.Regular), envOf(r, 5.0), st);
-        Assert.assertEq(expected = View.zBackdropShot() + 1 :: Nil, zOfBox(items, 1000.0))
+        let st = bgTo(r, 0.0, photoAt(r, 1) :: "grade=${grade(r)}" :: "transition=cut" :: Nil, Stage.empty());
+        Assert.assertEq(expected = View.zBackdropShot() + 1 :: Nil, zOfBox(ViewStage.backdropsUsing(marker(r), screenArea(), envOf(r, 5.0), st), 1000.0))
 
     @Test
     def testWithoutAGamePictureTheStillIsDrawn(): Unit \ {Assert, Fs.FileRead} =
         let r = res();
-        let items = ViewStage.backdropsWith(noPaint(), _ -> Layout.screen(Layout.Fit.Regular), envOf(r, 5.0), firstShown(r));
+        let items = ViewStage.backdropsUsing(noPaint(), screenArea(), envOf(r, 5.0), firstShown(r));
         Assert.assertTrue(items |> List.exists(p -> match p#item {
             case Render.Item.Shader(_) => true
             case _                     => false
         }))
 
     @Test
-    def testTemplateBackdropsAskTheGameAndFallBackToTheStill(): Unit \ {Assert, Fs.FileRead} =
-        // テンプレートの GameView.backdrop は何も描かないので、backdropsIn は描かない口を渡した時と同じ。
-        let r = res();
-        let area = (_: Option[Float64]) -> Layout.screen(Layout.Fit.Regular);
-        let env = envOf(r, 5.0);
-        Assert.assertEq(expected = xsOf(ViewStage.backdropsWith(noPaint(), area, env, firstShown(r))), xsOf(ViewStage.backdropsIn(area, env, firstShown(r))))
-
-    @Test
     def testTemplateTransitionsFadeTheGamePicture(): Unit \ {Assert, Fs.FileRead} =
         // テンプレートの fade の途中は、前の背景（写真 0 番 = x 2000）と今の背景（写真 1 番 = x 1000）の両方を描く。
         let r = res();
-        let st = applied(r, 1.0, "bg", photoAt(r, 1) :: "transition=fade" :: "time=2" :: Nil, firstShown(r));
-        let xs = xsOf(ViewStage.backdropsWith(marker(r), _ -> Layout.screen(Layout.Fit.Regular), envOf(r, 2.0), st));
+        let st = bgTo(r, 1.0, photoAt(r, 1) :: "transition=fade" :: "time=2" :: Nil, firstShown(r));
+        let xs = xsOf(ViewStage.backdropsUsing(marker(r), screenArea(), envOf(r, 2.0), st));
         Assert.assertTrue(List.memberOf(1000.0, xs) and List.memberOf(2000.0, xs))
 
     // ══ GameCommands.backdropSwitch ══
 
     @Test
     def testGameOwnedSwitchWaitsForItsSeconds(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        Assert.assertEq(expected = Ok(Out.Wait(3.0) :: Nil), ownedOuts(r, walk(3.0), false))
+        Assert.assertEq(expected = Ok(Out.Wait(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
 
     @Test
     def testInstantDoesNotAskTheGame(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        Assert.assertEq(expected = Ok(Nil), ownedOuts(r, walk(3.0), true))
+        Assert.assertEq(expected = Ok(Nil), ownedBy(res(), walk(3.0), true, Nil) |> Result.map(snd))
 
     @Test
-    def testTheTemplateDoesNotOwnTheSwitch(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        let st = applied(r, 1.0, "bg", photoAt(r, 1) :: Nil, firstShown(r));
-        Assert.assertTrue(Option.isEmpty(st#switch#game))
+    def testWithoutTheGameTheSwitchIsTheScripts(): Unit \ {Assert, Fs.FileRead} =
+        let st = ownedBy(res(), noSwitch(), false, "transition=slide" :: Nil) |> Result.map(fst) |> Result.getWithDefault(Stage.empty());
+        Assert.assertEq(expected = (true, BackdropDoc.Transition.Slide), (Option.isEmpty(st#switch#game), st#switch#transition))
 
     @Test
     def testGameOwnedSwitchDrawsOnlyTheNewBackdrop(): Unit \ {Assert, Fs.FileRead} =
-        // ゲームが持つ切り替えの途中は、前の背景（x 2000）を重ねず、今の背景（x 1000）だけを濃さ 1 で描く。
+        // ゲームが持つ切り替えの途中は、前の背景（x 2000）を重ねず、今の背景（x 1000）だけを描く。
         let r = res();
-        let st = ownedStage(r, walk(3.0));
-        let xs = xsOf(ViewStage.backdropsWith(marker(r), _ -> Layout.screen(Layout.Fit.Regular), envOf(r, 2.0), st));
+        let xs = xsOf(ViewStage.backdropsUsing(marker(r), screenArea(), envOf(r, 2.0), ownedStage(r, Nil)));
         Assert.assertEq(expected = (true, false), (List.memberOf(1000.0, xs), List.memberOf(2000.0, xs)))
 
     @Test
-    def testGameOwnedSwitchRingsItsSoundsOnTheStoryClock(): Unit \ {Assert, Fs.FileRead} =
-        // 1.0 秒に始めた切り替えの音（0 秒と 1.5 秒）を、物語の時刻 0.5〜1.0 と 1.0〜2.0 と 2.0〜3.0 で分けて出す。
-        let st = ownedStage(res(), walk(3.0));
-        let between = (a, b) -> Stage.gameSwitchSoundsBetween(t(a), t(b), st);
-        Assert.assertEq(expected = ("se_a" :: Nil, Nil, "se_b" :: Nil), (between(0.5, 1.0), between(1.0, 2.0), between(2.0, 3.0)))
+    def testGameOwnedPanDoesNotSlideTheBackdrop(): Unit \ {Assert, Fs.FileRead} =
+        // 台本が transition=pan でも、ゲームが持つ間は今の背景を横へずらさない（印は x 1000 のまま）。
+        let r = res();
+        let xs = xsOf(ViewStage.backdropsUsing(marker(r), screenArea(), envOf(r, 2.0), ownedStage(r, "transition=pan" :: "time=0.8" :: Nil)));
+        Assert.assertEq(expected = (true, true), (List.memberOf(1000.0, xs), xs |> List.forAll(x -> x == 1000.0 or x <= 0.0)))
 
     @Test
-    def testSkippingFinishesTheGameOwnedSwitch(): Unit \ {Assert, Fs.FileRead} =
-        let st = Stage.withGameSwitchFinished(ownedStage(res(), walk(3.0)));
-        Assert.assertTrue(TestKit.near(1.0, Stage.fadeProgress(t(1.5), st)))
+    def testGameOwnedBlackDoesNotDarkenTheWorld(): Unit \ {Assert, Fs.FileRead} =
+        // 台本が transition=black でも、ゲームが持つ間は暗転の箱（world の背景より手前の Box）を出さない。
+        let r = res();
+        let st = ownedStage(r, "transition=black" :: Nil);
+        let veils = ViewStage.frame(envOf(r, 2.5), st, true) |> List.filter(p -> match p#item {
+            case Render.Item.Box(b) => b#zIndex >= View.zWorldStride()
+            case _                  => false
+        });
+        Assert.assertEq(expected = 0, List.length(veils))
 
-    /// 写真 0 番から 1 番へ、1.0 秒に switchOf で替えた時の出来事。
-    def ownedOuts(r: Res.Res, switchOf: (Commands.Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch], instant: Bool): Result[String, List[Out]] =
-        ownedBy(r, switchOf, instant) |> Result.map(snd)
+    @Test
+    def testGameOwnedCutKeepsTheGamesSeconds(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertTrue(TestKit.near(3.0, ownedStage(res(), "transition=cut" :: Nil)#fadeSeconds))
 
-    def ownedStage(r: Res.Res, switchOf: (Commands.Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch]): Stage.Stage =
-        ownedBy(r, switchOf, false) |> Result.map(fst) |> Result.getWithDefault(Stage.empty())
+    @Test
+    def testGameOwnedSwitchSoundsAreCutByTheStoryClock(): Unit \ {Assert, Fs.FileRead} =
+        // 1.0 秒に始めた切り替えの音（0.2 秒と 1.5 秒）を、物語の時刻 0.5〜1.5 と 1.5〜2.0 と 2.0〜3.0 で分けて出す。
+        let st = ownedStage(res(), Nil);
+        let between = (a, b) -> Stage.gameSwitchSoundsBetween(t(a), t(b), st);
+        Assert.assertEq(expected = ("se_a" :: Nil, Nil, "se_b" :: Nil), (between(0.5, 1.5), between(1.5, 2.0), between(2.0, 3.0)))
 
-    def ownedBy(r: Res.Res, switchOf: (Commands.Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch], instant: Bool):
-            Result[String, (Stage.Stage, List[Out])] =
-        let c = Commands.bgWith(switchOf);
-        let cmd = command("bg", photoAt(r, 1) :: Nil);
-        forM (args <- YarnCommands.parse(c#spec, cmd); done <- c#apply({ instant = instant | ctxAt(r, 1.0) }, args, firstShown(r))) yield done
+    // ══ World を通す（Silent とスキップの instant・歩く間の待ちと音） ══
 
-    // ══ <<tween game.<鍵>>> ══
+    /// ctx#instant を game.instant（1 か 0）に書く命令。
+    def probe(): Commands.Command[Stage.Stage] =
+        { spec = YarnCommands.spec("probe", "instant を書く", Nil), timing = Commands.Timing.Instant,
+          apply = (ctx, _, st) -> Ok(({ props = PropertyTween.setNum(PropertyTween.numKey("game.instant"), if (ctx#instant) 1.0 else 0.0, ctx#now, 0.0, st#props) | st }, Nil)),
+          needs = Commands.noAssets }
+
+    def probed(r: Res.Res, replay: Commands.Replay): Float64 =
+        Commands.executeUsing(probe() :: Nil, replay, ctxAt(r, 0.0), command("probe", Nil), Stage.empty())
+            |> Result.map(match (st, _) -> PropertyTween.numEnd(PropertyTween.numKey("game.instant"), -1.0, st#props)) |> Result.getWithDefault(-1.0)
+
+    @Test
+    def testSilentReplayRaisesInstant(): Unit \ {Assert, Fs.FileRead} =
+        let r = res();
+        Assert.assertEq(expected = (1.0, 0.0), (probed(r, Commands.Replay.Silent), probed(r, Commands.Replay.Live)))
+
+    @Test
+    def testSkippingRaisesInstant(): Unit \ {Assert, Fs.FileRead} =
+        let r = res();
+        let w = begun(r);
+        let instantWhen = (mode: World.Playback) -> World.readOf(w) |> Option.map(rd -> WorldRead.ctxOf(r, { playback = mode | rd }, w)#instant);
+        Assert.assertEq(expected = (Some(true), Some(false)), (instantWhen(World.Playback.Skip), instantWhen(World.Playback.Manual)))
+
+    /// 読み始めた所で、ゲームが持つ 3 秒の切り替えを当て、明けたら出す台詞 1 行（.yarn の 99 行目）を預けた World。
+    def walking(r: Res.Res): World.World =
+        let w = begun(r);
+        let line = { speaker = "", text = "歩いた後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } };
+        World.mapRead(rd -> {
+            let c = Commands.bgUsing(walk(3.0));
+            let stage = YarnCommands.parse(c#spec, command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)) |> Result.toOption
+                |> Option.flatMap(a -> c#apply({ instant = false | WorldRead.ctxOf(r, rd, w) }, a, rd#stage) |> Result.toOption) |> Option.map(fst)
+                |> Option.getWithDefault(rd#stage);
+            { stage = stage, pause = Some({ until = Clock.after(3.0, World.now(w)), rest = (YarnRunner.Event.Line(line), 0) :: Nil, last = None }) | rd }
+        }, w)
+
+    def cuesOf(events: List[World.Event]): List[String] = events |> List.filterMap(e -> match e {
+        case World.Event.Cue(name) => Some(name)
+        case _                     => None
+    })
+
+    def stepHearing(r: Res.Res, dt: Float64, w: World.World): (World.World, List[String]) =
+        let (next, events) = Emit.collect(() -> WorldRead.step(r, dt, TestKit.tickClocks(r, dt, w)));
+        (next, cuesOf(events))
+
+    @Test
+    def testSkippingAWalkFinishesIt(): Unit \ {Assert, Fs.FileRead} =
+        // スキップで歩きの待ちを飛ばすと、切り替えも終わりの形になる（前の背景を持たない）。
+        let r = res();
+        let skipped = World.mapRead(rd -> { playback = World.Playback.Skip | rd }, walking(r));
+        let after = TestKit.stepBy(r, 0.01, skipped);
+        Assert.assertEq(expected = Some(true), World.readOf(after) |> Option.map(rd -> Option.isEmpty(rd#stage#under) and Option.isEmpty(rd#pause)))
+
+    @Test
+    def testWalkSoundRingsOnceOnTheStoryClock(): Unit \ {Assert, Fs.FileRead} =
+        // 0.2 秒の音は、最初の 0.5 秒のフレームで 1 回だけ鳴り、次の 0.5 秒では鳴らない。
+        let r = res();
+        let (w1, first) = stepHearing(r, 0.5, walking(r));
+        let (_, second) = stepHearing(r, 0.5, w1);
+        Assert.assertEq(expected = ("se_a" :: Nil, Nil), (first, second))
+
+    @Test
+    def testWalkSoundWaitsWhileAScreenIsOpen(): Unit \ {Assert, Fs.FileRead} =
+        // 画面（ログ）を開いている間は物語の時計が止まるので、歩きの音は鳴らない。
+        let r = res();
+        let opened = TestKit.quiet(() -> WorldLog.openLog(walking(r)));
+        let (_, heard) = stepHearing(r, 2.0, opened);
+        Assert.assertEq(expected = Nil, heard)
+
+    @Test
+    def testTheNextLineWaitsUntilTheWalkEnds(): Unit \ {Assert, Fs.FileRead} =
+        // 歩いている間は押しても次の台詞へ進まず、3 秒の後に待ちが明ける。
+        let r = res();
+        let w = walking(r);
+        let pressed = TestKit.advance(r, TestKit.stepBy(r, 1.0, w));
+        let ended = TestKit.stepBy(r, 2.5, pressed);
+        Assert.assertEq(expected = (TestKit.placeOf(w), false, true),
+                        (TestKit.placeOf(pressed), World.readOf(pressed) |> Option.exists(rd -> Option.isEmpty(rd#pause)), World.readOf(ended) |> Option.exists(rd -> Option.isEmpty(rd#pause))))
+
+    // ══ <<tween 鍵>> ══
 
     @Test
     def testTweenMovesAGameKeyOverTime(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        let st = applied(r, 0.0, "tween", "game.lair.arrive" :: "1" :: "time=2" :: Nil, Stage.empty());
+        let st = applied(res(), 0.0, "tween", "lair.arrive" :: "1" :: "time=2" :: Nil, Stage.empty());
         Assert.assertTrue(TestKit.near(0.5, PropertyTween.numAt(t(1.0), PropertyTween.numKey("game.lair.arrive"), 0.0, st#props)))
 
     @Test
     def testTweenSettlesAtItsEnd(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        let st = Stage.settle(applied(r, 0.0, "tween", "game.lair.arrive" :: "1" :: "time=2" :: Nil, Stage.empty()));
+        let st = Stage.settle(applied(res(), 0.0, "tween", "lair.arrive" :: "1" :: "time=2" :: Nil, Stage.empty()));
         Assert.assertTrue(TestKit.near(1.0, PropertyTween.numAt(t(0.0), PropertyTween.numKey("game.lair.arrive"), 0.0, st#props)))
 
     @Test
-    def testTweenRefusesKeysOutsideGame(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        Assert.assertTrue(Result.isErr(Commands.execute(Commands.Replay.Live, ctxAt(r, 0.0), command("tween", "camera.zoom" :: "2" :: Nil), Stage.empty())))
+    def testTweenRefusesAWrittenGamePrefix(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertTrue(Result.isErr(Commands.execute(Commands.Replay.Live, ctxAt(res(), 0.0), command("tween", "game.lair.arrive" :: "1" :: Nil), Stage.empty())))
 
     // ══ Commands.applyText ══
 
@@ -237,31 +328,24 @@ mod TestGameHooks {
 
     // ══ GameView.hud・GameView.objects ══
 
-    @Test
-    def testGameHudIsPutInItsBand(): Unit \ {Assert, Fs.FileRead} =
+    def hudZs(band: View.HudBand): List[Int32] \ Fs.FileRead =
         let r = res();
-        let read = World.readOf(begun(r));
-        let hud = (_: View.Env, _: World.Read) -> View.at(0.0, 0.0, RawDraw.box({ x = 1.0, y = 1.0 }, { r = 1.0, g = 1.0, b = 1.0 }, 3)) :: Nil;
-        let zs = read |> Option.map(rd -> View.gameHudOf(hud, envOf(r, 0.0), rd) |> List.map(p -> ViewStage.zOf(p#item))) |> Option.getWithDefault(Nil);
-        Assert.assertEq(expected = View.zGameHud() + 3 :: Nil, zs)
+        let hud = (_: View.Env, _: World.Read) -> (band, View.at(0.0, 0.0, RawDraw.box({ x = 1.0, y = 1.0 }, { r = 1.0, g = 1.0, b = 1.0 }, 3))) :: Nil;
+        World.readOf(begun(r)) |> Option.map(rd -> View.gameHudUsing(hud, envOf(r, 0.0), rd) |> List.map(p -> ViewStage.zOf(p#item))) |> Option.getWithDefault(Nil)
 
     @Test
-    def testTemplateHasNoGameHud(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        let read = World.readOf(begun(r));
-        Assert.assertEq(expected = Some(0), read |> Option.map(rd -> List.length(GameView.hud(envOf(r, 0.0), rd))))
+    def testHudOverTheWindowIsAboveTheText(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = View.zGameHud() + 3 :: Nil, hudZs(View.HudBand.OverWindow))
+
+    @Test
+    def testHudUnderTheWindowIsBelowTheVeil(): Unit \ {Assert, Fs.FileRead} =
+        let zs = hudZs(View.HudBand.UnderWindow);
+        Assert.assertEq(expected = (View.zGameHudUnder() + 3 :: Nil, true), (zs, zs |> List.forAll(z -> z < View.zVeil())))
 
     @Test
     def testGameObjectsAreListedWhileReading(): Unit \ {Assert, Fs.FileRead} =
         let r = res();
         let lamp = (_: View.Env, _: World.Read) -> { id = "lamp", name = "電灯", rect = Layout.screen(Layout.Fit.Regular) } :: Nil;
-        let ids = FlowVideo.objectsWith(lamp, Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
+        let ids = FlowVideo.objectsUsing(lamp, Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
         Assert.assertTrue(List.memberOf("lamp", ids))
-
-    @Test
-    def testTemplateObjectsAreTheGameFreeList(): Unit \ {Assert, Fs.FileRead} =
-        let r = res();
-        let none = (_: View.Env, _: World.Read) -> Nil;
-        let ids = o -> o |> List.map((x: TapeOut.ScreenObject) -> x#id);
-        Assert.assertEq(expected = ids(FlowVideo.objectsWith(none, Layout.Fit.Regular, r, begun(r))), ids(FlowVideo.objectsOf(Layout.Fit.Regular, r, begun(r))))
 }

@@ -58,7 +58,8 @@ mod View {
     /// 頁の幕の上・字の下に置く小物（NVL と縦の画面の頁。幕で小物がくすまないように）。
     pub def zPageProp(): Int32 = 15
     pub def zText(): Int32 = 20
-    /// ゲームの hud の物（GameView.hud）の帯の下端（21..29）。
+    /// ゲームの hud の物（GameView.hud）の帯の下端。UnderWindow は 1..9（文字の枠の覆いより奥）、OverWindow は 21..29（本文の上・選択肢の下）。
+    pub def zGameHudUnder(): Int32 = 1
     pub def zGameHud(): Int32 = 21
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
@@ -99,12 +100,22 @@ mod View {
         let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
         List.flatten(screen :: covered :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
-    /// ゲームの hud の物（GameView.hud）。
-    def gameHud(env: Env, r: World.Read): List[Render.PlacedItem] = gameHudOf(GameView.hud, env, r)
+    /// GameView.hud の物を置く帯。UnderWindow = 文字の枠の覆いより奥（hud の一番奥。カメラと揺れを受けない。画面に掛かる血など）・
+    /// OverWindow = 本文の上・選択肢の下（状態バー・コメント欄など）。
+    pub enum HudBand with Eq {
+        case UnderWindow
+        case OverWindow
+    }
 
-    /// hud が返す物を、本文の上・選択肢の下の帯（zGameHud から 9 段）へ置く（物の中の z 0..8。テストが hud を差し替える）。
-    pub def gameHudOf(hud: (Env, World.Read) -> List[Render.PlacedItem], env: Env, r: World.Read): List[Render.PlacedItem] =
-        hud(env, r) |> List.map(Render.overItem(ViewStage.mapZ(z -> zGameHud() + Int32.max(0, Int32.min(8, z)))))
+    /// ゲームの hud の物（GameView.hud）。
+    def gameHud(env: Env, r: World.Read): List[Render.PlacedItem] = gameHudUsing(GameView.hud, env, r)
+
+    /// hud が返す物を帯ごとの z（帯の下端から 9 段）へ置く（物の中の z 0..8。テストが hud を差し替える）。
+    pub def gameHudUsing(hud: (Env, World.Read) -> List[(HudBand, Render.PlacedItem)], env: Env, r: World.Read): List[Render.PlacedItem] =
+        hud(env, r) |> List.map(match (band, item) -> {
+            let base = if (band == HudBand.UnderWindow) zGameHudUnder() else zGameHud();
+            Render.overItem(ViewStage.mapZ(z -> base + Int32.max(0, Int32.min(8, z))), item)
+        })
 
     /// 頁の幕の上に描く小物（ViewStage.propsOnPage の時だけ）。
     // WhyNot: 小物に文字の枠の薄さ（<<window off time=>>）を掛けない — 消し終えると world の層が小物を濃いまま描くので、薄くなってからぱっと戻る。

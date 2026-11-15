@@ -838,7 +838,7 @@
           ]
         }
       ],
-      "summary": "ゲームの数の値（game. で始まる鍵。GameView が読む）を秒かけて動かす（from = 始まりの値・省くと今の値から。書いたことの無い鍵は 0 から）"
+      "summary": "ゲームの数の値を秒かけて動かす（鍵 lair.arrive は game.lair.arrive。game. は書かない。from = 始まりの値・省くと今の値から。書いたことの無い鍵は 0 から）"
     },
     "window": {
       "params": [

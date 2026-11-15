@@ -4,6 +4,7 @@
 // bin/fge yarn build の check は assets/talk/vocab.json と、隣の vocab.std.json（テンプレートの命令の表 Commands.all()）を合わせて読み、
 // 名前を Doc から集め、コマンドの引数を表で検査する（vocab.json が書くのは Doc のどこを見るかとゲームの命令の表 GameCommands.all() だけ。
 // 書き直すのは make talk-vocab。TestDocs が一致を見る）。vocab.std.json はテンプレートの追随で上書きされる物で、ゲームでは直さない。
+// 決まり: vocab.std.json が持つのは commands だけ。tags・speakers・vars・nodes・nodeRefs はゲームの vocab.json に置く（Doc の場所はゲームごとに違う）。
 //
 //   assets/talk/yukidoke.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ World#dialogue
 mod Talk {

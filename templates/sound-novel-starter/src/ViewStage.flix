@@ -147,7 +147,7 @@ mod ViewStage {
     /// 写真を敷く矩形（実際の画面）: aspect（横÷縦）を書いた写真は、揺れの分だけ大きい画面を覆うように比を保って真ん中に置く
     /// （はみ出しは捨てる。縦に長い still を横の画面でも縦の画面でも真ん中で切り抜く）。書いていない写真は backdropRect。
     // WhyNot: aspect の無い写真も覆う形にしない — 横の画面の 16:9 の写真が今の敷き方（画面に合わせて少し伸ばす）とずれ、描き出しの基準が全部替わる。
-    def photoRect(fit: Layout.Fit): Option[Float64] -> Rect2.Rect2 = aspect -> match aspect {
+    pub def photoRect(fit: Layout.Fit): Option[Float64] -> Rect2.Rect2 = aspect -> match aspect {
         case None    => backdropRect(fit)
         case Some(a) =>
             let w = Layout.width(fit);
@@ -160,12 +160,12 @@ mod ViewStage {
 
     /// 背景を塗る（実際の画面は揺れの分だけはみ出す photoRect、サムネは画面ちょうど）。描く背景は Stage.shownShot（背景が無い間は initial）。
     pub def backdropsIn(areaOf: Option[Float64] -> Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        backdropsWith(GameView.backdrop, areaOf, env, stage)
+        backdropsUsing(GameView.backdrop, areaOf, env, stage)
 
     /// backdropsIn の、ゲームの絵を paint から引く形（テストが差し替える）。
     /// 切り替えの間は、替え方（Stage の switch）ごとに前の背景（under）と今の背景を重ねる・送る・塗り替える。
     /// ゲームが持つ切り替え（switch#game）の間は重ねず、今の背景をそのまま描く（ゲームが under と進みから歩く絵を出す）。
-    pub def backdropsWith(paint: BackdropPainter, areaOf: Option[Float64] -> Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
+    pub def backdropsUsing(paint: BackdropPainter, areaOf: Option[Float64] -> Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
         let base = areaOf(None);
         let ground = View.at(base#position#x, base#position#y, RawDraw.box(base#size, Backdrop.groundColor(), 0));
         let p = Stage.fadeProgress(env#storyNow, stage);
@@ -228,17 +228,19 @@ mod ViewStage {
 
     /// 今の背景を左から p の割合まで塗る（wipe）。ゲームが描いた絵は塗り分けられないので、濃さ p で重ねる。
     def wiped(paint: BackdropPainter, env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage, shot: Option[Stage.Shot], p: Float64): List[Render.PlacedItem] =
-        let masked = (spec, area: Rect2.Rect2) -> {
+        shot |> Option.flatMap(s -> pictureOf(paint, env, stage, s, areaOf)) |> Option.map(match (picture, area) -> wipedPicture(picture, area, p))
+            |> Option.getWithDefault(Nil)
+
+    /// 背景 1 枚を左から p の割合まで塗る（ゲームが描いた絵は塗り分けられないので、濃さ p で重ねる）。
+    def wipedPicture(picture: Picture, area: Rect2.Rect2, p: Float64): List[Render.PlacedItem] = match picture {
+        case Picture.Still(spec) =>
             let edge = area#position#x + area#size#x * p;
             let x0 = area#position#x;
             let y0 = area#position#y;
             let y1 = area#position#y + area#size#y;
             Render.shaderFillMasked(spec, area, ({ x = x0, y = y0 } :: { x = edge, y = y0 } :: { x = edge, y = y1 } :: { x = x0, y = y1 } :: Nil) :: Nil, 1.0, View.zBackdropShot()) :: Nil
-        };
-        shot |> Option.flatMap(s -> pictureOf(paint, env, stage, s, areaOf)) |> Option.map(match (picture, area) -> match picture {
-            case Picture.Still(spec) => masked(spec, area)
-            case Picture.Painted(_)  => placed(picture, area, 0.0, p, View.zBackdropShot())
-        }) |> Option.getWithDefault(Nil)
+        case Picture.Painted(_)  => placed(picture, area, 0.0, p, View.zBackdropShot())
+    }
 
     /// 写真がまだ届いていなければ None（その層は描かず、下の暗い地が見える）。
     def specOf(shot: Stage.Shot, env: View.Env): Option[ShaderDoc.Spec] =
