@@ -575,7 +575,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     // ── Pass ──
 
-    /// RenderTarget.Target.beginTarget の中身。表に無いか形が違えば texture を作り、登録簿に design の大きさで載せて開いた印を立てる。
+    /// RenderTarget.Target.beginTarget の中身。表に無いか形が違えば texture を作り、登録簿に design の大きさで載せ、開いている Pass として控える。
     def beginTarget(paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         if (spec#samples > 1) skip(paint, "MSAA（標本 2 以上は 1 で描く）") else ();

@@ -23,7 +23,7 @@ mod V1Main {
     def drawScene(sc: V1Scenes.Scene): Unit \ Platform.Rendering + RenderTarget.Target + Platform.Window =
         let design = { x = V1Scenes.designW(), y = V1Scenes.designH() };
         if (List.isEmpty(sc#passes)) ()
-        else discard App.Internal.Paint.drawPassPlan(_ -> (), design, Set.empty(), Render.passPlan(sc#passes));
+        else discard App.Internal.Paint.drawPassPlan(_ -> (), design, Set.empty(), { targets = sc#targets | Render.passPlan(sc#passes) });
         let items = sc#items();
         App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None);
         Platform.Window.presentFrame()
@@ -67,6 +67,9 @@ mod V1Main {
                     WebGpuPaint.readFrame(paint, buf);
                     { pixels = buf, submits = WebGpuPaint.submitCount(paint) }
                 });
+                // V1 で描かない物（多角形・mask つきスプライト）を 2 コマ渡す: 名前ごとに 1 回だけ知らせ、誤りを出さずに捨てる。
+                handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
+                handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
                 let result = (shots, gpu.errorCount(), gpu.lastError(), gpu.adapterInfo());
                 gpu.destroy();
                 Ok(result)
@@ -109,7 +112,7 @@ mod V1Main {
         }, Map#{BootFont.name() => BootFont.atlas()});
         { atlases = Ref.fresh(Static, atlases), grow = (_, atlas, _) -> checked_ecast(atlas), missing = Ref.fresh(Static, Set.empty()) }
 
-    /// f の中の Platform の effect と Target を WebGpuPaint で受ける。入力・窓の問いには「何も起きていない」で答え、presentFrame でコマを締める。
+    /// f の中の Platform の effect と Target を WebGpuPaint で受ける。入力・ウィンドウの問いには「何も起きていない」で答え、presentFrame でコマを締める。
     def handle(paint: WebGpuPaint.Paint, fonts: RenderPaint.Fonts,
                f: Unit -> a \ ef): a \ (ef - GlOffscreen.HandledEffects) + IO =
         WebGpuPaint.handleTarget(paint, () ->
