@@ -99,11 +99,6 @@ pub mod EcsTween {
     }
 
     /// 補間カーブ（全て 0→0・1→1 を保つ）。
-    def ease(e: Easing, t: Float64): Float64 = match e {
-        case Easing.Linear    => t
-        case Easing.EaseIn    => t * t
-        case Easing.EaseOut   => t * (2.0 - t)
-        case Easing.EaseInOut => if (t < 0.5) 2.0 * t * t else -1.0 + (4.0 - 2.0 * t) * t
-    }
+    def ease(e: Easing, t: Float64): Float64 = Curve.ease(toEase(e), t)
 
 }

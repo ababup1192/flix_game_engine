@@ -67,11 +67,10 @@ mod TestYarnCommands {
         YarnCommands.spec("shake", "画面を揺らす", Param.erase(strength()) :: Param.erase(device()) :: Nil) ::
         YarnCommands.spec("label", "字を出す", Param.erase(text()) :: Param.erase(note()) :: Nil) :: Nil
 
-    def specNamed(name: String): YarnCommands.Spec =
-        written() |> List.find(s -> YarnCommands.nameOf(s) == name) |> Option.getWithDefault(overlay())
-
     def parsed(name: String, args: List[String]): Result[String, YarnCommands.Args] =
-        YarnCommands.parse(specNamed(name), commandOf(name, args))
+        written() |> List.find(s -> YarnCommands.nameOf(s) == name)
+                  |> Option.toOk("見本の表に <<${name}>> が無い")
+                  |> Result.flatMap(s -> YarnCommands.parse(s, commandOf(name, args)))
 
     // ── 見本 ──
 
@@ -98,6 +97,25 @@ mod TestYarnCommands {
     def testTableSurvivesJson(): Unit \ Assert =
         let back = YarnCommands.fromJson(YarnCommands.toJson(written())) |> Result.map(YarnCommands.toJson);
         Assert.assertEq(expected = Ok(YarnCommands.toJson(written())), back)
+
+    def oneParam(row: Util.Json.Json): Util.Json.Json =
+        Util.Json.Json.JObject(Map#{ "bg" => Util.Json.Json.JObject(Map#{ "params" => Util.Json.Json.JArray(Vector#{ row }) }) })
+
+    def typedRow(typeName: String): Util.Json.Json =
+        Util.Json.Json.JObject(Map#{ "name" => Util.Json.Json.JString("a"), "type" => Util.Json.Json.JString(typeName) })
+
+    /// values の無い choice と ease は表の誤り（go の検査も同じく止める）。
+    @Test
+    def testChoiceAndEaseWithoutValuesAreRejected(): Unit \ Assert =
+        Assert.assertEq(expected = (true, true),
+            (Result.isErr(YarnCommands.fromJson(oneParam(typedRow("choice")))), Result.isErr(YarnCommands.fromJson(oneParam(typedRow("ease"))))))
+
+    /// 型に合わない既定の値は表の誤り。
+    @Test
+    def testDefaultOutsideTheTypeIsRejected(): Unit \ Assert =
+        let row = Util.Json.Json.JObject(Map#{ "name" => Util.Json.Json.JString("a"), "type" => Util.Json.Json.JString("choice"),
+            "values" => Util.Json.Json.JArray(Vector#{ Util.Json.Json.JString("x") }), "default" => Util.Json.Json.JString("y") });
+        Assert.assertTrue(Result.isErr(YarnCommands.fromJson(oneParam(row))))
 
     /// 中身の無い {}（引数を見ないコマンド）は表の一覧に入らない。
     @Test
@@ -187,18 +205,18 @@ mod TestYarnCommands {
 
     def doc(file: String, keys: String): List[YarnCommands.DocRef] = YarnCommands.DocRef.Keys("../" + file, keys) :: Nil
 
-    def item(): Param.Req[String] = Param.name("item", doc("items.json", "items")) |> Param.at(1) |> Param.required
+    def item(): Param.Req[String] = Param.name("item", doc("rpg.items.json", "items")) |> Param.at(1) |> Param.required
     def count(): Param.Req[Float64] = Param.num("count", 1.0, 99.0) |> Param.at(2) |> Param.required
 
     def gameTable(): List[YarnCommands.Spec] =
         let none = name -> YarnCommands.spec(name, name, Nil);
         YarnCommands.spec("quest", "依頼を進める", Param.erase(Param.choice("verb", "accept" :: "defeat" :: "report" :: Nil) |> Param.at(1) |> Param.required) :: Nil) ::
-        YarnCommands.spec("join", "仲間に入れる", Param.erase(Param.name("member", doc("party.json", "members")) |> Param.at(1) |> Param.required) :: Nil) ::
+        YarnCommands.spec("join", "仲間に入れる", Param.erase(Param.name("member", doc("rpg.party.json", "members")) |> Param.at(1) |> Param.required) :: Nil) ::
         YarnCommands.spec("give", "道具を渡す", Param.erase(item()) :: Param.erase(count()) :: Nil) ::
         YarnCommands.spec("take", "道具を減らす", Param.erase(item()) :: Param.erase(count()) :: Nil) ::
         YarnCommands.spec("gold", "お金を足す", Param.erase(Param.num("amount", -99999.0, 99999.0) |> Param.at(1) |> Param.required) :: Nil) ::
-        YarnCommands.spec("shop", "店を開く", Param.erase(Param.name("shop", YarnCommands.DocRef.Path("../shops.json", "goods[].shop") :: Nil) |> Param.at(1)) :: Nil) ::
-        YarnCommands.spec("fight", "戦う", Param.erase(Param.name("foe", doc("foes.json", "foes")) |> Param.at(1) |> Param.required) ::
+        YarnCommands.spec("shop", "店を開く", Param.erase(Param.name("shop", YarnCommands.DocRef.Path("../rpg.shops.json", "goods[].shop") :: Nil) |> Param.at(1)) :: Nil) ::
+        YarnCommands.spec("fight", "戦う", Param.erase(Param.name("foe", doc("rpg.foes.json", "foes")) |> Param.at(1) |> Param.required) ::
                                            Param.erase(Param.name("win", Nil) |> Param.at(2)) :: Nil) ::
         YarnCommands.spec("open", "物を開ける", Param.erase(Param.name("id", Nil) |> Param.at(1) |> Param.required) :: Nil) ::
         YarnCommands.spec("warp", "出口へ移る", Param.erase(Param.name("exit", Nil) |> Param.at(1) |> Param.required) :: Nil) ::
@@ -218,11 +236,13 @@ mod TestYarnCommands {
             Map.get(name, table) |> Option.map(s -> Result.isErr(YarnCommands.parse(s, commandOf(name, args)))) |> Option.getWithDefault(true));
         Assert.assertEq(expected = (13, Nil), (Map.size(table), unread))
 
-    /// 引数を取らないコマンドに引数を書くと断る。
+    /// 引数を取らないコマンドに引数を書くと、取らない事を言って断る。
     @Test
     def testCommandWithoutParamsRejectsArgs(): Unit \ Assert =
-        let inn = gameTable() |> List.find(s -> YarnCommands.nameOf(s) == "inn") |> Option.getWithDefault(overlay());
-        Assert.assertTrue(Result.isErr(YarnCommands.parse(inn, commandOf("inn", "tonight" :: Nil))))
+        let why = gameTable() |> List.find(s -> YarnCommands.nameOf(s) == "inn")
+            |> Option.toOk("inn が無い")
+            |> Result.flatMap(inn -> YarnCommands.parse(inn, commandOf("inn", "tonight" :: Nil)) |> Result.map(_ -> "受けた"));
+        Assert.assertEq(expected = Err("<<inn>> は引数を取らない（t.yarn:1）"), why)
 
     // ── Curve.Ease ──
 
@@ -241,6 +261,13 @@ mod TestYarnCommands {
         Assert.assertEq(expected = (0.5, 0.5, 0.25, 0.75, 0.125, 0.5, 0.5, 0.5),
             (at(Curve.Ease.Linear), at(Curve.Ease.SmoothStep), at(Curve.Ease.InQuad), at(Curve.Ease.OutQuad),
              at(Curve.Ease.InCubic), at(Curve.Ease.InOutCubic), at(Curve.Ease.InOutSine), at(Curve.Ease.InOutBounce)))
+
+    /// Back は出だしで 0 を下回り（InBack(0.2) < 0）、終わりで 1 を超える（OutBack(0.8) > 1）。Elastic も 1 を超え、OutBounce は 1/2.75 で 1 に着き、1.5/2.75 で 0.75 まで跳ね返る。
+    @Test
+    def testBackOvershootsAndBounceLands(): Unit \ Assert =
+        Assert.assertEq(expected = (true, true, true, true),
+            (Curve.ease(Curve.Ease.InBack, 0.2) < 0.0, Curve.ease(Curve.Ease.OutBack, 0.8) > 1.0,
+             Curve.ease(Curve.Ease.OutElastic, 0.1) > 1.0, near(Curve.ease(Curve.Ease.OutBounce, 1.0 / 2.75), 1.0) and near(Curve.ease(Curve.Ease.OutBounce, 1.5 / 2.75), 0.75)))
 
     /// 0〜1 の外は端の値。
     @Test

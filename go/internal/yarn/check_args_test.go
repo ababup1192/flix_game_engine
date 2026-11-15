@@ -118,7 +118,7 @@ func TestQuotedCommandArgsStayTogether(t *testing.T) {
 		t.Errorf("args %q", got)
 	}
 	_, ps := buildText(t, "title: A\n---\n<<say \"open>>\n===\n", nil)
-	if got := messages(ps); len(ps) != 1 || !strings.Contains(got, "t.yarn:3: << を閉じる >> が無い") {
+	if got := messages(ps); len(ps) != 1 || !strings.Contains(got, `t.yarn:3: "…" が閉じていない`) {
 		t.Errorf("got %s", got)
 	}
 }
@@ -129,6 +129,10 @@ func TestBrokenArgTableStops(t *testing.T) {
 		`{"bg": {"params": [{"name": "a", "type": "colour"}]}}`,
 		`{"bg": {"params": [{"name": "a", "type": "name", "pos": 1}, {"name": "b", "type": "name", "pos": 3}]}}`,
 		`{"bg": {"params": [{"name": "a", "type": "num"}]}}`,
+		`{"bg": {"params": [{"name": "a", "type": "choice"}]}}`,
+		`{"bg": {"params": [{"name": "a", "type": "ease"}]}}`,
+		`{"bg": {"params": [{"name": "a", "type": "choice", "values": ["x"], "default": "y"}]}}`,
+		`{"bg": {"params": [{"name": "a", "type": "num", "min": 0, "max": 1, "default": "2"}]}}`,
 	} {
 		if _, _, err := ParseVocab([]byte(`{"version": 2, "commands": `+body+`}`), "vocab.json", "."); err == nil {
 			t.Errorf("止まらない: %s", body)
@@ -145,5 +149,24 @@ func TestEmptyButPresentFromIsSilent(t *testing.T) {
 	v, notes := loadV2(t, root)
 	if len(notes) != 0 || v.skip["vars"] || v.skip["nodeRefs"] {
 		t.Errorf("notes %v skip %v", notes, v.skip)
+	}
+}
+
+// path で同じ名前が何度も拾われても、近い名前の案は 1 度ずつ。
+func TestRefHintListsEachNameOnce(t *testing.T) {
+	vocab := strings.Replace(refVocab, `{"doc": "../novel.backdrops.json", "keys": "photos"}`, `{"doc": "../novel.backdrops.json", "path": "goods[].shop"}`, 1)
+	root := writeGame(t, map[string]string{"assets/talk/vocab.json": vocab,
+		"assets/novel.backdrops.json": `{"goods": [{"shop": "mine"}, {"shop": "mine"}, {"shop": "mine"}], "volumes": {}}`})
+	v, _ := loadV2(t, root)
+	_, ps := BuildProgram([]string{"t.yarn"}, []string{"title: Station\n---\n<<bg mini>>\n===\n"}, v, "vocab.json")
+	if got := messages(ps); !strings.Contains(got, "（もしかして: mine）") {
+		t.Errorf("got %s", got)
+	}
+}
+
+// 引数を取らないコマンドに引数を書くと、取らない事を言う。
+func TestCommandWithoutParamsSaysSo(t *testing.T) {
+	if msg := CheckArgs("inn", &CommandSpec{Params: []ParamSpec{}}, []string{"tonight"}); msg != "<<inn>> は引数を取らない" {
+		t.Errorf("got %q", msg)
 	}
 }

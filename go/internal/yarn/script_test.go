@@ -402,3 +402,24 @@ func TestForTapeWithoutYarnIsEmpty(t *testing.T) {
 		t.Fatalf("%v %q %v", g, md, err)
 	}
 }
+
+// 条件と <<set>> の〔〕は変数を「表示名（$名前）」で書き、台詞の {$x} はそのまま。--diff は何も直さなければ空で、
+// 表示名の付いた条件を書き替えると「式を直す」と言う（表示名を .yarn へ戻さない）。
+func TestScriptNamesVariablesAndDiffSurvives(t *testing.T) {
+	text := "title: A\n---\n<<declare $closeness = 0>>\n<<set $closeness to 1>>\n<<if $closeness >= 2>>\nwitch: {$closeness} だね\n<<endif>>\n===\n"
+	prog, _ := buildText(t, text, nil)
+	names := map[string]string{"witch": "魔女"}
+	base := BuildScript(ScriptSource{Prog: prog, Comments: NodeComments(text), Names: names,
+		Notes: Notes{Comment: CommentNotes(text)}, Vars: map[string]string{"$closeness": "親しさ"}})
+	md := RenderScript(base)
+	if !strings.Contains(md, "〔もし 親しさ（$closeness） >= 2〕") || !strings.Contains(md, "〔親しさ（$closeness） を 1 にする〕") || !strings.Contains(md, "{$closeness} だね") {
+		t.Fatalf("got\n%s", md)
+	}
+	if got := DiffScript(base, md, names, "／"); !strings.Contains(got, "直しはありません。") {
+		t.Errorf("直さない原稿で差分: %s", got)
+	}
+	edited := strings.Replace(md, "親しさ（$closeness） >= 2", "親しさ（$closeness） >= 3", 1)
+	if got := DiffScript(base, edited, names, "／"); !strings.Contains(got, "条件の直し") || strings.Contains(got, "Yarn の行: `親しさ") {
+		t.Errorf("got %s", got)
+	}
+}

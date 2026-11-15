@@ -497,6 +497,10 @@ func commandEnd(content string) int {
 
 func (p *parser) command(no int, content string) *Stmt {
 	close := commandEnd(content)
+	if close < 0 && quoteLeftOpen(content) {
+		p.fail(no, `"…" が閉じていない（>> まで "…" の中に入っている。中の " は \" と書く）`)
+		return nil
+	}
 	if close < 0 {
 		p.fail(no, "<< を閉じる >> が無い（コマンドは 1 行で書く）")
 		return nil
@@ -547,6 +551,20 @@ func (p *parser) command(no int, content string) *Stmt {
 		return &Stmt{Kind: "stop", Line: no, Tags: tags}
 	}
 	return &Stmt{Kind: "command", Line: no, Name: name, Args: args, Tags: tags}
+}
+
+// quoteLeftOpen は << で始まる字の "…" が行の終わりまで閉じていないか（数え方は commandEnd と同じ）。
+func quoteLeftOpen(content string) bool {
+	inString := false
+	for i := 2; i < len(content); i++ {
+		switch {
+		case inString && content[i] == '\\':
+			i++
+		case content[i] == '"':
+			inString = !inString
+		}
+	}
+	return inString
 }
 
 // commandFields はコマンドの中を空白で割る（"…" は空白を含んでも 1 つ。字は " ごと残し、外すのは読む側）。

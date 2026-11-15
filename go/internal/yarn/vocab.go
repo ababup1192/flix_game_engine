@@ -159,8 +159,10 @@ func (r *docReader) resolveSpecs(specs map[string]*CommandSpec) ([]string, error
 				}
 				*f.set = map[string]bool{}
 				for _, x := range fs {
-					(*f.set)[x.name] = true
-					*f.list = append(*f.list, x.name)
+					if !(*f.set)[x.name] {
+						(*f.set)[x.name] = true
+						*f.list = append(*f.list, x.name)
+					}
 				}
 			}
 		}

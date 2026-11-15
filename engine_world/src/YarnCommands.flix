@@ -52,7 +52,7 @@ pub mod YarnCommands {
     /// Field の中身。
     type alias Row = { name = String, pos = Int32, kind = Kind, need = Need, words = List[String], names = List[DocRef], shape = Shape, group = String }
 
-    /// 型付きの引数の取っ手。decode は 1 つの値の字を読む（parse を通った字なら Some）。
+    /// 型付きの引数のハンドル。decode は 1 つの値の字を読む（parse を通った字なら Some）。
     enum Handle[_: Type, t: Type]({ field = Field, decode = String -> Option[t], fallback = Option[t] })
 
     /// コマンド 1 つの引数の表。
@@ -106,6 +106,16 @@ pub mod YarnCommands {
         else if (List.length(List.distinct(names)) != List.length(names)) Some("<<${s#name}>> に同じ名前の引数が 2 つある")
         else if (List.exists(n -> n == "", names)) Some("<<${s#name}>> に名前の無い引数がある")
         else if (positions != wanted or List.length(positions) > maxPositional()) Some("<<${s#name}>> の位置の番号は 1 から順に ${maxPositional()} つまで")
+        else rows |> List.filterMap(rowProblemOf(s#name)) |> List.head
+
+    /// 引数 1 つの表の誤り: 値の一覧の無い choice と、型に合わない既定の値。
+    def rowProblemOf(command: String, r: Row): Option[String] =
+        let badDefault = match r#need {
+            case Need.Defaulted(d) => not List.memberOf(d, r#words) and List.isEmpty(r#names) and not fitsKind(r#kind, d)
+            case _                 => false
+        };
+        if (r#kind == Kind.Choice(Nil)) Some("<<${command}>> の ${r#name}（choice）に values が要る")
+        else if (badDefault) Some("<<${command}>> の ${r#name} の既定の値が型に合わない（${expectedOf(r)}）")
         else None
 
     // ── 読む ──
@@ -153,8 +163,11 @@ pub mod YarnCommands {
         let chars = String.toList(raw);
         let n = List.length(chars);
         if (n >= 2 and String.endsWith(suffix = "\"", raw))
-            unescape(List.slice(start = 1, end = n - 1, chars), Nil) |> Option.toOk("<<${command}>> の \"…\" が閉じていない: ${raw}")
-        else Err("<<${command}>> の \"…\" が閉じていない: ${raw}")
+            unescape(List.slice(start = 1, end = n - 1, chars), Nil) |> Option.toOk(unclosed(command, raw))
+        else Err(unclosed(command, raw))
+
+    def unclosed(command: String, raw: String): String =
+        "<<${command}>> の \"…\" が閉じていないか、中に裸の \" がある（中の \" は \\\" と書く）: ${raw}"
 
     def unescape(chars: List[Char], acc: List[Char]): Option[String] = match chars {
         case Nil              => Some(List.reverse(acc) |> List.join(""))
@@ -175,7 +188,8 @@ pub mod YarnCommands {
         let seen = pairs |> List.map(fst);
         let twice = firstRepeat(seen, Set.empty());
         let unknown = keyed |> List.map(fst) |> List.find(k -> not Set.memberOf(k, known));
-        if (List.length(positional) > List.length(slots))
+        if (not List.isEmpty(positional) and List.isEmpty(rows)) Err("<<${command}>> は引数を取らない")
+        else if (List.length(positional) > List.length(slots))
             Err("<<${command}>> の位置の引数は ${List.length(slots)} つまで（${List.length(positional)} つ書いてある。ほかは key=value で書く）")
         else match (unknown, twice) {
             case (Some(k), _)    => Err("<<${command}>> に知らない鍵 ${k}${Suggest.hint(k, names)}")
@@ -399,7 +413,10 @@ pub mod YarnCommands {
             case "name"   => Map.get("ref", obj) |> Option.map(refsFromJson(label)) |> Option.getWithDefault(Ok(Nil)) |> Result.map(Kind.Name)
             case "choice" => Ok(Kind.Choice(Map.get("values", obj) |> Option.map(stringsOf) |> Option.getWithDefault(Nil)))
             case "flag"   => Ok(Kind.Flag)
-            case "ease"   => Ok(Kind.Ease)
+            case "ease"   =>
+                // WhyNot: values の無い ease を受けない — go の検査は values で名前を照らすので、受けると build と実行時の答えが割れる
+                if (Map.get("values", obj) |> Option.map(stringsOf) |> Option.getWithDefault(Nil) |> List.isEmpty) Err("${label} の ease に values が要る")
+                else Ok(Kind.Ease)
             case other    => Err("${label} の type ${other} を知らない（num・time・name・choice・flag・ease）")
         }
 

@@ -66,6 +66,12 @@ func (c *CommandSpec) validate(name string) error {
 		if p.Type == "num" && (p.Min == nil || p.Max == nil) {
 			return fmt.Errorf("語彙の commands の %s の引数 %s に min と max が要る", name, p.Name)
 		}
+		if (p.Type == "choice" || p.Type == "ease") && len(p.Values) == 0 {
+			return fmt.Errorf("語彙の commands の %s の引数 %s（%s）に values が要る", name, p.Name, p.Type)
+		}
+		if p.Default != nil && len(p.OrNames) == 0 && !contains(p.OrWords, *p.Default) && !fitsArgType(&p, *p.Default) {
+			return fmt.Errorf("語彙の commands の %s の引数 %s の既定の値 %s が型に合わない（%s）", name, p.Name, *p.Default, expectedArg(&p))
+		}
 		if p.Pos > 0 {
 			positions = append(positions, p.Pos)
 		}
@@ -88,7 +94,7 @@ func CheckArgs(command string, spec *CommandSpec, args []string) string {
 		if strings.HasPrefix(raw, `"`) {
 			v, ok := unquoteArg(raw)
 			if !ok {
-				return fmt.Sprintf("<<%s>> の \"…\" が閉じていない: %s", command, raw)
+				return fmt.Sprintf("<<%s>> の \"…\" が閉じていないか、中に裸の \" がある（中の \" は \\\" と書く）: %s", command, raw)
 			}
 			positional = append(positional, v)
 			continue
@@ -101,7 +107,7 @@ func CheckArgs(command string, spec *CommandSpec, args []string) string {
 		if strings.HasPrefix(value, `"`) {
 			v, ok := unquoteArg(value)
 			if !ok {
-				return fmt.Sprintf("<<%s>> の \"…\" が閉じていない: %s", command, value)
+				return fmt.Sprintf("<<%s>> の \"…\" が閉じていないか、中に裸の \" がある（中の \" は \\\" と書く）: %s", command, value)
 			}
 			value = v
 		}
@@ -119,6 +125,9 @@ func CheckArgs(command string, spec *CommandSpec, args []string) string {
 		}
 	}
 	sort.Slice(slots, func(a, b int) bool { return slots[a].Pos < slots[b].Pos })
+	if len(positional) > 0 && len(spec.Params) == 0 {
+		return fmt.Sprintf("<<%s>> は引数を取らない", command)
+	}
 	if len(positional) > len(slots) {
 		return fmt.Sprintf("<<%s>> の位置の引数は %d つまで（%d つ書いてある。ほかは key=value で書く）", command, len(slots), len(positional))
 	}
