@@ -16,6 +16,37 @@ mod Talk {
     /// シナリオを読む。読めない・壊れている時はノードの無いシナリオ（World が直し方を語る 1 行を出す）。
     pub def load(): Yarn.Program \ Fs.FileRead = Yarn.loadOr(Yarn.empty(), dialoguePath())
 
+    /// ノードの全部の文（選択肢と <<if>> の枝の中身も。書いた順）。
+    pub def statementsOf(node: Yarn.Node): List[Yarn.Statement] = flatten(node#body)
+
+    def flatten(body: List[Yarn.Statement]): List[Yarn.Statement] =
+        body |> List.flatMap(statement -> statement :: flatten(innerOf(statement)))
+
+    def innerOf(statement: Yarn.Statement): List[Yarn.Statement] = match statement {
+        case Yarn.Statement.Choose(choices) => choices |> List.flatMap(choice -> choice#body)
+        case Yarn.Statement.If(branches, _) => branches |> List.flatMap(branch -> branch#body)
+        case _                              => Nil
+    }
+
+    /// 文の .yarn の行（選択肢の並びは最初の選択肢の行）。
+    pub def sourceOf(statement: Yarn.Statement): Option[Yarn.Source] = match statement {
+        case Yarn.Statement.Say(line)         => Some(line#source)
+        case Yarn.Statement.Choose(choices)   => List.head(choices) |> Option.map(choice -> choice#line#source)
+        case Yarn.Statement.Jump(_, source)   => Some(source)
+        case Yarn.Statement.Stop(source)      => Some(source)
+        case Yarn.Statement.Command(command)  => Some(command#source)
+        case Yarn.Statement.Set(_, _, source) => Some(source)
+        case Yarn.Statement.If(_, source)     => Some(source)
+    }
+
+    /// シナリオの全部のコマンド（<<wait>> も）。
+    pub def commandsOf(program: Yarn.Program): List[Yarn.Command] =
+        Yarn.nodeNames(program) |> List.filterMap(name -> Yarn.nodeOf(name, program)) |> List.flatMap(statementsOf)
+            |> List.filterMap(statement -> match statement {
+                case Yarn.Statement.Command(command) => Some(command)
+                case _                               => None
+            })
+
     /// vocab.json から見た Doc のパス（vocab.json は assets/talk/、Doc は assets/ に置く）。
     def fromVocab(docPath: String): String =
         "../" + (String.stripPrefix(substr = "assets/", docPath) |> Option.getWithDefault(docPath))

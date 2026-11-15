@@ -518,7 +518,7 @@ mod TestRules {
         let saves = quiet(() -> WorldSaves.writeSlot(res, page1(), 3, tuned))#saves;
         let back = Saves.fromJson(Saves.fresh(res#kind), Saves.toJson(saves));
         let shape = (whole: Saves.Saves) -> { let s = Saves.rec(whole); (Map.keysOf(s#slots), s#seen, s#serial, s#config#cps, s#config#skipScope, s#config#display,
-                                        Map.valuesOf(s#slots) |> List.map(slot -> (slot#savedAt, slot#place, slot#mark#mode, slot#mark#bookmark#node))) };
+                                        Map.valuesOf(s#slots) |> List.map(slot -> (slot#savedAt, slot#place, Stage.fromSnapshot(slot#mark#stage)#mode, slot#mark#bookmark#node))) };
         Assert.assertEq(expected = shape(saves), shape(back))
 
     @Test
@@ -530,17 +530,24 @@ mod TestRules {
             |> Option.map(bm -> Util.Json.Json.JObject(Map#{ "slots" => Util.Json.Json.JObject(Map#{
                    "0" => Util.Json.Json.JObject(Map#{ "bookmark" => bm, "ambience" => Util.Json.Json.JString("evening") }) }) }))
             |> Option.map(Saves.fromJson(Saves.fresh(res#kind)))
-            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> x#mark#ambience));
+            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> ambienceOfMark(x#mark)));
         Assert.assertEq(expected = Some(Some("amb_evening") :: Nil), read)
+
+    /// 戻れる所の舞台で鳴っている環境音。
+    def ambienceOfMark(mark: Saves.Mark): Option[String] =
+        PropertyTween.nameEnd(Stage.ambienceKey(), Stage.fromSnapshot(mark#stage)#props)
 
     @Test
     def testAmbienceSoundNameWithoutAmbPrefixSurvivesJson(): Unit \ {Assert, Fs.FileRead} =
         // amb_ で始まらない音の名前（rain_loop）の環境音も、セーブの JSON を通してそのまま戻る。
         let res = TestKit.res();
         let saves = WorldRead.slotHere(res, begun(res))
-            |> Option.map(slot -> Saves.withPushed(Saves.Tab.Quick, { mark = { ambience = Some("rain_loop") | slot#mark } | slot }, Saves.fresh(res#kind)));
+            |> Option.map(slot -> {
+                let stage = Stage.withAmbience(Clock.zero(), Some("rain_loop"), Stage.fromSnapshot(slot#mark#stage));
+                Saves.withPushed(Saves.Tab.Quick, { mark = { stage = Stage.snapshotOf(stage) | slot#mark } | slot }, Saves.fresh(res#kind))
+            });
         let read = saves |> Option.map(s -> Saves.fromJson(Saves.fresh(res#kind), Saves.toJson(s)))
-            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> x#mark#ambience));
+            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> ambienceOfMark(x#mark)));
         Assert.assertEq(expected = Some(Some("rain_loop") :: Nil), read)
 
     @Test

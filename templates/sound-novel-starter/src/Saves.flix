@@ -3,11 +3,11 @@
 // 「中身が変わった実機のフレームの後」でだけ（World の saveRev が鍵。テスト・flow・描き出しでは書かない）。
 //
 // セーブの枠は 5 つのページ（Tab）× 6 枠。オートとクイックは「新しい物を先頭に入れ、古い物を後ろへ押し出す」ページ、
-// 1〜3 は人が枠を選んで書くページ。どの枠も中身は「戻れる所」Mark（YarnRunner のブックマークと、前のノードから
-// 持ち越す舞台）と、ロード画面に出す物（場所・話し手・台詞・保存した日時・通し番号）。
+// 1〜3 は人が枠を選んで書くページ。どの枠も中身は「戻れる所」Mark（YarnRunner のブックマークと、その台詞を出した時の
+// 舞台と頁）と、ロード画面に出す物（場所・話し手・台詞・保存した日時・通し番号）。
 // Mark はバックログの行と「戻る」も同じ物を持つ（セーブ・ロード・戻るが 1 つの戻し方 World.restore を通る）。
 mod Saves {
-    use fge::{DocJson, JsonCodec, Log, YarnRunner}
+    use fge::{Clock, DocJson, JsonCodec, Log, YarnRunner}
     use Util.Json.Json
 
     /// World が持つので包む（record のままだと World を取る全 def へ中身が展開される）。
@@ -45,16 +45,13 @@ mod Saves {
         display = Display
     }
 
-    /// 戻れる所 1 つ。bookmark = シナリオの位置、shot / ambience / particles / mode / cast = その時の背景・環境音（project.json の sounds の名前）・
-    /// パーティクル・文章の出し方・立ち絵と小物
-    /// （ブックマークが当て直すのは今のノードの頭からなので、前のノードで始まった物はここから戻す）。
+    /// 戻れる所 1 つ。bookmark = シナリオの位置、stage = その時の舞台（settle した物）、page = その台詞を出した後の頁
+    /// （version 2 のセーブから読んだ枠は None で、戻す時は当て直しで作った頁を使う）。
+    /// 戻す時はブックマークを当て直してバックログを作り、舞台と頁はこの値で置き換える（WorldRead.restore）。
     pub type alias Mark = {
         bookmark = YarnRunner.Bookmark,
-        shot = Option[Stage.Shot],
-        ambience = Option[String],
-        particles = Option[String],
-        mode = Stage.Mode,
-        cast = Cast.Mark
+        stage = Stage.Snapshot,
+        page = Option[Page.Page]
     }
 
     /// セーブデータ 1 つ。place = 場所の名前（背景の写真の label）、speaker / excerpt = その時の話し手と台詞、
@@ -201,19 +198,16 @@ mod Saves {
 
     pub def toJson(saves: Saves): Json =
         let num = x -> Json.JNumber(JsonCodec.floatToBd(x));
-        let text = o -> o |> Option.map(Json.JString) |> Option.getWithDefault(Json.JNull);
         let slot = (s: Slot) -> Json.JObject(Map#{
             "bookmark" => YarnRunner.bookmarkToJson(s#mark#bookmark),
-            "photo" => text(s#mark#shot |> Option.map(shot -> shot#photo)),
-            "grade" => text(s#mark#shot |> Option.map(shot -> shot#grade)),
-            "ambienceSound" => text(s#mark#ambience), "particles" => text(s#mark#particles),
-            "mode" => Json.JString("${s#mark#mode}"), "cast" => Cast.markToJson(s#mark#cast),
+            "stage" => Stage.snapshotToJson(s#mark#stage),
+            "page" => s#mark#page |> Option.map(Page.toJson) |> Option.getWithDefault(Json.JNull),
             "place" => Json.JString(s#place), "speaker" => Json.JString(s#speaker), "excerpt" => Json.JString(s#excerpt),
             "savedAt" => num(Int64.toFloat64(s#savedAt)), "serial" => num(Int32.toFloat64(s#serial)) });
         let r = rec(saves);
         let c = r#config;
         Json.JObject(Map#{
-            "version" => num(2.0),
+            "version" => num(3.0),
             "serial" => num(Int32.toFloat64(r#serial)),
             "slots" => Json.JObject(r#slots |> Map.toList |> List.map(match (i, s) -> (Int32.toString(i), slot(s))) |> List.toMap),
             "seen" => Json.JArray(r#seen |> Set.toList |> List.map(Json.JString) |> List.toVector),
@@ -225,6 +219,18 @@ mod Saves {
                                            "afterChoice" => Json.JString("${c#afterChoice}"),
                                            "display" => Json.JString("${c#display}") })
         })
+
+    /// 枠の舞台。"stage" の鍵（version 3）が無ければ、version 2 の欄（photo・grade・環境音・particles・mode・cast）から作る。
+    def stageOf(obj: Map[String, Json]): Stage.Snapshot = match Map.get("stage", obj) {
+        case Some(j) => Stage.snapshotFromJson(j)
+        case None    =>
+            let text = key -> Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString);
+            let mode = if (text("mode") == Some("Adv")) Stage.Mode.Adv else Stage.Mode.Nvl;
+            { shot = forM (photo <- text("photo"); grade <- text("grade")) yield { photo = photo, grade = grade },
+              mode = mode, cast = Cast.layerOf(Cast.markFromJson(Map.get("cast", obj))) | Stage.empty() }
+                |> Stage.withAmbience(Clock.zero(), ambienceOf(obj)) |> Stage.withParticles(Clock.zero(), text("particles"))
+                |> Stage.snapshotOf
+    }
 
     /// 枠の環境音（project.json の sounds の名前）。ambienceSound の鍵を先に見て、無ければ ambience の短い名前に amb_ を付ける。
     /// WhyNot: ambience の字を音の名前として読まない — その鍵は amb_ を付けない短い名前（evening）で書かれている。
@@ -240,12 +246,7 @@ mod Saves {
         let slotOf = j -> JsonCodec.expectObject(j) |> Option.flatMap(obj -> forM (
                 bookmark <- Map.get("bookmark", obj) |> Option.flatMap(YarnRunner.bookmarkFromJson)
             ) yield {
-                let text = key -> Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString);
-                let mode = if (text("mode") == Some("Adv")) Stage.Mode.Adv else Stage.Mode.Nvl;
-                { mark = { bookmark = bookmark,
-                           shot = forM (photo <- text("photo"); grade <- text("grade")) yield { photo = photo, grade = grade },
-                           ambience = ambienceOf(obj), particles = text("particles"), mode = mode,
-                           cast = Cast.markFromJson(Map.get("cast", obj)) },
+                { mark = { bookmark = bookmark, stage = stageOf(obj), page = Map.get("page", obj) |> Option.flatMap(Page.fromJson) },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),
                   savedAt = Float64.tryToInt64(JsonCodec.floatOr("savedAt", 0.0, obj)) |> Option.getWithDefault(0i64),

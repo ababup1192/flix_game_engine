@@ -445,6 +445,7 @@ mod Controls {
 
     /// 起動時と描き出しとテストが同じ形で読む描く元（Doc とシナリオ）。
     pub def loadRes(): Res.Res \ Fs.FileRead =
+        let dialogue = Talk.load();
         { story = StoryDoc.load(StoryDoc.path()),
           kind = KindDoc.load(KindDoc.path()),
           theme = ThemeDoc.load(ThemeDoc.path()),
@@ -456,7 +457,8 @@ mod Controls {
           cast = CastDoc.load(CastDoc.path()),
           shots = ShotsDoc.load(ShotsDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
-          dialogue = Talk.load(),
+          dialogue = dialogue,
+          commandArgs = Commands.argsTableOf(dialogue),
           missing = Set.empty(),
           scriptEdits = ScriptEdits.none() }
 

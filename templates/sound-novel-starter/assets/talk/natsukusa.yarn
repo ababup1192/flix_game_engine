@@ -7,7 +7,7 @@
 //   演出はコマンドで書く（主の引数は位置・ほかは key=value。全部の一覧は src/Commands.flix の冒頭）:
 //     <<bg 写真 grade=時間帯 time=秒>>  背景の写真を、時間帯の色でぼかして、秒かけて切り替える（写真・時間帯は assets/novel.backdrops.json）
 //     <<window nvl>> / <<window bottom>>  文章を画面いっぱいに積む（小説の頁）/ 下のウィンドウに 1 行ずつ出す
-//     <<window clear>>       NVL の頁をめくる
+//     <<window clear>> / <<window off>>  NVL の頁をめくる / 文字の枠と字を消す（次の台詞・選択肢で戻る）
 //     <<audio ambience 音>>  鳴り続ける環境音を替える（off で止める。音は project.json の sounds の名前）
 //     <<audio se 音>>        効果音を 1 回
 //     <<fx 名>>              画面のパーティクルの演出（fireflies / off）

@@ -4,7 +4,8 @@
 //
 //   <<bg 写真 [grade=時間帯] [time=秒]>>      背景を「写真」（novel.backdrops.json の photos）に替え、秒かけて重ねる（既定 1 秒）。
 //                                              grade（grades）を省くと今の背景の時間帯のまま
-//   <<window nvl|bottom|clear>>               文章を画面いっぱいに積む / 下のウィンドウに 1 行ずつ出す / NVL の頁をめくる
+//   <<window nvl|bottom|clear|off>>           文章を画面いっぱいに積む / 下のウィンドウに 1 行ずつ出す / NVL の頁をめくる /
+//                                              文字の枠と字を消す（次の台詞・選択肢か nvl・bottom で戻る）
 //   <<audio ambience 音|off>>                 鳴り続ける環境音を替える・止める（音は project.json の sounds の名前）
 //   <<audio se 音>>                           効果音を 1 回
 //   <<fx fireflies|off>>                      画面のパーティクルの演出
@@ -15,6 +16,7 @@
 //
 // 書き方は YarnCommands（位置の引数は 2 つまで・ほかは key=value・"…" は空白を含む 1 つの値）。
 // 表に無い名前と引数の誤りは Err を返し、World が 1 行言って舞台はそのまま続ける（シナリオの書き損じで止めない）。
+// 引数はシナリオを読んだ時に 1 回だけ読んで表（ArgsTable。Res が持つ）に置き、毎回の実行では読み直さない。
 // apply が後に残す物は全部 Stage に書く（セーブ・settle・素材待ちが Stage だけを見て済むように）。
 mod Commands {
     use fge::{Clock, Yarn, YarnCommands}
@@ -69,8 +71,31 @@ mod Commands {
 
     def lookup(name: String): Option[Command[Stage.Stage]] = table() |> List.find(c -> YarnCommands.nameOf(c#spec) == name)
 
-    def parsed(command: Yarn.Command): Option[(Command[Stage.Stage], YarnCommands.Args)] =
-        forM (c <- lookup(command#name); args <- YarnCommands.parse(c#spec, command) |> Result.toOption) yield (c, args)
+    // ── 読んだ引数の表 ──
+
+    /// シナリオの全部のコマンドを読んだ結果（鍵は .yarn の「ファイル:行」。表に無い名前のコマンドは入れない）。
+    enum ArgsTableOf(Map[String, (Yarn.Command, Result[String, YarnCommands.Args])])
+
+    /// シナリオを読んだ時に 1 回だけ作る引数の表（Res.withDialogue が作り直す）。
+    pub type alias ArgsTable = ArgsTableOf
+
+    /// program の全部のコマンドを表で読む。
+    pub def argsTableOf(program: Yarn.Program): ArgsTable =
+        let entryOf = (command: Yarn.Command) -> lookup(command#name)
+            |> Option.map(c -> (Yarn.sourceText(command#source), (command, YarnCommands.parse(c#spec, command))));
+        ArgsTableOf.ArgsTableOf(Talk.commandsOf(program) |> List.filterMap(entryOf) |> List.toMap)
+
+    /// command の引数（表に同じ行の同じコマンドがあればそれを使い、無ければここで読む）。
+    // WhyNot: 行の鍵だけで引かない — 台本の差し替えの前に作った表やテストが組んだコマンドは、同じ行に別のコマンドがありうる。
+    def argsOf(table: ArgsTable, c: Command[Stage.Stage], command: Yarn.Command): Result[String, YarnCommands.Args] =
+        let ArgsTableOf.ArgsTableOf(m) = table;
+        match Map.get(Yarn.sourceText(command#source), m) {
+            case Some((seen, args)) if seen#name == command#name and seen#args == command#args => args
+            case _ => YarnCommands.parse(c#spec, command)
+        }
+
+    def parsed(res: Res.Res, command: Yarn.Command): Option[(Command[Stage.Stage], YarnCommands.Args)] =
+        forM (c <- lookup(command#name); args <- argsOf(res#commandArgs, c, command) |> Result.toOption) yield (c, args)
 
     // ── 表を引く ──
 
@@ -79,7 +104,7 @@ mod Commands {
         let at = " (${Yarn.sourceText(command#source)})";
         forM (
             c <- lookup(command#name) |> Option.toOk("知らないコマンド <<${command#name}>>${at}");
-            args <- YarnCommands.parse(c#spec, command);
+            args <- argsOf(ctx#res#commandArgs, c, command);
             done <- c#apply(ctx, args, st) |> Result.mapErr(why -> "<<${command#name}>> ${why}${at}")
         ) yield {
             let (next, outs) = done;
@@ -94,12 +119,12 @@ mod Commands {
     }
 
     /// command が時間を取る演出か（読めないコマンドは Instant）。
-    pub def timingOf(command: Yarn.Command): Timing =
-        parsed(command) |> Option.map(match (c, _) -> c#timing) |> Option.getWithDefault(Timing.Instant)
+    pub def timingOf(res: Res.Res, command: Yarn.Command): Timing =
+        parsed(res, command) |> Option.map(match (c, _) -> c#timing) |> Option.getWithDefault(Timing.Instant)
 
     /// command を st に当てる前に届いていてほしい絵と音の名前（読めないコマンドは空）。
     pub def needsOf(res: Res.Res, command: Yarn.Command, st: Stage.Stage): List[String] =
-        parsed(command) |> Option.map(match (c, args) -> c#needs(res, args, st)) |> Option.getWithDefault(Nil)
+        parsed(res, command) |> Option.map(match (c, args) -> c#needs(res, args, st)) |> Option.getWithDefault(Nil)
 
     // ── Doc の名前の場所（vocab.json のフォルダ assets/talk から数える） ──
 
@@ -139,14 +164,15 @@ mod Commands {
           needs = (res, a, _) -> BackdropDoc.textureOf(Param.get(photo, a), res#backdrops) |> Option.toList }
 
     def window(): Command[Stage.Stage] =
-        let mode = Param.choice("mode", "nvl" :: "bottom" :: "clear" :: Nil) |> Param.at(1) |> Param.required;
-        let toMode = (m, st: Stage.Stage) -> ({ mode = m | st }, if (m == st#mode) Nil else Out.ClearPage :: Nil);
-        { spec = YarnCommands.spec("window", "文字の出し方を替える（nvl = 画面いっぱい・bottom = 下のウィンドウ）・NVL の頁をめくる（clear）",
+        let mode = Param.choice("mode", "nvl" :: "bottom" :: "clear" :: "off" :: Nil) |> Param.at(1) |> Param.required;
+        let toMode = (now, m, st: Stage.Stage) -> (Stage.withWindowShown(now, { mode = m | st }), if (m == st#mode) Nil else Out.ClearPage :: Nil);
+        { spec = YarnCommands.spec("window", "文字の出し方を替える（nvl = 画面いっぱい・bottom = 下のウィンドウ）・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）",
                                    Param.erase(mode) :: Nil),
           timing = Timing.Instant,
-          apply = (_, a, st) -> match Param.get(mode, a) {
-              case "nvl"    => Ok(toMode(Stage.Mode.Nvl, st))
-              case "bottom" => Ok(toMode(Stage.Mode.Adv, st))
+          apply = (ctx, a, st) -> match Param.get(mode, a) {
+              case "nvl"    => Ok(toMode(ctx#now, Stage.Mode.Nvl, st))
+              case "bottom" => Ok(toMode(ctx#now, Stage.Mode.Adv, st))
+              case "off"    => Ok((Stage.withWindowHidden(ctx#now, true, st), Nil))
               case _        => Ok((st, Out.ClearPage :: Nil))
           },
           needs = noAssets }

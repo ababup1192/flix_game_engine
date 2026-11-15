@@ -9,7 +9,8 @@ mod Res {
     /// keys = キーの割り当て・smallScreen = 小さい画面（スマホ）の時の字と押せる物の大きさ・
     /// portrait = 縦の画面（縦の design で起動した時）の字と押せる物の大きさ・cast = 立ち絵と小物（位置・一覧・出入りの秒）・shots = 描き出しの場面・mixer = 音のバス・dialogue = シナリオの木・
     /// missing = ブラウザ版で後回しにした絵と音のうち、まだ届いていない物の名前（textures / sounds の name。デスクトップ・描き出し・テストは空）・
-    /// scriptEdits = 始まりの引数（edit.<行>）で当てたシナリオの直し（ふだんは空）。
+    /// scriptEdits = 始まりの引数（edit.<行>）で当てたシナリオの直し（ふだんは空）・
+    /// commandArgs = シナリオのコマンドを表で読んだ結果（dialogue と一緒に作り直す。withDialogue）。
     pub type alias Res = {
         story = StoryDoc.Doc,
         kind = KindDoc.Doc,
@@ -23,6 +24,7 @@ mod Res {
         shots = ShotsDoc.Doc,
         mixer = AudioMixer.Mixer,
         dialogue = Yarn.Program,
+        commandArgs = Commands.ArgsTable,
         missing = Set[String],
         scriptEdits = ScriptEdits.Applied
     }
@@ -58,5 +60,5 @@ mod Res {
     pub def withScriptEdits(edits: ScriptEdits.Applied, res: Res): Res = { scriptEdits = edits | res }
 
     /// シナリオの木を差し替える（読んでいる所を新しい木へ収め直すのは WorldRead.settleDialogue）。
-    pub def withDialogue(dialogue: Yarn.Program, res: Res): Res = { dialogue = dialogue | res }
+    pub def withDialogue(dialogue: Yarn.Program, res: Res): Res = { dialogue = dialogue, commandArgs = Commands.argsTableOf(dialogue) | res }
 }
