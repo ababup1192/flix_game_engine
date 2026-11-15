@@ -5,7 +5,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     import java.nio.FloatBuffer
     use RenderFrame.{closeSpriteRun, emitSprite, stateSize}
     use RenderFrame.Internal.RenderList.{instanceFloats, newRenderList, rowAt, rowsOf}
-    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isHistoryName, scissorInto, viewportTop}
+    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isHistoryName, keepScissor, putScissor, scissorInto, viewportTop}
 
     def fb(): (Int32, Int32) = (320, 200)
 
@@ -49,6 +49,17 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     @Test
     def testScissorStaysInsideTarget(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (40, 40, 10, 10), scissorOf((50, 50), (0, -50, 100, 100), 1, 40, 40, 90, 90))
+
+    /// 同じ scissor を 2 回続けて積もうとすると 2 回目だけ積まない。違う矩形に替えるとまた積む（最初の 1 回も積む）。
+    @Test
+    def testSameScissorIsNotPushedTwice(): Unit \ {Assert, IO} =
+        let geom = geometryOf(320, 200, vp(), 0, -1);
+        putScissor(geom, 0, 0, 320, 200);
+        let first = keepScissor(geom);
+        let second = keepScissor(geom);
+        putScissor(geom, 10, 30, 40, 40);
+        let changed = keepScissor(geom);
+        Assert.assertEq(expected = (false, true, false), (first, second, changed))
 
     // ── viewport ──
 

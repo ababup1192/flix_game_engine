@@ -1,8 +1,7 @@
 // RenderPaint.Internal.TextureTable — 絵の CPU の側の表（名前 → TextureInfo の登録簿と、ensureTexture が上げた名前 → key）を、
 // GL（RenderPaint）と WebGPU（WebGpuPaint）が同じ関数で育てる。GPU へ上げる所は backend ごとの関数の record（Uploads）で受ける。
 // 決まり: Uploads は list を作る def（RenderFrame.emitSprite など 1 体ごとに通る物）へ渡さない。上げるのは list を作る前。
-// WhyNot: 上げる所を effect にしない — 列を作る def の型にその effect が乗ると、ブラウザでは 1 体ごとに続きの入れ物の代金を払う
-//   （plans/webgpu-shape-review-2d.md の 3.3）。
+// WhyNot: 上げる所を effect にしない — 列を作る def の型にその effect が乗ると、ブラウザでは 1 体ごとに続きの入れ物の代金を払う。
 pub mod RenderPaint.Internal.TextureTable {
 
     /// backend が絵を GPU へ上げる関数の組。

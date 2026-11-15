@@ -12,6 +12,7 @@ pub mod RenderFrame.Internal.GlRows {
 
     /// args#targetClear から pass を作る（None = 画面）。Pass の描き先の番号と形式は問わない（GL は bind 済みの framebuffer へ描く）。
     /// GL の描き先はいつも stencil を持つ（窓は GLFW_STENCIL_BITS・Pass は RenderTargetGl の renderbuffer）。
+    // WhyNot: Pass の標本の数を描き先から引かない — samples = 1 で MSAA の Pass とずれるが、GL の backend は pass の samples を読まない（bind 済みの FBO が決める）。
     pub def passOfArgs(args: FrameArgs): PassSpec =
         match args#targetClear {
             case None     => screenPass((args#fbW, args#fbH), (args#designW, args#designH), args#clearColor, DepthStencil.DepthAndStencil)
@@ -24,7 +25,7 @@ pub mod RenderFrame.Internal.GlRows {
         if (pass#width <= 0 or pass#height <= 0) ()
         else {
             beginPass(gl, pass);
-            let list = lendRenderList(gl, args);
+            let list = prepareRenderList(gl, args);
             let upsideDown = upsideDownTargetsOf(targetUpsideDown(), () -> args#targetNames);
             emitFrameMixed(gl, glStateOf(args, pass), list, args, pass, upsideDown);
             endPass(gl)
@@ -46,9 +47,9 @@ pub mod RenderFrame.Internal.GlRows {
                               RenderUtil.f32(clearColor#b), 1.0f32);
                 gl.clear(GlConst.COLOR_BUFFER_BIT);
                 gl.disable(GlConst.SCISSOR_TEST)
-            case PassTarget.Target(colors) =>
+            case PassTarget.Target(color, _) =>
                 gl.viewport(vpX, vpY, vpW, vpH);
-                colors |> List.head |> Option.forEach(color -> clearColorAttachment(gl, color))
+                clearColorAttachment(gl, color)
         }
 
     /// Pass の色の attachment を load の 3 択で始末する（RenderTarget.LoadOp の doc を参照）。
@@ -72,7 +73,7 @@ pub mod RenderFrame.Internal.GlRows {
     /// 描く物の数ぶん書ける instance と頂点の入れ物（1 コマ 1 本の使い回し）を貸した空の列。
     /// 行は GL を直に呼ぶ種類の手前まで溜まるので、instance はスプライトの数ぶん取る（行を流すたびに先頭へ戻る）。
     /// 頂点は多角形を三角形へほどいた数の上限で先に広げておく（溜めている途中で取り直す＝書きかけを捨てることが起きない）。
-    def lendRenderList(gl: GlContext, args: FrameArgs): RenderList \ IO =
+    def prepareRenderList(gl: GlContext, args: FrameArgs): RenderList \ IO =
         let instBuf = args#instBuf;
         let polyBuf = args#polyBuf;
         RenderBuf.ensure(gl, instBuf, Int32.max(1, List.length(args#sprites)) * instanceFloats());

@@ -97,17 +97,18 @@ pub mod RenderFrame.Internal.RenderList {
     pub type alias ColorAttachment = { texture = Int32, format = RenderTarget.Format, load = RenderTarget.LoadOp, resolveTo = Option[Int32] }
 
     /// 描き先。Screen = 画面（色の attachment は画面か中間の texture の 1 つで、backend が決める。letterbox = 黒帯があるか）・
-    /// Target = Pass の texture（色の attachment の列。今は頭の 1 つだけ使う）。
+    /// Target = Pass の texture（頭の色の attachment と、その後ろの attachment の列。今は頭の 1 つだけ使う）。
+    // WhyNot: 色の attachment を List 1 本で持たない — Pass は必ず 1 つ持つので、空の列を読む枝（既定値か bug!）が要らない形にする。
     pub enum PassTarget {
         case Screen({ clearColor = Color, letterbox = Bool })
-        case Target(List[ColorAttachment])
+        case Target(ColorAttachment, List[ColorAttachment])
     }
 
     /// 1 つの pass の指定。width × height = 描き先の画素の大きさ・viewport = design の矩形を描き先の画素で（x, 上の端, 幅, 高さ。左上が原点）・
     /// depthStencil = 描き先が持つ depth と stencil・samples = 標本の数・copyHistory = 描く前に今の中身を写す先の表の番号。
-    // WhyNot: copyHistory を読む backend はまだ無い — GL は RenderPaint.prepareHistory が描く前に写し、WebGPU は history を描かない。R1b の history の小分けで pass から読む形へ移す。
-    // WhyNot: depthStencil で stencil つきと無しの pipeline を分けない — WebGPU の行に mask がまだ無く、stencil を持つ pass を作らない。mask の行を足す時に、
-    //   両方の pipeline を読み込みの間に作っておく（初めて mask が出たコマで作ると、できるまでそのコマの絵が崩れる）。
+    // WhyNot: copyHistory を読む backend はまだ無い — GL は RenderPaint.prepareHistory が描く前に写し、WebGPU は history を描かない。
+    // WhyNot: depthStencil で stencil つきと無しの pipeline を分けない — WebGPU の行に mask がまだ無く、stencil を持つ pass を作らない。
+    //   mask の行が入る時は、両方の pipeline を読み込みの間に作っておく（初めて mask が出たコマで作ると、できるまでそのコマの絵が崩れる）。
     pub type alias PassSpec = {
         target = PassTarget,
         width = Int32,
@@ -130,7 +131,7 @@ pub mod RenderFrame.Internal.RenderList {
     /// Pass の texture 1 枚の pass。design の全面を描き先の全面へ写す（縦横の倍率が少し違ってよい — uv で読む限りずれない）。
     pub def targetPass(size: (Int32, Int32), color: ColorAttachment, depthStencil: DepthStencil, samples: Int32): PassSpec =
         let (width, height) = size;
-        { target = PassTarget.Target(color :: Nil), width = width, height = height, viewport = (0, 0, width, height),
+        { target = PassTarget.Target(color, Nil), width = width, height = height, viewport = (0, 0, width, height),
           depthStencil = depthStencil, samples = samples, copyHistory = None }
 
     /// 頭の色の attachment の始末（画面は黒帯があれば黒・無ければ clearColor）。
@@ -138,22 +139,35 @@ pub mod RenderFrame.Internal.RenderList {
         match pass#target {
             case PassTarget.Screen(screen) =>
                 RenderTarget.LoadOp.Clear(if (screen#letterbox) { r = 0.0, g = 0.0, b = 0.0 } else screen#clearColor)
-            case PassTarget.Target(colors) =>
-                colors |> List.head |> Option.map(c -> c#load) |> Option.getWithDefault(RenderTarget.LoadOp.Keep)
+            case PassTarget.Target(color, _) => color#load
         }
 
     /// 描き先の色の attachment の表の番号（画面は -1）。この番号の絵を読む行は描けない。
     pub def targetTextureOf(pass: PassSpec): Int32 =
         match pass#target {
-            case PassTarget.Screen(_)      => -1
-            case PassTarget.Target(colors) => colors |> List.head |> Option.map(c -> c#texture) |> Option.getWithDefault(-1)
+            case PassTarget.Screen(_)        => -1
+            case PassTarget.Target(color, _) => color#texture
+        }
+
+    /// Pass の頭の色の attachment の形式（画面は None — 形式は backend が決める）。
+    pub def targetFormatOf(pass: PassSpec): Option[RenderTarget.Format] =
+        match pass#target {
+            case PassTarget.Screen(_)        => None
+            case PassTarget.Target(color, _) => Some(color#format)
+        }
+
+    /// 画面の pass の design の中の地の色（Pass は地の色を持たないので None）。
+    pub def screenClearColorOf(pass: PassSpec): Option[Color] =
+        match pass#target {
+            case PassTarget.Screen(screen) => Some(screen#clearColor)
+            case PassTarget.Target(_, _)   => None
         }
 
     /// 画面の pass で黒帯があるか。
     pub def hasLetterbox(pass: PassSpec): Bool =
         match pass#target {
             case PassTarget.Screen(screen) => screen#letterbox
-            case PassTarget.Target(_)      => false
+            case PassTarget.Target(_, _)   => false
         }
 
     /// viewport を GL の左下が原点の (x, y, 幅, 高さ) で。

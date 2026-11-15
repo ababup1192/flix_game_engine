@@ -4,18 +4,14 @@
 pub mod RenderFrame.Internal.WebGpuRows {
     import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, addCountsTo, closeSpriteRun, countSpriteDraw, emitSprite, mergedByZ, newRunState, upsideDownTargetsOf, writeInstAt}
-    use RenderFrame.Internal.RenderList.{PassSpec, PassTarget, RenderList, glViewportOf, hasLetterbox, loadOpOf, newRenderList, nextInstanceOf,
-                                         rowAt, rowCountOf, rowsOf, targetTextureOf}
-
-    /// 描き先（texture）は上下逆に格納しない（行 0 が上）。
-    pub def targetUpsideDown(): Bool = false
+    use RenderFrame.{Merged, addCountsTo, closeSpriteRun, countSpriteDraw, emitSprite, mergedByZ, newRunState, writeInstAt}
+    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, glViewportOf, hasLetterbox, loadOpOf, newRenderList, nextInstanceOf,
+                                         rowAt, rowCountOf, rowsOf, screenClearColorOf, targetTextureOf}
 
     /// 1 回の renderCommands を pass 1 つへ流す。
     /// cfg の欄:
     ///   sprites・registry = 描き物と絵の表（GL の FrameArgs と同じ物）・designW/H = 射影の寸
     ///   pass = 描き先と、その始末・viewport（描き先と同じ絵を読む行は描かずに知らせる）
-    ///   targetNames() = 描き先の表の名前（上下逆に格納する backend の時だけ引く）
     ///   instancesFor(n)・verticesFor(n) = n 体・n 頂点ぶん書ける入れ物（呼ぶ側の LITTLE_ENDIAN の ByteBuffer の float の見方）
     ///   openPass(n, op) = 入れ物の頭 n 体を GPU へ送り、op で始末した render pass を開く。返すのは (pass, 送った位置の instance の番号)
     ///   setPipeline(blend の番号)・setTexture(絵の番号) = 行の鍵を pass に積む（0 の絵は呼ばない）
@@ -26,7 +22,6 @@ pub mod RenderFrame.Internal.WebGpuRows {
         designW = Float64,
         designH = Float64,
         pass = PassSpec,
-        targetNames = Unit -> Set[String] \ IO,
         texWarnLog = Ref[Set[String], Static],
         drawCounts = RenderDrawCounts.Holder,
         instancesFor = Int32 -> FloatBuffer \ IO,
@@ -52,12 +47,12 @@ pub mod RenderFrame.Internal.WebGpuRows {
             let registry = cfg#registry;
             let warnLog = cfg#texWarnLog;
             let skip = cfg#skip;
-            let upsideDown = upsideDownTargetsOf(targetUpsideDown(), cfg#targetNames);
-            emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog, skip, mergedByZ(Nil, cfg#sprites, Nil, Nil, Nil, Vector.empty()));
+            // WhyNot: 描き先の表を引かない — WebGPU の texture は行 0 が上で、上下逆に格納された描き先が無い（GL の targetUpsideDown が真なのと違う）。
+            emitAll(st, list, scaleX, scaleY, registry, Set.empty(), warnLog, skip, mergedByZ(Nil, cfg#sprites, Nil, Nil, Nil, Vector.empty()));
             closeSpriteRun(st, list);
             let used = nextInstanceOf(list);
             if (letterboxed) writeInstAt(instances, used, 0.0, 0.0, cfg#designW, cfg#designH,
-                                         clearBox(clearColorOf(spec)), false, false) else ();
+                                         clearBox(screenClearColorOf(spec) |> Option.getWithDefault({ r = 0.0, g = 0.0, b = 0.0 })), false, false) else ();
             let sent = if (letterboxed) used + 1 else used;
             let (pass, base) = cfg#openPass(sent, loadOpOf(spec));
             let (vpX, vpY, _, _) = vp;
@@ -74,13 +69,6 @@ pub mod RenderFrame.Internal.WebGpuRows {
             drawRowsFrom(pass, st, rowsOf(list), geom, setPipeline, cfg#setTexture, skip, 0, rowCountOf(list));
             pass.end();
             addCountsTo(cfg#drawCounts, st)
-        }
-
-    /// 画面の pass の clearColor（Pass は使わないので黒）。
-    def clearColorOf(spec: PassSpec): Color =
-        match spec#target {
-            case PassTarget.Screen(screen) => screen#clearColor
-            case PassTarget.Target(_)      => { r = 0.0, g = 0.0, b = 0.0 }
         }
 
     // ── 行を流す間ずっと同じ値の入れ物（Int32 の配列 1 本）──
@@ -208,17 +196,22 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     /// geom の 10〜13 の scissor を pass に積む（前に積んだ物と同じなら積まない）。
     def applyScissor(pass: RenderPass, geom: Array[Int32, Static]): Unit \ IO =
+        if (keepScissor(geom)) ()
+        else pass.setScissorRect(Array.get(10, geom), Array.get(11, geom), Array.get(12, geom), Array.get(13, geom))
+
+    /// geom の 10〜13 の scissor が、前に積んだ物（14〜17）と同じなら真。違えば 14〜17 を 10〜13 へ控えて偽（呼ぶ側が積む）。
+    def keepScissor(geom: Array[Int32, Static]): Bool \ IO =
         let x = Array.get(10, geom);
         let y = Array.get(11, geom);
         let w = Array.get(12, geom);
         let h = Array.get(13, geom);
-        if (x == Array.get(14, geom) and y == Array.get(15, geom) and w == Array.get(16, geom) and h == Array.get(17, geom)) ()
+        if (x == Array.get(14, geom) and y == Array.get(15, geom) and w == Array.get(16, geom) and h == Array.get(17, geom)) true
         else {
-            pass.setScissorRect(x, y, w, h);
             Array.put(x, 14, geom);
             Array.put(y, 15, geom);
             Array.put(w, 16, geom);
-            Array.put(h, 17, geom)
+            Array.put(h, 17, geom);
+            false
         }
 
     def putScissor(geom: Array[Int32, Static], x: Int32, y: Int32, w: Int32, h: Int32): Unit \ IO =

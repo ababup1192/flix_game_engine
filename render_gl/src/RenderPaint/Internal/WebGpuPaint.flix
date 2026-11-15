@@ -43,7 +43,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     import java.nio.ByteOrder
     import java.nio.FloatBuffer
     use RenderFrame.Internal.RenderList
-    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, PassTarget}
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec}
     use RenderFrame.Internal.WebGpuRows
     use RenderPaint.Internal.TextureTable
     use RenderPaint.Internal.WebGpuShader
@@ -477,11 +477,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// sprites を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
     def paintInto(paint: Paint, texture: Texture, pass: PassSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        let format = formatOf(pass);
+        // WhyNot: 画面の形式を描き先に問わない — 画面は中間の texture（RGBA8）へ描き、present で画面の形式へ写す。
+        let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
         WebGpuRows.renderFrame({
             sprites = sprites, registry = Ref.get(p#registryRef),
             designW = p#designW, designH = p#designH, pass = pass,
-            targetNames = () -> Map.keysOf(Ref.get(p#targetsRef)),
             texWarnLog = p#texWarnLog, drawCounts = p#drawCounts,
             instancesFor = n -> instancesFor(paint, n),
             verticesFor = _ -> checked_ecast(p#cpuVertices),
@@ -490,13 +490,6 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             setTexture = (pass1, id) -> pass1.setBindGroup(1, groupOf(paint, id)),
             skip = name -> skip(paint, name)
         })
-
-    /// pass の色の attachment の形式（画面は中間の texture の RGBA8）。
-    def formatOf(pass: PassSpec): RenderTarget.Format =
-        match pass#target {
-            case PassTarget.Screen(_)      => RenderTarget.Format.Rgba8Unorm
-            case PassTarget.Target(colors) => colors |> List.head |> Option.map(c -> c#format) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm)
-        }
 
     def groupOf(paint: Paint, id: Int32): BindGroup \ IO =
         let PaintData.PaintData(p) = paint;
@@ -570,9 +563,13 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let submits = Array.get(1, p#frameCounters);
         Array.put(submits, 2, p#frameCounters);
         Array.put(0, 1, p#frameCounters);
-        Array.put(Array.get(3, p#frameCounters) + 1, 3, p#frameCounters);
-        if (submits >= 2) Array.put(Array.get(4, p#frameCounters) + 1, 4, p#frameCounters) else ();
-        Array.put(Int32.max(submits, Array.get(5, p#frameCounters)), 5, p#frameCounters)
+        noteFrameSubmits(submits, p#frameCounters)
+
+    /// 1 コマの submit の回数 submits を、counters（frameCounters の並び）の 3〜5 へ足す。
+    def noteFrameSubmits(submits: Int32, counters: Array[Int32, Static]): Unit \ IO =
+        Array.put(Array.get(3, counters) + 1, 3, counters);
+        if (submits >= 2) Array.put(Array.get(4, counters) + 1, 4, counters) else ();
+        Array.put(Int32.max(submits, Array.get(5, counters)), 5, counters)
 
     /// 前のコマ（present まで）の submit の数。
     pub def submitCount(paint: Paint): Int32 \ IO =
@@ -580,13 +577,17 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Array.get(2, p#frameCounters)
 
     /// 前にこれを呼んだ後のコマ（present の数）の submit の回数を読んで数え直す。frames = コマの数・twoOrMore = submit が 2 回以上のコマの数・most = 1 コマの一番多い回数。
-    /// 半分を超えるコマが 2 回以上なら、upload を staging へ移す目安（plans/webgpu-shape-review-2d.md の 3.4）。
+    /// 半分を超えるコマが 2 回以上なら、upload を staging buffer へ移す目安。
     pub def takeSubmitCounts(paint: Paint): { frames = Int32, twoOrMore = Int32, most = Int32 } \ IO =
         let PaintData.PaintData(p) = paint;
-        let counts = { frames = Array.get(3, p#frameCounters), twoOrMore = Array.get(4, p#frameCounters), most = Array.get(5, p#frameCounters) };
-        Array.put(0, 3, p#frameCounters);
-        Array.put(0, 4, p#frameCounters);
-        Array.put(0, 5, p#frameCounters);
+        takeSubmitCountsOf(p#frameCounters)
+
+    /// counters（frameCounters の並び）の 3〜5 を読んで 0 に戻す。
+    def takeSubmitCountsOf(counters: Array[Int32, Static]): { frames = Int32, twoOrMore = Int32, most = Int32 } \ IO =
+        let counts = { frames = Array.get(3, counters), twoOrMore = Array.get(4, counters), most = Array.get(5, counters) };
+        Array.put(0, 3, counters);
+        Array.put(0, 4, counters);
+        Array.put(0, 5, counters);
         counts
 
     /// 中間の texture を RGBA の生の画素で buf へ読む（幅 × 高さ × 4 バイト・GlOffscreen.readRgba と同じく下の行から）。present の後に呼ぶ。

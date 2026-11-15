@@ -4,9 +4,9 @@
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
     use RenderFrame.{blendCode, calcViewport, closeSpriteRun, emitSprite, pushSpriteKeyed, stateSize, writeInstAt}
-    use RenderFrame.Internal.RenderList.{DepthStencil, RenderList, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
-                                         loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenPass, targetPass,
-                                         targetTextureOf}
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, RenderList, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
+                                         loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenClearColorOf, screenPass,
+                                         targetFormatOf, targetPass, targetTextureOf}
 
     // ── 組み立て ──
 
@@ -183,12 +183,12 @@ mod RenderFrame.TestRenderList {
     def clearColor(): Color = { r = 51.0 / 255.0, g = 102.0 / 255.0, b = 153.0 / 255.0 }
 
     /// 320 × 200 に design 320 × 180 を収めた画面の pass（上下に 10 px ずつの黒帯）。
-    def letterboxedScreen(): RenderFrame.Internal.RenderList.PassSpec =
+    def letterboxedScreen(): PassSpec =
         screenPass((320, 200), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil)
 
     /// 番号 7 の絵へ op で描く Pass の pass。
-    def passTo(op: RenderTarget.LoadOp): RenderFrame.Internal.RenderList.PassSpec =
-        targetPass((64, 32), { texture = 7, format = RenderTarget.Format.Rgba8Unorm, load = op, resolveTo = None }, DepthStencil.NoDepthStencil, 1)
+    def passTo(op: RenderTarget.LoadOp): PassSpec =
+        targetPass((64, 32), { texture = 7, format = RenderTarget.Format.Rgba16Float, load = op, resolveTo = None }, DepthStencil.NoDepthStencil, 1)
 
     /// LoadOp を比べられる形に（Clear は色の 8 bit・ClearTransparent は -1・Keep は -2）。
     def opOf(op: RenderTarget.LoadOp): (Int32, Int32, Int32) = match op {
@@ -203,6 +203,20 @@ mod RenderFrame.TestRenderList {
     @Test
     def testScreenViewportIsTopLeftOrigin(): Unit \ Assert =
         Assert.assertEq(expected = (0, 10, 320, 180), letterboxedScreen()#viewport)
+
+    /// 横に広い描き先（400 × 180 に design 320 × 180）は左右に 40 px ずつの黒帯で、viewport は x = 40 から。
+    @Test
+    def testPillarboxViewportStartsAfterLeftBand(): Unit \ Assert =
+        let wide = screenPass((400, 180), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil);
+        Assert.assertEq(expected = ((40, 0, 320, 180), true), (wide#viewport, hasLetterbox(wide)))
+
+    /// Pass の形式と地の色: 画面は形式を持たず地の色を持ち、Pass は頭の attachment の形式を持ち地の色を持たない。
+    @Test
+    def testFormatAndClearColorOfScreenAndPass(): Unit \ Assert =
+        let pass = passTo(RenderTarget.LoadOp.Keep);
+        Assert.assertEq(expected = (true, false, false, true),
+                        (Option.isEmpty(targetFormatOf(letterboxedScreen())), Option.isEmpty(screenClearColorOf(letterboxedScreen())),
+                         Option.isEmpty(targetFormatOf(pass)), Option.isEmpty(screenClearColorOf(pass))))
 
     /// GL の左下が原点の viewport へ戻すと calcViewport と同じ（下の黒帯が 11 px の 201 px の高さでも）。
     @Test

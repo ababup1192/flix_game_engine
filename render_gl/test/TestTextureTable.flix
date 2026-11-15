@@ -2,7 +2,7 @@
 // GPU を呼ばない Uploads（呼ばれた順に "create 8x8"・"write 5"・"drop 5" を控える）で表を育て、控えと表を読む。
 
 mod TestTextureTable {
-    use RenderPaint.Internal.TextureTable.{Tables, Uploads, ensureTexture, putTexture}
+    use RenderPaint.Internal.TextureTable.{Tables, Uploads, ensureTexture, putRadialBuiltins, putTexture}
 
     // ── 組み立て ──
 
@@ -55,6 +55,16 @@ mod TestTextureTable {
         ensureTexture(recordingUploads(log), tables, () -> (), "gen", "k1", 8, 8, pixels(64));
         let kept = Map.get("gen", Ref.get(tables#registryRef)) |> Option.map(info -> GpuHandle.textureIdInt(info#id));
         Assert.assertEq(expected = (Nil, Some(5)), (Ref.get(log), kept))
+
+    /// 組み込みの放射の絵は、光と闇の 2 枚を RadialBuiltin の辺の長さで作って名前で置く。
+    @Test
+    def testRadialBuiltinsPutsLightAndDark(): Unit \ {Assert, IO} =
+        let log = Ref.fresh(Static, Nil);
+        let tables = freshTables();
+        putRadialBuiltins(recordingUploads(log), tables);
+        let side = Int32.toString(RadialBuiltin.size());
+        let named = (Map.memberOf(RadialBuiltin.lightName(), Ref.get(tables#registryRef)), Map.memberOf(RadialBuiltin.darkName(), Ref.get(tables#registryRef)));
+        Assert.assertEq(expected = (("create ${side}x${side}" :: "create ${side}x${side}" :: Nil), (true, true)), (List.reverse(Ref.get(log)), named))
 
     /// 上げた時だけ診断へ知らせる（同じ key の 2 回目は知らせない）。
     @Test
