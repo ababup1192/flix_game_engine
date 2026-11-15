@@ -4,7 +4,7 @@
 mod TestTextureTable {
     import java.nio.ByteBuffer
     use RenderPaint.Internal.TextureTable.{Tables, Uploads, ensureTexture, putRadialBuiltins, putTexture}
-    use RenderPaint.Internal.WebGpuPaint
+    use RenderPaint.Internal.TextureTable.{opaqueRgbaOf}
 
     // ── 組み立て ──
 
@@ -83,13 +83,13 @@ mod TestTextureTable {
         ensureTexture(uploads, tables, note, "gen", "k1", 8, 8, pixels(64));
         Assert.assertEq(expected = 1, Ref.get(noted))
 
-    // ── WebGPU の createImage が alpha の無い絵を広げる所 ──
+    // ── opaqueRgbaOf（3 バイトの形式を持たない backend が alpha の無い絵を広げる所）──
 
     /// RGB の 2 画素は、色をそのままに alpha を 255（-1 のバイト）にした RGBA の 8 バイトになる。
     @Test
     def testOpaqueRgbaKeepsColorAndFillsAlpha(): Unit \ {Assert, IO} =
         let rgb = ByteBuffer.allocateDirect(6);
         List.forEachWithIndex((i, b) -> discard rgb.put(i, b), 1i8 :: 2i8 :: 3i8 :: 4i8 :: 5i8 :: 6i8 :: Nil);
-        let rgba = WebGpuPaint.opaqueRgbaOf(rgb, 2);
+        let rgba = opaqueRgbaOf(rgb, 2);
         Assert.assertEq(expected = 1i8 :: 2i8 :: 3i8 :: -1i8 :: 4i8 :: 5i8 :: 6i8 :: -1i8 :: Nil, List.map(i -> rgba.get(i), List.range(0, 8)))
 }

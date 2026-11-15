@@ -81,8 +81,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             nextSlot = Array[Int32, Static],
             registryRef = Ref[RenderAsset.TextureRegistry, Static],
             textureKeyRef = Ref[Map[String, String], Static],
-            // 描き先・開いている描き先・最後に画面へ描いたコマの表（描き先の texture は slots の番号で引く）。
+            // レンダーターゲットと開いているターゲットの表（ターゲットの texture は slots の番号で引く）。
             targets = TargetTable.Table,
+            lastFrame = Array[RenderPaint.Frame, Static],
             // instance buffer（GPU）・その大きさ（体数）・このコマで次に空いている位置（体）。
             instanceBuffer = Array[Buffer, Static],
             instanceCounts = Array[Int32, Static],
@@ -147,6 +148,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             blank = blank, slots = Ref.fresh(Static, Map.empty()), nextSlot = Array#{1} @ Static,
             registryRef = Ref.fresh(Static, Map.empty()), textureKeyRef = Ref.fresh(Static, Map.empty()),
             targets = TargetTable.fresh(),
+            lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
             instanceBuffer = Array#{createInstanceBuffer(gpu, firstCount)} @ Static,
             instanceCounts = Array#{firstCount, 0} @ Static,
             cpuBytes = Array#{bytes} @ Static, cpuFloats = Array#{bytes.asFloatBuffer()} @ Static,
@@ -325,26 +327,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         bytes
 
     /// 解いた画像（alpha が真なら RGBA、偽なら RGB の 3 バイト・上の行から）を RGBA8_UNORM の絵にする。RGB は alpha を 255 にして 4 バイトへ広げる
-    /// （GL が RGB8 で上げて alpha を 1 で読むのと同じ）。WebGPU に 3 バイトの形式が無いので、広げるのは読み込みの時の CPU。
+    /// （GL が RGB8 で上げて alpha を 1 で読むのと同じ）。
+    // WhyNot: GPU の側で広げない — WebGPU に 3 バイトの形式が無く、広げるのは読み込みの時だけなので CPU で足りる。
     def uploadImage(paint: Paint, width: Int32, height: Int32, bytes: ByteBuffer, alpha: Bool): RenderAsset.TextureInfo \ IO =
         if (alpha) uploadRgba(paint, width, height, bytes)
-        else uploadRgba(paint, width, height, opaqueRgbaOf(bytes, width * height))
-
-    /// RGB（1 画素 3 バイト）の頭 count 画素を、alpha を 255 にした RGBA（4 バイト）の新しい入れ物へ写す。
-    pub def opaqueRgbaOf(rgb: ByteBuffer, count: Int32): ByteBuffer \ IO =
-        let rgba = ByteBuffer.allocateDirect(Int32.max(4, count * 4));
-        rgbIntoRgba(rgb, rgba, count, 0);
-        rgba
-
-    def rgbIntoRgba(rgb: ByteBuffer, rgba: ByteBuffer, count: Int32, i: Int32): Unit \ IO =
-        if (i >= count) ()
-        else {
-            discard rgba.put(i * 4, rgb.get(i * 3));
-            discard rgba.put(i * 4 + 1, rgb.get(i * 3 + 1));
-            discard rgba.put(i * 4 + 2, rgb.get(i * 3 + 2));
-            discard rgba.put(i * 4 + 3, -1i8);
-            rgbIntoRgba(rgb, rgba, count, i + 1)
-        }
+        else uploadRgba(paint, width, height, TextureTable.opaqueRgbaOf(bytes, width * height))
 
     /// RGBA（1 画素 4 バイト）の頭 count 画素の alpha を 255 で埋める（hasAlpha が偽の絵。GL が RGB8 で上げて alpha を 1 で読むのと同じ）。
     pub def makeOpaque(rgba: ByteBuffer, count: Int32): Unit \ IO = fillAlphaFrom(rgba, count, 0)
@@ -363,6 +350,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Array.put(None, 0, p#encoder);
         Map.forEach((_, slot) -> { slot#group.release(); slot#texture.destroy() }, Ref.get(p#slots));
         Ref.put(Map.empty(), p#slots);
+        TargetTable.clear(p#targets);
         p#blank#group.release();
         p#blank#texture.destroy();
         Option.forEach(g -> g.release(), Ref.get(p#presentGroup));
@@ -536,7 +524,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 false
             case None =>
                 let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer | RenderPaint.emptyFrame() };
-                TargetTable.rememberFrame(p#targets, frame);
+                Array.put(frame, 0, p#lastFrame);
                 paintScreen(paint, sprites);
                 RenderDrawCounts.endScreenFrame(p#drawCounts);
                 if (Option.isEmpty(Ref.get(p#diagnosticsRef))) RenderDrawCounts.discardTotal(p#drawCounts) else ();
@@ -561,7 +549,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// 最後に画面へ描いたコマを中間の texture へ描き直す（大きさが変わった時。控えも数も進めない）。続けて present を呼ぶ。
     pub def repaintLast(paint: Paint): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        paintScreen(paint, TargetTable.lastFrame(p#targets)#sprites)
+        paintScreen(paint, Array.get(0, p#lastFrame)#sprites)
 
     // ── 画面へ出す・読む・大きさ ──
 
@@ -649,14 +637,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     // ── Pass ──
 
-    /// RenderTarget.Target.beginTarget の中身。作り直すか・絵の表への載せ方は TargetTable が決める。
+    /// RenderTarget.Target.beginTarget の中身。作り直すか・registry への載せ方は TargetTable が決める。
+    /// 標本の数が変われば作り直す（GL と同じ鍵）。WebGPU は標本 1 で描くので絵は変わらず、作り直しの分だけ無駄になるが、鍵を 2 本にしない。
     def beginTarget(paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         if (spec#samples > 1) skip(paint, "MSAA（標本 2 以上は 1 で描く）") else ();
-        discard TargetTable.begin(webGpuTargets(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec)
+        discard TargetTable.begin(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec)
 
-    /// WebGPU で描き先を作る・捨てる関数の組。表の番号は絵の表（slots）の番号（積んだ pass があれば先に submit する）。
-    def webGpuTargets(paint: Paint): TargetTable.Targets =
+    /// WebGPU でレンダーターゲットを作る・捨てる関数の組。表の番号は絵の表（slots）の番号（積んだ pass があれば先に submit する）。
+    def webGpuTargetAllocator(paint: Paint): TargetTable.TargetAllocator =
         { create = spec -> createTargetSlot(paint, spec), destroy = id -> dropSlot(paint, id) }
 
     def createTargetSlot(paint: Paint, spec: RenderTarget.TargetSpec): Int32 \ IO =

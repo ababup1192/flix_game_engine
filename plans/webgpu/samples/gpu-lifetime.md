@@ -1,30 +1,33 @@
 # 書き味の見本: GPU の物の寿命の持ち主（9.1 の表「GPU の物の寿命の持ち主」・親 5.3）
 
-- 比べた物は 2D の描き先（Pass の render target・その history・開いている描き先・最後に画面へ描いたコマ）。R1b ⇄ P6 の最初の小分けの範囲。
+- 比べた物は 2D のレンダーターゲット（Pass の描き先・その history・開いているターゲット）。R1b ⇄ P6 の最初の小分けの範囲。
+  最後に画面へ描いたコマ（`lastFrame`）は寿命の決まりを持たないので、backend ごとの配列 1 本に残した。
   形・タイル・static layer・シェーダーの寿命は、それぞれの小分け（多角形とタイルと static layer・面・R2b）で同じ形に載せる。
 - 候補 (a) は入れた形（`render_gl/src/RenderPaint/Internal/TargetTable.flix`）から写した。候補 (b) は入れる前の main（`efbd707d`）の形で、テストは実際に書いて通した（`render_gl` のテスト 337 本と一緒に緑。commit していない）。
-- 速さは比べない: 表を引くのは Pass を開く時と描き先の名前を引く時だけで、1 体ごとに通る所（`emitSprite` など）は触らない。sprite_stress の前後は人の方針で計画の最後にまとめて測る。
+- 速さは比べない: 1 体ごとに通る所（`emitSprite` など）は触っていない。毎フレームの表の引きは前と同じ回数（面の絵の上下は描く 1 枚ごとに表を 1 回読む・`targetNames` はコマに 1 回）。sprite_stress の前後は人の方針で計画の最後にまとめて測る。
+- 比べていない中間の案: (b) のまま作り直しの比べ（`isSameShape`・`isSameTexture`）だけを共有する形。鍵は 1 か所になるが、history の捨て方・registry への載せ方・テストは 2 本のまま残る。
 
 ## 数（行数は doc のコメントを含む・2026-11-15）
 
 | 見る点 | (a) 表は前半・作る消すだけ backend | (b) 全部 backend（入れる前の形） |
 |---|---|---|
-| GL の backend | 46 行（`beginTarget` 3・`glTargets` 11・`destroyEntry` 7・`entryOf` 3・`prepareHistory` 14・`endTarget` 3 ほか） | 75 行（`beginTarget` 23・`sameShape` と `sameTexture` 8・`dropHistory` 11・`prepareHistory` 26・`endTarget` 7） |
-| WebGPU の backend | 17 行（`beginTarget` 5・`webGpuTargets` 3・`createTargetSlot` 7）。history は表が持つので、写す所（`copyTextureToTexture`）を足すだけになる | 20 行（`beginTarget` 18・`TargetSlot` 2）。history は無く、足すと GL の `prepareHistory`・`dropHistory`・作り直しの鍵の 2 本目（約 45 行）が要る |
-| 共有の前半 | `TargetTable` 119 行（作り直しの鍵・history の作り直しと捨て方・絵の表への載せ方・開いている描き先・最後のコマ） | 無し |
-| 寿命のテスト | GPU を呼ばない `Targets` で 7 本・111 行（作る回数・捨てる順・標本の数・history の使い回しと捨て方・絵の表の大きさ）。GL と WebGPU の両方の振る舞いを 1 回で固定する | GL は偽の GL（`Proxy` で `createFramebuffer` を数える 20 行）と `RenderPaint.create` 一式で 1 本 42 行。WebGPU は Dawn の device を開くテスト（`TestWebGpuOffscreen` の形）が要る。history は GL の blit を数える偽物を足さないと見られない |
+| GL の backend | 46 行（`beginTarget` 3・`glTargetAllocator` 11・`destroyEntry` 7・`entryOf` 3・`prepareHistory` 14・`endTarget` 3 ほか） | 75 行（`beginTarget` 23・`sameShape` と `sameTexture` 8・`dropHistory` 11・`prepareHistory` 26・`endTarget` 7） |
+| WebGPU の backend | 17 行（`beginTarget` 5・`webGpuTargetAllocator` 3・`createTargetSlot` 7）。history を足す時は写す所（`copyTextureToTexture`）だけ | 20 行（`beginTarget` 18・`TargetSlot` 2）。history は無く、足すと GL の `prepareHistory`・`dropHistory`・作り直しの鍵の 2 本目が要る（約 45 行・【見積もり】） |
+| 共有の前半 | `TargetTable` 122 行（作り直しの鍵・history の作り直しと捨て方・registry への載せ方・開いているターゲット） | 無し |
+| **合計** | **185 行**（46 + 17 + 122） | **95 行**（75 + 20）。WebGPU に history を足すと約 140 行【見積もり】 |
+| 寿命のテスト | GPU を呼ばない `TargetAllocator` で 10 本・146 行（作る回数・捨てる順・標本の数・history の使い回しと作り直しと捨て方・registry の大きさ・開いていない時の end・入れ子の begin）。GL と WebGPU の両方の振る舞いを 1 回で固定する | GL は偽の GL（`Proxy` で `createFramebuffer` を数える 20 行）と `RenderPaint.create` 一式で 1 本 42 行。WebGPU は Dawn の device を開くテスト（`TestWebGpuOffscreen` の形）が要る。history は GL の blit を数える偽物を足さないと見られない |
 | 片方だけ直す事故 | 起きない（鍵と捨てる順は 1 か所） | 起きる（入れる前、GL は作り直しで history を捨て、WebGPU は history を持たなかった） |
 
 ## 候補 (a): 表は前半・作る消すだけ backend（入れた形）
 
 ```flix
 // backend が渡すのは「作る・捨てる」の 2 つだけ。番号は名前で引く絵の番号と同じ（GL は色のテクスチャ・WebGPU は slots の番号）。
-def webGpuTargets(paint: Paint): TargetTable.Targets =
+def webGpuTargetAllocator(paint: Paint): TargetTable.TargetAllocator =
     { create = spec -> createTargetSlot(paint, spec), destroy = id -> dropSlot(paint, id) }
 
 def beginTarget(paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
     let PaintData.PaintData(p) = paint;
-    discard TargetTable.begin(webGpuTargets(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec)
+    discard TargetTable.begin(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec)
 
 // 描く時は表の行から自分の物を引く。
 def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
@@ -33,7 +36,7 @@ def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, sprites: List[Rende
         |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
         |> Option.forEach(match (row, slot) -> paintInto(paint, slot#texture, passOf(row, spec), sprites))
 
-// テスト: GPU を呼ばない Targets で、表の決まりを backend と別に固定する。
+// テスト: GPU を呼ばない TargetAllocator で、表の決まりを backend と別に固定する。
 @Test
 def testSizeChangeDestroysThenCreates(): Unit \ {Assert, IO} =
     Assert.assertEq(expected = "create fx 64x64 s1" :: "destroy 101" :: "create fx 32x32 s1" :: Nil, callsOf(64 :: 32 :: Nil))
@@ -72,6 +75,8 @@ def testSameShapeCreatesOnceThenSizeChangeDeletes(): Unit \ {Assert, IO} =
 
 ## 決めた事
 
-**(a)**。backend の行は GL 75 → 46・WebGPU は history を足す時の約 45 行が要らなくなり、寿命の決まりを GPU 無しで 7 本のテストに固定できた。
+**(a)**。行の合計は (a) の方が多い（185 行と 95 行）。選んだ理由は行数ではなく、
+寿命の決まりを GPU 無しのテスト 10 本で GL と WebGPU の両方について固定できる事・決まり（作り直しの鍵・history の捨て方・registry への載せ方）が 1 か所にある事・
+片方の backend だけ直す事故（入れる前は GL だけが history を捨てていた）が起きない事。WebGPU に history を足す時に 2 本目を書かずに済むのはその結果（約 45 行・【見積もり】）。
 (b) の良い所（backend が自分の物を 1 つの Map で直に引ける）は、(a) でも「表の番号 → 自分の物」の Map を 1 回引くだけで、差は 1 行。
-予算・捨てる順・preload を持つ物（3D の形・シェーダー）も、同じ `Targets` の形（作る・捨てる）に「中身を書く」を足して載せる見込み（R2b の寿命の表）。
+予算・捨てる順・preload を持つ物（3D の形・シェーダー）も、同じ `TargetAllocator` の形（作る・捨てる）に「中身を書く」を足して載せる見込み（R2b の寿命の表）。

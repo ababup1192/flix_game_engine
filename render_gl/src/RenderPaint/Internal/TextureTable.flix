@@ -27,6 +27,33 @@ pub mod RenderPaint.Internal.TextureTable {
     pub def putTexture(tables: Tables, name: String, info: RenderAsset.TextureInfo): Unit \ IO =
         Ref.put(Map.insert(name, info, Ref.get(tables#registryRef)), tables#registryRef)
 
+    /// 名前を registry から外す（GPU の絵は捨てない。捨てるのは呼ぶ側）。
+    pub def removeTexture(tables: Tables, name: String): Unit \ IO =
+        Ref.put(Map.remove(name, Ref.get(tables#registryRef)), tables#registryRef)
+
+    /// RGB（1 画素 3 バイト）の頭 count 画素を、alpha を 255 にした RGBA（4 バイト）の新しい入れ物へ写す。
+    /// 3 バイトの形式を持たない backend（WebGPU）が createImage で alpha の無い絵を広げる。
+    // WhyNot: 1 画素ずつ get と put を呼ばない — 入れ物の呼び出しが画素の数の 4 倍になる。配列へまとめて取って広げ、1 回で写す。
+    pub def opaqueRgbaOf(rgb: ByteBuffer, count: Int32): ByteBuffer \ IO = region rc {
+        let src = Array.repeat(rc, count * 3, 0i8);
+        discard rgb.get(0, src, 0, count * 3);
+        let dst = Array.repeat(rc, count * 4, -1i8);
+        spreadRgb(src, dst, count, 0);
+        let rgba = ByteBuffer.allocateDirect(Int32.max(4, count * 4));
+        discard rgba.put(0, dst, 0, count * 4);
+        rgba
+    }
+
+    /// src の RGB を dst の RGBA の頭 3 バイトへ画素 i から写す（dst の alpha は呼ぶ側が埋めておく）。
+    def spreadRgb(src: Array[Int8, r], dst: Array[Int8, r], count: Int32, i: Int32): Unit \ r =
+        if (i >= count) ()
+        else {
+            Array.put(Array.get(i * 3, src), i * 4, dst);
+            Array.put(Array.get(i * 3 + 1, src), i * 4 + 1, dst);
+            Array.put(Array.get(i * 3 + 2, src), i * 4 + 2, dst);
+            spreadRgb(src, dst, count, i + 1)
+        }
+
     /// 組み込みの放射の絵（Render.lightAt / darkAt が引く）を上げて名前で引けるようにする。ゲームの manifest には載らない名前なので、
     /// 起動時に必ず上げる（ここで足さないと「アセット配線をしたゲームだけ光が出る」になる）。
     pub def putRadialBuiltins(uploads: Uploads, tables: Tables): Unit \ IO =
