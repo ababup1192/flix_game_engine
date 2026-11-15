@@ -664,3 +664,8 @@ V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関�
   絵は gl-parity・テンプレの reference・gl-capture・webgpu-v1-check（PC とブラウザ）で前と同じ。sprite_stress は前と後で 5% の内。
 - 3 章と食い違った所と持ち越しは `webgpu-shape-review-2d.md` の 7 章（`FrameArgs` が pub なので `targetNames`・`targetClear` が残る・描き先の表と `lastFrame` は共有していない・
   読み込みの record・`copyImageBitmap`・sprite_stress の JSON の `submits` は engine の拡張の相談）。
+
+### 12.16 相談事の決め（人の「おまかせ」・2026-11-15）
+
+- submit の回数を engine の pub の `FrameDiagnostics` に足す件: 今は足さない。テンプレ 3 本の最初の場面で submit が 2 回以上のコマは 0 で、staging の判断に今すぐ要らないため。P6 で staging を比べる時に要れば、その時に足す。数は PC の `FLIX_GE_FRAME_STATS` で見られる。
+- `gl-capture` の基準（0.88.4 と違う 30 枚）: 今は撮り直さない。P10 で Dawn の版を pin して基準を撮り直す予定なので、そこでまとめる。それまでは「30 枚のまま増えない」を門にする。
