@@ -76,6 +76,15 @@
 - 4 本の 50 個を、他のエンジン（Ren'Py・Naninovel・TyranoScript・Dialogic 2・KAG）と並べて 19 個の部品にまとめた案: bg・overlay・camera・shake・filter・show・hide・move・swap・speak・fx・audio・window・text・wait・gate・hud・feed・preset。共通の引数は time=（秒）・ease=（1 系統）・wait=。表は artifact「ノベル演出の標準語彙の案」。
 - 台本のグラフの試作: `dialogue.json`（`bin/fge yarn build` の出力）から、分岐のグラフ・ノードごとの演出の帯・矢印ごとの持ち越す舞台・たどり着けないノードと行き止まりの検査を HTML に出す（scratchpad の yarn_graph.py。Python で 200 行ほど）。道具にするなら go の `bin/fge yarn graph` に移し、テープの「ここから遊ぶ」とつなぐ。
 
+### 3.17 スパイク: 4 本を 19 個で書き直す（2026-11-15）
+
+- 4 本の演出コマンド 924 行を機械で書き直した。書けなかった行は 0。案の引数のままで意味まで同じ 610 行（66.0%）、引数を足せば 879 行（95.1%）、意味が変わる 11 行（1.2%）、preset へ 34 行（3.7%）。コマンドの字数は 1.45 倍。
+- 案に足す引数（多い順）: text の at=（NVL の頁の中の置き場）・bg の grade=・ease の smoothstep・overlay の layer=・音の間タップで送れない秒（音の Doc へ）・show / hide の置き場に 1 つだけ・bg の via=slide|pan ほか。
+- 表の直し: hold は wait でなく text の lock=。同じ名前で別の動き（bg pan）を分ける。位置引数は 2 つまで。feed の本文は "…" で包む。shake の強さと time の既定はゲームの Doc に置く。
+- 1 本でしか使われていない部品が多い（camera・text・feed・gate・move・swap・speak）。3.15 の「2 本で要った物だけ」に当てると根拠が弱い物がある。標準に入れるか、ゲームの口に置くかを決める。
+- preset の Doc の案: `steps: [{ at: 秒, cue: "台本と同じ 1 コマンド" }]` の平らな時刻表。hop は書ける。stab は切り抜き・物だけの揺れ・重ね順・線が足りない。crash は ShaderDoc に時間で動く値が要る。scene の深さの決まり・wound の線・days の針・end のカードは、ゲームのコードで足す口。
+- 置き場: scratchpad の vocab-spike/（convert.py・vocab.json・vocab.md・presets.json・out/issues.md）。
+
 ### 3.2 ゲームの作り方の流れ（人の案・2026-11-15）
 
 1. **判断**: シナリオと演出の要望を、語彙の一覧表（コードから作る 1 頁）に照らし、「そのまま」「組み合わせ（N5）」「足りない」に振り分ける。
