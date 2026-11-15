@@ -383,6 +383,65 @@ scissor と pipeline は pass の頭で 1 回だけ積んだ（sprite_stress の
 
 **比べた上で今の案。** 乗り換えた所は無い。
 
+## 7. 実装で分かった事（R1b-0・2026-11-15・枝 `webgpu-r1b0`）
+
+入れた物は 3 つの commit（R1b-0a-1・0a-2・0b）。置き場は `render_gl/src/RenderFrame/Internal/RenderList.flix`（行の型・`PassSpec`）・`GlRows.flix`（GL の backend）・
+`render_gl/src/RenderPaint/Internal/TextureTable.flix`（絵の CPU の側の表と `Uploads`）。`Frame.flix` は 1,162 行 → 964 行。
+
+### 7.1 3 章と食い違った所・決めた範囲で止めた所
+
+| # | 3 章の案 | 入れた形 | 理由 |
+|---|---|---|---|
+| 1 | `targetNames` の欄は消す（3.1 の 3） | `FrameArgs#targetNames` は残し、front-end が `targetUpsideDown` を backend に聞いて、真の時だけ使う（WebGPU は描き先の表を引かない） | `FrameArgs` と `renderFrameMixed` は `mod RenderFrame` の pub で、3.6 の「pub を変えない」と食い違う。`FrameArgs` を Internal へ移す時（R1b）に消す |
+| 2 | clear・letterbox は `PassSpec` で受ける（3.2） | GL は `GlRows.renderPass(gl, args, pass)` が `pass` だけを読む。`FrameArgs#targetClear` は残り、`renderFrameMixed`（pub・呼ぶのはテストだけ）は `targetClear` から `pass` を作る（Pass の番号は -1・形式は Rgba8Unorm。GL はどちらも読まない） | 上と同じ。`targetClear` と `pass` が二重に持つのは #1 と一緒に消す |
+| 3 | 組の列 `(PassSpec, 行)`（3.0） | 型は作っていない。1 回の `renderCommands` は組 1 つ | 2D だけの今は組が 1 つで、GL は GL を直に呼ぶ種類の手前で行を途中で流す。3D の場面の pass を組にする R1b の小分けで型にする |
+| 4 | stencil つきと無しの pipeline を読み込みの間に両方作る（3.2） | `PassSpec#depthStencil` の欄と WhyNot だけ（WebGPU は `NoDepthStencil`・GL は `DepthAndStencil`） | WebGPU の行に mask がまだ無い（brief どおり「形の余地」） |
+| 5 | `copyHistory`（3.2） | 欄だけ。どちらの backend も読まない（いつも None） | history の写しは R1b の history の小分け |
+| 6 | `RenderList` の `values`・`ranges`（3.1 の 8） | 入れていない（`vertices` だけ足した） | 使う種類（タイル・面）がまだ行に無い |
+| 7 | 行を流す所は前と同じ scissor を積まない（3.1 の 7） | WebGPU だけ（`WebGpuRows.applyScissor`）。GL は今のまま | GL は行の間に GL を直に呼ぶ種類（面・mask・3D の場面）が scissor を触るので、控えが外れる。GL の種類が全部行になってから入れる |
+| 8 | upload を関数の record に 1 本化（3.3 (b)） | `TextureTable.Uploads`（`createArgb`・`writeArgb`・`drop`）で `ensureTexture` と組み込みの放射の絵だけを 1 本にした | 読み込み（`RenderPaint.AssetLoader` は `GlContext` を受ける pub の型・`LwjglAssets.loadTexture`）を record に替えるのは pub の型の変更。PC の WebGPU の stb の読み込み（`WebGpuWindowLayer.loadImageOrBug`）は GL と成分の数が違う（GL は alpha の無い絵を RGB の 3 成分で上げ、WebGPU は 4 成分で読んで alpha を埋める）。op の「外の画像を写す」「buffer」も未 |
+| 9 | `copyImageBitmap` を直に表へ載せる（4 章の R1b-0b） | していない | `hasAlpha = false` の絵は alpha を 255 で埋める所が CPU にあり、`copyExternalImageToTexture` では埋められない。`BrowserWebGpu`（engine_web/java）と `fge-web.js` に手が要る |
+| 10 | `submits` を sprite_stress の区間の JSON に出す（3.4） | 出していない。PC の `FLIX_GE_FRAME_STATS` の行だけ（下の 7.2） | bench が読めるのは engine の pub の `FrameDiagnostics` だけで、欄を足すのは engine の拡張（3.4 の「その時に別に相談」）。ブラウザには `FLIX_GE_FRAME_STATS` そのものが無い |
+
+### 7.2 submit の回数
+
+- PC の `FLIX_GE_FRAME_STATS=1` の行の終わりは、前は「行を出したコマ 1 つの submit の数」だった。staging へ移る目安（3.4: 半分を超えるコマが 2 回以上）を見るには足りないので、
+  前の行の後のコマのうち 2 回以上だったコマの数と、1 コマの一番多い回数（`・submits 2 回以上 k/n コマ（最大 m）`）にした（`WebGpuPaint.takeSubmitCounts`）。
+  `RenderFrameStats.record` の `tail` は行を出す時だけ組む関数にした（render_gl の中の pub で、engine の pub ではない）。
+- `bench/webgpu_v1`（`make webgpu-v1-check` の 1）は場面ごとに submit の数を出す: 9 場面のうち `passThenGenerated` だけ 2、ほかは 1（V1 の記録と同じ）。
+
+### 7.3 門の結果
+
+- テスト: render_gl 329・engine_world 1473・engine_tools 305・engine 964 が緑（render_gl は TestTextureTable 5 本と pass の 5 本を足し、WebGpuRows の pass の 2 本を TestRenderList へ移した）。
+- `make gl-parity` 緑（castShadow の 565 px は前からの B）。テンプレ 3 本の `reference-check` 緑（rpg 16 枚・novel 43 枚・tidepool 8 枚）。
+- `make webgpu-v1-check` 緑（9 場面 0 px・rpg-starter の title の GL と WebGPU 0 px）・`-web` 緑（WebGL2 と 0 px）・`webgpu-check`・`-web`・`-same` 緑。
+- `make gl-capture-check`: 基準 0.88.4 と違うのは 30 枚で、R1b-0 の前の main（`7189053a`）で撮った 54 枚の SHA256SUMS とバイトまで同じ（増えていない）。
+- `lint-huge-methods`（engine・rpg-starter）・`gl-jar-pin-check`・`go test ./...`・`bin/fge export-web templates/rpg-starter` の ⑨ が緑。render_gl/java は触っていない。
+
+sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前と後を交互に。どれも 3 回の幅が 5% を超えたか重なったので 6 回の中央値）:
+
+| 場面 | 前 frame / submit | 後 frame / submit | 後 / 前 |
+|---|---|---|---|
+| PC GL 絵 1 種 | 7.241 / 2.188 | 7.220 / 2.200 | 1.00 / 1.01 |
+| PC WebGPU 絵 1 種 | 6.960 / 2.141 | 7.050 / 2.212 | 1.01 / 1.03 |
+| PC GL 絵 16 種 | 41.309 / 35.927 | 41.489 / 36.094 | 1.00 / 1.00 |
+| PC WebGPU 絵 16 種 | 13.742 / 5.974 | 13.593 / 5.967 | 0.99 / 1.00 |
+
+| 場面（ブラウザ） | 前 submit / cpu | 後 submit / cpu | 後 / 前 |
+|---|---|---|---|
+| WebGL2 絵 1 種 | 13.70 / 29.7 | 14.25 / 30.6 | 1.04 / 1.03 |
+| WebGPU 絵 1 種 | 16.45 / 32.8 | 16.60 / 32.8 | 1.01 / 1.00 |
+| WebGL2 絵 16 種 | 34.30 / 51.9 | 34.90 / 52.6 | 1.02 / 1.01 |
+| WebGPU 絵 16 種 | 31.65 / 47.9 | 31.20 / 47.55 | 0.99 / 0.99 |
+
+- PC の WebGPU 絵 1 種は、1 回の起動の中で submit が約 5.2 ms に張り付く回が混ざる（2 峰）。同じ場面を前と後で 8 回ずつ足すと、前 2/8・後 2/8（合わせて前 2/14・後 4/14）で、前にも出る。V1 の記録（RESULTS.md の「約 5 ms の submit が混ざる回」）と同じ物で、R1b-0 で増えたとは言えない。
+- ブラウザの WebGL2 絵 1 種は後が 6 回とも前の中央値より高く（+4%）、5% の内だが向きは揃っている。後の 1 回目は別の作業場の java（索引づくり 3 本）が動いていた回。
+
+### 7.4 持ち越し（R1b ⇄ P6）
+
+- 7.1 の #1・#2（`FrameArgs` を Internal へ移して `targetNames`・`targetClear` を消す）・#3（組の列の型）・#7（GL の scissor の控え）・#8（読み込みの record・stb の 2 本目）・#9（`copyImageBitmap`）・#10（`FrameDiagnostics` に `submits`・engine の拡張の相談）。
+- ブラウザの WebGPU の submit の回数を出す口（`FLIX_GE_FRAME_STATS` に当たる物がブラウザに無い）。
+
 ## 第 1 版のレビュー（74 点）への対応
 
 | # | 指摘 | 入れた所 |
