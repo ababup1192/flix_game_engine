@@ -1,4 +1,4 @@
-<!-- engine v0.95.0 / 生成: 2026-11-14 -->
+<!-- engine v0.95.0 / 生成: 2026-11-15 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -726,6 +726,8 @@
 - `pub def generateFlix(hooks: CpuHooks): String`
 - `pub def generateFlixCases(hooks: CpuHooks): String`
 - `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
+- 式 e を WGSL の関数 `fn name(…) -> vec3f` に生成した字（toGlsl と同じ木・同じ引数の並び）。場面の値は `r3d` の欄（Render3dWgsl の struct）で読み、
+  `pub def toWgsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 
 ## LoadProgress — `engine/src/platform/LoadProgress.flix`
 - 起動の読み込みの進み具合（区切りごとに 1 回）と、読み込みの仕事を回す口。
@@ -1660,6 +1662,25 @@
 - `pub def texMipSource(): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
 
+## ShaderGen.Wgsl — `engine/src/shader/ShaderGen/Wgsl.flix`
+- draw ごとの値の 1 つ（`SgValues` の欄。並びの順が uniform buffer の Float32 の位置）。
+  `pub enum UniformSlot with Eq, ToString { case RectPosX case RectPosY case RectSizeX case RectSizeY case Time case Alpha case TexLevels(Int32) case Param(Int32) }`
+- 2D の面の WGSL。module = 全部（入口は vs_main・fs_main）・functions = 入口を除いた物（`fn sg_surface(vUv: vec2f) -> vec4f` まで）・
+  `pub type alias SurfaceWgsl = { module = String, functions = String, slots = List[UniformSlot], texReads = List[(String, ShaderDoc.FilterMode)] }`
+- Spec → 2D の面の WGSL（式は ShaderGen.compile と同じ木から作る）。
+  `pub def compile(spec: ShaderDoc.Spec): SurfaceWgsl`
+- 2D の面の入口（vs_main・fs_main）。quad は頂点の番号から作る（GL の共有 quad と同じ 6 頂点）。
+  `pub def surfaceEntries(): String`
+- `pub def clipFromGlSource(): String`
+- 3D の材質の WGSL の部品。declarations = `SgValues` と絵の宣言（`@group(group)`）・functions = ノイズの関数と
+  `pub type alias MaterialWgsl = { declarations = String, functions = String, slots = List[UniformSlot], paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
+- 3D の材質の WGSL（式は ShaderGen.compile3d と同じ木から作る）。group = `sg` と絵を置く bind group の番号。
+  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], group: Int32): MaterialWgsl`
+- 欄の WGSL の名前（GLSL の uniform と同じ名前）。
+  `pub def slotName(slot: UniformSlot): String`
+- `pub def prelude(): String`
+- `pub def texMipSource(): String`
+
 ## ShaderJson — `engine/src/shader/ShaderJson.flix`
 - JSON をトップレベルの Spec へ読み取る。壊れていれば Err（パス付きの説明）。
   `pub def parse(json: Json): Result[JsonError, ShaderDoc.Spec]`
@@ -1868,6 +1889,9 @@
 - `pub def srgbToLinearGlsl(name: String): String`
 - linearToSrgb と同じ式の GLSL の関数（float → float。負は 0・1 を超えても切らない）。
   `pub def linearToSrgbGlsl(name: String): String`
+- `pub def srgbToLinearWgsl(name: String): String`
+- linearToSrgbGlsl の WGSL の版（f32 → f32。式は同じ）。
+  `pub def linearToSrgbWgsl(name: String): String`
 
 ## TileLayer — `engine/src/render2d/TileLayer.flix`
 - 色変調なし（白 = テクスチャの色のまま）。tint の既定値として使う。

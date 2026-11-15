@@ -671,7 +671,38 @@ pub mod ShaderGen {
     pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): MaterialGlsl =
         let reads = ShaderDoc.materialTexReads(spec, emission, metallicRoughness);
         let params = ShaderDoc.materialParamNames(spec, emission, metallicRoughness);
-        let tex = withParamScope(params, texScopeFrom(reads));
+        let readsTextures = not List.isEmpty(reads);
+        let stmts = materialStatements(spec, emission, metallicRoughness, withParamScope(params, texScopeFrom(reads)), readsTextures);
+        let indent = (lines: List[String]) -> lines |> List.map(st -> "    " + st + "\n") |> joinParts;
+        let cutoutFunction = match stmts#cutout {
+            case None => ""
+            case Some(lines) =>
+                joinParts(
+                    "float materialCutoutAlpha() {\n" ::
+                    "    vec2 sg_uv = vUv;\n" ::
+                    "    vec3 sg_normal = normalize(vNormal);\n" ::
+                    indent(lines) ::
+                    "}\n" :: Nil)
+        };
+        { uniforms = "uniform float uTime;\n" + texUniformDecls(reads) + texLevelDecls(reads) + paramUniformDecls(params),
+          functions = joinParts(
+              preludeSource() ::
+              (if (readsTextures) blurSourceWith(e -> "textureLod(tex, " + e + ", 0.0)") + texMipSource() else "") ::
+              divSource() ::
+              "void materialEval(out vec4 albedo, out vec3 emission" + (if (Option.nonEmpty(metallicRoughness)) ", out vec2 metalRough" else "") + ") {\n" ::
+              "    vec2 sg_uv = vUv;\n" ::
+              "    vec3 sg_normal = normalize(vNormal);\n" ::
+              indent(stmts#eval) ::
+              "}\n" ::
+              cutoutFunction :: Nil),
+          paramNames = params,
+          texReads = reads,
+          cutoutAlpha = if (readsTextures) "materialCutoutAlpha()" else "albedo.a" }
+
+    /// 材質の文: eval = albedo・emission・metalRough へ代入する文（binding の宣言から）・cutout = 絵を読む材質だけ、mip のレベル 0 で読み直した α を返す文。
+    /// tex = 絵と Param の番号の表（wgslModeKey() があれば WGSL の字）・readsTextures = 材質が絵を読むか。
+    def materialStatements(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade],
+                           tex: Map[String, Int32], readsTextures: Bool): { eval = List[String], cutout = Option[List[String]] } =
         let mipTex = Map.insert(mipModeKey(), 0, tex);
         let baseEnv = Map#{ worldKey() => "vWorld", normalKey() => "sg_normal", colorKey() => "vColor" };
         let uv = "sg_uv";
@@ -685,38 +716,22 @@ pub mod ShaderGen {
             case None        => "emission = vec3(0.0, 0.0, 0.0);"
         };
         let metalStmts = match metallicRoughness {
-            case Some(shade) => ("metalRough = clamp((" + shadeExpr(0.0, shade, uv, env, mipTex) + ").xy, 0.0, 1.0);") :: Nil
+            case Some(shade) => ("metalRough = " + clampUnit2(tex, "(" + shadeExpr(0.0, shade, uv, env, mipTex) + ").xy") + ";") :: Nil
             case None        => Nil
         };
-        let body = finishReads(List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: metalStmts));
-        let readsTextures = not List.isEmpty(reads);
-        let indent = (stmts: List[String]) -> stmts |> List.map(st -> "    " + st + "\n") |> joinParts;
-        let cutoutFunction = if (not readsTextures) "" else {
+        let eval = finishReads(vec4Decl(tex), List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: metalStmts));
+        let cutout = if (not readsTextures) None else {
             let level0 = Map.insert(level0ModeKey(), 0, tex);
             let alphaExpr = match spec#out {
                 case ShaderDoc.Out.Fill(f) => "return " + fieldExpr(f#alpha, uv, env, level0) + ";"
             };
-            joinParts(
-                "float materialCutoutAlpha() {\n" ::
-                "    vec2 sg_uv = vUv;\n" ::
-                "    vec3 sg_normal = normalize(vNormal);\n" ::
-                indent(finishReads(List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, level0)), alphaExpr :: Nil))) ::
-                "}\n" :: Nil)
+            Some(finishReads(vec4Decl(tex), List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, level0)), alphaExpr :: Nil)))
         };
-        { uniforms = "uniform float uTime;\n" + texUniformDecls(reads) + texLevelDecls(reads) + paramUniformDecls(params),
-          functions = joinParts(
-              preludeSource() ::
-              (if (readsTextures) blurSourceWith(e -> "textureLod(tex, " + e + ", 0.0)") + texMipSource() else "") ::
-              divSource() ::
-              "void materialEval(out vec4 albedo, out vec3 emission" + (if (Option.nonEmpty(metallicRoughness)) ", out vec2 metalRough" else "") + ") {\n" ::
-              "    vec2 sg_uv = vUv;\n" ::
-              "    vec3 sg_normal = normalize(vNormal);\n" ::
-              indent(body) ::
-              "}\n" ::
-              cutoutFunction :: Nil),
-          paramNames = params,
-          texReads = reads,
-          cutoutAlpha = if (readsTextures) "materialCutoutAlpha()" else "albedo.a" }
+        { eval = eval, cutout = cutout }
+
+    /// vec2 の式 e を 0..1 に丸める式（WGSL の clamp は端も vec2 で渡す）。
+    def clampUnit2(tex: Map[String, Int32], e: String): String =
+        if (isWgsl(tex)) "clamp(" + e + ", vec2(0.0), vec2(1.0))" else "clamp(" + e + ", 0.0, 1.0)"
 
     /// fieldExpr の env で World / Normal の変数名を引く鍵（'@' を含む binding の名前は sg_b_ の変数名として GLSL が通さないので、
     /// 動く Spec の binding とは重ならない）。
@@ -845,7 +860,7 @@ pub mod ShaderGen {
     def mainStatements(spec: ShaderDoc.Spec, uv: String, baseEnv: Map[String, String], tex: Map[String, Int32]): List[String] =
         let rev = bindingStatements(spec#bindings, uv, baseEnv, tex);
         let out = outStmt(spec#cycleRate, spec#out, uv, bindingEnv(spec#bindings, baseEnv), tex);
-        finishReads(List.reverse(out :: rev))
+        finishReads(vec4Decl(tex), List.reverse(out :: rev))
 
     /// binding の宣言の文（逆順）。
     def bindingStatements(bindings: List[(String, ShaderDoc.Field)], uv: String, baseEnv: Map[String, String],
@@ -853,7 +868,7 @@ pub mod ShaderGen {
         let (rev, _) = List.foldLeft((acc, nf) -> {
             let (out, env) = acc;
             let (name, field) = nf;
-            let line = "float sg_b_" + name + " = " + fieldExpr(field, uv, env, tex) + ";";
+            let line = floatDecl(tex) + "sg_b_" + name + " = " + fieldExpr(field, uv, env, tex) + ";";
             (line :: out, Map.insert(name, "sg_b_" + name, env))
         }, (Nil, baseEnv), bindings);
         rev
@@ -876,14 +891,14 @@ pub mod ShaderGen {
 
     /// 印の付いた文の列を、印の無い GLSL の文の列へ。1 回しか出ない読みはそのまま書き戻す
     /// （同じ読みが 2 回以上無い Spec の GLSL は印を入れる前と 1 文字も変わらない）。
-    def finishReads(stmts: List[String]): List[String] =
+    def finishReads(vecDecl: String, stmts: List[String]): List[String] =
         if (not List.exists(st -> String.contains({ substr = "⟦" }, st), stmts)) stmts
         else {
             let parsed = stmts |> List.map(st -> fst(parseReads(st, 0)));
             let counts = parsed |> List.foldLeft((acc, ps) -> countReads(ps, acc), Map.empty());
             let (out, _) = parsed |> List.foldLeft((acc, ps) -> {
                 let (lines, st0) = acc;
-                let (text, st1) = renderReads(counts, ps, { decls = Nil | st0 });
+                let (text, st1) = renderReads(vecDecl, counts, ps, { decls = Nil | st0 });
                 (List.append(text :: st1#decls, lines), st1)
             }, (Nil, { declared = Map.empty(), decls = Nil, next = 0 }));
             List.reverse(out)
@@ -921,28 +936,28 @@ pub mod ShaderGen {
                 countReads(inner, Map.insert(key, 1 + Option.getWithDefault(0, Map.get(key, m)), m))
         }, acc, ps)
 
-    def renderReads(counts: Map[String, Int32], ps: List[ReadPiece], st: HoistState): (String, HoistState) =
+    def renderReads(vecDecl: String, counts: Map[String, Int32], ps: List[ReadPiece], st: HoistState): (String, HoistState) =
         let (rev, stOut) = List.foldLeft((acc, p) -> {
             let (parts, st0) = acc;
             match p {
                 case ReadPiece.Text(t) => (t :: parts, st0)
                 case ReadPiece.Read(inner) =>
-                    let (call, st1) = renderReads(counts, inner, st0);
-                    let (text, st2) = hoistRead(counts, plainReads(inner), call, st1);
+                    let (call, st1) = renderReads(vecDecl, counts, inner, st0);
+                    let (text, st2) = hoistRead(vecDecl, counts, plainReads(inner), call, st1);
                     (text :: parts, st2)
             }
         }, (Nil, st), ps);
         (joinParts(List.reverse(rev)), stOut)
 
     /// 2 回以上出る読みは変数へ（初めてならこの文の前に宣言を積む）、1 回きりなら呼び出しのまま。
-    def hoistRead(counts: Map[String, Int32], key: String, call: String, st: HoistState): (String, HoistState) =
+    def hoistRead(vecDecl: String, counts: Map[String, Int32], key: String, call: String, st: HoistState): (String, HoistState) =
         if (Option.getWithDefault(0, Map.get(key, counts)) < 2) (call, st)
         else match Map.get(key, st#declared) {
             case Some(var) => (var, st)
             case None =>
                 let var = "sg_r${st#next}";
                 (var, { declared = Map.insert(key, var, st#declared),
-                        decls = ("vec4 " + var + " = " + call + ";") :: st#decls,
+                        decls = (vecDecl + var + " = " + call + ";") :: st#decls,
                         next = st#next + 1 })
         }
 
@@ -957,7 +972,7 @@ pub mod ShaderGen {
                 tex: Map[String, Int32]): String =
         match out {
             case ShaderDoc.Out.Fill(f) =>
-                "outColor = vec4(" + shadeExpr(cycleRate, f#shade, uv, env, tex) + ", " +
+                (if (isWgsl(tex)) "let " else "") + "outColor = vec4(" + shadeExpr(cycleRate, f#shade, uv, env, tex) + ", " +
                 fieldExpr(f#alpha, uv, env, tex) + ");"
         }
 
@@ -1069,7 +1084,7 @@ pub mod ShaderGen {
                 fieldExpr(sw#of, uv2, env, tex)
             case ShaderDoc.Field.Angle(an) =>
                 // 中心から見た角度を 0..1 へ（atan2 / 2π + 0.5）。
-                "(atan((" + uv + ").y - " + f(an#cy) + ", (" + uv + ").x - " + f(an#cx) +
+                "(" + atan2Name(tex) + "((" + uv + ").y - " + f(an#cy) + ", (" + uv + ").x - " + f(an#cx) +
                     ") * 0.15915494 + 0.5)"
             case ShaderDoc.Field.Rotate(rt) =>
                 let uv2 = "sg_rotate((" + uv + "), " + f(rt#cx) + ", " + f(rt#cy) + ", " +
@@ -1207,7 +1222,7 @@ pub mod ShaderGen {
                     case ShaderDoc.TexChan.B => ".b"
                     case ShaderDoc.TexChan.A => ".a"
                 };
-                markRead("sg_blur(uTex${i}, uTexFlip${i}, (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
+                markRead("sg_blur(uTex${i}, " + texSecondArg(i, tex) + ", (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
                     ") * (" + fieldExpr(bl#amount, uv, env, tex) + "), " + iLit(ShaderDoc.blurTaps(bl#taps)) + ")") + chan
             // 番号は texReads の正典順なので表に必ずある。無い場合の 0.0 は保険。
             // WhyNot: 寸法を uniform で渡さない — 縮んだ Pass に registry の design の寸法を入れる取り違えが起きうる。
@@ -1217,7 +1232,7 @@ pub mod ShaderGen {
                     case ShaderDoc.Axis.V => ".y"
                 };
                 match Map.get(sizeKey(ts#name), tex) {
-                    case Some(i) => "float(textureSize(uTex${i}, 0)" + axis + ")"
+                    case Some(i) => texSizeCall(i, tex) + axis + ")"
                     case None    => "0.0"
                 }
         }
@@ -1225,9 +1240,32 @@ pub mod ShaderGen {
     /// uTexN を uv で読む GLSL の呼び出し（2D の面は texture・3D の材質は段つきの sg_texMip・cutout の α は段 0 の textureLod）。
     def texReadCall(i: Int32, uv: String, tex: Map[String, Int32]): String =
         let flipped = "vec2((" + uv + ").x, mix((" + uv + ").y, 1.0 - (" + uv + ").y, uTexFlip${i}))";
-        if (Map.memberOf(mipModeKey(), tex)) "sg_texMip(uTex${i}, uTexFlip${i}, uTexLevels${i}, (" + uv + "))"
+        if (Map.memberOf(mipModeKey(), tex)) "sg_texMip(uTex${i}, " + texSecondArg(i, tex) + ", uTexLevels${i}, (" + uv + "))"
+        else if (isWgsl(tex)) "textureSampleLevel(uTex${i}, uTex${i}Sampler, (" + uv + "), 0.0)"
         else if (Map.memberOf(level0ModeKey(), tex)) "textureLod(uTex${i}, " + flipped + ", 0.0)"
         else "texture(uTex${i}, " + flipped + ")"
+
+    // ── 言葉（GLSL・WGSL）で字が違う所。WGSL は表に wgslModeKey() を入れて組む ──
+    // WhyNot: WGSL の読みで uv の上下を返さない — WebGPU の描き先の texture は上の行が先で、ほかの絵と同じ向き（返すのは GL の描き先だけ）。
+    // WhyNot: WGSL の 2D の面の読みを textureSample にしない — 値で分かれる分岐（sg_blur の半径 0）の後で呼べない（uniformity）。面の絵に mip は無いのでレベル 0 と同じ値。
+
+    /// 表の鍵: WGSL の字で組む（rescope が @mode: の鍵を残す）。
+    def wgslModeKey(): String = "@mode:wgsl"
+
+    def isWgsl(tex: Map[String, Int32]): Bool = Map.memberOf(wgslModeKey(), tex)
+
+    def floatDecl(tex: Map[String, Int32]): String = if (isWgsl(tex)) "let " else "float "
+
+    def vec4Decl(tex: Map[String, Int32]): String = if (isWgsl(tex)) "let " else "vec4 "
+
+    def atan2Name(tex: Map[String, Int32]): String = if (isWgsl(tex)) "atan2" else "atan"
+
+    /// sg_blur・sg_texMip の 2 つ目の引数（GLSL は上下を返す uTexFlipN・WGSL は sampler）。
+    def texSecondArg(i: Int32, tex: Map[String, Int32]): String = if (isWgsl(tex)) "uTex${i}Sampler" else "uTexFlip${i}"
+
+    /// 寸法を float で読む式の頭（閉じ括弧は呼ぶ側）。
+    def texSizeCall(i: Int32, tex: Map[String, Int32]): String =
+        if (isWgsl(tex)) "f32(textureDimensions(uTex${i}, 0)" else "float(textureSize(uTex${i}, 0)"
 
     /// env の key に置いた 3D の変数（vec3）の axis の成分。無ければ 0.0（2D の面）。
     def scene3dRead(key: String, axis: ShaderDoc.Axis3, env: Map[String, String]): String =

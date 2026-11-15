@@ -16,6 +16,7 @@ pub mod LightModel3d.Codegen {
     enum Target {
         case Flix
         case Glsl
+        case Wgsl
     }
 
     /// 生成した関数が受ける引数（並びの順が引数の順）。
@@ -92,7 +93,7 @@ pub mod LightModel3d.Codegen {
             else match t {
                 case Target.Flix => "${env#shadowFunction}(shadow, i, ${vec3InputCode(t, Vec3Input.Position, 0)}, ${vec3InputCode(t, Vec3Input.Position, 1)}, ${vec3InputCode(t, Vec3Input.Position, 2)})"
                 // GLSL の i はスポットの番号（Flix の i は並びの欄の位置）。spotShadow はその番号で uShadowSpot と比べる。
-                case Target.Glsl => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
+                case _           => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
             }
         case (Target.Flix, _) => scalarInputName(input)
         // WhyNot: 太陽の影の割合を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が先に求めて渡す（地図を引くのは木の外）。
@@ -105,6 +106,15 @@ pub mod LightModel3d.Codegen {
         case (Target.Glsl, ScalarInput.LightmapIntensity) => "uLightmapIntensity"
         case (Target.Glsl, ScalarInput.EnvironmentOn)     => "float(uEnvOn)"
         case (Target.Glsl, ScalarInput.EnvironmentBoxOn)  => "float(uEnvBoxOn)"
+        case (Target.Wgsl, ScalarInput.SunLit)            => "r3d_sunLit"
+        case (Target.Wgsl, ScalarInput.Hemisphere)        => "r3d.uHemisphere"
+        case (Target.Wgsl, ScalarInput.FogNear)           => "r3d.uFogRange.x"
+        case (Target.Wgsl, ScalarInput.FogFar)            => "r3d.uFogRange.y"
+        case (Target.Wgsl, ScalarInput.SkyCurve)          => "r3d.uCurve"
+        case (Target.Wgsl, ScalarInput.LightmapSrgb)      => "f32(r3d.uLightmapSrgb)"
+        case (Target.Wgsl, ScalarInput.LightmapIntensity) => "r3d.uLightmapIntensity"
+        case (Target.Wgsl, ScalarInput.EnvironmentOn)     => "f32(r3d.uEnvOn)"
+        case (Target.Wgsl, ScalarInput.EnvironmentBoxOn)  => "f32(r3d.uEnvBoxOn)"
     }
 
     def scalarInputName(input: ScalarInput): String = match input {
@@ -191,18 +201,32 @@ pub mod LightModel3d.Codegen {
         case Vec3Input.SunColor             => "uSunColor"
     }
 
+    /// WGSL で入力を読む名前（場面の値は Render3dWgsl の `var<uniform> r3d` の欄。名前は GLSL の uniform と同じ）。
+    def wgslUniformOf(input: Vec3Input): String =
+        if (isPerPixel(input)) vec3InputName(input) else "r3d." + glslUniformOf(input)
+
+    /// WGSL の光の欄。f32 と vec2 の配列は uniform の配列の 16 バイト刻みに合わせて vec4 の配列に入れてある（x・y を読む）。
+    def wgslScalarField(kind: LightKind, field: ScalarLightField): String = match (kind, field) {
+        case (LightKind.Point, ScalarLightField.RangeSquared) => "(r3d.uPointRange[i].x * r3d.uPointRange[i].x)"
+        case (LightKind.Spot, ScalarLightField.RangeSquared)  => "(r3d.uSpotRange[i].x * r3d.uSpotRange[i].x)"
+        case (LightKind.Spot, ScalarLightField.OuterCos)      => "r3d.uSpotCone[i].x"
+        case (LightKind.Spot, ScalarLightField.InnerCos)      => "r3d.uSpotCone[i].y"
+        case _                                                => bug!("LightModel3d: 点光源に円錐の縁は無い")
+    }
+
     def axisSuffix(t: Target, axis: Int32): String = match (t, axis) {
         case (Target.Flix, 0) => "X"
         case (Target.Flix, 1) => "Y"
         case (Target.Flix, _) => "Z"
-        case (Target.Glsl, 0) => ".x"
-        case (Target.Glsl, 1) => ".y"
-        case (Target.Glsl, _) => ".z"
+        case (_, 0)           => ".x"
+        case (_, 1)           => ".y"
+        case (_, _)           => ".z"
     }
 
     def vec3InputCode(t: Target, input: Vec3Input, axis: Int32): String = match t {
         case Target.Flix => vec3InputName(input) + axisSuffix(t, axis)
         case Target.Glsl => glslUniformOf(input) + axisSuffix(t, axis)
+        case Target.Wgsl => wgslUniformOf(input) + axisSuffix(t, axis)
     }
 
     def lightOf(env: Env, what: String): LightKind = match env#light {
@@ -234,6 +258,7 @@ pub mod LightModel3d.Codegen {
         let kind = lightOf(env, "光の欄");
         match t {
             case Target.Glsl => glslScalarField(kind, field)
+            case Target.Wgsl => wgslScalarField(kind, field)
             case Target.Flix => match scalarFieldOffset(kind, field) {
                 case Some(offset) => fieldRead(offset)
                 case None         => bug!("LightModel3d: この光に無い欄")
@@ -246,6 +271,9 @@ pub mod LightModel3d.Codegen {
             case Target.Glsl =>
                 let u = glslVec3Field(kind, field);
                 ("${u}.x", "${u}.y", "${u}.z")
+            case Target.Wgsl =>
+                let u = "r3d." + glslVec3Field(kind, field);
+                ("${u}.x", "${u}.y", "${u}.z")
             case Target.Flix => match vec3FieldOffset(kind, field) {
                 case Some(offset) => (fieldRead(offset), fieldRead(offset + 1), fieldRead(offset + 2))
                 case None         => bug!("LightModel3d: この光に無い欄")
@@ -254,29 +282,31 @@ pub mod LightModel3d.Codegen {
 
     def call1(t: Target, flixName: String, glslName: String, a: String): String = match t {
         case Target.Flix => "${flixName}(${a})"
-        case Target.Glsl => "${glslName}(${a})"
+        case _           => "${glslName}(${a})"
     }
 
     def maxCode(t: Target, a: String, b: String): String = match t {
         case Target.Flix => "Float64.max(${a}, ${b})"
-        case Target.Glsl => "max(${a}, ${b})"
+        case _           => "max(${a}, ${b})"
     }
 
     def minCode(t: Target, a: String, b: String): String = match t {
         case Target.Flix => "Float64.min(${a}, ${b})"
-        case Target.Glsl => "min(${a}, ${b})"
+        case _           => "min(${a}, ${b})"
     }
 
     def srgbCode(t: Target, toLinear: Bool, a: String): String = match (t, toLinear) {
         case (Target.Flix, true)  => "Texture3d.srgbToLinear(${a})"
         case (Target.Flix, false) => "Texture3d.linearToSrgb(${a})"
-        case (Target.Glsl, true)  => "r3d_srgbToLinear(${a})"
-        case (Target.Glsl, false) => "r3d_linearToSrgb(${a})"
+        case (_, true)            => "r3d_srgbToLinear(${a})"
+        case (_, false)           => "r3d_linearToSrgb(${a})"
     }
 
     def selectCode(t: Target, c: String, a: String, b: String): String = match t {
         case Target.Flix => "(if (${c}) ${a} else ${b})"
         case Target.Glsl => "(${c} ? ${a} : ${b})"
+        // WhyNot: select の両側の計算を避けない — 文の無い式の側だけがここへ来る（文のある側は IfElse の文になる）。
+        case Target.Wgsl => "select(${b}, ${a}, ${c})"
     }
 
     def condCode(t: Target, fresh: Ref[(String, Int32), r], env: Env, c: Cond): (List[Stmt], String) \ r = match c {
@@ -287,7 +317,7 @@ pub mod LightModel3d.Codegen {
             let (sr, cr) = condCode(t, fresh, env, r);
             let op = match t {
                 case Target.Flix => "and"
-                case Target.Glsl => "&&"
+                case _           => "&&"
             };
             // WhyNot: 右の文を左より前に流さない — 左が偽の時に右を計算しない約束が崩れる。右は文の要らない形だけを受ける。
             if (not List.isEmpty(sr)) bug!("LightModel3d: Cond.And の右に Let・文の要る Select は置けない")
@@ -337,7 +367,7 @@ pub mod LightModel3d.Codegen {
         case ScalarExpr.Min(a, b)     => binary(t, fresh, env, a, b, (x, y) -> minCode(t, x, y))
         case ScalarExpr.Pow(a, b)     => binary(t, fresh, env, a, b, (x, y) -> match t {
             case Target.Flix => "Float64.pow(base = ${x}, ${y})"
-            case Target.Glsl => "pow(${x}, ${y})"
+            case _           => "pow(${x}, ${y})"
         })
         case ScalarExpr.Sqrt(a) =>
             let (sa, ca) = scalarCode(t, fresh, env, a);
@@ -347,12 +377,13 @@ pub mod LightModel3d.Codegen {
             (sa, match t {
                 case Target.Flix => "(1.0 / Num.sqrt(${ca}))"
                 case Target.Glsl => "inversesqrt(${ca})"
+                case Target.Wgsl => "inverseSqrt(${ca})"
             })
         case ScalarExpr.Clamp01(a) =>
             let (sa, ca) = scalarCode(t, fresh, env, a);
             (sa, match t {
                 case Target.Flix => "clamp01(${ca})"
-                case Target.Glsl => "clamp(${ca}, 0.0, 1.0)"
+                case _           => "clamp(${ca}, 0.0, 1.0)"
             })
         case ScalarExpr.Smoothstep(lo, hi, x) =>
             let (sl, cl) = scalarCode(t, fresh, env, lo);
@@ -440,6 +471,9 @@ pub mod LightModel3d.Codegen {
                 case Target.Glsl =>
                     let (sv, cv) = bindIfNotAtomic3(fresh, vec3Code(t, fresh, env, v));
                     (sv, map3(x -> "(uToonSteps > 0 ? floor(${x} * float(uToonSteps) + 0.5) / float(uToonSteps) : ${x})", cv))
+                case Target.Wgsl =>
+                    let (sv, cv) = bindIfNotAtomic3(fresh, vec3Code(t, fresh, env, v));
+                    (sv, map3(x -> "select(${x}, floor(${x} * f32(r3d.uToonSteps) + 0.5) / f32(r3d.uToonSteps), r3d.uToonSteps > 0)", cv))
             }
         case Vec3Expr.SrgbToLinear(v) => let (sv, cv) = vec3Code(t, fresh, env, v); (sv, map3(x -> srgbCode(t, true, x), cv))
         case Vec3Expr.LinearToSrgb(v) => let (sv, cv) = vec3Code(t, fresh, env, v); (sv, map3(x -> srgbCode(t, false, x), cv))
@@ -493,7 +527,7 @@ pub mod LightModel3d.Codegen {
     def outerNamesOf(env: Env): List[String] =
         let scalars = Map.toList(env#scalars) |> List.map(snd);
         let vecs = Map.toList(env#vecs) |> List.map(snd) |> List.flatMap(v -> { let (x, y, z) = v; x :: y :: z :: Nil });
-        List.append(scalars, vecs) |> List.distinct |> List.sort
+        List.append(scalars, vecs) |> List.distinct |> Sort.sortStable
 
     // ── 使う引数 ─────────────────────────────────────────
 
@@ -911,5 +945,52 @@ pub mod LightModel3d.Codegen {
                 "${pad}for (int i = 0; i < ${limit}; i++) {\n" +
                 "${indent(depth + 1)}if (i >= ${count}) break;\n" +
                 glslStmts(depth + 1, bodyStmts) + accumulate + "${pad}}\n"
+        }
+
+    // ════════════════════════════════════════════════════════
+    // WGSL の出口
+    // ════════════════════════════════════════════════════════
+
+    /// 式 e を WGSL の関数 `fn name(…) -> vec3f` に生成した字（toGlsl と同じ木・同じ引数の並び）。場面の値は `r3d` の欄（Render3dWgsl の struct）で読み、
+    /// 光のループは Scene3d.maxPointLights()・maxSpotLights() 回の for で r3d.uPointCount・r3d.uSpotCount で抜ける。
+    /// 影は spotShadow(i, p)（i は i32）・太陽の影の割合は `var<private> r3d_sunLit`・色の空間は r3d_srgbToLinear・r3d_linearToSrgb（Texture3d.srgbToLinearWgsl・linearToSrgbWgsl）。
+    pub def toWgsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String = region rc {
+        let fresh = Ref.fresh(rc, ("", 0));
+        let (stmts, (x, y, z)) = vec3Code(Target.Wgsl, fresh, envFor(""), e);
+        let kept = pruneStmts(stmts, identifiersInAll(x :: y :: z :: Nil));
+        let perPixelSet = List.toSet(perPixel);
+        let missing = paramsOfVec3(e) |> Set.toList |> List.filter(p -> match p {
+            case Param.Vec3Param(input) => isPerPixel(input) and not Set.memberOf(input, perPixelSet)
+            case _                      => false
+        });
+        let params = perPixel |> List.map(input -> "${vec3InputName(input)}: vec3f");
+        if (not List.isEmpty(missing)) bug!("LightModel3d: ${name} の木が引数の並びに無い画素ごとの入力を読む")
+        else if (List.exists(input -> not isPerPixel(input), perPixel)) bug!("LightModel3d: ${name} の引数の並びに uniform で読む入力がある")
+        else "fn ${name}(${List.join(", ", params)}) -> vec3f {\n" + wgslStmts(1, kept) + "    return vec3f(${x}, ${y}, ${z});\n}\n"
+    }
+
+    def wgslStmts(depth: Int32, stmts: List[Stmt]): String =
+        stmts |> List.map(wgslStmt(depth)) |> List.join("")
+
+    def wgslStmt(depth: Int32, s: Stmt): String =
+        let pad = indent(depth);
+        match s {
+            case Stmt.Bind(name, e) => "${pad}let ${name} = ${e};\n"
+            case Stmt.BindBool(name, e) => "${pad}let ${name} = ${e};\n"
+            case Stmt.IfElse(c, names, yesStmts, yesVals, noStmts, noVals) =>
+                let assign = (vals: List[String]) -> List.zip(names, vals) |> List.map(pair -> "${indent(depth + 1)}${fst(pair)} = ${snd(pair)};\n") |> List.join("");
+                (names |> List.map(n -> "${pad}var ${n}: f32;\n") |> List.join("")) +
+                "${pad}if (${c}) {\n" + wgslStmts(depth + 1, yesStmts) + assign(yesVals) +
+                "${pad}} else {\n" + wgslStmts(depth + 1, noStmts) + assign(noVals) + "${pad}}\n"
+            case Stmt.Loop(kind, names, bodyStmts, vals, _, _) =>
+                let (count, limit) = match kind {
+                    case LightKind.Point => ("r3d.uPointCount", Scene3d.maxPointLights())
+                    case LightKind.Spot  => ("r3d.uSpotCount", Scene3d.maxSpotLights())
+                };
+                let accumulate = List.zip(names, vals) |> List.map(pair -> "${indent(depth + 1)}${fst(pair)} = ${fst(pair)} + ${snd(pair)};\n") |> List.join("");
+                (names |> List.map(n -> "${pad}var ${n}: f32 = 0.0;\n") |> List.join("")) +
+                "${pad}for (var i = 0; i < ${limit}; i++) {\n" +
+                "${indent(depth + 1)}if (i >= ${count}) { break; }\n" +
+                wgslStmts(depth + 1, bodyStmts) + accumulate + "${pad}}\n"
         }
 }
