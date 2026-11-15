@@ -393,6 +393,8 @@ webgpu-v1-check:
 # WebGPU の頁の renderer に webgpu: が無い・WebGPU の無い頁の renderer に webgpu: がある・WebGL2 の絵と違う、のどれかで exit 1。
 # PC の WebGPU (make webgpu-v1-check の w1) があれば、それとも比べる (alpha は見ない)。書き出しを省くなら WEB_EXPORT=off。先に make sync-engine-full-web。
 WEBGPU_V1_WEB := $(WEBGPU_V1_OUT)/web
+# WhyNot: /bin/sh に任せない — pipefail を持たない sh（古い dash など）では撮れなかった回が通る。
+webgpu-v1-check-web: SHELL := /bin/bash
 webgpu-v1-check-web:
 	@if [ "$(WEB_EXPORT)" != off ]; then bin/fge export-web templates/rpg-starter --out $(WEBGPU_V1_WEB)/rpg; fi
 	@page=$(WEBGPU_V1_WEB)/rpg; { sed -n 1,3p $$page/index.html; cat bench/webgpu_v1/web/nogpu-head.html; sed -n '4,$$p' $$page/index.html; } > $$page/nogpu.html

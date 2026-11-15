@@ -10,7 +10,7 @@
 - お題: rpg-starter の題名の画面（親 9 章: スプライト 7 個だけ・多角形と面が無い）と、Pass 1 つに通した画面（11 章の 1 で `bench/gl_parity` の `passPaste` などに代えると決めた）。PC とブラウザで出す。
 - 選び分け: 既定は GL のまま（リリース 2 まで）。PC は `FLIX_GE_BACKEND=webgpu`、ブラウザは `?backend=webgpu`。使えない時は理由を 1 行知らせて GL で起動する。
 - **V1 で描かない物**（WebGPU を選んだ時だけ。名前ごとに初めの 1 回だけ知らせて描かない）: 多角形・タイルの層・static layer・面（`ShaderDoc`）・3D の場面・mask つきスプライト・
-  Pass の history（`<名前>@prev`）・MSAA（標本 2 以上は 1 で描いて知らせる）・F8 の注釈・PC で起動の後に足す字（`ensureGlyphs`。3.1）。どれも親 9 章の R1b ⇄ P6 以降の物。
+  Pass の history（`<名前>@history`）・MSAA（標本 2 以上は 1 で描いて知らせる）・F8 の注釈・PC で起動の後に足す字（`ensureGlyphs`。3.1）。どれも親 9 章の R1b ⇄ P6 以降の物。
 - **V1 で変えない物**: `RenderFrame` の関数の中身・`RenderList` の形・GL の backend の流し方・engine（`engine`・`engine_world`）の pub・`render_gl/java`
   （GL の層の jar のハッシュを動かさない。12.9 の 8 の直しも V1 ではしない）。`Frame.flix` で直すのはコメント 1 か所だけ（1.3）。
 - **増える pub**（render_gl と engine_web の中だけ。ゲームから呼ばない物は `Internal` の下に置く）:
@@ -228,7 +228,7 @@ PC は理由を 1 行出して終わる（コマの途中で GL へ移るには�
 3. `endTarget`: フラグを下ろす（標本 1 なので resolve は無い）。
 4. 本編の `renderCommands` は `Render.sprite(name)` を普通の絵として描く。uv は返さない（2.6）。sampler は NEAREST（`Render.Pass` の doc の約束）。
 
-- 自分を読む Pass（`<名前>@prev`）は、今の GL が `glBlitFramebuffer` で前のコマを写す所。`WebGpu` の interface に texture から texture への写しが無いので V1 では描かない（親 R1b ⇄ P6 の history）。
+- 自分を読む Pass（`<名前>@history`）は、今の GL が `glBlitFramebuffer` で前のコマを写す所。`WebGpu` の interface に texture から texture への写しが無いので V1 では描かない（親 R1b ⇄ P6 の history）。
 - 同じ見た目かは 8.1 の門で GL と画素で比べる。
 
 ## 5. ウィンドウ
@@ -517,6 +517,7 @@ commit: 段階 1 `4aff67b0`・段階 2 `6eee79e1`・段階 3 `92205618`・段階
 - 画面なしの比べ（bench/webgpu_v1・9 場面）: 全部 0 px（字の許容 2/255 も使わず）・WebGPU の誤り 0・submit は Pass の後に生成の絵を書き替える場面だけ 2・ほかは 1。
 - 実機の窓（隠して起動・rpg-starter の title）: WebGPU どうし 2 回で 6 枚とも同じ SHA・GLYPHS=used の GL と 6 枚とも 0 px。窓を見せた起動（768x720）でも GL と frame shot の SHA が同じ。
 - gl_parity の V1 の 5 scene: WebGPU と SoftRaster・WebGPU と GL とも 0 px。
+- `make webgpu`（`PARITY_VIA_SCREEN=1`）を回した後も、git に入っている `bench/gl_parity/debug/soft/*.items.tsv` は書き替わらない（`git status bench/gl_parity/debug/soft` が clean・2026-11-15）。
 - ブラウザ（Chrome 156）: rpg-starter の title で WebGL2 と WebGPU が 0 px（SHA も同じ）。PC の WebGPU とは 22 px・±1（PC の GL とブラウザの GL でも同じ 22 px・±1）。WebGPU の無い頁は WebGL2 で同じ絵。
 - firstInstance と instance の頂点バッファで 20,000 本: PC の CPU の中央値 1.45 ms（storage の形と同じ）・ブラウザ 0.8 ms。
 - sprite_stress の同じ絵 20,000 個（bench/sprite_stress/RESULTS.md の節）: PC は WebGPU / GL が frame 0.89 倍・submit 0.94 倍（WebGpuRows の欄の読み方を直した後。直す前は submit 1.28 倍）。ブラウザは submit 1.04 倍・cpu 1.02 倍。

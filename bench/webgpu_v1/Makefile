@@ -1,7 +1,7 @@
 # webgpu_v1 — WebGPU の 2D の描き手（RenderPaint.Internal.WebGpuPaint）を、ウィンドウを開かずに GL の描き手（GlOffscreen）と画素で比べる門。
 # 同じ場面（src/Scenes.flix）を両方で 1 コマずつ描き、場面ごとに違う画素の数と成分の差の最大を出す。許す差は tolerance.tsv（既定は 0）。
 # 1 つでも許す差を超えるか、WebGPU の誤りの数が 0 でないか、submit の数が場面の期待と違えば exit 1。GPU が要るので CI には載せない（webgpu-check と同じ）。
-#   make run    … 門（描いた絵は debug/gl・debug/webgpu・差は debug/diff）
+#   make run    … 門（描いた絵は debug/gl・debug/webgpu）
 #   make check  … 型検査だけ
 # 先にエンジンの root で make sync-engine-full（engine_full/src の symlink 集と、Dawn のネイティブを持つ engine_full/flix.toml を使う）。
 #
