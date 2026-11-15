@@ -71,7 +71,7 @@ mod View {
         let stage = World.stageOf(res, w);
         let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
-        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage) :: GameView.draw(res, env#storyNow, stage) :: Nil)
+        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage) :: GameView.draw(env, stage) :: Nil)
             |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -942,7 +942,7 @@ mod View {
         let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
             List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage)
-                         :: GameView.draw(away#res, away#storyNow, read#stage) :: reading(atlas, away, read) :: Nil))
+                         :: GameView.draw(away, read#stage) :: reading(atlas, away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)

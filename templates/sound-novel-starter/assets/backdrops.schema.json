@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "背景の写真と時間帯の色（novel.backdrops.json）",
-  "description": "シナリオの <<bg 写真 時間帯 秒>> の名前はここの鍵。写真は昼の実写で、時間帯の色とぼかしはシェーダー（src/Backdrop.flix）が付ける。",
+  "description": "シナリオの <<bg 写真 grade=時間帯 time=秒>> の名前はここの鍵。写真は昼の実写で、時間帯の色とぼかしはシェーダー（src/Backdrop.flix）が付ける。",
   "type": "object",
   "required": [
     "version",

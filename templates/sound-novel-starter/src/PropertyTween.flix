@@ -41,7 +41,7 @@ mod PropertyTween {
     /// startsAt から seconds の間だけ。
     type alias TriggerTrack[c] = { startsAt = Clock.Time[c], seconds = Float64 }
 
-    /// 鍵ごとの予定の列（始まる時刻の順）。列の頭より前は、頭の値の前の形（数は origin・名前は無い）。
+    /// 鍵ごとの予定の列（始まる時刻の順）。列の頭が始まる前は値が無い（読む側の fallback・名前は None）。
     enum TableOf[c]({ nums = Map[String, List[NumTrack[c]]], names = Map[String, List[NameTrack[c]]], triggers = Map[String, List[TriggerTrack[c]]] })
 
     /// 名前の付いた値の表（外からは tween・setName・trigger だけで書く）。
@@ -107,7 +107,7 @@ mod PropertyTween {
 
     // ── 読む ──
 
-    /// k の now の値（まだ一度も書いていなければ fallback）。
+    /// k の now の値（始まった予定がまだ無ければ fallback）。
     pub def numAt(now: Clock.Time[c], k: NumKey, fallback: Float64, t: Table[c]): Float64 =
         numIn(now, Map.getWithDefault(numName(k), Nil, tracks(t)#nums)) |> Option.getWithDefault(fallback)
 
@@ -116,7 +116,7 @@ mod PropertyTween {
             case Some(x) =>
                 let progress = if (x#seconds <= 0.0) 1.0 else Clock.since(x#startsAt, now) / x#seconds;
                 Some(x#origin + (x#target - x#origin) * Curve.ease(x#ease, progress))
-            case None => List.head(xs) |> Option.map(x -> x#origin)
+            case None => None
         }
 
     /// k の now の値（無い・まだ一度も書いていなければ None）。

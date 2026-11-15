@@ -45,7 +45,8 @@ mod Saves {
         display = Display
     }
 
-    /// 戻れる所 1 つ。bookmark = シナリオの位置、shot / ambience / particles / mode / cast = その時の背景・環境音・パーティクル・文章の出し方・立ち絵と小物
+    /// 戻れる所 1 つ。bookmark = シナリオの位置、shot / ambience / particles / mode / cast = その時の背景・環境音（project.json の sounds の名前）・
+    /// パーティクル・文章の出し方・立ち絵と小物
     /// （ブックマークが当て直すのは今のノードの頭からなので、前のノードで始まった物はここから戻す）。
     pub type alias Mark = {
         bookmark = YarnRunner.Bookmark,
@@ -225,6 +226,10 @@ mod Saves {
                                            "display" => Json.JString("${c#display}") })
         })
 
+    /// 枠の ambience の字 → 環境音の音の名前。
+    /// WhyNot: 書いてある字をそのまま音の名前にしない — 同じ version 2 のセーブに、amb_ を付けない短い名前（evening）で書いた枠がある。
+    def soundOfAmbience(name: String): String = if (String.startsWith(prefix = "amb_", name)) name else "amb_${name}"
+
     /// JSON から（壊れた枠・行はその分だけ捨て、設定の欠けた欄は fallback の値）。
     pub def fromJson(fallback: Saves, json: Json): Saves =
         let root = JsonCodec.expectObject(json) |> Option.getWithDefault(Map.empty());
@@ -235,7 +240,7 @@ mod Saves {
                 let mode = if (text("mode") == Some("Adv")) Stage.Mode.Adv else Stage.Mode.Nvl;
                 { mark = { bookmark = bookmark,
                            shot = forM (photo <- text("photo"); grade <- text("grade")) yield { photo = photo, grade = grade },
-                           ambience = text("ambience"), particles = text("particles"), mode = mode,
+                           ambience = text("ambience") |> Option.map(soundOfAmbience), particles = text("particles"), mode = mode,
                            cast = Cast.markFromJson(Map.get("cast", obj)) },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),

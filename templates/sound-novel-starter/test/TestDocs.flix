@@ -82,7 +82,7 @@ mod TestDocs {
                       World.Event.Opened :: World.Event.Closed :: World.Event.Saved :: World.Event.Loaded :: World.Event.Rolled :: Nil;
         let ses = audioSounds("se", res#dialogue) |> List.map(World.Event.Cue);
         let played = List.append(replies, ses) |> List.filterMap(Controls.soundOf);
-        let ambiences = Stage.ambienceSound(StoryDoc.rec(res#story)#titleAmbience) :: audioSounds("ambience", res#dialogue);
+        let ambiences = StoryDoc.rec(res#story)#titleAmbience :: audioSounds("ambience", res#dialogue);
         let missing = List.append(played, ambiences) |> List.filter(n -> not Set.memberOf(n, sounds)) |> List.distinct;
         Assert.assertEq(expected = Nil, missing)
 
@@ -131,6 +131,12 @@ mod TestDocs {
         // 横の位置と縦の位置は、同じ名前の集まり（シナリオの <<show 名前 at=位置>> は向きを知らずに書く）。
         let d = CastDoc.rec(CastDoc.load(CastDoc.path()));
         Assert.assertEq(expected = Map.keysOf(d#slots), Map.keysOf(d#portraitSlots))
+
+    @Test
+    def testCastAndPropNamesNeverOverlap(): Unit \ {Assert, Fs.FileRead} =
+        // 人物と小物の名前は重ならない（<<show 名前>> は cast を先に引くので、重なった小物は出せない）。
+        let d = CastDoc.rec(CastDoc.load(CastDoc.path()));
+        Assert.assertEq(expected = Set.empty(), Set.intersection(Map.keysOf(d#cast), Map.keysOf(d#props)))
 
     @Test
     def testCastDocFallsOpen(): Unit \ {Assert, Fs.FileRead} =

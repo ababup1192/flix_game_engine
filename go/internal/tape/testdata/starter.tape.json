@@ -7,15 +7,15 @@
   "game": "sound-novel-starter",
   "lines": {
     "22": {
-      "cmd": "<<ambience evening>>",
+      "cmd": "<<audio ambience amb_evening>>",
       "node": "Station"
     },
     "23": {
-      "cmd": "<<bg station dusk 2.5>>",
+      "cmd": "<<bg station grade=dusk time=2.5>>",
       "node": "Station"
     },
     "24": {
-      "cmd": "<<nvl>>",
+      "cmd": "<<window nvl>>",
       "node": "Station"
     },
     "25": {
@@ -43,7 +43,7 @@
       "who": "地の文"
     },
     "30": {
-      "cmd": "<<clear>>",
+      "cmd": "<<window clear>>",
       "node": "Station"
     },
     "31": {

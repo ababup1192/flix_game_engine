@@ -139,6 +139,18 @@ mod TestCast {
         Assert.assertEq(expected = ("b" :: Nil, 0), (castOf(one) |> List.map(match (n, _, _) -> n), List.length(none#cast)))
 
     @Test
+    def testHideAllAlsoHidesTheProp(): Unit \ {Assert, Fs.FileRead} =
+        // <<hide all>> は人物だけでなく小物も消す。
+        let gone = played(("show", "a" :: Nil) :: ("show", "cup" :: Nil) :: ("hide", "all" :: Nil) :: Nil);
+        Assert.assertEq(expected = None, gone#prop |> Option.map(s -> s#now#name))
+
+    @Test
+    def testHideAtASlotHidesWhoStandsThere(): Unit \ {Assert, Fs.FileRead} =
+        // <<hide at=位置>> はその位置に出ている人物だけを消し、ほかの位置の人は残す。
+        let layer = played(("show", "a" :: "at=left" :: Nil) :: ("show", "b" :: "at=right" :: Nil) :: ("hide", "at=left" :: Nil) :: Nil);
+        Assert.assertEq(expected = "b" :: Nil, castOf(layer) |> List.map(match (n, _, _) -> n))
+
+    @Test
     def testItemReplacesThePreviousProp(): Unit \ {Assert, Fs.FileRead} =
         // 小物の <<show>> は前の小物と入れ替わり（前の小物は消えていく）、<<hide at=item>> で消える。人物の列には入らない。
         let swapped = played(("show", "cup" :: Nil) :: ("show", "fan" :: Nil) :: Nil);

@@ -15,7 +15,7 @@ mod TestCommands {
 
     def gradeOf(res: Res.Res): String = BackdropDoc.rec(res#backdrops)#grades |> Map.keysOf |> Set.toList |> List.head |> Option.getWithDefault("")
 
-    def ambienceOf(res: Res.Res): String = Stage.ambienceSound(StoryDoc.rec(res#story)#titleAmbience)
+    def ambienceOf(res: Res.Res): String = StoryDoc.rec(res#story)#titleAmbience
 
     def exec(res: Res.Res, replay: Commands.Replay, name: String, args: List[String], st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
         Commands.execute(replay, ctx(res), command(name, args), st)

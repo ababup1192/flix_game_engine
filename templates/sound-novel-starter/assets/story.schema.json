@@ -34,7 +34,7 @@
     },
     "titleAmbience": {
       "type": "string",
-      "description": "タイトル画面の環境音（amb_<名前>。空なら鳴らさない）"
+      "description": "タイトル画面の環境音（project.json の sounds の名前。空なら鳴らさない）"
     },
     "opening": {
       "type": "string",

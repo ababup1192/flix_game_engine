@@ -31,9 +31,15 @@ mod TestPropertyTween {
         Assert.assertEq(expected = 0.25, PropertyTween.numAt(t(1.0), alpha(), 0.25, empty()))
 
     @Test
-    def testDelayedTweenHoldsItsStartValueUntilItBegins(): Unit \ Assert =
-        let delayed = PropertyTween.tween(alpha(), Some(0.5), 1.0, t(0.0), 3.0, 2.0, Curve.Ease.Linear, empty());
-        Assert.assertEq(expected = (0.5, 0.75), (PropertyTween.numAt(t(1.0), alpha(), -1.0, delayed), PropertyTween.numAt(t(4.0), alpha(), -1.0, delayed)))
+    def testDelayedTweenKeepsThePreviousValueUntilItBegins(): Unit \ Assert =
+        let delayed = PropertyTween.setNum(alpha(), 0.25, t(0.0), 0.0, empty())
+            |> PropertyTween.tween(alpha(), Some(0.5), 1.0, t(0.0), 3.0, 2.0, Curve.Ease.Linear);
+        Assert.assertEq(expected = (0.25, 0.75), (PropertyTween.numAt(t(1.0), alpha(), -1.0, delayed), PropertyTween.numAt(t(4.0), alpha(), -1.0, delayed)))
+
+    @Test
+    def testFirstDelayedWriteReadsTheFallbackUntilItBegins(): Unit \ Assert =
+        let later = PropertyTween.setNum(alpha(), 0.75, t(0.0), 2.0, empty());
+        Assert.assertEq(expected = (-1.0, 0.75), (PropertyTween.numAt(t(1.0), alpha(), -1.0, later), PropertyTween.numAt(t(3.0), alpha(), -1.0, later)))
 
     @Test
     def testTweenWithoutFromStartsAtTheValueWhenItBegins(): Unit \ Assert =

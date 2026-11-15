@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "背景の写真と時間帯の色。シナリオの <<bg 写真 時間帯 秒>> の名前はここの鍵。写真はどれも昼の実写で、夕暮れ・夜・朝は時間帯の色でシェーダーが作る（作り方は src/Backdrop.flix の冒頭）。texture = project.json の textures の名前、label = セーブ画面に出す場所の名前。blur = ぼかしの半径（画面の幅に対する割合）、taps = ぼかしで読む点の数、saturation = 彩度、exposure = 明るさ、tint = 赤・緑・青の倍率、lift = 暗い所に足す色、sky / skyStrength / skyReach = 上から差す光の色・強さ・届く深さ、vignette = 四隅を落とす強さ、focusPull = 切り替えの頭で余分にぼかす量。写真の出典は CREDITS.md と novel.credits.json。",
+  "note": "背景の写真と時間帯の色。シナリオの <<bg 写真 grade=時間帯 time=秒>> の名前はここの鍵。写真はどれも昼の実写で、夕暮れ・夜・朝は時間帯の色でシェーダーが作る（作り方は src/Backdrop.flix の冒頭）。texture = project.json の textures の名前、label = セーブ画面に出す場所の名前。blur = ぼかしの半径（画面の幅に対する割合）、taps = ぼかしで読む点の数、saturation = 彩度、exposure = 明るさ、tint = 赤・緑・青の倍率、lift = 暗い所に足す色、sky / skyStrength / skyReach = 上から差す光の色・強さ・届く深さ、vignette = 四隅を落とす強さ、focusPull = 切り替えの頭で余分にぼかす量。写真の出典は CREDITS.md と novel.credits.json。",
   "photos": {
     "station": { "texture": "bg_station", "label": "無人の駅" },
     "paddy":   { "texture": "bg_paddy",   "label": "田んぼの道" },

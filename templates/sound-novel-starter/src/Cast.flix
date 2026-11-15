@@ -39,7 +39,7 @@ mod Cast {
     // ── コマンドの引数から意味を作る（引数の読み方は Commands の show・hide） ──
 
     /// 名前の種類（cast にあれば人物・props にあれば小物）。どちらにも無ければ None。
-    pub def kindOf(doc: CastDoc.Doc, name: String): Option[Kind] =
+    def kindOf(doc: CastDoc.Doc, name: String): Option[Kind] =
         if (Option.nonEmpty(CastDoc.entryOf(Kind.Character, name, doc))) Some(Kind.Character)
         else if (Option.nonEmpty(CastDoc.entryOf(Kind.Prop, name, doc))) Some(Kind.Prop)
         else None

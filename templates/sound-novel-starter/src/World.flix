@@ -348,7 +348,7 @@ mod World {
     def titleStage(story: StoryDoc.Doc): Stage.Stage =
         let r = StoryDoc.rec(story);
         { shot = Some({ photo = r#titlePhoto, grade = r#titleGrade }) | Stage.empty() }
-            |> Stage.withAmbience(Clock.zero(), if (String.isEmpty(r#titleAmbience)) None else Some(Stage.ambienceSound(r#titleAmbience)))
+            |> Stage.withAmbience(Clock.zero(), if (String.isEmpty(r#titleAmbience)) None else Some(r#titleAmbience))
 
     /// 物語の時計の今。
     pub def now(w: World): Clock.Time[Stage.Story] = Clock.nowOf(w#storyClock)

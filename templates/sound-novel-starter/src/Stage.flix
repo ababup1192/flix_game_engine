@@ -43,9 +43,6 @@ mod Stage {
     /// 画面の揺れ（長さと幅は novel.kind.json）。
     pub def shakeKey(): PropertyTween.TriggerKey = PropertyTween.triggerKey("camera.shake")
 
-    /// タイトルの環境音の名前（novel.story.json の titleAmbience）→ project.json の sounds の名前。
-    pub def ambienceSound(name: String): String = "amb_${name}"
-
     /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
     pub def particleNames(): List[String] = "fireflies" :: Nil
 

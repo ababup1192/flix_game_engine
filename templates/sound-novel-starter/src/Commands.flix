@@ -151,21 +151,27 @@ mod Commands {
           },
           needs = noAssets }
 
+    /// audio のチャンネル: 鳴り続ける環境音。
+    def ambience(): String = "ambience"
+
+    /// audio のチャンネル: 一発の効果音。
+    def se(): String = "se"
+
     def audio(): Command[Stage.Stage] =
-        let channel = Param.choice("channel", "ambience" :: "se" :: Nil) |> Param.at(1) |> Param.required;
+        let channel = Param.choice("channel", ambience() :: se() :: Nil) |> Param.at(1) |> Param.required;
         let sound = Param.name("sound", sounds()) |> Param.orWords("off" :: Nil) |> Param.at(2) |> Param.required;
         { spec = YarnCommands.spec("audio", "環境音を替える・止める（ambience）・効果音を 1 回鳴らす（se）",
                                    Param.erase(channel) :: Param.erase(sound) :: Nil),
           timing = Timing.Instant,
           apply = (ctx, a, st) -> match (Param.get(channel, a), Param.get(sound, a)) {
-              case ("ambience", Or.Value(name)) => Ok((Stage.withAmbience(ctx#now, Some(name), st), Nil))
-              case ("ambience", Or.Word(_))     => Ok((Stage.withAmbience(ctx#now, None, st), Nil))
-              case (_, Or.Value(name))          => Ok((st, Out.Sound(name) :: Nil))
-              case (_, Or.Word(_))              => Err("効果音は止められない（off は ambience だけ）")
+              case (c, Or.Value(name)) if c == ambience() => Ok((Stage.withAmbience(ctx#now, Some(name), st), Nil))
+              case (c, Or.Word(_)) if c == ambience()     => Ok((Stage.withAmbience(ctx#now, None, st), Nil))
+              case (_, Or.Value(name))                    => Ok((st, Out.Sound(name) :: Nil))
+              case (_, Or.Word(_))                        => Err("効果音は止められない（off は ambience だけ）")
           },
           needs = (_, a, _) -> match (Param.get(channel, a), Param.get(sound, a)) {
-              case ("ambience", Or.Value(name)) => name :: Nil
-              case _                            => Nil
+              case (c, Or.Value(name)) if c == ambience() => name :: Nil
+              case _                                      => Nil
           } }
 
     def fx(): Command[Stage.Stage] =

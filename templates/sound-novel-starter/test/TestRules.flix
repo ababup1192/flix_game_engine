@@ -522,6 +522,17 @@ mod TestRules {
         Assert.assertEq(expected = shape(saves), shape(back))
 
     @Test
+    def testSaveWithShortAmbienceNameReadsTheSoundName(): Unit \ {Assert, Fs.FileRead} =
+        // 環境音を amb_ の無い短い名前（"evening"）で書いた枠は、音の名前（amb_evening）として読む。音の名前のままの枠はそのまま。
+        let res = TestKit.res();
+        let bookmark = WorldRead.slotHere(res, begun(res)) |> Option.map(s -> YarnRunner.bookmarkToJson(s#mark#bookmark));
+        let slot = (bm, name) -> Util.Json.Json.JObject(Map#{ "bookmark" => bm, "ambience" => Util.Json.Json.JString(name) });
+        let read = bookmark |> Option.map(bm -> Util.Json.Json.JObject(Map#{ "slots" => Util.Json.Json.JObject(Map#{ "0" => slot(bm, "evening"), "1" => slot(bm, "amb_night") }) }))
+            |> Option.map(Saves.fromJson(Saves.fresh(res#kind)))
+            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> x#mark#ambience));
+        Assert.assertEq(expected = Some(Some("amb_evening") :: Some("amb_night") :: Nil), read)
+
+    @Test
     def testDateText(): Unit \ {Assert} =
         // 日時の字: 1970-01-01 からの秒を 年/月/日 時:分 に（うるう年の 2 月末も）。
         Assert.assertEq(expected = ("1970/01/01 00:00", "2024/02/29 23:59", "2026/08/14 19:32"),

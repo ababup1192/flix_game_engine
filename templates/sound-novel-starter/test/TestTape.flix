@@ -138,7 +138,7 @@ mod TestTape {
         // 鳴り続ける音は鳴り始めのフレームに 1 回だけ ambience で載る（タイトルの環境音と <<audio ambience amb_river>>）。
         let started = tapeOf(Nil) |> Result.map(root -> arrayAt("sounds", root)
             |> List.filter(row -> textAt("kind", row) == "ambience") |> List.map(row -> textAt("name", row)));
-        Assert.assertEq(expected = Ok(Stage.ambienceSound(StoryDoc.rec(TestKit.res()#story)#titleAmbience) :: "amb_river" :: Nil), started)
+        Assert.assertEq(expected = Ok(StoryDoc.rec(TestKit.res()#story)#titleAmbience :: "amb_river" :: Nil), started)
 
     @Test
     def testOneShotSoundCarriesItsLabel(): Unit \ {Assert, Fs.FileRead} =

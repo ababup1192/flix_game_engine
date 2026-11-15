@@ -3,6 +3,9 @@
 // 後に残る値は Stage の props（PropertyTween）に game. で始まる鍵で書き、GameView が読んで描く。
 // そうすればセーブ・settle・素材待ちはテンプレートの道をそのまま通る（Saves や WorldRead を直さない）。
 //
+//   use fge::YarnCommands
+//   use fge::YarnCommands.Param
+//
 //   def hop(): Commands.Command[Stage.Stage] =
 //       let who = Param.name("name", Nil) |> Param.at(1) |> Param.required;
 //       { spec = YarnCommands.spec("hop", "跳ねる", Param.erase(who) :: Nil), timing = Commands.Timing.Timed,
