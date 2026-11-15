@@ -155,6 +155,8 @@ rewind 30                                    F8 の巻き戻しから再開し�
   ゲームは何も足さなくてよい。App を組む時に Main だけが読む外の値（起動した時刻など）は記録に残らないので、
   その欄だけ `App.withWorldSummaryMask` で決まった値へ置き換える（手本は templates/sound-novel-starter の Game.app）。
 
+ゲームを新しいテンプレートへ移す前と後で同じ flow を流し、記録（tape.json と書き出したコマ）を突き合わせる道具は `bin/fge migrate`（[migrate-diff.md](migrate-diff.md)）。
+
 ### 決定性の門（make determinism）
 
 記録の再生が「実機と同じ World になる」ことを、リリースの前に確かめる（`bin/determinism.sh`・engine の作業場で。先に `make sync-engine-full`）。

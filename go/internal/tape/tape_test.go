@@ -330,6 +330,16 @@ func TestParseRejectsUnknownField(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsMigrateFields(t *testing.T) {
+	err := withEdit(t, func(m map[string]any) {
+		m["events"], m["frames"], m["ranLines"] = []any{}, []any{}, []any{}
+		m["buses"], m["screen"] = map[string]any{}, map[string]any{"w": 540, "h": 960}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestParseRejectsTimelineLineAbsentFromLines(t *testing.T) {
 	err := withEdit(t, func(m map[string]any) { m["timeline"] = []any{[]any{0, nil}, []any{1, 99}} })
 	if err == nil || !strings.Contains(err.Error(), "99") {

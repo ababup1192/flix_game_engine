@@ -40,8 +40,9 @@ var required = []struct{ key, from string }{
 
 // optional は無くてもよい欄。choices は選択肢を選ばない flow や前の版のテンプレートでは無い。commit 以下は Build が上書きする
 // （graph と script は シナリオのフォルダが見つかった時だけ）。
+// events・buses・frames・ranLines・screen は移行の突き合わせ（bin/fge migrate diff）が読む欄で、頁は使わない（docs/migrate-diff.md）。
 var optional = map[string]bool{"playUrl": true, "choices": true, "commit": true, "video": true, "stripPerSec": true, "strip": true,
-	"graph": true, "script": true}
+	"graph": true, "script": true, "events": true, "buses": true, "frames": true, "ranLines": true, "screen": true}
 
 // Tape は検査を通った tape.json。頁へは raw をそのまま渡し、型は検査と分岐の組み立てのためだけに読む。
 type Tape struct {

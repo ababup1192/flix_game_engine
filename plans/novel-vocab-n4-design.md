@@ -656,6 +656,26 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 振り分け（読み違いを直す・人に見せる）は移行の見積もり（11 章）に入れた。
 
+### 10.8 段 10 の go の道具の記録（2026-11-16）
+
+`bin/fge migrate diff`・`bin/fge migrate video` を作った（`go/internal/migrate`）。記録の形・承認のファイル・線の既定の全文は [docs/migrate-diff.md](../docs/migrate-diff.md)。
+
+- **合格線（10.3 の後の段落）に合わせた分け方**: 出来事の並び・問いの値・音の名前と順・撮れていない記録・通らない命令の行は門を止める（終わりの番号 1）。コマの画素・`objects` の矩形と区間・音の時刻・バスの音量は「迷った差」として一覧（頁と端末）に溜め、止めない。人が `migrate video` の横並びの動画と一緒に見て、残す物を `migrate-accept.json` で承認する。10.6 の 2（わざと入れた読み違いで落ちる）のうちコマで落ちる物は、`--strict` で流すか迷った差の一覧に出る事で確かめる。
+- **tape.json に足す欄の名前と型**（テンプレートの FlowVideo / TapeOut が書く。無い記録は「比べていない」と出して落とさない。`bin/fge tape` は知っている欄として通す）:
+  - `events: [{t, node, kind: line|choice|wait, seq, who?, text?, options?, picked?, seconds?, probes?}]` — 10.1 の「ノードごとの出来事の並び」と「台詞ごとの問いの値の全部」（line の `probes`）を 1 つにした。`seq` は line ならノードの中の台詞の番号（0 から）、choice と wait ならそれまでに出した台詞の数。
+  - `buses: {バス: [[秒, dB|null]]}` — バスの音量の変わり目。null は無音。ミキサーの音量を World か Res から読めなければ欄ごと出さない【未確認: 読めるか】。
+  - `frames: [{file, t, node, seq, kind: lineDone|mid, cmd?, step?, at?, layer: world|all, backdrop3d?}]` — 書き出したコマ（PNG・tape.json からの相対パス）。前と後は `layer|node@visit#seq|kind(|step@at)` の鍵で組にする（visit はノードの何回目の訪問かで、読む側が出来事の並びから数える）。
+  - `ranLines: [行番号]` — 流れた台本の行（カバー率。無ければ `lines` の行を通ったと見る）。インタープリタが実行した文を全部その時に記録する（コマの台本の位置を写すと、同じフレームの `bg`・`set`・`jump` が抜けて偽の「通らない行」になる）。
+  - `screen: {w, h}` — 矩形を px に直す画面の大きさ。
+- **記録のフォルダ**: `debug/migrate/{baseline,new}/flows/<flow>/<大きさ>/tape.json`（大きさを分けなければ `flows/<flow>/tape.json`）と `saves/<名前>/restore.json`（`{save, refused, node, seq, probes, objects, frames, screen}`）。
+- **線の既定**: 絵は 2 px のずれまで許す（相手の 2 px 以内でいちばん近い色との差・両向き）。lineDone は 2/255 以内が 99.5% 以上・backdrop3d は 3/255 以内が 99% 以上・mid は平均 3/255 以下・矩形 ±2 px・音の時刻と区間 ±1 フレーム・バス 0.1 秒ごとに ±1 dB（両方を -60 dB で下に止めてから差を取る）。mid のコマにはずれの探しをかけない（なめらかな背景で overlay の濃さの差が隠れる）。承認は 1 件 3 秒まで・1 本の flow で 20 件まで（同じ why は 1 件）・systematic は名指しの命令の mid のコマで平均 6/255 以下。
+- **レビュー 1 回目（80 点）で足した物**: `migrate-accept.json` の `probeMap`（問いの値の言い方の読み替え。10.2.1 の e2e の問い `mode` の `Nvl`・`Adv` → `nvl`・`bottom`。読み替えは頁の承認済みの節に回数ごと出す）・systematic は flow を省ける（全部の flow に当て、頁で 1 つの理由にまとめる）・nobaseline の flow と大きさは新しい版のコマを頁に並べる・どの差にも当たらない承認を「使われていない承認」に出す・同じフレームの音の順は比べない。
+- **レビュー 2 回目（86 点）で直した物**: コマの組は、鍵の土台（`layer|node#seq|kind(|step@at)`）が時刻の順で何回目かを両方の版で数えて作る（出来事の並びから訪問を数える形は、台詞の無い場面転換のノードと `<<jump 自分>>` の続けての入り直しを数えられなかった）。片方の版で同じ土台のコマが同じ時刻に 2 枚あれば止める。音は名前で並べ直さず、1 フレームの窓の中で名前と kind が同じ物を前から組にする（並べ直すと 1 フレームずれた音どうしの順が入れ替わって偽の止まりが出た）。撮っていない途中のコマは止める側の差のまま `what: frame` の intended で承認できる（命令を組み替えると生まれなくなるため）。演出の後のコマと古いセーブのコマは今どおり承認できない。
+- **頁の置き場**: 既定 `debug/migrate/report/`（`index.html`・`report.json`・`heat/*.png`）。承認は既定 `debug/migrate/migrate-accept.json`。どちらも new の記録のフォルダの隣。
+- **横並びの動画**: `bin/fge migrate video --old <前.mp4> --new <後.mp4> --out debug/migrate/<flow>.sbs.mp4 --tape <new の tape.json>`。10.5 の `make migrate-video FLOW=` はゲームの Makefile の口なので、テンプレートの側で `make flow-video` の 2 回とこの 1 行をつなぐ（段 10 のテンプレートの担当）。
+- 血鱗の今の tape.json 3 本（`debug/video/tape_*`）を前と後の両方に置いて流すと（レビュー 2 の直しの後に流し直しても同じ数）、止める違い 0・迷った差 0 で、通らない命令の行が 3 行（結末の 3 つのノードの「タイトルへ戻る」の選択肢の中の `<<stop>>`）出た。テープの flow はその選択肢を選ばず、`lines` にもその行が載らないため（260 行目で確かめた。328・355 行目は同じ形と見た【推】）。
+- agents-pack の早見表と eval のお題には足さない。この道具はエンジンの作業場で 2 本の移行（段 11・12）にだけ使い、ゲームを作る人が普段使う口ではない。`make migrate-baseline` と `make migrate-video` をテンプレートの Makefile に足す段で、早見表に 1 行と eval のお題を 1 本足す（ゲームに配る口になるため）。
+
 ## 11. 小分けの順と見積もり
 
 物差し:
