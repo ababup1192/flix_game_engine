@@ -601,6 +601,51 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
   こちらは 7.6 に書いた今のソースのハッシュ（`c367c77d…`）と同じ。
 - 速さの前後は人の方針（12.16）で回していない。毎コマの変化: history を読む Pass は写す pass が 1 本増える（GL は前から blit していた）・WebGPU の標本つきの Pass は描き先が標本 4 になる。
 
+### 7.9 R1b-4: mask（比べる値を進める形・2026-11-15）
+
+決めた事と入れた物は親の 12.20、比べの見本は `plans/webgpu/samples/mask-stencil.md`（2 つの決め事とも別案を動かして GL と比べた）。
+
+3 章との対応:
+
+| 所 | 3 章の案 | 入れた形 |
+|---|---|---|
+| 3.1 の 9（mask の行） | スプライトの行 + mask の頂点の範囲（`vertices` の中）。比べる値を進める・255 を超えたら pass を分けるのは backend の中 | 行の種類 `kindMask`（1 体 = 1 行。1 = instance・2 = mask の頂点の数・10 = mask の先頭の頂点・11 = 比べる値）。比べる値は**前半**が進めて行に書く。255 を超えた時、WebGPU は pass を分けずに pass の中で stencil を 0 に戻す |
+| 3.1 の 8 の `vertices` | 多角形と mask の頂点 | そのとおり（mask の頂点も多角形と同じ入れ物・同じ 6 個の並び・values の頭の identity の view で描く） |
+| 3.2 の `depthStencil` | 2D は mask の行がある時だけ stencil | そのとおり（WebGPU は前半が stencil を使う mask を積んだ時だけ `DepthAndStencil`。GL は前から窓も Pass も stencil を持つ） |
+| 3.2 の pipeline の数え方 | stencil つきと無しの両方を読み込みの間に作る（スプライトは 6 本 → 12 本） | 起動の時に RGBA8・標本 1 の分を作る（7 本 → 18 本: 無しと Keep の 7 本ずつ・Equal のスプライト 3 本・Write の多角形 1 本）。RGBA16_FLOAT と標本 4 は今どおり初めて要る Pass で作る |
+
+7.1 の #7（GL の scissor の控え）: GL を直に呼ぶ種類は面と 3D の場面の 2 つになったが、まだ残るので持ち越し。
+
+門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal）:
+
+- テスト: render_gl 432 緑（`.layers/render_gl` の flix test。`TestMaskRows` 18 本を足し、`TestShapeRows` の「mask つきスプライトは行にならない」1 本を消した）。偽の GL を通る `TestDrawCounts` の mask の 2 本はそのまま緑。
+  `TestMaskRows` のうち 2 本は何も描かない GL で `emitOne` を通し、「mask → mask つきの面」の後も `usesStencil` が真のままである事と、面の後の mask の比べる値が 1 に戻る事を見る。
+- `make gl-parity` 緑（castShadow の 565 px は前からの B。SoftRaster と GL の `passMask` は 0 px）。テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）。`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+- `make webgpu-v1-check` 緑: 画面なしの比べは 27 場面とも許す差の内（足した mask の 5 場面は 0 px・submit 1・WebGPU の誤り 0・許す差は足していない）。足した場面:
+  `maskBasic`（三角形・凹の矢印・回転・左右の反転・Add・切り抜き・三角形にならない mask）・`maskNested`（2 つの多角形を重ねた mask・前の mask の内側に次の mask・mask の後の mask の無いスプライト・箱と mask つきの交互）・
+  `maskPass`（Pass と本編の両方に mask）・`maskMsaa`（標本 4 の Pass に mask。stencil も標本 4・mask は端数の位置の軸に沿った矩形）・`maskOverflow`（同じ場所に 300 体・mask はセルの 1 つずつ。比べる値が 255 を超える）。
+  `maskOverflow` は、WebGPU で stencil を 0 に戻す所を消すと 540 px・最大 ±129 で落ちる事を確かめた。
+  `unsupported`（面 1 つと 3D の場面を 2 コマ）は「まだ描かない: 面（ShaderDoc）」と「3D の場面」を 1 回ずつ知らせ、WebGPU の誤り 0。
+- `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。mask の場面をブラウザで回す口はまだ無い（R1b-2 からの持ち越し）。
+- `make lint-huge-methods` 緑（sprite_stress の jar を作り直し、`bench/webgpu_v1` の jar も渡して）・`make lint-max-lines` 緑（pipeline と stencil の所を `WebGpuPipelines` へ分け、`WebGpuPaint.flix` は 1,010 行）。
+- `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数）。main の控えとは sound-novel-starter の title の 6 枚だけ違い、7.6 の今のソースのハッシュ（`c367c77d…`）と同じ（7.8 と同じ状態）。
+- 速さの前後は人の方針（12.16）で回していない。毎コマの変化: GL の mask つきは stencil の clear が pass の頭と 255 個ごとになった・前半は体数を数える周回で mask の頂点の数も数える（`spriteCaps`。周回の数は前と同じ）・
+  WebGPU は mask のある pass だけ stencil の attachment を持つ。
+
+1 回目のレビュー（87 点）への対応（2 回目のコミット）:
+
+| # | 指摘 | 直した所 |
+|---|---|---|
+| 必須 1 | `nextMaskRef` の WhyNot が事実と違う（pass の中で 0 に戻している） | 「戻すたびに design の全面の draw が 1 本増え、GL でも mask ごとに全面の clear を払う」へ |
+| 必須 2 | `st` の 41 番が「前の値」と「stencil を使うか」の 2 つの意味を持ち、mask つきの面の後に `usesStencil` が偽になる | 42 番（stencil を使う行を積んだ）を足して `usesStencil` はそちらを読む・`stateSize` 43・面の後も真のままのテスト |
+| 必須 3 | `bindPipelineWith` は pass と geom を書き替えるので `with*` に合わない | `bindStencilPipeline` |
+| 任意 | 起動の pipeline の WhyNot | 「そのコマが詰まる」（Dawn は作り終えるまで待つ）と「stencil つきの pass では mask の無い行まで Keep の pipeline に替わる」 |
+| 任意 | `unsupported` を消した・`emitItem` の else と `skippedName` は通らない | 場面を面 1 つと 3D の場面で戻した・`emitItem` の飛ばす枝と `skippedName` を消した（面と 3D の場面は `mergedByZ` に渡さない） |
+| 任意 | `maskVertsOf` の match・`maskVertCap` の周回 | 1 行に・`spriteCaps`（体数と mask の頂点の数を 1 回の周回で） |
+| 任意 | `testMaxRefFitsEightBits` が `testRefWrapsAfterMax` と重なる | 消した |
+| 任意 | `WebGpuPaint.flix` が上限に近い | pipeline と stencil の所を `RenderPaint.Internal.WebGpuPipelines`（202 行）へ |
+| 任意 | 持ち越しの 2 行 | 親の 12.20 に（Dawn の stencil の store・起動の pipeline の重さ） |
+
 ## 第 1 版のレビュー（74 点）への対応
 
 | # | 指摘 | 入れた所 |

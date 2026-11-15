@@ -1,12 +1,12 @@
 // RenderFrame.Internal.GlRows — RenderList の行を GL へ流す（GL の backend）。pass を開いて閉じ（clear・viewport・後始末）、
-// instance と頂点の入れ物を貸し、行 1 つを draw 1 回にする（スプライトの run・多角形の run・タイルの層・static layer の範囲）。
+// instance と頂点の入れ物を貸し、行 1 つを draw 1 回にする（スプライトの run・多角形の run・タイルの層・static layer の範囲。mask つきスプライトは 2 回）。
 pub mod RenderFrame.Internal.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
     import java.nio.FloatBuffer
-    use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, upsideDownTargetsOf}
+    use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, spriteCaps, upsideDownTargetsOf}
     use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, PassHistory, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
-                                         instanceFloats, kindPoly, kindStatic, kindTile, newRenderList, rowAt, rowCountOf, rowsOf, screenPass,
+                                         instanceFloats, kindMask, kindPoly, kindStatic, kindTile, newRenderList, rowAt, rowCountOf, rowsOf, screenPass,
                                          targetPass, valuesOf, vertexFloats}
 
     /// GL の描き先（FBO）は行 0 が下で、上下逆に格納される。
@@ -79,8 +79,9 @@ pub mod RenderFrame.Internal.GlRows {
     def prepareRenderList(gl: GlContext, args: FrameArgs): RenderList \ IO =
         let instBuf = args#instBuf;
         let polyBuf = args#polyBuf;
-        RenderBuf.ensure(gl, instBuf, Int32.max(1, List.length(args#sprites)) * instanceFloats());
-        RenderBuf.ensure(gl, polyBuf, Int32.max(3, polyVertCap(args#polygons)) * vertexFloats());
+        let (spriteCount, maskVerts) = spriteCaps(args#sprites);
+        RenderBuf.ensure(gl, instBuf, Int32.max(1, spriteCount) * instanceFloats());
+        RenderBuf.ensure(gl, polyBuf, Int32.max(3, polyVertCap(args#polygons) + maskVerts) * vertexFloats());
         newRenderList(RenderBuf.buffer(instBuf), RenderBuf.buffer(polyBuf))
 
     // ── GL の backend の状態（Int32 の配列 1 本・gs）──
@@ -148,6 +149,7 @@ pub mod RenderFrame.Internal.GlRows {
         if (kind == kindPoly()) drawPolyRow(gl, gs, st, vertices, rows, values, row)
         else if (kind == kindTile()) drawTileRow(gl, gs, st, rows, values, row)
         else if (kind == kindStatic()) drawStaticRow(gl, gs, st, rows, values, row)
+        else if (kind == kindMask()) drawMaskRow(gl, gs, st, instances, vertices, rows, values, row)
         else drawSpriteRow(gl, gs, st, instances, rows, row);
         ()
 
@@ -160,6 +162,29 @@ pub mod RenderFrame.Internal.GlRows {
                                             Array.get(3, gs), blendOf(blendC), instances, rowAt(rows, row, 1), rowAt(rows, row, 2));
         countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
                         blendC, false, 1)
+
+    /// mask つきスプライトの行: stencil の値が 1 なら先に stencil を全部 0 にし（RenderList.nextMaskRef）、mask を stencil へ書いて
+    /// その内側だけ 1 体を描く（draw 2 回）。値が 0（mask が 3 頂点未満）なら stencil を使わずに 1 体を描く。
+    def drawMaskRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instances: FloatBuffer, vertices: FloatBuffer,
+                    rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
+        let texId = rowAt(rows, row, 3);
+        let blendC = rowAt(rows, row, 4);
+        let ref = rowAt(rows, row, 11);
+        if (ref == 0)
+            RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
+                                                Array.get(3, gs), blendOf(blendC), instances, rowAt(rows, row, 1), 1)
+        else {
+            if (ref == 1) {
+                RenderSprite.clearStencil(gl);
+                setScissorAt(gl, gs, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9))
+            } else ();
+            RenderSprite.drawSpriteMaskedRange(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
+                                               Array.get(3, gs), blendOf(blendC), instances, rowAt(rows, row, 1),
+                                               Array.get(4, gs), Array.get(5, gs), Array.get(6, gs), gs, polyLocsAt(),
+                                               values, 0, vertices, rowAt(rows, row, 10), rowAt(rows, row, 2), ref)
+        };
+        countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
+                        blendC, true, if (ref == 0) 1 else 2)
 
     /// 多角形の行（vertices の run）を 1 回の draw で描く。
     def drawPolyRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], vertices: FloatBuffer,

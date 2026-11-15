@@ -1,4 +1,5 @@
-// GL と WebGPU の両方で描く場面。WebGPU が描く物（スプライト・字・箱・Pass・生成の絵・多角形・タイルの層・static layer・Pass の history・MSAA）だけで組む。
+// GL と WebGPU の両方で描く場面。WebGPU が描く物（スプライト・字・箱・Pass・生成の絵・多角形・タイルの層・static layer・Pass の history・MSAA・
+// mask つきスプライト）だけで組む。
 // 箱・スプライト・幕・放射の 4 つは bench/gl_parity の同じ名前の場面と同じ中身（色は 8 bit で割り切れる k/255）。
 // lint-view: 対象外 — GL と WebGPU の描き手の画素の一致を見る門の場面。丸めの差を混ぜないよう単色の箱を主にしている。画面に出す絵ではない。
 mod V1Scenes {
@@ -29,7 +30,8 @@ mod V1Scenes {
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: veil() :: radial() :: text() :: passPaste() :: passHalf() :: generated() :: passThenGenerated() ::
         polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() ::
-        historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() :: Nil
+        historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() ::
+        maskBasic() :: maskNested() :: maskPass() :: maskMsaa() :: maskOverflow() :: Nil
 
     def c8(r: Int32, g: Int32, b: Int32): Color =
         { r = Int32.toFloat64(r) / 255.0, g = Int32.toFloat64(g) / 255.0, b = Int32.toFloat64(b) / 255.0 }
@@ -405,12 +407,94 @@ mod V1Scenes {
           targets = targetsWith("mtog", 4), submits = Some(1),
           items = still(pasteQuarter("mtog", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mtog"), 160.0, 90.0, 1) :: Nil) }
 
-    /// WebGPU がまだ描かない物だけの場面（mask つきスプライト）。GL とは比べない。
+    /// WebGPU がまだ描かない物だけの場面（面と 3D の場面）。GL とは比べない。
     pub def unsupported(): Scene =
+        let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
         { name = "unsupported", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = None, items = still(
-            at(120.0, 60.0, Render.Item.Sprite({ texture = "atlas", tint = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
-                scale = { x = 2.0, y = 2.0 }, rotation = 0.0, centered = true, flipH = false, flipV = false, regionRect = None,
-                zIndex = 1, blend = DrawCmd.BlendMode.Normal,
-                maskPolys = ({ x = 0.0, y = 0.0 } :: { x = 8.0, y = 0.0 } :: { x = 0.0, y = 8.0 } :: Nil) :: Nil })) ::
+            Render.shaderFill(ShaderDoc.demoSurface(), { position = v(20.0, 20.0), size = v(60.0, 40.0) }, 0.0, 1) ::
+            Render.scene3d(v(120.0, 60.0), { zIndex = 2 | Scene3d.scene(camera, v(100.0, 50.0)) }) ::
             Nil) }
+
+    // ── mask つきスプライト（stencil の比べる値を 1 ずつ進める・RenderList.nextMaskRef）──
+    // mask の形は絵の大きさのローカル座標（左上が原点・回転と反転は絵と同じに掛かる）。絵は市松のアトラス（16 × 16）を 4 倍の 64 × 64 で。
+
+    def maskedSprite(spec: { tint = Color, rotation = Float64, flipH = Bool, blend = DrawCmd.BlendMode, z = Int32, mask = List[List[Vec2.Vec2]] }): Render.Item =
+        Render.Item.Sprite({ texture = "atlas", tint = spec#tint, alpha = 1.0, scale = { x = 4.0, y = 4.0 }, rotation = spec#rotation,
+            centered = false, flipH = spec#flipH, flipV = false, regionRect = None, zIndex = spec#z, blend = spec#blend, maskPolys = spec#mask })
+
+    def plainMask(tint: Color, z: Int32, mask: List[List[Vec2.Vec2]]): Render.Item =
+        maskedSprite({ tint = tint, rotation = 0.0, flipH = false, blend = DrawCmd.BlendMode.Normal, z = z, mask = mask })
+
+    def white(): Color = c8(255, 255, 255)
+
+    def triangleMask(): List[List[Vec2.Vec2]] = (v(2.0, 2.0) :: v(62.0, 6.0) :: v(10.0, 58.0) :: Nil) :: Nil
+
+    /// 軸に沿った矩形の mask（x, y から w × h）。
+    def rectMask(x: Float64, y: Float64, w: Float64, h: Float64): List[Vec2.Vec2] = v(x, y) :: v(x + w, y) :: v(x + w, y + h) :: v(x, y + h) :: Nil
+
+    /// 三角形・凹の矢印・回転・左右の反転・Add・切り抜き・三角形にならない mask（そのまま描く）。
+    def maskBasic(): Scene =
+        { name = "maskBasic", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
+            at(8.0, 8.0, plainMask(white(), 1, triangleMask())) ::
+            at(80.0, 8.0, plainMask(c8(128, 255, 128), 1, arrow() :: Nil)) ::
+            at(152.0, 8.0, maskedSprite({ tint = white(), rotation = 0.5, flipH = false, blend = DrawCmd.BlendMode.Normal, z = 1, mask = triangleMask() })) ::
+            at(224.0, 8.0, maskedSprite({ tint = white(), rotation = 0.0, flipH = true, blend = DrawCmd.BlendMode.Normal, z = 1, mask = triangleMask() })) ::
+            at(8.0, 100.0, RawDraw.box(v(64.0, 64.0), c8(60, 60, 140), 1)) ::
+            at(8.0, 100.0, maskedSprite({ tint = c8(160, 80, 40), rotation = 0.0, flipH = false, blend = DrawCmd.BlendMode.Add, z = 2, mask = triangleMask() })) ::
+            at(80.0, 100.0, Render.Item.Clipped({ rect = { position = v(80.0, 100.0), size = v(40.0, 64.0) }, inner = plainMask(white(), 1, triangleMask()) })) ::
+            at(152.0, 100.0, plainMask(c8(255, 200, 120), 1, (v(0.0, 0.0) :: v(60.0, 0.0) :: Nil) :: Nil)) ::
+            Nil) }
+
+    /// 2 つの多角形を重ねた mask（内側の三角形も四角の内側なので、合わせた形は四角）・前の mask の内側に次の mask・
+    /// mask の後に mask の無いスプライト（stencil で切られずに全部出る）・箱と mask つきの交互。
+    def maskNested(): Scene =
+        let square = rectMask(4.0, 4.0, 56.0, 56.0);
+        let inner = v(16.0, 16.0) :: v(48.0, 16.0) :: v(16.0, 48.0) :: Nil;
+        { name = "maskNested", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
+            at(8.0, 8.0, plainMask(c8(255, 128, 128), 1, square :: inner :: Nil)) ::
+            at(80.0, 8.0, plainMask(c8(128, 128, 255), 1, square :: Nil)) ::
+            at(80.0, 8.0, plainMask(c8(255, 255, 128), 2, inner :: Nil)) ::
+            at(96.0, 24.0, plainMask(c8(128, 255, 128), 3, (v(4.0, 4.0) :: v(30.0, 4.0) :: v(4.0, 30.0) :: Nil) :: Nil)) ::
+            at(160.0, 8.0, plainMask(white(), 1, triangleMask())) ::
+            at(176.0, 24.0, atlasSprite("atlas", { srcPos = origin(), srcSize = full(), sx = 3.0, fH = false, fV = false })) ::
+            at(240.0, 8.0, plainMask(white(), 1, triangleMask())) ::
+            at(244.0, 60.0, RawDraw.box(v(40.0, 20.0), c8(200, 60, 140), 2)) ::
+            at(240.0, 70.0, plainMask(c8(128, 255, 255), 3, rectMask(10.0, 10.0, 30.0, 40.0) :: Nil)) ::
+            Nil) }
+
+    /// mask つきスプライトを Pass に描いて本編へ貼り、本編にも mask つきを置く（Pass と本編の pass が別々に stencil を持つ）。
+    def maskPass(): Scene =
+        let pm: Render.Pass = { name = "pm", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items =
+            at(8.0, 8.0, plainMask(white(), 1, triangleMask())) ::
+            at(60.0, 20.0, plainMask(c8(255, 160, 80), 2, arrow() :: Nil)) ::
+            at(100.0, 10.0, atlasSprite("atlas", { srcPos = origin(), srcSize = full(), sx = 2.0, fH = false, fV = false })) ::
+            Nil };
+        { name = "maskPass", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pm :: Nil, targets = Map.empty(), submits = Some(1), items = still(
+            pasteQuarter("pm", 0.0, 0.0, 1) ::
+            at(200.0, 100.0, plainMask(c8(128, 255, 128), 2, triangleMask())) ::
+            Nil) }
+
+    /// 標本 4 の Pass に mask つきを描く（stencil も標本 4）。mask は端数の位置の軸に沿った矩形（斜めの縁は GL と標本の位置が違う — MSAA の場面の WhyNot）。
+    def maskMsaa(): Scene =
+        let pm: Render.Pass = { name = "pmsaa", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items =
+            at(8.0, 8.0, plainMask(white(), 1, rectMask(3.3, 5.2, 40.4, 30.6) :: Nil)) ::
+            at(60.0, 12.0, plainMask(c8(255, 160, 80), 2, rectMask(2.7, 1.3, 20.2, 50.4) :: rectMask(20.3, 30.2, 30.4, 10.6) :: Nil)) ::
+            Nil };
+        { name = "maskMsaa", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pm :: Nil, targets = targetsWith("pmsaa", 4), submits = Some(1),
+          items = still(pasteQuarter("pmsaa", 0.0, 0.0, 1) :: Nil) }
+
+    /// 1 つの pass に mask つきを 300 個（比べる値の上限 255 を超える）。どれも同じ 64 × 64 の場所に置き、mask は 20 × 15 のセルの 1 つずつ（セルごとに色を替える）。
+    /// 256 個目（値 1 に戻る）の前に stencil を 0 に戻さないと、1 個目の mask のセルにも 256 個目の色が出る。
+    def maskOverflow(): Scene =
+        let cell = i -> {
+            let col = Int32.remainder(i, 20);
+            let row = i / 20;
+            rectMask(Int32.toFloat64(col) * 3.0 + 2.0, Int32.toFloat64(row) * 4.0 + 2.0, 3.0, 4.0) :: Nil
+        };
+        let tintOf = i -> c8(55 + Int32.remainder(i * 37, 200), 55 + Int32.remainder(i * 91, 200), 55 + Int32.remainder(i * 53, 200));
+        { name = "maskOverflow", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
+            (List.range(0, 300) |> List.map(i -> at(40.0, 40.0, plainMask(tintOf(i), 1, cell(i)))))) }
 }

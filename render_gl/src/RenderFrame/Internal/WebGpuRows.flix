@@ -1,12 +1,12 @@
 // RenderFrame.Internal.WebGpuRows — 1 回の renderCommands を、GL と同じ前半（mergedByZ → emitRowItem が RenderList を作る）で行にし、
 // 行を WebGPU の render pass へ流す。device・pipeline・絵と頂点の buffer の表・instance と頂点と values の buffer は呼ぶ側（WebGpuPaint）が持ち、関数の record で渡す。
-// 描くのはスプライト・字・箱（mask 無し）・多角形・タイルの層・static layer。ほかの種類は名前ごとに呼ぶ側へ知らせて飛ばす。
+// 描くのはスプライト・字・箱（mask つきを含む）・多角形・タイルの層・static layer。面と 3D の場面は受け取らない（呼ぶ側が名前ごとに知らせて捨てる）。
 pub mod RenderFrame.Internal.WebGpuRows {
     import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
     use RenderFrame.{Merged, addCountsTo, closeRuns, countPolyDraw, countSingleDraw, countSpriteDraw, emitRowItem, mergedByZ, newRunState,
-                     polyVertCap, upsideDownTargetsOf, writeInstAt}
-    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, glViewportOf, hasLetterbox, kindPoly, kindSprite, kindStatic, kindTile, loadOpOf,
+                     polyVertCap, spriteCaps, upsideDownTargetsOf, usesStencil, writeInstAt}
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, RenderList, glViewportOf, hasLetterbox, kindMask, kindPoly, kindSprite, kindStatic, kindTile,
                                          newRenderList, nextInstanceOf, nextVertexOf, rowAt, rowCountOf, rowsOf, screenClearColorOf,
                                          targetTextureOf, valueCountOf, valuesOf}
 
@@ -18,15 +18,23 @@ pub mod RenderFrame.Internal.WebGpuRows {
     pub def shapePoly(): Int32 = 1
     pub def shapeTile(): Int32 = 2
 
+    /// pipeline の stencil の使い方（setPipeline に渡す番号）。None = pass が stencil を持たない・Keep = 持つが比べず書かない・
+    /// Write = 色を変えず stencil へ比べる値を書く（mask の多角形）・Equal = stencil が比べる値の画素だけ描く（mask の内側のスプライト）。
+    pub def stencilNone(): Int32 = 0
+    pub def stencilKeep(): Int32 = 1
+    pub def stencilWrite(): Int32 = 2
+    pub def stencilEqual(): Int32 = 3
+
     /// 1 回の renderCommands を pass 1 つへ流す。
     /// cfg の欄:
     ///   sprites・tileMaps・polygons・staticRanges・registry = 描き物と絵の表（GL の FrameArgs と同じ物）・designW/H = 射影の寸
     ///   pass = 描き先と、その始末・viewport（描き先と同じ絵を読む行は描かずに知らせる）
     ///   instancesFor(n)・verticesFor(n) = n 体・n 頂点ぶん書ける入れ物（呼ぶ側の LITTLE_ENDIAN の ByteBuffer の float の見方）
     ///   upload(体数, 頂点数, values, values の数) = 入れ物の頭と values を GPU へ送る。返すのは送った位置（instance の番号, 頂点の番号, values の bytes）
-    ///   openPass(op) = op で始末した render pass を開く（instance の buffer を頂点の buffer の 0 番に付けておく）
-    ///   setPipeline(形, blend の番号)・setTexture(絵の番号) = 行の鍵を pass に積む（0 の絵は呼ばない）
-    ///   setVertices(種類, buffer の番号) = 頂点の buffer の 0 番を、その種類の buffer にする（スプライト = instance・多角形 = 頂点・タイル と static = 表の buffer）。
+    ///   openPass(pass) = pass の色の始末と depthStencil で render pass を開く（stencil は 0 で clear。instance の buffer を頂点の buffer の 0 番に付けておく）
+    ///   setPipeline(形, blend の番号, stencil の使い方)・setTexture(絵の番号) = 行の鍵を pass に積む（0 の絵は呼ばない）
+    ///   setVertices(種類, buffer の番号) = 頂点の buffer の 0 番を、その種類の buffer にする（スプライト = instance・多角形 = 頂点・タイル と static = 表の buffer・
+    ///     kindMask = stencil を 0 に戻す design の全面の 6 頂点）。
     ///     返すのはその buffer に入っている要素の数（タイルは枚数・static は頂点の数）。表に無い番号なら 0（その行は描かずに数える）
     ///   setValues(bytes) = 頂点の buffer の 1 番を、values の buffer の bytes の位置にする
     ///   skip(名前) = 描かない種類を知らせる（名前ごとに 1 回にまとめるのは呼ぶ側）
@@ -44,8 +52,8 @@ pub mod RenderFrame.Internal.WebGpuRows {
         instancesFor = Int32 -> FloatBuffer \ IO,
         verticesFor = Int32 -> FloatBuffer \ IO,
         upload = (Int32, Int32, Array[Float32, Static], Int32) -> (Int32, Int32, Int32) \ IO,
-        openPass = RenderTarget.LoadOp -> RenderPass \ IO,
-        setPipeline = (RenderPass, Int32, Int32) -> Unit \ IO,
+        openPass = PassSpec -> RenderPass \ IO,
+        setPipeline = (RenderPass, Int32, Int32, Int32) -> Unit \ IO,
         setTexture = (RenderPass, Int32) -> Unit \ IO,
         setVertices = (RenderPass, Int32, Int32) -> Int32 \ IO,
         setValues = (RenderPass, Int32) -> Unit \ IO,
@@ -60,16 +68,17 @@ pub mod RenderFrame.Internal.WebGpuRows {
             let scaleX = Int32.toFloat64(vpW) / cfg#designW;
             let scaleY = Int32.toFloat64(vpH) / cfg#designH;
             let letterboxed = hasLetterbox(spec);
-            let instances = cfg#instancesFor(List.length(cfg#sprites) + 1);
+            let (spriteCount, maskVerts) = spriteCaps(cfg#sprites);
+            let instances = cfg#instancesFor(spriteCount + 1);
             let st = newRunState(cfg#drawCounts);
-            let list = newRenderList(instances, cfg#verticesFor(Int32.max(3, polyVertCap(cfg#polygons))));
+            let list = newRenderList(instances, cfg#verticesFor(Int32.max(3, polyVertCap(cfg#polygons) + maskVerts)));
             // WhyNot: 並べた 1 個ごとに cfg の欄を読まない — 開いた record の欄は読むたびに欄の列を辿り、2 万個の画面ではそれだけで 1 コマに出る。
             let registry = cfg#registry;
             let warnLog = cfg#texWarnLog;
             let skip = cfg#skip;
             // WhyNot: 描き先の表の名前を渡さない — targetUpsideDown が偽なので upsideDownTargetsOf は表を引かない。
             let upsideDown = upsideDownTargetsOf(targetUpsideDown(), () -> Set.empty());
-            emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog, skip,
+            emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog,
                     mergedByZ(cfg#tileMaps, cfg#sprites, cfg#polygons, cfg#staticRanges, Nil, Vector.empty()));
             closeRuns(st, list);
             let used = nextInstanceOf(list);
@@ -77,12 +86,15 @@ pub mod RenderFrame.Internal.WebGpuRows {
                                          clearBox(screenClearColorOf(spec) |> Option.getWithDefault({ r = 0.0, g = 0.0, b = 0.0 })), false, false) else ();
             let sent = if (letterboxed) used + 1 else used;
             let (base, vertexBase, valuesBase) = cfg#upload(sent, nextVertexOf(list), valuesOf(list), valueCountOf(list));
-            let pass = cfg#openPass(loadOpOf(spec));
+            // WhyNot: いつも stencil つきの pass にしない — mask を使わない画面まで stencil の attachment のメモリと clear・書き出しを払う。
+            let stencil = usesStencil(st);
+            let pass = cfg#openPass(if (stencil) { depthStencil = DepthStencil.DepthAndStencil | spec } else spec);
             let (vpX, vpY, _, _) = vp;
             pass.setViewport(Int32.toFloat64(vpX), Int32.toFloat64(viewportTop(fbH, vpY, vpH)),
                              Int32.toFloat64(vpW), Int32.toFloat64(vpH), 0.0, 1.0);
             let setPipeline = cfg#setPipeline;
-            let geom = geometryOf(fbW, fbH, vp, (base, vertexBase, valuesBase), targetTextureOf(spec));
+            let geom = geometryOf(fbW, fbH, vp, (base, vertexBase, valuesBase), targetTextureOf(spec),
+                                  if (stencil) stencilKeep() else stencilNone());
             if (letterboxed) {
                 bindPipeline(pass, geom, setPipeline, shapeSprite(), 0);
                 putScissor(geom, 0, 0, fbW, fbH);
@@ -96,55 +108,43 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     // ── 行を流す間ずっと同じ値の入れ物（Int32 の配列 1 本）──
     // 0=描き先の幅 1=描き先の高さ 2-5=viewport (x, y, 幅, 高さ・GL の左下原点) 6=行の instance を送った位置 7=描き先と同じ絵の番号
-    // 8=今積んである pipeline（形 × 4 + blend） 9=今積んである絵（どちらも -1 = まだ積んでいない） 10-13=今の行の scissor (x, y, 幅, 高さ)
+    // 8=今積んである pipeline（(形 × 4 + blend) × 4 + stencil の使い方） 9=今積んである絵（どちらも -1 = まだ積んでいない） 10-13=今の行の scissor (x, y, 幅, 高さ)
     // 14-17=今積んである scissor (x, y, 幅, 高さ・幅 -1 = まだ積んでいない) 18=頂点の buffer の 0 番の種類（kind*） 19=その buffer の番号
     // 20=頂点の buffer の 1 番の values の bytes（-1 = まだ積んでいない） 21=行の頂点を送った位置 22=values を送った位置（bytes）
-    // 23=頂点の buffer の 0 番に入っている要素の数
+    // 23=頂点の buffer の 0 番に入っている要素の数 24=mask でない行の stencil の使い方（stencilNone か stencilKeep）
+    // 25=pass を開いた後に stencil へ書いたか（1 = 書いた） 26=pass に積んである stencil の比べる値
     // WhyNot: record や組で持ち回らない — 行が描く物の数だけある画面で、行ごとに record の欄を辿る代金と組の割り当てが 1 コマに出る（RenderFrame の st と同じ形）。
-    /// sent = 送った位置（instance の番号, 頂点の番号, values の bytes）・readsForbidden = 描き先と同じ絵の番号。
-    def geometryOf(fbW: Int32, fbH: Int32, vp: (Int32, Int32, Int32, Int32), sent: (Int32, Int32, Int32), readsForbidden: Int32): Array[Int32, Static] \ IO =
+    /// sent = 送った位置（instance の番号, 頂点の番号, values の bytes）・readsForbidden = 描き先と同じ絵の番号・stencil = mask でない行の stencil の使い方。
+    def geometryOf(fbW: Int32, fbH: Int32, vp: (Int32, Int32, Int32, Int32), sent: (Int32, Int32, Int32), readsForbidden: Int32,
+                   stencil: Int32): Array[Int32, Static] \ IO =
         let (vpX, vpY, vpW, vpH) = vp;
         let (base, vertexBase, valuesBase) = sent;
         Array#{fbW, fbH, vpX, vpY, vpW, vpH, base, readsForbidden, -1, -1, 0, 0, 0, 0, 0, 0, -1, 0, kindSprite(), 0, -1,
-               vertexBase, valuesBase, Int32.maxValue()} @ Static
+               vertexBase, valuesBase, Int32.maxValue(), stencil, 0, 0} @ Static
 
     def emitAll(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                 registry: RenderAsset.TextureRegistry, upsideDown: Set[String], warnLog: Ref[Set[String], Static],
-                skip: String -> Unit \ IO, items: List[Merged]): Unit \ IO =
+                items: List[Merged]): Unit \ IO =
         match items {
             case Nil => ()
             case item :: rest =>
-                emitItem(st, list, scaleX, scaleY, registry, upsideDown, warnLog, skip, item);
-                emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog, skip, rest)
+                emitItem(st, list, scaleX, scaleY, registry, upsideDown, warnLog, item);
+                emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog, rest)
         }
 
-    /// 並べた 1 個を行へ積む（行になる種類だけ。GL を直に呼ぶ種類は知らせて飛ばす）。
+    /// 並べた 1 個を行へ積む。
+    /// 面と 3D の場面は mergedByZ に渡さない（まだ描かない種類で、知らせて捨てるのは WebGpuPaint）ので、emitRowItem は false を返さない。
     // WhyNot: 末尾を呼び出しで終えない・emitAll のループの中へ書き下さない — ループが JIT から外れる（docs/performance.md の 13 節。RenderFrame.emitOne と同じ形）。
     @DontInline
     def emitItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                  registry: RenderAsset.TextureRegistry, upsideDown: Set[String], warnLog: Ref[Set[String], Static],
-                 skip: String -> Unit \ IO, item: Merged): Unit \ IO =
-        if (emitRowItem(st, list, scaleX, scaleY, registry, upsideDown, warnLog, item)) ()
-        else {
-            // WhyNot: 飛ばした所で run を続けない — GL は GL を直に呼ぶ種類の前で run を閉じるので、続けると draw の数え方が GL とずれる。
-            closeRuns(st, list);
-            skip(skippedName(item))
-        };
+                 item: Merged): Unit \ IO =
+        discard emitRowItem(st, list, scaleX, scaleY, registry, upsideDown, warnLog, item);
         ()
-
-    /// 行にならなかった物の知らせの名前（スプライトは mask つきの時だけ行にならない）。
-    def skippedName(item: Merged): String = match item {
-        case Merged.MSprite(_)  => "mask つきスプライト"
-        case Merged.MSurface(_) => "面（ShaderDoc）"
-        case Merged.MScene3d(_) => "3D の場面"
-        case Merged.MTile(_)    => "タイルの層"
-        case Merged.MPoly(_)    => "多角形"
-        case Merged.MStatic(_)  => "static layer"
-    }
 
     // WhyNot: 積む関数を record 1 つで渡さない — 行が描く物の数だけある画面で、行ごとに record の欄を辿る代金が 1 コマに出る。
     def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                     setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
+                     setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
                      skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
@@ -157,11 +157,13 @@ pub mod RenderFrame.Internal.WebGpuRows {
     // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
     def drawRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
+                setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
                 skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32): Unit \ IO =
         let kind = rowAt(rows, row, 0);
         let texId = rowAt(rows, row, 3);
+        // 描かずに飛ばす行でも戻す — 戻さずに飛ばすと、次の値の mask が前に書いた同じ値と重なる。
+        if (kind == kindMask() and rowAt(rows, row, 11) == 1 and Array.get(25, geom) == 1) resetStencil(pass, geom, setPipeline, setVertices, setValues) else ();
         if (texId != 0 and texId == Array.get(7, geom)) skip("描き先と同じ絵を読む行")
         else {
             scissorInto(geom, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9));
@@ -169,13 +171,14 @@ pub mod RenderFrame.Internal.WebGpuRows {
             if (kind == kindPoly()) drawPolyRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
             else if (kind == kindTile()) drawTileRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, warnLog, row, visible)
             else if (kind == kindStatic()) drawStaticRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
+            else if (kind == kindMask()) drawMaskRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, row, visible)
             else drawSpriteRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, row, visible)
         };
         ()
 
     /// スプライトの行: instance の run を draw 1 本（6 頂点 × 体数・firstInstance で行の頭を引く）。
     def drawSpriteRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                      setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
+                      setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                       setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, row: Int32, visible: Bool): Unit \ IO =
         let texId = rowAt(rows, row, 3);
         let blendC = rowAt(rows, row, 4);
@@ -189,9 +192,55 @@ pub mod RenderFrame.Internal.WebGpuRows {
         countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
                         blendC, false, 1)
 
+    /// mask つきスプライトの行: mask の三角形を stencil へ比べる値で書き（色は変えない）、stencil がその値の画素だけ 1 体を描く（draw 2 本）。
+    /// 値が 1 の行の前で stencil を 0 に戻すのは drawRow（pass を開いた後に stencil へ書いた時だけ。開いた時は 0 で clear 済み）。
+    /// 値が 0（mask が 3 頂点未満）なら stencil を使わずに 1 体を描く。
+    def drawMaskRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
+                    setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
+                    setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
+                    row: Int32, visible: Bool): Unit \ IO =
+        let texId = rowAt(rows, row, 3);
+        let blendC = rowAt(rows, row, 4);
+        let ref = rowAt(rows, row, 11);
+        if (visible and ref > 0) {
+            bindStencilRef(pass, geom, ref);
+            bindStencilPipeline(pass, geom, setPipeline, shapePoly(), 0, stencilWrite());
+            discard bindVertices(pass, geom, setVertices, kindPoly(), 0);
+            bindValues(pass, geom, setValues, 0);
+            applyScissor(pass, geom);
+            pass.draw(rowAt(rows, row, 2), 1, Array.get(21, geom) + rowAt(rows, row, 10), 0);
+            Array.put(1, 25, geom)
+        } else ();
+        if (visible) {
+            bindStencilPipeline(pass, geom, setPipeline, shapeSprite(), blendC, if (ref > 0) stencilEqual() else Array.get(24, geom));
+            discard bindVertices(pass, geom, setVertices, kindSprite(), 0);
+            bindTexture(pass, geom, setTexture, texId);
+            applyScissor(pass, geom);
+            pass.draw(6, 1, 0, firstInstanceAt(rows, row, Array.get(6, geom)))
+        } else ();
+        countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
+                        blendC, true, if (ref > 0) 2 else 1)
+
+    /// stencil を全部 0 に戻す: design の全面の 6 頂点を、stencil へ値 0 を書く pipeline で描く。scissor は描き先の全面にし、行の scissor は次の applyScissor が戻す。
+    // WhyNot: pass を閉じて stencil を clear して開き直さない — 開き直すと viewport・積んだ pipeline と buffer の控え・黒帯の箱を全部張り直す道が要り、
+    //   標本つきの描き先は閉じるたびに resolve する。
+    def resetStencil(pass: RenderPass, geom: Array[Int32, Static], setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO,
+                     setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO): Unit \ IO =
+        let rowScissor = (Array.get(10, geom), Array.get(11, geom), Array.get(12, geom), Array.get(13, geom));
+        putScissor(geom, 0, 0, Array.get(0, geom), Array.get(1, geom));
+        applyScissor(pass, geom);
+        bindStencilRef(pass, geom, 0);
+        bindStencilPipeline(pass, geom, setPipeline, shapePoly(), 0, stencilWrite());
+        let count = bindVertices(pass, geom, setVertices, kindMask(), 0);
+        bindValues(pass, geom, setValues, 0);
+        pass.draw(count, 1, 0, 0);
+        Array.put(0, 25, geom);
+        let (x, y, w, h) = rowScissor;
+        putScissor(geom, x, y, w, h)
+
     /// 多角形の行: 送った頂点の run を draw 1 本（view は values の頭の identity の view）。
     def drawPolyRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                    setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
+                    setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
                     setValues: (RenderPass, Int32) -> Unit \ IO, row: Int32, visible: Bool): Unit \ IO =
         let blendC = rowAt(rows, row, 4);
         if (visible) {
@@ -206,7 +255,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     /// タイルの層の行: 表の instance の buffer を draw 1 本（6 頂点 × タイルの数）。blend はいつも Normal。
     /// タイルの数が buffer に入っている枚数より多ければ、入っている枚数で描く（buffer の外を読む draw は pass ごと誤りになり、コマ全体が消える）。
     def drawTileRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                    setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
+                    setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
                     warnLog: Ref[Set[String], Static], row: Int32, visible: Bool): Unit \ IO =
         let held = if (visible) bindVertices(pass, geom, setVertices, kindTile(), rowAt(rows, row, 10)) else 0;
@@ -223,7 +272,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     /// static layer の範囲の行: 表の頂点の buffer の範囲を draw 1 本（3 頂点未満は描かず数えない）。範囲が buffer の外へ出る分は描かない。
     def drawStaticRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                      setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
+                      setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
                       setValues: (RenderPass, Int32) -> Unit \ IO, row: Int32, visible: Bool): Unit \ IO =
         let count = rowAt(rows, row, 2);
         let first = rowAt(rows, row, 1);
@@ -246,14 +295,27 @@ pub mod RenderFrame.Internal.WebGpuRows {
             Log.fellBack("webgpu", "タイルの層", "buffer に入っている枚数", "TileMapRenderCmd の tileCount が buffer に入っている枚数より多い")
         }
 
-    /// 形と blend の番号の pipeline を積む（前と同じなら積まない）。
-    def bindPipeline(pass: RenderPass, geom: Array[Int32, Static], setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO,
+    /// 形と blend の番号の pipeline を、mask でない行の stencil の使い方で積む（前と同じなら積まない）。
+    def bindPipeline(pass: RenderPass, geom: Array[Int32, Static], setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO,
                      shape: Int32, blendC: Int32): Unit \ IO =
-        let key = shape * 4 + blendC;
+        bindStencilPipeline(pass, geom, setPipeline, shape, blendC, Array.get(24, geom))
+
+    /// 形と blend の番号と stencil の使い方の pipeline を積む（前と同じなら積まない）。
+    def bindStencilPipeline(pass: RenderPass, geom: Array[Int32, Static], setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO,
+                         shape: Int32, blendC: Int32, stencil: Int32): Unit \ IO =
+        let key = (shape * 4 + blendC) * 4 + stencil;
         if (Array.get(8, geom) == key) ()
         else {
-            setPipeline(pass, shape, blendC);
+            setPipeline(pass, shape, blendC, stencil);
             Array.put(key, 8, geom)
+        }
+
+    /// pass の stencil の比べる値を ref にする（前と同じなら積まない）。
+    def bindStencilRef(pass: RenderPass, geom: Array[Int32, Static], ref: Int32): Unit \ IO =
+        if (Array.get(26, geom) == ref) ()
+        else {
+            pass.setStencilReference(ref);
+            Array.put(ref, 26, geom)
         }
 
     /// 絵の番号 texId を group 1 に積む（0 の絵と、前と同じ絵は積まない）。

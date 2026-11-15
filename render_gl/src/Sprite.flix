@@ -515,44 +515,43 @@ mod RenderSprite {
         gl.drawArraysInstanced(GlConst.TRIANGLES, 0, 6, count);
         gl.bindVertexArray(0)
 
-    /// スプライト 1 体を maskPolys（スクリーン px の多角形）の内側だけに抜いて描く。
-    /// 手順は drawShaderSurfaceMasked と同じステンシル流用: mask を描き込む（色は書かない）→
-    /// EQUAL テスト付きで instance 1 体だけ描く → 後始末。instData には first 体目に
-    /// 1 体ぶんが書き込み済みの前提（RenderFrame が writeInstAt で書く）。
-    /// mask が退化（頂点 3 未満）ならステンシルを触らずそのまま 1 体描く。返すのは出した draw call の数。
-    pub def drawSpriteMasked(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
-                             multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode,
-                             instData: FloatBuffer, first: Int32,
-                             polyShader: Int32, polyVao: Int32, polyVbo: Int32,
-                             polyUniforms: RenderShader.PolyBatchUniforms,
-                             maskPolys: List[List[Vec2.Vec2]]): Int32 \ IO =
-        let (maskData, maskCount) = buildMaskData(maskPolys);
-        if (maskCount < 3) {
-            drawSpriteInstancedBuf(gl, shader, vao, instanceVbo, texId, multiplyBlendLoc, blend,
-                                   instData, first, 1);
-            1
-        } else {
-            // 1) mask を stencil に描き込む（色は書かず内側を 1 に）。この 1 体ぶんだけ使うので毎回 clear。
-            gl.enable(GlConst.STENCIL_TEST);
-            gl.stencilMask(255i32);
-            gl.clearStencil(0);
-            gl.clear(GlConst.STENCIL_BUFFER_BIT);
-            gl.stencilFunc(GlConst.ALWAYS, 1i32, 255i32);
-            gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.REPLACE);
-            gl.colorMask(false, false, false, false);
-            drawPolygonBatch(gl, polyShader, polyVao, polyVbo, polyUniforms,
-                             DrawCmd.BlendMode.Normal, maskData, maskCount);
-            gl.colorMask(true, true, true, true);
-            // 2) stencil==1 の画素だけスプライトを描く（stencil は書かない）。
-            gl.stencilFunc(GlConst.EQUAL, 1i32, 255i32);
-            gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.KEEP);
-            gl.stencilMask(0i32);
-            drawSpriteInstancedBuf(gl, shader, vao, instanceVbo, texId, multiplyBlendLoc, blend,
-                                   instData, first, 1);
-            // 3) 後始末（次の描画にステンシル状態を持ち越さない）。
-            gl.stencilMask(255i32);
-            gl.disable(GlConst.STENCIL_TEST);
-            2
-        }
+    /// mask の多角形の列（画面の座標）を三角形にほどき、頂点 6 floats（位置と白）を入れ物の firstVert 番目から書く。書いた頂点数を返す。
+    pub def writeMaskVerts(data: FloatBuffer, firstVert: Int32, maskPolys: List[List[Vec2.Vec2]]): Int32 \ IO =
+        maskPolys |> List.foldLeft((i, poly) -> Triangulate.triangles(poly) |> List.foldLeft((j, tri) -> {
+            let (v0, v1, v2) = tri;
+            writeXY(data, j,     v0, 1.0f32, 1.0f32, 1.0f32, 1.0f32);
+            writeXY(data, j + 1, v1, 1.0f32, 1.0f32, 1.0f32, 1.0f32);
+            writeXY(data, j + 2, v2, 1.0f32, 1.0f32, 1.0f32, 1.0f32);
+            j + 3
+        }, i), firstVert) - firstVert
+
+    /// stencil を全部 0 にする（scissor を外してから。張り直すのは呼ぶ側）。
+    pub def clearStencil(gl: GlContext): Unit \ IO =
+        gl.disable(GlConst.SCISSOR_TEST);
+        gl.stencilMask(255i32);
+        gl.clearStencil(0);
+        gl.clear(GlConst.STENCIL_BUFFER_BIT)
+
+    /// instances の first 体目 1 体を、vertices の [maskFirst, maskFirst + maskCount) の三角形の内側だけに描く。
+    /// mask を stencil へ値 ref で書き（色は書かない・view は values の at からの 6 個）、stencil が ref の画素だけスプライトを描いて、stencil の検査を外す。
+    /// locs の [locAt, locAt + 4) = 多角形のシェーダーの uniform location（drawPolygonRange と同じ）。
+    pub def drawSpriteMaskedRange(gl: GlContext, shader: Int32, vao: Int32, instanceVbo: Int32, texId: Int32,
+                                  multiplyBlendLoc: Int32, blend: DrawCmd.BlendMode, instances: FloatBuffer, first: Int32,
+                                  polyShader: Int32, polyVao: Int32, polyVbo: Int32, locs: Array[Int32, Static], locAt: Int32,
+                                  values: Array[Float32, Static], at: Int32, vertices: FloatBuffer, maskFirst: Int32, maskCount: Int32,
+                                  ref: Int32): Unit \ IO =
+        gl.enable(GlConst.STENCIL_TEST);
+        gl.stencilMask(255i32);
+        gl.stencilFunc(GlConst.ALWAYS, ref, 255i32);
+        gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.REPLACE);
+        gl.colorMask(false, false, false, false);
+        drawPolygonRange(gl, polyShader, polyVao, polyVbo, locs, locAt, DrawCmd.BlendMode.Normal, values, at, vertices, maskFirst, maskCount);
+        gl.colorMask(true, true, true, true);
+        gl.stencilFunc(GlConst.EQUAL, ref, 255i32);
+        gl.stencilOp(GlConst.KEEP, GlConst.KEEP, GlConst.KEEP);
+        gl.stencilMask(0i32);
+        drawSpriteInstancedBuf(gl, shader, vao, instanceVbo, texId, multiplyBlendLoc, blend, instances, first, 1);
+        gl.stencilMask(255i32);
+        gl.disable(GlConst.STENCIL_TEST)
 
 }

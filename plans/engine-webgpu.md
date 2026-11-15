@@ -418,6 +418,9 @@ WebGPU はその values を stride 0 の instance の頂点の buffer として�
 **R1b-3 で決めた物（2026-11-15）**: history は毎コマ写す（2 枚の入れ替えと比べた）・MSAA は pass の終わりごとに resolve する（endTarget で 1 回と比べた）・
 WebGPU で history へ写すのは present と同じ WGSL で描く（encoder の copyTextureToTexture と比べた）。3 つとも両方を動かして GL と 0 px（`samples/history-msaa.md`）。12.19。
 
+**R1b-4 で決めた物（2026-11-15）**: mask の比べる値は前半が進めて行に書く（GL と WebGPU の backend がそれぞれ数える形と比べた）・255 を超えた時、WebGPU は pass の中で
+design の全面を値 0 で描いて stencil を戻す（pass を閉じて開き直す形と比べた）。2 つとも両方を動かして GL と 0 px（`samples/mask-stencil.md`）。12.20。
+
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
 置き場は `plans/webgpu/samples/<決める物>.md`。フェーズの終わりの報告で人に見せ、同じ物をレビュー役にも渡す（名前と読みやすさを見てもらう）。
@@ -768,3 +771,41 @@ history の寿命（作る・形が変われば作り直す・描き先を作り
   P8 の cutout の縁の門の形・1 回の begin〜end に renderCommands が 2 回来る時の resolve が 2 回になる事（今のゲームには無い）。
   （P10）標本つきの pipeline は初めてその Pass を描くコマの中で作る（ブラウザの試作で 1 本 65〜93 ms・4.3）ので、そのコマが詰まる。本当に避けるには読み込みの間に作る。
   その時は 2 回目の renderCommands が history を読むと、写るのは前のコマの最後でなく、同じコマの 1 回目を描いた後の中身になる（GL も前から同じ）。
+
+### 12.20 R1b-4: mask（比べる値を進める形・2026-11-15・この Mac・Dawn の Metal だけ）
+
+表の 8 行目の 4 つ目の種類。mask つきスプライトを `RenderList` の行（`kindMask`・1 体 = 1 行）にし、GL を直に呼ぶ種類は面と 3D の場面だけになった。同じ行を WebGPU の backend に流した。
+8 章の「stencil は残し、mask ごとに比べる値を 1 ずつ進める」を GL と WebGPU の両方の形にした（GL も mask ごとの stencil の clear をやめた）。
+
+- **決めた事 1 — 比べる値は前半が進めて行に書く**: `RenderList.nextMaskRef`（前の値 → 次の値。1 から 1 ずつ・255 の次は 1）を前半の `pushMaskedItem` だけが呼び、行の 11 番に書く。
+  値 1 の行の前で backend は stencil を全部 0 にする（pass の頭か 255 を使い切った後）。前の値は front-end の状態（`st` の 41 番）に pass ごとに持つ。
+  別の案「GL と WebGPU の backend がそれぞれ数える」も動かした（mask の 5 場面とも GL と 0 px）。決まりが 2 か所に分かれ、GPU 無しのテストで固定できないので取らなかった。
+  形のレビュー（2D）の 3.1 の 9 と 3.2 の終わりは「比べる値を進めるのは backend の中」と書いていたが、ここで前半へ寄せた。見本は `plans/webgpu/samples/mask-stencil.md`。
+- **決めた事 2 — 255 を超えた時、WebGPU は pass の中で stencil を 0 に戻す**: design の全面（1 px ずつ外へ広げた）6 頂点を、mask を書く pipeline に比べる値 0 で描く（`WebGpuRows.resetStencil`）。
+  別の案は 8 章の「pass を分ける」（区切りごとに閉じて、色は前の中身のまま・stencil は clear で開き直す）。動かして 5 場面とも 0 px だったが、pass が 255 個ごとに 1 本増え、
+  標本つきの描き先は閉じるたびに resolve し、画面の pass を「前の中身のまま」で開く形（今の `PassSpec` の `Screen` は clear しか持たない）と控えの張り直しが要る。
+  GL は値 1 の行の前で scissor を外して `glClear(STENCIL_BUFFER_BIT)`。
+- **WebGPU の stencil の attachment**: 前半が行に stencil を使う mask を積んだ時だけ（`RenderFrame.usesStencil`）、`PassSpec#depthStencil` を `DepthAndStencil` にして pass を開く（3.2 のとおり）。
+  形式は `DEPTH24_PLUS_STENCIL8`（`render_gl/java` の Dawn の実装は depth の LoadOp をいつも書き、WebGPU は depth の無い形式にそれを書くと誤りにする。`STENCIL8` は試していない）。描き先ごとに 1 枚（中間の texture は鍵 0・Pass は表の番号）、
+  初めて mask を描く pass で作り、大きさか標本の数が違えば作り直し、描き先を捨てる時と `release` で捨てる。標本 4 の Pass は stencil も標本 4。
+  mask を書く draw は blend を (0, 1) にして色を変えない（`render_gl/java` の `RenderPipelineDesc` に色の書き込みの mask の口が無いため）。
+- **pipeline**: 鍵に stencil の使い方（`WebGpuRows.stencil*`: None・Keep・Write・Equal）を足した。起動の時に作る物は 7 本 → 18 本（RGBA8・標本 1 の stencil 無しと Keep のスプライトと多角形の 3 本ずつとタイル 1 本・
+  Equal のスプライト 3 本・Write の多角形 1 本。3.2 の「両方を読み込みの間に作っておく」）。初めて mask が出たコマで作ると、Dawn は作り終えるまで待つのでそのコマが詰まり、
+  stencil つきの pass では mask の無い行まで Keep の pipeline に替わるので、スプライトと多角形とタイルの分も要る（12.19 の標本つきの pipeline と同じ言い方）。
+  **ブラウザの起動が 11 本ぶん重くなる**（試作で 1 本 65〜93 ms・4.3）は測っていない。
+- **GL の mask つきの面**: 面は今も GL を直に呼び、自分で stencil を 0 にして 1 を書く。そこで mask つきの面を描いた後は前半の前の値（`st` の 41 番）を 0 にし、次の mask の前に stencil を 0 に戻させる。
+  「この pass に stencil を使う行を積んだか」は別の欄（42 番）に持ち、面の後も真のまま（`usesStencil` が読む）。WebGPU は面をまだ描かない。
+- 入れた物（render_gl の中だけ・engine の pub は増えていない）:
+  - 前半: `RenderList.kindMask`・`appendMaskRow`・`maxMaskRef`・`nextMaskRef`・`RenderFrame.pushMaskedItem`・`spriteCaps`（体数と mask の頂点の数を 1 回の周回で数え、入れ物を先に広げる）・`usesStencil`。
+    `emitRowItem` が mask つきも行にする。WebGPU の `emitItem` は面と 3D の場面を受け取らない（`mergedByZ` に渡さない）ので、知らせて飛ばす枝を消した。
+  - GL: `GlRows.drawMaskRow`・`RenderSprite.writeMaskVerts`・`clearStencil`・`drawSpriteMaskedRange`（`drawSpriteMasked` を置き換え・mask の頂点は多角形と同じ入れ物から `drawPolygonRange` で流す）。
+  - WebGPU: `WebGpuRows.drawMaskRow`・`resetStencil`・`bindStencilPipeline`・`bindStencilRef`。pipeline と stencil の表は `WebGpuPaint` から新しい `RenderPaint.Internal.WebGpuPipelines`
+    （`pipelineOf`・`buildStartupPipelines`・`describeStencil`・`stencilOf`・`dropStencil`・`createResetQuad`）へ分けた。`openPass` は `PassSpec` を受ける。
+- 振る舞いの変化（絵は変わらない）: GL は mask ごとの stencil の clear が pass の頭と 255 個ごとの 1 回になった。mask つきスプライトの instance は 0 番に書き直さず、行の列の中に書く。
+  draw の数え方は前と同じ（mask つきは 2・三角形にならない mask は 1）。
+- 門（この Mac・2026-11-15）: `webgpu-shape-review-2d.md` の 7.9。
+- `bench/webgpu_v1` の `unsupported` は、mask つきスプライトが描けるようになったので、中身を面（ShaderDoc）1 つと 3D の場面に差し替えた（2 コマ渡して、名前ごとに 1 回だけ知らせ・WebGPU の誤り 0）。
+- 持ち越し: ブラウザで mask の絵を GL と比べる門（`bench/webgpu_v1` の場面をブラウザで回す口が無い・R1b-2 から）・
+  `spriteCaps` が毎コマ全部のスプライトの mask を数える分（P10 の前の計測で）・面に mask を付ける時に比べる値を面の行にも持たせるか（面の小分けで）。
+  - `render_gl/java/fge/webgpu/dawn/DawnWebGpu.java` の 590 行目は stencil を Store で書き出すが、pass の後に stencil を読む物は無いので捨てる設定（Discard）で足りる（jar に触るので今は直さない）。
+  - 起動の時に作る pipeline が 11 本増える重さは、mask を使わないゲームにも掛かる。P10 の前に測り、重ければ非同期で作る案（8 章の pipeline の行）と比べる。

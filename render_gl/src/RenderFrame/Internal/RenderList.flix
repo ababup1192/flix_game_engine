@@ -1,10 +1,12 @@
 // RenderFrame.Internal.RenderList — 1 回の renderCommands で描く行の列（GL と WebGPU が同じ物を流す）と、その行を描く pass の指定。
-// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲。面・mask・3D の場面は GL を直に呼ぶ）。
+// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲・mask つきスプライト 1 体。面と 3D の場面は GL を直に呼ぶ）。
 // GL の物（program・VAO・buffer）を持たず、絵と頂点の buffer は backend の表の番号（GL の backend ではテクスチャ・VAO の番号）で持つ。
 // rows の頭: 0=行の数 1=次に書く instance の番号 2=次に書く頂点の番号。その後ろに 1 行 rowStride() 個:
 //   0=種類（kind*） 1=先頭（スプライトは instance・多角形と static は頂点の番号） 2=数（体数・頂点数・タイルの数）
 //   3=絵の番号（0 = 絵の無い箱・多角形と static は 0） 4=blend 5=clip有無 6-9=clip矩形（viewport の左上原点の px）
 //   10=頂点の buffer の番号（タイルの instance・static の頂点。backend の表の番号。ほかは 0） 11=values の先頭（draw ごとの値。スプライトは 0）
+//   mask つきスプライト（kindMask）だけ欄の意味が違う: 1=instance の番号（1 体） 2=mask の頂点の数（三角形にほどいた物・3 未満なら 0） 10=mask の先頭の頂点の番号
+//   11=stencil に書いて比べる値（nextMaskRef が決める・0 = mask が 3 頂点未満で stencil を使わずに描く）。mask の頂点は values の頭の identity の view で描く。
 // instances は 1 体 instanceFloats() 個（RenderFrame.writeInstAt の並び）。スプライトの行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
 // vertices は多角形の頂点（1 頂点 6 個・RenderSprite.writePolyVerts の並び）。instances も vertices も backend が貸す入れ物で、GPU へそのまま送る。
 // values は draw ごとの値（front-end の並び。GL は uniform へ差し、WebGPU は詰め直さずに stride 0 の頂点の buffer として読む）。頭の viewValueFloats() 個はいつも identity の view（多角形の行が指す）。
@@ -37,6 +39,8 @@ pub mod RenderFrame.Internal.RenderList {
     pub def kindStatic(): Int32 = 4
     pub def kindSurface(): Int32 = 5
     pub def kindScene3d(): Int32 = 6
+    /// mask つきスプライトの行（draw call は kindSprite で数える）。
+    pub def kindMask(): Int32 = 7
 
     def rowStride(): Int32 = 12
 
@@ -161,6 +165,26 @@ pub mod RenderFrame.Internal.RenderList {
         let rows = rowsWithRoom(list);
         putRow(rows, Array.get(0, rows), kindStatic(), first, count, 0, blendC, clipFlag, x0, y0, x1, y1, buffer, at)
 
+    /// mask つきスプライト 1 体を 1 行として足す。instanceAt = 書いた 1 体の番号・maskFirst と maskCount = vertices に書いた mask の三角形の頂点・
+    /// ref = stencil に書いて比べる値（nextMaskRef。maskCount が 3 未満なら 0）。次の instance と頂点は、この行の後ろから始まる。
+    pub def appendMaskRow(list: RenderList, instanceAt: Int32, maskFirst: Int32, maskCount: Int32, texId: Int32, blendC: Int32,
+                          clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32, ref: Int32): Unit \ IO =
+        let rows = rowsWithRoom(list);
+        putRow(rows, Array.get(0, rows), kindMask(), instanceAt, maskCount, texId, blendC, clipFlag, x0, y0, x1, y1, maskFirst, ref);
+        Array.put(instanceAt + 1, 1, rows);
+        Array.put(maskFirst + maskCount, 2, rows)
+
+    /// stencil の比べる値の上限（stencil は 8 bit）。
+    pub def maxMaskRef(): Int32 = 255
+
+    /// 1 つの pass の中で、前の mask の値 last（0 = この pass でまだ無い）の次の mask の値。1 から 1 ずつ進み、上限の次は 1 に戻る。
+    /// 値が 1 の行の前で、backend は stencil を全部 0 にする（pass の頭か、上限まで使い切った後）。それ以外の値は前の mask が書いたどの値よりも
+    /// 大きいので、stencil を 0 に戻さなくても前の mask の形と取り違えない。
+    // WhyNot: mask ごとに stencil を 0 に戻さない — WebGPU は pass の途中で stencil だけを clear する口が無く、戻すたびに design の全面の draw が 1 本増える。
+    //   GL でも mask ごとに全面の clear を払う。
+    pub def nextMaskRef(last: Int32): Int32 =
+        if (last <= 0 or last >= maxMaskRef()) 1 else last + 1
+
     /// 行の欄を書いて行の数を 1 進める（rows は rowsWithRoom で取った物）。
     def putRow(rows: Array[Int32, Static], n: Int32, kind: Int32, first: Int32, count: Int32, texId: Int32, blendC: Int32,
                clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32, buffer: Int32, valuesAt: Int32): Unit \ IO =
@@ -209,9 +233,8 @@ pub mod RenderFrame.Internal.RenderList {
     }
 
     /// 1 つの pass の指定。width × height = 描き先の画素の大きさ・viewport = design の矩形を描き先の画素で（x, 上の端, 幅, 高さ。左上が原点）・
-    /// depthStencil = 描き先が持つ depth と stencil・samples = 標本の数・history = pass を開く前の history の始末。
-    // WhyNot: depthStencil で stencil つきと無しの pipeline を分けない — WebGPU の行に mask がまだ無く、stencil を持つ pass を作らない。
-    //   mask の行が入る時は、両方の pipeline を読み込みの間に作っておく（初めて mask が出たコマで作ると、できるまでそのコマの絵が崩れる）。
+    /// depthStencil = 描き先が持つ depth と stencil（WebGPU は、行に stencil を使う mask があれば前半が DepthAndStencil にする）・samples = 標本の数・
+    /// history = pass を開く前の history の始末。
     pub type alias PassSpec = {
         target = PassTarget,
         width = Int32,

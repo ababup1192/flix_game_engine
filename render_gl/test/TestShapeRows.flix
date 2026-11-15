@@ -212,14 +212,6 @@ mod RenderFrame.TestShapeRows {
     def testSceneIsNotARow(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (false, 0), madeRow(Merged.MScene3d(0)))
 
-    /// mask つきスプライトは行にならない。
-    @Test
-    def testMaskedSpriteIsNotARow(): Unit \ {Assert, IO} =
-        let masked = DrawCmd.make({
-          texture = "", position = v(0.0, 0.0), scale = v(4.0, 4.0), rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
-          centered = false, uvOffset = v(0.0, 0.0), uvScale = v(1.0, 1.0), zIndex = 0, style = None, clip = None,
-          blend = DrawCmd.BlendMode.Normal, mask = (v(0.0, 0.0) :: v(4.0, 0.0) :: v(0.0, 4.0) :: Nil) :: Nil });
-        Assert.assertEq(expected = (false, 0), madeRow(Merged.MSprite(masked)))
 
     /// 面（ShaderDoc）は行にならない。
     @Test
