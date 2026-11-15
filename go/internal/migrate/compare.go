@@ -1,8 +1,8 @@
 package migrate
 
 import (
+	"encoding/json"
 	"fmt"
-	"image"
 	"math"
 	"os"
 	"path/filepath"
@@ -41,9 +41,14 @@ type Diff struct {
 	Mean      float64 `json:"mean,omitempty"`
 	Max       int     `json:"max,omitempty"`
 	Within    float64 `json:"within,omitempty"`
-	Accepted  string  `json:"accepted,omitempty"`
-	Why       string  `json:"why,omitempty"`
-	Pending   bool    `json:"pending,omitempty"`
+	// Images は前の版の記録が無い時に人が見る新しい版のコマの全部（nobaseline）。
+	Images []string `json:"images,omitempty"`
+	// Accepted・AcceptKind・Why・EntryImages は当たった承認の名前・種類・理由・承認に添えた絵。
+	Accepted    string   `json:"accepted,omitempty"`
+	AcceptKind  string   `json:"acceptKind,omitempty"`
+	Why         string   `json:"why,omitempty"`
+	EntryImages []string `json:"entryImages,omitempty"`
+	Pending     bool     `json:"pending,omitempty"`
 	// Review は迷った差（絵・矩形・音の時刻・音量）。門は止めず、一覧に溜めて最後に動画と並べて人が見る（10.3 の合格線）。
 	Review bool `json:"review,omitempty"`
 }
@@ -64,13 +69,16 @@ type Uncovered struct {
 	Accepted bool   `json:"accepted"`
 }
 
-// Result は突き合わせの全部。
+// Result は突き合わせの全部。Applied は当てた読み替えと決め（問いの値の読み替え・読まないセーブ）、
+// Unused はどの差にも当たらなかった承認。
 type Result struct {
 	Diffs     []*Diff     `json:"diffs"`
 	Skips     []Skip      `json:"skips"`
 	Uncovered []Uncovered `json:"uncovered"`
 	Problems  []string    `json:"problems"`
 	Notes     []string    `json:"notes"`
+	Applied   []string    `json:"applied"`
+	Unused    []string    `json:"unused"`
 	Stopped   []string    `json:"stopped"`
 	Frames    int         `json:"framesCompared"`
 	Strict    bool        `json:"strict"`
@@ -100,8 +108,13 @@ type Options struct {
 
 // Compare は前と後の記録を突き合わせる。
 func Compare(base, cur *Side, acc *Accept, opt Options) *Result {
-	r := &Result{Diffs: []*Diff{}, Skips: []Skip{}, Uncovered: []Uncovered{}, Problems: []string{}, Notes: []string{}, Stopped: []string{}}
-	c := &comparer{r: r, acc: acc, opt: opt}
+	r := &Result{Diffs: []*Diff{}, Skips: []Skip{}, Uncovered: []Uncovered{}, Problems: []string{}, Notes: []string{},
+		Applied: []string{}, Unused: []string{}, Stopped: []string{}}
+	if opt.Out != "" {
+		// WhyNot: 前の回の差の色の図を残さない — 直した後の頁に、もう当たらない図が混ざって読み違える。
+		_ = os.RemoveAll(filepath.Join(opt.Out, "heat"))
+	}
+	c := &comparer{r: r, acc: acc, opt: opt, rewrites: map[string]int{}}
 	for _, flow := range sortedKeys(base.Flows) {
 		sizes := base.Flows[flow]
 		for _, size := range sortedKeys(sizes) {
@@ -115,9 +128,15 @@ func Compare(base, cur *Side, acc *Accept, opt Options) *Result {
 	}
 	for _, flow := range sortedKeys(cur.Flows) {
 		for _, size := range sortedKeys(cur.Flows[flow]) {
-			if base.Flows[flow][size] == nil {
-				c.add(&Diff{Flow: flow, Size: size, What: WhatNoBaseline, Seq: -1, Detail: "前の版の記録が無い（新しい版の絵を人が頁で見て nobaseline で承認する）"})
+			if base.Flows[flow][size] != nil {
+				continue
 			}
+			t := cur.Flows[flow][size]
+			d := &Diff{Flow: flow, Size: size, What: WhatNoBaseline, Seq: -1, Detail: "前の版の記録が無い（新しい版の絵を人が頁で見て nobaseline で承認する）"}
+			for _, f := range t.Frames {
+				d.Images = append(d.Images, filepath.Join(t.Dir, f.File))
+			}
+			c.add(d)
 		}
 	}
 	c.restores(base, cur)
@@ -129,15 +148,17 @@ func Compare(base, cur *Side, acc *Accept, opt Options) *Result {
 	problems, invalid := acc.Validate(opt.Lim)
 	r.Problems = append(r.Problems, problems...)
 	c.applyAccept(invalid)
+	c.reportRewrites()
 	r.Strict = opt.Strict
 	r.Passed = r.Open(opt.Strict) == 0 && len(r.Problems) == 0
 	return r
 }
 
 type comparer struct {
-	r   *Result
-	acc *Accept
-	opt Options
+	r        *Result
+	acc      *Accept
+	opt      Options
+	rewrites map[string]int // 「問い mode: "Nvl" → "nvl"」→ 読み替えた回数
 }
 
 func (c *comparer) add(d *Diff) { c.r.Diffs = append(c.r.Diffs, d) }
@@ -154,8 +175,9 @@ func (c *comparer) tape(flow, size string, a, b *Tape) {
 	c.sounds(flow, size, a, b)
 	c.buses(flow, size, a, b)
 	c.probes(flow, size, a, b)
-	c.objects(flow, size, a.Objects, b.Objects, frameTol(a), screenOf(a), screenOf(b))
-	c.frames(flow, size, a.Frames, b.Frames, a.Dir, b.Dir, false)
+	place := func(at float64) (string, int) { return placeAt(b, at) }
+	c.objects(flow, size, a.Objects, b.Objects, frameTol(a), screenOf(a), screenOf(b), place)
+	c.frames(flow, size, frameSide{a.Frames, a.Dir, visitsOf(a)}, frameSide{b.Frames, b.Dir, visitsOf(b)}, false)
 }
 
 func frameTol(t *Tape) float64 { return 1/t.FPS + 1e-6 }
@@ -216,7 +238,7 @@ func (c *comparer) events(flow, size string, a, b *Tape) bool {
 		c.skip(flow, size, WhatEvent, "events が無いので待ちは比べていない（台詞と選択肢は timeline と choices から比べた）")
 	}
 	ea, eb := eventsOf(a), eventsOf(b)
-	if !a.Has("events") && b.Has("events") || a.Has("events") && !b.Has("events") {
+	if a.Has("events") != b.Has("events") {
 		ea, eb = eventsOf(withoutEvents(a)), eventsOf(withoutEvents(b))
 	}
 	tol := frameTol(a)
@@ -319,33 +341,52 @@ func placeAt(t *Tape, at float64) (string, int) {
 
 // ---- 2. 音 ----
 
+// soundOrder は同じフレームで鳴った音を (フレーム, kind, name) で並べ直した写し。
+// WhyNot: 書いた順のまま比べない — 同じフレームの中の順は命令を当てる順で決まり、移行で替わっても聞こえ方は同じ。
+func soundOrder(t *Tape) []Sound {
+	out := append([]Sound(nil), t.Sounds...)
+	frame := func(s Sound) int { return int(math.Round(s.T * t.FPS)) }
+	sort.SliceStable(out, func(i, j int) bool {
+		fi, fj := frame(out[i]), frame(out[j])
+		if fi != fj {
+			return fi < fj
+		}
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
 func (c *comparer) sounds(flow, size string, a, b *Tape) {
 	if !a.Has("sounds") || !b.Has("sounds") {
 		c.skip(flow, size, WhatSound, "sounds が無い")
 		return
 	}
+	sa, sb := soundOrder(a), soundOrder(b)
 	tol := frameTol(a)
-	for i := 0; i < len(a.Sounds) || i < len(b.Sounds); i++ {
-		if i >= len(a.Sounds) || i >= len(b.Sounds) {
-			s, side := a.Sounds, "前"
-			if i >= len(a.Sounds) {
-				s, side = b.Sounds, "後"
+	for i := 0; i < len(sa) || i < len(sb); i++ {
+		if i >= len(sa) || i >= len(sb) {
+			s, side := sa, "前"
+			if i >= len(sa) {
+				s, side = sb, "後"
 			}
 			node, seq := placeAt(b, s[i].T)
 			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: s[i].T,
-				Detail: fmt.Sprintf("音の数が違う（前 %d・後 %d）。%d 番目から先は%sにだけある（%s %s）", len(a.Sounds), len(b.Sounds), i, side, s[i].Kind, s[i].Name)})
+				Detail: fmt.Sprintf("音の数が違う（前 %d・後 %d）。%d 番目から先は%sにだけある（%s %s）", len(sa), len(sb), i, side, s[i].Kind, s[i].Name)})
 			return
 		}
-		sa, sb := a.Sounds[i], b.Sounds[i]
-		node, seq := placeAt(b, sb.T)
-		if sa.Name != sb.Name || sa.Kind != sb.Kind {
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: sb.T,
-				Detail: fmt.Sprintf("%d 番目の音が違う（前 %s %s / 後 %s %s）。後ろの音は比べない", i, sa.Kind, sa.Name, sb.Kind, sb.Name)})
+		x, y := sa[i], sb[i]
+		node, seq := placeAt(b, y.T)
+		if x.Name != y.Name || x.Kind != y.Kind {
+			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: y.T,
+				Detail: fmt.Sprintf("%d 番目の音が違う（前 %s %s / 後 %s %s）。後ろの音は比べない", i, x.Kind, x.Name, y.Kind, y.Name)})
 			return
 		}
-		if math.Abs(sa.T-sb.T) > tol {
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: sb.T,
-				Review: true, Detail: fmt.Sprintf("%s の鳴った時刻が %.3f 秒ずれた（前 %.3f / 後 %.3f・許すのは 1 フレーム）", sa.Name, sb.T-sa.T, sa.T, sb.T)})
+		if math.Abs(x.T-y.T) > tol {
+			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: y.T, Review: true,
+				Detail: fmt.Sprintf("%s の鳴った時刻が %.3f 秒ずれた（前 %.3f / 後 %.3f・許すのは 1 フレーム）", x.Name, y.T-x.T, x.T, y.T)})
 		}
 	}
 }
@@ -357,40 +398,65 @@ func (c *comparer) buses(flow, size string, a, b *Tape) {
 		c.skip(flow, size, WhatBus, "buses が無い")
 		return
 	}
-	th := c.opt.Th
-	end := math.Min(a.Duration, b.Duration)
+	for _, bus := range sortedKeys(b.Buses) {
+		if _, ok := a.Buses[bus]; !ok {
+			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Seq: -1, Review: true, Detail: fmt.Sprintf("バス %s は新しい版にだけある", bus)})
+		}
+	}
+	end := math.Min(busEnd(a), busEnd(b))
 	for _, bus := range sortedKeys(a.Buses) {
 		pb, ok := b.Buses[bus]
 		if !ok {
 			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Seq: -1, Review: true, Detail: fmt.Sprintf("バス %s が新しい版に無い", bus)})
 			continue
 		}
-		pa := a.Buses[bus]
-		runFrom, worst := -1.0, 0.0
-		flush := func(to float64) {
-			if runFrom < 0 {
-				return
-			}
-			node, seq := placeAt(b, runFrom)
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Node: node, Seq: seq, T: runFrom, Review: true,
-				Detail: fmt.Sprintf("バス %s の音量が %.2f〜%.2f 秒で ±%g dB を超えた（最大 %.1f dB）", bus, runFrom, to, th.BusDB, worst)})
-			runFrom, worst = -1, 0
-		}
-		steps := int(math.Floor(end/th.BusStep + 1e-9))
-		for k := 0; k <= steps; k++ {
-			t := float64(k) * th.BusStep
-			d := dbGap(busAt(pa, t), busAt(pb, t), th.SilentDB)
-			if d > th.BusDB {
-				if runFrom < 0 {
-					runFrom = t
-				}
-				worst = math.Max(worst, d)
-			} else {
-				flush(t)
-			}
-		}
-		flush(end)
+		c.bus(flow, size, bus, a.Buses[bus], pb, end, b)
 	}
+}
+
+// busEnd は音量を比べる最後の秒（duration が無ければ記録の最後の時刻）。
+func busEnd(t *Tape) float64 {
+	if t.Duration > 0 {
+		return t.Duration
+	}
+	end := 0.0
+	for _, pts := range t.Buses {
+		for _, p := range pts {
+			end = math.Max(end, p.T)
+		}
+	}
+	if n := len(t.Timeline); n > 0 {
+		end = math.Max(end, t.Timeline[n-1].T)
+	}
+	return end
+}
+
+func (c *comparer) bus(flow, size, bus string, pa, pb []BusPoint, end float64, b *Tape) {
+	th := c.opt.Th
+	runFrom, worst := -1.0, 0.0
+	flush := func(to float64) {
+		if runFrom < 0 {
+			return
+		}
+		node, seq := placeAt(b, runFrom)
+		c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Node: node, Seq: seq, T: runFrom, Review: true,
+			Detail: fmt.Sprintf("バス %s の音量が %.2f〜%.2f 秒で ±%g dB を超えた（最大 %.1f dB）", bus, runFrom, to, th.BusDB, worst)})
+		runFrom, worst = -1, 0
+	}
+	steps := int(math.Floor(end/th.BusStep + 1e-9))
+	for k := 0; k <= steps; k++ {
+		t := float64(k) * th.BusStep
+		d := dbGap(busAt(pa, t), busAt(pb, t), th.SilentDB)
+		if d > th.BusDB+1e-9 {
+			if runFrom < 0 {
+				runFrom = t
+			}
+			worst = math.Max(worst, d)
+		} else {
+			flush(t)
+		}
+	}
+	flush(end)
 }
 
 func busAt(pts []BusPoint, t float64) *float64 {
@@ -404,20 +470,45 @@ func busAt(pts []BusPoint, t float64) *float64 {
 	return v
 }
 
-// dbGap は 2 つの音量の差。無音どうしは 0、片方だけ無音なら無限。
+// dbGap は 2 つの音量の差。どちらも silent で下に止めてから比べる（無音は silent と同じ）。
+// WhyNot: 片方だけ無音の時に無限の差にしない — フェードの終わりで -60 を跨ぐ 1 コマの食い違いが、毎回迷った差になる。
 func dbGap(a, b *float64, silent float64) float64 {
-	sa := a == nil || *a <= silent
-	sb := b == nil || *b <= silent
-	switch {
-	case sa && sb:
-		return 0
-	case sa || sb:
-		return math.Inf(1)
+	floor := func(v *float64) float64 {
+		if v == nil {
+			return silent
+		}
+		return math.Max(*v, silent)
 	}
-	return math.Abs(*a - *b)
+	return math.Abs(floor(a) - floor(b))
 }
 
 // ---- 3. 問いの値 ----
+
+// mapProbe は前の版の問いの値を probeMap で読み替える（読み替えたら数える）。
+func (c *comparer) mapProbe(name string, raw json.RawMessage) string {
+	text := scalarText(raw)
+	to, ok := c.acc.mapProbe(name, text)
+	if !ok {
+		return text
+	}
+	c.rewrites[fmt.Sprintf("問い %s: %s → %s", name, text, to)]++
+	return to
+}
+
+func (c *comparer) reportRewrites() {
+	for _, k := range sortedKeys(c.rewrites) {
+		c.r.Applied = append(c.r.Applied, fmt.Sprintf("probeMap で前の版の値を読み替えた: %s（%d 回）", k, c.rewrites[k]))
+	}
+	for _, name := range sortedKeys(c.acc.ProbeMap) {
+		for _, from := range sortedKeys(c.acc.ProbeMap[name]) {
+			text, _ := json.Marshal(from)
+			to, _ := json.Marshal(c.acc.ProbeMap[name][from])
+			if c.rewrites[fmt.Sprintf("問い %s: %s → %s", name, text, to)] == 0 {
+				c.r.Unused = append(c.r.Unused, fmt.Sprintf("probeMap の %s: %s はどの値にも当たらなかった", name, from))
+			}
+		}
+	}
+}
 
 func (c *comparer) probes(flow, size string, a, b *Tape) {
 	ea, eb := eventsOf(a), eventsOf(b)
@@ -427,7 +518,7 @@ func (c *comparer) probes(flow, size string, a, b *Tape) {
 				continue
 			}
 			for _, name := range sortedKeys(ea[i].Probes) {
-				va := scalarText(ea[i].Probes[name])
+				va := c.mapProbe(name, ea[i].Probes[name])
 				vb, ok := eb[i].Probes[name]
 				if !ok || scalarText(vb) != va {
 					got := "無い"
@@ -452,7 +543,11 @@ func (c *comparer) probes(flow, size string, a, b *Tape) {
 			c.add(&Diff{Flow: flow, Size: size, Step: 3, What: WhatProbe, Seq: -1, Detail: fmt.Sprintf("問い %s が新しい版に無い（同じ名前で出す）", name)})
 			continue
 		}
-		va, vb := valueRun(a.Probes[name]), valueRun(pb)
+		mapped := make([]ProbePoint, len(a.Probes[name]))
+		for i, p := range a.Probes[name] {
+			mapped[i] = ProbePoint{T: p.T, Value: c.mapProbe(name, json.RawMessage(p.Value))}
+		}
+		va, vb := valueRun(mapped), valueRun(pb)
 		for i := 0; i < len(va) || i < len(vb); i++ {
 			if i < len(va) && i < len(vb) && va[i].Value == vb[i].Value {
 				continue
@@ -500,250 +595,4 @@ func joinValues(ps []ProbePoint) string {
 		parts = append(parts, p.Value)
 	}
 	return clip(strings.Join(parts, " → "), 80)
-}
-
-// ---- 4. 画面の物 ----
-
-// screenOf は矩形の割合を px に直す画面の大きさ（screen が無ければ world のコマの大きさ）。
-func screenOf(t *Tape) *Size {
-	if t.Screen != nil {
-		return t.Screen
-	}
-	return frameSize(t.Dir, t.Frames)
-}
-
-func frameSize(dir string, frames []Frame) *Size {
-	for _, f := range frames {
-		img, err := loadNRGBA(filepath.Join(dir, f.File))
-		if err == nil {
-			return &Size{W: float64(img.Rect.Dx()), H: float64(img.Rect.Dy())}
-		}
-	}
-	return nil
-}
-
-func (c *comparer) objects(flow, size string, a, b []Object, tol float64, sa, sb *Size) {
-	if sa == nil || sb == nil {
-		c.skip(flow, size, WhatObject, "画面の大きさ（screen）も world のコマも無いので、矩形は比べていない（数と区間だけ比べた）")
-	}
-	group := func(list []Object, mapped bool) map[string][]Object {
-		m := map[string][]Object{}
-		for _, o := range list {
-			id := o.ID
-			if mapped {
-				id = c.acc.mapID(id)
-			}
-			m[id] = append(m[id], o)
-		}
-		for _, v := range m {
-			sort.SliceStable(v, func(i, j int) bool { return v[i].From < v[j].From })
-		}
-		return m
-	}
-	ga, gb := group(a, true), group(b, false)
-	for _, id := range sortedKeys(ga) {
-		la, lb := ga[id], gb[id]
-		if len(la) != len(lb) {
-			t := la[0].From
-			c.add(&Diff{Flow: flow, Size: size, Step: 4, What: WhatObject, Seq: -1, T: t, Review: true,
-				Detail: fmt.Sprintf("%s の出た回数が違う（前 %d・後 %d）", id, len(la), len(lb))})
-			continue
-		}
-		for i := range la {
-			oa, ob := la[i], lb[i]
-			if why := objectDiff(oa, ob, tol, sa, sb, c.opt.Th.RectPx, c.acc.rectFree(id)); why != "" {
-				c.add(&Diff{Flow: flow, Size: size, Step: 4, What: WhatObject, Seq: -1, T: ob.From, Review: true, Detail: fmt.Sprintf("%s の %d 回目: %s", id, i, why)})
-			}
-		}
-	}
-	for _, id := range sortedKeys(gb) {
-		if _, ok := ga[id]; !ok {
-			c.add(&Diff{Flow: flow, Size: size, Step: 4, What: WhatObject, Seq: -1, T: gb[id][0].From, Review: true,
-				Detail: fmt.Sprintf("%s は新しい版にだけ出る（前の id と同じなら idMap に書く）", id)})
-		}
-	}
-}
-
-func objectDiff(a, b Object, tol float64, sa, sb *Size, px float64, rectFree bool) string {
-	if math.Abs(a.From-b.From) > tol || math.Abs(a.To-b.To) > tol {
-		return fmt.Sprintf("出ていた区間が違う（前 %.3f〜%.3f / 後 %.3f〜%.3f）", a.From, a.To, b.From, b.To)
-	}
-	if rectFree || sa == nil || sb == nil {
-		return ""
-	}
-	ax := [4]float64{a.Rect.X * sa.W, a.Rect.Y * sa.H, a.Rect.W * sa.W, a.Rect.H * sa.H}
-	bx := [4]float64{b.Rect.X * sb.W, b.Rect.Y * sb.H, b.Rect.W * sb.W, b.Rect.H * sb.H}
-	for k := range ax {
-		if math.Abs(ax[k]-bx[k]) > px+1e-6 {
-			return fmt.Sprintf("矩形が %g px より大きくずれた（前 %.0f,%.0f %.0fx%.0f / 後 %.0f,%.0f %.0fx%.0f）", px, ax[0], ax[1], ax[2], ax[3], bx[0], bx[1], bx[2], bx[3])
-		}
-	}
-	return ""
-}
-
-// ---- 5. コマ ----
-
-func (c *comparer) frames(flow, size string, a, b []Frame, dirA, dirB string, restore bool) {
-	if len(a) == 0 {
-		c.skip(flow, size, WhatFrame, "前の版に frames が無い")
-		return
-	}
-	byKey := map[string]Frame{}
-	for _, f := range b {
-		byKey[f.Key()] = f
-	}
-	for i, fa := range a {
-		if fa.Layer != "world" {
-			continue
-		}
-		fb, ok := byKey[fa.Key()]
-		if !ok {
-			c.add(&Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fa.T, FrameKind: fa.Kind, Cmd: fa.Cmd,
-				Before: filepath.Join(dirA, fa.File), Detail: "新しい版でこのコマを撮っていない（" + fa.Key() + "）"})
-			continue
-		}
-		c.frame(flow, size, i, fa, fb, dirA, dirB, restore)
-	}
-}
-
-func (c *comparer) frame(flow, size string, i int, fa, fb Frame, dirA, dirB string, restore bool) {
-	pa, pb := filepath.Join(dirA, fa.File), filepath.Join(dirB, fb.File)
-	d := &Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fb.T, FrameKind: fa.Kind, Cmd: fb.Cmd, Before: pa, After: pb}
-	if restore {
-		d.Step = 6
-	}
-	ia, err := loadNRGBA(pa)
-	var ib *image.NRGBA
-	if err == nil {
-		ib, err = loadNRGBA(pb)
-	}
-	if err != nil {
-		d.Detail = "コマを読めない: " + err.Error()
-		c.add(d)
-		return
-	}
-	delta := c.opt.Th.DoneDelta
-	if fa.Backdrop3d {
-		delta = c.opt.Th.Still3DDelta
-	}
-	st, cerr := comparePixels(ia, ib, delta, c.opt.Th.ShiftPx, "")
-	c.r.Frames++
-	d.Mean, d.Max, d.Within = st.Mean, st.Max, st.Within
-	if cerr != nil {
-		d.Detail = cerr.Error()
-		c.add(d)
-		return
-	}
-	if d.Detail = c.frameRule(fa, st, delta, restore); d.Detail == "" {
-		return
-	}
-	d.Review = true
-	if c.opt.Out != "" {
-		heat := filepath.Join(c.opt.Out, "heat", fmt.Sprintf("%s_%s_%d.png", safeName(flow), safeName(size), i))
-		if os.MkdirAll(filepath.Dir(heat), 0o755) == nil {
-			if _, err := comparePixels(ia, ib, delta, c.opt.Th.ShiftPx, heat); err == nil {
-				d.Heat = heat
-			}
-		}
-	}
-	c.add(d)
-}
-
-// frameRule は 10.3 の線を超えた時にその理由を返す（通れば空）。
-func (c *comparer) frameRule(f Frame, st PixelStats, delta int, restore bool) string {
-	th := c.opt.Th
-	switch {
-	case f.Kind == "mid" && !restore:
-		if st.Mean > th.MidMean {
-			return fmt.Sprintf("途中のコマの差の平均 %.2f/255 が %g/255 を超えた（%d px のずれまで許した後）", st.Mean, th.MidMean, th.ShiftPx)
-		}
-	case f.Backdrop3d:
-		if st.Within < th.Still3DRatio {
-			return fmt.Sprintf("3D の背景の休みの位置で差が %d/255 以内の画素が %.2f%%（%.1f%% 以上で通る）", delta, st.Within*100, th.Still3DRatio*100)
-		}
-	default:
-		if st.Within < th.DoneRatio {
-			return fmt.Sprintf("演出の後のコマで差が %d/255 以内の画素が %.2f%%（%.1f%% 以上で通る・%d px のずれまで許した後・最大の差 %d）", delta, st.Within*100, th.DoneRatio*100, th.ShiftPx, st.Max)
-		}
-	}
-	return ""
-}
-
-func safeName(s string) string {
-	return strings.NewReplacer("/", "_", "\\", "_", " ", "_", ":", "_").Replace(s)
-}
-
-// ---- 6. 古いセーブの読み戻し ----
-
-func (c *comparer) restores(base, cur *Side) {
-	if len(base.Restores) == 0 {
-		c.skip("saves", SingleSize, WhatRestore, "前の版に saves/<名前>/restore.json が無い")
-		return
-	}
-	for _, name := range sortedKeys(base.Restores) {
-		flow := "saves/" + name
-		ra, rb := base.Restores[name], cur.Restores[name]
-		add := func(detail string) {
-			c.add(&Diff{Flow: flow, Size: SingleSize, Step: 6, What: WhatRestore, Node: ra.Node, Seq: ra.Seq, Detail: detail})
-		}
-		if rb == nil {
-			add("新しい版でこのセーブを読み戻していない")
-			continue
-		}
-		if c.acc.Restore[name] == "refused" {
-			if !rb.Refused {
-				add("新しい版は「版が違うので読めない」と知らせてはじめから始めるはずが、読み戻した")
-			}
-			continue
-		}
-		if ra.Refused != rb.Refused {
-			add(fmt.Sprintf("読めたかが違う（前 refused=%v / 後 refused=%v）", ra.Refused, rb.Refused))
-			continue
-		}
-		if ra.Node != rb.Node || ra.Seq != rb.Seq {
-			add(fmt.Sprintf("戻った所が違う（前 %s#%d / 後 %s#%d）", ra.Node, ra.Seq, rb.Node, rb.Seq))
-			continue
-		}
-		for _, p := range sortedKeys(ra.Probes) {
-			vb, ok := rb.Probes[p]
-			if !ok || scalarText(vb) != scalarText(ra.Probes[p]) {
-				add(fmt.Sprintf("読み戻した時の問い %s が違う（前 %s）", p, scalarText(ra.Probes[p])))
-			}
-		}
-		sa, sb := ra.Screen, rb.Screen
-		if sa == nil {
-			sa = frameSize(ra.Dir, ra.Frames)
-		}
-		if sb == nil {
-			sb = frameSize(rb.Dir, rb.Frames)
-		}
-		before := len(c.r.Diffs)
-		c.objects(flow, SingleSize, ra.Objects, rb.Objects, math.Inf(1), sa, sb)
-		c.frames(flow, SingleSize, ra.Frames, rb.Frames, ra.Dir, rb.Dir, true)
-		for _, d := range c.r.Diffs[before:] {
-			d.Step = 6
-		}
-	}
-}
-
-// ---- 承認 ----
-
-func (c *comparer) applyAccept(invalid map[int]bool) {
-	for _, d := range c.r.Diffs {
-		if d.What == WhatEvent || d.What == WhatMissing {
-			continue
-		}
-		for i, e := range c.acc.Entries {
-			if invalid[i] || !e.matches(d, c.opt.Lim) {
-				continue
-			}
-			if !e.Approved {
-				d.Pending = true
-				continue
-			}
-			d.Accepted, d.Why = e.label(i), e.Why
-			d.Pending = false
-			break
-		}
-	}
 }

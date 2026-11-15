@@ -77,7 +77,7 @@ func baseRec() *rec {
 			"objects": []any{
 				map[string]any{"id": "message", "name": "枠", "from": 1.0, "to": 6.0, "rect": map[string]any{"x": 0.1, "y": 0.5, "w": 0.8, "h": 0.2}},
 			},
-			"probes": map[string]any{"mood": []any{[]any{0, "calm"}, []any{3.0, "tense"}}},
+			"probes":  map[string]any{"mood": []any{[]any{0, "calm"}, []any{3.0, "tense"}}},
 			"choices": []any{map[string]any{"t": 3.0, "line": 6, "node": "Start", "options": []any{"行く", "待つ"}, "picked": 0}},
 			"screen":  map[string]any{"w": 100, "h": 100},
 			"events": []any{
@@ -118,7 +118,16 @@ func (r *rec) clone() *rec {
 
 func (r *rec) write(t *testing.T, root string) {
 	t.Helper()
-	dir := filepath.Join(root, FlowsDir, "route", "design")
+	r.writeFlow(t, root, "route", "design")
+	if r.restore != nil {
+		writeJSON(t, filepath.Join(root, SavesDir, "quick1", RestoreFile), r.restore)
+	}
+}
+
+// writeFlow は tape.json とコマだけを flows/<flow>/<size> に書く。
+func (r *rec) writeFlow(t *testing.T, root, flow, size string) {
+	t.Helper()
+	dir := filepath.Join(root, FlowsDir, flow, size)
 	writeJSON(t, filepath.Join(dir, TapeFile), r.tape)
 	for name, img := range r.frames {
 		p := filepath.Join(dir, name)
@@ -128,9 +137,6 @@ func (r *rec) write(t *testing.T, root string) {
 		if err := writePNG(p, img); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if r.restore != nil {
-		writeJSON(t, filepath.Join(root, SavesDir, "quick1", RestoreFile), r.restore)
 	}
 }
 

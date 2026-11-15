@@ -55,53 +55,51 @@ func loadNRGBA(path string) (*image.NRGBA, error) {
 	return out, nil
 }
 
-// comparePixels は 2 枚を比べ、heat が空でなければ差の色の図（差の大きい所ほど赤い・同じ所は前の絵を暗く）を書く。
+// comparePixels は 2 枚を比べ、画素ごとの差（RGB のいちばん大きい差）も返す（差の色の図を作り直さずに書くため）。
 // 1 画素の差は、相手の同じ所から shift px 以内の画素のうち、いちばん近い色との差（合格線「絵は数画素のずれまで許す」）。
-func comparePixels(a, b *image.NRGBA, delta, shift int, heat string) (PixelStats, error) {
+// WhyNot: internal/compare の DiffNRGBA を使わない — あちらは同じ所の画素だけを比べ、ずれを許さない（reference の SHA の退行を見る物）。
+func comparePixels(a, b *image.NRGBA, delta, shift int) (PixelStats, []uint8, error) {
 	if a.Rect.Dx() != b.Rect.Dx() || a.Rect.Dy() != b.Rect.Dy() {
-		return PixelStats{Mean: 255, Max: 255}, fmt.Errorf("大きさが違う（%dx%d と %dx%d）", a.Rect.Dx(), a.Rect.Dy(), b.Rect.Dx(), b.Rect.Dy())
+		return PixelStats{Mean: 255, Max: 255}, nil, fmt.Errorf("大きさが違う（%dx%d と %dx%d）", a.Rect.Dx(), a.Rect.Dy(), b.Rect.Dx(), b.Rect.Dy())
 	}
-	var out *image.NRGBA
-	if heat != "" {
-		out = image.NewNRGBA(a.Rect)
-	}
+	n := a.Rect.Dx() * a.Rect.Dy()
+	gaps := make([]uint8, n)
 	var sum, within int64
 	maxD := 0
-	n := a.Rect.Dx() * a.Rect.Dy()
 	for i := 0; i < n; i++ {
 		o := i * 4
 		px, chans := pixelGap(a, b, o, o)
 		if px > delta && shift > 0 {
-			// WhyNot: a から b の近くを探すだけにしない — b にだけ足された小さな点は、周りの a の色が近くにあるので見逃す。両向きに探して大きい方を取る。
+			// WhyNot: a から b の近くを探すだけにしない — b にだけ足された小さな点は、周りの a の色が近くにあるので見逃す。
 			pa, ca := nearestGap(a, b, i, shift, px, chans)
 			pb, cb := nearestGap(b, a, i, shift, px, chans)
 			px, chans = max(pa, pb), max(ca, cb)
 		}
+		gaps[i] = uint8(px)
 		sum += int64(chans)
-		if px > maxD {
-			maxD = px
-		}
+		maxD = max(maxD, px)
 		if px <= delta {
 			within++
 		}
-		if out != nil {
-			out.Pix[o+3] = 255
-			if px <= delta {
-				g := uint8((int(a.Pix[o]) + int(a.Pix[o+1]) + int(a.Pix[o+2])) / 12)
-				out.Pix[o], out.Pix[o+1], out.Pix[o+2] = g, g, g
-			} else {
-				c := heatColor(px)
-				out.Pix[o], out.Pix[o+1], out.Pix[o+2] = c.R, c.G, c.B
-			}
-		}
 	}
-	st := PixelStats{Mean: float64(sum) / float64(n*3), Max: maxD, Within: float64(within) / float64(n)}
-	if out != nil {
-		if err := writePNG(heat, out); err != nil {
-			return st, err
+	return PixelStats{Mean: float64(sum) / float64(n*3), Max: maxD, Within: float64(within) / float64(n)}, gaps, nil
+}
+
+// writeHeat は差の色の図を書く（差の大きい所ほど赤い・同じ所は前の絵を暗く）。
+func writeHeat(path string, a *image.NRGBA, gaps []uint8, delta int) error {
+	out := image.NewNRGBA(a.Rect)
+	for i, px := range gaps {
+		o := i * 4
+		out.Pix[o+3] = 255
+		if int(px) <= delta {
+			g := uint8((int(a.Pix[o]) + int(a.Pix[o+1]) + int(a.Pix[o+2])) / 12)
+			out.Pix[o], out.Pix[o+1], out.Pix[o+2] = g, g, g
+			continue
 		}
+		c := heatColor(int(px))
+		out.Pix[o], out.Pix[o+1], out.Pix[o+2] = c.R, c.G, c.B
 	}
-	return st, nil
+	return writePNG(path, out)
 }
 
 // pixelGap は a の oa と b の ob の画素の差（RGB のいちばん大きい差と、3 つの差の和）。
