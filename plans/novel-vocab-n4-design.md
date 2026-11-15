@@ -646,7 +646,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 **決めた物**
 
-- Cast の層を `{ shown: List[Shown], leaving }` の 1 列にした（Shown に `kind`）。人物と小物の決め打ち（1 位置に 1 人・小物は同時に 1 つ）をやめ、Doc の slot の `exclusive`で「その位置に 1 つ」を決める。テンプレートと fixture の Doc は今の位置を全部 `exclusive: true` にしたので、作例の見た目は変わらない。
+- Cast の層を `{ shown: List[Shown], leaving }` の 1 列にした（Shown に `kind`）。人物と小物の決め打ち（1 位置に 1 人・小物は同時に 1 つ）をやめ、Doc の slot の `exclusive`（既定 true。段 2 の前に false から替えた）で「その位置に 1 つ」を決める。テンプレートと fixture の Doc は今の位置を全部 `exclusive: true` にしたので、作例の見た目は変わらない。
 - Doc（`novel.cast.json`）に `slideDistance`（既定 1.0 = 画面の外まで）・slot の `exclusive`・項目の `layer`（既定 人物 500・小物 600・背景に付く絵 100）と `attach`（`{ "bg": { 写真の名前: 横のずれ } }`）を足し、schema にも足した（段 4 の schema の分を先にした）。
 - `actor.<名>.x|y|scale|alpha|rotate` の鍵は `Stage.actorKey(名, Stage.ActorField)`。x・y は画面の幅・高さに対する割合、scale は足元を据えて掛ける、rotate は度（時計回り）。出ていない絵を出す時に `Stage.withActorReset` で既定へ戻す。
 - `show` に `from=`・`x=`・`y=`・`scale=`・`alpha=`・`ease=`、`hide` に `to=`・`ease=`、`move` を新しく（`x|dx`・`y|dy`・`scale`・`alpha`・`rotate`・`from`・`to`・`time=0.5`・`ease=smoothstep`）。`move from=left to=right` は秒 0 で出し、端の外へ着いた時に消す（Cast の消えていく物に「始まる時刻」を足し、それまで濃さのまま描く）。
@@ -677,10 +677,79 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 **持ち越し**
 
 - 段 2: 粒（700）と GameView を同じ層の数で並べる View（C11）。今は背景に付く絵 = z 3・ほか = z 5 の中だけで layer の順。
-- 段 3: `audio se wait=true`（Out.Wait を出す最初のコマンド）と、Res に音の長さ。`transition=slide` の間に背景に付く絵を背景と一緒に動かす。
-- 縦の頁の覆いを薄くする量（`Cast.presenceOf`）は背景に付く人物も数える。背景に付く絵を人物に置くゲームが出たら外す。
-- テンプレートの追随: 前の Doc に `exclusive` が無いと人物が同じ位置に重なる。ゲームを当て直す時は slot に `exclusive: true` を足す。
+- 段 3: `audio se wait=true`（Out.Wait を出す最初のコマンド）と、Res に音の長さ。`transition=slide` の間に背景に付く絵を背景と一緒に動かす → 段 3 で入れた（下）。
+- 縦の頁の覆いを薄くする量（`Cast.presenceOf`）は背景に付く人物も数える → 段 2 で直した（数えない）。
+- テンプレートの追随: `exclusive` の既定を true にしたので、前の Doc のままでも人物は重ならない（何人も立てたい位置にだけ `exclusive: false` を書く）。
 - agent-eval のお題（show from= / move）は段 13。
+
+**exclusive の既定（段 2 の前に直した）**: 設計書の 2.2 は「slot に `exclusive: true` を付ける」と書くだけで、書かない時の値を決めていない。既定 false のままだと、当て直していないゲームで人物が同じ位置に重なる。そこで既定を true（今の動きのまま）にし、何人でも立てる位置にだけ `exclusive: false` を書く形にした。fixture の `crowd` はそう書いた。
+
+### 11.2 段 2 の記録（2026-11-16）
+
+**決めた物**
+
+- `overlay 濃さ [color=black|white|#rrggbb] [from=] [layer=stage|screen] [time=0] [ease=smoothstep]`。鍵は `overlay.alpha`（数）・`overlay.color`・`overlay.layer`（名前）。一度も書いていない間の濃さは `novel.kind.json` の `overlayStart`、stage の層の数は `overlayLayer`（既定 900）。同じ濃さへ動かす時（`from=` 無し）は何もしない。screen は hud の z 44（本文とボタンの上・素材待ちの黒の下）。
+- `camera [zoom=] [x=] [y=] [time=0.5] [ease=smoothstep]`。鍵は `camera.zoom|x|y`（`Stage.CameraField`）。world の層だけに、画面の真ん中を軸に zoom 倍してずらす（`Render.scaledAllAround`・`movedAll`）。文字の枠と HUD には掛けない。
+- `shake [強さ] [on=screen|window|絵の名前] [time=]`。強さは `novel.kind.json` の `shakes`（名前 → seconds・px）か px の数、省くと今の `shakeSeconds`・`shakePx`。鍵は `camera|window|actor.<名>` の `.shake`（一度だけ）と `.shakeAmp`（数）。`PropertyTween.triggerSpanAt`（始まってからの秒と長さ）を足して、だんだん収まる量を鍵から出す。絵の揺れは `Cast.Transform` の `jitter`（px）。
+- **層の数で並べる View（C11）**: 新しい `ViewStage`（world の層）が、背景（0）・絵（Doc の layer）・粒・GameView・覆いを「まとまり」にし、層の数（同じ数なら 絵 → 粒 → GameView → 覆い）で並べてから、まとまりの順番 × `View.zWorldStride()`（8）+ まとまりの中の z を z にする。並んだ同じ層の数のまとまりは同じ z の幅を使う（今の「人物はみな z 5」と同じ絵になる）。`GameView.draw` は `List[(Int32, Render.PlacedItem)]` を返す。`zGameView` はやめた。サムネは z を 0..9 に詰める（字が z 10 から）。
+- **View.flix を分けた**: world の層の描き方（背景・立ち絵と小物・粒・覆い・カメラ・揺れ・z の付け替え）を `ViewStage.flix` へ移し、View.flix は 1,277 → 1,130 行。
+- `Cast.presenceOf` は背景に付く絵を数えない（Doc を受ける）。
+
+**比べた別案**
+
+| 決めた所 | 取った案 | 比べた案と取らなかった理由 |
+|---|---|---|
+| world の z の付け方 | まとまりごとに z の幅（8）を割り当てる | 層の数をそのまま z にする案: 層の数 0〜999 と、背景の中の z（0〜2）・粒の中の z（3・4）が混ざって前後が崩れる。`ZStack` の木にする案: 今の View は z の数で組んであり、段 2 で全部を木に替えると reference の絵を守れるか確かめる手間が大きい（ZStack へは z の数の表を 1 か所に集めた上で後から移せる） |
+| camera の rotate | 入れない | 2.2 の表は `rotate=` を持つが、背景と立ち絵は Shader の面で、`Render.turned` も Shader を傾けない。2D で効かない引数を置くと書いても何も起きない。3D の道筋（N4d）で `camera.rotate` を足す |
+
+**設計とのずれ**: camera の `rotate=` と `path=` は無い（`path=` は N4d）。
+
+**門の結果**: `make check` OK・`make test` 335 緑・`make reference-check` 45 枚すべて一致（絵は変わっていない）・`bin/fge yarn check assets/talk` ok・e2e の flow 6 本すべて ok・`make lint` の lint-doc-refs は 15 件（前の 16 件から 1 件減った。ほかは OK）・根の `make check-docs-sync` OK。
+
+### 11.3 段 3 の記録（2026-11-16）
+
+**決めた物**
+
+- `bg 写真 [transition=fade|black|wipe|slide|pan|cut] [pace=walk|run] [ease=linear]`。`Stage` に `switch`（transition・ease・pace）を足した。省いた transition は `novel.backdrops.json` の `defaultTransition`（既定 fade）。cut は秒 0。描き方は ViewStage: black = 前半は前の写真に暗い地を濃く、後半は今の写真から薄く／slide = 前の写真を左へ、今の写真を右から幅いっぱい送る／pan = 幅の 1/4 だけ寄せながら重ねる／wipe = 今の写真を左から `shaderFillMasked` で塗る。背景に付く絵は slide と pan の間、今の写真と同じだけ動く（`Cast.Env#backdropShift`）。pace は Stage に残すだけ（使うのは N4d）。
+- `audio ambience 音[,音]|off [volume=] [fade=]`・`audio bgm 音|off [volume=] [fade=]`・`audio se 音 [wait=true]`・`audio all off [fade=]`。鍵は `audio.ambience`（, でつないだ名前）・`audio.ambienceVolume`・`audio.bgm`・`audio.bgmVolume`。`Controls.ambience` が環境音の列と音楽を鳴り続ける音にする（音量 = 鍵 × バス）。音楽は `bgm_` で始まる名前を新しい bgm のバスへ（`novel.mixer.json` に bus と route を足し、設定の環境音の音量を掛ける）。fade は鳴らす時は音量 0 から、止める時は音量 0 まで動かしてから名前を消す。
+- volume の名前と効果音の後に送れない秒は `novel.mixer.json` の `volumes`・`lockSeconds`。テンプレートの `MixerDoc` が読む（バスの欄はエンジンの AudioMixerDoc が同じファイルから読む）。送れない秒は `text.lock`（一度だけ）に書き、押しても・オートでも送らない（スキップは止めない）。
+- `audio se 音 wait=true` は `Out.Wait(音の長さ)` を出す。長さは `SoundLength` が project.json の鳴り続けない音の WAV の頭（fmt の byteRate と data の大きさ）から読み、`Res#soundSeconds` に置く。読めない音は 1 行言って待たない。
+- `fx 名|off [once=true]`。名前は新しい Doc `novel.effects.json` の `particles`（名前 → `look`（fireflies・snow）・`layer`（既定 700）・`onceSeconds`）。once は `fx.once.<名>`（一度だけ）で、秒の間だけ薄くなりながら出す。作例は蛍と雪を layer 400（人物の奥）に置き、今の絵を変えない。`Stage.particleNames` の決め打ちはやめた。
+
+**比べた別案**
+
+| 決めた所 | 取った案 | 比べた案と取らなかった理由 |
+|---|---|---|
+| 音の長さ | 起動の時に WAV の頭から読む | 音の Doc に秒を書く案: ファイルから出せる値を手で写すので、音を差し替えると食い違う。全部の音を読む重さは、鳴り続ける音（大きいループ）を除けば小さい |
+| volumes・lockSeconds の置き場 | `novel.mixer.json` にテンプレートの欄として足す | 新しい音の Doc を作る案: 設計書 11 章の段 4 が mixer の欄と決めている。エンジンの読み手は知らない欄を読まないので、同じファイルに置いても食い違わない |
+| 粒の手触りの数 | `novel.kind.json` の fireflies・snow のまま | effects.json へ移す案: 数の Doc が 2 つに割れるだけで、段 3 で要るのは層の数と一度だけの秒だけ |
+
+**設計とのずれ**
+
+- `Out.StopSounds` は入れていない。一発の効果音を止める口がエンジン（App）に無く、足すのは承認の外。`audio all off` は環境音と音楽（鳴り続ける音）だけを止める。
+- pan は「幅の 1/4 寄せながら重ねる」の 2D の形にした（2.3 の表の「カメラを横へ振ったように流れて替わる」の近似）。
+- transition の切り替えの絵は reference の場面に無いので、目では確かめていない（テストで矩形と覆いの濃さを見た）。
+
+**門の結果**: `make check` OK・`make test` 356 緑（TestAudio 21 本。うち Out.Wait を端から端まで見る 2 本は `test/fixtures/wait`）・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・e2e の flow 6 本すべて ok・`make lint` の lint-doc-refs 15 件のまま・根の `make check-docs-sync` OK。
+
+### 11.4 段 4 の記録（2026-11-16）
+
+- 新しい Doc `novel.effects.json` の schema（`effects.schema.json`）と `editor.resources` の行は段 3 で入れた（コミット前の門が schema の無い Doc を止めるため）。
+- `novel.backdrops.json` の `defaultTransition` を schema と Doc に足した。cast の `exclusive`（既定 true）・`layer`・`attach`・`slideDistance`（段 1）と kind の `shakes`・`overlayStart`・`overlayLayer`（段 2）の schema は各段で入れた。
+- mixer の `volumes`・`lockSeconds` は schema に書いていない。novel.mixer.json の schema はエンジンの `docs/mixer.schema.json`（AudioMixerDoc の形）で、テンプレートの欄を足すとエンジンの文書を直すことになる。テンプレートが自分の mixer の schema を持つか、エンジンの schema に任意の欄を足すかは相談したい。
+- theme の `windows`・cast の `markers`・`hideWindow` は N4b の物なので段 5 で入れる。
+- `agents-pack/AGENTS.core.md` の早見表に、画面の演出の行（bg の替え方・overlay・camera・shake・audio・fx）を 1 行足し、演出コマンドの行の GameView の層の数と `Out.Wait` を直した。agent-eval のお題は段 13。
+
+**門の結果**: 段 3 と同じ（make check OK・make test 356 緑・reference-check 45 枚一致・yarn check ok・flow 6 本 ok・lint-doc-refs 15 件・check-docs-sync OK）。
+
+**段 1〜4 の持ち越し**
+
+- dx・dy の offset 型（px・%）は数のまま（engine_world の `YarnCommands.Param` に足すのは承認の外）。
+- `Out.StopSounds`（一発の効果音を止める）はエンジンに口が要る。
+- camera の rotate（2D）は Shader の面を傾ける口が要る。3D は N4d。
+- mixer の schema の置き場の相談。
+- transition の切り替えの途中の絵を見る場面が reference に無い（人が見る場面を足すかは段 13 か レビュー 1 で）。
+- agent-eval のお題（段 13）。
 
 ## 12. 試した事（スパイク）
 
