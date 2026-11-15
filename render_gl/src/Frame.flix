@@ -10,9 +10,10 @@ mod RenderFrame {
     import fge.gl.GlContext
     import fge.gl.GlConst
     import java.nio.FloatBuffer
-    use RenderFrame.Internal.GlRows.drawRenderList
-    use RenderFrame.Internal.RenderList.{RenderList, appendSpriteRow, kindPoly, kindScene3d, kindSprite, kindStatic, kindSurface,
-                                         kindTile, newRenderList, nextInstanceOf, rowCountOf}
+    use RenderFrame.Internal.GlRows
+    use RenderFrame.Internal.GlRows.{drawRenderList, setScissorAt}
+    use RenderFrame.Internal.RenderList.{RenderList, appendSpriteRow, instanceFloats, kindPoly, kindScene3d, kindSprite, kindStatic, kindSurface,
+                                         kindTile, nextInstanceOf, rowCountOf}
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず
@@ -402,30 +403,31 @@ mod RenderFrame {
                 discard data.put(base + 37, f32(ka))
         }
 
-    // ── 詰め込みループの run 状態 ──────────────────────────────
-    // run（同テクスチャ・同 clip 矩形・同 blend の連続列）の状態は Int32 配列 1 本に置き、
-    // 吐き出しに要る GL ハンドル定数も同じ配列に同居させる。組やレコードの acc を
-    // 持ち回らないのは、1 item ごとに組の作り直しと Option+組の等価比較が走り、
+    // ── 詰め込みループの run 状態（front-end の状態）──────────────────────────────
+    // run（同テクスチャ・同 clip 矩形・同 blend の連続列）の状態と draw call の数えは Int32 配列 1 本（st）に置く。
+    // backend の物（GL は program・VAO・buffer の番号と viewport）はここに置かず、backend が別の配列で持つ（GL は GlRows の gs）。
+    // 組やレコードの acc を持ち回らないのは、1 item ごとに組の作り直しと Option+組の等価比較が走り、
     // 物量シーンでフレーム時間に乗るため（スレッドダンプ実測）。局所クロージャに
     // まとめないのも同じ理由 — item 毎に呼ぶには Flix のクロージャは高すぎる（悪化の実測あり）。
     //
-    // スロット順（定数）: 0=instShader 1=instVao 2=instVbo 3=instMultiplyBlend
-    //              4=polyBatchShader 5=polyBatchVao 6=polyBatchVbo
-    //              7=vpX 8=vpY 9=vpW 10=vpH 26=tileShader
-    // スプライト run: 11=texId 12=clip有無 13-16=clip矩形 17=blend 18=体数 51=先頭の instance の番号（RenderList の instances の中）
-    // 多角形 run:     19=clip有無 20-23=clip矩形 24=blend 25=頂点数
-    // draw call の数え: 27=前の draw call の種類（kind*・0 = まだ無い） 28=この描き先でまだ draw call を出していない
-    //              29=前の draw call が mask つき 30=このコマで先に draw call が出ている
-    //              31-37=前に出したスプライトの鍵（texId・clip有無・clip矩形・blend） 38-43=前に出した多角形の鍵（clip有無・clip矩形・blend）
-    //              44-50=この描き先で数えた数（並びは RenderDrawCounts の slot）
-    def stateSize(): Int32 = 52
+    // スプライト run: 0=texId 1=clip有無 2-5=clip矩形 6=blend 7=体数 39=先頭の instance の番号（RenderList の instances の中）
+    // 多角形 run:     8=clip有無 9-12=clip矩形 13=blend 14=頂点数
+    // draw call の数え: 15=前の draw call の種類（kind*・0 = まだ無い） 16=この描き先でまだ draw call を出していない
+    //              17=前の draw call が mask つき 18=このコマで先に draw call が出ている
+    //              19-25=前に出したスプライトの鍵（texId・clip有無・clip矩形・blend） 26-31=前に出した多角形の鍵（clip有無・clip矩形・blend）
+    //              32-38=この描き先で数えた数（並びは RenderDrawCounts の slot）
+    def stateSize(): Int32 = 40
 
-    def runFirstSlot(): Int32 = 51
+    def runFirstSlot(): Int32 = 39
 
-    // WhyNot: RenderSprite の同じ数を呼ばない — 別のモジュールの pub でない関数は呼べず、pub に開くことになる。
-    def instanceFloats(): Int32 = 38
+    /// 描き先 1 つぶんの run の状態。drawCounts = このコマの数（もう draw call が出ていれば、次の draw call を描き先の切れ目と数える）。
+    def newRunState(drawCounts: RenderDrawCounts.Holder): Array[Int32, Static] \ IO =
+        let st: Array[Int32, Static] = Array.empty(Static, stateSize());
+        Array.put(1, 16, st);
+        Array.put(if (Array.get(RenderDrawCounts.drawCallsSlot(), drawCounts) > 0) 1 else 0, 18, st);
+        st
 
-    def countBase(): Int32 = 44
+    def countBase(): Int32 = 32
 
     /// この描き先の数 slot を n 足す。
     def bump(st: Array[Int32, Static], slot: Int32, n: Int32): Unit \ IO =
@@ -436,23 +438,23 @@ mod RenderFrame {
     /// kind = 今の draw call の種類・sameKindReason = 前も同じ種類だった時の理由の slot。コマの最初の draw call は理由を数えない。
     def countDraw(st: Array[Int32, Static], kind: Int32, sameKindReason: Int32): Unit \ IO =
         bump(st, RenderDrawCounts.drawCallsSlot(), 1);
-        if (Array.get(28, st) == 1) {
-            Array.put(0, 28, st);
-            if (Array.get(30, st) == 1) bump(st, RenderDrawCounts.targetSlot(), 1) else ()
-        } else if (Array.get(27, st) != kind) bump(st, RenderDrawCounts.kindSlot(), 1)
+        if (Array.get(16, st) == 1) {
+            Array.put(0, 16, st);
+            if (Array.get(18, st) == 1) bump(st, RenderDrawCounts.targetSlot(), 1) else ()
+        } else if (Array.get(15, st) != kind) bump(st, RenderDrawCounts.kindSlot(), 1)
         else bump(st, sameKindReason, 1);
-        Array.put(kind, 27, st)
+        Array.put(kind, 15, st)
 
     /// スプライトの draw call が、前に出したスプライトの draw call に続けられなかった理由の slot。
     /// masked = 今の draw call が mask つき。鍵が全部同じで mask も絡まないのは、間に描かない物（別の種類）が挟まった時。
     def spriteBreakOf(st: Array[Int32, Static], texId: Int32, clipFlag: Int32,
                       x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32, masked: Bool): Int32 \ IO =
-        if (Array.get(31, st) != texId) RenderDrawCounts.textureSlot()
-        else if (Array.get(37, st) != blendC) RenderDrawCounts.blendSlot()
-        else if (Array.get(32, st) != clipFlag
-                 or (clipFlag != 0 and (Array.get(33, st) != x0 or Array.get(34, st) != y0
-                                        or Array.get(35, st) != x1 or Array.get(36, st) != y1))) RenderDrawCounts.clipSlot()
-        else if (masked or Array.get(29, st) == 1) RenderDrawCounts.maskSlot()
+        if (Array.get(19, st) != texId) RenderDrawCounts.textureSlot()
+        else if (Array.get(25, st) != blendC) RenderDrawCounts.blendSlot()
+        else if (Array.get(20, st) != clipFlag
+                 or (clipFlag != 0 and (Array.get(21, st) != x0 or Array.get(22, st) != y0
+                                        or Array.get(23, st) != x1 or Array.get(24, st) != y1))) RenderDrawCounts.clipSlot()
+        else if (masked or Array.get(17, st) == 1) RenderDrawCounts.maskSlot()
         else RenderDrawCounts.kindSlot()
 
     /// スプライトの draw call を数え、その鍵を「前に出したスプライトの鍵」に控える。draws = 出した draw call の数（mask つきは 2）。
@@ -463,32 +465,32 @@ mod RenderFrame {
             bump(st, RenderDrawCounts.drawCallsSlot(), draws - 1);
             bump(st, RenderDrawCounts.maskSlot(), draws - 1)
         } else ();
-        Array.put(if (masked) 1 else 0, 29, st);
-        Array.put(texId, 31, st);
-        Array.put(clipFlag, 32, st);
-        Array.put(x0, 33, st);
-        Array.put(y0, 34, st);
-        Array.put(x1, 35, st);
-        Array.put(y1, 36, st);
-        Array.put(blendC, 37, st)
+        Array.put(if (masked) 1 else 0, 17, st);
+        Array.put(texId, 19, st);
+        Array.put(clipFlag, 20, st);
+        Array.put(x0, 21, st);
+        Array.put(y0, 22, st);
+        Array.put(x1, 23, st);
+        Array.put(y1, 24, st);
+        Array.put(blendC, 25, st)
 
     /// 今の多角形 run の draw call を数え、その鍵を「前に出した多角形の鍵」に控える。
     def countPolyDraw(st: Array[Int32, Static]): Unit \ IO =
-        let clipFlag = Array.get(19, st);
+        let clipFlag = Array.get(8, st);
         let reason =
-            if (Array.get(43, st) != Array.get(24, st)) RenderDrawCounts.blendSlot()
-            else if (Array.get(38, st) != clipFlag
-                     or (clipFlag != 0 and (Array.get(39, st) != Array.get(20, st) or Array.get(40, st) != Array.get(21, st)
-                                            or Array.get(41, st) != Array.get(22, st) or Array.get(42, st) != Array.get(23, st)))) RenderDrawCounts.clipSlot()
+            if (Array.get(31, st) != Array.get(13, st)) RenderDrawCounts.blendSlot()
+            else if (Array.get(26, st) != clipFlag
+                     or (clipFlag != 0 and (Array.get(27, st) != Array.get(9, st) or Array.get(28, st) != Array.get(10, st)
+                                            or Array.get(29, st) != Array.get(11, st) or Array.get(30, st) != Array.get(12, st)))) RenderDrawCounts.clipSlot()
             else RenderDrawCounts.kindSlot();
         countDraw(st, kindPoly(), reason);
-        Array.put(0, 29, st);
-        Array.put(clipFlag, 38, st);
-        Array.put(Array.get(20, st), 39, st);
-        Array.put(Array.get(21, st), 40, st);
-        Array.put(Array.get(22, st), 41, st);
-        Array.put(Array.get(23, st), 42, st);
-        Array.put(Array.get(24, st), 43, st)
+        Array.put(0, 17, st);
+        Array.put(clipFlag, 26, st);
+        Array.put(Array.get(9, st), 27, st);
+        Array.put(Array.get(10, st), 28, st);
+        Array.put(Array.get(11, st), 29, st);
+        Array.put(Array.get(12, st), 30, st);
+        Array.put(Array.get(13, st), 31, st)
 
     /// 1 つで 1 draw call の種類（タイル層・static の範囲・Shader の面）を数える。draws = 出した draw call の数（0 なら数えない・mask つきの面は 2）。
     def countSingleDraw(st: Array[Int32, Static], kind: Int32, draws: Int32): Unit \ IO =
@@ -499,7 +501,7 @@ mod RenderFrame {
                 bump(st, RenderDrawCounts.drawCallsSlot(), draws - 1);
                 bump(st, RenderDrawCounts.maskSlot(), draws - 1)
             } else ();
-            Array.put(0, 29, st)
+            Array.put(0, 17, st)
         }
 
     /// この描き先で数えた数を、今のコマの数へ足し込む。
@@ -525,53 +527,32 @@ mod RenderFrame {
         else if (code == 2) DrawCmd.BlendMode.Multiply
         else DrawCmd.BlendMode.Normal
 
-    /// scissor を張り替える。y は GL の左下原点へ反転し、viewport と交差する
-    /// （clip が画面外へ食み出しても letterbox の黒帯を侵さない）。
-    /// 幅か高さが 0 以下の矩形は glScissor(…, 0, 0) になり、その run は何も描かない。
-    /// clipFlag = 0 は「clip 矩形なし」（scissor 無効化）。
-    def setScissorAt(gl: GlContext, st: Array[Int32, Static], clipFlag: Int32,
-                     x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
-        if (clipFlag == 0) gl.disable(GlConst.SCISSOR_TEST)
-        else {
-            let vpX = Array.get(7, st);
-            let vpY = Array.get(8, st);
-            let vpW = Array.get(9, st);
-            let vpH = Array.get(10, st);
-            let cx0 = Int32.max(0, x0);
-            let cx1 = Int32.min(vpW, x1);
-            let cy0 = Int32.max(0, y0);
-            let cy1 = Int32.min(vpH, y1);
-            gl.enable(GlConst.SCISSOR_TEST);
-            gl.scissor(vpX + cx0, vpY + vpH - cy1,
-                           Int32.max(0, cx1 - cx0), Int32.max(0, cy1 - cy0))
-        }
-
     /// 溜めているスプライトの run を 1 行にして閉じる（空 run は行にしない）。
     def closeSpriteRun(st: Array[Int32, Static], list: RenderList): Unit \ IO =
-        let count = Array.get(18, st);
+        let count = Array.get(7, st);
         if (count == 0) () else {
-            appendSpriteRow(list, Array.get(runFirstSlot(), st), count, Array.get(11, st), Array.get(17, st),
-                            Array.get(12, st), Array.get(13, st), Array.get(14, st), Array.get(15, st), Array.get(16, st));
-            Array.put(0, 18, st)
+            appendSpriteRow(list, Array.get(runFirstSlot(), st), count, Array.get(0, st), Array.get(6, st),
+                            Array.get(1, st), Array.get(2, st), Array.get(3, st), Array.get(4, st), Array.get(5, st));
+            Array.put(0, 7, st)
         }
 
     /// 溜めているスプライトの run を閉じ、溜まった行を GL へ流す。GL を直に呼ぶ種類（多角形・タイル・面など）を描く前に呼ぶ。
-    def flushSprites(gl: GlContext, st: Array[Int32, Static], list: RenderList): Unit \ IO =
+    def flushSprites(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList): Unit \ IO =
         closeSpriteRun(st, list);
-        if (rowCountOf(list) == 0) () else drawRenderList(gl, st, list)
+        if (rowCountOf(list) == 0) () else drawRenderList(gl, gs, st, list)
 
     /// 溜まった多角形 run を 1 回の draw call で吐く（空 run は no-op）。
-    def flushPolys(gl: GlContext, st: Array[Int32, Static], polyData: FloatBuffer,
+    def flushPolys(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
                    uniforms: RenderShader.PolyBatchUniforms): Unit \ IO =
-        let count = Array.get(25, st);
+        let count = Array.get(14, st);
         if (count == 0) () else {
-            setScissorAt(gl, st, Array.get(19, st), Array.get(20, st), Array.get(21, st),
-                         Array.get(22, st), Array.get(23, st));
-            RenderSprite.drawPolygonBatchBuf(gl, Array.get(4, st), Array.get(5, st),
-                                             Array.get(6, st), uniforms,
-                                             blendOf(Array.get(24, st)), polyData, count);
+            setScissorAt(gl, gs, Array.get(8, st), Array.get(9, st), Array.get(10, st),
+                         Array.get(11, st), Array.get(12, st));
+            RenderSprite.drawPolygonBatchBuf(gl, Array.get(4, gs), Array.get(5, gs),
+                                             Array.get(6, gs), uniforms,
+                                             blendOf(Array.get(13, st)), list#vertices, count);
             countPolyDraw(st);
-            Array.put(0, 25, st)
+            Array.put(0, 14, st)
         }
 
     /// 積むときにその場で RenderList の instances へ書く。テクスチャ・clip 矩形・重ね方が変わるところでは
@@ -584,57 +565,57 @@ mod RenderFrame {
                         x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32,
                         posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
                         drawable: RenderType.Drawable, useTex: Bool, sdf: Bool): Unit \ IO =
-        let count = Array.get(18, st);
+        let count = Array.get(7, st);
         let sameKey = count != 0
-            and Array.get(11, st) == texId
-            and Array.get(17, st) == blendC
-            and Array.get(12, st) == clipFlag
-            and (clipFlag == 0 or (Array.get(13, st) == x0 and Array.get(14, st) == y0
-                                   and Array.get(15, st) == x1 and Array.get(16, st) == y1));
+            and Array.get(0, st) == texId
+            and Array.get(6, st) == blendC
+            and Array.get(1, st) == clipFlag
+            and (clipFlag == 0 or (Array.get(2, st) == x0 and Array.get(3, st) == y0
+                                   and Array.get(4, st) == x1 and Array.get(5, st) == y1));
         if (sameKey) {
             writeInstAt(list#instances, Array.get(runFirstSlot(), st) + count, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
-            Array.put(count + 1, 18, st)
+            Array.put(count + 1, 7, st)
         } else {
             closeSpriteRun(st, list);
             let first = nextInstanceOf(list);
             writeInstAt(list#instances, first, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
             Array.put(first, runFirstSlot(), st);
-            Array.put(texId, 11, st);
-            Array.put(clipFlag, 12, st);
-            Array.put(x0, 13, st);
-            Array.put(y0, 14, st);
-            Array.put(x1, 15, st);
-            Array.put(y1, 16, st);
-            Array.put(blendC, 17, st);
-            Array.put(1, 18, st)
+            Array.put(texId, 0, st);
+            Array.put(clipFlag, 1, st);
+            Array.put(x0, 2, st);
+            Array.put(y0, 3, st);
+            Array.put(x1, 4, st);
+            Array.put(y1, 5, st);
+            Array.put(blendC, 6, st);
+            Array.put(1, 7, st)
         }
 
     /// 1 多角形を三角形化して入れ物へ直に書く（clip 矩形か重ね方が変わるところでは先に吐く）。
     /// 頂点数が 3 未満（退化）なら何も積まない（run の鍵も進めない — 空 run のまま）。
-    def pushPolyKeyed(gl: GlContext, st: Array[Int32, Static], polyData: FloatBuffer,
+    def pushPolyKeyed(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
                       uniforms: RenderShader.PolyBatchUniforms, clipFlag: Int32,
                       x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32,
                       pc: RenderType.PolygonCmd): Unit \ IO =
-        let count = Array.get(25, st);
+        let count = Array.get(14, st);
         let sameKey = count != 0
-            and Array.get(24, st) == blendC
-            and Array.get(19, st) == clipFlag
-            and (clipFlag == 0 or (Array.get(20, st) == x0 and Array.get(21, st) == y0
-                                   and Array.get(22, st) == x1 and Array.get(23, st) == y1));
+            and Array.get(13, st) == blendC
+            and Array.get(8, st) == clipFlag
+            and (clipFlag == 0 or (Array.get(9, st) == x0 and Array.get(10, st) == y0
+                                   and Array.get(11, st) == x1 and Array.get(12, st) == y1));
         if (sameKey) {
-            let n = RenderSprite.writePolyVerts(polyData, count, pc);
-            if (n < 3) () else Array.put(count + n, 25, st)
+            let n = RenderSprite.writePolyVerts(list#vertices, count, pc);
+            if (n < 3) () else Array.put(count + n, 14, st)
         } else {
-            flushPolys(gl, st, polyData, uniforms);
-            let n = RenderSprite.writePolyVerts(polyData, 0, pc);
+            flushPolys(gl, gs, st, list, uniforms);
+            let n = RenderSprite.writePolyVerts(list#vertices, 0, pc);
             if (n < 3) () else {
-                Array.put(clipFlag, 19, st);
-                Array.put(x0, 20, st);
-                Array.put(y0, 21, st);
-                Array.put(x1, 22, st);
-                Array.put(y1, 23, st);
-                Array.put(blendC, 24, st);
-                Array.put(n, 25, st)
+                Array.put(clipFlag, 8, st);
+                Array.put(x0, 9, st);
+                Array.put(y0, 10, st);
+                Array.put(x1, 11, st);
+                Array.put(y1, 12, st);
+                Array.put(blendC, 13, st);
+                Array.put(n, 14, st)
             }
         }
 
@@ -656,16 +637,16 @@ mod RenderFrame {
                                 posX, posY, sizeX, sizeY, drawable, useTex, sdf)
         }
 
-    /// レンダーターゲット（FBO）のテクスチャは行 0 が下で上下逆に格納されている。
-    /// 指定の uv（上原点の部分矩形）を GL の格納向きへ写して標本する —
-    /// ゲーム側は普通の画像と同じ uv で書けばよい。ターゲット以外はそのまま返す。
-    def targetUvFlipped(targetNames: Set[String],
+    /// 上下逆に格納された描き先（GL の FBO は行 0 が下）の名前 upsideDownTargets の絵なら、
+    /// 指定の uv（上原点の部分矩形）を格納の向きへ写して標本する —
+    /// ゲーム側は普通の画像と同じ uv で書けばよい。ほかはそのまま返す。
+    def targetUvFlipped(upsideDownTargets: Set[String],
                         drawable: RenderType.Drawable): RenderType.Drawable =
         let DrawCmd.Drawable.Drawable(tex, _px, _py, _sx, _sy, _rot,
                                       _cr, _cg, _cb, _a, _cen,
                                       uox, uoy, usx, usy, _z,
                                       _style, _clip, _blend, _mask) = drawable;
-        if (Set.memberOf(tex, targetNames))
+        if (Set.memberOf(tex, upsideDownTargets))
             DrawCmd.withUv({ x = uox, y = 1.0 - uoy },
                            { x = usx, y = 0.0 - usy }, drawable)
         else drawable
@@ -679,10 +660,11 @@ mod RenderFrame {
         else position
 
     /// スプライト 1 体を run へ積む（テクスチャ解決と centered の平行移動込み）。
+    /// upsideDownTargets = 上下逆に格納された描き先の名前（upsideDownTargetsOf で backend に聞いた物）。
     def emitSprite(st: Array[Int32, Static], list: RenderList,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
-                   targetNames: Set[String],
+                   upsideDownTargets: Set[String],
                    warnLog: Ref[Set[String], Static],
                    drawable: RenderType.Drawable): Unit \ IO =
         let DrawCmd.Drawable.Drawable(tex, px, py, sx, sy, _rot,
@@ -701,7 +683,7 @@ mod RenderFrame {
                     let posY = originAxis(cen, py, displayH);
                     // フォントアトラス (font_*) は SDF テキストとして描く。
                     let isFont = String.startsWith({prefix = "font_"}, tex);
-                    let d = targetUvFlipped(targetNames, drawable);
+                    let d = targetUvFlipped(upsideDownTargets, drawable);
                     pushSpriteItem(st, list, scaleX, scaleY,
                                    GpuHandle.textureIdInt(texInfo#id),
                                    posX, posY, displayW, displayH, d, true, isFont)
@@ -714,10 +696,10 @@ mod RenderFrame {
     /// emitSprite と同じ式）。run の一括化から外れるのは、ステンシルの書き込み・解除を
     /// 1 体の draw の前後に挟む口が一括 draw に無いため — mask 付きは少数枚の前提。
     /// 呼び側（emitMerged）が両 run を吐いてから呼ぶ。
-    def emitSpriteMasked(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer,
+    def emitSpriteMasked(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instData: FloatBuffer,
                          scaleX: Float64, scaleY: Float64,
                          registry: RenderAsset.TextureRegistry,
-                         targetNames: Set[String],
+                         upsideDownTargets: Set[String],
                          warnLog: Ref[Set[String], Static],
                          polyUniforms: RenderShader.PolyBatchUniforms,
                          drawable: RenderType.Drawable): Unit \ IO =
@@ -726,7 +708,7 @@ mod RenderFrame {
                                       _uox, _uoy, _usx, _usy, _z,
                                       _style, _clip, _blend, _mask) = drawable;
         if (String.isEmpty(tex)) {
-            drawMaskedOne(gl, st, instData, scaleX, scaleY, polyUniforms, 0,
+            drawMaskedOne(gl, gs, st, instData, scaleX, scaleY, polyUniforms, 0,
                           px, py, sx, sy, drawable, false, false)
         } else {
             match Map.get(tex, registry) {
@@ -737,8 +719,8 @@ mod RenderFrame {
                     let posY = originAxis(cen, py, displayH);
                     let isFont = String.startsWith({prefix = "font_"}, tex);
                     // uv 反転は emitSprite と同じ（mask は形の変換なので uv には触らない）。
-                    let d = targetUvFlipped(targetNames, drawable);
-                    drawMaskedOne(gl, st, instData, scaleX, scaleY, polyUniforms,
+                    let d = targetUvFlipped(upsideDownTargets, drawable);
+                    drawMaskedOne(gl, gs, st, instData, scaleX, scaleY, polyUniforms,
                                   GpuHandle.textureIdInt(texInfo#id),
                                   posX, posY, displayW, displayH, d, true, isFont)
                 case None => warnMissingTexture(warnLog, tex)
@@ -747,7 +729,7 @@ mod RenderFrame {
 
     /// mask 付き 1 体の実描画: scissor を張り、instance を slot 0 へ書き、mask を
     /// スクリーン座標へ写してステンシル付きの単発 draw に渡す。
-    def drawMaskedOne(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer,
+    def drawMaskedOne(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instData: FloatBuffer,
                       scaleX: Float64, scaleY: Float64,
                       polyUniforms: RenderShader.PolyBatchUniforms, texId: Int32,
                       posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
@@ -762,11 +744,11 @@ mod RenderFrame {
                 let (cx0, cy0, cx1, cy1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
                 (1, cx0, cy0, cx1, cy1)
         };
-        setScissorAt(gl, st, clipFlag, x0, y0, x1, y1);
+        setScissorAt(gl, gs, clipFlag, x0, y0, x1, y1);
         writeInstAt(instData, 0, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
-        let draws = RenderSprite.drawSpriteMasked(gl, Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
-                                                  Array.get(3, st), blend, instData, 0,
-                                                  Array.get(4, st), Array.get(5, st), Array.get(6, st),
+        let draws = RenderSprite.drawSpriteMasked(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
+                                                  Array.get(3, gs), blend, instData, 0,
+                                                  Array.get(4, gs), Array.get(5, gs), Array.get(6, gs),
                                                   polyUniforms,
                                                   maskToScreen(rot, posX, posY, sizeX, sizeY, mask));
         countSpriteDraw(st, texId, clipFlag, x0, y0, x1, y1, blendCode(blend), true, draws)
@@ -794,29 +776,29 @@ mod RenderFrame {
         }
 
     /// 多角形 1 個を run へ積む（clip 矩形を Int32 鍵へほどく）。
-    def emitPoly(gl: GlContext, st: Array[Int32, Static], polyData: FloatBuffer,
+    def emitPoly(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
                  uniforms: RenderShader.PolyBatchUniforms,
                  scaleX: Float64, scaleY: Float64, pc: RenderType.PolygonCmd): Unit \ IO =
         match pc#clip {
-            case None    => pushPolyKeyed(gl, st, polyData, uniforms, 0, 0, 0, 0, 0,
+            case None    => pushPolyKeyed(gl, gs, st, list, uniforms, 0, 0, 0, 0, 0,
                                           blendCode(pc#blend), pc)
             case Some(r) =>
                 let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
-                pushPolyKeyed(gl, st, polyData, uniforms, 1, x0, y0, x1, y1, blendCode(pc#blend), pc)
+                pushPolyKeyed(gl, gs, st, list, uniforms, 1, x0, y0, x1, y1, blendCode(pc#blend), pc)
         }
 
     /// 静的レンジ 1 本を描く: 溜まっている両 run は呼び側で吐き終えている前提。
     /// scissor をレンジの clip に合わせ、永続 VBO の範囲を 1 draw call で塗る
     /// （アップロードも三角形化もしない）。
-    def emitStatic(gl: GlContext, st: Array[Int32, Static], scaleX: Float64, scaleY: Float64,
+    def emitStatic(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], scaleX: Float64, scaleY: Float64,
                    uniforms: RenderShader.PolyBatchUniforms, r: RenderStatic.Range): Unit \ IO =
         match r#clip {
-            case None    => setScissorAt(gl, st, 0, 0, 0, 0, 0)
+            case None    => setScissorAt(gl, gs, 0, 0, 0, 0, 0)
             case Some(c) =>
                 let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, c);
-                setScissorAt(gl, st, 1, x0, y0, x1, y1)
+                setScissorAt(gl, gs, 1, x0, y0, x1, y1)
         };
-        RenderSprite.drawStaticRange(gl, Array.get(4, st), r#vao, uniforms, r#blend,
+        RenderSprite.drawStaticRange(gl, Array.get(4, gs), r#vao, uniforms, r#blend,
                                      r#viewOffset, r#viewScale, r#halfDesign, r#first, r#count);
         countSingleDraw(st, kindStatic(), if (r#count < 3) 0 else 1)
 
@@ -830,10 +812,10 @@ mod RenderFrame {
     /// run をまたいでテクスチャごとに再グループ化するのは禁止: アルファブレンドは
     /// 描画順に依存するので、同 zIndex の bg 矩形とテキスト最後の文字が入れ替わって
     /// 文字が消える実バグが過去に起きた。
-    def emitMerged(gl: GlContext, st: Array[Int32, Static], list: RenderList, polyData: FloatBuffer,
+    def emitMerged(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
-                   targetNames: Set[String],
+                   upsideDownTargets: Set[String],
                    warnLog: Ref[Set[String], Static],
                    tileUniforms: RenderShader.TileUniforms,
                    polyBatchUniforms: RenderShader.PolyBatchUniforms,
@@ -843,9 +825,9 @@ mod RenderFrame {
         match items {
             case Nil => ()
             case item :: rest =>
-                emitOne(gl, st, list, polyData, scaleX, scaleY, registry, targetNames,
+                emitOne(gl, gs, st, list, scaleX, scaleY, registry, upsideDownTargets,
                         warnLog, tileUniforms, polyBatchUniforms, drawSurface, drawScene, item);
-                emitMerged(gl, st, list, polyData, scaleX, scaleY, registry, targetNames,
+                emitMerged(gl, gs, st, list, scaleX, scaleY, registry, upsideDownTargets,
                            warnLog, tileUniforms, polyBatchUniforms, drawSurface, drawScene, rest)
         }
 
@@ -853,10 +835,10 @@ mod RenderFrame {
     // WhyNot: emitMerged のループの中へ書き下さない・末尾を呼び出しで終えない — ループの中の呼び出しが末尾呼び出しの続き（Thunk）を返すと、
     //   JVM はループを途中から JIT（OSR）できず、1 コマに 1 回しか呼ばれないループがインタプリタのまま回る（docs/performance.md の 13 節）。
     @DontInline
-    def emitOne(gl: GlContext, st: Array[Int32, Static], list: RenderList, polyData: FloatBuffer,
+    def emitOne(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
                 scaleX: Float64, scaleY: Float64,
                 registry: RenderAsset.TextureRegistry,
-                targetNames: Set[String],
+                upsideDownTargets: Set[String],
                 warnLog: Ref[Set[String], Static],
                 tileUniforms: RenderShader.TileUniforms,
                 polyBatchUniforms: RenderShader.PolyBatchUniforms,
@@ -869,13 +851,13 @@ mod RenderFrame {
                 // 層は画面全体に敷くので scissor は viewport 全体へ戻し、blend は
                 // TileMapRenderCmd が blend を持たない（常に Normal）ため明示的に戻す
                 // （前 run の Add/Multiply を持ち越さない）。
-                flushSprites(gl, st, list);
-                flushPolys(gl, st, polyData, polyBatchUniforms);
-                setScissorAt(gl, st, 0, 0, 0, 0, 0);
+                flushSprites(gl, gs, st, list);
+                flushPolys(gl, gs, st, list, polyBatchUniforms);
+                setScissorAt(gl, gs, 0, 0, 0, 0, 0);
                 RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
                 match Map.get(tm#textureName, registry) {
                     case Some(texInfo) =>
-                        RenderSprite.drawTileMapInstanced(gl, Array.get(26, st),
+                        RenderSprite.drawTileMapInstanced(gl, Array.get(11, gs),
                                              GpuHandle.textureIdInt(texInfo#id),
                                              GpuHandle.tileVaoInt(tm#tileVaoId),
                                              tileUniforms,
@@ -887,42 +869,42 @@ mod RenderFrame {
                 }
             case Merged.MSprite(drawable) =>
                 // スプライトが来たら溜まっている多角形 run を先に吐く（列順を守る）。
-                flushPolys(gl, st, polyData, polyBatchUniforms);
+                flushPolys(gl, gs, st, list, polyBatchUniforms);
                 if (List.isEmpty(DrawCmd.maskOf(drawable)))
-                    emitSprite(st, list, scaleX, scaleY, registry, targetNames,
+                    emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets,
                                warnLog, drawable)
                 else {
                     // mask 付きはステンシルへの描き込みが draw の前後に要るため、
                     // 一括 run に混ぜられない — 自分の run も吐いてから単発で描く。
-                    flushSprites(gl, st, list);
-                    emitSpriteMasked(gl, st, list#instances, scaleX, scaleY, registry, targetNames,
+                    flushSprites(gl, gs, st, list);
+                    emitSpriteMasked(gl, gs, st, list#instances, scaleX, scaleY, registry, upsideDownTargets,
                                      warnLog, polyBatchUniforms, drawable)
                 }
             case Merged.MPoly(pc) =>
                 // 多角形が来たら溜まっているスプライト run を先に吐く（列順を守る）。
-                flushSprites(gl, st, list);
-                emitPoly(gl, st, polyData, polyBatchUniforms, scaleX, scaleY, pc)
+                flushSprites(gl, gs, st, list);
+                emitPoly(gl, gs, st, list, polyBatchUniforms, scaleX, scaleY, pc)
             case Merged.MStatic(r) =>
                 // 静的レンジが来たら両 run を吐いてから 1 draw call で描く（列順を守る）。
-                flushSprites(gl, st, list);
-                flushPolys(gl, st, polyData, polyBatchUniforms);
-                emitStatic(gl, st, scaleX, scaleY, polyBatchUniforms, r)
+                flushSprites(gl, gs, st, list);
+                flushPolys(gl, gs, st, list, polyBatchUniforms);
+                emitStatic(gl, gs, st, scaleX, scaleY, polyBatchUniforms, r)
             case Merged.MSurface(s) =>
                 // シェーダー面が来たら両 run を吐いてから 1 枚描く（列順＝重なり順を守る）。
                 // 面は矩形全体を塗るので scissor は viewport 全体に戻す
                 // （前 run の clip 矩形を持ち越さない）。
-                flushSprites(gl, st, list);
-                flushPolys(gl, st, polyData, polyBatchUniforms);
-                setScissorAt(gl, st, 0, 0, 0, 0, 0);
+                flushSprites(gl, gs, st, list);
+                flushPolys(gl, gs, st, list, polyBatchUniforms);
+                setScissorAt(gl, gs, 0, 0, 0, 0, 0);
                 countSingleDraw(st, kindSurface(), drawSurface(gl, s))
             case Merged.MScene3d(i) =>
                 // 場面も両 run を吐いてから描く（深度で前後を決めるのは場面の中だけ）。
-                flushSprites(gl, st, list);
-                flushPolys(gl, st, polyData, polyBatchUniforms);
-                drawScene({ x = Array.get(7, st), y = Array.get(8, st), width = Array.get(9, st),
-                            height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, i);
+                flushSprites(gl, gs, st, list);
+                flushPolys(gl, gs, st, list, polyBatchUniforms);
+                drawScene({ x = Array.get(7, gs), y = Array.get(8, gs), width = Array.get(9, gs),
+                            height = Array.get(10, gs), scaleX = scaleX, scaleY = scaleY }, i);
                 // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
-                Array.put(kindScene3d(), 27, st)
+                Array.put(kindScene3d(), 15, st)
         };
         // WhyNot: この () を消さない — match の枝の呼び出しが末尾になり、emitMerged のループが JIT から外れる。
         ()
@@ -934,125 +916,49 @@ mod RenderFrame {
         3 * List.foldLeft((acc, pc) -> acc + List.length(pc#vertices), 0, polygons)
 
     /// 1 フレーム描画: タイル層・sprites・polygons・静的レンジ・シェーダー面を
-    /// 1 本の安定ソート列に混ぜ、共有の zIndex どおりの重なり順で描く。
-    /// 黒帯部分は scissor で clear する。
+    /// 1 本の安定ソート列に混ぜ、共有の zIndex どおりの重なり順で描く。黒帯部分は scissor で clear する。
+    /// 描き先は args#targetClear で決める（None = 画面）。Pass の描き先の番号と形式は問わない（GL は bind 済みの framebuffer へ描き、どちらも読まない）。
     pub def renderFrameMixed(gl: GlContext, args: FrameArgs): Unit \ IO =
-        let tileShader   = args#tileShader;
-        let registry     = args#registry;
-        let clearColor   = args#clearColor;
-        let designW      = args#designW;
-        let designH      = args#designH;
-        let fbW          = args#fbW;
-        let fbH          = args#fbH;
-        let sprites      = args#sprites;
-        let tileMaps     = args#tileMaps;
-        let polygons     = args#polygons;
-        let staticRanges = args#staticRanges;
-        let polyBatchShader = args#polyBatchShader;
-        let polyBatchVao = args#polyBatchVao;
-        let polyBatchVbo = args#polyBatchVbo;
+        GlRows.renderPass(gl, args, GlRows.passOfArgs(args))
+
+    /// 上下逆に格納された描き先の名前。backend が上下逆に格納しない（upsideDown が偽）なら空で、描き先の表を引かない。
+    def upsideDownTargetsOf(upsideDown: Bool, targetNames: Unit -> Set[String] \ ef): Set[String] \ ef =
+        if (upsideDown) targetNames() else Set.empty()
+
+    /// 1 つの pass の中身を、z の列にして GL の backend へ流す（clear と後始末は呼ぶ側）。
+    /// gs = GL の backend の状態（GlRows の並び）・list = backend が貸した入れ物の空の列。
+    def emitFrameMixed(gl: GlContext, gs: Array[Int32, Static], list: RenderList, args: FrameArgs,
+                       pass: RenderFrame.Internal.RenderList.PassSpec, upsideDownTargets: Set[String]): Unit \ IO =
+        // タイル層・sprites・polygons・静的レンジ・シェーダー面を 1 本の安定ソート列に
+        // マージして描く。sprite だけ z 順にし polygon を最後へまとめて描くと、ワールド
+        // 配置のポリゴン（武器グリフ等）が手前のポップアップを貫通してしまう。全種を
+        // 同じ列で並べることで、重なり順が並べ替え鍵の指定どおりになる。静的レンジは
+        // 「頂点は既に GPU にある永続 VBO の範囲」を軽い値で表す run 種で、同鍵の
+        // 動的アイテムとの前後も入力順で保たれる（洞窟の壁 z=2 が粒 z=2 を正しく隠す等）。
+        // 同一鍵内は入力順（tiles → sprites → polygons → static → surfaces）を保つ
+        // （stableByZ が構造的に保証）。シェーダー面は zIndex の位置で両 run を吐いてから
+        // 1 枚描くので、水を床(z=0)の上・壁(z=2)の下に置ける（clear 直後の一括描画だと
+        // zIndex を無視して最下になり、不透明な背景に覆われて消える）。
+        // 同 z 内は入力順 = tiles → sprites → polygons → static → surfaces なので、
+        // 「同 z ならタイル層が奥」が安定ソートの規約としてそのまま立つ
+        // （タイル層を手前に出すには大きい zIndex）。
+        let sortedMerged = mergedByZ(args#tileMaps, args#sprites, args#polygons, args#staticRanges, args#surfaces, args#scenes#zIndexes);
+        // clip 矩形 → framebuffer 座標の整数 scissor 矩形 (x0, y0, x1, y1)（top-left 原点）。
+        // record に Eq が無いので、run の分断キーはこの int 組で比較する（fb 画素への
+        // 量子化を兼ね、1px 未満の差で run を無駄に割らない）。
+        let (_, _, vpW, vpH) = pass#viewport;
+        let scaleX = Int32.toFloat64(vpW) / args#designW;
+        let scaleY = Int32.toFloat64(vpH) / args#designH;
         let polyBatchUniforms = args#polyBatchUniforms;
-        let instShader   = args#instShader;
-        let instVao      = args#instVao;
-        let instVbo      = args#instVbo;
-        let instBuf      = args#instBuf;
-        let polyBuf      = args#polyBuf;
-        let tileUniforms = args#tileUniforms;
-        let instMultiplyBlend = args#instMultiplyBlend;
-        let surfaces     = args#surfaces;
-        let drawSurface  = args#drawSurface;
-        if (fbW > 0 and fbH > 0) {
-            // レンダーターゲットは design 全面をテクセル全面へ写す（縦横の倍率が少し違ってよい — uv で読む限りずれない）。
-            let (vpX, vpY, vpW, vpH) = match args#targetClear {
-                case None    => calcViewport(fbW, fbH, designW, designH)
-                case Some(_) => (0, 0, fbW, fbH)
-            };
-            match args#targetClear {
-                case None =>
-                    // 画面: 黒帯を含む全面を黒 → design 領域だけ clearColor の 2 段階の clear。
-                    gl.viewport(0, 0, fbW, fbH);
-                    gl.clearColor(0.0f32, 0.0f32, 0.0f32, 1.0f32);
-                    gl.clear(GlConst.COLOR_BUFFER_BIT);
-                    gl.viewport(vpX, vpY, vpW, vpH);
-                    gl.enable(GlConst.SCISSOR_TEST);
-                    gl.scissor(vpX, vpY, vpW, vpH);
-                    gl.clearColor(RenderUtil.f32(clearColor#r), RenderUtil.f32(clearColor#g),
-                                      RenderUtil.f32(clearColor#b), 1.0f32);
-                    gl.clear(GlConst.COLOR_BUFFER_BIT);
-                    gl.disable(GlConst.SCISSOR_TEST)
-                case Some(op) =>
-                    // レンダーターゲット: 全面に写すので黒帯は無い。前の中身の始末は
-                    // op の 3 択（RenderTarget.LoadOp の doc を参照）。
-                    gl.viewport(vpX, vpY, vpW, vpH);
-                    match op {
-                        case RenderTarget.LoadOp.Clear(c) =>
-                            gl.clearColor(RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b), 1.0f32);
-                            gl.clear(GlConst.COLOR_BUFFER_BIT)
-                        case RenderTarget.LoadOp.ClearTransparent =>
-                            gl.clearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
-                            gl.clear(GlConst.COLOR_BUFFER_BIT)
-                        case RenderTarget.LoadOp.Keep => ()
-                    }
-            };
-            // タイル層・sprites・polygons・静的レンジ・シェーダー面を 1 本の安定ソート列に
-            // マージして描く。sprite だけ z 順にし polygon を最後へまとめて描くと、ワールド
-            // 配置のポリゴン（武器グリフ等）が手前のポップアップを貫通してしまう。全種を
-            // 同じ列で並べることで、重なり順が並べ替え鍵の指定どおりになる。静的レンジは
-            // 「頂点は既に GPU にある永続 VBO の範囲」を軽い値で表す run 種で、同鍵の
-            // 動的アイテムとの前後も入力順で保たれる（洞窟の壁 z=2 が粒 z=2 を正しく隠す等）。
-            // 同一鍵内は入力順（tiles → sprites → polygons → static → surfaces）を保つ
-            // （stableByZ が構造的に保証）。シェーダー面は zIndex の位置で両 run を吐いてから
-            // 1 枚描くので、水を床(z=0)の上・壁(z=2)の下に置ける（clear 直後の一括描画だと
-            // zIndex を無視して最下になり、不透明な背景に覆われて消える）。
-            // 同 z 内は入力順 = tiles → sprites → polygons → static → surfaces なので、
-            // 「同 z ならタイル層が奥」が安定ソートの規約としてそのまま立つ
-            // （タイル層を手前に出すには大きい zIndex）。
-            let sortedMerged = mergedByZ(tileMaps, sprites, polygons, staticRanges, surfaces, args#scenes#zIndexes);
-            // clip 矩形 → framebuffer 座標の整数 scissor 矩形 (x0, y0, x1, y1)（top-left 原点）。
-            // record に Eq が無いので、run の分断キーはこの int 組で比較する（fb 画素への
-            // 量子化を兼ね、1px 未満の差で run を無駄に割らない）。
-            let scaleX = Int32.toFloat64(vpW) / designW;
-            let scaleY = Int32.toFloat64(vpH) / designH;
-            // 連続する「同じテクスチャ・同じ scissor・同じ blend」のスプライトを 1 回の
-            // instanced draw にまとめる（run 収集 → flush）。1 要素 1 draw call だと呼び出しの
-            // 固定費が積み上がり、数千体で描画時間のほとんどを占めてしまうため。
-            // 書き溜める先は 1 フレーム 1 本の使い回し。RenderList の行は GL を直に呼ぶ種類の手前まで溜まるので、
-            // スプライトの数ぶん取る（行を流すたびに先頭へ戻る）。
-            RenderBuf.ensure(gl, instBuf, Int32.max(1, List.length(sprites)) * instanceFloats());
-            RenderBuf.ensure(gl, polyBuf, Int32.max(3, polyVertCap(polygons)) * 6);
-            let instData = RenderBuf.buffer(instBuf);
-            let polyData = RenderBuf.buffer(polyBuf);
-            // run 状態と GL ハンドル定数を Int32 配列 1 本へ詰める（スロット順は stateSize 上のコメント）。
-            // 1 フレーム 1 回の小さな割り当てで、以降の 1 item ごとの組・クロージャの
-            // 作り直しが消える。
-            let st: Array[Int32, Static] = Array.empty(Static, stateSize());
-            Array.put(instShader, 0, st);
-            Array.put(instVao, 1, st);
-            Array.put(instVbo, 2, st);
-            Array.put(instMultiplyBlend, 3, st);
-            Array.put(polyBatchShader, 4, st);
-            Array.put(polyBatchVao, 5, st);
-            Array.put(polyBatchVbo, 6, st);
-            Array.put(vpX, 7, st);
-            Array.put(vpY, 8, st);
-            Array.put(vpW, 9, st);
-            Array.put(vpH, 10, st);
-            Array.put(tileShader, 26, st);
-            Array.put(1, 28, st);
-            Array.put(if (Array.get(RenderDrawCounts.drawCallsSlot(), args#drawCounts) > 0) 1 else 0, 30, st);
-            let list = newRenderList(instData);
-            emitMerged(gl, st, list, polyData, scaleX, scaleY, registry, args#targetNames,
-                       args#texWarnLog, tileUniforms, polyBatchUniforms, drawSurface, args#scenes#draw, sortedMerged);
-            // どちらか片方だけが非空（切替時に相手を吐いているため）。空 flush は no-op。
-            flushSprites(gl, st, list);
-            flushPolys(gl, st, polyData, polyBatchUniforms);
-            addCountsTo(args#drawCounts, st);
-            // フレーム末尾で必ず scissor を解除する — 有効なまま持ち越すと、次フレームの
-            // 全画面 clear や F8 注釈のスクリーンショット再描画が小矩形に切られる。
-            gl.disable(GlConst.SCISSOR_TEST);
-            // blend も Normal に戻す — Add/Multiply のまま持ち越すと、次フレーム冒頭の
-            // タイルマップや F8 注釈の再描画が違う重ね方で合成される。
-            RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal)
-        } else ()
+        // 連続する「同じテクスチャ・同じ scissor・同じ blend」のスプライトを 1 回の
+        // instanced draw にまとめる（run 収集 → flush）。1 要素 1 draw call だと呼び出しの
+        // 固定費が積み上がり、数千体で描画時間のほとんどを占めてしまうため。
+        let st = newRunState(args#drawCounts);
+        emitMerged(gl, gs, st, list, scaleX, scaleY, args#registry, upsideDownTargets,
+                   args#texWarnLog, args#tileUniforms, polyBatchUniforms, args#drawSurface, args#scenes#draw, sortedMerged);
+        // どちらか片方だけが非空（切替時に相手を吐いているため）。空 flush は no-op。
+        flushSprites(gl, gs, st, list);
+        flushPolys(gl, gs, st, list, polyBatchUniforms);
+        addCountsTo(args#drawCounts, st)
 
 }

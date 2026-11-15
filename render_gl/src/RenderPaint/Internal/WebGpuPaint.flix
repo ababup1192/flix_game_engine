@@ -42,6 +42,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.nio.FloatBuffer
+    use RenderFrame.Internal.RenderList
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, PassTarget}
     use RenderFrame.Internal.WebGpuRows
     use RenderPaint.Internal.WebGpuShader
 
@@ -88,6 +90,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             // instance の入れ物（CPU）。bytes と、その float の見方。
             cpuBytes = Array[ByteBuffer, Static],
             cpuFloats = Array[FloatBuffer, Static],
+            // 多角形の頂点の入れ物（CPU）。WebGPU の行に多角形がまだ無いので空のまま貸す。
+            cpuVertices = FloatBuffer,
             // 中間の texture と、その画素の大きさ（幅・高さ）。
             frameTexture = Array[Texture, Static],
             frameSize = Array[Int32, Static],
@@ -104,9 +108,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     pub type alias Paint = PaintData
 
-    /// instance の 1 体のバイト数（RenderFrame.writeInstAt の 38 個の float）。
-    // WhyNot: RenderFrame.instanceFloats を呼ばない — 兄弟の mod の pub でない関数は呼べず、pub に開くことになる。
-    def instanceBytes(): Int32 = 152
+    /// instance の 1 体のバイト数（RenderFrame.writeInstAt の float の並び）。
+    def instanceBytes(): Int32 = 4 * RenderList.instanceFloats()
 
     /// device の上に pipeline・buffer・中間の texture・組み込みの絵（起動画面の字とロゴ・Render.lightAt と darkAt の絵）を作る。
     /// design = 射影の寸・clearColor = design の中の地の色・width × height = 中間の texture の画素の大きさ。
@@ -148,6 +151,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             instanceBuffer = Array#{createInstanceBuffer(gpu, firstCount)} @ Static,
             instanceCounts = Array#{firstCount, 0} @ Static,
             cpuBytes = Array#{bytes} @ Static, cpuFloats = Array#{bytes.asFloatBuffer()} @ Static,
+            cpuVertices = FloatBuffer.allocate(0),
             frameTexture = Array#{createFrameTexture(gpu, cfg#width, cfg#height)} @ Static,
             frameSize = Array#{cfg#width, cfg#height} @ Static,
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
@@ -486,22 +490,29 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         pass.setVertexBuffer(0, buffer, 0i64, buffer.size());
         (pass, base)
 
-    /// sprites を texture（format・width × height）へ描く。targetClear = None なら画面・Some(op) なら Pass。readsForbidden = 描き先の絵の番号。
-    def paintInto(paint: Paint, texture: Texture, format: RenderTarget.Format, size: (Int32, Int32),
-                  targetClear: Option[RenderTarget.LoadOp], readsForbidden: Int32, sprites: List[RenderType.Drawable]): Unit \ IO =
+    /// sprites を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
+    def paintInto(paint: Paint, texture: Texture, pass: PassSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        let (width, height) = size;
+        let format = formatOf(pass);
         WebGpuRows.renderFrame({
-            sprites = sprites, registry = Ref.get(p#registryRef), clearColor = p#clearColor,
-            designW = p#designW, designH = p#designH, fbW = width, fbH = height,
-            targetClear = targetClear, readsForbidden = readsForbidden,
+            sprites = sprites, registry = Ref.get(p#registryRef),
+            designW = p#designW, designH = p#designH, pass = pass,
+            targetNames = () -> Map.keysOf(Ref.get(p#targetsRef)),
             texWarnLog = p#texWarnLog, drawCounts = p#drawCounts,
             instancesFor = n -> instancesFor(paint, n),
+            verticesFor = _ -> checked_ecast(p#cpuVertices),
             openPass = (n, op) -> openPass(paint, texture, n, op),
-            setPipeline = (pass, blendC) -> pass.setPipeline(pipelineOf(paint, blendC, format)),
-            setTexture = (pass, id) -> pass.setBindGroup(1, groupOf(paint, id)),
+            setPipeline = (pass1, blendC) -> pass1.setPipeline(pipelineOf(paint, blendC, format)),
+            setTexture = (pass1, id) -> pass1.setBindGroup(1, groupOf(paint, id)),
             skip = name -> skip(paint, name)
         })
+
+    /// pass の色の attachment の形式（画面は中間の texture の RGBA8）。
+    def formatOf(pass: PassSpec): RenderTarget.Format =
+        match pass#target {
+            case PassTarget.Screen(_)      => RenderTarget.Format.Rgba8Unorm
+            case PassTarget.Target(colors) => colors |> List.head |> Option.map(c -> c#format) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm)
+        }
 
     def groupOf(paint: Paint, id: Int32): BindGroup \ IO =
         let PaintData.PaintData(p) = paint;
@@ -541,12 +552,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         Map.get(spec#name, Ref.get(p#targetsRef))
-            |> Option.forEach(t -> paintInto(paint, t#texture, t#format, (t#width, t#height), Some(spec#clear), t#id, sprites))
+            |> Option.forEach(t -> paintInto(paint, t#texture,
+                   RenderList.targetPass((t#width, t#height), { texture = t#id, format = t#format, load = spec#clear, resolveTo = None },
+                                         DepthStencil.NoDepthStencil, 1), sprites))
 
     def paintScreen(paint: Paint, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        paintInto(paint, Array.get(0, p#frameTexture), RenderTarget.Format.Rgba8Unorm,
-                  (Array.get(0, p#frameSize), Array.get(1, p#frameSize)), None, -1, sprites)
+        let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
+        paintInto(paint, Array.get(0, p#frameTexture),
+                  RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil), sprites)
 
     /// 最後に画面へ描いたコマを中間の texture へ描き直す（大きさが変わった時。控えも数も進めない）。続けて present を呼ぶ。
     pub def repaintLast(paint: Paint): Unit \ IO =

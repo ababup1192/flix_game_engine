@@ -11,6 +11,8 @@ mod RenderPaint {
     import fge.gl.GlContext
     import fge.gl.GlConst
     import java.lang.System
+    use RenderFrame.Internal.GlRows
+    use RenderFrame.Internal.RenderList
 
     /// 1 コマの描く命令（画面へのコマ。リサイズで描き直す時・注釈のスクショも同じ物を使う）。
     pub type alias Frame = {
@@ -295,13 +297,14 @@ mod RenderPaint {
         };
         // WhyNot: 画面に標本の数を問わない — 窓は GLFW_SAMPLES を頼まずに作る（窓の MSAA は 2D の縁も変える）。
         let prepared = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }, frame#scenes);
-        RenderFrame.renderFrameMixed(gl, {
+        let args = {
             registry = Ref.get(paint#registryRef),
             fbW = fbW, fbH = fbH,
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons,
             staticRanges = staticRanges,
             surfaces = frame#surfaces, scenes = prepared,
-            targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase })
+            targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase };
+        GlRows.renderPass(gl, args, GlRows.passOfArgs(args))
 
     /// レンダーターゲットへの 1 フレーム。画面用の paintFrame と違い、黒帯 clear を
     /// せず（targetClear）、タイル層・静的レンジは乗らない。シェーダー面は画面と同じく z で合流する。
@@ -323,14 +326,18 @@ mod RenderPaint {
         let framebuffer = entry |> Option.map(RenderTargetGl.drawFramebuffer) |> Option.getWithDefault(paint#screenFramebuffer);
         let samples = entry |> Option.map(RenderTargetGl.drawSamples) |> Option.getWithDefault(1);
         let prepared = prepareScenes(paint, { framebuffer = framebuffer, format = target#format, samples = samples }, scenes);
-        RenderFrame.renderFrameMixed(gl, {
+        let args = {
             registry = Ref.get(paint#registryRef),
             designW = paint#screenW, designH = paint#screenH,
             fbW = tw, fbH = th,
             sprites = sprites, polygons = polygons,
             surfaces = surfaces, scenes = prepared,
             targetClear = Some(op),
-            targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase })
+            targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase };
+        let color = { texture = entry |> Option.map(e -> e#tex) |> Option.getWithDefault(-1),
+                      format = entry |> Option.map(e -> e#storedFormat) |> Option.getWithDefault(target#format),
+                      load = op, resolveTo = None };
+        GlRows.renderPass(gl, args, RenderList.targetPass((tw, th), color, RenderList.DepthStencil.DepthAndStencil, samples))
 
     /// 開いているターゲット name の history を用意する（clear の前・描く前に呼ぶ）。窓では今の中身（= 前のコマの最後）を写し、
     /// 1 枚撮り・動画では透明で塗る。history は registry とターゲットの表に載せる（上下逆格納なので貼る・読む時の反転も効く）。
