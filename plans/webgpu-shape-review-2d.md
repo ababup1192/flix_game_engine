@@ -538,7 +538,7 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 
 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal）:
 
-- テスト: render_gl 391 緑（`.layers/render_gl` の flix test。`TestShapeRows` 24 本・`TestShapeBuffers` 10 本・`TestUploadPlan` 3 本を足した）。engine・engine_world・engine_tools は触っていない。
+- テスト: render_gl 394 緑（`.layers/render_gl` の flix test。`TestShapeRows` 24 本・`TestShapeBuffers` 10 本・`TestUploadPlan` 6 本を足した）。engine・engine_world・engine_tools は触っていない。
 - `make gl-parity` 緑（castShadow の 565 px は前からの B）。テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）。
 - `make webgpu-v1-check` 緑: 画面なしの比べは 14 場面とも 0 px（足した `polygons`・`polygonPass`・`tiles`・`staticLayer` は submit 1、`polygonFlood` は submit 2・WebGPU の誤り 0）・rpg-starter の title の GL と WebGPU 0 px・gl_parity の V1 の scene 0 px。
   許容は既定の 0 のままで、丸めの許容を足した場面は無い。
@@ -549,9 +549,11 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 - 速さの前後は人の方針（12.16）で回していない。毎コマの変化: GL の多角形は行として溜めてから流す（GL の呼び出しは同じ数）・WebGPU はタイルと static の行ごとに `setVertexBuffer` が 1〜2 回増える。
 
 1 回目のレビュー（84 点）への対応: 必須 3 件（3 本の Stream の送り方を `planUpload` に出してテストと `polygonFlood`・別の案 (2b) を `bench/webgpu_check` で動かして表へ・独自の言い回しを「identity の view」「頂点の buffer」へ）と、
-任意のうち、タイルの作り直しを前半の `TileTable` へ（番号 → 入る枚数・大きくなれば捨てて作り直し新しい番号）・WebGPU でタイルの数や static の範囲が buffer を超える時に入っている分だけ描く・
+任意のうち、タイルの作り直しを前半の `TileTable` へ（番号 → 入る枚数。2 回目のレビュー（87 点）で、大きくなっても番号は変えない `grow` の口に直した — `updateTileBuffer` の「VAO を増やさない」約束を守る）・WebGPU でタイルの数や static の範囲が buffer を超える時に入っている分だけ描く・
 `geometryOf` に送った位置を引数で渡す・GL の行を流す所で list の欄を 1 回だけ取る・What のコメントを消す・テストを 1 つの値ずつに分け clip と行にならない種類を足す・mask つきスプライトを飛ばす所で run を閉じる（draw の数え方を GL とそろえる）を直した。
 `GpuHandle.StaticVao` などの使われなくなった engine の pub は、engine を触らず親の 12.18 の持ち越しに書いた。
+2 回目のレビュー（87 点）への対応: タイルを大きくする時も番号を変えない（上）・`TestUploadPlan` に境目の両側（ちょうど入る 800 + 200 = 1000 で submit しない・位置 800・大きさ 1000 のまま／1 バイト溢れると submit）・
+`upload` の `if (submit)` を 1 つに・タイルの数が buffer を超えた知らせを skip の文から外して `Log.fellBack`（初めの 1 回だけ）に。門は上と同じ物を流し直して緑（render_gl 394）。
 
 ## 第 1 版のレビュー（74 点）への対応
 

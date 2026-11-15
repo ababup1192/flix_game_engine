@@ -547,8 +547,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let valueSize = valueCount * 4;
         let (submit, instancePlan, vertexPlan, valuePlan) =
             planUpload(demandOf(p#instances, instanceSize), demandOf(p#vertices, vertexSize), demandOf(p#values, valueSize));
-        if (submit) flushPending(paint) else ();
-        if (submit) List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil) else ();
+        if (submit) {
+            flushPending(paint);
+            List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil)
+        } else ();
         discard floatsFor(p#values, valueCount).put(0, values, 0, valueCount);
         let instanceBase = sendPlanned(paint, p#instances, instancePlan, instanceSize) / instanceBytes();
         let vertexBase = sendPlanned(paint, p#vertices, vertexPlan, vertexSize) / (4 * RenderList.vertexFloats());
@@ -647,7 +649,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             p#gpu.writeBuffer(buffer, 0i64, data, 0, 4 * count)
         }
 
-    /// WebGPU でタイルの層の instance の buffer を作る・入れ直す・捨てる関数の組（積んだ pass があれば先に submit する）。
+    /// WebGPU でタイルの層の instance の buffer を作る・入れ直す・大きくする関数の組（積んだ pass があれば先に submit する）。
+    /// 大きくする時は同じ番号のまま buffer を捨てて作り直し、表を差し替える。
     /// 表の値は (buffer, 入る枚数)。
     def webGpuTileAllocator(paint: Paint): TileTable.TileAllocator =
         let PaintData.PaintData(p) = paint;
@@ -661,10 +664,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
               flushPending(paint);
               writeFloats(paint, buffer, floats, count * TileTable.tileFloats())
           }),
-          destroy = id -> Map.get(id, Ref.get(p#tileBuffers)) |> Option.forEach(match (buffer, _) -> {
+          grow = (id, floats, count) -> Map.get(id, Ref.get(p#tileBuffers)) |> Option.forEach(match (buffer, _) -> {
               flushPending(paint);
               buffer.destroy();
-              Ref.put(Map.remove(id, Ref.get(p#tileBuffers)), p#tileBuffers)
+              let grown = fst(createFilledBuffer(paint, "fge tiles", floats, count * TileTable.tileFloats()));
+              Ref.put(Map.insert(id, (grown, count), Ref.get(p#tileBuffers)), p#tileBuffers)
           }) }
 
     /// WebGPU で static layer の頂点の buffer を作る・捨てる関数の組（積んだ pass があれば先に submit する）。

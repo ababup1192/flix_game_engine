@@ -1,5 +1,5 @@
 // タイルの層の buffer の表（TileTable）と static layer のキャッシュ（RenderStatic）が、いつ backend に buffer を作らせ・入れ直させ・捨てさせるかを固定する。
-// GPU を呼ばない allocator（呼ばれた順に "create 6"・"write 101 4"・"destroy 101" を控え、番号は 101 から）で育て、控えを読む。
+// GPU を呼ばない allocator（呼ばれた順に "create 6"・"write 101 4"・"grow 101 5"・"destroy 101" を控え、番号は 101 から）で育て、控えを読む。
 
 mod TestShapeBuffers {
     use RenderPaint.Internal.TileTable
@@ -11,12 +11,12 @@ mod TestShapeBuffers {
         Ref.put(Ref.get(next) + 1, next);
         Ref.get(next)
 
-    /// 呼ばれた順を控える TileAllocator（"create 枚数"・"write 番号 枚数"・"destroy 番号"）。
+    /// 呼ばれた順を控える TileAllocator（"create 枚数"・"write 番号 枚数"・"grow 番号 枚数"）。
     def recordingTiles(log: Ref[List[String], Static]): TileAllocator \ IO =
         let next = Ref.fresh(Static, 100);
         { create = (_, count) -> { Ref.put("create ${Int32.toString(count)}" :: Ref.get(log), log); nextOf(next) },
           write = (id, _, count) -> Ref.put("write ${Int32.toString(id)} ${Int32.toString(count)}" :: Ref.get(log), log),
-          destroy = id -> Ref.put("destroy ${Int32.toString(id)}" :: Ref.get(log), log) }
+          grow = (id, _, count) -> Ref.put("grow ${Int32.toString(id)} ${Int32.toString(count)}" :: Ref.get(log), log) }
 
     /// 呼ばれた順を控える StaticAllocator（"create 頂点の数"・"destroy 番号"）。
     def recordingStatic(log: Ref[List[String], Static]): RenderStatic.StaticAllocator \ IO =
@@ -64,26 +64,26 @@ mod TestShapeBuffers {
         let (again, count) = TileTable.update(alloc, table, handle, tilesOf(3));
         Assert.assertEq(expected = (101, 3, "create 5" :: "write 101 3" :: Nil), (GpuHandle.tileVaoInt(again), count, List.reverse(Ref.get(log))))
 
-    /// 作った時の枚数（3）より多い update は、古い buffer を捨ててから作り直し、新しい番号を返す。
+    /// 作った時の枚数（3）より多い update は、同じ番号（101）のまま大きくする。
     @Test
-    def testUpdateThatGrowsRecreates(): Unit \ {Assert, IO} =
+    def testUpdateThatGrowsKeepsNumber(): Unit \ {Assert, IO} =
         let log = Ref.fresh(Static, Nil);
         let alloc = recordingTiles(log);
         let table = TileTable.fresh();
         let (handle, _) = TileTable.init(alloc, table, tilesOf(3));
         let (again, _) = TileTable.update(alloc, table, handle, tilesOf(5));
-        Assert.assertEq(expected = (102, "create 3" :: "destroy 101" :: "create 5" :: Nil), (GpuHandle.tileVaoInt(again), List.reverse(Ref.get(log))))
+        Assert.assertEq(expected = (101, "create 3" :: "grow 101 5" :: Nil), (GpuHandle.tileVaoInt(again), List.reverse(Ref.get(log))))
 
-    /// 作り直した後の update は、新しい枚数（5）までなら新しい番号へ入れ直す。
+    /// 大きくした後の update は、新しい枚数（5）までなら入れ直す。
     @Test
-    def testRecreatedBufferKeepsNewCapacity(): Unit \ {Assert, IO} =
+    def testGrownBufferKeepsNewCapacity(): Unit \ {Assert, IO} =
         let log = Ref.fresh(Static, Nil);
         let alloc = recordingTiles(log);
         let table = TileTable.fresh();
         let (handle, _) = TileTable.init(alloc, table, tilesOf(3));
-        let (grown, _) = TileTable.update(alloc, table, handle, tilesOf(5));
-        discard TileTable.update(alloc, table, grown, tilesOf(5));
-        Assert.assertEq(expected = Some("write 102 5"), List.head(Ref.get(log)))
+        discard TileTable.update(alloc, table, handle, tilesOf(5));
+        discard TileTable.update(alloc, table, handle, tilesOf(5));
+        Assert.assertEq(expected = Some("write 101 5"), List.head(Ref.get(log)))
 
     /// 知らない番号の update は新しく作り、新しい番号を返す。
     @Test

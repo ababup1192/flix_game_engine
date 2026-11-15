@@ -79,5 +79,5 @@ def slotGroup(paint: Paint, i: Int32): BindGroup \ IO = match Map.get(i, Ref.get
 ## 頂点の buffer の寿命（比べていない・R1b-1 の決まりに載せた）
 
 タイルの層の instance の buffer と static layer の頂点の buffer は、R1b-1 で決めた「表は前半・作る消すだけ backend」に載せた（`samples/gpu-lifetime.md`）。
-入れ直すか作るか（`TileTable.update`）・鍵が替わったら古い方を捨てて作り直す（`RenderStatic.resolve`）は前半の 1 か所で、backend は `TileAllocator{create, write, destroy}`・`StaticAllocator{create, destroy}` を渡す。
+入れ直すか大きくするか作るか（`TileTable.update`。大きくしても番号は変えない）・鍵が替わったら古い方を捨てて作り直す（`RenderStatic.resolve`）は前半の 1 か所で、backend は `TileAllocator{create, write, grow}`・`StaticAllocator{create, destroy}` を渡す。
 GPU を呼ばない allocator のテスト 10 本（`TestShapeBuffers`）で両方の backend の振る舞いを固定する。

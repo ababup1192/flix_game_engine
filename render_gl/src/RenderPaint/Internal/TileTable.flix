@@ -1,15 +1,16 @@
 // RenderPaint.Internal.TileTable — タイルの層の instance の buffer の表（GL と WebGPU が同じ決まりで使う）。
 // 作った buffer の番号（ゲームへ返す GpuHandle.TileVao の中身・backend の表の番号）→ 入る枚数と、タイル 1 枚の float の並びを持つ。
-// 入れ直すか・作り直すか・作るかはここだけで決め、backend は作る・入れ直す・捨てる 3 つ（TileAllocator）だけを渡す。
+// 入れ直すか・大きくするか・作るかはここだけで決め、backend は作る・入れ直す・大きくする 3 つ（TileAllocator）だけを渡す。
+// 番号は作った時のまま変えない（Platform.GpuResources.updateTileBuffer の約束: VAO を増やさない）。
 // 1 枚 tileFloats() 個: 0-1=px 2-3=uvOff 4-5=uvSc 6=alpha 7-9=tint（GL の tile シェーダーの location 1〜5 と同じ並び）。
 pub mod RenderPaint.Internal.TileTable {
 
-    /// backend が instance の buffer を作る・入れ直す・捨てる関数の組。create(floats, 枚数) は buffer の番号を返す。
-    /// write(番号, floats, 枚数) の枚数は、作った時の枚数を超えない（超える時は表が捨てて作り直す）。
+    /// backend が instance の buffer を作る・入れ直す・大きくする関数の組。create(floats, 枚数) は buffer の番号を返す。
+    /// write(番号, floats, 枚数) の枚数は、入る枚数を超えない。grow(番号, floats, 枚数) は同じ番号のまま、その枚数が入る buffer にして入れる。
     pub type alias TileAllocator = {
         create = (Array[Float32, Static], Int32) -> Int32 \ IO,
         write = (Int32, Array[Float32, Static], Int32) -> Unit \ IO,
-        destroy = Int32 -> Unit \ IO
+        grow = (Int32, Array[Float32, Static], Int32) -> Unit \ IO
     }
 
     /// 作った buffer の番号 → 入る枚数。
@@ -27,7 +28,7 @@ pub mod RenderPaint.Internal.TileTable {
         Ref.put(Map.insert(id, count, Ref.get(table)), table);
         (GpuHandle.wrapTileVao(id), count)
 
-    /// Game.updateTileBuffer の中身: 作った buffer に入る枚数なら入れ直す。入らなければ捨てて作り直し、新しい番号を返す。
+    /// Game.updateTileBuffer の中身: 作った buffer に入る枚数なら入れ直す。入らなければ同じ番号のまま大きくして入れる。
     /// 知らない番号なら作って返す。
     pub def update(alloc: TileAllocator, table: Table, handle: GpuHandle.TileVao,
                    instances: List[RenderType.TileInstance]): (GpuHandle.TileVao, Int32) \ IO =
@@ -38,9 +39,9 @@ pub mod RenderPaint.Internal.TileTable {
                 (alloc#write)(id, instanceFloats(instances), count);
                 (handle, count)
             case Some(_) =>
-                (alloc#destroy)(id);
-                Ref.put(Map.remove(id, Ref.get(table)), table);
-                init(alloc, table, instances)
+                (alloc#grow)(id, instanceFloats(instances), count);
+                Ref.put(Map.insert(id, count, Ref.get(table)), table);
+                (handle, count)
             case None => init(alloc, table, instances)
         }
 

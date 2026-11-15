@@ -89,7 +89,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
                 applyScissor(pass, geom);
                 pass.draw(6, 1, 0, base + used)
             } else ();
-            drawRowsFrom(pass, st, rowsOf(list), geom, setPipeline, cfg#setTexture, cfg#setVertices, cfg#setValues, skip, 0, rowCountOf(list));
+            drawRowsFrom(pass, st, rowsOf(list), geom, setPipeline, cfg#setTexture, cfg#setVertices, cfg#setValues, skip, warnLog, 0, rowCountOf(list));
             pass.end();
             addCountsTo(cfg#drawCounts, st)
         }
@@ -160,11 +160,11 @@ pub mod RenderFrame.Internal.WebGpuRows {
     def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
                      setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
-                     skip: String -> Unit \ IO, row: Int32, n: Int32): Unit \ IO =
+                     skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
-            drawRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, skip, row);
-            drawRowsFrom(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, skip, row + 1, n)
+            drawRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, skip, warnLog, row);
+            drawRowsFrom(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, skip, warnLog, row + 1, n)
         }
 
     /// 行 1 つを draw 1 本にし、draw call を GL と同じ物差しで数える（幅か高さが 0 の scissor は draw を出さずに数える）。
@@ -173,7 +173,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     def drawRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
                 setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
-                skip: String -> Unit \ IO, row: Int32): Unit \ IO =
+                skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32): Unit \ IO =
         let kind = rowAt(rows, row, 0);
         let texId = rowAt(rows, row, 3);
         if (texId != 0 and texId == Array.get(7, geom)) skip("描き先と同じ絵を読む行")
@@ -181,7 +181,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
             scissorInto(geom, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9));
             let visible = Array.get(12, geom) > 0 and Array.get(13, geom) > 0;
             if (kind == kindPoly()) drawPolyRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
-            else if (kind == kindTile()) drawTileRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, skip, row, visible)
+            else if (kind == kindTile()) drawTileRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, warnLog, row, visible)
             else if (kind == kindStatic()) drawStaticRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
             else drawSpriteRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, row, visible)
         };
@@ -222,10 +222,10 @@ pub mod RenderFrame.Internal.WebGpuRows {
     def drawTileRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
                     setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
-                    skip: String -> Unit \ IO, row: Int32, visible: Bool): Unit \ IO =
+                    warnLog: Ref[Set[String], Static], row: Int32, visible: Bool): Unit \ IO =
         let held = if (visible) bindVertices(pass, geom, setVertices, kindTile(), rowAt(rows, row, 10)) else 0;
         let count = Int32.min(rowAt(rows, row, 2), held);
-        if (held > 0 and held < rowAt(rows, row, 2)) skip("buffer に入っている枚数より多い分のタイル（入っている枚数だけ描く）") else ();
+        if (held > 0 and held < rowAt(rows, row, 2)) warnTilesOverBuffer(warnLog) else ();
         if (count > 0) {
             bindPipeline(pass, geom, setPipeline, shapeTile(), 0);
             bindTexture(pass, geom, setTexture, rowAt(rows, row, 3));
@@ -250,6 +250,15 @@ pub mod RenderFrame.Internal.WebGpuRows {
             pass.draw(drawn, 1, first, 0)
         } else ();
         countSingleDraw(st, kindStatic(), if (count < 3) 0 else 1)
+
+    /// タイルの数が buffer に入っている枚数より多かった事を、初めの 1 回だけ知らせる（毎コマ通る所なので、控えは texWarnLog に置く）。
+    def warnTilesOverBuffer(warnLog: Ref[Set[String], Static]): Unit \ IO =
+        let key = "webgpu: tiles over buffer";
+        if (Set.memberOf(key, Ref.get(warnLog))) ()
+        else {
+            Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
+            Log.fellBack("webgpu", "タイルの層", "buffer に入っている枚数", "TileMapRenderCmd の tileCount が buffer に入っている枚数より多い")
+        }
 
     /// 形と blend の番号の pipeline を積む（前と同じなら積まない）。
     def bindPipeline(pass: RenderPass, geom: Array[Int32, Static], setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO,

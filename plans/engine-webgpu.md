@@ -716,7 +716,8 @@ V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関�
   前者は `bench/webgpu_check` に形だけの門 `uniform-slot-bind-groups`（8 draw）を足して PC の Dawn と headless の Chrome で動かした: 動くが bind group が draw の数（8 個）だけ要り、1 draw 256 バイト（中身 20 バイト）。dynamic offset は道具の口が変わるので試さずに捨てた。
   入れた形は Dawn の Metal で 5 場面とも GL と 0 px。stride 0 の形そのものも門を 1 本足し（`stride0-instance-attribute`: offset を替えた 2 つの draw・firstInstance 3 でも同じ要素を読む）、PC の Dawn と headless の Chrome の両方で通した。
   **ブラウザで確かめたのは headless の Chrome（Metal）だけ**で、Safari と Firefox（wgpu の Metal での stride 0）は【未確認】。ブラウザで多角形とタイルの絵を GL と比べる門もまだ無い（ブラウザの門は rpg の題名の画面だけ）。
-- **頂点の buffer の寿命**: R1b-1 の「表は前半・作る消すだけ backend」に載せた（比べ直していない）。タイルの層は `RenderPaint.Internal.TileTable`（作った番号 → 入る枚数・入れ直すか作り直すか作るか・1 枚 10 個の並び）と `TileAllocator{create, write, destroy}`、
+- **頂点の buffer の寿命**: R1b-1 の「表は前半・作る消すだけ backend」に載せた（比べ直していない）。タイルの層は `RenderPaint.Internal.TileTable`（作った番号 → 入る枚数・入れ直すか大きくするか作るか・1 枚 10 個の並び）と `TileAllocator{create, write, grow}`。
+  大きくする時も番号（ゲームが持つ `GpuHandle.TileVao`）は変えない（`Platform.GpuResources.updateTileBuffer` の約束「VAO を増やさない」と engine_world の `TileCache` のまま。GL は `glBufferData` で VBO が大きくなるだけ、WebGPU は同じ番号のまま buffer を作り直して表を差し替える）。
   static layer は `RenderStatic.resolve` が `StaticAllocator{create, destroy}` を受ける形にした（鍵が替われば古い方を捨てて作り直す・`release`）。`RenderStatic.Range#vao` は `buffer`（backend の表の番号）にした。
 - 入れた物（render_gl の中だけ・engine の pub は増えていない）:
   - 前半: `RenderList.appendPolyRow`・`appendTileRow`・`appendStaticRow`・`values`・`nextVertexOf`。`RenderFrame.emitRowItem`（行になる種類を積む・GL と WebGPU が同じ物を呼ぶ）・`closeRuns`・`flushRows`（GL を直に呼ぶ種類の前だけ行を流す）。多角形の run は front-end の状態だけで持つ（頂点の先頭の番号を st の 40 番に）。
@@ -727,5 +728,5 @@ V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関�
 - 門（この Mac・2026-11-15）: 下の 7.7（`webgpu-shape-review-2d.md`）。
 - 3 本の `Stream` の送り方（どれかが入らなければ submit して 3 本とも頭から・頭からでも入らない本は伸ばす）は純粋な関数 `planUpload` に出し、GPU 無しのテスト 3 本（`TestUploadPlan`）と、Pass と本編に 12,600 頂点ずつ置く場面 `polygonFlood`（submit 2・0 px）で確かめた。
 - WebGPU でタイルの数が buffer に入っている枚数より多い時と、static の範囲が buffer の外へ出る時は、入っている分だけ描いて 1 回知らせる（buffer の外を読む draw は pass ごと誤りになり、コマ全体が消える）。
-- 持ち越し: `bench/webgpu_v1` の 5 場面をブラウザでも回す口・Safari と Firefox での stride 0・面（P5 の後）の行・mask（比べる値・8 章）・history と MSAA の resolve。タイルの層の buffer は捨てる口が無い（大きくなって作り直す時だけ捨てる。層ごと要らなくなった時の口は `GpuResources` に無く、足すなら engine の pub の拡張）。
+- 持ち越し: `bench/webgpu_v1` の 5 場面をブラウザでも回す口・Safari と Firefox での stride 0・面（P5 の後）の行・mask（比べる値・8 章）・history と MSAA の resolve。タイルの層の buffer は捨てる口が無い（層ごと要らなくなった時の口は `GpuResources` に無く、足すなら engine の pub の拡張。GL も前から捨てない）。
   engine の `GpuHandle.StaticVao`・`wrapStaticVao`・`staticVaoInt`・`staticVboInt` は使う所が無くなった（render_gl は static の buffer を番号 1 つで持つ）。消すのは engine の pub の変更なので相談事として残す。
