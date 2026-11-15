@@ -118,30 +118,19 @@ pub mod RenderFrame.Internal.WebGpuRows {
                 emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog, skip, rest)
         }
 
-    /// 並べた 1 個を行へ積む（行になる種類だけ。Pass の history を読むスプライトと、GL を直に呼ぶ種類は知らせて飛ばす）。
+    /// 並べた 1 個を行へ積む（行になる種類だけ。GL を直に呼ぶ種類は知らせて飛ばす）。
     // WhyNot: 末尾を呼び出しで終えない・emitAll のループの中へ書き下さない — ループが JIT から外れる（docs/performance.md の 13 節。RenderFrame.emitOne と同じ形）。
     @DontInline
     def emitItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                  registry: RenderAsset.TextureRegistry, upsideDown: Set[String], warnLog: Ref[Set[String], Static],
                  skip: String -> Unit \ IO, item: Merged): Unit \ IO =
-        if (readsHistory(item)) skip("Pass の history")
-        else if (emitRowItem(st, list, scaleX, scaleY, registry, upsideDown, warnLog, item)) ()
+        if (emitRowItem(st, list, scaleX, scaleY, registry, upsideDown, warnLog, item)) ()
         else {
             // WhyNot: 飛ばした所で run を続けない — GL は GL を直に呼ぶ種類の前で run を閉じるので、続けると draw の数え方が GL とずれる。
             closeRuns(st, list);
             skip(skippedName(item))
         };
         ()
-
-    /// Pass の前のコマの写しを読むスプライトか。
-    def readsHistory(item: Merged): Bool = match item {
-        case Merged.MSprite(d)  => isHistoryName(DrawCmd.textureOf(d))
-        case Merged.MTile(_)    => false
-        case Merged.MPoly(_)    => false
-        case Merged.MStatic(_)  => false
-        case Merged.MSurface(_) => false
-        case Merged.MScene3d(_) => false
-    }
 
     /// 行にならなかった物の知らせの名前（スプライトは mask つきの時だけ行にならない）。
     def skippedName(item: Merged): String = match item {
@@ -152,9 +141,6 @@ pub mod RenderFrame.Internal.WebGpuRows {
         case Merged.MPoly(_)    => "多角形"
         case Merged.MStatic(_)  => "static layer"
     }
-
-    /// Pass の前のコマの写しの名前か（RenderTarget.historyName で作る名前）。
-    def isHistoryName(name: String): Bool = String.endsWith({suffix = RenderTarget.historyName("")}, name)
 
     // WhyNot: 積む関数を record 1 つで渡さない — 行が描く物の数だけある画面で、行ごとに record の欄を辿る代金が 1 コマに出る。
     def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],

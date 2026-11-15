@@ -188,8 +188,8 @@ pub mod RenderFrame.Internal.RenderList {
         case DepthAndStencil
     }
 
-    /// 描き先の色の attachment 1 つ。texture = backend の表の番号・format = 画素の形式・load = 前の中身の始末・
-    /// resolveTo = 標本が 2 以上の時に写す先の表の番号。
+    /// 描き先の色の attachment 1 つ。texture = backend の表の番号（読む側が引く 1 標本の絵）・format = 画素の形式・load = 前の中身の始末・
+    /// resolveTo = 標本が 2 以上の時、pass の終わりに標本の平均を写す先の表の番号（描く所は backend が texture ごとに持つ標本つきの描き先）。
     pub type alias ColorAttachment = { texture = Int32, format = RenderTarget.Format, load = RenderTarget.LoadOp, resolveTo = Option[Int32] }
 
     /// 描き先。Screen = 画面（色の attachment は画面か中間の texture の 1 つで、backend が決める。letterbox = 黒帯があるか）・
@@ -200,9 +200,16 @@ pub mod RenderFrame.Internal.RenderList {
         case Target(ColorAttachment, List[ColorAttachment])
     }
 
+    /// pass を開く前の history（前のコマの描き先の絵）の始末。CopyTo(n) = 描き先の今の中身を表の番号 n へ写す・
+    /// ClearTransparent(n) = n を透明で塗る（前のコマを持たない 1 枚撮りと動画）・NoHistory = この pass は history を読まない。
+    pub enum PassHistory with Eq, ToString {
+        case NoHistory
+        case CopyTo(Int32)
+        case ClearTransparent(Int32)
+    }
+
     /// 1 つの pass の指定。width × height = 描き先の画素の大きさ・viewport = design の矩形を描き先の画素で（x, 上の端, 幅, 高さ。左上が原点）・
-    /// depthStencil = 描き先が持つ depth と stencil・samples = 標本の数・copyHistory = 描く前に今の中身を写す先の表の番号。
-    // WhyNot: copyHistory を読む backend はまだ無い — GL は RenderPaint.prepareHistory が描く前に写し、WebGPU は history を描かない。
+    /// depthStencil = 描き先が持つ depth と stencil・samples = 標本の数・history = pass を開く前の history の始末。
     // WhyNot: depthStencil で stencil つきと無しの pipeline を分けない — WebGPU の行に mask がまだ無く、stencil を持つ pass を作らない。
     //   mask の行が入る時は、両方の pipeline を読み込みの間に作っておく（初めて mask が出たコマで作ると、できるまでそのコマの絵が崩れる）。
     pub type alias PassSpec = {
@@ -212,7 +219,7 @@ pub mod RenderFrame.Internal.RenderList {
         viewport = (Int32, Int32, Int32, Int32),
         depthStencil = DepthStencil,
         samples = Int32,
-        copyHistory = Option[Int32]
+        history = PassHistory
     }
 
     /// 画面の pass。width × height に design を縦横比を保って収め、余りは黒帯。
@@ -222,13 +229,26 @@ pub mod RenderFrame.Internal.RenderList {
         let (vpX, vpY, vpW, vpH) = RenderFrame.calcViewport(width, height, designW, designH);
         let viewport = (vpX, height - vpY - vpH, vpW, vpH);
         { target = PassTarget.Screen({ clearColor = clearColor, letterbox = viewport != (0, 0, width, height) }),
-          width = width, height = height, viewport = viewport, depthStencil = depthStencil, samples = 1, copyHistory = None }
+          width = width, height = height, viewport = viewport, depthStencil = depthStencil, samples = 1, history = PassHistory.NoHistory }
 
     /// Pass の texture 1 枚の pass。design の全面を描き先の全面へ写す（縦横の倍率が少し違ってよい — uv で読む限りずれない）。
-    pub def targetPass(size: (Int32, Int32), color: ColorAttachment, depthStencil: DepthStencil, samples: Int32): PassSpec =
+    /// samples = backend が実際に描く標本の数。2 以上なら pass の終わりに color の texture へ resolve する（pass ごと）。
+    // WhyNot: resolve を endTarget まで待たない — WebGPU は pass の resolveTarget で写すので、endTarget で写すと標本つきの描き先を読み直して
+    //   書く空の pass が 1 本増える。GL の blit を pass の終わりへ寄せても、開いている描き先は読めない決まりなので絵は同じ。
+    pub def targetPass(size: (Int32, Int32), color: { texture = Int32, format = RenderTarget.Format, load = RenderTarget.LoadOp },
+                       depthStencil: DepthStencil, samples: Int32, history: PassHistory): PassSpec =
         let (width, height) = size;
-        { target = PassTarget.Target(color, Nil), width = width, height = height, viewport = (0, 0, width, height),
-          depthStencil = depthStencil, samples = samples, copyHistory = None }
+        let attachment = { texture = color#texture, format = color#format, load = color#load,
+                           resolveTo = if (samples > 1) Some(color#texture) else None };
+        { target = PassTarget.Target(attachment, Nil), width = width, height = height, viewport = (0, 0, width, height),
+          depthStencil = depthStencil, samples = samples, history = history }
+
+    /// pass の終わりに resolve する先の表の番号（標本 1 の pass と画面は None）。
+    pub def resolveTargetOf(pass: PassSpec): Option[Int32] =
+        match pass#target {
+            case PassTarget.Screen(_)        => None
+            case PassTarget.Target(color, _) => color#resolveTo
+        }
 
     /// 頭の色の attachment の始末（画面は黒帯があれば黒・無ければ clearColor）。
     pub def loadOpOf(pass: PassSpec): RenderTarget.LoadOp =

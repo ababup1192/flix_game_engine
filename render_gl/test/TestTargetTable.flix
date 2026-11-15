@@ -3,6 +3,7 @@
 
 mod TestTargetTable {
     use RenderPaint.Internal.TargetTable
+    use RenderFrame.Internal.RenderList.PassHistory
     use RenderPaint.Internal.TargetTable.{TargetAllocator}
     use RenderPaint.Internal.TextureTable
 
@@ -143,4 +144,75 @@ mod TestTargetTable {
         let history = RenderTarget.historyName("fx");
         Assert.assertEq(expected = ("destroy 101" :: "destroy 102" :: "create fx 32x32 s1" :: Nil, false, false),
                         (List.reverse(Ref.get(log)), TargetTable.isTarget(table, history), Map.memberOf(history, Ref.get(textures#registryRef))))
+
+    // ── 描く前の history の始末（historyFor）──
+
+    /// "fx" を開き、1 コマずつ (reads, keep) で historyFor を呼んだ答えの列と、呼ばれた順の控え（古い順）。
+    def historyCalls(frames: List[(Bool, Bool)]): (List[PassHistory], List[String]) \ IO =
+        let log = Ref.fresh(Static, Nil);
+        let allocator = recordingAllocator(log);
+        let textures = freshTextures();
+        let table = TargetTable.fresh();
+        let answers = List.map(match (reads, keep) -> {
+            discard TargetTable.begin(allocator, textures, table, design(), spec(64, 1));
+            let answer = TargetTable.historyFor(allocator, textures, table, design(), spec(64, 1), reads, keep);
+            discard TargetTable.end(table);
+            answer
+        }, frames);
+        (answers, List.reverse(Ref.get(log)))
+
+    /// 読まないコマは history を作らない。
+    @Test
+    def testNoReadMakesNoHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = ("create fx 64x64 s1" :: Nil), snd(historyCalls((false, true) :: Nil)))
+
+    /// 読まないコマの答えは NoHistory。
+    @Test
+    def testNoReadAnswersNoHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.NoHistory :: Nil, fst(historyCalls((false, true) :: Nil)))
+
+    /// 初めて読むコマで history（番号 102）を作り、窓では今の中身をそこへ写す。
+    @Test
+    def testFirstReadCreatesAndCopies(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (PassHistory.CopyTo(102) :: Nil, "create fx 64x64 s1" :: "create fx 64x64 s1" :: Nil),
+                        historyCalls((true, true) :: Nil))
+
+    /// 読むコマが続いても history は作り直さず、毎コマ同じ番号へ写す。
+    @Test
+    def testEveryReadCopiesIntoSameHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.CopyTo(102) :: PassHistory.CopyTo(102) :: Nil,
+                        fst(historyCalls((true, true) :: (true, true) :: Nil)))
+
+    /// 読まないコマを挟んでも history は捨てず、次に読むコマで同じ番号へ写し直す。
+    @Test
+    def testSkippedFrameKeepsHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.CopyTo(102) :: PassHistory.NoHistory :: PassHistory.CopyTo(102) :: Nil,
+                        fst(historyCalls((true, true) :: (false, true) :: (true, true) :: Nil)))
+
+    /// 前のコマを持たない描き方（1 枚撮り・動画）では、写さずに透明で塗る。
+    @Test
+    def testNotKeptClearsHistory(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = PassHistory.ClearTransparent(102) :: Nil, fst(historyCalls((true, false) :: Nil)))
+
+    // ── 標本の数（samplesWithin）──
+
+    /// WebGPU（1 と 4）は 8 を 4 に。
+    @Test
+    def testEightBecomesFourOnWebGpu(): Unit \ Assert =
+        Assert.assertEq(expected = 4, TargetTable.samplesWithin(8, 1 :: 4 :: Nil))
+
+    /// WebGPU（1 と 4）は 2 を 1 に（4 へは上げない）。
+    @Test
+    def testTwoBecomesOneOnWebGpu(): Unit \ Assert =
+        Assert.assertEq(expected = 1, TargetTable.samplesWithin(2, 1 :: 4 :: Nil))
+
+    /// 描ける数に頼んだ数があればそのまま。
+    @Test
+    def testSupportedCountIsKept(): Unit \ Assert =
+        Assert.assertEq(expected = 2, TargetTable.samplesWithin(2, 1 :: 2 :: 4 :: 8 :: Nil))
+
+    /// 1 未満を頼まれたら 1。
+    @Test
+    def testBelowOneBecomesOne(): Unit \ Assert =
+        Assert.assertEq(expected = 1, TargetTable.samplesWithin(0, 1 :: 4 :: Nil))
 }

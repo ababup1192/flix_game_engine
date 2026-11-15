@@ -315,16 +315,18 @@ mod RenderPaint {
                     sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd],
                     surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
         let (name, tw, th, op) = (target#name, target#width, target#height, target#clear);
-        let history = RenderTarget.historyName(name);
-        let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)
-            or List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
-            or paint#scene3d#readsTexture(history, scenes);
-        if (readsHistory) prepareHistory(gl, paint, target) else ();
+        let historyName = RenderTarget.historyName(name);
+        let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == historyName, cmd#texReads), surfaces)
+            or TargetTable.spritesReadHistory(name, sprites)
+            or paint#scene3d#readsTexture(historyName, scenes);
+        let history = TargetTable.historyFor(glTargetAllocator(gl, paint), textureTables(paint), paint#targets, (paint#screenW, paint#screenH),
+                                             target, readsHistory, paint#keepHistory);
+        let entry = TargetTable.rowByName(paint#targets, name) |> Option.flatMap(entryOf(paint));
+        Option.forEach(t -> applyHistory(gl, paint, t, history), entry);
         // WhyNot: 前の Pass が貼った絵を unit 0 に残さない — 形だけの描き物は絵を貼り直さず、残った絵が今の描き先だと、読まない枝でも WebGL2 が feedback loop と見て draw を止める。
         // WhyNot: テクスチャ 0 を貼らない — 完全でないテクスチャの読みはドライバ次第になる。
         gl.activeTexture(GlConst.TEXTURE0);
         gl.bindTexture(GlConst.TEXTURE_2D, paint#blankTexture);
-        let entry = TargetTable.rowByName(paint#targets, name) |> Option.flatMap(entryOf(paint));
         let framebuffer = entry |> Option.map(RenderTargetGl.drawFramebuffer) |> Option.getWithDefault(paint#screenFramebuffer);
         let samples = entry |> Option.map(RenderTargetGl.drawSamples) |> Option.getWithDefault(1);
         let prepared = prepareScenes(paint, { framebuffer = framebuffer, format = target#format, samples = samples }, scenes);
@@ -337,25 +339,28 @@ mod RenderPaint {
             targetClear = Some(op),
             targetNames = TargetTable.names(paint#targets) | paint#frameArgsBase };
         let color = { texture = entry |> Option.map(e -> e#tex) |> Option.getWithDefault(-1),
-                      format = entry |> Option.map(e -> e#storedFormat) |> Option.getWithDefault(target#format),
-                      load = op, resolveTo = None };
-        GlRows.renderPass(gl, args, RenderList.targetPass((tw, th), color, RenderList.DepthStencil.DepthAndStencil, samples))
-
-    /// 開いているターゲット name の history を用意する（clear の前・描く前に呼ぶ）。窓では今の中身（= 前のコマの最後）を写し、
-    /// 1 枚撮り・動画では透明で塗る。history は registry とターゲットの表に載せる（上下逆格納なので貼る・読む時の反転も効く）。
-    /// history は target と同じ形式で作る（作り直しの鍵は寸法と形式）。
-    def prepareHistory(gl: GlContext, paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
-        let history = TargetTable.ensureHistory(glTargetAllocator(gl, paint), textureTables(paint), paint#targets, (paint#screenW, paint#screenH), spec);
-        let target = TargetTable.rowByName(paint#targets, spec#name) |> Option.flatMap(entryOf(paint));
-        match (target, entryOf(paint, history)) {
-            case (Some(t), Some(h)) =>
-                if (paint#keepHistory) {
-                    // WhyNot: scissor を外さずに blit しない — glBlitFramebuffer は scissor に切られる。renderFrameMixed はコマの
-                    // 終わりで外す決まりだが、崩れた時に history が四角く欠けて気づきにくいので、ここで 1 回外す。
-                    gl.disable(GlConst.SCISSOR_TEST);
-                    RenderTargetGl.copyTo(gl, t, h)
-                } else RenderTargetGl.clearTransparent(gl, h, t)
+                      format = entry |> Option.map(e -> e#storedFormat) |> Option.getWithDefault(target#format), load = op };
+        let pass = RenderList.targetPass((tw, th), color, RenderList.DepthStencil.DepthAndStencil, samples, history);
+        GlRows.renderPass(gl, args, pass);
+        match (entry, RenderList.resolveTargetOf(pass)) {
+            case (Some(e), Some(_)) =>
+                // WhyNot: resolve の後を tex の FBO を bind したままにしない — 同じ描き先へ続けて来る renderCommands が標本の無い tex へ描く。
+                RenderTargetGl.resolve(gl, e);
+                RenderTargetGl.bind(gl, e)
             case _ => ()
+        }
+
+    /// pass を開く前の history の始末（TargetTable.historyFor の答え）を GL でする。target = 開いている描き先。描き先は target の描く FBO に戻す。
+    def applyHistory(gl: GlContext, paint: Paint, target: RenderTargetGl.Entry, history: RenderList.PassHistory): Unit \ IO =
+        match history {
+            case RenderList.PassHistory.NoHistory           => ()
+            case RenderList.PassHistory.CopyTo(n)           =>
+                // WhyNot: scissor を外さずに blit しない — glBlitFramebuffer は scissor に切られる。renderFrameMixed はコマの
+                // 終わりで外す決まりだが、崩れた時に history が四角く欠けて気づきにくいので、ここで 1 回外す。
+                gl.disable(GlConst.SCISSOR_TEST);
+                Option.forEach(h -> RenderTargetGl.copyTo(gl, target, h), Map.get(n, Ref.get(paint#targetEntries)))
+            case RenderList.PassHistory.ClearTransparent(n) =>
+                Option.forEach(h -> RenderTargetGl.clearTransparent(gl, h, target), Map.get(n, Ref.get(paint#targetEntries)))
         }
 
     /// Platform.Draw2d.renderCommands の中身（swap は Platform.Window.presentFrame）。レンダーターゲットが開いていればそこへ塗って false。
@@ -884,9 +889,8 @@ mod RenderPaint {
         let (_, _, vpW, _) = RenderFrame.calcViewport(fbW, fbH, paint#screenW, paint#screenH);
         Int32.toFloat64(vpW) / Float64.max(1.0, paint#screenW)
 
-    /// RenderTarget.Target.endTarget の中身。標本を持つターゲットは tex へ resolve してから、画面のフレームバッファへ戻す
-    /// （以降の Pass と本編はターゲットを tex で読む）。
+    /// RenderTarget.Target.endTarget の中身。画面のフレームバッファへ戻す（標本を持つターゲットは paintTarget が pass の終わりに tex へ resolve 済み）。
     pub def endTarget(gl: GlContext, paint: Paint): Unit \ IO =
-        TargetTable.end(paint#targets) |> Option.flatMap(entryOf(paint)) |> Option.forEach(RenderTargetGl.resolve(gl));
+        discard TargetTable.end(paint#targets);
         RenderTargetGl.unbind(gl, paint#screenFramebuffer)
 }

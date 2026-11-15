@@ -1,4 +1,4 @@
-// 入口。同じ場面（V1Scenes）を GL（GlOffscreen）と WebGPU（RenderPaint.Internal.WebGpuPaint・Dawn）の両方で、ウィンドウを開かずに 1 コマずつ描き、
+// 入口。同じ場面（V1Scenes）を GL（GlOffscreen）と WebGPU（RenderPaint.Internal.WebGpuPaint・Dawn）の両方で、ウィンドウを開かずに描き（warmup のコマの後に 1 コマ）、
 // 画素を比べて 1 行 1 場面の表を出す（"[webgpu-v1] <場面> …"）。場面ごとの許す差は tolerance.tsv（無ければ 0）。
 // 許す差を超えた場面がある・WebGPU の誤りの数が 0 でない・submit の数が場面の期待と違う、のどれかで exit 1。
 // 絵は debug/gl・debug/webgpu に書く。差の所の絵は bin/fge pixel-diff debug/gl/<場面>.png debug/webgpu/<場面>.png で見る。
@@ -14,6 +14,10 @@ mod V1Main {
     import java.nio.file.Paths
 
     // ── 場面を描く（GL と WebGPU で同じ）──
+
+    /// 場面の warmup のコマ（Pass と描き先の作り方だけ替えた場面）と、比べるコマの列。
+    def framesOf(sc: V1Scenes.Scene): List[V1Scenes.Scene] =
+        List.append(List.map(st -> { passes = st#passes, targets = st#targets | sc }, sc#warmup), sc :: Nil)
 
     /// 1 場面を 1 コマ描く: Pass を描いてから本編を渡し、画面へ出す。
     // WhyNot: Pass と本編を 1 つの def に書き下さない — effect の続きが畳み込まれて 8,000 バイトを超え、lint-huge-methods がこの jar で鳴る。
@@ -39,9 +43,10 @@ mod V1Main {
     def shootGl(config: GameEngine.EngineConfig): Result[String, List[ByteBuffer]] \ IO =
         match GlOffscreen.open({ config = config, scale = 1 }) {
             case Err(why)    => Err(why)
-            case Ok(session) =>
+            case Ok(opened) =>
+                let session = GlOffscreen.keepingHistory(opened);
                 let shots = V1Scenes.all() |> List.map(sc -> {
-                    GlOffscreen.handle(session, () -> drawScene(sc));
+                    List.forEach(frame -> GlOffscreen.handle(session, () -> drawScene(frame)), framesOf(sc));
                     let buf = GlOffscreen.freshBuffer(session);
                     GlOffscreen.readRgba(session, buf);
                     buf
@@ -66,7 +71,7 @@ mod V1Main {
                                                       width = width, height = height });
                 let fonts = LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.loadAll(paint, config);
                 let shots = V1Scenes.all() |> List.map(sc -> {
-                    handle(paint, fonts, () -> drawScene(sc));
+                    List.forEach(frame -> handle(paint, fonts, () -> drawScene(frame)), framesOf(sc));
                     let buf = ByteBuffer.allocateDirect(width * height * 4);
                     WebGpuPaint.readFrame(paint, buf);
                     { pixels = buf, submits = WebGpuPaint.submitCount(paint) }
@@ -201,7 +206,15 @@ mod V1Main {
         };
         let controlOk = control > 0;
         println("[webgpu-v1] 違う場面どうしの差 ${Int32.toString(control)} px（0 なら比べる道具が壊れている）");
-        let ok = errorsOk and controlOk and List.forAll(snd, rows) and List.length(rows) == List.length(V1Scenes.all());
+        let pixelCount = config#designWidth * config#designHeight;
+        let byName = List.zip(List.map(sc -> sc#name, V1Scenes.all()), List.zip(gl, List.map(g -> g#pixels, gpuShots))) |> List.toMap;
+        let msaaDiff = match (Map.get("msaaPass", byName), Map.get("msaaOff", byName)) {
+            case (Some((glOn, gpuOn)), Some((glOff, gpuOff))) => (diffOf(glOn, glOff, pixelCount)#pixels, diffOf(gpuOn, gpuOff, pixelCount)#pixels)
+            case _                                            => (0, 0)
+        };
+        let msaaOk = fst(msaaDiff) > 0 and snd(msaaDiff) > 0;
+        println("[webgpu-v1] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaaDiff))} px・WebGPU ${Int32.toString(snd(msaaDiff))} px（0 なら MSAA が掛かっていない）");
+        let ok = errorsOk and controlOk and msaaOk and List.forAll(snd, rows) and List.length(rows) == List.length(V1Scenes.all());
         println("[webgpu-v1] ${if (ok) "OK" else "NG"}");
         if (ok) () else System.exit(1)
 }

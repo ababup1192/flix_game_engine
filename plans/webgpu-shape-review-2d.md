@@ -555,6 +555,33 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 2 回目のレビュー（87 点）への対応: タイルを大きくする時も番号を変えない（上）・`TestUploadPlan` に境目の両側（ちょうど入る 800 + 200 = 1000 で submit しない・位置 800・大きさ 1000 のまま／1 バイト溢れると submit）・
 `upload` の `if (submit)` を 1 つに・タイルの数が buffer を超えた知らせを skip の文から外して `Log.fellBack`（初めの 1 回だけ）に。門は上と同じ物を流し直して緑（render_gl 394）。
 
+### 7.8 R1b-3: history と MSAA の resolve（2026-11-15）
+
+決めた事と入れた物は親の 12.19、比べの見本は `plans/webgpu/samples/history-msaa.md`（3 つの決め事とも別案を動かして GL と比べた）。
+
+3.2 の表との対応:
+
+| 欄 | 3.2 の案 | 入れた形 |
+|---|---|---|
+| `copyHistory` | `Option[Int32]`（前のコマを写す先の表の番号） | `history: PassHistory`（`CopyTo(n)`・`ClearTransparent(n)`・`NoHistory`）。1 枚撮りと動画の「透明で塗る」も前半が答える |
+| `colors` の resolve 先 | 標本 2 以上の時の表の番号 | `targetPass` が標本 2 以上の時だけ、描き先と同じ番号を `resolveTo` に入れる（描く所は backend が番号ごとに持つ標本つきの描き先） |
+| `samples` | 標本数 | backend が実際に描く数（`TargetTable.samplesWithin` で決めた数・GL は FBO が作れなければ 1） |
+
+門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal）:
+
+- テスト: render_gl 408 緑（`.layers/render_gl` の flix test。`TestTargetTable` に history の始末 6 本と標本の数 4 本・`TestRenderList` に resolve と history 5 本を足し、WebGpuRows の history の名前のテスト 1 本を消した）。engine・engine_world・engine_tools は触っていない。
+- `make gl-parity` 緑（castShadow の 565 px は前からの B）。テンプレ 3 本の `reference-check` 緑。
+- `make webgpu-v1-check` 緑: 画面なしの比べは 21 場面とも 0 px（足した history の 3 場面・MSAA の 4 場面も submit 1・WebGPU の誤り 0・丸めの許容は足していない）・
+  標本 4 と 1 の場面の差は GL と WebGPU の両方で 504 px（MSAA が掛かっている）・rpg-starter の title の GL と WebGPU 0 px・gl_parity の V1 の scene 0 px。
+  足した場面: `historyFade`（3 コマとも自分の history を半分の濃さで重ねる・1 コマ目は作った直後の history）・`historyLate`（読まないコマの後に初めて読む）・`historyKeep`（LoadOp.Keep で history を読む）・
+  `msaaPass` と `msaaOff`（標本 4 と 1）・`msaaKeep`（標本 4 の Keep に 3 コマ描き足し history を重ねる）・`msaaToggle`（標本 4 → 1 → 4 で作り直し・history を捨てる）。
+  比べるのは最後のコマで、前のコマは場面の `warmup` で描く。GL は `GlOffscreen.keepingHistory` で窓と同じく前のコマを写す。
+- `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。history と MSAA の場面をブラウザで回す口はまだ無い（R1b-2 からの持ち越し）。
+- `make lint-huge-methods` 緑（sprite_stress の jar を作り直し、`bench/webgpu_v1` の jar も渡して）。`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+- `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数）。main の控え（11-15 17:56）とは sound-novel-starter の title の 6 枚だけ違い、
+  こちらは 7.6 に書いた今のソースのハッシュ（`c367c77d…`）と同じ。
+- 速さの前後は人の方針（12.16）で回していない。毎コマの変化: history を読む Pass は写す pass が 1 本増える（GL は前から blit していた）・WebGPU の標本つきの Pass は描き先が標本 4 になる。
+
 ## 第 1 版のレビュー（74 点）への対応
 
 | # | 指摘 | 入れた所 |

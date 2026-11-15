@@ -4,7 +4,7 @@
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
     use RenderFrame.{blendCode, calcViewport, closeSpriteRun, emitSprite, pushSpriteKeyed, stateSize, writeInstAt}
-    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, RenderList, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassHistory, PassSpec, RenderList, resolveTargetOf, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
                                          loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenClearColorOf, screenPass,
                                          targetFormatOf, targetPass, targetTextureOf}
 
@@ -187,8 +187,11 @@ mod RenderFrame.TestRenderList {
         screenPass((320, 200), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil)
 
     /// 番号 7 の絵へ op で描く Pass の pass。
-    def passTo(op: RenderTarget.LoadOp): PassSpec =
-        targetPass((64, 32), { texture = 7, format = RenderTarget.Format.Rgba16Float, load = op, resolveTo = None }, DepthStencil.NoDepthStencil, 1)
+    def passTo(op: RenderTarget.LoadOp): PassSpec = passSampled(op, 1)
+
+    /// 番号 7 の絵へ標本 samples で描く Pass の pass（history は番号 9 へ写す）。
+    def passSampled(op: RenderTarget.LoadOp, samples: Int32): PassSpec =
+        targetPass((64, 32), { texture = 7, format = RenderTarget.Format.Rgba16Float, load = op }, DepthStencil.NoDepthStencil, samples, PassHistory.CopyTo(9))
 
     /// LoadOp を比べられる形に（Clear は色の 8 bit・ClearTransparent は -1・Keep は -2）。
     def opOf(op: RenderTarget.LoadOp): (Int32, Int32, Int32) = match op {
@@ -250,4 +253,29 @@ mod RenderFrame.TestRenderList {
     @Test
     def testTargetTextureOfScreenAndPass(): Unit \ Assert =
         Assert.assertEq(expected = (-1, 7), (targetTextureOf(letterboxedScreen()), targetTextureOf(passTo(RenderTarget.LoadOp.Keep))))
+
+    /// 標本 4 の Pass は、pass の終わりに描き先と同じ番号の絵へ resolve する。
+    @Test
+    def testSampledPassResolvesIntoItsTexture(): Unit \ Assert =
+        Assert.assertEq(expected = Some(7), resolveTargetOf(passSampled(RenderTarget.LoadOp.Keep, 4)))
+
+    /// 標本 1 の Pass は resolve しない。
+    @Test
+    def testSingleSamplePassDoesNotResolve(): Unit \ Assert =
+        Assert.assertEq(expected = None, resolveTargetOf(passSampled(RenderTarget.LoadOp.Keep, 1)))
+
+    /// 画面の pass は resolve しない。
+    @Test
+    def testScreenPassDoesNotResolve(): Unit \ Assert =
+        Assert.assertEq(expected = None, resolveTargetOf(letterboxedScreen()))
+
+    /// 画面の pass は history を読まない。
+    @Test
+    def testScreenPassHasNoHistory(): Unit \ Assert =
+        Assert.assertEq(expected = PassHistory.NoHistory, letterboxedScreen()#history)
+
+    /// Pass の pass は渡した history の始末を持つ。
+    @Test
+    def testTargetPassCarriesHistory(): Unit \ Assert =
+        Assert.assertEq(expected = PassHistory.CopyTo(9), passTo(RenderTarget.LoadOp.Keep)#history)
 }

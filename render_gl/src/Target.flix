@@ -40,7 +40,8 @@ mod RenderTargetGl {
         let made = create(gl, width, height, format);
         if (samples <= 1) { samples = samples | made }
         else {
-            let wanted = Int32.min(samples, RenderTarget.samplesAtMost(gl.getInteger(GlConst.MAX_SAMPLES)));
+            let most = gl.getInteger(GlConst.MAX_SAMPLES);
+            let wanted = RenderPaint.Internal.TargetTable.samplesWithin(samples, List.filter(n -> n <= most, 1 :: 2 :: 4 :: 8 :: Nil));
             if (wanted <= 1) { samples = samples | made }
             else { samples = samples, msaa = createMsaa(gl, width, height, made#storedFormat, wanted) | made }
         }
