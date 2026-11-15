@@ -897,12 +897,21 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
   - WebGPU: `WebGpuRows.drawSurfaceRow`・`readsTexture`・`renderFrame` の `surfaces` と `drawSurface`。`WebGpuPaint` の `pendingSurfaces`・`buildProgram` と `drawSurface` の handler（「まだ描かない: 面」を消した）。`WebGpuSurfaces`（222 行）。`WebGpuPaint.flix` は 1,045 行。
 - 振る舞いの変化（絵は変わらない）: GL は面の前で行を流さず、面も同じ列で流す（GL の呼び出しの並びは変わる・draw の順と数と数え方は同じ）。GL の mask つきの面は stencil の clear が pass の頭と 255 個ごとになった。
   面の値は前は `Float64` から f32 にして差していたのを、前半が f32 にして values に置いた物を差す（同じ値）。
-- テスト: render_gl 445 緑（`.layers/render_gl` の flix test。前の 437 から「面は行にならない」と「mask つきの面の後は値が 1 に戻る」の 2 本を替え、面の行 6 本・mask つきの面 4 本・面の history の読み 1 本を足した）。
+- テスト: render_gl 445 緑（`.layers/render_gl` の flix test。前の 437 から「面は行にならない」「mask の後の mask つきの面も stencil を使ったまま」「mask つきの面の後は値が 1 に戻る」の 3 本を消し、
+  面の行 6 本（`TestShapeRows`）・mask つきの面 4 本（`TestMaskRows`）・面の history の読み 1 本（`TestTargetTable`）を足した。`TestWgslDawn` は単色の代わりを足して 365 本）。
   核の主張を直しを外して確かめた: 前半で面の前の run を閉じないと `testSurfaceSplitsSpriteRun` と `testGlDrawsSurfaceInRowOrder`（GL の backend が面を塗る時に前の箱が 1 本だけ出ている）が落ちる。
   WebGPU の面の mask を描かないと `surfaceMask`・`surfacePass`・`surfaceMsaa` が 3,150〜6,926 px 違い、draw の数も GL と合わずに落ちる。
 - `bench/webgpu_v1` に面の 6 場面を足した（許す差は足していない・どれも既定の 0）: `surfaceFill`（単色・箱との重なり順・uv・params・time・Add・Multiply・α）・`surfaceBetween`（同じ箱の間の面・期待 draw 3・kind 2）・
   `surfaceTexture`（アトラスを Nearest と Linear で・GL では上下逆の Pass・無い名前）・`surfaceMask`（mask つきスプライトとの交互・前の面の mask の内側の小さい mask・三角形にならない mask・2 つの矩形の mask で絵を読む。期待 draw 12・kind 4・texture 1・mask 6）・
   `surfacePass`（Pass の中の面と mask つきの面）・`surfaceMsaa`（標本 4 の Pass の端数の位置の面と mask つきの面）。`unsupported` は 3D の場面だけにした。
-- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-15）: 下の「R1b-6 の門」。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-15）:
+  - render_gl のテスト 445 緑（上）・`TestWgslDawn` 365 本を Dawn で組んで誤り 0。
+  - `make gl-parity` 緑。81 行が変える前の木（R1b-5）で流した物と 1 字も同じ（castShadow の 565 px は前からの B。面の場面 `texField`・`passMask`・`paramRead` は A 段階で 0 px）。
+  - `make webgpu-v1-check` 緑: 画面なしの比べは 34 場面とも許す差の内（足した面の 6 場面は 0 px・submit 1）・2D の draw の数と切れた理由も 34 場面とも GL と同じで、
+    `surfaceBetween`・`surfaceMask` は期待とも同じ。WebGPU の誤り 0・「まだ描かない: 3D の場面」は 1 回。後半の rpg の題名の窓の 2 回撮り・GL との比べ・gl_parity の V1 の場面も緑。
+  - `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。面の場面をブラウザで回す口はまだ無い。
+  - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数・同じ 5 場面）。main の控え（11-15 21:08）とは sound-novel-starter の title の 6 枚だけ違い、7.6 の今のソースのハッシュ（`c367c77d…`）と同じ（R1b-3 からの状態）。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）・`make lint-huge-methods` 緑（sprite_stress の jar を作り直し、`bench/webgpu_v1` の jar も渡して）・`make lint-max-lines` 緑・`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+  - 速さの前後は人の方針（12.16）で回していない（比べの数字は面 200 枚の試しの場面だけ）。
 - 持ち越し: 面の pipeline をコマの途中で同期で作る事（8 章・P10。作るまで単色で描く形）・WebGPU の面の program の LRU と診断（`shaderBuilds`・`liveShaders`）・ブラウザで面の絵を GL と比べる門（R1b-2 からの、`bench/webgpu_v1` の場面をブラウザで回す口）・
   ブラウザで draw ごとの bind group を作る代金（P10 の前の計測）・面 1 枚に 256 バイト取る values の余り（面が数千枚の画面が出たら、engine と相談して storage へ）。
