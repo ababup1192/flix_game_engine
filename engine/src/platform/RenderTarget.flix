@@ -59,6 +59,7 @@ pub mod RenderTarget {
     /// d の 1 画素の標本の数を samples にした作り方（MSAA: 3D の手すり・金網・電線のような細い物の欠けとちらつきを抑える。
     /// `RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() |> RenderTarget.withHdr)`）。2D と 3D の両方に効く（その Pass に描く物の全部の縁）。
     /// 1・2・4・8 のどれか（ほかは近い下の値・1 未満は 1。samplesOf）で、GPU の上限（GL_MAX_SAMPLES）でも頭打ちにする。
+    /// WebGPU の描き手は 1 と 4 しか描けないので、2 は 4 で描く（置き場と塗りは 4 の分）。
     /// 色と深度の置き場が標本の数の倍になり、塗りは縁の分だけ増える。cutout の材質は α を標本の数に変えて縁をなめらかにする（alpha to coverage）。
     /// 画面なしの描き出し（CPU）は掛けない（絵は MSAA の無い絵のまま）。
     pub def withMsaa(samples: Int32, d: Descriptor): Descriptor = { samples = samples | d }
