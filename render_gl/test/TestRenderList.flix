@@ -210,13 +210,20 @@ mod RenderFrame.TestRenderList {
         let wide = screenPass((400, 180), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil);
         Assert.assertEq(expected = ((40, 0, 320, 180), true), (wide#viewport, hasLetterbox(wide)))
 
-    /// Pass の形式と地の色: 画面は形式を持たず地の色を持ち、Pass は頭の attachment の形式を持ち地の色を持たない。
+    /// 形式の比べられる名前（無ければ "none"）。
+    def formatName(format: Option[RenderTarget.Format]): String = match format {
+        case Some(RenderTarget.Format.Rgba8Unorm)  => "rgba8"
+        case Some(RenderTarget.Format.Rgba16Float) => "rgba16f"
+        case None                                  => "none"
+    }
+
+    /// Pass の形式と地の色: 画面は形式を持たず地の色を持ち、Pass は頭の attachment の形式（Rgba16Float）を持ち地の色を持たない。
     @Test
     def testFormatAndClearColorOfScreenAndPass(): Unit \ Assert =
         let pass = passTo(RenderTarget.LoadOp.Keep);
-        Assert.assertEq(expected = (true, false, false, true),
-                        (Option.isEmpty(targetFormatOf(letterboxedScreen())), Option.isEmpty(screenClearColorOf(letterboxedScreen())),
-                         Option.isEmpty(targetFormatOf(pass)), Option.isEmpty(screenClearColorOf(pass))))
+        Assert.assertEq(expected = ("none", false, "rgba16f", true),
+                        (formatName(targetFormatOf(letterboxedScreen())), Option.isEmpty(screenClearColorOf(letterboxedScreen())),
+                         formatName(targetFormatOf(pass)), Option.isEmpty(screenClearColorOf(pass))))
 
     /// GL の左下が原点の viewport へ戻すと calcViewport と同じ（下の黒帯が 11 px の 201 px の高さでも）。
     @Test

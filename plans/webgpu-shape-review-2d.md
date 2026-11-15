@@ -465,12 +465,12 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 | R5 | 親の文書の `DrawList` と 5 章の約束 | `plans/engine-webgpu.md` の `DrawList` を `RenderList` へ（11 章の 7 は名前を決めた文に）・5.1・6.1 の決まり 6・9.1・12.14 へ書き足した |
 | O1 | 多角形ごとに `list#vertices` を引く | `emitFrameMixed` で 1 回読み、`vertices` を引数で回す |
 | O2 | `formatOf`・`clearColorOf` の置き場と空の列 | `RenderList.targetFormatOf`・`screenClearColorOf` へ寄せ、`PassTarget.Target(ColorAttachment, List[ColorAttachment])` にした |
-| O3 | 呼ばれない `targetNames` | `WebGpuRows.renderFrame` の cfg から消し、WebGPU は描き先の表を引かない WhyNot を 1 行 |
+| O3 | 呼ばれない `targetNames` | `WebGpuRows.renderFrame` の cfg から消した。2 回目のレビュー（91 点）の N1 で、WebGPU にも `targetUpsideDown() = false` を戻し、`upsideDownTargetsOf(targetUpsideDown(), () -> Set.empty())` で backend に聞く形を残した（cfg の欄は増やさない） |
 | O4 | `passOfArgs` の標本数 | WhyNot を 1 行 |
 | O5 | コメントの予定の参照 | 自分が書いたコメントから文書の参照と予定を消した |
 | O6 | `lendRenderList` | `prepareRenderList` |
 | O7 | 完全名 | `use` に |
-| O9 | scissor の控え・左右の黒帯・放射の絵のテスト | `keepScissor` を切り出してテスト・左右の黒帯の viewport・`putRadialBuiltins` の 2 枚 |
+| O9 | scissor の控え・左右の黒帯・放射の絵のテスト | 比べる所（`isSameScissor`）と控える所（`noteScissor`）を分けてテスト・左右の黒帯の viewport・`putRadialBuiltins` の 2 枚 |
 | O8・O10 | | 見送り（指示どおり） |
 
 ## 第 1 版のレビュー（74 点）への対応

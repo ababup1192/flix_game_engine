@@ -4,9 +4,12 @@
 pub mod RenderFrame.Internal.WebGpuRows {
     import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, addCountsTo, closeSpriteRun, countSpriteDraw, emitSprite, mergedByZ, newRunState, writeInstAt}
+    use RenderFrame.{Merged, addCountsTo, closeSpriteRun, countSpriteDraw, emitSprite, mergedByZ, newRunState, upsideDownTargetsOf, writeInstAt}
     use RenderFrame.Internal.RenderList.{PassSpec, RenderList, glViewportOf, hasLetterbox, loadOpOf, newRenderList, nextInstanceOf,
                                          rowAt, rowCountOf, rowsOf, screenClearColorOf, targetTextureOf}
+
+    /// 描き先（texture）は上下逆に格納しない（行 0 が上）。
+    pub def targetUpsideDown(): Bool = false
 
     /// 1 回の renderCommands を pass 1 つへ流す。
     /// cfg の欄:
@@ -47,8 +50,9 @@ pub mod RenderFrame.Internal.WebGpuRows {
             let registry = cfg#registry;
             let warnLog = cfg#texWarnLog;
             let skip = cfg#skip;
-            // WhyNot: 描き先の表を引かない — WebGPU の texture は行 0 が上で、上下逆に格納された描き先が無い（GL の targetUpsideDown が真なのと違う）。
-            emitAll(st, list, scaleX, scaleY, registry, Set.empty(), warnLog, skip, mergedByZ(Nil, cfg#sprites, Nil, Nil, Nil, Vector.empty()));
+            // WhyNot: 描き先の表の名前を渡さない — targetUpsideDown が偽なので upsideDownTargetsOf は表を引かない。
+            let upsideDown = upsideDownTargetsOf(targetUpsideDown(), () -> Set.empty());
+            emitAll(st, list, scaleX, scaleY, registry, upsideDown, warnLog, skip, mergedByZ(Nil, cfg#sprites, Nil, Nil, Nil, Vector.empty()));
             closeSpriteRun(st, list);
             let used = nextInstanceOf(list);
             if (letterboxed) writeInstAt(instances, used, 0.0, 0.0, cfg#designW, cfg#designH,
@@ -196,23 +200,23 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     /// geom の 10〜13 の scissor を pass に積む（前に積んだ物と同じなら積まない）。
     def applyScissor(pass: RenderPass, geom: Array[Int32, Static]): Unit \ IO =
-        if (keepScissor(geom)) ()
-        else pass.setScissorRect(Array.get(10, geom), Array.get(11, geom), Array.get(12, geom), Array.get(13, geom))
-
-    /// geom の 10〜13 の scissor が、前に積んだ物（14〜17）と同じなら真。違えば 14〜17 を 10〜13 へ控えて偽（呼ぶ側が積む）。
-    def keepScissor(geom: Array[Int32, Static]): Bool \ IO =
-        let x = Array.get(10, geom);
-        let y = Array.get(11, geom);
-        let w = Array.get(12, geom);
-        let h = Array.get(13, geom);
-        if (x == Array.get(14, geom) and y == Array.get(15, geom) and w == Array.get(16, geom) and h == Array.get(17, geom)) true
+        if (isSameScissor(geom)) ()
         else {
-            Array.put(x, 14, geom);
-            Array.put(y, 15, geom);
-            Array.put(w, 16, geom);
-            Array.put(h, 17, geom);
-            false
+            pass.setScissorRect(Array.get(10, geom), Array.get(11, geom), Array.get(12, geom), Array.get(13, geom));
+            noteScissor(geom)
         }
+
+    /// geom の 10〜13 の scissor が、前に積んだ物（14〜17）と同じか。
+    def isSameScissor(geom: Array[Int32, Static]): Bool \ IO =
+        Array.get(10, geom) == Array.get(14, geom) and Array.get(11, geom) == Array.get(15, geom)
+            and Array.get(12, geom) == Array.get(16, geom) and Array.get(13, geom) == Array.get(17, geom)
+
+    /// geom の 10〜13 の scissor を、積んだ物として 14〜17 へ写す。
+    def noteScissor(geom: Array[Int32, Static]): Unit \ IO =
+        Array.put(Array.get(10, geom), 14, geom);
+        Array.put(Array.get(11, geom), 15, geom);
+        Array.put(Array.get(12, geom), 16, geom);
+        Array.put(Array.get(13, geom), 17, geom)
 
     def putScissor(geom: Array[Int32, Static], x: Int32, y: Int32, w: Int32, h: Int32): Unit \ IO =
         Array.put(x, 10, geom);
