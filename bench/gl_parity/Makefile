@@ -25,7 +25,8 @@ run:
 # WhyNot: passChain・texField・passMask・3D の scene を入れない — 面（ShaderDoc）・mask・3D の場面を使い、V1 の WebGPU は描かない。
 V1_SCENES := boxes,spriteNearest,passPaste,radial,veil
 webgpu:
-	rm -rf debug/gl debug/soft debug/diff debug/webgpu debug/gl-screen
+	@# WhyNot: debug/soft を消さない — 選んだ scene しか描き直さないので、git に入っているほかの scene の items.tsv が消える。
+	rm -rf debug/gl debug/diff debug/webgpu debug/gl-screen
 	@mkdir -p build
 	unset FLIX_GE_SPLASH_SHOT FLIX_GE_WEBGPU_FAIL; PARITY_SCENES=$(V1_SCENES) PARITY_VIA_SCREEN=1 FLIX_GE_BACKEND=webgpu FLIX_GE_HIDDEN=1 FLIX_GE_FRAME_SHOT=debug/gl \
 		../../bin/flix run 2>&1 | tee build/parity-webgpu.log; test $${PIPESTATUS[0]} -eq 0
