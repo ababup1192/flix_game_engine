@@ -105,6 +105,24 @@
           "default": 0.4
         }
       }
+    },
+    "margin": {
+      "kind": "field",
+      "type": "float",
+      "label": "案内を並べる左右の余白（design px）",
+      "order": 6,
+      "min": 0,
+      "max": 200,
+      "default": 24.0
+    },
+    "captionSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "案内の字の大きさ（入り切らなければ 0.6 倍まで縮める）",
+      "order": 7,
+      "min": 8,
+      "max": 60,
+      "default": 20.0
     }
   }
 }

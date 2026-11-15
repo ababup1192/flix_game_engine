@@ -74,7 +74,7 @@ mod WorldRead {
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
                   entering: World.World): World.World \ Emit[World.Event] =
         let w = World.mapRead(trackEntry(res, event), entering);
-        match event {
+        World.mapRead(withGate, match event {
             case YarnRunner.Event.Line(said)       =>
                 let line = ScriptEdits.editLine(res#scriptEdits, said);
                 whileReading(cur -> showLine(res, replay, bookmarkAt(last, later), line, { cursor = Some(line#source) | cur }, w), w)
@@ -86,7 +86,7 @@ mod WorldRead {
             case YarnRunner.Event.Command(command) =>
                 whileReading(cur -> World.withRead(cue(res, replay, command, { cursor = cursorAfter(res, command, cur#cursor) | cur }, w), w), w)
             case YarnRunner.Event.Done             => World.toCredits(res, w)
-        }
+        })
 
     /// コマンドを通った後の実行位置。時間を取る演出コマンド（表の timing が Timed）だけが位置を取り、<<wait>> と
     /// 時間を取らないコマンドは前の位置のまま（<<wait>> は直前の演出の続き）。
@@ -217,17 +217,21 @@ mod WorldRead {
 
     // ── ゲート（払い・タップで選ぶ選択肢） ──
 
-    /// 今のゲート（無ければ None）。写しは持たず、出ている選択肢か、台詞の頁なら送った先から毎回導く。
+    /// 今のゲート（無ければ None）。素材を待つ間とコマンドが出した待ちの間は無い（待ちが明けるまで選ばせない）。
+    pub def gateOf(r: World.Read): Option[Gate.Gate] =
+        if (Option.nonEmpty(r#hold) or Option.nonEmpty(r#pause)) None else r#gate
+
+    /// 出来事を反映した後の読んでいる値に、今のゲートを求めて持たせる。
     /// (a) 出ている選択肢の全部に #act がある → viaLine = false。
     /// (b) 今が台詞で、送ると出来事が選択肢だけ（間にコマンドも台詞も無い）で、その全部に #act がある → viaLine = true。
-    /// 素材を待つ間とコマンドが出した待ちの間は無い（待ちが明けるまで選ばせない）。
-    pub def gateOf(r: World.Read): Option[Gate.Gate] =
-        if (Option.nonEmpty(r#hold) or Option.nonEmpty(r#pause)) None
-        else if (not List.isEmpty(r#choices)) Gate.ofOptions(r#choices) |> Option.map(choices -> { choices = choices, viaLine = false })
-        else match YarnRunner.shownOf(r#talk) {
-            case YarnRunner.Shown.Line(_) => optionsAfterLine(r#talk) |> Gate.ofOptions |> Option.map(choices -> { choices = choices, viaLine = true })
-            case _                        => None
-        }
+    // WhyNot: 描く所と入力の所で毎回求めない — (b) は実行器を 1 歩進めて見るので、1 フレームに何度も進めることになる。
+    def withGate(r: World.Read): World.Read =
+        let gate = if (not List.isEmpty(r#choices)) Gate.ofOptions(r#choices) |> Option.map(choices -> { choices = choices, viaLine = false })
+                   else match YarnRunner.shownOf(r#talk) {
+                       case YarnRunner.Shown.Line(_) => optionsAfterLine(r#talk) |> Gate.ofOptions |> Option.map(choices -> { choices = choices, viaLine = true })
+                       case _                        => None
+                   };
+        { gate = gate | r }
 
     /// 今の台詞を送ると出来事が選択肢だけになる時の、その選択肢（そうでなければ空）。
     def optionsAfterLine(talk: YarnRunner.Runner[Stage.Story]): List[YarnRunner.DialogueOption] =
@@ -289,7 +293,7 @@ mod WorldRead {
                         Emit.emit(World.Event.Picked);
                         let marked = markSeen(r, w);
                         let log = if (isLoneGate(r)) r#log else List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Chose(option#line#text) :: r#log);
-                        let logged = { log = log, choices = Nil | r };
+                        let logged = { log = log, choices = Nil, gate = None | r };
                         let (talk, events) = YarnRunner.step(YarnRunner.Action.Choose(i), World.now(w), r#talk);
                         absorb(res, Commands.Replay.Live, events, { talk = talk | logged }, marked)
                     case _ => w

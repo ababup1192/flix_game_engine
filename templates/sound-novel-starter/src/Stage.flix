@@ -23,7 +23,7 @@ mod Stage {
     pub type alias Switch = { transition = BackdropDoc.Transition, ease = Curve.Ease, pace = Pace }
 
     /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、switch = 今の背景の替え方、
-    /// mode = メッセージ枠の型の名前（novel.theme.json の windows。Nvl / Adv はその出し方の最初の型）、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
+    /// mode = メッセージ枠の型の名前（novel.theme.json の windows。Nvl / Adv は legacyModes の行き先の型）、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
     /// props = 名前の付いた値（ambienceKey・particlesKey・shakeKeyOf・overlay*Key・cameraKey・windowHiddenKey・actorKey と game. の値）、cast = 立ち絵と小物の層。
     pub type alias Stage = {
         shot = Option[Shot],
@@ -81,7 +81,7 @@ mod Stage {
     /// 今の話し手（台詞を出すたびに World が書く・<<speak 名>>。地の文は None）。話していない人物を暗くする（novel.cast.json の highlight）。
     pub def speakerKey(): PropertyTween.NameKey = PropertyTween.nameKey("cast.speaker")
 
-    /// 文字の置き場（top・center・bottom。NVL の頁の中で行の塊を置く所）。
+    /// 文字の置き場（top・center・bottom。NVL の頁の中でブロックを置く所）。
     pub def textAtKey(): PropertyTween.NameKey = PropertyTween.nameKey("text.at")
 
     /// 文字の大きさの名前（novel.kind.json の textSizes）。
@@ -340,6 +340,6 @@ mod Stage {
     pub def makeSnapshot(shot: Option[Shot], mode: String, pages: Int32, props: PropertyTween.Table[Story], cast: Cast.Mark): Snapshot =
         snapshotOf({ shot = shot, mode = mode, pages = pages, props = props, cast = Cast.layerOf(cast) | empty() })
 
-    /// セーブに書いたメッセージ枠の型の名前（空なら NVL の最初の型）。Mark v3 の古い値 "Nvl"・"Adv" はそのまま残し、ThemeDoc.windowOf がその出し方の最初の型と読む。
+    /// セーブに書いたメッセージ枠の型の名前（空なら NVL の最初の型）。Mark v3 の古い値 "Nvl"・"Adv" はそのまま残し、ThemeDoc.windowOf が novel.theme.json の legacyModes の行き先と読む。
     pub def modeOfText(text: String): String = if (String.isEmpty(text)) ThemeDoc.kindAlias(ThemeDoc.WindowKind.Nvl) else text
 }

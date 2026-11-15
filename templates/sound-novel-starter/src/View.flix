@@ -81,11 +81,17 @@ mod View {
         let screen = if (coversScreen(w#panel)) Nil else match w#scene {
             case World.Scene.Title(item)      => title(atlas, env, item)
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
-            case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden or Stage.isWindowHidden(env#storyNow, r#stage)) Nil else shakenWindow(env, r, fadedWindow(env, r, reading(atlas, env, r)))
+            case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden or Stage.isWindowHidden(env#storyNow, r#stage)) Nil
+                                                 else shakenWindow(env, r, List.append(fadedWindow(env, r, reading(atlas, env, r)), pageProps(env, r)))
         };
         let covered = World.readOf(w) |> Option.map(r -> ViewStage.screenOverlay(env, r#stage, zOverlay())) |> Option.getWithDefault(Nil);
         let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
         List.flatten(screen :: covered :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
+
+    /// 頁の幕の上に描く小物（ViewStage.propsOnPage の時だけ）。
+    // WhyNot: 小物に文字の枠の薄さ（<<window off time=>>）を掛けない — 消し終えると world の層が小物を濃いまま描くので、薄くなってからぱっと戻る。
+    def pageProps(env: Env, r: World.Read): List[Render.PlacedItem] =
+        if (ViewStage.propsOnPage(env, r#stage)) ViewStage.pageProps(env, r#stage) else Nil
 
     /// 文字の枠と字を <<window off|on time=>> の途中の濃さにする。
     def fadedWindow(env: Env, r: World.Read, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
@@ -403,8 +409,9 @@ mod View {
     def gateHint(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         WorldRead.gateOf(r) |> Option.map(gate -> {
             let size = Layout.size(env#fit);
+            let margin = PromptsDoc.rec(env#res#prompts)#margin;
             let railLeft = List.range(0, List.length(WorldMenu.buttonsOf(env#fit))) |> List.map(i -> Rail.button(env#fit, i)#position#x) |> List.minimum;
-            let right = if (Layout.isPortrait(env#fit)) railLeft |> Option.map(x -> x - 8.0) |> Option.getWithDefault(size#x - Hint.margin()) else size#x - Hint.margin();
+            let right = if (Layout.isPortrait(env#fit)) railLeft |> Option.map(x -> x - 8.0) |> Option.getWithDefault(size#x - margin) else size#x - margin;
             let t = theme(env);
             let look = { width = size#x, height = size#y, y = size#y * PromptsDoc.rec(env#res#prompts)#arrow#y, right = right, t = realSeconds(env),
                          z = zChoice(), doc = env#res#prompts, ink = t#ink, ground = t#panel };
@@ -752,7 +759,7 @@ mod View {
         let t = theme(env);
         let away = { pointer = { x = -1.0, y = -1.0 } | env };
         let shown = screen |> Option.map(read ->
-            List.append(ViewStage.thumbnail(away, read#stage, not ViewStage.hasPageVeil(away, read#stage)), reading(atlas, away, read)))
+            List.flatten(ViewStage.thumbnail(away, read#stage, not ViewStage.propsOnPage(away, read#stage)) :: reading(atlas, away, read) :: pageProps(away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)

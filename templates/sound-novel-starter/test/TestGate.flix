@@ -202,4 +202,44 @@ mod TestGate {
     def testTargetWithoutAnAnchorIsNotRead(): Unit \ Assert =
         let doc = promptsWith("{ \"targets\": { \"key\": { \"rect\": { \"x\": 0.5 } } } }");
         Assert.assertTrue(Option.isEmpty(PromptsDoc.targetOf("key", doc)))
+
+    // ── 端の帯・選べる物の無い組・セーブとロード ──
+
+    @Test
+    def testEdgeDragWithTheRollbackKeyStaysAtTheGate(): Unit \ {Assert, Fs.FileRead} =
+        // 右の端の帯から左へ払う（Gesture はドラッグにする・ブラウザ版は離したフレームで戻るのキーも出る）と、ゲートのまま戻らない。
+        let r = res();
+        let k = KindDoc.rec(r#kind);
+        let edge = PromptsDoc.rec(r#prompts)#edge;
+        let start = { x = Layout.width(Layout.Fit.Regular) - edge / 2.0, y = 200.0 };
+        let finish = { x = start#x - k#swipeMin * 2.0, y = 200.0 };
+        let rollback = KeysDoc.rec(r#keys)#rollback |> List.head |> Option.getWithDefault(Key.PageUp);
+        let frames = { mouseClicked = true, mouseDown = true, cursor = start | App.emptyFrame() } ::
+                     { mouseDown = true, mouseMoved = true, cursor = finish, realNow = Clock.after(k#swipeSeconds / 2.0, Clock.zero()) | App.emptyFrame() } ::
+                     { cursor = finish, realNow = Clock.after(k#swipeSeconds / 2.0, Clock.zero()), justPressed = Set#{rollback}, down = Set#{rollback} | App.emptyFrame() } :: Nil;
+        let fork = atFork(r);
+        let w = List.foldLeft((acc, f) -> Controls.interact(f, r, acc), fork, frames);
+        Assert.assertEq(expected = World.talkLineOf(fork), World.talkLineOf(settle(r, w)))
+
+    @Test
+    def testGroupWithNoOpenOptionIsNotAGate(): Unit \ Assert =
+        // 組の全部に #act があっても、全部が <<if>> で選べなければゲートにしない。
+        let line = { speaker = "", text = "上へ", parts = Nil, tags = { key = "act", value = "up" } :: Nil, source = { file = "t", line = 1 } };
+        Assert.assertTrue(Option.isEmpty(Gate.ofOptions({ line = line, available = false } :: Nil)))
+
+    def restoredGateText(r: Res.Res, w: World.World): String =
+        WorldRead.slotHere(r, w) |> Option.map(slot -> settle(r, quiet(() -> WorldRead.restore(r, slot#mark, TestKit.w0(r))))) |> Option.map(gateText)
+            |> Option.getWithDefault("")
+
+    @Test
+    def testSaveAtTheLineGateLoadsBackToTheSameGate(): Unit \ {Assert, Fs.FileRead} =
+        let r = res();
+        let w = begun(r);
+        Assert.assertEq(expected = gateText(w), restoredGateText(r, w))
+
+    @Test
+    def testSaveAtTheOptionsGateLoadsBackToTheSameGate(): Unit \ {Assert, Fs.FileRead} =
+        let r = res();
+        let w = atFork(r);
+        Assert.assertEq(expected = gateText(w), restoredGateText(r, w))
 }

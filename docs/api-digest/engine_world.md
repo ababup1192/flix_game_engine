@@ -3284,8 +3284,7 @@
   `pub def list(h: Opt[t]): Opt[List[t]]`
 - 同じ group の引数のどれか 1 つは要る（hide の名前か at= など）。
   `pub def oneOf(group: String, h: Opt[t]): Opt[t]`
-- build が ref を「同じ行の引数 other の値 + "." + この値」で照らす（other を書いていない・other が orWords の語の時は照らさない）。
-  `pub def scopedBy(other: String, h: Opt[t]): Opt[t]`
+- `pub def scopedBy(other: String, h: Opt[t]): Opt[t]`
 - 表に並べる形にする。
   `pub def erase(h: Handle[m, t]): Erased`
 - 引数の値（書いてなければ既定の値）。

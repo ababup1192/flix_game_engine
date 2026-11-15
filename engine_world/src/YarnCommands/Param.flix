@@ -138,7 +138,7 @@ pub mod YarnCommands.Param {
     pub def oneOf(group: String, h: Opt[t]): Opt[t] = withRow(r -> { group = group | r }, h)
 
     /// build が ref を「同じ行の引数 other の値 + "." + この値」で照らす（other を書いていない・other が orWords の語の時は照らさない）。
-    /// WhyNot: 実行時の parse では照らさない — Doc を持たないのは ref と同じ。照らすのは名前を引く apply。
+    // WhyNot: 実行時の parse では照らさない — Doc を持たないのは ref と同じ。照らすのは名前を引く apply。
     pub def scopedBy(other: String, h: Opt[t]): Opt[t] = withRow(r -> { scope = other | r }, h)
 
     def withRow(f: YarnCommands.Row -> YarnCommands.Row, h: Handle[m, t]): Handle[m, t] =

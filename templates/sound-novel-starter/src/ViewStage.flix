@@ -194,9 +194,13 @@ mod ViewStage {
     pub def isPropOnPage(env: View.Env, w: World.World): Bool = match w#scene {
         case World.Scene.Reading(r) =>
             not View.coversScreen(w#panel) and w#panel != World.Panel.Hidden and not Stage.isWindowHidden(env#storyNow, r#stage)
-                and hasPageVeil(env, r#stage)
+                and propsOnPage(env, r#stage)
         case _ => false
     }
+
+    /// 小物を頁の幕の上に描く舞台か: 頁に幕があり、文字の枠を消す絵（novel.cast.json の hideWindow）が出ていない。
+    // WhyNot: 文字の枠を消す絵が出ている間も頁に描かない — 枠と一緒に頁の小物まで消え、hideWindow の小物そのものが見えなくなる。
+    pub def propsOnPage(env: View.Env, stage: Stage.Stage): Bool = hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
 
     /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
     pub def hasPageVeil(env: View.Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or Stage.kindOf(env#res#theme, stage) == ThemeDoc.WindowKind.Nvl

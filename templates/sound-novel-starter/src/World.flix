@@ -55,7 +55,8 @@ mod World {
     /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）、
     /// cursor = シナリオの実行位置（今の台詞・選択肢か、<<wait>> で待っている演出コマンドの行。talkCursorOf）、
     /// entry = 今のノードに入った時の舞台（戻れる所の当て直しの始まり。WorldRead.trackEntry）、
-    /// pause = コマンドが出した待ち（Commands.Out.Wait。無ければ None）。
+    /// pause = コマンドが出した待ち（Commands.Out.Wait。無ければ None）、
+    /// gate = 出来事を反映した後の今のゲート（払い・タップで選ぶ選択肢。素材の待ちとコマンドの待ちは見ない。読むのは WorldRead.gateOf）。
     pub type alias Read = {
         talk = YarnRunner.Runner[Stage.Story],
         stage = Stage.Stage,
@@ -71,7 +72,8 @@ mod World {
         tip = Option[(Int32, Clock.Time[Clock.Real])],
         cursor = Option[Yarn.Source],
         entry = NodeEntry,
-        pause = Option[Pause]
+        pause = Option[Pause],
+        gate = Option[Gate.Gate]
     }
 
     /// コマンドが出した待ち（<<wait 秒>> と同じ待ち。続きの出来事を出さずに物語の時計で待つ）。until = 明ける物語の時刻、
@@ -273,7 +275,7 @@ mod World {
         let stage = Stage.withModeResolved(theme, Stage.empty());
         { talk = YarnRunner.closed(), stage = stage, page = Page.empty(), choices = Nil, choiceCursor = 0,
           log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None,
-          entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(stage), page = Page.empty() } }, pause = None }
+          entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(stage), page = Page.empty() } }, pause = None, gate = None }
 
     // ── 場面を読む口 ──
 

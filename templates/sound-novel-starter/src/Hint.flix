@@ -40,10 +40,10 @@ mod Hint {
     /// 字の大きさは全部の選択肢でそろえる（一番狭い所に入る大きさ）。
     pub def items(atlas: FontAtlas, look: Look, targets: String -> Option[Rect2.Rect2], gate: Gate.Gate): List[Render.PlacedItem] =
         let count = List.length(gate#choices);
-        let slot = (look#right - margin()) / Int32.toFloat64(Int32.max(1, count));
+        let slot = (look#right - margin(look)) / Int32.toFloat64(Int32.max(1, count));
         let size = gate#choices |> List.filterMap(choice -> choice#caption)
-            |> List.map(text -> fitOf(atlas, slot, text)#size) |> List.minimum |> Option.getWithDefault(captionSize());
-        let slotX = i -> margin() + slot * (Int32.toFloat64(i) + 0.5);
+            |> List.map(text -> fitOf(atlas, captionSize(look), slot, text)#size) |> List.minimum |> Option.getWithDefault(captionSize(look));
+        let slotX = i -> margin(look) + slot * (Int32.toFloat64(i) + 0.5);
         let ringX = (choice: Gate.Choice) -> namedTap(choice#act) |> Option.flatMap(targets) |> Option.map(r -> r#position#x + r#size#x / 2.0);
         let rings = gate#choices |> List.filterMap(ringX);
         let farFromRings = i -> rings |> List.map(x -> Float64.abs(slotX(i) - x)) |> List.minimum |> Option.getWithDefault(0.0);
@@ -52,10 +52,11 @@ mod Hint {
         let freeSlots = List.range(0, count) |> List.map(i -> (0.0 - farFromRings(i), i)) |> Sort.sortStableBy(fst) |> List.map(snd)
             |> List.take(List.length(free)) |> Sort.sortStable;
         let placed = List.zip(free, freeSlots) |> List.toMap;
+        let arrows = freeSlots |> List.map(slotX);
         gate#choices |> List.zipWithIndex |> List.flatMap(match (i, choice) -> {
             let at = Map.get(i, placed) |> Option.getWithDefault(i);
             let center = { x = slotX(at), y = look#y };
-            choiceItems(atlas, look, targets, { center = center, room = slot, size = size, alone = count == 1 }, choice)
+            choiceItems(atlas, look, targets, { center = center, room = slot, size = size, alone = count == 1, arrows = arrows }, choice)
         })
 
     /// 選択肢を並べる時の左右の順（小さい方が左）。横の払いは指を置き始める側へ: 右払いは左の枠、左払いは右の枠、他は間。
@@ -66,11 +67,11 @@ mod Hint {
         case _                                       => 1
     }
 
-    /// 左右の余白（design px）。
-    pub def margin(): Float64 = 24.0
+    /// 左右の余白（design px。novel.prompts.json の margin）。
+    def margin(look: Look): Float64 = PromptsDoc.rec(look#doc)#margin
 
-    /// 案内の字の大きさ（入り切らなければここから縮める）。
-    def captionSize(): Float64 = 20.0
+    /// 案内の字の大きさ（novel.prompts.json の captionSize。入り切らなければここから縮める）。
+    def captionSize(look: Look): Float64 = PromptsDoc.rec(look#doc)#captionSize
 
     /// 選択肢の矢印と輪の色（#icon の色・無ければ矢印の色）。
     def inkOf(look: Look, choice: Gate.Choice): Color =
@@ -81,7 +82,7 @@ mod Hint {
     /// tap の当たる物があれば輪はその物のまわりに、字も輪のそばに置く（1 つだけなら輪の上、並べる隣があれば輪の横）。
     // WhyNot: 並べる時に字を割り当ての枠に置かない — 輪は当たる物の所に出るので、字だけが離れてどこを押す案内か読めなくなる。
     def choiceItems(atlas: FontAtlas, look: Look, targets: String -> Option[Rect2.Rect2],
-                    place: { center = Vec2.Vec2, room = Float64, size = Float64, alone = Bool }, choice: Gate.Choice): List[Render.PlacedItem] =
+                    place: { center = Vec2.Vec2, room = Float64, size = Float64, alone = Bool, arrows = List[Float64] }, choice: Gate.Choice): List[Render.PlacedItem] =
         let center = place#center;
         let ink = inkOf(look, choice);
         let below = { top = center#y + 41.0, x = center#x };
@@ -95,29 +96,35 @@ mod Hint {
         List.flatten(ground :: mark :: words :: Nil)
 
     /// tap の案内: 当たる物があればそのまわりの輪と字の置き場、無ければ案内の場所の輪。
-    def tapMark(atlas: FontAtlas, look: Look, place: { center = Vec2.Vec2, room = Float64, size = Float64, alone = Bool }, ink: Color,
+    def tapMark(atlas: FontAtlas, look: Look, place: { center = Vec2.Vec2, room = Float64, size = Float64, alone = Bool, arrows = List[Float64] }, ink: Color,
                 rect: Option[Rect2.Rect2], choice: Gate.Choice): (List[Render.PlacedItem], Bool, { top = Float64, x = Float64 }) = match rect {
         case Some(r) =>
             let (ringCenter, radius) = rectCenterRadius(r);
             let over = if (place#alone) { top = ringTop(look, r) - place#size - 30.0, x = ringCenter#x }
-                       else besideRing(atlas, look, (ringCenter, radius), place#size, choice#caption);
+                       else besideRing(atlas, look, (ringCenter, radius), place#arrows, place#size, choice#caption);
             (pulse(look, (ringCenter, radius), ink), false, over)
         case None => (pulse(look, (place#center, 34.0), ink), true, { top = place#center#y + 41.0, x = place#center#x })
     }
 
-    /// 輪の横（左右の空きの広い方）に置く字の、地の上端と真ん中の x。どちらにも入らなければ内の輪のすぐ上。
-    def besideRing(atlas: FontAtlas, look: Look, ring: (Vec2.Vec2, Float64), size: Float64, text: Option[String]): { top = Float64, x = Float64 } =
+    /// 輪の横（左右の空きの広い方）に置く字の、地の上端と真ん中の x。空きは画面の余白とほかの選択肢の矢印（arrows = 矢印の真ん中の x）までで、
+    /// どちらにも入らなければ内の輪のすぐ上。
+    def besideRing(atlas: FontAtlas, look: Look, ring: (Vec2.Vec2, Float64), arrows: List[Float64], size: Float64, text: Option[String]): { top = Float64, x = Float64 } =
         let (center, radius) = ring;
         let words = text |> Option.getWithDefault("");
         let pillW = TextDraw.width(words, atlas, size) + pillPad();
         let pillH = size + 22.0;
         let gap = 10.0;
-        let leftRoom = center#x - radius - gap - margin();
-        let rightRoom = look#width - margin() - (center#x + radius + gap);
+        let leftWall = arrows |> List.filter(x -> x < center#x) |> List.map(x -> x + arrowReach()) |> List.foldLeft(Float64.max, margin(look));
+        let rightWall = arrows |> List.filter(x -> x > center#x) |> List.map(x -> x - arrowReach()) |> List.foldLeft(Float64.min, look#width - margin(look));
+        let leftRoom = center#x - radius - gap - leftWall;
+        let rightRoom = rightWall - (center#x + radius + gap);
         if (Float64.max(leftRoom, rightRoom) >= pillW) {
             let x = if (leftRoom >= rightRoom) center#x - radius - gap - pillW / 2.0 else center#x + radius + gap + pillW / 2.0;
             { top = center#y - pillH / 2.0, x = x }
         } else { top = center#y - radius - gap - pillH, x = center#x }
+
+    /// 矢印とその後ろのぼかしが真ん中から横に届く長さ。
+    def arrowReach(): Float64 = 44.0
 
     /// 矢印の後ろに置く暗いぼかし（明るい背景の上でも線が立つ）。
     def halo(look: Look, center: Vec2.Vec2): List[Render.PlacedItem] =
@@ -185,12 +192,12 @@ mod Hint {
         let (center, radius) = rectCenterRadius(rect);
         center#y - radius * (1.0 + PromptsDoc.rec(look#doc)#pulse#spread)
 
-    /// 案内の字を幅 room に入れる割り方と大きさ。1 行で入らなければ真ん中の近くの「、」か「で」の後で 2 行に割り、それでも入らなければ縮める（0.6 倍まで）。
-    def fitOf(atlas: FontAtlas, room: Float64, text: String): { rows = List[String], size = Float64 } =
-        let widest = rows -> rows |> List.map(row -> TextDraw.width(row, atlas, captionSize())) |> List.maximum |> Option.getWithDefault(0.0);
+    /// 案内の字（大きさ base）を幅 room に入れる割り方と大きさ。1 行で入らなければ真ん中の近くの「、」か「で」の後で 2 行に割り、それでも入らなければ縮める（0.6 倍まで）。
+    def fitOf(atlas: FontAtlas, base: Float64, room: Float64, text: String): { rows = List[String], size = Float64 } =
+        let widest = rows -> rows |> List.map(row -> TextDraw.width(row, atlas, base)) |> List.maximum |> Option.getWithDefault(0.0);
         let fits = rows -> widest(rows) + pillPad() <= room;
         let rows = if (fits(text :: Nil)) text :: Nil else splitOf(text);
-        let size = if (fits(rows)) captionSize() else captionSize() * Float64.max(0.6, (room - pillPad()) / Float64.max(1.0, widest(rows)));
+        let size = if (fits(rows)) base else base * Float64.max(0.6, (room - pillPad()) / Float64.max(1.0, widest(rows)));
         { rows = rows, size = size }
 
     /// 2 行に割る所（「、」か「で」の後。無ければ割らない）。
@@ -205,20 +212,22 @@ mod Hint {
     def pillPad(): Float64 = 36.0
 
     /// 案内の字（暗い角丸の地の上に置く）。place = 地の上端・真ん中の x・横に使える幅・字の大きさ（全部の選択肢でそろえた物）。
+    /// 地が画面の余白からはみ出す時は、真ん中を内へ寄せる（輪の上の字が画面の端で切れない）。
     def caption(atlas: FontAtlas, look: Look, place: { top = Float64, x = Float64, room = Float64, size = Float64 }, text: String): List[Render.PlacedItem] =
-        let rows = fitOf(atlas, place#room, text)#rows;
+        let rows = fitOf(atlas, captionSize(look), place#room, text)#rows;
         let size = place#size;
         let lineH = size * 1.3;
         let tw = rows |> List.map(row -> TextDraw.width(row, atlas, size)) |> List.maximum |> Option.getWithDefault(0.0);
         let pill = { x = tw + pillPad(), y = Int32.toFloat64(List.length(rows) - 1) * lineH + size + 22.0 };
+        let cx = Float64.max(margin(look) + pill#x / 2.0, Float64.min(look#width - margin(look) - pill#x / 2.0, place#x));
         let ground = RawDraw.box(pill, look#ground, look#z + 1) |> Render.fade(0.78)
             |> Render.outlineA({ color = PromptsDoc.rec(look#doc)#arrow#color, alpha = 0.4, width = 1.0 }) |> Render.rounded(Float64.min(pill#y, size + 22.0) / 2.0);
         let words = rows |> List.zipWithIndex |> List.map(match (i, row) -> {
             let rw = TextDraw.width(row, atlas, size);
-            { at = { x = place#x - rw / 2.0, y = place#top + 9.0 + Int32.toFloat64(i) * lineH },
+            { at = { x = cx - rw / 2.0, y = place#top + 9.0 + Int32.toFloat64(i) * lineH },
               item = Render.textTinted(row, atlas, size, look#ink, look#z + 2) }
         });
-        { at = { x = place#x - pill#x / 2.0, y = place#top }, item = ground } :: words
+        { at = { x = cx - pill#x / 2.0, y = place#top }, item = ground } :: words
 
     def fadeTo(alpha: Float64): Render.PlacedItem -> Render.PlacedItem = placed -> Render.overItem(item -> Render.fade(alpha, item), placed)
 }

@@ -3,7 +3,7 @@
 // 人物と小物はテスト用の Doc（test/fixtures/novel.cast.json）、粒・型・字の大きさはテンプレートの Doc から引く。
 mod TestSpeaker {
 
-    use fge::{Clock, DocJson, JsonCodec, Yarn}
+    use fge::{Clock, DocJson, JsonCodec, Render, Yarn}
     use Commands.Out
 
     def command(name: String, args: List[String]): Yarn.Command =
@@ -69,10 +69,38 @@ mod TestSpeaker {
     // ── メッセージ枠の型の Doc と Mark v3 の mode ──
 
     @Test
-    def testAdvAliasReadsAsTheFirstAdvType(): Unit \ {Assert, Fs.FileRead} =
+    def testAdvAliasReadsAsTheLegacyModesTarget(): Unit \ {Assert, Fs.FileRead} =
         let res = TestKit.res();
-        let firstAdv = ThemeDoc.rec(res#theme)#windows |> Map.toList |> List.find(match (_, w) -> w#kind == ThemeDoc.WindowKind.Adv) |> Option.map(fst);
-        Assert.assertEq(expected = firstAdv, Some(fst(ThemeDoc.windowOf("Adv", res#theme))))
+        Assert.assertEq(expected = Map.get("Adv", ThemeDoc.rec(res#theme)#legacyModes), Some(fst(ThemeDoc.windowOf("Adv", res#theme))))
+
+    @Test
+    def testLegacyModesWinOverTheKeyOrder(): Unit \ Assert =
+        // 鍵の順で先に来る adv の型があっても、legacyModes の行き先を選ぶ。
+        let doc = ThemeDoc.fromJson("{ \"windows\": { \"aaa\": { \"kind\": \"adv\" }, \"bottom\": { \"kind\": \"adv\" } }, \"legacyModes\": { \"Adv\": \"bottom\" } }");
+        Assert.assertEq(expected = Some("bottom"), doc |> Option.map(d -> fst(ThemeDoc.windowOf("Adv", d))))
+
+    @Test
+    def testTemplateLegacyModesPointToTheirKind(): Unit \ {Assert, Fs.FileRead} =
+        // テンプレートの legacyModes の行き先は windows にあり、Nvl は nvl の型・Adv は adv の型。
+        let res = TestKit.res();
+        let d = ThemeDoc.rec(res#theme);
+        let wrong = (ThemeDoc.WindowKind.Nvl :: ThemeDoc.WindowKind.Adv :: Nil) |> List.filter(kind ->
+            not (Map.get(ThemeDoc.kindAlias(kind), d#legacyModes) |> Option.flatMap(t -> Map.get(t, d#windows)) |> Option.exists(w -> w#kind == kind)));
+        Assert.assertEq(expected = Nil, wrong)
+
+    @Test
+    def testVersion3SaveWithTheOldModeRestoresToTheLegacyTarget(): Unit \ {Assert, Fs.FileRead} =
+        // version 3 のセーブの JSON の "mode": "Adv" を Saves.fromJson で読み、WorldRead.restore で戻すと、舞台の型は legacyModes の Adv の行き先。
+        let r = TestKit.res();
+        let w = TestKit.begun(r);
+        let mode = World.stageOf(r, w)#mode;
+        let saved = WorldRead.slotHere(r, w) |> Option.map(slot -> Saves.withSlot(Saves.Tab.Numbered(1), 0, slot, Saves.fresh(r#kind)))
+            |> Option.map(s -> Util.Json.toPrettyString(2, Saves.toJson(s)));
+        let old = saved |> Option.map(text -> String.replace(src = "\"mode\": \"${mode}\"", dst = "\"mode\": \"Adv\"", text))
+            |> Option.flatMap(DocJson.parse);
+        let restored = old |> Option.map(Saves.fromJson(Saves.fresh(r#kind))) |> Option.flatMap(s -> Saves.slotOf(Saves.Tab.Numbered(1), 0, s))
+            |> Option.map(slot -> World.stageOf(r, TestKit.quiet(() -> WorldRead.restore(r, slot#mark, TestKit.w0(r))))#mode);
+        Assert.assertEq(expected = Map.get("Adv", ThemeDoc.rec(r#theme)#legacyModes), restored)
 
     def windowRows(text: String): Map[String, Util.Json.Json] =
         DocJson.parse(text) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
@@ -109,6 +137,13 @@ mod TestSpeaker {
     @Test
     def testTextWithoutArgumentsIsAnError(): Unit \ {Assert, Fs.FileRead} =
         Assert.assertTrue(Result.isErr(exec(TestKit.res(), "text", Nil, Stage.empty())))
+
+    @Test
+    def testTextAtInAdvIsAnError(): Unit \ {Assert, Fs.FileRead} =
+        // at= は NVL の頁の中の置き場なので、ADV の型の間に書くと Err。
+        let res = TestKit.res();
+        let adv = stageAfter(res, "window", "bottom" :: Nil, Stage.empty());
+        Assert.assertTrue(Result.isErr(exec(res, "text", "at=center" :: Nil, adv)))
 
     @Test
     def testTextUnknownSizeIsAnError(): Unit \ {Assert, Fs.FileRead} =
@@ -206,6 +241,19 @@ mod TestSpeaker {
         let res = castRes();
         let st = stageAfter(res, "show", "cup" :: "time=0" :: Nil, Stage.empty());
         Assert.assertTrue(Cast.hidesWindow(res#cast, st#cast))
+
+    @Test
+    def testHideWindowPropIsDrawnInTheWorldLayerOnTheNvlPage(): Unit \ {Assert, Fs.FileRead} =
+        // NVL の頁（小物はふだん頁の幕の上）でも、hideWindow の小物が出ている間は world の層がその小物の面を描く（枠と一緒に消えない）。
+        let res = castRes();
+        let st = stageAfter(res, "show", "cup" :: "time=0" :: Nil, Stage.withModeResolved(res#theme, Stage.empty()));
+        let w = World.withRead({ stage = st | World.emptyRead(res#theme) }, TestKit.w0(res));
+        let env = View.envOf(Layout.Fit.Regular, res, w);
+        let names = ViewStage.frame(env, st, not ViewStage.isPropOnPage(env, w)) |> List.filterMap(p -> match p#item {
+            case Render.Item.Shader(x) => Some(x#spec#name)
+            case _                         => None
+        });
+        Assert.assertTrue(names |> List.exists(n -> String.startsWith(prefix = "picture_${CastDoc.textureOf("cup", "plain")}", n)))
 
     @Test
     def testCastWithoutHideWindowKeepsTheWindow(): Unit \ {Assert, Fs.FileRead} =

@@ -36,12 +36,13 @@ mod Gate {
         let fromPrompts = key -> Json.JObject(Map#{ "from" => Json.JArray(Vector#{ Json.JObject(Map#{ "doc" => Json.JString(prompts), "keys" => Json.JString(key) }) }) });
         Json.JObject(Map#{ "act" => strings(actNames()), "at" => fromPrompts("targets"), "icon" => fromPrompts("icons"), "mute" => strings(Nil) })
 
-    /// 選択肢の組のゲート（組の全部に読める #act がある時だけ。選べない選択肢は並べない）。
+    /// 選択肢の組のゲート（組の全部に読める #act があり、選べる物が 1 つ以上ある時だけ。選べない選択肢は並べない）。
+    // WhyNot: 選べる物が 0 のゲートを作らない — 案内が 1 つも出ず、何も起きない画面で止まる。ボタンの選択肢なら選べない物を薄く出して止まった訳が見える。
     pub def ofOptions(options: List[YarnRunner.DialogueOption]): Option[List[Choice]] =
         let read = options |> List.zipWithIndex |> List.map(match (i, option) -> actOf(option#line#tags) |> Option.map(act -> (i, option, act)));
-        if (List.isEmpty(options) or List.exists(Option.isEmpty, read)) None
-        else Some(read |> List.filterMap(x -> x) |> List.filter(match (_, option, _) -> option#available)
-                       |> List.map(match (i, option, act) -> choiceOf(i, option, act)))
+        let open = read |> List.filterMap(x -> x) |> List.filter(match (_, option, _) -> option#available)
+                        |> List.map(match (i, option, act) -> choiceOf(i, option, act));
+        if (List.isEmpty(options) or List.exists(Option.isEmpty, read) or List.isEmpty(open)) None else Some(open)
 
     def choiceOf(i: Int32, option: YarnRunner.DialogueOption, act: Act): Choice =
         let tags = option#line#tags;

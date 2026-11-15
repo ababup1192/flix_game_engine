@@ -238,7 +238,8 @@ pub enum Out {
 | `text` | 2.2 の表の書き方（`at`・`size`・`align`・`speed`・`lock`） | `text.at` `.size` `.align`（名前）・`text.speed`（数）・`text.lock`（一度だけ） | Ren'Py の window の style・Naninovel `@printer`・Tyrano `[position]` / `[delay]` |
 
 - 血鱗の `item`（小物の間は枠を消す・2 行）と `vial gem|bone` の大写し（2 行）の「枠を消す」は `hideWindow` で書ける。
-- **Mark v3 の `mode` の読み替え**: N3 の Mark v3 は `"mode": "Nvl"` / `"Adv"`（enum の名前）を書く。N4b で型の名前（文字）に替えるので、Mark の読み手は「`Nvl` → `windows` の中で kind が nvl の最初の型・`Adv` → kind が adv の最初の型」と読む。書く方は型の名前。Mark の version は 3 のまま、値の形で見分ける（Doc の型の名前に `Nvl`・`Adv` を使わない決まりを schema で止める）。
+- **Mark v3 の `mode` の読み替え**: N3 の Mark v3 は `"mode": "Nvl"` / `"Adv"`（enum の名前）を書く。N4b で型の名前（文字）に替えるので、Mark の読み手は `novel.theme.json` の **`legacyModes`**（`{ "Nvl": "nvl", "Adv": "bottom" }`。空の舞台の Nvl もここで引く）の行き先と読む（レビュー 2 で、`windows` の鍵の字の順で決まる形から替えた）。行き先が無い Doc だけ、その出し方の最初の型（鍵の順）へ落ちる。書く方は型の名前（`WorldRead.restore`・`World.emptyRead` で本当の名前に直す）。Mark の version は 3 のまま、値の形で見分ける（Doc の型の名前に `Nvl`・`Adv` を使わない決まりは、schema の方言に鍵を縛る欄が無いので、読み手が落としてテストで止める）。型ごとに default を付ける案は、同じ出し方の型が 2 つ default を持つ食い違いを読み手が決めることになるので取らなかった。
+- `<<text at=>>` は NVL の頁の中の置き場なので、ADV の型の間に書くと Err（ADV の枠の置き場は型の `place`）。
 - `Page.show` は型の `kind` だけを見る。
 
 ## 4. N4c — 払い・タップで選ぶ選択肢と入力の案内
@@ -467,6 +468,7 @@ C2・C3・C7 は承認の後に中身が替わったので、**替わった所�
 | C11 | `GameView.draw` の型を `(層の数, 物)` の列に替える（2.4） | 血鱗の重ね順（鯨 300 → 傷 305 → スチル 330 → 少女 600）を 1 帯では描けない | GameView に帯を複数（actor の前・後）持たせる（血鱗の 300〜336 の間の差し込みは書けない） |
 | C12 | テンプレートにゲームの口を足す: `GameRes`（ゲームの Doc）・`GameBoot`（起動）・`GameView.hud`（hud の範囲）・`GameView.objects`（tape.json の画面の物）。第 2 版の「`Stage` の `game` の欄（JSON 1 つ）」はやめた。settle と戻しの決まりが無く、PropertyTween だけに書く決まりの抜け道にもなるため（6.2 の比べ。コメントの列は `game.feed.<番号>.*` の鍵で持つ） | 7.2 の 4 つだけでは血鱗の Art・ScenesDoc を持てず、ゲームの絵を tape.json の画面の物に出せない | ゲームがテンプレートのファイルを直してよいとする（C5 の上書きが崩れる）・`Stage` の `game` の欄に `GameCommands.settle(game: Json): Json` の口を付け、型と JSON の往復をゲームのテストで見る（6.2 の (i)） |
 | C14 | **相談中**: 鳴っている一発の効果音を止める口（`Out.StopSounds` と App の口）。`audio all off` で効果音も止めたい作品が出たら、エンジンに足すかを決める | 2.5 から外した（段 3） | 足さない（今は鳴り続ける音だけ止める） |
+| C2 の広げ（scope・`*`）**人の承認待ち** | engine_world の `YarnCommands.Row` の `scope` と `Param.scopedBy`、go の from の keys / path の `*` の段と、引数の `scope` の照らし。段 5 で入れた（コードは入っている） | C2 の承認は `marker` と `text` の型と go の検査だった。`<<show 名 表情>>` の表情を名前ごとの faces で照らす（2.7 の「名前ごとの集まり」・段 5・6 の完了条件）のと、`marker` を `cast.*.markers` から集めるのに要った | 表情専用の型を足す・表情は照らさない |
 | C13 | 公開済みの古いセーブ: 血鱗は読む（v2 の Mark を今のテンプレートの読み手で読み、既読の鍵と台本の行番号をそろえる）。廃屋配信は読まずに「版が違うのでセーブを読めない」と知らせる（9.4） | 血鱗は公開済み。廃屋配信は選択肢が無く 10 分ほどで読み終わり、古い Mark にゲームだけの欄（視聴者数・電波・バッテリー・配信の表示）がある | 廃屋配信もゲームの口で読み替える（約 40 行【推】） |
 
 ## 9. 2 本の移行
@@ -903,6 +905,26 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 当たる物の輪・#icon の絵・縦の画面のゲートは描き出しで見ていない（テストで矩形と入力を見た）。
 - 血鱗のゲートの案内の高さは鯨の上の空きで決めていた（ゲームの絵の位置）。テンプレートは Doc の固定の高さ `arrow.y` だけ。移行で要るならゲームの口を相談する。
 - テンプレートの物語にゲートの見本が無い（agent-eval のお題と一緒に段 13 で足すか決める）。
+
+### 11.8 レビュー 2（85 点）の直し（2026-11-16）
+
+| # | 指摘 | 直した所 |
+|---|---|---|
+| 必須 1 | hideWindow の小物が NVL と縦の画面で消える | `ViewStage.propsOnPage`（頁に幕があり hideWindow の絵が出ていない）で、小物を頁に描くかを決める（`isPropOnPage`・サムネも）。テスト `testHideWindowPropIsDrawnInTheWorldLayerOnTheNvlPage`。縦の画面と NVL の描き出しで目で見た（scratchpad の `vis/hide-portrait.png`・`vis/hide-nvl.png`。小物が world の層に出て、本文と枠は消え、選択肢は出る） |
+| 必須 2 | Mark v3 の Nvl / Adv の読み替え先が鍵の字の順 | `novel.theme.json` の `legacyModes` と schema・note。3 章に書き戻した |
+| 必須 3 | 本物のセーブで確かめる | version 3 のセーブの JSON の `"mode": "Adv"` を `Saves.fromJson` から `WorldRead.restore` まで通すテスト（期待値は legacyModes の Adv） |
+| 必須 4 | C2 の承認の表から出ている | 8.3 に「C2 の広げ（scope・`*`）」の行（人の承認待ち） |
+| 任意 5 | gateOf が実行器を何度も進める | 出来事を反映した時に 1 回求めて Read の `gate` に持たせる（`WorldRead.withGate`）。`gateOf` は待ちを見て `gate` を返すだけ |
+| 任意 6 | 端の帯から始めた払いがゲートで戻る | ゲートの間は、動いた押しと同じフレームの戻るのキーを受けない（`Controls.isMoved`）。テスト 1 本 |
+| 任意 7 | `window off time=` の後に頁の小物が消えてから戻る | 頁の小物に文字の枠の薄さを掛けない（`View.pageProps` を薄くする列の外へ） |
+| 任意 8 | 選べる物が 0 のゲートで詰む | `Gate.ofOptions` は選べる物が 0 なら None。テスト 1 本 |
+| 任意 9 | ADV の間の `text at=` | Err。3 章に 1 行。テスト 1 本 |
+| 任意 10 | Hint の数の直書き | `novel.prompts.json` の `margin`・`captionSize`（schema も） |
+| 任意 11 | 書き方 | `Param.scopedBy` の WhyNot を `//` の行に。「行の塊」→ ブロック |
+| 任意 12 | テスト | ゲートでセーブして戻すと同じゲート（台詞の頁・選択肢の頁の 2 本）・go で作例の toma.mouth が on= の照らしに拾われる |
+| 持ち越し | 描き出しで見ていない見た目 | 話し手を暗くする・puff の粒（`vis/speaker-dim-puff.png`）・当たる物の輪と #icon の色（`vis/gate-ring.png`）・縦の画面のゲート（`vis/gate-portrait.png`）を描き出して見た。見て直した物: 輪の横の字がほかの選択肢の矢印に重なる（空きを矢印までにした）・縦の画面で輪の上の字が画面の端で切れる（地を内へ寄せた）・作例の toma の口の点の高さ（0.17 → 0.24） |
+
+- 残り: 縦の画面では背景を画面より横に広く敷くので、写真に対する割合で書いた当たる物は横の画面より大きく、端にかかることがある（Doc の値の決め方。描き出しで見た）。
 
 ## 12. 試した事（スパイク）
 

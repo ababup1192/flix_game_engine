@@ -235,7 +235,10 @@ mod Commands {
           apply = (ctx, a, st) -> {
               let named = (key, value: Option[String], t) -> value |> Option.map(v -> PropertyTween.setName(key, Some(v), ctx#now, 0.0, t)) |> Option.getWithDefault(t);
               let sizeName = Param.getOpt(size, a);
-              if (sizeName |> Option.exists(n -> not Map.memberOf(n, KindDoc.rec(ctx#res#kind)#textSizes)))
+              let inAdv = Stage.kindOf(ctx#res#theme, st) == ThemeDoc.WindowKind.Adv;
+              if (Option.nonEmpty(Param.getOpt(place, a)) and inAdv)
+                  Err("at= は NVL の頁の中の置き場（今の型は ADV。ADV の枠の置き場は novel.theme.json の windows の place）")
+              else if (sizeName |> Option.exists(n -> not Map.memberOf(n, KindDoc.rec(ctx#res#kind)#textSizes)))
                   Err("知らない字の大きさ '${Option.getWithDefault("", sizeName)}'（novel.kind.json の textSizes）")
               else {
                   let props = st#props |> named(Stage.textAtKey(), Param.getOpt(place, a)) |> named(Stage.textSizeKey(), sizeName)

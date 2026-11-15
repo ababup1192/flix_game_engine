@@ -63,7 +63,7 @@ mod ViewText {
         Int32.toFloat64(Page.rowsOf(sizes#body, sizes#ruby, width, line)) * (sizes#body + k#lineGap * sizes#body / k#bodySize)
 
     /// NVL: 画面いっぱいに幕を敷き（縁取りの型は敷かない）、頁に積んだ行と今の行を並べる（行の間に少し空きを入れて段落にする）。
-    /// 行の塊は <<text at=>> で頁の上（既定）・真ん中・下に置く。頁の下は上の余白と同じだけ画面の下から上。
+    /// ブロックは <<text at=>> で頁の上（既定）・真ん中・下に置く。頁の下は上の余白と同じだけ画面の下から上。
     def nvl(atlas: FontAtlas, env: Env, window: ThemeDoc.Window, r: World.Read): List[Render.PlacedItem] =
         let t = View.theme(env);
         let k = View.kindOf(env);
@@ -88,7 +88,7 @@ mod ViewText {
             let placed = placeLine(atlas, { x = area#x, y = y }, area#width, sizes, inkOf(line, env, r), visible, line, style, env);
             (placed :: done, y + lineHeight(env, sizes, area#width, line) + gap)
         }, (Nil, top));
-        List.flatten(veil :: ViewStage.pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r) :: Nil)
+        List.flatten(veil :: List.flatten(List.reverse(items)) :: waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r) :: Nil)
 
     /// ADV: 枠（上から下へ濃くなる地と、金の細い縁。縁取りの型は地も縁も敷かない）に、名前（型の showName）と今の 1 行。
     /// 枠は型の place で画面の下（既定）か真ん中。
@@ -154,7 +154,7 @@ mod ViewText {
         }, (Nil, area#position#y));
         let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
         let veil = if (style#outline) Nil else portraitVeil(env, r#stage);
-        List.flatten(veil :: ViewStage.pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
+        List.flatten(veil :: List.flatten(List.reverse(items)) :: mark :: Nil)
 
     /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べ、人物が出ている間は novel.cast.json の
     /// portraitVeilWithCast を、人物の出入りの進みに合わせて掛ける（出ると薄く、消えると戻る）。

@@ -172,7 +172,7 @@ mod Controls {
             case (None, None) =>
                 // WhyNot: 上へのホイールでバックログを開かない — ブラウザ版で指を下へ払って送ると、動かしている間に上へのホイールも出る。
                 if (tapped(k#log, frame)) WorldMenu.press(res, World.Button.Log, dropped)
-                else if (tapped(k#rollback, frame)) WorldMenu.press(res, World.Button.Rollback, dropped)
+                else if (tapped(k#rollback, frame) and not (Option.nonEmpty(WorldRead.gateHere(w)) and isMoved(gesture))) WorldMenu.press(res, World.Button.Rollback, dropped)
                 else if (tapped(k#auto, frame)) WorldMenu.press(res, World.Button.Auto, dropped)
                 else if (tapped(k#skip, frame)) WorldMenu.press(res, World.Button.Skip, dropped)
                 else if (tapped(k#quickSave, frame)) WorldMenu.press(res, World.Button.QuickSave, dropped)
@@ -202,6 +202,15 @@ mod Controls {
                     (k#left, swipe(Gesture.Direction.Left)) :: (k#right, swipe(Gesture.Direction.Right)) ::
                     (k#confirm, Gate.Input.Confirm) :: Nil;
         byGesture |> Option.withDefault(default = keyed |> List.find(match (keys, _) -> tapped(keys, frame)) |> Option.map(snd))
+
+    /// 離した押しが動いた押し（払いかドラッグ）か。
+    // WhyNot: ゲートの間に、動いた押しと同じフレームの戻るのキーを受けない — ブラウザ版の横の払いは離したフレームで swipeLeft（戻る）のキーも出し、
+    //   端の帯から始めた払いは Gesture がドラッグにする（ゲートが受けない）ので、そのまま 1 行戻ってしまう。
+    def isMoved(gesture: Option[Gesture.Kind]): Bool = match gesture {
+        case Some(Gesture.Kind.Swipe(_)) => true
+        case Some(Gesture.Kind.Drag)     => true
+        case _                           => false
+    }
 
     /// 離した押しのうち本文を 1 行送る種類: タップ・ドラッグ・左の外の払い。
     // WhyNot: 左の払いで送らない — 左へ払うのは 1 行戻る（touchGestures の swipeLeft）で、送ると戻した行へすぐ進む。
