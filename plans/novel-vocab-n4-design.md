@@ -259,6 +259,21 @@ pub enum Out {
 
 ## 5. N4d — 3D の背景 `Backdrop3d`
 
+### 5.0 決め（2026-11-16）: `Backdrop3d` は作らず、汎用の口だけにする
+
+人の指示「無理矢理な命令になりそうであれば、切り上げるか、汎用な命令にまとめて進みましょう」を受けて、5.3 の形をやめる。
+5.3 の `animated` の 4 種（振り子・くらげの道筋・粒の層・光だまりが電灯を追う）と道筋・揺れ（creep・chase）は、2 本のどちらか 1 本だけの物で、
+2 本で共通なのは「glb を光なしで描く」「届く前・読めない時は still で進める」だけだった（血鱗は休みの位置で動き続ける・廃屋配信は部屋から部屋へ歩く）。
+抽象の境目は実装が 2 つある所にだけ置く（`docs/flix-conventions.md` の「層を置く物差し」）ので、ここは境目にならない。
+
+- **やめる物**: engine_world の `Backdrop3d`（C1）・`novel.backdrops3d.json`・`<<camera path=>>` の専用の命令・`animated` の種類の表。3D の描き方と道筋・揺れ・粒は各ゲームの GameView と Doc に残す。
+- **テンプレートに置く汎用の口**（段 9 の口と同じ種類なので、段 8 と 9 を 1 つにまとめる）:
+  1. 背景をゲームが描く口: `<<bg 名>>` の名前に対し、ゲームが背景の層（層の番号 0）を描けるなら描き、描けない・届いていない時はテンプレートが still の写真を描く（fail-open。`needs` は still だけ・3D の素材は待たない・`Ctx.isLoaded` は描き出しと flow では全部 true。5.4 の「素材を待つか」の行はそのまま生きる）。
+  2. 背景を替える時間をゲームが決める口: `bg` の apply がゲームに「この切り替えに何秒かけるか（と、その間に鳴らす音の Timeline）」を聞く。無ければ今の `transition=`・`pace=` の秒。歩いている間は次の台詞を出さない（5.4 の「文字を待たせる」）・Silent とスキップでは 0 秒・音は物語の時計（5.4 の「鳴らす音」の行）。
+  3. カメラの道筋は専用の命令にせず、既にある `game.<鍵>` の tween（PropertyTween）で書く（例: `game.lair.pathT` を 0→1）。ゲームの GameView がその値を読んで 3D のカメラを置く。
+  4. 最初の背景（`initial`）とタイトルの背景（`title`）は `novel.backdrops.json` に置く（5.3 の箇条のまま。3D に限らない汎用の欄なので残す）。縦と横の決まり（5.5 の still の切り抜き）もテンプレートの still の描き方として残す。
+- 足りない時: 2 本の移行（段 11・12）で、この口で書けない物が出たら、その時に足すかを決める（先回りして足さない）。
+
 ### 5.1 比べる前に分かる事
 
 | | (a) Blender で動画・連番に書き出して 2D で流す | (b) glb + 光を当てない絵（光は絵か lightmap にベイクする） | (c) 実行中の光と影 |
@@ -440,7 +455,7 @@ N4〜N6 の後にゲームが持つ .flix は次だけにする。ほかのテ�
 
 | # | 足す・変える物 | 根拠 | 別案 |
 |---|---|---|---|
-| C1 | engine_world に `Backdrop3d`（Doc の読み手・休みのカメラ・道筋・揺れ・`animated` の 4 種・still への fail-open）。pub は 20 前後【推】。engine（core）は変えない見込み（要る物は全部ある。5.1） | 2 本が別々に約 920 行と約 530 行を書いた（親の計画 1 章）。同じ形（glb を光なしで描き、休みのカメラで still と合わせ、Blender の道筋で動かす） | テンプレートに置く・ゲームに残す |
+| C1 | **取りやめ（5.0・2026-11-16）**。元: engine_world に `Backdrop3d`（Doc の読み手・休みのカメラ・道筋・揺れ・`animated` の 4 種・still への fail-open）。pub は 20 前後【推】。engine（core）は変えない見込み（要る物は全部ある。5.1） | 2 本が別々に約 920 行と約 530 行を書いた（親の計画 1 章）。同じ形（glb を光なしで描き、休みのカメラで still と合わせ、Blender の道筋で動かす） | テンプレートに置く・ゲームに残す |
 | C2 | engine_world の `YarnCommands.Param` に `marker`（`名.点`。第 1 版では `point`）と `text`（`"…"`）の型。go の検査も | N1〜N3 の計画書の 3.3 で N4b と N6 に回した型 | `name` で受けて apply で割る |
 | C3 | go がタグの値を Doc の鍵から集める（`#at:`・`#icon:` を `novel.prompts.json` から）。第 1 版の「タグの型」は、今の go が決まった一覧の照らしを既に持っていたので「Doc から集める」所だけになった | 今は `#at:` の打ち間違いが実行まで分からない | タグは決まった一覧のまま |
 | C4 | `Out` に `Wait` と `StopSounds`（テンプレート） | `se wait`・`audio all off` | 台本で `<<wait 秒>>` |
@@ -658,7 +673,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | 6 | N4c | 入力の案内をテンプレートへ（Gate・Hint・払いの判定・キーボードとマウス・オートとスキップ・flow の払い・E2e の問い）・`novel.prompts.json` と schema・go のタグの値の from（C3） | 3.5〜5 時間 |
 | — | レビュー 2 | | 0.5 時間 |
 | 7 | N4d | スパイク（5.2）。表を人に見せる | 2〜3 時間 |
-| 8 | N4d | engine_world の `Backdrop3d`（C1）・テンプレートの bg と `camera path=` の配線・道筋の選び方と音（World の `Timeline`）・still の切り抜き（5.5）・`novel.backdrops3d.json` の schema | 5〜7 時間 |
+| 8 | N4d | **5.0 で取りやめ・段 9 に合流**（汎用の口 3 つと initial・title・still の切り抜き）。元の中身: engine_world の `Backdrop3d`（C1）・テンプレートの bg と `camera path=` の配線・道筋の選び方と音（World の `Timeline`）・still の切り抜き（5.5）・`novel.backdrops3d.json` の schema | 5〜7 時間 |
 | 9 | 口 | `GameRes`・`GameBoot`・`GameView.hud`・`GameView.objects`（C12）・`Commands.applyText`（C9）・`vocab.std.json`（C8） | 1.5〜2.5 時間 |
 | — | レビュー 3 | | 0.5〜1 時間 |
 | 10 | 門 | 10.7 の道具と 10.6 の確かめ・`make template-sync`（C5）と、その一覧を毎回見る手順（7.2） | 9.5〜13 時間 |
