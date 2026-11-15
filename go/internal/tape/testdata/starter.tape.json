@@ -1,74 +1,181 @@
 {
   "branches": [],
   "choices": [],
-  "duration": 12.033,
+  "duration": 14.167,
   "flow": "e2e/tape.flow",
   "fps": 30,
   "game": "sound-novel-starter",
   "lines": {
     "22": {
-      "cmd": "<<audio ambience amb_evening>>",
-      "node": "Station"
+      "cmd": "<<audio ambience amb_winter_wind>>",
+      "node": "WinterRoute"
     },
     "23": {
-      "cmd": "<<bg station grade=dusk time=2.5>>",
-      "node": "Station"
+      "cmd": "<<bg slope grade=morning time=2.5>>",
+      "node": "WinterRoute"
     },
     "24": {
-      "cmd": "<<window nvl>>",
-      "node": "Station"
+      "cmd": "<<window off>>",
+      "node": "WinterRoute"
     },
     "25": {
-      "cmd": "<<wait 1.5>>",
-      "node": "Station"
+      "cmd": "<<wait 2>>",
+      "node": "WinterRoute"
     },
     "26": {
-      "node": "Station",
-      "text": "十年ぶりに降りた駅は、私が覚えているよりずっと小さかった。",
-      "who": "地の文"
+      "cmd": "<<window nvl>>",
+      "node": "WinterRoute"
     },
     "27": {
-      "node": "Station",
-      "text": "改札はとうに無く、錆びた運賃箱がひとつ、ホームの端で口を開けている。",
+      "node": "WinterRoute",
+      "text": "薄雪に、まだ靴の跡がない。",
       "who": "地の文"
     },
     "28": {
-      "node": "Station",
-      "text": "線路の向こうから蜩の声が押し寄せてきて、走り去る電車の音をあっという間に呑みこんだ。",
+      "node": "WinterRoute",
+      "text": "祖父の空き家へ来てから、朝に用事があるのは初めてだ。",
       "who": "地の文"
     },
     "29": {
-      "node": "Station",
-      "text": "祖母の家を片付けに来た。それだけの用事のはずだった。",
+      "node": "WinterRoute",
+      "text": "まだ寝ぼけた体を、玄関で急かさずに待つ。",
       "who": "地の文"
     },
     "30": {
-      "cmd": "<<window clear>>",
-      "node": "Station"
+      "node": "WinterRoute",
+      "text": "午前だけでいいからね。無理はしないで。",
+      "who": "郵便局の人"
     },
     "31": {
-      "node": "Station",
-      "text": "鞄の底で、鍵がひとつ鳴った。",
-      "who": "地の文"
+      "node": "WinterRoute",
+      "text": "はい、朝は得意です。お任せください。",
+      "who": "灯"
     },
     "32": {
-      "node": "Station",
-      "text": "家の鍵ではない。祖母が「なくさないでね」と私の手に握らせた、小さな真鍮の鍵だ。",
-      "who": "地の文"
+      "node": "WinterRoute",
+      "text": "坂の上は日陰が凍るよ。石垣の先、気をつけて。",
+      "who": "郵便局の人"
     },
     "33": {
-      "node": "Station",
-      "text": "何の鍵なのか、とうとう聞きそびれたまま、祖母は春に逝った。",
+      "node": "WinterRoute",
+      "text": "窓口で受け取った鞄は、思ったより腰の低い所に落ちた。",
       "who": "地の文"
     },
     "34": {
-      "node": "Station",
-      "text": "ホームの端で、夏草が背伸びをするように揺れている。",
-      "who": "地の文"
+      "cmd": "<<window clear>>",
+      "node": "WinterRoute"
     },
     "35": {
-      "cmd": "<<jump Paddy>>",
-      "node": "Station"
+      "node": "WinterRoute",
+      "text": "新しい配達の人かい。",
+      "who": "坂の家の人"
+    },
+    "36": {
+      "node": "WinterRoute",
+      "text": "冬の間だけ、お手伝いします。よろしくお願いします。",
+      "who": "灯"
+    },
+    "37": {
+      "node": "WinterRoute",
+      "text": "上の工房の人、手紙が好きでね。今日も待ってるよ。",
+      "who": "坂の家の人"
+    },
+    "38": {
+      "node": "WinterRoute",
+      "text": "石垣を回ると、靴底が横へ流れた。",
+      "who": "地の文"
+    },
+    "39": {
+      "node": "WinterRoute",
+      "text": "膝を曲げて止まり、石の白い粒を見つめる。",
+      "who": "地の文"
+    },
+    "40": {
+      "node": "WinterRoute",
+      "text": "次の一歩から、歩幅を半分にした。",
+      "who": "地の文"
+    },
+    "41": {
+      "cmd": "<<window clear>>",
+      "node": "WinterRoute"
+    },
+    "42": {
+      "node": "WinterRoute",
+      "text": "最後の一軒は、坂の上の古い工房だった。",
+      "who": "地の文"
+    },
+    "43": {
+      "node": "WinterRoute",
+      "text": "郵便受けの蓋を戻すと、庇の下の窓が開いた。",
+      "who": "地の文"
+    },
+    "44": {
+      "node": "WinterRoute",
+      "text": "石垣の所……。これを。",
+      "who": "冬馬"
+    },
+    "45": {
+      "node": "WinterRoute",
+      "text": "私にですか。ありがとうございます。",
+      "who": "灯"
+    },
+    "46": {
+      "node": "WinterRoute",
+      "text": "あの、お名前を。",
+      "who": "灯"
+    },
+    "47": {
+      "node": "WinterRoute",
+      "text": "雪明かりの向こうで、小さな封筒を持つ指だけが見えた。",
+      "who": "地の文"
+    },
+    "48": {
+      "node": "WinterRoute",
+      "text": "窓はもう閉まり、私の声がガラスに薄く残った。",
+      "who": "地の文"
+    },
+    "49": {
+      "cmd": "<<window clear>>",
+      "node": "WinterRoute"
+    },
+    "50": {
+      "node": "WinterRoute",
+      "text": "宛名には、次にここへ来る方へ、とある。",
+      "who": "地の文"
+    },
+    "51": {
+      "node": "WinterRoute",
+      "text": "坂の下で封を開くと、折った紙が膝いっぱいに広がった。",
+      "who": "地の文"
+    },
+    "52": {
+      "node": "WinterRoute",
+      "text": "道の線に沿って、細かな斜線が重なっている。",
+      "who": "地の文"
+    },
+    "53": {
+      "node": "WinterRoute",
+      "text": "今朝、足を取られた曲がり角にもあった。",
+      "who": "地の文"
+    },
+    "54": {
+      "node": "WinterRoute",
+      "text": "見られてた。",
+      "who": "灯"
+    },
+    "55": {
+      "node": "WinterRoute",
+      "text": "まだ会っていない私の靴の置き場を、考えた人がいる。",
+      "who": "地の文"
+    },
+    "56": {
+      "node": "WinterRoute",
+      "text": "帰ったら返事を書こう。封筒を内ポケットへ入れた。",
+      "who": "地の文"
+    },
+    "57": {
+      "cmd": "<<jump FirstLetter>>",
+      "node": "WinterRoute"
     }
   },
   "msg": {
@@ -84,7 +191,7 @@
     "x0": 0.075,
     "x1": 0.925
   },
-  "node": "Station",
+  "node": "WinterRoute",
   "objects": [
     {
       "from": 0,
@@ -113,14 +220,14 @@
     {
       "from": 2,
       "id": "backdrop",
-      "name": "背景（無人の駅）",
+      "name": "背景（冬の坂）",
       "rect": {
         "h": 1,
         "w": 1,
         "x": 0,
         "y": 0
       },
-      "to": 12.033
+      "to": 14.167
     },
     {
       "from": 2,
@@ -132,7 +239,7 @@
         "x": 0.115,
         "y": 0.115
       },
-      "to": 12.033
+      "to": 14.167
     },
     {
       "from": 2,
@@ -144,7 +251,7 @@
         "x": 0.133,
         "y": 0.948
       },
-      "to": 12.033
+      "to": 14.167
     }
   ],
   "playUrl": "",
@@ -161,32 +268,44 @@
         0
       ],
       [
-        3.533,
+        4.033,
         1
       ],
       [
-        4.7,
+        4.8,
         2
       ],
       [
-        6.033,
+        5.933,
         3
       ],
       [
-        7.567,
+        6.933,
         4
       ],
       [
-        8.7,
+        7.933,
         5
       ],
       [
-        9.533,
+        8.933,
         6
       ],
       [
-        11,
+        10.033,
         7
+      ],
+      [
+        11.167,
+        8
+      ],
+      [
+        11.967,
+        9
+      ],
+      [
+        13.133,
+        10
       ]
     ],
     "mode": [
@@ -208,7 +327,7 @@
     "photo": [
       [
         0,
-        "station"
+        "slope"
       ]
     ]
   },
@@ -219,29 +338,31 @@
       "t": 0
     },
     {
-      "id": "station",
-      "name": "無人の駅",
+      "id": "slope",
+      "name": "slope",
       "t": 2.033
     },
     {
       "id": "clear",
       "name": "頁をめくる",
-      "t": 8.733
+      "t": 11.2
     }
   ],
   "sounds": [
     {
       "kind": "ambience",
-      "label": "夕方の環境音",
+      "label": "amb_winter_wind",
       "line": null,
-      "name": "amb_evening",
+      "name": "amb_winter_wind",
       "t": 0
     }
   ],
   "speaker": {
-    "千夏": "chinatsu",
+    "冬馬": "toma",
     "地の文": "",
-    "私": "me"
+    "坂の家の人": "neighbor",
+    "灯": "akari",
+    "郵便局の人": "clerk"
   },
   "speakers": [
     {
@@ -252,15 +373,27 @@
     },
     {
       "color": "#e9c873",
-      "id": "chinatsu",
+      "id": "akari",
       "ink": "#f3eee4",
-      "name": "千夏"
+      "name": "灯"
     },
     {
       "color": "#e9c873",
-      "id": "me",
+      "id": "clerk",
       "ink": "#f3eee4",
-      "name": "私"
+      "name": "郵便局の人"
+    },
+    {
+      "color": "#e9c873",
+      "id": "neighbor",
+      "ink": "#f3eee4",
+      "name": "坂の家の人"
+    },
+    {
+      "color": "#e9c873",
+      "id": "toma",
+      "ink": "#f3eee4",
+      "name": "冬馬"
     }
   ],
   "timeline": [
@@ -273,34 +406,46 @@
       23
     ],
     [
-      3.533,
-      26
-    ],
-    [
-      4.7,
+      4.033,
       27
     ],
     [
-      6.033,
+      4.8,
       28
     ],
     [
-      7.567,
+      5.933,
       29
     ],
     [
-      8.7,
+      6.933,
+      30
+    ],
+    [
+      7.933,
       31
     ],
     [
-      9.533,
+      8.933,
       32
     ],
     [
-      11,
+      10.033,
       33
+    ],
+    [
+      11.167,
+      35
+    ],
+    [
+      11.967,
+      36
+    ],
+    [
+      13.133,
+      37
     ]
   ],
-  "title": "夏草の駅",
-  "yarn": "assets/talk/natsukusa.yarn"
+  "title": "雪どけを待たない便り",
+  "yarn": "assets/talk/yukidoke.yarn"
 }

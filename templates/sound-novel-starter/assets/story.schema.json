@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "画面の言葉（novel.story.json）",
-  "description": "シナリオの外で画面に出す言葉と話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn。",
+  "description": "シナリオの外で画面に出す言葉と話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn。",
   "type": "object",
   "required": [
     "version",
