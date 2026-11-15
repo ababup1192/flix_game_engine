@@ -29,6 +29,8 @@
   （入口は `Game.withAssetLoading` で、Main とブラウザの入口だけが足す。テスト・flow・描き出しは全部届いた形のまま）。
 - 文字送り（UiTypewriter）・ルビつきの字の配置と折り返し（RichText.placeRuby）・シナリオの実行（YarnRunner）・
   ミキサー（AudioMixer）はエンジンの物を使う。自前の文字折り・会話の進め方・音量の掛け算を書かない。
+- **BGM・効果音を外から足す時は、まず魔王魂と PeriTune から選ぶ**。規約の要点（魔王魂はクレジット必須・PeriTune の曲を有償の作品に入れる時は相談）と
+  書く所（`CREDITS.md` と `assets/novel.credits.json` の 2 か所）は engine の `docs/audio.md` の「外から持ってくる BGM・効果音」の節。
 
 ## この画面の画風
 
