@@ -68,7 +68,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | 文字送り・オート・スキップ・既読 | 速さは `assets/novel.kind.json` と設定の画面 | `WorldRead.step` / `autoOrSkip` / `markSeen` |
 | バックログ・そこへ戻る | 行数は `novel.kind.json` の `logMax` | `WorldLog.scrollLog` / `jumpTo`・`View.logPanel` |
 | ロールバック | — | `WorldLog.rollback`（ログの各行に、その行を出した時のブックマークを持たせる） |
-| セーブ・ロード・クイック・オート | ページと枠の数は `Saves.tabs` / `perPage` | `WorldSaves.writeSlot` / `loadFrom` / `quickSave`（YarnRunner のブックマークと、その台詞の舞台 `Stage.Snapshot` と頁）・`src/Saves.flix`（JSON は version 3。version 2 も読む）・`WorldRead.restore`・`View.slotsPanel` |
+| セーブ・ロード・クイック・オート | ページと枠の数は `Saves.tabs` / `perPage` | `WorldSaves.writeSlot` / `loadFrom` / `quickSave`（YarnRunner のブックマークと、その台詞の舞台 `Stage.Snapshot` と頁と、ノードに入った時の舞台）・`src/Saves.flix`（JSON は version 3。version 2 も読む）・`WorldRead.restore`・`View.slotsPanel` |
 | 確認のウィンドウ | 文言は `novel.story.json` の labels | `World.askFor`・`WorldMenu.answer`・`View.askLayer` |
 | 設定 | スライダーの範囲は `novel.kind.json` の `*Slider` | `WorldSettings.adjust` / `activate` / `withLevel` / `withSide`・`View.settingsPanel` |
 | タイトル画面・クレジット | `assets/novel.story.json`・`assets/novel.credits.json` | `View.title` / `View.credits` |

@@ -1,5 +1,6 @@
 // テスト用のシナリオ（TestCast の「舞台の全部と頁」）。頁の数・型の切り替え・ノードをまたぐ NVL の頁・文字の枠を消す・選択肢の分かれ道を、
 // 読み進めた時と戻した時で比べる。cast.yarn の Next の終わりから jump して着く。
+// Menu（自分へ戻る選択肢と出口）・Through（<<if>> の中のコマンドと、コマンドだけで通り過ぎる）・Island（どこからも来ない）は、ノードに着いた時の舞台を見る。
 // 直したら: bin/fge yarn build test/fixtures/talk --no-vocab
 title: Pages
 ---
@@ -30,9 +31,37 @@ me: 枠は台詞で戻る。
 title: Left
 ---
 <<window clear>>
+<<wait 1>>
 me: 左の道。
 ===
 title: Right
 ---
 me: 右の道。
+<<jump Menu>>
+===
+title: Menu
+---
+me: どうする？
+-> 聞く
+    me: 聞いた。
+    <<jump Menu>>
+-> 行く
+    me: 行こう。
+    <<jump Through>>
+===
+title: Through
+---
+<<if true>>
+    <<window bottom>>
+<<endif>>
+<<show b>>
+<<jump Exit>>
+===
+title: Exit
+---
+me: 出口。
+===
+title: Island
+---
+me: どこからも来ない。
 ===

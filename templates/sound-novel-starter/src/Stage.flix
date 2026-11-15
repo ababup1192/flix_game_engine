@@ -134,7 +134,13 @@ mod Stage {
             case Some(Ok(t))   => t
             case Some(Err(why)) => Log.warnThen("[saves] 舞台の値が読めないので値なしで戻す (${why})", PropertyTween.empty())
         };
-        let mode = if (JsonCodec.stringOr("mode", "", obj) == "${Mode.Adv}") Mode.Adv else Mode.Nvl;
-        snapshotOf({ shot = shot, mode = mode, pages = JsonCodec.intOr("pages", 0, obj), props = props,
-                     cast = Cast.layerOf(Cast.markFromJson(Map.get("cast", obj))) | empty() })
+        makeSnapshot(shot, modeOfText(JsonCodec.stringOr("mode", "", obj)), JsonCodec.intOr("pages", 0, obj), props,
+                     Cast.markFromJson(Map.get("cast", obj)))
+
+    /// 残した値から、settle した舞台を組む（セーブの JSON を読む所）。
+    pub def makeSnapshot(shot: Option[Shot], mode: Mode, pages: Int32, props: PropertyTween.Table[Story], cast: Cast.Mark): Snapshot =
+        snapshotOf({ shot = shot, mode = mode, pages = pages, props = props, cast = Cast.layerOf(cast) | empty() })
+
+    /// セーブに書いた文章の出し方の字（"Adv" のほかは Nvl）。
+    pub def modeOfText(text: String): Mode = if (text == "${Mode.Adv}") Mode.Adv else Mode.Nvl
 }

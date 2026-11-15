@@ -53,7 +53,8 @@ mod World {
     /// playback = 送り方、doneAt = 今の行を出し終えた物語の時刻、autosavedNode = オートセーブを残した最後のノード、
     /// hold = 素材の待ち（無ければ None）、gaveUp = 待ち切れずに諦めた素材の名前（もう待たない）、
     /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）、
-    /// cursor = シナリオの実行位置（今の台詞・選択肢か、<<wait>> で待っている演出コマンドの行。talkCursorOf）。
+    /// cursor = シナリオの実行位置（今の台詞・選択肢か、<<wait>> で待っている演出コマンドの行。talkCursorOf）、
+    /// entry = 今のノードに入った時の舞台（戻れる所の当て直しの始まり。WorldRead.trackEntry）。
     pub type alias Read = {
         talk = YarnRunner.Runner[Stage.Story],
         stage = Stage.Stage,
@@ -67,8 +68,13 @@ mod World {
         hold = Option[Hold],
         gaveUp = Set[String],
         tip = Option[(Int32, Clock.Time[Clock.Real])],
-        cursor = Option[Yarn.Source]
+        cursor = Option[Yarn.Source],
+        entry = NodeEntry
     }
+
+    /// 今のノードに入った時の記録。node = ノードの名前、lastLine = そのノードで最後に通った .yarn の行、
+    /// visits = ノードに入った回数（自分への jump も 1 回）、stage = 入る直前の舞台。
+    pub type alias NodeEntry = { node = String, lastLine = Int32, visits = Int32, stage = Stage.Snapshot }
 
     /// 素材の待ち: ブラウザ版で後回しにした背景・環境音が、使う時にまだ届いていない間の暗転（WorldRead の「素材の待ち」）。
     /// phase = 今の段、phaseFrom = その段に入った物語の時刻（黒へ重ねる進みの元）、waited = Waiting に居た実時間の秒、
@@ -258,7 +264,8 @@ mod World {
     /// 読み始める前の Read（舞台・頁・バックログが空）。
     pub def emptyRead(): Read =
         { talk = YarnRunner.closed(), stage = Stage.empty(), page = Page.empty(), choices = Nil, choiceCursor = 0,
-          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None }
+          log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None,
+          entry = { node = "", lastLine = 0, visits = 0, stage = Stage.snapshotOf(Stage.empty()) } }
 
     // ── 場面を読む口 ──
 

@@ -55,8 +55,8 @@ mod Page {
         case _                             => Nil
     }
 
-    /// show が NVL の頁をめくるか（積んだ行があり、新しい行と一緒に入り切らない）。
-    pub def turnsOver(mode: Stage.Mode, fits: List[Line] -> Bool, line: Line, page: Page): Bool =
+    /// line を出すと show が NVL の頁をめくるか（積んだ行があり、新しい行と一緒に入り切らない）。
+    pub def isFullFor(mode: Stage.Mode, fits: List[Line] -> Bool, line: Line, page: Page): Bool =
         let kept = keptOf(page);
         mode == Stage.Mode.Nvl and not List.isEmpty(kept) and not fits(List.append(kept, line :: Nil))
 

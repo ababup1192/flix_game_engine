@@ -459,6 +459,7 @@ mod Controls {
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
           dialogue = dialogue,
           commandArgs = Commands.argsTableOf(dialogue),
+          nodesBySource = Talk.nodesBySource(dialogue),
           missing = Set.empty(),
           scriptEdits = ScriptEdits.none() }
 

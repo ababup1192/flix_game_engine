@@ -342,7 +342,7 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 ### 4.2 頭から開く時（Studio のプレビュー・`talk node=`・描き出し・テープの「ここから遊ぶ」）
 
 - セーブが無いので、前のノードから持ち越す舞台が分からない。これが「ノードの頭で言い直す」決まりの残りの理由。(a) でも (b) でも同じく要る。
-- `WorldRead.entryOf(res, node)`: 最初のノードから音を出さずに流し、選択肢は全部たどって、そのノードに最初に着いた道の舞台を返す（血鱗の `StageAudit.arrive` と同じ流し方）。着かないノードは空の舞台で 1 行言う。
+- `WorldRead.buildEntryStage(res, node)`（計画の時の名前は entryOf）: 最初のノードから音を出さずに流し、選択肢は全部たどって、そのノードに最初に着いた道の舞台を返す（血鱗の `StageAudit.arrive` と同じ流し方）。着かないノードは空の舞台で 1 行言う。
 - たどり方の上限: 選択肢の組み合わせで道が増えるので、ノードごとに最初に着いた 1 本で止め、全体で出来事の数に上限（StageAudit と同じ fuel）を置く。上限に当たったら着いていないノードは空の舞台で 1 行言う。
 - Res（台本が替わると作り直す物）に、ノードごとの結果を一度だけ作って置く【推】。台本の差し替え（`Res.withDialogue`）と台詞の直し（`Res.withScriptEdits`。注釈の頁の「ここから遊ぶ」）の両方で作り直す。作る代金は 4 本の台本（ノード 6〜20）で数 ms【推】。測ってから置き場を決める。
 - `openAt` はこの舞台から始める。これで実機・プレビュー・セーブから戻した所が同じ舞台になる。
@@ -353,20 +353,21 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 - 血鱗の `StageAudit`（122 行）の 2 つの検査のうち、「ノードの頭の 4 文」と「生きて読んだ舞台と頭だけ当てた舞台の比べ」は要らなくなる。「前のノードが scene の頁の上限（cap）に着いているか」は血鱗だけの決まりなので、ゲームのテストに残す。
 - 代わりに、テンプレートの既存の `TestCast.testLiveStageMatchesTheRestoredStageOnEveryLine`（今は立ち絵だけを比べる）を広げ、舞台の全部（Snapshot）と頁を全部の台詞で比べる（O4）。
 
-### 4.4 段 7 で入れた形（実装と、計画とのずれ）
+### 4.4 段 7 で入れた形（実装と、計画とのずれ。1 回目のレビュー 84 点の直しまで）
 
-- **Mark**: `{ bookmark, stage = Stage.Snapshot, page = Option[Page.Page] }`。`Stage.Snapshot` は外から作らせない型（非 pub の enum + `pub type alias`）で、作る口は `Stage.snapshotOf`（settle してから包む）だけ。頁が `Option` なのは version 2 の枠に頁が無いため（None なら当て直しで作った頁のまま）。
-- **JSON は version 3**: 枠に `"stage": { "bg": {photo, grade} か null, "mode", "pages", "props", "cast" }` と `"page": { "lines", "current", "next" }`。version 2 か 3 かは根の `version` でなく、枠に `stage` の鍵があるかで見る（枠ごとに読み替える）。version 2 の欄（photo・grade・環境音・particles・mode・cast）は `Saves.stageOf` が Snapshot に読み替える。読めない欄はその欄の既定で続ける。
-- **restore**: Mark の舞台から当て直しを始め、`settled` の後に舞台と頁を Mark の値で置き換える（4.1 の決めた形のまま）。
-- **ずれ: セーブの道（`slotHere`）は、`<<wait>>` の間だけバックログの一番新しい戻れる所を使う**（`WorldRead.markHere`）。今のブックマークで作ると、当て直しが待ちを飛ばして次の台詞まで進むのに、舞台と頁は待つ前の物で置き換えるので食い違う。台詞と選択肢を出している間は計画どおり今のブックマーク・舞台・頁で作る。
+- **Mark**: `{ bookmark, stage = Stage.Snapshot, page = Option[Page.Page], entry = Option[Stage.Snapshot] }`。`Stage.Snapshot` は外から作らせない型（非 pub の enum + `pub type alias`）で、作る口は `Stage.snapshotOf`（settle してから包む）と、セーブの JSON を読む所の `Stage.makeSnapshot`。`page` と `entry` は、それを書く前のセーブ（version 2 と、`entry` の無い version 3）では None。
+- **ずれ: Mark にノードに入った時の舞台（`entry`）も持つ**（4.1 の (a) の情報を、YarnRunner を変えずに持つ形）。生きて読む時も当て直しも、出来事の .yarn の行で居るノードを引き（`Res#nodesBySource`・`Talk.nodesBySource`）、別のノードの行か、同じノードで前に通った行より上の行（自分への jump）に来た所でノードに入ったと見て、入る直前の舞台を `Read#entry`（`World.NodeEntry`）に残す（`WorldRead.trackEntry`。`absorbOne` の頭で毎回）。`restore` は `entry` から当て直すので、ロードした直後のバックログの前の台詞の戻れる所に、ノードの途中で替えた物（立ち絵・背景・型・小物・props）が早く入らない。`entry` の無い枠は今までどおり Mark の舞台から当て直す。
+- **JSON は version 3**: 枠に `"stage": { "bg": {photo, grade} か null, "mode", "pages", "props", "cast" }`・`"page": { "lines", "current", "next" }`・`"entry"`（stage と同じ形か null）。version 2 か 3 かは根の `version` でなく、枠に `stage` の鍵があるかで見る（枠ごとに読み替える）。version 2 の欄（photo・grade・環境音・particles・mode・cast）は `Saves.stageOf` が `Stage.makeSnapshot` で組む。読めない欄はその欄の既定で続ける。
+- **restore**: `entry`（無ければ Mark の舞台）から当て直してバックログと選択肢を作り、`settled` の後に舞台と頁を Mark の値で置き換える。
+- **ずれ: セーブの道（`slotHere`）は、`<<wait>>` の間はバックログの頭の項目だけを見る**（`WorldRead.markHere`・`headMarkOf`）。頭が戻れる所つきの台詞ならそれを使い、選んだ選択肢か空（はじめから読んだ頭の待ち・選択肢を選んだ直後の待ち）なら None で、その間はセーブしない。今のブックマークで作ると、当て直しが待ちを飛ばして次の台詞まで進むのに、舞台と頁は待つ前の物で置き換えるので食い違う。選んだ選択肢より前の台詞へさかのぼると、選ぶ前に戻る。台詞と選択肢を出している間は計画どおり今のブックマーク・舞台・頁で作る。
 - **ずれ: `window off`（`window.hidden`）は次の台詞・選択肢と `window nvl|bottom` で戻る**（`Stage.withWindowShown`。Ren'Py の window hide と同じ）。消したまま台詞を出すと、押せば進むのに何も読めない画面になるため。値は `props` の数の鍵 `window.hidden`（1 = 消す）で、名前の鍵にしなかったのは、後で `window off time=` で薄くする時に tween で書けるから。View は `Stage.isWindowHidden` が真の間、読む画面の層（文字の枠・字・クイックメニュー）を描かない（画面の Hidden と同じ層）。このため「前のノードで消したまま jump した後の台詞から戻す」写しのテストは意味を失い、代わりに「消して待つ間にセーブして戻すと、待つ前の台詞を枠のある形で出す」を見る。
-- **`Stage.pages`**: 足すのは `Out.ClearPage`（`window clear` と型の切り替え）と NVL で入り切らずにめくった時（`Page.turnsOver`）の 2 か所で、どちらも `WorldRead` の中（`takeOut` と `showLine`）。ADV の頁送り（`TurnPage`）は数えない（血鱗の「頁で沈む」は NVL の頁）。
-- **O2（台本を読んだ時に 1 回だけ引数を読む表）**: `Commands.ArgsTable`（鍵は「ファイル:行」。中は外から作れない）を `Res#commandArgs` に置き、`Res.withDialogue` と `Controls.loadRes` が作る。引く時は行の鍵に加えて名前と引数の字が同じかを見て、違えば読み直す（差し替え前の表・テストが組んだコマンド）。`ScriptEdits` は台詞だけを直すので作り直さない。`Commands.timingOf` は `res` を取るようになった。
-- **entryOf（4.2）**: `WorldRead.entryOf(res, node)` と `entriesWithin(fuel, res)`。1 歩の出来事の列には前のノードの残り・jump・次のノードの頭が入るので、出来事の .yarn の行から居るノードを引く表（`Talk.statementsOf`・`Talk.sourceOf`）で列を割り、ノードに入る直前の舞台を残す。血鱗の `StageAudit.headEventCount`（頭の出来事の数で後ろから外す）は `<<if>>` で数え違い、コマンドだけで通り過ぎるノードを拾えないので取らなかった。頁と舞台は読み進める時と同じ `absorbOne` で作る。もう着いたノードへ入った道はそこで止め、全体の歩数の上限は `entryFuel()` = 4000。着かないノードは空の舞台で 1 行言う。
-- **ずれ: entryOf を Res に置いていない**。作る代金はテスト 1 本（流す・比べるを含めて）で 7〜20 ms で、`openAt` ごとに作っている。Res に置くと Res が WorldRead（World）を使う向きになり、「Res は World を使わない」が崩れるため。
-- **ずれ（退行の門）: 描き出しの 8 枚が変わった**（ask・engawa・lane・load・night・save・small-ask・small-save）。実機では Lane・Engawa・River は Paddy の ADV のまま読まれる（`TestRules.testAdvBackdropCueStartsANewPage` がそれを確かめている）のに、今までの `openAt` は空の舞台（NVL）から始めていたので、描き出しだけ NVL だった。entryOf で描き出しが実機と同じ ADV になった（4.2 のねらいどおり）。別案として Lane の頭に `<<window nvl>>` を足すと 43 枚とも SHA が一致したが、実機の遊びを変えて上のテストが落ちるので取らず、リファレンスを別のコミットで更新した。
-- **残した穴**: セーブからロードした直後のバックログは、同じノードの前の台詞の戻れる所を「Mark の舞台から当て直した舞台」で作る。数え足す値や順に効く値は、ロード直後にそこへロールバックするとずれうる。読み進めている間のバックログは元の戻れる所を持ち続ける（`WorldLog.jumpTo` が前のログを残す）。直すには、ノードに入った時の舞台を Mark に持つ（4.1 の (a) の情報）必要があり、段 7 ではやらない。
-- **テスト**: `TestCast` に、見本の台本 `test/fixtures/talk/stage.yarn`（前のノードの型のまま始まるノード・NVL で入り切らない頁・clear・型の切り替え・ノードをまたぐ NVL の頁・window off と wait・選択肢の 2 つの道）を cast.yarn の Next の終わりから繋ぎ、全部の台詞（選択肢は両方の道）で舞台の全部と頁が戻ること・v3 の JSON の往復（`slotHere` から）・頁の数・待つ間のセーブ・v2 の枠の読み替え・entryOf（着いた時の舞台・上限・openAt）を見る。`TestCommands` に window off と引数の表。
+- **`Stage.pages`**: 足すのは `Out.ClearPage`（`window clear` と型の切り替え）と NVL で入り切らずにめくった時（`Page.isFullFor`）の 2 か所で、どちらも `WorldRead` の中（`takeOut` と `showLine`）。ADV の頁送り（`TurnPage`）は数えない（血鱗の「頁で沈む」は NVL の頁）。
+- **O2（台本を読んだ時に 1 回だけ引数を読む表）**: `Commands.ArgsTable`（鍵は「ファイル:行」。中は外から作れない）を `Res#commandArgs` に置き、`Res.withDialogue` と `Controls.loadRes` が作る（`Res#nodesBySource` も同じ所で作る）。引く時は行の鍵に加えて名前と引数の字が同じかを見て、違えば読み直す（差し替え前の表・テストが組んだコマンド）。`ScriptEdits` は台詞だけを直すので作り直さない。`Commands.timingOf` は `res` を取るようになった。
+- **ノードに着いた時の舞台（4.2）**: `WorldRead.buildEntryStage(res, node)` と `buildEntriesWithin(fuel, res)`（重い計算なので `build*`）。opening から全部の選択肢をたどり、読み進める時と同じ `absorbOne`（`trackEntry`）が残す `Read#entry` を、入った回数（`visits`）が増えるたびに見て、初めてのノードならその舞台を残す。もう着いたノードへ入った道（自分への jump も）はそこで止め、全体の歩数の上限は `entryFuel()` = 4000。着かないノードは空の舞台で 1 行言う。血鱗の `StageAudit.headEventCount`（頭の出来事の数で後ろから外す）は `<<if>>` で数え違い、コマンドだけで通り過ぎるノードを拾えないので取らなかった。
+- **`<<set>>` と `<<jump>>` だけのノードは出来事を出さないので、`buildEntriesWithin` では着かない**（そのノードを頭から開くと空の舞台から始める）。
+- **ずれ: ノードに着いた時の舞台を Res に置いていない**。作る代金はテスト 1 本（流す・比べるを含めて）で 7〜20 ms で、`openAt` ごとに作っている。Res に置くと Res が WorldRead（World）を使う向きになり、「Res は World を使わない」が崩れるため。
+- **ずれ（退行の門）: 描き出しの 8 枚が変わった**（ask・engawa・lane・load・night・save・small-ask・small-save）。実機では Lane・Engawa・River は Paddy の ADV のまま読まれる（`TestRules.testAdvBackdropCueStartsANewPage` がそれを確かめている）のに、今までの `openAt` は空の舞台（NVL）から始めていたので、描き出しだけ NVL だった。ノードに着いた時の舞台から開くので、描き出しが実機と同じ ADV になった（4.2 のねらいどおり。レビューで受け入れた）。別案として Lane の頭に `<<window nvl>>` を足すと 43 枚とも SHA が一致したが、実機の遊びを変えて上のテストが落ちるので取らず、リファレンスを別のコミットで更新した。
+- **テスト**: `TestCast` に、見本の台本 `test/fixtures/talk/stage.yarn`（前のノードの型のまま始まるノード・NVL で入り切らない頁・clear・型の切り替え・ノードをまたぐ NVL の頁・window off と wait・選択肢の 2 つの道・選択肢の直後の wait・自分へ戻るメニューと出口・`<<if>>` の中のコマンドとコマンドだけで通り過ぎるノード・どこからも来ないノード）を cast.yarn の Next の終わりから繋ぎ、全部の台詞（選択肢はどの道も・メニューの入り直しも）で舞台の全部と頁が戻ること・v3 の JSON の往復（`slotHere` から）・ロード直後のバックログで前の台詞へ戻ること・頁の数（型の切り替え・溢れ・clear を 1 本ずつ）・待つ間のセーブ（台詞の後・頭・選択肢の直後）・v2 の枠の読み替え・着いた時の舞台（上限・自分へ戻るメニュー・`<<if>>` と通り過ぎ・着かないノード・openAt）を見る。`TestCommands` に window off と引数の表。
 
 ## 5. 置き場と増える pub
 
@@ -408,7 +409,7 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
   - `PropertyTween`: tween の途中・遅れて始まる物・settle・JSON の往復。
   - `Out`: clear・window の型替え・ADV の bg で頁の出来事が出る。Silent で `Sound` が落ちる。
   - vocab.json がコードと一致（今の `TestDocs` のまま）。Saves v2 の JSON を v3 で読んで同じ舞台。
-  - `entryOf` が上限で止まる（選択肢の多い見本の台本）・台詞の直しで作り直す。
+  - `buildEntryStage` が上限で止まる（選択肢の多い見本の台本）・台詞の直しで作り直す。
   - 名指しの SHOT が Doc に無い時は `Err`。
 - go（足す分）: `"…"` のまとめが `<<set $x = "a b">>` と `<<declare>>` の文字列に触れない。v1 のゲームで `yarn check <Doc>` が何もせずに通る。
 - **退行の門: N1 から N3 の終わりまで、描き出しの絵が変わらない**（`templates/sound-novel-starter/reference/SHA256SUMS.txt` が同じ）。場面表を Doc に移しても、コマンドを表に移しても、セーブの形を替えても、同じ絵が出るはず。変わったら読み違い（ease の既定を今の動きに合わせるのもこのため）。
@@ -427,13 +428,13 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 | 4 | N2 | go の引数の検査・`"…"`・ref・共通の見本。N1 から持ち越し: `DocsOf` が `ref` の Doc も読む・変数の表示名を yarn graph とテープのグラフと読み台本に出す（済。テープの状態の表は novel-data-only.md 3.19 の「後で」へ） | 3〜4 時間 |
 | 5 | N2 | テンプレートの `PropertyTween`（delay・settle・JSON）（済。3.6 の「段 5・6 で入れた形」） | 2 時間 |
 | 6 | N2 | テンプレートの `Commands` 表・Ctx・Out・10 個を語彙 19 の名前で・台本の書き直し・GameCommands/GameView の口・早見表と docs とスキルの書き方。絵が同じ事を確かめる（済。描き出しの 43 枚は SHA が同じ。ずれは 3.2 の「段 6 で入れた形」） | 6〜7 時間 |
-| 7 | N3 | Snapshot と頁を持つ Mark v3・v2 の読み替え（環境音の短い名前の読み替えは段 6 で済）・restore の置き換え・頁と舞台の JSON・entryOf（上限・作り直し）・TestCast を広げる。段 6 から: `window off`（`window.hidden`）・`Stage.pages`・O2 の引数の表（済。ずれは 4.4。entryOf は Res に置かず毎回作る・待つ間のセーブはバックログの戻れる所・描き出しの 8 枚が実機と同じ ADV に変わった） | 4〜5 時間（restore と頁はスパイクで形が決まった） |
+| 7 | N3 | Snapshot と頁を持つ Mark v3・v2 の読み替え（環境音の短い名前の読み替えは段 6 で済）・restore の置き換え・頁と舞台の JSON・entryOf（上限・作り直し）・TestCast を広げる。段 6 から: `window off`（`window.hidden`）・`Stage.pages`・O2 の引数の表（済。ずれは 4.4。Mark にノードに入った時の舞台も持ち、restore はそこから当て直す・ノードに着いた時の舞台は Res に置かず毎回作る（`buildEntryStage`）・待つ間のセーブはバックログの頭の台詞だけ・描き出しの 8 枚が実機と同じ ADV に変わった） | 4〜5 時間（restore と頁はスパイクで形が決まった） |
 | 8 | — | agent-eval（新しいゲームで）・docs/modules の 1 行 | 1〜2 時間 |
 
 合計 25〜32 時間。
 
 **段 7 からの持ち越し**:
-- ロード直後のバックログの、同じノードの前の台詞の戻れる所（4.4 の「残した穴」）。
+- ロード直後のバックログの穴は、Mark にノードに入った時の舞台を持たせて直した（4.4）。`entry` の無い古い枠だけ前の形で戻る。
 - 血鱗の `StageAudit` の 2 つの検査を消すのと、台本の頭の言い直しを機械で消すのは、ゲームが移る N4 の後（4.3・6 章）。
 - `window off time=`（薄くして消す）は入れていない（`window.hidden` は数の値なので tween で書ける）。
 

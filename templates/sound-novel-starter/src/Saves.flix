@@ -45,13 +45,15 @@ mod Saves {
         display = Display
     }
 
-    /// 戻れる所 1 つ。bookmark = シナリオの位置、stage = その時の舞台（settle した物）、page = その台詞を出した後の頁
-    /// （version 2 のセーブから読んだ枠は None で、戻す時は当て直しで作った頁を使う）。
-    /// 戻す時はブックマークを当て直してバックログを作り、舞台と頁はこの値で置き換える（WorldRead.restore）。
+    /// 戻れる所 1 つ。bookmark = シナリオの位置、stage = その時の舞台（settle した物）、page = その台詞を出した後の頁、
+    /// entry = そのノードに入った時の舞台（当て直しの始まり）。page と entry は、それを書く前のセーブから読んだ枠では None
+    /// （頁は当て直しで作った物を使い、当て直しは stage から始める）。
+    /// 戻す時は entry からブックマークを当て直してバックログを作り、舞台と頁はこの値で置き換える（WorldRead.restore）。
     pub type alias Mark = {
         bookmark = YarnRunner.Bookmark,
         stage = Stage.Snapshot,
-        page = Option[Page.Page]
+        page = Option[Page.Page],
+        entry = Option[Stage.Snapshot]
     }
 
     /// セーブデータ 1 つ。place = 場所の名前（背景の写真の label）、speaker / excerpt = その時の話し手と台詞、
@@ -202,6 +204,7 @@ mod Saves {
             "bookmark" => YarnRunner.bookmarkToJson(s#mark#bookmark),
             "stage" => Stage.snapshotToJson(s#mark#stage),
             "page" => s#mark#page |> Option.map(Page.toJson) |> Option.getWithDefault(Json.JNull),
+            "entry" => s#mark#entry |> Option.map(Stage.snapshotToJson) |> Option.getWithDefault(Json.JNull),
             "place" => Json.JString(s#place), "speaker" => Json.JString(s#speaker), "excerpt" => Json.JString(s#excerpt),
             "savedAt" => num(Int64.toFloat64(s#savedAt)), "serial" => num(Int32.toFloat64(s#serial)) });
         let r = rec(saves);
@@ -220,16 +223,21 @@ mod Saves {
                                            "display" => Json.JString("${c#display}") })
         })
 
+    /// 欄の舞台（null は None）。
+    def snapshotIn(json: Json): Option[Stage.Snapshot] = match json {
+        case Json.JNull => None
+        case _          => Some(Stage.snapshotFromJson(json))
+    }
+
     /// 枠の舞台。"stage" の鍵（version 3）が無ければ、version 2 の欄（photo・grade・環境音・particles・mode・cast）から作る。
     def stageOf(obj: Map[String, Json]): Stage.Snapshot = match Map.get("stage", obj) {
         case Some(j) => Stage.snapshotFromJson(j)
         case None    =>
             let text = key -> Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString);
-            let mode = if (text("mode") == Some("Adv")) Stage.Mode.Adv else Stage.Mode.Nvl;
-            { shot = forM (photo <- text("photo"); grade <- text("grade")) yield { photo = photo, grade = grade },
-              mode = mode, cast = Cast.layerOf(Cast.markFromJson(Map.get("cast", obj))) | Stage.empty() }
-                |> Stage.withAmbience(Clock.zero(), ambienceOf(obj)) |> Stage.withParticles(Clock.zero(), text("particles"))
-                |> Stage.snapshotOf
+            let props = PropertyTween.empty() |> PropertyTween.setName(Stage.ambienceKey(), ambienceOf(obj), Clock.zero(), 0.0)
+                |> PropertyTween.setName(Stage.particlesKey(), text("particles"), Clock.zero(), 0.0);
+            Stage.makeSnapshot(forM (photo <- text("photo"); grade <- text("grade")) yield { photo = photo, grade = grade },
+                               Stage.modeOfText(text("mode") |> Option.getWithDefault("")), 0, props, Cast.markFromJson(Map.get("cast", obj)))
     }
 
     /// 枠の環境音（project.json の sounds の名前）。ambienceSound の鍵を先に見て、無ければ ambience の短い名前に amb_ を付ける。
@@ -246,7 +254,8 @@ mod Saves {
         let slotOf = j -> JsonCodec.expectObject(j) |> Option.flatMap(obj -> forM (
                 bookmark <- Map.get("bookmark", obj) |> Option.flatMap(YarnRunner.bookmarkFromJson)
             ) yield {
-                { mark = { bookmark = bookmark, stage = stageOf(obj), page = Map.get("page", obj) |> Option.flatMap(Page.fromJson) },
+                { mark = { bookmark = bookmark, stage = stageOf(obj), page = Map.get("page", obj) |> Option.flatMap(Page.fromJson),
+                           entry = Map.get("entry", obj) |> Option.flatMap(snapshotIn) },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),
                   savedAt = Float64.tryToInt64(JsonCodec.floatOr("savedAt", 0.0, obj)) |> Option.getWithDefault(0i64),

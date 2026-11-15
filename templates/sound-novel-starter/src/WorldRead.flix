@@ -3,8 +3,9 @@
 // ここの関数は、場面が Reading の時だけ読んでいる値 Read を取り出して動く（ほかの場面では何もしない）。
 //
 // 戻れる所（Saves.Mark）は 3 か所が同じ物を持つ: セーブデータ・バックログの行・「戻る」。戻し方は restore 1 つで、
-// ブックマークを当て直してバックログと選択肢を作り、舞台と頁は最後に Mark の値（その台詞を出した時の形）で置き換える。
-// ノードの頭から開く所（openAt）は、opening から流してそのノードに最初に着いた時の舞台（entryOf）から始める。
+// そのノードに入った時の舞台からブックマークを当て直してバックログと選択肢を作り、舞台と頁は最後に Mark の値（その台詞を出した時の形）で置き換える。
+// ノードに入った時は、出来事の .yarn の行でノードが替わった所（自分への jump も）を trackEntry が見分けて Read の entry に残す。
+// ノードの頭から開く所（openAt）は、opening から流してそのノードに最初に着いた時の舞台（buildEntryStage）から始める。
 //
 // オートとスキップは同じ所（autoOrSkip）で決める: 行を出し終えた時刻 doneAt から、オートは「設定の待ち + 字数 × autoPerChar」、
 // スキップは skipInterval ごとに送る。スキップは設定で「既読のみ」なら読んでいない行で止まり、選択肢で止まるかも設定で選ぶ。
@@ -63,7 +64,8 @@ mod WorldRead {
 
     /// 出来事 1 つ。later = その出来事より後ろに出た台詞と選択肢の数。
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
-                  w: World.World): World.World \ Emit[World.Event] =
+                  entering: World.World): World.World \ Emit[World.Event] =
+        let w = World.mapRead(trackEntry(res, event), entering);
         match event {
             case YarnRunner.Event.Line(said)       =>
                 let line = ScriptEdits.editLine(res#scriptEdits, said);
@@ -110,9 +112,20 @@ mod WorldRead {
     def bookmarkAt(last: Option[YarnRunner.Bookmark], later: Int32): Option[YarnRunner.Bookmark] =
         last |> Option.map(b -> { steps = List.take(Int32.max(0, List.length(b#steps) - later), b#steps) | b })
 
-    /// bookmark と、今の舞台と頁（文字送りは出し終えた形）で作る戻れる所。
+    /// bookmark と、今の舞台と頁（文字送りは出し終えた形）と、今のノードに入った時の舞台で作る戻れる所。
     def markOf(bookmark: YarnRunner.Bookmark, r: World.Read): Saves.Mark =
-        { bookmark = bookmark, stage = Stage.snapshotOf(r#stage), page = Some(Page.revealAll(r#page)) }
+        { bookmark = bookmark, stage = Stage.snapshotOf(r#stage), page = Some(Page.revealAll(r#page)), entry = Some(r#entry#stage) }
+
+    /// 出来事を反映する前に、ノードに入ったかを見る。別のノードの行か、同じノードで前に通った行より上の行（自分への jump）なら、
+    /// 入る直前の舞台を entry に残す。
+    def trackEntry(res: Res.Res, event: YarnRunner.Event, r: World.Read): World.Read =
+        let place = Talk.eventSourceOf(event) |> Option.flatMap(source -> Map.get(Yarn.sourceText(source), res#nodesBySource) |> Option.map(node -> (node, source#line)));
+        match place {
+            case Some((node, line)) if node != r#entry#node or line <= r#entry#lastLine =>
+                { entry = { node = node, lastLine = line, visits = r#entry#visits + 1, stage = Stage.snapshotOf(r#stage) } | r }
+            case Some((_, line)) => { entry = { lastLine = line | r#entry } | r }
+            case None            => r
+        }
 
     /// コマンド 1 つ（wait は実行器が待つので何もしない）。表で読んで舞台に当て、出た出来事を頁と音にする。
     /// 読めないコマンドは 1 行知らせて舞台はそのまま。
@@ -141,7 +154,7 @@ mod WorldRead {
         let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, res#story), line);
         let fits = fitsNvl(res);
         let shownStage = Stage.withWindowShown(World.now(w), r#stage);
-        let stage = if (Page.turnsOver(shownStage#mode, fits, entry, r#page)) Stage.withPageTurned(shownStage) else shownStage;
+        let stage = if (Page.isFullFor(shownStage#mode, fits, entry, r#page)) Stage.withPageTurned(shownStage) else shownStage;
         let page = Page.show(stage#mode, fits, entry, r#page);
         let placed = { stage = stage, page = if (replay == Commands.Replay.Silent) Page.revealAll(page) else page | r };
         let mark = bookmark |> Option.map(b -> markOf(b, placed));
@@ -309,19 +322,20 @@ mod WorldRead {
     pub def slotHere(res: Res.Res, w: World.World): Option[Saves.Slot] =
         World.readOf(w) |> Option.flatMap(r -> slotAt(res, markHere(r), r, w))
 
-    /// 今の所の戻れる所。<<wait>> の間は、今出している台詞の戻れる所（バックログの一番新しい物）。
+    /// 今の所の戻れる所。<<wait>> の間は、バックログの一番新しい行が台詞ならその戻れる所、選んだ選択肢か空なら None（セーブしない）。
     // WhyNot: 待っている間に今のブックマークと舞台で作らない — 当て直しは待ちを飛ばして次の台詞まで進むので、
     //         待つ前の舞台と頁で置き換えると、次の台詞の舞台と頁が食い違う。
+    // WhyNot: 選んだ選択肢より前の台詞の戻れる所へさかのぼらない — 戻すと選ぶ前に戻る。
     def markHere(r: World.Read): Option[Saves.Mark] =
-        let current = YarnRunner.bookmarkOf(r#talk) |> Option.map(b -> markOf(b, r));
         match YarnRunner.shownOf(r#talk) {
-            case YarnRunner.Shown.Waiting => r#log |> List.findMap(lineMarkOf) |> Option.withDefault(default = current)
-            case _                        => current
+            case YarnRunner.Shown.Waiting => headMarkOf(r#log)
+            case _                        => YarnRunner.bookmarkOf(r#talk) |> Option.map(b -> markOf(b, r))
         }
 
-    def lineMarkOf(entry: World.Entry): Option[Saves.Mark] = match entry {
-        case World.Entry.Said(_, mark) => mark
-        case World.Entry.Chose(_)      => None
+    /// バックログの一番新しい行の戻れる所（その行が台詞で戻れる所を持つ時だけ）。
+    pub def headMarkOf(log: List[World.Entry]): Option[Saves.Mark] = match log {
+        case World.Entry.Said(_, mark) :: _ => mark
+        case _                              => None
     }
 
     /// 戻れる所 mark で作るデータ（mark が無ければ None）。
@@ -351,15 +365,16 @@ mod WorldRead {
 
     // ── 戻れる所へ戻す ──
 
-    /// 戻れる所へ戻す: ブックマークを当て直し、通ったコマンドを音を出さずに反映してバックログと選択肢を作り直し、
-    /// 最後に舞台と頁を Mark の値で置き換える（頁の無い version 2 の枠は当て直しで作った頁のまま）。
-    /// 画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
-    // WhyNot: 当て直した舞台を使わない — 当て直しは今のノードの頭からなので、前のノードの分と、数え足す値（頁の数など）が合わない。
+    /// 戻れる所へ戻す: そのノードに入った時の舞台（Mark の entry）からブックマークを当て直し、通ったコマンドを音を出さずに反映して
+    /// バックログと選択肢を作り直し、最後に舞台と頁を Mark の値で置き換える。entry の無い枠は Mark の舞台から当て直し、
+    /// 頁の無い枠は当て直しで作った頁のまま。画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
+    // WhyNot: 当て直した舞台をそのまま使わない — 数え足す値（頁の数など）は当て直しの始まりに頼り、entry の無い枠では合わない。
     pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
         let saved = Stage.fromSnapshot(mark#stage);
+        let start = mark#entry |> Option.map(Stage.fromSnapshot) |> Option.getWithDefault(saved);
         let (talk, events) = YarnRunner.resume(res#dialogue, mark#bookmark, World.now(w));
         let gaveUp = World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
-        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = saved, gaveUp = gaveUp | World.emptyRead() },
+        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = start, gaveUp = gaveUp | World.emptyRead() },
                        { panel = World.Panel.Closed, ask = None | w }))
             |> World.mapRead(r -> { stage = saved, page = Option.getWithDefault(r#page, mark#page) | r })
 
@@ -473,108 +488,99 @@ mod WorldRead {
     // ── 始まりの場面（Starts・描き出し） ──
 
     /// node の頭から、.yarn の line 行を出している所まで進めた World（Studio の会話のプレビュー・bin/fge talk goto・描き出し）。
-    /// 舞台は node に最初に着いた時の形（entryOf）から始め、通ったコマンドは音を出さずに反映し、演出の途中は終わりの形にする。
+    /// 舞台は node に最初に着いた時の形（buildEntryStage）から始め、通ったコマンドは音を出さずに反映し、演出の途中は終わりの形にする。
     pub def openAt(res: Res.Res, storage: YarnStorage.Storage, node: String, line: Int32, w: World.World): World.World \ Emit[World.Event] =
         let (talk, events) = YarnRunner.startAtWith(storage, res#dialogue, node, line, World.now(w));
-        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = entryOf(res, node) | World.emptyRead() },
+        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = buildEntryStage(res, node) | World.emptyRead() },
                        { panel = World.Panel.Closed, ask = None | w }))
 
     // ── ノードに着いた時の舞台 ──
     //
     // opening のノードの頭から音を出さずに流し（台詞は送り・<<wait>> は明ける時刻へ・選択肢は選べる物を全部たどる）、
-    // 出来事の .yarn の行でどのノードに居るかを見て、ノードに最初に入る直前の舞台を残す。頁とコマンドの反映は読み進める時と同じ absorbOne。
-    // 道が増えすぎないよう、もう着いたノードへ入った道はそこで止め、全体の歩数に上限（entryFuel）を置く。
+    // 読み進める時と同じ absorbOne（trackEntry）がノードに入る直前の舞台を Read の entry に残すので、ノードごとに最初の物を集める。
+    // 道が増えすぎないよう、もう着いたノードへ入った道（自分への jump も）はそこで止め、全体の歩数に上限（entryFuel）を置く。
+    // 出来事を出さないノード（<<set>> と <<jump>> だけ）には着かない。
 
     /// 全体の歩数の上限（台詞を送る・選ぶ・待ちを明かすの 1 回が 1 歩）。
     pub def entryFuel(): Int32 = 4000
 
-    /// node に最初に着いた時の舞台。着かない（上限に当たった・どこからも jump しない）時は空の舞台で 1 行言う。
-    pub def entryOf(res: Res.Res, node: String): Stage.Stage =
-        match Map.get(node, entriesWithin(entryFuel(), res)) {
+    /// node に最初に着いた時の舞台（opening から流して作る）。着かない（上限に当たった・どこからも jump しない）時は空の舞台で 1 行言う。
+    def buildEntryStage(res: Res.Res, node: String): Stage.Stage =
+        match Map.get(node, buildEntriesWithin(entryFuel(), res)) {
             case Some(snapshot) => Stage.fromSnapshot(snapshot)
             case None           => Log.warnThen("[stage] ${node} は ${StoryDoc.openingOf(res#story)} から流しても着かない（空の舞台から始める）", Stage.empty())
         }
 
     /// fuel 歩までに着いたノードごとの、最初に着いた時の舞台（opening は空の舞台）。
-    pub def entriesWithin(fuel: Int32, res: Res.Res): Map[String, Stage.Snapshot] =
+    pub def buildEntriesWithin(fuel: Int32, res: Res.Res): Map[String, Stage.Snapshot] =
         let opening = StoryDoc.openingOf(res#story);
         match Yarn.nodeOf(opening, res#dialogue) {
             case None    => Map.empty()
             case Some(_) =>
                 let (talk, events) = YarnRunner.start(res#dialogue, opening, Clock.zero());
-                let found = Map#{ opening => Stage.snapshotOf(Stage.empty()) };
                 let w = World.withRead({ talk = talk | World.emptyRead() }, World.initial(Saves.fresh(res#kind), 0i64));
-                let first = absorbTracking(res, nodesBySource(res#dialogue), events, { w = w, node = opening, found = found, revisited = false });
-                snd(walkEntries(res, nodesBySource(res#dialogue), fuel, first#w :: Nil, first#found))
+                let first = absorbTracking(res, events, { w = w, found = Map.empty(), revisited = false });
+                snd(walkEntries(res, fuel, first#w :: Nil, first#found))
+                    |> (found -> if (Map.memberOf(opening, found)) found else Map.insert(opening, Stage.snapshotOf(Stage.empty()), found))
         }
 
-    /// .yarn の「ファイル:行」→ その行を持つノードの名前。
-    def nodesBySource(program: Yarn.Program): Map[String, String] =
-        Yarn.nodeNames(program) |> List.filterMap(name -> Yarn.nodeOf(name, program)) |> List.flatMap(node ->
-            Talk.statementsOf(node) |> List.filterMap(Talk.sourceOf) |> List.map(source -> (Yarn.sourceText(source), node#title)))
-            |> List.toMap
+    /// 道 1 本を流している所: w = 流した World、found = 着いたノードの舞台、revisited = この歩でもう着いたノードへ入ったか。
+    type alias Tracking = { w = World.World, found = Map[String, Stage.Snapshot], revisited = Bool }
 
-    /// 出来事の .yarn の行（Done は無い）。
-    def eventSource(event: YarnRunner.Event): Option[Yarn.Source] = match event {
-        case YarnRunner.Event.Line(line)       => Some(line#source)
-        case YarnRunner.Event.Choices(options) => List.head(options) |> Option.map(option -> option#line#source)
-        case YarnRunner.Event.Command(command) => Some(command#source)
-        case YarnRunner.Event.Done             => None
-    }
-
-    /// 道 1 本を流している所: w = 流した World、node = 今居るノード、found = 着いたノードの舞台、revisited = この歩でもう着いたノードへ入ったか。
-    type alias Tracking = { w = World.World, node = String, found = Map[String, Stage.Snapshot], revisited = Bool }
-
-    /// 出来事を順に反映し、ノードに入る直前の舞台を残す。
-    def absorbTracking(res: Res.Res, nodes: Map[String, String], events: List[YarnRunner.Event], start: Tracking): Tracking =
+    /// 出来事を順に反映し、ノードに入るたびに（Read の entry の visits が増えた時）、初めてのノードならその舞台を残す。
+    def absorbTracking(res: Res.Res, events: List[YarnRunner.Event], start: Tracking): Tracking =
+        let visitsOf = (w: World.World) -> World.readOf(w) |> Option.map(r -> r#entry#visits) |> Option.getWithDefault(0);
         let step = (t: Tracking, event) -> {
-            let entered = eventSource(event) |> Option.flatMap(source -> Map.get(Yarn.sourceText(source), nodes)) |> Option.filter(n -> n != t#node);
-            let marked = match entered {
-                case Some(n) if Map.memberOf(n, t#found) => { node = n, revisited = true | t }
-                case Some(n) =>
-                    let stage = World.readOf(t#w) |> Option.map(r -> r#stage) |> Option.getWithDefault(Stage.empty());
-                    { node = n, found = Map.insert(n, Stage.snapshotOf(stage), t#found) | t }
-                case None => t
-            };
-            { w = fst(Emit.collect(() -> absorbOne(res, Commands.Replay.Silent, None, event, 0, marked#w))) | marked }
+            let next = fst(Emit.collect(() -> absorbOne(res, Commands.Replay.Silent, None, event, 0, t#w)));
+            let entered = World.readOf(next) |> Option.filter(_ -> visitsOf(next) != visitsOf(t#w)) |> Option.map(r -> r#entry);
+            match entered {
+                case Some(e) if Map.memberOf(e#node, t#found) => { w = next, revisited = true | t }
+                case Some(e) => { w = next, found = Map.insert(e#node, e#stage, t#found) | t }
+                case None    => { w = next | t }
+            }
         };
         List.foldLeft(step, start, events)
 
     /// 流す道の列 stack を頭から 1 歩ずつ進める。返すのは (残りの歩数, 着いたノードの舞台)。
-    def walkEntries(res: Res.Res, nodes: Map[String, String], fuel: Int32, stack: List[World.World],
+    def walkEntries(res: Res.Res, fuel: Int32, stack: List[World.World],
                     found: Map[String, Stage.Snapshot]): (Int32, Map[String, Stage.Snapshot]) =
         match stack {
             case Nil => (fuel, found)
             case w :: rest if fuel > 0 =>
-                let (left, more, seen) = stepEntries(res, nodes, fuel, w, found);
-                walkEntries(res, nodes, left, List.append(more, rest), seen)
+                let (left, more, seen) = stepEntries(res, fuel, w, found);
+                walkEntries(res, left, List.append(more, rest), seen)
             case _ => (fuel, found)
         }
 
     /// 道 1 本の次の 1 歩（選択肢なら選べる物ごとに 1 歩）。返すのは (残りの歩数, 続ける道, 着いたノードの舞台)。
-    def stepEntries(res: Res.Res, nodes: Map[String, String], fuel: Int32, w: World.World,
+    def stepEntries(res: Res.Res, fuel: Int32, w: World.World,
                     found: Map[String, Stage.Snapshot]): (Int32, List[World.World], Map[String, Stage.Snapshot]) =
-        let actions = World.readOf(w) |> Option.map(r -> match YarnRunner.shownOf(r#talk) {
+        match World.readOf(w) {
+            case None    => (fuel, Nil, found)
+            case Some(r) =>
+                let take = (acc, action) -> {
+                    let (left, kept, seen) = acc;
+                    let (at, now) = action;
+                    if (left <= 0) acc
+                    else {
+                        let (talk, events) = YarnRunner.step(at, now, r#talk);
+                        let t = absorbTracking(res, events, { w = World.withRead({ talk = talk | r }, w), found = seen, revisited = false });
+                        (left - 1, if (t#revisited) kept else List.append(kept, t#w :: Nil), t#found)
+                    }
+                };
+                List.foldLeft(take, (fuel, Nil, found), walkActionsOf(r))
+        }
+
+    /// 流す時の次の入力（台詞は送る・待ちは明ける時刻へ・選択肢は選べる物を全部）。
+    def walkActionsOf(r: World.Read): List[(YarnRunner.Action, Clock.Time[Stage.Story])] =
+        match YarnRunner.shownOf(r#talk) {
             case YarnRunner.Shown.Line(_)       => (YarnRunner.Action.Advance, Clock.zero()) :: Nil
             case YarnRunner.Shown.Waiting       => (YarnRunner.Action.Tick, YarnRunner.waitUntilOf(r#talk) |> Option.getWithDefault(Clock.zero())) :: Nil
             case YarnRunner.Shown.Choices(opts) =>
                 opts |> List.zipWithIndex |> List.filter(match (_, option) -> option#available)
                      |> List.map(match (i, _) -> (YarnRunner.Action.Choose(i), Clock.zero()))
             case YarnRunner.Shown.Closed        => Nil
-        }) |> Option.getWithDefault(Nil);
-        let take = (acc, action) -> {
-            let (left, kept, seen) = acc;
-            let (at, now) = action;
-            match World.readOf(w) {
-                case Some(r) if left > 0 =>
-                    let (talk, events) = YarnRunner.step(at, now, r#talk);
-                    let node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault("");
-                    let t = absorbTracking(res, nodes, events, { w = World.withRead({ talk = talk | r }, w), node = node, found = seen, revisited = false });
-                    (left - 1, if (t#revisited) kept else List.append(kept, t#w :: Nil), t#found)
-                case _ => acc
-            }
-        };
-        List.foldLeft(take, (fuel, Nil, found), actions)
+        }
 
     /// 今の行を出し終えた形（描き出しが場面を作る時。時計を進めずに 1 行読み終える）。
     pub def revealLine(w: World.World): World.World = World.mapRead(r -> { page = Page.revealAll(r#page) | r }, w)
