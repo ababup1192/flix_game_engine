@@ -77,6 +77,11 @@ pub mod GlOffscreen {
         let SessionData.SessionData(s) = session;
         SessionData.SessionData({ paint = { keepHistory = true | s#paint } | s })
 
+    /// 最後に画面へ塗り終えたコマの 2D の draw call の数（WebGPU の描き手の数と比べる時に使う）。
+    pub def lastDraw2dCounts(session: Session): FrameDiagnostics.Draw2dCounts \ IO =
+        let SessionData.SessionData(s) = session;
+        RenderPaint.lastDraw2dCounts(s#paint)
+
     /// 文脈・塗りのコア・テクスチャ・字まで用意した物（FBO と地の色はまだ）。作れるのは prepare だけ。
     /// caps = その文脈の GL の関数表（LWJGL は糸ごとに持つので、塗る糸で付け直す）。
     enum PreparedData {

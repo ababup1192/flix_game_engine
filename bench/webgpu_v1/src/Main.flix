@@ -39,8 +39,8 @@ mod V1Main {
 
     // ── GL ──
 
-    /// 全部の場面を GL で描き、場面ごとの画素（RGBA・下の行から）を返す。
-    def shootGl(config: GameEngine.EngineConfig): Result[String, List[ByteBuffer]] \ IO =
+    /// 全部の場面を GL で描き、場面ごとの画素（RGBA・下の行から）と、そのコマの 2D の draw call の数を返す。
+    def shootGl(config: GameEngine.EngineConfig): Result[String, List[(ByteBuffer, FrameDiagnostics.Draw2dCounts)]] \ IO =
         match GlOffscreen.open({ config = config, scale = 1 }) {
             case Err(why)    => Err(why)
             case Ok(opened) =>
@@ -49,7 +49,7 @@ mod V1Main {
                     List.forEach(frame -> GlOffscreen.handle(session, () -> drawScene(frame)), framesOf(sc));
                     let buf = GlOffscreen.freshBuffer(session);
                     GlOffscreen.readRgba(session, buf);
-                    buf
+                    (buf, GlOffscreen.lastDraw2dCounts(session))
                 });
                 GlOffscreen.close(session);
                 Ok(shots)
@@ -57,8 +57,8 @@ mod V1Main {
 
     // ── WebGPU ──
 
-    /// 1 場面の結果: 画素（RGBA・下の行から）と、そのコマの submit の数。
-    type alias GpuShot = { pixels = ByteBuffer, submits = Int32 }
+    /// 1 場面の結果: 画素（RGBA・下の行から）と、そのコマの submit の数と 2D の draw call の数。
+    type alias GpuShot = { pixels = ByteBuffer, submits = Int32, draws = FrameDiagnostics.Draw2dCounts }
 
     /// 全部の場面を WebGPU で描く。返すのは (場面ごとの結果, 誤りの数, 最後の誤りの文, adapter の名前)。
     def shootWebGpu(config: GameEngine.EngineConfig): Result[String, (List[GpuShot], Int32, String, String)] \ IO + WebGpuDevice =
@@ -74,7 +74,7 @@ mod V1Main {
                     List.forEach(frame -> handle(paint, fonts, () -> drawScene(frame)), framesOf(sc));
                     let buf = ByteBuffer.allocateDirect(width * height * 4);
                     WebGpuPaint.readFrame(paint, buf);
-                    { pixels = buf, submits = WebGpuPaint.submitCount(paint) }
+                    { pixels = buf, submits = WebGpuPaint.submitCount(paint), draws = WebGpuPaint.lastDraw2dCounts(paint) }
                 });
                 // まだ描かない物（面と 3D の場面）を 2 コマ渡す: 名前ごとに 1 回だけ知らせ、誤りを出さずに捨てる。
                 handle(paint, fonts, () -> drawScene(V1Scenes.unsupported()));
@@ -162,29 +162,51 @@ mod V1Main {
 
     def pad(s: String, n: Int32): String = if (String.length(s) >= n) s else pad(s + " ", n)
 
+    /// draw call の数と、切れた理由ごとの数（target・kind・texture・blend・clip・mask）。
+    def drawKey(c: FrameDiagnostics.Draw2dCounts): (Int32, Int32, Int32, Int32, Int32, Int32, Int32) =
+        let b = c#batchBreaks;
+        (c#drawCalls, b#target, b#kind, b#texture, b#blend, b#clip, b#mask)
+
+    def drawText(c: FrameDiagnostics.Draw2dCounts): String =
+        let (n, target, kind, texture, blend, clip, mask) = drawKey(c);
+        "draw ${Int32.toString(n)}（target ${Int32.toString(target)}・kind ${Int32.toString(kind)}・texture ${Int32.toString(texture)}・"
+            + "blend ${Int32.toString(blend)}・clip ${Int32.toString(clip)}・mask ${Int32.toString(mask)}）"
+
+    /// 場面ごとの 2D の draw call の数の期待（GL と WebGPU の両方がこの数である事）。無い場面は GL と WebGPU が同じかだけを見る。
+    /// sceneBetween: 箱・箱・市松の絵の 3 本。同じ色・同じ blend の 2 つの箱の間に 3D の場面があるので、後の箱は kind で切れる
+    ///   （場面が無ければ 2 つの箱は 1 本にまとまる）。市松の絵は絵が替わるので texture で切れる。
+    def expectedDraws(): Map[String, (Int32, Int32, Int32, Int32, Int32, Int32, Int32)] =
+        Map#{"sceneBetween" => (3, 0, 1, 1, 0, 0, 0)}
+
     /// 1 場面の表の行と合否。
     def judge(width: Int32, height: Int32, limits: Map[String, Int32],
-              sc: V1Scenes.Scene, gl: ByteBuffer, gpu: GpuShot): (String, Bool) \ IO =
+              sc: V1Scenes.Scene, glShot: (ByteBuffer, FrameDiagnostics.Draw2dCounts), gpu: GpuShot): (String, Bool) \ IO =
+        let (gl, glDraws) = glShot;
         LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gl, width, height, "debug/gl/${sc#name}.png");
         LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gpu#pixels, width, height, "debug/webgpu/${sc#name}.png");
         let diff = diffOf(gl, gpu#pixels, width * height);
         let limit = Map.getWithDefault(sc#name, 0, limits);
         let submitsOk = Option.forAll(n -> n == gpu#submits, sc#submits);
-        let ok = diff#maxDelta <= limit and submitsOk;
+        let drawsSame = drawKey(glDraws) == drawKey(gpu#draws);
+        let drawsAsExpected = Option.forAll(e -> e == drawKey(glDraws), Map.get(sc#name, expectedDraws()));
+        let ok = diff#maxDelta <= limit and submitsOk and drawsSame and drawsAsExpected;
+        let drawNote = if (drawsSame and drawsAsExpected) "  ${drawText(glDraws)}"
+                       else "  GL ${drawText(glDraws)}・WebGPU ${drawText(gpu#draws)}${if (drawsAsExpected) "" else "（期待と違う）"}";
         let verdict = if (ok) "OK" else "NG";
         let expectedSubmits = sc#submits |> Option.map(n -> "（期待 ${Int32.toString(n)}）") |> Option.getWithDefault("");
         ("[webgpu-v1] ${pad(sc#name, 18)} ${verdict}  差 ${Int32.toString(diff#pixels)} px max ±${Int32.toString(diff#maxDelta)}（許容 ${Int32.toString(limit)}）"
-            + " submits ${Int32.toString(gpu#submits)}${expectedSubmits}", ok)
+            + " submits ${Int32.toString(gpu#submits)}${expectedSubmits}${drawNote}", ok)
 
     pub def go(): Unit \ IO =
         let config = match (run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO) {
             case Ok(loaded) => loaded#config
             case Err(why)   => bug!("project.json を読めない: ${why}")
         };
-        let gl = match shootGl(config) {
+        let glShots = match shootGl(config) {
             case Ok(shots) => shots
             case Err(why)  => bug!("GL を開けない: ${why}")
         };
+        let gl = List.map(fst, glShots);
         let gpuOutcome = run { shootWebGpu(config) } with WebGpuDevice.runDawn;
         let (gpuShots, errors, lastError, adapter) = match gpuOutcome {
             case Ok(r)    => r
@@ -192,7 +214,7 @@ mod V1Main {
         };
         println("[webgpu-v1] adapter: ${adapter}");
         let limits = tolerances();
-        let rows = List.zip(V1Scenes.all(), List.zip(gl, gpuShots)) |> List.map(row -> {
+        let rows = List.zip(V1Scenes.all(), List.zip(glShots, gpuShots)) |> List.map(row -> {
             let (sc, (glShot, gpuShot)) = row;
             judge(config#designWidth, config#designHeight, limits, sc, glShot, gpuShot)
         });

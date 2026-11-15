@@ -407,14 +407,15 @@ mod V1Scenes {
           targets = targetsWith("mtog", 4), submits = Some(1),
           items = still(pasteQuarter("mtog", 0.0, 0.0, 1) :: pasteQuarter(RenderTarget.historyName("mtog"), 160.0, 90.0, 1) :: Nil) }
 
-    /// 3D の場面を貼る行が 2D の並びの途中に入る場面: 同じ色の箱の間に、何も置かず地の色も無い 3D の場面（GL でも画素を変えない）。
-    /// 場面の行の後の箱と市松の絵が、場面の前と同じ状態（blend・scissor・viewport）で描かれる事を見る。WebGPU は場面を描かずに知らせる。
+    /// 3D の場面を貼る行が 2D の並びの途中に入る場面: 同じ色・同じ blend の 2 つの箱の間に、何も置かず地の色も無い 3D の場面（GL でも画素を変えない）。
+    /// 2 つの箱の run が切れる理由は場面だけで、GL と WebGPU の draw の数が同じ所で切れる事を Main が見る（期待は Main.expectedDraws）。
+    /// 場面の行の後の箱と市松の絵が、場面の前と同じ状態（blend・scissor・viewport）で描かれる事も見る。WebGPU は場面を描かずに知らせる。
     def sceneBetween(): Scene =
         let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
         { name = "sceneBetween", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 1)) ::
             Render.scene3d(v(60.0, 40.0), { zIndex = 2 | Scene3d.scene(camera, v(160.0, 100.0)) }) ::
-            at(100.0, 60.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 3) |> Render.blended(DrawCmd.BlendMode.Add)) ::
+            at(100.0, 60.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 3)) ::
             at(240.0, 100.0, maskedSprite({ tint = c8(255, 255, 255), rotation = 0.0, flipH = false, blend = DrawCmd.BlendMode.Normal, z = 3, mask = Nil })) ::
             Nil) }
 

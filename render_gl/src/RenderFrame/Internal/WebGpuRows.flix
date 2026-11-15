@@ -227,7 +227,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     /// 3D の場面を貼る行: まだ描かない（知らせるだけ）。数えは GL と同じく、次の 2D の draw call を kind で切る。
     // WhyNot: 2D の pass の途中で閉じて場面の pass を開かない — 2D の pass を閉じて開き直すと、viewport・積んだ pipeline と buffer の控え・黒帯の箱と
-    //   stencil を張り直す道が要り、標本つきの描き先は閉じるたびに resolve する。場面は先に自分の texture へ描いて、この行で貼る（plans/engine-webgpu.md の 5.4）。
+    //   stencil を張り直す道が要り、標本つきの描き先は閉じるたびに resolve する。V2 では場面を 2D の pass の前に自分の texture へ描き、この行で貼る（plans/engine-webgpu.md の 5.4）。
     def drawSceneRow(st: Array[Int32, Static], skip: String -> Unit \ IO): Unit \ IO =
         skip("3D の場面");
         countSceneRow(st)

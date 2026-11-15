@@ -1,8 +1,8 @@
 // RenderFrame.Internal.GlRows — RenderList の行を GL へ流す（GL の backend）。pass を開いて閉じ（clear・viewport・後始末）、
 // instance と頂点の入れ物を貸し、行 1 つを draw 1 回にする（スプライトの run・多角形の run・タイルの層・static layer の範囲。mask つきスプライトは 2 回）。
 // 3D の場面を貼る行は、その場で場面を描き先へ直に描く（Design の解像度の場面は先に描いた texture を貼る。Render3d.drawItem）。
-// WhyNot: Native の解像度の場面を中間の texture に描いてから貼らない — 標本つきの描き先で場面の MSAA が消え（gl-parity の msaaEdges が 652 → 3,362 px）、
-//   中間の 8 bit の丸めで GL の絵が変わり、場面ごとに描き先の付け替えと全面の貼りが 1 回ずつ増える（plans/engine-webgpu.md の 12.21）。
+// WhyNot: Native の解像度の場面を中間の texture に描いてから貼らない — 標本つきの描き先で場面の MSAA が消え、中間の 8 bit の丸めで GL の絵が変わる
+//   （plans/engine-webgpu.md の 12.21）。
 pub mod RenderFrame.Internal.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext

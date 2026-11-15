@@ -3,7 +3,7 @@
 // WhyNot: mod TestShapeRows にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestShapeRows {
     import java.nio.FloatBuffer
-    use RenderFrame.{Merged, blendCode, closeRuns, emitRowItem, stateSize}
+    use RenderFrame.{Merged, blendCode, closeRuns, countBase, emitRowItem, newRunState, stateSize}
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.RenderList.{RenderList, clearRenderList, instanceFloats, kindPoly, kindScene3d, kindSprite, kindStatic, kindTile, newRenderList,
                                          nextVertexOf, rowAt, rowCountOf, rowsOf, valueCountOf, valuesOf, vertexFloats, viewValueFloats}
@@ -239,6 +239,18 @@ mod RenderFrame.TestShapeRows {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         GlRows.drawRenderList(FakeGl.silent(), Array.empty(Static, 32), st, list, i -> Ref.put(i :: Ref.get(drawn), drawn));
         Assert.assertEq(expected = 1 :: 0 :: Nil, List.reverse(Ref.get(drawn)))
+
+    /// 同じ箱・場面・同じ箱を GL の backend で流すと、場面を描く時点で draw call は 1（前の箱だけ）・終わりで 2（後の箱は場面で切れる）・kind の切れ目が 1。
+    @Test
+    def testGlCountsSceneBetweenBoxes(): Unit \ {Assert, IO} =
+        let list = listOf(box() :: Merged.MScene3d(0) :: box() :: Nil);
+        let st = newRunState(RenderDrawCounts.fresh());
+        let drawsAtScene = Ref.fresh(Static, -1);
+        GlRows.drawRenderList(FakeGl.silent(), Array.empty(Static, 32), st, list,
+                              _ -> Ref.put(Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st), drawsAtScene));
+        Assert.assertEq(expected = (1, 2, 1),
+                        (Ref.get(drawsAtScene), Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st),
+                         Array.get(countBase() + RenderDrawCounts.kindSlot(), st)))
 
 
     /// 面（ShaderDoc）は行にならない。

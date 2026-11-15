@@ -781,6 +781,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         if (submits >= 2) Array.put(Array.get(4, counters) + 1, 4, counters) else ();
         Array.put(Int32.max(submits, Array.get(5, counters)), 5, counters)
 
+    /// 最後に画面へ描き終えたコマの 2D の draw call の数（GL の RenderPaint.lastDraw2dCounts と同じ物差し）。
+    pub def lastDraw2dCounts(paint: Paint): FrameDiagnostics.Draw2dCounts \ IO =
+        let PaintData.PaintData(p) = paint;
+        RenderDrawCounts.lastScreenFrame(p#drawCounts)
+
     /// 前のコマ（present まで）の submit の数。
     pub def submitCount(paint: Paint): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
