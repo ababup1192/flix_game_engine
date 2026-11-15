@@ -1,11 +1,11 @@
 // SceneRender — ゲーム画面を画面なしで PNG に描き出す（スナップショット比較用）。
-// 実行: make render-all → gallery/*.png と gallery/<場面>.json（場面と World は Shots）
+// 実行: make render-all → gallery/*.png と gallery/<場面>.json（場面の正は novel.shots.json・World を組むのは Shots）
 //       make render SHOT=nvl → debug/nvl.png（1 枚だけ）。small-<場面> は同じ場面を小さい画面（スマホ）の並べ方で描く。
 //       portrait-<場面> は縦に持ったスマホ（390×844 → 縦の design 540×1169）、portrait-short-<場面> は太い縦の画面（360×640 → 540×960）で描く
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
-    use fge::{App, DocJson, Display, HeadlessFont, HeadlessRender, JsonCodec, ProjectLoader, Render, Vec2}
+    use fge::{App, DocJson, Display, HeadlessFont, HeadlessRender, JsonCodec, ProjectLoader, Render, Suggest, Vec2}
 
     import java.io.File
     import java.lang.ProcessHandle
@@ -70,11 +70,12 @@ mod SceneRender {
     pub def oneJob(req: App.Headless.Request): Int32 \ IO =
         let wanted = Map.getWithDefault("SHOT", "", App.Headless.envOf(req)) |> String.splitOn(substr = " ")
             |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n));
-        let known = List.toSet(allNames());
+        let names = allNames(loadRes());
+        let known = List.toSet(names);
         let unknown = wanted |> List.filter(n -> not Set.memberOf(n, known));
         if (List.isEmpty(wanted) or not List.isEmpty(unknown)) {
-            println("[render] 描けない名前です: ${List.join(" ", unknown)}");
-            println("[render] SHOT=<場面> に使えるのは: ${List.join(" ", allNames())}");
+            unknown |> List.forEach(n -> println("[render] 描けない名前です: ${n}${Suggest.hint(n, names)}"));
+            println("[render] SHOT=<場面> に使えるのは: ${List.join(" ", names)}（場面の正は ${ShotsDoc.path()}）");
             1
         } else {
             let picked = List.toSet(wanted);
@@ -82,14 +83,14 @@ mod SceneRender {
             0
         }
 
-    /// 小さい画面（スマホ）の並べ方で描く場面: (描き出しの名前, Shots の場面の名前)。World は同じ場面の物をそのまま使う。
-    /// WhyNot: Shots.names に入れない — Shots.names は実機の START=shot: の口でもあり、デスクトップ版の実機はいつも Large で描く。
+    /// 小さい画面（スマホ）の並べ方で描く場面: (描き出しの名前, novel.shots.json の場面の名前)。World は同じ場面の物をそのまま使う。
+    /// WhyNot: novel.shots.json に入れない — Shots.names は実機の START=shot: の口でもあり、デスクトップ版の実機はいつも Large で描く。
     def smallShots(): List[(String, String)] =
         ("small-title", "title") :: ("small-nvl", "nvl") :: ("small-adv", "adv") :: ("small-choice", "choice")
             :: ("small-save", "save") :: ("small-settings", "settings") :: ("small-ask", "ask") :: Nil
 
-    /// 描く元を替えて描く横の場面: (描き出しの名前, Shots の場面の名前)。どう替えるかは resFor。
-    /// WhyNot: Shots.names に入れない — 実機の START=shot: は World だけを替える口で、Doc（描く元）は替えられない。
+    /// 描く元を替えて描く横の場面: (描き出しの名前, novel.shots.json の場面の名前)。どう替えるかは resFor。
+    /// WhyNot: novel.shots.json に入れない — 実機の START=shot: は World だけを替える口で、Doc（描く元）は替えられない。
     def variantShots(): List[(String, String)] =
         ("hold-ring", "hold") :: ("hold-none", "hold") :: ("cast-sample", "cast") :: Nil
 
@@ -124,7 +125,7 @@ mod SceneRender {
     /// 場面の名前 → World。縦の画面だけの場面（どれも ADV の台詞の上）: menu = オートを点けて右上の … のメニューを開いた所、
     /// saveload = しおりから [セーブ｜ロード] の選びを開いた所、tooltip = 指の長押しで右の列のログの名前を出した所、
     /// cast = テスト用の立ち絵の人物を出した所（横と縦の両方で描く）。
-    // WhyNot: 縦の画面だけの場面を Shots.names に入れない — 右の列と … は縦の画面にしか無く、Shots.names は横の描き出しと実機の START=shot: の口でもある。
+    // WhyNot: 縦の画面だけの場面を novel.shots.json に入れない — 右の列と … は縦の画面にしか無く、Shots.names は横の描き出しと実機の START=shot: の口でもある。
     def worldOf(scene: String, res: Res.Res): Option[World.World] = match scene {
         case "menu"     =>
             Shots.worldOf("adv", res) |> Option.map(w ->
@@ -147,25 +148,33 @@ mod SceneRender {
             |> Option.getWithDefault(0)
 
     /// 描き出せる名前の全部（Shots の場面と、小さい画面と縦の画面の場面）。
-    def allNames(): List[String] =
-        List.flatten(Shots.names() :: (variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
+    def allNames(res: Res.Res): List[String] =
+        List.flatten(Shots.names(res) :: (variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
                      :: (portraitShots() |> List.map(match (name, _, _) -> name)) :: Nil)
 
     def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();
         let cfg = cfgOf(outDir, texturesOf());
         let loaded = loadRes();
-        let regular = Shots.names() |> List.map(name -> (name, name, Look.Landscape(Display.SizeClass.Large)));
+        let regular = Shots.names(loaded) |> List.map(name -> (name, name, Look.Landscape(Display.SizeClass.Large)));
         let variant = variantShots() |> List.map(match (name, scene) -> (name, scene, Look.Landscape(Display.SizeClass.Large)));
         let small = smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Landscape(Display.SizeClass.Small)));
         let portrait = portraitShots() |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
         List.flatten(regular :: variant :: small :: portrait :: Nil) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, look) ->
-            let res = resFor(name, loaded);
-            worldOf(scene, res) |> Option.map(w -> {
+            shootNamed(outDir, cfg, loaded, name, scene, look))
+
+    /// 描き出しの名前 name を、場面 scene の World と look の画面で描く。場面を組めなければ 1 行言って飛ばす。
+    def shootNamed(outDir: String, cfg: HeadlessRender.RenderConfig, loaded: Res.Res, name: String, scene: String, look: Look): Option[String] \ IO =
+        let res = resFor(name, loaded);
+        match worldOf(scene, res) {
+            case Some(w) =>
                 let path = shootAs(look, res, cfg, w, name);
                 App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
-                path
-            }))
+                Some(path)
+            case None =>
+                println("[render] ${name} を飛ばす: 場面 '${scene}' を組めない（${ShotsDoc.path()} に無いか、読めない）");
+                None
+        }
 
     def shoot(res: Res.Res, cfg: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
         shootAs(Look.Landscape(Display.SizeClass.Large), res, cfg, w, name)

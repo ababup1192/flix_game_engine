@@ -8,6 +8,8 @@
   演出はコマンド（`<<bg>>` `<<nvl>>` `<<adv>>` `<<clear>>` `<<ambience>>` `<<se>>` `<<fx>>` `<<shake>>` `<<char>>` `<<item>>` `<<wait>>`）で書き、
   意味は `src/Stage.flix`。新しいコマンドは `Stage.Cue` に case と `cueOf` の枝、`Stage.commandNames` に名前を足す
   （語彙 `assets/talk/vocab.json` は `make talk-vocab`）。シナリオに式や条件を足すのは Yarn の `<<if>>` `<<set>>` まで。
+  話し手の呼び名・変数の表示名・「はじめから」で開くノード（`opening`）は `assets/novel.story.json`、描き出しの場面（make render の SHOT）は
+  `assets/novel.shots.json` に書く。どちらも `bin/fge yarn build` が vocab.json の from を通して読み、台本の名前と照らす（Flix を走らせずに名前を足せる）。
 - **画面に出す言葉はシナリオか Doc**: シナリオの外の言葉（タイトル画面・ボタン・設定・知らせ）は `assets/novel.story.json` の
   labels（鍵の正は `StoryDoc.Label`）。調整する数（文字の速さ・オートの待ち・ログの行数・揺れ）は `assets/novel.kind.json`。
 - **セーブはブックマーク**: セーブは YarnRunner のブックマーク（ノード・変数・送りと選択）と、前のノードから持ち越す舞台

@@ -22,10 +22,10 @@ mod TestRules {
 
     @Test
     def testNewGameOpensTheOpeningNodeOnItsFirstLine(): Unit \ {Assert, Fs.FileRead} =
-        // はじめから: コードが開くノード（Talk.Node.Opening）の最初の台詞を、台本の頭のコマンドどおりの舞台で出す。
+        // はじめから: novel.story.json の opening の最初の台詞を、台本の頭のコマンドどおりの舞台で出す。
         let res = TestKit.res();
         let w = begun(res);
-        let opening = Talk.nodeName(Talk.Node.Opening);
+        let opening = StoryDoc.openingOf(res#story);
         Assert.assertEq(expected = ("Reading", opening, List.head(sayLines(res, opening)), Stage.Mode.Nvl),
                         (World.sceneName(w), World.talkNodeOf(w), Some(lineNo(w)), World.stageOf(res, w)#mode))
 
@@ -35,7 +35,7 @@ mod TestRules {
         let res = TestKit.res();
         let app = TestKit.app(res, w0(res));
         Assert.assertEq(expected = Nil,
-            Shots.names() |> List.filter(name -> Result.isErr(App.buildStart(app, Vec2.zero(), App.shotStartName(name), Map.empty()))))
+            Shots.names(res) |> List.filter(name -> Result.isErr(App.buildStart(app, Vec2.zero(), App.shotStartName(name), Map.empty()))))
 
     // ══ 読み進める ══
 
@@ -61,7 +61,7 @@ mod TestRules {
         let res = TestKit.res();
         let w = begun(res);
         let next = settle(res, advance(res, w));
-        let opening = Talk.nodeName(Talk.Node.Opening);
+        let opening = StoryDoc.openingOf(res#story);
         Assert.assertEq(expected = (List.nth(1, sayLines(res, opening)), true, w#saveRev + 1),
                         (Some(lineNo(next)), Saves.isSeen(World.talkLineOf(w), next#saves), next#saveRev))
 
@@ -483,7 +483,7 @@ mod TestRules {
         let atPaddy = readTo(res, "Paddy", Nil, begun(res));
         let next = settle(res, advance(res, atPaddy));
         let nodeAt = (i: Int32, w: World.World) -> Saves.slotOf(Saves.Tab.Auto, i, w#saves) |> Option.map(s -> s#mark#bookmark#node);
-        let opening = Talk.nodeName(Talk.Node.Opening);
+        let opening = StoryDoc.openingOf(res#story);
         Assert.assertEq(expected = (Some("Paddy"), Some(opening), Saves.serialOf(next#saves)),
                         (nodeAt(0, atPaddy), nodeAt(1, atPaddy), Saves.serialOf(atPaddy#saves)))
 

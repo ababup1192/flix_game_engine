@@ -274,6 +274,22 @@
               "dialogue.json",
               "vocab.json"
             ]
+          },
+          {
+            "prefixes": [
+              "assets/"
+            ],
+            "suffixes": [
+              ".json"
+            ]
+          },
+          {
+            "substrings": [
+              "/assets/"
+            ],
+            "suffixes": [
+              ".json"
+            ]
           }
         ]
       }

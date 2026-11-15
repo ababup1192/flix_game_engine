@@ -183,6 +183,13 @@
         "schema": "assets/cast.schema.json"
       },
       {
+        "id": "shots",
+        "pattern": "assets/novel.shots.json",
+        "title": "描き出しの場面（make render の SHOT とギャラリーの並び）",
+        "role": "tuning",
+        "schema": "assets/shots.schema.json"
+      },
+      {
         "id": "mixer",
         "pattern": "assets/novel.mixer.json",
         "title": "音の通り道（環境音と効果音のバス）",

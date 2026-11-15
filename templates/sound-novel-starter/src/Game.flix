@@ -30,7 +30,9 @@ mod Game {
             |> App.withSustained(Resources.read(Controls.ambience))
             |> App.withMixer(Resources.read(Controls.mixerOf))
             |> App.withStarts(Starts.all())
-            |> App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))
+            // WhyNot: 場面の名前は起動の時の novel.shots.json の 1 回だけ — App.withShots は名前の一覧を組む時に受け取るので、
+            //   走らせながら Doc に足した場面は START=shot: で引けない（中身の直しは worldOf が今の Res で読むので効く）。
+            |> App.withShots(Resources.shotsOf(Shots.names(res), Shots.worldOf))
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))
             // WhyNot: 起動した時刻を World 全体の要約に入れない — Main だけが読む外の値で遊んだ記録に残らず、

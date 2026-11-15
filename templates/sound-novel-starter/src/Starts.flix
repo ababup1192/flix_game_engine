@@ -38,7 +38,7 @@ mod Starts {
 
     /// 引数 node（無ければ talk。どちらも無ければコードが最初に開くノード）のノード。
     def nodeOf(res: Res.Res, args: Map[String, String]): Result[String, String] =
-        let node = Map.getWithDefault("node", Map.getWithDefault("talk", Talk.nodeName(Talk.Node.Opening), args), args);
+        let node = Map.getWithDefault("node", Map.getWithDefault("talk", StoryDoc.openingOf(res#story), args), args);
         let known = Yarn.nodeNames(res#dialogue);
         if (List.memberOf(node, known)) Ok(node)
         else Err("ノード '${node}' はシナリオに無い${Suggest.hint(node, known)}")

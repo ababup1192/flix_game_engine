@@ -1,14 +1,20 @@
 {
   "version": 1,
-  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認のウィンドウ・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label、names の鍵はシナリオの話し手（src/Talk.flix の Speaker）。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
+  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認のウィンドウ・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label。names の鍵はシナリオの話し手、vars の鍵はシナリオの変数（$ を付けない名前）で、値は人に見せる名前。opening は「はじめから」で開くノード。話し手・変数・opening は bin/fge yarn build が assets/talk/vocab.json の from を通してここから読み、台本の名前と照らす。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
   "title": "夏草の駅",
   "subtitle": "十年ぶりに、祖母の町へ帰る。",
   "titlePhoto": "station",
   "titleGrade": "dusk",
   "titleAmbience": "evening",
+  "opening": "Station",
   "names": {
     "chinatsu": "千夏",
     "me": "私"
+  },
+  "vars": {
+    "closeness": "親しさ",
+    "house": "家をどうするか",
+    "stayed": "川で黙っていた"
   },
   "labels": {
     "newGame": "はじめから",

@@ -1,31 +1,11 @@
 // Talk — シナリオ（assets/talk/*.yarn）とコードの繋ぎ。
-// 話し手・最初に開くノード・コマンドの名前の正はここ（コマンドの意味は Stage）。bin/fge yarn build の check は
-// この語彙を書き出した assets/talk/vocab.json を読む（書き直すのは make talk-vocab。TestDocs が一致を見る）。
+// 話し手・変数の表示名・最初に開くノードの正は novel.story.json（StoryDoc）、描き出しの場面が指すノードは novel.shots.json、コマンドの名前の正は Stage。
+// bin/fge yarn build の check は assets/talk/vocab.json を読み、名前を Doc から集める（vocab.json が書くのは Doc のどこを見るかと
+// コマンドの名前だけ。書き直すのは make talk-vocab。TestDocs が一致を見る）。
 //
 //   assets/talk/natsukusa.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ World#dialogue
 mod Talk {
     use fge::{Yarn}
-
-    /// 話し手（シナリオの「chinatsu: 台詞」の左）。地の文は話し手を書かない。
-    pub enum Speaker with Eq, ToString {
-        case Chinatsu, Me
-    }
-
-    pub def speakers(): List[Speaker] = Speaker.Chinatsu :: Speaker.Me :: Nil
-
-    pub def speakerId(speaker: Speaker): String = match speaker {
-        case Speaker.Chinatsu => "chinatsu"
-        case Speaker.Me       => "me"
-    }
-
-    /// コードが開くノード（それ以外はシナリオの <<jump>> で辿る）。
-    pub enum Node with Eq, ToString {
-        case Opening
-    }
-
-    pub def nodeName(node: Node): String = match node {
-        case Node.Opening => "Station"
-    }
 
     pub def dialoguePath(): String = "assets/talk/dialogue.json"
 
@@ -34,13 +14,33 @@ mod Talk {
     /// シナリオを読む。読めない・壊れている時はノードの無いシナリオ（World が直し方を語る 1 行を出す）。
     pub def load(): Yarn.Program \ Fs.FileRead = Yarn.loadOr(Yarn.empty(), dialoguePath())
 
-    /// build の check が読む語彙。
-    pub def vocabOf(): Yarn.Vocab =
-        { speakers = Yarn.namesOf(speakerId, speakers()),
-          nodes = Yarn.namesOf(nodeName, Node.Opening :: Nil),
-          tags = Nil,
-          commands = Stage.commandNames() }
+    /// vocab.json から見た Doc のパス（vocab.json は assets/talk/、Doc は assets/ に置く）。
+    def fromVocab(docPath: String): String =
+        "../" + (String.stripPrefix(substr = "assets/", docPath) |> Option.getWithDefault(docPath))
+
+    /// build の check が読む語彙（vocab.json の版 2）。名前の正が Doc にある欄は from で Doc の場所だけを書く。
+    pub def vocabJson(): String =
+        let story = fromVocab(StoryDoc.path());
+        let commands = Stage.commandNames() |> List.map(name -> "    \"" + name + "\": {}") |> String.intercalate(",\n");
+        "{\n" +
+        "  \"version\": 2,\n" +
+        "  \"speakers\": " + docField(story, "keys", "names") + ",\n" +
+        "  \"vars\": " + docField(story, "keys", "vars") + ",\n" +
+        "  \"nodes\": " + docField(story, "path", "opening") + ",\n" +
+        "  \"nodeRefs\": " + docField(fromVocab(ShotsDoc.path()), "path", "shots[].node") + ",\n" +
+        "  \"tags\": {},\n" +
+        "  \"commands\": {\n" + commands + "\n  }\n" +
+        "}\n"
+
+    /// 欄 1 つの from（Doc の docPath の、how = keys か path の place を見る）。
+    def docField(docPath: String, how: String, place: String): String =
+        "{ \"from\": [{ \"doc\": \"" + docPath + "\", \"" + how + "\": \"" + place + "\" }] }"
 
     /// 語彙を assets/talk/vocab.json に書く（make talk-vocab）。
-    pub def vocab(): Unit \ IO = run { println(if (Yarn.writeVocab(vocabPath(), vocabOf())) "[talk] 語彙を書いた: ${vocabPath()}" else "[talk] 語彙を書けない: ${vocabPath()}") } with Fs.FileWrite.runWithIO
+    pub def vocab(): Unit \ IO =
+        let wrote = run { writeVocab() } with Fs.FileWrite.runWithIO;
+        println(if (wrote) "[talk] 語彙を書いた: ${vocabPath()}" else "[talk] 語彙を書けない: ${vocabPath()}")
+
+    def writeVocab(): Bool \ Fs.FileWrite =
+        run { Fs.WriteFile.write({str = vocabJson()}, vocabPath()) |> Result.isOk } with Fs.WriteFile.runWithFileWrite
 }

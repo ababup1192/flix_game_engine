@@ -729,7 +729,7 @@ func loadGroup(g group, cwd, vocabPath string, noVocab bool) (*loaded, error) {
 		case readErr != nil:
 			// WhyNot: 語彙が無くても止めない —— 書きかけのシナリオの形を見るのがこのコマンドの用途で、話し手やコマンドの検査は build が受け持つ。
 		default:
-			v, err := ParseVocab(data)
+			v, _, err := ParseVocab(data, vocabPath, l.root)
 			if err == nil {
 				l.cfg, err = ParseGraphConfig(data)
 			}

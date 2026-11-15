@@ -30,6 +30,7 @@ const usage = `使い方: bin/fge yarn <サブコマンド> ...   会話のシ�
   yarn check <パス>...
       パス（.yarn・vocab.json・dialogue.json）のフォルダごとに build と同じ検査をし、書いてある dialogue.json が
       .yarn から作り直した物と違えば 1（書かない）。コミットの前の門が流す。
+      ほかの .json（Doc）を渡すと、同じゲームの中でその Doc を from に書いた vocab.json のフォルダを見る（無ければ何もしない）。
   yarn graph <フォルダ> [--out <html>] [--json <json>|-] [--vocab <パス> | --no-vocab] [--stage a,b,…]
       分岐のグラフ（ノード = 箱・<<jump>> = 矢印・結末と最初のノードを色分け）と、ノードを押すと出る舞台・矢印・全部の行を
       1 ファイルの HTML に書く（既定 build/yarn-graph.html）。--json はシナリオを全部読まずに全体をつかむ用の中身。詳しくは yarn graph --help。
@@ -184,6 +185,7 @@ type group struct {
 func groupsOf(workRoot string, paths []string) ([]group, error) {
 	byDir := map[string]map[string]bool{}
 	whole := map[string]bool{}
+	indexes := map[string]map[string][]string{}
 	for _, p := range paths {
 		abs := p
 		if !filepath.IsAbs(abs) {
@@ -204,6 +206,13 @@ func groupsOf(workRoot string, paths []string) ([]group, error) {
 			byDir[dir][abs] = true
 		case err != nil && strings.HasSuffix(abs, ".yarn"):
 			return nil, fmt.Errorf("読めない: %s", p)
+		case isDocPath(abs):
+			for _, dir := range vocabDirsReferring(abs, indexes) {
+				whole[dir] = true
+				if byDir[dir] == nil {
+					byDir[dir] = map[string]bool{}
+				}
+			}
 		default:
 			dir := filepath.Dir(abs)
 			whole[dir] = true
@@ -232,6 +241,63 @@ func groupsOf(workRoot string, paths []string) ([]group, error) {
 	sort.Slice(out, func(a, b int) bool { return out[a].dir < out[b].dir })
 	return out, nil
 }
+
+// isDocPath は語彙の from が指しうる Doc（.json のうち、語彙と木そのものでない物）。
+func isDocPath(path string) bool {
+	base := filepath.Base(path)
+	return strings.HasSuffix(base, ".json") && base != vocabName && base != outName
+}
+
+// vocabDirsReferring は doc と同じゲーム（project.json のあるフォルダ）の中で、doc を from に書いた vocab.json のフォルダ。
+// indexes はゲームのルートごとの「Doc → 語彙のフォルダ」（Doc を何本渡されても 1 つのゲームを歩くのは 1 回）。
+// WhyNot: 見つからない時に doc のフォルダを丸ごと見ない —— v1 のゲームの Doc だけを直したコミットで、関わりの無い検査を流して止める。
+func vocabDirsReferring(doc string, indexes map[string]map[string][]string) []string {
+	root := FindGameRoot(filepath.Dir(doc))
+	if root == "" {
+		return nil
+	}
+	index, ok := indexes[root]
+	if !ok {
+		index = vocabIndexOf(root)
+		indexes[root] = index
+	}
+	return index[filepath.Clean(doc)]
+}
+
+// vocabIndexOf はゲームの中の vocab.json（v2）を全部読み、from が指す Doc → その語彙のフォルダ。
+func vocabIndexOf(root string) map[string][]string {
+	index := map[string][]string{}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != root && skipWalkDir[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != vocabName {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		seen := map[string]bool{}
+		for _, ref := range DocsOf(data, path) {
+			if !seen[ref] {
+				seen[ref] = true
+				index[ref] = append(index[ref], filepath.Dir(path))
+			}
+		}
+		return nil
+	})
+	return index
+}
+
+// skipWalkDir は語彙を探す時に降りないフォルダ（作り直せる物と外から入れた物）。
+var skipWalkDir = map[string]bool{".git": true, "build": true, "lib": true, "node_modules": true, "gallery": true, "debug": true, ".layers": true}
 
 func build(out, errOut *strings.Builder, workRoot string, paths []string, opts options, checkOnly bool, rep *Report) int {
 	groups, err := groupsOf(workRoot, paths)
@@ -304,11 +370,15 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 			rep.Problems = append(rep.Problems, ReportLine{File: rel(workRoot, vocabPath), Msg: msg})
 			return 1
 		}
-		v, err := ParseVocab(data)
+		v, notes, err := ParseVocab(data, vocabPath, workRoot)
 		if err != nil {
 			fmt.Fprintf(out, "%s: %v\n", rel(workRoot, vocabPath), err)
 			rep.Problems = append(rep.Problems, ReportLine{File: rel(workRoot, vocabPath), Msg: err.Error()})
 			return 1
+		}
+		for _, note := range notes {
+			out.WriteString(note + "\n")
+			rep.Notes = append(rep.Notes, ReportLine{File: rel(workRoot, vocabPath), Msg: note})
 		}
 		vocab = v
 		if line := suggest.Stale(workRoot, rel(workRoot, vocabPath), remake); line != "" {
@@ -338,7 +408,7 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 		fmt.Fprintf(out, "[yarn] %d 件の知らせ（%s は書かない）\n", len(problems), rel(workRoot, outPath))
 		return 1
 	}
-	for _, p := range Unreached(prog, vocab) {
+	for _, p := range append(Unreached(prog, vocab), UnnamedVars(prog, vocab)...) {
 		out.WriteString("注意: " + p.String() + "\n")
 		rep.Notes = append(rep.Notes, lineOf(p))
 	}

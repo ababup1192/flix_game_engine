@@ -145,7 +145,7 @@ mod TapeOut {
 
     /// 地の文と各話し手の色の行（地の文が先頭）。name が空の行は novel.story.json の呼び名。
     def speakerRows(res: Res.Res): List[ThemeDoc.Speaker] =
-        ("" :: List.map(Talk.speakerId, Talk.speakers())) |> List.map(id -> {
+        ("" :: StoryDoc.speakerIds(res#story)) |> List.map(id -> {
             let row = ThemeDoc.speakerOf(id, res#theme);
             if (String.isEmpty(row#name)) { name = StoryDoc.nameOf(id, res#story) | row } else row
         })

@@ -3,7 +3,7 @@
 // 場面は「進めて作る」: 台本が伸びても行番号を数え直さずに済むよう、「ノードの n 番目の台詞」「選択肢が出るまで」で位置を決める。
 // WhyNot: 描き出しの物（HeadlessRender・HeadlessFont・java.io）を引かない — Game.app から engine_tools へつながり、ブラウザ版で組めなくなる。
 mod Shots {
-    use fge::{Clock, Emit, Yarn, YarnRunner, YarnStorage}
+    use fge::{Clock, Emit, Log, Yarn, YarnRunner, YarnStorage}
 
     /// 描き出しの始まりの World（セーブデータは空・時刻は clockBase）。
     def initialOf(res: Res.Res): World.World = World.initial(Saves.fresh(res#kind), clockBase())
@@ -11,51 +11,62 @@ mod Shots {
     /// 描き出しの「起動した時刻」（2026/08/14 19:32。セーブの日時を毎回同じ字にする）。
     pub def clockBase(): Int64 = 1786735920i64
 
-    /// 描き出せる場面の名前（make render の SHOT とギャラリーの並びの正）。
-    pub def names(): List[String] =
-        "title" :: "nvl" :: "adv" :: "choice" :: "lane" :: "engawa" :: "night" :: "morning" :: "hold" :: "log" :: "save" :: "load" :: "settings" :: "ask" :: "credits" :: Nil
+    /// 描き出せる場面の名前（novel.shots.json の並び。後ろに extra の場面）。
+    pub def names(res: Res.Res): List[String] =
+        List.append(ShotsDoc.namesOf(res#shots), extra() |> List.map(fst))
 
     /// 名前 → 描き出しと同じ初めの World（initialOf）から組んだ場面の World。
-    pub def worldOf(name: String, res: Res.Res): Option[World.World] = sceneOf(res, name, initialOf(res))
+    pub def worldOf(name: String, res: Res.Res): Option[World.World] =
+        match ShotsDoc.shotOf(name, res#shots) {
+            case Some(shot) => Some(sceneOf(res, shot, initialOf(res)))
+            case None       => extraWorldOf(name, res)
+        }
 
-    /// 名前 → その場面の World。時計は秒で据える（蛍もクレジットも実時間から導くので、据えれば毎回同じ絵）。
-    def sceneOf(res: Res.Res, name: String, w0: World.World): Option[World.World] =
-        match name {
-            // タイトル画面: 夕暮れの駅の写真に題とメニュー。
-            case "title"    => Some(at(3.0, w0))
-            // NVL: 最初の頁。蜩（ひぐらし）のルビが載った 3 行目まで出した所。
-            case "nvl"      => Some(at(4.0, nthLine(res, "Station", 2, w0)))
-            // ADV: 田んぼの畦道で千夏が振り返る台詞。
-            case "adv"      => Some(at(4.0, nthLine(res, "Paddy", 3, w0)))
-            // 選択肢: 千夏の呼び方を選ぶ所。
-            case "choice"   => Some(at(4.0, toChoices(res, "Paddy", YarnStorage.empty(), w0)))
-            // 坂道: 夕暮れの坂の上の家（ADV）。
-            case "lane"     => Some(at(4.0, nthLine(res, "Lane", 2, w0)))
-            // 縁側: 夜の祖母の家（風鈴が鳴った後）。
-            case "engawa"   => Some(at(4.0, nthLine(res, "Engawa", 3, w0)))
-            // 朝: 駅へ戻る朝（NVL）。
-            case "morning"  => Some(at(4.0, nthLine(res, "Morning", 1, w0)))
-            // 素材の待ち: ブラウザ版で次の写真がまだ届かず、黒のまま待っている所（右下に待ちの印）。
-            case "hold"     => Some(at(4.0, holding(res, nthLine(res, "Station", 7, w0))))
-            // 夜: 蛍の川で、条件つきの選択肢が選べる所（$closeness = 2）。
-            case "night"    =>
-                let storage = YarnStorage.withArgs(Map#{ "$closeness" => "2" }, res#dialogue, YarnStorage.empty()) |> Result.getWithDefault(YarnStorage.empty());
-                Some(at(6.5, toChoices(res, "River", storage, w0)))
-            // バックログ: 縁側の選択肢まで読んでから開き、田んぼの台詞に触れている所（その行へ戻れると明るくなる）。
-            case "log"      =>
-                let w = quiet(() -> WorldLog.openLog(readThrough(res, w0)));
-                Some(at(4.0, { pointer = { x = 400.0, y = 300.0 } | w }))
-            // セーブ: 読んでいる途中で開いたセーブ画面（1 ページ目に 3 つ。いちばん新しい物に NEW）。
-            case "save"     => Some(at(4.0, quiet(() -> WorldSaves.openSave(withSlots(res, nthLine(res, "River", 2, w0))))))
+    def extraWorldOf(name: String, res: Res.Res): Option[World.World] =
+        extra() |> List.find(row -> fst(row) == name) |> Option.flatMap(row -> snd(row)(res))
+
+    /// Doc で表せない、コードで組む場面（名前, 組み立て）。novel.shots.json の場面の後ろに並ぶ。
+    pub def extra(): List[(String, Res.Res -> Option[World.World])] = Nil
+
+    /// Doc の 1 場面の World。時計は秒で据える（蛍もクレジットも実時間から導くので、据えれば毎回同じ絵）。
+    def sceneOf(res: Res.Res, shot: ShotsDoc.Shot, w0: World.World): World.World =
+        let storage = storageOf(res, shot#name, shot#vars);
+        let placed = shot#node |> Option.map(node -> placeIn(res, node, shot#place, storage, w0)) |> Option.getWithDefault(w0);
+        let opened = shot#open |> Option.map(screen -> openScreen(res, screen, placed)) |> Option.getWithDefault(placed);
+        let pointed = shot#pointer |> Option.map(p -> { pointer = { x = p#x, y = p#y } | opened }) |> Option.getWithDefault(opened);
+        at(shot#at, pointed)
+
+    /// 場面の変数（$ を付けない名前 → 値）を始まりの引数にしたシナリオの値。読めない時は 1 行言って変数を入れずに組む。
+    def storageOf(res: Res.Res, shotName: String, vars: Map[String, String]): YarnStorage.Storage =
+        if (Map.isEmpty(vars)) YarnStorage.empty()
+        else {
+            let args = vars |> Map.foldLeftWithKey((acc, k, v) -> Map.insert("$" + k, v, acc), Map.empty());
+            YarnStorage.withArgs(args, res#dialogue, YarnStorage.empty())
+                |> Result.mapErr(reason -> Log.fellBackThen("shots", "${ShotsDoc.path()} の ${shotName} の vars", "変数を入れない", reason, YarnStorage.empty()))
+                |> Result.getWithDefault(YarnStorage.empty())
+        }
+
+    def placeIn(res: Res.Res, node: String, place: ShotsDoc.Place, storage: YarnStorage.Storage, w: World.World): World.World =
+        match place {
+            case ShotsDoc.Place.Head      => WorldRead.revealLine(quiet(() -> WorldRead.openAt(res, storage, node, 0, w)))
+            case ShotsDoc.Place.NthSay(n) => nthLine(res, node, n, storage, w)
+            case ShotsDoc.Place.ToChoices => toChoices(res, node, storage, w)
+        }
+
+    /// 場面で開く画面。title はタイトル画面のまま（起動した時の World）。
+    def openScreen(res: Res.Res, screen: ShotsDoc.Screen, w: World.World): World.World =
+        match screen {
+            case ShotsDoc.Screen.Title    => w
+            // バックログ: 縁側の選択肢まで読んでから開く（何行も積む）。
+            case ShotsDoc.Screen.Log      => quiet(() -> WorldLog.openLog(readThrough(res, w)))
+            // セーブ: 1 ページ目に 3 つ（いちばん新しい物に NEW）。
+            case ShotsDoc.Screen.Save     => quiet(() -> WorldSaves.openSave(withSlots(res, w)))
             // ロード: タイトルから開いたロード画面（いちばん新しいデータのページ）。
-            case "load"     => Some(at(4.0, quiet(() -> WorldSaves.openLoad(World.toTitle(withSlots(res, w0))))))
-            // 設定: 読んでいる途中で開いた設定（見本の文が流れている所）。
-            case "settings" => Some(at(1.2, quiet(() -> WorldSettings.openSettings(nthLine(res, "Paddy", 3, w0)))))
-            // 確認のウィンドウ: ADV の台詞の上で「タイトルに戻りますか？」。
-            case "ask"      => Some(at(4.0, quiet(() -> World.askFor(World.Ask.ToTitle, nthLine(res, "Lane", 2, w0)))))
-            // クレジット: 流れ始めて 12 秒（写真の出典が見えている所）。
-            case "credits"  => Some(at(12.0, World.toCredits(res, w0)))
-            case _          => None
+            case ShotsDoc.Screen.Load     => quiet(() -> WorldSaves.openLoad(World.toTitle(withSlots(res, w))))
+            case ShotsDoc.Screen.Settings => quiet(() -> WorldSettings.openSettings(w))
+            case ShotsDoc.Screen.Ask      => quiet(() -> World.askFor(World.Ask.ToTitle, w))
+            case ShotsDoc.Screen.Credits  => World.toCredits(res, w)
+            case ShotsDoc.Screen.Hold     => holding(res, w)
         }
 
     /// 次の写真（Paddy の paddy）を黒のまま待ち続けている形（待ちの印が出る長さだけ待った所）。
@@ -72,14 +83,14 @@ mod Shots {
     def quiet(f: Unit -> World.World \ Emit[World.Event]): World.World = fst(Emit.collect(f))
 
     /// node の上から n 番目（0 から）の台詞を出し終えた所（その行までのコマンドは反映して、演出は終わりの形）。
-    def nthLine(res: Res.Res, node: String, n: Int32, w: World.World): World.World =
+    def nthLine(res: Res.Res, node: String, n: Int32, storage: YarnStorage.Storage, w: World.World): World.World =
         let line = Yarn.nodeOf(node, res#dialogue)
             |> Option.map(found -> found#body |> List.filterMap(statement -> match statement {
                    case Yarn.Statement.Say(say) => Some(say#source#line)
                    case _                       => None
                }))
             |> Option.flatMap(List.nth(n)) |> Option.getWithDefault(0);
-        WorldRead.revealLine(quiet(() -> WorldRead.openAt(res, YarnStorage.empty(), node, line, w)))
+        WorldRead.revealLine(quiet(() -> WorldRead.openAt(res, storage, node, line, w)))
 
     /// node の頭から選択肢が出るまで送った所（fuel で必ず止まる）。
     def toChoices(res: Res.Res, node: String, storage: YarnStorage.Storage, w: World.World): World.World =
@@ -92,9 +103,9 @@ mod Shots {
     def withSlots(res: Res.Res, w: World.World): World.World =
         let saveAt = (minutes: Int64, i: Int32, scene: World.World, target: World.World) ->
             { saves = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), i, { saves = target#saves, clockBase = clockBase() + minutes * 60i64 | scene }))#saves | target };
-        w |> saveAt(-2900i64, 0, nthLine(res, "Paddy", 3, w))
-          |> saveAt(-2860i64, 1, nthLine(res, "Lane", 2, w))
-          |> saveAt(-12i64, 2, nthLine(res, "Engawa", 4, w))
+        w |> saveAt(-2900i64, 0, nthLine(res, "Paddy", 3, YarnStorage.empty(), w))
+          |> saveAt(-2860i64, 1, nthLine(res, "Lane", 2, YarnStorage.empty(), w))
+          |> saveAt(-12i64, 2, nthLine(res, "Engawa", 4, YarnStorage.empty(), w))
           |> (cur -> { toast = None | cur })
 
     /// はじめから、田んぼで昔の呼び名を選び、縁側の選択肢まで読んだ World（バックログに何行も積むため。文字送りは待たない）。
