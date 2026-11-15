@@ -229,4 +229,5 @@ mod ParityMain {
 
 def main(): Unit \ IO =
     if (LwjglLayer.ensureMainThread()) ()
+    else if (WgslRows.isAsked()) WgslRows.go()
     else ParityMain.go()

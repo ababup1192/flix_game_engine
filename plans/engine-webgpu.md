@@ -675,3 +675,28 @@ V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関�
 - `gl-capture` の基準（0.88.4 と違う 30 枚）: 今は撮り直さない。P10 で Dawn の版を pin して基準を撮り直す予定なので、そこでまとめる。それまでは「30 枚のまま増えない」を門にする。
 - 速さの計測（人の方針・2026-11-15）: 計測の仕組みと基準は P0〜R1b-0 でそろったので、ここから先の小分けでは sprite_stress などの前後の比べ（5% の門）を回さず、計画の最後（P10 の前）にまとめて測る。画素の門（gl-parity・reference・gl-capture-check・webgpu-v1-check と -web）とテストは小分けごとに回す。最後の計測で 5% を超えて遅くなっていたら、どの小分けで遅くなったかを二分探索で探す。
 
+### 12.17 P5 の前半で入った物（2026-11-15・この Mac・Dawn の Metal だけ）
+
+- **WGSL の出し方は「書き手を挟む」に決めた**（9.1 の表）。式の組み立て（`ShaderGen.fieldExpr` ほか 257 行）は GLSL と 1 本のまま、言葉で字が違う所（`atan`・`textureSize`・`texture`・`textureLod`・宣言の頭・`smoothstep`）だけを小さな関数に寄せた。
+  WGSL 用に 2 本目を書く形は、試した 3 節で 27 行・全部で約 320 行の写しになり、節を足すたびに 2 か所を直す。GLSL を訳す形は、jWebGPU（webgpu.h）の `createShaderModule` が WGSL と SPIR-V しか受けず、
+  ゲームの `ShaderDoc` は走りながら変わるので訳す道具をブラウザ（wasm）へ運ぶ事になる（Tint が GLSL を読めるかは【未確認】）。文の形が違う物（ノイズの関数・ぼかし・mip を選ぶ読み・3D の frag の組み立て）は WGSL で書き足した。見本は `plans/webgpu/samples/wgsl-codegen.md`。
+- **面と材質の draw ごとの値の並びは「ShaderGen が struct を出す」に決めた**。欄は全部 f32 の `SgValues`（`var<uniform> sg`）で、`slots` の i 番目が buffer の i × 4 バイト目。名前は GLSL の uniform と同じ。
+  場面で共通の値（光・影・霧・空・環境マップ）は手で書いた `R3dScene`（`Render3dWgsl`）。見本は `plans/webgpu/samples/material-layout.md`。
+- 入れた物: engine の `ShaderGen.Wgsl`（2D の面 `compile`・3D の材質の部品 `compile3d`・ノイズの関数・`sg_texMip`・`sg_clipFromGl`）・`LightModel3d.Codegen` の `Target.Wgsl` と `toWgsl`・`Texture3d.srgbToLinearWgsl` / `linearToSrgbWgsl`。
+  render_gl の `Render3dWgsl`（材質の frag・頂点の色の frag と、それが使う影の PCF・TBN・環境マップ・lightmap・`r3d_surfaceOut`）。GLSL の字は 1 文字も変えていない。
+- 7 章の引っかかる所の手当て（出す側で）: clip の z は頂点シェーダーが `sg_clipFromGl`（z を -w..w から 0..w へ）で移し、射影と影の行列は GL の物のまま（奥行きの値が GL と同じになり、影の比べ `ndc.z × 0.5 + 0.5` はそのまま）。
+  描き先の上下は、WGSL では `uTexFlip`・`uNormalFlip` を持たない（WebGPU の描き先の texture は上の行が先）。影の地図だけは、画素を GL の数え方で決めて端にそろえてから、読む時に行を返す。
+  微分は 3D の `sg_texMip` の中だけで、2D の面の読みは `textureSampleLevel(…, 0)`（ぼかしの半径 0 の分岐の後で読むため）。暗黙の型変換は `f32(…)` を書く。uniform の f32 と vec2 の光の配列は vec4 の配列に入れた（16 バイト刻み）。
+  端が定数で等しい `smoothstep`（Disk の feather 0・同じ位置の stop）は Tint がシェーダーを作る所で止める（`smoothstep called with 'low' (0.5) equal to 'high'`。x が定数でなくても）ので、WGSL は `sg_smoothstep`（CPU と同じく端が等しければ step）を通す。
+  `select` は選ばない側も計算するので、関数の呼び出し（影の PCF）がある側は if の文にした。R8 の swizzle と RGB8 は上げる側（backend）の事で、出す字には関わらない。
+- 検査: render_gl の `TestWgslDawn` が PC の Dawn で **364 本**（2D の面 25・材質の部品 13・3D の材質の frag 324（絵を読む材質と頂点の色の材質は ProgramKind の 96 組・ほかの 11 の材質は 12 組）・lit と空 2）を組んで誤り 0。2D の面は pipeline まで作る。
+  組まずに通すのは Dawn のネイティブが無い OS と adapter が無い機械だけ（`[wgsl] SKIP:` の行を出す）。ほかの理由で device が開けなければ落とす。
+  GPU に頼らない検査: 同じ 364 本に GLSL にしか無い字（`float(`・`texture(`・` ? `・`mod(` など 12 種）が 0 個（`testGeneratedWgslHasNoGlslOnlyText`）。2 本書きの組（ノイズの関数・ぼかし・mip を選ぶ読み・割り算・影の PCF・TBN・環境マップの読み）は、数のリテラルを出てくる順に抜いて GLSL と WGSL で同じ（`TestShaderGenWgslPairs`・`TestRender3dWgslPairs`）。
+  値の比べ: `make -C bench/gl_parity wgsl-rows` が同じ面と材質を GL と WebGPU で 256 × 1 の RGBA32F に塗って比べる（2026-11-15・Apple M4 Pro・macOS 27 の GL と Dawn の Metal）。最初の 59 行のうち 41 行は差 0・最大 1.5e−5（テンプレの caustics。sin に大きな引数が入る節で、GL の driver と Tint の MSL で丸め方が違う）・lava 1.2e−5。上限 1e−4。
+  60 行目は 2 つのレベルの色が違う絵を mip のレベルが行の中で移る座標で読む材質で、r が変わらなければ落とす（mip を選ばずに読んでいないかの確かめ）。
+- **GPU の無い機械では Dawn に届かない**: jWebGPU 0.3.4 の Dawn に Null の backend が無い（`requestAdapter` が `No supported adapters`）。`TestWgslDawn` が組まずに通すのは、Dawn のネイティブを配っていない機種（`DawnNatives` の「この機種の WebGPU のネイティブはまだ配っていない」。今は macOS の arm64 だけに配る）と adapter が無い機械だけで、`[wgsl] SKIP:` の行を出す。ほかの理由で device が開けなければ落ちる。Linux の CI はネイティブが無いので SKIP になる。
+- `agents-pack` の早見表と agent-eval には足していない: `ShaderGen.Wgsl`・`toWgsl`・`Render3dWgsl`・`wgsl-rows` はゲームが呼ばない engine の中の口（ゲームは今までどおり `ShaderDoc` を書くだけ）。
+- 持ち越し（P5 の後半）: 3D の頂点シェーダー（骨・instance・lightmap の uv）・ビルボード・空・奥行きだけ・貼り付けの WGSL、2D の組み込みの残り（多角形・タイル・単色の代わり）、`R3dScene` を詰める所と光の式の値の比べ（ExprRows の WGSL 版）、
+  3D の frag の pipeline と bind group layout まで作る検査、言葉の印を表の鍵（`@mode:wgsl`）で運ぶ形を enum の文脈へ替える事、f32 に収まらない定数（`Pow` の定数の積など）、
+  2D の面の絵に mip が付いた時の読み（今はレベル 0 に決めている）、影の地図を描く頂点シェーダーも `sg_clipFromGl` を通す約束。
+  P6 の頭で: `R3dScene` の欄の offset のテスト（詰める所と組で。mat4 の前は pad0〜pad2 で埋めてある）。f32 に収まらない `Const` を `ShaderDoc` の parse で弾くか丸める（今は WGSL の側でシェーダーを作る所の誤りになる）。

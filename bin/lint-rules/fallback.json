@@ -10,6 +10,8 @@
   "defPattern": "^\\s*(?:pub\\s+)?def\\s+([a-zA-Z][A-Za-z0-9_]*)",
   "stringPattern": "\"(?:[^\"\\\\\\n]|\\\\.)*\"",
   "exempt": {
+    "engine/src/scene3d/LightModel3d/Codegen.flix::toWgsl": "正当 B: 木が引数の並びに無い入力を読むのはエンジンの光の式の書き誤り（toGlsl と同じ前提。生成するのは engine の中の決まった木だけで、読み込みの途中ではない）",
+    "engine/src/scene3d/LightModel3d/Codegen.flix::wgslScalarField": "正当 B: 点光源に円錐の縁を読むのは光の式の書き誤りで、木を作る所が止める（glslScalarField と同じ前提）",
     "engine/src/platform/LoadProgress.flix::imageDecoder": "正当 C: runNoop の下で絵を解こうとするのは handler の選び違い（画面なしで絵を解くなら HeadlessLoad.handle）。Err を返すと読み込みが既定値で続けて部品が黙って消える",
     "engine_tools/src/LogCapture.flix::capture": "正当 C: f の値は直前の Ref.put で必ず入るので届かない分岐（プログラマの前提）",
     "engine_world/src/Fx.flix::curveIntegral": "正当 B: flicker / pulse は速度カーブに使えないと FxDoc.parse が先に弾く到達不能な分岐",

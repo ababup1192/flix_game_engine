@@ -196,6 +196,22 @@ pub mod Texture3d {
         "                                   : ${glslFloat(1.0 + srgbOffset())} * pow(x, 1.0 / ${glslFloat(srgbGamma())}) - ${glslFloat(srgbOffset())};\n" +
         "}\n"
 
+    /// srgbToLinearGlsl の WGSL の版（f32 → f32。式は同じ）。
+    // WhyNot: 三項の代わりの select の両側の計算を避けない — 選ばない側の pow が NaN でも、select は選んだ側の値だけを返す。
+    pub def srgbToLinearWgsl(name: String): String =
+        "fn ${name}(s: f32) -> f32 {\n" +
+        "    return select(pow((s + ${glslFloat(srgbOffset())}) / ${glslFloat(1.0 + srgbOffset())}, ${glslFloat(srgbGamma())}), s / ${glslFloat(srgbSlope())},\n" +
+        "                  s <= ${glslFloat(srgbEdge())});\n" +
+        "}\n"
+
+    /// linearToSrgbGlsl の WGSL の版（f32 → f32。式は同じ）。
+    pub def linearToSrgbWgsl(name: String): String =
+        "fn ${name}(l: f32) -> f32 {\n" +
+        "    let x = max(l, 0.0);\n" +
+        "    return select(${glslFloat(1.0 + srgbOffset())} * pow(x, 1.0 / ${glslFloat(srgbGamma())}) - ${glslFloat(srgbOffset())}, x * ${glslFloat(srgbSlope())},\n" +
+        "                  x <= ${glslFloat(linearEdge())});\n" +
+        "}\n"
+
     def srgbEdge(): Float64 = 0.04045
     def linearEdge(): Float64 = 0.0031308
     def srgbSlope(): Float64 = 12.92
