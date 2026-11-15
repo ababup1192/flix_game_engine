@@ -2,7 +2,7 @@
 // 1 回の renderCommands で、2D の pass を開く前に prepare が場面ごとに自分の texture（色と深度。標本つきなら resolve まで）へ描き、
 // 2D の並びの z の位置で 2D の描き手がその texture を貼る（plans/engine-webgpu.md の 5.4）。計画（Render3d.ScenePlan）と行（Render3d.SceneList）は GL と同じ物を使い、
 // 行を流すのは Render3d.WebGpuRows。式は GL と同じ WGSL（Render3dWgsl の頂点の色の頂点シェーダーと frag）。
-// 描くのは不透明の頂点の色の物と光（点光源・スポット・太陽・環境光・hemisphere・かすみ）。材質・骨つき・ビルボード・空・影・Output.Depth は描かずに名前ごとに 1 回知らせる
+// 描くのは不透明の頂点の色の物と光（点光源・スポット・太陽・環境光・hemisphere・かすみ）。材質・骨つき・ビルボード・空・影・環境マップ・lightmap・Output.Depth は描かずに種類ごとの回数を host へ数えさせる
 // （材質の物は GL が「使えない」と答えた材質と同じく頂点の色で描く）。
 // WhyNot: 兄弟（Render3d.GlRows など）と同じく pub を外さない — 呼び手の RenderPaint.Internal.WebGpuPaint は Render3d の子孫でなく、pub でない子の mod には届かない
 //   （親の Render3d が pub でないので、別のパッケージのゲームからは見えない）。
@@ -42,7 +42,7 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.Instancing.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
-    use Render3d.ScenePlan.{PlanCaps, Planner, ScenePlan, SceneDraws, freshPlanner, groupScenes, planScenes}
+    use Render3d.ScenePlan.{Group, GroupedScene, PlanCaps, Planner, ScenePlan, SceneDraws, freshPlanner, groupScenes, planScenes}
     use Render3d.SceneList.{SceneList, buildSceneList}
     use Render3d.WebGpuRows.{MeshTable, drawRows, freshMeshes, releaseMeshes, trimMeshes, uploadRows}
     use RenderPaint.Internal.WebGpuPipelines
@@ -58,8 +58,8 @@ pub mod Render3d.WebGpuRenderer {
     }
 
     /// 2D の描き手から借りる物。encoder = 今のコマの encoder・notePass = encoder に pass を 1 つ積んだと知らせる・
-    /// flush = 積んだ pass があれば submit する（submit したら afterSubmit が呼ばれる）・skip = 描かない物を名前ごとに 1 回知らせる。
-    pub type alias Host = { encoder = Unit -> CommandEncoder \ IO, notePass = Unit -> Unit \ IO, flush = Unit -> Unit \ IO, skip = String -> Unit \ IO }
+    /// flush = 積んだ pass があれば submit する（submit したら afterSubmit が呼ばれる）・skip(種類, 回数) = 描かずに飛ばした物を種類ごとに数える。
+    pub type alias Host = { encoder = Unit -> CommandEncoder \ IO, notePass = Unit -> Unit \ IO, flush = Unit -> Unit \ IO, skip = (String, Int32) -> Unit \ IO }
 
     /// 場面を描く描き先。key = 2D の描き手の描き先の鍵（画面は 0）・format・samples = 2D の pass の形式と標本（WebGPU の描き先の標本は 1 か 4）・
     /// viewport = 描き先の中の design 領域（GL の左下が原点）と倍率・height = 描き先の高さ（画素）。
@@ -199,7 +199,7 @@ pub mod Render3d.WebGpuRenderer {
             // WhyNot: 姿勢の行を配らない — 骨つきの物は描かない（P8）。
             let caps = { alphaToOne = false, poseRowLimit = 0 };
             let grouped = groupScenes(s#planner, caps, dest#samples, cmds);
-            if (Vector.isEmpty(grouped#requests)) () else host#skip("3D の材質（頂点の色で描く）");
+            List.forEach(noteMaterials(host, grouped#members), grouped#scenes);
             let (plans, _) = planScenes(s#planner, caps, Vector.map(_ -> 0, grouped#requests), grouped);
             plans |> List.mapWithIndex((i, plan) -> prepareScene(r, host, dest, grouped#members, i, plan)) |> List.toVector
         }
@@ -232,14 +232,32 @@ pub mod Render3d.WebGpuRenderer {
         case Scene3d.Output.Depth(_) => false
     }
 
-    /// 描かない物を名前ごとに 1 回知らせる。
+    /// 材質の物（頂点の色で描く）を、不透明と半透明に分けて、視錐台の内の物の数で数える。そのうち lightmap を使う物も数える。
+    def noteMaterials(host: Host, members: MutList[MeshDraw, Static], scene: GroupedScene): Unit \ IO =
+        let drawn = (g: Group) -> List.range(g#batch#start, g#batch#start + g#batch#count)
+                                  |> List.map(i -> MutList.get(i, members)) |> List.filter(d -> not d#culled);
+        let tally = scene#groups |> List.foldLeft((acc, g) -> match g#surface {
+            case Some((fields, _)) =>
+                let (opaque, blended, lightmapped) = acc;
+                let ds = drawn(g);
+                let lit = lightmapped + List.count(d -> Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)), ds);
+                if (fields#blend) (opaque, blended + List.length(ds), lit) else (opaque + List.length(ds), blended, lit)
+            case None => acc
+        }, (0, 0, 0));
+        let (opaque, blended, lightmapped) = tally;
+        host#skip("3D の材質の物（頂点の色で描く）", opaque);
+        host#skip("3D の半透明の材質の物（頂点の色で不透明に描く）", blended);
+        host#skip("3D の lightmap の物（今の光で描く）", lightmapped)
+
+    /// 描かない物を種類ごとに数える（骨つきの物は物の数・ビルボードは数・影は光の数・空と環境マップと奥行きの書き出しは場面の数）。
     def noteUnsupported(host: Host, plan: ScenePlan[SpanBatch]): Unit \ IO =
         let scene = plan#cmd#scene;
-        if (List.isEmpty(plan#draws#skinned)) () else host#skip("3D の骨つきの物");
-        if (List.isEmpty(plan#shadowPlans)) () else host#skip("3D の影");
-        if (List.isEmpty(scene#billboards)) () else host#skip("3D のビルボード");
-        if (Option.isEmpty(scene#sky)) () else host#skip("3D の空");
-        if (isColorOutput(scene)) () else host#skip("3D の奥行きの書き出し（Output.Depth）")
+        host#skip("3D の骨つきの物", List.sumWith(b -> b#count, plan#draws#skinned));
+        host#skip("3D の影（影を落とす光）", List.length(plan#shadowPlans));
+        host#skip("3D のビルボード", List.length(scene#billboards));
+        host#skip("3D の空", Option.count(_ -> true, scene#sky));
+        host#skip("3D の環境マップ", Option.count(_ -> true, scene#environmentMap));
+        host#skip("3D の奥行きの書き出し（Output.Depth）", if (isColorOutput(scene)) 0 else 1)
 
     /// GL の左下が原点の画素の矩形を、描き先の左上が原点の (x, y, 幅, 高さ) にする。
     def topLeftOf(height: Int32, box: PixelBox): (Int32, Int32, Int32, Int32) =
@@ -363,6 +381,8 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 光の値 d を R3dScene の並びで buf へ詰める（欄の位置は Render3dWgsl.sceneDeclarations の頭のコメント）。影・環境マップ・lightmap・奥行きの書き出しの欄は切る値。
     /// GL の Render3d.Light.putLights が渡す欄と同じ値を、同じ名前の欄へ入れる。
+    // WhyNot: 書く欄の組を場面ごとに変えない — buf は場面をまたいで使い回すので、ある場面だけ書いた欄には次の場面で前の値が残る。
+    //   ここで書く欄は毎回すべて書き、書かない欄（影と奥行きの書き出しの on など）は作った時の 0 のまま読ませる。
     pub def packSceneValues(buf: ByteBuffer, d: LightData): Unit \ IO =
         putVec3(buf, 0, d#ambient, 0);
         discard buf.putFloat(12, d#hemisphere);

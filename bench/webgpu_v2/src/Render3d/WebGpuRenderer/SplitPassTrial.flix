@@ -59,7 +59,7 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
 
     /// 1 コマぶんの encoder を貸す Host（submit は frameA・frameB の終わりに 1 回だけ）。
     def hostOf(encoder: CommandEncoder): Host =
-        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = _ -> checked_ecast(()) }
+        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()) }
 
     def viewportOf(t: Trial): Scene3dRenderer.Viewport =
         let (dw, dh) = t#design;

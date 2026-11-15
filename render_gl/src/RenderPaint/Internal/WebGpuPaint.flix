@@ -4,7 +4,7 @@
 // ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
 // 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
 // 面（ShaderDoc）の program と pipeline と draw は WebGpuSurfaces。3D の場面は Render3d.WebGpuRenderer が 2D の pass の前に自分の texture へ描き、2D の並びの z の位置で貼る。
-// まだ描かない物（起動の後に足す字・3D の材質や影など）は名前ごとに 1 回知らせて捨てる。
+// まだ描かない物（起動の後に足す字・3D の材質や影など）は描かずに飛ばし、種類ごとの回数を数える（RenderPaint.Internal.SkippedDraws）。
 //
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
@@ -48,6 +48,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     use RenderFrame.Internal.RenderList
     use RenderFrame.Internal.RenderList.{DepthStencil, PassHistory, PassSpec}
     use RenderFrame.Internal.WebGpuRows
+    use RenderPaint.Internal.SkippedDraws
     use RenderPaint.Internal.TargetTable
     use RenderPaint.Internal.TextureTable
     use RenderPaint.Internal.TileTable
@@ -131,6 +132,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             frameCounters = Array[Int32, Static],
             texWarnLog = Ref[Set[String], Static],
             skipped = Ref[Set[String], Static],
+            // まだ描けずに飛ばした物の種類ごとの回数。
+            skips = SkippedDraws.Counts,
             diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
             drawCounts = RenderDrawCounts.Holder,
             // 3D の場面を描く所（2D の pass の前に場面を自分の texture へ描き、貼る行で貼る）。
@@ -194,7 +197,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             frameSize = Array#{cfg#width, cfg#height} @ Static,
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
-            texWarnLog = Ref.fresh(Static, Set.empty()), skipped = Ref.fresh(Static, Set.empty()),
+            texWarnLog = Ref.fresh(Static, Set.empty()), skipped = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
             scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout)
         });
@@ -351,6 +354,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// この後 paint は使えない。
     pub def release(paint: Paint): Unit \ IO =
         let PaintData.PaintData(p) = paint;
+        warnTable(SkippedDraws.tableOf(p#skips, "終わり"));
         Array.put(None, 0, p#encoder);
         Map.forEach((_, slot) -> { slot#group.release(); slot#texture.destroy() }, Ref.get(p#slots));
         Ref.put(Map.empty(), p#slots);
@@ -589,7 +593,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                                                      frame#scenes);
         // WhyNot: 診断の 3D の数を黙って 0 で出さない — bench の JSON で「描いた物が 0」と読み違える（数えるのは P8）。
         if (List.isEmpty(frame#scenes) or Option.isEmpty(Ref.get(p#diagnosticsRef))) ()
-        else skip(paint, "3D の数を数える事（診断の scene3dCounts は 0 のまま・未計測）");
+        else skip(paint, "3D の診断の数（scene3dCounts は未計測で 0）");
         WebGpuRows.renderFrame({
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons, staticRanges = staticRanges, surfaces = frame#surfaces,
             sceneZs = List.toVector(List.map(cmd -> cmd#scene#zIndex, frame#scenes)),
@@ -639,7 +643,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         { encoder = () -> encoderOf(paint),
           notePass = () -> Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters),
           flush = () -> flushPending(paint),
-          skip = name -> skip(paint, name) }
+          skip = (name, n) -> skipMany(paint, name, n) }
 
     // ── 頂点の buffer（タイルの層・static layer）──
 
@@ -709,15 +713,19 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let PaintData.PaintData(p) = paint;
         Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#group) |> Option.getWithDefault(p#blank#group)
 
-    /// まだ描かない物 name を、名前ごとに初めの 1 回だけ知らせる。
-    def skip(paint: Paint, name: String): Unit \ IO =
+    def skip(paint: Paint, name: String): Unit \ IO = skipMany(paint, name, 1)
+
+    /// まだ描かない物 name を n 回飛ばしたと数える（種類ごとの初めの 1 回だけ知らせる）。
+    def skipMany(paint: Paint, name: String, n: Int32): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        let seen = Ref.get(p#skipped);
-        if (Set.memberOf(name, seen)) ()
-        else {
-            Ref.put(Set.insert(name, seen), p#skipped);
-            Log.warn("[webgpu] まだ描かない: ${name}")
-        }
+        if (SkippedDraws.add(p#skips, name, n)) Log.warn("[webgpu] まだ描かない: ${name}") else ()
+
+    /// 飛ばした物の表 table があれば 1 回知らせる。
+    // WhyNot: 純粋な Unit のまま返さない — 呼ぶ側は文として `;` で捨てるので、純粋な呼び出しは消える（LwjglLayer.announceFixedDt と同じ）。
+    def warnTable(table: Option[String]): Unit \ IO = match table {
+        case Some(t) => checked_ecast(Log.warn(t))
+        case None    => ()
+    }
 
     /// Draw2d.renderCommands の中身。Pass が開いていればそこへ描いて false。開いていなければ中間の texture へ描き、控えを置いて true。
     def submitFrame(paint: Paint, sprites: List[RenderType.Drawable], tileMaps: List[RenderType.TileMapRenderCmd],
@@ -839,6 +847,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
         };
         submitEncoder(paint);
+        warnTable(SkippedDraws.endFrame(p#skips));
         Render3d.WebGpuRenderer.endFrame(p#scenes3d);
         WebGpuSurfaces.endFrame(p#surfaces, Array.get(0, p#lastFrame)#surfaces |> List.map(cmd -> GpuHandle.shaderProgramInt(cmd#program)) |> List.toSet);
         let submits = Array.get(1, p#frameCounters);
