@@ -355,6 +355,7 @@ pub mod ShaderGen {
         }
 
     // WhyNot: eqField を 1 つの match にしない — case が多く 8,000 バイトを超えて JVM が JIT しない。前半と後半の 2 つに分ける。
+    // WhyNot: eqField の末尾の eqFieldMore の呼び出しを呼び出しでない式にしない — 13 節の形はラムダのループから呼ぶ時で、eqField は再帰（eqBindings・欄の中の欄）から呼ぶ。
     @DontInline
     def eqFieldMore(ix: (String, String) -> Bool \ ef, a: ShaderDoc.Field, b: ShaderDoc.Field): Bool \ ef =
         use ShaderDoc.Field;
@@ -555,6 +556,7 @@ pub mod ShaderGen {
 
     // WhyNot: 欄の中身を 1 つの match にしない — case が多く 8,000 バイトを超えて JVM が JIT しない。前半と後半の 2 つに分ける。
     // WhyNot: ここで網羅を求めない — 網羅は fieldTag が止める。中身を入れ忘れた case は鍵が当たりやすくなるだけで、eqMaterial が見つける。
+    // WhyNot: 末尾の hashFieldPayloadMore の呼び出しを呼び出しでない式にしない — 13 節の形はラムダのループから呼ぶ時で、ここは hashField からしか呼ばない。
     @DontInline
     def hashFieldPayload(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, f: ShaderDoc.Field): Unit \ ef =
         use ShaderDoc.Field;
