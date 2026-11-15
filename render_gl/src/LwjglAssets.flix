@@ -1,7 +1,7 @@
 // LwjglAssets — デスクトップの素材の読み込み（RenderPaint.AssetLoader の LWJGL 版）。画像は stb で読み、字は stb で距離場を作って
 // （RenderFont・RenderFontCache・RenderGlyphGrow）、GPU へ上げるのは本体の RenderTexture に任せる。
-// 窓ありの描き手（LwjglLayer）も窓なしの描き手（GlOffscreen）も同じ物を渡す。画像 1 枚の読み込み（loadTexture）は上げる関数の組を受け、
-// PC の WebGPU の窓も同じ物を使う。
+// ウィンドウありの描き手（LwjglLayer）もウィンドウなしの描き手（GlOffscreen）も同じ物を渡す。
+// 画像 1 枚の読み込み（loadTexture）は上げる関数の組を受け、PC の WebGPU のウィンドウも同じ物を使う。
 mod LwjglAssets {
     import fge.gl.GlContext
     import org.lwjgl.stb.STBImage
