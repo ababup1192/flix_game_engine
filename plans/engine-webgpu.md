@@ -1027,7 +1027,7 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
     `TestSceneList` に、形・材質・絵の名前・間引きの混ざった入力で本番の候補の並びが見本（`groupInOrder` + `groupByTextures` + `batchOf`）と同じ事・XYX → XX, Y・1 つの鍵の中で絵の名前で分かれる・
     形が違えば同じ鍵でも分かれる・`numberSpan` が上限で止まる、の 5 本を足した（間引いた物が範囲に入らない事は 2 回目の 1 本）。どこからも呼ばれない `JointTexture.withBatchPoseRows` を消した。
   - `ScenePlan.placementOf` の match の入れ子を `cachedPlacement` へ出した。`Material.MaterialTable` の WhyNot を今の問い合わせのまとめ方に合わせた。
-  - `requestOf` は、既に聞いた番号に当たった時に `ShaderGen.eqMaterial`（参照が同じ木なら辿らない）で 1 回比べ、同じ GLSL を生まなければ別の番号で聞く（木の鍵がぶつかった時に黙って先の材質で描かない）。
+  - `requestOf` は、既に聞いた番号に当たった時に `ShaderGen.eqMaterial`（参照が同じ木なら辿らない）で 1 回比べ、同じ GLSL を生まなければ別の番号で聞く（木の鍵がぶつかった時に黙って先の材質で描かない。4 回目で候補の頭の 1 回に移した・下）。
     テストは書いていない: `Scene3d.Material3d` は閉じた型で、render_gl のテストから木の鍵がぶつかった 2 つの材質を作れない。
   - `kindCodeOf` に `Batch.kindBits` と分ける理由の WhyNot・`spanPoseRows` のループを自分への再帰に。
   - 直しを外した確かめ（3 回目）: `groupWith` の候補の並びを逆にすると `testGroupsMatchTheReference`・`testXyxGroupsXxThenY`・`testTextureNamesSplitOneKey` が落ちる。
@@ -1043,6 +1043,14 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
   - 3 回目の門（同じ機械・2026-11-16・3 回目のコミット a9b5c778）: `make gl-parity` 緑（81 行が a3c6e397 と 1 字も同じ）・`make gl-capture-check`（a と b の 54 枚が同じ・基準との差 30 枚・a3c6e397 の 54 枚ともバイトまで同じ）・
     `make webgpu-v1-check` 緑（36 場面・誤り 0）・`make webgpu-v1-check-web` 緑（0 px・0 px・PC と 22 px ±1）・テンプレ 3 本の `reference-check` 緑・`lint-huge-methods`・`lint-max-lines`・`gl-jar-pin-check` 緑。
     `bench/scene3d`（2 回 × 2 区間・frame p50（split・draw））: 形 1 つ 9.8〜10.4 ms（6.4〜6.6・0.2）・形が物ごと 57.6〜59.6 ms（26.4〜27.9・27.0〜27.3）で 2 回目と同じ。
+- 3 回目のレビュー（89 点）への対応（4 回目のコミット）:
+  - 3 回目のコミットの engine で fps3d_lab の部屋を前後交互に 3 本ずつ測り直した: 変える前 2.54・2.56・2.52 ms・後 2.65・2.67・2.65 ms（中央値 +4.3%・3 本とも遅い）。
+    3 回目の `requestOf` は物ごとに `ShaderGen.eqMaterial` を通り、部屋は材質の値を毎コマ作り直すので参照の比べで抜けず、物ごとに木を辿っていた。
+  - 木の鍵の衝突の確かめを、物ごとの `requestOf` から候補の頭で 1 回の `verifiedHandle` へ移した（候補の中の物は頭の材質で描くので、頭で比べれば足りる）。
+    直した後に同じく 3 本ずつ: 変える前 2.57・2.57・2.55 ms・後 2.63・2.64・2.65 ms（中央値 2.57 → 2.64 ms・+2.7%）。5% の内。3 本とも後が 0.06〜0.10 ms 遅い差は残り、理由は【未確認】
+    （候補の頭の比べか、2 回目の 8 本ずつの組（+0.2%）との日の揺れか。上の持ち越しの「物ごとに材質の絵の名前を辿る分」と一緒に R2b で見る）。
+  - テスト: 同じ 1 つの材質の値を uv の有る形・無い形・骨つきの形に付けても候補の並びが見本と同じ（控えに当たる道）・木の鍵がぶつかった材質は別の番号、の 2 本を足した（`requestOf`・`verifiedHandle`・`freshTables` を pub に）。
+    render_gl 486 緑。衝突の確かめを外すと `testCollidingTreeKeyAsksSeparately` が落ちる。`make gl-parity` は 81 行が a3c6e397 と 1 字も同じ。
 - 持ち越し: 材質の値を毎コマ作り直すゲームで、物ごとに材質の絵の名前の並びを辿る分（材質の木（spec）の値で控える案。9 章の表の 13 行目 R2b の「材質と絵の組」の小分けで、絵の組を行へ入れる時に一緒に）・
   形が物ごとの場面の split（候補ごとの仕事・26 ms。P9 の「動かない物の持ち越し」で計画ごと省く）・
   材質の draw ごとの値と絵の組を行へ（R2b。WebGPU の材質の bind group と一緒に）・半透明・ビルボード・空・影の地図を行へ（R2b）・WebGPU で 3D の行を流す（V2。`SceneList` と `MaterialTable` の形をそこで見直す）。

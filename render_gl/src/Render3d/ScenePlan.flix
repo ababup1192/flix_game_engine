@@ -97,12 +97,12 @@ mod Render3d.ScenePlan {
 
     /// 1 回の prepare の控え。keys = batch の鍵 → 番号・textures = 材質の絵の名前の並び → 番号・requests = backend に聞く材質・
     /// requestIds = (プログラムの版, 材質の木の鍵) → requests の番号・members = batch の描く物。
-    type alias Tables = {
+    pub type alias Tables = {
         keys = Ref[Map[BatchKey, Int32], Static], textures = Ref[Map[List[String], Int32], Static], requests = MutList[MaterialRequest, Static],
         requestIds = Ref[Map[(Int32, Int64), Int32], Static], members = MutList[MeshDraw, Static]
     }
 
-    def freshTables(): Tables \ IO =
+    pub def freshTables(): Tables \ IO =
         { keys = Ref.fresh(Static, Map.empty()), textures = Ref.fresh(Static, Map.empty()), requests = MutList.empty(Static),
           requestIds = Ref.fresh(Static, Map.empty()), members = MutList.empty(Static) }
 
@@ -249,20 +249,21 @@ mod Render3d.ScenePlan {
               texture = textureSlotOf(g#tables, names), needsUv = Option.nonEmpty(m#normalMap) }
         }
 
-    /// 材質 m を版 kind で聞いた番号（同じプログラムの材質を前に聞いていれば、その番号）。
-    /// 版と木の鍵が同じでも木が同じ GLSL を生まない材質（木の鍵の衝突）は、別の番号で聞く。
-    def requestOf(tables: Tables, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
+    /// 材質 m を版 kind で聞いた番号（版と木の鍵が同じ材質を前に聞いていれば、その番号。木の中身は比べない — 候補の頭で verifiedHandle が比べる）。
+    pub def requestOf(tables: Tables, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
         let id = (kindCodeOf(kind), force m#shaderHash);
         match Map.get(id, Ref.get(tables#requestIds)) {
-            case Some(handle) => askedOrNew(tables, handle, m, kind)
+            case Some(handle) => handle
             case None         =>
                 let handle = pushRequest(tables, m, kind);
                 Ref.put(Map.insert(id, handle, Ref.get(tables#requestIds)), tables#requestIds);
                 handle
         }
 
-    /// 同じ鍵で聞いた handle 番の材質と m が同じ GLSL を生むならその番号・違えば新しい番号。
-    def askedOrNew(tables: Tables, handle: Int32, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
+    /// handle 番の材質と m が同じ GLSL を生むならその番号・違えば（木の鍵の衝突）新しい番号で聞く。
+    // WhyNot: 物ごとに比べない — 材質の値を毎コマ作り直すゲームでは参照で比べられず、物の数だけ木を辿る。候補の中の物は頭の材質で描くので、頭で 1 回比べれば足りる。
+    // WhyNot: ぶつかった 2 つを同じ控えの中で両方保たない — backend の控えの鍵は木の鍵なので、ぶつかった 2 つは毎コマ組み直しになるが、64 ビットの衝突でだけ起き、絵は正しい。
+    pub def verifiedHandle(tables: Tables, handle: Int32, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
         if (isSameProgram(fst(MutList.get(handle, tables#requests)), m)) handle else pushRequest(tables, m, kind)
 
     def pushRequest(tables: Tables, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
@@ -351,7 +352,8 @@ mod Render3d.ScenePlan {
         List.range(0, groupCount) |> List.map(k -> {
             let head = Array.get(k, span#heads);
             let p = Array.get(head, placements);
-            { batch = { head = Array.get(head, draws), start = base + Array.get(k, starts), count = Array.get(k, span#counts) }, surface = p#surface, handle = p#handle }
+            { batch = { head = Array.get(head, draws), start = base + Array.get(k, starts), count = Array.get(k, span#counts) }, surface = p#surface,
+              handle = p#surface |> Option.map(mk -> verifiedHandle(tables, p#handle, fst(mk), snd(mk))) |> Option.getWithDefault(-1) }
         })
 
     /// spansOf の物ごとの控え。groupOf = 物の候補の番号・heads = 候補の頭の物の番号・counts = 候補の描く物の数。

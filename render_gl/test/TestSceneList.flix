@@ -244,6 +244,28 @@ mod Render3d.TestSceneList {
             :: Scene3d.meshInstance(y, Mat4.identity()) :: on(x, textured("a")) :: behind :: on(y, materialOf(0.9)) :: Scene3d.meshInstance(y, Mat4.identity()) :: Nil;
         Assert.assertEq(expected = referenceOrder(instances), groupedOrder(instances))
 
+    /// 同じ 1 つの材質の値を uv の有る形・無い形・骨つきの形に付けても（材質の値の控えに当たる道）、候補の並びは見本と同じ。
+    @Test
+    def testSharedMaterialOnShapeVariantsMatchesTheReference(): Unit \ {Assert, IO} =
+        let shared = materialOf(0.3);
+        let uvMesh = match Mesh3d.withUvs(Vector#{ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0 }, triangle(1.0)) {
+            case Ok(m)  => m
+            case Err(e) => bug!(e)
+        };
+        let skinned = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.identity()) |> Scene3d.withPose(poseAt(1.0)) |> Scene3d.withMaterial(shared);
+        let instances = on(uvMesh, shared) :: on(triangle(2.0), shared) :: skinned :: on(uvMesh, shared) :: on(triangle(2.0), shared) :: skinned :: Nil;
+        Assert.assertEq(expected = referenceOrder(instances), groupedOrder(instances))
+
+    /// 版と木の鍵が同じでも木の違う材質（木の鍵の衝突）は、候補の頭の確かめで別の番号になり、同じ材質は同じ番号のまま。
+    @Test
+    def testCollidingTreeKeyAsksSeparately(): Unit \ {Assert, IO} =
+        let tables = Render3d.ScenePlan.freshTables();
+        let colliding = (red: Float64) -> { shaderHash = lazy 1i64 | fieldsOf(red) };
+        let asked = Render3d.ScenePlan.requestOf(tables, colliding(0.1), plainKind());
+        let same = Render3d.ScenePlan.verifiedHandle(tables, Render3d.ScenePlan.requestOf(tables, colliding(0.1), plainKind()), colliding(0.1), plainKind());
+        let other = Render3d.ScenePlan.verifiedHandle(tables, Render3d.ScenePlan.requestOf(tables, colliding(0.9), plainKind()), colliding(0.9), plainKind());
+        Assert.assertEq(expected = (0, 0, 1), (asked, same, other))
+
     /// 形 X・Y・X は、X の 2 体・Y の 1 体の候補になる。
     @Test
     def testXyxGroupsXxThenY(): Unit \ {Assert, IO} =
