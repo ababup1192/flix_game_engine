@@ -12,8 +12,8 @@ mod RenderFrame {
     import java.nio.FloatBuffer
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.GlRows.{drawRenderList, setScissorAt}
-    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, appendPolyRow, appendSpriteRow, appendStaticRow, appendTileRow, instanceFloats,
-                                         kindPoly, kindScene3d, kindSprite, kindSurface, nextInstanceOf, nextVertexOf, rowCountOf}
+    use RenderFrame.Internal.RenderList.{PassSpec, RenderList, appendMaskRow, appendPolyRow, appendSpriteRow, appendStaticRow, appendTileRow, instanceFloats,
+                                         kindPoly, kindScene3d, kindSprite, kindSurface, nextInstanceOf, nextMaskRef, nextVertexOf, rowCountOf}
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず
@@ -416,7 +416,13 @@ mod RenderFrame {
     //              17=前の draw call が mask つき 18=このコマで先に draw call が出ている
     //              19-25=前に出したスプライトの鍵（texId・clip有無・clip矩形・blend） 26-31=前に出した多角形の鍵（clip有無・clip矩形・blend）
     //              32-38=この描き先で数えた数（並びは RenderDrawCounts の slot）
-    def stateSize(): Int32 = 41
+    // mask:       41=この pass で前の mask に使った stencil の値（0 = まだ無いか、stencil を 0 に戻す前提が崩れた）
+    def stateSize(): Int32 = 42
+
+    def maskRefSlot(): Int32 = 41
+
+    /// この pass の行に stencil を使う mask があるか（WebGPU が stencil つきの pass を開くかを決める）。
+    def usesStencil(st: Array[Int32, Static]): Bool \ IO = Array.get(maskRefSlot(), st) > 0
 
     def runFirstSlot(): Int32 = 39
 
@@ -694,24 +700,20 @@ mod RenderFrame {
             }
         }
 
-    /// mask 付きスプライト 1 体を単発で描く（テクスチャ解決と centered の平行移動は
-    /// emitSprite と同じ式）。run の一括化から外れるのは、ステンシルの書き込み・解除を
-    /// 1 体の draw の前後に挟む口が一括 draw に無いため — mask 付きは少数枚の前提。
-    /// 呼び側（emitMerged）が両 run を吐いてから呼ぶ。
-    def emitSpriteMasked(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instData: FloatBuffer,
+    /// mask つきスプライト 1 体を行にする（テクスチャ解決と centered の平行移動は emitSprite と同じ式）。
+    /// run に混ぜないのは、stencil へ mask を書く draw と、それで比べる draw を 1 体ごとに挟むため。
+    def emitSpriteMasked(st: Array[Int32, Static], list: RenderList,
                          scaleX: Float64, scaleY: Float64,
                          registry: RenderAsset.TextureRegistry,
                          upsideDownTargets: Set[String],
                          warnLog: Ref[Set[String], Static],
-                         polyUniforms: RenderShader.PolyBatchUniforms,
                          drawable: RenderType.Drawable): Unit \ IO =
         let DrawCmd.Drawable.Drawable(tex, px, py, sx, sy, _rot,
                                       _cr, _cg, _cb, _a, cen,
                                       _uox, _uoy, _usx, _usy, _z,
                                       _style, _clip, _blend, _mask) = drawable;
         if (String.isEmpty(tex)) {
-            drawMaskedOne(gl, gs, st, instData, scaleX, scaleY, polyUniforms, 0,
-                          px, py, sx, sy, drawable, false, false)
+            pushMaskedItem(st, list, scaleX, scaleY, 0, px, py, sx, sy, drawable, false, false)
         } else {
             match Map.get(tex, registry) {
                 case Some(texInfo) =>
@@ -722,20 +724,18 @@ mod RenderFrame {
                     let isFont = String.startsWith({prefix = "font_"}, tex);
                     // uv 反転は emitSprite と同じ（mask は形の変換なので uv には触らない）。
                     let d = targetUvFlipped(upsideDownTargets, drawable);
-                    drawMaskedOne(gl, gs, st, instData, scaleX, scaleY, polyUniforms,
-                                  GpuHandle.textureIdInt(texInfo#id),
-                                  posX, posY, displayW, displayH, d, true, isFont)
+                    pushMaskedItem(st, list, scaleX, scaleY, GpuHandle.textureIdInt(texInfo#id),
+                                   posX, posY, displayW, displayH, d, true, isFont)
                 case None => warnMissingTexture(warnLog, tex)
             }
         }
 
-    /// mask 付き 1 体の実描画: scissor を張り、instance を slot 0 へ書き、mask を
-    /// スクリーン座標へ写してステンシル付きの単発 draw に渡す。
-    def drawMaskedOne(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instData: FloatBuffer,
-                      scaleX: Float64, scaleY: Float64,
-                      polyUniforms: RenderShader.PolyBatchUniforms, texId: Int32,
-                      posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
-                      drawable: RenderType.Drawable, useTex: Bool, sdf: Bool): Unit \ IO =
+    /// mask つき 1 体を書いて行にする: 溜めている run を閉じ（列順を守る）、instance を 1 体書き、mask を画面の座標へ写して三角形の頂点を vertices へ書き、
+    /// stencil の値（RenderList.nextMaskRef）を進めて行を足す。mask が 3 頂点未満なら値を進めず 0 にする（backend は stencil を使わずに描く）。
+    def pushMaskedItem(st: Array[Int32, Static], list: RenderList,
+                       scaleX: Float64, scaleY: Float64, texId: Int32,
+                       posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
+                       drawable: RenderType.Drawable, useTex: Bool, sdf: Bool): Unit \ IO =
         let DrawCmd.Drawable.Drawable(_tex, _px, _py, _sx, _sy, rot,
                                       _cr, _cg, _cb, _a, _cen,
                                       _uox, _uoy, _usx, _usy, _z,
@@ -746,14 +746,24 @@ mod RenderFrame {
                 let (cx0, cy0, cx1, cy1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
                 (1, cx0, cy0, cx1, cy1)
         };
-        setScissorAt(gl, gs, clipFlag, x0, y0, x1, y1);
-        writeInstAt(instData, 0, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
-        let draws = RenderSprite.drawSpriteMasked(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
-                                                  Array.get(3, gs), blend, instData, 0,
-                                                  Array.get(4, gs), Array.get(5, gs), Array.get(6, gs),
-                                                  polyUniforms,
-                                                  maskToScreen(rot, posX, posY, sizeX, sizeY, mask));
-        countSpriteDraw(st, texId, clipFlag, x0, y0, x1, y1, blendCode(blend), true, draws)
+        closeRuns(st, list);
+        let instanceAt = nextInstanceOf(list);
+        writeInstAt(list#instances, instanceAt, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
+        let maskFirst = nextVertexOf(list);
+        let written = RenderSprite.writeMaskVerts(list#vertices, maskFirst, maskToScreen(rot, posX, posY, sizeX, sizeY, mask));
+        let maskCount = if (written < 3) 0 else written;
+        let ref = if (maskCount == 0) 0 else nextMaskRef(Array.get(maskRefSlot(), st));
+        if (ref > 0) Array.put(ref, maskRefSlot(), st) else ();
+        appendMaskRow(list, instanceAt, maskFirst, maskCount, texId, blendCode(blend), clipFlag, x0, y0, x1, y1, ref)
+
+    /// sprites の mask を三角形へほどいた時の頂点数の上限（1 個 n 頂点の多角形は 3(n-2) 以下）。polyVertCap と同じく入れ物を先に広げておく数。
+    def maskVertCap(sprites: List[RenderType.Drawable]): Int32 =
+        List.foldLeft((acc, d) -> acc + maskVertsOf(DrawCmd.maskOf(d)), 0, sprites)
+
+    def maskVertsOf(mask: List[List[Vec2.Vec2]]): Int32 = match mask {
+        case Nil => 0
+        case _   => 3 * List.foldLeft((acc, poly) -> acc + List.length(poly), 0, mask)
+    }
 
     /// mask 頂点（表示クアッドのローカル design px・原点 = 左上・回転前）を、writeInstAt と
     /// 同じ model 変換（回転中心 = クアッド中心）でスクリーン px へ写す。頂点を size の
@@ -816,8 +826,8 @@ mod RenderFrame {
                 appendStaticRow(list, r#buffer, r#first, r#count, blendCode(r#blend), 1, x0, y0, x1, y1, view)
         }
 
-    /// 並べた 1 個が行になる種類（mask の無いスプライト・多角形・タイルの層・static layer）なら行へ積んで true。
-    /// GL を直に呼ぶ種類（mask つきスプライト・面・3D の場面）は何もせず false（呼び側が溜めた行を流してから描く）。
+    /// 並べた 1 個が行になる種類（スプライト・多角形・タイルの層・static layer）なら行へ積んで true。
+    /// GL を直に呼ぶ種類（面・3D の場面）は何もせず false（呼び側が溜めた行を流してから描く）。
     // WhyNot: 末尾を呼び出しで終えない — 呼ぶ側のループ（emitOne・WebGpuRows.emitItem）が JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
     def emitRowItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
@@ -828,9 +838,9 @@ mod RenderFrame {
                 if (List.isEmpty(DrawCmd.maskOf(drawable))) {
                     // スプライトが来たら溜まっている多角形 run を先に閉じる（列順を守る）。
                     closePolyRun(st, list);
-                    emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable);
-                    true
-                } else false
+                    emitSprite(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable)
+                } else emitSpriteMasked(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, drawable);
+                true
             case Merged.MPoly(pc) =>
                 closeSpriteRun(st, list);
                 emitPoly(st, list, scaleX, scaleY, pc);
@@ -861,7 +871,6 @@ mod RenderFrame {
                    registry: RenderAsset.TextureRegistry,
                    upsideDownTargets: Set[String],
                    warnLog: Ref[Set[String], Static],
-                   polyBatchUniforms: RenderShader.PolyBatchUniforms,
                    drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
                    drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
                    items: List[Merged]): Unit \ IO =
@@ -869,9 +878,9 @@ mod RenderFrame {
             case Nil => ()
             case item :: rest =>
                 emitOne(gl, gs, st, list, scaleX, scaleY, registry, upsideDownTargets,
-                        warnLog, polyBatchUniforms, drawSurface, drawScene, item);
+                        warnLog, drawSurface, drawScene, item);
                 emitMerged(gl, gs, st, list, scaleX, scaleY, registry, upsideDownTargets,
-                           warnLog, polyBatchUniforms, drawSurface, drawScene, rest)
+                           warnLog, drawSurface, drawScene, rest)
         }
 
     /// 列の 1 個ぶんを描く（行になる種類は run へ積むか RenderList の行にする・GL を直に呼ぶ種類は溜めた行を流してから単発で描く）。
@@ -883,7 +892,6 @@ mod RenderFrame {
                 registry: RenderAsset.TextureRegistry,
                 upsideDownTargets: Set[String],
                 warnLog: Ref[Set[String], Static],
-                polyBatchUniforms: RenderShader.PolyBatchUniforms,
                 drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Int32 \ IO,
                 drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
                 item: Merged): Unit \ IO =
@@ -891,18 +899,18 @@ mod RenderFrame {
         else {
             flushRows(gl, gs, st, list);
             match item {
-                case Merged.MSprite(drawable) =>
-                    emitSpriteMasked(gl, gs, st, list#instances, scaleX, scaleY, registry, upsideDownTargets,
-                                     warnLog, polyBatchUniforms, drawable)
                 case Merged.MSurface(s) =>
                     // WhyNot: 前の行の clip 矩形を残さない — 面は矩形全体を塗るので、残すと切れる。
                     setScissorAt(gl, gs, 0, 0, 0, 0, 0);
-                    countSingleDraw(st, kindSurface(), drawSurface(gl, s))
+                    countSingleDraw(st, kindSurface(), drawSurface(gl, s));
+                    // mask つきの面は stencil を自分で 0 にして 1 を書く（mask が 3 頂点未満なら触らない）ので、次の mask は stencil を 0 に戻してから描く。
+                    if (List.isEmpty(s#mask)) () else Array.put(0, maskRefSlot(), st)
                 case Merged.MScene3d(i) =>
                     drawScene({ x = Array.get(7, gs), y = Array.get(8, gs), width = Array.get(9, gs),
                                 height = Array.get(10, gs), scaleX = scaleX, scaleY = scaleY }, i);
                     // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
                     Array.put(kindScene3d(), 15, st)
+                case Merged.MSprite(_) => ()
                 case Merged.MTile(_)   => ()
                 case Merged.MPoly(_)   => ()
                 case Merged.MStatic(_) => ()
@@ -951,13 +959,12 @@ mod RenderFrame {
         let (_, _, vpW, vpH) = pass#viewport;
         let scaleX = Int32.toFloat64(vpW) / args#designW;
         let scaleY = Int32.toFloat64(vpH) / args#designH;
-        let polyBatchUniforms = args#polyBatchUniforms;
         // 連続する「同じテクスチャ・同じ scissor・同じ blend」のスプライトを 1 回の
         // instanced draw にまとめる（run 収集 → flush）。1 要素 1 draw call だと呼び出しの
         // 固定費が積み上がり、数千体で描画時間のほとんどを占めてしまうため。
         let st = newRunState(args#drawCounts);
         emitMerged(gl, gs, st, list, scaleX, scaleY, args#registry, upsideDownTargets,
-                   args#texWarnLog, polyBatchUniforms, args#drawSurface, args#scenes#draw, sortedMerged);
+                   args#texWarnLog, args#drawSurface, args#scenes#draw, sortedMerged);
         flushRows(gl, gs, st, list);
         addCountsTo(args#drawCounts, st)
 

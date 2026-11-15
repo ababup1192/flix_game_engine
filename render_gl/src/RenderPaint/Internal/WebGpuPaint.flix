@@ -1,9 +1,9 @@
-// RenderPaint.Internal.WebGpuPaint — 塗りのコア（RenderPaint と RenderPaintHandlers）の WebGPU の分。2D のスプライト・字・箱・多角形・タイルの層・
+// RenderPaint.Internal.WebGpuPaint — 塗りのコア（RenderPaint と RenderPaintHandlers）の WebGPU の分。2D のスプライト・字・箱（mask つきを含む）・多角形・タイルの層・
 // static layer と、絵とフォントのアトラスを上げる・Pass を 1 つ挟む・中間の texture から画面へ写す、だけを持つ。
 // コマは中間の texture（RGBA8・描き先の画素の大きさ）へ描き、present で画面の texture へ 1 回写す。encoder はコマに 1 つで、submit はコマの終わり。
 // ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
 // 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
-// まだ描かない物（面・3D の場面・mask つきスプライト・起動の後に足す字）は名前ごとに 1 回知らせて捨てる。
+// まだ描かない物（面・3D の場面・起動の後に足す字）は名前ごとに 1 回知らせて捨てる。
 //
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
@@ -23,6 +23,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     import fge.webgpu.BufferBindingType
     import fge.webgpu.BufferUsage
     import fge.webgpu.CommandEncoder
+    import fge.webgpu.CompareFunction
     import fge.webgpu.FilterMode
     import fge.webgpu.RenderPass
     import fge.webgpu.RenderPassDesc
@@ -32,6 +33,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     import fge.webgpu.SamplerBindingType
     import fge.webgpu.ShaderModule
     import fge.webgpu.ShaderStage
+    import fge.webgpu.StencilOperation
     import fge.webgpu.Texture
     import fge.webgpu.TextureFormat
     import fge.webgpu.TextureSampleType
@@ -79,7 +81,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             presentLayout = BindGroupLayout,
             uniform = Buffer,
             frameGroup = BindGroup,
-            // 鍵 = ((形（WebGpuRows.shape*） × 4 + blend の番号) × 2 + 形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）) × 2 + 標本（0 = 1・1 = 4）。
+            // 鍵 = (((形（WebGpuRows.shape*） × 4 + blend の番号) × 2 + 形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）) × 2 + 標本（0 = 1・1 = 4）) × 4
+            //      + stencil の使い方（WebGpuRows.stencil*）。
             pipelines = Ref[Map[Int32, RenderPipeline], Static],
             // history へ写す pipeline（形式の番号 → pipeline。present と同じ WGSL で、1 画素ずつ写す）。
             copyPipelines = Ref[Map[Int32, RenderPipeline], Static],
@@ -102,6 +105,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             msaaTargets = Ref[Map[Int32, (Texture, Int32)], Static],
             // history へ写す元の bind group（写す元の描き先の slots の番号 → bind group。描き先を捨てる時に手放す）。
             copyGroups = Ref[Map[Int32, BindGroup], Static],
+            // mask の stencil（描き先の番号 → DEPTH24_PLUS_STENCIL8 の texture と、その幅・高さ・標本の数。中間の texture は 0。初めて mask を描く pass で作る）。
+            stencils = Ref[Map[Int32, (Texture, Int32, Int32, Int32)], Static],
+            // stencil を 0 に戻す design の全面の 6 頂点（多角形の頂点の並び）。
+            stencilResetQuad = Buffer,
             lastFrame = Array[RenderPaint.Frame, Static],
             // スプライトの instance・多角形の頂点・draw ごとの値（RenderList の values）の Stream。
             instances = Stream,
@@ -169,6 +176,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             blank = blank, slots = Ref.fresh(Static, Map.empty()), nextSlot = Array#{1} @ Static,
             registryRef = Ref.fresh(Static, Map.empty()), textureKeyRef = Ref.fresh(Static, Map.empty()),
             targets = TargetTable.fresh(), msaaTargets = Ref.fresh(Static, Map.empty()), copyGroups = Ref.fresh(Static, Map.empty()),
+            stencils = Ref.fresh(Static, Map.empty()), stencilResetQuad = createResetQuad(gpu, designW, designH),
             lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
             instances = freshStream(gpu, "fge instances", 4096 * instanceBytes()),
             vertices = freshStream(gpu, "fge vertices", 4096 * 4 * RenderList.vertexFloats()),
@@ -182,12 +190,18 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             texWarnLog = Ref.fresh(Static, Set.empty()), skipped = Ref.fresh(Static, Set.empty()),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh()
         });
-        // 起動の時に作る pipeline（RGBA8 のスプライトと多角形の 3 本ずつとタイルの 1 本）。RGBA16_FLOAT は初めて要る Pass で作る。
-        List.forEach(b -> {
-            discard pipelineOf(paint, WebGpuRows.shapeSprite(), b, RenderTarget.Format.Rgba8Unorm, 1);
-            discard pipelineOf(paint, WebGpuRows.shapePoly(), b, RenderTarget.Format.Rgba8Unorm, 1)
-        }, 0 :: 1 :: 2 :: Nil);
-        discard pipelineOf(paint, WebGpuRows.shapeTile(), 0, RenderTarget.Format.Rgba8Unorm, 1);
+        // 起動の時に作る pipeline（RGBA8・標本 1 の、stencil の無い pass と mask のある pass の両方）。RGBA16_FLOAT と標本 4 は初めて要る Pass で作る。
+        // WhyNot: mask のある pass の分を初めて mask が出たコマで作らない — できるまでの間、そのコマは mask の無いスプライトまで描けない。
+        List.forEach(stencil -> {
+            List.forEach(b -> {
+                discard pipelineOf(paint, WebGpuRows.shapeSprite(), b, RenderTarget.Format.Rgba8Unorm, 1, stencil);
+                discard pipelineOf(paint, WebGpuRows.shapePoly(), b, RenderTarget.Format.Rgba8Unorm, 1, stencil)
+            }, 0 :: 1 :: 2 :: Nil);
+            discard pipelineOf(paint, WebGpuRows.shapeTile(), 0, RenderTarget.Format.Rgba8Unorm, 1, stencil)
+        }, WebGpuRows.stencilNone() :: WebGpuRows.stencilKeep() :: Nil);
+        List.forEach(b -> discard pipelineOf(paint, WebGpuRows.shapeSprite(), b, RenderTarget.Format.Rgba8Unorm, 1, WebGpuRows.stencilEqual()),
+                     0 :: 1 :: 2 :: Nil);
+        discard pipelineOf(paint, WebGpuRows.shapePoly(), 0, RenderTarget.Format.Rgba8Unorm, 1, WebGpuRows.stencilWrite());
         installBuiltins(paint);
         paint
 
@@ -235,14 +249,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         case RenderTarget.Format.Rgba16Float => TextureFormat.RGBA16_FLOAT
     }
 
-    /// 形（WebGpuRows.shape*）と blend の番号（RenderFrame.blendCode）と描き先の形式と標本の数（1 か 4）の pipeline（無ければ作る）。
-    def pipelineOf(paint: Paint, shape: Int32, blendC: Int32, format: RenderTarget.Format, samples: Int32): RenderPipeline \ IO =
+    /// 形（WebGpuRows.shape*）と blend の番号（RenderFrame.blendCode）と描き先の形式と標本の数（1 か 4）と stencil の使い方（WebGpuRows.stencil*）の
+    /// pipeline（無ければ作る）。
+    def pipelineOf(paint: Paint, shape: Int32, blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): RenderPipeline \ IO =
         let PaintData.PaintData(p) = paint;
-        let key = ((shape * 4 + blendC) * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0);
+        let key = (((shape * 4 + blendC) * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil;
         match Map.get(key, Ref.get(p#pipelines)) {
             case Some(pipeline) => pipeline
             case None =>
-                let pipeline = buildPipeline(paint, shape, blendC, textureFormatOf(format), samples);
+                let pipeline = buildPipeline(paint, shape, blendC, textureFormatOf(format), samples, stencil);
                 Ref.put(Map.insert(key, pipeline, Ref.get(p#pipelines)), p#pipelines);
                 pipeline
         }
@@ -250,18 +265,52 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// glBlendFunc と同じ因子を色と alpha の両方に書く。Normal = (src-alpha, 1 − src-alpha)・Add = (src-alpha, 1)・Multiply = (dst, 1 − src-alpha)。
     /// 頂点の buffer の並びは形ごと: スプライト = instance（152 バイト）・多角形 = 頂点（24 バイト）と view（stride 0）・
     /// タイル = タイル 1 枚（40 バイト）と層の値（stride 0）。
-    def buildPipeline(paint: Paint, shape: Int32, blendC: Int32, format: TextureFormat, samples: Int32): RenderPipeline \ IO =
+    /// stencil の使い方が Write の時は blend を (0, 1) にして色を変えない（glColorMask(false…) の代わり）。
+    // WhyNot: Write で色の書き込みの mask を 0 にしない — render_gl/java の RenderPipelineDesc に色の書き込みの mask の口が無く、足すと GL の層の jar のハッシュと
+    //   ブラウザの実装が動く。
+    def buildPipeline(paint: Paint, shape: Int32, blendC: Int32, format: TextureFormat, samples: Int32, stencil: Int32): RenderPipeline \ IO =
         let PaintData.PaintData(p) = paint;
         let (src, dst, entry) =
-            if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE, "fs_main")
+            if (stencil == WebGpuRows.stencilWrite()) (BlendFactor.ZERO, BlendFactor.ONE, "fs_main")
+            else if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE, "fs_main")
             else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_multiply")
             else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_main");
-        let desc = new RenderPipelineDesc("fge ${Int32.toString(shape)} ${entry} ${Int32.toString(blendC)}");
+        let desc = new RenderPipelineDesc("fge ${Int32.toString(shape)} ${entry} ${Int32.toString(blendC)} ${Int32.toString(stencil)}");
         if (shape == WebGpuRows.shapePoly()) describePoly(p#frameLayout, p#polyModule, entry, desc)
         else if (shape == WebGpuRows.shapeTile()) describeTile(p#frameLayout, p#imageLayout, p#tileModule, desc)
         else describeSprite(p#frameLayout, p#imageLayout, p#spriteModule, entry, desc);
         discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD).multisample(samples);
+        describeStencil(stencil, desc);
         p#gpu.createRenderPipeline(desc)
+
+    /// stencil の使い方（WebGpuRows.stencil*）を pipeline に書く。None は depth と stencil を持たない。表と裏は同じ・深度は比べず書かない。
+    def describeStencil(stencil: Int32, desc: RenderPipelineDesc): Unit \ IO =
+        if (stencil == WebGpuRows.stencilNone()) ()
+        else {
+            discard desc.depthStencil(TextureFormat.DEPTH24_PLUS_STENCIL8, false, CompareFunction.ALWAYS);
+            if (stencil == WebGpuRows.stencilWrite())
+                discard desc.stencil(CompareFunction.ALWAYS, StencilOperation.KEEP, StencilOperation.KEEP, StencilOperation.REPLACE, 255, 255)
+            else if (stencil == WebGpuRows.stencilEqual())
+                discard desc.stencil(CompareFunction.EQUAL, StencilOperation.KEEP, StencilOperation.KEEP, StencilOperation.KEEP, 255, 0)
+            else
+                discard desc.stencil(CompareFunction.ALWAYS, StencilOperation.KEEP, StencilOperation.KEEP, StencilOperation.KEEP, 255, 0)
+        }
+
+    /// stencil を 0 に戻す 6 頂点（design の全面を 1 px ずつ外へ広げた矩形・色は白）。
+    def createResetQuad(gpu: WebGpu, designW: Float64, designH: Float64): Buffer \ IO =
+        let x0 = -1.0f32;
+        let y0 = -1.0f32;
+        let x1 = RenderUtil.f32(designW + 1.0);
+        let y1 = RenderUtil.f32(designH + 1.0);
+        let corners = (x0, y0) :: (x1, y0) :: (x1, y1) :: (x0, y0) :: (x1, y1) :: (x0, y1) :: Nil;
+        let data = ByteBuffer.allocateDirect(6 * 4 * RenderList.vertexFloats()).order(ByteOrder.LITTLE_ENDIAN);
+        List.forEach(match (x, y) -> {
+            discard data.putFloat(x).putFloat(y).putFloat(1.0f32).putFloat(1.0f32).putFloat(1.0f32).putFloat(1.0f32)
+        }, corners);
+        discard data.flip();
+        let buffer = createStreamBuffer(gpu, "fge stencil reset", 6 * 4 * RenderList.vertexFloats());
+        gpu.writeBuffer(buffer, 0i64, data, 0, 6 * 4 * RenderList.vertexFloats());
+        buffer
 
     def describeSprite(frameLayout: BindGroupLayout, imageLayout: BindGroupLayout, module: ShaderModule, entry: String,
                        desc: RenderPipelineDesc): Unit \ IO =
@@ -412,6 +461,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Ref.put(Map.empty(), p#msaaTargets);
         Map.forEach((_, group) -> group.release(), Ref.get(p#copyGroups));
         Ref.put(Map.empty(), p#copyGroups);
+        Map.forEach((_, e) -> { let (texture, _, _, _) = e; texture.destroy() }, Ref.get(p#stencils));
+        Ref.put(Map.empty(), p#stencils);
+        p#stencilResetQuad.destroy();
         TargetTable.clear(p#targets);
         p#blank#group.release();
         p#blank#texture.destroy();
@@ -568,18 +620,25 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let vertexBase = sendPlanned(paint, p#vertices, vertexPlan, vertexSize) / (4 * RenderList.vertexFloats());
         (instanceBase, vertexBase, sendPlanned(paint, p#values, valuePlan, valueSize))
 
-    /// texture の render pass を op で始末して開き、group 0・空の絵・instance buffer を付ける。
-    /// msaa = 標本を持つ描き先（Some なら描くのはそちらで、pass の終わりに texture へ resolve する）。
-    def openPass(paint: Paint, texture: Texture, msaa: Option[Texture], op: RenderTarget.LoadOp): RenderPass \ IO =
+    /// texture の render pass を spec の色の始末（RenderList.loadOpOf）で開き、group 0・空の絵・instance buffer を付ける。
+    /// msaa = 標本を持つ描き先と標本の数（Some なら描くのはそちらで、pass の終わりに texture へ resolve する）。
+    /// spec の depthStencil が DepthAndStencil なら、stencilKey の stencil（描き先と同じ大きさと標本の数）を 0 で clear して付ける。
+    def openPass(paint: Paint, texture: Texture, msaa: Option[(Texture, Int32)], stencilKey: Int32, spec: PassSpec): RenderPass \ IO =
         let PaintData.PaintData(p) = paint;
-        let drawn = Option.getWithDefault(texture, msaa);
+        let drawn = msaa |> Option.map(fst) |> Option.getWithDefault(texture);
         let view = drawn.defaultView();
-        let desc = match op {
+        let desc = match RenderList.loadOpOf(spec) {
             case RenderTarget.LoadOp.Clear(c)         => new RenderPassDesc("fge pass").clearColor(view, c#r, c#g, c#b, 1.0)
             case RenderTarget.LoadOp.ClearTransparent => new RenderPassDesc("fge pass").clearColor(view, 0.0, 0.0, 0.0, 0.0)
             case RenderTarget.LoadOp.Keep             => new RenderPassDesc("fge pass").loadColor(view)
         };
         if (Option.isEmpty(msaa)) () else discard desc.resolveTo(texture.defaultView());
+        match spec#depthStencil {
+            case DepthStencil.DepthAndStencil =>
+                let samples = msaa |> Option.map(snd) |> Option.getWithDefault(1);
+                discard desc.clearDepthStencil(stencilOf(paint, stencilKey, drawn.width(), drawn.height(), samples).defaultView(), 1.0, 0)
+            case _ => ()
+        };
         let pass = encoderOf(paint).beginRenderPass(desc);
         Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters);
         pass.setBindGroup(0, p#frameGroup);
@@ -587,13 +646,36 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         bindWhole(pass, 0, Array.get(0, p#instances#gpuBuffer));
         pass
 
+    /// 描き先 key の stencil（width × height・標本 samples）。無ければ作り、大きさか標本が違えば作り直す（古い物は、積んだ pass があれば先に submit してから捨てる）。
+    def stencilOf(paint: Paint, key: Int32, width: Int32, height: Int32, samples: Int32): Texture \ IO =
+        let PaintData.PaintData(p) = paint;
+        match Map.get(key, Ref.get(p#stencils)) {
+            case Some((texture, w, h, n)) if w == width and h == height and n == samples => texture
+            case old =>
+                Option.forEach(e -> { let (t, _, _, _) = e; flushPending(paint); t.destroy() }, old);
+                let texture = p#gpu.createTexture("fge stencil", width, height, TextureFormat.DEPTH24_PLUS_STENCIL8, TextureUsage.RENDER_ATTACHMENT, 1, samples);
+                Ref.put(Map.insert(key, (texture, width, height, samples), Ref.get(p#stencils)), p#stencils);
+                texture
+        }
+
+    /// 描き先 key の stencil を捨てる（積んだ pass があれば先に submit する）。
+    def dropStencil(paint: Paint, key: Int32): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        Map.get(key, Ref.get(p#stencils)) |> Option.forEach(e -> {
+            let (texture, _, _, _) = e;
+            flushPending(paint);
+            texture.destroy();
+            Ref.put(Map.remove(key, Ref.get(p#stencils)), p#stencils)
+        })
+
     def bindWhole(pass: RenderPass, slot: Int32, buffer: Buffer): Unit \ IO = pass.setVertexBuffer(slot, buffer, 0i64, buffer.size())
 
     /// 頂点の buffer の 0 番を、行の種類の buffer にする（WebGpuRows.renderFrame の setVertices）。返すのはその buffer に入っている要素の数
-    /// （タイルは枚数・static は頂点の数・スプライトと多角形はこのコマに送った分なので上限を設けない）。表に無い番号は 0（その行は描かない）。
+    /// （タイルは枚数・static は頂点の数・stencil を 0 に戻す矩形は 6・スプライトと多角形はこのコマに送った分なので上限を設けない）。表に無い番号は 0（その行は描かない）。
     def setVertices(paint: Paint, pass: RenderPass, kind: Int32, buffer: Int32): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
         if (kind == RenderList.kindPoly()) { bindWhole(pass, 0, Array.get(0, p#vertices#gpuBuffer)); Int32.maxValue() }
+        else if (kind == RenderList.kindMask()) { bindWhole(pass, 0, p#stencilResetQuad); 6 }
         else if (kind == RenderList.kindTile()) bindCounted(pass, Map.get(buffer, Ref.get(p#tileBuffers)))
         else if (kind == RenderList.kindStatic()) bindCounted(pass, Map.get(buffer, Ref.get(p#staticBuffers)))
         else { bindWhole(pass, 0, Array.get(0, p#instances#gpuBuffer)); Int32.maxValue() }
@@ -613,8 +695,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         pass.setVertexBuffer(1, buffer, Int32.toInt64(bytes), buffer.size() - Int32.toInt64(bytes))
 
     /// 1 回の renderCommands の描き物を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
-    /// msaa = 標本を持つ描き先（Pass の pass の samples が 2 以上の時だけ Some）。
-    def paintInto(paint: Paint, texture: Texture, msaa: Option[Texture], pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
+    /// msaa = 標本を持つ描き先と標本の数（Pass の pass の samples が 2 以上の時だけ Some）・stencilKey = mask の stencil を引く描き先の番号（中間の texture は 0）。
+    def paintInto(paint: Paint, texture: Texture, msaa: Option[(Texture, Int32)], stencilKey: Int32, pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         // WhyNot: 画面の形式を描き先に問わない — 画面は中間の texture（RGBA8）へ描き、present で画面の形式へ写す。
         let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
@@ -631,8 +713,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             instancesFor = n -> floatsFor(p#instances, n * RenderList.instanceFloats()),
             verticesFor = n -> floatsFor(p#vertices, n * RenderList.vertexFloats()),
             upload = (n, m, values, k) -> upload(paint, n, m, values, k),
-            openPass = op -> openPass(paint, texture, msaa, op),
-            setPipeline = (pass1, shape, blendC) -> pass1.setPipeline(pipelineOf(paint, shape, blendC, format, samples)),
+            openPass = spec -> openPass(paint, texture, msaa, stencilKey, spec),
+            setPipeline = (pass1, shape, blendC, stencil) -> pass1.setPipeline(pipelineOf(paint, shape, blendC, format, samples, stencil)),
             setTexture = (pass1, id) -> pass1.setBindGroup(1, groupOf(paint, id)),
             setVertices = (pass1, kind, buffer) -> setVertices(paint, pass1, kind, buffer),
             setValues = (pass1, bytes) -> setValues(paint, pass1, bytes),
@@ -750,7 +832,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                    let pass = RenderList.targetPass((row#width, row#height), { texture = row#texture, format = row#format, load = spec#clear },
                                                     DepthStencil.NoDepthStencil, samples, history);
                    applyHistory(paint, row#texture, slot#texture, row#format, pass#history);
-                   paintInto(paint, slot#texture, Option.map(fst, msaa), pass, frame)
+                   paintInto(paint, slot#texture, msaa, row#texture, pass, frame)
                })
 
     /// pass を開く前の history の始末（TargetTable.historyFor の答え）を、同じ encoder へ積む。
@@ -809,7 +891,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def paintScreen(paint: Paint, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
-        paintInto(paint, Array.get(0, p#frameTexture), None,
+        paintInto(paint, Array.get(0, p#frameTexture), None, 0,
                   RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil), frame)
 
     /// 最後に画面へ描いたコマを中間の texture へ描き直す（大きさが変わった時。控えも数も進めない）。続けて present を呼ぶ。
@@ -933,6 +1015,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def dropTargetSlot(paint: Paint, id: Int32): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         dropSlot(paint, id);
+        dropStencil(paint, id);
         Map.get(id, Ref.get(p#msaaTargets)) |> Option.forEach(msaa -> {
             fst(msaa).destroy();
             Ref.put(Map.remove(id, Ref.get(p#msaaTargets)), p#msaaTargets)
