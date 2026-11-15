@@ -16,7 +16,8 @@ mod Render3d.Material {
 
     /// 1 回の prepare の材質の表（GL の backend の持ち物）。entries = 聞かれた順の材質のプログラム（組めなかった物は program が 0）・
     /// orders = 計画へ返す順の番号（entries と同じ並び・0 = 使えないので頂点の色で描く）。
-    // WhyNot: 計画から材質の鍵の字で引き直さない — 同じ鍵で中身の違う材質が同じコマに来た時、先の batch が後で組み直したプログラムで描かれる。
+    // WhyNot: 描く時に材質の鍵の字で materialsRef から引き直さない — 計画は同じプログラムの材質を 1 つの問い合わせにまとめ（ScenePlan.requestOf）、
+    //   木の鍵がぶつかった材質だけを別の問い合わせにする。字で引くと、その 2 つが同じ鍵の 1 つの控えを指し、後で組み直した方のプログラムで両方を描く。
     pub type alias MaterialTable = { entries = Vector[MaterialEntry], orders = Vector[Int32] }
 
     /// requests の材質のプログラムを聞かれた順に 1 回ずつ引き、初めての材質はここで組む（3D を使わないゲームと、材質を使わない場面は GLSL のコンパイルを払わない）。

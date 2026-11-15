@@ -1,10 +1,12 @@
 // 3D の不透明の batch の行（Render3d.SceneList）と、行を作るまでの計画（Render3d.ScenePlan）。計画は GL を呼ばずに決まり、backend の答えは値で渡す。
 mod Render3d.TestSceneList {
-    use Render3d.Batch.{MaterialBatch, MeshBatch}
+    import java.nio.FloatBuffer
+    use Render3d.Batch.{MaterialBatch, MeshBatch, batchKeyOf, groupByTextures, groupInOrder}
     use Render3d.Counts.{BatchBreak, breakSlotOf}
+    use Render3d.Instancing.{PackMode, numberSpan}
     use Render3d.FakeGl.{cmdOf, freshRecorded, freshState, paint, plainTriangle, poseAt, recordingGl, sceneOf, timesCalled}
     use Render3d.SceneList.{SceneList, buildSceneList, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf}
-    use Render3d.ScenePlan.{PlanCaps, freshPlanner, groupScenes, planScenes}
+    use Render3d.ScenePlan.{PlanCaps, freshPlanner, groupScenes, kindOf, meshDrawOf, planScenes}
 
     def triangle(side: Float64): Mesh3d.Mesh3d =
         Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(side, 0.0, 0.0) :: Vec3.v3(0.0, side, 0.0) :: Nil, color = { r = 1.0, g = 1.0, b = 1.0 } } :: Nil)
@@ -203,6 +205,77 @@ mod Render3d.TestSceneList {
         let g = grouped(cmdOf(sceneOf(at(0.5, 0.0) :: at(0.0, -50.0) :: at(1.5, 0.0) :: Nil)) :: Nil);
         let worldX = (i: Int32) -> Vector.get(12, Mat4.toColumns(MutList.get(i, g#members)#fields#world));
         Assert.assertEq(expected = (2, 0.5, 1.5), (MutList.size(g#members), worldX(0), worldX(1)))
+
+    // ── 候補の並び（答え合わせの見本と同じか）──
+
+    /// 候補 1 つの (頭の形の鍵の字, 描く物の数, 材質の名前と絵の名前)。
+    def describe(head: Render3d.MeshDraw, count: Int32): (String, Int32, String) =
+        let material = head#fields#material |> Option.map(Scene3d.materialFieldsOf)
+            |> Option.map(m -> m#spec#name + ":" + (ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.map(fst) |> List.join(",")))
+            |> Option.getWithDefault("");
+        (Mesh3d.contentHash(head#fields#mesh), count, material)
+
+    /// instances を計画の本番（groupScenes）で分けた候補の並び。
+    def groupedOrder(instances: List[Scene3d.Instance3d]): List[(String, Int32, String)] \ IO =
+        grouped(cmdOf(sceneOf(instances)) :: Nil)#scenes |> List.head
+            |> Option.map(s -> List.map(g -> describe(g#batch#head, g#batch#count), s#groups)) |> Option.getWithDefault(Nil)
+
+    /// 同じ instances を答え合わせの見本（Render3d.Batch.groupInOrder と groupByTextures と batchOf）で分けた候補の並び。
+    def referenceOrder(instances: List[Scene3d.Instance3d]): List[(String, Int32, String)] \ IO =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let outside = Scene3d.isOutsideFrustum(Scene3d.frustumOf(sceneOf(instances)));
+        let draws = instances |> List.map(meshDrawOf(planner, outside));
+        let surfaceOf = (d: Render3d.MeshDraw) -> d#fields#material |> Option.map(Scene3d.materialFieldsOf) |> Option.map(m -> (m, kindOf(false, d, m)));
+        groupInOrder(d -> Mesh3d.contentHash(d#fields#mesh), d -> batchKeyOf(Render3d.DrawMode.Instanced, d, surfaceOf(d)), draws)
+            |> List.flatMap(groupByTextures(d -> Option.map(fst, surfaceOf(d))))
+            |> List.filterMap(members -> List.head(members) |> Option.map(head -> { let b = Render3d.Batch.batchOf(head, members); describe(b#head, b#count) }))
+
+    def on(mesh: Mesh3d.Mesh3d, material: Scene3d.Material3d): Scene3d.Instance3d =
+        Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material)
+
+    def textured(name: String): Scene3d.Material3d = Scene3d.texturedMaterial(name, ShaderDoc.FilterMode.Nearest)
+
+    /// 形・材質・絵の名前・間引きの混ざった入力で、本番の候補の並びは答え合わせの見本と同じ。
+    @Test
+    def testGroupsMatchTheReference(): Unit \ {Assert, IO} =
+        let (x, y) = (triangle(1.0), triangle(2.0));
+        let behind = Scene3d.meshInstance(x, Mat4.translate(Vec3.v3(0.0, 0.0, -50.0))) |> Scene3d.withMaterial(materialOf(0.1));
+        let instances = on(x, materialOf(0.1)) :: on(y, materialOf(0.1)) :: on(x, textured("a")) :: on(x, textured("b")) :: on(x, materialOf(0.1))
+            :: Scene3d.meshInstance(y, Mat4.identity()) :: on(x, textured("a")) :: behind :: on(y, materialOf(0.9)) :: Scene3d.meshInstance(y, Mat4.identity()) :: Nil;
+        Assert.assertEq(expected = referenceOrder(instances), groupedOrder(instances))
+
+    /// 形 X・Y・X は、X の 2 体・Y の 1 体の候補になる。
+    @Test
+    def testXyxGroupsXxThenY(): Unit \ {Assert, IO} =
+        let (x, y) = (triangle(1.0), triangle(2.0));
+        let plain = (mesh: Mesh3d.Mesh3d) -> Scene3d.meshInstance(mesh, Mat4.identity());
+        Assert.assertEq(expected = (Mesh3d.contentHash(x), 2) :: (Mesh3d.contentHash(y), 1) :: Nil,
+            groupedOrder(plain(x) :: plain(y) :: plain(x) :: Nil) |> List.map(t -> { let (h, n, _) = t; (h, n) }))
+
+    /// 1 つの鍵の中で、材質の絵の名前の並びが違う物は別の候補（絵 a・b・a は a の 2 体・b の 1 体）。
+    @Test
+    def testTextureNamesSplitOneKey(): Unit \ {Assert, IO} =
+        let x = triangle(1.0);
+        Assert.assertEq(expected = 2 :: 1 :: Nil,
+            groupedOrder(on(x, textured("a")) :: on(x, textured("b")) :: on(x, textured("a")) :: Nil) |> List.map(t -> { let (_, n, _) = t; n }))
+
+    /// 同じ鍵（同じ材質）でも、形が違えば別の候補。
+    @Test
+    def testOtherShapeSplitsSameKey(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = 2, List.length(groupedOrder(on(triangle(1.0), materialOf(0.1)) :: on(triangle(2.0), materialOf(0.1)) :: Nil)))
+
+    /// numberSpan は上限で止まる（3 体の範囲を上限 4 で 2 回詰めると、2 回目は 1 体だけ）。
+    @Test
+    def testNumberSpanStopsAtCapacity(): Unit \ {Assert, IO} =
+        let members: MutList[Render3d.MeshDraw, Static] = MutList.empty(Static);
+        List.range(0, 3) |> List.forEach(_ -> MutList.push(drawOf(triangle(1.0)), members));
+        let span = { head = drawOf(triangle(1.0)), start = 0, count = 3 };
+        let out = FloatBuffer.allocate(32 * 4);
+        let scratch = Array.repeat(Static, 32, 0.0f32);
+        let next = Array#{0} @ Static;
+        let first = numberSpan(out, scratch, 4, next, members, PackMode.Lit, span);
+        let second = numberSpan(out, scratch, 4, next, members, PackMode.Lit, span);
+        Assert.assertEq(expected = (0, 3, 3, 1, 4), (first#first, first#count, second#first, second#count, Array.get(0, next)))
 
     // ── GL の backend ──
 

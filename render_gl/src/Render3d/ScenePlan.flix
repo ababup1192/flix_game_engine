@@ -80,13 +80,14 @@ mod Render3d.ScenePlan {
         Map.foldRightWithKey((_, group, acc) -> List.reverse(group) ::: acc, Nil, byKey)
 
     /// 置いた物 d を材質 m で描くプログラムの版。法線マップは uv つきの形にだけ当てる。
-    def kindOf(coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind =
+    pub def kindOf(coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind =
         let uv = hasUv(d);
         { skinned = isSkinned(d), uv = uv, normalMap = Option.nonEmpty(m#normalMap) and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
           blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
           metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade) }
 
     /// プログラムの版の 8 つの欄を 1 つの数にした物（Render3d.materialKey の版の部分と同じ欄）。
+    // WhyNot: Render3d.Batch.kindBits を使わない — あちらは batch にしない版（lightmap・blend）を落とした batch の鍵で、材質の問い合わせは別のプログラムの版を分けなければいけない。
     def kindCodeOf(kind: ProgramKind): Int32 =
         let bit = (on, value) -> if (on) value else 0;
         bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#lightmap, 8) + bit(kind#blend, 16) + bit(kind#doubleSided, 32)
@@ -116,8 +117,7 @@ mod Render3d.ScenePlan {
     }
 
     /// 1 回の prepare の場面を候補に分け、backend に聞く材質を、その材質の物が初めて来た順に並べる。samples = 描き先の標本の数。
-    /// 同じプログラム（版と材質の木の鍵が同じ）の材質は 1 回だけ聞く。
-    // WhyNot: 木の鍵が同じで木の違う材質を分けて聞かない — 64 ビットの鍵の衝突でだけ起き、その時は後の材質も先の材質のプログラムで描く（絵の誤りで止まらない）。
+    /// 同じプログラム（版と材質の木の鍵が同じで、同じ GLSL を生む）の材質は 1 回だけ聞く（requestOf）。
     pub def groupScenes(planner: Planner, caps: PlanCaps, samples: Int32, cmds: List[Scene3d.RenderCmd]): Grouped \ IO =
         let tables = freshTables();
         let scenes = cmds |> List.map(groupScene(planner, tables, caps, samples));
@@ -214,16 +214,19 @@ mod Render3d.ScenePlan {
     def placementOf(g: Grouping, d: MeshDraw): Placement \ IO =
         match d#fields#material {
             case None    => plainPlacement(g, d)
-            case Some(m) =>
-                let bits = shapeBitsOf(d);
-                let byShape = byShapeOf(g#cache, unchecked_cast(m as Object));
-                match Map.get(bits, Ref.get(byShape)) {
-                    case Some(p) => p
-                    case None    =>
-                        let made = materialPlacement(g, d, Scene3d.materialFieldsOf(m));
-                        Ref.put(Map.insert(bits, made, Ref.get(byShape)), byShape);
-                        made
-                }
+            case Some(m) => cachedPlacement(g, d, m)
+        }
+
+    /// 材質 m の値と d の頂点の形の分け方（控えに無ければ決めて控える）。
+    def cachedPlacement(g: Grouping, d: MeshDraw, m: Scene3d.Material3d): Placement \ IO =
+        let bits = shapeBitsOf(d);
+        let byShape = byShapeOf(g#cache, unchecked_cast(m as Object));
+        match Map.get(bits, Ref.get(byShape)) {
+            case Some(p) => p
+            case None    =>
+                let made = materialPlacement(g, d, Scene3d.materialFieldsOf(m));
+                Ref.put(Map.insert(bits, made, Ref.get(byShape)), byShape);
+                made
         }
 
     def byShapeOf(cache: IdentityHashMap[Object, Object], key: Object): Ref[Map[Int32, Placement], Static] \ IO =
@@ -247,16 +250,29 @@ mod Render3d.ScenePlan {
         }
 
     /// 材質 m を版 kind で聞いた番号（同じプログラムの材質を前に聞いていれば、その番号）。
+    /// 版と木の鍵が同じでも木が同じ GLSL を生まない材質（木の鍵の衝突）は、別の番号で聞く。
     def requestOf(tables: Tables, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
         let id = (kindCodeOf(kind), force m#shaderHash);
         match Map.get(id, Ref.get(tables#requestIds)) {
-            case Some(handle) => handle
+            case Some(handle) => askedOrNew(tables, handle, m, kind)
             case None         =>
-                let handle = MutList.size(tables#requests);
-                MutList.push((m, kind), tables#requests);
+                let handle = pushRequest(tables, m, kind);
                 Ref.put(Map.insert(id, handle, Ref.get(tables#requestIds)), tables#requestIds);
                 handle
         }
+
+    /// 同じ鍵で聞いた handle 番の材質と m が同じ GLSL を生むならその番号・違えば新しい番号。
+    def askedOrNew(tables: Tables, handle: Int32, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
+        if (isSameProgram(fst(MutList.get(handle, tables#requests)), m)) handle else pushRequest(tables, m, kind)
+
+    def pushRequest(tables: Tables, m: Scene3d.MaterialFields, kind: ProgramKind): Int32 \ IO =
+        let handle = MutList.size(tables#requests);
+        MutList.push((m, kind), tables#requests);
+        handle
+
+    /// a と b が同じ GLSL を生むか（参照が同じ木なら木を辿らない・ShaderGen.eqMaterial）。
+    def isSameProgram(a: Scene3d.MaterialFields, b: Scene3d.MaterialFields): Bool =
+        ShaderGen.eqMaterial(a#spec, a#emission, a#metallicRoughnessShade, b#spec, b#emission, b#metallicRoughnessShade)
 
     /// batch の鍵の番号（鍵が無ければ -1）。
     def keySlotOf(tables: Tables, key: Option[BatchKey]): Int32 \ IO =
@@ -484,8 +500,14 @@ mod Render3d.ScenePlan {
         draws#blended |> List.forEach(d -> spanPoseRows(rows, members, d#batch))
 
     def spanPoseRows(rows: Ref[PoseRows, Static], members: MutList[MeshDraw, Static], b: SpanBatch): Unit \ IO =
-        if (not isSkinned(b#head)) ()
-        else List.range(b#start, b#start + b#count) |> List.forEach(i -> MutList.put(withPoseRow(rows, MutList.get(i, members)), i, members))
+        if (not isSkinned(b#head)) () else poseRowsFrom(rows, members, b#start, b#start + b#count)
+
+    def poseRowsFrom(rows: Ref[PoseRows, Static], members: MutList[MeshDraw, Static], i: Int32, end: Int32): Unit \ IO =
+        if (i >= end) ()
+        else {
+            MutList.put(withPoseRow(rows, MutList.get(i, members)), i, members);
+            poseRowsFrom(rows, members, i + 1, end)
+        }
 
     /// 候補を batch に分けて描く順に並べる。
     // WhyNot: 不透明の物を来た順のまま描かない — 深度で前後が決まるので順は同じ深さの面の勝ち方しか変えず、batch にするとプログラムの切り替えも draw も減る。

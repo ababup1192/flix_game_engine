@@ -70,7 +70,7 @@ mod Render3d.Instancing {
         }
 
     /// numberBatch の、描く物を members の [b#start, b#start + b#count) で受ける形。
-    def numberSpan(out: FloatBuffer, scratch: Array[Float32, Static], capacity: Int32, next: Array[Int32, Static], members: MutList[MeshDraw, Static],
+    pub def numberSpan(out: FloatBuffer, scratch: Array[Float32, Static], capacity: Int32, next: Array[Int32, Static], members: MutList[MeshDraw, Static],
                    mode: PackMode, b: SpanBatch): MeshBatch \ IO =
         let first = Array.get(0, next);
         let count = Int32.max(0, Int32.min(b#count, capacity - first));
@@ -86,6 +86,7 @@ mod Render3d.Instancing {
         }
 
     /// next の番号から b の物の値を out へ詰め、番号を振った b を返す。capacity を超える物は詰めない。
+    // WhyNot: 本番（numberSpan）から呼ばない・消さない — 描く物を列で持つ素直な形を、上限で止まる決まりの答え合わせの相手（TestRender3dBatch）として残す。
     pub def numberBatch(out: FloatBuffer, scratch: Array[Float32, Static], capacity: Int32, next: Array[Int32, Static], mode: PackMode, b: PlannedBatch): MeshBatch \ IO =
         let first = Array.get(0, next);
         let count = Int32.max(0, Int32.min(b#count, capacity - first));

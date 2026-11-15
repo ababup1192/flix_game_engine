@@ -7,7 +7,6 @@ mod Render3d.JointTexture {
     import java.nio.FloatBuffer
     import java.util.Objects
     use Render3d.{MeshDraw, State, jointTextureUnit, warnSceneOnce}
-    use Render3d.Batch.{PlannedBatch}
     use Render3d.DataTexture.{bufferFor, heightFor, takeTexture}
     use Render3d.Counts.{Counter, count}
 
@@ -53,10 +52,6 @@ mod Render3d.JointTexture {
                 { poseRow = row | d }
             case _ => d
         }
-
-    /// batch の描く物に姿勢の行を割り当てる。骨の無い batch は何もしない。
-    pub def withBatchPoseRows(rows: Ref[PoseRows, Static], b: PlannedBatch): PlannedBatch \ IO =
-        if (Option.isEmpty(b#head#pose)) b else { draws = List.map(withPoseRow(rows), b#draws) | b }
 
     /// a と b が同じ姿勢か。同じ 1 つの値なら中身を比べない。
     // WhyNot: 鍵だけで決めない — 違う並びが同じ鍵になりうる。
