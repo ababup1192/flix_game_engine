@@ -16,7 +16,7 @@
 //
 // 場面の移り変わり（Scene と、その上に開く Panel と、いちばん手前の確認のウィンドウ ask）:
 //
-//     Title ──はじめから──▶ Reading（Talk.Node.Opening のノードを開く）──シナリオが終わる──▶ Credits ──流れ切る・決定──▶ Title
+//     Title ──はじめから──▶ Reading（novel.story.json の opening のノードを開く）──シナリオが終わる──▶ Credits ──流れ切る・決定──▶ Title
 //       │                     │  送る(advance) → YarnRunner の Advance / 選ぶ(pick) → Choose / 戻る(rollback) → 1 つ前の行
 //       ├─つづきから（いちばん新しいデータを読む）──▶ Reading
 //       ├─ロード──▶ LoadSlots ──データを選ぶ──▶ Reading（ブックマークを当て直す = WorldRead.restore）

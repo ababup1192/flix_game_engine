@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "描き出しの場面（novel.shots.json）",
+  "description": "make render SHOT=<name> と make render-all の場面と並び。World の組み立ては src/Shots.flix。",
+  "type": "object",
+  "required": [
+    "version",
+    "shots"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Doc の形の版。いまは 1"
+    },
+    "title": {
+      "type": "string",
+      "description": "エディタの目次に出す名前"
+    },
+    "note": {
+      "type": "string",
+      "description": "人間と AI のためのメモ（ゲームは読まない）"
+    },
+    "shots": {
+      "type": "array",
+      "description": "場面の一覧（この並びがギャラリーの並び）",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "場面の名前（gallery/<name>.png・SHOT=<name>・START=shot:<name>）"
+          },
+          "node": {
+            "type": "string",
+            "description": "開くノード（シナリオの title:）。無ければ起動した時の画面から"
+          },
+          "say": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "ノードの何番目（0 から）の台詞を出し終えた所か。until と片方だけ"
+          },
+          "until": {
+            "type": "string",
+            "enum": [
+              "choices"
+            ],
+            "description": "choices = 選択肢が出るまで送った所。say と片方だけ"
+          },
+          "vars": {
+            "type": "object",
+            "description": "シナリオの変数（$ を付けない名前）→ 値",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "open": {
+            "type": "string",
+            "enum": [
+              "title",
+              "log",
+              "save",
+              "load",
+              "settings",
+              "ask",
+              "credits",
+              "hold"
+            ],
+            "description": "開く画面（hold = 次の写真を待っている所）"
+          },
+          "pointer": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "マウスの位置 [x, y]（design px）"
+          },
+          "at": {
+            "type": "number",
+            "minimum": 0,
+            "description": "時計を据える秒（字送り・蛍・クレジットの位置が決まる）"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

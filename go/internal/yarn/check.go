@@ -1,38 +1,16 @@
 package yarn
 
-// フォルダ 1 つ分の検査: ノード名の重なり・jump の行き先・変数の宣言と式の型と、語彙（vocab.json。正はゲームのコードの enum）との突き合わせ。
-// 語彙はゲームの Talk.vocab（中身は Yarn.vocabJson）が書く。形は flow の e2e/vocab.json と同じ決め方（キーの順は固定・配列）。
+// フォルダ 1 つ分の検査: ノード名の重なり・jump の行き先・変数の宣言と式の型と、語彙（vocab.json。読み方は vocab.go）との突き合わせ。
+// 語彙はゲームの Talk.vocab が書く。v2 の名前の正は Doc で、vocab.json は Doc のどこを見るかだけを持つ。
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/suggest"
 )
-
-// Vocab はゲームのコードが持つ名前の一覧。
-//
-//	speakers  話し手の id（話し手: 台詞 の左）
-//	nodes     コードが開くノード（.yarn に無ければ止める）
-//	tags      タグのキー → 取れる値（空なら値を書かない #key）
-//	commands  コマンドの名前（エンジンが読むのは wait だけ）
-type Vocab struct {
-	Speakers []string            `json:"speakers"`
-	Nodes    []string            `json:"nodes"`
-	Tags     map[string][]string `json:"tags"`
-	Commands []string            `json:"commands"`
-}
-
-// ParseVocab は vocab.json を読む。
-func ParseVocab(data []byte) (*Vocab, error) {
-	var v Vocab
-	if err := json.Unmarshal(data, &v); err != nil {
-		return nil, fmt.Errorf("語彙の JSON を読めない: %v", err)
-	}
-	return &v, nil
-}
 
 // reservedTags は公式で実行の意味を持つタグ（行の同一性・最後の行のマーカー）。語彙に書いても読まない。
 // 行の ID も読まない —— シナリオの行はファイル:行で指す（ID を手で振ると重なりと付け忘れの検査が要る）。
@@ -113,7 +91,7 @@ func CheckProgram(prog *Program, vocab *Vocab, vocabPath string) []Problem {
 	for _, n := range prog.Nodes {
 		file := n.File
 		checkSpeaker := func(line int, speaker string) {
-			if speaker != "" && !speakers[speaker] {
+			if speaker != "" && !vocab.skip["speakers"] && !speakers[speaker] {
 				out = append(out, Problem{File: file, Line: line,
 					Msg: fmt.Sprintf("知らない話し手 %s%s（字の : は \\: と書く）", speaker, suggest.Hint(speaker, vocab.Speakers))})
 			}
@@ -155,10 +133,35 @@ func CheckProgram(prog *Program, vocab *Vocab, vocabPath string) []Problem {
 			checkTags(s.Line, s.Tags)
 		})
 	}
-	for _, name := range vocab.Nodes {
-		if _, ok := byTitle[name]; !ok {
-			out = append(out, Problem{File: vocabPath, Line: 1,
-				Msg: fmt.Sprintf("コードが開くノード %s が .yarn に無い%s", name, suggest.Hint(name, titles))})
+	for _, list := range []struct {
+		names []string
+		what  string
+	}{{vocab.Nodes, "コードが開くノード"}, {vocab.NodeRefs, "Doc が指すノード"}} {
+		for _, name := range list.names {
+			if _, ok := byTitle[name]; ok {
+				continue
+			}
+			at, ok := vocab.origin[name]
+			if !ok {
+				at = Problem{File: vocabPath, Line: 1}
+			}
+			at.Msg = fmt.Sprintf("%s %s が .yarn に無い%s", list.what, name, suggest.Hint(name, titles))
+			out = append(out, at)
+		}
+	}
+	return out
+}
+
+// UnnamedVars は語彙の vars に表示名の無い変数（止めずに知らせるだけ。vars を見ない語彙なら無し）。
+func UnnamedVars(prog *Program, vocab *Vocab) []Problem {
+	if vocab == nil || vocab.Vars == nil {
+		return nil
+	}
+	var out []Problem
+	for _, v := range prog.Variables {
+		if label := vocab.Vars[v.Name]; label == "" {
+			out = append(out, Problem{File: v.File, Line: v.Line,
+				Msg: fmt.Sprintf("変数 %s に表示名が無い（Doc の vars に \"%s\": \"…\" を足す）", v.Name, strings.TrimPrefix(v.Name, "$"))})
 		}
 	}
 	return out
@@ -166,7 +169,7 @@ func CheckProgram(prog *Program, vocab *Vocab, vocabPath string) []Problem {
 
 // Unreached はコードも jump も開かないノード（止めずに知らせるだけ）。
 func Unreached(prog *Program, vocab *Vocab) []Problem {
-	if vocab == nil {
+	if vocab == nil || vocab.skip["nodes"] {
 		return nil
 	}
 	opened := setOf(vocab.Nodes)

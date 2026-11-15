@@ -1,6 +1,20 @@
 {
-  "speakers": ["chinatsu", "me"],
-  "nodes": ["Station"],
+  "version": 2,
+  "speakers": { "from": [{ "doc": "../novel.story.json", "keys": "names" }] },
+  "vars": { "from": [{ "doc": "../novel.story.json", "keys": "vars" }] },
+  "nodes": { "from": [{ "doc": "../novel.story.json", "path": "opening" }] },
+  "nodeRefs": { "from": [{ "doc": "../novel.shots.json", "path": "shots[].node" }] },
   "tags": {},
-  "commands": ["bg", "nvl", "adv", "clear", "ambience", "se", "fx", "shake", "char", "item"]
+  "commands": {
+    "bg": {},
+    "nvl": {},
+    "adv": {},
+    "clear": {},
+    "ambience": {},
+    "se": {},
+    "fx": {},
+    "shake": {},
+    "char": {},
+    "item": {}
+  }
 }

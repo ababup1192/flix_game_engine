@@ -35,9 +35,20 @@
       "type": "string",
       "description": "タイトル画面の環境音（amb_<名前>。空なら鳴らさない）"
     },
+    "opening": {
+      "type": "string",
+      "description": "「はじめから」で開くノード（シナリオの title:）"
+    },
     "names": {
       "type": "object",
-      "description": "話し手の id（src/Talk.flix の Speaker）→ 呼び名",
+      "description": "話し手の id（シナリオの「id: 台詞」の左）→ 呼び名",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "vars": {
+      "type": "object",
+      "description": "シナリオの変数の名前（$ を付けない）→ 人に見せる名前",
       "additionalProperties": {
         "type": "string"
       }

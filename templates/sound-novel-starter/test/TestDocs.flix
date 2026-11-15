@@ -94,24 +94,18 @@ mod TestDocs {
         Assert.assertEq(expected = Nil, missing)
 
     @Test
-    def testEverySpeakerHasAName(): Unit \ {Assert, Fs.FileRead} =
-        // 話し手の id（Talk.Speaker）は、どれも novel.story.json の names に呼び名がある。
+    def testEveryVariableHasALabel(): Unit \ {Assert, Fs.FileRead} =
+        // シナリオの変数は、どれも novel.story.json の vars に表示名がある（$ 付きの名前のまま出る物が無い）。
         let res = TestKit.res();
-        let missing = Talk.speakers() |> List.map(Talk.speakerId)
-            |> List.filter(id -> not Map.memberOf(id, StoryDoc.rec(res#story)#names));
-        Assert.assertEq(expected = Nil, missing)
+        let unnamed = Yarn.variablesOf(res#dialogue) |> List.map(fst)
+            |> List.filter(name -> StoryDoc.varLabelOf(name, res#story) == name);
+        Assert.assertEq(expected = Nil, unnamed)
 
     @Test
     def testVocabFileMatchesTalk(): Unit \ {Assert, Fs.FileRead} =
-        // build の check が読む assets/talk/vocab.json は、コードの語彙（Talk.vocabOf）を書いた物と同じ（make talk-vocab で書き直す）。
+        // build の check が読む assets/talk/vocab.json は、Talk.vocabJson を書いた物と同じ（make talk-vocab で書き直す）。
         let onDisk = Fs.FileRead.read(Talk.vocabPath()) |> Result.toOption |> Option.map(String.trim);
-        Assert.assertEq(expected = Some(String.trim(Yarn.vocabJson(Talk.vocabOf()))), onDisk)
-
-    @Test
-    def testOpeningNodeExists(): Unit \ {Assert, Fs.FileRead} =
-        // コードが開くノードが、build したシナリオにある。
-        let res = TestKit.res();
-        Assert.assertEq(expected = true, Option.nonEmpty(Yarn.nodeOf(Talk.nodeName(Talk.Node.Opening), res#dialogue)))
+        Assert.assertEq(expected = Some(String.trim(Talk.vocabJson())), onDisk)
 
 
     // ══ 立ち絵と小物（novel.cast.json） ══
@@ -153,4 +147,25 @@ mod TestDocs {
         let one = CastDoc.fromJson("{ \"fadeSeconds\": 1.0 }") |> Option.map(shape);
         let d = shape(CastDoc.defaults());
         Assert.assertEq(expected = (d, None, Some((1.0, Map.keysOf(CastDoc.rec(CastDoc.defaults())#slots), 0))), (missing, broken, one))
+
+
+    // ══ 描き出しの場面（novel.shots.json） ══
+
+    @Test
+    def testShotsDocSkipsOnlyTheUnreadableShots(): Unit \ Assert =
+        // 知らない画面・知らない until・say と until の両方・名前の無い場面は飛ばし、読める場面は並びのまま残す。
+        let text = "{ \"version\": 1, \"shots\": [ { \"name\": \"a\", \"node\": \"Station\", \"say\": 1, \"at\": 1.0 }, { \"name\": \"b\", \"open\": \"gallery\" }," +
+                   " { \"name\": \"c\", \"until\": \"end\" }, { \"name\": \"d\", \"say\": 1, \"until\": \"choices\" }, { \"node\": \"Station\" }," +
+                   " { \"name\": \"e\", \"open\": \"log\", \"pointer\": [1.0, 2.0] } ] }";
+        let named = r -> match r {
+            case Ok(shot)       => "ok " + shot#name
+            case Err((which, _)) => "skip " + which
+        };
+        Assert.assertEq(expected = Some("ok a" :: "skip b" :: "skip c" :: "skip d" :: "skip shots[4]" :: "ok e" :: Nil),
+                        ShotsDoc.rowsOf(text) |> Option.map(List.map(named)))
+
+    @Test
+    def testShotNotInTheDocBuildsNothing(): Unit \ {Assert, Fs.FileRead} =
+        // novel.shots.json に無い名前の場面は組まない（描き出しは名前の誤りとして断る）。
+        Assert.assertEq(expected = true, Option.isEmpty(Shots.worldOf("nvll", TestKit.res())))
 }

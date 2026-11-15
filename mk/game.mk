@@ -480,7 +480,8 @@ palette:
 endif
 
 # 会話のシナリオ（assets/talk/*.yarn）の語彙（話し手・タグ・コードが開くノード）を、ゲームの Talk.vocab
-# （正はコードの enum）から assets/talk/vocab.json へ書き直す。bin/fge yarn build の check がこれを読む。
+# から assets/talk/vocab.json へ書き直す。bin/fge yarn build の check がこれを読む（版 2 の語彙は名前を Doc から集めるので、
+# 書き直すのはコードの側の名前（コマンド）を変えた時だけ）。
 .PHONY: talk-vocab
 talk-vocab:
 	$(HEADLESS_RUN) Talk.vocab

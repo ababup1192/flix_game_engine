@@ -453,6 +453,7 @@ mod Controls {
           smallScreen = SmallScreenDoc.load(SmallScreenDoc.path()),
           portrait = loadPortrait(),
           cast = CastDoc.load(CastDoc.path()),
+          shots = ShotsDoc.load(ShotsDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
           dialogue = Talk.load(),
           missing = Set.empty(),
@@ -480,6 +481,7 @@ mod Controls {
             :: Resources.reloadRow("portrait", PortraitDoc.path(), res -> Res.withPortrait(loadPortrait(), res), unchanged)
             :: Resources.reloadRow("rail", RailDoc.path(), res -> Res.withPortrait(loadPortrait(), res), unchanged)
             :: Resources.reloadRow("cast", CastDoc.path(), res -> Res.withCast(CastDoc.load(CastDoc.path()), res), unchanged)
+            :: Resources.reloadRow("shots", ShotsDoc.path(), res -> Res.withShots(ShotsDoc.load(ShotsDoc.path()), res), unchanged)
             :: Resources.reloadRow("mixer", mixerPath(), res -> Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res), unchanged)
             :: Nil
 }

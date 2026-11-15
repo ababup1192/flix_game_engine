@@ -32,7 +32,7 @@ mod WorldRead {
     pub def newGame(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         Emit.emit(World.Event.Opened);
         let opened = { panel = World.Panel.Closed, ask = None | w };
-        let first = Talk.nodeName(Talk.Node.Opening);
+        let first = StoryDoc.openingOf(res#story);
         match Yarn.nodeOf(first, res#dialogue) {
             case Some(_) =>
                 let (talk, events) = YarnRunner.start(res#dialogue, first, World.now(w));

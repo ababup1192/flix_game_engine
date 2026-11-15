@@ -1,4 +1,4 @@
-// StoryDoc — novel.story.json（画面に出す言葉: タイトル・メニュー・設定・セーブ・確認のウィンドウの文言と、話し手の呼び名）の宣言ドキュメント層。
+// StoryDoc — novel.story.json（画面に出す言葉: タイトル・メニュー・設定・セーブ・確認のウィンドウの文言と、話し手の呼び名・変数の表示名・最初のノード）の宣言ドキュメント層。
 // 文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
 // 言葉は Label の enum を鍵に引く（鍵の綴りと既定の言葉の正は entryOf。Doc に無い鍵は既定の言葉で出す = fail-open）。
 mod StoryDoc {
@@ -184,7 +184,8 @@ mod StoryDoc {
     }
 
     /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は
-    /// novel.backdrops.json の鍵）と環境音、names = 話し手の id → 呼び名、labels = Label の鍵 → 言葉。
+    /// novel.backdrops.json の鍵）と環境音、opening = 「はじめから」で開くノード、names = 話し手の id → 呼び名、
+    /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉。
     pub type alias Rec = {
         version = Int32,
         title = String,
@@ -192,7 +193,9 @@ mod StoryDoc {
         titlePhoto = String,
         titleGrade = String,
         titleAmbience = String,
+        opening = String,
         names = Map[String, String],
+        vars = Map[String, String],
         labels = Map[String, String]
     }
 
@@ -206,7 +209,7 @@ mod StoryDoc {
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, title = "夏草の駅", subtitle = "十年ぶりに、祖母の町へ帰る。",
                   titlePhoto = "station", titleGrade = "dusk", titleAmbience = "evening",
-                  names = Map.empty(), labels = Map.empty() })
+                  opening = "Station", names = Map.empty(), vars = Map.empty(), labels = Map.empty() })
 
     /// 鍵の言葉（Doc に無ければ既定の言葉）。
     pub def labelOf(label: Label, doc: Doc): String =
@@ -219,6 +222,17 @@ mod StoryDoc {
     /// 話し手の id の呼び名（地の文の空の id は空・Doc に無い id はそのまま）。
     pub def nameOf(id: String, doc: Doc): String =
         Map.getWithDefault(id, id, rec(doc)#names)
+
+    /// 呼び名を持つ話し手の id（names の鍵の順）。
+    pub def speakerIds(doc: Doc): List[String] = rec(doc)#names |> Map.keysOf |> Set.toList
+
+    /// 「はじめから」で開くノード。
+    pub def openingOf(doc: Doc): String = rec(doc)#opening
+
+    /// シナリオの変数（$ は付けても付けなくてもよい）の表示名。Doc に無い変数は $ 付きの名前のまま。
+    pub def varLabelOf(name: String, doc: Doc): String =
+        let bare = String.stripPrefix(substr = "$", name) |> Option.getWithDefault(name);
+        Map.getWithDefault(bare, "$" + bare, rec(doc)#vars)
 
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
@@ -234,7 +248,9 @@ mod StoryDoc {
                   titlePhoto = JsonCodec.stringOr("titlePhoto", d#titlePhoto, root),
                   titleGrade = JsonCodec.stringOr("titleGrade", d#titleGrade, root),
                   titleAmbience = JsonCodec.stringOr("titleAmbience", d#titleAmbience, root),
+                  opening = JsonCodec.stringOr("opening", d#opening, root),
                   names = strings("names"),
+                  vars = strings("vars"),
                   labels = strings("labels") })
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。

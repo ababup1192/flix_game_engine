@@ -7,7 +7,7 @@ mod Res {
     /// 描く元の束（Main・描き出し・テストが Controls.loadRes で同じ形に読む）。
     /// story = 字と名前・kind = 遊びの数・theme = 色・backdrops = 背景の写真・credits = クレジットの行・
     /// keys = キーの割り当て・smallScreen = 小さい画面（スマホ）の時の字と押せる物の大きさ・
-    /// portrait = 縦の画面（縦の design で起動した時）の字と押せる物の大きさ・cast = 立ち絵と小物（位置・一覧・出入りの秒）・mixer = 音のバス・dialogue = シナリオの木・
+    /// portrait = 縦の画面（縦の design で起動した時）の字と押せる物の大きさ・cast = 立ち絵と小物（位置・一覧・出入りの秒）・shots = 描き出しの場面・mixer = 音のバス・dialogue = シナリオの木・
     /// missing = ブラウザ版で後回しにした絵と音のうち、まだ届いていない物の名前（textures / sounds の name。デスクトップ・描き出し・テストは空）・
     /// scriptEdits = 始まりの引数（edit.<行>）で当てたシナリオの直し（ふだんは空）。
     pub type alias Res = {
@@ -20,6 +20,7 @@ mod Res {
         smallScreen = SmallScreenDoc.Doc,
         portrait = PortraitDoc.Doc,
         cast = CastDoc.Doc,
+        shots = ShotsDoc.Doc,
         mixer = AudioMixer.Mixer,
         dialogue = Yarn.Program,
         missing = Set[String],
@@ -45,6 +46,8 @@ mod Res {
     pub def withPortrait(portrait: PortraitDoc.Doc, res: Res): Res = { portrait = portrait | res }
 
     pub def withCast(cast: CastDoc.Doc, res: Res): Res = { cast = cast | res }
+
+    pub def withShots(shots: ShotsDoc.Doc, res: Res): Res = { shots = shots | res }
 
     pub def withMixer(mixer: AudioMixer.Mixer, res: Res): Res = { mixer = mixer | res }
 

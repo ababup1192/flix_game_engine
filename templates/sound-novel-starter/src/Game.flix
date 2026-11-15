@@ -30,7 +30,7 @@ mod Game {
             |> App.withSustained(Resources.read(Controls.ambience))
             |> App.withMixer(Resources.read(Controls.mixerOf))
             |> App.withStarts(Starts.all())
-            |> App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))
+            |> App.withShots(Resources.shotsOf(Shots.names(res), Shots.worldOf))
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))
             // WhyNot: 起動した時刻を World 全体の要約に入れない — Main だけが読む外の値で遊んだ記録に残らず、
