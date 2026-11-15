@@ -1016,3 +1016,5 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 相談中: C14（一発の効果音を止める口・8.3）。決まるまで `audio all off` は鳴り続ける音だけを止める。
 - GameView の物の中の z を 0〜7 へ丸める時に知らせが無い。描き物は純粋で、Log に「1 回だけ知らせる」口が無いため。
 - `templates/sound-novel-starter/assets/mixer.schema.json` はエンジンの `docs/mixer.schema.json` の写しに `volumes`・`lockSeconds` を足した物。エンジンの schema に欄が増えたら、ここへも写す。
+
+- 段 10 の go の道具（`bin/fge migrate diff`・`migrate video`）を main へ入れた（2026-11-16・レビュー 80 → 86 → 92）。3 回目の任意で残した物: S1 撮っていないコマの差の Detail に「同じ土台が前の版で N 枚・新しい版で M 枚。欠けた回は後ろへずれて見える事がある」を一文・S2 新しい版にだけあるコマの数を Notes に出す・S3 `pairSound` で窓の外の同じ名前は時刻の近い物を先に探す・S4 `keyed` の同じ時刻をフレームの番号で比べる。移行の段 11 で頁を実際に読む時に、要るものから入れる。
