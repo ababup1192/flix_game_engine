@@ -30,6 +30,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 )
 
 // residentProtocol は flixlint の常駐と話す口の版。
@@ -339,12 +340,9 @@ func ShimJar(r *hooks.Rules) (string, error) {
 	return path, os.Rename(part, path)
 }
 
-// javaCmd は bin/flix と同じ決め方の java: PATH の java が動かなければエンジンの devbox の jdk。
+// javaCmd は bin/flix と同じ決め方の java（javacmd.Resolve）。
 func javaCmd(root string) string {
-	if exec.Command("java", "-version").Run() == nil {
-		return "java"
-	}
-	return filepath.Join(root, ".devbox", "nix", "profile", "default", "bin", "java")
+	return javacmd.Resolve(root)
 }
 
 func fileSum(path string) (string, error) {

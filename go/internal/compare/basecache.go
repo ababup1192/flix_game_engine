@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 	"github.com/ababup1192/flix_game_engine/go/internal/useengine"
 	"github.com/ababup1192/flix_game_engine/go/internal/videos"
 )
@@ -113,15 +114,9 @@ var envRefRe = regexp.MustCompile(envRefPattern)
 
 const envRefPattern = `\$[({]([A-Z][A-Z0-9_]*)[)}:-]|getenv\("([A-Z][A-Z0-9_]*)"|envOr\("([A-Z][A-Z0-9_]*)"`
 
-// javaCmd は描き出しが使う java（headless-run と同じ順: $JAVA → PATH の java → エンジンの devbox）。
+// javaCmd は描き出しが使う java（headless-run と同じ順。javacmd.Resolve）。
 func javaCmd(engineDir string) string {
-	if j := os.Getenv("JAVA"); j != "" {
-		return j
-	}
-	if p, err := exec.LookPath("java"); err == nil {
-		return p
-	}
-	return filepath.Join(engineDir, ".devbox", "nix", "profile", "default", "bin", "java")
+	return javacmd.Resolve(engineDir)
 }
 
 // engineToolsSum は描き出しの手順を持つエンジンの道具（mk・headless-run・fge-go）の中身の SHA-256。

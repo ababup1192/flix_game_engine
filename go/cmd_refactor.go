@@ -11,6 +11,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/checkd"
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 	"github.com/ababup1192/flix_game_engine/go/internal/refactorhost"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 	"github.com/ababup1192/flixlint/go/refactor"
@@ -99,7 +100,7 @@ func localNamesFlixlint(root string) bool {
 // WhyNot: flixlint へ java のパスを渡す口は無く、flixlint は PATH の java で常駐を起こす。macOS の /usr/bin/java は
 // jdk の無い入口なので、engine の外（ゲーム・templates/*）で流すと索引を作れずに止まっていた。
 func useEngineJava(engine string) {
-	if exec.Command("java", "-version").Run() == nil {
+	if javacmd.PathWorks() {
 		return
 	}
 	if path, ok := pathWithEngineJava(os.Getenv("PATH"), engine); ok {
@@ -116,10 +117,10 @@ func engineDirOf(root string) string {
 	return root
 }
 
-// pathWithEngineJava は engine の devbox の java がある時だけ、その bin を先頭に足した PATH を返す。
+// pathWithEngineJava は devbox の java がある時だけ（javacmd.DevboxBin）、その bin を先頭に足した PATH を返す。
 func pathWithEngineJava(path, engine string) (string, bool) {
-	bin := filepath.Join(engine, ".devbox", "nix", "profile", "default", "bin")
-	if _, err := os.Stat(filepath.Join(bin, "java")); err != nil {
+	bin := javacmd.DevboxBin(engine)
+	if bin == "" {
 		return path, false
 	}
 	if path == "" {
