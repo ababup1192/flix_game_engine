@@ -1,6 +1,6 @@
 # ノベルの語彙と舞台の土台（N1〜N3）の設計
 
-- 状態: 第 3 版（2026-11-15）。1 回目のレビュー（70 点）の M1〜M11・O1〜O11、2 回目（84 点）の N1・N2・P1〜P5 を入れた。実装はまだ。
+- 状態: 第 3 版（レビュー 3 回目 91 点で合格・2026-11-15）（2026-11-15）。1 回目のレビュー（70 点）の M1〜M11・O1〜O11、2 回目（84 点）の N1・N2・P1〜P5 を入れた。実装はまだ。
 - 親の計画: [plans/novel-data-only.md](novel-data-only.md) の N1〜N3。語彙 19 個と書き方 B（主の引数 1〜2 つは位置・ほかは `key=value`）は 3.16〜3.18 で決めた物、変数の表示名は 3.19 を前提にする。
 - 数は数えた物。【推】は見込み。
 
@@ -223,6 +223,8 @@ PropertyTween.toJson(t) / fromJson(json)                // セーブ（終わり
 
 ### 3.6 ゲームが自分のコードで演出を 1 つ足す口
 
+- 当て直しの間に `apply` が読む `Stage.pages` は途中の値（台詞の時点から数え足す）。後に残る結果は Snapshot で上書きされるので害は無い。頁の数を足すのは `ClearPage` を受ける所と NVL で入り切らずにめくる所の 2 つで、どちらも World の 1 つの関数を通す。
+
 ```flix
 // ゲームの src/GameCommands.flix（テンプレートは空の一覧。テンプレートの追随で上書きしない）
 pub def all(): List[Commands.Command[Stage.Stage]] = stab() :: Nil
@@ -302,7 +304,8 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 
 - **決まり**: `apply` と `Out` の結果で後に残る物（文字の枠を消しているか・頁の数・`game.` の値）は全部 `Stage` に入れ、Snapshot で戻す。World に残すのは頁だけで、頁も Mark で戻す。`Out.Event` はその場の音や見た目の合図だけで、状態を書かない。写しでは枠を消す値（`veiled`）を Stage に置き、前のノードで消したまま jump した後の台詞から戻して、消したまま戻る事を確かめた。
 - `restore` は Mark の舞台から当て直しを始め、バックログ・選択肢・ブックマークを作る。当て直した後に舞台を `Snapshot`、頁を `page` で置き換える。途中の動きは settle で終わりの値にそろう。
-- Mark は `showLine` の中で、頁に行を積んだ後に作る（今の `markAt` は行を積む前に呼ばれるので、頁だけ後から入れる）。
+- Mark は `showLine` の中で、頁に行を積んだ後に作る（今の `markAt` は行を積む前に呼ばれるので、頁だけ後から入れる）。**セーブ画面とクイックセーブの道（`WorldRead.slotHere` → `slotAt(None)` → `markAt`）も、今の頁（`r#page` の出し終えた形）を入れる**。7 章の v3 の JSON の往復のテストは `slotHere` から始め、頁も比べる。
+- 頁には書いた時の字（話し手の表示名・組んだ本文）が残る。セーブの後に台本や `names` を直すと、戻した頁だけ古い字になる。作る人の手元だけの話なので受け入れる。
 - バックログと「戻る」も同じ Mark を使う。頁は `nvlRows` 行までなので、バックログの行ごとに持っても重くない【推】。
 - セーブの JSON は version 3。`"stage": { "bg": …, "cast": …, "mode": …, "pages": 3, "props": { "overlay.alpha": 0.6, … } }` と `"page": { "lines": […], "current": … }`。version 2 の枠（photo・grade・ambience・particles・mode・cast）は読む所で `stage` に読み替え、頁が無いので頁は当て直しで作った物を使う（今と同じ）。読めない欄は既定で続ける（fail-open）。
 - 写しで確かめた範囲（P1）: 1 本目の写しで直したのは `fromJson`（v2 の欄から舞台を作る）だけで、`toJson` は変えておらず、`nudge` はセーブの JSON を通っていない。2 本目の写しで `toJson` に `nudge` と `veiled` を足し、セーブ → JSON → 読み戻し → restore の往復で出し方と枠を消した値が戻る事を 1 本確かめた（`testStageSurvivesSaveJson`）。**頁・背景・立ち絵・PropertyTween の JSON の往復は試していない**（写しでは JSON から読んだ Mark の頁は None で、当て直しの頁に落ちる）。
