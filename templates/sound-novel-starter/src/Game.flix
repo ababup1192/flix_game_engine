@@ -43,6 +43,7 @@ mod Game {
             |> App.withWorldSummaryMask(Resources.mapWorld((_, w) ->
                 { clockBase = 0i64, saves = Saves.withSavedAtShifted(0i64 - w#clockBase, w#saves) | w }))
             |> App.withStatusLine(Resources.read((r, w) -> "phase=${World.sceneName(w)} panel=${World.panelName(w)} talk=${World.talkNodeOf(w)} line=${World.talkLineOf(w)} mode=${World.stageOf(r, w)#mode} playback=${World.playbackOf(w)} ask=${World.askOf(w)}"))
+            |> GameBoot.app
 
     /// ブラウザ版で後回しにした絵と音（project.json の web.deferred）が届くたびに Res の missing を書き替え、
     /// 届いた絵を登録する量（Controls.decodeBudget）を渡す。Main とブラウザの入口だけが足す

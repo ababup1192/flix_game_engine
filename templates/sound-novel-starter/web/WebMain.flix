@@ -10,9 +10,11 @@ mod WebMain {
         run {
             // 後回しの絵と音（project.json の web.deferred）は押した後も裏で届く。届いていない名前を Res に置いて始める。
             let downloads = LoadProgress.downloads();
-            let res = Res.withMissing(downloads#missing(), Controls.loadRes());
+            let loaded = Res.withMissing(downloads#missing(), Controls.loadRes());
+            let res = Res.withGame(GameBoot.loadAssets(loaded#game), loaded);
             let app = Game.app(res, Saves.load(res#kind), localEpochSeconds())
                 |> Game.withAssetLoading(downloads)
+                |> GameBoot.withLoading({ downloads = downloads, decoder = LoadProgress.imageDecoder() })
                 |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
                                                         write = w -> Saves.write(w#saves), onJump = App.OnJump.Skip }));
             App.launchWithDevTools(WebLayer.devTools(), app)

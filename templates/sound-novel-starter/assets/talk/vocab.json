@@ -777,6 +777,69 @@
       ],
       "summary": "字の置き場（at = NVL の頁の中の top・center・bottom）・大きさ（size = novel.kind.json の textSizes）・揃え（align）・文字送りの速さの倍率（speed）・押しても送らない秒（lock）"
     },
+    "tween": {
+      "params": [
+        {
+          "name": "key",
+          "pos": 1,
+          "req": true,
+          "type": "name"
+        },
+        {
+          "max": 100000,
+          "min": -100000,
+          "name": "value",
+          "pos": 2,
+          "req": true,
+          "type": "num"
+        },
+        {
+          "max": 100000,
+          "min": -100000,
+          "name": "from",
+          "type": "num"
+        },
+        {
+          "default": "0.5",
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "ゲームの数の値（game. で始まる鍵。GameView が読む）を秒かけて動かす（from = 始まりの値・省くと今の値から。書いたことの無い鍵は 0 から）"
+    },
     "window": {
       "params": [
         {

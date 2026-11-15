@@ -18,6 +18,7 @@
 //   <<shake [強さ] [on=screen|window|名前] [time=秒]>>   揺らす（強さは novel.kind.json の shakes の名前か px・省くと shakeSeconds / shakePx）
 //   <<overlay 濃さ [color=black|white|#rrggbb] [from=] [layer=stage|screen] [time=0] [ease=]>>   画面に色を被せる（同じ濃さへは何もしない）
 //   <<camera [zoom=] [x=] [y=] [time=0.5] [ease=]>>   world の層を寄せる・ずらす（文字の枠と HUD には掛けない）
+//   <<tween game.<鍵> 値 [from=] [time=0.5] [ease=smoothstep]>>   ゲームの数の値（GameView が読む game. の鍵）を秒かけて動かす（3D のカメラの道筋の進みなど）
 //   <<show 名前 [表情] [at=位置] [from=left|right|top|bottom] [x=] [y=] [scale=] [alpha=] [time=秒] [ease=]>>
 //                                              立ち絵か小物（novel.cast.json の cast / props）を出す・表情や位置を替える。何人・何個でも出せ、
 //                                              exclusive の位置にだけは 1 つ（後から出した物が前の物を消す）。省いた物は出ている形のまま
@@ -38,8 +39,9 @@ mod Commands {
     use fge::YarnCommands.{DocRef, Param}
     use fge::YarnCommands.Param.Or
 
-    /// apply が読める物: now = 物語の時計の今、node = 読んでいるノード（無ければ ""）、res = Doc とシナリオ。
-    pub type alias Ctx = { now = Clock.Time[Stage.Story], node = String, res = Res.Res }
+    /// apply が読める物: now = 物語の時計の今、node = 読んでいるノード（無ければ ""）、res = Doc とシナリオ、
+    /// instant = 演出を待たずに済ませる時（Silent の当て直しかスキップ中。ゲームが持つ背景の切り替えを聞かない）。
+    pub type alias Ctx = { now = Clock.Time[Stage.Story], node = String, res = Res.Res, instant = Bool }
 
     /// apply が舞台の外へ出す出来事（後に残る状態は書かない）。
     ///   ClearPage = NVL の頁をめくる / TurnPage = ADV の頁を送る / Sound(名前) = 効果音を 1 回（project.json の sounds）/
@@ -78,7 +80,7 @@ mod Commands {
 
     /// テンプレートのコマンドの表。
     pub def all(): List[Command[Stage.Stage]] =
-        bg() :: window() :: text() :: speak() :: audio() :: fx() :: shake() :: overlay() :: camera() :: show() :: hide() :: move() :: Nil
+        bg() :: window() :: text() :: speak() :: audio() :: fx() :: shake() :: overlay() :: camera() :: tween() :: show() :: hide() :: move() :: Nil
 
     /// シナリオが使える全部（テンプレートの表とゲームの表）。
     def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
@@ -129,7 +131,7 @@ mod Commands {
         forM (
             c <- lookup(command#name) |> Option.toOk("知らないコマンド <<${command#name}>>${at}");
             args <- argsOf(ctx#res#commandArgs, c, command);
-            done <- c#apply(ctx, args, st) |> Result.mapErr(why -> "<<${command#name}>> ${why}${at}")
+            done <- c#apply({ instant = ctx#instant or replay == Replay.Silent | ctx }, args, st) |> Result.mapErr(why -> "<<${command#name}>> ${why}${at}")
         ) yield {
             let (next, outs) = done;
             (next, outs |> List.filter(out -> replay == Replay.Live or isPageOut(out)))
@@ -151,6 +153,46 @@ mod Commands {
     pub def needsOf(res: Res.Res, command: Yarn.Command, st: Stage.Stage): List[String] =
         parsed(res, command) |> Option.map(match (c, args) -> c#needs(res, args, st)) |> Option.getWithDefault(Nil)
 
+    // ── 台本と同じ書き方の 1 行を当てる（GameCommands が標準の舞台を替える口） ──
+
+    /// "<<show whale corpse time=0>>" を表で読んで st に当てる。GameCommands が人物・背景・覆いを替える時はこれを通す（Cast や背景の形に直に触らない）。
+    /// 出来事は落とさない（GameCommands の apply を呼んだ execute が replay で振り分ける）。
+    pub def applyText(ctx: Ctx, text: String, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
+        forM (
+            command <- commandOfText(text);
+            c <- lookup(command#name) |> Option.toOk("知らないコマンド ${text}");
+            args <- YarnCommands.parse(c#spec, command);
+            done <- c#apply(ctx, args, st) |> Result.mapErr(why -> "${text} ${why}")
+        ) yield done
+
+    /// applyText で当てる 1 行が、当てる前に届いていてほしい絵と音の名前（読めない行は空）。GameCommands の needs から呼ぶ。
+    pub def needsOfText(res: Res.Res, text: String, st: Stage.Stage): List[String] =
+        let found = forM (command <- commandOfText(text) |> Result.toOption; c <- lookup(command#name); args <- YarnCommands.parse(c#spec, command) |> Result.toOption)
+            yield c#needs(res, args, st);
+        Option.getWithDefault(Nil, found)
+
+    /// "<<名前 引数…>>" をコマンド 1 つに。台本と同じく空白で割り、"…" は空白を含んでも 1 つ（" ごと残す。外すのは Param）。
+    pub def commandOfText(text: String): Result[String, Yarn.Command] =
+        let inner = String.stripPrefix(substr = "<<", String.trim(text)) |> Option.flatMap(String.stripSuffix(substr = ">>")) |> Option.map(String.trim);
+        match inner |> Option.map(wordsOf) {
+            case Some(name :: args) => Ok({ name = name, args = args, tags = Nil, source = { file = "applyText", line = 0 } })
+            case _                  => Err("<<名前 引数…>> の形でない '${text}'")
+        }
+
+    /// コマンドの中を空白で割る（"…" の中の空白では割らず、中の \ は次の 1 字をそのまま入れる）。
+    def wordsOf(inner: String): List[String] =
+        let flush = (out, cur) -> if (List.isEmpty(cur)) out else (List.reverse(cur) |> List.map(Char.toString) |> String.flatten) :: out;
+        let step = (acc: (List[String], List[Char], Bool, Bool), c: Char) -> {
+            let (out, cur, quoted, escaped) = acc;
+            if (escaped) (out, c :: cur, quoted, false)
+            else if (quoted and c == '\\') (out, c :: cur, quoted, true)
+            else if (c == '"') (out, c :: cur, not quoted, false)
+            else if (not quoted and Char.isWhitespace(c)) (flush(out, cur), Nil, false, false)
+            else (out, c :: cur, quoted, false)
+        };
+        let (out, cur, _, _) = String.toList(inner) |> List.foldLeft(step, (Nil, Nil, false, false));
+        List.reverse(flush(out, cur))
+
     // ── Doc の名前の場所（vocab.json のフォルダ assets/talk から数える） ──
 
     def backdrops(path: String): DocRef = DocRef.Keys("../novel.backdrops.json", path)
@@ -167,14 +209,18 @@ mod Commands {
 
     // ── コマンド ──
 
-    def bg(): Command[Stage.Stage] =
+    def bg(): Command[Stage.Stage] = bgWith(GameCommands.backdropSwitch)
+
+    /// <<bg>> の表。switchOf = ゲームが持つ背景の切り替え（Ctx・前の背景・替える先・台本の替え方 → 秒と音。None なら台本の transition と time=）。
+    /// ゲームが持つ切り替えは、その秒だけ続きを待たせる（Out.Wait）。instant の時は聞かない。
+    pub def bgWith(switchOf: (Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch]): Command[Stage.Stage] =
         let photo = Param.name("photo", backdrops("photos") :: Nil) |> Param.at(1) |> Param.required;
         let grade = Param.name("grade", backdrops("grades") :: Nil);
         let time = Param.time(1.0);
         let transition = Param.choice("transition", BackdropDoc.transitionNames());
         let pace = Param.choice("pace", "walk" :: "run" :: Nil);
         let ease = Param.ease(Curve.Ease.Linear);
-        let gradeOf = (a, st: Stage.Stage) -> Param.getOpt(grade, a) |> Option.withDefault(default = st#shot |> Option.map(s -> s#grade));
+        let gradeOf = (a, prev: Option[Stage.Shot]) -> Param.getOpt(grade, a) |> Option.withDefault(default = prev |> Option.map(s -> s#grade));
         { spec = YarnCommands.spec("bg", "背景の写真を時間帯の色で替え、秒かけて切り替える（transition = fade・black・wipe・slide・pan・cut。省くと novel.backdrops.json の defaultTransition・pace = 3D の道筋の歩き方）",
                                    Param.erase(photo) :: Param.erase(grade) :: Param.erase(time) :: Param.erase(transition) :: Param.erase(pace) :: Param.erase(ease) :: Nil),
           timing = Timing.Timed,
@@ -183,16 +229,22 @@ mod Commands {
               let name = Param.get(photo, a);
               let switch = { transition = Param.getOpt(transition, a) |> Option.flatMap(BackdropDoc.transitionOf) |> Option.getWithDefault(BackdropDoc.rec(doc)#defaultTransition),
                              ease = Param.get(ease, a),
-                             pace = if (Param.getOpt(pace, a) == Some("run")) Stage.Pace.Run else Stage.Pace.Walk };
-              match gradeOf(a, st) {
+                             pace = if (Param.getOpt(pace, a) == Some("run")) Stage.Pace.Run else Stage.Pace.Walk,
+                             game = None };
+              let prev = Stage.shownShot(doc, st);
+              match gradeOf(a, prev) {
                   case None => Err("grade= が要る（前の背景が無い）")
                   case Some(g) =>
                       if (Option.isEmpty(BackdropDoc.photoOf(name, doc))) Err("知らない写真 '${name}'")
                       else if (Option.isEmpty(BackdropDoc.gradeOf(g, doc))) Err("知らない時間帯 '${g}'")
                       else {
-                          let next = Stage.withBackdropBy(ctx#now, { photo = name, grade = g }, Param.get(time, a), switch, st);
+                          let shot = { photo = name, grade = g };
+                          let owned = if (ctx#instant) None else switchOf(ctx, prev, shot, switch);
+                          let seconds = owned |> Option.map(o -> o#seconds) |> Option.getWithDefault(Param.get(time, a));
+                          let next = Stage.withBackdropBy(ctx#now, shot, seconds, { game = owned | switch }, { shot = prev | st });
+                          let waits = if (Option.nonEmpty(owned) and next#fadeSeconds > 0.0) Out.Wait(next#fadeSeconds) :: Nil else Nil;
                           // WhyNot: NVL の頁を背景の切り替えでめくらない — NVL の頁の切れ目は <<window clear>> と行の数が決める。
-                          Ok((next, if (Stage.kindOf(ctx#res#theme, st) == ThemeDoc.WindowKind.Adv) Out.TurnPage :: Nil else Nil))
+                          Ok((next, List.append(if (Stage.kindOf(ctx#res#theme, st) == ThemeDoc.WindowKind.Adv) Out.TurnPage :: Nil else Nil, waits)))
                       }
               }
           },
@@ -480,6 +532,29 @@ mod Commands {
                       |> Option.getWithDefault(props)
               };
               Ok(({ props = List.foldLeft(step, st#props, fields) | st }, Nil))
+          },
+          needs = noAssets }
+
+    /// 台本から動かせるゲームの値の鍵か（game. で始まり、その後ろが空でない）。
+    def isGameKey(name: String): Bool = String.stripPrefix(substr = "game.", name) |> Option.exists(rest -> not String.isEmpty(rest))
+
+    def tween(): Command[Stage.Stage] =
+        let key = Param.name("key", Nil) |> Param.at(1) |> Param.required;
+        let value = Param.num("value", -100000.0, 100000.0) |> Param.at(2) |> Param.required;
+        let fromArg = Param.num("from", -100000.0, 100000.0);
+        let time = Param.time(0.5);
+        let ease = Param.ease(Curve.Ease.SmoothStep);
+        { spec = YarnCommands.spec("tween", "ゲームの数の値（game. で始まる鍵。GameView が読む）を秒かけて動かす（from = 始まりの値・省くと今の値から。書いたことの無い鍵は 0 から）",
+                                   Param.erase(key) :: Param.erase(value) :: Param.erase(fromArg) :: Param.erase(time) :: Param.erase(ease) :: Nil),
+          timing = Timing.Timed,
+          apply = (ctx, a, st) -> {
+              let name = Param.get(key, a);
+              if (not isGameKey(name)) Err("動かせるのは game. で始まる鍵だけ '${name}'（標準の値はそれぞれの命令で動かす）")
+              else {
+                  let k = PropertyTween.numKey(name);
+                  let origin = Param.getOpt(fromArg, a) |> Option.getWithDefault(PropertyTween.numAt(ctx#now, k, 0.0, st#props));
+                  Ok(({ props = PropertyTween.tween(k, Some(origin), Param.get(value, a), ctx#now, 0.0, Param.get(time, a), Param.get(ease, a), st#props) | st }, Nil))
+              }
           },
           needs = noAssets }
 

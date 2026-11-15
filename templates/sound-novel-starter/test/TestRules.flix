@@ -187,7 +187,7 @@ mod TestRules {
     def testEveryCommandInTheScriptIsUnderstood(): Unit \ {Assert, Fs.FileRead} =
         // シナリオのコマンドは全部 Commands の表で読めて当てられる（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
         let res = TestKit.res();
-        let ctx = { now = Clock.zero(), node = "", res = res };
+        let ctx = { now = Clock.zero(), node = "", res = res, instant = false };
         let bad = commandsOf(res#dialogue) |> List.filter(c -> c#name != "wait")
             |> List.filterMap(c -> match Commands.execute(Commands.Replay.Silent, ctx, c, Stage.empty()) {
                 case Ok(_)    => None

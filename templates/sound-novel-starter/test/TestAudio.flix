@@ -14,7 +14,7 @@ mod TestAudio {
         { name = name, args = args, tags = Nil, source = { file = "test", line = 1 } }
 
     def executed(r: Res.Res, at: Float64, name: String, args: List[String], st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
-        Commands.execute(Commands.Replay.Live, { now = t(at), node = "", res = r }, command(name, args), st)
+        Commands.execute(Commands.Replay.Live, { now = t(at), node = "", res = r, instant = false }, command(name, args), st)
 
     def applied(at: Float64, name: String, args: List[String], st: Stage.Stage): Stage.Stage \ Fs.FileRead =
         executed(res(), at, name, args, st) |> Result.map(fst) |> Result.getWithDefault(st)
@@ -56,7 +56,7 @@ mod TestAudio {
         // slide の途中は、今の写真の面が右へずれて描かれる（左端が画面の左端より右）。
         let st = applied(1.0, "bg", photo() :: "transition=slide" :: "time=2" :: Nil, bg("transition=cut" :: Nil));
         let lefts = ViewStage.frame(envAt(2.0), st, true) |> List.filterMap(placed -> match placed#item {
-            case Render.Item.Shader(s) if Int32.remainder(s#zIndex, View.zWorldStride()) == 2 => Some(placed#at#x)
+            case Render.Item.Shader(s) if Int32.remainder(s#zIndex, View.zWorldStride()) == View.zBackdropShot() => Some(placed#at#x)
             case _                                                           => None
         });
         Assert.assertTrue(lefts |> List.exists(x -> x > 0.0))
@@ -139,7 +139,7 @@ mod TestAudio {
     def testSeWaitIsDroppedWhenReplaying(): Unit \ {Assert, Fs.FileRead} =
         // ロードや戻るの当て直しでは待たない（音も鳴らさない）。
         let r = Res.withSoundSeconds(Map#{ "se_x" => 0.8 }, res());
-        let outs = Commands.execute(Commands.Replay.Silent, { now = t(0.0), node = "", res = r }, command("audio", "se" :: "se_x" :: "wait=true" :: Nil), Stage.empty())
+        let outs = Commands.execute(Commands.Replay.Silent, { now = t(0.0), node = "", res = r, instant = false }, command("audio", "se" :: "se_x" :: "wait=true" :: Nil), Stage.empty())
             |> Result.map(snd);
         Assert.assertEq(expected = Ok(Nil), outs)
 

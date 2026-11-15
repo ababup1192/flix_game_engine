@@ -14,7 +14,7 @@ mod TestStageEffects {
         { name = name, args = args, tags = Nil, source = { file = "test", line = 1 } }
 
     def tried(at: Float64, name: String, args: List[String], st: Stage.Stage): Result[String, Stage.Stage] \ Fs.FileRead =
-        Commands.execute(Commands.Replay.Live, { now = t(at), node = "", res = res() }, command(name, args), st) |> Result.map(fst)
+        Commands.execute(Commands.Replay.Live, { now = t(at), node = "", res = res(), instant = false }, command(name, args), st) |> Result.map(fst)
 
     def applied(at: Float64, name: String, args: List[String], st: Stage.Stage): Stage.Stage \ Fs.FileRead =
         tried(at, name, args, st) |> Result.getWithDefault(st)

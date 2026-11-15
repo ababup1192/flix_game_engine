@@ -22,14 +22,14 @@ mod Backdrop {
         let progress = Field.Un({ op = ShaderDoc.UnOp.Sat, of = Field.Time({ scale = 1.0, offset = k(0.0) }) });
         let amount = add(k(1.0), mul(k(grade#focusPull), Field.Un({ op = ShaderDoc.UnOp.OneMinus, of = progress })));
         let blur = chan -> Field.TexBlur({ name = photo#texture, chan = chan,
-                                           radius = { x = grade#blur, y = grade#blur * aspect() },
+                                           radius = { x = grade#blur, y = grade#blur * aspectOf(photo) },
                                            taps = ShaderDoc.blurTaps(grade#taps), amount = amount });
         let luma = add(add(mul(k(0.299), Field.Ref("r")), mul(k(0.587), Field.Ref("g"))), mul(k(0.114), Field.Ref("b")));
         let skyFade = Field.Un({ op = ShaderDoc.UnOp.OneMinus,
                                  of = Field.Smoothstep({ lo = 0.0, hi = Float64.max(0.01, grade#skyReach),
                                                          of = Field.Uv({ axis = ShaderDoc.Axis.V }) }) });
         let vignette = sub(k(1.0), mul(k(grade#vignette),
-            Field.Smoothstep({ lo = 0.45, hi = 1.05, of = Field.RadialAspect({ cx = 0.5, cy = 0.5, aspect = aspect() }) })));
+            Field.Smoothstep({ lo = 0.45, hi = 1.05, of = Field.RadialAspect({ cx = 0.5, cy = 0.5, aspect = aspectOf(photo) }) })));
         let channel = (name, tint, lift, sky) -> {
             let c1 = add(Field.Ref("l"), mul(k(grade#saturation), sub(Field.Ref(name), Field.Ref("l"))));
             let c2 = add(mul(c1, k(grade#exposure * tint)), k(lift));
@@ -49,8 +49,8 @@ mod Backdrop {
     pub def surface(spec: ShaderDoc.Spec, rect: Rect2.Rect2, progress: Float64, z: Int32): Render.PlacedItem =
         Render.shaderFill(spec, rect, Float64.max(0.0, Float64.min(1.0, progress)), z)
 
-    /// 背景を敷く矩形の横÷縦（ぼかしの縦の半径を横とそろえ、四隅の落ち方を丸くする）。縦の画面でも写真の比 16:9 のまま敷く（ViewStage.backdropRect）。
-    def aspect(): Float64 = 16.0 / 9.0
+    /// 背景を敷く矩形の横÷縦（ぼかしの縦の半径を横とそろえ、四隅の落ち方を丸くする）。aspect を書いていない写真は 16:9 のまま敷く（ViewStage.photoRect）。
+    def aspectOf(photo: BackdropDoc.Photo): Float64 = photo#aspect |> Option.getWithDefault(16.0 / 9.0)
 
     def k(v: Float64): Field = Field.Const(v)
 

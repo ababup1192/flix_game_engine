@@ -149,7 +149,7 @@ mod WorldRead {
 
     /// コマンドの表の apply が読む物。
     def ctxOf(res: Res.Res, r: World.Read, w: World.World): Commands.Ctx =
-        { now = World.now(w), node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault(""), res = res }
+        { now = World.now(w), node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault(""), res = res, instant = r#playback == World.Playback.Skip }
 
     /// コマンドが出した出来事 1 つ（Silent の時の音と合図と待ちは Commands.execute が落としてある）。
     /// 待ちは now から秒だけ（続きの出来事は absorbFrom が預ける。1 つのコマンドが 2 つ出したら長い方）。
@@ -349,7 +349,8 @@ mod WorldRead {
         let waited = match YarnRunner.shownOf(r#talk) {
             case _ if Option.nonEmpty(r#pause) =>
                 r#pause |> Option.filter(p -> skipping or Clock.since(p#until, World.now(w)) >= 0.0)
-                        |> Option.map(p -> resumePause(res, p, r, w)) |> Option.getWithDefault(w)
+                        |> Option.map(p -> resumePause(res, p, if (skipping) { stage = Stage.withGameSwitchFinished(r#stage) | r } else r, w))
+                        |> Option.getWithDefault(w)
             case YarnRunner.Shown.Waiting =>
                 // スキップ中は待ちも飛ばす（明ける時刻をそのまま渡す）。
                 let at = if (r#playback == World.Playback.Skip) YarnRunner.waitUntilOf(r#talk) |> Option.getWithDefault(World.now(w)) else World.now(w);
@@ -357,6 +358,7 @@ mod WorldRead {
                 absorb(res, Commands.Replay.Live, events, { talk = talk | r }, w)
             case _ => w
         };
+        switchSounds(waited);
         whileReading(cur -> {
             let noWait = KindDoc.isNoWait(World.configOf(waited)#cps, res#kind);
             let fast = noWait or (cur#playback == World.Playback.Skip and isSkippable(cur, waited));
@@ -366,6 +368,11 @@ mod WorldRead {
             let stamped = if (Page.isDone(page) and Option.isEmpty(typed#doneAt)) { doneAt = Some(World.now(waited)) | typed } else typed;
             autoOrSkip(res, stamped, waited)
         }, waited)
+
+    /// ゲームが持つ背景の切り替え（GameCommands.backdropSwitch）の音のうち、このフレーム（物語の時計の前のフレームから今まで）に鳴らす物を出す。
+    def switchSounds(w: World.World): Unit \ Emit[World.Event] =
+        World.readOf(w) |> Option.map(r -> Stage.gameSwitchSoundsBetween(Clock.after(0.0 - Clock.dtOf(w#storyClock), World.now(w)), World.now(w), r#stage))
+            |> Option.getWithDefault(Nil) |> List.forEach(name -> Emit.emit(World.Event.Cue(name)))
 
     /// オートとスキップ（行を出し終えてから、決めた間が過ぎたら送る）。
     /// スキップは選択肢で止まるか待つか（設定の「選択肢の後」）、読んでいない行で止まるか（設定の「スキップ」）。

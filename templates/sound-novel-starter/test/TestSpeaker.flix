@@ -10,7 +10,7 @@ mod TestSpeaker {
         { name = name, args = args, tags = Nil, source = { file = "test", line = 1 } }
 
     def exec(res: Res.Res, name: String, args: List[String], st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
-        Commands.execute(Commands.Replay.Live, { now = Clock.zero(), node = "", res = res }, command(name, args), st)
+        Commands.execute(Commands.Replay.Live, { now = Clock.zero(), node = "", res = res, instant = false }, command(name, args), st)
 
     def stageAfter(res: Res.Res, name: String, args: List[String], st: Stage.Stage): Stage.Stage =
         exec(res, name, args, st) |> Result.map(fst) |> Result.getWithDefault(st)

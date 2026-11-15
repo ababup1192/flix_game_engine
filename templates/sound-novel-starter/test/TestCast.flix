@@ -28,7 +28,7 @@ mod TestCast {
 
     /// コマンド 1 つを、時刻 at に、層 layer を持つ舞台へ表で当てた結果の層。
     def tried(at: Float64, name: String, args: List[String], layer: Cast.Layer): Result[String, Cast.Layer] \ Fs.FileRead =
-        Commands.execute(Commands.Replay.Silent, { now = t(at), node = "", res = res() }, command(name, args), { cast = layer | Stage.empty() })
+        Commands.execute(Commands.Replay.Silent, { now = t(at), node = "", res = res(), instant = false }, command(name, args), { cast = layer | Stage.empty() })
             |> Result.map(done -> fst(done)#cast)
 
     /// tried の結果（読めないコマンドは層をそのまま）。
