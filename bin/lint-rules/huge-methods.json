@@ -11,12 +11,17 @@
     "ShaderJson.fieldToJson::huge-methods": "Doc の書き出しの時だけ通る",
     "LightModel3d.Codegen.vec3Code::huge-methods": "光の式の木から字を作る時だけ通る",
     "LightModel3d.Codegen.scalarCode::huge-methods": "光の式の木から字を作る時だけ通る",
-    "ShaderGen.eqMaterial::huge-methods": "【直す候補】3D の material 1 つにつき毎コマ通る（Render3d.Material.reuseOrRebuild が前のコマの material と比べる）。重さは未計測。JFR で確かめてから直すか決める",
-    "ShaderGen.eqSpecTree::huge-methods": "【直す候補】eqMaterial から通る。同上",
-    "ShaderGen.eqSpecWith::huge-methods": "【直す候補】eqMaterial から通る。同上",
-    "ShaderGen.eqShade::huge-methods": "【直す候補】eqMaterial から通る。同上",
-    "ShaderGen.eqOptField::huge-methods": "【直す候補】eqMaterial から通る。同上",
-    "ShaderGen.eqOut::huge-methods": "【直す候補】eqMaterial から通る。同上",
+    "SoftRaster3d.renderLayer::huge-methods": "CPU の描き出しで 3D の場面 1 つにつき 1 回通る段取り（画素の行ごとの仕事は renderRow へ出してある）",
+    "PostProcess.fxaaSpec::huge-methods": "FXAA の Spec の木を組むだけで、組んだ Spec は program の cache に入る（画素ごと・物ごとには通らない）",
+    "Gltf.materialOf::huge-methods": "glb を読む時に材質の番号ごとに 1 回だけ通る",
+    "Flow.runLine::huge-methods": "flow（台本）の 1 行ごとに 1 回。遊ぶ時の毎コマには通らない（headless の確かめと /perf だけ）",
+    "Flow.Parse.lineInto::huge-methods": "flow を読む時に行ごとに 1 回だけ通る",
+    "Flow.Parse.optsOf::huge-methods": "flow を読む時に行ごとに 1 回だけ通る",
+    "App.Internal.DevTools.openDesktop::huge-methods": "起動の時に 1 回だけ通る",
+    "App.RemoteDebug.remoteFlow::huge-methods": "開発の道具の POST /flow を受けた時だけ通る",
+    "App.Internal.Hitch.perfRun::huge-methods": "開発の道具の POST /perf を受けた時だけ通る（1 コマごとの塗りは別の関数）",
+    "ExprRows.drawGl::huge-methods": "GL の突き合わせ（bench/gl_parity）で式の行を 1 回読み返すだけ",
+    "ParityMain.glShoot::huge-methods": "GL の突き合わせ（bench/gl_parity）で場面 1 つにつき 1 回",
     "SceneBench.go::osr-skipped": "ベンチの 1 コマごとの外側のループ。1 回ごとに重い関数を呼ぶだけで、物の数だけ回るループではない"
   }
 }

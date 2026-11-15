@@ -306,6 +306,8 @@ pub mod ShaderGen {
             case _                    => false
         }
 
+    // WhyNot: 呼ぶ所へインラインさせない — eqShade・eqOptField などへ展開されて 8,000 バイトを超え、JVM が JIT しない（材質 1 つにつき毎コマ通る）。
+    @DontInline
     def eqField(ix: (String, String) -> Bool \ ef, a: ShaderDoc.Field, b: ShaderDoc.Field): Bool \ ef =
         use ShaderDoc.Field;
         match (a, b) {
@@ -349,6 +351,14 @@ pub mod ShaderGen {
             case (Field.Sparkle(ra), Field.Sparkle(rb))           =>
                 ra#scale == rb#scale and ra#rate == rb#rate
                     and ra#density == rb#density and ra#seed == rb#seed
+            case _                                                => eqFieldMore(ix, a, b)
+        }
+
+    // WhyNot: eqField を 1 つの match にしない — case が多く 8,000 バイトを超えて JVM が JIT しない。前半と後半の 2 つに分ける。
+    @DontInline
+    def eqFieldMore(ix: (String, String) -> Bool \ ef, a: ShaderDoc.Field, b: ShaderDoc.Field): Bool \ ef =
+        use ShaderDoc.Field;
+        match (a, b) {
             case (Field.Bin(ra), Field.Bin(rb))                   =>
                 ra#op == rb#op and eqField(ix, ra#a, rb#a) and eqField(ix, ra#b, rb#b)
             case (Field.Hash1(ra), Field.Hash1(rb))               =>
@@ -455,17 +465,21 @@ pub mod ShaderGen {
         hashFloat(tok, v#x); hashFloat(tok, v#y)
 
     /// Spec と Out の欄を閉じたパターンで開く（欄を足したら、ここでコンパイルが止まる）。
+    // WhyNot: 呼ぶ所へインラインさせない — hashMaterial へ展開されて 8,000 バイトを超える。
+    @DontInline
     def hashSpec(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, s: ShaderDoc.Spec): Unit \ ef = match s {
         case { name = name, cycleRate = cycleRate, bindings = bindings, out = out } =>
             hashString(tok, name);
             hashFloat(tok, cycleRate);
             hashInt(tok, List.length(bindings));
-            bindings |> List.forEach(nf -> { hashString(tok, fst(nf)); hashField(tok, tex, snd(nf)) });
+            bindings |> List.forEach(nf -> { hashString(tok, fst(nf)); hashField(tok, tex, snd(nf)); () });
             match out {
                 case ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) => hashShade(tok, tex, shade); hashField(tok, tex, alpha)
             }
     }
 
+    // WhyNot: 呼ぶ所へインラインさせない — hashMaterial へ 2 か所（emission・metallicRoughness）展開されて 8,000 バイトを超える。
+    @DontInline
     def hashShade(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, s: ShaderDoc.Shade): Unit \ ef =
         use ShaderDoc.Shade;
         match s {
@@ -474,7 +488,7 @@ pub mod ShaderGen {
             case Shade.Gradient(g) =>
                 tok(3i64);
                 hashInt(tok, List.length(g#stops));
-                g#stops |> List.forEach(pc -> { hashFloat(tok, fst(pc)); hashColor(tok, snd(pc)) });
+                g#stops |> List.forEach(pc -> { hashFloat(tok, fst(pc)); hashColor(tok, snd(pc)); () });
                 hashField(tok, tex, g#field)
             case Shade.Cosine(c)   =>
                 tok(4i64); hashColor(tok, c#a); hashColor(tok, c#b); hashColor(tok, c#c); hashColor(tok, c#d); hashField(tok, tex, c#field)
@@ -487,52 +501,117 @@ pub mod ShaderGen {
             case Some(x) => tok(1i64); hashField(tok, tex, x)
         }
 
-    /// 全部の case を書く（case を足したら、ここで網羅の不足としてコンパイルが止まる）。
+    /// 種類ごとの番号。全部の case を書く（case を足したら、ここで網羅の不足としてコンパイルが止まる）。
+    def fieldTag(f: ShaderDoc.Field): Int64 =
+        use ShaderDoc.Field;
+        match f {
+            case Field.Const(_)        => 1i64
+            case Field.Uv(_)           => 2i64
+            case Field.Worley(_)       => 3i64
+            case Field.Fbm(_)          => 4i64
+            case Field.FbmTile(_)      => 5i64
+            case Field.Smoothstep(_)   => 6i64
+            case Field.Scaled(_)       => 7i64
+            case Field.Warp(_)         => 8i64
+            case Field.Mix(_)          => 9i64
+            case Field.Blend(_)        => 10i64
+            case Field.Disk(_)         => 11i64
+            case Field.Radial(_)       => 12i64
+            case Field.RadialAspect(_) => 13i64
+            case Field.Quantize(_)     => 14i64
+            case Field.Scales(_)       => 15i64
+            case Field.Glints(_)       => 16i64
+            case Field.Ripples(_)      => 17i64
+            case Field.Sparkle(_)      => 18i64
+            case Field.Bin(_)          => 19i64
+            case Field.Hash1(_)        => 20i64
+            case Field.Hash2(_)        => 21i64
+            case Field.Un(_)           => 22i64
+            case Field.Pow(_)          => 23i64
+            case Field.Time(_)         => 24i64
+            case Field.Tiling(_)       => 25i64
+            case Field.Snap(_)         => 26i64
+            case Field.Swirl(_)        => 27i64
+            case Field.Angle(_)        => 28i64
+            case Field.Rotate(_)       => 29i64
+            case Field.Ref(_)          => 30i64
+            case Field.Tex(_)          => 31i64
+            case Field.Shift(_)        => 32i64
+            case Field.TexBlur(_)      => 33i64
+            case Field.TexSize(_)      => 34i64
+            case Field.Sampler(_)      => 35i64
+            case Field.Param(_)        => 36i64
+            case Field.World(_)        => 37i64
+            case Field.Normal(_)       => 38i64
+            case Field.VertexColor(_)  => 39i64
+        }
+
+    // WhyNot: 呼ぶ所へインラインさせない — hashMaterial・hashShade へ展開されて 8,000 バイトを超え、JVM が JIT しない（毎コマ材質を組み直すゲームでは材質ごとに通る）。
+    @DontInline
     def hashField(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, f: ShaderDoc.Field): Unit \ ef =
+        tok(fieldTag(f));
+        hashFieldPayload(tok, tex, f);
+        ()
+
+    // WhyNot: 欄の中身を 1 つの match にしない — case が多く 8,000 バイトを超えて JVM が JIT しない。前半と後半の 2 つに分ける。
+    // WhyNot: ここで網羅を求めない — 網羅は fieldTag が止める。中身を入れ忘れた case は鍵が当たりやすくなるだけで、eqMaterial が見つける。
+    @DontInline
+    def hashFieldPayload(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, f: ShaderDoc.Field): Unit \ ef =
         use ShaderDoc.Field;
         let fl = x -> hashFloat(tok, x);
         let i = x -> hashInt(tok, x);
         let sub = x -> hashField(tok, tex, x);
         match f {
-            case Field.Const(v)        => tok(1i64); fl(v)
-            case Field.Uv(r)           => tok(2i64); hashShown(tok, r#axis)
-            case Field.Worley(r)       => tok(3i64); fl(r#scale); i(r#seed); hashShown(tok, r#out)
-            case Field.Fbm(r)          => tok(4i64); i(r#octaves); fl(r#scale); i(r#seed)
-            case Field.FbmTile(r)      => tok(5i64); i(r#octaves); fl(r#scale); hashVec2(tok, r#period); i(r#seed)
-            case Field.Smoothstep(r)   => tok(6i64); fl(r#lo); fl(r#hi); sub(r#of)
-            case Field.Scaled(r)       => tok(7i64); fl(r#factor); hashVec2(tok, r#scroll); sub(r#of)
-            case Field.Warp(r)         => tok(8i64); fl(r#amount); fl(r#scale); i(r#seed); sub(r#of)
-            case Field.Mix(r)          => tok(9i64); sub(r#a); sub(r#b); fl(r#t)
-            case Field.Blend(r)        => tok(10i64); sub(r#a); sub(r#b); sub(r#by)
-            case Field.Disk(r)         => tok(11i64); fl(r#cx); fl(r#cy); fl(r#radius); fl(r#feather)
-            case Field.Radial(r)       => tok(12i64); fl(r#cx); fl(r#cy)
-            case Field.RadialAspect(r) => tok(13i64); fl(r#cx); fl(r#cy); fl(r#aspect)
-            case Field.Quantize(r)     => tok(14i64); sub(r#of); i(r#steps)
-            case Field.Scales(r)       => tok(15i64); fl(r#scale); fl(r#stagger)
-            case Field.Glints(r)       => tok(16i64); fl(r#scale); fl(r#rate); fl(r#density); i(r#seed)
-            case Field.Ripples(r)      => tok(17i64); fl(r#freq); fl(r#amp); fl(r#speed); i(r#seed)
-            case Field.Sparkle(r)      => tok(18i64); fl(r#scale); fl(r#rate); fl(r#density); i(r#seed)
-            case Field.Bin(r)          => tok(19i64); hashShown(tok, r#op); sub(r#a); sub(r#b)
-            case Field.Hash1(r)        => tok(20i64); fl(r#scale); i(r#seed); hashOptField(tok, tex, r#bucket)
-            case Field.Hash2(r)        => tok(21i64); fl(r#scale); i(r#seed); hashShown(tok, r#comp); hashOptField(tok, tex, r#bucket)
-            case Field.Un(r)           => tok(22i64); hashShown(tok, r#op); sub(r#of)
-            case Field.Pow(r)          => tok(23i64); sub(r#of); fl(r#p)
-            case Field.Time(r)         => tok(24i64); fl(r#scale); sub(r#offset)
-            case Field.Tiling(r)       => tok(25i64); hashVec2(tok, r#tiles); sub(r#of)
-            case Field.Snap(r)         => tok(26i64); hashVec2(tok, r#cells); sub(r#of)
-            case Field.Swirl(r)        => tok(27i64); fl(r#cx); fl(r#cy); fl(r#strength); fl(r#rate); sub(r#of)
-            case Field.Angle(r)        => tok(28i64); fl(r#cx); fl(r#cy)
-            case Field.Rotate(r)       => tok(29i64); fl(r#cx); fl(r#cy); fl(r#turns); fl(r#rate); sub(r#of)
-            case Field.Ref(n)          => tok(30i64); hashString(tok, n)
-            case Field.Tex(r)          => tok(31i64); tex(r#name); hashShown(tok, r#chan)
-            case Field.Shift(r)        => tok(32i64); sub(r#dx); sub(r#dy); sub(r#of)
-            case Field.TexBlur(r)      => tok(33i64); tex(r#name); hashShown(tok, r#chan); hashVec2(tok, r#radius); i(r#taps); sub(r#amount)
-            case Field.TexSize(r)      => tok(34i64); tex(r#name); hashShown(tok, r#axis)
-            case Field.Sampler(r)      => tok(35i64); hashShown(tok, r#filter); sub(r#of)
-            case Field.Param(r)        => tok(36i64); hashString(tok, r#name)
-            case Field.World(r)        => tok(37i64); hashShown(tok, r#axis)
-            case Field.Normal(r)       => tok(38i64); hashShown(tok, r#axis)
-            case Field.VertexColor(r)  => tok(39i64); hashShown(tok, r#chan)
+            case Field.Const(v)        => fl(v)
+            case Field.Uv(r)           => hashShown(tok, r#axis)
+            case Field.Worley(r)       => fl(r#scale); i(r#seed); hashShown(tok, r#out)
+            case Field.Fbm(r)          => i(r#octaves); fl(r#scale); i(r#seed)
+            case Field.FbmTile(r)      => i(r#octaves); fl(r#scale); hashVec2(tok, r#period); i(r#seed)
+            case Field.Smoothstep(r)   => fl(r#lo); fl(r#hi); sub(r#of)
+            case Field.Scaled(r)       => fl(r#factor); hashVec2(tok, r#scroll); sub(r#of)
+            case Field.Warp(r)         => fl(r#amount); fl(r#scale); i(r#seed); sub(r#of)
+            case Field.Mix(r)          => sub(r#a); sub(r#b); fl(r#t)
+            case Field.Blend(r)        => sub(r#a); sub(r#b); sub(r#by)
+            case Field.Disk(r)         => fl(r#cx); fl(r#cy); fl(r#radius); fl(r#feather)
+            case Field.Radial(r)       => fl(r#cx); fl(r#cy)
+            case Field.RadialAspect(r) => fl(r#cx); fl(r#cy); fl(r#aspect)
+            case Field.Quantize(r)     => sub(r#of); i(r#steps)
+            case Field.Scales(r)       => fl(r#scale); fl(r#stagger)
+            case Field.Glints(r)       => fl(r#scale); fl(r#rate); fl(r#density); i(r#seed)
+            case Field.Ripples(r)      => fl(r#freq); fl(r#amp); fl(r#speed); i(r#seed)
+            case Field.Sparkle(r)      => fl(r#scale); fl(r#rate); fl(r#density); i(r#seed)
+            case _                     => hashFieldPayloadMore(tok, tex, f)
+        }
+
+    @DontInline
+    def hashFieldPayloadMore(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, f: ShaderDoc.Field): Unit \ ef =
+        use ShaderDoc.Field;
+        let fl = x -> hashFloat(tok, x);
+        let i = x -> hashInt(tok, x);
+        let sub = x -> hashField(tok, tex, x);
+        match f {
+            case Field.Bin(r)          => hashShown(tok, r#op); sub(r#a); sub(r#b)
+            case Field.Hash1(r)        => fl(r#scale); i(r#seed); hashOptField(tok, tex, r#bucket)
+            case Field.Hash2(r)        => fl(r#scale); i(r#seed); hashShown(tok, r#comp); hashOptField(tok, tex, r#bucket)
+            case Field.Un(r)           => hashShown(tok, r#op); sub(r#of)
+            case Field.Pow(r)          => sub(r#of); fl(r#p)
+            case Field.Time(r)         => fl(r#scale); sub(r#offset)
+            case Field.Tiling(r)       => hashVec2(tok, r#tiles); sub(r#of)
+            case Field.Snap(r)         => hashVec2(tok, r#cells); sub(r#of)
+            case Field.Swirl(r)        => fl(r#cx); fl(r#cy); fl(r#strength); fl(r#rate); sub(r#of)
+            case Field.Angle(r)        => fl(r#cx); fl(r#cy)
+            case Field.Rotate(r)       => fl(r#cx); fl(r#cy); fl(r#turns); fl(r#rate); sub(r#of)
+            case Field.Ref(n)          => hashString(tok, n)
+            case Field.Tex(r)          => tex(r#name); hashShown(tok, r#chan)
+            case Field.Shift(r)        => sub(r#dx); sub(r#dy); sub(r#of)
+            case Field.TexBlur(r)      => tex(r#name); hashShown(tok, r#chan); hashVec2(tok, r#radius); i(r#taps); sub(r#amount)
+            case Field.TexSize(r)      => tex(r#name); hashShown(tok, r#axis)
+            case Field.Sampler(r)      => hashShown(tok, r#filter); sub(r#of)
+            case Field.Param(r)        => hashString(tok, r#name)
+            case Field.World(r)        => hashShown(tok, r#axis)
+            case Field.Normal(r)       => hashShown(tok, r#axis)
+            case Field.VertexColor(r)  => hashShown(tok, r#chan)
+            case _                     => ()
         }
 
     /// Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
