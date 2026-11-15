@@ -107,17 +107,20 @@ mod ViewText {
         match r#page#current {
             case None => ground
             case Some(line) =>
+                let nameAt = { x = namePos#x, y = namePos#y + dy };
+                let nameShade = if (style#outline) outlineOffsets() |> List.map(match (ox, oy) -> { at = { x = nameAt#x + ox, y = nameAt#y + oy },
+                                    item = Render.textTinted(line#speaker, atlas, sizes#name, { r = 0.0, g = 0.0, b = 0.0 }, View.zText()) |> Render.fade(0.8) }) else Nil;
                 let name = if (String.isEmpty(line#speaker) or not window#showName) Nil
-                    else { at = { x = namePos#x, y = namePos#y + dy }, item = Render.textTinted(line#speaker, atlas, sizes#name, speakerOf(line, env)#color, View.zText() + 1) } :: Nil;
+                    else List.append(nameShade, { at = nameAt, item = Render.textTinted(line#speaker, atlas, sizes#name, speakerOf(line, env)#color, View.zText() + 1) } :: Nil);
                 let body = placeLine(atlas, { x = text#x, y = text#y + dy }, text#width, scaled(env, r#stage, { body = sizes#body, ruby = sizes#ruby }), inkOf(line, env, r),
                                      Page.visibleCount(r#page), line, style, env);
                 List.flatten(ground :: name :: body ::
                     waitMark(atlas, { x = p#position#x + p#size#x - 30.0, y = p#position#y + p#size#y - 30.0 }, env, r) :: Nil)
         }
 
-    /// 送りの印（行を出し終えて、送れる時だけ明滅する。コマンドが出した待ちの間は送れないので出さない）。オートの間は点けたまま（押さなくても進むと分かる）。
+    /// 送りの印（行を出し終えて、送れる時だけ明滅する。コマンドが出した待ちの間とゲートの頁は送れないので出さない）。オートの間は点けたまま（押さなくても進むと分かる）。
     def waitMark(atlas: FontAtlas, pos: Vec2.Vec2, env: Env, r: World.Read): List[Render.PlacedItem] =
-        if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current) or Option.nonEmpty(r#pause)) Nil
+        if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current) or Option.nonEmpty(r#pause) or Option.nonEmpty(WorldRead.gateOf(r))) Nil
         else {
             let alpha = if (r#playback == World.Playback.Auto) 0.9 else 0.35 + 0.55 * (0.5 + 0.5 * Num.sin(View.realSeconds(env) * 4.0));
             { at = pos, item = Render.textTinted("▼", atlas, 14.0, View.theme(env)#accent, View.zText() + 2) |> Render.fade(alpha) } :: Nil
@@ -135,7 +138,7 @@ mod ViewText {
         let base = Layout.advTextSizes(env#fit, View.kindOf(env));
         let body = scaled(env, r#stage, { body = base#body, ruby = base#ruby });
         let sizes = { body = body#body, ruby = body#ruby, name = base#name };
-        let area = Layout.page(env#fit, List.length(r#choices));
+        let area = Layout.page(env#fit, if (Option.nonEmpty(WorldRead.gateOf(r))) 0 else List.length(r#choices));
         let blockOf = (line, visible, isCurrent) ->
             { line = line, visible = visible, isCurrent = isCurrent, height = blockHeight(env, sizes, window#showName, area#size#x, line) };
         let older = r#page#lines |> List.map(line -> blockOf(line, String.length(line#text), false));

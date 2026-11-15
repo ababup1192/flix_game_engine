@@ -201,6 +201,12 @@ mod ViewStage {
     /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
     pub def hasPageVeil(env: View.Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or Stage.kindOf(env#res#theme, stage) == ThemeDoc.WindowKind.Nvl
 
+    /// tap の当たる物（novel.prompts.json の targets）の名前 → 画面の矩形。写真に載る物は背景を塗る矩形、絵に載る物は出ている絵の置き場から引く。
+    pub def targetRectOf(env: View.Env, stage: Stage.Stage): String -> Option[Rect2.Rect2] =
+        let photo = stage#shot |> Option.map(s -> (s#photo, backdropRect(env#fit)));
+        let placed = Cast.placedOf(castEnv(env, stage), stage#cast) |> List.map(p -> (p#figure#name, p#rect)) |> List.toMap;
+        name -> Hint.targetRect(env#res#prompts, photo, a -> Map.get(a, placed), name)
+
     /// 立ち絵と小物の描く元。掛ける色は背景の時間帯の cast の欄（無い時間帯・背景が無い時は絵のまま）を、背景の重ねと同じ進みで替える。
     pub def castEnv(env: View.Env, stage: Stage.Stage): Cast.Env =
         let toneOf = (shot: Option[Stage.Shot]) -> shot

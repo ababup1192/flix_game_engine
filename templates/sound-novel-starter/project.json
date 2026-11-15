@@ -199,6 +199,13 @@
         "schema": "assets/effects.schema.json"
       },
       {
+        "id": "prompts",
+        "pattern": "assets/novel.prompts.json",
+        "title": "入力の案内（払い・タップで選ぶ選択肢の矢印・絵・当たる物）",
+        "role": "material",
+        "schema": "assets/prompts.schema.json"
+      },
+      {
         "id": "project",
         "pattern": "project.json",
         "schema": "project.schema.json",
@@ -241,8 +248,8 @@
     "touchGestures": {
       "longPress": "touchHold",
       "swipeLeft": "rollback",
-      "swipeUp": "advance",
-      "swipeDown": "advance"
+      "swipeUp": "flickUp",
+      "swipeDown": "flickDown"
     },
     "orientation": "any",
     "portraitDesign": {

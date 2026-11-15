@@ -10,7 +10,8 @@ mod KeysDoc {
     /// left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ、hide = ウィンドウを隠す、
     /// rollback = 1 行戻る、advance = 読む画面で 1 行送る（ほかの画面では読まない）、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページを替える、
     /// remove = セーブデータを削除する、quit = タイトルで終了を尋ねる、
-    /// touchHold = 指の長押し（ブラウザ版の touchGestures の longPress が押すキー。読む間に縦の画面の右の列の上なら名前・オートはスキップ、ほかの所なら隠す）。
+    /// touchHold = 指の長押し（ブラウザ版の touchGestures の longPress が押すキー。読む間に縦の画面の右の列の上なら名前・オートはスキップ、ほかの所なら隠す）、
+    /// flickUp / flickDown = 指の縦の払い（ブラウザ版の touchGestures の swipeUp / swipeDown が押すキー。払いで選ぶ選択肢では上・下の払い、ほかの所では 1 行送る）。
     pub type alias Rec = {
         version = Int32,
         confirm = List[Key],
@@ -31,7 +32,9 @@ mod KeysDoc {
         tabNext = List[Key],
         remove = List[Key],
         quit = List[Key],
-        touchHold = List[Key]
+        touchHold = List[Key],
+        flickUp = List[Key],
+        flickDown = List[Key]
     }
 
     /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
@@ -61,7 +64,9 @@ mod KeysDoc {
           tabNext = Key.E :: Nil,
           remove  = Key.Delete :: Nil,
           quit    = Key.Escape :: Nil,
-          touchHold = Key.Menu :: Nil })
+          touchHold = Key.Menu :: Nil,
+          flickUp = Key.Numpad8 :: Nil,
+          flickDown = Key.Numpad2 :: Nil })
 
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
@@ -81,7 +86,8 @@ mod KeysDoc {
           hide = keys("hide", d#hide), rollback = keys("rollback", d#rollback), advance = keys("advance", d#advance),
           quickSave = keys("quickSave", d#quickSave), quickLoad = keys("quickLoad", d#quickLoad),
           tabPrev = keys("tabPrev", d#tabPrev), tabNext = keys("tabNext", d#tabNext), remove = keys("remove", d#remove),
-          quit = keys("quit", d#quit), touchHold = keys("touchHold", d#touchHold) })
+          quit = keys("quit", d#quit), touchHold = keys("touchHold", d#touchHold),
+          flickUp = keys("flickUp", d#flickUp), flickDown = keys("flickDown", d#flickDown) })
 
     /// 欄の文字列列 → キーの列。知らない名前はその 1 個だけ捨て（InputMap.keysOf）、列ごと空になる形だけ既定へ落とす。
     def keysOr(field: String, fallback: List[Key], root: Map[String, Json]): List[Key] =

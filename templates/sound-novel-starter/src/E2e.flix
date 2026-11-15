@@ -57,20 +57,26 @@ mod E2e {
               { name = "mode", doc = "メッセージ枠の型の名前（novel.theme.json の windows）", read = Flow.Probe.Text(Resources.read((res, w) -> "${World.stageOf(res, w)#mode}")) } ::
               { name = "photo", doc = "今の背景の写真の名前（無ければ空）", read = Flow.Probe.Text(Resources.read((res, w) -> World.stageOf(res, w)#shot |> Option.map(s -> s#photo) |> Option.getWithDefault(""))) } ::
               { name = "lineDone", doc = "今の行を出し終えた", read = Flow.Probe.Flag(onWorld(w -> Page.isDone(World.pageOf(w)))) } ::
+              { name = "gate", doc = "今のゲート（払い・タップで選ぶ選択肢）で選べる操作（up・down・left・right・tap・tap:当たる物 を | でつなぐ。ゲートでなければ空）", read = Flow.Probe.Text(onWorld(gateText)) } ::
               { name = "choice", doc = "選択肢を出している", read = Flow.Probe.Flag(onWorld(World.isChoosing)) } ::
               { name = "cursor", doc = "一番手前のカーソルの番号（0 から。確認のウィンドウ → 画面 → 選択肢 → タイトルの順に見る）", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(cursorOf(w)))) } ::
               { name = "ownPace", doc = "シナリオの変数 $own_pace（最初の手紙で歩調を伝えた）", read = Flow.Probe.Flag(onWorld(w -> World.variableOf("$own_pace", w) == "True")) } ::
               { name = "sharedTiredness", doc = "シナリオの変数 $shared_tiredness（2 通目で休む日を伝えた）", read = Flow.Probe.Flag(onWorld(w -> World.variableOf("$shared_tiredness", w) == "True")) } :: Nil,
           drives =
-              { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・ウィンドウ・タイトル画面では押さない）",
+              { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・ゲート・ウィンドウ・タイトル画面では押さない）",
                 act = (waited, h) -> Resources.read((_, w) ->
-                    if (not World.isReading(w) or not World.isFree(w) or World.isChoosing(w)) Flow.DriveAct.Restart
+                    if (not World.isReading(w) or not World.isFree(w) or World.isChoosing(w) or Option.nonEmpty(WorldRead.gateHere(w))) Flow.DriveAct.Restart
                     else if (not Page.isDone(World.pageOf(w))) Flow.DriveAct.Restart
                     else if (waited >= readSeconds()) Flow.DriveAct.Tap("confirm")
                     else Flow.DriveAct.Idle, h) } :: Nil,
           ready = Some(onWorld(w -> if (World.isReading(w) and not Page.isDone(World.pageOf(w))) Flow.Ready.Busy("typing") else Flow.Ready.Ready)),
           replies = Some(onWorld(w -> Emit.countOf(w#events)))
           | Flow.emptyTable() }
+
+    /// 今のゲートで選べる操作の字（ゲートでなければ空）。flow は払いを役のキー（prev・next・left・right）で、tap の選択肢が 1 つなら confirm で選ぶ。
+    def gateText(w: World.World): String =
+        WorldRead.gateHere(w) |> Option.map(gate -> gate#choices |> List.map(choice -> Gate.actText(choice#act)) |> String.intercalate("|"))
+            |> Option.getWithDefault("")
 
     /// World だけを読む問いを、組（描く元と World）を受ける形にする。
     def onWorld(f: World.World -> a): Resources.With[Res.Res, World.World] -> a = Resources.read((_, w) -> f(w))

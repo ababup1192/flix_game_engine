@@ -41,10 +41,20 @@ mod TestGesture {
 
     /// Gesture.step にフレームを古い順に渡し、最後のフレームで決まった種類の名前。
     def classified(res: Res.Res, frames: List[App.Frame]): String =
-        let limits = KindDoc.gestureLimits(res#kind);
+        let limits = KindDoc.gestureLimits(res#kind, PromptsDoc.rec(res#prompts)#edge, 960.0);
         frames |> List.foldLeft((acc, frame) -> Gesture.step(limits, frame, snd(acc)), (None, Gesture.idle())) |> fst |> nameOf
 
     // ══ 分け方 ══
+
+    @Test
+    def testSwipeStartingInTheEdgeBandIsADrag(): Unit \ {Assert, Fs.FileRead} =
+        // 押し始めが左の端から novel.prompts.json の edge の内なら、払いの長さと秒でもドラッグ（スマホの戻る操作と重ねない）。
+        let res = TestKit.res();
+        let k = kind(res);
+        let edge = PromptsDoc.rec(res#prompts)#edge;
+        let start = { x = edge / 2.0, y = 200.0 };
+        let finish = { x = edge / 2.0 + k#swipeMin * 2.0, y = 200.0 };
+        Assert.assertEq(expected = "Drag", classified(res, down(0.0, start) :: held(k#swipeSeconds / 2.0, finish) :: up(k#swipeSeconds / 2.0, finish) :: Nil))
 
     @Test
     def testGestureKindsOnRelease(): Unit \ {Assert, Fs.FileRead} =
@@ -119,9 +129,9 @@ mod TestGesture {
         Assert.assertEq(expected = World.talkLineOf(first), World.talkLineOf(w))
 
     /// ブラウザ版で指を縦に払った 1 回: 動かしている間はホイールの刻み（指を下へ = 上へ回した向き = 正）だけが来て、
-    /// 離したフレームで touchGestures の swipeUp / swipeDown = advance のキーが 1 回来る。左ボタンは一度も押さない。
+    /// 離したフレームで touchGestures の swipeUp / swipeDown = flickUp / flickDown のキーが 1 回来る。左ボタンは一度も押さない。
     def fingerSwipe(res: Res.Res, wheel: Float64, w: World.World): World.World =
-        let advance = KeysDoc.rec(res#keys)#advance |> List.head |> Option.getWithDefault(Key.PageDown);
+        let advance = KeysDoc.rec(res#keys)#flickUp |> List.head |> Option.getWithDefault(Key.Numpad8);
         let moving = { wheel = wheel | App.emptyFrame() };
         let release = { justPressed = Set#{advance}, down = Set#{advance} | App.emptyFrame() };
         play(res, moving :: moving :: release :: Nil, w)

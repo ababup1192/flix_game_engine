@@ -832,7 +832,32 @@
       }
     ]
   },
-  "tags": {},
+  "tags": {
+    "act": [
+      "up",
+      "down",
+      "left",
+      "right",
+      "tap"
+    ],
+    "at": {
+      "from": [
+        {
+          "doc": "../novel.prompts.json",
+          "keys": "targets"
+        }
+      ]
+    },
+    "icon": {
+      "from": [
+        {
+          "doc": "../novel.prompts.json",
+          "keys": "icons"
+        }
+      ]
+    },
+    "mute": []
+  },
   "vars": {
     "from": [
       {

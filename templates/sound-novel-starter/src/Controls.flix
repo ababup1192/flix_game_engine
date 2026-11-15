@@ -1,7 +1,8 @@
 // Controls — 入力の解釈・音の宣言・Doc の読み込みと読み直し（純粋。読み込みだけ Fs.FileRead）。
 // キーは KeysDoc（novel.keys.json）の割り当て、クリックは Layout の矩形（View が描く所と同じ）で当てる。
-// 入力の効き先は「いちばん手前の物」1 つ: 確認のウィンドウ → 開いている画面 → 選択肢 → クイックメニュー → 本文（送る）。
-// 本文を送るのはキーの決定と、Gesture が離した時に決めた押し（タップ・ドラッグ・左の外の払い）。押している間と長押しは送らない。
+// 入力の効き先は「いちばん手前の物」1 つ: 確認のウィンドウ → 開いている画面 → クイックメニュー → ゲート → 選択肢 → 本文（送る）。
+// 本文を送るのはキーの決定と、Gesture が離した時に決めた押し（タップ・ドラッグ・左の外の払い）と縦の払いのキー。押している間と長押しは送らない。
+// ゲート（払い・タップで選ぶ選択肢。Gate）は Gesture が離した時の払い・タップと、払いのキー（↑↓←→ / WASD・ブラウザ版の縦の払い）で選ぶ。
 mod Controls {
     use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, LoadProgress, Log, Rect2, Resources, Yarn}
     use fge::GameEngine.Key
@@ -109,20 +110,19 @@ mod Controls {
     /// 押した 1 回は Gesture で記録し、離した時に advancesOnRelease の種類なら本文を 1 行送る（releasedText）。
     def readingInput(res: Res.Res, frame: App.Frame, w0: World.World): World.World \ Emit[World.Event] =
         let fit = fitOf(res, frame);
-        let (gesture, track) = Gesture.step(KindDoc.gestureLimits(res#kind), frame, w0#gesture);
+        let (gesture, track) = Gesture.step(KindDoc.gestureLimits(res#kind, PromptsDoc.rec(res#prompts)#edge, Layout.width(fit)), frame, w0#gesture);
         let w = { gesture = track | w0 };
-        let releasedText = Option.exists(advancesOnRelease, gesture);
-        if (Layout.isPortrait(fit)) railInput(res, frame, fit, releasedText, w)
+        if (Layout.isPortrait(fit)) railInput(res, frame, fit, gesture, w)
         else {
             let buttons = WorldMenu.buttonsOf(fit);
             let pressed = Layout.hitOf(List.length(buttons), i -> Layout.button(fit, i, List.length(buttons)), frame#cursor)
                 |> Option.filter(_ -> frame#mouseClicked) |> Option.flatMap(i -> List.nth(i, buttons));
-            readingRest(res, frame, pressed, releasedText, w)
+            readingRest(res, frame, pressed, gesture, w)
         }
 
     /// 縦の画面: 右の列のボタンは押し始めで掴み、離した時に押したことにする。長押しは WorldMenu.longPressOf のとおり。… は押した時に開く。
     /// 列か … が受けた押しは Gesture の記録を捨てる（列を押して離した時に、本文のタップとして台詞まで進めない）。
-    def railInput(res: Res.Res, frame: App.Frame, fit: Layout.Fit, releasedText: Bool, w: World.World): World.World \ Emit[World.Event] =
+    def railInput(res: Res.Res, frame: App.Frame, fit: Layout.Fit, gesture: Option[Gesture.Kind], w: World.World): World.World \ Emit[World.Event] =
         let buttons = WorldMenu.buttonsOf(fit);
         let input = Rail.inputOf(frame, tapped(keysOf(res)#touchHold, frame));
         let dropped = dropGesture(w);
@@ -137,7 +137,7 @@ mod Controls {
             case Rail.Outcome.TouchLong(i) => buttonAt(i, b -> touchLongPress(res, frame, b, i, dropped))
             case Rail.Outcome.MoreOpen     => WorldMenu.press(res, World.Button.Menu, dropped)
             case Rail.Outcome.Swallow      => dropped
-            case Rail.Outcome.Pass         => readingRest(res, frame, None, releasedText, w)
+            case Rail.Outcome.Pass         => readingRest(res, frame, None, gesture, w)
         }
 
     /// 押したまま長押しの秒を越えている列のボタン: ツールチップの物は離すまで掴んだまま（離しても押さない）、
@@ -156,15 +156,20 @@ mod Controls {
             case WorldMenu.LongPressAction.Tooltip      => World.mapRead(r -> { tip = Some((i, frame#realNow)) | r }, w)
         }
 
-    /// 押したボタン（無ければキー・選択肢・送り）。送るのは離した押し（releasedText）とキーの決定だけで、
-    /// ボタン・キー・選択肢が受けた押しは Gesture の記録を捨てる。指の長押し（touchHold）は列の外なら隠す。
-    def readingRest(res: Res.Res, frame: App.Frame, pressed: Option[World.Button], releasedText: Bool, w0: World.World): World.World \ Emit[World.Event] =
+    /// 押したボタン（無ければゲート・キー・選択肢・送り）。送るのは離した押し（gesture）とキーの決定と縦の払いのキーだけで、
+    /// ボタン・キー・選択肢が受けた押しは Gesture の記録を捨てる（ゲートは押している途中の記録を持ち続ける）。指の長押し（touchHold）は列の外なら隠す。
+    // WhyNot: ゲートをキーの列（戻る・ログ…）より後に見ない — ブラウザ版の横の払いは、離した時に押したままの左ボタンを離すのと同じフレームで
+    //   swipeLeft のキー（戻る）も出すので、左へ払うゲートで 1 行戻ってしまう。
+    def readingRest(res: Res.Res, frame: App.Frame, pressed: Option[World.Button], gesture: Option[Gesture.Kind], w0: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
         let w = if (w0#grab != World.Grab.Free and not frame#mouseDown) { grab = World.Grab.Free | w0 } else w0;
         let dropped = dropGesture(w);
-        match pressed {
-            case Some(button) => WorldMenu.press(res, button, dropped)
-            case None =>
+        let gated = WorldRead.gateHere(w) |> Option.flatMap(gate -> gateInputOf(k, frame, tapTargetAt(res, frame, gate, w), gesture));
+        let releasedText = Option.exists(advancesOnRelease, gesture);
+        match (pressed, gated) {
+            case (Some(button), _) => WorldMenu.press(res, button, dropped)
+            case (None, Some(input)) => WorldRead.passGate(res, input, w)
+            case (None, None) =>
                 // WhyNot: 上へのホイールでバックログを開かない — ブラウザ版で指を下へ払って送ると、動かしている間に上へのホイールも出る。
                 if (tapped(k#log, frame)) WorldMenu.press(res, World.Button.Log, dropped)
                 else if (tapped(k#rollback, frame)) WorldMenu.press(res, World.Button.Rollback, dropped)
@@ -173,10 +178,30 @@ mod Controls {
                 else if (tapped(k#quickSave, frame)) WorldMenu.press(res, World.Button.QuickSave, dropped)
                 else if (tapped(k#quickLoad, frame)) WorldMenu.press(res, World.Button.QuickLoad, dropped)
                 else if (tapped(k#hide, frame) or tapped(k#back, frame) or tapped(k#touchHold, frame)) WorldMenu.press(res, World.Button.Hide, dropped)
-                else if (World.isChoosing(w)) choiceInput(res, frame, dropped)
-                else if (releasedText or tapped(k#confirm, frame) or tapped(k#advance, frame)) WorldRead.advance(res, w)
+                else if (World.isChoosing(w) and Option.isEmpty(WorldRead.gateHere(w))) choiceInput(res, frame, dropped)
+                else if (releasedText or tapped(k#confirm, frame) or tapped(k#advance, frame) or tapped(k#flickUp, frame) or tapped(k#flickDown, frame))
+                    WorldRead.advance(res, w)
                 else w
         }
+
+    /// 離したタップの所にある、今のゲートの tap で選ぶ物の名前（どれにも当たらなければ ""）。当たりは描く所と同じ Hint.targetRect。
+    def tapTargetAt(res: Res.Res, frame: App.Frame, gate: Gate.Gate, w: World.World): { x = Float64, y = Float64 } -> String = at ->
+        let env = View.envOf(fitOf(res, frame), res, w);
+        Hint.tapTargetAt(ViewStage.targetRectOf(env, World.stageOf(res, w)), gate, at)
+
+    /// このフレームのゲートの入力（離した払い・タップが先、無ければ払いのキーと決定）。hit = タップの所の tap で選ぶ物の名前。
+    def gateInputOf(k: KeysDoc.Rec, frame: App.Frame, hit: { x = Float64, y = Float64 } -> String, gesture: Option[Gesture.Kind]): Option[Gate.Input] =
+        let swipe = (dir: Gesture.Direction) -> Gate.Input.Did(Gate.Act.Swipe(dir));
+        let byGesture = match gesture {
+            case Some(Gesture.Kind.Swipe(dir)) => Some(swipe(dir))
+            case Some(Gesture.Kind.Tap(at))    => Some(Gate.Input.Did(Gate.Act.Tap(hit(at))))
+            case _                             => None
+        };
+        let keyed = (k#flickUp, swipe(Gesture.Direction.Up)) :: (k#flickDown, swipe(Gesture.Direction.Down)) ::
+                    (k#prev, swipe(Gesture.Direction.Up)) :: (k#next, swipe(Gesture.Direction.Down)) ::
+                    (k#left, swipe(Gesture.Direction.Left)) :: (k#right, swipe(Gesture.Direction.Right)) ::
+                    (k#confirm, Gate.Input.Confirm) :: Nil;
+        byGesture |> Option.withDefault(default = keyed |> List.find(match (keys, _) -> tapped(keys, frame)) |> Option.map(snd))
 
     /// 離した押しのうち本文を 1 行送る種類: タップ・ドラッグ・左の外の払い。
     // WhyNot: 左の払いで送らない — 左へ払うのは 1 行戻る（touchGestures の swipeLeft）で、送ると戻した行へすぐ進む。
@@ -465,6 +490,7 @@ mod Controls {
           mixerExtras = MixerDoc.load(mixerPath()),
           soundSeconds = loadSoundSeconds(dialogue),
           effects = EffectsDoc.load(EffectsDoc.path()),
+          prompts = PromptsDoc.load(PromptsDoc.path()),
           dialogue = dialogue,
           commandArgs = Commands.argsTableOf(dialogue),
           nodesBySource = Talk.nodesBySource(dialogue),
@@ -506,5 +532,6 @@ mod Controls {
             :: Resources.reloadRow("mixer", mixerPath(), res -> Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res)
                                                                  |> Res.withMixerExtras(MixerDoc.load(mixerPath())), unchanged)
             :: Resources.reloadRow("effects", EffectsDoc.path(), res -> Res.withEffects(EffectsDoc.load(EffectsDoc.path()), res), unchanged)
+            :: Resources.reloadRow("prompts", PromptsDoc.path(), res -> Res.withPrompts(PromptsDoc.load(PromptsDoc.path()), res), unchanged)
             :: Nil
 }

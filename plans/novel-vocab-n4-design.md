@@ -246,13 +246,13 @@ pub enum Out {
 - 書き方は血鱗のまま: `-> 案内 #act:up|down|left|right|tap [#at:名] [#icon:名] [#mute]`。組の全部の選択肢に `#act:` があれば、ボタンを出さずに案内を出して操作を待つ。選んだら今の `Choose(番号)` の道を通るので、セーブ・ロード・戻るはふつうの選択肢と同じ（血鱗の Gate の決まり）。
 - 名前: 部品は「入力の案内」（input prompt。Unity の Input System・Xbox の button prompt の言い方）。QTE（quick time event）は時間の制限がある物の名前で、血鱗の払いには時間の制限が無いので使わない。
 - タグの検査（C3）: 今の go はタグの値を決まった一覧で照らす。`#at:` と `#icon:` の値を `novel.prompts.json` の鍵から集める（`from`）ように go を広げる。`#act:` は決まった一覧のまま。
-- 新しい Doc `novel.prompts.json`: `icons`（名前 → 絵と色）・`arrow`（矢印の絵・流れる速さ）・`edge`（横の払いの指を置き始める帯の幅）・`targets`（名前 → どの背景の写真か絵の上の、どの矩形。0〜1）・`pulse`（tap の輪）。血鱗の `ScenesDoc.targets` をここへ移す。
+- 新しい Doc `novel.prompts.json`: `icons`（名前 → 絵（project.json の textures・正方形に貼る）と色）・`arrow`（矢印の色・流れる速さ・矢印の真ん中の高さ）・`edge`（押し始めが左右の端からこの幅の内なら払いにしない帯）・`targets`（名前 → `photo`（背景の写真）か `actor`（名前付きの絵）と、その矩形の中の `rect`（0〜1））・`pulse`（tap の輪の脈打つ速さと広がり）。血鱗の `ScenesDoc.targets` をここへ移す（血鱗の鯨の姿の上の当たる物は、移行で `actor` に書く）。
 - 移す物（血鱗から）:
   - `Gate`（79 行）と `Hint`（200 行）を World・View へ。
   - Controls と Layout の払いの判定（約 240 行【推】）を Controls と `Gesture` へ。
   - キーボード（矢印のキー）とマウスのドラッグでの払い。
   - オートとスキップの時の振る舞い（どちらもゲートで止まる。今の血鱗の決まり）。
-  - flow で払う手順。今は `wait … at=x,y mouse` を 4 行並べている（route_gem.flow）。flow の語彙に `swipe left` を足すか、`tap confirm` で 1 つのゲートを選ぶ今の形を正にする【推】。
+  - flow で払う手順。今は `wait … at=x,y mouse` を 4 行並べている（route_gem.flow）。**決めた事（段 6）**: ゲートでは役のキー（`tap prev`・`tap next`・`tap left`・`tap right`・tap の選択肢が 1 つなら `tap confirm`）が払いになるので、それを正にする。flow の語彙に `swipe` を足すのは engine_world の `Flow` を替えることになり C の承認の外。マウスのドラッグ（`wait … at= mouse`）も今のまま使える。
   - E2e の問い `gate`（`until gate=tap:gem`）をテンプレートの問いに。
 - テンプレートの既定の案内は「矢印 + 字」だけにする。血鱗の赤いナイフは `icons` の 1 つとして Doc で足す。
 
@@ -584,6 +584,9 @@ C2・C3・C7 は承認の後に中身が替わったので、**替わった所�
 | `CastDoc.Entry` / `CastDoc.Rec` | — | Entry に `markers`・`hideWindow`・`speakFx`、Rec に `highlight` を足した |
 | `EffectsDoc.Look` | Fireflies・Snow（Eq・ToString） | `Puff(Puff)` を足した（Eq・ToString は外した） |
 | e2e の問い `mode` | `Nvl`・`Adv` | 型の名前（作例は `nvl`・`bottom`） |
+| `KindDoc.gestureLimits` / `Gesture.Limits` | `(kind)` / 4 つの欄 | `(kind, edge, width)` / `edge`・`width` を足した |
+| `web.touchGestures` の縦の払い | `advance` のキー | `flickUp` / `flickDown` のキー（`novel.keys.json` に足した） |
+| `Res` | — | `prompts`（`novel.prompts.json`）を足した |
 
 ### 10.3 一致を求める所と許容差を持つ所（M9）
 
@@ -852,6 +855,54 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 新しい見た目（ADV の center・outline・話し手を暗くする・puff の粒）を写す場面が reference に無い。目では確かめていない（テストで矩形と明るさの値を見た）。
 - 話し手の id と cast の鍵をそろえる決まりは Doc の note にだけ書いた（食い違いを見るテストは無い）。
 - `text.at` の center・bottom で頁の下に入り切らない時の扱い（今は上から積むのと同じ所まで上げる）。
+
+### 11.7 段 6 の記録（2026-11-16）
+
+触ったのはテンプレート（sound-novel-starter）と go（`go/internal/yarn`。C3）。engine_world・engine・render_gl は触っていない。
+
+**決めた物**
+
+- `Gate`（血鱗の Gate を写した。`#act:` の読み・選び方・`actText`）と、vocab.json の tags（`Gate.tagsJson`: act は決まった一覧・at と icon は `novel.prompts.json` の `targets`・`icons` の鍵・mute は値を取らない）。`Talk.vocabJson` が書く。
+- `WorldRead.gateOf`・`gateHere`・`passGate`: 出ている選択肢の全部に `#act` があるか、今の台詞を送ると選択肢だけが出る時（viaLine）にゲート。素材を待つ間とコマンドが出した待ち（pause）の間は無い。`advance` はゲートの頁では字を出し切るだけ。選ぶ物が 1 つのゲートはバックログに選んだ行を残さない。オートとスキップはゲートで手動に戻る。
+- 入力（`Controls`）: 離した払い・タップ（`Gesture`）と、払いのキー（↑↓←→ / WASD・`flickUp`・`flickDown`）と決定（tap の選択肢が 1 つの時）。ゲートはキーの列（戻る・ログ…）より先に見る（ブラウザ版の横の払いは、離したフレームで swipeLeft のキー = 戻るも出すため）。ゲートの間は選択肢のボタンの入力を受けない。tap の当たりは描く所と同じ `ViewStage.targetRectOf`（`Hint.targetRect`）。
+- ブラウザ版の縦の払いは `web.touchGestures` の `swipeUp` / `swipeDown` を新しいキー `flickUp` / `flickDown`（`novel.keys.json`・既定 Numpad8 / Numpad2）へ替えた。ゲートの外では今までどおり 1 行送る。
+- `Gesture.Limits` に `edge`（`novel.prompts.json`）と画面の幅を足し、端の帯から始めた払いはドラッグにする（血鱗と同じ）。
+- `Hint`（血鱗の Hint を写した）: 矢印の色・速さ・高さ、#icon の色と絵、輪は Doc から。字の地と字の色は `novel.theme.json` の panel と ink。縦の画面では右の列の左までに収める。View は選択肢のボタンと送りの印をゲートの間は出さず、縦の頁はゲートの間は選択肢の分を縮めない。
+- e2e の問い `gate`（選べる操作を `|` でつなぐ）。drive の reader はゲートで押さない（flow が役のキーで選ぶ）。
+- go（C3）: vocab.json の tags の値に `{"from": [...]}` を書けるようにした（`Vocab.TagsFrom`）。from のタグは値が要り、Doc に無い値は近い名前の案つきで止める。Doc を読めない時はそのタグの値を照らさず 1 行知らせる。
+- 新しい Doc の schema（`assets/prompts.schema.json`）と `editor.resources` の行（prompts）を足した。
+
+**比べた別案**
+
+| 決めた所 | 取った案 | 比べた案と取らなかった理由 |
+|---|---|---|
+| flow の払い | 役のキー（`tap left` など）を正にする | flow の語彙に `swipe 向き` を足す案: engine_world の `Flow` を替える（C の承認の外）。キーの道は Controls の同じ `gateInputOf` を通るので、払いの判定（Gesture）はテストで別に見る |
+| ブラウザ版の縦の払い | 新しいキー `flickUp` / `flickDown`（血鱗と同じ） | `advance` のキーのまま、ゲートでは前のフレームのホイールの向きで上下を決める案: ホイールの刻みは動かしている間に出し、最初の向きと逆を捨てるので、向きを読み違える |
+| ゲートとキーの列の順 | ゲートを先に見る | 血鱗の順（キーの列の後）: テンプレートは swipeLeft を戻るに割り当てているので、左へ払うゲートで 1 行戻る（テスト `testMouseSwipeLeftPicksAndDoesNotRollBack`） |
+| 当たる物の載る先 | `photo` か `actor` の 2 つ | 血鱗の「写真か鯨の姿」: 姿はゲームの物なので、名前付きの絵（actor）に一般化した |
+| 案内の絵の貼り方 | 正方形の Shader の面（2 つの画素の間をなめらかにつなぐ） | `Render.sprite`: 絵の画素の大きさが Doc に無く、正方形へ収める倍率が決められない |
+
+**設計とのずれ**
+
+- 4 章の `arrow` の「矢印の絵」は持たない（矢印は線で描き、色・速さ・高さだけを Doc に出した）。高さ `y` は 4 章に無かった欄。
+- `edge` の帯はゲートの外の払い（ドラッグになる）にも効く（血鱗と同じ）。
+- ブラウザ版の `touchGestures` の縦の払いの割り当てを替えた（上の表）。
+- テンプレートの物語（yukidoke.yarn）にはゲートを入れていない。e2e の flow はゲートを通らず、ゲートは test/fixtures/gate の台本で見る。
+- 段 5 の続き: 縁取りの型（outline）で ADV の枠の名前にも縁取りを付けた（描き出しで見て、明るい写真の上で名前が読めなかった）。
+
+**門の結果**
+
+- テンプレート: `make check` OK・`make test` 427 緑（前は 401。TestGate 25 本・TestGesture に端の帯 1 本）・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok（9 ノード）・わざと入れた誤り（`#at:` の Doc に無い値・`#act:upp`・`#icon:` の Doc に無い値）は 3 件とも落ちた。
+- e2e の flow 6 本すべて ok。
+- 目で見た物（scratchpad の写し・reference は変えていない）: 選択肢の頁のゲート（左の払いと #icon の色の下の払い。`gate-hint.png`）・縁取りで真ん中に置いた ADV の枠（`adv-outline-center.png`）。
+- go: `go test ./...` ok（tags の from のテスト 5 本）・`go vet` 指摘なし。
+- `make lint`: lint-doc-refs 15 件のまま・ほか OK。根の `make check-docs-sync` OK。
+
+**持ち越し**
+
+- 当たる物の輪・#icon の絵・縦の画面のゲートは描き出しで見ていない（テストで矩形と入力を見た）。
+- 血鱗のゲートの案内の高さは鯨の上の空きで決めていた（ゲームの絵の位置）。テンプレートは Doc の固定の高さ `arrow.y` だけ。移行で要るならゲームの口を相談する。
+- テンプレートの物語にゲートの見本が無い（agent-eval のお題と一緒に段 13 で足すか決める）。
 
 ## 12. 試した事（スパイク）
 

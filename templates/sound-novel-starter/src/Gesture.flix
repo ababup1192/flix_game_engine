@@ -4,10 +4,11 @@
 mod Gesture {
     use fge::{App, Clock, Vec2}
 
-    /// 分ける時の数（KindDoc の tapSlop・longPressSeconds・swipeMin・swipeSeconds）。
+    /// 分ける時の数（KindDoc の tapSlop・longPressSeconds・swipeMin・swipeSeconds と、novel.prompts.json の edge・画面の幅）。
     /// slop = 押した所からこれより離れたら動いた押し（design px）、longPressSeconds = 動かさずにこれ以上置いたら長押し、
-    /// swipeMin / swipeSeconds = 押した所から離した所までこれ以上の長さを、この秒の内に動かしたら払い（それ以外の動いた押しはドラッグ）。
-    pub type alias Limits = { slop = Float64, longPressSeconds = Float64, swipeMin = Float64, swipeSeconds = Float64 }
+    /// swipeMin / swipeSeconds = 押した所から離した所までこれ以上の長さを、この秒の内に動かしたら払い（それ以外の動いた押しはドラッグ）、
+    /// edge / width = 押し始めが左右の端からこの幅の帯の内なら払いにせずドラッグ（width = 画面の幅・design px）。
+    pub type alias Limits = { slop = Float64, longPressSeconds = Float64, swipeMin = Float64, swipeSeconds = Float64, edge = Float64, width = Float64 }
 
     /// 押している 1 回。at = 押した所、since = 押した実時間、reach = 押した所から一番離れた長さ。
     pub type alias Press = { at = { x = Float64, y = Float64 }, since = Clock.Time[Clock.Real], reach = Float64 }
@@ -56,8 +57,13 @@ mod Gesture {
     def classify(limits: Limits, press: Press, end: { x = Float64, y = Float64 }, held: Float64): Kind =
         if (press#reach <= limits#slop and held >= limits#longPressSeconds) Kind.LongPress
         else if (press#reach <= limits#slop) Kind.Tap(press#at)
-        else if (Vec2.distanceTo(press#at, end) >= limits#swipeMin and held <= limits#swipeSeconds) Kind.Swipe(directionOf(press#at, end))
+        else if (Vec2.distanceTo(press#at, end) >= limits#swipeMin and held <= limits#swipeSeconds and not isAtEdge(limits, press#at)) Kind.Swipe(directionOf(press#at, end))
         else Kind.Drag
+
+    /// 押し始めが左右の端の帯の内か。
+    // WhyNot: 端から始めた払いを払いにしない — スマホの端からの横の払いは OS の戻る操作と重なり、戻るつもりで選んでしまう。
+    def isAtEdge(limits: Limits, at: { x = Float64, y = Float64 }): Bool =
+        at#x < limits#edge or at#x > limits#width - limits#edge
 
     def directionOf(start: { x = Float64, y = Float64 }, finish: { x = Float64, y = Float64 }): Direction =
         let dx = finish#x - start#x;

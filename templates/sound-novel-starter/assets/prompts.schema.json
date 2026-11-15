@@ -1,0 +1,110 @@
+{
+  "//": "novel.prompts.json の形の宣言（Studio の sections 方言）。払い・タップで選ぶ選択肢の入力の案内。描き方はコード（src/Hint.flix）、選び方は src/Gate.flix と src/Controls.flix。既定は src/PromptsDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "icons": {
+      "kind": "catalog",
+      "label": "案内に添える絵と色（鍵 = 台本の #icon: の名前）",
+      "order": 1,
+      "fields": {
+        "texture": {
+          "type": "text",
+          "label": "絵（project.json の textures の名前。空なら絵を出さず色だけ。正方形に貼る）",
+          "order": 1,
+          "default": ""
+        },
+        "color": {
+          "type": "color",
+          "label": "その選択肢の矢印と輪の色",
+          "order": 2,
+          "default": "#e9c873"
+        }
+      }
+    },
+    "arrow": {
+      "kind": "record",
+      "label": "矢印",
+      "order": 2,
+      "fields": {
+        "color": {
+          "type": "color",
+          "label": "色（#icon の無い選択肢）",
+          "order": 1,
+          "default": "#e9c873"
+        },
+        "speed": {
+          "type": "float",
+          "label": "1 秒に流れる回数",
+          "order": 2,
+          "min": 0,
+          "max": 4,
+          "default": 0.8
+        },
+        "y": {
+          "type": "float",
+          "label": "矢印の真ん中の高さ（画面の高さに対する割合）",
+          "order": 3,
+          "min": 0,
+          "max": 1,
+          "default": 0.62
+        }
+      }
+    },
+    "edge": {
+      "kind": "field",
+      "type": "float",
+      "label": "押し始めが左右の端からこの幅（design px）の内なら払いにしない（スマホの戻る操作と重ねない）",
+      "order": 3,
+      "min": 0,
+      "max": 200,
+      "default": 24.0
+    },
+    "targets": {
+      "kind": "catalog",
+      "label": "tap の当たる物（鍵 = 台本の #at: の名前）",
+      "order": 4,
+      "fields": {
+        "photo": {
+          "type": "text",
+          "label": "載る背景の写真（novel.backdrops.json の photos の名前。今の背景がその写真の時だけ当たる）。actor と片方だけ書く",
+          "order": 1,
+          "default": ""
+        },
+        "actor": {
+          "type": "text",
+          "label": "載る絵（novel.cast.json の名前。その絵が出ている時だけ当たる）。photo と片方だけ書く",
+          "order": 2,
+          "default": ""
+        },
+        "rect": {
+          "type": "json",
+          "label": "載る先の矩形の中の矩形 { \"x\", \"y\", \"w\", \"h\" }（左上 0・右下 1 の割合）",
+          "order": 3
+        }
+      }
+    },
+    "pulse": {
+      "kind": "record",
+      "label": "tap の輪",
+      "order": 5,
+      "fields": {
+        "rate": {
+          "type": "float",
+          "label": "1 秒に脈打つ回数",
+          "order": 1,
+          "min": 0,
+          "max": 4,
+          "default": 0.9
+        },
+        "spread": {
+          "type": "float",
+          "label": "外の輪が広がる割合（内の輪の半径に比べる）",
+          "order": 2,
+          "min": 0,
+          "max": 2,
+          "default": 0.4
+        }
+      }
+    }
+  }
+}

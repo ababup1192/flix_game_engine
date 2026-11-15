@@ -74,7 +74,7 @@ mod Talk {
             "vars"     => docField(story, "keys", "vars"),
             "nodes"    => docField(story, "path", "opening"),
             "nodeRefs" => docField(fromVocab(ShotsDoc.path()), "path", "shots[].node"),
-            "tags"     => Json.JObject(Map.empty()),
+            "tags"     => Gate.tagsJson(fromVocab(PromptsDoc.path())),
             "commands" => YarnCommands.toJson(Commands.specs())
         });
         Util.Json.toPrettyString(2, vocab) + "\n"

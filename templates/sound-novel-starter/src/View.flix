@@ -229,8 +229,8 @@ mod View {
     def reading(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let hidden = Cast.hidesWindow(env#res#cast, r#stage#cast);
         if (Layout.isPortrait(env#fit))
-            List.flatten((if (hidden) Nil else ViewText.portraitPage(atlas, env, r)) :: choices(atlas, env, r) :: portraitButtons(atlas, env, r) :: Nil)
-        else List.flatten((if (hidden) Nil else ViewText.textLayer(atlas, env, r)) :: choices(atlas, env, r) :: quickMenu(atlas, env, r) :: Nil)
+            List.flatten((if (hidden) Nil else ViewText.portraitPage(atlas, env, r)) :: choices(atlas, env, r) :: gateHint(atlas, env, r) :: portraitButtons(atlas, env, r) :: Nil)
+        else List.flatten((if (hidden) Nil else ViewText.textLayer(atlas, env, r)) :: choices(atlas, env, r) :: gateHint(atlas, env, r) :: quickMenu(atlas, env, r) :: Nil)
 
     // ── 縦の画面の右の列と … ──
 
@@ -395,7 +395,23 @@ mod View {
 
     // ── 選択肢 ──
 
+    /// 選択肢のボタン（ゲートはボタンを出さず、入力の案内 gateHint が受け持つ）。
     def choices(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
+        if (Option.nonEmpty(WorldRead.gateOf(r))) Nil else buttonChoices(atlas, env, r)
+
+    /// ゲートの入力の案内（矢印の高さは novel.prompts.json の arrow の y・右の端は縦の画面なら右の列の左）。
+    def gateHint(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
+        WorldRead.gateOf(r) |> Option.map(gate -> {
+            let size = Layout.size(env#fit);
+            let railLeft = List.range(0, List.length(WorldMenu.buttonsOf(env#fit))) |> List.map(i -> Rail.button(env#fit, i)#position#x) |> List.minimum;
+            let right = if (Layout.isPortrait(env#fit)) railLeft |> Option.map(x -> x - 8.0) |> Option.getWithDefault(size#x - Hint.margin()) else size#x - Hint.margin();
+            let t = theme(env);
+            let look = { width = size#x, height = size#y, y = size#y * PromptsDoc.rec(env#res#prompts)#arrow#y, right = right, t = realSeconds(env),
+                         z = zChoice(), doc = env#res#prompts, ink = t#ink, ground = t#panel };
+            Hint.items(atlas, look, ViewStage.targetRectOf(env, r#stage), gate)
+        }) |> Option.getWithDefault(Nil)
+
+    def buttonChoices(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
         let count = List.length(r#choices);
         // NVL は字が画面いっぱいにあるので、選ぶ間は幕を 1 枚足して頁を沈める。

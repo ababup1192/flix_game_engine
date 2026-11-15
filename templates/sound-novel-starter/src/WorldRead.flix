@@ -198,16 +198,57 @@ mod WorldRead {
     // ── 読み進める ──
 
     /// 決定 1 回分（読んでいる間・画面が閉じている時）。文字送りの途中なら全文へ、出し終えていれば次の行へ。
-    /// 選択肢を出している間は動かない（pick だけが進める）。オートとスキップは止める（人が押したら人の速さに戻す）。
+    /// 選択肢を出している間は動かない（pick だけが進める）。ゲートの頁は字を出し切るだけで送らない（passGate だけが進める）。
+    /// オートとスキップは止める（人が押したら人の速さに戻す）。
     pub def advance(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
-            case Some(r) if World.isFree(w) and List.isEmpty(r#choices) and Option.isEmpty(r#hold) =>
+            case Some(r) if World.isFree(w) and Option.isEmpty(r#hold) and (List.isEmpty(r#choices) or Option.nonEmpty(gateOf(r))) =>
                 let manual = { playback = World.Playback.Manual | r };
-                if (not Page.isDone(r#page)) {
-                    Emit.emit(World.Event.Revealed);
-                    World.withRead({ page = Page.revealAll(r#page) | manual }, w)
-                } else next(res, manual, w)
+                if (not Page.isDone(r#page)) reveal(manual, w)
+                else if (Option.nonEmpty(gateOf(r))) World.withRead(manual, w)
+                else next(res, manual, w)
             case _ => w
+        }
+
+    /// 今の行を出し切る。
+    def reveal(r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        Emit.emit(World.Event.Revealed);
+        World.withRead({ page = Page.revealAll(r#page) | r }, w)
+
+    // ── ゲート（払い・タップで選ぶ選択肢） ──
+
+    /// 今のゲート（無ければ None）。写しは持たず、出ている選択肢か、台詞の頁なら送った先から毎回導く。
+    /// (a) 出ている選択肢の全部に #act がある → viaLine = false。
+    /// (b) 今が台詞で、送ると出来事が選択肢だけ（間にコマンドも台詞も無い）で、その全部に #act がある → viaLine = true。
+    /// 素材を待つ間とコマンドが出した待ちの間は無い（待ちが明けるまで選ばせない）。
+    pub def gateOf(r: World.Read): Option[Gate.Gate] =
+        if (Option.nonEmpty(r#hold) or Option.nonEmpty(r#pause)) None
+        else if (not List.isEmpty(r#choices)) Gate.ofOptions(r#choices) |> Option.map(choices -> { choices = choices, viaLine = false })
+        else match YarnRunner.shownOf(r#talk) {
+            case YarnRunner.Shown.Line(_) => optionsAfterLine(r#talk) |> Gate.ofOptions |> Option.map(choices -> { choices = choices, viaLine = true })
+            case _                        => None
+        }
+
+    /// 今の台詞を送ると出来事が選択肢だけになる時の、その選択肢（そうでなければ空）。
+    def optionsAfterLine(talk: YarnRunner.Runner[Stage.Story]): List[YarnRunner.DialogueOption] =
+        match YarnRunner.step(YarnRunner.Action.Advance, Clock.zero(), talk) {
+            case (_, YarnRunner.Event.Choices(options) :: Nil) => options
+            case _                                             => Nil
+        }
+
+    /// 読んでいる間の今のゲート（読んでいない・無ければ None）。
+    pub def gateHere(w: World.World): Option[Gate.Gate] = World.readOf(w) |> Option.flatMap(gateOf)
+
+    /// ゲートへの入力 1 つ。文字送りの途中なら（当たらない入力でも）字を出し切るだけ。入力が選択肢に当たれば、viaLine なら
+    /// 台詞を送ってから選ぶ（ブックマークに Advance と Choose が積まれる）。当たらなければ何もしない。オートとスキップは止める。
+    pub def passGate(res: Res.Res, input: Gate.Input, w: World.World): World.World \ Emit[World.Event] =
+        match World.readOf(w) |> Option.filter(_ -> World.isFree(w)) |> Option.flatMap(r -> gateOf(r) |> Option.map(gate -> (r, gate))) {
+            case Some((r, gate)) =>
+                let manual = { playback = World.Playback.Manual | r };
+                if (not Page.isDone(r#page)) reveal(manual, w)
+                else Gate.pick(gate, input) |> Option.map(i -> if (gate#viaLine) pick(res, i, next(res, manual, w)) else pick(res, i, World.withRead(manual, w)))
+                         |> Option.getWithDefault(w)
+            case None => w
         }
 
     /// 今の行を既読にして、次の行へ送る。[遷移: 行→次の行 / 選択肢 / シナリオの終わり(Credits)]
@@ -247,14 +288,17 @@ mod WorldRead {
                     case Some(option) if option#available =>
                         Emit.emit(World.Event.Picked);
                         let marked = markSeen(r, w);
-                        let logged = { log = List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Chose(option#line#text) :: r#log),
-                                       choices = Nil | r };
+                        let log = if (isLoneGate(r)) r#log else List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Chose(option#line#text) :: r#log);
+                        let logged = { log = log, choices = Nil | r };
                         let (talk, events) = YarnRunner.step(YarnRunner.Action.Choose(i), World.now(w), r#talk);
                         absorb(res, Commands.Replay.Live, events, { talk = talk | logged }, marked)
                     case _ => w
                 }
             case _ => w
         }
+
+    /// 選ぶ物が 1 つのゲートか（払いの頁送りはバックログに選んだ行を残さない）。
+    def isLoneGate(r: World.Read): Bool = gateOf(r) |> Option.exists(gate -> List.length(gate#choices) < 2)
 
     /// 選択肢のカーソルで選ぶ。
     pub def pickHere(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
@@ -321,9 +365,11 @@ mod WorldRead {
 
     /// オートとスキップ（行を出し終えてから、決めた間が過ぎたら送る）。
     /// スキップは選択肢で止まるか待つか（設定の「選択肢の後」）、読んでいない行で止まるか（設定の「スキップ」）。
+    /// ゲートではオートもスキップも手動に戻す（払いを待つ。viaLine の頁で台詞を送らない）。
     def autoOrSkip(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let manual = World.withRead({ playback = World.Playback.Manual | r }, w);
         if (not World.isFree(w)) World.withRead(r, w)
+        else if (r#playback != World.Playback.Manual and Option.nonEmpty(gateOf(r))) manual
         else if (r#playback == World.Playback.Skip and not List.isEmpty(r#choices))
             if (World.configOf(w)#afterChoice == Saves.AfterChoice.StopSkip) manual else World.withRead(r, w)
         else if (r#playback == World.Playback.Skip and Option.nonEmpty(r#page#current) and not isSkippable(r, w)) manual

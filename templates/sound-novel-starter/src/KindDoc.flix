@@ -168,9 +168,9 @@ mod KindDoc {
                   windowAlphaSlider = slider("windowAlphaSlider", d#windowAlphaSlider) })
 
     /// 読む画面の 1 回の押しを分ける数。
-    pub def gestureLimits(kind: Doc): Gesture.Limits =
+    pub def gestureLimits(kind: Doc, edge: Float64, width: Float64): Gesture.Limits =
         let r = rec(kind);
-        { slop = r#tapSlop, longPressSeconds = r#longPressSeconds, swipeMin = r#swipeMin, swipeSeconds = r#swipeSeconds }
+        { slop = r#tapSlop, longPressSeconds = r#longPressSeconds, swipeMin = r#swipeMin, swipeSeconds = r#swipeSeconds, edge = edge, width = width }
 
     /// 文字の速さがスライダーの最大か（= ノーウェイト。行を一度に全部出す）。
     pub def isNoWait(cps: Float64, kind: Doc): Bool = cps >= rec(kind)#cpsSlider#max

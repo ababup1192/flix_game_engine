@@ -1,0 +1,28 @@
+// テスト用のシナリオ（TestGate）。払い・タップで選ぶ選択肢（#act:）のゲート: 台詞の頁のまま待つゲート（viaLine）・
+// 選択肢の頁のゲート・当たる物の tap・決まらない組（#act の無い選択肢が混じる）を見る。
+// 直したら: bin/fge yarn build test/fixtures/gate --no-vocab
+title: Gate
+---
+<<window bottom>>
+me: 上へ払うと次へ。
+-> 上へ払って次へ #act:up #mute
+    me: 払った後の行。
+me: 分かれ道。
+me: どちらへ行く。
+-> 左へ払って戻る #act:left
+    me: 左を選んだ。
+-> 下へ払って進む #act:down #icon:blade
+    me: 下を選んだ。
+me: 鍵を押す。
+-> 鍵をタップ #act:tap #at:key
+    me: 鍵を押した。
+me: どこでも押す。
+-> どこでも押す #act:tap
+    me: 押した。
+me: ふつうの選択肢。
+-> 払いで選ぶ #act:up
+    me: 払いで選んだ。
+-> ボタンで選ぶ
+    me: ボタンで選んだ。
+me: 終わり。
+===
