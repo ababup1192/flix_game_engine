@@ -222,7 +222,7 @@ pub enum Out {
 - 血鱗の `<<scene 名>>` は鯨の姿・目・少女・スチル・瓶・結末のカードをまとめて替える。新しい形では scene の中身を「標準の命令の並び」（`novel.scenes.json` に `"commands": ["<<show whale corpse time=0>>", …]`）と、ゲームだけの値（深さの決まり → `game.girl.depthRule`）に分ける。
 - GameCommands が Cast の層（と背景・覆い）を替えるのは、**`Commands.applyText(ctx, "<<show whale corpse time=0>>", st)` の口だけ**にする。標準の命令を同じ表で読み、同じ検査を通す。Cast の型に直に触らない。
 - GameCommands が直に書いてよいのは `game.` の鍵と、標準の数の鍵（`actor.<名>.x` など。`Stage` の pub な鍵の def を使う）。少女の沈み（`sink`）は `actor.girl.y` を書く。
-- **最初の sink で住処のカメラが潜る**（今の `Lair.cameraMove` の `diveFrom` と LairDoc の `sinkStartSec`・`sinkSeconds`）: `sink` の GameCommands は、**今の背景が `lair`（`initial` の背景か `<<bg lair>>`）で、かつ** `camera.path` がまだ `lair.dive` でなければ `Commands.applyText(ctx, "<<camera path=lair.dive>>", st)` を当てる（最初の 1 回だけ。今の `diveFrom` が 1 度だけ決まるのと同じ）。潜る動き（前へ進んで回り込み、`sinkStartSec` 秒の後に `sinkSeconds` 秒で沈む）は `paths.lair.dive` の keys にベイクする。348 行目の sink（鯨の写真の上・最後に深く沈む所）では背景が lair でないので当たらない。また **`bg` を替えても `camera.path` と `camera.pathT` は消さない**（5.3）ので、住処へ戻っても潜った後の位置のまま（今の「潜った後は終わりまで戻らない」と同じ）。台本に `<<camera path=lair.dive>>` の行を足す案 (a) は取らない: 22〜55 行目の間に詰められる注釈も空行も無く（数えた）、足すと間の台詞 13 行の行番号（既読の鍵）がずれる。
+- **（5.0.1 で替えた: `camera path=` は作らない。`sink` の GameCommands が `game.lair.dive` を `PropertyTween.tween` で動かし、GameView がその値で 3D のカメラを置く。下の決まり（背景が lair の時の最初の 1 回だけ・`bg` を替えても戻さない）はそのまま）** 最初の sink で住処のカメラが潜る（今の `Lair.cameraMove` の `diveFrom` と LairDoc の `sinkStartSec`・`sinkSeconds`）: `sink` の GameCommands は、**今の背景が `lair`（`initial` の背景か `<<bg lair>>`）で、かつ** `camera.path` がまだ `lair.dive` でなければ `Commands.applyText(ctx, "<<camera path=lair.dive>>", st)` を当てる（最初の 1 回だけ。今の `diveFrom` が 1 度だけ決まるのと同じ）。潜る動き（前へ進んで回り込み、`sinkStartSec` 秒の後に `sinkSeconds` 秒で沈む）は `paths.lair.dive` の keys にベイクする。348 行目の sink（鯨の写真の上・最後に深く沈む所）では背景が lair でないので当たらない。また **`bg` を替えても `camera.path` と `camera.pathT` は消さない**（5.3）ので、住処へ戻っても潜った後の位置のまま（今の「潜った後は終わりまで戻らない」と同じ）。台本に `<<camera path=lair.dive>>` の行を足す案 (a) は取らない: 22〜55 行目の間に詰められる注釈も空行も無く（数えた）、足すと間の台詞 13 行の行番号（既読の鍵）がずれる。
 - N1〜N3 の計画書の 3.6「足したコマンドは PropertyTween にだけ値を書く」を広げる決まりの変更なので、相談 C9 に入れた。
 - go の検査: `novel.scenes.json` の `commands` は台本と同じ書き方なので、vocab.json の `from` に足せば go が中も検査できる（preset（N5）と同じ形）。
 
@@ -274,6 +274,19 @@ pub enum Out {
   4. 最初の背景（`initial`）とタイトルの背景（`title`）は `novel.backdrops.json` に置く（5.3 の箇条のまま。3D に限らない汎用の欄なので残す）。縦と横の決まり（5.5 の still の切り抜き）もテンプレートの still の描き方として残す。
 - 足りない時: 2 本の移行（段 11・12）で、この口で書けない物が出たら、その時に足すかを決める（先回りして足さない）。
 
+#### 5.0.1 口の形（2026-11-16・段 8+9 を作る前に決めた）
+
+2 本のコード（血鱗の `Lair`・`Lair3d`・`Game.withLairLoading`・`Controls.loadResDeferred`・`render/SceneRender`、廃屋配信の `Rooms`・`Walk`・`WorldRead.backdropCueOf`・`Controls.walkSounds`・`Controls.loadResWithRooms`・`View.walkLayers`）を読んで、上の 4 つを次の形にした。
+
+| 口 | 形 | 上の箇条からの違いと理由 |
+|---|---|---|
+| 1. 背景をゲームが描く | `GameView.backdrop(env, stage, photo, area): Option[List[Render.PlacedItem]]`。写真の名前ごとに聞き、None ならテンプレートが still を描く。テンプレートの切り替え（fade・black・slide・pan・wipe）は、ゲームの絵にも同じ濃さ・横のずれを掛けて重ねる（wipe はゲームの絵を塗り分けられないので fade で重ねる）。物の中の z は 0..2 | 名前 1 つで聞くので、血鱗の住処（`lair` だけ 3D・ほかは写真）がそのまま書ける |
+| 2. 切り替えの秒と音をゲームが決める | `GameCommands.backdropSwitch(ctx, from, to, switch): Option[Stage.GameSwitch]`（`{ seconds, sounds = List[(秒, 音)] }`）。Some なら **その切り替えはゲームが描く**: テンプレートは重ねずに今の背景だけを `GameView.backdrop` で描き、ゲームは `stage#under`・`stage#fadeFrom`・`stage#fadeSeconds` から歩く絵を出す。秒の間は `Out.Wait` と同じ待ち（次の台詞を出さない。ブックマークの steps は増えない）。音は World が物語の時計で鳴らす（`World.Event.Cue`。Silent では鳴らない）。`Ctx.instant`（Silent の当て直しかスキップ中）の時は聞かずに秒 0。スキップで待ちを飛ばした時は切り替えも終わりの形にする | 廃屋配信の歩きは「前の部屋 → 今の部屋」を 1 本の絵で描くので、テンプレートが 2 枚を重ねる形では書けない。秒だけ替える口にすると絵が合わない。`Ctx.isLoaded` は要らない（届いたかはゲームが自分の描く元で決めて None を返す） |
+| 3. カメラの道筋 | 標準の命令 `<<tween game.<鍵> 値 [from=] [time=0.5] [ease=smoothstep]>>` を足す（`game.` で始まる鍵だけ。数の鍵を PropertyTween で動かす）。GameCommands が書く時は今までどおり `PropertyTween.tween` | 台本から `game.` の鍵を動かす口が無かった。血鱗の 22 行目の着く動きは `<<tween game.lair.arrive 1 time=8>>` で書ける（専用の `camera path=` は作らない）。`sink` の潜る動きは GameCommands が `game.lair.dive` を動かす（`applyText` で `camera path=` を当てる 2.8 の形はやめる） |
+| 4. `initial`・`title`・still の切り抜き | `initial: { photo, grade }`（背景が無い間に描く。最初の `<<bg>>` はこれから重ねる）・`title: { scale, drift }`（タイトルの背景を広げて漂わせる。写真と時間帯は今までどおり `novel.story.json` の `titlePhoto`・`titleGrade`）・photos の `aspect`（横÷縦。書いた写真は画面を覆うように真ん中で切り抜く。書かない写真は今までの 16:9 の敷き方） | 5.3 の `title.photo` は `novel.story.json` の `titlePhoto` と二重になるので持たない。血鱗のタイトルの絵は photos に足し、ぼかさない時間帯（blur 0・vignette 0）で引く |
+
+- 段 9 の口: `GameRes`（`Res#game` の型・`load`・保存即反映の行 `docRows`）・`GameBoot`（`app` = どの入口でも App に足す物・`loadAssets` = 実機とブラウザと描き出しで後から届く素材を読み始める・`withLoading` = 実機とブラウザで毎コマ解く口）・`GameView.hud(env, read)`（hud の帯。文字の枠を消しても残る・サムネにも出る）・`GameView.objects(env, read)`（tape.json の画面の物）・`Commands.applyText(ctx, "<<…>>", st)` と `Commands.needsOfText`・`assets/talk/vocab.std.json`（`Commands.all()` の表。go がゲームの `vocab.json` と合わせて読む）。
+
 ### 5.1 比べる前に分かる事
 
 | | (a) Blender で動画・連番に書き出して 2D で流す | (b) glb + 光を当てない絵（光は絵か lightmap にベイクする） | (c) 実行中の光と影 |
@@ -322,7 +335,7 @@ pub enum Out {
 ```
 
 - **最初の背景**: `novel.backdrops.json` に `"initial": { "photo": "lair", "grade": "clear" }` を足す。背景が無い間（`Stage` の `shot` が None・最初の `<<bg>>` の前）は、この背景を描く。今の血鱗の「背景が無ければ住処」と同じ動きで、台本に行を足さない（台詞の行番号を守る）。v2 のセーブで `photo` が null の物も、この背景で戻る。
-- **タイトル画面の背景は initial と分ける**: 今の血鱗のタイトルは住処ではなく、海中の遠景の 2D の絵（`Lair.titleBackdrop`: 画面いっぱいに敷き、1.05 倍に広げ、sin でゆっくり漂わせる）。同じ Doc に `"title": { "photo": "title_sea", "scale": 1.05, "drift": { "amp": [10, 6], "rate": [0.13, 0.09], "phase": [0, 1.0] } }` を置き、テンプレートのタイトル画面がこれを描く（photos に `title_sea` = 今の `titleBackdrop` の絵）。値は今のコードの数のままなので、reference の `title.png`・`portrait-title.png` の SHA は変わらないはず。10 章の門でも見る。`title` が無いゲームは今のテンプレートのタイトルのまま。
+- **タイトル画面の背景は initial と分ける**: 今の血鱗のタイトルは住処ではなく、海中の遠景の 2D の絵（`Lair.titleBackdrop`: 画面いっぱいに敷き、1.05 倍に広げ、sin でゆっくり漂わせる）。**（5.0.1 で替えた: 写真と時間帯は `novel.story.json` の `titlePhoto`・`titleGrade` のまま、`title` は `scale` と `drift` だけ）** 同じ Doc に `"title": { "photo": "title_sea", "scale": 1.05, "drift": { "amp": [10, 6], "rate": [0.13, 0.09], "phase": [0, 1.0] } }` を置き、テンプレートのタイトル画面がこれを描く（photos に `title_sea` = 今の `titleBackdrop` の絵）。値は今のコードの数のままなので、reference の `title.png`・`portrait-title.png` の SHA は変わらないはず。10 章の門でも見る。`title` が無いゲームは今のテンプレートのタイトルのまま。
 - still の名前は `novel.backdrops.json` の photos の名前。血鱗の photos に `lair`（絵は今の `assets/lair/lair_still.jpg`）を足す（9.1）。
 - `bg` を替えても `camera.path` と `camera.pathT` は消さない（道筋は背景ごとの物なので、別の背景の間は読まれないだけ）。
 - 台本: `<<bg 名>>`（Doc に 3D があれば 3D・無ければ写真）、`<<camera path=名 time=>>`（`camera.path` と `camera.pathT` を 0→1 へ tween。settle で終わりの位置）、背景から背景へ歩く道筋は 2.3 の表（台本に道筋の名前を書かない）。
@@ -338,11 +351,11 @@ pub enum Out {
 |---|---|---|
 | 歩く秒 | `bg` の apply | Doc の道筋の out + arrive × repeat + dissolve の秒を足して、背景の重ねの秒（`fadeSeconds`）と `camera.pathT` の tween の秒に書く。台本の `time=` は道筋がある時は使わない（今の廃屋配信と同じ） |
 | どの道筋を歩くか | `bg` の apply | 今の場所・行き先・`pace`・`walkOn` と、`Ctx` に足す `isLoaded`（その glb が届いているか）で決め、`Stage` の背景に道筋の名前を書く。届いていなければ 2D（今の廃屋配信の `roomsReady`）。Silent とスキップの時は歩かない（秒 0） |
-| 素材を待つか | `bg` の `needs` と `Ctx.isLoaded` を使い分ける | `needs` には still の写真だけを入れる（今と同じく、届くまで黒で待つ）。glb と 3D の絵は `needs` に入れない。3D は待たない（fail-open）: 届く前は待たずに 2D で切り替え、届いた後の切り替えから 3D になる。`isLoaded` は描き出しと flow では全部 true（全部を読んでから流す）なので、門の比べで揺れない |
-| 鳴らす音 | **World**（物語の時計） | 道筋の `sounds` から `Timeline` を作り（読み込みの時に 1 回。`Timeline.insert` と `withSoundAt`）、毎フレーム `Timeline.soundsOnClock(物語の時計, 歩き始めた時刻, tl)` で鳴る音を出す。時計は物語の時計（`Clock.Clock[Stage.Story]`。画面を開くと止まる。背景の重ねと `<<wait>>` と同じ時計）。実時間で鳴らす `soundsBetweenTimes`（App の `realNow` を渡す口）は使わない。画面を開いている間に足音が鳴り進まないようにするため。`Out.Sound` と同じ道（World の出来事）を通るので、Silent では鳴らず、tape.json の `sounds` にも出る。今の廃屋配信の `Controls.walkSounds` の置き場をテンプレートの World に移す形 |
+| 素材を待つか | `bg` の `needs` と、ゲームが `GameCommands.backdropSwitch`・`GameView.backdrop` で None を返す事（5.0.1。`Ctx.isLoaded` は作らない） | `needs` には still の写真だけを入れる（今と同じく、届くまで黒で待つ）。glb と 3D の絵は `needs` に入れない。3D は待たない（fail-open）: 届く前は待たずに 2D で切り替え、届いた後の切り替えから 3D になる。`isLoaded` は描き出しと flow では全部 true（全部を読んでから流す）なので、門の比べで揺れない |
+| 鳴らす音 | **World**（物語の時計） | （5.0.1 で替えた: ゲームが返す `sounds`（秒と音の名前の列）を `Stage.Switch` に持ち、World が毎フレーム物語の時計の前のフレームから今までの間の音を出す。`Timeline` は作らない — 並べ方の表が要らない秒と名前の組だけのため）。元の案: 道筋の `sounds` から `Timeline` を作り（読み込みの時に 1 回。`Timeline.insert` と `withSoundAt`）、毎フレーム `Timeline.soundsOnClock(物語の時計, 歩き始めた時刻, tl)` で鳴る音を出す。時計は物語の時計（`Clock.Clock[Stage.Story]`。画面を開くと止まる。背景の重ねと `<<wait>>` と同じ時計）。実時間で鳴らす `soundsBetweenTimes`（App の `realNow` を渡す口）は使わない。画面を開いている間に足音が鳴り進まないようにするため。`Out.Sound` と同じ道（World の出来事）を通るので、Silent では鳴らず、tape.json の `sounds` にも出る。今の廃屋配信の `Controls.walkSounds` の置き場をテンプレートの World に移す形 |
 | 暗くなり・継ぎ目 | View（状態を持たない） | Doc の `fade` と、歩き始めてからの秒から決める |
 | 揺れ | Backdrop3d の部品（状態を持たない） | Doc の `shake` と、歩き始めてからの秒（creep は歩いた距離）から決める |
-| 文字を待たせる | World | 歩いている間は次の台詞を出さない（廃屋配信の `testLineWaitsUntilTheWalkEnds`）。Yarn の `<<wait>>` ではないので、ブックマークの steps は増えない |
+| 文字を待たせる | World | （5.0.1: `bg` が `Out.Wait(秒)` を出す。押しても歩きは飛ばせない — 廃屋配信の「押すと歩きを終える」は移行で口が要るかを決める）歩いている間は次の台詞を出さない（廃屋配信の `testLineWaitsUntilTheWalkEnds`）。Yarn の `<<wait>>` ではないので、ブックマークの steps は増えない |
 
 - 歩き始めた時刻は `Stage` の背景の `fadeFrom`。セーブは settle した後なので、歩きの途中の状態は持たない。
 
