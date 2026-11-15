@@ -7,8 +7,16 @@ mod BackdropDoc {
     use fge::{Color, DocJson, JsonCodec}
     use Util.Json.Json
 
-    /// 写真 1 枚。texture = project.json の textures の名前、label = セーブの枠に出す場所の名前。
-    pub type alias Photo = { texture = String, label = String }
+    /// 写真 1 枚。texture = project.json の textures の名前、label = セーブの枠に出す場所の名前、
+    /// aspect = 絵の横÷縦（書いた写真は画面を覆うように比を保って真ん中で切り抜く。None は 16:9 の写真として画面に合わせて敷く）。
+    pub type alias Photo = { texture = String, label = String, aspect = Option[Float64] }
+
+    /// 背景が無い間（最初の <<bg>> の前・セーブの背景が null の時）に描く背景。最初の <<bg>> はこの背景から重ねる。
+    pub type alias Initial = { photo = String, grade = String }
+
+    /// タイトルの背景の動き（写真と時間帯は novel.story.json の titlePhoto・titleGrade）。scale = 画面の真ん中を軸に広げる倍率、
+    /// drift = 実時間 t 秒で x = sin(t × rate.x + phase.x) × amp.x（y も同じ）だけ漂う。
+    pub type alias Title = { scale = Float64, drift = { amp = { x = Float64, y = Float64 }, rate = { x = Float64, y = Float64 }, phase = { x = Float64, y = Float64 } } }
 
     /// 時間帯の色。blur = ぼかしの半径（画面の幅に対する割合）、taps = ぼかしで読む点の数（1〜64）、
     /// saturation = 彩度（0 = 白黒・1 = 写真のまま）、exposure = 明るさの倍率、tint = 色ごとの倍率（夕方は赤を残し青を絞る）、
@@ -59,12 +67,14 @@ mod BackdropDoc {
         case _       => None
     }
 
-    /// defaultTransition = transition= を省いた <<bg>> の切り替え。
+    /// defaultTransition = transition= を省いた <<bg>> の切り替え、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）。
     pub type alias Rec = {
         version = Int32,
         defaultTransition = Transition,
         photos = Map[String, Photo],
-        grades = Map[String, Grade]
+        grades = Map[String, Grade],
+        initial = Option[Initial],
+        title = Option[Title]
     }
 
     /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
@@ -75,7 +85,7 @@ mod BackdropDoc {
     pub def path(): String = "assets/novel.backdrops.json"
 
     /// 写真も時間帯も無い既定（Doc が読めない時は背景を出さず、地の色の上で読む）。
-    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, photos = Map.empty(), grades = Map.empty() })
+    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, photos = Map.empty(), grades = Map.empty(), initial = None, title = None })
 
     /// 時間帯の欄の既定（欄が欠けた時に使う。写真のまま薄くぼかした色）。
     pub def plainGrade(): Grade =
@@ -90,6 +100,15 @@ mod BackdropDoc {
 
     pub def gradeOf(name: String, doc: Doc): Option[Grade] = Map.get(name, rec(doc)#grades)
 
+    /// 写真の横÷縦（書いていない・知らない写真は None）。
+    pub def aspectOf(name: String, doc: Doc): Option[Float64] = photoOf(name, doc) |> Option.flatMap(photo -> photo#aspect)
+
+    /// 背景が無い間の背景（無ければ None）。
+    pub def initialOf(doc: Doc): Option[Initial] = rec(doc)#initial
+
+    /// タイトルの背景の動き（無ければ None）。
+    pub def titleOf(doc: Doc): Option[Title] = rec(doc)#title
+
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
@@ -99,11 +118,30 @@ mod BackdropDoc {
                   photos = Map.get("photos", root) |> Option.flatMap(JsonCodec.decodeStringMap(photoFromJson))
                       |> Option.getWithDefault(Map.empty()),
                   grades = Map.get("grades", root) |> Option.flatMap(JsonCodec.decodeStringMap(gradeFromJson))
-                      |> Option.getWithDefault(Map.empty()) })
+                      |> Option.getWithDefault(Map.empty()),
+                  initial = Map.get("initial", root) |> Option.flatMap(initialFromJson),
+                  title = Map.get("title", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(titleFromJson) })
+
+    /// initial の欄（photo と grade のどちらかが欠けたら無い物とする）。
+    def initialFromJson(json: Json): Option[Initial] =
+        JsonCodec.expectObject(json) |> Option.flatMap(obj ->
+            forM (photo <- Map.get("photo", obj) |> Option.flatMap(JsonCodec.expectString);
+                  grade <- Map.get("grade", obj) |> Option.flatMap(JsonCodec.expectString)) yield { photo = photo, grade = grade })
+
+    /// title の欄（欠けた欄は動かない値 = 倍率 1・幅 0）。
+    def titleFromJson(obj: Map[String, Json]): Title =
+        let drift = Map.get("drift", obj) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty());
+        let pair = key -> Map.get(key, drift) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat))
+            |> Option.flatMap(xs -> match xs {
+                   case x :: y :: Nil => Some({ x = x, y = y })
+                   case _             => None
+               }) |> Option.getWithDefault({ x = 0.0, y = 0.0 });
+        { scale = JsonCodec.floatOr("scale", 1.0, obj), drift = { amp = pair("amp"), rate = pair("rate"), phase = pair("phase") } }
 
     def photoFromJson(json: Json): Option[Photo] =
         JsonCodec.expectObject(json) |> Option.map(obj ->
-            { texture = JsonCodec.stringOr("texture", "", obj), label = JsonCodec.stringOr("label", "", obj) })
+            { texture = JsonCodec.stringOr("texture", "", obj), label = JsonCodec.stringOr("label", "", obj),
+              aspect = Map.get("aspect", obj) |> Option.flatMap(JsonCodec.expectFloat) |> Option.filter(a -> a > 0.0) })
 
     def gradeFromJson(json: Json): Option[Grade] =
         JsonCodec.expectObject(json) |> Option.map(obj -> {

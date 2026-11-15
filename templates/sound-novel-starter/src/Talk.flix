@@ -1,8 +1,10 @@
 // Talk — シナリオ（assets/talk/*.yarn）とコードの繋ぎ。
 // 話し手・変数の表示名・最初に開くノードの正は novel.story.json（StoryDoc）、描き出しの場面が指すノードは novel.shots.json、
 // コマンドと引数の表の正は Commands（テンプレートの表 + GameCommands）。
-// bin/fge yarn build の check は assets/talk/vocab.json を読み、名前を Doc から集め、コマンドの引数を表で検査する
-// （vocab.json が書くのは Doc のどこを見るかとコマンドの表だけ。書き直すのは make talk-vocab。TestDocs が一致を見る）。
+// bin/fge yarn build の check は assets/talk/vocab.json と、隣の vocab.std.json（テンプレートの命令の表 Commands.all()）を合わせて読み、
+// 名前を Doc から集め、コマンドの引数を表で検査する（vocab.json が書くのは Doc のどこを見るかとゲームの命令の表 GameCommands.all() だけ。
+// 書き直すのは make talk-vocab。TestDocs が一致を見る）。vocab.std.json はテンプレートの追随で上書きされる物で、ゲームでは直さない。
+// 決まり: vocab.std.json が持つのは commands だけ。tags・speakers・vars・nodes・nodeRefs はゲームの vocab.json に置く（Doc の場所はゲームごとに違う）。
 //
 //   assets/talk/yukidoke.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ World#dialogue
 mod Talk {
@@ -12,6 +14,8 @@ mod Talk {
     pub def dialoguePath(): String = "assets/talk/dialogue.json"
 
     pub def vocabPath(): String = "assets/talk/vocab.json"
+
+    pub def stdVocabPath(): String = "assets/talk/vocab.std.json"
 
     /// シナリオを読む。読めない・壊れている時はノードの無いシナリオ（World が直し方を語る 1 行を出す）。
     pub def load(): Yarn.Program \ Fs.FileRead = Yarn.loadOr(Yarn.empty(), dialoguePath())
@@ -75,7 +79,15 @@ mod Talk {
             "nodes"    => docField(story, "path", "opening"),
             "nodeRefs" => docField(fromVocab(ShotsDoc.path()), "path", "shots[].node"),
             "tags"     => Gate.tagsJson(fromVocab(PromptsDoc.path())),
-            "commands" => YarnCommands.toJson(Commands.specs())
+            "commands" => YarnCommands.toJson(GameCommands.all() |> List.map(c -> c#spec))
+        });
+        Util.Json.toPrettyString(2, vocab) + "\n"
+
+    /// テンプレートの命令の表（vocab.std.json。go が vocab.json の commands と合わせて読む。同じ名前があると止める）。
+    pub def stdVocabJson(): String =
+        let vocab = Json.JObject(Map#{
+            "version"  => Json.JNumber(JsonCodec.intToBd(2)),
+            "commands" => YarnCommands.toJson(Commands.all() |> List.map(c -> c#spec))
         });
         Util.Json.toPrettyString(2, vocab) + "\n"
 
@@ -83,11 +95,12 @@ mod Talk {
     def docField(docPath: String, how: String, place: String): Json =
         Json.JObject(Map#{ "from" => Json.JArray(Vector#{ Json.JObject(Map#{ "doc" => Json.JString(docPath), how => Json.JString(place) }) }) })
 
-    /// 語彙を assets/talk/vocab.json に書く（make talk-vocab）。
+    /// 語彙を assets/talk/vocab.json と vocab.std.json に書く（make talk-vocab）。
     pub def vocab(): Unit \ IO =
-        let wrote = run { writeVocab() } with Fs.FileWrite.runWithIO;
-        println(if (wrote) "[talk] 語彙を書いた: ${vocabPath()}" else "[talk] 語彙を書けない: ${vocabPath()}")
+        let report = (path, wrote) -> println(if (wrote) "[talk] 語彙を書いた: ${path}" else "[talk] 語彙を書けない: ${path}");
+        report(vocabPath(), run { writeText(vocabPath(), vocabJson()) } with Fs.FileWrite.runWithIO);
+        report(stdVocabPath(), run { writeText(stdVocabPath(), stdVocabJson()) } with Fs.FileWrite.runWithIO)
 
-    def writeVocab(): Bool \ Fs.FileWrite =
-        run { Fs.WriteFile.write({str = vocabJson()}, vocabPath()) |> Result.isOk } with Fs.WriteFile.runWithFileWrite
+    def writeText(path: String, text: String): Bool \ Fs.FileWrite =
+        run { Fs.WriteFile.write({str = text}, path) |> Result.isOk } with Fs.WriteFile.runWithFileWrite
 }

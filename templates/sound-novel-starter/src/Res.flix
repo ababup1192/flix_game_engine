@@ -13,7 +13,7 @@ mod Res {
     /// missing = ブラウザ版で後回しにした絵と音のうち、まだ届いていない物の名前（textures / sounds の name。デスクトップ・描き出し・テストは空）・
     /// scriptEdits = 始まりの引数（edit.<行>）で当てたシナリオの直し（ふだんは空）・
     /// commandArgs = シナリオのコマンドを表で読んだ結果・nodesBySource = .yarn の「ファイル:行」→ その行を持つノード
-    /// （どちらも dialogue と一緒に作り直す。withDialogue）。
+    /// （どちらも dialogue と一緒に作り直す。withDialogue）・game = このゲームだけの描く元（GameRes。テンプレートは中身を見ない）。
     pub type alias Res = {
         story = StoryDoc.Doc,
         kind = KindDoc.Doc,
@@ -34,7 +34,8 @@ mod Res {
         commandArgs = Commands.ArgsTable,
         nodesBySource = Map[String, String],
         missing = Set[String],
-        scriptEdits = ScriptEdits.Applied
+        scriptEdits = ScriptEdits.Applied,
+        game = GameRes.Data
     }
 
     // ── Doc の差し替え（保存即反映。Controls.docTable の reload） ──
@@ -68,6 +69,9 @@ mod Res {
     pub def withEffects(effects: EffectsDoc.Doc, res: Res): Res = { effects = effects | res }
 
     pub def withPrompts(prompts: PromptsDoc.Doc, res: Res): Res = { prompts = prompts | res }
+
+    /// このゲームだけの描く元を差し替える（GameRes.docRows の読み直し・GameBoot の素材の読み込み）。
+    pub def withGame(game: GameRes.Data, res: Res): Res = { game = game | res }
 
     /// まだ届いていない絵と音の名前を差し替える（Game.withAssetLoading が届くたびに写す）。
     pub def withMissing(missing: Set[String], res: Res): Res = { missing = missing | res }

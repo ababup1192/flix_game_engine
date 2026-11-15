@@ -8,7 +8,7 @@
   演出はコマンド（`<<bg>>` `<<window>>` `<<audio>>` `<<fx>>` `<<shake>>` `<<show>>` `<<hide>>` `<<wait>>`。主の引数は位置・ほかは `key=value`）で書き、
   引数の表と意味は `src/Commands.flix`（表に無い引数・型・Doc に無い名前は `bin/fge yarn build` が止める）。このゲームだけのコマンドは
   `src/GameCommands.flix` に 1 つ足し、後に残る値は `Stage` の `props`（`PropertyTween` の `game.` の鍵）に書いて `src/GameView.flix` で描く
-  （語彙 `assets/talk/vocab.json` は `make talk-vocab`）。シナリオに式や条件を足すのは Yarn の `<<if>>` `<<set>>` まで。
+  （語彙は `make talk-vocab` が書く: テンプレートの命令は `assets/talk/vocab.std.json`（追随で上書き）、ゲームの命令と Doc の場所は `assets/talk/vocab.json`）。シナリオに式や条件を足すのは Yarn の `<<if>>` `<<set>>` まで。
   話し手の呼び名・変数の表示名・「はじめから」で開くノード（`opening`）は `assets/novel.story.json`、描き出しの場面（make render の SHOT）は
   `assets/novel.shots.json` に書く。どちらも `bin/fge yarn build` が vocab.json の from を通して読み、台本の名前と照らす（Flix を走らせずに名前を足せる）。
 - **画面に出す言葉はシナリオか Doc**: シナリオの外の言葉（タイトル画面・ボタン・設定・知らせ）は `assets/novel.story.json` の

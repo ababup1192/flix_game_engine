@@ -8,7 +8,7 @@
 //   fps.txt   … コマの速さ（flow の fps）
 //   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・2 つ以上の .yarn にまたがる flow では書かずに理由を出す）
 mod FlowVideo {
-    use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Rect2, Render, Resources, VideoOut}
+    use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, HeadlessLoad, JsonCodec, Rect2, Render, Resources, VideoOut}
 
     import java.io.BufferedOutputStream
     import java.io.DataOutputStream
@@ -59,9 +59,14 @@ mod FlowVideo {
         }
 
     /// e2e と同じ App で、セーブの日時だけ描き出しと同じ「起動した時刻」に据える（e2e の 0 のままだと 1970/01/01 と出る）。
-    def appOf(): App.App[AppState, {}] \ Fs.FileRead =
-        let res = Controls.loadRes();
+    /// ゲームの後から届く素材（GameBoot.loadAssets）も全部読んでから流す（動画とテープに 3D の背景も写す）。
+    def appOf(): App.App[AppState, {}] \ {Fs.FileRead, IO} =
+        let res = loadRes();
         Game.app(res, Saves.fresh(res#kind), Shots.clockBase())
+
+    def loadRes(): Res.Res \ {Fs.FileRead, IO} =
+        let loaded = Controls.loadRes();
+        Res.withGame(HeadlessLoad.handle(() -> GameBoot.loadAssets(loaded#game)), loaded)
 
     /// 撮るコマの上限（30fps で 5 分。flow の until の max が先に当たる）。
     def frameCap(): Int32 = 9000
@@ -105,7 +110,10 @@ mod FlowVideo {
 
     /// 画面に出ている物（テープの頁の「物を選ぶ」）。タイトルは題字とメニュー、読む間は背景・立ち絵と小物・メッセージウィンドウ・選択肢・クイックメニュー。
     /// 置き場は View と同じ Layout・Cast の関数から引く（描いた所と枠がずれない）。
-    pub def objectsOf(fit: Layout.Fit, res: Res.Res, w: World.World): List[TapeOut.ScreenObject] =
+    pub def objectsOf(fit: Layout.Fit, res: Res.Res, w: World.World): List[TapeOut.ScreenObject] = objectsUsing(GameView.objects, fit, res, w)
+
+    /// objectsOf の、ゲームの物を game から引く形（テストが差し替える）。ゲームの物は読んでいる間の背景・立ち絵の後ろに並べる。
+    pub def objectsUsing(game: (View.Env, World.Read) -> List[TapeOut.ScreenObject], fit: Layout.Fit, res: Res.Res, w: World.World): List[TapeOut.ScreenObject] =
         let thing = (id, name, r) -> { id = id, name = name, rect = r };
         match w#scene {
             case World.Scene.Title(_) =>
@@ -115,15 +123,15 @@ mod FlowVideo {
                 thing("title_menu", "タイトルのメニュー", boxOf(List.range(0, count) |> List.map(i -> Layout.titleItem(fit, i, count)))) :: Nil
             case World.Scene.Credits(_, _) => thing("credits", "クレジット", Layout.screen(fit)) :: Nil
             case World.Scene.Reading(r) =>
-                let backdrop = r#stage#shot |> Option.map(shot -> {
+                let backdrop = Stage.shownShot(res#backdrops, r#stage) |> Option.map(shot -> {
                     let label = BackdropDoc.photoOf(shot#photo, res#backdrops) |> Option.map(p -> p#label) |> Option.filter(l -> not String.isEmpty(l));
                     thing("backdrop", "背景（${Option.getWithDefault(shot#photo, label)}）", Layout.screen(fit))
                 }) |> Option.toList;
                 let castEnv = { doc = res#cast, fit = fit, storyNow = World.now(w), realNow = w#realNow, missing = res#missing, light = Cast.steadyLight(Cast.plainTone()),
-                               props = r#stage#props, photo = r#stage#shot |> Option.map(s -> s#photo), backdropShift = 0.0 };
+                               props = r#stage#props, photo = Stage.shownShot(res#backdrops, r#stage) |> Option.map(s -> s#photo), backdropShift = 0.0 };
                 let cast = Cast.placedOf(castEnv, r#stage#cast) |> List.map(p -> thing(p#figure#name, if (String.isEmpty(p#label)) p#figure#name else p#label, p#rect));
                 let hud = if (View.coversScreen(w#panel) or w#panel == World.Panel.Hidden) Nil else readingHud(fit, res, r);
-                List.flatten(backdrop :: cast :: hud :: Nil)
+                List.flatten(backdrop :: cast :: game(View.envOf(fit, res, w), r) :: hud :: Nil)
         }
 
     def readingHud(fit: Layout.Fit, res: Res.Res, r: World.Read): List[TapeOut.ScreenObject] =

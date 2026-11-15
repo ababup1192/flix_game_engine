@@ -94,7 +94,7 @@ help:
 	@echo "  make flow FLOW=e2e/<名前>.flow  flow を画面なしで最後まで流す（失敗は行番号つき。Flix は組み直さない）"
 	@echo "  make flow-vocab         flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）"
 	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
-	@echo "  make talk-vocab         会話のシナリオの語彙 assets/talk/vocab.json を書き直す（bin/fge yarn build が読む）"
+	@echo "  make talk-vocab         会話のシナリオの語彙 assets/talk/vocab.json（ゲームの命令）と vocab.std.json（標準の命令）を書き直す（bin/fge yarn build が合わせて読む）"
 	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
 	@echo "  make module Q=<語>       やりたいこと → エンジンのモジュールを 1 行ずつ引く（自前で書く前にまずこれ）"
 	@echo "  make src Q=<名前>        ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）"

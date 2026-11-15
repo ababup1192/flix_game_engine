@@ -5,7 +5,9 @@ package yarn
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -736,10 +738,12 @@ func loadGroup(g group, cwd, vocabPath string, noVocab bool) (*loaded, error) {
 		if !explicit {
 			vocabPath = filepath.Join(g.dir, vocabName)
 		}
-		data, readErr := os.ReadFile(vocabPath)
+		data, readErr := readVocab(vocabPath)
 		switch {
 		case readErr != nil && explicit:
 			return nil, fmt.Errorf("語彙を読めない: %s", vocabPath)
+		case readErr != nil && !errors.Is(readErr, fs.ErrNotExist):
+			return nil, fmt.Errorf("%s: %v", rel(l.root, vocabPath), readErr)
 		case readErr != nil:
 			// WhyNot: 語彙が無くても止めない —— 書きかけのシナリオの形を見るのがこのコマンドの用途で、話し手やコマンドの検査は build が受け持つ。
 		default:

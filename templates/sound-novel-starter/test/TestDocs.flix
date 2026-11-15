@@ -117,6 +117,12 @@ mod TestDocs {
         let onDisk = Fs.FileRead.read(Talk.vocabPath()) |> Result.toOption |> Option.map(String.trim);
         Assert.assertEq(expected = Some(String.trim(Talk.vocabJson())), onDisk)
 
+    @Test
+    def testStdVocabFileMatchesTalk(): Unit \ {Assert, Fs.FileRead} =
+        // assets/talk/vocab.std.json は、Talk.stdVocabJson を書いた物と同じ（make talk-vocab で書き直す）。
+        let onDisk = Fs.FileRead.read(Talk.stdVocabPath()) |> Result.toOption |> Option.map(String.trim);
+        Assert.assertEq(expected = Some(String.trim(Talk.stdVocabJson())), onDisk)
+
 
     // ══ 立ち絵と小物（novel.cast.json） ══
 

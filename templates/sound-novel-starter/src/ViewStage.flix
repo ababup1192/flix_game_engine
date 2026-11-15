@@ -6,30 +6,52 @@
 mod ViewStage {
     use fge::{Clock, Color, DrawCmd, Fx, Num, RawDraw, Rect2, Render, ShaderDoc, Sort}
 
+    /// 背景 1 枚にゲームが描く絵（GameView.backdrop と同じ形: 描く元・舞台・背景の名前・塗る矩形 → 絵か None）。
+    pub type alias BackdropPainter = (View.Env, Stage.Stage, String, Rect2.Rect2) -> Option[List[Render.PlacedItem]]
+
+    /// 背景 1 枚の絵: ゲームが描いた物か、テンプレートの写真の Spec。
+    enum Picture {
+        case Painted(List[Render.PlacedItem])
+        case Still(ShaderDoc.Spec)
+    }
+
     /// world の層の物 1 グループ: layer = 層の数、order = 同じ層の数の中の順（絵 0・粒 1・GameView 2・覆い 3）、items = 物（中の z は 0..View.zWorldStride-1）。
     type alias Group = { layer = Int32, order = Int32, items = List[Render.PlacedItem] }
 
     /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は View が幕の上に描く）。
     pub def frame(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
         let (dx, dy) = Stage.shakeOffset(env#storyNow, Stage.ShakeTarget.Screen, stage);
-        layered(env, backdropRect(env#fit), stage, withProps) |> withCamera(env, stage) |> Render.movedAll({ x = dx, y = dy })
+        layered(env, photoRect(env#fit), stage, withProps) |> withCamera(env, stage) |> Render.movedAll({ x = dx, y = dy })
 
-    /// サムネの world の層: 画面ちょうどに塗り（揺れは掛けない）、z を 0..9 に詰める（サムネは字を z 10 から重ねる）。
-    /// 10 段を超える時は奥の段から重ねて詰める（手前の覆い・小物・人物の前後は崩さない）。
+    /// タイトル画面の world の層: frame に、novel.backdrops.json の title（広げる倍率と漂い）を掛ける（無ければ frame のまま）。
+    pub def titleFrame(env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        let items = frame(env, stage, true);
+        match BackdropDoc.titleOf(env#res#backdrops) {
+            case None    => items
+            case Some(t) =>
+                let s = View.realSeconds(env);
+                let d = t#drift;
+                let drift = { x = Num.sin(s * d#rate#x + d#phase#x) * d#amp#x, y = Num.sin(s * d#rate#y + d#phase#y) * d#amp#y };
+                items |> Render.scaledAllAround(t#scale, { x = Layout.width(env#fit) * 0.5, y = Layout.height(env#fit) * 0.5 }) |> Render.movedAll(drift)
+        }
+
+    /// サムネの world の層: 画面ちょうどに塗り（揺れは掛けない）、z を 0..View.zThumbHudUnder()-1（0..8）に詰める
+    /// （その上の 9 にゲームの hud の UnderWindow、字は z 10 から重ねる）。段が足りない時は奥の段から重ねて詰める（手前の覆い・小物・人物の前後は崩さない）。
     // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
     pub def thumbnail(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
-        let items = layered(env, Layout.screen(env#fit), stage, withProps) |> withCamera(env, stage);
+        let items = layered(env, _ -> Layout.screen(env#fit), stage, withProps) |> withCamera(env, stage);
         let zs = items |> List.map(p -> zOf(p#item)) |> List.toSet |> Set.toList;
-        let skip = Int32.max(0, List.length(zs) - 10);
+        let room = View.zThumbHudUnder();
+        let skip = Int32.max(0, List.length(zs) - room);
         let ranks = zs |> List.zipWithIndex |> List.map(match (i, z) -> (z, Int32.max(0, i - skip))) |> List.toMap;
-        items |> List.map(Render.overItem(mapZ(z -> Map.get(z, ranks) |> Option.getWithDefault(9))))
+        items |> List.map(Render.overItem(mapZ(z -> Map.get(z, ranks) |> Option.getWithDefault(room - 1))))
 
-    /// world の層の物を、層の数で並べて z を振った列（カメラと揺れの前）。area = 背景を塗る矩形。
-    def layered(env: View.Env, area: Rect2.Rect2, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
+    /// world の層の物を、層の数で並べて z を振った列（カメラと揺れの前）。areaOf = 写真の横÷縦（None は 16:9）→ 背景を塗る矩形。
+    def layered(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
         let keep = (kind, entry) -> CastDoc.isAttachedToBackdrop(entry) or withProps or kind == CastDoc.Kind.Character;
         let actors = Cast.groupsWhere(castEnv(env, stage), keep, stage#cast, 0) |> List.map(match (n, items) -> { layer = n, order = 0, items = items });
         let game = GameView.draw(env, stage) |> List.map(match (n, item) -> { layer = n, order = 2, items = item :: Nil });
-        let groups = { layer = 0, order = 0, items = backdropsIn(area, env, stage) } :: actors :::
+        let groups = { layer = 0, order = 0, items = backdropsIn(areaOf, env, stage) } :: actors :::
                      List.append(particleGroups(env, stage), overlayGroup(env, stage) :: blackoutGroup(env, stage) :: game);
         stacked(groups)
 
@@ -123,24 +145,62 @@ mod ViewStage {
             { position = { x = (w - wide) / 2.0, y = -12.0 }, size = { x = wide, y = tall } }
         } else { position = { x = -12.0, y = -12.0 }, size = { x = w + 24.0, y = h + 24.0 } }
 
-    /// 背景を矩形 area に塗る（実際の画面は揺れの分だけはみ出す backdropRect、サムネは画面ちょうど）。
-    /// 切り替えの間は、替え方（Stage の switch）ごとに前の写真（under）と今の写真（shot）を重ねる・送る・塗り替える。
-    pub def backdropsIn(area: Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        let ground = View.at(area#position#x, area#position#y, RawDraw.box(area#size, Backdrop.groundColor(), 0));
+    /// 写真を敷く矩形（実際の画面）: aspect（横÷縦）を書いた写真は、揺れの分だけ大きい画面を覆うように比を保って真ん中に置く
+    /// （はみ出しは捨てる。縦に長い still を横の画面でも縦の画面でも真ん中で切り抜く）。書いていない写真は backdropRect。
+    // WhyNot: aspect の無い写真も覆う形にしない — 横の画面の 16:9 の写真が今の敷き方（画面に合わせて少し伸ばす）とずれ、描き出しの基準が全部替わる。
+    pub def photoRect(fit: Layout.Fit): Option[Float64] -> Rect2.Rect2 = aspect -> match aspect {
+        case None    => backdropRect(fit)
+        case Some(a) =>
+            let w = Layout.width(fit);
+            let h = Layout.height(fit);
+            let cw = w + 24.0;
+            let ch = h + 24.0;
+            let (rw, rh) = if (cw / ch > a) (cw, cw / a) else (ch * a, ch);
+            { position = { x = (w - rw) / 2.0, y = (h - rh) / 2.0 }, size = { x = rw, y = rh } }
+    }
+
+    /// 背景を塗る（実際の画面は揺れの分だけはみ出す photoRect、サムネは画面ちょうど）。描く背景は Stage.shownShot（背景が無い間は initial）。
+    pub def backdropsIn(areaOf: Option[Float64] -> Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        backdropsUsing(GameView.backdrop, areaOf, env, stage)
+
+    /// backdropsIn の、ゲームの絵を paint から引く形（テストが差し替える）。
+    /// 切り替えの間は、替え方（Stage の switch）ごとに前の背景（under）と今の背景を重ねる・送る・塗り替える。
+    /// ゲームが持つ切り替え（switch#game）の間は重ねず、今の背景をそのまま描く（ゲームが under と進みから歩く絵を出す）。
+    pub def backdropsUsing(paint: BackdropPainter, areaOf: Option[Float64] -> Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        let base = areaOf(None);
+        let ground = View.at(base#position#x, base#position#y, RawDraw.box(base#size, Backdrop.groundColor(), 0));
         let p = Stage.fadeProgress(env#storyNow, stage);
-        let photo = (shot: Option[Stage.Shot], dx: Float64, progress, z) -> shot |> Option.flatMap(s -> specOf(s, env))
-            |> Option.map(spec -> Backdrop.surface(spec, { position = { x = area#position#x + dx, y = area#position#y } | area }, progress, z) :: Nil)
+        let photo = (shot: Option[Stage.Shot], dx: Float64, progress, z) -> shot
+            |> Option.flatMap(s -> pictureOf(paint, env, stage, s, areaOf)) |> Option.map(match (picture, area) -> placed(picture, area, dx, progress, z))
             |> Option.getWithDefault(Nil);
+        let current = Stage.shownShot(env#res#backdrops, stage);
         let under = if (p >= 1.0) None else stage#under;
         let shift = shiftOf(env, stage);
         let moved = match stage#switch#transition {
-            case BackdropDoc.Transition.Black => if (p < 0.5) photo(under, 0.0, 1.0, 1) else photo(stage#shot, 0.0, 1.0, 2)
-            case BackdropDoc.Transition.Slide => List.append(photo(under, shift - area#size#x, 1.0, 1), photo(stage#shot, shift, 1.0, 2))
-            case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - area#size#x * panShare(), 1.0, 1), photo(stage#shot, shift, p, 2))
-            case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, 1), wiped(env, area, stage#shot, p))
-            case _                            => List.append(photo(under, 0.0, 1.0, 1), photo(stage#shot, 0.0, p, 2))
+            case _ if Option.nonEmpty(stage#switch#game) and p < 1.0 => photo(current, 0.0, 1.0, View.zBackdropShot())
+            case BackdropDoc.Transition.Black => if (p < 0.5) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
+            case BackdropDoc.Transition.Slide => List.append(photo(under, shift - base#size#x, 1.0, View.zBackdropUnder()), photo(current, shift, 1.0, View.zBackdropShot()))
+            case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - base#size#x * panShare(), 1.0, View.zBackdropUnder()), photo(current, shift, p, View.zBackdropShot()))
+            case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, View.zBackdropUnder()), wiped(paint, env, areaOf, stage, current, p))
+            case _                            => List.append(photo(under, 0.0, 1.0, View.zBackdropUnder()), photo(current, 0.0, p, View.zBackdropShot()))
         };
         ground :: moved
+
+    /// 背景 shot の絵と塗る矩形: ゲームが描けばその絵、描かなければ写真（まだ届いていなければ None で、下の暗い地が見える）。
+    def pictureOf(paint: BackdropPainter, env: View.Env, stage: Stage.Stage, shot: Stage.Shot, areaOf: Option[Float64] -> Rect2.Rect2): Option[(Picture, Rect2.Rect2)] =
+        let area = areaOf(BackdropDoc.aspectOf(shot#photo, env#res#backdrops));
+        match paint(env, stage, shot#photo, area) {
+            case Some(items) => Some((Picture.Painted(items), area))
+            case None        => specOf(shot, env) |> Option.map(spec -> (Picture.Still(spec), area))
+        }
+
+    /// 絵を dx だけ横へずらし、濃さ progress で、z の幅 z..z+2 に置く。
+    def placed(picture: Picture, area: Rect2.Rect2, dx: Float64, progress: Float64, z: Int32): List[Render.PlacedItem] = match picture {
+        case Picture.Still(spec)    => Backdrop.surface(spec, { position = { x = area#position#x + dx, y = area#position#y } | area }, progress, z) :: Nil
+        case Picture.Painted(items) =>
+            let faded = if (progress >= 1.0) items else items |> List.map(Render.overItem(Render.fade(Float64.max(0.0, progress))));
+            faded |> Render.movedAll({ x = dx, y = 0.0 }) |> List.map(Render.overItem(mapZ(n -> z + Int32.max(0, Int32.min(2, n)))))
+    }
 
     /// transition=black の暗転のグループ: 前半は暗くなり、後半は明ける。背景だけでなく人物・粒・GameView も暗くするので、覆いと同じ層の数に置く。
     def blackoutGroup(env: View.Env, stage: Stage.Stage): Group =
@@ -167,15 +227,21 @@ mod ViewStage {
             case _                            => 0.0
         }
 
-    /// 今の写真を左から p の割合まで塗る（wipe）。
-    def wiped(env: View.Env, area: Rect2.Rect2, shot: Option[Stage.Shot], p: Float64): List[Render.PlacedItem] =
-        let edge = area#position#x + area#size#x * p;
-        let x0 = area#position#x;
-        let y0 = area#position#y;
-        let y1 = area#position#y + area#size#y;
-        shot |> Option.flatMap(s -> specOf(s, env))
-            |> Option.map(spec -> Render.shaderFillMasked(spec, area, ({ x = x0, y = y0 } :: { x = edge, y = y0 } :: { x = edge, y = y1 } :: { x = x0, y = y1 } :: Nil) :: Nil, 1.0, 2) :: Nil)
+    /// 今の背景を左から p の割合まで塗る（wipe）。ゲームが描いた絵は塗り分けられないので、濃さ p で重ねる。
+    def wiped(paint: BackdropPainter, env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage, shot: Option[Stage.Shot], p: Float64): List[Render.PlacedItem] =
+        shot |> Option.flatMap(s -> pictureOf(paint, env, stage, s, areaOf)) |> Option.map(match (picture, area) -> wipedPicture(picture, area, p))
             |> Option.getWithDefault(Nil)
+
+    /// 背景 1 枚を左から p の割合まで塗る（ゲームが描いた絵は塗り分けられないので、濃さ p で重ねる）。
+    def wipedPicture(picture: Picture, area: Rect2.Rect2, p: Float64): List[Render.PlacedItem] = match picture {
+        case Picture.Still(spec) =>
+            let edge = area#position#x + area#size#x * p;
+            let x0 = area#position#x;
+            let y0 = area#position#y;
+            let y1 = area#position#y + area#size#y;
+            Render.shaderFillMasked(spec, area, ({ x = x0, y = y0 } :: { x = edge, y = y0 } :: { x = edge, y = y1 } :: { x = x0, y = y1 } :: Nil) :: Nil, 1.0, View.zBackdropShot()) :: Nil
+        case Picture.Painted(_)  => placed(picture, area, 0.0, p, View.zBackdropShot())
+    }
 
     /// 写真がまだ届いていなければ None（その層は描かず、下の暗い地が見える）。
     def specOf(shot: Stage.Shot, env: View.Env): Option[ShaderDoc.Spec] =
@@ -207,7 +273,7 @@ mod ViewStage {
 
     /// tap の当たる物（novel.prompts.json の targets）の名前 → 画面の矩形。写真に載る物は背景を塗る矩形、絵に載る物は出ている絵の置き場から引く。
     pub def targetRectOf(env: View.Env, stage: Stage.Stage): String -> Option[Rect2.Rect2] =
-        let photo = stage#shot |> Option.map(s -> (s#photo, backdropRect(env#fit)));
+        let photo = Stage.shownShot(env#res#backdrops, stage) |> Option.map(s -> (s#photo, photoRect(env#fit)(BackdropDoc.aspectOf(s#photo, env#res#backdrops))));
         let placed = Cast.placedOf(castEnv(env, stage), stage#cast) |> List.map(p -> (p#figure#name, p#rect)) |> List.toMap;
         name -> Hint.targetRect(env#res#prompts, photo, a -> Map.get(a, placed), name)
 
@@ -217,9 +283,10 @@ mod ViewStage {
             |> Option.flatMap(s -> BackdropDoc.gradeOf(s#grade, env#res#backdrops) |> Option.flatMap(g -> g#cast) |> Option.map(Cast.toneOf(s#grade)))
             |> Option.getWithDefault(Cast.plainTone());
         let progress = Stage.fadeProgress(env#storyNow, stage);
-        let light = if (progress >= 1.0) Cast.steadyLight(toneOf(stage#shot)) else { previous = toneOf(stage#under), current = toneOf(stage#shot), progress = progress };
+        let shown = Stage.shownShot(env#res#backdrops, stage);
+        let light = if (progress >= 1.0) Cast.steadyLight(toneOf(shown)) else { previous = toneOf(stage#under), current = toneOf(shown), progress = progress };
         { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light,
-          props = stage#props, photo = stage#shot |> Option.map(s -> s#photo), backdropShift = shiftOf(env, stage) }
+          props = stage#props, photo = shown |> Option.map(s -> s#photo), backdropShift = shiftOf(env, stage) }
 
     // ── パーティクル（蛍・雪） ──
 

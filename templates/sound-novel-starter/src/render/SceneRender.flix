@@ -5,7 +5,7 @@
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
-    use fge::{App, DocJson, Display, HeadlessFont, HeadlessRender, JsonCodec, ProjectLoader, Render, Suggest, Vec2}
+    use fge::{App, DocJson, Display, HeadlessFont, HeadlessLoad, HeadlessRender, JsonCodec, ProjectLoader, Render, Suggest, Vec2}
 
     import java.io.File
     import java.lang.ProcessHandle
@@ -43,7 +43,11 @@ mod SceneRender {
                     (JsonCodec.stringOr("name", "", obj), JsonCodec.stringOr("path", "", obj)))))
              |> Option.getWithDefault(Nil) |> List.toMap
 
-    def loadRes(): Res.Res \ IO = run { Controls.loadRes() } with Fs.FileRead.runWithIO
+    /// ゲームの後から届く素材（GameBoot.loadAssets）も全部読んだ描く元（描き出しに 3D の背景も写す）。
+    def loadRes(): Res.Res \ IO = run {
+        let loaded = Controls.loadRes();
+        Res.withGame(HeadlessLoad.handle(() -> GameBoot.loadAssets(loaded#game)), loaded)
+    } with Fs.FileRead.runWithIO
 
     pub def all(): Unit \ IO = App.Headless.exitWith(allJob(App.Headless.requestFromProcess()))
 

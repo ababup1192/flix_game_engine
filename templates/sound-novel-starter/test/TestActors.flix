@@ -22,7 +22,7 @@ mod TestActors {
 
     /// コマンド 1 つを時刻 at に舞台 st へ表で当てた結果。
     def tried(at: Float64, name: String, args: List[String], st: Stage.Stage): Result[String, Stage.Stage] \ Fs.FileRead =
-        Commands.execute(Commands.Replay.Silent, { now = t(at), node = "", res = res() }, command(name, args), st) |> Result.map(fst)
+        Commands.execute(Commands.Replay.Silent, { now = t(at), node = "", res = res(), instant = false }, command(name, args), st) |> Result.map(fst)
 
     /// コマンドの列を 0 秒・1 秒・2 秒…の時刻で空の舞台へ順に当てる（読めないコマンドは飛ばす）。
     def played(cues: List[(String, List[String])]): Stage.Stage \ Fs.FileRead =

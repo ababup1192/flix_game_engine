@@ -50,6 +50,7 @@ type Rules struct {
 	Note         string   `json:"note"`
 	AssetsDir    string   `json:"assetsDir"`
 	SkipKinds    []string `json:"skipKinds"`
+	SkipNames    []string `json:"skipNames"`
 	SkipPrefixes []string `json:"skipPrefixes"`
 	SkipDirNames []string `json:"skipDirNames"`
 	NoteKeys     []string `json:"noteKeys"`
@@ -99,7 +100,13 @@ func (r *Rules) KindOf(rel string) string {
 	if _, _, ok := r.split(rel); !ok || r.inSkipDir(rel) {
 		return ""
 	}
-	parts := strings.Split(path.Base(rel), ".")
+	base := path.Base(rel)
+	for _, s := range r.SkipNames {
+		if base == s {
+			return ""
+		}
+	}
+	parts := strings.Split(base, ".")
 	if len(parts) < 3 || parts[0] == "" {
 		return ""
 	}

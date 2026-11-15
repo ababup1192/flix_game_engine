@@ -40,6 +40,20 @@ func TestShapeFires(t *testing.T) {
 	}
 }
 
+// skipNames の名前（会話の語彙の標準の命令の表 vocab.std.json）は Doc として数えず、同じ形の別の名前は数える。
+func TestSkipNamesAreNotDocs(t *testing.T) {
+	root := lintconf.TestRepo(t, Name, map[string]string{
+		"assets/talk/vocab.std.json": `{"commands":{}}`,
+		"assets/talk/other.std.json": `{"commands":{}}`,
+	})
+	if code, msg := run(t, root, "assets/talk/vocab.std.json"); code != 0 {
+		t.Fatalf("vocab.std.json は見ないはず code=%d msg=%s", code, msg)
+	}
+	if code, _ := run(t, root, "assets/talk/other.std.json"); code != 1 {
+		t.Fatalf("other.std.json は Doc として止まるはず code=%d", code)
+	}
+}
+
 // スキーマの label はスキーマのファイル自体を渡したときだけ見る。
 func TestLabelOnlyWhenSchemaGiven(t *testing.T) {
 	root := lintconf.TestRepo(t, Name, map[string]string{

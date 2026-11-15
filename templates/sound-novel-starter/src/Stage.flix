@@ -19,8 +19,13 @@ mod Stage {
         case Run
     }
 
-    /// 背景の替え方: transition = 切り替えの種類、ease = 進みの曲線、pace = 3D の道筋の歩き方。
-    pub type alias Switch = { transition = BackdropDoc.Transition, ease = Curve.Ease, pace = Pace }
+    /// ゲームが持つ背景の切り替え（GameCommands.backdropSwitch が決める）。seconds = 切り替えの秒（その間は次の台詞を出さない）、
+    /// sounds = 切り替えを始めてからの秒 at に鳴らす効果音 sound（project.json の sounds の名前）。
+    pub type alias GameSwitch = { seconds = Float64, sounds = List[{ at = Float64, sound = String }] }
+
+    /// 背景の替え方: transition = 切り替えの種類、ease = 進みの曲線、pace = 3D の道筋の歩き方、
+    /// game = ゲームが持つ切り替え（Some の間はテンプレートが前と今の背景を重ねず、今の背景を GameView.backdrop にそのまま描かせる）。
+    pub type alias Switch = { transition = BackdropDoc.Transition, ease = Curve.Ease, pace = Pace, game = Option[GameSwitch] }
 
     /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、switch = 今の背景の替え方、
     /// mode = メッセージ枠の型の名前（novel.theme.json の windows。Nvl / Adv は legacyModes の行き先の型）、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
@@ -55,7 +60,7 @@ mod Stage {
     pub def withModeResolved(theme: ThemeDoc.Doc, stage: Stage): Stage = { mode = fst(windowOf(theme, stage)) | stage }
 
     /// 前の写真の上に、一定の速さで重ねる替え方。
-    pub def plainSwitch(): Switch = { transition = BackdropDoc.Transition.Fade, ease = Curve.Ease.Linear, pace = Pace.Walk }
+    pub def plainSwitch(): Switch = { transition = BackdropDoc.Transition.Fade, ease = Curve.Ease.Linear, pace = Pace.Walk, game = None }
 
     /// 鳴り続ける環境音（project.json の sounds の名前。重ねる時は , でつないだ 1 つの値）。
     pub def ambienceKey(): PropertyTween.NameKey = PropertyTween.nameKey("audio.ambience")
@@ -243,6 +248,24 @@ mod Stage {
     pub def withBackdropBy(now: Clock.Time[Story], shot: Shot, seconds: Float64, switch: Switch, stage: Stage): Stage =
         let s = if (switch#transition == BackdropDoc.Transition.Cut) 0.0 else Float64.max(0.0, seconds);
         { shot = Some(shot), under = stage#shot, fadeFrom = now, fadeSeconds = s, switch = switch | stage }
+
+    /// 描く背景: 今の背景か、背景が無い間は novel.backdrops.json の initial。
+    pub def shownShot(doc: BackdropDoc.Doc, stage: Stage): Option[Shot] =
+        stage#shot |> Option.withDefault(default = BackdropDoc.initialOf(doc) |> Option.map(i -> { photo = i#photo, grade = i#grade }))
+
+    /// ゲームが持つ切り替えの途中なら、終わりの形にする（スキップで切り替えの待ちを飛ばした時）。ほかの切り替えはそのまま。
+    pub def withGameSwitchFinished(stage: Stage): Stage =
+        if (Option.isEmpty(stage#switch#game)) stage else { under = None, fadeFrom = Clock.never() | stage }
+
+    /// ゲームが持つ切り替えで、物語の時刻 before から now まで（before は含まない）に鳴らす効果音。
+    pub def gameSwitchSoundsBetween(before: Clock.Time[Story], now: Clock.Time[Story], stage: Stage): List[String] =
+        match stage#switch#game {
+            case Some(g) if stage#fadeFrom != Clock.never() =>
+                let lo = Clock.since(stage#fadeFrom, before);
+                let hi = Clock.since(stage#fadeFrom, now);
+                g#sounds |> List.filter(s -> s#at > lo and s#at <= hi) |> List.map(s -> s#sound)
+            case _ => Nil
+        }
 
     /// 環境音を now から替える（None で止める）。
     pub def withAmbience(now: Clock.Time[Story], sound: Option[String], stage: Stage): Stage =

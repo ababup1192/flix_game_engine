@@ -14,9 +14,11 @@ def main(): Unit \ IO =
             // Doc を読んで App を組む所ごと渡す（flow を記録する make debug の起動でも、ここで読んだ中身を使い Doc を読み直さない）。
             App.loadAndLaunch(() -> {
                 let downloads = LoadProgress.downloads();
-                let res = Res.withMissing(downloads#missing(), Controls.loadRes());
+                let loaded = Res.withMissing(downloads#missing(), Controls.loadRes());
+                let res = Res.withGame(GameBoot.loadAssets(loaded#game), loaded);
                 Game.app(res, Saves.load(res#kind), localEpochSeconds())
                     |> Game.withAssetLoading(downloads)
+                    |> GameBoot.withLoading({ downloads = downloads, decoder = LoadProgress.imageDecoder() })
                     // セーブデータ・既読・設定を書く（saveRev が変わった実機のフレームの後でだけ。テスト・flow・描き出しは書かない）。
                     |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
                                                             write = w -> Saves.write(w#saves), onJump = App.OnJump.Skip }))

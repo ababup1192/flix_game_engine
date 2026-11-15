@@ -28,6 +28,31 @@
       "description": "transition= を省いた <<bg>> の切り替え（fade = 重ねる・black = 短く暗転・wipe = 左から塗り替える・slide = 前の写真を左へ送る・pan = 横へ振ったように流れながら重ねる・cut = すぐ替わる）",
       "default": "fade"
     },
+    "initial": {
+      "type": "object",
+      "description": "背景が無い間（最初の <<bg>> の前・セーブの背景が無い時）に描く背景。最初の <<bg>> はこれから重ねる",
+      "required": ["photo", "grade"],
+      "properties": {
+        "photo": { "type": "string", "description": "photos の名前" },
+        "grade": { "type": "string", "description": "grades の名前" }
+      }
+    },
+    "title": {
+      "type": "object",
+      "description": "タイトル画面の背景の動き（写真と時間帯は novel.story.json の titlePhoto・titleGrade）",
+      "properties": {
+        "scale": { "type": "number", "minimum": 0.1, "maximum": 4, "default": 1, "description": "画面の真ん中を軸に広げる倍率" },
+        "drift": {
+          "type": "object",
+          "description": "実時間 t 秒で x = sin(t × rate[0] + phase[0]) × amp[0] だけ漂う（y は [1]）",
+          "properties": {
+            "amp": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+            "rate": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+            "phase": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+          }
+        }
+      }
+    },
     "photos": {
       "type": "object",
       "description": "写真の名前 → 写真",
@@ -44,6 +69,11 @@
           "label": {
             "type": "string",
             "description": "セーブ画面に出す場所の名前"
+          },
+          "aspect": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "絵の横÷縦（書いた写真は画面を覆うように比を保って真ん中で切り抜く。縦に長い still など。書かなければ 16:9 の写真として画面に合わせて敷く）"
           }
         }
       }

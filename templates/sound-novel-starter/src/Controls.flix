@@ -504,7 +504,8 @@ mod Controls {
           commandArgs = Commands.argsTableOf(dialogue),
           nodesBySource = Talk.nodesBySource(dialogue),
           missing = Set.empty(),
-          scriptEdits = ScriptEdits.none() }
+          scriptEdits = ScriptEdits.none(),
+          game = GameRes.load() }
 
     /// 鳴り続けない音の長さ（秒）。シナリオが wait=true で鳴らす効果音のうち、長さが読めない物を 1 行ずつ知らせる（読み込みのたびに 1 回）。
     def loadSoundSeconds(dialogue: Yarn.Program): Map[String, Float64] \ Fs.FileRead =
@@ -542,5 +543,5 @@ mod Controls {
                                                                  |> Res.withMixerExtras(MixerDoc.load(mixerPath())), unchanged)
             :: Resources.reloadRow("effects", EffectsDoc.path(), res -> Res.withEffects(EffectsDoc.load(EffectsDoc.path()), res), unchanged)
             :: Resources.reloadRow("prompts", PromptsDoc.path(), res -> Res.withPrompts(PromptsDoc.load(PromptsDoc.path()), res), unchanged)
-            :: Nil
+            :: GameRes.docRows()
 }

@@ -1,0 +1,875 @@
+{
+  "commands": {
+    "audio": {
+      "params": [
+        {
+          "name": "channel",
+          "pos": 1,
+          "req": true,
+          "type": "choice",
+          "values": [
+            "ambience",
+            "bgm",
+            "se",
+            "all"
+          ]
+        },
+        {
+          "list": true,
+          "name": "sound",
+          "orWords": [
+            "off"
+          ],
+          "pos": 2,
+          "ref": {
+            "from": [
+              {
+                "doc": "../../project.json",
+                "path": "sounds[].name"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "max": 1,
+          "min": 0,
+          "name": "volume",
+          "orNames": {
+            "from": [
+              {
+                "doc": "../novel.mixer.json",
+                "keys": "volumes"
+              }
+            ]
+          },
+          "type": "num"
+        },
+        {
+          "max": 30,
+          "min": 0,
+          "name": "fade",
+          "type": "num"
+        },
+        {
+          "name": "wait",
+          "type": "flag"
+        }
+      ],
+      "summary": "環境音（ambience。, で重ねる）・音楽（bgm）を替える・止める、効果音を 1 回鳴らす（se。wait = 音の長さだけ待つ）、all off で環境音と音楽を止める（volume = 数か novel.mixer.json の volumes の名前・fade = 秒）"
+    },
+    "bg": {
+      "params": [
+        {
+          "name": "photo",
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.backdrops.json",
+                "keys": "photos"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "name": "grade",
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.backdrops.json",
+                "keys": "grades"
+              }
+            ]
+          },
+          "type": "name"
+        },
+        {
+          "default": "1.0",
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "name": "transition",
+          "type": "choice",
+          "values": [
+            "fade",
+            "black",
+            "wipe",
+            "slide",
+            "pan",
+            "cut"
+          ]
+        },
+        {
+          "name": "pace",
+          "type": "choice",
+          "values": [
+            "walk",
+            "run"
+          ]
+        },
+        {
+          "default": "linear",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "背景の写真を時間帯の色で替え、秒かけて切り替える（transition = fade・black・wipe・slide・pan・cut。省くと novel.backdrops.json の defaultTransition・pace = 3D の道筋の歩き方）"
+    },
+    "camera": {
+      "params": [
+        {
+          "max": 10,
+          "min": 0.1,
+          "name": "zoom",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "x",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "y",
+          "type": "num"
+        },
+        {
+          "default": "0.5",
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "world の層（背景・絵・粒）を寄せる・ずらす（zoom = 倍率・x・y = 見る所のずれ。文字の枠には掛けない）"
+    },
+    "fx": {
+      "params": [
+        {
+          "name": "name",
+          "orWords": [
+            "off"
+          ],
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.effects.json",
+                "keys": "particles"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "name": "once",
+          "type": "flag"
+        },
+        {
+          "name": "on",
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast.*.markers"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props.*.markers"
+              }
+            ]
+          },
+          "type": "marker"
+        }
+      ],
+      "summary": "画面の粒の演出（novel.effects.json の particles）を出す・止める（once = Doc の onceSeconds だけ一度出す・on = novel.cast.json の markers の点から出す）"
+    },
+    "hide": {
+      "params": [
+        {
+          "name": "name",
+          "oneOf": "target",
+          "orWords": [
+            "all"
+          ],
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props"
+              }
+            ]
+          },
+          "type": "name"
+        },
+        {
+          "name": "at",
+          "oneOf": "target",
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "slots"
+              }
+            ]
+          },
+          "type": "name"
+        },
+        {
+          "name": "to",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "time",
+          "type": "num"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物・to = 端へ滑って消える）"
+    },
+    "move": {
+      "params": [
+        {
+          "name": "name",
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "x",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "y",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "dx",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "dy",
+          "type": "num"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "scale",
+          "type": "num"
+        },
+        {
+          "max": 1,
+          "min": 0,
+          "name": "alpha",
+          "type": "num"
+        },
+        {
+          "max": 720,
+          "min": -720,
+          "name": "rotate",
+          "type": "num"
+        },
+        {
+          "name": "from",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "name": "to",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "default": "0.5",
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "出ている絵の位置・大きさ・濃さ・傾きを秒かけて動かす（x・y = 置き場所からのずれ・dx・dy = 今の値に足す・from = 出ていない絵を端の外から出す・to = 端の外まで動かして消す）"
+    },
+    "overlay": {
+      "params": [
+        {
+          "max": 1,
+          "min": 0,
+          "name": "alpha",
+          "pos": 1,
+          "req": true,
+          "type": "num"
+        },
+        {
+          "name": "color",
+          "type": "name"
+        },
+        {
+          "max": 1,
+          "min": 0,
+          "name": "from",
+          "type": "num"
+        },
+        {
+          "name": "layer",
+          "type": "choice",
+          "values": [
+            "stage",
+            "screen"
+          ]
+        },
+        {
+          "default": "0.0",
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "画面に色を被せる濃さを秒かけて替える（color = black・white・#rrggbb・from = 始まりの濃さ・layer = stage（world の中）か screen（文字の枠より手前））"
+    },
+    "shake": {
+      "params": [
+        {
+          "max": 80,
+          "min": 0,
+          "name": "strength",
+          "orNames": {
+            "from": [
+              {
+                "doc": "../novel.kind.json",
+                "keys": "shakes"
+              }
+            ]
+          },
+          "pos": 1,
+          "type": "num"
+        },
+        {
+          "name": "on",
+          "orWords": [
+            "screen",
+            "window"
+          ],
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props"
+              }
+            ]
+          },
+          "type": "name"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "time",
+          "type": "num"
+        }
+      ],
+      "summary": "揺らす（強さ = novel.kind.json の shakes の名前か px・省くと shakeSeconds / shakePx。on = screen（既定）・window・絵の名前）"
+    },
+    "show": {
+      "params": [
+        {
+          "name": "name",
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "name": "face",
+          "pos": 2,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "path": "cast.*.faces[]"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "path": "props.*.faces[]"
+              }
+            ]
+          },
+          "scope": "name",
+          "type": "name"
+        },
+        {
+          "name": "at",
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "slots"
+              }
+            ]
+          },
+          "type": "name"
+        },
+        {
+          "name": "from",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "x",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "y",
+          "type": "num"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "scale",
+          "type": "num"
+        },
+        {
+          "max": 1,
+          "min": 0,
+          "name": "alpha",
+          "type": "num"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "time",
+          "type": "num"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率）"
+    },
+    "speak": {
+      "params": [
+        {
+          "name": "name",
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        }
+      ],
+      "summary": "字を出さずに話す（話し手を明るくし、novel.cast.json の speakFx を markers の mouth から一度出す）"
+    },
+    "text": {
+      "params": [
+        {
+          "name": "at",
+          "oneOf": "what",
+          "type": "choice",
+          "values": [
+            "top",
+            "center",
+            "bottom"
+          ]
+        },
+        {
+          "name": "size",
+          "oneOf": "what",
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.kind.json",
+                "keys": "textSizes"
+              }
+            ]
+          },
+          "type": "name"
+        },
+        {
+          "name": "align",
+          "oneOf": "what",
+          "type": "choice",
+          "values": [
+            "left",
+            "center"
+          ]
+        },
+        {
+          "max": 10,
+          "min": 0.05,
+          "name": "speed",
+          "oneOf": "what",
+          "type": "num"
+        },
+        {
+          "max": 30,
+          "min": 0,
+          "name": "lock",
+          "oneOf": "what",
+          "type": "num"
+        }
+      ],
+      "summary": "字の置き場（at = NVL の頁の中の top・center・bottom）・大きさ（size = novel.kind.json の textSizes）・揃え（align）・文字送りの速さの倍率（speed）・押しても送らない秒（lock）"
+    },
+    "tween": {
+      "params": [
+        {
+          "name": "key",
+          "pos": 1,
+          "req": true,
+          "type": "name"
+        },
+        {
+          "max": 100000,
+          "min": -100000,
+          "name": "value",
+          "pos": 2,
+          "req": true,
+          "type": "num"
+        },
+        {
+          "max": 100000,
+          "min": -100000,
+          "name": "from",
+          "type": "num"
+        },
+        {
+          "default": "0.5",
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "ゲームの数の値を秒かけて動かす（鍵 lair.arrive は game.lair.arrive。game. は書かない。from = 始まりの値・省くと今の値から。書いたことの無い鍵は 0 から）"
+    },
+    "window": {
+      "params": [
+        {
+          "name": "mode",
+          "orWords": [
+            "clear",
+            "off",
+            "on"
+          ],
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.theme.json",
+                "keys": "windows"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "time",
+          "type": "num"
+        }
+      ],
+      "summary": "メッセージ枠の型（novel.theme.json の windows）に替える・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）・出す（on。time = off・on の薄くなる秒）"
+    }
+  },
+  "version": 2
+}
