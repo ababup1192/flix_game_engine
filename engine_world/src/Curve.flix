@@ -63,6 +63,135 @@ pub mod Curve {
             case (t0, v0) :: rest  => walk(t0, v0, rest, t)
         }
 
+    // ── ease（2 つの値の間を、どんな速さの変わり方でつなぐか）──
+
+    /// 進み 0〜1 を、値の進み 0〜1 へ写す曲線の名前。どれも 0 で 0・1 で 1 になる。
+    /// Penner の 3 方向（In = 出だしが遅い・Out = 終わりが遅い・InOut = 両端が遅い）× 8 種と、
+    /// Linear（一定の速さ）・SmoothStep（両端がなめらかに止まる 3 次の曲線。Penner には無い）。
+    /// 台本と Doc に書く名前は easeTable（inOutCubic・smoothstep など。easings.net と同じ綴り）。
+    pub enum Ease with Eq {
+        case Linear
+        case SmoothStep
+        case InSine
+        case OutSine
+        case InOutSine
+        case InQuad
+        case OutQuad
+        case InOutQuad
+        case InCubic
+        case OutCubic
+        case InOutCubic
+        case InQuart
+        case OutQuart
+        case InOutQuart
+        case InExpo
+        case OutExpo
+        case InOutExpo
+        case InBack
+        case OutBack
+        case InOutBack
+        case InElastic
+        case OutElastic
+        case InOutElastic
+        case InBounce
+        case OutBounce
+        case InOutBounce
+    }
+
+    instance ToString[Ease] {
+        pub def toString(e: Ease): String =
+            easeTable() |> List.find(row -> snd(row) == e) |> Option.map(fst) |> Option.getWithDefault("linear")
+    }
+
+    /// 書く名前と曲線の表（台本の ease= と Doc の値はこの名前で書く）。
+    pub def easeTable(): List[(String, Ease)] =
+        ("linear", Ease.Linear) :: ("smoothstep", Ease.SmoothStep) ::
+        ("inSine", Ease.InSine) :: ("outSine", Ease.OutSine) :: ("inOutSine", Ease.InOutSine) ::
+        ("inQuad", Ease.InQuad) :: ("outQuad", Ease.OutQuad) :: ("inOutQuad", Ease.InOutQuad) ::
+        ("inCubic", Ease.InCubic) :: ("outCubic", Ease.OutCubic) :: ("inOutCubic", Ease.InOutCubic) ::
+        ("inQuart", Ease.InQuart) :: ("outQuart", Ease.OutQuart) :: ("inOutQuart", Ease.InOutQuart) ::
+        ("inExpo", Ease.InExpo) :: ("outExpo", Ease.OutExpo) :: ("inOutExpo", Ease.InOutExpo) ::
+        ("inBack", Ease.InBack) :: ("outBack", Ease.OutBack) :: ("inOutBack", Ease.InOutBack) ::
+        ("inElastic", Ease.InElastic) :: ("outElastic", Ease.OutElastic) :: ("inOutElastic", Ease.InOutElastic) ::
+        ("inBounce", Ease.InBounce) :: ("outBounce", Ease.OutBounce) :: ("inOutBounce", Ease.InOutBounce) :: Nil
+
+    /// 進み `progress`（0〜1。外は 0 か 1 に収める）での値の進み。Back と Elastic は途中で 0〜1 を少しはみ出す。
+    pub def ease(e: Ease, progress: Float64): Float64 =
+        let t = Num.clamp01(progress);
+        match e {
+            case Ease.Linear       => t
+            case Ease.SmoothStep   => t * t * (3.0 - 2.0 * t)
+            case Ease.InSine       => 1.0 - RenderUtil.cosF(t * halfPi())
+            case Ease.OutSine      => RenderUtil.sinF(t * halfPi())
+            case Ease.InOutSine    => 0.5 - 0.5 * RenderUtil.cosF(t * 2.0 * halfPi())
+            case Ease.InQuad       => pow(t, 2.0)
+            case Ease.OutQuad      => mirrorOut(t, 2.0)
+            case Ease.InOutQuad    => inOutPower(t, 2.0)
+            case Ease.InCubic      => pow(t, 3.0)
+            case Ease.OutCubic     => mirrorOut(t, 3.0)
+            case Ease.InOutCubic   => inOutPower(t, 3.0)
+            case Ease.InQuart      => pow(t, 4.0)
+            case Ease.OutQuart     => mirrorOut(t, 4.0)
+            case Ease.InOutQuart   => inOutPower(t, 4.0)
+            case Ease.InExpo       => if (t <= 0.0) 0.0 else pow(2.0, 10.0 * t - 10.0)
+            case Ease.OutExpo      => if (t >= 1.0) 1.0 else 1.0 - pow(2.0, -10.0 * t)
+            case Ease.InOutExpo    => inOutExpo(t)
+            case Ease.InBack       => inBack(t)
+            case Ease.OutBack      => 1.0 - inBack(1.0 - t)
+            case Ease.InOutBack    => inOutBack(t)
+            case Ease.InElastic    => inElastic(t)
+            case Ease.OutElastic   => 1.0 - inElastic(1.0 - t)
+            case Ease.InOutElastic => inOutElastic(t)
+            case Ease.InBounce     => 1.0 - outBounce(1.0 - t)
+            case Ease.OutBounce    => outBounce(t)
+            case Ease.InOutBounce  => if (t < 0.5) 0.5 - 0.5 * outBounce(1.0 - 2.0 * t) else 0.5 + 0.5 * outBounce(2.0 * t - 1.0)
+        }
+
+    def halfPi(): Float64 = 1.5707963267948966
+
+    def pow(b: Float64, e: Float64): Float64 = Float64.pow(base = b, e)
+
+    def mirrorOut(t: Float64, power: Float64): Float64 = 1.0 - pow(1.0 - t, power)
+
+    def inOutPower(t: Float64, power: Float64): Float64 =
+        if (t < 0.5) pow(2.0, power - 1.0) * pow(t, power)
+        else 1.0 - pow(2.0 - 2.0 * t, power) / 2.0
+
+    def inOutExpo(t: Float64): Float64 =
+        if (t <= 0.0) 0.0
+        else if (t >= 1.0) 1.0
+        else if (t < 0.5) pow(2.0, 20.0 * t - 10.0) / 2.0
+        else (2.0 - pow(2.0, 10.0 - 20.0 * t)) / 2.0
+
+    def backPull(): Float64 = 1.70158
+
+    def inBack(t: Float64): Float64 = (backPull() + 1.0) * t * t * t - backPull() * t * t
+
+    def inOutBack(t: Float64): Float64 =
+        let c = backPull() * 1.525;
+        if (t < 0.5) pow(2.0 * t, 2.0) * ((c + 1.0) * 2.0 * t - c) / 2.0
+        else (pow(2.0 * t - 2.0, 2.0) * ((c + 1.0) * (2.0 * t - 2.0) + c) + 2.0) / 2.0
+
+    def inElastic(t: Float64): Float64 =
+        if (t <= 0.0) 0.0
+        else if (t >= 1.0) 1.0
+        else -(pow(2.0, 10.0 * t - 10.0)) * RenderUtil.sinF((10.0 * t - 10.75) * (4.0 * halfPi() / 3.0))
+
+    def inOutElastic(t: Float64): Float64 =
+        let w = 4.0 * halfPi() / 4.5;
+        if (t <= 0.0) 0.0
+        else if (t >= 1.0) 1.0
+        else if (t < 0.5) -(pow(2.0, 20.0 * t - 10.0) * RenderUtil.sinF((20.0 * t - 11.125) * w)) / 2.0
+        else ((pow(2.0, 10.0 - 20.0 * t)) * RenderUtil.sinF((20.0 * t - 11.125) * w)) / 2.0 + 1.0
+
+    def outBounce(t: Float64): Float64 =
+        let n = 7.5625;
+        let d = 2.75;
+        if (t < 1.0 / d) n * t * t
+        else if (t < 2.0 / d) { let u = t - 1.5 / d; n * u * u + 0.75 }
+        else if (t < 2.5 / d) { let u = t - 2.25 / d; n * u * u + 0.9375 }
+        else { let u = t - 2.625 / d; n * u * u + 0.984375 }
+
     def walk(t0: Float64, v0: Float64, rest: List[(Float64, Float64)], t: Float64): Float64 =
         match rest {
             case Nil              => v0                              // 末尾以降は末尾値で平ら

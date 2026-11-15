@@ -90,6 +90,14 @@ pub mod EcsTween {
         let done = Int32.min(n, Num.floorInt(ease(easing, Num.clamp01(u)) * Int32.toFloat64(n) + 0.000001));
         start + dir * done
 
+    /// 同じ動きの Curve.Ease（EaseIn・EaseOut・EaseInOut は 2 乗の曲線なので InQuad・OutQuad・InOutQuad）。
+    pub def toEase(e: Easing): Curve.Ease = match e {
+        case Easing.Linear    => Curve.Ease.Linear
+        case Easing.EaseIn    => Curve.Ease.InQuad
+        case Easing.EaseOut   => Curve.Ease.OutQuad
+        case Easing.EaseInOut => Curve.Ease.InOutQuad
+    }
+
     /// 補間カーブ（全て 0→0・1→1 を保つ）。
     def ease(e: Easing, t: Float64): Float64 = match e {
         case Easing.Linear    => t

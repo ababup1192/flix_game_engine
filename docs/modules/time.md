@@ -8,6 +8,7 @@
 | やりたいこと | モジュール |
 |---|---|
 | 値を滑らかに動かす（tween・補間） | EcsTween / Curve |
+| 2 つの値の間をどんな速さでつなぐか（ease の名前: linear・smoothstep・Penner の inOutCubic など） | Curve（Ease・ease・easeTable）/ EcsTween（toEase） |
 | 整数を 1 つずつ動かす（数え下がり・数え上がり・巡って止まるルーレット） | EcsTween（steppedInt） |
 | 演出の時刻表（動き・効果音・待ちを 1 本に書く。拍・小節で書いて秒はテンポから。音を絵と同じクリップに付ける） | Timeline（build / buildOrPanic / append / join / atEndOf / insert / withSound / waitFor → stateOf / progressOf / soundsOn / soundsBetween。手順は `engine_world/src/Timeline.flix` 冒頭） |
 | 演出の長さ・待ち・溜めの目安（窓の出入り 200〜300ms・待ちは 1 秒まで・溜めは 15F・音と絵のずれ） | docs/pacing.md（目安の表と出典。曲に乗る演出は拍へ読み替えて Timeline に書く） |
