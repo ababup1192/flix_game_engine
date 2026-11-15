@@ -3,10 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/checkd"
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
@@ -47,11 +50,15 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 		code := refactor.Run(&o, &e, root, rest, opts)
 		return o.String(), e.String(), code
 	}
-	rootRows := func() ([]refactor.Row, bool) {
-		rows, err := refactor.ReadIndex(filepath.Join(root, "build", "refactor", "spans-resolved.tsv"), refactor.Resolved)
-		return rows, err == nil
+	r := treeRefactor{
+		runRoot:  runRoot,
+		gate:     treeGate{path: filepath.Join(root, "build", "refactor", "trees-skip.json"), stamp: treeStamp, run: runTreeRefactor, mu: &sync.Mutex{}},
+		readRows: readTreeRows,
+		lastUsage: func(since time.Time) (io.ReadCloser, error) {
+			return openFresh(filepath.Join(root, "build", "refactor", "last-usages.txt"), since)
+		},
 	}
-	return refactorWithTrees(out, errOut, rest, asJSON, q, trees, notes, runRoot, runTreeRefactor, treeIndexRows, rootRows)
+	return r.run(out, errOut, rest, asJSON, q, trees, notes)
 }
 
 // useEngineFlixlint は、ゲームが flixlint を名指ししていない時（submodule・--flixlint・FGE_FLIXLINT・FLIXLINT_BIN・

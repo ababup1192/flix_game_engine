@@ -22,7 +22,7 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-// engine の根の形（mk/game.mk・repository つきの flix.toml・src のある bench 1 本・src の無い bench 1 本・engine_web/src）。
+// engine のルートの形（mk/game.mk・repository つきの flix.toml・src のある bench 1 本・src の無い bench 1 本・engine_web/src）。
 func fakeEngine(t *testing.T) string {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "mk", "game.mk"), "")
@@ -34,7 +34,7 @@ func fakeEngine(t *testing.T) string {
 	return root
 }
 
-// bench は src のある物だけが木になり、engine の名前の頭は flix.toml の repository から作る。
+// bench は src のある物だけがソースツリーになり、engine の名前の頭は flix.toml の repository から作る。
 func TestRefactorTreesListsBenchWithSource(t *testing.T) {
 	trees, _ := refactorTrees(fakeEngine(t))
 	if len(trees) != 1 || trees[0].Name != "bench/crowd" || trees[0].EnginePrefix != testEnginePrefix {
@@ -42,7 +42,7 @@ func TestRefactorTreesListsBenchWithSource(t *testing.T) {
 	}
 }
 
-// engine_web を組む生成物が無ければ、木にせず見ていない事を 1 行で言う。
+// engine_web を組む生成物が無ければ、ソースツリーにせず見ていない事を 1 行で言う。
 func TestRefactorTreesNotesMissingWebTree(t *testing.T) {
 	_, notes := refactorTrees(fakeEngine(t))
 	if len(notes) != 1 || !strings.Contains(notes[0], "make sync-engine-full-web") {
@@ -50,7 +50,7 @@ func TestRefactorTreesNotesMissingWebTree(t *testing.T) {
 	}
 }
 
-// engine_web を組む生成物があれば、src/engine_web の下だけをこの木の物として engine_web/src へ置き換える。
+// engine_web を組む生成物があれば、src/engine_web の下だけをこのソースツリーの物として engine_web/src へ置き換える。
 func TestRefactorTreesMapsWebTreeToEngineWebSource(t *testing.T) {
 	root := fakeEngine(t)
 	writeFile(t, filepath.Join(root, webTreeDir, "flix.toml"), "")
@@ -63,7 +63,7 @@ func TestRefactorTreesMapsWebTreeToEngineWebSource(t *testing.T) {
 	}
 }
 
-// engine の根でなければ（ゲームの根）木は無い。
+// engine のルートでなければ（ゲームのルート）ソースツリーは無い。
 func TestRefactorTreesEmptyOutsideEngine(t *testing.T) {
 	trees, notes := refactorTrees(t.TempDir())
 	if trees != nil || notes != nil {
@@ -79,7 +79,7 @@ func TestParseTreeQuerySkipsFlagValues(t *testing.T) {
 	}
 }
 
-// 欄の問いと、書き換える操作は木で引かない。
+// 欄の問いと、書き換える操作はソースツリーで引かない。
 func TestParseTreeQueryRootOnlyOps(t *testing.T) {
 	for _, rest := range [][]string{
 		{"usages", "--label", "x", "--receiver", "World"},
@@ -87,12 +87,12 @@ func TestParseTreeQueryRootOnlyOps(t *testing.T) {
 		{"usages"},
 	} {
 		if _, ok := parseTreeQuery(rest); ok {
-			t.Errorf("%q は根だけのはず", rest)
+			t.Errorf("%q はルートだけのはず", rest)
 		}
 	}
 }
 
-// usages --unused は名前なしで木も見る。
+// usages --unused は名前なしでソースツリーも見る。
 func TestParseTreeQueryUnused(t *testing.T) {
 	q, ok := parseTreeQuery([]string{"usages", "--unused"})
 	if !ok || !q.unused {
@@ -100,92 +100,214 @@ func TestParseTreeQueryUnused(t *testing.T) {
 	}
 }
 
-var benchTree = refactorTree{Name: "bench/crowd", Root: "/e/bench/crowd", As: "bench/crowd/", EnginePrefix: testEnginePrefix}
-var webTree = refactorTree{Name: "engine_web", Root: "/e/build/engine_full_web", Own: "src/engine_web/", As: "engine_web/src/", Resident: true}
-
-// 根が当てた名前は、fpkg で使う木には engine の頭を付けて問う（木の中の同じ名前の別物を拾わない）。
-func TestAskTreePrefixesEngineNameInBench(t *testing.T) {
-	var asked []string
-	run := func(_ refactorTree, rest []string) (string, int) {
-		asked = rest
-		return `{"sym":"` + testEnginePrefix + `App.go","sites":[{"file":"src/Main.flix","line":3,"col":5,"owner":"Main.main","what":"call"}],"usage":{"sym":"x","kind":"def"}}`, 0
+// lib のあるソースツリー（treeGate は lib の無いソースツリーを問わない）。
+func treeWithLib(t *testing.T, tr refactorTree) refactorTree {
+	tr.Root = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tr.Root, "lib"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	q, _ := parseTreeQuery([]string{"usages", "App.go"})
-	askTree(benchTree, []string{"usages", "App.go"}, q, true, run)
-	if asked[1] != testEnginePrefix+"App.go" {
+	return tr
+}
+
+var benchTree = refactorTree{Name: "bench/crowd", As: "bench/crowd/", EnginePrefix: testEnginePrefix}
+var webTree = refactorTree{Name: "engine_web", Own: "src/engine_web/", As: "engine_web/src/", Resident: true}
+
+func gateOf(run treeRun) treeGate {
+	return treeGate{stamp: func(refactorTree) int64 { return 1 }, run: run}
+}
+
+func okRun(out string) treeRun {
+	return func(_ refactorTree, _ []string) (string, string, int) { return out, "", 0 }
+}
+
+const benchUsage = `{"sym":"` + testEnginePrefix + `Scene3d.shaderHashOf","sites":[{"file":"src/Main.flix","line":3,"col":5,"owner":"Main.main","what":"call"}],"usage":{"sym":"x","kind":"def"}}`
+
+// ルートが当てた名前は、fpkg で使うソースツリーにはルートの答えの完全な名前に engine の頭を付けて問う。
+func TestAskTreePrefixesRootSymInBench(t *testing.T) {
+	var asked []string
+	run := func(_ refactorTree, rest []string) (string, string, int) { asked = rest; return benchUsage, "", 0 }
+	q, _ := parseTreeQuery([]string{"usages", "shaderHashOf"})
+	askTree(gateOf(run), treeWithLib(t, benchTree), []string{"usages", "shaderHashOf"}, q, "Scene3d.shaderHashOf")
+	if asked[1] != testEnginePrefix+"Scene3d.shaderHashOf" {
 		t.Errorf("got %q", asked)
 	}
 }
 
-// 木の使われ所は engine の根からの相対で、名前は頭を外して出す。
+// ソースツリーの使われ所は engine のルートからの相対で、名前は頭を外して出す。
 func TestAskTreeMapsBenchSites(t *testing.T) {
-	run := func(_ refactorTree, _ []string) (string, int) {
-		return `{"sym":"` + testEnginePrefix + `App.go","sites":[{"file":"src/Main.flix","line":3,"col":5,"owner":"Main.main","what":"call"}],"usage":{"sym":"x","kind":"def"}}`, 0
-	}
-	q, _ := parseTreeQuery([]string{"usages", "App.go"})
-	a, ok := askTree(benchTree, []string{"usages", "App.go"}, q, true, run)
-	if !ok || a.Sym != "App.go" || a.Sites[0].File != "bench/crowd/src/Main.flix" {
+	q, _ := parseTreeQuery([]string{"usages", "Scene3d.shaderHashOf"})
+	a, ok, _ := askTree(gateOf(okRun(benchUsage)), treeWithLib(t, benchTree), []string{"usages", "Scene3d.shaderHashOf"}, q, "Scene3d.shaderHashOf")
+	if !ok || a.Sym != "Scene3d.shaderHashOf" || a.Sites[0].File != "bench/crowd/src/Main.flix" {
 		t.Errorf("got %+v %v", a, ok)
 	}
 }
 
-// engine_web の木で、engine の src の写し（Own の外）の使われ所は根の答えと重なるので落とす。
+// engine_web のソースツリーで、engine の src の写し（Own の外）の使われ所はルートの答えと重なるので落とす。
 func TestAskTreeDropsCopiesOutsideOwn(t *testing.T) {
-	run := func(_ refactorTree, _ []string) (string, int) {
-		return `{"sym":"A.f","sites":[{"file":"src/engine/A.flix","line":1,"col":1,"owner":"A.g","what":"call"},{"file":"src/engine_web/WebLayer.flix","line":9,"col":2,"owner":"WebLayer.go","what":"call"}],"usage":{"sym":"A.f","kind":"def","decl":"src/engine/A.flix:1:1"}}`, 0
-	}
+	out := `{"sym":"A.f","sites":[{"file":"src/engine/A.flix","line":1,"col":1,"owner":"A.g","what":"call"},{"file":"src/engine_web/WebLayer.flix","line":9,"col":2,"owner":"WebLayer.go","what":"call"}],"usage":{"sym":"A.f","kind":"def","decl":"src/engine/A.flix:1:1"}}`
 	q, _ := parseTreeQuery([]string{"usages", "A.f"})
-	a, _ := askTree(webTree, []string{"usages", "A.f"}, q, true, run)
+	a, _, _ := askTree(gateOf(okRun(out)), treeWithLib(t, webTree), []string{"usages", "A.f"}, q, "A.f")
 	if len(a.Sites) != 1 || a.Sites[0].File != "engine_web/src/WebLayer.flix" || a.Decl != "" {
 		t.Errorf("got %+v", a)
 	}
 }
 
-// show は根が当てた名前なら木を見ない（engine_web の木の写しを 2 度出さない）。
+// show はルートが当てた名前ならソースツリーを見ない（engine_web の写しを 2 度出さない）。
 func TestAskTreeSkipsShowWhenRootFound(t *testing.T) {
 	called := false
-	run := func(_ refactorTree, _ []string) (string, int) { called = true; return "{}", 0 }
+	run := func(_ refactorTree, _ []string) (string, string, int) { called = true; return "{}", "", 0 }
 	q, _ := parseTreeQuery([]string{"show", "A.f"})
-	askTree(webTree, []string{"show", "A.f"}, q, true, run)
+	askTree(gateOf(run), treeWithLib(t, webTree), []string{"show", "A.f"}, q, "A.f")
 	if called {
-		t.Error("木を問うた")
+		t.Error("ソースツリーを問うた")
 	}
 }
 
-// 根に無い名前を木で当てたら 0 で終わり、根の「索引にありません」は出さない。
-func TestRefactorWithTreesFoundOnlyInTree(t *testing.T) {
-	runRoot := func(_ []string) (string, string, int) { return "", "refactor search: 0 件\n", 1 }
-	run := func(_ refactorTree, _ []string) (string, int) {
-		return `{"found":[{"sym":"WebFs.runFileRead","kind":"def","file":"src/engine_web/WebFs.flix","line":20,"pub":true}]}`, 0
+const indexFailure = "refactor: 索引を作れません: flixlint が依存（lib/）を読めない（終了コード 4。上の出力）\nnext: make check（flix check が lib/ に依存を入れる）\n"
+
+// 索引を作れなかったソースツリーは、flix.toml・lib・src が新しくならない限り 2 回目は問わない。
+func TestTreeGateSkipsFailedTreeUntilItChanges(t *testing.T) {
+	calls := 0
+	run := func(_ refactorTree, _ []string) (string, string, int) { calls++; return "", indexFailure, 4 }
+	g := treeGate{path: filepath.Join(t.TempDir(), "skip.json"), stamp: func(refactorTree) int64 { return 7 }, run: run}
+	tr := treeWithLib(t, benchTree)
+	g.ask(tr, []string{"search", "x"})
+	g.ask(tr, []string{"search", "x"})
+	if calls != 1 {
+		t.Errorf("%d 回問うた", calls)
 	}
+}
+
+// 2 回目に問わなかった時も、なぜ引いていないかを 1 行で言う。
+func TestTreeGateNotesSkippedTree(t *testing.T) {
+	run := func(_ refactorTree, _ []string) (string, string, int) { return "", indexFailure, 4 }
+	g := treeGate{path: filepath.Join(t.TempDir(), "skip.json"), stamp: func(refactorTree) int64 { return 7 }, run: run}
+	tr := treeWithLib(t, benchTree)
+	g.ask(tr, []string{"search", "x"})
+	_, _, note := g.ask(tr, []string{"search", "x"})
+	if !strings.Contains(note, "前に索引を作れなかった") || !strings.Contains(note, "make check") {
+		t.Errorf("got %q", note)
+	}
+}
+
+// ソースツリーが新しくなったら（依存を入れた後）、もう 1 度問う。
+func TestTreeGateAsksAgainAfterTreeChanges(t *testing.T) {
+	calls := 0
+	run := func(_ refactorTree, _ []string) (string, string, int) { calls++; return "", indexFailure, 4 }
+	stamp := int64(7)
+	g := treeGate{path: filepath.Join(t.TempDir(), "skip.json"), stamp: func(refactorTree) int64 { return stamp }, run: run}
+	tr := treeWithLib(t, benchTree)
+	g.ask(tr, []string{"search", "x"})
+	stamp = 8
+	g.ask(tr, []string{"search", "x"})
+	if calls != 2 {
+		t.Errorf("%d 回問うた", calls)
+	}
+}
+
+// lib の無いソースツリーは flixlint を起こさず、make check で依存を入れる事を言う。
+func TestTreeGateDoesNotRunTreeWithoutLib(t *testing.T) {
+	called := false
+	run := func(_ refactorTree, _ []string) (string, string, int) { called = true; return "", "", 0 }
+	tr := benchTree
+	tr.Root = t.TempDir()
+	_, _, note := gateOf(run).ask(tr, []string{"search", "x"})
+	if called || !strings.Contains(note, "make check") {
+		t.Errorf("called=%v note=%q", called, note)
+	}
+}
+
+func refactorWith(runRoot func([]string) (string, string, int), run treeRun) treeRefactor {
+	return treeRefactor{runRoot: runRoot, gate: gateOf(run)}
+}
+
+// ルートに無い名前をソースツリーで当てたら 0 で終わり、ルートの「0 件」は出さない。
+func TestTreeRefactorFoundOnlyInTree(t *testing.T) {
+	runRoot := func(_ []string) (string, string, int) { return "search runFileRead: 0 件\n", "", 1 }
+	out := `{"found":[{"sym":"WebFs.runFileRead","kind":"def","file":"src/engine_web/WebFs.flix","line":20,"pub":true}]}`
 	rest := []string{"search", "runFileRead"}
 	q, _ := parseTreeQuery(rest)
-	var out, errOut strings.Builder
-	code := refactorWithTrees(&out, &errOut, rest, false, q, []refactorTree{webTree}, nil, runRoot, run, nil, nil)
-	if code != 0 || errOut.String() != "" || !strings.Contains(out.String(), "engine_web/src/WebFs.flix:20") {
-		t.Errorf("code=%d out=%q err=%q", code, out.String(), errOut.String())
+	var o, e strings.Builder
+	code := refactorWith(runRoot, okRun(out)).run(&o, &e, rest, false, q, []refactorTree{treeWithLib(t, webTree)}, nil)
+	if code != 0 || strings.Contains(o.String(), "0 件") || !strings.Contains(o.String(), "engine_web/src/WebFs.flix:20") {
+		t.Errorf("code=%d out=%q err=%q", code, o.String(), e.String())
 	}
 }
 
-// --json では根の答えに trees を足す。
-func TestRefactorWithTreesMergesJSON(t *testing.T) {
-	runRoot := func(_ []string) (string, string, int) { return `{"op":"search","found":[]}`, "", 1 }
-	run := func(_ refactorTree, _ []string) (string, int) {
-		return `{"found":[{"sym":"BenchRun.planOf","kind":"def","file":"src/BenchRun.flix","line":16}]}`, 0
+// ルートが「索引にありません」以外で落ちたら、ルートの誤りと終了コードがそのまま残り、ソースツリーは問わない。
+func TestTreeRefactorKeepsRootFailure(t *testing.T) {
+	runRoot := func(_ []string) (string, string, int) {
+		return "", "refactor: 索引（resolved）を作れません: ソースがコンパイルできない\n", 2
 	}
+	called := false
+	run := func(_ refactorTree, _ []string) (string, string, int) { called = true; return "{}", "", 0 }
+	rest := []string{"usages", "A.f"}
+	q, _ := parseTreeQuery(rest)
+	var o, e strings.Builder
+	code := refactorWith(runRoot, run).run(&o, &e, rest, false, q, []refactorTree{treeWithLib(t, benchTree)}, nil)
+	if code != 2 || called || !strings.Contains(e.String(), "コンパイルできない") {
+		t.Errorf("code=%d called=%v err=%q", code, called, e.String())
+	}
+}
+
+// --max の歯止めで落ちたルートの終了コードは変わらない。
+func TestTreeRefactorKeepsMaxExitCode(t *testing.T) {
+	runRoot := func(_ []string) (string, string, int) {
+		return "usages Scene3d.material（def）\n  27 か所\n", "", 1
+	}
+	rest := []string{"usages", "Scene3d.material", "--max", "1"}
+	q, _ := parseTreeQuery(rest)
+	var o, e strings.Builder
+	code := refactorWith(runRoot, okRun(benchUsage)).run(&o, &e, rest, false, q, []refactorTree{treeWithLib(t, benchTree)}, nil)
+	if code != 1 || !strings.Contains(o.String(), "27 か所") {
+		t.Errorf("code=%d out=%q", code, o.String())
+	}
+}
+
+// ソースツリーへ渡す問いからは --max を外す。
+func TestTreeRefactorDropsMaxForTrees(t *testing.T) {
+	runRoot := func(_ []string) (string, string, int) { return `{"sym":"A.f"}`, "", 0 }
+	var asked []string
+	run := func(_ refactorTree, rest []string) (string, string, int) { asked = rest; return "{}", "", 0 }
+	rest := []string{"usages", "A.f", "--max", "5"}
+	q, _ := parseTreeQuery(rest)
+	var o, e strings.Builder
+	refactorWith(runRoot, run).run(&o, &e, rest, false, q, []refactorTree{treeWithLib(t, benchTree)}, nil)
+	if hasAnyArg(asked, "--max") || asked[1] != testEnginePrefix+"A.f" {
+		t.Errorf("got %q", asked)
+	}
+}
+
+// --json ではルートの答えの鍵の順のまま、終わりに trees を足す。
+func TestTreeRefactorAppendsTreesToRootJSON(t *testing.T) {
+	runRoot := func(_ []string) (string, string, int) {
+		return `{"op":"search","found":[{"sym":"A.planOf","kind":"def","file":"src/A.flix","line":1}]}` + "\n", "", 0
+	}
+	out := `{"found":[{"sym":"BenchRun.planOf","kind":"def","file":"src/BenchRun.flix","line":16}]}`
 	rest := []string{"search", "planOf", "--json"}
 	q, _ := parseTreeQuery(rest)
-	var out, errOut strings.Builder
-	refactorWithTrees(&out, &errOut, rest, true, q, []refactorTree{benchTree}, nil, runRoot, run, nil, nil)
-	var got struct {
-		Trees []treeAnswer `json:"trees"`
-	}
-	if err := json.Unmarshal([]byte(out.String()), &got); err != nil || len(got.Trees) != 1 || got.Trees[0].Found[0].File != "bench/crowd/src/BenchRun.flix" {
-		t.Errorf("got %q (%v)", out.String(), err)
+	var o, e strings.Builder
+	refactorWith(runRoot, okRun(out)).run(&o, &e, rest, true, q, []refactorTree{treeWithLib(t, benchTree)}, nil)
+	if !strings.HasPrefix(o.String(), `{"op":"search","found":`) || !strings.Contains(o.String(), `"trees":[{"tree":"bench/crowd"`) {
+		t.Errorf("got %q", o.String())
 	}
 }
 
-// 木の参照は engine の名前ごとに数え、木の中の自分の名前（頭の無い物）と再帰は数えない。
+// ソースツリーの一覧もルートと同じ件数で切り、残りの数を言う。
+func TestRenderTreeAnswersCutsAtLimit(t *testing.T) {
+	var sites []refactor.UsageSite
+	for i := 0; i < 12; i++ {
+		sites = append(sites, refactor.UsageSite{File: "bench/a/src/M.flix", Line: i + 1, Col: 1, Owner: "M.f", What: "call"})
+	}
+	var b strings.Builder
+	q, _ := parseTreeQuery([]string{"usages", "A.f"})
+	renderTreeAnswers(&b, q, []treeAnswer{{Tree: "bench/a", Sym: "A.f", Sites: sites}}, 10)
+	if strings.Count(b.String(), "M.flix") != 10 || !strings.Contains(b.String(), "ほか 2 件") {
+		t.Errorf("got %q", b.String())
+	}
+}
+
+// ソースツリーの参照は engine の名前ごとに数え、中の自分の名前（頭の無い物）と再帰は数えない。
 func TestTreeRefsCountsEngineNamesOnly(t *testing.T) {
 	rows := []refactor.Row{
 		{Kind: refactor.KindDefUse, File: "src/Main.flix", Line: 1, Col: 1, Sym: testEnginePrefix + "App.go", Owner: "Main.main"},
@@ -198,7 +320,7 @@ func TestTreeRefsCountsEngineNamesOnly(t *testing.T) {
 	}
 }
 
-// --unused の候補のうち、木から使われている物だけを木の名前つきで返す。
+// --unused の候補のうち、ソースツリーから使われている物だけを名前つきで返す。
 func TestUsedInTreesPicksCandidatesUsedByTrees(t *testing.T) {
 	cands := map[string]string{"src/A.flix:3": "A.used", "src/A.flix:9": "A.unused"}
 	refs := map[string]map[string][]string{"bench/crowd": {"A.used": {"bench/crowd/src/Main.flix:1:1"}}}
@@ -208,17 +330,33 @@ func TestUsedInTreesPicksCandidatesUsedByTrees(t *testing.T) {
 	}
 }
 
-// 根の --unused の JSON の候補（短い名前）を、根の索引の宣言で完全な名前にする。
-func TestUnusedCandidatesUsesDeclRows(t *testing.T) {
-	out := `{"sites":[{"file":"src/A.flix","line":3,"col":5,"sym":"f","what":"def"},{"file":"src/A.flix","line":1,"col":1,"sym":"use X","what":"use"}]}`
-	rows := []refactor.Row{{Kind: refactor.KindDefDecl, File: "src/A.flix", Line: 3, Sym: "A.f"}}
-	got := unusedCandidates(out, rows)
+// 字の --unused の一覧（last-usages.txt）から def の候補だけを拾う（use の行は拾わない）。
+func TestUnusedCandidatesFromListSkipsUses(t *testing.T) {
+	list := "engine/test/T.flix:10:1      use java.awt.image.BufferedImage   使っていない use\n" +
+		"src/engine/core/Anchor.flix:35:13   Anchor.fromString   参照 0\n"
+	got := unusedCandidatesFromList(strings.NewReader(list))
+	if len(got) != 1 || got["src/engine/core/Anchor.flix:35"] != "Anchor.fromString" {
+		t.Errorf("got %v", got)
+	}
+}
+
+// --json の --unused の候補は def だけ。
+func TestUnusedCandidatesFromJSONKeepsDefs(t *testing.T) {
+	out := `{"sites":[{"file":"src/A.flix","line":3,"col":5,"sym":"A.f","what":"def"},{"file":"src/A.flix","line":1,"col":1,"sym":"X","what":"use"}]}`
+	got := unusedCandidatesFromJSON(out)
 	if len(got) != 1 || got["src/A.flix:3"] != "A.f" {
 		t.Errorf("got %v", got)
 	}
 }
 
-// engine の各パッケージの test は、根の索引の sources と testDirs の両方に入っている（新しいパッケージの test を足し忘れない）。
+// 空の object にも鍵を足せる。
+func TestAppendJSONKeyToEmptyObject(t *testing.T) {
+	if got := appendJSONKey("{}\n", "k", 1); got != `{"k":1}`+"\n" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// engine の各パッケージの test は、ルートの索引の sources と testDirs の両方に入っている（新しいパッケージの test を足し忘れない）。
 func TestEngineRefactorConfigListsPackageTests(t *testing.T) {
 	root := filepath.Join("..")
 	// WhyNot: refactor.LoadConfig で読まない。手元の refactor.local.json（git に入らない）が sources を替えると、配る方の欠けが隠れる。
