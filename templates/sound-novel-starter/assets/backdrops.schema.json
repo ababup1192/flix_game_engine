@@ -110,6 +110,33 @@
             "description": "切り替えの頭で余分にぼかす量（blur の倍数）",
             "minimum": 0,
             "maximum": 4
+          },
+          "cast": {
+            "type": "object",
+            "description": "立ち絵と小物に掛ける色（無ければ絵のまま。人の姿が写った一枚絵の時間帯は書かない）",
+            "properties": {
+              "tint": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "赤・緑・青の倍率"
+              },
+              "exposure": {
+                "type": "number",
+                "description": "明るさ（1 = そのまま）",
+                "minimum": 0,
+                "maximum": 2
+              },
+              "saturation": {
+                "type": "number",
+                "description": "彩度（1 = そのまま）",
+                "minimum": 0,
+                "maximum": 2
+              }
+            }
           }
         }
       }

@@ -57,7 +57,7 @@ mod Shots {
     def openScreen(res: Res.Res, screen: ShotsDoc.Screen, w: World.World): World.World =
         match screen {
             case ShotsDoc.Screen.Title    => w
-            // バックログ: 縁側の選択肢まで読んでから開く（何行も積む）。
+            // バックログ: 2 通目の選択肢まで読んでから開く（何行も積む）。
             case ShotsDoc.Screen.Log      => quiet(() -> WorldLog.openLog(readThrough(res, w)))
             // セーブ: 1 ページ目に 3 つ（いちばん新しい物に NEW）。
             case ShotsDoc.Screen.Save     => quiet(() -> WorldSaves.openSave(withSlots(res, w)))
@@ -69,9 +69,9 @@ mod Shots {
             case ShotsDoc.Screen.Hold     => holding(res, w)
         }
 
-    /// 次の写真（Paddy の paddy）を黒のまま待ち続けている形（待ちの印が出る長さだけ待った所）。
+    /// 次の写真（FirstLetter の desk_room）を黒のまま待ち続けている形（待ちの目印が出る長さだけ待った所）。
     def holding(res: Res.Res, w: World.World): World.World =
-        let names = BackdropDoc.textureOf("paddy", res#backdrops) |> Option.toList;
+        let names = BackdropDoc.textureOf("desk_room", res#backdrops) |> Option.toList;
         let hold = { phase = World.HoldPhase.Waiting, phaseFrom = World.now(w), waited = KindDoc.rec(res#kind)#holdMarkSeconds + 1.0,
                      names = names, rest = Nil, last = None };
         World.mapRead(r -> { hold = Some(hold) | r }, w)
@@ -96,19 +96,19 @@ mod Shots {
     def toChoices(res: Res.Res, node: String, storage: YarnStorage.Storage, w: World.World): World.World =
         def walk(fuel: Int32, cur: World.World): World.World =
             if (fuel <= 0 or World.isChoosing(cur)) cur
-            else walk(fuel - 1, quiet(() -> WorldRead.advance(res, WorldRead.revealLine(cur))));
-        WorldRead.revealLine(walk(60, quiet(() -> WorldRead.openAt(res, storage, node, 0, w))))
+            else walk(fuel - 1, settleWait(res, quiet(() -> WorldRead.advance(res, WorldRead.revealLine(cur)))));
+        WorldRead.revealLine(walk(60, settleWait(res, quiet(() -> WorldRead.openAt(res, storage, node, 0, w)))))
 
-    /// 1 ページ目に 3 つ（田んぼ・坂・縁側）、オートのページに 1 つセーブした World。日時は少しずつずらす。
+    /// 1 ページ目に 3 つ（工房の軒先・灯の部屋・工房）、オートのページに 1 つセーブした World。日時は少しずつずらす。
     def withSlots(res: Res.Res, w: World.World): World.World =
         let saveAt = (minutes: Int64, i: Int32, scene: World.World, target: World.World) ->
             { saves = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), i, { saves = target#saves, clockBase = clockBase() + minutes * 60i64 | scene }))#saves | target };
-        w |> saveAt(-2900i64, 0, nthLine(res, "Paddy", 3, YarnStorage.empty(), w))
-          |> saveAt(-2860i64, 1, nthLine(res, "Lane", 2, YarnStorage.empty(), w))
-          |> saveAt(-12i64, 2, nthLine(res, "Engawa", 4, YarnStorage.empty(), w))
+        w |> saveAt(-2900i64, 0, nthLine(res, "StudioWindow", 3, YarnStorage.empty(), w))
+          |> saveAt(-2860i64, 1, nthLine(res, "Reply", 2, YarnStorage.empty(), w))
+          |> saveAt(-12i64, 2, nthLine(res, "Invitation", 2, YarnStorage.empty(), w))
           |> (cur -> { toast = None | cur })
 
-    /// はじめから、田んぼで昔の呼び名を選び、縁側の選択肢まで読んだ World（バックログに何行も積むため。文字送りは待たない）。
+    /// はじめから、最初の手紙で歩調を伝える方を選び、2 通目の選択肢まで読んだ World（バックログに何行も積むため。文字送りは待たない）。
     def readThrough(res: Res.Res, w: World.World): World.World =
         def walk(fuel: Int32, picks: List[Int32], cur: World.World): World.World =
             if (fuel <= 0) cur
@@ -117,7 +117,7 @@ mod Shots {
                 case Nil       => cur
             }
             else walk(fuel - 1, picks, settleWait(res, quiet(() -> WorldRead.advance(res, WorldRead.revealLine(cur)))));
-        walk(200, 1 :: Nil, settleWait(res, quiet(() -> WorldRead.newGame(res, w))))
+        walk(200, 0 :: Nil, settleWait(res, quiet(() -> WorldRead.newGame(res, w))))
 
     /// <<wait>> を明かす（描き出しは時計を進めないので、明ける時刻で 1 歩だけ流す）。
     def settleWait(res: Res.Res, w: World.World): World.World =

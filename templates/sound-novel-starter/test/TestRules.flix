@@ -1,5 +1,6 @@
 // ルールと進行だけをテストする。座標・描き方・文字送りの見た目はテストしない。
-// シナリオは本物（natsukusa.yarn を build した木）。行の文字は写さず、ノードの名前・変数・台本の木から期待値を導く。
+// シナリオは本物（yukidoke.yarn を build した木）。行の文字は写さず、ノードの名前・変数・シナリオの木から期待値を導く。
+// 手本のシナリオに無い効果音だけは、テスト用の木（TestKit.fixtureRes）で見る。
 mod TestRules {
 
     use fge::{App, AudioMixer, Clock, Emit, Vec2, Yarn, YarnRunner}
@@ -85,7 +86,7 @@ mod TestRules {
     def testAdvStacksLinesOnThePage(): Unit \ {Assert, Fs.FileRead} =
         // ADV の台詞も頁に積む（横の ADV のウィンドウは今の 1 行だけを描き、縦の画面は頁に積んで描く）。
         let res = TestKit.res();
-        let w = readTo(res, "Paddy", Nil, begun(res)) |> advance(res) |> settle(res);
+        let w = readTo(res, "StudioWindow", 0 :: Nil, begun(res)) |> advance(res) |> settle(res);
         Assert.assertEq(expected = (Stage.Mode.Adv, 1), (World.stageOf(res, w)#mode, List.length(World.pageOf(w)#lines)))
 
     @Test
@@ -101,9 +102,15 @@ mod TestRules {
     def testAdvBackdropCueStartsANewPage(): Unit \ {Assert, Fs.FileRead} =
         // ADV のまま次の場面（背景を替える）へ進むと、前の場面の台詞は頁に残らない。
         let res = TestKit.res();
-        let lane = readTo(res, "Lane", 0 :: Nil, begun(res)) |> advance(res) |> settle(res) |> advance(res) |> settle(res);
-        let texts = World.pageOf(lane)#lines |> List.map(l -> l#text);
-        Assert.assertEq(expected = (Stage.Mode.Adv, false), (World.stageOf(res, lane)#mode, texts |> List.exists(t -> String.contains(substr = "やっぱり", t))))
+        let before = readTo(res, "Invitation", 0 :: 0 :: Nil, begun(res));
+        let earlier = sayLines(res, "LastDelivery") |> List.map(n -> "${n}") |> List.toSet;
+        let inside = before |> advance(res) |> settle(res) |> advance(res) |> settle(res);
+        let carried = World.pageOf(inside)#lines |> List.exists(l -> Set.memberOf(lineOfSource(l#source), earlier));
+        Assert.assertEq(expected = (Stage.Mode.Adv, false), (World.stageOf(res, inside)#mode, carried))
+
+    /// 頁の行の source（「ファイル:行」）の行番号の字。
+    def lineOfSource(source: String): String =
+        source |> String.splitOn(substr = ":") |> List.last |> Option.getWithDefault("")
 
     @Test
     def testAdvPageTurnsWhenTheBackdropChanges(): Unit \ Assert =
@@ -127,49 +134,51 @@ mod TestRules {
         Assert.assertEq(expected = (true, placeOf(asking)), (World.isChoosing(after), placeOf(after)))
 
     @Test
-    def testPickingTheNicknameRaisesCloseness(): Unit \ {Assert, Fs.FileRead} =
-        // 田んぼの選択肢: 昔の呼び名（2 つ目）を選ぶと $closeness が 1 上がり、1 つ目では上がらない。
+    def testTellingYourPaceSetsOwnPace(): Unit \ {Assert, Fs.FileRead} =
+        // 最初の手紙の選択肢: 坂をゆっくり上がると添える（1 つ目）と、枝を読み終えた所で $own_pace が立ち、2 つ目では立たない。
         let res = TestKit.res();
         let asking = TestKit.readUntil(res, World.isChoosing, Nil, begun(res));
-        let closeness = i -> World.variableOf("$closeness", settle(res, pick(res, i, asking)));
-        Assert.assertEq(expected = ("0", "1"), (closeness(0), closeness(1)))
+        let ownPace = i -> World.variableOf("$own_pace", readTo(res, "StudioWindow", i :: Nil, asking));
+        Assert.assertEq(expected = ("True", "False"), (ownPace(0), ownPace(1)))
 
     @Test
-    def testConditionalChoiceCannotBePickedWithoutCloseness(): Unit \ {Assert, Fs.FileRead} =
-        // 川の選択肢の 2 つ目は $closeness >= 2 の時だけ選べる。足りなければ選べない印で並び、pick しても動かない。
+    def testConditionalChoiceNeedsBothLetters(): Unit \ {Assert, Fs.FileRead} =
+        // 工房の誘いの選択肢の 1 つ目は $own_pace and $shared_tiredness の時だけ選べる。どちらも無ければ選べない目印つきで並び、pick しても動かない。
         let res = TestKit.res();
-        let atRiver = readTo(res, "River", 0 :: 0 :: Nil, begun(res)) |> (w -> TestKit.readUntil(res, World.isChoosing, Nil, w));
-        let tried = settle(res, pick(res, 1, atRiver));
-        let available = World.choicesOf(atRiver) |> List.map(option -> option#available);
-        Assert.assertEq(expected = (true :: false :: Nil, placeOf(atRiver)), (available, placeOf(tried)))
+        let invited = readTo(res, "Invitation", 1 :: 1 :: Nil, begun(res)) |> (w -> TestKit.readUntil(res, World.isChoosing, Nil, w));
+        let tried = settle(res, pick(res, 0, invited));
+        let available = World.choicesOf(invited) |> List.map(option -> option#available);
+        Assert.assertEq(expected = (false :: true :: true :: Nil, placeOf(invited)), (available, placeOf(tried)))
 
     @Test
     def testCursorSkipsChoicesThatCannotBePicked(): Unit \ {Assert, Fs.FileRead} =
-        // 選べない選択肢にはカーソルが止まらない。
+        // 選べない選択肢にはカーソルが止まらない（1 つ目が選べない時、どちらへ動かしても 2 つ目か 3 つ目）。
         let res = TestKit.res();
-        let atRiver = readTo(res, "River", 0 :: 0 :: Nil, begun(res)) |> (w -> TestKit.readUntil(res, World.isChoosing, Nil, w));
-        let moved = quiet(() -> WorldRead.moveChoice(1, atRiver));
-        Assert.assertEq(expected = Some(0), World.readOf(moved) |> Option.map(r -> r#choiceCursor))
+        let invited = readTo(res, "Invitation", 1 :: 1 :: Nil, begun(res)) |> (w -> TestKit.readUntil(res, World.isChoosing, Nil, w));
+        let cursorAfter = delta -> World.readOf(quiet(() -> WorldRead.moveChoice(delta, invited))) |> Option.map(r -> r#choiceCursor);
+        Assert.assertEq(expected = (Some(2), Some(1)), (cursorAfter(1), cursorAfter(2)))
 
     @Test
-    def testTrueEndingNeedsBothWarmChoices(): Unit \ {Assert, Fs.FileRead} =
-        // 両方の選択で近づくと、川で残る選択ができ、朝に $stayed が立つ。
+    def testSlowLettersNeedsBothHonestLetters(): Unit \ {Assert, Fs.FileRead} =
+        // 2 通の手紙で歩調と休む日を伝えると、誘いで春からの手紙を選べ、期限を決めない文通の結末に着く。
         let res = TestKit.res();
-        let morning = readTo(res, "Morning", 1 :: 1 :: 1 :: Nil, begun(res));
-        Assert.assertEq(expected = ("2", "True"), (World.variableOf("$closeness", morning), World.variableOf("$stayed", morning)))
+        let ending = readTo(res, "SlowLetters", 0 :: 0 :: 0 :: Nil, begun(res));
+        Assert.assertEq(expected = ("SlowLetters", "True", "True"),
+                        (World.talkNodeOf(ending), World.variableOf("$own_pace", ending), World.variableOf("$shared_tiredness", ending)))
 
     @Test
-    def testSellingEndingKeepsDistance(): Unit \ {Assert, Fs.FileRead} =
-        // 売ると答えて黙って帰ると、$house は sell・$stayed は立たない。
+    def testDecliningKeepsTheMap(): Unit \ {Assert, Fs.FileRead} =
+        // 手紙で歩調も休む日も伝えず、誘いを断ると（選べるのは 2 つ目と 3 つ目）、地図をしまう結末に着き、どちらの変数も立たない。
         let res = TestKit.res();
-        let morning = readTo(res, "Morning", 0 :: 0 :: 0 :: Nil, begun(res));
-        Assert.assertEq(expected = ("sell", "False"), (World.variableOf("$house", morning), World.variableOf("$stayed", morning)))
+        let ending = readTo(res, "KeptMap", 1 :: 1 :: 2 :: Nil, begun(res));
+        Assert.assertEq(expected = ("KeptMap", "False", "False"),
+                        (World.talkNodeOf(ending), World.variableOf("$own_pace", ending), World.variableOf("$shared_tiredness", ending)))
 
     @Test
     def testStoryEndRollsTheCredits(): Unit \ {Assert, Fs.FileRead} =
         // シナリオの終わりまで読むとクレジットへ。
         let res = TestKit.res();
-        let done = TestKit.readUntil(res, World.isCredits, 1 :: 1 :: 1 :: Nil, begun(res));
+        let done = TestKit.readUntil(res, World.isCredits, 0 :: 0 :: 0 :: Nil, begun(res));
         Assert.assertEq(expected = true, World.isCredits(done))
 
     // ══ 演出 ══
@@ -349,13 +358,15 @@ mod TestRules {
 
     @Test
     def testRollbackOverAChoiceUndoesItsVariables(): Unit \ {Assert, Fs.FileRead} =
-        // 選んだ後の行から戻ると、問いの行へ戻り、選んだ枝の <<set>> も取り消される（選び直せる）。
+        // 選んだ後の行から戻ると、問いの行へ戻って選び直せる。選んだ枝の <<set>> を過ぎた行から戻ると、その <<set>> も取り消される。
         let res = TestKit.res();
         let asking = TestKit.readUntil(res, World.isChoosing, Nil, begun(res));
-        let chose = settle(res, pick(res, 1, asking));
+        let chose = settle(res, pick(res, 0, asking));
         let back = settle(res, quiet(() -> WorldLog.rollback(res, chose)));
-        Assert.assertEq(expected = (placeOf(asking), "0", true),
-                        (placeOf(back), World.variableOf("$closeness", back), World.isChoosing(settle(res, advance(res, back)))))
+        let set = TestKit.readUntil(res, w -> World.variableOf("$own_pace", w) == "True", Nil, chose);
+        let unset = settle(res, quiet(() -> WorldLog.rollback(res, set)));
+        Assert.assertEq(expected = (placeOf(asking), true, "False"),
+                        (placeOf(back), World.isChoosing(settle(res, advance(res, back))), World.variableOf("$own_pace", unset)))
 
     @Test
     def testRollbackAtTheFirstLineOnlyNotices(): Unit \ {Assert, Fs.FileRead} =
@@ -382,7 +393,7 @@ mod TestRules {
     def testRollbackWorksOnLinesReplayedByALoad(): Unit \ {Assert, Fs.FileRead} =
         // ロードで読み直した行にも戻れる所が付く（ロードした直後に戻ると 1 つ前の行）。
         let res = TestKit.res();
-        let before = readTo(res, "Paddy", Nil, begun(res)) |> advance(res) |> settle(res);
+        let before = readTo(res, "StudioWindow", 0 :: Nil, begun(res)) |> advance(res) |> settle(res);
         let saved = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), 0, settle(res, advance(res, before))));
         let loaded = settle(res, quiet(() -> WorldSaves.loadFrom(res, Saves.Tab.Numbered(1), 0, quiet(() -> WorldRead.newGame(res, saved)))));
         let back = settle(res, quiet(() -> WorldLog.rollback(res, loaded)));
@@ -396,28 +407,28 @@ mod TestRules {
     def testLoadingRestoresPlaceAndStage(): Unit \ {Assert, Fs.FileRead} =
         // ロードすると、セーブした所のノードと行に戻り、舞台（写真・文章の出し方・環境音）もセーブした時の形になる。
         let res = TestKit.res();
-        let atPaddy = readTo(res, "Paddy", Nil, begun(res)) |> advance(res) |> settle(res) |> advance(res) |> settle(res);
-        let saved = quiet(() -> WorldSaves.writeSlot(res, page1(), 0, atPaddy));
-        let elsewhere = readTo(res, "Lane", 1 :: Nil, saved);
+        let atEaves = readTo(res, "StudioWindow", 0 :: Nil, begun(res)) |> advance(res) |> settle(res) |> advance(res) |> settle(res);
+        let saved = quiet(() -> WorldSaves.writeSlot(res, page1(), 0, atEaves));
+        let elsewhere = readTo(res, "Reply", Nil, saved);
         let loaded = settle(res, quiet(() -> WorldSaves.loadFrom(res, page1(), 0, elsewhere)));
         let stageOf = (w: World.World) -> { let st = World.stageOf(res, w); (st#shot |> Option.map(shot -> (shot#photo, shot#grade)), st#mode, Stage.ambienceOf(World.now(w), st)) };
-        Assert.assertEq(expected = (placeOf(atPaddy), stageOf(atPaddy)), (placeOf(loaded), stageOf(loaded)))
+        Assert.assertEq(expected = (placeOf(atEaves), stageOf(atEaves)), (placeOf(loaded), stageOf(loaded)))
 
     @Test
     def testLoadingRestoresVariables(): Unit \ {Assert, Fs.FileRead} =
-        // セーブは変数も戻す（選んだ後にセーブしたデータでは $closeness が残る）。
+        // セーブは変数も戻す（選んだ後にセーブしたデータでは $own_pace が残る）。
         let res = TestKit.res();
-        let chose = readTo(res, "Lane", 1 :: Nil, begun(res));
+        let chose = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let saved = quiet(() -> WorldSaves.writeSlot(res, page1(), 2, chose));
         let loaded = settle(res, quiet(() -> WorldSaves.loadFrom(res, page1(), 2, quiet(() -> WorldRead.newGame(res, saved)))));
-        Assert.assertEq(expected = "1", World.variableOf("$closeness", loaded))
+        Assert.assertEq(expected = "True", World.variableOf("$own_pace", loaded))
 
     @Test
     def testSlotRemembersWhereAndWhen(): Unit \ {Assert, Fs.FileRead} =
         // データには場所（写真の名前）・台詞の頭・保存した日時（起動の時刻 + 実時間）が入る。
         let res = TestKit.res();
-        let atPaddy = readTo(res, "Paddy", Nil, begun(res));
-        let w = { clockBase = 1000i64, realNow = Clock.after(42.5, Clock.zero()) | atPaddy };
+        let atEaves = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
+        let w = { clockBase = 1000i64, realNow = Clock.after(42.5, Clock.zero()) | atEaves };
         let saved = quiet(() -> WorldSaves.writeSlot(res, page1(), 0, w));
         let place = World.stageOf(res, w)#shot |> Option.flatMap(shot -> BackdropDoc.photoOf(shot#photo, res#backdrops)) |> Option.map(p -> p#label);
         let slot = Saves.slotOf(page1(), 0, saved#saves);
@@ -428,19 +439,19 @@ mod TestRules {
     def testSavingOverAFilledSlotAsksFirst(): Unit \ {Assert, Fs.FileRead} =
         // 埋まっている枠を選ぶと上書きを尋ね、いいえなら前のデータのまま、はいなら今の所で書き直す。
         let res = TestKit.res();
-        let first = readTo(res, "Paddy", Nil, begun(res));
+        let first = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let saved = quiet(() -> WorldSaves.writeSlot(res, page1(), 0, first));
-        let later = quiet(() -> WorldSaves.openSave(readTo(res, "Lane", 1 :: Nil, saved)));
+        let later = quiet(() -> WorldSaves.openSave(readTo(res, "Reply", Nil, saved)));
         let asked = quiet(() -> WorldSaves.withTab(page1(), later) |> (opened -> WorldSaves.chooseSlot(res, 0, opened)));
         let nodeIn = (w: World.World) -> Saves.slotOf(page1(), 0, w#saves) |> Option.map(s -> s#mark#bookmark#node);
-        Assert.assertEq(expected = (Some(World.Ask.Overwrite(page1(), 0)), Some("Paddy"), Some("Lane")),
+        Assert.assertEq(expected = (Some(World.Ask.Overwrite(page1(), 0)), Some("StudioWindow"), Some("Reply")),
                         (World.askOf(asked), nodeIn(quiet(() -> WorldMenu.answer(res, World.Answer.No, asked))), nodeIn(quiet(() -> WorldMenu.answer(res, World.Answer.Yes, asked)))))
 
     @Test
     def testDeletingASlotAsksThenRemovesIt(): Unit \ {Assert, Fs.FileRead} =
         // 削除は尋ねてから消す。
         let res = TestKit.res();
-        let here = readTo(res, "Paddy", Nil, begun(res));
+        let here = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let saved = quiet(() -> WorldSaves.writeSlot(res, page1(), 1, here));
         let asked = quiet(() -> WorldSaves.deleteSlot(1, WorldSaves.withTab(page1(), WorldSaves.openSave(saved))));
         let gone = quiet(() -> WorldMenu.answer(res, World.Answer.Yes, asked));
@@ -451,11 +462,11 @@ mod TestRules {
     def testContinueLoadsTheNewestSave(): Unit \ {Assert, Fs.FileRead} =
         // タイトルの「つづきから」は、ページを問わずいちばん新しいデータを読む。
         let res = TestKit.res();
-        let here = readTo(res, "Paddy", Nil, begun(res));
+        let here = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let a = quiet(() -> WorldSaves.writeSlot(res, page1(), 0, here));
-        let b = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(3), 5, readTo(res, "Lane", 1 :: Nil, a)));
+        let b = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(3), 5, readTo(res, "Reply", Nil, a)));
         let continued = settle(res, quiet(() -> WorldMenu.chooseTitle(res, World.TitleItem.Continue, World.toTitle(b))));
-        Assert.assertEq(expected = (Some((Saves.Tab.Numbered(3), 5)), "Lane"), (Saves.latest(b#saves), World.talkNodeOf(continued)))
+        Assert.assertEq(expected = (Some((Saves.Tab.Numbered(3), 5)), "Reply"), (Saves.latest(b#saves), World.talkNodeOf(continued)))
 
     @Test
     def testContinueWithoutSavesOnlyNotices(): Unit \ {Assert, Fs.FileRead} =
@@ -470,9 +481,9 @@ mod TestRules {
     def testQuickSaveAndQuickLoad(): Unit \ {Assert, Fs.FileRead} =
         // クイックセーブはクイックのページの先頭へ入り、Qロードは確認の後にそこから読む。
         let res = TestKit.res();
-        let here = readTo(res, "Paddy", Nil, begun(res));
+        let here = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let saved = quiet(() -> WorldMenu.press(res, World.Button.QuickSave, here));
-        let moved = readTo(res, "Lane", 1 :: Nil, saved);
+        let moved = readTo(res, "Reply", Nil, saved);
         let asked = quiet(() -> WorldMenu.press(res, World.Button.QuickLoad, moved));
         let loaded = settle(res, quiet(() -> WorldMenu.answer(res, World.Answer.Yes, asked)));
         Assert.assertEq(expected = (Some(World.Ask.QuickLoad), placeOf(here)), (World.askOf(asked), placeOf(loaded)))
@@ -481,18 +492,18 @@ mod TestRules {
     def testAutosaveAtEachNewNode(): Unit \ {Assert, Fs.FileRead} =
         // 新しいノードに入って最初の行を出すとオートのページの先頭へ残り、前の物は 1 つ後ろへずれる。同じノードの間は残さない。
         let res = TestKit.res();
-        let atPaddy = readTo(res, "Paddy", Nil, begun(res));
-        let next = settle(res, advance(res, atPaddy));
+        let atLetter = readTo(res, "FirstLetter", Nil, begun(res));
+        let next = settle(res, advance(res, atLetter));
         let nodeAt = (i: Int32, w: World.World) -> Saves.slotOf(Saves.Tab.Auto, i, w#saves) |> Option.map(s -> s#mark#bookmark#node);
         let opening = StoryDoc.openingOf(res#story);
-        Assert.assertEq(expected = (Some("Paddy"), Some(opening), Saves.serialOf(next#saves)),
-                        (nodeAt(0, atPaddy), nodeAt(1, atPaddy), Saves.serialOf(atPaddy#saves)))
+        Assert.assertEq(expected = (Some("FirstLetter"), Some(opening), Saves.serialOf(next#saves)),
+                        (nodeAt(0, atLetter), nodeAt(1, atLetter), Saves.serialOf(atLetter#saves)))
 
     @Test
     def testPushedPagesKeepOnlyTheNewestSix(): Unit \ {Assert, Fs.FileRead} =
         // オートとクイックのページは新しい 6 つだけを持つ（先頭が一番新しい）。
         let res = TestKit.res();
-        let w = readTo(res, "Paddy", Nil, begun(res));
+        let w = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let pushed = List.range(0, 8) |> List.foldLeft((acc, _) -> quiet(() -> WorldSaves.quickSave(res, acc)), w);
         let serials = List.range(0, Saves.perPage() + 1) |> List.map(i -> Saves.slotOf(Saves.Tab.Quick, i, pushed#saves) |> Option.map(s -> s#serial));
         let top = Saves.serialOf(pushed#saves);
@@ -502,7 +513,7 @@ mod TestRules {
     def testSaveScreenOnlyWritesNumberedPages(): Unit \ {Assert, Fs.FileRead} =
         // セーブ画面はページ 1〜3 だけを巡り、オートのページを開いていても書かない。
         let res = TestKit.res();
-        let w = readTo(res, "Paddy", Nil, begun(res));
+        let w = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let opened = quiet(() -> WorldSaves.openSave(w));
         let cycled = quiet(() -> WorldSaves.moveTab(1, quiet(() -> WorldSaves.moveTab(1, quiet(() -> WorldSaves.moveTab(1, opened))))));
         let tabOf = (cur: World.World) -> World.slotsOf(cur) |> Option.map(fst) |> Option.map(Saves.isWritable);
@@ -513,7 +524,7 @@ mod TestRules {
     def testSavesSurviveJson(): Unit \ {Assert, Fs.FileRead} =
         // セーブデータ・既読・設定は JSON を通しても同じ。
         let res = TestKit.res();
-        let chose = readTo(res, "Lane", 1 :: Nil, begun(res));
+        let chose = readTo(res, "StudioWindow", 0 :: Nil, begun(res));
         let tuned = quiet(() -> WorldSettings.withSide(World.Pair.Display, Layout.Side.Right, quiet(() -> WorldSettings.withSide(World.Pair.SkipScope, Layout.Side.Right, chose))));
         let saves = quiet(() -> WorldSaves.writeSlot(res, page1(), 3, tuned))#saves;
         let back = Saves.fromJson(Saves.fresh(res#kind), Saves.toJson(saves));
@@ -660,17 +671,16 @@ mod TestRules {
     @Test
     def testScriptSoundEffectsAreHeard(): Unit \ {Assert, Fs.FileRead} =
         // シナリオの <<audio se 音>> はその音の名前の出来事になり、Controls が同じ名前の音を鳴らす。
-        let res = TestKit.res();
-        let atLane = readTo(res, "Lane", 1 :: Nil, begun(res));
-        let (_, heard) = TestKit.readHearing(res, w -> World.talkNodeOf(w) == "Engawa", Nil, atLane);
+        let res = TestKit.fixtureRes("test/fixtures/sound", "Sound");
+        let (_, heard) = TestKit.readHearing(res, w -> World.talkNodeOf(w) == "SoundAfter", Nil, begun(res));
         Assert.assertEq(expected = (true, Some("se_slap")),
                         (List.memberOf(World.Event.Cue("se_slap"), heard), Controls.soundOf(World.Event.Cue("se_slap"))))
 
     @Test
     def testLoadingIsSilent(): Unit \ {Assert, Fs.FileRead} =
         // ロードで読み直す時、通り過ぎた <<audio se>> は鳴らさない（返事は Loaded の 1 つだけ）。
-        let res = TestKit.res();
-        let past = readTo(res, "Engawa", 1 :: Nil, begun(res));
+        let res = TestKit.fixtureRes("test/fixtures/sound", "Sound");
+        let past = readTo(res, "SoundAfter", Nil, begun(res));
         let saved = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), 0, past));
         let (_, heard) = Emit.collect(() -> WorldSaves.loadFrom(res, Saves.Tab.Numbered(1), 0, saved));
         Assert.assertEq(expected = World.Event.Loaded :: Nil, heard)

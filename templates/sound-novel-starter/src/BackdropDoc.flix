@@ -14,7 +14,8 @@ mod BackdropDoc {
     /// saturation = 彩度（0 = 白黒・1 = 写真のまま）、exposure = 明るさの倍率、tint = 色ごとの倍率（夕方は赤を残し青を絞る）、
     /// lift = 暗い所に足す色（夜の青み・朝のかすみ）、sky = 画面の上から差す光の色、skyStrength = その強さ、
     /// skyReach = 光が届く深さ（画面の高さの割合）、vignette = 四隅を落とす強さ（0〜1）、
-    /// focusPull = 切り替えの頭で余分にぼかす量（1 = 倍の半径から合わせる）。
+    /// focusPull = 切り替えの頭で余分にぼかす量（1 = 倍の半径から合わせる）、
+    /// cast = 立ち絵と小物に掛ける色（無ければ掛けない。人の姿が写った一枚絵の時間帯は、人物も絵の一部なので書かない）。
     pub type alias Grade = {
         blur = Float64,
         taps = Int32,
@@ -26,8 +27,12 @@ mod BackdropDoc {
         skyStrength = Float64,
         skyReach = Float64,
         vignette = Float64,
-        focusPull = Float64
+        focusPull = Float64,
+        cast = Option[CastGrade]
     }
+
+    /// 立ち絵と小物を背景になじませる色。tint = 色ごとの倍率、exposure = 明るさの倍率、saturation = 彩度（1 = 絵のまま）。
+    pub type alias CastGrade = { tint = Color, exposure = Float64, saturation = Float64 }
 
     pub type alias Rec = {
         version = Int32,
@@ -49,7 +54,7 @@ mod BackdropDoc {
     pub def plainGrade(): Grade =
         { blur = 0.006, taps = 24, saturation = 1.0, exposure = 1.0,
           tint = { r = 1.0, g = 1.0, b = 1.0 }, lift = { r = 0.0, g = 0.0, b = 0.0 },
-          sky = { r = 1.0, g = 1.0, b = 1.0 }, skyStrength = 0.0, skyReach = 0.5, vignette = 0.3, focusPull = 0.6 }
+          sky = { r = 1.0, g = 1.0, b = 1.0 }, skyStrength = 0.0, skyReach = 0.5, vignette = 0.3, focusPull = 0.6, cast = None }
 
     pub def photoOf(name: String, doc: Doc): Option[Photo] = Map.get(name, rec(doc)#photos)
 
@@ -88,8 +93,18 @@ mod BackdropDoc {
               tint = gains("tint", d#tint), lift = gains("lift", d#lift),
               sky = color("sky", d#sky), skyStrength = num("skyStrength", d#skyStrength),
               skyReach = num("skyReach", d#skyReach), vignette = num("vignette", d#vignette),
-              focusPull = num("focusPull", d#focusPull) }
+              focusPull = num("focusPull", d#focusPull),
+              cast = Map.get("cast", obj) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(castGradeOf) }
         })
+
+    /// 時間帯の cast の欄（欠けた欄は絵のまま = 倍率 1）。
+    def castGradeOf(obj: Map[String, Json]): CastGrade =
+        let gains = Map.get("tint", obj) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat))
+            |> Option.flatMap(xs -> match xs {
+                   case r :: g :: b :: Nil => Some({ r = r, g = g, b = b })
+                   case _                  => None
+               }) |> Option.getWithDefault({ r = 1.0, g = 1.0, b = 1.0 });
+        { tint = gains, exposure = JsonCodec.floatOr("exposure", 1.0, obj), saturation = JsonCodec.floatOr("saturation", 1.0, obj) }
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =

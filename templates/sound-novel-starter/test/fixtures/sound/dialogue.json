@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が test/fixtures/sound/sound.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "test/fixtures/sound/sound.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Sound",
+      "file": "test/fixtures/sound/sound.yarn",
+      "line": 4,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 6,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "me",
+          "text": "鳴る前の行。"
+        },
+        {
+          "kind": "command",
+          "line": 8,
+          "name": "audio",
+          "args": [
+            "se",
+            "se_slap"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 9,
+          "speaker": "me",
+          "text": "鳴った後の行。"
+        },
+        {
+          "kind": "jump",
+          "line": 10,
+          "node": "SoundAfter"
+        }
+      ]
+    },
+    {
+      "title": "SoundAfter",
+      "file": "test/fixtures/sound/sound.yarn",
+      "line": 12,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 14,
+          "speaker": "me",
+          "text": "次のノードの一行目。"
+        },
+        {
+          "kind": "line",
+          "line": 15,
+          "speaker": "me",
+          "text": "次のノードの二行目。"
+        }
+      ]
+    }
+  ]
+}

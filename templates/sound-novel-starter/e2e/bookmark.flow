@@ -1,23 +1,23 @@
-# 田んぼでセーブし、先へ読んでからロードすると、同じ行・同じ舞台（写真・ADV）から読み直せる。
+# 工房の軒先（ADV）でセーブし、灯の部屋（NVL）へ読み進めてからロードすると、同じ行・同じ舞台（写真・ADV）から読み直せる。
 start title
 tap confirm
-drive reader until talk=Paddy max 90
+drive reader until choice max 90                # 最初の手紙の選択肢（NVL）
+tap confirm                                     # 「私は、坂をゆっくり上がります」と添える
+drive reader until talk=StudioWindow max 60
 wait 0.5
-tap 544,524                            # 下の帯の「セーブ」
+tap 544,524                                     # 下の帯の「セーブ」
 expect panel=SaveSlots
-tap 268,189                            # 1 ページ目の 1 枚目の枠（空なので確認なしで書く）
+tap 268,189                                     # 1 ページ目の 1 枚目の枠（空なので確認なしで書く）
 expect panel=SaveSlots
 tap back
-expect panel=Closed&talk=Paddy
-drive reader until choice max 60
-tap confirm                            # 「千夏？」
-drive reader until talk=Lane max 60
-expect photo=lane
-tap 608,524                            # 下の帯の「ロード」
-expect panel=LoadSlots&tab=Auto           # 開くのは一番新しいセーブのページ（坂道のオートセーブ）
-tap 291,105                            # 「1」のページへ
+expect panel=Closed&talk=StudioWindow
+drive reader until talk=Reply max 60
+expect photo=desk_room&mode=Nvl
+tap 608,524                                     # 下の帯の「ロード」
+expect panel=LoadSlots&tab=Auto                 # 開くのは一番新しいセーブのページ（灯の部屋のオートセーブ）
+tap 291,105                                     # 「1」のページへ
 expect tab=Numbered(1)
-tap 268,189                            # 1 枚目の枠から読む
+tap 268,189                                     # 1 枚目の枠から読む
 expect ask=Load(Numbered(1),0)
-tap 394,310                            # 確認の「はい」
-expect panel=Closed&talk=Paddy&photo=paddy&mode=Adv
+tap 394,310                                     # 確認の「はい」
+expect panel=Closed&talk=StudioWindow&photo=studio_eaves&mode=Adv

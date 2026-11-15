@@ -50,10 +50,13 @@ mod CastDoc {
                   cast = Map.empty(), props = Map.empty() })
 
     /// 描き出しとテストが使う見本: 既定の Doc に、テスト用の透過画像（assets/cast/_sample_plain.png・art/cast/sample.py が作る）の人物を 1 人足した物。
-    /// WhyNot: 作例のシナリオと novel.cast.json に載せない — テンプレートの物語に立ち絵は出さず、仕組みだけを見せる。
-    pub def sample(): Doc =
-        let d = rec(defaults());
-        Doc.Doc({ cast = Map#{ sampleName() => { label = "見本", aspect = 0.4, scale = 1.0, face = "plain", slot = "center", faces = "plain" :: Nil } } | d })
+    /// WhyNot: 作例のシナリオと novel.cast.json に載せない — 単色の形は仕組みを確かめるためだけの絵で、物語の人物ではない。
+    pub def sample(): Doc = withSample(defaults())
+
+    /// doc の人物に、テスト用の透過画像の人物を 1 人足した物（物語の人物と小物はそのまま残る）。
+    pub def withSample(doc: Doc): Doc =
+        let d = rec(doc);
+        Doc.Doc({ cast = Map.insert(sampleName(), { label = "見本", aspect = 0.4, scale = 1.0, face = "plain", slot = "center", faces = "plain" :: Nil }, d#cast) | d })
 
     /// 見本の人物の名前。
     pub def sampleName(): String = "_sample"

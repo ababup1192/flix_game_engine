@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "title": "夏草の駅",
+  "title": "雪どけを待たない便り",
   "designWidth": 960,
   "designHeight": 540,
   "windowWidth": 1280,
@@ -11,32 +11,52 @@
     "b": 0.08
   },
   "maxDeltaTime": 0.05,
-  "// textures": "背景の写真（出典は CREDITS.md）。名前は assets/novel.backdrops.json の photos の texture と対。cast__sample_plain はテスト用の立ち絵（art/cast/sample.py が作る単色の形・描き出しとテストだけが CastDoc.sample で使い、物語には出さない）。立ち絵は cast_<名前>_<表情> の名前で足す。",
+  "// textures": "背景の写真（作り方と出典は CREDITS.md）。名前は assets/novel.backdrops.json の photos の texture と対。立ち絵と小物は cast_<名前>_<表情> の名前（assets/novel.cast.json の cast・props と faces）。cast__sample_plain はテスト用の立ち絵（art/cast/sample.py が作る単色の形・描き出しとテストだけが CastDoc.sample で使い、物語には出さない）。",
   "textures": [
     {
-      "name": "bg_station",
-      "path": "assets/bg/station.jpg",
+      "name": "bg_slope",
+      "path": "assets/bg/slope.jpg",
       "hasAlpha": false
     },
     {
-      "name": "bg_paddy",
-      "path": "assets/bg/paddy.jpg",
+      "name": "bg_desk_room",
+      "path": "assets/bg/desk_room.jpg",
       "hasAlpha": false
     },
     {
-      "name": "bg_lane",
-      "path": "assets/bg/lane.jpg",
+      "name": "bg_studio_eaves",
+      "path": "assets/bg/studio_eaves.jpg",
       "hasAlpha": false
     },
     {
-      "name": "bg_engawa",
-      "path": "assets/bg/engawa.jpg",
+      "name": "bg_studio",
+      "path": "assets/bg/studio.jpg",
       "hasAlpha": false
     },
     {
-      "name": "bg_river",
-      "path": "assets/bg/river.jpg",
+      "name": "bg_still_akari_slope",
+      "path": "assets/bg/still_akari_slope.jpg",
       "hasAlpha": false
+    },
+    {
+      "name": "cast_toma_plain",
+      "path": "assets/cast/toma_plain.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cast_toma_puzzled",
+      "path": "assets/cast/toma_puzzled.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cast_toma_smile",
+      "path": "assets/cast/toma_smile.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "cast_map_plain",
+      "path": "assets/cast/map_plain.png",
+      "hasAlpha": true
     },
     {
       "name": "cast__sample_plain",
@@ -55,34 +75,9 @@
   ],
   "sounds": [
     {
-      "name": "amb_evening",
-      "path": "assets/sfx/amb_evening.wav",
+      "name": "amb_winter_wind",
+      "path": "assets/sfx/amb_winter_wind.wav",
       "looping": true
-    },
-    {
-      "name": "amb_night",
-      "path": "assets/sfx/amb_night.wav",
-      "looping": true
-    },
-    {
-      "name": "amb_river",
-      "path": "assets/sfx/amb_river.wav",
-      "looping": true
-    },
-    {
-      "name": "amb_morning",
-      "path": "assets/sfx/amb_morning.wav",
-      "looping": true
-    },
-    {
-      "name": "se_slap",
-      "path": "assets/sfx/se_slap.wav",
-      "looping": false
-    },
-    {
-      "name": "se_furin",
-      "path": "assets/sfx/se_furin.wav",
-      "looping": false
     },
     {
       "name": "ui_page",
@@ -136,14 +131,14 @@
       {
         "id": "credits",
         "pattern": "assets/novel.credits.json",
-        "title": "クレジット（写真とフォントの出典）",
+        "title": "クレジット（絵と音とフォントの出典）",
         "role": "material",
         "schema": "assets/credits.schema.json"
       },
       {
         "id": "kind",
         "pattern": "assets/novel.kind.json",
-        "title": "手触り（字の大きさ・オート・スキップ・揺れ・蛍）",
+        "title": "手触り（字の大きさ・オート・スキップ・揺れ・蛍・雪）",
         "role": "tuning",
         "schema": "assets/kind.schema.json"
       },
@@ -221,19 +216,18 @@
       "assets/talk/*.yarn",
       "assets/*.schema.json"
     ],
-    "// deferred": "押して始めた後に裏で取る素材（シナリオで出てくる順）。タイトルの写真（station）と環境音（evening）、タイトルで鳴る返事の音は起動時に取る。届く前に使う所は暗転で待つ（背景・環境音）か、鳴らさずに進む（一発の音）。",
+    "// deferred": "押して始めた後に裏で取る素材（シナリオで出てくる順）。タイトルの写真（slope）と環境音（winter_wind）、タイトルで鳴る返事の音は起動時に取る。届く前に使う所は暗転で待つ（背景・環境音）か、鳴らさずに進む（一発の音）。",
     "deferred": [
-      "assets/bg/paddy.jpg",
-      "assets/sfx/ui_choice.wav",
       "assets/sfx/ui_page.wav",
-      "assets/bg/lane.jpg",
-      "assets/sfx/se_slap.wav",
-      "assets/sfx/amb_night.wav",
-      "assets/bg/engawa.jpg",
-      "assets/sfx/se_furin.wav",
-      "assets/sfx/amb_river.wav",
-      "assets/bg/river.jpg",
-      "assets/sfx/amb_morning.wav"
+      "assets/bg/desk_room.jpg",
+      "assets/cast/map_plain.png",
+      "assets/sfx/ui_choice.wav",
+      "assets/bg/studio_eaves.jpg",
+      "assets/cast/toma_plain.png",
+      "assets/cast/toma_puzzled.png",
+      "assets/bg/studio.jpg",
+      "assets/cast/toma_smile.png",
+      "assets/bg/still_akari_slope.jpg"
     ],
     "keysDoc": "assets/novel.keys.json",
     "touchGestures": {

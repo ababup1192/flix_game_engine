@@ -47,6 +47,8 @@ mod View {
 
     // ── hud の中の z（小さいほど奥） ──
     def zVeil(): Int32 = 10
+    /// 頁の幕の上・字の下に置く小物（NVL と縦の画面の頁。幕で小物がくすまないように）。
+    def zPageProp(): Int32 = 15
     def zText(): Int32 = 20
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
@@ -71,7 +73,7 @@ mod View {
         let stage = World.stageOf(res, w);
         let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
-        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage) :: GameView.draw(env, stage) :: Nil)
+        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage, not isPropOnPage(env, w)) :: GameView.draw(env, stage) :: Nil)
             |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -169,9 +171,36 @@ mod View {
 
     // ── 立ち絵と小物（Cast） ──
 
-    /// 立ち絵と小物を蛍の手前（z 5）に描く。まだ届いていない絵は描かない（背景の写真と同じ扱い）。
-    def castLayer(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        Cast.items({ doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing }, stage#cast, 5)
+    /// 立ち絵を蛍の手前（z 5）に描く。小物は withProps の時だけここで描く（頁の幕がある間は hud の pageProps が幕の上に描く）。
+    /// まだ届いていない絵は描かない（背景の写真と同じ扱い）。
+    def castLayer(env: Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
+        let cenv = castEnv(env, stage);
+        let people = Cast.itemsOf(cenv, CastDoc.Kind.Character, stage#cast, 5);
+        if (withProps) List.append(people, Cast.itemsOf(cenv, CastDoc.Kind.Prop, stage#cast, 5)) else people
+
+    /// 頁の幕の上・字の下に描く小物（NVL と縦の画面の頁）。
+    def pageProps(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        Cast.itemsOf(castEnv(env, stage), CastDoc.Kind.Prop, stage#cast, zPageProp())
+
+    /// 今の画面で、小物を hud の頁（幕の上）が描くか。読んでいる頁を hud が描いていて、その頁に幕がある時（NVL か縦の画面）。
+    def isPropOnPage(env: Env, w: World.World): Bool = match w#scene {
+        case World.Scene.Reading(r) =>
+            not coversScreen(w#panel) and w#panel != World.Panel.Hidden and not Stage.isWindowHidden(env#storyNow, r#stage)
+                and hasPageVeil(env, r#stage)
+        case _ => false
+    }
+
+    /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
+    def hasPageVeil(env: Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or stage#mode == Stage.Mode.Nvl
+
+    /// 立ち絵と小物の描く元。掛ける色は背景の時間帯の cast の欄（無い時間帯・背景が無い時は絵のまま）を、背景の重ねと同じ進みで替える。
+    def castEnv(env: Env, stage: Stage.Stage): Cast.Env =
+        let toneOf = (shot: Option[Stage.Shot]) -> shot
+            |> Option.flatMap(s -> BackdropDoc.gradeOf(s#grade, env#res#backdrops) |> Option.flatMap(g -> g#cast) |> Option.map(Cast.toneOf(s#grade)))
+            |> Option.getWithDefault(Cast.plainTone());
+        let progress = Stage.fadeProgress(env#storyNow, stage);
+        let light = if (progress >= 1.0) Cast.steadyLight(toneOf(stage#shot)) else { previous = toneOf(stage#under), current = toneOf(stage#shot), progress = progress };
+        { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light }
 
     // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
 
@@ -247,7 +276,7 @@ mod View {
                    else textAt(hub#x + ring + gap, center#y - size / 2.0 - 1.0, word, atlas, size, t#ink, z + 1) :: Nil;
         ground :: sheen :: List.append(text, dots)
 
-    // ── パーティクル（蛍） ──
+    // ── パーティクル（蛍・雪） ──
 
     /// 蛍: 番号と実時間だけから位置と明滅を導く（どこにも保存しない = 巻き戻しても同じ絵）。
     /// 草むらの高さ（画面の下 6 割）をゆっくり漂い、息をするように明滅する。
@@ -267,8 +296,53 @@ mod View {
                              |> Render.overItem(item -> item |> Render.fade(fly#a) |> Render.blended(DrawCmd.BlendMode.Add))
                          :: Render.glowAt({ x = fly#x, y = fly#y }, fly#r * 5.0, color,
                                           { alpha = 0.55 * fly#a, blend = DrawCmd.BlendMode.Add }, 3))
+            case Some("snow") => snow(env, stage)
             case _ => Nil
         }
+
+    /// 雪: 蛍と同じく番号と実時間だけから位置を導く。上から下へゆっくり落ち、横に少し揺れ、画面の下で上へ戻る。
+    /// 粒子ごとに速さ・大きさ・濃さを散らし、遠い粒子（小さく遅い）ほど薄くして奥行きを出す。
+    /// 降り始めは粒子ごとに出る時刻をずらして少しずつ増やす（物語の時計で数えるので、セーブから戻した所は全部そろっている）。
+    /// 光は粒子の周りの薄いにじみだけ。手前の大きな粒子と灯りの側の粒子が、粒子ごとにばらつく間で時々にじみを強める。
+    def snow(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        let k = kindOf(env)#snow;
+        let w = Layout.width(env#fit);
+        let h = Layout.height(env#fit);
+        let margin = 12.0;
+        let span = h + margin * 2.0;
+        let ink = Color.lighten(theme(env)#ink, 0.6);
+        let ramp = Stage.particlesSince(env#storyNow, stage)
+            |> Option.map(since -> if (k#fadeIn <= 0.0) 1.0 else Float64.min(1.0, since / k#fadeIn)) |> Option.getWithDefault(1.0);
+        let lit = stage#shot |> Option.exists(shot -> List.memberOf(shot#photo, k#warmPhotos));
+        Fx.derive(k#count, realSeconds(env), (_i, rand, t) -> {
+            let depth = rand(2);
+            let fall = rand(1) * span + t * k#fallSpeed * (0.6 + depth * 0.8);
+            let y = fall - span * Float64.floor(fall / span) - margin;
+            let x = rand(0) * w + Num.sin(t * (0.35 + rand(3) * 0.45) + rand(4) * 6.28) * k#sway * (0.5 + depth * 0.5);
+            let warmth = if (lit) clamp01((x / w - k#warmFromX) / Float64.max(0.01, 1.0 - k#warmFromX)) else 0.0;
+            let catches = Float64.max(warmth, clamp01((depth - 0.6) / 0.4));
+            let glint = catches * snowGlint(k, t, rand(5), rand(6), rand(7));
+            { x = x, y = y, r = k#size * (0.5 + depth * 0.8), a = (0.45 + depth * 0.5) * clamp01((ramp - rand(8)) * 6.0),
+              glint = glint, color = Color.mix(ink, k#warmColor, warmth * k#warmStrength) }
+        }) |> List.filter(flake -> flake#a > 0.01) |> List.flatMap(flake ->
+            Render.glowAt({ x = flake#x, y = flake#y }, flake#r * k#glowRadius, flake#color,
+                          { alpha = k#glow * flake#a * (1.0 + k#twinkleGain * flake#glint), blend = DrawCmd.BlendMode.Add }, 3)
+            |> List.append(RawDraw.circleAt({ x = flake#x, y = flake#y }, flake#r, flake#color, 4)
+                               |> Render.overItem(item -> Render.fade(Float64.min(1.0, flake#a + 0.1 * flake#glint), item)) :: Nil))
+
+    /// 1 つの粒子が今どれだけ光を拾っているか（0〜1）。間は粒子ごとに twinkleEvery の 0.5〜1.5 倍で、
+    /// その間のどこで光るかも回ごとに変えるので、同じ粒子でも規則的には光らない。spread / phase / seed = 粒子ごとの乱数。
+    def snowGlint(k: KindDoc.Snow, t: Float64, spread: Float64, phase: Float64, seed: Float64): Float64 =
+        let period = Float64.max(k#twinkleSeconds * 2.0, k#twinkleEvery * (0.5 + spread));
+        let shifted = t + phase * period;
+        let cycle = Float64.floor(shifted / period);
+        let roll = fract(Num.sin(cycle * 12.9898 + seed * 78.233) * 43758.5453);
+        let u = (shifted - cycle * period - roll * (period - k#twinkleSeconds)) / Float64.max(0.01, k#twinkleSeconds);
+        if (u < 0.0 or u >= 1.0) 0.0 else Num.sin(Num.pi() * u)
+
+    def fract(x: Float64): Float64 = x - Float64.floor(x)
+
+    def clamp01(x: Float64): Float64 = Float64.max(0.0, Float64.min(1.0, x))
 
     // ── 読んでいる間の画面（本文・選択肢・クイックメニュー） ──
 
@@ -330,7 +404,7 @@ mod View {
             let placed = placeLine(atlas, { x = area#x, y = y }, area#width, { body = k#bodySize, ruby = k#rubySize }, inkOf(line, env, r), visible, line, env);
             (placed :: done, y + lineHeight(env, { body = k#bodySize, ruby = k#rubySize }, area#width, line) + 6.0)
         }, (Nil, area#y));
-        veil :: List.append(List.flatten(List.reverse(items)), waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r))
+        veil :: List.flatten(pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r) :: Nil)
 
     /// ADV: 下のウィンドウ（上から下へ濃くなる地と、金の細い縁）に、名前と今の 1 行。
     def adv(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
@@ -382,7 +456,7 @@ mod View {
              y + b#height + Layout.paragraphGap())
         }, (Nil, area#position#y));
         let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
-        List.flatten(portraitVeil(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
+        List.flatten(portraitVeil(env, r#stage) :: pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
 
     /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べ、人物が出ている間は novel.cast.json の
     /// portraitVeilWithCast を、人物の出入りの進みに合わせて掛ける（出ると薄く、消えると戻る）。
@@ -941,7 +1015,7 @@ mod View {
         // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
         let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
-            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage)
+            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage, not hasPageVeil(away, read#stage))
                          :: GameView.draw(away, read#stage) :: reading(atlas, away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));

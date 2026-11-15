@@ -79,7 +79,8 @@
           "req": true,
           "type": "choice",
           "values": [
-            "fireflies"
+            "fireflies",
+            "snow"
           ]
         }
       ],

@@ -1,20 +1,21 @@
 {
   "version": 1,
-  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認のウィンドウ・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label。names の鍵はシナリオの話し手、vars の鍵はシナリオの変数（$ を付けない名前）で、値は人に見せる名前。opening は「はじめから」で開くノード。話し手・変数・opening は bin/fge yarn build が assets/talk/vocab.json の from を通してここから読み、台本の名前と照らす。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
-  "title": "夏草の駅",
-  "subtitle": "十年ぶりに、祖母の町へ帰る。",
-  "titlePhoto": "station",
-  "titleGrade": "dusk",
-  "titleAmbience": "amb_evening",
-  "opening": "Station",
+  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認のウィンドウ・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label。names の鍵はシナリオの話し手、vars の鍵はシナリオの変数（$ を付けない名前）で、値は人に見せる名前。opening は「はじめから」で開くノード。話し手・変数・opening は bin/fge yarn build が assets/talk/vocab.json の from を通してここから読み、台本の名前と照らす。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
+  "title": "雪どけを待たない便り",
+  "subtitle": "冬の山里で、坂の上の工房へ便りを届ける。",
+  "titlePhoto": "slope",
+  "titleGrade": "morning",
+  "titleAmbience": "amb_winter_wind",
+  "opening": "WinterRoute",
   "names": {
-    "chinatsu": "千夏",
-    "me": "私"
+    "akari": "灯",
+    "toma": "冬馬",
+    "clerk": "郵便局の人",
+    "neighbor": "坂の家の人"
   },
   "vars": {
-    "closeness": "親しさ",
-    "house": "家をどうするか",
-    "stayed": "川で黙っていた"
+    "own_pace": "自分の歩調を伝えた",
+    "shared_tiredness": "休む日を伝えた"
   },
   "labels": {
     "newGame": "はじめから",
@@ -66,7 +67,7 @@
     "seVolume": "効果音",
     "windowAlpha": "ウィンドウの濃さ",
     "reset": "初期設定に戻す",
-    "preview": "夏草の匂いが、開けた窓から流れこんでくる。遠くで蜩が鳴いた。",
+    "preview": "薄雪の坂に、まだ靴の跡がない。工房の窓の向こうで、版木を削る音がした。",
     "yes": "はい",
     "no": "いいえ",
     "askOverwrite": "このデータに上書きしますか？",

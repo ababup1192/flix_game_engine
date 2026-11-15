@@ -1,0 +1,13 @@
+# 分岐の見本（make tape FLOWS="e2e/tape_own_pace.flow e2e/tape_thanks.flow"）。最初の手紙の選択肢で地図の分かりやすさに礼を書く道。
+fps 30
+start talk node=FirstLetter
+mark letter
+drive reader until choice max 60
+wait 1
+mark choice
+tap next
+wait 0.5
+tap confirm                                     # 地図の分かりやすさに礼を書く
+drive reader until talk=StudioWindow max 60
+mark eaves
+wait 1.5

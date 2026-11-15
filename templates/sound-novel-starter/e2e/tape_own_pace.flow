@@ -1,0 +1,12 @@
+# 分岐の見本（make tape FLOWS="e2e/tape_own_pace.flow e2e/tape_thanks.flow"）。最初の手紙の選択肢で「坂をゆっくり上がります」と添える道。
+# もう 1 本（tape_thanks.flow）は同じ始まりから地図の礼を書く。2 本の頁は分岐のカードでつながる。
+fps 30
+start talk node=FirstLetter
+mark letter
+drive reader until choice max 60
+wait 1
+mark choice
+tap confirm                                     # 「私は、坂をゆっくり上がります」と添える
+drive reader until talk=StudioWindow max 60
+mark eaves
+wait 1.5

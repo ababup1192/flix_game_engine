@@ -24,7 +24,7 @@ mod TestScriptEdits {
 
     def res(): Res.Res \ Fs.FileRead =
         let program = Yarn.fromJson(programText()) |> Option.getWithDefault(Yarn.empty());
-        Res.withDialogue(program, TestKit.res())
+        Res.withDialogue(program, TestKit.res()) |> TestKit.withOpening("Station")
 
     /// talk の始まりを引数で組む（組めなければ止める）。
     // WhyNot: App.startOrBug を通さない — 始まりの前に Doc とシナリオを読み直すので、見本のシナリオが本物に戻る。

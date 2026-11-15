@@ -1,5 +1,5 @@
 // StoryDoc — novel.story.json（画面に出す言葉: タイトル・メニュー・設定・セーブ・確認のウィンドウの文言と、話し手の呼び名・変数の表示名・最初のノード）の宣言ドキュメント層。
-// 文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
+// 文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
 // 言葉は Label の enum を鍵に引く（鍵の綴りと既定の言葉の正は entryOf。Doc に無い鍵は既定の言葉で出す = fail-open）。
 mod StoryDoc {
     use fge::{DocJson, JsonCodec, Log}
@@ -160,7 +160,7 @@ mod StoryDoc {
         case Label.SeVolume       => ("seVolume", "効果音")
         case Label.WindowAlpha    => ("windowAlpha", "ウィンドウの濃さ")
         case Label.Reset          => ("reset", "初期設定に戻す")
-        case Label.Preview        => ("preview", "夏草の匂いが、開けた窓から流れこんでくる。遠くで蜩が鳴いた。")
+        case Label.Preview        => ("preview", "薄雪の坂に、まだ靴の跡がない。工房の窓の向こうで、版木を削る音がした。")
         case Label.Yes            => ("yes", "はい")
         case Label.No             => ("no", "いいえ")
         case Label.AskOverwrite   => ("askOverwrite", "このデータに上書きしますか？")
@@ -209,9 +209,9 @@ mod StoryDoc {
     pub def path(): String = "assets/novel.story.json"
 
     pub def defaults(): Doc =
-        Doc.Doc({ version = 1, title = "夏草の駅", subtitle = "十年ぶりに、祖母の町へ帰る。",
-                  titlePhoto = "station", titleGrade = "dusk", titleAmbience = "amb_evening",
-                  opening = "Station", names = Map.empty(), vars = Map.empty(), labels = Map.empty() })
+        Doc.Doc({ version = 1, title = "雪どけを待たない便り", subtitle = "冬の山里で、坂の上の工房へ便りを届ける。",
+                  titlePhoto = "slope", titleGrade = "morning", titleAmbience = "amb_winter_wind",
+                  opening = "WinterRoute", names = Map.empty(), vars = Map.empty(), labels = Map.empty() })
 
     /// 鍵の言葉（Doc に無ければ既定の言葉）。
     pub def labelOf(label: Label, doc: Doc): String =

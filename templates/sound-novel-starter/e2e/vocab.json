@@ -17,23 +17,24 @@
     {"name": "lineDone", "kind": "flag", "doc": "今の行を出し終えた"},
     {"name": "choice", "kind": "flag", "doc": "選択肢を出している"},
     {"name": "cursor", "kind": "num", "doc": "一番手前のカーソルの番号（0 から。確認のウィンドウ → 画面 → 選択肢 → タイトルの順に見る）"},
-    {"name": "stayed", "kind": "flag", "doc": "シナリオの変数 $stayed（true の結末へ向かっている）"},
-    {"name": "closeness", "kind": "num", "doc": "シナリオの変数 $closeness"}
+    {"name": "ownPace", "kind": "flag", "doc": "シナリオの変数 $own_pace（最初の手紙で歩調を伝えた）"},
+    {"name": "sharedTiredness", "kind": "flag", "doc": "シナリオの変数 $shared_tiredness（2 通目で休む日を伝えた）"}
   ],
   "drives": [
     {"name": "reader", "doc": "行を出し終えたら少し読んでから送る（選択肢・ウィンドウ・タイトル画面では押さない）"}
   ],
   "starts": [
     {"name": "title", "doc": "タイトル画面（起動の既定）", "args": {}},
-    {"name": "talk", "doc": "シナリオのノード（node か talk。既定は最初の Station）の頭から読む所。line = .yarn の行番号を渡すとその行まで進めて出した所（Studio の会話のプレビュー・bin/fge talk goto）。at = その行の前の文のハッシュ（合わなければ同じ文の行を探し、無ければノードの頭）。edit.<行>=<後の文> と was.<行>=<前の文のハッシュ> で台詞を直して遊ぶ（注釈の頁の「ここから遊ぶ」）。$名前=値 でシナリオの変数をその値にして流す", "args": {}},
+    {"name": "talk", "doc": "シナリオのノード（node か talk。既定は novel.story.json の opening）の頭から読む所。line = .yarn の行番号を渡すとその行まで進めて出した所（Studio の会話のプレビュー・bin/fge talk goto）。at = その行の前の文のハッシュ（合わなければ同じ文の行を探し、無ければノードの頭）。edit.<行>=<後の文> と was.<行>=<前の文のハッシュ> で台詞を直して遊ぶ（注釈の頁の「ここから遊ぶ」）。$名前=値 でシナリオの変数をその値にして流す", "args": {}},
     {"name": "shot:title", "doc": "ギャラリーの場面（gallery/title.png）", "args": {}},
     {"name": "shot:nvl", "doc": "ギャラリーの場面（gallery/nvl.png）", "args": {}},
     {"name": "shot:adv", "doc": "ギャラリーの場面（gallery/adv.png）", "args": {}},
     {"name": "shot:choice", "doc": "ギャラリーの場面（gallery/choice.png）", "args": {}},
-    {"name": "shot:lane", "doc": "ギャラリーの場面（gallery/lane.png）", "args": {}},
-    {"name": "shot:engawa", "doc": "ギャラリーの場面（gallery/engawa.png）", "args": {}},
-    {"name": "shot:night", "doc": "ギャラリーの場面（gallery/night.png）", "args": {}},
-    {"name": "shot:morning", "doc": "ギャラリーの場面（gallery/morning.png）", "args": {}},
+    {"name": "shot:eaves", "doc": "ギャラリーの場面（gallery/eaves.png）", "args": {}},
+    {"name": "shot:studio", "doc": "ギャラリーの場面（gallery/studio.png）", "args": {}},
+    {"name": "shot:invite", "doc": "ギャラリーの場面（gallery/invite.png）", "args": {}},
+    {"name": "shot:ending", "doc": "ギャラリーの場面（gallery/ending.png）", "args": {}},
+    {"name": "shot:still", "doc": "ギャラリーの場面（gallery/still.png）", "args": {}},
     {"name": "shot:hold", "doc": "ギャラリーの場面（gallery/hold.png）", "args": {}},
     {"name": "shot:log", "doc": "ギャラリーの場面（gallery/log.png）", "args": {}},
     {"name": "shot:save", "doc": "ギャラリーの場面（gallery/save.png）", "args": {}},

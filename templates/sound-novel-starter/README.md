@@ -1,10 +1,10 @@
-# 夏草の駅
+# 雪どけを待たない便り
 
-flix_game_engine のサウンドノベルの手本。十年ぶりに祖母の町へ帰った「私」が、幼なじみの千夏と、
-祖母が遺した真鍮の鍵の行き先をたどる。5 分ほどで読み終わり、選び方で結末が 3 つに分かれる。
+flix_game_engine のサウンドノベルの手本。冬の山里で午前だけ郵便の配達を手伝う灯が、坂の上の工房の窓から
+凍る場所を描いた地図を受け取り、木版画家の冬馬と便りを交わす。10 分ほどで読み終わり、選び方で結末が 3 つに分かれる。
 
-背景は描かずに実写の写真（Wikimedia Commons の CC0 / CC BY。出典は [CREDITS.md](CREDITS.md)）を使い、
-**ぼかしと時間帯の色はゲームの中でシェーダーが付ける**（同じ昼の写真が、夕暮れにも夜にも朝にもなる）。
+背景は昼の光の実写風の絵（画像生成。作り方は [CREDITS.md](CREDITS.md)）を使い、
+**ぼかしと時間帯の色はゲームの中でシェーダーが付ける**（同じ昼の絵が、夕方にも灯りの下にも夜にもなる）。
 文章は小説のように画面いっぱいに積む NVL と、下のウィンドウに 1 行ずつ出す ADV を、場面ごとに切り替える。
 字は明朝（しっぽり明朝・OFL）。
 
@@ -56,15 +56,15 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 
 | 機能 | 書く所 | 読む所 |
 |---|---|---|
-| 台詞・地の文・話し手 | `assets/talk/natsukusa.yarn`（Yarn Spinner の書き方） | `WorldRead.absorb` / `showLine` |
+| 台詞・地の文・話し手 | `assets/talk/yukidoke.yarn`（Yarn Spinner の書き方） | `WorldRead.absorb` / `showLine` |
 | ルビ（`[ruby=よみ]字[/ruby]`） | 同上 | `View.placeLine`（エンジンの `RichText.placeRuby`） |
 | 選択肢・条件つきの選択肢・変数 | `-> …` `<<if>>` `<<set>>` `<<declare>>` | `WorldRead.pick` / `moveChoice` |
 | 背景の写真を時間帯の色でぼかして切り替える | `<<bg 写真 grade=時間帯 time=秒>>` + `assets/novel.backdrops.json` | `src/Backdrop.flix`（ShaderDoc の `TexBlur`） |
 | NVL ⇄ ADV・頁をめくる・文字の枠を消す | `<<window nvl>>` `<<window bottom>>` `<<window clear>>` `<<window off>>`（次の台詞で戻る） | `Page.show` / `Commands` の `window`（頁の出来事 `Out`・めくった数は `Stage` の `pages`・消す値は `Stage.windowHiddenKey`） |
 | 環境音（ループ）・効果音 | `<<audio ambience 音>>` `<<audio se 音>>`（音は project.json の sounds の名前）+ `art/sfx.snd.star` | `Controls.ambience` / `soundOf`・音量は `assets/novel.mixer.json` のバス（名前が `amb_` で始まる音は環境音のバス・`se_` と `ui_` は効果音のバスへ振り分ける。ほかの名前は defaultBus）|
-| 画面の演出（蛍・揺れ） | `<<fx fireflies>>` `<<shake>>` | `View.particles` / `Stage.shakeOffset` |
+| 画面の演出（蛍・雪・揺れ） | `<<fx fireflies>>` `<<fx snow>>` `<<shake>>`（粒子の数・雪の速さと光は `assets/novel.kind.json`） | `View.particles` / `Stage.shakeOffset` |
 | 待ち | `<<wait 秒>>` | エンジンの YarnRunner が待つ |
-| 立ち絵と小物（出す・表情や位置を替える・消す。クロスフェードで、すべらせない） | `<<show 名前 [表情] [at=位置] [time=秒]>>`・`<<hide 名前>>`・`<<hide all>>`・`<<hide at=位置>>`（小物も同じ。props の名前は小物として出る）+ `assets/novel.cast.json`（位置・人物・小物。例は note）+ project.json の textures に `cast_<名前>_<表情>`。作例の物語には出していない（仕組みだけ） | `src/Cast.flix`（意味・重ね方・置き場所・描き方）・`View.castLayer`・セーブは `Saves.Mark` の `stage`（`Stage.Snapshot`）。素材は `python3 art/cast/prepare.py <元の絵の置き場>` で縮めて縁を埋め、`make lint-cast` で登録と縦横の比を見る。確かめ方: 描き出しの `cast-sample`・`portrait-cast-sample`・`portrait-cast-veil`（テスト用の絵 `assets/cast/_sample_plain.png` は `art/cast/sample.py` が作る） |
+| 立ち絵と小物（出す・表情や位置を替える・消す。クロスフェードで、すべらせない） | `<<show 名前 [表情] [at=位置] [time=秒]>>`・`<<hide 名前>>`・`<<hide all>>`・`<<hide at=位置>>`（小物も同じ。props の名前は小物として出る）+ `assets/novel.cast.json`（位置・人物・小物。例は note）+ project.json の textures に `cast_<名前>_<表情>`。作例の物語では冬馬（3 表情）と手描きの地図（小物）を出す | `src/Cast.flix`（意味・重ね方・置き場所・描き方）・`View.castLayer`・セーブは `Saves.Mark` の `stage`（`Stage.Snapshot`）。素材は `python3 art/cast/prepare.py <元の絵の置き場>` で縮めて縁を埋め、`make lint-cast` で登録と縦横の比を見る。確かめ方: 描き出しの `cast-sample`・`portrait-cast-sample`・`portrait-cast-veil`（テスト用の絵 `assets/cast/_sample_plain.png` は `art/cast/sample.py` が作る） |
 | 文字送り・オート・スキップ・既読 | 速さは `assets/novel.kind.json` と設定の画面 | `WorldRead.step` / `autoOrSkip` / `markSeen` |
 | バックログ・そこへ戻る | 行数は `novel.kind.json` の `logMax` | `WorldLog.scrollLog` / `jumpTo`・`View.logPanel` |
 | ロールバック | — | `WorldLog.rollback`（ログの各行に、その行を出した時のブックマークを持たせる） |
@@ -81,7 +81,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 **遊ぶ → シナリオを読む → コードを読む → JSON をいじる** の順で仕組みが見えます。
 
 1. `make run` で一度読み終える。
-2. `assets/talk/natsukusa.yarn` を読む。頭のコメントに、書けるコマンドの一覧がある。
+2. `assets/talk/yukidoke.yarn` を読む。頭のコメントに、書けるコマンドの一覧がある。
 3. コードは **入口 → 状態 → 描画 → 入力** の順:
    1. `src/Game.flix` … 部品を App に繋ぐ目次。冒頭に**毎フレームの流れ**。`src/Main.flix` は Doc とセーブを読んで起動するだけ。
       App の w は描く元と遊びの状態の組（エンジンの `Resources.With[Res.Res, World.World]`）。系・絵・問いは `Resources` の口で両方を受ける。
@@ -94,12 +94,12 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
       実行器の出来事を舞台・頁・ログへ反映）・バックログと戻る `WorldLog`・セーブとロード `WorldSaves`・設定 `WorldSettings`・
       タイトルとボタンと確認のウィンドウ `WorldMenu`。遷移を起こす関数の doc に `[遷移: X→Y]`。
       時計は 2 本: 文字送り・待ち・背景の切り替えは物語の時計 `storyClock`（画面を開くと止まる = `paceOf`）、
-      タイトル画面・クレジット・蛍の明滅・知らせは実時間 `realNow`。
+      タイトル画面・クレジット・蛍と雪の粒子・知らせは実時間 `realNow`。
       規則は音を鳴らさず、返事を出来事（`Emit`）として出す。Controls が集めて音へ替える。
    4. `src/Commands.flix` … 演出のコマンド（`<<bg>>` など）の引数の表と意味。`src/Stage.flix` … 舞台の状態（時間で動く値は `PropertyTween`）。
       `src/GameCommands.flix`・`src/GameView.flix` … このゲームだけのコマンドと絵を足す口（テンプレートは空）。`src/Page.flix` … NVL の頁と ADV の 1 行。
    5. `src/Backdrop.flix` … 写真をぼかして時間帯の色にするシェーダーの式（ShaderDoc を code で組む）。
-   6. `src/View.flix` … 状態を絵に写す（背景と蛍は `frame`、文章・ウィンドウ・タイトル画面は `hud`）。
+   6. `src/View.flix` … 状態を絵に写す（背景と蛍・雪は `frame`、文章・ウィンドウ・タイトル画面は `hud`）。
       部品は World を丸ごと受けず、描く元（`Env.res`）・セーブ・時刻だけの `Env` と、その場面の payload（`Read`・`TitleItem` など）を受ける。
    7. `src/Controls.flix` … 入力の効き先（確認のウィンドウ → 画面 → 選択肢 → ボタン → 本文）と音と Doc の読み直し（`docTable`。読み直すのは Res で、シナリオの行だけ `WorldRead.settleDialogue` が World を収め直す）。
 4. `assets/*.json` の数値や色を変えて、`make debug` で保存即反映を見る（ぼかしの強さ・時間帯の色・文字の速さ・音量）。

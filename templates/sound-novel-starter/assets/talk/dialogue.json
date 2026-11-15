@@ -1,35 +1,29 @@
 {
   "version": 3,
-  "note": "bin/fge yarn build が assets/talk/natsukusa.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "note": "bin/fge yarn build が assets/talk/yukidoke.yarn から書いた木。手で直さない（.yarn を直して build する）",
   "vocab": "assets/talk/vocab.json",
   "files": [
-    "assets/talk/natsukusa.yarn"
+    "assets/talk/yukidoke.yarn"
   ],
   "variables": [
     {
-      "name": "$closeness",
-      "value": 0,
-      "file": "assets/talk/natsukusa.yarn",
-      "line": 19
-    },
-    {
-      "name": "$house",
-      "value": "undecided",
-      "file": "assets/talk/natsukusa.yarn",
+      "name": "$own_pace",
+      "value": false,
+      "file": "assets/talk/yukidoke.yarn",
       "line": 20
     },
     {
-      "name": "$stayed",
+      "name": "$shared_tiredness",
       "value": false,
-      "file": "assets/talk/natsukusa.yarn",
+      "file": "assets/talk/yukidoke.yarn",
       "line": 21
     }
   ],
   "nodes": [
     {
-      "title": "Station",
-      "file": "assets/talk/natsukusa.yarn",
-      "line": 17,
+      "title": "WinterRoute",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 18,
       "headers": [],
       "body": [
         {
@@ -38,7 +32,7 @@
           "name": "audio",
           "args": [
             "ambience",
-            "amb_evening"
+            "amb_winter_wind"
           ]
         },
         {
@@ -46,8 +40,8 @@
           "line": 23,
           "name": "bg",
           "args": [
-            "station",
-            "grade=dusk",
+            "slope",
+            "grade=morning",
             "time=2.5"
           ]
         },
@@ -56,7 +50,7 @@
           "line": 24,
           "name": "window",
           "args": [
-            "nvl"
+            "off"
           ]
         },
         {
@@ -64,50 +58,58 @@
           "line": 25,
           "name": "wait",
           "args": [
-            "1.5"
+            "2"
           ]
         },
         {
-          "kind": "line",
+          "kind": "command",
           "line": 26,
-          "text": "十年ぶりに降りた駅は、私が覚えているよりずっと小さかった。"
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
         },
         {
           "kind": "line",
           "line": 27,
-          "text": "改札はとうに無く、錆びた運賃箱がひとつ、ホームの端で口を開けている。"
+          "text": "薄雪に、まだ靴の跡がない。"
         },
         {
           "kind": "line",
           "line": 28,
-          "text": "線路の向こうから蜩の声が押し寄せてきて、走り去る電車の音をあっという間に呑みこんだ。",
-          "parts": [
-            {
-              "text": "線路の向こうから"
-            },
-            {
-              "markup": "ruby",
-              "value": "ひぐらし"
-            },
-            {
-              "text": "蜩"
-            },
-            {
-              "close": "ruby"
-            },
-            {
-              "text": "の声が押し寄せてきて、走り去る電車の音をあっという間に呑みこんだ。"
-            }
-          ]
+          "text": "祖父の空き家へ来てから、朝に用事があるのは初めてだ。"
         },
         {
           "kind": "line",
           "line": 29,
-          "text": "祖母の家を片付けに来た。それだけの用事のはずだった。"
+          "text": "まだ寝ぼけた体を、玄関で急かさずに待つ。"
+        },
+        {
+          "kind": "line",
+          "line": 30,
+          "speaker": "clerk",
+          "text": "午前だけでいいからね。無理はしないで。"
+        },
+        {
+          "kind": "line",
+          "line": 31,
+          "speaker": "akari",
+          "text": "はい、朝は得意です。お任せください。"
+        },
+        {
+          "kind": "line",
+          "line": 32,
+          "speaker": "clerk",
+          "text": "坂の上は日陰が凍るよ。石垣の先、気をつけて。"
+        },
+        {
+          "kind": "line",
+          "line": 33,
+          "text": "窓口で受け取った鞄は、思ったより腰の低い所に落ちた。"
         },
         {
           "kind": "command",
-          "line": 30,
+          "line": 34,
           "name": "window",
           "args": [
             "clear"
@@ -115,86 +117,386 @@
         },
         {
           "kind": "line",
-          "line": 31,
-          "text": "鞄の底で、鍵がひとつ鳴った。"
-        },
-        {
-          "kind": "line",
-          "line": 32,
-          "text": "家の鍵ではない。祖母が「なくさないでね」と私の手に握らせた、小さな真鍮の鍵だ。",
-          "parts": [
-            {
-              "text": "家の鍵ではない。祖母が「なくさないでね」と私の手に握らせた、小さな"
-            },
-            {
-              "markup": "ruby",
-              "value": "しんちゅう"
-            },
-            {
-              "text": "真鍮"
-            },
-            {
-              "close": "ruby"
-            },
-            {
-              "text": "の鍵だ。"
-            }
-          ]
-        },
-        {
-          "kind": "line",
-          "line": 33,
-          "text": "何の鍵なのか、とうとう聞きそびれたまま、祖母は春に逝った。"
-        },
-        {
-          "kind": "line",
-          "line": 34,
-          "text": "ホームの端で、夏草が背伸びをするように揺れている。",
-          "parts": [
-            {
-              "text": "ホームの"
-            },
-            {
-              "markup": "ruby",
-              "value": "はし"
-            },
-            {
-              "text": "端"
-            },
-            {
-              "close": "ruby"
-            },
-            {
-              "text": "で、夏草が背伸びをするように揺れている。"
-            }
-          ]
-        },
-        {
-          "kind": "jump",
           "line": 35,
-          "node": "Paddy"
-        }
-      ]
-    },
-    {
-      "title": "Paddy",
-      "file": "assets/talk/natsukusa.yarn",
-      "line": 38,
-      "headers": [],
-      "body": [
+          "speaker": "neighbor",
+          "text": "新しい配達の人かい。"
+        },
         {
-          "kind": "command",
+          "kind": "line",
+          "line": 36,
+          "speaker": "akari",
+          "text": "冬の間だけ、お手伝いします。よろしくお願いします。"
+        },
+        {
+          "kind": "line",
+          "line": 37,
+          "speaker": "neighbor",
+          "text": "上の工房の人、手紙が好きでね。今日も待ってるよ。"
+        },
+        {
+          "kind": "line",
+          "line": 38,
+          "text": "石垣を回ると、靴底が横へ流れた。"
+        },
+        {
+          "kind": "line",
+          "line": 39,
+          "text": "膝を曲げて止まり、石の白い粒を見つめる。"
+        },
+        {
+          "kind": "line",
           "line": 40,
-          "name": "bg",
-          "args": [
-            "paddy",
-            "grade=evening",
-            "time=2.0"
-          ]
+          "text": "次の一歩から、歩幅を半分にした。"
         },
         {
           "kind": "command",
           "line": 41,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 42,
+          "text": "最後の一軒は、坂の上の古い工房だった。"
+        },
+        {
+          "kind": "line",
+          "line": 43,
+          "text": "郵便受けの蓋を戻すと、庇の下の窓が開いた。",
+          "parts": [
+            {
+              "text": "郵便受けの蓋を戻すと、"
+            },
+            {
+              "markup": "ruby",
+              "value": "ひさし"
+            },
+            {
+              "text": "庇"
+            },
+            {
+              "close": "ruby"
+            },
+            {
+              "text": "の下の窓が開いた。"
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 44,
+          "speaker": "toma",
+          "text": "石垣の所……。これを。"
+        },
+        {
+          "kind": "line",
+          "line": 45,
+          "speaker": "akari",
+          "text": "私にですか。ありがとうございます。"
+        },
+        {
+          "kind": "line",
+          "line": 46,
+          "speaker": "akari",
+          "text": "あの、お名前を。"
+        },
+        {
+          "kind": "line",
+          "line": 47,
+          "text": "雪明かりの向こうで、小さな封筒を持つ指だけが見えた。"
+        },
+        {
+          "kind": "line",
+          "line": 48,
+          "text": "窓はもう閉まり、私の声がガラスに薄く残った。"
+        },
+        {
+          "kind": "command",
+          "line": 49,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 50,
+          "text": "宛名には、次にここへ来る方へ、とある。"
+        },
+        {
+          "kind": "line",
+          "line": 51,
+          "text": "坂の下で封を開くと、折った紙が膝いっぱいに広がった。"
+        },
+        {
+          "kind": "line",
+          "line": 52,
+          "text": "道の線に沿って、細かな斜線が重なっている。"
+        },
+        {
+          "kind": "line",
+          "line": 53,
+          "text": "今朝、足を取られた曲がり角にもあった。"
+        },
+        {
+          "kind": "line",
+          "line": 54,
+          "speaker": "akari",
+          "text": "見られてた。"
+        },
+        {
+          "kind": "line",
+          "line": 55,
+          "text": "まだ会っていない私の靴の置き場を、考えた人がいる。"
+        },
+        {
+          "kind": "line",
+          "line": 56,
+          "text": "帰ったら返事を書こう。封筒を内ポケットへ入れた。"
+        },
+        {
+          "kind": "jump",
+          "line": 57,
+          "node": "FirstLetter"
+        }
+      ]
+    },
+    {
+      "title": "FirstLetter",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 60,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 62,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 63,
+          "name": "bg",
+          "args": [
+            "desk_room",
+            "grade=lamplight",
+            "time=1.5"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 64,
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 65,
+          "text": "帰宅して鞄を床に置き、湯の入った椀で手を温めた。"
+        },
+        {
+          "kind": "line",
+          "line": 66,
+          "text": "指が曲がるようになってから、木机に地図を開く。"
+        },
+        {
+          "kind": "command",
+          "line": 67,
+          "name": "show",
+          "args": [
+            "map"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 68,
+          "speaker": "toma",
+          "text": "石垣の北側は、十一時を過ぎても日陰です。"
+        },
+        {
+          "kind": "line",
+          "line": 69,
+          "speaker": "toma",
+          "text": "赤い小屋を回ると坂が緩く、手すりも使えます。"
+        },
+        {
+          "kind": "line",
+          "line": 70,
+          "speaker": "toma",
+          "text": "黒く濡れて見える所は氷です。白い砂の方へ足を。"
+        },
+        {
+          "kind": "line",
+          "line": 71,
+          "text": "小屋まで描いた手間が、今になって指に伝わる。"
+        },
+        {
+          "kind": "command",
+          "line": 72,
+          "name": "hide",
+          "args": [
+            "map"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 73,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 74,
+          "text": "便せんを地図の隣に置いた。"
+        },
+        {
+          "kind": "line",
+          "line": 75,
+          "speaker": "akari",
+          "text": "地図をありがとうございました。今日の仕事は楽でし"
+        },
+        {
+          "kind": "line",
+          "line": 76,
+          "speaker": "akari",
+          "text": "……ここは、消そう。"
+        },
+        {
+          "kind": "options",
+          "line": 77,
+          "options": [
+            {
+              "line": 77,
+              "text": "「私は、坂をゆっくり上がります」と添える",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 78,
+                  "speaker": "akari",
+                  "text": "石垣の先から、歩幅を小さくしました。"
+                },
+                {
+                  "kind": "line",
+                  "line": 79,
+                  "speaker": "akari",
+                  "text": "私は、坂をゆっくり上がります。"
+                },
+                {
+                  "kind": "line",
+                  "line": 80,
+                  "text": "その二行に、理由は足さなかった。"
+                },
+                {
+                  "kind": "set",
+                  "line": 81,
+                  "name": "$own_pace",
+                  "expr": {
+                    "kind": "value",
+                    "value": true
+                  }
+                }
+              ]
+            },
+            {
+              "line": 82,
+              "text": "地図の分かりやすさに礼を書く",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 83,
+                  "speaker": "akari",
+                  "text": "斜線のおかげで、帰りは足の置き場が分かりました。"
+                },
+                {
+                  "kind": "line",
+                  "line": 84,
+                  "speaker": "akari",
+                  "text": "赤い小屋の角まで描いてあって、迷いませんでした。"
+                },
+                {
+                  "kind": "line",
+                  "line": 85,
+                  "text": "道のことを確かに書けたので、そこで結んだ。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 86,
+          "speaker": "akari",
+          "text": "小野灯といいます。今日から配達を手伝っています。"
+        },
+        {
+          "kind": "line",
+          "line": 87,
+          "text": "宛名の所で、ペン先が浮いた。"
+        },
+        {
+          "kind": "line",
+          "line": 88,
+          "text": "工房の方へ、とだけ書き、窓から渡せる大きさに折る。"
+        },
+        {
+          "kind": "line",
+          "line": 89,
+          "text": "返事を求める行は足さず、封を押さえた。"
+        },
+        {
+          "kind": "line",
+          "line": 90,
+          "text": "明朝の鞄のそばに、封筒を立てかける。"
+        },
+        {
+          "kind": "line",
+          "line": 91,
+          "text": "手袋の支度に、その白い一枚が加わった。"
+        },
+        {
+          "kind": "jump",
+          "line": 92,
+          "node": "StudioWindow"
+        }
+      ]
+    },
+    {
+      "title": "StudioWindow",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 95,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 97,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "amb_winter_wind"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 98,
+          "name": "bg",
+          "args": [
+            "studio_eaves",
+            "grade=morning",
+            "time=1.5"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 99,
           "name": "window",
           "args": [
             "bottom"
@@ -202,812 +504,242 @@
         },
         {
           "kind": "line",
-          "line": 42,
-          "text": "田んぼの間を抜ける道は、記憶の中よりも少しだけ広くなっていた。"
+          "line": 100,
+          "text": "翌朝は小さな歩幅のまま、工房まで上った。"
         },
         {
           "kind": "line",
-          "line": 43,
-          "text": "稲の葉が風を受けて、緑の水面のように一斉にうねる。"
+          "line": 101,
+          "text": "郵便を入れ終えてから、私の封筒を取り出した。"
         },
-        {
-          "kind": "line",
-          "line": 44,
-          "text": "畦道の先で、麦わら帽子がこちらを振り返った。"
-        },
-        {
-          "kind": "line",
-          "line": 45,
-          "speaker": "chinatsu",
-          "text": "……やっぱり。歩き方が、昔のまんまだもん。"
-        },
-        {
-          "kind": "line",
-          "line": 46,
-          "text": "日焼けした腕に、見覚えのある黄色い如雨露を提げている。",
-          "parts": [
-            {
-              "text": "日焼けした腕に、見覚えのある黄色い"
-            },
-            {
-              "markup": "ruby",
-              "value": "じょうろ"
-            },
-            {
-              "text": "如雨露"
-            },
-            {
-              "close": "ruby"
-            },
-            {
-              "text": "を提げている。"
-            }
-          ]
-        },
-        {
-          "kind": "line",
-          "line": 47,
-          "text": "私は名前を呼ぼうとして、少しだけ迷った。呼び方を、もう覚えていなかった。"
-        },
-        {
-          "kind": "options",
-          "line": 48,
-          "options": [
-            {
-              "line": 48,
-              "text": "「千夏？」",
-              "body": [
-                {
-                  "kind": "line",
-                  "line": 49,
-                  "speaker": "chinatsu",
-                  "text": "正解。忘れられてたら、田んぼに突き落とすとこだった。"
-                },
-                {
-                  "kind": "line",
-                  "line": 50,
-                  "speaker": "me",
-                  "text": "物騒だなあ。相変わらず。"
-                }
-              ]
-            },
-            {
-              "line": 51,
-              "text": "「……ちいちゃん」",
-              "body": [
-                {
-                  "kind": "set",
-                  "line": 52,
-                  "name": "$closeness",
-                  "expr": {
-                    "kind": "+",
-                    "args": [
-                      {
-                        "kind": "variable",
-                        "name": "$closeness"
-                      },
-                      {
-                        "kind": "value",
-                        "value": 1
-                      }
-                    ]
-                  }
-                },
-                {
-                  "kind": "line",
-                  "line": 53,
-                  "speaker": "chinatsu",
-                  "text": "その呼び方、まだ覚えてたんだ。"
-                },
-                {
-                  "kind": "line",
-                  "line": 54,
-                  "speaker": "chinatsu",
-                  "text": "……ずるいなあ。怒る準備してたのに。"
-                },
-                {
-                  "kind": "line",
-                  "line": 55,
-                  "speaker": "me",
-                  "text": "怒られる覚えなら、あるけどね。"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "kind": "line",
-          "line": 56,
-          "speaker": "chinatsu",
-          "text": "おばあちゃんの家でしょ。鍵、開けといたよ。風、通さないと畳が傷むから。"
-        },
-        {
-          "kind": "line",
-          "line": 57,
-          "speaker": "me",
-          "text": "……ありがとう。ずっと、任せきりにして。"
-        },
-        {
-          "kind": "line",
-          "line": 58,
-          "speaker": "chinatsu",
-          "text": "いいって。おばあちゃんには、私のほうが世話になったんだし。"
-        },
-        {
-          "kind": "jump",
-          "line": 59,
-          "node": "Lane"
-        }
-      ]
-    },
-    {
-      "title": "Lane",
-      "file": "assets/talk/natsukusa.yarn",
-      "line": 62,
-      "headers": [],
-      "body": [
         {
           "kind": "command",
-          "line": 64,
-          "name": "bg",
+          "line": 102,
+          "name": "show",
           "args": [
-            "lane",
-            "grade=dusk",
-            "time=2.0"
+            "toma",
+            "plain",
+            "at=right"
           ]
         },
         {
           "kind": "line",
-          "line": 65,
-          "text": "坂の上の家までは、千夏が先に立って歩いた。"
+          "line": 103,
+          "speaker": "akari",
+          "text": "地図、助かりました。小野灯です。これ、お礼です。"
         },
         {
           "kind": "line",
-          "line": 66,
-          "text": "石垣の隙間から、蕺草の白い花がのぞいている。",
-          "parts": [
-            {
-              "text": "石垣の隙間から、"
-            },
-            {
-              "markup": "ruby",
-              "value": "どくだみ"
-            },
-            {
-              "text": "蕺草"
-            },
-            {
-              "close": "ruby"
-            },
-            {
-              "text": "の白い花がのぞいている。"
-            }
-          ]
+          "line": 104,
+          "speaker": "toma",
+          "text": "榎本冬馬です。受け取ります。"
         },
         {
           "kind": "line",
-          "line": 67,
-          "text": "どこかの家で夕飯の支度をしているのか、醤油の焦げる匂いが坂を下りてきた。"
+          "line": 105,
+          "speaker": "akari",
+          "text": "帰りは赤い小屋を回りました。"
         },
         {
           "kind": "line",
-          "line": 68,
-          "text": "子どもの頃は、この匂いがすると、どこにいても走って帰ったものだ。"
+          "line": 106,
+          "speaker": "toma",
+          "text": "石垣は、十一時でも凍るので。"
         },
         {
           "kind": "line",
-          "line": 69,
-          "speaker": "chinatsu",
-          "text": "東京の人は、坂でもう息が上がるんだ。"
+          "line": 107,
+          "speaker": "akari",
+          "text": "そうでしたか。今朝もまだ光ってました。"
         },
         {
           "kind": "line",
-          "line": 70,
-          "speaker": "me",
-          "text": "坂のせいじゃないよ。荷物が重いんだって。"
+          "line": 108,
+          "speaker": "toma",
+          "text": "午後二時なら、石垣の端まで日が入ります。"
         },
         {
           "kind": "line",
-          "line": 71,
-          "text": "言い返した背中を、思い切り叩かれた。"
-        },
-        {
-          "kind": "command",
-          "line": 72,
-          "name": "audio",
-          "args": [
-            "se",
-            "se_slap"
-          ]
-        },
-        {
-          "kind": "command",
-          "line": 73,
-          "name": "shake"
-        },
-        {
-          "kind": "line",
-          "line": 74,
-          "speaker": "me",
-          "text": "っ……痛いって！"
-        },
-        {
-          "kind": "line",
-          "line": 75,
-          "speaker": "chinatsu",
-          "text": "冗談。……おかえり。"
-        },
-        {
-          "kind": "line",
-          "line": 76,
-          "text": "夕暮れの坂の途中で、私はようやく、ただいまを言いそびれていたことに気がついた。"
-        },
-        {
-          "kind": "line",
-          "line": 77,
-          "speaker": "me",
-          "text": "……ただいま。"
-        },
-        {
-          "kind": "jump",
-          "line": 78,
-          "node": "Engawa"
-        }
-      ]
-    },
-    {
-      "title": "Engawa",
-      "file": "assets/talk/natsukusa.yarn",
-      "line": 81,
-      "headers": [],
-      "body": [
-        {
-          "kind": "command",
-          "line": 83,
-          "name": "audio",
-          "args": [
-            "ambience",
-            "amb_night"
-          ]
-        },
-        {
-          "kind": "command",
-          "line": 84,
-          "name": "bg",
-          "args": [
-            "engawa",
-            "grade=lamplight",
-            "time=3.0"
-          ]
-        },
-        {
-          "kind": "command",
-          "line": 85,
-          "name": "wait",
-          "args": [
-            "1"
-          ]
-        },
-        {
-          "kind": "line",
-          "line": 86,
-          "text": "縁側に腰を下ろすと、板は昼の熱をまだ少しだけ抱いていた。"
-        },
-        {
-          "kind": "line",
-          "line": 87,
-          "text": "家の中は、思っていたより片付いていた。千夏が、ときどき来てくれていたのだろう。"
-        },
-        {
-          "kind": "line",
-          "line": 88,
-          "text": "仏間の祖母の写真は、私の記憶よりも少しだけ若い顔で笑っている。"
-        },
-        {
-          "kind": "line",
-          "line": 89,
-          "text": "軒の風鈴が、思い出したように一度だけ鳴る。"
-        },
-        {
-          "kind": "command",
-          "line": 90,
-          "name": "audio",
-          "args": [
-            "se",
-            "se_furin"
-          ]
-        },
-        {
-          "kind": "line",
-          "line": 91,
-          "speaker": "chinatsu",
-          "text": "おばあちゃん、毎年この風鈴を出すの、八月の頭だって決めてたよね。"
-        },
-        {
-          "kind": "line",
-          "line": 92,
-          "speaker": "me",
-          "text": "しまうのは、お盆が明けてから。……そうだった。"
-        },
-        {
-          "kind": "line",
-          "line": 93,
-          "speaker": "chinatsu",
-          "text": "で、しまうのを手伝うのは、いつも私。"
-        },
-        {
-          "kind": "line",
-          "line": 94,
-          "text": "祖母がいなくなっても、風鈴だけは律儀に夏を数えていたらしい。"
-        },
-        {
-          "kind": "line",
-          "line": 95,
-          "speaker": "chinatsu",
-          "text": "……で。この家、どうするの。"
-        },
-        {
-          "kind": "line",
-          "line": 96,
-          "text": "麦茶の氷が、からんと崩れた。"
-        },
-        {
-          "kind": "options",
-          "line": 97,
-          "options": [
-            {
-              "line": 97,
-              "text": "「売ろうと思ってる」",
-              "body": [
-                {
-                  "kind": "set",
-                  "line": 98,
-                  "name": "$house",
-                  "expr": {
-                    "kind": "value",
-                    "value": "sell"
-                  }
-                },
-                {
-                  "kind": "line",
-                  "line": 99,
-                  "speaker": "chinatsu",
-                  "text": "そっか。……そうだよね。誰も住まないと、家って早く傷むから。"
-                },
-                {
-                  "kind": "line",
-                  "line": 100,
-                  "speaker": "me",
-                  "text": "こっちに戻っても、仕事が無いしね。……ごめん。"
-                },
-                {
-                  "kind": "line",
-                  "line": 101,
-                  "speaker": "chinatsu",
-                  "text": "謝ることないよ。あんたの家なんだから。"
-                },
-                {
-                  "kind": "line",
-                  "line": 102,
-                  "text": "千夏はそれきり、庭の暗がりのほうを見ていた。"
-                }
-              ]
-            },
-            {
-              "line": 103,
-              "text": "「まだ、決めてない」",
-              "body": [
-                {
-                  "kind": "set",
-                  "line": 104,
-                  "name": "$house",
-                  "expr": {
-                    "kind": "value",
-                    "value": "undecided"
-                  }
-                },
-                {
-                  "kind": "set",
-                  "line": 105,
-                  "name": "$closeness",
-                  "expr": {
-                    "kind": "+",
-                    "args": [
-                      {
-                        "kind": "variable",
-                        "name": "$closeness"
-                      },
-                      {
-                        "kind": "value",
-                        "value": 1
-                      }
-                    ]
-                  }
-                },
-                {
-                  "kind": "line",
-                  "line": 106,
-                  "speaker": "chinatsu",
-                  "text": "なら、決めるまでは私が風を通しといてあげる。"
-                },
-                {
-                  "kind": "line",
-                  "line": 107,
-                  "speaker": "chinatsu",
-                  "text": "高いよ。かき氷一年分。"
-                },
-                {
-                  "kind": "line",
-                  "line": 108,
-                  "speaker": "me",
-                  "text": "安いもんだよ。"
-                },
-                {
-                  "kind": "line",
-                  "line": 109,
-                  "speaker": "chinatsu",
-                  "text": "言ったね。忘れないから。"
-                }
-              ]
-            }
-          ]
+          "line": 109,
+          "text": "冬馬は封筒の端を両手で持った。奥の机には版木がある。"
         },
         {
           "kind": "line",
           "line": 110,
-          "speaker": "chinatsu",
-          "text": "ねえ。川、行かない？ 今夜あたり、出てると思う。"
+          "text": "紙いっぱいの声に顔が重なり、用意した世間話を飲み込んだ。"
         },
         {
           "kind": "line",
           "line": 111,
-          "speaker": "me",
-          "text": "出てるって、何が？"
+          "speaker": "akari",
+          "text": "その木、彫っている途中ですか。"
         },
         {
           "kind": "line",
           "line": 112,
-          "speaker": "chinatsu",
-          "text": "行けばわかるって。"
+          "speaker": "akari",
+          "text": "ここでお仕事を？"
         },
         {
-          "kind": "jump",
+          "kind": "command",
           "line": 113,
-          "node": "River"
-        }
-      ]
-    },
-    {
-      "title": "River",
-      "file": "assets/talk/natsukusa.yarn",
-      "line": 116,
-      "headers": [],
-      "body": [
+          "name": "show",
+          "args": [
+            "toma",
+            "puzzled"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 114,
+          "speaker": "toma",
+          "text": "木版の仕事で、冬だけ借りています。"
+        },
+        {
+          "kind": "line",
+          "line": 115,
+          "speaker": "toma",
+          "text": "春には町へ戻ります。"
+        },
         {
           "kind": "command",
+          "line": 116,
+          "name": "show",
+          "args": [
+            "toma",
+            "plain"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 117,
+          "speaker": "akari",
+          "text": "じゃあ、次の配達に行ってきます！"
+        },
+        {
+          "kind": "line",
           "line": 118,
-          "name": "audio",
-          "args": [
-            "ambience",
-            "amb_river"
-          ]
+          "speaker": "toma",
+          "text": "門の右、石が出ています。"
         },
         {
-          "kind": "command",
+          "kind": "line",
           "line": 119,
-          "name": "bg",
-          "args": [
-            "river",
-            "grade=night",
-            "time=3.0"
-          ]
+          "text": "背を向けると、封の端を切る音がした。"
         },
         {
-          "kind": "command",
+          "kind": "line",
           "line": 120,
-          "name": "wait",
-          "args": [
-            "1"
-          ]
+          "text": "春まで。手袋の中で、指を一度握った。"
         },
         {
           "kind": "command",
           "line": 121,
-          "name": "fx",
+          "name": "hide",
           "args": [
-            "fireflies"
-          ]
-        },
-        {
-          "kind": "line",
-          "line": 122,
-          "text": "川べりの草むらが、ふっと息をするように光った。"
-        },
-        {
-          "kind": "line",
-          "line": 123,
-          "text": "ひとつ、またひとつ。光は水面の上で揺れて、私たちの足もとまで漂ってくる。"
-        },
-        {
-          "kind": "line",
-          "line": 124,
-          "text": "せせらぎの音にまぎれて、遠くで河鹿が鳴いていた。",
-          "parts": [
-            {
-              "text": "せせらぎの音にまぎれて、遠くで"
-            },
-            {
-              "markup": "ruby",
-              "value": "かじか"
-            },
-            {
-              "text": "河鹿"
-            },
-            {
-              "close": "ruby"
-            },
-            {
-              "text": "が鳴いていた。"
-            }
-          ]
-        },
-        {
-          "kind": "line",
-          "line": 125,
-          "speaker": "chinatsu",
-          "text": "蛍はね、帰ってきた人の灯りなんだって。おばあちゃんの受け売り。"
-        },
-        {
-          "kind": "line",
-          "line": 126,
-          "speaker": "me",
-          "text": "おばあちゃん、そういう話ばっかりしてたよね。"
-        },
-        {
-          "kind": "line",
-          "line": 127,
-          "text": "鞄の中で、真鍮の鍵がまた小さく鳴った。"
-        },
-        {
-          "kind": "line",
-          "line": 128,
-          "speaker": "chinatsu",
-          "text": "その鍵。……おばあちゃんの裁縫箱のでしょ。"
-        },
-        {
-          "kind": "line",
-          "line": 129,
-          "speaker": "me",
-          "text": "なんで、知ってるの。"
-        },
-        {
-          "kind": "line",
-          "line": 130,
-          "speaker": "chinatsu",
-          "text": "あんたが来たら渡してって。中身は、子どもの頃のあんたの手紙だよ。全部、取ってあった。"
-        },
-        {
-          "kind": "options",
-          "line": 131,
-          "options": [
-            {
-              "line": 131,
-              "text": "「ありがとう」と言う",
-              "body": [
-                {
-                  "kind": "line",
-                  "line": 132,
-                  "speaker": "me",
-                  "text": "……ありがとう。教えてくれて。"
-                },
-                {
-                  "kind": "line",
-                  "line": 133,
-                  "speaker": "chinatsu",
-                  "text": "私に言っても、しょうがないでしょ。"
-                }
-              ]
-            },
-            {
-              "line": 134,
-              "text": "何も言わずに、光を見ている",
-              "condition": {
-                "kind": ">=",
-                "args": [
-                  {
-                    "kind": "variable",
-                    "name": "$closeness"
-                  },
-                  {
-                    "kind": "value",
-                    "value": 2
-                  }
-                ]
-              },
-              "body": [
-                {
-                  "kind": "set",
-                  "line": 135,
-                  "name": "$stayed",
-                  "expr": {
-                    "kind": "value",
-                    "value": true
-                  }
-                },
-                {
-                  "kind": "line",
-                  "line": 136,
-                  "text": "言葉にすると、何かがこぼれてしまう気がした。"
-                },
-                {
-                  "kind": "line",
-                  "line": 137,
-                  "text": "千夏も黙ったまま、隣で同じ光を見ていた。"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "kind": "command",
-          "line": 138,
-          "name": "fx",
-          "args": [
-            "off"
+            "toma"
           ]
         },
         {
           "kind": "jump",
-          "line": 139,
-          "node": "Morning"
+          "line": 122,
+          "node": "Reply"
         }
       ]
     },
     {
-      "title": "Morning",
-      "file": "assets/talk/natsukusa.yarn",
-      "line": 142,
+      "title": "Reply",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 125,
       "headers": [],
       "body": [
         {
           "kind": "command",
-          "line": 144,
+          "line": 127,
           "name": "audio",
           "args": [
             "ambience",
-            "amb_morning"
+            "off"
           ]
         },
         {
           "kind": "command",
-          "line": 145,
+          "line": 128,
           "name": "bg",
           "args": [
-            "station",
-            "grade=morning",
-            "time=3.0"
+            "desk_room",
+            "grade=lamplight",
+            "time=1.5"
           ]
         },
         {
           "kind": "command",
-          "line": 146,
+          "line": 129,
           "name": "window",
           "args": [
             "nvl"
           ]
         },
         {
-          "kind": "command",
-          "line": 147,
-          "name": "wait",
-          "args": [
-            "1.5"
-          ]
+          "kind": "line",
+          "line": 130,
+          "text": "配達のついでに封筒を渡し、次の朝には一通受け取る。"
         },
         {
           "kind": "line",
-          "line": 148,
-          "text": "朝の駅は、夕方とは別の場所のように白かった。"
+          "line": 131,
+          "text": "数日で、机の木目が隠れ始めた。"
         },
         {
           "kind": "line",
-          "line": 149,
-          "text": "夜露に濡れた夏草が、線路の脇でいっせいに陽を弾いている。"
+          "line": 132,
+          "speaker": "toma",
+          "text": "白く残す線の両側を削るので、残す所ほど手が要ります。"
         },
         {
-          "kind": "if",
-          "line": 150,
-          "clauses": [
+          "kind": "line",
+          "line": 133,
+          "speaker": "toma",
+          "text": "窓の霜を写そうと、紙を当ててみました。",
+          "parts": [
             {
-              "line": 150,
-              "condition": {
-                "kind": "variable",
-                "name": "$stayed"
-              },
-              "body": [
-                {
-                  "kind": "line",
-                  "line": 151,
-                  "text": "私は切符を買わなかった。"
-                },
-                {
-                  "kind": "line",
-                  "line": 152,
-                  "text": "裁縫箱の手紙は、まだ半分しか読んでいない。夏も、まだ半分残っている。"
-                },
-                {
-                  "kind": "line",
-                  "line": 153,
-                  "text": "改札の無い駅の前で、麦わら帽子が手を振っていた。"
-                }
-              ]
+              "text": "窓の"
             },
             {
-              "line": 154,
-              "condition": {
-                "kind": "==",
-                "args": [
-                  {
-                    "kind": "variable",
-                    "name": "$house"
-                  },
-                  {
-                    "kind": "value",
-                    "value": "sell"
-                  }
-                ]
-              },
-              "body": [
-                {
-                  "kind": "line",
-                  "line": 155,
-                  "text": "上りの電車が、遠くで小さく鳴いた。"
-                },
-                {
-                  "kind": "line",
-                  "line": 156,
-                  "text": "鞄の中には、真鍮の鍵と、読みかけの手紙の束。"
-                },
-                {
-                  "kind": "line",
-                  "line": 157,
-                  "text": "私は、振り返らないことにした。振り返れば、きっと降りてしまうから。"
-                }
-              ]
+              "markup": "ruby",
+              "value": "しも"
             },
             {
-              "line": 158,
-              "body": [
-                {
-                  "kind": "line",
-                  "line": 159,
-                  "text": "上りの電車が、遠くで小さく鳴いた。"
-                },
-                {
-                  "kind": "line",
-                  "line": 160,
-                  "text": "「また来る」とだけ書いた手紙を、千夏の家の郵便受けに入れてきた。"
-                },
-                {
-                  "kind": "line",
-                  "line": 161,
-                  "text": "次に降りる時は、ただいまを言いそびれないようにしようと思う。"
-                }
-              ]
+              "text": "霜"
+            },
+            {
+              "close": "ruby"
+            },
+            {
+              "text": "を写そうと、紙を当ててみました。"
             }
           ]
         },
         {
-          "kind": "command",
-          "line": 163,
-          "name": "wait",
-          "args": [
-            "1"
-          ]
+          "kind": "line",
+          "line": 134,
+          "speaker": "toma",
+          "text": "指で押さえた所から溶けて、枝が一本なくなりました。"
+        },
+        {
+          "kind": "line",
+          "line": 135,
+          "speaker": "toma",
+          "text": "版ではそこだけ太い。窓にはもう、確かめる枝もありません。"
+        },
+        {
+          "kind": "line",
+          "line": 136,
+          "text": "軒下では二言で終わる人が、紙では窓の前に私を立たせる。"
         },
         {
           "kind": "command",
-          "line": 164,
+          "line": 137,
           "name": "window",
           "args": [
             "clear"
@@ -1015,8 +747,1180 @@
         },
         {
           "kind": "line",
+          "line": 138,
+          "text": "昨日は帰るなり横になり、便せんに触らなかった。"
+        },
+        {
+          "kind": "line",
+          "line": 139,
+          "text": "今日も元気に坂を上りました、と書いて、線を引く。"
+        },
+        {
+          "kind": "line",
+          "line": 140,
+          "text": "鉛筆を置いた一日は、確かにここにあった。"
+        },
+        {
+          "kind": "options",
+          "line": 141,
+          "options": [
+            {
+              "line": 141,
+              "text": "返事が遅れたのは、疲れて休んでいたからと書く",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 142,
+                  "speaker": "akari",
+                  "text": "昨日は疲れて、帰ってから休んでいました。"
+                },
+                {
+                  "kind": "line",
+                  "line": 143,
+                  "speaker": "akari",
+                  "text": "手紙を書かずに過ごす日もあります。"
+                },
+                {
+                  "kind": "line",
+                  "line": 144,
+                  "text": "句点を置き、その先の余白はそのままにした。"
+                },
+                {
+                  "kind": "set",
+                  "line": 145,
+                  "name": "$shared_tiredness",
+                  "expr": {
+                    "kind": "value",
+                    "value": true
+                  }
+                }
+              ]
+            },
+            {
+              "line": 146,
+              "text": "今日見つけた雪の形を描く",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 147,
+                  "speaker": "akari",
+                  "text": "窓の縁の雪です。片方だけ耳の長い兎に見えました。"
+                },
+                {
+                  "kind": "line",
+                  "line": 148,
+                  "speaker": "akari",
+                  "text": "右の耳は、屋根から落ちたひとかけらです。"
+                },
+                {
+                  "kind": "line",
+                  "line": 149,
+                  "text": "休んだ昨日は消さず、今夜はこの絵を送る。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 150,
+          "speaker": "akari",
+          "text": "太く残った枝にも、あの朝の指の温度がありそうです。"
+        },
+        {
+          "kind": "line",
+          "line": 151,
+          "text": "折った便せんの下から、臨時配達の予定表が出てきた。"
+        },
+        {
+          "kind": "line",
+          "line": 152,
+          "text": "最後の日まで、あと三日。"
+        },
+        {
+          "kind": "line",
+          "line": 153,
+          "text": "その先は、郵便を持って窓をたたくことができない。"
+        },
+        {
+          "kind": "jump",
+          "line": 154,
+          "node": "LastDelivery"
+        }
+      ]
+    },
+    {
+      "title": "LastDelivery",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 157,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 159,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "amb_winter_wind"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 160,
+          "name": "bg",
+          "args": [
+            "studio_eaves",
+            "grade=evening",
+            "time=2.0"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 161,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 162,
+          "speaker": "clerk",
+          "text": "今日で終わりだね。助かったよ。"
+        },
+        {
+          "kind": "line",
+          "line": 163,
+          "speaker": "akari",
+          "text": "こちらこそ！　最後まで届けてきます。"
+        },
+        {
+          "kind": "line",
+          "line": 164,
+          "text": "そう答えて出た鞄に、今は工房宛ての一通だけがある。"
+        },
+        {
+          "kind": "line",
           "line": 165,
-          "text": "—— 夏草の駅 ——"
+          "text": "工房の屋根が見える坂で、新しい雪が袖に落ちた。"
+        },
+        {
+          "kind": "command",
+          "line": 166,
+          "name": "fx",
+          "args": [
+            "snow"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 167,
+          "text": "白い粉の下で靴が滑り、足を開いて踏みとどまった。"
+        },
+        {
+          "kind": "command",
+          "line": 168,
+          "name": "shake"
+        },
+        {
+          "kind": "line",
+          "line": 169,
+          "text": "地図の斜線を思い出し、ざらつく場所に靴底を置く。"
+        },
+        {
+          "kind": "line",
+          "line": 170,
+          "speaker": "akari",
+          "text": "この幅で、いい。"
+        },
+        {
+          "kind": "line",
+          "line": 171,
+          "text": "戸口に着くと、冬馬が軒下で待っていた。"
+        },
+        {
+          "kind": "command",
+          "line": 172,
+          "name": "show",
+          "args": [
+            "toma",
+            "plain",
+            "at=right"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 173,
+          "speaker": "akari",
+          "text": "最後の一通です。今日で配達、終わりなんです。"
+        },
+        {
+          "kind": "line",
+          "line": 174,
+          "speaker": "toma",
+          "text": "ここまで、ありがとうございました。"
+        },
+        {
+          "kind": "line",
+          "line": 175,
+          "speaker": "akari",
+          "text": "私宛ての便りも、ありがとうございました。"
+        },
+        {
+          "kind": "line",
+          "line": 176,
+          "speaker": "toma",
+          "text": "帰りは小屋の方へ。石垣は雪で境が見えません。"
+        },
+        {
+          "kind": "line",
+          "line": 177,
+          "speaker": "akari",
+          "text": "はい。楽しかったです、それでは。"
+        },
+        {
+          "kind": "line",
+          "line": 178,
+          "speaker": "toma",
+          "text": "……あの。"
+        },
+        {
+          "kind": "line",
+          "line": 179,
+          "text": "空の鞄を持ち直す。底が、折れた形のまま軽い。"
+        },
+        {
+          "kind": "line",
+          "line": 180,
+          "text": "冬馬は戸を閉めなかった。帰る足を、私も止めた。"
+        },
+        {
+          "kind": "command",
+          "line": 181,
+          "name": "show",
+          "args": [
+            "toma",
+            "puzzled"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 182,
+          "speaker": "toma",
+          "text": "少し、話せますか。"
+        },
+        {
+          "kind": "line",
+          "line": 183,
+          "speaker": "toma",
+          "text": "その、ストーブのある方へ。"
+        },
+        {
+          "kind": "jump",
+          "line": 184,
+          "node": "Invitation"
+        }
+      ]
+    },
+    {
+      "title": "Invitation",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 187,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 189,
+          "name": "fx",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 190,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 191,
+          "name": "bg",
+          "args": [
+            "studio",
+            "grade=lamplight",
+            "time=1.5"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 192,
+          "name": "show",
+          "args": [
+            "toma",
+            "plain",
+            "at=left"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 193,
+          "text": "戸が閉まると、灯油の匂いがした。刷り紙が頭上に揺れる。"
+        },
+        {
+          "kind": "line",
+          "line": 194,
+          "text": "私は鞄を足元に置き、手袋をそろえた。"
+        },
+        {
+          "kind": "line",
+          "line": 195,
+          "speaker": "toma",
+          "text": "お茶を、と思ったんですが。"
+        },
+        {
+          "kind": "line",
+          "line": 196,
+          "speaker": "akari",
+          "text": "あ、そんな、お気遣いなく。"
+        },
+        {
+          "kind": "line",
+          "line": 197,
+          "speaker": "toma",
+          "text": "いえ。また、灯さんに会いたいです。"
+        },
+        {
+          "kind": "line",
+          "line": 198,
+          "speaker": "toma",
+          "text": "配達のない日にも……"
+        },
+        {
+          "kind": "command",
+          "line": 199,
+          "name": "window",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 200,
+          "name": "wait",
+          "args": [
+            "1.5"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 201,
+          "speaker": "akari",
+          "text": "配達のお礼、ということですか。"
+        },
+        {
+          "kind": "line",
+          "line": 202,
+          "speaker": "toma",
+          "text": "枝に指の温度がある、という便りを二度読みました。"
+        },
+        {
+          "kind": "line",
+          "line": 203,
+          "speaker": "akari",
+          "text": "版の、太く残った枝のこと。"
+        },
+        {
+          "kind": "command",
+          "line": 204,
+          "name": "show",
+          "args": [
+            "toma",
+            "smile"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 205,
+          "speaker": "toma",
+          "text": "あれを読んで、削り直す手を止めました。"
+        },
+        {
+          "kind": "line",
+          "line": 206,
+          "speaker": "toma",
+          "text": "封を開けて、灯さんが何を見たか読むのが楽しみでした。"
+        },
+        {
+          "kind": "line",
+          "line": 207,
+          "text": "春には、この人の机も窓も町へ移る。"
+        },
+        {
+          "kind": "line",
+          "line": 208,
+          "text": "私の朝は、ここで続く。明日も同じだけ歩けるとは限らない。"
+        },
+        {
+          "kind": "line",
+          "line": 209,
+          "text": "手紙なら続けたい。一杯の間なら、今も座っていたい。"
+        },
+        {
+          "kind": "line",
+          "line": 210,
+          "text": "今日は帰る、と言ってもいい。手袋から手を離した。"
+        },
+        {
+          "kind": "options",
+          "line": 211,
+          "options": [
+            {
+              "line": 211,
+              "text": "「返事を待てるなら、春からも手紙を」",
+              "condition": {
+                "kind": "and",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$own_pace"
+                  },
+                  {
+                    "kind": "variable",
+                    "name": "$shared_tiredness"
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 212,
+                  "speaker": "akari",
+                  "text": "書ける日だけになりますが、春からも手紙を。"
+                },
+                {
+                  "kind": "line",
+                  "line": 213,
+                  "speaker": "toma",
+                  "text": "はい。どう続けるか、相談しましょう。"
+                },
+                {
+                  "kind": "jump",
+                  "line": 214,
+                  "node": "SlowLetters"
+                }
+              ]
+            },
+            {
+              "line": 215,
+              "text": "「今日は、一杯だけお茶をご一緒に」",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 216,
+                  "speaker": "akari",
+                  "text": "今日は、一杯飲む間だけ、ご一緒してもいいですか。"
+                },
+                {
+                  "kind": "line",
+                  "line": 217,
+                  "speaker": "toma",
+                  "text": "はい。一杯ぶん、湯を沸かします。"
+                },
+                {
+                  "kind": "jump",
+                  "line": 218,
+                  "node": "OneCup"
+                }
+              ]
+            },
+            {
+              "line": 219,
+              "text": "「この地図、大事にします」と別れる",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 220,
+                  "speaker": "akari",
+                  "text": "誘ってくれて、ありがとうございます。今日は帰ります。"
+                },
+                {
+                  "kind": "line",
+                  "line": 221,
+                  "speaker": "toma",
+                  "text": "はい。小屋の手すり、角だけ釘が出ています。"
+                },
+                {
+                  "kind": "jump",
+                  "line": 222,
+                  "node": "KeptMap"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SlowLetters",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 225,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 227,
+          "speaker": "akari",
+          "text": "返事は何日まで、って決めないでおきたいです。"
+        },
+        {
+          "kind": "line",
+          "line": 228,
+          "speaker": "toma",
+          "text": "はい。日付は決めずに。"
+        },
+        {
+          "kind": "line",
+          "line": 229,
+          "speaker": "akari",
+          "text": "休む日は、手紙も休みます。"
+        },
+        {
+          "kind": "line",
+          "line": 230,
+          "speaker": "toma",
+          "text": "僕も彫っている間は、書く言葉が出なくなります。"
+        },
+        {
+          "kind": "line",
+          "line": 231,
+          "speaker": "akari",
+          "text": "では、次の一通を急かさない、で。"
+        },
+        {
+          "kind": "line",
+          "line": 232,
+          "speaker": "toma",
+          "text": "はい。僕からも、催促はしません。"
+        },
+        {
+          "kind": "command",
+          "line": 233,
+          "name": "show",
+          "args": [
+            "toma",
+            "smile"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 234,
+          "speaker": "toma",
+          "text": "春からは、町のこの住所へ。僕の部屋です。"
+        },
+        {
+          "kind": "line",
+          "line": 235,
+          "speaker": "akari",
+          "text": "私の宛先も書きますね。番地、少し長いんです。"
+        },
+        {
+          "kind": "line",
+          "line": 236,
+          "text": "それぞれ白い紙に書いて、机の上で交換した。"
+        },
+        {
+          "kind": "line",
+          "line": 237,
+          "text": "空白を埋める仕事は、どちらの紙にも書いていない。"
+        },
+        {
+          "kind": "command",
+          "line": 238,
+          "name": "hide",
+          "args": [
+            "toma"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 239,
+          "name": "bg",
+          "args": [
+            "desk_room",
+            "grade=lamplight",
+            "time=1.5"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 240,
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 241,
+          "name": "show",
+          "args": [
+            "map"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 242,
+          "text": "帰宅して、地図と新しい宛先を木机に並べた。"
+        },
+        {
+          "kind": "line",
+          "line": 243,
+          "text": "最初の細かな字も、これから届く字も、私は受け取りたい。"
+        },
+        {
+          "kind": "line",
+          "line": 244,
+          "speaker": "toma",
+          "text": "赤い小屋を回ると坂が緩く、手すりも使えます。"
+        },
+        {
+          "kind": "command",
+          "line": 245,
+          "name": "hide",
+          "args": [
+            "map"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 246,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 247,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 248,
+          "text": "明日の予定に手紙は入れず、白い便せんをしまった。"
+        },
+        {
+          "kind": "line",
+          "line": 249,
+          "text": "今夜は書かずに眠る。宛先は机の上にある。"
+        },
+        {
+          "kind": "line",
+          "line": 250,
+          "text": "封筒が増えない一日を、そのまま終える。"
+        },
+        {
+          "kind": "command",
+          "line": 251,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 252,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 253,
+          "name": "window",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 254,
+          "name": "bg",
+          "args": [
+            "still_akari_slope",
+            "grade=still_morning",
+            "time=2.0"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 255,
+          "name": "fx",
+          "args": [
+            "snow"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 256,
+          "name": "wait",
+          "args": [
+            "3"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 257,
+          "name": "fx",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 258,
+          "text": "—— 雪どけを待たない便り ——"
+        }
+      ]
+    },
+    {
+      "title": "OneCup",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 261,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 263,
+          "text": "鞄から手を離し、湯気の前に腰を下ろした。"
+        },
+        {
+          "kind": "line",
+          "line": 264,
+          "text": "向かい合うと、届ける物のない両手の置き場に迷う。"
+        },
+        {
+          "kind": "line",
+          "line": 265,
+          "speaker": "akari",
+          "text": "お手紙の、霜の枝。版にも残ったんですね。"
+        },
+        {
+          "kind": "line",
+          "line": 266,
+          "speaker": "toma",
+          "text": "右の角に。ほかより二倍ほど太く。"
+        },
+        {
+          "kind": "line",
+          "line": 267,
+          "speaker": "akari",
+          "text": "刷っても、そこだけ違って見えますか。"
+        },
+        {
+          "kind": "line",
+          "line": 268,
+          "speaker": "toma",
+          "text": "はい。黒い筋になります。"
+        },
+        {
+          "kind": "command",
+          "line": 269,
+          "name": "show",
+          "args": [
+            "toma",
+            "puzzled"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 270,
+          "speaker": "toma",
+          "text": "ただ、削り直すと……その。"
+        },
+        {
+          "kind": "line",
+          "line": 271,
+          "speaker": "akari",
+          "text": "窓からは消えた枝、でしたね。"
+        },
+        {
+          "kind": "line",
+          "line": 272,
+          "text": "便りの続きを思い出し、私は黙ったまま茶をひと口飲んだ。"
+        },
+        {
+          "kind": "command",
+          "line": 273,
+          "name": "show",
+          "args": [
+            "toma",
+            "smile"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 274,
+          "speaker": "toma",
+          "text": "また、ここで飲めますか。"
+        },
+        {
+          "kind": "line",
+          "line": 275,
+          "speaker": "akari",
+          "text": "体調を見て、私からお知らせしてもいいですか。"
+        },
+        {
+          "kind": "line",
+          "line": 276,
+          "speaker": "akari",
+          "text": "日にちは、その時に。"
+        },
+        {
+          "kind": "line",
+          "line": 277,
+          "text": "空の茶碗を置き、一杯ぶんの席を立つ。",
+          "parts": [
+            {
+              "text": "空の"
+            },
+            {
+              "markup": "ruby",
+              "value": "ちゃわん"
+            },
+            {
+              "text": "茶碗"
+            },
+            {
+              "close": "ruby"
+            },
+            {
+              "text": "を置き、一杯ぶんの席を立つ。"
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 278,
+          "text": "冬馬も見送りに立った。次の日は決めず、今日の湯気が残った。"
+        },
+        {
+          "kind": "command",
+          "line": 279,
+          "name": "hide",
+          "args": [
+            "toma"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 280,
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 281,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 282,
+          "name": "window",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 283,
+          "name": "bg",
+          "args": [
+            "still_akari_slope",
+            "grade=still_evening",
+            "time=2.0"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 284,
+          "name": "fx",
+          "args": [
+            "snow"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 285,
+          "name": "wait",
+          "args": [
+            "3"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 286,
+          "name": "fx",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 287,
+          "text": "—— 雪どけを待たない便り ——"
+        }
+      ]
+    },
+    {
+      "title": "KeptMap",
+      "file": "assets/talk/yukidoke.yarn",
+      "line": 290,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 292,
+          "name": "hide",
+          "args": [
+            "toma"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 293,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 294,
+          "name": "bg",
+          "args": [
+            "desk_room",
+            "grade=night",
+            "time=2.0"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 295,
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 296,
+          "text": "鞄を逆さにして、底の紙くずを手のひらに受けた。"
+        },
+        {
+          "kind": "line",
+          "line": 297,
+          "text": "明朝は配達がない。目覚ましの針を戻す。"
+        },
+        {
+          "kind": "command",
+          "line": 298,
+          "name": "show",
+          "args": [
+            "map"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 299,
+          "text": "初日に伏せた地図を、今日は机いっぱいに広げた。"
+        },
+        {
+          "kind": "line",
+          "line": 300,
+          "speaker": "toma",
+          "text": "黒く濡れて見える所は氷です。白い砂の方へ足を。"
+        },
+        {
+          "kind": "line",
+          "line": 301,
+          "speaker": "toma",
+          "text": "小屋の手すりは使えます。角の釘だけ避けてください。"
+        },
+        {
+          "kind": "line",
+          "line": 302,
+          "text": "地図を裏返し、榎本冬馬、と書いた。",
+          "parts": [
+            {
+              "text": "地図を裏返し、"
+            },
+            {
+              "markup": "ruby",
+              "value": "えのもと"
+            },
+            {
+              "text": "榎本"
+            },
+            {
+              "close": "ruby"
+            },
+            {
+              "text": "冬馬、と書いた。"
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 303,
+          "text": "私の名も知らないうちに、靴を置く場所を描いてくれた人。"
+        },
+        {
+          "kind": "line",
+          "line": 304,
+          "text": "帰り際の、はい、という声は、余白の字よりずっと短かった。"
+        },
+        {
+          "kind": "line",
+          "line": 305,
+          "speaker": "akari",
+          "text": "帰ってよかった。でも、会いたかった。"
+        },
+        {
+          "kind": "line",
+          "line": 306,
+          "text": "配達の前夜、封筒を鞄に添えるのが好きだった。"
+        },
+        {
+          "kind": "line",
+          "line": 307,
+          "text": "もうその支度はしない。書いた名前の墨が乾くのを待つ。"
+        },
+        {
+          "kind": "command",
+          "line": 308,
+          "name": "hide",
+          "args": [
+            "map"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 309,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 310,
+          "text": "地図を便りと重ね、抽斗の奥へしまった。",
+          "parts": [
+            {
+              "text": "地図を便りと重ね、"
+            },
+            {
+              "markup": "ruby",
+              "value": "ひきだし"
+            },
+            {
+              "text": "抽斗"
+            },
+            {
+              "close": "ruby"
+            },
+            {
+              "text": "の奥へしまった。"
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 311,
+          "text": "坂の途中の斜線が、閉じた木の下に続いている。"
+        },
+        {
+          "kind": "line",
+          "line": 312,
+          "text": "指に残った紙の乾きをこすり、机を離れた。"
+        },
+        {
+          "kind": "command",
+          "line": 313,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 314,
+          "name": "window",
+          "args": [
+            "clear"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 315,
+          "name": "window",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 316,
+          "name": "bg",
+          "args": [
+            "still_akari_slope",
+            "grade=still_morning",
+            "time=2.0"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 317,
+          "name": "fx",
+          "args": [
+            "snow"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 318,
+          "name": "wait",
+          "args": [
+            "3"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 319,
+          "name": "fx",
+          "args": [
+            "off"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 320,
+          "text": "—— 雪どけを待たない便り ——"
         }
       ]
     }

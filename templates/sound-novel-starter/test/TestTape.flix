@@ -9,7 +9,7 @@ mod TestTape {
 
     /// 見本のシナリオ（t.yarn・ノードは最初に開く Station）。
     ///   10 <<audio ambience amb_river>>（時間を取らない・鳴り続ける） 11 <<audio se se_slap>> 12 <<wait 1>> 13 地の文
-    ///   14 <<bg station grade=dusk time=1.0>>（時間を取る） 15 <<audio se se_furin>> 16 <<wait 1>> 17 千夏の台詞
+    ///   14 <<bg slope grade=dusk time=1.0>>（時間を取る） 15 <<audio se se_furin>> 16 <<wait 1>> 17 千夏の台詞
     ///   18 <<audio se se_slap>> 19 <<wait 1>> 20 地の文
     def programText(): String =
         "{\"version\": 3, \"files\": [\"t.yarn\"], \"variables\": [], \"nodes\": [{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
@@ -17,7 +17,7 @@ mod TestTape {
         "{\"kind\": \"command\", \"line\": 11, \"name\": \"audio\", \"args\": [\"se\", \"se_slap\"]}," +
         "{\"kind\": \"command\", \"line\": 12, \"name\": \"wait\", \"args\": [\"1\"]}," +
         "{\"kind\": \"line\", \"line\": 13, \"text\": \"" + longText() + "\"}," +
-        "{\"kind\": \"command\", \"line\": 14, \"name\": \"bg\", \"args\": [\"station\", \"grade=dusk\", \"time=1.0\"]}," +
+        "{\"kind\": \"command\", \"line\": 14, \"name\": \"bg\", \"args\": [\"slope\", \"grade=dusk\", \"time=1.0\"]}," +
         "{\"kind\": \"command\", \"line\": 15, \"name\": \"audio\", \"args\": [\"se\", \"se_furin\"]}," +
         "{\"kind\": \"command\", \"line\": 16, \"name\": \"wait\", \"args\": [\"1\"]}," +
         "{\"kind\": \"line\", \"line\": 17, \"speaker\": \"chinatsu\", \"text\": \"" + longText() + "\"}," +
@@ -33,7 +33,7 @@ mod TestTape {
 
     def resOf(text: String): Res.Res \ Fs.FileRead =
         let program = Yarn.fromJson(text) |> Option.getWithDefault(Yarn.empty());
-        Res.withDialogue(program, TestKit.res())
+        Res.withDialogue(program, TestKit.res()) |> TestKit.withOpening("Station")
 
     // ── シナリオの位置（World.talkCursorOf） ──
 

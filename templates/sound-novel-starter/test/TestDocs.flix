@@ -65,6 +65,15 @@ mod TestDocs {
                         (missing, broken, rail#anchor, rail#longPressSeconds))
 
     @Test
+    def testCastGradeIsReadAndMissingMeansAsDrawn(): Unit \ Assert =
+        // 時間帯の cast の欄は倍率と彩度として読み、欄の無い時間帯（一枚絵の still_*）は立ち絵に何も掛けない。
+        let read = BackdropDoc.fromJson("{ \"grades\": { \"warm\": { \"cast\": { \"tint\": [1.0, 0.8, 0.6], \"exposure\": 0.5, \"saturation\": 0.7 } }, \"still\": {} } }")
+            |> Option.getWithDefault(BackdropDoc.defaults());
+        let castOf = name -> BackdropDoc.gradeOf(name, read) |> Option.flatMap(g -> g#cast);
+        let tone = castOf("warm") |> Option.map(Cast.toneOf("warm")) |> Option.map(t -> (t#r, t#g, t#b, t#saturation));
+        Assert.assertEq(expected = (Some((0.5, 0.4, 0.3, 0.7)), true), (tone, Option.isEmpty(castOf("still"))))
+
+    @Test
     def testEveryPhotoHasATexture(): Unit \ {Assert, Fs.FileRead} =
         // novel.backdrops.json の写真は、どれも project.json の textures に名前がある（描き出しと実機が同じ名前で読む）。
         let res = TestKit.res();
