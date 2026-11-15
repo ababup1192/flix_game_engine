@@ -4,10 +4,11 @@
 mod Gesture {
     use fge::{App, Clock, Vec2}
 
-    /// 分ける時の数（KindDoc の tapSlop・longPressSeconds・swipeMin・swipeSeconds）。
+    /// 分ける時の数（KindDoc の tapSlop・longPressSeconds・swipeMin・swipeSeconds と、novel.prompts.json の edge・画面の幅）。
     /// slop = 押した所からこれより離れたら動いた押し（design px）、longPressSeconds = 動かさずにこれ以上置いたら長押し、
-    /// swipeMin / swipeSeconds = 押した所から離した所までこれ以上の長さを、この秒の内に動かしたら払い（それ以外の動いた押しはドラッグ）。
-    pub type alias Limits = { slop = Float64, longPressSeconds = Float64, swipeMin = Float64, swipeSeconds = Float64 }
+    /// swipeMin / swipeSeconds = 押した所から離した所までこれ以上の長さを、この秒の内に動かしたら払い（それ以外の動いた押しはドラッグ）、
+    /// edge / width = 押し始めが左右の端からこの幅の帯の内の横の払いはドラッグ（width = 画面の幅・design px）。
+    pub type alias Limits = { slop = Float64, longPressSeconds = Float64, swipeMin = Float64, swipeSeconds = Float64, edge = Float64, width = Float64 }
 
     /// 押している 1 回。at = 押した所、since = 押した実時間、reach = 押した所から一番離れた長さ。
     pub type alias Press = { at = { x = Float64, y = Float64 }, since = Clock.Time[Clock.Real], reach = Float64 }
@@ -56,8 +57,15 @@ mod Gesture {
     def classify(limits: Limits, press: Press, end: { x = Float64, y = Float64 }, held: Float64): Kind =
         if (press#reach <= limits#slop and held >= limits#longPressSeconds) Kind.LongPress
         else if (press#reach <= limits#slop) Kind.Tap(press#at)
-        else if (Vec2.distanceTo(press#at, end) >= limits#swipeMin and held <= limits#swipeSeconds) Kind.Swipe(directionOf(press#at, end))
+        else if (Vec2.distanceTo(press#at, end) >= limits#swipeMin and held <= limits#swipeSeconds and not isEdgeSideSwipe(limits, press#at, directionOf(press#at, end)))
+            Kind.Swipe(directionOf(press#at, end))
         else Kind.Drag
+
+    /// 左右の端の帯から始めた横の払いか（縦の払いは帯を見ない）。
+    // WhyNot: 端から始めた横の払いを払いにしない — スマホの端からの横の払いは OS の戻る操作と重なり、戻るつもりで選んでしまう。
+    //   縦の払いまで帯で止めない — OS の戻る操作は横だけで、ブラウザ版の縦の払い（flickUp / flickDown のキー）は帯を見ずに届くので、端で縦が選べたり選べなかったりする。
+    def isEdgeSideSwipe(limits: Limits, at: { x = Float64, y = Float64 }, dir: Direction): Bool =
+        (dir == Direction.Left or dir == Direction.Right) and (at#x < limits#edge or at#x > limits#width - limits#edge)
 
     def directionOf(start: { x = Float64, y = Float64 }, finish: { x = Float64, y = Float64 }): Direction =
         let dx = finish#x - start#x;

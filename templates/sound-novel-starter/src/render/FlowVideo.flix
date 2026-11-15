@@ -122,17 +122,17 @@ mod FlowVideo {
                 let castEnv = { doc = res#cast, fit = fit, storyNow = World.now(w), realNow = w#realNow, missing = res#missing, light = Cast.steadyLight(Cast.plainTone()),
                                props = r#stage#props, photo = r#stage#shot |> Option.map(s -> s#photo), backdropShift = 0.0 };
                 let cast = Cast.placedOf(castEnv, r#stage#cast) |> List.map(p -> thing(p#figure#name, if (String.isEmpty(p#label)) p#figure#name else p#label, p#rect));
-                let hud = if (View.coversScreen(w#panel) or w#panel == World.Panel.Hidden) Nil else readingHud(fit, r);
+                let hud = if (View.coversScreen(w#panel) or w#panel == World.Panel.Hidden) Nil else readingHud(fit, res, r);
                 List.flatten(backdrop :: cast :: hud :: Nil)
         }
 
-    def readingHud(fit: Layout.Fit, r: World.Read): List[TapeOut.ScreenObject] =
+    def readingHud(fit: Layout.Fit, res: Res.Res, r: World.Read): List[TapeOut.ScreenObject] =
         let choiceCount = List.length(r#choices);
         let buttonCount = List.length(WorldMenu.buttonsOf(fit));
         let message = if (Layout.isPortrait(fit)) Layout.page(fit, choiceCount)
-            else match r#stage#mode {
-                case Stage.Mode.Adv => Layout.advPanel(fit)
-                case Stage.Mode.Nvl =>
+            else match snd(Stage.windowOf(res#theme, r#stage)) {
+                case w if w#kind == ThemeDoc.WindowKind.Adv => Layout.advPanelAt(fit, w#place)
+                case _ =>
                     let area = Layout.nvlText();
                     rectOf(area#x, area#y, area#width, Layout.height(fit) - 2.0 * area#y)
             };

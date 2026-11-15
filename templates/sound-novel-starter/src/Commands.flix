@@ -5,13 +5,16 @@
 //   <<bg 写真 [grade=時間帯] [time=秒] [transition=fade|black|wipe|slide|pan|cut] [pace=walk|run] [ease=]>>
 //                                              背景を「写真」（novel.backdrops.json の photos）に替え、秒かけて切り替える（既定 1 秒）。
 //                                              grade（grades）を省くと今の背景の時間帯のまま・transition を省くと Doc の defaultTransition
-//   <<window nvl|bottom|clear|off>>           文章を画面いっぱいに積む / 下のウィンドウに 1 行ずつ出す / NVL の頁をめくる /
-//                                              文字の枠と字を消す（次の台詞・選択肢か nvl・bottom で戻る）
+//   <<window 型|clear|off|on [time=]>>        メッセージ枠の型（novel.theme.json の windows。作例は nvl = 画面いっぱい・bottom = 下の枠）に替える /
+//                                              NVL の頁をめくる / 文字の枠と字を消す・出す（off は次の台詞・選択肢か型の指定でも戻る。time は off・on の薄くなる秒）
+//   <<text [at=top|center|bottom] [size=名前] [align=left|center] [speed=倍率] [lock=秒]>>
+//                                              字の置き場（NVL の頁の中）・大きさ（novel.kind.json の textSizes）・揃え・文字送りの速さの倍率・押しても送らない秒
+//   <<speak 名前>>                            字を出さずに話す（話し手を明るくし、novel.cast.json の speakFx を markers の mouth から一度出す）
 //   <<audio ambience|bgm 音[,音]|off [volume=] [fade=]>>   鳴り続ける環境音（, で重ねる）・音楽を替える・止める（音は project.json の sounds の名前。
 //                                              volume は数か novel.mixer.json の volumes の名前）
 //   <<audio se 音 [wait=true]>>               効果音を 1 回（wait は音の長さだけ続きを待つ。novel.mixer.json の lockSeconds の間は押しても送らない）
 //   <<audio all off [fade=]>>                 環境音と音楽を全部止める
-//   <<fx 名前|off [once=true]>>               画面の粒の演出（novel.effects.json の particles）
+//   <<fx 名前|off [once=true] [on=絵.点]>>    画面の粒の演出（novel.effects.json の particles。on は novel.cast.json の markers の点から出す・点から出せる粒だけ）
 //   <<shake [強さ] [on=screen|window|名前] [time=秒]>>   揺らす（強さは novel.kind.json の shakes の名前か px・省くと shakeSeconds / shakePx）
 //   <<overlay 濃さ [color=black|white|#rrggbb] [from=] [layer=stage|screen] [time=0] [ease=]>>   画面に色を被せる（同じ濃さへは何もしない）
 //   <<camera [zoom=] [x=] [y=] [time=0.5] [ease=]>>   world の層を寄せる・ずらす（文字の枠と HUD には掛けない）
@@ -75,7 +78,7 @@ mod Commands {
 
     /// テンプレートのコマンドの表。
     pub def all(): List[Command[Stage.Stage]] =
-        bg() :: window() :: audio() :: fx() :: shake() :: overlay() :: camera() :: show() :: hide() :: move() :: Nil
+        bg() :: window() :: text() :: speak() :: audio() :: fx() :: shake() :: overlay() :: camera() :: show() :: hide() :: move() :: Nil
 
     /// シナリオが使える全部（テンプレートの表とゲームの表）。
     def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
@@ -154,6 +157,10 @@ mod Commands {
 
     def castNames(): List[DocRef] = DocRef.Keys("../novel.cast.json", "cast") :: DocRef.Keys("../novel.cast.json", "props") :: Nil
 
+    def faces(): List[DocRef] = DocRef.Path("../novel.cast.json", "cast.*.faces[]") :: DocRef.Path("../novel.cast.json", "props.*.faces[]") :: Nil
+
+    def markers(): List[DocRef] = DocRef.Keys("../novel.cast.json", "cast.*.markers") :: DocRef.Keys("../novel.cast.json", "props.*.markers") :: Nil
+
     def slots(): List[DocRef] = DocRef.Keys("../novel.cast.json", "slots") :: Nil
 
     def sounds(): List[DocRef] = DocRef.Path("../../project.json", "sounds[].name") :: Nil
@@ -185,23 +192,79 @@ mod Commands {
                       else {
                           let next = Stage.withBackdropBy(ctx#now, { photo = name, grade = g }, Param.get(time, a), switch, st);
                           // WhyNot: NVL の頁を背景の切り替えでめくらない — NVL の頁の切れ目は <<window clear>> と行の数が決める。
-                          Ok((next, if (st#mode == Stage.Mode.Adv) Out.TurnPage :: Nil else Nil))
+                          Ok((next, if (Stage.kindOf(ctx#res#theme, st) == ThemeDoc.WindowKind.Adv) Out.TurnPage :: Nil else Nil))
                       }
               }
           },
           needs = (res, a, _) -> BackdropDoc.textureOf(Param.get(photo, a), res#backdrops) |> Option.toList }
 
     def window(): Command[Stage.Stage] =
-        let mode = Param.choice("mode", "nvl" :: "bottom" :: "clear" :: "off" :: Nil) |> Param.at(1) |> Param.required;
-        let toMode = (now, m, st: Stage.Stage) -> (Stage.withWindowShown(now, { mode = m | st }), if (m == st#mode) Nil else Out.ClearPage :: Nil);
-        { spec = YarnCommands.spec("window", "文字の出し方を替える（nvl = 画面いっぱい・bottom = 下のウィンドウ）・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）",
-                                   Param.erase(mode) :: Nil),
+        let mode = Param.name("mode", DocRef.Keys("../novel.theme.json", "windows") :: Nil) |> Param.orWords("clear" :: "off" :: "on" :: Nil)
+            |> Param.at(1) |> Param.required;
+        let time = Param.num("time", 0.0, 10.0);
+        let toMode = (ctx: Ctx, name, st: Stage.Stage) -> {
+            let changed = fst(Stage.windowOf(ctx#res#theme, st)) != name;
+            (Stage.withWindowShown(ctx#now, { mode = name | st }), if (changed) Out.ClearPage :: Nil else Nil)
+        };
+        { spec = YarnCommands.spec("window", "メッセージ枠の型（novel.theme.json の windows）に替える・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）・出す（on。time = off・on の薄くなる秒）",
+                                   Param.erase(mode) :: Param.erase(time) :: Nil),
           timing = Timing.Instant,
-          apply = (ctx, a, st) -> match Param.get(mode, a) {
-              case "nvl"    => Ok(toMode(ctx#now, Stage.Mode.Nvl, st))
-              case "bottom" => Ok(toMode(ctx#now, Stage.Mode.Adv, st))
-              case "off"    => Ok((Stage.withWindowHidden(ctx#now, true, st), Nil))
-              case _        => Ok((st, Out.ClearPage :: Nil))
+          apply = (ctx, a, st) -> {
+              let secs = Param.getOpt(time, a);
+              match Param.get(mode, a) {
+                  case Or.Word("off") => Ok((Stage.withWindowFade(ctx#now, true, Option.getWithDefault(0.0, secs), st), Nil))
+                  case Or.Word("on")  => Ok((Stage.withWindowFade(ctx#now, false, Option.getWithDefault(0.0, secs), st), Nil))
+                  case _ if Option.nonEmpty(secs) => Err("time= は off・on だけ")
+                  case Or.Word(_)     => Ok((st, Out.ClearPage :: Nil))
+                  case Or.Value(name) =>
+                      if (ThemeDoc.hasWindow(name, ctx#res#theme)) Ok(toMode(ctx, name, st))
+                      else Err("知らないメッセージ枠の型 '${name}'（novel.theme.json の windows）")
+              }
+          },
+          needs = noAssets }
+
+    def text(): Command[Stage.Stage] =
+        let place = Param.choice("at", "top" :: "center" :: "bottom" :: Nil) |> Param.oneOf("what");
+        let size = Param.name("size", DocRef.Keys("../novel.kind.json", "textSizes") :: Nil) |> Param.oneOf("what");
+        let align = Param.choice("align", "left" :: "center" :: Nil) |> Param.oneOf("what");
+        let speed = Param.num("speed", 0.05, 10.0) |> Param.oneOf("what");
+        let lock = Param.num("lock", 0.0, 30.0) |> Param.oneOf("what");
+        { spec = YarnCommands.spec("text", "字の置き場（at = NVL の頁の中の top・center・bottom）・大きさ（size = novel.kind.json の textSizes）・揃え（align）・文字送りの速さの倍率（speed）・押しても送らない秒（lock）",
+                                   Param.erase(place) :: Param.erase(size) :: Param.erase(align) :: Param.erase(speed) :: Param.erase(lock) :: Nil),
+          timing = Timing.Instant,
+          apply = (ctx, a, st) -> {
+              let named = (key, value: Option[String], t) -> value |> Option.map(v -> PropertyTween.setName(key, Some(v), ctx#now, 0.0, t)) |> Option.getWithDefault(t);
+              let sizeName = Param.getOpt(size, a);
+              let inAdv = Stage.kindOf(ctx#res#theme, st) == ThemeDoc.WindowKind.Adv;
+              if (Option.nonEmpty(Param.getOpt(place, a)) and inAdv)
+                  Err("at= は NVL の頁の中の置き場（今の型は ADV。ADV の枠の置き場は novel.theme.json の windows の place）")
+              else if (sizeName |> Option.exists(n -> not Map.memberOf(n, KindDoc.rec(ctx#res#kind)#textSizes)))
+                  Err("知らない字の大きさ '${Option.getWithDefault("", sizeName)}'（novel.kind.json の textSizes）")
+              else {
+                  let props = st#props |> named(Stage.textAtKey(), Param.getOpt(place, a)) |> named(Stage.textSizeKey(), sizeName)
+                      |> named(Stage.textAlignKey(), Param.getOpt(align, a));
+                  let sped = Param.getOpt(speed, a) |> Option.map(v -> PropertyTween.setNum(Stage.textSpeedKey(), v, ctx#now, 0.0, props)) |> Option.getWithDefault(props);
+                  let locked = Param.getOpt(lock, a) |> Option.map(secs -> PropertyTween.trigger(Stage.textLockKey(), ctx#now, 0.0, secs, sped)) |> Option.getWithDefault(sped);
+                  Ok(({ props = locked | st }, Nil))
+              }
+          },
+          needs = noAssets }
+
+    def speak(): Command[Stage.Stage] =
+        let who = Param.name("name", castNames()) |> Param.at(1) |> Param.required;
+        { spec = YarnCommands.spec("speak", "字を出さずに話す（話し手を明るくし、novel.cast.json の speakFx を markers の mouth から一度出す）",
+                                   Param.erase(who) :: Nil),
+          timing = Timing.Instant,
+          apply = (ctx, a, st) -> {
+              let name = Param.get(who, a);
+              let spoken = { props = PropertyTween.setName(Stage.speakerKey(), Some(name), ctx#now, 0.0, st#props) | st };
+              match Cast.entryOf(ctx#res#cast, name) |> Option.map(e -> e#speakFx) {
+                  case None             => Err("知らない人物か小物 '${name}'")
+                  case Some(None)       => Ok((spoken, Nil))
+                  case Some(Some(fx))   =>
+                      if (Option.isEmpty(CastDoc.markerOf(name, "mouth", ctx#res#cast))) Err("'${name}' に speakFx があるのに markers に mouth が無い（novel.cast.json）")
+                      else applyEffect(ctx, fx, true, Some("${name}.mouth"), spoken)
+              }
           },
           needs = noAssets }
 
@@ -311,22 +374,35 @@ mod Commands {
     def fx(): Command[Stage.Stage] =
         let name = Param.name("name", DocRef.Keys("../novel.effects.json", "particles") :: Nil) |> Param.orWords("off" :: Nil) |> Param.at(1) |> Param.required;
         let once = Param.flag("once");
-        { spec = YarnCommands.spec("fx", "画面の粒の演出（novel.effects.json の particles）を出す・止める（once = Doc の onceSeconds だけ一度出す）",
-                                   Param.erase(name) :: Param.erase(once) :: Nil),
+        let on = Param.marker("on", markers());
+        { spec = YarnCommands.spec("fx", "画面の粒の演出（novel.effects.json の particles）を出す・止める（once = Doc の onceSeconds だけ一度出す・on = novel.cast.json の markers の点から出す）",
+                                   Param.erase(name) :: Param.erase(once) :: Param.erase(on) :: Nil),
           timing = Timing.Instant,
-          apply = (ctx, a, st) -> match Param.get(name, a) {
-              case Or.Value(n) => applyEffect(ctx, n, Param.getOpt(once, a) == Some(true), st)
-              case Or.Word(_)  => Ok((Stage.withParticles(ctx#now, None, st), Nil))
+          apply = (ctx, a, st) -> {
+              let point = Param.getOpt(on, a);
+              let missing = point |> Option.filter(match (n, p) -> Option.isEmpty(CastDoc.markerOf(n, p, ctx#res#cast)));
+              match (Param.get(name, a), missing) {
+                  case (_, Some((n, p)))   => Err("'${n}' に点 '${p}' が無い（novel.cast.json の markers）")
+                  case (Or.Value(n), None) => applyEffect(ctx, n, Param.getOpt(once, a) == Some(true), point |> Option.map(match (x, p) -> "${x}.${p}"), st)
+                  case (Or.Word(_), None)  =>
+                      if (Option.nonEmpty(point) or Option.nonEmpty(Param.getOpt(once, a))) Err("off に once= と on= は書けない")
+                      else Ok((Stage.withParticles(ctx#now, None, None, st), Nil))
+              }
           },
           needs = noAssets }
 
-    /// 粒の演出 n を出す（once なら Doc の onceSeconds だけ一度・そうでなければ止めるまで）。
-    def applyEffect(ctx: Ctx, n: String, once: Bool, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
+    /// 粒の演出 n を出す（once なら Doc の onceSeconds だけ一度・そうでなければ止めるまで。at = 出す点「絵.点」・None は画面に広げる）。
+    def applyEffect(ctx: Ctx, n: String, once: Bool, at: Option[String], st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
         match EffectsDoc.particleOf(n, ctx#res#effects) {
-            case None    => Err("知らない粒の演出 '${n}'")
+            case None => Err("知らない粒の演出 '${n}'")
+            case Some(p) if Option.nonEmpty(at) and not EffectsDoc.isPointed(p#look) =>
+                Err("'${n}' は画面に広げる粒なので点から出せない（点から出せるのは look が puff の粒）")
             case Some(p) =>
-                if (once) Ok(({ props = PropertyTween.trigger(Stage.fxOnceKey(n), ctx#now, 0.0, p#onceSeconds, st#props) | st }, Nil))
-                else Ok((Stage.withParticles(ctx#now, Some(n), st), Nil))
+                if (once) {
+                    let props = PropertyTween.setName(Stage.fxOnceAtKey(n), at, ctx#now, 0.0, st#props);
+                    Ok(({ props = PropertyTween.trigger(Stage.fxOnceKey(n), ctx#now, 0.0, p#onceSeconds, props) | st }, Nil))
+                }
+                else Ok((Stage.withParticles(ctx#now, Some(n), at, st), Nil))
         }
 
     def shake(): Command[Stage.Stage] =
@@ -470,7 +546,7 @@ mod Commands {
 
     def show(): Command[Stage.Stage] =
         let who = Param.name("name", castNames()) |> Param.at(1) |> Param.required;
-        let face = Param.name("face", Nil) |> Param.at(2);
+        let face = Param.name("face", faces()) |> Param.scopedBy("name") |> Param.at(2);
         let slot = Param.name("at", slots());
         let fromArg = Param.choice("from", edgeNames());
         let x = Param.num("x", -3.0, 3.0);

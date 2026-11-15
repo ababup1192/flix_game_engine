@@ -198,6 +198,12 @@
       "max": 999,
       "default": 900
     },
+    "textSizes": {
+      "kind": "field",
+      "type": "json",
+      "label": "<<text size=名前>> の名前 → 本文とルビの字に掛ける倍率（例 { \"small\": 0.8, \"normal\": 1.0 }）",
+      "order": 17
+    },
     "fireflies": {
       "kind": "field",
       "type": "int",

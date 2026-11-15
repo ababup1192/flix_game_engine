@@ -127,6 +127,11 @@ mod PropertyTween {
     pub def nameSince(now: Clock.Time[c], k: NameKey, t: Table[c]): Option[Float64] =
         lastStarted(now, x -> x#startsAt, Map.getWithDefault(nameName(k), Nil, tracks(t)#names)) |> Option.map(x -> Clock.since(x#startsAt, now))
 
+    /// k の now の値の 1 つ前の値（今の値に替わる前に始まっていた値。無い・settle の後は None）。替わり目をなめらかにつなぐ時に読む。
+    pub def namePreviousAt(now: Clock.Time[c], k: NameKey, t: Table[c]): Option[String] =
+        Map.getWithDefault(nameName(k), Nil, tracks(t)#names) |> List.filter(x -> Clock.since(x#startsAt, now) >= 0.0)
+            |> List.reverse |> List.drop(1) |> List.head |> Option.flatMap(x -> x#value)
+
     /// k が now に起きていれば、始まってからの秒（始まる前・終わった後は None）。
     pub def triggerAt(now: Clock.Time[c], k: TriggerKey, t: Table[c]): Option[Float64] =
         triggerSpanAt(now, k, t) |> Option.map(fst)

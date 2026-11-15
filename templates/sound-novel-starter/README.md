@@ -39,7 +39,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | ウィンドウを隠す（写真だけを見る） | H / Esc |
 | セーブ・ロード・設定・タイトルへ | 下の帯のボタン |
 
-ブラウザ版の指: タップと上下の払いで 1 行送る（`web.touchGestures` の `swipeUp` / `swipeDown` が `advance` のキー）・左へ払うと 1 行戻る・長押しでウィンドウを隠す（`longPress` が指の長押しだけの `touchHold` のキー。縦の画面の右の列の上ならボタンの名前を出し、オートはスキップに入る）。
+ブラウザ版の指: タップと上下の払いで 1 行送る（`web.touchGestures` の `swipeUp` / `swipeDown` が `flickUp` / `flickDown` のキー。払いで選ぶ選択肢では上下の払い）・左へ払うと 1 行戻る・長押しでウィンドウを隠す（`longPress` が指の長押しだけの `touchHold` のキー。縦の画面の右の列の上ならボタンの名前を出し、オートはスキップに入る）。
 
 - **セーブ・ロード**: 枠は 1 ページ 6 枠（2 列 × 3 行）。ページは「オート」「クイック」と番号の 3 ページ（Q / E で切り替え）。
   枠にはセーブした時の画面をそのまま縮めたサムネ・保存した日時・場所・話し手と台詞の頭が出る。上書き・削除（× か Delete）・
@@ -57,12 +57,15 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | 機能 | 書く所 | 読む所 |
 |---|---|---|
 | 台詞・地の文・話し手 | `assets/talk/yukidoke.yarn`（Yarn Spinner の書き方） | `WorldRead.absorb` / `showLine` |
-| ルビ（`[ruby=よみ]字[/ruby]`） | 同上 | `View.placeLine`（エンジンの `RichText.placeRuby`） |
+| ルビ（`[ruby=よみ]字[/ruby]`） | 同上 | `ViewText.placeLine`（エンジンの `RichText.placeRuby`） |
 | 選択肢・条件つきの選択肢・変数 | `-> …` `<<if>>` `<<set>>` `<<declare>>` | `WorldRead.pick` / `moveChoice` |
 | 背景の写真を時間帯の色でぼかして切り替える | `<<bg 写真 grade=時間帯 time=秒 [transition=fade\|black\|wipe\|slide\|pan\|cut] [pace=walk\|run]>>` + `assets/novel.backdrops.json`（`defaultTransition`） | `src/Backdrop.flix`（ShaderDoc の `TexBlur`） |
-| NVL ⇄ ADV・頁をめくる・文字の枠を消す | `<<window nvl>>` `<<window bottom>>` `<<window clear>>` `<<window off>>`（次の台詞で戻る） | `Page.show` / `Commands` の `window`（頁の出来事 `Out`・めくった数は `Stage` の `pages`・消す値は `Stage.windowHiddenKey`） |
+| メッセージ枠の型（NVL ⇄ ADV・置き場・字幕の形）・頁をめくる・文字の枠を消す | `<<window 型>>`（型は `assets/novel.theme.json` の `windows`。作例は `nvl` と `bottom`）`<<window clear>>` `<<window off\|on [time=]>>`（off は次の台詞で戻る） | `Page.show` / `Commands` の `window`・`ViewText`（頁の出来事 `Out`・めくった数は `Stage` の `pages`・消す値は `Stage.windowHiddenKey`） |
+| 字の置き場・大きさ・揃え・速さ | `<<text at=top\|center\|bottom size=名前 align=left\|center speed=倍率 lock=秒>>`（大きさの名前は `novel.kind.json` の `textSizes`） | `ViewText`・`Stage.textScaleOf` |
+| 話し手を明るく・字を出さずに話す・出ている間は枠を消す | 台詞の話し手（id は cast の鍵とそろえる）・`<<speak 名前>>`・`assets/novel.cast.json` の `highlight` と項目の `markers`・`speakFx`・`hideWindow` | `WorldRead.showLine`（`cast.speaker`）・`Cast.brightnessOf`・`Cast.hidesWindow` |
+| 払い・タップで選ぶ選択肢（入力の案内） | `-> 本文 #act:up\|down\|left\|right\|tap [#at:当たる物] [#icon:絵] [#mute]`（組の全部に `#act:`）+ `assets/novel.prompts.json`（icons・arrow・edge・targets・pulse） | `Gate`・`WorldRead.passGate`・`Controls` の `gateInputOf`（払い・タップ・↑↓←→）・`Hint`（案内の絵）・e2e の問い `gate` |
 | 環境音（ループ）・音楽・効果音 | `<<audio ambience 音[,音] [volume=] [fade=]>>` `<<audio bgm 音>>` `<<audio se 音 [wait=true]>>` `<<audio all off>>`（音量の名前 `volumes` と効果音の後に送れない秒 `lockSeconds` は `assets/novel.mixer.json`）（音は project.json の sounds の名前）+ `art/sfx.snd.star` | `Controls.ambience` / `soundOf`・音量は `assets/novel.mixer.json` のバス（名前が `amb_` で始まる音は環境音のバス・`se_` と `ui_` は効果音のバスへ振り分ける。ほかの名前は defaultBus）|
-| 画面の演出（蛍・雪・揺れ・覆い・寄り） | `<<fx 名前 [once=true]>>`（粒の表と層の数は `assets/novel.effects.json`） `<<shake [強さ] [on=screen\|window\|名前]>>` `<<overlay 濃さ [color=] [from=] [layer=stage\|screen]>>` `<<camera zoom= x= y=>>`（粒子の数・雪・揺れの強さ shakes・覆いの始まりと層の数は `assets/novel.kind.json`） | `ViewStage`（world の層を層の数で並べる・カメラと揺れ）/ `Stage.shakeOffset` |
+| 画面の演出（蛍・雪・立ちのぼる粒・揺れ・覆い・寄り） | `<<fx 名前 [once=true] [on=絵.点]>>`（粒の表と層の数は `assets/novel.effects.json`。点は `novel.cast.json` の `markers`・点から出せるのは `look: puff`） `<<shake [強さ] [on=screen\|window\|名前]>>` `<<overlay 濃さ [color=] [from=] [layer=stage\|screen]>>` `<<camera zoom= x= y=>>`（粒子の数・雪・揺れの強さ shakes・覆いの始まりと層の数は `assets/novel.kind.json`） | `ViewStage`（world の層を層の数で並べる・カメラと揺れ）/ `Stage.shakeOffset` |
 | 待ち | `<<wait 秒>>` | エンジンの YarnRunner が待つ |
 | 立ち絵と小物（何人・何個でも出す・表情や位置を替える・消す・端から滑る・動かす） | `<<show 名前 [表情] [at=位置] [from=left\|right\|top\|bottom]>>`・`<<hide 名前\|all [to=…]>>`・`<<hide at=位置>>`・`<<move 名前 x= y= dx= dy= scale= alpha= rotate= [from=] [to=] [time=]>>`（小物も同じ。props の名前は小物として出る。`exclusive` の位置には 1 つだけ。背景に付く絵は Doc の `attach.bg`）+ `assets/novel.cast.json`（位置・人物・小物。例は note）+ project.json の textures に `cast_<名前>_<表情>`。作例の物語では冬馬（3 表情）と手描きの地図（小物）を出す | `src/Cast.flix`（意味・重ね方・置き場所・描き方）・`View.castLayer`・セーブは `Saves.Mark` の `stage`（`Stage.Snapshot`）。素材は `python3 art/cast/prepare.py <元の絵の置き場>` で縮めて縁を埋め、`make lint-cast` で登録と縦横の比を見る。確かめ方: 描き出しの `cast-sample`・`portrait-cast-sample`・`portrait-cast-veil`（テスト用の絵 `assets/cast/_sample_plain.png` は `art/cast/sample.py` が作る） |
 | 文字送り・オート・スキップ・既読 | 速さは `assets/novel.kind.json` と設定の画面 | `WorldRead.step` / `autoOrSkip` / `markSeen` |

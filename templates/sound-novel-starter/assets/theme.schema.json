@@ -94,6 +94,80 @@
           "required": true
         }
       }
+    },
+    "windows": {
+      "kind": "catalog",
+      "label": "メッセージ枠の型（鍵 = <<window 型>> の型の名前。Nvl と Adv はセーブの古い値と同じ字なので使えない）",
+      "order": 10,
+      "fields": {
+        "kind": {
+          "type": {
+            "enum": [
+              "nvl",
+              "adv"
+            ]
+          },
+          "label": "出し方（nvl = 画面いっぱいに積む・adv = 枠に今の 1 行）",
+          "order": 1,
+          "default": "adv",
+          "required": true
+        },
+        "place": {
+          "type": {
+            "enum": [
+              "bottom",
+              "center"
+            ]
+          },
+          "label": "adv の枠の置き場（bottom = 画面の下・center = 真ん中）",
+          "order": 2,
+          "default": "bottom"
+        },
+        "frame": {
+          "type": {
+            "enum": [
+              "panel",
+              "outline"
+            ]
+          },
+          "label": "字の立たせ方（panel = 字の下に枠の地を敷く・outline = 地を敷かず字を暗い縁取りで囲む＝字幕の形）",
+          "order": 3,
+          "default": "panel"
+        },
+        "showName": {
+          "type": "bool",
+          "label": "adv の枠と縦の画面に話し手の名前を出すか（横の NVL の頁は名前を出さない）",
+          "order": 4,
+          "default": true
+        },
+        "quotes": {
+          "type": "bool",
+          "label": "台詞（話し手のある行）を「」で包むか",
+          "order": 5,
+          "default": true
+        }
+      }
+    },
+    "legacyModes": {
+      "kind": "record",
+      "label": "セーブの古い mode の値の読み替え先（型の名前。欠け・windows に無い・出し方が違うと読み込みで知らせ、その出し方の最初の型で読む）",
+      "order": 11,
+      "fields": {
+        "Nvl": {
+          "type": "text",
+          "label": "Nvl の読み替え先（kind が nvl の型の名前）",
+          "order": 1,
+          "default": "nvl",
+          "required": true
+        },
+        "Adv": {
+          "type": "text",
+          "label": "Adv の読み替え先（kind が adv の型の名前）",
+          "order": 2,
+          "default": "bottom",
+          "required": true
+        }
+      }
     }
   }
 }

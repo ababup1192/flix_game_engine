@@ -5,10 +5,21 @@ mod EffectsDoc {
     use fge::{DocJson, JsonCodec, Log}
     use Util.Json.Json
 
-    /// 粒の描き方。Fireflies = 漂って明滅する光（novel.kind.json の fireflies）、Snow = 降る雪（novel.kind.json の snow）。
-    pub enum Look with Eq, ToString {
+    /// 粒の描き方。Fireflies = 漂って明滅する光（novel.kind.json の fireflies）、Snow = 降る雪（novel.kind.json の snow）、
+    /// Puff = 1 つの点（novel.cast.json の markers。無ければ画面の真ん中）から立ちのぼって消える粒（泡・湯気・息）。
+    pub enum Look {
         case Fireflies
         case Snow
+        case Puff(Puff)
+    }
+
+    /// 立ちのぼる粒の手触り: count = 粒の数、rise = のぼる速さ（px/秒）、spread = 横に散る幅（px）、size = 粒の半径（px）、life = 1 粒が消えるまでの秒。
+    pub type alias Puff = { count = Int32, rise = Float64, spread = Float64, size = Float64, life = Float64 }
+
+    /// 点から出せる描き方か（<<fx 名 on=絵.点>>）。
+    pub def isPointed(look: Look): Bool = match look {
+        case Look.Puff(_) => true
+        case _            => false
     }
 
     /// 粒の演出 1 つ。look = 描き方、layer = world の層の数（背景 0・人物 500・小物 600 と並べる）、onceSeconds = <<fx 名 once=true>> で出す秒。
@@ -35,15 +46,18 @@ mod EffectsDoc {
     /// 名前の粒の演出（知らない名前は None）。
     pub def particleOf(name: String, doc: Doc): Option[Particle] = Map.get(name, rec(doc)#particles)
 
-    def lookOf(name: String): Option[Look] = match name {
+    def lookOf(name: String, obj: Map[String, Json]): Option[Look] = match name {
         case "fireflies" => Some(Look.Fireflies)
         case "snow"      => Some(Look.Snow)
+        case "puff"      => Some(Look.Puff({ count = JsonCodec.intOr("count", 10, obj), rise = JsonCodec.floatOr("rise", 70.0, obj),
+                                             spread = JsonCodec.floatOr("spread", 18.0, obj), size = JsonCodec.floatOr("size", 3.0, obj),
+                                             life = Float64.max(0.1, JsonCodec.floatOr("life", 1.4, obj)) }))
         case _           => None
     }
 
     def particleFrom(json: Json): Option[Particle] =
         JsonCodec.expectObject(json) |> Option.flatMap(obj ->
-            lookOf(JsonCodec.stringOr("look", "", obj)) |> Option.map(look ->
+            lookOf(JsonCodec.stringOr("look", "", obj), obj) |> Option.map(look ->
                 { look = look, layer = JsonCodec.intOr("layer", defaultLayer(), obj), onceSeconds = JsonCodec.floatOr("onceSeconds", 2.0, obj) }))
 
     pub def fromJson(text: String): Option[Doc] = DocJson.decodeObject(fromRoot, text)
@@ -56,7 +70,7 @@ mod EffectsDoc {
         let entries = Map.get("particles", root) |> Option.flatMap(JsonCodec.expectObject);
         let read = (name, json) -> match particleFrom(json) {
             case Some(p) => p
-            case None    => Log.fellBackThen("effects", "novel.effects.json の粒 '${name}'", "雪（既定）", "look が fireflies・snow のどれでもないか、形が違う", fallback)
+            case None    => Log.fellBackThen("effects", "novel.effects.json の粒 '${name}'", "雪（既定）", "look が fireflies・snow・puff のどれでもないか、形が違う", fallback)
         };
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
                   particles = entries |> Option.map(Map.mapWithKey(read)) |> Option.getWithDefault(d#particles) })

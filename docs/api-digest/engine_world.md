@@ -1,4 +1,4 @@
-<!-- engine v0.95.0 / 生成: 2026-11-15 -->
+<!-- engine v0.95.0 / 生成: 2026-11-16 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -3264,6 +3264,10 @@
   `pub def choice(name: String, values: List[String]): Opt[String]`
 - 名前。refs は build が照らす Doc（Nil なら照らさない）。
   `pub def name(name: String, refs: List[DocRef]): Opt[String]`
+- 「名.点」（whale.mouth）を (名, 点) で読む。. がちょうど 1 つで両側が空でない時だけ受ける。refs は build が照らす Doc。
+  `pub def marker(name: String, refs: List[DocRef]): Opt[(String, String)]`
+- 空でない字（"…" で書けば空白も含む）。
+  `pub def text(name: String): Opt[String]`
 - true か false。
   `pub def flag(name: String): Opt[Bool]`
 - 位置 pos（1 か 2）でも書ける。
@@ -3280,6 +3284,7 @@
   `pub def list(h: Opt[t]): Opt[List[t]]`
 - 同じ group の引数のどれか 1 つは要る（hide の名前か at= など）。
   `pub def oneOf(group: String, h: Opt[t]): Opt[t]`
+- `pub def scopedBy(other: String, h: Opt[t]): Opt[t]`
 - 表に並べる形にする。
   `pub def erase(h: Handle[m, t]): Erased`
 - 引数の値（書いてなければ既定の値）。

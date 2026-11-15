@@ -39,6 +39,25 @@
         { "name": "text", "type": "name", "pos": 1, "req": true },
         { "name": "note", "type": "name", "pos": 2 }
       ]
+    },
+    "show": {
+      "summary": "立ち絵を出す",
+      "params": [
+        { "name": "who", "type": "name", "pos": 1, "req": true, "orWords": ["all"], "ref": { "from": [{ "doc": "../nowhere.json", "keys": "cast" }] } },
+        { "name": "face", "type": "name", "pos": 2, "scope": "who", "ref": { "from": [{ "doc": "../nowhere.json", "path": "cast.*.faces[]" }] } }
+      ]
+    },
+    "fx": {
+      "summary": "粒を出す",
+      "params": [
+        { "name": "on", "type": "marker", "req": true, "ref": { "from": [{ "doc": "../nowhere.json", "keys": "cast.*.markers" }, { "doc": "../nowhere.json", "keys": "props.*.markers" }] } }
+      ]
+    },
+    "say": {
+      "summary": "名前の無い字を出す",
+      "params": [
+        { "name": "line", "type": "text", "pos": 1, "req": true }
+      ]
     }
   },
   "cases": [
@@ -86,6 +105,23 @@
     { "cmd": "label", "args": ["\"open"], "ok": false, "why": "\"…\" が閉じていない" },
     { "cmd": "label", "args": ["x=1"], "ok": false, "why": "知らない鍵（= の前が名前なら key=value）" },
     { "cmd": "label", "args": ["hello", "1-2=3"], "ok": true },
-    { "cmd": "label", "args": ["\"\""], "ok": false, "why": "値が無い" }
+    { "cmd": "label", "args": ["\"\""], "ok": false, "why": "値が無い" },
+    { "cmd": "show", "args": ["toma", "smile"], "ok": true },
+    { "cmd": "show", "args": ["toma"], "ok": true },
+    { "cmd": "show", "args": ["face=smile", "who=toma"], "ok": true },
+    { "cmd": "show", "args": ["all", "smile"], "ok": true },
+    { "cmd": "show", "args": ["face=smile"], "ok": false, "why": "必須の who が無い" },
+    { "cmd": "fx", "args": ["on=whale.mouth"], "ok": true },
+    { "cmd": "fx", "args": ["on=\"whale.mouth\""], "ok": true },
+    { "cmd": "fx", "args": ["on=whale"], "ok": false, "why": "marker に . が無い" },
+    { "cmd": "fx", "args": ["on=whale.mouth.tip"], "ok": false, "why": "marker の . が 2 つ" },
+    { "cmd": "fx", "args": ["on=.mouth"], "ok": false, "why": "marker の名前が空" },
+    { "cmd": "fx", "args": ["on=whale."], "ok": false, "why": "marker の点が空" },
+    { "cmd": "fx", "args": ["whale.mouth"], "ok": false, "why": "位置で書ける引数が無い" },
+    { "cmd": "say", "args": ["\"good morning, toma\""], "ok": true },
+    { "cmd": "say", "args": ["hello"], "ok": true },
+    { "cmd": "say", "args": ["\"a.b = c\""], "ok": true },
+    { "cmd": "say", "args": ["\"\""], "ok": false, "why": "値が無い" },
+    { "cmd": "say", "args": [], "ok": false, "why": "必須の line が無い" }
   ]
 }

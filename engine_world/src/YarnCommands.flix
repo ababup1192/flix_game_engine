@@ -10,13 +10,14 @@
 // 書き方: 位置の引数は 2 つまで、ほかは key=value。"…" は空白を含む 1 つの値（\" と \\ が使える）。
 // 同じ鍵を 2 回・知らない鍵・位置の数の超過・必須の欠けは誤り。受ける行と断る行の見本は
 // go/internal/yarn/testdata/command-args.json（go の検査と同じ見本を読む）。
-// Doc の名前（ref）は実行時には照らさない（Doc を持たない）。照らすのは build と、名前を引く apply。
+// Doc の名前（ref と scope）は実行時には照らさない（Doc を持たない）。照らすのは build と、名前を引く apply。
 pub mod YarnCommands {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JString, JNumber, JBool, JArray}
 
     /// Doc のどこから名前を集めるか（vocab.json の from の 1 行と同じ）。doc は vocab.json のフォルダから数えたパス。
-    /// Keys(doc, path) = path の先の object の鍵、Path(doc, path) = path の先の文字列（xs[] は配列の要素を全部）。
+    /// Keys(doc, path) = path の先の object の鍵、Path(doc, path) = path の先の文字列（xs[] は配列の要素を全部・
+    /// * は object の値を全部たどり、たどった鍵を名前の頭に「鍵.」で付ける。cast.*.faces[] → toma.smile）。
     pub enum DocRef with Eq {
         case Keys(String, String)
         case Path(String, String)
@@ -27,6 +28,8 @@ pub mod YarnCommands {
         case Num(Float64, Float64)
         case Time
         case Name(List[DocRef])
+        case Marker(List[DocRef])
+        case Text
         case Choice(List[String])
         case Flag
         case Ease
@@ -46,11 +49,12 @@ pub mod YarnCommands {
     }
 
     /// 引数 1 つの表の行（型を消した物）。pos = 位置で書ける順番（0 は key=value だけ）・words = 型の外に受ける語・
-    /// names = 型に合わない値を名前として受ける時に照らす Doc・group = どれか 1 つは要る組の名前（"" は組に入らない）。
+    /// names = 型に合わない値を名前として受ける時に照らす Doc・group = どれか 1 つは要る組の名前（"" は組に入らない）・
+    /// scope = build が ref を「同じ行の引数 scope の値 + "." + この値」で照らす（"" は値だけで照らす）。
     enum Field(Row)
 
     /// Field の中身。
-    type alias Row = { name = String, pos = Int32, kind = Kind, need = Need, words = List[String], names = List[DocRef], shape = Shape, group = String }
+    type alias Row = { name = String, pos = Int32, kind = Kind, need = Need, words = List[String], names = List[DocRef], shape = Shape, group = String, scope = String }
 
     /// 型付きの引数のハンドル。decode は 1 つの値の字を読む（parse を通った字なら Some）。
     enum Handle[_: Type, t: Type]({ field = Field, decode = String -> Option[t], encode = t -> String, fallback = Option[t] })
@@ -106,15 +110,17 @@ pub mod YarnCommands {
         else if (List.length(List.distinct(names)) != List.length(names)) Some("<<${s#name}>> に同じ名前の引数が 2 つある")
         else if (List.exists(n -> n == "", names)) Some("<<${s#name}>> に名前の無い引数がある")
         else if (positions != wanted or List.length(positions) > maxPositional()) Some("<<${s#name}>> の位置の番号は 1 から順に ${maxPositional()} つまで")
-        else rows |> List.filterMap(rowProblemOf(s#name)) |> List.head
+        else rows |> List.filterMap(rowProblemOf(s#name, List.toSet(names))) |> List.head
 
-    /// 引数 1 つの表の誤り: 値の一覧の無い choice と、型に合わない既定の値。
-    def rowProblemOf(command: String, r: Row): Option[String] =
+    /// 引数 1 つの表の誤り: 値の一覧の無い choice・ほかの引数を指さない scope・型に合わない既定の値。
+    def rowProblemOf(command: String, names: Set[String], r: Row): Option[String] =
         let badDefault = match r#need {
             case Need.Defaulted(d) => Result.isErr(checkValue(command, r, d))
             case _                 => false
         };
+        let badScope = r#scope != "" and (r#scope == r#name or not Set.memberOf(r#scope, names));
         if (r#kind == Kind.Choice(Nil)) Some("<<${command}>> の ${r#name}（choice）に values が要る")
+        else if (badScope) Some("<<${command}>> の ${r#name} の scope ${r#scope} が、ほかの引数の名前でない")
         else if (badDefault) Some("<<${command}>> の ${r#name} の既定の値が型に合わない（${expectedOf(r)}）")
         else None
 
@@ -246,6 +252,8 @@ pub mod YarnCommands {
         case Kind.Num(lo, hi)  => numberOf(value) |> Option.exists(x -> x >= lo and x <= hi)
         case Kind.Time         => numberOf(value) |> Option.exists(x -> x >= 0.0)
         case Kind.Name(_)      => value != ""
+        case Kind.Marker(_)    => markerOf(value) |> Option.nonEmpty
+        case Kind.Text         => value != ""
         case Kind.Choice(vs)   => List.memberOf(value, vs)
         case Kind.Flag         => value == "true" or value == "false"
         case Kind.Ease         => easeOf(value) |> Option.nonEmpty
@@ -257,6 +265,8 @@ pub mod YarnCommands {
             case Kind.Num(lo, hi) => "${numText(lo)}〜${numText(hi)} の数"
             case Kind.Time        => "0 以上の秒"
             case Kind.Name(_)     => "名前"
+            case Kind.Marker(_)   => "名前.点（whale.mouth の形）"
+            case Kind.Text        => "字（空白を含む時は \"…\"）"
             case Kind.Choice(vs)  => String.intercalate(" / ", vs)
             case Kind.Flag        => "true / false"
             case Kind.Ease        => "ease の名前（linear・smoothstep・inOutCubic など）"
@@ -325,6 +335,12 @@ pub mod YarnCommands {
         };
         if (wellFormed) Float64.fromString(value) else None
 
+    /// 「名.点」の (名, 点)（. がちょうど 1 つで両側が空でない時だけ。go の検査と同じ形）。
+    def markerOf(value: String): Option[(String, String)] = match String.splitOn(substr = ".", value) {
+        case name :: point :: Nil if name != "" and point != "" => Some((name, point))
+        case _                                                  => None
+    }
+
     def easeOf(value: String): Option[Curve.Ease] =
         Curve.easeTable() |> List.find(row -> fst(row) == value) |> Option.map(snd)
 
@@ -348,7 +364,9 @@ pub mod YarnCommands {
         let kindRows = match r#kind {
             case Kind.Num(lo, hi) => ("type", JString("num")) :: ("min", numJson(lo)) :: ("max", numJson(hi)) :: Nil
             case Kind.Time        => ("type", JString("time")) :: Nil
-            case Kind.Name(refs)  => ("type", JString("name")) :: (if (List.isEmpty(refs)) Nil else ("ref", refsJson(refs)) :: Nil)
+            case Kind.Name(refs)  => ("type", JString("name")) :: refRows(refs)
+            case Kind.Marker(refs) => ("type", JString("marker")) :: refRows(refs)
+            case Kind.Text        => ("type", JString("text")) :: Nil
             case Kind.Choice(vs)  => ("type", JString("choice")) :: ("values", stringsJson(vs)) :: Nil
             case Kind.Flag        => ("type", JString("flag")) :: Nil
             case Kind.Ease        => ("type", JString("ease")) :: ("values", stringsJson(Curve.easeTable() |> List.map(fst))) :: Nil
@@ -363,8 +381,12 @@ pub mod YarnCommands {
             (if (List.isEmpty(r#words)) Nil else ("orWords", stringsJson(r#words)) :: Nil) :::
             (if (List.isEmpty(r#names)) Nil else ("orNames", refsJson(r#names)) :: Nil) :::
             (if (r#shape == Shape.Listed) ("list", JBool(true)) :: Nil else Nil) :::
-            (if (r#group == "") Nil else ("oneOf", JString(r#group)) :: Nil);
+            (if (r#group == "") Nil else ("oneOf", JString(r#group)) :: Nil) :::
+            (if (r#scope == "") Nil else ("scope", JString(r#scope)) :: Nil);
         JObject(List.toMap(("name", JString(r#name)) :: kindRows ::: needRows ::: extra))
+
+    def refRows(refs: List[DocRef]): List[(String, Json)] =
+        if (List.isEmpty(refs)) Nil else ("ref", refsJson(refs)) :: Nil
 
     def numJson(x: Float64): Json = JNumber(JsonCodec.floatToBd(x))
 
@@ -429,7 +451,8 @@ pub mod YarnCommands {
                 words  = Map.get("orWords", obj) |> Option.map(stringsOf) |> Option.getWithDefault(Nil),
                 names  = names,
                 shape  = if (Map.get("list", obj) |> Option.flatMap(JsonCodec.expectBool) |> Option.getWithDefault(false)) Shape.Listed else Shape.Single,
-                group  = text("oneOf") |> Option.getWithDefault("")
+                group  = text("oneOf") |> Option.getWithDefault(""),
+                scope  = text("scope") |> Option.getWithDefault("")
             })
         }
 
@@ -439,15 +462,20 @@ pub mod YarnCommands {
         match typeName {
             case "num"    => forM (lo <- num("min"); hi <- num("max")) yield Kind.Num(lo, hi)
             case "time"   => Ok(Kind.Time)
-            case "name"   => Map.get("ref", obj) |> Option.map(refsFromJson(label)) |> Option.getWithDefault(Ok(Nil)) |> Result.map(Kind.Name)
+            case "name"   => refsOf(label, obj) |> Result.map(Kind.Name)
+            case "marker" => refsOf(label, obj) |> Result.map(Kind.Marker)
+            case "text"   => Ok(Kind.Text)
             case "choice" => Ok(Kind.Choice(Map.get("values", obj) |> Option.map(stringsOf) |> Option.getWithDefault(Nil)))
             case "flag"   => Ok(Kind.Flag)
             case "ease"   =>
                 // WhyNot: values の無い ease を受けない — go の検査は values で名前を照らすので、受けると build と実行時の答えが割れる
                 if (Map.get("values", obj) |> Option.map(stringsOf) |> Option.getWithDefault(Nil) |> List.isEmpty) Err("${label} の ease に values が要る")
                 else Ok(Kind.Ease)
-            case other    => Err("${label} の type ${other} を知らない（num・time・name・choice・flag・ease）")
+            case other    => Err("${label} の type ${other} を知らない（num・time・name・marker・text・choice・flag・ease）")
         }
+
+    def refsOf(label: String, obj: Map[String, Json]): Result[String, List[DocRef]] =
+        Map.get("ref", obj) |> Option.map(refsFromJson(label)) |> Option.getWithDefault(Ok(Nil))
 
     def stringsOf(json: Json): List[String] = match json {
         case JArray(xs) => xs |> Vector.toList |> List.filterMap(JsonCodec.expectString)

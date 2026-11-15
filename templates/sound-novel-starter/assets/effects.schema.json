@@ -8,8 +8,14 @@
       "order": 1,
       "fields": {
         "look": {
-          "type": { "enum": ["fireflies", "snow"] },
-          "label": "描き方（fireflies = 漂って明滅する光・snow = 降る雪）",
+          "type": {
+            "enum": [
+              "fireflies",
+              "snow",
+              "puff"
+            ]
+          },
+          "label": "描き方（fireflies = 漂って明滅する光・snow = 降る雪・puff = 1 つの点から立ちのぼる粒。<<fx 名 on=絵.点>> で点を選べるのは puff だけ）",
           "order": 1,
           "default": "snow",
           "required": true
@@ -29,6 +35,46 @@
           "default": 2.0,
           "min": 0,
           "max": 30
+        },
+        "count": {
+          "type": "int",
+          "label": "puff の粒の数",
+          "order": 4,
+          "default": 10,
+          "min": 0,
+          "max": 200
+        },
+        "rise": {
+          "type": "float",
+          "label": "puff ののぼる速さ（px/秒）",
+          "order": 5,
+          "default": 70.0,
+          "min": 0,
+          "max": 1000
+        },
+        "spread": {
+          "type": "float",
+          "label": "puff の横に散る幅（px）",
+          "order": 6,
+          "default": 18.0,
+          "min": 0,
+          "max": 400
+        },
+        "size": {
+          "type": "float",
+          "label": "puff の粒の半径（px）",
+          "order": 7,
+          "default": 3.0,
+          "min": 0.5,
+          "max": 40
+        },
+        "life": {
+          "type": "float",
+          "label": "puff の 1 粒が消えるまでの秒",
+          "order": 8,
+          "default": 1.4,
+          "min": 0.1,
+          "max": 10
         }
       }
     }

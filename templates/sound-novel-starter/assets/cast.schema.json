@@ -42,6 +42,30 @@
       "max": 1,
       "default": 1.0
     },
+    "highlight": {
+      "kind": "record",
+      "label": "話し手を明るくする（話し手が出ている間、ほかの人物を暗くする）",
+      "group": "出し方",
+      "order": 3,
+      "fields": {
+        "dim": {
+          "type": "float",
+          "label": "話していない人物を暗くする量（0 = 暗くしない・1 = 真っ黒）",
+          "order": 1,
+          "min": 0,
+          "max": 1,
+          "default": 0.35
+        },
+        "seconds": {
+          "type": "float",
+          "label": "話し手が替わった時に明るさをつなぐ秒",
+          "order": 2,
+          "min": 0,
+          "max": 3,
+          "default": 0.25
+        }
+      }
+    },
     "slots": {
       "kind": "catalog",
       "label": "横の画面の位置（<<show 名前 at=位置>> に書く位置の名前）",
@@ -181,6 +205,23 @@
           "type": "json",
           "label": "背景に付く絵にする時だけ書く: { \"bg\": { 写真の名前: 横のずれ（画面の幅に対する割合） } }。背景のすぐ上に描き、写真ごとに横へずらす",
           "order": 8
+        },
+        "markers": {
+          "type": "json",
+          "label": "絵の中の点の名前 → { \"x\": 割合, \"y\": 割合 }（絵の左上 0・右下 1。<<fx 名 on=名前.点>> と <<speak>> が粒を出す所）",
+          "order": 9
+        },
+        "hideWindow": {
+          "type": "bool",
+          "label": "出ている間は文字の枠と字を消す（選択肢とボタンは出す）",
+          "order": 10,
+          "default": false
+        },
+        "speakFx": {
+          "type": "text",
+          "label": "<<speak 名前>> が markers の mouth から一度出す粒（novel.effects.json の puff の粒の名前。空なら出さない）",
+          "order": 11,
+          "default": ""
         }
       }
     },
@@ -243,6 +284,23 @@
           "type": "json",
           "label": "背景に付く絵にする時だけ書く: { \"bg\": { 写真の名前: 横のずれ（画面の幅に対する割合） } }。背景のすぐ上に描き、写真ごとに横へずらす",
           "order": 8
+        },
+        "markers": {
+          "type": "json",
+          "label": "絵の中の点の名前 → { \"x\": 割合, \"y\": 割合 }（絵の左上 0・右下 1。<<fx 名 on=名前.点>> と <<speak>> が粒を出す所）",
+          "order": 9
+        },
+        "hideWindow": {
+          "type": "bool",
+          "label": "出ている間は文字の枠と字を消す（選択肢とボタンは出す）",
+          "order": 10,
+          "default": false
+        },
+        "speakFx": {
+          "type": "text",
+          "label": "<<speak 名前>> が markers の mouth から一度出す粒（novel.effects.json の puff の粒の名前。空なら出さない）",
+          "order": 11,
+          "default": ""
         }
       }
     }

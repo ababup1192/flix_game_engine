@@ -103,10 +103,19 @@ func CheckProgram(prog *Program, vocab *Vocab, vocabPath string) []Problem {
 					continue
 				}
 				values, ok := vocab.Tags[t.Key]
+				fromDoc := vocab.TagsFrom[t.Key]
 				switch {
 				case !ok:
 					out = append(out, Problem{File: file, Line: line,
 						Msg: fmt.Sprintf("知らないタグ #%s%s", t.Key, suggest.Hint(t.Key, tagKeys))})
+				case fromDoc && t.Value == "":
+					out = append(out, Problem{File: file, Line: line,
+						Msg: fmt.Sprintf("タグ #%s に値が要る（#%s:名前）", t.Key, t.Key)})
+				case fromDoc && vocab.skip["tags の "+t.Key]:
+				case fromDoc && !setOf(values)[t.Value]:
+					out = append(out, Problem{File: file, Line: line,
+						Msg: fmt.Sprintf("タグ #%s の値 %q が Doc に無い%s", t.Key, t.Value, suggest.Hint(t.Value, values))})
+				case fromDoc:
 				case len(values) == 0 && t.Value != "":
 					out = append(out, Problem{File: file, Line: line,
 						Msg: fmt.Sprintf("タグ #%s は値を取らない（#%s と書く）", t.Key, t.Key)})

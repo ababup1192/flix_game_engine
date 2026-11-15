@@ -1,6 +1,6 @@
 // Page — 画面に出している文章（NVL の頁・ADV の 1 行）と文字送りの状態（純粋）。
 // 1 行はシナリオの台詞 1 つで、ルビ（Yarn.rubiesOf）と、どの .yarn の行か（既読の鍵）を持つ。
-// 台詞（話し手のある行）は「」で包む — サウンドノベルは地の文と台詞を同じ頁に積むので、名前の表示だけでは
+// 台詞（話し手のある行）はメッセージ枠の型の quotes が真なら「」で包む — サウンドノベルは地の文と台詞を同じ頁に積むので、名前の表示だけでは
 // 誰の言葉か頁の上で読めない。ルビの位置は包んだ「の 1 字ぶん後ろへずらす。
 //
 // NVL は行を頁に積み、入り切らなくなったら頁をめくる（数え方は rowsOf。描く時の折り方 RichText.placeRuby と
@@ -25,11 +25,11 @@ mod Page {
 
     pub def empty(): Page = { lines = Nil, current = None, reveal = UiTypewriter.done(""), next = NextLine.Append }
 
-    /// シナリオの台詞を 1 行に（name = 話し手の呼び名。地の文は空）。
-    pub def lineOf(name: String, line: Yarn.Line): Line =
+    /// シナリオの台詞を 1 行に（name = 話し手の呼び名。地の文は空・quotes = 台詞を「」で包むか）。
+    pub def lineOf(name: String, quotes: Bool, line: Yarn.Line): Line =
         let rubies = Yarn.rubiesOf(line);
-        if (String.isEmpty(line#speaker))
-            { speaker = "", text = line#text, rubies = rubies, source = Yarn.sourceText(line#source) }
+        if (String.isEmpty(line#speaker) or not quotes)
+            { speaker = if (String.isEmpty(line#speaker)) "" else name, text = line#text, rubies = rubies, source = Yarn.sourceText(line#source) }
         else
             { speaker = name, text = "「${line#text}」", rubies = rubies |> List.map(r -> { start = r#start + 1 | r }),
               source = Yarn.sourceText(line#source) }
@@ -41,11 +41,11 @@ mod Page {
     /// 入り切らない時、NVL は頁をめくり（積んだ行を捨てる）、ADV は古い行から落として積み続ける。
     /// fits = 頁に積んだ行と新しい行が入り切るか（World が rowsOf と novel.kind.json の nvlRows で決める）。
     // WhyNot: ADV の行を捨てずに積む — 縦の画面は ADV の台詞も頁に積んで読ませる。横の ADV のウィンドウは今の 1 行だけを描くので見た目は変わらない。
-    pub def show(mode: Stage.Mode, fits: List[Line] -> Bool, line: Line, page: Page): Page =
+    pub def show(mode: ThemeDoc.WindowKind, fits: List[Line] -> Bool, line: Line, page: Page): Page =
         let kept = keptOf(page);
         let lines = match mode {
-            case Stage.Mode.Nvl => if (fits(List.append(kept, line :: Nil))) kept else Nil
-            case Stage.Mode.Adv => latestFitting(fits, line, kept)
+            case ThemeDoc.WindowKind.Nvl => if (fits(List.append(kept, line :: Nil))) kept else Nil
+            case ThemeDoc.WindowKind.Adv => latestFitting(fits, line, kept)
         };
         { lines = lines, current = Some(line), reveal = UiTypewriter.start(line#text), next = NextLine.Append }
 
@@ -56,9 +56,9 @@ mod Page {
     }
 
     /// line を出すと show が NVL の頁をめくるか（積んだ行があり、新しい行と一緒に入り切らない）。
-    pub def isFullFor(mode: Stage.Mode, fits: List[Line] -> Bool, line: Line, page: Page): Bool =
+    pub def isFullFor(mode: ThemeDoc.WindowKind, fits: List[Line] -> Bool, line: Line, page: Page): Bool =
         let kept = keptOf(page);
-        mode == Stage.Mode.Nvl and not List.isEmpty(kept) and not fits(List.append(kept, line :: Nil))
+        mode == ThemeDoc.WindowKind.Nvl and not List.isEmpty(kept) and not fits(List.append(kept, line :: Nil))
 
     /// 積んだ行 kept のうち、新しい行 line と一緒に入り切る新しい方の行（入り切るまで古い行から落とす）。
     def latestFitting(fits: List[Line] -> Bool, line: Line, kept: List[Line]): List[Line] =

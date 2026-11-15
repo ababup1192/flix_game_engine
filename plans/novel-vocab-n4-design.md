@@ -92,12 +92,14 @@
 | コマンド | 引数 | 既定 | 書く所 | 他のエンジンの同じ物 |
 |---|---|---|---|---|
 | `bg 写真` | `grade=` ★`transition=fade\|black\|wipe\|slide\|pan\|cut` ★`pace=walk\|run` `time=` ★`ease=` | transition = Doc の `defaultTransition`（今は fade）・pace = walk・time = 1 | Stage の背景の形（`shot`・`under`・`fadeFrom`・`fadeSeconds`）に ★`transition` と ★`pace` を足す | Ren'Py `scene … with dissolve`・Naninovel `@back … transition:`・Tyrano `[bg method=]` |
-| `window 型\|clear\|off\|on` | `time=` | — | `Stage.mode`（N4b で Doc の型の名前に）・`window.hidden`（N3） | Ren'Py `window hide` / `nvl`・Naninovel `@printer`・`@hidePrinter` |
+| `window 型\|clear\|off\|on` | `time=`（off・on の薄くなる秒だけ。型と clear に書くと Err） | — | `Stage.mode`（型の名前）・`window.hidden`（数。time で tween） | Ren'Py `window hide` / `nvl`・Naninovel `@printer`・`@hidePrinter` |
+| ★`text` | `at=top\|center\|bottom`（NVL の頁の中の行の塊の置き場）`size=`（`novel.kind.json` の `textSizes` の名前）`align=left\|center`（1 行に収まる行だけ真ん中へ）`speed=`（設定の文字の速さに掛ける倍率）`lock=`（秒）。どれか 1 つは要る | — | `text.at` `.size` `.align`（名前）・`text.speed`（数）・`text.lock`（一度だけ） | Ren'Py の window の style・Naninovel `@printer`・Tyrano `[position]` / `[delay]` |
+| ★`speak 名` | — | — | `cast.speaker`。項目の `speakFx` があれば `markers.mouth` から一度（`fx.once.<粒>`・`fx.onceAt.<粒>`） | — |
 | `audio ambience 音[,音]\|off` | ★`volume=` ★`fade=` | volume = Doc の音量 | `audio.ambience`（名前。重ねる時は `,` でつないだ 1 つの値）・★`audio.ambienceVolume`（数） | Naninovel `@sfx loop:true` |
 | ★`audio bgm 音\|off` | `volume=`（数か Doc の名前）`fade=` | fade = 0 | ★`audio.bgm`（名前）・★`audio.bgmVolume`（数・tween で fade） | Ren'Py `play music … fadein`・Naninovel `@bgm`・Tyrano `[playbgm]` |
 | `audio se 音` | ★`wait=true` | wait = false | `Out.Sound`。wait なら ★`Out.Wait(wav の秒)`。音量はバス（novel.mixer.json）が決め、`volume=`・`fade=` を書くと Err（一発の音は名前しか運べない） | Naninovel `@sfx wait:true`・Tyrano `[playse]` + `[wse]` |
 | ★`audio all off` | `fade=` | — | 環境音と音楽（鳴り続ける音）の名前を None。一発の効果音は止めない（8.3 の C14） | Ren'Py `stop sound`・`stop music` |
-| `fx 名\|off` | ★`once=true` ★`on=名.点`（N4b） | 続ける | `fx.particles`（名前）。once は ★`fx.once.<名>`（一度だけの演出） | Naninovel `@spawn Rain` |
+| `fx 名\|off` | ★`once=true` ★`on=名.点`（N4b。引数の型 `marker`。点から出せるのは `look: puff` の粒だけで、蛍・雪に書くと Err） | 続ける | `fx.particles`・★`fx.particlesAt`（名前）。once は ★`fx.once.<名>`（一度だけの演出）・★`fx.onceAt.<名>` | Naninovel `@spawn Rain` |
 | `shake [強さ]` | ★`on=screen\|window\|<絵の名前>` `time=` | 強さ・time = Doc の名前付きの強さ（`novel.kind.json` の `shakes`）。数を書けば px | `camera.shake`（一度だけ）・★`camera.shakeAmp`（数）。on が絵なら ★`actor.<名>.shake` | Tyrano `[quake]`・Naninovel `@shakeCamera` |
 | `show 名 [絵]` | `at=` ★`from=left\|right\|top\|bottom` ★`x=` ★`y=` ★`scale=` ★`alpha=` `time=` ★`ease=` | 絵・at = 出ている形か Doc の face・slot | Cast の層（自分の形）。x〜alpha は `actor.<名>.*` | Ren'Py `show 名 属性 at 位置`・Naninovel `@char` / `@spawn`・Tyrano `[chara_show]` + `[chara_mod]` |
 | `hide 名\|all` / `hide at=位置` | ★`to=left\|right\|top\|bottom` `time=` ★`ease=` | time = Doc の fadeSeconds | Cast の層 | Ren'Py `hide`・Naninovel `@hideChars`・Tyrano `[chara_hide]` |
@@ -228,15 +230,16 @@ pub enum Out {
 
 | 物 | 形 | 書く所 | 他のエンジン |
 |---|---|---|---|
-| 話し手を明るく・ほかを暗く | 台詞を出すたびに World が `cast.speaker`（名前）を書く。View が Doc の `highlight`（暗くする量・秒）で描く。台本には書かない | `cast.speaker`（Snapshot に乗る） | Naninovel の speaker highlight・Ren'Py の `say_attribute` |
-| 字を出さずに話す | `<<speak 名>>` が `cast.speaker` を書き、Doc の `markers.mouth` から `fx` の once を出す | `cast.speaker`・`fx.once.<名>` | —（血鱗の言い方を残す） |
+| 話し手を明るく・ほかを暗く | 台詞を出すたびに World が `cast.speaker`（話し手の id。地の文は None・同じ話し手は書き直さない）を書く。View が `novel.cast.json` の `highlight`（`dim`・`seconds`）で描く。暗くするのは話し手が出ている間のほかの人物だけ（小物・背景に付く絵は暗くしない）。替わり目は `PropertyTween.namePreviousAt` で前の話し手からつなぐ。話し手の id は cast の鍵と同じにする。台本には書かない | `cast.speaker`（Snapshot に乗る） | Naninovel の speaker highlight・Ren'Py の `say_attribute` |
+| 字を出さずに話す | `<<speak 名>>` が `cast.speaker` を書き、項目の `speakFx`（粒の名前）があれば `markers.mouth` からその粒を一度出す（`speakFx` があるのに mouth が無い Doc は Err） | `cast.speaker`・`fx.once.<粒>`・`fx.onceAt.<粒>` | —（血鱗の言い方を残す） |
 | 絵の中の点 | 引数の型 `marker`（`whale.mouth`）。点は `novel.cast.json` の絵ごとの `markers`（画像の中の 0〜1）。名前は Godot の Marker2D に合わせた（Unreal は socket・血鱗の今の Doc は marks） | — | Godot Marker2D・Unreal socket |
 | 出ている間は文字の枠を消す | 絵の Doc の `hideWindow: true`。View が「その絵が出ているか」から決める（状態を持たない） | 書かない | — |
-| メッセージ枠の型 | `<<window 型>>` の型の名前を `novel.theme.json` の `windows` から引く。型ごとに `kind`（nvl / adv）・置き場（下・真ん中）・縁取り・名前を出すか・括弧を付けるか | `Stage.mode` を型の名前（文字）に | Naninovel の printer の種類（Dialogue・Wide・Fullscreen・Bubble）・Ren'Py の ADV / NVL |
+| メッセージ枠の型 | `<<window 型>>` の型の名前を `novel.theme.json` の `windows` から引く。型ごとに `kind`（nvl / adv）・`place`（bottom / center。adv の枠）・`frame`（縁取り = panel（地を敷く）/ outline（地を敷かず字を周りの影で縁取る・字幕の形））・`showName`（adv の枠と縦の画面に名前を出すか。横の NVL の頁は名前を出さない）・`quotes`（台詞を「」で包むか） | `Stage.mode` を型の名前（文字）に | Naninovel の printer の種類（Dialogue・Wide・Fullscreen・Bubble）・Ren'Py の ADV / NVL |
 | `text` | 2.2 の表の書き方（`at`・`size`・`align`・`speed`・`lock`） | `text.at` `.size` `.align`（名前）・`text.speed`（数）・`text.lock`（一度だけ） | Ren'Py の window の style・Naninovel `@printer`・Tyrano `[position]` / `[delay]` |
 
 - 血鱗の `item`（小物の間は枠を消す・2 行）と `vial gem|bone` の大写し（2 行）の「枠を消す」は `hideWindow` で書ける。
-- **Mark v3 の `mode` の読み替え**: N3 の Mark v3 は `"mode": "Nvl"` / `"Adv"`（enum の名前）を書く。N4b で型の名前（文字）に替えるので、Mark の読み手は「`Nvl` → `windows` の中で kind が nvl の最初の型・`Adv` → kind が adv の最初の型」と読む。書く方は型の名前。Mark の version は 3 のまま、値の形で見分ける（Doc の型の名前に `Nvl`・`Adv` を使わない決まりを schema で止める）。
+- **Mark v3 の `mode` の読み替え**: N3 の Mark v3 は `"mode": "Nvl"` / `"Adv"`（enum の名前）を書く。N4b で型の名前（文字）に替えるので、Mark の読み手は `novel.theme.json` の **`legacyModes`**（`{ "Nvl": "nvl", "Adv": "bottom" }`。空の舞台の Nvl もここで引く）の行き先と読む（レビュー 2 で、`windows` の鍵の字の順で決まる形から替えた）。行き先が無い・windows に無い・出し方が違う Doc は、読み込みの時に 1 行ずつ知らせ（`ThemeDoc.legacyProblemsOf`）、その出し方の最初の型（鍵の順。その出し方の型が無ければもう一方の出し方の最初の型）へ落ちる。新しいゲームの最初の型は `ThemeDoc.startWindowName`（legacyModes の Nvl の行き先が nvl の型ならそれ、無ければ nvl の最初の型、nvl の型が無ければ adv の最初の型）。書く方は型の名前（`WorldRead.restore`・`World.emptyRead` で本当の名前に直す）。Mark の version は 3 のまま、値の形で見分ける（Doc の型の名前に `Nvl`・`Adv` を使わない決まりは、schema の方言に鍵を縛る欄が無いので、読み手が落としてテストで止める）。型ごとに default を付ける案は、同じ出し方の型が 2 つ default を持つ食い違いを読み手が決めることになるので取らなかった。
+- `<<text at=>>` は NVL の頁の中の置き場なので、ADV の型の間に書くと Err（ADV の枠の置き場は型の `place`）。
 - `Page.show` は型の `kind` だけを見る。
 
 ## 4. N4c — 払い・タップで選ぶ選択肢と入力の案内
@@ -244,13 +247,13 @@ pub enum Out {
 - 書き方は血鱗のまま: `-> 案内 #act:up|down|left|right|tap [#at:名] [#icon:名] [#mute]`。組の全部の選択肢に `#act:` があれば、ボタンを出さずに案内を出して操作を待つ。選んだら今の `Choose(番号)` の道を通るので、セーブ・ロード・戻るはふつうの選択肢と同じ（血鱗の Gate の決まり）。
 - 名前: 部品は「入力の案内」（input prompt。Unity の Input System・Xbox の button prompt の言い方）。QTE（quick time event）は時間の制限がある物の名前で、血鱗の払いには時間の制限が無いので使わない。
 - タグの検査（C3）: 今の go はタグの値を決まった一覧で照らす。`#at:` と `#icon:` の値を `novel.prompts.json` の鍵から集める（`from`）ように go を広げる。`#act:` は決まった一覧のまま。
-- 新しい Doc `novel.prompts.json`: `icons`（名前 → 絵と色）・`arrow`（矢印の絵・流れる速さ）・`edge`（横の払いの指を置き始める帯の幅）・`targets`（名前 → どの背景の写真か絵の上の、どの矩形。0〜1）・`pulse`（tap の輪）。血鱗の `ScenesDoc.targets` をここへ移す。
+- 新しい Doc `novel.prompts.json`: `icons`（名前 → 絵（project.json の textures・正方形に貼る）と色）・`arrow`（矢印の色・流れる速さ・矢印の真ん中の高さ）・`edge`（押し始めが左右の端からこの幅の内なら払いにしない帯）・`targets`（名前 → `photo`（背景の写真）か `actor`（名前付きの絵）と、その矩形の中の `rect`（0〜1））・`pulse`（tap の輪の脈打つ速さと広がり）。血鱗の `ScenesDoc.targets` をここへ移す（血鱗の鯨の姿の上の当たる物は、移行で `actor` に書く）。
 - 移す物（血鱗から）:
   - `Gate`（79 行）と `Hint`（200 行）を World・View へ。
   - Controls と Layout の払いの判定（約 240 行【推】）を Controls と `Gesture` へ。
   - キーボード（矢印のキー）とマウスのドラッグでの払い。
   - オートとスキップの時の振る舞い（どちらもゲートで止まる。今の血鱗の決まり）。
-  - flow で払う手順。今は `wait … at=x,y mouse` を 4 行並べている（route_gem.flow）。flow の語彙に `swipe left` を足すか、`tap confirm` で 1 つのゲートを選ぶ今の形を正にする【推】。
+  - flow で払う手順。今は `wait … at=x,y mouse` を 4 行並べている（route_gem.flow）。**決めた事（段 6）**: ゲートでは役のキー（`tap prev`・`tap next`・`tap left`・`tap right`・tap の選択肢が 1 つなら `tap confirm`）が払いになるので、それを正にする。flow の語彙に `swipe` を足すのは engine_world の `Flow` を替えることになり C の承認の外。マウスのドラッグ（`wait … at= mouse`）も今のまま使える。
   - E2e の問い `gate`（`until gate=tap:gem`）をテンプレートの問いに。
 - テンプレートの既定の案内は「矢印 + 字」だけにする。血鱗の赤いナイフは `icons` の 1 つとして Doc で足す。
 
@@ -465,6 +468,7 @@ C2・C3・C7 は承認の後に中身が替わったので、**替わった所�
 | C11 | `GameView.draw` の型を `(層の数, 物)` の列に替える（2.4） | 血鱗の重ね順（鯨 300 → 傷 305 → スチル 330 → 少女 600）を 1 帯では描けない | GameView に帯を複数（actor の前・後）持たせる（血鱗の 300〜336 の間の差し込みは書けない） |
 | C12 | テンプレートにゲームの口を足す: `GameRes`（ゲームの Doc）・`GameBoot`（起動）・`GameView.hud`（hud の範囲）・`GameView.objects`（tape.json の画面の物）。第 2 版の「`Stage` の `game` の欄（JSON 1 つ）」はやめた。settle と戻しの決まりが無く、PropertyTween だけに書く決まりの抜け道にもなるため（6.2 の比べ。コメントの列は `game.feed.<番号>.*` の鍵で持つ） | 7.2 の 4 つだけでは血鱗の Art・ScenesDoc を持てず、ゲームの絵を tape.json の画面の物に出せない | ゲームがテンプレートのファイルを直してよいとする（C5 の上書きが崩れる）・`Stage` の `game` の欄に `GameCommands.settle(game: Json): Json` の口を付け、型と JSON の往復をゲームのテストで見る（6.2 の (i)） |
 | C14 | **相談中**: 鳴っている一発の効果音を止める口（`Out.StopSounds` と App の口）。`audio all off` で効果音も止めたい作品が出たら、エンジンに足すかを決める | 2.5 から外した（段 3） | 足さない（今は鳴り続ける音だけ止める） |
+| C2 の広げ（scope・`*`）**人の承認待ち** | engine_world の `YarnCommands.Row` の `scope` と `Param.scopedBy`、go の from の keys / path の `*` の段と、引数の `scope` の照らし。段 5 で入れた（コードは入っている） | C2 の承認は `marker` と `text` の型と go の検査だった。`<<show 名 表情>>` の表情を名前ごとの faces で照らす（2.7 の「名前ごとの集まり」・段 5・6 の完了条件）のと、`marker` を `cast.*.markers` から集めるのに要った | 表情専用の型を足す・表情は照らさない |
 | C13 | 公開済みの古いセーブ: 血鱗は読む（v2 の Mark を今のテンプレートの読み手で読み、既読の鍵と台本の行番号をそろえる）。廃屋配信は読まずに「版が違うのでセーブを読めない」と知らせる（9.4） | 血鱗は公開済み。廃屋配信は選択肢が無く 10 分ほどで読み終わり、古い Mark にゲームだけの欄（視聴者数・電波・バッテリー・配信の表示）がある | 廃屋配信もゲームの口で読み替える（約 40 行【推】） |
 
 ## 9. 2 本の移行
@@ -574,6 +578,17 @@ C2・C3・C7 は承認の後に中身が替わったので、**替わった所�
 | `Cast.presenceOf` | `(now, layer)` | `(now, doc, layer)`（背景に付く絵を数えない） |
 | `Cast.Env` | — | `props`・`photo`・`backdropShift` を足した |
 | `Res` | — | `mixerExtras`・`soundSeconds`・`effects` を足した |
+| `Stage.Mode` と `Stage#mode` | enum（Nvl・Adv） | 消した。`Stage#mode` はメッセージ枠の型の名前（文字）。出し方は `Stage.kindOf(theme, stage)`（`ThemeDoc.WindowKind`）・型は `Stage.windowOf` |
+| `Page.lineOf` / `Page.show` / `Page.isFullFor` | `(name, line)` / `(Stage.Mode, …)` | `(name, quotes, line)` / `(ThemeDoc.WindowKind, …)` |
+| `Stage.withParticles` | `(now, name, stage)` | `(now, name, at, stage)`（at = 出す点） |
+| `World.emptyRead` | `()` | `(theme)`（空の舞台の型を windows の最初の NVL の型にする） |
+| View の文字の層 | `View.textLayer`・`nvl`・`adv`・`portraitPage`・`keepLatest`・`Block` | `ViewText` へ移した |
+| `CastDoc.Entry` / `CastDoc.Rec` | — | Entry に `markers`・`hideWindow`・`speakFx`、Rec に `highlight` を足した |
+| `EffectsDoc.Look` | Fireflies・Snow（Eq・ToString） | `Puff(Puff)` を足した（Eq・ToString は外した） |
+| e2e の問い `mode` | `Nvl`・`Adv` | 型の名前（作例は `nvl`・`bottom`） |
+| `KindDoc.gestureLimits` / `Gesture.Limits` | `(kind)` / 4 つの欄 | `(kind, edge, width)` / `edge`・`width` を足した |
+| `web.touchGestures` の縦の払い | `advance` のキー | `flickUp` / `flickDown` のキー（`novel.keys.json` に足した） |
+| `Res` | — | `prompts`（`novel.prompts.json`）を足した |
 
 ### 10.3 一致を求める所と許容差を持つ所（M9）
 
@@ -795,6 +810,133 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 **門の結果**: `make check` OK・`make test` 368 緑・`make reference-check` 45 枚すべて一致（絵は変わっていない）・`bin/fge yarn check assets/talk` ok・e2e の flow 6 本すべて ok・render-lint・lint-record-wrap・lint-forbid OK・lint-doc-refs 15 件（増えていない）・根の `make check-docs-sync` OK。
 
+### 11.6 段 5 の記録（2026-11-16）
+
+触ったのはテンプレート（sound-novel-starter）・engine_world（`YarnCommands`・`YarnCommands.Param`。C2）・go（`go/internal/yarn`。C2 の検査）。engine・render_gl は触っていない。
+
+**決めた物**
+
+- 引数の型（C2・engine_world）: `Param.marker(name, refs)`（`名.点` を (名前, 点) で読む）・`Param.text(name)`（空でない字・`"…"`）・`Param.scopedBy(other, h)`（build が ref を「同じ行の other の値 + . + この値」で照らす）。vocab.json の `type: marker`・`type: text`・`scope`。go の from の `keys`・`path` に `*` の段（object の値を全部たどり、たどった鍵を名前の頭に付ける）。受ける行と断る行の見本 `go/internal/yarn/testdata/command-args.json` に足した（go と Flix が同じ見本を読む）。
+- `show` の表情を `scopedBy("name")` と `cast.*.faces[]`・`props.*.faces[]` で照らす（2.7 の「名前ごとの集まり」）。`fx on=` は `cast.*.markers`・`props.*.markers` の鍵で照らす。わざと入れた誤り（表情・点・型・字の大きさ・話し手の 5 つ）は 5 件とも `bin/fge yarn check` で落ちた。
+- メッセージ枠の型: `novel.theme.json` の `windows`（作例は `nvl` と `bottom`。今の見た目のまま）。`Stage#mode` は型の名前で、空の舞台と Mark v3 の古い値 `Nvl`・`Adv` は「その出し方の最初の型（鍵の順）」と読み（`ThemeDoc.windowOf`）、`World.emptyRead`・`WorldRead.restore`・ノードに着いた時の舞台で本当の型の名前に直す（`Stage.withModeResolved`）。書くのはいつも型の名前。ADV の center は `Layout.advPanelAt`、outline は字の周り 8 方向に影を置き、地と縁を敷かない。
+- `<<window off|on time=>>`: `window.hidden` を tween し、View が文字の層を途中の濃さで描く（`Stage.windowAlphaAt`）。
+- `<<text>>`: `at` は NVL の頁の中の行の塊の置き場（頁の下は上の余白と同じだけ画面の下から上）・`size` は `novel.kind.json` の `textSizes` の倍率（NVL の頁の行の数え方 `WorldRead.fitsNvl` も同じ倍率で数える）・`align=center` は 1 行に収まる行だけ真ん中へ・`speed` は文字送りの速さの倍率・`lock` は押しても送らない秒。
+- `cast.speaker` と話し手を明るく: `WorldRead.showLine` が台詞ごとに書く（`Stage.withSpeaker`。同じ話し手は書き直さない）。立ち絵の面に Param `lit` を足して明るさを掛ける（Spec を替えずに毎コマ変えられる。1.0 なら絵は変わらない）。
+- `hideWindow`: 出ている物に `hideWindow` の絵があれば、文字の枠と字だけを描かない（選択肢とボタンは描く。消えていく途中の物は数えない）。
+- 粒の点: `novel.effects.json` に `look: puff`（count・rise・spread・size・life）を足し、点（`Cast.markerPointOf`。出ている絵の矩形の中の markers の割合の所）から立ちのぼらせる。作例に `breath`、toma に `markers.mouth` と `speakFx: breath` を足した（台本は使っていないので絵は変わらない）。
+- View.flix の文字の層（NVL・ADV・縦の頁・1 行の置き方・送りの印）を `ViewText.flix` へ分けた（View.flix は 1,130 → 約 980 行）。
+
+**比べた別案**
+
+| 決めた所 | 取った案 | 比べた案と取らなかった理由 |
+|---|---|---|
+| 話し手の替わり目のつなぎ | `cast.speaker` の 1 つ前の値を `PropertyTween.namePreviousAt` で読む（表は今の値と 1 つ前の値を持っている） | 人物ごとの数の鍵 `actor.<名>.dim` を World が台詞ごとに tween する案: 台詞のたびに出ている人物の数だけ鍵を書き、Snapshot も太る。名前 1 つの鍵（設計書 3 章）のままで済む |
+| 明るさの掛け方 | 立ち絵の面の Param `lit` | 色の倍率の Const に掛ける案: 替わり目の間ずっと Spec が替わり、実機がシェーダーを組み直す |
+| 表情の照らし | `scope`（同じ行の別の引数の値を頭に付けて照らす）と `*` | 表情だけの専用の型を足す案: 小物の絵・背景の写真の時間帯など、名前ごとの集まりは他にも出る。汎用の 2 つで書ける |
+| `*` の後の欄が どの項目にも無い時 | `*` より前の段に届いていれば「空の集まり」と読み、検査は飛ばさない | 今の「名前を 1 つも拾わない時は検査を飛ばす」のまま: 作例のように markers をまだ誰も書いていない Doc で、`on=` が何でも build を通り、実行時に Err になる |
+| Nvl・Adv の型の名前を止める所 | `ThemeDoc` の読み手が落として知らせる・テスト | schema で止める（設計書 3 章）: Studio の sections 方言に catalog の鍵を縛る欄が無い |
+
+**設計とのずれ**
+
+- 3 章の「縁取り」は `frame`（panel / outline）の 1 欄にした（地を敷くか、字を縁取るか）。`showName` は横の NVL の頁では効かない（頁に名前の置き場が無い。schema の文に書いた）。
+- 3 章の「Doc の型の名前に Nvl・Adv を使わない決まりを schema で止める」は、読み手とテストで止める（上の表）。
+- 3 章の `speak` の粒は Doc に名前が無かったので、項目の `speakFx` を足した。点から出す粒（`on=`）は `look: puff` だけにし、蛍と雪（画面に広げる粒）に書くと Err。
+- 2.2 の `window` に `on` と、off・on の `time=` を入れた。
+- `text` の `at` は NVL の頁だけ（ADV の枠の置き場は型の `place`）。`align=center` は 1 行に収まる行だけ（描く RichText に揃えの口が無い）。
+- e2e の問い `mode` の値が型の名前になった（flow の `mode=Nvl` → `nvl`・`mode=Adv` → `bottom`）。
+
+**門の結果**
+
+- テンプレート: `make check` OK・`make test` 401 緑（前は 368。TestSpeaker 33 本・TestCommands の見本に text・speak）・`make reference-check` 45 枚すべて一致（途中で縦の画面の 4 枚が変わったのは nvl の型の showName を false にしていたためで、true に直して一致）・`bin/fge yarn check assets/talk` ok（9 ノード）・わざと入れた誤り 5 件は 5 件とも落ちた。
+- e2e の flow 6 本すべて ok。
+- `make lint`: lint-doc-refs 15 件のまま・lint-record-wrap・lint-forbid・lint-cast OK。根の `make check-docs-sync` OK。
+- engine_world: `make sync-layers` の後 .layers/engine_world で flix test 1506 緑。go: `go test ./internal/yarn/` ok・`go vet` 指摘なし。rpg-starter・tidepool-starter の `make reference-check` 一致。
+
+**持ち越し**
+
+- 新しい見た目（ADV の center・outline・話し手を暗くする・puff の粒）を写す場面が reference に無い。目では確かめていない（テストで矩形と明るさの値を見た）。
+- 話し手の id と cast の鍵をそろえる決まりは Doc の note にだけ書いた（食い違いを見るテストは無い）。
+- `text.at` の center・bottom で頁の下に入り切らない時の扱い（今は上から積むのと同じ所まで上げる）。
+
+### 11.7 段 6 の記録（2026-11-16）
+
+触ったのはテンプレート（sound-novel-starter）と go（`go/internal/yarn`。C3）。engine_world・engine・render_gl は触っていない。
+
+**決めた物**
+
+- `Gate`（血鱗の Gate を写した。`#act:` の読み・選び方・`actText`）と、vocab.json の tags（`Gate.tagsJson`: act は決まった一覧・at と icon は `novel.prompts.json` の `targets`・`icons` の鍵・mute は値を取らない）。`Talk.vocabJson` が書く。
+- `WorldRead.gateOf`・`gateHere`・`passGate`: 出ている選択肢の全部に `#act` があるか、今の台詞を送ると選択肢だけが出る時（viaLine）にゲート。素材を待つ間とコマンドが出した待ち（pause）の間は無い。`advance` はゲートの頁では字を出し切るだけ。選ぶ物が 1 つのゲートはバックログに選んだ行を残さない。オートとスキップはゲートで手動に戻る。
+- 入力（`Controls`）: 離した払い・タップ（`Gesture`）と、払いのキー（↑↓←→ / WASD・`flickUp`・`flickDown`）と決定（tap の選択肢が 1 つの時）。ゲートはキーの列（戻る・ログ…）より先に見る（ブラウザ版の横の払いは、離したフレームで swipeLeft のキー = 戻るも出すため）。ゲートの間は選択肢のボタンの入力を受けない。tap の当たりは描く所と同じ `ViewStage.targetRectOf`（`Hint.targetRect`）。
+- ブラウザ版の縦の払いは `web.touchGestures` の `swipeUp` / `swipeDown` を新しいキー `flickUp` / `flickDown`（`novel.keys.json`・既定 Numpad8 / Numpad2）へ替えた。ゲートの外では今までどおり 1 行送る。
+- `Gesture.Limits` に `edge`（`novel.prompts.json`）と画面の幅を足し、端の帯から始めた払いはドラッグにする（血鱗と同じ）。
+- `Hint`（血鱗の Hint を写した）: 矢印の色・速さ・高さ、#icon の色と絵、輪は Doc から。字の地と字の色は `novel.theme.json` の panel と ink。縦の画面では右の列の左までに収める。View は選択肢のボタンと送りの印をゲートの間は出さず、縦の頁はゲートの間は選択肢の分を縮めない。
+- e2e の問い `gate`（選べる操作を `|` でつなぐ）。drive の reader はゲートで押さない（flow が役のキーで選ぶ）。
+- go（C3）: vocab.json の tags の値に `{"from": [...]}` を書けるようにした（`Vocab.TagsFrom`）。from のタグは値が要り、Doc に無い値は近い名前の案つきで止める。Doc を読めない時はそのタグの値を照らさず 1 行知らせる。
+- 新しい Doc の schema（`assets/prompts.schema.json`）と `editor.resources` の行（prompts）を足した。
+
+**比べた別案**
+
+| 決めた所 | 取った案 | 比べた案と取らなかった理由 |
+|---|---|---|
+| flow の払い | 役のキー（`tap left` など）を正にする | flow の語彙に `swipe 向き` を足す案: engine_world の `Flow` を替える（C の承認の外）。キーの道は Controls の同じ `gateInputOf` を通るので、払いの判定（Gesture）はテストで別に見る |
+| ブラウザ版の縦の払い | 新しいキー `flickUp` / `flickDown`（血鱗と同じ） | `advance` のキーのまま、ゲートでは前のフレームのホイールの向きで上下を決める案: ホイールの刻みは動かしている間に出し、最初の向きと逆を捨てるので、向きを読み違える |
+| ゲートとキーの列の順 | ゲートを先に見る | 血鱗の順（キーの列の後）: テンプレートは swipeLeft を戻るに割り当てているので、左へ払うゲートで 1 行戻る（テスト `testMouseSwipeLeftPicksAndDoesNotRollBack`） |
+| 当たる物の載る先 | `photo` か `actor` の 2 つ | 血鱗の「写真か鯨の姿」: 姿はゲームの物なので、名前付きの絵（actor）に一般化した |
+| 案内の絵の貼り方 | 正方形の Shader の面（2 つの画素の間をなめらかにつなぐ） | `Render.sprite`: 絵の画素の大きさが Doc に無く、正方形へ収める倍率が決められない |
+
+**設計とのずれ**
+
+- 4 章の `arrow` の「矢印の絵」は持たない（矢印は線で描き、色・速さ・高さだけを Doc に出した）。高さ `y` は 4 章に無かった欄。
+- `edge` の帯はゲートの外の払い（ドラッグになる）にも効く（血鱗と同じ）。
+- ブラウザ版の `touchGestures` の縦の払いの割り当てを替えた（上の表）。
+- テンプレートの物語（yukidoke.yarn）にはゲートを入れていない。e2e の flow はゲートを通らず、ゲートは test/fixtures/gate の台本で見る。
+- 段 5 の続き: 縁取りの型（outline）で ADV の枠の名前にも縁取りを付けた（描き出しで見て、明るい写真の上で名前が読めなかった）。
+
+**門の結果**
+
+- テンプレート: `make check` OK・`make test` 427 緑（前は 401。TestGate 25 本・TestGesture に端の帯 1 本）・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok（9 ノード）・わざと入れた誤り（`#at:` の Doc に無い値・`#act:upp`・`#icon:` の Doc に無い値）は 3 件とも落ちた。
+- e2e の flow 6 本すべて ok。
+- 目で見た物（scratchpad の写し・reference は変えていない）: 選択肢の頁のゲート（左の払いと #icon の色の下の払い。`gate-hint.png`）・縁取りで真ん中に置いた ADV の枠（`adv-outline-center.png`）。
+- go: `go test ./...` ok（tags の from のテスト 5 本）・`go vet` 指摘なし。
+- `make lint`: lint-doc-refs 15 件のまま・ほか OK。根の `make check-docs-sync` OK。
+
+**持ち越し**
+
+- 当たる物の輪・#icon の絵・縦の画面のゲートは描き出しで見ていない（テストで矩形と入力を見た）。
+- 血鱗のゲートの案内の高さは鯨の上の空きで決めていた（ゲームの絵の位置）。テンプレートは Doc の固定の高さ `arrow.y` だけ。移行で要るならゲームの口を相談する。
+- テンプレートの物語にゲートの見本が無い（agent-eval のお題と一緒に段 13 で足すか決める）。
+
+### 11.8 レビュー 2（85 点）の直し（2026-11-16）
+
+| # | 指摘 | 直した所 |
+|---|---|---|
+| 必須 1 | hideWindow の小物が NVL と縦の画面で消える | `ViewStage.propsOnPage`（頁に幕があり hideWindow の絵が出ていない）で、小物を頁に描くかを決める（`isPropOnPage`・サムネも）。テスト `testHideWindowPropIsDrawnInTheWorldLayerOnTheNvlPage`。縦の画面と NVL の描き出しで目で見た（scratchpad の `vis/hide-portrait.png`・`vis/hide-nvl.png`。小物が world の層に出て、本文と枠は消え、選択肢は出る） |
+| 必須 2 | Mark v3 の Nvl / Adv の読み替え先が鍵の字の順 | `novel.theme.json` の `legacyModes` と schema・note。3 章に書き戻した |
+| 必須 3 | 本物のセーブで確かめる | version 3 のセーブの JSON の `"mode": "Adv"` を `Saves.fromJson` から `WorldRead.restore` まで通すテスト（期待値は legacyModes の Adv） |
+| 必須 4 | C2 の承認の表から出ている | 8.3 に「C2 の広げ（scope・`*`）」の行（人の承認待ち） |
+| 任意 5 | gateOf が実行器を何度も進める | 出来事を反映した時に 1 回求めて Read の `gate` に持たせる（`WorldRead.withGate`）。`gateOf` は待ちを見て `gate` を返すだけ |
+| 任意 6 | 端の帯から始めた払いがゲートで戻る | ゲートの間は、動いた押しと同じフレームの戻るのキーを受けない（`Controls.isMoved`）。テスト 1 本 |
+| 任意 7 | `window off time=` の後に頁の小物が消えてから戻る | 頁の小物に文字の枠の薄さを掛けない（`View.pageProps` を薄くする列の外へ） |
+| 任意 8 | 選べる物が 0 のゲートで詰む | `Gate.ofOptions` は選べる物が 0 なら None。テスト 1 本 |
+| 任意 9 | ADV の間の `text at=` | Err。3 章に 1 行。テスト 1 本 |
+| 任意 10 | Hint の数の直書き | `novel.prompts.json` の `margin`・`captionSize`（schema も） |
+| 任意 11 | 書き方 | `Param.scopedBy` の WhyNot を `//` の行に。「行の塊」→ ブロック |
+| 任意 12 | テスト | ゲートでセーブして戻すと同じゲート（台詞の頁・選択肢の頁の 2 本）・go で作例の toma.mouth が on= の照らしに拾われる |
+| 持ち越し | 描き出しで見ていない見た目 | 話し手を暗くする・puff の粒（`vis/speaker-dim-puff.png`）・当たる物の輪と #icon の色（`vis/gate-ring.png`）・縦の画面のゲート（`vis/gate-portrait.png`）を描き出して見た。見て直した物: 輪の横の字がほかの選択肢の矢印に重なる（空きを矢印までにした）・縦の画面で輪の上の字が画面の端で切れる（地を内へ寄せた）・作例の toma の口の点の高さ（0.17 → 0.24） |
+
+- 残り: 縦の画面では背景を画面より横に広く敷くので、写真に対する割合で書いた当たる物は横の画面より大きく、端にかかることがある（Doc の値の決め方。描き出しで見た）。
+
+### 11.9 レビュー 2 の 2 回目（92 点）の任意の直し（2026-11-16）
+
+| # | 直した所 |
+|---|---|
+| B1 | `ThemeDoc` の読み込みで legacyModes の欠け・行き先が windows に無い・出し方が違うを 1 行ずつ知らせる。新しいゲームの最初の型を `ThemeDoc.startWindowName` にし（`Stage.emptyFor`）、nvl の型が無い Doc でも windows にある型で始まる。3 章・schema・note を合わせた。テスト 4 本 |
+| B2 | ゲートを求めるのは出来事ごとでなく、`absorbFrom` の終わりと待ちで止まる所（`pauseOrGo`）の 1 回 |
+| B3 | `reopenNode` でも `gate = None` を並べる |
+| B4 | 端の帯は横の払いだけに効かせる（`Gesture.isEdgeSideSwipe`）。OS の戻る操作は横だけで、ブラウザ版の縦の払い（flickUp / flickDown のキー）は帯を見ずに届くので、縦はデスクトップでもブラウザ版でも帯の内から選べる形にそろえた。テスト 1 本 |
+| B5 | 11.8 の残りを 14 章へ移した |
+| 絵 | 作例の toma の口の点を x 0.58・y 0.225 に直し、粒が口から立ちのぼるのを描き出しで見た（scratchpad の `vis/speaker-dim-puff-2.png`・`vis/puff-zoom.png`） |
+
 ## 12. 試した事（スパイク）
 
 | 試した事 | 置き場 | 結果 |
@@ -833,6 +975,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - go の `parse.go` の `"…"` は N2 で入れた。`feed` の本文に `>>` を含めない決まりは今のまま。
 - 【未確認】ブラウザ版で後回し（`web.deferred`）にした効果音は、起動の時に長さが読めず、`audio se … wait=true` が待たない見込み（読めない音は読み込みのたびに 1 回知らせる）。直すなら、音が届いた時に長さを読む。
 - 【未確認】Studio のミキサーのフォームで保存した時に、テンプレートの `assets/mixer.schema.json` に書いた `volumes` と `lockSeconds` が残るか。
+- 縦の画面では背景を画面より横に広く敷くので、`novel.prompts.json` の写真に対する割合で書いた当たる物は横の画面より大きく、画面の端にかかることがある（Doc の値の決め方。レビュー 2 で描き出して見た）。
 - 相談中: C14（一発の効果音を止める口・8.3）。決まるまで `audio all off` は鳴り続ける音だけを止める。
 - GameView の物の中の z を 0〜7 へ丸める時に知らせが無い。描き物は純粋で、Log に「1 回だけ知らせる」口が無いため。
 - `templates/sound-novel-starter/assets/mixer.schema.json` はエンジンの `docs/mixer.schema.json` の写しに `volumes`・`lockSeconds` を足した物。エンジンの schema に欄が増えたら、ここへも写す。

@@ -194,12 +194,22 @@ mod ViewStage {
     pub def isPropOnPage(env: View.Env, w: World.World): Bool = match w#scene {
         case World.Scene.Reading(r) =>
             not View.coversScreen(w#panel) and w#panel != World.Panel.Hidden and not Stage.isWindowHidden(env#storyNow, r#stage)
-                and hasPageVeil(env, r#stage)
+                and propsOnPage(env, r#stage)
         case _ => false
     }
 
+    /// 小物を頁の幕の上に描く舞台か: 頁に幕があり、文字の枠を消す絵（novel.cast.json の hideWindow）が出ていない。
+    // WhyNot: 文字の枠を消す絵が出ている間も頁に描かない — 枠と一緒に頁の小物まで消え、hideWindow の小物そのものが見えなくなる。
+    pub def propsOnPage(env: View.Env, stage: Stage.Stage): Bool = hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
+
     /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
-    pub def hasPageVeil(env: View.Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or stage#mode == Stage.Mode.Nvl
+    pub def hasPageVeil(env: View.Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or Stage.kindOf(env#res#theme, stage) == ThemeDoc.WindowKind.Nvl
+
+    /// tap の当たる物（novel.prompts.json の targets）の名前 → 画面の矩形。写真に載る物は背景を塗る矩形、絵に載る物は出ている絵の置き場から引く。
+    pub def targetRectOf(env: View.Env, stage: Stage.Stage): String -> Option[Rect2.Rect2] =
+        let photo = stage#shot |> Option.map(s -> (s#photo, backdropRect(env#fit)));
+        let placed = Cast.placedOf(castEnv(env, stage), stage#cast) |> List.map(p -> (p#figure#name, p#rect)) |> List.toMap;
+        name -> Hint.targetRect(env#res#prompts, photo, a -> Map.get(a, placed), name)
 
     /// 立ち絵と小物の描く元。掛ける色は背景の時間帯の cast の欄（無い時間帯・背景が無い時は絵のまま）を、背景の重ねと同じ進みで替える。
     pub def castEnv(env: View.Env, stage: Stage.Stage): Cast.Env =
@@ -214,24 +224,54 @@ mod ViewStage {
     // ── パーティクル（蛍・雪） ──
 
     /// 粒の演出のグループ: 止めるまで出ている物（<<fx 名>>）と、一度だけ出ている物（<<fx 名 once=true>>。だんだん薄くなる）。
-    /// 層の数と描き方は novel.effects.json。
+    /// 層の数と描き方は novel.effects.json。点（「絵.点」）から出す粒は、その絵が出ていなければ描かない。
     def particleGroups(env: View.Env, stage: Stage.Stage): List[Group] =
         let doc = env#res#effects;
+        let at = key -> PropertyTween.nameAt(env#storyNow, key, stage#props);
+        let steadyAt = at(Stage.particlesAtKey());
         let steady = Stage.particlesOf(env#storyNow, stage) |> Option.flatMap(n -> EffectsDoc.particleOf(n, doc))
-            |> Option.map(p -> { layer = p#layer, order = 1, items = particlesOf(env, stage, p#look) }) |> Option.toList;
+            |> Option.map(p -> { layer = p#layer, order = 1, items = particlesOf(env, stage, steadyAt, None, p#look) }) |> Option.toList;
         let fading = (name, p: EffectsDoc.Particle) -> PropertyTween.triggerSpanAt(env#storyNow, Stage.fxOnceKey(name), stage#props)
             |> Option.map(match (since, seconds) -> {
                 let left = if (seconds <= 0.0) 0.0 else 1.0 - since / seconds;
-                { layer = p#layer, order = 1, items = particlesOf(env, stage, p#look) |> List.map(Render.overItem(Render.fade(left))) }
+                { layer = p#layer, order = 1, items = particlesOf(env, stage, at(Stage.fxOnceAtKey(name)), Some(since), p#look) |> List.map(Render.overItem(Render.fade(left))) }
             });
         let once = EffectsDoc.rec(doc)#particles |> Map.toList |> List.filterMap(match (name, p) -> fading(name, p));
         List.append(steady, once)
 
-    /// 描き方 look の粒。
-    def particlesOf(env: View.Env, stage: Stage.Stage, look: EffectsDoc.Look): List[Render.PlacedItem] = match look {
+    /// 描き方 look の粒。point = 出す点（「絵.点」）、since = 一度だけ出す物の始まってからの秒（止めるまで出す物は None で実時間）。
+    def particlesOf(env: View.Env, stage: Stage.Stage, point: Option[String], since: Option[Float64], look: EffectsDoc.Look): List[Render.PlacedItem] = match look {
         case EffectsDoc.Look.Fireflies => fireflies(env)
         case EffectsDoc.Look.Snow      => snow(env, stage)
+        case EffectsDoc.Look.Puff(k)   =>
+            originOf(env, stage, point) |> Option.map(o -> puff(env, k, o, since)) |> Option.getWithDefault(Nil)
     }
+
+    /// 粒を出す点の画面の位置: 「絵.点」ならその絵の markers の点（絵が出ていなければ None）、None なら画面の真ん中。
+    def originOf(env: View.Env, stage: Stage.Stage, point: Option[String]): Option[{ x = Float64, y = Float64 }] = match point {
+        case None    => Some({ x = Layout.width(env#fit) / 2.0, y = Layout.height(env#fit) / 2.0 })
+        case Some(p) => markerOriginOf(env, stage, p)
+    }
+
+    def markerOriginOf(env: View.Env, stage: Stage.Stage, point: String): Option[{ x = Float64, y = Float64 }] = match String.splitOn(substr = ".", point) {
+        case name :: dot :: Nil => Cast.markerPointOf(castEnv(env, stage), stage#cast, name, dot)
+        case _                  => None
+    }
+
+    /// 立ちのぼる粒: 点から 1 粒ずつ時をずらしてのぼり、横に少し揺れながら life 秒で薄れて消える。番号と時刻だけから位置を導く（保存しない）。
+    /// 一度だけ出す物は始まってからの秒で、まだ出ていない粒（時をずらした分）は描かない。
+    def puff(env: View.Env, k: EffectsDoc.Puff, origin: { x = Float64, y = Float64 }, since: Option[Float64]): List[Render.PlacedItem] =
+        let ink = Color.lighten(View.theme(env)#ink, 0.4);
+        let t = since |> Option.getWithDefault(View.realSeconds(env));
+        Fx.derive(k#count, t, (_i, rand, now) -> {
+            let delay = rand(0) * k#life;
+            let raw = now - delay;
+            let age = if (Option.isEmpty(since)) raw - k#life * Float64.floor(raw / k#life) else raw;
+            let x = origin#x + (rand(1) - 0.5) * k#spread + Num.sin(now * (2.0 + rand(2) * 2.0) + rand(3) * 6.28) * k#spread * 0.2;
+            { x = x, y = origin#y - age * k#rise, r = k#size * (0.6 + rand(4) * 0.8), a = if (age < 0.0 or age > k#life) 0.0 else 1.0 - age / k#life }
+        }) |> List.filter(b -> b#a > 0.01) |> List.flatMap(b ->
+            Render.glowAt({ x = b#x, y = b#y }, b#r * 3.0, ink, { alpha = 0.35 * b#a, blend = DrawCmd.BlendMode.Add }, 3)
+            |> List.append(RawDraw.circleAt({ x = b#x, y = b#y }, b#r, ink, 4) |> Render.overItem(item -> Render.fade(b#a, item)) :: Nil))
 
     /// 蛍: 番号と実時間だけから位置と明滅を導く（どこにも保存しない = 巻き戻しても同じ絵）。
     /// 草むらの高さ（画面の下 6 割）をゆっくり漂い、息をするように明滅する。

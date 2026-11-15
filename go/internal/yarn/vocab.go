@@ -11,6 +11,7 @@ package yarn
 //	     "nodeRefs": {"from": [{"doc": "../novel.shots.json", "path": "shots[].node"}]},
 //	     "tags": {...}, "commands": {"bg": {...}, ...}}
 //	doc は vocab.json のフォルダから数える。path と keys は . で区切り、xs[] は配列の要素を全部たどる。
+//	* は object の値を全部たどり、たどった鍵を名前の頭に「鍵.」で付ける（cast.*.faces[] → toma.smile）。
 //	v2 の欄に配列を直に書いてもよい（v1 と同じ読み方）。
 
 import (
@@ -28,7 +29,8 @@ import (
 //	Nodes     コードが開くノード（.yarn に無ければ止める・届かないノードの知らせの起点）
 //	NodeRefs  名前で指すだけのノード（.yarn に無ければ止める。起点には混ぜない）
 //	Vars      変数の名前（$ 付き）→ 表示名。nil なら見ない（v1・Doc を読めない時）
-//	Tags      タグのキー → 取れる値（空なら値を書かない #key）
+//	Tags      タグのキー → 取れる値（空なら値を書かない #key。TagsFrom のキーは Doc から集めた値）
+//	TagsFrom  値を Doc から集めるタグのキー（v2 の tags に {"from": [...]} で書いた物。値は要る）
 //	Commands  コマンドの名前（エンジンが読むのは wait だけ）
 //	Specs     引数の表を持つコマンド（v2 の commands で params を書いた物。無いコマンドは名前だけ見る）
 type Vocab struct {
@@ -37,9 +39,10 @@ type Vocab struct {
 	NodeRefs []string
 	Vars     map[string]string
 	Tags     map[string][]string
+	TagsFrom map[string]bool
 	Commands []string
 	Specs    map[string]*CommandSpec
-	// skip は v2 の from を読めずに検査を飛ばす欄（"speakers"・"nodes"・"nodeRefs"）。
+	// skip は v2 の from を読めずに検査を飛ばす欄（"speakers"・"nodes"・"nodeRefs"・"tags の <キー>"）。
 	skip map[string]bool
 	// origin はノードの名前を集めた Doc の場所（ゲームのルートからのパスと行）。無いノードの知らせを Doc の行へ向ける。
 	origin map[string]Problem
@@ -61,13 +64,25 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 		Vars     json.RawMessage     `json:"vars"`
 		Nodes    json.RawMessage     `json:"nodes"`
 		NodeRefs json.RawMessage     `json:"nodeRefs"`
-		Tags     map[string][]string `json:"tags"`
-		Commands json.RawMessage     `json:"commands"`
+		Tags     map[string]json.RawMessage `json:"tags"`
+		Commands json.RawMessage            `json:"commands"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, nil, fmt.Errorf("語彙の JSON を読めない: %v", err)
 	}
-	v := &Vocab{Tags: raw.Tags, skip: map[string]bool{}, origin: map[string]Problem{}}
+	v := &Vocab{Tags: map[string][]string{}, TagsFrom: map[string]bool{}, skip: map[string]bool{}, origin: map[string]Problem{}}
+	tagFrom := map[string]json.RawMessage{}
+	for k, body := range raw.Tags {
+		var values []string
+		if json.Unmarshal(body, &values) == nil {
+			v.Tags[k] = values
+			continue
+		}
+		if head.Version < vocabVersionTwo {
+			return nil, nil, fmt.Errorf("語彙の tags の %s は値の配列で書く（Doc から集める {\"from\": …} は version 2）", k)
+		}
+		tagFrom[k] = body
+	}
 	commands, specs, err := commandsOf(raw.Commands)
 	if err != nil {
 		return nil, nil, err
@@ -121,6 +136,24 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 			continue
 		}
 		f.into(fs)
+	}
+	tagKeys := make([]string, 0, len(tagFrom))
+	for k := range tagFrom {
+		tagKeys = append(tagKeys, k)
+	}
+	sort.Strings(tagKeys)
+	for _, k := range tagKeys {
+		key := "tags の " + k
+		fs, more, skip, err := r.collect(key, tagFrom[k])
+		if err != nil {
+			return nil, nil, err
+		}
+		notes = append(notes, more...)
+		v.TagsFrom[k] = true
+		v.Tags[k] = namesOfFound(fs)
+		if skip {
+			v.skip[key] = true
+		}
 	}
 	more, err := r.resolveSpecs(specs)
 	if err != nil {
@@ -290,7 +323,7 @@ func (r *docReader) collect(key string, raw json.RawMessage) ([]found, []string,
 			where = *e.Keys
 			got, reached = r.keysAt(doc, where, docPath, docRel)
 		}
-		if len(got) == 0 && reached {
+		if len(got) == 0 && (reached || starPrefixReached(doc, where)) {
 			continue
 		}
 		if len(got) == 0 {
@@ -303,25 +336,41 @@ func (r *docReader) collect(key string, raw json.RawMessage) ([]found, []string,
 	return out, notes, skip, nil
 }
 
-// stringsAt は path の先の文字列の全部。reached は path が最後までたどれたか（空の配列で尽きた時も true。
-// 名前を 1 つも拾わなかった時に、綴り違いか、行き先はあるが空なのかを分ける）。
+// starPrefixReached は path に * があり、最初の * より前の段が最後までたどれるか。* の後の欄は項目ごとに書かない事がある
+// （novel.cast.json の markers）ので、* より前に届いていれば、名前を 1 つも拾わなくても「空」と読み、検査は飛ばさない。
+func starPrefixReached(doc any, path string) bool {
+	head, _, found := strings.Cut(path, "*")
+	if !found {
+		return false
+	}
+	head = strings.TrimSuffix(head, ".")
+	if head == "" {
+		return true
+	}
+	_, reached := selectPathReached(doc, head)
+	return reached
+}
+
+// stringsAt は path の先の文字列の全部（* でたどった鍵を名前の頭に付ける）。reached は path が最後までたどれたか
+// （空の配列で尽きた時も true。名前を 1 つも拾わなかった時に、綴り違いか、行き先はあるが空なのかを分ける）。
 func (r *docReader) stringsAt(doc any, path, docPath, docRel string) ([]found, bool) {
 	var out []found
 	values, reached := selectPathReached(doc, path)
 	for _, x := range values {
-		if s, ok := x.(string); ok && s != "" {
-			out = append(out, found{name: s, label: s, doc: docRel, line: r.lineOf(docPath, s)})
+		if s, ok := x.value.(string); ok && s != "" {
+			out = append(out, found{name: x.prefix + s, label: s, doc: docRel, line: r.lineOf(docPath, s)})
 		}
 	}
 	return out, reached
 }
 
-// keysAt は path の先の object の鍵の全部（値が文字列なら表示名）。reached は path の先が全部 object だったか。
+// keysAt は path の先の object の鍵の全部（値が文字列なら表示名・* でたどった鍵を名前の頭に付ける）。
+// reached は path の先が全部 object だったか。
 func (r *docReader) keysAt(doc any, path, docPath, docRel string) ([]found, bool) {
 	var out []found
 	values, reached := selectPathReached(doc, path)
 	for _, x := range values {
-		obj, ok := x.(map[string]any)
+		obj, ok := x.value.(map[string]any)
 		if !ok {
 			reached = false
 			continue
@@ -333,7 +382,7 @@ func (r *docReader) keysAt(doc any, path, docPath, docRel string) ([]found, bool
 		sort.Strings(names)
 		for _, k := range names {
 			label, _ := obj[k].(string)
-			out = append(out, found{name: k, label: label, doc: docRel, line: r.lineOf(docPath, k)})
+			out = append(out, found{name: x.prefix + k, label: label, doc: docRel, line: r.lineOf(docPath, k)})
 		}
 	}
 	return out, reached
@@ -383,45 +432,73 @@ func (r *docReader) lineOf(path, name string) int {
 	return 1
 }
 
-// selectPath は path（. 区切り・xs[] は配列の要素を全部）の先にある値の全部。
-func selectPath(doc any, path string) []any {
-	values, _ := selectPathReached(doc, path)
-	return values
+// picked は path の先の値 1 つと、* でたどった鍵を . で並べた頭（* が無ければ ""）。
+type picked struct {
+	prefix string
+	value  any
 }
 
-// selectPathReached は selectPath と、途中で鍵が無い・形が違う所に一度も当たらなかったか。
-func selectPathReached(doc any, path string) ([]any, bool) {
-	cur := []any{doc}
+// selectPathReached は path（. 区切り・xs[] は配列の要素を全部・* は object の値を全部）の先にある値の全部（* でたどった鍵の頭つき）と、途中で鍵が無い・形が違う所に一度も当たらなかったか。
+// * より後の段は、どれか 1 つが鍵を持てば足りる（cast.*.markers の markers を持たない役がいても綴り違いにしない）。
+func selectPathReached(doc any, path string) ([]picked, bool) {
+	cur := []picked{{value: doc}}
 	reached := true
+	afterStar := false
 	for _, seg := range strings.Split(path, ".") {
-		spread := strings.HasSuffix(seg, "[]")
-		field := strings.TrimSuffix(seg, "[]")
-		var next []any
+		var next []picked
+		misses := 0
 		for _, x := range cur {
-			obj, ok := x.(map[string]any)
+			got, ok := stepPath(x, seg)
 			if !ok {
-				reached = false
+				misses++
 				continue
 			}
-			val, ok := obj[field]
-			if !ok {
-				reached = false
-				continue
-			}
-			if !spread {
-				next = append(next, val)
-				continue
-			}
-			arr, ok := val.([]any)
-			if !ok {
-				reached = false
-				continue
-			}
-			next = append(next, arr...)
+			next = append(next, got...)
 		}
+		if misses > 0 && (!afterStar || misses == len(cur)) {
+			reached = false
+		}
+		afterStar = afterStar || seg == "*"
 		cur = next
 	}
 	return cur, reached
+}
+
+// stepPath は値 1 つから段 seg を 1 つ進めた先（ok は鍵があり形が合ったか）。
+func stepPath(x picked, seg string) ([]picked, bool) {
+	obj, ok := x.value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	if seg == "*" {
+		keys := make([]string, 0, len(obj))
+		for k := range obj {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out := make([]picked, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, picked{prefix: x.prefix + k + ".", value: obj[k]})
+		}
+		return out, true
+	}
+	field := strings.TrimSuffix(seg, "[]")
+	val, ok := obj[field]
+	if !ok {
+		return nil, false
+	}
+	if !strings.HasSuffix(seg, "[]") {
+		return []picked{{prefix: x.prefix, value: val}}, true
+	}
+	arr, ok := val.([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]picked, 0, len(arr))
+	for _, v := range arr {
+		out = append(out, picked{prefix: x.prefix, value: v})
+	}
+	return out, true
 }
 
 // DocsOf は vocab.json（v2）の from が指す Doc の全部（絶対パス）。v1 と読めない語彙は空。
@@ -476,6 +553,17 @@ func docUsersOf(data []byte, vocabPath string) map[string][]string {
 	sort.Strings(keys)
 	for _, k := range keys {
 		add(k, sections[k])
+	}
+	var tags map[string]json.RawMessage
+	if json.Unmarshal(sections["tags"], &tags) == nil {
+		names := make([]string, 0, len(tags))
+		for name := range tags {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			add("tags の "+name, tags[name])
+		}
 	}
 	var commands map[string]struct {
 		Params []struct {

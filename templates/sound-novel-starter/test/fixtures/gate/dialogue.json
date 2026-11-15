@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が test/fixtures/gate/gate.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "test/fixtures/gate/gate.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Gate",
+      "file": "test/fixtures/gate/gate.yarn",
+      "line": 4,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 6,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "me",
+          "text": "上へ払うと次へ。"
+        },
+        {
+          "kind": "options",
+          "line": 8,
+          "options": [
+            {
+              "line": 8,
+              "text": "上へ払って次へ",
+              "tags": [
+                {
+                  "key": "act",
+                  "value": "up"
+                },
+                {
+                  "key": "mute",
+                  "value": ""
+                }
+              ],
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 9,
+                  "speaker": "me",
+                  "text": "払った後の行。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 10,
+          "speaker": "me",
+          "text": "分かれ道。"
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "speaker": "me",
+          "text": "どちらへ行く。"
+        },
+        {
+          "kind": "options",
+          "line": 12,
+          "options": [
+            {
+              "line": 12,
+              "text": "左へ払って戻る",
+              "tags": [
+                {
+                  "key": "act",
+                  "value": "left"
+                }
+              ],
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 13,
+                  "speaker": "me",
+                  "text": "左を選んだ。"
+                }
+              ]
+            },
+            {
+              "line": 14,
+              "text": "下へ払って進む",
+              "tags": [
+                {
+                  "key": "act",
+                  "value": "down"
+                },
+                {
+                  "key": "icon",
+                  "value": "blade"
+                }
+              ],
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 15,
+                  "speaker": "me",
+                  "text": "下を選んだ。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "me",
+          "text": "鍵を押す。"
+        },
+        {
+          "kind": "options",
+          "line": 17,
+          "options": [
+            {
+              "line": 17,
+              "text": "鍵をタップ",
+              "tags": [
+                {
+                  "key": "act",
+                  "value": "tap"
+                },
+                {
+                  "key": "at",
+                  "value": "key"
+                }
+              ],
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 18,
+                  "speaker": "me",
+                  "text": "鍵を押した。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 19,
+          "speaker": "me",
+          "text": "どこでも押す。"
+        },
+        {
+          "kind": "options",
+          "line": 20,
+          "options": [
+            {
+              "line": 20,
+              "text": "どこでも押す",
+              "tags": [
+                {
+                  "key": "act",
+                  "value": "tap"
+                }
+              ],
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 21,
+                  "speaker": "me",
+                  "text": "押した。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 22,
+          "speaker": "me",
+          "text": "ふつうの選択肢。"
+        },
+        {
+          "kind": "options",
+          "line": 23,
+          "options": [
+            {
+              "line": 23,
+              "text": "払いで選ぶ",
+              "tags": [
+                {
+                  "key": "act",
+                  "value": "up"
+                }
+              ],
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 24,
+                  "speaker": "me",
+                  "text": "払いで選んだ。"
+                }
+              ]
+            },
+            {
+              "line": 25,
+              "text": "ボタンで選ぶ",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 26,
+                  "speaker": "me",
+                  "text": "ボタンで選んだ。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 27,
+          "speaker": "me",
+          "text": "終わり。"
+        }
+      ]
+    }
+  ]
+}

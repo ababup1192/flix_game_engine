@@ -12,7 +12,7 @@ expect panel=SaveSlots
 tap back
 expect panel=Closed&talk=StudioWindow
 drive reader until talk=Reply max 60
-expect photo=desk_room&mode=Nvl
+expect photo=desk_room&mode=nvl
 tap 608,524                                     # 下の帯の「ロード」
 expect panel=LoadSlots&tab=Auto                 # 開くのは一番新しいセーブのページ（灯の部屋のオートセーブ）
 tap 291,105                                     # 「1」のページへ
@@ -20,4 +20,4 @@ expect tab=Numbered(1)
 tap 268,189                                     # 1 枚目の枠から読む
 expect ask=Load(Numbered(1),0)
 tap 394,310                                     # 確認の「はい」
-expect panel=Closed&talk=StudioWindow&photo=studio_eaves&mode=Adv
+expect panel=Closed&talk=StudioWindow&photo=studio_eaves&mode=bottom

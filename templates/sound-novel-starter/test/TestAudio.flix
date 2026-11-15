@@ -125,7 +125,7 @@ mod TestAudio {
         // 鳴り続ける音は、環境音の列と音楽の全部。
         let r = res();
         let st = applied(0.0, "audio", "bgm" :: "bgm_x" :: Nil, applied(0.0, "audio", "ambience" :: "amb_a,amb_b" :: Nil, Stage.empty()));
-        let w = World.withRead({ stage = st | World.emptyRead() }, TestKit.w0(r));
+        let w = World.withRead({ stage = st | World.emptyRead(r#theme) }, TestKit.w0(r));
         Assert.assertEq(expected = "amb_a" :: "amb_b" :: "bgm_x" :: Nil, Controls.ambience(r, w) |> List.map(s -> s#name))
 
     @Test
@@ -181,7 +181,7 @@ mod TestAudio {
         // 鳴り続ける音の音量は、舞台の audio.bgmVolume。
         let r = res();
         let st = applied(0.0, "audio", "bgm" :: "bgm_x" :: "volume=0.3" :: Nil, Stage.empty());
-        let w = World.withRead({ stage = st | World.emptyRead() }, TestKit.w0(r));
+        let w = World.withRead({ stage = st | World.emptyRead(r#theme) }, TestKit.w0(r));
         Assert.assertEq(expected = Some(0.3), Controls.ambience(r, w) |> List.head |> Option.map(s -> s#volume))
 
     @Test
