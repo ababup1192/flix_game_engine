@@ -49,13 +49,36 @@ var varNameRe = regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*`)
 // withVarLabels は字の中の $名前 を「表示名（$名前）」にする（表示名の無い変数はそのまま）。
 // WhyNot: 台詞の {$x} には当てない — 書き替えた台詞は Yarn の行へ戻すので、表示名が .yarn に入ってしまう。
 // 条件と <<set>> の〔〕は --diff が「式を直す」と言うだけで行へ戻さないので、表示名を足しても往復は壊れない。
+// 式の文字列（"…"。exprText が strconv.Quote で書く）の中の $ は変数でないので当てない。
 func withVarLabels(text string, vars map[string]string) string {
-	return varNameRe.ReplaceAllStringFunc(text, func(v string) string {
-		if label := vars[v]; label != "" {
-			return label + "（" + v + "）"
+	var out strings.Builder
+	start, inString := 0, false
+	label := func(part string) string {
+		return varNameRe.ReplaceAllStringFunc(part, func(v string) string {
+			if name := vars[v]; name != "" {
+				return name + "（" + v + "）"
+			}
+			return v
+		})
+	}
+	for i := 0; i < len(text); i++ {
+		switch {
+		case inString && text[i] == '\\':
+			i++
+		case text[i] == '"' && !inString:
+			out.WriteString(label(text[start:i]))
+			start, inString = i, true
+		case text[i] == '"':
+			out.WriteString(text[start : i+1])
+			start, inString = i+1, false
 		}
-		return v
-	})
+	}
+	if inString {
+		out.WriteString(text[start:])
+	} else {
+		out.WriteString(label(text[start:]))
+	}
+	return out.String()
 }
 
 // Notes は演出コマンド → シナリオ原稿の〔〕の言葉。File（script-notes.json）を先に、Comment（.yarn の冒頭のコメント）を後に引く。

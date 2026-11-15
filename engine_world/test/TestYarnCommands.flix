@@ -123,6 +123,22 @@ mod TestYarnCommands {
         let json = Util.Json.Json.JObject(Map#{ "bg" => Util.Json.Json.JObject(Map.empty()) });
         Assert.assertEq(expected = Ok(0), YarnCommands.fromJson(json) |> Result.map(List.length))
 
+    def smallAndLarge(): YarnCommands.Spec =
+        YarnCommands.spec("tick", "小さい数と大きい数の既定",
+            Param.erase(Param.time(0.0001)) ::
+            Param.erase(Param.num("tiny", 0.0, 0.001) |> Param.default(0.0005)) ::
+            Param.erase(Param.num("huge", 0.0, 100000000.0) |> Param.default(20000000.0)) ::
+            Param.erase(Param.num("steps", 0.0, 9.0) |> Param.list |> Param.default(1.0 :: 2.5 :: Nil)) :: Nil)
+
+    /// 0.001 未満・1e7 以上の数と、並びの既定の値は、指数を使わない台本の数の形で書き、型で照らして通る。
+    @Test
+    def testDefaultsAreWrittenAsPlainNumbers(): Unit \ Assert =
+        let text = Util.Json.toPrettyString(2, YarnCommands.toJson(smallAndLarge() :: Nil));
+        Assert.assertEq(expected = (true, true, true, true, true),
+            (String.contains(substr = "\"0.0001\"", text), String.contains(substr = "\"0.0005\"", text),
+             String.contains(substr = "\"20000000.0\"", text), String.contains(substr = "\"1.0,2.5\"", text),
+             Result.isOk(YarnCommands.fromJson(YarnCommands.toJson(smallAndLarge() :: Nil)))))
+
     // ── 型付きで読む ──
 
     /// 必須の位置の引数を数で読む。

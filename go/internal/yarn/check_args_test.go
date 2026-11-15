@@ -166,7 +166,23 @@ func TestRefHintListsEachNameOnce(t *testing.T) {
 
 // 引数を取らないコマンドに引数を書くと、取らない事を言う。
 func TestCommandWithoutParamsSaysSo(t *testing.T) {
-	if msg := CheckArgs("inn", &CommandSpec{Params: []ParamSpec{}}, []string{"tonight"}); msg != "<<inn>> は引数を取らない" {
-		t.Errorf("got %q", msg)
+	for _, args := range [][]string{{"tonight"}, {"at=tonight"}} {
+		if msg := CheckArgs("inn", &CommandSpec{Params: []ParamSpec{}}, args); msg != "<<inn>> は引数を取らない" {
+			t.Errorf("%v: got %q", args, msg)
+		}
+	}
+}
+
+// 小さい数・大きい数・並びの既定の値（engine_world が指数を使わずに書く形）は表の誤りにしない。
+func TestPlainNumberDefaultsAreAccepted(t *testing.T) {
+	body := `{"tick": {"params": [{"name": "time", "type": "time", "default": "0.0001"},
+		{"name": "tiny", "type": "num", "min": 0, "max": 0.001, "default": "0.0005"},
+		{"name": "huge", "type": "num", "min": 0, "max": 100000000, "default": "20000000.0"},
+		{"name": "steps", "type": "num", "min": 0, "max": 9, "list": true, "default": "1.0,2.5"}]}}`
+	if _, _, err := ParseVocab([]byte(`{"version": 2, "commands": `+body+`}`), "vocab.json", "."); err != nil {
+		t.Errorf("err %v", err)
+	}
+	if _, _, err := ParseVocab([]byte(`{"version": 2, "commands": {"a": {"params": [{"name": "t", "type": "time", "default": "1.0E-4"}]}}}`), "vocab.json", "."); err == nil {
+		t.Errorf("指数の形の既定を通した")
 	}
 }

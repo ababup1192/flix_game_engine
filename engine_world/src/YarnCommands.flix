@@ -53,7 +53,7 @@ pub mod YarnCommands {
     type alias Row = { name = String, pos = Int32, kind = Kind, need = Need, words = List[String], names = List[DocRef], shape = Shape, group = String }
 
     /// 型付きの引数のハンドル。decode は 1 つの値の字を読む（parse を通った字なら Some）。
-    enum Handle[_: Type, t: Type]({ field = Field, decode = String -> Option[t], fallback = Option[t] })
+    enum Handle[_: Type, t: Type]({ field = Field, decode = String -> Option[t], encode = t -> String, fallback = Option[t] })
 
     /// コマンド 1 つの引数の表。
     enum CommandSpec({ name = String, summary = String, params = List[Field] })
@@ -111,7 +111,7 @@ pub mod YarnCommands {
     /// 引数 1 つの表の誤り: 値の一覧の無い choice と、型に合わない既定の値。
     def rowProblemOf(command: String, r: Row): Option[String] =
         let badDefault = match r#need {
-            case Need.Defaulted(d) => not List.memberOf(d, r#words) and List.isEmpty(r#names) and not fitsKind(r#kind, d)
+            case Need.Defaulted(d) => Result.isErr(checkValue(command, r, d))
             case _                 => false
         };
         if (r#kind == Kind.Choice(Nil)) Some("<<${command}>> の ${r#name}（choice）に values が要る")
@@ -188,7 +188,7 @@ pub mod YarnCommands {
         let seen = pairs |> List.map(fst);
         let twice = firstRepeat(seen, Set.empty());
         let unknown = keyed |> List.map(fst) |> List.find(k -> not Set.memberOf(k, known));
-        if (not List.isEmpty(positional) and List.isEmpty(rows)) Err("<<${command}>> は引数を取らない")
+        if (not List.isEmpty(tokens) and List.isEmpty(rows)) Err("<<${command}>> は引数を取らない")
         else if (List.length(positional) > List.length(slots))
             Err("<<${command}>> の位置の引数は ${List.length(slots)} つまで（${List.length(positional)} つ書いてある。ほかは key=value で書く）")
         else match (unknown, twice) {
@@ -265,8 +265,37 @@ pub mod YarnCommands {
         let listed = if (r#shape == Shape.Listed) "を , で並べる" else "";
         base + listed + more
 
-    def numText(x: Float64): String =
-        if (Float64.floor(x) == x and Float64.abs(x) < 1.0e9) Int64.toString(Float64.tryToInt64(x) |> Option.getWithDefault(0i64)) else Float64.toString(x)
+    def numText(x: Float64): String = plainNumber(x)
+
+    /// 数を台本の数の形（- と数字と . だけ・指数を使わない）で書いた字。
+    def plainNumber(x: Float64): String =
+        let s = Float64.toString(x);
+        match String.splitOn(substr = "E", s) {
+            case mantissa :: exponent :: Nil =>
+                Int32.fromString(exponent) |> Option.map(shiftPoint(mantissa)) |> Option.getWithDefault(s)
+            case _ => s
+        }
+
+    /// 「1.2345」の小数点を e 桁ずらした字（e が負なら左へ）。
+    def shiftPoint(mantissa: String, e: Int32): String =
+        let negative = String.startsWith(prefix = "-", mantissa);
+        let body = String.stripPrefix(substr = "-", mantissa) |> Option.getWithDefault(mantissa);
+        let point = String.indexOf(substr = ".", body) |> Option.getWithDefault(String.length(body));
+        let digits = String.replace(src = ".", dst = "", body);
+        let at = point + e;
+        let zeros = n -> String.repeat(Int32.max(0, n), "0");
+        let plain =
+            if (at <= 0) "0." + zeros(0 - at) + digits
+            else if (at >= String.length(digits)) digits + zeros(at - String.length(digits)) + ".0"
+            else String.slice(start = 0, end = at, digits) + "." + String.sliceRight(start = at, digits);
+        let trimmed = trimZeros(plain);
+        if (negative) "-" + trimmed else trimmed
+
+    /// 小数の後ろの余った 0 を落とす（. の後に 1 桁は残す）。
+    def trimZeros(s: String): String =
+        if (String.endsWith(suffix = "0", s) and not String.endsWith(suffix = ".0", s) and String.contains(substr = ".", s))
+            trimZeros(String.dropRight(1, s))
+        else s
 
     /// 必須の欠けと、どれか 1 つは要る組の欠け。
     def missingOf(command: String, rows: List[Row], given: Set[String]): Result[String, Unit] =

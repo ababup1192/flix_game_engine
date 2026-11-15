@@ -3271,7 +3271,7 @@
 - 書かなければ誤り。
   `pub def required(h: Opt[t]): Req[t]`
 - 書かなければ fallback。
-  `pub def default(fallback: t, h: Opt[t]): Req[t] with ToString[t]`
+  `pub def default(fallback: t, h: Opt[t]): Req[t]`
 - 型の外に words の語も受ける（off・all など）。
   `pub def orWords(words: List[String], h: Opt[t]): Opt[Or[t]]`
 - 型に合わない値を、refs の Doc の名前として受ける（数か音量の名前、など）。

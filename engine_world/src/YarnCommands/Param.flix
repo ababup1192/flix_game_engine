@@ -41,33 +41,35 @@ pub mod YarnCommands.Param {
 
     /// min 以上 max 以下の数。
     pub def num(name: String, min: Float64, max: Float64): Opt[Float64] =
-        optional(name, Kind.Num(min, max), YarnCommands.numberOf)
+        optional(name, Kind.Num(min, max), YarnCommands.numberOf, YarnCommands.plainNumber)
 
     /// time=秒（0 以上）。書かなければ fallback。
     pub def time(fallback: Float64): Req[Float64] =
-        optional("time", Kind.Time, YarnCommands.numberOf) |> default(fallback)
+        optional("time", Kind.Time, YarnCommands.numberOf, YarnCommands.plainNumber) |> default(fallback)
 
     /// ease=曲線の名前（Curve.easeTable）。書かなければ fallback。
     pub def ease(fallback: Curve.Ease): Req[Curve.Ease] =
-        optional("ease", Kind.Ease, YarnCommands.easeOf) |> default(fallback)
+        optional("ease", Kind.Ease, YarnCommands.easeOf, ToString.toString) |> default(fallback)
 
     /// values のどれか。
     pub def choice(name: String, values: List[String]): Opt[String] =
         let known = List.toSet(values);
-        optional(name, Kind.Choice(values), v -> if (Set.memberOf(v, known)) Some(v) else None)
+        optional(name, Kind.Choice(values), v -> if (Set.memberOf(v, known)) Some(v) else None, v -> v)
 
     /// 名前。refs は build が照らす Doc（Nil なら照らさない）。
     pub def name(name: String, refs: List[DocRef]): Opt[String] =
-        optional(name, Kind.Name(refs), v -> if (v == "") None else Some(v))
+        optional(name, Kind.Name(refs), v -> if (v == "") None else Some(v), v -> v)
 
     /// true か false。
     pub def flag(name: String): Opt[Bool] =
-        optional(name, Kind.Flag, v -> if (v == "true") Some(true) else if (v == "false") Some(false) else None)
+        optional(name, Kind.Flag, v -> if (v == "true") Some(true) else if (v == "false") Some(false) else None, b -> if (b) "true" else "false")
 
-    def optional(name: String, kind: Kind, decode: String -> Option[t]): Opt[t] =
+    /// encode は値を台本に書く字へ戻す（既定の値を vocab.json に書き、型で照らす）。
+    def optional(name: String, kind: Kind, decode: String -> Option[t], encode: t -> String): Opt[t] =
         Handle.Handle({
             field    = Field.Field({ name = name, pos = 0, kind = kind, need = Need.Optional, words = Nil, names = Nil, shape = Shape.Single, group = "" }),
             decode   = decode,
+            encode   = encode,
             fallback = None
         })
 
@@ -82,8 +84,10 @@ pub mod YarnCommands.Param {
         Handle.Handle(x)
 
     /// 書かなければ fallback。
-    pub def default(fallback: t, h: Opt[t]): Req[t] with ToString[t] =
-        let Handle.Handle(x) = withRow(r -> { need = Need.Defaulted(ToString.toString(fallback)) | r }, h);
+    /// WhyNot: 既定の字を ToString で作らない — Float64 は 0.001 未満と 1e7 以上で 1.0E-4 の形になり、台本の数の形に合わない。
+    pub def default(fallback: t, h: Opt[t]): Req[t] =
+        let Handle.Handle(y) = h;
+        let Handle.Handle(x) = withRow(r -> { need = Need.Defaulted(y#encode(fallback)) | r }, h);
         Handle.Handle({ fallback = Some(fallback) | x })
 
     /// 型の外に words の語も受ける（off・all など）。
@@ -93,6 +97,7 @@ pub mod YarnCommands.Param {
         Handle.Handle({
             field    = x#field,
             decode   = v -> if (Set.memberOf(v, known)) Some(Or.Word(v)) else x#decode(v) |> Option.map(Or.Value),
+            encode   = orText(x#encode),
             fallback = None
         })
 
@@ -102,6 +107,7 @@ pub mod YarnCommands.Param {
         Handle.Handle({
             field    = x#field,
             decode   = v -> x#decode(v) |> Option.map(Or.Value) |> Option.withDefault(default = if (v == "") None else Some(Or.Word(v))),
+            encode   = orText(x#encode),
             fallback = None
         })
 
@@ -111,8 +117,14 @@ pub mod YarnCommands.Param {
         Handle.Handle({
             field    = x#field,
             decode   = v -> String.splitOn(substr = ",", v) |> Option.traverse(x#decode),
+            encode   = vs -> vs |> List.map(x#encode) |> String.intercalate(","),
             fallback = None
         })
+
+    def orText(inner: t -> String, x: Or[t]): String = match x {
+        case Or.Value(v) => inner(v)
+        case Or.Word(w)  => w
+    }
 
     /// 同じ group の引数のどれか 1 つは要る（hide の名前か at= など）。
     pub def oneOf(group: String, h: Opt[t]): Opt[t] = withRow(r -> { group = group | r }, h)

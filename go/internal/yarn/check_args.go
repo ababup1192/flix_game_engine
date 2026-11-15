@@ -69,7 +69,7 @@ func (c *CommandSpec) validate(name string) error {
 		if (p.Type == "choice" || p.Type == "ease") && len(p.Values) == 0 {
 			return fmt.Errorf("語彙の commands の %s の引数 %s（%s）に values が要る", name, p.Name, p.Type)
 		}
-		if p.Default != nil && len(p.OrNames) == 0 && !contains(p.OrWords, *p.Default) && !fitsArgType(&p, *p.Default) {
+		if p.Default != nil && checkArgValue(name, &p, *p.Default) != "" {
 			return fmt.Errorf("語彙の commands の %s の引数 %s の既定の値 %s が型に合わない（%s）", name, p.Name, *p.Default, expectedArg(&p))
 		}
 		if p.Pos > 0 {
@@ -125,7 +125,7 @@ func CheckArgs(command string, spec *CommandSpec, args []string) string {
 		}
 	}
 	sort.Slice(slots, func(a, b int) bool { return slots[a].Pos < slots[b].Pos })
-	if len(positional) > 0 && len(spec.Params) == 0 {
+	if len(args) > 0 && len(spec.Params) == 0 {
 		return fmt.Sprintf("<<%s>> は引数を取らない", command)
 	}
 	if len(positional) > len(slots) {

@@ -423,3 +423,11 @@ func TestScriptNamesVariablesAndDiffSurvives(t *testing.T) {
 		t.Errorf("got %s", got)
 	}
 }
+
+// 式の文字列の中の $ は変数の表示名にしない。
+func TestVarLabelsSkipStringLiterals(t *testing.T) {
+	got := withVarLabels(`$house == "$house \"x\"" and $house`, map[string]string{"$house": "家"})
+	if got != `家（$house） == "$house \"x\"" and 家（$house）` {
+		t.Errorf("got %s", got)
+	}
+}
