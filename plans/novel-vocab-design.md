@@ -439,6 +439,7 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 - ロード直後のバックログの穴は、Mark にノードに入る直前の舞台と頁を持たせて直した（4.4）。`entry` の無い古い枠と、`<<if not>>` が上・`<<else>>` が下の自分への jump の 1 回目の入り直しだけ前の形で戻る（4.4）。
 - 血鱗の `StageAudit` の 2 つの検査を消すのと、台本の頭の言い直しを機械で消すのは、ゲームが移る N4 の後（4.3・6 章）。
 - `window off time=`（薄くして消す）は入れていない（`window.hidden` は数の値なので tween で書ける）。
+- `openAt`（プレビュー・描き出し）は、ノードに着いた時の舞台から始めるが、頁は空から始める（`buildEntriesWithin` が舞台だけを集める）。ノードをまたいで続く NVL の頁を頭から開くと前のノードの行が出ない。集める物を `NodeStart` にすれば揃う（N4 か段 8）。
 
 **段 5・6 からの持ち越し**:
 - `window off`・`Stage.pages`・O2（台本を読んだ時に 1 回だけ引数を読む表）は段 7（N3）で入れる（済）。
