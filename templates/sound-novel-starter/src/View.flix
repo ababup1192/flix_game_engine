@@ -47,6 +47,8 @@ mod View {
 
     // ── hud の中の z（小さいほど奥） ──
     def zVeil(): Int32 = 10
+    /// 頁の幕の上・字の下に置く小物（NVL と縦の画面の頁。幕で小物がくすまないように）。
+    def zPageProp(): Int32 = 15
     def zText(): Int32 = 20
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
@@ -71,7 +73,7 @@ mod View {
         let stage = World.stageOf(res, w);
         let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
-        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage) :: GameView.draw(env, stage) :: Nil)
+        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage, not isPropOnPage(env, w)) :: GameView.draw(env, stage) :: Nil)
             |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -169,9 +171,36 @@ mod View {
 
     // ── 立ち絵と小物（Cast） ──
 
-    /// 立ち絵と小物を蛍の手前（z 5）に描く。まだ届いていない絵は描かない（背景の写真と同じ扱い）。
-    def castLayer(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        Cast.items({ doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing }, stage#cast, 5)
+    /// 立ち絵を蛍の手前（z 5）に描く。小物は withProps の時だけここで描く（頁の幕がある間は hud の pageProps が幕の上に描く）。
+    /// まだ届いていない絵は描かない（背景の写真と同じ扱い）。
+    def castLayer(env: Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
+        let cenv = castEnv(env, stage);
+        let people = Cast.itemsOf(cenv, CastDoc.Kind.Character, stage#cast, 5);
+        if (withProps) List.append(people, Cast.itemsOf(cenv, CastDoc.Kind.Prop, stage#cast, 5)) else people
+
+    /// 頁の幕の上・字の下に描く小物（NVL と縦の画面の頁）。
+    def pageProps(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        Cast.itemsOf(castEnv(env, stage), CastDoc.Kind.Prop, stage#cast, zPageProp())
+
+    /// 今の画面で、小物を hud の頁（幕の上）が描くか。読んでいる頁を hud が描いていて、その頁に幕がある時（NVL か縦の画面）。
+    def isPropOnPage(env: Env, w: World.World): Bool = match w#scene {
+        case World.Scene.Reading(r) =>
+            not coversScreen(w#panel) and w#panel != World.Panel.Hidden and not Stage.isWindowHidden(env#storyNow, r#stage)
+                and hasPageVeil(env, r#stage)
+        case _ => false
+    }
+
+    /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
+    def hasPageVeil(env: Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or stage#mode == Stage.Mode.Nvl
+
+    /// 立ち絵と小物の描く元。掛ける色は背景の時間帯の cast の欄（無い時間帯・背景が無い時は絵のまま）を、背景の重ねと同じ進みで替える。
+    def castEnv(env: Env, stage: Stage.Stage): Cast.Env =
+        let toneOf = (shot: Option[Stage.Shot]) -> shot
+            |> Option.flatMap(s -> BackdropDoc.gradeOf(s#grade, env#res#backdrops) |> Option.flatMap(g -> g#cast) |> Option.map(Cast.toneOf(s#grade)))
+            |> Option.getWithDefault(Cast.plainTone());
+        let progress = Stage.fadeProgress(env#storyNow, stage);
+        let light = if (progress >= 1.0) Cast.steadyLight(toneOf(stage#shot)) else { previous = toneOf(stage#under), current = toneOf(stage#shot), progress = progress };
+        { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light }
 
     // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
 
@@ -375,7 +404,7 @@ mod View {
             let placed = placeLine(atlas, { x = area#x, y = y }, area#width, { body = k#bodySize, ruby = k#rubySize }, inkOf(line, env, r), visible, line, env);
             (placed :: done, y + lineHeight(env, { body = k#bodySize, ruby = k#rubySize }, area#width, line) + 6.0)
         }, (Nil, area#y));
-        veil :: List.append(List.flatten(List.reverse(items)), waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r))
+        veil :: List.flatten(pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r) :: Nil)
 
     /// ADV: 下のウィンドウ（上から下へ濃くなる地と、金の細い縁）に、名前と今の 1 行。
     def adv(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
@@ -427,7 +456,7 @@ mod View {
              y + b#height + Layout.paragraphGap())
         }, (Nil, area#position#y));
         let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
-        List.flatten(portraitVeil(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
+        List.flatten(portraitVeil(env, r#stage) :: pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
 
     /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べ、人物が出ている間は novel.cast.json の
     /// portraitVeilWithCast を、人物の出入りの進みに合わせて掛ける（出ると薄く、消えると戻る）。
@@ -986,7 +1015,7 @@ mod View {
         // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
         let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
-            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage)
+            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage, not hasPageVeil(away, read#stage))
                          :: GameView.draw(away, read#stage) :: reading(atlas, away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));

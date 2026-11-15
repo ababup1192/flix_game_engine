@@ -116,7 +116,7 @@ mod SceneRender {
         ("portrait-title", "title", tall) :: ("portrait-nvl", "nvl", tall) :: ("portrait-adv", "adv", tall)
             :: ("portrait-choice", "choice", tall) :: ("portrait-log", "log", tall) :: ("portrait-save", "save", tall)
             :: ("portrait-settings", "settings", tall) :: ("portrait-ask", "ask", tall)
-            :: ("portrait-eaves", "eaves", tall) :: ("portrait-menu", "menu", tall)
+            :: ("portrait-eaves", "eaves", tall) :: ("portrait-ending", "ending", tall) :: ("portrait-menu", "menu", tall)
             :: ("portrait-saveload", "saveload", tall) :: ("portrait-tooltip", "tooltip", tall)
             :: ("portrait-hold-ring", "hold", tall) :: ("portrait-cast-sample", "cast", tall) :: ("portrait-cast-veil", "cast", tall)
             :: ("portrait-short-nvl", "nvl", short) :: ("portrait-short-save", "save", short)

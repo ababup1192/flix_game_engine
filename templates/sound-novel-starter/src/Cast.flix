@@ -1,6 +1,7 @@
 // Cast — 立ち絵と小物の層（純粋）: シナリオの <<show>> / <<hide>> の引数から作る意味、出す・替える・消すの重ね方、セーブに残す形、置き場所と描き方。
 // 絵は 2D の透過画像（project.json の textures「cast_<名前>_<表情>」）を、2 つの画素の間をなめらかにつなぐシェーダーの面で貼る。
-// 位置の替えはクロスフェードだけで、すべらせない。描くのは world の層（View.frame）で、字の地より必ず奥。
+// 位置の替えはクロスフェードだけで、すべらせない。描くのは字より必ず奥（人物は world の層・小物は頁の幕がある間だけ幕の上。置き分けは View）。
+// 色は背景の時間帯から掛ける（Light）。
 mod Cast {
     use fge::{Clock, Curve, JsonCodec, Num, Rect2, Render, ShaderDoc, Sway}
     use fge::ShaderDoc.{Field, Out, Shade, TexChan}
@@ -228,14 +229,31 @@ mod Cast {
 
     // ── 置き場所と描き方 ──
 
-    /// 描く元: Doc・並べ方の組（画面の大きさと縦か横か）・2 本の時計の今・まだ届いていない絵の名前。
+    /// 描く元: Doc・並べ方の組（画面の大きさと縦か横か）・2 本の時計の今・まだ届いていない絵の名前・背景の時間帯から掛ける色。
     pub type alias Env = {
         doc = CastDoc.Doc,
         fit = Layout.Fit,
         storyNow = Clock.Time[Stage.Story],
         realNow = Clock.Time[Clock.Real],
-        missing = Set[String]
+        missing = Set[String],
+        light = Light
     }
+
+    /// 絵に掛ける色 1 つ。key = 時間帯の名前（シェーダーの名前に入れる）、r / g / b = 色ごとの倍率（明るさ込み）、saturation = 彩度。
+    pub type alias Tone = { key = String, r = Float64, g = Float64, b = Float64, saturation = Float64 }
+
+    /// 背景の切り替えに合わせて previous から current へ、progress（0〜1）でなめらかに替える。
+    pub type alias Light = { previous = Tone, current = Tone, progress = Float64 }
+
+    /// 掛けない色（絵のまま）。
+    pub def plainTone(): Tone = { key = "plain", r = 1.0, g = 1.0, b = 1.0, saturation = 1.0 }
+
+    /// 時間帯 key の cast の欄から作る色。
+    pub def toneOf(key: String, g: BackdropDoc.CastGrade): Tone =
+        { key = key, r = g#tint#r * g#exposure, g = g#tint#g * g#exposure, b = g#tint#b * g#exposure, saturation = g#saturation }
+
+    /// 切り替えずに 1 つの色を掛け続ける。
+    pub def steadyLight(tone: Tone): Light = { previous = tone, current = tone, progress = 1.0 }
 
     /// 位置の一覧（縦の画面は portraitSlots）。
     def slotsOf(env: Env): Map[String, CastDoc.Slot] =
@@ -254,11 +272,31 @@ mod Cast {
         { position = { x = cx - w * k / 2.0, y = foot - h * k }, size = { x = w * k, y = h * k } }
 
     /// 透過画像を読む面（2 つの画素の間をなめらかにつないで読む。縁の透明な画素の色は art/cast/prepare.py が縁の色で埋めてある）。
+    /// 色: l = 明るさ、c1 = l + 彩度 × (c − l)、c2 = c1 × 倍率。彩度と倍率は previous から current へ、面の t（切り替えの進み）でつなぐ。
     // WhyNot: Render.sprite で貼らない — 2D の絵は格子に乗せる前提で、縮めると画素を飛ばして読み、輪郭がぎざぎざになる。
-    def pictureSpec(texture: String): ShaderDoc.Spec =
+    // WhyNot: 進みを Const で埋め込まない — Spec が毎フレーム変わると、実機はシェーダーを組み直し続ける（t で渡せば時間帯の組ごとに 1 本）。
+    def pictureSpec(texture: String, light: Light): ShaderDoc.Spec =
         let read = chan -> Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = Field.Tex({ name = texture, chan = chan }) });
-        { name = "picture_${texture}", cycleRate = 0.0, bindings = Nil,
-          out = Out.Fill({ shade = Shade.Rgb({ r = read(TexChan.R), g = read(TexChan.G), b = read(TexChan.B) }), alpha = read(TexChan.A) }) }
+        let k = v -> Field.Const(v);
+        let bin = (op, a, b) -> Field.Bin({ op = op, a = a, b = b });
+        let steady = light#previous#key == light#current#key;
+        let between = (a, b) -> if (steady or a == b) k(b) else bin(ShaderDoc.BinOp.Add, k(a), bin(ShaderDoc.BinOp.Mul, k(b - a), Field.Ref("p")));
+        let luma = bin(ShaderDoc.BinOp.Add, bin(ShaderDoc.BinOp.Add, bin(ShaderDoc.BinOp.Mul, k(0.299), Field.Ref("r")), bin(ShaderDoc.BinOp.Mul, k(0.587), Field.Ref("g"))),
+                       bin(ShaderDoc.BinOp.Mul, k(0.114), Field.Ref("b")));
+        let channel = (name, gain) -> {
+            let c1 = bin(ShaderDoc.BinOp.Add, Field.Ref("l"), bin(ShaderDoc.BinOp.Mul, between(light#previous#saturation, light#current#saturation), bin(ShaderDoc.BinOp.Sub, Field.Ref(name), Field.Ref("l"))));
+            bin(ShaderDoc.BinOp.Mul, c1, gain)
+        };
+        let suffix = if (not steady) "_${light#previous#key}_${light#current#key}"
+                     else if (light#current#key == plainTone()#key) ""
+                     else "_${light#current#key}";
+        { name = "picture_${texture}${suffix}", cycleRate = 0.0,
+          bindings = ("r", read(TexChan.R)) :: ("g", read(TexChan.G)) :: ("b", read(TexChan.B)) :: ("l", luma) ::
+                     ("p", Field.Un({ op = ShaderDoc.UnOp.Sat, of = Field.Time({ scale = 1.0, offset = k(0.0) }) })) :: Nil,
+          out = Out.Fill({ shade = Shade.Rgb({ r = channel("r", between(light#previous#r, light#current#r)),
+                                               g = channel("g", between(light#previous#g, light#current#g)),
+                                               b = channel("b", between(light#previous#b, light#current#b)) }),
+                           alpha = read(TexChan.A) }) }
 
     /// 1 つの形を濃さ alpha で描く。知らない名前・位置・表情と、まだ届いていない絵は描かない。
     // WhyNot: Doc の faces に無い表情を貼りに行かない — 未登録のテクスチャは GL では黒（0 番）が貼られ、黒い四角が出る。
@@ -273,7 +311,7 @@ mod Cast {
             let grow = if (r#size#y <= 0.0) 0.0 else breath / r#size#y;
             let swayed = { position = { x = r#position#x - r#size#x * grow / 2.0, y = r#position#y - breath },
                            size = { x = r#size#x * (1.0 + grow), y = r#size#y + breath } };
-            Render.shaderFill(pictureSpec(texture), swayed, 0.0, z) |> Render.overItem(Render.fade(alpha))
+            Render.shaderFill(pictureSpec(texture, env#light), swayed, env#light#progress, z) |> Render.overItem(Render.fade(alpha))
         }) |> Option.toList
 
     /// Doc の項目と置き場の矩形（知らない名前・位置・表情なら None）。
@@ -297,8 +335,15 @@ mod Cast {
 
     /// 層の全部を z に描く（消えていく物 → 人物 → 小物の順で、後ろほど手前）。
     pub def items(env: Env, layer: Layer, z: Int32): List[Render.PlacedItem] =
-        let going = (kind: Kind) -> layer#leaving |> List.filter(l -> l#kind == kind) |> List.flatMap(l ->
+        List.append(itemsOf(env, Kind.Character, layer, z), itemsOf(env, Kind.Prop, layer, z))
+
+    /// 層の kind の物だけを z に描く（消えていく物 → 出ている物）。
+    pub def itemsOf(env: Env, kind: Kind, layer: Layer, z: Int32): List[Render.PlacedItem] =
+        let going = layer#leaving |> List.filter(l -> l#kind == kind) |> List.flatMap(l ->
             figureItem(env, kind, l#figure, leavingAlphaOf(env#storyNow, l), z));
-        List.flatten(going(Kind.Character) :: (layer#cast |> List.flatMap(s -> shownItems(env, Kind.Character, s, z)))
-                     :: going(Kind.Prop) :: (layer#prop |> Option.map(s -> shownItems(env, Kind.Prop, s, z)) |> Option.getWithDefault(Nil)) :: Nil)
+        let shown = match kind {
+            case Kind.Character => layer#cast |> List.flatMap(s -> shownItems(env, Kind.Character, s, z))
+            case Kind.Prop      => layer#prop |> Option.map(s -> shownItems(env, Kind.Prop, s, z)) |> Option.getWithDefault(Nil)
+        };
+        List.append(going, shown)
 }
