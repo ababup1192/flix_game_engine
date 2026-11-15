@@ -57,8 +57,8 @@ mod ParityMain {
 
     /// frame-<n>.png（FRAME_SHOT の通し番号）を scene 名へ付け替える。番号は
     /// 「画面口 scene の宣言順 = 画面フレームの順」で決まる（他に画面へ描く物は無い）。
-    def renameFrames(): Unit \ IO =
-        Scenes.all()
+    def renameFrames(scenes: List[Scenes.Scene]): Unit \ IO =
+        scenes
             |> List.filter(sc -> sc#via == Scenes.ShotVia.ViaScreen)
             |> List.forEachWithIndex((i, sc) -> {
                 let src = new File("debug/gl/frame-${i + 1}.png");
@@ -182,26 +182,48 @@ mod ParityMain {
             ("[parity] ${pad(sc#name, 14)} 描いた数 ${Int32.toString(drawn)}（期待 ${Int32.toString(expected)}）${verdict}", ok)
         })
 
+    /// 環境変数 PARITY_SCENES（名前をコンマで並べた物）で選んだ scene（無ければ全部）。
+    /// PARITY_VIA_SCREEN=1 なら、ターゲット口の scene も画面口で撮る（GL のターゲットを直に読む口を通らない。WebGPU の描き手で流す時に置く）。
+    def selectedScenes(): List[Scenes.Scene] \ IO =
+        let wanted = envOf("PARITY_SCENES") |> Option.map(text -> String.split(regex = ",", text) |> List.map(String.trim) |> List.toSet);
+        let viaScreen = envOf("PARITY_VIA_SCREEN") == Some("1");
+        Scenes.all()
+            |> List.filter(sc -> Option.forAll(names -> Set.memberOf(sc#name, names), wanted))
+            |> List.map(sc -> if (viaScreen) { via = Scenes.ShotVia.ViaScreen | sc } else sc)
+
+    def envOf(name: String): Option[String] \ IO =
+        let value = System.getenv(name);
+        if (Object.isNull(value) or String.isEmpty(value)) None else Some(value)
+
     pub def go(): Unit \ IO =
         let exprInputs = ExprRows.inputs();
+        let scenes = selectedScenes();
+        // WhyNot: scene を選んだ時に式の行と正射影の箱を流さない — どちらも今の GL の文脈へ直に描くので、WebGPU の描き手の窓では描けない。
+        let narrowed = Option.nonEmpty(envOf("PARITY_SCENES"));
         let (counted, exprGl, orthoGl) = run {
             Platform.Diagnostics.setDiagnosticsEnabled(true);
-            let shot = Scenes.all() |> List.filterMap(sc -> glShootCounted(sc));
-            (shot, ExprRows.drawGl(exprInputs), OrthoBox.drawGl())
+            let shot = scenes |> List.filterMap(sc -> glShootCounted(sc));
+            if (narrowed) (shot, None, None) else (shot, Some(ExprRows.drawGl(exprInputs)), Some(OrthoBox.drawGl()))
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO;
-        renameFrames();
+        renameFrames(scenes);
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let cfg = cfgOf(atlas);
-        Scenes.all() |> List.forEach(sc -> softShoot(cfg, sc));
-        let outcomes = Scenes.all() |> List.map(sc ->
+        scenes |> List.forEach(sc -> softShoot(cfg, sc));
+        let outcomes = scenes |> List.map(sc ->
             (sc#exact, PixelDiff.compare(sc#name, "debug/gl/${sc#name}.png",
                 "debug/soft/${sc#name}.png", "debug/diff/${sc#name}.png")));
         List.forEach(eo -> { let (exact, o) = eo; println(line(exact, o)) }, outcomes);
-        Scenes.all() |> List.filter(is3d) |> List.forEach(sc -> println("[parity3d] ${sc#name}"));
+        scenes |> List.filter(is3d) |> List.forEach(sc -> println("[parity3d] ${sc#name}"));
         List.forEach(c -> println(fst(c)), counted);
-        let exprOk = ExprRows.report(exprInputs, exprGl);
-        let orthoOk = OrthoBox.report(orthoGl);
+        let exprOk = match exprGl {
+            case Some(gl) => ExprRows.report(exprInputs, gl)
+            case None     => true
+        };
+        let orthoOk = match orthoGl {
+            case Some(gl) => OrthoBox.report(gl)
+            case None     => true
+        };
         if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted) or not exprOk or not orthoOk) System.exit(1) else ()
 }
 

@@ -120,7 +120,8 @@ help:
 	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く・SCENE=field COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1 で物を並べた場面)"
 	@echo "  make webgpu-check         WebGPU の PC の実装 (Dawn) を Flix から通して描いて読み戻す門 (窓なし・2 プロセス・窓。NG で exit 1)"
-	@echo "  make webgpu-v1-check      WebGPU の 2D の描き手と GL の描き手をウィンドウなしで同じ場面に描いて画素を比べる (許す差は bench/webgpu_v1/tolerance.tsv。NG で exit 1)"
+	@echo "  make webgpu-v1-check      WebGPU の 2D の描き手の PC の門 (画面なしの比べ・実機の窓の 2 回・GL との pixel-diff・gl_parity の V1 の scene。NG で exit 1)"
+	@echo "  make webgpu-v1-check-web  同じ門のブラウザ版 (rpg-starter の ?capture を WebGL2・?backend=webgpu・WebGPU の無い頁で撮って比べる。NG で exit 1)"
 	@echo "  make webgpu-check-web     同じ門をブラウザの実装 (navigator.gpu) でヘッドレスの Chrome に流す (PC と同じ Flix のコード・canvas。NG で exit 1)"
 	@echo "  make webgpu-check-same    PC とブラウザの門を同じ機械で流し、三角形と firstInstance の絵の digest が同じかを比べる (違えば exit 1)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
@@ -364,12 +365,50 @@ gl-parity-cpu:
 webgpu-check:
 	@$(MAKE) -C bench/webgpu_check check run two window
 
-# WebGPU の 2D の描き手 (RenderPaint.Internal.WebGpuPaint) と GL の描き手 (GlOffscreen) を、ウィンドウを開かずに同じ場面で描いて画素を比べる (bench/webgpu_v1)。
-# 箱・スプライト・幕・放射の絵・字・Pass・生成の絵。許す差は bench/webgpu_v1/tolerance.tsv (既定 0・字は 2/255)。WebGPU の誤りの数と submit の数も見る。
-# 許す差を超えるか誤りがあれば exit 1。GPU の要る門なので CI には載せない。先に make sync-engine-full。
-.PHONY: webgpu-v1-check
+# WebGPU の 2D の描き手 (V1・plans/webgpu-v1.md の 8.1) の PC の門。順に:
+#   1. 画面なし: bench/webgpu_v1 で GlOffscreen と同じ場面を描いて比べる (箱・スプライト・幕・放射の絵・字・Pass・生成の絵。WebGPU の誤りの数と submit の数も見る)
+#   2. 実機の窓 (隠して起動): rpg-starter の title を --backend webgpu で 2 回撮り、SHA が同じ
+#   3. GL と WebGPU: 同じ場面を GLYPHS=used の GL でも撮り、bin/fge pixel-diff で比べる
+#   4. bench/gl_parity の V1 の scene を WebGPU で流し、SoftRaster と GL に比べる
+# 許す差は bench/webgpu_v1/tolerance.tsv (既定 0・字は 2/255)。どれかが落ちれば exit 1。GPU の要る門なので CI には載せない。先に make sync-engine-full。
+WEBGPU_V1_OUT := build/webgpu-v1
+WEBGPU_V1_TOL := bench/webgpu_v1/tolerance.tsv
+.PHONY: webgpu-v1-check webgpu-v1-check-web
 webgpu-v1-check:
 	@$(MAKE) -C bench/webgpu_v1 run
+	@rm -rf $(WEBGPU_V1_OUT)/w1 $(WEBGPU_V1_OUT)/w2 $(WEBGPU_V1_OUT)/gl
+	@bin/gl-capture.sh --backend webgpu $(WEBGPU_V1_OUT)/w1 templates/rpg-starter:title
+	@bin/gl-capture.sh --backend webgpu $(WEBGPU_V1_OUT)/w2 templates/rpg-starter:title
+	@bin/gl-capture.sh --compare $(WEBGPU_V1_OUT)/w1 $(WEBGPU_V1_OUT)/w2
+	@GLYPHS=used bin/gl-capture.sh $(WEBGPU_V1_OUT)/gl templates/rpg-starter:title
+	@bad=; for f in $(WEBGPU_V1_OUT)/gl/rpg-starter__title/frame-*.png; do n=$$(basename $$f .png); \
+		bin/fge pixel-diff $$f $(WEBGPU_V1_OUT)/w1/rpg-starter__title/$$n.png --name rpg-starter__title --tolerance $(WEBGPU_V1_TOL) \
+			--out $(WEBGPU_V1_OUT)/diff/title-$$n.png || bad="$$bad $$n"; \
+	done; [ -z "$$bad" ] || { echo "[webgpu-v1-check] GL と違う:$$bad"; exit 1; }
+	@$(MAKE) -C bench/gl_parity webgpu
+	@echo "[webgpu-v1-check] OK"
+
+# 同じ V1 の門のブラウザ版: rpg-starter を書き出し、web-capture の ?capture=6 を WebGL2・?backend=webgpu・WebGPU の無い頁
+# (navigator.gpu と GPU* の大域の名前を消した頁・bench/webgpu_v1/web/nogpu-head.html) で撮って比べる。
+# WebGPU の頁の renderer に webgpu: が無い・WebGPU の無い頁の renderer に webgpu: がある・WebGL2 の絵と違う、のどれかで exit 1。
+# PC の WebGPU (make webgpu-v1-check の w1) があれば、それとも比べる (alpha は見ない)。書き出しを省くなら WEB_EXPORT=off。先に make sync-engine-full-web。
+WEBGPU_V1_WEB := $(WEBGPU_V1_OUT)/web
+webgpu-v1-check-web:
+	@if [ "$(WEB_EXPORT)" != off ]; then bin/fge export-web templates/rpg-starter --out $(WEBGPU_V1_WEB)/rpg; fi
+	@page=$(WEBGPU_V1_WEB)/rpg; { sed -n 1,3p $$page/index.html; cat bench/webgpu_v1/web/nogpu-head.html; sed -n '4,$$p' $$page/index.html; } > $$page/nogpu.html
+	@set -e; for pair in "gl:index.html?capture=6" "webgpu:index.html?capture=6&backend=webgpu" "nogpu:nogpu.html?capture=6&backend=webgpu"; do \
+		name=$${pair%%:*}; url=$${pair#*:}; \
+		bin/fge web-capture "$$url" $(WEBGPU_V1_WEB)/$$name.png --dir $(WEBGPU_V1_WEB)/rpg --size 640x600 --wait 90 | tee $(WEBGPU_V1_WEB)/$$name.log; \
+	done
+	@grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/webgpu.log || { echo "[webgpu-v1-check-web] ?backend=webgpu の頁が WebGPU で描いていない"; exit 1; }
+	@! grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/nogpu.log || { echo "[webgpu-v1-check-web] WebGPU の無い頁が WebGPU で描いた"; exit 1; }
+	@bin/fge pixel-diff $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/webgpu.png --name rpg-starter__title --tolerance $(WEBGPU_V1_TOL) --out $(WEBGPU_V1_WEB)/diff-webgpu.png
+	@bin/fge pixel-diff $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/nogpu.png --name nogpu --out $(WEBGPU_V1_WEB)/diff-nogpu.png
+	@if [ -f $(WEBGPU_V1_OUT)/w1/rpg-starter__title/frame-6.png ]; then \
+		bin/fge pixel-diff $(WEBGPU_V1_WEB)/webgpu.png $(WEBGPU_V1_OUT)/w1/rpg-starter__title/frame-6.png --ignore-alpha \
+			--name rpg-starter__title-web-vs-pc --tolerance $(WEBGPU_V1_TOL) --out $(WEBGPU_V1_WEB)/diff-web-vs-pc.png; \
+	else echo "[webgpu-v1-check-web] PC の WebGPU の絵が無いので比べない (先に make webgpu-v1-check)"; fi
+	@echo "[webgpu-v1-check-web] OK"
 
 # 同じ門のブラウザ版 (navigator.gpu・TeaVM の JSO)。ウィンドウを使わない門を PC と同じ Flix のコード (bench/webgpu_check/src/Checks.flix) で
 # ヘッドレスの Chrome に流し、canvas の描き先も見る。結果の JSON は build/bench-web/webgpu_check.json。どれかが NG なら exit 1。

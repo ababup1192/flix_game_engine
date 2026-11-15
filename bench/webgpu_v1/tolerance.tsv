@@ -1,2 +1,4 @@
 # 場面	許す差（成分の差の最大・/255）	理由
 text	2	字の距離場の輪郭で fwidth の値が経路で違いうる
+rpg-starter__title	2	字のある画面（実測は 0）。字の距離場の輪郭で fwidth の値が経路で違いうる
+rpg-starter__title-web-vs-pc	1	ブラウザ（Chrome の Metal）と PC（Dawn）の WebGPU の丸め。GL どうし（ANGLE と CGL）でも同じ 22 px・±1
