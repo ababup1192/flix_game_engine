@@ -50,7 +50,7 @@
 # 環境変数: FGE_HEADLESS_FALLBACK=1 = jar を作れない時も flix run で続ける（既定は止める）。
 #           FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
 # （相対パスはここで絶対パスにする — jar は build/headless/proj へ移って作るため）。
-#           JAVA = jar を流す java（既定は PATH の java、無ければエンジンの devbox の java）。
+#           JAVA = jar を流す java（-version が通らなければ PATH の java・エンジンの devbox の java の順。bin/java-resolve.sh）。
 #           HEADLESS_JAVA_OPTS = java へ足す旗（既定の旗の後ろに付くので上書きできる。例: -Xss64m）。
 #           jar から流す時だけ効く（flix run へ回った時は bin/flix の旗のまま）。
 #           HEADLESS_LOCK_WAIT_SECONDS = jar を作る鍵を待つ上限の秒（既定 900。テストが短くする）。
@@ -482,10 +482,12 @@ if is_stale; then
 fi
 
 # java の旗は bin/flix と同じ（深い再帰のための -Xss32m・ヒープは物理メモリの 50%）。描き出しは窓を開かないので headless。
+. "$engine/bin/java-resolve.sh"
 java_cmd="${JAVA:-java}"
-if ! java_version_out="$("$java_cmd" -version 2>&1)"; then
-    java_cmd="$engine/.devbox/nix/profile/default/bin/java"
-    java_version_out="$("$java_cmd" -version 2>&1 || true)"
+java_version_out=""
+if fge_resolve_java "$engine"; then
+    java_cmd=$FGE_JAVA
+    java_version_out=$FGE_JAVA_VERSION_OUT
 fi
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
 # この旗を知らず起動しない。版は上の -version の出力から読み、JVM を別に起こさない（bin/flix と同じ）。

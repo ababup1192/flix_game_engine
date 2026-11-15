@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 )
 
 // EngineRepoURL はエンジンの repo（作り手専用の clone を作る元）。
@@ -36,8 +38,9 @@ type FlixJarVersion func(jar string) (string, error)
 var versionInOutput = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`)
 
 // JavaFlixJarVersion は java -jar <jar> --version で版を読む（リリースの check-bundle-flix と同じ確かめ方）。
+// java は jar を置いたエンジンの置き場（<engine>/bin/flix.jar）から決める。
 func JavaFlixJarVersion(jar string) (string, error) {
-	out, err := exec.Command("java", "-jar", jar, "--version").CombinedOutput()
+	out, err := exec.Command(javacmd.Resolve(filepath.Dir(filepath.Dir(jar))), "-jar", jar, "--version").CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("java -jar %s --version: %v", jar, err)
 	}

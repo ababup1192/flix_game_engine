@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
@@ -525,23 +526,9 @@ func isWithin(parent, child string) string {
 	return rel
 }
 
-// exportWebJava は java の呼び方（JAVA → PATH の動く java → engine の devbox の jdk）。
-// WhyNot: PATH の java だけにしないのは、macOS の /usr/bin/java が jdk の無い入口で、起こすと止まるため。
+// exportWebJava は java の呼び方（javacmd.Resolve: JAVA → PATH の動く java → engine の devbox の jdk → main の checkout の物）。
 func exportWebJava(engine string) string {
-	if j := os.Getenv("JAVA"); j != "" {
-		return j
-	}
-	if exec.Command("java", "-version").Run() == nil {
-		return "java"
-	}
-	name := "java"
-	if os.PathSeparator == '\\' {
-		name = "java.exe"
-	}
-	if devbox := filepath.Join(engine, ".devbox", "nix", "profile", "default", "bin", name); fileExists(devbox) {
-		return devbox
-	}
-	return "java"
+	return javacmd.Resolve(engine)
 }
 
 // prepareExportProject は作業フォルダの project/ を作り直し、ゲーム・WebMain・engine_full_web を置く。

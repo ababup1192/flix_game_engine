@@ -3,14 +3,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/checkd"
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 	"github.com/ababup1192/flix_game_engine/go/internal/refactorhost"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 	"github.com/ababup1192/flixlint/go/refactor"
@@ -35,7 +39,26 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	}
 	useEngineFlixlint(root, rest)
 	useEngineJava(engineDirOf(repoRoot()))
-	return refactor.Run(out, errOut, root, rest, refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)})
+	opts := refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)}
+	q, ok := parseTreeQuery(rest)
+	trees, notes := refactorTrees(root)
+	if !ok || (len(trees) == 0 && len(notes) == 0) {
+		return refactor.Run(out, errOut, root, rest, opts)
+	}
+	runRoot := func(rest []string) (string, string, int) {
+		var o, e strings.Builder
+		code := refactor.Run(&o, &e, root, rest, opts)
+		return o.String(), e.String(), code
+	}
+	r := treeRefactor{
+		runRoot:  runRoot,
+		gate:     treeGate{path: filepath.Join(root, "build", "refactor", "trees-skip.json"), stamp: treeStamp, run: runTreeRefactor, mu: &sync.Mutex{}},
+		readRows: readTreeRows,
+		lastUsage: func(since time.Time) (io.ReadCloser, error) {
+			return openFresh(filepath.Join(root, "build", "refactor", "last-usages.txt"), since)
+		},
+	}
+	return r.run(out, errOut, rest, asJSON, q, trees, notes)
 }
 
 // useEngineFlixlint は、ゲームが flixlint を名指ししていない時（submodule・--flixlint・FGE_FLIXLINT・FLIXLINT_BIN・
@@ -84,7 +107,7 @@ func localNamesFlixlint(root string) bool {
 // WhyNot: flixlint へ java のパスを渡す口は無く、flixlint は PATH の java で常駐を起こす。macOS の /usr/bin/java は
 // jdk の無い入口なので、engine の外（ゲーム・templates/*）で流すと索引を作れずに止まっていた。
 func useEngineJava(engine string) {
-	if exec.Command("java", "-version").Run() == nil {
+	if javacmd.PathWorks() {
 		return
 	}
 	if path, ok := pathWithEngineJava(os.Getenv("PATH"), engine); ok {
@@ -101,10 +124,10 @@ func engineDirOf(root string) string {
 	return root
 }
 
-// pathWithEngineJava は engine の devbox の java がある時だけ、その bin を先頭に足した PATH を返す。
+// pathWithEngineJava は devbox の java がある時だけ（javacmd.DevboxBin）、その bin を先頭に足した PATH を返す。
 func pathWithEngineJava(path, engine string) (string, bool) {
-	bin := filepath.Join(engine, ".devbox", "nix", "profile", "default", "bin")
-	if _, err := os.Stat(filepath.Join(bin, "java")); err != nil {
+	bin := javacmd.DevboxBin(engine)
+	if bin == "" {
 		return path, false
 	}
 	if path == "" {

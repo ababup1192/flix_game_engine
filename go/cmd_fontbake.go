@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/fontbake"
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
@@ -213,15 +214,7 @@ func newFontBakeRunner(game string) (fontbake.Runner, error) {
 	if flixJar == "" {
 		return fontbake.Runner{}, fmt.Errorf("flix.jar が見つからない（engine の bin/flix.jar を置くか FLIX_JAR で名指す）")
 	}
-	java := os.Getenv("JAVA")
-	if java == "" {
-		if exec.Command("java", "-version").Run() == nil {
-			java = "java"
-		} else {
-			java = filepath.Join(engine, ".devbox", "nix", "profile", "default", "bin", "java")
-		}
-	}
-	return fontbake.Runner{GameDir: game, FlixJar: flixJar, Java: java, Log: os.Stderr}, nil
+	return fontbake.Runner{GameDir: game, FlixJar: flixJar, Java: javacmd.Resolve(engine), Log: os.Stderr}, nil
 }
 
 func writeFontsManifest(outDir string, atlases []*fontbake.Atlas, charset int) error {

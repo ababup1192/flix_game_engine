@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/jarshare"
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 	"github.com/ababup1192/flix_game_engine/go/internal/resident"
 )
 
@@ -278,6 +279,14 @@ func jarInputs(verb, dir string, flags map[string]string) (jarshare.Inputs, erro
 	return jarshare.Inputs{Source: source, Dispatcher: string(dispatcher), FlixJarSHA: flixSHA, Revision: flags["--revision"]}, nil
 }
 
+// toolPath は tool のパス。java は javacmd.Resolve（PATH の /usr/bin/java の入口を掴まない）。
+func toolPath(tool string) (string, error) {
+	if tool != "java" {
+		return exec.LookPath(tool)
+	}
+	return exec.LookPath(javacmd.Resolve(engineDirOf(repoRoot())))
+}
+
 // launchdPath は作り手の PATH。今 git・gh・java がいるフォルダと、OS の決まったフォルダだけを並べる。
 //
 // WhyNot: 今の PATH を丸ごと写さない — 会話ごとの一時のフォルダやエージェントの作業場が入っていて、それが消えると
@@ -293,7 +302,7 @@ func launchdPath() string {
 	}
 	// go と make は、作り手がエンジンの置き場を用意する時（--engine-repo）に fge-go を組むのに使う。
 	for _, tool := range []string{"git", "gh", "java", "go", "make"} {
-		if p, err := exec.LookPath(tool); err == nil {
+		if p, err := toolPath(tool); err == nil {
 			// symlink は先を辿る（作業場の .devbox の profile は、作業場を消すと無くなる。先の nix store は残る）。
 			if real, err := filepath.EvalSymlinks(p); err == nil {
 				p = real

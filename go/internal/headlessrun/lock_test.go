@@ -23,7 +23,7 @@ func write(t *testing.T, path, body string, mode os.FileMode) {
 	}
 }
 
-// fakeGame は、headless-run の写しを持つエンジンと、入口 1 つのゲームを作ってゲームの根を返す。
+// fakeGame は、headless-run（と読み込む java-resolve.sh）の写しを持つエンジンと、入口 1 つのゲームを作ってゲームの根を返す。
 // 偽の flix は build-fatjar で artifact/ に小さな jar を置くだけ（コンパイルしない）。
 // エンジンに bin/fge-go を置かないので、jar が古いかは更新時刻で決まり、段 1・段 2 の分け合いも動かない。
 func fakeGame(t *testing.T) string {
@@ -34,6 +34,11 @@ func fakeGame(t *testing.T) string {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(root, "engine", "bin", "headless-run"), string(script), 0o755)
+	resolve, err := os.ReadFile(filepath.Join(repoRoot(), "bin", "java-resolve.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "engine", "bin", "java-resolve.sh"), string(resolve), 0o644)
 	write(t, filepath.Join(root, "fakeflix"), "#!/bin/sh\n[ \"$1\" = build-fatjar ] || exit 1\nmkdir -p artifact\necho jar > artifact/game.jar\n", 0o755)
 	game := filepath.Join(root, "game")
 	write(t, filepath.Join(game, "flix.toml"), "[package]\nname = \"game\"\n", 0o644)

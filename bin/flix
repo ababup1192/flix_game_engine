@@ -69,8 +69,10 @@ done < <(type -aP flix)
 # devbox シェルの外 (素のターミナル・Studio の .app 等) では PATH に flix が居ない。
 # engine 自身の devbox profile から直接借りる — new-game で産まれたゲームの
 # make check が「シェルの入り方」で失敗しないように。
+. "$SCRIPT_DIR/java-resolve.sh"
 if [ -z "$FLIX_JAR" ]; then
-    for prof in "$PROJECT_ROOT/.devbox/nix/profile/default/bin/flix"; do
+    while IFS= read -r prof_bin; do
+        prof="$prof_bin/flix"
         real="$(readlink -f "$prof" 2>/dev/null)"
         case "$real" in
             /nix/store/*)
@@ -78,7 +80,9 @@ if [ -z "$FLIX_JAR" ]; then
                 if [ -f "$jar" ]; then FLIX_JAR="$jar"; break; fi
                 ;;
         esac
-    done
+    done <<FGE_BINS
+$(fge_devbox_bins "$PROJECT_ROOT")
+FGE_BINS
 fi
 
 # nix が無ければ手動配置の bin/flix.jar にフォールバック。
@@ -102,14 +106,12 @@ fi
 # 居るかどうか (command -v) では見ないのは、macOS には必ず /usr/bin/java という
 # 「Java を入れてください」と言うだけのスタブが居て、本物と見分けが付かないため。
 # Studio の .app から起こした make は PATH が /usr/bin:/bin:... しか無く、必ずこれを掴む。
-JAVA_CMD="java"
-if ! JAVA_VERSION_OUT="$("$JAVA_CMD" -version 2>&1)"; then
-    JAVA_CMD="$PROJECT_ROOT/.devbox/nix/profile/default/bin/java"
-    if ! JAVA_VERSION_OUT="$("$JAVA_CMD" -version 2>&1)"; then
-        echo "java が見つかりません。devbox shell に入るか、PATH に JDK を通してください。" >&2
-        exit 127
-    fi
+if ! fge_resolve_java "$PROJECT_ROOT"; then
+    echo "java が見つかりません。devbox shell に入るか、PATH に JDK を通してください（JAVA で名指しもできる）。" >&2
+    exit 127
 fi
+JAVA_CMD=$FGE_JAVA
+JAVA_VERSION_OUT=$FGE_JAVA_VERSION_OUT
 # WhyNot: --sun-misc-unsafe-memory-access を無条件に付けない — JDK 22 以前（Studio が同梱する 21 も）は
 # この旗を知らず起動しない。LWJGL の sun.misc.Unsafe の警告が出るのは 24 からなので 24 で切る。
 # 版は上の -version の出力から読む。release ファイルや java -XshowSettings を別に起こすと、

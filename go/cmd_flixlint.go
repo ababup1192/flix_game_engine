@@ -9,6 +9,7 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/checkd"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
+	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 )
 
 // make lint-flixlint の下ごしらえ: flixlint の本体 (bin/flixlint と規則の engine) と shim の jar を、hooks.json の
@@ -27,7 +28,7 @@ func init() {
 			}
 			fmt.Fprintf(out, "FLIXLINT_DIR='%s'\nFLIXLINT_SHIM='%s'\n", dir, shim)
 			// WhyNot: flixlint へ java のパスを渡す口は無いので、PATH の java が動かない時は engine の devbox の jdk を前に足させる。
-			if exec.Command("java", "-version").Run() != nil {
+			if !javacmd.PathWorks() {
 				if path, ok := pathWithEngineJava(os.Getenv("PATH"), engineDirOf(repoRoot())); ok {
 					fmt.Fprintf(out, "PATH='%s'\n", path)
 				}
