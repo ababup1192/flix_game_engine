@@ -71,6 +71,9 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 		return nil, nil, err
 	}
 	v.Commands = commands
+	if head.Version > vocabVersionTwo {
+		return nil, nil, fmt.Errorf("語彙の版 %d を知らない（読めるのは 1 と 2。bin/fge を新しくする）", head.Version)
+	}
 	if head.Version < vocabVersionTwo {
 		for _, f := range []struct {
 			raw json.RawMessage
@@ -84,7 +87,7 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 		}
 		return v, nil, nil
 	}
-	r := &docReader{dir: filepath.Dir(vocabPath), root: root, cache: map[string]any{}}
+	r := &docReader{dir: filepath.Dir(vocabPath), root: root, cache: map[string]any{}, texts: map[string]string{}, failed: map[string]error{}}
 	var notes []string
 	for _, f := range []struct {
 		key  string
@@ -105,12 +108,12 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 			v.skip[f.key] = true
 			continue
 		}
-		fs, note, err := r.collect(f.key, f.raw)
+		fs, more, skip, err := r.collect(f.key, f.raw)
 		if err != nil {
 			return nil, nil, err
 		}
-		if note != "" {
-			notes = append(notes, note)
+		notes = append(notes, more...)
+		if skip {
 			v.skip[f.key] = true
 			continue
 		}
@@ -166,6 +169,7 @@ type docReader struct {
 	dir, root string
 	cache     map[string]any
 	texts     map[string]string
+	failed    map[string]error
 }
 
 type fromEntry struct {
@@ -174,79 +178,113 @@ type fromEntry struct {
 	Path *string `json:"path"`
 }
 
-// collect は欄 1 つの名前を集める。Doc を読めない時は note に 1 行（欄の検査を飛ばす合図）、
-// 欄の書き方そのものの誤りは err（語彙が壊れているのと同じく止める）。
-func (r *docReader) collect(key string, raw json.RawMessage) ([]found, string, error) {
+// collect は欄 1 つの名前を集める。Doc を読めない時と from が名前を 1 つも拾わない時は notes に 1 行ずつ
+// （欄の検査を飛ばす合図。読めない Doc は最初の欄でだけ言う）、欄の書き方そのものの誤りは err（語彙が壊れているのと同じく止める）。
+func (r *docReader) collect(key string, raw json.RawMessage) ([]found, []string, bool, error) {
 	var direct []string
 	if json.Unmarshal(raw, &direct) == nil {
 		out := make([]found, 0, len(direct))
 		for _, n := range direct {
 			out = append(out, found{name: n, label: n})
 		}
-		return out, "", nil
+		return out, nil, false, nil
 	}
 	var section struct {
 		From []fromEntry `json:"from"`
 	}
 	if err := json.Unmarshal(raw, &section); err != nil || len(section.From) == 0 {
-		return nil, "", fmt.Errorf("語彙の %s は名前の配列か {\"from\": [{\"doc\": …, \"keys\" か \"path\": …}]} で書く", key)
+		return nil, nil, false, fmt.Errorf("語彙の %s は名前の配列か {\"from\": [{\"doc\": …, \"keys\" か \"path\": …}]} で書く", key)
 	}
 	var out []found
+	var notes []string
+	skip := false
 	for _, e := range section.From {
 		if e.Doc == "" || (e.Keys == nil) == (e.Path == nil) {
-			return nil, "", fmt.Errorf("語彙の %s の from は doc と、keys か path のどちらか 1 つを書く", key)
+			return nil, nil, false, fmt.Errorf("語彙の %s の from は doc と、keys か path のどちらか 1 つを書く", key)
 		}
 		docPath := filepath.Join(r.dir, filepath.FromSlash(e.Doc))
-		doc, err := r.load(docPath)
-		if err != nil {
-			return nil, fmt.Sprintf("注意: 語彙の %s の Doc %s を読めない（%v）— %s の検査を飛ばす", key, rel(r.root, docPath), err, key), nil
-		}
 		docRel := rel(r.root, docPath)
-		if e.Path != nil {
-			for _, x := range selectPath(doc, *e.Path) {
-				if s, ok := x.(string); ok && s != "" {
-					out = append(out, found{name: s, label: s, doc: docRel, line: r.lineOf(docPath, s)})
-				}
+		doc, first, err := r.load(docPath)
+		if err != nil {
+			if first {
+				notes = append(notes, fmt.Sprintf("注意: 語彙の from の Doc %s を読めない（%v）— その Doc を見る欄（%s ほか）の検査を飛ばす", docRel, err, key))
 			}
+			skip = true
 			continue
 		}
-		for _, x := range selectPath(doc, *e.Keys) {
-			obj, ok := x.(map[string]any)
-			if !ok {
-				continue
-			}
-			names := make([]string, 0, len(obj))
-			for k := range obj {
-				names = append(names, k)
-			}
-			sort.Strings(names)
-			for _, k := range names {
-				label, _ := obj[k].(string)
-				out = append(out, found{name: k, label: label, doc: docRel, line: r.lineOf(docPath, k)})
-			}
+		var got []found
+		var where string
+		if e.Path != nil {
+			where = *e.Path
+			got = r.stringsAt(doc, where, docPath, docRel)
+		} else {
+			where = *e.Keys
+			got = r.keysAt(doc, where, docPath, docRel)
 		}
+		if len(got) == 0 {
+			notes = append(notes, fmt.Sprintf("注意: 語彙の %s の from（%s の %s）が名前を 1 つも拾わない — %s の検査を飛ばす（綴りを確かめる）", key, docRel, where, key))
+			skip = true
+			continue
+		}
+		out = append(out, got...)
 	}
-	return out, "", nil
+	return out, notes, skip, nil
 }
 
-func (r *docReader) load(path string) (any, error) {
+// stringsAt は path の先の文字列の全部。
+func (r *docReader) stringsAt(doc any, path, docPath, docRel string) []found {
+	var out []found
+	for _, x := range selectPath(doc, path) {
+		if s, ok := x.(string); ok && s != "" {
+			out = append(out, found{name: s, label: s, doc: docRel, line: r.lineOf(docPath, s)})
+		}
+	}
+	return out
+}
+
+// keysAt は path の先の object の鍵の全部（値が文字列なら表示名）。
+func (r *docReader) keysAt(doc any, path, docPath, docRel string) []found {
+	var out []found
+	for _, x := range selectPath(doc, path) {
+		obj, ok := x.(map[string]any)
+		if !ok {
+			continue
+		}
+		names := make([]string, 0, len(obj))
+		for k := range obj {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			label, _ := obj[k].(string)
+			out = append(out, found{name: k, label: label, doc: docRel, line: r.lineOf(docPath, k)})
+		}
+	}
+	return out
+}
+
+// load は Doc を読む（読めた物も読めなかった物も覚える）。first は読めない事をこの呼び出しで初めて知ったか。
+func (r *docReader) load(path string) (any, bool, error) {
 	if doc, ok := r.cache[path]; ok {
-		return doc, nil
+		return doc, false, nil
+	}
+	if err, ok := r.failed[path]; ok {
+		return nil, false, err
 	}
 	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("無い")
+	if err == nil {
+		var doc any
+		if err = json.Unmarshal(data, &doc); err == nil {
+			r.cache[path] = doc
+			r.texts[path] = string(data)
+			return doc, false, nil
+		}
+		err = fmt.Errorf("JSON が壊れている: %v", err)
+	} else {
+		err = fmt.Errorf("無い")
 	}
-	var doc any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("JSON が壊れている: %v", err)
-	}
-	r.cache[path] = doc
-	if r.texts == nil {
-		r.texts = map[string]string{}
-	}
-	r.texts[path] = string(data)
-	return doc, nil
+	r.failed[path] = err
+	return nil, true, err
 }
 
 // lineOf は Doc の中で "name" と書いた最初の行（見つからなければ 1）。

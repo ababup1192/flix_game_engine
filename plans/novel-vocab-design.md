@@ -72,6 +72,11 @@
 - `vars`: 名前の無い変数（`<<declare>>` と `$x` に出てくる物）は `yarn check` で知らせる（止めない）。`yarn graph`・テープの状態の表・分岐の式・読み台本の条件は、表示名を主に出し `$名前` を小さく添える（下書き 3.19）。表示名の正は Doc で、go もテンプレートの TapeOut も同じ Doc を読む。
 - v1（文字列の配列）もそのまま読む。ゲームは N4 の後まで v1 のまま動く。
 - `vocab.json` が変わるのはコマンドの表（コード）を変えた時だけになる。その時はどうせ Flix を走らせている。
+- **N1 で入れた形（実装 d513c2ef と 1 回目のレビューの直し）**:
+  - `commands` は N1 では中身の空な object（`{"bg": {}, …}`）。引数の表（3.3）は N2 で中を埋める。go は配列と object の両方を読む。
+  - `from` が名前を 1 つも拾わない時（`path`・`keys` の綴り違い）は 1 行言ってその欄を飛ばす。読めない Doc は Doc 1 つに 1 行。`nodes` が空なら届かないノードの知らせを流さない。版 3 以上の語彙は止める。
+  - **N1 では未着手・N2 でやる**: 引数の `ref`（Doc の鍵を引数の名前に照らす）と、`DocsOf`（`yarn check <Doc>` の逆引き）が `ref` の Doc も読む所。
+  - **N1 では未着手・N2 でやる**: 変数の表示名を `yarn graph`・テープ（TapeOut の状態の表）・読み台本に出す所。N1 は go の知らせ（表示名の無い変数）と、テンプレートのテスト（全部の変数に表示名がある）まで。
 
 ### 2.3 門（コミット前の検査）
 
@@ -377,10 +382,10 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 
 | # | 段 | 中身 | 見積もり |
 |---|---|---|---|
-| 1 | N1 | go の vocab v2 の `from`・`nodeRefs`・`vars`・story.json の opening と vars・Talk の enum を消す・precommit の when と yarn check の Doc のパス | 3〜4 時間 |
+| 1 | N1 | go の vocab v2 の `from`・`nodeRefs`・`vars`・story.json の opening と vars・Talk の enum を消す・precommit の when と yarn check の Doc のパス（済。`ref` の逆引きと変数の表示名を出す所は N1 では未着手・段 4 でやる） | 3〜4 時間 |
 | 2 | N1 | novel.shots.json と schema・Shots を Doc で組む・SceneRender が Doc の名前を引く。絵が同じ事を SHA で確かめる | 3〜4 時間 |
 | 3 | N2 | engine_world の `YarnCommands` と `Curve.Ease`（EcsTween への写しの関数まで） | 3〜4 時間 |
-| 4 | N2 | go の引数の検査・`"…"`・ref・共通の見本 | 3〜4 時間 |
+| 4 | N2 | go の引数の検査・`"…"`・ref・共通の見本。N1 から持ち越し: `DocsOf` が `ref` の Doc も読む・変数の表示名を yarn graph と TapeOut に出す | 3〜4 時間 |
 | 5 | N2 | テンプレートの `PropertyTween`（delay・settle・JSON） | 2 時間 |
 | 6 | N2 | テンプレートの `Commands` 表・Ctx・Out・10 個を語彙 19 の名前で・台本の書き直し・GameCommands/GameView の口・早見表と docs とスキルの書き方。絵が同じ事を確かめる | 6〜7 時間 |
 | 7 | N3 | Snapshot と頁を持つ Mark v3・v2 の読み替え・restore の置き換え・頁と舞台の JSON・entryOf（上限・作り直し）・TestCast を広げる | 4〜5 時間（restore と頁はスパイクで形が決まった） |

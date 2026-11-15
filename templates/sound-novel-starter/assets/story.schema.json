@@ -4,7 +4,8 @@
   "description": "シナリオの外で画面に出す言葉と話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn。",
   "type": "object",
   "required": [
-    "version"
+    "version",
+    "opening"
   ],
   "properties": {
     "version": {

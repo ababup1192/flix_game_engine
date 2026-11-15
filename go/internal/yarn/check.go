@@ -169,7 +169,7 @@ func UnnamedVars(prog *Program, vocab *Vocab) []Problem {
 
 // Unreached はコードも jump も開かないノード（止めずに知らせるだけ）。
 func Unreached(prog *Program, vocab *Vocab) []Problem {
-	if vocab == nil || vocab.skip["nodes"] {
+	if vocab == nil || vocab.skip["nodes"] || len(vocab.Nodes) == 0 {
 		return nil
 	}
 	opened := setOf(vocab.Nodes)

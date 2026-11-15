@@ -2,7 +2,7 @@
 // 文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
 // 言葉は Label の enum を鍵に引く（鍵の綴りと既定の言葉の正は entryOf。Doc に無い鍵は既定の言葉で出す = fail-open）。
 mod StoryDoc {
-    use fge::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec, Log}
     use Util.Json.Json
 
     /// シナリオの外で画面に出す言葉の鍵。
@@ -248,10 +248,17 @@ mod StoryDoc {
                   titlePhoto = JsonCodec.stringOr("titlePhoto", d#titlePhoto, root),
                   titleGrade = JsonCodec.stringOr("titleGrade", d#titleGrade, root),
                   titleAmbience = JsonCodec.stringOr("titleAmbience", d#titleAmbience, root),
-                  opening = JsonCodec.stringOr("opening", d#opening, root),
+                  opening = openingIn(d#opening, root),
                   names = strings("names"),
                   vars = strings("vars"),
                   labels = strings("labels") })
+
+    /// opening（無い・文字列でない時は 1 行言って既定のノード。go の build はこの欄が無いと最初のノードを照らせない）。
+    def openingIn(fallback: String, root: Map[String, Json]): String =
+        match Map.get("opening", root) |> Option.flatMap(JsonCodec.expectString) {
+            case Some(node) => node
+            case None       => Log.fellBackThen("story", "${path()} の opening", fallback, "「はじめから」で開くノードが書いてない", fallback)
+        }
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =

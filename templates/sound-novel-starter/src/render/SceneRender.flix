@@ -161,16 +161,20 @@ mod SceneRender {
         let small = smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Landscape(Display.SizeClass.Small)));
         let portrait = portraitShots() |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
         List.flatten(regular :: variant :: small :: portrait :: Nil) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, look) ->
-            let res = resFor(name, loaded);
-            match worldOf(scene, res) {
-                case Some(w) =>
-                    let path = shootAs(look, res, cfg, w, name);
-                    App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
-                    Some(path)
-                case None =>
-                    println("[render] ${name} を飛ばす: 場面 '${scene}' を組めない（${ShotsDoc.path()} に無いか、読めない）");
-                    None
-            })
+            shootNamed(outDir, cfg, loaded, name, scene, look))
+
+    /// 描き出しの名前 name を、場面 scene の World と look の画面で描く。場面を組めなければ 1 行言って飛ばす。
+    def shootNamed(outDir: String, cfg: HeadlessRender.RenderConfig, loaded: Res.Res, name: String, scene: String, look: Look): Option[String] \ IO =
+        let res = resFor(name, loaded);
+        match worldOf(scene, res) {
+            case Some(w) =>
+                let path = shootAs(look, res, cfg, w, name);
+                App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
+                Some(path)
+            case None =>
+                println("[render] ${name} を飛ばす: 場面 '${scene}' を組めない（${ShotsDoc.path()} に無いか、読めない）");
+                None
+        }
 
     def shoot(res: Res.Res, cfg: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
         shootAs(Look.Landscape(Display.SizeClass.Large), res, cfg, w, name)

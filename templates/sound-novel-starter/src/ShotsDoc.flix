@@ -57,12 +57,25 @@ mod ShotsDoc {
         DocJson.decodeObject(fromRoot, text)
 
     /// 場面の行ごとの読めた物と読めない理由（(どの場面か, 理由)）。fromJson は読めない行を 1 行言って飛ばす。
+    /// 同じ名前の 2 つ目からは読めない行にする（SHOT=<名前> で引けるのは 1 つだけ）。
     pub def rowsOf(text: String): Option[List[Result[(String, String), Shot]]] =
         DocJson.decodeObject(decodeRows, text)
 
     def decodeRows(root: Map[String, Json]): List[Result[(String, String), Shot]] =
-        Map.get("shots", root) |> Option.flatMap(JsonCodec.decodeList(Some)) |> Option.getWithDefault(Nil)
-            |> List.mapWithIndex((i, row) -> decodeShot(i, row))
+        let rows = Map.get("shots", root) |> Option.flatMap(JsonCodec.decodeList(Some)) |> Option.getWithDefault(Nil)
+            |> List.mapWithIndex((i, row) -> decodeShot(i, row));
+        let (_, checked) = rows |> List.foldLeft((state, r) -> {
+            let (seen, acc) = state;
+            let (nextSeen, row) = markRepeated(seen, r);
+            (nextSeen, row :: acc)
+        }, (Set.empty(), Nil));
+        List.reverse(checked)
+
+    def markRepeated(seen: Set[String], r: Result[(String, String), Shot]): (Set[String], Result[(String, String), Shot]) = match r {
+        case Ok(shot) if Set.memberOf(shot#name, seen) => (seen, Err((shot#name, "同じ名前の場面が前にある")))
+        case Ok(shot)                                  => (Set.insert(shot#name, seen), r)
+        case Err(_)                                    => (seen, r)
+    }
 
     def fromRoot(root: Map[String, Json]): Doc =
         Doc.Doc({ version = JsonCodec.intOr("version", 1, root),
@@ -73,22 +86,42 @@ mod ShotsDoc {
         case Err((which, reason)) => Log.fellBackThen("shots", "${path()} の ${which}", "その場面を飛ばす", reason, None)
     }
 
-    /// i 番目（0 から）の行の場面。読めない時は (どの場面か, 理由)。
+    /// i 番目（0 から）の行の場面。読めない時（欄の型の違いも）は (どの場面か, 理由)。
     def decodeShot(i: Int32, row: Json): Result[(String, String), Shot] =
         let which = "shots[${i}]";
         forM (
-            obj    <- JsonCodec.expectObject(row) |> Option.toOk((which, "object でない"));
-            name   <- stringAt("name", obj) |> Option.filter(n -> not String.isEmpty(n)) |> Option.toOk((which, "name が無い"));
-            place  <- placeOf(obj) |> Result.mapErr(reason -> (name, reason));
-            open   <- openOf(obj) |> Result.mapErr(reason -> (name, reason))
+            obj     <- JsonCodec.expectObject(row) |> Option.toOk((which, "object でない"));
+            name    <- stringAt("name", obj) |> Option.filter(n -> not String.isEmpty(n)) |> Option.toOk((which, "name が無い"));
+            node    <- optional("node", JsonCodec.expectString, "文字列", obj) |> Result.mapErr(reason -> (name, reason));
+            place   <- placeOf(obj) |> Result.mapErr(reason -> (name, reason));
+            open    <- openOf(obj) |> Result.mapErr(reason -> (name, reason));
+            vars    <- optional("vars", JsonCodec.decodeStringMap(scalarText), "名前 → 文字・数・真偽の object", obj) |> Result.mapErr(reason -> (name, reason));
+            pointer <- optional("pointer", j -> JsonCodec.decodeList(JsonCodec.expectFloat, j) |> Option.flatMap(pointOf), "[x, y] の数 2 つ", obj) |> Result.mapErr(reason -> (name, reason));
+            at      <- Map.get("at", obj) |> Option.flatMap(JsonCodec.expectFloat) |> Option.toOk((name, "at（時計を据える秒の数）が無い"))
         ) yield {
             name = name,
-            node = stringAt("node", obj),
+            node = node,
             place = place,
-            vars = Map.get("vars", obj) |> Option.flatMap(JsonCodec.decodeStringMap(JsonCodec.expectString)) |> Option.getWithDefault(Map.empty()),
+            vars = Option.getWithDefault(Map.empty(), vars),
             open = open,
-            pointer = Map.get("pointer", obj) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat)) |> Option.flatMap(pointOf),
-            at = JsonCodec.floatOr("at", 0.0, obj)
+            pointer = pointer,
+            at = at
+        }
+
+    /// 無ければ None、有って decode が読めなければ「key は what で書く」。
+    def optional(key: String, decode: Json -> Option[a], what: String, obj: Map[String, Json]): Result[String, Option[a]] =
+        match Map.get(key, obj) {
+            case None    => Ok(None)
+            case Some(j) => decode(j) |> Option.map(Some) |> Option.toOk("${key} は ${what} で書く")
+        }
+
+    /// 変数の値の字（YarnStorage.withArgs が宣言の型で読み直す。数と真偽はそのまま字にする）。
+    def scalarText(j: Json): Option[String] =
+        match (JsonCodec.expectString(j), JsonCodec.expectBool(j), JsonCodec.expectFloat(j)) {
+            case (Some(text), _, _)  => Some(text)
+            case (_, Some(b), _)     => Some(if (b) "true" else "false")
+            case (_, _, Some(x))     => Some(Float64.toString(x))
+            case _                   => None
         }
 
     def stringAt(key: String, obj: Map[String, Json]): Option[String] = Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString)
@@ -99,18 +132,32 @@ mod ShotsDoc {
     }
 
     def placeOf(obj: Map[String, Json]): Result[String, Place] =
-        let say = Map.get("say", obj) |> Option.flatMap(JsonCodec.expectInt);
-        match (say, stringAt("until", obj)) {
-            case (Some(_), Some(_))         => Err("say と until は片方だけ書く")
-            case (Some(n), None)            => Ok(Place.NthSay(n))
-            case (None, Some("choices"))    => Ok(Place.ToChoices)
-            case (None, Some(other))        => Err("until の '${other}' を知らない（choices だけ）")
-            case (None, None)               => Ok(Place.Head)
-        }
+        forM (
+            say   <- optional("say", sayIndex, "0 以上の整数", obj);
+            until <- optional("until", JsonCodec.expectString, "文字列", obj);
+            place <- placeFrom(say, until)
+        ) yield place
 
-    def openOf(obj: Map[String, Json]): Result[String, Option[Screen]] = match stringAt("open", obj) {
-        case None         => Ok(None)
-        case Some(word)   => screenOf(word) |> Option.map(Some) |> Option.toOk("open の '${word}' を知らない（${String.intercalate("・", screenWords())}）")
+    def sayIndex(j: Json): Option[Int32] =
+        JsonCodec.expectFloat(j) |> Option.filter(x -> x >= 0.0 and Float64.floor(x) == x) |> Option.flatMap(Float64.tryToInt32)
+
+    def placeFrom(say: Option[Int32], until: Option[String]): Result[String, Place] = match (say, until) {
+        case (Some(_), Some(_))      => Err("say と until は片方だけ書く")
+        case (Some(n), None)         => Ok(Place.NthSay(n))
+        case (None, Some("choices")) => Ok(Place.ToChoices)
+        case (None, Some(other))     => Err("until の '${other}' を知らない（choices だけ）")
+        case (None, None)            => Ok(Place.Head)
+    }
+
+    def openOf(obj: Map[String, Json]): Result[String, Option[Screen]] =
+        forM (
+            word   <- optional("open", JsonCodec.expectString, "文字列", obj);
+            screen <- screenOfWord(word)
+        ) yield screen
+
+    def screenOfWord(word: Option[String]): Result[String, Option[Screen]] = match word {
+        case None    => Ok(None)
+        case Some(w) => screenOf(w) |> Option.map(Some) |> Option.toOk("open の '${w}' を知らない（${String.intercalate("・", screenWords())}）")
     }
 
     def screenWords(): List[String] = "title" :: "log" :: "save" :: "load" :: "settings" :: "ask" :: "credits" :: "hold" :: Nil

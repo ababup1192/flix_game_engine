@@ -153,15 +153,24 @@ mod TestDocs {
 
     @Test
     def testShotsDocSkipsOnlyTheUnreadableShots(): Unit \ Assert =
-        // 知らない画面・知らない until・say と until の両方・名前の無い場面は飛ばし、読める場面は並びのまま残す。
-        let text = "{ \"version\": 1, \"shots\": [ { \"name\": \"a\", \"node\": \"Station\", \"say\": 1, \"at\": 1.0 }, { \"name\": \"b\", \"open\": \"gallery\" }," +
-                   " { \"name\": \"c\", \"until\": \"end\" }, { \"name\": \"d\", \"say\": 1, \"until\": \"choices\" }, { \"node\": \"Station\" }," +
-                   " { \"name\": \"e\", \"open\": \"log\", \"pointer\": [1.0, 2.0] } ] }";
+        // 知らない画面・知らない until・say と until の両方・名前の無い場面・型の違う say・秒の無い場面・同じ名前の 2 つ目は
+        // 飛ばし（理由の頭の語つき）、読める場面は並びのまま残す。vars の数と真偽は字にして受ける。
+        let text = "{ \"version\": 1, \"shots\": [" +
+                   " { \"name\": \"a\", \"node\": \"Station\", \"say\": 1, \"at\": 1.0 }," +
+                   " { \"name\": \"b\", \"open\": \"gallery\", \"at\": 1.0 }," +
+                   " { \"name\": \"c\", \"until\": \"end\", \"at\": 1.0 }," +
+                   " { \"name\": \"d\", \"say\": 1, \"until\": \"choices\", \"at\": 1.0 }," +
+                   " { \"node\": \"Station\", \"at\": 1.0 }," +
+                   " { \"name\": \"f\", \"node\": \"Station\", \"say\": \"2\", \"at\": 1.0 }," +
+                   " { \"name\": \"g\", \"open\": \"title\" }," +
+                   " { \"name\": \"e\", \"open\": \"log\", \"pointer\": [1.0, 2.0], \"vars\": { \"closeness\": 2, \"stayed\": true }, \"at\": 1.0 }," +
+                   " { \"name\": \"a\", \"open\": \"title\", \"at\": 1.0 } ] }";
         let named = r -> match r {
-            case Ok(shot)       => "ok " + shot#name
-            case Err((which, _)) => "skip " + which
+            case Ok(shot)             => "ok ${shot#name} ${Map.toList(shot#vars)}"
+            case Err((which, reason)) => "skip ${which} " + (String.splitOn(substr = " ", reason) |> List.head |> Option.getWithDefault(""))
         };
-        Assert.assertEq(expected = Some("ok a" :: "skip b" :: "skip c" :: "skip d" :: "skip shots[4]" :: "ok e" :: Nil),
+        Assert.assertEq(expected = Some("ok a Nil" :: "skip b open" :: "skip c until" :: "skip d say" :: "skip shots[4] name" :: "skip f say"
+                                        :: "skip g at（時計を据える秒の数）が無い" :: "ok e (closeness, 2.0) :: (stayed, true) :: Nil" :: "skip a 同じ名前の場面が前にある" :: Nil),
                         ShotsDoc.rowsOf(text) |> Option.map(List.map(named)))
 
     @Test

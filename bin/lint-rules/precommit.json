@@ -272,11 +272,23 @@
           {
             "basenames": [
               "dialogue.json",
-              "vocab.json",
-              "novel.story.json",
-              "novel.shots.json",
-              "novel.backdrops.json",
-              "novel.cast.json"
+              "vocab.json"
+            ]
+          },
+          {
+            "prefixes": [
+              "assets/"
+            ],
+            "suffixes": [
+              ".json"
+            ]
+          },
+          {
+            "substrings": [
+              "/assets/"
+            ],
+            "suffixes": [
+              ".json"
             ]
           }
         ]

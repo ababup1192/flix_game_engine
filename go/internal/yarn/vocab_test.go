@@ -81,10 +81,69 @@ func loadV2(t *testing.T, root string) (*Vocab, []string) {
 // v2 の from は Doc の鍵（keys）と場所（path・xs[] は配列の全部）から名前を集め、commands は object の鍵を名前にする。
 func TestVocabV2CollectsNamesFromDocs(t *testing.T) {
 	v, notes := loadV2(t, writeGame(t, nil))
-	got := strings.Join([]string{strings.Join(v.Speakers, ","), strings.Join(v.Nodes, ","), strings.Join(v.NodeRefs, ","),
-		v.Vars["$closeness"], strings.Join(v.Commands, ",")}, " | ")
-	if got != "chinatsu | Station | Station,Far | 親しさ | bg" || len(notes) != 0 {
-		t.Errorf("got %q notes %v", got, notes)
+	if len(notes) != 0 {
+		t.Fatalf("notes %v", notes)
+	}
+	for _, c := range []struct{ what, got, want string }{
+		{"speakers", strings.Join(v.Speakers, ","), "chinatsu"},
+		{"nodes", strings.Join(v.Nodes, ","), "Station"},
+		{"nodeRefs", strings.Join(v.NodeRefs, ","), "Station,Far"},
+		{"vars", v.Vars["$closeness"], "親しさ"},
+		{"commands", strings.Join(v.Commands, ","), "bg"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s: got %q want %q", c.what, c.got, c.want)
+		}
+	}
+}
+
+// path は配列を何段でも展開し、keys の先が object でない所は名前に数えない。
+func TestSelectPathSpreadsNestedArraysAndKeysSkipNonObjects(t *testing.T) {
+	doc := map[string]any{
+		"a":     []any{map[string]any{"b": []any{map[string]any{"c": "x"}, map[string]any{"c": "y"}}}, map[string]any{"b": "not-array"}},
+		"names": []any{map[string]any{"k": "v"}, "plain"},
+	}
+	r := &docReader{texts: map[string]string{}}
+	var got []string
+	for _, f := range r.stringsAt(doc, "a[].b[].c", "", "d.json") {
+		got = append(got, f.name)
+	}
+	if strings.Join(got, ",") != "x,y" {
+		t.Errorf("path: got %v", got)
+	}
+	keys := r.keysAt(doc, "names[]", "", "d.json")
+	if len(keys) != 1 || keys[0].name != "k" {
+		t.Errorf("keys: got %+v", keys)
+	}
+}
+
+// from の path の綴り違いで名前が 1 つも拾えない時は、1 行言ってその欄の検査を飛ばす（黙って検査が消えない）。
+func TestFromThatPicksNothingIsNotedAndSkipped(t *testing.T) {
+	root := writeGame(t, map[string]string{"assets/talk/vocab.json": strings.Replace(v2Vocab, `"shots[].node"`, `"shot[].node"`, 1)})
+	v, notes := loadV2(t, root)
+	want := "注意: 語彙の nodeRefs の from（assets/novel.shots.json の shot[].node）が名前を 1 つも拾わない"
+	if len(notes) != 1 || !strings.HasPrefix(notes[0], want) {
+		t.Errorf("notes %v", notes)
+	}
+	if !v.skip["nodeRefs"] {
+		t.Errorf("nodeRefs を飛ばしていない")
+	}
+}
+
+// 最初のノードが 1 つも集まらない時は、届かないノードを知らせない（全部が届かないと出て、本当の知らせが埋もれる）。
+func TestNoOpeningNodeSilencesUnreached(t *testing.T) {
+	root := writeGame(t, map[string]string{"assets/novel.story.json": `{"version": 1, "names": {"chinatsu": "千夏"}, "vars": {}}`})
+	v, _ := loadV2(t, root)
+	prog, _ := BuildProgram([]string{"t.yarn"}, []string{"title: Station\n---\nhi\n===\n"}, v, "vocab.json")
+	if got := Unreached(prog, v); len(got) != 0 {
+		t.Errorf("got %s", messages(got))
+	}
+}
+
+// 知らない版（3 以上）の語彙は止める。
+func TestUnknownVocabVersionStops(t *testing.T) {
+	if _, _, err := ParseVocab([]byte(`{"version": 3}`), "vocab.json", "."); err == nil || !strings.Contains(err.Error(), "版 3") {
+		t.Errorf("err %v", err)
 	}
 }
 
@@ -124,12 +183,12 @@ func TestUnnamedVariablesAreNotedNotStopped(t *testing.T) {
 	}
 }
 
-// from の Doc が読めない時は 1 行言って、その欄（話し手）の検査だけを飛ばす。
+// from の Doc が読めない時は Doc 1 つに 1 行言って、その Doc を見る欄（話し手）の検査だけを飛ばす。
 func TestUnreadableDocSkipsOnlyThatCheck(t *testing.T) {
 	root := writeGame(t, map[string]string{"assets/talk/vocab.json": strings.Replace(v2Vocab, `"../novel.story.json", "keys": "names"`, `"../gone.json", "keys": "names"`, 1)})
 	v, notes := loadV2(t, root)
 	_, ps := BuildProgram([]string{"t.yarn"}, []string{"title: Station\n---\nstranger: やあ\n<<nope>>\n===\n"}, v, "vocab.json")
-	if len(notes) != 1 || !strings.Contains(notes[0], "speakers の検査を飛ばす") {
+	if len(notes) != 1 || !strings.Contains(notes[0], "assets/gone.json を読めない") {
 		t.Errorf("notes %v", notes)
 	}
 	if got := messages(ps); strings.Contains(got, "話し手") || !strings.Contains(got, "<<nope>>") {

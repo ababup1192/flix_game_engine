@@ -3,7 +3,7 @@
 // 場面は「進めて作る」: 台本が伸びても行番号を数え直さずに済むよう、「ノードの n 番目の台詞」「選択肢が出るまで」で位置を決める。
 // WhyNot: 描き出しの物（HeadlessRender・HeadlessFont・java.io）を引かない — Game.app から engine_tools へつながり、ブラウザ版で組めなくなる。
 mod Shots {
-    use fge::{Clock, Emit, Yarn, YarnRunner, YarnStorage}
+    use fge::{Clock, Emit, Log, Yarn, YarnRunner, YarnStorage}
 
     /// 描き出しの始まりの World（セーブデータは空・時刻は clockBase）。
     def initialOf(res: Res.Res): World.World = World.initial(Saves.fresh(res#kind), clockBase())
@@ -19,31 +19,36 @@ mod Shots {
     pub def worldOf(name: String, res: Res.Res): Option[World.World] =
         match ShotsDoc.shotOf(name, res#shots) {
             case Some(shot) => Some(sceneOf(res, shot, initialOf(res)))
-            case None       => extra() |> List.find(match (n, _) -> n == name) |> Option.flatMap(match (_, build) -> build(res))
+            case None       => extraWorldOf(name, res)
         }
+
+    def extraWorldOf(name: String, res: Res.Res): Option[World.World] =
+        extra() |> List.find(row -> fst(row) == name) |> Option.flatMap(row -> snd(row)(res))
 
     /// Doc で表せない、コードで組む場面（名前, 組み立て）。novel.shots.json の場面の後ろに並ぶ。
     pub def extra(): List[(String, Res.Res -> Option[World.World])] = Nil
 
     /// Doc の 1 場面の World。時計は秒で据える（蛍もクレジットも実時間から導くので、据えれば毎回同じ絵）。
     def sceneOf(res: Res.Res, shot: ShotsDoc.Shot, w0: World.World): World.World =
-        let storage = storageOf(res, shot#vars);
+        let storage = storageOf(res, shot#name, shot#vars);
         let placed = shot#node |> Option.map(node -> placeIn(res, node, shot#place, storage, w0)) |> Option.getWithDefault(w0);
         let opened = shot#open |> Option.map(screen -> openScreen(res, screen, placed)) |> Option.getWithDefault(placed);
         let pointed = shot#pointer |> Option.map(p -> { pointer = { x = p#x, y = p#y } | opened }) |> Option.getWithDefault(opened);
         at(shot#at, pointed)
 
-    /// 場面の変数（$ を付けない名前 → 値）を始まりの引数にしたシナリオの値。
-    def storageOf(res: Res.Res, vars: Map[String, String]): YarnStorage.Storage =
+    /// 場面の変数（$ を付けない名前 → 値）を始まりの引数にしたシナリオの値。読めない時は 1 行言って変数を入れずに組む。
+    def storageOf(res: Res.Res, shotName: String, vars: Map[String, String]): YarnStorage.Storage =
         if (Map.isEmpty(vars)) YarnStorage.empty()
         else {
             let args = vars |> Map.foldLeftWithKey((acc, k, v) -> Map.insert("$" + k, v, acc), Map.empty());
-            YarnStorage.withArgs(args, res#dialogue, YarnStorage.empty()) |> Result.getWithDefault(YarnStorage.empty())
+            YarnStorage.withArgs(args, res#dialogue, YarnStorage.empty())
+                |> Result.mapErr(reason -> Log.fellBackThen("shots", "${ShotsDoc.path()} の ${shotName} の vars", "変数を入れない", reason, YarnStorage.empty()))
+                |> Result.getWithDefault(YarnStorage.empty())
         }
 
     def placeIn(res: Res.Res, node: String, place: ShotsDoc.Place, storage: YarnStorage.Storage, w: World.World): World.World =
         match place {
-            case ShotsDoc.Place.Head      => nthLine(res, node, -1, storage, w)
+            case ShotsDoc.Place.Head      => WorldRead.revealLine(quiet(() -> WorldRead.openAt(res, storage, node, 0, w)))
             case ShotsDoc.Place.NthSay(n) => nthLine(res, node, n, storage, w)
             case ShotsDoc.Place.ToChoices => toChoices(res, node, storage, w)
         }
@@ -77,7 +82,7 @@ mod Shots {
 
     def quiet(f: Unit -> World.World \ Emit[World.Event]): World.World = fst(Emit.collect(f))
 
-    /// node の上から n 番目（0 から。負ならノードの頭）の台詞を出し終えた所（その行までのコマンドは反映して、演出は終わりの形）。
+    /// node の上から n 番目（0 から）の台詞を出し終えた所（その行までのコマンドは反映して、演出は終わりの形）。
     def nthLine(res: Res.Res, node: String, n: Int32, storage: YarnStorage.Storage, w: World.World): World.World =
         let line = Yarn.nodeOf(node, res#dialogue)
             |> Option.map(found -> found#body |> List.filterMap(statement -> match statement {

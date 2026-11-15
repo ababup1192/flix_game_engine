@@ -185,6 +185,7 @@ type group struct {
 func groupsOf(workRoot string, paths []string) ([]group, error) {
 	byDir := map[string]map[string]bool{}
 	whole := map[string]bool{}
+	indexes := map[string]map[string][]string{}
 	for _, p := range paths {
 		abs := p
 		if !filepath.IsAbs(abs) {
@@ -206,7 +207,7 @@ func groupsOf(workRoot string, paths []string) ([]group, error) {
 		case err != nil && strings.HasSuffix(abs, ".yarn"):
 			return nil, fmt.Errorf("読めない: %s", p)
 		case isDocPath(abs):
-			for _, dir := range vocabDirsReferring(abs) {
+			for _, dir := range vocabDirsReferring(abs, indexes) {
 				whole[dir] = true
 				if byDir[dir] == nil {
 					byDir[dir] = map[string]bool{}
@@ -248,14 +249,24 @@ func isDocPath(path string) bool {
 }
 
 // vocabDirsReferring は doc と同じゲーム（project.json のあるフォルダ）の中で、doc を from に書いた vocab.json のフォルダ。
+// indexes はゲームのルートごとの「Doc → 語彙のフォルダ」（Doc を何本渡されても 1 つのゲームを歩くのは 1 回）。
 // WhyNot: 見つからない時に doc のフォルダを丸ごと見ない —— v1 のゲームの Doc だけを直したコミットで、関わりの無い検査を流して止める。
-func vocabDirsReferring(doc string) []string {
+func vocabDirsReferring(doc string, indexes map[string]map[string][]string) []string {
 	root := FindGameRoot(filepath.Dir(doc))
 	if root == "" {
 		return nil
 	}
-	want := filepath.Clean(doc)
-	var dirs []string
+	index, ok := indexes[root]
+	if !ok {
+		index = vocabIndexOf(root)
+		indexes[root] = index
+	}
+	return index[filepath.Clean(doc)]
+}
+
+// vocabIndexOf はゲームの中の vocab.json（v2）を全部読み、from が指す Doc → その語彙のフォルダ。
+func vocabIndexOf(root string) map[string][]string {
+	index := map[string][]string{}
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -273,15 +284,16 @@ func vocabDirsReferring(doc string) []string {
 		if readErr != nil {
 			return nil
 		}
+		seen := map[string]bool{}
 		for _, ref := range DocsOf(data, path) {
-			if ref == want {
-				dirs = append(dirs, filepath.Dir(path))
-				break
+			if !seen[ref] {
+				seen[ref] = true
+				index[ref] = append(index[ref], filepath.Dir(path))
 			}
 		}
 		return nil
 	})
-	return dirs
+	return index
 }
 
 // skipWalkDir は語彙を探す時に降りないフォルダ（作り直せる物と外から入れた物）。

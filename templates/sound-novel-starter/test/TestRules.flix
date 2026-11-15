@@ -22,7 +22,7 @@ mod TestRules {
 
     @Test
     def testNewGameOpensTheOpeningNodeOnItsFirstLine(): Unit \ {Assert, Fs.FileRead} =
-        // はじめから: novel.story.json の openingの最初の台詞を、台本の頭のコマンドどおりの舞台で出す。
+        // はじめから: novel.story.json の opening の最初の台詞を、台本の頭のコマンドどおりの舞台で出す。
         let res = TestKit.res();
         let w = begun(res);
         let opening = StoryDoc.openingOf(res#story);
