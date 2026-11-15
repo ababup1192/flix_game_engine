@@ -150,7 +150,7 @@
     },
     "legacyModes": {
       "kind": "record",
-      "label": "セーブの古い mode の値の読み替え先（型の名前。空の舞台の Nvl もここで引く）",
+      "label": "セーブの古い mode の値の読み替え先（型の名前。欠け・windows に無い・出し方が違うと読み込みで知らせ、その出し方の最初の型で読む）",
       "order": 11,
       "fields": {
         "Nvl": {

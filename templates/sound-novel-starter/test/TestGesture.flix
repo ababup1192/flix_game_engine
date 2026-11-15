@@ -47,6 +47,16 @@ mod TestGesture {
     // ══ 分け方 ══
 
     @Test
+    def testVerticalSwipeStartingInTheEdgeBandIsASwipe(): Unit \ {Assert, Fs.FileRead} =
+        // 端の帯は横の払いだけを止める。帯の内から上へ払うのは払い。
+        let res = TestKit.res();
+        let k = kind(res);
+        let edge = PromptsDoc.rec(res#prompts)#edge;
+        let start = { x = edge / 2.0, y = 300.0 };
+        let finish = { x = edge / 2.0, y = 300.0 - k#swipeMin * 2.0 };
+        Assert.assertEq(expected = "Swipe(Up)", classified(res, down(0.0, start) :: held(k#swipeSeconds / 2.0, finish) :: up(k#swipeSeconds / 2.0, finish) :: Nil))
+
+    @Test
     def testSwipeStartingInTheEdgeBandIsADrag(): Unit \ {Assert, Fs.FileRead} =
         // 押し始めが左の端から novel.prompts.json の edge の内なら、払いの長さと秒でもドラッグ（スマホの戻る操作と重ねない）。
         let res = TestKit.res();

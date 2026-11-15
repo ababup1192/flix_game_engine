@@ -84,19 +84,51 @@ mod ThemeDoc {
     pub def kindAlias(kind: WindowKind): String = "${kind}"
 
     /// 型の名前 name の型と、その本当の名前。Nvl / Adv は legacyModes の行き先の型。
-    /// legacyModes に無い・行き先が windows に無い時と知らない名前は、windows の中でその出し方（知らない名前は ADV）の最初の型（鍵の順。無ければ既定の型）。
+    /// legacyModes に無い・行き先が windows に無い時と知らない名前は、windows の中でその出し方（知らない名前は ADV）の最初の型（鍵の順）、
+    /// その出し方の型が無ければもう一方の出し方の最初の型。
     // WhyNot: 知らない名前を知らせない — 毎フレーム描く所が引くので、同じ 1 行が流れ続ける。知らない名前は台本からは来ない（<<window>> の apply が Err にする）。
+    //   Doc の legacyModes の食い違いは読み込みの時に 1 回知らせる（legacyProblemsOf）。
     pub def windowOf(name: String, doc: Doc): (String, Window) =
         let ws = rec(doc)#windows;
-        let firstOf = kind -> ws |> Map.toList |> List.find(match (_, w) -> w#kind == kind);
-        let fallback = (kind, builtin) -> firstOf(kind) |> Option.getWithDefault((kindAlias(kind), builtin));
         let legacy = Map.get(name, rec(doc)#legacyModes) |> Option.flatMap(target -> Map.get(target, ws) |> Option.map(w -> (target, w)));
         match (Map.get(name, ws), legacy) {
             case (Some(w), _)    => (name, w)
             case (None, Some(t)) => t
-            case _ if name == kindAlias(WindowKind.Nvl) => fallback(WindowKind.Nvl, nvlWindow())
-            case _               => fallback(WindowKind.Adv, advWindow())
+            case _ if name == kindAlias(WindowKind.Nvl) => firstOfKind(WindowKind.Nvl, doc)
+            case _               => firstOfKind(WindowKind.Adv, doc)
         }
+
+    /// windows の中で kind の最初の型（鍵の順）。無ければもう一方の出し方の最初の型（それも無ければ既定の型）。
+    def firstOfKind(kind: WindowKind, doc: Doc): (String, Window) =
+        let ws = rec(doc)#windows |> Map.toList;
+        let other = if (kind == WindowKind.Nvl) WindowKind.Adv else WindowKind.Nvl;
+        let builtin = if (kind == WindowKind.Nvl) nvlWindow() else advWindow();
+        ws |> List.find(match (_, w) -> w#kind == kind)
+           |> Option.withDefault(default = ws |> List.find(match (_, w) -> w#kind == other))
+           |> Option.getWithDefault((kindAlias(kind), builtin))
+
+    /// 新しいゲームの最初の型の名前: legacyModes の Nvl の行き先が windows の nvl の型ならそれ、無ければ nvl の最初の型、nvl の型が無ければ adv の最初の型。
+    pub def startWindowName(doc: Doc): String =
+        let ws = rec(doc)#windows;
+        Map.get(kindAlias(WindowKind.Nvl), rec(doc)#legacyModes)
+            |> Option.filter(t -> Map.get(t, ws) |> Option.exists(w -> w#kind == WindowKind.Nvl))
+            |> Option.getWithDefault(fst(firstOfKind(WindowKind.Nvl, doc)))
+
+    /// legacyModes の食い違い（Nvl・Adv の欠け・行き先が windows に無い・行き先の出し方が違う）を 1 行ずつ。
+    pub def legacyProblemsOf(windows: Map[String, Window], legacy: Map[String, String]): List[String] =
+        (WindowKind.Nvl :: WindowKind.Adv :: Nil) |> List.filterMap(kind -> {
+            let oldName = kindAlias(kind);
+            match Map.get(oldName, legacy) {
+                case None    => Some("legacyModes に ${oldName} が無い（${oldName} の古いセーブは ${oldName} の最初の型で読む）")
+                case Some(t) => targetProblemOf(oldName, kind, t, Map.get(t, windows))
+            }
+        })
+
+    def targetProblemOf(oldName: String, kind: WindowKind, target: String, window: Option[Window]): Option[String] = match window {
+        case None                       => Some("legacyModes の ${oldName} の行き先 '${target}' が windows に無い")
+        case Some(w) if w#kind != kind  => Some("legacyModes の ${oldName} の行き先 '${target}' は ${w#kind} の型（${oldName} は ${kind} の型にする）")
+        case Some(_)                    => None
+    }
 
     /// 型の名前が windows にあるか。
     pub def hasWindow(name: String, doc: Doc): Bool = Map.memberOf(name, rec(doc)#windows)
@@ -141,6 +173,11 @@ mod ThemeDoc {
                   windows = Map.get("windows", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(windowsOf)
                                 |> Option.filter(ws -> not Map.isEmpty(ws)) |> Option.getWithDefault(d#windows),
                   legacyModes = Map.get("legacyModes", root) |> Option.flatMap(JsonCodec.decodeStringMap(JsonCodec.expectString)) |> Option.getWithDefault(d#legacyModes) })
+            |> warnLegacy
+
+    /// legacyModes の食い違いを読み込みの時に 1 行ずつ知らせる（Doc はそのまま。windowOf が最初の型へ落とす）。
+    def warnLegacy(doc: Doc): Doc =
+        legacyProblemsOf(rec(doc)#windows, rec(doc)#legacyModes) |> List.foldLeft((acc, why) -> Log.warnThen("[theme] ${why}", acc), doc)
 
     /// windows の表（名前 → { kind, place, frame, showName, quotes }）を読む。Nvl・Adv の名前と読めない行は落とし、落とした理由を 1 行ずつ返す。
     // WhyNot: 型の名前に Nvl・Adv を許さない — セーブの Mark v3 の mode の古い値と同じ字になり、どちらの意味か読み分けられない。

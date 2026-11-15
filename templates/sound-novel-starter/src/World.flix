@@ -270,9 +270,9 @@ mod World {
           saves = saves, saveRev = 0, pointer = { x = -1.0, y = -1.0 }, grab = Grab.Free, gesture = Gesture.idle(), clockBase = clockBase,
           storyClock = Clock.start(), realNow = Clock.zero(), toast = None, quitting = false, events = Emit.empty() }
 
-    /// 読み始める前の Read（舞台・頁・バックログが空。メッセージ枠は theme の windows の最初の NVL の型）。
+    /// 読み始める前の Read（舞台・頁・バックログが空。メッセージ枠は ThemeDoc.startWindowName の型）。
     pub def emptyRead(theme: ThemeDoc.Doc): Read =
-        let stage = Stage.withModeResolved(theme, Stage.empty());
+        let stage = Stage.emptyFor(theme);
         { talk = YarnRunner.closed(), stage = stage, page = Page.empty(), choices = Nil, choiceCursor = 0,
           log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None,
           entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(stage), page = Page.empty() } }, pause = None, gate = None }

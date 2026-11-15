@@ -55,7 +55,7 @@ mod WorldRead {
     def absorbFrom(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], pairs: List[(YarnRunner.Event, Int32)],
                    w: World.World): World.World \ Emit[World.Event] =
         match pairs {
-            case Nil => w
+            case Nil => World.mapRead(withGate, w)
             case (event, later) :: rest =>
                 let waitFor = if (replay == Commands.Replay.Live) namesToWait(res, pairs, w) else Nil;
                 if (not List.isEmpty(waitFor)) startHold(waitFor, pairs, last, w)
@@ -66,7 +66,7 @@ mod WorldRead {
     def pauseOrGo(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], rest: List[(YarnRunner.Event, Int32)],
                   w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) |> Option.flatMap(r -> r#pause) {
-            case Some(p) => World.mapRead(r -> { pause = Some({ rest = rest, last = last | p }) | r }, w)
+            case Some(p) => World.mapRead(r -> withGate({ pause = Some({ rest = rest, last = last | p }) | r }), w)
             case None    => absorbFrom(res, replay, last, rest, w)
         }
 
@@ -74,7 +74,7 @@ mod WorldRead {
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
                   entering: World.World): World.World \ Emit[World.Event] =
         let w = World.mapRead(trackEntry(res, event), entering);
-        World.mapRead(withGate, match event {
+        match event {
             case YarnRunner.Event.Line(said)       =>
                 let line = ScriptEdits.editLine(res#scriptEdits, said);
                 whileReading(cur -> showLine(res, replay, bookmarkAt(last, later), line, { cursor = Some(line#source) | cur }, w), w)
@@ -86,7 +86,7 @@ mod WorldRead {
             case YarnRunner.Event.Command(command) =>
                 whileReading(cur -> World.withRead(cue(res, replay, command, { cursor = cursorAfter(res, command, cur#cursor) | cur }, w), w), w)
             case YarnRunner.Event.Done             => World.toCredits(res, w)
-        })
+        }
 
     /// コマンドを通った後の実行位置。時間を取る演出コマンド（表の timing が Timed）だけが位置を取り、<<wait>> と
     /// 時間を取らないコマンドは前の位置のまま（<<wait>> は直前の演出の続き）。
@@ -221,7 +221,7 @@ mod WorldRead {
     pub def gateOf(r: World.Read): Option[Gate.Gate] =
         if (Option.nonEmpty(r#hold) or Option.nonEmpty(r#pause)) None else r#gate
 
-    /// 出来事を反映した後の読んでいる値に、今のゲートを求めて持たせる。
+    /// 出来事を反映し終えた（か待ちで止まった）読んでいる値に、今のゲートを求めて持たせる（absorbFrom の終わりと pauseOrGo）。
     /// (a) 出ている選択肢の全部に #act がある → viaLine = false。
     /// (b) 今が台詞で、送ると出来事が選択肢だけ（間にコマンドも台詞も無い）で、その全部に #act がある → viaLine = true。
     // WhyNot: 描く所と入力の所で毎回求めない — (b) は実行器を 1 歩進めて見るので、1 フレームに何度も進めることになる。
@@ -593,7 +593,7 @@ mod WorldRead {
     def buildEntryStage(res: Res.Res, node: String): Stage.Stage =
         match Map.get(node, buildEntriesWithin(entryFuel(), res)) {
             case Some(snapshot) => Stage.fromSnapshot(snapshot)
-            case None           => Log.warnThen("[stage] ${node} は ${StoryDoc.openingOf(res#story)} から流しても着かない（空の舞台から始める）", Stage.withModeResolved(res#theme, Stage.empty()))
+            case None           => Log.warnThen("[stage] ${node} は ${StoryDoc.openingOf(res#story)} から流しても着かない（空の舞台から始める）", Stage.emptyFor(res#theme))
         }
 
     /// fuel 歩までに着いたノードごとの、最初に着いた時の舞台（opening は空の舞台）。
@@ -606,7 +606,7 @@ mod WorldRead {
                 let w = World.withRead({ talk = talk | World.emptyRead(res#theme) }, World.initial(Saves.fresh(res#kind), 0i64));
                 let first = absorbTracking(res, events, { w = w, found = Map.empty(), revisited = false });
                 snd(walkEntries(res, fuel, first#w :: Nil, first#found))
-                    |> (found -> if (Map.memberOf(opening, found)) found else Map.insert(opening, Stage.snapshotOf(Stage.withModeResolved(res#theme, Stage.empty())), found))
+                    |> (found -> if (Map.memberOf(opening, found)) found else Map.insert(opening, Stage.snapshotOf(Stage.emptyFor(res#theme)), found))
         }
 
     /// 道 1 本を流している所: w = 流した World、found = 着いたノードの舞台、revisited = この歩でもう着いたノードへ入ったか。
@@ -684,7 +684,7 @@ mod WorldRead {
         match YarnRunner.nodeOf(r#talk) {
             case Some(node) if Option.nonEmpty(Yarn.nodeOf(node, res#dialogue)) =>
                 let (talk, events) = YarnRunner.startWith(YarnRunner.storageOf(r#talk), res#dialogue, node, World.now(w));
-                fst(Emit.collect(() -> absorb(res, Commands.Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil, hold = None, pause = None | r }, w)))
+                fst(Emit.collect(() -> absorb(res, Commands.Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil, hold = None, pause = None, gate = None | r }, w)))
             case Some(_) => World.toTitle(w)
             case None    => w
         }

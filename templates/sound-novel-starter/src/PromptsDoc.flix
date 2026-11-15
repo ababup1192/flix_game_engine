@@ -24,7 +24,7 @@ mod PromptsDoc {
     /// tap の輪: rate = 1 秒に脈打つ回数、spread = 外の輪が広がる割合（内の輪の半径に比べる）。
     pub type alias Pulse = { rate = Float64, spread = Float64 }
 
-    /// icons = 案内の絵、arrow = 矢印、edge = 押し始めが左右の端からこの幅（design px）の内なら払いにしない帯、targets = tap の当たる物、pulse = tap の輪、
+    /// icons = 案内の絵、arrow = 矢印、edge = 押し始めが左右の端からこの幅（design px）の内なら横の払いにしない帯、targets = tap の当たる物、pulse = tap の輪、
     /// margin = 案内を並べる左右の余白（design px）、captionSize = 案内の字の大きさ（入り切らなければ 0.6 倍まで縮める）。
     pub type alias Rec = { version = Int32, icons = Map[String, Icon], arrow = Arrow, edge = Float64, targets = Map[String, Target], pulse = Pulse,
                            margin = Float64, captionSize = Float64 }

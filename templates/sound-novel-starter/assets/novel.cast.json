@@ -78,8 +78,8 @@
       ],
       "markers": {
         "mouth": {
-          "x": 0.5,
-          "y": 0.24
+          "x": 0.58,
+          "y": 0.225
         }
       },
       "speakFx": "breath"

@@ -238,7 +238,7 @@ pub enum Out {
 | `text` | 2.2 の表の書き方（`at`・`size`・`align`・`speed`・`lock`） | `text.at` `.size` `.align`（名前）・`text.speed`（数）・`text.lock`（一度だけ） | Ren'Py の window の style・Naninovel `@printer`・Tyrano `[position]` / `[delay]` |
 
 - 血鱗の `item`（小物の間は枠を消す・2 行）と `vial gem|bone` の大写し（2 行）の「枠を消す」は `hideWindow` で書ける。
-- **Mark v3 の `mode` の読み替え**: N3 の Mark v3 は `"mode": "Nvl"` / `"Adv"`（enum の名前）を書く。N4b で型の名前（文字）に替えるので、Mark の読み手は `novel.theme.json` の **`legacyModes`**（`{ "Nvl": "nvl", "Adv": "bottom" }`。空の舞台の Nvl もここで引く）の行き先と読む（レビュー 2 で、`windows` の鍵の字の順で決まる形から替えた）。行き先が無い Doc だけ、その出し方の最初の型（鍵の順）へ落ちる。書く方は型の名前（`WorldRead.restore`・`World.emptyRead` で本当の名前に直す）。Mark の version は 3 のまま、値の形で見分ける（Doc の型の名前に `Nvl`・`Adv` を使わない決まりは、schema の方言に鍵を縛る欄が無いので、読み手が落としてテストで止める）。型ごとに default を付ける案は、同じ出し方の型が 2 つ default を持つ食い違いを読み手が決めることになるので取らなかった。
+- **Mark v3 の `mode` の読み替え**: N3 の Mark v3 は `"mode": "Nvl"` / `"Adv"`（enum の名前）を書く。N4b で型の名前（文字）に替えるので、Mark の読み手は `novel.theme.json` の **`legacyModes`**（`{ "Nvl": "nvl", "Adv": "bottom" }`。空の舞台の Nvl もここで引く）の行き先と読む（レビュー 2 で、`windows` の鍵の字の順で決まる形から替えた）。行き先が無い・windows に無い・出し方が違う Doc は、読み込みの時に 1 行ずつ知らせ（`ThemeDoc.legacyProblemsOf`）、その出し方の最初の型（鍵の順。その出し方の型が無ければもう一方の出し方の最初の型）へ落ちる。新しいゲームの最初の型は `ThemeDoc.startWindowName`（legacyModes の Nvl の行き先が nvl の型ならそれ、無ければ nvl の最初の型、nvl の型が無ければ adv の最初の型）。書く方は型の名前（`WorldRead.restore`・`World.emptyRead` で本当の名前に直す）。Mark の version は 3 のまま、値の形で見分ける（Doc の型の名前に `Nvl`・`Adv` を使わない決まりは、schema の方言に鍵を縛る欄が無いので、読み手が落としてテストで止める）。型ごとに default を付ける案は、同じ出し方の型が 2 つ default を持つ食い違いを読み手が決めることになるので取らなかった。
 - `<<text at=>>` は NVL の頁の中の置き場なので、ADV の型の間に書くと Err（ADV の枠の置き場は型の `place`）。
 - `Page.show` は型の `kind` だけを見る。
 
@@ -926,6 +926,17 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 - 残り: 縦の画面では背景を画面より横に広く敷くので、写真に対する割合で書いた当たる物は横の画面より大きく、端にかかることがある（Doc の値の決め方。描き出しで見た）。
 
+### 11.9 レビュー 2 の 2 回目（92 点）の任意の直し（2026-11-16）
+
+| # | 直した所 |
+|---|---|
+| B1 | `ThemeDoc` の読み込みで legacyModes の欠け・行き先が windows に無い・出し方が違うを 1 行ずつ知らせる。新しいゲームの最初の型を `ThemeDoc.startWindowName` にし（`Stage.emptyFor`）、nvl の型が無い Doc でも windows にある型で始まる。3 章・schema・note を合わせた。テスト 4 本 |
+| B2 | ゲートを求めるのは出来事ごとでなく、`absorbFrom` の終わりと待ちで止まる所（`pauseOrGo`）の 1 回 |
+| B3 | `reopenNode` でも `gate = None` を並べる |
+| B4 | 端の帯は横の払いだけに効かせる（`Gesture.isEdgeSideSwipe`）。OS の戻る操作は横だけで、ブラウザ版の縦の払い（flickUp / flickDown のキー）は帯を見ずに届くので、縦はデスクトップでもブラウザ版でも帯の内から選べる形にそろえた。テスト 1 本 |
+| B5 | 11.8 の残りを 14 章へ移した |
+| 絵 | 作例の toma の口の点を x 0.58・y 0.225 に直し、粒が口から立ちのぼるのを描き出しで見た（scratchpad の `vis/speaker-dim-puff-2.png`・`vis/puff-zoom.png`） |
+
 ## 12. 試した事（スパイク）
 
 | 試した事 | 置き場 | 結果 |
@@ -964,6 +975,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - go の `parse.go` の `"…"` は N2 で入れた。`feed` の本文に `>>` を含めない決まりは今のまま。
 - 【未確認】ブラウザ版で後回し（`web.deferred`）にした効果音は、起動の時に長さが読めず、`audio se … wait=true` が待たない見込み（読めない音は読み込みのたびに 1 回知らせる）。直すなら、音が届いた時に長さを読む。
 - 【未確認】Studio のミキサーのフォームで保存した時に、テンプレートの `assets/mixer.schema.json` に書いた `volumes` と `lockSeconds` が残るか。
+- 縦の画面では背景を画面より横に広く敷くので、`novel.prompts.json` の写真に対する割合で書いた当たる物は横の画面より大きく、画面の端にかかることがある（Doc の値の決め方。レビュー 2 で描き出して見た）。
 - 相談中: C14（一発の効果音を止める口・8.3）。決まるまで `audio all off` は鳴り続ける音だけを止める。
 - GameView の物の中の z を 0〜7 へ丸める時に知らせが無い。描き物は純粋で、Log に「1 回だけ知らせる」口が無いため。
 - `templates/sound-novel-starter/assets/mixer.schema.json` はエンジンの `docs/mixer.schema.json` の写しに `volumes`・`lockSeconds` を足した物。エンジンの schema に欄が増えたら、ここへも写す。

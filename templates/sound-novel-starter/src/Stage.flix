@@ -48,6 +48,9 @@ mod Stage {
     /// 今のメッセージ枠の出し方（NVL か ADV か）。
     pub def kindOf(theme: ThemeDoc.Doc, stage: Stage): ThemeDoc.WindowKind = snd(windowOf(theme, stage))#kind
 
+    /// 物語を始める前の舞台で、メッセージ枠を theme の始まりの型（ThemeDoc.startWindowName）にした物。
+    pub def emptyFor(theme: ThemeDoc.Doc): Stage = { mode = ThemeDoc.startWindowName(theme) | empty() }
+
     /// mode の Nvl / Adv を windows の本当の型の名前にした舞台（Mark v3 の古い値を読んだ後に当てる）。
     pub def withModeResolved(theme: ThemeDoc.Doc, stage: Stage): Stage = { mode = fst(windowOf(theme, stage)) | stage }
 

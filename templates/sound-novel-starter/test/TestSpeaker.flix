@@ -76,8 +76,29 @@ mod TestSpeaker {
     @Test
     def testLegacyModesWinOverTheKeyOrder(): Unit \ Assert =
         // 鍵の順で先に来る adv の型があっても、legacyModes の行き先を選ぶ。
-        let doc = ThemeDoc.fromJson("{ \"windows\": { \"aaa\": { \"kind\": \"adv\" }, \"bottom\": { \"kind\": \"adv\" } }, \"legacyModes\": { \"Adv\": \"bottom\" } }");
+        let doc = ThemeDoc.fromJson("{ \"windows\": { \"aaa\": { \"kind\": \"adv\" }, \"bottom\": { \"kind\": \"adv\" }, \"nvl\": { \"kind\": \"nvl\" } }, \"legacyModes\": { \"Nvl\": \"nvl\", \"Adv\": \"bottom\" } }");
         Assert.assertEq(expected = Some("bottom"), doc |> Option.map(d -> fst(ThemeDoc.windowOf("Adv", d))))
+
+    def advOnly(): Map[String, ThemeDoc.Window] =
+        Map#{ "sub" => { kind = ThemeDoc.WindowKind.Adv, place = ThemeDoc.WindowPlace.Bottom, frame = ThemeDoc.WindowFrame.Outline, showName = true, quotes = true } }
+
+    @Test
+    def testLegacyTargetMissingFromWindowsIsAProblem(): Unit \ Assert =
+        Assert.assertEq(expected = 1, List.length(ThemeDoc.legacyProblemsOf(advOnly(), Map#{ "Nvl" => "sub", "Adv" => "gone" }) |> List.filter(p -> String.contains(substr = "gone", p))))
+
+    @Test
+    def testLegacyTargetOfAnotherKindIsAProblem(): Unit \ Assert =
+        Assert.assertEq(expected = 1, List.length(ThemeDoc.legacyProblemsOf(advOnly(), Map#{ "Nvl" => "sub", "Adv" => "sub" })))
+
+    @Test
+    def testLegacyModesWrittenInPartIsAProblem(): Unit \ Assert =
+        Assert.assertEq(expected = 1, List.length(ThemeDoc.legacyProblemsOf(advOnly(), Map#{ "Adv" => "sub" })))
+
+    @Test
+    def testNewGameStartsWithTheFirstAdvTypeWithoutAnNvlType(): Unit \ Assert =
+        // windows に nvl の型が無ければ、legacyModes の Nvl に頼らず adv の最初の型で始める。
+        let doc = ThemeDoc.Doc.Doc({ windows = advOnly(), legacyModes = Map#{ "Nvl" => "gone" } | ThemeDoc.rec(ThemeDoc.defaults()) });
+        Assert.assertEq(expected = "sub", ThemeDoc.startWindowName(doc))
 
     @Test
     def testTemplateLegacyModesPointToTheirKind(): Unit \ {Assert, Fs.FileRead} =
@@ -246,7 +267,7 @@ mod TestSpeaker {
     def testHideWindowPropIsDrawnInTheWorldLayerOnTheNvlPage(): Unit \ {Assert, Fs.FileRead} =
         // NVL の頁（小物はふだん頁の幕の上）でも、hideWindow の小物が出ている間は world の層がその小物の面を描く（枠と一緒に消えない）。
         let res = castRes();
-        let st = stageAfter(res, "show", "cup" :: "time=0" :: Nil, Stage.withModeResolved(res#theme, Stage.empty()));
+        let st = stageAfter(res, "show", "cup" :: "time=0" :: Nil, Stage.emptyFor(res#theme));
         let w = World.withRead({ stage = st | World.emptyRead(res#theme) }, TestKit.w0(res));
         let env = View.envOf(Layout.Fit.Regular, res, w);
         let names = ViewStage.frame(env, st, not ViewStage.isPropOnPage(env, w)) |> List.filterMap(p -> match p#item {
