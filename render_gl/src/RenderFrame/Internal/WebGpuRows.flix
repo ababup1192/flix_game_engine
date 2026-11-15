@@ -1,6 +1,6 @@
 // RenderFrame.Internal.WebGpuRows — 1 回の renderCommands を、GL と同じ前半（mergedByZ → emitMerged が RenderList を作る）で行にし、
 // 行を WebGPU の render pass へ流す。device・pipeline・絵と頂点の buffer の表・instance と頂点と values の buffer は呼ぶ側（WebGpuPaint）が持ち、関数の record で渡す。
-// 描くのはスプライト・字・箱（mask つきを含む）・多角形・タイルの層・static layer・面（mask つきを含む）。3D の場面を貼る行は z の位置まで並べ、描かずに知らせる（skip）。
+// 描くのはスプライト・字・箱（mask つきを含む）・多角形・タイルの層・static layer・面（mask つきを含む）と、先に自分の texture へ描いた 3D の場面を z の位置で貼る行。
 pub mod RenderFrame.Internal.WebGpuRows {
     import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
@@ -17,6 +17,11 @@ pub mod RenderFrame.Internal.WebGpuRows {
     pub def shapeSprite(): Int32 = 0
     pub def shapePoly(): Int32 = 1
     pub def shapeTile(): Int32 = 2
+    /// 3D の場面を描いた texture を貼る形（WebGpuShader.sceneWgsl）。blend はいつも blendScene。
+    pub def shapeScene(): Int32 = 3
+
+    /// 場面を貼る blend の番号（α を掛けた後の値として重ねる。RenderFrame.blendCode の 3 つの後）。
+    pub def blendScene(): Int32 = 3
 
     /// pipeline の stencil の使い方（setPipeline に渡す番号）。None = pass が stencil を持たない・Keep = 持つが比べず書かない・
     /// Write = 色を変えず stencil へ比べる値を書く（mask の多角形）・Equal = stencil が比べる値の画素だけ描く（mask の内側のスプライト）。
@@ -27,6 +32,9 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     /// 面の行の面を塗る口（renderFrame の drawSurface の欄）: (pass, rows, 行, reads, stencil の使い方, 行の values の先頭の buffer の中の bytes)。
     pub type alias SurfaceDrawer = (RenderPass, Array[Int32, Static], Int32, Array[Int32, Static], Int32, Int32) -> Unit \ IO
+
+    /// 場面の行の場面を貼る口（renderFrame の drawScene の欄）: (pass, 場面の番号, stencil の使い方)。
+    pub type alias SceneDrawer = (RenderPass, Int32, Int32) -> Unit \ IO
 
     /// 1 回の renderCommands を pass 1 つへ流す。
     /// cfg の欄:
@@ -43,6 +51,8 @@ pub mod RenderFrame.Internal.WebGpuRows {
     ///   setValues(bytes) = 頂点の buffer の 1 番を、values の buffer の bytes の位置にする
     ///   drawSurface(pass, rows, 行, reads, stencil の使い方, 値の bytes) = 面の行の面を塗る（pipeline と group 0・1 を付けて draw 1 本。
     ///     描いた後は group 0 を射影・group 1 を空の絵に戻す）。値の bytes = 行の values の先頭の、values の buffer の中の位置
+    ///   drawScene(pass, 場面の番号, stencil の使い方) = 先に描いておいた場面の texture を、場面の矩形の scissor で貼る（pipeline・group 1・scissor を積む。
+    ///     group 0 と viewport は替えない）。描く物の無い場面は何もしない
     ///   skip(名前) = 描かない種類を知らせる（名前ごとに 1 回にまとめるのは呼ぶ側）
     pub def renderFrame(cfg: {
         sprites = List[RenderType.Drawable],
@@ -66,6 +76,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
         setVertices = (RenderPass, Int32, Int32) -> Int32 \ IO,
         setValues = (RenderPass, Int32) -> Unit \ IO,
         drawSurface = SurfaceDrawer,
+        drawScene = SceneDrawer,
         skip = String -> Unit \ IO
     }): Unit \ IO =
         let spec = cfg#pass;
@@ -110,7 +121,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
                 applyScissor(pass, geom);
                 pass.draw(6, 1, 0, base + used)
             } else ();
-            drawRowsFrom(pass, st, rowsOf(list), readsOf(list), geom, setPipeline, cfg#setTexture, cfg#setVertices, cfg#setValues, cfg#drawSurface, skip, warnLog,
+            drawRowsFrom(pass, st, rowsOf(list), readsOf(list), geom, setPipeline, cfg#setTexture, cfg#setVertices, cfg#setValues, cfg#drawSurface, cfg#drawScene, skip, warnLog,
                          0, rowCountOf(list));
             pass.end();
             addCountsTo(cfg#drawCounts, st)
@@ -136,12 +147,12 @@ pub mod RenderFrame.Internal.WebGpuRows {
     def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], reads: Array[Int32, Static], geom: Array[Int32, Static],
                      setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
-                     drawSurface: SurfaceDrawer,
+                     drawSurface: SurfaceDrawer, drawScene: SceneDrawer,
                      skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
-            drawRow(pass, st, rows, reads, geom, setPipeline, setTexture, setVertices, setValues, drawSurface, skip, warnLog, row);
-            drawRowsFrom(pass, st, rows, reads, geom, setPipeline, setTexture, setVertices, setValues, drawSurface, skip, warnLog, row + 1, n)
+            drawRow(pass, st, rows, reads, geom, setPipeline, setTexture, setVertices, setValues, drawSurface, drawScene, skip, warnLog, row);
+            drawRowsFrom(pass, st, rows, reads, geom, setPipeline, setTexture, setVertices, setValues, drawSurface, drawScene, skip, warnLog, row + 1, n)
         }
 
     /// 行 1 つを draw 1 本にし、draw call を GL と同じ物差しで数える（幅か高さが 0 の scissor は draw を出さずに数える）。
@@ -150,7 +161,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     def drawRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], reads: Array[Int32, Static], geom: Array[Int32, Static],
                 setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                 setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
-                drawSurface: SurfaceDrawer,
+                drawSurface: SurfaceDrawer, drawScene: SceneDrawer,
                 skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32): Unit \ IO =
         let kind = rowAt(rows, row, 0);
         let texId = rowAt(rows, row, 3);
@@ -164,7 +175,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
             else if (kind == kindTile()) drawTileRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, warnLog, row, visible)
             else if (kind == kindStatic()) drawStaticRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
             else if (kind == kindMask()) drawMaskRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, row, visible)
-            else if (kind == kindScene3d()) drawSceneRow(st, skip)
+            else if (kind == kindScene3d()) drawSceneRow(pass, st, rows, geom, drawScene, row)
             else if (kind == kindSurface()) drawSurfaceRow(pass, st, rows, reads, geom, setPipeline, setVertices, setValues, drawSurface, skip, row)
             else drawSpriteRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, row, visible)
         };
@@ -249,11 +260,16 @@ pub mod RenderFrame.Internal.WebGpuRows {
         else if (Array.get(first * readFields(), reads) == texId) true
         else hasTextureIn(reads, first + 1, count - 1, texId)
 
-    /// 3D の場面を貼る行: まだ描かない（知らせるだけ）。数えは GL と同じく、次の 2D の draw call を kind で切る。
+    /// 3D の場面を貼る行: 2D の pass の前に描いておいた場面の texture を貼る（2D の draw call には数えない）。数えは GL と同じく、次の 2D の draw call を kind で切る。
+    /// 貼る口が pipeline・group 1・scissor を替えるので、その 3 つの控えを捨てて次の行に積み直させる。
     // WhyNot: 2D の pass の途中で閉じて場面の pass を開かない — 2D の pass を閉じて開き直すと、viewport・積んだ pipeline と buffer の控え・黒帯の箱と
-    //   stencil を張り直す道が要り、標本つきの描き先は閉じるたびに resolve する。V2 では場面を 2D の pass の前に自分の texture へ描き、この行で貼る（plans/engine-webgpu.md の 5.4）。
-    def drawSceneRow(st: Array[Int32, Static], skip: String -> Unit \ IO): Unit \ IO =
-        skip("3D の場面");
+    //   stencil を張り直す道が要り、標本つきの描き先は閉じるたびに resolve する（plans/engine-webgpu.md の 5.4・12.25 で 2 つの形を比べた）。
+    def drawSceneRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static], drawScene: SceneDrawer,
+                     row: Int32): Unit \ IO =
+        drawScene(pass, rowAt(rows, row, 1), Array.get(24, geom));
+        Array.put(-1, 8, geom);
+        Array.put(-1, 9, geom);
+        Array.put(-1, 16, geom);
         countSceneRow(st)
 
     /// stencil を全部 0 に戻す: design の全面の 6 頂点を、stencil へ値 0 を書く pipeline で描く。scissor は描き先の全面にし、行の scissor は次の applyScissor が戻す。

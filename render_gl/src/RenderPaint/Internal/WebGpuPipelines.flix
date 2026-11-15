@@ -3,17 +3,21 @@
 // stencil は描き先ごとに 1 枚（中間の texture は鍵 0・Pass は絵の表の番号）で、初めて mask を描く pass で作る。
 pub mod RenderPaint.Internal.WebGpuPipelines {
     import fge.webgpu.BindGroupLayout
+    import fge.webgpu.BindGroupLayoutDesc
     import fge.webgpu.BlendFactor
     import fge.webgpu.BlendOperation
     import fge.webgpu.Buffer
+    import fge.webgpu.BufferBindingType
     import fge.webgpu.BufferUsage
     import fge.webgpu.CompareFunction
     import fge.webgpu.RenderPipeline
     import fge.webgpu.RenderPipelineDesc
     import fge.webgpu.ShaderModule
+    import fge.webgpu.ShaderStage
     import fge.webgpu.StencilOperation
     import fge.webgpu.Texture
     import fge.webgpu.TextureFormat
+    import fge.webgpu.TextureSampleType
     import fge.webgpu.TextureUsage
     import fge.webgpu.VertexFormat
     import fge.webgpu.WebGpu
@@ -25,6 +29,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     use RenderPaint.Internal.WebGpuShader
 
     /// pipeline と stencil の表。frameLayout と imageLayout は WebGpuPaint の持ち物（ここでは手放さない）。
+    /// sceneLayout = 3D の場面を貼る形の group 1（場面の texture と貼る矩形の uniform・WebGpuShader.sceneWgsl）。表が作って手放す。
     /// pipelines の鍵 = 形 × targetKeys() + targetKeyOf（blend・形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）・標本・stencil の使い方）。
     /// stencils = 描き先の鍵 → DEPTH24_PLUS_STENCIL8 の texture と、その幅・高さ・標本の数。
     pub type alias Pipelines = {
@@ -32,6 +37,8 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         spriteModule = ShaderModule,
         polyModule = ShaderModule,
         tileModule = ShaderModule,
+        sceneModule = ShaderModule,
+        sceneLayout = BindGroupLayout,
         frameLayout = BindGroupLayout,
         imageLayout = BindGroupLayout,
         pipelines = Ref[Map[Int32, RenderPipeline], Static],
@@ -45,9 +52,17 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
           spriteModule = gpu.createShaderModule("fge sprite", WebGpuShader.spriteWgsl()),
           polyModule = gpu.createShaderModule("fge polygon", WebGpuShader.polyWgsl()),
           tileModule = gpu.createShaderModule("fge tile", WebGpuShader.tileWgsl()),
+          sceneModule = gpu.createShaderModule("fge scene3d paste", WebGpuShader.sceneWgsl()),
+          sceneLayout = createSceneLayout(gpu),
           frameLayout = frameLayout, imageLayout = imageLayout,
           pipelines = Ref.fresh(Static, Map.empty()), stencils = Ref.fresh(Static, Map.empty()),
           stencilResetQuad = createResetQuad(gpu, design) }
+
+    /// 場面を貼る形の group 1 の layout（場面の texture と、貼る矩形の uniform）。
+    def createSceneLayout(gpu: WebGpu): BindGroupLayout \ IO =
+        let desc = new BindGroupLayoutDesc("fge scene3d paste");
+        discard desc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).buffer(1, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
+        gpu.createBindGroupLayout(desc)
 
     /// 起動の時に作る pipeline（RGBA8・標本 1 の、stencil の無い pass と mask のある pass の両方）。RGBA16_FLOAT と標本 4 は初めて要る Pass で作る。
     // WhyNot: mask のある pass の分を初めて mask が出たコマで作らない — Dawn は pipeline を作り終えるまで待つので、そのコマが詰まる。
@@ -73,14 +88,16 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         pipes#stencilResetQuad.destroy();
         pipes#spriteModule.release();
         pipes#polyModule.release();
-        pipes#tileModule.release()
+        pipes#tileModule.release();
+        pipes#sceneModule.release();
+        pipes#sceneLayout.release()
 
     /// pipeline の鍵のうち描き先と重ね方の分: ((blend の番号 × 2 + 形式) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方（0 以上 targetKeys() 未満）。
     /// 鍵の残り（形か面の program の番号）は × targetKeys() して足す。
     pub def targetKeyOf(blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): Int32 =
         ((blendC * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil
 
-    /// targetKeyOf が取る値の数（blend 3 × 形式 2 × 標本 2 × stencil 4 = 48 を収める）。
+    /// targetKeyOf が取る値の数（blend 4（3 つと場面を貼る WebGpuRows.blendScene）× 形式 2 × 標本 2 × stencil 4 = 64 を収める）。
     pub def targetKeys(): Int32 = 64
 
     pub def formatCode(format: RenderTarget.Format): Int32 = match format {
@@ -105,7 +122,8 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
                 pipeline
         }
 
-    /// glBlendFunc と同じ因子を色と alpha の両方に書く。Normal = (src-alpha, 1 − src-alpha)・Add = (src-alpha, 1)・Multiply = (dst, 1 − src-alpha)。
+    /// glBlendFunc と同じ因子を色と alpha の両方に書く。Normal = (src-alpha, 1 − src-alpha)・Add = (src-alpha, 1)・Multiply = (dst, 1 − src-alpha)・
+    /// 場面を貼る（WebGpuRows.blendScene）= (1, 1 − src-alpha)（GL の Render3d.blitDesign と同じ）。
     /// 頂点の buffer の並びは形ごと: スプライト = instance（152 バイト）・多角形 = 頂点（24 バイト）と view（stride 0）・
     /// タイル = タイル 1 枚（40 バイト）と層の値（stride 0）。
     /// stencil の使い方が Write の時は blend を (0, 1) にして色を変えない（glColorMask(false…) の代わり）。
@@ -116,6 +134,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         let desc = new RenderPipelineDesc("fge ${Int32.toString(shape)} ${entry} ${Int32.toString(blendC)} ${Int32.toString(stencil)}");
         if (shape == WebGpuRows.shapePoly()) describePoly(pipes#frameLayout, pipes#polyModule, entry, desc)
         else if (shape == WebGpuRows.shapeTile()) describeTile(pipes#frameLayout, pipes#imageLayout, pipes#tileModule, desc)
+        else if (shape == WebGpuRows.shapeScene()) describeScene(pipes#frameLayout, pipes#sceneLayout, pipes#sceneModule, desc)
         else describeSprite(pipes#frameLayout, pipes#imageLayout, pipes#spriteModule, entry, desc);
         describeTarget(blendC, format, samples, stencil, desc);
         pipes#gpu.createRenderPipeline(desc)
@@ -126,6 +145,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
             if (stencil == WebGpuRows.stencilWrite()) (BlendFactor.ZERO, BlendFactor.ONE)
             else if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE)
             else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA)
+            else if (blendC == WebGpuRows.blendScene()) (BlendFactor.ONE, BlendFactor.ONE_MINUS_SRC_ALPHA)
             else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA);
         discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD).multisample(samples);
         describeStencil(stencil, desc)
@@ -171,6 +191,11 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         discard desc.vertexBuffer(0, true);
         discard desc.attribute(VertexFormat.FLOAT32X2, 0, 6).attribute(VertexFormat.FLOAT32, 8, 7);
         discard desc.attribute(VertexFormat.FLOAT32X2, 12, 8).attribute(VertexFormat.FLOAT32X3, 20, 9)
+
+    /// 場面を貼る形: 頂点の buffer を持たない（全面の三角形を頂点の番号で作る）。
+    def describeScene(frameLayout: BindGroupLayout, sceneLayout: BindGroupLayout, module: ShaderModule, desc: RenderPipelineDesc): Unit \ IO =
+        discard desc.bindGroupLayout(frameLayout).bindGroupLayout(sceneLayout);
+        discard desc.vertex(module, "vs_main").fragment(module, "fs_main")
 
     // ── stencil ──
 

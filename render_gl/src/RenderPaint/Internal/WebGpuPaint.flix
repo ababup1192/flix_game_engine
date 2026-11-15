@@ -3,7 +3,8 @@
 // コマは中間の texture（RGBA8・描き先の画素の大きさ）へ描き、present で画面の texture へ 1 回写す。encoder はコマに 1 つで、submit はコマの終わり。
 // ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
 // 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
-// 面（ShaderDoc）の program と pipeline と draw は WebGpuSurfaces。まだ描かない物（3D の場面・起動の後に足す字）は名前ごとに 1 回知らせて捨てる。3D の場面は 2D の並びの z の位置まで行にしてから捨てる（WebGpuRows）。
+// 面（ShaderDoc）の program と pipeline と draw は WebGpuSurfaces。3D の場面は Render3d.WebGpuRenderer が 2D の pass の前に自分の texture へ描き、2D の並びの z の位置で貼る。
+// まだ描かない物（起動の後に足す字・3D の材質や影など）は名前ごとに 1 回知らせて捨てる。
 //
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
@@ -131,7 +132,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             texWarnLog = Ref[Set[String], Static],
             skipped = Ref[Set[String], Static],
             diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
-            drawCounts = RenderDrawCounts.Holder
+            drawCounts = RenderDrawCounts.Holder,
+            // 3D の場面を描く所（2D の pass の前に場面を自分の texture へ描き、貼る行で貼る）。
+            scenes3d = Render3d.WebGpuRenderer.Renderer
         })
     }
 
@@ -192,7 +195,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
             texWarnLog = Ref.fresh(Static, Set.empty()), skipped = Ref.fresh(Static, Set.empty()),
-            diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh()
+            diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
+            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout)
         });
         installBuiltins(paint);
         paint
@@ -363,6 +367,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Ref.put(None, p#presentPipeline);
         WebGpuPipelines.release(p#pipes);
         WebGpuSurfaces.release(p#surfaces);
+        Render3d.WebGpuRenderer.release(p#scenes3d);
         Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(p#copyPipelines));
         Ref.put(Map.empty(), p#copyPipelines);
         Array.get(0, p#frameTexture).destroy();
@@ -432,7 +437,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(0, 0, p#frameCounters);
                 Array.put(Array.get(1, p#frameCounters) + 1, 1, p#frameCounters);
                 List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil);
-                WebGpuSurfaces.afterSubmit(p#surfaces)
+                WebGpuSurfaces.afterSubmit(p#surfaces);
+                Render3d.WebGpuRenderer.afterSubmit(p#scenes3d)
         }
 
     /// このコマに積んだ pass があれば submit する（絵や buffer を作る・書く・捨てる前に呼ぶ）。
@@ -578,6 +584,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         };
         let surfaces = p#surfaces;
         let textureOf = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#texture);
+        let scenes = Render3d.WebGpuRenderer.prepare(p#scenes3d, sceneHost(paint),
+                                                     { key = stencilKey, format = format, samples = samples, viewport = sceneViewportOf(paint, pass), height = pass#height },
+                                                     frame#scenes);
         WebGpuRows.renderFrame({
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons, staticRanges = staticRanges, surfaces = frame#surfaces,
             sceneZs = List.toVector(List.map(cmd -> cmd#scene#zIndex, frame#scenes)),
@@ -595,8 +604,35 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             drawSurface = (pass1, rows, row, reads, stencil, bytes) ->
                 WebGpuSurfaces.draw(surfaces, pass1, (format, samples), stencil, Array.get(0, p#values#gpuBuffer), bytes, textureOf, name -> skip(paint, name),
                                     rows, row, reads),
+            drawScene = (pass1, index, stencil) -> pasteScene(pipes, (format, samples), Vector.get(index, scenes), pass1, stencil),
             skip = name -> skip(paint, name)
         })
+
+    /// 先に描いた場面 1 つ（Render3d.WebGpuRenderer.prepare の答え）を、場面の矩形の scissor で貼る（描く物の無い場面は何もしない）。
+    def pasteScene(pipes: WebGpuPipelines.Pipelines, target: (RenderTarget.Format, Int32), scene: Option[Render3d.WebGpuRenderer.Paste],
+                   pass: RenderPass, stencil: Int32): Unit \ IO =
+        let (format, samples) = target;
+        scene |> Option.forEach(paste -> {
+            let (x, y, w, h) = paste#scissor;
+            pass.setPipeline(WebGpuPipelines.pipelineOf(pipes, WebGpuRows.shapeScene(), WebGpuRows.blendScene(), format, samples, stencil));
+            pass.setBindGroup(1, paste#group);
+            pass.setScissorRect(x, y, w, h);
+            pass.draw(3, 1, 0, 0)
+        })
+
+    /// 場面の矩形を描き先の画素へ写すための design 領域（GL の左下が原点）と倍率（GL の RenderPaint が Scene3dRenderer.Prepared#draw に渡す物と同じ）。
+    def sceneViewportOf(paint: Paint, pass: PassSpec): Scene3dRenderer.Viewport =
+        let PaintData.PaintData(p) = paint;
+        let (x, y, w, h) = RenderList.glViewportOf(pass);
+        { x = x, y = y, width = w, height = h, scaleX = Int32.toFloat64(w) / p#designW, scaleY = Int32.toFloat64(h) / p#designH }
+
+    /// 3D の描き手へ貸す encoder・submit・知らせ。
+    def sceneHost(paint: Paint): Render3d.WebGpuRenderer.Host =
+        let PaintData.PaintData(p) = paint;
+        { encoder = () -> encoderOf(paint),
+          notePass = () -> Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters),
+          flush = () -> flushPending(paint),
+          skip = name -> skip(paint, name) }
 
     // ── 頂点の buffer（タイルの層・static layer）──
 
@@ -796,6 +832,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
         };
         submitEncoder(paint);
+        Render3d.WebGpuRenderer.endFrame(p#scenes3d);
         WebGpuSurfaces.endFrame(p#surfaces, Array.get(0, p#lastFrame)#surfaces |> List.map(cmd -> GpuHandle.shaderProgramInt(cmd#program)) |> List.toSet);
         let submits = Array.get(1, p#frameCounters);
         Array.put(submits, 2, p#frameCounters);
@@ -1006,7 +1043,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             }
         }
 
-    /// 3D の場面は溜めて、次の renderCommands の 2D の並びに z の位置で混ぜる（貼る行は描かずに 1 回知らせる・WebGpuRows）。先に上げる物の宣言は捨てる。
+    /// 3D の場面は溜めて、次の renderCommands で 2D の pass の前に描き、2D の並びに z の位置で貼る（Render3d.WebGpuRenderer・WebGpuRows）。先に上げる物の宣言は捨てる。
     pub def handleDraw3d(paint: Paint, f: Unit -> a \ ef): a \ (ef - Platform.Draw3d) + IO =
         run f() with handler Platform.Draw3d {
             def drawScene3d(cmd, k) = {

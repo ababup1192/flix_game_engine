@@ -270,6 +270,55 @@ pub mod Render3dWgsl {
         "    return vec4f(r3d_surfaceOut(i.vColor, i.vTint, lightAt(i.vWorld, n), vec3f(0.0), 1.0, i.vWorld, true), 1.0);\n" +
         "}\n"
 
+    /// 1 体ごとの値の 1 体のバイト数（Render3d.Instancing の 1 体 = 8 texel × 4 float）。
+    pub def instanceBytes(): Int32 = 4 * 4 * Render3dGlsl.texelsPerInstance()
+
+    /// 目と射影の行列（group 0 の binding 5）。詰める側は uView・uProj の順に列優先で 128 バイト。
+    pub def cameraDeclarations(): String =
+        "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f };\n" +
+        "@group(0) @binding(5) var<uniform> r3dCamera: R3dCamera;\n"
+
+    /// 頂点の色のプログラムの頂点シェーダー（Render3dGlsl.litVertexSource の骨の無い版と同じ式）。入口は vs_main。
+    /// 形の頂点は buffer 0（位置・法線・色の 9 float・36 バイト）を location 0〜2 で、1 体ごとの値は buffer 1（Render3d.Instancing の 1 体の並び・instanceBytes()）を
+    /// location 3〜10 で読む。行の頭の物は draw の firstInstance で引く。varying は litFragmentSource の R3dLitIn と同じ並び。
+    // WhyNot: 1 体ごとの値を storage buffer から引かない — 2D のスプライト（V1）と同じ instance の頂点の buffer にそろえる。骨の行と一緒に storage へ移すかは P8 で決める。
+    pub def litVertexSource(): String =
+        cameraDeclarations() +
+        "struct R3dVertexIn {\n" +
+        "    @location(0) aPos: vec3f,\n" +
+        "    @location(1) aNormal: vec3f,\n" +
+        "    @location(2) aColor: vec3f,\n" +
+        "    @location(3) model0: vec4f,\n" +
+        "    @location(4) model1: vec4f,\n" +
+        "    @location(5) model2: vec4f,\n" +
+        "    @location(6) model3: vec4f,\n" +
+        "    @location(7) normal0: vec4f,\n" +
+        "    @location(8) normal1: vec4f,\n" +
+        "    @location(9) normal2: vec4f,\n" +
+        "    @location(10) tint: vec4f,\n" +
+        "};\n" +
+        "struct R3dLitOut {\n" +
+        "    @builtin(position) position: vec4f,\n" +
+        "    @location(0) vWorld: vec3f,\n" +
+        "    @location(1) vNormal: vec3f,\n" +
+        "    @location(2) vColor: vec3f,\n" +
+        "    @location(3) @interpolate(flat) vTint: vec3f,\n" +
+        "};\n" +
+        colorSpaceSource() +
+        ShaderGen.Wgsl.clipFromGlSource() +
+        "@vertex fn vs_main(v: R3dVertexIn) -> R3dLitOut {\n" +
+        "    let model = mat4x4f(v.model0, v.model1, v.model2, v.model3);\n" +
+        "    let normalMatrix = mat4x4f(vec4f(v.normal0.xyz, 0.0), vec4f(v.normal1.xyz, 0.0), vec4f(v.normal2.xyz, 0.0), vec4f(0.0, 0.0, 0.0, 1.0));\n" +
+        "    let world = model * vec4f(v.aPos, 1.0);\n" +
+        "    var o: R3dLitOut;\n" +
+        "    o.vWorld = world.xyz;\n" +
+        "    o.vNormal = (normalMatrix * vec4f(v.aNormal, 0.0)).xyz;\n" +
+        "    o.vColor = r3d_srgbToLinear3(v.aColor);\n" +
+        "    o.vTint = v.tint.rgb;\n" +
+        "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * world);\n" +
+        "    return o;\n" +
+        "}\n"
+
     /// 空の色の式 skyAt(向き)（Render3dGlsl.skyLightSource と同じ木）。
     pub def skyLightSource(): String =
         LightModel3d.Codegen.toWgsl("skyAt", Vec3Input.SkyDirection :: Nil, LightModel3d.skyModel())

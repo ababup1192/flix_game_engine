@@ -188,6 +188,25 @@ pub mod RenderPaint.Internal.WebGpuShader {
         "}\n" +
         "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(0.5, 0.2, 0.2, 1.0); }\n"
 
+    /// 3D の場面を描いた texture を 2D の描き先へ貼る WGSL（viewport の全面の三角形 1 枚・貼る矩形は scissor で切る）。入口は vs_main・fs_main。
+    /// group 0 = 射影の行列（読まない・2D の行と同じ並びにして付け直さない）・group 1 = 場面の texture と、貼る矩形の左上（描き先の画素）と texture の画素 ÷ 矩形の画素。
+    /// 出す色は α を掛けた後の値（pipeline の blend が ONE, ONE_MINUS_SRC_ALPHA）。読む texel は GL の Render3d.blitDesign の最も近い画素と同じ式。
+    // WhyNot: viewport を貼る矩形にしない — 画面の外へはみ出した場面の矩形は描き先の外の viewport になり、WebGPU はそれを誤りにする。
+    // WhyNot: textureSample で読まない — Native の場面は 1 画素ずつ写したいので、sampler の filter を通さず整数の座標で読む。
+    pub def sceneWgsl(): String =
+        "struct Paste { origin: vec2f, scale: vec2f };\n" +
+        "@group(1) @binding(0) var sceneImage: texture_2d<f32>;\n" +
+        "@group(1) @binding(1) var<uniform> paste: Paste;\n" +
+        "@vertex fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {\n" +
+        "    var corners = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));\n" +
+        "    return vec4f(corners[vi], 0.0, 1.0);\n" +
+        "}\n" +
+        "@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n" +
+        "    let last = vec2i(textureDimensions(sceneImage, 0)) - vec2i(1);\n" +
+        "    let texel = clamp(vec2i(floor((pos.xy - paste.origin) * paste.scale)), vec2i(0), last);\n" +
+        "    return textureLoad(sceneImage, texel, 0);\n" +
+        "}\n"
+
     /// 中間の texture を画面の texture へ写す WGSL（全面の三角形 1 枚）。入口は vs_present・fs_present。group 0 = 中間の texture。
     // WhyNot: textureSample で読まない — 標本と sampler を通すと filter の差が出うる。整数の座標で 1 画素ずつ写す。
     pub def presentWgsl(): String =
