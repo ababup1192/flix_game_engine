@@ -23,8 +23,8 @@ run:
 # WebGPU の描き手（FLIX_GE_BACKEND=webgpu）で V1 が描く scene だけを画面口で流し、SoftRaster と比べる（run と同じ表）。
 # 続けて同じ scene を GL でも画面口で撮り、GL と WebGPU を bin/fge pixel-diff で比べる（許す差は 0）。起動のログに WebGPU で起動した行が無ければ止める。
 # 絵は debug/webgpu と debug/gl-screen に残す。
-# WhyNot: passChain・texField・passMask・3D の scene を入れない — 面（ShaderDoc）・mask・3D の場面を使い、V1 の WebGPU は描かない。
-V1_SCENES := boxes,spriteNearest,passPaste,radial,veil
+# WhyNot: passChain・texField・passMask と、材質・影・ビルボードを使う 3D の scene を入れない — 面（ShaderDoc）・mask と 3D のそれらを WebGPU はまだ描かない（3D は頂点の色と地の色だけ・plans の 12.25）。
+V1_SCENES := boxes,spriteNearest,passPaste,radial,veil,sceneBetweenBoxes
 webgpu:
 	@# WhyNot: debug/soft を消さない — 選んだ scene しか描き直さないので、git に入っているほかの scene の items.tsv が消える。
 	rm -rf debug/gl debug/diff debug/webgpu debug/gl-screen

@@ -2,10 +2,11 @@
 // 例の描き先は 320 × 200 に design 320 × 180 を収めた物（calcViewport が上下に 10 px ずつの黒帯を置く: vp = (0, 10, 320, 180)）。
 // WhyNot: mod TestWebGpuRows にしない — 固定したい関数は WebGpuRows の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
+    import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
     use RenderFrame.{closeSpriteRun, emitSprite, stateSize}
-    use RenderFrame.Internal.RenderList.{instanceFloats, newRenderList, rowAt, rowsOf}
-    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isSameScissor, noteScissor, putScissor, scissorInto, viewportTop}
+    use RenderFrame.Internal.RenderList.{appendSceneRow, instanceFloats, newRenderList, rowAt, rowsOf}
+    use RenderFrame.Internal.WebGpuRows.{drawSceneRow, firstInstanceAt, geometryOf, isSameScissor, noteScissor, putScissor, scissorInto, stencilKeep, viewportTop}
 
     def fb(): (Int32, Int32) = (320, 200)
 
@@ -84,6 +85,25 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
         closeSpriteRun(st, list);
         let rows = rowsOf(list);
         Assert.assertEq(expected = (0, 6, 101, 1), (rowAt(rows, 1, 4), rowAt(rows, 1, 3), firstInstanceAt(rows, 1, 100), rowAt(rows, 1, 2)))
+
+    // ── 3D の場面を貼る行 ──
+
+    /// 場面の行は、行の 1 番の場面の番号と mask でない行の stencil の使い方で貼る口を 1 回呼び、pipeline・絵・scissor の控えを捨てる（次の行が積み直す）。
+    @Test
+    def testSceneRowPastesByNumberAndForgetsBindings(): Unit \ {Assert, IO} =
+        let st: Array[Int32, Static] = Array.empty(Static, stateSize());
+        let list = newRenderList(FloatBuffer.allocate(0), FloatBuffer.allocate(0));
+        appendSceneRow(list, 2);
+        let geom = geometryOf(320, 200, vp(), (0, 0, 0), -1, stencilKeep());
+        Array.put(7, 8, geom);
+        Array.put(5, 9, geom);
+        putScissor(geom, 0, 0, 320, 200);
+        noteScissor(geom);
+        let calls = Ref.fresh(Static, (Nil: List[(Int32, Int32)]));
+        let pass: RenderPass = unchecked_cast(null as RenderPass);
+        drawSceneRow(pass, st, rowsOf(list), geom, (_, scene, stencil) -> Ref.put((scene, stencil) :: Ref.get(calls), calls), 0);
+        Assert.assertEq(expected = ((2, stencilKeep()) :: Nil, -1, -1, false),
+                        (Ref.get(calls), Array.get(8, geom), Array.get(9, geom), isSameScissor(geom)))
 
     def spriteOf(texture: String): DrawCmd.Drawable =
         DrawCmd.make({

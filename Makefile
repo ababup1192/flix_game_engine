@@ -371,6 +371,7 @@ webgpu-check:
 #   2. 実機の窓 (隠して起動): rpg-starter の title を --backend webgpu で 2 回撮り、SHA が同じ
 #   3. GL と WebGPU: 同じ場面を CAPTURE_GLYPHS=used の GL でも撮り、bin/fge pixel-diff で比べる
 #   4. bench/gl_parity の V1 の scene を WebGPU で流し、SoftRaster と GL に比べる
+#   5. bench/webgpu_v2（3D の比べ・render_gl の pub でない関数を呼ぶ）が組めるかだけを見る（流すのは make -C bench/webgpu_v2 run）
 # 許す差は bench/webgpu_v1/tolerance.tsv (既定 0・字は 2/255)。どれかが落ちれば exit 1。GPU の要る門なので CI には載せない。先に make sync-engine-full。
 WEBGPU_V1_OUT := build/webgpu-v1
 WEBGPU_V1_TOL := bench/webgpu_v1/tolerance.tsv
@@ -387,6 +388,7 @@ webgpu-v1-check:
 			--out $(WEBGPU_V1_OUT)/diff/title-$$n.png || bad="$$bad $$n"; \
 	done; [ -z "$$bad" ] || { echo "[webgpu-v1-check] GL と違う:$$bad"; exit 1; }
 	@$(MAKE) -C bench/gl_parity webgpu
+	@$(MAKE) -C bench/webgpu_v2 check
 	@echo "[webgpu-v1-check] OK"
 
 # 同じ V1 の門のブラウザ版: rpg-starter を書き出し、web-capture の ?capture=6 を WebGL2・?backend=webgpu・WebGPU の無い頁

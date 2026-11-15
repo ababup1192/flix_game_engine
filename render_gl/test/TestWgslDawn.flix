@@ -252,12 +252,15 @@ mod TestWgslDawn {
         })
 
     /// 手で書いた 2D の面の WGSL（組めない面の単色の代わり）。
-    def builtinSurfaces(): List[(String, String)] = ("surface fallback", RenderPaint.Internal.WebGpuShader.surfaceFallbackWgsl()) :: Nil
+    def builtinSurfaces(): List[(String, String)] =
+        ("surface fallback", RenderPaint.Internal.WebGpuShader.surfaceFallbackWgsl()) ::
+        ("scene3d paste", RenderPaint.Internal.WebGpuShader.sceneWgsl()) :: Nil
 
     /// 3D の光の式の関数（材質の frag に入らない空の式を含む）を、場面の宣言と一緒に組む。
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
+        ("vertex lit", Render3dWgsl.litVertexSource()) ::
         ("sky", head + Render3dWgsl.skyLightSource() +
                 "@fragment fn fs_main(@location(0) d: vec3f) -> @location(0) vec4f { return vec4f(skyAt(d), 1.0); }\n") :: Nil
 
