@@ -50,7 +50,7 @@ showcase-video:
 # tape.json が書けない（同じ名前の mark・2 つ以上の .yarn にまたがる flow）時は FlowVideo が理由を出し、ここで止める。
 # flow が途中で止まった時も、そこまでの頁を作ってから止まった印（終了コード 1）を返す。
 # 分岐: 結末ごとに 1 本ずつ flow を書き（同じ始まりから別の選択肢を選ぶ）、make tape FLOWS="e2e/a.flow e2e/b.flow" で
-# まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐のカードにして隣の頁へつなぐ。
+# まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐にして、頁のグラフの箱から隣の頁へつなぐ。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
 # WhyNot: flow が途中で止まっても exit しない — そこまでの頁を作ってから、最後に終了コード 1 を返す（code）。
 tape-shoot = rm -rf debug/video/$(2) debug/tape/$(2); mkdir -p debug/tape/$(2); \

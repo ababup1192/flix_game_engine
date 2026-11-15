@@ -13,7 +13,7 @@ import (
 var fieldOrder = []string{
 	"game", "title", "flow", "commit", "fps", "duration", "yarn", "node", "playUrl", "stripPerSec",
 	"scenes", "timeline", "lines", "speaker", "sounds", "objects", "branches", "probes",
-	"speakers", "probeNames", "msg", "choices", "video", "videoBytes", "strip",
+	"speakers", "probeNames", "msg", "choices", "video", "videoBytes", "strip", "graph", "script",
 }
 
 // required はゲームの tape.json が持つ欄と、無かった時に言う出どころ。
@@ -38,8 +38,10 @@ var required = []struct{ key, from string }{
 	{"branches", "分岐（今は []）"},
 }
 
-// optional は無くてもよい欄。choices は選択肢を選ばない flow や前の版のテンプレートでは無い。commit 以下は Build が上書きする。
-var optional = map[string]bool{"playUrl": true, "choices": true, "commit": true, "video": true, "stripPerSec": true, "strip": true}
+// optional は無くてもよい欄。choices は選択肢を選ばない flow や前の版のテンプレートでは無い。commit 以下は Build が上書きする
+// （graph と script は yarn の台本のフォルダが見つかった時だけ）。
+var optional = map[string]bool{"playUrl": true, "choices": true, "commit": true, "video": true, "stripPerSec": true, "strip": true,
+	"graph": true, "script": true}
 
 // Tape は検査を通った tape.json。頁へは raw をそのまま渡し、型は検査と分岐の組み立てのためだけに読む。
 type Tape struct {

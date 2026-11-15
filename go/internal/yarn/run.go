@@ -4,7 +4,8 @@ package yarn
 //
 //	fge yarn build <フォルダか x.yarn>... [--out <パス>] [--vocab <パス> | --no-vocab]   読んで検査し、木の JSON を書く
 //	fge yarn check <パス>...                                                           書かずに、書いてある JSON とずれていないかも見る
-//	fge yarn graph <フォルダ> [--out <html>] [--json <json>]                          分岐のグラフと演出の帯の HTML（と JSON）を書く（graph.go）
+//	fge yarn graph <フォルダ> [--out <html>] [--json <json>]                          分岐のグラフとノードごとの行の HTML（と JSON）を書く（graph.go）
+//	fge yarn script <フォルダ> [--out <md>]・script --diff <直した.md> <フォルダ>          シナリオ原稿を書く・直した原稿の差分を .yarn へ反映する形で出す（script.go）
 //	build と check は --json で Report（知らせ・ノードの一覧・書いたファイル）を 1 行の JSON にする（Studio の会話の画面が読む）
 
 import (
@@ -30,8 +31,11 @@ const usage = `使い方: bin/fge yarn <サブコマンド> ...   会話のシ�
       パス（.yarn・vocab.json・dialogue.json）のフォルダごとに build と同じ検査をし、書いてある dialogue.json が
       .yarn から作り直した物と違えば 1（書かない）。コミットの前の門が流す。
   yarn graph <フォルダ> [--out <html>] [--json <json>|-] [--vocab <パス> | --no-vocab] [--stage a,b,…]
-      分岐のグラフ（ノード = 箱・<<jump>> = 矢印・結末と最初のノードを色分け）と、ノードを押すと出る演出の帯・全部の行を
+      分岐のグラフ（ノード = 箱・<<jump>> = 矢印・結末と最初のノードを色分け）と、ノードを押すと出る舞台・矢印・全部の行を
       1 ファイルの HTML に書く（既定 build/yarn-graph.html）。--json はシナリオを全部読まずに全体をつかむ用の中身。詳しくは yarn graph --help。
+  yarn script <フォルダ> [--out <md>]   /   yarn script --diff <直した.md> <フォルダ> [--out <md>]
+      ライターが読むシナリオ原稿（Markdown。既定 build/yarn-script.md）を書く。--diff は直した原稿と今の .yarn の差分（diff）を取り、
+      .yarn のどの行をどう直すか（そのまま貼れる行つき）を出す。詳しくは yarn script --help。
 
 読む: ノード（title: 〜 --- 〜 ===）・ヘッダ・話し手: 台詞・#タグ・-> の選択肢と字下げ・<<jump>>・<<stop>>・<<wait 秒>>・// コメント・\ のエスケープ。
 台詞の強制の改行は \n（例 girl: できた！\n次は…）。字の \ < > { } # / [ ] : は前に \ を置く（字の \n は \\n）。
@@ -113,8 +117,11 @@ func run(out, errOut *strings.Builder, workRoot string, args []string, rep *Repo
 		}
 		return 0
 	}
-	if args[0] == "graph" {
+	switch args[0] {
+	case "graph":
 		return runGraph(out, errOut, workRoot, args[1:])
+	case "script":
+		return runScript(out, errOut, workRoot, args[1:])
 	}
 	opts, paths, err := parseFlags(args[1:])
 	if err != nil {
@@ -127,7 +134,7 @@ func run(out, errOut *strings.Builder, workRoot string, args []string, rep *Repo
 	case "check":
 		return build(out, errOut, workRoot, paths, opts, true, rep)
 	}
-	errOut.WriteString(fmt.Sprintf("知らないサブコマンド: %s%s\n", args[0], suggest.Hint(args[0], []string{"build", "check", "graph", "help"})))
+	errOut.WriteString(fmt.Sprintf("知らないサブコマンド: %s%s\n", args[0], suggest.Hint(args[0], []string{"build", "check", "graph", "script", "help"})))
 	return 2
 }
 
@@ -406,12 +413,24 @@ func BuildProgram(names, texts []string, vocab *Vocab, vocabPath string) (*Progr
 
 // gameRootOf は dir から上へ辿って最初に project.json のあるフォルダ（無ければ cwd）。
 func gameRootOf(dir, cwd string) string {
-	for d := dir; ; d = filepath.Dir(d) {
+	if root := FindGameRoot(dir); root != "" {
+		return root
+	}
+	return cwd
+}
+
+// FindGameRoot は dir から上へ辿って最初に project.json のあるフォルダ（無ければ空）。
+func FindGameRoot(dir string) string {
+	d, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	for ; ; d = filepath.Dir(d) {
 		if _, err := os.Stat(filepath.Join(d, "project.json")); err == nil {
 			return d
 		}
 		if filepath.Dir(d) == d {
-			return cwd
+			return ""
 		}
 	}
 }

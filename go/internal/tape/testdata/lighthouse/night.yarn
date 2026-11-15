@@ -1,0 +1,25 @@
+title: Shore
+---
+<<bg shore>>
+keeper: 今夜は風が強い。／船は来るだろうか
+// 行 10 から選択肢（fork.tape.json の choices の line）
+//
+//
+//
+//
+-> 灯をともす
+    灯台守は灯をともした
+    <<jump Tower>>
+-> 眠る
+    <<jump Sleep>>
+===
+title: Tower
+---
+灯台守は階段を上った
+<<stop>>
+===
+title: Sleep
+---
+灯台守は眠った
+<<stop>>
+===

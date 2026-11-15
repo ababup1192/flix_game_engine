@@ -1,6 +1,6 @@
 package yarn
 
-// fge yarn graph: フォルダの .yarn から、ノードと jump のグラフ・ノードごとの演出の帯・検査を作る。
+// fge yarn graph: フォルダの .yarn から、ノードと jump のグラフ・ノードごとの演出の並びと行・検査を作る（HTML は行を、--json は演出の並びも出す）。
 // 中身は Graph（--json で書く形）に集め、HTML は graph_html.go がそれから描く。
 
 import (
@@ -313,8 +313,8 @@ func firstText(stmts []*Stmt) string {
 	return ""
 }
 
-// CommentHeadings は .yarn の本文から、title: の直前の // ── コメントの「:」より前を、ノード名ごとに拾う。
-func CommentHeadings(text string) map[string]string {
+// NodeComments は .yarn の本文から、title: の直前の // ── コメント（線を除いた全部）を、ノード名ごとに拾う。
+func NodeComments(text string) map[string]string {
 	out := map[string]string{}
 	pending := ""
 	for _, raw := range strings.Split(text, "\n") {
@@ -324,15 +324,29 @@ func CommentHeadings(text string) map[string]string {
 			pending = strings.TrimSpace(strings.Trim(line, "/ ─"))
 		case strings.HasPrefix(line, "title:"):
 			if pending != "" {
-				if i := strings.IndexAny(pending, ":："); i >= 0 {
-					pending = pending[:i]
-				}
-				out[strings.TrimSpace(strings.TrimPrefix(line, "title:"))] = strings.TrimSpace(pending)
+				out[strings.TrimSpace(strings.TrimPrefix(line, "title:"))] = pending
 			}
 			pending = ""
 		}
 	}
 	return out
+}
+
+// CommentHeadings は NodeComments の見出し（commentHeading）。
+func CommentHeadings(text string) map[string]string {
+	out := NodeComments(text)
+	for k, v := range out {
+		out[k] = commentHeading(v)
+	}
+	return out
+}
+
+// commentHeading は // ── コメントの「:」より前（箱とシナリオ原稿の見出しに使う短い名前）。
+func commentHeading(comment string) string {
+	if i := strings.IndexAny(comment, ":："); i >= 0 {
+		return strings.TrimSpace(comment[:i])
+	}
+	return comment
 }
 
 // layoutDepths は最初のノードたちから jump を辿った最短の数を Depth に入れる。
@@ -534,9 +548,9 @@ func clip(s string, n int) string {
 }
 
 const graphUsage = `使い方: bin/fge yarn graph <フォルダか x.yarn>... [--out <html>] [--json <json>|-] [--vocab <パス> | --no-vocab] [--stage a,b,…]
-  1 つのフォルダの .yarn から、分岐のグラフ（ノード = 箱・<<jump>> = 矢印）と、ノードごとの演出の帯・全部の行・検査を書き出す。
+  1 つのフォルダの .yarn から、分岐のグラフ（ノード = 箱・<<jump>> = 矢印）と、ノードを押すと出る舞台・矢印・全部の行と、検査を書き出す。
   既定の書き先は <ゲームのルート>/build/yarn-graph.html（1 ファイルで開ける。外の物を読まない）。
-  --json はグラフの中身（ノード・矢印・帯・検査。行の本文は入れない）を書く（- か書き先を省くと標準出力）。--json だけなら HTML は書かない。
+  --json はグラフの中身（ノード・矢印・演出の並び・検査。行の本文は入れない）を書く（- か書き先を省くと標準出力）。--json だけなら HTML は書かない。
   最初のノードは語彙（vocab.json）の nodes（コードが開くノード）。語彙が無ければ最初のファイルの最初のノード。
   演出の色は既定の表に、vocab.json の "graph": {"categories": {"actor": ["girl"]}} を重ねる（分類: stage actor sound fx wait end。無い名前は other）。
   舞台（ノードを越えて残る物）は --stage か vocab.json の graph.stage、無ければ scene bg bgm ambience lights。
@@ -631,70 +645,16 @@ func runGraph(out, errOut *strings.Builder, cwd string, args []string) int {
 		errOut.WriteString(fmt.Sprintf("グラフは 1 つのフォルダずつ作る（.yarn のあるフォルダが %d 個ある）\n", len(groups)))
 		return 2
 	}
-	g := groups[0]
-	root := gameRootOf(g.dir, cwd)
-	var vocab *Vocab
-	var cfg GraphConfig
-	vocabPath := ""
-	if !opts.noVocab {
-		vocabPath = abs(opts.vocab)
-		if vocabPath == "" {
-			vocabPath = filepath.Join(g.dir, vocabName)
-		}
-		data, readErr := os.ReadFile(vocabPath)
-		switch {
-		case readErr != nil && opts.vocab != "":
-			errOut.WriteString(fmt.Sprintf("語彙を読めない: %s\n", opts.vocab))
-			return 2
-		case readErr != nil:
-			// WhyNot: 語彙が無くても止めない —— 書きかけのシナリオの形を見るのがこのコマンドの用途で、話し手やコマンドの検査は build が受け持つ。
-			vocabPath = ""
-		default:
-			if vocab, err = ParseVocab(data); err == nil {
-				cfg, err = ParseGraphConfig(data)
-			}
-			if err != nil {
-				errOut.WriteString(fmt.Sprintf("%s: %v\n", rel(root, vocabPath), err))
-				return 2
-			}
-		}
+	l, err := loadGroup(groups[0], cwd, abs(opts.vocab), opts.noVocab)
+	if err != nil {
+		errOut.WriteString(err.Error() + "\n")
+		return 2
 	}
-	var names, texts []string
-	for _, f := range g.files {
-		data, err := os.ReadFile(f)
-		if err != nil {
-			errOut.WriteString(fmt.Sprintf("%s: 読めない: %v\n", rel(root, f), err))
-			return 2
-		}
-		names = append(names, rel(root, f))
-		texts = append(texts, string(data))
-	}
-	prog, checked := BuildProgram(names, texts, vocab, rel(root, vocabPath))
-	stage := opts.stage
-	if len(stage) == 0 {
-		stage = cfg.Stage
-	}
-	if len(stage) == 0 {
-		stage = DefaultStageKeys
-	}
-	table, cfgProblems := categoryTable(cfg, rel(root, vocabPath))
-	var roots []string
-	if vocab != nil {
-		roots = vocab.Nodes
-	}
-	heads := map[string]string{}
-	for _, text := range texts {
-		for k, v := range CommentHeadings(text) {
-			heads[k] = v
-		}
-	}
-	graph := BuildGraph(prog, checked, roots, stage, table, heads)
-	graph.Problems = append(cfgProblems, graph.Problems...)
-	graph.Title = fmt.Sprintf("%s — %s", gameTitleOf(root), rel(root, g.dir))
+	graph := l.graph(opts.stage)
 
 	htmlPath := abs(opts.out)
 	if htmlPath == "" && !opts.jsonOut {
-		htmlPath = filepath.Join(root, "build", "yarn-graph.html")
+		htmlPath = filepath.Join(l.root, "build", "yarn-graph.html")
 	}
 	if htmlPath != "" {
 		page, err := RenderGraphHTML(graph)
@@ -741,6 +701,80 @@ func runGraph(out, errOut *strings.Builder, cwd string, args []string) int {
 		}
 	}
 	return 0
+}
+
+// loaded は 1 つのフォルダの .yarn を読んだ物。graph・script・テープの頁が同じ読み方をする。
+type loaded struct {
+	dir, root string
+	texts     []string
+	prog      *Program
+	checked   []Problem
+	vocab     *Vocab
+	cfg       GraphConfig
+	vocabRel  string
+}
+
+// loadGroup は束 g の .yarn と語彙を読んで木にする。vocabPath が空なら <フォルダ>/vocab.json（無くてもよい）。
+func loadGroup(g group, cwd, vocabPath string, noVocab bool) (*loaded, error) {
+	l := &loaded{dir: g.dir, root: gameRootOf(g.dir, cwd)}
+	if !noVocab {
+		explicit := vocabPath != ""
+		if !explicit {
+			vocabPath = filepath.Join(g.dir, vocabName)
+		}
+		data, readErr := os.ReadFile(vocabPath)
+		switch {
+		case readErr != nil && explicit:
+			return nil, fmt.Errorf("語彙を読めない: %s", vocabPath)
+		case readErr != nil:
+			// WhyNot: 語彙が無くても止めない —— 書きかけのシナリオの形を見るのがこのコマンドの用途で、話し手やコマンドの検査は build が受け持つ。
+		default:
+			v, err := ParseVocab(data)
+			if err == nil {
+				l.cfg, err = ParseGraphConfig(data)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("%s: %v", rel(l.root, vocabPath), err)
+			}
+			l.vocab, l.vocabRel = v, rel(l.root, vocabPath)
+		}
+	}
+	var names []string
+	for _, f := range g.files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("%s: 読めない: %v", rel(l.root, f), err)
+		}
+		names = append(names, rel(l.root, f))
+		l.texts = append(l.texts, string(data))
+	}
+	l.prog, l.checked = BuildProgram(names, l.texts, l.vocab, l.vocabRel)
+	return l, nil
+}
+
+// graph は読んだ木のグラフ。stage が空なら語彙の graph.stage、それも無ければ既定の舞台。
+func (l *loaded) graph(stage []string) *Graph {
+	if len(stage) == 0 {
+		stage = l.cfg.Stage
+	}
+	if len(stage) == 0 {
+		stage = DefaultStageKeys
+	}
+	table, cfgProblems := categoryTable(l.cfg, l.vocabRel)
+	var roots []string
+	if l.vocab != nil {
+		roots = l.vocab.Nodes
+	}
+	heads := map[string]string{}
+	for _, text := range l.texts {
+		for k, v := range CommentHeadings(text) {
+			heads[k] = v
+		}
+	}
+	g := BuildGraph(l.prog, l.checked, roots, stage, table, heads)
+	g.Problems = append(cfgProblems, g.Problems...)
+	g.Title = fmt.Sprintf("%s — %s", gameTitleOf(l.root), rel(l.root, l.dir))
+	return g
 }
 
 // gameTitleOf は project.json の title（無ければフォルダの名前）。

@@ -26,10 +26,16 @@ func forkTapeWith(t *testing.T, edit func(m map[string]any)) []byte {
 	return b
 }
 
-// forkTape は分岐の見本を picked で選んだ物にする。
+// forkTape は分岐の見本を picked で選んだ物にする。2 つ目（眠る）を選んだテープは、4 秒から Sleep のノードの行が映る。
 func forkTape(t *testing.T, picked int) []byte {
 	t.Helper()
-	return forkTapeWith(t, func(m map[string]any) { firstChoice(m)["picked"] = picked })
+	return forkTapeWith(t, func(m map[string]any) {
+		firstChoice(m)["picked"] = picked
+		if picked == 1 {
+			m["lines"].(map[string]any)["22"] = map[string]any{"who": "地の文", "text": "灯台守は眠った", "node": "Sleep"}
+			m["timeline"] = []any{[]any{0, nil}, []any{1.5, 3}, []any{2, 4}, []any{3.2, 10}, []any{4, 22}, []any{5.5, nil}}
+		}
+	})
 }
 
 func firstChoice(m map[string]any) map[string]any { return m["choices"].([]any)[0].(map[string]any) }
@@ -53,7 +59,7 @@ func TestGroupBranchesLinkTheOtherRoute(t *testing.T) {
 	// light の分岐: 選んだ道は「このテープ」、もう 1 本は dark の頁のその秒への道。問いは直前の台詞の最初の文。
 	want := []Branch{{T: 3.2, Line: 10, Question: "今夜は風が強い", Routes: []Route{
 		{Label: "灯をともす", Note: "このテープ", Here: true},
-		{Label: "眠る", Note: "dark のテープ", Href: "../dark/index.html#t=3.2"},
+		{Label: "眠る", Note: "dark のテープ", Href: "../dark/index.html#t=3.2", Starts: map[string]float64{"Shore": 1.5, "Sleep": 4}},
 	}}}
 	a, _ := json.Marshal(lightDark(t)[0])
 	w, _ := json.Marshal(want)
@@ -255,10 +261,24 @@ func TestBuildGroupStopsOnSameFolderName(t *testing.T) {
 	}
 }
 
+// writeGame は root をゲームのルートにする（project.json と、fork.tape.json の yarn が指すシナリオ）。
+func writeGame(t *testing.T, root string) {
+	t.Helper()
+	talk := filepath.Join(root, "assets", "talk")
+	if err := os.MkdirAll(talk, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "project.json"), []byte(`{"title": "灯台守の夜"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	copyFile(t, "testdata/lighthouse/night.yarn", filepath.Join(talk, "night.yarn"))
+}
+
 // forkSite は分岐の見本を 2 本（light は 1 つ目・dark は 2 つ目を選んだ）並べて --group で束ね、1 つの origin に置く。
 func forkSite(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	writeGame(t, root)
 	dirs := writeForkDirs(t, root, []string{"light", "dark"}, [][]byte{forkTape(t, 0), forkTape(t, 1)})
 	if _, err := BuildGroup(Options{Group: dirs, Commit: "abc1234"}, nil); err != nil {
 		t.Fatal(err)
@@ -268,16 +288,32 @@ func forkSite(t *testing.T) string {
 	return srv.URL
 }
 
-func TestRouteWithHrefMovesToTheOtherPage(t *testing.T) {
-	// 撮った道のボタンは、その道の頁へ #t= 付きで移る。
+func TestGraphNodeOnOtherRouteMovesToTheOtherPage(t *testing.T) {
+	// このテープに映らないノードの箱は、そのノードへ入る道を撮った隣の頁へ #t= 付きで移るボタンを出す。
 	p := openTapePage(t, phone)
 	base := forkSite(t)
 	loadPlain(t, p, base+"/light/")
-	if err := p.Eval(`(() => { openChapters(true); document.querySelector('.route[data-r="1"]').click(); return true; })()`, nil); err != nil {
+	if err := p.Eval(`(() => { openChapters(true); $("gwrap").querySelector('.gbox[data-node="Sleep"]').dispatchEvent(new MouseEvent("click", { bubbles: true })); $("nodePanel").querySelector('.gact[data-href]').click(); return true; })()`, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.WaitFor(`location.pathname.startsWith("/dark/") && location.hash === "#t=3.2"`, 30*time.Second); err != nil {
-		t.Fatalf("dark の頁へ移っていない: %v", err)
+	if err := p.WaitFor(`location.pathname.startsWith("/dark/") && location.hash === "#t=4"`, 30*time.Second); err != nil {
+		t.Fatalf("dark の頁の Sleep の秒へ移っていない: %v", err)
+	}
+}
+
+func TestGraphNodeTwoStepsAheadOnOtherRoute(t *testing.T) {
+	// 隣のテープに映るノードなら、選択肢のすぐ先でなくても、その頁のそのノードの秒へ移るボタンを出す。
+	href := evalOnFork[string](t, `(() => { const r = TAPE.branches[0].routes[1]; r.starts.Far = 5; GRAPH.detail.Far = { rows: [], incoming: [], out: [], file: TAPE.yarn, head_text: "遠く" };
+	  GRAPH.v.nodes.push({ id: "Far", head: "遠く", x: 0, y: 0, sub: "" }); openChapters(true); pickNode("Far"); return $("nodePanel").querySelector(".gact[data-href]").dataset.href; })()`)
+	if !strings.HasSuffix(href, "dark/index.html#t=5") {
+		t.Fatalf("href: %s", href)
+	}
+}
+
+func TestGraphHidesPlayWithoutPlayUrl(t *testing.T) {
+	// playUrl の無いテープでは、ノードの欄に「ここから遊ぶ」を出さない。
+	if n := evalOnFork[int](t, `(() => { TAPE.playUrl = ""; openChapters(true); pickNode("Tower"); return $("nodePanel").querySelectorAll("a.gact").length; })()`); n != 0 {
+		t.Fatalf("「ここから遊ぶ」が %d 個", n)
 	}
 }
 
@@ -316,16 +352,29 @@ func TestHashTimeZeroStartsAtZero(t *testing.T) {
 	}
 }
 
-func TestRouteHereSeeksOnThisPage(t *testing.T) {
-	// この頁の道のボタンは、頁を移らずにその選択肢の秒へ送る。
+func TestGraphNodeOnThisTapeSeeksToItsFirstLine(t *testing.T) {
+	// このテープに映るノードの「この場面へ」は、頁を移らずに映像へ戻り、そのノードの最初の行の秒へ送る。
 	p := openTapePage(t, phone)
 	loadPlain(t, p, forkSite(t)+"/light/")
 	var sec float64
-	if err := p.Eval(`(() => { seek(0.5); openChapters(true); document.querySelector('.route[data-r="0"]').click(); return location.pathname === "/light/" ? video.currentTime : -1; })()`, &sec); err != nil {
+	if err := p.Eval(`(() => { seek(0.5); openChapters(true); pickNode("Tower"); $("nodePanel").querySelector('.gact[data-go]').click(); return location.pathname === "/light/" && viewMode === "video" ? video.currentTime : -1; })()`, &sec); err != nil {
 		t.Fatal(err)
 	}
-	if sec < 3.2 || sec > 3.3 {
-		t.Fatalf("この頁の 3.2 秒へ送っていない: %v", sec)
+	if sec < 4 || sec > 4.1 {
+		t.Fatalf("Tower の 4 秒へ送っていない: %v", sec)
+	}
+}
+
+func TestGraphRowOnThisTapeSeeksToTheLine(t *testing.T) {
+	// 箱の行の列のうち、このテープに映る行を押すとその行の秒へ送る。
+	p := openTapePage(t, phone)
+	loadPlain(t, p, forkSite(t)+"/light/")
+	var sec float64
+	if err := p.Eval(`(() => { openChapters(true); pickNode("Shore"); $("nodePanel").querySelector('.grows li.here[data-ln="4"]').click(); return video.currentTime; })()`, &sec); err != nil {
+		t.Fatal(err)
+	}
+	if sec < 2 || sec > 2.1 {
+		t.Fatalf("行 4 の 2 秒へ送っていない: %v", sec)
 	}
 }
 
@@ -384,11 +433,10 @@ func TestForkMarkerIsShownOnTheTimeline(t *testing.T) {
 	}
 }
 
-func TestForkCardShowsTheRoutesFromTheGroup(t *testing.T) {
-	// 分岐のカードの道は、選んだ道（✓ このテープ）と、隣のテープの道。
-	routes := evalOnFork[string](t, `(() => { openChapters(true); return [...document.querySelectorAll(".route")].map(n => n.textContent).join("|"); })()`)
-	if routes != "✓ 灯をともすこのテープ|眠るdark のテープ" {
-		t.Fatalf("道: %s", routes)
+func TestForkMarkerPicksTheNodeOfTheBranch(t *testing.T) {
+	// 分岐のマーカーから開くと、グラフの形に切り替わり、その選択肢のあるノードの箱を選んでいる。
+	if node := evalOnFork[string](t, `(() => { openChapters(true, 0); return $("gwrap").querySelector(".gbox.pick").dataset.node; })()`); node != "Shore" {
+		t.Fatalf("選んだ箱: %s", node)
 	}
 }
 
@@ -399,19 +447,16 @@ func TestForkCardHasNoExampleLabel(t *testing.T) {
 	}
 }
 
-func TestBranchBeforeTheFirstMarkIsInTheFirstSceneCard(t *testing.T) {
-	// 最初の mark より前の分岐も、最初のシーンの下にカードが出る。
-	n := evalOnFork[int](t, `(() => { TAPE.scenes[0].t = 3.5; openChapters(true); return document.querySelectorAll(".forkcard").length; })()`)
-	if n != 1 {
-		t.Fatalf("分岐のカード: %d", n)
+func TestGraphPlayLinkStartsAtTheNode(t *testing.T) {
+	// 箱の「ここから遊ぶ」はそのノードで talk= を作る。
+	if href := evalOnFork[string](t, `(() => { openChapters(true); pickNode("Sleep"); return $("nodePanel").querySelector("a.gact").href; })()`); !strings.HasSuffix(href, "?talk=Sleep") {
+		t.Fatalf("href: %s", href)
 	}
 }
 
-func TestThreeRoutesWrapToTheNextRow(t *testing.T) {
-	// 道が 3 本の時は 2 本と 1 本の 2 行に折れる（2 本の時は 1 行）。
-	top := evalOnFork[float64](t, `(() => { TAPE.branches[0].routes.push({ label: "海を見る", note: "まだ撮っていない", here: false });
-	  openChapters(true); const r = document.querySelectorAll(".route"); return r[2].offsetTop - r[0].offsetTop; })()`)
-	if top <= 0 {
-		t.Fatalf("3 本目が 1 行目に並んだ: %v", top)
+func TestGraphKeepsAllNodesOfTheScript(t *testing.T) {
+	// グラフはシナリオの全部のノード（このテープに映らない Sleep も）を箱にする。
+	if ids := evalOnFork[string](t, `(() => { openChapters(true); return [...$("gwrap").querySelectorAll(".gbox")].map(n => n.dataset.node).join(","); })()`); ids != "Shore,Tower,Sleep" {
+		t.Fatalf("箱: %s", ids)
 	}
 }

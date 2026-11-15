@@ -1,6 +1,7 @@
 package tape
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -19,15 +20,17 @@ type Branch struct {
 	Routes   []Route `json:"routes"`
 }
 
-// Route は分岐の道 1 つ。Here = この頁が撮った道、Href = その道を撮った隣のテープ（無ければ空）。
+// Route は分岐の道 1 つ。Here = この頁が撮った道、Href = その道を撮った隣のテープ（無ければ空）、
+// Starts = 隣のテープに映るノード → そのノードの最初の秒（頁のグラフが、この頁に映らないノードから隣の頁のその秒へ移る）。
 type Route struct {
-	Label string `json:"label"`
-	Note  string `json:"note"`
-	Here  bool   `json:"here"`
-	Href  string `json:"href,omitempty"`
+	Label  string             `json:"label"`
+	Note   string             `json:"note"`
+	Here   bool               `json:"here"`
+	Href   string             `json:"href,omitempty"`
+	Starts map[string]float64 `json:"starts,omitempty"`
 }
 
-// questionRunes は分岐のカードに出す問いの字の数の上限（行の番号と並べて、スマホの幅のカードの 1 行に収める）。
+// questionRunes は分岐の問いの字の数の上限（タイムラインの「分」の印の吹き出しの 1 行に収める）。
 const questionRunes = 14
 
 // GroupBranches は同じ始まりから撮った複数のテープ（並びは names と同じ）から、各テープの branches を作る。
@@ -82,6 +85,7 @@ func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 					// WhyNot: 「../<フォルダ>/#t=」にしない — file:// で開いた頁ではフォルダの道が index.html を開かない。
 					r.Href = "../" + url.PathEscape(names[other.tape]) + "/" + IndexFile + "#t=" + strconv.FormatFloat(other.choice.T, 'f', -1, 64)
 					r.Note = names[other.tape] + " のテープ"
+					r.Starts = tapes[other.tape].nodeStarts()
 				}
 				routes[j] = r
 			}
@@ -94,7 +98,7 @@ func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 	return out
 }
 
-// questionOf は分岐のカードに出す問い。ゲームが書いた question（選択肢を出していた時の台詞）の最初の文を、
+// questionOf は分岐の問い（「分」の印の吹き出しに出す）。ゲームが書いた question（選択肢を出していた時の台詞）の最初の文を、
 // カードの 1 行に収まる長さで返す。question が無ければノードの名前。
 func (t *Tape) questionOf(ch Choice) string {
 	text := ch.Question
@@ -109,6 +113,30 @@ func (t *Tape) questionOf(ch Choice) string {
 		return string(rs[:questionRunes-1]) + "…"
 	}
 	return text
+}
+
+// nodeStarts はテープに映るノード → そのノードの行が最初に出る秒（行の node が無い前の版は top の node）。
+func (t *Tape) nodeStarts() map[string]float64 {
+	var timeline [][2]*float64
+	var lines map[string]struct {
+		Node string `json:"node"`
+	}
+	_ = json.Unmarshal(t.raw["timeline"], &timeline)
+	_ = json.Unmarshal(t.raw["lines"], &lines)
+	out := map[string]float64{}
+	for _, row := range timeline {
+		if row[0] == nil || row[1] == nil {
+			continue
+		}
+		node := lines[strconv.Itoa(int(*row[1]))].Node
+		if node == "" {
+			node = t.Node
+		}
+		if _, ok := out[node]; !ok {
+			out[node] = *row[0]
+		}
+	}
+	return out
 }
 
 // BuildGroup は複数のテープのフォルダを、互いの分岐をつないだ頁にする（各フォルダの index.html の道を返す）。
@@ -147,7 +175,7 @@ func BuildGroup(opt Options, warn io.Writer) ([]string, error) {
 	out := make([]string, len(dirs))
 	for i, d := range dirs {
 		b := branches[i]
-		index, err := build(Options{Dir: d, Commit: opt.Commit, FFmpeg: opt.FFmpeg, Splash: opt.Splash, Branches: &b}, tapes[i])
+		index, err := build(Options{Dir: d, Commit: opt.Commit, FFmpeg: opt.FFmpeg, Splash: opt.Splash, Warn: opt.Warn, Branches: &b}, tapes[i])
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", d, err)
 		}

@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	register("yarn", "会話のシナリオ (*.yarn・Yarn Spinner の部分集合) を読んで検査し、木の JSON を書く (build / check / graph / help)", cmdYarn)
+	register("yarn", "会話のシナリオ (*.yarn・Yarn Spinner の部分集合) を読んで検査し、木の JSON を書く (build / check / graph / script / help)", cmdYarn)
 }
 
 func cmdYarn(out, errOut *strings.Builder, rest []string, asJSON bool) int {

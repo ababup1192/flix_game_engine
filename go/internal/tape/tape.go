@@ -16,6 +16,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/yarn"
 )
 
 //go:embed template.html
@@ -58,6 +60,8 @@ type Options struct {
 	Branches *[]Branch
 	// Splash は動画を取っている間に頁が描く起動画面の材料（bin/fge が engine の BootFontData から作って渡す）。
 	Splash Splash
+	// Warn は止めない注意の書き先（nil なら書かない）。
+	Warn io.Writer
 }
 
 // Splash は頁の SPLASH。ゲームのブラウザ版の bundle.json の splash と同じ形（ロゴと組み込みフォントの PNG・字の表・字の寸法）。
@@ -86,6 +90,7 @@ func Run(args []string, splash Splash, stdout, stderr io.Writer) int {
 		return 2
 	}
 	opt.Splash = splash
+	opt.Warn = stderr
 	if len(opt.Group) > 0 {
 		outs, err := BuildGroup(opt, stderr)
 		if err != nil {
@@ -104,8 +109,8 @@ func Run(args []string, splash Splash, stdout, stderr io.Writer) int {
 	return 0
 }
 
-const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く）\n" +
-	"       bin/fge tape --group <フォルダ> <フォルダ>…   （同じ始まりから撮った複数のテープ。選んだ道が分かれた所を分岐のカードにして、隣の頁へつなぐ。フォルダは並べて置く）\n" +
+const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く。ゲームのシナリオが見つかれば分岐のグラフとシナリオ原稿 .md も頁に載せる）\n" +
+	"       bin/fge tape --group <フォルダ> <フォルダ>…   （同じ始まりから撮った複数のテープ。選んだ道が分かれた所を分岐にして、グラフの箱から隣の頁へつなぐ。フォルダは並べて置く）\n" +
 	"       bin/fge tape publish <フォルダ>…   （Pages の置き場へ置いて URL を出す。詳しくは publish --help）"
 
 func parseArgs(args []string) (Options, error) {
@@ -172,6 +177,7 @@ func build(opt Options, t *Tape) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	addScript(opt.Dir, t, opt.Warn)
 	if opt.Branches != nil {
 		b, err := json.Marshal(*opt.Branches)
 		if err != nil {
@@ -188,6 +194,33 @@ func build(opt Options, t *Tape) (string, error) {
 		return "", err
 	}
 	return index, nil
+}
+
+// addScript は tape.json の yarn（ゲームのルートからのパス）のフォルダの .yarn から、分岐のグラフ（graph）と
+// シナリオ原稿の Markdown（script）を作って頁の欄に足す。ゲームのルートは dir から上へ辿って最初に project.json のあるフォルダ。
+// ルートか .yarn が見つからなければ足さない（頁は「映像 / グラフ」とシナリオ原稿のボタンを出さない）。
+// WhyNot: シナリオが読めなくても頁を作るのをやめない — 動画に注釈を付けるのがテープの本題で、グラフは添え物。
+func addScript(dir string, t *Tape, warn io.Writer) {
+	root := yarn.FindGameRoot(dir)
+	if root == "" || t.Yarn == "" {
+		return
+	}
+	folder := filepath.Dir(filepath.Join(root, filepath.FromSlash(t.Yarn)))
+	if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+		return
+	}
+	graph, script, err := yarn.ForTape(folder)
+	if err == nil && graph != nil {
+		var g, s []byte
+		if g, err = json.Marshal(graph); err == nil {
+			if s, err = json.Marshal(script); err == nil {
+				t.raw["graph"], t.raw["script"] = g, s
+			}
+		}
+	}
+	if err != nil && warn != nil {
+		fmt.Fprintf(warn, "tape: 注意: シナリオ %s を読めないので、グラフとシナリオ原稿を載せない: %v\n", folder, err)
+	}
 }
 
 func gitShortHead(dir string) (string, error) {

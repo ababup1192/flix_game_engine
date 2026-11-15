@@ -113,7 +113,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 曲の頭を 1 回だけ鳴らし本編をループ | `SfxSynth.renderLooped` + `App.withSustained` |
 | 効果音・曲を作る・直す（音割れも検査） | 台本 `*.snd.star` か `*.sndsrc.json` を `bin/fge snd build` |
 | 会話を人が書く・台詞と選択肢を順に出す・会話の中で数えて分ける | `*.yarn`（`<<declare>>` `<<set>>` `<<if>>` `{$x}` `visited`）を `bin/fge yarn build` → `Yarn.loadOr` + `YarnRunner.start` / `step`・値は `YarnRunner.valueOf` / `startWith` / `YarnStorage`・選べない選択肢は `DialogueOption` の `available` |
-| 会話の分岐の全体をつかむ（シナリオを全部読まずに・たどり着けないノードと行き止まりを見る） | `bin/fge yarn graph <シナリオのフォルダ>`（1 ファイルの HTML: ノード = 箱・jump = 矢印・押すと演出の帯と全部の行）・`--json -` で中身（ノード・矢印・帯・検査）。演出の色は vocab.json の `"graph": {"categories": …}` |
+| 会話の分岐の全体をつかむ（シナリオを全部読まずに・たどり着けないノードと行き止まりを見る） | `bin/fge yarn graph <シナリオのフォルダ>`（1 ファイルの HTML: ノード = 箱・jump = 矢印・押すと全部の行）・`--json -` で中身（ノード・矢印・演出の並び・検査）。演出の色は vocab.json の `"graph": {"categories": …}` |
+| ライターにシナリオを読ませて直してもらう（Yarn を読めない人・AI に・直しを .yarn へ反映する） | `bin/fge yarn script <シナリオのフォルダ>`（シナリオ原稿の Markdown を build/yarn-script.md へ: 名前「台詞」・〔演出〕・（間 N 秒）・◆ 選択肢・→ jump）・`bin/fge yarn script --diff <直した.md> <フォルダ>`（差分を .yarn のファイル:行と、そのまま貼れる行で出す）。〔〕の言葉はフォルダの `script-notes.json` か .yarn の冒頭の `//   <<名前 …>>  説明` の行。テープの頁（bin/fge tape）は「映像 / グラフ」の切り替えと「シナリオ原稿 .md」のボタンを載せる |
 | ノベルの BGM・効果音を外のフリー素材から選ぶ（候補・規約・クレジットの書き所） | 魔王魂（https://maou.audio/・クレジット必須）と PeriTune（https://peritune.com/・有償の作品に入れる時は相談）。要点と書き所は engine の `docs/audio.md` の「外から持ってくる BGM・効果音」・クレジットは `CREDITS.md` と `assets/novel.credits.json`（手本 sound-novel-starter） |
 | ノベルのルビ・セーブとロード・実写の背景をぼかす | `[ruby=よみ]字[/ruby]` → `RichText.placeRuby`・`YarnRunner.bookmarkOf` / `resume`・ShaderDoc の `blur` 場（手本 `sound-novel-starter`） |
 | 会話の行を本物の画面で見る・起動中のゲームをその行へ（変数の値を決めて） | Studio の会話・`bin/fge talk shot` / `goto`（始まり `talk node= line=`・`'$名前=値'` は `YarnStorage.withArgs` → `YarnRunner.startAtWith`） |
@@ -160,7 +161,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |
 | flow で撮った動画にスマホで注釈を付けてもらい、AI 向けのプロンプトにする頁を作る | sound-novel-starter の子では `make tape FLOW=e2e/tape.flow`（中で `bin/fge tape --dir debug/tape/<名前>` が strip.jpg と index.html を書く） |
-| 選択肢で分かれた道ごとにテープを撮り、頁の分岐のカードで隣の道へ移れるようにする | 結末ごとに同じ始まりの flow を 1 本ずつ書き、`make tape FLOWS="e2e/a.flow e2e/b.flow"`（中で `bin/fge tape --group debug/tape/a debug/tape/b` が tape.json の choices から branches を組む）。公開は `bin/fge tape publish debug/tape/a debug/tape/b`（1 つの URL の下に並ぶ） |
+| 選択肢で分かれた道ごとにテープを撮り、頁の分岐のグラフから隣の道へ移れるようにする | 結末ごとに同じ始まりの flow を 1 本ずつ書き、`make tape FLOWS="e2e/a.flow e2e/b.flow"`（中で `bin/fge tape --group debug/tape/a debug/tape/b` が tape.json の choices から branches を組む）。公開は `bin/fge tape publish debug/tape/a debug/tape/b`（1 つの URL の下に並ぶ） |
 | 作ったテープの頁を GitHub Pages に置き、URL をレビュワーに渡す | `bin/fge tape publish debug/tape/<名前> --repo <owner/name>`（既定は dry run。push は `--yes`・反映待ちは `--wait`・目印の無い置き場の初回は `--init`。テープは置き場の docs フォルダの下に置くので、Pages は枝の docs フォルダを出す形にする） |
 | テープの置き場の一覧（README のゲームごとの見出し・`games/<game>.md` の日付と撮った版へのリンク）を、テープを置かずに作り直す | `bin/fge tape publish --reindex --repo <owner/name>`（一覧に無い過去の公開は `--seed-from debug/tape/published.jsonl` で埋める。古い置き方で根に置いたテープは docs フォルダの下へ移る） |
 | ドット絵を描く・直す（台本・絵の種類で検査が決まる） | `/pixel-art` → `*.px.star` か `*.pxsrc.json`（`"kind"`）を `bin/fge px build` |

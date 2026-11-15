@@ -168,16 +168,74 @@
   .chap.cur .nm { color: var(--accent); }
   .chap::before { content: ""; position: absolute; left: 14px; top: -8px; bottom: -8px; width: 2px; background: rgba(255,255,255,.08); z-index: -1; }
   .mini { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 700; color: #111; }
-  .forkcard { margin: 6px 0 6px 0; padding: 10px 12px; border-radius: 12px; background: #0c0c0d; border: 1px dashed rgba(255,255,255,.18); }
-  .forkcard .q { font-size: 12px; color: var(--dim); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-  .routes { display: flex; gap: 6px; }
-  .route { flex: 1; min-height: 44px; border-radius: 10px; background: var(--raised); padding: 6px 10px; text-align: left; }
-  .route b { display: block; font-size: 13px; }
-  .route span { font-size: 10px; color: var(--faint); }
-  .route.on { background: #fff; color: #111; }
-  .route.on span { color: #555; }
-  .route.none { opacity: .55; }
-  .example { font-size: 10px; font-weight: 700; color: #1a1300; background: var(--accent); border-radius: 3px; padding: 0 4px; }
+  .scriptrow { display: flex; align-items: center; gap: 8px; margin: 16px 0 4px; }
+  .scriptrow .label { flex: 1; margin: 0; }
+  .scriptdl { height: 28px; padding: 0 10px; border-radius: 99px; background: rgba(255,255,255,.1); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .scriptdl:active { background: rgba(255,255,255,.2); }
+  .modes { flex: none; display: inline-flex; height: 30px; padding: 2px; border-radius: 99px; background: var(--raised); }
+  .modes button { padding: 0 11px; border-radius: 99px; font-size: 12px; font-weight: 600; color: var(--dim); }
+  .modes button.on { background: #fff; color: #111; }
+  .gview { display: none; }
+  body.mode-graph .gview { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+  body.mode-graph:not(.wide) .gview { position: fixed; inset: 0; z-index: 25; padding-top: env(safe-area-inset-top); }
+  body.wide.mode-graph .gview { grid-area: view; }
+  body.wide.mode-graph .preview { display: none; }
+  .gv-head { flex: none; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--hair); }
+  .gv-head .ttl { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gv-head .ttl small { margin-left: 6px; font-size: 11px; font-weight: 400; color: var(--faint); }
+  .zb { width: 30px; height: 30px; border-radius: 99px; background: rgba(255,255,255,.1); font-size: 15px; font-weight: 700; display: grid; place-items: center; }
+  .zb.fit { width: auto; padding: 0 10px; font-size: 12px; }
+  body.wide .gv-head .xbtn { display: none; }
+  .gwrap { flex: 1 1 auto; min-height: 0; overflow: auto; background: #0c0c0d; overscroll-behavior: contain; touch-action: pan-x pan-y; }
+  .gwrap svg { display: block; margin: 0 auto; }
+  .gwrap marker path { fill: rgba(255,255,255,.4); }
+  .gbox { cursor: pointer; }
+  .gbox rect { fill: var(--raised); stroke: rgba(255,255,255,.18); stroke-width: 1.5; }
+  .gbox.here rect { fill: #24303a; stroke: rgba(108,196,255,.55); }
+  .gbox.root rect { stroke: var(--c-video); }
+  .gbox.end rect { stroke: var(--accent); }
+  .gbox.lost rect { stroke: #ff7a59; stroke-dasharray: 4 3; }
+  .gbox.cur rect { stroke: #fff; stroke-width: 2.5; }
+  .gbox.pick rect { stroke: var(--accent); stroke-width: 4; }
+  .gbox .t { font-size: 12px; font-weight: 600; fill: var(--text); }
+  .gbox .i { font-size: 9px; fill: var(--faint); text-anchor: end; }
+  .gbox .s { font-size: 11px; fill: var(--faint); }
+  .gbox .b { font-size: 11px; fill: var(--c-script); }
+  .gbox .tm { font-size: 11px; font-weight: 700; fill: var(--c-video); text-anchor: end; }
+  .gbox.end .b { fill: var(--accent); font-weight: 700; }
+  .gedge path { fill: none; stroke: rgba(255,255,255,.4); stroke-width: 1.4; }
+  .gedge.back path { stroke-dasharray: 5 4; }
+  .gedge.choice path { stroke: var(--c-script); }
+  .gedge.hot path { stroke: var(--accent); stroke-width: 2.6; }
+  .gedge text { font-size: 11px; fill: var(--c-script); text-anchor: middle; paint-order: stroke; stroke: #0c0c0d; stroke-width: 4px; }
+  .npanel { display: none; }
+  body.mode-graph .npanel { display: block; }
+  body.mode-graph:not(.wide) .npanel { flex: none; max-height: 42%; overflow: auto; padding: 10px 14px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--hair); background: var(--surface); }
+  .insp .npanel { flex: 1 1 0; min-height: 0; overflow: auto; padding: 10px 12px 12px; }
+  body.mode-graph .insp > .dock, body.mode-graph .insp > #listSheet { display: none !important; }
+  .npanel .nm { font-size: 14px; font-weight: 600; word-break: break-word; }
+  .npanel .nm small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--faint); }
+  .gacts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  .gact { height: 30px; padding: 0 10px; border-radius: 99px; display: inline-flex; align-items: center; background: rgba(255,255,255,.1); color: var(--text);
+    font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .gact.go { background: var(--c-video); color: #04121c; }
+  .gact:active { opacity: .8; }
+  .gnone { font-size: 11px; color: var(--faint); }
+  .glinks .label { margin: 10px 0 4px; }
+  .glink { display: block; width: 100%; text-align: left; padding: 6px 8px; margin-top: 4px; border-radius: 8px; background: rgba(255,255,255,.06); font-size: 12px; line-height: 1.45; }
+  .glink b { color: var(--c-script); font-weight: 700; }
+  .glink small { margin-left: 6px; font-size: 10px; color: var(--faint); }
+  .glink:active { background: rgba(255,255,255,.14); }
+  .glink.gone { color: #ff7a59; cursor: default; }
+  .grows { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; line-height: 1.5; }
+  .grows li { display: grid; grid-template-columns: 30px 1fr; gap: 6px; padding: 2px 0; border-top: 1px solid var(--hair); }
+  .grows .ln { color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
+  .grows li.here { cursor: pointer; }
+  .grows li.here .ln { color: var(--c-video); font-weight: 700; }
+  .grows span { word-break: break-word; }
+  .grows .k-stage { color: #7aa7f0; } .grows .k-actor { color: #d68cc4; } .grows .k-sound { color: #5cc4a4; } .grows .k-fx { color: #f08a66; }
+  .grows .k-wait, .grows .k-other { color: var(--faint); } .grows .k-end { color: var(--accent); font-weight: 700; } .grows .k-gate { color: #a98bf0; }
+  .grows .k-choice, .grows .k-jump { color: var(--accent); }
   .scenenote { position: absolute; right: 10px; bottom: 10px; height: 38px; padding: 0 14px 0 11px; border-radius: 99px; display: none; align-items: center; gap: 6px;
     background: rgba(255,255,255,.94); color: #111; font-size: 13px; font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2; }
   .scenenote:active { transform: scale(.97); }
@@ -281,6 +339,7 @@
       <span class="count" id="listCount" style="display:none"></span>
     </button>
     <button class="titlebtn" id="chapBtn"><b>血鱗 序章</b><span class="mock">MOCK</span><br><small><span id="sceneName">タイトル</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></small></button>
+    <div class="modes" id="modes" role="tablist" aria-label="見る物"><button data-m="video" class="on">映像</button><button data-m="graph">グラフ</button></div>
     <button class="export" id="exportBtn">書き出す</button>
   </div>
 
@@ -293,6 +352,13 @@
       <div class="editpill" id="editPill"></div>
       <button class="scenenote" id="sceneNote"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H10l-5 4z"/><path d="M12 8v4M10 10h4"/></svg><span id="sceneNoteText">このシーンに注釈</span></button>
     </div>
+  </div>
+
+  <div class="gview" id="graphView">
+    <div class="gv-head"><div class="ttl" id="gvTitle"></div><button class="zb" id="zoomOut" aria-label="縮める">−</button><button class="zb" id="zoomIn" aria-label="広げる">＋</button><button class="zb fit" id="zoomFit">全体</button><button class="scriptdl" id="gvScript">シナリオ原稿 .md</button>
+      <button class="xbtn" id="gvClose" aria-label="映像へ戻る"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
+    <div class="gwrap" id="gwrap"></div>
+    <div class="npanel" id="nodePanel"></div>
   </div>
 
   <div class="timeline">
@@ -453,7 +519,10 @@ const TAPE = {
     phase: [[0, "Title"], [3, "Reading"], [38, "Credits"]], witch: [[0, "off"], [7, "on"], [31.5, "off"]],
     item: [[0, "—"], [17.5, "bottle"], [21.5, "knife"], [24.4, "—"]], ambience: [[0, "—"], [4.2, "sea"]],
     logSize: [[0, 0], [8, 1], [9, 2], [10, 3], [12, 4], [13, 5], [14.6, 6], [15, 7], [16.6, 8], [19, 9], [23, 10], [24.5, 11], [26.8, 12], [28.8, 13], [31.8, 14]]
-  }
+  },
+  // 分岐のグラフとシナリオ原稿: 書き出しの道具がシナリオのフォルダ（bin/fge yarn graph・yarn script と同じ読み方）から作る
+  graph: {"h":{"w":1980,"h":270,"bw":168,"bh":64,"nodes":[{"id":"Lair","head":"おや、あんた海の者でな…","x":24,"y":73,"kind":"root","sub":"13 行・29 演出・約 13 秒待ち","badge":"最初のノード"},{"id":"Deep","head":"〔汎用海中〕","x":276,"y":73,"sub":"0 行・31 演出・約 13 秒待ち","badge":"ゲート 4"},{"id":"Whale","head":"あらあら、珍しいお客様…","x":528,"y":73,"sub":"14 行・33 演出・約 14 秒待ち"},{"id":"Corpse","head":"白鯨は動かなくなりまし…","x":780,"y":73,"sub":"4 行・29 演出・約 4 秒待ち","badge":"ゲート 4"},{"id":"Fork","head":"宝石は海流にさらわれ","x":1032,"y":73,"sub":"1 行・9 演出・約 1 秒待ち"},{"id":"Gem","head":"〔宝石の場所〕","x":1284,"y":24,"sub":"0 行・9 演出・約 3 秒待ち","badge":"ゲート 1"},{"id":"GemEnd","head":"宝石を拾って器に入れま…","x":1536,"y":24,"kind":"end","sub":"6 行・14 演出・約 4 秒待ち","badge":"結末 gem"},{"id":"Dissect","head":"少女は手を止めることな…","x":1284,"y":122,"sub":"2 行・9 演出・約 3 秒待ち"},{"id":"Bones","head":"肉を削がれ海水に洗われ…","x":1536,"y":122,"sub":"1 行・8 演出・約 2 秒待ち"},{"id":"BoneEnd","head":"鯨の骨を少し削って器に…","x":1788,"y":24,"kind":"end","sub":"8 行・16 演出・約 4 秒待ち","badge":"結末 bone"},{"id":"Leave","head":"安らげる場所はありまし…","x":1788,"y":122,"kind":"end","sub":"3 行・13 演出・約 6 秒待ち","badge":"結末 leave"}],"edges":[{"from":"Lair","to":"Deep","line":63,"d":"M192,105 C234,105 234,105 270,105","lx":234,"ly":99,"tip":"Lair → Deep（assets/talk/kesshou.yarn:63）"},{"from":"Deep","to":"Whale","line":104,"d":"M444,105 C486,105 486,105 522,105","lx":486,"ly":99,"tip":"Deep → Whale（assets/talk/kesshou.yarn:104）"},{"from":"Whale","to":"Corpse","line":157,"d":"M696,105 C738,105 738,105 774,105","lx":738,"ly":99,"tip":"Whale → Corpse（assets/talk/kesshou.yarn:157）"},{"from":"Corpse","to":"Fork","line":200,"d":"M948,105 C990,105 990,105 1026,105","lx":990,"ly":99,"tip":"Corpse → Fork（assets/talk/kesshou.yarn:200）"},{"from":"Fork","to":"Gem","line":213,"d":"M1200,105 C1242,105 1242,56 1278,56","lx":1242,"ly":74.5,"choice":"宝石を拾いに行く","label":"宝石を拾いに行く","tip":"Fork → Gem（assets/talk/kesshou.yarn:213）"},{"from":"Fork","to":"Dissect","line":219,"d":"M1200,105 C1242,105 1242,154 1278,154","lx":1242,"ly":123.5,"choice":"解体する","label":"解体する","tip":"Fork → Dissect（assets/talk/kesshou.yarn:219）"},{"from":"Gem","to":"GemEnd","line":235,"d":"M1452,56 C1494,56 1494,56 1530,56","lx":1494,"ly":50,"tip":"Gem → GemEnd（assets/talk/kesshou.yarn:235）"},{"from":"GemEnd","to":"Fork","line":264,"d":"M1620,88 C1620,154 1116,203 1116,143","lx":1368,"ly":186.5,"choice":"分岐まで戻る","label":"分岐まで戻る","back":true,"tip":"GemEnd → Fork（assets/talk/kesshou.yarn:264）"},{"from":"Dissect","to":"Bones","line":281,"d":"M1452,154 C1494,154 1494,154 1530,154","lx":1494,"ly":148,"tip":"Dissect → Bones（assets/talk/kesshou.yarn:281）"},{"from":"Bones","to":"BoneEnd","line":297,"d":"M1704,154 C1746,154 1746,56 1782,56","lx":1746,"ly":99,"choice":"骨をタップ","label":"骨をタップ","tip":"Bones → BoneEnd（assets/talk/kesshou.yarn:297）"},{"from":"Bones","to":"Leave","line":299,"d":"M1704,154 C1746,154 1746,154 1782,154","lx":1746,"ly":148,"choice":"立ち去る","label":"立ち去る","tip":"Bones → Leave（assets/talk/kesshou.yarn:299）"},{"from":"BoneEnd","to":"Bones","line":332,"d":"M1872,88 C1872,144 1620,242 1620,192","lx":1746,"ly":228,"choice":"分岐まで戻る","label":"分岐まで戻る","back":true,"tip":"BoneEnd → Bones（assets/talk/kesshou.yarn:332）"}]},"v":{"w":504,"h":882,"bw":168,"bh":64,"nodes":[{"id":"Lair","head":"おや、あんた海の者でな…","x":128,"y":24,"kind":"root","sub":"13 行・29 演出・約 13 秒待ち","badge":"最初のノード"},{"id":"Deep","head":"〔汎用海中〕","x":128,"y":134,"sub":"0 行・31 演出・約 13 秒待ち","badge":"ゲート 4"},{"id":"Whale","head":"あらあら、珍しいお客様…","x":128,"y":244,"sub":"14 行・33 演出・約 14 秒待ち"},{"id":"Corpse","head":"白鯨は動かなくなりまし…","x":128,"y":354,"sub":"4 行・29 演出・約 4 秒待ち","badge":"ゲート 4"},{"id":"Fork","head":"宝石は海流にさらわれ","x":128,"y":464,"sub":"1 行・9 演出・約 1 秒待ち"},{"id":"Gem","head":"〔宝石の場所〕","x":24,"y":574,"sub":"0 行・9 演出・約 3 秒待ち","badge":"ゲート 1"},{"id":"GemEnd","head":"宝石を拾って器に入れま…","x":24,"y":684,"kind":"end","sub":"6 行・14 演出・約 4 秒待ち","badge":"結末 gem"},{"id":"Dissect","head":"少女は手を止めることな…","x":232,"y":574,"sub":"2 行・9 演出・約 3 秒待ち"},{"id":"Bones","head":"肉を削がれ海水に洗われ…","x":232,"y":684,"sub":"1 行・8 演出・約 2 秒待ち"},{"id":"BoneEnd","head":"鯨の骨を少し削って器に…","x":24,"y":794,"kind":"end","sub":"8 行・16 演出・約 4 秒待ち","badge":"結末 bone"},{"id":"Leave","head":"安らげる場所はありまし…","x":232,"y":794,"kind":"end","sub":"3 行・13 演出・約 6 秒待ち","badge":"結末 leave"}],"edges":[{"from":"Lair","to":"Deep","line":63,"d":"M212,88 C212,111 212,111 212,128","lx":212,"ly":115,"tip":"Lair → Deep（assets/talk/kesshou.yarn:63）"},{"from":"Deep","to":"Whale","line":104,"d":"M212,198 C212,221 212,221 212,238","lx":212,"ly":225,"tip":"Deep → Whale（assets/talk/kesshou.yarn:104）"},{"from":"Whale","to":"Corpse","line":157,"d":"M212,308 C212,331 212,331 212,348","lx":212,"ly":335,"tip":"Whale → Corpse（assets/talk/kesshou.yarn:157）"},{"from":"Corpse","to":"Fork","line":200,"d":"M212,418 C212,441 212,441 212,458","lx":212,"ly":445,"tip":"Corpse → Fork（assets/talk/kesshou.yarn:200）"},{"from":"Fork","to":"Gem","line":213,"d":"M212,528 C212,551 108,551 108,568","lx":160,"ly":555,"choice":"宝石を拾いに行く","label":"宝石を拾いに行く","tip":"Fork → Gem（assets/talk/kesshou.yarn:213）"},{"from":"Fork","to":"Dissect","line":219,"d":"M212,528 C212,551 316,551 316,568","lx":264,"ly":555,"choice":"解体する","label":"解体する","tip":"Fork → Dissect（assets/talk/kesshou.yarn:219）"},{"from":"Gem","to":"GemEnd","line":235,"d":"M108,638 C108,661 108,661 108,678","lx":108,"ly":665,"tip":"Gem → GemEnd（assets/talk/kesshou.yarn:235）"},{"from":"GemEnd","to":"Fork","line":264,"d":"M192,716 C242,716 346,496 302,496","lx":333.5,"ly":606,"choice":"分岐まで戻る","label":"分岐まで戻る","back":true,"tip":"GemEnd → Fork（assets/talk/kesshou.yarn:264）"},{"from":"Dissect","to":"Bones","line":281,"d":"M316,638 C316,661 316,661 316,678","lx":316,"ly":665,"tip":"Dissect → Bones（assets/talk/kesshou.yarn:281）"},{"from":"Bones","to":"BoneEnd","line":297,"d":"M316,748 C316,771 108,771 108,788","lx":212,"ly":775,"choice":"骨をタップ","label":"骨をタップ","tip":"Bones → BoneEnd（assets/talk/kesshou.yarn:297）"},{"from":"Bones","to":"Leave","line":299,"d":"M316,748 C316,771 316,771 316,788","lx":316,"ly":775,"choice":"立ち去る","label":"立ち去る","tip":"Bones → Leave（assets/talk/kesshou.yarn:299）"},{"from":"BoneEnd","to":"Bones","line":332,"d":"M192,826 C232,826 440,716 406,716","lx":430,"ly":771,"choice":"分岐まで戻る","label":"分岐まで戻る","back":true,"tip":"BoneEnd → Bones（assets/talk/kesshou.yarn:332）"}]},"detail":{"BoneEnd":{"head_text":"鯨の骨を少し削って器に…","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene bone_end\u003e\u003e","l":305},{"d":0,"c":"stage","t":"\u003c\u003cbg whale clear 0\u003e\u003e","l":306},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":307},{"d":0,"c":"stage","t":"\u003c\u003clights 0.8\u003e\u003e","l":308},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":309},{"d":0,"c":"line","t":"鯨の骨を少し削って器に入れました。／この宝石は、／器の核にできるかもしれません","l":310},{"d":0,"c":"line","t":"血も核も揃ったので、／少女は魔女の元へ戻ることにしました。／これできっと彼女の願いは叶うでしょう","l":311},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":312},{"d":0,"c":"end","t":"\u003c\u003cend bone\u003e\u003e","l":313},{"d":0,"c":"wait","t":"\u003c\u003cwait 3.2\u003e\u003e","l":314},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":315},{"d":0,"c":"line","t":"あるところに、／元は人間だった人魚がおりました。","l":316},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":317},{"d":0,"c":"line","t":"その人魚は／死に瀕した生命を見つけては、／最期まで側にいます。","l":318},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":319},{"d":0,"c":"line","t":"やがてその生命が死ぬと、／人魚はその死者を丁寧に解体します。","l":320},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":321},{"d":0,"c":"line","t":"その肉体の中身の隅々、肉の一片まで。／その姿を全てを記憶し、／それからその肉体を海へ還すために。","l":322},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":323},{"d":0,"c":"line","t":"人魚はそうやって、／死者を弔うことが生き甲斐でした。／けれどそこに死者への悲しみや／憐れみがあるわけではありません。","l":324},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":325},{"d":0,"c":"line","t":"そうしなければいけない、と。／その心に刻まれているから、／そうしているだけなのです……。","l":326},{"d":0,"c":"choice","t":"選択肢 2 つ","l":327},{"d":1,"c":"choice","t":"-\u003e タイトルへ戻る","l":327},{"d":2,"c":"jump","t":"\u003c\u003cstop\u003e\u003e","l":328},{"d":1,"c":"choice","t":"-\u003e 分岐まで戻る","l":329},{"d":2,"c":"stage","t":"\u003c\u003cblack 0.8\u003e\u003e","l":330},{"d":2,"c":"wait","t":"\u003c\u003cwait 0.9\u003e\u003e","l":331},{"d":2,"c":"jump","t":"\u003c\u003cjump Bones\u003e\u003e","l":332}],"head":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"bone_end"},"state":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"bone_end"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Bones","carried":{}}],"out":[{"to":"Bones","choice":"分岐まで戻る"}]},"Bones":{"head_text":"肉を削がれ海水に洗われ…","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene bones\u003e\u003e","l":287},{"d":0,"c":"stage","t":"\u003c\u003cbg whale clear 0\u003e\u003e","l":288},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":289},{"d":0,"c":"stage","t":"\u003c\u003clights 0.8\u003e\u003e","l":290},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":291},{"d":0,"c":"line","t":"肉を削がれ海水に洗われた大きな骨が、／宝石のようにきらめいて見えました","l":292},{"d":0,"c":"choice","t":"選択肢 2 つ","l":293},{"d":1,"c":"choice","t":"-\u003e 骨をタップ","l":293},{"d":2,"c":"sound","t":"\u003c\u003cse bone\u003e\u003e","l":294},{"d":2,"c":"other","t":"\u003c\u003cvial bone\u003e\u003e","l":295},{"d":2,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":296},{"d":2,"c":"jump","t":"\u003c\u003cjump BoneEnd\u003e\u003e","l":297},{"d":1,"c":"choice","t":"-\u003e 立ち去る","l":298},{"d":2,"c":"jump","t":"\u003c\u003cjump Leave\u003e\u003e","l":299}],"head":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"bones"},"state":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"bones"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Dissect","carried":{}},{"from":"BoneEnd","carried":{}}],"out":[{"to":"BoneEnd","choice":"骨をタップ"},{"to":"Leave","choice":"立ち去る"}]},"Corpse":{"head_text":"白鯨は動かなくなりまし…","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene corpse\u003e\u003e","l":163},{"d":0,"c":"stage","t":"\u003c\u003cbg whale clear 0\u003e\u003e","l":164},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":165},{"d":0,"c":"stage","t":"\u003c\u003clights 0.6\u003e\u003e","l":166},{"d":0,"c":"line","t":"白鯨は動かなくなりました。","l":167},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":168},{"d":0,"c":"gate","t":"-\u003e 刺す #act:down #icon:knife #mute","l":169},{"d":0,"c":"other","t":"\u003c\u003cstab\u003e\u003e","l":170},{"d":0,"c":"sound","t":"\u003c\u003cse stab\u003e\u003e","l":171},{"d":0,"c":"other","t":"\u003c\u003cwound 1\u003e\u003e","l":172},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.0\u003e\u003e","l":173},{"d":0,"c":"other","t":"\u003c\u003cvial 1\u003e\u003e","l":174},{"d":0,"c":"sound","t":"\u003c\u003cse fill\u003e\u003e","l":175},{"d":0,"c":"line","t":"白鯨にナイフを突き立てましたが、／反応はありません。／ナイフを深く突き刺した箇所から／どろりと赤い血が流れだしていきます。","l":176},{"d":0,"c":"gate","t":"-\u003e 刺す #act:down #icon:knife #mute","l":177},{"d":0,"c":"other","t":"\u003c\u003cstab\u003e\u003e","l":178},{"d":0,"c":"sound","t":"\u003c\u003cse stab\u003e\u003e","l":179},{"d":0,"c":"other","t":"\u003c\u003cwound 2\u003e\u003e","l":180},{"d":0,"c":"other","t":"\u003c\u003cvial 2\u003e\u003e","l":181},{"d":0,"c":"sound","t":"\u003c\u003cse fill\u003e\u003e","l":182},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.0\u003e\u003e","l":183},{"d":0,"c":"gate","t":"-\u003e 刺す #act:down #icon:knife #mute","l":184},{"d":0,"c":"other","t":"\u003c\u003cstab\u003e\u003e","l":185},{"d":0,"c":"sound","t":"\u003c\u003cse stab\u003e\u003e","l":186},{"d":0,"c":"other","t":"\u003c\u003cwound 3\u003e\u003e","l":187},{"d":0,"c":"other","t":"\u003c\u003cvial 4\u003e\u003e","l":188},{"d":0,"c":"sound","t":"\u003c\u003cse fill\u003e\u003e","l":189},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.0\u003e\u003e","l":190},{"d":0,"c":"line","t":"流れ出る大量の血が、／器に満ちていきます。","l":191},{"d":0,"c":"gate","t":"-\u003e 鯨の腹を割く #act:down #icon:knife","l":192},{"d":0,"c":"other","t":"\u003c\u003cstab\u003e\u003e","l":193},{"d":0,"c":"sound","t":"\u003c\u003cse slash\u003e\u003e","l":194},{"d":0,"c":"other","t":"\u003c\u003cwound belly\u003e\u003e","l":195},{"d":0,"c":"other","t":"\u003c\u003croll\u003e\u003e","l":196},{"d":0,"c":"sound","t":"\u003c\u003cse roll\u003e\u003e","l":197},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.4\u003e\u003e","l":198},{"d":0,"c":"line","t":"切り開いた内蔵から／小さな光るモノが転がり落ちました。／美しく磨かれた、大きな宝石でした","l":199},{"d":0,"c":"jump","t":"\u003c\u003cjump Fork\u003e\u003e","l":200}],"head":{"ambience":"still","bg":"whale clear 0","lights":"0.6","scene":"corpse"},"state":{"ambience":"still","bg":"whale clear 0","lights":"0.6","scene":"corpse"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Whale","carried":{}}],"out":[{"to":"Fork","choice":""}]},"Deep":{"head_text":"〔汎用海中〕","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene deep\u003e\u003e","l":69},{"d":0,"c":"stage","t":"\u003c\u003cbg deep deep0 1.6\u003e\u003e","l":70},{"d":0,"c":"sound","t":"\u003c\u003cambience deep\u003e\u003e","l":71},{"d":0,"c":"stage","t":"\u003c\u003clights 0.6\u003e\u003e","l":72},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":73},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.0\u003e\u003e","l":74},{"d":0,"c":"gate","t":"-\u003e 上方向スワイプでページ切替 #act:up","l":75},{"d":0,"c":"stage","t":"\u003c\u003cbg deep deep1 0.8\u003e\u003e","l":76},{"d":0,"c":"other","t":"\u003c\u003cvision fish\u003e\u003e","l":77},{"d":0,"c":"sound","t":"\u003c\u003cse bubble\u003e\u003e","l":78},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":79},{"d":0,"c":"gate","t":"-\u003e 上へ #act:up #mute","l":80},{"d":0,"c":"stage","t":"\u003c\u003cbg deep deep2 0.8\u003e\u003e","l":81},{"d":0,"c":"other","t":"\u003c\u003cvision drowned\u003e\u003e","l":82},{"d":0,"c":"sound","t":"\u003c\u003cse bubble\u003e\u003e","l":83},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":84},{"d":0,"c":"gate","t":"-\u003e 上へ #act:up #mute","l":85},{"d":0,"c":"stage","t":"\u003c\u003cbg deep deep3 0.8\u003e\u003e","l":86},{"d":0,"c":"other","t":"\u003c\u003cvision plant\u003e\u003e","l":87},{"d":0,"c":"sound","t":"\u003c\u003cse bubble\u003e\u003e","l":88},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":89},{"d":0,"c":"gate","t":"-\u003e 上へ #act:up #mute","l":90},{"d":0,"c":"other","t":"\u003c\u003cvision clear\u003e\u003e","l":91},{"d":0,"c":"stage","t":"\u003c\u003cbg deep deep4 1.2\u003e\u003e","l":92},{"d":0,"c":"sound","t":"\u003c\u003cse rumble\u003e\u003e","l":93},{"d":0,"c":"other","t":"\u003c\u003cshadow 2.4\u003e\u003e","l":94},{"d":0,"c":"wait","t":"\u003c\u003cwait 2.6\u003e\u003e","l":95},{"d":0,"c":"other","t":"\u003c\u003ceye on\u003e\u003e","l":96},{"d":0,"c":"sound","t":"\u003c\u003cse eye\u003e\u003e","l":97},{"d":0,"c":"wait","t":"\u003c\u003cwait 2.4\u003e\u003e","l":98},{"d":0,"c":"stage","t":"\u003c\u003cblack 1.5\u003e\u003e","l":99},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":100},{"d":0,"c":"other","t":"\u003c\u003ceye off\u003e\u003e","l":101},{"d":0,"c":"sound","t":"\u003c\u003cambience off\u003e\u003e","l":102},{"d":0,"c":"wait","t":"\u003c\u003cwait 0.8\u003e\u003e","l":103},{"d":0,"c":"jump","t":"\u003c\u003cjump Whale\u003e\u003e","l":104}],"head":{"ambience":"off","bg":"deep deep4 1.2","lights":"0.6","scene":"deep"},"state":{"ambience":"off","bg":"deep deep4 1.2","lights":"0.6","scene":"deep"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Lair","carried":{}}],"out":[{"to":"Whale","choice":""}]},"Dissect":{"head_text":"少女は手を止めることな…","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene dissect\u003e\u003e","l":270},{"d":0,"c":"stage","t":"\u003c\u003cbg whale clear 0\u003e\u003e","l":271},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":272},{"d":0,"c":"stage","t":"\u003c\u003clights 0.8\u003e\u003e","l":273},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":274},{"d":0,"c":"line","t":"少女は手を止めることなく、／大量の肉を／少しずつ丁寧に切り分けていきます。","l":275},{"d":0,"c":"other","t":"\u003c\u003cwhale off 1.6\u003e\u003e","l":276},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":277},{"d":0,"c":"line","t":"そうしてあらかた切り刻んだ後","l":278},{"d":0,"c":"other","t":"\u003c\u003cwhale bones 1.2\u003e\u003e","l":279},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.2\u003e\u003e","l":280},{"d":0,"c":"jump","t":"\u003c\u003cjump Bones\u003e\u003e","l":281}],"head":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"dissect"},"state":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"dissect"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Fork","carried":{}}],"out":[{"to":"Bones","choice":""}]},"Fork":{"head_text":"宝石は海流にさらわれ","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene fork\u003e\u003e","l":206},{"d":0,"c":"stage","t":"\u003c\u003cbg whale clear 0\u003e\u003e","l":207},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":208},{"d":0,"c":"stage","t":"\u003c\u003clights 0.8\u003e\u003e","l":209},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":210},{"d":0,"c":"line","t":"宝石は海流にさらわれ／どこかへと転がって行きます……","l":211},{"d":0,"c":"choice","t":"選択肢 2 つ","l":212},{"d":1,"c":"choice","t":"-\u003e 宝石を拾いに行く","l":212},{"d":2,"c":"jump","t":"\u003c\u003cjump Gem\u003e\u003e","l":213},{"d":1,"c":"choice","t":"-\u003e 解体する","l":214},{"d":2,"c":"other","t":"\u003c\u003cstab\u003e\u003e","l":215},{"d":2,"c":"other","t":"\u003c\u003cwound all\u003e\u003e","l":216},{"d":2,"c":"sound","t":"\u003c\u003cse slash\u003e\u003e","l":217},{"d":2,"c":"wait","t":"\u003c\u003cwait 1.4\u003e\u003e","l":218},{"d":2,"c":"jump","t":"\u003c\u003cjump Dissect\u003e\u003e","l":219}],"head":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"fork"},"state":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"fork"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Corpse","carried":{}},{"from":"GemEnd","carried":{}}],"out":[{"to":"Gem","choice":"宝石を拾いに行く"},{"to":"Dissect","choice":"解体する"}]},"Gem":{"head_text":"〔宝石の場所〕","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene gem\u003e\u003e","l":225},{"d":0,"c":"stage","t":"\u003c\u003cbg gem clear 1.8 pan\u003e\u003e","l":226},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":227},{"d":0,"c":"stage","t":"\u003c\u003clights 0.8\u003e\u003e","l":228},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":229},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.8\u003e\u003e","l":230},{"d":0,"c":"gate","t":"-\u003e 宝石をタップ #act:tap #at:gem","l":231},{"d":0,"c":"sound","t":"\u003c\u003cse pick\u003e\u003e","l":232},{"d":0,"c":"other","t":"\u003c\u003cvial gem\u003e\u003e","l":233},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":234},{"d":0,"c":"jump","t":"\u003c\u003cjump GemEnd\u003e\u003e","l":235}],"head":{"ambience":"still","bg":"gem clear 1.8 pan","lights":"0.8","scene":"gem"},"state":{"ambience":"still","bg":"gem clear 1.8 pan","lights":"0.8","scene":"gem"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Fork","carried":{}}],"out":[{"to":"GemEnd","choice":""}]},"GemEnd":{"head_text":"宝石を拾って器に入れま…","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene gem_end\u003e\u003e","l":241},{"d":0,"c":"stage","t":"\u003c\u003cbg gem clear 0\u003e\u003e","l":242},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":243},{"d":0,"c":"stage","t":"\u003c\u003clights 0.8\u003e\u003e","l":244},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":245},{"d":0,"c":"line","t":"宝石を拾って器に入れました。／この宝石は、／器の核にできるかもしれません","l":246},{"d":0,"c":"line","t":"血も核も揃ったので、／少女は魔女の元へ戻ることにしました。／これできっと彼女の願いは叶うでしょう","l":247},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":248},{"d":0,"c":"end","t":"\u003c\u003cend gem\u003e\u003e","l":249},{"d":0,"c":"wait","t":"\u003c\u003cwait 3.2\u003e\u003e","l":250},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":251},{"d":0,"c":"line","t":"あるところに、／元は人間だった人魚がおりました。／その人魚は光り輝く／透き通るモノが大好きで。","l":252},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":253},{"d":0,"c":"line","t":"海底や船の残骸、／人間の死体などを探しては、／キラキラ光る宝石や飾り物を／漁って集めていました。／美しく磨かれたそれらの価値も、／その品々にこめられた思いも／素晴らしい技術も／人魚にはよく分かりません。／知ったところで意味が無いのです。","l":254},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":255},{"d":0,"c":"line","t":"美しく輝く宝石さえあれば、／心が歓びを感じる。／ただそれだけが／人魚の生きる理由であったのです。／そうして、ただ心の求めるままに。","l":256},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":257},{"d":0,"c":"line","t":"人魚はその長い長い／生涯全部を費やして、／ただ光り輝くモノを／集め続けるのです……。","l":258},{"d":0,"c":"choice","t":"選択肢 2 つ","l":259},{"d":1,"c":"choice","t":"-\u003e タイトルへ戻る","l":259},{"d":2,"c":"jump","t":"\u003c\u003cstop\u003e\u003e","l":260},{"d":1,"c":"choice","t":"-\u003e 分岐まで戻る","l":261},{"d":2,"c":"stage","t":"\u003c\u003cblack 0.8\u003e\u003e","l":262},{"d":2,"c":"wait","t":"\u003c\u003cwait 0.9\u003e\u003e","l":263},{"d":2,"c":"jump","t":"\u003c\u003cjump Fork\u003e\u003e","l":264}],"head":{"ambience":"still","bg":"gem clear 0","lights":"0.8","scene":"gem_end"},"state":{"ambience":"still","bg":"gem clear 0","lights":"0.8","scene":"gem_end"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Gem","carried":{}}],"out":[{"to":"Fork","choice":"分岐まで戻る"}]},"Lair":{"head_text":"おや、あんた海の者でな…","rows":[{"d":0,"c":"sound","t":"\u003c\u003cse splash\u003e\u003e","l":19},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.2\u003e\u003e","l":20},{"d":0,"c":"sound","t":"\u003c\u003cambience sea\u003e\u003e","l":21},{"d":0,"c":"stage","t":"\u003c\u003clights 1.8\u003e\u003e","l":22},{"d":0,"c":"wait","t":"\u003c\u003cwait 0.6\u003e\u003e","l":23},{"d":0,"c":"other","t":"\u003c\u003cgirl\u003e\u003e","l":24},{"d":0,"c":"other","t":"\u003c\u003cpuff\u003e\u003e","l":25},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.8\u003e\u003e","l":26},{"d":0,"c":"other","t":"\u003c\u003cwitch on\u003e\u003e","l":27},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.3\u003e\u003e","l":28},{"d":0,"c":"line","t":"witch: おや、あんた海の者でないね。／そんなに空気の泡を吐いてりゃ／すぐ分かるさ","l":29},{"d":0,"c":"sound","t":"\u003c\u003cse bubble\u003e\u003e","l":30},{"d":0,"c":"other","t":"\u003c\u003cspeak girl\u003e\u003e","l":31},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.7\u003e\u003e","l":32},{"d":0,"c":"line","t":"witch: なになに……／海の魔女の力が借りたくて、／息苦しい中ここまで？／そりゃあご苦労なことだ","l":33},{"d":0,"c":"line","t":"witch: それで、願いってのは？／……はあ。魂を捨てたい、ね。／人間様にしちゃ珍しい願い事だ","l":34},{"d":0,"c":"line","t":"witch: ま、不可能じゃないよ。／ただし対価に／今あんたの一番大事なモノを……／え、そんなもの存在しない？","l":35},{"d":0,"c":"line","t":"witch: ……","l":36},{"d":0,"c":"line","t":"witch: ああもう。分かった、分かった。／だからそんな目で見るんじゃないよ","l":37},{"d":0,"c":"line","t":"witch: こいつを持っていきな","l":38},{"d":0,"c":"actor","t":"\u003c\u003citem bottle\u003e\u003e","l":39},{"d":0,"c":"sound","t":"\u003c\u003cse glass\u003e\u003e","l":40},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":41},{"d":0,"c":"line","t":"witch: この器を血で満たし、／ついでに魂の代わりに／お前を動かしてくれる核を／何か一つ、入れるんだ。／それを今の心臓とそっくり取り換えりゃ、／魂を失くしても生きていけるってわけさ","l":42},{"d":0,"c":"actor","t":"\u003c\u003citem knife\u003e\u003e","l":43},{"d":0,"c":"sound","t":"\u003c\u003cse blade\u003e\u003e","l":44},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.6\u003e\u003e","l":45},{"d":0,"c":"line","t":"witch: ほら、このナイフもサービスだ。／血を集めるのに便利だろうし、／使い続ければ手に馴染むだろうさ","l":46},{"d":0,"c":"actor","t":"\u003c\u003citem off\u003e\u003e","l":47},{"d":0,"c":"line","t":"witch: ただし、中身を集めている間は、／海から上がるんじゃないよ。／私の魔法が解けて、／器が駄目になっちまうからね","l":48},{"d":0,"c":"line","t":"witch: それだと息が続かない？／泣き言をいうんじゃないよ。／水中でも、息継ぎする手段はあるものさ。／それくらいは自分で探しな","l":49},{"d":0,"c":"line","t":"witch: さあ、お行き。／魂を失くして新しい生を歩むか、／死んで魂ごと失くしちまうか。／それはあんたの努力次第だ。／それで、あんたの目的が果たされたら。／その時に余った心臓と魂を／対価として貰うことにしよう","l":50},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":51},{"d":0,"c":"other","t":"\u003c\u003cwitch off\u003e\u003e","l":52},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.2\u003e\u003e","l":53},{"d":0,"c":"gate","t":"-\u003e 上方向スワイプでページ切替 #act:up","l":54},{"d":0,"c":"other","t":"\u003c\u003csink 40\u003e\u003e","l":55},{"d":0,"c":"sound","t":"\u003c\u003cse sink\u003e\u003e","l":56},{"d":0,"c":"line","t":"こうして少女は／魂の代わりになるモノを得るために、／海での暮らしを始めました","l":57},{"d":0,"c":"gate","t":"-\u003e 上へ #act:up #mute","l":58},{"d":0,"c":"other","t":"\u003c\u003csink 40\u003e\u003e","l":59},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.0\u003e\u003e","l":60},{"d":0,"c":"stage","t":"\u003c\u003cblack 1.0\u003e\u003e","l":61},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.0\u003e\u003e","l":62},{"d":0,"c":"jump","t":"\u003c\u003cjump Deep\u003e\u003e","l":63}],"head":{"ambience":"sea","lights":"1.8"},"state":{"ambience":"sea","lights":"1.8"},"file":"assets/talk/kesshou.yarn","incoming":[],"out":[{"to":"Deep","choice":""}]},"Leave":{"head_text":"安らげる場所はありまし…","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene leave\u003e\u003e","l":338},{"d":0,"c":"stage","t":"\u003c\u003cbg whale clear 0\u003e\u003e","l":339},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":340},{"d":0,"c":"stage","t":"\u003c\u003clights 0.8\u003e\u003e","l":341},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":342},{"d":0,"c":"line","t":"安らげる場所はありました。／それは無くなってしまっても、／必要なモノは遺されました。","l":343},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":344},{"d":0,"c":"line","t":"けれどまだ、／少女の望む核は見つかりません。","l":345},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":346},{"d":0,"c":"line","t":"魂の代わりになるという／『それ』を求めて、／彼女はまだまだ海の中を／さまようようです――。","l":347},{"d":0,"c":"other","t":"\u003c\u003csink 900 3.5\u003e\u003e","l":348},{"d":0,"c":"sound","t":"\u003c\u003cse sink\u003e\u003e","l":349},{"d":0,"c":"wait","t":"\u003c\u003cwait 3.5\u003e\u003e","l":350},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":351},{"d":0,"c":"end","t":"\u003c\u003cend leave\u003e\u003e","l":352},{"d":0,"c":"wait","t":"\u003c\u003cwait 2.4\u003e\u003e","l":353},{"d":0,"c":"gate","t":"-\u003e タイトルへ戻る","l":354},{"d":1,"c":"jump","t":"\u003c\u003cstop\u003e\u003e","l":355}],"head":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"leave"},"state":{"ambience":"still","bg":"whale clear 0","lights":"0.8","scene":"leave"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Bones","carried":{}}],"out":[]},"Whale":{"head_text":"あらあら、珍しいお客様…","rows":[{"d":0,"c":"stage","t":"\u003c\u003cscene whale\u003e\u003e","l":110},{"d":0,"c":"stage","t":"\u003c\u003cbg whale clear 0\u003e\u003e","l":111},{"d":0,"c":"sound","t":"\u003c\u003cambience whale\u003e\u003e","l":112},{"d":0,"c":"stage","t":"\u003c\u003clights 2.0\u003e\u003e","l":113},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":114},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.8\u003e\u003e","l":115},{"d":0,"c":"sound","t":"\u003c\u003cse call\u003e\u003e","l":116},{"d":0,"c":"line","t":"whale: あらあら、珍しいお客様だわ。／海の上の子、人間さんね","l":117},{"d":0,"c":"line","t":"whale: 年を取りすぎたせいか、／この辺りからすっかり／動けなくなってしまってね。／だから、お客様が来るのが嬉しくって","l":118},{"d":0,"c":"line","t":"whale: 人間のお嬢さん、／もしよろしければ、／しばらく話し相手に／なってくれないかしら","l":119},{"d":0,"c":"sound","t":"\u003c\u003cse bubble\u003e\u003e","l":120},{"d":0,"c":"other","t":"\u003c\u003cspeak girl\u003e\u003e","l":121},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.7\u003e\u003e","l":122},{"d":0,"c":"line","t":"白鯨の傍は快適で、／少女は白鯨と長い間、／穏やかな時を過ごしました","l":123},{"d":0,"c":"other","t":"\u003c\u003cdays 3\u003e\u003e","l":124},{"d":0,"c":"wait","t":"\u003c\u003cwait 2.6\u003e\u003e","l":125},{"d":0,"c":"other","t":"\u003c\u003cvision tea\u003e\u003e","l":126},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.8\u003e\u003e","l":127},{"d":0,"c":"other","t":"\u003c\u003cvision meal\u003e\u003e","l":128},{"d":0,"c":"wait","t":"\u003c\u003cwait 2.2\u003e\u003e","l":129},{"d":0,"c":"other","t":"\u003c\u003cvision clear\u003e\u003e","l":130},{"d":0,"c":"line","t":"けれど、それも長くは続きませんでした","l":131},{"d":0,"c":"stage","t":"\u003c\u003cclear\u003e\u003e","l":132},{"d":0,"c":"stage","t":"\u003c\u003cblack 1.0\u003e\u003e","l":133},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.1\u003e\u003e","l":134},{"d":0,"c":"other","t":"\u003c\u003cwhale lying 0\u003e\u003e","l":135},{"d":0,"c":"stage","t":"\u003c\u003clights 1.2\u003e\u003e","l":136},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.2\u003e\u003e","l":137},{"d":0,"c":"line","t":"whale: 私ね、きっと近いうちに死んでしまうの","l":138},{"d":0,"c":"line","t":"whale: そのことは受け入れてはいるのよ。／もう十分に長生きしたのだから","l":139},{"d":0,"c":"line","t":"whale: でも、その時が来る前に／せっかく出会えたあなたに、／なにかお礼がしたいと思ったの","l":140},{"d":0,"c":"line","t":"whale: けれど、生憎とこんな身体だから、／何も用意できていなくて","l":141},{"d":0,"c":"line","t":"whale: 以前、この辺りで見つけた綺麗な石を／大事に取っておいたはずなのだけれど、／それも見当たらなくて","l":142},{"d":0,"c":"line","t":"whale: あなたに似合うと思ったのに、残念だわ","l":143},{"d":0,"c":"other","t":"\u003c\u003cbreath\u003e\u003e","l":144},{"d":0,"c":"sound","t":"\u003c\u003cse exhale\u003e\u003e","l":145},{"d":0,"c":"other","t":"\u003c\u003cwhale closing 5.0\u003e\u003e","l":146},{"d":0,"c":"line","t":"whale: ねえ人間さん。／私がいなくなったら／私の財産を好きにしていいわ。／もっとも、今差し出せるものなんて／この身一つしかないのだけれど。／本当、あの綺麗な石が／ここに残っていたらよかったのに","l":147},{"d":0,"c":"other","t":"\u003c\u003cwhale closed\u003e\u003e","l":148},{"d":0,"c":"line","t":"whale: …………。ごめんなさい、少し休むわ。／なんだからとても眠いの……","l":149},{"d":0,"c":"other","t":"\u003c\u003cbreath\u003e\u003e","l":150},{"d":0,"c":"sound","t":"\u003c\u003cse exhale\u003e\u003e","l":151},{"d":0,"c":"other","t":"\u003c\u003cwhale still\u003e\u003e","l":152},{"d":0,"c":"sound","t":"\u003c\u003cambience still\u003e\u003e","l":153},{"d":0,"c":"line","t":"whale: …………","l":154},{"d":0,"c":"other","t":"\u003c\u003cwhale corpse 1.5\u003e\u003e","l":155},{"d":0,"c":"wait","t":"\u003c\u003cwait 1.5\u003e\u003e","l":156},{"d":0,"c":"jump","t":"\u003c\u003cjump Corpse\u003e\u003e","l":157}],"head":{"ambience":"whale","bg":"whale clear 0","lights":"2.0","scene":"whale"},"state":{"ambience":"still","bg":"whale clear 0","lights":"1.2","scene":"whale"},"file":"assets/talk/kesshou.yarn","incoming":[{"from":"Deep","carried":{}}],"out":[{"to":"Corpse","choice":""}]}}},
+  script: "\u003c!-- yarn: 3b75d11f5427 --\u003e\n# シナリオ原稿 — 血と鱗と素敵なモノ\n\n〔〕は演出の注釈、（）は間。字は自由に直してください。演出を足したい・変えたい所は〔〕で書けば、AI がシナリオへ反映します。\n話し手の名前は「」の前。地の文は名前を書きません。改行はそのまま画面の改行です（Markdown のプレビューでは行がつながるので、テキストのまま読んでください）。ルビは ｜字《よみ》。\n\n## 1「おや、あんた海の者でな…」　〔Lair〕\n\n〔se splash〕（間 1.2 秒）〔ambience sea〕〔暗闇から海の底が現れる（1.8）〕（間 0.6 秒）〔少女が左上へ沈んでくる〕〔少女の口から泡〕（間 1.8 秒）〔魔女が右下に現れる〕（間 1.3 秒）\n魔女「おや、あんた海の者でないね。\n　　　そんなに空気の泡を吐いてりゃ\n　　　すぐ分かるさ」\n\n〔se bubble〕〔字を出さずに話す（girl）〕（間 1.7 秒）\n魔女「なになに……\n　　　海の魔女の力が借りたくて、\n　　　息苦しい中ここまで？\n　　　そりゃあご苦労なことだ」\n\n魔女「それで、願いってのは？\n　　　……はあ。魂を捨てたい、ね。\n　　　人間様にしちゃ珍しい願い事だ」\n\n魔女「ま、不可能じゃないよ。\n　　　ただし対価に\n　　　今あんたの一番大事なモノを……\n　　　え、そんなもの存在しない？」\n\n魔女「……」\n\n魔女「ああもう。分かった、分かった。\n　　　だからそんな目で見るんじゃないよ」\n\n魔女「こいつを持っていきな」\n\n〔小瓶・ナイフを手に持ち、文字の奥に大きく映す〕〔se glass〕（間 1.6 秒）\n魔女「この器を血で満たし、\n　　　ついでに魂の代わりに\n　　　お前を動かしてくれる核を\n　　　何か一つ、入れるんだ。\n　　　それを今の心臓とそっくり取り換えりゃ、\n　　　魂を失くしても生きていけるってわけさ」\n\n〔小瓶・ナイフを手に持ち、文字の奥に大きく映す〕〔se blade〕（間 1.6 秒）\n魔女「ほら、このナイフもサービスだ。\n　　　血を集めるのに便利だろうし、\n　　　使い続ければ手に馴染むだろうさ」\n\n〔小瓶・ナイフを手に持ち、文字の奥に大きく映す〕\n魔女「ただし、中身を集めている間は、\n　　　海から上がるんじゃないよ。\n　　　私の魔法が解けて、\n　　　器が駄目になっちまうからね」\n\n魔女「それだと息が続かない？\n　　　泣き言をいうんじゃないよ。\n　　　水中でも、息継ぎする手段はあるものさ。\n　　　それくらいは自分で探しな」\n\n魔女「さあ、お行き。\n　　　魂を失くして新しい生を歩むか、\n　　　死んで魂ごと失くしちまうか。\n　　　それはあんたの努力次第だ。\n　　　それで、あんたの目的が果たされたら。\n　　　その時に余った心臓と魂を\n　　　対価として貰うことにしよう」\n\n〔clear〕〔去る〕（間 1.2 秒）\n【↑ 上へ払う】　案内「上方向スワイプでページ切替」\n〔少女が沈む（40）〕〔se sink〕\nこうして少女は\n魂の代わりになるモノを得るために、\n海での暮らしを始めました\n\n【↑ 上へ払う】\n〔少女が沈む（40）〕（間 1.0 秒）〔黒へ落とす（1.0）〕（間 1.0 秒）\n→ 2「〔汎用海中〕」 へ\n\n## 2「〔汎用海中〕」　〔Deep〕\n\u003e 汎用海中: 払うたびに海が暗くなり、少女が 1 段ずつ沈み、回想のスチルが決まった所に 1 枚ずつ浮かび上がって入れ替わる。4 回目でスチルが消え、影と目、暗転\n\n〔scene deep〕〔bg deep deep0 1.6〕〔ambience deep〕〔暗闇から海の底が現れる（0.6）〕〔clear〕（間 1.0 秒）\n【↑ 上へ払う】　案内「上方向スワイプでページ切替」\n〔bg deep deep1 0.8〕〔vision fish〕〔se bubble〕（間 1.6 秒）\n【↑ 上へ払う】\n〔bg deep deep2 0.8〕〔vision drowned〕〔se bubble〕（間 1.6 秒）\n【↑ 上へ払う】\n〔bg deep deep3 0.8〕〔vision plant〕〔se bubble〕（間 1.6 秒）\n【↑ 上へ払う】\n〔vision clear〕〔bg deep deep4 1.2〕〔se rumble〕〔shadow 2.4〕（間 2.6 秒）〔eye on〕〔se eye〕（間 2.4 秒）〔黒へ落とす（1.5）〕（間 1.6 秒）〔eye off〕〔ambience off〕（間 0.8 秒）\n→ 3「あらあら、珍しいお客様…」 へ\n\n## 3「あらあら、珍しいお客様…」　〔Whale〕\n\u003e 白鯨の住処: タップで会話。地の文を出したまま日々と回想のスチルが流れ、暗転して白鯨が横たわり、目を閉じ、泡が止まり、遺体になる\n\n〔scene whale〕〔bg whale clear 0〕〔ambience whale〕〔暗闇から海の底が現れる（2.0）〕〔clear〕（間 1.8 秒）〔se call〕\n白鯨「あらあら、珍しいお客様だわ。\n　　　海の上の子、人間さんね」\n\n白鯨「年を取りすぎたせいか、\n　　　この辺りからすっかり\n　　　動けなくなってしまってね。\n　　　だから、お客様が来るのが嬉しくって」\n\n白鯨「人間のお嬢さん、\n　　　もしよろしければ、\n　　　しばらく話し相手に\n　　　なってくれないかしら」\n\n〔se bubble〕〔字を出さずに話す（girl）〕（間 1.7 秒）\n白鯨の傍は快適で、\n少女は白鯨と長い間、\n穏やかな時を過ごしました\n\n〔days 3〕（間 2.6 秒）〔vision tea〕（間 1.8 秒）〔vision meal〕（間 2.2 秒）〔vision clear〕\nけれど、それも長くは続きませんでした\n\n〔clear〕〔黒へ落とす（1.0）〕（間 1.1 秒）〔whale lying 0〕〔暗闇から海の底が現れる（1.2）〕（間 1.2 秒）\n白鯨「私ね、きっと近いうちに死んでしまうの」\n\n白鯨「そのことは受け入れてはいるのよ。\n　　　もう十分に長生きしたのだから」\n\n白鯨「でも、その時が来る前に\n　　　せっかく出会えたあなたに、\n　　　なにかお礼がしたいと思ったの」\n\n白鯨「けれど、生憎とこんな身体だから、\n　　　何も用意できていなくて」\n\n白鯨「以前、この辺りで見つけた綺麗な石を\n　　　大事に取っておいたはずなのだけれど、\n　　　それも見当たらなくて」\n\n白鯨「あなたに似合うと思ったのに、残念だわ」\n\n〔breath〕〔se exhale〕〔whale closing 5.0〕\n白鯨「ねえ人間さん。\n　　　私がいなくなったら\n　　　私の財産を好きにしていいわ。\n　　　もっとも、今差し出せるものなんて\n　　　この身一つしかないのだけれど。\n　　　本当、あの綺麗な石が\n　　　ここに残っていたらよかったのに」\n\n〔whale closed〕\n白鯨「…………。ごめんなさい、少し休むわ。\n　　　なんだからとても眠いの……」\n\n〔breath〕〔se exhale〕〔whale still〕〔ambience still〕\n白鯨「…………」\n\n〔whale corpse 1.5〕（間 1.5 秒）\n→ 4「白鯨は動かなくなりまし…」 へ\n\n## 4「白鯨は動かなくなりまし…」　〔Corpse〕\n\u003e 遺体: 下へ払うたびにナイフで刺し、血飛沫と赤い線、瓶に血が溜まる。最後に腹を割くと光る物が転がり出る\n\n〔scene corpse〕〔bg whale clear 0〕〔ambience still〕〔暗闇から海の底が現れる（0.6）〕\n白鯨は動かなくなりました。\n\n〔clear〕\n【↓ 下へ払う】\n〔stab〕〔se stab〕〔wound 1〕（間 1.0 秒）〔vial 1〕〔se fill〕\n白鯨にナイフを突き立てましたが、\n反応はありません。\nナイフを深く突き刺した箇所から\nどろりと赤い血が流れだしていきます。\n\n【↓ 下へ払う】\n〔stab〕〔se stab〕〔wound 2〕〔vial 2〕〔se fill〕（間 1.0 秒）\n【↓ 下へ払う】\n〔stab〕〔se stab〕〔wound 3〕〔vial 4〕〔se fill〕（間 1.0 秒）\n流れ出る大量の血が、\n器に満ちていきます。\n\n【↓ 下へ払う】　案内「鯨の腹を割く」\n〔stab〕〔se slash〕〔wound belly〕〔roll〕〔se roll〕（間 1.4 秒）\n切り開いた内蔵から\n小さな光るモノが転がり落ちました。\n美しく磨かれた、大きな宝石でした\n\n→ 5「宝石は海流にさらわれ」 へ\n\n## 5「宝石は海流にさらわれ」　〔Fork〕\n\u003e 分かれ道（頭の台詞でオートセーブ）: 左へ払えば宝石を拾いに（案内は指を置き始める右側）、下へ払えば解体\n\n〔scene fork〕〔bg whale clear 0〕〔ambience still〕〔暗闇から海の底が現れる（0.8）〕〔clear〕\n宝石は海流にさらわれ\nどこかへと転がって行きます……\n\n◆ 選ぶ\n　・宝石を拾いに行く（←）\n　　→ 6「〔宝石の場所〕」 へ\n　・解体する（↓）\n　　〔stab〕〔wound all〕〔se slash〕（間 1.4 秒）\n　　→ 8「少女は手を止めることな…」 へ\n\n## 6「〔宝石の場所〕」　〔Gem〕\n\u003e 宝石の場所: 住処から右へ送った先。宝石をタップして瓶に入れる（大写し）\n\n〔scene gem〕〔bg gem clear 1.8 pan〕〔ambience still〕〔暗闇から海の底が現れる（0.8）〕〔clear〕（間 1.8 秒）\n【● タップ（gem を）】　案内「宝石をタップ」\n〔se pick〕〔vial gem〕（間 1.6 秒）\n→ 7「宝石を拾って器に入れま…」 へ\n\n## 7「宝石を拾って器に入れま…」　〔GemEnd〕\n\u003e 「宝石」END: 拾った地の文の後に暗転と札とスチル。結びの地の文は段落ごとに頁を改める\n\n〔scene gem_end〕〔bg gem clear 0〕〔ambience still〕〔暗闇から海の底が現れる（0.8）〕〔clear〕\n宝石を拾って器に入れました。\nこの宝石は、\n器の核にできるかもしれません\n\n血も核も揃ったので、\n少女は魔女の元へ戻ることにしました。\nこれできっと彼女の願いは叶うでしょう\n\n〔clear〕〔end gem〕（間 3.2 秒）〔clear〕\nあるところに、\n元は人間だった人魚がおりました。\nその人魚は光り輝く\n透き通るモノが大好きで。\n\n〔clear〕\n海底や船の残骸、\n人間の死体などを探しては、\nキラキラ光る宝石や飾り物を\n漁って集めていました。\n美しく磨かれたそれらの価値も、\nその品々にこめられた思いも\n素晴らしい技術も\n人魚にはよく分かりません。\n知ったところで意味が無いのです。\n\n〔clear〕\n美しく輝く宝石さえあれば、\n心が歓びを感じる。\nただそれだけが\n人魚の生きる理由であったのです。\nそうして、ただ心の求めるままに。\n\n〔clear〕\n人魚はその長い長い\n生涯全部を費やして、\nただ光り輝くモノを\n集め続けるのです……。\n\n◆ 選ぶ\n　・タイトルへ戻る\n　　■ おわり\n　・分岐まで戻る\n　　〔黒へ落とす（0.8）〕（間 0.9 秒）\n　　→ 5「宝石は海流にさらわれ」 へ\n\n## 8「少女は手を止めることな…」　〔Dissect〕\n\u003e 解体（全体の赤い線は Fork の払いで入る）: 鯨が消えて骨が残る\n\n〔scene dissect〕〔bg whale clear 0〕〔ambience still〕〔暗闇から海の底が現れる（0.8）〕〔clear〕\n少女は手を止めることなく、\n大量の肉を\n少しずつ丁寧に切り分けていきます。\n\n〔whale off 1.6〕（間 1.6 秒）\nそうしてあらかた切り刻んだ後\n\n〔whale bones 1.2〕（間 1.2 秒）\n→ 9「肉を削がれ海水に洗われ…」 へ\n\n## 9「肉を削がれ海水に洗われ…」　〔Bones〕\n\u003e 骨（頭の台詞でオートセーブ）: 骨をタップすれば瓶に骨の欠片、上へ払えば立ち去る\n\n〔scene bones〕〔bg whale clear 0〕〔ambience still〕〔暗闇から海の底が現れる（0.8）〕〔clear〕\n肉を削がれ海水に洗われた大きな骨が、\n宝石のようにきらめいて見えました\n\n◆ 選ぶ\n　・骨をタップ（●）\n　　〔se bone〕〔vial bone〕（間 1.6 秒）\n　　→ 10「鯨の骨を少し削って器に…」 へ\n　・立ち去る（↑）\n　　→ 11「安らげる場所はありまし…」 へ\n\n## 10「鯨の骨を少し削って器に…」　〔BoneEnd〕\n\u003e 「骨」END\n\n〔scene bone_end〕〔bg whale clear 0〕〔ambience still〕〔暗闇から海の底が現れる（0.8）〕〔clear〕\n鯨の骨を少し削って器に入れました。\nこの宝石は、\n器の核にできるかもしれません\n\n血も核も揃ったので、\n少女は魔女の元へ戻ることにしました。\nこれできっと彼女の願いは叶うでしょう\n\n〔clear〕〔end bone〕（間 3.2 秒）〔clear〕\nあるところに、\n元は人間だった人魚がおりました。\n\n〔clear〕\nその人魚は\n死に瀕した生命を見つけては、\n最期まで側にいます。\n\n〔clear〕\nやがてその生命が死ぬと、\n人魚はその死者を丁寧に解体します。\n\n〔clear〕\nその肉体の中身の隅々、肉の一片まで。\nその姿を全てを記憶し、\nそれからその肉体を海へ還すために。\n\n〔clear〕\n人魚はそうやって、\n死者を弔うことが生き甲斐でした。\nけれどそこに死者への悲しみや\n憐れみがあるわけではありません。\n\n〔clear〕\nそうしなければいけない、と。\nその心に刻まれているから、\nそうしているだけなのです……。\n\n◆ 選ぶ\n　・タイトルへ戻る\n　　■ おわり\n　・分岐まで戻る\n　　〔黒へ落とす（0.8）〕（間 0.9 秒）\n　　→ 9「肉を削がれ海水に洗われ…」 へ\n\n## 11「安らげる場所はありまし…」　〔Leave〕\n\u003e 立ち去る: 少女は画面の下へ消え、「つづく」（続きの話へつながる結末なので、分岐へは戻さずタイトルへだけ）\n\n〔scene leave〕〔bg whale clear 0〕〔ambience still〕〔暗闇から海の底が現れる（0.8）〕〔clear〕\n安らげる場所はありました。\nそれは無くなってしまっても、\n必要なモノは遺されました。\n\n〔clear〕\nけれどまだ、\n少女の望む核は見つかりません。\n\n〔clear〕\n魂の代わりになるという\n『それ』を求めて、\n彼女はまだまだ海の中を\nさまようようです――。\n\n〔少女が沈む（900 3.5）〕〔se sink〕（間 3.5 秒）〔clear〕〔end leave〕（間 2.4 秒）\n◆ 選ぶ\n　・タイトルへ戻る\n　　■ おわり\n\n"
 };
 
 // 注釈は 3 つの帯のどれかに付く。帯の色・絵・名前を 1 か所で決め、タイムライン・下の札・一覧・書き出しが同じ物を使う
@@ -563,11 +632,12 @@ function renderForks() {
 }
 function openChapters(toFork, fork = 0) {
   video.pause();
-  if (form === "three") { focusBin(toFork, fork); return; }
+  // 分岐の印から来たら、その選択肢のあるノードを選んだグラフを開く（グラフの無いテープはチャプターへ）
+  if (toFork && GRAPH) { if (TAPE.branches[fork]) gPick = branchNode(TAPE.branches[fork]); setView("graph"); return; }
+  if (form === "three") { focusBin(); return; }
   renderChapters($("chapBody"), "fork");
   open("chapSheet");
-  if (toFork) setTimeout(() => $("fork" + fork)?.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
-  else setTimeout(() => $("chapBody").querySelector(".chap.cur")?.scrollIntoView({ block: "center" }), 300);
+  setTimeout(() => $("chapBody").querySelector(".chap.cur")?.scrollIntoView({ block: "center" }), 300);
 }
 function renderChapters(body, forkId) { body.innerHTML = chaptersHtml(forkId); wireChapters(body); }
 function chaptersHtml(forkId) {
@@ -580,21 +650,115 @@ function chaptersHtml(forkId) {
   TAPE.scenes.forEach(s => {
     rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * CHAP_W}px 0"></div>
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
-    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach(br => {
-      const i = TAPE.branches.indexOf(br);
-      rows.push(`<div class="forkcard" id="${forkId}${i}"><div class="q"><span class="fork" style="position:relative;left:9px;top:0;margin-right:10px"><i>分</i></span>${esc(br.question)} · ${yarn}:${br.line}${br.example ? ' <span class="example">例</span>' : ""}</div>
-        <div class="routes">${br.routes.map((r, j) => `<button class="route ${r.here ? "on" : "none"}" data-r="${j}"><b>${r.here ? "✓ " : ""}${esc(r.label)}</b><span>${esc(r.note)}</span></button>`).join("")}</div></div>`);
-    });
   });
-  return `<div class="ctxline">通し · ${TAPE.scenes.length} シーン · 分岐 ${TAPE.branches.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>` + rows.join("");
+  return `<div class="ctxline">通し · ${TAPE.scenes.length} シーン · 分岐 ${TAPE.branches.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>` + rows.join("") + scriptRow();
 }
 function wireChapters(body) {
   body.querySelectorAll(".chap").forEach(n => n.onclick = () => { close(); seek(+n.dataset.t + .05); });
-  body.querySelectorAll(".route").forEach(n => n.onclick = () => {
-    const r = TAPE.branches[0].routes[+n.dataset.r];
-    if (r.here) { close(); seek(TAPE.branches[0].t + .05); } else toast("この枝の動画はまだありません（撮ると、ここから切り替わります）");
-  });
+  body.querySelectorAll(".scriptdl").forEach(n => n.onclick = () => saveFile(TAPE.script, `${TAPE.game}.md`));
 }
+// ── 分岐のグラフ: 「映像 / グラフ」で見る物を切り替える（シナリオの全体を見る）。bin/fge yarn graph と同じ置き場で箱と矢印を描き、
+// 箱を押すとそのノードの行を出す。このテープに映るノードは「この場面へ」で映像に戻ってその秒へ送る ──
+const GRAPH = TAPE.graph || null;
+let viewMode = "video", gPick = null, gZoom = null;
+const nodeOfLine = ln => (TAPE.lines[ln] && TAPE.lines[ln].node) || TAPE.node;
+function nodeStart(node) { const r = TAPE.timeline.find(([, ln]) => ln != null && nodeOfLine(ln) === node); return r ? r[0] : null; }
+function nodeAtTime(t) { const ln = lineAt(t); return ln ? nodeOfLine(ln) : null; }
+const branchNode = br => TAPE.lines[br.line] ? nodeOfLine(br.line) : nodeAtTime(br.t);
+// WhyNot: playUrl に ?talk= を字でつながない — playUrl が既に ? を持つと ??talk= になって開けない
+function nodeHref(node) { const u = new URL(TAPE.playUrl, location.href); u.searchParams.set("talk", node); return u.href; }
+// このテープに映らないノードを映した隣のテープ（branches の routes の starts）と、その頁でのノードの最初の秒
+function routeTo(node) {
+  for (const br of TAPE.branches) for (const r of br.routes) {
+    if (!r.here && r.href && r.starts && r.starts[node] !== undefined) return { note: r.note, href: r.href.replace(/#t=.*$/, "") + "#t=" + r.starts[node] };
+  }
+  return null;
+}
+// 全体に合わせた時の倍率。WhyNot: 高さに収まるまで縮めきらない — 長い台本では字が読めない点になる。.7 より下は送って見る
+function fitScale(L) { const w = $("gwrap"); return Math.min(1, (w.clientWidth - 16) / L.w, Math.max((w.clientHeight - 16) / L.h, .7)); }
+// WhyNot: いつも横に並べない — スマホと縦長の窓では横に長いグラフが 1 箱ずつしか見えない。縦と横の大きく収まる方を使う
+function graphLayout() { return form === "phone" || fitScale(GRAPH.v) > fitScale(GRAPH.h) ? GRAPH.v : GRAPH.h; }
+function svgHtml(L, k, cur, pick) {
+  const edges = L.edges.map(e => `<g class="gedge${e.back ? " back" : ""}${e.choice ? " choice" : ""}${e.from === pick || e.to === pick ? " hot" : ""}"><title>${esc(e.tip)}</title><path d="${e.d}" marker-end="url(#gArrow)"/>${e.label ? `<text x="${e.lx}" y="${e.ly}">${esc(e.label)}</text>` : ""}</g>`).join("");
+  const boxes = L.nodes.map(n => {
+    const at = nodeStart(n.id);
+    return `<g class="gbox ${n.kind || ""}${at !== null ? " here" : ""}${n.id === cur ? " cur" : ""}${n.id === pick ? " pick" : ""}" data-node="${esc(n.id)}"><title>${esc(n.id)}</title>` +
+      `<rect x="${n.x}" y="${n.y}" width="${L.bw}" height="${L.bh}" rx="6"/><text class="t" x="${n.x + 12}" y="${n.y + 22}">${esc(n.head)}</text>` +
+      `<text class="s" x="${n.x + 12}" y="${n.y + 40}">${esc(n.sub)}</text><text class="b" x="${n.x + 12}" y="${n.y + 56}">${esc(n.badge || "")}</text>` +
+      (at !== null ? `<text class="tm" x="${n.x + L.bw - 8}" y="${n.y + 56}">▶ ${mmss(at)}</text>` : `<text class="i" x="${n.x + L.bw - 8}" y="${n.y + 56}">${esc(n.id)}</text>`) + `</g>`;
+  }).join("");
+  return `<svg width="${L.w * k}" height="${L.h * k}" viewBox="0 0 ${L.w} ${L.h}" role="img" aria-label="ノードと jump の矢印"><defs><marker id="gArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${edges}${boxes}</svg>`;
+}
+function renderGraph(center) {
+  if (!GRAPH || viewMode !== "graph") return;
+  const L = graphLayout(), k = gZoom ?? fitScale(L), cur = nodeAtTime(video.currentTime), pick = gPick || cur || TAPE.node;
+  $("gwrap").innerHTML = svgHtml(L, k, cur, pick);
+  $("gwrap").querySelectorAll(".gbox").forEach(n => n.onclick = () => pickNode(n.dataset.node));
+  $("gvTitle").innerHTML = `分岐のグラフ<small>${GRAPH.v.nodes.length} ノード · ${Math.round(k * 100)}%</small>`;
+  $("nodePanel").innerHTML = nodeHtml(pick);
+  wireNode($("nodePanel"));
+  if (center) centerPick(L, k, pick);
+}
+function nodeHtml(node) {
+  const d = GRAPH.detail[node], n = GRAPH.v.nodes.find(x => x.id === node);
+  if (!d || !n) return "";
+  const at = nodeStart(node), route = at === null ? routeTo(node) : null;
+  // WhyNot: 別のファイルの行番号でテープの行を引かない — 台本が 2 つ以上の .yarn に分かれると同じ番号が別の行を指す
+  const here = new Set(d.file === TAPE.yarn ? TAPE.timeline.map(r => r[1]).filter(ln => ln != null) : []);
+  const go = at !== null ? `<button class="gact go" data-go="${at}">▶ この場面へ ${mmss(at)}</button>`
+    : route ? `<button class="gact" data-href="${esc(route.href)}">${esc(route.note)}で見る</button>` : `<span class="gnone">このテープには映っていない</span>`;
+  const play = TAPE.playUrl ? `<a class="gact" target="_blank" rel="noopener" href="${esc(nodeHref(node))}">ここから遊ぶ</a>` : "";
+  const rows = d.rows.map(r => `<li class="${here.has(r.l) ? "here" : ""}" data-ln="${r.l}"><span class="ln">${r.l}</span><span class="k-${r.c}" style="padding-left:${r.d * 10}px">${esc(r.t)}</span></li>`).join("");
+  // 矢印の先と元は箱と同じ冒頭の文で出し、押すとその箱へ移る（ノード名は小さく添える）
+  const link = (to, pre) => GRAPH.detail[to] ? `<button class="glink" data-node="${esc(to)}">${pre}${esc(GRAPH.detail[to].head_text)}<small>${esc(to)}</small></button>`
+    : `<div class="glink gone">${pre}無いノード<small>${esc(to)}</small></div>`;
+  const outs = d.out.map(o => link(o.to, o.choice ? `<b>「${esc(o.choice)}」</b>→ ` : "→ ")).join("") || `<span class="gnone">${d.rows.some(r => r.c === "end") ? "結末" : "行き先なし"}</span>`;
+  const ins = d.incoming.map(i => link(i.from, "← ")).join("") || `<span class="gnone">最初のノード</span>`;
+  return `<div class="nm">${esc(n.head)}<small>${esc(node)} · ${esc(d.file)}</small></div><div class="gacts">${go}${play}</div>` +
+    `<div class="glinks"><div class="label">行き先</div>${outs}<div class="label">来る所</div>${ins}</div><ul class="grows">${rows}</ul>`;
+}
+function wireNode(body) {
+  body.querySelectorAll(".gact[data-go]").forEach(n => n.onclick = () => { setView("video"); seek(+n.dataset.go + .05); });
+  body.querySelectorAll(".gact[data-href]").forEach(n => n.onclick = () => { location.href = n.dataset.href; });
+  body.querySelectorAll(".glink").forEach(n => n.onclick = () => { pickNode(n.dataset.node); centerPick(graphLayout(), gZoom ?? fitScale(graphLayout()), n.dataset.node); });
+  body.querySelectorAll(".grows li.here").forEach(n => n.onclick = () => { setView("video"); seek(lineStart(+n.dataset.ln) + .05); });
+}
+function pickNode(node) { gPick = node; renderGraph(false); }
+function centerPick(L, k, node) {
+  const w = $("gwrap"), n = L.nodes.find(x => x.id === node);
+  if (n) { w.scrollLeft = (n.x + L.bw / 2) * k - w.clientWidth / 2; w.scrollTop = (n.y + L.bh / 2) * k - w.clientHeight / 2; }
+}
+function setView(m) {
+  viewMode = GRAPH ? m : "video";
+  document.body.classList.toggle("mode-graph", viewMode === "graph");
+  $("modes").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.m === viewMode));
+  if (viewMode === "graph") { video.pause(); renderGraph(true); }
+}
+function zoomBy(f) {
+  const L = graphLayout(), w = $("gwrap"), k0 = gZoom ?? fitScale(L), cx = (w.scrollLeft + w.clientWidth / 2) / k0, cy = (w.scrollTop + w.clientHeight / 2) / k0;
+  gZoom = f === 0 ? null : Math.max(.3, Math.min(2, k0 * f));
+  renderGraph(false);
+  const k = gZoom ?? fitScale(L);
+  w.scrollLeft = cx * k - w.clientWidth / 2; w.scrollTop = cy * k - w.clientHeight / 2;
+}
+$("modes").querySelectorAll("button").forEach(b => b.onclick = () => setView(b.dataset.m));
+$("gvClose").onclick = () => setView("video");
+$("zoomIn").onclick = () => zoomBy(1.25); $("zoomOut").onclick = () => zoomBy(.8); $("zoomFit").onclick = () => zoomBy(0);
+$("gvScript").onclick = () => saveFile(TAPE.script, `${TAPE.game}.md`);
+if (!GRAPH) $("modes").style.display = "none";
+if (!TAPE.script) $("gvScript").style.display = "none";
+// 2 本の指で広げる・縮める（頁の拡大は viewport で止めてある）。マウスはトラックパッドのピンチ（ctrl + ホイール）
+let gPinch = null;
+$("gwrap").addEventListener("touchstart", e => { if (e.touches.length === 2) gPinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), k: gZoom ?? fitScale(graphLayout()) }; }, { passive: true });
+$("gwrap").addEventListener("touchmove", e => {
+  if (!gPinch || e.touches.length !== 2) return;
+  e.preventDefault();
+  const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  zoomBy(Math.max(.3, Math.min(2, gPinch.k * d / gPinch.d)) / (gZoom ?? fitScale(graphLayout())));
+}, { passive: false });
+$("gwrap").addEventListener("touchend", () => { gPinch = null; });
+$("gwrap").addEventListener("wheel", e => { if (!e.ctrlKey) return; e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : .9); }, { passive: false });
+function scriptRow() { return TAPE.script ? `<div class="scriptrow"><div class="label">シナリオ · ${esc(yarn)}</div><button class="scriptdl">シナリオ原稿 .md</button></div>` : ""; }
 function markSelection() {
   document.querySelectorAll(".sel").forEach(n => n.classList.remove("sel"));
   if (!sel) return;
@@ -748,6 +912,7 @@ function onTime(t, scrubbing) {
     last.scene = s.id; $("sceneName").textContent = s.name;
     document.querySelectorAll(".scene").forEach(n => n.classList.toggle("cur", n.dataset.id === s.id));
     if (form === "three") renderBin();
+    renderGraph(false);
   }
   if (ln !== last.ln) { last.ln = ln; document.querySelectorAll(".clip").forEach(n => n.classList.toggle("cur", +n.dataset.ln === ln)); }
   // 帯を送ったら、選んでいる物も今のコマに合わせて移す（違う物を指したまま操作させない）
@@ -940,14 +1105,14 @@ $("exportBtn").onclick = () => {
 const fileName = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `tape-${TAPE.game}-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.md`; };
 let downloads = null;
 if (window.claude && claude.use) claude.use("downloads").then(d => { downloads = d; }).catch(() => {});
-$("saveBtn").onclick = async () => {
-  const text = $("exportText").textContent, name = fileName();
+async function saveFile(text, name) {
   if (downloads) { try { await downloads.save({ filename: name, data: text }); toast("保存しました"); return; } catch (e) { if (e && e.code === "declined") { toast("保存をやめました"); return; } } }
   const file = new File([text], name, { type: "text/markdown" });
   // WhyNot: マウスの広い形では共有シートを出さない — PC の共有シートはファイルを置く先を選べず、保存のつもりで押した人が迷う
   if (!extras() && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
   const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast("ダウンロードしました");
-};
+}
+$("saveBtn").onclick = () => saveFile($("exportText").textContent, fileName());
 $("copyBtn").onclick = async () => { try { await navigator.clipboard.writeText($("exportText").textContent); toast("コピーしました"); } catch { toast("コピーできませんでした"); } };
 
 function applyTape() {
@@ -984,7 +1149,7 @@ const MQ = {
   mouse: matchMedia("(hover: hover) and (pointer: fine)")
 };
 let form = "phone", mouse = false;
-const IN_PANEL = ["dock", "noteSheet", "editSheet", "infoSheet", "chapSheet", "listSheet"];
+const IN_PANEL = ["dock", "noteSheet", "editSheet", "infoSheet", "chapSheet", "listSheet", "nodePanel"];
 const homes = IN_PANEL.map(id => { const n = $(id); return { n, parent: n.parentNode, next: n.nextSibling }; });
 const extras = () => form !== "phone" && mouse;
 
@@ -1013,7 +1178,7 @@ function applyForm() {
   relayout();
   if (f === "three") { renderList(); renderBin(); }
 }
-function relayout() { const t = video.currentTime; layoutTimeline(); renderTracks(); renderForks(); follow(t); last = {}; onTime(t); }
+function relayout() { const t = video.currentTime; layoutTimeline(); renderTracks(); renderForks(); follow(t); last = {}; onTime(t); renderGraph(false); }
 addEventListener("resize", applyForm);
 document.querySelectorAll(".mod").forEach(k => k.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl");
 
@@ -1027,9 +1192,9 @@ function renderBin() {
   if (performance.now() - binScrolledAt > 1500) body.querySelector(".chap.cur")?.scrollIntoView({ block: "nearest" });
 }
 ["wheel", "touchstart", "pointerdown"].forEach(ev => $("binBody").addEventListener(ev, () => { binScrolledAt = performance.now(); }, { passive: true }));
-function focusBin(toFork, fork) {
+function focusBin() {
   renderBin();
-  const n = toFork ? $("bfork" + fork) : $("binBody").querySelector(".chap.cur");
+  const n = $("binBody").querySelector(".chap.cur");
   if (!n) return;
   n.scrollIntoView({ block: "center", behavior: "smooth" });
   n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 900);
