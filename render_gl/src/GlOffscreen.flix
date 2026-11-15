@@ -344,7 +344,7 @@ pub mod GlOffscreen {
                 if (size < 0i64) count
                 else {
                     Option.forEach(info -> RenderTexture.deleteTexture(s#glLog#gl, info), RenderPaint.textureInfo(s#paint, entry#name));
-                    RenderPaint.putTexture(entry#name, LwjglAssets.loadTexture(s#glLog#gl, entry#path, entry#hasAlpha), s#paint);
+                    RenderPaint.putTexture(entry#name, LwjglAssets.loadTexture(RenderPaint.glUploads(s#glLog#gl), entry#path, entry#hasAlpha), s#paint);
                     count + 1
                 }
             }

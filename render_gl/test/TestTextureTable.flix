@@ -2,7 +2,9 @@
 // GPU を呼ばない Uploads（呼ばれた順に "create 8x8"・"write 5"・"drop 5" を控える）で表を育て、控えと表を読む。
 
 mod TestTextureTable {
+    import java.nio.ByteBuffer
     use RenderPaint.Internal.TextureTable.{Tables, Uploads, ensureTexture, putRadialBuiltins, putTexture}
+    use RenderPaint.Internal.WebGpuPaint
 
     // ── 組み立て ──
 
@@ -10,6 +12,10 @@ mod TestTextureTable {
     def recordingUploads(log: Ref[List[String], Static]): Uploads =
         { createArgb = (width, height, _) -> {
               Ref.put("create ${Int32.toString(width)}x${Int32.toString(height)}" :: Ref.get(log), log);
+              { id = GpuHandle.wrapTextureId(100), width = Int32.toFloat64(width), height = Int32.toFloat64(height) }
+          },
+          createImage = (width, height, _, _) -> {
+              Ref.put("image ${Int32.toString(width)}x${Int32.toString(height)}" :: Ref.get(log), log);
               { id = GpuHandle.wrapTextureId(100), width = Int32.toFloat64(width), height = Int32.toFloat64(height) }
           },
           writeArgb = (info, _, _, _) -> Ref.put("write ${Int32.toString(GpuHandle.textureIdInt(info#id))}" :: Ref.get(log), log),
@@ -76,4 +82,14 @@ mod TestTextureTable {
         ensureTexture(uploads, tables, note, "gen", "k1", 8, 8, pixels(64));
         ensureTexture(uploads, tables, note, "gen", "k1", 8, 8, pixels(64));
         Assert.assertEq(expected = 1, Ref.get(noted))
+
+    // ── WebGPU の createImage が alpha の無い絵を広げる所 ──
+
+    /// RGB の 2 画素は、色をそのままに alpha を 255（-1 のバイト）にした RGBA の 8 バイトになる。
+    @Test
+    def testOpaqueRgbaKeepsColorAndFillsAlpha(): Unit \ {Assert, IO} =
+        let rgb = ByteBuffer.allocateDirect(6);
+        List.forEachWithIndex((i, b) -> discard rgb.put(i, b), 1i8 :: 2i8 :: 3i8 :: 4i8 :: 5i8 :: 6i8 :: Nil);
+        let rgba = WebGpuPaint.opaqueRgbaOf(rgb, 2);
+        Assert.assertEq(expected = 1i8 :: 2i8 :: 3i8 :: -1i8 :: 4i8 :: 5i8 :: 6i8 :: -1i8 :: Nil, List.map(i -> rgba.get(i), List.range(0, 8)))
 }

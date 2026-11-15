@@ -13,6 +13,7 @@ mod RenderPaint {
     import java.lang.System
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.RenderList
+    use RenderPaint.Internal.TargetTable
     use RenderPaint.Internal.TextureTable
 
     /// 1 コマの描く命令（画面へのコマ。リサイズで描き直す時・注釈のスクショも同じ物を使う）。
@@ -57,12 +58,10 @@ mod RenderPaint {
         blankTexture = Int32,
         // program → (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs)。
         shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static],
-        // レンダーターゲットの名前 → GL 実体。
-        targetsRef = Ref[Map[String, RenderTargetGl.Entry], Static],
-        // 今開いているターゲットの宣言。None = 画面。
-        activeTargetHolder = Array[Option[RenderTarget.TargetSpec], Static],
-        // ターゲットの名前 → 前のコマの中身の写し（RenderTarget.historyName で読ませる。自分を読む Pass がある時だけ作る）。
-        historyRef = Ref[Map[String, RenderTargetGl.Entry], Static],
+        // 描き先・history・開いている描き先・最後に画面へ塗ったコマの表（作り直しと捨てる時を決める側）。
+        targets = TargetTable.Table,
+        // 描き先の表の番号（色のテクスチャの番号）→ GL 実体。
+        targetEntries = Ref[Map[Int32, RenderTargetGl.Entry], Static],
         // Rgba16Float で作れず Rgba8Unorm で作り直したことを知らせたターゲットの名前（名前ごとに 1 回）。
         targetWarnedRef = Ref[Set[String], Static],
         // history に前のコマを写すか（窓で遊ぶ時）、毎回透明で塗るか（1 枚撮り・動画 — 描き出しと同じ「1 コマ目」）。
@@ -73,8 +72,6 @@ mod RenderPaint {
         textureKeyRef = Ref[Map[String, String], Static],
         // 静的多角形バッファのキャッシュ（RenderStatic.resolve）。
         staticCacheCell = Array[Option[RenderStatic.Entry], Static],
-        // 最後に画面へ塗ったコマの命令（リサイズの描き直し・LRU の pin・注釈のスクショ）。
-        lastFrameHolder = Array[Frame, Static],
         // 1 コマぶんの診断（setDiagnosticsEnabled の間だけ Some。consumeDiagnostics が取り出す）。
         diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
         // 起動から作ったシェーダーと消したシェーダーの数（[作った, 消した]。診断の liveShaders の元）。
@@ -166,8 +163,7 @@ mod RenderPaint {
         let missingSurfaceTexRef: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
 
         // ターゲットは初回の beginTarget で作られ、寸法が変わらない限り使い回す。
-        let targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static] = Ref.fresh(Static, Map.empty());
-        let activeTargetHolder = Array#{(None: Option[RenderTarget.TargetSpec])} @ Static;
+        let targets = TargetTable.fresh();
 
         // テクスチャ表は実行時に増える（ensureTexture が生成したアトラスを足す）ので可変で持つ。
         let registryRef: Ref[RenderAsset.TextureRegistry, Static] = Ref.fresh(Static, Map.empty());
@@ -178,7 +174,6 @@ mod RenderPaint {
 
         // キー一致で使い回し・不一致で古い VBO を free して作り直す（RenderStatic.resolve）。
         let staticCacheCell = Array#{(None: Option[RenderStatic.Entry])} @ Static;
-        let lastFrameHolder = Array#{emptyFrame()} @ Static;
 
         // シェーダー面 1 枚を GL へ描く閉包。program の uniform location を逆引きして差す。
         // z の合流（sprites/polygons/静的レンジとの重なり順）は renderFrameMixed が受け持つので、
@@ -213,7 +208,6 @@ mod RenderPaint {
             // pass をこのフレームで宣言せず名前だけ読むと、ずっと 0 bind（黒）のままになる。
             // registry / targets はこの 1 枚の描画中は変わらないので、名前ごとに読み直さない。
             let registry = Ref.get(registryRef);
-            let targets = Ref.get(targetsRef);
             let texBinds = List.zip(cmd#texReads, texLocs) |> List.zipWithIndex
                 |> List.map(itb -> {
                     let (i, readLocs) = itb;
@@ -232,7 +226,7 @@ mod RenderPaint {
                             0
                     };
                     // pass ターゲットは上下逆格納なので flip=1（貼る側で吸収する既存規約と同型）。
-                    let flip = if (Map.memberOf(name, targets)) 1.0 else 0.0;
+                    let flip = if (TargetTable.isTarget(targets, name)) 1.0 else 0.0;
                     let sampler = if (filter == ShaderDoc.FilterMode.Linear) surfaceSamplerLinear else surfaceSampler;
                     ({ texUnit = i, texId = texId, flipLoc = flipLoc, flip = flip, sampler = sampler }: RenderSprite.SurfaceTexBind)
                 });
@@ -279,10 +273,10 @@ mod RenderPaint {
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
           pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, scene3d = cfg#scene3d,
           blankTexture = GpuHandle.textureIdInt(RenderTexture.loadTextureFromPixels(gl, 1, 1, Vector#{0})#id),
-          targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
-          historyRef = Ref.fresh(Static, Map.empty()), targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
+          targets = targets, targetEntries = Ref.fresh(Static, Map.empty()),
+          targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
-          staticCacheCell = staticCacheCell, lastFrameHolder = lastFrameHolder,
+          staticCacheCell = staticCacheCell,
           diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
           retiredProgramsRef = Ref.fresh(Static, Set.empty()), gpuTimer = cfg#gpuTimer }
 
@@ -304,7 +298,7 @@ mod RenderPaint {
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons,
             staticRanges = staticRanges,
             surfaces = frame#surfaces, scenes = prepared,
-            targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase };
+            targetNames = TargetTable.names(paint#targets) | paint#frameArgsBase };
         GlRows.renderPass(gl, args, GlRows.passOfArgs(args))
 
     /// レンダーターゲットへの 1 フレーム。画面用の paintFrame と違い、黒帯 clear を
@@ -323,7 +317,7 @@ mod RenderPaint {
         // WhyNot: テクスチャ 0 を貼らない — 完全でないテクスチャの読みはドライバ次第になる。
         gl.activeTexture(GlConst.TEXTURE0);
         gl.bindTexture(GlConst.TEXTURE_2D, paint#blankTexture);
-        let entry = Map.get(name, Ref.get(paint#targetsRef));
+        let entry = TargetTable.rowByName(paint#targets, name) |> Option.flatMap(entryOf(paint));
         let framebuffer = entry |> Option.map(RenderTargetGl.drawFramebuffer) |> Option.getWithDefault(paint#screenFramebuffer);
         let samples = entry |> Option.map(RenderTargetGl.drawSamples) |> Option.getWithDefault(1);
         let prepared = prepareScenes(paint, { framebuffer = framebuffer, format = target#format, samples = samples }, scenes);
@@ -334,7 +328,7 @@ mod RenderPaint {
             sprites = sprites, polygons = polygons,
             surfaces = surfaces, scenes = prepared,
             targetClear = Some(op),
-            targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase };
+            targetNames = TargetTable.names(paint#targets) | paint#frameArgsBase };
         let color = { texture = entry |> Option.map(e -> e#tex) |> Option.getWithDefault(-1),
                       format = entry |> Option.map(e -> e#storedFormat) |> Option.getWithDefault(target#format),
                       load = op, resolveTo = None };
@@ -344,30 +338,18 @@ mod RenderPaint {
     /// 1 枚撮り・動画では透明で塗る。history は registry とターゲットの表に載せる（上下逆格納なので貼る・読む時の反転も効く）。
     /// history は target と同じ形式で作る（作り直しの鍵は寸法と形式）。
     def prepareHistory(gl: GlContext, paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
-        let name = spec#name;
-        let history = RenderTarget.historyName(name);
-        let existing = Map.get(name, Ref.get(paint#historyRef)) |> Option.filter(sameTexture(spec));
-        let entry = match existing {
-            case Some(e) => e
-            case None =>
-                Option.forEach(e -> RenderTargetGl.destroy(gl, e), Map.get(name, Ref.get(paint#historyRef)));
-                let fresh = RenderTargetGl.create(gl, spec#width, spec#height, spec#format);
-                Ref.put(Map.insert(name, fresh, Ref.get(paint#historyRef)), paint#historyRef);
-                fresh
-        };
-        match Map.get(name, Ref.get(paint#targetsRef)) {
-            case Some(target) =>
+        let history = TargetTable.ensureHistory(glTargets(gl, paint), textureTables(paint), paint#targets, (paint#screenW, paint#screenH), spec);
+        let target = TargetTable.rowByName(paint#targets, spec#name) |> Option.flatMap(entryOf(paint));
+        match (target, entryOf(paint, history)) {
+            case (Some(t), Some(h)) =>
                 if (paint#keepHistory) {
                     // WhyNot: scissor を外さずに blit しない — glBlitFramebuffer は scissor に切られる。renderFrameMixed はコマの
                     // 終わりで外す決まりだが、崩れた時に history が四角く欠けて気づきにくいので、ここで 1 回外す。
                     gl.disable(GlConst.SCISSOR_TEST);
-                    RenderTargetGl.copyTo(gl, target, entry)
-                } else RenderTargetGl.clearTransparent(gl, entry, target)
-            case None => ()
-        };
-        Ref.put(Map.insert(history, entry, Ref.get(paint#targetsRef)), paint#targetsRef);
-        putTexture(history, ({ id = GpuHandle.wrapTextureId(entry#tex),
-                               width = paint#screenW, height = paint#screenH }: RenderAsset.TextureInfo), paint)
+                    RenderTargetGl.copyTo(gl, t, h)
+                } else RenderTargetGl.clearTransparent(gl, h, t)
+            case _ => ()
+        }
 
     /// Platform.Draw2d.renderCommands の中身（swap は Platform.Window.presentFrame）。レンダーターゲットが開いていればそこへ塗って false。
     /// 開いていなければ、溜めたシェーダー面を取り出して画面（今 bind されている fbW × fbH）へ塗り、
@@ -376,7 +358,7 @@ mod RenderPaint {
                         sprites: List[GameEngine.Drawable], tileMaps: List[GameEngine.TileMapRenderCmd],
                         polygons: List[GameEngine.PolygonRenderCmd],
                         staticLayer: Option[GameEngine.StaticLayerCmd]): Bool \ IO =
-        match Array.get(0, paint#activeTargetHolder) {
+        match TargetTable.activeSpec(paint#targets) {
             case Some(target) =>
                 // ターゲットが開いている間の描画は画面でなくそこに着く。swap も
                 // 控え（リサイズ再描画の元）も触らない — 画面のフレームは同じ絵のフレームの末尾に必ず別で来る。
@@ -393,7 +375,7 @@ mod RenderPaint {
                 Array.put(Nil, 0, paint#pendingShaderHolder);
                 let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons,
                               staticLayer = staticLayer, surfaces = surfaces, scenes = takeScenes(paint) };
-                Array.put(frame, 0, paint#lastFrameHolder);
+                TargetTable.rememberFrame(paint#targets, frame);
                 // 進めるのはここ 1 箇所だけ。上のレンダーターゲットへの分岐でも進めると、
                 // Pass を N 枚描くゲームでは絵 1 枚あたり N+1 回進み、「現世代 = いま描いて
                 // いる面」という数え方が壊れる。
@@ -429,17 +411,17 @@ mod RenderPaint {
 
     /// 溜めた場面を 3D の描き手に準備させ、2D の並びへ混ぜる形を受け取る。dest = 準備の後に戻す描き先・その形式・標本の数。
     def prepareScenes(paint: Paint, dest: Scene3dRenderer.Dest, scenes: List[Scene3d.RenderCmd]): Scene3dRenderer.Prepared \ IO =
-        paint#scene3d#prepare(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef), dest, scenes)
+        paint#scene3d#prepare(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targets, paint#textureKeyRef), dest, scenes)
 
     /// ビルボードと 3D の材質が貼るテクスチャを名前で引く（レンダーターゲットは上下逆に格納されているので flipped）。
     /// version = ensureTexture の key（同じ GL ハンドルのまま画素を差し替えると変わる。key の無い絵は空の字）。
     def registeredTexture(registryRef: Ref[RenderAsset.TextureRegistry, Static],
-                          targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static],
+                          targets: TargetTable.Table,
                           textureKeyRef: Ref[Map[String, String], Static],
                           name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =
         Map.get(name, Ref.get(registryRef)) |> Option.map(info ->
             ({ texId = GpuHandle.textureIdInt(info#id), width = info#width, height = info#height,
-               flipped = Map.memberOf(name, Ref.get(targetsRef)),
+               flipped = TargetTable.isTarget(targets, name),
                version = Map.getWithDefault(name, "", Ref.get(textureKeyRef)) }: Scene3dRenderer.RegisteredTexture))
 
     /// 最後に画面へ塗り終えた時の 2D の draw call の数（診断を集めていなくても読める）。
@@ -447,10 +429,10 @@ mod RenderPaint {
         RenderDrawCounts.lastScreenFrame(paint#frameArgsBase#drawCounts)
 
     /// 最後に画面へ塗ったコマの命令。
-    pub def lastFrame(paint: Paint): Frame \ IO = Array.get(0, paint#lastFrameHolder)
+    pub def lastFrame(paint: Paint): Frame \ IO = TargetTable.lastFrame(paint#targets)
 
     /// 画面のコマの命令を控えに置く（起動画面のように submitFrame を通らず塗る物も、リサイズで描き直せるように）。
-    pub def rememberFrame(paint: Paint, frame: Frame): Unit \ IO = Array.put(frame, 0, paint#lastFrameHolder)
+    pub def rememberFrame(paint: Paint, frame: Frame): Unit \ IO = TargetTable.rememberFrame(paint#targets, frame)
 
     // ── 読み込み（テクスチャ・フォント）──
 
@@ -554,8 +536,9 @@ mod RenderPaint {
                                    name, key, width, height, argb)
 
     /// GL で絵を上げる関数の組。
-    def glUploads(gl: GlContext): TextureTable.Uploads =
+    pub def glUploads(gl: GlContext): TextureTable.Uploads =
         { createArgb = (width, height, argb) -> RenderTexture.loadTextureFromPixels(gl, width, height, argb),
+          createImage = (width, height, bytes, alpha) -> RenderTexture.uploadBytes(gl, { width = width, height = height, alpha = alpha }, bytes),
           writeArgb = (info, width, height, argb) -> RenderTexture.updateTexturePixels(gl, info, width, height, argb),
           drop = info -> RenderTexture.deleteTexture(gl, info) }
 
@@ -733,7 +716,7 @@ mod RenderPaint {
     /// Platform.Draw3d.preload3d の中身。
     // WhyNot: queueScene3d のように溜めない — 溜めると、同じコマの Pass の場面が上がる前に描かれる。
     pub def preloadScene3d(paint: Paint, cmd: Scene3d.PreloadCmd): Unit \ IO =
-        paint#scene3d#preload(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef), cmd)
+        paint#scene3d#preload(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targets, paint#textureKeyRef), cmd)
 
     /// 使わなくなったシェーダープログラムを LRU で追い出す。
     def evictShaderPrograms(gl: GlContext, paint: Paint): Unit \ IO =
@@ -751,7 +734,7 @@ mod RenderPaint {
         // 上限は「生きている面の数」から決める。固定の数にすると、面を多く出すゲームで
         // 毎フレーム作っては捨てるだけになる（面の数はゲームが決めるのでエンジンは知らない）。
         let cap = Int32.max(16, Set.size(liveNow) * 2);
-        let lastSurfaces = Array.get(0, paint#lastFrameHolder)#surfaces;
+        let lastSurfaces = lastFrame(paint)#surfaces;
         let pinned = lastSurfaces
             |> List.foldLeft((acc, cmd: DrawCmd.SurfaceRenderCmd) ->
                 Set.insert(GpuHandle.shaderProgramInt(cmd#program), acc), liveNow)
@@ -829,35 +812,31 @@ mod RenderPaint {
     /// ターゲットのテクスチャを registry へ登録し（以降 Render.sprite(name, z) が普通のスプライトとして引ける）、bind する。
     /// clear は submitFrame（renderFrameMixed の targetClear）が行う — GL の clear 手順を 1 箇所に保つため、ここでは開いた印を残すだけ。
     pub def beginTarget(gl: GlContext, paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
-        let name = spec#name;
-        let targetsRef = paint#targetsRef;
-        let freshEntry = () -> {
-            let fresh = RenderTargetGl.createWithSamples(gl, spec#width, spec#height, spec#format, spec#samples);
-            if (RenderTargetGl.isFallback(fresh)) warnFormatFallback(paint, name) else ();
-            if (RenderTargetGl.isMsaaFallback(fresh)) warnMsaaFallback(paint, name) else ();
-            Ref.put(Map.insert(name, fresh, Ref.get(targetsRef)), targetsRef);
-            fresh
-        };
-        let entry = match Map.get(name, Ref.get(targetsRef)) {
+        let row = TargetTable.begin(glTargets(gl, paint), textureTables(paint), paint#targets, (paint#screenW, paint#screenH), spec);
+        Option.forEach(RenderTargetGl.bind(gl), entryOf(paint, row))
+
+    /// GL で描き先を作る・捨てる関数の組。表の番号は色のテクスチャの番号。
+    def glTargets(gl: GlContext, paint: Paint): TargetTable.Targets =
+        { create = spec -> {
+              let fresh = RenderTargetGl.createWithSamples(gl, spec#width, spec#height, spec#format, spec#samples);
+              if (RenderTargetGl.isFallback(fresh)) warnFormatFallback(paint, spec#name) else ();
+              if (RenderTargetGl.isMsaaFallback(fresh)) warnMsaaFallback(paint, spec#name) else ();
+              Ref.put(Map.insert(fresh#tex, fresh, Ref.get(paint#targetEntries)), paint#targetEntries);
+              fresh#tex
+          },
+          destroy = texture -> destroyEntry(gl, paint, texture) }
+
+    def destroyEntry(gl: GlContext, paint: Paint, texture: Int32): Unit \ IO =
+        match Map.get(texture, Ref.get(paint#targetEntries)) {
             case Some(e) =>
-                if (sameShape(spec, e)) e
-                else { RenderTargetGl.destroy(gl, e); dropHistory(gl, paint, name); freshEntry() }
-            case None => freshEntry()
-        };
-        // registry には design の寸法で載せる — sprite の大きさと region の UV は registry の寸法で決まるので、
-        // 縮んだターゲットも design 全面に貼れる（region の src も design px のまま）。
-        putTexture(name, ({ id = GpuHandle.wrapTextureId(entry#tex),
-                            width = paint#screenW, height = paint#screenH }: RenderAsset.TextureInfo), paint);
-        RenderTargetGl.bind(gl, entry);
-        Array.put(Some(spec), 0, paint#activeTargetHolder)
+                RenderTargetGl.destroy(gl, e);
+                Ref.put(Map.remove(texture, Ref.get(paint#targetEntries)), paint#targetEntries)
+            case None => ()
+        }
 
-    /// 作ってある e が spec と同じ寸法・形式・標本の数か（作り直しの鍵）。
-    def sameShape(spec: RenderTarget.TargetSpec, e: RenderTargetGl.Entry): Bool =
-        sameTexture(spec, e) and e#samples == spec#samples
-
-    /// 作ってある e の絵（tex）が spec と同じ寸法・形式か（history の作り直しの鍵。history は標本を持たない）。
-    def sameTexture(spec: RenderTarget.TargetSpec, e: RenderTargetGl.Entry): Bool =
-        e#width == spec#width and e#height == spec#height and e#format == spec#format
+    /// 描き先の表の行 row の GL 実体。
+    def entryOf(paint: Paint, row: TargetTable.Row): Option[RenderTargetGl.Entry] \ IO =
+        Map.get(row#texture, Ref.get(paint#targetEntries))
 
     /// 標本を持つ描き先を作れずに MSAA なしで描くことを、名前ごとに 1 回だけ知らせる。
     def warnMsaaFallback(paint: Paint, name: String): Unit \ IO =
@@ -881,24 +860,9 @@ mod RenderPaint {
         let (_, _, vpW, _) = RenderFrame.calcViewport(fbW, fbH, paint#screenW, paint#screenH);
         Int32.toFloat64(vpW) / Float64.max(1.0, paint#screenW)
 
-    /// ターゲット name を作り直す時に、その history も捨てる（次に要る時に新しい寸法で透明から作る）。
-    def dropHistory(gl: GlContext, paint: Paint, name: String): Unit \ IO =
-        match Map.get(name, Ref.get(paint#historyRef)) {
-            case None    => ()
-            case Some(e) =>
-                RenderTargetGl.destroy(gl, e);
-                let history = RenderTarget.historyName(name);
-                Ref.put(Map.remove(name, Ref.get(paint#historyRef)), paint#historyRef);
-                Ref.put(Map.remove(history, Ref.get(paint#targetsRef)), paint#targetsRef);
-                Ref.put(Map.remove(history, Ref.get(paint#registryRef)), paint#registryRef)
-        }
-
     /// RenderTarget.Target.endTarget の中身。標本を持つターゲットは tex へ resolve してから、画面のフレームバッファへ戻す
     /// （以降の Pass と本編はターゲットを tex で読む）。
     pub def endTarget(gl: GlContext, paint: Paint): Unit \ IO =
-        Array.get(0, paint#activeTargetHolder)
-            |> Option.flatMap(spec -> Map.get(spec#name, Ref.get(paint#targetsRef)))
-            |> Option.forEach(e -> RenderTargetGl.resolve(gl, e));
-        RenderTargetGl.unbind(gl, paint#screenFramebuffer);
-        Array.put(None, 0, paint#activeTargetHolder)
+        TargetTable.end(paint#targets) |> Option.flatMap(entryOf(paint)) |> Option.forEach(RenderTargetGl.resolve(gl));
+        RenderTargetGl.unbind(gl, paint#screenFramebuffer)
 }

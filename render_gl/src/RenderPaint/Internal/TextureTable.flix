@@ -3,12 +3,16 @@
 // 決まり: Uploads は list を作る def（RenderFrame.emitSprite など 1 体ごとに通る物）へ渡さない。上げるのは list を作る前。
 // WhyNot: 上げる所を effect にしない — 列を作る def の型にその effect が乗ると、ブラウザでは 1 体ごとに続きの入れ物の代金を払う。
 pub mod RenderPaint.Internal.TextureTable {
+    import java.nio.ByteBuffer
 
     /// backend が絵を GPU へ上げる関数の組。
     /// createArgb(幅, 高さ, ARGB の int の列（行優先・上の行から）) = 新しい絵を作って上げる（NEAREST・REPEAT）・
+    /// createImage(幅, 高さ, 解いた画像, alpha) = 解いた画像（alpha が真なら 1 画素 4 バイトの RGBA、偽なら 3 バイトの RGB・上の行から）を
+    /// 新しい絵にする（NEAREST・REPEAT。alpha が偽の絵は不透明として読む）・
     /// writeArgb(絵, 幅, 高さ, ARGB) = 同じ大きさの絵の画素を差し替える・drop(絵) = 絵を捨てる。
     pub type alias Uploads = {
         createArgb = (Int32, Int32, Vector[Int32]) -> RenderAsset.TextureInfo \ IO,
+        createImage = (Int32, Int32, ByteBuffer, Bool) -> RenderAsset.TextureInfo \ IO,
         writeArgb = (RenderAsset.TextureInfo, Int32, Int32, Vector[Int32]) -> Unit \ IO,
         drop = RenderAsset.TextureInfo -> Unit \ IO
     }
