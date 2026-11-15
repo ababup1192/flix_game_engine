@@ -554,7 +554,7 @@ mod RenderFrame {
     //   0=種類（kind*） 1=先頭の instance の番号 2=体数 3=絵の番号（0 = 絵の無い箱） 4=blend 5=clip有無 6-9=clip矩形（viewport の左上原点の px）
     // instances は 1 体 38 個（writeInstAt の並び）。行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
     // WhyNot: 行ごとに record や enum を作らない — 絵が 1 個ごとに替わると行は描く物の数だけでき、その割り当てが 1 コマに乗る。
-    // WhyNot: 別のモジュールに出さない — 別のモジュールの pub でない関数は呼べず、行を作る関数と流す関数を pub に開くことになる（render_gl の pub を増やさない）。
+    // WhyNot: 兄弟のモジュールに出さない — 兄弟の mod からは pub でない関数を呼べず（子孫の RenderFrame.Internal.* からは見える）、行を作る関数と流す関数を pub に開くことになる（render_gl の pub を増やさない）。
     type alias RenderList = { instances = FloatBuffer, rows = Array[Array[Int32, Static], Static] }
 
     def rowStride(): Int32 = 10

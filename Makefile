@@ -120,6 +120,7 @@ help:
 	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く・SCENE=field COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1 で物を並べた場面)"
 	@echo "  make webgpu-check         WebGPU の PC の実装 (Dawn) を Flix から通して描いて読み戻す門 (窓なし・2 プロセス・窓。NG で exit 1)"
+	@echo "  make webgpu-v1-check      WebGPU の 2D の描き手と GL の描き手を窓なしで同じ場面に描いて画素を比べる (許す差は bench/webgpu_v1/tolerance.tsv。NG で exit 1)"
 	@echo "  make webgpu-check-web     同じ門をブラウザの実装 (navigator.gpu) でヘッドレスの Chrome に流す (PC と同じ Flix のコード・canvas。NG で exit 1)"
 	@echo "  make webgpu-check-same    PC とブラウザの門を同じ機械で流し、三角形と firstInstance の絵の digest が同じかを比べる (違えば exit 1)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
@@ -362,6 +363,13 @@ gl-parity-cpu:
 .PHONY: webgpu-check
 webgpu-check:
 	@$(MAKE) -C bench/webgpu_check check run two window
+
+# WebGPU の 2D の描き手 (RenderPaint.Internal.WebGpuPaint) と GL の描き手 (GlOffscreen) を、ウィンドウを開かずに同じ場面で描いて画素を比べる (bench/webgpu_v1)。
+# 箱・スプライト・幕・放射の絵・字・Pass・生成の絵。許す差は bench/webgpu_v1/tolerance.tsv (既定 0・字は 2/255)。WebGPU の誤りの数と submit の数も見る。
+# 許す差を超えるか誤りがあれば exit 1。GPU の要る門なので CI には載せない。先に make sync-engine-full。
+.PHONY: webgpu-v1-check
+webgpu-v1-check:
+	@$(MAKE) -C bench/webgpu_v1 run
 
 # 同じ門のブラウザ版 (navigator.gpu・TeaVM の JSO)。ウィンドウを使わない門を PC と同じ Flix のコード (bench/webgpu_check/src/Checks.flix) で
 # ヘッドレスの Chrome に流し、canvas の描き先も見る。結果の JSON は build/bench-web/webgpu_check.json。どれかが NG なら exit 1。

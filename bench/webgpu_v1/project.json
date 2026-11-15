@@ -1,0 +1,33 @@
+{
+  "title": "WebGPU V1 Parity",
+  "designWidth": 320,
+  "designHeight": 180,
+  "windowScale": 1,
+  "clearColor": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0
+  },
+  "maxDeltaTime": 10.0,
+  "glyphs": "used",
+  "textures": [
+    {
+      "name": "atlas",
+      "path": "../gl_parity/assets/atlas.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "atlasOpaque",
+      "path": "../gl_parity/assets/atlas.png",
+      "hasAlpha": false
+    }
+  ],
+  "fonts": [
+    {
+      "name": "ui",
+      "path": "../gl_parity/assets/Xolonium-Regular.ttf",
+      "fontSize": 24.0
+    }
+  ],
+  "sounds": []
+}
