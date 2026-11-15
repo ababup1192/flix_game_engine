@@ -1054,3 +1054,11 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
 - 持ち越し: 材質の値を毎コマ作り直すゲームで、物ごとに材質の絵の名前の並びを辿る分（材質の木（spec）の値で控える案。9 章の表の 13 行目 R2b の「材質と絵の組」の小分けで、絵の組を行へ入れる時に一緒に）・
   形が物ごとの場面の split（候補ごとの仕事・26 ms。P9 の「動かない物の持ち越し」で計画ごと省く）・
   材質の draw ごとの値と絵の組を行へ（R2b。WebGPU の材質の bind group と一緒に）・半透明・ビルボード・空・影の地図を行へ（R2b）・WebGPU で 3D の行を流す（V2。`SceneList` と `MaterialTable` の形をそこで見直す）。
+
+### 12.24 リリース 2（0.96.0・2026-11-16）
+
+- 2D のゲームが WebGPU を試しに選べる版として 0.96.0 を出した（人の「リリース進めていいよ」）。選ぶ口は R1b までに入っていた物のまま（PC は `FLIX_GE_BACKEND`・ブラウザは `?backend=webgpu`・3D の入口は GL で起動して知らせる）。
+- 12.8 の決めどおり、ここで agents-pack の早見表に 1 行とお題 `try-webgpu-backend` を足した（100 点）。手当ては `docs/migrations/0.96.0.md`。
+- 門: `make release`（全量・gl-parity）緑・`make determinism`・`make smoke-devtools` 緑。`make gl-capture-check` は 54 枚が a と b で同じ・基準 0.88.4 との差 30 枚で前と同じ（12.16 の決めで P10 まで撮り直さない）。
+- 外から取る確かめ: rpg-starter の写しから lib を消し、fpkg・flix.toml・`fge-gl-9261957f995f.jar` を Release から取って build と起動が通った。GL と `FLIX_GE_BACKEND=webgpu`（Dawn の Metal）の両方でタイトル画面が出た。Maven Central が 429 を返したので、Maven の jar だけは手元のテンプレートの置き場を借りた。
+- 【未確認】Windows・Linux・Safari・Firefox（12.12 からの持ち越しのまま）。
