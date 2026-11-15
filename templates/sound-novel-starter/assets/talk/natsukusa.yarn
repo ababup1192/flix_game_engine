@@ -1,15 +1,15 @@
 // 『夏草の駅』— サウンドノベルの手本のシナリオ（Yarn Spinner の部分集合）。
-// 直したら bin/fge yarn build assets/talk（check が話し手・コマンド・ノードの名前を src/Talk.flix の語彙で止める）。
+// 直したら bin/fge yarn build assets/talk（check が話し手・ノードの名前と、コマンドの引数の型・名前を assets/talk/vocab.json で止める）。
 //
 // 書き方:
 //   地の文は話し手を書かない。台詞は「chinatsu: ……」（呼び名は assets/novel.story.json の names）。
 //   [ruby=よみ]字[/ruby] でルビ（[/] でも閉じられる。1 行の中で閉じる）。
-//   演出はコマンドで書く（引数の意味は src/Stage.flix の冒頭）:
-//     <<bg 写真 時間帯 秒>>  背景の写真を、時間帯の色でぼかして、秒かけて切り替える（写真・時間帯は assets/novel.backdrops.json）
-//     <<nvl>> / <<adv>>      文章を画面いっぱいに積む（小説の頁）/ 下のウィンドウに 1 行ずつ出す
-//     <<clear>>              NVL の頁をめくる
-//     <<ambience 名>>        鳴り続ける環境音を替える（off で止める）
-//     <<se 名>>              効果音を 1 回
+//   演出はコマンドで書く（主の引数は位置・ほかは key=value。全部の一覧は src/Commands.flix の冒頭）:
+//     <<bg 写真 grade=時間帯 time=秒>>  背景の写真を、時間帯の色でぼかして、秒かけて切り替える（写真・時間帯は assets/novel.backdrops.json）
+//     <<window nvl>> / <<window bottom>>  文章を画面いっぱいに積む（小説の頁）/ 下のウィンドウに 1 行ずつ出す
+//     <<window clear>>       NVL の頁をめくる
+//     <<audio ambience 音>>  鳴り続ける環境音を替える（off で止める。音は project.json の sounds の名前）
+//     <<audio se 音>>        効果音を 1 回
 //     <<fx 名>>              画面のパーティクルの演出（fireflies / off）
 //     <<shake>>              画面を短く揺らす
 //     <<wait 秒>>            待つ（エンジンの実行器が待つ）
@@ -19,15 +19,15 @@ title: Station
 <<declare $closeness = 0>>
 <<declare $house = "undecided">>
 <<declare $stayed = false>>
-<<ambience evening>>
-<<bg station dusk 2.5>>
-<<nvl>>
+<<audio ambience amb_evening>>
+<<bg station grade=dusk time=2.5>>
+<<window nvl>>
 <<wait 1.5>>
 十年ぶりに降りた駅は、私が覚えているよりずっと小さかった。
 改札はとうに無く、錆びた運賃箱がひとつ、ホームの端で口を開けている。
 線路の向こうから[ruby=ひぐらし]蜩[/ruby]の声が押し寄せてきて、走り去る電車の音をあっという間に呑みこんだ。
 祖母の家を片付けに来た。それだけの用事のはずだった。
-<<clear>>
+<<window clear>>
 鞄の底で、鍵がひとつ鳴った。
 家の鍵ではない。祖母が「なくさないでね」と私の手に握らせた、小さな[ruby=しんちゅう]真鍮[/ruby]の鍵だ。
 何の鍵なのか、とうとう聞きそびれたまま、祖母は春に逝った。
@@ -37,8 +37,8 @@ title: Station
 
 title: Paddy
 ---
-<<bg paddy evening 2.0>>
-<<adv>>
+<<bg paddy grade=evening time=2.0>>
+<<window bottom>>
 田んぼの間を抜ける道は、記憶の中よりも少しだけ広くなっていた。
 稲の葉が風を受けて、緑の水面のように一斉にうねる。
 畦道の先で、麦わら帽子がこちらを振り返った。
@@ -61,7 +61,7 @@ chinatsu: いいって。おばあちゃんには、私のほうが世話にな�
 
 title: Lane
 ---
-<<bg lane dusk 2.0>>
+<<bg lane grade=dusk time=2.0>>
 坂の上の家までは、千夏が先に立って歩いた。
 石垣の隙間から、[ruby=どくだみ]蕺草[/ruby]の白い花がのぞいている。
 どこかの家で夕飯の支度をしているのか、醤油の焦げる匂いが坂を下りてきた。
@@ -69,7 +69,7 @@ title: Lane
 chinatsu: 東京の人は、坂でもう息が上がるんだ。
 me: 坂のせいじゃないよ。荷物が重いんだって。
 言い返した背中を、思い切り叩かれた。
-<<se slap>>
+<<audio se se_slap>>
 <<shake>>
 me: っ……痛いって！
 chinatsu: 冗談。……おかえり。
@@ -80,14 +80,14 @@ me: ……ただいま。
 
 title: Engawa
 ---
-<<ambience night>>
-<<bg engawa lamplight 3.0>>
+<<audio ambience amb_night>>
+<<bg engawa grade=lamplight time=3.0>>
 <<wait 1>>
 縁側に腰を下ろすと、板は昼の熱をまだ少しだけ抱いていた。
 家の中は、思っていたより片付いていた。千夏が、ときどき来てくれていたのだろう。
 仏間の祖母の写真は、私の記憶よりも少しだけ若い顔で笑っている。
 軒の風鈴が、思い出したように一度だけ鳴る。
-<<se furin>>
+<<audio se se_furin>>
 chinatsu: おばあちゃん、毎年この風鈴を出すの、八月の頭だって決めてたよね。
 me: しまうのは、お盆が明けてから。……そうだった。
 chinatsu: で、しまうのを手伝うのは、いつも私。
@@ -115,8 +115,8 @@ chinatsu: 行けばわかるって。
 
 title: River
 ---
-<<ambience river>>
-<<bg river night 3.0>>
+<<audio ambience amb_river>>
+<<bg river grade=night time=3.0>>
 <<wait 1>>
 <<fx fireflies>>
 川べりの草むらが、ふっと息をするように光った。
@@ -141,9 +141,9 @@ chinatsu: あんたが来たら渡してって。中身は、子どもの頃の�
 
 title: Morning
 ---
-<<ambience morning>>
-<<bg station morning 3.0>>
-<<nvl>>
+<<audio ambience amb_morning>>
+<<bg station grade=morning time=3.0>>
+<<window nvl>>
 <<wait 1.5>>
 朝の駅は、夕方とは別の場所のように白かった。
 夜露に濡れた夏草が、線路の脇でいっせいに陽を弾いている。
@@ -161,6 +161,6 @@ title: Morning
     次に降りる時は、ただいまを言いそびれないようにしようと思う。
 <<endif>>
 <<wait 1>>
-<<clear>>
+<<window clear>>
 —— 夏草の駅 ——
 ===

@@ -1,5 +1,5 @@
 // CastDoc — novel.cast.json（立ち絵と小物）の宣言ドキュメント層: 位置（横と縦）・人物と小物の一覧・出入りの秒・息の揺れ・縦の頁の覆いの倍率。
-// 出し方と重ね方の決まりは Cast のコード、シナリオの書き方は Stage の頭のコメント（<<char>> / <<item>>）。
+// 出し方と重ね方の決まりは Cast のコード、シナリオの書き方は Commands の頭のコメント（<<show>> / <<hide>>）。
 // テクスチャの名前は「cast_<名前>_<表情>」で導き、project.json の textures にこの名前で登録する（TestDocs が見る）。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod CastDoc {

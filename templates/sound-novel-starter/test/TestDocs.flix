@@ -10,7 +10,8 @@ mod TestDocs {
             |> Option.flatMap(JsonCodec.decodeList(j -> JsonCodec.expectObject(j) |> Option.map(obj -> JsonCodec.stringOr("name", "", obj))))
             |> Option.getWithDefault(Nil) |> List.toSet
 
-    def commandArgs(name: String, program: Yarn.Program): List[String] =
+    /// シナリオの <<audio channel 音>> の音の名前（off は入れない）。
+    def audioSounds(channel: String, program: Yarn.Program): List[String] =
         def walk(body: List[Yarn.Statement]): List[Yarn.Command] = body |> List.flatMap(statement -> match statement {
             case Yarn.Statement.Command(c)      => c :: Nil
             case Yarn.Statement.Choose(cs)      => cs |> List.flatMap(choice -> walk(choice#body))
@@ -18,7 +19,8 @@ mod TestDocs {
             case _                              => Nil
         });
         Yarn.nodeNames(program) |> List.filterMap(n -> Yarn.nodeOf(n, program)) |> List.flatMap(node -> walk(node#body))
-            |> List.filter(c -> c#name == name) |> List.filterMap(c -> List.head(c#args))
+            |> List.filter(c -> c#name == "audio" and List.head(c#args) == Some(channel))
+            |> List.filterMap(c -> List.nth(1, c#args)) |> List.filter(n -> n != "off")
 
     @Test
     def testProjectJsonLoads(): Unit \ {Assert, Fs.FileRead} =
@@ -73,15 +75,14 @@ mod TestDocs {
 
     @Test
     def testEverySoundTheGameCanPlayIsRegistered(): Unit \ {Assert, Fs.FileRead} =
-        // 返事の音・台本の <<se>> と <<ambience>>・タイトルの環境音は、どれも project.json の sounds にある。
+        // 返事の音・シナリオの <<audio se>> と <<audio ambience>>・タイトルの環境音は、どれも project.json の sounds にある。
         let res = TestKit.res();
         let sounds = namesIn("sounds");
         let replies = World.Event.Paged :: World.Event.Revealed :: World.Event.Moved :: World.Event.Picked ::
                       World.Event.Opened :: World.Event.Closed :: World.Event.Saved :: World.Event.Loaded :: World.Event.Rolled :: Nil;
-        let ses = commandArgs("se", res#dialogue) |> List.map(n -> World.Event.Cue("se_${n}"));
+        let ses = audioSounds("se", res#dialogue) |> List.map(World.Event.Cue);
         let played = List.append(replies, ses) |> List.filterMap(Controls.soundOf);
-        let ambiences = (StoryDoc.rec(res#story)#titleAmbience :: commandArgs("ambience", res#dialogue))
-            |> List.filter(n -> n != "off") |> List.map(n -> "amb_${n}");
+        let ambiences = Stage.ambienceSound(StoryDoc.rec(res#story)#titleAmbience) :: audioSounds("ambience", res#dialogue);
         let missing = List.append(played, ambiences) |> List.filter(n -> not Set.memberOf(n, sounds)) |> List.distinct;
         Assert.assertEq(expected = Nil, missing)
 
@@ -127,16 +128,9 @@ mod TestDocs {
 
     @Test
     def testCastSlotsMatchInBothOrientations(): Unit \ {Assert, Fs.FileRead} =
-        // 横の位置と縦の位置は、同じ名前の集まり（シナリオの <<char 名前 位置>> は向きを知らずに書く）。
+        // 横の位置と縦の位置は、同じ名前の集まり（シナリオの <<show 名前 at=位置>> は向きを知らずに書く）。
         let d = CastDoc.rec(CastDoc.load(CastDoc.path()));
         Assert.assertEq(expected = Map.keysOf(d#slots), Map.keysOf(d#portraitSlots))
-
-    @Test
-    def testFaceNamesNeverShadowSlotNames(): Unit \ {Assert, Fs.FileRead} =
-        // 表情の名前と位置の名前は重ならない（コマンドの語は位置の名前を先に読むので、重なった表情は選べない）。
-        let d = CastDoc.rec(CastDoc.load(CastDoc.path()));
-        let faces = List.append(Map.valuesOf(d#cast), Map.valuesOf(d#props)) |> List.flatMap(e -> e#faces);
-        Assert.assertEq(expected = Nil, faces |> List.filter(f -> Map.memberOf(f, d#slots)))
 
     @Test
     def testCastDocFallsOpen(): Unit \ {Assert, Fs.FileRead} =

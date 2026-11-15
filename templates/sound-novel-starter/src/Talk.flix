@@ -1,11 +1,13 @@
 // Talk — シナリオ（assets/talk/*.yarn）とコードの繋ぎ。
-// 話し手・変数の表示名・最初に開くノードの正は novel.story.json（StoryDoc）、描き出しの場面が指すノードは novel.shots.json、コマンドの名前の正は Stage。
-// bin/fge yarn build の check は assets/talk/vocab.json を読み、名前を Doc から集める（vocab.json が書くのは Doc のどこを見るかと
-// コマンドの名前だけ。書き直すのは make talk-vocab。TestDocs が一致を見る）。
+// 話し手・変数の表示名・最初に開くノードの正は novel.story.json（StoryDoc）、描き出しの場面が指すノードは novel.shots.json、
+// コマンドと引数の表の正は Commands（テンプレートの表 + GameCommands）。
+// bin/fge yarn build の check は assets/talk/vocab.json を読み、名前を Doc から集め、コマンドの引数を表で検査する
+// （vocab.json が書くのは Doc のどこを見るかとコマンドの表だけ。書き直すのは make talk-vocab。TestDocs が一致を見る）。
 //
 //   assets/talk/natsukusa.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ World#dialogue
 mod Talk {
-    use fge::{Yarn}
+    use fge::{JsonCodec, Yarn, YarnCommands}
+    use Util.Json.Json
 
     pub def dialoguePath(): String = "assets/talk/dialogue.json"
 
@@ -21,20 +23,20 @@ mod Talk {
     /// build の check が読む語彙（vocab.json の版 2）。名前の正が Doc にある欄は from で Doc の場所だけを書く。
     pub def vocabJson(): String =
         let story = fromVocab(StoryDoc.path());
-        let commands = Stage.commandNames() |> List.map(name -> "    \"" + name + "\": {}") |> String.intercalate(",\n");
-        "{\n" +
-        "  \"version\": 2,\n" +
-        "  \"speakers\": " + docField(story, "keys", "names") + ",\n" +
-        "  \"vars\": " + docField(story, "keys", "vars") + ",\n" +
-        "  \"nodes\": " + docField(story, "path", "opening") + ",\n" +
-        "  \"nodeRefs\": " + docField(fromVocab(ShotsDoc.path()), "path", "shots[].node") + ",\n" +
-        "  \"tags\": {},\n" +
-        "  \"commands\": {\n" + commands + "\n  }\n" +
-        "}\n"
+        let vocab = Json.JObject(Map#{
+            "version"  => Json.JNumber(JsonCodec.intToBd(2)),
+            "speakers" => docField(story, "keys", "names"),
+            "vars"     => docField(story, "keys", "vars"),
+            "nodes"    => docField(story, "path", "opening"),
+            "nodeRefs" => docField(fromVocab(ShotsDoc.path()), "path", "shots[].node"),
+            "tags"     => Json.JObject(Map.empty()),
+            "commands" => YarnCommands.toJson(Commands.specs())
+        });
+        Util.Json.toPrettyString(2, vocab) + "\n"
 
     /// 欄 1 つの from（Doc の docPath の、how = keys か path の place を見る）。
-    def docField(docPath: String, how: String, place: String): String =
-        "{ \"from\": [{ \"doc\": \"" + docPath + "\", \"" + how + "\": \"" + place + "\" }] }"
+    def docField(docPath: String, how: String, place: String): Json =
+        Json.JObject(Map#{ "from" => Json.JArray(Vector#{ Json.JObject(Map#{ "doc" => Json.JString(docPath), how => Json.JString(place) }) }) })
 
     /// 語彙を assets/talk/vocab.json に書く（make talk-vocab）。
     pub def vocab(): Unit \ IO =

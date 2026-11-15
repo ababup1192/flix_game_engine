@@ -38,7 +38,7 @@ mod TestKit {
     pub def readUntil(res: Res.Res, until: World.World -> Bool, picks: List[Int32], w: World.World): World.World =
         fst(readHearing(res, until, picks, w))
 
-    /// readUntil と同じ読み方で、途中で規則が出した出来事（返事・<<se>>）も古い順に返す。
+    /// readUntil と同じ読み方で、途中で規則が出した出来事（返事・<<audio se>>）も古い順に返す。
     pub def readHearing(res: Res.Res, until: World.World -> Bool, picks: List[Int32], w: World.World): (World.World, List[World.Event]) =
         let heard = (f: Unit -> World.World \ Emit[World.Event]) -> Emit.collect(f);
         let tick = (cur: World.World) -> heard(() -> WorldRead.step(res, 30.0, tickClocks(res, 30.0, cur)));

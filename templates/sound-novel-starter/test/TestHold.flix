@@ -155,7 +155,7 @@ mod TestHold {
 
     @Test
     def testUnarrivedSeIsSkippedSilently(): Unit \ {Assert, Fs.FileRead} =
-        // 一発の効果音（<<se slap>>）は届いていなくても待たずに読み進め、鳴らす音からは外す（届いていれば鳴る）。
+        // 一発の効果音（<<audio se se_slap>>）は届いていなくても待たずに読み進め、鳴らす音からは外す（届いていれば鳴る）。
         let res = TestKit.res();
         let slap = "se_slap";
         let held = missingOf(slap :: Nil, res);

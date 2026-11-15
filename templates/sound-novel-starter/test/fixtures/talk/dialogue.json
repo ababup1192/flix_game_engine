@@ -1,7 +1,7 @@
 {
   "version": 1,
   "note": "bin/fge yarn build が test/fixtures/talk/cast.yarn から書いた木。手で直さない（.yarn を直して build する）",
-  "vocab": "assets/talk/vocab.json",
+  "vocab": "",
   "files": [
     "test/fixtures/talk/cast.yarn"
   ],
@@ -15,12 +15,15 @@
         {
           "kind": "command",
           "line": 5,
-          "name": "adv"
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
         },
         {
           "kind": "command",
           "line": 6,
-          "name": "char",
+          "name": "show",
           "args": [
             "a"
           ]
@@ -34,10 +37,10 @@
         {
           "kind": "command",
           "line": 8,
-          "name": "char",
+          "name": "show",
           "args": [
             "b",
-            "right"
+            "at=right"
           ]
         },
         {
@@ -49,7 +52,7 @@
         {
           "kind": "command",
           "line": 10,
-          "name": "char",
+          "name": "show",
           "args": [
             "a",
             "smile"
@@ -64,7 +67,7 @@
         {
           "kind": "command",
           "line": 12,
-          "name": "item",
+          "name": "show",
           "args": [
             "cup"
           ]
@@ -97,11 +100,11 @@
         {
           "kind": "command",
           "line": 19,
-          "name": "char",
+          "name": "show",
           "args": [
             "a",
-            "left",
-            "0"
+            "at=left",
+            "time=0"
           ]
         },
         {
@@ -113,18 +116,17 @@
         {
           "kind": "command",
           "line": 21,
-          "name": "char",
+          "name": "hide",
           "args": [
-            "b",
-            "off"
+            "b"
           ]
         },
         {
           "kind": "command",
           "line": 22,
-          "name": "item",
+          "name": "hide",
           "args": [
-            "off"
+            "at=item"
           ]
         },
         {
@@ -136,9 +138,9 @@
         {
           "kind": "command",
           "line": 24,
-          "name": "char",
+          "name": "hide",
           "args": [
-            "off"
+            "all"
           ]
         },
         {
