@@ -71,6 +71,11 @@
 - 似た物は 1 つにまとめる（例: kankan の `dim`、血鱗の `black`・`lights` は覆いの濃さを時間で変える同じ物）。
 - 4 本のコマンドは名前で約 50 個。まとめると基本の部品 15〜20 個でほとんど書ける【推】。語彙の一覧表を作る時に 4 本の台本を当てて確かめる。
 
+### 3.16 標準の語彙の案と台本のグラフ（2026-11-15）
+
+- 4 本の 50 個を、他のエンジン（Ren'Py・Naninovel・TyranoScript・Dialogic 2・KAG）と並べて 19 個の部品にまとめた案: bg・overlay・camera・shake・filter・show・hide・move・swap・speak・fx・audio・window・text・wait・gate・hud・feed・preset。共通の引数は time=（秒）・ease=（1 系統）・wait=。表は artifact「ノベル演出の標準語彙の案」。
+- 台本のグラフの試作: `dialogue.json`（`bin/fge yarn build` の出力）から、分岐のグラフ・ノードごとの演出の帯・矢印ごとの持ち越す舞台・たどり着けないノードと行き止まりの検査を HTML に出す（scratchpad の yarn_graph.py。Python で 200 行ほど）。道具にするなら go の `bin/fge yarn graph` に移し、テープの「ここから遊ぶ」とつなぐ。
+
 ### 3.2 ゲームの作り方の流れ（人の案・2026-11-15）
 
 1. **判断**: シナリオと演出の要望を、語彙の一覧表（コードから作る 1 頁）に照らし、「そのまま」「組み合わせ（N5）」「足りない」に振り分ける。
