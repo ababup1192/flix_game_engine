@@ -2,6 +2,8 @@
 # gl-capture.sh — テンプレートの場面を実機の GL（隠しウィンドウ）で起動し、頭の数コマの絵を撮って SHA-256 を控える。
 #
 #   bin/gl-capture.sh <出力のフォルダ> [<フォルダ>:<START の字> ...]   撮る（フォルダは engine の根から。場面を省くと下の既定の場面）
+#   bin/gl-capture.sh --backend webgpu <出力のフォルダ> [...]          同じ場面を WebGPU の描き手（FLIX_GE_BACKEND=webgpu）で撮る。起動のログに
+#                                                                      '[backend] webgpu:' が無い（GL へ落ちた）・起動の後に足す字の知らせがある時は止める
 #   bin/gl-capture.sh --compare <A> <B> [--skip <フォルダ名> ...]       2 回の SHA を比べる（フォルダか SHA の一覧のファイル。違えば exit 1）
 #                                                                      --skip は撮った物のフォルダ名（例 scene3d・rpg-starter__title）と完全に一致する場面を比べない
 #
@@ -9,7 +11,7 @@
 # FLIX_GE_FIXED_DT（dt を固定。2 コマ目以降もバイトで比べられる）・FLIX_GE_MUTE・START（App.withStarts の場面から起動）。
 # 撮る engine はゲームの lib の fpkg（engine の作業場では make sync-engine-full が配った物）。dt の固定を知らない古い fpkg で
 # 撮ると 2 コマ目から揃わないので、起動のログに dt を固定した知らせの行が無ければ止める。
-# 環境変数: FRAMES（撮るコマ数・既定 6）・DT（既定 1/60。off で固定しない＝実時間の dt。比べられるのは頭のコマだけになる）・
+# 環境変数: CAPTURE_GLYPHS（FLIX_GE_GLYPHS に置く値・--backend webgpu の既定は used・ほかは置かない）・FRAMES（撮るコマ数・既定 6）・DT（既定 1/60。off で固定しない＝実時間の dt。比べられるのは頭のコマだけになる）・
 #           WAIT_SECONDS（jar を作った後の、1 場面の起動から撮り終えるまでの上限・既定 180）。
 # 撮る間は、絵や時間を変えうる呼ぶ人の環境変数（下の reset_env）を外す。
 #
@@ -71,8 +73,15 @@ if [ "${1:-}" = "--compare" ]; then
 	exit 1
 fi
 
+backend=gl
+if [ "${1:-}" = "--backend" ]; then
+	if [ $# -lt 2 ] || { [ "$2" != gl ] && [ "$2" != webgpu ]; }; then echo "usage: $0 --backend gl|webgpu <出力のフォルダ> …" >&2; exit 2; fi
+	backend=$2
+	shift 2
+fi
+
 if [ $# -lt 1 ]; then
-	echo "usage: $0 <出力のフォルダ> [<フォルダ>:<START> ...] | --compare <A> <B>" >&2
+	echo "usage: $0 [--backend gl|webgpu] <出力のフォルダ> [<フォルダ>:<START> ...] | --compare <A> <B>" >&2
 	exit 2
 fi
 
@@ -90,7 +99,12 @@ if [ $# -gt 0 ]; then scenes=("$@"); else scenes=("${default_scenes[@]}"); fi
 
 # 絵・時間・起動の道を変えうる環境変数。撮る時は外して、誰が撮っても同じ条件にする。
 reset_env=(FLIX_GE_SPLASH_SHOT FLIX_GE_FRAME_STATS FLIX_GE_NO_SPLASH FLIX_GE_GLYPHS FLIX_GE_NO_FONT_CACHE
-	FGE_SOFT_SERIAL DEBUG FLOW_RECORD HEADLESS_RESIDENT HEADLESS_JAVA_OPTS JAVA_TOOL_OPTIONS FLIX_GE_CACHE_DIR START)
+	FGE_SOFT_SERIAL DEBUG FLOW_RECORD HEADLESS_RESIDENT HEADLESS_JAVA_OPTS JAVA_TOOL_OPTIONS FLIX_GE_CACHE_DIR START
+	FLIX_GE_BACKEND FLIX_GE_WEBGPU_FAIL)
+# 起動の時に用意する字（FLIX_GE_GLYPHS）。WebGPU の V1 は起動の後に字を足さないので、--backend webgpu の既定は used（出しうる字を起動の時に先に作る）。
+# GL と画素で比べる時は、GL の側も同じ CAPTURE_GLYPHS で撮る（字のアトラスの並びが変わるので、GLYPHS の無い撮り置きの SHA とは比べない）。
+glyphs=${CAPTURE_GLYPHS:-}
+if [ "$backend" = webgpu ] && [ -z "$glyphs" ]; then glyphs=used; fi
 
 capture_one() {
 	local game=$1 start=$2
@@ -105,6 +119,8 @@ capture_one() {
 		export FLIX_GE_HIDDEN=1 FLIX_GE_MUTE=1 FLIX_GE_FRAME_SHOT="$dir"
 		if [ -n "$start" ]; then export START="$start"; else unset START; fi
 		if [ "$dt" = off ]; then unset FLIX_GE_FIXED_DT; else export FLIX_GE_FIXED_DT="$dt"; fi
+		if [ "$backend" = webgpu ]; then export FLIX_GE_BACKEND=webgpu; fi
+		if [ -n "$glyphs" ]; then export FLIX_GE_GLYPHS="$glyphs"; fi
 		export FLIX_CMD="$engine/bin/flix"
 		# WhyNot: jar を作る時間を撮る時間の上限に入れない — 作り直しは 30 秒〜数分かかり、初回だけ撮れなかった扱いになる。
 		"$engine/bin/headless-run" --build-only > "$dir/build.log" 2>&1 || exit 1
@@ -131,6 +147,18 @@ capture_one() {
 	if [ "$dt" != off ] && ! grep -aq '\[lwjgl\] FLIX_GE_FIXED_DT:' "$dir/run.log"; then
 		echo "[gl-capture] ${game}: 起動のログに dt を固定した知らせが無い（lib の engine が古い？ engine では make sync-engine-full）" >&2
 		return 1
+	fi
+	# WhyNot: --backend webgpu の撮り物を起動のログを見ずに受けない — WebGPU を使えずに GL へ落ちた絵を「WebGPU の絵」として比べてしまう。
+	if [ "$backend" = webgpu ]; then
+		if ! grep -aq '\[backend\] webgpu:' "$dir/run.log"; then
+			echo "[gl-capture] ${game}: 起動のログに '[backend] webgpu:' が無い（GL へ落ちた。${dir}/run.log）" >&2
+			grep -a '\[backend\]' "$dir/run.log" >&2 || true
+			return 1
+		fi
+		if grep -aq '起動の後に足す字' "$dir/run.log"; then
+			echo "[gl-capture] ${game}: WebGPU が起動の後に足す字を描かなかった（字の欠けた絵。CAPTURE_GLYPHS=used で撮る。${dir}/run.log）" >&2
+			return 1
+		fi
 	fi
 	local n=$((frames + 1))
 	while [ -e "$dir/frame-$n.png" ]; do rm -f "$dir/frame-$n.png"; n=$((n + 1)); done

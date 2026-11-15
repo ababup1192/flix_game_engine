@@ -22,6 +22,7 @@ mod WebGpuSharedChecks {
     import fge.webgpu.Texture
     import fge.webgpu.TextureFormat
     import fge.webgpu.TextureUsage
+    import fge.webgpu.VertexFormat
     import fge.webgpu.WebGpu
     import java.lang.System
     import java.nio.ByteBuffer
@@ -230,7 +231,7 @@ mod WebGpuSharedChecks {
     type alias FrameTime = { cpuMs = Float64, gpuMs = Float64 }
 
     /// 1 コマ描いて終わるまで待ち、時間を返す。perInstance が真なら draw を n 本・偽なら 1 本で n 体。
-    def benchFrame(gpu: WebGpu, target: Texture, pipeline: RenderPipeline, group: BindGroup, n: Int32,
+    def benchFrame(gpu: WebGpu, target: Texture, pipeline: RenderPipeline, bind: RenderPass -> Unit \ IO, n: Int32,
                    perInstance: Bool, timing: Option[(QuerySet, Buffer, Buffer)], tsBuf: ByteBuffer): FrameTime \ IO =
         let t0 = System.nanoTime();
         let encoder = gpu.createCommandEncoder("check bench");
@@ -238,7 +239,7 @@ mod WebGpuSharedChecks {
         timing |> Option.forEach(t -> { let (qs, _, _) = t; discard passDesc.timestampWrites(qs, 0, 1) });
         let pass = encoder.beginRenderPass(passDesc);
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, group);
+        bind(pass);
         if (perInstance) drawEach(pass, 0, n) else pass.draw(6, n, 0, 0);
         pass.end();
         timing |> Option.forEach(t -> {
@@ -262,21 +263,65 @@ mod WebGpuSharedChecks {
         let sorted = Sort.sortStable(xs);
         List.nth(List.length(sorted) / 2, sorted) |> Option.getWithDefault(0.0)
 
-    def runFrames(gpu: WebGpu, target: Texture, pipeline: RenderPipeline, group: BindGroup, n: Int32,
+    def runFrames(gpu: WebGpu, target: Texture, pipeline: RenderPipeline, bind: RenderPass -> Unit \ IO, n: Int32,
                   perInstance: Bool, timing: Option[(QuerySet, Buffer, Buffer)], count: Int32): List[FrameTime] \ IO =
         let tsBuf = ByteBuffer.allocateDirect(16).order(ByteOrder.LITTLE_ENDIAN);
-        List.range(0, count) |> List.map(_ -> benchFrame(gpu, target, pipeline, group, n, perInstance, timing, tsBuf))
+        List.range(0, count) |> List.map(_ -> benchFrame(gpu, target, pipeline, bind, n, perInstance, timing, tsBuf))
 
     pub def fmt(x: Float64): String = Float64.toString(Float64.round(x * 1000.0) / 1000.0)
 
+    /// 1 体の値を頂点バッファ（instance ごと・location 0）から読む形。絵は quadsWgsl と同じ。
+    def quadsVertexWgsl(): String =
+        "struct V { @builtin(position) pos: vec4f, @location(0) shade: f32 };\n" +
+        "@vertex fn vs_main(@builtin(vertex_index) i: u32, @location(0) r: vec4f) -> V {\n" +
+        "    var c = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0), vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0));\n" +
+        "    var out: V;\n" +
+        "    out.pos = vec4f(r.xy + c[i] * r.z, 0.0, 1.0);\n" +
+        "    out.shade = r.w;\n" +
+        "    return out;\n" +
+        "}\n" +
+        "@fragment fn fs_main(v: V) -> @location(0) vec4f { return vec4f(v.shade, 1.0 - v.shade, 0.5, 1.0); }\n"
+
+    /// 1 つの形で測った物: draw 1 本で N 体（inst）と、firstInstance で 1 体ずつ N 本（each）の時間と、それぞれの絵の digest。
+    type alias Measured = { inst = List[FrameTime], instDigest = Int32, each = List[FrameTime], eachDigest = Int32 }
+
+    /// 温めの 40 コマを捨て、200 コマを測る。
+    def measureShape(gpu: WebGpu, target: Texture, size: Int32, pipeline: RenderPipeline, bind: RenderPass -> Unit \ IO,
+                     n: Int32, timing: Option[(QuerySet, Buffer, Buffer)]): Measured \ IO =
+        let warm = 40;
+        let measured = 200;
+        let imageBytes = size * size * 4;
+        let inst = runFrames(gpu, target, pipeline, bind, n, false, timing, warm + measured) |> List.drop(warm);
+        let instDigest = digest(readTexture(gpu, target, size, size), imageBytes);
+        let each = runFrames(gpu, target, pipeline, bind, n, true, timing, warm + measured) |> List.drop(warm);
+        let eachDigest = digest(readTexture(gpu, target, size, size), imageBytes);
+        { inst = inst, instDigest = instDigest, each = each, eachDigest = eachDigest }
+
+    /// 測った物の 1 行（中央値と小さい方の値）。
+    def measuredLine(n: Int32, m: Measured): String =
+        let med = (xs: List[FrameTime], f: FrameTime -> Float64) -> fmt(median(List.map(f, xs)));
+        "N=${n} frames=${List.length(m#each)} | draw(6,N) cpu med=${med(m#inst, f -> f#cpuMs)} ms gpu med=${med(m#inst, f -> f#gpuMs)} ms" +
+        " | draw(6,1,0,k)×N cpu med=${med(m#each, f -> f#cpuMs)} ms gpu med=${med(m#each, f -> f#gpuMs)} ms (limit 3 ms)" +
+        " | same image=${m#instDigest == m#eachDigest} digest=${m#eachDigest}" +
+        " | draw(6,1,0,k)×N smallest cpu=${smallest(m#each |> List.map(f -> f#cpuMs))} gpu=${smallest(m#each |> List.map(f -> f#gpuMs))}"
+
     /// 20,000 体を「draw 1 本」と「firstInstance で 1 体ずつ draw」で描き、絵が同じかと 1 体ずつの CPU の時間（合格線 3 ms）を見る。
+    /// 1 体の値の読み方を 2 つ測る: storage buffer を instance_index で引く形と、instance の頂点バッファを firstInstance から読む形（2D の道の形）。
+    /// 頂点バッファの形は、storage の形と同じ絵になる事も見る。
     def checkFirstInstance(gpu: WebGpu): Bool \ IO + CheckLog =
         let n = 20000;
         let size = 1024;
         let rowsBytes = n * 16;
-        let rows = gpu.createBuffer("check rows", Int32.toInt64(rowsBytes), usage2(BufferUsage.STORAGE, BufferUsage.COPY_DST));
         let data = ByteBuffer.allocateDirect(rowsBytes).order(ByteOrder.LITTLE_ENDIAN);
         fillRows(data, n, 0);
+        let target = gpu.createTexture("check bench", size, size, TextureFormat.RGBA8_UNORM, usage2(TextureUsage.RENDER_ATTACHMENT, TextureUsage.COPY_SRC), 1, 1);
+        let timing = if (gpu.hasTimestampQuery())
+            Some((gpu.createTimestampQuerySet("check bench", 2),
+                  gpu.createBuffer("check ts resolve", 16i64, usage2(BufferUsage.QUERY_RESOLVE, BufferUsage.COPY_SRC)),
+                  gpu.createBuffer("check ts read", 16i64, usage2(BufferUsage.COPY_DST, BufferUsage.MAP_READ))))
+            else None;
+        // storage buffer と instance_index
+        let rows = gpu.createBuffer("check rows", Int32.toInt64(rowsBytes), usage2(BufferUsage.STORAGE, BufferUsage.COPY_DST));
         gpu.writeBuffer(rows, 0i64, data, 0, rowsBytes);
         let layout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("check rows").buffer(0, ShaderStage.VERTEX, BufferBindingType.READ_ONLY_STORAGE));
         let group = gpu.createBindGroup(new BindGroupDesc("check rows", layout).buffer(0, rows, 0i64, Int32.toInt64(rowsBytes)));
@@ -284,37 +329,35 @@ mod WebGpuSharedChecks {
         let desc = new RenderPipelineDesc("check quads");
         discard desc.bindGroupLayout(layout).vertex(module, "vs_main").fragment(module, "fs_main").colorTarget(TextureFormat.RGBA8_UNORM);
         let pipeline = gpu.createRenderPipeline(desc);
-        let target = gpu.createTexture("check bench", size, size, TextureFormat.RGBA8_UNORM, usage2(TextureUsage.RENDER_ATTACHMENT, TextureUsage.COPY_SRC), 1, 1);
-        let timing = if (gpu.hasTimestampQuery())
-            Some((gpu.createTimestampQuerySet("check bench", 2),
-                  gpu.createBuffer("check ts resolve", 16i64, usage2(BufferUsage.QUERY_RESOLVE, BufferUsage.COPY_SRC)),
-                  gpu.createBuffer("check ts read", 16i64, usage2(BufferUsage.COPY_DST, BufferUsage.MAP_READ))))
-            else None;
-        let warm = 40;
-        let measured = 200;
-        let imageBytes = size * size * 4;
-        let inst = runFrames(gpu, target, pipeline, group, n, false, timing, warm + measured) |> List.drop(warm);
-        let instDigest = digest(readTexture(gpu, target, size, size), imageBytes);
-        let each = runFrames(gpu, target, pipeline, group, n, true, timing, warm + measured) |> List.drop(warm);
-        let eachDigest = digest(readTexture(gpu, target, size, size), imageBytes);
-        let instCpu = median(inst |> List.map(f -> f#cpuMs));
-        let eachCpu = median(each |> List.map(f -> f#cpuMs));
-        let instGpu = median(inst |> List.map(f -> f#gpuMs));
-        let eachGpu = median(each |> List.map(f -> f#gpuMs));
-        // WhyNot: ByteBuffer.mismatch で比べない — TeaVM に無く、ブラウザで同じコードが組めない。
-        let sameImage = instDigest == eachDigest;
+        let storage = measureShape(gpu, target, size, pipeline, pass -> pass.setBindGroup(0, group), n, timing);
+        // instance の頂点バッファと firstInstance
+        let vertices = gpu.createBuffer("check vertex rows", Int32.toInt64(rowsBytes), usage2(BufferUsage.VERTEX, BufferUsage.COPY_DST));
+        gpu.writeBuffer(vertices, 0i64, data, 0, rowsBytes);
+        let vertexModule = gpu.createShaderModule("check quads vertex", quadsVertexWgsl());
+        let vertexDesc = new RenderPipelineDesc("check quads vertex");
+        discard vertexDesc.vertex(vertexModule, "vs_main").fragment(vertexModule, "fs_main");
+        discard vertexDesc.vertexBuffer(16, true).attribute(VertexFormat.FLOAT32X4, 0, 0).colorTarget(TextureFormat.RGBA8_UNORM);
+        let vertexPipeline = gpu.createRenderPipeline(vertexDesc);
+        let vertex = measureShape(gpu, target, size, vertexPipeline, pass -> pass.setVertexBuffer(0, vertices, 0i64, Int32.toInt64(rowsBytes)), n, timing);
         let errors = gpu.errorCount();
-        let ok = sameImage and eachCpu <= 3.0 and errors == 0;
+        // WhyNot: ByteBuffer.mismatch で比べない — TeaVM に無く、ブラウザで同じコードが組めない。
+        let storageOk = storage#instDigest == storage#eachDigest and median(storage#each |> List.map(f -> f#cpuMs)) <= 3.0 and errors == 0;
+        let sameAsStorage = vertex#eachDigest == storage#eachDigest;
+        let vertexOk = vertex#instDigest == vertex#eachDigest and sameAsStorage
+            and median(vertex#each |> List.map(f -> f#cpuMs)) <= 3.0 and errors == 0;
         timing |> Option.forEach(t -> { let (qs, resolve, read) = t; qs.destroy(); resolve.destroy(); read.destroy() });
         group.release();
         pipeline.release();
         module.release();
         layout.release();
         rows.destroy();
+        vertexPipeline.release();
+        vertexModule.release();
+        vertices.destroy();
         target.destroy();
-        report("first-instance", ok,
-               "N=${n} frames=${measured} | draw(6,N) cpu med=${fmt(instCpu)} ms gpu med=${fmt(instGpu)} ms | draw(6,1,0,k)×N cpu med=${fmt(eachCpu)} ms gpu med=${fmt(eachGpu)} ms (limit 3 ms) | same image=${sameImage} digest=${eachDigest} errors=${errors}" +
-               " | draw(6,1,0,k)×N smallest cpu=${smallest(each |> List.map(f -> f#cpuMs))} gpu=${smallest(each |> List.map(f -> f#gpuMs))}")
+        let storageReported = report("first-instance", storageOk, "${measuredLine(n, storage)} errors=${errors}");
+        let vertexReported = report("first-instance-vertex", vertexOk, "${measuredLine(n, vertex)} same as storage=${sameAsStorage} errors=${errors}");
+        storageReported and vertexReported
 
     /// 測った値のうち小さい方から 6 つ（重なりは 1 つに）。時計の刻みを見るため丸めない。
     def smallest(xs: List[Float64]): String =

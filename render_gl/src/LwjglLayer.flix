@@ -302,7 +302,27 @@ pub mod LwjglLayer {
             println("GLFW init failed");
             bug!("GLFW failed")
         } else ();
+        let env = LwjglEnv.load();
+        match env#backend {
+            case LwjglEnv.Backend.WebGpu => withWebGpuOrGl(config, env, f)
+            case LwjglEnv.Backend.Gl     => withGl(config, env, f)
+        }
 
+    /// WebGPU のウィンドウで起動する。開く前に落ちたら（Dawn のネイティブ・device・ウィンドウ）理由を 1 行言い、GLFW の hint を戻して GL で起動する。
+    @DontInline
+    def withWebGpuOrGl(config: GameEngine.EngineConfig, env: LwjglEnv.Settings, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
+        match LwjglLayer.Internal.WebGpuWindowLayer.withWindow(config, env, f) {
+            case Ok(result) => result
+            case Err(why)   =>
+                println("[backend] WebGPU を使えない: ${why} — GL で起動する");
+                // WhyNot: hint を戻さずに GL の枝へ入らない — GLFW_NO_API が残ると GL のウィンドウに context が付かない。
+                GLFW.glfwDefaultWindowHints();
+                withGl(config, env, f)
+        }
+
+    /// GL のウィンドウで起動する（GLFW は初期化済み・env は withLwjgl の頭で読んだ環境変数）。
+    @DontInline
+    def withGl(config: GameEngine.EngineConfig, env: LwjglEnv.Settings, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR, 3);
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 3);
         GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE, GLFW.GLFW_OPENGL_CORE_PROFILE);
@@ -317,7 +337,6 @@ pub mod LwjglLayer {
         // 隠しウィンドウモード（GL 突き合わせ harness 用）。Retina の 2 倍化を切るのは、
         // フレームバッファ = design 寸に固定しないと letterbox 補間が乗り、
         // 画素の突き合わせが成立しないため。
-        let env = LwjglEnv.load();
         let hidden = env#hidden;
         // 音を消して起動するか（計測や見回りで隠し窓を流す時）。音の処理は動かしたまま、全体の音量だけ 0 に止める。
         let muted = env#muted;
@@ -647,60 +666,11 @@ pub mod LwjglLayer {
                 k(())
             }
             def setMouseCaptured(captured, k) = {
-                if (captured == Array.get(0, ws#mouseCaptured)) ()
-                else {
-                    Array.put(captured, 0, ws#mouseCaptured);
-                    LwjglInput.rebaseMouse(ws#devices);
-                    let raw = GLFW.glfwRawMouseMotionSupported();
-                    if (captured) {
-                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
-                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_TRUE) else ()
-                    } else {
-                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_FALSE) else ();
-                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(Array.get(0, ws#cursorVisible)))
-                    }
-                };
+                applyMouseCaptured(window, ws#devices, ws#mouseCaptured, ws#cursorVisible, captured);
                 k(())
             }
             def setFullscreen(on, k) = {
-                let wasFullscreen = Array.get(0, fullscreenHolder);
-                if (on == wasFullscreen) ()
-                else if (on) {
-                    // 現在のウィンドウ位置・サイズを復元用に確保してから、プライマリモニタの
-                    // 現在の解像度でボーダーレス化する（解像度そのものは変えないので、
-                    // 既存の letterbox/pillarbox な calcViewport がそのまま吸収できる）。
-                    let posStack = MemoryStack.stackPush();
-                    let xBuf = posStack.mallocInt(1);
-                    let yBuf = posStack.mallocInt(1);
-                    GLFW.glfwGetWindowPos(window, xBuf, yBuf);
-                    let sizeStack = MemoryStack.stackPush();
-                    let wBuf = sizeStack.mallocInt(1);
-                    let hBuf = sizeStack.mallocInt(1);
-                    GLFW.glfwGetWindowSize(window, wBuf, hBuf);
-                    Array.put((xBuf.get(0), yBuf.get(0), wBuf.get(0), hBuf.get(0)), 0, originalWindowRectHolder);
-                    discard MemoryStack.stackPop();
-                    discard MemoryStack.stackPop();
-                    // glfwSetWindowMonitor はモード切替のたびに glfwSetFramebufferSizeCallback を
-                    // 発火させる（GLFW の仕様）ので、framebufferSizeHolder は既存の callback が
-                    // 自然に拾って更新する。calcViewport はここを明示的に叩き直す必要はない。
-                    let monitor = GLFW.glfwGetPrimaryMonitor();
-                    let vidMode = GLFW.glfwGetVideoMode(monitor);
-                    GLFW.glfwSetWindowMonitor(window, monitor, 0, 0,
-                        vidMode.width(), vidMode.height(), vidMode.refreshRate())
-                } else {
-                    // 保存値を検証してから戻す — 壊れた保存値でウィンドウが見えない場所に
-                    // 行くと、ユーザーはフルスクリーンから二度と戻れなくなる。
-                    let (x, y, w, h) = Array.get(0, originalWindowRectHolder);
-                    let width = if (w < 1) config#windowWidth else w;
-                    let height = if (h < 1) config#windowHeight else h;
-                    let monitor = GLFW.glfwGetPrimaryMonitor();
-                    let vidMode = GLFW.glfwGetVideoMode(monitor);
-                    let clampedX = Int32.max(0, Int32.min(x, Int32.max(0, vidMode.width() - width)));
-                    let clampedY = Int32.max(0, Int32.min(y, Int32.max(0, vidMode.height() - height)));
-                    GLFW.glfwSetWindowMonitor(window, MemoryUtil.NULL, clampedX, clampedY,
-                        width, height, GLFW.GLFW_DONT_CARE)
-                };
-                Array.put(on, 0, fullscreenHolder);
+                applyFullscreen(window, config, fullscreenHolder, originalWindowRectHolder, on);
                 k(())
             }
             def isFullscreen(k) = k(Array.get(0, fullscreenHolder))
@@ -710,6 +680,65 @@ pub mod LwjglLayer {
                 k(())
             }
         }
+
+    /// マウスのキャプチャを切り替える（同じなら何もしない）。放す時は setCursorVisible で宣言した矢印の見せ方へ戻す。GL と WebGPU のウィンドウで同じ物を使う。
+    def applyMouseCaptured(window: Int64, devices: LwjglInput.Devices, mouseCaptured: Array[Bool, Static],
+                           cursorVisible: Array[Bool, Static], captured: Bool): Unit \ IO =
+        if (captured == Array.get(0, mouseCaptured)) ()
+        else {
+            Array.put(captured, 0, mouseCaptured);
+            LwjglInput.rebaseMouse(devices);
+            let raw = GLFW.glfwRawMouseMotionSupported();
+            if (captured) {
+                GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+                if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_TRUE) else ()
+            } else {
+                if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_FALSE) else ();
+                GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(Array.get(0, cursorVisible)))
+            }
+        }
+
+    /// フルスクリーンを切り替える（同じなら何もしない）。GL と WebGPU のウィンドウで同じ物を使う。
+    def applyFullscreen(window: Int64, config: GameEngine.EngineConfig, fullscreenHolder: Array[Bool, Static],
+                        originalWindowRectHolder: Array[(Int32, Int32, Int32, Int32), Static], on: Bool): Unit \ IO =
+        let wasFullscreen = Array.get(0, fullscreenHolder);
+        if (on == wasFullscreen) ()
+        else if (on) {
+            // 現在のウィンドウ位置・サイズを復元用に確保してから、プライマリモニタの
+            // 現在の解像度でボーダーレス化する（解像度そのものは変えないので、
+            // 既存の letterbox/pillarbox な calcViewport がそのまま吸収できる）。
+            let posStack = MemoryStack.stackPush();
+            let xBuf = posStack.mallocInt(1);
+            let yBuf = posStack.mallocInt(1);
+            GLFW.glfwGetWindowPos(window, xBuf, yBuf);
+            let sizeStack = MemoryStack.stackPush();
+            let wBuf = sizeStack.mallocInt(1);
+            let hBuf = sizeStack.mallocInt(1);
+            GLFW.glfwGetWindowSize(window, wBuf, hBuf);
+            Array.put((xBuf.get(0), yBuf.get(0), wBuf.get(0), hBuf.get(0)), 0, originalWindowRectHolder);
+            discard MemoryStack.stackPop();
+            discard MemoryStack.stackPop();
+            // glfwSetWindowMonitor はモード切替のたびに glfwSetFramebufferSizeCallback を
+            // 発火させる（GLFW の仕様）ので、framebufferSizeHolder は既存の callback が
+            // 自然に拾って更新する。calcViewport はここを明示的に叩き直す必要はない。
+            let monitor = GLFW.glfwGetPrimaryMonitor();
+            let vidMode = GLFW.glfwGetVideoMode(monitor);
+            GLFW.glfwSetWindowMonitor(window, monitor, 0, 0,
+                vidMode.width(), vidMode.height(), vidMode.refreshRate())
+        } else {
+            // 保存値を検証してから戻す — 壊れた保存値でウィンドウが見えない場所に
+            // 行くと、ユーザーはフルスクリーンから二度と戻れなくなる。
+            let (x, y, w, h) = Array.get(0, originalWindowRectHolder);
+            let width = if (w < 1) config#windowWidth else w;
+            let height = if (h < 1) config#windowHeight else h;
+            let monitor = GLFW.glfwGetPrimaryMonitor();
+            let vidMode = GLFW.glfwGetVideoMode(monitor);
+            let clampedX = Int32.max(0, Int32.min(x, Int32.max(0, vidMode.width() - width)));
+            let clampedY = Int32.max(0, Int32.min(y, Int32.max(0, vidMode.height() - height)));
+            GLFW.glfwSetWindowMonitor(window, MemoryUtil.NULL, clampedX, clampedY,
+                width, height, GLFW.GLFW_DONT_CARE)
+        };
+        Array.put(on, 0, fullscreenHolder)
 
     /// 前の presentFrame の後に画面へ塗ったコマがあれば、FrameStats と撮る口に渡してから swap する（無ければ何もしない）。
     // WhyNot: 撮る前に既定のフレームバッファを bind し直さない — presentFrame はレンダーターゲットを閉じてから呼ぶ決まり（Platform.Window の doc）で、
@@ -721,7 +750,7 @@ pub mod LwjglLayer {
                 Ref.put(None, ws#screenPainted);
                 let swapFrom = System.nanoTime();
                 let (fbW, fbH) = Array.get(0, ws#framebufferSize);
-                Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, () -> RenderPaint.lastDraw2dCounts(ws#paint)), ws#frameStats);
+                Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, () -> RenderPaint.lastDraw2dCounts(ws#paint), ""), ws#frameStats);
                 frameShot(ws#frameShotDir, fbW, fbH, ws#frameShotTaken);
                 GLFW.glfwSwapBuffers(ws#window);
                 if (ws#finishAfterSwap) GL11.glFinish() else ();

@@ -546,6 +546,43 @@ public final class BrowserWebGpu implements WebGpu {
     @JSBody(params = {"id"}, script =
         "var c = document.getElementById(id);"
         + "if (!c) { c = document.createElement('canvas'); c.id = id; document.body.appendChild(c); }"
-        + "return c.getContext('webgpu');")
+        + "var ctx = c.getContext('webgpu'); if (ctx) window.fgeWebGpuTaken = true; return ctx;")
     private static native GPUCanvasContext canvasContext(String id);
+
+    // ── 頁の素材と知らせ ──
+
+    /**
+     * 頁が起動の前に解いておいた道の絵（ImageBitmap・width × height）を、copyExternalImageToTexture（premultipliedAlpha: false）で GPU へ写してから読み戻し、
+     * dst へ RGBA（1 画素 4 バイト・上の行から）で置く（読めるまで待つ）。dst は幅 × 高さ × 4 バイト以上。絵が無ければ IllegalStateException。
+     * WhyNot: 写した texture をそのまま描く絵にしない — 描く側（WebGpuPaint）の絵の表に載せる口が無く、上げる口は画素を受ける形だけ。
+     * WhyNot: 読み戻しを JS の中で待たない — 待つ間に wasm のメモリが伸びると、待つ前に作ったメモリの view が使えなくなる。JS は写して積むまで・待つのは readBuffer。
+     */
+    public void copyImageBitmap(String path, int width, int height, ByteBuffer dst) {
+        int row = (width * 4 + 255) / 256 * 256;
+        fge.webgpu.Buffer readback = createBuffer("fge image read", (long) row * height, BufferUsage.COPY_DST | BufferUsage.MAP_READ);
+        try {
+            String error = copyBitmapToBuffer(device, path, ((BrowserBuffer) readback).buffer, row);
+            if (!error.isEmpty()) throw new IllegalStateException("絵 " + path + " を写せない: " + error);
+            ByteBuffer padded = ByteBuffer.allocateDirect(row * height);
+            readBuffer(readback, 0, row * height, padded);
+            for (int y = 0; y < height; y++) {
+                ByteBuffer line = padded.duplicate();
+                line.position(y * row).limit(y * row + width * 4);
+                ByteBuffer to = dst.duplicate();
+                to.position(y * width * 4);
+                to.put(line);
+            }
+        } finally {
+            readback.destroy();
+        }
+    }
+
+    @JSBody(params = {"device", "path", "buffer", "row"}, script = "return fgeCopyImageBitmap(device, path, buffer, row);")
+    private static native String copyBitmapToBuffer(GPUDevice device, String path, GPUBuffer buffer, int row);
+
+    /** device を失ったら、頁に WebGL の時と同じ文で読み直しを案内する。 */
+    public void onDeviceLost() { watchLost(device); }
+
+    @JSBody(params = {"device"}, script = "fgeWatchDeviceLost(device);")
+    private static native void watchLost(GPUDevice device);
 }

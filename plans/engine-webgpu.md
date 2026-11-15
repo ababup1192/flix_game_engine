@@ -626,3 +626,14 @@ dual-source blending・mask は ref を進める形・GL との比べの門・�
   刻み: 各コマの値の小さい方は CPU が 0.4・0.5・0.6・0.7 ms（`performance.now` の 0.1 ms 刻み）、GPU が 0.262144・0.32768 ms（timestamp が 65.536 µs = 2^16 ns 刻み。
   PC の Dawn の 1.048576 ms も同じ刻みの 16 倍）。どちらも刻みより細かい差は読めない。
 - 【未確認】Safari（Mac・iPhone）・Windows・Linux・WebGPU の無いブラウザでの起動（起動の時の選び分けと WebGL2 版の起動は V1）。
+
+### 12.13 V1 の設計（2026-11-15・第 3 版。レビューは 78 点 → 91 点で合格。残りの 6 件も入れた）
+
+V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関わる決め事:
+- 書き出しは 1 つ（wasm 1 本に両方を入れて起動で選ぶ。5.5 の「2 つ作る」を改める。増える分は rpg-starter の 4〜7% の見込み【推】で、段階 4 で 2 つに分けて測る）。
+- WebGPU の流し方は `RenderFrame.Internal.WebGpuRows` に置き、`RenderFrame` の関数を pub に開かない（子孫の mod から先祖の pub でない物が見える【確】）。増える pub は同じ文書の 0 章の表。
+- instance の 38 float は instance の頂点バッファでそのまま読む。
+- 読み込みは V1 の仮の道（CPU の側の pub だけを共有し、上げる所を WebGPU の側に別に書く。同じ文書の 3.1）。PC で起動の後に字を足すのは V1 の外。
+- 決めた事: Pass のお題は `bench/gl_parity` の `passPaste` などで代える・Dawn の macOS arm64 のネイティブを V1 で `engine_full` に載せる・PC の 3D は描かずに知らせる・GL へ落ちた理由は画面に出さない。
+- ブラウザで `getContext("webgpu")` の後に落ちたら、`backend` を外した URL で `location.replace` して GL で開き直す（同じ canvas から webgl2 は取れないため）。
+- 形のレビューへの持ち越しは同じ文書の 12 章（17 件）。

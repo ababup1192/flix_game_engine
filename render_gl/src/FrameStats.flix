@@ -20,7 +20,9 @@ mod RenderFrameStats {
 
     /// 1 コマ分を記録する。paintFrom・paintTo はそのコマの塗りの始まりと終わり（System.nanoTime）。
     /// 窓が埋まったら 1 行出して数え直す。draw2d = 今塗ったコマの 2D の draw call の数（行を出す時だけ呼ぶ）。
-    pub def record(stats: Stats, paintFrom: Int64, paintTo: Int64, draw2d: Unit -> FrameDiagnostics.Draw2dCounts \ IO): Unit \ IO =
+    /// tail = 行の終わりに足す字（描き手ごとの数。WebGPU は「・submits N」）。
+    pub def record(stats: Stats, paintFrom: Int64, paintTo: Int64, draw2d: Unit -> FrameDiagnostics.Draw2dCounts \ IO,
+                   tail: String): Unit \ IO =
         let Stats.Stats(paints, gaps, filled, lastAt) = stats;
         let prev = Array.get(0, lastAt);
         Array.put(paintFrom, 0, lastAt);
@@ -32,7 +34,7 @@ mod RenderFrameStats {
             if (n + 1 < window()) Array.put(n + 1, 0, filled)
             else {
                 Array.put(0, 0, filled);
-                println("[frame-stats] ${Int32.toString(window())} コマ: 塗り ${summary(paints)}・間隔 ${summary(gaps)}・${draw2dText(draw2d())}")
+                println("[frame-stats] ${Int32.toString(window())} コマ: 塗り ${summary(paints)}・間隔 ${summary(gaps)}・${draw2dText(draw2d())}${tail}")
             }
         }
 

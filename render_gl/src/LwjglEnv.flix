@@ -14,6 +14,7 @@ mod LwjglEnv {
     /// fixedDt: FLIX_GE_FIXED_DT の秒（空なら無し）。毎コマの dt を実時間の代わりにこの値にする（同じ操作で同じ絵になるかを確かめる用）。
     /// portraitView: FLIX_GE_PORTRAIT の画面の大きさ（空・"0" なら無し。"1" は Display.defaultPortraitView・"390x844" はその大きさ）。
     /// 縦の指定（web.portraitDesign）を持つゲームを、縦に持ったスマホの design で起動する（LwjglLayer.withProject）。
+    /// backend: FLIX_GE_BACKEND（無い・"gl" は Gl・"webgpu" は WebGpu・ほかは Gl で 1 行言う）。
     pub type alias Settings = {
         hidden = Bool,
         noVsync = Bool,
@@ -22,8 +23,25 @@ mod LwjglEnv {
         frameShotDir = Option[String],
         splashShotPath = Option[String],
         fixedDt = Option[Float64],
-        portraitView = Option[Vec2.Vec2]
+        portraitView = Option[Vec2.Vec2],
+        backend = Backend
     }
+
+    /// 実機のウィンドウで描く道。Gl = OpenGL 3.3（既定）・WebGpu = Dawn の WebGPU（V1 は 2D だけ。使えない時は GL で起動する）。
+    pub enum Backend with Eq, ToString {
+        case Gl
+        case WebGpu
+    }
+
+    /// FLIX_GE_BACKEND の字を道にする（無い・空・"gl" は Gl・"webgpu" は WebGpu・ほかは Err）。大文字と小文字は区別しない。
+    def parseBackend(text: Option[String]): Result[String, Backend] =
+        match text |> Option.map(t -> String.toLowerCase(String.trim(t))) {
+            case None           => Ok(Backend.Gl)
+            case Some("")       => Ok(Backend.Gl)
+            case Some("gl")     => Ok(Backend.Gl)
+            case Some("webgpu") => Ok(Backend.WebGpu)
+            case Some(other)    => Err("gl か webgpu を書く（'${other}' は知らない）")
+        }
 
     /// 今のプロセスの環境変数から読む。FLIX_GE_FIXED_DT が読めない値なら実時間のまま続け、1 行言う。
     // WhyNot: 読めない FLIX_GE_FIXED_DT で起動を止めない — 開発の道具の口なので、遊べる窓を落とすほどではない。
@@ -33,6 +51,7 @@ mod LwjglEnv {
         let settings = fromMap(env);
         warnUnreadableFixedDt(env, settings);
         warnUnreadablePortrait(env, settings);
+        warnUnknownBackend(env);
         settings
 
     /// 3D の置いた物の描き方。FGE_INSTANCING=off は全部の物を batch にせず、物ごとの材質で来た順に描く（batch の鍵と順の確かめの比べ相手）。
@@ -55,7 +74,8 @@ mod LwjglEnv {
           frameShotDir = filled("FLIX_GE_FRAME_SHOT"),
           splashShotPath = filled("FLIX_GE_SPLASH_SHOT"),
           fixedDt = filled("FLIX_GE_FIXED_DT") |> Option.flatMap(text -> Result.toOption(parseFixedDt(text))),
-          portraitView = filled("FLIX_GE_PORTRAIT") |> Option.filter(text -> text != "0") |> Option.flatMap(text -> Result.toOption(parsePortraitView(text))) }
+          portraitView = filled("FLIX_GE_PORTRAIT") |> Option.filter(text -> text != "0") |> Option.flatMap(text -> Result.toOption(parsePortraitView(text))),
+          backend = parseBackend(Map.get("FLIX_GE_BACKEND", env)) |> Result.getWithDefault(Backend.Gl) }
 
     /// FLIX_GE_PORTRAIT の字を画面の大きさにする。"1" は Display.defaultPortraitView、"<幅>x<高さ>" は縦長（高さ > 幅 > 0）の時だけ受ける。
     pub def parsePortraitView(text: String): Result[String, Vec2.Vec2] =
@@ -104,6 +124,12 @@ mod LwjglEnv {
         match (Map.get("FLIX_GE_PORTRAIT", env) |> Option.filter(text -> text != "" and text != "0"), settings#portraitView) {
             case (Some(text), None) => checked_ecast(Log.fellBack("lwjgl", "FLIX_GE_PORTRAIT=${text}", "横の design", portraitFailureOf(text)))
             case _ => ()
+        }
+
+    def warnUnknownBackend(env: Map[String, String]): Unit \ IO =
+        match parseBackend(Map.get("FLIX_GE_BACKEND", env)) {
+            case Err(why) => checked_ecast(Log.fellBack("backend", "FLIX_GE_BACKEND", "gl", why))
+            case Ok(_)    => ()
         }
 
     /// parsePortraitView が受けなかった理由（受けた字なら空）。

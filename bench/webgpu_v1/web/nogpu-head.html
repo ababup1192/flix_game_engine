@@ -1,0 +1,8 @@
+<script>
+// WebGPU の無いブラウザを真似る: navigator.gpu と GPU* の大域の名前を消す。
+try { Object.defineProperty(navigator, "gpu", { value: undefined, configurable: true }); } catch (e) {}
+["GPU", "GPUAdapter", "GPUDevice", "GPUBuffer", "GPUTexture", "GPUBufferUsage", "GPUTextureUsage", "GPUShaderStage", "GPUMapMode",
+ "GPUCanvasContext", "GPUColorWrite", "GPUQueue", "GPUCommandEncoder", "GPURenderPassEncoder", "GPURenderPipeline", "GPUSampler",
+ "GPUBindGroup", "GPUShaderModule"].forEach(function (n) { try { delete window[n]; } catch (e) {} try { window[n] = undefined; } catch (e) {} });
+console.log("[nogpu] GPUBufferUsage=" + typeof GPUBufferUsage + " navigator.gpu=" + typeof navigator.gpu);
+</script>

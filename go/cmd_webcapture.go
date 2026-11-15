@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"image/png"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,7 +14,8 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/cdp"
 )
 
-const webCaptureUsage = "使い方: fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH]\n" +
+const webCaptureUsage = "使い方: fge web-capture <URL> <出力.png> [--wait <秒>] [--size WxH] [--dir <書き出したフォルダ>]\n" +
+	"  --dir はそのフォルダを 127.0.0.1 の使い捨ての口で配り、<URL> をその頁の道とクエリ（例 index.html?capture=6）として読む\n" +
 	"  頁の約束（window.fgeCaptureReady と window.fgeCapture()）は docs/web-capture.md"
 
 func init() {
@@ -26,9 +29,18 @@ func init() {
 func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 	opt := cdp.Options{}
 	var pos []string
+	serveDir := ""
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch a {
+		case "--dir":
+			if i+1 >= len(args) {
+				fmt.Fprintf(errOut, "--dir の値がありません\n%s\n", webCaptureUsage)
+				return 2
+			}
+			serveDir = args[i+1]
+			i++
+			continue
 		case "--wait", "--size":
 			if i+1 >= len(args) {
 				fmt.Fprintf(errOut, "%s の値がありません\n%s\n", a, webCaptureUsage)
@@ -65,6 +77,17 @@ func cmdWebCapture(out, errOut *strings.Builder, args []string) int {
 	}
 	opt.URL = pos[0]
 	dest := pos[1]
+	if serveDir != "" {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			fmt.Fprintf(errOut, "web-capture: 配る口を開けない: %v\n", err)
+			return 1
+		}
+		server := &http.Server{Handler: http.FileServer(http.Dir(serveDir))}
+		go func() { _ = server.Serve(listener) }()
+		defer server.Close()
+		opt.URL = "http://" + listener.Addr().String() + "/" + strings.TrimPrefix(pos[0], "/")
+	}
 
 	res, err := cdp.Capture(opt)
 	if err != nil {

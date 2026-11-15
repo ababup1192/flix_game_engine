@@ -98,4 +98,19 @@ mod TestLwjglEnv {
         Assert.assertEq(expected = (true, true),
                         (Option.isEmpty(LwjglEnv.fromMap(Map.empty())#portraitView),
                          Option.isEmpty(LwjglEnv.fromMap(Map#{ "FLIX_GE_PORTRAIT" => "0" })#portraitView)))
+
+    // ── 描く道（FLIX_GE_BACKEND）─────────────────────────────────────────
+
+    /// 置かない・空・"gl" は GL・"webgpu" は大文字小文字と前後の空白を問わず WebGPU。
+    @Test
+    def testBackendReadsGlAndWebGpu(): Unit \ Assert =
+        let read = env -> LwjglEnv.fromMap(env)#backend;
+        Assert.assertEq(expected = (LwjglEnv.Backend.Gl, LwjglEnv.Backend.Gl, LwjglEnv.Backend.Gl, LwjglEnv.Backend.WebGpu),
+                        (read(Map.empty()), read(Map#{"FLIX_GE_BACKEND" => ""}), read(Map#{"FLIX_GE_BACKEND" => "gl"}),
+                         read(Map#{"FLIX_GE_BACKEND" => " WebGPU "})))
+
+    /// 知らない値は GL で起動する（起動を止めない。知らせは load が出す）。
+    @Test
+    def testUnknownBackendFallsBackToGl(): Unit \ Assert =
+        Assert.assertEq(expected = LwjglEnv.Backend.Gl, LwjglEnv.fromMap(Map#{"FLIX_GE_BACKEND" => "vulkan"})#backend)
 }
