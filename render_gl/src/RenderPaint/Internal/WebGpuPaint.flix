@@ -92,6 +92,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             nearestRepeat = Sampler,
             linearRepeat = Sampler,
             nearestClamp = Sampler,
+            linearClamp = Sampler,
             // 1 × 1 の透明な黒（pass の頭で group 1 に付けておく）。
             blank = TextureSlot,
             slots = Ref[Map[Int32, TextureSlot], Static],
@@ -155,6 +156,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let frameGroup = gpu.createBindGroup(new BindGroupDesc("fge frame", frameLayout).buffer(0, uniform, 0i64, 64i64));
         let nearestRepeat = gpu.createSampler("fge nearest repeat", FilterMode.NEAREST, FilterMode.NEAREST, AddressMode.REPEAT);
         let linearRepeat = gpu.createSampler("fge linear repeat", FilterMode.LINEAR, FilterMode.NEAREST, AddressMode.REPEAT);
+        let nearestClamp = gpu.createSampler("fge nearest clamp", FilterMode.NEAREST, FilterMode.NEAREST, AddressMode.CLAMP_TO_EDGE);
+        let linearClamp = gpu.createSampler("fge linear clamp", FilterMode.LINEAR, FilterMode.NEAREST, AddressMode.CLAMP_TO_EDGE);
         let blankTexture = gpu.createTexture("fge blank", 1, 1, TextureFormat.RGBA8_UNORM,
                                              Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
         gpu.writeTexture(blankTexture, 0, 0, 0, 1, 1, ByteBuffer.allocateDirect(4), 0, 4);
@@ -163,7 +166,6 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let blank = { texture = blankTexture, width = 1, height = 1, group = gpu.createBindGroup(blankDesc) };
         let pipes = WebGpuPipelines.fresh(gpu, frameLayout, imageLayout, (designW, designH));
         WebGpuPipelines.buildStartupPipelines(pipes);
-        let nearestClamp = gpu.createSampler("fge nearest clamp", FilterMode.NEAREST, FilterMode.NEAREST, AddressMode.CLAMP_TO_EDGE);
         let paint = PaintData.PaintData({
             gpu = gpu, designW = designW, designH = designH, clearColor = cfg#clearColor,
             presentModule = gpu.createShaderModule("fge present", WebGpuShader.presentWgsl()),
@@ -171,14 +173,14 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             uniform = uniform, frameGroup = frameGroup,
             pipes = pipes, copyPipelines = Ref.fresh(Static, Map.empty()), presentPipeline = Ref.fresh(Static, None),
             presentGroup = Ref.fresh(Static, None),
-            nearestRepeat = nearestRepeat, linearRepeat = linearRepeat, nearestClamp = nearestClamp,
+            nearestRepeat = nearestRepeat, linearRepeat = linearRepeat, nearestClamp = nearestClamp, linearClamp = linearClamp,
             blank = blank, slots = Ref.fresh(Static, Map.empty()), nextSlot = Array#{1} @ Static,
             registryRef = Ref.fresh(Static, Map.empty()), textureKeyRef = Ref.fresh(Static, Map.empty()),
             targets = TargetTable.fresh(), msaaTargets = Ref.fresh(Static, Map.empty()), copyGroups = Ref.fresh(Static, Map.empty()),
             lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
             pendingScenes = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static,
             pendingSurfaces = Array#{(Nil: List[DrawCmd.SurfaceRenderCmd])} @ Static,
-            surfaces = WebGpuSurfaces.fresh(gpu, { layout = frameLayout, group = frameGroup }, blank#group, nearestClamp),
+            surfaces = WebGpuSurfaces.fresh(gpu, { layout = frameLayout, group = frameGroup }, { nearest = nearestClamp, linear = linearClamp }),
             instances = freshStream(gpu, "fge instances", vertexUsage(), 4096 * instanceBytes()),
             vertices = freshStream(gpu, "fge vertices", vertexUsage(), 4096 * 4 * RenderList.vertexFloats()),
             // 面の値も読むので uniform の buffer としても bind する。
@@ -375,6 +377,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         p#nearestRepeat.release();
         p#linearRepeat.release();
         p#nearestClamp.release();
+        p#linearClamp.release();
         p#frameLayout.release();
         p#imageLayout.release();
         p#presentLayout.release();
@@ -701,7 +704,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,
-                                             TargetTable.readsHistory(spec#name, frame#sprites, frame#surfaces), true);
+                                             TargetTable.isHistoryRead(spec#name, frame#sprites, frame#surfaces), true);
         TargetTable.rowByName(p#targets, spec#name)
             |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
             |> Option.forEach(match (row, slot) -> {
@@ -793,7 +796,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
         };
         submitEncoder(paint);
-        WebGpuSurfaces.endFrame(p#surfaces);
+        WebGpuSurfaces.endFrame(p#surfaces, Array.get(0, p#lastFrame)#surfaces |> List.map(cmd -> GpuHandle.shaderProgramInt(cmd#program)) |> List.toSet);
         let submits = Array.get(1, p#frameCounters);
         Array.put(submits, 2, p#frameCounters);
         Array.put(0, 1, p#frameCounters);

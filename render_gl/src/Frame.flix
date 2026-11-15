@@ -276,7 +276,7 @@ mod RenderFrame {
         surfaces = List[DrawCmd.SurfaceRenderCmd],
         // 面の行 1 つの面を GL へ描くクロージャ（program の uniform location を知る塗りのコアが提供する。GlRows.RowDrawers#surface）。
         // stencil の始末と draw call の数えは GlRows が受け持つ。
-        drawSurface = (GlContext, Array[Int32, Static], Int32, Array[Int32, Static], Array[Float32, Static]) -> Unit \ IO,
+        drawSurface = GlRows.SurfaceDrawer,
         // 先に準備した 3D の場面の並び。番号ごとの z で 2D の並びに混ぜ、同じ z の中では surfaces の後に描く。
         scenes = Scene3dRenderer.Prepared,
         // None = 画面へのフレーム・Some(op) = レンダーターゲット（FBO）へのフレームで、op が前の中身の始末（RenderTarget.LoadOp の doc）。
@@ -840,7 +840,7 @@ mod RenderFrame {
     /// 面 1 枚を行にする: 溜めている run を閉じ（列順を守る）、読む絵を名前から backend の表の番号へ引き、mask を三角形の頂点へほどいて vertices へ書き、
     /// stencil の値（RenderList.nextMaskRef。mask つきスプライトと同じ数え方）を進めて行を足す。mask が 3 頂点未満なら値を進めず 0 にする。
     // WhyNot: mask つきの面だけ stencil を自分で 0 に戻して 1 を書く形にしない — WebGPU は pass の途中で stencil を 0 に戻すたびに design の全面の
-    //   draw が 1 本増え、前半の値の数え（st の 41 番）も面の後で 0 に戻す枝が要る。
+    //   draw が 1 本増え、前半の値の数えも面の後で 0 に戻す枝が要る。
     def emitSurface(st: Array[Int32, Static], list: RenderList, registry: RenderAsset.TextureRegistry, upsideDownTargets: Set[String],
                     warnLog: Ref[Set[String], Static], s: DrawCmd.SurfaceRenderCmd): Unit \ IO =
         closeRuns(st, list);

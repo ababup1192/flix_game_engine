@@ -13,11 +13,14 @@ pub mod RenderFrame.Internal.GlRows {
                                          instanceFloats, kindMask, kindPoly, kindScene3d, kindStatic, kindSurface, kindTile, newRenderList, readsOf, rowAt, rowCountOf,
                                          rowsOf, screenPass, targetPass, valuesOf, vertexFloats}
 
+    /// 面の行の面を塗る口: (gl, rows, 行, reads, values)。行の program と values と reads の絵で塗る（stencil は GlRows が張ってから呼ぶ）。
+    pub type alias SurfaceDrawer = (GlContext, Array[Int32, Static], Int32, Array[Int32, Static], Array[Float32, Static]) -> Unit \ IO
+
     /// 行を流す時に GL の backend の外へ頼む描き物。scene = 3D の場面を貼る行で番号の場面を描く・
-    /// surface(gl, rows, 行, reads, values) = 面の行の面を、行の program と values と reads の絵で塗る（stencil は GlRows が張ってから呼ぶ）。
+    /// surface = 面の行の面を塗る（SurfaceDrawer）。
     pub type alias RowDrawers = {
         scene = Int32 -> Unit \ IO,
-        surface = (GlContext, Array[Int32, Static], Int32, Array[Int32, Static], Array[Float32, Static]) -> Unit \ IO
+        surface = SurfaceDrawer
     }
 
     /// GL の描き先（FBO）は行 0 が下で、上下逆に格納される。
@@ -143,7 +146,7 @@ pub mod RenderFrame.Internal.GlRows {
 
     // WhyNot: 行ごとに list と draw の欄を引かない — 行が描く物の数だけある画面で、record の欄を辿る代金が 1 コマに出る。入れ物と配列はここで 1 回取る。
     def drawRowsFrom(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], drawScene: Int32 -> Unit \ IO,
-                     drawSurface: (GlContext, Array[Int32, Static], Int32, Array[Int32, Static], Array[Float32, Static]) -> Unit \ IO,
+                     drawSurface: SurfaceDrawer,
                      instances: FloatBuffer, vertices: FloatBuffer,
                      rows: Array[Int32, Static], values: Array[Float32, Static], reads: Array[Int32, Static], row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
@@ -156,7 +159,7 @@ pub mod RenderFrame.Internal.GlRows {
     // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
     def drawRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], drawScene: Int32 -> Unit \ IO,
-                drawSurface: (GlContext, Array[Int32, Static], Int32, Array[Int32, Static], Array[Float32, Static]) -> Unit \ IO,
+                drawSurface: SurfaceDrawer,
                 instances: FloatBuffer, vertices: FloatBuffer,
                 rows: Array[Int32, Static], values: Array[Float32, Static], reads: Array[Int32, Static], row: Int32): Unit \ IO =
         let kind = rowAt(rows, row, 0);
@@ -207,7 +210,7 @@ pub mod RenderFrame.Internal.GlRows {
     /// 面の行: stencil の値が 1 なら先に stencil を全部 0 にし、mask を stencil へ書いてその内側だけ面を塗る（draw 2 回）。
     /// 値が 0（mask が無いか 3 頂点未満）なら面をそのまま塗る。塗るのは塗りのコアの drawSurface（program と uniform と絵の bind）。
     def drawSurfaceRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static],
-                       drawSurface: (GlContext, Array[Int32, Static], Int32, Array[Int32, Static], Array[Float32, Static]) -> Unit \ IO,
+                       drawSurface: SurfaceDrawer,
                        vertices: FloatBuffer, rows: Array[Int32, Static], values: Array[Float32, Static], reads: Array[Int32, Static], row: Int32): Unit \ IO =
         let ref = rowAt(rows, row, 10);
         if (ref == 0) drawSurface(gl, rows, row, reads, values)

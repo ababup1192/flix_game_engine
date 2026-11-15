@@ -273,6 +273,13 @@ mod RenderFrame.TestShapeRows {
         Assert.assertEq(expected = (surfaceValueAlign(), 1.0f32 :: 2.0f32 :: 30.0f32 :: 20.0f32 :: 1.5f32 :: 0.5f32 :: 0.25f32 :: Nil),
                         (at, valuesAt(list, at, 7)))
 
+    /// 値が 64 個を超える面（params 59 = 65 個）は 128 個取り、次の面は 64 + 128 = 192 から。取った残りは 0。
+    @Test
+    def testLongSurfaceTakesTwoSteps(): Unit \ {Assert, IO} =
+        let long = Merged.MSurface({ params = List.repeat(59, 0.5) | surface() });
+        let list = listOf(long :: plainSurface() :: Nil);
+        Assert.assertEq(expected = (64, 192, 0.0f32), (cell(list, 0, 11), cell(list, 1, 11), Array.get(64 + 65, valuesOf(list))))
+
     /// 同じ絵の箱の間に面が入ると、箱の run は面の前で閉じる（箱・面・箱の 3 行）。
     @Test
     def testSurfaceSplitsSpriteRun(): Unit \ {Assert, IO} =
@@ -312,4 +319,3 @@ mod RenderFrame.TestShapeRows {
                         (Ref.get(drawsAtSurface), Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st),
                          Array.get(countBase() + RenderDrawCounts.kindSlot(), st)))
 }
-

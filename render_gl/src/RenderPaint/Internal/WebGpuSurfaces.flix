@@ -3,14 +3,12 @@
 // program は Spec の名前で引き、中身が同じなら作り直さない（GL の RenderPaint.buildProgram と同じ決まり）。組めない Spec は単色の代わり（WebGpuShader.surfaceFallbackWgsl）で塗る。
 // pipeline は program × blend × 描き先の形式 × 標本の数 × stencil の使い方ごとに 1 本で、初めて要る時に作って控える。
 pub mod RenderPaint.Internal.WebGpuSurfaces {
-    import fge.webgpu.AddressMode
     import fge.webgpu.BindGroup
     import fge.webgpu.BindGroupDesc
     import fge.webgpu.BindGroupLayout
     import fge.webgpu.BindGroupLayoutDesc
     import fge.webgpu.Buffer
     import fge.webgpu.BufferBindingType
-    import fge.webgpu.FilterMode
     import fge.webgpu.RenderPass
     import fge.webgpu.RenderPipeline
     import fge.webgpu.RenderPipelineDesc
@@ -31,15 +29,14 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
     /// 組んだ面 1 つ: shader module・面の値の数（ShaderGen.Wgsl の SgValues の欄の数）・読む絵の数。
     type alias Program = { module = ShaderModule, slots = Int32, reads = Int32 }
 
-    /// 面の表。frameLayout・frameGroup・blankGroup・nearestClamp は WebGpuPaint の持ち物（ここでは手放さない）。
+    /// 面の表。frameLayout・frameGroup・nearestClamp・linearClamp は WebGpuPaint の持ち物（ここでは手放さない）。
     /// byName = Spec の名前 → (組んだ時の Spec, program の番号)・programs = 番号 → 組んだ面・layouts = 読む絵の数 → group 0 の layout・
-    /// pipelines の鍵 = program の番号 × 64 + ((blend の番号 × 2 + 形式) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方・
-    /// retired = 同じ名前で作り直して表から外した番号（コマの終わりに手放す）・drawGroups = 今の encoder に積んだ draw の bind group（submit の後に手放す）。
+    /// pipelines の鍵 = program の番号 × WebGpuPipelines.targetKeys() + WebGpuPipelines.targetKeyOf（blend・形式・標本・stencil の使い方）・
+    /// retired = 同じ名前で作り直して表から外した番号（どのコマの命令も指さなくなったら手放す）・drawGroups = 今の encoder に積んだ draw の bind group（submit の後に手放す）。
     pub type alias Surfaces = {
         gpu = WebGpu,
         frameLayout = BindGroupLayout,
         frameGroup = BindGroup,
-        blankGroup = BindGroup,
         nearestClamp = Sampler,
         linearClamp = Sampler,
         black = Texture,
@@ -54,18 +51,17 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
     }
 
     /// 単色の代わりの program の番号（表を作る時に組んである）。
-    pub def fallbackProgram(): Int32 = 1
+    def fallbackProgram(): Int32 = 1
 
-    /// 単色の代わりを組んだ表。
-    pub def fresh(gpu: WebGpu, frame: { layout = BindGroupLayout, group = BindGroup }, blankGroup: BindGroup, nearestClamp: Sampler): Surfaces \ IO =
+    /// 単色の代わりを組んだ表。frame = 射影の group の layout と group・samplers = 面の絵を読む sampler（Nearest と Linear。どちらも端に張り付く）。
+    pub def fresh(gpu: WebGpu, frame: { layout = BindGroupLayout, group = BindGroup }, samplers: { nearest = Sampler, linear = Sampler }): Surfaces \ IO =
         let black = gpu.createTexture("fge surface black", 1, 1, TextureFormat.RGBA8_UNORM,
                                       Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
         let opaque = ByteBuffer.allocateDirect(4);
         discard opaque.put(3, -1i8);
         gpu.writeTexture(black, 0, 0, 0, 1, 1, opaque, 0, 4);
         let module = gpu.createShaderModule("fge surface fallback", WebGpuShader.surfaceFallbackWgsl());
-        { gpu = gpu, frameLayout = frame#layout, frameGroup = frame#group, blankGroup = blankGroup, nearestClamp = nearestClamp,
-          linearClamp = gpu.createSampler("fge linear clamp", FilterMode.LINEAR, FilterMode.NEAREST, AddressMode.CLAMP_TO_EDGE),
+        { gpu = gpu, frameLayout = frame#layout, frameGroup = frame#group, nearestClamp = samplers#nearest, linearClamp = samplers#linear,
           black = black, byName = Ref.fresh(Static, Map.empty()),
           programs = Ref.fresh(Static, Map#{fallbackProgram() => { module = module, slots = 6, reads = 0 }}),
           layouts = Ref.fresh(Static, Map.empty()), pipelines = Ref.fresh(Static, Map.empty()), nextId = Array#{fallbackProgram() + 1} @ Static,
@@ -85,12 +81,15 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
                 id
             case old =>
                 let id = compileProgram(surfaces, spec);
-                Option.forEach(match (_, oldId) -> if (oldId == id or oldId == fallbackProgram()) () else Ref.put(oldId :: Ref.get(surfaces#retired), surfaces#retired), old);
+                old |> Option.map(snd) |> Option.filter(oldId -> oldId != id and oldId != fallbackProgram())
+                    |> Option.forEach(oldId -> Ref.put(oldId :: Ref.get(surfaces#retired), surfaces#retired));
                 Ref.put(Map.insert(spec#name, (spec, id), named), surfaces#byName);
                 id
         }
 
     /// Spec の WGSL を組んで表に足し、番号を返す。組めなければ単色の代わりの番号（名前ごとに 1 回知らせる）。
+    // WhyNot: 組めない WGSL の誤りを device の誤りの数から外さない — createShaderModule の誤りは error scope で受けないと device の誤り（errorCount）に数えられ、
+    //   scope を開く口は render_gl/java の WebGpu に無い（足すと GL の層の jar のハッシュとブラウザの実装が動く）。組めない Spec は単色で塗れるが、誤りは 1 つ数えられる。
     def compileProgram(surfaces: Surfaces, spec: ShaderDoc.Spec): Int32 \ IO =
         let out = ShaderGen.Wgsl.compile(spec);
         let module = surfaces#gpu.createShaderModule("fge surface ${spec#name}", out#module);
@@ -130,7 +129,7 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
 
     /// program id の pipeline（無ければ作る）。blendC = RenderFrame.blendCode・stencil = WebGpuRows.stencil*。
     def pipelineOf(surfaces: Surfaces, id: Int32, program: Program, blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): RenderPipeline \ IO =
-        let key = id * 64 + ((blendC * 2 + WebGpuPipelines.formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil;
+        let key = id * WebGpuPipelines.targetKeys() + WebGpuPipelines.targetKeyOf(blendC, format, samples, stencil);
         match Map.get(key, Ref.get(surfaces#pipelines)) {
             case Some(pipeline) => pipeline
             case None =>
@@ -147,7 +146,8 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
 
     /// 面の行 row（RenderList の面の行）の面を、pass に draw 1 本で塗る。target = 描き先の形式と標本の数・stencil = WebGpuRows.stencil*・
     /// values と bytes = 行の面の値を置いた buffer とその位置（RenderList.surfaceValueAlign の 4 倍の倍数）・textureOf = 絵の表の番号 → texture。
-    /// 描いた後は group 0 を射影・group 1 を空の絵に戻す（スプライトの形の pipeline の並び）。表に無い program と、面の値が program の欄より少ない行は描かずに知らせる。
+    /// 描いた後は group 0 を射影に戻す（group 1 は射影のまま残す。絵の group の控えは呼ぶ側の WebGpuRows が持ち、面の後に捨てる）。
+    /// 表に無い program と、面の値が program の欄より少ない行は描かずに知らせる。
     // WhyNot: bind group を番号と位置と絵の組で控えて使い回さない — 位置は前の行の values の数で毎コマ動き、絵と buffer を捨てる・作り直す時に控えを外す決まりが要る
     //   （比べた結果は plans/engine-webgpu.md の 12.22）。
     pub def draw(surfaces: Surfaces, pass: RenderPass, target: (RenderTarget.Format, Int32), stencil: Int32, values: Buffer, bytes: Int32,
@@ -157,23 +157,29 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
         match Map.get(id, Ref.get(surfaces#programs)) {
             case None => skip("面（組んでいない program）")
             case Some(program) =>
-                let size = (4 * program#slots + 15) / 16 * 16;
-                if (size > 4 * RenderList.surfaceValuesTaken(RenderList.rowAt(rows, row, 2))) skip("面（program の値の欄が行の値より多い）")
+                if (not canReadValues(program#slots, RenderList.rowAt(rows, row, 2))) skip("面（program の値の欄が行の値より多い）")
                 else {
                     let (format, samples) = target;
-                    let group = groupOf(surfaces, program, values, bytes, size, textureOf, reads, RenderList.rowAt(rows, row, 6), RenderList.rowAt(rows, row, 7));
+                    let group = buildDrawGroup(surfaces, program, values, bytes, valueBytesOf(program#slots), textureOf, reads,
+                                               RenderList.rowAt(rows, row, 6), RenderList.rowAt(rows, row, 7));
                     pass.setPipeline(pipelineOf(surfaces, id, program, RenderList.rowAt(rows, row, 4), format, samples, stencil));
                     pass.setBindGroup(0, group);
                     pass.setBindGroup(1, surfaces#frameGroup);
                     pass.draw(6, 1, 0, 0);
-                    pass.setBindGroup(0, surfaces#frameGroup);
-                    pass.setBindGroup(1, surfaces#blankGroup)
+                    pass.setBindGroup(0, surfaces#frameGroup)
                 }
         }
 
+    /// 欄 slots 個の面の値を uniform として読む大きさ（16 バイトの倍数）。
+    def valueBytesOf(slots: Int32): Int32 = (4 * slots + 15) / 16 * 16
+
+    /// 欄 slots 個の program が、値を count 個書いた面の行の values を読めるか（行が取った数 RenderList.surfaceValuesTaken の内に収まるか）。
+    /// 行の値が欄より少なくても、取った数の内なら読む（残りは 0 で埋めてある）。
+    def canReadValues(slots: Int32, count: Int32): Bool = valueBytesOf(slots) <= 4 * RenderList.surfaceValuesTaken(count)
+
     /// 面の値（values の bytes から size バイト）と、reads の [first, first + count) の絵を読む group 0。絵の数が program#reads に足りなければ、残りは不透明な黒
     /// （GL が絵の無い unit で読む値）。今の encoder の draw の物として控え、submit の後に手放す。
-    def groupOf(surfaces: Surfaces, program: Program, values: Buffer, bytes: Int32, size: Int32, textureOf: Int32 -> Option[Texture] \ IO,
+    def buildDrawGroup(surfaces: Surfaces, program: Program, values: Buffer, bytes: Int32, size: Int32, textureOf: Int32 -> Option[Texture] \ IO,
                 reads: Array[Int32, Static], first: Int32, count: Int32): BindGroup \ IO =
         let desc = new BindGroupDesc("fge surface", layoutOf(surfaces, program#reads)).buffer(0, values, Int32.toInt64(bytes), Int32.toInt64(size));
         List.forEach(k -> {
@@ -193,20 +199,23 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
         List.forEach(g -> g.release(), Ref.get(surfaces#drawGroups));
         Ref.put(Nil, surfaces#drawGroups)
 
-    /// コマの終わり（submit の後）に呼ぶ: 作り直して表から外した program と、その pipeline を手放す。
-    pub def endFrame(surfaces: Surfaces): Unit \ IO =
-        let retired = List.toSet(Ref.get(surfaces#retired));
+    /// コマの終わり（submit の後）に呼ぶ: 作り直して表から外した program のうち、pinned（最後に画面へ描いたコマの面の program。大きさが変わると描き直す）に無い物と、
+    /// その pipeline を手放す。pinned にある物は、そのコマが替わるまで残す。
+    pub def endFrame(surfaces: Surfaces, pinned: Set[Int32]): Unit \ IO =
+        let (kept, gone) = List.partition(id -> Set.memberOf(id, pinned), Ref.get(surfaces#retired));
+        let retired = List.toSet(gone);
         if (Set.isEmpty(retired)) ()
         else {
-            Ref.put(Nil, surfaces#retired);
+            Ref.put(kept, surfaces#retired);
             let pipelines = Ref.get(surfaces#pipelines);
-            Map.forEach((key, pipeline) -> if (Set.memberOf(key / 64, retired)) pipeline.release() else (), pipelines);
-            Ref.put(Map.filterWithKey((key, _) -> not Set.memberOf(key / 64, retired), pipelines), surfaces#pipelines);
+            let programOfKey = key -> key / WebGpuPipelines.targetKeys();
+            Map.forEach((key, pipeline) -> if (Set.memberOf(programOfKey(key), retired)) pipeline.release() else (), pipelines);
+            Ref.put(Map.filterWithKey((key, _) -> not Set.memberOf(programOfKey(key), retired), pipelines), surfaces#pipelines);
             Set.forEach(id -> Map.get(id, Ref.get(surfaces#programs)) |> Option.forEach(p -> p#module.release()), retired);
             Ref.put(Map.filterWithKey((id, _) -> not Set.memberOf(id, retired), Ref.get(surfaces#programs)), surfaces#programs)
         }
 
-    /// 作った物（bind group・pipeline・layout・shader module・sampler・黒の絵）を全部手放す。この後 surfaces は使えない。
+    /// 作った物（bind group・pipeline・layout・shader module・黒の絵）を全部手放す。この後 surfaces は使えない。
     pub def release(surfaces: Surfaces): Unit \ IO =
         afterSubmit(surfaces);
         Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(surfaces#pipelines));
@@ -215,6 +224,5 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
         Ref.put(Map.empty(), surfaces#layouts);
         Map.forEach((_, p) -> p#module.release(), Ref.get(surfaces#programs));
         Ref.put(Map.empty(), surfaces#programs);
-        surfaces#linearClamp.release();
         surfaces#black.destroy()
 }

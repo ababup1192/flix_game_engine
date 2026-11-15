@@ -103,7 +103,7 @@ pub mod RenderPaint.Internal.TargetTable {
         }
 
     /// sprites と surfaces のどれかがターゲット name の history を読むか（GL は 3D の場面の読みも足して見る）。
-    pub def readsHistory(name: String, sprites: List[RenderType.Drawable], surfaces: List[DrawCmd.SurfaceRenderCmd]): Bool =
+    pub def isHistoryRead(name: String, sprites: List[RenderType.Drawable], surfaces: List[DrawCmd.SurfaceRenderCmd]): Bool =
         let history = RenderTarget.historyName(name);
         List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
             or List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)

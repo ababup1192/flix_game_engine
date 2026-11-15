@@ -251,10 +251,10 @@ mod TestWgslDawn {
             chosen |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
         })
 
-    /// 3D の光の式の関数（材質の frag に入らない空の式を含む）を、場面の宣言と一緒に組む。
     /// 手で書いた 2D の面の WGSL（組めない面の単色の代わり）。
     def builtinSurfaces(): List[(String, String)] = ("surface fallback", RenderPaint.Internal.WebGpuShader.surfaceFallbackWgsl()) :: Nil
 
+    /// 3D の光の式の関数（材質の frag に入らない空の式を含む）を、場面の宣言と一緒に組む。
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::

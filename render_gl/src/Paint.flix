@@ -278,7 +278,7 @@ mod RenderPaint {
                     surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
         let (name, tw, th, op) = (target#name, target#width, target#height, target#clear);
         let historyName = RenderTarget.historyName(name);
-        let readsHistory = TargetTable.readsHistory(name, sprites, surfaces) or paint#scene3d#readsTexture(historyName, scenes);
+        let readsHistory = TargetTable.isHistoryRead(name, sprites, surfaces) or paint#scene3d#readsTexture(historyName, scenes);
         let history = TargetTable.historyFor(glTargetAllocator(gl, paint), textureTables(paint), paint#targets, (paint#screenW, paint#screenH),
                                              target, readsHistory, paint#keepHistory);
         let entry = TargetTable.rowByName(paint#targets, name) |> Option.flatMap(entryOf(paint));

@@ -210,7 +210,7 @@ mod TestTargetTable {
         discard frame(64);
         Assert.assertEq(expected = PassHistory.CopyTo(104), frame(32))
 
-    // ── history を読むか（spritesReadHistory）──
+    // ── history を読むか（isHistoryRead）──
 
     def spriteOf(texture: String): DrawCmd.Drawable =
         DrawCmd.make({
@@ -222,17 +222,17 @@ mod TestTargetTable {
     /// 自分の history を貼るスプライトがあれば真。
     @Test
     def testOwnHistoryIsRead(): Unit \ Assert =
-        Assert.assertTrue(TargetTable.readsHistory("fx", spriteOf("atlas") :: spriteOf(RenderTarget.historyName("fx")) :: Nil, Nil))
+        Assert.assertTrue(TargetTable.isHistoryRead("fx", spriteOf("atlas") :: spriteOf(RenderTarget.historyName("fx")) :: Nil, Nil))
 
     /// ほかの描き先の history は読まない扱い。
     @Test
     def testOtherHistoryIsNotRead(): Unit \ Assert =
-        Assert.assertFalse(TargetTable.readsHistory("fx", spriteOf(RenderTarget.historyName("bloom")) :: Nil, Nil))
+        Assert.assertFalse(TargetTable.isHistoryRead("fx", spriteOf(RenderTarget.historyName("bloom")) :: Nil, Nil))
 
     /// 描き先の名前そのものは history ではない。
     @Test
     def testTargetNameItselfIsNotHistory(): Unit \ Assert =
-        Assert.assertFalse(TargetTable.readsHistory("fx", spriteOf("fx") :: Nil, Nil))
+        Assert.assertFalse(TargetTable.isHistoryRead("fx", spriteOf("fx") :: Nil, Nil))
 
     /// 自分の history を読む面があれば真（WebGPU の Pass も面の読みで history を写す）。
     @Test
@@ -241,5 +241,5 @@ mod TestTargetTable {
             { program = GpuHandle.wrapShaderProgram(1), texReads = (RenderTarget.historyName("fx"), ShaderDoc.FilterMode.Nearest) :: Nil,
               rect = { position = { x = 0.0, y = 0.0 }, size = { x = 8.0, y = 8.0 } }, mask = Nil, time = 0.0, zIndex = 0,
               blend = DrawCmd.BlendMode.Normal, alpha = 1.0, params = Nil };
-        Assert.assertTrue(TargetTable.readsHistory("fx", Nil, surface :: Nil))
+        Assert.assertTrue(TargetTable.isHistoryRead("fx", Nil, surface :: Nil))
 }

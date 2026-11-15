@@ -32,7 +32,8 @@ mod V1Scenes {
         polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() ::
         historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() ::
         maskBasic() :: maskNested() :: maskPass() :: maskMsaa() :: maskOverflow() :: sceneBetween() ::
-        surfaceFill() :: surfaceBetween() :: surfaceTexture() :: surfaceMask() :: surfacePass() :: surfaceMsaa() :: Nil
+        surfaceFill() :: surfaceBetween() :: surfaceTexture() :: surfaceMask() :: surfacePass() :: surfaceMsaa() ::
+        surfaceAfterOverflow() :: surfaceHistory() :: Nil
 
     def c8(r: Int32, g: Int32, b: Int32): Color =
         { r = Int32.toFloat64(r) / 255.0, g = Int32.toFloat64(g) / 255.0, b = Int32.toFloat64(b) / 255.0 }
@@ -609,13 +610,38 @@ mod V1Scenes {
     /// 1 つの pass に mask つきを 300 個（比べる値の上限 255 を超える）。どれも同じ 64 × 64 の場所に置き、mask は 20 × 15 のセルの 1 つずつ（セルごとに色を替える）。
     /// 256 個目（値 1 に戻る）の前に stencil を 0 に戻さないと、1 個目の mask のセルにも 256 個目の色が出る。
     def maskOverflow(): Scene =
-        let cell = i -> {
-            let col = Int32.remainder(i, 20);
-            let row = i / 20;
-            rectMask(Int32.toFloat64(col) * 3.0 + 2.0, Int32.toFloat64(row) * 4.0 + 2.0, 3.0, 4.0) :: Nil
-        };
-        let tintOf = i -> c8(55 + Int32.remainder(i * 37, 200), 55 + Int32.remainder(i * 91, 200), 55 + Int32.remainder(i * 53, 200));
         { name = "maskOverflow", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
+            at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) :: overflowMasks(300)) }
+
+    /// (40, 40) の 64 × 64 に重ねた mask つき n 体（mask は 20 × 15 のセルの i 番目・セルごとに色を替える）。
+    def overflowMasks(n: Int32): List[Render.PlacedItem] =
+        List.range(0, n) |> List.map(i -> at(40.0, 40.0, plainMask(overflowTint(i), 1, overflowCell(i))))
+
+    def overflowCell(i: Int32): List[List[Vec2.Vec2]] =
+        let col = Int32.remainder(i, 20);
+        let row = i / 20;
+        rectMask(Int32.toFloat64(col) * 3.0 + 2.0, Int32.toFloat64(row) * 4.0 + 2.0, 3.0, 4.0) :: Nil
+
+    def overflowTint(i: Int32): Color = c8(55 + Int32.remainder(i * 37, 200), 55 + Int32.remainder(i * 91, 200), 55 + Int32.remainder(i * 53, 200))
+
+    /// mask つきスプライト 255 体（比べる値を使い切る）の後に、同じ 64 × 64 を塗る mask つきの面（値 1 に戻る）と、その後の mask つきスプライト（値 2）。
+    /// 面の mask は 1 体目のセルを含まない右下の矩形。面の前に stencil を 0 に戻さないと、1 体目のセル（値 1 のまま）にも面の色が出る。期待は Main.expectedDraws。
+    def surfaceAfterOverflow(): Scene =
+        { name = "surfaceAfterOverflow", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(0.0, 0.0, RawDraw.box(designSize(), c8(24, 28, 40), 0)) ::
-            (List.range(0, 300) |> List.map(i -> at(40.0, 40.0, plainMask(tintOf(i), 1, cell(i)))))) }
+            List.append(overflowMasks(255),
+                Render.shaderFillMasked(solidSpec("v1_overflow", c8(240, 240, 240)), rectAt(40.0, 40.0, 64.0, 64.0),
+                                        rectMask(70.0, 70.0, 30.0, 30.0) :: Nil, 0.0, 1) ::
+                at(40.0, 40.0, plainMask(c8(255, 80, 80), 2, rectMask(50.0, 2.0, 12.0, 12.0) :: Nil)) :: Nil)) }
+
+    /// Pass の面が自分の history（前のコマの描き先の絵）を半分の濃さで読み、箱を 1 つ足す（historyFade の面の版）。3 コマ描いて、最後のコマの赤は 1/4・緑は 1/2。
+    /// 面が history を読む事でも、pass を開く前に前のコマの絵を写す（TargetTable.isHistoryRead）。
+    def surfaceHistory(): Scene =
+        let pass = (color, x) -> ({ name = "shist", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)),
+                                    items = withItem(Render.fade(0.5), surfaceAt(readSpec("v1_history", RenderTarget.historyName("shist"), ShaderDoc.FilterMode.Nearest),
+                                                                                 rectAt(0.0, 0.0, designW(), designH()), 1)) ::
+                                            boxAt(x, 20.0, color, 2) :: Nil }: Render.Pass);
+        { name = "surfaceHistory", warmup = step(pass(c8(240, 40, 40), 10.0) :: Nil) :: step(pass(c8(40, 240, 40), 50.0) :: Nil) :: Nil,
+          tiles = noTiles(), staticLayer = None, passes = pass(c8(40, 40, 240), 90.0) :: Nil, targets = Map.empty(), submits = Some(1),
+          items = still(pasteQuarter("shist", 0.0, 0.0, 1) :: Nil) }
 }

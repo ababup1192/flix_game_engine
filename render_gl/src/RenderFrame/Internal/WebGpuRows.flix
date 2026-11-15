@@ -25,6 +25,9 @@ pub mod RenderFrame.Internal.WebGpuRows {
     pub def stencilWrite(): Int32 = 2
     pub def stencilEqual(): Int32 = 3
 
+    /// 面の行の面を塗る口（renderFrame の drawSurface の欄）: (pass, rows, 行, reads, stencil の使い方, 行の values の先頭の buffer の中の bytes)。
+    pub type alias SurfaceDrawer = (RenderPass, Array[Int32, Static], Int32, Array[Int32, Static], Int32, Int32) -> Unit \ IO
+
     /// 1 回の renderCommands を pass 1 つへ流す。
     /// cfg の欄:
     ///   sprites・tileMaps・polygons・staticRanges・registry = 描き物と絵の表（GL の FrameArgs と同じ物）・designW/H = 射影の寸
@@ -62,7 +65,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
         setTexture = (RenderPass, Int32) -> Unit \ IO,
         setVertices = (RenderPass, Int32, Int32) -> Int32 \ IO,
         setValues = (RenderPass, Int32) -> Unit \ IO,
-        drawSurface = (RenderPass, Array[Int32, Static], Int32, Array[Int32, Static], Int32, Int32) -> Unit \ IO,
+        drawSurface = SurfaceDrawer,
         skip = String -> Unit \ IO
     }): Unit \ IO =
         let spec = cfg#pass;
@@ -115,7 +118,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     // ── 行を流す間ずっと同じ値の入れ物（Int32 の配列 1 本）──
     // 0=描き先の幅 1=描き先の高さ 2-5=viewport (x, y, 幅, 高さ・GL の左下原点) 6=行の instance を送った位置 7=描き先と同じ絵の番号
-    // 8=今積んである pipeline（(形 × 4 + blend) × 4 + stencil の使い方） 9=今積んである絵（どちらも -1 = まだ積んでいない） 10-13=今の行の scissor (x, y, 幅, 高さ)
+    // 8=今積んである pipeline（(形 × 4 + blend) × 4 + stencil の使い方） 9=今積んである絵（0 = 空の絵。pipeline と絵のどちらも -1 = まだ積んでいないか、面の draw が替えた） 10-13=今の行の scissor (x, y, 幅, 高さ)
     // 14-17=今積んである scissor (x, y, 幅, 高さ・幅 -1 = まだ積んでいない) 18=頂点の buffer の 0 番の種類（kind*） 19=その buffer の番号
     // 20=頂点の buffer の 1 番の values の bytes（-1 = まだ積んでいない） 21=行の頂点を送った位置 22=values を送った位置（bytes）
     // 23=頂点の buffer の 0 番に入っている要素の数 24=mask でない行の stencil の使い方（stencilNone か stencilKeep）
@@ -126,14 +129,14 @@ pub mod RenderFrame.Internal.WebGpuRows {
                    stencil: Int32): Array[Int32, Static] \ IO =
         let (vpX, vpY, vpW, vpH) = vp;
         let (base, vertexBase, valuesBase) = sent;
-        Array#{fbW, fbH, vpX, vpY, vpW, vpH, base, readsForbidden, -1, -1, 0, 0, 0, 0, 0, 0, -1, 0, kindSprite(), 0, -1,
+        Array#{fbW, fbH, vpX, vpY, vpW, vpH, base, readsForbidden, -1, 0, 0, 0, 0, 0, 0, 0, -1, 0, kindSprite(), 0, -1,
                vertexBase, valuesBase, Int32.maxValue(), stencil, 0, 0} @ Static
 
     // WhyNot: 積む関数を record 1 つで渡さない — 行が描く物の数だけある画面で、行ごとに record の欄を辿る代金が 1 コマに出る。
     def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], reads: Array[Int32, Static], geom: Array[Int32, Static],
                      setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
-                     drawSurface: (RenderPass, Array[Int32, Static], Int32, Array[Int32, Static], Int32, Int32) -> Unit \ IO,
+                     drawSurface: SurfaceDrawer,
                      skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
@@ -147,7 +150,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     def drawRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], reads: Array[Int32, Static], geom: Array[Int32, Static],
                 setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
                 setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
-                drawSurface: (RenderPass, Array[Int32, Static], Int32, Array[Int32, Static], Int32, Int32) -> Unit \ IO,
+                drawSurface: SurfaceDrawer,
                 skip: String -> Unit \ IO, warnLog: Ref[Set[String], Static], row: Int32): Unit \ IO =
         let kind = rowAt(rows, row, 0);
         let texId = rowAt(rows, row, 3);
@@ -214,14 +217,15 @@ pub mod RenderFrame.Internal.WebGpuRows {
 
     /// 面の行: 値が 0 でなければ mask の三角形を stencil へ比べる値で書き（色は変えない）、stencil がその値の画素だけ面を塗る（draw 2 本）。
     /// 値が 1 の行の前で stencil を 0 に戻すのは drawRow。読む絵に描き先と同じ絵があれば描かずに知らせる（WebGPU は描き先を読む draw で pass ごと誤りにする）。
-    /// 面の pipeline と group 0・1 を積むのは drawSurface なので、描いた後は積んである pipeline と絵の控えを捨てる。
+    /// 面の pipeline と group 0・1 を積むのは drawSurface（group 0 は戻す）。group 1 の控えはここが持つので、描いた後は pipeline と絵の控えを捨て、
+    /// 次の行が自分の絵（読まない行は空の絵）を積み直す。
     def drawSurfaceRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], reads: Array[Int32, Static], geom: Array[Int32, Static],
                        setPipeline: (RenderPass, Int32, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
                        setValues: (RenderPass, Int32) -> Unit \ IO,
-                       drawSurface: (RenderPass, Array[Int32, Static], Int32, Array[Int32, Static], Int32, Int32) -> Unit \ IO,
+                       drawSurface: SurfaceDrawer,
                        skip: String -> Unit \ IO, row: Int32): Unit \ IO =
         let ref = rowAt(rows, row, 10);
-        if (readsTexture(reads, rowAt(rows, row, 6), rowAt(rows, row, 7), Array.get(7, geom))) skip("描き先と同じ絵を読む行")
+        if (hasTextureIn(reads, rowAt(rows, row, 6), rowAt(rows, row, 7), Array.get(7, geom))) skip("描き先と同じ絵を読む行")
         else {
             if (ref > 0) {
                 bindStencilRef(pass, geom, ref);
@@ -240,10 +244,10 @@ pub mod RenderFrame.Internal.WebGpuRows {
         countSingleDraw(st, kindSurface(), if (ref > 0) 2 else 1)
 
     /// reads の [first, first + count) の絵に texId（0 でない）があるか。
-    def readsTexture(reads: Array[Int32, Static], first: Int32, count: Int32, texId: Int32): Bool \ IO =
+    def hasTextureIn(reads: Array[Int32, Static], first: Int32, count: Int32, texId: Int32): Bool \ IO =
         if (count <= 0 or texId == 0) false
         else if (Array.get(first * readFields(), reads) == texId) true
-        else readsTexture(reads, first + 1, count - 1, texId)
+        else hasTextureIn(reads, first + 1, count - 1, texId)
 
     /// 3D の場面を貼る行: まだ描かない（知らせるだけ）。数えは GL と同じく、次の 2D の draw call を kind で切る。
     // WhyNot: 2D の pass の途中で閉じて場面の pass を開かない — 2D の pass を閉じて開き直すと、viewport・積んだ pipeline と buffer の控え・黒帯の箱と
@@ -349,9 +353,10 @@ pub mod RenderFrame.Internal.WebGpuRows {
             Array.put(ref, 26, geom)
         }
 
-    /// 絵の番号 texId を group 1 に積む（0 の絵と、前と同じ絵は積まない）。
+    /// 絵の番号 texId を group 1 に積む（前と同じ絵は積まない）。0 の絵（読まない行）は、group 1 が絵の group の時は積まず、
+    /// 面の draw が group 1 を替えた後（控えが -1）だけ空の絵を積む。
     def bindTexture(pass: RenderPass, geom: Array[Int32, Static], setTexture: (RenderPass, Int32) -> Unit \ IO, texId: Int32): Unit \ IO =
-        if (texId == 0 or Array.get(9, geom) == texId) ()
+        if (Array.get(9, geom) == texId or (texId == 0 and Array.get(9, geom) != -1)) ()
         else {
             setTexture(pass, texId);
             Array.put(texId, 9, geom)

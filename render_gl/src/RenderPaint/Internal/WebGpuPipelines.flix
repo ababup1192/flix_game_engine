@@ -25,7 +25,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     use RenderPaint.Internal.WebGpuShader
 
     /// pipeline と stencil の表。frameLayout と imageLayout は WebGpuPaint の持ち物（ここでは手放さない）。
-    /// pipelines の鍵 = (((形 × 4 + blend の番号) × 2 + 形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方。
+    /// pipelines の鍵 = 形 × targetKeys() + targetKeyOf（blend・形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）・標本・stencil の使い方）。
     /// stencils = 描き先の鍵 → DEPTH24_PLUS_STENCIL8 の texture と、その幅・高さ・標本の数。
     pub type alias Pipelines = {
         gpu = WebGpu,
@@ -75,6 +75,14 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
         pipes#polyModule.release();
         pipes#tileModule.release()
 
+    /// pipeline の鍵のうち描き先と重ね方の分: ((blend の番号 × 2 + 形式) × 2 + 標本（0 = 1・1 = 4）) × 4 + stencil の使い方（0 以上 targetKeys() 未満）。
+    /// 鍵の残り（形か面の program の番号）は × targetKeys() して足す。
+    pub def targetKeyOf(blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): Int32 =
+        ((blendC * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil
+
+    /// targetKeyOf が取る値の数（blend 3 × 形式 2 × 標本 2 × stencil 4 = 48 を収める）。
+    pub def targetKeys(): Int32 = 64
+
     pub def formatCode(format: RenderTarget.Format): Int32 = match format {
         case RenderTarget.Format.Rgba8Unorm  => 0
         case RenderTarget.Format.Rgba16Float => 1
@@ -88,7 +96,7 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     /// 形（WebGpuRows.shape*）と blend の番号（RenderFrame.blendCode）と描き先の形式と標本の数（1 か 4）と stencil の使い方（WebGpuRows.stencil*）の
     /// pipeline（無ければ作る）。
     pub def pipelineOf(pipes: Pipelines, shape: Int32, blendC: Int32, format: RenderTarget.Format, samples: Int32, stencil: Int32): RenderPipeline \ IO =
-        let key = (((shape * 4 + blendC) * 2 + formatCode(format)) * 2 + (if (samples > 1) 1 else 0)) * 4 + stencil;
+        let key = shape * targetKeys() + targetKeyOf(blendC, format, samples, stencil);
         match Map.get(key, Ref.get(pipes#pipelines)) {
             case Some(pipeline) => pipeline
             case None =>

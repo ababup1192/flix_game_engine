@@ -5,7 +5,7 @@ mod RenderFrame.TestMaskRows {
     import java.nio.FloatBuffer
     use RenderFrame.{Merged, closeRuns, emitRowItem, stateSize, usesStencil}
     use RenderFrame.Internal.RenderList.{RenderList, instanceFloats, kindMask, kindSprite, maxMaskRef, newRenderList, nextInstanceOf, nextMaskRef,
-                                         nextVertexOf, rowAt, rowCountOf, rowsOf, vertexFloats}
+                                         nextVertexOf, rowAt, rowCountOf, rowsOf, stencilRefOf, vertexFloats}
 
     // ── 組み立て ──
 
@@ -168,6 +168,18 @@ mod RenderFrame.TestMaskRows {
     def testDegenerateSurfaceMaskKeepsRef(): Unit \ {Assert, IO} =
         let list = listOf(masked() :: surfaceWith(degenerate()) :: masked() :: Nil);
         Assert.assertEq(expected = (0, 2), (cell(list, 1, 10), cell(list, 2, 11)))
+
+    /// backend が stencil を 0 に戻すかを読む値（stencilRefOf）は、mask つきスプライトの行は 11 番・面の行は 10 番・mask の無いスプライトの行は 0。
+    @Test
+    def testStencilRefOfReadsSurfaceRow(): Unit \ {Assert, IO} =
+        let rows = rowsOf(listOf(masked() :: surfaceWith(triangle()) :: plain() :: Nil));
+        Assert.assertEq(expected = (1, 2, 0), (stencilRefOf(rows, 0), stencilRefOf(rows, 1), stencilRefOf(rows, 2)))
+
+    /// 255 体の mask つきの後の mask つきの面は値 1 に戻る（backend はその行の前で stencil を 0 に戻す）。
+    @Test
+    def testSurfaceAfterMaxIsOne(): Unit \ {Assert, IO} =
+        let rows = rowsOf(listOf(List.append(List.repeat(maxMaskRef(), masked()), surfaceWith(triangle()) :: Nil)));
+        Assert.assertEq(expected = 1, stencilRefOf(rows, maxMaskRef()))
 
     /// 行の数（上の testRefWrapsAfterMax の前提）。
     @Test

@@ -179,8 +179,11 @@ mod V1Main {
     /// surfaceMask: 同じ z では面がスプライトの後なので、地の箱 1・mask つきスプライト 2 × 2・mask つきの面 2・三角形にならない mask の面 1・mask つきの面 2・
     ///   z 2 の mask つきスプライト 2 の 12 本。kind の切れ目は 3 枚の面と最後のスプライト（4）・texture は最初のスプライト（1）・
     ///   mask は mask つきの 2 本目の 5 本と、前も mask つきの 2 体目のスプライト（6）。
+    /// surfaceAfterOverflow: 地の箱 1・mask つきスプライト 255 × 2・mask つきの面 2・mask つきスプライト 2 の 515 本。kind は面と最後のスプライト（2）・
+    ///   texture は最初のスプライト（1）・mask は mask つきの 2 本目 257 本と、前も mask つきの 2 体目からのスプライト 254 本（511）。
     def expectedDraws(): Map[String, (Int32, Int32, Int32, Int32, Int32, Int32, Int32)] =
-        Map#{"sceneBetween" => (3, 0, 1, 1, 0, 0, 0), "surfaceBetween" => (3, 0, 2, 0, 0, 0, 0), "surfaceMask" => (12, 0, 4, 1, 0, 0, 6)}
+        Map#{"sceneBetween" => (3, 0, 1, 1, 0, 0, 0), "surfaceBetween" => (3, 0, 2, 0, 0, 0, 0), "surfaceMask" => (12, 0, 4, 1, 0, 0, 6),
+             "surfaceAfterOverflow" => (515, 0, 2, 1, 0, 0, 511)}
 
     /// 1 場面の表の行と合否。
     def judge(width: Int32, height: Int32, limits: Map[String, Int32],
