@@ -16,6 +16,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/yarn"
 )
 
 //go:embed template.html
@@ -104,8 +106,8 @@ func Run(args []string, splash Splash, stdout, stderr io.Writer) int {
 	return 0
 }
 
-const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く）\n" +
-	"       bin/fge tape --group <フォルダ> <フォルダ>…   （同じ始まりから撮った複数のテープ。選んだ道が分かれた所を分岐のカードにして、隣の頁へつなぐ。フォルダは並べて置く）\n" +
+const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く。ゲームの台本が見つかれば分岐のグラフと読み台本 .md も頁に載せる）\n" +
+	"       bin/fge tape --group <フォルダ> <フォルダ>…   （同じ始まりから撮った複数のテープ。選んだ道が分かれた所を分岐にして、グラフの箱から隣の頁へつなぐ。フォルダは並べて置く）\n" +
 	"       bin/fge tape publish <フォルダ>…   （Pages の置き場へ置いて URL を出す。詳しくは publish --help）"
 
 func parseArgs(args []string) (Options, error) {
@@ -172,6 +174,9 @@ func build(opt Options, t *Tape) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := addScript(opt.Dir, t); err != nil {
+		return "", err
+	}
 	if opt.Branches != nil {
 		b, err := json.Marshal(*opt.Branches)
 		if err != nil {
@@ -188,6 +193,54 @@ func build(opt Options, t *Tape) (string, error) {
 		return "", err
 	}
 	return index, nil
+}
+
+// addScript は tape.json の yarn（ゲームのルートからのパス）のフォルダの .yarn から、分岐のグラフ（graph）と
+// 読み台本の Markdown（script）を作って頁の欄に足す。ゲームのルートは dir から上へ辿って最初に project.json のあるフォルダ。
+// ルートか .yarn が見つからなければ足さない（頁はグラフと読み台本の項目を出さない）。
+func addScript(dir string, t *Tape) error {
+	root := gameRoot(dir)
+	if root == "" || t.Yarn == "" {
+		return nil
+	}
+	folder := filepath.Dir(filepath.Join(root, filepath.FromSlash(t.Yarn)))
+	if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+		return nil
+	}
+	graph, script, err := yarn.ForTape(folder)
+	if err != nil {
+		return fmt.Errorf("台本 %s を読めない: %w", folder, err)
+	}
+	if graph == nil {
+		return nil
+	}
+	g, err := json.Marshal(graph)
+	if err != nil {
+		return err
+	}
+	s, err := json.Marshal(script)
+	if err != nil {
+		return err
+	}
+	t.raw["graph"], t.raw["script"] = g, s
+	return nil
+}
+
+// gameRoot は dir から上へ辿って最初に project.json のあるフォルダ（無ければ空）。
+func gameRoot(dir string) string {
+	d, err := filepath.Abs(dir)
+	if err != nil {
+		return ""
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(d, "project.json")); err == nil {
+			return d
+		}
+		if filepath.Dir(d) == d {
+			return ""
+		}
+		d = filepath.Dir(d)
+	}
 }
 
 func gitShortHead(dir string) (string, error) {

@@ -166,16 +166,73 @@
   .chap.cur .nm { color: var(--accent); }
   .chap::before { content: ""; position: absolute; left: 14px; top: -8px; bottom: -8px; width: 2px; background: rgba(255,255,255,.08); z-index: -1; }
   .mini { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 700; color: #111; }
-  .forkcard { margin: 6px 0 6px 0; padding: 10px 12px; border-radius: 12px; background: #0c0c0d; border: 1px dashed rgba(255,255,255,.18); }
-  .forkcard .q { font-size: 12px; color: var(--dim); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-  .routes { display: flex; flex-wrap: wrap; gap: 6px; }
-  .route { flex: 1; min-width: 40%; min-height: 44px; border-radius: 10px; background: var(--raised); padding: 6px 10px; text-align: left; }
-  .route b { display: block; font-size: 13px; }
-  .route span { font-size: 10px; color: var(--faint); }
-  .route.on { background: #fff; color: #111; }
-  .route.on span { color: #555; }
-  .route.none { opacity: .55; }
-  .example { font-size: 10px; font-weight: 700; color: #1a1300; background: var(--accent); border-radius: 3px; padding: 0 4px; }
+  .scriptrow { display: flex; align-items: center; gap: 8px; margin: 16px 0 4px; }
+  .scriptrow .label { flex: 1; margin: 0; }
+  .scriptdl { height: 28px; padding: 0 10px; border-radius: 99px; background: rgba(255,255,255,.1); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .scriptdl:active { background: rgba(255,255,255,.2); }
+  .modes { flex: none; display: inline-flex; height: 30px; padding: 2px; border-radius: 99px; background: var(--raised); }
+  .modes button { padding: 0 11px; border-radius: 99px; font-size: 12px; font-weight: 600; color: var(--dim); }
+  .modes button.on { background: #fff; color: #111; }
+  .gview { display: none; }
+  body.mode-graph .gview { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+  body.mode-graph:not(.wide) .gview { position: fixed; inset: 0; z-index: 25; padding-top: env(safe-area-inset-top); }
+  body.wide.mode-graph .gview { grid-area: view; }
+  body.wide.mode-graph .preview { display: none; }
+  .gv-head { flex: none; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--hair); }
+  .gv-head .ttl { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gv-head .ttl small { margin-left: 6px; font-size: 11px; font-weight: 400; color: var(--faint); }
+  .zb { width: 30px; height: 30px; border-radius: 99px; background: rgba(255,255,255,.1); font-size: 15px; font-weight: 700; display: grid; place-items: center; }
+  .zb.fit { width: auto; padding: 0 10px; font-size: 12px; }
+  body.wide .gv-head .xbtn { display: none; }
+  .gwrap { flex: 1 1 auto; min-height: 0; overflow: auto; background: #0c0c0d; overscroll-behavior: contain; touch-action: pan-x pan-y; }
+  .gwrap svg { display: block; margin: 0 auto; }
+  .gwrap marker path { fill: rgba(255,255,255,.4); }
+  .gbox { cursor: pointer; }
+  .gbox rect { fill: var(--raised); stroke: rgba(255,255,255,.18); stroke-width: 1.5; }
+  .gbox.here rect { fill: #24303a; stroke: rgba(108,196,255,.55); }
+  .gbox.root rect { stroke: var(--c-video); }
+  .gbox.end rect { stroke: var(--accent); }
+  .gbox.lost rect { stroke: #ff7a59; stroke-dasharray: 4 3; }
+  .gbox.cur rect { stroke: #fff; stroke-width: 2.5; }
+  .gbox.pick rect { stroke: var(--accent); stroke-width: 4; }
+  .gbox .t { font-size: 12px; font-weight: 600; fill: var(--text); }
+  .gbox .i { font-size: 9px; fill: var(--faint); text-anchor: end; }
+  .gbox .s { font-size: 11px; fill: var(--faint); }
+  .gbox .b { font-size: 11px; fill: var(--c-script); }
+  .gbox .tm { font-size: 11px; font-weight: 700; fill: var(--c-video); text-anchor: end; }
+  .gbox.end .b { fill: var(--accent); font-weight: 700; }
+  .gedge path { fill: none; stroke: rgba(255,255,255,.4); stroke-width: 1.4; }
+  .gedge.back path { stroke-dasharray: 5 4; }
+  .gedge.choice path { stroke: var(--c-script); }
+  .gedge.hot path { stroke: var(--accent); stroke-width: 2.6; }
+  .gedge text { font-size: 11px; fill: var(--c-script); text-anchor: middle; paint-order: stroke; stroke: #0c0c0d; stroke-width: 4px; }
+  .npanel { display: none; }
+  body.mode-graph .npanel { display: block; }
+  body.mode-graph:not(.wide) .npanel { flex: none; max-height: 42%; overflow: auto; padding: 10px 14px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--hair); background: var(--surface); }
+  .insp .npanel { flex: 1 1 0; min-height: 0; overflow: auto; padding: 10px 12px 12px; }
+  body.mode-graph .insp > .dock, body.mode-graph .insp > #listSheet { display: none !important; }
+  .npanel .nm { font-size: 14px; font-weight: 600; word-break: break-word; }
+  .npanel .nm small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--faint); }
+  .gacts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  .gact { height: 30px; padding: 0 10px; border-radius: 99px; display: inline-flex; align-items: center; background: rgba(255,255,255,.1); color: var(--text);
+    font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .gact.go { background: var(--c-video); color: #04121c; }
+  .gact:active { opacity: .8; }
+  .gnone { font-size: 11px; color: var(--faint); }
+  .glinks .label { margin: 10px 0 4px; }
+  .glink { display: block; width: 100%; text-align: left; padding: 6px 8px; margin-top: 4px; border-radius: 8px; background: rgba(255,255,255,.06); font-size: 12px; line-height: 1.45; }
+  .glink b { color: var(--c-script); font-weight: 700; }
+  .glink small { margin-left: 6px; font-size: 10px; color: var(--faint); }
+  .glink:active { background: rgba(255,255,255,.14); }
+  .grows { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; line-height: 1.5; }
+  .grows li { display: grid; grid-template-columns: 30px 1fr; gap: 6px; padding: 2px 0; border-top: 1px solid var(--hair); }
+  .grows .ln { color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
+  .grows li.here { cursor: pointer; }
+  .grows li.here .ln { color: var(--c-video); font-weight: 700; }
+  .grows span { word-break: break-word; }
+  .grows .k-stage { color: #7aa7f0; } .grows .k-actor { color: #d68cc4; } .grows .k-sound { color: #5cc4a4; } .grows .k-fx { color: #f08a66; }
+  .grows .k-wait, .grows .k-other { color: var(--faint); } .grows .k-end { color: var(--accent); font-weight: 700; } .grows .k-gate { color: #a98bf0; }
+  .grows .k-choice, .grows .k-jump { color: var(--accent); }
   .scenenote { position: absolute; right: 10px; bottom: 10px; height: 38px; padding: 0 14px 0 11px; border-radius: 99px; display: none; align-items: center; gap: 6px;
     background: rgba(255,255,255,.94); color: #111; font-size: 13px; font-weight: 700; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2; }
   .scenenote:active { transform: scale(.97); }
@@ -281,6 +338,7 @@
       <span class="count" id="listCount" style="display:none"></span>
     </button>
     <button class="titlebtn" id="chapBtn"><b id="tapeTitle"></b><br><small><span id="sceneName">タイトル</span><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></small></button>
+    <div class="modes" id="modes" role="tablist" aria-label="見る物"><button data-m="video" class="on">映像</button><button data-m="graph">グラフ</button></div>
     <button class="export" id="exportBtn">書き出す</button>
   </div>
 
@@ -293,6 +351,13 @@
       <div class="editpill" id="editPill"></div>
       <button class="scenenote" id="sceneNote"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H10l-5 4z"/><path d="M12 8v4M10 10h4"/></svg><span id="sceneNoteText">このシーンに注釈</span></button>
     </div>
+  </div>
+
+  <div class="gview" id="graphView">
+    <div class="gv-head"><div class="ttl" id="gvTitle"></div><button class="zb" id="zoomOut" aria-label="縮める">−</button><button class="zb" id="zoomIn" aria-label="広げる">＋</button><button class="zb fit" id="zoomFit">全体</button><button class="scriptdl" id="gvScript">読み台本 .md</button>
+      <button class="xbtn" id="gvClose" aria-label="映像へ戻る"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button></div>
+    <div class="gwrap" id="gwrap"></div>
+    <div class="npanel" id="nodePanel"></div>
   </div>
 
   <div class="timeline">
@@ -513,11 +578,12 @@ function renderForks() {
 }
 function openChapters(toFork, fork = 0) {
   video.pause();
-  if (form === "three") { focusBin(toFork, fork); return; }
+  // 分岐の印から来たら、その選択肢のあるノードを選んだグラフを開く（グラフの無いテープはチャプターへ）
+  if (toFork && GRAPH) { if (TAPE.branches[fork]) gPick = branchNode(TAPE.branches[fork]); setView("graph"); return; }
+  if (form === "three") { focusBin(); return; }
   renderChapters($("chapBody"), "fork");
   open("chapSheet");
-  if (toFork) setTimeout(() => $("fork" + fork)?.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
-  else setTimeout(() => $("chapBody").querySelector(".chap.cur")?.scrollIntoView({ block: "center" }), 300);
+  setTimeout(() => $("chapBody").querySelector(".chap.cur")?.scrollIntoView({ block: "center" }), 300);
 }
 function renderChapters(body, forkId) { body.innerHTML = chaptersHtml(forkId); wireChapters(body); }
 function chaptersHtml(forkId) {
@@ -530,21 +596,120 @@ function chaptersHtml(forkId) {
   TAPE.scenes.forEach(s => {
     rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * CHAP_W}px 0"></div>
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
-    TAPE.branches.filter(br => (br.t >= s.t || s === TAPE.scenes[0]) && br.t < sceneEnd(s)).forEach(br => {
-      const i = TAPE.branches.indexOf(br);
-      rows.push(`<div class="forkcard" id="${forkId}${i}" data-b="${i}"><div class="q"><span class="fork" style="position:relative;left:9px;top:0;margin-right:10px"><i>分</i></span>${esc(br.question)} · ${yarn}:${br.line}${br.example ? ' <span class="example">例</span>' : ""}</div>
-        <div class="routes">${br.routes.map((r, j) => `<button class="route ${r.here ? "on" : "none"}" data-r="${j}"><b>${r.here ? "✓ " : ""}${esc(r.label)}</b><span>${esc(r.note)}</span></button>`).join("")}</div></div>`);
-    });
   });
-  return `<div class="ctxline">通し · ${TAPE.scenes.length} シーン${TAPE.branches.length ? ` · 分岐 ${TAPE.branches.length}${TAPE.branches.some(br => br.example) ? "（例の分岐は見せ方を試すための仮の物です）" : ""}` : ""}</div>` + rows.join("");
+  return `<div class="ctxline">通し · ${TAPE.scenes.length} シーン${TAPE.branches.length ? ` · 分岐 ${TAPE.branches.length}${TAPE.branches.some(br => br.example) ? "（例の分岐は見せ方を試すための仮の物です）" : ""}` : ""}</div>` + rows.join("") + scriptRow();
 }
 function wireChapters(body) {
   body.querySelectorAll(".chap").forEach(n => n.onclick = () => { close(); seek(+n.dataset.t + .05); });
-  body.querySelectorAll(".route").forEach(n => n.onclick = () => {
-    const br = TAPE.branches[+n.closest(".forkcard").dataset.b], r = br.routes[+n.dataset.r];
-    if (r.here) { close(); seek(br.t + .05); } else if (r.href) location.href = r.href; else toast("この枝の動画はまだありません（撮ると、ここから切り替わります）");
-  });
+  body.querySelectorAll(".scriptdl").forEach(n => n.onclick = () => saveFile(TAPE.script, `${TAPE.game}.md`));
 }
+// ── 分岐のグラフ: 「映像 / グラフ」で見る物を切り替える。bin/fge yarn graph と同じ置き場で箱と矢印を描き、
+// 箱を押すとそのノードの行を出す。このテープに映るノードは「この場面へ」で映像に戻ってその秒へ送る ──
+const GRAPH = TAPE.graph || null;
+let viewMode = "video", gPick = null, gZoom = null;
+const nodeOfLine = ln => (TAPE.lines[ln] && TAPE.lines[ln].node) || TAPE.node;
+function nodeStart(node) { const r = TAPE.timeline.find(([, ln]) => ln != null && nodeOfLine(ln) === node); return r ? r[0] : null; }
+function nodeAtTime(t) { const ln = lineAt(t); return ln ? nodeOfLine(ln) : null; }
+const branchNode = br => TAPE.lines[br.line] ? nodeOfLine(br.line) : nodeAtTime(br.t);
+const nodeHref = node => `${TAPE.playUrl}?talk=${encodeURIComponent(node)}`;
+// このテープに映らないノードへ入る選択肢を、別のテープで撮った道（branches の routes）
+function routeTo(node) {
+  for (const br of TAPE.branches) {
+    const from = branchNode(br);
+    for (const r of br.routes) {
+      if (r.here || !r.href) continue;
+      const e = GRAPH.edges.filter(e => e.choice === r.label && e.from === from && e.line > br.line).sort((a, b) => a.line - b.line)[0];
+      if (e && e.to === node) return r;
+    }
+  }
+  return null;
+}
+GRAPH && (GRAPH.edges = GRAPH.h.edges);
+// 全体に合わせた時の倍率。WhyNot: 高さに収まるまで縮めきらない — 長い台本では字が読めない点になる。.7 より下は送って見る
+function fitScale(L) { const w = $("gwrap"); return Math.min(1, (w.clientWidth - 16) / L.w, Math.max((w.clientHeight - 16) / L.h, .7)); }
+// WhyNot: いつも横に並べない — スマホと縦長の窓では横に長いグラフが 1 箱ずつしか見えない。縦と横の大きく収まる方を使う
+function graphLayout() { return form === "phone" || fitScale(GRAPH.v) > fitScale(GRAPH.h) ? GRAPH.v : GRAPH.h; }
+function svgHtml(L, k, cur, pick) {
+  const edges = L.edges.map(e => `<g class="gedge${e.back ? " back" : ""}${e.choice ? " choice" : ""}${e.from === pick || e.to === pick ? " hot" : ""}"><title>${esc(e.tip)}</title><path d="${e.d}" marker-end="url(#gArrow)"/>${e.label ? `<text x="${e.lx}" y="${e.ly}">${esc(e.label)}</text>` : ""}</g>`).join("");
+  const boxes = L.nodes.map(n => {
+    const at = nodeStart(n.id);
+    return `<g class="gbox ${n.kind || ""}${at !== null ? " here" : ""}${n.id === cur ? " cur" : ""}${n.id === pick ? " pick" : ""}" data-node="${esc(n.id)}"><title>${esc(n.id)}</title>` +
+      `<rect x="${n.x}" y="${n.y}" width="${L.bw}" height="${L.bh}" rx="6"/><text class="t" x="${n.x + 12}" y="${n.y + 22}">${esc(n.head)}</text>` +
+      `<text class="s" x="${n.x + 12}" y="${n.y + 40}">${esc(n.sub)}</text><text class="b" x="${n.x + 12}" y="${n.y + 56}">${esc(n.badge || "")}</text>` +
+      (at !== null ? `<text class="tm" x="${n.x + L.bw - 8}" y="${n.y + 56}">▶ ${mmss(at)}</text>` : `<text class="i" x="${n.x + L.bw - 8}" y="${n.y + 56}">${esc(n.id)}</text>`) + `</g>`;
+  }).join("");
+  return `<svg width="${L.w * k}" height="${L.h * k}" viewBox="0 0 ${L.w} ${L.h}" role="img" aria-label="ノードと jump の矢印"><defs><marker id="gArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${edges}${boxes}</svg>`;
+}
+function renderGraph(center) {
+  if (!GRAPH || viewMode !== "graph") return;
+  const L = graphLayout(), k = gZoom ?? fitScale(L), cur = nodeAtTime(video.currentTime), pick = gPick || cur || TAPE.node;
+  GRAPH.edges = L.edges;
+  $("gwrap").innerHTML = svgHtml(L, k, cur, pick);
+  $("gwrap").querySelectorAll(".gbox").forEach(n => n.onclick = () => pickNode(n.dataset.node));
+  $("gvTitle").innerHTML = `分岐のグラフ<small>${GRAPH.v.nodes.length} ノード · ${Math.round(k * 100)}%</small>`;
+  $("nodePanel").innerHTML = nodeHtml(pick);
+  wireNode($("nodePanel"));
+  if (center) centerPick(L, k, pick);
+}
+function nodeHtml(node) {
+  const d = GRAPH.detail[node], n = GRAPH.v.nodes.find(x => x.id === node);
+  if (!d || !n) return "";
+  const at = nodeStart(node), route = at === null ? routeTo(node) : null;
+  // WhyNot: 別のファイルの行番号でテープの行を引かない — 台本が 2 つ以上の .yarn に分かれると同じ番号が別の行を指す
+  const here = new Set(d.file === TAPE.yarn ? TAPE.timeline.map(r => r[1]).filter(ln => ln != null) : []);
+  const go = at !== null ? `<button class="gact go" data-go="${at}">▶ この場面へ ${mmss(at)}</button>`
+    : route ? `<button class="gact" data-href="${esc(route.href)}">${esc(route.note)}で見る</button>` : `<span class="gnone">このテープには映っていない</span>`;
+  const play = TAPE.playUrl ? `<a class="gact" target="_blank" rel="noopener" href="${esc(nodeHref(node))}">ここから遊ぶ</a>` : "";
+  const rows = d.rows.map(r => `<li class="${here.has(r.l) ? "here" : ""}" data-ln="${r.l}"><span class="ln">${r.l}</span><span class="k-${r.c}" style="padding-left:${r.d * 10}px">${esc(r.t)}</span></li>`).join("");
+  // 矢印の先と元は箱と同じ冒頭の文で出し、押すとその箱へ移る（ノード名は小さく添える）
+  const link = (to, pre) => `<button class="glink" data-node="${esc(to)}">${pre}${esc(GRAPH.detail[to]?.head_text ?? to)}<small>${esc(to)}</small></button>`;
+  const outs = d.out.map(o => link(o.to, o.choice ? `<b>「${esc(o.choice)}」</b>→ ` : "→ ")).join("") || `<span class="gnone">${d.rows.some(r => r.c === "end") ? "結末" : "行き先なし"}</span>`;
+  const ins = d.incoming.map(i => link(i.from, "← ")).join("") || `<span class="gnone">最初のノード</span>`;
+  return `<div class="nm">${esc(n.head)}<small>${esc(node)} · ${esc(d.file)}</small></div><div class="gacts">${go}${play}</div>` +
+    `<div class="glinks"><div class="label">行き先</div>${outs}<div class="label">来る所</div>${ins}</div><ul class="grows">${rows}</ul>`;
+}
+function wireNode(body) {
+  body.querySelectorAll(".gact[data-go]").forEach(n => n.onclick = () => { setView("video"); seek(+n.dataset.go + .05); });
+  body.querySelectorAll(".gact[data-href]").forEach(n => n.onclick = () => { location.href = n.dataset.href; });
+  body.querySelectorAll(".glink").forEach(n => n.onclick = () => { pickNode(n.dataset.node); centerPick(graphLayout(), gZoom ?? fitScale(graphLayout()), n.dataset.node); });
+  body.querySelectorAll(".grows li.here").forEach(n => n.onclick = () => { setView("video"); seek(lineStart(+n.dataset.ln) + .05); });
+}
+function pickNode(node) { gPick = node; renderGraph(false); }
+function centerPick(L, k, node) {
+  const w = $("gwrap"), n = L.nodes.find(x => x.id === node);
+  if (n) { w.scrollLeft = (n.x + L.bw / 2) * k - w.clientWidth / 2; w.scrollTop = (n.y + L.bh / 2) * k - w.clientHeight / 2; }
+}
+function setView(m) {
+  viewMode = GRAPH ? m : "video";
+  document.body.classList.toggle("mode-graph", viewMode === "graph");
+  $("modes").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.m === viewMode));
+  if (viewMode === "graph") { video.pause(); renderGraph(true); }
+}
+function zoomBy(f) {
+  const L = graphLayout(), w = $("gwrap"), k0 = gZoom ?? fitScale(L), cx = (w.scrollLeft + w.clientWidth / 2) / k0, cy = (w.scrollTop + w.clientHeight / 2) / k0;
+  gZoom = f === 0 ? null : Math.max(.3, Math.min(2, k0 * f));
+  renderGraph(false);
+  const k = gZoom ?? fitScale(L);
+  w.scrollLeft = cx * k - w.clientWidth / 2; w.scrollTop = cy * k - w.clientHeight / 2;
+}
+$("modes").querySelectorAll("button").forEach(b => b.onclick = () => setView(b.dataset.m));
+$("gvClose").onclick = () => setView("video");
+$("zoomIn").onclick = () => zoomBy(1.25); $("zoomOut").onclick = () => zoomBy(.8); $("zoomFit").onclick = () => zoomBy(0);
+$("gvScript").onclick = () => saveFile(TAPE.script, `${TAPE.game}.md`);
+if (!GRAPH) $("modes").style.display = "none";
+if (!TAPE.script) $("gvScript").style.display = "none";
+// 2 本の指で広げる・縮める（頁の拡大は viewport で止めてある）。マウスはトラックパッドのピンチ（ctrl + ホイール）
+let gPinch = null;
+$("gwrap").addEventListener("touchstart", e => { if (e.touches.length === 2) gPinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), k: gZoom ?? fitScale(graphLayout()) }; }, { passive: true });
+$("gwrap").addEventListener("touchmove", e => {
+  if (!gPinch || e.touches.length !== 2) return;
+  e.preventDefault();
+  const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  zoomBy(Math.max(.3, Math.min(2, gPinch.k * d / gPinch.d)) / (gZoom ?? fitScale(graphLayout())));
+}, { passive: false });
+$("gwrap").addEventListener("touchend", () => { gPinch = null; });
+$("gwrap").addEventListener("wheel", e => { if (!e.ctrlKey) return; e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : .9); }, { passive: false });
+function scriptRow() { return TAPE.script ? `<div class="scriptrow"><div class="label">台本 · ${esc(yarn)}</div><button class="scriptdl">読み台本 .md</button></div>` : ""; }
 function markSelection() {
   document.querySelectorAll(".sel").forEach(n => n.classList.remove("sel"));
   if (!sel) return;
@@ -699,6 +864,7 @@ function onTime(t, scrubbing) {
     last.scene = s.id; $("sceneName").textContent = s.name;
     document.querySelectorAll(".scene").forEach(n => n.classList.toggle("cur", n.dataset.id === s.id));
     if (form === "three") renderBin();
+    renderGraph(false);
   }
   if (ln !== last.ln) { last.ln = ln; document.querySelectorAll(".clip").forEach(n => n.classList.toggle("cur", +n.dataset.ln === ln)); }
   // 帯を送ったら、選んでいる物も今のコマに合わせて移す（違う物を指したまま操作させない）
@@ -906,14 +1072,14 @@ $("exportBtn").onclick = () => {
 const fileName = () => { const d = new Date(), p = n => String(n).padStart(2, "0"); return `tape-${TAPE.game}-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.md`; };
 let downloads = null;
 if (window.claude && claude.use) claude.use("downloads").then(d => { downloads = d; }).catch(() => {});
-$("saveBtn").onclick = async () => {
-  const text = $("exportText").textContent, name = fileName();
+async function saveFile(text, name) {
   if (downloads) { try { await downloads.save({ filename: name, data: text }); toast("保存しました"); return; } catch (e) { if (e && e.code === "declined") { toast("保存をやめました"); return; } } }
   const file = new File([text], name, { type: "text/markdown" });
   // WhyNot: マウスの広い形では共有シートを出さない — PC の共有シートはファイルを置く先を選べず、保存のつもりで押した人が迷う
   if (!extras() && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
   const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast("ダウンロードしました");
-};
+}
+$("saveBtn").onclick = () => saveFile($("exportText").textContent, fileName());
 $("copyBtn").onclick = async () => { try { await navigator.clipboard.writeText($("exportText").textContent); toast("コピーしました"); } catch { toast("コピーできませんでした"); } };
 
 function applyTape() {
@@ -953,7 +1119,7 @@ const MQ = {
   mouse: matchMedia("(hover: hover) and (pointer: fine)")
 };
 let form = "phone", mouse = false;
-const IN_PANEL = ["dock", "noteSheet", "editSheet", "infoSheet", "chapSheet", "listSheet"];
+const IN_PANEL = ["dock", "noteSheet", "editSheet", "infoSheet", "chapSheet", "listSheet", "nodePanel"];
 const homes = IN_PANEL.map(id => { const n = $(id); return { n, parent: n.parentNode, next: n.nextSibling }; });
 const extras = () => form !== "phone" && mouse;
 
@@ -982,7 +1148,7 @@ function applyForm() {
   relayout();
   if (f === "three") { renderList(); renderBin(); }
 }
-function relayout() { const t = video.currentTime; layoutTimeline(); renderTracks(); renderForks(); follow(t); last = {}; onTime(t); }
+function relayout() { const t = video.currentTime; layoutTimeline(); renderTracks(); renderForks(); follow(t); last = {}; onTime(t); renderGraph(false); }
 addEventListener("resize", applyForm);
 document.querySelectorAll(".mod").forEach(k => k.textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl");
 
@@ -996,9 +1162,9 @@ function renderBin() {
   if (performance.now() - binScrolledAt > 1500) body.querySelector(".chap.cur")?.scrollIntoView({ block: "nearest" });
 }
 ["wheel", "touchstart", "pointerdown"].forEach(ev => $("binBody").addEventListener(ev, () => { binScrolledAt = performance.now(); }, { passive: true }));
-function focusBin(toFork, fork) {
+function focusBin() {
   renderBin();
-  const n = toFork ? $("bfork" + fork) : $("binBody").querySelector(".chap.cur");
+  const n = $("binBody").querySelector(".chap.cur");
   if (!n) return;
   n.scrollIntoView({ block: "center", behavior: "smooth" });
   n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 900);

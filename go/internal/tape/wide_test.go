@@ -261,12 +261,12 @@ func TestSplashCoversTheWholeWideWindow(t *testing.T) {
 	}
 }
 
-func TestRouteInLeftPanelMovesToTheOtherPage(t *testing.T) {
-	// 3 列の左の欄にある分岐のカードの、撮った道のボタンは、その道の頁へ #t= 付きで移る。
+func TestGraphInLeftPanelMovesToTheOtherPage(t *testing.T) {
+	// 広い画面ではノードの欄が右の欄（インスペクタ）に出て、隣のテープで撮った道のノードは、その道の頁へ #t= 付きで移る。
 	p := openTapePage(t, desktop)
 	base := forkSite(t)
 	loadPlain(t, p, base+"/light/")
-	if err := p.Eval(`(() => { openChapters(true); $("bfork0").querySelector('.route[data-r="1"]').click(); return true; })()`, nil); err != nil {
+	if err := p.Eval(`(() => { openChapters(true); pickNode("Sleep"); $("insp").querySelector('#nodePanel .gact[data-href]').click(); return true; })()`, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.WaitFor(`location.pathname.startsWith("/dark/") && location.hash === "#t=3.2"`, 30*time.Second); err != nil {

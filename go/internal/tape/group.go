@@ -27,7 +27,7 @@ type Route struct {
 	Href  string `json:"href,omitempty"`
 }
 
-// questionRunes は分岐のカードに出す問いの字の数の上限（行の番号と並べて、スマホの幅のカードの 1 行に収める）。
+// questionRunes は分岐の問いの字の数の上限（タイムラインの「分」の印の吹き出しの 1 行に収める）。
 const questionRunes = 14
 
 // GroupBranches は同じ始まりから撮った複数のテープ（並びは names と同じ）から、各テープの branches を作る。
@@ -94,7 +94,7 @@ func GroupBranches(names []string, tapes []*Tape) [][]Branch {
 	return out
 }
 
-// questionOf は分岐のカードに出す問い。ゲームが書いた question（選択肢を出していた時の台詞）の最初の文を、
+// questionOf は分岐の問い（「分」の印の吹き出しに出す）。ゲームが書いた question（選択肢を出していた時の台詞）の最初の文を、
 // カードの 1 行に収まる長さで返す。question が無ければノードの名前。
 func (t *Tape) questionOf(ch Choice) string {
 	text := ch.Question

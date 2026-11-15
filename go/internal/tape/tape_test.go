@@ -88,14 +88,6 @@ var mockFixes = [][2]string{
 			"  #splash { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; background: #0b0e12; transition: opacity .2s; }\n" +
 			"  #splash.gone { opacity: 0; pointer-events: none; }\n</style>"},
 	{"<div class=\"toast\" id=\"toast\"></div>\n", "<div class=\"toast\" id=\"toast\"></div>\n<canvas id=\"splash\"></canvas>\n"},
-	{"    TAPE.branches.filter(br => br.t >= s.t && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"${forkId}${i}\"><div",
-		"    TAPE.branches.filter(br => (br.t >= s.t || s === TAPE.scenes[0]) && br.t < sceneEnd(s)).forEach(br => {\n      const i = TAPE.branches.indexOf(br);\n      rows.push(`<div class=\"forkcard\" id=\"${forkId}${i}\" data-b=\"${i}\"><div"},
-	{"    const r = TAPE.branches[0].routes[+n.dataset.r];\n" +
-		"    if (r.here) { close(); seek(TAPE.branches[0].t + .05); } else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n",
-		"    const br = TAPE.branches[+n.closest(\".forkcard\").dataset.b], r = br.routes[+n.dataset.r];\n" +
-			"    if (r.here) { close(); seek(br.t + .05); } else if (r.href) location.href = r.href; else toast(\"この枝の動画はまだありません（撮ると、ここから切り替わります）\");\n"},
-	{"  .routes { display: flex; gap: 6px; }\n  .route { flex: 1; min-height: 44px;",
-		"  .routes { display: flex; flex-wrap: wrap; gap: 6px; }\n  .route { flex: 1; min-width: 40%; min-height: 44px;"},
 	{"  return l.cmd ? { file: TAPE.yarn, node: TAPE.node, line: ln, command: l.cmd } : { file: TAPE.yarn, node: TAPE.node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };",
 		"  const node = l.node ?? TAPE.node;\n  return l.cmd ? { file: TAPE.yarn, node, line: ln, command: l.cmd } : { file: TAPE.yarn, node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };"},
 	{"<dt>ノード</dt><dd>${TAPE.node}</dd></dl>",

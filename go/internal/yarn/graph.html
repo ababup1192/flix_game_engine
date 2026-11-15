@@ -40,7 +40,7 @@ svg { display: block; }
 .node.root rect { stroke: var(--c-stage); }
 .node.end rect { fill: color-mix(in srgb, var(--c-end) 14%, var(--panel)); stroke: var(--c-end); }
 .node.lost rect { stroke-dasharray: 4 3; stroke: var(--c-fx); }
-.ntitle { font-weight: 600; font-size: 14px; fill: var(--ink); }
+.ntitle { font-weight: 600; font-size: 12px; fill: var(--ink); }
 .nid { font-size: 9px; fill: var(--muted); text-anchor: end; font-family: var(--font-mono); }
 .nsub { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
 .nbadge { font-size: 11px; fill: var(--c-gate); }
@@ -57,11 +57,9 @@ svg { display: block; }
 .c-fx { background: var(--c-fx); } .c-wait { background: var(--c-wait); } .c-end { background: var(--c-end); }
 .c-line { background: var(--c-line); } .c-gate { background: var(--c-gate); } .c-other { background: var(--c-other); }
 .c-choice, .c-jump { background: var(--accent); }
-.strip { display: flex; height: 26px; border-radius: 4px; overflow: hidden; border: 1px solid var(--line); margin: 6px 0 4px; }
-.strip span { min-width: 3px; border-right: 1px solid var(--panel); }
-.striplegend { color: var(--muted); font-size: 12px; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; margin: 8px 0; }
-.kv dt { color: var(--muted); } .kv dd { margin: 0; font-family: var(--font-mono); }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.kv .nname { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
 .rows { list-style: none; margin: 8px 0 0; padding: 0; max-height: 520px; overflow: auto; border-top: 1px solid var(--line); }
 .rows li { display: grid; grid-template-columns: 38px 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .rows .ln { color: var(--muted); font-family: var(--font-mono); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -110,15 +108,6 @@ svg { display: block; }
   </section>
   <section id="detail" aria-live="polite">
     <h2 id="dtitle">ノード</h2>
-    <div class="striplegend">演出の帯（左からシナリオの順。幅は wait の秒、台詞は 1 行ずつ細い帯）</div>
-    <div class="strip" id="strip"></div>
-    <div class="legend">
-      <span><span class="chip c-stage">舞台</span></span><span><span class="chip c-actor">人物・絵</span></span>
-      <span><span class="chip c-sound">音</span></span><span><span class="chip c-fx">一度だけの演出</span></span>
-      <span><span class="chip c-wait">wait</span></span><span><span class="chip c-line">台詞</span></span>
-      <span><span class="chip c-gate">ゲート</span></span><span><span class="chip c-end">結末</span></span>
-      <span><span class="chip c-other">その他</span></span>
-    </div>
     <dl class="kv" id="kv"></dl>
     <ul class="rows" id="rows"></ul>
   </section>
@@ -137,24 +126,21 @@ svg { display: block; }
 <script>
 const DETAIL = %DETAIL%;
 const ROOT = %ROOT%;
+// 矢印の先と元は箱と同じ冒頭の文で出し、ノード名は括弧で小さく添える（esc 済みの HTML を返す）
+const named = t => DETAIL[t] ? `${esc(DETAIL[t].head_text)}<small class="nname">（${esc(t)}）</small>` : esc(t);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 function show(name) {
   const d = DETAIL[name]; if (!d) return;
   document.querySelectorAll(".node").forEach(n => n.classList.toggle("sel", n.dataset.node === name));
   document.querySelectorAll(".edge").forEach(e => e.classList.toggle("hot", e.dataset.from === name || e.dataset.to === name));
   document.getElementById("dtitle").textContent = d.head_text + "（" + name + "）";
-  const strip = document.getElementById("strip");
-  strip.innerHTML = d.strip.map(s => {
-    const w = s.c === "wait" ? Math.max(6, s.w * 14) : (s.c === "line" ? 5 : 8);
-    return `<span class="c-${s.c}" style="flex:0 0 ${w}px" title="${esc(s.l + ": " + s.n + " " + s.a)}"></span>`;
-  }).join("");
   const kv = [];
   const fmt = o => Object.keys(o).length ? Object.entries(o).map(([k, v]) => `${k}=${v}`).join("・") : "なし";
-  kv.push(["頭で当てる舞台", fmt(d.head)]);
-  kv.push(["終わりの舞台", fmt(d.state)]);
-  kv.push(["入ってくる矢印", d.incoming.length ? d.incoming.map(i => i.from + (Object.keys(i.carried).length ? `（持ち越し ${fmt(i.carried)}）` : "")).join("、") : "なし（最初のノード）"]);
-  kv.push(["出ていく矢印", d.out.length ? d.out.map(o => o.to + (o.choice ? `（${o.choice}）` : "")).join("、") : "なし"]);
-  document.getElementById("kv").innerHTML = kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  kv.push(["頭で当てる舞台", esc(fmt(d.head))]);
+  kv.push(["終わりの舞台", esc(fmt(d.state))]);
+  kv.push(["入ってくる矢印", d.incoming.length ? d.incoming.map(i => named(i.from) + (Object.keys(i.carried).length ? esc(`（持ち越し ${fmt(i.carried)}）`) : "")).join("、") : "なし（最初のノード）"]);
+  kv.push(["出ていく矢印", d.out.length ? d.out.map(o => named(o.to) + (o.choice ? esc(`（${o.choice}）`) : "")).join("、") : "なし"]);
+  document.getElementById("kv").innerHTML = kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
   document.getElementById("rows").innerHTML = d.rows.map(r => {
     const mono = r.c !== "line" ? " cmd" : "";
     return `<li><span class="ln">${r.l}</span><span class="k-${r.c}${mono}" style="padding-left:${r.d * 14}px">${esc(r.t)}</span></li>`;
