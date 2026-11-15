@@ -9,88 +9,179 @@ mod Render3d.Material {
     use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, batchKeyOf, batchOf, groupByTextures, groupInOrder}
     use Scene3dRenderer.{RegisteredTexture}
     use Render3d.Counts.{BatchBreak, Counter, Phase, count, noteMaterialBuild, timed}
+    use Render3d.ScenePlan.{Planner, warnOnce}
+    use Render3d.SceneList.{batchBreakOf}
 
     // ── 材質のある置いた物 ──
 
     /// 置いた物 1 つを batch へ分ける材料。surface = 描く材質とプログラムの版（無ければ頂点の色で描く）。
-    type alias PlacedDraw = { draw = MeshDraw, surface = Option[(Scene3d.MaterialFields, ProgramKind)] }
+    pub type alias PlacedDraw = { draw = MeshDraw, surface = Option[(Scene3d.MaterialFields, ProgramKind)] }
 
-    /// 置いた物を batch に分け、頂点の色で描く batch と材質のプログラムで描く batch を返す。wants が偽の材質と、組めなかった材質は頂点の色の側へ。
-    /// 材質のプログラムは batch ごとに 1 回引き、初めての材質はここで組む（3D を使わないゲームと、材質を使わない場面は GLSL のコンパイルを払わない）。
-    /// outside = 描かずに済ませる物か（視錐台の外。MeshDraw の culled になる）。間引く物の材質も組む（間引くのは描く段の手前）。
-    // WhyNot: 間引いた物を材質の組み立ての前に除かない — 初めて振り向いたコマで GLSL を組んで止まる（読み込み中に先に組ませる作りが効かない）。
-    /// coverage = 描き先が標本を持ち、色の段で描く（cutout の材質を alpha to coverage の版で組む）。
-    pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
-                        instances: List[Scene3d.Instance3d]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]]) \ IO = timed(state, Phase.Split, () -> {
-        let placed = instances |> List.map(placedDrawOf(state, outside, wants, coverage));
-        let (plain, materials) = groupInOrder(p -> Mesh3d.contentHash(p#draw#fields#mesh), p -> batchKeyOf(state#drawMode, p#draw, p#surface), placed)
+    /// 材質を backend に聞く 1 つ（batch の頭の物の材質とプログラムの版）。聞く並びの番号が、そのまま材質の表の番号（MaterialBatch#handle）になる。
+    pub type alias MaterialRequest = (Scene3d.MaterialFields, ProgramKind)
+
+    /// 1 回の prepare の材質の表（GL の backend の持ち物）。entries = 聞かれた順の材質のプログラム（組めなかった物は program が 0）・
+    /// orders = 計画へ返す順の番号（entries と同じ並び・0 = 使えないので頂点の色で描く）。
+    // WhyNot: 計画から材質の鍵の字で引き直さない — 同じ鍵で中身の違う材質が同じコマに来た時、先の batch が後で組み直したプログラムで描かれる。
+    pub type alias MaterialTable = { entries = Vector[MaterialEntry], orders = Vector[Int32] }
+
+    /// 置いた物を batch の候補に分ける（GL を呼ばない）。wants が偽の材質は頂点の色の候補へ。
+    /// outside = 描かずに済ませる物か（視錐台の外。MeshDraw の culled になる）。coverage = 描き先が標本を持ち、色の段で描く（cutout の材質を alpha to coverage の版にする）。
+    pub def groupPlaced(planner: Planner, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
+                        instances: List[Scene3d.Instance3d]): List[List[PlacedDraw]] \ IO =
+        let placed = instances |> List.map(placedDrawOf(planner, outside, wants, coverage));
+        groupInOrder(p -> Mesh3d.contentHash(p#draw#fields#mesh), p -> batchKeyOf(planner#drawMode, p#draw, p#surface), placed)
             |> List.flatMap(groupByTextures(p -> Option.map(fst, p#surface)))
-            |> List.foldLeft(addPlaced(gl, state, gen), (Nil, Nil));
+
+    /// groups のうち材質のある候補の、backend に聞く材質（候補の順）。
+    pub def requestsOf(groups: List[List[PlacedDraw]]): List[MaterialRequest] =
+        groups |> List.filterMap(members -> List.head(members) |> Option.flatMap(head -> head#surface))
+
+    /// requests の材質のプログラムを聞かれた順に 1 回ずつ引き、初めての材質はここで組む（3D を使わないゲームと、材質を使わない場面は GLSL のコンパイルを払わない）。
+    /// 間引く物の材質も組む（間引くのは描く段の手前）。
+    // WhyNot: 間引いた物を材質の組み立ての前に除かない — 初めて振り向いたコマで GLSL を組んで止まる（読み込み中に先に組ませる作りが効かない）。
+    pub def resolveMaterials(gl: GlContext, state: State, gen: Int64, requests: Vector[MaterialRequest]): MaterialTable \ IO =
+        let entries = requests |> Vector.map(r -> lookupMaterial(gl, state, gen, fst(r), snd(r)));
+        { entries = entries, orders = Vector.map(e -> e#locs#mesh#program, entries) }
+
+    /// 表の handle 番の材質のプログラム。
+    pub def entryAt(table: MaterialTable, handle: Int32): MaterialEntry = Vector.get(handle, table#entries)
+
+    /// groups を、頂点の色で描く batch と材質の batch に分ける（GL を呼ばない）。firstRequest = groups の最初の材質の聞いた番号・
+    /// orders = backend の答え（requestsOf の順の番号から引く。0 なら頂点の色で描く）。
+    pub def splitGroups(groups: List[List[PlacedDraw]], firstRequest: Int32, orders: Vector[Int32]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]]) =
+        let (plain, materials, _) = groups |> List.foldLeft(addPlaced(orders), (Nil, Nil, firstRequest));
         (List.reverse(plain), List.reverse(materials))
-    })
+
+    /// 置いた物を候補に分け、材質を引き、batch に分けるまでを 1 回で通す（GL を持つ側の形。表は材質の batch が貼る絵の名前を引くのに要る）。
+    pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
+                            instances: List[Scene3d.Instance3d]): ((List[PlannedBatch], List[MaterialBatch[PlannedBatch]]), MaterialTable) \ IO =
+        timed(state, Phase.Split, () -> {
+            let groups = groupPlaced(state#planner, outside, wants, coverage, instances);
+            let table = resolveMaterials(gl, state, gen, List.toVector(requestsOf(groups)));
+            (splitGroups(groups, 0, table#orders), table)
+        })
 
     /// 置いた物 1 つを batch へ分ける材料にする（lightmap と法線マップの食い違いは形ごとに 1 回知らせる）。
-    // WhyNot: splitByMaterial の List.map のラムダへ書き下さない — ラムダは 1 コマに 1 回しか呼ばれない関数の中へ展開され、JVM がそのループを
+    // WhyNot: groupPlaced の List.map のラムダへ書き下さない — ラムダは 1 コマに 1 回しか呼ばれない関数の中へ展開され、JVM がそのループを
     //   途中から JIT（OSR）するのを「stack not empty」で諦め、物の数だけインタプリタで回る（docs/performance.md の 13 節）。
     @DontInline
-    def placedDrawOf(state: State, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
+    def placedDrawOf(planner: Planner, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                      i: Scene3d.Instance3d): PlacedDraw \ IO =
         Scene3d.lightmapWarning(i) |> Option.forEach(line ->
-            warnSceneOnce(state, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh), line));
-        let draw = meshDrawOf(state, outside, i);
+            warnOnce(planner, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh), line));
+        let draw = meshDrawOf(planner, outside, i);
         let surface = draw#fields#material |> Option.map(Scene3d.materialFieldsOf) |> Option.filter(wants)
-            |> Option.map(m -> (m, vertexKindOf(state, coverage, draw, m)));
+            |> Option.map(m -> (m, vertexKindOf(planner, coverage, draw, m)));
         { draw = draw, surface = surface }
 
-    /// members の batch を acc の頭へ足す: 材質のプログラムが組めたら右の列へ、ほかは左の列へ。
-    def addPlaced(gl: GlContext, state: State, gen: Int64, acc: (List[PlannedBatch], List[MaterialBatch[PlannedBatch]]),
-                  members: List[PlacedDraw]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]]) \ IO =
-        let (plain, materials) = acc;
-        match members {
-            case Nil         => acc
-            case head :: _   =>
-                let batch = batchOf(head#draw, List.map(p -> p#draw, members));
-                let material = head#surface |> Option.flatMap(mk -> {
-                    let (m, kind) = mk;
-                    materialEntry(gl, state, gen, m, kind) |> Option.map(e -> { entry = e, material = m, batch = batch })
-                });
-                match material {
-                    case Some(d) => (plain, d :: materials)
-                    case None    => (batch :: plain, materials)
-                }
+    /// members の batch を acc の頭へ足す: 材質があり backend が使えると答えたら右の列へ、ほかは左の列へ。acc の 3 つ目 = 次の材質の聞いた番号。
+    def addPlaced(orders: Vector[Int32], acc: (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32),
+                  members: List[PlacedDraw]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32) =
+        List.head(members) |> Option.map(head -> addBatch(orders, acc, head, members)) |> Option.getWithDefault(acc)
+
+    def addBatch(orders: Vector[Int32], acc: (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32),
+                 head: PlacedDraw, members: List[PlacedDraw]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32) =
+        let (plain, materials, next) = acc;
+        let batch = batchOf(head#draw, List.map(p -> p#draw, members));
+        let asked = if (Option.isEmpty(head#surface)) next else next + 1;
+        match head#surface |> Option.flatMap(materialBatchOf(orders, next, batch)) {
+            case Some(d) => (plain, d :: materials, asked)
+            case None    => (batch :: plain, materials, asked)
         }
 
+    /// handle 番に聞いた材質 mk の batch（backend が使えないと答えたら None）。
+    def materialBatchOf(orders: Vector[Int32], handle: Int32, batch: PlannedBatch, mk: MaterialRequest): Option[MaterialBatch[PlannedBatch]] =
+        let (m, kind) = mk;
+        let order = Vector.get(handle, orders);
+        if (order == 0) None else Some({ handle = handle, order = order, kind = kind, material = m, batch = batch })
+
     /// 置いた物 d を材質 m で描くプログラムの頂点の形。法線マップは uv つきの形にだけ当てる（uv の無い形は形ごとに 1 回知らせて無視する）。
-    def vertexKindOf(state: State, coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind \ IO =
+    def vertexKindOf(planner: Planner, coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind \ IO =
         let uv = hasUv(d);
         let wantsNormalMap = Option.nonEmpty(m#normalMap);
         if (wantsNormalMap and not uv)
-            warnSceneOnce(state, "nouv:" + Mesh3d.contentHash(d#fields#mesh),
+            warnOnce(planner, "nouv:" + Mesh3d.contentHash(d#fields#mesh),
                 "scene3d: uv の無い形に法線マップの材質 '${m#spec#name}' が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
         else ();
         { skinned = isSkinned(d), uv = uv, normalMap = wantsNormalMap and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
           blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
           metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade) }
 
-    /// 材質の batch を draws の順に描く（呼び手が並べる: 不透明はプログラムの番号で並べて切り替えを減らす・半透明は遠い物から）。
-    /// 続く物が同じプログラムなら組み直さない。描き終えたら、絵を貼った unit（材質の絵と法線マップ）の sampler を外して unit 0 へ戻す。
+    /// 半透明の材質の batch を draws の順（呼び手が遠い物から並べる）に描く。不透明の batch は Render3d.GlRows が行で描く。
+    /// 続く物が同じプログラムなら組み直さない。描き終えたら、絵を貼った unit の sampler を外して unit 0 へ戻す。
     pub def drawMaterials(gl: GlContext, state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
-                      draws: List[MaterialBatch[MeshBatch]]): Unit \ IO =
-        let bound = Array#{0, 0, 0, 0} @ Static;
+                          table: MaterialTable, draws: List[MaterialBatch[MeshBatch]]): Unit \ IO =
+        let bound = freshBound();
         let previous: Ref[Option[MaterialBatch[MeshBatch]], Static] = Ref.fresh(Static, None);
-        draws |> List.forEach(d -> if (d#batch#count == 0) drawBatch(gl, state, gen, d#entry#locs#mesh, BatchBreak.Material, d#batch) else {
-            let locs = d#entry#locs;
-            if (locs#mesh#program == Array.get(0, bound)) ()
-            else {
-                Array.put(locs#mesh#program, 0, bound);
-                useMaterialProgram(gl, state, camera, pass, locs)
-            };
-            let units = drawMaterialBatch(gl, state, gen, source, d#entry#coverage, batchBreakOf(Ref.get(previous), d), d);
-            Ref.put(Some(d), previous);
-            Array.put(Int32.max(units, Array.get(1, bound)), 1, bound);
-            if (d#entry#normalMapped) Array.put(1, 2, bound) else ();
-            if (d#entry#lightmapped) Array.put(1, 3, bound) else ()
+        draws |> List.forEach(d -> {
+            let entry = entryAt(table, d#handle);
+            if (d#batch#count == 0) drawBatch(gl, state, gen, entry#locs#mesh, BatchBreak.Material, d#batch) else {
+                useMaterial(gl, state, camera, pass, bound, entry);
+                let why = batchBreakOf(Ref.get(previous), d);
+                let look = { coverage = entry#coverage, doubleSided = d#material#doubleSided };
+                drawMaterialWith(gl, state, gen, source, bound, entry, d#material, d#batch#head, look, () -> drawBatch(gl, state, gen, entry#locs#mesh, why, d#batch));
+                Ref.put(Some(d), previous)
+            }
         });
+        releaseBound(gl, bound)
+
+    /// 材質を描く間に付けた物の控え。0 = 今のプログラム・1 = 貼った材質の絵の unit の数・2 = 法線マップを貼ったら 1・3 = lightmap を貼ったら 1。
+    pub def freshBound(): Array[Int32, Static] \ IO = Array#{0, 0, 0, 0} @ Static
+
+    /// entry のプログラムが今の物と違えば付け替え、場面の値（目・光・影・時刻・出す物）を入れる。
+    pub def useMaterial(gl: GlContext, state: State, camera: CameraData, pass: MaterialPass, bound: Array[Int32, Static], entry: MaterialEntry): Unit \ IO =
+        let program = entry#locs#mesh#program;
+        if (program == Array.get(0, bound)) ()
+        else {
+            Array.put(program, 0, bound);
+            useMaterialProgram(gl, state, camera, pass, entry#locs)
+        }
+
+    /// 材質 m（頭の物 head）の batch 1 つを、今付いている entry のプログラムで描く: cutout・params・絵・法線マップ・lightmap を入れて drawMesh を呼ぶ。
+    /// look#coverage なら cutout を discard でなく alpha to coverage で抜く（出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。look#doubleSided ならその間だけカリングを切る。
+    pub def drawMaterialWith(gl: GlContext, state: State, gen: Int64, source: TextureSource, bound: Array[Int32, Static], entry: MaterialEntry,
+                             m: Scene3d.MaterialFields, head: MeshDraw, look: { coverage = Bool, doubleSided = Bool }, drawMesh: Unit -> Unit \ IO): Unit \ IO =
+        bindMaterial(gl, state, gen, source, bound, entry, m, head);
+        drawWithLook(gl, look, drawMesh)
+
+    /// 材質 m（頭の物 head）の cutout・params・絵・法線マップ・lightmap を、今付いている entry のプログラムへ入れ、貼った unit を bound に控える。
+    pub def bindMaterial(gl: GlContext, state: State, gen: Int64, source: TextureSource, bound: Array[Int32, Static], entry: MaterialEntry,
+                         m: Scene3d.MaterialFields, head: MeshDraw): Unit \ IO =
+        let locs = entry#locs;
+        gl.uniform1i(locs#cutout, if (m#cutout) 1 else 0);
+        // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
+        //   compile3d が uParamN に割り当てた並び（0 にした後）と食い違う余地がある。uniform を宣言した側の並びで引く。
+        List.zip(locs#params, entry#paramNames) |> List.forEach(ln -> {
+            let (paramLoc, name) = ln;
+            gl.uniform1f(paramLoc, RenderUtil.f32(Map.getWithDefault(name, 0.0, m#params)))
+        });
+        let units = bindMaterialTextures(gl, state, gen, source, entry, m);
+        bindNormalMap(gl, state, gen, source, entry, m);
+        bindLightmap(gl, state, gen, source, entry, head);
+        if (entry#normalMapped) ensureTangents(gl, state, gen, head#fields#mesh) else ();
+        Array.put(Int32.max(units, Array.get(1, bound)), 1, bound);
+        if (entry#normalMapped) Array.put(1, 2, bound) else ();
+        if (entry#lightmapped) Array.put(1, 3, bound) else ()
+
+    /// drawMesh を、look#coverage なら alpha to coverage を付けて・look#doubleSided ならカリングを切って呼ぶ（呼んだ後に戻す）。
+    pub def drawWithLook(gl: GlContext, look: { coverage = Bool, doubleSided = Bool }, drawMesh: Unit -> Unit \ IO): Unit \ IO =
+        if (look#coverage) {
+            gl.enable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);
+            gl.enable(GlConst.SAMPLE_ALPHA_TO_ONE)
+        } else ();
+        if (look#doubleSided) {
+            gl.disable(GlConst.CULL_FACE);
+            drawMesh();
+            gl.enable(GlConst.CULL_FACE)
+        } else drawMesh();
+        if (look#coverage) {
+            gl.disable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);
+            gl.disable(GlConst.SAMPLE_ALPHA_TO_ONE)
+        } else ()
+
+    /// bound に控えた、絵を貼った unit の sampler を外して unit 0 へ戻す。
+    pub def releaseBound(gl: GlContext, bound: Array[Int32, Static]): Unit \ IO =
         releaseMaterialUnits(gl, Array.get(1, bound), Array.get(2, bound) == 1, Array.get(3, bound) == 1)
 
     /// unit 0〜count−1（と、normalMap が真なら法線マップの unit・lightmap が真なら lightmap の unit）の sampler を外して unit 0 へ戻す。どれも貼っていなければ何もしない。
@@ -122,68 +213,20 @@ mod Render3d.Material {
     pub def isCoverageCutout(coverage: Bool, m: Scene3d.MaterialFields): Bool =
         coverage and m#cutout and not m#blend
 
-    /// 材質の batch d が 1 つの draw call に分かれた理由（優先の順は FrameDiagnostics.Scene3dBatchBreaks）。previous = 同じ並びで前に描いた batch。
-    /// 形が前と違って材質が同じ時だけ Mesh（形も材質も同じで分かれたのは、材質の絵の組が違う時）。
-    def batchBreakOf(previous: Option[MaterialBatch[MeshBatch]], d: MaterialBatch[MeshBatch]): BatchBreak =
-        if (d#material#blend) BatchBreak.Transparent
-        else if (d#entry#lightmapped) BatchBreak.Lightmap
-        else if (isSkinned(d#batch#head)) BatchBreak.Skinned
-        else if (Option.exists(p -> isSameMaterial(p, d) and not isSameMesh(p, d), previous)) BatchBreak.Mesh
-        else BatchBreak.Material
-
-    /// プログラム・材質の木の鍵・params が同じか。
-    def isSameMaterial(a: MaterialBatch[MeshBatch], b: MaterialBatch[MeshBatch]): Bool =
-        a#entry#locs#mesh#program == b#entry#locs#mesh#program
-            and force a#material#shaderHash == force b#material#shaderHash
-            and a#material#params == b#material#params
-
-    def isSameMesh(a: MaterialBatch[MeshBatch], b: MaterialBatch[MeshBatch]): Bool =
-        Mesh3d.contentHash(a#batch#head#fields#mesh) == Mesh3d.contentHash(b#batch#head#fields#mesh)
-
-    /// 材質の batch 1 つを描き、絵を貼った unit の数を返す。coverage = cutout を discard でなく alpha to coverage で抜く
-    /// （出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。
-    def drawMaterialBatch(gl: GlContext, state: State, gen: Int64, source: TextureSource, coverage: Bool, why: BatchBreak, d: MaterialBatch[MeshBatch]): Int32 \ IO =
-        let locs = d#entry#locs;
-        gl.uniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
-        // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
-        //   compile3d が uParamN に割り当てた並び（0 にした後）と食い違う余地がある。uniform を宣言した側の並びで引く。
-        List.zip(locs#params, d#entry#paramNames) |> List.forEach(ln -> {
-            let (paramLoc, name) = ln;
-            gl.uniform1f(paramLoc, RenderUtil.f32(Map.getWithDefault(name, 0.0, d#material#params)))
-        });
-        let units = bindMaterialTextures(gl, state, gen, source, d);
-        bindNormalMap(gl, state, gen, source, d);
-        bindLightmap(gl, state, gen, source, d);
-        if (d#entry#normalMapped) ensureTangents(gl, state, gen, d#batch#head#fields#mesh) else ();
-        if (coverage) {
-            gl.enable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);
-            gl.enable(GlConst.SAMPLE_ALPHA_TO_ONE)
-        } else ();
-        if (d#material#doubleSided) {
-            gl.disable(GlConst.CULL_FACE);
-            drawBatch(gl, state, gen, locs#mesh, why, d#batch);
-            gl.enable(GlConst.CULL_FACE)
-        } else drawBatch(gl, state, gen, locs#mesh, why, d#batch);
-        if (coverage) {
-            gl.disable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);
-            gl.disable(GlConst.SAMPLE_ALPHA_TO_ONE)
-        } else ();
-        units
-
     /// lightmap を lightmap の unit に貼り、段の数・色空間・強さを入れる（Clamp・段つきの Linear で読む）。lightmap を読まないプログラムは何もしない。
     /// 名前が場面の textures に無い絵は 0（黒）で読み、名前ごとに 1 回知らせる（材質の絵と同じ道）。
     // WhyNot: プログラムごとに 1 回だけ入れない — 同じ形と材質で lightmap だけ違う物は同じプログラムで続けて描かれ、前の物の絵と強さを引き継ぐ。
-    def bindLightmap(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialBatch[MeshBatch]): Unit \ IO =
-        if (not d#entry#lightmapped) ()
-        else Scene3d.lightmapOfFields(d#batch#head#fields) |> Option.forEach(lm -> {
+    def bindLightmap(gl: GlContext, state: State, gen: Int64, source: TextureSource, entry: MaterialEntry, head: MeshDraw): Unit \ IO =
+        if (not entry#lightmapped) ()
+        else Scene3d.lightmapOfFields(head#fields) |> Option.forEach(lm -> {
             let unit = lightmapTextureUnit();
             gl.activeTexture(GlConst.TEXTURE0 + unit);
             let bound = resolveTextureAs(gl, state, gen, source, "lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace));
             gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
             gl.bindSampler(unit, materialSampler(gl, state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
-            gl.uniform1f(d#entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Int32.min(bound#levels, lm#maxLevels))));
-            gl.uniform1i(d#entry#locs#lightmapSrgb, if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1 else 0);
-            gl.uniform1f(d#entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity))
+            gl.uniform1f(entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Int32.min(bound#levels, lm#maxLevels))));
+            gl.uniform1i(entry#locs#lightmapSrgb, if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1 else 0);
+            gl.uniform1f(entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity))
         })
 
     /// 場面の環境マップを環境マップの unit に貼り、絵の段の数を返す（無ければ 0・何も貼らない）。名前が場面の textures に無い絵は 0（黒）の 1 段で読み、
@@ -207,33 +250,33 @@ mod Render3d.Material {
         if (Option.isEmpty(scene#environmentMap)) () else gl.bindSampler(environmentTextureUnit(), 0)
 
     /// 法線マップを法線マップの unit に貼る（材質の wrap・Linear で読む）。法線マップを当てないプログラムは何もしない。
-    def bindNormalMap(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialBatch[MeshBatch]): Unit \ IO =
-        match (d#entry#normalMapped, d#material#normalMap) {
+    def bindNormalMap(gl: GlContext, state: State, gen: Int64, source: TextureSource, entry: MaterialEntry, m: Scene3d.MaterialFields): Unit \ IO =
+        match (entry#normalMapped, m#normalMap) {
             case (true, Some(n)) =>
                 let unit = normalMapTextureUnit();
                 gl.activeTexture(GlConst.TEXTURE0 + unit);
                 let bound = resolveMaterialTexture(gl, state, gen, source, n#texture, Texture3d.TextureUse.NormalMap);
                 gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
-                gl.bindSampler(unit, materialSampler(gl, state, d#material#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
-                gl.uniform1f(d#entry#locs#normalStrength, RenderUtil.f32(n#strength));
-                gl.uniform1f(d#entry#locs#normalFlip, if (bound#flipped) 1.0f32 else 0.0f32);
-                gl.uniform1f(d#entry#locs#normalLevels, RenderUtil.f32(Int32.toFloat64(bound#levels)))
+                gl.bindSampler(unit, materialSampler(gl, state, m#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
+                gl.uniform1f(entry#locs#normalStrength, RenderUtil.f32(n#strength));
+                gl.uniform1f(entry#locs#normalFlip, if (bound#flipped) 1.0f32 else 0.0f32);
+                gl.uniform1f(entry#locs#normalLevels, RenderUtil.f32(Int32.toFloat64(bound#levels)))
             case _ => ()
         }
 
     /// 材質の絵を unit 0〜 に貼り、読み方（wrap と補間）の sampler を付けて、貼った数を返す。
     /// 名前は描く材質から引き直す（eqSpec は tex の名前を並びの番号で比べるので、名前だけ違う材質が同じプログラムを使う）。
-    def bindMaterialTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialBatch[MeshBatch]): Int32 \ IO =
-        if (List.isEmpty(d#entry#texReads)) 0
+    def bindMaterialTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, entry: MaterialEntry, m: Scene3d.MaterialFields): Int32 \ IO =
+        if (List.isEmpty(entry#texReads)) 0
         else {
-            let reads = ShaderDoc.materialTexReads(d#material#spec, d#material#emission, d#material#metallicRoughnessShade) |> List.take(Scene3d.maxMaterialTextures());
-            List.zip(reads, List.zip(d#entry#locs#texFlips, d#entry#locs#texLevels)) |> List.forEachWithIndex((unit, pair) -> {
+            let reads = ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.take(Scene3d.maxMaterialTextures());
+            List.zip(reads, List.zip(entry#locs#texFlips, entry#locs#texLevels)) |> List.forEachWithIndex((unit, pair) -> {
                 let ((name, filter), (flipLoc, levelsLoc)) = pair;
                 // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
                 gl.activeTexture(GlConst.TEXTURE0 + unit);
                 let bound = resolveMaterialTexture(gl, state, gen, source, name, Texture3d.TextureUse.MaterialTexture);
                 gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
-                gl.bindSampler(unit, materialSampler(gl, state, d#material#wrap, filter, bound#levels > 1));
+                gl.bindSampler(unit, materialSampler(gl, state, m#wrap, filter, bound#levels > 1));
                 gl.uniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
                 gl.uniform1f(levelsLoc, RenderUtil.f32(Int32.toFloat64(bound#levels)))
             });
@@ -531,8 +574,8 @@ mod Render3d.Material {
     // ── 材質のプログラムの置き場 ──
 
 
-    /// 材質のプログラムを引く。無いか、同じ鍵で中身が違えば組み直す。組めなかった材質は None（頂点の色で描く）。
-    def materialEntry(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): Option[MaterialEntry] \ IO =
+    /// 材質のプログラムを引く。無いか、同じ鍵で中身が違えば組み直す。組めなかった材質は locs#mesh#program が 0（頂点の色で描く）。
+    def lookupMaterial(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): MaterialEntry \ IO =
         let key = materialKey(m, kind);
         let cache = Ref.get(state#materialsRef);
         let entry = match Map.get(key, cache) {
@@ -540,7 +583,7 @@ mod Render3d.Material {
             case None        => rebuildMaterial(gl, state, gen, { key = key, kind = kind }, None, m)
         };
         Ref.put(Map.insert(key, entry, Ref.get(state#materialsRef)), state#materialsRef);
-        if (entry#locs#mesh#program == 0) None else Some(entry)
+        entry
 
     def sameMaterial(entry: MaterialEntry, m: Scene3d.MaterialFields): Bool =
         ShaderGen.eqMaterial(entry#spec, entry#emission, entry#metallicRoughness, m#spec, m#emission, m#metallicRoughnessShade)

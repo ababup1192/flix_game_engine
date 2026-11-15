@@ -183,7 +183,7 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
 | 2D: static layer の範囲 | `Static.flix` | 置き場の番号と範囲・**draw ごとの値**（viewOffset・viewScale・halfDesign） |
 | 2D: 面（`ShaderDoc`） | `RenderSprite.drawShaderSurface` | シェーダーの鍵・**draw ごとの値**（rect・time・alpha・`params` の列）・**絵の組**（`texReads` の列と補間）・mask の形（R1b-6: program の番号・values の 64 個の倍数の位置・`reads` の範囲・mask の頂点の範囲・比べる値。12.22） |
 | 2D: 3D の場面を貼る | `MScene3d` | 場面の描き先の番号・矩形（今は場面の番号だけ・12.21） |
-| 3D: 形の batch（不透明・材質・半透明・影） | `MeshBatch`・`MaterialBatch` | 材質の鍵・形の番号と範囲・行の起点と数・**draw ごとの値**（`uParamN`・cutout）・**絵の組**（材質の絵の列・sampler・normal map・lightmap） |
+| 3D: 形の batch（不透明・材質・半透明・影） | `MeshBatch`・`MaterialBatch` | 材質の鍵・形の番号と範囲・行の起点と数・**draw ごとの値**（`uParamN`・cutout）・**絵の組**（材質の絵の列・sampler・normal map・lightmap）（R2a: 不透明だけ `Render3d.SceneList` の行・種類・材質の表の番号・順の番号・行の起点と数・分かれた理由・フラグ。形は backend が上げて返す番号、draw ごとの値と絵の組はまだ行の外。12.23） |
 | 3D: ビルボードの集まり・空・後がけ | `drawBillboards` ほか | 行の範囲・絵・draw ごとの値 |
 | pass の区切り | `beginTarget`・`endTarget`・影の地図・Design の描き先 | 描き先の番号・クリア・resolve・history の写し・pass ごとの値（カメラ・`LightData`・時刻・影と環境の絵） |
 | 物の上げ下ろし | `GpuResources` の handler・`meshEntry`・フォントの部分更新 | 作る・中身を書く・消す（下の「物の寿命」） |
@@ -428,6 +428,10 @@ design の全面を値 0 で描いて stencil を戻す（pass を閉じて開�
 面の値は values に置き、WebGPU は values の buffer を uniform としても bind して、面ごとに 256 バイトの倍数の位置で読む（ShaderGen が出す `var<uniform> sg` のまま。storage にするのは engine の変更）。
 bind group は draw ごとに作って submit の後に手放す（番号と位置と絵で控えて使い回す形と比べた。速さは揺れの内で、控えを外す決まりが要る）。pipeline は program × blend × 形式 × 標本 × stencil の鍵で控える（draw ごとに作る形と比べた）。
 mask つきの面も比べる値を mask つきスプライトと同じく前半が進めて行に書く（面ごとに stencil を 0 に戻す今の GL の形と比べた。絵は同じで、WebGPU は戻すたびに全面の draw が 1 本増える）。12.22・`samples/surface-values.md`。
+
+**R2a で決めた物（2026-11-16）**: `RenderList` の 1 行の欄と高さ（3D）は 2D と同じ「物の集まり」の高さ（1 行 = 不透明の batch 1 つ）にし、前の材質の行と同じ付け方で描ける行に前半がフラグを立てる
+（backend が毎行付け直す形・材質を付ける行を分ける低い高さと比べた。GL の `draw` の区間が field 12,000・形が物ごとで 33.5〜35.4 → 28.3〜30.1 ms）。計画は材質の状態を値で聞き（聞く材質を並べて backend が順の番号の列を返す。関数の record を計画に渡す形と比べた）、
+材質の batch は backend の材質の表の番号を持つ（材質の鍵の字で引き直す形と比べた）。V2 の後に WebGPU の行数とあわせて見直す。12.23・`samples/scene-list-3d.md`。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
@@ -940,3 +944,52 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
 
   2 回目の門（同じ機械・2026-11-15）: render_gl 452 緑（7 本足した）・`TestWgslDawn` 365 本・`make gl-parity` 緑（81 行が R1b-5 の木と 1 字も同じ）・`make webgpu-v1-check` 緑（36 場面とも許す差の内・面の 8 場面は 0 px・draw の数も GL と同じ・誤り 0）・
   `make webgpu-v1-check-web` 緑（前と同じ）・`make gl-capture-check`（54 枚が a と b で同じ・基準との差 30 枚で前と同じ）・テンプレ 3 本の `reference-check` 緑・`lint-huge-methods`・`lint-max-lines`・`gl-jar-pin-check` 緑。
+
+### 12.23 R2a: 3D の不透明の batch（2026-11-16・この Mac・GL だけ）
+
+表の 11 行目。3D の不透明の batch（頂点の色の物・骨つきの物・不透明の材質の物）を `Render3d.SceneList` の行（1 行 = batch 1 つ）にし、GL の backend（`Render3d.GlRows`）が流す形にした。
+計画（`Render3d.ScenePlan`）から `gl` と GL の `State` を外した。WebGPU の backend はまだ 3D を描かない（V2）。半透明・ビルボード・空・影の地図は今どおり GL を直に呼ぶ（R2b）。
+
+- **計画が backend に聞く物（5.3 の 3 つ）**: 描き先の能力は `PlanCaps`（alpha to coverage が使えるか・姿勢の行の上限）。材質の状態と順の番号は値で聞く:
+  前半の `groupScenes` が置いた物を batch の候補に分けて聞く材質（頭の物の材質とプログラムの版）を場面の順・候補の順に並べ、backend の `Material.resolveMaterials` が引いて（初めての材質はここで組む）
+  順の番号の列（0 = 使えない）を返し、前半の `planScenes` がそれで頂点の色の batch と材質の batch に分けて並べる。計画の側の状態（描き方と知らせ済みの鍵）は `ScenePlan.Planner` に分け、`Render3d.State#planner` が持つ。
+  GL の backend の順の番号は今どおりプログラムの番号（同じ深さの面の勝ち方が変わらない）。
+- **`MaterialBatch#entry` を替えた**: `{ handle, order, kind, material, batch }`。handle = その prepare の材質の表（`Material.MaterialTable`・GL の backend の持ち物）の番号で、聞いた並びの番号がそのまま番号になる。
+  材質の鍵の字で引き直す形は、同じ鍵で中身の違う材質が同じコマに来た時に先の batch の絵が変わるので取らなかった。
+- **行の欄**（`SceneList` の頭のコメント）: 種類・材質の表の番号・順の番号・1 体ごとの値の先頭・数・分かれた理由（`Counts.breakSlotOf` の番号。前半が決める）・フラグ（両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方）。
+  行ごとの頭の物と材質は `heads`・`materials` の列に持つ（形を上げる・lightmap と絵の名前を引くのに要る）。材質の draw ごとの値（`uParamN`・cutout）と絵の組はまだ行の外で、GL は材質から引く（R2b の「材質と絵の組」）。
+- **決めた事 1 — 1 行の高さは batch 1 つ + 同じ付け方のフラグ**（9.1 の表の 3D の行・見本の 1）。backend が毎行付け直す形と比べ、GL の `draw` の区間が field 12,000・形が物ごと・材質 1 種で 33.5〜35.4 → 28.3〜30.1 ms。
+  材質を付ける行と形を描く行を分ける低い高さは、GL の呼び出しがフラグの形と同じになり、並びの決まりが backend 2 つに増えるので動かさずに取らなかった。V2 の後に WebGPU の行数とあわせて見直す。
+- **決めた事 2 — 形と絵を描く前に上げる**（5.3 の「上げる行」）: `GlRows.uploadRows` が場面を描き始める前に行の形（間引いた行も・置き場の lastUsed を進める）・材質の絵・法線マップ・lightmap・タンジェントを上げ、
+  行ごとの (VAO, 添え字の数) を返す。行を描く所は置き場を引かない（前は batch ごとに `meshEntry` の Map を引いていた）。前の `noteCulled`（間引いた材質の絵だけ先に上げる）はここへまとめた。
+  「上げる行」を `RenderList` の行の種類にはしていない（upload は list を作る前に呼ぶ関数という判断 13 と同じ並び）。材質の絵は描く時にもう一度引く（置き場に当たるだけ。番号を行へ入れるのは R2b）。
+- 入れた物（render_gl の中だけ・engine の pub は増えていない）:
+  - 前半: `ScenePlan.Planner`・`freshPlanner`・`warnOnce`・`warnOnceIn`・`PlanCaps`・`GroupedScene`・`groupScenes`・`planScenes`（引数を替えた）。`Material.PlacedDraw`（pub に）・`MaterialRequest`・`groupPlaced`・`requestsOf`・`splitGroups`。
+    新しい `Render3d.SceneList`（`buildSceneList`・`batchBreakOf`（Material から移した・lightmap は `kind` から）・`isSameBinding`）。`Shadow.shadowPlansOf` と `meshDrawOf` は `Planner` を受ける。
+  - GL: 新しい `Render3d.GlRows`（`SceneInputs`・`SceneTarget`・`SceneItem` を ScenePlan から移した・`uploadRows`・`drawRows`）。`Material.resolveMaterials`・`MaterialTable`・`entryAt`・`lookupMaterial`（`materialEntry` を替えた）・
+    `freshBound`・`useMaterial`・`bindMaterial`・`drawWithLook`・`drawMaterialWith`・`releaseBound`（`drawMaterialBatch` を分けた）・`splitByMaterial`（Preload が使う、GL を持つ側の形）。`Render3d.drawMeshRange`・`planCapsOf`・`Counts.countDrawCallAt`。
+    消した物: `Render3d.drawInstancesLit`・`drawLitWith`・`drawInstancesDepth`・`drawDepthWith`・`noteCulled`。`Render3d.flix` は 1,175 → 1,124 行。
+- 振る舞いの変化（絵は変わらない）: GL は場面ごとに形と絵の upload を先にまとめて出す（draw の間に `bufferData` が挟まらない）。前の材質の行と同じ付け方の行は cutout・`uParamN`・絵・sampler を入れ直さない。
+  `hasAlphaToOne` と姿勢の行の上限は prepare ごとに 1 回聞く（前は Native で標本つきの場面の時だけ聞いた）。間引いた法線マップの物のタンジェントも上げる。draw の数と分かれた理由は前と同じ。
+- テスト: render_gl 469 緑（前の 452 に `TestSceneList` の 17 本。行 11 本・計画 5 本（GL を呼ばず backend の答えを値で渡す）・GL の backend 1 本）。偽の GL を通る 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload）は 1 字も替えずに緑。
+  直しを外した確かめ: 材質を順の番号で並べないと `testMaterialsSortByBackendOrder` と `testInstancedSortsMaterialsByProgram` が落ちる。同じ付け方の比べから params を外すと `testOtherParamsRebind` が落ちる。
+  形を描く時に上げる形へ戻すと `testMeshesUploadBeforeFirstDraw` と `testCulledBatchKeepsMeshInUse` が落ちる。
+- 門（この Mac・Apple M4 Pro・macOS 27・2026-11-16）:
+  - `make gl-parity` 緑。81 行が変える前の木（R1b-6・a3c6e397）で流した物と 1 字も同じ（決めた事 1 のフラグを入れる前と後の両方）。
+  - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ）。変える前の木で撮った 54 枚とバイトまで同じ。
+  - `make webgpu-v1-check` 緑（36 場面とも許す差の内・draw の数も GL と同じ・誤り 0・「まだ描かない: 3D の場面」1 回）。`make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）・`make lint-huge-methods` 緑（sprite_stress・bench/scene3d・bench/webgpu_v1 の jar）・`make lint-max-lines` 緑・`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+  - 速さ（`bench/scene3d`・`make run SCENE=field COUNT=12000 MOVING=100`・2 回 × 2 区間・frame p50。人の方針（12.16）では最後にまとめて測るが、表の行が速さの【目標】を持つので測った）:
+
+    | 条件 | 変える前（a3c6e397） | 後（フラグ無し） | 後（入れた形） |
+    |---|---|---|---|
+    | 形 1 つ・材質 1 種 | 15.7〜18.4 ms（split 12.1〜14.5） | 15.3〜15.5 ms（split 11.7〜11.8） | 15.4〜18.9 ms（split 11.7〜14.7） |
+    | 形が物ごと・材質 1 種（1 棟ずつの都市に近い形） | 71.1〜82.4 ms（split 25.4〜31.3・draw 41.4〜44.7） | 70.5〜74.9 ms（draw 33.5〜35.4） | 73.2〜78.0 ms（draw 28.3〜30.1） |
+
+    1 コマは起動ごとの揺れ（`bench/scene3d/RESULTS.md` の ±20%）の内で、はっきり減ったのは GL の `draw` の区間だけ。split（計画）は変わっていない。
+    東京 1 棟ずつ（137 ms → 100 ms【目標】）は【未確認】（`plateau_city` は repo の外で、この小分けでは回していない）。fps3d_lab の 5% は【未確認】（同じ理由）。
+- 設計とずれた所: 表の「`planScene` 系を配列で運ぶ」は、計画の出口（`SceneList` の行）だけを配列にした。内側の輪（`placedDrawOf`・`groupInOrder`・`batchOf`・`packDraw` の record の欄の引き当て）は
+  偽の GL を通るテスト（`TestRender3dBatch` が `batchOf`・`numberBatch`・`packDraw` の record の形を見る）を替えずに残すため手を付けていない。split が 12〜15 ms のまま（目標の分）なのはこのため。
+  5.3 の「上げる行を `RenderList` の先頭に出す」は、行の種類でなく描く前に呼ぶ backend の関数にした（決めた事 2）。
+- 持ち越し: 計画の内側の輪を配列で運ぶ（split の 12〜15 ms・テストの record の形を替える相談とあわせて）・材質の draw ごとの値と絵の組を行へ（R2b。WebGPU の材質の bind group と一緒に）・
+  半透明・ビルボード・空・影の地図を行へ（R2b）・東京と fps3d_lab の計測（P10 の前の計測で）・WebGPU で 3D の行を流す（V2。`SceneList` と `MaterialTable` の形をそこで見直す）。

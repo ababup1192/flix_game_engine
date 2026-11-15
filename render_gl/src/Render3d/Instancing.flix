@@ -26,7 +26,7 @@ mod Render3d.Instancing {
     def mapBatches(f: PackMode -> PlannedBatch -> MeshBatch \ ef, plan: ScenePlan[PlannedBatch]): ScenePlan[MeshBatch] \ ef =
         let lit = f(PackMode.Lit);
         let shadowDepth = f(PackMode.ShadowDepth);
-        let material = d -> { entry = d#entry, material = d#material, batch = lit(d#batch) };
+        let material = d -> { handle = d#handle, order = d#order, kind = d#kind, material = d#material, batch = lit(d#batch) };
         let draws = plan#draws;
         { cmd = plan#cmd,
           draws = { plain = List.map(lit, draws#plain), skinned = List.map(lit, draws#skinned),

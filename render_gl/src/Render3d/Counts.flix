@@ -14,7 +14,8 @@ mod Render3d.Counts {
         case ShadowPass, Billboard, Sky, Transparent, Lightmap, Skinned, Material, Mesh
     }
 
-    def breakSlotOf(b: BatchBreak): Int32 = match b {
+    /// b を数える countsHolder の添え字（Render3d.SceneList の行の分かれた理由の欄もこの番号）。
+    pub def breakSlotOf(b: BatchBreak): Int32 = match b {
         case BatchBreak.ShadowPass  => 11
         case BatchBreak.Billboard   => 12
         case BatchBreak.Sky         => 13
@@ -127,9 +128,11 @@ mod Render3d.Counts {
         Ref.put({ name = name, reason = reason } :: Ref.get(state#materialBuildsRef), state#materialBuildsRef)
 
     /// 3D の draw call を 1 つ数え、それが 1 つの draw call に分かれた理由 why も 1 つ数える。
-    pub def countDrawCall(state: State, why: BatchBreak): Unit \ IO =
+    pub def countDrawCall(state: State, why: BatchBreak): Unit \ IO = countDrawCallAt(state, breakSlotOf(why))
+
+    /// countDrawCall の、理由を breakSlotOf の番号で受ける形。
+    pub def countDrawCallAt(state: State, slot: Int32): Unit \ IO =
         count(state, Counter.DrawCalls, 1);
         let h = state#countsHolder;
-        let i = breakSlotOf(why);
-        Array.put(Array.get(i, h) + 1, i, h)
+        Array.put(Array.get(slot, h) + 1, slot, h)
 }
