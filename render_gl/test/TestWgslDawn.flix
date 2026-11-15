@@ -1,8 +1,9 @@
 // 生成した WGSL を PC の Dawn（Tint）で組み、誤りが 0 件かを確かめる（ブラウザを開かない）。
 // 形式: 1 つのテストが device を 1 つ開き、全部の変種を組んで、組めなかった物の名前と誤りの文の列が空かを見る
 // （Dawn は呼ぶスレッドを 1 つにする約束なので、テストを変種ごとに分けない）。
-// device が開けない機械（GPU が無い・Dawn のネイティブが無い OS）では組まずに通し、その旨を 1 行出す
-// （jWebGPU 0.3.4 の Dawn には Null の backend が無く、GPU の無い機械では Tint に届かない）。
+// 組まずに通すのは、Dawn のネイティブが無い OS（今は macOS の arm64 だけにある）と、adapter が無い機械（GPU が無い）だけで、`[wgsl] SKIP:` の行を出す
+// （jWebGPU 0.3.4 の Dawn には Null の backend が無く、GPU の無い機械では Tint に届かない）。ほかの理由で開けなければ落とす。
+// GPU に頼らない検査（GLSL にしか無い字が無いか）は同じファイルの CPU のテストが見る。
 mod TestWgslDawn {
     import fge.webgpu.BindGroupLayoutDesc
     import fge.webgpu.BufferBindingType
@@ -13,6 +14,7 @@ mod TestWgslDawn {
     import fge.webgpu.TextureSampleType
     import fge.webgpu.WebGpu
     import java.io.File
+    import java.lang.System
     import java.nio.file.Files
     use ShaderDoc.{Field, Shade, Out, Axis, TexChan, BinOp, UnOp, FilterMode, WorleyOut, Axis3}
 
@@ -211,15 +213,17 @@ mod TestWgslDawn {
 
     /// 3D の材質の部品を、varying を引数で受ける小さな frag に差して組む。
     def materialErrors(gpu: WebGpu, label: String, spec: ShaderDoc.Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): String \ IO =
+        compileErrors(gpu, label, materialHarness(spec, emission, metallicRoughness))
+
+    def materialHarness(spec: ShaderDoc.Spec, emission: Option[Shade], metallicRoughness: Option[Shade]): String =
         let m = ShaderGen.Wgsl.compile3d(spec, emission, metallicRoughness, 1);
-        let wgsl = m#declarations + m#functions +
+        m#declarations + m#functions +
             "@fragment fn fs_main(@location(0) vUv: vec2f, @location(1) vWorld: vec3f, @location(2) vNormal: vec3f, @location(3) vColor: vec3f) -> @location(0) vec4f {\n" +
             "    let material = materialEval(vUv, vWorld, vNormal, vColor);\n" +
             "    let albedo = material.albedo;\n" +
             "    let cutout = " + m#cutoutAlpha + ";\n" +
             "    return vec4f(albedo.rgb + material.emission + vec3f(material.metalRough, cutout), albedo.a);\n" +
-            "}\n";
-        compileErrors(gpu, label, wgsl)
+            "}\n"
 
     /// 材質の frag の字を変える ProgramKind の欄の組（skinned は頂点シェーダーだけを変えるので偽のまま。法線マップは uv つきの時だけ）。
     def programKinds(): List[Render3d.ProgramKind] =
@@ -278,13 +282,53 @@ mod TestWgslDawn {
         let fails = unreadable ::: (all |> List.filter(p -> not String.isEmpty(snd(p))));
         (fails, List.length(all))
 
+    /// 組まずに通してよい理由か: Dawn のネイティブが無い OS か、adapter が無い（DawnWebGpu.open の「adapter が無い」・Dawn の「No supported adapters」）。
+    def isSkippable(why: String): Bool \ IO =
+        let os = System.getProperty("os.name");
+        let arch = System.getProperty("os.arch");
+        let hasNative = not Object.isNull(os) and String.startsWith({ prefix = "Mac" }, os) and not Object.isNull(arch) and arch == "aarch64";
+        not hasNative or String.contains({ substr = "adapter が無い" }, why) or String.contains({ substr = "No supported adapters" }, why)
+
+    /// 生成した WGSL の全部（2D の面・材質の部品を差した frag・3D の材質の frag・lit・空）の (名前, 字)。Dawn の検査と同じ並び。
+    def allWgsl(): List[(String, String)] \ IO =
+        let surfaces = allKindsSpecs() ::: nonUniformBlurSpec() :: equalEdgeSpecs() ::: engineSpecs() ::: (templateSpecs() |> List.filterMap(Result.toOption));
+        let materials = materialVariants() |> List.map(v -> {
+            let (name, spec, glow, metal) = v;
+            ("material " + name, materialHarness(spec, glow, metal))
+        });
+        (surfaces |> List.map(sp -> (sp#name, ShaderGen.Wgsl.compile(sp)#module))) ::: materials ::: materialFragments() ::: sceneFunctions()
+
+    /// GLSL にしか無い字（WGSL に出たら言葉の切り替え漏れ）。
+    def glslOnlyTokens(): List[String] =
+        "float(" :: "vec2 " :: "vec4 " :: "texture(" :: "textureLod(" :: "textureSize(" :: " ? " :: "atan(" :: "mod(" :: "inversesqrt" :: "dFdx" :: "uniform " :: Nil
+
+    /// tok が字 s に、名前の途中でない所（直前が英数字と _ でない所）から出てくるか（sg_mod( の mod( は数えない）。
+    def hasToken(tok: String, s: String): Bool =
+        let isPart = (ch: Char) -> Char.isLetter(ch) or Char.isDigit(ch) or ch == '_';
+        let starts = String.splitOn({ substr = tok }, s);
+        List.zip(starts, List.drop(1, starts)) |> List.exists(p -> {
+            let before = fst(p);
+            String.isEmpty(before) or not isPart(String.charAt(String.length(before) - 1, before)) or not isPart(String.charAt(0, tok))
+        })
+
+    @Test
+    def testGeneratedWgslHasNoGlslOnlyText(): Unit \ {Assert, IO} =
+        let found = allWgsl() |> List.flatMap(nw -> {
+            let (name, wgsl) = nw;
+            glslOnlyTokens() |> List.filter(tok -> hasToken(tok, wgsl)) |> List.map(tok -> "${name}: ${tok}")
+        });
+        Assert.assertEq(expected = (Nil: List[String]), found)
+
     @Test
     def testEveryGeneratedWgslCompilesOnDawn(): Unit \ {Assert, IO} =
         let device = WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice());
         match device {
             case Err(why) =>
-                println("[wgsl] Dawn の device が開けないので組まずに通す: ${why}");
-                Assert.assertEq(expected = 0, 0)
+                if (isSkippable(why)) {
+                    println("[wgsl] SKIP: Dawn で組まない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
             case Ok(gpu) =>
                 let (fails, count) = checkAll(gpu);
                 gpu.destroy();

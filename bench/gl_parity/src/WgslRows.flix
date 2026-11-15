@@ -2,9 +2,8 @@
 // 256 × 1 の RGBA32F に塗り、8 bit に丸める前の値で比べる。どちらも同じ機械の GPU の f32 なので、式の字が同じなら値も同じになるはず。
 // 画素 i の uv は ((i + 0.5) / 256, fract(i × 0.618034))。絵を読む面には、読む名前ごとに 8 × 8 の決まった絵を貼る（GL も WebGPU も同じ並びの同じ絵）。
 // 差は |gl − webgpu| / max(1, |gl|) の成分ごとの最大。上限 limit() を超えた物があれば exit 1。
-// 上限（2026-11-15・Apple M4 Pro・macOS 27 の GL と Dawn の Metal で測った値から決めた）: 59 行のうち 41 行は差 0。
-//   残りは sin・cos に大きな引数（uTime を掛けた位相・hash）が入る節で、測った最大は 1.5e−5（テンプレの caustics）・1.2e−5（lava）。
-//   GLSL と WGSL は別のコンパイラ（GL の driver と Tint の MSL）を通るので、掛けて足す所の丸め方がそろわない。上限 1e−4 は 8 bit の 1/40 段。
+// 上限 1e−4 の理由: sin・cos に大きな引数（uTime を掛けた位相・hash）が入る節は、GLSL と WGSL が別のコンパイラ（GL の driver と Tint）を通り、
+//   掛けて足す所の丸め方がそろわない。8 bit の 1/40 段なので絵には出ない（測った値は plans/engine-webgpu.md の 12.14）。
 //
 // 入口: `make -C bench/gl_parity wgsl-rows`（PARITY_WGSL_ROWS=1 で ParityMain の main がここへ来る）。GPU と Dawn の要る門。
 mod WgslRows {
@@ -132,9 +131,14 @@ mod WgslRows {
     def paramValue(k: Int32): Float64 = 0.3 + 0.17 * Int32.toFloat64(k)
 
     /// 画素 i の uv（GLSL と WGSL で同じ式）。
-    def rowUvGlsl(): String = "vec2 sg_rowUv(float x) { float i = floor(x); return vec2((i + 0.5) / 256.0, fract(i * 0.618034)); }\n"
+    /// sg_rowUvMip は u の進みが画素ごとに速くなる座標（mip のレベルが行の左の 0 から右の 1 へ移る。fract の継ぎ目は sg_texMip が差から外す）。
+    def rowUvGlsl(): String =
+        "vec2 sg_rowUv(float x) { float i = floor(x); return vec2((i + 0.5) / 256.0, fract(i * 0.618034)); }\n" +
+        "vec2 sg_rowUvMip(float x) { float i = floor(x); return vec2(fract(i * i / 2048.0), 0.5); }\n"
 
-    def rowUvWgsl(): String = "fn sg_rowUv(x: f32) -> vec2f { let i = floor(x); return vec2f((i + 0.5) / 256.0, fract(i * 0.618034)); }\n"
+    def rowUvWgsl(): String =
+        "fn sg_rowUv(x: f32) -> vec2f { let i = floor(x); return vec2f((i + 0.5) / 256.0, fract(i * 0.618034)); }\n" +
+        "fn sg_rowUvMip(x: f32) -> vec2f { let i = floor(x); return vec2f(fract(i * i / 2048.0), 0.5); }\n"
 
     /// 面の GLSL を 1 行に塗る形へ: vUv を varying から画素の位置の式へ替える（ほかの字は ShaderGen.compile のまま）。
     def surfaceGlsl(spec: ShaderDoc.Spec): String =
@@ -178,26 +182,26 @@ mod WgslRows {
         ("noisy", noisy, None, None) :: Nil
 
     /// 画素ごとの varying（GLSL と WGSL で同じ式）。
-    def varyingsGlsl(): String =
-        "    vUv = sg_rowUv(gl_FragCoord.x);\n" +
+    def varyingsGlsl(uvFn: String): String =
+        "    vUv = " + uvFn + "(gl_FragCoord.x);\n" +
         "    vWorld = vec3(vUv.x * 4.0 - 2.0, vUv.y * 3.0, vUv.x - vUv.y);\n" +
         "    vNormal = vec3(vUv.y - 0.5, 1.0, vUv.x - 0.5);\n" +
         "    vColor = vec3(vUv.x, vUv.y, 0.5);\n"
 
-    def materialGlsl(spec: ShaderDoc.Spec, emission: Option[Shade], metal: Option[Shade]): String =
+    def materialGlsl(uvFn: String, spec: ShaderDoc.Spec, emission: Option[Shade], metal: Option[Shade]): String =
         let m = ShaderGen.compile3d(spec, emission, metal);
         "#version 330 core\nvec2 vUv;\nvec3 vWorld;\nvec3 vNormal;\nvec3 vColor;\nout vec4 fragColor;\n" + rowUvGlsl() + m#uniforms + m#functions +
-        "void main() {\n" + varyingsGlsl() +
+        "void main() {\n" + varyingsGlsl(uvFn) +
         "    vec4 albedo;\n    vec3 emission;\n    vec2 metalRough = vec2(0.0);\n" +
         (if (Option.nonEmpty(metal)) "    materialEval(albedo, emission, metalRough);\n" else "    materialEval(albedo, emission);\n") +
         "    fragColor = vec4(albedo.rgb + emission * 0.5 + vec3(metalRough, 0.0) * 0.25, albedo.a + " + m#cutoutAlpha + " * 0.125);\n" +
         "}\n"
 
-    def materialWgsl(spec: ShaderDoc.Spec, emission: Option[Shade], metal: Option[Shade]): String =
+    def materialWgsl(uvFn: String, spec: ShaderDoc.Spec, emission: Option[Shade], metal: Option[Shade]): String =
         let m = ShaderGen.Wgsl.compile3d(spec, emission, metal, 0);
         m#declarations + rowUvWgsl() + m#functions +
         "@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n" +
-        "    let vUv = sg_rowUv(pos.x);\n" +
+        "    let vUv = " + uvFn + "(pos.x);\n" +
         "    let vWorld = vec3f(vUv.x * 4.0 - 2.0, vUv.y * 3.0, vUv.x - vUv.y);\n" +
         "    let vNormal = vec3f(vUv.y - 0.5, 1.0, vUv.x - 0.5);\n" +
         "    let vColor = vec3f(vUv.x, vUv.y, 0.5);\n" +
@@ -216,21 +220,35 @@ mod WgslRows {
     // ── 比べる ──
 
     /// 1 つの行（名前・GLSL・WGSL・GL の uniform・WebGPU の値・絵）。
-    type alias Row = { name = String, glsl = String, wgsl = String, glUniforms = List[(String, RowUniform)], values = Vector[Float32], textures = List[RowTexture] }
+    /// mustVary = r が行の中で変わるはずの行（変わらなければ、読みが mip のレベルを選んでいない）。
+    type alias Row = { name = String, glsl = String, wgsl = String, glUniforms = List[(String, RowUniform)], values = Vector[Float32], textures = List[RowTexture],
+                       mustVary = Bool }
 
     def rows(): List[Row] \ IO =
         let surfaces = surfaceSpecs() |> List.map(spec -> {
             let out = ShaderGen.Wgsl.compile(spec);
             { name = "face " + spec#name, glsl = surfaceGlsl(spec), wgsl = surfaceWgsl(spec), glUniforms = surfaceGlUniforms(spec),
-              values = packSlots(out#slots), textures = texturesOf(out#texReads) }
+              values = packSlots(out#slots), textures = texturesOf(out#texReads), mustVary = false }
         });
         let mats = materials() |> List.map(entry -> {
             let (name, spec, glow, metal) = entry;
             let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 0);
-            { name = "material " + name, glsl = materialGlsl(spec, glow, metal), wgsl = materialWgsl(spec, glow, metal),
-              glUniforms = materialGlUniforms(spec, glow, metal), values = packSlots(m#slots), textures = texturesOf(m#texReads) }
+            { name = "material " + name, glsl = materialGlsl("sg_rowUv", spec, glow, metal), wgsl = materialWgsl("sg_rowUv", spec, glow, metal),
+              glUniforms = materialGlUniforms(spec, glow, metal), values = packSlots(m#slots), textures = texturesOf(m#texReads), mustVary = false }
         });
-        surfaces ::: mats
+        surfaces ::: mats ::: mipRow() :: Nil
+
+    /// 2 つのレベルの色が違う（レベル 0 = 暗い赤・レベル 1 = 明るい赤）絵を、mip のレベルが行の中で 0 から 1 へ移る座標で読む材質の行。
+    def mipRow(): Row =
+        let spec = fill("mip", 0.0, Shade.Rgb({ r = Field.Tex({ name = "albedo", chan = TexChan.R }), g = c(0.0), b = c(0.0) }), c(1.0));
+        let m = ShaderGen.Wgsl.compile3d(spec, None, None, 0);
+        let solid = (size: Int32, red: Int32) -> { width = size, height = size,
+                                                   texels = RowTexels.Argb8(Vector.repeat(size * size, Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(red, 16)))) };
+        let chain = { sampler = "uTex0", levels = solid(8, 40) :: solid(4, 220) :: Nil, linear = true };
+        { name = "material mip（2 レベル）", glsl = materialGlsl("sg_rowUvMip", spec, None, None), wgsl = materialWgsl("sg_rowUvMip", spec, None, None),
+          glUniforms = ("uTime", RowUniform.FloatValue(time())) :: ("uTexFlip0", RowUniform.FloatValue(0.0)) :: ("uTexLevels0", RowUniform.FloatValue(2.0)) :: Nil,
+          values = packSlots(m#slots) |> Vector.mapWithIndex((k, x) -> if (k == 1) Float64.truncateToFloat32(2.0) else x),
+          textures = chain :: Nil, mustVary = true }
 
     def diffOf(gl: Vector[Float32], gpu: Vector[Float32]): Float64 =
         Vector.zip(gl, gpu) |> Vector.foldLeft((acc, p) -> {
@@ -269,7 +287,10 @@ mod WgslRows {
                 case (Ok(a), Ok(b)) =>
                     let d = diffOf(a, b);
                     let spread = spreadOf(a);
-                    ("[wgsl-rows] ${r#name}: 差 ${d}・GL の r の幅 ${spread}" + (if (d <= limit()) "" else "（上限 ${limit()} を超えた）"), d <= limit())
+                    let flat = r#mustVary and spread == 0.0;
+                    let ok = d <= limit() and not flat;
+                    ("[wgsl-rows] ${r#name}: 差 ${d}・GL の r の幅 ${spread}" + (if (d <= limit()) "" else "（上限 ${limit()} を超えた）") +
+                     (if (flat) "（変わるはずの r が変わらない）" else ""), ok)
                 case (Err(e), _) => ("[wgsl-rows] ${r#name}: GL で塗れない: ${e}", false)
                 case (_, Err(e)) => ("[wgsl-rows] ${r#name}: WebGPU で塗れない: ${e}", false)
             }

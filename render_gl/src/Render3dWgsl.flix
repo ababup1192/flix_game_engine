@@ -1,6 +1,5 @@
 // Render3dWgsl — 3D の描き手の WebGPU の frag の WGSL（Render3dGlsl の材質の frag・頂点の色の frag と、それが使う光・影・色の空間・法線マップ・環境マップ・lightmap の関数）。
 // 式は Render3dGlsl と 1 行ずつ同じに書き、光・かすみ・空の式は同じ LightModel3d の木から LightModel3d.Codegen.toWgsl で作る。
-// 頂点シェーダー・ビルボード・空・奥行きだけ・貼り付けの WGSL はまだ無い（3D の WebGPU の描き手のフェーズで足す）。
 //
 // bind group: 0 = 場面（`var<uniform> r3d: R3dScene`・影の地図・太陽の影の地図・環境マップ）・1 = 材質（ShaderGen.Wgsl.compile3d の `sg` と絵）・
 // 2 = 物ごと（`var<uniform> r3dDraw: R3dDraw`・法線マップ・lightmap）。varying の location は R3dIn の並び。
@@ -93,7 +92,7 @@ pub mod Render3dWgsl {
     /// 影の地図の PCF（Render3dGlsl.shadowSource と同じ約束 1〜5）と、スポットと太陽の影の割合。
     /// 地図の画素の数え方は GL と同じ（行 0 が NDC の y = −1）で、読む時だけ行を上下に返す: WebGPU で描いた地図は行 0 が NDC の y = +1。
     // WhyNot: 周りの画素を返した後の行で端にそろえない — 端にそろえる（clamp）のを GL の行で済ませてから返せば、CPU の描き手と同じ画素の組を読む。
-    def shadowSource(): String =
+    pub def shadowSource(): String =
         "fn shadowLitFraction(map: texture_depth_2d, lightMatrix: mat4x4f, bias: f32, pcf: i32, shift: f32, n: vec3f, p: vec3f) -> f32 {\n" +
         "    let c = lightMatrix * vec4f(p + n * shift, 1.0);\n" +
         "    if (c.w <= 0.0) { return 1.0; }\n" +
@@ -143,11 +142,12 @@ pub mod Render3dWgsl {
         "}\n"
 
     // WhyNot: 極で atan2 を選ばない形を if にしない — select は両側を計算するが、atan2(0, 0) の値は捨てられる（Flix の atan2 と同じ 0 を選ぶ）。
-    def environmentSource(): String =
+    pub def environmentSource(): String =
         LightModel3d.Codegen.toWgsl("environmentDirectionAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.MetallicRoughness :: Nil,
                                     LightModel3d.environmentDirection()) +
         "fn environmentUv(d: vec3f) -> vec2f {\n" +
-        "    let azimuth = select(atan2(d.x, -d.z), 0.0, abs(d.x) + abs(d.z) < 1e-12);\n" +
+        "    let pole = abs(d.x) + abs(d.z) < 1e-12;\n" +
+        "    let azimuth = select(atan2(d.x, -d.z), 0.0, pole);\n" +
         "    return vec2f(0.5 + azimuth / 6.283185307179586, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793);\n" +
         "}\n" +
         "fn environmentColorAt(p: vec3f, n: vec3f, albedo: vec3f, metalRough: vec3f) -> vec3f {\n" +
@@ -164,9 +164,16 @@ pub mod Render3dWgsl {
         LightModel3d.Codegen.toWgsl("lightmapLightAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.LightmapColor :: Nil,
                                     LightModel3d.lightmapLightingModel())
 
-    /// 法線マップで傾けた法線（Render3dGlsl.normalMapSource・applyNormalMapSource と同じ式）。
-    // WhyNot: 長さ 0 の p の normalize を if で避けない — select は両側を計算するが、NaN の側は捨てられる。
+    /// 法線マップで傾けた法線（Render3dGlsl.normalMapSource と同じ式）。
     def normalMapSource(): String =
+        applyNormalMapSource() +
+        "fn normalMapped(n: vec3f, uv: vec2f, tangent: vec4f) -> vec3f {\n" +
+        "    return applyNormalMap(n, tangent, r3dDraw.uNormalStrength, sg_texMip(uNormalMap, uNormalMapSampler, r3dDraw.uNormalLevels, uv).rgb);\n" +
+        "}\n"
+
+    /// Render3dGlsl.applyNormalMapSource と同じ式。
+    // WhyNot: 長さ 0 の p の normalize を if で避けない — select は両側を計算するが、NaN の側は捨てられる。
+    pub def applyNormalMapSource(): String =
         "fn applyNormalMap(n: vec3f, tangent: vec4f, strength: f32, c: vec3f) -> vec3f {\n" +
         "    var t = tangent.xyz - n * dot(n, tangent.xyz);\n" +
         "    if (dot(t, t) < 1e-12) { return n; }\n" +
@@ -175,12 +182,10 @@ pub mod Render3dWgsl {
         "    let m = vec3f((c.x * 2.0 - 1.0) * strength, (c.y * 2.0 - 1.0) * strength, c.z * 2.0 - 1.0);\n" +
         "    let p = t * m.x + b * m.y + n * m.z;\n" +
         "    return select(normalize(p), n, dot(p, p) < 1e-12);\n" +
-        "}\n" +
-        "fn normalMapped(n: vec3f, uv: vec2f, tangent: vec4f) -> vec3f {\n" +
-        "    return applyNormalMap(n, tangent, r3dDraw.uNormalStrength, sg_texMip(uNormalMap, uNormalMapSampler, r3dDraw.uNormalLevels, uv).rgb);\n" +
         "}\n"
 
     /// frag が受ける varying（Render3dGlsl の in の並び）。uv・2 本目の uv・タンジェント・表裏は使う版だけ。
+    // WhyNot: flat の値を最後の頂点から取る形（GL の既定）にそろえない — WGSL の flat は最初の頂点を取るが、vTint と vEmissionIntensity は置いた物 1 つで同じ値。
     def inputStruct(surface: Render3d.ProgramKind, normalMapped: Bool): String =
         "struct R3dIn {\n" +
         "    @location(0) vWorld: vec3f,\n" +
@@ -198,7 +203,7 @@ pub mod Render3dWgsl {
     /// 材質の部品は group 1 で作った物（ShaderGen.Wgsl.compile3d(…, 1)）を渡す。
     pub def materialFragmentSource(m: ShaderGen.Wgsl.MaterialWgsl, surface: Render3d.ProgramKind): String =
         let normalMapped = surface#uv and surface#normalMap;
-        let needsMip = (normalMapped or surface#lightmap) and not String.contains(substr = "fn sg_texMip(", m#functions);
+        let needsMip = (normalMapped or surface#lightmap) and List.isEmpty(m#texReads);
         let faceNormal = if (surface#doubleSided) "facingNormal" else "normalize(vNormal)";
         let normal = if (normalMapped) "normalMapped(${faceNormal}, vUv, i.vTangent)" else faceNormal;
         let cutout = if (surface#coverage) "" else "    if (r3dDraw.uCutout == 1 && " + m#cutoutAlpha + " < 0.5) { discard; }\n";

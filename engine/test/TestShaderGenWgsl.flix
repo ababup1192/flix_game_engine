@@ -54,7 +54,7 @@ mod TestShaderGenWgsl {
     def testSurfaceSlotsAreTheStructOrder(): Unit \ Assert =
         let out = ShaderGen.Wgsl.compile(fill(Nil, Field.Bin({ op = ShaderDoc.BinOp.Add, a = Field.Param({ name = "p" }), b = Field.Param({ name = "q" }) })));
         let names = out#slots |> List.map(ShaderGen.Wgsl.slotName) |> List.map(n -> n + ": f32") |> List.join(", ");
-        Assert.assertTrue(String.contains(substr = "struct SgValues { " + names + " };", out#module) and List.length(out#slots) == 8)
+        Assert.assertEq(expected = (true, 8), (String.contains(substr = "struct SgValues { " + names + " };", out#module), List.length(out#slots)))
 
     @Test
     def testMaterialSlotsAreTimeThenLevelsThenParams(): Unit \ Assert =
@@ -76,9 +76,10 @@ mod TestShaderGenWgsl {
     @Test
     def testLightLoopBreaksOnTheCountInsideTheFixedBound(): Unit \ Assert =
         let wgsl = lightAt();
-        Assert.assertTrue(String.startsWith(prefix = "fn lightAt(p: vec3f, n: vec3f) -> vec3f {", wgsl) and
-                          String.contains(substr = "for (var i = 0; i < ${Scene3d.maxPointLights()}; i++) {", wgsl) and
-                          String.contains(substr = "if (i >= r3d.uPointCount) { break; }", wgsl))
+        Assert.assertEq(expected = (true, true, true),
+                        (String.startsWith(prefix = "fn lightAt(p: vec3f, n: vec3f) -> vec3f {", wgsl),
+                         String.contains(substr = "for (var i = 0; i < ${Scene3d.maxPointLights()}; i++) {", wgsl),
+                         String.contains(substr = "if (i >= r3d.uPointCount) { break; }", wgsl)))
 
     /// f32 の光の配列は uniform の配列の 16 バイト刻みに合わせて vec4 の配列に入れ、x を読む。
     @Test
@@ -101,6 +102,14 @@ mod TestShaderGenWgsl {
     def testSpotShadowIsNotComputedInsideSelect(): Unit \ Assert =
         let lines = String.lines(lightAt()) |> List.filter(l -> String.contains(substr = "spotShadow(", l));
         Assert.assertEq(expected = (Nil: List[String]), lines |> List.filter(l -> String.contains(substr = "select(", l)))
+
+    /// 光の式の木の smoothstep も、両端が同じ数なら組み込みの smoothstep を使わず、CPU と同じく端以上で 1 にする。
+    @Test
+    def testLightSmoothstepWithEqualNumberEndsIsAStep(): Unit \ Assert =
+        let y = LightModel3d.ScalarExpr.Y(LightModel3d.Vec3Expr.In(Vec3Input.Normal));
+        let s = LightModel3d.ScalarExpr.Smoothstep(LightModel3d.ScalarExpr.Num(0.5), LightModel3d.ScalarExpr.Num(0.5), y);
+        let wgsl = LightModel3d.Codegen.toWgsl("f", Vec3Input.Normal :: Nil, LightModel3d.Vec3Expr.Make(s, s, s));
+        Assert.assertTrue(String.contains(substr = "select(0.0, 1.0, n.y >= 0.5)", wgsl))
 
     @Test
     def testLightHasNoTernaryOrGlslNames(): Unit \ Assert =

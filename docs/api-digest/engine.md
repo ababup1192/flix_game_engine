@@ -1669,8 +1669,6 @@
   `pub type alias SurfaceWgsl = { module = String, functions = String, slots = List[UniformSlot], texReads = List[(String, ShaderDoc.FilterMode)] }`
 - Spec → 2D の面の WGSL（式は ShaderGen.compile と同じ木から作る）。
   `pub def compile(spec: ShaderDoc.Spec): SurfaceWgsl`
-- 2D の面の入口（vs_main・fs_main）。quad は頂点の番号から作る（GL の共有 quad と同じ 6 頂点）。
-  `pub def surfaceEntries(): String`
 - `pub def clipFromGlSource(): String`
 - 3D の材質の WGSL の部品。declarations = `SgValues` と絵の宣言（`@group(group)`）・functions = ノイズの関数と
   `pub type alias MaterialWgsl = { declarations = String, functions = String, slots = List[UniformSlot], paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
@@ -1678,7 +1676,6 @@
   `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], group: Int32): MaterialWgsl`
 - 欄の WGSL の名前（GLSL の uniform と同じ名前）。
   `pub def slotName(slot: UniformSlot): String`
-- `pub def prelude(): String`
 - `pub def texMipSource(): String`
 
 ## ShaderJson — `engine/src/shader/ShaderJson.flix`

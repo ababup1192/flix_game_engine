@@ -16,15 +16,17 @@
 | WGSL の並びの決まり（16 バイトそろえ） | 欄を全部 f32 にすれば「4 バイトずつ前から」で済む。vec2 や vec3 を混ぜると穴が空く | vec4 の配列なので穴は無いが、4 つずつの番号の読みになる |
 
 **決めた理由**: どちらも表は 1 つで、詰める側の手間は同じ。差は生成した WGSL が読めるかで、候補 1 は名前のまま読める。
-欄を f32 だけにする決まりで、16 バイトそろえの穴の計算を詰める側に持ち込まない（struct の大きさは WGSL が 16 の倍数に丸める。buffer はその大きさで取る）。
+欄を f32 だけにする決まりで、16 バイトそろえの穴の計算を詰める側に持ち込まない（f32 だけの struct の大きさは欄の数 n × 4 バイト。backend は buffer を roundUp(4n, 16) バイト以上で取る約束にする）。
 場面で共通の値（光・影・霧・カメラ）は Spec に依らないので、手で書いた 1 つの struct にする（候補 2 の形。ShaderGen は知らない）。
 
 ## 候補 1: ShaderGen が struct を出す（入れた形）
 
 ```flix
-// ShaderGen.compileWgsl(spec) の返す値（engine の pub）。
-pub type alias SurfaceWgsl = { module = String, slots = List[UniformSlot], texReads = List[(String, ShaderDoc.FilterMode)] }
+// ShaderGen.Wgsl.compile(spec) の返す値（engine の pub）。functions = 入口（vs_main・fs_main）を除いた物。
+pub type alias SurfaceWgsl = { module = String, functions = String, slots = List[UniformSlot],
+                               texReads = List[(String, ShaderDoc.FilterMode)] }
 
+// ShaderGen.Wgsl.UniformSlot
 pub enum UniformSlot with Eq, ToString {
     case RectPosX
     case RectPosY
@@ -43,7 +45,7 @@ pub enum UniformSlot with Eq, ToString {
 //   @group(0) @binding(2) var uTex0Sampler: sampler;
 
 // backend の詰める所（P6 の面の小分けで書く。下は形の見本）。
-def packSlots(slots: List[ShaderGen.UniformSlot], draw: SurfaceDraw, buf: ByteBuffer): Unit \ IO =
+def packSlots(slots: List[ShaderGen.Wgsl.UniformSlot], draw: SurfaceDraw, buf: ByteBuffer): Unit \ IO =
     slots |> List.forEachWithIndex((i, slot) -> discard buf.putFloat(i * 4, valueOf(slot, draw)))
 ```
 

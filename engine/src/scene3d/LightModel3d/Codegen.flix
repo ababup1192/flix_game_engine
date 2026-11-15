@@ -315,13 +315,13 @@ pub mod LightModel3d.Codegen {
 
     /// WGSL の select が、選ばない側の関数の呼び出し（影の PCF など）まで計算することになるか。GLSL の三項と Flix の if は選んだ側だけを計算する。
     def selectComputesCall(t: Target, yes: String, no: String): Bool = match t {
-        case Target.Wgsl => hasCall(yes) or hasCall(no)
+        case Target.Wgsl => hasAnyCall(yes) or hasAnyCall(no)
         case Target.Glsl => false
         case Target.Flix => false
     }
 
-    /// 字に関数の呼び出し（名前の直後の開き括弧）があるか。
-    def hasCall(code: String): Bool =
+    /// 字に関数の呼び出し（名前の直後の開き括弧）が 1 つでもあるか（組み込みの max・min・pow も数える。重い呼び出しだけを見分けない）。
+    def hasAnyCall(code: String): Bool =
         let chars = String.toList(code);
         List.zip(chars, List.drop(1, chars)) |> List.exists(p -> {
             let (a, b) = p;
@@ -348,6 +348,19 @@ pub mod LightModel3d.Codegen {
         let (sa, ca) = scalarCode(t, fresh, env, a);
         let (sb, cb) = scalarCode(t, fresh, env, b);
         (sa ::: sb, f(ca, cb))
+
+    /// 両端が同じ数の Num か（WGSL はそのまま組み込みの smoothstep に渡すと、シェーダーを作る所で誤りになる）。
+    def isSameNum(lo: ScalarExpr, hi: ScalarExpr): Bool = match (lo, hi) {
+        case (ScalarExpr.Num(a), ScalarExpr.Num(b)) => a == b
+        case _                                      => false
+    }
+
+    /// smoothstep の式。WGSL で両端が同じ数なら、CPU の smoothstep（flixHelpers）と同じく x が端以上で 1・ほかは 0 にする。
+    def smoothstepCode(t: Target, sameEnds: Bool, lo: String, hi: String, x: String): String = match t {
+        case Target.Wgsl => if (sameEnds) "select(0.0, 1.0, ${x} >= ${hi})" else "smoothstep(${lo}, ${hi}, ${x})"
+        case Target.Glsl => "smoothstep(${lo}, ${hi}, ${x})"
+        case Target.Flix => "smoothstep(${lo}, ${hi}, ${x})"
+    }
 
     def lookupScalar(env: Env, name: String): String = match Map.get(name, env#scalars) {
         case Some(code) => code
@@ -411,7 +424,7 @@ pub mod LightModel3d.Codegen {
             let (sl, cl) = scalarCode(t, fresh, env, lo);
             let (sh, ch) = scalarCode(t, fresh, env, hi);
             let (sx, cx) = scalarCode(t, fresh, env, x);
-            (sl ::: sh ::: sx, "smoothstep(${cl}, ${ch}, ${cx})")
+            (sl ::: sh ::: sx, smoothstepCode(t, isSameNum(lo, hi), cl, ch, cx))
         case ScalarExpr.Dot(a, b) =>
             let (sa, ca) = vec3Code(t, fresh, env, a);
             let (sb, cb) = vec3Code(t, fresh, env, b);
@@ -493,6 +506,7 @@ pub mod LightModel3d.Codegen {
                 case Target.Glsl =>
                     let (sv, cv) = bindIfNotAtomic3(fresh, vec3Code(t, fresh, env, v));
                     (sv, map3(x -> "(uToonSteps > 0 ? floor(${x} * float(uToonSteps) + 0.5) / float(uToonSteps) : ${x})", cv))
+                // WhyNot: 段の数が 0 の時の 0 割りを select の外へ出さない — 選ばない側の inf と NaN は捨てられる。
                 case Target.Wgsl =>
                     let (sv, cv) = bindIfNotAtomic3(fresh, vec3Code(t, fresh, env, v));
                     (sv, map3(x -> "select(${x}, floor(${x} * f32(r3d.uToonSteps) + 0.5) / f32(r3d.uToonSteps), r3d.uToonSteps > 0)", cv))
@@ -944,6 +958,12 @@ pub mod LightModel3d.Codegen {
         else "vec3 ${name}(${List.join(", ", params)}) {\n" + glslStmts(1, kept) + "    return vec3(${x}, ${y}, ${z});\n}\n"
     }
 
+    /// 光のループの数の uniform の名前と、回す上限。
+    def loopBounds(kind: LightKind): (String, Int32) = match kind {
+        case LightKind.Point => ("uPointCount", Scene3d.maxPointLights())
+        case LightKind.Spot  => ("uSpotCount", Scene3d.maxSpotLights())
+    }
+
     def glslStmts(depth: Int32, stmts: List[Stmt]): String =
         stmts |> List.map(glslStmt(depth)) |> List.join("")
 
@@ -958,10 +978,7 @@ pub mod LightModel3d.Codegen {
                 "${pad}if (${c}) {\n" + glslStmts(depth + 1, yesStmts) + assign(yesVals) +
                 "${pad}} else {\n" + glslStmts(depth + 1, noStmts) + assign(noVals) + "${pad}}\n"
             case Stmt.Loop(kind, names, bodyStmts, vals, _, _) =>
-                let (count, limit) = match kind {
-                    case LightKind.Point => ("uPointCount", Scene3d.maxPointLights())
-                    case LightKind.Spot  => ("uSpotCount", Scene3d.maxSpotLights())
-                };
+                let (count, limit) = loopBounds(kind);
                 let accumulate = List.zip(names, vals) |> List.map(pair -> "${indent(depth + 1)}${fst(pair)} = ${fst(pair)} + ${snd(pair)};\n") |> List.join("");
                 (names |> List.map(n -> "${pad}float ${n} = 0.0;\n") |> List.join("")) +
                 "${pad}for (int i = 0; i < ${limit}; i++) {\n" +
@@ -1005,10 +1022,8 @@ pub mod LightModel3d.Codegen {
                 "${pad}if (${c}) {\n" + wgslStmts(depth + 1, yesStmts) + assign(yesVals) +
                 "${pad}} else {\n" + wgslStmts(depth + 1, noStmts) + assign(noVals) + "${pad}}\n"
             case Stmt.Loop(kind, names, bodyStmts, vals, _, _) =>
-                let (count, limit) = match kind {
-                    case LightKind.Point => ("r3d.uPointCount", Scene3d.maxPointLights())
-                    case LightKind.Spot  => ("r3d.uSpotCount", Scene3d.maxSpotLights())
-                };
+                let (countName, limit) = loopBounds(kind);
+                let count = "r3d." + countName;
                 let accumulate = List.zip(names, vals) |> List.map(pair -> "${indent(depth + 1)}${fst(pair)} = ${fst(pair)} + ${snd(pair)};\n") |> List.join("");
                 (names |> List.map(n -> "${pad}var ${n}: f32 = 0.0;\n") |> List.join("")) +
                 "${pad}for (var i = 0; i < ${limit}; i++) {\n" +

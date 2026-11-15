@@ -2,7 +2,8 @@
 // ここに置くのは文の形が GLSL と違う所（ノイズの関数・ぼかし・mip のレベルを選ぶ読み・uniform の struct・入口）だけ。
 
 /// 2D の面と 3D の材質の WGSL。draw ごとの値は 1 つの struct（`SgValues`・`var<uniform> sg`）に、欄を全部 f32 で並べる。
-/// 欄の並び（`slots`）の i 番目が uniform buffer の i × 4 バイト目（struct の大きさは欄の数 × 4 バイト。buffer はそれ以上の大きさで取る）。
+/// 欄の並び（`slots`）の i 番目が uniform buffer の i × 4 バイト目。struct の大きさは欄の数 n × 4 バイトで、backend は buffer を roundUp(4n, 16) バイト以上で取る
+/// （uniform の binding の大きさを 16 の倍数にそろえるため。余りは読まれない）。
 /// 絵の k 番目（texReads の並び）は binding 1 + 2k の texture_2d<f32>（`uTexK`）と 2 + 2k の sampler（`uTexKSampler`）。
 /// GL の描き先と違い、WebGPU の描き先の texture は上の行が先なので、読む uv の上下は返さない（GLSL の uTexFlipN は無い）。
 pub mod ShaderGen.Wgsl {
@@ -38,6 +39,7 @@ pub mod ShaderGen.Wgsl {
             valuesDecl(0, slots) ::
             textureDecls(0, reads) ::
             prelude() ::
+            smoothstepSource() ::
             (if (ShaderDoc.usesBlur(spec)) blurSource() else "") ::
             (if (ShaderDoc.usesDiv(spec)) divSource() else "") ::
             "fn sg_surface(vUv: vec2f) -> vec4f {\n" ::
@@ -48,7 +50,7 @@ pub mod ShaderGen.Wgsl {
         { module = functions + surfaceEntries(), functions = functions, slots = slots, texReads = reads }
 
     /// 2D の面の入口（vs_main・fs_main）。quad は頂点の番号から作る（GL の共有 quad と同じ 6 頂点）。
-    pub def surfaceEntries(): String =
+    def surfaceEntries(): String =
         "struct SgFrame { projection: mat4x4f };\n" +
         "@group(1) @binding(0) var<uniform> sgFrame: SgFrame;\n" +
         "struct SgVsOut {\n" +
@@ -104,6 +106,7 @@ pub mod ShaderGen.Wgsl {
         { declarations = valuesDecl(group, slots) + textureDecls(group, reads),
           functions = joinParts(
               prelude() ::
+              smoothstepSource() ::
               (if (readsTextures) blurSource() + texMipSource() else "") ::
               divSource() ::
               "struct SgMaterial { albedo: vec4f, emission: vec3f, metalRough: vec2f };\n" ::
@@ -155,13 +158,9 @@ pub mod ShaderGen.Wgsl {
 
     /// ノイズの関数（ShaderGen.preludeSource と 1 行ずつ同じ式）。sg.uTime を読む。
     // WhyNot: % で割った余りを取らない — WGSL の % は 0 の向きに切り、負の値で GLSL の mod と答えが違う。sg_mod は GLSL の mod の式。
-    pub def prelude(): String = joinParts(
+    def prelude(): String = joinParts(
         "fn sg_mod(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }\n" ::
         "fn sg_mod2(x: vec2f, y: vec2f) -> vec2f { return x - y * floor(x / y); }\n" ::
-        "fn sg_smoothstep(lo: f32, hi: f32, x: f32) -> f32 {\n" ::
-        "    if (hi == lo) { return select(1.0, 0.0, x < lo); }\n" ::
-        "    return smoothstep(lo, hi, x);\n" ::
-        "}\n" ::
         "fn sg_hash1(p: vec2f, seed: f32) -> f32 {\n" ::
         "    return fract(sin(dot(p, vec2f(127.1, 311.7)) + seed * 0.017) * 43758.5453123);\n" ::
         "}\n" ::
@@ -282,6 +281,13 @@ pub mod ShaderGen.Wgsl {
         "    return c + mat2x2f(co, -s, s, co) * p;\n" ::
         "}\n" :: Nil)
 
+    /// 端が定数の smoothstep（ShaderGen.smoothstepName の WhyNot）。端が等しければ CPU の ShaderEval と同じく x < lo で 0・ほかは 1。
+    def smoothstepSource(): String =
+        "fn sg_smoothstep(lo: f32, hi: f32, x: f32) -> f32 {\n" +
+        "    if (hi == lo) { return select(1.0, 0.0, x < lo); }\n" +
+        "    return smoothstep(lo, hi, x);\n" +
+        "}\n"
+
     /// ぼかし（ShaderGen.blurSource と同じ点の並び）。2D の面も 3D の材質も mip のレベル 0 を読む。
     def blurSource(): String =
         "fn sg_blur(tex: texture_2d<f32>, smp: sampler, uv: vec2f, radius: vec2f, taps: i32) -> vec4f {\n" +
@@ -299,6 +305,7 @@ pub mod ShaderGen.Wgsl {
 
     /// 3D の材質の mip のレベルを選ぶ読み（ShaderGen.texMipSource と同じ式。上下は返さない）。
     // WhyNot: 三項の代わりの select の偽の側の log2 を避けない — select は両方を計算するが、rho が 1 以下の時の log2 の値は捨てられる。
+    // WhyNot: dpdy の符号の向き（GL の dFdy と上下が逆）を直さない — dy は長さを測るだけに使い、向きは答えに効かない。
     pub def texMipSource(): String =
         "fn sg_texMip(tex: texture_2d<f32>, smp: sampler, levels: f32, c: vec2f) -> vec4f {\n" +
         "    var dx = dpdx(c);\n" +
@@ -307,7 +314,8 @@ pub mod ShaderGen.Wgsl {
         "    dy -= floor(dy + 0.5);\n" +
         "    let size = vec2f(textureDimensions(tex, 0));\n" +
         "    let rho = max(length(dx * size), length(dy * size));\n" +
-        "    let lod = select(min(levels - 1.0, log2(rho)), 0.0, levels <= 1.0 || rho <= 1.0);\n" +
+        "    let noMip = levels <= 1.0 || rho <= 1.0;\n" +
+        "    let lod = select(0.0, min(levels - 1.0, log2(rho)), !noMip);\n" +
         "    return textureSampleLevel(tex, smp, c, lod);\n" +
         "}\n"
 
