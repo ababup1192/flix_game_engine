@@ -1057,6 +1057,8 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | O15 | title のテスト | 1.05 倍と sin の漂いから出した x と等しいかを見る |
 | O6 | サムネの切り抜き | 試していない（14 章）。UV の側で切り抜くと写真の面の作り方が替わり、描き出しの基準 45 枚を全部見直すことになるため |
 
+- レビュー 3 の 2 回目（90 点）の直し: N1 サムネでは world を 0..8 に詰め、ゲームの hud の UnderWindow を 9 にまとめる（`View.thumbHudUsing`・`View.zThumbHudUnder`。実際の画面と同じ 1..9 に置くと world の 0..8 と重なり、血が立ち絵の下に潜る）。テスト 1 本。基準の絵 45 枚は変わらない（どの場面も world の段が 9 以下）。A1 `Commands.lookupIn`。A2 TestGameHooks の背景の Doc にテスト用の写真 p0・p1 と時間帯 g を足して使う（ゲームの写真の数に頼らない）。`make test` 479 緑。
+
 **門の結果**: `make check` OK・`make test` 478 緑・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・`make flow` 6 本 ok・`make lint` は lint-doc-refs 15 件のまま（前からの物）・`go test ./internal/yarn/ ./internal/docshape/` ok・agent-eval `novel-3d-backdrop-walk` 100 点（1 回）。
 
 ## 12. 試した事（スパイク）

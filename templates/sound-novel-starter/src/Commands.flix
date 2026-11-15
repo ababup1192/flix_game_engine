@@ -88,7 +88,10 @@ mod Commands {
     /// テンプレートとゲームを合わせた全部の命令の表（名前の重なりを見るテスト）。
     pub def specs(): List[YarnCommands.Spec] = table() |> List.map(c -> c#spec)
 
-    def lookup(name: String): Option[Command[Stage.Stage]] = table() |> List.find(c -> YarnCommands.nameOf(c#spec) == name)
+    def lookup(name: String): Option[Command[Stage.Stage]] = lookupIn(table(), name)
+
+    def lookupIn(commands: List[Command[Stage.Stage]], name: String): Option[Command[Stage.Stage]] =
+        commands |> List.find(c -> YarnCommands.nameOf(c#spec) == name)
 
     /// シナリオの <<audio se 音 wait=true>> の音の名前（長さが要る音）。
     pub def waitSoundsOf(program: Yarn.Program): List[String] =
@@ -133,7 +136,7 @@ mod Commands {
     pub def executeUsing(commands: List[Command[Stage.Stage]], replay: Replay, ctx: Ctx, command: Yarn.Command, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
         let at = " (${Yarn.sourceText(command#source)})";
         forM (
-            c <- commands |> List.find(x -> YarnCommands.nameOf(x#spec) == command#name) |> Option.toOk("知らないコマンド <<${command#name}>>${at}");
+            c <- lookupIn(commands, command#name) |> Option.toOk("知らないコマンド <<${command#name}>>${at}");
             args <- argsOf(ctx#res#commandArgs, c, command);
             done <- c#apply({ instant = ctx#instant or replay == Replay.Silent | ctx }, args, st) |> Result.mapErr(why -> "<<${command#name}>> ${why}${at}")
         ) yield {

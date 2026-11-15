@@ -35,15 +35,16 @@ mod ViewStage {
                 items |> Render.scaledAllAround(t#scale, { x = Layout.width(env#fit) * 0.5, y = Layout.height(env#fit) * 0.5 }) |> Render.movedAll(drift)
         }
 
-    /// サムネの world の層: 画面ちょうどに塗り（揺れは掛けない）、z を 0..9 に詰める（サムネは字を z 10 から重ねる）。
-    /// 10 段を超える時は奥の段から重ねて詰める（手前の覆い・小物・人物の前後は崩さない）。
+    /// サムネの world の層: 画面ちょうどに塗り（揺れは掛けない）、z を 0..View.zThumbHudUnder()-1（0..8）に詰める
+    /// （その上の 9 にゲームの hud の UnderWindow、字は z 10 から重ねる）。段が足りない時は奥の段から重ねて詰める（手前の覆い・小物・人物の前後は崩さない）。
     // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
     pub def thumbnail(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
         let items = layered(env, _ -> Layout.screen(env#fit), stage, withProps) |> withCamera(env, stage);
         let zs = items |> List.map(p -> zOf(p#item)) |> List.toSet |> Set.toList;
-        let skip = Int32.max(0, List.length(zs) - 10);
+        let room = View.zThumbHudUnder();
+        let skip = Int32.max(0, List.length(zs) - room);
         let ranks = zs |> List.zipWithIndex |> List.map(match (i, z) -> (z, Int32.max(0, i - skip))) |> List.toMap;
-        items |> List.map(Render.overItem(mapZ(z -> Map.get(z, ranks) |> Option.getWithDefault(9))))
+        items |> List.map(Render.overItem(mapZ(z -> Map.get(z, ranks) |> Option.getWithDefault(room - 1))))
 
     /// world の層の物を、層の数で並べて z を振った列（カメラと揺れの前）。areaOf = 写真の横÷縦（None は 16:9）→ 背景を塗る矩形。
     def layered(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =

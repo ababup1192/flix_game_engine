@@ -1,14 +1,25 @@
 // ゲームの口（GameView.backdrop・GameCommands.backdropSwitch・GameView.hud・GameView.objects・Commands.applyText・<<tween>>）と
 // novel.backdrops.json の initial・title・aspect の配線: 差し替えの形（ViewStage.backdropsUsing・Commands.bgUsing・Commands.executeUsing・
 // View.gameHudUsing・FlowVideo.objectsUsing）に偽の関数を差して、差した物が使われることを見る。
-// このファイルはテンプレートの持ち物で、ゲームが口を埋めても落ちないように、テンプレートの既定（None・Nil）や Doc の中身には頼らない。
+// このファイルはテンプレートの持ち物で、ゲームが口を埋めても落ちないように、テンプレートの既定（None・Nil）には頼らない。
+// 背景の Doc には、テスト用の写真 2 枚（p0・p1）と時間帯 1 つ（g）を足し、initial と title を外して使う（ゲームの写真の数や欄には頼らない。
+// ゲームの写真と時間帯は残すので、読み始めた World の台本の <<bg>> はそのまま当たる）。
 mod TestGameHooks {
 
     use fge::{Clock, Emit, Num, RawDraw, Rect2, Render, Yarn, YarnCommands, YarnRunner}
     use Commands.Out
     use TestKit.begun
 
-    def res(): Res.Res \ Fs.FileRead = TestKit.res() |> Res.withCast(CastDoc.load("test/fixtures/novel.cast.json"))
+    def res(): Res.Res \ Fs.FileRead =
+        let base = TestKit.res() |> Res.withCast(CastDoc.load("test/fixtures/novel.cast.json"));
+        Res.withBackdrops(withTestPhotos(base#backdrops), base)
+
+    /// 背景の Doc に写真 p0・p1（絵は無くてよい）と時間帯 g を足し、initial と title を外した物。
+    def withTestPhotos(doc: BackdropDoc.Doc): BackdropDoc.Doc =
+        let d = BackdropDoc.rec(doc);
+        let photo = name -> { texture = "test_${name}", label = name, aspect = None };
+        BackdropDoc.Doc.Doc({ photos = d#photos |> Map.insert("p0", photo("p0")) |> Map.insert("p1", photo("p1")),
+                              grades = Map.insert("g", BackdropDoc.plainGrade(), d#grades), initial = None, title = None | d })
 
     def t(seconds: Float64): Clock.Time[Stage.Story] = Clock.startAt(seconds) |> Clock.nowOf
 
@@ -20,11 +31,9 @@ mod TestGameHooks {
     def applied(r: Res.Res, at: Float64, name: String, args: List[String], st: Stage.Stage): Stage.Stage =
         Commands.execute(Commands.Replay.Live, ctxAt(r, at), command(name, args), st) |> Result.map(fst) |> Result.getWithDefault(st)
 
-    def photos(r: Res.Res): List[String] = BackdropDoc.rec(r#backdrops)#photos |> Map.keysOf |> Set.toList
+    def photoAt(_r: Res.Res, i: Int32): String = "p${Int32.toString(i)}"
 
-    def photoAt(r: Res.Res, i: Int32): String = List.drop(i, photos(r)) |> List.head |> Option.getWithDefault("")
-
-    def grade(r: Res.Res): String = BackdropDoc.rec(r#backdrops)#grades |> Map.keysOf |> Set.toList |> List.head |> Option.getWithDefault("")
+    def grade(_r: Res.Res): String = "g"
 
     type alias SwitchOf = (Commands.Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch]
 
@@ -341,6 +350,16 @@ mod TestGameHooks {
     def testHudUnderTheWindowIsBelowTheVeil(): Unit \ {Assert, Fs.FileRead} =
         let zs = hudZs(View.HudBand.UnderWindow);
         Assert.assertEq(expected = (View.zGameHudUnder() + 3 :: Nil, true), (zs, zs |> List.forAll(z -> z < View.zVeil())))
+
+    @Test
+    def testThumbnailHudUnderTheWindowIsAboveTheWorldAndBelowTheText(): Unit \ {Assert, Fs.FileRead} =
+        // サムネでは world を 0..8 に詰め、UnderWindow の hud はその上（9）・字（zVeil 10）の下にまとめる。
+        let r = res();
+        let st = TestKit.quiet(() -> WorldRead.step(r, 0.0, begun(r))) |> World.readOf |> Option.map(rd -> rd#stage) |> Option.getWithDefault(Stage.empty());
+        let worldTop = ViewStage.thumbnail(envOf(r, 0.0), applied(r, 0.0, "show", "a" :: Nil, st), true) |> List.map(p -> ViewStage.zOf(p#item)) |> List.maximum |> Option.getWithDefault(0);
+        let hud = (_: View.Env, _: World.Read) -> (View.HudBand.UnderWindow, View.at(0.0, 0.0, RawDraw.box({ x = 1.0, y = 1.0 }, { r = 1.0, g = 0.0, b = 0.0 }, 5))) :: Nil;
+        let hudZs = World.readOf(begun(r)) |> Option.map(rd -> View.thumbHudUsing(hud, envOf(r, 0.0), rd) |> List.map(p -> ViewStage.zOf(p#item))) |> Option.getWithDefault(Nil);
+        Assert.assertEq(expected = (View.zThumbHudUnder() :: Nil, true, true), (hudZs, worldTop < View.zThumbHudUnder(), View.zThumbHudUnder() < View.zVeil()))
 
     @Test
     def testGameObjectsAreListedWhileReading(): Unit \ {Assert, Fs.FileRead} =

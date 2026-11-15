@@ -60,6 +60,8 @@ mod View {
     pub def zText(): Int32 = 20
     /// ゲームの hud の物（GameView.hud）の帯の下端。UnderWindow は 1..9（文字の枠の覆いより奥）、OverWindow は 21..29（本文の上・選択肢の下）。
     pub def zGameHudUnder(): Int32 = 1
+    /// サムネで UnderWindow をまとめる z（world を 0..8 に詰めた上・字の 10 の下）。
+    pub def zThumbHudUnder(): Int32 = 9
     pub def zGameHud(): Int32 = 21
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
@@ -112,10 +114,19 @@ mod View {
 
     /// hud が返す物を帯ごとの z（帯の下端から 9 段）へ置く（物の中の z 0..8。テストが hud を差し替える）。
     pub def gameHudUsing(hud: (Env, World.Read) -> List[(HudBand, Render.PlacedItem)], env: Env, r: World.Read): List[Render.PlacedItem] =
-        hud(env, r) |> List.map(match (band, item) -> {
-            let base = if (band == HudBand.UnderWindow) zGameHudUnder() else zGameHud();
-            Render.overItem(ViewStage.mapZ(z -> base + Int32.max(0, Int32.min(8, z))), item)
-        })
+        placeHud(z -> zGameHudUnder() + clampHudZ(z), hud(env, r))
+
+    /// サムネのゲームの hud: world を 0..8 に詰めるので、UnderWindow は 1 段（zThumbHudUnder）にまとめる（world より手前・字より奥）。
+    // WhyNot: 実際の画面と同じ 1..9 に置かない — サムネの world の 0..8 と重なり、画面に掛かる血が立ち絵や覆いの下に潜る。
+    pub def thumbHudUsing(hud: (Env, World.Read) -> List[(HudBand, Render.PlacedItem)], env: Env, r: World.Read): List[Render.PlacedItem] =
+        placeHud(_ -> zThumbHudUnder(), hud(env, r))
+
+    /// 帯の付いた物を置く: UnderWindow は under で z を決め、OverWindow は zGameHud から 9 段。
+    def placeHud(under: Int32 -> Int32, items: List[(HudBand, Render.PlacedItem)]): List[Render.PlacedItem] =
+        items |> List.map(match (band, item) ->
+            Render.overItem(ViewStage.mapZ(z -> if (band == HudBand.UnderWindow) under(z) else zGameHud() + clampHudZ(z)), item))
+
+    def clampHudZ(z: Int32): Int32 = Int32.max(0, Int32.min(8, z))
 
     /// 頁の幕の上に描く小物（ViewStage.propsOnPage の時だけ）。
     // WhyNot: 小物に文字の枠の薄さ（<<window off time=>>）を掛けない — 消し終えると world の層が小物を濃いまま描くので、薄くなってからぱっと戻る。
@@ -788,7 +799,7 @@ mod View {
         let t = theme(env);
         let away = { pointer = { x = -1.0, y = -1.0 } | env };
         let shown = screen |> Option.map(read ->
-            List.flatten(ViewStage.thumbnail(away, read#stage, not ViewStage.propsOnPage(away, read#stage)) :: gameHud(away, read) :: reading(atlas, away, read) :: pageProps(away, read) :: Nil))
+            List.flatten(ViewStage.thumbnail(away, read#stage, not ViewStage.propsOnPage(away, read#stage)) :: thumbHudUsing(GameView.hud, away, read) :: reading(atlas, away, read) :: pageProps(away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)
