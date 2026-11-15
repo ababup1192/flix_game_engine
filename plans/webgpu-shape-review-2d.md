@@ -1,4 +1,4 @@
-# WebGPU 移行の段階「`DrawList` の形のレビュー（2D）」— 材料と案（第 2 版・人の了承待ち）
+# WebGPU 移行の段階「`DrawList` の形のレビュー（2D）」— 材料と案（第 3 版・レビュー 90 点・人の了承待ち）
 
 親は `plans/engine-webgpu.md`（以下「親」）の 9 章の表の 7 番と 9.1。V1 の文書は `plans/webgpu-v1.md`（以下「V1」）。
 【確】= コードか測った値 ／【推】= 読みや割り算からの見積もり。測ったのは 2026-11-15・Apple M4 Pro・Chrome 156（ヘッドレス）だけ。
@@ -42,7 +42,7 @@ PC とブラウザの同じ絵は `bench/sprite_stress/RESULTS.md` の V1 の節
 |---|---|---|---|
 | PC・同じ絵 | 7.563 / 2.192 | 6.753 / 2.057 | frame 0.89 倍・submit 0.94 倍 |
 | PC・絵 16 種（20,000 draw） | 41.039 / 35.815 | 13.524 / 5.863 | frame 0.33 倍・submit 0.16 倍 |
-| ブラウザ・同じ絵 | 33.3 / 13.5（cpu 29.4） | 33.3 / 14.1（cpu 30.0） | submit 1.04 倍（frame は描き替えの刻みで比べられない） |
+| ブラウザ・同じ絵 | 33.3 / 13.5（cpu 29.4） | 33.3 / 14.1（cpu 30.0）。この段階で測った日の今の main は 15.5（下の D・E の表） | submit 1.04 倍（frame は描き替えの刻みで比べられない） |
 | ブラウザ・絵 16 種【新】 | 50 / 33.2（cpu 50.5） | 50 / 30.1（cpu 45.7） | submit 0.91 倍・cpu 0.90 倍 |
 
 ブラウザの絵 16 種（`make bench-web BENCH=sprite_stress BENCH_WEB_EXPORT=off ARGS='n=20000&tex=16'` と `&backend=webgpu` を交互に 3 回ずつ。測る前に `ps` で他の重い java が無い事を見た。WebGPU の回は 3 回とも `env.backend` が `webgpu: WebGPU apple metal-3 ()`。draw は 20,000・切れた理由は `texture` 19,999）:
@@ -71,7 +71,7 @@ PC とブラウザの同じ絵は `bench/sprite_stress/RESULTS.md` の V1 の節
 | D | 11.6 / 27.0 | 11.7 / 26.7 | 11.6 / 26.7 | 11.6 / 26.7 |
 | E | 15.5 / 31.1 | 15.4 / 30.9 | 15.6 / 31.2 | 15.5 / 31.1 |
 
-- 絵 16 種: 行を流す前まで（View から list を作り終えるまで・空の pass を開いて閉じる）17.3 ms・行を流す Flix の輪 4.2 ms（C − B）・`setTexture` と `draw` 8.9 ms（同じ組の A − C・1 行 約 0.45 µs）。
+- 絵 16 種: 行を流す前まで（`renderCommands` の中で list を作り終えるまで・空の pass を開いて閉じる）17.3 ms・行を流す Flix の輪 4.2 ms（C − B）・`setTexture` と `draw` 8.9 ms（同じ組の A − C・1 行 約 0.45 µs）。
   書き出しは WebAssembly GC なので、8.9 ms の大半は wasm から JS への呼び出しと見るが、B と C は GPU の仕事も消すので、GPU プロセスとの CPU の取り合い・戻りの待ちの分が A − C に混ざりうる【推】。
 - scissor を毎行積むのをやめても 0.8 ms（2.6%）。**状態の変化だけを行にする（行の高さを下げる）案は、backend が前と同じ物を積まないだけで同じ所まで行ける**ので、行の高さは今の「物の集まり」のままでよい。
 - 同じ絵: `writeInstAt`（1 体 38 回の `put` × 20,000 体）が 3.9 ms（1 体 約 0.2 µs）。残りの 11.6 ms は未分解で、中身は共有の front-end（`mergedByZ`・`emitSprite` の登録簿の引き当てと run の鍵・`writeBuffer` への写し）。
@@ -144,7 +144,7 @@ WebGPU の `drawRow` は今 `(pass, st, rows, geom, setPipeline, setTexture, ski
 | 18 | bench が engine の fpkg から `RenderPaint.Internal.*` を呼べない | pub にしない。bench は今の木のまま（3.6） |
 
 R1b ⇄ P6 の 3 つが今の形に足せるか:
-- 9（mask）: スプライトの行 + mask の頂点の範囲（`vertices` の中）を持つ種類。stencil の比べる値を進める・255 を超えたら pass を分けるのは backend の中。stencil の attachment は `PassSpec` が持つ（front-end は list に mask の行があれば stencil つきの `PassSpec` にする）。足せる。
+- 9（mask）: スプライトの行 + mask の頂点の範囲（`vertices` の中）を持つ種類。stencil の比べる値を進める・255 を超えたら pass を分けるのは backend の中。stencil の attachment は `PassSpec` が持つ（front-end は list に mask の行があれば stencil つきの `PassSpec` にする。pipeline は両方を読み込みの間に作っておく・3.2）。足せる。
 - 15（中間の texture）: `PassSpec` の描き先が「画面」なので、backend が中間を使うかを決められる。足せる。
 - 16: list と関係ない（`fge-web.js` の読み込みと `?capture`）。
 
@@ -207,14 +207,27 @@ R1b ⇄ P6 の 3 つが今の形に足せるか:
 
 **おすすめ: P3。** 組の数は 1 コマに数個で、配列へ詰める得が無い。`RenderTarget.LoadOp` などの enum を型のまま持てる。欄（【推】・名前は R1b-0 で決める）:
 
+共通の欄:
+
 | 欄 | 中身 |
 |---|---|
-| `target` | `Screen({ clearColor, letterbox: Bool })` か `Target({ colors, depthStencil, samples })` |
-| `colors` | 色の attachment の列。1 つごとに表の番号・形式・`RenderTarget.LoadOp`・resolve 先の番号（標本 2 以上の時）。今は 1 つだけ使う（親 12.3: 名前つきの attachment を後で足せるように列にしておく） |
+| `target` | 描き先（下の表の 2 つのどちらか） |
 | `depthStencil` | 無し / depth / depth と stencil（形式と clear の値）。2D は mask の行がある時だけ stencil、3D の場面は depth |
-| `samples` | 標本数。pipeline の鍵（親 7 章）は blend × 形式の列 × depthStencil × 標本数 × 頂点の形になり、前の 3 つは `PassSpec` から backend が引く（#8） |
+| `samples` | 標本数 |
 | `viewport` | design の矩形を描き先の画素で（左上が原点。GL は y を返す） |
 | `copyHistory` | `Option[Int32]`（前のコマを写す先の表の番号。R1b の history の小分けで使い始める） |
+
+描き先ごとの欄（`target` の中身）:
+
+| 描き先 | 欄 |
+|---|---|
+| `Screen` | `clearColor`・`letterbox: Bool`（色の attachment は画面か中間の texture の 1 つで、backend が決める） |
+| `Target` | `colors`: 色の attachment の列。1 つごとに表の番号・形式・`RenderTarget.LoadOp`・resolve 先の番号（標本 2 以上の時）。今は 1 つだけ使う（親 12.3: 名前つきの attachment を後で足せるように列にしておく） |
+
+- **pipeline の数え方**: 鍵（親 7 章）は blend × 色の形式の列 × depthStencil × 標本数 × 頂点の形。このうち色の形式の列・depthStencil・標本数の 3 つは `PassSpec` から backend が引く（#8）。
+  2D のスプライトは stencil つきと無しの両方を数えるので、V1 の 6 本（blend 3 × 形式 2）は 12 本になる。
+- **stencil つきと無しの両方の pipeline を、読み込みの間に作っておく。** mask が初めて出たコマで stencil つきの pipeline を作り始めると、1 本 65〜93 ms（親 4.3）かかり、できるまで単色で描くので、そのコマは普通のスプライトまで崩れる。
+  WhyNot: 画面と中間の texture をいつも stencil つきにしない — stencil の attachment のメモリと、毎コマの clear と書き出しの帯域を、mask を使わないゲームまで払う。
 
 pass の途中で分ける事（mask が 255 を超える）は backend の中で決める。
 
@@ -324,3 +337,5 @@ R1b の頭に R1b-0 を置く（R1b の最初の小分け「物の上げ下ろ�
 | 14 | 名前の理由に Godot と three.js | 3.6 |
 | 15 | 見本の「同じ形」が事実と違う | 1.3（`WebGpuRows.drawRow` の実際の引数・そろえるのは分け方だけ） |
 | 16 | C で bind group の引き当ても飛ばしたか・GPU プロセスの分 | 1.2（C の定義と A − C の注） |
+
+2 回目のレビュー（90 点・合格）の残り 4 件: stencil つきと無しの pipeline を読み込みの間に両方作る（3.2・本数は 12 本）・内訳の「`renderCommands` の中で」（1.2）・`PassSpec` の欄を共通と描き先ごとに分けた（3.2）・同じ絵のこの日の値 15.5 ms（1.2 の表）。
