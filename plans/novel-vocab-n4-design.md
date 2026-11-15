@@ -282,10 +282,10 @@ pub enum Out {
 |---|---|---|
 | 1. 背景をゲームが描く | `GameView.backdrop(env, stage, photo, area): Option[List[Render.PlacedItem]]`。写真の名前ごとに聞き、None ならテンプレートが still を描く。テンプレートの切り替え（fade・black・slide・pan・wipe）は、ゲームの絵にも同じ濃さ・横のずれを掛けて重ねる（wipe はゲームの絵を塗り分けられないので fade で重ねる）。物の中の z は 0..2 | 名前 1 つで聞くので、血鱗の住処（`lair` だけ 3D・ほかは写真）がそのまま書ける |
 | 2. 切り替えの秒と音をゲームが決める | `GameCommands.backdropSwitch(ctx, from, to, switch): Option[Stage.GameSwitch]`（`{ seconds, sounds = List[(秒, 音)] }`）。Some なら **その切り替えはゲームが描く**: テンプレートは重ねずに今の背景だけを `GameView.backdrop` で描き、ゲームは `stage#under`・`stage#fadeFrom`・`stage#fadeSeconds` から歩く絵を出す。秒の間は `Out.Wait` と同じ待ち（次の台詞を出さない。ブックマークの steps は増えない）。音は World が物語の時計で鳴らす（`World.Event.Cue`。Silent では鳴らない）。`Ctx.instant`（Silent の当て直しかスキップ中）の時は聞かずに秒 0。スキップで待ちを飛ばした時は切り替えも終わりの形にする | 廃屋配信の歩きは「前の部屋 → 今の部屋」を 1 本の絵で描くので、テンプレートが 2 枚を重ねる形では書けない。秒だけ替える口にすると絵が合わない。`Ctx.isLoaded` は要らない（届いたかはゲームが自分の描く元で決めて None を返す） |
-| 3. カメラの道筋 | 標準の命令 `<<tween game.<鍵> 値 [from=] [time=0.5] [ease=smoothstep]>>` を足す（`game.` で始まる鍵だけ。数の鍵を PropertyTween で動かす）。GameCommands が書く時は今までどおり `PropertyTween.tween` | 台本から `game.` の鍵を動かす口が無かった。血鱗の 22 行目の着く動きは `<<tween game.lair.arrive 1 time=8>>` で書ける（専用の `camera path=` は作らない）。`sink` の潜る動きは GameCommands が `game.lair.dive` を動かす（`applyText` で `camera path=` を当てる 2.8 の形はやめる） |
+| 3. カメラの道筋 | 標準の命令 `<<tween 鍵 値 [from=] [time=0.5] [ease=smoothstep]>>` を足す（台本には `game.` を書かず、`lair.arrive` を `game.lair.arrive` と読む。数の鍵を PropertyTween で動かす。レビュー 3 の決め）。GameCommands が書く時は今までどおり `PropertyTween.tween` | 台本から `game.` の鍵を動かす口が無かった。血鱗の 22 行目の着く動きは `<<tween lair.arrive 1 time=8>>` で書ける（専用の `camera path=` は作らない）。`sink` の潜る動きは GameCommands が `game.lair.dive` を動かす（`applyText` で `camera path=` を当てる 2.8 の形はやめる） |
 | 4. `initial`・`title`・still の切り抜き | `initial: { photo, grade }`（背景が無い間に描く。最初の `<<bg>>` はこれから重ねる）・`title: { scale, drift }`（タイトルの背景を広げて漂わせる。写真と時間帯は今までどおり `novel.story.json` の `titlePhoto`・`titleGrade`）・photos の `aspect`（横÷縦。書いた写真は画面を覆うように真ん中で切り抜く。書かない写真は今までの 16:9 の敷き方） | 5.3 の `title.photo` は `novel.story.json` の `titlePhoto` と二重になるので持たない。血鱗のタイトルの絵は photos に足し、ぼかさない時間帯（blur 0・vignette 0）で引く |
 
-- 段 9 の口: `GameRes`（`Res#game` の型・`load`・保存即反映の行 `docRows`）・`GameBoot`（`app` = どの入口でも App に足す物・`loadAssets` = 実機とブラウザと描き出しで後から届く素材を読み始める・`withLoading` = 実機とブラウザで毎コマ解く口）・`GameView.hud(env, read)`（hud の帯。文字の枠を消しても残る・サムネにも出る）・`GameView.objects(env, read)`（tape.json の画面の物）・`Commands.applyText(ctx, "<<…>>", st)` と `Commands.needsOfText`・`assets/talk/vocab.std.json`（`Commands.all()` の表。go がゲームの `vocab.json` と合わせて読む）。
+- 段 9 の口: `GameRes`（`Res#game` の型・`load`・保存即反映の行 `docRows`）・`GameBoot`（`app` = どの入口でも App に足す物・`loadAssets` = 実機とブラウザと描き出しで後から届く素材を読み始める・`withLoading` = 実機とブラウザで毎コマ解く口）・`GameView.hud(env, read)`（帯 `View.HudBand` を付けて返す: UnderWindow = 文字の枠の覆いより奥・OverWindow = 本文の上。文字の枠を消しても残る・サムネにも出る）・`GameView.objects(env, read)`（tape.json の画面の物）・`Commands.applyText(ctx, "<<…>>", st)` と `Commands.needsOfText`・`assets/talk/vocab.std.json`（`Commands.all()` の表。go がゲームの `vocab.json` と合わせて読む。**std は commands だけを持ち、tags・speakers・vars・nodes はゲームの vocab.json**）。
 
 ### 5.1 比べる前に分かる事
 
@@ -335,10 +335,10 @@ pub enum Out {
 ```
 
 - **最初の背景**: `novel.backdrops.json` に `"initial": { "photo": "lair", "grade": "clear" }` を足す。背景が無い間（`Stage` の `shot` が None・最初の `<<bg>>` の前）は、この背景を描く。今の血鱗の「背景が無ければ住処」と同じ動きで、台本に行を足さない（台詞の行番号を守る）。v2 のセーブで `photo` が null の物も、この背景で戻る。
-- **タイトル画面の背景は initial と分ける**: 今の血鱗のタイトルは住処ではなく、海中の遠景の 2D の絵（`Lair.titleBackdrop`: 画面いっぱいに敷き、1.05 倍に広げ、sin でゆっくり漂わせる）。**（5.0.1 で替えた: 写真と時間帯は `novel.story.json` の `titlePhoto`・`titleGrade` のまま、`title` は `scale` と `drift` だけ）** 同じ Doc に `"title": { "photo": "title_sea", "scale": 1.05, "drift": { "amp": [10, 6], "rate": [0.13, 0.09], "phase": [0, 1.0] } }` を置き、テンプレートのタイトル画面がこれを描く（photos に `title_sea` = 今の `titleBackdrop` の絵）。値は今のコードの数のままなので、reference の `title.png`・`portrait-title.png` の SHA は変わらないはず。10 章の門でも見る。`title` が無いゲームは今のテンプレートのタイトルのまま。
+- **タイトル画面の背景は initial と分ける**: 今の血鱗のタイトルは住処ではなく、海中の遠景の 2D の絵（`Lair.titleBackdrop`: 画面いっぱいに敷き、1.05 倍に広げ、sin でゆっくり漂わせる）。**（5.0.1 で替えた: 写真と時間帯は `novel.story.json` の `titlePhoto`・`titleGrade` のまま、`title` は `scale` と `drift` だけ）** 同じ Doc に `"title": { "photo": "title_sea", "scale": 1.05, "drift": { "amp": [10, 6], "rate": [0.13, 0.09], "phase": [0, 1.0] } }` を置き、テンプレートのタイトル画面がこれを描く（photos に `title_sea` = 今の `titleBackdrop` の絵）。値は今のコードの数のままだが、**血鱗の `title.png`・`portrait-title.png` の SHA は一致しない見込み**（今は `Art.coverAt` で画面ちょうどを覆う生の絵、テンプレートは `photoRect`（揺れの分 +24px）に時間帯のシェーダー）。10 章の門で許容差を持つ所に入れる。テンプレート自身の title.png は `title` を書かないので変わらない（確かめた）。`title` が無いゲームは今のテンプレートのタイトルのまま。
 - still の名前は `novel.backdrops.json` の photos の名前。血鱗の photos に `lair`（絵は今の `assets/lair/lair_still.jpg`）を足す（9.1）。
-- `bg` を替えても `camera.path` と `camera.pathT` は消さない（道筋は背景ごとの物なので、別の背景の間は読まれないだけ）。
-- 台本: `<<bg 名>>`（Doc に 3D があれば 3D・無ければ写真）、`<<camera path=名 time=>>`（`camera.path` と `camera.pathT` を 0→1 へ tween。settle で終わりの位置）、背景から背景へ歩く道筋は 2.3 の表（台本に道筋の名前を書かない）。
+- （5.0.1 で替えた: `camera.path`・`camera.pathT` は作らない。道筋の進みはゲームの `game.` の鍵で、`bg` を替えても消えない）`bg` を替えても `camera.path` と `camera.pathT` は消さない（道筋は背景ごとの物なので、別の背景の間は読まれないだけ）。
+- （5.0.1 で替えた: `<<camera path=>>` は作らない。`<<tween 鍵 値 time=>>`）台本: `<<bg 名>>`（Doc に 3D があれば 3D・無ければ写真）、`<<camera path=名 time=>>`（`camera.path` と `camera.pathT` を 0→1 へ tween。settle で終わりの位置）、背景から背景へ歩く道筋は 2.3 の表（台本に道筋の名前を書かない）。
 - `animated` の `kind` は 2 本で要った 4 つだけ: `sway`（振り子）・`path`（くらげ・道筋を往復）・`billboardParticles`（粒の層）・`followPoint`（光だまりが電灯を追う）。くらげの傘の縮み（`pulse`）は 1 本だけの物なので `path` の小さな欄に留める。足りない物はゲームの GameView で描く（3D の上に 2D を重ねる）。
 - glb の node は `Model3d.findNode`（1 つ）・`Model3d.nodesWithPrefix`（`jelly_*` のような頭の一致）で引く。毎コマ引くなら `Model3d.nodesByName` を読み込みの時に 1 回作る。
 - 届く前・読めない時は still で進める（fail-open）。台本の流れと時刻は 3D の有無で変えない。
@@ -349,8 +349,8 @@ pub enum Out {
 
 | 物 | 持ち主 | 形 |
 |---|---|---|
-| 歩く秒 | `bg` の apply | Doc の道筋の out + arrive × repeat + dissolve の秒を足して、背景の重ねの秒（`fadeSeconds`）と `camera.pathT` の tween の秒に書く。台本の `time=` は道筋がある時は使わない（今の廃屋配信と同じ） |
-| どの道筋を歩くか | `bg` の apply | 今の場所・行き先・`pace`・`walkOn` と、`Ctx` に足す `isLoaded`（その glb が届いているか）で決め、`Stage` の背景に道筋の名前を書く。届いていなければ 2D（今の廃屋配信の `roomsReady`）。Silent とスキップの時は歩かない（秒 0） |
+| 歩く秒 | `bg` の apply（5.0.1: ゲームの `backdropSwitch` が返す秒。`camera.pathT` は作らない） | Doc の道筋の out + arrive × repeat + dissolve の秒を足して、背景の重ねの秒（`fadeSeconds`）と `camera.pathT` の tween の秒に書く。台本の `time=` は道筋がある時は使わない（今の廃屋配信と同じ） |
+| どの道筋を歩くか | `bg` の apply（5.0.1: ゲームの `backdropSwitch` が決める。`Ctx.isLoaded` と `walkOn` は作らない） | 今の場所・行き先・`pace`・`walkOn` と、`Ctx` に足す `isLoaded`（その glb が届いているか）で決め、`Stage` の背景に道筋の名前を書く。届いていなければ 2D（今の廃屋配信の `roomsReady`）。Silent とスキップの時は歩かない（秒 0） |
 | 素材を待つか | `bg` の `needs` と、ゲームが `GameCommands.backdropSwitch`・`GameView.backdrop` で None を返す事（5.0.1。`Ctx.isLoaded` は作らない） | `needs` には still の写真だけを入れる（今と同じく、届くまで黒で待つ）。glb と 3D の絵は `needs` に入れない。3D は待たない（fail-open）: 届く前は待たずに 2D で切り替え、届いた後の切り替えから 3D になる。`isLoaded` は描き出しと flow では全部 true（全部を読んでから流す）なので、門の比べで揺れない |
 | 鳴らす音 | **World**（物語の時計） | （5.0.1 で替えた: ゲームが返す `sounds`（秒と音の名前の列）を `Stage.Switch` に持ち、World が毎フレーム物語の時計の前のフレームから今までの間の音を出す。`Timeline` は作らない — 並べ方の表が要らない秒と名前の組だけのため）。元の案: 道筋の `sounds` から `Timeline` を作り（読み込みの時に 1 回。`Timeline.insert` と `withSoundAt`）、毎フレーム `Timeline.soundsOnClock(物語の時計, 歩き始めた時刻, tl)` で鳴る音を出す。時計は物語の時計（`Clock.Clock[Stage.Story]`。画面を開くと止まる。背景の重ねと `<<wait>>` と同じ時計）。実時間で鳴らす `soundsBetweenTimes`（App の `realNow` を渡す口）は使わない。画面を開いている間に足音が鳴り進まないようにするため。`Out.Sound` と同じ道（World の出来事）を通るので、Silent では鳴らず、tape.json の `sounds` にも出る。今の廃屋配信の `Controls.walkSounds` の置き場をテンプレートの World に移す形 |
 | 暗くなり・継ぎ目 | View（状態を持たない） | Doc の `fade` と、歩き始めてからの秒から決める |
@@ -358,6 +358,7 @@ pub enum Out {
 | 文字を待たせる | World | （5.0.1: `bg` が `Out.Wait(秒)` を出す。押しても歩きは飛ばせない — 廃屋配信の「押すと歩きを終える」は移行で口が要るかを決める）歩いている間は次の台詞を出さない（廃屋配信の `testLineWaitsUntilTheWalkEnds`）。Yarn の `<<wait>>` ではないので、ブックマークの steps は増えない |
 
 - 歩き始めた時刻は `Stage` の背景の `fadeFrom`。セーブは settle した後なので、歩きの途中の状態は持たない。
+- **e2e（`make flow`）は 3D も歩きも無い秒で流れる**: テンプレートの `E2e.appOf` は `Controls.loadRes` だけで組み、`GameBoot.loadAssets` を通らない（3D の素材は無い形）。ゲームの `backdropSwitch` は素材が無ければ None を返すので、flow の秒はテンプレートの transition と time= の秒になる。動画とテープ（`FlowVideo`）と描き出し（`SceneRender`）は `loadAssets` を通すので 3D も歩きも写る（今の 2 本の e2e と同じ分け方）。
 
 ### 5.5 縦と横・画面の大きさ
 
@@ -975,16 +976,17 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 |---|---|---|---|
 | `GameView.backdrop` | `(View.Env, Stage.Stage, String, Rect2) -> Option[List[Render.PlacedItem]]` | 背景の名前ごとに絵を返す（中の z 0..2） | None（写真） |
 | `GameCommands.backdropSwitch` | `(Commands.Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch]` | 切り替えの秒と `(秒, 音)` の列を返すと、その切り替えはゲームが描く | None |
-| `<<tween game.<鍵> 値 [from=] [time=0.5] [ease=smoothstep]>>` | 標準の命令（`Commands.all()` の 13 個目） | 台本に書く・GameView が `PropertyTween.numAt` で読む | — |
+| `<<tween 鍵 値 [from=] [time=0.5] [ease=smoothstep]>>` | 標準の命令（`Commands.all()` の 13 個目。`lair.arrive` → `game.lair.arrive`。`game.` を書くと Err） | 台本に書く・GameView が `PropertyTween.numAt` で読む | — |
 | `novel.backdrops.json` の `initial`・`title`・photos の `aspect` | `BackdropDoc.Initial`・`Title`・`Photo#aspect` | Doc に書く | どれも無し（今の絵のまま） |
 | `GameRes` | `GameRes.Data`（Res#game）・`load`・`docRows` | enum の中身と読み込みと保存即反映の行を書く | `Data.Empty`・行なし |
 | `GameBoot` | `app`・`loadAssets`・`withLoading` | アトラス・後から届く素材の読み込み（実機・ブラウザ・描き出し）・毎コマ解く口（実機・ブラウザ） | 何もしない |
-| `GameView.hud` | `(View.Env, World.Read) -> List[Render.PlacedItem]` | 状態バー・コメント欄（中の z 0..8 → hud の z 21..29） | Nil |
+| `GameView.hud` | `(View.Env, World.Read) -> List[(View.HudBand, Render.PlacedItem)]` | 帯を選んで返す: UnderWindow（hud の z 1..9。文字の枠の覆い 10 より奥）・OverWindow（21..29。本文の上・選択肢の下）。中の z 0..8 | Nil |
 | `GameView.objects` | `(View.Env, World.Read) -> List[{ id, name, rect }]` | tape.json の画面の物に足す | Nil |
 | `Commands.applyText`・`needsOfText`・`commandOfText` | `(Ctx, String, Stage) -> Result[String, (Stage, List[Out])]` ほか | GameCommands から台本と同じ 1 行で標準の命令を当てる | — |
 | `assets/talk/vocab.std.json` | `Talk.stdVocabJson`（`Commands.all()`）。`vocab.json` の commands は `GameCommands.all()` だけ | make talk-vocab が両方を書く。go が合わせて読み、同じ名前は止める | — |
 
-- テストで差し替えられるように、口を呼ぶ所を引数で受ける形にした（`ViewStage.backdropsWith`・`Commands.bgWith`・`View.gameHudOf`・`FlowVideo.objectsWith`）。`TestGameHooks` が偽の関数を渡して「差した物が使われる」を、テンプレートの既定で「今までどおり」を見る。
+- テストで差し替えられるように、口を呼ぶ所を引数で受ける形にした（`ViewStage.backdropsUsing`・`Commands.bgUsing`・`Commands.executeUsing`・`View.gameHudUsing`・`FlowVideo.objectsUsing`）。`TestGameHooks` は偽の関数を渡して配線だけを見る（テンプレートの持ち物なので、ゲームが口を埋めても落ちないよう、既定の None・Nil や Doc の中身には頼らない）。
+- ゲームが持つ切り替えでは、`bg` の apply が transition を Fade へ寄せる（slide・pan のずれと black の暗転が歩く絵に掛からない。cut でもゲームの秒が残る）。
 - `Commands.Ctx` に `instant`（Silent の当て直しかスキップ中）を足した。スキップで待ちを飛ばした時は `Stage.withGameSwitchFinished` で歩きも終わりの形にする。
 - 背景の層の中の z を 地 0・前の背景 1..3・今の背景 4..6 にした（`View.zBackdropUnder`・`zBackdropShot`）。並びは前と同じなので描き出しの基準は変わらない。
 
@@ -994,7 +996,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 |---|---|
 | 血鱗 `Lair3d.items`・`View.frame` の「写真が無ければ住処」 | `GameView.backdrop`（`lair` だけ Some）＋ `initial: { photo: lair }` |
 | 血鱗 `Lair.titleBackdrop`（1.05 倍・sin の漂い） | `title: { scale, drift }`（写真は story.json の `titlePhoto`・ぼかさない時間帯） |
-| 血鱗 `Lair.cameraMove` の着く動き（22 行目）・`diveFrom`（sink） | `<<tween game.lair.arrive 1 time=8>>`・sink の GameCommands が `game.lair.dive` を tween |
+| 血鱗 `Lair.cameraMove` の着く動き（22 行目）・`diveFrom`（sink） | `<<tween lair.arrive 1 time=8>>`・sink の GameCommands が `game.lair.dive` を tween |
 | 血鱗 `Res` の `scenes`・`camera`（LairDoc）・`art`・`lairPending`・`Controls.docTable` の lair の行 | `GameRes.Data`・`GameRes.load`・`GameRes.docRows` |
 | 血鱗 `Game.app` の `App.withSpriteAtlases`・`Controls.loadResDeferred`・`Game.withLairLoading`・`SceneRender`/`FlowVideo` の `Res.withLair` | `GameBoot.app`・`GameBoot.loadAssets`・`GameBoot.withLoading` |
 | 血鱗 `FlowVideo` の `lampBox`・`rockBox` | `GameView.objects` |
@@ -1005,7 +1007,8 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | 廃屋配信 `Controls.walkSounds` | `Stage.GameSwitch#sounds`（World が物語の時計で鳴らす） |
 | 廃屋配信 `Page.show(Stage.walkEndOf …)`（歩き終えるまで字を出さない） | `bg` が出す `Out.Wait` |
 | 廃屋配信 `Res` の `walks`・`rooms`・`roomsPending`・`Controls.loadResWithRooms`・`Game.withAssetLoading` の `withBackgroundLoad` | `GameRes`・`GameBoot.loadAssets`・`GameBoot.withLoading` |
-| 廃屋配信 `View.liveBar`・`statusBar`・`chatColumn`（サムネにも出る） | `GameView.hud`（変数は `YarnRunner.valueOf`） |
+| 廃屋配信 `View.liveBar`・`statusBar`・`chatColumn`（サムネにも出る。zLive 16・zChat 14） | `GameView.hud` の OverWindow（変数は `YarnRunner.valueOf`） |
+| 廃屋配信 `View.blood`（zBlood 4。文字の枠の覆いの下・カメラと揺れを受けない） | `GameView.hud` の UnderWindow（hud の一番奥） |
 | 廃屋配信 `feed`（コメントの列） | GameCommands が `game.feed.<番号>.*` に書き、`GameView.hud` が描く（6.2 の (ii)） |
 
 **設計とのずれ**
@@ -1018,7 +1021,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 **門の結果**
 
-- テンプレート: `make check` OK・`make test` 473 緑（前は 441。TestGameHooks 31 本・TestDocs に vocab.std.json 1 本）・`make reference-check` 45 枚すべて一致（`title.png`・`portrait-title.png` も変わらない）・`bin/fge yarn check assets/talk` ok（9 ノード）・e2e の flow 6 本すべて ok・`make lint` は lint-doc-refs 15 件のまま（前からの物）・ほか OK。
+- テンプレート: `make check` OK・`make test` 473 緑（前は 441。TestGameHooks 31 本・TestDocs に vocab.std.json 1 本。レビュー 3 の直しの後は 11.11）・`make reference-check` 45 枚すべて一致（`title.png`・`portrait-title.png` も変わらない）・`bin/fge yarn check assets/talk` ok（9 ノード）・e2e の flow 6 本すべて ok・`make lint` は lint-doc-refs 15 件のまま（前からの物）・ほか OK。
 - わざと入れた誤り: `<<bg slopee>>` と `<<tween camera.zoom>>`（値なし）は、vocab.std.json があれば引数の誤りとして落ち、vocab.std.json を外すと「知らないコマンド」で落ちる（標準の命令が vocab.std.json から来ている）。
 - go: `go test ./...` ok（yarn に vocab.std.json のテスト 4 本）・`go vet ./internal/yarn/` 指摘なし。
 - lint の規約: `bin/lint-rules/doc-shape.json` の skipKinds に `std`（vocab.std.json は生成物で Doc ではない）・`precommit.json` の yarn の口に `vocab.std.json`。
@@ -1026,8 +1029,35 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 **持ち越し**
 
 - 廃屋配信の「押すと歩きを終える」（`testTapSkipsTheWalk`）は、`Out.Wait` の間は押しても進まないので書けない。移行で要るなら口を相談する。
-- 血鱗の `Controls.decodeBudget`（住処 1 本が収まる Idle(80)）と廃屋配信の `isWalkDark` は、`GameBoot.withLoading` の中で `App.withDecodeBudget` を掛け直して書く形【推】（後から掛けた物が効くかは【未確認】）。
-- `GameView.backdrop` の絵に掛ける濃さ（`Render.fade`）が `Scene3d` の物に効くかは【未確認】（効かなければ fade の切り替えの間 3D がぱっと替わる）。
+- 血鱗の `Controls.decodeBudget`（住処 1 本が収まる Idle(80)）と廃屋配信の `isWalkDark` は、`GameBoot.withLoading` の中で `App.withDecodeBudget` を掛け直して書く（後から掛けた物が効く: `{ decodeBudget = f | rec(app) }`）。
+- `GameView.backdrop` の絵に掛ける濃さ（`Render.fade`）は Sprite・Box・Poly・Text・Shader にだけ効き、`Scene3d` には効かない。3D の背景へ fade・pan で入ると 3D はぱっと出る（2 本の台本で 3D の背景へ重ねて入る行は今は無い）。
+
+### 11.11 レビュー 3（78 点）の直し（2026-11-16）
+
+| # | 指摘 | 直した所 |
+|---|---|---|
+| M1 | ゲームが持つ切り替えにも slide・pan のずれと black の暗転が掛かる | `bg` の apply が、ゲームが持つ時は transition を Fade へ寄せる（cut で秒が 0 に潰れる件も直る）。テスト 3 本（pan でずれない・black の箱が出ない・cut でもゲームの秒） |
+| M2 | hud の帯 1 つでは廃屋配信の血（覆いの下）が書けない | `View.HudBand`（UnderWindow = hud の z 1..9・OverWindow = 21..29）。`GameView.hud` は `List[(View.HudBand, PlacedItem)]`。テスト 2 本。11.10 の対応表に血の行 |
+| M3 | テンプレートの既定を見るテストが、口を埋めたゲームで落ちる | 既定（None・Nil・Doc に initial が無い）を見る 5 本を消した。残りも舞台を作る `<<bg>>` を `bgUsing(None)` で当て、Doc の initial・title を明示して、ゲームの中身に左右されない形に |
+| M4 | World を通したテストが無い | `Commands.executeUsing`（表を差す）と `WorldRead.ctxOf`（pub）で: Silent が instant を立てる・スキップ中が instant を立てる・スキップで歩きが終わりの形・歩きの音が 1 回だけ・画面を開いている間は鳴らない・歩いている間は次の台詞へ進まない（6 本） |
+| M5 | agent-eval のお題 | `novel-3d-backdrop-walk`（GameView.backdrop と backdropSwitch を期待・Stage.Cue と WorldRead を避ける）。1 回流して 100 点 |
+| M6 | match の入れ子 | `ViewStage.wipedPicture` に切り出した |
+| O1 | tween の鍵 | 台本は `<<tween lair.arrive 1>>`（`game.` を前に付けて読む）。`game.` を書くと Err。build で止める口は engine_world の変更になるので持ち越し（14 章） |
+| O2 | 差す版の名前 | `backdropsUsing`・`bgUsing`・`executeUsing`・`gameHudUsing`・`objectsUsing` |
+| O3 | 答えの出る未確認 | decodeBudget は後から掛けた物が効く・Scene3d に fade は効かない・Studio は vocab.json の commands を読まない（11.10・14 章・GameView のコメント） |
+| O5 | 血鱗のタイトルの SHA | 5.3 を「一致しない見込み・門で許容差」に |
+| O7 | 押すと歩きを終える | 14 章に書き方 2 つ（`Out.WaitOrTap`・`GameSwitch` の `skippable`） |
+| O8 | 取り残し | Commands の頭と `specs` の doc・`mk/game.mk` の talk-vocab の help・AGENTS.local.md・GameView の area の説明 |
+| O9 | 5.3・5.4 の古い文 | 5.0.1 で替えた印。e2e が 3D と歩きの無い秒で流れる事を 5.4 に |
+| O10 | vocab の分け方 | 「std は commands だけ」を Talk のコメントと 5.0.1 に |
+| O11 | 古い vocab.json の追随 | `docs/migrations/0.97.0.md`（手書きの節）に `make talk-vocab` で直る事 |
+| O12 | doc-shape の外し方 | go の docshape に `skipNames` を足し、`vocab.std.json` を名前で外す（skipKinds の `std` はやめた）。テスト 1 本 |
+| O13 | FlowVideo の castEnv | `Stage.shownShot` に |
+| O14 | sounds の形 | `{ at, sound }`。Ctx の作り口は足さなかった（今の作り手はテストの 8 か所で、口を足しても record の欄を 1 つ書く手間は変わらない） |
+| O15 | title のテスト | 1.05 倍と sin の漂いから出した x と等しいかを見る |
+| O6 | サムネの切り抜き | 試していない（14 章）。UV の側で切り抜くと写真の面の作り方が替わり、描き出しの基準 45 枚を全部見直すことになるため |
+
+**門の結果**: `make check` OK・`make test` 478 緑・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・`make flow` 6 本 ok・`make lint` は lint-doc-refs 15 件のまま（前からの物）・`go test ./internal/yarn/ ./internal/docshape/` ok・agent-eval `novel-3d-backdrop-walk` 100 点（1 回）。
 
 ## 12. 試した事（スパイク）
 
@@ -1071,5 +1101,8 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 相談中: C14（一発の効果音を止める口・8.3）。決まるまで `audio all off` は鳴り続ける音だけを止める。
 - GameView の物の中の z を 0〜7 へ丸める時に知らせが無い（`GameView.backdrop` の 0..2・`GameView.hud` の 0..8 も同じ）。描き物は純粋で、Log に「1 回だけ知らせる」口が無いため。
 - `templates/sound-novel-starter/assets/mixer.schema.json` はエンジンの `docs/mixer.schema.json` の写しに `volumes`・`lockSeconds` を足した物。エンジンの schema に欄が増えたら、ここへも写す。
-- （段 8+9）廃屋配信の「押すと歩きを終える」・decodeBudget の掛け直し・`Scene3d` に濃さが効くか（11.10 の持ち越し）。
-- （段 8+9）`vocab.std.json` を読むのは go の `yarn build`・`check`・`graph` と Doc から語彙を探す所。Studio など、ほかに `vocab.json` の commands を読む物があれば標準の命令が見えなくなる【未確認】。
+- （段 8+9）廃屋配信の「押すと歩きを終える」（`testTapSkipsTheWalk`）は、`Out.Wait` の間は押しても進まないので書けない。移行で要るなら、(1) `Out.WaitOrTap(秒)`（押すと明ける待ち。明けた時にゲームが持つ切り替えも終わりの形にする）か、(2) `GameSwitch` に `skippable` を持たせ、押した時にテンプレートが `Stage.withGameSwitchFinished` と待ちの明けを当てる、のどちらかを相談する。
+- （段 8+9）`Scene3d` に `Render.fade` は効かない（3D の背景へ重ねて入るとぱっと出る）。要るなら GameView が自分で暗くする。
+- （段 8+9）`vocab.std.json` を読むのは go の `yarn build`・`check`・`graph` と Doc から語彙を探す所。Studio の `TalkTags.elm` は `vocab.json` の tags・speakerTags だけを読み commands は読まないので、分けても壊れない。
+- （段 8+9）`<<tween>>` の鍵に `game.` や `camera.` を書いた時に build で止める口は無い（`YarnCommands.Param` の name 型に頭の字の決まりを持たせるのは engine_world の変更）。今は実行の時に `game.` を Err にし、ほかは `game.` を前に付けて読む。
+- （段 8+9）サムネはどの写真も画面ちょうどに伸ばす（`aspect` の切り抜きは実際の画面だけ）。`ShaderDoc.Field` の `Tiling`・`Shift` で UV の側で切り抜けばサムネでも伸びない見込み【推】。描き出しの基準の絵が全部替わりうるので、今回は試していない。
