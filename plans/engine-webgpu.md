@@ -431,7 +431,8 @@ mask つきの面も比べる値を mask つきスプライトと同じく前半
 
 **R2a で決めた物（2026-11-16）**: `RenderList` の 1 行の欄と高さ（3D）は 2D と同じ「物の集まり」の高さ（1 行 = 不透明の batch 1 つ）にし、前の材質の行と同じ付け方で描ける行に前半がフラグを立てる
 （backend が毎行付け直す形・材質を付ける行を分ける低い高さと比べた。GL の `draw` の区間が field 12,000・形が物ごとで 33.5〜35.4 → 28.3〜30.1 ms）。計画は材質の状態を値で聞き（聞く材質を並べて backend が順の番号の列を返す。関数の record を計画に渡す形と比べた）、
-材質の batch は backend の材質の表の番号を持つ（材質の鍵の字で引き直す形と比べた）。V2 の後に WebGPU の行数とあわせて見直す。12.23・`samples/scene-list-3d.md`。
+材質の batch は backend の材質の表の番号を持つ（材質の鍵の字で引き直す形と比べた）。計画の内側は材質の値ごとに分け方を 1 回だけ決め、描く物を配列の範囲で運ぶ
+（物ごとに record を作って列で運ぶ形と比べた。field 12,000 の split 12〜14.5 → 6.3 ms）。V2 の後に WebGPU の行数とあわせて見直す。12.23・`samples/scene-list-3d.md`。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
@@ -987,9 +988,39 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
     | 形が物ごと・材質 1 種（1 棟ずつの都市に近い形） | 71.1〜82.4 ms（split 25.4〜31.3・draw 41.4〜44.7） | 70.5〜74.9 ms（draw 33.5〜35.4） | 73.2〜78.0 ms（draw 28.3〜30.1） |
 
     1 コマは起動ごとの揺れ（`bench/scene3d/RESULTS.md` の ±20%）の内で、はっきり減ったのは GL の `draw` の区間だけ。split（計画）は変わっていない。
-    東京 1 棟ずつ（137 ms → 100 ms【目標】）は【未確認】（`plateau_city` は repo の外で、この小分けでは回していない）。fps3d_lab の 5% は【未確認】（同じ理由）。
-- 設計とずれた所: 表の「`planScene` 系を配列で運ぶ」は、計画の出口（`SceneList` の行）だけを配列にした。内側の輪（`placedDrawOf`・`groupInOrder`・`batchOf`・`packDraw` の record の欄の引き当て）は
-  偽の GL を通るテスト（`TestRender3dBatch` が `batchOf`・`numberBatch`・`packDraw` の record の形を見る）を替えずに残すため手を付けていない。split が 12〜15 ms のまま（目標の分）なのはこのため。
-  5.3 の「上げる行を `RenderList` の先頭に出す」は、行の種類でなく描く前に呼ぶ backend の関数にした（決めた事 2）。
-- 持ち越し: 計画の内側の輪を配列で運ぶ（split の 12〜15 ms・テストの record の形を替える相談とあわせて）・材質の draw ごとの値と絵の組を行へ（R2b。WebGPU の材質の bind group と一緒に）・
-  半透明・ビルボード・空・影の地図を行へ（R2b）・東京と fps3d_lab の計測（P10 の前の計測で）・WebGPU で 3D の行を流す（V2。`SceneList` と `MaterialTable` の形をそこで見直す）。
+    東京 1 棟ずつと fps3d_lab は 1 回目では測っていない（下の 2 回目の門）。
+- 1 回目のずれ（2 回目で直した）: 「`planScene` 系を配列で運ぶ」を計画の出口だけにしていた。5.3 の「上げる行を `RenderList` の先頭に」は行の種類でなく描く前に呼ぶ backend の関数にした（決めた事 2・5.3 の表に →）。
+- 1 回目のレビュー（78 点）への対応（2 回目のコミット）:
+  - **決めた事 3 — 計画の内側を配列で運ぶ**（見本の 4）。field 12,000 の JFR（変える前の木）で標本の 51% が record の欄の引き当てで、呼び手は `Batch.hasSameTree`・`kindBits`・`batchKeyOf`・`Material.vertexKindOf`・`batchOf`（物ごとに鍵の組・木の比べ・版の record を作っていた）。
+    分け方（聞く材質・batch の鍵の番号・材質の絵の名前の並びの番号）を材質の値（同じ 1 つの値・`IdentityHashMap`）と頂点の形（uv・骨・lightmap）の組ごとに 1 回だけ決め、物ごとは配列の上で番号を引くだけにした（`ScenePlan.groupWith`・`placeOne`・`spansOf`）。
+    描く物は batch ごとの列でなく prepare の配列（`Grouped#members`）の範囲（`Batch.SpanBatch`）で運び、`Instancing` も範囲から詰める。候補の並びは `groupInOrder`・`groupByTextures` と同じ（同じ深さの面の勝ち方を変えない）。
+    同じプログラム（版と材質の木の鍵）の材質は 1 回だけ backend に聞く（木の鍵の衝突でだけ、後の材質が先の材質のプログラムで描かれる。`groupScenes` の WhyNot）。
+    `TestRender3dBatch` が呼ぶ純粋な関数（`batchOf`・`shapeBatches`・`groupInOrder`・`groupByTextures`・`numberBatch`・`packDraw`）は record を返す口のまま残した。テストの形と両立しない所は無かった。
+  - 計画の側の関数（置いた物 1 つ・材質の版・材質の問い合わせ・影の計画・`isSkinned`・`hasUv`・`meshDrawOf`・`inDrawOrder`・`isCoverageCutout`）を GL を import しない `ScenePlan` へ集め、`Material`・`Shadow` との相互の use を解いた（`TestRender3dDrawOrder` の名前だけ替えた）。
+  - 半透明の batch の形・絵・タンジェントも `uploadRows` で先に上げる（`GlRows` の「描く途中で上げない」の WhyNot を本当にした）。`buildSceneList` は `timed(Phase.Split)` の中で 1 回で埋め、行と upload のループは自分への再帰にした（docs/performance.md の 13 節）。
+    `isSameBinding` の絵は (名前, 補間) の組で比べる。`ScenePlan` の頭のコメントを WhyNot に、`Render3d.flix` の頭のモジュールの一覧に `ScenePlan`・`SceneList`・`GlRows` を足した。
+  - 見本 1 の (B)（材質を付ける行を分ける）を動かした: gl-parity は同じ・`draw` は 27.1〜30.1 ms で (C) の 27.0〜27.2 ms と揺れの内・行の形のテストが落ちる。(C) のまま。
+  - テスト: render_gl 479 緑（`TestSceneList` は 27 本。足した物: isSameBinding の cutout・wrap・法線マップ・順の番号・絵の補間で付け直す 5 本・同じ材質を 1 回だけ聞く・2 つ目の場面の材質が答えの 2 つ目を指す・
+    間引いた物は範囲に入らない・材質の絵も描く前に上がる・偽の GL で同じ材質の 2 行目は cutout の uniform と絵を付け直さない・lightmap の版の 2 行目は付け直す）。偽の GL を通る 6 ファイルは a3c6e397 と 1 字も同じ。
+  - 直しを外した確かめ（2 回目）: GL が `flagSameBinding` を見ない → `testSecondSameMaterialRowDoesNotRebind` が落ちる。材質の問い合わせの番号を場面ごとに 0 から振る（1 回目の `firstRequest` を 0 にするのと同じ誤り）→ `testSecondSceneMaterialPointsAtSecondAnswer` が落ちる。
+    半透明の形を先に上げない → `testMeshesUploadBeforeFirstDraw` が落ちる。材質の絵を先に上げない → `testTexturesUploadBeforeFirstDraw` が落ちる（1 回目の書き方では落ちなかったので、先に描く頂点の色の物を足した）。
+  - 2 回目の門（この Mac・2026-11-16）:
+    - `make gl-parity` 緑。81 行が a3c6e397 の木と 1 字も同じ。
+    - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ）。a3c6e397 の木で撮った 54 枚ともバイトまで同じ。
+    - `make webgpu-v1-check` 緑（36 場面・誤り 0・「まだ描かない: 3D の場面」1 回）・`make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1）・
+      テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）・`lint-huge-methods`（sprite_stress を作り直し・bench/scene3d・bench/webgpu_v1 の jar）・`lint-max-lines`・`gl-jar-pin-check` 緑。
+    - 速さ（`bench/scene3d`・field 12,000・動く割合 100%・2 回 × 2 区間・frame p50（split・draw））:
+
+      | 条件 | 変える前（a3c6e397） | 1 回目 | 2 回目 |
+      |---|---|---|---|
+      | 形 1 つ・材質 1 種 | 15.7〜18.4 ms（12.1〜14.5・0.2） | 15.4〜18.9 ms（11.7〜14.7・0.2） | 9.8〜10.1 ms（6.3〜6.4・0.2） |
+      | 形が物ごと・材質 1 種 | 71.1〜82.4 ms（25.4〜31.3・41.4〜44.7） | 73.2〜78.0 ms（23.7〜26.4・28.3〜30.1） | 57.2〜59.0 ms（26.0〜27.7・27.0〜27.2） |
+
+    - **東京 1 棟ずつ**（`plateau_city`・`PLATEAU_MODEL=3k_each`・12,557 棟・`FLIX_GE_FRAME_STATS` の 600 コマの平均の間隔）: 変える前（a3c6e397）101.9〜112.4 ms・2 回目 83.9〜97.6 ms（2 本ずつ交互）。
+      100 ms 以下【目標】に届いた。4.4 の 137 ms は 0.95.0 より前の engine の数で、変える前の今の木はすでに約 103 ms（P1 と R1 の分）。リポジトリは触らず、写し（データは symlink）を 0.95.0 の fpkg で組んで測った。
+    - **fps3d_lab の部屋**（`START=room`・同じ測り方・温まった後の 600 コマの平均の中央値・5 本ずつ交互）: 変える前 2.56・2.58・2.59・2.60・2.60 ms。2 回目 2.57・2.59・2.65・3.16・3.23 ms。
+      5 本のうち 3 本は 5% の内、2 本は 2.6 ms と 3.2〜3.5 ms の間を数十秒ごとに行き来する回で 22〜25% 遅い。JFR（25 秒）では main の標本のうち 3D の描き手の割合は前 55%・後 51% で、CPU の計画の分が増えた証は無く、遅い回の理由は【不明】。
+      部屋は材質の値を毎コマ作り直すので、材質の値ごとの控えが当たらず、物ごとに材質の絵の名前の並びを辿る（`ShaderDoc.texReadsIn` の標本が 36 → 70）。
+- 設計とずれた所: 「上げる行」は行の種類でなく描く前に呼ぶ backend の関数（5.3 の表に →）。`MaterialBatch#entry` は鍵の字でなく材質の表の番号（9 章の表に →）。材質の絵の組と draw ごとの値はまだ行の外（R2b）。
+- 持ち越し: fps3d_lab の遅い回の理由（P10 の前の計測で、遅い回だけ JFR を取って前と比べる）・材質の値を毎コマ作り直すゲームで材質の絵の名前の並びを物ごとに辿る分（spec の値で控える案）・形が物ごとの場面の split（候補ごとの仕事・26 ms）・
+  材質の draw ごとの値と絵の組を行へ（R2b。WebGPU の材質の bind group と一緒に）・半透明・ビルボード・空・影の地図を行へ（R2b）・WebGPU で 3D の行を流す（V2。`SceneList` と `MaterialTable` の形をそこで見直す）。
