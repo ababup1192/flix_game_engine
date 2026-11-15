@@ -4,6 +4,7 @@
 mod ShaderGen.Wgsl.TestWgslPairs {
 
     /// 字 s の数のリテラル（名前の途中の数字 — sg_hash1・vec2・f32 — は数えない）を出てくる順に。符号は見ない。
+    // WhyNot: 1 つの numbersIn を共有しない — engine と render_gl のテストは別のパッケージで、テストの関数は互いに見えない。同じ物が render_gl/test/TestRender3dWgslPairs.flix にあるので、直す時は両方を直す。
     def numbersIn(s: String): List[String] =
         let chars = String.toList(s) |> List.toVector;
         let n = Vector.length(chars);

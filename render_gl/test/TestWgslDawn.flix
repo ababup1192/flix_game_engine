@@ -14,7 +14,6 @@ mod TestWgslDawn {
     import fge.webgpu.TextureSampleType
     import fge.webgpu.WebGpu
     import java.io.File
-    import java.lang.System
     import java.nio.file.Files
     use ShaderDoc.{Field, Shade, Out, Axis, TexChan, BinOp, UnOp, FilterMode, WorleyOut, Axis3}
 
@@ -282,12 +281,11 @@ mod TestWgslDawn {
         let fails = unreadable ::: (all |> List.filter(p -> not String.isEmpty(snd(p))));
         (fails, List.length(all))
 
-    /// 組まずに通してよい理由か: Dawn のネイティブが無い OS か、adapter が無い（DawnWebGpu.open の「adapter が無い」・Dawn の「No supported adapters」）。
-    def isSkippable(why: String): Bool \ IO =
-        let os = System.getProperty("os.name");
-        let arch = System.getProperty("os.arch");
-        let hasNative = not Object.isNull(os) and String.startsWith({ prefix = "Mac" }, os) and not Object.isNull(arch) and arch == "aarch64";
-        not hasNative or String.contains({ substr = "adapter が無い" }, why) or String.contains({ substr = "No supported adapters" }, why)
+    /// 組まずに通してよい理由か: Dawn のネイティブを配っていない機種（DawnNatives の文）か、adapter が無い（DawnWebGpu.open の「adapter が無い」・Dawn の「No supported adapters」）。
+    // WhyNot: OS と CPU の名前をここで見ない — 配る機種の表は DawnNatives の 1 か所にあり、写すと機種を足した時に片方だけ古くなる。
+    def isSkippable(why: String): Bool =
+        String.contains({ substr = "WebGPU のネイティブはまだ配っていない" }, why) or
+        String.contains({ substr = "adapter が無い" }, why) or String.contains({ substr = "No supported adapters" }, why)
 
     /// 生成した WGSL の全部（2D の面・材質の部品を差した frag・3D の材質の frag・lit・空）の (名前, 字)。Dawn の検査と同じ並び。
     def allWgsl(): List[(String, String)] \ IO =
@@ -300,7 +298,8 @@ mod TestWgslDawn {
 
     /// GLSL にしか無い字（WGSL に出たら言葉の切り替え漏れ）。
     def glslOnlyTokens(): List[String] =
-        "float(" :: "vec2 " :: "vec4 " :: "texture(" :: "textureLod(" :: "textureSize(" :: " ? " :: "atan(" :: "mod(" :: "inversesqrt" :: "dFdx" :: "uniform " :: Nil
+        "float(" :: "vec2 " :: "vec4 " :: "texture(" :: "textureLod(" :: "textureSize(" :: " ? " :: "atan(" :: "mod(" :: "inversesqrt" :: "dFdx" :: "uniform " ::
+        "bool " :: "ivec" :: "texelFetch(" :: "gl_" :: Nil
 
     /// tok が字 s に、名前の途中でない所（直前が英数字と _ でない所）から出てくるか（sg_mod( の mod( は数えない）。
     def hasToken(tok: String, s: String): Bool =

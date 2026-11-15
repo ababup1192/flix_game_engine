@@ -155,16 +155,17 @@ mod WgslRows {
         List.mapWithIndex((k, _) -> ("uParam${k}", RowUniform.FloatValue(paramValue(k))), ShaderDoc.paramNames(spec)) :::
         List.mapWithIndex((k, _) -> ("uTexFlip${k}", RowUniform.FloatValue(0.0)), ShaderDoc.texReads(spec))
 
-    def slotValue(slot: ShaderGen.Wgsl.UniformSlot): Float64 = match slot {
+    /// levels = 絵の mip のレベルの数（どの絵も同じ数）。
+    def slotValue(levels: Int32, slot: ShaderGen.Wgsl.UniformSlot): Float64 = match slot {
         case ShaderGen.Wgsl.UniformSlot.Time         => time()
         case ShaderGen.Wgsl.UniformSlot.Alpha        => 1.0
-        case ShaderGen.Wgsl.UniformSlot.TexLevels(_) => 1.0
+        case ShaderGen.Wgsl.UniformSlot.TexLevels(_) => Int32.toFloat64(levels)
         case ShaderGen.Wgsl.UniformSlot.Param(k)     => paramValue(k)
         case _                                       => 0.0
     }
 
-    def packSlots(slots: List[ShaderGen.Wgsl.UniformSlot]): Vector[Float32] =
-        slots |> List.map(s -> Float64.truncateToFloat32(slotValue(s))) |> List.toVector
+    def packSlots(levels: Int32, slots: List[ShaderGen.Wgsl.UniformSlot]): Vector[Float32] =
+        slots |> List.map(s -> Float64.truncateToFloat32(slotValue(levels, s))) |> List.toVector
 
     // ── 3D の材質 ──
 
@@ -228,13 +229,13 @@ mod WgslRows {
         let surfaces = surfaceSpecs() |> List.map(spec -> {
             let out = ShaderGen.Wgsl.compile(spec);
             { name = "face " + spec#name, glsl = surfaceGlsl(spec), wgsl = surfaceWgsl(spec), glUniforms = surfaceGlUniforms(spec),
-              values = packSlots(out#slots), textures = texturesOf(out#texReads), mustVary = false }
+              values = packSlots(1, out#slots), textures = texturesOf(out#texReads), mustVary = false }
         });
         let mats = materials() |> List.map(entry -> {
             let (name, spec, glow, metal) = entry;
             let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 0);
             { name = "material " + name, glsl = materialGlsl("sg_rowUv", spec, glow, metal), wgsl = materialWgsl("sg_rowUv", spec, glow, metal),
-              glUniforms = materialGlUniforms(spec, glow, metal), values = packSlots(m#slots), textures = texturesOf(m#texReads), mustVary = false }
+              glUniforms = materialGlUniforms(spec, glow, metal), values = packSlots(1, m#slots), textures = texturesOf(m#texReads), mustVary = false }
         });
         surfaces ::: mats ::: mipRow() :: Nil
 
@@ -247,7 +248,7 @@ mod WgslRows {
         let chain = { sampler = "uTex0", levels = solid(8, 40) :: solid(4, 220) :: Nil, linear = true };
         { name = "material mip（2 レベル）", glsl = materialGlsl("sg_rowUvMip", spec, None, None), wgsl = materialWgsl("sg_rowUvMip", spec, None, None),
           glUniforms = ("uTime", RowUniform.FloatValue(time())) :: ("uTexFlip0", RowUniform.FloatValue(0.0)) :: ("uTexLevels0", RowUniform.FloatValue(2.0)) :: Nil,
-          values = packSlots(m#slots) |> Vector.mapWithIndex((k, x) -> if (k == 1) Float64.truncateToFloat32(2.0) else x),
+          values = packSlots(List.length(chain#levels), m#slots),
           textures = chain :: Nil, mustVary = true }
 
     def diffOf(gl: Vector[Float32], gpu: Vector[Float32]): Float64 =
