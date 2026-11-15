@@ -61,7 +61,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | 選択肢・条件つきの選択肢・変数 | `-> …` `<<if>>` `<<set>>` `<<declare>>` | `WorldRead.pick` / `moveChoice` |
 | 背景の写真を時間帯の色でぼかして切り替える | `<<bg 写真 grade=時間帯 time=秒>>` + `assets/novel.backdrops.json` | `src/Backdrop.flix`（ShaderDoc の `TexBlur`） |
 | NVL ⇄ ADV・頁をめくる | `<<window nvl>>` `<<window bottom>>` `<<window clear>>` | `Page.show` / `Commands` の `window`（頁の出来事 `Out`） |
-| 環境音（ループ）・効果音 | `<<audio ambience 音>>` `<<audio se 音>>`（音は project.json の sounds の名前）+ `art/sfx.snd.star` | `Controls.ambience` / `soundOf`・音量は `assets/novel.mixer.json` のバス |
+| 環境音（ループ）・効果音 | `<<audio ambience 音>>` `<<audio se 音>>`（音は project.json の sounds の名前）+ `art/sfx.snd.star` | `Controls.ambience` / `soundOf`・音量は `assets/novel.mixer.json` のバス（名前が `amb_` で始まる音は環境音のバス・`se_` と `ui_` は効果音のバスへ振り分ける。ほかの名前は defaultBus）|
 | 画面の演出（蛍・揺れ） | `<<fx fireflies>>` `<<shake>>` | `View.particles` / `Stage.shakeOffset` |
 | 待ち | `<<wait 秒>>` | エンジンの YarnRunner が待つ |
 | 立ち絵と小物（出す・表情や位置を替える・消す。クロスフェードで、すべらせない） | `<<show 名前 [表情] [at=位置] [time=秒]>>`・`<<hide 名前>>`・`<<hide all>>`・`<<hide at=位置>>`（小物も同じ。props の名前は小物として出る）+ `assets/novel.cast.json`（位置・人物・小物。例は note）+ project.json の textures に `cast_<名前>_<表情>`。作例の物語には出していない（仕組みだけ） | `src/Cast.flix`（意味・重ね方・置き場所・描き方）・`View.castLayer`・セーブは `Saves.Mark` の `cast`。素材は `python3 art/cast/prepare.py <元の絵の置き場>` で縮めて縁を埋め、`make lint-cast` で登録と縦横の比を見る。確かめ方: 描き出しの `cast-sample`・`portrait-cast-sample`・`portrait-cast-veil`（テスト用の絵 `assets/cast/_sample_plain.png` は `art/cast/sample.py` が作る） |

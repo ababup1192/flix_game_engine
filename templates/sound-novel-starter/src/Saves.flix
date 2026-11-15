@@ -206,7 +206,7 @@ mod Saves {
             "bookmark" => YarnRunner.bookmarkToJson(s#mark#bookmark),
             "photo" => text(s#mark#shot |> Option.map(shot -> shot#photo)),
             "grade" => text(s#mark#shot |> Option.map(shot -> shot#grade)),
-            "ambience" => text(s#mark#ambience), "particles" => text(s#mark#particles),
+            "ambienceSound" => text(s#mark#ambience), "particles" => text(s#mark#particles),
             "mode" => Json.JString("${s#mark#mode}"), "cast" => Cast.markToJson(s#mark#cast),
             "place" => Json.JString(s#place), "speaker" => Json.JString(s#speaker), "excerpt" => Json.JString(s#excerpt),
             "savedAt" => num(Int64.toFloat64(s#savedAt)), "serial" => num(Int32.toFloat64(s#serial)) });
@@ -226,9 +226,13 @@ mod Saves {
                                            "display" => Json.JString("${c#display}") })
         })
 
-    /// 枠の ambience の字 → 環境音の音の名前。
-    /// WhyNot: 書いてある字をそのまま音の名前にしない — 同じ version 2 のセーブに、amb_ を付けない短い名前（evening）で書いた枠がある。
-    def soundOfAmbience(name: String): String = if (String.startsWith(prefix = "amb_", name)) name else "amb_${name}"
+    /// 枠の環境音（project.json の sounds の名前）。ambienceSound の鍵を先に見て、無ければ ambience の短い名前に amb_ を付ける。
+    /// WhyNot: ambience の字を音の名前として読まない — その鍵は amb_ を付けない短い名前（evening）で書かれている。
+    /// WhyNot: 字が amb_ で始まるかで古い形を見分けない — amb_ で始まらない音の名前（rain_loop）も書ける。
+    def ambienceOf(obj: Map[String, Json]): Option[String] = match Map.get("ambienceSound", obj) {
+        case Some(j) => JsonCodec.expectString(j)
+        case None    => Map.get("ambience", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.map(name -> "amb_${name}")
+    }
 
     /// JSON から（壊れた枠・行はその分だけ捨て、設定の欠けた欄は fallback の値）。
     pub def fromJson(fallback: Saves, json: Json): Saves =
@@ -240,7 +244,7 @@ mod Saves {
                 let mode = if (text("mode") == Some("Adv")) Stage.Mode.Adv else Stage.Mode.Nvl;
                 { mark = { bookmark = bookmark,
                            shot = forM (photo <- text("photo"); grade <- text("grade")) yield { photo = photo, grade = grade },
-                           ambience = text("ambience") |> Option.map(soundOfAmbience), particles = text("particles"), mode = mode,
+                           ambience = ambienceOf(obj), particles = text("particles"), mode = mode,
                            cast = Cast.markFromJson(Map.get("cast", obj)) },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),

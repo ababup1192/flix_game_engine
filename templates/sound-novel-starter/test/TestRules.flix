@@ -523,14 +523,25 @@ mod TestRules {
 
     @Test
     def testSaveWithShortAmbienceNameReadsTheSoundName(): Unit \ {Assert, Fs.FileRead} =
-        // 環境音を amb_ の無い短い名前（"evening"）で書いた枠は、音の名前（amb_evening）として読む。音の名前のままの枠はそのまま。
+        // ambience の鍵に amb_ の無い短い名前（"evening"）で書いた枠は、音の名前（amb_evening）として読む。
         let res = TestKit.res();
         let bookmark = WorldRead.slotHere(res, begun(res)) |> Option.map(s -> YarnRunner.bookmarkToJson(s#mark#bookmark));
-        let slot = (bm, name) -> Util.Json.Json.JObject(Map#{ "bookmark" => bm, "ambience" => Util.Json.Json.JString(name) });
-        let read = bookmark |> Option.map(bm -> Util.Json.Json.JObject(Map#{ "slots" => Util.Json.Json.JObject(Map#{ "0" => slot(bm, "evening"), "1" => slot(bm, "amb_night") }) }))
+        let read = bookmark
+            |> Option.map(bm -> Util.Json.Json.JObject(Map#{ "slots" => Util.Json.Json.JObject(Map#{
+                   "0" => Util.Json.Json.JObject(Map#{ "bookmark" => bm, "ambience" => Util.Json.Json.JString("evening") }) }) }))
             |> Option.map(Saves.fromJson(Saves.fresh(res#kind)))
             |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> x#mark#ambience));
-        Assert.assertEq(expected = Some(Some("amb_evening") :: Some("amb_night") :: Nil), read)
+        Assert.assertEq(expected = Some(Some("amb_evening") :: Nil), read)
+
+    @Test
+    def testAmbienceSoundNameWithoutAmbPrefixSurvivesJson(): Unit \ {Assert, Fs.FileRead} =
+        // amb_ で始まらない音の名前（rain_loop）の環境音も、セーブの JSON を通してそのまま戻る。
+        let res = TestKit.res();
+        let saves = WorldRead.slotHere(res, begun(res))
+            |> Option.map(slot -> Saves.withPushed(Saves.Tab.Quick, { mark = { ambience = Some("rain_loop") | slot#mark } | slot }, Saves.fresh(res#kind)));
+        let read = saves |> Option.map(s -> Saves.fromJson(Saves.fresh(res#kind), Saves.toJson(s)))
+            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> x#mark#ambience));
+        Assert.assertEq(expected = Some(Some("rain_loop") :: Nil), read)
 
     @Test
     def testDateText(): Unit \ {Assert} =

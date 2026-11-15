@@ -186,7 +186,7 @@ pub type alias Command[st] = {
   - `needs` は 7 つとも手で書けたので、Spec から ref を読む pub（`YarnCommands.refsOf`）は要らなかった。engine_world は触っていない。
   - 台本を読んだ時に 1 回だけ引数を読む表（O2 の `Map[Source, Args]`）は入れていない（毎回 parse。性能だけの話なので N3 へ回した）。
   - コマンド名は語彙 19 へ: `bg 写真 [grade=] [time=]`（grade を省くと今の時間帯）・`window nvl|bottom|clear`・`audio ambience|se 音|off`（音は project.json の sounds の名前そのまま）・`fx`・`shake`・`show 名前 [表情] [at=] [time=]`・`hide 名前|all` / `hide at=位置`。show・hide の名前は cast にあれば人物・props にあれば小物（両方にあれば人物。重なりは TestDocs が止める）。`hide all` は人物と小物を全部消す（旧 `<<char off>>` は人物だけ）。show・hide の `time` は既定が Doc（fadeSeconds）なので `Param.time` でなく `num`。
-  - 環境音の値の意味が短い名前（`evening`）から音の名前（`amb_evening`）へ変わった。Mark は version 2 のまま、`Saves.fromJson` が `amb_` で始まらない名前に `amb_` を付けて読む。タイトルの `titleAmbience` も音の名前にそろえた。
+  - 環境音の値の意味が短い名前（`evening`）から音の名前（`amb_evening`）へ変わった。Mark は version 2 のまま、音の名前は新しい鍵 `ambienceSound` に書く。`Saves.fromJson` はその鍵を先に見て、無ければ古い鍵 `ambience` の短い名前に `amb_` を付けて読む（字が `amb_` で始まるかで見分けると、`rain_loop` のような音の名前が読み違えられる）。version を 3 に上げる案は、N3 の Mark v3（Snapshot）と番号がぶつかるので取らなかった。タイトルの `titleAmbience` も音の名前にそろえた。
   - yarn graph（とテープのグラフ）の既定の分類に window（stage）と audio（sound）を足し、舞台の鍵を「名前 1 つ目の引数」（`audio ambience`・`audio bgm`）でも書けるようにした（`audio se` は残らない）。
 
 ### 3.3 引数の表（`YarnCommands`）
