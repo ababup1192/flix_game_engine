@@ -831,3 +831,8 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 【未確認】廃屋配信が公開済みか（C13 の勧めは公開済みでも同じ）。
 - 廃屋配信の「カメラの質感」（約 200 行）を ShaderDoc で書けるか。粒状のノイズ・周辺の暗さ・色のずれは `Field.Hash1`・`RadialAspect`・`Tex` の `Shift` で書ける見込み【推】。
 - go の `parse.go` の `"…"` は N2 で入れた。`feed` の本文に `>>` を含めない決まりは今のまま。
+- 【未確認】ブラウザ版で後回し（`web.deferred`）にした効果音は、起動の時に長さが読めず、`audio se … wait=true` が待たない見込み（読めない音は読み込みのたびに 1 回知らせる）。直すなら、音が届いた時に長さを読む。
+- 【未確認】Studio のミキサーのフォームで保存した時に、テンプレートの `assets/mixer.schema.json` に書いた `volumes` と `lockSeconds` が残るか。
+- 相談中: C14（一発の効果音を止める口・8.3）。決まるまで `audio all off` は鳴り続ける音だけを止める。
+- GameView の物の中の z を 0〜7 へ丸める時に知らせが無い。描き物は純粋で、Log に「1 回だけ知らせる」口が無いため。
+- `templates/sound-novel-starter/assets/mixer.schema.json` はエンジンの `docs/mixer.schema.json` の写しに `volumes`・`lockSeconds` を足した物。エンジンの schema に欄が増えたら、ここへも写す。
