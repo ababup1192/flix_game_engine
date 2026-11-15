@@ -208,11 +208,11 @@ mod WorldRead {
 
     /// 今の行を既読にして、次の行へ送る。[遷移: 行→次の行 / 選択肢 / シナリオの終わり(Credits)]
     /// コマンドが出した待ちの間は送らない（実行器はもう待ちの後ろの台詞を出しているので、送るとその台詞を読まずに越える）。
+    /// 効果音の後の lockSeconds の間は、押しても・オートでも送らない（スキップは止めない）。
     def next(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let marked = markSeen(r, w);
         match YarnRunner.shownOf(r#talk) {
             case _ if Option.nonEmpty(r#pause) => World.withRead(r, w)
-            // 効果音の後の lockSeconds の間は、押しても・オートでも送らない（スキップは止めない）。
             case _ if r#playback != World.Playback.Skip and Stage.isTextLocked(World.now(w), r#stage) => World.withRead(r, w)
             case YarnRunner.Shown.Line(_) =>
                 Emit.emit(World.Event.Paged);
@@ -291,12 +291,11 @@ mod WorldRead {
             case None       => holdIfMissing(res, readOn(res, r, w))
         }, w)
 
-    /// 待っていない時の 1 歩（<<wait>>・文字送り・出し終えた時刻・オートとスキップ）。
+    /// 待っていない時の 1 歩（<<wait>>・文字送り・出し終えた時刻・オートとスキップ）。 コマンドが出した待ち（pause）も <<wait>> と同じく、スキップ中は飛ばす。
     def readOn(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let skipping = r#playback == World.Playback.Skip;
         let waited = match YarnRunner.shownOf(r#talk) {
             case _ if Option.nonEmpty(r#pause) =>
-                // スキップ中はコマンドが出した待ちも飛ばす。
                 r#pause |> Option.filter(p -> skipping or Clock.since(p#until, World.now(w)) >= 0.0)
                         |> Option.map(p -> resumePause(res, p, r, w)) |> Option.getWithDefault(w)
             case YarnRunner.Shown.Waiting =>
@@ -630,7 +629,7 @@ mod WorldRead {
         match YarnRunner.nodeOf(r#talk) {
             case Some(node) if Option.nonEmpty(Yarn.nodeOf(node, res#dialogue)) =>
                 let (talk, events) = YarnRunner.startWith(YarnRunner.storageOf(r#talk), res#dialogue, node, World.now(w));
-                fst(Emit.collect(() -> absorb(res, Commands.Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil, hold = None | r }, w)))
+                fst(Emit.collect(() -> absorb(res, Commands.Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil, hold = None, pause = None | r }, w)))
             case Some(_) => World.toTitle(w)
             case None    => w
         }

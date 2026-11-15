@@ -19,8 +19,6 @@ mod TestStageEffects {
     def applied(at: Float64, name: String, args: List[String], st: Stage.Stage): Stage.Stage \ Fs.FileRead =
         tried(at, name, args, st) |> Result.getWithDefault(st)
 
-    def near(a: Float64, b: Float64): Bool = Float64.abs(a - b) < 0.000001
-
     def alphaAt(at: Float64, st: Stage.Stage): Float64 \ Fs.FileRead =
         PropertyTween.numAt(t(at), Stage.overlayAlphaKey(), k()#overlayStart, st#props)
 
@@ -43,26 +41,26 @@ mod TestStageEffects {
     @Test
     def testOverlayEndsAtTheAlpha(): Unit \ {Assert, Fs.FileRead} =
         let st = applied(0.0, "overlay", "0.6" :: "time=1" :: Nil, Stage.empty());
-        Assert.assertTrue(near(0.6, PropertyTween.numEnd(Stage.overlayAlphaKey(), k()#overlayStart, st#props)))
+        Assert.assertTrue(TestKit.near(0.6, PropertyTween.numEnd(Stage.overlayAlphaKey(), k()#overlayStart, st#props)))
 
     @Test
     def testOverlayStartsFromTheDocStart(): Unit \ {Assert, Fs.FileRead} =
         // 一度も覆いを書いていない時は、Doc の overlayStart から動き出す。
         let st = applied(0.0, "overlay", "0.6" :: "time=1" :: Nil, Stage.empty());
-        Assert.assertTrue(near(k()#overlayStart, alphaAt(0.0, st)))
+        Assert.assertTrue(TestKit.near(k()#overlayStart, alphaAt(0.0, st)))
 
     @Test
     def testOverlayToTheSameAlphaChangesNothing(): Unit \ {Assert, Fs.FileRead} =
         // 動いている途中で同じ濃さへの覆いを書いても、動きを始め直さない。
         let first = applied(0.0, "overlay", "0.6" :: "time=2" :: Nil, Stage.empty());
         let again = applied(1.0, "overlay", "0.6" :: "time=2" :: Nil, first);
-        Assert.assertTrue(near(alphaAt(1.5, first), alphaAt(1.5, again)))
+        Assert.assertTrue(TestKit.near(alphaAt(1.5, first), alphaAt(1.5, again)))
 
     @Test
     def testOverlayFromStartsThere(): Unit \ {Assert, Fs.FileRead} =
         // from= は始まりの濃さ（flash は from=1 で 1 行）。
         let st = applied(0.0, "overlay", "0" :: "from=1" :: "time=1" :: Nil, Stage.empty());
-        Assert.assertTrue(near(1.0, alphaAt(0.0, st)))
+        Assert.assertTrue(TestKit.near(1.0, alphaAt(0.0, st)))
 
     @Test
     def testOverlayUnknownColorIsAnError(): Unit \ {Assert, Fs.FileRead} =
@@ -84,7 +82,7 @@ mod TestStageEffects {
     @Test
     def testCameraEndsAtTheZoom(): Unit \ {Assert, Fs.FileRead} =
         let st = applied(0.0, "camera", "zoom=1.5" :: Nil, Stage.empty());
-        Assert.assertTrue(near(1.5, PropertyTween.numEnd(Stage.cameraKey(Stage.CameraField.Zoom), 1.0, st#props)))
+        Assert.assertTrue(TestKit.near(1.5, PropertyTween.numEnd(Stage.cameraKey(Stage.CameraField.Zoom), 1.0, st#props)))
 
     @Test
     def testCameraZoomScalesTheWorld(): Unit \ {Assert, Fs.FileRead} =
@@ -98,7 +96,7 @@ mod TestStageEffects {
             case Render.Item.Shader(x) => Some(x#rect#size#x)
             case _                     => None
         }) |> List.head |> Option.getWithDefault(0.0);
-        Assert.assertTrue(near(2.0 * widthOf(Stage.withBackdrop(t(0.0), shot, 0.0, Stage.empty())), widthOf(withShot)))
+        Assert.assertTrue(TestKit.near(2.0 * widthOf(Stage.withBackdrop(t(0.0), shot, 0.0, Stage.empty())), widthOf(withShot)))
 
     // ══ <<shake>> ══
 
@@ -108,7 +106,7 @@ mod TestStageEffects {
         let name = k()#shakes |> Map.keysOf |> Set.toList |> List.head |> Option.getWithDefault("");
         let px = Map.get(name, k()#shakes) |> Option.map(s -> s#px) |> Option.getWithDefault(-1.0);
         let st = applied(0.0, "shake", name :: Nil, Stage.empty());
-        Assert.assertTrue(near(px, PropertyTween.numEnd(Stage.shakeAmpKeyOf(Stage.ShakeTarget.Screen), 0.0, st#props)))
+        Assert.assertTrue(TestKit.near(px, PropertyTween.numEnd(Stage.shakeAmpKeyOf(Stage.ShakeTarget.Screen), 0.0, st#props)))
 
     @Test
     def testUnknownShakeNameIsAnError(): Unit \ {Assert, Fs.FileRead} =
@@ -147,8 +145,25 @@ mod TestStageEffects {
         Assert.assertTrue(boxZ > zOfShader("picture_cast_a_plain", st))
 
     @Test
+    def testParticlesWithoutALayerAreAboveTheActors(): Unit \ {Assert, Fs.FileRead} =
+        // 層の数を書かない粒（既定 700）は、人物（500）より手前に描く。
+        let r = res() |> Res.withEffects(EffectsDoc.defaults());
+        let st = Stage.settle(applied(1.0, "fx", "snow" :: Nil, applied(0.0, "show", "a" :: Nil, Stage.empty())));
+        let env = { storyNow = t(100.0) | View.envOf(Layout.Fit.Regular, r, TestKit.w0(r)) };
+        let items = ViewStage.frame(env, st, true);
+        let castZ = items |> List.filterMap(placed -> match placed#item {
+            case Render.Item.Shader(s) => Some(s#zIndex)
+            case _                     => None
+        }) |> List.foldLeft(Int32.max, -1);
+        let polyZ = items |> List.filterMap(placed -> match placed#item {
+            case Render.Item.Shader(_) => None
+            case other                 => Some(ViewStage.zOf(other))
+        }) |> List.foldLeft(Int32.max, -1);
+        Assert.assertTrue(polyZ > castZ)
+
+    @Test
     def testAttachedActorIsNotCountedAsPresence(): Unit \ {Assert, Fs.FileRead} =
         // 背景に付く絵（shade）は、縦の頁の覆いを薄くする「人物が出ている量」に数えない。
         let st = Stage.settle(applied(0.0, "show", "shade" :: Nil, Stage.empty()));
-        Assert.assertTrue(near(0.0, Cast.presenceOf(t(10.0), res()#cast, st#cast)))
+        Assert.assertTrue(TestKit.near(0.0, Cast.presenceOf(t(10.0), res()#cast, st#cast)))
 }

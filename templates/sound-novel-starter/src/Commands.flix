@@ -28,8 +28,10 @@
 // 表に無い名前と引数の誤りは Err を返し、World が 1 行言って舞台はそのまま続ける（シナリオの書き損じで止めない）。
 // 引数はシナリオを読んだ時に 1 回だけ読んで表（ArgsTable。Res が持つ）に置き、毎回の実行では読み直さない。
 // apply が後に残す物は全部 Stage に書く（セーブ・settle・素材待ちが Stage だけを見て済むように）。
+// WhyNot: <<audio se 音 wait=true>> の待ちを後ろの <<wait 秒>> に足さない — 実行器はコマンドを返した時にはもう後ろの <<wait>> まで流していて、
+//   その時刻から数える。足すには実行器（engine_world の YarnRunner）に待ちを差し込む口が要るので、2 つは重なり、長い方だけ待つ。
 mod Commands {
-    use fge::{Clock, Color, Curve, Log, Yarn, YarnCommands}
+    use fge::{Clock, Curve, Yarn, YarnCommands}
     use fge::YarnCommands.{DocRef, Param}
     use fge::YarnCommands.Param.Or
 
@@ -82,6 +84,13 @@ mod Commands {
     pub def specs(): List[YarnCommands.Spec] = table() |> List.map(c -> c#spec)
 
     def lookup(name: String): Option[Command[Stage.Stage]] = table() |> List.find(c -> YarnCommands.nameOf(c#spec) == name)
+
+    /// シナリオの <<audio se 音 wait=true>> の音の名前（長さが要る音）。
+    pub def waitSoundsOf(program: Yarn.Program): List[String] =
+        Talk.commandsOf(program) |> List.filterMap(c -> match c#args {
+            case "se" :: sound :: rest if c#name == "audio" and List.memberOf("wait=true", rest) => Some(sound)
+            case _                                                                          => None
+        }) |> List.distinct
 
     // ── 読んだ引数の表 ──
 
@@ -219,10 +228,14 @@ mod Commands {
     }
 
     /// 鳴り続ける音を now から替える。sound = None で止める。fade > 0 なら、鳴らす時は音量 0 から、止める時は音量 0 まで fade 秒で動かす。
+    /// 鳴っている音と同じ音なら、鳴らし直さずに今の音量から volume へ動かす。
     def withSustained(now: Clock.Time[Stage.Story], keys: (PropertyTween.NameKey, PropertyTween.NumKey), sound: Option[String], volume: Float64, fade: Float64,
                       st: Stage.Stage): Stage.Stage =
         let (nameKey, volumeKey) = keys;
+        let same = Option.nonEmpty(sound) and PropertyTween.nameEnd(nameKey, st#props) == sound;
         let props = match sound {
+            case Some(_) if same =>
+                PropertyTween.tween(volumeKey, Some(PropertyTween.numAt(now, volumeKey, 1.0, st#props)), volume, now, 0.0, fade, Curve.Ease.Linear, st#props)
             case Some(_) =>
                 let named = PropertyTween.setName(nameKey, sound, now, 0.0, st#props);
                 if (fade > 0.0) PropertyTween.tween(volumeKey, Some(0.0), volume, now, 0.0, fade, Curve.Ease.Linear, named)
@@ -233,14 +246,24 @@ mod Commands {
         };
         { props = props | st }
 
+    /// チャンネルに書けない引数を書いた時の理由（無ければ None）。
+    // WhyNot: 効果音の volume= と fade= を受けて捨てない — 一発の音（Out.Sound）は名前しか運べず、音量はバスが決める。黙って捨てると書いた人が効いたと思う。
+    def misuseOf(ch: Channel, hasVolume: Bool, hasFade: Bool, hasWait: Bool): Option[String] = match ch {
+        case Channel.Se  => if (hasVolume or hasFade) Some("効果音に volume= と fade= は書けない（音量は novel.mixer.json のバスが決める）") else None
+        case Channel.All => if (hasVolume or hasWait) Some("all off に書けるのは fade= だけ") else None
+        case _           => if (hasWait) Some("wait=true は効果音（se）だけ") else None
+    }
+
     /// 効果音 name を鳴らす: 音を 1 回、Doc の lockSeconds の間は押しても送らない、wait なら音の長さだけ続きを待つ。
+    /// 長さが読めない音は待たない（読めないことは読み込みの時に Controls.loadSoundSeconds が 1 回知らせる）。
+    // WhyNot: ここで知らせない — apply はロード・戻る・ノードの頭の舞台づくりでも何度も当て直すので、同じ 1 行が流れ続ける。
     def playSe(ctx: Ctx, name: String, wait: Bool, st: Stage.Stage): (Stage.Stage, List[Out]) =
-        let locked = MixerDoc.lockOf(name, ctx#res#sounds)
+        let locked = MixerDoc.lockOf(name, ctx#res#mixerExtras)
             |> Option.map(secs -> { props = PropertyTween.trigger(Stage.textLockKey(), ctx#now, 0.0, secs, st#props) | st }) |> Option.getWithDefault(st);
         let waits = match (wait, Map.get(name, ctx#res#soundSeconds)) {
             case (false, _)        => Nil
             case (true, Some(secs)) => Out.Wait(secs) :: Nil
-            case (true, None)      => Log.warnThen("[stage] <<audio se ${name} wait=true>> の長さが読めないので待たない", Nil)
+            case (true, None)      => Nil
         };
         (locked, Out.Sound(name) :: waits)
 
@@ -259,9 +282,11 @@ mod Commands {
               let level = match Param.getOpt(volume, a) {
                   case None                => Ok(1.0)
                   case Some(Or.Value(v))   => Ok(v)
-                  case Some(Or.Word(name)) => MixerDoc.volumeOf(name, ctx#res#sounds) |> Option.toOk("知らない音量 '${name}'")
+                  case Some(Or.Word(name)) => MixerDoc.volumeOf(name, ctx#res#mixerExtras) |> Option.toOk("知らない音量 '${name}'")
               };
+              let misuse = misuseOf(ch, Option.nonEmpty(Param.getOpt(volume, a)), Option.nonEmpty(Param.getOpt(fade, a)), Option.nonEmpty(Param.getOpt(wait, a)));
               match (ch, Param.get(sound, a), level) {
+                  case _ if Option.nonEmpty(misuse)        => Err(Option.getWithDefault("", misuse))
                   case (_, _, Err(why))                    => Err(why)
                   case (Channel.Se, Or.Value(name :: Nil), _) => Ok(playSe(ctx, name, Param.getOpt(wait, a) == Some(true), st))
                   case (Channel.Se, Or.Value(_), _)        => Err("効果音は 1 つずつ鳴らす")
@@ -290,13 +315,13 @@ mod Commands {
                                    Param.erase(name) :: Param.erase(once) :: Nil),
           timing = Timing.Instant,
           apply = (ctx, a, st) -> match Param.get(name, a) {
-              case Or.Value(n) => withEffect(ctx, n, Param.getOpt(once, a) == Some(true), st)
+              case Or.Value(n) => applyEffect(ctx, n, Param.getOpt(once, a) == Some(true), st)
               case Or.Word(_)  => Ok((Stage.withParticles(ctx#now, None, st), Nil))
           },
           needs = noAssets }
 
     /// 粒の演出 n を出す（once なら Doc の onceSeconds だけ一度・そうでなければ止めるまで）。
-    def withEffect(ctx: Ctx, n: String, once: Bool, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
+    def applyEffect(ctx: Ctx, n: String, once: Bool, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
         match EffectsDoc.particleOf(n, ctx#res#effects) {
             case None    => Err("知らない粒の演出 '${n}'")
             case Some(p) =>
@@ -305,7 +330,7 @@ mod Commands {
         }
 
     def shake(): Command[Stage.Stage] =
-        let strength = Param.num("strength", 0.0, 200.0) |> Param.orNames(DocRef.Keys("../novel.kind.json", "shakes") :: Nil) |> Param.at(1);
+        let strength = Param.num("strength", 0.0, 80.0) |> Param.orNames(DocRef.Keys("../novel.kind.json", "shakes") :: Nil) |> Param.at(1);
         let on = Param.name("on", castNames()) |> Param.orWords("screen" :: "window" :: Nil);
         let time = Param.num("time", 0.0, 10.0);
         { spec = YarnCommands.spec("shake", "揺らす（強さ = novel.kind.json の shakes の名前か px・省くと shakeSeconds / shakePx。on = screen（既定）・window・絵の名前）",
@@ -349,7 +374,7 @@ mod Commands {
               let start = KindDoc.rec(ctx#res#kind)#overlayStart;
               let now = PropertyTween.numAt(ctx#now, Stage.overlayAlphaKey(), start, st#props);
               let unchanged = Option.isEmpty(Param.getOpt(fromArg, a)) and PropertyTween.numEnd(Stage.overlayAlphaKey(), start, st#props) == target;
-              if (colorName |> Option.exists(c -> Option.isEmpty(colorOfName(c)))) Err("知らない色 '${Option.getWithDefault("", colorName)}'（black・white・#rrggbb）")
+              if (colorName |> Option.exists(c -> Option.isEmpty(Stage.overlayColorOf(c)))) Err("知らない色 '${Option.getWithDefault("", colorName)}'（black・white・#rrggbb）")
               else {
                   let named = (key, value: Option[String], t) -> value |> Option.map(v -> PropertyTween.setName(key, Some(v), ctx#now, 0.0, t)) |> Option.getWithDefault(t);
                   let props = st#props |> named(Stage.overlayColorKey(), colorName) |> named(Stage.overlayLayerKey(), Param.getOpt(place, a));
@@ -360,13 +385,6 @@ mod Commands {
               }
           },
           needs = noAssets }
-
-    /// overlay の色の名前（black・white・#rrggbb）の色。
-    pub def colorOfName(name: String): Option[Color] = match name {
-        case "black" => Some({ r = 0.0, g = 0.0, b = 0.0 })
-        case "white" => Some({ r = 1.0, g = 1.0, b = 1.0 })
-        case _       => Color.hex(name)
-    }
 
     def camera(): Command[Stage.Stage] =
         let zoom = Param.num("zoom", 0.1, 10.0);
@@ -520,7 +538,6 @@ mod Commands {
         let toArg = Param.choice("to", edgeNames());
         let time = Param.time(0.5);
         let ease = Param.ease(Curve.Ease.SmoothStep);
-        // 出ていない絵を from= で出す時の意味（秒 0 で、Doc の face・slot に出す）。
         let entryCue = (res: Res.Res, a, st: Stage.Stage) ->
             if (Cast.isShown(Param.get(who, a), st#cast) or Option.isEmpty(Param.getOpt(fromArg, a))) Ok(None)
             else Cast.showCue(res#cast, Param.get(who, a), None, None, Some(0.0)) |> Result.map(Some);
@@ -547,6 +564,8 @@ mod Commands {
               let toEdge = Param.getOpt(toArg, a) |> Option.flatMap(edgeOf);
               match (conflict(a), entryCue(ctx#res, a, st)) {
                   case (Some(why), _) => Err(why)
+                  case (None, Ok(None)) if Cast.isShown(name, st#cast) and Option.nonEmpty(Param.getOpt(fromArg, a)) =>
+                      Err("'${name}' はもう出ている（from= は出ていない絵を端の外から出す時だけ）")
                   case (None, Err(why)) => Err(why)
                   case (None, Ok(None)) if not Cast.isShown(name, st#cast) => Err("'${name}' は出ていない（出すなら <<show>> か from=）")
                   case (None, Ok(entering)) =>

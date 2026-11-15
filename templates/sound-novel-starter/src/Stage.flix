@@ -4,7 +4,7 @@
 // 背景（前の写真を下に敷いて重ねる）と立ち絵（出入りと表情の重ね）は値 1 つで表せないので、自分の形と settle を持つ。
 // セーブ・バックログ・「戻る」が持つのは settle した舞台（Snapshot）。
 mod Stage {
-    use fge::{Clock, Curve, JsonCodec, Log, Num}
+    use fge::{Clock, Color, Curve, JsonCodec, Log, Num}
     use Util.Json.Json
 
     /// 物語の時計の名前（中身は要らない）。文字送り・<<wait>>・背景の重ね・揺れが使い、画面や確認のウィンドウを開くと止まる。
@@ -111,6 +111,13 @@ mod Stage {
 
     /// 覆いの色（black・white・#rrggbb）。
     pub def overlayColorKey(): PropertyTween.NameKey = PropertyTween.nameKey("overlay.color")
+
+    /// 覆いの色の名前（black・white・#rrggbb）の色（知らない名前は None）。
+    pub def overlayColorOf(name: String): Option[Color] = match name {
+        case "black" => Some({ r = 0.0, g = 0.0, b = 0.0 })
+        case "white" => Some({ r = 1.0, g = 1.0, b = 1.0 })
+        case _       => Color.hex(name)
+    }
 
     /// 覆いの置き場（stage = world の層の中・screen = 文字の枠より手前）。
     pub def overlayLayerKey(): PropertyTween.NameKey = PropertyTween.nameKey("overlay.layer")

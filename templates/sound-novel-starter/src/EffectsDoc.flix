@@ -2,7 +2,7 @@
 // 粒の数や速さなどの手触りは novel.kind.json（fireflies・snow）、描き方は ViewStage（コード）。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod EffectsDoc {
-    use fge::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec, Log}
     use Util.Json.Json
 
     /// 粒の描き方。Fireflies = 漂って明滅する光（novel.kind.json の fireflies）、Snow = 降る雪（novel.kind.json の snow）。
@@ -48,10 +48,18 @@ mod EffectsDoc {
 
     pub def fromJson(text: String): Option[Doc] = DocJson.decodeObject(fromRoot, text)
 
+    /// 書き損じの粒 1 つだけを既定（雪・層の数 700）にして知らせ、ほかの粒は書いたとおりに読む。
+    // WhyNot: 粒の表を丸ごと既定へ落とさない — 1 つの書き損じで、書いた粒が全部消えて蛍と雪に戻る。
     def fromRoot(root: Map[String, Json]): Doc =
         let d = rec(defaults());
+        let fallback = { look = Look.Snow, layer = defaultLayer(), onceSeconds = 2.0 };
+        let entries = Map.get("particles", root) |> Option.flatMap(JsonCodec.expectObject);
+        let read = (name, json) -> match particleFrom(json) {
+            case Some(p) => p
+            case None    => Log.fellBackThen("effects", "novel.effects.json の粒 '${name}'", "雪（既定）", "look が fireflies・snow のどれでもないか、形が違う", fallback)
+        };
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
-                  particles = Map.get("particles", root) |> Option.flatMap(JsonCodec.decodeStringMap(particleFrom)) |> Option.getWithDefault(d#particles) })
+                  particles = entries |> Option.map(Map.mapWithKey(read)) |> Option.getWithDefault(d#particles) })
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead = DocJson.loadOr(fromJson, defaults(), p)

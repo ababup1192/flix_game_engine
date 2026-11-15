@@ -188,7 +188,8 @@
         "id": "mixer",
         "pattern": "assets/novel.mixer.json",
         "title": "音の通り道（環境音と効果音のバス）",
-        "role": "tuning"
+        "role": "tuning",
+        "schema": "assets/mixer.schema.json"
       },
       {
         "id": "effects",

@@ -3,7 +3,7 @@
 // 入力の効き先は「いちばん手前の物」1 つ: 確認のウィンドウ → 開いている画面 → 選択肢 → クイックメニュー → 本文（送る）。
 // 本文を送るのはキーの決定と、Gesture が離した時に決めた押し（タップ・ドラッグ・左の外の払い）。押している間と長押しは送らない。
 mod Controls {
-    use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, LoadProgress, Log, Rect2, Resources}
+    use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, LoadProgress, Log, Rect2, Resources, Yarn}
     use fge::GameEngine.Key
 
     // ── 毎フレームの系 ──
@@ -462,14 +462,20 @@ mod Controls {
           cast = CastDoc.load(CastDoc.path()),
           shots = ShotsDoc.load(ShotsDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
-          sounds = MixerDoc.load(mixerPath()),
-          soundSeconds = SoundLength.load(),
+          mixerExtras = MixerDoc.load(mixerPath()),
+          soundSeconds = loadSoundSeconds(dialogue),
           effects = EffectsDoc.load(EffectsDoc.path()),
           dialogue = dialogue,
           commandArgs = Commands.argsTableOf(dialogue),
           nodesBySource = Talk.nodesBySource(dialogue),
           missing = Set.empty(),
           scriptEdits = ScriptEdits.none() }
+
+    /// 鳴り続けない音の長さ（秒）。シナリオが wait=true で鳴らす効果音のうち、長さが読めない物を 1 行ずつ知らせる（読み込みのたびに 1 回）。
+    def loadSoundSeconds(dialogue: Yarn.Program): Map[String, Float64] \ Fs.FileRead =
+        let seconds = SoundLength.load();
+        let unread = Commands.waitSoundsOf(dialogue) |> List.filter(name -> not Map.memberOf(name, seconds));
+        Log.warnAllThen(unread |> List.map(name -> "[stage] <<audio se ${name} wait=true>> の長さが読めない（project.json の sounds の WAV が読めない）ので、この音では待たない"), seconds)
 
     /// 縦の画面の Doc（novel.portrait.json に novel.rail.json を rail 欄として組んだ物）。
     def loadPortrait(): PortraitDoc.Doc \ Fs.FileRead =
@@ -481,7 +487,10 @@ mod Controls {
     pub def docTable(): List[DocTable.Entry[Resources.With[Res.Res, World.World]]] =
         let unchanged = (_, w) -> w;
         Resources.reloadRow("story", StoryDoc.path(), res -> Res.withStory(StoryDoc.load(StoryDoc.path()), res), unchanged)
-            :: Resources.reloadUnnamedRow(Talk.dialoguePath(), res -> Res.withDialogue(Talk.load(), res), WorldRead.settleDialogue)
+            :: Resources.reloadUnnamedRow(Talk.dialoguePath(), res -> {
+                   let dialogue = Talk.load();
+                   Res.withDialogue(dialogue, res) |> Res.withSoundSeconds(loadSoundSeconds(dialogue))
+               }, WorldRead.settleDialogue)
             :: (Resources.reloadRow("kind", KindDoc.path(), res -> Res.withKind(KindDoc.load(KindDoc.path()), res), unchanged)
                 |> DocTable.withActiveWhen(Resources.read((_, w) -> World.isReading(w))))
             :: Resources.reloadRow("theme", ThemeDoc.path(), res -> Res.withTheme(ThemeDoc.load(ThemeDoc.path()), res), unchanged)
@@ -495,7 +504,7 @@ mod Controls {
             :: Resources.reloadRow("cast", CastDoc.path(), res -> Res.withCast(CastDoc.load(CastDoc.path()), res), unchanged)
             :: Resources.reloadRow("shots", ShotsDoc.path(), res -> Res.withShots(ShotsDoc.load(ShotsDoc.path()), res), unchanged)
             :: Resources.reloadRow("mixer", mixerPath(), res -> Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res)
-                                                                 |> Res.withSounds(MixerDoc.load(mixerPath())), unchanged)
+                                                                 |> Res.withMixerExtras(MixerDoc.load(mixerPath())), unchanged)
             :: Resources.reloadRow("effects", EffectsDoc.path(), res -> Res.withEffects(EffectsDoc.load(EffectsDoc.path()), res), unchanged)
             :: Nil
 }

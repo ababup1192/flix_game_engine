@@ -39,8 +39,6 @@ mod TestActors {
     def xAt(at: Float64, name: String, st: Stage.Stage): Float64 =
         PropertyTween.numAt(t(at), Stage.actorKey(name, Stage.ActorField.X), Stage.actorDefaultOf(Stage.ActorField.X), st#props)
 
-    def near(a: Float64, b: Float64): Bool = Float64.abs(a - b) < 0.000001
-
     def envOf(st: Stage.Stage, photo: Option[String]): Cast.Env \ Fs.FileRead =
         { doc = doc(), fit = Layout.Fit.Regular, storyNow = t(100.0), realNow = Clock.zero(), missing = Set.empty(),
           light = Cast.steadyLight(Cast.plainTone()), props = st#props, photo = photo, backdropShift = 0.0 }
@@ -72,31 +70,47 @@ mod TestActors {
         let st = Stage.settle(played(("show", "a" :: Nil) :: ("show", "book" :: Nil) :: Nil));
         Assert.assertEq(expected = "picture_cast_book_plain" :: "picture_cast_a_plain" :: Nil, drawnNames(envOf(st, None), st))
 
+    @Test
+    def testSlotWithoutExclusiveHoldsOne(): Unit \ Assert =
+        // exclusive を書かない位置は 1 つしか立てない（2 人目を出すと 1 人目は消えていく）。
+        let doc = CastDoc.fromJson("{ \"slots\": { \"mid\": { \"x\": 0.5, \"bottom\": 1.0, \"height\": 0.9 } }, \"cast\": { \"p\": { \"slot\": \"mid\", \"faces\": [\"plain\"] }, \"q\": { \"slot\": \"mid\", \"faces\": [\"plain\"] } } }")
+            |> Option.getWithDefault(CastDoc.defaults());
+        let showOf = name -> Cast.showCue(doc, name, None, None, Some(0.0));
+        let layer = List.foldLeft((acc, name) -> showOf(name) |> Result.map(cue -> Cast.apply(t(0.0), cue, acc)) |> Result.getWithDefault(acc),
+                                  Cast.empty(), "p" :: "q" :: Nil);
+        Assert.assertEq(expected = "q" :: Nil, Cast.shownNames(layer))
+
+    @Test
+    def testMoveFromOnAShownActorIsAnError(): Unit \ {Assert, Fs.FileRead} =
+        // from= は出ていない絵を端の外から出す時だけ（出ている絵を端へ飛ばさない）。
+        let shown = played(("show", "a" :: Nil) :: Nil);
+        Assert.assertTrue(Result.isErr(tried(1.0, "move", "a" :: "from=left" :: Nil, shown)))
+
     // ══ 端から滑る ══
 
     @Test
     def testShowFromLeftStartsOneSlideAway(): Unit \ {Assert, Fs.FileRead} =
         // <<show 名 from=left>> は、置き場所から slideDistance だけ左から動き出す。
         let st = played(("show", "a" :: "from=left" :: Nil) :: Nil);
-        Assert.assertTrue(near(0.0 - d()#slideDistance, xAt(0.0, "a", st)))
+        Assert.assertTrue(TestKit.near(0.0 - d()#slideDistance, xAt(0.0, "a", st)))
 
     @Test
     def testShowFromLeftEndsAtTheSlot(): Unit \ {Assert, Fs.FileRead} =
         // 滑り終えると置き場所（ずれ 0）に着く。
         let st = played(("show", "a" :: "from=left" :: Nil) :: Nil);
-        Assert.assertTrue(near(0.0, xEnd("a", st)))
+        Assert.assertTrue(TestKit.near(0.0, xEnd("a", st)))
 
     @Test
     def testHideToRightEndsOneSlideAway(): Unit \ {Assert, Fs.FileRead} =
         // <<hide 名 to=right>> は、今の位置から slideDistance だけ右へ滑りながら消える。
         let st = played(("show", "a" :: Nil) :: ("hide", "a" :: "to=right" :: Nil) :: Nil);
-        Assert.assertTrue(near(d()#slideDistance, xEnd("a", st)))
+        Assert.assertTrue(TestKit.near(d()#slideDistance, xEnd("a", st)))
 
     @Test
     def testShowingAgainResetsTheMoves(): Unit \ {Assert, Fs.FileRead} =
         // 消した絵を出し直すと、前に出した時の <<move>> は持ち越さない（ずれは既定の 0）。
         let st = played(("show", "a" :: Nil) :: ("move", "a" :: "x=0.3" :: Nil) :: ("hide", "a" :: Nil) :: ("show", "a" :: Nil) :: Nil);
-        Assert.assertTrue(near(0.0, xEnd("a", st)))
+        Assert.assertTrue(TestKit.near(0.0, xEnd("a", st)))
 
     // ══ <<move>> ══
 
@@ -104,13 +118,13 @@ mod TestActors {
     def testMoveWritesTheTarget(): Unit \ {Assert, Fs.FileRead} =
         // <<move 名 scale=>> は actor.<名>.scale の終わりの値を書く。
         let st = played(("show", "a" :: Nil) :: ("move", "a" :: "scale=1.5" :: Nil) :: Nil);
-        Assert.assertTrue(near(1.5, Stage.actorEnd("a", Stage.ActorField.Scale, st)))
+        Assert.assertTrue(TestKit.near(1.5, Stage.actorEnd("a", Stage.ActorField.Scale, st)))
 
     @Test
     def testMoveDxAddsToTheEnd(): Unit \ {Assert, Fs.FileRead} =
         // dx= は今の終わりの値に足した値を書く（相対の値は残さない）。
         let st = played(("show", "a" :: Nil) :: ("move", "a" :: "x=0.2" :: Nil) :: ("move", "a" :: "dx=0.1" :: Nil) :: Nil);
-        Assert.assertTrue(near(0.3, xEnd("a", st)))
+        Assert.assertTrue(TestKit.near(0.3, xEnd("a", st)))
 
     @Test
     def testMoveStartsFromTheValueNow(): Unit \ {Assert, Fs.FileRead} =
@@ -118,7 +132,7 @@ mod TestActors {
         let shown = played(("show", "a" :: Nil) :: Nil);
         let first = tried(1.0, "move", "a" :: "x=0.4" :: "time=1" :: Nil, shown) |> Result.getWithDefault(shown);
         let second = tried(1.5, "move", "a" :: "x=0.0" :: "time=1" :: Nil, first) |> Result.getWithDefault(first);
-        Assert.assertTrue(near(xAt(1.5, "a", first), xAt(1.5, "a", second)))
+        Assert.assertTrue(TestKit.near(xAt(1.5, "a", first), xAt(1.5, "a", second)))
 
     @Test
     def testMoveXAndDxTogetherIsAnError(): Unit \ {Assert, Fs.FileRead} =
@@ -151,7 +165,7 @@ mod TestActors {
     def testMoveAcrossEndsOneSlideBeyond(): Unit \ {Assert, Fs.FileRead} =
         // from=left to=right は、置き場所から slideDistance だけ左から右へ動く。
         let st = played(("move", "a" :: "from=left" :: "to=right" :: Nil) :: Nil);
-        Assert.assertTrue(near(d()#slideDistance, xEnd("a", st)))
+        Assert.assertTrue(TestKit.near(d()#slideDistance, xEnd("a", st)))
 
     @Test
     def testRotatedActorDrawsTheTurnedPicture(): Unit \ {Assert, Fs.FileRead} =
@@ -163,7 +177,8 @@ mod TestActors {
     def testQuarterTurnSwapsTheSidesOfTheBox(): Unit \ Assert =
         // 90 度傾けた絵の外接する矩形は、幅と高さが入れ替わる。
         let (box, _) = Cast.tiltOf(90.0, { position = { x = 0.0, y = 0.0 }, size = { x = 10.0, y = 20.0 } });
-        Assert.assertTrue(near(20.0, box#size#x) and near(10.0, box#size#y))
+        Assert.assertEq(expected = (20, 10), (Float64.round(box#size#x) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                              Float64.round(box#size#y) |> Float64.tryToInt32 |> Option.getWithDefault(0)))
 
     // ══ 背景に付く絵 ══
 
@@ -173,7 +188,7 @@ mod TestActors {
         let st = Stage.settle(played(("show", "shade" :: Nil) :: Nil));
         let xOf = photo -> Cast.placedOf(envOf(st, photo), st#cast) |> List.head |> Option.map(p -> p#rect#position#x) |> Option.getWithDefault(0.0);
         let shift = Cast.entryOf(doc(), "shade") |> Option.map(e -> CastDoc.attachShiftOf(Some("p"), e#attach)) |> Option.getWithDefault(0.0);
-        Assert.assertTrue(near(shift * Layout.width(Layout.Fit.Regular), xOf(Some("p")) - xOf(None)))
+        Assert.assertTrue(TestKit.near(shift * Layout.width(Layout.Fit.Regular), xOf(Some("p")) - xOf(None)))
 
     // ══ 残す形 ══
 
@@ -224,6 +239,12 @@ mod TestActors {
         // スキップ中は待ちも飛ばす。
         let w = World.mapRead(r -> { playback = World.Playback.Skip | r }, paused(10.0));
         Assert.assertTrue(Option.isEmpty(World.readOf(stepBy(res(), 0.01, w)) |> Option.flatMap(r -> r#pause)))
+
+    @Test
+    def testReopeningTheNodeDropsThePause(): Unit \ {Assert, Fs.FileRead} =
+        // 待ちの間にシナリオを直して開き直すと、前の待ちは残らない（Silent の流しを止めない）。
+        let w = WorldRead.settleDialogue(res(), paused(10.0));
+        Assert.assertTrue(Option.isEmpty(World.readOf(w) |> Option.flatMap(r -> r#pause)))
 
     @Test
     def testSaveDuringAPauseReturnsToTheLineBefore(): Unit \ {Assert, Fs.FileRead} =

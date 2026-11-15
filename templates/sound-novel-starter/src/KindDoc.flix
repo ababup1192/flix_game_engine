@@ -114,8 +114,9 @@ mod KindDoc {
           warmColor = Map.get("warmColor", o) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(Color.hex) |> Option.getWithDefault(fallback#warmColor),
           warmStrength = num("warmStrength", fallback#warmStrength) }
 
-    def shakeFrom(d: Rec, json: Json): Option[Shake] =
-        JsonCodec.expectObject(json) |> Option.map(o -> { seconds = JsonCodec.floatOr("seconds", d#shakeSeconds, o), px = JsonCodec.floatOr("px", d#shakePx, o) })
+    /// 名前付きの揺れ 1 つ（書いていない欄は同じ Doc の shakeSeconds・shakePx）。
+    def shakeFrom(fallback: Shake, json: Json): Option[Shake] =
+        JsonCodec.expectObject(json) |> Option.map(o -> { seconds = JsonCodec.floatOr("seconds", fallback#seconds, o), px = JsonCodec.floatOr("px", fallback#px, o) })
 
     /// 強さを書かない <<shake>> の揺れ。
     pub def defaultShake(kind: Doc): Shake = let r = rec(kind); { seconds = r#shakeSeconds, px = r#shakePx }
@@ -146,7 +147,8 @@ mod KindDoc {
                   autoPerChar = num("autoPerChar", d#autoPerChar), skipInterval = num("skipInterval", d#skipInterval),
                   logMax = int("logMax", d#logMax),
                   shakeSeconds = num("shakeSeconds", d#shakeSeconds), shakePx = num("shakePx", d#shakePx),
-                  shakes = Map.get("shakes", root) |> Option.flatMap(JsonCodec.decodeStringMap(shakeFrom(d))) |> Option.getWithDefault(d#shakes),
+                  shakes = Map.get("shakes", root) |> Option.flatMap(JsonCodec.decodeStringMap(shakeFrom({ seconds = num("shakeSeconds", d#shakeSeconds), px = num("shakePx", d#shakePx) })))
+                      |> Option.getWithDefault(d#shakes),
                   overlayStart = num("overlayStart", d#overlayStart), overlayLayer = int("overlayLayer", d#overlayLayer),
                   fireflies = int("fireflies", d#fireflies), snow = snow, creditsSpeed = num("creditsSpeed", d#creditsSpeed),
                   toastSeconds = num("toastSeconds", d#toastSeconds),

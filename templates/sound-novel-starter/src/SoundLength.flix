@@ -13,7 +13,7 @@ mod SoundLength {
             case Err(_) => Map.empty()
         }
 
-    /// 塊 1 つ: tagAt = 名前の頭、body = 中身の頭、size = 中身の大きさ。
+    /// チャンク 1 つ: tagAt = 名前の頭、body = 中身の頭、size = 中身の大きさ。
     type alias Chunk = { tagAt = Int32, body = Int32, size = Int64 }
 
     /// WAV（RIFF）の長さ（秒）: data の大きさ ÷ 1 秒の大きさ（fmt の byteRate）。RIFF でない・欄が無ければ None。
@@ -27,7 +27,7 @@ mod SoundLength {
             yield Int64.toFloat64(data#size) / Int64.toFloat64(rate)
         }
 
-    /// at から並ぶ塊（大きさが奇数なら 1 つ詰め物がある）。
+    /// at から並ぶチャンク（大きさが奇数なら 1 つ詰め物がある）。
     def chunksFrom(at: Int32, bytes: Vector[Int8], acc: List[Chunk]): List[Chunk] =
         if (at + 8 > Vector.length(bytes)) List.reverse(acc)
         else {

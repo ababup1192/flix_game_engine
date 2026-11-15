@@ -43,6 +43,52 @@
           "text": "待った後の行。"
         }
       ]
+    },
+    {
+      "title": "WaitLonger",
+      "file": "test/fixtures/wait/wait.yarn",
+      "line": 10,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 12,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "me",
+          "text": "重なる前の行。"
+        },
+        {
+          "kind": "command",
+          "line": 14,
+          "name": "audio",
+          "args": [
+            "se",
+            "se_slap",
+            "wait=true"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 15,
+          "name": "wait",
+          "args": [
+            "2"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "me",
+          "text": "重なった後の行。"
+        }
+      ]
     }
   ]
 }

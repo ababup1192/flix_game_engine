@@ -1,12 +1,12 @@
 // ViewStage — 舞台の world の層（背景・背景に付く絵・立ち絵と小物・粒・ゲームの絵・覆い）を、層の数で並べて描く（純粋）。
-// 物はまとまり（Group）ごとに「層の数」を持ち、層の数の小さい順（同じ数なら 絵 → 粒 → GameView → 覆い）に並べてから、
-// まとまりの順番 × View.zWorldStride + まとまりの中の z（0..View.zWorldStride-1）を z にする。カメラ（camera.*）と揺れ（camera.shake）はこの層にだけ掛ける。
+// 物はグループ（Group）ごとに「層の数」を持ち、層の数の小さい順（同じ数なら 絵 → 粒 → GameView → 覆い）に並べてから、
+// グループの順番 × View.zWorldStride + グループの中の z（0..View.zWorldStride-1）を z にする。カメラ（camera.*）と揺れ（camera.shake）はこの層にだけ掛ける。
 // 層の数の既定: 背景 0・背景に付く絵 100・人物 500・小物 600（novel.cast.json の layer）・粒（novel.effects.json の layer・既定 700）・覆い（novel.kind.json の overlayLayer）・
 // GameView は自分で決める。文字の枠と HUD は View.hud（world より必ず手前）。
 mod ViewStage {
     use fge::{Clock, Color, DrawCmd, Fx, Num, RawDraw, Rect2, Render, ShaderDoc, Sort}
 
-    /// world の層の物 1 まとまり: layer = 層の数、order = 同じ層の数の中の順（絵 0・粒 1・GameView 2・覆い 3）、items = 物（中の z は 0..View.zWorldStride-1）。
+    /// world の層の物 1 グループ: layer = 層の数、order = 同じ層の数の中の順（絵 0・粒 1・GameView 2・覆い 3）、items = 物（中の z は 0..View.zWorldStride-1）。
     type alias Group = { layer = Int32, order = Int32, items = List[Render.PlacedItem] }
 
     /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は View が幕の上に描く）。
@@ -15,10 +15,13 @@ mod ViewStage {
         layered(env, backdropRect(env#fit), stage, withProps) |> withCamera(env, stage) |> Render.movedAll({ x = dx, y = dy })
 
     /// サムネの world の層: 画面ちょうどに塗り（揺れは掛けない）、z を 0..9 に詰める（サムネは字を z 10 から重ねる）。
+    /// 10 段を超える時は奥の段から重ねて詰める（手前の覆い・小物・人物の前後は崩さない）。
     // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
     pub def thumbnail(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
         let items = layered(env, Layout.screen(env#fit), stage, withProps) |> withCamera(env, stage);
-        let ranks = items |> List.map(p -> zOf(p#item)) |> List.toSet |> Set.toList |> List.zipWithIndex |> List.map(match (i, z) -> (z, Int32.min(i, 9))) |> List.toMap;
+        let zs = items |> List.map(p -> zOf(p#item)) |> List.toSet |> Set.toList;
+        let skip = Int32.max(0, List.length(zs) - 10);
+        let ranks = zs |> List.zipWithIndex |> List.map(match (i, z) -> (z, Int32.max(0, i - skip))) |> List.toMap;
         items |> List.map(Render.overItem(mapZ(z -> Map.get(z, ranks) |> Option.getWithDefault(9))))
 
     /// world の層の物を、層の数で並べて z を振った列（カメラと揺れの前）。area = 背景を塗る矩形。
@@ -27,10 +30,12 @@ mod ViewStage {
         let actors = Cast.groupsWhere(castEnv(env, stage), keep, stage#cast, 0) |> List.map(match (n, items) -> { layer = n, order = 0, items = items });
         let game = GameView.draw(env, stage) |> List.map(match (n, item) -> { layer = n, order = 2, items = item :: Nil });
         let groups = { layer = 0, order = 0, items = backdropsIn(area, env, stage) } :: actors :::
-                     List.append(particleGroups(env, stage), overlayGroup(env, stage) :: game);
+                     List.append(particleGroups(env, stage), overlayGroup(env, stage) :: blackoutGroup(env, stage) :: game);
         stacked(groups)
 
-    /// まとまりを層の数の順に並べ、順番ごとに z の幅を割り当てる（並んだ同じ層の数と順のまとまりは同じ幅を使う）。
+    // WhyNot: docs/z-bands.md の「z の付け替えをしない・ZStack で積む」に従わない — 立ち絵・粒・背景はグループの中の z（0..7）を数で持って描いてあり、
+    //   GameView も (層の数, 物) で返すので、グループの順番から z の幅を割り当てる方が 1 か所で済む。グループの中の z が幅を超えた物は幅の端に丸める。
+    /// グループを層の数の順に並べ、順番ごとに z の幅を割り当てる（並んだ同じ層の数と順のグループは同じ幅を使う）。
     def stacked(groups: List[Group]): List[Render.PlacedItem] =
         let sorted = groups |> List.filter(g -> not List.isEmpty(g#items)) |> Sort.sortStableBy(g -> (g#layer, g#order));
         let step = (acc, g) -> {
@@ -60,12 +65,12 @@ mod ViewStage {
     def overlayOf(env: View.Env, stage: Stage.Stage): Option[(Color, Float64, Bool)] =
         let k = View.kindOf(env);
         let alpha = PropertyTween.numAt(env#storyNow, Stage.overlayAlphaKey(), k#overlayStart, stage#props);
-        let color = PropertyTween.nameAt(env#storyNow, Stage.overlayColorKey(), stage#props) |> Option.flatMap(Commands.colorOfName)
+        let color = PropertyTween.nameAt(env#storyNow, Stage.overlayColorKey(), stage#props) |> Option.flatMap(Stage.overlayColorOf)
             |> Option.getWithDefault({ r = 0.0, g = 0.0, b = 0.0 });
         let onScreen = PropertyTween.nameAt(env#storyNow, Stage.overlayLayerKey(), stage#props) == Some("screen");
         if (alpha <= 0.0) None else Some((color, Float64.min(1.0, alpha), onScreen))
 
-    /// 覆いの置き場が stage の時の world のまとまり（揺れても端が覗かないよう背景と同じ矩形）。
+    /// 覆いの置き場が stage の時の world のグループ（揺れても端が覗かないよう背景と同じ矩形）。
     def overlayGroup(env: View.Env, stage: Stage.Stage): Group =
         let items = overlayOf(env, stage) |> Option.filter(match (_, _, onScreen) -> not onScreen)
             |> Option.map(match (color, alpha, _) -> {
@@ -83,7 +88,7 @@ mod ViewStage {
     // ── z ──
 
     /// 絵 1 つの z（Clipped は中身）。
-    def zOf(item: Render.Item): Int32 = match item {
+    pub def zOf(item: Render.Item): Int32 = match item {
         case Render.Item.Sprite(s)  => s#zIndex
         case Render.Item.Text(x)    => x#zIndex
         case Render.Item.Box(b)     => b#zIndex
@@ -129,15 +134,24 @@ mod ViewStage {
         let under = if (p >= 1.0) None else stage#under;
         let shift = shiftOf(env, stage);
         let moved = match stage#switch#transition {
-            case BackdropDoc.Transition.Black =>
-                let veil = (a: Float64) -> View.at(area#position#x, area#position#y, RawDraw.box(area#size, Backdrop.groundColor(), 3) |> Render.fade(a)) :: Nil;
-                if (p < 0.5) List.append(photo(under, 0.0, 1.0, 1), veil(2.0 * p)) else List.append(photo(stage#shot, 0.0, 1.0, 2), veil(2.0 * (1.0 - p)))
+            case BackdropDoc.Transition.Black => if (p < 0.5) photo(under, 0.0, 1.0, 1) else photo(stage#shot, 0.0, 1.0, 2)
             case BackdropDoc.Transition.Slide => List.append(photo(under, shift - area#size#x, 1.0, 1), photo(stage#shot, shift, 1.0, 2))
             case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - area#size#x * panShare(), 1.0, 1), photo(stage#shot, shift, p, 2))
             case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, 1), wiped(env, area, stage#shot, p))
             case _                            => List.append(photo(under, 0.0, 1.0, 1), photo(stage#shot, 0.0, p, 2))
         };
         ground :: moved
+
+    /// transition=black の暗転のグループ: 前半は暗くなり、後半は明ける。背景だけでなく人物・粒・GameView も暗くするので、覆いと同じ層の数に置く。
+    def blackoutGroup(env: View.Env, stage: Stage.Stage): Group =
+        let p = Stage.fadeProgress(env#storyNow, stage);
+        let dark = if (p < 0.5) 2.0 * p else 2.0 * (1.0 - p);
+        let items = if (stage#switch#transition != BackdropDoc.Transition.Black or p >= 1.0 or dark <= 0.0) Nil
+                    else {
+                        let r = backdropRect(env#fit);
+                        View.at(r#position#x, r#position#y, RawDraw.box(r#size, Backdrop.groundColor(), 1) |> Render.fade(Float64.min(1.0, dark))) :: Nil
+                    };
+        { layer = View.kindOf(env)#overlayLayer, order = 3, items = items }
 
     /// pan で写真が流れる距離（背景の幅に対する割合）。
     // WhyNot: 写真を幅いっぱい流さない — 流しながら重ねるので、幅いっぱいだと前の写真が半分見えたまま新しい写真が透けて二重に見える。
@@ -199,7 +213,7 @@ mod ViewStage {
 
     // ── パーティクル（蛍・雪） ──
 
-    /// 粒の演出のまとまり: 止めるまで出ている物（<<fx 名>>）と、一度だけ出ている物（<<fx 名 once=true>>。だんだん薄くなる）。
+    /// 粒の演出のグループ: 止めるまで出ている物（<<fx 名>>）と、一度だけ出ている物（<<fx 名 once=true>>。だんだん薄くなる）。
     /// 層の数と描き方は novel.effects.json。
     def particleGroups(env: View.Env, stage: Stage.Stage): List[Group] =
         let doc = env#res#effects;

@@ -518,7 +518,7 @@
     "shake": {
       "params": [
         {
-          "max": 200,
+          "max": 80,
           "min": 0,
           "name": "strength",
           "orNames": {
