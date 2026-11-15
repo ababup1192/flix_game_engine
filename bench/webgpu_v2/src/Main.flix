@@ -20,42 +20,83 @@ mod V2Main {
     def timedFrames(): Int32 = 300
     def rounds(): Int32 = 5
 
-    /// 比べる場面。name・yaw = カメラの向き（ラジアン）・design = Design の解像度で描くか。
-    type alias Case = { name = String, yaw = Float64, design = Bool }
+    /// 比べる場面。passes と targets = 本編の前に描く Pass と、その描き先の作り方・items = 画面の描き物。
+    type alias Case = { name = String, passes = List[Render.Pass], targets = Map[String, RenderTarget.Descriptor], items = List[Render.PlacedItem] }
 
-    def cases(): List[Case] =
-        { name = "room", yaw = 0.0, design = false } ::
-        { name = "roomTurned", yaw = 0.5, design = false } ::
-        { name = "roomDesign", yaw = 0.0, design = true } :: Nil
+    def cases(kit: Room.Kit): List[Case] =
+        roomCase("room", kit, 0.0, Scene3d.Resolution.Native) ::
+        roomCase("roomTurned", kit, 0.5, Scene3d.Resolution.Native) ::
+        roomCase("roomDesign", kit, 0.0, Scene3d.Resolution.Design) ::
+        railsCase("railsMsaa", 4) ::
+        railsCase("railsNoMsaa", 1) ::
+        slantCase("slant2dMsaa") :: Nil
 
-    /// 場面ごとの許す差: 成分の差が 2 以上の画素の数（差が 1 の画素は数えない）。無い場面は 0。
-    /// room と roomTurned（2026-11-16・Apple M4 Pro の実測で 7 px と 6 px）: 同じ深さに重なる面（燭台の台と卓の天板）と三角形のふちの画素で、
-    /// 勝つ面が奥行きの丸めで入れ替わる（GL は clip の z を driver の固定の段で 0..1 へ移し、WebGPU は頂点シェーダーの sg_clipFromGl で移すので、最後の bit が違う）。
+    /// railsMsaa と同じ標本 4 の Pass に、3D を使わず 2D の斜めの細い多角形 3 本を描いて貼る（3D の貼る形に依らない MSAA のふちの差を見る比べ相手）。
+    def slantCase(name: String): Case =
+        let bar = (x: Float64, tilt: Float64) -> RawDraw.polygon({ x = x, y = 150.0 } :: { x = x + tilt, y = 30.0 } :: { x = x + tilt + 3.0, y = 30.0 } :: { x = x + 3.0, y = 150.0 } :: Nil,
+                                                                Color.rgb(0.9, 0.9, 0.9), 1);
+        let place = (x: Float64, tilt: Float64) -> ({ at = Vec2.zero(), item = bar(x, tilt) }: Render.PlacedItem);
+        let pass: Render.Pass = { name = "slant", clear = RenderTarget.LoadOp.Clear(Color.rgb(0.04, 0.04, 0.12)),
+                                  items = place(60.0, 60.0) :: place(110.0, 40.0) :: place(160.0, 24.0) :: Nil };
+        let design = Room.design();
+        { name = name, passes = pass :: Nil, targets = Map#{ "slant" => RenderTarget.withMsaa(4, RenderTarget.defaultDescriptor()) },
+          items = Render.blitRegion({ name = "slant", design = design, src = { position = Vec2.zero(), size = design },
+                                      at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
+
+    def roomCase(name: String, kit: Room.Kit, yaw: Float64, resolution: Scene3d.Resolution): Case =
+        { name = name, passes = Nil, targets = Map.empty(),
+          items = Render.scene3d(Vec2.zero(), { resolution = resolution | Room.scene(kit, yaw) }) :: Nil }
+
+    /// 標本 samples の Pass（design の解像度）に、斜めの細い棒 3 本（bench/gl_parity の msaaEdges の手すりと同じ形・頂点の色）の 3D の場面を描き、
+    /// スプライトで画面いっぱいに貼る（bench/gl_parity の passPaste と同じ道）。標本 4 では 3D の場面を標本 4 で描いて resolve してから、標本 4 の Pass へ貼る。
+    def railsCase(name: String, samples: Int32): Case =
+        let bar = (x: Float64, tilt: Float64) -> { points = Vec3.v3(x, -4.0, 12.0) :: Vec3.v3(x + tilt, 4.0, 12.0)
+                                                            :: Vec3.v3(x + tilt + 0.15, 4.0, 12.0) :: Vec3.v3(x + 0.15, -4.0, 12.0) :: Nil,
+                                                   color = Color.rgb(0.9, 0.9, 0.9) };
+        let rails = Scene3d.meshInstance(Mesh3d.fromPolygons(bar(-6.0, 3.0) :: bar(-4.0, 2.0) :: bar(-2.0, 1.2) :: Nil), Mat4.identity());
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
+        let scene = { instances = rails :: Nil, zIndex = 1,
+                      environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(Color.rgb(0.04, 0.04, 0.12)) }
+                      | Scene3d.scene(camera, Room.design()) };
+        let pass: Render.Pass = { name = "rails", clear = RenderTarget.LoadOp.Clear(Color.rgb(0.0, 0.0, 0.0)), items = Render.scene3d(Vec2.zero(), scene) :: Nil };
+        let design = Room.design();
+        { name = name, passes = pass :: Nil, targets = Map#{ "rails" => RenderTarget.withMsaa(samples, RenderTarget.defaultDescriptor()) },
+          items = Render.blitRegion({ name = "rails", design = design, src = { position = Vec2.zero(), size = design },
+                                      at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
+
+    /// 場面ごとの許す差: 成分の差が 2 以上の画素の数（差が 1 の画素は数えない）と、違う画素の数の上限（±1 の全体のずれを拾う）。無い場面は (0, 0)。
+    /// room と roomTurned（2026-11-16・Apple M4 Pro の実測で ±2 以上 7 px・6 px・違う画素 14 px・8 px）: 同じ深さに重なる面（燭台の台と卓の天板）と三角形のふちの画素で、
+    /// 勝つ面が奥行きの丸めで入れ替わる【推: GL は clip の z を固定の段で、WebGPU は頂点シェーダーの sg_clipFromGl で 0..1 へ移すので最後の bit が違う・
+    /// Apple Silicon の GL は Metal の上で動くので、GLSL と MSL の compiler の FMA のまとめ方の違いかもしれない】。
     /// 式の取り違え（光・かすみ・色の空間・面の向き）なら面の中が丸ごと違い、千 px の桁になる。
-    def tolerances(): Map[String, Int32] = Map#{"room" => 32, "roomTurned" => 32}
+    /// railsMsaa と slant2dMsaa（同じ日の実測で違う画素 3,330 px・5,040 px・±2 以上 2,493 px・4,464 px・どちらも max ±55 = 覆う割合 1/4 の段）: 斜めのふちの画素だけで、
+    /// 3D を使わない 2D の多角形でも同じ桁で出るので、3D の貼る形ではなく GL と WebGPU の標本の位置の違い
+    /// 【推: 描き先の行の並びが上下逆で、4 標本の位置の型が上下に鏡写しになる。軸に沿ったふち（bench/webgpu_v1 の msaaPass）は 0 px】。
+    /// MSAA が消えたかは許す差でなく、標本 4 と 1 の差（GL と WebGPU の両方で 0 でない）で見る。
+    def tolerances(): Map[String, (Int32, Int32)] = Map#{"room" => (32, 64), "roomTurned" => (32, 64), "railsMsaa" => (3000, 4000), "slant2dMsaa" => (5400, 6000)}
 
-    def itemsOf(kit: Room.Kit, c: Case): List[Render.PlacedItem] =
-        let scene = Room.scene(kit, c#yaw);
-        let resolution = if (c#design) Scene3d.Resolution.Design else Scene3d.Resolution.Native;
-        Render.scene3d(Vec2.zero(), { resolution = resolution | scene }) :: Nil
-
-    def drawFrame(items: List[Render.PlacedItem]): Unit \ Platform.Rendering + Platform.Window =
-        App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None);
+    def drawFrame(c: Case): Unit \ Platform.Rendering + Platform.Window + RenderTarget.Target =
+        drawPasses(c);
+        App.Internal.Paint.submitGpuItems(_ -> (), c#items, Nil, None);
         Platform.Window.presentFrame()
+
+    def drawPasses(c: Case): Unit \ Platform.Rendering + RenderTarget.Target =
+        if (List.isEmpty(c#passes)) ()
+        else discard App.Internal.Paint.drawPassPlan(_ -> (), Room.design(), Set.empty(), { targets = c#targets | Render.passPlan(c#passes) })
 
     // ── GL ──
 
-    def shootGl(session: GlOffscreen.Session, items: List[Render.PlacedItem]): ByteBuffer \ IO =
-        List.range(0, warmupFrames()) |> List.forEach(_ -> GlOffscreen.handle(session, () -> drawFrame(items)));
+    def shootGl(session: GlOffscreen.Session, c: Case): ByteBuffer \ IO =
+        List.range(0, warmupFrames()) |> List.forEach(_ -> GlOffscreen.handle(session, () -> drawFrame(c)));
         let buf = GlOffscreen.freshBuffer(session);
         GlOffscreen.readRgba(session, buf);
         buf
 
     def timeGl(session: GlOffscreen.Session, kit: Room.Kit): List[Int64] \ IO =
         List.range(0, timedFrames()) |> List.map(i -> {
-            let items = Room.items(kit, yawAt(i));
+            let c = roomCase("timed", kit, yawAt(i), Scene3d.Resolution.Native);
             let started = System.nanoTime();
-            GlOffscreen.handle(session, () -> drawFrame(items));
+            GlOffscreen.handle(session, () -> drawFrame(c));
             GL11.glFinish();
             System.nanoTime() - started
         })
@@ -65,17 +106,17 @@ mod V2Main {
 
     // ── WebGPU ──
 
-    def shootWebGpu(paint: WebGpuPaint.Paint, fonts: RenderPaint.Fonts, items: List[Render.PlacedItem], width: Int32, height: Int32): ByteBuffer \ IO =
-        List.range(0, warmupFrames()) |> List.forEach(_ -> handle(paint, fonts, () -> drawFrame(items)));
+    def shootWebGpu(paint: WebGpuPaint.Paint, fonts: RenderPaint.Fonts, c: Case, width: Int32, height: Int32): ByteBuffer \ IO =
+        List.range(0, warmupFrames()) |> List.forEach(_ -> handle(paint, fonts, () -> drawFrame(c)));
         let buf = ByteBuffer.allocateDirect(width * height * 4);
         WebGpuPaint.readFrame(paint, buf);
         buf
 
     def timeWebGpu(gpu: WebGpu, paint: WebGpuPaint.Paint, fonts: RenderPaint.Fonts, kit: Room.Kit): List[Int64] \ IO =
         List.range(0, timedFrames()) |> List.map(i -> {
-            let items = Room.items(kit, yawAt(i));
+            let c = roomCase("timed", kit, yawAt(i), Scene3d.Resolution.Native);
             let started = System.nanoTime();
-            handle(paint, fonts, () -> drawFrame(items));
+            handle(paint, fonts, () -> drawFrame(c));
             gpu.waitIdle();
             System.nanoTime() - started
         })
@@ -161,10 +202,10 @@ mod V2Main {
         LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gl, width, height, "debug/gl/${c#name}.png");
         LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gpu, width, height, "debug/webgpu/${c#name}.png");
         let diff = diffOf(gl, gpu, width * height);
-        let limit = Map.getWithDefault(c#name, 0, tolerances());
-        let ok = diff#overOne <= limit;
-        ("[webgpu-v2] ${pad(c#name, 12)} ${if (ok) "OK" else "NG"}  差 ${Int32.toString(diff#pixels)} px・±2 以上 ${Int32.toString(diff#overOne)} px（許容 ${Int32.toString(limit)}）"
-            + "・max ±${Int32.toString(diff#maxDelta)}・全 ${Int32.toString(width * height)} px", ok)
+        let (limit, limitAll) = Map.getWithDefault(c#name, (0, 0), tolerances());
+        let ok = diff#overOne <= limit and diff#pixels <= limitAll;
+        ("[webgpu-v2] ${pad(c#name, 12)} ${if (ok) "OK" else "NG"}  差 ${Int32.toString(diff#pixels)} px（許容 ${Int32.toString(limitAll)}）"
+            + "・±2 以上 ${Int32.toString(diff#overOne)} px（許容 ${Int32.toString(limit)}）・max ±${Int32.toString(diff#maxDelta)}・全 ${Int32.toString(width * height)} px", ok)
 
     /// ns の列の中央値（ms・小数 3 桁の字）。
     def medianMs(xs: List[Int64]): String =
@@ -205,11 +246,17 @@ mod V2Main {
                                                       width = width, height = height });
                 let fonts = LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.loadAll(paint, config);
                 println("[webgpu-v2] adapter: ${gpu.adapterInfo()}");
-                let rows = cases() |> List.map(c -> {
-                    let items = itemsOf(kit, c);
-                    judge(width, height, c, shootGl(session, items), shootWebGpu(paint, fonts, items, width, height))
-                });
+                let shots = cases(kit) |> List.map(c -> (c, shootGl(session, c), shootWebGpu(paint, fonts, c, width, height)));
+                let rows = shots |> List.map(match (c, gl, shot) -> judge(width, height, c, gl, shot));
                 List.forEach(r -> println(fst(r)), rows);
+                // 標本 4 と 1 の Pass の差: 0 なら MSAA が掛かっていない（GL と WebGPU のどちらも）。
+                let byName = shots |> List.map(match (c, gl, shot) -> (c#name, (gl, shot))) |> List.toMap;
+                let msaa = match (Map.get("railsMsaa", byName), Map.get("railsNoMsaa", byName)) {
+                    case (Some((glOn, gpuOn)), Some((glOff, gpuOff))) => (diffOf(glOn, glOff, width * height)#pixels, diffOf(gpuOn, gpuOff, width * height)#pixels)
+                    case _                                            => (0, 0)
+                };
+                println("[webgpu-v2] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaa))} px・WebGPU ${Int32.toString(snd(msaa))} px（0 なら MSAA が掛かっていない）");
+                let msaaOk = fst(msaa) > 0 and snd(msaa) > 0;
                 let trial = SplitPassTrial.open(gpu, width, height, (Int32.toFloat64(config#designWidth), Int32.toFloat64(config#designHeight)));
                 List.range(0, rounds()) |> List.forEach(round -> {
                     let gl = timeGl(session, kit);
@@ -225,7 +272,7 @@ mod V2Main {
                 println("[webgpu-v2] errors ${Int32.toString(errors)}${if (errors == 0) "" else " last=[${lastError}]"}");
                 WebGpuPaint.release(paint);
                 gpu.destroy();
-                Ok(errors == 0 and List.forAll(snd, rows))
+                Ok(errors == 0 and msaaOk and List.forAll(snd, rows))
         }
 }
 

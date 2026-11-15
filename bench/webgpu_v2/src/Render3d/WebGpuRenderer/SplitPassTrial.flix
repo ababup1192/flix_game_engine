@@ -3,6 +3,8 @@
 // B = 2D の pass を場面の所で閉じ、場面を描き先へ直に描いて（色は前の中身に描き足し・深度は場面の物）、2D の pass を開き直す。
 // どちらも 2D の中身は持たない（2D の pass を開く・閉じる・貼る代金だけが違う）。描き先は RGBA8・標本 1（画面の中間の texture と同じ）。
 // WhyNot: 本番の WebGpuPaint の道で B を組まない — B は 2D の pass を行の途中で開き直す道（viewport・控え・黒帯・stencil の張り直し）が要り、比べるためだけに本番へ足さない。
+// WhyNot: 本番の寿命の道（submit の途中で 1 体ごとの値と場面の値を頭から書き直す・同じ描き先の 2 回目で先に submit する）を通さない — Host の flush は何もせず、
+//   submit はコマの終わりに 1 回だけ。1 コマに場面 1 つで同じ描き先を 2 回書かないので、時間の比べには効かない（寿命の決まりは render_gl の TestWebGpuScene3dDawn が見る）。
 // WhyNot: Render3d.WebGpuRenderer の外に置かない — 子孫の mod からは pub でない物が見えるので、比べをここに置けば engine の pub を増やさずに済む。
 pub mod Render3d.WebGpuRenderer.SplitPassTrial {
     import fge.webgpu.BindGroup
