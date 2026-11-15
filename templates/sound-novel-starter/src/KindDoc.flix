@@ -10,7 +10,8 @@ mod KindDoc {
     /// cps / autoWait / masterVolume / ambienceVolume / seVolume / windowAlpha = 設定の既定（1 秒の字数・オートで読み終えてから送るまでの秒・
     /// 全体と環境音と効果音の音量 0〜1・文章のウィンドウの濃さ 0〜1）、
     /// autoPerChar = オートの待ちに足す 1 字あたりの秒（長い行ほど長く待つ）、skipInterval = スキップで 1 行を出す間（秒）、
-    /// logMax = ログに残す行の数、shakeSeconds / shakePx = <<shake>> の長さと揺れ幅、
+    /// logMax = ログに残す行の数、shakeSeconds / shakePx = 強さを書かない <<shake>> の長さと揺れ幅、shakes = 名前付きの揺れの強さ（<<shake 名前>>）、
+    /// overlayStart = <<overlay>> を一度も書いていない間の覆いの濃さ（0〜1）、overlayLayer = <<overlay layer=stage>> の層の数（world の中・大きいほど手前）、
     /// fireflies = <<fx fireflies>> のパーティクルの数、snow = <<fx snow>> の雪（Snow）、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、
     /// holdFadeSeconds = 素材を待つ時に黒へ重ねる秒（戻す秒も同じ）、holdGiveUpSeconds = 黒のまま待って諦めるまでの秒、
     /// holdMarkSeconds = 黒になってから隅に待ちの印を出すまでの秒（ブラウザ版で後回しの背景・環境音がまだ届いていない時）、
@@ -36,6 +37,9 @@ mod KindDoc {
         logMax = Int32,
         shakeSeconds = Float64,
         shakePx = Float64,
+        shakes = Map[String, Shake],
+        overlayStart = Float64,
+        overlayLayer = Int32,
         fireflies = Int32,
         snow = Snow,
         creditsSpeed = Float64,
@@ -66,6 +70,9 @@ mod KindDoc {
                             glow = Float64, glowRadius = Float64, twinkleEvery = Float64, twinkleSeconds = Float64, twinkleGain = Float64,
                             warmPhotos = List[String], warmFromX = Float64, warmColor = Color, warmStrength = Float64 }
 
+    /// 揺れの強さ 1 つ。seconds = 揺れる秒（だんだん収まる）、px = 揺れ幅。
+    pub type alias Shake = { seconds = Float64, px = Float64 }
+
     /// スライダーの下限・上限・1 押しの量。
     pub type alias Slider = { min = Float64, max = Float64, step = Float64 }
 
@@ -81,6 +88,7 @@ mod KindDoc {
         Doc.Doc({ version = 1, bodySize = 22.0, rubySize = 11.0, nameSize = 19.0, lineGap = 14.0,
                   advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
+                  shakes = Map.empty(), overlayStart = 0.0, overlayLayer = 900,
                   fireflies = 28, snow = snowDefaults(), creditsSpeed = 34.0, toastSeconds = 1.6,
                   holdFadeSeconds = 0.4, holdGiveUpSeconds = 20.0, holdMarkSeconds = 0.4,
                   tapSlop = 12.0, longPressSeconds = 0.65, swipeMin = 60.0, swipeSeconds = 0.5,
@@ -105,6 +113,12 @@ mod KindDoc {
           warmFromX = num("warmFromX", fallback#warmFromX),
           warmColor = Map.get("warmColor", o) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(Color.hex) |> Option.getWithDefault(fallback#warmColor),
           warmStrength = num("warmStrength", fallback#warmStrength) }
+
+    def shakeFrom(d: Rec, json: Json): Option[Shake] =
+        JsonCodec.expectObject(json) |> Option.map(o -> { seconds = JsonCodec.floatOr("seconds", d#shakeSeconds, o), px = JsonCodec.floatOr("px", d#shakePx, o) })
+
+    /// 強さを書かない <<shake>> の揺れ。
+    pub def defaultShake(kind: Doc): Shake = let r = rec(kind); { seconds = r#shakeSeconds, px = r#shakePx }
 
     def volume(): Slider = { min = 0.0, max = 1.0, step = 0.1 }
 
@@ -132,6 +146,8 @@ mod KindDoc {
                   autoPerChar = num("autoPerChar", d#autoPerChar), skipInterval = num("skipInterval", d#skipInterval),
                   logMax = int("logMax", d#logMax),
                   shakeSeconds = num("shakeSeconds", d#shakeSeconds), shakePx = num("shakePx", d#shakePx),
+                  shakes = Map.get("shakes", root) |> Option.flatMap(JsonCodec.decodeStringMap(shakeFrom(d))) |> Option.getWithDefault(d#shakes),
+                  overlayStart = num("overlayStart", d#overlayStart), overlayLayer = int("overlayLayer", d#overlayLayer),
                   fireflies = int("fireflies", d#fireflies), snow = snow, creditsSpeed = num("creditsSpeed", d#creditsSpeed),
                   toastSeconds = num("toastSeconds", d#toastSeconds),
                   holdFadeSeconds = num("holdFadeSeconds", d#holdFadeSeconds),

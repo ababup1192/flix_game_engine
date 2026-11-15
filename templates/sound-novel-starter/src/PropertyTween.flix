@@ -134,6 +134,12 @@ mod PropertyTween {
             |> Option.filter(match (since, seconds) -> since < seconds)
             |> Option.map(fst)
 
+    /// k が now に起きていれば、始まってからの秒と長さ（始まる前・終わった後は None）。だんだん収まる揺れが残りの割合を出すのに使う。
+    pub def triggerSpanAt(now: Clock.Time[c], k: TriggerKey, t: Table[c]): Option[(Float64, Float64)] =
+        lastStarted(now, x -> x#startsAt, Map.getWithDefault(triggerName(k), Nil, tracks(t)#triggers))
+            |> Option.map(x -> (Clock.since(x#startsAt, now), x#seconds))
+            |> Option.filter(match (since, seconds) -> since < seconds)
+
     /// k の予定が全部済んだ後の値（まだ一度も書いていなければ fallback）。
     pub def numEnd(k: NumKey, fallback: Float64, t: Table[c]): Float64 =
         Map.getWithDefault(numName(k), Nil, tracks(t)#nums) |> List.last |> Option.map(x -> x#target) |> Option.getWithDefault(fallback)

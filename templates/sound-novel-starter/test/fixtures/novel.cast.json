@@ -9,7 +9,7 @@
     "left": { "x": 0.25, "bottom": 1.0, "height": 0.9, "exclusive": true },
     "center": { "x": 0.5, "bottom": 1.0, "height": 0.9, "exclusive": true },
     "right": { "x": 0.75, "bottom": 1.0, "height": 0.9, "exclusive": true },
-    "crowd": { "x": 0.5, "bottom": 1.0, "height": 0.6 },
+    "crowd": { "x": 0.5, "bottom": 1.0, "height": 0.6, "exclusive": false },
     "item": { "x": 0.5, "bottom": 0.62, "height": 0.36, "exclusive": true },
     "desk": { "x": 0.5, "bottom": 0.94, "height": 0.4, "exclusive": true }
   },
@@ -17,7 +17,7 @@
     "left": { "x": 0.28, "bottom": 1.0, "height": 0.6, "exclusive": true },
     "center": { "x": 0.5, "bottom": 1.0, "height": 0.6, "exclusive": true },
     "right": { "x": 0.72, "bottom": 1.0, "height": 0.6, "exclusive": true },
-    "crowd": { "x": 0.5, "bottom": 1.0, "height": 0.4 },
+    "crowd": { "x": 0.5, "bottom": 1.0, "height": 0.4, "exclusive": false },
     "item": { "x": 0.5, "bottom": 0.55, "height": 0.25, "exclusive": true },
     "desk": { "x": 0.5, "bottom": 0.97, "height": 0.28, "exclusive": true }
   },

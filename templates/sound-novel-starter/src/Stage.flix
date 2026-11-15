@@ -21,7 +21,7 @@ mod Stage {
 
     /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、
     /// mode = 文章の出し方、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
-    /// props = 名前の付いた値（ambienceKey・particlesKey・shakeKey・windowHiddenKey・actorKey と game. の値）、cast = 立ち絵と小物の層。
+    /// props = 名前の付いた値（ambienceKey・particlesKey・shakeKeyOf・overlay*Key・cameraKey・windowHiddenKey・actorKey と game. の値）、cast = 立ち絵と小物の層。
     pub type alias Stage = {
         shot = Option[Shot],
         under = Option[Shot],
@@ -44,8 +44,65 @@ mod Stage {
     /// 画面のパーティクルの演出の名前（particleNames のどれか）。
     pub def particlesKey(): PropertyTween.NameKey = PropertyTween.nameKey("fx.particles")
 
-    /// 画面の揺れ（長さと幅は novel.kind.json）。
-    pub def shakeKey(): PropertyTween.TriggerKey = PropertyTween.triggerKey("camera.shake")
+    /// 揺らす相手。Screen = world の層（背景・絵・粒・GameView）、Window = 文字の枠と字、Actor(名前) = 名前付きの絵 1 つ。
+    pub enum ShakeTarget with Eq {
+        case Screen
+        case Window
+        case Actor(String)
+    }
+
+    def shakePrefixOf(target: ShakeTarget): String = match target {
+        case ShakeTarget.Screen    => "camera"
+        case ShakeTarget.Window    => "window"
+        case ShakeTarget.Actor(n)  => "actor.${n}"
+    }
+
+    /// 揺れの始まりと長さ（camera.shake・window.shake・actor.<名>.shake）。
+    pub def shakeKeyOf(target: ShakeTarget): PropertyTween.TriggerKey = PropertyTween.triggerKey("${shakePrefixOf(target)}.shake")
+
+    /// 揺れ幅（px。camera.shakeAmp・window.shakeAmp・actor.<名>.shakeAmp）。
+    pub def shakeAmpKeyOf(target: ShakeTarget): PropertyTween.NumKey = PropertyTween.numKey("${shakePrefixOf(target)}.shakeAmp")
+
+    /// 画面の揺れ。
+    pub def shakeKey(): PropertyTween.TriggerKey = shakeKeyOf(ShakeTarget.Screen)
+
+    /// target を now から seconds 秒、幅 px で揺らす。
+    pub def withShake(now: Clock.Time[Story], target: ShakeTarget, shake: KindDoc.Shake, stage: Stage): Stage =
+        let props = PropertyTween.setNum(shakeAmpKeyOf(target), shake#px, now, 0.0, stage#props);
+        { props = PropertyTween.trigger(shakeKeyOf(target), now, 0.0, shake#seconds, props) | stage }
+
+    /// 覆いの濃さ（0〜1）。
+    pub def overlayAlphaKey(): PropertyTween.NumKey = PropertyTween.numKey("overlay.alpha")
+
+    /// 覆いの色（black・white・#rrggbb）。
+    pub def overlayColorKey(): PropertyTween.NameKey = PropertyTween.nameKey("overlay.color")
+
+    /// 覆いの置き場（stage = world の層の中・screen = 文字の枠より手前）。
+    pub def overlayLayerKey(): PropertyTween.NameKey = PropertyTween.nameKey("overlay.layer")
+
+    /// カメラ（world の層だけに掛かる）の数の値。Zoom = 画面の真ん中を軸に掛ける倍率、X / Y = 見る所のずれ（画面の幅と高さに対する割合）。
+    pub enum CameraField with Eq, Order {
+        case Zoom
+        case X
+        case Y
+    }
+
+    /// カメラの field の鍵（camera.zoom・.x・.y）。
+    pub def cameraKey(field: CameraField): PropertyTween.NumKey = match field {
+        case CameraField.Zoom => PropertyTween.numKey("camera.zoom")
+        case CameraField.X    => PropertyTween.numKey("camera.x")
+        case CameraField.Y    => PropertyTween.numKey("camera.y")
+    }
+
+    /// カメラの field の既定（寄らない・ずらさない）。
+    pub def cameraDefaultOf(field: CameraField): Float64 = match field {
+        case CameraField.Zoom => 1.0
+        case _                => 0.0
+    }
+
+    /// now のカメラの field の値。
+    pub def cameraAt(now: Clock.Time[Story], field: CameraField, stage: Stage): Float64 =
+        PropertyTween.numAt(now, cameraKey(field), cameraDefaultOf(field), stage#props)
 
     /// 文字の枠と字を消しているか（1 = 消す・0 = 出す）。<<window off>> が 1 にし、<<window nvl|bottom>> と次の台詞・選択肢が 0 に戻す。
     pub def windowHiddenKey(): PropertyTween.NumKey = PropertyTween.numKey("window.hidden")
@@ -92,7 +149,9 @@ mod Stage {
     /// name の now のずれ（Cast が描く時に読む）。
     pub def actorTransformAt(now: Clock.Time[Story], name: String, props: PropertyTween.Table[Story]): Cast.Transform =
         let at = f -> PropertyTween.numAt(now, actorKey(name, f), actorDefaultOf(f), props);
-        { dx = at(ActorField.X), dy = at(ActorField.Y), scale = at(ActorField.Scale), alpha = at(ActorField.Alpha), degrees = at(ActorField.Rotate) }
+        let (jx, jy) = shakeOffsetIn(now, ShakeTarget.Actor(name), props);
+        { dx = at(ActorField.X), dy = at(ActorField.Y), scale = at(ActorField.Scale), alpha = at(ActorField.Alpha), degrees = at(ActorField.Rotate),
+          jitter = { x = jx, y = jy } }
 
     /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
     pub def particleNames(): List[String] = "fireflies" :: "snow" :: Nil
@@ -142,10 +201,13 @@ mod Stage {
         if (stage#fadeSeconds <= 0.0) 1.0
         else Float64.max(0.0, Float64.min(1.0, Clock.since(stage#fadeFrom, now) / stage#fadeSeconds))
 
-    /// 揺れのずれ（px）。揺れの長さ seconds と幅 px は novel.kind.json。だんだん収まる。
-    pub def shakeOffset(now: Clock.Time[Story], seconds: Float64, px: Float64, stage: Stage): (Float64, Float64) =
-        match PropertyTween.triggerAt(now, shakeKey(), stage#props) {
-            case Some(t) if seconds > 0.0 =>
+    /// target の now の揺れのずれ（px）。だんだん収まる。
+    pub def shakeOffset(now: Clock.Time[Story], target: ShakeTarget, stage: Stage): (Float64, Float64) = shakeOffsetIn(now, target, stage#props)
+
+    def shakeOffsetIn(now: Clock.Time[Story], target: ShakeTarget, props: PropertyTween.Table[Story]): (Float64, Float64) =
+        match PropertyTween.triggerSpanAt(now, shakeKeyOf(target), props) {
+            case Some((t, seconds)) if seconds > 0.0 =>
+                let px = PropertyTween.numAt(now, shakeAmpKeyOf(target), 0.0, props);
                 let left = 1.0 - t / seconds;
                 (Num.sin(t * 71.0) * px * left, Num.cos(t * 53.0) * px * 0.5 * left)
             case _ => (0.0, 0.0)

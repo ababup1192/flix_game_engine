@@ -155,6 +155,49 @@
       "max": 40,
       "default": 7.0
     },
+    "shakes": {
+      "kind": "catalog",
+      "label": "名前付きの揺れの強さ（鍵 = <<shake 名前>> の名前）",
+      "order": 17,
+      "fields": {
+        "seconds": {
+          "type": "float",
+          "label": "揺れる秒（だんだん収まる）",
+          "order": 1,
+          "default": 0.35,
+          "min": 0,
+          "max": 5,
+          "required": true
+        },
+        "px": {
+          "type": "float",
+          "label": "揺れ幅（px）",
+          "order": 2,
+          "default": 7.0,
+          "min": 0,
+          "max": 80,
+          "required": true
+        }
+      }
+    },
+    "overlayStart": {
+      "kind": "field",
+      "type": "float",
+      "label": "<<overlay>> を一度も書いていない間の覆いの濃さ（0〜1・1 で真っ黒から始まる）",
+      "order": 17,
+      "min": 0,
+      "max": 1,
+      "default": 0.0
+    },
+    "overlayLayer": {
+      "kind": "field",
+      "type": "int",
+      "label": "<<overlay layer=stage>> の層の数（world の中。背景 0・人物 500・小物 600 と並べる）",
+      "order": 17,
+      "min": 0,
+      "max": 999,
+      "default": 900
+    },
     "fireflies": {
       "kind": "field",
       "type": "int",

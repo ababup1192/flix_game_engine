@@ -9,7 +9,9 @@
 //   <<audio ambience 音|off>>                 鳴り続ける環境音を替える・止める（音は project.json の sounds の名前）
 //   <<audio se 音>>                           効果音を 1 回
 //   <<fx fireflies|snow|off>>                 画面のパーティクルの演出
-//   <<shake>>                                 画面を短く揺らす（長さと幅は novel.kind.json）
+//   <<shake [強さ] [on=screen|window|名前] [time=秒]>>   揺らす（強さは novel.kind.json の shakes の名前か px・省くと shakeSeconds / shakePx）
+//   <<overlay 濃さ [color=black|white|#rrggbb] [from=] [layer=stage|screen] [time=0] [ease=]>>   画面に色を被せる（同じ濃さへは何もしない）
+//   <<camera [zoom=] [x=] [y=] [time=0.5] [ease=]>>   world の層を寄せる・ずらす（文字の枠と HUD には掛けない）
 //   <<show 名前 [表情] [at=位置] [from=left|right|top|bottom] [x=] [y=] [scale=] [alpha=] [time=秒] [ease=]>>
 //                                              立ち絵か小物（novel.cast.json の cast / props）を出す・表情や位置を替える。何人・何個でも出せ、
 //                                              exclusive の位置にだけは 1 つ（後から出した物が前の物を消す）。省いた物は出ている形のまま
@@ -24,7 +26,7 @@
 // 引数はシナリオを読んだ時に 1 回だけ読んで表（ArgsTable。Res が持つ）に置き、毎回の実行では読み直さない。
 // apply が後に残す物は全部 Stage に書く（セーブ・settle・素材待ちが Stage だけを見て済むように）。
 mod Commands {
-    use fge::{Clock, Curve, Yarn, YarnCommands}
+    use fge::{Clock, Color, Curve, Yarn, YarnCommands}
     use fge::YarnCommands.{DocRef, Param}
     use fge::YarnCommands.Param.Or
 
@@ -68,7 +70,7 @@ mod Commands {
 
     /// テンプレートのコマンドの表。
     pub def all(): List[Command[Stage.Stage]] =
-        bg() :: window() :: audio() :: fx() :: shake() :: show() :: hide() :: move() :: Nil
+        bg() :: window() :: audio() :: fx() :: shake() :: overlay() :: camera() :: show() :: hide() :: move() :: Nil
 
     /// シナリオが使える全部（テンプレートの表とゲームの表）。
     def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
@@ -219,11 +221,87 @@ mod Commands {
           needs = noAssets }
 
     def shake(): Command[Stage.Stage] =
-        { spec = YarnCommands.spec("shake", "画面を短く揺らす（長さと幅は novel.kind.json）", Nil),
+        let strength = Param.num("strength", 0.0, 200.0) |> Param.orNames(DocRef.Keys("../novel.kind.json", "shakes") :: Nil) |> Param.at(1);
+        let on = Param.name("on", castNames()) |> Param.orWords("screen" :: "window" :: Nil);
+        let time = Param.num("time", 0.0, 10.0);
+        { spec = YarnCommands.spec("shake", "揺らす（強さ = novel.kind.json の shakes の名前か px・省くと shakeSeconds / shakePx。on = screen（既定）・window・絵の名前）",
+                                   Param.erase(strength) :: Param.erase(on) :: Param.erase(time) :: Nil),
           timing = Timing.Timed,
-          apply = (ctx, _, st) -> {
-              let seconds = KindDoc.rec(ctx#res#kind)#shakeSeconds;
-              Ok(({ props = PropertyTween.trigger(Stage.shakeKey(), ctx#now, 0.0, seconds, st#props) | st }, Nil))
+          apply = (ctx, a, st) -> {
+              let kind = ctx#res#kind;
+              let named = (name: String) -> Map.get(name, KindDoc.rec(kind)#shakes) |> Option.toOk("知らない揺れの強さ '${name}'");
+              let base = match Param.getOpt(strength, a) {
+                  case None                  => Ok(KindDoc.defaultShake(kind))
+                  case Some(Or.Value(px))    => Ok({ px = px | KindDoc.defaultShake(kind) })
+                  case Some(Or.Word(name))   => named(name)
+              };
+              let target = match Param.getOpt(on, a) {
+                  case Some(Or.Value(name))  => Stage.ShakeTarget.Actor(name)
+                  case Some(Or.Word("window")) => Stage.ShakeTarget.Window
+                  case _                     => Stage.ShakeTarget.Screen
+              };
+              base |> Result.map(shake -> {
+                  let seconds = Param.getOpt(time, a) |> Option.getWithDefault(shake#seconds);
+                  (Stage.withShake(ctx#now, target, { seconds = seconds | shake }, st), Nil)
+              })
+          },
+          needs = noAssets }
+
+    // ── 画面の覆いとカメラ: overlay・camera ──
+
+    def overlay(): Command[Stage.Stage] =
+        let alpha = Param.num("alpha", 0.0, 1.0) |> Param.at(1) |> Param.required;
+        let color = Param.name("color", Nil);
+        let fromArg = Param.num("from", 0.0, 1.0);
+        let place = Param.choice("layer", "stage" :: "screen" :: Nil);
+        let time = Param.time(0.0);
+        let ease = Param.ease(Curve.Ease.SmoothStep);
+        { spec = YarnCommands.spec("overlay", "画面に色を被せる濃さを秒かけて替える（color = black・white・#rrggbb・from = 始まりの濃さ・layer = stage（world の中）か screen（文字の枠より手前））",
+                                   Param.erase(alpha) :: Param.erase(color) :: Param.erase(fromArg) :: Param.erase(place) :: Param.erase(time) :: Param.erase(ease) :: Nil),
+          timing = Timing.Timed,
+          apply = (ctx, a, st) -> {
+              let colorName = Param.getOpt(color, a);
+              let target = Param.get(alpha, a);
+              let start = KindDoc.rec(ctx#res#kind)#overlayStart;
+              let now = PropertyTween.numAt(ctx#now, Stage.overlayAlphaKey(), start, st#props);
+              let unchanged = Option.isEmpty(Param.getOpt(fromArg, a)) and PropertyTween.numEnd(Stage.overlayAlphaKey(), start, st#props) == target;
+              if (colorName |> Option.exists(c -> Option.isEmpty(colorOfName(c)))) Err("知らない色 '${Option.getWithDefault("", colorName)}'（black・white・#rrggbb）")
+              else {
+                  let named = (key, value: Option[String], t) -> value |> Option.map(v -> PropertyTween.setName(key, Some(v), ctx#now, 0.0, t)) |> Option.getWithDefault(t);
+                  let props = st#props |> named(Stage.overlayColorKey(), colorName) |> named(Stage.overlayLayerKey(), Param.getOpt(place, a));
+                  let moved = if (unchanged) props
+                              else PropertyTween.tween(Stage.overlayAlphaKey(), Some(Param.getOpt(fromArg, a) |> Option.getWithDefault(now)), target,
+                                                       ctx#now, 0.0, Param.get(time, a), Param.get(ease, a), props);
+                  Ok(({ props = moved | st }, Nil))
+              }
+          },
+          needs = noAssets }
+
+    /// overlay の色の名前（black・white・#rrggbb）の色。
+    pub def colorOfName(name: String): Option[Color] = match name {
+        case "black" => Some({ r = 0.0, g = 0.0, b = 0.0 })
+        case "white" => Some({ r = 1.0, g = 1.0, b = 1.0 })
+        case _       => Color.hex(name)
+    }
+
+    def camera(): Command[Stage.Stage] =
+        let zoom = Param.num("zoom", 0.1, 10.0);
+        let x = Param.num("x", -3.0, 3.0);
+        let y = Param.num("y", -3.0, 3.0);
+        let time = Param.time(0.5);
+        let ease = Param.ease(Curve.Ease.SmoothStep);
+        { spec = YarnCommands.spec("camera", "world の層（背景・絵・粒）を寄せる・ずらす（zoom = 倍率・x・y = 見る所のずれ。文字の枠には掛けない）",
+                                   Param.erase(zoom) :: Param.erase(x) :: Param.erase(y) :: Param.erase(time) :: Param.erase(ease) :: Nil),
+          timing = Timing.Timed,
+          apply = (ctx, a, st) -> {
+              let fields = (Stage.CameraField.Zoom, zoom) :: (Stage.CameraField.X, x) :: (Stage.CameraField.Y, y) :: Nil;
+              let step = (props, pair) -> {
+                  let (field, h) = pair;
+                  Param.getOpt(h, a) |> Option.map(v -> PropertyTween.tween(Stage.cameraKey(field), Some(Stage.cameraAt(ctx#now, field, st)), v,
+                                                                           ctx#now, 0.0, Param.get(time, a), Param.get(ease, a), props))
+                      |> Option.getWithDefault(props)
+              };
+              Ok(({ props = List.foldLeft(step, st#props, fields) | st }, Nil))
           },
           needs = noAssets }
 

@@ -227,9 +227,9 @@ mod TestCast {
         let shown = played(("show", "a" :: Nil) :: Nil);
         let hidden = played(("show", "a" :: Nil) :: ("hide", "a" :: Nil) :: Nil);
         let fade = d()#fadeSeconds;
-        let mid = Cast.presenceOf(t(fade / 2.0), shown);
+        let mid = Cast.presenceOf(t(fade / 2.0), doc(), shown);
         Assert.assertEq(expected = (0.0, true, 1.0, 0.0),
-                        (Cast.presenceOf(t(0.0), shown), mid > 0.0 and mid < 1.0, Cast.presenceOf(t(fade), shown), Cast.presenceOf(t(1.0 + fade), hidden)))
+                        (Cast.presenceOf(t(0.0), doc(), shown), mid > 0.0 and mid < 1.0, Cast.presenceOf(t(fade), doc(), shown), Cast.presenceOf(t(1.0 + fade), doc(), hidden)))
 
     // ══ セーブに残す形 ══
 

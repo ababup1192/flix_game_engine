@@ -237,10 +237,11 @@ mod Cast {
     /// 消えていく物の今の濃さ。
     def leavingAlphaOf(now: Clock.Time[Stage.Story], l: Leaving): Float64 = l#alpha * (1.0 - easedOf(progressOf(now, l#startedAt, l#seconds)))
 
-    /// 人物がどれだけ出ているか（0〜1）: 見えている人物の濃さの最大。縦の頁の覆いを薄くする量に使う。
-    pub def presenceOf(now: Clock.Time[Stage.Story], layer: Layer): Float64 =
-        let shown = layer#shown |> List.filter(s -> s#kind == Kind.Character) |> List.map(s -> visibleOf(now, s)#alpha);
-        let going = layer#leaving |> List.filter(l -> l#kind == Kind.Character) |> List.map(leavingAlphaOf(now));
+    /// 人物がどれだけ出ているか（0〜1）: 見えている人物の濃さの最大。縦の頁の覆いを薄くする量に使う。背景に付く絵は数えない。
+    pub def presenceOf(now: Clock.Time[Stage.Story], doc: CastDoc.Doc, layer: Layer): Float64 =
+        let counts = (kind, name) -> kind == Kind.Character and not (entryOf(doc, name) |> Option.exists(CastDoc.isAttachedToBackdrop));
+        let shown = layer#shown |> List.filter(s -> counts(s#kind, s#now#name)) |> List.map(s -> visibleOf(now, s)#alpha);
+        let going = layer#leaving |> List.filter(l -> counts(l#kind, l#figure#name)) |> List.map(leavingAlphaOf(now));
         List.append(shown, going) |> List.foldLeft(Float64.max, 0.0)
 
     // ── 置き場所と描き方 ──
@@ -258,11 +259,12 @@ mod Cast {
         photo = Option[String]
     }
 
-    /// 置き場所からのずれ: dx / dy = 画面の幅と高さに対する割合、scale = 足元を据えて掛ける倍率、alpha = 濃さに掛ける倍率、degrees = 真ん中を軸に時計回りに傾ける角度。
-    pub type alias Transform = { dx = Float64, dy = Float64, scale = Float64, alpha = Float64, degrees = Float64 }
+    /// 置き場所からのずれ: dx / dy = 画面の幅と高さに対する割合、scale = 足元を据えて掛ける倍率、alpha = 濃さに掛ける倍率、degrees = 真ん中を軸に時計回りに傾ける角度、
+    /// jitter = その絵だけの揺れ（px）。
+    pub type alias Transform = { dx = Float64, dy = Float64, scale = Float64, alpha = Float64, degrees = Float64, jitter = { x = Float64, y = Float64 } }
 
     /// ずらさない形。
-    pub def identity(): Transform = { dx = 0.0, dy = 0.0, scale = 1.0, alpha = 1.0, degrees = 0.0 }
+    pub def identity(): Transform = { dx = 0.0, dy = 0.0, scale = 1.0, alpha = 1.0, degrees = 0.0, jitter = { x = 0.0, y = 0.0 } }
 
     /// 絵に掛ける色 1 つ。key = 時間帯の名前（シェーダーの名前に入れる）、r / g / b = 色ごとの倍率（明るさ込み）、saturation = 彩度。
     pub type alias Tone = { key = String, r = Float64, g = Float64, b = Float64, saturation = Float64 }
@@ -300,8 +302,8 @@ mod Cast {
     pub def movedRect(fit: Layout.Fit, t: Transform, r: Rect2.Rect2): Rect2.Rect2 =
         let size = Layout.size(fit);
         let k = Float64.max(0.0, t#scale);
-        let footX = r#position#x + r#size#x / 2.0 + t#dx * size#x;
-        let footY = r#position#y + r#size#y + t#dy * size#y;
+        let footX = r#position#x + r#size#x / 2.0 + t#dx * size#x + t#jitter#x;
+        let footY = r#position#y + r#size#y + t#dy * size#y + t#jitter#y;
         { position = { x = footX - r#size#x * k / 2.0, y = footY - r#size#y * k }, size = { x = r#size#x * k, y = r#size#y * k } }
 
     /// 名前の物の今のずれ（舞台の actor.<名>.* と、背景に付く絵なら今の写真の横のずれ）。
@@ -403,13 +405,14 @@ mod Cast {
         List.append(under, figureItem(env, shown#now, a, z))
 
     /// 層の全部を z に描く（重ね順の小さい物から。同じ重ね順なら消えていく物 → 出ている物）。
-    pub def items(env: Env, layer: Layer, z: Int32): List[Render.PlacedItem] = itemsWhere(env, (_, _) -> true, layer, z)
+    pub def items(env: Env, layer: Layer, z: Int32): List[Render.PlacedItem] = groupsWhere(env, (_, _) -> true, layer, z) |> List.flatMap(snd)
 
-    /// 層のうち keep（列と Doc の項目）が真の物だけを z に描く（並べ方は items と同じ）。Doc に無い名前は描かない。
-    pub def itemsWhere(env: Env, keep: (Kind, CastDoc.Entry) -> Bool, layer: Layer, z: Int32): List[Render.PlacedItem] =
+    /// 層のうち keep（列と Doc の項目）が真の物だけを、絵 1 つずつ (Doc の layer, z に描いた物) にして重ね順に並べる
+    /// （同じ重ね順なら消えていく物 → 出ている物、それぞれ出した順）。Doc に無い名前は描かない。
+    pub def groupsWhere(env: Env, keep: (Kind, CastDoc.Entry) -> Bool, layer: Layer, z: Int32): List[(Int32, List[Render.PlacedItem])] =
         let layerOf = (kind, name) -> entryOf(env#doc, name) |> Option.filter(e -> keep(kind, e)) |> Option.map(e -> e#layer);
         let going = layer#leaving |> List.filterMap(l -> layerOf(l#kind, l#figure#name)
-            |> Option.map(n -> (n * 2, figureItem(env, l#figure, leavingAlphaOf(env#storyNow, l), z))));
-        let shown = layer#shown |> List.filterMap(s -> layerOf(s#kind, s#now#name) |> Option.map(n -> (n * 2 + 1, shownItems(env, s, z))));
-        List.append(going, shown) |> Sort.sortStableBy(fst) |> List.flatMap(snd)
+            |> Option.map(n -> ((n, 0), (n, figureItem(env, l#figure, leavingAlphaOf(env#storyNow, l), z)))));
+        let shown = layer#shown |> List.filterMap(s -> layerOf(s#kind, s#now#name) |> Option.map(n -> ((n, 1), (n, shownItems(env, s, z)))));
+        List.append(going, shown) |> Sort.sortStableBy(fst) |> List.map(snd)
 }

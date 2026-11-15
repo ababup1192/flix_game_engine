@@ -646,7 +646,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 **決めた物**
 
-- Cast の層を `{ shown: List[Shown], leaving }` の 1 列にした（Shown に `kind`）。人物と小物の決め打ち（1 位置に 1 人・小物は同時に 1 つ）をやめ、Doc の slot の `exclusive`（既定 false）で「その位置に 1 つ」を決める。テンプレートと fixture の Doc は今の位置を全部 `exclusive: true` にしたので、作例の見た目は変わらない。
+- Cast の層を `{ shown: List[Shown], leaving }` の 1 列にした（Shown に `kind`）。人物と小物の決め打ち（1 位置に 1 人・小物は同時に 1 つ）をやめ、Doc の slot の `exclusive`で「その位置に 1 つ」を決める。テンプレートと fixture の Doc は今の位置を全部 `exclusive: true` にしたので、作例の見た目は変わらない。
 - Doc（`novel.cast.json`）に `slideDistance`（既定 1.0 = 画面の外まで）・slot の `exclusive`・項目の `layer`（既定 人物 500・小物 600・背景に付く絵 100）と `attach`（`{ "bg": { 写真の名前: 横のずれ } }`）を足し、schema にも足した（段 4 の schema の分を先にした）。
 - `actor.<名>.x|y|scale|alpha|rotate` の鍵は `Stage.actorKey(名, Stage.ActorField)`。x・y は画面の幅・高さに対する割合、scale は足元を据えて掛ける、rotate は度（時計回り）。出ていない絵を出す時に `Stage.withActorReset` で既定へ戻す。
 - `show` に `from=`・`x=`・`y=`・`scale=`・`alpha=`・`ease=`、`hide` に `to=`・`ease=`、`move` を新しく（`x|dx`・`y|dy`・`scale`・`alpha`・`rotate`・`from`・`to`・`time=0.5`・`ease=smoothstep`）。`move from=left to=right` は秒 0 で出し、端の外へ着いた時に消す（Cast の消えていく物に「始まる時刻」を足し、それまで濃さのまま描く）。
@@ -679,7 +679,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 段 2: 粒（700）と GameView を同じ層の数で並べる View（C11）。今は背景に付く絵 = z 3・ほか = z 5 の中だけで layer の順。
 - 段 3: `audio se wait=true`（Out.Wait を出す最初のコマンド）と、Res に音の長さ。`transition=slide` の間に背景に付く絵を背景と一緒に動かす。
 - 縦の頁の覆いを薄くする量（`Cast.presenceOf`）は背景に付く人物も数える。背景に付く絵を人物に置くゲームが出たら外す。
-- テンプレートの追随: 前の Doc に `exclusive` が無いと人物が同じ位置に重なる（既定 false）。ゲームを当て直す時は slot に `exclusive: true` を足す。
+- テンプレートの追随: 前の Doc に `exclusive` が無いと人物が同じ位置に重なる。ゲームを当て直す時は slot に `exclusive: true` を足す。
 - agent-eval のお題（show from= / move）は段 13。
 
 ## 12. 試した事（スパイク）

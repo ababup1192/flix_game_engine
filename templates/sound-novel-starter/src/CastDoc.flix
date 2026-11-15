@@ -106,7 +106,7 @@ mod CastDoc {
     def slotFrom(json: Json): Option[Slot] =
         JsonCodec.expectObject(json) |> Option.map(obj ->
             { x = JsonCodec.floatOr("x", 0.5, obj), bottom = JsonCodec.floatOr("bottom", 1.0, obj), height = JsonCodec.floatOr("height", 0.9, obj),
-              exclusive = JsonCodec.boolOr("exclusive", false, obj) })
+              exclusive = JsonCodec.boolOr("exclusive", true, obj) })
 
     def entryFrom(kind: Kind, slot: String, json: Json): Option[Entry] =
         JsonCodec.expectObject(json) |> Option.map(obj -> {

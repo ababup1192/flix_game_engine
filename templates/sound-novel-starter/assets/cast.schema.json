@@ -76,9 +76,9 @@
         },
         "exclusive": {
           "type": "bool",
-          "label": "その位置に出せるのは 1 つ（後から出した物が前の物を消す）",
+          "label": "その位置に出せるのは 1 つ（後から出した物が前の物を消す。false で何人でも立てる）",
           "order": 4,
-          "default": false
+          "default": true
         }
       }
     },
@@ -116,9 +116,9 @@
         },
         "exclusive": {
           "type": "bool",
-          "label": "その位置に出せるのは 1 つ（後から出した物が前の物を消す）",
+          "label": "その位置に出せるのは 1 つ（後から出した物が前の物を消す。false で何人でも立てる）",
           "order": 4,
-          "default": false
+          "default": true
         }
       }
     },
