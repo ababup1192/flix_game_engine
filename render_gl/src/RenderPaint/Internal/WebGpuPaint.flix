@@ -1,9 +1,9 @@
-// RenderPaint.Internal.WebGpuPaint — 塗りのコア（RenderPaint と RenderPaintHandlers）の WebGPU の分。2D のスプライト・字・箱と、
-// 絵とフォントのアトラスを上げる・Pass を 1 つ挟む・中間の texture から画面へ写す、だけを持つ。
+// RenderPaint.Internal.WebGpuPaint — 塗りのコア（RenderPaint と RenderPaintHandlers）の WebGPU の分。2D のスプライト・字・箱・多角形・タイルの層・
+// static layer と、絵とフォントのアトラスを上げる・Pass を 1 つ挟む・中間の texture から画面へ写す、だけを持つ。
 // コマは中間の texture（RGBA8・描き先の画素の大きさ）へ描き、present で画面の texture へ 1 回写す。encoder はコマに 1 つで、submit はコマの終わり。
-// ただし、そのコマに積んだ pass があるうちに絵を作る・書き替える・捨てる・Pass の texture を作り直す・instance buffer を伸ばす時は、先に submit する
-// （そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
-// V1 で描かない物（多角形・タイルの層・static layer・面・3D の場面・mask つきスプライト・MSAA・起動の後に足す字）は名前ごとに 1 回知らせて捨てる。
+// ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
+// 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
+// まだ描かない物（面・3D の場面・mask つきスプライト・MSAA・起動の後に足す字）は名前ごとに 1 回知らせて捨てる。
 //
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
@@ -47,10 +47,21 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     use RenderFrame.Internal.WebGpuRows
     use RenderPaint.Internal.TargetTable
     use RenderPaint.Internal.TextureTable
+    use RenderPaint.Internal.TileTable
     use RenderPaint.Internal.WebGpuShader
 
     /// 絵の表の 1 枚（番号 → texture と、それを読む bind group）。
     type alias TextureSlot = { texture = Texture, group = BindGroup, width = Int32, height = Int32 }
+
+    /// GPU へ毎コマ送る float の Stream 1 本: CPU の入れ物（LITTLE_ENDIAN の bytes と、その float の見方）と、送り先の GPU の buffer。
+    /// sizes: 0 = GPU の buffer の bytes・1 = 今の encoder（submit まで）に使った bytes。
+    type alias Stream = {
+        label = String,
+        cpuBytes = Array[ByteBuffer, Static],
+        cpuFloats = Array[FloatBuffer, Static],
+        gpuBuffer = Array[Buffer, Static],
+        sizes = Array[Int32, Static]
+    }
 
     /// 塗りのコアの状態。作るのは create だけ。
     enum PaintData {
@@ -60,13 +71,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             designH = Float64,
             clearColor = Color,
             spriteModule = ShaderModule,
+            polyModule = ShaderModule,
+            tileModule = ShaderModule,
             presentModule = ShaderModule,
             frameLayout = BindGroupLayout,
             imageLayout = BindGroupLayout,
             presentLayout = BindGroupLayout,
             uniform = Buffer,
             frameGroup = BindGroup,
-            // 鍵 = blend の番号 × 2 + 形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）。
+            // 鍵 = (形（WebGpuRows.shape*） × 4 + blend の番号) × 2 + 形式（0 = RGBA8_UNORM・1 = RGBA16_FLOAT）。
             pipelines = Ref[Map[Int32, RenderPipeline], Static],
             // 画面の形式と、中間の texture を写す pipeline。
             presentPipeline = Ref[Option[(TextureFormat, RenderPipeline)], Static],
@@ -84,14 +97,16 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             // レンダーターゲットと開いているターゲットの表（ターゲットの texture は slots の番号で引く）。
             targets = TargetTable.Table,
             lastFrame = Array[RenderPaint.Frame, Static],
-            // instance buffer（GPU）・その大きさ（体数）・このコマで次に空いている位置（体）。
-            instanceBuffer = Array[Buffer, Static],
-            instanceCounts = Array[Int32, Static],
-            // instance の入れ物（CPU）。bytes と、その float の見方。
-            cpuBytes = Array[ByteBuffer, Static],
-            cpuFloats = Array[FloatBuffer, Static],
-            // 多角形の頂点の入れ物（CPU）。WebGPU の行に多角形がまだ無いので空のまま貸す。
-            cpuVertices = FloatBuffer,
+            // スプライトの instance・多角形の頂点・draw ごとの値（RenderList の values）の Stream。
+            instances = Stream,
+            vertices = Stream,
+            values = Stream,
+            // 頂点の buffer の表: タイルの層の instance（番号 → buffer と、入る枚数）・static layer の頂点（番号 → buffer と、頂点の数）。番号は nextBuffer から振る。
+            tiles = TileTable.Table,
+            tileBuffers = Ref[Map[Int32, (Buffer, Int32)], Static],
+            staticBuffers = Ref[Map[Int32, (Buffer, Int32)], Static],
+            staticCell = Array[Option[RenderStatic.Entry], Static],
+            nextBuffer = Array[Int32, Static],
             // 中間の texture と、その画素の大きさ（幅・高さ）。
             frameTexture = Array[Texture, Static],
             frameSize = Array[Int32, Static],
@@ -134,11 +149,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let blankDesc = new BindGroupDesc("fge blank", imageLayout);
         discard blankDesc.textureView(0, blankTexture.defaultView()).sampler(1, nearestRepeat);
         let blank = { texture = blankTexture, width = 1, height = 1, group = gpu.createBindGroup(blankDesc) };
-        let firstCount = 4096;
-        let bytes = ByteBuffer.allocateDirect(firstCount * instanceBytes()).order(ByteOrder.LITTLE_ENDIAN);
         let paint = PaintData.PaintData({
             gpu = gpu, designW = designW, designH = designH, clearColor = cfg#clearColor,
             spriteModule = gpu.createShaderModule("fge sprite", WebGpuShader.spriteWgsl()),
+            polyModule = gpu.createShaderModule("fge polygon", WebGpuShader.polyWgsl()),
+            tileModule = gpu.createShaderModule("fge tile", WebGpuShader.tileWgsl()),
             presentModule = gpu.createShaderModule("fge present", WebGpuShader.presentWgsl()),
             frameLayout = frameLayout, imageLayout = imageLayout, presentLayout = presentLayout,
             uniform = uniform, frameGroup = frameGroup,
@@ -149,10 +164,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             registryRef = Ref.fresh(Static, Map.empty()), textureKeyRef = Ref.fresh(Static, Map.empty()),
             targets = TargetTable.fresh(),
             lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
-            instanceBuffer = Array#{createInstanceBuffer(gpu, firstCount)} @ Static,
-            instanceCounts = Array#{firstCount, 0} @ Static,
-            cpuBytes = Array#{bytes} @ Static, cpuFloats = Array#{bytes.asFloatBuffer()} @ Static,
-            cpuVertices = FloatBuffer.allocate(0),
+            instances = freshStream(gpu, "fge instances", 4096 * instanceBytes()),
+            vertices = freshStream(gpu, "fge vertices", 4096 * 4 * RenderList.vertexFloats()),
+            values = freshStream(gpu, "fge values", 4096 * 4),
+            tiles = TileTable.fresh(), tileBuffers = Ref.fresh(Static, Map.empty()), staticBuffers = Ref.fresh(Static, Map.empty()),
+            staticCell = Array#{(None: Option[RenderStatic.Entry])} @ Static, nextBuffer = Array#{1} @ Static,
             frameTexture = Array#{createFrameTexture(gpu, cfg#width, cfg#height)} @ Static,
             frameSize = Array#{cfg#width, cfg#height} @ Static,
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
@@ -160,8 +176,12 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             texWarnLog = Ref.fresh(Static, Set.empty()), skipped = Ref.fresh(Static, Set.empty()),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh()
         });
-        // 起動の時に作る pipeline（RGBA8 の 3 本）。RGBA16_FLOAT は初めて要る Pass で作る。
-        List.forEach(b -> discard pipelineOf(paint, b, RenderTarget.Format.Rgba8Unorm), 0 :: 1 :: 2 :: Nil);
+        // 起動の時に作る pipeline（RGBA8 のスプライトと多角形の 3 本ずつとタイルの 1 本）。RGBA16_FLOAT は初めて要る Pass で作る。
+        List.forEach(b -> {
+            discard pipelineOf(paint, WebGpuRows.shapeSprite(), b, RenderTarget.Format.Rgba8Unorm);
+            discard pipelineOf(paint, WebGpuRows.shapePoly(), b, RenderTarget.Format.Rgba8Unorm)
+        }, 0 :: 1 :: 2 :: Nil);
+        discard pipelineOf(paint, WebGpuRows.shapeTile(), 0, RenderTarget.Format.Rgba8Unorm);
         installBuiltins(paint);
         paint
 
@@ -184,8 +204,14 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         discard buf.flip();
         buf
 
-    def createInstanceBuffer(gpu: WebGpu, count: Int32): Buffer \ IO =
-        gpu.createBuffer("fge instances", Int32.toInt64(count * instanceBytes()), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST))
+    /// bytes の GPU の buffer（頂点の buffer として読み、queue から書く）。
+    def createStreamBuffer(gpu: WebGpu, label: String, bytes: Int32): Buffer \ IO =
+        gpu.createBuffer(label, Int32.toInt64(bytes), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST))
+
+    def freshStream(gpu: WebGpu, label: String, bytes: Int32): Stream \ IO =
+        let cpu = ByteBuffer.allocateDirect(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        { label = label, cpuBytes = Array#{cpu} @ Static, cpuFloats = Array#{cpu.asFloatBuffer()} @ Static,
+          gpuBuffer = Array#{createStreamBuffer(gpu, label, bytes)} @ Static, sizes = Array#{bytes, 0} @ Static }
 
     def createFrameTexture(gpu: WebGpu, width: Int32, height: Int32): Texture \ IO =
         gpu.createTexture("fge frame", Int32.max(1, width), Int32.max(1, height), TextureFormat.RGBA8_UNORM,
@@ -203,36 +229,62 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         case RenderTarget.Format.Rgba16Float => TextureFormat.RGBA16_FLOAT
     }
 
-    /// blend の番号（RenderFrame.blendCode）と描き先の形式の pipeline（無ければ作る）。
-    def pipelineOf(paint: Paint, blendC: Int32, format: RenderTarget.Format): RenderPipeline \ IO =
+    /// 形（WebGpuRows.shape*）と blend の番号（RenderFrame.blendCode）と描き先の形式の pipeline（無ければ作る）。
+    def pipelineOf(paint: Paint, shape: Int32, blendC: Int32, format: RenderTarget.Format): RenderPipeline \ IO =
         let PaintData.PaintData(p) = paint;
-        let key = blendC * 2 + formatCode(format);
+        let key = (shape * 4 + blendC) * 2 + formatCode(format);
         match Map.get(key, Ref.get(p#pipelines)) {
             case Some(pipeline) => pipeline
             case None =>
-                let pipeline = buildPipeline(paint, blendC, textureFormatOf(format));
+                let pipeline = buildPipeline(paint, shape, blendC, textureFormatOf(format));
                 Ref.put(Map.insert(key, pipeline, Ref.get(p#pipelines)), p#pipelines);
                 pipeline
         }
 
     /// glBlendFunc と同じ因子を色と alpha の両方に書く。Normal = (src-alpha, 1 − src-alpha)・Add = (src-alpha, 1)・Multiply = (dst, 1 − src-alpha)。
-    def buildPipeline(paint: Paint, blendC: Int32, format: TextureFormat): RenderPipeline \ IO =
+    /// 頂点の buffer の並びは形ごと: スプライト = instance（152 バイト）・多角形 = 頂点（24 バイト）と view（stride 0）・
+    /// タイル = タイル 1 枚（40 バイト）と層の値（stride 0）。
+    def buildPipeline(paint: Paint, shape: Int32, blendC: Int32, format: TextureFormat): RenderPipeline \ IO =
         let PaintData.PaintData(p) = paint;
         let (src, dst, entry) =
             if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE, "fs_main")
             else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_multiply")
             else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_main");
-        let desc = new RenderPipelineDesc("fge sprite ${entry} ${Int32.toString(blendC)}");
-        discard desc.bindGroupLayout(p#frameLayout).bindGroupLayout(p#imageLayout);
-        discard desc.vertex(p#spriteModule, "vs_main").fragment(p#spriteModule, entry);
+        let desc = new RenderPipelineDesc("fge ${Int32.toString(shape)} ${entry} ${Int32.toString(blendC)}");
+        if (shape == WebGpuRows.shapePoly()) describePoly(p#frameLayout, p#polyModule, entry, desc)
+        else if (shape == WebGpuRows.shapeTile()) describeTile(p#frameLayout, p#imageLayout, p#tileModule, desc)
+        else describeSprite(p#frameLayout, p#imageLayout, p#spriteModule, entry, desc);
+        discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD);
+        p#gpu.createRenderPipeline(desc)
+
+    def describeSprite(frameLayout: BindGroupLayout, imageLayout: BindGroupLayout, module: ShaderModule, entry: String,
+                       desc: RenderPipelineDesc): Unit \ IO =
+        discard desc.bindGroupLayout(frameLayout).bindGroupLayout(imageLayout);
+        discard desc.vertex(module, "vs_main").fragment(module, entry);
         discard desc.vertexBuffer(instanceBytes(), true);
         discard desc.attribute(VertexFormat.FLOAT32X4, 0, 1).attribute(VertexFormat.FLOAT32X2, 16, 2);
         discard desc.attribute(VertexFormat.FLOAT32X4, 24, 3).attribute(VertexFormat.FLOAT32X4, 40, 4);
         discard desc.attribute(VertexFormat.FLOAT32X4, 56, 5).attribute(VertexFormat.FLOAT32X4, 72, 6);
         discard desc.attribute(VertexFormat.FLOAT32X4, 88, 7).attribute(VertexFormat.FLOAT32X4, 104, 8);
-        discard desc.attribute(VertexFormat.FLOAT32X4, 120, 9).attribute(VertexFormat.FLOAT32X4, 136, 10);
-        discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD);
-        p#gpu.createRenderPipeline(desc)
+        discard desc.attribute(VertexFormat.FLOAT32X4, 120, 9).attribute(VertexFormat.FLOAT32X4, 136, 10)
+
+    def describePoly(frameLayout: BindGroupLayout, module: ShaderModule, entry: String, desc: RenderPipelineDesc): Unit \ IO =
+        discard desc.bindGroupLayout(frameLayout);
+        discard desc.vertex(module, "vs_main").fragment(module, entry);
+        discard desc.vertexBuffer(4 * RenderList.vertexFloats(), false);
+        discard desc.attribute(VertexFormat.FLOAT32X2, 0, 0).attribute(VertexFormat.FLOAT32X4, 8, 1);
+        discard desc.vertexBuffer(0, true);
+        discard desc.attribute(VertexFormat.FLOAT32X2, 0, 2).attribute(VertexFormat.FLOAT32X2, 8, 3).attribute(VertexFormat.FLOAT32X2, 16, 4)
+
+    def describeTile(frameLayout: BindGroupLayout, imageLayout: BindGroupLayout, module: ShaderModule, desc: RenderPipelineDesc): Unit \ IO =
+        discard desc.bindGroupLayout(frameLayout).bindGroupLayout(imageLayout);
+        discard desc.vertex(module, "vs_main").fragment(module, "fs_main");
+        discard desc.vertexBuffer(4 * TileTable.tileFloats(), true);
+        discard desc.attribute(VertexFormat.FLOAT32X2, 0, 1).attribute(VertexFormat.FLOAT32X2, 8, 2).attribute(VertexFormat.FLOAT32X2, 16, 3);
+        discard desc.attribute(VertexFormat.FLOAT32, 24, 4).attribute(VertexFormat.FLOAT32X3, 28, 5);
+        discard desc.vertexBuffer(0, true);
+        discard desc.attribute(VertexFormat.FLOAT32X2, 0, 6).attribute(VertexFormat.FLOAT32, 8, 7);
+        discard desc.attribute(VertexFormat.FLOAT32X2, 12, 8).attribute(VertexFormat.FLOAT32X3, 20, 9)
 
     /// 画面の形式 format へ中間の texture を写す pipeline（形式が変われば作り直す）。
     def presentPipelineOf(paint: Paint, format: TextureFormat): RenderPipeline \ IO =
@@ -360,7 +412,12 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Map.forEach((_, pipeline) -> pipeline.release(), Ref.get(p#pipelines));
         Ref.put(Map.empty(), p#pipelines);
         Array.get(0, p#frameTexture).destroy();
-        Array.get(0, p#instanceBuffer).destroy();
+        RenderStatic.release(webGpuStaticAllocator(paint), p#staticCell);
+        Map.forEach((_, b) -> fst(b).destroy(), Ref.get(p#tileBuffers));
+        Map.forEach((_, b) -> fst(b).destroy(), Ref.get(p#staticBuffers));
+        Ref.put(Map.empty(), p#staticBuffers);
+        Ref.put(Map.empty(), p#tileBuffers);
+        List.forEach(stream -> Array.get(0, stream#gpuBuffer).destroy(), p#instances :: p#vertices :: p#values :: Nil);
         p#frameGroup.release();
         p#uniform.destroy();
         p#nearestRepeat.release();
@@ -370,6 +427,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         p#imageLayout.release();
         p#presentLayout.release();
         p#spriteModule.release();
+        p#polyModule.release();
+        p#tileModule.release();
         p#presentModule.release()
 
     /// 1 枚を名前で置く（同じ名前は置き換える）。
@@ -410,7 +469,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 e
         }
 
-    /// 今の encoder を submit する（無ければ何もしない）。instance buffer は頭から使い直せる（queue の書き込みは submit の順に並ぶ）。
+    /// 今の encoder を submit する（無ければ何もしない）。流れの buffer は頭から使い直せる（queue の書き込みは submit の順に並ぶ）。
     def submitEncoder(paint: Paint): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         match Array.get(0, p#encoder) {
@@ -420,7 +479,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(None, 0, p#encoder);
                 Array.put(0, 0, p#frameCounters);
                 Array.put(Array.get(1, p#frameCounters) + 1, 1, p#frameCounters);
-                Array.put(0, 1, p#instanceCounts)
+                List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil)
         }
 
     /// このコマに積んだ pass があれば submit する（絵や buffer を作る・書く・捨てる前に呼ぶ）。
@@ -430,42 +489,76 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     // ── 1 回の renderCommands ──
 
-    /// n 体ぶん書ける instance の入れ物（CPU）。足りなければ倍に作り直す。
-    def instancesFor(paint: Paint, n: Int32): FloatBuffer \ IO =
-        let PaintData.PaintData(p) = paint;
-        let bytes = Array.get(0, p#cpuBytes);
-        if (bytes.capacity() >= n * instanceBytes()) Array.get(0, p#cpuFloats)
+    /// n 個の float を書ける stream の CPU の入れ物。足りなければ倍に作り直す。
+    def floatsFor(stream: Stream, n: Int32): FloatBuffer \ IO =
+        let bytes = Array.get(0, stream#cpuBytes);
+        if (bytes.capacity() >= 4 * n) Array.get(0, stream#cpuFloats)
         else {
-            let raw = ByteBuffer.allocateDirect(Int32.max(n, 2 * bytes.capacity() / instanceBytes()) * instanceBytes());
+            let raw = ByteBuffer.allocateDirect(Int32.max(4 * n, 2 * bytes.capacity()));
             let grown = raw.order(ByteOrder.LITTLE_ENDIAN);
             let floats = grown.asFloatBuffer();
-            Array.put(grown, 0, p#cpuBytes);
-            Array.put(floats, 0, p#cpuFloats);
+            Array.put(grown, 0, stream#cpuBytes);
+            Array.put(floats, 0, stream#cpuFloats);
             floats
         }
 
-    /// 入れ物の頭 n 体を GPU の instance buffer の空いている所へ送り、送った位置（体）を返す。
-    /// 足りなければ先に submit し（頭から使い直せる）、それでも足りなければ buffer を伸ばす。
-    def sendInstances(paint: Paint, n: Int32): Int32 \ IO =
+    /// 1 つの pass の送り方を決める。3 本の Stream（instance・頂点・values）ごとに (GPU の buffer の bytes, 今の encoder に使った bytes, 送る bytes)。
+    /// 返すのは (先に submit するか, 3 本それぞれの (送った後の GPU の buffer の bytes, 送る位置の bytes))。
+    /// どれかが空きに入らなければ submit して 3 本とも頭から送る（1 本だけ submit の後へ送ると、前の本が今の encoder の外で後の書き込みに上書きされる）。
+    /// 頭からでも入らない本は、要る大きさか倍の大きい方へ伸ばす。
+    def planUpload(instances: (Int32, Int32, Int32), vertices: (Int32, Int32, Int32), values: (Int32, Int32, Int32)):
+            (Bool, (Int32, Int32), (Int32, Int32), (Int32, Int32)) =
+        let submit = overflows(instances) or overflows(vertices) or overflows(values);
+        (submit, placeIn(submit, instances), placeIn(submit, vertices), placeIn(submit, values))
+
+    def overflows(demand: (Int32, Int32, Int32)): Bool =
+        let (capacity, used, need) = demand;
+        used + need > capacity
+
+    /// 1 本の (送った後の GPU の buffer の bytes, 送る位置)。submit したら頭から・頭からでも入らなければ要る大きさか倍の大きい方。
+    def placeIn(submit: Bool, demand: (Int32, Int32, Int32)): (Int32, Int32) =
+        let (capacity, used, need) = demand;
+        let base = if (submit) 0 else used;
+        (if (base + need <= capacity) capacity else Int32.max(base + need, 2 * capacity), base)
+
+    /// stream の (GPU の buffer の bytes, 使った bytes, 送る bytes)。
+    def demandOf(stream: Stream, bytes: Int32): (Int32, Int32, Int32) \ IO = (Array.get(0, stream#sizes), Array.get(1, stream#sizes), bytes)
+
+    /// planUpload の 1 本ぶんを行う: GPU の buffer を planned の大きさに作り直し（変わる時だけ）、CPU の入れ物の頭 bytes を送る位置へ書く。返すのは送る位置。
+    def sendPlanned(paint: Paint, stream: Stream, planned: (Int32, Int32), bytes: Int32): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
-        if (Array.get(1, p#instanceCounts) + n > Array.get(0, p#instanceCounts)) flushPending(paint) else ();
-        let capacity = Array.get(0, p#instanceCounts);
-        if (n > capacity) {
-            let grown = Int32.max(n, 2 * capacity);
-            Array.get(0, p#instanceBuffer).destroy();
-            Array.put(createInstanceBuffer(p#gpu, grown), 0, p#instanceBuffer);
-            Array.put(grown, 0, p#instanceCounts)
-        } else ();
-        let base = Array.get(1, p#instanceCounts);
-        if (n > 0) p#gpu.writeBuffer(Array.get(0, p#instanceBuffer), Int32.toInt64(base * instanceBytes()),
-                                     Array.get(0, p#cpuBytes), 0, n * instanceBytes()) else ();
-        Array.put(base + n, 1, p#instanceCounts);
+        let (capacity, base) = planned;
+        if (capacity == Array.get(0, stream#sizes)) ()
+        else {
+            Array.get(0, stream#gpuBuffer).destroy();
+            Array.put(createStreamBuffer(p#gpu, stream#label, capacity), 0, stream#gpuBuffer);
+            Array.put(capacity, 0, stream#sizes)
+        };
+        if (bytes > 0) p#gpu.writeBuffer(Array.get(0, stream#gpuBuffer), Int32.toInt64(base), Array.get(0, stream#cpuBytes), 0, bytes) else ();
+        Array.put(base + bytes, 1, stream#sizes);
         base
 
-    /// texture の render pass を op で始末して開き、group 0・空の絵・instance buffer を付ける。
-    def openPass(paint: Paint, texture: Texture, n: Int32, op: RenderTarget.LoadOp): (RenderPass, Int32) \ IO =
+    /// 1 つの pass の instance（体数）・頂点（数）・values（values の頭 valueCount 個）を GPU へ送り、送った位置（instance の番号, 頂点の番号, values の bytes）を返す。
+    /// 送り方は planUpload が決める（伸ばす時はいつも submit の後になる — 伸ばす本は頭からでも入らないので、空きにも入らない）。
+    def upload(paint: Paint, instanceCount: Int32, vertexCount: Int32, values: Array[Float32, Static], valueCount: Int32): (Int32, Int32, Int32) \ IO =
         let PaintData.PaintData(p) = paint;
-        let base = sendInstances(paint, n);
+        let instanceSize = instanceCount * instanceBytes();
+        let vertexSize = vertexCount * 4 * RenderList.vertexFloats();
+        let valueSize = valueCount * 4;
+        let (submit, instancePlan, vertexPlan, valuePlan) =
+            planUpload(demandOf(p#instances, instanceSize), demandOf(p#vertices, vertexSize), demandOf(p#values, valueSize));
+        if (submit) {
+            flushPending(paint);
+            List.forEach(stream -> Array.put(0, 1, stream#sizes), p#instances :: p#vertices :: p#values :: Nil)
+        } else ();
+        discard floatsFor(p#values, valueCount).put(0, values, 0, valueCount);
+        let instanceBase = sendPlanned(paint, p#instances, instancePlan, instanceSize) / instanceBytes();
+        let vertexBase = sendPlanned(paint, p#vertices, vertexPlan, vertexSize) / (4 * RenderList.vertexFloats());
+        (instanceBase, vertexBase, sendPlanned(paint, p#values, valuePlan, valueSize))
+
+    /// texture の render pass を op で始末して開き、group 0・空の絵・instance buffer を付ける。
+    def openPass(paint: Paint, texture: Texture, op: RenderTarget.LoadOp): RenderPass \ IO =
+        let PaintData.PaintData(p) = paint;
         let view = texture.defaultView();
         let desc = match op {
             case RenderTarget.LoadOp.Clear(c)         => new RenderPassDesc("fge pass").clearColor(view, c#r, c#g, c#b, 1.0)
@@ -476,80 +569,174 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters);
         pass.setBindGroup(0, p#frameGroup);
         pass.setBindGroup(1, p#blank#group);
-        let buffer = Array.get(0, p#instanceBuffer);
-        pass.setVertexBuffer(0, buffer, 0i64, buffer.size());
-        (pass, base)
+        bindWhole(pass, 0, Array.get(0, p#instances#gpuBuffer));
+        pass
 
-    /// sprites を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
-    def paintInto(paint: Paint, texture: Texture, pass: PassSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
+    def bindWhole(pass: RenderPass, slot: Int32, buffer: Buffer): Unit \ IO = pass.setVertexBuffer(slot, buffer, 0i64, buffer.size())
+
+    /// 頂点の buffer の 0 番を、行の種類の buffer にする（WebGpuRows.renderFrame の setVertices）。返すのはその buffer に入っている要素の数
+    /// （タイルは枚数・static は頂点の数・スプライトと多角形はこのコマに送った分なので上限を設けない）。表に無い番号は 0（その行は描かない）。
+    def setVertices(paint: Paint, pass: RenderPass, kind: Int32, buffer: Int32): Int32 \ IO =
+        let PaintData.PaintData(p) = paint;
+        if (kind == RenderList.kindPoly()) { bindWhole(pass, 0, Array.get(0, p#vertices#gpuBuffer)); Int32.maxValue() }
+        else if (kind == RenderList.kindTile()) bindCounted(pass, Map.get(buffer, Ref.get(p#tileBuffers)))
+        else if (kind == RenderList.kindStatic()) bindCounted(pass, Map.get(buffer, Ref.get(p#staticBuffers)))
+        else { bindWhole(pass, 0, Array.get(0, p#instances#gpuBuffer)); Int32.maxValue() }
+
+    /// 表の (buffer, 要素の数) を頂点の buffer の 0 番に付けて要素の数を返す（表に無ければ 0）。
+    def bindCounted(pass: RenderPass, entry: Option[(Buffer, Int32)]): Int32 \ IO = match entry {
+        case Some((buffer, count)) =>
+            bindWhole(pass, 0, buffer);
+            count
+        case None => 0
+    }
+
+    /// 頂点の buffer の 1 番を、values の buffer の bytes の位置からにする。
+    def setValues(paint: Paint, pass: RenderPass, bytes: Int32): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        let buffer = Array.get(0, p#values#gpuBuffer);
+        pass.setVertexBuffer(1, buffer, Int32.toInt64(bytes), buffer.size() - Int32.toInt64(bytes))
+
+    /// 1 回の renderCommands の描き物を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
+    def paintInto(paint: Paint, texture: Texture, pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         // WhyNot: 画面の形式を描き先に問わない — 画面は中間の texture（RGBA8）へ描き、present で画面の形式へ写す。
         let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
+        let staticRanges = match frame#staticLayer {
+            case None    => Nil
+            case Some(l) => RenderStatic.resolve(webGpuStaticAllocator(paint), p#staticCell, l)
+        };
         WebGpuRows.renderFrame({
-            sprites = sprites, registry = Ref.get(p#registryRef),
+            sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons, staticRanges = staticRanges,
+            registry = Ref.get(p#registryRef),
             designW = p#designW, designH = p#designH, pass = pass,
             texWarnLog = p#texWarnLog, drawCounts = p#drawCounts,
-            instancesFor = n -> instancesFor(paint, n),
-            verticesFor = _ -> checked_ecast(p#cpuVertices),
-            openPass = (n, op) -> openPass(paint, texture, n, op),
-            setPipeline = (pass1, blendC) -> pass1.setPipeline(pipelineOf(paint, blendC, format)),
+            instancesFor = n -> floatsFor(p#instances, n * RenderList.instanceFloats()),
+            verticesFor = n -> floatsFor(p#vertices, n * RenderList.vertexFloats()),
+            upload = (n, m, values, k) -> upload(paint, n, m, values, k),
+            openPass = op -> openPass(paint, texture, op),
+            setPipeline = (pass1, shape, blendC) -> pass1.setPipeline(pipelineOf(paint, shape, blendC, format)),
             setTexture = (pass1, id) -> pass1.setBindGroup(1, groupOf(paint, id)),
+            setVertices = (pass1, kind, buffer) -> setVertices(paint, pass1, kind, buffer),
+            setValues = (pass1, bytes) -> setValues(paint, pass1, bytes),
             skip = name -> skip(paint, name)
         })
+
+    // ── 頂点の buffer（タイルの層・static layer）──
+
+    /// 頂点の buffer の次の番号。
+    def takeBufferNumber(paint: Paint): Int32 \ IO =
+        let PaintData.PaintData(p) = paint;
+        let id = Array.get(0, p#nextBuffer);
+        Array.put(id + 1, 0, p#nextBuffer);
+        id
+
+    /// floats の頭 count 個を入れた、頂点の buffer として読む GPU の buffer（積んだ pass があれば先に submit する）。
+    def createFilledBuffer(paint: Paint, label: String, floats: Array[Float32, Static], count: Int32): (Buffer, Int32) \ IO =
+        let PaintData.PaintData(p) = paint;
+        flushPending(paint);
+        let bytes = Int32.max(4, 4 * count);
+        let buffer = createStreamBuffer(p#gpu, label, bytes);
+        writeFloats(paint, buffer, floats, count);
+        (buffer, bytes)
+
+    def writeFloats(paint: Paint, buffer: Buffer, floats: Array[Float32, Static], count: Int32): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        if (count <= 0) ()
+        else {
+            let data = ByteBuffer.allocateDirect(4 * count).order(ByteOrder.LITTLE_ENDIAN);
+            discard data.asFloatBuffer().put(0, floats, 0, count);
+            p#gpu.writeBuffer(buffer, 0i64, data, 0, 4 * count)
+        }
+
+    /// WebGPU でタイルの層の instance の buffer を作る・入れ直す・大きくする関数の組（積んだ pass があれば先に submit する）。
+    /// 大きくする時は同じ番号のまま buffer を捨てて作り直し、表を差し替える。
+    /// 表の値は (buffer, 入る枚数)。
+    def webGpuTileAllocator(paint: Paint): TileTable.TileAllocator =
+        let PaintData.PaintData(p) = paint;
+        { create = (floats, count) -> {
+              let id = takeBufferNumber(paint);
+              let buffer = fst(createFilledBuffer(paint, "fge tiles", floats, count * TileTable.tileFloats()));
+              Ref.put(Map.insert(id, (buffer, count), Ref.get(p#tileBuffers)), p#tileBuffers);
+              id
+          },
+          write = (id, floats, count) -> Map.get(id, Ref.get(p#tileBuffers)) |> Option.forEach(match (buffer, _) -> {
+              flushPending(paint);
+              writeFloats(paint, buffer, floats, count * TileTable.tileFloats())
+          }),
+          grow = (id, floats, count) -> Map.get(id, Ref.get(p#tileBuffers)) |> Option.forEach(match (buffer, _) -> {
+              flushPending(paint);
+              buffer.destroy();
+              let grown = fst(createFilledBuffer(paint, "fge tiles", floats, count * TileTable.tileFloats()));
+              Ref.put(Map.insert(id, (grown, count), Ref.get(p#tileBuffers)), p#tileBuffers)
+          }) }
+
+    /// WebGPU で static layer の頂点の buffer を作る・捨てる関数の組（積んだ pass があれば先に submit する）。
+    def webGpuStaticAllocator(paint: Paint): RenderStatic.StaticAllocator =
+        let PaintData.PaintData(p) = paint;
+        { create = (data, count) -> {
+              let id = takeBufferNumber(paint);
+              let buffer = fst(createFilledBuffer(paint, "fge static", data, count * RenderList.vertexFloats()));
+              Ref.put(Map.insert(id, (buffer, count), Ref.get(p#staticBuffers)), p#staticBuffers);
+              id
+          },
+          destroy = id -> Map.get(id, Ref.get(p#staticBuffers)) |> Option.forEach(match (buffer, _) -> {
+              flushPending(paint);
+              buffer.destroy();
+              Ref.put(Map.remove(id, Ref.get(p#staticBuffers)), p#staticBuffers)
+          }) }
 
     def groupOf(paint: Paint, id: Int32): BindGroup \ IO =
         let PaintData.PaintData(p) = paint;
         Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#group) |> Option.getWithDefault(p#blank#group)
 
-    /// V1 で描かない物 name を、名前ごとに初めの 1 回だけ知らせる。
+    /// まだ描かない物 name を、名前ごとに初めの 1 回だけ知らせる。
     def skip(paint: Paint, name: String): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let seen = Ref.get(p#skipped);
         if (Set.memberOf(name, seen)) ()
         else {
             Ref.put(Set.insert(name, seen), p#skipped);
-            Log.warn("[webgpu] V1 では描かない: ${name}")
+            Log.warn("[webgpu] まだ描かない: ${name}")
         }
 
     /// Draw2d.renderCommands の中身。Pass が開いていればそこへ描いて false。開いていなければ中間の texture へ描き、控えを置いて true。
     def submitFrame(paint: Paint, sprites: List[RenderType.Drawable], tileMaps: List[RenderType.TileMapRenderCmd],
                     polygons: List[RenderType.PolygonCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Bool \ IO =
         let PaintData.PaintData(p) = paint;
-        if (List.isEmpty(tileMaps)) () else skip(paint, "タイルの層");
-        if (List.isEmpty(polygons)) () else skip(paint, "多角形");
-        if (Option.isEmpty(staticLayer)) () else skip(paint, "static layer");
+        let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer | RenderPaint.emptyFrame() };
         match TargetTable.activeSpec(p#targets) {
             case Some(spec) =>
-                paintTarget(paint, spec, sprites);
+                // タイルの層と static layer は画面のコマの物（GL の RenderPaint.paintTarget と同じく Pass には乗せない）。
+                paintTarget(paint, spec, { tileMaps = Nil, staticLayer = None | frame });
                 false
             case None =>
-                let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer | RenderPaint.emptyFrame() };
                 Array.put(frame, 0, p#lastFrame);
-                paintScreen(paint, sprites);
+                paintScreen(paint, frame);
                 RenderDrawCounts.endScreenFrame(p#drawCounts);
                 if (Option.isEmpty(Ref.get(p#diagnosticsRef))) RenderDrawCounts.discardTotal(p#drawCounts) else ();
                 true
         }
 
     /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。
-    def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
+    def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         TargetTable.rowByName(p#targets, spec#name)
             |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
             |> Option.forEach(match (row, slot) -> paintInto(paint, slot#texture,
                    RenderList.targetPass((row#width, row#height), { texture = row#texture, format = row#format, load = spec#clear, resolveTo = None },
-                                         DepthStencil.NoDepthStencil, 1), sprites))
+                                         DepthStencil.NoDepthStencil, 1), frame))
 
-    def paintScreen(paint: Paint, sprites: List[RenderType.Drawable]): Unit \ IO =
+    def paintScreen(paint: Paint, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
         paintInto(paint, Array.get(0, p#frameTexture),
-                  RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil), sprites)
+                  RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil), frame)
 
     /// 最後に画面へ描いたコマを中間の texture へ描き直す（大きさが変わった時。控えも数も進めない）。続けて present を呼ぶ。
     pub def repaintLast(paint: Paint): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        paintScreen(paint, Array.get(0, p#lastFrame)#sprites)
+        paintScreen(paint, Array.get(0, p#lastFrame))
 
     // ── 画面へ出す・読む・大きさ ──
 
@@ -687,13 +874,13 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let uploads = webGpuUploads(paint);
         let tables = textureTables(paint);
         run f() with handler Platform.GpuResources {
-            def initTileBuffer(_instances, k) = {
-                skip(paint, "タイルの層");
-                k((GpuHandle.wrapTileVao(0), 0))
+            def initTileBuffer(instances, k) = {
+                let PaintData.PaintData(p) = paint;
+                k(TileTable.init(webGpuTileAllocator(paint), p#tiles, instances))
             }
-            def updateTileBuffer(vaoId, _instances, k) = {
-                skip(paint, "タイルの層");
-                k((vaoId, 0))
+            def updateTileBuffer(vaoId, instances, k) = {
+                let PaintData.PaintData(p) = paint;
+                k(TileTable.update(webGpuTileAllocator(paint), p#tiles, vaoId, instances))
             }
             def ensureTexture(name, key, width, height, argb, k) = {
                 TextureTable.ensureTexture(uploads, tables, () -> noteDiagnostics(paint, d -> { textureUploads = name :: d#textureUploads | d }),

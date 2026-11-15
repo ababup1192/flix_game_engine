@@ -1,17 +1,28 @@
 // RenderFrame.Internal.RenderList — 1 回の renderCommands で描く行の列（GL と WebGPU が同じ物を流す）と、その行を描く pass の指定。
-// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run だけ。ほかの種類は GL を直に呼ぶ）。GL の物（program・VAO・buffer）を持たず、
-// 絵は backend の表の番号（GL の backend ではテクスチャの番号）で持つ。行は Int32 の配列、1 体ぶんの値は instances の Float32 に置く。
-// rows の頭: 0=行の数 1=次に書く instance の番号。その後ろに 1 行 rowStride() 個:
-//   0=種類（kind*） 1=先頭の instance の番号 2=体数 3=絵の番号（0 = 絵の無い箱） 4=blend 5=clip有無 6-9=clip矩形（viewport の左上原点の px）
-// instances は 1 体 instanceFloats() 個（RenderFrame.writeInstAt の並び）。行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
+// 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲。面・mask・3D の場面は GL を直に呼ぶ）。
+// GL の物（program・VAO・buffer）を持たず、絵と頂点の buffer は backend の表の番号（GL の backend ではテクスチャ・VAO の番号）で持つ。
+// rows の頭: 0=行の数 1=次に書く instance の番号 2=次に書く頂点の番号。その後ろに 1 行 rowStride() 個:
+//   0=種類（kind*） 1=先頭（スプライトは instance・多角形と static は頂点の番号） 2=数（体数・頂点数・タイルの数）
+//   3=絵の番号（0 = 絵の無い箱・多角形と static は 0） 4=blend 5=clip有無 6-9=clip矩形（viewport の左上原点の px）
+//   10=頂点の buffer の番号（タイルの instance・static の頂点。backend の表の番号。ほかは 0） 11=values の先頭（draw ごとの値。スプライトは 0）
+// instances は 1 体 instanceFloats() 個（RenderFrame.writeInstAt の並び）。スプライトの行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
 // vertices は多角形の頂点（1 頂点 6 個・RenderSprite.writePolyVerts の並び）。instances も vertices も backend が貸す入れ物で、GPU へそのまま送る。
+// values は draw ごとの値（front-end の並び。GL は uniform へ差し、WebGPU は詰め直さずに stride 0 の頂点の buffer として読む）。頭の viewValueFloats() 個はいつも identity の view（多角形の行が指す）。
+//   多角形と static は view 6 個（viewOffset x・y・viewScale x・y・halfDesign x・y）・タイルは 8 個（position x・y・tileSize・tileScale x・y・color r・g・b）。
 // 1 回の renderCommands は (PassSpec, RenderList) の組で描く。2D だけの画面では組は 1 つ。
 // WhyNot: 行ごとに record や enum を作らない — 絵が 1 個ごとに替わると行は描く物の数だけでき、その割り当てが 1 コマに乗る。
+// WhyNot: タイルと static の値を行の欄へ詰めない — Float32 を Int32 の欄へ入れると読む所でほどく手間が backend 2 つに要る。
 // WhyNot: RenderFrame の兄弟のモジュールに出さない — 兄弟の mod からは RenderFrame の pub でない関数（run の状態・数え）を呼べず、pub に開くことになる。
 pub mod RenderFrame.Internal.RenderList {
     import java.nio.FloatBuffer
 
-    pub type alias RenderList = { instances = FloatBuffer, vertices = FloatBuffer, rows = Array[Array[Int32, Static], Static] }
+    pub type alias RenderList = {
+        instances = FloatBuffer,
+        vertices = FloatBuffer,
+        rows = Array[Array[Int32, Static], Static],
+        values = Array[Array[Float32, Static], Static],
+        valueCount = Array[Int32, Static]
+    }
 
     /// instance の 1 体の float の数。
     pub def instanceFloats(): Int32 = 38
@@ -27,17 +38,34 @@ pub mod RenderFrame.Internal.RenderList {
     pub def kindSurface(): Int32 = 5
     pub def kindScene3d(): Int32 = 6
 
-    def rowStride(): Int32 = 10
+    def rowStride(): Int32 = 12
 
-    def rowsHead(): Int32 = 2
+    def rowsHead(): Int32 = 3
+
+    /// values の 1 つの view（多角形と static）の float の数。
+    pub def viewValueFloats(): Int32 = 6
+
+    /// values の 1 つのタイルの層の float の数。
+    pub def tileValueFloats(): Int32 = 8
 
     /// 空の列。instances と vertices は backend が貸す入れ物（描く物の数ぶん書ける大きさ）。
     pub def newRenderList(instances: FloatBuffer, vertices: FloatBuffer): RenderList \ IO =
-        { instances = instances, vertices = vertices, rows = Array#{Array.empty(Static, rowsHead() + 16 * rowStride())} @ Static }
+        let list = { instances = instances, vertices = vertices, rows = Array#{Array.empty(Static, rowsHead() + 16 * rowStride())} @ Static,
+                     values = Array#{Array.empty(Static, 64)} @ Static, valueCount = Array#{0} @ Static };
+        clearRenderList(list);
+        list
 
     pub def rowCountOf(list: RenderList): Int32 \ IO = Array.get(0, rowsOf(list))
 
     pub def nextInstanceOf(list: RenderList): Int32 \ IO = Array.get(1, rowsOf(list))
+
+    pub def nextVertexOf(list: RenderList): Int32 \ IO = Array.get(2, rowsOf(list))
+
+    /// values（広げると差し替わるので、行を足した後は取り直す）。
+    pub def valuesOf(list: RenderList): Array[Float32, Static] \ IO = Array.get(0, list#values)
+
+    /// values に書いた float の数（頭の identity の view を含む）。
+    pub def valueCountOf(list: RenderList): Int32 \ IO = Array.get(0, list#valueCount)
 
     /// 頭と行を並べた Int32 の配列（広げると差し替わるので、行を足した後は取り直す）。
     pub def rowsOf(list: RenderList): Array[Int32, Static] \ IO = Array.get(0, list#rows)
@@ -46,11 +74,34 @@ pub mod RenderFrame.Internal.RenderList {
     pub def rowAt(rows: Array[Int32, Static], row: Int32, col: Int32): Int32 \ IO =
         Array.get(rowsHead() + row * rowStride() + col, rows)
 
-    /// 行を全部捨てる（instances の書く位置も頭へ戻す）。
+    /// 行を全部捨てる（instances と頂点の書く位置も頭へ戻し、values は頭の identity の view だけにする）。
     pub def clearRenderList(list: RenderList): Unit \ IO =
         let rows = Array.get(0, list#rows);
         Array.put(0, 0, rows);
-        Array.put(0, 1, rows)
+        Array.put(0, 1, rows);
+        Array.put(0, 2, rows);
+        let values = Array.get(0, list#values);
+        Array.put(0.0f32, 0, values);
+        Array.put(0.0f32, 1, values);
+        Array.put(1.0f32, 2, values);
+        Array.put(1.0f32, 3, values);
+        Array.put(0.0f32, 4, values);
+        Array.put(0.0f32, 5, values);
+        Array.put(viewValueFloats(), 0, list#valueCount)
+
+    /// n 個書ける values と、書き始める位置を返し、書く位置を n 進める（足りなければ倍に広げて写す）。
+    def reserveValues(list: RenderList, n: Int32): (Array[Float32, Static], Int32) \ IO =
+        let values = Array.get(0, list#values);
+        let at = Array.get(0, list#valueCount);
+        let need = at + n;
+        Array.put(need, 0, list#valueCount);
+        if (Array.length(values) >= need) (values, at)
+        else {
+            let grown = Array.empty(Static, Int32.max(need, 2 * Array.length(values)));
+            Array.copyInto(srcPos = 0, dstPos = 0, len = at, src = values, grown);
+            Array.put(grown, 0, list#values);
+            (grown, at)
+        }
 
     /// 1 行足せる大きさの rows を返す（足りなければ倍に広げて写す）。
     def rowsWithRoom(list: RenderList): Array[Int32, Static] \ IO =
@@ -68,9 +119,53 @@ pub mod RenderFrame.Internal.RenderList {
     pub def appendSpriteRow(list: RenderList, first: Int32, count: Int32, texId: Int32, blendC: Int32,
                             clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
         let rows = rowsWithRoom(list);
-        let n = Array.get(0, rows);
+        putRow(rows, Array.get(0, rows), kindSprite(), first, count, texId, blendC, clipFlag, x0, y0, x1, y1, 0, 0);
+        Array.put(first + count, 1, rows)
+
+    /// 多角形の run（vertices の [first, first + count)）を 1 行として足す。次の run の頂点は、この run の後ろから始まる。
+    /// view は values の頭の identity の view（頂点は画面の座標で書いてある）。
+    pub def appendPolyRow(list: RenderList, first: Int32, count: Int32, blendC: Int32,
+                          clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
+        let rows = rowsWithRoom(list);
+        putRow(rows, Array.get(0, rows), kindPoly(), first, count, 0, blendC, clipFlag, x0, y0, x1, y1, 0, 0);
+        Array.put(first + count, 2, rows)
+
+    /// タイルの層を 1 行として足す。buffer = タイルの instance の buffer の番号・count = タイルの数。blend は Normal・clip は無し。
+    pub def appendTileRow(list: RenderList, texId: Int32, buffer: Int32, count: Int32,
+                          layer: { posX = Float32, posY = Float32, tileSize = Float32, scaleX = Float32, scaleY = Float32,
+                                   r = Float32, g = Float32, b = Float32 }): Unit \ IO =
+        let (values, at) = reserveValues(list, tileValueFloats());
+        Array.put(layer#posX, at + 0, values);
+        Array.put(layer#posY, at + 1, values);
+        Array.put(layer#tileSize, at + 2, values);
+        Array.put(layer#scaleX, at + 3, values);
+        Array.put(layer#scaleY, at + 4, values);
+        Array.put(layer#r, at + 5, values);
+        Array.put(layer#g, at + 6, values);
+        Array.put(layer#b, at + 7, values);
+        let rows = rowsWithRoom(list);
+        putRow(rows, Array.get(0, rows), kindTile(), 0, count, texId, 0, 0, 0, 0, 0, 0, buffer, at)
+
+    /// static layer の範囲（buffer の頂点 [first, first + count)）を 1 行として足す。view = 世界の座標を画面へ写す値。
+    pub def appendStaticRow(list: RenderList, buffer: Int32, first: Int32, count: Int32, blendC: Int32,
+                            clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32,
+                            view: { offsetX = Float32, offsetY = Float32, scaleX = Float32, scaleY = Float32,
+                                    halfX = Float32, halfY = Float32 }): Unit \ IO =
+        let (values, at) = reserveValues(list, viewValueFloats());
+        Array.put(view#offsetX, at + 0, values);
+        Array.put(view#offsetY, at + 1, values);
+        Array.put(view#scaleX, at + 2, values);
+        Array.put(view#scaleY, at + 3, values);
+        Array.put(view#halfX, at + 4, values);
+        Array.put(view#halfY, at + 5, values);
+        let rows = rowsWithRoom(list);
+        putRow(rows, Array.get(0, rows), kindStatic(), first, count, 0, blendC, clipFlag, x0, y0, x1, y1, buffer, at)
+
+    /// 行の欄を書いて行の数を 1 進める（rows は rowsWithRoom で取った物）。
+    def putRow(rows: Array[Int32, Static], n: Int32, kind: Int32, first: Int32, count: Int32, texId: Int32, blendC: Int32,
+               clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32, buffer: Int32, valuesAt: Int32): Unit \ IO =
         let at = rowsHead() + n * rowStride();
-        Array.put(kindSprite(), at + 0, rows);
+        Array.put(kind, at + 0, rows);
         Array.put(first, at + 1, rows);
         Array.put(count, at + 2, rows);
         Array.put(texId, at + 3, rows);
@@ -80,8 +175,9 @@ pub mod RenderFrame.Internal.RenderList {
         Array.put(y0, at + 7, rows);
         Array.put(x1, at + 8, rows);
         Array.put(y1, at + 9, rows);
-        Array.put(n + 1, 0, rows);
-        Array.put(first + count, 1, rows)
+        Array.put(buffer, at + 10, rows);
+        Array.put(valuesAt, at + 11, rows);
+        Array.put(n + 1, 0, rows)
 
     // ── pass の指定 ──
 
