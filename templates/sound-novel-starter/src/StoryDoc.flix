@@ -184,7 +184,7 @@ mod StoryDoc {
     }
 
     /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は
-    /// novel.backdrops.json の鍵）と環境音、opening = 「はじめから」で開くノード、names = 話し手の id → 呼び名、
+    /// novel.backdrops.json の鍵）と環境音（project.json の sounds の名前）、opening = 「はじめから」で開くノード、names = 話し手の id → 呼び名、
     /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉。
     pub type alias Rec = {
         version = Int32,
@@ -208,7 +208,7 @@ mod StoryDoc {
 
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, title = "夏草の駅", subtitle = "十年ぶりに、祖母の町へ帰る。",
-                  titlePhoto = "station", titleGrade = "dusk", titleAmbience = "evening",
+                  titlePhoto = "station", titleGrade = "dusk", titleAmbience = "amb_evening",
                   opening = "Station", names = Map.empty(), vars = Map.empty(), labels = Map.empty() })
 
     /// 鍵の言葉（Doc に無ければ既定の言葉）。

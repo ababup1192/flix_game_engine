@@ -35,9 +35,10 @@
         {
           "kind": "command",
           "line": 22,
-          "name": "ambience",
+          "name": "audio",
           "args": [
-            "evening"
+            "ambience",
+            "amb_evening"
           ]
         },
         {
@@ -46,14 +47,17 @@
           "name": "bg",
           "args": [
             "station",
-            "dusk",
-            "2.5"
+            "grade=dusk",
+            "time=2.5"
           ]
         },
         {
           "kind": "command",
           "line": 24,
-          "name": "nvl"
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
         },
         {
           "kind": "command",
@@ -104,7 +108,10 @@
         {
           "kind": "command",
           "line": 30,
-          "name": "clear"
+          "name": "window",
+          "args": [
+            "clear"
+          ]
         },
         {
           "kind": "line",
@@ -181,14 +188,17 @@
           "name": "bg",
           "args": [
             "paddy",
-            "evening",
-            "2.0"
+            "grade=evening",
+            "time=2.0"
           ]
         },
         {
           "kind": "command",
           "line": 41,
-          "name": "adv"
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
         },
         {
           "kind": "line",
@@ -342,8 +352,8 @@
           "name": "bg",
           "args": [
             "lane",
-            "dusk",
-            "2.0"
+            "grade=dusk",
+            "time=2.0"
           ]
         },
         {
@@ -404,9 +414,10 @@
         {
           "kind": "command",
           "line": 72,
-          "name": "se",
+          "name": "audio",
           "args": [
-            "slap"
+            "se",
+            "se_slap"
           ]
         },
         {
@@ -453,9 +464,10 @@
         {
           "kind": "command",
           "line": 83,
-          "name": "ambience",
+          "name": "audio",
           "args": [
-            "night"
+            "ambience",
+            "amb_night"
           ]
         },
         {
@@ -464,8 +476,8 @@
           "name": "bg",
           "args": [
             "engawa",
-            "lamplight",
-            "3.0"
+            "grade=lamplight",
+            "time=3.0"
           ]
         },
         {
@@ -499,9 +511,10 @@
         {
           "kind": "command",
           "line": 90,
-          "name": "se",
+          "name": "audio",
           "args": [
-            "furin"
+            "se",
+            "se_furin"
           ]
         },
         {
@@ -673,9 +686,10 @@
         {
           "kind": "command",
           "line": 118,
-          "name": "ambience",
+          "name": "audio",
           "args": [
-            "river"
+            "ambience",
+            "amb_river"
           ]
         },
         {
@@ -684,8 +698,8 @@
           "name": "bg",
           "args": [
             "river",
-            "night",
-            "3.0"
+            "grade=night",
+            "time=3.0"
           ]
         },
         {
@@ -858,9 +872,10 @@
         {
           "kind": "command",
           "line": 144,
-          "name": "ambience",
+          "name": "audio",
           "args": [
-            "morning"
+            "ambience",
+            "amb_morning"
           ]
         },
         {
@@ -869,14 +884,17 @@
           "name": "bg",
           "args": [
             "station",
-            "morning",
-            "3.0"
+            "grade=morning",
+            "time=3.0"
           ]
         },
         {
           "kind": "command",
           "line": 146,
-          "name": "nvl"
+          "name": "window",
+          "args": [
+            "nvl"
+          ]
         },
         {
           "kind": "command",
@@ -990,7 +1008,10 @@
         {
           "kind": "command",
           "line": 164,
-          "name": "clear"
+          "name": "window",
+          "args": [
+            "clear"
+          ]
         },
         {
           "kind": "line",

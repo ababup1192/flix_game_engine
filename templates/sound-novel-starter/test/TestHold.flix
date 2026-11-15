@@ -1,6 +1,6 @@
 // 素材の待ち（ブラウザ版で後回しにした背景・環境音が、使う時にまだ届いていない間の暗転）と、届いた絵を登録する予算の決まり。
 // 届いていない名前は Res の missing（実機は Game.withAssetLoading が downloads#missing() から写す）を外から決めて流す。
-// 写真・音の名前は Doc（novel.backdrops.json の texture・Stage.ambienceSound）から引き、秒は novel.kind.json から引く。
+// 写真・音の名前は Doc（novel.backdrops.json の texture・シナリオの <<audio ambience>> の音の名前）から引き、秒は novel.kind.json から引く。
 mod TestHold {
 
     use fge::{App, Clock, LoadProgress, Render, Resources}
@@ -146,7 +146,7 @@ mod TestHold {
     def testUnarrivedAmbienceHoldsWithTheBackdrop(): Unit \ {Assert, Fs.FileRead} =
         // Engawa の頭は環境音と写真を続けて替える。どちらも届いていなければ、暗転 1 回で両方を待つ。
         let res = TestKit.res();
-        let names = Stage.ambienceSound("night") :: texture(res, "engawa") :: Nil;
+        let names = "amb_night" :: texture(res, "engawa") :: Nil;
         let held = missingOf(names, res);
         let lane = readTo(res, "Lane", 0 :: Nil, begun(res));
         let w = readUntil(held, World.isHolding, Nil, lane);
@@ -155,7 +155,7 @@ mod TestHold {
 
     @Test
     def testUnarrivedSeIsSkippedSilently(): Unit \ {Assert, Fs.FileRead} =
-        // 一発の効果音（<<se slap>>）は届いていなくても待たずに読み進め、鳴らす音からは外す（届いていれば鳴る）。
+        // 一発の効果音（<<audio se se_slap>>）は届いていなくても待たずに読み進め、鳴らす音からは外す（届いていれば鳴る）。
         let res = TestKit.res();
         let slap = "se_slap";
         let held = missingOf(slap :: Nil, res);

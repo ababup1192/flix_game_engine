@@ -380,7 +380,7 @@ mod Controls {
 
     // ── 音 ──
 
-    /// 返事の音（project.json の sounds の論理名）。ui_ は決定やカーソルへの返事、se_ はシナリオの <<se>>。
+    /// 返事の音（project.json の sounds の論理名）。ui_ は決定やカーソルへの返事、Cue はシナリオの <<audio se>>（合図の Signal は音にしない）。
     /// 文を読み進めるたびに鳴らすと、環境音と台詞の間を音が刻んで読む邪魔になるので、送りは鳴らさない。
     pub def soundOf(event: World.Event): Option[String] = match event {
         case World.Event.Paged    => None
@@ -393,6 +393,7 @@ mod Controls {
         case World.Event.Loaded   => Some("ui_save")
         case World.Event.Rolled   => Some("ui_page")
         case World.Event.Cue(name) => Some(name)
+        case World.Event.Signal(_) => None
     }
 
     /// 1 フレームの一発の音（このフレームに溜まった出来事から）。missing = まだ届いていない音の名前。
@@ -403,9 +404,9 @@ mod Controls {
     pub def soundsOf(missing: Set[String], events: List[World.Event]): List[String] =
         events |> List.filterMap(soundOf) |> List.filter(name -> not Set.memberOf(name, missing))
 
-    /// 鳴り続ける環境音（舞台の ambience。amb_<名前>）。音量はミキサーのバスが決める。
+    /// 鳴り続ける環境音（舞台の環境音。project.json の sounds の名前）。音量はミキサーのバスが決める。
     pub def ambience(res: Res.Res, w: World.World): List[App.Sustain] =
-        World.stageOf(res, w)#ambience |> Option.map(name -> { name = Stage.ambienceSound(name), volume = 1.0, pitch = 1.0 } :: Nil)
+        Stage.ambienceOf(World.now(w), World.stageOf(res, w)) |> Option.map(name -> { name = name, volume = 1.0, pitch = 1.0 } :: Nil)
             |> Option.getWithDefault(Nil)
 
     /// 音の通り道: novel.mixer.json のバスに、設定の音量（全体 × 環境音 / 効果音）を掛ける。

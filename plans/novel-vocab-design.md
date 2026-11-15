@@ -179,6 +179,16 @@ pub type alias Command[st] = {
 - `needs` の既定は「`Param.name` の引数で `ref` が素材の表を指す物」から作る。bg のように Doc を 1 段引く物だけ手で書く。
 - 台本を読んだ時に 1 回だけ引数を読む（O2）: `Res` に台本を入れる時、全部のコマンドを `YarnCommands.parse` して `Map[Yarn.Source, Result[String, Args]]` を作っておく。毎回の実行では読み直さない。台本が替わった時（`Resources.reloadRow`）に作り直す。
 
+- **段 6 で入れた形（実装 5a81a390 と 1 回目のレビュー 79 点の直し）**:
+  - `Commands.run` は `Commands.execute`（`run` は Flix の予約語）。
+  - `takesTime = Bool` は `timing = Timing`（`Timed` / `Instant`。意味を Bool に持たせない決まり）。
+  - `Ctx` に `res` を足し、`apply` の戻りは `Result[String, (st, List[Out])]`。show の既定の表情・位置（Doc の face・slot）を引き、Doc に無い名前を Err にするため（「名前を引く apply」）。
+  - `needs` は 7 つとも手で書けたので、Spec から ref を読む pub（`YarnCommands.refsOf`）は要らなかった。engine_world は触っていない。
+  - 台本を読んだ時に 1 回だけ引数を読む表（O2 の `Map[Source, Args]`）は入れていない（毎回 parse。性能だけの話なので N3 へ回した）。
+  - コマンド名は語彙 19 へ: `bg 写真 [grade=] [time=]`（grade を省くと今の時間帯）・`window nvl|bottom|clear`・`audio ambience|se 音|off`（音は project.json の sounds の名前そのまま）・`fx`・`shake`・`show 名前 [表情] [at=] [time=]`・`hide 名前|all` / `hide at=位置`。show・hide の名前は cast にあれば人物・props にあれば小物（両方にあれば人物。重なりは TestDocs が止める）。`hide all` は人物と小物を全部消す（旧 `<<char off>>` は人物だけ）。show・hide の `time` は既定が Doc（fadeSeconds）なので `Param.time` でなく `num`。
+  - 環境音の値の意味が短い名前（`evening`）から音の名前（`amb_evening`）へ変わった。Mark は version 2 のまま、音の名前は新しい鍵 `ambienceSound` に書く。`Saves.fromJson` はその鍵を先に見て、無ければ古い鍵 `ambience` の短い名前に `amb_` を付けて読む（字が `amb_` で始まるかで見分けると、`rain_loop` のような音の名前が読み違えられる）。version を 3 に上げる案は、N3 の Mark v3（Snapshot）と番号がぶつかるので取らなかった。タイトルの `titleAmbience` も音の名前にそろえた。
+  - yarn graph（とテープのグラフ）の既定の分類に window（stage）と audio（sound）を足し、舞台の鍵を「名前 1 つ目の引数」（`audio ambience`・`audio bgm`）でも書けるようにした（`audio se` は残らない）。
+
 ### 3.3 引数の表（`YarnCommands`）
 
 型は vocab-spike/vocab.json の 19 個に出てくる物に合わせた。N2 で表に入れる物と、使う部品が来る段まで表から外す物を分ける。
@@ -249,6 +259,13 @@ pub def draw(res: Res.Res, now: Clock.Time[Stage.Story], stage: Stage.Stage): Li
 - GameView の z: `docs/z-bands.md` の world の中で、立ち絵（`Cast.items`）より上に小さな範囲を切る。文字の枠は hud の範囲（View の `zText` など）にあるので必ずその下になる。範囲の数は実装で `ZOrder` に 1 行書く。
 - 値 1 つで足りない物（線を描き足す傷）は、`game.` の値を数個持って GameView で描く。それでも足りない時だけ src を持つ作品になる（2 本立ての境目。下書き 2 章）。
 - `make talk-vocab` は `Commands.all() ++ GameCommands.all()` を書き出す。ゲームのコマンドも同じ検査に乗る。N4 で標準の表がエンジンに上がったら、標準の表はエンジンの版と一緒に配り（go が持つ）、ゲームの `vocab.json` には GameCommands の分だけを書く（O3）。
+
+- **段 5・6 で入れた形**:
+  - `PropertyTween` は鍵の型を 3 つ（`NumKey`・`NameKey`・`TriggerKey`）に分け、表は時計の名前を引数に取る `Table[c]`。同じ鍵に delay で予定を並べると時刻の順に動き、後から書いた物はそれより後に始まる予定を捨てる。始まった予定がまだ無い鍵は読む側の fallback（名前は None）。Godot の delay と同じ。
+  - 環境音・パーティクル・揺れは `Stage` の `props` へ移した（鍵 `audio.ambience`・`fx.particles`・`camera.shake`）。背景と立ち絵は自分の形のまま。
+  - `GameCommands.all()` と `GameView.draw(env: View.Env, stage)` はテンプレートでは空。env に Doc・並べ方の組（fit）・物語の時計・実時間が入る。z は `View.zGameView()` から 4 つ（立ち絵の 5 より手前）。
+  - `Out.Event` は `World.Event.Signal` になる（テンプレートのコマンドは出さない）。
+  - **N3 へ回した**: 口に入れる力のうち、文字の枠を消す（`window off`・`window.hidden`）と頁の数（`Stage.pages`）。今の Mark v2 には残せず、入れてもセーブで消えるため、Snapshot と一緒に入れる。
 
 ### 3.7 語彙 19 で書けない行と preset の行き先（M9）
 
@@ -393,12 +410,18 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 | 2 | N1 | novel.shots.json と schema・Shots を Doc で組む・SceneRender が Doc の名前を引く。絵が同じ事を SHA で確かめる | 3〜4 時間 |
 | 3 | N2 | engine_world の `YarnCommands` と `Curve.Ease`（EcsTween への写しの関数まで）（済。EcsTween の曲線の式は Curve.ease の 1 か所） | 3〜4 時間 |
 | 4 | N2 | go の引数の検査・`"…"`・ref・共通の見本。N1 から持ち越し: `DocsOf` が `ref` の Doc も読む・変数の表示名を yarn graph とテープのグラフと読み台本に出す（済。テープの状態の表は novel-data-only.md 3.19 の「後で」へ） | 3〜4 時間 |
-| 5 | N2 | テンプレートの `PropertyTween`（delay・settle・JSON） | 2 時間 |
-| 6 | N2 | テンプレートの `Commands` 表・Ctx・Out・10 個を語彙 19 の名前で・台本の書き直し・GameCommands/GameView の口・早見表と docs とスキルの書き方。絵が同じ事を確かめる | 6〜7 時間 |
-| 7 | N3 | Snapshot と頁を持つ Mark v3・v2 の読み替え・restore の置き換え・頁と舞台の JSON・entryOf（上限・作り直し）・TestCast を広げる | 4〜5 時間（restore と頁はスパイクで形が決まった） |
+| 5 | N2 | テンプレートの `PropertyTween`（delay・settle・JSON）（済。3.6 の「段 5・6 で入れた形」） | 2 時間 |
+| 6 | N2 | テンプレートの `Commands` 表・Ctx・Out・10 個を語彙 19 の名前で・台本の書き直し・GameCommands/GameView の口・早見表と docs とスキルの書き方。絵が同じ事を確かめる（済。描き出しの 43 枚は SHA が同じ。ずれは 3.2 の「段 6 で入れた形」） | 6〜7 時間 |
+| 7 | N3 | Snapshot と頁を持つ Mark v3・v2 の読み替え（環境音の短い名前の読み替えは段 6 で済）・restore の置き換え・頁と舞台の JSON・entryOf（上限・作り直し）・TestCast を広げる。段 6 から: `window off`（`window.hidden`）・`Stage.pages`・O2 の引数の表 | 4〜5 時間（restore と頁はスパイクで形が決まった） |
 | 8 | — | agent-eval（新しいゲームで）・docs/modules の 1 行 | 1〜2 時間 |
 
 合計 25〜32 時間。
+
+**段 5・6 からの持ち越し**:
+- `window off`・`Stage.pages`・O2（台本を読んだ時に 1 回だけ引数を読む表）は段 7（N3）で入れる。
+- 古い書き方（`<<char>>`・`Stage.commandNames`）を `bin/lint-rules/forbid.json` で止める件は入れていない（範囲をテンプレートに絞れるかは未確認）。
+- go の `script_test.go` と `check_args_test` の見本には古いコマンド名が残っている（go の検査の見本なので残す）。
+- agent-eval のお題 `novel-game-command` は足したが、新しいゲームの足元で流すのは段 8。
 
 **段 3・4 からの持ち越し**:
 - 整数の型が無い（個数に `3.5` を書いても断れない。今は `num` で受ける）。要る作品が出たら `Param.int` を足す。

@@ -8,7 +8,8 @@
 // **これは数ある画風の 1 つでしかない。** 真似してほしいのは「写真を奥へ下げて文章を主役にする」層の分け方。
 //
 // ── 画面の層（奥から手前へ）──
-//   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ パーティクル（蛍）→ 立ち絵 → 小物   … 揺れはこの層だけに掛かる
+//   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ パーティクル（蛍）→ 立ち絵 → 小物 → ゲームの絵（GameView）
+//          … 揺れはこの層だけに掛かる
 //   hud:   NVL の幕 / ADV のウィンドウ → 本文（ルビつき）・名前 → 送りの印 → 選択肢 → クイックメニュー（縦の画面は右の列と … とツールチップ）
 //          → 素材を待つ間の黒と待ちの印（ブラウザ版で背景・環境音がまだ届いていない時）
 //          → 画面（バックログ・セーブ・ロード・設定。セーブの枠のサムネはその時の画面を同じ関数で描いて縮める）→ 確認のウィンドウ → 知らせ
@@ -62,12 +63,15 @@ mod View {
     def zBanner(): Int32 = 150
     def zToast(): Int32 = 160
 
+    /// world の中で GameView が使う z の頭（zGameView から 4 つ。立ち絵と小物の 5 より手前）。文字の枠は hud なので必ずその上。
+    pub def zGameView(): Int32 = 6
+
     pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let env = envOf(fitOfCtx(ctx, res), res, w);
         let stage = World.stageOf(res, w);
         let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
-        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage) :: Nil)
+        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage) :: GameView.draw(env, stage) :: Nil)
             |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -248,7 +252,7 @@ mod View {
     /// 蛍: 番号と実時間だけから位置と明滅を導く（どこにも保存しない = 巻き戻しても同じ絵）。
     /// 草むらの高さ（画面の下 6 割）をゆっくり漂い、息をするように明滅する。
     def particles(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        match stage#particles {
+        match Stage.particlesOf(env#storyNow, stage) {
             case Some("fireflies") =>
                 let color = theme(env)#firefly;
                 Fx.derive(kindOf(env)#fireflies, realSeconds(env), (_i, rand, t) -> {
@@ -359,7 +363,7 @@ mod View {
     // ── 縦の画面の頁 ──
 
     /// 縦の画面: 写真を上から下へ濃くなる覆いで沈め、画面いっぱいの頁に文を上から積む（NVL も ADV も同じ頁）。前の行は少し薄く、今の行ははっきり。
-    /// 頁の切れ目は World のまま（NVL の <<clear>> と行の数・ADV の場面の切れ目）。縦の頁に入り切らない時は、古い行から行ごと上へ流して今の行を必ず見せる。
+    /// 頁の切れ目は World のまま（NVL の <<window clear>> と行の数・ADV の場面の切れ目）。縦の頁に入り切らない時は、古い行から行ごと上へ流して今の行を必ず見せる。
     def portraitPage(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
         let sizes = Layout.advTextSizes(env#fit, kindOf(env));
@@ -937,7 +941,8 @@ mod View {
         // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
         let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
-            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage) :: reading(atlas, away, read) :: Nil))
+            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage)
+                         :: GameView.draw(away, read#stage) :: reading(atlas, away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)

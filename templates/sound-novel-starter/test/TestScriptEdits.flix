@@ -7,14 +7,14 @@ mod TestScriptEdits {
     type alias AppState = Resources.With[Res.Res, World.World]
 
     /// 見本のシナリオ（t.yarn・ノード Station）。
-    ///   10 地の文「こいつを持っていきな」 11 地の文「二つ目の行」 12 <<se slap>>
+    ///   10 地の文「こいつを持っていきな」 11 地の文「二つ目の行」 12 <<audio se se_slap>>
     ///   13 <<if>> の中に 14「枝の中の行」 15 選択肢 16「選ぶ」→ 17「選んだ後」 18「最後」 19 <<jump Field>>
     ///   ノード Field（21）: 23「野原の行」
     def programText(): String =
         "{\"version\": 3, \"files\": [\"t.yarn\"], \"variables\": [], \"nodes\": [{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
         "{\"kind\": \"line\", \"line\": 10, \"text\": \"こいつを持っていきな\"}," +
         "{\"kind\": \"line\", \"line\": 11, \"text\": \"二つ目の行\"}," +
-        "{\"kind\": \"command\", \"line\": 12, \"name\": \"se\", \"args\": [\"slap\"]}," +
+        "{\"kind\": \"command\", \"line\": 12, \"name\": \"audio\", \"args\": [\"se\", \"se_slap\"]}," +
         "{\"kind\": \"if\", \"line\": 13, \"clauses\": [{\"body\": [{\"kind\": \"line\", \"line\": 14, \"text\": \"枝の中の行\"}]}]}," +
         "{\"kind\": \"options\", \"line\": 15, \"options\": [{\"line\": 16, \"text\": \"選ぶ\", \"body\": [{\"kind\": \"line\", \"line\": 17, \"text\": \"選んだ後\"}]}]}," +
         "{\"kind\": \"line\", \"line\": 18, \"text\": \"最後\"}," +
@@ -70,8 +70,8 @@ mod TestScriptEdits {
 
     @Test
     def testAtPointingAtACommandStartsFromThatCommand(): Unit \ {Assert, Fs.FileRead} =
-        // at が演出コマンドの字（<<se slap>>）と合えば、その行から進めて次の台詞（<<if>> の中の 14）を出す。ノードの頭へは戻らない。
-        let h = started(Map#{ "line" => "12", "at" => hash("<<se slap>>") });
+        // at が演出コマンドの字（<<audio se se_slap>>）と合えば、その行から進めて次の台詞（<<if>> の中の 14）を出す。ノードの頭へは戻らない。
+        let h = started(Map#{ "line" => "12", "at" => hash("<<audio se se_slap>>") });
         Assert.assertEq(expected = "t.yarn:14", lineOf(h))
 
     @Test

@@ -201,7 +201,8 @@ mod World {
     /// 規則の中で起きた出来事（返事の音の材料。冒頭の「出来事」）。Controls.interact が集めて events 欄に溜め、音は前後の差で読む。
     ///   Paged … 次の行へ送った / Revealed … 文字送りの途中で全文を出した / Moved … カーソルや値が動いた /
     ///   Picked … 選択肢を選んだ / Opened・Closed … 画面や確認のウィンドウを開けた・閉じた / Saved・Loaded … セーブした・ロードした /
-    ///   Rolled … 前の行へ戻った / Cue(名前) … シナリオの <<se>> の効果音。
+    ///   Rolled … 前の行へ戻った / Cue(名前) … シナリオの <<audio se>> の効果音（project.json の sounds の名前）/
+    ///   Signal(名前) … コマンドが出したその場の合図（Commands.Out.Event。テンプレートのコマンドは出さない）。
     pub enum Event with Eq, ToString {
         case Paged
         case Revealed
@@ -213,6 +214,7 @@ mod World {
         case Loaded
         case Rolled
         case Cue(String)
+        case Signal(String)
     }
 
     /// ゲームの状態（遊びの状態だけ。Doc とシナリオは Res が持つ）。scene / panel / ask = 冒頭の「状態の形」、
@@ -345,8 +347,8 @@ mod World {
     /// タイトルの舞台（写真は重ね終わっている）。
     def titleStage(story: StoryDoc.Doc): Stage.Stage =
         let r = StoryDoc.rec(story);
-        { shot = Some({ photo = r#titlePhoto, grade = r#titleGrade }),
-          ambience = if (String.isEmpty(r#titleAmbience)) None else Some(r#titleAmbience) | Stage.empty() }
+        { shot = Some({ photo = r#titlePhoto, grade = r#titleGrade }) | Stage.empty() }
+            |> Stage.withAmbience(Clock.zero(), if (String.isEmpty(r#titleAmbience)) None else Some(r#titleAmbience))
 
     /// 物語の時計の今。
     pub def now(w: World): Clock.Time[Stage.Story] = Clock.nowOf(w#storyClock)

@@ -67,7 +67,7 @@ mod TestRules {
 
     @Test
     def testNvlPageKeepsEarlierLinesUntilClear(): Unit \ {Assert, Fs.FileRead} =
-        // NVL は頁に前の行を積んだまま次の行を足す（<<clear>> まではめくらない）。
+        // NVL は頁に前の行を積んだまま次の行を足す（<<window clear>> まではめくらない）。
         let res = TestKit.res();
         let w = begun(res) |> advance(res) |> settle(res) |> advance(res) |> settle(res);
         Assert.assertEq(expected = 2, List.length(World.pageOf(w)#lines))
@@ -176,10 +176,11 @@ mod TestRules {
 
     @Test
     def testEveryCommandInTheScriptIsUnderstood(): Unit \ {Assert, Fs.FileRead} =
-        // 台本のコマンドは全部 Stage が読める（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
+        // シナリオのコマンドは全部 Commands の表で読めて当てられる（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
         let res = TestKit.res();
+        let ctx = { now = Clock.zero(), node = "", res = res };
         let bad = commandsOf(res#dialogue) |> List.filter(c -> c#name != "wait")
-            |> List.filterMap(c -> match Stage.cueOf(res, c) {
+            |> List.filterMap(c -> match Commands.execute(Commands.Replay.Silent, ctx, c, Stage.empty()) {
                 case Ok(_)    => None
                 case Err(why) => Some(why)
             });
@@ -399,7 +400,7 @@ mod TestRules {
         let saved = quiet(() -> WorldSaves.writeSlot(res, page1(), 0, atPaddy));
         let elsewhere = readTo(res, "Lane", 1 :: Nil, saved);
         let loaded = settle(res, quiet(() -> WorldSaves.loadFrom(res, page1(), 0, elsewhere)));
-        let stageOf = (w: World.World) -> { let st = World.stageOf(res, w); (st#shot |> Option.map(shot -> (shot#photo, shot#grade)), st#mode, st#ambience) };
+        let stageOf = (w: World.World) -> { let st = World.stageOf(res, w); (st#shot |> Option.map(shot -> (shot#photo, shot#grade)), st#mode, Stage.ambienceOf(World.now(w), st)) };
         Assert.assertEq(expected = (placeOf(atPaddy), stageOf(atPaddy)), (placeOf(loaded), stageOf(loaded)))
 
     @Test
@@ -521,6 +522,28 @@ mod TestRules {
         Assert.assertEq(expected = shape(saves), shape(back))
 
     @Test
+    def testSaveWithShortAmbienceNameReadsTheSoundName(): Unit \ {Assert, Fs.FileRead} =
+        // ambience の鍵に amb_ の無い短い名前（"evening"）で書いた枠は、音の名前（amb_evening）として読む。
+        let res = TestKit.res();
+        let bookmark = WorldRead.slotHere(res, begun(res)) |> Option.map(s -> YarnRunner.bookmarkToJson(s#mark#bookmark));
+        let read = bookmark
+            |> Option.map(bm -> Util.Json.Json.JObject(Map#{ "slots" => Util.Json.Json.JObject(Map#{
+                   "0" => Util.Json.Json.JObject(Map#{ "bookmark" => bm, "ambience" => Util.Json.Json.JString("evening") }) }) }))
+            |> Option.map(Saves.fromJson(Saves.fresh(res#kind)))
+            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> x#mark#ambience));
+        Assert.assertEq(expected = Some(Some("amb_evening") :: Nil), read)
+
+    @Test
+    def testAmbienceSoundNameWithoutAmbPrefixSurvivesJson(): Unit \ {Assert, Fs.FileRead} =
+        // amb_ で始まらない音の名前（rain_loop）の環境音も、セーブの JSON を通してそのまま戻る。
+        let res = TestKit.res();
+        let saves = WorldRead.slotHere(res, begun(res))
+            |> Option.map(slot -> Saves.withPushed(Saves.Tab.Quick, { mark = { ambience = Some("rain_loop") | slot#mark } | slot }, Saves.fresh(res#kind)));
+        let read = saves |> Option.map(s -> Saves.fromJson(Saves.fresh(res#kind), Saves.toJson(s)))
+            |> Option.map(s -> Saves.rec(s)#slots |> Map.valuesOf |> List.map(x -> x#mark#ambience));
+        Assert.assertEq(expected = Some(Some("rain_loop") :: Nil), read)
+
+    @Test
     def testDateText(): Unit \ {Assert} =
         // 日時の字: 1970-01-01 からの秒を 年/月/日 時:分 に（うるう年の 2 月末も）。
         Assert.assertEq(expected = ("1970/01/01 00:00", "2024/02/29 23:59", "2026/08/14 19:32"),
@@ -629,7 +652,7 @@ mod TestRules {
 
     @Test
     def testScriptSoundEffectsAreHeard(): Unit \ {Assert, Fs.FileRead} =
-        // 台本の <<se>> は se_<名前> の出来事になり、Controls が同じ名前の音を鳴らす。
+        // シナリオの <<audio se 音>> はその音の名前の出来事になり、Controls が同じ名前の音を鳴らす。
         let res = TestKit.res();
         let atLane = readTo(res, "Lane", 1 :: Nil, begun(res));
         let (_, heard) = TestKit.readHearing(res, w -> World.talkNodeOf(w) == "Engawa", Nil, atLane);
@@ -638,7 +661,7 @@ mod TestRules {
 
     @Test
     def testLoadingIsSilent(): Unit \ {Assert, Fs.FileRead} =
-        // ロードで読み直す時、通り過ぎた <<se>> は鳴らさない（返事は Loaded の 1 つだけ）。
+        // ロードで読み直す時、通り過ぎた <<audio se>> は鳴らさない（返事は Loaded の 1 つだけ）。
         let res = TestKit.res();
         let past = readTo(res, "Engawa", 1 :: Nil, begun(res));
         let saved = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), 0, past));

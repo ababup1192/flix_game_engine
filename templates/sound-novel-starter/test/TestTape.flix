@@ -8,20 +8,20 @@ mod TestTape {
     type alias AppState = Resources.With[Res.Res, World.World]
 
     /// 見本のシナリオ（t.yarn・ノードは最初に開く Station）。
-    ///   10 <<ambience river>>（時間を取らない・鳴り続ける） 11 <<se slap>> 12 <<wait 1>> 13 地の文
-    ///   14 <<bg station dusk 1.0>>（時間を取る） 15 <<se furin>> 16 <<wait 1>> 17 千夏の台詞
-    ///   18 <<se slap>> 19 <<wait 1>> 20 地の文
+    ///   10 <<audio ambience amb_river>>（時間を取らない・鳴り続ける） 11 <<audio se se_slap>> 12 <<wait 1>> 13 地の文
+    ///   14 <<bg station grade=dusk time=1.0>>（時間を取る） 15 <<audio se se_furin>> 16 <<wait 1>> 17 千夏の台詞
+    ///   18 <<audio se se_slap>> 19 <<wait 1>> 20 地の文
     def programText(): String =
         "{\"version\": 3, \"files\": [\"t.yarn\"], \"variables\": [], \"nodes\": [{\"title\": \"Station\", \"file\": \"t.yarn\", \"line\": 8, \"headers\": [], \"body\": [" +
-        "{\"kind\": \"command\", \"line\": 10, \"name\": \"ambience\", \"args\": [\"river\"]}," +
-        "{\"kind\": \"command\", \"line\": 11, \"name\": \"se\", \"args\": [\"slap\"]}," +
+        "{\"kind\": \"command\", \"line\": 10, \"name\": \"audio\", \"args\": [\"ambience\", \"amb_river\"]}," +
+        "{\"kind\": \"command\", \"line\": 11, \"name\": \"audio\", \"args\": [\"se\", \"se_slap\"]}," +
         "{\"kind\": \"command\", \"line\": 12, \"name\": \"wait\", \"args\": [\"1\"]}," +
         "{\"kind\": \"line\", \"line\": 13, \"text\": \"" + longText() + "\"}," +
-        "{\"kind\": \"command\", \"line\": 14, \"name\": \"bg\", \"args\": [\"station\", \"dusk\", \"1.0\"]}," +
-        "{\"kind\": \"command\", \"line\": 15, \"name\": \"se\", \"args\": [\"furin\"]}," +
+        "{\"kind\": \"command\", \"line\": 14, \"name\": \"bg\", \"args\": [\"station\", \"grade=dusk\", \"time=1.0\"]}," +
+        "{\"kind\": \"command\", \"line\": 15, \"name\": \"audio\", \"args\": [\"se\", \"se_furin\"]}," +
         "{\"kind\": \"command\", \"line\": 16, \"name\": \"wait\", \"args\": [\"1\"]}," +
         "{\"kind\": \"line\", \"line\": 17, \"speaker\": \"chinatsu\", \"text\": \"" + longText() + "\"}," +
-        "{\"kind\": \"command\", \"line\": 18, \"name\": \"se\", \"args\": [\"slap\"]}," +
+        "{\"kind\": \"command\", \"line\": 18, \"name\": \"audio\", \"args\": [\"se\", \"se_slap\"]}," +
         "{\"kind\": \"command\", \"line\": 19, \"name\": \"wait\", \"args\": [\"1\"]}," +
         "{\"kind\": \"line\", \"line\": 20, \"text\": \"" + longText() + "\"}]}]}"
 
@@ -39,21 +39,21 @@ mod TestTape {
 
     @Test
     def testWaitAfterAnInstantCommandKeepsTheEmptyCursor(): Unit \ {Assert, Fs.FileRead} =
-        // 頭の <<se>> の後の <<wait>> の間は、前の値（まだ何も無い = 空）のまま。
+        // 頭の <<audio se>> の後の <<wait>> の間は、前の値（まだ何も無い = 空）のまま。
         let r = res();
         let opened = TestKit.quiet(() -> WorldRead.newGame(r, TestKit.w0(r)));
         Assert.assertEq(expected = "", World.talkCursorOf(opened))
 
     @Test
     def testWaitAfterABackdropPointsAtTheBackdrop(): Unit \ {Assert, Fs.FileRead} =
-        // <<bg>> の後の <<wait>> の間は <<bg>> の行（<<se>> と <<wait>> の行ではない）。
+        // <<bg>> の後の <<wait>> の間は <<bg>> の行（<<audio se>> と <<wait>> の行ではない）。
         let r = res();
         let waiting = TestKit.advance(r, TestKit.begun(r));
         Assert.assertEq(expected = "t.yarn:14", World.talkCursorOf(waiting))
 
     @Test
     def testWaitAfterALineKeepsTheLine(): Unit \ {Assert, Fs.FileRead} =
-        // 台詞の後に時間を取らない <<se>> と <<wait>> が続く間は、その台詞の行のまま。
+        // 台詞の後に時間を取らない <<audio se>> と <<wait>> が続く間は、その台詞の行のまま。
         let r = res();
         let atLine = TestKit.settle(r, TestKit.advance(r, TestKit.begun(r)));
         let waiting = TestKit.advance(r, atLine);
@@ -129,16 +129,16 @@ mod TestTape {
 
     @Test
     def testTimelineKeepsOnlyChangesAndEmptyIsNull(): Unit \ {Assert, Fs.FileRead} =
-        // シナリオの位置が変わった所だけが載り、空は null（-1）。<<se>> と <<wait>> の行（11・12・15・16・18・19）は載らない。
+        // シナリオの位置が変わった所だけが載り、空は null（-1）。<<audio se>> と <<wait>> の行（11・12・15・16・18・19）は載らない。
         let lines = tapeOf(Nil) |> Result.map(root -> arrayAt("timeline", root) |> List.map(pair -> lineOf(secondOf(pair))));
         Assert.assertEq(expected = Ok(-1 :: 13 :: 14 :: 17 :: 20 :: Nil), lines)
 
     @Test
     def testSustainedSoundIsListedOnceWhenItStarts(): Unit \ {Assert, Fs.FileRead} =
-        // 鳴り続ける音は鳴り始めのフレームに 1 回だけ ambience で載る（タイトルの環境音と <<ambience river>>）。
+        // 鳴り続ける音は鳴り始めのフレームに 1 回だけ ambience で載る（タイトルの環境音と <<audio ambience amb_river>>）。
         let started = tapeOf(Nil) |> Result.map(root -> arrayAt("sounds", root)
             |> List.filter(row -> textAt("kind", row) == "ambience") |> List.map(row -> textAt("name", row)));
-        Assert.assertEq(expected = Ok(Stage.ambienceSound(StoryDoc.rec(TestKit.res()#story)#titleAmbience) :: Stage.ambienceSound("river") :: Nil), started)
+        Assert.assertEq(expected = Ok(StoryDoc.rec(TestKit.res()#story)#titleAmbience :: "amb_river" :: Nil), started)
 
     @Test
     def testOneShotSoundCarriesItsLabel(): Unit \ {Assert, Fs.FileRead} =

@@ -59,7 +59,7 @@ mod Page {
     /// 場面が変わった（背景を替えた）: 次の行から新しい頁にする。今の行は出したまま（横の ADV のウィンドウは次の行まで今の行を見せる）。
     pub def turn(page: Page): Page = { lines = Nil, next = NextLine.NewPage | page }
 
-    /// 頁をめくる（<<clear>>・ADV と NVL の切り替え）。今の行も消す。
+    /// 頁をめくる（<<window clear>>・ADV と NVL の切り替え）。今の行も消す。
     pub def clear(_page: Page): Page = empty()
 
     /// 文字送りを dt 秒ぶん進める。

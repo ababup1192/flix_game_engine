@@ -1,4 +1,4 @@
-# 演出の音 2 つ・返事の音 5 つ・川の環境音（Controls.soundOf と、台本の <<se>> <<ambience>>）。
+# 演出の音 2 つ・返事の音 5 つ・川の環境音（Controls.soundOf と、シナリオの <<audio se>> <<audio ambience>>）。
 # bin/fge snd build art/sfx.snd.star で art/sfx/*.sndsrc.json を書き、検査を通った物を atelier/sfx/<名前>.wav へ書く
 # （採用した物を assets/sfx へ移し、project.json の sounds に載せる）。
 # 夕方の蜩・夜の鈴虫・朝の鶯は合成でなく実際の録音（Wikimedia Commons。出典と切り出した所は CREDITS.md）。

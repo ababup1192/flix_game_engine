@@ -5,8 +5,9 @@
 環境音・ログ・オート・スキップ・既読・セーブとロード・設定）を一通り見せる教科書。
 
 - **文章・分岐・演出の順番は全部シナリオ**（`assets/talk/natsukusa.yarn`。直したら `bin/fge yarn build assets/talk`）。
-  演出はコマンド（`<<bg>>` `<<nvl>>` `<<adv>>` `<<clear>>` `<<ambience>>` `<<se>>` `<<fx>>` `<<shake>>` `<<char>>` `<<item>>` `<<wait>>`）で書き、
-  意味は `src/Stage.flix`。新しいコマンドは `Stage.Cue` に case と `cueOf` の枝、`Stage.commandNames` に名前を足す
+  演出はコマンド（`<<bg>>` `<<window>>` `<<audio>>` `<<fx>>` `<<shake>>` `<<show>>` `<<hide>>` `<<wait>>`。主の引数は位置・ほかは `key=value`）で書き、
+  引数の表と意味は `src/Commands.flix`（表に無い引数・型・Doc に無い名前は `bin/fge yarn build` が止める）。このゲームだけのコマンドは
+  `src/GameCommands.flix` に 1 つ足し、後に残る値は `Stage` の `props`（`PropertyTween` の `game.` の鍵）に書いて `src/GameView.flix` で描く
   （語彙 `assets/talk/vocab.json` は `make talk-vocab`）。シナリオに式や条件を足すのは Yarn の `<<if>>` `<<set>>` まで。
   話し手の呼び名・変数の表示名・「はじめから」で開くノード（`opening`）は `assets/novel.story.json`、描き出しの場面（make render の SHOT）は
   `assets/novel.shots.json` に書く。どちらも `bin/fge yarn build` が vocab.json の from を通して読み、台本の名前と照らす（Flix を走らせずに名前を足せる）。
@@ -47,7 +48,7 @@
   その下の右端に字の無い丸いアイコン 3 つ（しおり・ログ・オート）を縦一列（`src/Rail.flix`・積み方と大きさは `assets/novel.rail.json`）。
   しおりは [セーブ｜ロード] を列の左に開き、オートの長押しはスキップ、ほかのアイコンの長押しは名前のツールチップを出す。頁と選択肢は列の左で折り返す。進み具合のバーは付けない。
   列の丸は面に階調を入れない例外（49 px の記号で、形が一意に読めるかで見る）。階調は … の丸・ツールチップ・メニューの地が受け持つ。
-- 立ち絵と小物（`<<char>>` `<<item>>`・`src/Cast.flix`）は写真の上・字の地の下（world の層の蛍の手前）。透過画像を 2 つの画素の間をなめらかに
+- 立ち絵と小物（`<<show>>` `<<hide>>`・`src/Cast.flix`）は写真の上・字の地の下（world の層の蛍の手前）。透過画像を 2 つの画素の間をなめらかに
   つなぐシェーダーの面で貼り、出入りと表情の替えはクロスフェードだけ（すべらせない）。息の揺れは足元を据えて高さを僅かに伸び縮みさせる。
   縦の画面では頁の覆いで人物も沈む（`novel.cast.json` の `portraitVeilWithCast` を 1 未満にすると人物が出ている間だけ覆いが薄くなる）。
   テンプレートの物語には立ち絵を出していない（作るゲームが絵を足す。テスト用の単色の形は描き出しとテストだけが使う）。

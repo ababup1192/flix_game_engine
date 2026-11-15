@@ -37,16 +37,28 @@ var commandCategories = []string{CategoryStage, CategoryActor, CategorySound, Ca
 // DefaultCategories はどのゲームでも同じ意味で使われやすいコマンド名の分類。
 // ゲームだけのコマンド（人物の名前など）は vocab.json の graph.categories で足す。
 var DefaultCategories = map[string][]string{
-	CategoryStage: {"scene", "bg", "lights", "black", "clear", "nvl", "adv", "fade", "dim", "zoom", "text"},
+	CategoryStage: {"scene", "bg", "lights", "black", "clear", "nvl", "adv", "window", "fade", "dim", "zoom", "text"},
 	CategoryActor: {"char", "item", "show", "hide"},
-	CategorySound: {"se", "bgm", "ambience", "voice", "silence"},
+	CategorySound: {"se", "bgm", "ambience", "voice", "silence", "audio"},
 	CategoryFx:    {"shake", "fx", "flash"},
 	CategoryWait:  {waitCommand},
 	CategoryEnd:   {endCommand},
 }
 
 // DefaultStageKeys は、最後に書いた値がノードを越えて残るコマンド（舞台）の既定。
-var DefaultStageKeys = []string{"scene", "bg", "bgm", "ambience", "lights"}
+// 鍵は「名前」か「名前 1 つ目の引数」（audio ambience）。後の形は 1 つ目の引数ごとに分けて残す（audio se は残らない）。
+var DefaultStageKeys = []string{"scene", "bg", "bgm", "ambience", "lights", "audio ambience", "audio bgm"}
+
+// stageEntry は舞台に残すコマンドの鍵と値（舞台でなければ ok が偽）。「名前 1 つ目の引数」の鍵を先に見る。
+func stageEntry(isStage map[string]bool, name string, args []string) (key, val string, ok bool) {
+	if len(args) > 0 && isStage[name+" "+args[0]] {
+		return name + " " + args[0], orDefault(strings.Join(args[1:], " "), "on"), true
+	}
+	if isStage[name] {
+		return name, orDefault(strings.Join(args, " "), "on"), true
+	}
+	return "", "", false
+}
 
 // endCommand は結末のノードの目印（<<end 名前>>）。
 const endCommand = "end"
@@ -415,11 +427,10 @@ func summarizeNode(n *Node, isStage map[string]bool, catOf func(string) string, 
 					}
 				}
 				gn.WaitSeconds += secs
-				if isStage[s.Name] {
-					val := orDefault(args, "on")
-					gn.State[s.Name] = val
+				if key, val, ok := stageEntry(isStage, s.Name, s.Args); ok {
+					gn.State[key] = val
 					if !seenLine {
-						gn.Head[s.Name] = val
+						gn.Head[key] = val
 					}
 				}
 				if s.Name == endCommand {
@@ -555,7 +566,8 @@ const graphUsage = `使い方: bin/fge yarn graph <フォルダか x.yarn>... [-
   --json はグラフの中身（ノード・矢印・演出の並び・検査。行の本文は入れない）を書く（- か書き先を省くと標準出力）。--json だけなら HTML は書かない。
   最初のノードは語彙（vocab.json）の nodes（コードが開くノード）。語彙が無ければ最初のファイルの最初のノード。
   演出の色は既定の表に、vocab.json の "graph": {"categories": {"actor": ["girl"]}} を重ねる（分類: stage actor sound fx wait end。無い名前は other）。
-  舞台（ノードを越えて残る物）は --stage か vocab.json の graph.stage、無ければ scene bg bgm ambience lights。
+  舞台（ノードを越えて残る物）は --stage か vocab.json の graph.stage、無ければ scene bg bgm ambience lights と audio ambience・audio bgm
+  （「名前 1 つ目の引数」の鍵は、その引数の時だけ残す）。
   検査は build の検査の全部（error）に、たどり着けないノードと行き止まり（warn）を足す。知らせがあっても書く（終わりの番号は 0）。
 `
 

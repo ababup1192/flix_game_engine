@@ -1,8 +1,8 @@
-// Cast — 立ち絵と小物の層（純粋）: シナリオの <<char>> / <<item>> の読み方、出す・替える・消すの重ね方、セーブに残す形、置き場所と描き方。
+// Cast — 立ち絵と小物の層（純粋）: シナリオの <<show>> / <<hide>> の引数から作る意味、出す・替える・消すの重ね方、セーブに残す形、置き場所と描き方。
 // 絵は 2D の透過画像（project.json の textures「cast_<名前>_<表情>」）を、2 つの画素の間をなめらかにつなぐシェーダーの面で貼る。
 // 位置の替えはクロスフェードだけで、すべらせない。描くのは world の層（View.frame）で、字の地より必ず奥。
 mod Cast {
-    use fge::{Clock, Curve, JsonCodec, Num, Rect2, Render, ShaderDoc, Sway, Yarn}
+    use fge::{Clock, Curve, JsonCodec, Num, Rect2, Render, ShaderDoc, Sway}
     use fge::ShaderDoc.{Field, Out, Shade, TexChan}
     use CastDoc.Kind
     use Util.Json.Json
@@ -36,47 +36,46 @@ mod Cast {
 
     pub def empty(): Layer = { cast = Nil, prop = None, leaving = Nil }
 
-    // ── シナリオのコマンドを読む ──
+    // ── コマンドの引数から意味を作る（引数の読み方は Commands の show・hide） ──
 
-    /// <<char 名前 [表情] [位置] [秒]>> / <<char 名前 off [秒]>> / <<char off [秒]>> と、同じ形の <<item>> を読む。
-    /// 名前の後ろの語は、位置の名前 → その人の表情の名前 → 数（秒）の順に読み、どれでもなければ Err。
-    pub def cueOf(doc: CastDoc.Doc, command: Yarn.Command): Result[String, Cue] =
-        let at = " (${Yarn.sourceText(command#source)})";
-        let kind = if (command#name == "item") Kind.Prop else Kind.Character;
+    /// 名前の種類（cast にあれば人物・props にあれば小物）。どちらにも無ければ None。
+    def kindOf(doc: CastDoc.Doc, name: String): Option[Kind] =
+        if (Option.nonEmpty(CastDoc.entryOf(Kind.Character, name, doc))) Some(Kind.Character)
+        else if (Option.nonEmpty(CastDoc.entryOf(Kind.Prop, name, doc))) Some(Kind.Prop)
+        else None
+
+    /// 出す・表情や位置を替える。face / slot / seconds を省くと、出ている形のまま（出ていなければ Doc の face・slot）・Doc の fadeSeconds。
+    /// 名前・表情・位置が Doc に無ければ Err（無い名前で舞台を消さない）。
+    pub def showCue(doc: CastDoc.Doc, name: String, face: Option[String], slot: Option[String], seconds: Option[Float64]): Result[String, Cue] =
         let d = CastDoc.rec(doc);
-        match command#args {
-            case Nil                => Err("<<${command#name}>> の名前が無い${at}")
-            case "off" :: rest      => secondsOf(d#fadeSeconds, rest, at) |> Result.map(s -> Cue.Hide(kind, None, s))
-            case name :: "off" :: rest => secondsOf(d#fadeSeconds, rest, at) |> Result.map(s -> Cue.Hide(kind, Some(name), s))
-            case name :: rest       =>
-                match CastDoc.entryOf(kind, name, doc) {
-                    case None        => Err("知らない${kindWord(kind)} '${name}'${at}")
-                    case Some(entry) => showOf(d, kind, name, entry, rest, at)
-                }
+        let entryOfKind = kind -> CastDoc.entryOf(kind, name, doc) |> Option.map(entry -> (kind, entry));
+        match kindOf(doc, name) |> Option.flatMap(entryOfKind) {
+            case None => Err("知らない人物か小物 '${name}'")
+            case Some((kind, entry)) =>
+                if (face |> Option.exists(f -> not List.memberOf(f, entry#faces))) Err("'${name}' に無い表情 '${Option.getWithDefault("", face)}'")
+                else if (slot |> Option.exists(s -> not Map.memberOf(s, d#slots))) Err("知らない位置 '${Option.getWithDefault("", slot)}'")
+                else Ok(Cue.Show(kind, { name = name, face = Option.getWithDefault(entry#face, face), slot = Option.getWithDefault(entry#slot, slot) },
+                                 { face = Option.isEmpty(face), slot = Option.isEmpty(slot) }, secondsOr(d, seconds)))
         }
 
-    def kindWord(kind: Kind): String = match kind {
-        case Kind.Character => "人物"
-        case Kind.Prop      => "小物"
-    }
+    /// その人（か小物）を消す。
+    pub def hideCue(doc: CastDoc.Doc, name: String, seconds: Option[Float64]): Result[String, Cue] =
+        kindOf(doc, name) |> Option.map(kind -> Cue.Hide(kind, Some(name), secondsOr(CastDoc.rec(doc), seconds)))
+            |> Option.toOk("知らない人物か小物 '${name}'")
 
-    /// 残りの語の頭が数なら秒（無ければ fallback・数でなければ Err）。
-    def secondsOf(fallback: Float64, words: List[String], at: String): Result[String, Float64] = match words {
-        case Nil       => Ok(fallback)
-        case word :: _ => Float64.fromString(word) |> Option.map(s -> Float64.max(0.0, s)) |> Option.toOk("秒が数でない '${word}'${at}")
-    }
+    /// 人物と小物を全部消す。
+    pub def hideAllCues(doc: CastDoc.Doc, seconds: Option[Float64]): List[Cue] =
+        let s = secondsOr(CastDoc.rec(doc), seconds);
+        Cue.Hide(Kind.Character, None, s) :: Cue.Hide(Kind.Prop, None, s) :: Nil
 
-    /// 名前の後ろの語を 1 つずつ読み、出す形にする。
-    def showOf(d: CastDoc.Rec, kind: Kind, name: String, entry: CastDoc.Entry, words: List[String], at: String): Result[String, Cue] =
-        let start = Ok(({ face = None, slot = None, seconds = d#fadeSeconds }: { face = Option[String], slot = Option[String], seconds = Float64 }));
-        let read = words |> List.foldLeft((acc, word) -> acc |> Result.flatMap(got ->
-            if (Map.memberOf(word, d#slots)) Ok({ slot = Some(word) | got })
-            else if (List.memberOf(word, entry#faces)) Ok({ face = Some(word) | got })
-            else Float64.fromString(word) |> Option.map(s -> { seconds = Float64.max(0.0, s) | got })
-                     |> Option.toOk("知らない位置か表情 '${word}'（${name}）${at}")), start);
-        read |> Result.map(got ->
-            Cue.Show(kind, { name = name, face = Option.getWithDefault(entry#face, got#face), slot = Option.getWithDefault(entry#slot, got#slot) },
-                     { face = Option.isEmpty(got#face), slot = Option.isEmpty(got#slot) }, got#seconds))
+    /// 位置 slot に出ている物を全部消す。
+    pub def hideAtCues(doc: CastDoc.Doc, slot: String, seconds: Option[Float64], layer: Layer): List[Cue] =
+        let s = secondsOr(CastDoc.rec(doc), seconds);
+        let characters = layer#cast |> List.filter(x -> x#now#slot == slot) |> List.map(x -> Cue.Hide(Kind.Character, Some(x#now#name), s));
+        let prop = layer#prop |> Option.filter(x -> x#now#slot == slot) |> Option.map(x -> Cue.Hide(Kind.Prop, Some(x#now#name), s)) |> Option.toList;
+        List.append(characters, prop)
+
+    def secondsOr(d: CastDoc.Rec, seconds: Option[Float64]): Float64 = Float64.max(0.0, Option.getWithDefault(d#fadeSeconds, seconds))
 
     // ── 層に反映する ──
 

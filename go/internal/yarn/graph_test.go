@@ -152,6 +152,28 @@ func TestGraphEdgeCarriesStageTheTargetDoesNotSet(t *testing.T) {
 	}
 }
 
+func TestGraphWindowIsStageAndAudioIsSound(t *testing.T) {
+	g := graphOf(t, "title: A\n---\n<<window nvl>>\n<<audio se se_slap>>\n===\n", nil, GraphConfig{})
+	strip := nodeOf(g, "A").Strip
+	if strip[0].Category != CategoryStage || strip[1].Category != CategorySound {
+		t.Fatalf("window は stage・audio は sound のはず: %s %s", strip[0].Category, strip[1].Category)
+	}
+}
+
+func TestGraphAudioAmbienceStaysOnTheStageButSeDoesNot(t *testing.T) {
+	g := graphOf(t, "title: A\n---\n<<audio ambience amb_night>>\n<<audio se se_slap>>\nme: 夜\n===\n", nil, GraphConfig{})
+	n := nodeOf(g, "A")
+	if n.Head["audio ambience"] != "amb_night" {
+		t.Fatalf("audio ambience は舞台に amb_night で残るはず: %v", n.Head)
+	}
+	if _, ok := n.State["audio se"]; ok {
+		t.Fatalf("audio se は舞台に残らないはず: %v", n.State)
+	}
+	if _, ok := n.State["audio"]; ok {
+		t.Fatalf("audio だけの鍵は作らないはず: %v", n.State)
+	}
+}
+
 func TestGraphUnknownCommandIsOther(t *testing.T) {
 	g := graphOf(t, "title: A\n---\n<<witch on>>\n===\n", nil, GraphConfig{})
 	if c := nodeOf(g, "A").Strip[0].Category; c != CategoryOther {

@@ -34,7 +34,7 @@
     },
     "slots": {
       "kind": "catalog",
-      "label": "横の画面の位置（<<char>> / <<item>> に書く位置の名前）",
+      "label": "横の画面の位置（<<show 名前 at=位置>> に書く位置の名前）",
       "order": 4,
       "fields": {
         "x": {
@@ -102,7 +102,7 @@
     },
     "cast": {
       "kind": "catalog",
-      "label": "人物（鍵 = <<char 名前>> の名前）",
+      "label": "人物（鍵 = <<show 名前>> の名前）",
       "order": 6,
       "fields": {
         "label": {
@@ -151,7 +151,7 @@
     },
     "props": {
       "kind": "catalog",
-      "label": "小物（鍵 = <<item 名前>> の名前）",
+      "label": "小物（鍵 = <<show 名前>> の名前。同時に 1 つ）",
       "order": 7,
       "fields": {
         "label": {

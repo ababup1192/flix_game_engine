@@ -1,26 +1,26 @@
 // テスト用のシナリオ（TestCast）。立ち絵と小物の出し入れが、読み進めた時とロード・バックログから戻った時で同じ舞台になるかを見る。
-// 直したら: bin/fge yarn build test/fixtures/talk --vocab assets/talk/vocab.json
+// 直したら: bin/fge yarn build test/fixtures/talk --no-vocab（名前の正はテスト用の Doc なので、assets の語彙では照らさない）
 title: Station
 ---
-<<adv>>
-<<char a>>
+<<window bottom>>
+<<show a>>
 me: 一行目。
-<<char b right>>
+<<show b at=right>>
 chinatsu: 二行目。
-<<char a smile>>
+<<show a smile>>
 me: 三行目。
-<<item cup>>
+<<show cup>>
 chinatsu: 四行目。
 <<jump Next>>
 ===
 title: Next
 ---
 me: 次のノードの一行目。
-<<char a left 0>>
+<<show a at=left time=0>>
 me: 二行目。
-<<char b off>>
-<<item off>>
+<<hide b>>
+<<hide at=item>>
 chinatsu: 三行目。
-<<char off>>
+<<hide all>>
 me: 終わり。
 ===
