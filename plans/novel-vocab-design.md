@@ -1,36 +1,39 @@
 # ノベルの語彙と舞台の土台（N1〜N3）の設計
 
-- 状態: 設計の下書き（2026-11-15）。実装はまだ。エンジン（engine_world）に pub を足すので、着手の前に人と相談する。
-- 親の計画: [plans/novel-data-only.md](novel-data-only.md) の N1〜N3。語彙 19 個と書き方 B（主の引数 1〜2 つは位置・ほかは `key=value`）は 3.16〜3.18 で決めた物を前提にする。
+- 状態: 第 2 版（2026-11-15）。1 回目のレビュー（70 点）の M1〜M11 と O1〜O11 を入れた。実装はまだ。
+- 親の計画: [plans/novel-data-only.md](novel-data-only.md) の N1〜N3。語彙 19 個と書き方 B（主の引数 1〜2 つは位置・ほかは `key=value`）は 3.16〜3.18 で決めた物、変数の表示名は 3.19 を前提にする。
 - 数は数えた物。【推】は見込み。
 
 ## 0. 決めた事（要約）
 
-1. **N1**: 話し手は `novel.story.json` の `names` の鍵、最初のノードは同じ Doc の `opening`、描き出しの場面は新しい Doc `novel.shots.json`。`vocab.json` は「どの Doc のどの鍵を見るか」だけを書き、go が Doc を読んで名前を集める。名前を足すのに Flix を走らせない。
-2. **N2**: コマンドの表は **Flix の record の一覧**に置く（3 案を比べた。3 章）。1 コマンド = 引数の表 + `apply` 1 つ。引数の表はそのまま `vocab.json` に書き出し、go が `bin/fge yarn build` で型・範囲・必須・Doc の名前まで検査する。実行時も同じ表で読む。
-3. **N2**: 時間で動く舞台の値は、エンジンの新しい `PropertyTween`（名前付きの値 + tween の表）に入れる。値をここに入れたコマンドは、セーブ・settle・素材待ちを書かずに済む。1 コマンド足すのは「表に 1 行 + View で値を読む」の 2 か所になる。
-4. **N3**: セーブの Mark は「今のノードに入った時の舞台」をまるごと持つ（今は台詞の時点の 5 つの値だけ）。戻す時はそこからノードの頭を当て直すので、生きて読んだ時と同じ舞台になる。ノードの頭で言い直す決まりと血鱗の StageAudit は要らなくなる。
-5. 置き場: 汎用の 2 つ（`YarnCommands`・`PropertyTween`）と ease の名前（`Curve.Ease`）を engine_world へ。コマンドの中身（bg・show など）は N2 の間はテンプレートに置き、N4 でエンジンへ上げる。go は vocab v2 と引数の検査。
-6. ゲームは N2・N3 では追随しない。テンプレートだけ先に移し、ゲームは N4 の後に 1 回で移る（2 回の当て直しを避ける）。
+1. **N1**: 話し手は `novel.story.json` の `names`、変数とフラグの表示名は同じ Doc の `vars`、最初のノードは `opening`、描き出しの場面は新しい Doc `novel.shots.json`。`vocab.json` には「どの Doc のどの鍵を見るか」（`from`）だけを書き、go が Doc から名前を集める。名前を足すのに Flix を走らせない。
+2. **N2**: コマンドの表は **Flix の record の一覧**に置く（3 案を比べた。3.1）。1 コマンド = 引数の表 + `apply` 1 つ。`apply` は舞台と「出来事の列」（頁をめくる・音を鳴らすなど）を返す。引数の表はそのまま `vocab.json` に書き出し、go が `bin/fge yarn build` で型・範囲・必須・Doc の名前まで検査する。実行時も同じ表で読む。
+3. **N2**: 時間で動く舞台の値はテンプレートの `PropertyTween`（名前付きの値 + tween の表）に入れる。ここに値を書いたコマンドは、セーブ・settle・素材待ちを書かずに済む。1 コマンド足すのは「表に 1 行 + View で値を読む」の 2 か所になる。
+4. **N3**: セーブの Mark は**台詞の時点の舞台をまるごと**持つ。戻す時は、頁とバックログを作るために台本の当て直しは続けるが、舞台は最後に Mark の値で置き換える。「ノードに入った時の舞台」を持つ案と、どちらも写しで試して比べた（4.1）。
+5. 置き場: `YarnCommands`（引数の表・読み方・書き出し）と `Curve.Ease`（ease の名前）を engine_world へ。`PropertyTween` とコマンドの中身（bg・show など）は N4 までテンプレートに置く。go は vocab v2 と引数の検査。YarnRunner は変えない。
+6. ゲームは N2・N3 では追随しない。テンプレートだけ先に移し、ゲームは N4 の後に 1 回で移る（当て直しを 2 回しない）。
 
 ## 1. 今の形（数えた物）
 
 | 困り事 | 今の形 | 数 |
 |---|---|---|
-| 1 コマンド足すと何か所も直す | `Stage.Cue` の case・`cueOf`・`commandNames`・`applyCue`・`hasDuration`・`settle`・`Saves.Mark`（と toJson/fromJson）・`WorldRead.cueNames`・View | テンプレートの `Stage.Cue` を使う所 41（`refactor usages`。5 つの def） |
+| 1 コマンド足すと何か所も直す | `Stage.Cue` の case・`cueOf`・`commandNames`・`applyCue`・`hasDuration`・`settle`・`Saves.Mark`（と toJson/fromJson）・`WorldRead.cueNames`・`WorldRead.cue`（頁と音）・View | テンプレートで `Stage.Cue` を使う所 41（5 つの def） |
 | 引数の誤りが実行まで分からない | go の `check.go` は名前だけ見る。`parse.go` は空白で割るだけ（`"…"` を 1 つの引数にできない） | — |
 | 語彙の正が Flix の enum | `Talk.Speaker`・`Talk.Node`・`Stage.commandNames`。`vocab.json` は `make talk-vocab`（Flix を走らせる） | `Talk.Node` を使う所 9（test 4） |
-| 場面表がコード | `Shots.names` と `sceneOf` の match（テンプレート 15 場面） | haioku の場面表 約 170 行（下書き 1 章） |
-| 舞台の一部しかセーブに残らない | `Saves.Mark` = bookmark + shot・ambience・particles・mode・cast。kankan は dim・zoom・text・speed を足したが Mark に入れていない | ノードの頭に並ぶ舞台のコマンド: kankan 96（20 ノード）・血鱗 49（11）・izakaya 22（6）・haioku 7（7）。一部は本当の場面替え【推】 |
-| 戻した時に相対の動きが 2 回効く | `markAt` は台詞の時点の舞台を取り、`restore` はそれにノードの頭からのコマンドをもう一度当てる。今は全部が絶対の値なので害が無い | 語彙 19 の `move dx=/dy=` が入ると 2 回効く |
+| 場面表がコード | `Shots.names` と `sceneOf` の match（テンプレート 15 場面）。縦・小さい画面の場面は `SceneRender` | haioku の場面表 約 170 行（下書き 1 章） |
+| 舞台の一部しかセーブに残らない | Mark = bookmark + shot・ambience・particles・mode・cast。kankan は dim・zoom・text・speed を足したが Mark に入れていない | ノードの頭に並ぶ舞台のコマンド: kankan 96（20 ノード）・血鱗 49（11）・izakaya 22（6）・haioku 7（7）。一部は本当の場面替え【推】 |
+| 戻した時に相対の動きがずれる | `restore` は Mark の値にノードの頭からのコマンドをもう一度当てる。今は全部が絶対の値なので害が無い | 4.1 のスパイクで再現した |
 
 ## 2. N1 — 語彙の正を Doc と台本へ
 
 ### 2.1 Doc の形
 
 ```jsonc
-// assets/novel.story.json（足すのは opening だけ。names はもうある）
-{ "opening": "Station", "names": { "chinatsu": "千夏", "me": "私" }, ... }
+// assets/novel.story.json（足すのは opening と vars）
+{ "opening": "Station",
+  "names": { "chinatsu": "千夏", "me": "私" },
+  "vars":  { "closeness": "親しさ" },          // 鍵は $ を付けない変数の名前。値は人に見せる名前
+  ... }
 
 // assets/novel.shots.json（新しい Doc。make render の SHOT とギャラリーの並びの正）
 { "version": 1, "title": "描き出しの場面",
@@ -38,35 +41,46 @@
     { "name": "nvl",    "node": "Station", "say": 2,  "at": 4.0 },
     { "name": "choice", "node": "Paddy",   "until": "choices", "at": 4.0 },
     { "name": "night",  "node": "River",   "until": "choices", "vars": { "$closeness": "2" }, "at": 6.5 },
+    { "name": "log",    "open": "log", "pointer": [400, 300], "at": 4.0 },
     { "name": "save",   "node": "River",   "say": 2, "open": "save", "at": 4.0 },
     { "name": "title",  "open": "title", "at": 3.0 } ] }
 ```
 
 - `say` = ノードの n 番目の台詞（今の `nthLine`）、`until: "choices"` = 選択肢まで（今の `toChoices`）。どちらも無ければノードの頭。
-- `open` は画面の種類で、取れる値はテンプレートの画面だけ（title・log・save・load・settings・ask・credits・hold）。読む所で 1 回だけ enum に変える。知らない値は `Log.fellBack` してその場面を飛ばす（描き出しは止めない）。
-- 「セーブを 3 つ入れた」「縁側まで読んだ」のような組み立て（`withSlots`・`readThrough`）はテンプレートのコードに残し、`open: "save"` などがそれを呼ぶ。場面ごとの値（ノード・台詞・変数・秒）だけを Doc に出す。
-- コードで組みたい場面（haioku の 3D の部屋など）は、ゲームの `Shots.extra()` が返す一覧を後ろに足す口を残す（今の形のまま）。
+- `open` は画面の種類。取れる値はテンプレートの画面だけ（title・log・save・load・settings・ask・credits・hold）。読む所で 1 回だけ enum に変える。知らない値は `Log.fellBack` してその場面を飛ばす（描き出しは止めない）。
+- `pointer` はマウスの位置（design の px）。今の log 場面の `{ x = 400, y = 300 }`。描き出しの場面だけの値で、遊びの配置ではないので px で持つ。
+- 「セーブを 3 つ入れた」「縁側まで読んだ」の組み立て（`withSlots`・`readThrough`）はコードに残し、`open: "save"`・`open: "log"` がそれを呼ぶ。Doc に出すのは場面ごとの値（ノード・台詞・変数・秒・マウス）だけ。
+- **Doc で表さない場面**: `portrait-*`・`short-*` は Doc の場面に画面の向きと大きさを掛けた物なので、`SceneRender` が Doc の場面の名前を引いて作る（今の `variantShots`・`smallShots`・`portraitShots` の形のまま）。`cast-sample`・`cast-veil`・`hold-none`・`hold-ring` はテスト用の Doc に差し替える場面なので、`SceneRender` のコードに残す。どれも描き出しだけの物で、ブラウザ版には入らない。
+- コードで組みたい場面（haioku の 3D の部屋など）は、ゲームの `Shots.extra()` が返す一覧を後ろに足す口を残す。
 
 ### 2.2 vocab.json v2 は「どこを見るか」を書く
 
 ```jsonc
 { "version": 2,
   "speakers": { "from": [{ "doc": "../novel.story.json", "keys": "names" }] },
-  "nodes":    { "from": [{ "doc": "../novel.story.json", "path": "opening" },
-                         { "doc": "../novel.shots.json", "path": "shots[].node" }] },
-  "tags": { ... },          // N4c まで今のまま（コードが書く）
-  "commands": [ ... ] }     // 3 章。コードが書く
+  "vars":     { "from": [{ "doc": "../novel.story.json", "keys": "vars" }] },
+  "nodes":    { "from": [{ "doc": "../novel.story.json", "path": "opening" }] },              // 起点だけ
+  "nodeRefs": { "from": [{ "doc": "../novel.shots.json", "path": "shots[].node" }] },         // あるかだけ見る
+  "tags": { ... },                 // N4c まで今のまま（コードが書く）
+  "commands": { "bg": { ... }, "show": { ... } } }   // 3.3。名前を鍵にした object（vocab-spike の primitives と同じ形）
 ```
 
+- `nodes` は今と同じく「コードが開くノード」（起点）。go の `Unreached` と `yarn graph` の roots はここだけを起点にする。描き出しの場面のノードを起点に混ぜると、たどり着けないノードの知らせが黙るので、`nodeRefs`（シナリオにあるかだけ見る）に分ける。
 - go は `from` の Doc を読んで名前を集める。Doc が無い・読めない時は 1 行言って、その欄の検査だけを飛ばす（今の `--no-vocab` と同じ扱い）。
+- `vars`: 名前の無い変数（`<<declare>>` と `$x` に出てくる物）は `yarn check` で知らせる（止めない）。`yarn graph`・テープの状態の表・分岐の式・読み台本の条件は、表示名を主に出し `$名前` を小さく添える（下書き 3.19）。表示名の正は Doc で、go もテンプレートの TapeOut も同じ Doc を読む。
 - v1（文字列の配列）もそのまま読む。ゲームは N4 の後まで v1 のまま動く。
-- `speakers` と `nodes` の欄は Doc を見るだけなので、話し手やノードを足しても `vocab.json` は変わらない。`vocab.json` が変わるのはコマンドの表（コード）を変えた時だけになり、その時はどうせ Flix を走らせている。
+- `vocab.json` が変わるのはコマンドの表（コード）を変えた時だけになる。その時はどうせ Flix を走らせている。
 
-### 2.3 コード側
+### 2.3 門（コミット前の検査）
 
-- `Talk.Speaker`・`Talk.speakers`・`Talk.speakerId`・`Talk.Node`・`Talk.nodeName` を消す。最初のノードは `StoryDoc.openingOf(res#story)`、話し手の一覧は `StoryDoc.speakerIds`。使う所は src 5・test 4（`refactor usages`）。
+- `bin/lint-rules/precommit.json` の yarn の門の `when` に、vocab の `from` と `ref` が指す Doc（`novel.story.json`・`novel.shots.json`・`novel.backdrops.json`・`novel.cast.json` など）を足す。Doc だけを直したコミットでも、台本の名前の検査が流れる。
+- `bin/fge yarn check <Doc のパス>`: Doc のパスを渡されたら、同じゲーム（`project.json` のあるフォルダ）の中で、その Doc を `from` か `ref` に書いている `vocab.json` を探し、そのフォルダを検査する。
+
+### 2.4 コード側
+
+- `Talk.Speaker`・`Talk.speakers`・`Talk.speakerId`・`Talk.Node`・`Talk.nodeName` を消す。最初のノードは `StoryDoc.openingOf(res#story)`、話し手の一覧は `StoryDoc.speakerIds`、変数の表示名は `StoryDoc.varLabelOf`。使う所は src 5・test 4（`refactor usages`）。
 - `Shots.flix` は Doc を読んで World を組む物になる（`names()` は Doc の並び）。
-- 検査: `TestDocs` の「vocab.json がコードと一致」は残す（中身はコマンドの表だけになる）。「opening がシナリオにある」「shots の node がシナリオにある」は go の build が見るので、Flix のテストからは外せる。
+- `TestDocs` の「vocab.json がコードと一致」は残す（中身はコマンドの表だけになる）。「opening がシナリオにある」「shots の node がシナリオにある」は go の build が見るので、Flix のテストからは外せる。
 
 ## 3. N2 — 演出コマンドの共通の口
 
@@ -79,17 +93,18 @@
 ```flix
 // テンプレート src/Commands.flix
 def overlay(): Command[Stage.Stage] =
-    let alpha = Param.num("alpha", 0.0, 1.0) |> Param.at(1) |> Param.required;
+    let alpha = Param.num("alpha", 0.0, 1.0) |> Param.at(1) |> Param.required;    // Param.Req[Float64]
     let color = Param.choice("color", "black" :: "white" :: Nil) |> Param.default("black");
-    let from  = Param.num("from", 0.0, 1.0);
+    let from  = Param.num("from", 0.0, 1.0);                                       // Param.Opt[Float64]
     let time  = Param.time(0.0);
     let ease  = Param.ease(Curve.Ease.SmoothStep);
-    { spec  = YarnCommands.spec("overlay", "画面に被せる色の濃さを時間で変える",
-                  Param.erase(alpha) :: Param.erase(color) :: Param.erase(from) :: Param.erase(time) :: Param.erase(ease) :: Nil),
-      apply = (now, a, st) -> st
-          |> Stage.tween(Keys.overlayAlpha(), Param.get(from, a), Param.get(alpha, a), now, Param.get(time, a), Param.get(ease, a))
-          |> Stage.set(Keys.overlayColor(), Param.get(color, a)),
-      needs = Command.noAssets }
+    { spec      = YarnCommands.spec("overlay", "画面に被せる色の濃さを時間で変える",
+                      Param.erase(alpha) :: Param.erase(color) :: Param.erase(from) :: Param.erase(time) :: Param.erase(ease) :: Nil),
+      takesTime = true,
+      apply     = (ctx, a, st) -> (st
+          |> Stage.tween(Keys.overlayAlpha(), Param.getOpt(from, a), Param.get(alpha, a), ctx#now, Param.get(time, a), Param.get(ease, a))
+          |> Stage.set(Keys.overlayColor(), Param.get(color, a)), Nil),
+      needs     = Command.noAssets }
 ```
 
 **案 B: Doc（JSON）に置き、Flix は汎用に読むだけ**
@@ -97,11 +112,11 @@ def overlay(): Command[Stage.Stage] =
 ```jsonc
 "overlay": { "summary": "画面に被せる色の濃さを時間で変える",
   "params": [ { "name": "alpha", "pos": 1, "type": "num", "min": 0, "max": 1, "req": true },
-              { "name": "color", "type": "choice", "values": ["black", "white"], "default": "black" },
+              { "name": "color", "type": "enum", "values": ["black", "white"], "default": "black" },
               { "name": "from", "type": "num", "min": 0, "max": 1 }, { "name": "time", "type": "time" }, { "name": "ease", "type": "ease" } ],
   "writes": [ { "tween": "overlay.alpha", "from": "$from", "to": "$alpha", "time": "$time", "ease": "$ease" },
               { "set": "overlay.color", "to": "$color" } ] }
-// bg の via=slide・show の from=left・素材待ちの名前の引き方は writes で書けない
+// bg の via=slide・show の from=left・素材待ちの名前の引き方・頁をめくる は writes で書けない
 //   → "handler": "bg" と書いて Flix の match に戻る（表と中身が 2 か所に割れる）
 ```
 
@@ -125,156 +140,232 @@ def settle / markOf / cueNames ... = match ...                                  
 | Doc の流儀 | 振る舞いはコード | 振る舞いが JSON に入る（`doc-conventions.md` の「ロジックを JSON に書き始めたら設計の匂い」） | 振る舞いはコード |
 | ゲームが足す | ゲームの Flix で 1 行 | Doc で足せる（ただし tween と set の組だけ） | 足せない（enum を持つのはテンプレート） |
 
-**決めた: 案 A。** 理由は 3 つ。(1) 1 コマンドの正が 1 か所で、実行時の読み方と build の検査が同じ表から出る。(2) B の利点「ゲームが Doc で部品を足せる」は、下書き 3.15 の「部品はエンジン、名前付きの組み合わせは Doc（N5 の preset）」と役が重なり、B で書けない物（bg・show）で結局 Flix に戻る。(3) C は網羅の検査が効くだけで、直す所の数は減らない。Flix に型から表を作る仕組みが無いので、生成ではなく「表を別に書く」になる。
+**決めた: 案 A。** (1) 1 コマンドの正が 1 か所で、実行時の読み方と build の検査が同じ表から出る。(2) B の利点「ゲームが Doc で部品を足せる」は、下書き 3.15 の「部品はエンジン、名前付きの組み合わせは Doc（N5 の preset）」と役が重なり、B で書けない物（bg・show）で結局 Flix に戻る。(3) C は網羅の検査が効くだけで、直す所の数は減らない。Flix に型から表を作る仕組みが無いので、生成ではなく「表を別に書く」になる。
 
-preset（N5）は Doc に置く。preset の `cue` は台本と同じ書き方なので、go は同じ表で preset の中も検査できる。
+preset（N5）は Doc に置く。preset の `cue` は台本と同じ書き方なので、go は同じ表で preset の中も検査できる。preset の引数（`params`）も 3.3 と同じ型で書く。
 
 ### 3.2 コマンド 1 つの形
 
 ```flix
 // テンプレート（N4 でエンジンへ上げる）
+pub type alias Ctx = { now = Clock.Time[Stage.Story], pages = Int32, node = String }   // apply が読める物
+pub enum Out {                       // apply が舞台の外へ出す出来事
+    case ClearPage                   // NVL の頁をめくる（<<window clear>>・型が替わった時）
+    case TurnPage                    // ADV の頁を送る（ADV の時の bg）
+    case Sound(String)               // 効果音を 1 回（project.json の sounds の名前）
+    case Window(Bool)                // 文字の枠を消す・戻す（演出の間）
+    case Event(String)               // ゲームが受ける名前付きの出来事
+}
 pub type alias Command[st] = {
-    spec  = YarnCommands.Spec,                                        // 名前・説明・引数の表
-    apply = (Clock.Time[Stage.Story], YarnCommands.Args, st) -> st,   // 舞台を替える（純粋）
-    needs = (Res.Res, YarnCommands.Args, st) -> List[String]          // 待つ素材の名前（textures / sounds）
+    spec      = YarnCommands.Spec,
+    takesTime = Bool,                                              // 後の <<wait>> の間、テープの位置がこの行を指すか
+    apply     = (Ctx, YarnCommands.Args, st) -> (st, List[Out]),   // 純粋
+    needs     = (Res.Res, YarnCommands.Args, st) -> List[String]   // 待つ素材の名前（textures / sounds）
 }
 ```
 
-- 今の `cueOf`・`applyCue`・`hasDuration`・`cueNames`・`commandNames` は、表を引く汎用の 1 本（`Commands.run`）に置き換わる。表に無い名前と引数の誤りは `Err` を返し、World が 1 行言って舞台はそのまま（今と同じ。台本の書き損じで止めない）。
-- `hasDuration` は `PropertyTween.isMoving` で表から引けるので、コマンドごとに書かない。
-- `needs` の既定は「`Param.name` の引数で `ref` が素材の表を指す物」から自動で作る。bg のように Doc を 1 段引く物だけ手で書く。
-- `se`（1 回鳴らすだけ）のように舞台を変えないコマンドは `apply` で何もせず、出来事を出す口（`emit`）を record に足す【推】。
+- 今の `WorldRead.cue` が手で書いている 3 つは全部 `Out` で書ける。`<<clear>>` → `ClearPage`。`<<nvl>>`/`<<adv>>`（語彙 19 では `<<window>>`）は `apply` が古い舞台の型を見て、替わった時だけ `ClearPage`。ADV の時の `<<bg>>` は `apply` が `st` の型を見て `TurnPage`。`<<se>>` → `Sound`。
+- `Commands.run(replay, ctx, command, st)` が表を引き、`Replay.Silent`（当て直し）の時は `Sound` と `Event` を落とす。頁の出来事は Silent でも通す（頁を作り直すため）。表に無い名前と引数の誤りは `Err` を返し、World が 1 行言って舞台はそのまま（今と同じ。台本の書き損じで止めない）。
+- `takesTime` は表の欄で持つ（`PropertyTween.isMoving` からは引かない。秒が 0 の時も今の `hasDuration` と同じ答えにするため）。
+- `needs` の既定は「`Param.name` の引数で `ref` が素材の表を指す物」から作る。bg のように Doc を 1 段引く物だけ手で書く。
+- 台本を読んだ時に 1 回だけ引数を読む（O2）: `Res` に台本を入れる時、全部のコマンドを `YarnCommands.parse` して `Map[Yarn.Source, Result[String, Args]]` を作っておく。毎回の実行では読み直さない。台本が替わった時（`Resources.reloadRow`）に作り直す。
 
 ### 3.3 引数の表（`YarnCommands`）
 
-- 型: `num`（min・max）・`time`（秒 0〜60）・`ease`・`choice`（取れる値の列）・`name`（`ref` で Doc の鍵か素材の表を指す）・`flag`（true/false）・`text`（`"…"`）・`offset`（`40px` か `3.2%`）。
-- 位置の引数は 2 つまで（3.17 の表の直し）。ほかは `key=value`。同じ鍵を 2 回書く・知らない鍵・位置の数の超過は誤り。
-- 「どちらか 1 つは要る」（`hide` の名前か `at=`、`feed` の本文か `clear=`）は `oneOf` で表に書く。
-- `Args` は外から作らせない（非 pub の enum + `pub type alias`）。`parse(spec, command)` を通った物だけが `Param.get` で読めるので、`get` は失敗しない。
-- 書き出し: `YarnCommands.toJson(specs)` が `vocab.json` の `commands` を書く。形は scratchpad の vocab-spike/vocab.json の `primitives` に合わせる（`name`・`pos`・`type`・`min`・`max`・`values`・`ref`・`default`・`req`・`summary`）。
+型は vocab-spike/vocab.json の 19 個に出てくる物に合わせた。N2 で表に入れる物と、使う部品が来る段まで表から外す物を分ける。
+
+| vocab-spike の型 | 使う所 | N2 の型 | 入れる段 |
+|---|---|---|---|
+| `num`（30）・`name`（16）・`enum`（16）・`bool`（4） | ほぼ全部 | `num`（min・max）・`time`・`name`（`ref`）・`choice`・`flag` | N2 |
+| `name\|off`・`name\|all`・`num/input` | fx・hide・wait | 型 + `orWords`（`off`・`all`・`input` を足して受ける） | N2（fx・audio が要る。wait はエンジンが読むので表に入れない） |
+| `list(name)\|off` | audio の環境音を `a,b` で重ねる | `name` + `list` + `orWords` | N2（今の ambience を移す） |
+| `num\|name` | audio の volume（数か Doc の音量の名前） | `num` + `orNames`（`ref`） | N2 |
+| `offset`（`40px`・`3.2%`） | move の dx・dy | `offset` | N4（move と一緒） |
+| `enum\|#rgb` | overlay の color | `color`（決まった語か `#rgb`） | N4（overlay と一緒） |
+| `name.name`（点で区切った名前） | fx の `on=whale.stab` | `point`（絵の名前 + Doc の点の名前） | N4b（絵の中の点と一緒） |
+| text（`"…"`） | feed の本文 | `text` | N6（feed と一緒）。`parse.go` の `"…"` だけ N2 で入れる |
+| 項目の Doc が決める | hud の値 | — | N6 で決める |
+| preset の params が決める | preset の引数 | 上の型で preset ごとに書く | N5 |
+
+- 位置の引数は 2 つまで（3.17）。ほかは `key=value`。同じ鍵を 2 回書く・知らない鍵・位置の数の超過は誤り。
+- 「どちらか 1 つは要る」（`hide` の名前か `at=`）は `oneOf` で表に書く。
+- 必須と省ける物は型で分ける（O1）: `Param.Req[t]` の `get` は `t`、`Param.Opt[t]` の `getOpt` は `Option[t]`。既定のある物は `Req` と同じ扱い。表に入れていない handle を `get` するのはプログラマの誤りなので `bug!`（`docs/error-handling.md` の「前提が破れた所」）。7 章のテストで全部のコマンドを 1 回流して拾う。
+- `Args` は外から作らせない（非 pub の enum + `pub type alias`）。`parse(spec, command)` を通った物だけが読める。
+- 書き出し: `YarnCommands.toJson(specs)` が `vocab.json` の `commands`（名前を鍵にした object）を書く。1 つの引数の欄は vocab-spike と同じ（`name`・`pos`・`type`・`min`・`max`・`values`・`ref`・`default`・`req`・`summary`）に `orWords`・`list` を足す。
 
 ### 3.4 go の検査（`bin/fge yarn build`）
 
-- `parse.go`: コマンドの中を空白で割る前に `"…"` を 1 つの引数にまとめる（`feed` の本文）。`{式}` を断るのは今のまま。
+- `parse.go`: コマンドの中を空白で割る前に `"…"` を 1 つの引数にまとめる。`{式}` を断るのは今のまま。
 - `check.go`: v2 の `commands` があれば引数を表で検査する。知らない鍵には近い鍵を `suggest.Hint` で出す（今の名前の検査と同じ言い方）。`ref` は `from` と同じ書き方で Doc の鍵を集めて照らす（`<<bg statoin>>` が build で落ちる。今は実行時の `Err`）。
 - 実行時と build で判定がずれないように、受ける行と断る行の見本を 1 つの JSON（`go/internal/yarn/testdata/command-args.json`【推】）に置き、go のテストと engine_world のテストの両方が読む。
 
-### 3.5 時間で動く値（`PropertyTween`）
+### 3.5 時間で動く値（`PropertyTween`・テンプレート）
 
 ```flix
 let k = PropertyTween.numKey("overlay.alpha");          // NumKey と NameKey は別の型（取り違えを型で止める）
-let t = PropertyTween.tween(k, from, to, now, seconds, Curve.Ease.SmoothStep, table);
+let t = PropertyTween.tween(k, from, to, now, delay, seconds, Curve.Ease.SmoothStep, table);
 PropertyTween.numAt(now, k, fallback, t)                // View が読む
-PropertyTween.settle(t)                                 // 動きを終わりの値にし、one-shot を消す
+PropertyTween.settle(t)                                 // 遅れて始まる物も含め、全部を終わりの値にし、one-shot を消す
 PropertyTween.toJson(t) / fromJson(json)                // セーブ（終わりの値だけ）
 ```
 
-- 値は数（tween できる）と名前（すぐ替わる）の 2 種類。`trigger(key, now, seconds)` は一度だけの演出（揺れ・刺す）用で、`settle` で消える。
+- 値は数（tween できる）と名前（すぐ替わる）の 2 種類。`trigger(key, now, delay, seconds)` は一度だけの演出（揺れ・刺す）用で、`settle` で消える。
+- **開始の遅れ（`delay`）を今から入れる**。preset（N5）の `at:` と GameCommands の時刻表がこれで書ける。`settle` は「まだ始まっていない物」も終わりの値にそろえる。
 - 名前は Godot の `Tween.tween_property` に合わせた。鍵は `層.値`（`overlay.alpha`・`camera.zoom`・`text.at`）。ゲームが足す値は `game.` で始める。
-- ease の名前は今 `EcsTween.Easing`（EaseIn・EaseOut・EaseInOut）しか無い。語彙 19 は Penner の名前と smoothstep を使う（3.17）ので、`Curve.Ease` を足して `EcsTween` もそれを使えるようにする（相談事）。
-- 背景（前の写真を下に敷いて重ねる）と立ち絵（出入りと表情のクロスフェード）は、値 1 つでは表せないので、今の `Stage` と `Cast` の型のまま残す。この 2 つは自分の `settle` と JSON を持つ（今もある）。
+- 背景（前の写真を下に敷いて重ねる）と立ち絵（出入りと表情のクロスフェード）は値 1 つでは表せないので、今の `Stage` と `Cast` の型のまま残す。この 2 つは自分の `settle` と JSON を持つ（今もある）。
+- **EcsTween を広げない理由**: EcsTween は ECS の物（エンティティ）に付く動きで、実時間の秒で進む。舞台の値は物語の時計（`Clock.Time[Stage.Story]`。画面を開くと止まる）で進み、セーブに終わりの値を残し、settle で一度に終わらせる。進む時計とセーブの有無が違う。
+- **ease の名前**: 今は `EcsTween.Easing`（Linear・EaseIn・EaseOut・EaseInOut）と `FxDoc.CurveSpec` の 2 系統がある。語彙 19 は Penner の名前と smoothstep を使う（3.17）。`Curve.Ease` を engine_world に置き、`PropertyTween` はそれを使う。道筋: `EcsTween.Easing` の case を `Curve.Ease` の同じ動きへ写す関数を足し、次の版で `EcsTween` の引数を `Curve.Ease` に替えて `Easing` を外す（FxDoc は JSON の語なので、読む所で `Curve.Ease` に替える）。
+- **ease の既定は今の動きに合わせる**: 背景の重ねは線形（今の `Stage.fadeProgress`）、立ち絵は今の `Cast` の曲線のまま。語彙 19 の案の既定（smoothstep）は N4 で新しい部品にだけ使う。
 
 ### 3.6 ゲームが自分のコードで演出を 1 つ足す口
 
 ```flix
 // ゲームの src/GameCommands.flix（テンプレートは空の一覧。テンプレートの追随で上書きしない）
 pub def all(): List[Commands.Command[Stage.Stage]] = stab() :: Nil
-// ゲームの src/GameView.flix（テンプレートは Nil を返す。View が決まった z の範囲で呼ぶ）
+// ゲームの src/GameView.flix（テンプレートは Nil を返す）
 pub def draw(res: Res.Res, now: Clock.Time[Stage.Story], stage: Stage.Stage): List[Render.Item]
 ```
 
 - 足したコマンドは `PropertyTween` にだけ値を書く決まりにする。そうすればセーブ・settle・素材待ちはテンプレートの汎用の道を通る（ゲームが Saves や WorldRead を直さない）。
-- 値 1 つで足りない物（線を描き足す傷・頁で沈む深さ）は、`game.` の値を数個持って GameView で描く。それでも足りない時だけ src を持つ作品になる（2 本立ての境目。下書き 2 章）。
-- `make talk-vocab` は `Commands.all() ++ GameCommands.all()` を書き出す。ゲームのコマンドも同じ検査に乗る。
+- 口に入れる力: `Ctx#pages`（頁の数を読む。血鱗の「頁で沈む深さ」）・`Out.Window`（文字の枠を消す）・`Out.Event`（ゲームが受ける出来事）・`Out.Sound`。
+- GameView の z: `docs/z-bands.md` の world の中で、立ち絵（`Cast.items`）より上に小さな範囲を切る。文字の枠は hud の範囲（View の `zText` など）にあるので必ずその下になる。範囲の数は実装で `ZOrder` に 1 行書く。
+- 値 1 つで足りない物（線を描き足す傷）は、`game.` の値を数個持って GameView で描く。それでも足りない時だけ src を持つ作品になる（2 本立ての境目。下書き 2 章）。
+- `make talk-vocab` は `Commands.all() ++ GameCommands.all()` を書き出す。ゲームのコマンドも同じ検査に乗る。N4 で標準の表がエンジンに上がったら、標準の表はエンジンの版と一緒に配り（go が持つ）、ゲームの `vocab.json` には GameCommands の分だけを書く（O3）。
+
+### 3.7 語彙 19 で書けない行と preset の行き先（M9）
+
+3.17 のスパイクで「意味が変わる」11 行と、preset に回した種類を、どこが受けるかで振り分けた。
+
+| 物 | 行数・作品 | 受ける所 | 要る物 |
+|---|---|---|---|
+| girl-depth（頁で 1 段ずつ沈む少女） | 4・血鱗 | GameCommands | `Ctx#pages`・`game.girl.depth` |
+| apparition-flicker（ライトの揺れと出て消える） | 2・haioku | N5 の preset | N4 の filter が時間で動くこと |
+| blood-item-window（小物の間は枠を消す） | 2・血鱗 | N4b（絵ごとに「出る間は枠を消す」を Doc に） | `Out.Window` |
+| vial-core（瓶に核を入れて大写し・枠を消す） | 2・血鱗 | GameCommands（N4b の後は preset） | `Out.Window` |
+| haioku-blood（画面の上から血が垂れる） | 1・haioku | N4 の filter（時間で動く ShaderDoc） | — |
+| scene（鯨・傷・瓶・少女・深さの組） | 10・血鱗 | GameCommands（深さの決まり）+ 組は N5 | `Ctx#pages` |
+| hop（跳ねる） | 8・izakaya | N5 の preset（N5 までは GameCommands） | `delay` |
+| stab（ナイフが刺さる） | 5・血鱗 | GameCommands（切り抜き・物だけの揺れ・重ね順・線が N4 に無い） | `trigger`・GameView |
+| wound（傷の線を描き足す） | 5・血鱗 | GameCommands | GameView |
+| end（暗転→結末の字→スチル） | 3・血鱗 | N5 の preset（字を story.json の labels から引く口は N4 の text） | — |
+| crash（揺れ + 砂嵐 + 筋のずれ） | 1・haioku | N5 の preset | N4 の filter |
+| days（昼夜の窓と針） | 1・血鱗 | GameCommands（針と目盛り） | GameView |
+| roll（光の点が跳ねて外へ） | 1・血鱗 | N4 の move `path=` の後に N5 | — |
 
 ## 4. N3 — 舞台の値をセーブに残す
 
-### 4.1 Mark が持つ物を「ノードに入った時の舞台」に変える
+### 4.1 Mark に何を入れるか: 2 案を写しで試した
+
+前提（M1）: YarnRunner の出来事は Line・Choices・Command・Done の 4 つで、ノードの境目が無い。1 回の送りの中に「前のノードの残りのコマンド → jump → 次のノードの頭のコマンド → 台詞」がまとめて入る。
+
+| | (a) YarnRunner に `Event.Entered(ノード)` を足し、ノードに入った時の舞台を Mark に持つ | (b) 台詞の時点の舞台をまるごと Mark に持ち、戻した後に舞台を置き換える |
+|---|---|---|
+| 戻し方 | 入った時の舞台から、ノードの頭のコマンドを当て直す | 頁とバックログのために当て直すが、最後に舞台を Mark の値にする |
+| 相対の動き | 正しい | 正しい（当て直しの結果を使わない） |
+| セーブ後に .yarn の頭を直した時 | 戻した舞台に効く | 効かない（セーブの時の舞台のまま） |
+| エンジンの変更 | YarnRunner に case 1 つ。網羅の match が割れる所: engine の TestYarnOfficial・rpg-starter の `WorldTalk.applyEvent`・sound-novel の `WorldRead.absorbOne`、と各ゲームの写し | なし |
+| v2 のセーブの読み替え | 台詞の時点の値を入った時の値として読む（絶対の値だけなので同じ） | 台詞の時点の値をそのまま読む |
+
+**スパイク**（scratchpad の n3-spike。テンプレートを 3 つに写し、通るたびに 1 足すだけの `<<nudge>>` を足した。2 ノード・台詞 5 行の台本で、各台詞の「生きて読んだ値」と「その台詞の Mark から戻した値」を比べるテスト `TestNudge`。テストは TestKit・TestCast・TestRules・TestHold と合わせて流した）:
+
+| 写し | 変えた行（src） | テスト | 各台詞の (生きて読んだ値, 戻した値) |
+|---|---|---|---|
+| 今のまま | — | 102 通過・1 落ち | (1,1) (2,2) **(3,1) (4,2) (4,2)** — 前のノードの分が消える（ノードの頭で言い直す理由そのもの） |
+| (b) | Saves 6 行・WorldRead 5 行（計 11） | 103 通過 | (1,1) (2,2) (3,3) (4,4) (4,4) |
+| (a) | Saves・World・WorldRead で計 16 行 + YarnRunner 2 行（エンジンの写しをテンプレートに置いて試した。use の書き換えは数えない） | 103 通過 | (1,1) (2,2) (3,3) (4,4) (4,4) |
+
+どちらも今のテスト（読み込み・戻る・バックログ・素材待ち）を落とさなかった。
+
+**決めた: (b)。** 結果は同じで、(b) はエンジンを変えず、行数も少なく（11 行と 18 行）、網羅の match を割らない。(b) の損（セーブ後に台本の頭を直しても戻した舞台に効かない）は作る人の手元だけの話で、作る人が見るプレビューは `openAt`（4.2）を通るのでセーブを使わない。YarnRunner に出来事は足さない。
+
+形:
 
 ```flix
-pub type alias Mark = { bookmark = YarnRunner.Bookmark, entry = Stage.Snapshot }
-// Snapshot = 背景（写真・時間帯）・立ち絵と小物（今の Cast.Mark）・文章の出し方・PropertyTween の終わりの値。
+pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot }
+// Snapshot = settle した舞台: 背景（写真・時間帯）・立ち絵と小物（今の Cast.Mark）・文章の出し方・PropertyTween の終わりの値。
 // 環境音・BGM・続く粒（fx）も PropertyTween の名前の値に入れる。
 ```
 
-- `World.Read` に `entry: Stage.Snapshot` を持ち、ノードが替わった時（YarnRunner の nodeOf が替わった時）に今の舞台を settle して入れる。
-- `restore` は `entry` から舞台を作り、ブックマークでノードの頭から当て直す（今の流れのまま）。ノードの頭からのコマンドが全部もう一度効くので、**生きて読んだ時と同じ舞台**になる。相対の動き（`move dy=`）も 2 回効かない（1 章の最後の行）。途中の動きは settle で終わりの値にそろう。
-- バックログと「戻る」も同じ Mark を使う。`entry` はノードの間で同じ値を共有するので、行ごとに増えるのは参照だけ【推】。
-- セーブの JSON は version 3。`"entry": { "bg": …, "cast": …, "mode": …, "props": { "overlay.alpha": 0.6, … } }`。version 2 の枠（photo・grade・ambience・particles・mode・cast）は読む所で entry に読み替える。v2 は台詞の時点の値だが、今のコマンドは全部が絶対の値なので同じ舞台になる。読めない欄は既定で続ける（fail-open）。
+- `restore` は Mark の舞台から当て直しを始め（頁の型が合うように）、当て直した後に舞台を `Snapshot` で置き換える。途中の動きは settle で終わりの値にそろう。
+- バックログと「戻る」も同じ Mark を使う。
+- セーブの JSON は version 3。`"stage": { "bg": …, "cast": …, "mode": …, "props": { "overlay.alpha": 0.6, … } }`。version 2 の枠（photo・grade・ambience・particles・mode・cast）は読む所で `stage` に読み替える（スパイクでもこの形で書いた）。読めない欄は既定で続ける（fail-open）。
 
 ### 4.2 頭から開く時（Studio のプレビュー・`talk node=`・描き出し・テープの「ここから遊ぶ」）
 
-- セーブが無いのでノードに入った時の舞台が分からない。これが今「ノードの頭で言い直す」決まりの残りの理由。
+- セーブが無いので、前のノードから持ち越す舞台が分からない。これが「ノードの頭で言い直す」決まりの残りの理由。(a) でも (b) でも同じく要る。
 - `WorldRead.entryOf(res, node)`: 最初のノードから音を出さずに流し、選択肢は全部たどって、そのノードに最初に着いた道の舞台を返す（血鱗の `StageAudit.arrive` と同じ流し方）。着かないノードは空の舞台で 1 行言う。
 - Res（台本が替わると作り直す物）に、ノードごとの結果を一度だけ作って置く【推】。作る代金は 4 本の台本（ノード 6〜20）で数 ms【推】。測ってから置き場を決める。
-- `openAt` はこの `entry` から始める。これで実機・プレビュー・セーブから戻した所が同じ舞台になる。
+- `openAt` はこの舞台から始める。これで実機・プレビュー・セーブから戻した所が同じ舞台になる。
 
-### 4.3 消える物
+### 4.3 消える物と残る物
 
-- ノードの頭の言い直し: 台本から消してよい（消さなくても絶対の値なので害は無い）。kankan の `<<text bottom normal left>>` 32 回など。消すのは N4 の追随の時に機械で（同じノードに入る全部の道の `entry` に同じ値があれば消す）。
-- 血鱗の `StageAudit`（122 行）: 「生きて読んだ舞台 = 戻した舞台」が作りで守られるので要らない。代わりにテンプレートに汎用のテスト 1 本（7 章）。
+- ノードの頭の言い直し: 台本から消してよい（消さなくても絶対の値なので害は無い）。消すのは N4 の追随の時に機械で（そのノードに入る全部の道の舞台に同じ値があれば消す）。
+- 血鱗の `StageAudit`（122 行）の 2 つの検査のうち、「ノードの頭の 4 文」と「生きて読んだ舞台と頭だけ当てた舞台の比べ」は要らなくなる。「前のノードが scene の頁の上限（cap）に着いているか」は血鱗だけの決まりなので、ゲームのテストに残す。
+- 代わりに、テンプレートの既存の `TestCast.testLiveStageMatchesTheRestoredStageOnEveryLine`（今は立ち絵だけを比べる）を広げ、舞台の全部（Snapshot）を全部の台詞で比べる（O4）。
 
 ## 5. 置き場と増える pub
 
 | パッケージ | 足す・変える物 |
 |---|---|
-| engine_world | `YarnCommands`（Spec・Param・Args・parse・toJson）、`PropertyTween`、`Curve.Ease` |
-| テンプレート | `Commands.flix`（表と `run`）、`GameCommands.flix`・`GameView.flix`（空）、`Stage`（PropertyTween を持つ・Snapshot）、`Saves`（Mark v3）、`WorldRead`（entry・entryOf・`cue` を `Commands.run` に）、`Shots`（Doc を読む）、`StoryDoc`（opening）、`Talk`（enum を消す）、`assets/novel.shots.json` と schema・`editor.resources` |
-| go | `parse.go`（`"…"`）、`check.go`（vocab v2・引数・ref・from）、`graph.go`（コマンドの分類を v2 の表から色分け。下書き 3.18 の残り） |
+| engine_world | `YarnCommands`（Spec・Param・Args・parse・toJson）、`Curve.Ease`。2 つ目の使い手: rpg-starter の `assets/talk/vocab.json` にゲームのコマンドが 13 個ある（ending・fight・give・gold・heal・inn・join・open・quest・ride・shop・take・warp） |
+| テンプレート | `Commands.flix`（表・Ctx・Out・`run`）、`PropertyTween.flix`、`GameCommands.flix`・`GameView.flix`（空）、`Stage`（PropertyTween を持つ・Snapshot）、`Saves`（Mark v3）、`WorldRead`（`cue` を `Commands.run` に・restore・entryOf）、`Shots`（Doc を読む）、`StoryDoc`（opening・vars）、`Talk`（enum を消す）、`assets/novel.shots.json` と schema・`editor.resources` |
+| go | `parse.go`（`"…"`）、`check.go`（vocab v2・引数・ref・from・nodeRefs・名前の無い変数）、`run.go`（yarn check に Doc のパス）、`graph.go`（コマンドの分類と変数の表示名） |
+| bin/lint-rules | `precommit.json` の yarn の門の when に Doc |
 | engine（core） | なし |
 
-増える pub（engine_world・見込み 30 前後）:
+増える pub（engine_world・見込み 25 前後）:
 
 - `YarnCommands`: `Spec`・`spec`・`Args`（外から作れない）・`parse`・`toJson`・`fromJson`（テスト用）
-- `YarnCommands.Param`（mod）: `Param[t]`・`num`・`time`・`ease`・`choice`・`name`・`flag`・`text`・`offset`・`at`・`required`・`default`・`oneOf`・`erase`・`get`
-- `PropertyTween`: `Table`・`NumKey`・`NameKey`・`numKey`・`nameKey`・`empty`・`tween`・`set`・`trigger`・`numAt`・`nameAt`・`pulseAt`・`isMoving`・`settle`・`toJson`・`fromJson`
+- `YarnCommands.Param`（mod）: `Req[t]`・`Opt[t]`・`num`・`time`・`ease`・`choice`・`name`・`flag`・`at`・`required`・`default`・`orWords`・`list`・`oneOf`・`erase`・`get`・`getOpt`
 - `Curve.Ease`（enum: Linear・SmoothStep・Penner の In/Out/InOut × Sine・Quad・Cubic・Quart・Expo・Back・Elastic・Bounce）・`Curve.ease`
 
-層の物差しとの関係: どれも抽象の境目（実装を差し替える層）ではなく、1 つの実装の部品。`YarnCommands` の 2 つ目の使い手は RPG のテンプレートの会話【推・未確認】。無くても、Yarn と同じパッケージに置いて go と表の形を合わせる理由がある。
+`PropertyTween` は N4 まではテンプレートに置く（使い手がノベルのテンプレート 1 つだけなので、「層は実装が 2 つある所にだけ」に合わせる）。ゲームは src を持つ間テンプレートの写しを当て直す形になるが、N2・N3 ではゲームを移さない（6 章）ので、写しが増えるのは N4 で一度だけ。N4 でコマンドの中身と一緒にエンジンへ上げる。
 
 ## 6. 移り方
 
 | 対象 | いつ | 中身 | 機械でできるか |
 |---|---|---|---|
-| テンプレート | N1〜N3 の中で | 10 個のコマンドを語彙 19 の名前に（nvl・adv・clear → window、ambience・se → audio、char・item → show・hide） | 台本 51 行は convert.py（4 本 924 行で書けなかった行 0） |
-| izakaya | N2 の後に試しに 1 本目【推】 | `<<hop>>` は preset が N5 まで無いので GameCommands に 1 行。湯気と煙は fx | 台本は convert.py。src はテンプレートを当て直し、足した 105 行のうち 66 行が消える【推】 |
-| kankan・haioku・血鱗 | N4 の後に 1 回で | 追加のコマンドは標準の語彙に移り、残りは GameCommands と GameView へ | 台本は convert.py（引数を足せば 95.1% が同じ意味）。src はテンプレートを当て直してから、ゲームだけの演出を手で写す |
+| テンプレート | N1〜N3 の中で | 10 個のコマンドを語彙 19 の名前に（nvl・adv・clear → window、ambience・se → audio、char・item → show・hide）。同じ段で `agents-pack/AGENTS.core.md` の早見表・`docs/modules`・スキルの `<<char>>` などの書き方も直す | 台本 51 行は convert.py（4 本 924 行で書けなかった行 0） |
+| izakaya | N2 の後に試しに 1 本目【推】 | `<<hop>>` は preset が N5 まで無いので GameCommands に 1 行（`delay` で 4 つ並べる）。湯気と煙は fx | 台本は convert.py。src はテンプレートを当て直し、足した 105 行のうち 66 行が消える【推】 |
+| kankan・haioku・血鱗 | N4 の後に 1 回で | 追加のコマンドは標準の語彙に移り、残りは GameCommands と GameView へ（3.7） | 台本は convert.py（引数を足せば 95.1% が同じ意味）。src はテンプレートを当て直してから、ゲームだけの演出を手で写す |
 
 - N2・N3 だけでゲームを移すと、kankan の追加コマンド（dim・flash・zoom・text・speed・hold）を GameCommands に書き直した後、N4 で標準に移ってもう一度消すことになる。当て直しは kankan で 2 回・血鱗で約 5 時間かかった（下書き 1 章）ので、ゲームは N4 の後の 1 回にする。
 - 古いセーブ（v2）は読める（4.1）。古い vocab.json（v1）も go が読める（2.2）。
 
 ## 7. テストと門
 
-- engine_world: `YarnCommands` は引数の型ごとに受ける・断るを 1 本ずつ、`command-args.json` の見本を全部。`PropertyTween` は tween の途中・settle・JSON の往復。`Curve.Ease` は 0 と 1 の端と真ん中。`make sync-layers` の後に `.layers/engine_world` で流す（`make test-engine_world` は偽の解決エラーになる。メモの決まり）。
-- go: `go test ./internal/yarn`。同じ `command-args.json`。v1 と v2 の両方の vocab で build が通る事。
+- engine_world: `YarnCommands` は引数の型ごとに受ける・断るを 1 本ずつ、`command-args.json` の見本を全部。`Curve.Ease` は 0 と 1 の端と真ん中。`make sync-layers` の後に `.layers/engine_world` で流す（`make test-engine_world` は偽の解決エラーになる）。
+- go: `go test ./internal/yarn`。同じ `command-args.json`。v1 と v2 の両方の vocab で build が通る事。`nodeRefs` が `Unreached` の起点に入らない事。名前の無い変数を知らせて止めない事。
 - テンプレート:
-  - **戻した舞台 = 生きて読んだ舞台**: 全部のノードの全部の台詞で、生きて流した舞台（settle 後）と、その台詞の Mark を `restore` した舞台が同じ。ゲームも自分の台本で同じテストを持つ（StageAudit の代わり）。
-  - 表の全部のコマンドを、必須の引数だけで 1 回ずつ `run` して落ちない（handle の書き忘れを拾う）。
-  - vocab.json がコードと一致（今の `TestDocs` のまま）。
-  - Saves v2 の JSON を v3 で読んで同じ舞台。
-- 退行の門: **N1 と N2 の間、描き出しの絵が変わらない**（`templates/sound-novel-starter/reference/SHA256SUMS.txt` が同じ）。場面表を Doc に移しても、コマンドを表に移しても、同じ絵が出るはず。変わったら読み違い。
-- 新しい仕組みの決まり（AGENTS.md）: `agents-pack/AGENTS.core.md` の早見表に「演出コマンドを足す → Commands の表に 1 行」を足し、`agent-eval/engine.json` に「引数の誤りを build で見つけて直す」お題を 1 本。古い書き方（`Stage.commandNames`・`Talk.Speaker`）を `bin/lint-rules/forbid.json` で止める。
+  - 舞台の全部を全部の台詞で比べる（`TestCast` の既存のテストを広げる。4.3）。相対の値を持つ見本の台本（スパイクの `nudge` の形）を test/fixtures に 1 本。
+  - 表の全部のコマンドを、必須の引数だけで 1 回ずつ `run` して落ちない（handle の書き忘れの `bug!` を拾う）。
+  - `PropertyTween`: tween の途中・遅れて始まる物・settle・JSON の往復。
+  - `Out`: clear・window の型替え・ADV の bg で頁の出来事が出る。Silent で `Sound` が落ちる。
+  - vocab.json がコードと一致（今の `TestDocs` のまま）。Saves v2 の JSON を v3 で読んで同じ舞台。
+- **退行の門: N1 から N3 の終わりまで、描き出しの絵が変わらない**（`templates/sound-novel-starter/reference/SHA256SUMS.txt` が同じ）。場面表を Doc に移しても、コマンドを表に移しても、セーブの形を替えても、同じ絵が出るはず。変わったら読み違い（ease の既定を今の動きに合わせるのもこのため）。
+- 新しい仕組みの決まり（AGENTS.md）: `agents-pack/AGENTS.core.md` の早見表に「演出コマンドを足す → Commands の表に 1 行」を足し、`agent-eval/engine.json` に「引数の誤りを build で見つけて直す」お題を 1 本。確かめはテンプレートから `make new-game` で作った新しいゲームの足元で `make agent-eval ONLY=<お題>`（今のゲームは N4 まで古い形なので使わない）。
+- 古い書き方（`Stage.commandNames`・`Talk.Speaker`）を `bin/lint-rules/forbid.json` で止めるのは、範囲をテンプレートに絞れるならその形で、絞れなければゲームが移った後（N4 の後）に入れる（今入れると移っていないゲームのコミットが止まる）。
 
 ## 8. 小分けの順と見積もり（実時間・【推】）
 
-各段の後に `flix check` と波及したパッケージのテストだけ回す。レビューは N1 の後・N2 の後・N3 の後の 3 回にまとめる。
+各段の後に `flix check` と波及したパッケージのテストだけ回す。レビューは N1 の後・N2 の後・N3 の後の 3 回にまとめる。今回のスパイク（写し 3 つ・テスト 3 回）は書き換えから結果まで 1 時間ほどで、テンプレートのテスト 1 回は約 23 秒だった。これを物差しにした。
 
 | # | 段 | 中身 | 見積もり |
 |---|---|---|---|
-| 1 | N1 | go の vocab v2 の `from`・story.json の opening・Talk の enum を消す | 2〜3 時間 |
-| 2 | N1 | novel.shots.json と schema・Shots を Doc で組む。絵が同じ事を SHA で確かめる | 3〜4 時間 |
-| 3 | N2 | engine_world の `YarnCommands` と `Curve.Ease`（相談の後） | 3 時間 |
+| 1 | N1 | go の vocab v2 の `from`・`nodeRefs`・`vars`・story.json の opening と vars・Talk の enum を消す・precommit の when と yarn check の Doc のパス | 3〜4 時間 |
+| 2 | N1 | novel.shots.json と schema・Shots を Doc で組む・SceneRender が Doc の名前を引く。絵が同じ事を SHA で確かめる | 3〜4 時間 |
+| 3 | N2 | engine_world の `YarnCommands` と `Curve.Ease`（EcsTween への写しの関数まで） | 3〜4 時間 |
 | 4 | N2 | go の引数の検査・`"…"`・ref・共通の見本 | 3〜4 時間 |
-| 5 | N2 | engine_world の `PropertyTween` | 2〜3 時間 |
-| 6 | N2 | テンプレートの `Commands` 表・10 個を語彙 19 の名前で・台本の書き直し・GameCommands/GameView の口。絵が同じ事を確かめる | 5〜6 時間 |
-| 7 | N3 | Snapshot・entry・Saves v3 と v2 の読み替え・entryOf・「戻した舞台 = 生きて読んだ舞台」のテスト | 4〜5 時間 |
-| 8 | — | 早見表・agent-eval・forbid・docs/modules の 1 行 | 1〜2 時間 |
+| 5 | N2 | テンプレートの `PropertyTween`（delay・settle・JSON） | 2 時間 |
+| 6 | N2 | テンプレートの `Commands` 表・Ctx・Out・10 個を語彙 19 の名前で・台本の書き直し・GameCommands/GameView の口・早見表と docs とスキルの書き方。絵が同じ事を確かめる | 6〜7 時間 |
+| 7 | N3 | Snapshot・Mark v3 と v2 の読み替え・restore の置き換え・entryOf・TestCast を広げる | 3〜4 時間（restore はスパイクで形が決まった） |
+| 8 | — | agent-eval（新しいゲームで）・docs/modules の 1 行 | 1〜2 時間 |
 
-合計 23〜30 時間。3・5 はエンジン（engine_world）なので 1・2 と並べて進められる（同じパッケージを 2 人に触らせない）。
+合計 24〜31 時間。3 は engine_world なので 1・2 と並べて進められる（同じパッケージを 2 人に触らせない）。
 
-## 9. 相談事（着手の前に人へ）
+## 9. 決めた事（相談事への答え・人は「おまかせ」、親が決めた）
 
-1. engine_world に `YarnCommands`・`PropertyTween`・`Curve.Ease` を足してよいか（pub 30 前後）。テンプレートに置いたままにする別案は、ゲームが src を持つ間は同じ物が各ゲームに写るので取らなかった。
-2. コマンドの中身（bg・show など）を N2 ではテンプレートに置き、N4 でエンジンへ上げる順でよいか。最初からエンジンに置くと、N4 の語彙が固まる前に pub が決まってしまう。
-3. テンプレートのコマンド名を N2 で語彙 19 の名前に替える（`<<char>>` → `<<show>>` など）。テンプレートを新しく作るゲームはここから新しい名前になる。
-4. `se` の出来事を出す口（3.2）と、GameView の z の範囲（`docs/z-bands.md` のどこか）は実装の前に決める。
+1. engine_world に `YarnCommands` と `Curve.Ease` を足す。`PropertyTween` は N4 までテンプレート。YarnRunner には出来事を足さない（4.1 のスパイクで (b) に決めたため）。
+2. コマンドの中身（bg・show など）は N2 ではテンプレートに置き、N4 でエンジンへ上げる。
+3. テンプレートのコマンド名を N2 で語彙 19 の名前に替える（`<<char>>` → `<<show>>` など）。`agents-pack/AGENTS.core.md` の早見表・`docs/modules`・スキルの書き方も同じ段で直す。
+4. `se` は 3.2 の `Out.Sound`。GameView の z は `docs/z-bands.md` の world の中で、立ち絵より上・文字の枠より下に小さな範囲を切る（3.6）。
