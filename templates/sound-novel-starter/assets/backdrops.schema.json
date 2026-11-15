@@ -15,6 +15,19 @@
     "note": {
       "type": "string"
     },
+    "defaultTransition": {
+      "type": "string",
+      "enum": [
+        "fade",
+        "black",
+        "wipe",
+        "slide",
+        "pan",
+        "cut"
+      ],
+      "description": "transition= を省いた <<bg>> の切り替え（fade = 重ねる・black = 短く暗転・wipe = 左から塗り替える・slide = 前の写真を左へ送る・pan = 横へ振ったように流れながら重ねる・cut = すぐ替わる）",
+      "default": "fade"
+    },
     "photos": {
       "type": "object",
       "description": "写真の名前 → 写真",

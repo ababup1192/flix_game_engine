@@ -1,0 +1,17 @@
+// テスト用のシナリオ（TestAudio）。<<audio se 音 wait=true>> が音の長さだけ続きの台詞を待たせること・後ろの <<wait>> とは重なる（長い方だけ待つ）ことを見る。
+// 直したら: bin/fge yarn build test/fixtures/wait --no-vocab
+title: Wait
+---
+<<window bottom>>
+me: 待つ前の行。
+<<audio se se_slap wait=true>>
+me: 待った後の行。
+===
+title: WaitLonger
+---
+<<window bottom>>
+me: 重なる前の行。
+<<audio se se_slap wait=true>>
+<<wait 2>>
+me: 重なった後の行。
+===

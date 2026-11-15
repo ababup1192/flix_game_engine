@@ -188,7 +188,15 @@
         "id": "mixer",
         "pattern": "assets/novel.mixer.json",
         "title": "音の通り道（環境音と効果音のバス）",
-        "role": "tuning"
+        "role": "tuning",
+        "schema": "assets/mixer.schema.json"
+      },
+      {
+        "id": "effects",
+        "pattern": "assets/novel.effects.json",
+        "title": "画面の粒の演出（蛍・雪の層の数と一度だけ出す秒）",
+        "role": "tuning",
+        "schema": "assets/effects.schema.json"
       },
       {
         "id": "project",

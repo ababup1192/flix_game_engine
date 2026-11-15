@@ -1,19 +1,23 @@
 {
   "version": 1,
-  "note": "音の通り道。amb_（鳴り続ける環境音）は ambience のバス、se_（シナリオの効果音）と ui_（返事の音）は se のバス。バスの音量は設定の画面の値を Controls.mixerOf が掛ける。panel = 画面（バックログ・セーブ・設定）や確認のウィンドウを開いている間の聞こえ方（環境音を籠もらせる）。全体の音量は両方のバスに掛ける。ducks の depth は返事の音が鳴る間に環境音へ残す倍率（0.85 なら 15% だけ下げる。小さくするほど深く下がる）。",
+  "note": "音の通り道。amb_（鳴り続ける環境音）は ambience のバス、bgm_（音楽）は bgm のバス（設定の環境音の音量を掛ける）、se_（シナリオの効果音）と ui_（返事の音）は se のバス。バスの音量は設定の画面の値を Controls.mixerOf が掛ける。panel = 画面（バックログ・セーブ・設定）や確認のウィンドウを開いている間の聞こえ方（環境音を籠もらせる）。全体の音量は両方のバスに掛ける。ducks の depth は返事の音が鳴る間に環境音へ残す倍率（0.85 なら 15% だけ下げる。小さくするほど深く下がる）。volumes = <<audio ambience|bgm 音 volume=名前>> に書ける音量の名前（0〜1）、lockSeconds = 効果音の名前 → <<audio se>> で鳴らした後に押しても台詞を送らない秒（テンプレートが読む欄。バスの欄はエンジンが読む）。",
   "defaultBus": "se",
   "transitionSeconds": 0.4,
   "buses": [
     { "name": "ambience", "volume": 0.7, "lowpassGainHF": 1.0 },
-    { "name": "se", "volume": 0.8, "lowpassGainHF": 1.0 }
+    { "name": "se", "volume": 0.8, "lowpassGainHF": 1.0 },
+    { "name": "bgm", "volume": 0.7, "lowpassGainHF": 1.0 }
   ],
   "routes": [
     { "bus": "ambience", "prefixes": ["amb_"] },
-    { "bus": "se", "prefixes": ["se_", "ui_"] }
+    { "bus": "se", "prefixes": ["se_", "ui_"] },
+    { "bus": "bgm", "prefixes": ["bgm_"] }
   ],
   "ducks": [
     { "bus": "ambience", "by": ["se"], "depth": 0.85, "attackSeconds": 0.05, "holdSeconds": 0.2, "releaseSeconds": 0.6 }
   ],
   "cooldowns": [ { "prefix": "ui_cursor", "seconds": 0.04 } ],
-  "snapshots": [ { "name": "panel", "buses": [ { "name": "ambience", "lowpassGainHF": 0.25 } ] } ]
+  "snapshots": [ { "name": "panel", "buses": [ { "name": "ambience", "lowpassGainHF": 0.25 }, { "name": "bgm", "lowpassGainHF": 0.25 } ] } ],
+  "volumes": { "low": 0.4, "normal": 0.7, "raised": 1.0 },
+  "lockSeconds": {}
 }

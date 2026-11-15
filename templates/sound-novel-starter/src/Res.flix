@@ -7,7 +7,9 @@ mod Res {
     /// 描く元の束（Main・描き出し・テストが Controls.loadRes で同じ形に読む）。
     /// story = 字と名前・kind = 遊びの数・theme = 色・backdrops = 背景の写真・credits = クレジットの行・
     /// keys = キーの割り当て・smallScreen = 小さい画面（スマホ）の時の字と押せる物の大きさ・
-    /// portrait = 縦の画面（縦の design で起動した時）の字と押せる物の大きさ・cast = 立ち絵と小物（位置・一覧・出入りの秒）・shots = 描き出しの場面・mixer = 音のバス・dialogue = シナリオの木・
+    /// portrait = 縦の画面（縦の design で起動した時）の字と押せる物の大きさ・cast = 立ち絵と小物（位置・一覧・出入りの秒）・shots = 描き出しの場面・mixer = 音のバス・
+    /// mixerExtras = 名前付きの音量と効果音の後に送れない秒（novel.mixer.json のテンプレートの欄）・soundSeconds = 鳴り続けない音の長さ（秒。SoundLength）・
+    /// effects = 粒の演出の表・dialogue = シナリオの木・
     /// missing = ブラウザ版で後回しにした絵と音のうち、まだ届いていない物の名前（textures / sounds の name。デスクトップ・描き出し・テストは空）・
     /// scriptEdits = 始まりの引数（edit.<行>）で当てたシナリオの直し（ふだんは空）・
     /// commandArgs = シナリオのコマンドを表で読んだ結果・nodesBySource = .yarn の「ファイル:行」→ その行を持つノード
@@ -24,6 +26,9 @@ mod Res {
         cast = CastDoc.Doc,
         shots = ShotsDoc.Doc,
         mixer = AudioMixer.Mixer,
+        mixerExtras = MixerDoc.Doc,
+        soundSeconds = Map[String, Float64],
+        effects = EffectsDoc.Doc,
         dialogue = Yarn.Program,
         commandArgs = Commands.ArgsTable,
         nodesBySource = Map[String, String],
@@ -54,6 +59,12 @@ mod Res {
     pub def withShots(shots: ShotsDoc.Doc, res: Res): Res = { shots = shots | res }
 
     pub def withMixer(mixer: AudioMixer.Mixer, res: Res): Res = { mixer = mixer | res }
+
+    pub def withMixerExtras(extras: MixerDoc.Doc, res: Res): Res = { mixerExtras = extras | res }
+
+    pub def withSoundSeconds(seconds: Map[String, Float64], res: Res): Res = { soundSeconds = seconds | res }
+
+    pub def withEffects(effects: EffectsDoc.Doc, res: Res): Res = { effects = effects | res }
 
     /// まだ届いていない絵と音の名前を差し替える（Game.withAssetLoading が届くたびに写す）。
     pub def withMissing(missing: Set[String], res: Res): Res = { missing = missing | res }

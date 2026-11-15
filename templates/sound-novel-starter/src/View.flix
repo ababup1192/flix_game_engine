@@ -8,8 +8,8 @@
 // **これは数ある画風の 1 つでしかない。** 真似してほしいのは「写真を奥へ下げて文章を主役にする」層の分け方。
 //
 // ── 画面の層（奥から手前へ）──
-//   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ パーティクル（蛍）→ 立ち絵 → 小物 → ゲームの絵（GameView）
-//          … 揺れはこの層だけに掛かる
+//   world: 層の数の順に並べる（ViewStage）。背景 0 → 背景に付く絵 → 粒 → 立ち絵と小物（Doc の layer）・ゲームの絵（GameView が決める）→ 覆い（overlay）
+//          … カメラと揺れはこの層だけに掛かる
 //   hud:   NVL の幕 / ADV のウィンドウ → 本文（ルビつき）・名前 → 送りの印 → 選択肢 → クイックメニュー（縦の画面は右の列と … とツールチップ）
 //          → 素材を待つ間の黒と待ちの印（ブラウザ版で背景・環境音がまだ届いていない時）
 //          → 画面（バックログ・セーブ・ロード・設定。セーブの枠のサムネはその時の画面を同じ関数で描いて縮める）→ 確認のウィンドウ → 知らせ
@@ -45,14 +45,19 @@ mod View {
     def fitOfCtx(ctx: App.ViewCtx, res: Res.Res): Layout.Fit =
         Layout.fitOf(ctx#display#sizeClass, ctx#display#orientation, ctx#visible#size, res#smallScreen, res#portrait)
 
+    /// world の層（ViewStage）でまとまり 1 つが使う z の幅（まとまりの中の z は 0..この幅-1）。
+    pub def zWorldStride(): Int32 = 8
+
     // ── hud の中の z（小さいほど奥） ──
     def zVeil(): Int32 = 10
     /// 頁の幕の上・字の下に置く小物（NVL と縦の画面の頁。幕で小物がくすまないように）。
-    def zPageProp(): Int32 = 15
+    pub def zPageProp(): Int32 = 15
     def zText(): Int32 = 20
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
     /// 素材を待つ間の黒（本文とボタンの上・画面と確認のウィンドウの下）と、その上の待ちの印。
+    /// <<overlay layer=screen>> の覆い（本文とボタンの上・素材を待つ間の黒の下）。
+    def zOverlay(): Int32 = 44
     def zHold(): Int32 = 45
     def zHoldMark(): Int32 = 46
     def zPanel(): Int32 = 50
@@ -65,16 +70,9 @@ mod View {
     def zBanner(): Int32 = 150
     def zToast(): Int32 = 160
 
-    /// world の中で GameView が使う z の頭（zGameView から 4 つ。立ち絵と小物の 5 より手前）。文字の枠は hud なので必ずその上。
-    pub def zGameView(): Int32 = 6
-
     pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let env = envOf(fitOfCtx(ctx, res), res, w);
-        let stage = World.stageOf(res, w);
-        let k = KindDoc.rec(env#res#kind);
-        let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
-        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage, not isPropOnPage(env, w)) :: GameView.draw(env, stage) :: Nil)
-            |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
+        ViewStage.frame(env, World.stageOf(res, w), not ViewStage.isPropOnPage(env, w))
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let atlas = ctx#atlas;
@@ -83,16 +81,22 @@ mod View {
         let screen = if (coversScreen(w#panel)) Nil else match w#scene {
             case World.Scene.Title(item)      => title(atlas, env, item)
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
-            case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden or Stage.isWindowHidden(env#storyNow, r#stage)) Nil else reading(atlas, env, r)
+            case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden or Stage.isWindowHidden(env#storyNow, r#stage)) Nil else shakenWindow(env, r, reading(atlas, env, r))
         };
+        let covered = World.readOf(w) |> Option.map(r -> ViewStage.screenOverlay(env, r#stage, zOverlay())) |> Option.getWithDefault(Nil);
         let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
-        List.flatten(screen :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
+        List.flatten(screen :: covered :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
-    def realSeconds(env: Env): Float64 = Clock.secondsOf(env#realNow)
+    /// 文字の枠と字を <<shake on=window>> の分だけずらす。
+    def shakenWindow(env: Env, r: World.Read, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
+        let (dx, dy) = Stage.shakeOffset(env#storyNow, Stage.ShakeTarget.Window, r#stage);
+        if (dx == 0.0 and dy == 0.0) items else Render.movedAll({ x = dx, y = dy }, items)
 
-    def theme(env: Env): ThemeDoc.Rec = ThemeDoc.rec(env#res#theme)
+    pub def realSeconds(env: Env): Float64 = Clock.secondsOf(env#realNow)
 
-    def kindOf(env: Env): KindDoc.Rec = KindDoc.rec(env#res#kind)
+    pub def theme(env: Env): ThemeDoc.Rec = ThemeDoc.rec(env#res#theme)
+
+    pub def kindOf(env: Env): KindDoc.Rec = KindDoc.rec(env#res#kind)
 
     def label(l: StoryDoc.Label, env: Env): String = StoryDoc.labelOf(l, env#res#story)
 
@@ -105,7 +109,7 @@ mod View {
     /// 字の薄い色（選べない物・空き）。
     def dim(env: Env): Color = Color.mix(theme(env)#ink, theme(env)#panel, 0.55)
 
-    def at(x: Float64, y: Float64, item: Render.Item): Render.PlacedItem = { at = { x = x, y = y }, item = item }
+    pub def at(x: Float64, y: Float64, item: Render.Item): Render.PlacedItem = { at = { x = x, y = y }, item = item }
 
     def textAt(x: Float64, y: Float64, text: String, atlas: FontAtlas, size: Float64, color: Color, z: Int32): Render.PlacedItem =
         at(x, y, Render.textTinted(text, atlas, size, color, z))
@@ -128,11 +132,6 @@ mod View {
                |> Render.outlineA({ color = if (lit) t#accent else Color.mix(t#ink, t#panel, 0.7), alpha = if (lit) 0.9 else 0.6, width = 1.0 })
                |> Render.rounded(3.0))
 
-    // ── 背景（写真をぼかして時間帯の色に） ──
-
-    /// 揺れても画面の端が覗かないよう、背景は画面より一回り大きく敷く。縦の画面は写真の横長の比のまま高さに合わせ、
-    /// 左右のはみ出しを捨てる（真ん中を見せる）。
-    // WhyNot: 縦の画面で写真を画面の比に縮めない — 横長の写真が縦に潰れる。
     /// 画面（バックログ・セーブ・設定）が下の画面を覆うか。
     pub def coversScreen(panel: World.Panel): Bool = match panel {
         case World.Panel.Closed          => false
@@ -141,66 +140,6 @@ mod View {
         case World.Panel.SaveLoadPick(_) => false
         case _                           => true
     }
-
-    def backdropRect(fit: Layout.Fit): Rect2.Rect2 =
-        let w = Layout.width(fit);
-        let h = Layout.height(fit);
-        if (Layout.isPortrait(fit)) {
-            let tall = h + 24.0;
-            let wide = tall * 16.0 / 9.0;
-            { position = { x = (w - wide) / 2.0, y = -12.0 }, size = { x = wide, y = tall } }
-        } else { position = { x = -12.0, y = -12.0 }, size = { x = w + 24.0, y = h + 24.0 } }
-
-    def backdrops(env: Env, stage: Stage.Stage): List[Render.PlacedItem] = backdropsIn(backdropRect(env#fit), env, stage)
-
-    /// 背景を矩形 area に塗る（実際の画面は揺れの分だけはみ出す backdropRect、サムネは画面ちょうど）。
-    def backdropsIn(area: Rect2.Rect2, env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        let ground = at(area#position#x, area#position#y, RawDraw.box(area#size, Backdrop.groundColor(), 0));
-        let layer = (shot: Stage.Shot, progress, z) -> specOf(shot, env)
-            |> Option.map(spec -> Backdrop.surface(spec, area, progress, z) :: Nil)
-            |> Option.getWithDefault(Nil);
-        let under = stage#under |> Option.map(shot -> layer(shot, 1.0, 1)) |> Option.getWithDefault(Nil);
-        let top = stage#shot |> Option.map(shot -> layer(shot, Stage.fadeProgress(env#storyNow, stage), 2)) |> Option.getWithDefault(Nil);
-        ground :: List.append(under, top)
-
-    /// 写真がまだ届いていなければ None（その層は描かず、下の暗い地が見える）。
-    def specOf(shot: Stage.Shot, env: Env): Option[ShaderDoc.Spec] =
-        forM (photo <- BackdropDoc.photoOf(shot#photo, env#res#backdrops) |> Option.filter(p -> not Set.memberOf(p#texture, env#res#missing));
-              grade <- BackdropDoc.gradeOf(shot#grade, env#res#backdrops))
-        yield Backdrop.specOf("${shot#photo}_${shot#grade}", photo, grade)
-
-    // ── 立ち絵と小物（Cast） ──
-
-    /// 立ち絵を蛍の手前（z 5）に描く。小物は withProps の時だけここで描く（頁の幕がある間は hud の pageProps が幕の上に描く）。
-    /// まだ届いていない絵は描かない（背景の写真と同じ扱い）。
-    def castLayer(env: Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
-        let cenv = castEnv(env, stage);
-        let people = Cast.itemsOf(cenv, CastDoc.Kind.Character, stage#cast, 5);
-        if (withProps) List.append(people, Cast.itemsOf(cenv, CastDoc.Kind.Prop, stage#cast, 5)) else people
-
-    /// 頁の幕の上・字の下に描く小物（NVL と縦の画面の頁）。
-    def pageProps(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        Cast.itemsOf(castEnv(env, stage), CastDoc.Kind.Prop, stage#cast, zPageProp())
-
-    /// 今の画面で、小物を hud の頁（幕の上）が描くか。読んでいる頁を hud が描いていて、その頁に幕がある時（NVL か縦の画面）。
-    def isPropOnPage(env: Env, w: World.World): Bool = match w#scene {
-        case World.Scene.Reading(r) =>
-            not coversScreen(w#panel) and w#panel != World.Panel.Hidden and not Stage.isWindowHidden(env#storyNow, r#stage)
-                and hasPageVeil(env, r#stage)
-        case _ => false
-    }
-
-    /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
-    def hasPageVeil(env: Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or stage#mode == Stage.Mode.Nvl
-
-    /// 立ち絵と小物の描く元。掛ける色は背景の時間帯の cast の欄（無い時間帯・背景が無い時は絵のまま）を、背景の重ねと同じ進みで替える。
-    def castEnv(env: Env, stage: Stage.Stage): Cast.Env =
-        let toneOf = (shot: Option[Stage.Shot]) -> shot
-            |> Option.flatMap(s -> BackdropDoc.gradeOf(s#grade, env#res#backdrops) |> Option.flatMap(g -> g#cast) |> Option.map(Cast.toneOf(s#grade)))
-            |> Option.getWithDefault(Cast.plainTone());
-        let progress = Stage.fadeProgress(env#storyNow, stage);
-        let light = if (progress >= 1.0) Cast.steadyLight(toneOf(stage#shot)) else { previous = toneOf(stage#under), current = toneOf(stage#shot), progress = progress };
-        { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light }
 
     // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
 
@@ -276,74 +215,6 @@ mod View {
                    else textAt(hub#x + ring + gap, center#y - size / 2.0 - 1.0, word, atlas, size, t#ink, z + 1) :: Nil;
         ground :: sheen :: List.append(text, dots)
 
-    // ── パーティクル（蛍・雪） ──
-
-    /// 蛍: 番号と実時間だけから位置と明滅を導く（どこにも保存しない = 巻き戻しても同じ絵）。
-    /// 草むらの高さ（画面の下 6 割）をゆっくり漂い、息をするように明滅する。
-    def particles(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        match Stage.particlesOf(env#storyNow, stage) {
-            case Some("fireflies") =>
-                let color = theme(env)#firefly;
-                Fx.derive(kindOf(env)#fireflies, realSeconds(env), (_i, rand, t) -> {
-                    let x = rand(0) * Layout.width(env#fit) + Num.sin(t * (0.15 + rand(2) * 0.2) + rand(3) * 6.28) * 40.0;
-                    let y = Layout.height(env#fit) * (0.42 + rand(1) * 0.5) + Num.sin(t * (0.3 + rand(4) * 0.3) + rand(5) * 6.28) * 18.0;
-                    let pulse = 0.5 + 0.5 * Num.sin(t * (1.2 + rand(6) * 1.6) + rand(7) * 6.28);
-                    let a = pulse * pulse;
-                    { x = x, y = y, a = a, r = 2.0 + rand(8) * 1.6 }
-                }) |> List.flatMap(fly ->
-                    if (fly#a < 0.05) Nil
-                    else RawDraw.circleAt({ x = fly#x, y = fly#y }, fly#r * 0.5, Color.lighten(color, 0.5), 4)
-                             |> Render.overItem(item -> item |> Render.fade(fly#a) |> Render.blended(DrawCmd.BlendMode.Add))
-                         :: Render.glowAt({ x = fly#x, y = fly#y }, fly#r * 5.0, color,
-                                          { alpha = 0.55 * fly#a, blend = DrawCmd.BlendMode.Add }, 3))
-            case Some("snow") => snow(env, stage)
-            case _ => Nil
-        }
-
-    /// 雪: 蛍と同じく番号と実時間だけから位置を導く。上から下へゆっくり落ち、横に少し揺れ、画面の下で上へ戻る。
-    /// 粒子ごとに速さ・大きさ・濃さを散らし、遠い粒子（小さく遅い）ほど薄くして奥行きを出す。
-    /// 降り始めは粒子ごとに出る時刻をずらして少しずつ増やす（物語の時計で数えるので、セーブから戻した所は全部そろっている）。
-    /// 光は粒子の周りの薄いにじみだけ。手前の大きな粒子と灯りの側の粒子が、粒子ごとにばらつく間で時々にじみを強める。
-    def snow(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        let k = kindOf(env)#snow;
-        let w = Layout.width(env#fit);
-        let h = Layout.height(env#fit);
-        let margin = 12.0;
-        let span = h + margin * 2.0;
-        let ink = Color.lighten(theme(env)#ink, 0.6);
-        let ramp = Stage.particlesSince(env#storyNow, stage)
-            |> Option.map(since -> if (k#fadeIn <= 0.0) 1.0 else Float64.min(1.0, since / k#fadeIn)) |> Option.getWithDefault(1.0);
-        let lit = stage#shot |> Option.exists(shot -> List.memberOf(shot#photo, k#warmPhotos));
-        Fx.derive(k#count, realSeconds(env), (_i, rand, t) -> {
-            let depth = rand(2);
-            let fall = rand(1) * span + t * k#fallSpeed * (0.6 + depth * 0.8);
-            let y = fall - span * Float64.floor(fall / span) - margin;
-            let x = rand(0) * w + Num.sin(t * (0.35 + rand(3) * 0.45) + rand(4) * 6.28) * k#sway * (0.5 + depth * 0.5);
-            let warmth = if (lit) clamp01((x / w - k#warmFromX) / Float64.max(0.01, 1.0 - k#warmFromX)) else 0.0;
-            let catches = Float64.max(warmth, clamp01((depth - 0.6) / 0.4));
-            let glint = catches * snowGlint(k, t, rand(5), rand(6), rand(7));
-            { x = x, y = y, r = k#size * (0.5 + depth * 0.8), a = (0.45 + depth * 0.5) * clamp01((ramp - rand(8)) * 6.0),
-              glint = glint, color = Color.mix(ink, k#warmColor, warmth * k#warmStrength) }
-        }) |> List.filter(flake -> flake#a > 0.01) |> List.flatMap(flake ->
-            Render.glowAt({ x = flake#x, y = flake#y }, flake#r * k#glowRadius, flake#color,
-                          { alpha = k#glow * flake#a * (1.0 + k#twinkleGain * flake#glint), blend = DrawCmd.BlendMode.Add }, 3)
-            |> List.append(RawDraw.circleAt({ x = flake#x, y = flake#y }, flake#r, flake#color, 4)
-                               |> Render.overItem(item -> Render.fade(Float64.min(1.0, flake#a + 0.1 * flake#glint), item)) :: Nil))
-
-    /// 1 つの粒子が今どれだけ光を拾っているか（0〜1）。間は粒子ごとに twinkleEvery の 0.5〜1.5 倍で、
-    /// その間のどこで光るかも回ごとに変えるので、同じ粒子でも規則的には光らない。spread / phase / seed = 粒子ごとの乱数。
-    def snowGlint(k: KindDoc.Snow, t: Float64, spread: Float64, phase: Float64, seed: Float64): Float64 =
-        let period = Float64.max(k#twinkleSeconds * 2.0, k#twinkleEvery * (0.5 + spread));
-        let shifted = t + phase * period;
-        let cycle = Float64.floor(shifted / period);
-        let roll = fract(Num.sin(cycle * 12.9898 + seed * 78.233) * 43758.5453);
-        let u = (shifted - cycle * period - roll * (period - k#twinkleSeconds)) / Float64.max(0.01, k#twinkleSeconds);
-        if (u < 0.0 or u >= 1.0) 0.0 else Num.sin(Num.pi() * u)
-
-    def fract(x: Float64): Float64 = x - Float64.floor(x)
-
-    def clamp01(x: Float64): Float64 = Float64.max(0.0, Float64.min(1.0, x))
-
     // ── 読んでいる間の画面（本文・選択肢・クイックメニュー） ──
 
     /// 読んでいる間の 1 画面。サムネも同じ関数で描く。
@@ -404,7 +275,7 @@ mod View {
             let placed = placeLine(atlas, { x = area#x, y = y }, area#width, { body = k#bodySize, ruby = k#rubySize }, inkOf(line, env, r), visible, line, env);
             (placed :: done, y + lineHeight(env, { body = k#bodySize, ruby = k#rubySize }, area#width, line) + 6.0)
         }, (Nil, area#y));
-        veil :: List.flatten(pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r) :: Nil)
+        veil :: List.flatten(ViewStage.pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r) :: Nil)
 
     /// ADV: 下のウィンドウ（上から下へ濃くなる地と、金の細い縁）に、名前と今の 1 行。
     def adv(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
@@ -426,9 +297,9 @@ mod View {
                     waitMark(atlas, { x = p#position#x + p#size#x - 30.0, y = p#position#y + p#size#y - 30.0 }, env, r) :: Nil)
         }
 
-    /// 送りの印（行を出し終えて、送れる時だけ明滅する）。オートの間は点けたまま（押さなくても進むと分かる）。
+    /// 送りの印（行を出し終えて、送れる時だけ明滅する。コマンドが出した待ちの間は送れないので出さない）。オートの間は点けたまま（押さなくても進むと分かる）。
     def waitMark(atlas: FontAtlas, pos: Vec2.Vec2, env: Env, r: World.Read): List[Render.PlacedItem] =
-        if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current)) Nil
+        if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current) or Option.nonEmpty(r#pause)) Nil
         else {
             let alpha = if (r#playback == World.Playback.Auto) 0.9 else 0.35 + 0.55 * (0.5 + 0.5 * Num.sin(realSeconds(env) * 4.0));
             { at = pos, item = Render.textTinted("▼", atlas, 14.0, theme(env)#accent, zText() + 2) |> Render.fade(alpha) } :: Nil
@@ -456,14 +327,14 @@ mod View {
              y + b#height + Layout.paragraphGap())
         }, (Nil, area#position#y));
         let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
-        List.flatten(portraitVeil(env, r#stage) :: pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
+        List.flatten(portraitVeil(env, r#stage) :: ViewStage.pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
 
     /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べ、人物が出ている間は novel.cast.json の
     /// portraitVeilWithCast を、人物の出入りの進みに合わせて掛ける（出ると薄く、消えると戻る）。
     def portraitVeil(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
         let t = theme(env);
         let withCast = CastDoc.rec(env#res#cast)#portraitVeilWithCast;
-        let presence = Cast.presenceOf(env#storyNow, stage#cast);
+        let presence = Cast.presenceOf(env#storyNow, env#res#cast, stage#cast);
         let a = windowAlpha(env) * (1.0 + (withCast - 1.0) * presence);
         let stops = (0.0, 0.6 * a) :: (0.3, 1.1 * a) :: (1.0, 1.2 * a) :: Nil;
         let size = Layout.size(env#fit);
@@ -1012,15 +883,12 @@ mod View {
     def thumbnail(atlas: FontAtlas, env: Env, screen: Option[World.Read], r: Rect2.Rect2): List[Render.PlacedItem] =
         let t = theme(env);
         let away = { pointer = { x = -1.0, y = -1.0 } | env };
-        // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
-        let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
-            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage, not hasPageVeil(away, read#stage))
-                         :: GameView.draw(away, read#stage) :: reading(atlas, away, read) :: Nil))
+            List.append(ViewStage.thumbnail(away, read#stage, not ViewStage.hasPageVeil(away, read#stage)), reading(atlas, away, read)))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)
-            |> List.map(Render.overItem(liftedZ(zThumb()))) |> Render.clippedAll(r);
+            |> List.map(Render.overItem(ViewStage.mapZ(z -> z + zThumb()))) |> Render.clippedAll(r);
         // 写真がまだ届いていない枠は、暗い地（backdropsIn が写真を描かない）に待ちの印。
         let photoMissing = screen |> Option.exists(read -> stagePhotoMissing(env, read#stage));
         let mark = if (photoMissing) loadingMark(atlas, env, t#loadingMark, r, { x = 30.0, y = 12.0 }, 0.6, zThumbTop() + 1) else Nil;
@@ -1030,17 +898,6 @@ mod View {
     def stagePhotoMissing(env: Env, stage: Stage.Stage): Bool =
         stage#shot |> Option.flatMap(shot -> BackdropDoc.textureOf(shot#photo, env#res#backdrops))
             |> Option.exists(texture -> Set.memberOf(texture, env#res#missing))
-
-    /// 絵 1 つの重なり順を dz だけ手前へ（Clipped は中身）。
-    def liftedZ(dz: Int32): Render.Item -> Render.Item = item -> match item {
-        case Render.Item.Sprite(s)  => Render.Item.Sprite({ zIndex = s#zIndex + dz | s })
-        case Render.Item.Text(x)    => Render.Item.Text({ zIndex = x#zIndex + dz | x })
-        case Render.Item.Box(b)     => Render.Item.Box({ zIndex = b#zIndex + dz | b })
-        case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = p#zIndex + dz | p })
-        case Render.Item.Shader(x)  => Render.Item.Shader({ zIndex = x#zIndex + dz | x })
-        case Render.Item.Scene3d(x) => Render.Item.Scene3d({ zIndex = x#zIndex + dz | x })
-        case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = liftedZ(dz)(c#inner) | c })
-    }
 
     /// 矩形の 1px の縁。
     def frameOf(r: Rect2.Rect2, color: Color, z: Int32): List[Render.PlacedItem] =

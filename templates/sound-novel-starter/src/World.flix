@@ -54,7 +54,8 @@ mod World {
     /// hold = 素材の待ち（無ければ None）、gaveUp = 待ち切れずに諦めた素材の名前（もう待たない）、
     /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）、
     /// cursor = シナリオの実行位置（今の台詞・選択肢か、<<wait>> で待っている演出コマンドの行。talkCursorOf）、
-    /// entry = 今のノードに入った時の舞台（戻れる所の当て直しの始まり。WorldRead.trackEntry）。
+    /// entry = 今のノードに入った時の舞台（戻れる所の当て直しの始まり。WorldRead.trackEntry）、
+    /// pause = コマンドが出した待ち（Commands.Out.Wait。無ければ None）。
     pub type alias Read = {
         talk = YarnRunner.Runner[Stage.Story],
         stage = Stage.Stage,
@@ -69,8 +70,14 @@ mod World {
         gaveUp = Set[String],
         tip = Option[(Int32, Clock.Time[Clock.Real])],
         cursor = Option[Yarn.Source],
-        entry = NodeEntry
+        entry = NodeEntry,
+        pause = Option[Pause]
     }
+
+    /// コマンドが出した待ち（<<wait 秒>> と同じ待ち。続きの出来事を出さずに物語の時計で待つ）。until = 明ける物語の時刻、
+    /// rest = 待ちの後ろのシナリオの出来事と、それぞれの後ろの入力の数（明けたら続きから反映する）、last = rest の台詞の戻れる所の元。
+    // WhyNot: 実行器（YarnRunner）の待ちに入れない — 実行器はコマンドを返した時にはもう次の台詞まで流し終えていて、外から待ちを差し込めない。
+    pub type alias Pause = { until = Clock.Time[Stage.Story], rest = List[(YarnRunner.Event, Int32)], last = Option[YarnRunner.Bookmark] }
 
     /// 今のノードに入った時の記録。node = ノードの名前、lastLine = そのノードで最後に通った .yarn の行、
     /// visits = ノードに入った回数（自分への jump も 1 回）、start = 入る直前の舞台と頁。
@@ -265,7 +272,7 @@ mod World {
     pub def emptyRead(): Read =
         { talk = YarnRunner.closed(), stage = Stage.empty(), page = Page.empty(), choices = Nil, choiceCursor = 0,
           log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None,
-          entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(Stage.empty()), page = Page.empty() } } }
+          entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(Stage.empty()), page = Page.empty() } }, pause = None }
 
     // ── 場面を読む口 ──
 

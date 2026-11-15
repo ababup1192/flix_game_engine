@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が test/fixtures/wait/wait.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "test/fixtures/wait/wait.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Wait",
+      "file": "test/fixtures/wait/wait.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 5,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 6,
+          "speaker": "me",
+          "text": "待つ前の行。"
+        },
+        {
+          "kind": "command",
+          "line": 7,
+          "name": "audio",
+          "args": [
+            "se",
+            "se_slap",
+            "wait=true"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 8,
+          "speaker": "me",
+          "text": "待った後の行。"
+        }
+      ]
+    },
+    {
+      "title": "WaitLonger",
+      "file": "test/fixtures/wait/wait.yarn",
+      "line": 10,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 12,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "me",
+          "text": "重なる前の行。"
+        },
+        {
+          "kind": "command",
+          "line": 14,
+          "name": "audio",
+          "args": [
+            "se",
+            "se_slap",
+            "wait=true"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 15,
+          "name": "wait",
+          "args": [
+            "2"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "me",
+          "text": "重なった後の行。"
+        }
+      ]
+    }
+  ]
+}
