@@ -4,7 +4,8 @@ package yarn
 //
 //	fge yarn build <フォルダか x.yarn>... [--out <パス>] [--vocab <パス> | --no-vocab]   読んで検査し、木の JSON を書く
 //	fge yarn check <パス>...                                                           書かずに、書いてある JSON とずれていないかも見る
-//	どちらも --json で Report（知らせ・ノードの一覧・書いたファイル）を 1 行の JSON にする（Studio の会話の画面が読む）
+//	fge yarn graph <フォルダ> [--out <html>] [--json <json>]                          分岐のグラフと演出の帯の HTML（と JSON）を書く（graph.go）
+//	build と check は --json で Report（知らせ・ノードの一覧・書いたファイル）を 1 行の JSON にする（Studio の会話の画面が読む）
 
 import (
 	"bytes"
@@ -28,6 +29,9 @@ const usage = `使い方: bin/fge yarn <サブコマンド> ...   会話のシ�
   yarn check <パス>...
       パス（.yarn・vocab.json・dialogue.json）のフォルダごとに build と同じ検査をし、書いてある dialogue.json が
       .yarn から作り直した物と違えば 1（書かない）。コミットの前の門が流す。
+  yarn graph <フォルダ> [--out <html>] [--json <json>|-] [--vocab <パス> | --no-vocab] [--stage a,b,…]
+      分岐のグラフ（ノード = 箱・<<jump>> = 矢印・結末と最初のノードを色分け）と、ノードを押すと出る演出の帯・全部の行を
+      1 ファイルの HTML に書く（既定 build/yarn-graph.html）。--json はシナリオを全部読まずに全体をつかむ用の中身。詳しくは yarn graph --help。
 
 読む: ノード（title: 〜 --- 〜 ===）・ヘッダ・話し手: 台詞・#タグ・-> の選択肢と字下げ・<<jump>>・<<stop>>・<<wait 秒>>・// コメント・\ のエスケープ。
 台詞の強制の改行は \n（例 girl: できた！\n次は…）。字の \ < > { } # / [ ] : は前に \ を置く（字の \n は \\n）。
@@ -109,6 +113,9 @@ func run(out, errOut *strings.Builder, workRoot string, args []string, rep *Repo
 		}
 		return 0
 	}
+	if args[0] == "graph" {
+		return runGraph(out, errOut, workRoot, args[1:])
+	}
 	opts, paths, err := parseFlags(args[1:])
 	if err != nil {
 		errOut.WriteString(err.Error() + "\n")
@@ -120,7 +127,7 @@ func run(out, errOut *strings.Builder, workRoot string, args []string, rep *Repo
 	case "check":
 		return build(out, errOut, workRoot, paths, opts, true, rep)
 	}
-	errOut.WriteString(fmt.Sprintf("知らないサブコマンド: %s%s\n", args[0], suggest.Hint(args[0], []string{"build", "check", "help"})))
+	errOut.WriteString(fmt.Sprintf("知らないサブコマンド: %s%s\n", args[0], suggest.Hint(args[0], []string{"build", "check", "graph", "help"})))
 	return 2
 }
 

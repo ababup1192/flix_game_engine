@@ -113,6 +113,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 曲の頭を 1 回だけ鳴らし本編をループ | `SfxSynth.renderLooped` + `App.withSustained` |
 | 効果音・曲を作る・直す（音割れも検査） | 台本 `*.snd.star` か `*.sndsrc.json` を `bin/fge snd build` |
 | 会話を人が書く・台詞と選択肢を順に出す・会話の中で数えて分ける | `*.yarn`（`<<declare>>` `<<set>>` `<<if>>` `{$x}` `visited`）を `bin/fge yarn build` → `Yarn.loadOr` + `YarnRunner.start` / `step`・値は `YarnRunner.valueOf` / `startWith` / `YarnStorage`・選べない選択肢は `DialogueOption` の `available` |
+| 会話の分岐の全体をつかむ（シナリオを全部読まずに・たどり着けないノードと行き止まりを見る） | `bin/fge yarn graph <シナリオのフォルダ>`（1 ファイルの HTML: ノード = 箱・jump = 矢印・押すと演出の帯と全部の行）・`--json -` で中身（ノード・矢印・帯・検査）。演出の色は vocab.json の `"graph": {"categories": …}` |
 | ノベルのルビ・セーブとロード・実写の背景をぼかす | `[ruby=よみ]字[/ruby]` → `RichText.placeRuby`・`YarnRunner.bookmarkOf` / `resume`・ShaderDoc の `blur` 場（手本 `sound-novel-starter`） |
 | 会話の行を本物の画面で見る・起動中のゲームをその行へ（変数の値を決めて） | Studio の会話・`bin/fge talk shot` / `goto`（始まり `talk node= line=`・`'$名前=値'` は `YarnStorage.withArgs` → `YarnRunner.startAtWith`） |
 | 画面（表紙・遊ぶ・クリア）を足す・その画面だけの値を持つ | World の `screen` の enum に case と payload（手本 game-starter・tidepool-starter） |

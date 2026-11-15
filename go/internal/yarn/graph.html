@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%TITLE%</title>
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --ink: #1d2230; --muted: #687087; --line: #d5d9e2; --accent: #2f5bd3;
+  --c-stage: #3d7be0; --c-actor: #b0569c; --c-sound: #2b9a7a; --c-fx: #d4572f; --c-wait: #9aa1b2;
+  --c-end: #c79a1e; --c-line: #5a6278; --c-gate: #7b52d6; --c-other: #8a8f9c;
+  --font-body: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12151c; --panel: #1a1e28; --ink: #e4e7ee; --muted: #8f97ab; --line: #2c3240; --accent: #7aa2ff;
+  --c-line: #a3abc0; --c-wait: #6d7487; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #12151c; --panel: #1a1e28; --ink: #e4e7ee; --muted: #8f97ab; --line: #2c3240; --accent: #7aa2ff;
+  --c-line: #a3abc0; --c-wait: #6d7487; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.6; }
+header { padding: 20px 24px 8px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; }
+h1 { font-size: 20px; margin: 0; text-wrap: balance; }
+.src { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0 24px 12px; color: var(--muted); }
+.stats b { color: var(--ink); font-variant-numeric: tabular-nums; margin-right: 2px; }
+main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 16px; padding: 0 24px 24px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+h2 { font-size: 14px; margin: 0 0 10px; }
+.graphwrap { overflow: auto; }
+svg { display: block; }
+.node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+.node { cursor: pointer; }
+.node:hover rect, .node:focus rect { stroke: var(--accent); }
+.node:focus { outline: none; }
+.node.sel rect { stroke: var(--accent); stroke-width: 3; }
+.node.root rect { stroke: var(--c-stage); }
+.node.end rect { fill: color-mix(in srgb, var(--c-end) 14%, var(--panel)); stroke: var(--c-end); }
+.node.lost rect { stroke-dasharray: 4 3; stroke: var(--c-fx); }
+.ntitle { font-weight: 600; font-size: 14px; fill: var(--ink); }
+.nid { font-size: 9px; fill: var(--muted); text-anchor: end; font-family: var(--font-mono); }
+.nsub { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.nbadge { font-size: 11px; fill: var(--c-gate); }
+.node.end .nbadge { fill: var(--c-end); font-weight: 600; }
+.edge path { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.edge.back path { stroke-dasharray: 5 4; }
+.edge.choice path { stroke: var(--c-gate); }
+.edge.hot path { stroke: var(--accent); stroke-width: 2.6; }
+.elabel { font-size: 11px; fill: var(--c-gate); text-anchor: middle; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
+#arrow path { fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+.chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px; color: #fff; }
+.c-stage { background: var(--c-stage); } .c-actor { background: var(--c-actor); } .c-sound { background: var(--c-sound); }
+.c-fx { background: var(--c-fx); } .c-wait { background: var(--c-wait); } .c-end { background: var(--c-end); }
+.c-line { background: var(--c-line); } .c-gate { background: var(--c-gate); } .c-other { background: var(--c-other); }
+.c-choice, .c-jump { background: var(--accent); }
+.strip { display: flex; height: 26px; border-radius: 4px; overflow: hidden; border: 1px solid var(--line); margin: 6px 0 4px; }
+.strip span { min-width: 3px; border-right: 1px solid var(--panel); }
+.striplegend { color: var(--muted); font-size: 12px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; margin: 8px 0; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; font-family: var(--font-mono); }
+.rows { list-style: none; margin: 8px 0 0; padding: 0; max-height: 520px; overflow: auto; border-top: 1px solid var(--line); }
+.rows li { display: grid; grid-template-columns: 38px 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.rows .ln { color: var(--muted); font-family: var(--font-mono); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.rows .cmd { font-family: var(--font-mono); font-size: 12px; }
+.rows .k-stage { color: var(--c-stage); } .rows .k-actor { color: var(--c-actor); } .rows .k-sound { color: var(--c-sound); }
+.rows .k-fx { color: var(--c-fx); } .rows .k-wait { color: var(--muted); } .rows .k-end { color: var(--c-end); font-weight: 600; }
+.rows .k-gate { color: var(--c-gate); } .rows .k-choice, .rows .k-jump { color: var(--accent); font-weight: 600; }
+.below { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 24px 32px; }
+@media (max-width: 900px) { .below { grid-template-columns: 1fr; } }
+.counts { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.counts li { display: flex; gap: 4px; align-items: center; font-variant-numeric: tabular-nums; }
+.problems { margin: 0; padding-left: 18px; }
+.p-warn { color: var(--c-fx); } .p-error { color: var(--c-fx); font-weight: 600; } .p-ok { color: var(--c-sound); list-style: none; margin-left: -18px; }
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>%TITLE%</h1>
+  <span class="src">%SRC%</span>
+</header>
+<div class="stats">
+  <span><b>%NNODES%</b>ノード</span>
+  <span><b>%NLINES%</b>行の台詞と地の文</span>
+  <span><b>%NWAIT%</b>秒の wait（合計）</span>
+  <span><b>%NEND%</b>結末（%ENDS%）</span>
+  <span>最初のノード <b>%ROOTS%</b></span>
+  <span>舞台 <b>%STAGE%</b></span>
+</div>
+<main>
+  <section>
+    <h2>分岐のグラフ</h2>
+    <div class="graphwrap">
+      <svg width="%SVGW%" height="%SVGH%" viewBox="0 0 %SVGW% %SVGH%" role="img" aria-label="ノードと jump の矢印">
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+        %EDGES%
+        %NODES%
+      </svg>
+    </div>
+    <div class="legend">
+      <span>実線 = 先へ進む jump</span><span>点線 = 前のノードへ戻る jump</span>
+      <span style="color:var(--c-gate)">紫 = 選択肢の jump（字は選択肢）</span>
+      <span style="color:var(--c-stage)">青枠 = 最初のノード</span>
+      <span style="color:var(--c-end)">金 = 結末</span><span style="color:var(--c-fx)">破線の枠 = たどり着けない</span><span>矢印に指を置くと、持ち越す舞台が出ます</span>
+    </div>
+  </section>
+  <section id="detail" aria-live="polite">
+    <h2 id="dtitle">ノード</h2>
+    <div class="striplegend">演出の帯（左からシナリオの順。幅は wait の秒、台詞は 1 行ずつ細い帯）</div>
+    <div class="strip" id="strip"></div>
+    <div class="legend">
+      <span><span class="chip c-stage">舞台</span></span><span><span class="chip c-actor">人物・絵</span></span>
+      <span><span class="chip c-sound">音</span></span><span><span class="chip c-fx">一度だけの演出</span></span>
+      <span><span class="chip c-wait">wait</span></span><span><span class="chip c-line">台詞</span></span>
+      <span><span class="chip c-gate">ゲート</span></span><span><span class="chip c-end">結末</span></span>
+      <span><span class="chip c-other">その他</span></span>
+    </div>
+    <dl class="kv" id="kv"></dl>
+    <ul class="rows" id="rows"></ul>
+  </section>
+</main>
+<div class="below">
+  <section>
+    <h2>演出コマンドの使われ方（回数）</h2>
+    <ul class="counts">%COUNTS%</ul>
+  </section>
+  <section>
+    <h2>検査</h2>
+    <ul class="problems">%PROBLEMS%</ul>
+    <p class="hint">error は bin/fge yarn build が止める物（無いノードへの jump・語彙に無い名前など）。warn はたどり着けないノードと行き止まり。</p>
+  </section>
+</div>
+<script>
+const DETAIL = %DETAIL%;
+const ROOT = %ROOT%;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+function show(name) {
+  const d = DETAIL[name]; if (!d) return;
+  document.querySelectorAll(".node").forEach(n => n.classList.toggle("sel", n.dataset.node === name));
+  document.querySelectorAll(".edge").forEach(e => e.classList.toggle("hot", e.dataset.from === name || e.dataset.to === name));
+  document.getElementById("dtitle").textContent = d.head_text + "（" + name + "）";
+  const strip = document.getElementById("strip");
+  strip.innerHTML = d.strip.map(s => {
+    const w = s.c === "wait" ? Math.max(6, s.w * 14) : (s.c === "line" ? 5 : 8);
+    return `<span class="c-${s.c}" style="flex:0 0 ${w}px" title="${esc(s.l + ": " + s.n + " " + s.a)}"></span>`;
+  }).join("");
+  const kv = [];
+  const fmt = o => Object.keys(o).length ? Object.entries(o).map(([k, v]) => `${k}=${v}`).join("・") : "なし";
+  kv.push(["頭で当てる舞台", fmt(d.head)]);
+  kv.push(["終わりの舞台", fmt(d.state)]);
+  kv.push(["入ってくる矢印", d.incoming.length ? d.incoming.map(i => i.from + (Object.keys(i.carried).length ? `（持ち越し ${fmt(i.carried)}）` : "")).join("、") : "なし（最初のノード）"]);
+  kv.push(["出ていく矢印", d.out.length ? d.out.map(o => o.to + (o.choice ? `（${o.choice}）` : "")).join("、") : "なし"]);
+  document.getElementById("kv").innerHTML = kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  document.getElementById("rows").innerHTML = d.rows.map(r => {
+    const mono = r.c !== "line" ? " cmd" : "";
+    return `<li><span class="ln">${r.l}</span><span class="k-${r.c}${mono}" style="padding-left:${r.d * 14}px">${esc(r.t)}</span></li>`;
+  }).join("");
+}
+document.querySelectorAll(".node").forEach(n => {
+  n.addEventListener("click", () => show(n.dataset.node));
+  n.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(n.dataset.node); } });
+});
+show(ROOT);
+</script>
+</body>
+</html>
