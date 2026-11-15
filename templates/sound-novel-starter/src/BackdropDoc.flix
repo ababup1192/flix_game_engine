@@ -34,8 +34,35 @@ mod BackdropDoc {
     /// 立ち絵と小物を背景になじませる色。tint = 色ごとの倍率、exposure = 明るさの倍率、saturation = 彩度（1 = 絵のまま）。
     pub type alias CastGrade = { tint = Color, exposure = Float64, saturation = Float64 }
 
+    /// 背景の切り替えの種類（<<bg … transition=>>）。Fade = 前の写真の上に重ねる・Black = 短く暗転してから映る・Wipe = 左から塗り替える・
+    /// Slide = 前の写真を左へ送り新しい写真を右から入れる・Pan = 横へ振ったように流れながら重ねる・Cut = すぐ替わる。
+    pub enum Transition with Eq, ToString {
+        case Fade
+        case Black
+        case Wipe
+        case Slide
+        case Pan
+        case Cut
+    }
+
+    /// <<bg … transition=>> に書ける名前。
+    pub def transitionNames(): List[String] = "fade" :: "black" :: "wipe" :: "slide" :: "pan" :: "cut" :: Nil
+
+    /// 名前の切り替えの種類（知らない名前は None）。
+    pub def transitionOf(name: String): Option[Transition] = match name {
+        case "fade"  => Some(Transition.Fade)
+        case "black" => Some(Transition.Black)
+        case "wipe"  => Some(Transition.Wipe)
+        case "slide" => Some(Transition.Slide)
+        case "pan"   => Some(Transition.Pan)
+        case "cut"   => Some(Transition.Cut)
+        case _       => None
+    }
+
+    /// defaultTransition = transition= を省いた <<bg>> の切り替え。
     pub type alias Rec = {
         version = Int32,
+        defaultTransition = Transition,
         photos = Map[String, Photo],
         grades = Map[String, Grade]
     }
@@ -48,7 +75,7 @@ mod BackdropDoc {
     pub def path(): String = "assets/novel.backdrops.json"
 
     /// 写真も時間帯も無い既定（Doc が読めない時は背景を出さず、地の色の上で読む）。
-    pub def defaults(): Doc = Doc.Doc({ version = 1, photos = Map.empty(), grades = Map.empty() })
+    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, photos = Map.empty(), grades = Map.empty() })
 
     /// 時間帯の欄の既定（欄が欠けた時に使う。写真のまま薄くぼかした色）。
     pub def plainGrade(): Grade =
@@ -68,6 +95,7 @@ mod BackdropDoc {
 
     def fromRoot(root: Map[String, Json]): Doc =
         Doc.Doc({ version = JsonCodec.intOr("version", 1, root),
+                  defaultTransition = transitionOf(JsonCodec.stringOr("defaultTransition", "fade", root)) |> Option.getWithDefault(Transition.Fade),
                   photos = Map.get("photos", root) |> Option.flatMap(JsonCodec.decodeStringMap(photoFromJson))
                       |> Option.getWithDefault(Map.empty()),
                   grades = Map.get("grades", root) |> Option.flatMap(JsonCodec.decodeStringMap(gradeFromJson))

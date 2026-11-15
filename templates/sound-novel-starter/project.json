@@ -191,6 +191,13 @@
         "role": "tuning"
       },
       {
+        "id": "effects",
+        "pattern": "assets/novel.effects.json",
+        "title": "画面の粒の演出（蛍・雪の層の数と一度だけ出す秒）",
+        "role": "tuning",
+        "schema": "assets/effects.schema.json"
+      },
+      {
         "id": "project",
         "pattern": "project.json",
         "schema": "project.schema.json",

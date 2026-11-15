@@ -1,0 +1,36 @@
+{
+  "//": "novel.effects.json の形の宣言（Studio の sections 方言）。画面の粒の演出の表。描き方はコード（src/ViewStage.flix）、粒の数や速さは novel.kind.json。既定は src/EffectsDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "particles": {
+      "kind": "catalog",
+      "label": "粒の演出（鍵 = <<fx 名前>> の名前）",
+      "order": 1,
+      "fields": {
+        "look": {
+          "type": { "enum": ["fireflies", "snow"] },
+          "label": "描き方（fireflies = 漂って明滅する光・snow = 降る雪）",
+          "order": 1,
+          "default": "snow",
+          "required": true
+        },
+        "layer": {
+          "type": "int",
+          "label": "world の層の数（背景 0・背景に付く絵 100・人物 500・小物 600 と並べる）",
+          "order": 2,
+          "default": 700,
+          "min": 0,
+          "max": 999
+        },
+        "onceSeconds": {
+          "type": "float",
+          "label": "<<fx 名前 once=true>> で一度だけ出す秒",
+          "order": 3,
+          "default": 2.0,
+          "min": 0,
+          "max": 30
+        }
+      }
+    }
+  }
+}

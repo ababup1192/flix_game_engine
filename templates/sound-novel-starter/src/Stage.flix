@@ -4,7 +4,7 @@
 // 背景（前の写真を下に敷いて重ねる）と立ち絵（出入りと表情の重ね）は値 1 つで表せないので、自分の形と settle を持つ。
 // セーブ・バックログ・「戻る」が持つのは settle した舞台（Snapshot）。
 mod Stage {
-    use fge::{Clock, JsonCodec, Log, Num}
+    use fge::{Clock, Curve, JsonCodec, Log, Num}
     use Util.Json.Json
 
     /// 物語の時計の名前（中身は要らない）。文字送り・<<wait>>・背景の重ね・揺れが使い、画面や確認のウィンドウを開くと止まる。
@@ -19,7 +19,16 @@ mod Stage {
     /// 背景 1 枚（写真と時間帯の名前）。
     pub type alias Shot = { photo = String, grade = String }
 
-    /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、
+    /// 3D の道筋の歩き方（<<bg … pace=>>）。Walk = 歩く・Run = 走る。
+    pub enum Pace with Eq, ToString {
+        case Walk
+        case Run
+    }
+
+    /// 背景の替え方: transition = 切り替えの種類、ease = 進みの曲線、pace = 3D の道筋の歩き方。
+    pub type alias Switch = { transition = BackdropDoc.Transition, ease = Curve.Ease, pace = Pace }
+
+    /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、switch = 今の背景の替え方、
     /// mode = 文章の出し方、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
     /// props = 名前の付いた値（ambienceKey・particlesKey・shakeKeyOf・overlay*Key・cameraKey・windowHiddenKey・actorKey と game. の値）、cast = 立ち絵と小物の層。
     pub type alias Stage = {
@@ -27,6 +36,7 @@ mod Stage {
         under = Option[Shot],
         fadeFrom = Clock.Time[Story],
         fadeSeconds = Float64,
+        switch = Switch,
         mode = Mode,
         pages = Int32,
         props = PropertyTween.Table[Story],
@@ -35,11 +45,36 @@ mod Stage {
 
     /// 物語を始める前の舞台（背景なし・NVL・音なし）。
     pub def empty(): Stage =
-        { shot = None, under = None, fadeFrom = Clock.never(), fadeSeconds = 0.0, mode = Mode.Nvl, pages = 0,
+        { shot = None, under = None, fadeFrom = Clock.never(), fadeSeconds = 0.0, switch = plainSwitch(), mode = Mode.Nvl, pages = 0,
           props = PropertyTween.empty(), cast = Cast.empty() }
 
-    /// 鳴り続ける環境音（project.json の sounds の名前）。
+    /// 前の写真の上に、一定の速さで重ねる替え方。
+    pub def plainSwitch(): Switch = { transition = BackdropDoc.Transition.Fade, ease = Curve.Ease.Linear, pace = Pace.Walk }
+
+    /// 鳴り続ける環境音（project.json の sounds の名前。重ねる時は , でつないだ 1 つの値）。
     pub def ambienceKey(): PropertyTween.NameKey = PropertyTween.nameKey("audio.ambience")
+
+    /// 環境音の音量（0〜1。ミキサーのバスの音量に掛ける）。
+    pub def ambienceVolumeKey(): PropertyTween.NumKey = PropertyTween.numKey("audio.ambienceVolume")
+
+    /// 鳴り続ける音楽（project.json の sounds の名前）。
+    pub def bgmKey(): PropertyTween.NameKey = PropertyTween.nameKey("audio.bgm")
+
+    /// 音楽の音量（0〜1）。
+    pub def bgmVolumeKey(): PropertyTween.NumKey = PropertyTween.numKey("audio.bgmVolume")
+
+    /// 押しても台詞を送らない間（効果音の後の novel.mixer.json の lockSeconds）。
+    pub def textLockKey(): PropertyTween.TriggerKey = PropertyTween.triggerKey("text.lock")
+
+    /// 粒の演出 name を一度だけ出す間（<<fx 名 once=true>>）。
+    pub def fxOnceKey(name: String): PropertyTween.TriggerKey = PropertyTween.triggerKey("fx.once.${name}")
+
+    /// now に押しても台詞を送らない間か。
+    pub def isTextLocked(now: Clock.Time[Story], stage: Stage): Bool = Option.nonEmpty(PropertyTween.triggerAt(now, textLockKey(), stage#props))
+
+    /// now に鳴っている環境音の列（, でつないだ値を分ける）。
+    pub def ambienceSoundsOf(now: Clock.Time[Story], stage: Stage): List[String] =
+        ambienceOf(now, stage) |> Option.map(v -> String.splitOn(substr = ",", v) |> List.filter(n -> not String.isEmpty(n))) |> Option.getWithDefault(Nil)
 
     /// 画面のパーティクルの演出の名前（particleNames のどれか）。
     pub def particlesKey(): PropertyTween.NameKey = PropertyTween.nameKey("fx.particles")
@@ -153,12 +188,14 @@ mod Stage {
         { dx = at(ActorField.X), dy = at(ActorField.Y), scale = at(ActorField.Scale), alpha = at(ActorField.Alpha), degrees = at(ActorField.Rotate),
           jitter = { x = jx, y = jy } }
 
-    /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
-    pub def particleNames(): List[String] = "fireflies" :: "snow" :: Nil
-
     /// 背景を shot に替え、seconds かけて前の背景の上に重ねる。
     pub def withBackdrop(now: Clock.Time[Story], shot: Shot, seconds: Float64, stage: Stage): Stage =
-        { shot = Some(shot), under = stage#shot, fadeFrom = now, fadeSeconds = Float64.max(0.0, seconds) | stage }
+        withBackdropBy(now, shot, seconds, plainSwitch(), stage)
+
+    /// 背景を shot に替え、seconds かけて switch の替え方で替える（Cut は秒 0）。
+    pub def withBackdropBy(now: Clock.Time[Story], shot: Shot, seconds: Float64, switch: Switch, stage: Stage): Stage =
+        let s = if (switch#transition == BackdropDoc.Transition.Cut) 0.0 else Float64.max(0.0, seconds);
+        { shot = Some(shot), under = stage#shot, fadeFrom = now, fadeSeconds = s, switch = switch | stage }
 
     /// 環境音を now から替える（None で止める）。
     pub def withAmbience(now: Clock.Time[Story], sound: Option[String], stage: Stage): Stage =
@@ -196,10 +233,10 @@ mod Stage {
     pub def settle(stage: Stage): Stage =
         { under = None, fadeFrom = Clock.never(), props = PropertyTween.settle(stage#props), cast = Cast.settle(stage#cast) | stage }
 
-    /// 背景の重ねの進み（0〜1。秒が 0 なら 1）。
+    /// 背景の重ねの進み（0〜1。秒が 0 なら 1）。替え方の曲線を掛ける。
     pub def fadeProgress(now: Clock.Time[Story], stage: Stage): Float64 =
         if (stage#fadeSeconds <= 0.0) 1.0
-        else Float64.max(0.0, Float64.min(1.0, Clock.since(stage#fadeFrom, now) / stage#fadeSeconds))
+        else Curve.ease(stage#switch#ease, Float64.max(0.0, Float64.min(1.0, Clock.since(stage#fadeFrom, now) / stage#fadeSeconds)))
 
     /// target の now の揺れのずれ（px）。だんだん収まる。
     pub def shakeOffset(now: Clock.Time[Story], target: ShakeTarget, stage: Stage): (Float64, Float64) = shakeOffsetIn(now, target, stage#props)

@@ -43,7 +43,7 @@ mod TestActors {
 
     def envOf(st: Stage.Stage, photo: Option[String]): Cast.Env \ Fs.FileRead =
         { doc = doc(), fit = Layout.Fit.Regular, storyNow = t(100.0), realNow = Clock.zero(), missing = Set.empty(),
-          light = Cast.steadyLight(Cast.plainTone()), props = st#props, photo = photo }
+          light = Cast.steadyLight(Cast.plainTone()), props = st#props, photo = photo, backdropShift = 0.0 }
 
     /// 描いた面のシェーダーの名前（描く順）。
     def drawnNames(env: Cast.Env, st: Stage.Stage): List[String] =

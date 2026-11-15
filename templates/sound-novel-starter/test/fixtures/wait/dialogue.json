@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が test/fixtures/wait/wait.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "test/fixtures/wait/wait.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Wait",
+      "file": "test/fixtures/wait/wait.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 5,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 6,
+          "speaker": "me",
+          "text": "待つ前の行。"
+        },
+        {
+          "kind": "command",
+          "line": 7,
+          "name": "audio",
+          "args": [
+            "se",
+            "se_slap",
+            "wait=true"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 8,
+          "speaker": "me",
+          "text": "待った後の行。"
+        }
+      ]
+    }
+  ]
+}

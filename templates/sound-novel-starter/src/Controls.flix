@@ -404,16 +404,21 @@ mod Controls {
     pub def soundsOf(missing: Set[String], events: List[World.Event]): List[String] =
         events |> List.filterMap(soundOf) |> List.filter(name -> not Set.memberOf(name, missing))
 
-    /// 鳴り続ける環境音（舞台の環境音。project.json の sounds の名前）。音量はミキサーのバスが決める。
+    /// 鳴り続ける音（舞台の環境音の列と音楽。project.json の sounds の名前）。音量は舞台の audio.ambienceVolume・audio.bgmVolume に、ミキサーのバスを掛ける。
     pub def ambience(res: Res.Res, w: World.World): List[App.Sustain] =
-        Stage.ambienceOf(World.now(w), World.stageOf(res, w)) |> Option.map(name -> { name = name, volume = 1.0, pitch = 1.0 } :: Nil)
-            |> Option.getWithDefault(Nil)
+        let now = World.now(w);
+        let stage = World.stageOf(res, w);
+        let volume = k -> PropertyTween.numAt(now, k, 1.0, stage#props);
+        let ambient = Stage.ambienceSoundsOf(now, stage) |> List.map(name -> { name = name, volume = volume(Stage.ambienceVolumeKey()), pitch = 1.0 });
+        let music = PropertyTween.nameAt(now, Stage.bgmKey(), stage#props) |> Option.map(name -> { name = name, volume = volume(Stage.bgmVolumeKey()), pitch = 1.0 }) |> Option.toList;
+        List.append(ambient, music) |> List.filter(s -> s#volume > 0.0)
 
     /// 音の通り道: novel.mixer.json のバスに、設定の音量（全体 × 環境音 / 効果音）を掛ける。
     /// 画面や確認のウィンドウを開いている間は snapshot「panel」（環境音を籠もらせる）。
     pub def mixerOf(res: Res.Res, w: World.World): AudioMixer.Mixer =
         let c = Saves.configOf(w#saves);
         let base = res#mixer |> AudioMixer.withBusVolume("ambience", c#masterVolume * c#ambienceVolume)
+                           |> AudioMixer.withBusVolume("bgm", c#masterVolume * c#ambienceVolume)
                            |> AudioMixer.withBusVolume("se", c#masterVolume * c#seVolume);
         if (World.isFree(w)) base else AudioMixer.withSnapshot("panel", base)
 
@@ -457,6 +462,9 @@ mod Controls {
           cast = CastDoc.load(CastDoc.path()),
           shots = ShotsDoc.load(ShotsDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
+          sounds = MixerDoc.load(mixerPath()),
+          soundSeconds = SoundLength.load(),
+          effects = EffectsDoc.load(EffectsDoc.path()),
           dialogue = dialogue,
           commandArgs = Commands.argsTableOf(dialogue),
           nodesBySource = Talk.nodesBySource(dialogue),
@@ -486,6 +494,8 @@ mod Controls {
             :: Resources.reloadRow("rail", RailDoc.path(), res -> Res.withPortrait(loadPortrait(), res), unchanged)
             :: Resources.reloadRow("cast", CastDoc.path(), res -> Res.withCast(CastDoc.load(CastDoc.path()), res), unchanged)
             :: Resources.reloadRow("shots", ShotsDoc.path(), res -> Res.withShots(ShotsDoc.load(ShotsDoc.path()), res), unchanged)
-            :: Resources.reloadRow("mixer", mixerPath(), res -> Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res), unchanged)
+            :: Resources.reloadRow("mixer", mixerPath(), res -> Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res)
+                                                                 |> Res.withSounds(MixerDoc.load(mixerPath())), unchanged)
+            :: Resources.reloadRow("effects", EffectsDoc.path(), res -> Res.withEffects(EffectsDoc.load(EffectsDoc.path()), res), unchanged)
             :: Nil
 }

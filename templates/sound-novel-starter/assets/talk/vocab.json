@@ -9,10 +9,13 @@
           "type": "choice",
           "values": [
             "ambience",
-            "se"
+            "bgm",
+            "se",
+            "all"
           ]
         },
         {
+          "list": true,
           "name": "sound",
           "orWords": [
             "off"
@@ -28,9 +31,33 @@
           },
           "req": true,
           "type": "name"
+        },
+        {
+          "max": 1,
+          "min": 0,
+          "name": "volume",
+          "orNames": {
+            "from": [
+              {
+                "doc": "../novel.mixer.json",
+                "keys": "volumes"
+              }
+            ]
+          },
+          "type": "num"
+        },
+        {
+          "max": 30,
+          "min": 0,
+          "name": "fade",
+          "type": "num"
+        },
+        {
+          "name": "wait",
+          "type": "flag"
         }
       ],
-      "summary": "環境音を替える・止める（ambience）・効果音を 1 回鳴らす（se）"
+      "summary": "環境音（ambience。, で重ねる）・音楽（bgm）を替える・止める、効果音を 1 回鳴らす（se。wait = 音の長さだけ待つ）、all off で環境音と音楽を止める（volume = 数か novel.mixer.json の volumes の名前・fade = 秒）"
     },
     "bg": {
       "params": [
@@ -64,9 +91,62 @@
           "default": "1.0",
           "name": "time",
           "type": "time"
+        },
+        {
+          "name": "transition",
+          "type": "choice",
+          "values": [
+            "fade",
+            "black",
+            "wipe",
+            "slide",
+            "pan",
+            "cut"
+          ]
+        },
+        {
+          "name": "pace",
+          "type": "choice",
+          "values": [
+            "walk",
+            "run"
+          ]
+        },
+        {
+          "default": "linear",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
         }
       ],
-      "summary": "背景の写真を時間帯の色で替え、秒かけて重ねる"
+      "summary": "背景の写真を時間帯の色で替え、秒かけて切り替える（transition = fade・black・wipe・slide・pan・cut。省くと novel.backdrops.json の defaultTransition・pace = 3D の道筋の歩き方）"
     },
     "camera": {
       "params": [
@@ -137,15 +217,23 @@
             "off"
           ],
           "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.effects.json",
+                "keys": "particles"
+              }
+            ]
+          },
           "req": true,
-          "type": "choice",
-          "values": [
-            "fireflies",
-            "snow"
-          ]
+          "type": "name"
+        },
+        {
+          "name": "once",
+          "type": "flag"
         }
       ],
-      "summary": "画面のパーティクルの演出を出す・止める"
+      "summary": "画面の粒の演出（novel.effects.json の particles）を出す・止める（once = Doc の onceSeconds だけ一度出す）"
     },
     "hide": {
       "params": [

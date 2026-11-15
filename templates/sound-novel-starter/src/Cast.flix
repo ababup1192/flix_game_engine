@@ -247,7 +247,8 @@ mod Cast {
     // ── 置き場所と描き方 ──
 
     /// 描く元: Doc・並べ方の組（画面の大きさと縦か横か）・2 本の時計の今・まだ届いていない絵の名前・背景の時間帯から掛ける色・
-    /// 舞台の名前の付いた値（actor.<名>.* を読む）・今の背景の写真の名前（背景に付く絵のずれを引く）。
+    /// 舞台の名前の付いた値（actor.<名>.* を読む）・今の背景の写真の名前（背景に付く絵のずれを引く）・
+    /// 背景が横へ動いている量（px。slide と pan の切り替えの間、背景に付く絵も一緒に動かす）。
     pub type alias Env = {
         doc = CastDoc.Doc,
         fit = Layout.Fit,
@@ -256,7 +257,8 @@ mod Cast {
         missing = Set[String],
         light = Light,
         props = PropertyTween.Table[Stage.Story],
-        photo = Option[String]
+        photo = Option[String],
+        backdropShift = Float64
     }
 
     /// 置き場所からのずれ: dx / dy = 画面の幅と高さに対する割合、scale = 足元を据えて掛ける倍率、alpha = 濃さに掛ける倍率、degrees = 真ん中を軸に時計回りに傾ける角度、
@@ -309,7 +311,8 @@ mod Cast {
     /// 名前の物の今のずれ（舞台の actor.<名>.* と、背景に付く絵なら今の写真の横のずれ）。
     def transformOf(env: Env, name: String, entry: CastDoc.Entry): Transform =
         let t = Stage.actorTransformAt(env#storyNow, name, env#props);
-        { dx = t#dx + CastDoc.attachShiftOf(env#photo, entry#attach) | t }
+        let moving = if (CastDoc.isAttachedToBackdrop(entry)) env#backdropShift else 0.0;
+        { dx = t#dx + CastDoc.attachShiftOf(env#photo, entry#attach), jitter = { x = t#jitter#x + moving, y = t#jitter#y } | t }
 
     /// 透過画像を読む面（2 つの画素の間をなめらかにつないで読む。縁の透明な画素の色は art/cast/prepare.py が縁の色で埋めてある）。
     /// 色: l = 明るさ、c1 = l + 彩度 × (c − l)、c2 = c1 × 倍率。彩度と倍率は previous から current へ、面の t（切り替えの進み）でつなぐ。

@@ -77,7 +77,7 @@ mod TestCast {
         })
 
     def envAt(now: Float64, missing: Set[String]): Cast.Env \ Fs.FileRead =
-        { doc = doc(), fit = Layout.Fit.Regular, storyNow = t(now), realNow = Clock.zero(), missing = missing, light = Cast.steadyLight(Cast.plainTone()), props = PropertyTween.empty(), photo = None }
+        { doc = doc(), fit = Layout.Fit.Regular, storyNow = t(now), realNow = Clock.zero(), missing = missing, light = Cast.steadyLight(Cast.plainTone()), props = PropertyTween.empty(), photo = None, backdropShift = 0.0 }
 
     // ══ シナリオのコマンドを読む ══
 

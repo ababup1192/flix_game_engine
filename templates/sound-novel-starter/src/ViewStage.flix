@@ -1,17 +1,13 @@
 // ViewStage — 舞台の world の層（背景・背景に付く絵・立ち絵と小物・粒・ゲームの絵・覆い）を、層の数で並べて描く（純粋）。
 // 物はまとまり（Group）ごとに「層の数」を持ち、層の数の小さい順（同じ数なら 絵 → 粒 → GameView → 覆い）に並べてから、
 // まとまりの順番 × View.zWorldStride + まとまりの中の z（0..View.zWorldStride-1）を z にする。カメラ（camera.*）と揺れ（camera.shake）はこの層にだけ掛ける。
-// 層の数の既定: 背景 0・背景に付く絵 100・人物 500・小物 600（novel.cast.json の layer）・粒（particleLayer）・覆い（novel.kind.json の overlayLayer）・
+// 層の数の既定: 背景 0・背景に付く絵 100・人物 500・小物 600（novel.cast.json の layer）・粒（novel.effects.json の layer・既定 700）・覆い（novel.kind.json の overlayLayer）・
 // GameView は自分で決める。文字の枠と HUD は View.hud（world より必ず手前）。
 mod ViewStage {
     use fge::{Clock, Color, DrawCmd, Fx, Num, RawDraw, Rect2, Render, ShaderDoc, Sort}
 
     /// world の層の物 1 まとまり: layer = 層の数、order = 同じ層の数の中の順（絵 0・粒 1・GameView 2・覆い 3）、items = 物（中の z は 0..View.zWorldStride-1）。
     type alias Group = { layer = Int32, order = Int32, items = List[Render.PlacedItem] }
-
-    /// 粒（蛍・雪）の層の数。
-    // WhyNot: 粒を人物（500）より手前に置かない — 作例の絵は粒を人物の奥に置いて描いてある（reference の絵がそれを見張る）。
-    def particleLayer(): Int32 = 400
 
     /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は View が幕の上に描く）。
     pub def frame(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
@@ -31,7 +27,7 @@ mod ViewStage {
         let actors = Cast.groupsWhere(castEnv(env, stage), keep, stage#cast, 0) |> List.map(match (n, items) -> { layer = n, order = 0, items = items });
         let game = GameView.draw(env, stage) |> List.map(match (n, item) -> { layer = n, order = 2, items = item :: Nil });
         let groups = { layer = 0, order = 0, items = backdropsIn(area, env, stage) } :: actors :::
-                     ({ layer = particleLayer(), order = 1, items = particles(env, stage) } :: overlayGroup(env, stage) :: game);
+                     List.append(particleGroups(env, stage), overlayGroup(env, stage) :: game);
         stacked(groups)
 
     /// まとまりを層の数の順に並べ、順番ごとに z の幅を割り当てる（並んだ同じ層の数と順のまとまりは同じ幅を使う）。
@@ -123,14 +119,49 @@ mod ViewStage {
         } else { position = { x = -12.0, y = -12.0 }, size = { x = w + 24.0, y = h + 24.0 } }
 
     /// 背景を矩形 area に塗る（実際の画面は揺れの分だけはみ出す backdropRect、サムネは画面ちょうど）。
+    /// 切り替えの間は、替え方（Stage の switch）ごとに前の写真（under）と今の写真（shot）を重ねる・送る・塗り替える。
     pub def backdropsIn(area: Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
         let ground = View.at(area#position#x, area#position#y, RawDraw.box(area#size, Backdrop.groundColor(), 0));
-        let layer = (shot: Stage.Shot, progress, z) -> specOf(shot, env)
-            |> Option.map(spec -> Backdrop.surface(spec, area, progress, z) :: Nil)
+        let p = Stage.fadeProgress(env#storyNow, stage);
+        let photo = (shot: Option[Stage.Shot], dx: Float64, progress, z) -> shot |> Option.flatMap(s -> specOf(s, env))
+            |> Option.map(spec -> Backdrop.surface(spec, { position = { x = area#position#x + dx, y = area#position#y } | area }, progress, z) :: Nil)
             |> Option.getWithDefault(Nil);
-        let under = stage#under |> Option.map(shot -> layer(shot, 1.0, 1)) |> Option.getWithDefault(Nil);
-        let top = stage#shot |> Option.map(shot -> layer(shot, Stage.fadeProgress(env#storyNow, stage), 2)) |> Option.getWithDefault(Nil);
-        ground :: List.append(under, top)
+        let under = if (p >= 1.0) None else stage#under;
+        let shift = shiftOf(env, stage);
+        let moved = match stage#switch#transition {
+            case BackdropDoc.Transition.Black =>
+                let veil = (a: Float64) -> View.at(area#position#x, area#position#y, RawDraw.box(area#size, Backdrop.groundColor(), 3) |> Render.fade(a)) :: Nil;
+                if (p < 0.5) List.append(photo(under, 0.0, 1.0, 1), veil(2.0 * p)) else List.append(photo(stage#shot, 0.0, 1.0, 2), veil(2.0 * (1.0 - p)))
+            case BackdropDoc.Transition.Slide => List.append(photo(under, shift - area#size#x, 1.0, 1), photo(stage#shot, shift, 1.0, 2))
+            case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - area#size#x * panShare(), 1.0, 1), photo(stage#shot, shift, p, 2))
+            case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, 1), wiped(env, area, stage#shot, p))
+            case _                            => List.append(photo(under, 0.0, 1.0, 1), photo(stage#shot, 0.0, p, 2))
+        };
+        ground :: moved
+
+    /// pan で写真が流れる距離（背景の幅に対する割合）。
+    // WhyNot: 写真を幅いっぱい流さない — 流しながら重ねるので、幅いっぱいだと前の写真が半分見えたまま新しい写真が透けて二重に見える。
+    def panShare(): Float64 = 0.25
+
+    /// 今の写真が横へずれている量（px）: slide は右から幅いっぱい、pan は panShare だけ寄ってくる。ほかは 0。
+    def shiftOf(env: View.Env, stage: Stage.Stage): Float64 =
+        let p = Stage.fadeProgress(env#storyNow, stage);
+        let width = backdropRect(env#fit)#size#x;
+        match stage#switch#transition {
+            case BackdropDoc.Transition.Slide => (1.0 - p) * width
+            case BackdropDoc.Transition.Pan   => (1.0 - p) * width * panShare()
+            case _                            => 0.0
+        }
+
+    /// 今の写真を左から p の割合まで塗る（wipe）。
+    def wiped(env: View.Env, area: Rect2.Rect2, shot: Option[Stage.Shot], p: Float64): List[Render.PlacedItem] =
+        let edge = area#position#x + area#size#x * p;
+        let x0 = area#position#x;
+        let y0 = area#position#y;
+        let y1 = area#position#y + area#size#y;
+        shot |> Option.flatMap(s -> specOf(s, env))
+            |> Option.map(spec -> Render.shaderFillMasked(spec, area, ({ x = x0, y = y0 } :: { x = edge, y = y0 } :: { x = edge, y = y1 } :: { x = x0, y = y1 } :: Nil) :: Nil, 1.0, 2) :: Nil)
+            |> Option.getWithDefault(Nil)
 
     /// 写真がまだ届いていなければ None（その層は描かず、下の暗い地が見える）。
     def specOf(shot: Stage.Shot, env: View.Env): Option[ShaderDoc.Spec] =
@@ -164,31 +195,46 @@ mod ViewStage {
         let progress = Stage.fadeProgress(env#storyNow, stage);
         let light = if (progress >= 1.0) Cast.steadyLight(toneOf(stage#shot)) else { previous = toneOf(stage#under), current = toneOf(stage#shot), progress = progress };
         { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light,
-          props = stage#props, photo = stage#shot |> Option.map(s -> s#photo) }
+          props = stage#props, photo = stage#shot |> Option.map(s -> s#photo), backdropShift = shiftOf(env, stage) }
 
     // ── パーティクル（蛍・雪） ──
 
+    /// 粒の演出のまとまり: 止めるまで出ている物（<<fx 名>>）と、一度だけ出ている物（<<fx 名 once=true>>。だんだん薄くなる）。
+    /// 層の数と描き方は novel.effects.json。
+    def particleGroups(env: View.Env, stage: Stage.Stage): List[Group] =
+        let doc = env#res#effects;
+        let steady = Stage.particlesOf(env#storyNow, stage) |> Option.flatMap(n -> EffectsDoc.particleOf(n, doc))
+            |> Option.map(p -> { layer = p#layer, order = 1, items = particlesOf(env, stage, p#look) }) |> Option.toList;
+        let fading = (name, p: EffectsDoc.Particle) -> PropertyTween.triggerSpanAt(env#storyNow, Stage.fxOnceKey(name), stage#props)
+            |> Option.map(match (since, seconds) -> {
+                let left = if (seconds <= 0.0) 0.0 else 1.0 - since / seconds;
+                { layer = p#layer, order = 1, items = particlesOf(env, stage, p#look) |> List.map(Render.overItem(Render.fade(left))) }
+            });
+        let once = EffectsDoc.rec(doc)#particles |> Map.toList |> List.filterMap(match (name, p) -> fading(name, p));
+        List.append(steady, once)
+
+    /// 描き方 look の粒。
+    def particlesOf(env: View.Env, stage: Stage.Stage, look: EffectsDoc.Look): List[Render.PlacedItem] = match look {
+        case EffectsDoc.Look.Fireflies => fireflies(env)
+        case EffectsDoc.Look.Snow      => snow(env, stage)
+    }
+
     /// 蛍: 番号と実時間だけから位置と明滅を導く（どこにも保存しない = 巻き戻しても同じ絵）。
     /// 草むらの高さ（画面の下 6 割）をゆっくり漂い、息をするように明滅する。
-    def particles(env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        match Stage.particlesOf(env#storyNow, stage) {
-            case Some("fireflies") =>
-                let color = View.theme(env)#firefly;
-                Fx.derive(View.kindOf(env)#fireflies, View.realSeconds(env), (_i, rand, t) -> {
-                    let x = rand(0) * Layout.width(env#fit) + Num.sin(t * (0.15 + rand(2) * 0.2) + rand(3) * 6.28) * 40.0;
-                    let y = Layout.height(env#fit) * (0.42 + rand(1) * 0.5) + Num.sin(t * (0.3 + rand(4) * 0.3) + rand(5) * 6.28) * 18.0;
-                    let pulse = 0.5 + 0.5 * Num.sin(t * (1.2 + rand(6) * 1.6) + rand(7) * 6.28);
-                    let a = pulse * pulse;
-                    { x = x, y = y, a = a, r = 2.0 + rand(8) * 1.6 }
-                }) |> List.flatMap(fly ->
-                    if (fly#a < 0.05) Nil
-                    else RawDraw.circleAt({ x = fly#x, y = fly#y }, fly#r * 0.5, Color.lighten(color, 0.5), 4)
-                             |> Render.overItem(item -> item |> Render.fade(fly#a) |> Render.blended(DrawCmd.BlendMode.Add))
-                         :: Render.glowAt({ x = fly#x, y = fly#y }, fly#r * 5.0, color,
-                                          { alpha = 0.55 * fly#a, blend = DrawCmd.BlendMode.Add }, 3))
-            case Some("snow") => snow(env, stage)
-            case _ => Nil
-        }
+    def fireflies(env: View.Env): List[Render.PlacedItem] =
+        let color = View.theme(env)#firefly;
+        Fx.derive(View.kindOf(env)#fireflies, View.realSeconds(env), (_i, rand, t) -> {
+            let x = rand(0) * Layout.width(env#fit) + Num.sin(t * (0.15 + rand(2) * 0.2) + rand(3) * 6.28) * 40.0;
+            let y = Layout.height(env#fit) * (0.42 + rand(1) * 0.5) + Num.sin(t * (0.3 + rand(4) * 0.3) + rand(5) * 6.28) * 18.0;
+            let pulse = 0.5 + 0.5 * Num.sin(t * (1.2 + rand(6) * 1.6) + rand(7) * 6.28);
+            let a = pulse * pulse;
+            { x = x, y = y, a = a, r = 2.0 + rand(8) * 1.6 }
+        }) |> List.flatMap(fly ->
+            if (fly#a < 0.05) Nil
+            else RawDraw.circleAt({ x = fly#x, y = fly#y }, fly#r * 0.5, Color.lighten(color, 0.5), 4)
+                     |> Render.overItem(item -> item |> Render.fade(fly#a) |> Render.blended(DrawCmd.BlendMode.Add))
+                 :: Render.glowAt({ x = fly#x, y = fly#y }, fly#r * 5.0, color,
+                                  { alpha = 0.55 * fly#a, blend = DrawCmd.BlendMode.Add }, 3))
 
     /// 雪: 蛍と同じく番号と実時間だけから位置を導く。上から下へゆっくり落ち、横に少し揺れ、画面の下で上へ戻る。
     /// 粒子ごとに速さ・大きさ・濃さを散らし、遠い粒子（小さく遅い）ほど薄くして奥行きを出す。

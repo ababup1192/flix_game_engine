@@ -212,6 +212,8 @@ mod WorldRead {
         let marked = markSeen(r, w);
         match YarnRunner.shownOf(r#talk) {
             case _ if Option.nonEmpty(r#pause) => World.withRead(r, w)
+            // 効果音の後の lockSeconds の間は、押しても・オートでも送らない（スキップは止めない）。
+            case _ if r#playback != World.Playback.Skip and Stage.isTextLocked(World.now(w), r#stage) => World.withRead(r, w)
             case YarnRunner.Shown.Line(_) =>
                 Emit.emit(World.Event.Paged);
                 let (talk, events) = YarnRunner.step(YarnRunner.Action.Advance, World.now(marked), r#talk);
