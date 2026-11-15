@@ -135,6 +135,7 @@ help:
 	@echo "  make smoke-devtools [SMOKE_TEMPLATE=<テンプレ>]  隠しウィンドウの DEBUG 起動で、名簿・命令口（/help・/halt・/step・/resume・/perf）・flow の記録・閉じた後の名簿を確かめる"
 	@echo "  make determinism [TARGETS=\"<フォルダ>:<台本> …\"]  隠しウィンドウのテンプレに台本を流して遊んだ記録を書き、画面なしの再生が同じ World になるか (リリースの前)"
 	@echo "  make gl-capture-check [BASE=off] [SKIP=<フォルダ名>]  同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる (SKIP の場面は比べない・違えば exit 1)"
+	@echo "  make gl-capture-baseline  この機械の gl-capture の基準を今の絵で撮る (bench/baseline/<版>/gl-capture-<機械>.sha256)"
 	@echo "  make check-external       外のゲームの写しを今の engine で型検査し、基準 (bench/baseline/) から増えたエラーだけ出す"
 	@echo "  make baseline-check [GALLERY=1]  gl-parity の行と絵・3D の部屋の CPU の絵 (とテンプレの gallery) を基準 (PARITY_BASELINE) と比べる"
 	@echo "                           ONLY_2D=1 で 3D の行と絵を除く・ONLY_KNOWN=1 で基準に無い名前を飛ばす・GALLERY_BASE=<dir> で gallery の基準を別に・COMPARE_MAX=<dir> で 3D の行の max を控えと並べる"
@@ -579,13 +580,25 @@ gl-capture:
 	@bin/gl-capture.sh "$(OUT)"
 
 # WhyNot: gl-capture の基準を BASELINE と分ける — 3D の GL の絵は C2 の後で 1 画素変わり、0.78.0 の基準は gl-capture だけを持つ。
-GL_CAPTURE_BASELINE ?= bench/baseline/0.88.4
+# WhyNot: 基準を 1 つのファイルにしない — M2 と M4 Pro で 54 枚のうち 30 枚がずれ、別の機械の基準との差が毎回の門に混ざった。
+GL_CAPTURE_BASELINE ?= bench/baseline/0.96.0
+GL_CAPTURE_MACHINE ?= $(shell sysctl -n machdep.cpu.brand_string 2>/dev/null | tr 'A-Z ' 'a-z-')
+GL_CAPTURE_BASELINE_FILE ?= $(GL_CAPTURE_BASELINE)/gl-capture-$(GL_CAPTURE_MACHINE).sha256
 gl-capture-check:
 	@rm -rf build/gl-capture/a build/gl-capture/b
 	@bin/gl-capture.sh build/gl-capture/a && bin/gl-capture.sh build/gl-capture/b && \
 		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b $(if $(SKIP),--skip $(SKIP))
-	@# 基準と同じ機械なら、基準とも比べる (別の機械の基準とは比べられないので BASE=off で止める)。
-	@if [ "$(BASE)" != off ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE)/gl-capture.sha256 build/gl-capture/a $(if $(SKIP),--skip $(SKIP)); fi
+	@if [ "$(BASE)" = off ]; then :; \
+	elif [ -f "$(GL_CAPTURE_BASELINE_FILE)" ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE_FILE) build/gl-capture/a $(if $(SKIP),--skip $(SKIP)); \
+	else echo "[gl-capture] この機械 ($(GL_CAPTURE_MACHINE)) の基準が無いので、2 回撮りの一致だけを見た（撮るなら make gl-capture-baseline）"; fi
+
+# この機械の基準を今の絵で撮る（撮った絵は 2 回撮りで一致した物だけ）。
+.PHONY: gl-capture-baseline
+gl-capture-baseline:
+	@$(MAKE) --no-print-directory gl-capture-check BASE=off
+	@mkdir -p $(GL_CAPTURE_BASELINE)
+	@cp build/gl-capture/a/SHA256SUMS $(GL_CAPTURE_BASELINE_FILE)
+	@echo "[gl-capture] 基準を書いた: $(GL_CAPTURE_BASELINE_FILE)"
 
 # 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
 # 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。
