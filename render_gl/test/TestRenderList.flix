@@ -3,8 +3,10 @@
 // WhyNot: mod TestRenderList にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
-    use RenderFrame.{RenderList, blendCode, clearRenderList, closeSpriteRun, emitSprite, instanceFloats, kindSprite,
-                     newRenderList, nextInstanceOf, pushSpriteKeyed, rowAt, rowCountOf, rowsOf, stateSize, writeInstAt}
+    use RenderFrame.{blendCode, calcViewport, closeSpriteRun, emitSprite, pushSpriteKeyed, stateSize, writeInstAt}
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec, RenderList, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
+                                         loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenClearColorOf, screenPass,
+                                         targetFormatOf, targetPass, targetTextureOf}
 
     // ── 組み立て ──
 
@@ -32,7 +34,7 @@ mod RenderFrame.TestRenderList {
     /// 描き物を順に積んで run を閉じた RenderList（倍率 1・Pass の絵は無し・"missing" は知らせ済み）。
     def listOf(drawables: List[DrawCmd.Drawable]): RenderList \ IO =
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
-        let list = newRenderList(FloatBuffer.allocate(instanceFloats() * Int32.max(1, List.length(drawables))));
+        let list = newRenderList(FloatBuffer.allocate(instanceFloats() * Int32.max(1, List.length(drawables))), FloatBuffer.allocate(0));
         let warnLog = Ref.fresh(Static, Set#{"missing"});
         List.forEach(d -> emitSprite(st, list, 1.0, 1.0, registry(), Set.empty(), warnLog, d), drawables);
         closeSpriteRun(st, list);
@@ -137,7 +139,7 @@ mod RenderFrame.TestRenderList {
     @Test
     def testNoClipIgnoresLeftoverRect(): Unit \ {Assert, IO} =
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
-        let list = newRenderList(FloatBuffer.allocate(2 * instanceFloats()));
+        let list = newRenderList(FloatBuffer.allocate(2 * instanceFloats()), FloatBuffer.allocate(0));
         let d = sprite("a", 0.0);
         pushSpriteKeyed(st, list, 5, 0, 1, 2, 30, 40, 0, 0.0, 0.0, 8.0, 8.0, d, true, false);
         pushSpriteKeyed(st, list, 5, 0, 7, 8, 9, 10, 0, 1.0, 0.0, 8.0, 8.0, d, true, false);
@@ -175,4 +177,77 @@ mod RenderFrame.TestRenderList {
         let list = listOf(alternating(3));
         clearRenderList(list);
         Assert.assertEq(expected = 0, nextInstanceOf(list))
+
+    // ── pass の指定 ──
+
+    def clearColor(): Color = { r = 51.0 / 255.0, g = 102.0 / 255.0, b = 153.0 / 255.0 }
+
+    /// 320 × 200 に design 320 × 180 を収めた画面の pass（上下に 10 px ずつの黒帯）。
+    def letterboxedScreen(): PassSpec =
+        screenPass((320, 200), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil)
+
+    /// 番号 7 の絵へ op で描く Pass の pass。
+    def passTo(op: RenderTarget.LoadOp): PassSpec =
+        targetPass((64, 32), { texture = 7, format = RenderTarget.Format.Rgba16Float, load = op, resolveTo = None }, DepthStencil.NoDepthStencil, 1)
+
+    /// LoadOp を比べられる形に（Clear は色の 8 bit・ClearTransparent は -1・Keep は -2）。
+    def opOf(op: RenderTarget.LoadOp): (Int32, Int32, Int32) = match op {
+        case RenderTarget.LoadOp.Clear(c)         => (Float64.round(c#r * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                                      Float64.round(c#g * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                                      Float64.round(c#b * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0))
+        case RenderTarget.LoadOp.ClearTransparent => (-1, -1, -1)
+        case RenderTarget.LoadOp.Keep             => (-2, -2, -2)
+    }
+
+    /// 画面の pass の viewport は左上が原点で、上の黒帯 10 px の下から始まる。
+    @Test
+    def testScreenViewportIsTopLeftOrigin(): Unit \ Assert =
+        Assert.assertEq(expected = (0, 10, 320, 180), letterboxedScreen()#viewport)
+
+    /// 横に広い描き先（400 × 180 に design 320 × 180）は左右に 40 px ずつの黒帯で、viewport は x = 40 から。
+    @Test
+    def testPillarboxViewportStartsAfterLeftBand(): Unit \ Assert =
+        let wide = screenPass((400, 180), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil);
+        Assert.assertEq(expected = ((40, 0, 320, 180), true), (wide#viewport, hasLetterbox(wide)))
+
+    /// 形式の比べられる名前（無ければ "none"）。
+    def formatName(format: Option[RenderTarget.Format]): String = match format {
+        case Some(RenderTarget.Format.Rgba8Unorm)  => "rgba8"
+        case Some(RenderTarget.Format.Rgba16Float) => "rgba16f"
+        case None                                  => "none"
+    }
+
+    /// Pass の形式と地の色: 画面は形式を持たず地の色を持ち、Pass は頭の attachment の形式（Rgba16Float）を持ち地の色を持たない。
+    @Test
+    def testFormatAndClearColorOfScreenAndPass(): Unit \ Assert =
+        let pass = passTo(RenderTarget.LoadOp.Keep);
+        Assert.assertEq(expected = ("none", false, "rgba16f", true),
+                        (formatName(targetFormatOf(letterboxedScreen())), Option.isEmpty(screenClearColorOf(letterboxedScreen())),
+                         formatName(targetFormatOf(pass)), Option.isEmpty(screenClearColorOf(pass))))
+
+    /// GL の左下が原点の viewport へ戻すと calcViewport と同じ（下の黒帯が 11 px の 201 px の高さでも）。
+    @Test
+    def testGlViewportMatchesCalcViewport(): Unit \ Assert =
+        let odd = screenPass((320, 201), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil);
+        Assert.assertEq(expected = calcViewport(320, 201, 320.0, 180.0), glViewportOf(odd))
+
+    /// 黒帯が要るのは design の矩形が描き先の全面でない画面だけ（Pass は持たない）。
+    @Test
+    def testLetterboxOnlyWhenViewportIsSmaller(): Unit \ Assert =
+        let full = screenPass((320, 180), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil);
+        Assert.assertEq(expected = (true, false, false),
+                        (hasLetterbox(letterboxedScreen()), hasLetterbox(full), hasLetterbox(passTo(RenderTarget.LoadOp.Keep))))
+
+    /// 画面は黒帯があれば黒・無ければ clearColor で始め、Pass は頼まれた op のまま。
+    @Test
+    def testLoadOpOfScreenAndPass(): Unit \ Assert =
+        let full = screenPass((320, 180), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil);
+        Assert.assertEq(expected = ((0, 0, 0), (51, 102, 153), (-2, -2, -2), (-1, -1, -1)),
+                        (opOf(loadOpOf(letterboxedScreen())), opOf(loadOpOf(full)),
+                         opOf(loadOpOf(passTo(RenderTarget.LoadOp.Keep))), opOf(loadOpOf(passTo(RenderTarget.LoadOp.ClearTransparent)))))
+
+    /// 描き先の絵の番号: 画面は -1・Pass は色の attachment の番号。
+    @Test
+    def testTargetTextureOfScreenAndPass(): Unit \ Assert =
+        Assert.assertEq(expected = (-1, 7), (targetTextureOf(letterboxedScreen()), targetTextureOf(passTo(RenderTarget.LoadOp.Keep))))
 }

@@ -42,7 +42,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.nio.FloatBuffer
+    use RenderFrame.Internal.RenderList
+    use RenderFrame.Internal.RenderList.{DepthStencil, PassSpec}
     use RenderFrame.Internal.WebGpuRows
+    use RenderPaint.Internal.TextureTable
     use RenderPaint.Internal.WebGpuShader
 
     /// 絵の表の 1 枚（番号 → texture と、それを読む bind group）。
@@ -88,11 +91,14 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             // instance の入れ物（CPU）。bytes と、その float の見方。
             cpuBytes = Array[ByteBuffer, Static],
             cpuFloats = Array[FloatBuffer, Static],
+            // 多角形の頂点の入れ物（CPU）。WebGPU の行に多角形がまだ無いので空のまま貸す。
+            cpuVertices = FloatBuffer,
             // 中間の texture と、その画素の大きさ（幅・高さ）。
             frameTexture = Array[Texture, Static],
             frameSize = Array[Int32, Static],
             encoder = Array[Option[CommandEncoder], Static],
-            // 0 = 今の encoder に積んだ pass の数・1 = このコマの submit の数・2 = 前のコマの submit の数。
+            // 0 = 今の encoder に積んだ pass の数・1 = このコマの submit の数・2 = 前のコマの submit の数・
+            // 3〜5 = takeSubmitCounts の後のコマの数・そのうち submit が 2 回以上のコマの数・1 コマの submit の一番多い回数。
             frameCounters = Array[Int32, Static],
             lastFrame = Array[RenderPaint.Frame, Static],
             texWarnLog = Ref[Set[String], Static],
@@ -104,9 +110,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     pub type alias Paint = PaintData
 
-    /// instance の 1 体のバイト数（RenderFrame.writeInstAt の 38 個の float）。
-    // WhyNot: RenderFrame.instanceFloats を呼ばない — 兄弟の mod の pub でない関数は呼べず、pub に開くことになる。
-    def instanceBytes(): Int32 = 152
+    /// instance の 1 体のバイト数（RenderFrame.writeInstAt の float の並び）。
+    def instanceBytes(): Int32 = 4 * RenderList.instanceFloats()
 
     /// device の上に pipeline・buffer・中間の texture・組み込みの絵（起動画面の字とロゴ・Render.lightAt と darkAt の絵）を作る。
     /// design = 射影の寸・clearColor = design の中の地の色・width × height = 中間の texture の画素の大きさ。
@@ -148,10 +153,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             instanceBuffer = Array#{createInstanceBuffer(gpu, firstCount)} @ Static,
             instanceCounts = Array#{firstCount, 0} @ Static,
             cpuBytes = Array#{bytes} @ Static, cpuFloats = Array#{bytes.asFloatBuffer()} @ Static,
+            cpuVertices = FloatBuffer.allocate(0),
             frameTexture = Array#{createFrameTexture(gpu, cfg#width, cfg#height)} @ Static,
             frameSize = Array#{cfg#width, cfg#height} @ Static,
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
-            frameCounters = Array#{0, 0, 0} @ Static,
+            frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
             lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
             texWarnLog = Ref.fresh(Static, Set.empty()), skipped = Ref.fresh(Static, Set.empty()),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh()
@@ -167,9 +173,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         putTexture(BootFont.textureName(), uploadBgra(paint, side, side, BootFont.pixelsArgb()), paint);
         let logoSide = BootFont.logoSide();
         putTexture(BootFont.logoTextureName(), uploadBgra(paint, logoSide, logoSide, BootFont.logoArgb()), paint);
-        let radial = RadialBuiltin.size();
-        putTexture(RadialBuiltin.lightName(), uploadBgra(paint, radial, radial, RadialBuiltin.lightPixels()), paint);
-        putTexture(RadialBuiltin.darkName(), uploadBgra(paint, radial, radial, RadialBuiltin.darkPixels()), paint)
+        TextureTable.putRadialBuiltins(webGpuUploads(paint), textureTables(paint))
 
     /// GL の RenderShader.setProjectionMatrix と同じ行列（列の順・64 バイト）。
     def projectionBytes(width: Float64, height: Float64): ByteBuffer \ IO =
@@ -365,34 +369,18 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// 1 枚を名前で置く（同じ名前は置き換える）。
     pub def putTexture(name: String, info: RenderAsset.TextureInfo, paint: Paint): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        Ref.put(Map.insert(name, info, Ref.get(p#registryRef)), p#registryRef)
+        TextureTable.putTexture(textureTables(paint), name, info)
 
-    /// GpuResources.ensureTexture の中身。key が前と同じなら何もしない。大きさが同じなら writeTexture だけ・違えば作り直す。
-    /// マニフェストで読んだ絵（key を持たない名前）には書かない（GL の RenderPaint.ensureTexture と同じ）。
-    def ensureTexture(paint: Paint, name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO =
+    /// 絵の CPU の側の表。
+    def textureTables(paint: Paint): TextureTable.Tables =
         let PaintData.PaintData(p) = paint;
-        let keys = Ref.get(p#textureKeyRef);
-        if (Map.get(name, keys) == Some(key)) ()
-        else {
-            noteDiagnostics(paint, d -> { textureUploads = name :: d#textureUploads | d });
-            let prev = Map.get(name, Ref.get(p#registryRef));
-            let taken = not Option.isEmpty(prev) and Option.isEmpty(Map.get(name, keys));
-            if (taken) println("[ensureTexture] 名前 '${name}' はすでに別の絵が使っています（上書きしません）")
-            else {
-                let info = match prev {
-                    case Some(old) if old#width == Int32.toFloat64(width) and old#height == Int32.toFloat64(height) =>
-                        rewriteSlot(paint, GpuHandle.textureIdInt(old#id), width, height, argb);
-                        old
-                    case Some(old) =>
-                        dropSlot(paint, GpuHandle.textureIdInt(old#id));
-                        uploadBgra(paint, width, height, argb)
-                    case None => uploadBgra(paint, width, height, argb)
-                };
-                putTexture(name, info, paint);
-                Ref.put(Map.insert(name, key, Ref.get(p#textureKeyRef)), p#textureKeyRef)
-            }
-        }
+        { registryRef = p#registryRef, textureKeyRef = p#textureKeyRef }
+
+    /// WebGPU で絵を上げる関数の組（どれも、そのコマに積んだ pass があれば先に submit する）。
+    def webGpuUploads(paint: Paint): TextureTable.Uploads =
+        { createArgb = (width, height, argb) -> uploadBgra(paint, width, height, argb),
+          writeArgb = (info, width, height, argb) -> rewriteSlot(paint, GpuHandle.textureIdInt(info#id), width, height, argb),
+          drop = info -> dropSlot(paint, GpuHandle.textureIdInt(info#id)) }
 
     /// 番号 id の絵の画素を差し替える（積んだ pass があれば先に submit する）。
     def rewriteSlot(paint: Paint, id: Int32, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO =
@@ -486,20 +474,20 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         pass.setVertexBuffer(0, buffer, 0i64, buffer.size());
         (pass, base)
 
-    /// sprites を texture（format・width × height）へ描く。targetClear = None なら画面・Some(op) なら Pass。readsForbidden = 描き先の絵の番号。
-    def paintInto(paint: Paint, texture: Texture, format: RenderTarget.Format, size: (Int32, Int32),
-                  targetClear: Option[RenderTarget.LoadOp], readsForbidden: Int32, sprites: List[RenderType.Drawable]): Unit \ IO =
+    /// sprites を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
+    def paintInto(paint: Paint, texture: Texture, pass: PassSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        let (width, height) = size;
+        // WhyNot: 画面の形式を描き先に問わない — 画面は中間の texture（RGBA8）へ描き、present で画面の形式へ写す。
+        let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
         WebGpuRows.renderFrame({
-            sprites = sprites, registry = Ref.get(p#registryRef), clearColor = p#clearColor,
-            designW = p#designW, designH = p#designH, fbW = width, fbH = height,
-            targetClear = targetClear, readsForbidden = readsForbidden,
+            sprites = sprites, registry = Ref.get(p#registryRef),
+            designW = p#designW, designH = p#designH, pass = pass,
             texWarnLog = p#texWarnLog, drawCounts = p#drawCounts,
             instancesFor = n -> instancesFor(paint, n),
+            verticesFor = _ -> checked_ecast(p#cpuVertices),
             openPass = (n, op) -> openPass(paint, texture, n, op),
-            setPipeline = (pass, blendC) -> pass.setPipeline(pipelineOf(paint, blendC, format)),
-            setTexture = (pass, id) -> pass.setBindGroup(1, groupOf(paint, id)),
+            setPipeline = (pass1, blendC) -> pass1.setPipeline(pipelineOf(paint, blendC, format)),
+            setTexture = (pass1, id) -> pass1.setBindGroup(1, groupOf(paint, id)),
             skip = name -> skip(paint, name)
         })
 
@@ -541,12 +529,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         Map.get(spec#name, Ref.get(p#targetsRef))
-            |> Option.forEach(t -> paintInto(paint, t#texture, t#format, (t#width, t#height), Some(spec#clear), t#id, sprites))
+            |> Option.forEach(t -> paintInto(paint, t#texture,
+                   RenderList.targetPass((t#width, t#height), { texture = t#id, format = t#format, load = spec#clear, resolveTo = None },
+                                         DepthStencil.NoDepthStencil, 1), sprites))
 
     def paintScreen(paint: Paint, sprites: List[RenderType.Drawable]): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        paintInto(paint, Array.get(0, p#frameTexture), RenderTarget.Format.Rgba8Unorm,
-                  (Array.get(0, p#frameSize), Array.get(1, p#frameSize)), None, -1, sprites)
+        let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
+        paintInto(paint, Array.get(0, p#frameTexture),
+                  RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil), sprites)
 
     /// 最後に画面へ描いたコマを中間の texture へ描き直す（大きさが変わった時。控えも数も進めない）。続けて present を呼ぶ。
     pub def repaintLast(paint: Paint): Unit \ IO =
@@ -569,13 +560,35 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
         };
         submitEncoder(paint);
-        Array.put(Array.get(1, p#frameCounters), 2, p#frameCounters);
-        Array.put(0, 1, p#frameCounters)
+        let submits = Array.get(1, p#frameCounters);
+        Array.put(submits, 2, p#frameCounters);
+        Array.put(0, 1, p#frameCounters);
+        noteFrameSubmits(submits, p#frameCounters)
+
+    /// 1 コマの submit の回数 submits を、counters（frameCounters の並び）の 3〜5 へ足す。
+    def noteFrameSubmits(submits: Int32, counters: Array[Int32, Static]): Unit \ IO =
+        Array.put(Array.get(3, counters) + 1, 3, counters);
+        if (submits >= 2) Array.put(Array.get(4, counters) + 1, 4, counters) else ();
+        Array.put(Int32.max(submits, Array.get(5, counters)), 5, counters)
 
     /// 前のコマ（present まで）の submit の数。
     pub def submitCount(paint: Paint): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
         Array.get(2, p#frameCounters)
+
+    /// 前にこれを呼んだ後のコマ（present の数）の submit の回数を読んで数え直す。frames = コマの数・twoOrMore = submit が 2 回以上のコマの数・most = 1 コマの一番多い回数。
+    /// 半分を超えるコマが 2 回以上なら、upload を staging buffer へ移す目安。
+    pub def takeSubmitCounts(paint: Paint): { frames = Int32, twoOrMore = Int32, most = Int32 } \ IO =
+        let PaintData.PaintData(p) = paint;
+        takeSubmitCountsOf(p#frameCounters)
+
+    /// counters（frameCounters の並び）の 3〜5 を読んで 0 に戻す。
+    def takeSubmitCountsOf(counters: Array[Int32, Static]): { frames = Int32, twoOrMore = Int32, most = Int32 } \ IO =
+        let counts = { frames = Array.get(3, counters), twoOrMore = Array.get(4, counters), most = Array.get(5, counters) };
+        Array.put(0, 3, counters);
+        Array.put(0, 4, counters);
+        Array.put(0, 5, counters);
+        counts
 
     /// 中間の texture を RGBA の生の画素で buf へ読む（幅 × 高さ × 4 バイト・GlOffscreen.readRgba と同じく下の行から）。present の後に呼ぶ。
     pub def readFrame(paint: Paint, buf: ByteBuffer): Unit \ IO =
@@ -665,6 +678,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     /// GPU の資源を paint の登録簿で受ける。fonts = 名前 → アトラス（getFontAtlas の元。足す字は V1 では足さず、フォントごとに 1 回知らせる）。
     pub def handleGpuResources(paint: Paint, fonts: RenderPaint.Fonts, f: Unit -> a \ ef): a \ (ef - Platform.GpuResources) + IO =
+        let uploads = webGpuUploads(paint);
+        let tables = textureTables(paint);
         run f() with handler Platform.GpuResources {
             def initTileBuffer(_instances, k) = {
                 skip(paint, "タイルの層");
@@ -675,7 +690,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 k((vaoId, 0))
             }
             def ensureTexture(name, key, width, height, argb, k) = {
-                ensureTexture(paint, name, key, width, height, argb);
+                TextureTable.ensureTexture(uploads, tables, () -> noteDiagnostics(paint, d -> { textureUploads = name :: d#textureUploads | d }),
+                                           name, key, width, height, argb);
                 k(())
             }
             def ensureGlyphs(textureName, codepoints, k) = {

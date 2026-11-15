@@ -3,8 +3,9 @@
 // WhyNot: mod TestWebGpuRows にしない — 固定したい関数は WebGpuRows の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     import java.nio.FloatBuffer
-    use RenderFrame.{closeSpriteRun, emitSprite, instanceFloats, newRenderList, rowAt, rowsOf, stateSize}
-    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isHistoryName, loadOpOf, needsLetterbox, scissorInto, viewportTop}
+    use RenderFrame.{closeSpriteRun, emitSprite, stateSize}
+    use RenderFrame.Internal.RenderList.{instanceFloats, newRenderList, rowAt, rowsOf}
+    use RenderFrame.Internal.WebGpuRows.{firstInstanceAt, geometryOf, isHistoryName, isSameScissor, noteScissor, putScissor, scissorInto, viewportTop}
 
     def fb(): (Int32, Int32) = (320, 200)
 
@@ -16,15 +17,6 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
         let geom = geometryOf(fst(fb), snd(fb), vp, 0, -1);
         scissorInto(geom, clipFlag, x0, y0, x1, y1);
         (Array.get(10, geom), Array.get(11, geom), Array.get(12, geom), Array.get(13, geom))
-
-    /// LoadOp を比べられる形に（Clear は色の 8 bit・ClearTransparent は -1・Keep は -2）。
-    def opOf(op: RenderTarget.LoadOp): (Int32, Int32, Int32) = match op {
-        case RenderTarget.LoadOp.Clear(c)         => (Float64.round(c#r * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0),
-                                                      Float64.round(c#g * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0),
-                                                      Float64.round(c#b * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0))
-        case RenderTarget.LoadOp.ClearTransparent => (-1, -1, -1)
-        case RenderTarget.LoadOp.Keep             => (-2, -2, -2)
-    }
 
     // ── scissor ──
 
@@ -58,17 +50,24 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     def testScissorStaysInsideTarget(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = (40, 40, 10, 10), scissorOf((50, 50), (0, -50, 100, 100), 1, 40, 40, 90, 90))
 
-    // ── viewport と黒帯 ──
+    /// まだ何も積んでいない時は同じでない・積んだと控えた後の同じ矩形は同じ・違う矩形に替えると同じでない。
+    @Test
+    def testSameScissorOnlyAfterNoted(): Unit \ {Assert, IO} =
+        let geom = geometryOf(320, 200, vp(), 0, -1);
+        putScissor(geom, 0, 0, 320, 200);
+        let first = isSameScissor(geom);
+        noteScissor(geom);
+        let second = isSameScissor(geom);
+        putScissor(geom, 10, 30, 40, 40);
+        let changed = isSameScissor(geom);
+        Assert.assertEq(expected = (false, true, false), (first, second, changed))
+
+    // ── viewport ──
 
     /// viewport の上の端: 上下の黒帯 10 px の時は 10・下に寄った高さ 100 の viewport（GL の vpY = 0）は 300 − 100 = 200。
     @Test
     def testViewportTopFlipsGlOrigin(): Unit \ Assert =
         Assert.assertEq(expected = (10, 200), (viewportTop(200, 10, 180), viewportTop(300, 0, 100)))
-
-    /// 黒帯が要るのは design の矩形が描き先の全面でない時だけ。
-    @Test
-    def testLetterboxOnlyWhenViewportIsSmaller(): Unit \ Assert =
-        Assert.assertEq(expected = (true, false), (needsLetterbox(320, 200, vp()), needsLetterbox(320, 180, (0, 0, 320, 180))))
 
     // ── 行から draw の引数 ──
 
@@ -78,7 +77,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
         let registry = Map#{"a" => { id = GpuHandle.wrapTextureId(5), width = 8.0, height = 8.0 },
                             "b" => { id = GpuHandle.wrapTextureId(6), width = 8.0, height = 8.0 }};
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
-        let list = newRenderList(FloatBuffer.allocate(instanceFloats() * 2));
+        let list = newRenderList(FloatBuffer.allocate(instanceFloats() * 2), FloatBuffer.allocate(0));
         let warnLog = Ref.fresh(Static, Set.empty());
         emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, spriteOf("a"));
         emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, spriteOf("b"));
@@ -93,15 +92,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
           centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
           zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
 
-    // ── render pass の頭の始末と Pass の history ──
-
-    /// 画面は黒帯があれば黒・無ければ clearColor で始め、Pass は頼まれた op のまま（clearColor = (51, 102, 153)/255）。
-    @Test
-    def testLoadOpOfScreenAndPass(): Unit \ Assert =
-        let c = { r = 51.0 / 255.0, g = 102.0 / 255.0, b = 153.0 / 255.0 };
-        Assert.assertEq(expected = ((0, 0, 0), (51, 102, 153), (-2, -2, -2), (-1, -1, -1)),
-                        (opOf(loadOpOf(None, true, c)), opOf(loadOpOf(None, false, c)),
-                         opOf(loadOpOf(Some(RenderTarget.LoadOp.Keep), true, c)), opOf(loadOpOf(Some(RenderTarget.LoadOp.ClearTransparent), false, c))))
+    // ── Pass の history ──
 
     /// Pass の前のコマの写しの名前（RenderTarget.historyName）だけを history と見る。
     @Test

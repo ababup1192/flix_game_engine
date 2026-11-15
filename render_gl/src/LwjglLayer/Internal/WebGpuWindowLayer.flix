@@ -351,6 +351,10 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
                 }
         }
 
+    /// FrameStats の行の終わりに足す submit の回数（前に出した行の後のコマで、2 回以上だったコマの数と一番多い回数）。
+    def submitsText(counts: { frames = Int32, twoOrMore = Int32, most = Int32 }): String =
+        "・submits 2 回以上 ${Int32.toString(counts#twoOrMore)}/${Int32.toString(counts#frames)} コマ（最大 ${Int32.toString(counts#most)}）"
+
     /// 前の presentFrame の後に画面へ描いたコマがあれば、画面へ出し、撮る口と FrameStats に渡す（無ければ何もしない）。
     def presentIfPainted(ps: PresentState): Unit \ IO =
         match Ref.get(ps#screenPainted) {
@@ -358,9 +362,8 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             case Some((paintFrom, paintTo, counts)) =>
                 Ref.put(None, ps#screenPainted);
                 discard showOnScreen(ps);
-                let submits = WebGpuPaint.submitCount(ps#paint);
                 Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo, counts,
-                                                                "・submits ${Int32.toString(submits)}"), ps#frameStats);
+                                                                () -> submitsText(WebGpuPaint.takeSubmitCounts(ps#paint))), ps#frameStats);
                 noteNewErrors(ps);
                 frameShot(ps)
         }
