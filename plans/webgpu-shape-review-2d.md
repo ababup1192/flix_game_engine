@@ -462,7 +462,7 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 | R2 | `FrameArgs` の `targetClear`・`targetNames` のコメントが古い | 今読む所（`passOfArgs`・上下逆に格納する backend だけ）と、pass と二重で残す WhyNot に直した |
 | R3 | staging へ移る条件をテンプレで確かめていない | 7.2 の表（3 本とも 0）・測っていない場面は 7.4 |
 | R4 | 1 コマの submit の数えにテストが無い | `noteFrameSubmits`・`takeSubmitCountsOf` を配列を受ける def に切り出し、`TestSubmitCounts` 3 本 |
-| R5 | 親の文書の `DrawList` と 5 章の約束 | `plans/engine-webgpu.md` の `DrawList` を `RenderList` へ（11 章の 7 は名前を決めた文に）・5.1・6.1 の決まり 6・9.1・12.14 へ書き足した |
+| R5 | 親の文書の `DrawList` と 5 章の約束 | `plans/engine-webgpu.md` の `DrawList` を `RenderList` へ（11 章の 7 は名前を決めた文に）・5.1・6.1 の決まり 6・9.1・12.15 へ書き足した |
 | O1 | 多角形ごとに `list#vertices` を引く | `emitFrameMixed` で 1 回読み、`vertices` を引数で回す |
 | O2 | `formatOf`・`clearColorOf` の置き場と空の列 | `RenderList.targetFormatOf`・`screenClearColorOf` へ寄せ、`PassTarget.Target(ColorAttachment, List[ColorAttachment])` にした |
 | O3 | 呼ばれない `targetNames` | `WebGpuRows.renderFrame` の cfg から消した。2 回目のレビュー（91 点）の N1 で、WebGPU にも `targetUpsideDown() = false` を戻し、`upsideDownTargetsOf(targetUpsideDown(), () -> Set.empty())` で backend に聞く形を残した（cfg の欄は増やさない） |
