@@ -902,7 +902,7 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
     group 1 の控えは `WebGpuRows` が持つ（面の draw は group 0 だけ戻し、`drawSurfaceRow` が絵の控えを捨てて、次の行が空の絵か自分の絵を積み直す）。
 - 振る舞いの変化（絵は変わらない）: GL は面の前で行を流さず、面も同じ列で流す（GL の呼び出しの並びは変わる・draw の順と数と数え方は同じ）。GL の mask つきの面は stencil の clear が pass の頭と 255 個ごとになった。
   面の値は前は `Float64` から f32 にして差していたのを、前半が f32 にして values に置いた物を差す（同じ値）。
-- テスト: render_gl 445 緑（`.layers/render_gl` の flix test。前の 437 から「面は行にならない」「mask の後の mask つきの面も stencil を使ったまま」「mask つきの面の後は値が 1 に戻る」の 3 本を消し、
+- テスト: render_gl 445 緑（1 回目の時点・2 回目は下の表の 452。`.layers/render_gl` の flix test。前の 437 から「面は行にならない」「mask の後の mask つきの面も stencil を使ったまま」「mask つきの面の後は値が 1 に戻る」の 3 本を消し、
   面の行 6 本（`TestShapeRows`）・mask つきの面 4 本（`TestMaskRows`）・面の history の読み 1 本（`TestTargetTable`）を足した。`TestWgslDawn` は単色の代わりを足して 365 本）。
   核の主張を直しを外して確かめた: 前半で面の前の run を閉じないと `testSurfaceSplitsSpriteRun` と `testGlDrawsSurfaceInRowOrder`（GL の backend が面を塗る時に前の箱が 1 本だけ出ている）が落ちる。
   WebGPU の面の mask を描かないと `surfaceMask`・`surfacePass`・`surfaceMsaa` が 3,150〜6,926 px 違い、draw の数も GL と合わずに落ちる。
@@ -910,7 +910,7 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
   `surfaceTexture`（アトラスを Nearest と Linear で・GL では上下逆の Pass・無い名前）・`surfaceMask`（mask つきスプライトとの交互・前の面の mask の内側の小さい mask・三角形にならない mask・2 つの矩形の mask で絵を読む。期待 draw 12・kind 4・texture 1・mask 6）・
   `surfacePass`（Pass の中の面と mask つきの面）・`surfaceMsaa`（標本 4 の Pass の端数の位置の面と mask つきの面）。`unsupported` は 3D の場面だけにした。
 - 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-15）:
-  - render_gl のテスト 445 緑（上）・`TestWgslDawn` 365 本を Dawn で組んで誤り 0。
+  - render_gl のテスト 445 緑（1 回目の時点）・`TestWgslDawn` 365 本を Dawn で組んで誤り 0。
   - `make gl-parity` 緑。81 行が変える前の木（R1b-5）で流した物と 1 字も同じ（castShadow の 565 px は前からの B。面の場面 `texField`・`passMask`・`paramRead` は A 段階で 0 px）。
   - `make webgpu-v1-check` 緑: 画面なしの比べは 34 場面とも許す差の内（足した面の 6 場面は 0 px・submit 1）・2D の draw の数と切れた理由も 34 場面とも GL と同じで、
     `surfaceBetween`・`surfaceMask` は期待とも同じ。WebGPU の誤り 0・「まだ描かない: 3D の場面」は 1 回。後半の rpg の題名の窓の 2 回撮り・GL との比べ・gl_parity の V1 の場面も緑。
