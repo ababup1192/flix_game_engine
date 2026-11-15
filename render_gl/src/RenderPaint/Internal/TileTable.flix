@@ -1,20 +1,21 @@
 // RenderPaint.Internal.TileTable — タイルの層の instance の buffer の表（GL と WebGPU が同じ決まりで使う）。
-// 作った buffer の番号（ゲームへ返す GpuHandle.TileVao の中身・backend の表の番号）の集まりと、タイル 1 枚の float の並びを持つ。
-// 入れ直すか作るかはここだけで決め、backend は作る・入れ直す 2 つ（TileAllocator）だけを渡す。
+// 作った buffer の番号（ゲームへ返す GpuHandle.TileVao の中身・backend の表の番号）→ 入る枚数と、タイル 1 枚の float の並びを持つ。
+// 入れ直すか・作り直すか・作るかはここだけで決め、backend は作る・入れ直す・捨てる 3 つ（TileAllocator）だけを渡す。
 // 1 枚 tileFloats() 個: 0-1=px 2-3=uvOff 4-5=uvSc 6=alpha 7-9=tint（GL の tile シェーダーの location 1〜5 と同じ並び）。
 pub mod RenderPaint.Internal.TileTable {
 
-    /// backend が instance の buffer を作る・入れ直す関数の組。create(floats, 枚数) は buffer の番号を返す。
-    /// write(番号, floats, 枚数) は前より多い枚数でも受ける（足りない buffer は backend が作り直す）。
+    /// backend が instance の buffer を作る・入れ直す・捨てる関数の組。create(floats, 枚数) は buffer の番号を返す。
+    /// write(番号, floats, 枚数) の枚数は、作った時の枚数を超えない（超える時は表が捨てて作り直す）。
     pub type alias TileAllocator = {
         create = (Array[Float32, Static], Int32) -> Int32 \ IO,
-        write = (Int32, Array[Float32, Static], Int32) -> Unit \ IO
+        write = (Int32, Array[Float32, Static], Int32) -> Unit \ IO,
+        destroy = Int32 -> Unit \ IO
     }
 
-    /// 作った buffer の番号の集まり。
-    pub type alias Table = Ref[Set[Int32], Static]
+    /// 作った buffer の番号 → 入る枚数。
+    pub type alias Table = Ref[Map[Int32, Int32], Static]
 
-    pub def fresh(): Table \ IO = Ref.fresh(Static, Set.empty())
+    pub def fresh(): Table \ IO = Ref.fresh(Static, Map.empty())
 
     /// タイル 1 枚の float の数。
     pub def tileFloats(): Int32 = 10
@@ -23,18 +24,25 @@ pub mod RenderPaint.Internal.TileTable {
     pub def init(alloc: TileAllocator, table: Table, instances: List[RenderType.TileInstance]): (GpuHandle.TileVao, Int32) \ IO =
         let count = List.length(instances);
         let id = (alloc#create)(instanceFloats(instances), count);
-        Ref.put(Set.insert(id, Ref.get(table)), table);
+        Ref.put(Map.insert(id, count, Ref.get(table)), table);
         (GpuHandle.wrapTileVao(id), count)
 
-    /// Game.updateTileBuffer の中身: 作った buffer なら入れ直し、知らない番号なら作って返す。
+    /// Game.updateTileBuffer の中身: 作った buffer に入る枚数なら入れ直す。入らなければ捨てて作り直し、新しい番号を返す。
+    /// 知らない番号なら作って返す。
     pub def update(alloc: TileAllocator, table: Table, handle: GpuHandle.TileVao,
                    instances: List[RenderType.TileInstance]): (GpuHandle.TileVao, Int32) \ IO =
         let id = GpuHandle.tileVaoInt(handle);
-        if (Set.memberOf(id, Ref.get(table))) {
-            let count = List.length(instances);
-            (alloc#write)(id, instanceFloats(instances), count);
-            (handle, count)
-        } else init(alloc, table, instances)
+        let count = List.length(instances);
+        match Map.get(id, Ref.get(table)) {
+            case Some(capacity) if count <= capacity =>
+                (alloc#write)(id, instanceFloats(instances), count);
+                (handle, count)
+            case Some(_) =>
+                (alloc#destroy)(id);
+                Ref.put(Map.remove(id, Ref.get(table)), table);
+                init(alloc, table, instances)
+            case None => init(alloc, table, instances)
+        }
 
     /// タイルの列を 1 枚 tileFloats() 個の float に並べる。
     pub def instanceFloats(instances: List[RenderType.TileInstance]): Array[Float32, Static] \ IO =

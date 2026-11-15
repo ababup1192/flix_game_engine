@@ -1,13 +1,13 @@
 // RenderFrame.Internal.RenderList — 1 回の renderCommands で描く行の列（GL と WebGPU が同じ物を流す）と、その行を描く pass の指定。
 // 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲。面・mask・3D の場面は GL を直に呼ぶ）。
-// GL の物（program・VAO・buffer）を持たず、絵と形の buffer は backend の表の番号（GL の backend ではテクスチャ・VAO の番号）で持つ。
+// GL の物（program・VAO・buffer）を持たず、絵と頂点の buffer は backend の表の番号（GL の backend ではテクスチャ・VAO の番号）で持つ。
 // rows の頭: 0=行の数 1=次に書く instance の番号 2=次に書く頂点の番号。その後ろに 1 行 rowStride() 個:
 //   0=種類（kind*） 1=先頭（スプライトは instance・多角形と static は頂点の番号） 2=数（体数・頂点数・タイルの数）
 //   3=絵の番号（0 = 絵の無い箱・多角形と static は 0） 4=blend 5=clip有無 6-9=clip矩形（viewport の左上原点の px）
-//   10=形の buffer の番号（タイルの instance・static の頂点。backend の表の番号。ほかは 0） 11=values の先頭（draw ごとの値。スプライトは 0）
+//   10=頂点の buffer の番号（タイルの instance・static の頂点。backend の表の番号。ほかは 0） 11=values の先頭（draw ごとの値。スプライトは 0）
 // instances は 1 体 instanceFloats() 個（RenderFrame.writeInstAt の並び）。スプライトの行の値は instances の [先頭 × 38, (先頭 + 体数) × 38)。
 // vertices は多角形の頂点（1 頂点 6 個・RenderSprite.writePolyVerts の並び）。instances も vertices も backend が貸す入れ物で、GPU へそのまま送る。
-// values は draw ごとの値（front-end の並び・backend が uniform か頂点の属性へ詰め直す）。頭の viewValueFloats() 個はいつも動かない view（多角形の行が指す）。
+// values は draw ごとの値（front-end の並び。GL は uniform へ差し、WebGPU は詰め直さずに stride 0 の頂点の buffer として読む）。頭の viewValueFloats() 個はいつも identity の view（多角形の行が指す）。
 //   多角形と static は view 6 個（viewOffset x・y・viewScale x・y・halfDesign x・y）・タイルは 8 個（position x・y・tileSize・tileScale x・y・color r・g・b）。
 // 1 回の renderCommands は (PassSpec, RenderList) の組で描く。2D だけの画面では組は 1 つ。
 // WhyNot: 行ごとに record や enum を作らない — 絵が 1 個ごとに替わると行は描く物の数だけでき、その割り当てが 1 コマに乗る。
@@ -20,7 +20,6 @@ pub mod RenderFrame.Internal.RenderList {
         instances = FloatBuffer,
         vertices = FloatBuffer,
         rows = Array[Array[Int32, Static], Static],
-        // values と、その次に書く位置（0 番目）。
         values = Array[Array[Float32, Static], Static],
         valueCount = Array[Int32, Static]
     }
@@ -65,7 +64,7 @@ pub mod RenderFrame.Internal.RenderList {
     /// values（広げると差し替わるので、行を足した後は取り直す）。
     pub def valuesOf(list: RenderList): Array[Float32, Static] \ IO = Array.get(0, list#values)
 
-    /// values に書いた float の数（頭の動かない view を含む）。
+    /// values に書いた float の数（頭の identity の view を含む）。
     pub def valueCountOf(list: RenderList): Int32 \ IO = Array.get(0, list#valueCount)
 
     /// 頭と行を並べた Int32 の配列（広げると差し替わるので、行を足した後は取り直す）。
@@ -75,7 +74,7 @@ pub mod RenderFrame.Internal.RenderList {
     pub def rowAt(rows: Array[Int32, Static], row: Int32, col: Int32): Int32 \ IO =
         Array.get(rowsHead() + row * rowStride() + col, rows)
 
-    /// 行を全部捨てる（instances と頂点の書く位置も頭へ戻し、values は頭の動かない view だけにする）。
+    /// 行を全部捨てる（instances と頂点の書く位置も頭へ戻し、values は頭の identity の view だけにする）。
     pub def clearRenderList(list: RenderList): Unit \ IO =
         let rows = Array.get(0, list#rows);
         Array.put(0, 0, rows);
@@ -124,7 +123,7 @@ pub mod RenderFrame.Internal.RenderList {
         Array.put(first + count, 1, rows)
 
     /// 多角形の run（vertices の [first, first + count)）を 1 行として足す。次の run の頂点は、この run の後ろから始まる。
-    /// view は values の頭の動かない view（頂点は画面の座標で書いてある）。
+    /// view は values の頭の identity の view（頂点は画面の座標で書いてある）。
     pub def appendPolyRow(list: RenderList, first: Int32, count: Int32, blendC: Int32,
                           clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
         let rows = rowsWithRoom(list);

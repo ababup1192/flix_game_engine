@@ -429,6 +429,60 @@ mod WebGpuSharedChecks {
         let ok = near(left, (255, 0, 0, 255)) and near(right, (0, 255, 0, 255)) and errors == 0;
         report("stride0-instance-attribute", ok, "left=${showPixel(left)} right=${showPixel(right)} errors=${errors}")
 
+    // ── 別の案: uniform の buffer を 256 バイトの枠に割り、枠ごとの bind group を作り置く（stride 0 の形と比べるため）──
+
+    /// 8 本の縦の帯を別の draw で描き、色は group 0 の uniform（枠 i）から読む。
+    def slotColorWgsl(): String =
+        "struct Draw { color: vec4f, column: f32 };\n" +
+        "@group(0) @binding(0) var<uniform> d: Draw;\n" +
+        "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n" +
+        "    var p = array<vec2f, 6>(vec2f(0.0, -1.0), vec2f(1.0, -1.0), vec2f(0.0, 1.0), vec2f(0.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0));\n" +
+        "    return vec4f(-1.0 + (d.column + p[i].x) * 0.25, p[i].y, 0.0, 1.0);\n" +
+        "}\n" +
+        "@fragment fn fs_main() -> @location(0) vec4f { return d.color; }\n"
+
+    /// 枠 i（256 バイト）に (i / 7, 1 − i / 7, 0.5, 1)・列 i を置き、枠ごとに bind group を 1 つ作って draw ごとに付け替える。
+    def checkUniformSlots(session: WebGpuOffscreen.Session): Bool \ IO + CheckLog =
+        let gpu = WebGpuOffscreen.gpuOf(session);
+        let (w, h) = WebGpuOffscreen.sizeOf(session);
+        let slots = 8;
+        let layout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("check slots").buffer(0, ShaderStage.VERTEX + ShaderStage.FRAGMENT, BufferBindingType.UNIFORM));
+        let module = gpu.createShaderModule("check slots", slotColorWgsl());
+        let desc = new RenderPipelineDesc("check slots");
+        discard desc.bindGroupLayout(layout).vertex(module, "vs_main").fragment(module, "fs_main").colorTarget(TextureFormat.RGBA8_UNORM);
+        let pipeline = gpu.createRenderPipeline(desc);
+        let data = ByteBuffer.allocateDirect(256 * slots).order(ByteOrder.LITTLE_ENDIAN);
+        List.forEach(i -> {
+            let t = Int32.toFloat32(i) / 7.0f32;
+            List.forEachWithIndex((k, v) -> discard data.putFloat(256 * i + 4 * k, v), t :: (1.0f32 - t) :: 0.5f32 :: 1.0f32 :: Int32.toFloat32(i) :: Nil)
+        }, List.range(0, slots));
+        let uniforms = gpu.createBuffer("check slots", Int32.toInt64(256 * slots), usage2(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
+        gpu.writeBuffer(uniforms, 0i64, data, 0, 256 * slots);
+        let groups = List.range(0, slots) |> List.map(i -> gpu.createBindGroup(new BindGroupDesc("check slot", layout).buffer(0, uniforms, Int32.toInt64(256 * i), 32i64)));
+        let encoder = gpu.createCommandEncoder("check slots");
+        let pass = encoder.beginRenderPass(new RenderPassDesc("check slots").clearColor(WebGpuOffscreen.targetOf(session).defaultView(), 0.2, 0.2, 0.2, 1.0));
+        pass.setPipeline(pipeline);
+        List.forEach(g -> { pass.setBindGroup(0, g); pass.draw(6, 1, 0, 0) }, groups);
+        pass.end();
+        gpu.submit(encoder.finish());
+        let buf = ByteBuffer.allocateDirect(w * h * 4);
+        WebGpuOffscreen.readRgba(session, buf);
+        List.forEach(g -> g.release(), groups);
+        uniforms.destroy();
+        pipeline.release();
+        module.release();
+        layout.release();
+        // 列 i の帯の中ほど（幅 w / 8 の帯の真ん中）の色。
+        let colorAt = i -> rgbaAt(buf, w * 4, w * (2 * i + 1) / 16, h / 2);
+        let want = i -> {
+            let t = Int32.toFloat64(i) / 7.0;
+            (Float64.round(t * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+             Float64.round((1.0 - t) * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0), 128, 255)
+        };
+        let errors = gpu.errorCount();
+        let ok = List.forAll(i -> near(colorAt(i), want(i)), List.range(0, slots)) and errors == 0;
+        report("uniform-slot-bind-groups", ok, "bindGroups=${slots} draws=${slots} bytesPerDraw=256 col0=${showPixel(colorAt(0))} col7=${showPixel(colorAt(7))} errors=${errors}")
+
     // ── まとめ ──────────────────────────────
 
     /// ウィンドウを使わない門を全部流し、全部通ったかを返す。
@@ -446,6 +500,7 @@ mod WebGpuSharedChecks {
                     checkFloatRows(session) ::
                     checkArgbMipRows(session) ::
                     checkConstantAttribute(session) ::
+                    checkUniformSlots(session) ::
                     checkFirstInstance(gpu) :: Nil;
                 WebGpuOffscreen.close(session);
                 List.forAll(identity, results)

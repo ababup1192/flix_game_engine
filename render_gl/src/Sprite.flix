@@ -228,8 +228,7 @@ mod RenderSprite {
         (vao, vbo)
 
     /// 永続 VBO の [first, first+count) の頂点範囲を 1 回の draw call で塗る（アップロードなし）。
-    /// camera（viewOffset/viewScale/halfDesign）を uniform で当てる。blend / scissor は
-    /// 呼び側（RenderFrame）が設定済み。
+    /// camera（viewOffset/viewScale/halfDesign）と blend を uniform と因子で当てる（scissor は呼び側の GlRows.drawRow が張る）。
     /// locs と values は drawPolygonRange と同じ。
     pub def drawStaticRange(gl: GlContext, shader: Int32, vao: Int32, locs: Array[Int32, Static], locAt: Int32, blend: DrawCmd.BlendMode,
                             values: Array[Float32, Static], at: Int32, first: Int32, count: Int32): Unit \ IO =

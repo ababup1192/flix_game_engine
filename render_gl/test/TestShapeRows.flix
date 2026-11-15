@@ -34,6 +34,10 @@ mod RenderFrame.TestShapeRows {
         Merged.MStatic({ buffer = 44, first = 6, count = 9, blend = DrawCmd.BlendMode.Add, clip = None, zIndex = 0,
                          viewOffset = v(20.0, 10.0), viewScale = v(1.5, 1.5), halfDesign = v(160.0, 90.0) })
 
+    def surface(): DrawCmd.SurfaceRenderCmd =
+        { program = GpuHandle.wrapShaderProgram(1), texReads = Nil, rect = clipRect(), mask = Nil, time = 0.0, zIndex = 0,
+          blend = DrawCmd.BlendMode.Normal, alpha = 1.0, params = Nil }
+
     def registry(): RenderAsset.TextureRegistry =
         Map#{"tiles" => { id = GpuHandle.wrapTextureId(9), width = 16.0, height = 16.0 }}
 
@@ -47,6 +51,17 @@ mod RenderFrame.TestShapeRows {
         list
 
     def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = rowAt(rowsOf(list), row, col)
+
+    def clipRect(): Rect2.Rect2 = { position = v(1.0, 2.0), size = v(30.0, 20.0) }
+
+    /// clipRect を倍率 1 で画素にした時の (clip有無, x0, y0, x1, y1)。
+    def clipCells(): (Int32, Int32, Int32, Int32, Int32) =
+        let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = 1.0, scaleY = 1.0 }, clipRect());
+        (1, x0, y0, x1, y1)
+
+    /// 行 row の欄 5〜9（clip有無・clip矩形）。
+    def rowClip(list: RenderList, row: Int32): (Int32, Int32, Int32, Int32, Int32) \ IO =
+        (cell(list, row, 5), cell(list, row, 6), cell(list, row, 7), cell(list, row, 8), cell(list, row, 9))
 
     def kindsOf(list: RenderList): List[Int32] \ IO = List.range(0, rowCountOf(list)) |> List.map(row -> cell(list, row, 0))
 
@@ -77,7 +92,13 @@ mod RenderFrame.TestShapeRows {
         let list = listOf(poly() :: Merged.MPoly(polyWith(DrawCmd.BlendMode.Multiply, None)) :: Nil);
         Assert.assertEq(expected = (2, blendCode(DrawCmd.BlendMode.Multiply)), (rowCountOf(list), cell(list, 1, 4)))
 
-    /// 多角形の行の view は values の頭（動かない view・0）を指す。
+    /// 切り抜きの矩形を持つ多角形の行は、clip有無 1 と DrawCmd.clipPixels の画素の矩形を持つ。
+    @Test
+    def testClippedPolygonRowKeepsClipPixels(): Unit \ {Assert, IO} =
+        let list = listOf(Merged.MPoly(polyWith(DrawCmd.BlendMode.Normal, Some(clipRect()))) :: Nil);
+        Assert.assertEq(expected = clipCells(), rowClip(list, 0))
+
+    /// 多角形の行の view は values の頭（identity の view・0）を指す。
     @Test
     def testPolygonRowPointsAtIdentityView(): Unit \ {Assert, IO} =
         let list = listOf(poly() :: Nil);
@@ -91,11 +112,21 @@ mod RenderFrame.TestShapeRows {
 
     // ── タイルの層 ──
 
-    /// タイルの層の行は 種類・枚数・絵の番号・buffer の番号を持つ。
+    /// タイルの層の行の種類はタイル。
     @Test
-    def testTileRowColumns(): Unit \ {Assert, IO} =
+    def testTileRowKind(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = kindTile(), cell(listOf(tile() :: Nil), 0, 0))
+
+    /// タイルの層の行は、枚数（12）と絵の番号（9）を持つ。
+    @Test
+    def testTileRowCountAndTexture(): Unit \ {Assert, IO} =
         let list = listOf(tile() :: Nil);
-        Assert.assertEq(expected = (kindTile(), 12, 9, 33), (cell(list, 0, 0), cell(list, 0, 2), cell(list, 0, 3), cell(list, 0, 10)))
+        Assert.assertEq(expected = (12, 9), (cell(list, 0, 2), cell(list, 0, 3)))
+
+    /// タイルの層の行は、instance の buffer の番号（33）を持つ。
+    @Test
+    def testTileRowBuffer(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = 33, cell(listOf(tile() :: Nil), 0, 10))
 
     /// タイルの層の values は position・tileSize・tileScale・color の 8 個。
     @Test
@@ -118,12 +149,33 @@ mod RenderFrame.TestShapeRows {
 
     // ── static layer ──
 
-    /// static の行は 種類・頭の頂点・頂点の数・blend・buffer の番号を持つ。
+    /// static の行の種類は static。
     @Test
-    def testStaticRowColumns(): Unit \ {Assert, IO} =
+    def testStaticRowKind(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = kindStatic(), cell(listOf(staticRange() :: Nil), 0, 0))
+
+    /// static の行は、buffer の中の頭の頂点（6）と頂点の数（9）を持つ。
+    @Test
+    def testStaticRowRange(): Unit \ {Assert, IO} =
         let list = listOf(staticRange() :: Nil);
-        Assert.assertEq(expected = (kindStatic(), 6, 9, blendCode(DrawCmd.BlendMode.Add), 44),
-                        (cell(list, 0, 0), cell(list, 0, 1), cell(list, 0, 2), cell(list, 0, 4), cell(list, 0, 10)))
+        Assert.assertEq(expected = (6, 9), (cell(list, 0, 1), cell(list, 0, 2)))
+
+    /// static の行の blend は範囲の blend（Add）。
+    @Test
+    def testStaticRowBlend(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = blendCode(DrawCmd.BlendMode.Add), cell(listOf(staticRange() :: Nil), 0, 4))
+
+    /// static の行は範囲の buffer の番号（44）を持つ。
+    @Test
+    def testStaticRowBuffer(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = 44, cell(listOf(staticRange() :: Nil), 0, 10))
+
+    /// 切り抜きの矩形を持つ static の範囲の行は、clip有無 1 と DrawCmd.clipPixels の画素の矩形を持つ。
+    @Test
+    def testClippedStaticRowKeepsClipPixels(): Unit \ {Assert, IO} =
+        let clipped = Merged.MStatic({ buffer = 44, first = 0, count = 3, blend = DrawCmd.BlendMode.Normal, clip = Some(clipRect()), zIndex = 0,
+                                       viewOffset = v(0.0, 0.0), viewScale = v(1.0, 1.0), halfDesign = v(0.0, 0.0) });
+        Assert.assertEq(expected = clipCells(), rowClip(listOf(clipped :: Nil), 0))
 
     /// static の行の view は values の頭の後ろに置き、viewOffset・viewScale・halfDesign の 6 個。
     @Test
@@ -141,18 +193,36 @@ mod RenderFrame.TestShapeRows {
         let list = listOf(List.repeat(10, tile()));
         Assert.assertEq(expected = (10, viewValueFloats() + 80, 3.0f32), (rowCountOf(list), valueCountOf(list), Array.get(cell(list, 9, 11), valuesOf(list))))
 
-    /// 空にした列の values は頭の動かない view だけ・頂点の書く位置は頭。
+    /// 空にした列の values は頭の identity の view だけ・頂点の書く位置は頭。
     @Test
     def testClearKeepsOnlyIdentityView(): Unit \ {Assert, IO} =
         let list = listOf(poly() :: staticRange() :: Nil);
         clearRenderList(list);
         Assert.assertEq(expected = (viewValueFloats(), 0), (valueCountOf(list), nextVertexOf(list)))
 
-    /// 面と 3D の場面は行にならない（emitRowItem が false を返し、行を足さない）。
-    @Test
-    def testSceneIsNotARow(): Unit \ {Assert, IO} =
+    /// 1 個を emitRowItem へ渡した時の (行にしたか, 行の数)。
+    def madeRow(item: Merged): (Bool, Int32) \ IO =
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let list = newRenderList(FloatBuffer.allocate(instanceFloats()), FloatBuffer.allocate(vertexFloats()));
-        let made = emitRowItem(st, list, 1.0, 1.0, registry(), Set.empty(), Ref.fresh(Static, Set.empty()), Merged.MScene3d(0));
-        Assert.assertEq(expected = (false, 0), (made, rowCountOf(list)))
+        let made = emitRowItem(st, list, 1.0, 1.0, registry(), Set.empty(), Ref.fresh(Static, Set.empty()), item);
+        (made, rowCountOf(list))
+
+    /// 3D の場面は行にならない（emitRowItem が false を返し、行を足さない）。
+    @Test
+    def testSceneIsNotARow(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (false, 0), madeRow(Merged.MScene3d(0)))
+
+    /// mask つきスプライトは行にならない。
+    @Test
+    def testMaskedSpriteIsNotARow(): Unit \ {Assert, IO} =
+        let masked = DrawCmd.make({
+          texture = "", position = v(0.0, 0.0), scale = v(4.0, 4.0), rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
+          centered = false, uvOffset = v(0.0, 0.0), uvScale = v(1.0, 1.0), zIndex = 0, style = None, clip = None,
+          blend = DrawCmd.BlendMode.Normal, mask = (v(0.0, 0.0) :: v(4.0, 0.0) :: v(0.0, 4.0) :: Nil) :: Nil });
+        Assert.assertEq(expected = (false, 0), madeRow(Merged.MSprite(masked)))
+
+    /// 面（ShaderDoc）は行にならない。
+    @Test
+    def testSurfaceIsNotARow(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (false, 0), madeRow(Merged.MSurface(surface())))
 }

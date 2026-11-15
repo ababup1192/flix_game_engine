@@ -3,6 +3,7 @@
 pub mod RenderFrame.Internal.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
+    import java.nio.FloatBuffer
     use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, upsideDownTargetsOf}
     use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
                                          instanceFloats, kindPoly, kindStatic, kindTile, newRenderList, rowAt, rowCountOf, rowsOf, screenPass,
@@ -124,60 +125,62 @@ pub mod RenderFrame.Internal.GlRows {
 
     /// 行を順に GL へ流し、列を空にする。st = front-end の状態（draw call を数える先）。
     pub def drawRenderList(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList): Unit \ IO =
-        drawRowsFrom(gl, gs, st, list, 0, rowCountOf(list));
+        drawRowsFrom(gl, gs, st, list#instances, list#vertices, rowsOf(list), valuesOf(list), 0, rowCountOf(list));
         clearRenderList(list)
 
-    def drawRowsFrom(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList, row: Int32, n: Int32): Unit \ IO =
+    // WhyNot: 行ごとに list の欄を引かない — 行が描く物の数だけある画面で、record の欄を辿る代金が 1 コマに出る。入れ物と配列はここで 1 回取る。
+    def drawRowsFrom(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instances: FloatBuffer, vertices: FloatBuffer,
+                     rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
-            drawRow(gl, gs, st, list, row);
-            drawRowsFrom(gl, gs, st, list, row + 1, n)
+            drawRow(gl, gs, st, instances, vertices, rows, values, row);
+            drawRowsFrom(gl, gs, st, instances, vertices, rows, values, row + 1, n)
         }
 
     /// 行 1 つを draw 1 回で描き、draw call を数える（種類ごとの描き方は drawPolyRow などへ）。
     // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
-    def drawRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList, row: Int32): Unit \ IO =
-        let rows = rowsOf(list);
+    def drawRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instances: FloatBuffer, vertices: FloatBuffer,
+                rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
         let kind = rowAt(rows, row, 0);
         setScissorAt(gl, gs, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9));
-        if (kind == kindPoly()) drawPolyRow(gl, gs, st, list, rows, row)
-        else if (kind == kindTile()) drawTileRow(gl, gs, st, list, rows, row)
-        else if (kind == kindStatic()) drawStaticRow(gl, gs, st, list, rows, row)
-        else drawSpriteRow(gl, gs, st, list, rows, row);
+        if (kind == kindPoly()) drawPolyRow(gl, gs, st, vertices, rows, values, row)
+        else if (kind == kindTile()) drawTileRow(gl, gs, st, rows, values, row)
+        else if (kind == kindStatic()) drawStaticRow(gl, gs, st, rows, values, row)
+        else drawSpriteRow(gl, gs, st, instances, rows, row);
         ()
 
     /// スプライトの行（instances の run）を 1 回の instanced draw で描く。
-    def drawSpriteRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
+    def drawSpriteRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instances: FloatBuffer,
                       rows: Array[Int32, Static], row: Int32): Unit \ IO =
         let texId = rowAt(rows, row, 3);
         let blendC = rowAt(rows, row, 4);
         RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
-                                            Array.get(3, gs), blendOf(blendC), list#instances, rowAt(rows, row, 1), rowAt(rows, row, 2));
+                                            Array.get(3, gs), blendOf(blendC), instances, rowAt(rows, row, 1), rowAt(rows, row, 2));
         countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
                         blendC, false, 1)
 
     /// 多角形の行（vertices の run）を 1 回の draw で描く。
-    def drawPolyRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
-                    rows: Array[Int32, Static], row: Int32): Unit \ IO =
+    def drawPolyRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], vertices: FloatBuffer,
+                    rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
         let blendC = rowAt(rows, row, 4);
         RenderSprite.drawPolygonRange(gl, Array.get(4, gs), Array.get(5, gs), Array.get(6, gs), gs, polyLocsAt(), blendOf(blendC),
-                                      valuesOf(list), rowAt(rows, row, 11), list#vertices, rowAt(rows, row, 1), rowAt(rows, row, 2));
+                                      values, rowAt(rows, row, 11), vertices, rowAt(rows, row, 1), rowAt(rows, row, 2));
         countPolyDraw(st, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9), blendC)
 
     /// タイルの層の行を 1 回の instanced draw で描く。TileMapRenderCmd は blend を持たない（いつも Normal）ので、前の行の Add / Multiply を戻す。
-    def drawTileRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
-                    rows: Array[Int32, Static], row: Int32): Unit \ IO =
+    def drawTileRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static],
+                    rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
         RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
         RenderSprite.drawTileMapInstanced(gl, Array.get(11, gs), rowAt(rows, row, 3), rowAt(rows, row, 10), gs, tileLocsAt(),
-                                          valuesOf(list), rowAt(rows, row, 11), rowAt(rows, row, 2));
+                                          values, rowAt(rows, row, 11), rowAt(rows, row, 2));
         countSingleDraw(st, kindTile(), 1)
 
     /// static layer の範囲の行を、頂点の buffer（VAO）の範囲で 1 回の draw で描く（上げも三角形化もしない）。
-    def drawStaticRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList,
-                      rows: Array[Int32, Static], row: Int32): Unit \ IO =
+    def drawStaticRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static],
+                      rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
         let count = rowAt(rows, row, 2);
         RenderSprite.drawStaticRange(gl, Array.get(4, gs), rowAt(rows, row, 10), gs, polyLocsAt(), blendOf(rowAt(rows, row, 4)),
-                                     valuesOf(list), rowAt(rows, row, 11), rowAt(rows, row, 1), count);
+                                     values, rowAt(rows, row, 11), rowAt(rows, row, 1), count);
         countSingleDraw(st, kindStatic(), if (count < 3) 0 else 1)
 }

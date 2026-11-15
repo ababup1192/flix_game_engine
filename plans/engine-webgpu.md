@@ -708,20 +708,24 @@ V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関�
 
 表の 8 行目の 2 つ目の種類。GL で多角形・タイルの層・static layer の範囲を `RenderList` の行にし（GL を直に呼ぶのは面・mask つきスプライト・3D の場面だけになった）、同じ行を WebGPU の backend に流した。
 
-- **決めた事 1 — draw ごとの値の置き場**: `RenderList` に `values`（Float32 の配列・前半の持ち物）を足し、行の欄を 10 → 12 にした（10 = 形の buffer の番号・11 = values の先頭）。
-  タイルの層は 8 個（position・tileSize・tileScale・color）、多角形と static は view の 6 個（viewOffset・viewScale・halfDesign）。values の頭の 6 個はいつも動かない view で、動く多角形の行はそこを指す（多角形と static が shader 1 本・GL の関数 1 本になる）。
+- **決めた事 1 — draw ごとの値の置き場**: `RenderList` に `values`（Float32 の配列・前半の持ち物）を足し、行の欄を 10 → 12 にした（10 = 頂点の buffer の番号・11 = values の先頭）。
+  タイルの層は 8 個（position・tileSize・tileScale・color）、多角形と static は view の 6 個（viewOffset・viewScale・halfDesign）。values の頭の 6 個はいつも identity の view で、動く多角形の行はそこを指す（多角形と static が shader 1 本・GL の関数 1 本になる）。
   比べた別の案は「行は元の record の番号だけ持ち、record の列を横に置く」: GL は今の uniform の差し方のままで済むが、WebGPU に record をほどいて float に詰め直す 2 本目ができ、P9 の持ち越しと JS へ 1 回で渡す形（形のレビュー 3.5）に乗らない。見本は `plans/webgpu/samples/per-draw-values.md`。
 - **決めた事 2 — WebGPU で draw ごとの値を shader へ渡す形**: values をコマに 1 回 `writeBuffer` し、**stride 0 の instance の頂点の buffer**（頂点の buffer の 1 番）として読み、行ごとに `setVertexBuffer` の offset だけ替える。
   別の案は「uniform の buffer を 256 バイトの枠に割って枠ごとの bind group を作り置く」と「dynamic offset」。前者は bind group の数が 1 コマの draw の数を追い、1 draw 256 バイトに広げる。後者は `render_gl/java` の `WebGpu` の口（`setBindGroup` の offset）を足す事になり、GL の層の jar のハッシュとブラウザの JSO の実装が動く。
-  どちらも書いて試してはいない（同じ見本の文書に 30 行以内の形だけ）。入れた形は Dawn の Metal で 4 場面とも GL と 0 px。
-  stride 0 の形そのものは `bench/webgpu_check` に門を 1 本足し（`stride0-instance-attribute`: offset を替えた 2 つの draw・firstInstance 3 でも同じ要素を読む）、PC の Dawn と headless の Chrome の両方で通した。ブラウザで多角形とタイルの絵を GL と比べる門はまだ無い（ブラウザの門は rpg の題名の画面だけ）。
-- **形の buffer の寿命**: R1b-1 の「表は前半・作る消すだけ backend」に載せた（比べ直していない）。タイルの層は `RenderPaint.Internal.TileTable`（作った番号の集まり・入れ直すか作るか・1 枚 10 個の並び）と `TileAllocator{create, write}`、
+  前者は `bench/webgpu_check` に形だけの門 `uniform-slot-bind-groups`（8 draw）を足して PC の Dawn と headless の Chrome で動かした: 動くが bind group が draw の数（8 個）だけ要り、1 draw 256 バイト（中身 20 バイト）。dynamic offset は道具の口が変わるので試さずに捨てた。
+  入れた形は Dawn の Metal で 5 場面とも GL と 0 px。stride 0 の形そのものも門を 1 本足し（`stride0-instance-attribute`: offset を替えた 2 つの draw・firstInstance 3 でも同じ要素を読む）、PC の Dawn と headless の Chrome の両方で通した。
+  **ブラウザで確かめたのは headless の Chrome（Metal）だけ**で、Safari と Firefox（wgpu の Metal での stride 0）は【未確認】。ブラウザで多角形とタイルの絵を GL と比べる門もまだ無い（ブラウザの門は rpg の題名の画面だけ）。
+- **頂点の buffer の寿命**: R1b-1 の「表は前半・作る消すだけ backend」に載せた（比べ直していない）。タイルの層は `RenderPaint.Internal.TileTable`（作った番号 → 入る枚数・入れ直すか作り直すか作るか・1 枚 10 個の並び）と `TileAllocator{create, write, destroy}`、
   static layer は `RenderStatic.resolve` が `StaticAllocator{create, destroy}` を受ける形にした（鍵が替われば古い方を捨てて作り直す・`release`）。`RenderStatic.Range#vao` は `buffer`（backend の表の番号）にした。
 - 入れた物（render_gl の中だけ・engine の pub は増えていない）:
   - 前半: `RenderList.appendPolyRow`・`appendTileRow`・`appendStaticRow`・`values`・`nextVertexOf`。`RenderFrame.emitRowItem`（行になる種類を積む・GL と WebGPU が同じ物を呼ぶ）・`closeRuns`・`flushRows`（GL を直に呼ぶ種類の前だけ行を流す）。多角形の run は front-end の状態だけで持つ（頂点の先頭の番号を st の 40 番に）。
   - GL: `GlRows.drawRow` が種類で分かれる（`drawPolyRow`・`drawTileRow`・`drawStaticRow`）。uniform の location は GL の状態の配列（gs の 12〜19）に置き、`RenderSprite.drawPolygonRange`・`drawStaticRange`・`drawTileMapInstanced` が values の位置から差す。
-  - WebGPU: `WebGpuShader.polyWgsl`・`tileWgsl`（対の GLSL と 1 行ずつ同じ式）・pipeline の鍵に形（スプライト・多角形・タイル）を足す・instance / 頂点 / values の 3 本の流れ（`Stream`。どれかが空きに入らなければ先に submit して 3 本とも頭から送る）・
+  - WebGPU: `WebGpuShader.polyWgsl`・`tileWgsl`（対の GLSL と 1 行ずつ同じ式）・pipeline の鍵に形（スプライト・多角形・タイル）を足す・instance / 頂点 / values の 3 本の `Stream`（どれかが空きに入らなければ先に submit して 3 本とも頭から送る）・
     タイルと static の buffer の表・`initTileBuffer`・`updateTileBuffer`。Pass へはタイルと static を乗せない（GL の `paintTarget` と同じ）。起動の時に作る pipeline は 3 本 → 7 本（スプライトと多角形の blend 3 つずつとタイル 1 本）。
 - 振る舞いの変化（絵は変わらない）: GL の多角形の run は、スプライトが来るたびに GL へ流していたのが、行として溜めて GL を直に呼ぶ種類の前（か pass の終わり）にまとめて流す。GL の呼び出しの並びは変わるが、draw の順と数・数え方は同じ。
 - 門（この Mac・2026-11-15）: 下の 7.7（`webgpu-shape-review-2d.md`）。
-- 持ち越し: `bench/webgpu_v1` の 4 場面をブラウザでも回す口・面（P5 の後）の行・mask（比べる値・8 章）・history と MSAA の resolve。タイルの層の buffer は捨てる口が無い（GL も前から捨てない。`GpuResources` に口が無く、足すなら engine の pub の拡張）。
+- 3 本の `Stream` の送り方（どれかが入らなければ submit して 3 本とも頭から・頭からでも入らない本は伸ばす）は純粋な関数 `planUpload` に出し、GPU 無しのテスト 3 本（`TestUploadPlan`）と、Pass と本編に 12,600 頂点ずつ置く場面 `polygonFlood`（submit 2・0 px）で確かめた。
+- WebGPU でタイルの数が buffer に入っている枚数より多い時と、static の範囲が buffer の外へ出る時は、入っている分だけ描いて 1 回知らせる（buffer の外を読む draw は pass ごと誤りになり、コマ全体が消える）。
+- 持ち越し: `bench/webgpu_v1` の 5 場面をブラウザでも回す口・Safari と Firefox での stride 0・面（P5 の後）の行・mask（比べる値・8 章）・history と MSAA の resolve。タイルの層の buffer は捨てる口が無い（大きくなって作り直す時だけ捨てる。層ごと要らなくなった時の口は `GpuResources` に無く、足すなら engine の pub の拡張）。
+  engine の `GpuHandle.StaticVao`・`wrapStaticVao`・`staticVaoInt`・`staticVboInt` は使う所が無くなった（render_gl は static の buffer を番号 1 つで持つ）。消すのは engine の pub の変更なので相談事として残す。

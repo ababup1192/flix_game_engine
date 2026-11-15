@@ -529,24 +529,29 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 
 | 欄 | 3.1 の 8 の案 | 入れた形 |
 |---|---|---|
-| `rows` の頭 | 行の数・次の instance・次の頂点 | そのとおり（3 個）。1 行は 10 → 12 欄（10 = 形の buffer の番号・11 = values の先頭） |
+| `rows` の頭 | 行の数・次の instance・次の頂点 | そのとおり（3 個）。1 行は 10 → 12 欄（10 = 頂点の buffer の番号・11 = values の先頭） |
 | `vertices` | 多角形と mask の頂点 | 多角形だけ（mask は次の小分け） |
-| `values` | draw ごとの値（タイルの position・面の params）。front-end の並びで書き、backend が uniform か storage へ詰め直す | front-end の並びのまま。GL は uniform へ、WebGPU は詰め直さず stride 0 の頂点の buffer として読む。頭の 6 個は動く多角形の動かない view |
+| `values` | draw ごとの値（タイルの position・面の params）。front-end の並びで書き、backend が uniform か storage へ詰め直す | front-end の並びのまま。GL は uniform へ、WebGPU は詰め直さず stride 0 の頂点の buffer として読む。頭の 6 個は動く多角形の identity の view |
 | `ranges` | 長さの変わる物（`texReads`） | 入れていない（使う種類は面） |
 
 7.1 の持ち越しの仕分け: #7（GL の scissor の控え）は、GL を直に呼ぶ種類がまだ 3 つ（面・mask つきスプライト・3D の場面）残るので持ち越し。ほか（#1・#2・#3・#8・#9・#10）はこの小分けの外。
 
 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal）:
 
-- テスト: render_gl 377 緑（`.layers/render_gl` の flix test。`TestShapeRows` 15 本・`TestShapeBuffers` 8 本を足した）。engine・engine_world・engine_tools は触っていない。
+- テスト: render_gl 391 緑（`.layers/render_gl` の flix test。`TestShapeRows` 24 本・`TestShapeBuffers` 10 本・`TestUploadPlan` 3 本を足した）。engine・engine_world・engine_tools は触っていない。
 - `make gl-parity` 緑（castShadow の 565 px は前からの B）。テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）。
-- `make webgpu-v1-check` 緑: 画面なしの比べは 13 場面とも 0 px（足した `polygons`・`polygonPass`・`tiles`・`staticLayer` も 0 px・submit 1・WebGPU の誤り 0）・rpg-starter の title の GL と WebGPU 0 px・gl_parity の V1 の scene 0 px。
+- `make webgpu-v1-check` 緑: 画面なしの比べは 14 場面とも 0 px（足した `polygons`・`polygonPass`・`tiles`・`staticLayer` は submit 1、`polygonFlood` は submit 2・WebGPU の誤り 0）・rpg-starter の title の GL と WebGPU 0 px・gl_parity の V1 の scene 0 px。
   許容は既定の 0 のままで、丸めの許容を足した場面は無い。
 - `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。
-- `make webgpu-check` と `webgpu-check-web` 緑（足した `stride0-instance-attribute` が PC の Dawn と headless の Chrome で通る）。
-- `make lint-huge-methods` 緑（sprite_stress の jar を作り直して）。`bench/webgpu_v1` の jar（engine を全部含む）でも緑（その時に bench の `V1Main.drawScene` が 10,317 バイトで鳴ったので 2 つの def に分けた）。
-- `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数）。
+- `make webgpu-check` と `webgpu-check-web` 緑（足した `stride0-instance-attribute` と `uniform-slot-bind-groups` が PC の Dawn と headless の Chrome で通る）。
+- `make lint-huge-methods` 緑（sprite_stress の jar を作り直して）。`bench/webgpu_v1` の jar（engine を全部含む）でも緑（初めに bench の `V1Main.drawScene` が 10,317 バイトで鳴ったので 2 つの def に分けた）。
+- `make gl-capture-check`（1 回目のレビューの前）: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数）。
 - 速さの前後は人の方針（12.16）で回していない。毎コマの変化: GL の多角形は行として溜めてから流す（GL の呼び出しは同じ数）・WebGPU はタイルと static の行ごとに `setVertexBuffer` が 1〜2 回増える。
+
+1 回目のレビュー（84 点）への対応: 必須 3 件（3 本の Stream の送り方を `planUpload` に出してテストと `polygonFlood`・別の案 (2b) を `bench/webgpu_check` で動かして表へ・独自の言い回しを「identity の view」「頂点の buffer」へ）と、
+任意のうち、タイルの作り直しを前半の `TileTable` へ（番号 → 入る枚数・大きくなれば捨てて作り直し新しい番号）・WebGPU でタイルの数や static の範囲が buffer を超える時に入っている分だけ描く・
+`geometryOf` に送った位置を引数で渡す・GL の行を流す所で list の欄を 1 回だけ取る・What のコメントを消す・テストを 1 つの値ずつに分け clip と行にならない種類を足す・mask つきスプライトを飛ばす所で run を閉じる（draw の数え方を GL とそろえる）を直した。
+`GpuHandle.StaticVao` などの使われなくなった engine の pub は、engine を触らず親の 12.18 の持ち越しに書いた。
 
 ## 第 1 版のレビュー（74 点）への対応
 

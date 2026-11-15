@@ -23,7 +23,7 @@ mod V1Scenes {
 
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: veil() :: radial() :: text() :: passPaste() :: passHalf() :: generated() :: passThenGenerated() ::
-        polygons() :: polygonPass() :: tiles() :: staticLayer() :: Nil
+        polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() :: Nil
 
     def c8(r: Int32, g: Int32, b: Int32): Color =
         { r = Int32.toFloat64(r) / 255.0, g = Int32.toFloat64(g) / 255.0, b = Int32.toFloat64(b) / 255.0 }
@@ -221,6 +221,25 @@ mod V1Scenes {
             Render.blitRegion({ name = "pp", design = { x = designW(), y = designH() },
                                 src = { position = v(0.0, 0.0), size = v(160.0, 90.0) },
                                 at = v(80.0, 45.0), size = v(160.0, 90.0), z = 2 }) :: Nil) }
+
+    /// 16 角形を 20 × 15 に並べた 300 個（三角形にほどくと 12,600 頂点）。色は場所ごとに替える。
+    def ngonGrid(z: Int32): List[Render.PlacedItem] =
+        List.range(0, 300) |> List.map(i -> {
+            let col = Int32.remainder(i, 20);
+            let row = i / 20;
+            at(Int32.toFloat64(col * 16 + 8), Int32.toFloat64(row * 12 + 6),
+               RawDraw.ngon(16, 6.0, c8(40 + col * 10, 60 + row * 12, 200 - col * 5), z))
+        })
+
+    /// Pass と本編の両方に多角形を 12,600 頂点ずつ置く。頂点の Stream（初めは 4,096 頂点）を Pass が伸ばし、
+    /// 本編はその後ろに入らないので submit してから頭から送る（submit は本編の前の 1 回と、コマの終わりの 1 回）。
+    def polygonFlood(): Scene =
+        let pf: Render.Pass = { name = "pf", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = ngonGrid(1) };
+        { name = "polygonFlood", tiles = noTiles(), staticLayer = None, passes = pf :: Nil, targets = Map.empty(), submits = Some(2), items = still(
+            List.append(ngonGrid(1),
+                Render.blitRegion({ name = "pf", design = { x = designW(), y = designH() },
+                                    src = { position = v(0.0, 0.0), size = v(160.0, 90.0) },
+                                    at = v(160.0, 90.0), size = v(160.0, 90.0), z = 2 }) :: Nil)) }
 
     // ── タイルの層（市松のアトラス 16 × 16 を 8 × 8 のタイル 4 種に割る・層の色・タイルの tint と alpha・倍率・スプライトとの重なり順）──
 

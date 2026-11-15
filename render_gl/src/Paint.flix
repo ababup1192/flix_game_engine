@@ -559,11 +559,11 @@ mod RenderPaint {
     pub def initTileBuffer(gl: GlContext, paint: Paint, instances: List[GameEngine.TileInstance]): (GpuHandle.TileVao, Int32) \ IO =
         TileTable.init(glTileAllocator(gl, paint), paint#tiles, instances)
 
-    /// Game.updateTileBuffer の中身: 既にある VAO の VBO へ入れ直す（知らない VAO なら作って返す）。
+    /// Game.updateTileBuffer の中身: 既にある VAO の VBO へ入れ直す（入らない枚数なら作り直し、知らない VAO なら作って返す）。
     pub def updateTileBuffer(gl: GlContext, paint: Paint, vaoId: GpuHandle.TileVao, instances: List[GameEngine.TileInstance]): (GpuHandle.TileVao, Int32) \ IO =
         TileTable.update(glTileAllocator(gl, paint), paint#tiles, vaoId, instances)
 
-    /// GL でタイルの instance の buffer を作る・入れ直す関数の組。番号は共有の四角を読む VAO。
+    /// GL でタイルの instance の buffer を作る・入れ直す・捨てる関数の組。番号は共有の四角を読む VAO。
     def glTileAllocator(gl: GlContext, paint: Paint): TileTable.TileAllocator =
         { create = (floats, _) -> {
               let instanceVBO = RenderSprite.buildTileInstanceVBO(gl, floats);
@@ -572,7 +572,12 @@ mod RenderPaint {
               tileVao
           },
           write = (tileVao, floats, _) ->
-              Map.get(tileVao, Ref.get(paint#tileVboRegistry)) |> Option.forEach(vbo -> RenderSprite.uploadTileInstances(gl, vbo, floats)) }
+              Map.get(tileVao, Ref.get(paint#tileVboRegistry)) |> Option.forEach(vbo -> RenderSprite.uploadTileInstances(gl, vbo, floats)),
+          destroy = tileVao -> {
+              Map.get(tileVao, Ref.get(paint#tileVboRegistry)) |> Option.forEach(vbo -> gl.deleteBuffer(vbo));
+              gl.deleteVertexArray(tileVao);
+              Ref.put(Map.remove(tileVao, Ref.get(paint#tileVboRegistry)), paint#tileVboRegistry)
+          } }
 
     /// GL で static layer の頂点の buffer を作る・捨てる関数の組。番号は VAO。
     def glStaticAllocator(gl: GlContext, paint: Paint): RenderStatic.StaticAllocator =

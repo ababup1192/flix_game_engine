@@ -1,5 +1,5 @@
 // RenderFrame.Internal.WebGpuRows — 1 回の renderCommands を、GL と同じ前半（mergedByZ → emitRowItem が RenderList を作る）で行にし、
-// 行を WebGPU の render pass へ流す。device・pipeline・絵と形の buffer の表・instance と頂点と values の buffer は呼ぶ側（WebGpuPaint）が持ち、関数の record で渡す。
+// 行を WebGPU の render pass へ流す。device・pipeline・絵と頂点の buffer の表・instance と頂点と values の buffer は呼ぶ側（WebGpuPaint）が持ち、関数の record で渡す。
 // 描くのはスプライト・字・箱（mask 無し）・多角形・タイルの層・static layer。ほかの種類は名前ごとに呼ぶ側へ知らせて飛ばす。
 pub mod RenderFrame.Internal.WebGpuRows {
     import fge.webgpu.RenderPass
@@ -27,7 +27,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     ///   openPass(op) = op で始末した render pass を開く（instance の buffer を頂点の buffer の 0 番に付けておく）
     ///   setPipeline(形, blend の番号)・setTexture(絵の番号) = 行の鍵を pass に積む（0 の絵は呼ばない）
     ///   setVertices(種類, buffer の番号) = 頂点の buffer の 0 番を、その種類の buffer にする（スプライト = instance・多角形 = 頂点・タイル と static = 表の buffer）。
-    ///     表に無い番号なら false（その行は描かずに数える）
+    ///     返すのはその buffer に入っている要素の数（タイルは枚数・static は頂点の数）。表に無い番号なら 0（その行は描かずに数える）
     ///   setValues(bytes) = 頂点の buffer の 1 番を、values の buffer の bytes の位置にする
     ///   skip(名前) = 描かない種類を知らせる（名前ごとに 1 回にまとめるのは呼ぶ側）
     pub def renderFrame(cfg: {
@@ -47,7 +47,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
         openPass = RenderTarget.LoadOp -> RenderPass \ IO,
         setPipeline = (RenderPass, Int32, Int32) -> Unit \ IO,
         setTexture = (RenderPass, Int32) -> Unit \ IO,
-        setVertices = (RenderPass, Int32, Int32) -> Bool \ IO,
+        setVertices = (RenderPass, Int32, Int32) -> Int32 \ IO,
         setValues = (RenderPass, Int32) -> Unit \ IO,
         skip = String -> Unit \ IO
     }): Unit \ IO =
@@ -82,9 +82,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
             pass.setViewport(Int32.toFloat64(vpX), Int32.toFloat64(viewportTop(fbH, vpY, vpH)),
                              Int32.toFloat64(vpW), Int32.toFloat64(vpH), 0.0, 1.0);
             let setPipeline = cfg#setPipeline;
-            let geom = geometryOf(fbW, fbH, vp, base, targetTextureOf(spec));
-            Array.put(vertexBase, 21, geom);
-            Array.put(valuesBase, 22, geom);
+            let geom = geometryOf(fbW, fbH, vp, (base, vertexBase, valuesBase), targetTextureOf(spec));
             if (letterboxed) {
                 bindPipeline(pass, geom, setPipeline, shapeSprite(), 0);
                 putScissor(geom, 0, 0, fbW, fbH);
@@ -101,10 +99,14 @@ pub mod RenderFrame.Internal.WebGpuRows {
     // 8=今積んである pipeline（形 × 4 + blend） 9=今積んである絵（どちらも -1 = まだ積んでいない） 10-13=今の行の scissor (x, y, 幅, 高さ)
     // 14-17=今積んである scissor (x, y, 幅, 高さ・幅 -1 = まだ積んでいない) 18=頂点の buffer の 0 番の種類（kind*） 19=その buffer の番号
     // 20=頂点の buffer の 1 番の values の bytes（-1 = まだ積んでいない） 21=行の頂点を送った位置 22=values を送った位置（bytes）
+    // 23=頂点の buffer の 0 番に入っている要素の数
     // WhyNot: record や組で持ち回らない — 行が描く物の数だけある画面で、行ごとに record の欄を辿る代金と組の割り当てが 1 コマに出る（RenderFrame の st と同じ形）。
-    def geometryOf(fbW: Int32, fbH: Int32, vp: (Int32, Int32, Int32, Int32), base: Int32, readsForbidden: Int32): Array[Int32, Static] \ IO =
+    /// sent = 送った位置（instance の番号, 頂点の番号, values の bytes）・readsForbidden = 描き先と同じ絵の番号。
+    def geometryOf(fbW: Int32, fbH: Int32, vp: (Int32, Int32, Int32, Int32), sent: (Int32, Int32, Int32), readsForbidden: Int32): Array[Int32, Static] \ IO =
         let (vpX, vpY, vpW, vpH) = vp;
-        Array#{fbW, fbH, vpX, vpY, vpW, vpH, base, readsForbidden, -1, -1, 0, 0, 0, 0, 0, 0, -1, 0, kindSprite(), 0, -1, 0, 0} @ Static
+        let (base, vertexBase, valuesBase) = sent;
+        Array#{fbW, fbH, vpX, vpY, vpW, vpH, base, readsForbidden, -1, -1, 0, 0, 0, 0, 0, 0, -1, 0, kindSprite(), 0, -1,
+               vertexBase, valuesBase, Int32.maxValue()} @ Static
 
     def emitAll(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                 registry: RenderAsset.TextureRegistry, upsideDown: Set[String], warnLog: Ref[Set[String], Static],
@@ -124,7 +126,11 @@ pub mod RenderFrame.Internal.WebGpuRows {
                  skip: String -> Unit \ IO, item: Merged): Unit \ IO =
         if (readsHistory(item)) skip("Pass の history")
         else if (emitRowItem(st, list, scaleX, scaleY, registry, upsideDown, warnLog, item)) ()
-        else skip(skippedName(item));
+        else {
+            // WhyNot: 飛ばした所で run を続けない — GL は GL を直に呼ぶ種類の前で run を閉じるので、続けると draw の数え方が GL とずれる。
+            closeRuns(st, list);
+            skip(skippedName(item))
+        };
         ()
 
     /// Pass の前のコマの写しを読むスプライトか。
@@ -153,7 +159,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     // WhyNot: 積む関数を record 1 つで渡さない — 行が描く物の数だけある画面で、行ごとに record の欄を辿る代金が 1 コマに出る。
     def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
                      setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
-                     setVertices: (RenderPass, Int32, Int32) -> Bool \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
+                     setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
                      skip: String -> Unit \ IO, row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
@@ -166,7 +172,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     @DontInline
     def drawRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
                 setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
-                     setVertices: (RenderPass, Int32, Int32) -> Bool \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
+                     setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
                 skip: String -> Unit \ IO, row: Int32): Unit \ IO =
         let kind = rowAt(rows, row, 0);
         let texId = rowAt(rows, row, 3);
@@ -175,7 +181,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
             scissorInto(geom, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9));
             let visible = Array.get(12, geom) > 0 and Array.get(13, geom) > 0;
             if (kind == kindPoly()) drawPolyRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
-            else if (kind == kindTile()) drawTileRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, row, visible)
+            else if (kind == kindTile()) drawTileRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, setValues, skip, row, visible)
             else if (kind == kindStatic()) drawStaticRow(pass, st, rows, geom, setPipeline, setVertices, setValues, row, visible)
             else drawSpriteRow(pass, st, rows, geom, setPipeline, setTexture, setVertices, row, visible)
         };
@@ -184,7 +190,7 @@ pub mod RenderFrame.Internal.WebGpuRows {
     /// スプライトの行: instance の run を draw 1 本（6 頂点 × 体数・firstInstance で行の頭を引く）。
     def drawSpriteRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
                       setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
-                      setVertices: (RenderPass, Int32, Int32) -> Bool \ IO, row: Int32, visible: Bool): Unit \ IO =
+                      setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, row: Int32, visible: Bool): Unit \ IO =
         let texId = rowAt(rows, row, 3);
         let blendC = rowAt(rows, row, 4);
         if (visible) {
@@ -197,9 +203,9 @@ pub mod RenderFrame.Internal.WebGpuRows {
         countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
                         blendC, false, 1)
 
-    /// 多角形の行: 送った頂点の run を draw 1 本（view は values の頭の動かない view）。
+    /// 多角形の行: 送った頂点の run を draw 1 本（view は values の頭の identity の view）。
     def drawPolyRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                    setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Bool \ IO,
+                    setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
                     setValues: (RenderPass, Int32) -> Unit \ IO, row: Int32, visible: Bool): Unit \ IO =
         let blendC = rowAt(rows, row, 4);
         if (visible) {
@@ -212,28 +218,36 @@ pub mod RenderFrame.Internal.WebGpuRows {
         countPolyDraw(st, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9), blendC)
 
     /// タイルの層の行: 表の instance の buffer を draw 1 本（6 頂点 × タイルの数）。blend はいつも Normal。
+    /// タイルの数が buffer に入っている枚数より多ければ、入っている枚数で描く（buffer の外を読む draw は pass ごと誤りになり、コマ全体が消える）。
     def drawTileRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
                     setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setTexture: (RenderPass, Int32) -> Unit \ IO,
-                     setVertices: (RenderPass, Int32, Int32) -> Bool \ IO, setValues: (RenderPass, Int32) -> Unit \ IO, row: Int32, visible: Bool): Unit \ IO =
-        if (visible and bindVertices(pass, geom, setVertices, kindTile(), rowAt(rows, row, 10))) {
+                     setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO, setValues: (RenderPass, Int32) -> Unit \ IO,
+                    skip: String -> Unit \ IO, row: Int32, visible: Bool): Unit \ IO =
+        let held = if (visible) bindVertices(pass, geom, setVertices, kindTile(), rowAt(rows, row, 10)) else 0;
+        let count = Int32.min(rowAt(rows, row, 2), held);
+        if (held > 0 and held < rowAt(rows, row, 2)) skip("buffer に入っている枚数より多い分のタイル（入っている枚数だけ描く）") else ();
+        if (count > 0) {
             bindPipeline(pass, geom, setPipeline, shapeTile(), 0);
             bindTexture(pass, geom, setTexture, rowAt(rows, row, 3));
             bindValues(pass, geom, setValues, rowAt(rows, row, 11));
             applyScissor(pass, geom);
-            pass.draw(6, rowAt(rows, row, 2), 0, 0)
+            pass.draw(6, count, 0, 0)
         } else ();
         countSingleDraw(st, kindTile(), 1)
 
-    /// static layer の範囲の行: 表の頂点の buffer の範囲を draw 1 本（3 頂点未満は描かず数えない）。
+    /// static layer の範囲の行: 表の頂点の buffer の範囲を draw 1 本（3 頂点未満は描かず数えない）。範囲が buffer の外へ出る分は描かない。
     def drawStaticRow(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], geom: Array[Int32, Static],
-                      setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Bool \ IO,
+                      setPipeline: (RenderPass, Int32, Int32) -> Unit \ IO, setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
                       setValues: (RenderPass, Int32) -> Unit \ IO, row: Int32, visible: Bool): Unit \ IO =
         let count = rowAt(rows, row, 2);
-        if (visible and count >= 3 and bindVertices(pass, geom, setVertices, kindStatic(), rowAt(rows, row, 10))) {
+        let first = rowAt(rows, row, 1);
+        let held = if (visible and count >= 3) bindVertices(pass, geom, setVertices, kindStatic(), rowAt(rows, row, 10)) else 0;
+        let drawn = Int32.min(count, held - first);
+        if (drawn >= 3) {
             bindPipeline(pass, geom, setPipeline, shapePoly(), rowAt(rows, row, 4));
             bindValues(pass, geom, setValues, rowAt(rows, row, 11));
             applyScissor(pass, geom);
-            pass.draw(count, 1, rowAt(rows, row, 1), 0)
+            pass.draw(drawn, 1, first, 0)
         } else ();
         countSingleDraw(st, kindStatic(), if (count < 3) 0 else 1)
 
@@ -255,15 +269,19 @@ pub mod RenderFrame.Internal.WebGpuRows {
             Array.put(texId, 9, geom)
         }
 
-    /// 頂点の buffer の 0 番を、種類 kind の buffer（番号 buffer）にする（前と同じなら積まない）。表に無い番号なら false。
-    def bindVertices(pass: RenderPass, geom: Array[Int32, Static], setVertices: (RenderPass, Int32, Int32) -> Bool \ IO,
-                     kind: Int32, buffer: Int32): Bool \ IO =
-        if (Array.get(18, geom) == kind and Array.get(19, geom) == buffer) true
-        else if (setVertices(pass, kind, buffer)) {
-            Array.put(kind, 18, geom);
-            Array.put(buffer, 19, geom);
-            true
-        } else false
+    /// 頂点の buffer の 0 番を、種類 kind の buffer（番号 buffer）にする（前と同じなら積まない）。返すのは入っている要素の数（表に無い番号なら 0）。
+    def bindVertices(pass: RenderPass, geom: Array[Int32, Static], setVertices: (RenderPass, Int32, Int32) -> Int32 \ IO,
+                     kind: Int32, buffer: Int32): Int32 \ IO =
+        if (Array.get(18, geom) == kind and Array.get(19, geom) == buffer) Array.get(23, geom)
+        else {
+            let held = setVertices(pass, kind, buffer);
+            if (held > 0) {
+                Array.put(kind, 18, geom);
+                Array.put(buffer, 19, geom);
+                Array.put(held, 23, geom)
+            } else ();
+            held
+        }
 
     /// 頂点の buffer の 1 番を、行の values の先頭（float の番号）の位置にする（前と同じなら積まない）。
     def bindValues(pass: RenderPass, geom: Array[Int32, Static], setValues: (RenderPass, Int32) -> Unit \ IO, at: Int32): Unit \ IO =

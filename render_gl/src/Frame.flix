@@ -889,24 +889,20 @@ mod RenderFrame {
                 item: Merged): Unit \ IO =
         if (emitRowItem(st, list, scaleX, scaleY, registry, upsideDownTargets, warnLog, item)) ()
         else {
-            // GL を直に呼ぶ種類は、溜めた行を全部流してから描く（列順を守る）。
             flushRows(gl, gs, st, list);
             match item {
                 case Merged.MSprite(drawable) =>
-                    // mask 付きはステンシルへの描き込みが draw の前後に要るため、一括 run に混ぜられない。
                     emitSpriteMasked(gl, gs, st, list#instances, scaleX, scaleY, registry, upsideDownTargets,
                                      warnLog, polyBatchUniforms, drawable)
                 case Merged.MSurface(s) =>
-                    // 面は矩形全体を塗るので scissor は viewport 全体に戻す（前 run の clip 矩形を持ち越さない）。
+                    // WhyNot: 前の行の clip 矩形を残さない — 面は矩形全体を塗るので、残すと切れる。
                     setScissorAt(gl, gs, 0, 0, 0, 0, 0);
                     countSingleDraw(st, kindSurface(), drawSurface(gl, s))
                 case Merged.MScene3d(i) =>
-                    // 深度で前後を決めるのは場面の中だけ。
                     drawScene({ x = Array.get(7, gs), y = Array.get(8, gs), width = Array.get(9, gs),
                                 height = Array.get(10, gs), scaleX = scaleX, scaleY = scaleY }, i);
                     // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
                     Array.put(kindScene3d(), 15, st)
-                // 行になる種類は emitRowItem が積み終えている。
                 case Merged.MTile(_)   => ()
                 case Merged.MPoly(_)   => ()
                 case Merged.MStatic(_) => ()

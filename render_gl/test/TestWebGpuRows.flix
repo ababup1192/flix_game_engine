@@ -14,7 +14,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     /// scissorInto が置いた (x, y, 幅, 高さ) を組で読む。
     def scissorOf(fb: (Int32, Int32), vp: (Int32, Int32, Int32, Int32), clipFlag: Int32,
                   x0: Int32, y0: Int32, x1: Int32, y1: Int32): (Int32, Int32, Int32, Int32) \ IO =
-        let geom = geometryOf(fst(fb), snd(fb), vp, 0, -1);
+        let geom = geometryOf(fst(fb), snd(fb), vp, (0, 0, 0), -1);
         scissorInto(geom, clipFlag, x0, y0, x1, y1);
         (Array.get(10, geom), Array.get(11, geom), Array.get(12, geom), Array.get(13, geom))
 
@@ -53,7 +53,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     /// まだ何も積んでいない時は同じでない・積んだと控えた後の同じ矩形は同じ・違う矩形に替えると同じでない。
     @Test
     def testSameScissorOnlyAfterNoted(): Unit \ {Assert, IO} =
-        let geom = geometryOf(320, 200, vp(), 0, -1);
+        let geom = geometryOf(320, 200, vp(), (0, 0, 0), -1);
         putScissor(geom, 0, 0, 320, 200);
         let first = isSameScissor(geom);
         noteScissor(geom);
