@@ -234,14 +234,25 @@ pub mod RenderFrame.Internal.RenderList {
     /// Pass の texture 1 枚の pass。design の全面を描き先の全面へ写す（縦横の倍率が少し違ってよい — uv で読む限りずれない）。
     /// samples = backend が実際に描く標本の数。2 以上なら pass の終わりに color の texture へ resolve する（pass ごと）。
     // WhyNot: resolve を endTarget まで待たない — WebGPU は pass の resolveTarget で写すので、endTarget で写すと標本つきの描き先を読み直して
-    //   書く空の pass が 1 本増える。GL の blit を pass の終わりへ寄せても、開いている描き先は読めない決まりなので絵は同じ。
-    pub def targetPass(size: (Int32, Int32), color: { texture = Int32, format = RenderTarget.Format, load = RenderTarget.LoadOp },
-                       depthStencil: DepthStencil, samples: Int32, history: PassHistory): PassSpec =
+    //   書く空の pass が 1 本増える。開いている描き先は読めない決まりなので、pass の終わりに写しても読む側の絵は同じ。
+    pub def targetPass(size: (Int32, Int32), color: TargetColor, depthStencil: DepthStencil, samples: Int32, history: PassHistory): PassSpec =
         let (width, height) = size;
         let attachment = { texture = color#texture, format = color#format, load = color#load,
                            resolveTo = if (samples > 1) Some(color#texture) else None };
         { target = PassTarget.Target(attachment, Nil), width = width, height = height, viewport = (0, 0, width, height),
           depthStencil = depthStencil, samples = samples, history = history }
+
+    /// Pass の描き先の色（targetPass の引数）。texture = backend の表の番号・format = 画素の形式・load = 前の中身の始末。
+    pub type alias TargetColor = { texture = Int32, format = RenderTarget.Format, load = RenderTarget.LoadOp }
+
+    /// 頼まれた標本の数 requested で、backend が描ける標本の数 supported のどれを使うか。requested を超えない一番大きい物
+    /// （GL は 1・2・4・8 のうち GL_MAX_SAMPLES 以下で、8 を頼まれて上限 4 なら 4）。ただし requested が 2 以上で、それが 1 になる時は
+    /// supported の 2 以上の一番小さい物へ上げる（WebGPU は 1 と 4 しか描けないので、2 は 4 で描く）。
+    // WhyNot: 2 を 1 へ下げない — 4 が描ける backend で MSAA が消え、backend で絵の縁が大きく変わる。
+    pub def drawSamplesOf(requested: Int32, supported: List[Int32]): Int32 =
+        let below = List.foldLeft((best, n) -> if (n <= requested and n > best) n else best, 1, supported);
+        if (requested <= 1 or below > 1) below
+        else List.foldLeft((best, n) -> if (n > 1 and (best == 1 or n < best)) n else best, 1, supported)
 
     /// pass の終わりに resolve する先の表の番号（標本 1 の pass と画面は None）。
     pub def resolveTargetOf(pass: PassSpec): Option[Int32] =

@@ -847,7 +847,8 @@ mod RenderPaint {
     /// GL でレンダーターゲットを作る・捨てる関数の組。表の番号は色のテクスチャの番号。
     def glTargetAllocator(gl: GlContext, paint: Paint): TargetTable.TargetAllocator =
         { create = spec -> {
-              let fresh = RenderTargetGl.createWithSamples(gl, spec#width, spec#height, spec#format, spec#samples);
+              let drawn = RenderList.drawSamplesOf(spec#samples, RenderTargetGl.sampleCounts(gl));
+              let fresh = RenderTargetGl.createWithSamples(gl, spec#width, spec#height, spec#format, spec#samples, drawn);
               if (RenderTargetGl.isFallback(fresh)) warnFormatFallback(paint, spec#name) else ();
               if (RenderTargetGl.isMsaaFallback(fresh)) warnMsaaFallback(paint, spec#name) else ();
               Ref.put(Map.insert(fresh#tex, fresh, Ref.get(paint#targetEntries)), paint#targetEntries);

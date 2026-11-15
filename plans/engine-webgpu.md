@@ -746,17 +746,24 @@ history の寿命（作る・形が変われば作り直す・描き先を作り
   別の案「endTarget で 1 回」も WebGPU で動かした（空の pass の resolveTarget）。絵は同じで、標本つきの描き先 1 枚あたり pass が 1 本増える。
 - **決めた事 3 — WebGPU で history へ写す道具は描いて写す**（present と同じ WGSL の全面の三角形・形式ごとの pipeline 1 本）。別の案 `CommandEncoder.copyTextureToTexture` を `render_gl/java` に足して PC の Dawn で動かした（絵は同じ・Flix は約 25 行少ない）。
   jar のハッシュとブラウザの実装と Release の置き場が動くので今は入れず、staging（`copyBufferToTexture`）で jar を開ける時に替える。
-- **標本の数の決まり**: `TargetTable.samplesWithin`（頼まれた数を、backend が描ける数のうち超えない一番大きい物へ）。GL は 1・2・4・8 のうち `GL_MAX_SAMPLES` 以下（前と同じ答え）、WebGPU は 1 と 4（core の device が必ず持つ数）。
-  WebGPU で標本 2 を頼まれると 1 で描き、名前ごとに 1 回 `Log.fellBack` で知らせる（GL で標本つきの FBO が作れない時と同じ扱い）。engine の `RenderTarget.withMsaa` の doc（1・2・4・8・GPU の上限で頭打ち）の範囲の中と見て、doc は変えていない。
+- **標本の数の決まり**: `RenderList.drawSamplesOf`（頼まれた数を超えない、backend が描ける一番大きい数。ただし 2 以上を頼まれてそれが 1 になる時は、描ける 2 以上の一番小さい数へ上げる）。
+  GL は 1・2・4・8 のうち `GL_MAX_SAMPLES` 以下（前と同じ答え）、WebGPU は 1 と 4（core の device が必ず持つ数）なので、**WebGPU は標本 2 を 4 で描く**（8 は 4）。
+  1 回目のレビュー（84 点）で「2 を 1 にするのは engine の `RenderTarget.withMsaa` の doc（1・2・4・8 に下へ丸め・GPU の上限で頭打ち）の範囲と言えない（4 が描けるのに MSAA が消え、backend で絵が変わる）」と指摘され、
+  親が相談事として (b)「WebGPU では 2 を 4 に上げる」に決めた。2 を 4 で描く時は名前ごとに 1 回 `Log.fellBack`。
+  engine の `withMsaa` の doc に「WebGPU は 1 と 4 しか描けないので、2 は 4 で描く」を 1 行足すのは、この担当では engine の編集が許しで止められたので**まだ足していない**（親か人が足す）。
+  `bench/webgpu_v1` の `msaaTwo`（標本 2）は GL（2 標本）と WebGPU（4 標本）で縁の画素が違うので、許す差を 56/255 にして理由を `tolerance.tsv` に書いた（既定 0 の例外）。
+  代わりに、WebGPU の `msaaTwo` の絵が標本 4 の `msaaPass` と画素まで同じ事を Main が見る。
 - **GL と比べて分かった事**: GL の描き先は上下逆に格納されるので、標本の位置が中身に対して上下に返り、**斜めの縁の MSAA は GL と WebGPU で 1〜2 標本ずれる**（多角形の場面で 89 px・最大 ±51）。
   軸に沿った縁は一致する（標本の x の組と y の組が上下に返しても同じ）。MSAA の門の場面は端数の位置の箱と四角形の多角形にし、端数は画素の中心と標本の位置を避けた（ちょうど乗ると標本 1 でも最大 ±224）。
   9.1 の表の「PC の cutout の縁」（MSAA の縁の絵を今の GL と比べる）は、斜めの縁を GL と画素で比べられないので、P8 で門の形を決め直す。
 - 入れた物（render_gl の中だけ・engine の pub は増えていない）:
-  - 前半: `RenderList.PassHistory`・`resolveTargetOf`・`targetPass` の引数（標本の数と history）・`TargetTable.historyFor`・`spritesReadHistory`・`samplesWithin`。
-  - GL: `RenderPaint.applyHistory`（`prepareHistory` を置き換え・写すか塗るかは前半の答え）・resolve を pass の終わりへ・`RenderTargetGl.createWithSamples` が `samplesWithin` を使う・
-    `GlOffscreen.keepingHistory`（render_gl の pub を 1 つ足した。窓と同じく history に前のコマを写す session。`bench/webgpu_v1` が GL と WebGPU の写しを比べるのに使う）。
-  - WebGPU: history（`applyHistory`・`copyInto`・`copyPipelineOf`。history を読むスプライトを「まだ描かない」で捨てていたのをやめた）・MSAA（標本 4 の描き先 `msaaTargets`・pipeline の鍵に標本・`openPass` の `resolveTo`）。
+  - 前半: `RenderList.PassHistory`・`TargetColor`・`resolveTargetOf`・`drawSamplesOf`・`targetPass` の引数（標本の数と history）・`TargetTable.historyFor`・`spritesReadHistory`。
+  - GL: `RenderPaint.applyHistory`（`prepareHistory` を置き換え・写すか塗るかは前半の答え）・resolve を pass の終わりへ・描く標本の数は `glTargetAllocator` が `RenderTargetGl.sampleCounts` と `drawSamplesOf` で決めて `createWithSamples` へ渡す・
+    `GlOffscreen.withHistoryKept`（render_gl の pub を 1 つ足した。窓と同じく history に前のコマを写す session。`bench/webgpu_v1` が GL と WebGPU の写しを比べるのに使う）。
+  - WebGPU: history（`applyHistory`・`copyInto`・`copyGroupOf`（写す元の bind group は描き先を捨てるまで使い回す）・`copyPipelineOf`。history を読むスプライトを「まだ描かない」で捨てていたのをやめた）・
+    MSAA（標本つきの描き先と標本の数 `msaaTargets`・pipeline の鍵に標本・`openPass` の `resolveTo`・標本つきの描き先を作った時にその pipeline 6 本を先に作る）。
     WebGPU の描き手は窓とその撮影でしか動かないので、1 枚撮りの「history は毎回透明」（GL の `keepHistory = false`）は持たない。
 - 門（この Mac・2026-11-15）: `webgpu-shape-review-2d.md` の 7.8。
 - 持ち越し: ブラウザでの history と MSAA の絵の門（`bench/webgpu_v1` の場面をブラウザで回す口が無い・R1b-2 から）・Safari と Firefox・history の入れ替え（P10 の計測次第）・copyTextureToTexture（jar を開ける時）・
   P8 の cutout の縁の門の形・1 回の begin〜end に renderCommands が 2 回来る時の resolve が 2 回になる事（今のゲームには無い）。
+  その時は 2 回目の renderCommands が history を読むと、写るのは前のコマの最後でなく、同じコマの 1 回目を描いた後の中身になる（GL も前から同じ）。

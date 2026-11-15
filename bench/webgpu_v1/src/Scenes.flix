@@ -29,7 +29,7 @@ mod V1Scenes {
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: veil() :: radial() :: text() :: passPaste() :: passHalf() :: generated() :: passThenGenerated() ::
         polygons() :: polygonPass() :: tiles() :: staticLayer() :: polygonFlood() ::
-        historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaOff() :: msaaKeep() :: msaaToggle() :: Nil
+        historyFade() :: historyLate() :: historyKeep() :: msaaPass() :: msaaTwo() :: msaaOff() :: msaaKeep() :: msaaToggle() :: Nil
 
     def c8(r: Int32, g: Int32, b: Int32): Color =
         { r = Int32.toFloat64(r) / 255.0, g = Int32.toFloat64(g) / 255.0, b = Int32.toFloat64(b) / 255.0 }
@@ -305,7 +305,7 @@ mod V1Scenes {
               Nil) }
 
     // ── Pass の history（前のコマの描き先の絵）と MSAA ──
-    // history の場面はコマを続けて描き、窓と同じく前のコマの絵を写す（GL は GlOffscreen.keepingHistory）。
+    // history の場面はコマを続けて描き、窓と同じく前のコマの絵を写す（GL は GlOffscreen.withHistoryKept）。
     // history の写しが 1 コマずれる（前の前のコマを読む・今のコマの途中を読む）と、重ねた箱の濃さが変わる。
 
     def designSize(): Vec2.Vec2 = v(designW(), designH())
@@ -377,6 +377,9 @@ mod V1Scenes {
 
     /// 端数の縁を標本 4 の Pass へ描いて本編へ貼る（縁の画素は標本の平均）。
     def msaaPass(): Scene = msaaPassWith("msaaPass", 4)
+
+    /// msaaPass と同じ物を標本 2 で（GL は 2 標本・WebGPU は 1 と 4 しか描けないので 4 標本。縁の画素の濃さの段が違う — tolerance.tsv）。
+    def msaaTwo(): Scene = msaaPassWith("msaaTwo", 2)
 
     /// msaaPass と同じ物を標本 1 で（Main がこの 2 つの絵が違う事を見る — 両方の描き手が MSAA を掛けずに同じ絵になる誤りを拾う）。
     def msaaOff(): Scene = msaaPassWith("msaaOff", 1)

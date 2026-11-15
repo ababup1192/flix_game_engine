@@ -91,7 +91,7 @@ pub mod RenderPaint.Internal.TargetTable {
     /// 開いているターゲット spec へ 1 回の renderCommands を描く前の history の始末（pass を開く前に backend がする事）。
     /// reads = その描き物が spec の history を読むか・keep = 前のコマの絵を写すか（偽 = 透明で塗る。1 枚撮りと動画は前のコマを持たない）。
     /// 読まないコマは history を作らず触らない（作ってある history は捨てずに置き、次に読むコマで写し直す）。
-    /// 読むコマが初めてなら history を作る（作った直後の中身は透明で、写すのは描き先の今の中身 = 前のコマの最後）。
+    /// 読むコマが初めてなら history を作る。写すのは、その renderCommands を描く前の描き先の中身（1 コマに 1 回なら前のコマの最後）。
     // WhyNot: 2 枚を描き先と history で毎コマ入れ替えない — LoadOp.Keep の描き先は前のコマの絵から描き足すので写しが要り、
     //   入れ替えと写しの 2 つの道と、標本つきの描き先を名前の側に付け替える表が要る（plans/webgpu/samples/history-msaa.md）。
     pub def historyFor(allocator: TargetAllocator, textures: TextureTable.Tables, table: Table, design: (Float64, Float64),
@@ -106,11 +106,6 @@ pub mod RenderPaint.Internal.TargetTable {
     pub def spritesReadHistory(name: String, sprites: List[RenderType.Drawable]): Bool =
         let history = RenderTarget.historyName(name);
         List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
-
-    /// 頼まれた標本の数 requested を、backend が描ける標本の数 supported のうち requested を超えない一番大きい物にする（無ければ 1）。
-    /// GL は 1・2・4・8 のうち GL_MAX_SAMPLES 以下・WebGPU は 1 と 4（core の device が必ず持つ数）。
-    pub def samplesWithin(requested: Int32, supported: List[Int32]): Int32 =
-        List.foldLeft((best, n) -> if (n <= requested and n > best) n else best, 1, supported)
 
     /// 表を空にする（backend が自分の物を全部まとめて捨てた後。ここからは destroy を呼ばない）。
     pub def clear(table: Table): Unit \ IO =

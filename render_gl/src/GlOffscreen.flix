@@ -73,7 +73,7 @@ pub mod GlOffscreen {
         (s#width, s#height)
 
     /// 窓と同じく、Pass の history に前のコマの絵を写す session（open の既定は毎回透明）。何コマか続けて描き、history の写しを窓の描き手と比べる時に使う。
-    pub def keepingHistory(session: Session): Session =
+    pub def withHistoryKept(session: Session): Session =
         let SessionData.SessionData(s) = session;
         SessionData.SessionData({ paint = { keepHistory = true | s#paint } | s })
 

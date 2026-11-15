@@ -44,7 +44,7 @@ mod V1Main {
         match GlOffscreen.open({ config = config, scale = 1 }) {
             case Err(why)    => Err(why)
             case Ok(opened) =>
-                let session = GlOffscreen.keepingHistory(opened);
+                let session = GlOffscreen.withHistoryKept(opened);
                 let shots = V1Scenes.all() |> List.map(sc -> {
                     List.forEach(frame -> GlOffscreen.handle(session, () -> drawScene(frame)), framesOf(sc));
                     let buf = GlOffscreen.freshBuffer(session);
@@ -214,7 +214,13 @@ mod V1Main {
         };
         let msaaOk = fst(msaaDiff) > 0 and snd(msaaDiff) > 0;
         println("[webgpu-v1] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaaDiff))} px・WebGPU ${Int32.toString(snd(msaaDiff))} px（0 なら MSAA が掛かっていない）");
-        let ok = errorsOk and controlOk and msaaOk and List.forAll(snd, rows) and List.length(rows) == List.length(V1Scenes.all());
+        // WebGPU は標本 2 を 4 で描くので、標本 2 の場面の WebGPU の絵は標本 4 の場面と画素まで同じはず。
+        let twoAsFour = match (Map.get("msaaTwo", byName), Map.get("msaaPass", byName)) {
+            case (Some((_, gpuTwo)), Some((_, gpuFour))) => diffOf(gpuTwo, gpuFour, pixelCount)#pixels
+            case _                                       => -1
+        };
+        println("[webgpu-v1] WebGPU の標本 2 と 4 の差 ${Int32.toString(twoAsFour)} px（0 でなければ標本 2 を 4 で描いていない）");
+        let ok = errorsOk and controlOk and msaaOk and twoAsFour == 0 and List.forAll(snd, rows) and List.length(rows) == List.length(V1Scenes.all());
         println("[webgpu-v1] ${if (ok) "OK" else "NG"}");
         if (ok) () else System.exit(1)
 }

@@ -194,25 +194,75 @@ mod TestTargetTable {
     def testNotKeptClearsHistory(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = PassHistory.ClearTransparent(102) :: Nil, fst(historyCalls((true, false) :: Nil)))
 
-    // ── 標本の数（samplesWithin）──
+    /// 描き先の大きさが変わったコマは、作り直した history（番号 104）へ写す（前の history 102 は描き先と一緒に捨てた）。
+    @Test
+    def testResizeCopiesIntoNewHistory(): Unit \ {Assert, IO} =
+        let log = Ref.fresh(Static, Nil);
+        let allocator = recordingAllocator(log);
+        let textures = freshTextures();
+        let table = TargetTable.fresh();
+        let frame = side -> {
+            discard TargetTable.begin(allocator, textures, table, design(), spec(side, 1));
+            let answer = TargetTable.historyFor(allocator, textures, table, design(), spec(side, 1), true, true);
+            discard TargetTable.end(table);
+            answer
+        };
+        discard frame(64);
+        Assert.assertEq(expected = PassHistory.CopyTo(104), frame(32))
+
+    // ── history を読むか（spritesReadHistory）──
+
+    def spriteOf(texture: String): DrawCmd.Drawable =
+        DrawCmd.make({
+          texture = texture, position = { x = 0.0, y = 0.0 }, scale = { x = 1.0, y = 1.0 },
+          rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
+          centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
+          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
+
+    /// 自分の history を貼るスプライトがあれば真。
+    @Test
+    def testOwnHistoryIsRead(): Unit \ Assert =
+        Assert.assertTrue(TargetTable.spritesReadHistory("fx", spriteOf("atlas") :: spriteOf(RenderTarget.historyName("fx")) :: Nil))
+
+    /// ほかの描き先の history は読まない扱い。
+    @Test
+    def testOtherHistoryIsNotRead(): Unit \ Assert =
+        Assert.assertFalse(TargetTable.spritesReadHistory("fx", spriteOf(RenderTarget.historyName("bloom")) :: Nil))
+
+    /// 描き先の名前そのものは history ではない。
+    @Test
+    def testTargetNameItselfIsNotHistory(): Unit \ Assert =
+        Assert.assertFalse(TargetTable.spritesReadHistory("fx", spriteOf("fx") :: Nil))
+
+    // ── 標本の数（RenderList.drawSamplesOf）──
 
     /// WebGPU（1 と 4）は 8 を 4 に。
     @Test
     def testEightBecomesFourOnWebGpu(): Unit \ Assert =
-        Assert.assertEq(expected = 4, TargetTable.samplesWithin(8, 1 :: 4 :: Nil))
+        Assert.assertEq(expected = 4, RenderFrame.Internal.RenderList.drawSamplesOf(8, 1 :: 4 :: Nil))
 
-    /// WebGPU（1 と 4）は 2 を 1 に（4 へは上げない）。
+    /// WebGPU（1 と 4）は 2 を 4 に上げる（1 へは下げない）。
     @Test
-    def testTwoBecomesOneOnWebGpu(): Unit \ Assert =
-        Assert.assertEq(expected = 1, TargetTable.samplesWithin(2, 1 :: 4 :: Nil))
+    def testTwoBecomesFourOnWebGpu(): Unit \ Assert =
+        Assert.assertEq(expected = 4, RenderFrame.Internal.RenderList.drawSamplesOf(2, 1 :: 4 :: Nil))
 
     /// 描ける数に頼んだ数があればそのまま。
     @Test
     def testSupportedCountIsKept(): Unit \ Assert =
-        Assert.assertEq(expected = 2, TargetTable.samplesWithin(2, 1 :: 2 :: 4 :: 8 :: Nil))
+        Assert.assertEq(expected = 2, RenderFrame.Internal.RenderList.drawSamplesOf(2, 1 :: 2 :: 4 :: 8 :: Nil))
+
+    /// GL の上限で頭打ち（上限 4 で 8 を頼むと 4）。
+    @Test
+    def testCappedByMaxSamples(): Unit \ Assert =
+        Assert.assertEq(expected = 4, RenderFrame.Internal.RenderList.drawSamplesOf(8, 1 :: 2 :: 4 :: Nil))
+
+    /// 1 標本しか描けなければ 1。
+    @Test
+    def testOnlySingleSampleStaysOne(): Unit \ Assert =
+        Assert.assertEq(expected = 1, RenderFrame.Internal.RenderList.drawSamplesOf(4, 1 :: Nil))
 
     /// 1 未満を頼まれたら 1。
     @Test
     def testBelowOneBecomesOne(): Unit \ Assert =
-        Assert.assertEq(expected = 1, TargetTable.samplesWithin(0, 1 :: 4 :: Nil))
+        Assert.assertEq(expected = 1, RenderFrame.Internal.RenderList.drawSamplesOf(0, 1 :: 4 :: Nil))
 }

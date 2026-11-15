@@ -565,7 +565,7 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 |---|---|---|
 | `copyHistory` | `Option[Int32]`（前のコマを写す先の表の番号） | `history: PassHistory`（`CopyTo(n)`・`ClearTransparent(n)`・`NoHistory`）。1 枚撮りと動画の「透明で塗る」も前半が答える |
 | `colors` の resolve 先 | 標本 2 以上の時の表の番号 | `targetPass` が標本 2 以上の時だけ、描き先と同じ番号を `resolveTo` に入れる（描く所は backend が番号ごとに持つ標本つきの描き先） |
-| `samples` | 標本数 | backend が実際に描く数（`TargetTable.samplesWithin` で決めた数・GL は FBO が作れなければ 1） |
+| `samples` | 標本数 | backend が実際に描く数（`RenderList.drawSamplesOf` で決めた数・WebGPU は 2 を 4 に・GL は FBO が作れなければ 1） |
 
 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal）:
 
@@ -575,9 +575,28 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
   標本 4 と 1 の場面の差は GL と WebGPU の両方で 504 px（MSAA が掛かっている）・rpg-starter の title の GL と WebGPU 0 px・gl_parity の V1 の scene 0 px。
   足した場面: `historyFade`（3 コマとも自分の history を半分の濃さで重ねる・1 コマ目は作った直後の history）・`historyLate`（読まないコマの後に初めて読む）・`historyKeep`（LoadOp.Keep で history を読む）・
   `msaaPass` と `msaaOff`（標本 4 と 1）・`msaaKeep`（標本 4 の Keep に 3 コマ描き足し history を重ねる）・`msaaToggle`（標本 4 → 1 → 4 で作り直し・history を捨てる）。
-  比べるのは最後のコマで、前のコマは場面の `warmup` で描く。GL は `GlOffscreen.keepingHistory` で窓と同じく前のコマを写す。
+  比べるのは最後のコマで、前のコマは場面の `warmup` で描く。GL は `GlOffscreen.withHistoryKept` で窓と同じく前のコマを写す。
 - `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。history と MSAA の場面をブラウザで回す口はまだ無い（R1b-2 からの持ち越し）。
 - `make lint-huge-methods` 緑（sprite_stress の jar を作り直し、`bench/webgpu_v1` の jar も渡して）。`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+
+1 回目のレビュー（84 点）への対応（2 回目のコミット）:
+
+| # | 指摘 | 直した所 |
+|---|---|---|
+| 必須 1 | WebGPU で標本 2 を 1 で描くのは engine の `withMsaa` の doc の範囲と言えない | 親の決め (b) で、WebGPU は 2 を 4 で描く（`RenderList.drawSamplesOf`・知らせは「標本 2 は 4 で描く」）。`bench/webgpu_v1` に `msaaTwo` を足し、GL（2）との差は許す差 56/255 を理由つきで `tolerance.tsv` へ・WebGPU の `msaaTwo` と `msaaPass` が 0 px である事を Main が見る。engine の doc の 1 行は、engine の編集が許しで止められたので未（親の 12.19） |
+| 必須 2 | `historyFor` の doc が「前のコマの最後」と言い切る | 「その renderCommands を描く前の描き先の中身（1 コマに 1 回なら前のコマの最後）」へ。12.19 の持ち越しに history の中身の行 |
+| 必須 3 | `keepingHistory` が動詞の決まりに合わない | `GlOffscreen.withHistoryKept` |
+| 任意 | `msaaTargets` の二重引き | `(Texture, 標本の数)` で持ち、`paintTarget` が 1 回引いて `paintInto` へ渡す |
+| 任意 | 透明で塗る道を持たない WhyNot と `ClearTransparent` の枝 | WhyNot に 1 行（前半の答えを全部受けるために置き、今は通らない） |
+| 任意 | `RenderTargetGl` が `TargetTable` を呼ぶ逆向きの依存 | 数の決まりを `RenderList.drawSamplesOf` へ移し、`glTargetAllocator` が `RenderTargetGl.sampleCounts` から決めて `createWithSamples` へ渡す |
+| 任意 | コメントの経緯の言い回し | `targetPass` と `copyInto` の WhyNot から消した |
+| 任意 | 写すたびの `createBindGroup` | `copyGroupOf`（描き先を捨てるまで使い回す） |
+| 任意 | 初めの MSAA のコマで pipeline を作る | 標本つきの描き先を作った時に、その形式と標本の数のスプライトと多角形の pipeline 6 本を作る |
+| 任意 | `targetPass` の color の型 | `RenderList.TargetColor` |
+| 任意 | テスト | `spritesReadHistory` 3 本・描き先の大きさを変えた後のコマで新しい history へ写す 1 本・`drawSamplesOf` 6 本（2 を 4 へ・GL の上限で頭打ち・1 しか描けない時） |
+
+2 回目のコミットの門: render_gl 414 緑・`gl-parity` 緑（castShadow 565 px は前から）・`webgpu-v1-check` 緑（22 場面。`msaaTwo` だけ許す差 56 で 492 px・±56、ほかは 0 px・WebGPU の標本 2 と 4 の差 0 px）・
+`webgpu-v1-check-web` 緑・`lint-huge-methods` 緑・テンプレ 3 本の `reference-check` 緑・`gl-jar-pin-check` 緑。engine は触っていないので `make test-engine` は流していない。
 - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数）。main の控え（11-15 17:56）とは sound-novel-starter の title の 6 枚だけ違い、
   こちらは 7.6 に書いた今のソースのハッシュ（`c367c77d…`）と同じ。
 - 速さの前後は人の方針（12.16）で回していない。毎コマの変化: history を読む Pass は写す pass が 1 本増える（GL は前から blit していた）・WebGPU の標本つきの Pass は描き先が標本 4 になる。

@@ -98,8 +98,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             textureKeyRef = Ref[Map[String, String], Static],
             // レンダーターゲットと開いているターゲットの表（ターゲットの texture は slots の番号で引く）。
             targets = TargetTable.Table,
-            // 標本を持つターゲットの描き先（slots の番号 → 標本 4 の texture。pass の終わりに slots の texture へ resolve する）。
-            msaaTargets = Ref[Map[Int32, Texture], Static],
+            // 標本を持つターゲットの描き先（slots の番号 → 標本つきの texture と標本の数。pass の終わりに slots の texture へ resolve する）。
+            msaaTargets = Ref[Map[Int32, (Texture, Int32)], Static],
+            // history へ写す元の bind group（写す元の描き先の slots の番号 → bind group。描き先を捨てる時に手放す）。
+            copyGroups = Ref[Map[Int32, BindGroup], Static],
             lastFrame = Array[RenderPaint.Frame, Static],
             // スプライトの instance・多角形の頂点・draw ごとの値（RenderList の values）の Stream。
             instances = Stream,
@@ -166,7 +168,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             nearestRepeat = nearestRepeat, linearRepeat = linearRepeat, nearestClamp = nearestClamp,
             blank = blank, slots = Ref.fresh(Static, Map.empty()), nextSlot = Array#{1} @ Static,
             registryRef = Ref.fresh(Static, Map.empty()), textureKeyRef = Ref.fresh(Static, Map.empty()),
-            targets = TargetTable.fresh(), msaaTargets = Ref.fresh(Static, Map.empty()),
+            targets = TargetTable.fresh(), msaaTargets = Ref.fresh(Static, Map.empty()), copyGroups = Ref.fresh(Static, Map.empty()),
             lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
             instances = freshStream(gpu, "fge instances", 4096 * instanceBytes()),
             vertices = freshStream(gpu, "fge vertices", 4096 * 4 * RenderList.vertexFloats()),
@@ -406,8 +408,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Array.put(None, 0, p#encoder);
         Map.forEach((_, slot) -> { slot#group.release(); slot#texture.destroy() }, Ref.get(p#slots));
         Ref.put(Map.empty(), p#slots);
-        Map.forEach((_, texture) -> texture.destroy(), Ref.get(p#msaaTargets));
+        Map.forEach((_, msaa) -> fst(msaa).destroy(), Ref.get(p#msaaTargets));
         Ref.put(Map.empty(), p#msaaTargets);
+        Map.forEach((_, group) -> group.release(), Ref.get(p#copyGroups));
+        Ref.put(Map.empty(), p#copyGroups);
         TargetTable.clear(p#targets);
         p#blank#group.release();
         p#blank#texture.destroy();
@@ -609,12 +613,12 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         pass.setVertexBuffer(1, buffer, Int32.toInt64(bytes), buffer.size() - Int32.toInt64(bytes))
 
     /// 1 回の renderCommands の描き物を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
-    def paintInto(paint: Paint, texture: Texture, pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
+    /// msaa = 標本を持つ描き先（Pass の pass の samples が 2 以上の時だけ Some）。
+    def paintInto(paint: Paint, texture: Texture, msaa: Option[Texture], pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         // WhyNot: 画面の形式を描き先に問わない — 画面は中間の texture（RGBA8）へ描き、present で画面の形式へ写す。
         let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
         let samples = pass#samples;
-        let msaa = RenderList.resolveTargetOf(pass) |> Option.flatMap(id -> Map.get(id, Ref.get(p#msaaTargets)));
         let staticRanges = match frame#staticLayer {
             case None    => Nil
             case Some(l) => RenderStatic.resolve(webGpuStaticAllocator(paint), p#staticCell, l)
@@ -732,7 +736,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         }
 
     /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
-    // WhyNot: 1 枚撮りの「history は透明」（GL の keepHistory = false）を持たない — WebGPU の描き手は窓とその撮影でしか動かず、どちらも前のコマを写す。
+    // WhyNot: 1 枚撮りの「history は透明」（GL の keepHistory = false）を持たない — WebGPU の描き手は窓とその撮影でしか動かず、どちらも前のコマを写す
+    //   （historyFor へ keep を真で渡す。applyHistory の ClearTransparent の枝は前半の答えを全部受けるために置き、今は通らない）。
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,
@@ -740,19 +745,21 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         TargetTable.rowByName(p#targets, spec#name)
             |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
             |> Option.forEach(match (row, slot) -> {
-                   let samples = if (Map.memberOf(row#texture, Ref.get(p#msaaTargets))) 4 else 1;
+                   let msaa = Map.get(row#texture, Ref.get(p#msaaTargets));
+                   let samples = msaa |> Option.map(snd) |> Option.getWithDefault(1);
                    let pass = RenderList.targetPass((row#width, row#height), { texture = row#texture, format = row#format, load = spec#clear },
                                                     DepthStencil.NoDepthStencil, samples, history);
-                   applyHistory(paint, slot#texture, row#format, pass#history);
-                   paintInto(paint, slot#texture, pass, frame)
+                   applyHistory(paint, row#texture, slot#texture, row#format, pass#history);
+                   paintInto(paint, slot#texture, Option.map(fst, msaa), pass, frame)
                })
 
-    /// pass を開く前の history の始末（TargetTable.historyFor の答え）を、同じ encoder へ積む。source = 開いている描き先の texture（resolve 済みの 1 標本）。
-    def applyHistory(paint: Paint, source: Texture, format: RenderTarget.Format, history: PassHistory): Unit \ IO =
+    /// pass を開く前の history の始末（TargetTable.historyFor の答え）を、同じ encoder へ積む。
+    /// sourceId・source = 開いている描き先の slots の番号と texture（resolve 済みの 1 標本）。
+    def applyHistory(paint: Paint, sourceId: Int32, source: Texture, format: RenderTarget.Format, history: PassHistory): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         match history {
             case PassHistory.NoHistory           => ()
-            case PassHistory.CopyTo(n)           => Map.get(n, Ref.get(p#slots)) |> Option.forEach(h -> copyInto(paint, source, h#texture, format))
+            case PassHistory.CopyTo(n)           => Map.get(n, Ref.get(p#slots)) |> Option.forEach(h -> copyInto(paint, sourceId, source, h#texture, format))
             case PassHistory.ClearTransparent(n) =>
                 Map.get(n, Ref.get(p#slots)) |> Option.forEach(h -> {
                     let pass = encoderOf(paint).beginRenderPass(new RenderPassDesc("fge history").clearColor(h#texture.defaultView(), 0.0, 0.0, 0.0, 0.0));
@@ -762,18 +769,27 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         }
 
     /// source の画素を同じ大きさの dest へ 1 画素ずつ写す pass を積む（present と同じ WGSL・blend なし）。
-    // WhyNot: encoder の copyTextureToTexture で写さない — render_gl/java の WebGpu の口に足す事になり、GL の層の jar のハッシュとブラウザの実装が動く
-    //   （plans/webgpu/samples/history-msaa.md で両方を動かして比べた）。
-    def copyInto(paint: Paint, source: Texture, dest: Texture, format: RenderTarget.Format): Unit \ IO =
+    // WhyNot: encoder の copyTextureToTexture で写さない — render_gl/java の WebGpu の口に足す事になり、GL の層の jar のハッシュとブラウザの実装が動く。
+    def copyInto(paint: Paint, sourceId: Int32, source: Texture, dest: Texture, format: RenderTarget.Format): Unit \ IO =
         let PaintData.PaintData(p) = paint;
-        let group = p#gpu.createBindGroup(new BindGroupDesc("fge history copy", p#presentLayout).textureView(0, source.defaultView()));
+        let group = copyGroupOf(paint, sourceId, source);
         let pass = encoderOf(paint).beginRenderPass(new RenderPassDesc("fge history copy").loadColor(dest.defaultView()));
         pass.setPipeline(copyPipelineOf(paint, format));
         pass.setBindGroup(0, group);
         pass.draw(3, 1, 0, 0);
         pass.end();
-        group.release();
         Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters)
+
+    /// 描き先 sourceId を写す元として読む bind group（無ければ作って控える）。
+    def copyGroupOf(paint: Paint, sourceId: Int32, source: Texture): BindGroup \ IO =
+        let PaintData.PaintData(p) = paint;
+        match Map.get(sourceId, Ref.get(p#copyGroups)) {
+            case Some(group) => group
+            case None =>
+                let group = p#gpu.createBindGroup(new BindGroupDesc("fge history copy", p#presentLayout).textureView(0, source.defaultView()));
+                Ref.put(Map.insert(sourceId, group, Ref.get(p#copyGroups)), p#copyGroups);
+                group
+        }
 
     /// 形式 format の history へ写す pipeline（無ければ作る）。
     def copyPipelineOf(paint: Paint, format: RenderTarget.Format): RenderPipeline \ IO =
@@ -793,7 +809,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def paintScreen(paint: Paint, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
-        paintInto(paint, Array.get(0, p#frameTexture),
+        paintInto(paint, Array.get(0, p#frameTexture), None,
                   RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil), frame)
 
     /// 最後に画面へ描いたコマを中間の texture へ描き直す（大きさが変わった時。控えも数も進めない）。続けて present を呼ぶ。
@@ -896,8 +912,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def webGpuTargetAllocator(paint: Paint): TargetTable.TargetAllocator =
         { create = spec -> createTargetSlot(paint, spec), destroy = id -> dropTargetSlot(paint, id) }
 
-    /// spec の 1 標本の texture（読む側が引く・history を写す元）を作り、標本が 2 以上なら標本 4 の描き先も作って msaaTargets へ置く。
-    /// 標本の数は 1 か 4（TargetTable.samplesWithin）。頼まれたのに 1 になる時（標本 2）は名前ごとに 1 回知らせる。
+    /// spec の 1 標本の texture（読む側が引く・history を写す元）を作り、標本が 2 以上なら標本つきの描き先も作って msaaTargets へ置く。
+    /// 標本の数は 1 か 4（RenderList.drawSamplesOf）。頼まれた数と違う時（標本 2 を 4 で描く）は名前ごとに 1 回知らせる。
+    /// 標本つきの描き先を作った時に、その形式と標本の数の pipeline も作っておく（初めて描くコマで作り始めると、そのコマが詰まる）。
     def createTargetSlot(paint: Paint, spec: RenderTarget.TargetSpec): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
         flushPending(paint);
@@ -905,12 +922,16 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let texture = p#gpu.createTexture("fge pass ${spec#name}", spec#width, spec#height, format,
             Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_SRC)), 1, 1);
         let id = addSlot(paint, texture, p#nearestClamp, spec#width, spec#height);
-        let samples = TargetTable.samplesWithin(spec#samples, 1 :: 4 :: Nil);
+        let samples = RenderList.drawSamplesOf(spec#samples, 1 :: 4 :: Nil);
         if (samples > 1) {
             let msaa = p#gpu.createTexture("fge pass ${spec#name} msaa", spec#width, spec#height, format, TextureUsage.RENDER_ATTACHMENT, 1, samples);
-            Ref.put(Map.insert(id, msaa, Ref.get(p#msaaTargets)), p#msaaTargets)
-        } else if (spec#samples > 1) warnMsaaFallback(paint, spec#name)
-        else ();
+            Ref.put(Map.insert(id, (msaa, samples), Ref.get(p#msaaTargets)), p#msaaTargets);
+            List.forEach(b -> {
+                discard pipelineOf(paint, WebGpuRows.shapeSprite(), b, spec#format, samples);
+                discard pipelineOf(paint, WebGpuRows.shapePoly(), b, spec#format, samples)
+            }, 0 :: 1 :: 2 :: Nil)
+        } else ();
+        if (samples > spec#samples and spec#samples > 1) warnMsaaRounded(paint, spec#name, spec#samples, samples) else ();
         id
 
     /// ターゲットの texture と、あれば標本を持つ描き先を捨てる（積んだ pass があれば先に submit する）。
@@ -918,17 +939,22 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let PaintData.PaintData(p) = paint;
         dropSlot(paint, id);
         Map.get(id, Ref.get(p#msaaTargets)) |> Option.forEach(msaa -> {
-            msaa.destroy();
+            fst(msaa).destroy();
             Ref.put(Map.remove(id, Ref.get(p#msaaTargets)), p#msaaTargets)
+        });
+        Map.get(id, Ref.get(p#copyGroups)) |> Option.forEach(group -> {
+            group.release();
+            Ref.put(Map.remove(id, Ref.get(p#copyGroups)), p#copyGroups)
         })
 
-    def warnMsaaFallback(paint: Paint, name: String): Unit \ IO =
+    def warnMsaaRounded(paint: Paint, name: String, requested: Int32, drawn: Int32): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let key = "MSAA ${name}";
         if (Set.memberOf(key, Ref.get(p#skipped))) ()
         else {
             Ref.put(Set.insert(key, Ref.get(p#skipped)), p#skipped);
-            Log.fellBack("render-target", name, "MSAA なし", "WebGPU の描き先の標本は 1 か 4（頼まれた数より小さい方の 1 にした）")
+            Log.fellBack("render-target", name, "標本 ${Int32.toString(drawn)}",
+                         "WebGPU の描き先の標本は 1 か 4（標本 ${Int32.toString(requested)} は ${Int32.toString(drawn)} で描く）")
         }
 
     /// 描き先 fbW × fbH へ design を収めた時の倍率（黒帯の分は入れない）。
