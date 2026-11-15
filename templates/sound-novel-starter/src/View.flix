@@ -87,6 +87,13 @@ mod View {
             case _                    => ViewStage.frame(env, World.stageOf(res, w), not ViewStage.isPropOnPage(env, w))
         }
 
+    /// 舞台だけの絵（frame と、画面に被せる overlay）。文字の枠・HUD・画面・知らせ・素材の待ちの字は描かない（移行の突き合わせの world の層のコマ）。
+    // WhyNot: frame だけにしない — layer=screen の overlay は hud の側に描くので、frame だけでは overlay の秒を替えた差が world の層のコマに出ない。
+    pub def worldLayer(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
+        let env = envOf(fitOfCtx(ctx, res), res, w);
+        let covered = World.readOf(w) |> Option.map(r -> ViewStage.screenOverlay(env, r#stage, zOverlay())) |> Option.getWithDefault(Nil);
+        List.append(frame(ctx, res, w), covered)
+
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let atlas = ctx#atlas;
         let env = envOf(fitOfCtx(ctx, res), res, w);

@@ -428,6 +428,7 @@ mod Controls {
         case World.Event.Rolled   => Some("ui_page")
         case World.Event.Cue(name) => Some(name)
         case World.Event.Signal(_) => None
+        case World.Event.Executed(_) => None
     }
 
     /// 1 フレームの一発の音（このフレームに溜まった出来事から）。missing = まだ届いていない音の名前。

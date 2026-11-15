@@ -156,6 +156,12 @@ mod Commands {
     pub def timingOf(res: Res.Res, command: Yarn.Command): Timing =
         parsed(res, command) |> Option.map(match (c, _) -> c#timing) |> Option.getWithDefault(Timing.Instant)
 
+    /// 時間を取る演出の、シナリオに書いた time= の秒（時間を取らない・time= を書いていない・読めない時は None）。
+    // WhyNot: 秒を Doc の既定や舞台の値から引かない — 移行の突き合わせで、前と後のシナリオの同じ行に同じ秒を当てるため（Doc の既定が替わっても途中のコマの鍵がずれない）。
+    pub def scriptSecondsOf(res: Res.Res, command: Yarn.Command): Option[Float64] =
+        if (timingOf(res, command) != Timing.Timed) None
+        else command#args |> List.findMap(arg -> String.stripPrefix({substr = "time="}, arg)) |> Option.flatMap(Float64.fromString)
+
     /// command を st に当てる前に届いていてほしい絵と音の名前（読めないコマンドは空）。
     pub def needsOf(res: Res.Res, command: Yarn.Command, st: Stage.Stage): List[String] =
         parsed(res, command) |> Option.map(match (c, args) -> c#needs(res, args, st)) |> Option.getWithDefault(Nil)

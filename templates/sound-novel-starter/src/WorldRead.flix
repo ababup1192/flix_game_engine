@@ -74,6 +74,7 @@ mod WorldRead {
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
                   entering: World.World): World.World \ Emit[World.Event] =
         let w = World.mapRead(trackEntry(res, event), entering);
+        if (replay == Commands.Replay.Live) World.readOf(w) |> Option.flatMap(r -> executedOf(res, r#entry, event)) |> Option.forEach(e -> Emit.emit(World.Event.Executed(e))) else ();
         match event {
             case YarnRunner.Event.Line(said)       =>
                 let line = ScriptEdits.editLine(res#scriptEdits, said);
@@ -86,6 +87,18 @@ mod WorldRead {
             case YarnRunner.Event.Command(command) =>
                 whileReading(cur -> World.withRead(cue(res, replay, command, { cursor = cursorAfter(res, command, cur#cursor) | cur }, w), w), w)
             case YarnRunner.Event.Done             => World.toCredits(res, w)
+        }
+
+    /// 反映する実行器の出来事を、記録の書き手が読む形に（台詞と選択肢の字は ScriptEdits を当てた物。会話の終わりは None）。
+    def executedOf(res: Res.Res, entry: World.NodeEntry, event: YarnRunner.Event): Option[World.Executed] =
+        let place = line -> (entry#node, entry#visits, line);
+        let edited = line -> ScriptEdits.editLine(res#scriptEdits, line);
+        match event {
+            case YarnRunner.Event.Line(said)       => let line = edited(said); Some(World.Executed.Said(place(line#source#line), line#speaker, line#text))
+            case YarnRunner.Event.Choices(offered) => List.head(offered) |> Option.map(first ->
+                World.Executed.Offered(place(first#line#source#line), offered |> List.map(option -> edited(option#line)#text)))
+            case YarnRunner.Event.Command(command) => Some(World.Executed.Ran(place(command#source#line), command#name, command#args, Commands.scriptSecondsOf(res, command)))
+            case YarnRunner.Event.Done             => None
         }
 
     /// コマンドを通った後の実行位置。時間を取る演出コマンド（表の timing が Timed）だけが位置を取り、<<wait>> と
