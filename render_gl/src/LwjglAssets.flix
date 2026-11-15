@@ -1,17 +1,20 @@
 // LwjglAssets — デスクトップの素材の読み込み（RenderPaint.AssetLoader の LWJGL 版）。画像は stb で読み、字は stb で距離場を作って
 // （RenderFont・RenderFontCache・RenderGlyphGrow）、GPU へ上げるのは本体の RenderTexture に任せる。
-// 窓ありの描き手（LwjglLayer）も窓なしの描き手（GlOffscreen）も同じ物を渡す。
+// ウィンドウありの描き手（LwjglLayer）もウィンドウなしの描き手（GlOffscreen）も同じ物を渡す。
+// 画像 1 枚の読み込み（loadTexture）は上げる関数の組を受け、PC の WebGPU のウィンドウも同じ物を使う。
 mod LwjglAssets {
     import fge.gl.GlContext
     import org.lwjgl.stb.STBImage
     import org.lwjgl.system.MemoryStack
+    use RenderPaint.Internal.TextureTable
 
     /// 塗りのコアへ渡す読み込みの口。
     pub def loader(): RenderPaint.AssetLoader =
         { loadTextures = loadTextureRegistry, loadFonts = loadFonts }
 
-    /// PNG/JPG など stb が読める画像を読み、GPU へ上げる。NEAREST フィルタ + REPEAT ラップ (ピクセルアート前提)。
-    pub def loadTexture(gl: GlContext, path: String, alpha: Bool): RenderAsset.TextureInfo \ IO =
+    /// PNG/JPG など stb が読める画像を読み、uploads で GPU へ上げる。NEAREST フィルタ + REPEAT ラップ (ピクセルアート前提)。
+    /// alpha が偽の絵は 3 成分で解く（不透明として読む）。読めなければ bug!（起動時に絵の実体が要る）。
+    pub def loadTexture(uploads: TextureTable.Uploads, path: String, alpha: Bool): RenderAsset.TextureInfo \ IO =
         let stack = MemoryStack.stackPush();
         let w = stack.mallocInt(1);
         let h = stack.mallocInt(1);
@@ -23,7 +26,7 @@ mod LwjglAssets {
             discard MemoryStack.stackPop();
             bug!("Failed to load texture: ${path}")
         } else {
-            let info = RenderTexture.uploadBytes(gl, { width = w.get(0), height = h.get(0), alpha = alpha }, data);
+            let info = uploads#createImage(w.get(0), h.get(0), data, alpha);
             STBImage.stbi_image_free(data);
             discard MemoryStack.stackPop();
             info
@@ -35,9 +38,10 @@ mod LwjglAssets {
                                 onProgress: (Int32, Int32) -> Unit \ IO): RenderAsset.TextureRegistry \ IO =
         let total = List.length(manifest);
         onProgress(0, total);
+        let uploads = RenderPaint.glUploads(gl);
         let result = List.foldLeft((acc, entry) -> {
             let (registry, done) = acc;
-            let texInfo = loadTexture(gl, entry#path, entry#hasAlpha);
+            let texInfo = loadTexture(uploads, entry#path, entry#hasAlpha);
             println("  ${entry#path} loaded (${texInfo#width}x${texInfo#height})");
             onProgress(done + 1, total);
             (Map.insert(entry#name, texInfo, registry), done + 1)

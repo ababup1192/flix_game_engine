@@ -16,8 +16,6 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import org.lwjgl.glfw.GLFW
     import org.lwjgl.glfw.GLFWFramebufferSizeCallbackI
     import org.lwjgl.glfw.GLFWNativeCocoa
-    import org.lwjgl.stb.STBImage
-    import org.lwjgl.system.MemoryStack
     import org.lwjgl.system.MemoryUtil
     import java.awt.image.BufferedImage
     import java.io.File
@@ -159,38 +157,18 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
 
     // ── 読み込み（3.1 の PC の道）──
 
-    /// project.json の絵を stb で 4 成分に解き、hasAlpha が偽なら alpha を 255 で埋めて RGBA8 で上げ、名前で引けるようにする。
+    /// project.json の絵を GL と同じ読み込み（LwjglAssets.loadTexture）で解いて WebGPU へ上げ、名前で引けるようにする。
     /// onProgress = 読み終えた枚数・全部の枚数（起動画面が進み具合を出す）。
-    // WhyNot: LwjglAssets.loadTexture を呼ばない — 解いた直後に GL へ上げるので、解く所だけを分けられない。
     def loadTextures(paint: WebGpuPaint.Paint, manifest: List[RenderAsset.TextureEntry], onProgress: (Int32, Int32) -> Unit \ IO): Unit \ IO =
         let total = List.length(manifest);
         onProgress(0, total);
+        let uploads = WebGpuPaint.webGpuUploads(paint);
         List.forEachWithIndex((i, entry) -> {
-            let info = loadImageOrBug(paint, entry);
+            let info = LwjglAssets.loadTexture(uploads, entry#path, entry#hasAlpha);
             WebGpuPaint.putTexture(entry#name, info, paint);
             println("  ${entry#path} loaded (${info#width}x${info#height})");
             onProgress(i + 1, total)
         }, manifest)
-
-    /// 1 枚を stb で解いて上げる。読めなければ bug!（起動時に絵の実体が要る）。
-    def loadImageOrBug(paint: WebGpuPaint.Paint, entry: RenderAsset.TextureEntry): RenderAsset.TextureInfo \ IO =
-        let stack = MemoryStack.stackPush();
-        let w = stack.mallocInt(1);
-        let h = stack.mallocInt(1);
-        let c = stack.mallocInt(1);
-        STBImage.stbi_set_flip_vertically_on_load(false);
-        let data = STBImage.stbi_load(entry#path, w, h, c, 4);
-        if (Object.isNull(data)) {
-            discard MemoryStack.stackPop();
-            bug!("Failed to load texture: ${entry#path}")
-        } else {
-            let (width, height) = (w.get(0), h.get(0));
-            if (entry#hasAlpha) () else WebGpuPaint.makeOpaque(data, width * height);
-            let info = WebGpuPaint.uploadRgba(paint, width, height, data);
-            STBImage.stbi_image_free(data);
-            discard MemoryStack.stackPop();
-            info
-        }
 
     /// project.json のフォントを、GL と同じ「出しうる字」で RenderFontCache.loadOrBake から作り、距離場を R8 で上げる。
     /// 起動の後に足す字は V1 では足さない（WebGpuPaint の ensureGlyphs がフォントごとに 1 回知らせる）。

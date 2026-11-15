@@ -473,6 +473,54 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 | O9 | scissor の控え・左右の黒帯・放射の絵のテスト | 比べる所（`isSameScissor`）と控える所（`noteScissor`）を分けてテスト・左右の黒帯の viewport・`putRadialBuiltins` の 2 枚 |
 | O8・O10 | | 見送り（指示どおり） |
 
+### 7.6 R1b-1: 物の上げ下ろしと寿命の表（2026-11-15・枝 `worktree-agent-a923b3511366a5aca`）
+
+**9.1 の「GPU の物の寿命の持ち主」は (a)「表は前半・作る消すだけ backend」に決めた。** 比べは `plans/webgpu/samples/gpu-lifetime.md`（両方を書いて通した）。
+2D のレンダーターゲットで、行の合計は (a) 185 行（GL 46・WebGPU 17・前半の表 122）・(b) 95 行（GL 75・WebGPU 20）で、(a) の方が多い。
+選んだ理由は、寿命の決まりを GPU を呼ばない 10 本のテストで GL と WebGPU の両方について固定できる事・決まりが 1 か所にある事・片方の backend だけ直す事故（入れる前は GL だけが history を捨てていた）が起きない事。
+(b) のまま WebGPU に history を足すと同じ決まりの 2 本目（約 45 行・【見積もり】）が要る。(b) のまま比べの関数（`isSameShape`・`isSameTexture`）だけを共有する中間の案は比べていない。
+
+入れた物:
+
+- `render_gl/src/RenderPaint/Internal/TargetTable.flix`: レンダーターゲット（名前 → 行 `Row{texture, width, height, format, samples}`）・history・開いているターゲットの表。
+  作り直しの鍵（大きさ・形式・標本の数。history は標本を見ない）・作り直す時に history も捨てる・テクスチャの registry へ design の大きさで載せる、はここだけで決める。
+  backend は `TargetAllocator{create, destroy}` を渡し（`glTargetAllocator`・`webGpuTargetAllocator`）、表の番号（registry に載るテクスチャの番号と同じ）から自分の物を引く（GL は `targetEntries`・WebGPU は `slots`）。
+- GL（`RenderPaint`）: `Paint` の欄 `targetsRef`・`historyRef`・`activeTargetHolder` を `targets`（表）と `targetEntries`（番号 → `RenderTargetGl.Entry`）へ。`sameShape`・`sameTexture`・`dropHistory` を消した。
+- WebGPU（`WebGpuPaint`）: `TargetSlot` と `targetsRef`・`activeTarget` を同じ表へ。ターゲットの texture は `slots` から引く。
+- `lastFrame` は寿命の決まりを持たないので、表に入れず backend ごとの配列 1 本のまま（GL の `lastFrameHolder`・WebGPU の `lastFrame`）。
+- 読み込み（#8 の一部）: `TextureTable.Uploads` に `createImage`（解いた画像・alpha の無い絵は RGB の 3 バイト）を足し、`LwjglAssets.loadTexture` は `Uploads` を受ける。
+  PC の WebGPU は GL と同じ stb の道を通る（`WebGpuWindowLayer.loadImageOrBug` を消した）。WebGPU は RGB を読み込みの時に CPU で RGBA へ広げる（`TextureTable.opaqueRgbaOf`。配列へまとめて取って広げる・テスト 1 本）。
+- `TextureTable.removeTexture`（registry から名前を外す。history を捨てる時に使う）。
+
+振る舞いの変化（どれも絵は変わらない）:
+
+| # | 変化 | 扱い |
+|---|---|---|
+| a | WebGPU も標本の数が変わればターゲットを作り直す（前は大きさと形式だけを見た） | 残した。WebGPU は標本 1 で描くので絵は同じで、鍵を 2 本にしない（`WebGpuPaint.beginTarget` の doc に 1 行） |
+| b | GL の history を `createWithSamples(…, 1)` で作る（前は `create`）。Rgba16Float を作れない時の知らせが history の名前でも出て、1 枚で 2 行になる | 直した。`ensureHistory` は create へターゲットの名前のまま渡し（WhyNot をコメントに）、知らせは名前ごとに 1 行 |
+| c | WebGPU の `release` からターゲットの表を空にする所が消えた | 直した。`TargetTable.clear` を足し、`release` が slots を捨てた後に呼ぶ |
+
+7.1 の持ち越しの仕分け:
+
+| # | 今回 | 理由 |
+|---|---|---|
+| 11 | 描き先の表（ターゲット・history・開いているターゲット）は `TargetTable` の 1 本にした。`lastFrame` は共有せず、backend ごとの配列 1 本のまま | `lastFrame` は作る・捨てるが無く、表に入れると `RenderPaint.Frame` を通して `RenderPaint` と `TargetTable` が互いを引く。共有して得る物が無い |
+| 1・2 | 半分。`targetNames` は `TargetTable.names` の 1 か所から作る。`FrameArgs#targetNames`・`targetClear` の欄は残る | `FrameArgs` と `renderFrameMixed` は `mod RenderFrame` の pub で、テストが組み立てる。Internal へ移すのは pass の組の列（#3）を型にする小分けで一緒にする |
+| 8 | 半分。PC の画像は 1 本 | `RenderPaint.AssetLoader` の `GlContext` は残る: ブラウザの WebGL2 は JS の中で `ImageBitmap` から直に上げ（`WebImages.texImage`）、record の op では受けられない（#9 と一緒）。字（`loadFonts`・`grow`）は WebGPU で起動の後に字を足す所（部分の書き込みの op・コマの途中の upload）が要り、アトラスの頁（決まり 3）と一緒に決める |
+| 3・7・9・10 | 持ち越し | この小分けの外（組の列・GL の scissor の控え・`copyImageBitmap`・`FrameDiagnostics` の拡張） |
+
+12.9（P4a の後に直す物）の残り 1〜5・7・8〜13 は、どれも Dawn の Java・`make two`・Studio・`bin/fge` の側で、この小分けは `render_gl/java` も道具も触っていないので持ち越し。
+
+門（この Mac）:
+
+- テスト: render_gl 347 緑（`TestTargetTable` 10 本・`TestTextureTable` に 1 本）。engine・engine_world・engine_tools は触っていない。
+- `make gl-parity` 緑（B は前からの許容の内・castShadow 565 px）。テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8。1 回目のレビューの前に回した）。
+- `make gl-capture-check`（1 回目のレビューの前）: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ数）。main の `build/gl-capture/a/SHA256SUMS`（11-14 14:59 に撮った物）とは sound-novel-starter の title の 6 枚だけ違うが、
+  入れる前のソース（`efbd707d`）で撮り直した title も今回と同じハッシュ（`c367c77d…`）で、main の控えが JDK 25 へ上げた commit（b7dd80b3）より前の物だった。
+- `make webgpu-v1-check` 緑（9 場面 0 px・rpg-starter の title の GL と WebGPU 0 px。title の絵は新しい読み込みの道を通る）・`webgpu-v1-check-web` 緑（1 回目のレビューの前。WebGL2 と 0 px・PC と 22 px で許容の内）。
+- `lint-huge-methods`（engine の sprite_stress の jar を作り直して・rpg-starter）緑。
+- sprite_stress の前後の比べは人の方針（WebGPU まわりの速さは計画の最後にまとめて測る）で回していない。1 体ごとに通る所は触っておらず、毎フレームの表の引きは前と同じ回数（面の絵の上下は描く 1 枚ごとに表を 1 回読む・`targetNames` はコマに 1 回）。
+
 ## 第 1 版のレビュー（74 点）への対応
 
 | # | 指摘 | 入れた所 |
