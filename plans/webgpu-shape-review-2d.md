@@ -622,7 +622,7 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 - `make gl-parity` 緑（castShadow の 565 px は前からの B。SoftRaster と GL の `passMask` は 0 px）。テンプレ 3 本の `reference-check` 緑（rpg 16・novel 43・tidepool 8）。`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
 - `make webgpu-v1-check` 緑: 画面なしの比べは 27 場面とも許す差の内（足した mask の 5 場面は 0 px・submit 1・WebGPU の誤り 0・許す差は足していない）。足した場面:
   `maskBasic`（三角形・凹の矢印・回転・左右の反転・Add・切り抜き・三角形にならない mask）・`maskNested`（2 つの多角形を重ねた mask・前の mask の内側に次の mask・mask の後の mask の無いスプライト・箱と mask つきの交互）・
-  `maskPass`（Pass と本編の両方に mask）・`maskMsaa`（標本 4 の Pass に mask。stencil も標本 4・mask は端数の位置の軸に沿った矩形）・`maskOverflow`（同じ場所に 300 体・mask は升目の 1 つずつ。比べる値が 255 を超える）。
+  `maskPass`（Pass と本編の両方に mask）・`maskMsaa`（標本 4 の Pass に mask。stencil も標本 4・mask は端数の位置の軸に沿った矩形）・`maskOverflow`（同じ場所に 300 体・mask はセルの 1 つずつ。比べる値が 255 を超える）。
   `maskOverflow` は、WebGPU で stencil を 0 に戻す所を消すと 540 px・最大 ±129 で落ちる事を確かめた。
 - `make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。mask の場面をブラウザで回す口はまだ無い（R1b-2 からの持ち越し）。
 - `make lint-huge-methods` 緑（sprite_stress の jar を作り直し、`bench/webgpu_v1` の jar も渡して）・`make lint-max-lines` 緑（`WebGpuPaint.flix` 1,159 行）。

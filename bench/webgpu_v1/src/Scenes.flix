@@ -477,8 +477,8 @@ mod V1Scenes {
         { name = "maskMsaa", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = pm :: Nil, targets = targetsWith("pmsaa", 4), submits = Some(1),
           items = still(pasteQuarter("pmsaa", 0.0, 0.0, 1) :: Nil) }
 
-    /// 1 つの pass に mask つきを 300 個（比べる値の上限 255 を超える）。どれも同じ 64 × 64 の場所に置き、mask は 20 × 15 の升目の 1 つずつ（升ごとに色を替える）。
-    /// 256 個目（値 1 に戻る）の前に stencil を 0 に戻さないと、1 個目の mask の升にも 256 個目の色が出る。
+    /// 1 つの pass に mask つきを 300 個（比べる値の上限 255 を超える）。どれも同じ 64 × 64 の場所に置き、mask は 20 × 15 のセルの 1 つずつ（セルごとに色を替える）。
+    /// 256 個目（値 1 に戻る）の前に stencil を 0 に戻さないと、1 個目の mask のセルにも 256 個目の色が出る。
     def maskOverflow(): Scene =
         let cell = i -> {
             let col = Int32.remainder(i, 20);

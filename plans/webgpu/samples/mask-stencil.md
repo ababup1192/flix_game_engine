@@ -49,7 +49,7 @@ let cuts = List.filter(r -> rowAt(rows, r, 0) == kindMask() and rowAt(rows, r, 1
 ```
 
 **(a) に決めた。** pass が増えず、開き直す道（前の中身のままの画面の pass・控えの張り直し・区切りごとの resolve）を持たずに済む。
-`maskOverflow`（同じ場所に 300 体・mask は升目の 1 つずつ）で、0 に戻す所を消すと 540 px・最大 ±129 違う（256 体目から 300 体目の色が 1〜45 体目の升にも出る）事を確かめた。
+`maskOverflow`（同じ場所に 300 体・mask はセルの 1 つずつ）で、0 に戻す所を消すと 540 px・最大 ±129 違う（256 体目から 300 体目の色が 1〜45 体目のセルにも出る）事を確かめた。
 GL は値 1 の行の前で `glClear(STENCIL_BUFFER_BIT)` を呼ぶ（scissor を外してから）。
 
 ## 3. 比べていない物
