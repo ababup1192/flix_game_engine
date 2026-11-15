@@ -126,15 +126,18 @@ mod SceneRender {
     /// saveload = しおりから [セーブ｜ロード] の選びを開いた所、tooltip = 指の長押しで右の列のログの名前を出した所、
     /// cast = テスト用の立ち絵の人物を出した所（横と縦の両方で描く）。
     // WhyNot: 縦の画面だけの場面を novel.shots.json に入れない — 右の列と … は縦の画面にしか無く、Shots.names は横の描き出しと実機の START=shot: の口でもある。
-    def worldOf(scene: String, res: Res.Res): Option[World.World] = match scene {
-        case "menu"     =>
-            Shots.worldOf("adv", res) |> Option.map(w ->
-                World.mapRead(r -> { playback = World.Playback.Auto | r }, { panel = World.Panel.Menu(0) | w }))
-        case "saveload" => Shots.worldOf("adv", res) |> Option.map(w -> { panel = World.Panel.SaveLoadPick(0) | w })
-        case "tooltip"  => Shots.worldOf("adv", res) |> Option.map(w -> World.mapRead(r -> { tip = Some((logIndex(), w#realNow)) | r }, w))
-        case "cast"     => Shots.worldOf("adv", res) |> Option.map(World.mapRead(r -> { stage = { cast = sampleLayer() | r#stage } | r }))
-        case _          => Shots.worldOf(scene, res)
-    }
+    def worldOf(scene: String, res: Res.Res): Option[World.World] =
+        match List.find(row -> fst(row) == scene, ownScenes()) {
+            case Some((_, change)) => Shots.worldOf("adv", res) |> Option.map(change)
+            case None              => Shots.worldOf(scene, res)
+        }
+
+    /// worldOf だけが組む場面: (名前, adv の場面の World をどう変えるか)。
+    def ownScenes(): List[(String, World.World -> World.World)] =
+        ("menu", w -> World.mapRead(r -> { playback = World.Playback.Auto | r }, { panel = World.Panel.Menu(0) | w })) ::
+        ("saveload", w -> { panel = World.Panel.SaveLoadPick(0) | w }) ::
+        ("tooltip", w -> World.mapRead(r -> { tip = Some((logIndex(), w#realNow)) | r }, w)) ::
+        ("cast", World.mapRead(r -> { stage = { cast = sampleLayer() | r#stage } | r })) :: Nil
 
     /// テスト用の立ち絵の人物を、既定の位置と表情で出し終えた層。
     def sampleLayer(): Cast.Layer =
@@ -148,9 +151,15 @@ mod SceneRender {
             |> Option.getWithDefault(0)
 
     /// 描き出せる名前の全部（Shots の場面と、小さい画面と縦の画面の場面）。
-    def allNames(res: Res.Res): List[String] =
-        List.flatten(Shots.names(res) :: (variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
+    def allNames(res: Res.Res): List[String] = Shots.names(res) ::: variantNames()
+
+    def variantNames(): List[String] =
+        List.flatten((variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
                      :: (portraitShots() |> List.map(match (name, _, _) -> name)) :: Nil)
+
+    /// 描き出しだけの名前（novel.shots.json の場面の名前と重なると、どちらを描くか読み違える）: worldOf だけが組む場面と、
+    /// 描く元を替えた場面・小さい画面・縦の画面の描き出しの名前。
+    pub def renderOnlyNames(): List[String] = (ownScenes() |> List.map(fst)) ::: variantNames()
 
     def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();

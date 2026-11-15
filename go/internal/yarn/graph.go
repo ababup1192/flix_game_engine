@@ -64,6 +64,8 @@ type Graph struct {
 	Edges       []*GraphEdge   `json:"edges"`
 	Commands    []CommandCount `json:"commands"`
 	Problems    []GraphProblem `json:"problems"`
+	// Vars は変数の名前（$ 付き）→ 表示名（語彙の vars。行の $名前 を表示名で出し、$名前 を小さく添える）。
+	Vars map[string]string `json:"vars,omitempty"`
 }
 
 // GraphNode はノード 1 つ。Depth は最初のノードからの最短の jump の数（たどり着けなければ一番右の列）。
@@ -773,6 +775,9 @@ func (l *loaded) graph(stage []string) *Graph {
 	}
 	g := BuildGraph(l.prog, l.checked, roots, stage, table, heads)
 	g.Problems = append(cfgProblems, g.Problems...)
+	if l.vocab != nil {
+		g.Vars = l.vocab.Vars
+	}
 	g.Title = fmt.Sprintf("%s — %s", gameTitleOf(l.root), rel(l.root, l.dir))
 	return g
 }

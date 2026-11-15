@@ -105,13 +105,14 @@ func TestSelectPathSpreadsNestedArraysAndKeysSkipNonObjects(t *testing.T) {
 	}
 	r := &docReader{texts: map[string]string{}}
 	var got []string
-	for _, f := range r.stringsAt(doc, "a[].b[].c", "", "d.json") {
+	paths, _ := r.stringsAt(doc, "a[].b[].c", "", "d.json")
+	for _, f := range paths {
 		got = append(got, f.name)
 	}
 	if strings.Join(got, ",") != "x,y" {
 		t.Errorf("path: got %v", got)
 	}
-	keys := r.keysAt(doc, "names[]", "", "d.json")
+	keys, _ := r.keysAt(doc, "names[]", "", "d.json")
 	if len(keys) != 1 || keys[0].name != "k" {
 		t.Errorf("keys: got %+v", keys)
 	}

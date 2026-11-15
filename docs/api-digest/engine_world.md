@@ -1,4 +1,4 @@
-<!-- engine v0.95.0 / 生成: 2026-11-14 -->
+<!-- engine v0.95.0 / 生成: 2026-11-15 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -904,6 +904,13 @@
   `pub def dampedSpring(amp: Float64, decay: Float64, freq: Float64, t: Float64): Float64`
 - (時刻, 値) の折れ線を `t` で読んだ値。`keyframes` は時刻の昇順。区間内は線形に
   `pub def pieces(keyframes: List[(Float64, Float64)], t: Float64): Float64`
+- 進み 0〜1 を、値の進み 0〜1 へ写す曲線の名前。どれも 0 で 0・1 で 1 になる。
+  `pub enum Ease with Eq { case Linear case SmoothStep case InSine case OutSine case InOutSine case InQuad case OutQuad case InOutQuad case InCubic case OutCubic case InOutCubic case InQuart case OutQuart case InOutQuart case InExpo case OutExpo case InOutExpo case InBack case OutBack case InOutBack case InElastic case OutElastic case InOutElastic case InBounce case OutBounce case InOutBounce }`
+- `pub def toString(e: Ease): String`
+- 書く名前と曲線の表（台本の ease= と Doc の値はこの名前で書く）。
+  `pub def easeTable(): List[(String, Ease)]`
+- 進み `progress`（0〜1。外は 0 か 1 に収める）での値の進み。Back と Elastic は途中で 0〜1 を少しはみ出す。
+  `pub def ease(e: Ease, progress: Float64): Float64`
 
 ## Daylight — `engine_world/src/Daylight.flix`
 - 空気の色の節。at = 1 日のどこか（0.0〜1.0）、color = そのときの色、
@@ -1094,6 +1101,8 @@
   `pub def step(dt: Float64, ts: Tweens[k, c]): (Tweens[k, c], List[((k, c), Out)], List[(k, c)]) with Order[k], Order[c]`
 - 整数を start から end へ 1 つずつ動かす tween の、進み u（0..1）の時点の値。
   `pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32`
+- 同じ動きの Curve.Ease（EaseIn・EaseOut・EaseInOut は 2 乗の曲線なので InQuad・OutQuad・InOutQuad）。
+  `pub def toEase(e: Easing): Curve.Ease`
 
 ## Emit — `engine_world/src/Emit.flix`
 - 出来事を 1 つ外へ出す effect。e はゲームが選ぶ出来事の型。
@@ -3212,6 +3221,71 @@
   `pub def vocabJson(vocab: Vocab): String`
 - 語彙を path に書く（書けたか）。ゲームの Talk.vocab が呼ぶ（bin/headless-run が jar を作った時・make talk-vocab）。
   `pub def writeVocab(path: String, vocab: Vocab): Bool \ Fs.FileWrite`
+
+## YarnCommands — `engine_world/src/YarnCommands.flix`
+- Doc のどこから名前を集めるか（vocab.json の from の 1 行と同じ）。doc は vocab.json のフォルダから数えたパス。
+  `pub enum DocRef with Eq { case Keys(String, String) case Path(String, String) }`
+- コマンド 1 つの引数の表（spec か fromJson で作る）。
+  `pub type alias Spec = CommandSpec`
+- parse を通った引数（外からは作れない。読むのは Param.get / Param.getOpt）。
+  `pub type alias Args = Parsed`
+- コマンド 1 つの表。名前の重なり・位置の番号の飛びや重なり・3 つ目の位置はプログラマの誤りなので止める。
+  `pub def spec(name: String, summary: String, params: List[Field]): Spec`
+- 表のコマンドの名前。
+  `pub def nameOf(s: Spec): String`
+- command を表で読む。読めない時は直し方を 1 行で返す（台本の場所つき）。
+  `pub def parse(s: Spec, command: Yarn.Command): Result[String, Args]`
+- 表の一覧を vocab.json の commands（名前を鍵にした object）にする。
+  `pub def toJson(specs: List[Spec]): Json`
+- vocab.json の commands（toJson の形）を表の一覧に戻す。中身の無い {} のコマンド（引数を見ない）は一覧に入れない。
+  `pub def fromJson(json: Json): Result[String, List[Spec]]`
+
+## YarnCommands.Param — `engine_world/src/YarnCommands/Param.flix`
+- Req を見分ける型（書かなくても値がある）。
+  `pub enum Must`
+- Opt を見分ける型（書かなければ値が無い）。
+  `pub enum May`
+- 書かなくても値がある引数（required・default・time・ease）。読むのは get。
+  `pub type alias Req[t] = Handle[Must, t]`
+- 書かなければ値が無い引数。読むのは getOpt。
+  `pub type alias Opt[t] = Handle[May, t]`
+- 型を消した引数（YarnCommands.spec に並べる）。
+  `pub type alias Erased = Field`
+- orWords の語か orNames の名前（Word）と、型どおりの値（Value）。
+  `pub enum Or[t] with Eq { case Value(t) case Word(String) }`
+- `pub def toString(x: Or[t]): String`
+- min 以上 max 以下の数。
+  `pub def num(name: String, min: Float64, max: Float64): Opt[Float64]`
+- time=秒（0 以上）。書かなければ fallback。
+  `pub def time(fallback: Float64): Req[Float64]`
+- ease=曲線の名前（Curve.easeTable）。書かなければ fallback。
+  `pub def ease(fallback: Curve.Ease): Req[Curve.Ease]`
+- values のどれか。
+  `pub def choice(name: String, values: List[String]): Opt[String]`
+- 名前。refs は build が照らす Doc（Nil なら照らさない）。
+  `pub def name(name: String, refs: List[DocRef]): Opt[String]`
+- true か false。
+  `pub def flag(name: String): Opt[Bool]`
+- 位置 pos（1 か 2）でも書ける。
+  `pub def at(pos: Int32, h: Opt[t]): Opt[t]`
+- 書かなければ誤り。
+  `pub def required(h: Opt[t]): Req[t]`
+- 書かなければ fallback。
+  `pub def default(fallback: t, h: Opt[t]): Req[t]`
+- 型の外に words の語も受ける（off・all など）。
+  `pub def orWords(words: List[String], h: Opt[t]): Opt[Or[t]]`
+- 型に合わない値を、refs の Doc の名前として受ける（数か音量の名前、など）。
+  `pub def orNames(refs: List[DocRef], h: Opt[t]): Opt[Or[t]]`
+- , で区切って並べた値（a,b）。
+  `pub def list(h: Opt[t]): Opt[List[t]]`
+- 同じ group の引数のどれか 1 つは要る（hide の名前か at= など）。
+  `pub def oneOf(group: String, h: Opt[t]): Opt[t]`
+- 表に並べる形にする。
+  `pub def erase(h: Handle[m, t]): Erased`
+- 引数の値（書いてなければ既定の値）。
+  `pub def get(h: Req[t], args: Args): t`
+- 引数の値（書いてなければ None）。
+  `pub def getOpt(h: Opt[t], args: Args): Option[t]`
 
 ## YarnRunner — `engine_world/src/YarnRunner.flix`
 - 呼び出しの間に起きた出来事。

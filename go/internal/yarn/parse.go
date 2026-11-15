@@ -497,6 +497,10 @@ func commandEnd(content string) int {
 
 func (p *parser) command(no int, content string) *Stmt {
 	close := commandEnd(content)
+	if close < 0 && quoteLeftOpen(content) {
+		p.fail(no, `"…" が閉じていない（>> まで "…" の中に入っている。中の " は \" と書く）`)
+		return nil
+	}
 	if close < 0 {
 		p.fail(no, "<< を閉じる >> が無い（コマンドは 1 行で書く）")
 		return nil
@@ -527,8 +531,7 @@ func (p *parser) command(no int, content string) *Stmt {
 		p.refuse(no, "コマンドの中の {式}", "値をそのまま書く")
 		return nil
 	}
-	fields := strings.Fields(inner)
-	args := fields[1:]
+	args := commandFields(inner)[1:]
 	if r, refused := refusedCommands[name]; refused {
 		p.refuse(no, r[0], r[1])
 		return nil
@@ -548,6 +551,55 @@ func (p *parser) command(no int, content string) *Stmt {
 		return &Stmt{Kind: "stop", Line: no, Tags: tags}
 	}
 	return &Stmt{Kind: "command", Line: no, Name: name, Args: args, Tags: tags}
+}
+
+// quoteLeftOpen は << で始まる字の "…" が行の終わりまで閉じていないか（数え方は commandEnd と同じ）。
+func quoteLeftOpen(content string) bool {
+	inString := false
+	for i := 2; i < len(content); i++ {
+		switch {
+		case inString && content[i] == '\\':
+			i++
+		case content[i] == '"':
+			inString = !inString
+		}
+	}
+	return inString
+}
+
+// commandFields はコマンドの中を空白で割る（"…" は空白を含んでも 1 つ。字は " ごと残し、外すのは読む側）。
+// "…" の中の \ は次の 1 字をそのまま入れる。閉じていない "…" は commandEnd が >> を見つけられずに先に止める。
+func commandFields(inner string) []string {
+	var out []string
+	var cur strings.Builder
+	inQuote, started := false, false
+	rs := []rune(inner)
+	for i := 0; i < len(rs); i++ {
+		c := rs[i]
+		switch {
+		case inQuote && c == '\\' && i+1 < len(rs):
+			cur.WriteRune(c)
+			i++
+			cur.WriteRune(rs[i])
+		case c == '"':
+			inQuote = !inQuote
+			started = true
+			cur.WriteRune(c)
+		case !inQuote && unicode.IsSpace(c):
+			if started {
+				out = append(out, cur.String())
+				cur.Reset()
+				started = false
+			}
+		default:
+			started = true
+			cur.WriteRune(c)
+		}
+	}
+	if started {
+		out = append(out, cur.String())
+	}
+	return out
 }
 
 // assignment は <<set>>・<<declare>> の「$名前 to 式」を分ける（op は += などの + の字・= と to は空）。

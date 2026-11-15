@@ -60,6 +60,7 @@ svg { display: block; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; margin: 8px 0; }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; }
 .kv .nname { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
+.rows .vname { margin-left: 3px; font-size: 10px; color: var(--muted); font-family: var(--font-mono); font-weight: 400; }
 .rows { list-style: none; margin: 8px 0 0; padding: 0; max-height: 520px; overflow: auto; border-top: 1px solid var(--line); }
 .rows li { display: grid; grid-template-columns: 38px 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .rows .ln { color: var(--muted); font-family: var(--font-mono); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -126,6 +127,9 @@ svg { display: block; }
 <script>
 const DETAIL = %DETAIL%;
 const ROOT = %ROOT%;
+// 変数の表示名（語彙の vars）。行の $名前 は表示名を主に出し、$名前 を小さく添える（esc 済みの HTML に当てる）
+const VARS = %VARS%;
+const withVarNames = html => html.replace(/\$[A-Za-z_][A-Za-z0-9_]*/g, v => VARS[v] ? `${esc(VARS[v])}<small class="vname">${v}</small>` : v);
 // 矢印の先と元は箱と同じ冒頭の文で出し、ノード名は括弧で小さく添える（esc 済みの HTML を返す）
 const named = t => DETAIL[t] ? `${esc(DETAIL[t].head_text)}<small class="nname">（${esc(t)}）</small>` : esc(t);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
@@ -143,7 +147,7 @@ function show(name) {
   document.getElementById("kv").innerHTML = kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
   document.getElementById("rows").innerHTML = d.rows.map(r => {
     const mono = r.c !== "line" ? " cmd" : "";
-    return `<li><span class="ln">${r.l}</span><span class="k-${r.c}${mono}" style="padding-left:${r.d * 14}px">${esc(r.t)}</span></li>`;
+    return `<li><span class="ln">${r.l}</span><span class="k-${r.c}${mono}" style="padding-left:${r.d * 14}px">${withVarNames(esc(r.t))}</span></li>`;
   }).join("");
 }
 document.querySelectorAll(".node").forEach(n => {

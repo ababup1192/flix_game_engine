@@ -21,6 +21,7 @@
 | 会話のシナリオを .yarn（Yarn Spinner の部分集合）で書く・台詞と選択肢を順に出す・話し手やタグを語彙で止める | Yarn（`bin/fge yarn build` が書いた木を loadOr・語彙は vocabJson）/ YarnRunner（start・startAt（.yarn の行まで進める）・step・trace）（実例: `templates/sound-novel-starter/src/Talk.flix`・`templates/sound-novel-starter/src/Stage.flix`） |
 | 台本の変数（`$x`）と訪れた数を持ち越す・ゲームから読む／書く・セーブに入れる | YarnStorage（empty・get・set・visitCountOf・toJson・fromJson）/ YarnRunner（startWith・storageOf・withStorage・valueOf） |
 | ノベルのセーブ・ロード（読んでいる所に栞を挟み、同じ行・同じ変数から読み直す） | YarnRunner（bookmarkOf・resume・bookmarkToJson・bookmarkFromJson）（実例: `templates/sound-novel-starter/src/World.flix` の saveSlot / loadSlot） |
+| 台本のコマンドの引数を表で書く（位置は 2 つまで・ほかは key=value・"…"）・型付きで読む・vocab.json に書き出して build で型と Doc の名前を見る | YarnCommands（spec・parse・toJson・fromJson）/ YarnCommands.Param（num・time・ease・choice・name・flag・at・required・default・orWords・orNames・list・oneOf・erase・get・getOpt）（見本: `go/internal/yarn/testdata/command-args.json`） |
 | 台詞にルビ（ふりがな）を振る（`[ruby=よみ]字[/ruby]`）・ルビつきで折って描く・行数を数える | Yarn（rubiesOf）/ RichText（placeRuby・rubyLineCountBy。句読点は行頭に送らずぶら下げる）（実例: `templates/sound-novel-starter/src/View.flix`） |
 | マウスの下の UI 要素を知る | UiFocus。UiDoc の画面の各要素の画面矩形は layoutRects |
 | 絵の上に散らばった選べる物を矢印・Tab・ホバーで巡る（キーのフォーカスとホバーを 1 つにする・:focus-visible の枠） | UiFocusNav（Target の列を作るだけ。UiDoc の画面は targetsOfUi。並びの決まったメニューは UiMenu） |
@@ -53,4 +54,5 @@
   分岐の全体と各ノードの演出の流れは `bin/fge yarn graph <シナリオのフォルダ>`（1 ファイルの HTML・`--json` で中身）で見る。
   ライターが読むシナリオ原稿は `bin/fge yarn script <シナリオのフォルダ>`（Markdown）、直した原稿は `--diff <直した.md>` で差分を .yarn の行へ反映する形で出す（〔〕の言葉はフォルダの script-notes.json か .yarn の冒頭のコメントの演出の一覧）。
   台詞の強制の改行は .yarn に `\n` と書く（木の字に改行が入り、RichText・Text がそこで行を変える。字の `\n` は `\\n`）。
+- **YarnCommands** — コマンド 1 つの引数の表（Spec）と、表で引数を読む口（parse → Param.get）・vocab.json の commands への書き出し（toJson）。build の検査と実行時の読み方が同じ表から出る。
 - **YarnRunner** — シナリオの木を直に辿り、台詞・選択肢・コマンド・終わりの出来事を返す純粋な実行器（`<<wait>>` は型で分けた時計の時刻で待つ）。

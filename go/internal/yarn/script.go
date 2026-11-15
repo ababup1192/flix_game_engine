@@ -33,6 +33,7 @@ type ScriptLine struct {
 
 // ScriptSource はシナリオ原稿を作る材料。Comments はノード名 → title: の前の // ── コメント（NodeComments）、
 // Names は話し手の id → 表示の名前、Notes は演出コマンドの注釈の言葉、Hash は .yarn の中身の指紋（scriptHash）。
+// Vars は変数の名前（$ 付き）→ 表示名（語彙の vars）。条件と <<set>> の〔〕で「親しさ（$closeness）」と書く。
 type ScriptSource struct {
 	Title    string
 	Hash     string
@@ -40,6 +41,44 @@ type ScriptSource struct {
 	Comments map[string]string
 	Names    map[string]string
 	Notes    Notes
+	Vars     map[string]string
+}
+
+var varNameRe = regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*`)
+
+// withVarLabels は字の中の $名前 を「表示名（$名前）」にする（表示名の無い変数はそのまま）。
+// WhyNot: 台詞の {$x} には当てない — 書き替えた台詞は Yarn の行へ戻すので、表示名が .yarn に入ってしまう。
+// 条件と <<set>> の〔〕は --diff が「式を直す」と言うだけで行へ戻さないので、表示名を足しても往復は壊れない。
+// 式の文字列（"…"。exprText が strconv.Quote で書く）の中の $ は変数でないので当てない。
+func withVarLabels(text string, vars map[string]string) string {
+	var out strings.Builder
+	start, inString := 0, false
+	label := func(part string) string {
+		return varNameRe.ReplaceAllStringFunc(part, func(v string) string {
+			if name := vars[v]; name != "" {
+				return name + "（" + v + "）"
+			}
+			return v
+		})
+	}
+	for i := 0; i < len(text); i++ {
+		switch {
+		case inString && text[i] == '\\':
+			i++
+		case text[i] == '"' && !inString:
+			out.WriteString(label(text[start:i]))
+			start, inString = i, true
+		case text[i] == '"':
+			out.WriteString(text[start : i+1])
+			start, inString = i+1, false
+		}
+	}
+	if inString {
+		out.WriteString(text[start:])
+	} else {
+		out.WriteString(label(text[start:]))
+	}
+	return out.String()
 }
 
 // Notes は演出コマンド → シナリオ原稿の〔〕の言葉。File（script-notes.json）を先に、Comment（.yarn の冒頭のコメント）を後に引く。
@@ -323,15 +362,15 @@ func (w *scriptWriter) walk(body []*Stmt, node *Node, depth int) {
 		case "stop":
 			w.emit(pad+"■ おわり", ref(s.Line, "stop", nil))
 		case "set":
-			w.emit(pad+"〔"+s.Name+" を "+exprText(s.Expr)+" にする〕", ref(s.Line, "flow", nil))
+			w.emit(pad+"〔"+withVarLabels(s.Name+" を "+exprText(s.Expr), w.src.Vars)+" にする〕", ref(s.Line, "flow", nil))
 		case "if":
 			for i, c := range s.Clauses {
 				head := "〔それ以外〕"
 				switch {
 				case i == 0:
-					head = "〔もし " + exprText(c.Condition) + "〕"
+					head = "〔もし " + withVarLabels(exprText(c.Condition), w.src.Vars) + "〕"
 				case c.Condition != nil:
-					head = "〔そうでなく、もし " + exprText(c.Condition) + "〕"
+					head = "〔そうでなく、もし " + withVarLabels(exprText(c.Condition), w.src.Vars) + "〕"
 				}
 				w.emit(pad+head, ref(c.Line, "flow", nil))
 				w.walk(c.Body, node, depth+1)
@@ -760,6 +799,9 @@ const scriptNotesName = "script-notes.json"
 func (l *loaded) scriptSource() (ScriptSource, error) {
 	src := ScriptSource{Title: gameTitleOf(l.root), Hash: scriptHash(l.texts), Prog: l.prog, Comments: map[string]string{}, Names: storyNames(l.root),
 		Notes: Notes{File: map[string]string{}, Comment: map[string]string{}}}
+	if l.vocab != nil {
+		src.Vars = l.vocab.Vars
+	}
 	if data, err := os.ReadFile(filepath.Join(l.dir, scriptNotesName)); err == nil {
 		m, err := ParseScriptNotes(data)
 		if err != nil {

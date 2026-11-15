@@ -75,8 +75,9 @@
 - **N1 で入れた形（実装 d513c2ef と 1 回目のレビューの直し）**:
   - `commands` は N1 では中身の空な object（`{"bg": {}, …}`）。引数の表（3.3）は N2 で中を埋める。go は配列と object の両方を読む。
   - `from` が名前を 1 つも拾わない時（`path`・`keys` の綴り違い）は 1 行言ってその欄を飛ばす。読めない Doc は Doc 1 つに 1 行。`nodes` が空なら届かないノードの知らせを流さない。版 3 以上の語彙は止める。
-  - **N1 では未着手・N2 でやる**: 引数の `ref`（Doc の鍵を引数の名前に照らす）と、`DocsOf`（`yarn check <Doc>` の逆引き）が `ref` の Doc も読む所。
-  - **N1 では未着手・N2 でやる**: 変数の表示名を `yarn graph`・テープ（TapeOut の状態の表）・読み台本に出す所。N1 は go の知らせ（表示名の無い変数）と、テンプレートのテスト（全部の変数に表示名がある）まで。
+  - **段 4 で済んだ**: 引数の `ref` と `orNames`（from と同じ書き方で Doc の名前を集めて照らす）と、`DocsOf` が `ref`・`orNames` の Doc も返す所（`yarn check <ref の Doc>` が台本を見る）。読めない Doc の知らせは、その Doc を見ている欄の名前を全部並べる。from の行き先はあるが空（`"vars": {}`・`"shots": []`）の時は知らせず、綴り違いだけ知らせる。
+  - **段 4 で済んだ**: 変数の表示名を `yarn graph`（JSON の `vars` と HTML の行）・テープのグラフの行・読み台本（条件と `<<set>>` の〔〕を「親しさ（$closeness）」に。台詞の `{$x}` は書き替えを .yarn へ戻すので変えない）に出す所。
+  - **後へ回した**: テープの「状態」の表（plans/tape/mock-state.html の状態の行・カード・シート・分岐の式と「なぜ」）。今のテープには状態の表が無く、作るには実行中の変数を記録する口から要るので、plans/novel-data-only.md 3.19 の「後で」で作る。
 
 ### 2.3 門（コミット前の検査）
 
@@ -200,11 +201,17 @@ pub type alias Command[st] = {
 - 「どちらか 1 つは要る」（`hide` の名前か `at=`）は `oneOf` で表に書く。
 - 必須と省ける物は型で分ける（O1）: `Param.Req[t]` の `get` は `t`、`Param.Opt[t]` の `getOpt` は `Option[t]`。既定のある物は `Req` と同じ扱い。表に入れていない handle を `get` するのはプログラマの誤りなので `bug!`（`docs/error-handling.md` の「前提が破れた所」）。7 章のテストで全部のコマンドを 1 回流して拾う。
 - `Args` は外から作らせない（非 pub の enum + `pub type alias`）。`parse(spec, command)` を通った物だけが読める。
-- 書き出し: `YarnCommands.toJson(specs)` が `vocab.json` の `commands`（名前を鍵にした object）を書く。1 つの引数の欄は vocab-spike と同じ（`name`・`pos`・`type`・`min`・`max`・`values`・`ref`・`default`・`req`・`summary`）に `orWords`・`list` を足す。
+- 書き出し: `YarnCommands.toJson(specs)` が `vocab.json` の `commands`（名前を鍵にした object）を書く。1 つの引数の欄は vocab-spike と同じ（`name`・`pos`・`type`・`min`・`max`・`values`・`ref`・`default`・`req`）に `orWords`・`orNames`・`list`・`oneOf` を足す。
+- **段 3 で済んだ（実装 a47c9646 と 1 回目のレビューの直し）**:
+  - `summary` はコマンドにだけ付ける（引数ごとの説明は持たない）。
+  - `ease` は `"type": "ease"` に `values`（Curve.easeTable の 26 の名前）を並べて書き、go は名前の一覧を持たない。`choice` と `ease` で `values` が空なら表の誤り（go の validate と Flix の fromJson の両方で止める）。型に合わない既定の値も表の誤り。
+  - `Param.Req` / `Param.Opt` を見分ける目印の型 `Must` / `May` は pub にした。Flix 0.78 では非 pub の空の enum は型の別名から使っても「使っていない」と止まるため（Clock.Real と同じ形）。
+  - 表の誤り（`spec`）と、表に入れていないハンドルを読む誤り（`Param.get`）は bug!。`bin/lint-rules/fallback.json` に理由つきで除外した。
+  - 2 つ目の使い手（rpg-starter の 13 個）は表で書けた。足りなかった物は 8 章の持ち越しに書いた。
 
 ### 3.4 go の検査（`bin/fge yarn build`）
 
-- `parse.go`: コマンドの中を空白で割る前に `"…"` を 1 つの引数にまとめる。`{式}` を断るのは今のまま。まとめるのは `<<set>>`・`<<declare>>`・`<<jump>>`・`<<stop>>` を分けた後のコマンドだけで、`<<set $x = "a b">>` の文字列には触れない（go のテストで 1 本見る）。
+- `parse.go`: コマンドの中を空白で割る前に `"…"` を 1 つの引数にまとめる。**`"` は木（dialogue.json）に残し、外すのは読む側（`YarnCommands.parse` と go の検査）**。外してしまうと `"x=1"` が key=value に読み違えられるため。台本のコマンドを `c#args` から直に読むコードには `"` が見える。`{式}` を断るのは今のまま。まとめるのは `<<set>>`・`<<declare>>`・`<<jump>>`・`<<stop>>` を分けた後のコマンドだけで、`<<set $x = "a b">>` の文字列には触れない（go のテストで 1 本見る）。
 - `check.go`: v2 の `commands` があれば引数を表で検査する。知らない鍵には近い鍵を `suggest.Hint` で出す（今の名前の検査と同じ言い方）。`ref` は `from` と同じ書き方で Doc の鍵を集めて照らす（`<<bg statoin>>` が build で落ちる。今は実行時の `Err`）。
 - 実行時と build で判定がずれないように、受ける行と断る行の見本を 1 つの JSON（`go/internal/yarn/testdata/command-args.json`【推】）に置き、go のテストと engine_world のテストの両方が読む。
 
@@ -384,14 +391,20 @@ pub type alias Mark = { bookmark = YarnRunner.Bookmark, stage = Stage.Snapshot, 
 |---|---|---|---|
 | 1 | N1 | go の vocab v2 の `from`・`nodeRefs`・`vars`・story.json の opening と vars・Talk の enum を消す・precommit の when と yarn check の Doc のパス（済。`ref` の逆引きと変数の表示名を出す所は N1 では未着手・段 4 でやる） | 3〜4 時間 |
 | 2 | N1 | novel.shots.json と schema・Shots を Doc で組む・SceneRender が Doc の名前を引く。絵が同じ事を SHA で確かめる | 3〜4 時間 |
-| 3 | N2 | engine_world の `YarnCommands` と `Curve.Ease`（EcsTween への写しの関数まで） | 3〜4 時間 |
-| 4 | N2 | go の引数の検査・`"…"`・ref・共通の見本。N1 から持ち越し: `DocsOf` が `ref` の Doc も読む・変数の表示名を yarn graph と TapeOut に出す | 3〜4 時間 |
+| 3 | N2 | engine_world の `YarnCommands` と `Curve.Ease`（EcsTween への写しの関数まで）（済。EcsTween の曲線の式は Curve.ease の 1 か所） | 3〜4 時間 |
+| 4 | N2 | go の引数の検査・`"…"`・ref・共通の見本。N1 から持ち越し: `DocsOf` が `ref` の Doc も読む・変数の表示名を yarn graph とテープのグラフと読み台本に出す（済。テープの状態の表は novel-data-only.md 3.19 の「後で」へ） | 3〜4 時間 |
 | 5 | N2 | テンプレートの `PropertyTween`（delay・settle・JSON） | 2 時間 |
 | 6 | N2 | テンプレートの `Commands` 表・Ctx・Out・10 個を語彙 19 の名前で・台本の書き直し・GameCommands/GameView の口・早見表と docs とスキルの書き方。絵が同じ事を確かめる | 6〜7 時間 |
 | 7 | N3 | Snapshot と頁を持つ Mark v3・v2 の読み替え・restore の置き換え・頁と舞台の JSON・entryOf（上限・作り直し）・TestCast を広げる | 4〜5 時間（restore と頁はスパイクで形が決まった） |
 | 8 | — | agent-eval（新しいゲームで）・docs/modules の 1 行 | 1〜2 時間 |
 
-合計 25〜32 時間。3 は engine_world なので 1・2 と並べて進められる（同じパッケージを 2 人に触らせない）。
+合計 25〜32 時間。
+
+**段 3・4 からの持ち越し**:
+- 整数の型が無い（個数に `3.5` を書いても断れない。今は `num` で受ける）。要る作品が出たら `Param.int` を足す。
+- ノード名を `ref` で引けない（`<<fight 敵 勝った後のノード>>` など）。マップごとの Doc（open・warp の物と出口）も `ref` の from で書けない。
+- テンプレートの `vocab.json` の `commands` は `{}` のまま。中に表を書くのは段 6（コマンドの名前を語彙 19 に替えるのと同じ時）。go は `params` の無いコマンドの引数を見ない。
+- 段 6 への申し送り: `needs` の既定（「`Param.name` の引数で `ref` が素材の表を指す物」から作る。3.2）には、Spec から引数ごとの `ref` を読む pub（`YarnCommands.refsOf` など）が要る。今の Spec は外から中を読めない。3 は engine_world なので 1・2 と並べて進められる（同じパッケージを 2 人に触らせない）。
 
 ## 9. 決めた事（相談事への答え・人は「おまかせ」、親が決めた）
 

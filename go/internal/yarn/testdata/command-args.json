@@ -1,0 +1,91 @@
+{
+  "note": "コマンドの引数の受ける行と断る行の見本。go の検査（check_args.go）と engine_world の YarnCommands.parse（TestYarnCommands）が同じ物を読む。args は .yarn の << >> の中を go の parse.go が割った後の字（\"…\" は 1 つに入ったまま）。ref の Doc は読めない扱い（どちらの側も名前を照らさない）。",
+  "commands": {
+    "overlay": {
+      "summary": "画面に被せる色の濃さを時間で変える",
+      "params": [
+        { "name": "alpha", "type": "num", "min": 0, "max": 1, "pos": 1, "req": true },
+        { "name": "color", "type": "choice", "values": ["black", "white"], "default": "black" },
+        { "name": "from", "type": "num", "min": 0, "max": 1 },
+        { "name": "time", "type": "time", "default": "0.0" },
+        { "name": "ease", "type": "ease", "default": "smoothstep",
+          "values": ["linear", "smoothstep", "inSine", "outSine", "inOutSine", "inQuad", "outQuad", "inOutQuad", "inCubic", "outCubic", "inOutCubic", "inQuart", "outQuart", "inOutQuart", "inExpo", "outExpo", "inOutExpo", "inBack", "outBack", "inOutBack", "inElastic", "outElastic", "inOutElastic", "inBounce", "outBounce", "inOutBounce"] }
+      ]
+    },
+    "audio": {
+      "summary": "環境音を重ねる・音量を変える",
+      "params": [
+        { "name": "amb", "type": "name", "ref": { "from": [{ "doc": "../nowhere.json", "keys": "sounds" }] }, "list": true, "orWords": ["off"] },
+        { "name": "volume", "type": "num", "min": 0, "max": 1, "orNames": { "from": [{ "doc": "../nowhere.json", "keys": "volumes" }] } }
+      ]
+    },
+    "hide": {
+      "summary": "立ち絵を消す",
+      "params": [
+        { "name": "who", "type": "name", "pos": 1, "orWords": ["all"], "oneOf": "target" },
+        { "name": "at", "type": "choice", "values": ["left", "center", "right"], "oneOf": "target" }
+      ]
+    },
+    "shake": {
+      "summary": "画面を揺らす",
+      "params": [
+        { "name": "strength", "type": "num", "min": 0, "max": 20, "pos": 1, "default": "1.0" },
+        { "name": "device", "type": "flag" }
+      ]
+    },
+    "label": {
+      "summary": "字を出す",
+      "params": [
+        { "name": "text", "type": "name", "pos": 1, "req": true },
+        { "name": "note", "type": "name", "pos": 2 }
+      ]
+    }
+  },
+  "cases": [
+    { "cmd": "overlay", "args": ["0.5"], "ok": true },
+    { "cmd": "overlay", "args": ["0"], "ok": true },
+    { "cmd": "overlay", "args": ["1"], "ok": true },
+    { "cmd": "overlay", "args": ["0.5", "color=white", "time=1.5", "ease=inOutCubic"], "ok": true },
+    { "cmd": "overlay", "args": ["alpha=1"], "ok": true },
+    { "cmd": "overlay", "args": ["time=2", "0.25", "from=1"], "ok": true },
+    { "cmd": "overlay", "args": [], "ok": false, "why": "必須の alpha が無い" },
+    { "cmd": "overlay", "args": ["1.5"], "ok": false, "why": "範囲の外" },
+    { "cmd": "overlay", "args": ["-0.5"], "ok": false, "why": "範囲の外" },
+    { "cmd": "overlay", "args": [".5"], "ok": false, "why": "数の形でない" },
+    { "cmd": "overlay", "args": ["1e0"], "ok": false, "why": "数の形でない" },
+    { "cmd": "overlay", "args": ["0.5", "colr=white"], "ok": false, "why": "知らない鍵" },
+    { "cmd": "overlay", "args": ["0.5", "color=red"], "ok": false, "why": "choice の外" },
+    { "cmd": "overlay", "args": ["0.5", "0.3"], "ok": false, "why": "位置の数の超過" },
+    { "cmd": "overlay", "args": ["0.5", "alpha=0.3"], "ok": false, "why": "同じ引数を 2 回" },
+    { "cmd": "overlay", "args": ["0.5", "color=white", "color=black"], "ok": false, "why": "同じ鍵を 2 回" },
+    { "cmd": "overlay", "args": ["0.5", "time=-1"], "ok": false, "why": "秒が負" },
+    { "cmd": "overlay", "args": ["0.5", "ease=bouncy"], "ok": false, "why": "ease の名前でない" },
+    { "cmd": "overlay", "args": ["0.5", "time="], "ok": false, "why": "値が無い" },
+    { "cmd": "audio", "args": [], "ok": true },
+    { "cmd": "audio", "args": ["amb=sea,wind"], "ok": true },
+    { "cmd": "audio", "args": ["amb=off"], "ok": true },
+    { "cmd": "audio", "args": ["amb=sea,"], "ok": false, "why": "並びの要素が空" },
+    { "cmd": "audio", "args": ["volume=0.3"], "ok": true },
+    { "cmd": "audio", "args": ["volume=loud"], "ok": true },
+    { "cmd": "audio", "args": ["volume=2"], "ok": false, "why": "範囲の外" },
+    { "cmd": "audio", "args": ["sea"], "ok": false, "why": "位置で書ける引数が無い" },
+    { "cmd": "hide", "args": ["chinatsu"], "ok": true },
+    { "cmd": "hide", "args": ["all"], "ok": true },
+    { "cmd": "hide", "args": ["at=left"], "ok": true },
+    { "cmd": "hide", "args": [], "ok": false, "why": "who か at のどちらかが要る" },
+    { "cmd": "hide", "args": ["at=top"], "ok": false, "why": "choice の外" },
+    { "cmd": "shake", "args": [], "ok": true },
+    { "cmd": "shake", "args": ["3", "device=true"], "ok": true },
+    { "cmd": "shake", "args": ["device=yes"], "ok": false, "why": "true / false でない" },
+    { "cmd": "shake", "args": ["25"], "ok": false, "why": "範囲の外" },
+    { "cmd": "label", "args": ["\"two words\""], "ok": true },
+    { "cmd": "label", "args": ["\"x=1\""], "ok": true },
+    { "cmd": "label", "args": ["\"a\\\"b\"", "\"\\\\\""], "ok": true },
+    { "cmd": "label", "args": ["hello", "note=\"said twice\""], "ok": true },
+    { "cmd": "label", "args": ["\"a\"b\""], "ok": false, "why": "\"…\" の中に裸の \"" },
+    { "cmd": "label", "args": ["\"open"], "ok": false, "why": "\"…\" が閉じていない" },
+    { "cmd": "label", "args": ["x=1"], "ok": false, "why": "知らない鍵（= の前が名前なら key=value）" },
+    { "cmd": "label", "args": ["hello", "1-2=3"], "ok": true },
+    { "cmd": "label", "args": ["\"\""], "ok": false, "why": "値が無い" }
+  ]
+}

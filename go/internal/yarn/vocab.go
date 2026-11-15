@@ -30,6 +30,7 @@ import (
 //	Vars      変数の名前（$ 付き）→ 表示名。nil なら見ない（v1・Doc を読めない時）
 //	Tags      タグのキー → 取れる値（空なら値を書かない #key）
 //	Commands  コマンドの名前（エンジンが読むのは wait だけ）
+//	Specs     引数の表を持つコマンド（v2 の commands で params を書いた物。無いコマンドは名前だけ見る）
 type Vocab struct {
 	Speakers []string
 	Nodes    []string
@@ -37,6 +38,7 @@ type Vocab struct {
 	Vars     map[string]string
 	Tags     map[string][]string
 	Commands []string
+	Specs    map[string]*CommandSpec
 	// skip は v2 の from を読めずに検査を飛ばす欄（"speakers"・"nodes"・"nodeRefs"）。
 	skip map[string]bool
 	// origin はノードの名前を集めた Doc の場所（ゲームのルートからのパスと行）。無いノードの知らせを Doc の行へ向ける。
@@ -66,7 +68,7 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 		return nil, nil, fmt.Errorf("語彙の JSON を読めない: %v", err)
 	}
 	v := &Vocab{Tags: raw.Tags, skip: map[string]bool{}, origin: map[string]Problem{}}
-	commands, err := commandNamesOf(raw.Commands)
+	commands, specs, err := commandsOf(raw.Commands)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,7 +89,8 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 		}
 		return v, nil, nil
 	}
-	r := &docReader{dir: filepath.Dir(vocabPath), root: root, cache: map[string]any{}, texts: map[string]string{}, failed: map[string]error{}}
+	r := &docReader{dir: filepath.Dir(vocabPath), root: root, cache: map[string]any{}, texts: map[string]string{}, failed: map[string]error{},
+		users: docUsersOf(data, vocabPath)}
 	var notes []string
 	for _, f := range []struct {
 		key  string
@@ -119,28 +122,91 @@ func ParseVocab(data []byte, vocabPath, root string) (*Vocab, []string, error) {
 		}
 		f.into(fs)
 	}
-	return v, notes, nil
+	more, err := r.resolveSpecs(specs)
+	if err != nil {
+		return nil, nil, err
+	}
+	v.Specs = specs
+	return v, append(notes, more...), nil
 }
 
-// commandNamesOf は commands の名前（配列か、名前を鍵にした object）。
-func commandNamesOf(raw json.RawMessage) ([]string, error) {
+// resolveSpecs は引数の表の ref と orNames の Doc から名前を集める（読めない Doc の欄は照らさない）。
+func (r *docReader) resolveSpecs(specs map[string]*CommandSpec) ([]string, error) {
+	var notes []string
+	names := make([]string, 0, len(specs))
+	for name := range specs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for i := range specs[name].Params {
+			p := &specs[name].Params[i]
+			for _, f := range []struct {
+				raw  json.RawMessage
+				set  *map[string]bool
+				list *[]string
+			}{{p.Ref, &p.refNames, &p.refList}, {p.OrNames, &p.orNameSet, &p.orNameList}} {
+				if len(f.raw) == 0 {
+					continue
+				}
+				fs, more, skip, err := r.collect(fmt.Sprintf("commands の %s の %s", name, p.Name), f.raw)
+				if err != nil {
+					return nil, err
+				}
+				notes = append(notes, more...)
+				if skip {
+					continue
+				}
+				*f.set = map[string]bool{}
+				for _, x := range fs {
+					if !(*f.set)[x.name] {
+						(*f.set)[x.name] = true
+						*f.list = append(*f.list, x.name)
+					}
+				}
+			}
+		}
+	}
+	return notes, nil
+}
+
+// commandsOf は commands の名前（配列か、名前を鍵にした object）と、params を書いたコマンドの引数の表。
+func commandsOf(raw json.RawMessage) ([]string, map[string]*CommandSpec, error) {
+	specs := map[string]*CommandSpec{}
 	if len(raw) == 0 {
-		return nil, nil
+		return nil, specs, nil
 	}
 	var list []string
 	if json.Unmarshal(raw, &list) == nil {
-		return list, nil
+		return list, specs, nil
 	}
 	var table map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &table); err != nil {
-		return nil, fmt.Errorf("語彙の commands は名前の配列か、名前を鍵にした object で書く: %v", err)
+		return nil, nil, fmt.Errorf("語彙の commands は名前の配列か、名前を鍵にした object で書く: %v", err)
 	}
 	names := make([]string, 0, len(table))
-	for k := range table {
+	for k, body := range table {
 		names = append(names, k)
+		var head struct {
+			Params json.RawMessage `json:"params"`
+		}
+		if err := json.Unmarshal(body, &head); err != nil {
+			return nil, nil, fmt.Errorf("語彙の commands の %s は object で書く: %v", k, err)
+		}
+		if len(head.Params) == 0 {
+			continue
+		}
+		var spec CommandSpec
+		if err := json.Unmarshal(body, &spec); err != nil {
+			return nil, nil, fmt.Errorf("語彙の commands の %s の引数の表を読めない: %v", k, err)
+		}
+		if err := spec.validate(k); err != nil {
+			return nil, nil, err
+		}
+		specs[k] = &spec
 	}
 	sort.Strings(names)
-	return names, nil
+	return names, specs, nil
 }
 
 // found は Doc から集めた名前 1 つ（label は keys の時の値の字・doc と line は知らせの場所）。
@@ -170,6 +236,8 @@ type docReader struct {
 	cache     map[string]any
 	texts     map[string]string
 	failed    map[string]error
+	// users は Doc（絶対パス）→ その Doc を from に書いた欄の名前（読めない時の知らせに並べる）。
+	users map[string][]string
 }
 
 type fromEntry struct {
@@ -207,19 +275,23 @@ func (r *docReader) collect(key string, raw json.RawMessage) ([]found, []string,
 		doc, first, err := r.load(docPath)
 		if err != nil {
 			if first {
-				notes = append(notes, fmt.Sprintf("注意: 語彙の from の Doc %s を読めない（%v）— その Doc を見る欄（%s ほか）の検査を飛ばす", docRel, err, key))
+				notes = append(notes, fmt.Sprintf("注意: 語彙の from の Doc %s を読めない（%v）— その Doc を見る欄（%s）の検査を飛ばす", docRel, err, r.usersText(docPath, key)))
 			}
 			skip = true
 			continue
 		}
 		var got []found
 		var where string
+		var reached bool
 		if e.Path != nil {
 			where = *e.Path
-			got = r.stringsAt(doc, where, docPath, docRel)
+			got, reached = r.stringsAt(doc, where, docPath, docRel)
 		} else {
 			where = *e.Keys
-			got = r.keysAt(doc, where, docPath, docRel)
+			got, reached = r.keysAt(doc, where, docPath, docRel)
+		}
+		if len(got) == 0 && reached {
+			continue
 		}
 		if len(got) == 0 {
 			notes = append(notes, fmt.Sprintf("注意: 語彙の %s の from（%s の %s）が名前を 1 つも拾わない — %s の検査を飛ばす（綴りを確かめる）", key, docRel, where, key))
@@ -231,23 +303,27 @@ func (r *docReader) collect(key string, raw json.RawMessage) ([]found, []string,
 	return out, notes, skip, nil
 }
 
-// stringsAt は path の先の文字列の全部。
-func (r *docReader) stringsAt(doc any, path, docPath, docRel string) []found {
+// stringsAt は path の先の文字列の全部。reached は path が最後までたどれたか（空の配列で尽きた時も true。
+// 名前を 1 つも拾わなかった時に、綴り違いか、行き先はあるが空なのかを分ける）。
+func (r *docReader) stringsAt(doc any, path, docPath, docRel string) ([]found, bool) {
 	var out []found
-	for _, x := range selectPath(doc, path) {
+	values, reached := selectPathReached(doc, path)
+	for _, x := range values {
 		if s, ok := x.(string); ok && s != "" {
 			out = append(out, found{name: s, label: s, doc: docRel, line: r.lineOf(docPath, s)})
 		}
 	}
-	return out
+	return out, reached
 }
 
-// keysAt は path の先の object の鍵の全部（値が文字列なら表示名）。
-func (r *docReader) keysAt(doc any, path, docPath, docRel string) []found {
+// keysAt は path の先の object の鍵の全部（値が文字列なら表示名）。reached は path の先が全部 object だったか。
+func (r *docReader) keysAt(doc any, path, docPath, docRel string) ([]found, bool) {
 	var out []found
-	for _, x := range selectPath(doc, path) {
+	values, reached := selectPathReached(doc, path)
+	for _, x := range values {
 		obj, ok := x.(map[string]any)
 		if !ok {
+			reached = false
 			continue
 		}
 		names := make([]string, 0, len(obj))
@@ -260,7 +336,16 @@ func (r *docReader) keysAt(doc any, path, docPath, docRel string) []found {
 			out = append(out, found{name: k, label: label, doc: docRel, line: r.lineOf(docPath, k)})
 		}
 	}
-	return out
+	return out, reached
+}
+
+// usersText は Doc を from に書いた欄の名前を ・ で並べた字（集めていなければ key だけ）。
+func (r *docReader) usersText(docPath, key string) string {
+	users := r.users[filepath.Clean(docPath)]
+	if len(users) == 0 {
+		return key
+	}
+	return strings.Join(users, "・")
 }
 
 // load は Doc を読む（読めた物も読めなかった物も覚える）。first は読めない事をこの呼び出しで初めて知ったか。
@@ -300,7 +385,14 @@ func (r *docReader) lineOf(path, name string) int {
 
 // selectPath は path（. 区切り・xs[] は配列の要素を全部）の先にある値の全部。
 func selectPath(doc any, path string) []any {
+	values, _ := selectPathReached(doc, path)
+	return values
+}
+
+// selectPathReached は selectPath と、途中で鍵が無い・形が違う所に一度も当たらなかったか。
+func selectPathReached(doc any, path string) ([]any, bool) {
 	cur := []any{doc}
+	reached := true
 	for _, seg := range strings.Split(path, ".") {
 		spread := strings.HasSuffix(seg, "[]")
 		field := strings.TrimSuffix(seg, "[]")
@@ -308,23 +400,28 @@ func selectPath(doc any, path string) []any {
 		for _, x := range cur {
 			obj, ok := x.(map[string]any)
 			if !ok {
+				reached = false
 				continue
 			}
 			val, ok := obj[field]
 			if !ok {
+				reached = false
 				continue
 			}
 			if !spread {
 				next = append(next, val)
 				continue
 			}
-			if arr, ok := val.([]any); ok {
-				next = append(next, arr...)
+			arr, ok := val.([]any)
+			if !ok {
+				reached = false
+				continue
 			}
+			next = append(next, arr...)
 		}
 		cur = next
 	}
-	return cur
+	return cur, reached
 }
 
 // DocsOf は vocab.json（v2）の from が指す Doc の全部（絶対パス）。v1 と読めない語彙は空。
@@ -340,18 +437,65 @@ func DocsOf(data []byte, vocabPath string) []string {
 		return nil
 	}
 	var out []string
-	for _, raw := range sections {
+	for doc := range docUsersOf(data, vocabPath) {
+		out = append(out, doc)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// docUsersOf は v2 の語彙の from（欄の from と、commands の引数の ref・orNames の from）が指す Doc（絶対パス）→
+// その Doc を見る欄の名前（speakers・commands の bg の who など）。
+func docUsersOf(data []byte, vocabPath string) map[string][]string {
+	users := map[string][]string{}
+	var sections map[string]json.RawMessage
+	if json.Unmarshal(data, &sections) != nil {
+		return users
+	}
+	add := func(label string, raw json.RawMessage) {
 		var section struct {
 			From []fromEntry `json:"from"`
 		}
-		if json.Unmarshal(raw, &section) != nil {
-			continue
+		if len(raw) == 0 || json.Unmarshal(raw, &section) != nil {
+			return
 		}
 		for _, e := range section.From {
-			if e.Doc != "" {
-				out = append(out, filepath.Clean(filepath.Join(filepath.Dir(vocabPath), filepath.FromSlash(e.Doc))))
+			if e.Doc == "" {
+				continue
+			}
+			doc := filepath.Clean(filepath.Join(filepath.Dir(vocabPath), filepath.FromSlash(e.Doc)))
+			if !contains(users[doc], label) {
+				users[doc] = append(users[doc], label)
 			}
 		}
 	}
-	return out
+	keys := make([]string, 0, len(sections))
+	for k := range sections {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		add(k, sections[k])
+	}
+	var commands map[string]struct {
+		Params []struct {
+			Name    string          `json:"name"`
+			Ref     json.RawMessage `json:"ref"`
+			OrNames json.RawMessage `json:"orNames"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(sections["commands"], &commands) == nil {
+		names := make([]string, 0, len(commands))
+		for name := range commands {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			for _, p := range commands[name].Params {
+				add("commands の "+name+" の "+p.Name, p.Ref)
+				add("commands の "+name+" の "+p.Name, p.OrNames)
+			}
+		}
+	}
+	return users
 }

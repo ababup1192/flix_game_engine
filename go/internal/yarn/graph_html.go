@@ -194,11 +194,12 @@ type TapeGraph struct {
 	H      GraphLayout           `json:"h"`
 	V      GraphLayout           `json:"v"`
 	Detail map[string]nodeDetail `json:"detail"`
+	Vars   map[string]string     `json:"vars,omitempty"`
 }
 
 // BuildTapeGraph は g をテープの頁に埋める形にする。
 func BuildTapeGraph(g *Graph) *TapeGraph {
-	return &TapeGraph{H: LayoutGraph(g, false), V: LayoutGraph(g, true), Detail: nodeDetails(g)}
+	return &TapeGraph{H: LayoutGraph(g, false), V: LayoutGraph(g, true), Detail: nodeDetails(g), Vars: g.Vars}
 }
 
 // RenderGraphHTML はグラフを 1 ファイルの HTML にする（CSS と JS は中に持つ）。
@@ -240,6 +241,7 @@ func RenderGraphHTML(g *Graph) ([]byte, error) {
 		firstNode = g.Roots[0]
 	}
 	rootJSON, _ := json.Marshal(firstNode)
+	varsJSON, _ := json.Marshal(orEmpty(g.Vars))
 
 	var counts strings.Builder
 	for _, c := range g.Commands {
@@ -264,6 +266,7 @@ func RenderGraphHTML(g *Graph) ([]byte, error) {
 		"%EDGES%", edges.String(), "%NODES%", nodes.String(),
 		"%DETAIL%", strings.ReplaceAll(string(detailJSON), "</", `<\/`),
 		"%ROOT%", string(rootJSON),
+		"%VARS%", strings.ReplaceAll(string(varsJSON), "</", `<\/`),
 		"%COUNTS%", counts.String(), "%PROBLEMS%", problems.String(),
 		"%NNODES%", strconv.Itoa(len(g.Nodes)), "%NLINES%", strconv.Itoa(g.Lines),
 		"%NWAIT%", fmt.Sprintf("%.0f", g.WaitSeconds), "%NEND%", strconv.Itoa(len(g.Endings)),
