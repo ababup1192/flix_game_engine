@@ -10,7 +10,6 @@
 mod RenderPaint {
     import fge.gl.GlContext
     import fge.gl.GlConst
-    import java.lang.System
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.RenderList
     use RenderPaint.Internal.TargetTable
@@ -165,8 +164,6 @@ mod RenderPaint {
         // tex 場の標本規約（NEAREST + CLAMP）を bind 中の unit へ強制する sampler（起動時に 1 個）。
         let surfaceSampler = RenderSprite.createSurfaceSampler(gl, false);
         let surfaceSamplerLinear = RenderSprite.createSurfaceSampler(gl, true);
-        // 見つからないと知らせた tex 場のテクスチャ名（「一度だけ鳴らす」控え）。
-        let missingSurfaceTexRef: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
 
         // ターゲットは初回の beginTarget で作られ、寸法が変わらない限り使い回す。
         let targets = TargetTable.fresh();
@@ -181,75 +178,40 @@ mod RenderPaint {
         // キー一致で使い回し・不一致で古い VBO を free して作り直す（RenderStatic.resolve）。
         let staticCacheCell = Array#{(None: Option[RenderStatic.Entry])} @ Static;
 
-        // シェーダー面 1 枚を GL へ描く閉包。program の uniform location を逆引きして差す。
-        // z の合流（sprites/polygons/静的レンジとの重なり順）は renderFrameMixed が受け持つので、
-        // ここは 1 枚の描画だけに徹する。
-        // cmd#texReads と texLocs の長さ不一致は List.zip が短い方に合わせて黙って吸収する —
+        // 面の行 1 つの面を GL へ描く閉包。program の uniform location を逆引きして、行の values（rect・time・alpha・params）と reads の絵を差す。
+        // stencil と数えは GlRows.drawSurfaceRow が受け持つので、ここは 1 枚の描画だけに徹する。
+        // 絵の数と texLocs の数・params の数と paramLocs の数の不一致は短い方に合わせて黙って吸収する —
         // コンパイル失敗した複数 Spec が同じ fallback program を鍵に uniform cache を上書きし合い、
-        // fallback では texLocs が空（または全 -1）になるため、names 2 本 × locs 0 本は正常系
-        //（glUniform の location -1 も無視される）。
-        let drawSurface = (surfaceGl: GlContext, cmd: DrawCmd.SurfaceRenderCmd) -> {
-            let program = GpuHandle.shaderProgramInt(cmd#program);
+        // fallback では locs が空（または全 -1）になるため、絵 2 枚 × locs 0 本は正常系（glUniform の location -1 も無視される）。
+        let drawSurface = (surfaceGl: GlContext, rows: Array[Int32, Static], row: Int32, reads: Array[Int32, Static], values: Array[Float32, Static]) -> {
+            let program = RenderList.rowAt(rows, row, 1);
             // buildProgram だけで使用を刻むと足りない — Platform.GpuResources.buildProgram の doc は
             // 「起動時/リロード時に 1 回 compile」と約束していて、その通りに 1 回だけ
             // compile してハンドルを持ち回るゲームの program が「未使用」に見えて
             // 追い出される。追い出された program は下の uniform 逆引きが
             // (-1,-1,-1,Nil) で握り潰すので、エラーも例外も出ず絵だけ違う形で壊れる。
-            Ref.put(Map.insert(program, Array.get(0, frameGenHolder), Ref.get(programUsedAtRef)),
-                    programUsedAtRef);
+            Ref.put(Map.insert(program, Array.get(0, frameGenHolder), Ref.get(programUsedAtRef)), programUsedAtRef);
             let (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs) =
                 Map.get(program, Ref.get(shaderUniformCache))
                 |> Option.getWithDefault((-1, -1, -1, -1, (Nil: List[(Int32, Int32)]), (Nil: List[Int32])));
+            let at = RenderList.rowAt(rows, row, 11);
+            let paramCount = RenderList.rowAt(rows, row, 2) - 6;
             // Param の値（uParamN・正典順）。program を使う間だけ効く uniform なので、描く直前に差す。
-            // 長さの不一致は List.zip が短い方に合わせて吸収する（fallback の program では locs が空）。
             if (List.isEmpty(paramLocs)) ()
             else {
                 surfaceGl.useProgram(program);
-                List.zip(paramLocs, cmd#params) |> List.forEach(lv -> {
-                    let (loc, value) = lv;
-                    surfaceGl.uniform1f(loc, RenderUtil.f32(value))
-                })
+                List.forEachWithIndex((k, loc) -> if (k < paramCount) surfaceGl.uniform1f(loc, Array.get(at + 6 + k, values)) else (), paramLocs)
             };
-            // 名前 → GL テクスチャ id。無い名前は 0（黒）を bind して一度だけ知らせる —
-            // pass をこのフレームで宣言せず名前だけ読むと、ずっと 0 bind（黒）のままになる。
-            // registry / targets はこの 1 枚の描画中は変わらないので、名前ごとに読み直さない。
-            let registry = Ref.get(registryRef);
-            let targetRows = TargetTable.rows(targets);
-            let texBinds = List.zip(cmd#texReads, texLocs) |> List.zipWithIndex
-                |> List.map(itb -> {
-                    let (i, readLocs) = itb;
-                    let ((name, filter), locs) = readLocs;
-                    let (_samplerLoc, flipLoc) = locs;
-                    let texId = match Map.get(name, registry) {
-                        case Some(info) => GpuHandle.textureIdInt(info#id)
-                        case None =>
-                            let warned = Ref.get(missingSurfaceTexRef);
-                            if (Set.memberOf(name, warned)) ()
-                            else {
-                                System.err.println("shader tex '${name}' が見つからない — 黒(0)を貼る"
-                                    + "（pass ならこのフレームで宣言されているか確認）");
-                                Ref.put(Set.insert(name, warned), missingSurfaceTexRef)
-                            };
-                            0
-                    };
-                    // pass ターゲットは上下逆格納なので flip=1（貼る側で吸収する既存規約と同型）。
-                    let flip = if (Map.memberOf(name, targetRows)) 1.0 else 0.0;
-                    let sampler = if (filter == ShaderDoc.FilterMode.Linear) surfaceSamplerLinear else surfaceSampler;
-                    ({ texUnit = i, texId = texId, flipLoc = flipLoc, flip = flip, sampler = sampler }: RenderSprite.SurfaceTexBind)
-                });
-            // mask が空なら矩形そのまま、非空なら多角形の内側だけにステンシルで抜く
-            // （多角形描画は poly バッチ経路を借りる）。
-            if (List.isEmpty(cmd#mask)) {
-                RenderSprite.drawShaderSurface(surfaceGl, program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
-                                               texBinds,
-                                               cmd#rect, cmd#time, cmd#alpha, cmd#blend);
-                1
-            } else
-                RenderSprite.drawShaderSurfaceMasked(surfaceGl, program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
-                                               texBinds,
-                                               cmd#rect, cmd#time, cmd#alpha, cmd#blend,
-                                               polyBatchShader, polyBatchVao, polyBatchVbo,
-                                               polyBatchUniforms, cmd#mask)
+            let readsAt = RenderList.rowAt(rows, row, 6);
+            let readCount = RenderList.rowAt(rows, row, 7);
+            let texBinds = List.zipWithIndex(texLocs) |> List.filter(il -> fst(il) < readCount) |> List.map(il -> {
+                let (i, (_samplerLoc, flipLoc)) = il;
+                let base = (readsAt + i) * RenderList.readFields();
+                let sampler = if (Array.get(base + 1, reads) == 1) surfaceSamplerLinear else surfaceSampler;
+                ({ texUnit = i, texId = Array.get(base, reads), flipLoc = flipLoc, flip = Int32.toFloat64(Array.get(base + 2, reads)), sampler = sampler }: RenderSprite.SurfaceTexBind)
+            });
+            RenderSprite.drawShaderSurface(surfaceGl, program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
+                                           texBinds, values, at, RenderFrame.blendOf(RenderList.rowAt(rows, row, 4)))
         };
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が
         // 大半なので、共通ベースを 1 つ組み、呼び出し側は変わる所だけ上書きする。
@@ -316,9 +278,7 @@ mod RenderPaint {
                     surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
         let (name, tw, th, op) = (target#name, target#width, target#height, target#clear);
         let historyName = RenderTarget.historyName(name);
-        let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == historyName, cmd#texReads), surfaces)
-            or TargetTable.spritesReadHistory(name, sprites)
-            or paint#scene3d#readsTexture(historyName, scenes);
+        let readsHistory = TargetTable.readsHistory(name, sprites, surfaces) or paint#scene3d#readsTexture(historyName, scenes);
         let history = TargetTable.historyFor(glTargetAllocator(gl, paint), textureTables(paint), paint#targets, (paint#screenW, paint#screenH),
                                              target, readsHistory, paint#keepHistory);
         let entry = TargetTable.rowByName(paint#targets, name) |> Option.flatMap(entryOf(paint));

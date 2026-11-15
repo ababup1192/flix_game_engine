@@ -1,12 +1,13 @@
-// 多角形の run・タイルの層・static layer の範囲・3D の場面を貼る所が RenderList の行になる所（GL を呼ばない前半）と、場面の行を GL の backend が流す順を固定する。
+// 多角形の run・タイルの層・static layer の範囲・面・3D の場面を貼る所が RenderList の行になる所（GL を呼ばない前半）と、場面と面の行を GL の backend が流す順を固定する。
 // 並べた物（Merged）を emitRowItem へ順に渡して run を閉じ、行の欄と values を読む（倍率 1・Pass の絵は無し）。
 // WhyNot: mod TestShapeRows にしない — 行を作る関数は RenderFrame の中の pub でない関数で、子のモジュールからしか呼べない。
 mod RenderFrame.TestShapeRows {
     import java.nio.FloatBuffer
     use RenderFrame.{Merged, blendCode, closeRuns, countBase, emitRowItem, newRunState, stateSize}
     use RenderFrame.Internal.GlRows
-    use RenderFrame.Internal.RenderList.{RenderList, clearRenderList, instanceFloats, kindPoly, kindScene3d, kindSprite, kindStatic, kindTile, newRenderList,
-                                         nextVertexOf, rowAt, rowCountOf, rowsOf, valueCountOf, valuesOf, vertexFloats, viewValueFloats}
+    use RenderFrame.Internal.RenderList.{RenderList, clearRenderList, instanceFloats, kindPoly, kindScene3d, kindSprite, kindStatic, kindSurface, kindTile,
+                                         newRenderList, nextVertexOf, readFields, readsOf, rowAt, rowCountOf, rowsOf, surfaceValueAlign, valueCountOf, valuesOf,
+                                         vertexFloats, viewValueFloats}
 
     // ── 組み立て ──
 
@@ -47,7 +48,7 @@ mod RenderFrame.TestShapeRows {
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
         let list = newRenderList(FloatBuffer.allocate(instanceFloats() * 8), FloatBuffer.allocate(vertexFloats() * 64));
         let warnLog = Ref.fresh(Static, Set#{"missing"});
-        List.forEach(item -> discard emitRowItem(st, list, 1.0, 1.0, registry(), Set.empty(), warnLog, item), items);
+        List.forEach(item -> emitRowItem(st, list, 1.0, 1.0, registry(), Set.empty(), warnLog, item), items);
         closeRuns(st, list);
         list
 
@@ -201,19 +202,16 @@ mod RenderFrame.TestShapeRows {
         clearRenderList(list);
         Assert.assertEq(expected = (viewValueFloats(), 0), (valueCountOf(list), nextVertexOf(list)))
 
-    /// 1 個を emitRowItem へ渡した時の (行にしたか, 行の数)。
-    def madeRow(item: Merged): (Bool, Int32) \ IO =
-        let st: Array[Int32, Static] = Array.empty(Static, stateSize());
-        let list = newRenderList(FloatBuffer.allocate(instanceFloats()), FloatBuffer.allocate(vertexFloats()));
-        let made = emitRowItem(st, list, 1.0, 1.0, registry(), Set.empty(), Ref.fresh(Static, Set.empty()), item);
-        (made, rowCountOf(list))
+    /// 3D の場面と面を描く口（場面は番号を drawn へ積み・面は何もしない）。
+    def drawersInto(drawn: Ref[List[Int32], Static]): GlRows.RowDrawers =
+        { scene = i -> Ref.put(i :: Ref.get(drawn), drawn), surface = (_, _, _, _, _) -> checked_ecast(()) }
 
     // ── 3D の場面を貼る行 ──
 
-    /// 3D の場面は 1 行になる（emitRowItem が true を返す）。
+    /// 3D の場面は 1 行になる。
     @Test
     def testSceneIsARow(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = (true, 1), madeRow(Merged.MScene3d(0)))
+        Assert.assertEq(expected = 1, rowCountOf(listOf(Merged.MScene3d(0) :: Nil)))
 
     /// 場面の行は種類 kindScene3d と、1 番の欄に場面の番号を持つ。
     @Test
@@ -237,7 +235,7 @@ mod RenderFrame.TestShapeRows {
         let list = listOf(Merged.MScene3d(1) :: box() :: Merged.MScene3d(0) :: Nil);
         let drawn = Ref.fresh(Static, (Nil: List[Int32]));
         let st: Array[Int32, Static] = Array.empty(Static, stateSize());
-        GlRows.drawRenderList(FakeGl.silent(), Array.empty(Static, 32), st, list, i -> Ref.put(i :: Ref.get(drawn), drawn));
+        GlRows.drawRenderList(FakeGl.silent(), Array.empty(Static, 32), st, list, drawersInto(drawn));
         Assert.assertEq(expected = 1 :: 0 :: Nil, List.reverse(Ref.get(drawn)))
 
     /// 同じ箱・場面・同じ箱を GL の backend で流すと、場面を描く時点で draw call は 1（前の箱だけ）・終わりで 2（後の箱は場面で切れる）・kind の切れ目が 1。
@@ -247,14 +245,71 @@ mod RenderFrame.TestShapeRows {
         let st = newRunState(RenderDrawCounts.fresh());
         let drawsAtScene = Ref.fresh(Static, -1);
         GlRows.drawRenderList(FakeGl.silent(), Array.empty(Static, 32), st, list,
-                              _ -> Ref.put(Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st), drawsAtScene));
+                              { scene = _ -> Ref.put(Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st), drawsAtScene),
+                                surface = (_, _, _, _, _) -> checked_ecast(()) });
         Assert.assertEq(expected = (1, 2, 1),
                         (Ref.get(drawsAtScene), Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st),
                          Array.get(countBase() + RenderDrawCounts.kindSlot(), st)))
 
+    // ── 面の行 ──
 
-    /// 面（ShaderDoc）は行にならない。
+    /// 絵 reads を読み、mask で切り抜く面（program 1・矩形 clipRect・time 1.5・alpha 0.5・params は 0.25 の 1 つ）。
+    def surfaceWith(reads: List[(String, ShaderDoc.FilterMode)], mask: List[List[Vec2.Vec2]]): Merged =
+        Merged.MSurface({ texReads = reads, mask = mask, time = 1.5, alpha = 0.5, params = 0.25 :: Nil | surface() })
+
+    def plainSurface(): Merged = surfaceWith(Nil, Nil)
+
+    /// 面は 1 行で、program の番号と values に書いた値の数（rect 4・time・alpha・params 1 = 7）を持つ。
     @Test
-    def testSurfaceIsNotARow(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = (false, 0), madeRow(Merged.MSurface(surface())))
+    def testSurfaceIsARow(): Unit \ {Assert, IO} =
+        let list = listOf(plainSurface() :: Nil);
+        Assert.assertEq(expected = (1, kindSurface(), 1, 7), (rowCountOf(list), cell(list, 0, 0), cell(list, 0, 1), cell(list, 0, 2)))
+
+    /// 面の値は values の 64 の倍数の位置（static の値の後ろの 12 → 64）から、rect・time・alpha・params の順。
+    @Test
+    def testSurfaceValuesAreAlignedInOrder(): Unit \ {Assert, IO} =
+        let list = listOf(staticRange() :: plainSurface() :: Nil);
+        let at = cell(list, 1, 11);
+        Assert.assertEq(expected = (surfaceValueAlign(), 1.0f32 :: 2.0f32 :: 30.0f32 :: 20.0f32 :: 1.5f32 :: 0.5f32 :: 0.25f32 :: Nil),
+                        (at, valuesAt(list, at, 7)))
+
+    /// 同じ絵の箱の間に面が入ると、箱の run は面の前で閉じる（箱・面・箱の 3 行）。
+    @Test
+    def testSurfaceSplitsSpriteRun(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = kindSprite() :: kindSurface() :: kindSprite() :: Nil, kindsOf(listOf(box() :: plainSurface() :: box() :: Nil)))
+
+    /// 面の行の reads 1 つ分の (絵の番号, 補間, 上下逆)。
+    def readAt(list: RenderList, row: Int32, k: Int32): (Int32, Int32, Int32) \ IO =
+        let base = (cell(list, row, 6) + k) * readFields();
+        (Array.get(base, readsOf(list)), Array.get(base + 1, readsOf(list)), Array.get(base + 2, readsOf(list)))
+
+    /// 読む絵は名前から番号へ引く（"tiles" = 9・Linear・上下逆の描き先）。無い名前は 0・Nearest。
+    @Test
+    def testSurfaceReadsResolveNames(): Unit \ {Assert, IO} =
+        let st: Array[Int32, Static] = Array.empty(Static, stateSize());
+        let list = newRenderList(FloatBuffer.allocate(instanceFloats()), FloatBuffer.allocate(vertexFloats()));
+        let item = surfaceWith(("tiles", ShaderDoc.FilterMode.Linear) :: ("missing", ShaderDoc.FilterMode.Nearest) :: Nil, Nil);
+        emitRowItem(st, list, 1.0, 1.0, registry(), Set#{"tiles"}, Ref.fresh(Static, Set#{"shader tex missing"}), item);
+        Assert.assertEq(expected = (2, (9, 1, 1), (0, 0, 0)), (cell(list, 0, 7), readAt(list, 0, 0), readAt(list, 0, 1)))
+
+    /// mask つきの面は、mask の三角形（四角 = 6 頂点）を vertices へ書き、比べる値 1 を持つ。次の頂点はその後ろ。
+    @Test
+    def testMaskedSurfaceRowHoldsMaskAndRef(): Unit \ {Assert, IO} =
+        let square = (v(0.0, 0.0) :: v(4.0, 0.0) :: v(4.0, 4.0) :: v(0.0, 4.0) :: Nil) :: Nil;
+        let list = listOf(surfaceWith(Nil, square) :: Nil);
+        Assert.assertEq(expected = (0, 6, 1, 6), (cell(list, 0, 8), cell(list, 0, 9), cell(list, 0, 10), nextVertexOf(list)))
+
+    /// 同じ箱・面・同じ箱を GL の backend で流すと、面を塗る時点で draw call は 1（前の箱だけ）・終わりで 3・kind の切れ目が 2（面と後の箱）。
+    @Test
+    def testGlDrawsSurfaceInRowOrder(): Unit \ {Assert, IO} =
+        let list = listOf(box() :: plainSurface() :: box() :: Nil);
+        let st = newRunState(RenderDrawCounts.fresh());
+        let drawsAtSurface = Ref.fresh(Static, -1);
+        GlRows.drawRenderList(FakeGl.silent(), Array.empty(Static, 32), st, list,
+                              { scene = _ -> checked_ecast(()),
+                                surface = (_, _, _, _, _) -> Ref.put(Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st), drawsAtSurface) });
+        Assert.assertEq(expected = (1, 3, 2),
+                        (Ref.get(drawsAtSurface), Array.get(countBase() + RenderDrawCounts.drawCallsSlot(), st),
+                         Array.get(countBase() + RenderDrawCounts.kindSlot(), st)))
 }
+

@@ -252,6 +252,9 @@ mod TestWgslDawn {
         })
 
     /// 3D の光の式の関数（材質の frag に入らない空の式を含む）を、場面の宣言と一緒に組む。
+    /// 手で書いた 2D の面の WGSL（組めない面の単色の代わり）。
+    def builtinSurfaces(): List[(String, String)] = ("surface fallback", RenderPaint.Internal.WebGpuShader.surfaceFallbackWgsl()) :: Nil
+
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
@@ -273,7 +276,7 @@ mod TestWgslDawn {
             let (name, spec, glow, metal) = v;
             ("material " + name, materialErrors(gpu, name, spec, glow, metal))
         });
-        let fragFails = List.append(materialFragments(), sceneFunctions()) |> List.map(nw -> {
+        let fragFails = (materialFragments() ::: sceneFunctions() ::: builtinSurfaces()) |> List.map(nw -> {
             let (name, wgsl) = nw;
             (name, compileErrors(gpu, name, wgsl))
         });
@@ -294,7 +297,7 @@ mod TestWgslDawn {
             let (name, spec, glow, metal) = v;
             ("material " + name, materialHarness(spec, glow, metal))
         });
-        (surfaces |> List.map(sp -> (sp#name, ShaderGen.Wgsl.compile(sp)#module))) ::: materials ::: materialFragments() ::: sceneFunctions()
+        (surfaces |> List.map(sp -> (sp#name, ShaderGen.Wgsl.compile(sp)#module))) ::: materials ::: materialFragments() ::: sceneFunctions() ::: builtinSurfaces()
 
     /// GLSL にしか無い字（WGSL に出たら言葉の切り替え漏れ）。
     def glslOnlyTokens(): List[String] =

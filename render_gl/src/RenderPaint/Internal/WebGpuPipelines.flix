@@ -104,18 +104,23 @@ pub mod RenderPaint.Internal.WebGpuPipelines {
     // WhyNot: Write で色の書き込みの mask を 0 にしない — render_gl/java の RenderPipelineDesc に色の書き込みの mask の口が無く、足すと GL の層の jar のハッシュと
     //   ブラウザの実装が動く。
     def buildPipeline(pipes: Pipelines, shape: Int32, blendC: Int32, format: TextureFormat, samples: Int32, stencil: Int32): RenderPipeline \ IO =
-        let (src, dst, entry) =
-            if (stencil == WebGpuRows.stencilWrite()) (BlendFactor.ZERO, BlendFactor.ONE, "fs_main")
-            else if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE, "fs_main")
-            else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_multiply")
-            else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA, "fs_main");
+        let entry = if (blendC == 2 and stencil != WebGpuRows.stencilWrite()) "fs_multiply" else "fs_main";
         let desc = new RenderPipelineDesc("fge ${Int32.toString(shape)} ${entry} ${Int32.toString(blendC)} ${Int32.toString(stencil)}");
         if (shape == WebGpuRows.shapePoly()) describePoly(pipes#frameLayout, pipes#polyModule, entry, desc)
         else if (shape == WebGpuRows.shapeTile()) describeTile(pipes#frameLayout, pipes#imageLayout, pipes#tileModule, desc)
         else describeSprite(pipes#frameLayout, pipes#imageLayout, pipes#spriteModule, entry, desc);
-        discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD).multisample(samples);
-        describeStencil(stencil, desc);
+        describeTarget(blendC, format, samples, stencil, desc);
         pipes#gpu.createRenderPipeline(desc)
+
+    /// 描き先の形式・標本の数・blend の因子・stencil の使い方を pipeline に書く（スプライトの形と面で同じ物）。
+    pub def describeTarget(blendC: Int32, format: TextureFormat, samples: Int32, stencil: Int32, desc: RenderPipelineDesc): Unit \ IO =
+        let (src, dst) =
+            if (stencil == WebGpuRows.stencilWrite()) (BlendFactor.ZERO, BlendFactor.ONE)
+            else if (blendC == 1) (BlendFactor.SRC_ALPHA, BlendFactor.ONE)
+            else if (blendC == 2) (BlendFactor.DST, BlendFactor.ONE_MINUS_SRC_ALPHA)
+            else (BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA);
+        discard desc.colorTarget(format).blend(src, dst, BlendOperation.ADD, src, dst, BlendOperation.ADD).multisample(samples);
+        describeStencil(stencil, desc)
 
     /// stencil の使い方（WebGpuRows.stencil*）を pipeline に書く。None は depth と stencil を持たない。表と裏は同じ・深度は比べず書かない。
     def describeStencil(stencil: Int32, desc: RenderPipelineDesc): Unit \ IO =

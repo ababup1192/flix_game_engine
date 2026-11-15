@@ -658,6 +658,19 @@ sprite_stress（20,000 個・2 区間目・前 = `7189053a`・後 = R1b-0。前�
 
 7.1 の #7（GL の scissor の控え）: GL を直に呼ぶ種類は面だけになった。面の小分け（P5 の後）で面を行にすれば消える。
 
+### 7.11 R1b-6: 面（2026-11-15）
+
+決めた事・比べた別案・門は親の 12.22、比べの見本は `plans/webgpu/samples/surface-values.md`。3 章との対応:
+
+| 所 | 3 章の案 | 入れた形 |
+|---|---|---|
+| 3.1 の 8（draw ごとの値） | 行の欄に values の先頭を持ち、並びは Spec ごと（`ShaderGen` が struct を出す） | そのとおり。面の値は values の 64 個（256 バイト）の倍数の位置から rect・time・alpha・params の順（`SgValues` の欄の順）。WebGPU は values の buffer を uniform としても bind し、面ごとの bind group で読む |
+| 3.1 の「絵の組」 | 行に絵の列と補間 | 行の欄に入らないので、`RenderList` に `reads`（Int32 の配列・1 つ 3 個: 絵の番号・補間・上下逆）を足し、行の 6・7 番が範囲を指す。名前から番号を引くのも、無い名前を知らせるのも前半 |
+| 3.1 の 9（mask の行） | mask つきの面も mask の頂点の範囲 | そのとおり（行の 8・9 番）。比べる値は mask つきスプライトと同じく前半が進めて行の 10 番に書く（12.20 の持ち越しの答え） |
+| `emitRowItem` | — | Bool をやめて Unit に。GL の `emitOne`（面の前で行を流して直に描く枝）と WebGPU の `emitAll`・`emitItem` を消し、GL と WebGPU が同じ `emitMerged` を呼ぶ |
+
+7.1 の #7（GL の scissor の控え）: GL を直に呼ぶ種類が無くなったので、面の前で scissor を外す枝ごと消えた（面の行は clip を持たず、行の scissor の張り直しが外す）。
+
 ## 第 1 版のレビュー（74 点）への対応
 
 | # | 指摘 | 入れた所 |
