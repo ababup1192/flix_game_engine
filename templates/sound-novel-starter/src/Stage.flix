@@ -10,12 +10,6 @@ mod Stage {
     /// 物語の時計の名前（中身は要らない）。文字送り・<<wait>>・背景の重ね・揺れが使い、画面や確認のウィンドウを開くと止まる。
     pub enum Story
 
-    /// 文章の出し方。Nvl = 画面いっぱいに積む（小説の頁）、Adv = 下のウィンドウに 1 行ずつ。
-    pub enum Mode with Eq, ToString {
-        case Nvl
-        case Adv
-    }
-
     /// 背景 1 枚（写真と時間帯の名前）。
     pub type alias Shot = { photo = String, grade = String }
 
@@ -29,7 +23,7 @@ mod Stage {
     pub type alias Switch = { transition = BackdropDoc.Transition, ease = Curve.Ease, pace = Pace }
 
     /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、switch = 今の背景の替え方、
-    /// mode = 文章の出し方、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
+    /// mode = メッセージ枠の型の名前（novel.theme.json の windows。Nvl / Adv はその出し方の最初の型）、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
     /// props = 名前の付いた値（ambienceKey・particlesKey・shakeKeyOf・overlay*Key・cameraKey・windowHiddenKey・actorKey と game. の値）、cast = 立ち絵と小物の層。
     pub type alias Stage = {
         shot = Option[Shot],
@@ -37,7 +31,7 @@ mod Stage {
         fadeFrom = Clock.Time[Story],
         fadeSeconds = Float64,
         switch = Switch,
-        mode = Mode,
+        mode = String,
         pages = Int32,
         props = PropertyTween.Table[Story],
         cast = Cast.Layer
@@ -45,8 +39,17 @@ mod Stage {
 
     /// 物語を始める前の舞台（背景なし・NVL・音なし）。
     pub def empty(): Stage =
-        { shot = None, under = None, fadeFrom = Clock.never(), fadeSeconds = 0.0, switch = plainSwitch(), mode = Mode.Nvl, pages = 0,
+        { shot = None, under = None, fadeFrom = Clock.never(), fadeSeconds = 0.0, switch = plainSwitch(), mode = ThemeDoc.kindAlias(ThemeDoc.WindowKind.Nvl), pages = 0,
           props = PropertyTween.empty(), cast = Cast.empty() }
+
+    /// 今のメッセージ枠の型の名前と型。
+    pub def windowOf(theme: ThemeDoc.Doc, stage: Stage): (String, ThemeDoc.Window) = ThemeDoc.windowOf(stage#mode, theme)
+
+    /// 今のメッセージ枠の出し方（NVL か ADV か）。
+    pub def kindOf(theme: ThemeDoc.Doc, stage: Stage): ThemeDoc.WindowKind = snd(windowOf(theme, stage))#kind
+
+    /// mode の Nvl / Adv を windows の本当の型の名前にした舞台（Mark v3 の古い値を読んだ後に当てる）。
+    pub def withModeResolved(theme: ThemeDoc.Doc, stage: Stage): Stage = { mode = fst(windowOf(theme, stage)) | stage }
 
     /// 前の写真の上に、一定の速さで重ねる替え方。
     pub def plainSwitch(): Switch = { transition = BackdropDoc.Transition.Fade, ease = Curve.Ease.Linear, pace = Pace.Walk }
@@ -68,6 +71,40 @@ mod Stage {
 
     /// 粒の演出 name を一度だけ出す間（<<fx 名 once=true>>）。
     pub def fxOnceKey(name: String): PropertyTween.TriggerKey = PropertyTween.triggerKey("fx.once.${name}")
+
+    /// 一度だけ出す粒 name を出す点（「絵.点」。<<fx 名 once=true on=絵.点>>・<<speak>>。None は画面に広げる）。
+    pub def fxOnceAtKey(name: String): PropertyTween.NameKey = PropertyTween.nameKey("fx.onceAt.${name}")
+
+    /// 止めるまで出す粒を出す点（「絵.点」。<<fx 名 on=絵.点>>。None は画面に広げる）。
+    pub def particlesAtKey(): PropertyTween.NameKey = PropertyTween.nameKey("fx.particlesAt")
+
+    /// 今の話し手（台詞を出すたびに World が書く・<<speak 名>>。地の文は None）。話していない人物を暗くする（novel.cast.json の highlight）。
+    pub def speakerKey(): PropertyTween.NameKey = PropertyTween.nameKey("cast.speaker")
+
+    /// 文字の置き場（top・center・bottom。NVL の頁の中で行の塊を置く所）。
+    pub def textAtKey(): PropertyTween.NameKey = PropertyTween.nameKey("text.at")
+
+    /// 文字の大きさの名前（novel.kind.json の textSizes）。
+    pub def textSizeKey(): PropertyTween.NameKey = PropertyTween.nameKey("text.size")
+
+    /// 文字の揃え（left・center）。
+    pub def textAlignKey(): PropertyTween.NameKey = PropertyTween.nameKey("text.align")
+
+    /// 文字送りの速さに掛ける倍率（設定の文字の速さ × これ）。
+    pub def textSpeedKey(): PropertyTween.NumKey = PropertyTween.numKey("text.speed")
+
+    /// 話し手を now から speaker に替える（地の文は None。今の話し手と同じなら舞台はそのまま）。
+    // WhyNot: 同じ話し手を書き直さない — 替わった時刻が新しくなり、明るさのつなぎ（novel.cast.json の highlight）が台詞ごとにやり直しになる。
+    pub def withSpeaker(now: Clock.Time[Story], speaker: Option[String], stage: Stage): Stage =
+        if (PropertyTween.nameEnd(speakerKey(), stage#props) == speaker) stage
+        else { props = PropertyTween.setName(speakerKey(), speaker, now, 0.0, stage#props) | stage }
+
+    /// 今の字の大きさの倍率（<<text size=>> の名前を novel.kind.json の textSizes で引く。書いていない・知らない名前は 1）。
+    pub def textScaleOf(kind: KindDoc.Doc, stage: Stage): Float64 =
+        PropertyTween.nameEnd(textSizeKey(), stage#props) |> Option.flatMap(n -> Map.get(n, KindDoc.rec(kind)#textSizes)) |> Option.getWithDefault(1.0)
+
+    /// now の文字送りの速さの倍率（書いていなければ 1）。
+    pub def textSpeedAt(now: Clock.Time[Story], stage: Stage): Float64 = PropertyTween.numAt(now, textSpeedKey(), 1.0, stage#props)
 
     /// now に押しても台詞を送らない間か。
     pub def isTextLocked(now: Clock.Time[Story], stage: Stage): Bool = Option.nonEmpty(PropertyTween.triggerAt(now, textLockKey(), stage#props))
@@ -208,13 +245,22 @@ mod Stage {
     pub def withAmbience(now: Clock.Time[Story], sound: Option[String], stage: Stage): Stage =
         { props = PropertyTween.setName(ambienceKey(), sound, now, 0.0, stage#props) | stage }
 
-    /// パーティクルの演出を now から替える（None で止める）。
-    pub def withParticles(now: Clock.Time[Story], name: Option[String], stage: Stage): Stage =
-        { props = PropertyTween.setName(particlesKey(), name, now, 0.0, stage#props) | stage }
+    /// パーティクルの演出を now から替える（None で止める。at = 出す点「絵.点」・None は画面に広げる）。
+    pub def withParticles(now: Clock.Time[Story], name: Option[String], at: Option[String], stage: Stage): Stage =
+        let props = PropertyTween.setName(particlesAtKey(), at, now, 0.0, stage#props);
+        { props = PropertyTween.setName(particlesKey(), name, now, 0.0, props) | stage }
 
     /// 文字の枠と字を now から消す・出す。
-    pub def withWindowHidden(now: Clock.Time[Story], hidden: Bool, stage: Stage): Stage =
-        { props = PropertyTween.setNum(windowHiddenKey(), if (hidden) 1.0 else 0.0, now, 0.0, stage#props) | stage }
+    pub def withWindowHidden(now: Clock.Time[Story], hidden: Bool, stage: Stage): Stage = withWindowFade(now, hidden, 0.0, stage)
+
+    /// 文字の枠と字を now から seconds かけて薄くして消す・濃くして出す。
+    pub def withWindowFade(now: Clock.Time[Story], hidden: Bool, seconds: Float64, stage: Stage): Stage =
+        let key = windowHiddenKey();
+        let target = if (hidden) 1.0 else 0.0;
+        { props = PropertyTween.tween(key, Some(PropertyTween.numAt(now, key, 0.0, stage#props)), target, now, 0.0, seconds, Curve.Ease.Linear, stage#props) | stage }
+
+    /// now の文字の枠と字の濃さ（1 = 出ている・0 = 消えている）。
+    pub def windowAlphaAt(now: Clock.Time[Story], stage: Stage): Float64 = 1.0 - Float64.max(0.0, Float64.min(1.0, PropertyTween.numAt(now, windowHiddenKey(), 0.0, stage#props)))
 
     /// 文字の枠と字を消していれば now から出す（消していなければ舞台はそのまま）。
     // WhyNot: 消したまま台詞を出さない — 字の見えない台詞は、押せば進むのに何も読めない画面になる（Ren'Py の window hide も次の台詞で戻る）。
@@ -291,9 +337,9 @@ mod Stage {
                      Cast.markFromJson(Map.get("cast", obj)))
 
     /// 残した値から、settle した舞台を組む（セーブの JSON を読む所）。
-    pub def makeSnapshot(shot: Option[Shot], mode: Mode, pages: Int32, props: PropertyTween.Table[Story], cast: Cast.Mark): Snapshot =
+    pub def makeSnapshot(shot: Option[Shot], mode: String, pages: Int32, props: PropertyTween.Table[Story], cast: Cast.Mark): Snapshot =
         snapshotOf({ shot = shot, mode = mode, pages = pages, props = props, cast = Cast.layerOf(cast) | empty() })
 
-    /// セーブに書いた文章の出し方の字（"Adv" のほかは Nvl）。
-    pub def modeOfText(text: String): Mode = if (text == "${Mode.Adv}") Mode.Adv else Mode.Nvl
+    /// セーブに書いたメッセージ枠の型の名前（空なら NVL の最初の型）。Mark v3 の古い値 "Nvl"・"Adv" はそのまま残し、ThemeDoc.windowOf がその出し方の最初の型と読む。
+    pub def modeOfText(text: String): String = if (String.isEmpty(text)) ThemeDoc.kindAlias(ThemeDoc.WindowKind.Nvl) else text
 }

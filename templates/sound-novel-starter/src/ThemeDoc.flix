@@ -1,4 +1,4 @@
-// ThemeDoc — novel.theme.json（字・ウィンドウの色と待ちの印）の宣言ドキュメント層。写真の色は BackdropDoc の時間帯が持つ。
+// ThemeDoc — novel.theme.json（字・ウィンドウの色と待ちの印・メッセージ枠の型）の宣言ドキュメント層。写真の色は BackdropDoc の時間帯が持つ。
 // fail-open — 読めない綴りの色は既定の色のまま、知らない待ちの印は dots。
 mod ThemeDoc {
     use fge::{Color, DocJson, JsonCodec, Log}
@@ -13,6 +13,28 @@ mod ThemeDoc {
         case Hidden
     }
 
+    /// メッセージ枠の出し方。Nvl = 画面いっぱいに積む（小説の頁）、Adv = 枠に今の 1 行。
+    pub enum WindowKind with Eq, ToString {
+        case Nvl
+        case Adv
+    }
+
+    /// ADV の枠の置き場。Bottom = 画面の下、Center = 画面の真ん中。
+    pub enum WindowPlace with Eq, ToString {
+        case Bottom
+        case Center
+    }
+
+    /// 字を写真から立たせる仕方。Panel = 字の下に枠の地を敷く、Outline = 地を敷かず字を暗い縁取りで囲む（字幕の形）。
+    pub enum WindowFrame with Eq, ToString {
+        case Panel
+        case Outline
+    }
+
+    /// メッセージ枠の型 1 つ（<<window 型>> の型）。kind = 出し方、place = ADV の枠の置き場、frame = 字の立たせ方、
+    /// showName = ADV の枠に話し手の名前を出すか、quotes = 台詞を「」で包むか。
+    pub type alias Window = { kind = WindowKind, place = WindowPlace, frame = WindowFrame, showName = Bool, quotes = Bool }
+
     /// 話し手 1 人の色。id = シナリオの話し手の id（地の文は空）、name = 人に見せる名前（空なら novel.story.json の names）、
     /// color = 名前の字（テープの頁でシナリオの行を塗る色も同じ）、ink = 本文の字。
     pub type alias Speaker = { id = String, name = String, color = Color, ink = Color }
@@ -20,7 +42,7 @@ mod ThemeDoc {
     /// ink = 本文の字、inkSeen = 既読の行の字（スキップで飛ばせる行だと分かる色）、name = 話し手の名前、
     /// accent = 選んでいる物・オートやスキップの点灯、panel = ADV のウィンドウ・選択肢・画面の地（濃さは設定の「ウィンドウの濃さ」）、
     /// veil = NVL の頁の下に敷く幕の濃さを、ウィンドウの濃さに掛ける割合（頁は画面いっぱいなのでウィンドウより薄くしてよい）、firefly = 蛍の光、
-    /// loadingMark = 素材を待つ間の印、speakers = 話し手の id → 色（無い id は name と ink の色）。
+    /// loadingMark = 素材を待つ間の印、speakers = 話し手の id → 色（無い id は name と ink の色）、windows = メッセージ枠の型の名前 → 型。
     pub type alias Rec = {
         version = Int32,
         ink = Color,
@@ -31,7 +53,8 @@ mod ThemeDoc {
         veil = Float64,
         firefly = Color,
         loadingMark = LoadingMark,
-        speakers = Map[String, Speaker]
+        speakers = Map[String, Speaker],
+        windows = Map[String, Window]
     }
 
     /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
@@ -47,7 +70,31 @@ mod ThemeDoc {
         Doc.Doc({ version = 1, ink = hex("#f3eee4"), inkSeen = hex("#c7d3e8"), name = hex("#e9c873"),
                   accent = hex("#e9c873"), panel = hex("#0a0e16"), veil = 0.8,
                   firefly = hex("#d9ff8c"), loadingMark = LoadingMark.Dots,
-                  speakers = Map#{ "" => { id = "", name = "地の文", color = hex("#e9c873"), ink = hex("#f3eee4") } } })
+                  speakers = Map#{ "" => { id = "", name = "地の文", color = hex("#e9c873"), ink = hex("#f3eee4") } },
+                  windows = Map#{ "nvl" => nvlWindow(), "bottom" => advWindow() } })
+
+    def nvlWindow(): Window = { kind = WindowKind.Nvl, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true }
+
+    def advWindow(): Window = { kind = WindowKind.Adv, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true }
+
+    /// 「その出し方の最初の型」を指す名前（Mark v3 の mode が書いていた値。Doc の型の名前には使えない）。
+    pub def kindAlias(kind: WindowKind): String = "${kind}"
+
+    /// 型の名前 name の型と、その本当の名前。Nvl / Adv は windows の中でその出し方の最初の型（鍵の順）。
+    /// 知らない名前は ADV の最初の型（無ければ既定の ADV）。
+    // WhyNot: 知らない名前を知らせない — 毎フレーム描く所が引くので、同じ 1 行が流れ続ける。知らない名前は台本からは来ない（<<window>> の apply が Err にする）。
+    pub def windowOf(name: String, doc: Doc): (String, Window) =
+        let ws = rec(doc)#windows;
+        let firstOf = kind -> ws |> Map.toList |> List.find(match (_, w) -> w#kind == kind);
+        let fallback = (kind, builtin) -> firstOf(kind) |> Option.getWithDefault((kindAlias(kind), builtin));
+        match Map.get(name, ws) {
+            case Some(w) => (name, w)
+            case None if name == kindAlias(WindowKind.Nvl) => fallback(WindowKind.Nvl, nvlWindow())
+            case None => fallback(WindowKind.Adv, advWindow())
+        }
+
+    /// 型の名前が windows にあるか。
+    pub def hasWindow(name: String, doc: Doc): Bool = Map.memberOf(name, rec(doc)#windows)
 
     /// 話し手の色（Doc に無い id は名前の色と本文の色）。
     pub def speakerOf(id: String, doc: Doc): Speaker =
@@ -85,7 +132,43 @@ mod ThemeDoc {
                   firefly = color("firefly", d#firefly),
                   loadingMark = loadingMarkOr(JsonCodec.stringOr("loadingMark", "dots", root)),
                   speakers = Map.get("speakers", root) |> Option.map(speakersOf(color("name", d#name), color("ink", d#ink)))
-                                 |> Option.getWithDefault(d#speakers) })
+                                 |> Option.getWithDefault(d#speakers),
+                  windows = Map.get("windows", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(windowsOf)
+                                |> Option.filter(ws -> not Map.isEmpty(ws)) |> Option.getWithDefault(d#windows) })
+
+    /// windows の表（名前 → { kind, place, frame, showName, quotes }）を読む。Nvl・Adv の名前と読めない行は落とし、落とした理由を 1 行ずつ返す。
+    // WhyNot: 型の名前に Nvl・Adv を許さない — セーブの Mark v3 の mode の古い値と同じ字になり、どちらの意味か読み分けられない。
+    pub def windowsFrom(rows: Map[String, Json]): (Map[String, Window], List[String]) =
+        let read = (name, json) ->
+            if (name == kindAlias(WindowKind.Nvl) or name == kindAlias(WindowKind.Adv)) Err("windows の型の名前 '${name}' は使えない（セーブの古い値と同じ字）")
+            else windowFrom(json) |> Option.toOk("windows の '${name}' が読めない（kind = nvl・adv が要る）");
+        let results = rows |> Map.toList |> List.map(match (name, json) -> read(name, json) |> Result.map(w -> (name, w)));
+        (results |> List.filterMap(Result.toOption) |> List.toMap, results |> List.filterMap(errorOf))
+
+    def errorOf(r: Result[String, a]): Option[String] = match r {
+        case Err(why) => Some(why)
+        case Ok(_)    => None
+    }
+
+    /// windowsFrom で読み、落とした行を 1 行ずつ知らせる。
+    def windowsOf(rows: Map[String, Json]): Map[String, Window] =
+        let (kept, dropped) = windowsFrom(rows);
+        dropped |> List.foldLeft((acc, why) -> Log.warnThen("[theme] ${why} — 落とす", acc), kept)
+
+    def windowFrom(json: Json): Option[Window] =
+        JsonCodec.expectObject(json) |> Option.flatMap(obj -> {
+            let kind = match JsonCodec.stringOr("kind", "", obj) {
+                case "nvl" => Some(WindowKind.Nvl)
+                case "adv" => Some(WindowKind.Adv)
+                case _     => None
+            };
+            let base = (k: WindowKind) -> if (k == WindowKind.Nvl) nvlWindow() else advWindow();
+            kind |> Option.map(k -> { kind = k,
+                                      place = if (JsonCodec.stringOr("place", "bottom", obj) == "center") WindowPlace.Center else WindowPlace.Bottom,
+                                      frame = if (JsonCodec.stringOr("frame", "panel", obj) == "outline") WindowFrame.Outline else WindowFrame.Panel,
+                                      showName = JsonCodec.boolOr("showName", base(k)#showName, obj),
+                                      quotes = JsonCodec.boolOr("quotes", base(k)#quotes, obj) })
+        })
 
     /// speakers の列（{id, name, color, ink}）。色の無い行は名前の色と本文の色。
     def speakersOf(name: Color, ink: Color, json: Json): Map[String, Speaker] =

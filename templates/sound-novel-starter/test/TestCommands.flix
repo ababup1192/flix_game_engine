@@ -25,7 +25,7 @@ mod TestCommands {
 
     /// 表のコマンドごとに、必須の引数だけを書いた 1 行（人物と小物はテスト用の Doc の名前）。
     def samples(res: Res.Res): List[(String, List[String])] =
-        ("bg", photoOf(res) :: "grade=${gradeOf(res)}" :: Nil) :: ("window", "nvl" :: Nil) :: ("audio", "ambience" :: ambienceOf(res) :: Nil)
+        ("bg", photoOf(res) :: "grade=${gradeOf(res)}" :: Nil) :: ("window", "nvl" :: Nil) :: ("text", "speed=1" :: Nil) :: ("speak", "cup" :: Nil) :: ("audio", "ambience" :: ambienceOf(res) :: Nil)
         :: ("fx", "off" :: Nil) :: ("shake", Nil) :: ("overlay", "0.5" :: Nil) :: ("camera", Nil) :: ("show", "a" :: Nil) :: ("hide", "all" :: Nil) :: ("move", "a" :: "from=left" :: Nil) :: Nil
 
     def castRes(): Res.Res \ Fs.FileRead = TestKit.res() |> Res.withCast(CastDoc.load("test/fixtures/novel.cast.json"))
@@ -76,7 +76,7 @@ mod TestCommands {
             |> Option.getWithDefault({ file = "test", line = 1 });
         let clear = { name = "window", args = "clear" :: Nil, tags = Nil, source = source };
         let bottom = { name = "window", args = "bottom" :: Nil, tags = Nil, source = source };
-        let outs = (c: Yarn.Command) -> Commands.execute(Commands.Replay.Live, ctx(res), c, { mode = Stage.Mode.Adv | Stage.empty() }) |> Result.map(snd);
+        let outs = (c: Yarn.Command) -> Commands.execute(Commands.Replay.Live, ctx(res), c, { mode = "bottom" | Stage.empty() }) |> Result.map(snd);
         Assert.assertEq(expected = (Ok(Out.ClearPage :: Nil), Ok(Nil)), (outs(clear), outs(bottom)))
 
     @Test
@@ -85,7 +85,7 @@ mod TestCommands {
         let res = TestKit.res();
         let args = photoOf(res) :: "grade=${gradeOf(res)}" :: Nil;
         Assert.assertEq(expected = (Ok(Out.TurnPage :: Nil), Ok(Nil)),
-                        (outsOf(res, Commands.Replay.Live, "bg", args, { mode = Stage.Mode.Adv | Stage.empty() }), outsOf(res, Commands.Replay.Live, "bg", args, Stage.empty())))
+                        (outsOf(res, Commands.Replay.Live, "bg", args, { mode = "bottom" | Stage.empty() }), outsOf(res, Commands.Replay.Live, "bg", args, Stage.empty())))
 
     @Test
     def testBackdropWithoutGradeKeepsTheCurrentGrade(): Unit \ {Assert, Fs.FileRead} =

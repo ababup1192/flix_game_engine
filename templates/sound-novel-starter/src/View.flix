@@ -49,10 +49,10 @@ mod View {
     pub def zWorldStride(): Int32 = 8
 
     // ── hud の中の z（小さいほど奥） ──
-    def zVeil(): Int32 = 10
+    pub def zVeil(): Int32 = 10
     /// 頁の幕の上・字の下に置く小物（NVL と縦の画面の頁。幕で小物がくすまないように）。
     pub def zPageProp(): Int32 = 15
-    def zText(): Int32 = 20
+    pub def zText(): Int32 = 20
     def zChoice(): Int32 = 30
     def zButtons(): Int32 = 40
     /// 素材を待つ間の黒（本文とボタンの上・画面と確認のウィンドウの下）と、その上の待ちの印。
@@ -81,11 +81,16 @@ mod View {
         let screen = if (coversScreen(w#panel)) Nil else match w#scene {
             case World.Scene.Title(item)      => title(atlas, env, item)
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
-            case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden or Stage.isWindowHidden(env#storyNow, r#stage)) Nil else shakenWindow(env, r, reading(atlas, env, r))
+            case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden or Stage.isWindowHidden(env#storyNow, r#stage)) Nil else shakenWindow(env, r, fadedWindow(env, r, reading(atlas, env, r)))
         };
         let covered = World.readOf(w) |> Option.map(r -> ViewStage.screenOverlay(env, r#stage, zOverlay())) |> Option.getWithDefault(Nil);
         let holding = World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.map(holdLayer(atlas, env)) |> Option.getWithDefault(Nil);
         List.flatten(screen :: covered :: holding :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: editedBanner(atlas, env) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
+
+    /// 文字の枠と字を <<window off|on time=>> の途中の濃さにする。
+    def fadedWindow(env: Env, r: World.Read, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
+        let a = Stage.windowAlphaAt(env#storyNow, r#stage);
+        if (a >= 1.0) items else items |> List.map(Render.overItem(Render.fade(a)))
 
     /// 文字の枠と字を <<shake on=window>> の分だけずらす。
     def shakenWindow(env: Env, r: World.Read, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
@@ -111,7 +116,10 @@ mod View {
 
     pub def at(x: Float64, y: Float64, item: Render.Item): Render.PlacedItem = { at = { x = x, y = y }, item = item }
 
-    def textAt(x: Float64, y: Float64, text: String, atlas: FontAtlas, size: Float64, color: Color, z: Int32): Render.PlacedItem =
+    /// 文章のウィンドウの濃さ（設定の「ウィンドウの濃さ」）。NVL の幕はこれに theme の veil を掛ける。
+    pub def windowAlpha(env: Env): Float64 = Saves.configOf(env#saves)#windowAlpha
+
+    pub def textAt(x: Float64, y: Float64, text: String, atlas: FontAtlas, size: Float64, color: Color, z: Int32): Render.PlacedItem =
         at(x, y, Render.textTinted(text, atlas, size, color, z))
 
     /// 右端を right に合わせた字。
@@ -217,168 +225,12 @@ mod View {
 
     // ── 読んでいる間の画面（本文・選択肢・クイックメニュー） ──
 
-    /// 読んでいる間の 1 画面。サムネも同じ関数で描く。
+    /// 読んでいる間の 1 画面。サムネも同じ関数で描く。novel.cast.json で hideWindow の絵が出ている間は、文字の枠と字だけを描かない（選択肢とボタンは描く）。
     def reading(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
+        let hidden = Cast.hidesWindow(env#res#cast, r#stage#cast);
         if (Layout.isPortrait(env#fit))
-            List.flatten(portraitPage(atlas, env, r) :: choices(atlas, env, r) :: portraitButtons(atlas, env, r) :: Nil)
-        else List.flatten(textLayer(atlas, env, r) :: choices(atlas, env, r) :: quickMenu(atlas, env, r) :: Nil)
-
-    def textLayer(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
-        match r#stage#mode {
-            case Stage.Mode.Nvl => nvl(atlas, env, r)
-            case Stage.Mode.Adv => adv(atlas, env, r)
-        }
-
-    /// 文章のウィンドウの濃さ（設定の「ウィンドウの濃さ」）。NVL の幕はこれに theme の veil を掛ける。
-    def windowAlpha(env: Env): Float64 = Saves.configOf(env#saves)#windowAlpha
-
-    /// 1 行を置く（字の下に 1px ずらした影を敷き、写真の明るい所でも字の縁が立つようにする）。
-    /// sizes = 本文とルビの字の大きさ（行の間は本文の字に比べて novel.kind.json の lineGap の割合）。
-    def placeLine(atlas: FontAtlas, pos: Vec2.Vec2, width: Float64, sizes: { body = Float64, ruby = Float64 }, ink: Color, visible: Int32,
-                  line: Page.Line, env: Env): List[Render.PlacedItem] =
-        let k = kindOf(env);
-        let place = (tint, p, z) -> RichText.placeRuby(
-            { atlas = atlas, size = sizes#body, baseTint = tint, z = z, pos = p, maxWidth = width, lineGap = k#lineGap * sizes#body / k#bodySize },
-            sizes#ruby, line#rubies, visible, RichText.plain(line#text) :: Nil);
-        List.append(place({ r = 0.0, g = 0.0, b = 0.0 }, { x = pos#x + 1.0, y = pos#y + 1.5 }, zText()) |> List.map(fadeTo(0.55)),
-                    place(ink, pos, zText() + 1))
-
-    def fadeTo(alpha: Float64): Render.PlacedItem -> Render.PlacedItem = placed -> Render.overItem(item -> Render.fade(alpha, item), placed)
-
-    /// 今の行を既に読んでいれば既読の色、まだなら話し手の本文の色。
-    def inkOf(line: Page.Line, env: Env, r: World.Read): Color =
-        let isCurrent = Option.exists(c -> c#source == line#source, r#page#current);
-        if (isCurrent and Saves.isSeen(line#source, env#saves)) theme(env)#inkSeen else speakerOf(line, env)#ink
-
-    /// 行の話し手の色（novel.theme.json の speakers。地の文は空の id）。
-    def speakerOf(line: Page.Line, env: Env): ThemeDoc.Speaker =
-        let id = if (String.isEmpty(line#speaker)) "" else StoryDoc.idOfName(line#speaker, env#res#story);
-        ThemeDoc.speakerOf(id, env#res#theme)
-
-    /// 1 行が頁に占める高さ（行の数 × (字 + 行の間)）。行の間は本文の字に比べて novel.kind.json の lineGap の割合（placeLine と同じ）。
-    def lineHeight(env: Env, sizes: { body = Float64, ruby = Float64 }, width: Float64, line: Page.Line): Float64 =
-        let k = kindOf(env);
-        Int32.toFloat64(Page.rowsOf(sizes#body, sizes#ruby, width, line)) * (sizes#body + k#lineGap * sizes#body / k#bodySize)
-
-    /// NVL: 画面いっぱいに幕を敷き、頁に積んだ行と今の行を上から並べる（行の間に少し空きを入れて段落にする）。
-    def nvl(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
-        let t = theme(env);
-        let k = kindOf(env);
-        let area = Layout.nvlText();
-        let veil = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), t#panel, zVeil())
-                                    |> Render.fade(Float64.min(0.95, windowAlpha(env) * t#veil)));
-        let current = r#page#current |> Option.map(line -> (line, Page.visibleCount(r#page)) :: Nil) |> Option.getWithDefault(Nil);
-        let rows = List.append(r#page#lines |> List.map(line -> (line, String.length(line#text))), current);
-        let (items, endY) = rows |> List.foldLeft((acc, row) -> {
-            let (done, y) = acc;
-            let (line, visible) = row;
-            let placed = placeLine(atlas, { x = area#x, y = y }, area#width, { body = k#bodySize, ruby = k#rubySize }, inkOf(line, env, r), visible, line, env);
-            (placed :: done, y + lineHeight(env, { body = k#bodySize, ruby = k#rubySize }, area#width, line) + 6.0)
-        }, (Nil, area#y));
-        veil :: List.flatten(ViewStage.pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r) :: Nil)
-
-    /// ADV: 下のウィンドウ（上から下へ濃くなる地と、金の細い縁）に、名前と今の 1 行。
-    def adv(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
-        let t = theme(env);
-        let sizes = Layout.advTextSizes(env#fit, kindOf(env));
-        let p = Layout.advPanel(env#fit);
-        let ground = { at = p#position,
-                       item = Render.vgrad(p#size, { top = t#panel, bottom = Color.darken(t#panel, 0.3) }, zVeil()) |> Render.fade(windowAlpha(env)) };
-        let rim = { at = p#position, item = RawDraw.box({ x = p#size#x, y = 1.0 }, t#accent, zVeil() + 1) |> Render.fade(0.45) };
-        let text = Layout.advText(env#fit);
-        match r#page#current {
-            case None => ground :: rim :: Nil
-            case Some(line) =>
-                let name = if (String.isEmpty(line#speaker)) Nil
-                    else { at = Layout.advName(env#fit), item = Render.textTinted(line#speaker, atlas, sizes#name, speakerOf(line, env)#color, zText() + 1) } :: Nil;
-                let body = placeLine(atlas, { x = text#x, y = text#y }, text#width, { body = sizes#body, ruby = sizes#ruby }, inkOf(line, env, r),
-                                     Page.visibleCount(r#page), line, env);
-                List.flatten((ground :: rim :: name) :: body ::
-                    waitMark(atlas, { x = p#position#x + p#size#x - 30.0, y = p#position#y + p#size#y - 30.0 }, env, r) :: Nil)
-        }
-
-    /// 送りの印（行を出し終えて、送れる時だけ明滅する。コマンドが出した待ちの間は送れないので出さない）。オートの間は点けたまま（押さなくても進むと分かる）。
-    def waitMark(atlas: FontAtlas, pos: Vec2.Vec2, env: Env, r: World.Read): List[Render.PlacedItem] =
-        if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current) or Option.nonEmpty(r#pause)) Nil
-        else {
-            let alpha = if (r#playback == World.Playback.Auto) 0.9 else 0.35 + 0.55 * (0.5 + 0.5 * Num.sin(realSeconds(env) * 4.0));
-            { at = pos, item = Render.textTinted("▼", atlas, 14.0, theme(env)#accent, zText() + 2) |> Render.fade(alpha) } :: Nil
-        }
-
-    // ── 縦の画面の頁 ──
-
-    /// 縦の画面: 写真を上から下へ濃くなる覆いで沈め、画面いっぱいの頁に文を上から積む（NVL も ADV も同じ頁）。前の行は少し薄く、今の行ははっきり。
-    /// 頁の切れ目は World のまま（NVL の <<window clear>> と行の数・ADV の場面の切れ目）。縦の頁に入り切らない時は、古い行から行ごと上へ流して今の行を必ず見せる。
-    def portraitPage(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
-        let t = theme(env);
-        let sizes = Layout.advTextSizes(env#fit, kindOf(env));
-        let area = Layout.page(env#fit, List.length(r#choices));
-        let blockOf = (line, visible, isCurrent) ->
-            { line = line, visible = visible, isCurrent = isCurrent, height = blockHeight(env, sizes, area#size#x, line) };
-        let older = r#page#lines |> List.map(line -> blockOf(line, String.length(line#text), false));
-        let current = r#page#current |> Option.map(line -> blockOf(line, Page.visibleCount(r#page), true)) |> Option.toList;
-        let shown = keepLatest(area#size#y, List.append(older, current));
-        let (items, endY) = shown |> List.foldLeft((acc, b) -> {
-            let (done, y) = acc;
-            let speaker = speakerOf(b#line, env);
-            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(speaker#ink, t#panel, 0.12);
-            let nameInk = if (b#isCurrent) speaker#color else Color.mix(speaker#color, t#panel, 0.45);
-            (portraitBlock(atlas, sizes, { x = area#position#x, y = y }, area#size#x, { body = ink, name = nameInk }, b#visible, b#line, env) :: done,
-             y + b#height + Layout.paragraphGap())
-        }, (Nil, area#position#y));
-        let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
-        List.flatten(portraitVeil(env, r#stage) :: ViewStage.pageProps(env, r#stage) :: List.flatten(List.reverse(items)) :: mark :: Nil)
-
-    /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べ、人物が出ている間は novel.cast.json の
-    /// portraitVeilWithCast を、人物の出入りの進みに合わせて掛ける（出ると薄く、消えると戻る）。
-    def portraitVeil(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        let t = theme(env);
-        let withCast = CastDoc.rec(env#res#cast)#portraitVeilWithCast;
-        let presence = Cast.presenceOf(env#storyNow, env#res#cast, stage#cast);
-        let a = windowAlpha(env) * (1.0 + (withCast - 1.0) * presence);
-        let stops = (0.0, 0.6 * a) :: (0.3, 1.1 * a) :: (1.0, 1.2 * a) :: Nil;
-        let size = Layout.size(env#fit);
-        List.zip(stops, List.drop(1, stops)) |> List.map(match ((y0, a0), (y1, a1)) -> {
-            let top = size#y * y0;
-            let bottom = size#y * y1;
-            let alpha0 = Float64.min(0.95, a0);
-            let alpha1 = Float64.min(0.95, a1);
-            at(0.0, top, Render.gradPolygon(
-                { pos = { x = 0.0, y = 0.0 },              color = t#panel, alpha = alpha0 } ::
-                { pos = { x = size#x, y = 0.0 },           color = t#panel, alpha = alpha0 } ::
-                { pos = { x = size#x, y = bottom - top },  color = Color.darken(t#panel, 0.2), alpha = alpha1 } ::
-                { pos = { x = 0.0, y = bottom - top },     color = Color.darken(t#panel, 0.2), alpha = alpha1 } :: Nil,
-                zVeil()))
-        })
-
-    /// 縦の頁の 1 行が占める高さ（台詞なら上に添える名前の行 + 本文の行の数 × (字 + 行の間)）。
-    def blockHeight(env: Env, sizes: { body = Float64, ruby = Float64, name = Float64 }, width: Float64, line: Page.Line): Float64 =
-        nameRowOf(sizes, line) + lineHeight(env, { body = sizes#body, ruby = sizes#ruby }, width, line)
-
-    // WhyNot: 名前の行を名前の字の高さだけにしない — 本文の 1 行目のルビが名前の行の下へはみ出して重なる。
-    def nameRowOf(sizes: { body = Float64, ruby = Float64, name = Float64 }, line: Page.Line): Float64 =
-        if (String.isEmpty(line#speaker)) 0.0 else sizes#name + 8.0 + sizes#ruby * 0.5
-
-    /// 縦の頁に置く 1 行: 行・見えている字の数・今の行か・占める高さ。
-    pub type alias Block = { line = Page.Line, visible = Int32, isCurrent = Bool, height = Float64 }
-
-    /// 新しい方から、高さ room に入るだけの行（古い順に戻して返す）。行の途中では切らず行ごと落とす。今の行（最後）は入らなくても必ず残す。
-    pub def keepLatest(room: Float64, blocks: List[Block]): List[Block] =
-        let (kept, _, _) = List.reverse(blocks) |> List.foldLeft((acc, b) -> {
-            let (taken, used, open) = acc;
-            let next = used + b#height + (if (List.isEmpty(taken)) 0.0 else Layout.paragraphGap());
-            if (open and (List.isEmpty(taken) or next <= room)) (b :: taken, next, true) else (taken, used, false)
-        }, (Nil, 0.0, true));
-        kept
-
-    /// 縦の頁の 1 行（台詞は台詞の頭に名前を小さく添える）。ink = 本文と名前の色（前の行は薄く）。
-    def portraitBlock(atlas: FontAtlas, sizes: { body = Float64, ruby = Float64, name = Float64 }, pos: Vec2.Vec2, width: Float64,
-                      ink: { body = Color, name = Color }, visible: Int32, line: Page.Line, env: Env): List[Render.PlacedItem] =
-        let nameRow = nameRowOf(sizes, line);
-        let name = if (nameRow > 0.0) textAt(pos#x, pos#y, line#speaker, atlas, sizes#name, ink#name, zText() + 1) :: Nil else Nil;
-        let body = placeLine(atlas, { x = pos#x, y = pos#y + nameRow }, width,
-                             { body = sizes#body, ruby = sizes#ruby }, ink#body, visible, line, env);
-        List.append(name, body)
+            List.flatten((if (hidden) Nil else ViewText.portraitPage(atlas, env, r)) :: choices(atlas, env, r) :: portraitButtons(atlas, env, r) :: Nil)
+        else List.flatten((if (hidden) Nil else ViewText.textLayer(atlas, env, r)) :: choices(atlas, env, r) :: quickMenu(atlas, env, r) :: Nil)
 
     // ── 縦の画面の右の列と … ──
 
@@ -548,7 +400,7 @@ mod View {
         let count = List.length(r#choices);
         // NVL は字が画面いっぱいにあるので、選ぶ間は幕を 1 枚足して頁を沈める。
         // 縦の画面は頁を選択肢の上までに縮めるので、頁を沈める幕は要らない。
-        let sink = if (count > 0 and r#stage#mode == Stage.Mode.Nvl and not Layout.isPortrait(env#fit))
+        let sink = if (count > 0 and Stage.kindOf(env#res#theme, r#stage) == ThemeDoc.WindowKind.Nvl and not Layout.isPortrait(env#fit))
             at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), t#panel, zChoice() - 1) |> Render.fade(0.7)) :: Nil
             else Nil;
         sink ::: (r#choices |> List.zipWithIndex |> List.flatMap(match (i, option) -> {
@@ -780,7 +632,7 @@ mod View {
                 let baseY = top + 6.0 + nameRow;
                 let (name, ink) = match entry {
                     case World.Entry.Said(line, _) =>
-                        let speaker = speakerOf(line, env);
+                        let speaker = ViewText.speakerOf(line, env);
                         let n = if (String.isEmpty(line#speaker)) Nil
                                 else if (nameRow > 0.0) textAt(text#x, top + 6.0, line#speaker, atlas, size * 0.75, speaker#color, zPanelText()) :: Nil
                                 else textRight(Layout.logNameRight(), baseY + rowHeight - size, line#speaker, atlas, size * 0.9, speaker#color, zPanelText()) :: Nil;

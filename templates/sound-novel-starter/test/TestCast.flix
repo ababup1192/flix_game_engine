@@ -20,7 +20,7 @@ mod TestCast {
 
     /// 項目の既定の表情と位置。
     def entry(kind: Kind, name: String): CastDoc.Entry \ Fs.FileRead =
-        CastDoc.entryOf(kind, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil, layer = 0, attach = CastDoc.Attach.Screen })
+        CastDoc.entryOf(kind, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil, layer = 0, attach = CastDoc.Attach.Screen, markers = Map.empty(), hideWindow = false, speakFx = None })
 
     /// コマンド 1 つ（<<name args…>>）。
     def command(name: String, args: List[String]): Yarn.Command =
@@ -264,7 +264,7 @@ mod TestCast {
                 let st = Stage.fromSnapshot(s#mark#stage);
                 (st#shot |> Option.map(shot -> (shot#photo, shot#grade)), st#mode, markTuple(Cast.markOf(st#cast)), Stage.ambienceOf(Clock.zero(), st), Stage.particlesOf(Clock.zero(), st), Option.isEmpty(s#mark#page))
             });
-        Assert.assertEq(expected = Some((Some(("p", "g")), Stage.Mode.Adv, (("a", "smile", "left") :: Nil, Nil), Some("amb_x"), Some("fireflies"), true)), read)
+        Assert.assertEq(expected = Some((Some(("p", "g")), "Adv", (("a", "smile", "left") :: Nil, Nil), Some("amb_x"), Some("fireflies"), true)), read)
 
     // ══ ロード・バックログから戻る時の持ち越し（テスト用のシナリオ） ══
 
@@ -436,7 +436,7 @@ mod TestCast {
         // Exit に着いた時の舞台には、コマンドだけで通り過ぎる Through の <<if>> の枝の中の <<window bottom>> と <<show b>> が入っている。
         let r = res();
         let exit = Map.get("Exit", WorldRead.buildEntriesWithin(WorldRead.entryFuel(), r)) |> Option.map(Stage.fromSnapshot);
-        Assert.assertEq(expected = Some((Stage.Mode.Adv, "b" :: Nil)),
+        Assert.assertEq(expected = Some(("bottom", "b" :: Nil)),
                         exit |> Option.map(st -> (st#mode, castOf(st#cast) |> List.map(match (n, _, _) -> n))))
 
     @Test

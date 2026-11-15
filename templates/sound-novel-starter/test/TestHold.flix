@@ -106,7 +106,7 @@ mod TestHold {
         Ref.put(Set.empty(), fake#missing);
         let arrived = App.stepBackgroundLoad(app, dark);
         let w = stepBy(arrived#resources, 1.0 / 60.0, arrived#world);
-        Assert.assertEq(expected = (Some(LoadProgress.DecodeBudget.Covered(50.0)), Set.empty(), Some(World.HoldPhase.FadingIn), Some("desk_room"), Stage.Mode.Nvl),
+        Assert.assertEq(expected = (Some(LoadProgress.DecodeBudget.Covered(50.0)), Set.empty(), Some(World.HoldPhase.FadingIn), Some("desk_room"), "nvl"),
                         (budget, arrived#resources#missing, World.holdPhaseOf(w), photoOf(w), World.stageOf(res, w)#mode))
 
     @Test

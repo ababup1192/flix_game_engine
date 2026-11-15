@@ -54,7 +54,7 @@ mod E2e {
               { name = "talk", doc = "開いているシナリオのノード（閉じていれば空）", read = Flow.Probe.Text(onWorld(World.talkNodeOf)) } ::
               { name = "talkLine", doc = "今出している行のシナリオの行（ファイル:行）", read = Flow.Probe.Text(onWorld(World.talkLineOf)) } ::
               { name = "talkCursor", doc = "シナリオの実行位置（ファイル:行。<<wait>> の間は前の時間を取る演出の行・読んでいなければ空）", read = Flow.Probe.Text(onWorld(World.talkCursorOf)) } ::
-              { name = "mode", doc = "文章の出し方（Nvl・Adv）", read = Flow.Probe.Text(Resources.read((res, w) -> "${World.stageOf(res, w)#mode}")) } ::
+              { name = "mode", doc = "メッセージ枠の型の名前（novel.theme.json の windows）", read = Flow.Probe.Text(Resources.read((res, w) -> "${World.stageOf(res, w)#mode}")) } ::
               { name = "photo", doc = "今の背景の写真の名前（無ければ空）", read = Flow.Probe.Text(Resources.read((res, w) -> World.stageOf(res, w)#shot |> Option.map(s -> s#photo) |> Option.getWithDefault(""))) } ::
               { name = "lineDone", doc = "今の行を出し終えた", read = Flow.Probe.Flag(onWorld(w -> Page.isDone(World.pageOf(w)))) } ::
               { name = "choice", doc = "選択肢を出している", read = Flow.Probe.Flag(onWorld(World.isChoosing)) } ::

@@ -2,9 +2,9 @@
 # 期限を決めない文通の結末（最後に坂の後ろ姿の一枚絵）を経てクレジットへ。
 start title
 tap confirm                                     # タイトル → はじめから
-expect talk=WinterRoute&mode=Nvl&photo=slope
+expect talk=WinterRoute&mode=nvl&photo=slope
 drive reader until choice max 90                # 冬の坂（NVL）から最初の手紙の選択肢まで
-expect talk=FirstLetter&mode=Nvl
+expect talk=FirstLetter&mode=nvl
 tap confirm                                     # 「私は、坂をゆっくり上がります」と添える
 drive reader until ownPace max 30
 mark letter

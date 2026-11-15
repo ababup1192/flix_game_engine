@@ -36,10 +36,10 @@ mod WorldRead {
         match Yarn.nodeOf(first, res#dialogue) {
             case Some(_) =>
                 let (talk, events) = YarnRunner.start(res#dialogue, first, World.now(w));
-                absorb(res, Commands.Replay.Live, events, { talk = talk | World.emptyRead() }, opened)
+                absorb(res, Commands.Replay.Live, events, { talk = talk | World.emptyRead(res#theme) }, opened)
             case None =>
                 showLine(res, Commands.Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk/yukidoke.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
-                                             parts = Nil, tags = Nil, source = { file = "", line = 0 } }, World.emptyRead(), opened)
+                                             parts = Nil, tags = Nil, source = { file = "", line = 0 } }, World.emptyRead(res#theme), opened)
         }
 
     // ── シナリオの出来事を反映する ──
@@ -169,23 +169,27 @@ mod WorldRead {
         absorbFrom(res, Commands.Replay.Live, p#last, p#rest, World.withRead({ pause = None | r }, w))
 
     /// 台詞 1 行を頁とバックログへ。NVL で頁に入り切らない時は頁をめくって（めくった数を足して）から積む。消していた文字の枠は出す。
+    /// 話し手（地の文は None）を舞台の cast.speaker に書く（話していない人物を暗くする）。台詞を「」で包むかはメッセージ枠の型の quotes。
     /// 戻れる所は行を積んだ後の舞台と頁で作る。新しいノードの最初の行ならオートセーブ。
     def showLine(res: Res.Res, replay: Replay, bookmark: Option[YarnRunner.Bookmark], line: Yarn.Line, r: World.Read, w: World.World): World.World =
-        let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, res#story), line);
-        let fits = fitsNvl(res);
-        let shownStage = Stage.withWindowShown(World.now(w), r#stage);
-        let stage = if (Page.isFullFor(shownStage#mode, fits, entry, r#page)) Stage.withPageTurned(shownStage) else shownStage;
-        let page = Page.show(stage#mode, fits, entry, r#page);
+        let window = snd(Stage.windowOf(res#theme, r#stage));
+        let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, res#story), window#quotes, line);
+        let fits = fitsNvl(res, r#stage);
+        let speaker = if (String.isEmpty(line#speaker)) None else Some(line#speaker);
+        let shownStage = Stage.withSpeaker(World.now(w), speaker, Stage.withWindowShown(World.now(w), r#stage));
+        let stage = if (Page.isFullFor(window#kind, fits, entry, r#page)) Stage.withPageTurned(shownStage) else shownStage;
+        let page = Page.show(window#kind, fits, entry, r#page);
         let placed = { stage = stage, page = if (replay == Commands.Replay.Silent) Page.revealAll(page) else page | r };
         let mark = bookmark |> Option.map(b -> markOf(b, placed));
         let shown = { choices = Nil, doneAt = None, log = List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Said(entry, mark) :: r#log) | placed };
         if (replay == Commands.Replay.Silent) World.withRead(shown, w) else autosave(res, mark, shown, w)
 
-    /// NVL の頁に行の列が入り切るか（行の数は novel.kind.json の nvlRows）。
-    def fitsNvl(res: Res.Res): List[Page.Line] -> Bool = lines ->
+    /// NVL の頁に行の列が入り切るか（行の数は novel.kind.json の nvlRows。<<text size=>> の倍率の字で数え、頁の高さは倍率で割った行の数）。
+    def fitsNvl(res: Res.Res, stage: Stage.Stage): List[Page.Line] -> Bool = lines ->
         let k = KindDoc.rec(res#kind);
-        let rows = lines |> List.foldLeft((sum, line) -> sum + Page.rowsOf(k#bodySize, k#rubySize, Layout.nvlText()#width, line), 0);
-        rows <= k#nvlRows
+        let scale = Stage.textScaleOf(res#kind, stage);
+        let rows = lines |> List.foldLeft((sum, line) -> sum + Page.rowsOf(k#bodySize * scale, k#rubySize * scale, Layout.nvlText()#width, line), 0);
+        Int32.toFloat64(rows) * scale <= Int32.toFloat64(k#nvlRows)
 
     def firstOpen(options: List[YarnRunner.DialogueOption]): Int32 =
         options |> List.zipWithIndex |> List.find(match (_, option) -> option#available)
@@ -309,7 +313,7 @@ mod WorldRead {
             let noWait = KindDoc.isNoWait(World.configOf(waited)#cps, res#kind);
             let fast = noWait or (cur#playback == World.Playback.Skip and isSkippable(cur, waited));
             let page = if (fast) Page.revealAll(cur#page)
-                       else Page.step(World.configOf(waited)#cps, Clock.dtOf(waited#storyClock), cur#page);
+                       else Page.step(World.configOf(waited)#cps * Stage.textSpeedAt(World.now(waited), cur#stage), Clock.dtOf(waited#storyClock), cur#page);
             let typed = { page = page | cur };
             let stamped = if (Page.isDone(page) and Option.isEmpty(typed#doneAt)) { doneAt = Some(World.now(waited)) | typed } else typed;
             autoOrSkip(res, stamped, waited)
@@ -397,14 +401,15 @@ mod WorldRead {
     /// 戻れる所へ戻す: そのノードに入る直前の舞台と頁（Mark の entry）からブックマークを当て直し、通ったコマンドを音を出さずに反映して
     /// バックログと選択肢を作り直し、最後に舞台と頁を Mark の値で置き換える。entry の無い枠は Mark の舞台と空の頁から当て直し、
     /// 頁の無い枠は当て直しで作った頁のまま。画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
+    /// Mark v3 の古い mode（Nvl・Adv）は、ここで novel.theme.json の windows の本当の型の名前にする。
     // WhyNot: 当て直した舞台をそのまま使わない — 数え足す値（頁の数など）は当て直しの始まりに頼り、entry の無い枠では合わない。
     pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
-        let saved = Stage.fromSnapshot(mark#stage);
-        let start = mark#entry |> Option.map(e -> Stage.fromSnapshot(e#stage)) |> Option.getWithDefault(saved);
+        let saved = Stage.withModeResolved(res#theme, Stage.fromSnapshot(mark#stage));
+        let start = mark#entry |> Option.map(e -> Stage.withModeResolved(res#theme, Stage.fromSnapshot(e#stage))) |> Option.getWithDefault(saved);
         let startPage = mark#entry |> Option.map(e -> e#page) |> Option.getWithDefault(Page.empty());
         let (talk, events) = YarnRunner.resume(res#dialogue, mark#bookmark, World.now(w));
         let gaveUp = World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
-        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = start, page = startPage, gaveUp = gaveUp | World.emptyRead() },
+        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = start, page = startPage, gaveUp = gaveUp | World.emptyRead(res#theme) },
                        { panel = World.Panel.Closed, ask = None | w }))
             |> World.mapRead(r -> { stage = saved, page = Option.getWithDefault(r#page, mark#page) | r })
 
@@ -521,7 +526,7 @@ mod WorldRead {
     /// 舞台は node に最初に着いた時の形（buildEntryStage）から始め、通ったコマンドは音を出さずに反映し、演出の途中は終わりの形にする。
     pub def openAt(res: Res.Res, storage: YarnStorage.Storage, node: String, line: Int32, w: World.World): World.World \ Emit[World.Event] =
         let (talk, events) = YarnRunner.startAtWith(storage, res#dialogue, node, line, World.now(w));
-        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = buildEntryStage(res, node) | World.emptyRead() },
+        settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = buildEntryStage(res, node) | World.emptyRead(res#theme) },
                        { panel = World.Panel.Closed, ask = None | w }))
 
     // ── ノードに着いた時の舞台 ──
@@ -538,7 +543,7 @@ mod WorldRead {
     def buildEntryStage(res: Res.Res, node: String): Stage.Stage =
         match Map.get(node, buildEntriesWithin(entryFuel(), res)) {
             case Some(snapshot) => Stage.fromSnapshot(snapshot)
-            case None           => Log.warnThen("[stage] ${node} は ${StoryDoc.openingOf(res#story)} から流しても着かない（空の舞台から始める）", Stage.empty())
+            case None           => Log.warnThen("[stage] ${node} は ${StoryDoc.openingOf(res#story)} から流しても着かない（空の舞台から始める）", Stage.withModeResolved(res#theme, Stage.empty()))
         }
 
     /// fuel 歩までに着いたノードごとの、最初に着いた時の舞台（opening は空の舞台）。
@@ -548,10 +553,10 @@ mod WorldRead {
             case None    => Map.empty()
             case Some(_) =>
                 let (talk, events) = YarnRunner.start(res#dialogue, opening, Clock.zero());
-                let w = World.withRead({ talk = talk | World.emptyRead() }, World.initial(Saves.fresh(res#kind), 0i64));
+                let w = World.withRead({ talk = talk | World.emptyRead(res#theme) }, World.initial(Saves.fresh(res#kind), 0i64));
                 let first = absorbTracking(res, events, { w = w, found = Map.empty(), revisited = false });
                 snd(walkEntries(res, fuel, first#w :: Nil, first#found))
-                    |> (found -> if (Map.memberOf(opening, found)) found else Map.insert(opening, Stage.snapshotOf(Stage.empty()), found))
+                    |> (found -> if (Map.memberOf(opening, found)) found else Map.insert(opening, Stage.snapshotOf(Stage.withModeResolved(res#theme, Stage.empty())), found))
         }
 
     /// 道 1 本を流している所: w = 流した World、found = 着いたノードの舞台、revisited = この歩でもう着いたノードへ入ったか。

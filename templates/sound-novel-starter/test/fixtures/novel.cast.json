@@ -1,10 +1,11 @@
 {
   "version": 1,
-  "note": "テスト用の立ち絵と小物（TestCast・TestActors が読む）。人物 2 人（a は表情 2 つ・b は位置の高さを超える scale）と小物 3 つ（cup と fan は item・book は desk）と背景に付く絵 1 つ（shade。写真 p で横へずれる）。crowd だけが 1 つしか立てない位置でない。絵のファイルは無くてよい（描き出しは CastDoc.sample を使う）。",
+  "note": "テスト用の立ち絵と小物（TestCast・TestActors が読む）。人物 2 人（a は表情 2 つ・b は位置の高さを超える scale）と小物 3 つ（cup と fan は item・book は desk）と背景に付く絵 1 つ（shade。写真 p で横へずれる）。crowd だけが 1 つしか立てない位置でない。a は口の点（markers の mouth）と speakFx、b は speakFx だけ（口の点が無い）、cup は出ている間は文字の枠を消す（hideWindow）。絵のファイルは無くてよい（描き出しは CastDoc.sample を使う）。",
   "fadeSeconds": 0.5,
   "slideDistance": 0.6,
   "sway": 0.0,
   "portraitVeilWithCast": 0.5,
+  "highlight": { "dim": 0.4, "seconds": 0.5 },
   "slots": {
     "left": { "x": 0.25, "bottom": 1.0, "height": 0.9, "exclusive": true },
     "center": { "x": 0.5, "bottom": 1.0, "height": 0.9, "exclusive": true },
@@ -22,12 +23,12 @@
     "desk": { "x": 0.5, "bottom": 0.97, "height": 0.28, "exclusive": true }
   },
   "cast": {
-    "a": { "label": "A", "aspect": 0.4, "scale": 1.0, "face": "plain", "slot": "center", "faces": ["plain", "smile"] },
-    "b": { "label": "B", "aspect": 0.5, "scale": 1.2, "face": "plain", "slot": "left", "faces": ["plain"] },
+    "a": { "label": "A", "aspect": 0.4, "scale": 1.0, "face": "plain", "slot": "center", "faces": ["plain", "smile"], "markers": { "mouth": { "x": 0.5, "y": 0.2 } }, "speakFx": "breath" },
+    "b": { "label": "B", "aspect": 0.5, "scale": 1.2, "face": "plain", "slot": "left", "faces": ["plain"], "speakFx": "breath" },
     "shade": { "label": "影", "aspect": 1.0, "scale": 1.0, "face": "plain", "slot": "crowd", "faces": ["plain"], "attach": { "bg": { "p": -0.2 } } }
   },
   "props": {
-    "cup": { "label": "湯呑み", "aspect": 1.0, "scale": 1.0, "face": "plain", "slot": "item", "faces": ["plain"] },
+    "cup": { "label": "湯呑み", "aspect": 1.0, "scale": 1.0, "face": "plain", "slot": "item", "faces": ["plain"], "hideWindow": true },
     "fan": { "label": "うちわ", "aspect": 0.8, "scale": 1.0, "face": "plain", "slot": "item", "faces": ["plain"] },
     "book": { "label": "本", "aspect": 0.7, "scale": 1.0, "face": "plain", "slot": "desk", "faces": ["plain"], "layer": 450 }
   }

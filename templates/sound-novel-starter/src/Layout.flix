@@ -91,6 +91,11 @@ mod Layout {
         case Fit.Portrait(_, _) => page(fit, 0)
     }
 
+    /// ADV の枠を型の置き場 place に置いた矩形（Center は画面の縦の真ん中）。名前と本文は advPanel からのずれの分だけ一緒に動かす。
+    pub def advPanelAt(fit: Fit, place: ThemeDoc.WindowPlace): Rect2.Rect2 =
+        let p = advPanel(fit);
+        if (place == ThemeDoc.WindowPlace.Center) { position = { x = p#position#x, y = (height(fit) - p#size#y) / 2.0 } | p } else p
+
     /// ADV の名前の左上。
     pub def advName(fit: Fit): { x = Float64, y = Float64 } = { x = 72.0, y = advPanel(fit)#position#y + 12.0 }
 

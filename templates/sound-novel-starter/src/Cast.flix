@@ -129,6 +129,10 @@ mod Cast {
     /// 名前の物が出ているか。
     pub def isShown(name: String, layer: Layer): Bool = Option.nonEmpty(currentOf(name, layer))
 
+    /// 出ている物のうちに、出ている間は文字の枠を消す絵（novel.cast.json の hideWindow）があるか。消えていく途中の物は数えない。
+    pub def hidesWindow(doc: CastDoc.Doc, layer: Layer): Bool =
+        layer#shown |> List.exists(s -> entryOf(doc, s#now#name) |> Option.exists(e -> e#hideWindow))
+
     /// 出ている物の名前（出した順）。
     pub def shownNames(layer: Layer): List[String] = layer#shown |> List.map(s -> s#now#name)
 
@@ -315,7 +319,7 @@ mod Cast {
         { dx = t#dx + CastDoc.attachShiftOf(env#photo, entry#attach), jitter = { x = t#jitter#x + moving, y = t#jitter#y } | t }
 
     /// 透過画像を読む面（2 つの画素の間をなめらかにつないで読む。縁の透明な画素の色は art/cast/prepare.py が縁の色で埋めてある）。
-    /// 色: l = 明るさ、c1 = l + 彩度 × (c − l)、c2 = c1 × 倍率。彩度と倍率は previous から current へ、面の t（切り替えの進み）でつなぐ。
+    /// 色: l = 明るさ、c1 = l + 彩度 × (c − l)、c2 = c1 × 倍率 × lit（Param。話し手を明るくする brightnessOf）。彩度と倍率は previous から current へ、面の t（切り替えの進み）でつなぐ。
     /// turned なら、面を傾けた絵の外接する矩形にし、Param の turn_a〜turn_d（tiltParamsOf）で読む座標を回して、絵の外は透かす。
     // WhyNot: Render.sprite で貼らない — 2D の絵は格子に乗せる前提で、縮めると画素を飛ばして読み、輪郭がぎざぎざになる。
     // WhyNot: 進みを Const で埋め込まない — Spec が毎フレーム変わると、実機はシェーダーを組み直し続ける（t で渡せば時間帯の組ごとに 1 本）。
@@ -338,7 +342,7 @@ mod Cast {
                        bin(ShaderDoc.BinOp.Mul, k(0.114), Field.Ref("b")));
         let channel = (name, gain) -> {
             let c1 = bin(ShaderDoc.BinOp.Add, Field.Ref("l"), bin(ShaderDoc.BinOp.Mul, between(light#previous#saturation, light#current#saturation), bin(ShaderDoc.BinOp.Sub, Field.Ref(name), Field.Ref("l"))));
-            bin(ShaderDoc.BinOp.Mul, c1, gain)
+            bin(ShaderDoc.BinOp.Mul, bin(ShaderDoc.BinOp.Mul, c1, gain), param("lit"))
         };
         let suffix = if (not steady) "_${light#previous#key}_${light#current#key}"
                      else if (light#current#key == plainTone()#key) ""
@@ -368,7 +372,7 @@ mod Cast {
     /// 1 つの形を濃さ alpha で描く。知らない名前・位置・表情と、まだ届いていない絵は描かない。
     // WhyNot: Doc の faces に無い表情を貼りに行かない — 未登録のテクスチャは GL では黒（0 番）が貼られ、黒い四角が出る。
     /// 息の揺れは足元を据えたまま高さを僅かに伸び縮みさせる（上下に動かすと足元の下に隙間が覗く）。
-    def figureItem(env: Env, figure: Figure, alpha: Float64, z: Int32): List[Render.PlacedItem] =
+    def figureItem(env: Env, figure: Figure, alpha: Float64, brightness: Float64, z: Int32): List[Render.PlacedItem] =
         let texture = textureOf(figure);
         match placementOf(env, figure) {
             case Some((_, r, t)) if alpha * t#alpha > 0.0 and not Set.memberOf(texture, env#missing) =>
@@ -378,10 +382,11 @@ mod Cast {
                 let swayed = { position = { x = r#position#x - r#size#x * grow / 2.0, y = r#position#y - breath },
                                size = { x = r#size#x * (1.0 + grow), y = r#size#y + breath } };
                 let faded = Render.overItem(Render.fade(alpha * t#alpha));
-                if (t#degrees == 0.0) faded(Render.shaderFill(pictureSpec(texture, env#light, false), swayed, env#light#progress, z)) :: Nil
+                let lit = Map#{ "lit" => brightness };
+                if (t#degrees == 0.0) faded(Render.shaderFill(pictureSpec(texture, env#light, false), swayed, env#light#progress, z) |> Render.withShaderParams(lit)) :: Nil
                 else {
                     let (box, params) = tiltOf(t#degrees, swayed);
-                    faded(Render.shaderFill(pictureSpec(texture, env#light, true), box, env#light#progress, z) |> Render.withShaderParams(params)) :: Nil
+                    faded(Render.shaderFill(pictureSpec(texture, env#light, true), box, env#light#progress, z) |> Render.withShaderParams(Map.union(lit, params))) :: Nil
                 }
             case _ => Nil
         }
@@ -395,6 +400,16 @@ mod Cast {
             (entry, movedRect(env#fit, t, rectOf(env#fit, slot, entry)), t)
         }
 
+    /// 名前の絵の点 point の、今の画面の位置（出ていない・まだ届いていない・Doc に無い点は None）。
+    pub def markerPointOf(env: Env, layer: Layer, name: String, point: String): Option[{ x = Float64, y = Float64 }] =
+        forM (shown <- layer#shown |> List.find(s -> s#now#name == name) |> Option.filter(s -> not Set.memberOf(textureOf(s#now), env#missing));
+              m <- CastDoc.markerOf(name, point, env#doc);
+              placed <- placementOf(env, shown#now))
+        yield {
+            let (_, r, _) = placed;
+            { x = r#position#x + r#size#x * m#x, y = r#position#y + r#size#y * m#y }
+        }
+
     /// 出ている人物と小物の置き場（消えていく物と、描かない物 = 知らない名前・まだ届いていない絵は除く）。label = Doc の人に見せる名前。
     pub def placedOf(env: Env, layer: Layer): List[{ kind = Kind, figure = Figure, label = String, rect = Rect2.Rect2 }] =
         layer#shown |> List.filter(s -> not Set.memberOf(textureOf(s#now), env#missing))
@@ -402,10 +417,27 @@ mod Cast {
                      |> Option.map(match (entry, r, _) -> { kind = s#kind, figure = s#now, label = entry#label, rect = r }))
 
     /// 出ている物 1 つ: 同じ位置で表情を替えている間は、前の形を敷いた時の濃さで下に残し、今の形を上から濃くする（途中で背景が透けない）。
-    def shownItems(env: Env, shown: Shown, z: Int32): List[Render.PlacedItem] =
+    def shownItems(env: Env, layer: Layer, shown: Shown, z: Int32): List[Render.PlacedItem] =
         let a = nowAlphaOf(env#storyNow, shown);
-        let under = shown#before |> Option.map(b -> figureItem(env, b#figure, b#alpha, z)) |> Option.getWithDefault(Nil);
-        List.append(under, figureItem(env, shown#now, a, z))
+        let lit = brightnessOf(env, layer, shown#kind, shown#now#name);
+        let under = shown#before |> Option.map(b -> figureItem(env, b#figure, b#alpha, lit, z)) |> Option.getWithDefault(Nil);
+        List.append(under, figureItem(env, shown#now, a, lit, z))
+
+    /// 名前の物の今の明るさ（1 = 絵のまま）。話し手（Stage の cast.speaker）が出ている間、ほかの人物を novel.cast.json の highlight の dim だけ暗くし、
+    /// 話し手が替わった時は highlight の seconds で前の明るさからつなぐ。小物・背景に付く絵・話し手が出ていない時と地の文は暗くしない。
+    pub def brightnessOf(env: Env, layer: Layer, kind: Kind, name: String): Float64 =
+        let h = CastDoc.rec(env#doc)#highlight;
+        let counts = kind == Kind.Character and not (entryOf(env#doc, name) |> Option.exists(CastDoc.isAttachedToBackdrop));
+        let dimFor = (speaker: Option[String]) -> if (speaker |> Option.exists(s -> s != name and isShown(s, layer))) h#dim else 0.0;
+        if (not counts or h#dim <= 0.0) 1.0
+        else {
+            let key = Stage.speakerKey();
+            let now = dimFor(PropertyTween.nameAt(env#storyNow, key, env#props));
+            let before = dimFor(PropertyTween.namePreviousAt(env#storyNow, key, env#props));
+            let since = PropertyTween.nameSince(env#storyNow, key, env#props) |> Option.getWithDefault(h#seconds);
+            let p = if (h#seconds <= 0.0) 1.0 else Float64.min(1.0, Float64.max(0.0, since / h#seconds));
+            1.0 - Float64.min(1.0, before + (now - before) * p)
+        }
 
     /// 層の全部を z に描く（重ね順の小さい物から。同じ重ね順なら消えていく物 → 出ている物）。
     pub def items(env: Env, layer: Layer, z: Int32): List[Render.PlacedItem] = groupsWhere(env, (_, _) -> true, layer, z) |> List.flatMap(snd)
@@ -415,7 +447,7 @@ mod Cast {
     pub def groupsWhere(env: Env, keep: (Kind, CastDoc.Entry) -> Bool, layer: Layer, z: Int32): List[(Int32, List[Render.PlacedItem])] =
         let layerOf = (kind, name) -> entryOf(env#doc, name) |> Option.filter(e -> keep(kind, e)) |> Option.map(e -> e#layer);
         let going = layer#leaving |> List.filterMap(l -> layerOf(l#kind, l#figure#name)
-            |> Option.map(n -> ((n, 0), (n, figureItem(env, l#figure, leavingAlphaOf(env#storyNow, l), z)))));
-        let shown = layer#shown |> List.filterMap(s -> layerOf(s#kind, s#now#name) |> Option.map(n -> ((n, 1), (n, shownItems(env, s, z)))));
+            |> Option.map(n -> ((n, 0), (n, figureItem(env, l#figure, leavingAlphaOf(env#storyNow, l), brightnessOf(env, layer, l#kind, l#figure#name), z)))));
+        let shown = layer#shown |> List.filterMap(s -> layerOf(s#kind, s#now#name) |> Option.map(n -> ((n, 1), (n, shownItems(env, layer, s, z)))));
         List.append(going, shown) |> Sort.sortStableBy(fst) |> List.map(snd)
 }

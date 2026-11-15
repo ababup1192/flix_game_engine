@@ -92,12 +92,14 @@
 | コマンド | 引数 | 既定 | 書く所 | 他のエンジンの同じ物 |
 |---|---|---|---|---|
 | `bg 写真` | `grade=` ★`transition=fade\|black\|wipe\|slide\|pan\|cut` ★`pace=walk\|run` `time=` ★`ease=` | transition = Doc の `defaultTransition`（今は fade）・pace = walk・time = 1 | Stage の背景の形（`shot`・`under`・`fadeFrom`・`fadeSeconds`）に ★`transition` と ★`pace` を足す | Ren'Py `scene … with dissolve`・Naninovel `@back … transition:`・Tyrano `[bg method=]` |
-| `window 型\|clear\|off\|on` | `time=` | — | `Stage.mode`（N4b で Doc の型の名前に）・`window.hidden`（N3） | Ren'Py `window hide` / `nvl`・Naninovel `@printer`・`@hidePrinter` |
+| `window 型\|clear\|off\|on` | `time=`（off・on の薄くなる秒だけ。型と clear に書くと Err） | — | `Stage.mode`（型の名前）・`window.hidden`（数。time で tween） | Ren'Py `window hide` / `nvl`・Naninovel `@printer`・`@hidePrinter` |
+| ★`text` | `at=top\|center\|bottom`（NVL の頁の中の行の塊の置き場）`size=`（`novel.kind.json` の `textSizes` の名前）`align=left\|center`（1 行に収まる行だけ真ん中へ）`speed=`（設定の文字の速さに掛ける倍率）`lock=`（秒）。どれか 1 つは要る | — | `text.at` `.size` `.align`（名前）・`text.speed`（数）・`text.lock`（一度だけ） | Ren'Py の window の style・Naninovel `@printer`・Tyrano `[position]` / `[delay]` |
+| ★`speak 名` | — | — | `cast.speaker`。項目の `speakFx` があれば `markers.mouth` から一度（`fx.once.<粒>`・`fx.onceAt.<粒>`） | — |
 | `audio ambience 音[,音]\|off` | ★`volume=` ★`fade=` | volume = Doc の音量 | `audio.ambience`（名前。重ねる時は `,` でつないだ 1 つの値）・★`audio.ambienceVolume`（数） | Naninovel `@sfx loop:true` |
 | ★`audio bgm 音\|off` | `volume=`（数か Doc の名前）`fade=` | fade = 0 | ★`audio.bgm`（名前）・★`audio.bgmVolume`（数・tween で fade） | Ren'Py `play music … fadein`・Naninovel `@bgm`・Tyrano `[playbgm]` |
 | `audio se 音` | ★`wait=true` | wait = false | `Out.Sound`。wait なら ★`Out.Wait(wav の秒)`。音量はバス（novel.mixer.json）が決め、`volume=`・`fade=` を書くと Err（一発の音は名前しか運べない） | Naninovel `@sfx wait:true`・Tyrano `[playse]` + `[wse]` |
 | ★`audio all off` | `fade=` | — | 環境音と音楽（鳴り続ける音）の名前を None。一発の効果音は止めない（8.3 の C14） | Ren'Py `stop sound`・`stop music` |
-| `fx 名\|off` | ★`once=true` ★`on=名.点`（N4b） | 続ける | `fx.particles`（名前）。once は ★`fx.once.<名>`（一度だけの演出） | Naninovel `@spawn Rain` |
+| `fx 名\|off` | ★`once=true` ★`on=名.点`（N4b。引数の型 `marker`。点から出せるのは `look: puff` の粒だけで、蛍・雪に書くと Err） | 続ける | `fx.particles`・★`fx.particlesAt`（名前）。once は ★`fx.once.<名>`（一度だけの演出）・★`fx.onceAt.<名>` | Naninovel `@spawn Rain` |
 | `shake [強さ]` | ★`on=screen\|window\|<絵の名前>` `time=` | 強さ・time = Doc の名前付きの強さ（`novel.kind.json` の `shakes`）。数を書けば px | `camera.shake`（一度だけ）・★`camera.shakeAmp`（数）。on が絵なら ★`actor.<名>.shake` | Tyrano `[quake]`・Naninovel `@shakeCamera` |
 | `show 名 [絵]` | `at=` ★`from=left\|right\|top\|bottom` ★`x=` ★`y=` ★`scale=` ★`alpha=` `time=` ★`ease=` | 絵・at = 出ている形か Doc の face・slot | Cast の層（自分の形）。x〜alpha は `actor.<名>.*` | Ren'Py `show 名 属性 at 位置`・Naninovel `@char` / `@spawn`・Tyrano `[chara_show]` + `[chara_mod]` |
 | `hide 名\|all` / `hide at=位置` | ★`to=left\|right\|top\|bottom` `time=` ★`ease=` | time = Doc の fadeSeconds | Cast の層 | Ren'Py `hide`・Naninovel `@hideChars`・Tyrano `[chara_hide]` |
@@ -228,11 +230,11 @@ pub enum Out {
 
 | 物 | 形 | 書く所 | 他のエンジン |
 |---|---|---|---|
-| 話し手を明るく・ほかを暗く | 台詞を出すたびに World が `cast.speaker`（名前）を書く。View が Doc の `highlight`（暗くする量・秒）で描く。台本には書かない | `cast.speaker`（Snapshot に乗る） | Naninovel の speaker highlight・Ren'Py の `say_attribute` |
-| 字を出さずに話す | `<<speak 名>>` が `cast.speaker` を書き、Doc の `markers.mouth` から `fx` の once を出す | `cast.speaker`・`fx.once.<名>` | —（血鱗の言い方を残す） |
+| 話し手を明るく・ほかを暗く | 台詞を出すたびに World が `cast.speaker`（話し手の id。地の文は None・同じ話し手は書き直さない）を書く。View が `novel.cast.json` の `highlight`（`dim`・`seconds`）で描く。暗くするのは話し手が出ている間のほかの人物だけ（小物・背景に付く絵は暗くしない）。替わり目は `PropertyTween.namePreviousAt` で前の話し手からつなぐ。話し手の id は cast の鍵と同じにする。台本には書かない | `cast.speaker`（Snapshot に乗る） | Naninovel の speaker highlight・Ren'Py の `say_attribute` |
+| 字を出さずに話す | `<<speak 名>>` が `cast.speaker` を書き、項目の `speakFx`（粒の名前）があれば `markers.mouth` からその粒を一度出す（`speakFx` があるのに mouth が無い Doc は Err） | `cast.speaker`・`fx.once.<粒>`・`fx.onceAt.<粒>` | —（血鱗の言い方を残す） |
 | 絵の中の点 | 引数の型 `marker`（`whale.mouth`）。点は `novel.cast.json` の絵ごとの `markers`（画像の中の 0〜1）。名前は Godot の Marker2D に合わせた（Unreal は socket・血鱗の今の Doc は marks） | — | Godot Marker2D・Unreal socket |
 | 出ている間は文字の枠を消す | 絵の Doc の `hideWindow: true`。View が「その絵が出ているか」から決める（状態を持たない） | 書かない | — |
-| メッセージ枠の型 | `<<window 型>>` の型の名前を `novel.theme.json` の `windows` から引く。型ごとに `kind`（nvl / adv）・置き場（下・真ん中）・縁取り・名前を出すか・括弧を付けるか | `Stage.mode` を型の名前（文字）に | Naninovel の printer の種類（Dialogue・Wide・Fullscreen・Bubble）・Ren'Py の ADV / NVL |
+| メッセージ枠の型 | `<<window 型>>` の型の名前を `novel.theme.json` の `windows` から引く。型ごとに `kind`（nvl / adv）・`place`（bottom / center。adv の枠）・`frame`（縁取り = panel（地を敷く）/ outline（地を敷かず字を周りの影で縁取る・字幕の形））・`showName`（adv の枠と縦の画面に名前を出すか。横の NVL の頁は名前を出さない）・`quotes`（台詞を「」で包むか） | `Stage.mode` を型の名前（文字）に | Naninovel の printer の種類（Dialogue・Wide・Fullscreen・Bubble）・Ren'Py の ADV / NVL |
 | `text` | 2.2 の表の書き方（`at`・`size`・`align`・`speed`・`lock`） | `text.at` `.size` `.align`（名前）・`text.speed`（数）・`text.lock`（一度だけ） | Ren'Py の window の style・Naninovel `@printer`・Tyrano `[position]` / `[delay]` |
 
 - 血鱗の `item`（小物の間は枠を消す・2 行）と `vial gem|bone` の大写し（2 行）の「枠を消す」は `hideWindow` で書ける。
@@ -574,6 +576,14 @@ C2・C3・C7 は承認の後に中身が替わったので、**替わった所�
 | `Cast.presenceOf` | `(now, layer)` | `(now, doc, layer)`（背景に付く絵を数えない） |
 | `Cast.Env` | — | `props`・`photo`・`backdropShift` を足した |
 | `Res` | — | `mixerExtras`・`soundSeconds`・`effects` を足した |
+| `Stage.Mode` と `Stage#mode` | enum（Nvl・Adv） | 消した。`Stage#mode` はメッセージ枠の型の名前（文字）。出し方は `Stage.kindOf(theme, stage)`（`ThemeDoc.WindowKind`）・型は `Stage.windowOf` |
+| `Page.lineOf` / `Page.show` / `Page.isFullFor` | `(name, line)` / `(Stage.Mode, …)` | `(name, quotes, line)` / `(ThemeDoc.WindowKind, …)` |
+| `Stage.withParticles` | `(now, name, stage)` | `(now, name, at, stage)`（at = 出す点） |
+| `World.emptyRead` | `()` | `(theme)`（空の舞台の型を windows の最初の NVL の型にする） |
+| View の文字の層 | `View.textLayer`・`nvl`・`adv`・`portraitPage`・`keepLatest`・`Block` | `ViewText` へ移した |
+| `CastDoc.Entry` / `CastDoc.Rec` | — | Entry に `markers`・`hideWindow`・`speakFx`、Rec に `highlight` を足した |
+| `EffectsDoc.Look` | Fireflies・Snow（Eq・ToString） | `Puff(Puff)` を足した（Eq・ToString は外した） |
+| e2e の問い `mode` | `Nvl`・`Adv` | 型の名前（作例は `nvl`・`bottom`） |
 
 ### 10.3 一致を求める所と許容差を持つ所（M9）
 
@@ -794,6 +804,54 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | 任意 17 | Doc の書き損じ・▼ | `novel.effects.json` の粒 1 つの書き損じは、その 1 つだけ既定（雪・700）にして知らせる（テストは書いていない: 知らせる 1 行が stderr に出るとテストが落ちる）。待ちの間は送りの印（▼）を出さない |
 
 **門の結果**: `make check` OK・`make test` 368 緑・`make reference-check` 45 枚すべて一致（絵は変わっていない）・`bin/fge yarn check assets/talk` ok・e2e の flow 6 本すべて ok・render-lint・lint-record-wrap・lint-forbid OK・lint-doc-refs 15 件（増えていない）・根の `make check-docs-sync` OK。
+
+### 11.6 段 5 の記録（2026-11-16）
+
+触ったのはテンプレート（sound-novel-starter）・engine_world（`YarnCommands`・`YarnCommands.Param`。C2）・go（`go/internal/yarn`。C2 の検査）。engine・render_gl は触っていない。
+
+**決めた物**
+
+- 引数の型（C2・engine_world）: `Param.marker(name, refs)`（`名.点` を (名前, 点) で読む）・`Param.text(name)`（空でない字・`"…"`）・`Param.scopedBy(other, h)`（build が ref を「同じ行の other の値 + . + この値」で照らす）。vocab.json の `type: marker`・`type: text`・`scope`。go の from の `keys`・`path` に `*` の段（object の値を全部たどり、たどった鍵を名前の頭に付ける）。受ける行と断る行の見本 `go/internal/yarn/testdata/command-args.json` に足した（go と Flix が同じ見本を読む）。
+- `show` の表情を `scopedBy("name")` と `cast.*.faces[]`・`props.*.faces[]` で照らす（2.7 の「名前ごとの集まり」）。`fx on=` は `cast.*.markers`・`props.*.markers` の鍵で照らす。わざと入れた誤り（表情・点・型・字の大きさ・話し手の 5 つ）は 5 件とも `bin/fge yarn check` で落ちた。
+- メッセージ枠の型: `novel.theme.json` の `windows`（作例は `nvl` と `bottom`。今の見た目のまま）。`Stage#mode` は型の名前で、空の舞台と Mark v3 の古い値 `Nvl`・`Adv` は「その出し方の最初の型（鍵の順）」と読み（`ThemeDoc.windowOf`）、`World.emptyRead`・`WorldRead.restore`・ノードに着いた時の舞台で本当の型の名前に直す（`Stage.withModeResolved`）。書くのはいつも型の名前。ADV の center は `Layout.advPanelAt`、outline は字の周り 8 方向に影を置き、地と縁を敷かない。
+- `<<window off|on time=>>`: `window.hidden` を tween し、View が文字の層を途中の濃さで描く（`Stage.windowAlphaAt`）。
+- `<<text>>`: `at` は NVL の頁の中の行の塊の置き場（頁の下は上の余白と同じだけ画面の下から上）・`size` は `novel.kind.json` の `textSizes` の倍率（NVL の頁の行の数え方 `WorldRead.fitsNvl` も同じ倍率で数える）・`align=center` は 1 行に収まる行だけ真ん中へ・`speed` は文字送りの速さの倍率・`lock` は押しても送らない秒。
+- `cast.speaker` と話し手を明るく: `WorldRead.showLine` が台詞ごとに書く（`Stage.withSpeaker`。同じ話し手は書き直さない）。立ち絵の面に Param `lit` を足して明るさを掛ける（Spec を替えずに毎コマ変えられる。1.0 なら絵は変わらない）。
+- `hideWindow`: 出ている物に `hideWindow` の絵があれば、文字の枠と字だけを描かない（選択肢とボタンは描く。消えていく途中の物は数えない）。
+- 粒の点: `novel.effects.json` に `look: puff`（count・rise・spread・size・life）を足し、点（`Cast.markerPointOf`。出ている絵の矩形の中の markers の割合の所）から立ちのぼらせる。作例に `breath`、toma に `markers.mouth` と `speakFx: breath` を足した（台本は使っていないので絵は変わらない）。
+- View.flix の文字の層（NVL・ADV・縦の頁・1 行の置き方・送りの印）を `ViewText.flix` へ分けた（View.flix は 1,130 → 約 980 行）。
+
+**比べた別案**
+
+| 決めた所 | 取った案 | 比べた案と取らなかった理由 |
+|---|---|---|
+| 話し手の替わり目のつなぎ | `cast.speaker` の 1 つ前の値を `PropertyTween.namePreviousAt` で読む（表は今の値と 1 つ前の値を持っている） | 人物ごとの数の鍵 `actor.<名>.dim` を World が台詞ごとに tween する案: 台詞のたびに出ている人物の数だけ鍵を書き、Snapshot も太る。名前 1 つの鍵（設計書 3 章）のままで済む |
+| 明るさの掛け方 | 立ち絵の面の Param `lit` | 色の倍率の Const に掛ける案: 替わり目の間ずっと Spec が替わり、実機がシェーダーを組み直す |
+| 表情の照らし | `scope`（同じ行の別の引数の値を頭に付けて照らす）と `*` | 表情だけの専用の型を足す案: 小物の絵・背景の写真の時間帯など、名前ごとの集まりは他にも出る。汎用の 2 つで書ける |
+| `*` の後の欄が どの項目にも無い時 | `*` より前の段に届いていれば「空の集まり」と読み、検査は飛ばさない | 今の「名前を 1 つも拾わない時は検査を飛ばす」のまま: 作例のように markers をまだ誰も書いていない Doc で、`on=` が何でも build を通り、実行時に Err になる |
+| Nvl・Adv の型の名前を止める所 | `ThemeDoc` の読み手が落として知らせる・テスト | schema で止める（設計書 3 章）: Studio の sections 方言に catalog の鍵を縛る欄が無い |
+
+**設計とのずれ**
+
+- 3 章の「縁取り」は `frame`（panel / outline）の 1 欄にした（地を敷くか、字を縁取るか）。`showName` は横の NVL の頁では効かない（頁に名前の置き場が無い。schema の文に書いた）。
+- 3 章の「Doc の型の名前に Nvl・Adv を使わない決まりを schema で止める」は、読み手とテストで止める（上の表）。
+- 3 章の `speak` の粒は Doc に名前が無かったので、項目の `speakFx` を足した。点から出す粒（`on=`）は `look: puff` だけにし、蛍と雪（画面に広げる粒）に書くと Err。
+- 2.2 の `window` に `on` と、off・on の `time=` を入れた。
+- `text` の `at` は NVL の頁だけ（ADV の枠の置き場は型の `place`）。`align=center` は 1 行に収まる行だけ（描く RichText に揃えの口が無い）。
+- e2e の問い `mode` の値が型の名前になった（flow の `mode=Nvl` → `nvl`・`mode=Adv` → `bottom`）。
+
+**門の結果**
+
+- テンプレート: `make check` OK・`make test` 401 緑（前は 368。TestSpeaker 33 本・TestCommands の見本に text・speak）・`make reference-check` 45 枚すべて一致（途中で縦の画面の 4 枚が変わったのは nvl の型の showName を false にしていたためで、true に直して一致）・`bin/fge yarn check assets/talk` ok（9 ノード）・わざと入れた誤り 5 件は 5 件とも落ちた。
+- e2e の flow 6 本すべて ok。
+- `make lint`: lint-doc-refs 15 件のまま・lint-record-wrap・lint-forbid・lint-cast OK。根の `make check-docs-sync` OK。
+- engine_world: `make sync-layers` の後 .layers/engine_world で flix test 1506 緑。go: `go test ./internal/yarn/` ok・`go vet` 指摘なし。rpg-starter・tidepool-starter の `make reference-check` 一致。
+
+**持ち越し**
+
+- 新しい見た目（ADV の center・outline・話し手を暗くする・puff の粒）を写す場面が reference に無い。目では確かめていない（テストで矩形と明るさの値を見た）。
+- 話し手の id と cast の鍵をそろえる決まりは Doc の note にだけ書いた（食い違いを見るテストは無い）。
+- `text.at` の center・bottom で頁の下に入り切らない時の扱い（今は上から積むのと同じ所まで上げる）。
 
 ## 12. 試した事（スパイク）
 

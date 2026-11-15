@@ -231,9 +231,25 @@
         {
           "name": "once",
           "type": "flag"
+        },
+        {
+          "name": "on",
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast.*.markers"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props.*.markers"
+              }
+            ]
+          },
+          "type": "marker"
         }
       ],
-      "summary": "画面の粒の演出（novel.effects.json の particles）を出す・止める（once = Doc の onceSeconds だけ一度出す）"
+      "summary": "画面の粒の演出（novel.effects.json の particles）を出す・止める（once = Doc の onceSeconds だけ一度出す・on = novel.cast.json の markers の点から出す）"
     },
     "hide": {
       "params": [
@@ -584,6 +600,19 @@
         {
           "name": "face",
           "pos": 2,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "path": "cast.*.faces[]"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "path": "props.*.faces[]"
+              }
+            ]
+          },
+          "scope": "name",
           "type": "name"
         },
         {
@@ -674,22 +703,109 @@
       ],
       "summary": "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率）"
     },
+    "speak": {
+      "params": [
+        {
+          "name": "name",
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        }
+      ],
+      "summary": "字を出さずに話す（話し手を明るくし、novel.cast.json の speakFx を markers の mouth から一度出す）"
+    },
+    "text": {
+      "params": [
+        {
+          "name": "at",
+          "oneOf": "what",
+          "type": "choice",
+          "values": [
+            "top",
+            "center",
+            "bottom"
+          ]
+        },
+        {
+          "name": "size",
+          "oneOf": "what",
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.kind.json",
+                "keys": "textSizes"
+              }
+            ]
+          },
+          "type": "name"
+        },
+        {
+          "name": "align",
+          "oneOf": "what",
+          "type": "choice",
+          "values": [
+            "left",
+            "center"
+          ]
+        },
+        {
+          "max": 10,
+          "min": 0.05,
+          "name": "speed",
+          "oneOf": "what",
+          "type": "num"
+        },
+        {
+          "max": 30,
+          "min": 0,
+          "name": "lock",
+          "oneOf": "what",
+          "type": "num"
+        }
+      ],
+      "summary": "字の置き場（at = NVL の頁の中の top・center・bottom）・大きさ（size = novel.kind.json の textSizes）・揃え（align）・文字送りの速さの倍率（speed）・押しても送らない秒（lock）"
+    },
     "window": {
       "params": [
         {
           "name": "mode",
-          "pos": 1,
-          "req": true,
-          "type": "choice",
-          "values": [
-            "nvl",
-            "bottom",
+          "orWords": [
             "clear",
-            "off"
-          ]
+            "off",
+            "on"
+          ],
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.theme.json",
+                "keys": "windows"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "time",
+          "type": "num"
         }
       ],
-      "summary": "文字の出し方を替える（nvl = 画面いっぱい・bottom = 下のウィンドウ）・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）"
+      "summary": "メッセージ枠の型（novel.theme.json の windows）に替える・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）・出す（on。time = off・on の薄くなる秒）"
     }
   },
   "nodeRefs": {

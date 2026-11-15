@@ -2,7 +2,7 @@ package yarn
 
 // コマンドの引数を vocab.json（v2）の commands の表で見る。受ける・断るの判定は engine_world の
 // YarnCommands.parse と同じ（見本は testdata/command-args.json を両方が読む）。違うのは ref と orNames の
-// Doc の名前を照らす所だけ（実行時は Doc を持たないので照らさない）。
+// Doc の名前を照らす所と、scope の名前ごとの集まりで照らす所だけ（実行時は Doc を持たないので照らさない）。
 
 import (
 	"encoding/json"
@@ -24,7 +24,8 @@ type CommandSpec struct {
 }
 
 // ParamSpec は引数 1 つ。Pos = 位置で書ける順番（0 は key=value だけ）・OrWords = 型の外に受ける語・
-// OrNames = 型に合わない値を名前として受ける時の Doc・List = , で並べる・OneOf = どれか 1 つは要る組の名前。
+// OrNames = 型に合わない値を名前として受ける時の Doc・List = , で並べる・OneOf = どれか 1 つは要る組の名前・
+// Scope = ref を「同じ行の引数 Scope の値 + "." + この値」で照らす（表情を役の名前ごとの集まりで照らす、など）。
 type ParamSpec struct {
 	Name    string          `json:"name"`
 	Pos     int             `json:"pos,omitempty"`
@@ -39,6 +40,7 @@ type ParamSpec struct {
 	OrNames json.RawMessage `json:"orNames,omitempty"`
 	List    bool            `json:"list,omitempty"`
 	OneOf   string          `json:"oneOf,omitempty"`
+	Scope   string          `json:"scope,omitempty"`
 	// refNames と orNames は Doc から集めた名前。nil は照らさない（Doc を読めない・ref が無い）。
 	refNames   map[string]bool
 	orNameSet  map[string]bool
@@ -46,7 +48,7 @@ type ParamSpec struct {
 	orNameList []string
 }
 
-var paramTypes = map[string]bool{"num": true, "time": true, "name": true, "choice": true, "flag": true, "ease": true}
+var paramTypes = map[string]bool{"num": true, "time": true, "name": true, "marker": true, "text": true, "choice": true, "flag": true, "ease": true}
 
 // validate は表そのものの誤り（名前の重なり・位置の番号・知らない型）。
 func (c *CommandSpec) validate(name string) error {
@@ -61,7 +63,7 @@ func (c *CommandSpec) validate(name string) error {
 		}
 		seen[p.Name] = true
 		if !paramTypes[p.Type] {
-			return fmt.Errorf("語彙の commands の %s の引数 %s の type %q を知らない（num・time・name・choice・flag・ease）", name, p.Name, p.Type)
+			return fmt.Errorf("語彙の commands の %s の引数 %s の type %q を知らない（num・time・name・marker・text・choice・flag・ease）", name, p.Name, p.Type)
 		}
 		if p.Type == "num" && (p.Min == nil || p.Max == nil) {
 			return fmt.Errorf("語彙の commands の %s の引数 %s に min と max が要る", name, p.Name)
@@ -69,7 +71,10 @@ func (c *CommandSpec) validate(name string) error {
 		if (p.Type == "choice" || p.Type == "ease") && len(p.Values) == 0 {
 			return fmt.Errorf("語彙の commands の %s の引数 %s（%s）に values が要る", name, p.Name, p.Type)
 		}
-		if p.Default != nil && checkArgValue(name, &p, *p.Default) != "" {
+		if p.Scope != "" && (p.Scope == p.Name || !hasParam(c.Params, p.Scope)) {
+			return fmt.Errorf("語彙の commands の %s の引数 %s の scope %s が、ほかの引数の名前でない", name, p.Name, p.Scope)
+		}
+		if p.Default != nil && checkArgValue(name, &p, *p.Default, "") != "" {
 			return fmt.Errorf("語彙の commands の %s の引数 %s の既定の値 %s が型に合わない（%s）", name, p.Name, *p.Default, expectedArg(&p))
 		}
 		if p.Pos > 0 {
@@ -83,6 +88,15 @@ func (c *CommandSpec) validate(name string) error {
 		}
 	}
 	return nil
+}
+
+func hasParam(ps []ParamSpec, name string) bool {
+	for _, p := range ps {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckArgs は引数を表で見て、誤りがあれば 1 行（無ければ ""）。
@@ -142,14 +156,16 @@ func CheckArgs(command string, spec *CommandSpec, args []string) string {
 		}
 	}
 	given := map[string]bool{}
+	values := map[string]string{}
 	for _, kv := range pairs {
 		if given[kv.name] {
 			return fmt.Sprintf("<<%s>> の %s を 2 回書いている", command, kv.name)
 		}
 		given[kv.name] = true
+		values[kv.name] = kv.value
 	}
 	for _, kv := range pairs {
-		if msg := checkArgValue(command, byName[kv.name], kv.value); msg != "" {
+		if msg := checkArgValue(command, byName[kv.name], kv.value, scopeOf(byName, values, byName[kv.name])); msg != "" {
 			return msg
 		}
 	}
@@ -237,7 +253,19 @@ func unquoteArg(raw string) (string, bool) {
 	return b.String(), true
 }
 
-func checkArgValue(command string, p *ParamSpec, value string) string {
+// scopeOf は p の値を照らす集まりの名前（scope の引数の値）。scope が無い・書いていない・orWords の語の時は ""（照らさない）。
+func scopeOf(byName map[string]*ParamSpec, values map[string]string, p *ParamSpec) string {
+	if p.Scope == "" {
+		return ""
+	}
+	v, ok := values[p.Scope]
+	if !ok || contains(byName[p.Scope].OrWords, v) {
+		return ""
+	}
+	return v
+}
+
+func checkArgValue(command string, p *ParamSpec, value, scope string) string {
 	if value == "" {
 		return fmt.Sprintf("<<%s>> の %s に値が無い", command, p.Name)
 	}
@@ -249,21 +277,18 @@ func checkArgValue(command string, p *ParamSpec, value string) string {
 		parts = strings.Split(value, ",")
 	}
 	for _, v := range parts {
-		if msg := checkOneArg(command, p, v); msg != "" {
+		if msg := checkOneArg(command, p, v, scope); msg != "" {
 			return msg
 		}
 	}
 	return ""
 }
 
-func checkOneArg(command string, p *ParamSpec, v string) string {
+func checkOneArg(command string, p *ParamSpec, v, scope string) string {
 	_, isNum := argNumber(v)
 	numeric := p.Type == "num" || p.Type == "time"
 	if fitsArgType(p, v) {
-		if p.Type == "name" && p.refNames != nil && !p.refNames[v] {
-			return fmt.Sprintf("<<%s>> の %s の %s が Doc に無い%s", command, p.Name, v, suggest.Hint(v, p.refList))
-		}
-		return ""
+		return checkRefName(command, p, v, scope)
 	}
 	if v != "" && len(p.OrNames) > 0 && !(numeric && isNum) {
 		if p.orNameSet != nil && !p.orNameSet[v] {
@@ -274,6 +299,35 @@ func checkOneArg(command string, p *ParamSpec, v string) string {
 	return fmt.Sprintf("<<%s>> の %s に %s は書けない（%s）", command, p.Name, v, expectedArg(p))
 }
 
+// checkRefName は ref の Doc の名前に v があるか（scope がある時は「scope.v」で照らし、案はその集まりの中から出す）。
+func checkRefName(command string, p *ParamSpec, v, scope string) string {
+	if (p.Type != "name" && p.Type != "marker") || p.refNames == nil || (p.Scope != "" && scope == "") {
+		return ""
+	}
+	if p.Scope == "" {
+		if p.refNames[v] {
+			return ""
+		}
+		return fmt.Sprintf("<<%s>> の %s の %s が Doc に無い%s", command, p.Name, v, suggest.Hint(v, p.refList))
+	}
+	if p.refNames[scope+"."+v] {
+		return ""
+	}
+	var near []string
+	for _, n := range p.refList {
+		if rest, ok := strings.CutPrefix(n, scope+"."); ok {
+			near = append(near, rest)
+		}
+	}
+	return fmt.Sprintf("<<%s>> の %s の %s が Doc の %s に無い%s", command, p.Name, v, scope, suggest.Hint(v, near))
+}
+
+// isMarker は「名.点」の形か（. がちょうど 1 つで両側が空でない。YarnCommands.Param.marker と同じ形）。
+func isMarker(v string) bool {
+	name, point, ok := strings.Cut(v, ".")
+	return ok && name != "" && point != "" && !strings.Contains(point, ".")
+}
+
 func fitsArgType(p *ParamSpec, v string) bool {
 	switch p.Type {
 	case "num":
@@ -282,8 +336,10 @@ func fitsArgType(p *ParamSpec, v string) bool {
 	case "time":
 		x, ok := argNumber(v)
 		return ok && x >= 0
-	case "name":
+	case "name", "text":
 		return v != ""
+	case "marker":
+		return isMarker(v)
 	case "choice", "ease":
 		return contains(p.Values, v)
 	case "flag":
@@ -324,6 +380,10 @@ func expectedArg(p *ParamSpec) string {
 		base = "0 以上の秒"
 	case "name":
 		base = "名前"
+	case "marker":
+		base = "名前.点（whale.mouth の形）"
+	case "text":
+		base = "字（空白を含む時は \"…\"）"
 	case "choice":
 		base = strings.Join(p.Values, " / ")
 	case "flag":

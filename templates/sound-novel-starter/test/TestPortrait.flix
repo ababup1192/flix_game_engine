@@ -253,19 +253,19 @@ mod TestPortrait {
 
     // ── 縦の頁 ──
 
-    def block(text: String, height: Float64, isCurrent: Bool): View.Block =
+    def block(text: String, height: Float64, isCurrent: Bool): ViewText.Block =
         { line = { speaker = "", text = text, rubies = Nil, source = text }, visible = String.length(text), isCurrent = isCurrent, height = height }
 
     @Test
     def testKeepLatestDropsOldestWholeLines(): Unit \ Assert =
         // 頁に入り切らない時は、古い行から行ごと落として新しい 2 行を残す（100 + 段落の空き 26 + 100 = 226 ≤ 230）。
-        let kept = View.keepLatest(230.0, block("a", 100.0, false) :: block("b", 100.0, false) :: block("c", 100.0, true) :: Nil);
+        let kept = ViewText.keepLatest(230.0, block("a", 100.0, false) :: block("b", 100.0, false) :: block("c", 100.0, true) :: Nil);
         Assert.assertEq(expected = "b" :: "c" :: Nil, kept |> List.map(b -> b#line#text))
 
     @Test
     def testKeepLatestAlwaysKeepsTheCurrentLine(): Unit \ Assert =
         // 今の行だけで頁の高さを超えても、今の行は残る。
-        let kept = View.keepLatest(300.0, block("a", 50.0, false) :: block("now", 500.0, true) :: Nil);
+        let kept = ViewText.keepLatest(300.0, block("a", 50.0, false) :: block("now", 500.0, true) :: Nil);
         Assert.assertEq(expected = "now" :: Nil, kept |> List.map(b -> b#line#text))
 
     @Test

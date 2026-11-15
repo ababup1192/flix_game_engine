@@ -1,5 +1,5 @@
 // YarnCommands のテスト。受ける行と断る行の見本（go の検査と同じ command-args.json）を表で読み、
-// Param で書いた表が見本と同じ vocab.json になる事・型付きで読める事・2 つ目の使い手（道具や敵の名前を引く
+// Param で書いた表（marker・text・scope を含む）が見本と同じ vocab.json になる事・型付きで読める事・2 つ目の使い手（道具や敵の名前を引く
 // 13 個のゲームのコマンド）の台本の行が表で読める事を見る。
 
 mod TestYarnCommands {
@@ -56,6 +56,13 @@ mod TestYarnCommands {
     def text(): Param.Req[String] = Param.name("text", Nil) |> Param.at(1) |> Param.required
     def note(): Param.Opt[String] = Param.name("note", Nil) |> Param.at(2)
 
+    def actor(): Param.Req[Or[String]] = Param.name("who", nowhere("cast")) |> Param.at(1) |> Param.orWords("all" :: Nil) |> Param.required
+    def face(): Param.Opt[String] =
+        Param.name("face", YarnCommands.DocRef.Path("../nowhere.json", "cast.*.faces[]") :: Nil) |> Param.at(2) |> Param.scopedBy("who")
+    def spot(): Param.Req[(String, String)] =
+        Param.marker("on", nowhere("cast.*.markers") ::: nowhere("props.*.markers")) |> Param.required
+    def line(): Param.Req[String] = Param.text("line") |> Param.at(1) |> Param.required
+
     def overlay(): YarnCommands.Spec =
         YarnCommands.spec("overlay", "画面に被せる色の濃さを時間で変える",
             Param.erase(alpha()) :: Param.erase(color()) :: Param.erase(startAlpha()) :: Param.erase(time()) :: Param.erase(ease()) :: Nil)
@@ -65,7 +72,10 @@ mod TestYarnCommands {
         YarnCommands.spec("audio", "環境音を重ねる・音量を変える", Param.erase(amb()) :: Param.erase(volume()) :: Nil) ::
         YarnCommands.spec("hide", "立ち絵を消す", Param.erase(who()) :: Param.erase(side()) :: Nil) ::
         YarnCommands.spec("shake", "画面を揺らす", Param.erase(strength()) :: Param.erase(device()) :: Nil) ::
-        YarnCommands.spec("label", "字を出す", Param.erase(text()) :: Param.erase(note()) :: Nil) :: Nil
+        YarnCommands.spec("label", "字を出す", Param.erase(text()) :: Param.erase(note()) :: Nil) ::
+        YarnCommands.spec("show", "立ち絵を出す", Param.erase(actor()) :: Param.erase(face()) :: Nil) ::
+        YarnCommands.spec("fx", "粒を出す", Param.erase(spot()) :: Nil) ::
+        YarnCommands.spec("say", "名前の無い字を出す", Param.erase(line()) :: Nil) :: Nil
 
     def parsed(name: String, args: List[String]): Result[String, YarnCommands.Args] =
         written() |> List.find(s -> YarnCommands.nameOf(s) == name)
@@ -82,10 +92,10 @@ mod TestYarnCommands {
             Map.get(cmd, specs) |> Option.map(s -> Result.isOk(YarnCommands.parse(s, commandOf(cmd, args))) != ok) |> Option.getWithDefault(true));
         Assert.assertEq(expected = Nil, wrong)
 
-    /// 見本は 40 行より多い（読めずに 0 行で通っていない）。
+    /// 見本は 60 行より多い（読めずに 0 行で通っていない）。
     @Test
     def testSamplesAreRead(): Unit \ Assert + Fs.FileRead =
-        Assert.assertTrue(List.length(sampleCases()) > 40)
+        Assert.assertTrue(List.length(sampleCases()) > 60)
 
     /// Param で書いた表を書き出すと、見本の commands と同じ vocab.json になる。
     @Test
@@ -198,6 +208,28 @@ mod TestYarnCommands {
     @Test
     def testQuotedTextIsUnquoted(): Unit \ Assert =
         Assert.assertEq(expected = Ok("say \"hi\""), parsed("label", "\"say \\\"hi\\\"\"" :: Nil) |> Result.map(Param.get(text())))
+
+    /// marker は . で 1 回だけ区切った (名前, 点)。
+    @Test
+    def testMarkerIsReadAsNameAndPoint(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(("whale", "mouth")), parsed("fx", "on=whale.mouth" :: Nil) |> Result.map(Param.get(spot())))
+
+    /// text は "…" を外した、空白を含む字。
+    @Test
+    def testTextKeepsSpaces(): Unit \ Assert =
+        Assert.assertEq(expected = Ok("good morning, toma"), parsed("say", "\"good morning, toma\"" :: Nil) |> Result.map(Param.get(line())))
+
+    /// scope を付けた引数は、実行時には値だけで読む（Doc で照らさない）。
+    @Test
+    def testScopedNameIsReadAsItsValue(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(Some("smile")), parsed("show", "toma" :: "smile" :: Nil) |> Result.map(Param.getOpt(face())))
+
+    /// ほかの引数を指さない scope は表の誤り（go の検査も同じく止める）。
+    @Test
+    def testScopeToAnUnknownParamIsRejected(): Unit \ Assert =
+        let row = Util.Json.Json.JObject(Map#{ "name" => Util.Json.Json.JString("a"), "type" => Util.Json.Json.JString("name"),
+            "scope" => Util.Json.Json.JString("who") });
+        Assert.assertTrue(Result.isErr(YarnCommands.fromJson(oneParam(row))))
 
     /// 知らない鍵には近い鍵を添える。
     @Test

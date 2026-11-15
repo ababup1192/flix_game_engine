@@ -186,3 +186,99 @@ func TestPlainNumberDefaultsAreAccepted(t *testing.T) {
 		t.Errorf("指数の形の既定を通した")
 	}
 }
+
+const castVocab = `{
+  "version": 2,
+  "nodes": ["Station"],
+  "commands": {
+    "show": {"params": [
+      {"name": "who", "type": "name", "pos": 1, "req": true, "orWords": ["all"], "ref": {"from": [{"doc": "../novel.cast.json", "keys": "cast"}]}},
+      {"name": "face", "type": "name", "pos": 2, "scope": "who", "ref": {"from": [{"doc": "../novel.cast.json", "path": "cast.*.faces[]"}]}}]},
+    "fx": {"params": [
+      {"name": "on", "type": "marker", "req": true, "ref": {"from": [{"doc": "../novel.cast.json", "keys": "cast.*.markers"}, {"doc": "../novel.cast.json", "keys": "props.*.markers"}]}}]}
+  }
+}
+`
+
+const castDoc = `{"version": 1,
+  "cast": {"toma": {"faces": ["smile", "angry"], "markers": {"mouth": {}}}, "rin": {"faces": ["sad"]}},
+  "props": {"whale": {"markers": {"mouth": {}, "tail": {}}}, "lamp": {}}}`
+
+func castVocabOf(t *testing.T, vocab string) (*Vocab, []string) {
+	t.Helper()
+	root := writeGame(t, map[string]string{"assets/talk/vocab.json": vocab, "assets/novel.cast.json": castDoc})
+	return loadV2(t, root)
+}
+
+func castProblems(t *testing.T, body string) []Problem {
+	t.Helper()
+	v, notes := castVocabOf(t, castVocab)
+	if len(notes) != 0 {
+		t.Fatalf("notes %v", notes)
+	}
+	_, ps := BuildProgram([]string{"t.yarn"}, []string{"title: Station\n---\n" + body + "\n===\n"}, v, "vocab.json")
+	return ps
+}
+
+// keys の * は object の値を全部たどり、たどった鍵を頭に付ける（markers を持たない役がいても綴り違いにしない）。
+func TestStarInKeysPrefixesTheWalkedKey(t *testing.T) {
+	v, _ := castVocabOf(t, castVocab)
+	if got := strings.Join(v.Specs["fx"].Params[0].refList, ","); got != "toma.mouth,whale.mouth,whale.tail" {
+		t.Errorf("got %s", got)
+	}
+}
+
+// path の * も同じく、文字列の頭にたどった鍵を付ける。
+func TestStarInPathPrefixesTheWalkedKey(t *testing.T) {
+	v, _ := castVocabOf(t, castVocab)
+	if got := strings.Join(v.Specs["show"].Params[1].refList, ","); got != "rin.sad,toma.smile,toma.angry" {
+		t.Errorf("got %s", got)
+	}
+}
+
+// * の後の段をどの値も持たない時は綴り違いとして知らせる。
+func TestStarPathThatPicksNothingIsNoted(t *testing.T) {
+	_, notes := castVocabOf(t, strings.Replace(castVocab, `"cast.*.faces[]"`, `"casts.*.faces[]"`, 1))
+	if len(notes) != 1 || !strings.Contains(notes[0], "casts.*.faces[]") {
+		t.Errorf("notes %v", notes)
+	}
+}
+
+// * より前の段に届いていれば、* の後の欄が どの項目にも無くても知らせず、空の集まりとして照らす（書かない事がある欄）。
+func TestStarPathWithReachedPrefixIsEmptyNotSkipped(t *testing.T) {
+	_, notes := castVocabOf(t, strings.Replace(castVocab, `"cast.*.faces[]"`, `"cast.*.face[]"`, 1))
+	if len(notes) != 0 {
+		t.Errorf("notes %v", notes)
+	}
+}
+
+// marker の名前は ref の Doc で照らす。
+func TestMarkerMissingFromTheDocStops(t *testing.T) {
+	got := messages(castProblems(t, "<<fx on=whale.mouth>>\n<<fx on=whale.tial>>"))
+	if !strings.Contains(got, "t.yarn:4: <<fx>> の on の whale.tial が Doc に無い（もしかして: whale.tail）") || strings.Contains(got, "t.yarn:3") {
+		t.Errorf("got %s", got)
+	}
+}
+
+// scope の引数は、その引数の値の集まりで照らし、案もその集まりから出す。
+func TestScopedNameIsCheckedWithinTheOtherArgsValue(t *testing.T) {
+	got := messages(castProblems(t, "<<show toma smile>>\n<<show rin smil>>"))
+	if !strings.Contains(got, "t.yarn:4: <<show>> の face の smil が Doc の rin に無い") || strings.Contains(got, "t.yarn:3") {
+		t.Errorf("got %s", got)
+	}
+}
+
+// scope の先が orWords の語の時は照らさない。
+func TestScopedNameIsNotCheckedUnderAnOrWord(t *testing.T) {
+	if ps := castProblems(t, "<<show all smile>>"); len(ps) != 0 {
+		t.Errorf("got %s", messages(ps))
+	}
+}
+
+// scope の先がほかの引数の名前でない表は止める。
+func TestScopeToAnUnknownParamStops(t *testing.T) {
+	body := `{"show": {"params": [{"name": "face", "type": "name", "scope": "who"}]}}`
+	if _, _, err := ParseVocab([]byte(`{"version": 2, "commands": `+body+`}`), "vocab.json", "."); err == nil {
+		t.Errorf("止まらない")
+	}
+}

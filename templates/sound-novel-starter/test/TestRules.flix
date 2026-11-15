@@ -27,7 +27,7 @@ mod TestRules {
         let res = TestKit.res();
         let w = begun(res);
         let opening = StoryDoc.openingOf(res#story);
-        Assert.assertEq(expected = ("Reading", opening, List.head(sayLines(res, opening)), Stage.Mode.Nvl),
+        Assert.assertEq(expected = ("Reading", opening, List.head(sayLines(res, opening)), "nvl"),
                         (World.sceneName(w), World.talkNodeOf(w), Some(lineNo(w)), World.stageOf(res, w)#mode))
 
     /// ギャラリーの場面は全部、実機と同じ App から shot:<名前> の始まりで組める。
@@ -78,8 +78,8 @@ mod TestRules {
         // 頁に入り切らない行が来たら、頁をめくってその行だけにする。
         let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
         let fits = lines -> List.length(lines) <= 2;
-        let page = Page.empty() |> Page.show(Stage.Mode.Nvl, fits, line("a")) |> Page.show(Stage.Mode.Nvl, fits, line("b"))
-                                |> Page.show(Stage.Mode.Nvl, fits, line("c"));
+        let page = Page.empty() |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("b"))
+                                |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("c"));
         Assert.assertEq(expected = (0, Some("c")), (List.length(page#lines), page#current |> Option.map(l -> l#text)))
 
     @Test
@@ -87,15 +87,15 @@ mod TestRules {
         // ADV の台詞も頁に積む（横の ADV のウィンドウは今の 1 行だけを描き、縦の画面は頁に積んで描く）。
         let res = TestKit.res();
         let w = readTo(res, "StudioWindow", 0 :: Nil, begun(res)) |> advance(res) |> settle(res);
-        Assert.assertEq(expected = (Stage.Mode.Adv, 1), (World.stageOf(res, w)#mode, List.length(World.pageOf(w)#lines)))
+        Assert.assertEq(expected = ("bottom", 1), (World.stageOf(res, w)#mode, List.length(World.pageOf(w)#lines)))
 
     @Test
     def testAdvDropsOldestLinesWhenThePageIsFull(): Unit \ Assert =
         // ADV は頁に入り切らない時、頁をめくらずに古い行から落として積み続ける。
         let fits = lines -> List.length(lines) <= 2;
         let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
-        let page = Page.empty() |> Page.show(Stage.Mode.Adv, fits, line("a")) |> Page.show(Stage.Mode.Adv, fits, line("b"))
-                                |> Page.show(Stage.Mode.Adv, fits, line("c"));
+        let page = Page.empty() |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("b"))
+                                |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("c"));
         Assert.assertEq(expected = ("b" :: Nil, Some("c")), (page#lines |> List.map(l -> l#text), page#current |> Option.map(l -> l#text)))
 
     @Test
@@ -106,7 +106,7 @@ mod TestRules {
         let earlier = sayLines(res, "LastDelivery") |> List.map(n -> "${n}") |> List.toSet;
         let inside = before |> advance(res) |> settle(res) |> advance(res) |> settle(res);
         let carried = World.pageOf(inside)#lines |> List.exists(l -> Set.memberOf(lineOfSource(l#source), earlier));
-        Assert.assertEq(expected = (Stage.Mode.Adv, false), (World.stageOf(res, inside)#mode, carried))
+        Assert.assertEq(expected = ("bottom", false), (World.stageOf(res, inside)#mode, carried))
 
     /// 頁の行の source（「ファイル:行」）の行番号の字。
     def lineOfSource(source: String): String =
@@ -117,8 +117,8 @@ mod TestRules {
         // ADV で場面が変わる（背景を替える）と、次の行から新しい頁になる。今の行は次の行まで出したまま。
         let fits = _ -> true;
         let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
-        let turned = Page.empty() |> Page.show(Stage.Mode.Adv, fits, line("a")) |> Page.show(Stage.Mode.Adv, fits, line("b")) |> Page.turn;
-        let next = turned |> Page.show(Stage.Mode.Adv, fits, line("c"));
+        let turned = Page.empty() |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("b")) |> Page.turn;
+        let next = turned |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("c"));
         Assert.assertEq(expected = ((0, Some("b")), (0, Some("c"))),
                         ((List.length(turned#lines), turned#current |> Option.map(l -> l#text)),
                          (List.length(next#lines), next#current |> Option.map(l -> l#text))))

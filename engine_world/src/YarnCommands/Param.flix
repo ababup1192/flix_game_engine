@@ -1,5 +1,5 @@
 // YarnCommands.Param — コマンドの引数 1 つを表に書く部品と、parse を通った引数を型付きで読む口。
-// 部品は Opt（書かなければ値が無い）を作り、at・orWords・orNames・list・oneOf で形を足し、
+// 部品は Opt（書かなければ値が無い）を作り、at・orWords・orNames・list・oneOf・scopedBy で形を足し、
 // required か default で Req（いつも値がある）にする。time と ease は既定の値つきの Req を直に作る。
 //
 //   let alpha = Param.num("alpha", 0.0, 1.0) |> Param.at(1) |> Param.required;   // Req[Float64]
@@ -60,6 +60,14 @@ pub mod YarnCommands.Param {
     pub def name(name: String, refs: List[DocRef]): Opt[String] =
         optional(name, Kind.Name(refs), v -> if (v == "") None else Some(v), v -> v)
 
+    /// 「名.点」（whale.mouth）を (名, 点) で読む。. がちょうど 1 つで両側が空でない時だけ受ける。refs は build が照らす Doc。
+    pub def marker(name: String, refs: List[DocRef]): Opt[(String, String)] =
+        optional(name, Kind.Marker(refs), YarnCommands.markerOf, match (n, p) -> "${n}.${p}")
+
+    /// 空でない字（"…" で書けば空白も含む）。
+    pub def text(name: String): Opt[String] =
+        optional(name, Kind.Text, v -> if (v == "") None else Some(v), v -> v)
+
     /// true か false。
     pub def flag(name: String): Opt[Bool] =
         optional(name, Kind.Flag, v -> if (v == "true") Some(true) else if (v == "false") Some(false) else None, b -> if (b) "true" else "false")
@@ -67,7 +75,7 @@ pub mod YarnCommands.Param {
     /// encode は値を台本に書く字へ戻す（既定の値を vocab.json に書き、型で照らす）。
     def optional(name: String, kind: Kind, decode: String -> Option[t], encode: t -> String): Opt[t] =
         Handle.Handle({
-            field    = Field.Field({ name = name, pos = 0, kind = kind, need = Need.Optional, words = Nil, names = Nil, shape = Shape.Single, group = "" }),
+            field    = Field.Field({ name = name, pos = 0, kind = kind, need = Need.Optional, words = Nil, names = Nil, shape = Shape.Single, group = "", scope = "" }),
             decode   = decode,
             encode   = encode,
             fallback = None
@@ -128,6 +136,10 @@ pub mod YarnCommands.Param {
 
     /// 同じ group の引数のどれか 1 つは要る（hide の名前か at= など）。
     pub def oneOf(group: String, h: Opt[t]): Opt[t] = withRow(r -> { group = group | r }, h)
+
+    /// build が ref を「同じ行の引数 other の値 + "." + この値」で照らす（other を書いていない・other が orWords の語の時は照らさない）。
+    /// WhyNot: 実行時の parse では照らさない — Doc を持たないのは ref と同じ。照らすのは名前を引く apply。
+    pub def scopedBy(other: String, h: Opt[t]): Opt[t] = withRow(r -> { scope = other | r }, h)
 
     def withRow(f: YarnCommands.Row -> YarnCommands.Row, h: Handle[m, t]): Handle[m, t] =
         let Handle.Handle(x) = h;
