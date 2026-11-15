@@ -1,4 +1,4 @@
-# WebGPU 移行の段階 V1（縦に 1 本・2D）— 設計（第 3 版・未着手）
+# WebGPU 移行の段階 V1（縦に 1 本・2D）— 設計（第 3 版・段階 1〜5 を実装した）
 
 親の文書は `plans/engine-webgpu.md`（以下「親」。章の番号は親の物）。V1 の中身は親の 9 章の表の V1 の行と、P4b から回した「起動の時の選び分け」（親 5.5・12.12）。
 【確】= コードか手元の試しで確かめた ／【推】= 読みや割り算からの見積もり ／【未確認】= まだ確かめていない。
@@ -467,11 +467,64 @@ TeaVM がコマの途中で手を返した時の中間の texture の扱い（�
 10. Pass の history の写し（`copyTo`）が行にも `WebGpu` にも無い → pass の区切りの行に「前のコマを写す」を持たせ、`WebGpu` に texture の写しを足す。
 11. 1 回の `renderCommands` ごとに流し、submit はコマの終わり → コマの途中の上げ物の前に submit する決まり（3.2）を、「上げる行」を列に入れる形と staging の形と比べる（親 9.1 の「いつ流すか」）。
 12. instance を頂点バッファで読むか、storage buffer と `instance_index` で読むか（2.1）。draw ごとの値（面・材質）を入れる時にどちらにそろえるか。
-13. 字の絵だけシェーダーが読む成分が違う（GL は swizzle で `.a`・WebGPU は `.r`）→ 絵の種類を行か表に持つか。
+13. 字の絵だけシェーダーが読む成分が違う（GL は swizzle で `.a`・WebGPU は `.r`）→ 絵の種類を行か表に持つか。 実装: 字の絵は R8 で上げて `.r` を読み、bench/webgpu_v1 の字の場面は GL と 0 px（許容の 2/255 は使わなかった）。
 14. 絵ごとの filter と address を表の番号の裏（bind group）に持たせた → 行は番号だけでよいか。アトラスの頁（親 6.1 の 3）にした時の sampler の持ち方。
 15. 中間の texture へ描いてから画面へ写す 1 枚 → Pass も 3D も無いコマで省くか（10 章）。
 16. ブラウザで画像を解く所（`fgeBitmapArgb`）と `?capture`（`fgeFrameDrawn`）が WebGL2 に寄りかかる → V1 は隠した canvas の webgl2 と `publishCapture` で逃げた（6.2）。WebGPU の側で解く・読む形にするか（WebGL2 の無いブラウザは WebGPU も無いので急がない）。
 17. 1 コマの submit の回数を engine の pub の `FrameDiagnostics` に出すか（V1 は `FLIX_GE_FRAME_STATS` だけ。3.2）。
+18. bench が engine の fpkg（mount = "fge"）では `RenderPaint.Internal.WebGpuPaint` を呼べない（`mod RenderPaint` が pub でない）→ `RenderPaint` を pub にするか、
+    bench/webgpu_v1 の木（engine_full/src と bench の src をファイルごとの symlink で 1 つのパッケージにする形）のままにするか。
+19. `copyImageBitmap` は一時の texture へ写してから読み戻す（WebGpuPaint に外で作った texture を載せる口が無い）→ 絵の表に texture を載せる口を足して、読み戻しを省くか。
+20. WebGPU の窓の診断に `swapNs` と GPU の時間を足していない（`noteFrame` の pub が無い）。`FLIX_GE_FRAME_STATS` の行の終わりの `submits` だけ。
+21. PC の `FLIX_GE_GLYPHS=auto` のゲーム（rpg-starter）は、V1 の WebGPU では起動の後に字を足さないので字が欠ける。gl-capture の `--backend webgpu` は既定で `GLYPHS=used` にした。
+22. Pass の history（`<名前>@prev`）は専用の知らせを出さず、登録簿に無い絵として `texture '…' が見つからない` が名前ごとに 1 回出るだけ。
+23. `make gl-capture-check` の基準（bench/baseline/0.88.4）と sound-novel・tidepool・scene3d の 5 場面・30 枚が違う。V1 の前の engine（設計だけの fef4a2da を
+    `git archive` して撮った 54 枚）は今の engine の 54 枚とバイトまで同じで、同じ 30 枚が基準と違うので、V1 の外。基準の撮り直しは人の判断。
+24. Studio の Maven の種（flix_ge_studio の server/lib・`--maven-seed`）に jWebGPU（webgpu-desktop-jni・webgpu-jni・jParser の runtime）と
+    Dawn の macOS arm64 のネイティブが無い。engine_full/flix.toml が求めるので、手元のキャッシュに無い機械で新しいゲームを作ると Maven から取りに行く。
+    Studio のリポジトリで、server/flix.toml の engine を今の版へ上げて server/lib を取り直す（別のリポジトリの作業。V1 では手順だけ）。
+    `make studio-parity` は Studio の clone へ git の操作をするので、この作業場からは流していない。
+25. `make lint-huge-methods` は ShaderGen.hashMaterial・hashOptField・SoftRaster3d.renderLayer の 3 件で落ちる。V1 の前の engine（fef4a2da）の
+    bench/scene3d の jar でも同じ 3 件が出るので V1 の外。V1 で増えた withGl・runWindow は起動の時に 1 回だけ通るので exempt に載せた。
+
+## 実装で分かった事（段階 1〜5・2026-11-15）
+
+commit: 段階 1 `4aff67b0`・段階 2 `6eee79e1`・段階 3 `92205618`・段階 4 `d5a5398f`・段階 5 `1a0aea3a` と、その後の文書と測りの commit。
+
+### 設計と食い違った所
+
+| 所 | 設計 | 実装 | 理由 |
+|---|---|---|---|
+| bench/webgpu_v1 の組み方 | flix.toml で engine の fpkg に依存 | engine_full/src と bench の src をファイルごとの symlink で 1 つのパッケージの木（build/tree）に束ね、fat jar を起こす | `mod RenderPaint` が pub でなく、子の `RenderPaint.Internal.WebGpuPaint` は別のパッケージから見えない（E2544）。engine の pub を増やさないため。フォルダの symlink だと flix は中を探さず緑を返す |
+| PC の読み込みの置き場の確かめ | — | bench は `LwjglLayer.Internal.WebGpuWindowLayer` の子孫の mod（bench/webgpu_v1/src/LwjglLayer/Internal/WebGpuWindowLayer/V1Assets.flix）から窓の読み込みを呼ぶ | 写すと、窓の読み込みが崩れても門が緑のままになる |
+| `WebGpuWindow.open` | WebGPU の枝はこれでウィンドウを開く | `WebGpuWindowLayer` が GLFW と `createMacSurface` を直に呼ぶ | `open` は隠した時も surface まで作り、`close` は `glfwTerminate` まで呼び、入力に要る GLFW のウィンドウの番号を外へ出さない |
+| `copyImageBitmap` | 描く絵の texture へ直に写す | 一時の texture へ写してから読み戻し、RGBA を `WebGpuPaint.uploadRgba` で上げる。`hasAlpha=false` も同じ道で alpha を 255 で埋める | WebGpuPaint の絵の表に外で作った texture を載せる口が無く、足すと 0 章に無い pub が要る（12 章の 19） |
+| `?capture` の origin | `"top-left"` | `"bottom-left"`（GL の頁と同じ形）。canvas は opaque なので alpha は 1 で置く | web-capture はどちらも読める。alpha を 1 にしたので WebGL2 の頁と SHA まで同じになる |
+| 黒帯の箱の instance の位置 | 行の instance より前 | 行の instance の後ろに書き、draw は行より先に出す | 描く順が同じなので絵は同じ |
+| WebGpuRows の `setPipeline`・`setTexture` | 番号だけを受ける | `(RenderPass, 番号)` を受ける | pass は `openPass` の後にしか無い |
+| 起動の選び分けの関数 | — | `withGl`・`withWebGpuOrGl`・`withWindow`・`runWindow`（と WebLayer の対）に `@DontInline` | 付けないと rpg-starter の main の閉包が `MethodTooLargeException` で組めなかった |
+| `Browser.initWebGl2` | 引数無し | 理由を受け、webgpu の文脈を取った後なら頁を開き直して偽を返す | GL へ落ちる道の 1 本で、取る前と取った後の両方を受ける |
+| gl_parity の WebGPU の scene | passChain も | boxes・spriteNearest・passPaste・radial・veil の 5 つ | passChain は面（ShaderDoc）を使う |
+
+### 測った数字
+
+- 画面なしの比べ（bench/webgpu_v1・9 場面）: 全部 0 px（字の許容 2/255 も使わず）・WebGPU の誤り 0・submit は Pass の後に生成の絵を書き替える場面だけ 2・ほかは 1。
+- 実機の窓（隠して起動・rpg-starter の title）: WebGPU どうし 2 回で 6 枚とも同じ SHA・GLYPHS=used の GL と 6 枚とも 0 px。窓を見せた起動（768x720）でも GL と frame shot の SHA が同じ。
+- gl_parity の V1 の 5 scene: WebGPU と SoftRaster・WebGPU と GL とも 0 px。
+- ブラウザ（Chrome 156）: rpg-starter の title で WebGL2 と WebGPU が 0 px（SHA も同じ）。PC の WebGPU とは 22 px・±1（PC の GL とブラウザの GL でも同じ 22 px・±1）。WebGPU の無い頁は WebGL2 で同じ絵。
+- firstInstance と instance の頂点バッファで 20,000 本: PC の CPU の中央値 1.45 ms（storage の形と同じ）・ブラウザ 0.8 ms。
+- sprite_stress の同じ絵 20,000 個（bench/sprite_stress/RESULTS.md の節）: PC は WebGPU / GL が frame 0.89 倍・submit 0.94 倍（WebGpuRows の欄の読み方を直した後。直す前は submit 1.28 倍）。ブラウザは submit 1.04 倍・cpu 1.02 倍。
+- 1 コマの submit: sprite_stress 1・rpg-starter の title 1。
+- wasm: 何も描かない頁で `runBrowserWebGpu` を呼ぶ版が +38,817 バイト。rpg-starter 8,259,097 → 8,823,006 バイト（+6.8%）・sound-novel-starter +8.3%。
+- 書き出しは同じ 1 本（6.3 の A）のまま。WebGPU の無い頁でも wasm を読めた（JSO の `GPU*` の名前は読む時に要らない）。
+
+### 確かめていない事（V1 の終わり）
+
+Retina の 2 倍の窓（この機械では窓が等倍の表示に出た）・窓を見せた時に画面に出た絵そのもの（読み戻した frame shot は見た）・大きさを変えた時の描き直し・
+Dawn の Metal の IMMEDIATE が本当に待たないか（configure の誤りは出ない）・本物の「Dawn のネイティブを読めない」（`FLIX_GE_WEBGPU_FAIL=native` で起こしただけ）・
+ブラウザで webgpu の文脈を取った後に落ちて開き直す道と、取る前に落ちて GL へ入る道（わざと起こす口が無い）・device lost・
+ブラウザで `hasAlpha=false` の絵を描いた時の画素・Safari と iPhone・Windows と Linux。
+
 
 ## 第 1 版のレビュー（78 点）への対応
 

@@ -324,3 +324,53 @@ field の 8da689b8 は、上の表では 1 回しか取れていない。57291f9
 静かな状態での測り直し（2026-11-14 21:35〜21:41・main と 8da689b8 を交互に 2 本ずつ・1 本は 2 区間なので 4 つずつ）:
 field 12,000 の frame p50 は main 23.79〜24.05 ms → 8da689b8 23.98〜24.26 ms（差は 1% 以内）。`cpu_phases` の `split` は 18.00〜18.08 → 18.08〜18.42 ms。
 この回の値が上の表（19〜20 ms）より大きい理由は調べていない【不明】。
+
+## WebGPU の V1 と GL（同じ絵 20,000 個・2026-11-15・Apple M4 Pro・plans/webgpu-v1.md の 8.2）
+
+測る区間は両方の backend で同じ関数の前後: frame は App のコマの dt（`Platform.FrameClock.getDeltaTime` の間・`LwjglLayer.handleFrameClock` は両方で同じ物）、
+submit は `Draw2d.renderCommands` の中（GL は `RenderPaintHandlers.handleDraw2d`・WebGPU は `WebGpuPaint.handleDraw2d` が同じ所で `submitNs` に足す）。
+WebGPU の swap は診断に足していない（`swap_p50` は 0）。測る前に毎回 `pgrep -fl java` でほかの重い物が無い事を見た（毎回 0 本）。
+
+### PC（`cd bench/sprite_stress && make run TEX=1 COUNTS=20000,20000`・2 区間目の値・GL と `FLIX_GE_BACKEND=webgpu` を交互に）
+
+1 回目の 3 回ずつ（WebGpuRows を直す前）:
+
+| 回 | GL frame p50 | GL submit p50 | WebGPU frame p50 | WebGPU submit p50 |
+|---|---|---|---|---|
+| 1 | 6.969 | 2.185 | 7.490 | 2.826 |
+| 2 | 7.611 | 2.202 | 10.274 | 5.588 |
+| 3 | 7.295 | 2.275 | 7.449 | 2.817 |
+
+- WebGPU の submit の中央値が GL の 1.28 倍で、5% を超えた。JFR の標本（`JAVA_TOOL_OPTIONS=-XX:StartFlightRecording`）で、
+  `WebGpuRows.renderFrame` の中の並べた 1 個ごとの `cfg#registry`・`cfg#texWarnLog`・`cfg#skip`（開いた record の欄を読むたびに
+  `RecordExtend.lookupField` が欄の列を辿る）が上にいた。GL の `renderFrameMixed` は欄を頭で 1 回だけ読む。同じ形に直し、
+  1 個ずつ積むループも `RenderFrame.emitMerged` と同じ（末尾を呼び出しで終えない `@DontInline` の 1 個）にした。
+- 2 回目の 3 回（4〜6）は、両方の backend に約 5 ms の submit が混ざる回があり（GL 5.218・WebGPU 5.573/5.558）、幅が 5% を超えたので判定に使っていない。
+
+直した後の 3 回ずつ（判定に使う回）:
+
+| 回 | GL frame p50 | GL submit p50 | WebGPU frame p50 | WebGPU submit p50 |
+|---|---|---|---|---|
+| 7 | 7.563 | 2.224 | 6.769 | 2.109 |
+| 8 | 7.498 | 2.183 | 6.671 | 2.052 |
+| 9 | 7.617 | 2.192 | 6.753 | 2.057 |
+| 中央値 | 7.563 | 2.192 | 6.753 | 2.057 |
+| 幅（最大 − 最小） | 0.119（1.6%） | 0.041（1.9%） | 0.098（1.5%） | 0.057（2.8%） |
+
+- WebGPU / GL: frame 0.89 倍・submit 0.94 倍（合格線 1.05 倍の内）。
+- 1 コマの submit の回数（`FLIX_GE_FRAME_STATS=1`）: sprite_stress 1・rpg-starter の title 1。
+
+### ブラウザ（`make bench-web BENCH=sprite_stress ARGS='n=20000&tex=1'` と `&backend=webgpu`・Chrome 156 ヘッドレス・交互に）
+
+| 回 | WebGL2 frame / submit / cpu p50 | WebGPU frame / submit / cpu p50 |
+|---|---|---|
+| 1 | 33.3 / 15.3 / 30.2 | 33.3 / 14.1 / 30.0 |
+| 2 | 33.3 / 13.5 / 29.4 | 33.3 / 14.1 / 30.1 |
+| 3 | 33.3 / 13.5 / 29.3 | 33.3 / 14.1 / 30.0 |
+| 中央値 | 33.3 / 13.5 / 29.4 | 33.3 / 14.1 / 30.0 |
+| 幅 | 0 / 1.8 / 0.9 | 0 / 0 / 0.1 |
+
+- WebGPU / WebGL2: submit 1.04 倍・cpu 1.02 倍（合格線の内）。frame はどちらも 33.3 ms（ヘッドレスの Chrome の描き替えが 30 回/秒に張り付き、比べられない）。
+- WebGPU で描いた事は、頁が出す `[backend] webgpu: WebGPU apple metal-3 ()` の行（bench-overlay が `env.backend` に置く）で見た。
+  `env.renderer` は overlay が自分で取った WebGL2 の名前なので、どちらの回も ANGLE と出る。
+- WebGL2 の回 1 の submit 15.3 は 1 回だけ高い（幅の大半）。

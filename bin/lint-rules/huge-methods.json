@@ -6,6 +6,8 @@
     "App.Internal.Runner.runningStep::huge-methods": "1 コマに 1 回だけ通る（物の数だけ回るループの中身ではない）。1 コマの段取りを 1 か所で読めるようにまとめてある",
     "App.Internal.Paint.renderFrame::huge-methods": "1 コマに 1 回だけ通る（物の数だけ回るループの中身ではない）",
     "App.Internal.Halt.pausedStep::huge-methods": "ポーズ中に 1 コマに 1 回だけ通る",
+    "LwjglLayer.withGl::huge-methods": "起動の時に 1 回だけ通る（GL の窓を開いて handler を重ねる所。毎コマのループは f の中）",
+    "LwjglLayer.Internal.WebGpuWindowLayer.runWindow::huge-methods": "起動の時に 1 回だけ通る（WebGPU の窓を開いて handler を重ねる所。毎コマのループは f の中）",
     "ShaderGen.fieldExpr::huge-methods": "シェーダーの字を作る時だけ通る（cache に入った後は通らない）",
     "ShaderEval.compileField::huge-methods": "ShaderDoc の木を CPU の関数へ直す時だけ通る（cache に入った後は通らない）",
     "ShaderJson.fieldToJson::huge-methods": "Doc の書き出しの時だけ通る",

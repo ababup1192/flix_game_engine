@@ -96,6 +96,8 @@
     if (typeof line === "string" && line.indexOf("[bench] ") === 0) {
       try { handle(line.slice(8)); } catch (e) { bench.error = String(e && e.message || e); }
     }
+    // 頁が描き手を名乗った行（"[backend] webgpu: <adapter>"）。env.renderer は overlay が自分で取った WebGL2 の名前なので、WebGPU で描いたかはこちらで見る。
+    if (typeof line === "string" && line.indexOf("[backend] ") === 0) bench.env.backend = line.slice(10);
     return log.apply(console, arguments);
   };
 })();

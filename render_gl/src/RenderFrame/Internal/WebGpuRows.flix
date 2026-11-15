@@ -50,8 +50,11 @@ pub mod RenderFrame.Internal.WebGpuRows {
             Array.put(1, 28, st);
             Array.put(if (Array.get(RenderDrawCounts.drawCallsSlot(), cfg#drawCounts) > 0) 1 else 0, 30, st);
             let list = newRenderList(instances);
-            mergedByZ(Nil, cfg#sprites, Nil, Nil, Nil, Vector.empty())
-                |> List.forEach(item -> emitItem(st, list, scaleX, scaleY, cfg#registry, cfg#texWarnLog, cfg#skip, item));
+            // WhyNot: 並べた 1 個ごとに cfg の欄を読まない — 開いた record の欄は読むたびに欄の列を辿り、2 万個の画面ではそれだけで 1 コマに出る。
+            let registry = cfg#registry;
+            let warnLog = cfg#texWarnLog;
+            let skip = cfg#skip;
+            emitAll(st, list, scaleX, scaleY, registry, warnLog, skip, mergedByZ(Nil, cfg#sprites, Nil, Nil, Nil, Vector.empty()));
             closeSpriteRun(st, list);
             let used = nextInstanceOf(list);
             if (letterboxed) writeInstAt(instances, used, 0.0, 0.0, cfg#designW, cfg#designH,
@@ -88,7 +91,19 @@ pub mod RenderFrame.Internal.WebGpuRows {
         bound = Array[Int32, Static]
     }
 
+    def emitAll(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
+                registry: RenderAsset.TextureRegistry, warnLog: Ref[Set[String], Static],
+                skip: String -> Unit \ IO, items: List[Merged]): Unit \ IO =
+        match items {
+            case Nil => ()
+            case item :: rest =>
+                emitItem(st, list, scaleX, scaleY, registry, warnLog, skip, item);
+                emitAll(st, list, scaleX, scaleY, registry, warnLog, skip, rest)
+        }
+
     /// 並べた 1 個を行へ積む（mask の無いスプライトだけ。ほかは知らせて飛ばす）。
+    // WhyNot: 末尾を呼び出しで終えない・emitAll のループの中へ書き下さない — ループが JIT から外れる（docs/performance.md の 13 節。RenderFrame.emitOne と同じ形）。
+    @DontInline
     def emitItem(st: Array[Int32, Static], list: RenderList, scaleX: Float64, scaleY: Float64,
                  registry: RenderAsset.TextureRegistry, warnLog: Ref[Set[String], Static],
                  skip: String -> Unit \ IO, item: Merged): Unit \ IO =
@@ -101,7 +116,8 @@ pub mod RenderFrame.Internal.WebGpuRows {
             case Merged.MStatic(_)  => skip("static layer")
             case Merged.MSurface(_) => skip("面（ShaderDoc）")
             case Merged.MScene3d(_) => skip("3D の場面")
-        }
+        };
+        ()
 
     def drawRowsFrom(pass: RenderPass, st: Array[Int32, Static], rows: Array[Int32, Static], sink: RowSink,
                      row: Int32, n: Int32): Unit \ IO =
