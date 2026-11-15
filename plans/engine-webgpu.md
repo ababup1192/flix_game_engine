@@ -1062,3 +1062,4 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
 - 門: `make release`（全量・gl-parity）緑・`make determinism`・`make smoke-devtools` 緑。`make gl-capture-check` は 54 枚が a と b で同じ・基準 0.88.4 との差 30 枚で前と同じ（12.16 の決めで P10 まで撮り直さない）。
 - 外から取る確かめ: rpg-starter の写しから lib を消し、fpkg・flix.toml・`fge-gl-9261957f995f.jar` を Release から取って build と起動が通った。GL と `FLIX_GE_BACKEND=webgpu`（Dawn の Metal）の両方でタイトル画面が出た。Maven Central が 429 を返したので、Maven の jar だけは手元のテンプレートの置き場を借りた。
 - 【未確認】Windows・Linux・Safari・Firefox（12.12 からの持ち越しのまま）。
+- スマホ（人の申告・2026-11-16）: Galaxy S24 Ultra の Chrome で Pages の rpg-starter（0.96.0・`?backend=webgpu&hud=1`）が WebGPU で起動した（adapter は `qualcomm adreno-7xx`）。WebGPU と WebGL2 のどちらもふだんは 60 fps（画面の更新の上限）で、タイトル画面が出た時と起動の直後だけ一瞬下がる【推: 素材とパイプラインを作る所】。60 で頭打ちなので、この場面では 2 つの速さの差は読めない。差を見るのは重い場面（sprite_stress の頁など）で。
