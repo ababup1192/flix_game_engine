@@ -1,4 +1,4 @@
-// 3D の描き手の、描く順（Render3d.inDrawOrder）と、
+// 3D の描き手の、描く順（Render3d.ScenePlan.inDrawOrder）と、
 // 場面の絵と段つきの写しの置き場を上限に収める時に捨てる物（Render3d.Material.budgetEvictions）。GL を呼ばずに決まる所。
 mod Render3d.TestDrawOrder {
 
@@ -6,19 +6,19 @@ mod Render3d.TestDrawOrder {
     @Test
     def testEqualKeysKeepInputOrder(): Unit \ Assert =
         let xs = (2, "a") :: (1, "b") :: (2, "c") :: (1, "d") :: Nil;
-        Assert.assertEq(expected = "b" :: "d" :: "a" :: "c" :: Nil, Render3d.inDrawOrder(fst, xs) |> List.map(snd))
+        Assert.assertEq(expected = "b" :: "d" :: "a" :: "c" :: Nil, Render3d.ScenePlan.inDrawOrder(fst, xs) |> List.map(snd))
 
     /// 同じ並びを 2 回並べると同じ順になる。
     @Test
     def testSameInputGivesSameOrder(): Unit \ Assert =
         let xs = List.range(0, 40) |> List.map(i -> (Int32.remainder(i * 7, 5), i));
-        let order = () -> Render3d.inDrawOrder(fst, xs) |> List.map(snd);
+        let order = () -> Render3d.ScenePlan.inDrawOrder(fst, xs) |> List.map(snd);
         Assert.assertEq(expected = order(), order())
 
     /// 空の入力は空のまま。
     @Test
     def testEmptyInputStaysEmpty(): Unit \ Assert =
-        Assert.assertEq(expected = (Nil: List[Int32]), Render3d.inDrawOrder(identity, Nil))
+        Assert.assertEq(expected = (Nil: List[Int32]), Render3d.ScenePlan.inDrawOrder(identity, Nil))
 
     /// 並んだ入力・鍵が全部同じ入力が 10 万個でも来た順のまま返る。
     @Test
@@ -26,7 +26,7 @@ mod Render3d.TestDrawOrder {
         let sorted = List.range(0, 100000);
         let same = List.map(i -> (0, i), sorted);
         Assert.assertEq(expected = (true, true),
-            (Render3d.inDrawOrder(identity, sorted) == sorted, Render3d.inDrawOrder(fst, same) == same))
+            (Render3d.ScenePlan.inDrawOrder(identity, sorted) == sorted, Render3d.ScenePlan.inDrawOrder(fst, same) == same))
 
     // ── 置き場の上限 ──
 

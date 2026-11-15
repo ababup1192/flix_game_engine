@@ -4,16 +4,22 @@ mod Render3d.Batch {
     import java.lang.Object
     import java.util.HashMap
     import java.util.Objects
-    use Render3d.{DrawMode, MeshDraw, ProgramKind, isSkinned}
+    use Render3d.{DrawMode, MeshDraw, ProgramKind}
+    use Render3d.ScenePlan.{isSkinned}
 
-    /// 1 体ごとの値の番号を振る前の batch。head = 頭の物（間引いた物のこともある。形と lightmap を読む）・draws = 描く物（間引いた物を除く・来た順）・
+    /// 1 体ごとの値の番号を振る前の batch（描く物を列で持つ形）。head = 頭の物（間引いた物のこともある。形と lightmap を読む）・draws = 描く物（間引いた物を除く・来た順）・
     /// count = 描く物の数（0 なら、形と絵を今のコマで使った物として数えるだけ）。
     pub type alias PlannedBatch = { head = MeshDraw, draws = List[MeshDraw], count = Int32 }
+
+    /// 1 体ごとの値の番号を振る前の batch（計画の中の形）。描く物は prepare の描く物の配列（Render3d.ScenePlan の members）の [start, start + count)（来た順）。
+    /// head と count は PlannedBatch と同じ。
+    // WhyNot: 描く物を batch ごとの列で持たない — 物ごとに列の節を作り、番号を振る所で列を辿り直す代金が物の数だけ 1 コマに乗る。
+    pub type alias SpanBatch = { head = MeshDraw, start = Int32, count = Int32 }
 
     /// 1 体ごとの値の番号を振った batch。first = 頭の物の番号。
     pub type alias MeshBatch = { head = MeshDraw, count = Int32, first = Int32 }
 
-    /// 材質のある物の batch（backend が使えると答えた材質だけ）。handle = backend の材質の表の番号（Render3d.Material.MaterialRequest の聞いた並び）・order = backend が返す材質の順の番号（描く順と、前の batch と同じ材質かを決める）・
+    /// 材質のある物の batch（backend が使えると答えた材質だけ）。handle = backend の材質の表の番号（Render3d.ScenePlan.MaterialRequest の聞いた並び）・order = backend が返す材質の順の番号（描く順と、前の batch と同じ材質かを決める）・
     /// kind = プログラムの版・material = 頭の物の材質。emissionIntensity だけは 1 体ごとに draws の物の材質から読む。
     // WhyNot: backend の材質の控え（GL のプログラムと uniform の番号）を持たない — 計画が GL を知ることになり、WebGPU の backend が同じ計画を使えない。
     pub type alias MaterialBatch[b] = { handle = Int32, order = Int32, kind = ProgramKind, material = Scene3d.MaterialFields, batch = b }

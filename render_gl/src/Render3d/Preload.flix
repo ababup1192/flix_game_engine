@@ -1,11 +1,12 @@
 // Render3d.Preload — 3D の描き手（Render3d）の、遊びの途中で初めて出る物（形・絵・材質のプログラム）を描く前に GPU へ上げる所。約束は Render3d.flix の頭。
 mod Render3d.Preload {
     import fge.gl.GlContext
-    use Render3d.{PreloadState, State, TextureRead, TextureSlot, TextureSource, isSkinned, materialTextureNames, meshEntry, programsOf, rebuildStreakLimit,
+    use Render3d.{PreloadState, State, TextureRead, TextureSlot, TextureSource, materialTextureNames, meshEntry, programsOf, rebuildStreakLimit,
                   skinnedProgramsOf, warnSceneOnce}
-    use Render3d.Batch.{MaterialBatch, PlannedBatch}
+    use Render3d.Batch.{MaterialBatch, SpanBatch}
     use Render3d.Counts.{Phase, timed}
-    use Render3d.Material.{MaterialTable, entryAt, isCoverageCutout, resolveTextureAs, splitByMaterial, textureSlotOf}
+    use Render3d.Material.{MaterialTable, entryAt, resolveTextureAs, splitByMaterial, textureSlotOf}
+    use Render3d.ScenePlan.{isCoverageCutout, isSkinned}
 
     /// 何も上げていない状態。
     pub def empty(): PreloadState =
@@ -51,7 +52,7 @@ mod Render3d.Preload {
 
     /// cutout の材質の alpha to coverage の版を組み、その batch を引いた表と組にして返す。
     // WhyNot: 版を描き先から選ばない — 描き先が標本を持つかは場面ごとに決まり、宣言の時には分からない。
-    def coverageVersions(gl: GlContext, state: State, gen: Int64, instances: List[Scene3d.Instance3d]): List[(MaterialTable, MaterialBatch[PlannedBatch])] \ IO =
+    def coverageVersions(gl: GlContext, state: State, gen: Int64, instances: List[Scene3d.Instance3d]): List[(MaterialTable, MaterialBatch[SpanBatch])] \ IO =
         if (not gl.hasAlphaToOne()) Nil
         else {
             let ((_, materials), table) = splitByMaterial(gl, state, gen, _ -> true, _ -> true, true, List.filter(isCoverageInstance, instances));

@@ -5,37 +5,19 @@ mod Render3d.Material {
     use Render3d.Shadow.{putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
     use Render3d.Light.{lightLocsOf, putLights}
-    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, Texture3dEntry, TextureSlot, TextureSource, bindDataTextureUnits, drawBatch, ensureTangents, hasUv, isSkinned, environmentTextureUnit, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
-    use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, batchKeyOf, batchOf, groupByTextures, groupInOrder}
+    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, drawBatch, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
+    use Render3d.Batch.{MaterialBatch, MeshBatch, SpanBatch}
     use Scene3dRenderer.{RegisteredTexture}
     use Render3d.Counts.{BatchBreak, Counter, Phase, count, noteMaterialBuild, timed}
-    use Render3d.ScenePlan.{Planner, warnOnce}
+    use Render3d.ScenePlan.{MaterialRequest, groupInstances, splitGroups}
     use Render3d.SceneList.{batchBreakOf}
 
-    // ── 材質のある置いた物 ──
-
-    /// 置いた物 1 つを batch へ分ける材料。surface = 描く材質とプログラムの版（無ければ頂点の色で描く）。
-    pub type alias PlacedDraw = { draw = MeshDraw, surface = Option[(Scene3d.MaterialFields, ProgramKind)] }
-
-    /// 材質を backend に聞く 1 つ（batch の頭の物の材質とプログラムの版）。聞く並びの番号が、そのまま材質の表の番号（MaterialBatch#handle）になる。
-    pub type alias MaterialRequest = (Scene3d.MaterialFields, ProgramKind)
+    // ── 材質の表 ──
 
     /// 1 回の prepare の材質の表（GL の backend の持ち物）。entries = 聞かれた順の材質のプログラム（組めなかった物は program が 0）・
     /// orders = 計画へ返す順の番号（entries と同じ並び・0 = 使えないので頂点の色で描く）。
     // WhyNot: 計画から材質の鍵の字で引き直さない — 同じ鍵で中身の違う材質が同じコマに来た時、先の batch が後で組み直したプログラムで描かれる。
     pub type alias MaterialTable = { entries = Vector[MaterialEntry], orders = Vector[Int32] }
-
-    /// 置いた物を batch の候補に分ける（GL を呼ばない）。wants が偽の材質は頂点の色の候補へ。
-    /// outside = 描かずに済ませる物か（視錐台の外。MeshDraw の culled になる）。coverage = 描き先が標本を持ち、色の段で描く（cutout の材質を alpha to coverage の版にする）。
-    pub def groupPlaced(planner: Planner, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
-                        instances: List[Scene3d.Instance3d]): List[List[PlacedDraw]] \ IO =
-        let placed = instances |> List.map(placedDrawOf(planner, outside, wants, coverage));
-        groupInOrder(p -> Mesh3d.contentHash(p#draw#fields#mesh), p -> batchKeyOf(planner#drawMode, p#draw, p#surface), placed)
-            |> List.flatMap(groupByTextures(p -> Option.map(fst, p#surface)))
-
-    /// groups のうち材質のある候補の、backend に聞く材質（候補の順）。
-    pub def requestsOf(groups: List[List[PlacedDraw]]): List[MaterialRequest] =
-        groups |> List.filterMap(members -> List.head(members) |> Option.flatMap(head -> head#surface))
 
     /// requests の材質のプログラムを聞かれた順に 1 回ずつ引き、初めての材質はここで組む（3D を使わないゲームと、材質を使わない場面は GLSL のコンパイルを払わない）。
     /// 間引く物の材質も組む（間引くのは描く段の手前）。
@@ -47,66 +29,14 @@ mod Render3d.Material {
     /// 表の handle 番の材質のプログラム。
     pub def entryAt(table: MaterialTable, handle: Int32): MaterialEntry = Vector.get(handle, table#entries)
 
-    /// groups を、頂点の色で描く batch と材質の batch に分ける（GL を呼ばない）。firstRequest = groups の最初の材質の聞いた番号・
-    /// orders = backend の答え（requestsOf の順の番号から引く。0 なら頂点の色で描く）。
-    pub def splitGroups(groups: List[List[PlacedDraw]], firstRequest: Int32, orders: Vector[Int32]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]]) =
-        let (plain, materials, _) = groups |> List.foldLeft(addPlaced(orders), (Nil, Nil, firstRequest));
-        (List.reverse(plain), List.reverse(materials))
-
     /// 置いた物を候補に分け、材質を引き、batch に分けるまでを 1 回で通す（GL を持つ側の形。表は材質の batch が貼る絵の名前を引くのに要る）。
     pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
-                            instances: List[Scene3d.Instance3d]): ((List[PlannedBatch], List[MaterialBatch[PlannedBatch]]), MaterialTable) \ IO =
+                            instances: List[Scene3d.Instance3d]): ((List[SpanBatch], List[MaterialBatch[SpanBatch]]), MaterialTable) \ IO =
         timed(state, Phase.Split, () -> {
-            let groups = groupPlaced(state#planner, outside, wants, coverage, instances);
-            let table = resolveMaterials(gl, state, gen, List.toVector(requestsOf(groups)));
-            (splitGroups(groups, 0, table#orders), table)
+            let (groups, requests) = groupInstances(state#planner, outside, wants, coverage, instances);
+            let table = resolveMaterials(gl, state, gen, requests);
+            (splitGroups(groups, table#orders), table)
         })
-
-    /// 置いた物 1 つを batch へ分ける材料にする（lightmap と法線マップの食い違いは形ごとに 1 回知らせる）。
-    // WhyNot: groupPlaced の List.map のラムダへ書き下さない — ラムダは 1 コマに 1 回しか呼ばれない関数の中へ展開され、JVM がそのループを
-    //   途中から JIT（OSR）するのを「stack not empty」で諦め、物の数だけインタプリタで回る（docs/performance.md の 13 節）。
-    @DontInline
-    def placedDrawOf(planner: Planner, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
-                     i: Scene3d.Instance3d): PlacedDraw \ IO =
-        Scene3d.lightmapWarning(i) |> Option.forEach(line ->
-            warnOnce(planner, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh), line));
-        let draw = meshDrawOf(planner, outside, i);
-        let surface = draw#fields#material |> Option.map(Scene3d.materialFieldsOf) |> Option.filter(wants)
-            |> Option.map(m -> (m, vertexKindOf(planner, coverage, draw, m)));
-        { draw = draw, surface = surface }
-
-    /// members の batch を acc の頭へ足す: 材質があり backend が使えると答えたら右の列へ、ほかは左の列へ。acc の 3 つ目 = 次の材質の聞いた番号。
-    def addPlaced(orders: Vector[Int32], acc: (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32),
-                  members: List[PlacedDraw]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32) =
-        List.head(members) |> Option.map(head -> addBatch(orders, acc, head, members)) |> Option.getWithDefault(acc)
-
-    def addBatch(orders: Vector[Int32], acc: (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32),
-                 head: PlacedDraw, members: List[PlacedDraw]): (List[PlannedBatch], List[MaterialBatch[PlannedBatch]], Int32) =
-        let (plain, materials, next) = acc;
-        let batch = batchOf(head#draw, List.map(p -> p#draw, members));
-        let asked = if (Option.isEmpty(head#surface)) next else next + 1;
-        match head#surface |> Option.flatMap(materialBatchOf(orders, next, batch)) {
-            case Some(d) => (plain, d :: materials, asked)
-            case None    => (batch :: plain, materials, asked)
-        }
-
-    /// handle 番に聞いた材質 mk の batch（backend が使えないと答えたら None）。
-    def materialBatchOf(orders: Vector[Int32], handle: Int32, batch: PlannedBatch, mk: MaterialRequest): Option[MaterialBatch[PlannedBatch]] =
-        let (m, kind) = mk;
-        let order = Vector.get(handle, orders);
-        if (order == 0) None else Some({ handle = handle, order = order, kind = kind, material = m, batch = batch })
-
-    /// 置いた物 d を材質 m で描くプログラムの頂点の形。法線マップは uv つきの形にだけ当てる（uv の無い形は形ごとに 1 回知らせて無視する）。
-    def vertexKindOf(planner: Planner, coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind \ IO =
-        let uv = hasUv(d);
-        let wantsNormalMap = Option.nonEmpty(m#normalMap);
-        if (wantsNormalMap and not uv)
-            warnOnce(planner, "nouv:" + Mesh3d.contentHash(d#fields#mesh),
-                "scene3d: uv の無い形に法線マップの材質 '${m#spec#name}' が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
-        else ();
-        { skinned = isSkinned(d), uv = uv, normalMap = wantsNormalMap and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
-          blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
-          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade) }
 
     /// 半透明の材質の batch を draws の順（呼び手が遠い物から並べる）に描く。不透明の batch は Render3d.GlRows が行で描く。
     /// 続く物が同じプログラムなら組み直さない。描き終えたら、絵を貼った unit の sampler を外して unit 0 へ戻す。
@@ -207,11 +137,6 @@ mod Render3d.Material {
                 gl.uniform1i(locs#depthOut, 1);
                 putDepthRange(gl, locs#depthRange, dr)
         }
-
-    /// 材質 m の cutout を alpha to coverage で描くか。coverage = 描き先が標本を持ち、色の段で描く（Output.Depth は偽で渡す）。
-    // WhyNot: 深度の段（Output.Depth）と半透明に使わない — 深度の灰色は縁で混ぜると奥行きが嘘になり、半透明の α は重ねる量に使う。
-    pub def isCoverageCutout(coverage: Bool, m: Scene3d.MaterialFields): Bool =
-        coverage and m#cutout and not m#blend
 
     /// lightmap を lightmap の unit に貼り、段の数・色空間・強さを入れる（Clamp・段つきの Linear で読む）。lightmap を読まないプログラムは何もしない。
     /// 名前が場面の textures に無い絵は 0（黒）で読み、名前ごとに 1 回知らせる（材質の絵と同じ道）。

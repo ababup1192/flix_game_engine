@@ -2,6 +2,7 @@
 // makeRenderer で Scene3dRenderer.Renderer として 2D の描き手へ渡り、2D の並びの z の 1 点で draw が呼ばれる。その中だけ深度で前後を決めて、GL の状態を元へ戻して返す。
 // 座標の約束（左手系・表の面は時計回り）は engine の scene3d/Scene3d.flix の頭。
 // 光の uniform は Render3d.Light・影の地図は Render3d.Shadow・材質のある置いた物と場面の絵は Render3d.Material（render_gl/src/Render3d/）・シェーダーの字は Render3dGlsl。
+// 置いた物を batch に分けて並べる計画（GL を呼ばない）は Render3d.ScenePlan・不透明の batch の行は Render3d.SceneList・その行を GL で流すのは Render3d.GlRows。
 //
 // 光・かすみ・空の式の元は engine の LightModel3d の木。GLSL は木から作り（Render3dGlsl）、CPU の描き手は木から生成した関数を回す。
 //   色 = 頂点の色 × tint × light。
@@ -384,21 +385,22 @@ mod Render3d {
     def prepareScenes(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                       dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
         // 影の地図は全部の場面の姿勢を上げた後に描く — 影の道も同じ行を読む。
-        let (plans, materials, jointTexture, instanceTexture) = timed(state, Phase.Split, () -> {
+        let (plans, lists, materials, textures) = timed(state, Phase.Split, () -> {
             let caps = planCapsOf(gl, state);
-            let (grouped, requests) = groupScenes(state#planner, caps, dest#samples, cmds);
-            let materials = resolveMaterials(gl, state, gen, requests);
+            let grouped = groupScenes(state#planner, caps, dest#samples, cmds);
+            let materials = resolveMaterials(gl, state, gen, grouped#requests);
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
             let joints = Render3d.JointTexture.upload(gl, state, gen, rows);
-            let (numbered, instances) = Render3d.Instancing.upload(gl, state, gen, planned);
-            (numbered, materials, joints, instances)
+            let (numbered, instances) = Render3d.Instancing.upload(gl, state, gen, planned, grouped#members);
+            (numbered, List.map(plan -> buildSceneList(plan#draws), numbered), materials, (joints, instances))
         });
+        let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
         let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, List.map(plan -> plan#shadowPlans, plans)));
         let designCount = Array#{0} @ Static;
-        let items = List.zip(plans, shadows) |> List.map(ps -> {
-            let (plan, shadow) = ps;
-            let inputs = { list = buildSceneList(plan#draws), blended = plan#draws#blended, materials = materials, shadows = shadow,
+        let items = List.zip(List.zip(plans, lists), shadows) |> List.map(pls -> {
+            let ((plan, list), shadow) = pls;
+            let inputs = { list = list, blended = plan#draws#blended, materials = materials, shadows = shadow,
                            jointTexture = jointTexture, instanceTexture = instanceTexture };
             let target = match plan#cmd#scene#resolution {
                 case Scene3d.Resolution.Native => SceneTarget.Native(inputs)
@@ -699,26 +701,6 @@ mod Render3d {
             gl.drawElementsInstanced(GlConst.TRIANGLES, indexCount, GlConst.UNSIGNED_INT, 0, count);
             countDrawCallAt(state, why)
         }
-
-    def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
-
-    /// 描く順の鍵で並べる。鍵が同じ物は来た順（同じ入力はいつも同じ順）。
-    // WhyNot: 並べ替えにしない — 鍵（program）はほとんど並んで来る入力で、1 棟 1 個の都市では鍵の種類が物の数に近い。
-    // 鍵ごとに集めて小さい順につなげば、並び方に関わらず物の数 × log(鍵の種類) で済む。
-    def inDrawOrder(keyOf: a -> Int32, xs: List[a]): List[a] =
-        let byKey = List.foldLeft((m, x) -> {
-            let key = keyOf(x);
-            Map.insert(key, x :: Map.getWithDefault(key, Nil, m), m)
-        }, (Map.empty(): Map[Int32, List[a]]), xs);
-        Map.foldRightWithKey((_, group, acc) -> List.reverse(group) ::: acc, Nil, byKey)
-
-    def hasUv(d: MeshDraw): Bool = Option.nonEmpty(Mesh3d.uvs(d#fields#mesh))
-
-    /// 置いた物を描く材料にする（outside が真なら間引く）。姿勢の行は描く物が決まった後で割り当てる。ジョイントの数の食い違いは形ごとに 1 回だけ知らせる（Scene3d.skinningWarning）。
-    def meshDrawOf(planner: Render3d.ScenePlan.Planner, outside: Scene3d.Instance3d -> Bool, placed: Scene3d.Instance3d): MeshDraw \ IO =
-        let fields = Scene3d.instanceFieldsOf(placed);
-        Scene3d.skinningWarning(placed) |> Option.forEach(message -> Render3d.ScenePlan.warnOnceIn(planner#skinWarnedRef, Mesh3d.contentHash(fields#mesh), message));
-        { fields = fields, pose = Scene3d.skinningOf(placed), poseRow = 0, culled = outside(placed) }
 
     /// 列優先 16 個の float の並び（glUniformMatrix4fv に transpose = false で渡す形）。
     def matrixArray(m: Mat4.Mat4): Array[Float32, Static] \ IO =

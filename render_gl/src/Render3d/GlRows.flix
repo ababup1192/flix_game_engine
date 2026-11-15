@@ -30,7 +30,7 @@ mod Render3d.GlRows {
     pub type alias SceneItem = { cmd = Scene3d.RenderCmd, target = SceneTarget }
 
     /// 行の形を置き場へ上げ（無ければ）、行ごとの (VAO, 添え字の数) を 2 個ずつ並べて返す。材質の行の絵（材質の絵・法線マップ・lightmap）とタンジェントも上げ、
-    /// 全部の物が視錐台の外の半透明の batch の絵も今のコマで使った物として数える。置いた物 total 個と描く物の数を足す。
+    /// 半透明の batch の形と絵とタンジェントも上げる（間引いた物も今のコマで使った物として数える）。置いた物 total 個と描く物の数を足す。
     /// 描き始める前に呼ぶ（初めての絵は引く時に今の unit へ貼るので、絵を引いたら unit 0 へ戻す）。
     // WhyNot: 間引いた物を置き場で古いままにしない — 振り向くたびに形と絵を上げ直して止まり、毎コマ作り直しの知らせも鳴る。
     // WhyNot: 描く途中で上げない — WebGPU の backend は render pass の中で物を作れない。GL でも draw の間に bufferData と mip の生成が挟まる。
@@ -39,12 +39,27 @@ mod Render3d.GlRows {
         let n = rowCountOf(list);
         let meshes = Array.repeat(Static, Int32.max(1, 2 * n), 0);
         let touched = Array#{0, 0} @ Static;
-        List.range(0, n) |> List.forEach(uploadRow(gl, state, gen, source, inputs, meshes, touched));
-        inputs#blended |> List.filter(d -> d#batch#count == 0)
-            |> List.forEach(d -> uploadTextures(gl, state, gen, source, touched, entryAt(inputs#materials, d#handle), d#material, d#batch#head));
+        uploadRowsFrom(gl, state, gen, source, inputs, meshes, touched, 0, n);
+        inputs#blended |> List.forEach(d -> uploadBlended(gl, state, gen, source, touched, inputs#materials, d));
         if (Array.get(0, touched) == 1) gl.activeTexture(GlConst.TEXTURE0) else ();
         countInstances(state, total, Array.get(1, touched) + List.sumWith(d -> d#batch#count, inputs#blended));
         meshes
+
+    def uploadRowsFrom(gl: GlContext, state: State, gen: Int64, source: TextureSource, inputs: SceneInputs, meshes: Array[Int32, Static],
+                       touched: Array[Int32, Static], row: Int32, n: Int32): Unit \ IO =
+        if (row >= n) ()
+        else {
+            uploadRow(gl, state, gen, source, inputs, meshes, touched, row);
+            uploadRowsFrom(gl, state, gen, source, inputs, meshes, touched, row + 1, n)
+        }
+
+    /// 半透明の batch d の形・絵・タンジェント（描く時の drawBatch は置き場に当たるだけになる）。
+    def uploadBlended(gl: GlContext, state: State, gen: Int64, source: TextureSource, touched: Array[Int32, Static], table: MaterialTable,
+                      d: MaterialBatch[MeshBatch]): Unit \ IO =
+        let mesh = d#batch#head#fields#mesh;
+        discard meshEntry(gl, state, gen, mesh);
+        uploadTextures(gl, state, gen, source, touched, entryAt(table, d#handle), d#material, d#batch#head);
+        if (d#kind#normalMap) ensureTangents(gl, state, gen, mesh) else ()
 
     /// touched = [絵を引いたら 1, 行の描く物の数の合計]。
     def uploadRow(gl: GlContext, state: State, gen: Int64, source: TextureSource, inputs: SceneInputs, meshes: Array[Int32, Static],
@@ -59,7 +74,9 @@ mod Render3d.GlRows {
             let material = entryAt(inputs#materials, rowAt(list, row, 1));
             uploadTextures(gl, state, gen, source, touched, material, m, head);
             if (hasFlag(list, row, flagNormalMap())) ensureTangents(gl, state, gen, head#fields#mesh) else ()
-        })
+        });
+        // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で uploadRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
+        ()
 
     def uploadTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, touched: Array[Int32, Static], entry: MaterialEntry,
                        m: Scene3d.MaterialFields, head: MeshDraw): Unit \ IO =
@@ -75,8 +92,15 @@ mod Render3d.GlRows {
                      inputs: SceneInputs, meshes: Array[Int32, Static]): Unit \ IO =
         let bound = freshBound();
         let frame = { camera = camera, pass = pass, eye = eye, source = source, inputs = inputs, meshes = meshes, bound = bound };
-        List.range(0, rowCountOf(inputs#list)) |> List.forEach(drawRow(gl, state, gen, frame));
+        drawRowsFrom(gl, state, gen, frame, 0, rowCountOf(inputs#list));
         releaseBound(gl, bound)
+
+    def drawRowsFrom(gl: GlContext, state: State, gen: Int64, frame: RowFrame, row: Int32, n: Int32): Unit \ IO =
+        if (row >= n) ()
+        else {
+            drawRow(gl, state, gen, frame, row);
+            drawRowsFrom(gl, state, gen, frame, row + 1, n)
+        }
 
     /// drawRows の 1 回で行をまたいで変わらない物。bound = 今付いているプログラムと貼った unit（Render3d.Material.freshBound）。
     type alias RowFrame = {
@@ -86,7 +110,9 @@ mod Render3d.GlRows {
     def drawRow(gl: GlContext, state: State, gen: Int64, frame: RowFrame, row: Int32): Unit \ IO =
         let kind = rowAt(frame#inputs#list, row, 0);
         if (kind == kindMaterial()) drawMaterialRow(gl, state, gen, frame, row)
-        else drawShapeRow(gl, state, frame, kind == kindSkinned(), row)
+        else drawShapeRow(gl, state, frame, kind == kindSkinned(), row);
+        // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
+        ()
 
     // WhyNot: 描く物の無い行でプログラムを引く前に飛ばさない — 骨つきの版は骨つきの行が来たコマに組む決まりで、全部が間引かれている間に組まずにおくと、振り向いたコマで GLSL を組んで止まる。
     def drawShapeRow(gl: GlContext, state: State, frame: RowFrame, skinned: Bool, row: Int32): Unit \ IO =
