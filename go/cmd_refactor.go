@@ -35,7 +35,22 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	}
 	useEngineFlixlint(root, rest)
 	useEngineJava(engineDirOf(repoRoot()))
-	return refactor.Run(out, errOut, root, rest, refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)})
+	opts := refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)}
+	q, ok := parseTreeQuery(rest)
+	trees, notes := refactorTrees(root)
+	if !ok || (len(trees) == 0 && len(notes) == 0) {
+		return refactor.Run(out, errOut, root, rest, opts)
+	}
+	runRoot := func(rest []string) (string, string, int) {
+		var o, e strings.Builder
+		code := refactor.Run(&o, &e, root, rest, opts)
+		return o.String(), e.String(), code
+	}
+	rootRows := func() ([]refactor.Row, bool) {
+		rows, err := refactor.ReadIndex(filepath.Join(root, "build", "refactor", "spans-resolved.tsv"), refactor.Resolved)
+		return rows, err == nil
+	}
+	return refactorWithTrees(out, errOut, rest, asJSON, q, trees, notes, runRoot, runTreeRefactor, treeIndexRows, rootRows)
 }
 
 // useEngineFlixlint は、ゲームが flixlint を名指ししていない時（submodule・--flixlint・FGE_FLIXLINT・FLIXLINT_BIN・
