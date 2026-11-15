@@ -20,7 +20,7 @@ mod TestCast {
 
     /// 項目の既定の表情と位置。
     def entry(kind: Kind, name: String): CastDoc.Entry \ Fs.FileRead =
-        CastDoc.entryOf(kind, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil })
+        CastDoc.entryOf(kind, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil, layer = 0, attach = CastDoc.Attach.Screen })
 
     /// コマンド 1 つ（<<name args…>>）。
     def command(name: String, args: List[String]): Yarn.Command =
@@ -48,19 +48,25 @@ mod TestCast {
     def figureTuple(f: Cast.Figure): (String, String, String) = (f#name, f#face, f#slot)
 
     /// 出ている人物の (名前, 表情, 位置)。
-    def castOf(layer: Cast.Layer): List[(String, String, String)] = layer#cast |> List.map(s -> figureTuple(s#now))
+    def castOf(layer: Cast.Layer): List[(String, String, String)] = layer#shown |> List.filter(s -> s#kind == Kind.Character) |> List.map(s -> figureTuple(s#now))
+
+    /// 出ている小物の頭の名前。
+    def propOf(layer: Cast.Layer): Option[String] = layer#shown |> List.find(s -> s#kind == Kind.Prop) |> Option.map(s -> s#now#name)
+
+    /// 出ている人物の数。
+    def characterCount(layer: Cast.Layer): Int32 = List.length(castOf(layer))
 
     def leavingOf(layer: Cast.Layer): List[String] = layer#leaving |> List.map(l -> l#figure#name)
 
-    def cueTuple(c: Cast.Cue): (String, String, String, String, Bool, Bool, Float64) = match c {
-        case Cast.Cue.Show(kind, f, keep, s) => ("${kind}", f#name, f#face, f#slot, keep#face, keep#slot, s)
-        case Cast.Cue.Hide(kind, name, s)    => ("${kind}", Option.getWithDefault("*", name), "off", "", false, false, s)
+    def cueTuple(cue: Cast.Cue): (String, String, String, String, Bool, Bool, Float64) = match cue {
+        case Cast.Cue.Show(c) => ("${c#kind}", c#figure#name, c#figure#face, c#figure#slot, c#keep#face, c#keep#slot, c#seconds)
+        case Cast.Cue.Hide(c) => ("Hide", Option.getWithDefault("*", c#name), "off", "", false, false, c#seconds)
     }
 
-    def markTuple(m: Cast.Mark): (List[(String, String, String)], Option[(String, String, String)]) =
-        (m#cast |> List.map(figureTuple), m#prop |> Option.map(figureTuple))
+    def markTuple(m: Cast.Mark): (List[(String, String, String)], List[(String, String, String)]) =
+        (m#cast |> List.map(figureTuple), m#props |> List.map(figureTuple))
 
-    def stageMark(w: World.World): (List[(String, String, String)], Option[(String, String, String)]) \ Fs.FileRead =
+    def stageMark(w: World.World): (List[(String, String, String)], List[(String, String, String)]) \ Fs.FileRead =
         markTuple(Cast.markOf(World.stageOf(res(), w)#cast))
 
     /// 層を z 5 に描いた面の (シェーダーの名前, 濃さ)。
@@ -71,7 +77,7 @@ mod TestCast {
         })
 
     def envAt(now: Float64, missing: Set[String]): Cast.Env \ Fs.FileRead =
-        { doc = doc(), fit = Layout.Fit.Regular, storyNow = t(now), realNow = Clock.zero(), missing = missing, light = Cast.steadyLight(Cast.plainTone()) }
+        { doc = doc(), fit = Layout.Fit.Regular, storyNow = t(now), realNow = Clock.zero(), missing = missing, light = Cast.steadyLight(Cast.plainTone()), props = PropertyTween.empty(), photo = None }
 
     // ══ シナリオのコマンドを読む ══
 
@@ -80,7 +86,7 @@ mod TestCast {
         // <<show 名前 表情 at=位置 time=秒>> は、2 つ目の位置の引数を表情、at= を位置として出す。
         let layer = tried(0.0, "show", "a" :: "smile" :: "at=left" :: "time=1.5" :: Nil, Cast.empty());
         Assert.assertEq(expected = Ok((("a", "smile", "left") :: Nil, 1.5)),
-                        layer |> Result.map(l -> (castOf(l), List.head(l#cast) |> Option.map(x -> x#seconds) |> Option.getWithDefault(0.0))))
+                        layer |> Result.map(l -> (castOf(l), List.head(l#shown) |> Option.map(x -> x#seconds) |> Option.getWithDefault(0.0))))
 
     @Test
     def testOmittedArgumentsComeFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
@@ -93,7 +99,7 @@ mod TestCast {
     def testPropNamesShowAsProps(): Unit \ {Assert, Fs.FileRead} =
         // props にある名前は小物として出る（人物の列には入らない）。
         let layer = applied(0.0, "show", "cup" :: Nil, Cast.empty());
-        Assert.assertEq(expected = (Some("cup"), 0), (layer#prop |> Option.map(x -> x#now#name), List.length(layer#cast)))
+        Assert.assertEq(expected = (Some("cup"), 0), (propOf(layer), characterCount(layer)))
 
     @Test
     def testUnknownArgumentsAreErrors(): Unit \ {Assert, Fs.FileRead} =
@@ -123,7 +129,7 @@ mod TestCast {
         // 位置を省いて出し直すと、位置はそのままで表情だけが替わり、前の表情を下に残す。
         let layer = played(("show", "a" :: "at=left" :: Nil) :: ("show", "a" :: "smile" :: Nil) :: Nil);
         Assert.assertEq(expected = (("a", "smile", "left") :: Nil, Some(entry(Kind.Character, "a")#face)),
-                        (castOf(layer), List.head(layer#cast) |> Option.flatMap(s -> s#before) |> Option.map(u -> u#figure#face)))
+                        (castOf(layer), List.head(layer#shown) |> Option.flatMap(s -> s#before) |> Option.map(u -> u#figure#face)))
 
     @Test
     def testMovingToAnotherSlotFadesOutTheOldSlot(): Unit \ {Assert, Fs.FileRead} =
@@ -137,13 +143,13 @@ mod TestCast {
         let two = ("show", "a" :: Nil) :: ("show", "b" :: Nil) :: Nil;
         let one = played(List.append(two, ("hide", "a" :: Nil) :: Nil));
         let none = played(List.append(two, ("hide", "all" :: Nil) :: Nil));
-        Assert.assertEq(expected = ("b" :: Nil, 0), (castOf(one) |> List.map(match (n, _, _) -> n), List.length(none#cast)))
+        Assert.assertEq(expected = ("b" :: Nil, 0), (castOf(one) |> List.map(match (n, _, _) -> n), characterCount(none)))
 
     @Test
     def testHideAllAlsoHidesTheProp(): Unit \ {Assert, Fs.FileRead} =
         // <<hide all>> は人物だけでなく小物も消す。
         let gone = played(("show", "a" :: Nil) :: ("show", "cup" :: Nil) :: ("hide", "all" :: Nil) :: Nil);
-        Assert.assertEq(expected = None, gone#prop |> Option.map(s -> s#now#name))
+        Assert.assertEq(expected = None, propOf(gone))
 
     @Test
     def testHideAtASlotHidesWhoStandsThere(): Unit \ {Assert, Fs.FileRead} =
@@ -157,7 +163,7 @@ mod TestCast {
         let swapped = played(("show", "cup" :: Nil) :: ("show", "fan" :: Nil) :: Nil);
         let gone = played(("show", "cup" :: Nil) :: ("hide", "at=item" :: Nil) :: Nil);
         Assert.assertEq(expected = (Some("fan"), "cup" :: Nil, 0, None),
-                        (swapped#prop |> Option.map(s -> s#now#name), leavingOf(swapped), List.length(swapped#cast), gone#prop |> Option.map(s -> s#now#name)))
+                        (propOf(swapped), leavingOf(swapped), characterCount(swapped), propOf(gone)))
 
     // ══ 重ね方 ══
 
@@ -213,7 +219,7 @@ mod TestCast {
     def testSettleEndsCrossfadesAndLeaving(): Unit \ {Assert, Fs.FileRead} =
         // settle は重ねの途中を終わりの形にする: 前の表情を捨て、消えていく物を空にする。
         let layer = Cast.settle(played(("show", "a" :: Nil) :: ("show", "b" :: "at=center" :: Nil) :: ("show", "b" :: "at=left" :: Nil) :: Nil));
-        Assert.assertEq(expected = (Nil, 0), (layer#cast |> List.filterMap(s -> s#before) |> List.map(u -> figureTuple(u#figure)), List.length(layer#leaving)))
+        Assert.assertEq(expected = (Nil, 0), (layer#shown |> List.filterMap(s -> s#before) |> List.map(u -> figureTuple(u#figure)), List.length(layer#leaving)))
 
     @Test
     def testPresenceFollowsTheFade(): Unit \ {Assert, Fs.FileRead} =
@@ -242,14 +248,14 @@ mod TestCast {
         let old = bookmark |> Option.map(bm -> Json.JObject(Map#{ "slots" => Json.JObject(Map#{ "0" => Json.JObject(Map#{ "bookmark" => bm, "mode" => Json.JString("Adv") }) }) }));
         let read = old |> Option.map(Saves.fromJson(fresh))
             |> Option.flatMap(s -> Map.get(0, Saves.rec(s)#slots)) |> Option.map(s -> markTuple(Cast.markOf(Stage.fromSnapshot(s#mark#stage)#cast)));
-        Assert.assertEq(expected = Some((Nil, None)), read)
+        Assert.assertEq(expected = Some((Nil, Nil)), read)
 
     @Test
     def testVersion2SaveReadsIntoTheStage(): Unit \ {Assert, Fs.FileRead} =
         // version 2 の枠の欄（photo・grade・mode・cast・ambienceSound・particles）は、戻す舞台に読み替える。頁は無い。
         let r = res();
         let bookmark = WorldRead.slotHere(r, begun(r)) |> Option.map(s -> YarnRunner.bookmarkToJson(s#mark#bookmark));
-        let cast = Cast.markToJson({ cast = { name = "a", face = "smile", slot = "left" } :: Nil, prop = None });
+        let cast = Cast.markToJson({ cast = { name = "a", face = "smile", slot = "left" } :: Nil, props = Nil });
         let old = bookmark |> Option.map(bm -> Json.JObject(Map#{ "version" => Json.JNumber(JsonCodec.intToBd(2)), "slots" => Json.JObject(Map#{ "0" => Json.JObject(Map#{
             "bookmark" => bm, "photo" => Json.JString("p"), "grade" => Json.JString("g"), "mode" => Json.JString("Adv"), "cast" => cast,
             "ambienceSound" => Json.JString("amb_x"), "particles" => Json.JString("fireflies") }) }) }));
@@ -258,7 +264,7 @@ mod TestCast {
                 let st = Stage.fromSnapshot(s#mark#stage);
                 (st#shot |> Option.map(shot -> (shot#photo, shot#grade)), st#mode, markTuple(Cast.markOf(st#cast)), Stage.ambienceOf(Clock.zero(), st), Stage.particlesOf(Clock.zero(), st), Option.isEmpty(s#mark#page))
             });
-        Assert.assertEq(expected = Some((Some(("p", "g")), Stage.Mode.Adv, (("a", "smile", "left") :: Nil, None), Some("amb_x"), Some("fireflies"), true)), read)
+        Assert.assertEq(expected = Some((Some(("p", "g")), Stage.Mode.Adv, (("a", "smile", "left") :: Nil, Nil), Some("amb_x"), Some("fireflies"), true)), read)
 
     // ══ ロード・バックログから戻る時の持ち越し（テスト用のシナリオ） ══
 
@@ -303,8 +309,8 @@ mod TestCast {
         let r = res();
         let pairs = (everyLine(r, 0 :: Nil) :: everyLine(r, 1 :: 0 :: 1 :: Nil) :: Nil) |> List.flatten |> List.map(liveAndRestored(r));
         // 4 行目（Station の最後）は 2 人と小物が出ている所（空どうしの一致で通らないことの確かめ）。
-        let l4 = List.nth(3, everyLine(r, Nil)) |> Option.map(stageMark) |> Option.getWithDefault((Nil, None));
-        Assert.assertEq(expected = (pairs |> List.map(match (live, _) -> (live, live)), (shownAtL4(), Some(("cup", "plain", "item")))),
+        let l4 = List.nth(3, everyLine(r, Nil)) |> Option.map(stageMark) |> Option.getWithDefault((Nil, Nil));
+        Assert.assertEq(expected = (pairs |> List.map(match (live, _) -> (live, live)), (shownAtL4(), ("cup", "plain", "item") :: Nil)),
                         (pairs, l4))
 
     @Test
@@ -330,7 +336,7 @@ mod TestCast {
         let loaded = settle(r, quiet(() -> WorldSaves.loadFrom(r, Saves.Tab.Numbered(1), 0, World.toTitle(saved))));
         let asked = quiet(() -> WorldLog.askJump(2, quiet(() -> WorldLog.openLog(loaded))));
         let jumped = settle(r, quiet(() -> WorldMenu.answer(r, World.Answer.Yes, asked)));
-        Assert.assertEq(expected = (shownAtL4(), Some(("cup", "plain", "item"))), stageMark(jumped))
+        Assert.assertEq(expected = (shownAtL4(), ("cup", "plain", "item") :: Nil), stageMark(jumped))
 
     @Test
     def testLogJumpAfterALoadKeepsThePageFromTheEarlierNode(): Unit \ {Assert, Fs.FileRead} =
@@ -445,7 +451,7 @@ mod TestCast {
         // ノードの頭から開くと、前のノードから持ち越す人物と小物が出ている（台本の頭で言い直さなくてよい）。
         let r = res();
         let opened = quiet(() -> WorldRead.openAt(r, YarnStorage.empty(), "Next", 0, World.toTitle(begun(r))));
-        Assert.assertEq(expected = (shownAtL4(), Some(("cup", "plain", "item"))), stageMark(opened))
+        Assert.assertEq(expected = (shownAtL4(), ("cup", "plain", "item") :: Nil), stageMark(opened))
 
     /// テスト用のシナリオの 4 行目（Station の最後）で出ている人物: a は笑顔で真ん中・b は右。
     def shownAtL4(): List[(String, String, String)] = ("a", "smile", "center") :: ("b", "plain", "right") :: Nil
@@ -457,7 +463,7 @@ mod TestCast {
         let atNext = TestKit.readTo(r, "Next", Nil, begun(r));
         let saved = quiet(() -> WorldSaves.writeSlot(r, Saves.Tab.Numbered(1), 0, atNext));
         let loaded = settle(r, quiet(() -> WorldSaves.loadFrom(r, Saves.Tab.Numbered(1), 0, World.toTitle(saved))));
-        Assert.assertEq(expected = (shownAtL4(), Some(("cup", "plain", "item"))), stageMark(loaded))
+        Assert.assertEq(expected = (shownAtL4(), ("cup", "plain", "item") :: Nil), stageMark(loaded))
 
     @Test
     def testCastSurvivesJumpingBackFromTheLog(): Unit \ {Assert, Fs.FileRead} =
@@ -469,7 +475,7 @@ mod TestCast {
         let k = List.length(World.logOf(far)) - List.length(World.logOf(before));
         let asked = quiet(() -> WorldLog.askJump(k, quiet(() -> WorldLog.openLog(far))));
         let jumped = settle(r, quiet(() -> WorldMenu.answer(r, World.Answer.Yes, asked)));
-        Assert.assertEq(expected = (shownAtL4(), Some(("cup", "plain", "item"))), stageMark(jumped))
+        Assert.assertEq(expected = (shownAtL4(), ("cup", "plain", "item") :: Nil), stageMark(jumped))
 
     // ══ 素材の待ち ══
 
@@ -502,7 +508,7 @@ mod TestCast {
         let typing = advance(held, begun(r));
         let fading = advance(held, advance(held, typing));
         let waiting = stepBy(held, KindDoc.rec(r#kind)#holdFadeSeconds + 0.01, fading);
-        let starts = (w: World.World) -> World.stageOf(r, w)#cast#cast |> List.map(s -> Clock.secondsOf(s#startedAt));
+        let starts = (w: World.World) -> World.stageOf(r, w)#cast#shown |> List.map(s -> Clock.secondsOf(s#startedAt));
         let never = Clock.secondsOf(Clock.never());
         Assert.assertEq(expected = (Some(World.HoldPhase.Waiting), never :: never :: Nil), (World.holdPhaseOf(waiting), starts(waiting)))
 

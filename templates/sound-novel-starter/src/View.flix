@@ -8,7 +8,7 @@
 // **これは数ある画風の 1 つでしかない。** 真似してほしいのは「写真を奥へ下げて文章を主役にする」層の分け方。
 //
 // ── 画面の層（奥から手前へ）──
-//   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ パーティクル（蛍）→ 立ち絵 → 小物 → ゲームの絵（GameView）
+//   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ 背景に付く絵 → パーティクル（蛍）→ 立ち絵と小物（Doc の layer の順）→ ゲームの絵（GameView）
 //          … 揺れはこの層だけに掛かる
 //   hud:   NVL の幕 / ADV のウィンドウ → 本文（ルビつき）・名前 → 送りの印 → 選択肢 → クイックメニュー（縦の画面は右の列と … とツールチップ）
 //          → 素材を待つ間の黒と待ちの印（ブラウザ版で背景・環境音がまだ届いていない時）
@@ -73,7 +73,7 @@ mod View {
         let stage = World.stageOf(res, w);
         let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
-        List.flatten(backdrops(env, stage) :: particles(env, stage) :: castLayer(env, stage, not isPropOnPage(env, w)) :: GameView.draw(env, stage) :: Nil)
+        List.flatten(backdrops(env, stage) :: backdropActors(env, stage) :: particles(env, stage) :: castLayer(env, stage, not isPropOnPage(env, w)) :: GameView.draw(env, stage) :: Nil)
             |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -172,15 +172,18 @@ mod View {
     // ── 立ち絵と小物（Cast） ──
 
     /// 立ち絵を蛍の手前（z 5）に描く。小物は withProps の時だけここで描く（頁の幕がある間は hud の pageProps が幕の上に描く）。
-    /// まだ届いていない絵は描かない（背景の写真と同じ扱い）。
+    /// 背景に付く絵は描かない（backdropActors）。まだ届いていない絵は描かない（背景の写真と同じ扱い）。
     def castLayer(env: Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
-        let cenv = castEnv(env, stage);
-        let people = Cast.itemsOf(cenv, CastDoc.Kind.Character, stage#cast, 5);
-        if (withProps) List.append(people, Cast.itemsOf(cenv, CastDoc.Kind.Prop, stage#cast, 5)) else people
+        Cast.itemsWhere(castEnv(env, stage), (kind, entry) -> not CastDoc.isAttachedToBackdrop(entry) and (withProps or kind == CastDoc.Kind.Character),
+                        stage#cast, 5)
+
+    /// 背景に付く絵（Doc の attach.bg）を、背景の上・蛍の下（z 3 の頭）に描く。
+    def backdropActors(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        Cast.itemsWhere(castEnv(env, stage), (_, entry) -> CastDoc.isAttachedToBackdrop(entry), stage#cast, 3)
 
     /// 頁の幕の上・字の下に描く小物（NVL と縦の画面の頁）。
     def pageProps(env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        Cast.itemsOf(castEnv(env, stage), CastDoc.Kind.Prop, stage#cast, zPageProp())
+        Cast.itemsWhere(castEnv(env, stage), (kind, entry) -> kind == CastDoc.Kind.Prop and not CastDoc.isAttachedToBackdrop(entry), stage#cast, zPageProp())
 
     /// 今の画面で、小物を hud の頁（幕の上）が描くか。読んでいる頁を hud が描いていて、その頁に幕がある時（NVL か縦の画面）。
     def isPropOnPage(env: Env, w: World.World): Bool = match w#scene {
@@ -200,7 +203,8 @@ mod View {
             |> Option.getWithDefault(Cast.plainTone());
         let progress = Stage.fadeProgress(env#storyNow, stage);
         let light = if (progress >= 1.0) Cast.steadyLight(toneOf(stage#shot)) else { previous = toneOf(stage#under), current = toneOf(stage#shot), progress = progress };
-        { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light }
+        { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light,
+          props = stage#props, photo = stage#shot |> Option.map(s -> s#photo) }
 
     // ── 素材の待ち（ブラウザ版で背景・環境音がまだ届いていない間の暗転） ──
 
@@ -1015,7 +1019,7 @@ mod View {
         // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
         let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
-            List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage, not hasPageVeil(away, read#stage))
+            List.flatten(backdropsIn(whole, away, read#stage) :: backdropActors(away, read#stage) :: particles(away, read#stage) :: castLayer(away, read#stage, not hasPageVeil(away, read#stage))
                          :: GameView.draw(away, read#stage) :: reading(atlas, away, read) :: Nil))
             |> Option.getWithDefault(Nil);
         let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));

@@ -21,7 +21,7 @@ mod Stage {
 
     /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、
     /// mode = 文章の出し方、pages = 頁をめくった数（WorldRead が <<window clear>>・型の切り替え・NVL で入り切らない時に足す）、
-    /// props = 名前の付いた値（ambienceKey・particlesKey・shakeKey・windowHiddenKey と game. の値）、cast = 立ち絵と小物の層。
+    /// props = 名前の付いた値（ambienceKey・particlesKey・shakeKey・windowHiddenKey・actorKey と game. の値）、cast = 立ち絵と小物の層。
     pub type alias Stage = {
         shot = Option[Shot],
         under = Option[Shot],
@@ -49,6 +49,50 @@ mod Stage {
 
     /// 文字の枠と字を消しているか（1 = 消す・0 = 出す）。<<window off>> が 1 にし、<<window nvl|bottom>> と次の台詞・選択肢が 0 に戻す。
     pub def windowHiddenKey(): PropertyTween.NumKey = PropertyTween.numKey("window.hidden")
+
+    /// 名前付きの絵（立ち絵・小物）1 つの数の値。X / Y = 置き場所からのずれ（画面の幅と高さに対する割合）、Scale = 足元を据えて掛ける倍率、
+    /// Alpha = 濃さに掛ける倍率、Rotate = 真ん中を軸に時計回りに傾ける角度（度）。
+    pub enum ActorField with Eq, Order, ToString {
+        case X
+        case Y
+        case Scale
+        case Alpha
+        case Rotate
+    }
+
+    /// 全部の ActorField。
+    pub def actorFields(): List[ActorField] = ActorField.X :: ActorField.Y :: ActorField.Scale :: ActorField.Alpha :: ActorField.Rotate :: Nil
+
+    /// 名前付きの絵 name の field の鍵（actor.<名>.x・.y・.scale・.alpha・.rotate）。
+    pub def actorKey(name: String, field: ActorField): PropertyTween.NumKey =
+        let suffix = match field {
+            case ActorField.X      => "x"
+            case ActorField.Y      => "y"
+            case ActorField.Scale  => "scale"
+            case ActorField.Alpha  => "alpha"
+            case ActorField.Rotate => "rotate"
+        };
+        PropertyTween.numKey("actor.${name}.${suffix}")
+
+    /// field の既定の値（ずらさない形）。
+    pub def actorDefaultOf(field: ActorField): Float64 = match field {
+        case ActorField.Scale => 1.0
+        case ActorField.Alpha => 1.0
+        case _                => 0.0
+    }
+
+    /// name の field の、予定が全部済んだ後の値（書いていなければ既定）。
+    pub def actorEnd(name: String, field: ActorField, stage: Stage): Float64 =
+        PropertyTween.numEnd(actorKey(name, field), actorDefaultOf(field), stage#props)
+
+    /// name の数の値を now から全部既定へ戻す（出ていない絵を出し直す時。前に出した時の <<move>> を持ち越さない）。
+    pub def withActorReset(now: Clock.Time[Story], name: String, stage: Stage): Stage =
+        { props = actorFields() |> List.foldLeft((t, f) -> PropertyTween.setNum(actorKey(name, f), actorDefaultOf(f), now, 0.0, t), stage#props) | stage }
+
+    /// name の now のずれ（Cast が描く時に読む）。
+    pub def actorTransformAt(now: Clock.Time[Story], name: String, props: PropertyTween.Table[Story]): Cast.Transform =
+        let at = f -> PropertyTween.numAt(now, actorKey(name, f), actorDefaultOf(f), props);
+        { dx = at(ActorField.X), dy = at(ActorField.Y), scale = at(ActorField.Scale), alpha = at(ActorField.Alpha), degrees = at(ActorField.Rotate) }
 
     /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
     pub def particleNames(): List[String] = "fireflies" :: "snow" :: Nil

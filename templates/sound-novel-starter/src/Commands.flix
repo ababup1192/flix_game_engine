@@ -10,16 +10,21 @@
 //   <<audio se 音>>                           効果音を 1 回
 //   <<fx fireflies|snow|off>>                 画面のパーティクルの演出
 //   <<shake>>                                 画面を短く揺らす（長さと幅は novel.kind.json）
-//   <<show 名前 [表情] [at=位置] [time=秒]>>  立ち絵か小物（novel.cast.json の cast / props）を出す・表情や位置を替える。
-//                                              省いた物は出ている形のまま（出ていなければ Doc の face・slot）。小物は同時に 1 つ
-//   <<hide 名前|all [time=秒]>> / <<hide at=位置>>   その人・全部・その位置に出ている物を消す
+//   <<show 名前 [表情] [at=位置] [from=left|right|top|bottom] [x=] [y=] [scale=] [alpha=] [time=秒] [ease=]>>
+//                                              立ち絵か小物（novel.cast.json の cast / props）を出す・表情や位置を替える。何人・何個でも出せ、
+//                                              exclusive の位置にだけは 1 つ（後から出した物が前の物を消す）。省いた物は出ている形のまま
+//                                              （出ていなければ Doc の face・slot）。from は端から slideDistance だけ滑って出る。x〜alpha は actor.<名>.*
+//   <<hide 名前|all [to=left|right|top|bottom] [time=秒] [ease=]>> / <<hide at=位置>>   その人・全部・その位置に出ている物を消す（to は端へ滑って消える）
+//   <<move 名前 [x=|dx=] [y=|dy=] [scale=] [alpha=] [rotate=] [from=] [to=] [time=0.5] [ease=smoothstep]>>
+//                                              出ている絵の位置・大きさ・濃さ・傾きを時間で動かす（dx・dy は今の終わりの値に足す）。
+//                                              from は出ていない絵を端の外から出し、to は端の外まで動かしてから消す
 //
 // 書き方は YarnCommands（位置の引数は 2 つまで・ほかは key=value・"…" は空白を含む 1 つの値）。
 // 表に無い名前と引数の誤りは Err を返し、World が 1 行言って舞台はそのまま続ける（シナリオの書き損じで止めない）。
 // 引数はシナリオを読んだ時に 1 回だけ読んで表（ArgsTable。Res が持つ）に置き、毎回の実行では読み直さない。
 // apply が後に残す物は全部 Stage に書く（セーブ・settle・素材待ちが Stage だけを見て済むように）。
 mod Commands {
-    use fge::{Clock, Yarn, YarnCommands}
+    use fge::{Clock, Curve, Yarn, YarnCommands}
     use fge::YarnCommands.{DocRef, Param}
     use fge::YarnCommands.Param.Or
 
@@ -28,12 +33,14 @@ mod Commands {
 
     /// apply が舞台の外へ出す出来事（後に残る状態は書かない）。
     ///   ClearPage = NVL の頁をめくる / TurnPage = ADV の頁を送る / Sound(名前) = 効果音を 1 回（project.json の sounds）/
-    ///   Event(名前) = その場の音や見た目の合図だけ（World.Event.Signal になる）。
+    ///   Event(名前) = その場の音や見た目の合図だけ（World.Event.Signal になる）/
+    ///   Wait(秒) = 物語の時計で秒だけ、続きの台詞・選択肢・コマンドを出さずに待つ（<<wait 秒>> と同じ待ち。Silent では落とす）。
     pub enum Out with Eq, ToString {
         case ClearPage
         case TurnPage
         case Sound(String)
         case Event(String)
+        case Wait(Float64)
     }
 
     /// 時間を取る演出か。Timed なら、後の <<wait>> の間テープの位置がこの行を指す（World.talkCursorOf）。
@@ -61,7 +68,7 @@ mod Commands {
 
     /// テンプレートのコマンドの表。
     pub def all(): List[Command[Stage.Stage]] =
-        bg() :: window() :: audio() :: fx() :: shake() :: show() :: hide() :: Nil
+        bg() :: window() :: audio() :: fx() :: shake() :: show() :: hide() :: move() :: Nil
 
     /// シナリオが使える全部（テンプレートの表とゲームの表）。
     def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
@@ -116,6 +123,7 @@ mod Commands {
         case Out.TurnPage  => true
         case Out.Sound(_)  => false
         case Out.Event(_)  => false
+        case Out.Wait(_)   => false
     }
 
     /// command が時間を取る演出か（読めないコマンドは Instant）。
@@ -219,39 +227,176 @@ mod Commands {
           },
           needs = noAssets }
 
+    // ── 名前付きの絵（立ち絵と小物）: show・hide・move ──
+
+    /// from= / to= の端。
+    enum Edge with Eq {
+        case Left
+        case Right
+        case Top
+        case Bottom
+    }
+
+    def edgeNames(): List[String] = "left" :: "right" :: "top" :: "bottom" :: Nil
+
+    def edgeOf(name: String): Option[Edge] = match name {
+        case "left"   => Some(Edge.Left)
+        case "right"  => Some(Edge.Right)
+        case "top"    => Some(Edge.Top)
+        case "bottom" => Some(Edge.Bottom)
+        case _        => None
+    }
+
+    /// 端へ滑る値と向き（左と上が負）。
+    def edgeAxisOf(edge: Edge): (Stage.ActorField, Float64) = match edge {
+        case Edge.Left   => (Stage.ActorField.X, -1.0)
+        case Edge.Right  => (Stage.ActorField.X, 1.0)
+        case Edge.Top    => (Stage.ActorField.Y, -1.0)
+        case Edge.Bottom => (Stage.ActorField.Y, 1.0)
+    }
+
+    /// 名前付きの絵 1 つの動き: targets = 着く値（書いた値だけ）、from / to = 端から出る・端へ出る、seconds / ease = 動く秒と曲線。
+    type alias Motion = { targets = Map[Stage.ActorField, Float64], fromEdge = Option[Edge], toEdge = Option[Edge], seconds = Float64, ease = Curve.Ease }
+
+    /// name の actor.<名>.* を motion のとおりに now から動かす。着く値は書いた値か今の終わりの値で、to の向きの値はそこから slideDistance だけ先、
+    /// from の向きの値はそこから slideDistance だけ手前（端の側）から、ほかの値は now の値から動き出す。どれも替わらない値は書かない。
+    // WhyNot: 動き出す値を PropertyTween に任せない（origin = None）— 出し直しで既定へ戻した値は now に始まる予定なので、同じ now の tween が捨てて前の値から動く。
+    def withMotion(now: Clock.Time[Stage.Story], distance: Float64, name: String, motion: Motion, st: Stage.Stage): Stage.Stage =
+        let offsetOn = (edge: Option[Edge], field) -> edge |> Option.map(edgeAxisOf) |> Option.filter(match (f, _) -> f == field)
+            |> Option.map(match (_, sign) -> sign * distance);
+        let step = (cur: Stage.Stage, field) -> {
+            let base = Map.get(field, motion#targets) |> Option.getWithDefault(Stage.actorEnd(name, field, cur));
+            let toward = offsetOn(motion#toEdge, field);
+            let away = offsetOn(motion#fromEdge, field);
+            if (Option.isEmpty(toward) and Option.isEmpty(away) and not Map.memberOf(field, motion#targets)) cur
+            else {
+                let dest = base + Option.getWithDefault(0.0, toward);
+                let key = Stage.actorKey(name, field);
+                let origin = away |> Option.map(o -> base + o) |> Option.getWithDefault(PropertyTween.numAt(now, key, Stage.actorDefaultOf(field), cur#props));
+                { props = PropertyTween.tween(key, Some(origin), dest, now, 0.0, motion#seconds, motion#ease, cur#props) | cur }
+            }
+        };
+        Stage.actorFields() |> List.foldLeft(step, st)
+
+    /// cues を層に当てる。出ていなかった絵を出す時は、その絵の actor.<名>.* を先に既定へ戻す。
+    def withCast(now: Clock.Time[Stage.Story], cues: List[Cast.Cue], st: Stage.Stage): Stage.Stage =
+        let one = (cur: Stage.Stage, cue) -> {
+            let fresh = Cast.targetOf(cue, cur#cast) |> Option.exists(match (_, figure) -> not Cast.isShown(figure#name, cur#cast));
+            let reset = Cast.targetOf(cue, cur#cast) |> Option.filter(_ -> fresh)
+                |> Option.map(match (_, figure) -> Stage.withActorReset(now, figure#name, cur)) |> Option.getWithDefault(cur);
+            { cast = Cast.apply(now, cue, reset#cast) | reset }
+        };
+        List.foldLeft(one, st, cues)
+
     def show(): Command[Stage.Stage] =
         let who = Param.name("name", castNames()) |> Param.at(1) |> Param.required;
         let face = Param.name("face", Nil) |> Param.at(2);
         let slot = Param.name("at", slots());
+        let fromArg = Param.choice("from", edgeNames());
+        let x = Param.num("x", -3.0, 3.0);
+        let y = Param.num("y", -3.0, 3.0);
+        let scale = Param.num("scale", 0.0, 10.0);
+        let alpha = Param.num("alpha", 0.0, 1.0);
         let time = Param.num("time", 0.0, 10.0);
+        let ease = Param.ease(Curve.Ease.SmoothStep);
         let cueOf = (res: Res.Res, a) -> Cast.showCue(res#cast, Param.get(who, a), Param.getOpt(face, a), Param.getOpt(slot, a), Param.getOpt(time, a));
-        { spec = YarnCommands.spec("show", "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds）",
-                                   Param.erase(who) :: Param.erase(face) :: Param.erase(slot) :: Param.erase(time) :: Nil),
+        let targetsOf = a -> ((Stage.ActorField.X, x) :: (Stage.ActorField.Y, y) :: (Stage.ActorField.Scale, scale) :: (Stage.ActorField.Alpha, alpha) :: Nil)
+            |> List.filterMap(match (f, h) -> Param.getOpt(h, a) |> Option.map(v -> (f, v))) |> List.toMap;
+        { spec = YarnCommands.spec("show", "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率）",
+                                   Param.erase(who) :: Param.erase(face) :: Param.erase(slot) :: Param.erase(fromArg) :: Param.erase(x) :: Param.erase(y) ::
+                                   Param.erase(scale) :: Param.erase(alpha) :: Param.erase(time) :: Param.erase(ease) :: Nil),
           timing = Timing.Timed,
-          apply = (ctx, a, st) -> cueOf(ctx#res, a) |> Result.map(cue -> (withCast(ctx#now, cue :: Nil, st), Nil)),
+          apply = (ctx, a, st) -> cueOf(ctx#res, a) |> Result.map(cue -> {
+              let d = CastDoc.rec(ctx#res#cast);
+              let motion = { targets = targetsOf(a), fromEdge = Param.getOpt(fromArg, a) |> Option.flatMap(edgeOf), toEdge = None,
+                             seconds = Param.getOpt(time, a) |> Option.getWithDefault(d#fadeSeconds), ease = Param.get(ease, a) };
+              (withMotion(ctx#now, d#slideDistance, Param.get(who, a), motion, withCast(ctx#now, cue :: Nil, st)), Nil)
+          }),
           needs = (res, a, st) -> cueOf(res, a) |> Result.toOption |> Option.flatMap(cue -> Cast.targetOf(cue, st#cast))
               |> Option.map(match (_, figure) -> Cast.textureOf(figure)) |> Option.toList }
 
     def hide(): Command[Stage.Stage] =
         let who = Param.name("name", castNames()) |> Param.orWords("all" :: Nil) |> Param.at(1) |> Param.oneOf("target");
         let slot = Param.name("at", slots()) |> Param.oneOf("target");
+        let toArg = Param.choice("to", edgeNames());
         let time = Param.num("time", 0.0, 10.0);
-        { spec = YarnCommands.spec("hide", "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物）",
-                                   Param.erase(who) :: Param.erase(slot) :: Param.erase(time) :: Nil),
+        let ease = Param.ease(Curve.Ease.SmoothStep);
+        { spec = YarnCommands.spec("hide", "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物・to = 端へ滑って消える）",
+                                   Param.erase(who) :: Param.erase(slot) :: Param.erase(toArg) :: Param.erase(time) :: Param.erase(ease) :: Nil),
           timing = Timing.Timed,
           apply = (ctx, a, st) -> {
               let doc = ctx#res#cast;
+              let d = CastDoc.rec(doc);
               let seconds = Param.getOpt(time, a);
               let named = match Param.getOpt(who, a) {
-                  case Some(Or.Value(name)) => Cast.hideCue(doc, name, seconds) |> Result.map(cue -> cue :: Nil)
+                  case Some(Or.Value(name)) => Cast.hideCue(doc, name, seconds, 0.0) |> Result.map(cue -> cue :: Nil)
                   case Some(Or.Word(_))     => Ok(Cast.hideAllCues(doc, seconds))
                   case None                 => Ok(Nil)
               };
               let atSlot = Param.getOpt(slot, a) |> Option.map(s -> Cast.hideAtCues(doc, s, seconds, st#cast)) |> Option.getWithDefault(Nil);
-              named |> Result.map(cues -> (withCast(ctx#now, List.append(cues, atSlot), st), Nil))
+              let motion = { targets = Map.empty(), fromEdge = None, toEdge = Param.getOpt(toArg, a) |> Option.flatMap(edgeOf),
+                             seconds = Option.getWithDefault(d#fadeSeconds, seconds), ease = Param.get(ease, a) };
+              named |> Result.map(cues -> {
+                  let all = List.append(cues, atSlot);
+                  let slid = if (Option.isEmpty(motion#toEdge)) st
+                             else Cast.hiddenNamesOf(all, st#cast) |> List.foldLeft((cur, name) -> withMotion(ctx#now, d#slideDistance, name, motion, cur), st);
+                  (withCast(ctx#now, all, slid), Nil)
+              })
           },
           needs = noAssets }
 
-    def withCast(now: Clock.Time[Stage.Story], cues: List[Cast.Cue], st: Stage.Stage): Stage.Stage =
-        { cast = cues |> List.foldLeft((layer, cue) -> Cast.apply(now, cue, layer), st#cast) | st }
+    def move(): Command[Stage.Stage] =
+        let who = Param.name("name", castNames()) |> Param.at(1) |> Param.required;
+        let x = Param.num("x", -3.0, 3.0);
+        let y = Param.num("y", -3.0, 3.0);
+        let dx = Param.num("dx", -3.0, 3.0);
+        let dy = Param.num("dy", -3.0, 3.0);
+        let scale = Param.num("scale", 0.0, 10.0);
+        let alpha = Param.num("alpha", 0.0, 1.0);
+        let rotate = Param.num("rotate", -720.0, 720.0);
+        let fromArg = Param.choice("from", edgeNames());
+        let toArg = Param.choice("to", edgeNames());
+        let time = Param.time(0.5);
+        let ease = Param.ease(Curve.Ease.SmoothStep);
+        // 出ていない絵を from= で出す時の意味（秒 0 で、Doc の face・slot に出す）。
+        let entryCue = (res: Res.Res, a, st: Stage.Stage) ->
+            if (Cast.isShown(Param.get(who, a), st#cast) or Option.isEmpty(Param.getOpt(fromArg, a))) Ok(None)
+            else Cast.showCue(res#cast, Param.get(who, a), None, None, Some(0.0)) |> Result.map(Some);
+        let targetsOf = (a, st: Stage.Stage) -> {
+            let name = Param.get(who, a);
+            let relative = (field, h) -> Param.getOpt(h, a) |> Option.map(v -> Stage.actorEnd(name, field, st) + v);
+            let absolute = (field: Stage.ActorField, h) -> Param.getOpt(h, a) |> Option.map(v -> (field, v));
+            let moved = (field, abs, rel) -> absolute(field, abs) |> Option.withDefault(default = relative(field, rel) |> Option.map(v -> (field, v)));
+            List.filterMap(o -> o, moved(Stage.ActorField.X, x, dx) :: moved(Stage.ActorField.Y, y, dy) ::
+                                   absolute(Stage.ActorField.Scale, scale) :: absolute(Stage.ActorField.Alpha, alpha) :: absolute(Stage.ActorField.Rotate, rotate) :: Nil)
+                |> List.toMap
+        };
+        let conflict = a -> if (Option.nonEmpty(Param.getOpt(x, a)) and Option.nonEmpty(Param.getOpt(dx, a))) Some("x= と dx= は一緒に書けない")
+                            else if (Option.nonEmpty(Param.getOpt(y, a)) and Option.nonEmpty(Param.getOpt(dy, a))) Some("y= と dy= は一緒に書けない")
+                            else None;
+        { spec = YarnCommands.spec("move", "出ている絵の位置・大きさ・濃さ・傾きを秒かけて動かす（x・y = 置き場所からのずれ・dx・dy = 今の値に足す・from = 出ていない絵を端の外から出す・to = 端の外まで動かして消す）",
+                                   Param.erase(who) :: Param.erase(x) :: Param.erase(y) :: Param.erase(dx) :: Param.erase(dy) :: Param.erase(scale) ::
+                                   Param.erase(alpha) :: Param.erase(rotate) :: Param.erase(fromArg) :: Param.erase(toArg) :: Param.erase(time) :: Param.erase(ease) :: Nil),
+          timing = Timing.Timed,
+          apply = (ctx, a, st) -> {
+              let name = Param.get(who, a);
+              let doc = ctx#res#cast;
+              let seconds = Param.get(time, a);
+              let toEdge = Param.getOpt(toArg, a) |> Option.flatMap(edgeOf);
+              match (conflict(a), entryCue(ctx#res, a, st)) {
+                  case (Some(why), _) => Err(why)
+                  case (None, Err(why)) => Err(why)
+                  case (None, Ok(None)) if not Cast.isShown(name, st#cast) => Err("'${name}' は出ていない（出すなら <<show>> か from=）")
+                  case (None, Ok(entering)) =>
+                      let shown = entering |> Option.map(cue -> withCast(ctx#now, cue :: Nil, st)) |> Option.getWithDefault(st);
+                      let motion = { targets = targetsOf(a, shown), fromEdge = Param.getOpt(fromArg, a) |> Option.flatMap(edgeOf), toEdge = toEdge,
+                                     seconds = seconds, ease = Param.get(ease, a) };
+                      let moved = withMotion(ctx#now, CastDoc.rec(doc)#slideDistance, name, motion, shown);
+                      let gone = toEdge |> Option.map(_ -> Cast.hideCue(doc, name, Some(0.0), seconds) |> Result.map(cue -> withCast(ctx#now, cue :: Nil, moved)))
+                          |> Option.getWithDefault(Ok(moved));
+                      gone |> Result.map(next -> (next, Nil))
+              }
+          },
+          needs = (res, a, st) -> entryCue(res, a, st) |> Result.toOption |> Option.flatMap(o -> o) |> Option.flatMap(cue -> Cast.targetOf(cue, st#cast))
+              |> Option.map(match (_, figure) -> Cast.textureOf(figure)) |> Option.toList }
 }

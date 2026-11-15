@@ -82,7 +82,7 @@ mod TestKit {
     /// 今のシナリオの位置（ノードと行）。
     pub def placeOf(w: World.World): (String, String) = (World.talkNodeOf(w), World.talkLineOf(w))
 
-    pub def isWaiting(w: World.World): Bool = match World.readOf(w) |> Option.map(r -> YarnRunner.shownOf(r#talk)) {
+    pub def isWaiting(w: World.World): Bool = match World.readOf(w) |> Option.map(r -> if (Option.nonEmpty(r#pause)) YarnRunner.Shown.Waiting else YarnRunner.shownOf(r#talk)) {
         case Some(YarnRunner.Shown.Waiting) => true
         case _                              => false
     }

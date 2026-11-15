@@ -143,7 +143,7 @@ mod SceneRender {
     def sampleLayer(): Cast.Layer =
         let entry = CastDoc.entryOf(CastDoc.Kind.Character, CastDoc.sampleName(), CastDoc.sample());
         let figures = entry |> Option.map(e -> { name = CastDoc.sampleName(), face = e#face, slot = e#slot }) |> Option.toList;
-        Cast.layerOf({ cast = figures, prop = None })
+        Cast.layerOf({ cast = figures, props = Nil })
 
     /// 縦の画面の右の列のログの番号。
     def logIndex(): Int32 =

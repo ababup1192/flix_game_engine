@@ -59,7 +59,15 @@ mod WorldRead {
             case (event, later) :: rest =>
                 let waitFor = if (replay == Commands.Replay.Live) namesToWait(res, pairs, w) else Nil;
                 if (not List.isEmpty(waitFor)) startHold(waitFor, pairs, last, w)
-                else absorbFrom(res, replay, last, rest, absorbOne(res, replay, last, event, later, w))
+                else pauseOrGo(res, replay, last, rest, absorbOne(res, replay, last, event, later, w))
+        }
+
+    /// 出来事 1 つを反映した後: コマンドが待ち（Out.Wait）を出していたら、残りの出来事を待ちに預けて止まり、そうでなければ続ける。
+    def pauseOrGo(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], rest: List[(YarnRunner.Event, Int32)],
+                  w: World.World): World.World \ Emit[World.Event] =
+        match World.readOf(w) |> Option.flatMap(r -> r#pause) {
+            case Some(p) => World.mapRead(r -> { pause = Some({ rest = rest, last = last | p }) | r }, w)
+            case None    => absorbFrom(res, replay, last, rest, w)
         }
 
     /// 出来事 1 つ。later = その出来事より後ろに出た台詞と選択肢の数。
@@ -135,7 +143,7 @@ mod WorldRead {
     def cue(res: Res.Res, replay: Replay, command: Yarn.Command, r: World.Read, w: World.World): World.Read \ Emit[World.Event] =
         if (command#name == "wait") r
         else match Commands.execute(replay, ctxOf(res, r, w), command, r#stage) {
-            case Ok((stage, outs)) => outs |> List.foldLeft((cur, out) -> takeOut(out, cur), { stage = stage | r })
+            case Ok((stage, outs)) => outs |> List.foldLeft((cur, out) -> takeOut(World.now(w), out, cur), { stage = stage | r })
             case Err(message)      => Log.warnThen("[stage] ${message}", r)
         }
 
@@ -143,13 +151,22 @@ mod WorldRead {
     def ctxOf(res: Res.Res, r: World.Read, w: World.World): Commands.Ctx =
         { now = World.now(w), node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault(""), res = res }
 
-    /// コマンドが出した出来事 1 つ（Silent の時の音と合図は Commands.execute が落としてある）。
-    def takeOut(out: Out, r: World.Read): World.Read \ Emit[World.Event] = match out {
-        case Out.ClearPage   => { page = Page.clear(r#page), stage = Stage.withPageTurned(r#stage) | r }
-        case Out.TurnPage    => { page = Page.turn(r#page) | r }
-        case Out.Sound(name) => Emit.emit(World.Event.Cue(name)); r
-        case Out.Event(name) => Emit.emit(World.Event.Signal(name)); r
+    /// コマンドが出した出来事 1 つ（Silent の時の音と合図と待ちは Commands.execute が落としてある）。
+    /// 待ちは now から秒だけ（続きの出来事は absorbFrom が預ける。1 つのコマンドが 2 つ出したら長い方）。
+    def takeOut(now: Clock.Time[Stage.Story], out: Out, r: World.Read): World.Read \ Emit[World.Event] = match out {
+        case Out.ClearPage    => { page = Page.clear(r#page), stage = Stage.withPageTurned(r#stage) | r }
+        case Out.TurnPage     => { page = Page.turn(r#page) | r }
+        case Out.Sound(name)  => Emit.emit(World.Event.Cue(name)); r
+        case Out.Event(name)  => Emit.emit(World.Event.Signal(name)); r
+        case Out.Wait(secs)   =>
+            let until = Clock.after(Float64.max(0.0, secs), now);
+            let later = r#pause |> Option.map(p -> if (Clock.since(p#until, until) > 0.0) until else p#until) |> Option.getWithDefault(until);
+            { pause = Some({ until = later, rest = Nil, last = None }) | r }
     }
+
+    /// コマンドが出した待ちが明けた（かスキップで飛ばした）: 待ちを消して、預けておいた続きの出来事を反映する。
+    def resumePause(res: Res.Res, p: World.Pause, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        absorbFrom(res, Commands.Replay.Live, p#last, p#rest, World.withRead({ pause = None | r }, w))
 
     /// 台詞 1 行を頁とバックログへ。NVL で頁に入り切らない時は頁をめくって（めくった数を足して）から積む。消していた文字の枠は出す。
     /// 戻れる所は行を積んだ後の舞台と頁で作る。新しいノードの最初の行ならオートセーブ。
@@ -190,9 +207,11 @@ mod WorldRead {
         }
 
     /// 今の行を既読にして、次の行へ送る。[遷移: 行→次の行 / 選択肢 / シナリオの終わり(Credits)]
+    /// コマンドが出した待ちの間は送らない（実行器はもう待ちの後ろの台詞を出しているので、送るとその台詞を読まずに越える）。
     def next(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let marked = markSeen(r, w);
         match YarnRunner.shownOf(r#talk) {
+            case _ if Option.nonEmpty(r#pause) => World.withRead(r, w)
             case YarnRunner.Shown.Line(_) =>
                 Emit.emit(World.Event.Paged);
                 let (talk, events) = YarnRunner.step(YarnRunner.Action.Advance, World.now(marked), r#talk);
@@ -217,7 +236,7 @@ mod WorldRead {
     /// 選択肢 i を選ぶ。選べない選択肢（行末の <<if>> が偽）の番号なら何もしない。[遷移: 選択肢→選んだ中身]
     pub def pick(res: Res.Res, i: Int32, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
-            case Some(r) if World.isFree(w) and Option.isEmpty(r#hold) =>
+            case Some(r) if World.isFree(w) and Option.isEmpty(r#hold) and Option.isEmpty(r#pause) =>
                 match List.nth(i, r#choices) {
                     case Some(option) if option#available =>
                         Emit.emit(World.Event.Picked);
@@ -272,7 +291,12 @@ mod WorldRead {
 
     /// 待っていない時の 1 歩（<<wait>>・文字送り・出し終えた時刻・オートとスキップ）。
     def readOn(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        let skipping = r#playback == World.Playback.Skip;
         let waited = match YarnRunner.shownOf(r#talk) {
+            case _ if Option.nonEmpty(r#pause) =>
+                // スキップ中はコマンドが出した待ちも飛ばす。
+                r#pause |> Option.filter(p -> skipping or Clock.since(p#until, World.now(w)) >= 0.0)
+                        |> Option.map(p -> resumePause(res, p, r, w)) |> Option.getWithDefault(w)
             case YarnRunner.Shown.Waiting =>
                 // スキップ中は待ちも飛ばす（明ける時刻をそのまま渡す）。
                 let at = if (r#playback == World.Playback.Skip) YarnRunner.waitUntilOf(r#talk) |> Option.getWithDefault(World.now(w)) else World.now(w);
@@ -331,6 +355,7 @@ mod WorldRead {
     // WhyNot: 選んだ選択肢より前の台詞の戻れる所へさかのぼらない — 戻すと選ぶ前に戻る。
     def markHere(r: World.Read): Option[Saves.Mark] =
         match YarnRunner.shownOf(r#talk) {
+            case _ if Option.nonEmpty(r#pause) => headMarkOf(r#log)
             case YarnRunner.Shown.Waiting => headMarkOf(r#log)
             case _                        => YarnRunner.bookmarkOf(r#talk) |> Option.map(b -> markOf(b, r))
         }

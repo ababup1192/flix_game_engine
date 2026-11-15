@@ -640,6 +640,48 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - N5（preset）は範囲の外。2 本で preset に回る行は 6 行なので、移行の時点では GameCommands に置き（約 200 行【推】）、N5 で preset に移す。N5 を移行の前にやれば二度手間は消えるが、N5 の形（Doc の時刻表）を決める相談が先に要る。
 - 並行: 段 5〜6（テンプレート）と段 8 の engine_world の部分は別のパッケージなので並べられる（同じパッケージを 2 人に触らせない）。段 10 の go の道具も段 1〜9 と並べられる。
 
+### 11.1 段 1 の記録（2026-11-16）
+
+触ったのはテンプレート（sound-novel-starter）だけ。engine_world・engine・render_gl は触っていない。
+
+**決めた物**
+
+- Cast の層を `{ shown: List[Shown], leaving }` の 1 列にした（Shown に `kind`）。人物と小物の決め打ち（1 位置に 1 人・小物は同時に 1 つ）をやめ、Doc の slot の `exclusive`（既定 false）で「その位置に 1 つ」を決める。テンプレートと fixture の Doc は今の位置を全部 `exclusive: true` にしたので、作例の見た目は変わらない。
+- Doc（`novel.cast.json`）に `slideDistance`（既定 1.0 = 画面の外まで）・slot の `exclusive`・項目の `layer`（既定 人物 500・小物 600・背景に付く絵 100）と `attach`（`{ "bg": { 写真の名前: 横のずれ } }`）を足し、schema にも足した（段 4 の schema の分を先にした）。
+- `actor.<名>.x|y|scale|alpha|rotate` の鍵は `Stage.actorKey(名, Stage.ActorField)`。x・y は画面の幅・高さに対する割合、scale は足元を据えて掛ける、rotate は度（時計回り）。出ていない絵を出す時に `Stage.withActorReset` で既定へ戻す。
+- `show` に `from=`・`x=`・`y=`・`scale=`・`alpha=`・`ease=`、`hide` に `to=`・`ease=`、`move` を新しく（`x|dx`・`y|dy`・`scale`・`alpha`・`rotate`・`from`・`to`・`time=0.5`・`ease=smoothstep`）。`move from=left to=right` は秒 0 で出し、端の外へ着いた時に消す（Cast の消えていく物に「始まる時刻」を足し、それまで濃さのまま描く）。
+- `attach: bg` の絵は背景のすぐ上（今の z 3 の頭・蛍の下）に描き、今の写真のずれだけ横へずらす。ほかの絵は z 5 の中で Doc の `layer` の順に描く（同じ layer は消えていく物 → 出ている物、出した順）。particles と GameView を層の数で並べるのは段 2（C11）。
+- `Out.Wait(秒)`: World の Read に `pause`（明ける時刻・待ちの後ろの出来事・戻れる所の元）を足した。コマンドが Wait を出すと、`absorbFrom` が残りの出来事を pause に預けて止まり、物語の時計で明けたら（スキップ中はすぐ）続きを反映する。待ちの間は送り・選択が効かず、セーブは `<<wait>>` の間と同じくバックログの頭の台詞の戻れる所。Silent では Commands.execute が落とす。
+
+**比べた別案**
+
+| 決めた所 | 取った案 | 比べた案と取らなかった理由 |
+|---|---|---|
+| from= / to= の滑り | actor.<名>.x / y の tween（PropertyTween） | 2.5 の「Shown に from・to を足す」案: View で滑りのずれと move のずれを 2 つ足し、Cast にも別の settle が要る。move の from / to はどのみち鍵で書くので、仕組みが 2 つになる |
+| 待ち（Out.Wait） | テンプレートの World が残りの出来事を預かる（素材の待ち Hold と同じ形） | 実行器（engine_world の YarnRunner）に外から待ちを差し込む口を足す案: C の承認の外。実行器はコマンドを返した時にはもう次の台詞まで流し終えている |
+| 傾き（rotate） | 面を外接する矩形にし、Param（turn_a〜turn_d）で読む座標を回し、絵の外を Step で透かす | `ShaderDoc.Field.Rotate`: 回す量が Const なので、傾きが動く間ずっと Spec が替わり実機がシェーダーを組み直す。`Render.turned` は Shader の面を傾けない。小さく描き出して確かめた（20 度・左へ 0.2。縁の切れ・はみ出しなし） |
+
+**設計とのずれ**
+
+- 2.5 の「Shown に from・to を足す」はしなかった（上の表）。
+- 2.2 の `dx`・`dy` は offset 型（`40px`・`3.2%`）でなく数（画面に対する割合・x / y と同じ単位）。offset 型は engine_world の `YarnCommands.Param` に無く、足すのは C の承認の外。要るなら相談する。
+- 2.2 の `audio se wait=true` は段 3 に残した（音の長さを Res に持たせる所が段 3 の audio の分と重なる）。そのため Out.Wait を出すコマンドはまだ無く、World の待ちのテストは pause を組んだ World で見た（Wait → pause を作る 1 行と、残りの出来事を預ける所は段 3 で `wait=true` と一緒にテストする）。
+- 「Doc の既定に戻す」の既定は固定の値（ずれ 0・倍率 1・濃さ 1・傾き 0）。actor ごとの既定は Doc に無い。
+
+**門の結果**
+
+- テンプレート: `make check` OK・`make test` 319 緑（前は 294。TestActors 25 本を足した）・`make reference-check` 45 枚すべて一致（絵は変わっていない）・`bin/fge yarn check assets/talk` ok（9 ノード）。
+- e2e の flow 6 本（bookmark・showcase・tape・tape_own_pace・tape_thanks・true_ending）すべて ok。
+- `make lint`: lint-doc-refs は前からの 16 件のまま（増やしていない）。render-lint・lint-record-wrap・lint-forbid は OK。根の `make check-docs-sync` OK。
+
+**持ち越し**
+
+- 段 2: 粒（700）と GameView を同じ層の数で並べる View（C11）。今は背景に付く絵 = z 3・ほか = z 5 の中だけで layer の順。
+- 段 3: `audio se wait=true`（Out.Wait を出す最初のコマンド）と、Res に音の長さ。`transition=slide` の間に背景に付く絵を背景と一緒に動かす。
+- 縦の頁の覆いを薄くする量（`Cast.presenceOf`）は背景に付く人物も数える。背景に付く絵を人物に置くゲームが出たら外す。
+- テンプレートの追随: 前の Doc に `exclusive` が無いと人物が同じ位置に重なる（既定 false）。ゲームを当て直す時は slot に `exclusive: true` を足す。
+- agent-eval のお題（show from= / move）は段 13。
+
 ## 12. 試した事（スパイク）
 
 | 試した事 | 置き場 | 結果 |

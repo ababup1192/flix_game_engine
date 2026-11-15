@@ -123,13 +123,179 @@
           "type": "name"
         },
         {
+          "name": "to",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
           "max": 10,
           "min": 0,
           "name": "time",
           "type": "num"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
         }
       ],
-      "summary": "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物）"
+      "summary": "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物・to = 端へ滑って消える）"
+    },
+    "move": {
+      "params": [
+        {
+          "name": "name",
+          "pos": 1,
+          "ref": {
+            "from": [
+              {
+                "doc": "../novel.cast.json",
+                "keys": "cast"
+              },
+              {
+                "doc": "../novel.cast.json",
+                "keys": "props"
+              }
+            ]
+          },
+          "req": true,
+          "type": "name"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "x",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "y",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "dx",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "dy",
+          "type": "num"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "scale",
+          "type": "num"
+        },
+        {
+          "max": 1,
+          "min": 0,
+          "name": "alpha",
+          "type": "num"
+        },
+        {
+          "max": 720,
+          "min": -720,
+          "name": "rotate",
+          "type": "num"
+        },
+        {
+          "name": "from",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "name": "to",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "default": "0.5",
+          "name": "time",
+          "type": "time"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
+        }
+      ],
+      "summary": "出ている絵の位置・大きさ・濃さ・傾きを秒かけて動かす（x・y = 置き場所からのずれ・dx・dy = 今の値に足す・from = 出ていない絵を端の外から出す・to = 端の外まで動かして消す）"
     },
     "shake": {
       "params": [],
@@ -173,13 +339,80 @@
           "type": "name"
         },
         {
+          "name": "from",
+          "type": "choice",
+          "values": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "x",
+          "type": "num"
+        },
+        {
+          "max": 3,
+          "min": -3,
+          "name": "y",
+          "type": "num"
+        },
+        {
+          "max": 10,
+          "min": 0,
+          "name": "scale",
+          "type": "num"
+        },
+        {
+          "max": 1,
+          "min": 0,
+          "name": "alpha",
+          "type": "num"
+        },
+        {
           "max": 10,
           "min": 0,
           "name": "time",
           "type": "num"
+        },
+        {
+          "default": "smoothstep",
+          "name": "ease",
+          "type": "ease",
+          "values": [
+            "linear",
+            "smoothstep",
+            "inSine",
+            "outSine",
+            "inOutSine",
+            "inQuad",
+            "outQuad",
+            "inOutQuad",
+            "inCubic",
+            "outCubic",
+            "inOutCubic",
+            "inQuart",
+            "outQuart",
+            "inOutQuart",
+            "inExpo",
+            "outExpo",
+            "inOutExpo",
+            "inBack",
+            "outBack",
+            "inOutBack",
+            "inElastic",
+            "outElastic",
+            "inOutElastic",
+            "inBounce",
+            "outBounce",
+            "inOutBounce"
+          ]
         }
       ],
-      "summary": "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds）"
+      "summary": "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率）"
     },
     "window": {
       "params": [

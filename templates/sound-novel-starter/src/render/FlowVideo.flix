@@ -119,7 +119,8 @@ mod FlowVideo {
                     let label = BackdropDoc.photoOf(shot#photo, res#backdrops) |> Option.map(p -> p#label) |> Option.filter(l -> not String.isEmpty(l));
                     thing("backdrop", "背景（${Option.getWithDefault(shot#photo, label)}）", Layout.screen(fit))
                 }) |> Option.toList;
-                let castEnv = { doc = res#cast, fit = fit, storyNow = World.now(w), realNow = w#realNow, missing = res#missing, light = Cast.steadyLight(Cast.plainTone()) };
+                let castEnv = { doc = res#cast, fit = fit, storyNow = World.now(w), realNow = w#realNow, missing = res#missing, light = Cast.steadyLight(Cast.plainTone()),
+                               props = r#stage#props, photo = r#stage#shot |> Option.map(s -> s#photo) };
                 let cast = Cast.placedOf(castEnv, r#stage#cast) |> List.map(p -> thing(p#figure#name, if (String.isEmpty(p#label)) p#figure#name else p#label, p#rect));
                 let hud = if (View.coversScreen(w#panel) or w#panel == World.Panel.Hidden) Nil else readingHud(fit, r);
                 List.flatten(backdrop :: cast :: hud :: Nil)

@@ -12,6 +12,16 @@
       "max": 3,
       "default": 0.4
     },
+    "slideDistance": {
+      "kind": "field",
+      "type": "float",
+      "label": "from= / to= で端から滑る距離（画面に対する割合。1 で画面の外まで）",
+      "group": "出し方",
+      "order": 1,
+      "min": 0,
+      "max": 2,
+      "default": 1.0
+    },
     "sway": {
       "kind": "field",
       "type": "float",
@@ -63,6 +73,12 @@
           "min": 0.05,
           "max": 1.5,
           "required": true
+        },
+        "exclusive": {
+          "type": "bool",
+          "label": "その位置に出せるのは 1 つ（後から出した物が前の物を消す）",
+          "order": 4,
+          "default": false
         }
       }
     },
@@ -97,6 +113,12 @@
           "min": 0.05,
           "max": 1.5,
           "required": true
+        },
+        "exclusive": {
+          "type": "bool",
+          "label": "その位置に出せるのは 1 つ（後から出した物が前の物を消す）",
+          "order": 4,
+          "default": false
         }
       }
     },
@@ -146,12 +168,25 @@
           },
           "label": "表情の名前（テクスチャは cast_<名前>_<表情>）",
           "order": 6
+        },
+        "layer": {
+          "type": "int",
+          "label": "重ね順（大きいほど手前。既定は人物 500・小物 600・背景に付く絵 100）",
+          "order": 7,
+          "default": 500,
+          "min": 0,
+          "max": 999
+        },
+        "attach": {
+          "type": "json",
+          "label": "背景に付く絵にする時だけ書く: { \"bg\": { 写真の名前: 横のずれ（画面の幅に対する割合） } }。背景のすぐ上に描き、写真ごとに横へずらす",
+          "order": 8
         }
       }
     },
     "props": {
       "kind": "catalog",
-      "label": "小物（鍵 = <<show 名前>> の名前。同時に 1 つ）",
+      "label": "小物（鍵 = <<show 名前>> の名前。何個でも出せ、exclusive の位置にだけは 1 つ）",
       "order": 7,
       "fields": {
         "label": {
@@ -195,6 +230,19 @@
           },
           "label": "表情の名前（テクスチャは cast_<名前>_<表情>）",
           "order": 6
+        },
+        "layer": {
+          "type": "int",
+          "label": "重ね順（大きいほど手前。既定は人物 500・小物 600・背景に付く絵 100）",
+          "order": 7,
+          "default": 600,
+          "min": 0,
+          "max": 999
+        },
+        "attach": {
+          "type": "json",
+          "label": "背景に付く絵にする時だけ書く: { \"bg\": { 写真の名前: 横のずれ（画面の幅に対する割合） } }。背景のすぐ上に描き、写真ごとに横へずらす",
+          "order": 8
         }
       }
     }
