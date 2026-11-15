@@ -370,7 +370,7 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 9 | P5 | （上の交互の途中で、面の前に）**WGSL の出口**（7 章）。`Codegen.Target.Wgsl`・`ShaderGen` の書き手と、面と材質の draw ごとの値の並び（struct）・組み込み | Dawn で全部の変種が通るテスト。式の行の突き合わせ（画面なしの session の drawFloatRows） | 10〜16 時間 |
 | — | | **リリース 2**: 2D のゲームは WebGPU を「試しに選べる」。選ぶ口は、PC は環境変数（`FLIX_GE_BACKEND=webgpu`）、ブラウザは URL の `?backend=webgpu`。何も付けなければ今までどおり GL。入口が 3D（`withProject3d`）のゲームは、付けても GL のまま起動して理由を知らせる | | |
 | 11 | R2a | **3D の不透明の batch だけ `RenderList` に。** `planScenes` から `gl` と GL の `State` を外す（capability・順の番号・材質の状態を backend に聞く）。`MaterialBatch#entry` を材質の鍵に替える（→ 12.23 で、鍵の字でなく backend の材質の表の番号（`handle`）に）。形と絵の「上げる行」。**`planScene` 系を配列で運ぶ**（決まり 9 の 3D の分。record の欄の引き当てを内側の輪から出す） | `gl-parity` 0 px・**偽の GL を通るテスト 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload。うち GL の呼び出しの並びまで比べるのは 3 ファイル）はそのまま門に残す**（`RenderList` を見るテストは足す）・fps3d_lab が 5% 以内。`bench/scene3d` の動く割合 100%・12,000 個と、東京 1 棟ずつ: 137 ms → 100 ms 以下【目標】 | 8〜11 時間 |
-| 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定** | 6〜9 時間 |
+| 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定**（形のレビュー（3D）は V2b の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25） | 6〜9 時間 |
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け: 材質と絵の組／影／骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／環境マップ・空・lightmap／ビルボード・半透明・後がけ／寿命の表 | R2a と同じ門 | 8〜12 時間 |
 | 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
@@ -436,8 +436,12 @@ mask つきの面も比べる値を mask つきスプライトと同じく前半
 （物ごとに record を作って列で運ぶ形と比べた。field 12,000 の split 12〜14.5 → 6.3 ms）。V2 の後に WebGPU の行数とあわせて見直す。12.23・`samples/scene-list-3d.md`。
 
 **V2 で決めた物（2026-11-16）**: 3D を 2D へ貼る形（5.4）は「先に自分の texture へ描いて貼る」（A）にした（「pass を閉じて開き直す」B と、`bench/scene3d` の部屋の 1 コマで比べた）。
-1 コマは B が A より 0.02 ms ほど短い（揺れの内に近い）が、B は 2D の pass を行の途中で開き直す道（viewport・控え・黒帯・stencil の張り直し）が要り、標本つきの描き先は閉じるたびに resolve する。
-Design の解像度の場面はどちらの形でも自分の texture が要るので、A なら道が 1 本で済む。`RenderList` の 1 行の欄と高さ（3D）は R2a の形のままで WebGPU が流せた（`SceneList` の欄のうち使うのは種類・1 体ごとの値の先頭・数）。12.25。
+1 コマは B が速い: 3 回 × 4 区間（JIT の温まる 1 区間目を除く）のどれでも B が短く、差は 0.006〜0.058 ms（中央値 0.026 ms・約 5%）で揺れの内ではない。
+比べ方は B の不利が出ない条件に偏っている（標本 1・場面 1 つ・2D の中身なし。B は場面の数だけ 2D の pass が切れ、標本つきの描き先は閉じるたびに resolve する）。
+それでも A にした理由: 道が 1 本（Design の解像度の場面はどちらの形でも自分の texture が要る）・B は 2D の pass を行の途中で開き直す道（viewport・控え・黒帯・stencil の張り直し）が要る・
+B は標本つきの描き先で pass の切れ目ごとに resolve が増える・スマホのタイル型 GPU では pass の切れ目ごとに描き先の全画面の読み書き（store と load）が増える【推: この Mac では測っていない】。
+MSAA のふちは A で消えない（標本 4 の Pass に描いた 3D の斜めの棒で、標本 4 と 1 の差が GL 4,761 px・WebGPU 4,158 px。GL との差 3,330 px は 3D を使わない 2D の斜めの多角形でも 5,040 px の同じ桁で出る標本の位置の違い【推】。12.25）。
+`RenderList` の 1 行の欄と高さ（3D）は R2a の形のままで WebGPU が流せた（`SceneList` の欄のうち使うのは種類・1 体ごとの値の先頭・数）。形のレビュー（3D）は V2b（実物の欠けの一覧）の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
@@ -1075,52 +1079,85 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
 
 表の 12 行目。WebGPU の backend に 3D の不透明・頂点の色・光（点光源・スポット・太陽・環境光・hemisphere・かすみ）を足し、`bench/scene3d` の部屋を WebGPU で出した。
 計画（`Render3d.ScenePlan`）と行（`Render3d.SceneList`）は GL と同じ物を使い、行を流す所だけを WebGPU の側に足した（GL の `Render3d.GlRows` と対の `Render3d.WebGpuRows`）。engine の pub（ゲームから見える API）は増えていない。
+レビュー 1 回目（84 点）の必須 4 件と任意を直した（下の「1 回目のレビューへの対応」）。
 
 - **決めた事 1 — 3D を 2D へ貼る形は A「先に自分の texture へ描いて貼る」**（9.1 の表の最後の行）。2D の pass を開く前に、場面ごとに自分の texture（色と DEPTH24_PLUS。標本つきの描き先なら標本つきで描いて resolve）へ描き、
   2D の行の z の位置で、その texture を α を掛けた後の値として（ONE, ONE_MINUS_SRC_ALPHA）場面の矩形 ∩ clip ∩ design 領域の scissor で貼る（`WebGpuShader.sceneWgsl`。読む texel の式は GL の `Render3d.blitDesign` と同じ）。
   B「場面の所で 2D の pass を閉じ、場面を描き先へ直に描いて、2D の pass を開き直す」を、同じ道具で 1 コマずつ組んで比べた（`bench/webgpu_v2` の `SplitPassTrial`。2D の中身は無く、pass を開く・閉じる・貼る代金だけが違う）。
-  部屋（960 × 540・Native）の 1 コマ（waitIdle まで・300 コマの中央値・5 回）: A 0.475〜0.590 ms・B 0.421〜0.481 ms（2 回目からは A 0.475〜0.498・B 0.421〜0.462）。B が 0.02〜0.06 ms 短い。
-  それでも A にした理由: B は 2D の pass を行の途中で開き直す道（viewport・積んだ pipeline と buffer の控え・黒帯の箱・stencil）が要り、標本つきの描き先は閉じるたびに resolve する（場面の数だけ増える）。
-  Design の解像度の場面はどちらでも自分の texture が要るので、A なら道が 1 本。MSAA のふちは、画面（標本 1）では比べられない（標本つきの Pass の中の場面は A でも標本つきで描いてから resolve して貼るので、ふちの覆う割合は残る【推】・絵では見ていない）。
-  P8 の終わりに fps3d_lab の部屋で確かめる（5.4 のとおり）。
+  - 数: 部屋（960 × 540・Native）の 1 コマ（waitIdle まで・300 コマの中央値）を 3 回流し、JIT の温まる 1 区間目を除いた 4 区間ずつ（12 区間）: A 0.452〜0.498 ms・B 0.421〜0.462 ms。
+    **12 区間のどれでも B が短く**、差は 0.006〜0.058 ms（中央値 0.026 ms・約 5%）。揺れの内ではない。
+  - 比べ方の偏り: 標本 1・場面 1 つ・2D の中身なし。B の不利（場面の数だけ 2D の pass が切れる・標本つきの描き先は閉じるたびに resolve する・切れ目の後で viewport・pipeline・buffer・黒帯・stencil を張り直す）が出ない条件で測っている。
+  - それでも A にした理由: (1) 道が 1 本 — Design の解像度の場面はどちらの形でも自分の texture が要る。(2) B は 2D の pass を行の途中で開き直す道が要り、`WebGpuRows` の控え（`geom`）を全部張り直す。
+    (3) 標本つきの描き先では、B は pass の切れ目ごとに resolve が増える。(4) スマホのタイル型 GPU では、pass の切れ目ごとに描き先の全画面の読み書き（store と load）が増える【推: この Mac では測っていない】。
+  - MSAA のふちは A で消えない（必須 3 で見た・下の門の表の railsMsaa）。P8 の終わりに fps3d_lab の部屋で確かめる（5.4 のとおり）。
 - **決めた事 2 — 1 体ごとの値は instance の頂点の buffer**（GL の 1 体ごとの値のテクスチャ・`Render3d.Instancing` の 1 体 8 texel の並びのまま 128 バイト）を location 3〜10 で読み、行の頭の物は `drawIndexed` の firstInstance で引く。
   storage buffer にしないのは 2D のスプライト（V1）とそろえるため。骨の行と一緒に storage へ移すかは P8 で決める。並びは `Instancing.numberSpan` をそのまま使う（GL と同じ詰め方）。
 - **決めた事 3 — 材質・骨つき・ビルボード・空・影・Output.Depth は描かずに名前ごとに 1 回知らせる**（「まだ描かない: 3D の材質（頂点の色で描く）」など）。材質は backend に「使えない」（順の番号 0）と答えるので、GL が使えないと答えた材質と同じく頂点の色で描く。
+  診断の 3D の数（`scene3dCounts`）は数えないので、診断が有効で場面のあるコマに「まだ描かない: 3D の数を数える事（診断の scene3dCounts は 0 のまま・未計測）」を 1 回出す（`FrameDiagnostics` に「未計測」の値を足すのは engine の pub の変更なので取らない）。
 - **`RenderList` の 1 行の欄と高さ（3D）**（9.1）: R2a の `SceneList` の行のまま WebGPU で流せた。WebGPU の側で読む欄は種類・1 体ごとの値の先頭・数だけ（材質の表の番号・フラグは P8 の材質で読む）。行を流す所は `Render3d.WebGpuRows` の 128 行（形の置き場を含む）・GL の `Render3d.GlRows` は 177 行。
-  形のレビュー（3D）は P8 の材質を足す時の書き味とあわせて行う（下の持ち越し）。
+  12.21 の見込み（場面を貼る行の 3 番に描き先の番号を入れる）は取らなかった: 描き先は prepare の答え（場面の番号で引く `Paste`）が持ち、行の欄を増やさずに済んだ。
+- **形のレビュー（3D）は V2b（実物の欠けの一覧）の直後**（コーディネーターの判断・人のおまかせ・2026-11-16）。欠けの一覧で材質・骨・instance の行に要る欄が見えてから形を確定する方が作り直しが少ないため。9 章の表の V2 の行にも書いた。
 - スマホの上限（12.24 の S24 Ultra の値）の内: varying は 4 つ（16 の内）・場面の値の uniform は 944 バイト（65,536 の内）・bind group は 3D の pipeline が 1 つ・貼る pipeline が 2 つ（4 の内）・頂点の buffer は 2 本（8 の内）・storage は使わない。
 - 入れた物（render_gl の中だけ）:
-  - 新しい `Render3d.WebGpuRenderer`（pub mod。親の `Render3d` が pub でないのでゲームからは見えない）: 場面ごとの描き先（`SceneTarget`・描き先の鍵とそのコマの場面の番号ごと）・`prepare`（計画 → 1 体ごとの値を送る → 形を上げる → 場面の値を書く → pass を積む）・`afterSubmit`・`endFrame`（GL と同じ頂点の上限で形を捨てる・128 コマ描かなかった描き先を捨てる）・
-    `packSceneValues`（GL の `Light.lightDataOf` の答えを `R3dScene` の欄の位置へ。12.17 の持ち越しの「`R3dScene` を詰める所」）。
+  - 新しい `Render3d.WebGpuRenderer`（pub mod。呼び手の `WebGpuPaint` が `Render3d` の子孫でないので pub が要る・親の `Render3d` が pub でないのでゲームからは見えない。WhyNot に書いた）:
+    場面ごとの描き先（`SceneTarget`・描き先の鍵とそのコマの場面の番号ごと）・`prepare`（計画 → 1 体ごとの値を送る → 形を上げる → 場面の値を書く → pass を積む）・`notePasted`・`afterSubmit`・`endFrame`（GL と同じ頂点の上限で形を捨てる・128 コマ描かなかった描き先を捨てる）・
+    `packSceneValues`（GL の `Light.lightDataOf` の答えを `R3dScene` の欄の位置へ。12.17 の持ち越しの「`R3dScene` を詰める所」）。画面（RGBA8・標本 1）の 3D の pipeline と貼る pipeline は create の時に作る。
   - 新しい `Render3d.WebGpuRows`: 形の buffer の置き場（`MeshTable`）・`uploadRows`・`drawRows`。
   - `Render3dWgsl.litVertexSource`・`cameraDeclarations`・`instanceBytes`（12.17 の持ち越しの 3D の頂点シェーダーのうち、骨の無い頂点の色の版）。`WebGpuShader.sceneWgsl`（貼る形）。
   - `WebGpuPipelines` に貼る形（`WebGpuRows.shapeScene`・blend の番号 `blendScene` = 3・group 1 の `sceneLayout`）。`targetKeys()` の 64 にちょうど収まる。
-  - `RenderFrame.Internal.WebGpuRows`: 場面の行は貼る口（`SceneDrawer`）を場面の番号と stencil の使い方で呼び、pipeline・group 1・scissor の控えを捨てる（数えは前と同じ・2D の draw call には数えない）。
-  - `WebGpuPaint`: `paintInto` が 2D の pass の前に `prepare` を呼ぶ・submit の後に `afterSubmit`・present の後に `endFrame`。1,084 行。
-  - 同じ encoder で同じ描き先の値を 2 回書く時（同じコマに同じ Pass を 2 回開く・大きさが変わって描き直す）は先に submit する（`noteWritten` の WhyNot）。1 体ごとの値の buffer があふれた時も submit して頭から書き、頭からでも入らなければ伸ばす（2D の Stream と同じ決まり）。
-- テスト: render_gl 491 緑（前の 486 に 5 本: `TestWebGpuScene3d` 4 本（場面の値の欄の位置・光の配列の 16 バイト刻み・影と奥行きの書き出しを切る値・矩形の上下）・`TestWebGpuRows` に場面の行が番号と stencil の使い方で貼る口を呼び控えを捨てる 1 本）。
-  `TestWgslDawn` は頂点の色の頂点シェーダーと貼る形を足して 367 本を Dawn で組んで誤り 0。
-- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16）:
-  - 新しい `make -C bench/webgpu_v2 run`（GPU が要るので CI に載せない）: 部屋を GL（`GlOffscreen`）と WebGPU（`WebGpuPaint`）で 960 × 540 に描いて比べる。WebGPU の誤り 0。
-    | 場面 | 違う画素 | ±2 以上 | 差の最大 | 許す差（±2 以上の画素） |
-    |---|---|---|---|---|
-    | room（Native・正面） | 14 px / 518,400 | 7 px | ±82 | 32 |
-    | roomTurned（Native・yaw 0.5） | 8 px | 6 px | ±52 | 32 |
-    | roomDesign（Design の解像度 320 × 180 を 3 倍で貼る） | 0 px | 0 px | ±0 | 0 |
-    差の理由（画素を 1 つずつ見た）: ±1 の 7 px と 2 px は光とかすみの坂の丸め（GL の driver と Tint の MSL）。大きい差は、同じ深さに重なる面（燭台の台と卓の天板・y = 351 の 6 px）と三角形のふちの画素で、勝つ面が入れ替わった物。
-    GL は clip の z を driver の固定の段で 0..1 へ移し、WebGPU は頂点シェーダーの `sg_clipFromGl` で移すので、奥行きの最後の bit が違う。式を取り違えれば面の中が丸ごと違って千 px の桁になる（Design の場面が 0 px なのも、式と貼る形が GL と同じ事の裏づけ）。
+  - `RenderFrame.Internal.WebGpuRows`: 場面の行は貼る口（`SceneDrawer`）を場面の番号と stencil の使い方で呼び、pipeline・group 1・scissor の控えを捨てる（`forgetBindings` を面の行と共有。数えは前と同じ・2D の draw call には数えない）。
+  - `WebGpuPaint`: `paintInto` が 2D の pass の前に `prepare` を呼ぶ・貼る時に `notePasted`・submit の後に `afterSubmit`・present の後に `endFrame`。
+    残りが少ない（上限 1,200 行）ので、3D の Host・`sceneViewportOf`・`pasteScene` を子の mod（例 `RenderPaint.Internal.WebGpuScenes`）へ移すのを P8 の最初の小分けにする。
+  - 寿命の決まり: 同じ encoder で同じ描き先の値を 2 回書く時（同じコマに同じ Pass を 2 回開く・大きさが変わって描き直す）は先に submit する。控え（`written`）は値を書いた時と、2D の pass に貼った時（`notePasted`）に付ける
+    （prepare から 2D の pass を積むまでの間に submit が入ると控えが消えるので、pass の中で付け直す。pass を閉じるまで submit は入らない）。1 体ごとの値の buffer があふれた時は submit して頭から書き、頭からでも入らなければ伸ばす（2D の Stream と同じ決まり）。
+  - 根の `src/render_gl/Render3d/` にも新しい 2 ファイルの symlink を足した（無いと refactor の索引の木で `TestWebGpuScene3d` が Undefined use になる・任意 13）。
+- 1 回目のレビュー（84 点）への対応:
+  - 必須 1（控えが submit で消える）: `Paste` に描き先の鍵を持たせ、`WebGpuPaint.pasteScene` が貼る時に `notePasted` を呼ぶ。回帰テスト `TestWebGpuScene3dDawn`（Dawn を開く・prepare → submit → 貼る → 同じ描き先の prepare で submit を 1 回頼む）。
+    直しを外した確かめ: 貼る時の `notePasted` を外すと「expected 1, but got 0」で落ちる。
+  - 必須 2・4: 上の決めた事 1 と「形のレビュー（3D）」と 9.1・9 章の表に書いた。
+  - 必須 3（MSAA のふち）: `bench/webgpu_v2` に railsMsaa（標本 4 の Pass に bench/gl_parity の msaaEdges の手すりと同じ斜めの棒 3 本を頂点の色の 3D で描き、`Render.blitRegion` で画面へ貼る・passPaste と同じ道）・railsNoMsaa（同じ物を標本 1）・
+    slant2dMsaa（3D を使わず 2D の斜めの多角形を標本 4 の Pass へ。比べ相手）を足した。数は下の門の表。
+  - 任意で直した物: CPU の入れ物を使い回す（1 体ごとの値は足りなければ倍に作り直す）・画面の 3D と貼る pipeline を create で作る・14 px の説明に【推】・違う画素の総数の上限（64）・pub mod の WhyNot・
+    pipeline の鍵に標本の数・`SplitPassTrial` が寿命の道を通らない限界を WhyNot に・`make webgpu-v1-check` の終わりに `make -C bench/webgpu_v2 check`・12.21 の見込みを取らなかった理由・`forgetBindings`・
+    `RendererData` の欄の説明を型の頭へ・`scene3dCounts` の知らせ・refactor の索引（根の src の symlink）。
+  - 任意で残した物: `WebGpuPaint` の 3D の分を子の mod へ移す（P8 の最初の小分け・上に書いた）。
+- テスト: render_gl 492 緑（前の 486 に 6 本: `TestWebGpuScene3d` 4 本（場面の値の欄の位置・光の配列の 16 バイト刻み・影と奥行きの書き出しを切る値・矩形の上下）・`TestWebGpuRows` に場面の行が番号と stencil の使い方で貼る口を呼び控えを捨てる 1 本・
+  `TestWebGpuScene3dDawn` 1 本（寿命の決まり・Dawn を開く。開けない機種と GPU の無い機械では SKIP）。`TestWgslDawn` は頂点の色の頂点シェーダーと貼る形を足して 367 本を Dawn で組んで誤り 0。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16・main（c6c772e3）に rebase した後の 2 回目）:
+  - `make -C bench/webgpu_v2 run`（GPU が要るので CI に載せない。組めるかだけは `make webgpu-v1-check` の終わりで見る）: GL（`GlOffscreen`）と WebGPU（`WebGpuPaint`）で 960 × 540 に描いて比べる。WebGPU の誤り 0。
+
+    | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大 |
+    |---|---|---|---|
+    | room（Native・正面） | 14 px / 518,400（64） | 7 px（32） | ±82 |
+    | roomTurned（Native・yaw 0.5） | 8 px（64） | 6 px（32） | ±52 |
+    | roomDesign（Design の解像度 320 × 180 を 3 倍で貼る） | 0 px（0） | 0 px（0） | ±0 |
+    | railsMsaa（標本 4 の Pass の 3D の斜めの棒を貼る） | 3,330 px（4,000） | 2,493 px（3,000） | ±55 |
+    | railsNoMsaa（同じ物を標本 1） | 0 px（0） | 0 px（0） | ±0 |
+    | slant2dMsaa（標本 4 の Pass の 2D の斜めの多角形・比べ相手） | 5,040 px（6,000） | 4,464 px（5,400） | ±55 |
+
+    標本 4 と 1 の差（MSAA が掛かっているか・門）: GL 4,761 px・WebGPU 4,158 px。
+  - 部屋の差の理由（画素を 1 つずつ見た）: ±1 の 7 px と 2 px は光とかすみの坂の丸め。大きい差は、同じ深さに重なる面（燭台の台と卓の天板・y = 351 の 6 px）と三角形のふちの画素で、勝つ面が入れ替わった物
+    【推: GL は clip の z を固定の段で、WebGPU は頂点シェーダーの `sg_clipFromGl` で 0..1 へ移すので奥行きの最後の bit が違う。Apple Silicon の GL は Metal の上で動くので、GLSL と MSL の compiler の FMA のまとめ方の違いかもしれない】。
+    式を取り違えれば面の中が丸ごと違って千 px の桁になる（Design の場面が 0 px なのも、式と貼る形が GL と同じ事の裏づけ）。
+  - MSAA のふち（必須 3）: railsMsaa の差は斜めのふちの画素だけで、成分の差は覆う割合 1/4 の段（背景と棒の差 219 の 1/4 = 55）。GL は 1/4・3/4 の段（65・174）を、WebGPU は 1/2 の段（120）を出す画素が並ぶ。
+    3D を使わない 2D の斜めの多角形（slant2dMsaa）でも同じ段・同じ桁（5,040 px）で出るので、3D の貼る形（A）の差ではなく、GL と WebGPU の標本の位置の違い
+    【推: 描き先の行の並びが上下逆で、4 標本の位置の型が上下に鏡写しになる。bench/webgpu_v1 の msaaPass は軸に沿ったふちだけなので 0 px】。
+    3,330 px は design の画素で約 370 px（3 倍に貼っている）で、bench/gl_parity の msaaEdges（GL と CPU の差 652 px）と同じ桁。12.21 の GL の試しのように MSAA が消えた時は、標本 4 と 1 の差が 0 になる。
   - `make gl-parity` 緑（GL の道は触っていない。前の木の表との 1 字ずつの比べはしていない）。`bench/gl_parity` の WebGPU の V1 の scene に `sceneBetweenBoxes`（地の色が不透明な 3D の場面を 2 つの箱で挟む）を足し、SoftRaster と GL の両方に 0 px。
-  - `make webgpu-v1-check` 緑（36 場面とも許す差の内・draw の数も GL と同じ・誤り 0。`sceneBetween` は場面を描いて貼るようになって 0 px・draw 3（kind 1・texture 1）で前と同じ）。
-  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）。`make gl-capture-check`: a と b の 54 枚がバイトまで同じ・基準 0.88.4 と違うのは 30 枚（前と同じ）。
-    main の木（novel のテンプレートだけ別の担当が直している）で撮った 54 枚と比べ、違うのは novel の title の 6 枚だけ（bench/scene3d の 6 枚を含むほかは同じ）。
+  - `make webgpu-v1-check` 緑（36 場面とも許す差の内・draw の数も GL と同じ・誤り 0・`sceneBetween` は場面を描いて貼るようになって 0 px・draw 3（kind 1・texture 1）で前と同じ。終わりの `bench/webgpu_v2` の型検査も緑）。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）。
+  - `make gl-capture-check`（基準 `bench/baseline/0.96.0/gl-capture-apple-m4-pro.sha256`）: a と b の 54 枚がバイトまで同じ。基準と違うのは novel の title の 6 枚だけで、この枝の変更ではない:
+    main の作業の木の `templates/sound-novel-starter/saves/novel.json`（git の外の中断セーブ）があると title に「続きから」が出る。この worktree に同じファイルを写して title だけ撮り直すと 6 枚とも基準とバイトまで同じだった（写したファイルは消した）。
+    基準が git の外のセーブの有無で変わる（撮る機械の作業の木の状態に依る）事は、基準の撮り方の持ち越し。
   - `lint-huge-methods` 緑（`bench/webgpu_v1` と `bench/webgpu_v2` の jar。engine の全部を束ねた木の jar で、sprite_stress と bench/scene3d の jar は作り直していない）・`lint-max-lines` 緑・`gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
-  - 1 コマの時間（記録・門ではない）: `bench/webgpu_v2` で GL（glFinish まで）と WebGPU（waitIdle まで）を同じ回で交互に（300 コマの中央値・5 回）: GL 0.305〜0.898 ms・WebGPU 0.464〜0.821 ms（2 回目からは GL 0.305〜0.708・WebGPU 0.464〜0.578）。
-    部屋は 1 ms に届かず、GPU の時計の揺れで回ごとに 2 倍近く動く。WebGPU が GL より大きく遅い事は無い。
+  - 1 コマの時間（記録・門ではない）: `bench/webgpu_v2` で GL（glFinish まで）と WebGPU（waitIdle まで）を同じ回で交互に（300 コマの中央値・5 区間を 3 回）: GL 0.354〜0.898 ms・WebGPU 0.460〜0.821 ms。
+    部屋は 1 ms に届かず、GPU の時計の揺れで区間ごとに 2 倍近く動く。WebGPU が GL より大きく遅い事は無い。
     実機の窓（`cd bench/scene3d && make run` と `FLIX_GE_BACKEND=webgpu`）では、WebGPU の frame が 8.2〜8.3 ms に張り付く（2D だけの sprite_stress の 100 個でも同じ。`FLIX_GE_NO_VSYNC` で IMMEDIATE を頼んでも、この Mac では 120 Hz の垂直同期を待っている【推】）ので、1 コマの比べに使えない。
     submit の中央値は GL 0.309 ms・WebGPU 0.270 ms（1 回ずつ）。
 - 持ち越し:
-  - スマホで WebGPU の 3D を開く確かめ（12.14 の P0 の残りの limit の頁は 12.24 で取れた。3D の絵を S24 Ultra と iPhone で出すのは人の手が要る）。ブラウザ（`?backend=webgpu`）で 3D を出す確かめもしていない【未確認】。
-  - 形のレビュー（3D）: 9 章の表の V2 の門の「形のレビュー（3D）で確定」はレビュー役と人の了承が要るので、P8 の材質の小分けで行の欄（材質の表の番号・同じ付け方のフラグ）を WebGPU が読む所まで書いてからまとめて行う。
-  - 3D の数（`FrameDiagnostics` の `scene3dCounts`・draw の分かれた理由・CPU の区間）を WebGPU で数えていない（bench の JSON の 3D の draw call は 0 と出る）。
+  - スマホとブラウザ（`?backend=webgpu`）で 3D を出す確かめ【未確認】（スマホの上限は 12.24 で取れた。3D の絵を S24 Ultra と iPhone で出すのは人の手が要る）。
+  - 形のレビュー（3D）: V2b の直後（上）。
+  - 3D の数（`scene3dCounts`・draw の分かれた理由・CPU の区間）を WebGPU で数える（P8 までに。今は知らせだけ）。
   - 材質・骨つき・半透明・ビルボード・空・影・環境マップ・lightmap・Output.Depth・preload（P8）。WebGPU の `paintTarget` の history の要否にビルボードの絵を数える事（12.21 の持ち越し）はビルボードと一緒に。
+  - MSAA の標本の位置が GL と違う理由（行の並びが上下逆で 4 標本の型が鏡写しになるのか）を確かめる【推のまま】。
   - 実機の窓の WebGPU で垂直同期を待たない形（IMMEDIATE が効かない理由）を調べる【未確認】。速さの比べは 12.16 のとおり P10 の前にまとめる。
