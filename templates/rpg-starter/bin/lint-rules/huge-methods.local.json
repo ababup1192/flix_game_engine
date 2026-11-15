@@ -1,0 +1,7 @@
+{
+  "exempt": {
+    "Shots.worldOf::huge-methods": "開発用の始まりの場面（START=）と描き出しの場面を組む所。起動の時に 1 回だけ",
+    "MapDoc.fromRoot::huge-methods": "地図の Doc を読む所。読み込みの時に地図ごとに 1 回",
+    "Starts.field::huge-methods": "始まりの場面の World を組む所。起動か場面の切り替えの時に 1 回"
+  }
+}
