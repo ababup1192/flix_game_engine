@@ -639,3 +639,10 @@ V1（縦に 1 本・2D）の設計は `plans/webgpu-v1.md`。この文書に関�
 - 決めた事: Pass のお題は `bench/gl_parity` の `passPaste` などで代える・Dawn の macOS arm64 のネイティブを V1 で `engine_full` に載せる・PC の 3D は描かずに知らせる・GL へ落ちた理由は画面に出さない。
 - ブラウザで `getContext("webgpu")` の後に落ちたら、`backend` を外した URL で `location.replace` して GL で開き直す（同じ canvas から webgl2 は取れないため）。
 - 形のレビューへの持ち越しは同じ文書の 12 章（17 件）。
+
+### 12.14 計画の終わりの確かめ（人の希望・2026-11-15。P10 の門に足す）
+
+- **スマホの 3D**: fps3d-room を S24 Ultra（と iPhone）で、WebGL2 と WebGPU の両方で測り、基準（S24 Ultra で 46.5 fps・CPU 20.7 ms）と比べる。場面と測り方は基準の時と同じにする。
+- **東京駅**（`~/Documents/flix_ge_workspace/plateau_city`）: PC で「1 棟ずつ」（今 137 ms・目標は R2a で 100 ms 以下、P9 で 16 ms 以下）と「建物をつないだ版」（今 3.0 ms）を、GL と WebGPU で測る。
+  ブラウザとスマホは、絵が約 784 MB で今のままでは開けない（4.4）。絵を縮めた版か範囲を絞った版を作って「多少は確認できる」所まで持っていけるかを、P9 の後に試す（作れるか・何 MB まで落とせるかは【未確認】）。
+- 3D の段（P5・V2）の前に、スマホで WebGPU の limit と feature の一覧を取る小さな頁を開いてもらう（P0 の残り）。
