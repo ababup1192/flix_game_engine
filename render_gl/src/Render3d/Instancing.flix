@@ -7,7 +7,7 @@ mod Render3d.Instancing {
     import fge.gl.GlContext
     import java.nio.FloatBuffer
     use Render3d.{MeshDraw, State, instanceTextureUnit, warnSceneOnce}
-    use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch}
+    use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, SpanBatch}
     use Render3d.DataTexture.{bufferFor, heightFor, rowLimit, takeTexture, textureWidth}
     use Render3dGlsl.{instancesPerRow, texelsPerInstance}
     use Render3d.ScenePlan.{ScenePlan}
@@ -23,10 +23,10 @@ mod Render3d.Instancing {
     }
 
     /// plan の全部の batch へ f を当てる（色・深度の場面の batch の後にその場面の影の batch）。
-    def mapBatches(f: PackMode -> PlannedBatch -> MeshBatch \ ef, plan: ScenePlan[PlannedBatch]): ScenePlan[MeshBatch] \ ef =
+    def mapBatches(f: PackMode -> SpanBatch -> MeshBatch \ ef, plan: ScenePlan[SpanBatch]): ScenePlan[MeshBatch] \ ef =
         let lit = f(PackMode.Lit);
         let shadowDepth = f(PackMode.ShadowDepth);
-        let material = d -> { entry = d#entry, material = d#material, batch = lit(d#batch) };
+        let material = d -> { handle = d#handle, order = d#order, kind = d#kind, material = d#material, batch = lit(d#batch) };
         let draws = plan#draws;
         { cmd = plan#cmd,
           draws = { plain = List.map(lit, draws#plain), skinned = List.map(lit, draws#skinned),
@@ -34,16 +34,16 @@ mod Render3d.Instancing {
           shadowPlans = plan#shadowPlans |> List.map(s -> { plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) | s }) }
 
     /// plan の batch の描く物の数の合計。
-    def countOf(plan: ScenePlan[PlannedBatch]): Int32 =
+    def countOf(plan: ScenePlan[SpanBatch]): Int32 =
         let draws = plan#draws;
-        let meshes = (bs: List[PlannedBatch]) -> List.sumWith(b -> b#count, bs);
-        let materials = (ds: List[MaterialBatch[PlannedBatch]]) -> List.sumWith(d -> d#batch#count, ds);
+        let meshes = (bs: List[SpanBatch]) -> List.sumWith(b -> b#count, bs);
+        let materials = (ds: List[MaterialBatch[SpanBatch]]) -> List.sumWith(d -> d#batch#count, ds);
         meshes(draws#plain) + meshes(draws#skinned) + materials(draws#opaque) + materials(draws#blended)
             + List.sumWith(s -> meshes(s#plain) + meshes(s#skinned), plan#shadowPlans)
 
     /// 今の prepare の全部の batch に番号を振り、1 体ごとの値をテクスチャへ 1 回で上げて、振り終えた plans とテクスチャの番号を返す。描く物が無ければテクスチャを作らず None。
-    /// テクスチャに入り切らない batch の物は描かない（1 回知らせる）。
-    pub def upload(gl: GlContext, state: State, gen: Int64, plans: List[ScenePlan[PlannedBatch]]): (List[ScenePlan[MeshBatch]], Option[Int32]) \ IO =
+    /// テクスチャに入り切らない batch の物は描かない（1 回知らせる）。members = batch の描く物（Render3d.ScenePlan.Grouped#members）。
+    pub def upload(gl: GlContext, state: State, gen: Int64, plans: List[ScenePlan[SpanBatch]], members: MutList[MeshDraw, Static]): (List[ScenePlan[MeshBatch]], Option[Int32]) \ IO =
         let total = List.sumWith(countOf, plans);
         if (total == 0) (plans |> List.map(mapBatches(_ -> b -> { head = b#head, count = 0, first = 0 })), None)
         else {
@@ -59,7 +59,7 @@ mod Render3d.Instancing {
             discard out.clear();
             let scratch = Array.repeat(Static, texelsPerInstance() * 4, 0.0f32);
             let next = Array#{0} @ Static;
-            let numbered = plans |> List.map(mapBatches(numberBatch(out, scratch, capacity, next)));
+            let numbered = plans |> List.map(mapBatches(numberSpan(out, scratch, capacity, next, members)));
             discard out.position(0);
             discard out.limit(rows * width * 4);
             gl.activeTexture(GlConst.TEXTURE0 + instanceTextureUnit());
@@ -69,7 +69,24 @@ mod Render3d.Instancing {
             (numbered, Some(texture#texId))
         }
 
+    /// numberBatch の、描く物を members の [b#start, b#start + b#count) で受ける形。
+    pub def numberSpan(out: FloatBuffer, scratch: Array[Float32, Static], capacity: Int32, next: Array[Int32, Static], members: MutList[MeshDraw, Static],
+                   mode: PackMode, b: SpanBatch): MeshBatch \ IO =
+        let first = Array.get(0, next);
+        let count = Int32.max(0, Int32.min(b#count, capacity - first));
+        packFrom(out, scratch, mode, members, b#start, b#start + count);
+        Array.put(first + count, 0, next);
+        { head = b#head, count = count, first = first }
+
+    def packFrom(out: FloatBuffer, scratch: Array[Float32, Static], mode: PackMode, members: MutList[MeshDraw, Static], i: Int32, end: Int32): Unit \ IO =
+        if (i >= end) ()
+        else {
+            packDraw(out, scratch, mode, MutList.get(i, members));
+            packFrom(out, scratch, mode, members, i + 1, end)
+        }
+
     /// next の番号から b の物の値を out へ詰め、番号を振った b を返す。capacity を超える物は詰めない。
+    // WhyNot: 本番（numberSpan）から呼ばない・消さない — 描く物を列で持つ素直な形を、上限で止まる決まりの答え合わせの相手（TestRender3dBatch）として残す。
     pub def numberBatch(out: FloatBuffer, scratch: Array[Float32, Static], capacity: Int32, next: Array[Int32, Static], mode: PackMode, b: PlannedBatch): MeshBatch \ IO =
         let first = Array.get(0, next);
         let count = Int32.max(0, Int32.min(b#count, capacity - first));

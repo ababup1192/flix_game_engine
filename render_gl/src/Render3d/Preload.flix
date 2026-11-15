@@ -1,11 +1,12 @@
 // Render3d.Preload — 3D の描き手（Render3d）の、遊びの途中で初めて出る物（形・絵・材質のプログラム）を描く前に GPU へ上げる所。約束は Render3d.flix の頭。
 mod Render3d.Preload {
     import fge.gl.GlContext
-    use Render3d.{PreloadState, State, TextureRead, TextureSlot, TextureSource, isSkinned, materialTextureNames, meshEntry, programsOf, rebuildStreakLimit,
+    use Render3d.{PreloadState, State, TextureRead, TextureSlot, TextureSource, materialTextureNames, meshEntry, programsOf, rebuildStreakLimit,
                   skinnedProgramsOf, warnSceneOnce}
-    use Render3d.Batch.{MaterialBatch, PlannedBatch}
+    use Render3d.Batch.{MaterialBatch, SpanBatch}
     use Render3d.Counts.{Phase, timed}
-    use Render3d.Material.{isCoverageCutout, resolveTextureAs, splitByMaterial, textureSlotOf}
+    use Render3d.Material.{MaterialTable, entryAt, resolveTextureAs, splitByMaterial, textureSlotOf}
+    use Render3d.ScenePlan.{isCoverageCutout, isSkinned}
 
     /// 何も上げていない状態。
     pub def empty(): PreloadState =
@@ -38,21 +39,25 @@ mod Render3d.Preload {
         let instances = (cmd#instances)();
         // WhyNot: 頂点の色のプログラムを最初の場面に任せない — 2D のタイトルの後の最初の 3D のコマで組むことになり、そのコマが跳ねる。
         if (List.isEmpty(instances)) () else discard programsOf(gl, state);
-        let (plain, materials) = splitByMaterial(gl, state, gen, _ -> true, _ -> true, false, instances);
+        let ((plain, materials), table) = splitByMaterial(gl, state, gen, _ -> true, _ -> true, false, instances);
         let draws = List.append(plain, List.map(d -> d#batch, materials)) |> List.map(b -> b#head);
         if (List.exists(isSkinned, draws)) discard skinnedProgramsOf(gl, state) else ();
         draws |> List.forEach(d -> discard meshEntry(gl, state, gen, d#fields#mesh));
-        let allMaterials = List.append(materials, coverageVersions(gl, state, gen, instances));
+        let allMaterials = List.append(List.map(d -> (table, d), materials), coverageVersions(gl, state, gen, instances));
         let source = { textureOf = textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         { builtKey = Some(cmd#key), rebuilds = Nil, meshes = draws |> List.map(d -> Mesh3d.contentHash(d#fields#mesh)) |> List.toSet,
-          programs = allMaterials |> List.map(d -> d#entry#locs#mesh#program) |> List.toSet,
-          textures = allMaterials |> List.flatMap(d -> materialTextureNames(d#entry, d#material, d#batch#head)) |> List.toSet |> Set.toList |> uploadTextures(gl, state, gen, source) }
+          programs = allMaterials |> List.map(td -> { let (t, d) = td; entryAt(t, d#handle)#locs#mesh#program }) |> List.toSet,
+          textures = allMaterials |> List.flatMap(td -> { let (t, d) = td; materialTextureNames(entryAt(t, d#handle), d#material, d#batch#head) })
+              |> List.toSet |> Set.toList |> uploadTextures(gl, state, gen, source) }
 
-    /// cutout の材質の alpha to coverage の版を組む。
+    /// cutout の材質の alpha to coverage の版を組み、その batch を引いた表と組にして返す。
     // WhyNot: 版を描き先から選ばない — 描き先が標本を持つかは場面ごとに決まり、宣言の時には分からない。
-    def coverageVersions(gl: GlContext, state: State, gen: Int64, instances: List[Scene3d.Instance3d]): List[MaterialBatch[PlannedBatch]] \ IO =
+    def coverageVersions(gl: GlContext, state: State, gen: Int64, instances: List[Scene3d.Instance3d]): List[(MaterialTable, MaterialBatch[SpanBatch])] \ IO =
         if (not gl.hasAlphaToOne()) Nil
-        else snd(splitByMaterial(gl, state, gen, _ -> true, _ -> true, true, List.filter(isCoverageInstance, instances)))
+        else {
+            let ((_, materials), table) = splitByMaterial(gl, state, gen, _ -> true, _ -> true, true, List.filter(isCoverageInstance, instances));
+            List.map(d -> (table, d), materials)
+        }
 
     def isCoverageInstance(i: Scene3d.Instance3d): Bool =
         Scene3d.instanceFieldsOf(i)#material |> Option.exists(m -> isCoverageCutout(true, Scene3d.materialFieldsOf(m)))

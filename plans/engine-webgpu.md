@@ -183,7 +183,7 @@ WebGPU の命令の再調査（`survey/H`）と、「測りながら・書き味
 | 2D: static layer の範囲 | `Static.flix` | 置き場の番号と範囲・**draw ごとの値**（viewOffset・viewScale・halfDesign） |
 | 2D: 面（`ShaderDoc`） | `RenderSprite.drawShaderSurface` | シェーダーの鍵・**draw ごとの値**（rect・time・alpha・`params` の列）・**絵の組**（`texReads` の列と補間）・mask の形（R1b-6: program の番号・values の 64 個の倍数の位置・`reads` の範囲・mask の頂点の範囲・比べる値。12.22） |
 | 2D: 3D の場面を貼る | `MScene3d` | 場面の描き先の番号・矩形（今は場面の番号だけ・12.21） |
-| 3D: 形の batch（不透明・材質・半透明・影） | `MeshBatch`・`MaterialBatch` | 材質の鍵・形の番号と範囲・行の起点と数・**draw ごとの値**（`uParamN`・cutout）・**絵の組**（材質の絵の列・sampler・normal map・lightmap） |
+| 3D: 形の batch（不透明・材質・半透明・影） | `MeshBatch`・`MaterialBatch` | 材質の鍵・形の番号と範囲・行の起点と数・**draw ごとの値**（`uParamN`・cutout）・**絵の組**（材質の絵の列・sampler・normal map・lightmap）（R2a: 不透明だけ `Render3d.SceneList` の行・種類・材質の表の番号・順の番号・行の起点と数・分かれた理由・フラグ。形は backend が上げて返す番号、draw ごとの値と絵の組はまだ行の外。12.23） |
 | 3D: ビルボードの集まり・空・後がけ | `drawBillboards` ほか | 行の範囲・絵・draw ごとの値 |
 | pass の区切り | `beginTarget`・`endTarget`・影の地図・Design の描き先 | 描き先の番号・クリア・resolve・history の写し・pass ごとの値（カメラ・`LightData`・時刻・影と環境の絵） |
 | 物の上げ下ろし | `GpuResources` の handler・`meshEntry`・フォントの部分更新 | 作る・中身を書く・消す（下の「物の寿命」） |
@@ -221,7 +221,7 @@ device を作る時は `core-features-and-limits` を求め、選べる機能は
 | 描き先の絵の上下・clip の z の範囲 | 前半が知っている（`emitMerged` の `targetNames`・`RegisteredTexture#flipped`）。射影行列と影の行列も前半が作る | backend の capability に「描き先の絵が上下逆か」「clip の z が 0〜1 か」を足し、前半はそれを見て uv と行列を作る |
 | 2D: テクスチャの登録簿・フォントのアトラスの中身（名前 → アトラスの Map） | render_gl | CPU の側の表は前半。GPU の物は backend |
 | 3D: `planScenes`・`Batch`・`Counts`・`LightData`・材質の鍵 | `Render3d.*`（`planScenes` は `gl` と GL の `State` を受ける） | 前半（R2 で `gl` を外す）。backend に聞く物は 3 つ: capability（alpha to coverage が使えるか・行の上限）・材質の鍵ごとの**順の番号**（今は GL のプログラムの番号で描く順を決めている。同じ深さの面の勝ち方が変わらないよう、GL の backend は今と同じ番号を返す）・材質の状態（使える / 作成中 / 失敗） |
-| **GPU の物の寿命**（形・絵・影の描き先・Design の描き先・シェーダー・static layer のバッファ・タイルのバッファ） | `meshEntry`・`Material.flix` の後半（約 300 行）・`ShaderCache`・`RenderStatic`・`RenderTargetGl` | **置き場の表（鍵・世代・予算・捨てる順・preload・知らせ）は前半、「作る・中身を書く・消す」だけ backend。** 今は描く時に上げているので（`drawBatch` → `meshEntry`）、R2 で「上げる行」を `RenderList` の先頭に出す形に直す |
+| **GPU の物の寿命**（形・絵・影の描き先・Design の描き先・シェーダー・static layer のバッファ・タイルのバッファ） | `meshEntry`・`Material.flix` の後半（約 300 行）・`ShaderCache`・`RenderStatic`・`RenderTargetGl` | **置き場の表（鍵・世代・予算・捨てる順・preload・知らせ）は前半、「作る・中身を書く・消す」だけ backend。** 今は描く時に上げているので（`drawBatch` → `meshEntry`）、R2 で「上げる行」を `RenderList` の先頭に出す形に直す（→ 12.23 で、行でなく描く前に呼ぶ backend の関数（`GlRows.uploadRows`）に） |
 | 材質が組めない時 | 計画の中で頂点の色の batch へ落とす（`materialEntry` が `None`） | 同じにそろえる。WebGPU で pipeline が作成中の間も「頂点の色へ落とす」（8 章）。計画は backend の「材質の状態」を聞いて決める |
 | GL の番号の漏れ | `Dest#framebuffer`・`RegisteredTexture#texId`・engine の pub の `GpuHandle`（`TextureId`・`TileVao`・`ShaderProgram`。effect の戻り値でゲームまで出る）・`GpuHandle.StaticVao(Int32, Int32)`（vao と vbo の組。使うのは `RenderStatic` だけ）・`RenderStatic.Range#vao`・`RenderTargetGl.Entry`（25 か所）・`SceneInputs#jointTexture / instanceTexture`・`MaterialBatch#entry`（uniform の番号の束） | `GpuHandle` は **Int32 のまま「backend の表の番号」と読み替える**（engine の pub を変えない）。render_gl の中の物（`Entry`・`entry`・`vao`・`jointTexture`）は backend の中へ移す（R1・R2） |
 | GL の呼び出し（`RenderSprite`・`Target`・`RenderTexture`・`Render3d` の draw・`Shadow`・`Material` の bind・`DataTexture`・`Instancing`・`JointTexture`） | render_gl | GL の backend にまとめる（R1・R2）。WebGPU の backend は新しく書く（P6・P8） |
@@ -369,7 +369,7 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 8 | R1b ⇄ P6 | **2D の残りを、種類ごとに「GL でリファクタ → すぐ WebGPU の backend に足す」を交互に。** 順: 物の上げ下ろしと寿命の表（5.3）→ 多角形とタイルと static layer → history と MSAA の resolve → mask（比べる値を進める形・8 章）→ 3D の場面を貼る → （P5 の後）面。GL と形が一番違う所（pass・history・mask）を早く WebGPU に通す。「送るのを 1 コマ 1 回に」（決まり 6）は、GL では測って得な時だけ（GL 3.3 / WebGL2 に baseInstance が無く、run ごとに頂点の属性を付け直す事になるため）。アトラスの頁（決まり 3）・読み戻しと F8・動画もここ | 種類ごとに、GL は `gl-parity` 0 px・`reference`・`gl-capture-check`・ベンチ 5% 以内。WebGPU は GL の backend と同じ機械で `gl-capture` の場面を比べる（許容は場面ごとに理由を書く。既定は差 0・丸めが出る場面だけ 2/255）と SoftRaster との `gl-parity`（画面なしの session）。終わりに: テンプレ 3 本が PC とブラウザで GL より遅くない（5% 以内）・ブラウザは `?capture` を自動で回す門 | 18〜26 時間 |
 | 9 | P5 | （上の交互の途中で、面の前に）**WGSL の出口**（7 章）。`Codegen.Target.Wgsl`・`ShaderGen` の書き手と、面と材質の draw ごとの値の並び（struct）・組み込み | Dawn で全部の変種が通るテスト。式の行の突き合わせ（画面なしの session の drawFloatRows） | 10〜16 時間 |
 | — | | **リリース 2**: 2D のゲームは WebGPU を「試しに選べる」。選ぶ口は、PC は環境変数（`FLIX_GE_BACKEND=webgpu`）、ブラウザは URL の `?backend=webgpu`。何も付けなければ今までどおり GL。入口が 3D（`withProject3d`）のゲームは、付けても GL のまま起動して理由を知らせる | | |
-| 11 | R2a | **3D の不透明の batch だけ `RenderList` に。** `planScenes` から `gl` と GL の `State` を外す（capability・順の番号・材質の状態を backend に聞く）。`MaterialBatch#entry` を材質の鍵に替える。形と絵の「上げる行」。**`planScene` 系を配列で運ぶ**（決まり 9 の 3D の分。record の欄の引き当てを内側の輪から出す） | `gl-parity` 0 px・**偽の GL を通るテスト 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload。うち GL の呼び出しの並びまで比べるのは 3 ファイル）はそのまま門に残す**（`RenderList` を見るテストは足す）・fps3d_lab が 5% 以内。`bench/scene3d` の動く割合 100%・12,000 個と、東京 1 棟ずつ: 137 ms → 100 ms 以下【目標】 | 8〜11 時間 |
+| 11 | R2a | **3D の不透明の batch だけ `RenderList` に。** `planScenes` から `gl` と GL の `State` を外す（capability・順の番号・材質の状態を backend に聞く）。`MaterialBatch#entry` を材質の鍵に替える（→ 12.23 で、鍵の字でなく backend の材質の表の番号（`handle`）に）。形と絵の「上げる行」。**`planScene` 系を配列で運ぶ**（決まり 9 の 3D の分。record の欄の引き当てを内側の輪から出す） | `gl-parity` 0 px・**偽の GL を通るテスト 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload。うち GL の呼び出しの並びまで比べるのは 3 ファイル）はそのまま門に残す**（`RenderList` を見るテストは足す）・fps3d_lab が 5% 以内。`bench/scene3d` の動く割合 100%・12,000 個と、東京 1 棟ずつ: 137 ms → 100 ms 以下【目標】 | 8〜11 時間 |
 | 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定** | 6〜9 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け: 材質と絵の組／影／骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／環境マップ・空・lightmap／ビルボード・半透明・後がけ／寿命の表 | R2a と同じ門 | 8〜12 時間 |
 | 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
@@ -428,6 +428,11 @@ design の全面を値 0 で描いて stencil を戻す（pass を閉じて開�
 面の値は values に置き、WebGPU は values の buffer を uniform としても bind して、面ごとに 256 バイトの倍数の位置で読む（ShaderGen が出す `var<uniform> sg` のまま。storage にするのは engine の変更）。
 bind group は draw ごとに作って submit の後に手放す（番号と位置と絵で控えて使い回す形と比べた。速さは揺れの内で、控えを外す決まりが要る）。pipeline は program × blend × 形式 × 標本 × stencil の鍵で控える（draw ごとに作る形と比べた）。
 mask つきの面も比べる値を mask つきスプライトと同じく前半が進めて行に書く（面ごとに stencil を 0 に戻す今の GL の形と比べた。絵は同じで、WebGPU は戻すたびに全面の draw が 1 本増える）。12.22・`samples/surface-values.md`。
+
+**R2a で決めた物（2026-11-16）**: `RenderList` の 1 行の欄と高さ（3D）は 2D と同じ「物の集まり」の高さ（1 行 = 不透明の batch 1 つ）にし、前の材質の行と同じ付け方で描ける行に前半がフラグを立てる
+（backend が毎行付け直す形・材質を付ける行を分ける低い高さと比べた。GL の `draw` の区間が field 12,000・形が物ごとで 33.5〜35.4 → 28.3〜30.1 ms）。計画は材質の状態を値で聞き（聞く材質を並べて backend が順の番号の列を返す。関数の record を計画に渡す形と比べた）、
+材質の batch は backend の材質の表の番号を持つ（材質の鍵の字で引き直す形と比べた）。計画の内側は材質の値ごとに分け方を 1 回だけ決め、描く物を配列の範囲で運ぶ
+（物ごとに record を作って列で運ぶ形と比べた。field 12,000 の split 12〜14.5 → 6.3 ms）。V2 の後に WebGPU の行数とあわせて見直す。12.23・`samples/scene-list-3d.md`。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
@@ -940,3 +945,112 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
 
   2 回目の門（同じ機械・2026-11-15）: render_gl 452 緑（7 本足した）・`TestWgslDawn` 365 本・`make gl-parity` 緑（81 行が R1b-5 の木と 1 字も同じ）・`make webgpu-v1-check` 緑（36 場面とも許す差の内・面の 8 場面は 0 px・draw の数も GL と同じ・誤り 0）・
   `make webgpu-v1-check-web` 緑（前と同じ）・`make gl-capture-check`（54 枚が a と b で同じ・基準との差 30 枚で前と同じ）・テンプレ 3 本の `reference-check` 緑・`lint-huge-methods`・`lint-max-lines`・`gl-jar-pin-check` 緑。
+
+### 12.23 R2a: 3D の不透明の batch（2026-11-16・この Mac・GL だけ）
+
+表の 11 行目。3D の不透明の batch（頂点の色の物・骨つきの物・不透明の材質の物）を `Render3d.SceneList` の行（1 行 = batch 1 つ）にし、GL の backend（`Render3d.GlRows`）が流す形にした。
+計画（`Render3d.ScenePlan`）から `gl` と GL の `State` を外した。WebGPU の backend はまだ 3D を描かない（V2）。半透明・ビルボード・空・影の地図は今どおり GL を直に呼ぶ（R2b）。
+
+- **計画が backend に聞く物（5.3 の 3 つ）**: 描き先の能力は `PlanCaps`（alpha to coverage が使えるか・姿勢の行の上限）。材質の状態と順の番号は値で聞く:
+  前半の `groupScenes` が置いた物を batch の候補に分けて聞く材質（頭の物の材質とプログラムの版）を場面の順・候補の順に並べ、backend の `Material.resolveMaterials` が引いて（初めての材質はここで組む）
+  順の番号の列（0 = 使えない）を返し、前半の `planScenes` がそれで頂点の色の batch と材質の batch に分けて並べる。計画の側の状態（描き方と知らせ済みの鍵）は `ScenePlan.Planner` に分け、`Render3d.State#planner` が持つ。
+  GL の backend の順の番号は今どおりプログラムの番号（同じ深さの面の勝ち方が変わらない）。
+- **`MaterialBatch#entry` を替えた**: `{ handle, order, kind, material, batch }`。handle = その prepare の材質の表（`Material.MaterialTable`・GL の backend の持ち物）の番号で、聞いた並びの番号がそのまま番号になる。
+  材質の鍵の字で引き直す形は、同じ鍵で中身の違う材質が同じコマに来た時に先の batch の絵が変わるので取らなかった。
+- **行の欄**（`SceneList` の頭のコメント）: 種類・材質の表の番号・順の番号・1 体ごとの値の先頭・数・分かれた理由（`Counts.breakSlotOf` の番号。前半が決める）・フラグ（両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方）。
+  行ごとの頭の物と材質は `heads`・`materials` の列に持つ（形を上げる・lightmap と絵の名前を引くのに要る）。材質の draw ごとの値（`uParamN`・cutout）と絵の組はまだ行の外で、GL は材質から引く（R2b の「材質と絵の組」）。
+- **決めた事 1 — 1 行の高さは batch 1 つ + 同じ付け方のフラグ**（9.1 の表の 3D の行・見本の 1）。backend が毎行付け直す形と比べ、GL の `draw` の区間が field 12,000・形が物ごと・材質 1 種で 33.5〜35.4 → 28.3〜30.1 ms。
+  材質を付ける行と形を描く行を分ける低い高さは、GL の呼び出しがフラグの形と同じになり、並びの決まりが backend 2 つに増えるので動かさずに取らなかった。V2 の後に WebGPU の行数とあわせて見直す。
+- **決めた事 2 — 形と絵を描く前に上げる**（5.3 の「上げる行」）: `GlRows.uploadRows` が場面を描き始める前に行の形（間引いた行も・置き場の lastUsed を進める）・材質の絵・法線マップ・lightmap・タンジェントを上げ、
+  行ごとの (VAO, 添え字の数) を返す。行を描く所は置き場を引かない（前は batch ごとに `meshEntry` の Map を引いていた）。前の `noteCulled`（間引いた材質の絵だけ先に上げる）はここへまとめた。
+  「上げる行」を `RenderList` の行の種類にはしていない（upload は list を作る前に呼ぶ関数という判断 13 と同じ並び）。材質の絵は描く時にもう一度引く（置き場に当たるだけ。番号を行へ入れるのは R2b）。
+- 入れた物（render_gl の中だけ・engine の pub は増えていない）:
+  - 前半: `ScenePlan.Planner`・`freshPlanner`・`warnOnce`・`warnOnceIn`・`PlanCaps`・`GroupedScene`・`groupScenes`・`planScenes`（引数を替えた）。`Material.PlacedDraw`（pub に）・`MaterialRequest`・`groupPlaced`・`requestsOf`・`splitGroups`。
+    新しい `Render3d.SceneList`（`buildSceneList`・`batchBreakOf`（Material から移した・lightmap は `kind` から）・`isSameBinding`）。`Shadow.shadowPlansOf` と `meshDrawOf` は `Planner` を受ける。
+  - GL: 新しい `Render3d.GlRows`（`SceneInputs`・`SceneTarget`・`SceneItem` を ScenePlan から移した・`uploadRows`・`drawRows`）。`Material.resolveMaterials`・`MaterialTable`・`entryAt`・`lookupMaterial`（`materialEntry` を替えた）・
+    `freshBound`・`useMaterial`・`bindMaterial`・`drawWithLook`・`drawMaterialWith`・`releaseBound`（`drawMaterialBatch` を分けた）・`splitByMaterial`（Preload が使う、GL を持つ側の形）。`Render3d.drawMeshRange`・`planCapsOf`・`Counts.countDrawCallAt`。
+    消した物: `Render3d.drawInstancesLit`・`drawLitWith`・`drawInstancesDepth`・`drawDepthWith`・`noteCulled`。`Render3d.flix` は 1,175 → 1,124 行。
+- 振る舞いの変化（絵は変わらない）: GL は場面ごとに形と絵の upload を先にまとめて出す（draw の間に `bufferData` が挟まらない）。前の材質の行と同じ付け方の行は cutout・`uParamN`・絵・sampler を入れ直さない。
+  `hasAlphaToOne` と姿勢の行の上限は prepare ごとに 1 回聞く（前は Native で標本つきの場面の時だけ聞いた）。間引いた法線マップの物のタンジェントも上げる。draw の数と分かれた理由は前と同じ。
+- テスト: render_gl 469 緑（前の 452 に `TestSceneList` の 17 本。行 11 本・計画 5 本（GL を呼ばず backend の答えを値で渡す）・GL の backend 1 本）。偽の GL を通る 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload）は 1 字も替えずに緑。
+  直しを外した確かめ: 材質を順の番号で並べないと `testMaterialsSortByBackendOrder` と `testInstancedSortsMaterialsByProgram` が落ちる。同じ付け方の比べから params を外すと `testOtherParamsRebind` が落ちる。
+  形を描く時に上げる形へ戻すと `testMeshesUploadBeforeFirstDraw` と `testCulledBatchKeepsMeshInUse` が落ちる。
+- 門（この Mac・Apple M4 Pro・macOS 27・2026-11-16）:
+  - `make gl-parity` 緑。81 行が変える前の木（R1b-6・a3c6e397）で流した物と 1 字も同じ（決めた事 1 のフラグを入れる前と後の両方）。
+  - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ）。変える前の木で撮った 54 枚とバイトまで同じ。
+  - `make webgpu-v1-check` 緑（36 場面とも許す差の内・draw の数も GL と同じ・誤り 0・「まだ描かない: 3D の場面」1 回）。`make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1 で前と同じ）。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）・`make lint-huge-methods` 緑（sprite_stress・bench/scene3d・bench/webgpu_v1 の jar）・`make lint-max-lines` 緑・`make gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+  - 速さ（`bench/scene3d`・`make run SCENE=field COUNT=12000 MOVING=100`・2 回 × 2 区間・frame p50。人の方針（12.16）では最後にまとめて測るが、表の行が速さの【目標】を持つので測った）:
+
+    | 条件 | 変える前（a3c6e397） | 後（フラグ無し） | 後（入れた形） |
+    |---|---|---|---|
+    | 形 1 つ・材質 1 種 | 15.7〜18.4 ms（split 12.1〜14.5） | 15.3〜15.5 ms（split 11.7〜11.8） | 15.4〜18.9 ms（split 11.7〜14.7） |
+    | 形が物ごと・材質 1 種（1 棟ずつの都市に近い形） | 71.1〜82.4 ms（split 25.4〜31.3・draw 41.4〜44.7） | 70.5〜74.9 ms（draw 33.5〜35.4） | 73.2〜78.0 ms（draw 28.3〜30.1） |
+
+    1 コマは起動ごとの揺れ（`bench/scene3d/RESULTS.md` の ±20%）の内で、はっきり減ったのは GL の `draw` の区間だけ。split（計画）は変わっていない。
+    東京 1 棟ずつと fps3d_lab は 1 回目では測っていない（下の 2 回目の門）。
+- 1 回目のずれ（2 回目で直した）: 「`planScene` 系を配列で運ぶ」を計画の出口だけにしていた。5.3 の「上げる行を `RenderList` の先頭に」は行の種類でなく描く前に呼ぶ backend の関数にした（決めた事 2・5.3 の表に →）。
+- 1 回目のレビュー（78 点）への対応（2 回目のコミット）:
+  - **決めた事 3 — 計画の内側を配列で運ぶ**（見本の 4）。field 12,000 の JFR（変える前の木）で標本の 51% が record の欄の引き当てで、呼び手は `Batch.hasSameTree`・`kindBits`・`batchKeyOf`・`Material.vertexKindOf`・`batchOf`（物ごとに鍵の組・木の比べ・版の record を作っていた）。
+    分け方（聞く材質・batch の鍵の番号・材質の絵の名前の並びの番号）を材質の値（同じ 1 つの値・`IdentityHashMap`）と頂点の形（uv・骨・lightmap）の組ごとに 1 回だけ決め、物ごとは配列の上で番号を引くだけにした（`ScenePlan.groupWith`・`placeOne`・`spansOf`）。
+    描く物は batch ごとの列でなく prepare の配列（`Grouped#members`）の範囲（`Batch.SpanBatch`）で運び、`Instancing` も範囲から詰める。候補の並びは `groupInOrder`・`groupByTextures` と同じ（同じ深さの面の勝ち方を変えない）。
+    同じプログラム（版と材質の木の鍵）の材質は 1 回だけ backend に聞く（木の鍵の衝突でだけ、後の材質が先の材質のプログラムで描かれる。`groupScenes` の WhyNot）。
+    `TestRender3dBatch` が呼ぶ純粋な関数（`batchOf`・`shapeBatches`・`groupInOrder`・`groupByTextures`・`numberBatch`・`packDraw`）は record を返す口のまま残し、テストは替えていない。ただし本番（`groupWith`・`numberSpan`）はそれらを呼ばなくなり、
+    `TestRender3dBatch` は本番の並びを守らなくなった（2 回目では書き漏らした。3 回目で、古い関数を答え合わせの見本と WhyNot に書き、本番の並びを見本と比べるテストを足した）。
+  - 計画の側の関数（置いた物 1 つ・材質の版・材質の問い合わせ・影の計画・`isSkinned`・`hasUv`・`meshDrawOf`・`inDrawOrder`・`isCoverageCutout`）を GL を import しない `ScenePlan` へ集め、`Material`・`Shadow` との相互の use を解いた（`TestRender3dDrawOrder` の名前だけ替えた）。
+  - 半透明の batch の形・絵・タンジェントも `uploadRows` で先に上げる（`GlRows` の「描く途中で上げない」の WhyNot を本当にした）。`buildSceneList` は `timed(Phase.Split)` の中で 1 回で埋め、行と upload のループは自分への再帰にした（docs/performance.md の 13 節）。
+    `isSameBinding` の絵は (名前, 補間) の組で比べる。`ScenePlan` の頭のコメントを WhyNot に、`Render3d.flix` の頭のモジュールの一覧に `ScenePlan`・`SceneList`・`GlRows` を足した。
+  - 見本 1 の (B)（材質を付ける行を分ける）を動かした: gl-parity は同じ・`draw` は 27.1〜30.1 ms で (C) の 27.0〜27.2 ms と揺れの内・行の形のテストが落ちる。(C) のまま。
+  - テスト: render_gl 479 緑（`TestSceneList` は 27 本。足した物: isSameBinding の cutout・wrap・法線マップ・順の番号・絵の補間で付け直す 5 本・同じ材質を 1 回だけ聞く・2 つ目の場面の材質が答えの 2 つ目を指す・
+    間引いた物は範囲に入らない・材質の絵も描く前に上がる・偽の GL で同じ材質の 2 行目は cutout の uniform と絵を付け直さない・lightmap の版の 2 行目は付け直す）。偽の GL を通る 6 ファイルは a3c6e397 と 1 字も同じ。
+  - 直しを外した確かめ（2 回目）: GL が `flagSameBinding` を見ない → `testSecondSameMaterialRowDoesNotRebind` が落ちる。材質の問い合わせの番号を場面ごとに 0 から振る（1 回目の `firstRequest` を 0 にするのと同じ誤り）→ `testSecondSceneMaterialPointsAtSecondAnswer` が落ちる。
+    半透明の形を先に上げない → `testMeshesUploadBeforeFirstDraw` が落ちる。材質の絵を先に上げない → `testTexturesUploadBeforeFirstDraw` が落ちる（1 回目の書き方では落ちなかったので、先に描く頂点の色の物を足した）。
+  - 2 回目の門（この Mac・2026-11-16）:
+    - `make gl-parity` 緑。81 行が a3c6e397 の木と 1 字も同じ。
+    - `make gl-capture-check`: a と b の 54 枚がバイトまで同じ。基準 0.88.4 と違うのは 30 枚（前と同じ）。a3c6e397 の木で撮った 54 枚ともバイトまで同じ。
+    - `make webgpu-v1-check` 緑（36 場面・誤り 0・「まだ描かない: 3D の場面」1 回）・`make webgpu-v1-check-web` 緑（WebGL2 と 0 px・WebGPU の無い頁 0 px・PC と 22 px ±1）・
+      テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）・`lint-huge-methods`（sprite_stress を作り直し・bench/scene3d・bench/webgpu_v1 の jar）・`lint-max-lines`・`gl-jar-pin-check` 緑。
+    - 速さ（`bench/scene3d`・field 12,000・動く割合 100%・2 回 × 2 区間・frame p50（split・draw））:
+
+      | 条件 | 変える前（a3c6e397） | 1 回目 | 2 回目 |
+      |---|---|---|---|
+      | 形 1 つ・材質 1 種 | 15.7〜18.4 ms（12.1〜14.5・0.2） | 15.4〜18.9 ms（11.7〜14.7・0.2） | 9.8〜10.1 ms（6.3〜6.4・0.2） |
+      | 形が物ごと・材質 1 種 | 71.1〜82.4 ms（25.4〜31.3・41.4〜44.7） | 73.2〜78.0 ms（23.7〜26.4・28.3〜30.1） | 57.2〜59.0 ms（26.0〜27.7・27.0〜27.2） |
+
+    - **東京 1 棟ずつ**（`plateau_city`・`PLATEAU_MODEL=3k_each`・12,557 棟・`FLIX_GE_FRAME_STATS` の 600 コマの平均の間隔）: 変える前（a3c6e397）101.9〜112.4 ms・2 回目 83.9〜97.6 ms（2 本ずつ交互）。
+      100 ms 以下【目標】に届いた。4.4 の 137 ms は 0.95.0 より前の engine の数で、変える前の今の木はすでに約 103 ms（P1 と R1 の分）。リポジトリは触らず、写し（データは symlink）を 0.95.0 の fpkg で組んで測った。
+    - **fps3d_lab の部屋**（`START=room`・同じ測り方・温まった後の 600 コマの平均の中央値）: 2 回目の時点で変える前 2.56〜2.60 ms（5 本）・後 2.57〜3.23 ms（5 本・うち 2 本が 3.2 ms 前後の遅い回）。
+      3 回目で前後を交互に 8 本ずつ回した（下）。部屋は材質の値を毎コマ作り直すので、材質の値ごとの控えが当たらず、物ごとに材質の絵の名前の並びを辿る（`ShaderDoc.texReadsIn` の標本が 36 → 70）。
+- 設計とずれた所: 「上げる行」は行の種類でなく描く前に呼ぶ backend の関数（5.3 の表に →）。`MaterialBatch#entry` は鍵の字でなく材質の表の番号（9 章の表に →）。材質の絵の組と draw ごとの値はまだ行の外（R2b）。
+- 2 回目のレビュー（85 点）への対応（3 回目のコミット）:
+  - **答え合わせの見本**: `Batch.groupInOrder`・`groupByTextures`・`batchOf`・`shapeBatches`・`Instancing.numberBatch` を、本番（`ScenePlan.groupWith`・`Instancing.numberSpan`）から呼ばない答え合わせの相手と WhyNot に書いて残した（`TestRender3dBatch` は替えない）。
+    `TestSceneList` に、形・材質・絵の名前・間引きの混ざった入力で本番の候補の並びが見本（`groupInOrder` + `groupByTextures` + `batchOf`）と同じ事・XYX → XX, Y・1 つの鍵の中で絵の名前で分かれる・
+    形が違えば同じ鍵でも分かれる・`numberSpan` が上限で止まる、の 5 本を足した（間引いた物が範囲に入らない事は 2 回目の 1 本）。どこからも呼ばれない `JointTexture.withBatchPoseRows` を消した。
+  - `ScenePlan.placementOf` の match の入れ子を `cachedPlacement` へ出した。`Material.MaterialTable` の WhyNot を今の問い合わせのまとめ方に合わせた。
+  - `requestOf` は、既に聞いた番号に当たった時に `ShaderGen.eqMaterial`（参照が同じ木なら辿らない）で 1 回比べ、同じ GLSL を生まなければ別の番号で聞く（木の鍵がぶつかった時に黙って先の材質で描かない。4 回目で候補の頭の 1 回に移した・下）。
+    テストは書いていない: `Scene3d.Material3d` は閉じた型で、render_gl のテストから木の鍵がぶつかった 2 つの材質を作れない。
+  - `kindCodeOf` に `Batch.kindBits` と分ける理由の WhyNot・`spanPoseRows` のループを自分への再帰に。
+  - 直しを外した確かめ（3 回目）: `groupWith` の候補の並びを逆にすると `testGroupsMatchTheReference`・`testXyxGroupsXxThenY`・`testTextureNamesSplitOneKey` が落ちる。
+  - render_gl 484 緑（`TestSceneList` 32 本）。偽の GL を通る 6 ファイルは a3c6e397 と 1 字も同じ。
+  - **fps3d_lab の部屋・前後を交互に 8 本ずつ**（2 回目のコミット fc440960 の engine。3 回目のコミットで計画の速さに関わる所は `requestOf` の比べだけ）:
+
+    | 組 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+    |---|---|---|---|---|---|---|---|---|
+    | 変える前（a3c6e397） | 2.63 | 2.53 | 2.56 | 2.60 | 3.16 | 2.61 | 2.59 | 3.12 |
+    | 後 | 2.59 | 2.59 | 2.63 | 2.61 | 3.36 | 2.56 | 2.67 | 2.61 |
+
+    中央値の中央値は前 2.605 ms・後 2.61 ms（+0.2%）で 5% の内。3.1〜3.4 ms の遅い回は前にも 2 本・後に 1 本出たので、この Mac の揺れとして通す（2 回目に後にだけ見えた 2 本も同じ揺れと見る）。
+  - 3 回目の門（同じ機械・2026-11-16・3 回目のコミット a9b5c778）: `make gl-parity` 緑（81 行が a3c6e397 と 1 字も同じ）・`make gl-capture-check`（a と b の 54 枚が同じ・基準との差 30 枚・a3c6e397 の 54 枚ともバイトまで同じ）・
+    `make webgpu-v1-check` 緑（36 場面・誤り 0）・`make webgpu-v1-check-web` 緑（0 px・0 px・PC と 22 px ±1）・テンプレ 3 本の `reference-check` 緑・`lint-huge-methods`・`lint-max-lines`・`gl-jar-pin-check` 緑。
+    `bench/scene3d`（2 回 × 2 区間・frame p50（split・draw））: 形 1 つ 9.8〜10.4 ms（6.4〜6.6・0.2）・形が物ごと 57.6〜59.6 ms（26.4〜27.9・27.0〜27.3）で 2 回目と同じ。
+- 3 回目のレビュー（89 点）への対応（4 回目のコミット）:
+  - 3 回目のコミットの engine で fps3d_lab の部屋を前後交互に 3 本ずつ測り直した: 変える前 2.54・2.56・2.52 ms・後 2.65・2.67・2.65 ms（中央値 +4.3%・3 本とも遅い）。
+    3 回目の `requestOf` は物ごとに `ShaderGen.eqMaterial` を通り、部屋は材質の値を毎コマ作り直すので参照の比べで抜けず、物ごとに木を辿っていた。
+  - 木の鍵の衝突の確かめを、物ごとの `requestOf` から候補の頭で 1 回の `verifiedHandle` へ移した（候補の中の物は頭の材質で描くので、頭で比べれば足りる）。
+    直した後に同じく 3 本ずつ: 変える前 2.57・2.57・2.55 ms・後 2.63・2.64・2.65 ms（中央値 2.57 → 2.64 ms・+2.7%）。5% の内。3 本とも後が 0.06〜0.10 ms 遅い差は残り、理由は【未確認】
+    （候補の頭の比べか、2 回目の 8 本ずつの組（+0.2%）との日の揺れか。上の持ち越しの「物ごとに材質の絵の名前を辿る分」と一緒に R2b で見る）。
+  - テスト: 同じ 1 つの材質の値を uv の有る形・無い形・骨つきの形に付けても候補の並びが見本と同じ（控えに当たる道）・木の鍵がぶつかった材質は別の番号、の 2 本を足した（`requestOf`・`verifiedHandle`・`freshTables` を pub に）。
+    render_gl 486 緑。衝突の確かめを外すと `testCollidingTreeKeyAsksSeparately` が落ちる。`make gl-parity` は 81 行が a3c6e397 と 1 字も同じ。
+- 持ち越し: 材質の値を毎コマ作り直すゲームで、物ごとに材質の絵の名前の並びを辿る分（材質の木（spec）の値で控える案。9 章の表の 13 行目 R2b の「材質と絵の組」の小分けで、絵の組を行へ入れる時に一緒に）・
+  形が物ごとの場面の split（候補ごとの仕事・26 ms。P9 の「動かない物の持ち越し」で計画ごと省く）・
+  材質の draw ごとの値と絵の組を行へ（R2b。WebGPU の材質の bind group と一緒に）・半透明・ビルボード・空・影の地図を行へ（R2b）・WebGPU で 3D の行を流す（V2。`SceneList` と `MaterialTable` の形をそこで見直す）。

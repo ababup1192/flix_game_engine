@@ -4,20 +4,27 @@ mod Render3d.Batch {
     import java.lang.Object
     import java.util.HashMap
     import java.util.Objects
-    use Render3d.{DrawMode, MaterialEntry, MeshDraw, ProgramKind, isSkinned}
+    use Render3d.{DrawMode, MeshDraw, ProgramKind}
+    use Render3d.ScenePlan.{isSkinned}
 
-    /// 1 体ごとの値の番号を振る前の batch。head = 頭の物（間引いた物のこともある。形と lightmap を読む）・draws = 描く物（間引いた物を除く・来た順）・
-    /// count = 描く物の数（0 なら、形と絵を今のコマで使った物として数えるだけ）。
+    /// 答え合わせの見本の batch（描く物を列で持つ形・batchOf と shapeBatches が返す）。head = 頭の物・draws = 描く物（間引いた物を除く・来た順）・count = 描く物の数。
     pub type alias PlannedBatch = { head = MeshDraw, draws = List[MeshDraw], count = Int32 }
+
+    /// 1 体ごとの値の番号を振る前の batch。描く物は prepare の描く物の配列（Render3d.ScenePlan の members）の [start, start + count)（来た順）。
+    /// head = 頭の物（間引いた物のこともある。形と lightmap を読む）・count = 描く物の数（0 なら、形と絵を今のコマで使った物として数えるだけ）。
+    // WhyNot: 描く物を batch ごとの列で持たない — 物ごとに列の節を作り、番号を振る所で列を辿り直す代金が物の数だけ 1 コマに乗る。
+    pub type alias SpanBatch = { head = MeshDraw, start = Int32, count = Int32 }
 
     /// 1 体ごとの値の番号を振った batch。first = 頭の物の番号。
     pub type alias MeshBatch = { head = MeshDraw, count = Int32, first = Int32 }
 
-    /// 材質のある物の batch（プログラムは組めた物だけ）。material = 頭の物の材質。emissionIntensity だけは 1 体ごとに draws の物の材質から読む。
-    pub type alias MaterialBatch[b] = { entry = MaterialEntry, material = Scene3d.MaterialFields, batch = b }
+    /// 材質のある物の batch（backend が使えると答えた材質だけ）。handle = backend の材質の表の番号（Render3d.ScenePlan.MaterialRequest の聞いた並び）・order = backend が返す材質の順の番号（描く順と、前の batch と同じ材質かを決める）・
+    /// kind = プログラムの版・material = 頭の物の材質。emissionIntensity だけは 1 体ごとに描く物の材質から読む。
+    // WhyNot: backend の材質の控え（GL のプログラムと uniform の番号）を持たない — 計画が GL を知ることになり、WebGPU の backend が同じ計画を使えない。
+    pub type alias MaterialBatch[b] = { handle = Int32, order = Int32, kind = ProgramKind, material = Scene3d.MaterialFields, batch = b }
 
     /// 同じ形の中で、同じ batch へ入れてよい物の鍵。Shape = 材質の無い物（骨つきか）・Surface = 材質のある物。
-    /// 材質の絵の名前は鍵に入れない（読むのに材質の木を辿るので、groupByTextures で batch の中を分ける）。
+    /// 材質の絵の名前は鍵に入れない（読むのに材質の木を辿るので、同じ鍵の中を絵の名前の並びで分ける）。
     pub enum BatchKey with Eq, Order {
         case Shape(Bool)
         case Surface(SurfaceKey)
@@ -45,8 +52,11 @@ mod Render3d.Batch {
         let bit = (on, value) -> if (on) value else 0;
         bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#doubleSided, 8) + bit(kind#coverage, 16) + bit(kind#metallicRoughness, 32)
 
+    // ── 答え合わせの見本（groupInOrder・groupByTextures・batchOf・shapeBatches）──
+    // WhyNot: 計画の本番（Render3d.ScenePlan.groupWith）から呼ばない・消さない — 本番は材質の値ごとの控えと配列で同じ並びを作り、
+    //   この素直な形は「同じ入力で同じ候補の並びになるか」を確かめる答え合わせの相手（TestRender3dBatch・TestSceneList）として残す。
+
     /// xs を同じ bucketOf の字で同じ keyOf の物ごとにまとめる。keyOf が None の物は 1 体の batch。batch の中は来た順・batch どうしは頭の物が来た順。bucketOf = 形の鍵の字。
-    // WhyNot: 鍵を Flix の Map だけで引かない — batch にならない物の多い場面で、物ごとに木の節を作り直す代金が prepare に出る。形の鍵の字は Java の String で hashCode を覚えている。
     pub def groupInOrder(bucketOf: a -> String, keyOf: a -> Option[k], xs: List[a]): List[List[a]] \ IO with Order[k] =
         let buckets: HashMap[String, Object] = new HashMap();
         let cells = xs |> List.foldLeft((order, x) -> match keyOf(x) {
@@ -103,7 +113,7 @@ mod Render3d.Batch {
         let visible = List.filter(d -> not d#culled, members);
         { head = head, draws = visible, count = List.length(visible) }
 
-    /// 材質の無い物の batch（形と骨つきかで分ける）。影の地図の道が使う。
+    /// 材質の無い物の batch（形と骨つきかで分ける）。
     pub def shapeBatches(mode: DrawMode, draws: List[MeshDraw]): List[PlannedBatch] \ IO =
         groupInOrder(d -> Mesh3d.contentHash(d#fields#mesh), d -> batchKeyOf(mode, d, None), draws)
             |> List.filterMap(members -> List.head(members) |> Option.map(head -> batchOf(head, members)))

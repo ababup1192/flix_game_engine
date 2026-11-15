@@ -2,11 +2,11 @@
 mod Render3d.Shadow {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{SceneShadows, ShadowCaster, ShadowLight, ShadowPlan, isSkinned, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, drawBatch, matrixArray, maxShadowMapSize,
-                  maxShadowPcfRadius, meshDrawOf, idleTargetFrames, programsOf, blankTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram, loc}
-    use Render3d.Batch.{MeshBatch, PlannedBatch, shapeBatches}
-    use Render3d.JointTexture.{PoseRows, withBatchPoseRows}
+    use Render3d.{SceneShadows, ShadowCaster, ShadowLight, ShadowPlan, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, drawBatch, matrixArray, maxShadowMapSize,
+                  maxShadowPcfRadius, idleTargetFrames, programsOf, blankTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram, loc}
+    use Render3d.Batch.{MeshBatch}
     use Render3d.Counts.{BatchBreak, Counter, count}
+    use Render3d.ScenePlan.{warnShadowOnce}
 
     // ── 影の地図 ──
 
@@ -15,19 +15,6 @@ mod Render3d.Shadow {
         case Spot(ShadowUse)
         case Sun(SunShadowUse)
     }
-
-    /// 影を落とす光（スポットと太陽）ごとに、影の地図を描く材料を分ける（影だけに映る物の姿勢の行もここで rows へ割り当てる）。スポットの次に太陽。無ければ空。
-    /// 太陽を使えない理由（Scene3d.directionalLightWarning）は、影の有無に関わらずここで鍵ごとに初回 1 回だけ知らせる（場面ごとにここを通る）。
-    // WhyNot: 半透明の物に影を落とさせない — 影の地図は 0 か 1 の奥行きで、薄い色ガラスが真っ黒な影を落とす。
-    pub def shadowPlansOf(state: State, rows: Ref[PoseRows, Static], scene: Scene3d.Scene3dCmd): List[ShadowPlan[PlannedBatch]] \ IO =
-        Scene3d.directionalLightWarning(scene) |> Option.forEach(line -> warnShadowOnce(state, "@sun:direction", line));
-        shadowCastersOf(state, scene) |> List.map(found -> {
-            let (light, caster) = found;
-            let outside = Scene3d.isOutsideFrustum(caster#frustum);
-            let (skinned, plain) = scene#instances |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)))
-                |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
-            { caster = caster, light = light, plain = shapeBatches(state#drawMode, plain), skinned = shapeBatches(state#drawMode, skinned) |> List.map(withBatchPoseRows(rows)) }
-        })
 
     /// 場面ごとに、plans（場面と同じ並び）の影の地図を描き、塗りへ渡す物を返す。骨つきの物は今 joint の unit に貼ってある joint texture を読む。
     /// 描き終えたら深度と scissor を切り、program と VAO を外す。描き先は呼ぶ側が戻す。
@@ -61,46 +48,9 @@ mod Render3d.Shadow {
         case Cast.Spot(_)      => None
     }
 
-    /// 影を落とす光（スポットがあれば先・太陽が後）。Output.Depth の場面と、置いた物の無い場面は空。
-    def shadowCastersOf(state: State, scene: Scene3d.Scene3dCmd): List[(ShadowLight, ShadowCaster)] \ IO =
-        let spot = spotCasterOf(state, scene) |> Option.map(found -> { let (i, caster) = found; (ShadowLight.Spot(i), caster) }) |> Option.toList;
-        let sun = Scene3d.directionalShadowOf(scene) |> Option.map(sunCasterOf(state, scene)) |> Option.toList;
-        List.append(spot, sun)
-
-    /// 太陽の影の地図を描く光。設定が上限を超えて頭打ちになった時は 1 回知らせる（頭打ちの値は Scene3d.directionalShadowOf が決める）。
-    def sunCasterOf(state: State, scene: Scene3d.Scene3dCmd, setup: Scene3d.SunShadowSetup): (ShadowLight, ShadowCaster) \ IO =
-        Scene3d.directionalLightOf(scene) |> Option.flatMap(l -> l#shadow) |> Option.forEach(s -> {
-            if (s#mapSize > maxShadowMapSize())
-                warnShadowOnce(state, "sunSize", "scene3d: 太陽の影の mapSize ${s#mapSize} は大きすぎる — ${maxShadowMapSize()} で描く")
-            else ();
-            if (s#pcfRadius > maxShadowPcfRadius())
-                warnShadowOnce(state, "sunPcf", "scene3d: 太陽の影の pcfRadius ${s#pcfRadius} は大きすぎる — ${maxShadowPcfRadius()} で数える")
-            else ()
-        });
-        (ShadowLight.Sun(setup), { matrix = setup#matrix, frustum = setup#frustum,
-                                   settings = { mapSize = setup#mapSize, bias = setup#depthBias, pcfRadius = setup#pcfRadius, strength = setup#strength } })
-
-    /// 影を落とすスポット。Output.Depth の場面と、置いた物の無い場面は None。
-    /// mapSize が 0 以下の shadow は無い物として扱う。2 本目以降の shadow は使わない（1 回知らせる）。
-    /// 返すのは (pickLights の後の並びの番号, 光)。
-    def spotCasterOf(state: State, scene: Scene3d.Scene3dCmd): Option[(Int32, ShadowCaster)] \ IO =
-        match scene#output {
-            case Scene3d.Output.Depth(_) => None
-            case Scene3d.Output.Color if List.isEmpty(scene#instances) => None
-            case Scene3d.Output.Color =>
-                let casters = Scene3d.pickLights(scene#camera#eye, scene)#spotLights
-                    |> List.mapWithIndex((i, spot) -> spot#shadow |> Option.filter(m -> m#mapSize > 0)
-                        |> Option.map(m -> (i, { matrix = Scene3d.shadowMatrix(spot), frustum = Scene3d.shadowFrustumOf(spot), settings = m })))
-                    |> List.filterMap(identity);
-                if (List.length(casters) > 1)
-                    warnShadowOnce(state, "second", "scene3d: 影を落とすスポットが 1 つの場面に 2 本以上ある — 最初の 1 本だけが影を落とす")
-                else ();
-                List.head(casters)
-        }
-
     def shadowMapSizeOf(state: State, m: Scene3d.ShadowMap): Int32 \ IO =
         if (m#mapSize > maxShadowMapSize()) {
-            warnShadowOnce(state, "size", "scene3d: 影の地図の mapSize ${m#mapSize} は大きすぎる — ${maxShadowMapSize()} で描く");
+            warnShadowOnce(state#planner, "size","scene3d: 影の地図の mapSize ${m#mapSize} は大きすぎる — ${maxShadowMapSize()} で描く");
             maxShadowMapSize()
         } else m#mapSize
 
@@ -189,7 +139,7 @@ mod Render3d.Shadow {
         case ShadowLight.Spot(spotIndex) =>
             let r = caster#settings#pcfRadius;
             let radius = if (r > maxShadowPcfRadius()) {
-                warnShadowOnce(state, "pcf", "scene3d: 影の pcfRadius ${r} は大きすぎる — ${maxShadowPcfRadius()} で数える");
+                warnShadowOnce(state#planner, "pcf","scene3d: 影の pcfRadius ${r} は大きすぎる — ${maxShadowPcfRadius()} で数える");
                 maxShadowPcfRadius()
             } else Int32.max(0, r);
             Cast.Spot({ tex = target#tex, matrix = matrixArray(caster#matrix), bias = caster#settings#bias,
@@ -201,14 +151,6 @@ mod Render3d.Shadow {
                        forward = Array#{ RenderUtil.f32(f#x), RenderUtil.f32(f#y), RenderUtil.f32(f#z) } @ Static,
                        distance = setup#distance, fadeWidth = setup#fadeWidth })
     }
-
-    def warnShadowOnce(state: State, kind: String, message: String): Unit \ IO =
-        let warned = Ref.get(state#shadowWarnedRef);
-        if (Set.memberOf(kind, warned)) ()
-        else {
-            Ref.put(Set.insert(kind, warned), state#shadowWarnedRef);
-            Log.warn(message)
-        }
 
     /// 塗りの間だけ影の地図を影の unit（スポットは 7・太陽は 13）に貼る（unit 0 へ戻して返す）。None なら何もしない。
     pub def bindShadowMap(gl: GlContext, shadows: SceneShadows): Unit \ IO =
