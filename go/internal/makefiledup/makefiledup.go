@@ -6,6 +6,7 @@
 //	fge-go makefile-dup --root DIR   リポジトリのルートを差し替える
 //
 // 見るのは mk/game.mk を include している Makefile だけ。止めるのは「共通の口と同じ名前のターゲットに、レシピ (タブで始まる行か ; の後ろ) を書いた」形。
+// 共通のターゲットは game.mk と、game.mk が取り込む隣の .mk (mk/common.mk) にある物。
 // 前提 (依存) を足すだけの行 (`render-all: extra-art`) と、ターゲット別の変数
 // (`render: SHOTS = title`) は止めない。どちらも engine のレシピをそのまま使うため。
 //
@@ -137,6 +138,24 @@ func CommonTargets(gameMk string) map[string]bool {
 	return set
 }
 
+// game.mk が取り込む物の行 (include / -include / sinclude) の最後の名前。
+var siblingIncludeRe = regexp.MustCompile(`(?m)^\s*(?:-|s)?include\s+.*?([A-Za-z0-9_.-]+\.mk)\s*$`)
+
+// includedSiblings は game.mk が取り込む、game.mk と同じフォルダの .mk の本文をつないで返す
+// (mk/common.mk の help・api・module などもゲームへ配る共通のターゲット)。
+// WhyNot: include の行のパスを make のように展開しない — $(ENGINE) と空白の退避が入っていて、
+// ここで再現すると make とずれる。共通部は game.mk の隣にしか置かないので、名前だけで引く。
+func includedSiblings(gameMkPath, body string) string {
+	var out []string
+	for _, m := range siblingIncludeRe.FindAllStringSubmatch(body, -1) {
+		text, err := os.ReadFile(filepath.Join(filepath.Dir(gameMkPath), m[1]))
+		if err == nil {
+			out = append(out, string(text))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
 // findGameMk は game.mk のパスと、それが根の中 (engine のリポ) かを返す。
 func findGameMk(root, rel string) (string, bool) {
 	dir, self := status.FindEngineDir(root, rel)
@@ -179,6 +198,9 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		return 2, fmt.Errorf("%s を読めません: %v", mk, err)
 	}
 	common := CommonTargets(string(body))
+	for name := range CommonTargets(includedSiblings(mk, string(body))) {
+		common[name] = true
+	}
 	var hits []Hit
 	seen := 0
 	for _, rel := range files {

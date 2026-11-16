@@ -67,7 +67,7 @@ lint-sprite（理由つき）だけで、外した数は毎回 exempt に出る�
 | 1 | gate の外れ（near も）。px build は書かない・snd build は WAV を書かない |
 | 2 | lint の fail だけ（書き出しはする） |
 
-`px check`（make lint-px と pre-commit の口）は今までどおり 0 か 1。`--strict` を付けた時だけ lint の fail で 2。
+`px check`（`bin/fge px check` と pre-commit が呼ぶ）は今までどおり 0 か 1。`--strict` を付けた時だけ lint の fail で 2。
 
 ## 周回（rounds snap）
 

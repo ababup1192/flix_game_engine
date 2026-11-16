@@ -314,7 +314,7 @@ SoftRaster は `DrawCmd` を CPU で描くだけで GPU を知らない。retain
 - dungeon は zoom=1・平行移動のみで非問題の見込み。だが Float64/Float32 差は順序合わせで消えないので §4.2 の 1px diff ゲートで担保。zoom 横展開は §5 段階5 で再検証。
 
 ### Flix 固有の落とし穴
-- **sync**: engine（`GameEngine.flix`/`GpuHandle.flix`/`DrawCmd.flix`/`render_gl`）変更後は `make sync-engine`・`make sync-render-gl`・`make sync-engine-world` を個別に（`make sync` の clean-locks は全 worktree 走査でハング）。fpkg は `.flix` のみ・テスト非同梱。
+- **sync**: engine（`GameEngine.flix`/`GpuHandle.flix`/`DrawCmd.flix`/`render_gl`）変更後は `make sync-layers`（層の作業場を張り直す）と `make sync-engine-full`（engine_full を組んで templates・bench へ配る）。fpkg は `.flix` のみ・テスト非同梱。
 - **レコード `#` はホットパス**: retained の狙いは「頂点ごとの `#vertices` 読みを毎フレームから消す」こと。逆に毎フレーム走る `key`/レンジ fold で不要な `#` チェーンを増やさない（`StaticKey` は浅い record・`StaticRange` の fold は薄く）。
 - **エフェクト多相**: 新 op は `Game` eff に乗るので `staticLayer` の関数は `ef` を帯びる。既定は純粋 hook を `checked_ecast` で widen（`App.makeWith` の作法）。
 - **BSD userland**: 一括置換は `sed -i` 不可 → Python バイト処理。新 Makefile ターゲット（計測・glReadPixels 実行）は実運転 1 回通すまで頼らない。
