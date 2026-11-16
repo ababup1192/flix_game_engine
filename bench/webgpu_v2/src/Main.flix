@@ -39,12 +39,16 @@ mod V2Main {
         materialCase("lmTextured", kit, V2Lightmaps.textured) ::
         materialCase("lmNormalLinear", kit, V2Lightmaps.normalLinear) ::
         lightmapDepthCase(kit) ::
-        skyCase("sky", Scene3d.Resolution.Native, V2Sky.yard(kit, 0.0, -0.45, 1.0)) ::
-        skyCase("skyTurned", Scene3d.Resolution.Native, V2Sky.yard(kit, 3.0, 0.25, 0.6)) ::
-        skyCase("skyDesign", Scene3d.Resolution.Design, V2Sky.yard(kit, 0.0, -0.45, 1.0)) ::
-        skyCase("skyDepth", Scene3d.Resolution.Native, { output = depthOfRoom() | V2Sky.yard(kit, 0.0, -0.45, 1.0) }) ::
+        sceneCase("sky", Scene3d.Resolution.Native, V2Sky.yard(kit, 0.0, -0.45, 1.0)) ::
+        sceneCase("skyTurned", Scene3d.Resolution.Native, V2Sky.yard(kit, 3.0, 0.25, 0.6)) ::
+        sceneCase("skyDesign", Scene3d.Resolution.Design, V2Sky.yard(kit, 0.0, -0.45, 1.0)) ::
+        sceneCase("skyDepth", Scene3d.Resolution.Native, { output = depthOfRoom() | V2Sky.yard(kit, 0.0, -0.45, 1.0) }) ::
         skyMsaaPassCase("skyMsaaPass", kit, true) ::
         skyMsaaPassCase("yardMsaaPass", kit, false) ::
+        sceneCase("blend", Scene3d.Resolution.Native, V2Blend.room(kit)) ::
+        sceneCase("blendDesign", Scene3d.Resolution.Design, V2Blend.room(kit)) ::
+        sceneCase("blendDepth", Scene3d.Resolution.Native, { output = depthOfRoom() | V2Blend.room(kit) }) ::
+        msaaPassCase("blendMsaaPass", V2Blend.room(kit)) ::
         skinnedCase("skinned", kit, Scene3d.Output.Color, V2Skinned.vertexColored) ::
         skinnedCase("skinnedTextured", kit, Scene3d.Output.Color, V2Skinned.textured(V2Materials.colorTexture())) ::
         skinnedCase("skinnedDepth", kit, depthOfRoom(), V2Skinned.vertexColored) ::
@@ -115,20 +119,23 @@ mod V2Main {
         { name = "lmDepth", passes = Nil, targets = Map.empty(),
           items = Render.scene3d(Vec2.zero(), { output = depthOfRoom() | V2Lightmaps.textured(Room.scene(kit, 0.3)) }) :: Nil }
 
-    /// 空の場面 scene（V2Sky）を解像度 resolution で画面へ直に。
-    def skyCase(name: String, resolution: Scene3d.Resolution, scene: Scene3d.Scene3dCmd): Case =
+    /// 場面 scene（V2Sky・V2Blend）を解像度 resolution で画面へ直に。
+    def sceneCase(name: String, resolution: Scene3d.Resolution, scene: Scene3d.Scene3dCmd): Case =
         { name = name, passes = Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), { resolution = resolution | scene }) :: Nil }
 
-    /// 空の場面を標本 4 の Pass（design の解像度）に描いて resolve し、画面いっぱいに貼る（空の pipeline の標本 4 の版を通す）。
+    /// 空の場面を標本 4 の Pass に描いて貼る（空の pipeline の標本 4 の版を通す）。
     /// withSky が偽なら空を外して地の色（部屋の黒）にした比べ相手（yardMsaaPass・MSAA のふちの差が空に依らない事を見る）。
     def skyMsaaPassCase(name: String, kit: Room.Kit, withSky: Bool): Case =
         let yard = V2Sky.yard(kit, 0.4, -0.2, 1.5);
-        let scene = if (withSky) yard else { sky = None | yard };
-        let pass: Render.Pass = { name = "sky", clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 0.0, 1.0)),
+        msaaPassCase(name, if (withSky) yard else { sky = None | yard })
+
+    /// 場面 scene を標本 4 の Pass（design の解像度・マゼンタで消す）に描いて resolve し、画面いっぱいに貼る。
+    def msaaPassCase(name: String, scene: Scene3d.Scene3dCmd): Case =
+        let pass: Render.Pass = { name = "msaa", clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 0.0, 1.0)),
                                   items = Render.scene3d(Vec2.zero(), scene) :: Nil };
         let design = Room.design();
-        { name = name, passes = pass :: Nil, targets = Map#{ "sky" => RenderTarget.withMsaa(4, RenderTarget.defaultDescriptor()) },
-          items = Render.blitRegion({ name = "sky", design = design, src = { position = Vec2.zero(), size = design },
+        { name = name, passes = pass :: Nil, targets = Map#{ "msaa" => RenderTarget.withMsaa(4, RenderTarget.defaultDescriptor()) },
+          items = Render.blitRegion({ name = "msaa", design = design, src = { position = Vec2.zero(), size = design },
                                       at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
 
     /// 部屋の奥行きの書き出し（Output.Depth）。目から 1 m で黒・13.5 m で白（部屋の奥の壁まで灰色の坂が入る幅）。
@@ -209,6 +216,12 @@ mod V2Main {
     /// 壊して確かめた（同じ日に 1 回ずつ）: 空の frag で NDC の y を返さないと skyDepth を除く 4 場面が 43 万〜51 万 px・空の色を sRGB へ戻さないと 43 万〜51 万 px・
     /// 空の向きの材料の幅と高さを入れ替えると 43 万〜50 万 px 違って落ちる（skyDepth は空を描かず白で消すのでこの 3 つでは 0 px）。
     /// 空の曲がりを 1 に決め打ちすると曲がりが 1 でない skyTurned と skyMsaaPass が 43 万 px・奥行きの書き出しの pass でも空を描くと skyDepth が 50 万 px 違って落ちる。
+    /// 半透明の場面（同じ機械の実測。違う画素・±2 以上・max）: blend 14・7・±70、blendDesign 0・0・±0、blendDepth 11・1・±2、blendMsaaPass 17,181・13,689・±49。
+    /// blend は room と同じ所（重なる面の入れ替わり）で同じ数（半透明の板の画素は差に出ていない）。blendDepth は半透明の物を書かないので部屋の奥行きの書き出しと同じ形の差。
+    /// blendMsaaPass は skyMsaaPass と同じ標本の位置の違い。上限は実測のほぼ 2 倍・差の最大は blend が面の入れ替わりで切らず、blendDepth は roomDepth と同じ ±16・blendMsaaPass は ±128。
+    /// 壊して確かめた（同じ日に 1 回ずつ）: WebGPU の半透明の pipeline の混ぜ方を外すと blend・blendDesign が 13.5 万 px・blendMsaaPass が 14.8 万 px、
+    /// 半透明の pipeline で深度を書くと（交わる板が欠ける）blend と blendDesign が 1.2 万 px 違って落ちる（blendMsaaPass は 2.99 万 px で上限の内）。
+    /// 計画の並べ順を逆にすると GL と WebGPU の両方が同じに変わるのでこの比べは通る（GL の blend の絵は変わる・守るのは TestSceneList.testPlanSortsBlendedFarToNear）。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
@@ -217,7 +230,8 @@ mod V2Main {
              "shadowSpot" => (8, 32, 255), "shadowSpotTextured" => (8, 350, 255), "shadowSun" => (8, 16, 255), "shadowSunCrowd" => (48, 64, 255),
              "shadowSunTextured" => (8, 80, 255), "shadowBoth" => (8, 16, 255),
              "lmTextured" => (150, 460, 255), "lmNormalLinear" => (160, 580, 255), "lmDepth" => (8, 16, 16),
-             "sky" => (4, 16, 16), "skyTurned" => (4, 8, 16), "skyDesign" => (4, 8, 16), "skyDepth" => (4, 8, 16), "skyMsaaPass" => (24000, 28000, 128)}
+             "sky" => (4, 16, 16), "skyTurned" => (4, 8, 16), "skyDesign" => (4, 8, 16), "skyDepth" => (4, 8, 16), "skyMsaaPass" => (24000, 28000, 128),
+             "blend" => (16, 32, 255), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass"}
