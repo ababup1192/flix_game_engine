@@ -120,6 +120,13 @@ mod Layout {
 
     // ── 縦の画面の頁 ──
 
+    /// 縦の画面の下の帯（下端から height px。今の行を出す範囲）。幅と下端は頁と同じ、上端は頁より上へは出ない。
+    pub def portraitBand(fit: Fit, bandHeight: Float64): Rect2.Rect2 =
+        let p = page(fit, 0);
+        let bottom = p#position#y + p#size#y;
+        let top = Float64.min(bottom, Float64.max(p#position#y, height(fit) - bandHeight));
+        rect(p#position#x, top, p#size#x, bottom - top)
+
     /// 縦の画面の頁（文を上から積む範囲。幅は折り返す幅）。choiceCount 個の選択肢を出している間は、その上までに縮める。
     /// 右端は右の操作の列の左端から 12 px 左で抑える（列の積み方が top でも bottom でも重ならない）。
     // WhyNot: 折り返す幅を余白いっぱいにしない — 行末の句読点はぶら下げで幅の外へ出るので、右の余白が左より狭く見える。

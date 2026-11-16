@@ -328,11 +328,18 @@ mod FlowVideo {
                 List.flatten(backdrop :: cast :: game({ fonts = fonts | View.envOf(fit, res, w) }, r) :: hud :: Nil)
         }
 
+    /// 縦の画面のメッセージウィンドウの矩形（型の portrait が band なら下の帯、page なら頁）。
+    def portraitMessage(fit: Layout.Fit, window: ThemeDoc.Window, choiceCount: Int32): Rect2.Rect2 = match window#portrait {
+        case ThemeDoc.PortraitText.Band(h) => Layout.portraitBand(fit, h)
+        case ThemeDoc.PortraitText.Page    => Layout.page(fit, choiceCount)
+    }
+
     def readingHud(fit: Layout.Fit, res: Res.Res, r: World.Read): List[TapeOut.ScreenObject] =
         let choiceCount = List.length(r#choices);
         let buttonCount = List.length(WorldMenu.buttonsOf(fit));
-        let message = if (Layout.isPortrait(fit)) Layout.page(fit, choiceCount)
-            else match snd(Stage.windowOf(res#theme, r#stage)) {
+        let window = snd(Stage.windowOf(res#theme, r#stage));
+        let message = if (Layout.isPortrait(fit)) portraitMessage(fit, window, choiceCount)
+            else match window {
                 case w if w#kind == ThemeDoc.WindowKind.Adv => Layout.advPanelAt(fit, w#place)
                 case _ =>
                     let area = Layout.nvlText();

@@ -80,7 +80,7 @@ mod TestSpeaker {
         Assert.assertEq(expected = Some("bottom"), doc |> Option.map(d -> fst(ThemeDoc.windowOf("Adv", d))))
 
     def advOnly(): Map[String, ThemeDoc.Window] =
-        Map#{ "sub" => { kind = ThemeDoc.WindowKind.Adv, place = ThemeDoc.WindowPlace.Bottom, frame = ThemeDoc.WindowFrame.Outline, showName = true, quotes = true } }
+        Map#{ "sub" => { kind = ThemeDoc.WindowKind.Adv, place = ThemeDoc.WindowPlace.Bottom, frame = ThemeDoc.WindowFrame.Outline, showName = true, quotes = true, portrait = ThemeDoc.PortraitText.Page } }
 
     @Test
     def testLegacyTargetMissingFromWindowsIsAProblem(): Unit \ Assert =

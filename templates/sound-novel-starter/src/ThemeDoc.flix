@@ -31,9 +31,16 @@ mod ThemeDoc {
         case Outline
     }
 
+    /// 縦の画面での字の出し方。Page = 画面いっぱいの頁に行を上から積む、Band(高さ) = 画面の下の帯（下端から高さ px）に今の行だけを出し、
+    /// 覆いは帯の上にだけ敷く（帯より上の写真と HUD は沈めない）。
+    pub enum PortraitText with Eq, ToString {
+        case Page
+        case Band(Float64)
+    }
+
     /// メッセージ枠の型 1 つ（<<window 型>> の型）。kind = 出し方、place = ADV の枠の置き場、frame = 字の立たせ方、
-    /// showName = ADV の枠に話し手の名前を出すか、quotes = 台詞を「」で包むか。
-    pub type alias Window = { kind = WindowKind, place = WindowPlace, frame = WindowFrame, showName = Bool, quotes = Bool }
+    /// showName = ADV の枠に話し手の名前を出すか、quotes = 台詞を「」で包むか、portrait = 縦の画面での字の出し方。
+    pub type alias Window = { kind = WindowKind, place = WindowPlace, frame = WindowFrame, showName = Bool, quotes = Bool, portrait = PortraitText }
 
     /// 話し手 1 人の色。id = シナリオの話し手の id（地の文は空）、name = 人に見せる名前（空なら novel.story.json の names）、
     /// color = 名前の字（テープの頁でシナリオの行を塗る色も同じ）、ink = 本文の字。
@@ -76,9 +83,9 @@ mod ThemeDoc {
                   windows = Map#{ "nvl" => nvlWindow(), "bottom" => advWindow() },
                   legacyModes = Map#{ "Nvl" => "nvl", "Adv" => "bottom" } })
 
-    def nvlWindow(): Window = { kind = WindowKind.Nvl, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true }
+    def nvlWindow(): Window = { kind = WindowKind.Nvl, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true, portrait = PortraitText.Page }
 
-    def advWindow(): Window = { kind = WindowKind.Adv, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true }
+    def advWindow(): Window = { kind = WindowKind.Adv, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true, portrait = PortraitText.Page }
 
     /// Mark v3 の mode が書いていた出し方の名前（Nvl・Adv。legacyModes の鍵。Doc の型の名前には使えない）。
     pub def kindAlias(kind: WindowKind): String = "${kind}"
@@ -210,8 +217,13 @@ mod ThemeDoc {
                                       place = if (JsonCodec.stringOr("place", "bottom", obj) == "center") WindowPlace.Center else WindowPlace.Bottom,
                                       frame = if (JsonCodec.stringOr("frame", "panel", obj) == "outline") WindowFrame.Outline else WindowFrame.Panel,
                                       showName = JsonCodec.boolOr("showName", base(k)#showName, obj),
-                                      quotes = JsonCodec.boolOr("quotes", base(k)#quotes, obj) })
+                                      quotes = JsonCodec.boolOr("quotes", base(k)#quotes, obj),
+                                      portrait = portraitTextOf(obj) })
         })
+
+    /// 型の portrait（"page"・"band"）と bandHeight（帯の高さ px。既定 236）。知らない字は page。
+    def portraitTextOf(obj: Map[String, Json]): PortraitText =
+        if (JsonCodec.stringOr("portrait", "page", obj) == "band") PortraitText.Band(JsonCodec.floatOr("bandHeight", 236.0, obj)) else PortraitText.Page
 
     /// speakers の列（{id, name, color, ink}）。色の無い行は名前の色と本文の色。
     def speakersOf(name: Color, ink: Color, json: Json): Map[String, Speaker] =

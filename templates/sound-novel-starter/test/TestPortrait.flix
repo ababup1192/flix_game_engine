@@ -2,7 +2,7 @@
 // 当たりの矩形は View が描く所と同じ Layout の関数から引く（座標の数を写さない）。Frame#viewport が縦長なら縦の並べ方になる。
 mod TestPortrait {
 
-    use fge::{App, Clock, Display, Rect2}
+    use fge::{App, Clock, Display, JsonCodec, Rect2, Render}
     use fge::GameEngine.Key
     use TestKit.{begun, w0}
 
@@ -276,4 +276,46 @@ mod TestPortrait {
         let bottom = r -> r#position#y + r#size#y;
         let limit = Layout.height(fit) - PortraitDoc.rec(res#portrait)#pageBottom;
         Assert.assertTrue(bottom(Layout.page(fit, 0)) <= limit and bottom(Layout.page(fit, 3)) <= Layout.choice(fit, 0, 3)#position#y)
+
+    // ── 縦の画面の下の帯（メッセージ枠の型の portrait: band） ──
+
+    @Test
+    def testBandIsReadFromTheWindowType(): Unit \ Assert =
+        let rows = Map#{ "live" => Util.Json.Json.JObject(Map#{ "kind" => Util.Json.Json.JString("adv"), "portrait" => Util.Json.Json.JString("band"),
+                                                                 "bandHeight" => Util.Json.Json.JNumber(JsonCodec.floatToBd(200.0)) }) };
+        Assert.assertEq(expected = Some(ThemeDoc.PortraitText.Band(200.0)), Map.get("live", fst(ThemeDoc.windowsFrom(rows))) |> Option.map(w -> w#portrait))
+
+    @Test
+    def testAWindowTypeWithoutPortraitIsThePage(): Unit \ Assert =
+        let rows = Map#{ "plain" => Util.Json.Json.JObject(Map#{ "kind" => Util.Json.Json.JString("adv") }) };
+        Assert.assertEq(expected = Some(ThemeDoc.PortraitText.Page), Map.get("plain", fst(ThemeDoc.windowsFrom(rows))) |> Option.map(w -> w#portrait))
+
+    @Test
+    def testTheBandStartsItsHeightAboveTheBottom(): Unit \ {Assert, Fs.FileRead} =
+        let fit = portrait(TestKit.res(), tall());
+        Assert.assertTrue(TestKit.near(Layout.height(fit) - 236.0, Layout.portraitBand(fit, 236.0)#position#y))
+
+    /// どのメッセージ枠の型も縦の画面で下の帯に出す描く元。
+    def bandRes(): Res.Res \ Fs.FileRead =
+        let base = TestKit.res();
+        let d = ThemeDoc.rec(base#theme);
+        Res.withTheme(ThemeDoc.Doc.Doc({ windows = d#windows |> Map.map(w -> { portrait = ThemeDoc.PortraitText.Band(236.0) | w }) | d }), base)
+
+    /// 縦の画面で、前の行と今の行を頁に持つ読む間の本文に描いた字。
+    def bandTexts(res: Res.Res): List[String] \ IO =
+        let atlas = SceneRender.cfgOf(tall(), "debug", Map.empty())#fontAtlas;
+        let fit = portrait(res, tall());
+        let w = begun(res);
+        World.readOf(w) |> Option.map(r -> {
+            let page = { lines = Page.plainLine("前の行の字", "a:1") :: Nil, current = Some(Page.plainLine("今の行の字", "a:2")) | Page.revealAll(r#page) };
+            ViewText.portraitPage(atlas, View.envOf(fit, res, w), { page = page | r })
+        }) |> Option.getWithDefault(Nil) |> List.filterMap(p -> match p#item {
+            case Render.Item.Text(t) => Some(t#text)
+            case _                       => None
+        })
+
+    @Test
+    def testTheBandShowsOnlyTheCurrentLine(): Unit \ {Assert, Fs.FileRead, IO} =
+        let texts = String.intercalate("", bandTexts(bandRes()));
+        Assert.assertEq(expected = (true, false), (String.contains(substr = "今", texts), String.contains(substr = "前", texts)))
 }
