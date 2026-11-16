@@ -226,10 +226,10 @@ mod StoryDoc {
     pub def labelOf(label: Label, doc: Doc): String =
         Map.get(labelKey(label), rec(doc)#labels) |> Option.getWithDefault(snd(entryOf(label)))
 
-    /// ゲームが決めた鍵 key の言葉（gameLabels に無ければ fallback）。replace を当てた字。
+    /// ゲームが決めた鍵 key の言葉（gameLabels に無ければ fallback）。labelOf と同じく replace は当てない（要る時は replaceText で包む）。
     // WhyNot: Label の enum にゲームの case を足させない — テンプレートの enum を書き換えると、テンプレートの追随のたびにぶつかる。
     pub def gameLabelOf(key: String, fallback: String, doc: Doc): String =
-        replaceText(doc, Map.getWithDefault(key, fallback, rec(doc)#gameLabels))
+        Map.getWithDefault(key, fallback, rec(doc)#gameLabels)
 
     /// 呼び名の話し手の id（nameOf の逆。Doc に無い呼び名はそのまま）。
     pub def idOfName(name: String, doc: Doc): String =

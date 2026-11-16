@@ -838,10 +838,10 @@ mod TestRules {
 
     @Test
     def testGameLabelsComeFromTheDocOrTheFallback(): Unit \ Assert =
-        // gameLabels に書いた鍵はその言葉（replace も当たる）、書いていない鍵は渡した既定の言葉。
+        // gameLabels に書いた鍵はその言葉（labelOf と同じく replace は当てない）、書いていない鍵は渡した既定の言葉。
         let json = "{\"opening\": \"WinterRoute\", \"gameLabels\": {\"endingTrue\": \"××××の朝\"}, \"replace\": {\"××××\": \"ユウキ\"}}";
         let doc = StoryDoc.fromJson(json) |> Option.getWithDefault(StoryDoc.defaults());
-        Assert.assertEq(expected = ("ユウキの朝", "結末"), (StoryDoc.gameLabelOf("endingTrue", "x", doc), StoryDoc.gameLabelOf("endingBad", "結末", doc)))
+        Assert.assertEq(expected = ("××××の朝", "結末"), (StoryDoc.gameLabelOf("endingTrue", "x", doc), StoryDoc.gameLabelOf("endingBad", "結末", doc)))
 
     @Test
     def testTheMigrateRecordKeepsTheScriptText(): Unit \ {Assert, Fs.FileRead} =

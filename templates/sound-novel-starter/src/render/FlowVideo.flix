@@ -86,7 +86,9 @@ mod FlowVideo {
             case Ok(outcome) =>
                 video(outcome);
                 let recorded = migrate |> Option.forAll(to -> writeMigrate(settings, screen, path, script, to, outcome));
-                println("rendered: ${out} (${Int32.toString(List.length(outcome#frames))} frames)");
+                let frames = Int32.toString(List.length(outcome#frames));
+                let written = if (writes == Writes.Everything) out else migrate |> Option.map(to -> to#dir) |> Option.getWithDefault(out);
+                println("rendered: ${written} (${frames} frames${if (writes == Writes.Everything) "" else "・移行の記録だけ"})");
                 if (recorded) 0 else 2
             case Err(failure) =>
                 video(failure#upTo);

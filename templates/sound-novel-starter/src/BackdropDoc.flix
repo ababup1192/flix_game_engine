@@ -4,7 +4,7 @@
 // 色の作り方（ぼかし → 彩度 → 露出と色味 → 空の光 → 四隅を落とす）は Backdrop.specOf（コード）、数はここ。
 // fail-open — 読めない欄は既定のまま・知らない写真や時間帯は Stage が知らせて前の背景のまま続ける。
 mod BackdropDoc {
-    use fge::{Color, DocJson, JsonCodec}
+    use fge::{Color, DocJson, JsonCodec, Log}
     use Util.Json.Json
 
     /// 写真 1 枚。texture = project.json の textures の名前、label = セーブの枠に出す場所の名前、
@@ -128,7 +128,15 @@ mod BackdropDoc {
                       |> Option.getWithDefault(Map.empty()),
                   initial = Map.get("initial", root) |> Option.flatMap(initialFromJson),
                   title = Map.get("title", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(titleFromJson),
-                  ground = Map.get("ground", root) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(Color.hex) })
+                  ground = groundIn(root) })
+
+    /// ground の欄（無ければ None。書いてあるのに #rrggbb として読めなければ 1 行言って None = 夜の紺）。
+    def groundIn(root: Map[String, Json]): Option[Color] = Map.get("ground", root) |> Option.flatMap(groundOf)
+
+    def groundOf(json: Json): Option[Color] = match JsonCodec.expectString(json) |> Option.flatMap(Color.hex) {
+        case Some(color) => Some(color)
+        case None        => Log.fellBackThen("backdrops", "${path()} の ground", "夜の紺", "#rrggbb の色として読めない", None)
+    }
 
     /// initial の欄（photo と grade のどちらかが欠けたら無い物とする）。
     def initialFromJson(json: Json): Option[Initial] =

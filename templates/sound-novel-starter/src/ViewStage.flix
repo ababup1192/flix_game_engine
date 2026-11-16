@@ -202,7 +202,10 @@ mod ViewStage {
             faded |> Render.movedAll({ x = dx, y = 0.0 }) |> List.map(Render.overItem(mapZ(n -> z + Int32.max(0, Int32.min(2, n)))))
     }
 
-    /// 前の背景が絵を持たないか（無い・blank の写真）。black の切り替えは、この時は暗い所から全部の秒で明ける。
+    /// 前の背景（stage#under。切り替えの間だけ持つ）が絵を持たないか: 無い・novel.backdrops.json で blank の写真。
+    /// black の切り替えは、この時は前半の暗くなる側を飛ばし、暗い所から全部の秒で明ける。
+    // WhyNot: GameView.backdrop が blank の写真に絵を描くかまでは見ない — blackoutGroup は描く元（paint）を持たず、
+    //   blank の写真に絵を描くゲームは blank を外せば前半の暗転が戻る。
     def isFromDark(env: View.Env, stage: Stage.Stage): Bool =
         stage#under |> Option.forAll(s -> BackdropDoc.isBlank(s#photo, env#res#backdrops))
 

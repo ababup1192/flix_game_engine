@@ -189,36 +189,9 @@ mod WorldRead {
             |> Option.map(found -> {
                 let (item, (event, later)) = found;
                 let inOrder = Set.maximum(r#beat#state#applied) |> Option.forAll(j -> j < i);
-                let applied = absorbOne(res, Commands.Replay.Live, item#last, event, later, NovelBeat.plannedSecondsOf(i, beat), inOrder, marked) |> World.mapRead(withGate);
-                if (inOrder) applied else refreshHeadMark(applied)
+                absorbOne(res, Commands.Replay.Live, item#last, event, later, NovelBeat.plannedSecondsOf(i, beat), inOrder, marked) |> World.mapRead(withGate)
             })
             |> Option.getWithDefault(marked)
-
-    /// 先に積んだ台詞の後に当てた命令の舞台を、その台詞の戻れる所（バックログの頭と、同じ所を書いたオートセーブ）に入れ直す。
-    // WhyNot: 待ちの間のセーブを 1 つ前の台詞へ戻す形にしない — 先に積んだ台詞はもう頁とバックログに出ていて、戻すと読んだ行が
-    //   もう一度出る。オートセーブも台詞を積んだ時に書くので、どちらの形でも入れ直しが要る。
-    def refreshHeadMark(w: World.World): World.World =
-        match World.readOf(w) |> Option.flatMap(r -> headSaidOf(r#log) |> Option.map(found -> (r, found))) {
-            case Some((r, (entry, mark))) =>
-                let fresh = { stage = Stage.snapshotOf(r#stage) | mark };
-                let saves = autoSlotWith(mark, fresh, w#saves);
-                World.withSaves(saves, World.withRead({ log = World.Entry.Said(entry, Some(fresh)) :: List.drop(1, r#log) | r }, w))
-            case None => w
-        }
-
-    /// バックログの頭が戻れる所を持つ台詞なら、その行と戻れる所。
-    def headSaidOf(log: List[World.Entry]): Option[(Page.Line, Saves.Mark)] = match log {
-        case World.Entry.Said(entry, Some(mark)) :: _ => Some((entry, mark))
-        case _                                        => None
-    }
-
-    /// オートセーブの一番新しい枠が mark と同じ所なら、戻れる所を fresh にする。
-    def autoSlotWith(mark: Saves.Mark, fresh: Saves.Mark, saves: Saves.Saves): Saves.Saves =
-        match Saves.slotOf(Saves.Tab.Auto, 0, saves) {
-            case Some(slot) if YarnRunner.bookmarkToJson(slot#mark#bookmark) == YarnRunner.bookmarkToJson(mark#bookmark) =>
-                Saves.withSlot(Saves.Tab.Auto, 0, { mark = fresh | slot }, saves)
-            case _ => saves
-        }
 
     /// 実行器を Tick した（<<wait>> の時刻を渡す）: 続きの束をビートの後ろへ足す。
     def tick(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
@@ -381,7 +354,7 @@ mod WorldRead {
 
     /// 台詞 1 行を頁とバックログへ。NVL で頁に入り切らない時は頁をめくって（めくった数を足して）から積む。消していた文字の枠は出す。
     /// 話し手（地の文は None）を舞台の cast.speaker に書く（話していない人物を暗くする）。台詞を「」で包むかはメッセージ枠の型の quotes。
-    /// 戻れる所は行を積んだ後の舞台と頁で作る。新しいノードの最初の行ならオートセーブ。
+    /// 戻れる所は行を積んだ後の舞台と頁で作る（先に積んだ台詞なら、前にあってまだ当てていない命令も試しに当てる）。新しいノードの最初の行ならオートセーブ。
     def showLine(res: Res.Res, replay: Replay, bookmark: Option[YarnRunner.Bookmark], line: Yarn.Line, r: World.Read, w: World.World): World.World =
         let window = snd(Stage.windowOf(res#theme, r#stage));
         let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, res#story), window#quotes, line);
@@ -391,7 +364,7 @@ mod WorldRead {
         let stage = if (Page.isFullFor(window#kind, fits, entry, r#page)) Stage.withPageTurned(shownStage) else shownStage;
         let page = Page.show(window#kind, fits, entry, r#page);
         let placed = { stage = stage, page = if (replay == Commands.Replay.Silent) Page.revealAll(page) else page | r };
-        let mark = bookmark |> Option.map(b -> markOf(b, placed));
+        let mark = bookmark |> Option.map(b -> withCommandsBehind(res, placed, w, markOf(b, placed)));
         let shown = { choices = Nil, doneAt = None, log = List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Said(entry, mark) :: r#log) | placed };
         if (replay == Commands.Replay.Silent) World.withRead(shown, w) else autosave(res, mark, shown, w)
 
@@ -628,23 +601,24 @@ mod WorldRead {
 
     /// 今の所のデータ（読んでいなければ None）。セーブの画面とクイックセーブが書く。
     pub def slotHere(res: Res.Res, w: World.World): Option[Saves.Slot] =
-        World.readOf(w) |> Option.flatMap(r -> slotAt(res, markHere(res, r, w), r, w))
+        World.readOf(w) |> Option.flatMap(r -> slotAt(res, markHere(r), r, w))
 
     /// 今の所の戻れる所。<<wait>> の間は、バックログの一番新しい行が台詞ならその戻れる所、選んだ選択肢か空なら None（セーブしない）。
     // WhyNot: 待っている間に今のブックマークと舞台で作らない — 当て直しは待ちを飛ばして次の台詞まで進むので、
     //         待つ前の舞台と頁で置き換えると、次の台詞の舞台と頁が食い違う。
     // WhyNot: 選んだ選択肢より前の台詞の戻れる所へさかのぼらない — 戻すと選ぶ前に戻る。
-    def markHere(res: Res.Res, r: World.Read, w: World.World): Option[Saves.Mark] =
+    def markHere(r: World.Read): Option[Saves.Mark] =
         match YarnRunner.shownOf(r#talk) {
             // 字を出している間（Typing）も頭の行の戻れる所: 実行器はもう次の束へ進んでいることがあり、今のブックマークは台詞の後ろを指す。
-            case _ if NovelBeat.isHolding(r#beat#waiting) or r#beat#waiting == NovelBeat.Waiting.Typing =>
-                headMarkOf(r#log) |> Option.map(withCommandsBehind(res, r, w))
+            case _ if NovelBeat.isHolding(r#beat#waiting) or r#beat#waiting == NovelBeat.Waiting.Typing => headMarkOf(r#log)
             case _ => YarnRunner.bookmarkOf(r#talk) |> Option.map(b -> markOf(b, r))
         }
 
     /// 先に積んだ台詞より前にあってまだ当てていない命令を、戻れる所の舞台へ試しに当てた形（音・合図・待ちは落とす）。
+    /// 台詞を積む時に 1 回だけ作り、バックログ・オートセーブ・待ちの間のセーブが同じ物を使う。
     // WhyNot: 待ちの間はセーブを断る形にしない — コメントが続く場面では台詞を出してから数秒待つのが普通で、その間ずっと
     //         セーブ・クイックセーブが効かないと壊れたように見える。戻した後は台詞の後ろから進むので、当てていない命令はここで入れるしかない。
+    // WhyNot: 命令を当てた後に戻れる所を入れ直さない — バックログの頭とオートセーブとセーブの 3 か所を後から追いかけることになる。
     def withCommandsBehind(res: Res.Res, r: World.Read, w: World.World, mark: Saves.Mark): Saves.Mark =
         let ctx = ctxOf(res, r, w);
         let step = (st, command) -> Commands.execute(Commands.Replay.Silent, ctx, command, st) |> Result.map(fst) |> Result.getWithDefault(st);
@@ -653,14 +627,14 @@ mod WorldRead {
             case commands => { stage = Stage.snapshotOf(List.foldLeft(step, Stage.fromSnapshot(mark#stage), commands)) | mark }
         }
 
-    /// ビートの中で、もう当てた一番後ろの出来事より前にあって、まだ当てていない命令（台本の順）。
+    /// ビートの中で、もう当てた一番後ろの出来事より前にあって、まだ当てていない命令（後で当てる順 = NovelBeat.behindOf）。
     def commandsBehindOf(beat: NovelBeat.Beat): List[Yarn.Command] =
-        let top = Set.maximum(beat#applied) |> Option.getWithDefault(-1);
-        let commandOf = (i, item: NovelBeat.Item) -> match item#event {
-            case Some((YarnRunner.Event.Command(command), _)) if i < top and not Set.memberOf(i, beat#applied) => Some(command)
-            case _ => None
-        };
-        beat#items |> Vector.mapWithIndex(commandOf) |> Vector.toList |> List.flatMap(Option.toList)
+        NovelBeat.behindOf(beat) |> List.filterMap(i -> Vector.nth(i, beat#items) |> Option.flatMap(item -> commandOf(item#event)))
+
+    def commandOf(event: Option[(YarnRunner.Event, Int32)]): Option[Yarn.Command] = match event {
+        case Some((YarnRunner.Event.Command(command), _)) => Some(command)
+        case _                                            => None
+    }
 
     /// バックログの一番新しい行の戻れる所（その行が台詞で戻れる所を持つ時だけ）。
     pub def headMarkOf(log: List[World.Entry]): Option[Saves.Mark] = match log {
