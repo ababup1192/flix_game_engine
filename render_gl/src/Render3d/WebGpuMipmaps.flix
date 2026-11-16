@@ -1,9 +1,9 @@
 // Render3d.WebGpuMipmaps — 全体の登録の絵（2D の描き手の絵）の mip つきの写しを GPU の render pass で作る（GL の PC の Render3d.Material.mipCopyOf と対）。
-// 段 0 は元の絵をそのまま写し、段 k は段 k − 1 の 2 × 2 のテクセルを Mip.build と同じ決まり（はみ出す列と行は端を繰り返す・Raw は (和 + 2) / 4 の切り捨て・
-// SrgbCurve の rgb は線形の量の平均を 8bit の sRGB の値へ戻す）で平均して、段 1 つの view を描き先にして描く。
+// レベル 0 は元の絵をそのまま写し、レベル k はレベル k − 1 の 2 × 2 のテクセルを Mip.build と同じ決まり（はみ出す列と行は端を繰り返す・Raw は (和 + 2) / 4 の切り捨て・
+// SrgbCurve の rgb は線形の量の平均を 8bit の sRGB の値へ戻す）で平均して、レベル 1 つの view を描き先にして描く。
 // WhyNot: 元の絵を読み戻して CPU の Mip.build で作らない — readBuffer は答えが出るまで返らず、ブラウザでは requestAnimationFrame の中で待てない。
 // WhyNot: 2D の描き手が絵を上げた時の CPU の画素を持っておかない — 全部の絵をヒープに二重に持つことになる（GL が持たないと決めた理由と同じ）。
-// WhyNot: 前の段を線形のフィルタで 1 回読んで平均しない — sRGB の曲線の平均と端の繰り返しと (和 + 2) / 4 の丸めが Mip.build とそろわない。
+// WhyNot: 前のレベルを線形のフィルタで 1 回読んで平均しない — sRGB の曲線の平均と端の繰り返しと (和 + 2) / 4 の丸めが Mip.build とそろわない。
 mod Render3d.WebGpuMipmaps {
     import fge.webgpu.BindGroup
     import fge.webgpu.BindGroupDesc
@@ -25,8 +25,8 @@ mod Render3d.WebGpuMipmaps {
     import fge.webgpu.TextureView
     import fge.webgpu.WebGpu
 
-    /// 写しを作る道具。layout = 読む段の group 0（絵 1 枚）・pipelines = 段の作り方（Step）の番号 → pipeline（初めて使う時に作る）・
-    /// views と groups = 今の encoder で使った段の view と group（submit の後に手放す）。
+    /// 写しを作る道具。layout = 読むレベルの group 0（絵 1 枚）・pipelines = レベルの作り方（Step）の番号 → pipeline（初めて使う時に作る）・
+    /// views と groups = 今の encoder で使ったレベルの view と group（submit の後に手放す）。
     pub type alias Mipmaps = {
         gpu = WebGpu, layout = BindGroupLayout, vertexModule = ShaderModule, fragmentModule = ShaderModule,
         pipelines = Ref[Map[Int32, RenderPipeline], Static],
@@ -36,10 +36,10 @@ mod Render3d.WebGpuMipmaps {
     /// 写しを描き込む encoder と、pass を 1 つ積んだと知らせる口（3D の描き手の Host の物）。
     pub type alias Encoding = { encoder = Unit -> CommandEncoder \ IO, notePass = Unit -> Unit \ IO }
 
-    /// 作った写し 1 枚。levels = 段の数・bytes = 段を合わせた置き場の大きさ。
+    /// 作った写し 1 枚。levels = レベルの数・bytes = レベルを合わせた置き場の大きさ。
     pub type alias MipCopy = { texture = Texture, levels = Int32, bytes = Int64 }
 
-    /// 段 1 つの作り方。Copy = 段 0（元の絵を写す）・その上の段は平均の仕方ごと。
+    /// レベル 1 つの作り方。Copy = レベル 0（元の絵を写す）・その上のレベルは平均の仕方ごと。
     enum Step {
         case Copy
         case Halve(Mip.Average)
@@ -75,15 +75,15 @@ mod Render3d.WebGpuMipmaps {
         mm#vertexModule.release();
         mm#fragmentModule.release()
 
-    /// encoder を submit した後に呼ぶ（段の view と group を手放す）。
+    /// encoder を submit した後に呼ぶ（レベルの view と group を手放す）。
     pub def afterSubmit(mm: Mipmaps): Unit \ IO =
         Ref.get(mm#groups) |> List.forEach(g -> g.release());
         Ref.put(Nil, mm#groups);
         Ref.get(mm#views) |> List.forEach(v -> v.release());
         Ref.put(Nil, mm#views)
 
-    /// 元の絵 source の mip つきの写しを作り、段を作る pass を enc の encoder へ積む（呼ぶのは pass を開いていない時だけ）。
-    /// 段の数は 1 × 1 まで（TextureTable3d.levelsOf・Mip.build と同じ数え方）・平均の仕方は average。
+    /// 元の絵 source の mip つきの写しを作り、レベルを作る pass を enc の encoder へ積む（呼ぶのは pass を開いていない時だけ）。
+    /// レベルの数は 1 × 1 まで（TextureTable3d.levelsOf・Mip.build と同じ数え方）・平均の仕方は average。
     pub def copyOf(mm: Mipmaps, enc: Encoding, label: String, source: Texture, average: Mip.Average): MipCopy \ IO =
         let width = source.width();
         let height = source.height();
@@ -95,7 +95,7 @@ mod Render3d.WebGpuMipmaps {
             encodeStep(mm, enc, Step.Halve(average), texture.createView(level - 1, 1), texture.createView(level, 1)));
         { texture = texture, levels = levels, bytes = bytesOf(width, height, levels) }
 
-    /// 段 0 から levels 段の、RGBA8 の置き場の大きさ。
+    /// レベル 0 から levels レベルの、RGBA8 の置き場の大きさ。
     def bytesOf(width: Int32, height: Int32, levels: Int32): Int64 =
         if (levels <= 0) 0i64
         else Int32.toInt64(width * height * 4) + bytesOf(Int32.max(1, width / 2), Int32.max(1, height / 2), levels - 1)
@@ -129,7 +129,7 @@ mod Render3d.WebGpuMipmaps {
                 made
         }
 
-    /// 段を作る frag（入口は fs_copy・fs_raw・fs_srgb）。読む段は group 0 の binding 0 の段 1 つの view。
+    /// レベルを作る frag（入口は fs_copy・fs_raw・fs_srgb）。読むレベルは group 0 の binding 0 のレベル 1 つの view。
     /// 成分は 8bit の値（0〜255 の整数）に直して Mip.build と同じ式で平均し、k / 255 を書く（unorm の描き先は k に戻る）。
     // WhyNot: 線形の量を 8bit の sRGB の値へ戻す所を 255 本のしきい値の表で数えない — しきい値 (k − 0.5) / 255 を線形にした値以下を数えるのは、
     //   linearToSrgb(平均) × 255 + 0.5 の切り捨てと同じ数（曲線が単調）。f32 の丸めでしきい値の際だけ ±1 ずれうる。

@@ -287,7 +287,7 @@ pub mod Render3d.WebGpuMaterials {
             found |> List.filterMap(snd)
         })
 
-    /// 絵 name を表の番号で作る。場面の絵は CPU で段を作って上げ、全体の登録の絵は 2D の描き手の texture から段つきの写しを GPU で作る（元の絵が作り直されたら作り直す）。
+    /// 絵 name を表の番号で作る。場面の絵は CPU で mip のレベルを作って上げ、全体の登録の絵は 2D の描き手の texture から mip つきの写しを GPU で作る（元の絵が作り直されたら作り直す）。
     def ensureTexture(m: Materials, up: TextureUploads, name: String, textureUse: Texture3d.TextureUse): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let average = Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse));
@@ -310,8 +310,8 @@ pub mod Render3d.WebGpuMaterials {
             |> Option.flatMap(read -> Map.get(TextureTable3d.numberOf(s#textures, gen, fst(read)), Ref.get(s#store)))
             |> Option.map(g -> (g#texture, g#levels))
 
-    /// 2D の描き手の絵 t の段つきの写し（平均の仕方 average）を GPU で作り、番号 handle で控える（2D の描き手が絵を持っていなければ None）。
-    // WhyNot: 2D の描き手の絵を段 1 つのまま借りて貼らない — 遠くの面が段を選べず、段つきの写しを読む GL より細かくちらつく。
+    /// 2D の描き手の絵 t のmip つきの写し（平均の仕方 average）を GPU で作り、番号 handle で控える（2D の描き手が絵を持っていなければ None）。
+    // WhyNot: 2D の描き手の絵をmip のレベル 1 つのまま借りて貼らない — 遠くの面がレベルを選べず、mip つきの写しを読む GL より細かくちらつく。
     def mipCopyTexture(m: Materials, up: TextureUploads, handle: Int32, average: Mip.Average, t: Scene3dRenderer.RegisteredTexture): Option[{ levels = Int32, bytes = Int64 }] \ IO =
         let MaterialsData.MaterialsData(s) = m;
         (up#registered#textureById)(t#texId) |> Option.map(source -> {

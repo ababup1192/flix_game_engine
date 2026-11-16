@@ -1,4 +1,4 @@
-// 全体の登録の絵の mip つきの写し（Render3d.WebGpuMipmaps）が、PC の Dawn で CPU の Mip.build と同じ段を作る事を、段ごとに読み戻して固定する。
+// 全体の登録の絵の mip つきの写し（Render3d.WebGpuMipmaps）が、PC の Dawn で CPU の Mip.build と同じレベルを作る事を、レベルごとに読み戻して固定する。
 // WhyNot: mod TestWebGpuMipmapsDawn にしない — Render3d.WebGpuMipmaps は pub でなく、子の mod からだけ見える。
 // 組まずに通すのは、Dawn のネイティブを配っていない機種と adapter が無い機械だけ（TestWebGpuScene3dDawn と同じ。`[mipmaps-dawn] SKIP:` の行を出す）。
 mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
@@ -22,7 +22,7 @@ mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
 
     def byteOf(x: Int32): Int32 = Int32.bitwiseAnd(x, 255)
 
-    /// average の写しを Dawn で作って段ごとに読み戻した ARGB の列と、Mip.build の段の列の組（Dawn で開けなければ Err）。
+    /// average の写しを Dawn で作ってレベルごとに読み戻した ARGB の列と、Mip.build のレベルの列の組（Dawn で開けなければ Err）。
     def bothChains(average: Mip.Average): Result[String, (List[Vector[Int32]], List[Vector[Int32]])] \ IO =
         WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) |> Result.map(gpu -> {
             let tex = source();
@@ -85,11 +85,11 @@ mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
             case Ok((expected, found)) => Assert.assertEq(expected = expected, found)
         }
 
-    /// Raw の写しの段が、辺が奇数の絵でも Mip.build の段と画素まで同じ。
+    /// Raw の写しのレベルが、辺が奇数の絵でも Mip.build のレベルと画素まで同じ。
     @Test
     def testRawCopyMatchesMipBuild(): Unit \ {Assert, IO} = assertSameChain(Mip.Average.Raw)
 
-    /// SrgbCurve の写しの段が、辺が奇数の絵でも Mip.build の段と画素まで同じ。
+    /// SrgbCurve の写しのレベルが、辺が奇数の絵でも Mip.build のレベルと画素まで同じ。
     @Test
     def testSrgbCopyMatchesMipBuild(): Unit \ {Assert, IO} = assertSameChain(Mip.Average.SrgbCurve)
 }
