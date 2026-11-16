@@ -315,6 +315,20 @@ mod TestTape {
 
     def pickedIndexes(frames: List[Flow.Played[AppState]]): List[Int32] = TapeOut.choicesOf(frames) |> List.map(c -> c#picked)
 
+    /// 台詞の頁のまま待つゲート（viaLine）で選択肢が 2 つ以上の所（test/fixtures/gate の「どちらへ行く」）。
+    def atViaLineFork(r: Res.Res): World.World =
+        let after = TestGate.passed(r, TestGate.swipe(Gesture.Direction.Up), TestGate.begun(r));
+        let isForkOnLine = w -> WorldRead.gateHere(w) |> Option.map(g -> g#viaLine and List.length(g#choices) >= 2);
+        TestKit.readUntil(r, w -> isForkOnLine(w) == Some(true), Nil, TestKit.settle(r, TestKit.advance(r, after)))
+
+    @Test
+    def testPickedThroughAViaLineGateIsRecorded(): Unit \ {Assert, Fs.FileRead} =
+        // 払った 1 フレームの中で台詞を送ってから選ぶので、選択肢が出ているフレームが無くても、選んだ番号（下 = 1）が載る。
+        let r = TestGate.res();
+        let before = atViaLineFork(r);
+        let chose = recorded(() -> WorldRead.passGate(r, TestGate.swipe(Gesture.Direction.Down), before), before);
+        Assert.assertEq(expected = 1 :: Nil, pickedIndexes(played(r, before, chose) :: Nil))
+
     @Test
     def testSecondTimeOfTheSameOptionsStartsWhenTheyAppearedAgain(): Unit \ {Assert, Fs.FileRead} =
         // 選択肢が 0 フレーム目に出て 2 フレーム目に「回る」を選ぶと同じフレームでまた出る。2 回目（4 フレーム目に「出る」）の at はまた出た 2。

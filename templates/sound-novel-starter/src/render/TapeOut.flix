@@ -199,7 +199,7 @@ mod TapeOut {
     // WhyNot: カーソルだけで番号を決めない — 指で押す時はカーソルを動かさずにその番号を選ぶ。選んだ字（バックログの一番新しい「選んだ」行）で引き、同じ字が 2 つある時だけカーソルを使う。
     def pickedIn(step: App.TraceStep[AppState]): Option[Choice] =
         let before = step#before#world;
-        let offered = World.choicesOf(before);
+        let offered = World.readOf(before) |> Option.map(WorldRead.offeredOf) |> Option.getWithDefault(Nil);
         let options = offered |> List.map(option -> option#line#text);
         let cursor = World.readOf(before) |> Option.map(r -> r#choiceCursor) |> Option.getWithDefault(0);
         forM (
