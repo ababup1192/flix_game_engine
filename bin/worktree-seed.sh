@@ -72,24 +72,20 @@ seed() {
 	fi
 	mkdir -p "$(dirname "$dst")"
 	if [ "$how" = symlink ]; then
+		# WhyNot: main の lib/cache が共有の置き場 (make mvn-cache-share) への symlink なら、その先を直に指す。
+		# main を経由すると main の作業ツリーを動かした時に worktree の cache まで切れる。
+		[ -d "$src" ] && src=$(cd "$src" && pwd -P)
 		ln -s "$src" "$dst" && note "張った    $rel（symlink）"
 	else
 		clone "$src" "$dst" && note "張った    $rel（clone）"
 	fi
 }
 
-# Flix のパッケージ（flix.toml を持ち、main で lib/ が育っている所）を拾う。
-# WhyNot: ./build の直下は拾う — build/engine_full_web は make が組み立てるパッケージで、lib を持つ。
-# それより深い build/ は組んだ class の山か、配る版の組み立ての写し (build/bundle) なので歩かない。
-pkgs=$(cd "$main" && find . \
-	\( -path ./.git -o -path ./.claude -o -path ./.devbox -o -path './*/build' -o \( -path './build/*/*' -type d \) \
-	   -o -name node_modules -o -name src -o -name test -o -name artifact \) -prune \
-	-o -name flix.toml -print 2>/dev/null | sed 's|/flix.toml$||; s|^\./||' | sort)
+pkgs=$("$(dirname "$0")/flix-packages.sh" "$main")
 
 for pkg in $pkgs; do
 	lib="$pkg/lib"
 	[ "$pkg" = . ] && lib=lib
-	[ -d "$main/$lib" ] || continue
 	# WhyNot: worktree に無いパッケージへは張らない — main にだけある作りかけのフォルダを worktree に生やすと、
 	# 中身の無い lib だけが残る。.layers と build は make が後から作る場所なので先に張ってよい。
 	case "$pkg" in
@@ -102,7 +98,7 @@ for pkg in $pkgs; do
 		case "$name" in
 			# WhyNot: Maven の cache は symlink — 中身は版ごとの置き場で、書かれるのは足りない物の追加だけ。
 			# main と共有すれば、どちらかで取った物がもう一方でも Maven へ行かずに済む。
-			# make clean-locks の find は symlink の先へ降りないので、worktree から main の lock は消えない。
+			# 同時に書いても壊れない理由は bin/mvn-cache-share.sh。
 			cache) seed symlink "$lib/$name" ;;
 			# WhyNot: external・github は symlink にしない — make gl-jar が lib/external の fge-gl-*.jar を消して置き直し、
 			# github の fpkg は make sync が張り直す。symlink だと worktree の作業が main の lib を書き換える。

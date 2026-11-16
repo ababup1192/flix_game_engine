@@ -160,6 +160,7 @@ help:
 	@echo "  make gl-jar-publish       置き場の Release fge-gl-<ハッシュ> を作って jar を載せる (あれば何もしない・main への push で gl-jar.yml も流す)"
 	@echo "  make hooks                git の pre-commit ゲート (bin/githooks) をこの clone に配線する"
 	@echo "  make worktree-seed [WT=<worktree>]  新しい worktree へ git の外の依存 (lib・flix.jar・fge-go・gl-jar・fpkg) を main から張る (Studio の worktree も可)"
+	@echo "  make mvn-cache-share [ROOT=<dir>]  各パッケージの lib/cache を共有の置き場 1 か所へ移して symlink にする (中身は捨てない・使用中は飛ばす)"
 	@echo "  make bundle-zip           Studio に同梱する engine 一式を zip に固める (Release に添える)"
 
 # flix check を Ctrl-C で中断すると lib/cache/.../*.lock が残り、
@@ -169,8 +170,20 @@ help:
 # 消すのは -delete でなく -exec rm にする: BSD find の -delete は暗黙に -depth を立て、
 # すると -prune が無効化されて GB 級の build/ を全部歩き数分固まる (元の 7 分ハングの正体)。
 LOCK_DIRS := $(ENGINE_DIR) $(wildcard $(LAYER_DIRS)) $(ENGINE_FULL_DIR) $(wildcard templates/*) $(wildcard bench/*)
+# 共有の置き場 (make mvn-cache-share) は find が symlink の先へ降りないので別に歩く。
+# WhyNot: 置き場では開いているプロセスの居る lock を消さない — 置き場は他の worktree やゲームの flix と共有で、
+# 取っている最中の lock を消すと 2 つのプロセスが同じ .part に書く。
+MVN_CACHE_DIR = $(shell bin/mvn-cache-share.sh --print-dir)
 clean-locks:
-	@find $(LOCK_DIRS) -type d -name build -prune -o \( -path "*/lib/cache/*" -name "*.lock" -print -exec rm -f {} + \) 2>/dev/null | awk 'END { print NR " lock(s) removed" }'
+	@{ find $(LOCK_DIRS) -type d -name build -prune -o \( -path "*/lib/cache/*" -name "*.lock" -print -exec rm -f {} + \) 2>/dev/null; \
+	   [ ! -d "$(MVN_CACHE_DIR)" ] || find "$(MVN_CACHE_DIR)" -name '*.lock' 2>/dev/null | while read -r f; do \
+	     lsof "$$f" >/dev/null 2>&1 || { rm -f "$$f"; echo "$$f"; }; done; } | awk 'END { print NR " lock(s) removed" }'
+
+# 各パッケージの lib/cache (Maven の取り物) を共有の置き場 1 か所へ移し、symlink にする。ROOT を省くとこの作業ツリー。
+# 置き場・移し方・同時に使っても壊れない根拠は bin/mvn-cache-share.sh。
+.PHONY: mvn-cache-share
+mvn-cache-share:
+	@bin/mvn-cache-share.sh "$(or $(ROOT),$(CURDIR))"
 
 # engine の全パッケージ (ルートの src/ の symlink 集) を 1 つの木として型検査する。bin/fge refactor の --apply の後の
 # 確かめ (refactor.json の verify) もこれを流す。CHECKD=0 で素の flix check・QUIET=0 で全文。
