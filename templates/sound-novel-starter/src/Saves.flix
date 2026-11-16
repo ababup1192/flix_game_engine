@@ -322,16 +322,46 @@ mod Saves {
         let topSerial = slots |> Map.valuesOf |> List.map(s -> s#serial) |> List.foldLeft(Int32.max, 0);
         Saves.Saves({ slots = slots, seen = seen, config = config, serial = Int32.max(topSerial, JsonCodec.intOr("serial", 0, root)) })
 
-    /// 起動の時に読んだセーブ。refused = この版では読めない形（Form.Foreign）だったので読まずに fresh にした。
-    pub type alias Opened = { saves = Saves, refused = Bool }
+    /// 起動の時に読んだセーブ。refused = この版では読めない形（Form.Foreign）だったので読まずに fresh にした、
+    /// keptAs = 断ったファイルを写して残した先（写せなかった・断っていない時は None）。
+    pub type alias Opened = { saves = Saves, refused = Bool, keptAs = Option[String] }
 
-    /// 起動の 1 回: 無い・壊れている時は fresh（初めて遊ぶ時と同じ）。この版では読めない形の時も fresh で、refused を立てる。
-    pub def load(kind: KindDoc.Doc): Opened \ Fs.FileRead =
+    /// 断ったセーブを残す先（version の数ごとに 1 つ）。
+    pub def refusedPath(version: Int32): String = "saves/novel.refused-v${version}.json"
+
+    /// 起動の 1 回: 無い・壊れている時は fresh（初めて遊ぶ時と同じ）。この版では読めない形の時も fresh で refused を立て、
+    /// 元のファイルを refusedPath へ写して残す。
+    // WhyNot: 断ったファイルをそのまま置いておかない — 遊び始めて最初の未読の行か設定の変更で saves/novel.json は書き直され、古い枠は消える。
+    pub def load(kind: KindDoc.Doc): Opened \ {Fs.FileRead, Fs.FileWrite} =
         let fallback = fresh(kind);
-        let json = Fs.FileRead.read(path()) |> Result.toOption |> Option.flatMap(DocJson.parse);
-        match json {
-            case Some(j) => decode(fallback, j) |> Option.map(s -> { saves = s, refused = false }) |> Option.getWithDefault({ saves = fallback, refused = true })
-            case None    => { saves = fallback, refused = false }
+        let text = Fs.FileRead.read(path()) |> Result.toOption;
+        match forM (t <- text; j <- text |> Option.flatMap(DocJson.parse)) yield (t, j) {
+            case Some((t, j)) => openedOf(fallback, t, j)
+            case None         => { saves = fallback, refused = false, keptAs = None }
+        }
+
+    /// 読んだ JSON から起動のセーブ（読めない形なら元の文字 text を残す）。
+    def openedOf(fallback: Saves, text: String, json: Json): Opened \ {Fs.FileRead, Fs.FileWrite} =
+        match decode(fallback, json) {
+            case Some(s) => { saves = s, refused = false, keptAs = None }
+            case None    =>
+                let version = JsonCodec.expectObject(json) |> Option.map(root -> JsonCodec.intOr("version", 0, root)) |> Option.getWithDefault(0);
+                { saves = fallback, refused = true, keptAs = keepRefused(refusedPath(version), text) }
+        }
+
+    /// 断ったセーブの文字を dst へ書く。dst が既にあれば書かずにそれを残した先とする（前に断った物を消さない）。書けなければ 1 行言って None。
+    // WhyNot: Fs.FileTest で有無を見ない — ブラウザ版の Fs（WebFs）は FileRead と FileWrite しか受けない。
+    def keepRefused(dst: String, text: String): Option[String] \ {Fs.FileRead, Fs.FileWrite} =
+        if (Result.isOk(Fs.FileRead.read(dst))) Some(dst)
+        else {
+            let done = forM (
+                _ <- Fs.FileWrite.mkDirs("saves");
+                _ <- Fs.FileWrite.write({ str = text }, dst)
+            ) yield ();
+            match done {
+                case Ok(_)  => Some(dst)
+                case Err(e) => Log.warnThen("[saves] 読めない形のセーブを残せない: ${dst} (${e})", None)
+            }
         }
 
     /// 書く（App.addOutput の write）。書けない時は 1 行知らせて続ける（遊びは止めない）。

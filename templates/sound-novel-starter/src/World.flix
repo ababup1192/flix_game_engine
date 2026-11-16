@@ -287,10 +287,14 @@ mod World {
           saves = saves, saveRev = 0, pointer = { x = -1.0, y = -1.0 }, grab = Grab.Free, gesture = Gesture.idle(), clockBase = clockBase,
           storyClock = Clock.start(), realNow = Clock.zero(), toast = None, quitting = false, events = Emit.empty() }
 
-    /// 起動の World を、起動の時に読んだセーブから。この版では読めないセーブだった時は、タイトルで「読めない」と知らせる。
-    pub def opened(opened: Saves.Opened, clockBase: Int64): World =
-        let w = initial(opened#saves, clockBase);
-        if (opened#refused) notice(StoryDoc.Label.SavesRefused, w) else w
+    /// 起動の World を、起動の時に読んだセーブから。この版では読めないセーブだった時は、タイトルで「読めない」（写して残せたなら
+    /// そのことも）と知らせる。
+    // WhyNot: 知らせをほかの知らせより長く出さない — 断ったファイルは saves/ に残っていて読み逃しても失わず、長さは novel.kind.json の toastSeconds で決める。
+    pub def opened(boot: Saves.Opened, clockBase: Int64): World =
+        let w = initial(boot#saves, clockBase);
+        if (not boot#refused) w
+        else if (Option.nonEmpty(boot#keptAs)) notice(StoryDoc.Label.SavesRefusedKept, w)
+        else notice(StoryDoc.Label.SavesRefused, w)
 
     /// 読み始める前の Read（舞台・頁・バックログが空。メッセージ枠は ThemeDoc.startWindowName の型）。
     pub def emptyRead(theme: ThemeDoc.Doc): Read =
