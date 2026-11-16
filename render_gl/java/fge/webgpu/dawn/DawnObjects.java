@@ -55,6 +55,21 @@ final class DawnObjects {
             return new DawnTextureView(view);
         }
 
+        @Override public fge.webgpu.TextureView createView(int baseMip, int mipCount) {
+            WGPUTextureViewDescriptor desc = new WGPUTextureViewDescriptor();
+            desc.setFormat(DawnFormats.textureFormat(format));
+            desc.setDimension(WGPUTextureViewDimension._2D);
+            desc.setBaseMipLevel(baseMip);
+            desc.setMipLevelCount(mipCount);
+            desc.setBaseArrayLayer(0);
+            desc.setArrayLayerCount(1);
+            desc.setAspect(WGPUTextureAspect.All);
+            WGPUTextureView view = new WGPUTextureView();
+            texture.createView(desc, view);
+            desc.dispose();
+            return new DawnTextureView(view);
+        }
+
         @Override public fge.webgpu.TextureView defaultView() {
             if (defaultView == null) defaultView = (DawnTextureView) createView();
             return defaultView;
