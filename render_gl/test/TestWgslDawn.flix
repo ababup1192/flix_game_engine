@@ -261,10 +261,13 @@ mod TestWgslDawn {
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
         ("frag depth", Render3dWgsl.depthFragmentSource()) ::
-        ("vertex lit", Render3dWgsl.litVertexSource()) ::
-        ("vertex material", Render3dWgsl.materialVertexSource(false, false)) ::
-        ("vertex material uv", Render3dWgsl.materialVertexSource(true, false)) ::
-        ("vertex material uv lightmap", Render3dWgsl.materialVertexSource(true, true)) ::
+        ("vertex lit", Render3dWgsl.litVertexSource(false)) ::
+        ("vertex material", Render3dWgsl.materialVertexSource(false, false, false)) ::
+        ("vertex material uv", Render3dWgsl.materialVertexSource(true, false, false)) ::
+        ("vertex material uv lightmap", Render3dWgsl.materialVertexSource(true, true, false)) ::
+        ("vertex lit skinned", Render3dWgsl.litVertexSource(true)) ::
+        ("vertex material skinned", Render3dWgsl.materialVertexSource(false, false, true)) ::
+        ("vertex material uv skinned", Render3dWgsl.materialVertexSource(true, false, true)) ::
         ("sky", head + Render3dWgsl.skyLightSource() +
                 "@fragment fn fs_main(@location(0) d: vec3f) -> @location(0) vec4f { return vec4f(skyAt(d), 1.0); }\n") :: Nil
 

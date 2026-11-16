@@ -35,6 +35,10 @@ mod V2Main {
         materialCase("matNormal", kit, V2Materials.normalMapped) ::
         materialDepthCase(kit) ::
         materialCase("matMany", kit, V2Materials.manyMaterials(manyCount(), kit#torch)) ::
+        skinnedCase("skinned", kit, Scene3d.Output.Color, V2Skinned.vertexColored) ::
+        skinnedCase("skinnedTextured", kit, Scene3d.Output.Color, V2Skinned.textured(V2Materials.colorTexture())) ::
+        skinnedCase("skinnedDepth", kit, depthOfRoom(), V2Skinned.vertexColored) ::
+        skinnedCase("crowd", kit, Scene3d.Output.Color, V2Skinned.crowd(crowdCount(), kit#torch)) ::
         railsCase("railsMsaa", 4, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsNoMsaa", 1, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsMsaaClear", 4, None, Color.rgb(0.3, 0.15, 0.05)) ::
@@ -65,6 +69,13 @@ mod V2Main {
     /// 部屋の物に材質 restyle（V2Materials）を付けて画面へ直に（Native・yaw 0.3 で家具の側面も映す）。
     def materialCase(name: String, kit: Room.Kit, restyle: Scene3d.Scene3dCmd -> Scene3d.Scene3dCmd): Case =
         { name = name, passes = Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), restyle(Room.scene(kit, 0.3))) :: Nil }
+
+    /// 部屋に restyle（V2Skinned）で物を足して画面へ直に（Native・正面）。output = 場面の Output（Depth なら奥行きの書き出し）。
+    def skinnedCase(name: String, kit: Room.Kit, output: Scene3d.Output, restyle: Scene3d.Scene3dCmd -> Scene3d.Scene3dCmd): Case =
+        { name = name, passes = Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), { output = output | restyle(Room.scene(kit, 0.0)) }) :: Nil }
+
+    /// crowd の小物の数（形 2 種で行が 2 本・2 本目の行の頭の物は 1 体ごとの値の途中を指す）。
+    def crowdCount(): Int32 = 1200
 
     /// 穴あきの両面の材質を奥行きの書き出しで（cutout の穴を抜いた灰色・裏の面も書く）。
     def materialDepthCase(kit: Room.Kit): Case =
@@ -134,7 +145,8 @@ mod V2Main {
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
-             "matDepth" => (4, 8, 255), "matMany" => (430, 440, 255)}
+             "matDepth" => (4, 8, 255), "matMany" => (430, 440, 255),
+             "skinned" => (8, 32, 255), "skinnedTextured" => (8, 100, 255), "skinnedDepth" => (4, 8, 16), "crowd" => (32, 64, 255)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip"}
@@ -199,6 +211,17 @@ mod V2Main {
     def timeValues(gpu: WebGpu, trial: SplitPassTrial.Trial, kit: Room.Kit): List[Int64] \ IO =
         List.range(0, timedFrames()) |> List.map(i -> {
             let cmds = Render.drawScenes3d(Render.scene3d(Vec2.zero(), V2Materials.manyMaterials(manyCount(), kit#torch, Room.scene(kit, yawAt(i)))) :: Nil);
+            let started = System.nanoTime();
+            SplitPassTrial.frameA(trial, cmds);
+            gpu.waitIdle();
+            System.nanoTime() - started
+        })
+
+    /// 小物 crowdCount() 個と骨つきの人形の場面を貼る形 A で i コマ目を組んで GPU を待つ時間（1 体ごとの値と姿勢の送り方の記録）。
+    def timeCrowd(gpu: WebGpu, trial: SplitPassTrial.Trial, kit: Room.Kit): List[Int64] \ IO =
+        List.range(0, timedFrames()) |> List.map(i -> {
+            let scene = V2Skinned.vertexColored(V2Skinned.crowd(crowdCount(), kit#torch, Room.scene(kit, yawAt(i))));
+            let cmds = Render.drawScenes3d(Render.scene3d(Vec2.zero(), scene) :: Nil);
             let started = System.nanoTime();
             SplitPassTrial.frameA(trial, cmds);
             gpu.waitIdle();
@@ -372,7 +395,9 @@ mod V2Main {
                         + "・貼る形 A ${medianMs(a)}・B ${medianMs(b)}");
                     let uniform = timeValues(gpu, trial, kit);
                     let storage = timeValues(gpu, storageTrial, kit);
-                    println("[webgpu-v2] 材質 ${Int32.toString(manyCount())} 個の 1 コマ（${Int32.toString(round + 1)} 回目・ms）: 値を uniform で ${medianMs(uniform)}・storage で ${medianMs(storage)}")
+                    println("[webgpu-v2] 材質 ${Int32.toString(manyCount())} 個の 1 コマ（${Int32.toString(round + 1)} 回目・ms）: 値を uniform で ${medianMs(uniform)}・storage で ${medianMs(storage)}");
+                    let crowd = timeCrowd(gpu, trial, kit);
+                    println("[webgpu-v2] 小物 ${Int32.toString(crowdCount())} 個と人形 ${Int32.toString(V2Skinned.figureCount())} 体の 1 コマ（${Int32.toString(round + 1)} 回目・ms）: ${medianMs(crowd)}")
                 });
                 SplitPassTrial.close(trial);
                 SplitPassTrial.close(storageTrial);

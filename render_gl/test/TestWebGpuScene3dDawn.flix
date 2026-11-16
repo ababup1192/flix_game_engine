@@ -2,12 +2,13 @@
 // 組まずに通すのは、Dawn のネイティブを配っていない機種と adapter が無い機械だけ（TestWgslDawn と同じ。`[scene3d-dawn] SKIP:` の行を出す）。
 // WhyNot: mod TestWebGpuScene3dDawn にしない — afterSubmit の後の控えを見るのに Render3d.WebGpuRenderer の Host と prepare を、2D の描き手を通さずに呼ぶ。
 mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
+    import fge.webgpu.BindGroupLayout
     import fge.webgpu.BindGroupLayoutDesc
     import fge.webgpu.BufferBindingType
     import fge.webgpu.ShaderStage
     import fge.webgpu.TextureSampleType
     import fge.webgpu.WebGpu
-    use Render3d.WebGpuRenderer.{Dest, Host, Prepared, afterSubmit, notePasted, prepare}
+    use Render3d.WebGpuRenderer.{Dest, Host, Prepared, RendererData, afterSubmit, notePasted, packPoses, prepare, sendPoses}
 
     def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
 
@@ -43,10 +44,50 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
                 Assert.assertEq(expected = 1, flushes)
         }
 
-    def flushesAround(gpu: WebGpu): Int32 \ IO =
+    def pasteLayout(gpu: WebGpu): BindGroupLayout \ IO =
         let layoutDesc = new BindGroupLayoutDesc("test paste");
         discard layoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).buffer(1, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
-        let layout = gpu.createBindGroupLayout(layoutDesc);
+        gpu.createBindGroupLayout(layoutDesc)
+
+    /// 姿勢は同じ encoder の中では 1 回だけ送って group 2 を使い回し、submit の後は送り直して新しい group 2 を作る
+    /// （submit の後に次の prepare が姿勢の buffer の頭から書くので、前の位置を読む group を使い続けない）。
+    @Test
+    def testPosesAreResentAfterSubmit(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let found = posesAroundSubmit(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = (1, true, 1, false), found)
+        }
+
+    /// (1 回目に送った後の group 2 の数, 2 回目が同じ group か, submit の後に送り直した後の group 2 の数, 送り直した group が前と同じか)。
+    def posesAroundSubmit(gpu: WebGpu): (Int32, Bool, Int32, Bool) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
+        let RendererData.RendererData(s) = renderer;
+        let rows = snd(Render3d.PoseRows.assignRow(Render3d.FakeGl.poseAt(1.0), Render3d.PoseRows.noRows(16)));
+        let found = match packPoses(renderer, rows) {
+            case None => (0, false, 0, false)
+            case Some(poses) =>
+                let first = sendPoses(renderer, poses);
+                let again = sendPoses(renderer, poses);
+                let sentOnce = List.length(Ref.get(s#poseGroups));
+                afterSubmit(renderer);
+                let resent = sendPoses(renderer, poses);
+                (sentOnce, Render3d.PoseRows.isSameValue(first, again), List.length(Ref.get(s#poseGroups)), Render3d.PoseRows.isSameValue(first, resent))
+        };
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        found
+
+    def flushesAround(gpu: WebGpu): Int32 \ IO =
+        let layout = pasteLayout(gpu);
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);

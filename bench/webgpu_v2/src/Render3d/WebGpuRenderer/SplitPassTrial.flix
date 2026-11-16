@@ -93,9 +93,9 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
             let rect = sceneRect(vp, plan#cmd);
             let scissor = clipBox(vp, rect, plan#cmd#clip);
             let target = targetOf(t#renderer, host, (0, i), { width = rect#width, height = rect#height, format = RenderTarget.Format.Rgba8Unorm, samples = 1 });
-            let staged = stageScene(t#renderer, host, target, grouped#members, plan);
+            let staged = stageScene(t#renderer, host, target, { members = grouped#members, poses = None }, plan);
             staged#passes |> List.forEach(match (spec, list, valuesBase) ->
-                encodeScene(t#renderer, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase },
+                encodeScene(t#renderer, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup },
                             { color = t#frame.defaultView(), resolve = None, clear = None, depth = target#depth.defaultView(),
                               viewport = topLeftOf(t#height, rect), scissor = topLeftOf(t#height, scissor) }))
         });

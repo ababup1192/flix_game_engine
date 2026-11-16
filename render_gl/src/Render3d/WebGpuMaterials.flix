@@ -1,7 +1,7 @@
 // Render3d.WebGpuMaterials — WebGPU の 3D の材質の分（材質の program・材質の絵の置き場・draw ごとの値の buffer・材質の pipeline と group 1）。
 // Render3d.WebGpuRenderer が 1 つ持つ。材質は計画の問い合わせ（Render3d.ScenePlan.MaterialRequest）ごとに resolve で答え、行の values と reads
 // （並びは Render3d.MaterialValues の頭）を、値の buffer の区画と絵の表（Render3d.TextureTable3d）の番号で group 1 に付ける。
-// 描く材質: 骨の無い・lightmap の無い・半透明でない・alpha to coverage でない材質（uv・法線マップ・両面・cutout・metallic と roughness を含む）。
+// 描く材質: lightmap の無い・半透明でない・alpha to coverage でない材質（骨つき・uv・法線マップ・両面・cutout・metallic と roughness を含む）。
 // 描かない版は順の番号 0 で答え、計画は頂点の色の道へ回す（知らせるのは Render3d.WebGpuRenderer.skipsOf）。
 // WhyNot: alpha to coverage の版を描かない — render_gl/java の RenderPipelineDesc に alphaToCoverage の口が無い（足すと GL の層の jar のハッシュが動く）。
 //   計画には描き先の能力として「alpha to one が無い」と答え、cutout は discard で抜く（ブラウザの GL と同じ）。
@@ -62,7 +62,7 @@ pub mod Render3d.WebGpuMaterials {
     type alias GpuTexture = { texture = Texture, levels = Int32, borrowed = Bool }
 
     /// 状態。programs = materialKey → 組んだ program（組めなければ None）・current = 今の prepare の問い合わせの順の program（行の欄 1 が引く）・
-    /// vertexModules = uv つきか → 材質の頂点シェーダー・pipelines = (program, 形式の番号, 標本, 頂点のバイト数) → pipeline・
+    /// vertexModules = (uv つきか, 骨つきか) → 材質の頂点シェーダー・pipelines = (program, 形式の番号, 標本, 頂点のバイト数) → pipeline・
     /// textures = 絵の表・store = 絵の表の番号 → 絵・samplers = [Repeat Nearest, Repeat Linear, Clamp Nearest, Clamp Linear]・blank = 無い絵の代わり（1 × 1 の透明な黒）・
     /// values = 値の buffer（要素 1 つ・足りなければ作り直す）・valuesUsed = 今の encoder で使ったバイト数・groups = 今の encoder の group 1（submit の後に手放す）・
     /// bound = 今の pass で最後に付けた (pipeline の鍵の番号, 行の値の位置)・warned = 知らせ済みの材質の名前。
@@ -73,7 +73,7 @@ pub mod Render3d.WebGpuMaterials {
             programs = Ref[Map[String, Option[Program]], Static],
             nextId = Array[Int32, Static],
             current = Ref[Vector[Option[Program]], Static],
-            vertexModules = Ref[Map[Bool, ShaderModule], Static],
+            vertexModules = Ref[Map[(Bool, Bool), ShaderModule], Static],
             pipelines = Ref[Map[(Int32, Int32, Int32, Int32), RenderPipeline], Static],
             textures = TextureTable3d.Table,
             store = Ref[Map[Int32, GpuTexture], Static],
@@ -150,7 +150,7 @@ pub mod Render3d.WebGpuMaterials {
     // ── 材質の program ──
 
     /// 版 kind の材質をこの描き手が描けるか。
-    pub def isDrawable(kind: ProgramKind): Bool = not kind#skinned and not kind#lightmap and not kind#blend and not kind#coverage
+    pub def isDrawable(kind: ProgramKind): Bool = not kind#lightmap and not kind#blend and not kind#coverage
 
     /// 問い合わせ requests に順の番号で答える（描けない版と組めない材質は 0）。答えた表は current に控え、行の欄 1（問い合わせの番号）で引く。
     /// 初めての材質はここで組み、noteBuild(名前) を呼ぶ。
@@ -230,10 +230,15 @@ pub mod Render3d.WebGpuMaterials {
     /// 行 list の材質の行が読む絵を作る（無ければ）。source = 場面の textures と全体の登録・textureById = 登録の絵の番号 → 2D の描き手の texture・
     /// gen = 今の世代。描き始める前に呼ぶ。
     pub def uploadTextures(m: Materials, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64, list: SceneList): Unit \ IO =
-        let up = { source = source, textureById = textureById, gen = gen };
-        List.range(0, rowCountOf(list)) |> List.forEach(row ->
+        uploadTexturesFrom(m, { source = source, textureById = textureById, gen = gen }, list, 0, rowCountOf(list))
+
+    def uploadTexturesFrom(m: Materials, up: TextureUploads, list: SceneList, row: Int32, n: Int32): Unit \ IO =
+        if (row >= n) ()
+        else {
             if (rowAt(list, row, 0) == kindMaterial() and valuesAt(list, row) >= 0) materialAt(list, row) |> Option.forEach(f -> uploadRowTextures(m, up, list, row, f))
-            else ())
+            else ();
+            uploadTexturesFrom(m, up, list, row + 1, n)
+        }
 
     /// uploadTextures の 1 回で行をまたいで変わらない物。
     type alias TextureUploads = { source = TextureSource, textureById = Int32 -> Option[Texture] \ IO, gen = Int64 }
@@ -329,9 +334,20 @@ pub mod Render3d.WebGpuMaterials {
 
     // ── 描く ──
 
+    /// pass の中で今付けている pipeline（同じ物を付け直さないための鍵）。Shape(pass の番号, 頂点のバイト数, 骨つきか) = 頂点の色の pipeline・
+    /// Material(program の順の番号, 頂点のバイト数) = 材質の pipeline。
+    pub enum BoundPipeline with Eq {
+        case Unbound
+        case Shape(Int32, Int32, Bool)
+        case Material(Int32, Int32)
+    }
+
     /// 材質の行を描く pass の付け方の材料。base = 行の values を送った位置（バイト）・format・samples = 描き先・sceneLayout = group 0 の layout・
-    /// bound = [今の pipeline の鍵の番号（-1 = まだ）, 最後に付けた group の行]。
-    pub type alias MaterialPass = { base = Int32, format = RenderTarget.Format, samples = Int32, sceneLayout = BindGroupLayout, bound = Array[Int32, Static] }
+    /// poseLayout = group 2（姿勢）の layout・bound = 今の pipeline・groupRow = 最後に group 1 を付けた行（要素 1 つ・-1 = 付けていないか、付けた物が材質の group でない）。
+    pub type alias MaterialPass = {
+        base = Int32, format = RenderTarget.Format, samples = Int32, sceneLayout = BindGroupLayout, poseLayout = BindGroupLayout,
+        bound = Ref[BoundPipeline, Static], groupRow = Array[Int32, Static]
+    }
 
     /// 行 row の材質の pipeline と group 1 を pass に付ける（描けない行は偽）。前の材質の行と同じ付け方（flagSameBinding）の行は group を付け直さない。
     pub def bindRow(m: Materials, mp: MaterialPass, pass: RenderPass, list: SceneList, row: Int32, mesh: MeshBuffers): Bool \ IO =
@@ -341,18 +357,17 @@ pub mod Render3d.WebGpuMaterials {
         let program = if (handle >= 0 and handle < Vector.length(current)) Vector.get(handle, current) else None;
         let valuesOk = valuesAt(list, row) >= 0;
         match program {
-            case Some(p) if valuesOk =>
-                let pipeline = pipelineOf(m, mp, p, mesh);
-                let pipelineKey = p#id * 4096 + mesh#stride;
-                if (Array.get(0, mp#bound) == pipelineKey) () else {
-                    pass.setPipeline(pipeline);
-                    Array.put(pipelineKey, 0, mp#bound);
-                    Array.put(-1, 1, mp#bound)
+            case Some(p) if valuesOk and (not p#kind#skinned or Option.nonEmpty(mesh#skinAt)) =>
+                let key = BoundPipeline.Material(p#id, mesh#stride);
+                if (Ref.get(mp#bound) == key) () else {
+                    pass.setPipeline(pipelineOf(m, mp, p, mesh));
+                    Ref.put(key, mp#bound);
+                    Array.put(-1, 0, mp#groupRow)
                 };
-                let reuse = hasFlag(list, row, flagSameBinding()) and Array.get(1, mp#bound) >= 0;
+                let reuse = hasFlag(list, row, flagSameBinding()) and Array.get(0, mp#groupRow) >= 0;
                 if (reuse) () else {
                     pass.setBindGroup(1, buildGroup(m, mp, p, list, row));
-                    Array.put(row, 1, mp#bound)
+                    Array.put(row, 0, mp#groupRow)
                 };
                 true
             case _ => false
@@ -369,7 +384,7 @@ pub mod Render3d.WebGpuMaterials {
         let store = Ref.get(s#store);
         let textureAt = (k: Int32) -> Map.get(readAt(list, row, k, 0), store) |> Option.map(g -> g#texture) |> Option.getWithDefault(s#blank);
         let samplerAt = (k: Int32) -> Array.get(2 * readAt(list, row, k, 2) + readAt(list, row, k, 1), s#samplers);
-        List.range(0, p#texCount) |> List.forEach(k -> discard desc.textureView(1 + 2 * k, textureAt(k).defaultView()).sampler(2 + 2 * k, samplerAt(k)));
+        putTexturesFrom(desc, textureAt, samplerAt, 0, p#texCount);
         if (p#kind#uv and p#kind#normalMap) {
             let draw = Render3dWgsl.drawBinding();
             discard desc.textureView(draw + 1, textureAt(p#texCount).defaultView()).sampler(draw + 2, samplerAt(p#texCount))
@@ -378,7 +393,16 @@ pub mod Render3d.WebGpuMaterials {
         Ref.put(group :: Ref.get(s#groups), s#groups);
         group
 
+    /// 材質の絵の k 番目から n の前までを desc の 1 + 2k（絵）と 2 + 2k（sampler）へ。
+    def putTexturesFrom(desc: BindGroupDesc, textureAt: Int32 -> Texture \ IO, samplerAt: Int32 -> Sampler \ IO, k: Int32, n: Int32): Unit \ IO =
+        if (k >= n) ()
+        else {
+            discard desc.textureView(1 + 2 * k, textureAt(k).defaultView()).sampler(2 + 2 * k, samplerAt(k));
+            putTexturesFrom(desc, textureAt, samplerAt, k + 1, n)
+        }
+
     /// program p で形 mesh を mp の描き先へ描く pipeline（無ければ作る）。表の面は時計回りで、両面の材質だけ裏を間引かない。深度は LESS で書く。
+    /// 骨つきの版は group 2（姿勢）と、形の版のジョイントの番号と重み（location 14・15）を読む（呼ぶ側が mesh#skinAt のある形だけを渡す）。
     def pipelineOf(m: Materials, mp: MaterialPass, p: Program, mesh: MeshBuffers): RenderPipeline \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let key = (p#id, WebGpuPipelines.formatCode(mp#format), mp#samples, mesh#stride);
@@ -386,9 +410,12 @@ pub mod Render3d.WebGpuMaterials {
             case Some(found) => found
             case None =>
                 let desc = new RenderPipelineDesc("fge material");
-                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p#kind#uv), "vs_main").fragment(p#fragment, "fs_main");
+                let skinned = p#kind#skinned;
+                discard desc.bindGroupLayout(mp#sceneLayout).bindGroupLayout(p#layout).vertex(vertexModuleOf(m, p#kind#uv, skinned), "vs_main").fragment(p#fragment, "fs_main");
+                if (skinned) discard desc.bindGroupLayout(mp#poseLayout) else ();
                 discard desc.vertexBuffer(mesh#stride, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);
                 if (p#kind#uv) discard desc.attribute(VertexFormat.FLOAT32X2, 36, 11).attribute(VertexFormat.FLOAT32X4, 44, 12) else ();
+                if (skinned) mesh#skinAt |> Option.forEach(at -> discard desc.attribute(VertexFormat.FLOAT32X4, at, 14).attribute(VertexFormat.FLOAT32X4, at + 16, 15)) else ();
                 discard desc.vertexBuffer(Render3dWgsl.instanceBytes(), true);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 0, 3).attribute(VertexFormat.FLOAT32X4, 16, 4);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 32, 5).attribute(VertexFormat.FLOAT32X4, 48, 6);
@@ -402,14 +429,14 @@ pub mod Render3d.WebGpuMaterials {
                 made
         }
 
-    /// 材質の頂点シェーダー（uv つきの版か。無ければ作る）。
-    def vertexModuleOf(m: Materials, uv: Bool): ShaderModule \ IO =
+    /// 材質の頂点シェーダー（uv つきの版か・骨つきの版か。無ければ作る）。
+    def vertexModuleOf(m: Materials, uv: Bool, skinned: Bool): ShaderModule \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        match Map.get(uv, Ref.get(s#vertexModules)) {
+        match Map.get((uv, skinned), Ref.get(s#vertexModules)) {
             case Some(found) => found
             case None =>
-                let made = s#gpu.createShaderModule("fge material vs", Render3dWgsl.materialVertexSource(uv, false));
-                Ref.put(Map.insert(uv, made, Ref.get(s#vertexModules)), s#vertexModules);
+                let made = s#gpu.createShaderModule("fge material vs", Render3dWgsl.materialVertexSource(uv, false, skinned));
+                Ref.put(Map.insert((uv, skinned), made, Ref.get(s#vertexModules)), s#vertexModules);
                 made
         }
 }

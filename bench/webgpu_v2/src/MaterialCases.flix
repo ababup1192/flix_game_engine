@@ -30,7 +30,7 @@ mod V2Materials {
     def opaque(r: Int32, g: Int32, b: Int32): Int32 =
         Int32.bitwiseOr(Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(r, 16)), Int32.leftShift(g, 8)), b)
 
-    def colorTexture():Texture3d.Texture3d = checker(8, 8, opaque(208, 160, 96), opaque(64, 96, 128), false)
+    pub def colorTexture(): Texture3d.Texture3d = checker(8, 8, opaque(208, 160, 96), opaque(64, 96, 128), false)
 
     def holeTexture(): Texture3d.Texture3d = checker(6, 8, opaque(224, 224, 224), opaque(192, 64, 64), true)
 
