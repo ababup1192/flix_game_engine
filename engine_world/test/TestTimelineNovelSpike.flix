@@ -63,7 +63,7 @@ mod TestTimelineNovelSpike {
             case Item.LineWait(_, secs, sounds) =>
                 let started = place(place(gated, Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), hold(i, secs) |> withSounds(sounds));
                 { flowFrom = Some(Key.Hold(i)) | started }
-            case Item.RunnerWait(secs)       => place(gated, hold(i, secs))
+            case Item.RunnerWait(secs)       => runnerWaitOf(i, secs, acc)
             case Item.Line(_)                => place(place(gated, Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.waitFor(Key.Read))
         }
 
@@ -74,6 +74,13 @@ mod TestTimelineNovelSpike {
             { flowFrom = None | place(applied, Timeline.atStartOf(flow, Key.Hold(i), Duration.Seconds(secs))) }
         case None =>
             place(place(acc, Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), hold(i, secs))
+    }
+
+    /// 実行器の <<wait>>。LineWait の後ろなら LineWait の頭から数えて重なる（古い版の記録: 歩く <<bg genkan>> 5.4 秒の後ろの
+    /// <<wait 0.8>> の後の台詞は bg から 5.433 秒 = 歩きの終わりの次のフレーム）。後ろの命令は流さない。
+    def runnerWaitOf(i: Int32, secs: Float64, acc: Acc): Acc = match acc#flowFrom {
+        case Some(flow) => { flowFrom = None | place(acc, Timeline.atStartOf(flow, Key.Hold(i), Duration.Seconds(secs))) }
+        case None       => place(acc, hold(i, secs))
     }
 
     /// 1 ビートの時刻表（毎フレーム組み直す。数十行なら µs）。
@@ -114,14 +121,24 @@ mod TestTimelineNovelSpike {
         case _                   => false
     }
 
-    /// 押した: 押すと明ける待ちの途中なら、押した時に途中だった待ちの一番遅い終わりへ 1 回で飛ぶ。
-    // WhyNot: 待ちごとに skipToEndOf を続けて当てない — 飛んだ先でちょうど始まる次の待ち（<<wait>>）まで途中に見えて飛ばしてしまう。
-    def tap(items: List[Item], wall: Float64, p: Timeline.Player, tl: Timeline.Timeline[Key]): Timeline.Player =
-        let ends = Timeline.activeAt(Timeline.playheadOn(wall, p, tl), tl) |> List.map(c -> c#start + c#dur);
-        match List.maximum(ends) {
-            case Some(end) if waitingOf(items, wall, p, tl) == Waiting.Tappable => Timeline.seekOn(wall, end, p, tl)
-            case _                                                             => p
-        }
+    /// 押した: 途中の押すと明ける待ちを、今の時刻で終わる長さに縮める（押しても明けない待ちと、重なって数えている
+    /// <<wait>> は残る。古い版も押すと歩きだけを終え、<<wait>> の明ける時刻はそのままだった）。縮めた後ろの音は鳴らない。
+    // WhyNot: 一番遅い終わりへ seek しない — 歩きと重なって数えている <<wait>> まで一緒に飛ばし、表の時刻も 1 本しか動かせない。
+    def tap(items: List[Item], wall: Float64, p: Timeline.Player, tl: Timeline.Timeline[Key]): List[Item] =
+        let head = Timeline.playheadOn(wall, p, tl);
+        items |> List.zipWithIndex |> List.map(pair -> {
+            let (i, item) = pair;
+            let cutAt = Timeline.clipOf(Key.Hold(i), tl) |> Option.filter(c -> isTappable(item) and isActive(Timeline.stateOf(c#tag, head, tl)))
+                                                       |> Option.map(c -> head#t - c#start);
+            cutAt |> Option.map(secs -> shortened(secs, item)) |> Option.getWithDefault(item)
+        })
+
+    /// 待ちを secs 秒に縮めた物（縮めた後ろの音を外す）。
+    def shortened(secs: Float64, item: Item): Item = match item {
+        case Item.WaitOrTap(name, _)        => Item.WaitOrTap(name, secs)
+        case Item.LineWait(name, _, sounds) => Item.LineWait(name, secs, sounds |> List.filter(pair -> fst(pair) <= secs))
+        case other                          => other
+    }
 
     /// 台詞の出来事の番号（無ければ -1）。
     def lineIndexOf(items: List[Item]): Int32 =
@@ -138,19 +155,20 @@ mod TestTimelineNovelSpike {
     def dt(): Float64 = 1.0 / 30.0
 
     /// 1/30 秒ずつ流し、台詞が出た最初のフレームの壁の時刻（taps の秒に押す）と、鳴った音を返す。
-    def playBeat(items: List[Item], taps: List[Float64]): (Float64, List[String]) =
-        let tl = beatOf(items);
-        let line = lineIndexOf(items);
-        def go(i: Int32, p: Timeline.Player, heard: List[String]): (Float64, List[String]) = {
+    def playBeat(start: List[Item], taps: List[Float64]): (Float64, List[String]) =
+        let line = lineIndexOf(start);
+        let p = Timeline.player();
+        def go(i: Int32, items: List[Item], heard: List[String]): (Float64, List[String]) = {
             let wall = Int32.toFloat64(i) * dt();
             let pressed = List.exists(t -> Int32.toFloat64(i - 1) * dt() < t and t <= wall, taps);
-            let next = if (pressed) tap(items, wall, p, tl) else p;
+            let next = if (pressed) tap(items, wall, p, beatOf(items)) else items;
+            let tl = beatOf(next);
             let prev = if (i == 0) 0.0 else Int32.toFloat64(i - 1) * dt();
-            let sounds = heard ::: Timeline.soundsOnPlayer(if (i == 0) Playback.Enter else Playback.Play, prev, wall, next, tl);
-            if (isApplied(line, Timeline.playheadOn(wall, next, tl), tl) or wall > 30.0) (wall, sounds)
+            let sounds = heard ::: Timeline.soundsOnPlayer(if (i == 0) Playback.Enter else Playback.Play, prev, wall, p, tl);
+            if (isApplied(line, Timeline.playheadOn(wall, p, tl), tl) or wall > 30.0) (wall, sounds)
             else go(i + 1, next, sounds)
         };
-        go(0, Timeline.player(), Nil)
+        go(0, start, Nil)
 
     /// 歩く背景 → <<set>> → <<audio>> ×2 → <<wait 0.8>> → 台詞（移行で台詞が早く出た並び）。
     def walkThenWait(): List[Item] = List#{
@@ -165,8 +183,14 @@ mod TestTimelineNovelSpike {
     def within(t: Float64, expected: Float64): Bool = t >= expected - 1.0e-9 and t < expected + dt()
 
     @Test
-    def testTheLineWaitsForTheWalkAndThenTheRunnerWait(): Unit \ Assert =
-        Assert.assertEq(expected = true, within(fst(playBeat(walkThenWait(), Nil)), 5.4 + 0.8))
+    def testTheRunnerWaitCountsFromTheStartOfTheWalk(): Unit \ Assert =
+        // 古い版の記録（walk_tour の tape.json）: bg genkan 36.5 秒・台詞 41.933 秒 = 5.433 秒後（歩き 5.4 秒の次のフレーム）
+        Assert.assertEq(expected = true, within(fst(playBeat(walkThenWait(), Nil)), 5.4))
+
+    @Test
+    def testARunnerWaitLongerThanTheWalkHoldsTheLine(): Unit \ Assert =
+        let items = List#{ Item.LineWait("bg", 5.4, Nil), Item.RunnerWait(6.0), Item.Line("narration") };
+        Assert.assertEq(expected = true, within(fst(playBeat(items, Nil)), 6.0))
 
     @Test
     def testTheAudioAfterTheWalkFlowsAtTheStartOfTheWalk(): Unit \ Assert =
@@ -179,8 +203,12 @@ mod TestTimelineNovelSpike {
         Assert.assertEq(expected = List#{"door", "ambience", "bgm", "step"}, snd(playBeat(walkThenWait(), Nil)))
 
     @Test
-    def testTappingDuringTheWalkEndsItAndKeepsTheRunnerWait(): Unit \ Assert =
-        Assert.assertEq(expected = true, within(fst(playBeat(walkThenWait(), List#{0.99})), 1.0 + 0.8))
+    def testTappingAfterTheRunnerWaitShowsTheLineAtOnce(): Unit \ Assert =
+        Assert.assertEq(expected = true, within(fst(playBeat(walkThenWait(), List#{0.99})), 1.0))
+
+    @Test
+    def testTappingDuringTheRunnerWaitEndsTheWalkButKeepsTheWait(): Unit \ Assert =
+        Assert.assertEq(expected = true, within(fst(playBeat(walkThenWait(), List#{0.49})), 0.8))
 
     @Test
     def testTappingDuringTheWalkDropsItsLaterSounds(): Unit \ Assert =
@@ -191,12 +219,8 @@ mod TestTimelineNovelSpike {
         let items = walkThenWait();
         let tl = beatOf(items);
         let p = Timeline.player();
-        Assert.assertEq(expected = (Waiting.Tappable, Waiting.Blocking, Waiting.Input),
-            (waitingOf(items, 1.0, p, tl), waitingOf(items, 5.8, p, tl), waitingOf(items, 6.3, p, tl)))
-
-    @Test
-    def testTappingDuringTheRunnerWaitDoesNothing(): Unit \ Assert =
-        Assert.assertEq(expected = true, within(fst(playBeat(walkThenWait(), List#{5.59})), 5.4 + 0.8))
+        Assert.assertEq(expected = (Waiting.Blocking, Waiting.Tappable, Waiting.Input),
+            (waitingOf(items, 0.5, p, tl), waitingOf(items, 1.0, p, tl), waitingOf(items, 5.5, p, tl)))
 
     // ── コメントの LineWait: 後ろの <<audio se>> と <<jump>> は流れ、台詞だけ待つ ──
 
@@ -223,8 +247,13 @@ mod TestTimelineNovelSpike {
         Assert.assertEq(expected = Some(1.5), Timeline.clipOf(Key.Apply(1), tl) |> Option.map(c -> c#start))
 
     @Test
-    def testAPlainWaitFromAFlowedCommandMakesTheWalkUntappable(): Unit \ Assert =
+    def testAPlainWaitFromAFlowedCommandMakesTheWalkBlocking(): Unit \ Assert =
         let items = List#{ Item.LineWait("bg", 5.4, Nil), Item.Wait("audio", 6.0), Item.Line("next") };
         let tl = beatOf(items);
         Assert.assertEq(expected = Waiting.Blocking, waitingOf(items, 1.0, Timeline.player(), tl))
+
+    @Test
+    def testTappingTheWalkKeepsAPlainWaitFromAFlowedCommand(): Unit \ Assert =
+        let items = List#{ Item.LineWait("bg", 5.4, Nil), Item.Wait("audio", 6.0), Item.Line("next") };
+        Assert.assertEq(expected = true, within(fst(playBeat(items, List#{0.99})), 6.0))
 }

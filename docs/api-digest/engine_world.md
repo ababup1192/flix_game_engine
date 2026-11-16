@@ -2609,6 +2609,8 @@
   `pub def activeAt(head: Playhead, tl: Timeline[a]): List[Clip[a]] with Order[a]`
 - 次の待ち（無ければ表の終わり）へ飛ぶ（スキップ・ロードで演出を飛ばす）。
   `pub def skipToNextWait(wall: Float64, p: Player, tl: Timeline[a]): Player`
+- 壁の時刻の前のフレーム prev から今の now までに頭を過ぎたクリップの tag（開始の順。同じ時刻は書いた待ちの順・tag の順）。
+  `pub def startedOnPlayer(playback: Playback, prev: Float64, now: Float64, p: Player, tl: Timeline[a]): List[a] with Order[a]`
 - 壁の時刻の前のフレーム prev から今の now までに鳴らす効果音。区間の中で飛んだ所は、飛ぶ前までを鳴らし、
   `pub def soundsOnPlayer(playback: Playback, prev: Float64, now: Float64, p: Player, tl: Timeline[a]): List[String]`
 

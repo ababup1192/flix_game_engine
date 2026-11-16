@@ -3,7 +3,7 @@
 - 日付: 2026-11-16
 - 範囲: テンプレート `templates/sound-novel-starter` の待ちの全部と、engine_world の `Timeline` に足す口。今回は設計とスパイクまで（本実装・merge・push はしない）。
 - 親: [novel-vocab-n4-design.md](novel-vocab-n4-design.md) の 11.10〜11.12（L・N・(1)）と 14 章。
-- スパイクの枝: `worktree-agent-a951ddd25bec3d964`（engine_world の `Timeline` に口を足し、テスト 19 本）。
+- スパイクの枝: `worktree-agent-a951ddd25bec3d964`（engine_world の `Timeline` に口を足し、テスト 23 本）。
 
 ## 1. なぜ
 
@@ -14,7 +14,28 @@
 
 ### 1.1 (1) を読んで分かった事【推: コードを読んだだけで、流してはいない】
 
-実行器は `<<wait 0.8>>` に着いた時（= 台詞を送った時）に `waitUntil = 今 + 0.8` を決める（`YarnRunner.flow` の Command の所）。一方で歩く `<<bg>>` の待ち（`Out.LineWait(5.4)`）は `Pause#until = 今 + 5.4` を持ち、`flowInstant` は `wait` の命令で止まって残りを `Pause#rest` に預ける。5.4 秒で待ちが明けると、実行器の 0.8 秒はとうに過ぎているので、次のコマの `readOn` が `Tick` してすぐ台詞を出す。つまり World の中だけでも、台詞は 5.4 + 0.8 = 6.2 秒ではなく約 5.4 秒で出る（今のテスト 4 本は「1 秒では出ず 6.5 秒には出ている」を見ているので通る）。2 本の時計が別々に進むこと自体が (a) の形。App の道でだけ 0.8 秒で出る件は別の担当が直している（このファイルは触っていない）。
+実行器は `<<wait 0.8>>` に着いた時（= 台詞を送った時）に `waitUntil = 今 + 0.8` を決める（`YarnRunner.flow` の Command の所）。一方で歩く `<<bg>>` の待ち（`Out.LineWait(5.4)`）は `Pause#until = 今 + 5.4` を持ち、`flowInstant` は `wait` の命令で止まって残りを `Pause#rest` に預ける。5.4 秒で待ちが明けると、実行器の 0.8 秒はとうに過ぎているので、次のコマの `readOn` が `Tick` してすぐ台詞を出す。つまり World の中だけでも、台詞は 5.4 + 0.8 = 6.2 秒ではなく約 5.4 秒で出る（今のテスト 4 本は「1 秒では出ず 6.5 秒には出ている」を見ているので通る）。2 本の時計が別々に進むこと自体が (a) の形（ただし 1.2 の通り、この並びの約 5.4 秒は古い版と同じで正しい）。App の道でだけ 0.8 秒で出る件は別の担当が直している（このファイルは触っていない）。
+
+### 1.2 古い版はどう数えていたか（記録で確かめた）
+
+合格線は「台詞・音の順と時刻が古い版と一致」。古い版の基準の記録 `~/Documents/flix_ge_workspace/haioku-n4-baseline/debug/migrate/baseline/flows/walk_tour/tape.json`（30 fps）を jq で読んだ:
+
+| 何 | 記録の秒 | 出どころ |
+|---|---|---|
+| Entrance の `<<se se_door_heavy>>` と `<<wait 0.9>>` | 35.567 | sounds・events（kind=wait） |
+| Inside の頭: `<<bg genkan dark 1.2>>`・`<<ambience amb_house>>`・`<<bgm bgm_suspense>>`・`<<wait 0.8>>` | 36.5（35.567 + 0.9 の次のフレーム） | sounds（ambience 2 つ）・events（kind=wait, node=Inside, seconds=0.8） |
+| 歩きの音 `se_creak` | 38.733（bg から 2.233 秒） | sounds。walks.json の entrance_out → genkan の `sounds[t=2.2]` |
+| Inside の最初の台詞「一歩入っただけで、…」（haioku.yarn 81 行目） | **41.933（bg から 5.433 秒）** | events（kind=line, seq=0） |
+
+歩きの長さは古い版の `Walk.totalSeconds` = out の keys の最後の t（87 個 = 2.867 秒）+ arrive の最後の t（62 個 = 2.033 秒）+ `dissolveSeconds` 0.5 = **5.4 秒**。台詞は歩きの終わり（36.5 + 5.4 = 41.9）の次のフレーム（41.933）に出ている。6.2 秒（42.7）ではない。
+
+2 つの報告はどちらも正しく、食い違いではなかった:
+- レビュー役の読み「古い版の `readOn` は歩いている間は実行器の `<<wait>>` を進めない」は正しい（`Shown.Waiting if Option.isEmpty(Stage.walkingFor(...))`）。
+- ただし実行器の `waitUntil` は `<<wait 0.8>>` に着いた時（bg と同じ 36.5）に 37.3 と決まっているので、歩きが終わって Tick した時にはもう過ぎていて、すぐ台詞が出る。だから移行の担当の「5.43 秒後」になる。
+
+**決め: 歩く背景（LineWait）の後ろの `<<wait>>` は `atStartOf(歩きの Hold)` に置く**（歩きの頭から数えて重なり、台詞は遅い方の終わり = max(5.4, 0.8) = 5.4 秒）。後ろの命令は流さない（古い版も Tick までは次を流さない）。前に時間を取る待ちが無い `<<wait>>` は今までどおり `append`。
+
+押した時も古い版に合わせる: 古い版の `advance` は歩きの途中で押すと `Stage.finishSwitch` で歩きだけを終え、`<<wait>>` の明ける時刻（37.3）はそのまま。Timeline では「押すと明ける Hold を、押した時刻で終わる長さに縮めて組み直す」で表す（seek だと重なって数えている `<<wait>>` まで一緒に飛ばすので使わない）。seek はスキップとロードにだけ使う。
 
 ## 2. 今の待ちの出どころと、読む所
 
@@ -55,15 +76,15 @@ enum Key { Apply(Int32) /* i 番目の出来事を当てる時刻（長さ 0） 
 
 | # | 出どころ | Timeline で | 解く・終える | 音 |
 |---|---|---|---|---|
-| 1 | 実行器の `<<wait 秒>>` | `append(Hold(i), 秒)`（前の待ちが済んでから数える） | 時間で | — |
+| 1 | 実行器の `<<wait 秒>>` | LineWait の後ろなら `atStartOf(LineWait の Hold, Hold(i), 秒)`（歩きの頭から数えて重なる・後ろの命令は流さない。根拠は 1.2 の記録の 5.433 秒）。それ以外は `append(Hold(i), 秒)` | 時間で（押しても明けない） | — |
 | 2 | `Out.Wait(秒)` | `append(Apply(i), 0)` + `append(Hold(i), 秒)`。LineWait の後ろで流した命令が出したら `atStartOf(LineWait の Hold, Hold(i), 秒)`（重なって、明けるのは遅い方） | 時間で（押しても明けない） | — |
-| 3 | `Out.WaitOrTap(秒)` | #2 と同じ置き方。テンプレートが「押すと明ける Hold」と覚える | 押すと `seekOn`（押した時に途中だった Hold の一番遅い終わりへ。`activeAt` で引く） | 飛ばした区間の音は鳴らない |
+| 3 | `Out.WaitOrTap(秒)` | #2 と同じ置き方。テンプレートが「押すと明ける Hold」と覚える | 押すと、途中の押すと明ける Hold を押した時刻で終わる長さに縮めて組み直す（重なっている押しても明けない Hold と `<<wait>>` は残る） | 縮めた後ろの音は外すので鳴らない |
 | 4 | `Out.LineWait(秒)` | #3 と同じ + 後ろの時間を取らない命令を `atStartOf(Hold(i), Apply(j), 0)` で頭に寄せる。時間を取る命令・`<<wait>>`・台詞・選択肢・押しても明けない待ちが来たら寄せるのをやめて `append` に戻す | #3 と同じ | 寄せた命令の音は歩きの頭で鳴る |
-| 5 | 背景の切り替えの歩き | #4 の `Hold(i)` に `withSoundAt(名前, 秒)`（`GameSwitch#sounds` をそのまま） | 押して飛んだ・スキップで `Stage.withGameSwitchFinished` を当てる（飛んだフレームの `Player` の差で知る） | `Stage.gameSwitchSoundsBetween` は要らなくなる |
+| 5 | 背景の切り替えの歩き | #4 の `Hold(i)` に `withSoundAt(名前, 秒)`（`GameSwitch#sounds` をそのまま） | 押して縮めた・スキップで飛んだ所で `Stage.withGameSwitchFinished` を当てる | `Stage.gameSwitchSoundsBetween` は要らなくなる |
 | 6 | 字を出している間 | 台詞の `Apply(i)` の後に `waitFor(Typed)`。`Page.isDone` になったフレームでテンプレートが `resumeOn` | 押す = `Page.revealAll` してから `resumeOn` | — |
 | 7 | 押しても送らない秒 | 今のまま（Stage の trigger）。`Read` の待ちを `resumeOn` する前に `Stage.isTextLocked` を見る | — | — |
 | 8 | 素材を待つ間 | `append(Fade(i), holdFadeSeconds)` + `waitFor(Assets)` + `append(Fade(i+1), holdFadeSeconds)`。届いたか諦めた時にテンプレートが `resumeOn` | `World.paceOf` は `waitingOf == AtAssets` で止める | — |
-| 9 | 押すと明ける | `seekOn` / `skipToEndOf`（`Player` に Seek を足す） | — | 飛ばした区間は鳴らさず、飛んだ先ちょうどの音は 1 回 |
+| 9 | 押すと明ける | #3 の縮めて組み直す形（表はビートの列から毎フレーム組むので、列の秒を書き替えるだけ）。seek は使わない（重なって数えている `<<wait>>` まで飛ばす） | — | 縮めた後ろの音は鳴らない |
 | 10 | 時間を取らない命令を先に流す | #4 の置き方（`atStartOf`）。待ちの欄は要らない | — | — |
 | 11 | オート | `Read` の待ちで止まってからの秒 = `waitedOn`。`autoWait + 字数 × autoPerChar` を過ぎたら `resumeOn` | — | — |
 | 11 | スキップ | 毎フレーム `skipToNextWait`、`Typed` は即 `resumeOn`、`Read` は `waitedOn ≥ skipInterval` で `resumeOn` | — | 飛ばした区間は鳴らさない（今と同じ） |
@@ -78,13 +99,13 @@ enum Key { Apply(Int32) /* i 番目の出来事を当てる時刻（長さ 0） 
 
 | 要る事 | 今 | 足す口（スパイクで入れた物は ●） |
 |---|---|---|
-| 押して途中の演出を終える（歩きを押して終える） | `waitFor` は長さの決まらない待ちだけで、長さのあるクリップを途中で終える口が無い | ● `Timeline.seekOn` / `skipToEndOf`（Godot `AnimationPlayer.seek`・Unity `PlayableDirector.time`・Bevy `seek_to`） |
+| 先へ飛ぶ（ノベルの押した時は列を縮める形にしたので、使うのはスキップ・ロード。ほかのゲームの「押すとカットシーンを飛ばす」にも） | `waitFor` は長さの決まらない待ちだけで、長さのあるクリップを途中で終える口が無い | ● `Timeline.seekOn` / `skipToEndOf`（Godot `AnimationPlayer.seek`・Unity `PlayableDirector.time`・Bevy `seek_to`） |
 | スキップ・ロードで次の待ちまで飛ぶ | 無い | ● `Timeline.skipToNextWait` |
 | 解いた待ちと飛んだ所を 1 つの値で World に持つ | `resume` は `List[Float64]`（解いた時刻だけ） | ● `Timeline.Player`（外から作らせない型。`player()` で作る）・`resumeOn` |
 | 飛んだフレームの音（飛ばした区間は鳴らさない・飛んだ先ちょうどは 1 回） | `soundsOn` の `Seek` はそのフレームの音を全部落とす | ● `Timeline.soundsOnPlayer` |
 | 再生位置・待っているか・待ちに着いてからの秒 | `playheadOf` / `isWaiting`（resume の列で） | ● `playheadOn` / `isWaitingOn` / `waitedOn`（オートの間） |
 | 押した時に途中だった演出をまとめて引く | `stateOf` をタグごとに呼ぶ | ● `Timeline.activeAt` |
-| 新しく始まったクリップ（命令を当てる時刻）を、飛んだ区間の物も含めて返す | 無い（音だけが出来事） | 提案 `Timeline.startedOnPlayer(prev, now, player, tl): List[a]`（Unity の Signal の retroactive・Bevy の AnimationEvent。音と違い、飛ばした区間の物も返す。スキップで飛ばした `<<set>>` も当てるため）。スパイクでは台詞の `Apply` を `stateOf` で見ただけ |
+| 新しく始まったクリップ（命令を当てる時刻）を、飛んだ区間の物も含めて返す | 無い（音だけが出来事） | ● `Timeline.startedOnPlayer(playback, prev, now, player, tl): List[a] with Order[a]`（Unity の Signal の retroactive・Bevy の AnimationEvent。音と違い、飛ばした区間の物も返す。スキップで飛ばした `<<set>>` も当てるため。境目は soundsOn と同じ・最初のフレーム（Enter）は prev ちょうどの操作より前から数える・O(クリップの数)） |
 
 公開の型シグネチャは何も変えていない（`Timeline` の enum の中身・`playheadOf` / `resume` / `soundsOn` はそのまま。足したのは新しい名前だけ）。
 
@@ -101,8 +122,8 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 | engine_world（汎用） | テンプレート（ノベル固有の対応だけ） |
 |---|---|
-| `Timeline.Player`・`player`・`resumeOn`・`seekOn`・`skipToEndOf`・`skipToNextWait`・`playheadOn`・`isWaitingOn`・`waitedOn`・`soundsOnPlayer`・`activeAt`（スパイク済み） | 新しい mod `NovelBeat`: `Item`（実行器の出来事 + `Commands.Out` + `Commands.timingOf` から作る）・置き方の決まり（LineWait の後ろの時間を取らない命令を頭へ寄せる）・`Key`・`waitingOf`・押した時の決まり（途中の押すと明ける Hold の一番遅い終わりへ）・オートとスキップの秒 |
-| 提案 `startedOnPlayer`（飛んだ区間も返すクリップの始まり） | `World.Read#beat`（`pause` と `hold` の `rest` / `last` を置き換える） |
+| `Timeline.Player`・`player`・`resumeOn`・`seekOn`・`skipToEndOf`・`skipToNextWait`・`playheadOn`・`isWaitingOn`・`waitedOn`・`soundsOnPlayer`・`activeAt`・`startedOnPlayer`（スパイク済み） | 新しい mod `NovelBeat`: `Item`（実行器の出来事 + `Commands.Out` + `Commands.timingOf` から作る）・置き方の決まり（LineWait の後ろの時間を取らない命令を頭へ寄せ、`<<wait>>` と流した命令の待ちを頭から重ねる）・`Key`・`waitingOf`・押した時の決まり（途中の押すと明ける Hold を押した時刻まで縮める）・オートとスキップの秒 |
+| — | `World.Read#beat`（`pause` と `hold` の `rest` / `last` を置き換える） |
 | 既存 `App.advanceFrame` / `App.trace`（テストの道） | `TestKit` の 1 歩を App の道へ |
 | — | 素材の待ち・字を出し切る・押しても送らない秒を `resumeOn` する所（何が届いたか・字を出し切ったかはノベルの事） |
 
@@ -110,14 +131,15 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 ## 6. スパイクの結果
 
-engine_world の `Timeline` に 3.3 の ● を足し、`.layers/engine_world` で全量のテストを流した: **Passed 1533・Failed 0**（足したテスト 19 本を含む）。
+engine_world の `Timeline` に 3.3 の ● を足し、`.layers/engine_world` で全量のテストを流した: **Passed 1537・Failed 0**（足したテスト 23 本を含む）。
 
-- `engine_world/test/TestTimelinePlayer.flix`（8 本・engine に残す）: 操作なしで歩き → 着いた音 → 待ちで止まる・歩きを押して終えると後ろの足音は鳴らず着いた音は 1 回・seek は待ちを越えない・待ちに着く前の早押しは数えない・飛んだ後の resume は待ちから続く・待ちに着いてからの秒・`skipToNextWait` は飛ばした音を鳴らさない・`resumeOn` は古い `resume` と同じ再生位置。
-- `engine_world/test/TestTimelineNovelSpike.flix`（11 本・スパイク。本実装でテンプレートの `NovelBeat` とそのテストへ移し、engine からは消す）:
-  - (1) の並び（歩く bg 5.4 秒・押すと明ける・音 2 つ → `<<set>>` → `<<audio>>` ×2 → `<<wait 0.8>>` → 台詞）: 台詞は 6.2 秒のフレームで出る・`<<audio>>` 2 つは歩きの頭（0 秒）で当たる・音は door → ambience → bgm → step の順に 1 回ずつ・1 秒で押すと歩きが終わり台詞は 1.8 秒（`<<wait 0.8>>` は残る）・押した時は後ろの足音が鳴らない・`<<wait>>` の途中で押しても何も起きない・待ちの判断が 1 秒 Tappable / 5.8 秒 Blocking / 6.3 秒 Input。
-  - コメントの LineWait（1.5 秒 → `<<audio se ping>>` → `<<jump>>` → 台詞）: 台詞は 1.5 秒・ping は 0 秒で鳴る・WaitOrTap なら ping も 1.5 秒まで待つ・歩きの後ろで流した命令が押しても明けない待ちを出すと歩きも押して明けない。
-- スパイクで分かった落とし穴: 押した時に待ちごとに `skipToEndOf` を続けて当てると、飛んだ先でちょうど始まる `<<wait>>` まで「途中」に見えて飛ばしてしまう。押した時に途中だった物を先に `activeAt` で集め、一番遅い終わりへ 1 回で飛ぶ（スパイクの `tap`）。
-- 今の World との比べは流していない（1.1 は読んだだけ）。本実装の段 1 で App の道のテストを足し、今の版で 5.4 秒前後に出る事を先に赤で確かめる。
+- `engine_world/test/TestTimelinePlayer.flix`（10 本・engine に残す）: 操作なしで歩き → 着いた音 → 待ちで止まる・歩きを seek で終えると後ろの足音は鳴らず着いた音は 1 回・seek は待ちを越えない・待ちに着く前の早押しは数えない・飛んだ後の resume は待ちから続く・待ちに着いてからの秒・`skipToNextWait` は飛ばした音を鳴らさない・`resumeOn` は古い `resume` と同じ再生位置・`startedOnPlayer` は頭で飛ばした区間の物も返す・resume をまたいでもクリップの頭は 1 回ずつ。
+- `engine_world/test/TestTimelineNovelSpike.flix`（13 本・スパイク。本実装でテンプレートの `NovelBeat` とそのテストへ移し、engine からは消す）:
+  - (1) の並び（歩く bg 5.4 秒・押すと明ける・音 2 つ → `<<set>>` → `<<audio>>` ×2 → `<<wait 0.8>>` → 台詞）: 台詞は 5.4 秒のフレームで出る（古い版の 5.433 秒と同じフレーム）・`<<wait>>` が歩きより長ければ（6.0 秒）台詞は 6.0 秒・`<<audio>>` 2 つは歩きの頭（0 秒）で当たる・音は door → ambience → bgm → step の順に 1 回ずつ・1 秒で押すと台詞はすぐ（`<<wait 0.8>>` はもう明けている）・0.5 秒で押すと歩きは終わり台詞は 0.8 秒（`<<wait>>` は残る）・押した時は後ろの足音が鳴らない・待ちの判断が 0.5 秒 Blocking（`<<wait>>` と重なる）/ 1 秒 Tappable / 5.5 秒 Input。
+  - コメントの LineWait（1.5 秒 → `<<audio se ping>>` → `<<jump>>` → 台詞）: 台詞は 1.5 秒・ping は 0 秒で鳴る・WaitOrTap なら ping も 1.5 秒まで待つ・歩きの後ろで流した命令が押しても明けない待ち（6 秒）を出すと、その間は Blocking で、歩きを押して終えても台詞は 6 秒まで待つ。
+- スパイクで分かった落とし穴: 押した時に一番遅い終わりへ seek すると、歩きと重なって数えている `<<wait>>` まで飛ばしてしまう（古い版は歩きだけを終える）。押した時は列の秒を縮めて組み直す形にした。
+- 今の template の動きとの違い: 今は歩きの後ろで流した命令が押しても明けない待ちを出すと、歩きごと押せなくなる（`withPause` の WhyNot）。縮める形では歩きだけを終えて、音を聞かせる待ちは残るので、WhyNot の心配（音の途中で台詞が出る）は起きない。本実装でこちらにそろえてよいかは段 2 の並走で確かめる。
+- 今の World との比べは流していない（1.1 は読んだだけ）。本実装の段 1 で App の道のテストを足して確かめる。
 
 ## 7. 本実装の段取りと見積もり（実時間）
 
@@ -125,7 +147,7 @@ engine_world の `Timeline` に 3.3 の ● を足し、`.layers/engine_world` �
 
 | 段 | 中身 | 門 | 見積もり |
 |---|---|---|---|
-| 0 | engine の口を正式にする: `startedOnPlayer` を足す・`agents-pack/AGENTS.core.md` の早見表に 1 行・`agents-pack/agent-eval/engine.json` にお題 1 本・api-digest は bump で | engine_world 全量・`make agent-eval ONLY=<お題>` | 1.5 時間 |
+| 0 | engine の口を正式にする（`startedOnPlayer` はスパイクで足し済み）: `agents-pack/AGENTS.core.md` の早見表に 1 行・`agents-pack/agent-eval/engine.json` にお題 1 本・api-digest は bump で | engine_world 全量・`make agent-eval ONLY=<お題>` | 1.5 時間 |
 | 1 | `TestKit` を `App.advanceFrame` / `App.trace` の道へ（挙動は変えない）。(1) を App の道で見るテストを足す（今の版で赤 = 1.1 の確かめ） | テンプレートのテストが全部緑（(1) の新しいテストだけ赤のまま印を付ける） | 2 時間 |
 | 2 | `NovelBeat` と `World.Read#beat` を足し、今の `pause` / 実行器の待ちと並べて走らせる（`waitingOf` と `isWaiting` / `isPaused` が食い違ったらテストで落とす。flow 6 本でも比べる） | テスト緑・flow 6 本の指紋が同じ・食い違いの一覧が (1) の形だけ | 3 時間 |
 | 3 | 切り替え: `absorbFrom` / `pauseOrGo` / `flowInstant` / `readOn` の `<<wait>>` と `pause` を `beat` に。実行器の `<<wait>>` はその場で引き出す。reader・ready・`advance`・`autoOrSkip`・`markHere`・`gateOf`・`waitMark`・`commandedOf` を `waitingOf` に。`Pause` を消す | テスト緑（(1) も緑）・flow 6 本・廃屋配信の比べ（下） | 4〜5 時間 |
@@ -144,15 +166,16 @@ engine_world の `Timeline` に 3.3 の ● を足し、`.layers/engine_world` �
 
 ### 7.2 血鱗への効き【未確認】
 
-- `<<wait>>` が前の命令の待ち（`Out.Wait`・`WaitOrTap`）の後から数えるようになる。血鱗に「待ちを出す命令の直後の `<<wait>>`」があれば、台詞の時刻が `<<wait>>` の秒だけ遅くなる（今は重なって消えていた）。移行の比べで前の版（古い血鱗）と照らし、前の版が後から数えていたなら直りになる。
+- `<<wait>>` の数え方は今のテンプレートと同じ（LineWait の後ろは頭から重ねる・それ以外の待ちの後ろは後から数える）。今の「Out.Wait / WaitOrTap の後ろの `<<wait>>`」は、実行器の時計が先に進んで重なっている見込み【推】で、Timeline では後から数える（`append`）。血鱗の古い版がどちらだったかは、廃屋配信と同じく基準の記録の秒で確かめてから置き方を決める。
 - 払い・タップのゲートは `gateOf` が `waitingOf` を読むだけになり、形は変わらない見込み。
 - 血鱗が素材の待ち（ブラウザ版）を使うなら段 4 の flow で一緒に見る。
 
 ## 8. 相談したい事
 
-1. 1.1 の通り、今の World は `<<wait>>` を前の命令の待ちと重ねて数えている。Timeline に寄せると「前の待ちが済んでから数える」になり、(1) だけでなく同じ並びの全部で台詞が遅くなる。これを正にしてよいか（古い 2 本の版はどちらも後から数えていた【推】）。
-2. `startedOnPlayer` の名前（Unity は Signal・Godot は method track・Bevy は AnimationEvent）。「クリップの始まりを、飛ばした区間の物も返す」口として、`startedOnPlayer` でよいか。
-3. スパイクのテスト `TestTimelineNovelSpike.flix` は engine に置いたまま枝にある。本実装の段 2 でテンプレートへ移す前提。
+1. （決まった）`<<wait>>` の数え方は古い版と同じにする。1.2 の記録で、LineWait の後ろは `atStartOf`（重ねる）に決めた。
+2. （決まった）`startedOnPlayer` の名前はこのまま。スパイクで足した。
+3. 押した時に歩きだけを終える形（6 章の「今の template の動きとの違い」）を正にしてよいか。段 2 の並走で古い版の記録と照らす。
+4. スパイクのテスト `TestTimelineNovelSpike.flix` は engine に置いたまま枝にある。本実装の段 2 でテンプレートへ移す前提。
 
 ## 9. 親の設計書から指す 1 行（案）
 

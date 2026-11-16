@@ -36,6 +36,7 @@
 //   - 押すと途中の演出を終える・スキップで飛ばす表は、解いた待ちと飛んだ所を Player 1 つに記録する
 //     （player / resumeOn / seekOn / skipToEndOf / skipToNextWait → playheadOn / isWaitingOn / waitedOn / soundsOnPlayer）。
 //     押した時に途中のクリップは activeAt。seek は waitFor を越えず、飛ばした区間の音は鳴らさない。
+//     クリップの頭（命令を当てる時刻）は startedOnPlayer。こちらは飛ばした区間の物も返す。
 //   - 書き間違い（同じ名前・まだ置いていない名前を基準・待ちに音・待ちより前へ置く・長さを合わせる音の
 //     食い違い）は build が Err で返す。並びをコードが書く表は buildOrPanic（組めなければ止める）で受け、
 //     場面ごとにテストを 1 本置けば遊ぶ前に止まる。同じ物を何本も並べる所は tag に番号を持たせる（Tick(i)）。
@@ -583,6 +584,32 @@ pub mod Timeline {
             let next = r#waits |> List.drop(head#passed) |> List.head |> Option.getWithDefault(r#duration);
             seekOn(wall, next, p, tl)
     }
+
+    /// 壁の時刻の前のフレーム prev から今の now までに頭を過ぎたクリップの tag（開始の順。同じ時刻は書いた待ちの順・tag の順）。
+    /// 音と違い、飛ばした区間で始まる物も返す（Unity の Signal の retroactive。スキップで飛ばした命令も当てる所に）。
+    /// 境目は soundsOn と同じ（Play は (prev, now]・Enter は [prev, now]・Seek は何も返さない）。O(クリップの数)。
+    pub def startedOnPlayer(playback: Playback, prev: Float64, now: Float64, p: Player, tl: Timeline[a]): List[a] with Order[a] =
+        match tl {
+            case Timeline.Timeline(r) =>
+                // 最初のフレームは前のフレームが無いので、prev ちょうどの操作より前の位置から数える（頭で飛んだ物も返す）。
+                let before = if (playback == Playback.Enter) playheadOn(prev, PlayerData.PlayerData(controlsOf(p) |> List.filter(c -> controlWall(c) < prev)), tl)
+                             else playheadOn(prev, p, tl);
+                let after = playheadOn(now, p, tl);
+                let segmentOf = (tag: a) -> Map.get(tag, r#segments) |> Option.getWithDefault(0);
+                let isStarted = (c: Clip[a]) -> {
+                    let segment = segmentOf(c#tag);
+                    let reached = not isBefore(after, c#start, segment);
+                    let fresh = match playback {
+                        case Playback.Enter => not isBefore({ t = c#start, passed = segment }, before#t, before#passed)
+                        case Playback.Play  => isBefore(before, c#start, segment)
+                        case Playback.Seek  => false
+                    };
+                    reached and fresh
+                };
+                Map.valuesOf(r#clips) |> List.filter(isStarted)
+                    |> List.map(c -> ((c#start, segmentOf(c#tag)), c#tag))
+                    |> Sort.sortStableWith((x, y) -> fst(x) <=> fst(y)) |> List.map(snd)
+        }
 
     /// 壁の時刻の前のフレーム prev から今の now までに鳴らす効果音。区間の中で飛んだ所は、飛ぶ前までを鳴らし、
     /// 飛ばした区間は鳴らさず、飛んだ先ちょうどからを鳴らす（Bevy の seek と同じく飛ばした区間の音は出さない）。

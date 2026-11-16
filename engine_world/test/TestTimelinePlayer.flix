@@ -86,4 +86,32 @@ mod TestTimelinePlayer {
         let old = Timeline.resume(6.0, Nil, tl);
         let pair = (h: Timeline.Playhead) -> (h#t, h#passed);
         Assert.assertEq(expected = pair(Timeline.playheadOf(6.3, old, tl)), pair(Timeline.playheadOn(6.3, p, tl)))
+
+    /// play と同じ刻み方で、フレームごとに頭を過ぎたクリップを集める。
+    def started(act: (Float64, Timeline.Player) -> Timeline.Player, end: Float64): List[Cut] =
+        let tl = cut();
+        let dt = 1.0 / 30.0;
+        def go(i: Int32, p: Timeline.Player, acc: List[Cut]): List[Cut] = {
+            let wall = Int32.toFloat64(i) * dt;
+            if (wall > end) acc
+            else {
+                let next = act(wall, p);
+                let prev = if (i == 0) 0.0 else Int32.toFloat64(i - 1) * dt;
+                let playback = if (i == 0) Playback.Enter else Playback.Play;
+                go(i + 1, next, acc ::: Timeline.startedOnPlayer(playback, prev, wall, next, tl))
+            }
+        };
+        go(0, Timeline.player(), Nil)
+
+    @Test
+    def testStartedClipsIncludeTheOnesInsideASkippedRange(): Unit \ Assert =
+        let tl = cut();
+        Assert.assertEq(expected = List#{Cut.Walk, Cut.Arrive, Cut.Read},
+            started((wall, p) -> if (wall == 0.0) Timeline.skipToNextWait(wall, p, tl) else p, 10.0))
+
+    @Test
+    def testEachClipStartsOnceAcrossAResume(): Unit \ Assert =
+        let tl = cut();
+        Assert.assertEq(expected = List#{Cut.Walk, Cut.Arrive, Cut.Read, Cut.Leave},
+            started((wall, p) -> if (wall > 5.0) Timeline.resumeOn(wall, p, tl) else p, 10.0))
 }
