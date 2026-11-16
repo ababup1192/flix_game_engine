@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PxSprite document (*.sprite.json)",
+  "description": "文字格子のドット絵。legend が文字→意味色キー(テーマで解決する名前)を与え、sprites が名前付きコマ(rows)と anchor を持つ。legend に無い文字は透明(fail-open)。",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "note": { "type": "string", "description": "人間と AI のためのメモ(パーサは無視する)" },
+    "paletteFile": {
+      "type": "string",
+      "description": "legend の意味色キーを解決する色票（Studio のドット絵エディタが引く。ゲーム側は無視し、実色は ThemeDoc.resolver が決める）"
+    },
+    "legend": {
+      "type": "object",
+      "description": "1 文字 → 意味色キー。ファイルに 1 個・全コマで共有。",
+      "additionalProperties": { "type": "string" },
+      "propertyNames": { "minLength": 1, "maxLength": 1 }
+    },
+    "sprites": {
+      "type": "object",
+      "description": "スプライト名 → { frames, anchor }。'//' で始まる名前はコメント。",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "type": "object",
+            "description": "格子内の基準セル。draw の置き場所がこのセルの左上に来る(省略時 0,0)。",
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          },
+          "frames": {
+            "type": "object",
+            "description": "コマ名 → rows(上の行から順の文字列の配列)。",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "required": ["frames"]
+      }
+    }
+  },
+  "required": ["version", "legend", "sprites"]
+}

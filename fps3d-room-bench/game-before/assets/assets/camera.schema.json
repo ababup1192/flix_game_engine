@@ -1,0 +1,200 @@
+{
+  "//": "fps3d_lab.camera.json の形（Studio の sections 方言）。既定は src の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "eyeHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "目の高さ",
+      "order": 1,
+      "default": 26.0
+    },
+    "focal": {
+      "kind": "field",
+      "type": "float",
+      "label": "焦点距離（design px。小さいほど広角）",
+      "order": 2,
+      "default": 250.0
+    },
+    "pitch": {
+      "kind": "field",
+      "type": "float",
+      "label": "下を向く角（度）",
+      "order": 3,
+      "default": 0.0
+    },
+    "walkSpeed": {
+      "kind": "field",
+      "type": "float",
+      "label": "歩く速さ（1 秒あたり）",
+      "order": 4,
+      "default": 55.0
+    },
+    "turnSpeed": {
+      "kind": "field",
+      "type": "float",
+      "label": "向きを変える速さ（度 / 秒）",
+      "order": 5,
+      "default": 150.0
+    },
+    "radius": {
+      "kind": "field",
+      "type": "float",
+      "label": "壁の手前で止まる半径",
+      "order": 6,
+      "default": 7.0
+    },
+    "bob": {
+      "kind": "field",
+      "type": "float",
+      "label": "歩く時に目が上下する幅",
+      "order": 7,
+      "default": 1.0
+    },
+    "stride": {
+      "kind": "field",
+      "type": "float",
+      "label": "1 歩の長さ",
+      "order": 8,
+      "default": 26.0
+    },
+    "doorFade": {
+      "kind": "field",
+      "type": "float",
+      "label": "扉をくぐる演出の半分の秒",
+      "order": 9,
+      "default": 0.55
+    },
+    "doorZoom": {
+      "kind": "field",
+      "type": "float",
+      "label": "押して入る時に戸口へ寄り切る倍率",
+      "order": 10,
+      "min": 1,
+      "max": 12,
+      "default": 6.0
+    },
+    "doorDolly": {
+      "kind": "field",
+      "type": "float",
+      "label": "引いて出る時にカメラが前へ進む長さ（m。扉から目までは 1.7）",
+      "order": 11,
+      "min": 0,
+      "max": 4,
+      "default": 2.6
+    },
+    "dotX": {
+      "kind": "field",
+      "type": "float",
+      "label": "地形の 1 ドットの横",
+      "order": 12,
+      "default": 1.0
+    },
+    "dotZ": {
+      "kind": "field",
+      "type": "float",
+      "label": "地形の 1 ドットの奥行き",
+      "order": 13,
+      "default": 1.0
+    },
+    "dotY": {
+      "kind": "field",
+      "type": "float",
+      "label": "地形の 1 ドットの縦",
+      "order": 14,
+      "default": 1.0
+    },
+    "lowRes": {
+      "kind": "field",
+      "type": "bool",
+      "label": "240×135 に描いて拡大する",
+      "order": 15,
+      "default": true
+    },
+    "dof": {
+      "kind": "record",
+      "label": "ピント",
+      "order": 16,
+      "fields": {
+        "nearHalf": {
+          "type": "float",
+          "label": "手前のくっきりの幅",
+          "default": 60.0
+        },
+        "farHalf": {
+          "type": "float",
+          "label": "奥のくっきりの幅",
+          "default": 90.0
+        },
+        "ramp": {
+          "type": "float",
+          "label": "ぼけ切るまでの長さ",
+          "default": 220.0
+        },
+        "nearBlur": {
+          "type": "float",
+          "label": "手前のぼけの強さ",
+          "default": 0.7
+        },
+        "depthNear": {
+          "type": "float",
+          "label": "深さの Pass の手前",
+          "default": 250.0
+        },
+        "depthRange": {
+          "type": "float",
+          "label": "深さの Pass の幅",
+          "default": 900.0
+        }
+      }
+    },
+    "mouseTurn": {
+      "kind": "field",
+      "type": "float",
+      "label": "マウスで向きを変える量（度 / design px）",
+      "order": 17,
+      "default": 0.15,
+      "min": 0,
+      "max": 2
+    },
+    "invertY": {
+      "kind": "field",
+      "type": "bool",
+      "label": "マウスの上下を逆にする",
+      "order": 18,
+      "default": false
+    },
+    "pitchLimit": {
+      "kind": "field",
+      "type": "float",
+      "label": "見上げ見下ろせる角（度）",
+      "order": 19,
+      "default": 50.0,
+      "min": 0,
+      "max": 89
+    },
+    "msaa": {
+      "kind": "field",
+      "type": "int",
+      "label": "部屋の縁のならしの標本の数（1 で無し）",
+      "order": 20,
+      "default": 4,
+      "min": 1,
+      "max": 8
+    },
+    "talkRange": {
+      "kind": "field",
+      "type": "float",
+      "label": "番兵に話しかけ・物の名前を出せる距離（目の先のレイの長さ）",
+      "order": 21,
+      "default": 44.0
+    },
+    "blendTime": {
+      "kind": "field",
+      "type": "float",
+      "label": "番兵の動きを切り替える時のブレンドの秒",
+      "order": 22,
+      "default": 0.25
+    }
+  }
+}

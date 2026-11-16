@@ -1,0 +1,26 @@
+{
+  "//": "fps3d_lab.inspect.json の形の宣言（Studio の sections 方言）。何を見ているかはコード、見せる字だけを Doc に置く。",
+  "version": 1,
+  "sections": {
+    "guard": {
+      "kind": "field",
+      "type": "text",
+      "label": "番兵を見ている時の文言（決定ボタンで敬礼）",
+      "order": 1,
+      "default": "Guard  -  Enter: salute"
+    },
+    "props": {
+      "kind": "catalog",
+      "label": "家具（鍵 = layout.json の props の model）",
+      "order": 2,
+      "fields": {
+        "name": {
+          "type": "text",
+          "label": "見ている時に出す名前",
+          "order": 1,
+          "required": true
+        }
+      }
+    }
+  }
+}

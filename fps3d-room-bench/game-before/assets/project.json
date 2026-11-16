@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "title": "Doorway Lab",
+  "designWidth": 480,
+  "designHeight": 270,
+  "windowWidth": 960,
+  "windowHeight": 540,
+  "windowScale": 2,
+  "clearColor": {
+    "r": 0.027,
+    "g": 0.024,
+    "b": 0.047
+  },
+  "maxDeltaTime": 0.05,
+  "textures": [
+    {
+      "name": "wood_floor",
+      "path": "assets/textures/wood_floor.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "wood_floor_n",
+      "path": "assets/textures/wood_floor_n.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "plaster",
+      "path": "assets/textures/plaster.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "plaster_n",
+      "path": "assets/textures/plaster_n.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "stone_wall",
+      "path": "assets/textures/stone_wall.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "stone_wall_n",
+      "path": "assets/textures/stone_wall_n.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "marble",
+      "path": "assets/textures/marble.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "marble_n",
+      "path": "assets/textures/marble_n.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "wood_dark",
+      "path": "assets/textures/wood_dark.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "wood_dark_n",
+      "path": "assets/textures/wood_dark_n.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fabric",
+      "path": "assets/textures/fabric.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "fabric_n",
+      "path": "assets/textures/fabric_n.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "wood_ceiling",
+      "path": "assets/textures/wood_ceiling.png",
+      "hasAlpha": false
+    },
+    {
+      "name": "wood_ceiling_n",
+      "path": "assets/textures/wood_ceiling_n.png",
+      "hasAlpha": false
+    }
+  ],
+  "// glyphs": "起動時に焼く字。auto=出た字から順に焼く / used=ソースとアセットにある字を先に焼く / all=フォントの全字",
+  "glyphs": "auto",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/Xolonium-Regular.ttf",
+      "fontSize": 60.0
+    }
+  ],
+  "sounds": [
+    {
+      "name": "amb_cave",
+      "path": "assets/sfx/amb_cave.wav",
+      "looping": false
+    },
+    {
+      "name": "step_a",
+      "path": "assets/sfx/step_a.wav",
+      "looping": false
+    },
+    {
+      "name": "step_b",
+      "path": "assets/sfx/step_b.wav",
+      "looping": false
+    }
+  ],
+  "editor": {
+    "resources": [
+      {
+        "id": "theme",
+        "pattern": "assets/fps3d_lab.theme.json",
+        "title": "色（背景・差し色）",
+        "schema": "assets/theme.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "floors",
+        "pattern": "assets/fps3d_lab.floors.json",
+        "title": "フロアの並び（画風・光の Doc・壁の高さ）",
+        "schema": "assets/floors.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "dungeon",
+        "pattern": "assets/fps3d_lab.dungeon.json",
+        "title": "地図の寸法と高さ",
+        "schema": "assets/dungeon.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "camera",
+        "pattern": "assets/fps3d_lab.camera.json",
+        "title": "カメラと地形の絵",
+        "schema": "assets/camera.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "look",
+        "pattern": "assets/*.look.json",
+        "title": "フロアごとの光と材質と後処理",
+        "schema": "assets/look.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "sprite",
+        "pattern": "assets/*.sprite.json",
+        "title": "ドット絵",
+        "schema": "assets/sprite.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "sample",
+        "pattern": "assets/sample.kind.json",
+        "title": "手触り（速さ）",
+        "schema": "assets/sample.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "keys",
+        "pattern": "assets/player.keys.json",
+        "title": "キー割り当て（どのキーで動かすか）",
+        "schema": "assets/keys.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "inspect",
+        "pattern": "assets/fps3d_lab.inspect.json",
+        "title": "部屋で目の先の物に出す文言",
+        "schema": "assets/inspect.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "scenes",
+        "pattern": "assets/*.scenes.json",
+        "title": "場面の説明（ギャラリーに出る題と一言）",
+        "schema": "assets/scenes.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "project",
+        "pattern": "project.json",
+        "schema": "project.schema.json",
+        "title": "ゲームの題・画面",
+        "role": "tuning"
+      }
+    ]
+  }
+}

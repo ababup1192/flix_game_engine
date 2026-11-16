@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "title": "礼拝堂の光と材質",
+  "note": "いじると何が変わるか: torch・brazier・lantern=点光源（color 色・intensity 強さ・radius 届く半径・flicker 揺らぎの振れ幅・flickerSpeed 揺らぎの速さ。lantern は主人公の灯り）/ lanternHeight=主人公の灯りの高さ / ambientRoom・ambientCorridor=環境光（部屋の中・通路の奥）/ shadowInner・shadowOuter=柱の影の縁（柱の半分の幅の何倍から暗く・何倍で影なし）/ lightSteps・lightMax=明るさの段の数と上限 / lightDither=段の境を散らす量 / lightWrap・lightFacing=面の向きの効き方 / floor・wall・top・pillar=材質の色（c0 目地と暗い所・c1 c2 石の 2 色）/ moss=苔の色 / void=地図の外の色 / contactShadow=足元の影の濃さ / spriteLightMax=人に掛ける光の上限 / dustCount・dustAlpha=ほこりの粒の数と濃さ / exposure=露出（stop。1 で 2 倍明るく）・whitePoint=白の点（この明るさで真っ白。上げるほど明るい所の段差が残る） / tilt*=ピントの外のぼけ / bloom*=ブルーム（Threshold しきい。1 を超える所が光る・Knee 幅・Strength 強さ）/ vignette=画面の四隅を落とす量 / grade*=色調（暗部を Shadow の色へ・明部を Highlight の色へ寄せる量・底の持ち上げ・彩度） / sun=日の光（color・intensity・光の来る向き x 東・y 上・z 北）/ lava=溶岩の光（床の目地と割れ目が自分で光る色・glow 強さ・pulse 脈打つ速さ）/ particle=浮遊物の種類（dust ほこり・petal 花びら・ember 火の粉）/ particleColor=浮遊物の色 / heat=熱のゆらぎの強さ / chandelier=シャンデリアの灯り（部屋のシャンデリアの真ん中に 1 つ。intensity 0 で灯さない）/ swayAngle・swayPeriod=シャンデリアの揺れの角（度）と 1 往復の秒 / windowTintMix=窓の光に乗せる青みの割合 / windowTint・windowPool=窓の前の床に落とすステンドグラスの光の色と強さ / hemisphere=上を向く面ほど明るくする量 / spot=部屋の影を落とすスポットライト（intensity 強さ・range 届く距離。書斎は北の壁の松明から・礼拝堂は東の高い窓から）/ bounce=松明の色の照り返しを環境光へ足す割合 / flameGlow=炎が自分で光る強さ（線形の倍率）/ doorLamp=扉を引いて出る場面の背中の燭台（intensity・range。色と揺らぎは brazier）",
+  "torch": {
+    "color": "#ffd9a0",
+    "intensity": 0.6,
+    "radius": 80.0,
+    "flicker": 0.18,
+    "flickerSpeed": 7.0
+  },
+  "brazier": {
+    "color": "#ffc078",
+    "intensity": 0.45,
+    "radius": 70.0,
+    "flicker": 0.14,
+    "flickerSpeed": 5.0
+  },
+  "lantern": {
+    "color": "#ffd8a0",
+    "intensity": 0.5,
+    "radius": 115.0,
+    "flicker": 0.05,
+    "flickerSpeed": 3.0
+  },
+  "lanternHeight": 28.0,
+  "ambientRoom": "#2a3040",
+  "ambientCorridor": "#08080e",
+  "shadowInner": 0.6,
+  "shadowOuter": 1.25,
+  "lightSteps": 16,
+  "lightMax": 1.6,
+  "lightDither": 0.3,
+  "lightWrap": 0.5,
+  "lightFacing": 2.2,
+  "floor": {
+    "c0": "#5e5a62",
+    "c1": "#d8d2c8",
+    "c2": "#8a8692"
+  },
+  "wall": {
+    "c0": "#7a7468",
+    "c1": "#d6cfc2",
+    "c2": "#a39d92"
+  },
+  "top": {
+    "c0": "#8a847a",
+    "c1": "#dcd6ca",
+    "c2": "#b8b1a4"
+  },
+  "pillar": {
+    "c0": "#4a4444",
+    "c1": "#9a9286",
+    "c2": "#c4b8a0"
+  },
+  "moss": "#d4a640",
+  "void": "#07060c",
+  "contactShadow": 0.55,
+  "spriteLightMax": 1.0,
+  "dustCount": 40,
+  "dustAlpha": 0.5,
+  "exposure": -0.6,
+  "whitePoint": 4.0,
+  "tiltRadius": 0.018,
+  "tiltTaps": 12,
+  "bloomRadius": 0.05,
+  "bloomTaps": 12,
+  "bloomStrength": 0.35,
+  "bloomThreshold": 1.2,
+  "bloomKnee": 0.6,
+  "bloomScale": 0.5,
+  "blurScale": 0.5,
+  "vignette": 0.35,
+  "gradeShadow": "#1a2238",
+  "gradeShadowMix": 0.35,
+  "gradeHighlight": "#fff2dc",
+  "gradeHighlightMix": 0.08,
+  "gradeLift": 0.02,
+  "gradeSaturation": 0.1,
+  "sun": {
+    "color": "#ffd8a0",
+    "intensity": 0.0,
+    "x": -0.5,
+    "y": 1.0,
+    "z": -0.6
+  },
+  "lava": {
+    "color": "#ff5a1e",
+    "glow": 0.0,
+    "pulse": 1.2
+  },
+  "particle": "dust",
+  "particleColor": "#fff0c8",
+  "heat": 0.0,
+  "sunShadow": "#6a70a0",
+  "sunShadowAlpha": 0.0,
+  "hazeColor": "#a8c0e0",
+  "hazeStart": 0.3,
+  "hazeAmount": 0.0,
+  "spriteTintSat": 1.0,
+  "chandelier": {
+    "color": "#ffb868",
+    "intensity": 1.4,
+    "radius": 200.0,
+    "flicker": 0.06,
+    "flickerSpeed": 4.0
+  },
+  "swayAngle": 1.0,
+  "swayPeriod": 5.5,
+  "windowTint": "#e0a0ff",
+  "windowTintMix": 0.3,
+  "hemisphere": 0.16,
+  "windowPool": 1.3,
+  "spot": {
+    "intensity": 1.2,
+    "range": 520.0
+  },
+  "bounce": 0.1,
+  "flameGlow": 39.0
+}

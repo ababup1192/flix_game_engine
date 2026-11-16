@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "title": "フロアの並び",
+  "note": "1 行 = 1 フロア（部屋ごとに画風で行を引く: 書斎 = cave・礼拝堂 = chapel）。いじると何が変わるか: name=名前 / style=画風（cave 洞窟・meadow 草原・volcano 火山・chapel 礼拝堂。模様と灯りと飾りの絵の種類）/ look=光と材質と後処理の Doc / wallHeight=壁の高さ（0 は dungeon.json の値）/ outdoor=壁の外を岩でなく野原にする（屋外）",
+  "floors": [
+    {
+      "name": "cave",
+      "style": "cave",
+      "look": "assets/fps3d_lab.look.json",
+      "wallHeight": 0.0,
+      "outdoor": false
+    },
+    {
+      "name": "meadow",
+      "style": "meadow",
+      "look": "assets/fps3d_lab.meadow.look.json",
+      "wallHeight": 12.0,
+      "outdoor": true
+    },
+    {
+      "name": "volcano",
+      "style": "volcano",
+      "look": "assets/fps3d_lab.volcano.look.json",
+      "wallHeight": 0.0,
+      "outdoor": false
+    },
+    {
+      "name": "chapel",
+      "style": "chapel",
+      "look": "assets/fps3d_lab.chapel.look.json",
+      "wallHeight": 70.0,
+      "outdoor": false
+    }
+  ]
+}

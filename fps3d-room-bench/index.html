@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fps3d-room bench — WebGPU と WebGL2 を同じ条件で</title>
+<style>
+  body { margin: 0; padding: 12px; background: #111; color: #ddd; font: 14px/1.5 system-ui, sans-serif; }
+  button { font: inherit; font-size: 18px; padding: 10px 22px; margin: 4px 0; }
+  table { border-collapse: collapse; margin: 8px 0; font: 13px/1.4 ui-monospace, Menlo, monospace; }
+  td, th { border: 1px solid #444; padding: 2px 6px; text-align: right; }
+  th { background: #222; }
+  td.l { text-align: left; }
+  pre { white-space: pre-wrap; word-break: break-all; font: 12px/1.4 ui-monospace, Menlo, monospace; background: #000; padding: 6px; }
+  .note { color: #999; font-size: 13px; }
+</style>
+</head>
+<body>
+<h3>fps3d-room bench</h3>
+<p class="note">部屋のカメラを 1 コマに 0.75 度ずつ回し（480 コマで 1 周）、部屋に入ってから 90 コマ後の 960 コマ（2 周）を測ります。
+WebGPU と WebGL2 は同じコマ番号で同じ向きを見るので、そのまま比べられます。WebGPU 前（0.97.0）→ WebGPU 後（pass の命令を JS へ 1 回で渡す枝）→ WebGL2 を 2 回くり返し、続けて部屋の MSAA を切った回（480 コマ・1 周）、呼び出しを数える回と engine の診断の行を出す回（各 240 コマ・どちらも時間は読まない）を流します。
+スマホは横向き・画面を消さずに 3〜4 分。終わると下に表が出ます。</p>
+<button id="go" type="button">始める</button>
+<div id="out"></div>
+<script>
+(function () {
+  "use strict";
+  var q = new URLSearchParams(location.search);
+  var rounds = parseInt(q.get("rounds") || "2", 10);
+  var withCounts = q.get("counts") !== "0";
+  var withDiag = q.get("diag") !== "0";
+  var withMsaa1 = q.get("msaa1") !== "0";
+  var extra = q.get("knobs") || "";           // 例 knobs=msaa%3D1 で全部の回へ足す
+  var frames = q.get("frames") || "960";
+  var plan = [];
+  function add(dir, backend, mode, n, more) {
+    var p = new URLSearchParams();
+    if (backend === "webgpu") p.set("backend", "webgpu");
+    p.set("mode", mode); p.set("frames", n);
+    if (q.get("yaw")) p.set("yaw", q.get("yaw"));
+    if (more) more.split("&").forEach(function (kv) { var i = kv.indexOf("="); if (i > 0) p.set(kv.slice(0, i), kv.slice(i + 1)); });
+    if (extra) extra.split("&").forEach(function (kv) { var i = kv.indexOf("="); if (i > 0) p.set(kv.slice(0, i), kv.slice(i + 1)); });
+    plan.push({ dir: dir, p: p });
+  }
+  // game = engine の今の枝（pass の命令を JS へ 1 回で渡す）・game-before = 0.97.0（main a3735aee）の書き出し。
+  for (var r = 0; r < rounds; r++) { add("game-before", "webgpu", "time", frames); add("game", "webgpu", "time", frames); add("game", "gl", "time", frames); }
+  if (withMsaa1) { add("game-before", "webgpu", "time", "480", "msaa=1"); add("game", "webgpu", "time", "480", "msaa=1"); add("game", "gl", "time", "480", "msaa=1"); }
+  if (withCounts) { add("game-before", "webgpu", "count", "240"); add("game", "webgpu", "count", "240"); add("game", "gl", "count", "240"); }
+  if (withDiag) { add("game-before", "webgpu", "diag", "240", "diag=1"); add("game", "webgpu", "diag", "240", "diag=1"); add("game", "gl", "diag", "240", "diag=1"); }
+  // 後ろから URL をつなぐ（各回が次の回の URL を bnext に持つ。次の回の頁から見た道）。
+  var next = "";
+  for (var i = plan.length - 1; i >= 0; i--) {
+    plan[i].p.set("brun", String(i));
+    if (next) plan[i].p.set("bnext", encodeURIComponent(next));
+    next = "../" + plan[i].dir + "/index.html?" + plan[i].p.toString();
+  }
+  var first = plan[0].dir + "/index.html?" + plan[0].p.toString();
+
+  function start() { sessionStorage.setItem("fgeBench", "[]"); location.href = first; }
+  document.getElementById("go").addEventListener("click", start);
+
+  var results = JSON.parse(sessionStorage.getItem("fgeBench") || "[]");
+  window.__bench = { done: false, query: location.search, env: { userAgent: navigator.userAgent }, results: results };
+  if (q.get("done") === "1") { show(results); window.__bench.done = true; }
+  else if (q.get("auto") === "1") start();
+
+  function label(r) {
+    var name = r.backend === "webgl2" ? "WebGL2" : (r.build === "game-before" ? "WebGPU 前" : "WebGPU 後");
+    return name + (/msaa=1/.test(r.knobs) ? " msaa=1" : "");
+  }
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+  function show(rs) {
+    var html = "";
+    var times = rs.filter(function (r) { return r.mode === "time"; });
+    html += "<h4>時間（" + esc(times.length ? times[0].canvas + " / dpr " + times[0].dpr : "") + "）</h4>";
+    html += "<table><tr><th>回</th><th>描き手</th><th>fps</th><th>cpu 中央</th><th>cpu 平均</th><th>cpu p95</th>";
+    for (var b = 0; b < 8; b++) html += "<th>" + (b * 45) + "°</th>";
+    html += "</tr>";
+    times.forEach(function (r) {
+      html += "<tr><td>" + r.run + "</td><td class=l>" + label(r) + "</td><td>" + r.fps + "</td><td>" + r.cpu.median + "</td><td>" + r.cpu.mean + "</td><td>" + r.cpu.p95 + "</td>";
+      r.bins.forEach(function (v) { html += "<td>" + (v === null ? "-" : v) + "</td>"; });
+      html += "</tr>";
+    });
+    html += "</table><p class=note>cpu = 1 コマで wasm が使った時間（ms・rAF から戻って次に待つまで）。角の列は向きごとの cpu の中央値。</p>";
+    var counts = rs.filter(function (r) { return r.mode === "count"; });
+    if (counts.length) {
+      var keys = {};
+      counts.forEach(function (r) { Object.keys(r.perFrame || {}).forEach(function (k) { keys[k] = Math.max(keys[k] || 0, r.perFrame[k]); }); });
+      var top = Object.keys(keys).sort(function (a, b) { return keys[b] - keys[a]; }).slice(0, 40);
+      html += "<h4>1 コマあたりの呼び出し（数える回）</h4><table><tr><th class=l>何</th>";
+      counts.forEach(function (r) { html += "<th>" + label(r) + "</th>"; });
+      html += "</tr>";
+      counts.forEach(function (r) {
+        var t = 0, c = 0;
+        Object.keys(r.perFrame || {}).forEach(function (k) { if (k.indexOf("bridge:") === 0) t += r.perFrame[k]; if (k.indexOf("call:") === 0) c += r.perFrame[k]; });
+        r.bridgeTotal = +t.toFixed(1); r.callTotal = +c.toFixed(1);
+      });
+      html += "<tr><td class=l>wasm→JS の橋渡し（合計）</td>" + counts.map(function (r) { return "<td>" + r.bridgeTotal + "</td>"; }).join("") + "</tr>";
+      html += "<tr><td class=l>GPU / GL の API（合計）</td>" + counts.map(function (r) { return "<td>" + r.callTotal + "</td>"; }).join("") + "</tr>";
+      top.forEach(function (k) {
+        html += "<tr><td class=l>" + esc(k) + "</td>" + counts.map(function (r) { return "<td>" + ((r.perFrame || {})[k] || "") + "</td>"; }).join("") + "</tr>";
+      });
+      html += "</table>";
+    }
+    var diags = rs.filter(function (r) { return r.mode === "diag"; });
+    diags.forEach(function (r) { html += "<h4>診断の行（" + label(r) + "）</h4><pre>" + esc(r.diag) + "</pre>"; });
+    var errs = rs.filter(function (r) { return r.errors && r.errors.length; });
+    errs.forEach(function (r) { html += "<p>誤り（回 " + r.run + "）: " + esc(r.errors.join(" / ")) + "</p>"; });
+    if (rs.length) html += "<p class=note>" + esc(rs[0].adapter || "") + " / " + esc(rs[rs.length - 1].adapter || "") + "<br>" + esc(rs[0].ua) + "</p>";
+    html += "<button id=copy type=button>JSON をコピー</button><pre id=json></pre>";
+    document.getElementById("out").innerHTML = html;
+    document.getElementById("json").textContent = JSON.stringify(rs);
+    document.getElementById("copy").addEventListener("click", function () {
+      var b = document.getElementById("copy");
+      navigator.clipboard.writeText(JSON.stringify(rs)).then(function () { b.textContent = "コピーした"; }, function () { b.textContent = "コピーできない（下の字を選んで）"; });
+    });
+  }
+})();
+</script>
+</body>
+</html>

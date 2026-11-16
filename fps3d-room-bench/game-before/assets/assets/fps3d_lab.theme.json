@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "title": "色",
+  "note": "絵の見え方。派生色（ハイライト・影）はコードで導くので、色は基準色だけ置く。shade はドット絵の塗りの仕上げ — 絵は平らに塗っておき、立体感をここで足す（読み込み時に 1 回だけ掛かるので、何体出しても重くならない）。いじると何が変わるか: bg=画面の下地 / accent=主人公の色 / shade.rim=光の側の縁を明るく / shade.contact=影の側の縁を暗く / shade.dither=明暗の境を市松に散らす / shade.grain=面の内側に粒 / shade.lightX,lightY=光の来る向き（-1 左・上 / +1 右・下 / 0 効かない）。 colors=ドット絵の材料の色（鍵は fps3d_lab.sprite.json の legend の名前）。",
+  "bg": "#11111a",
+  "accent": "#63b0ff",
+  "shade": {
+    "rim": 1.0,
+    "contact": 1.0,
+    "dither": 0.0,
+    "grain": 0.0,
+    "grainScale": 1,
+    "lightX": -1,
+    "lightY": -1
+  },
+  "colors": {
+    "outline": {
+      "hex": "#1e1626"
+    },
+    "outlineWarm": {
+      "hex": "#3a1a10"
+    },
+    "hood": {
+      "hex": "#2f6a6e"
+    },
+    "hoodLight": {
+      "hex": "#5aa0a0"
+    },
+    "hoodDark": {
+      "hex": "#1a3e48"
+    },
+    "skin": {
+      "hex": "#e0ac84"
+    },
+    "skinLight": {
+      "hex": "#f4cca4"
+    },
+    "skinDark": {
+      "hex": "#a8704e"
+    },
+    "coat": {
+      "hex": "#9a4a2e"
+    },
+    "coatLight": {
+      "hex": "#c4703e"
+    },
+    "trousers": {
+      "hex": "#3e3446"
+    },
+    "trousersDark": {
+      "hex": "#28222e"
+    },
+    "boots": {
+      "hex": "#4a3024"
+    },
+    "belt": {
+      "hex": "#5a3a24"
+    },
+    "brass": {
+      "hex": "#e0b048"
+    },
+    "lanternFrame": {
+      "hex": "#6a5432"
+    },
+    "flameCore": {
+      "hex": "#fff4b0"
+    },
+    "slime": {
+      "hex": "#5e9a3e"
+    },
+    "slimeLight": {
+      "hex": "#a6d870"
+    },
+    "slimeDark": {
+      "hex": "#2e5a2a"
+    },
+    "white": {
+      "hex": "#f4f4ec"
+    },
+    "wing": {
+      "hex": "#4a3a5a"
+    },
+    "bat": {
+      "hex": "#6a5478"
+    },
+    "batLight": {
+      "hex": "#9a84a8"
+    },
+    "batDark": {
+      "hex": "#3a2c48"
+    },
+    "ember": {
+      "hex": "#ff5a3a"
+    },
+    "bone": {
+      "hex": "#d6ccb0"
+    },
+    "boneLight": {
+      "hex": "#f2ead2"
+    },
+    "boneDark": {
+      "hex": "#968a70"
+    },
+    "socket": {
+      "hex": "#20141c"
+    },
+    "eyeGlow": {
+      "hex": "#ff7a3a"
+    },
+    "armor": {
+      "hex": "#5a5e6a"
+    },
+    "iron": {
+      "hex": "#4a4650"
+    },
+    "ironLight": {
+      "hex": "#8a8490"
+    },
+    "wood": {
+      "hex": "#6a4428"
+    },
+    "woodLight": {
+      "hex": "#9a6a3e"
+    },
+    "flame": {
+      "hex": "#ff9a2e"
+    },
+    "flameEdge": {
+      "hex": "#e04a1e"
+    },
+    "bulb": {
+      "hex": "#c89a5a"
+    },
+    "bulbLight": {
+      "hex": "#e8c27a"
+    },
+    "bulbDark": {
+      "hex": "#7a5432"
+    },
+    "shell": {
+      "hex": "#3e6a3a"
+    },
+    "shellLight": {
+      "hex": "#7aa85a"
+    },
+    "shellDark": {
+      "hex": "#22402a"
+    },
+    "stone": {
+      "hex": "#9a968a"
+    },
+    "stoneDark": {
+      "hex": "#5a5852"
+    }
+  }
+}

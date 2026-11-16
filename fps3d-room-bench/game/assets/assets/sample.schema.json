@@ -1,0 +1,38 @@
+{
+  "//": "sample.kind.json の形の宣言（Studio の sections 方言）。数値の初期値だけ Doc に置き、規則はコード側。",
+  "version": 1,
+  "sections": {
+    "speed": {
+      "kind": "field",
+      "type": "float",
+      "label": "主人公の速さ（px/秒）",
+      "order": 1,
+      "min": 10,
+      "max": 600,
+      "default": 120
+    },
+    "quitPrompt": {
+      "kind": "field",
+      "type": "string",
+      "label": "終了の確認の文言（Esc・閉じるボタンで出る窓）",
+      "order": 2,
+      "default": "Quit?  Enter: yes  /  Esc: no"
+    },
+    "loadingLabel": {
+      "kind": "field",
+      "type": "string",
+      "label": "起動の読み込み中の幕の文言（後ろの点は動きで足す）",
+      "order": 3,
+      "default": "Loading"
+    },
+    "loadingFade": {
+      "kind": "field",
+      "type": "float",
+      "label": "読み込みが済んでから幕を薄め切るまでの秒",
+      "order": 4,
+      "min": 0.05,
+      "max": 3,
+      "default": 0.5
+    }
+  }
+}
