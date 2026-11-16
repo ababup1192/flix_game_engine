@@ -201,6 +201,37 @@ mod Saves {
 
     // ── JSON ──
 
+    /// 書くセーブの形の版。
+    pub def formatVersion(): Int32 = 4
+
+    /// 読んだセーブの JSON の形。Current = この版の形（version 4 か、全部の枠が "stage" を持つ version 3）、
+    /// Legacy = version 2 より前（枠の舞台は photo・grade などの欄から作る）、Foreign = この版では読めない形。
+    pub enum Form with Eq, ToString {
+        case Current
+        case Legacy
+        case Foreign
+    }
+
+    /// JSON の形を見分ける。version 3 で "stage" の無い枠があれば、テンプレートの外で同じ版の数を使った別の形なので Foreign。
+    /// version が formatVersion より大きい（後の版が書いた）物も Foreign。
+    // WhyNot: version 3 をまとめて断らない — 0.96.0・0.97.0 のテンプレートが書いたセーブ（どの枠も "stage" を持つ）は今の形と同じで、そのまま読める。
+    pub def formOf(json: Json): Form =
+        let root = JsonCodec.expectObject(json) |> Option.getWithDefault(Map.empty());
+        let version = JsonCodec.intOr("version", 0, root);
+        if (version == formatVersion()) Form.Current
+        else if (version == 3) { if (slotsHaveStage(root)) Form.Current else Form.Foreign }
+        else if (version >= 0 and version <= 2) Form.Legacy
+        else Form.Foreign
+
+    /// どの枠も "stage" の鍵を持つか（枠が無ければ true）。
+    def slotsHaveStage(root: Map[String, Json]): Bool =
+        Map.get("slots", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
+            |> Map.valuesOf |> List.forAll(j -> JsonCodec.expectObject(j) |> Option.exists(obj -> Map.memberOf("stage", obj)))
+
+    /// この版で読める JSON なら読み（fromJson）、読めない形（Foreign）なら None。
+    pub def decode(fallback: Saves, json: Json): Option[Saves] =
+        if (formOf(json) == Form.Foreign) None else Some(fromJson(fallback, json))
+
     pub def toJson(saves: Saves): Json =
         let num = x -> Json.JNumber(JsonCodec.floatToBd(x));
         let slot = (s: Slot) -> Json.JObject(Map#{
@@ -213,7 +244,7 @@ mod Saves {
         let r = rec(saves);
         let c = r#config;
         Json.JObject(Map#{
-            "version" => num(3.0),
+            "version" => num(Int32.toFloat64(formatVersion())),
             "serial" => num(Int32.toFloat64(r#serial)),
             "slots" => Json.JObject(r#slots |> Map.toList |> List.map(match (i, s) -> (Int32.toString(i), slot(s))) |> List.toMap),
             "seen" => Json.JArray(r#seen |> Set.toList |> List.map(Json.JString) |> List.toVector),
@@ -291,12 +322,46 @@ mod Saves {
         let topSerial = slots |> Map.valuesOf |> List.map(s -> s#serial) |> List.foldLeft(Int32.max, 0);
         Saves.Saves({ slots = slots, seen = seen, config = config, serial = Int32.max(topSerial, JsonCodec.intOr("serial", 0, root)) })
 
-    /// 起動の 1 回: 無い・読めない時は fresh（初めて遊ぶ時と同じ）。
-    pub def load(kind: KindDoc.Doc): Saves \ Fs.FileRead =
+    /// 起動の時に読んだセーブ。refused = この版では読めない形（Form.Foreign）だったので読まずに fresh にした、
+    /// keptAs = 断ったファイルを写して残した先（写せなかった・断っていない時は None）。
+    pub type alias Opened = { saves = Saves, refused = Bool, keptAs = Option[String] }
+
+    /// 断ったセーブを残す先（version の数ごとに 1 つ）。
+    pub def refusedPath(version: Int32): String = "saves/novel.refused-v${version}.json"
+
+    /// 起動の 1 回: 無い・壊れている時は fresh（初めて遊ぶ時と同じ）。この版では読めない形の時も fresh で refused を立て、
+    /// 元のファイルを refusedPath へ写して残す。
+    // WhyNot: 断ったファイルをそのまま置いておかない — 遊び始めて最初の未読の行か設定の変更で saves/novel.json は書き直され、古い枠は消える。
+    pub def load(kind: KindDoc.Doc): Opened \ {Fs.FileRead, Fs.FileWrite} =
         let fallback = fresh(kind);
-        match Fs.FileRead.read(path()) {
-            case Ok(text) => DocJson.parse(text) |> Option.map(json -> fromJson(fallback, json)) |> Option.getWithDefault(fallback)
-            case Err(_)   => fallback
+        let text = Fs.FileRead.read(path()) |> Result.toOption;
+        match forM (t <- text; j <- text |> Option.flatMap(DocJson.parse)) yield (t, j) {
+            case Some((t, j)) => openedOf(fallback, t, j)
+            case None         => { saves = fallback, refused = false, keptAs = None }
+        }
+
+    /// 読んだ JSON から起動のセーブ（読めない形なら元の文字 text を残す）。
+    def openedOf(fallback: Saves, text: String, json: Json): Opened \ {Fs.FileRead, Fs.FileWrite} =
+        match decode(fallback, json) {
+            case Some(s) => { saves = s, refused = false, keptAs = None }
+            case None    =>
+                let version = JsonCodec.expectObject(json) |> Option.map(root -> JsonCodec.intOr("version", 0, root)) |> Option.getWithDefault(0);
+                { saves = fallback, refused = true, keptAs = keepRefused(refusedPath(version), text) }
+        }
+
+    /// 断ったセーブの文字を dst へ書く。dst が既にあれば書かずにそれを残した先とする（前に断った物を消さない）。書けなければ 1 行言って None。
+    // WhyNot: Fs.FileTest で有無を見ない — ブラウザ版の Fs（WebFs）は FileRead と FileWrite しか受けない。
+    def keepRefused(dst: String, text: String): Option[String] \ {Fs.FileRead, Fs.FileWrite} =
+        if (Result.isOk(Fs.FileRead.read(dst))) Some(dst)
+        else {
+            let done = forM (
+                _ <- Fs.FileWrite.mkDirs("saves");
+                _ <- Fs.FileWrite.write({ str = text }, dst)
+            ) yield ();
+            match done {
+                case Ok(_)  => Some(dst)
+                case Err(e) => Log.warnThen("[saves] 読めない形のセーブを残せない: ${dst} (${e})", None)
+            }
         }
 
     /// 書く（App.addOutput の write）。書けない時は 1 行知らせて続ける（遊びは止めない）。

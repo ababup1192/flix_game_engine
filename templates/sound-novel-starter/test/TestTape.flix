@@ -420,4 +420,16 @@ mod TestTape {
             |> List.find(row -> textAt("id", row) == "title_menu")
             |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(obj -> Map.get("from", obj)) |> Option.flatMap(JsonCodec.expectInt));
         Assert.assertEq(expected = Ok(Some(0)), first)
+
+    // ── ゲームの問い（GameE2e.probes） ──
+
+    @Test
+    def testGameProbesDoNotShareANameWithTheTemplates(): Unit \ Assert =
+        let names = E2e.table()#probes |> List.map(row -> row#name);
+        Assert.assertEq(expected = List.length(names), Set.size(List.toSet(names)))
+
+    @Test
+    def testGameProbesAreInTheFlowTable(): Unit \ Assert =
+        let names = E2e.table()#probes |> List.map(row -> row#name) |> List.toSet;
+        Assert.assertTrue(GameE2e.probes() |> List.forAll(row -> Set.memberOf(row#name, names)))
 }

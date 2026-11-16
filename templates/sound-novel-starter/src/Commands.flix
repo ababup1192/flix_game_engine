@@ -46,13 +46,16 @@ mod Commands {
     /// apply が舞台の外へ出す出来事（後に残る状態は書かない）。
     ///   ClearPage = NVL の頁をめくる / TurnPage = ADV の頁を送る / Sound(名前) = 効果音を 1 回（project.json の sounds）/
     ///   Event(名前) = その場の音や見た目の合図だけ（World.Event.Signal になる）/
-    ///   Wait(秒) = 物語の時計で秒だけ、続きの台詞・選択肢・コマンドを出さずに待つ（<<wait 秒>> と同じ待ち。Silent では落とす）。
+    ///   Wait(秒) = 物語の時計で秒だけ、続きの台詞・選択肢・コマンドを出さずに待つ（<<wait 秒>> と同じ待ち。Silent では落とす）/
+    ///   WaitOrTap(秒) = Wait と同じ待ちで、人が押すと（送りの操作）秒を待たずに明ける。押して明けた時は、ゲームが持つ背景の切り替えも
+    ///   終わりの形にする（Stage.withGameSwitchFinished）。オートでは明けない。Silent では落とし、スキップ中は Wait と同じくすぐ明ける。
     pub enum Out with Eq, ToString {
         case ClearPage
         case TurnPage
         case Sound(String)
         case Event(String)
         case Wait(Float64)
+        case WaitOrTap(Float64)
     }
 
     /// 時間を取る演出か。Timed なら、後の <<wait>> の間テープの位置がこの行を指す（World.talkCursorOf）。
@@ -83,7 +86,17 @@ mod Commands {
         bg() :: window() :: text() :: speak() :: audio() :: fx() :: shake() :: overlay() :: camera() :: tween() :: show() :: hide() :: move() :: Nil
 
     /// シナリオが使える全部（テンプレートの表とゲームの表）。
-    def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
+    pub def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
+
+    /// 読み進める時に当てる命令の表（Res#commands）。
+    // WhyNot: Res に命令の列をそのまま持たせない — Command の Ctx が Res を持つので、型の別名どうしが互いを指して組めない。
+    enum CommandTable(List[Command[Stage.Stage]])
+
+    pub type alias Table = CommandTable
+
+    pub def tableOf(commands: List[Command[Stage.Stage]]): Table = CommandTable.CommandTable(commands)
+
+    pub def commandsIn(t: Table): List[Command[Stage.Stage]] = let CommandTable.CommandTable(commands) = t; commands
 
     /// テンプレートとゲームを合わせた全部の命令の表（名前の重なりを見るテスト）。
     pub def specs(): List[YarnCommands.Spec] = table() |> List.map(c -> c#spec)
@@ -124,13 +137,13 @@ mod Commands {
         }
 
     def parsed(res: Res.Res, command: Yarn.Command): Option[(Command[Stage.Stage], YarnCommands.Args)] =
-        forM (c <- lookup(command#name); args <- argsOf(res#commandArgs, c, command) |> Result.toOption) yield (c, args)
+        forM (c <- lookupIn(commandsIn(res#commands), command#name); args <- argsOf(res#commandArgs, c, command) |> Result.toOption) yield (c, args)
 
     // ── 表を引く ──
 
     /// command を表で読んで st に当てる。Silent の時は Sound と Event を落とし、apply には instant を立てて渡す。
     pub def execute(replay: Replay, ctx: Ctx, command: Yarn.Command, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
-        executeUsing(table(), replay, ctx, command, st)
+        executeUsing(commandsIn(ctx#res#commands), replay, ctx, command, st)
 
     /// execute の、引く表を commands から取る形（テストが命令を差す）。
     pub def executeUsing(commands: List[Command[Stage.Stage]], replay: Replay, ctx: Ctx, command: Yarn.Command, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
@@ -150,6 +163,7 @@ mod Commands {
         case Out.Sound(_)  => false
         case Out.Event(_)  => false
         case Out.Wait(_)   => false
+        case Out.WaitOrTap(_) => false
     }
 
     /// command が時間を取る演出か（読めないコマンドは Instant）。
@@ -251,7 +265,7 @@ mod Commands {
                           let seconds = owned |> Option.map(o -> o#seconds) |> Option.getWithDefault(Param.get(time, a));
                           let byGame = if (Option.nonEmpty(owned)) { transition = BackdropDoc.Transition.Fade, game = owned | switch } else switch;
                           let next = Stage.withBackdropBy(ctx#now, shot, seconds, byGame, { shot = prev | st });
-                          let waits = if (Option.nonEmpty(owned) and next#fadeSeconds > 0.0) Out.Wait(next#fadeSeconds) :: Nil else Nil;
+                          let waits = if (Option.nonEmpty(owned) and next#fadeSeconds > 0.0) Out.WaitOrTap(next#fadeSeconds) :: Nil else Nil;
                           // WhyNot: NVL の頁を背景の切り替えでめくらない — NVL の頁の切れ目は <<window clear>> と行の数が決める。
                           Ok((next, List.append(if (Stage.kindOf(ctx#res#theme, st) == ThemeDoc.WindowKind.Adv) Out.TurnPage :: Nil else Nil, waits)))
                       }

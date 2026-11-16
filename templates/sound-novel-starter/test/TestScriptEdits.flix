@@ -159,7 +159,7 @@ mod TestScriptEdits {
     @Test
     def testBannerFitsTheWidthOfAPortraitScreen(): Unit \ {Assert, IO} =
         // 縦の画面の幅でも、バナーの行はどれも幅に収まる（2 つの知らせをつなぐと入らないので、知らせごとの行にするか字を縮める）。
-        let atlas = SceneRender.cfgOf("debug", Map.empty())#fontAtlas;
+        let atlas = SceneRender.cfgOf(SceneRender.design(), "debug", Map.empty())#fontAtlas;
         let room = Layout.width(Layout.Fit.Portrait(PortraitDoc.rec(PortraitDoc.defaults()), Display.defaultPortraitView())) - 16.0;
         let notices = "直した台本で遊んでいます" :: "台本が変わっていたので直しを当てていません（3 行）" :: Nil;
         let measure = (text, size) -> TextDraw.width(text, atlas, size);
@@ -170,7 +170,7 @@ mod TestScriptEdits {
     def testEditedStartShowsTheBanner(): Unit \ {Assert, Fs.FileRead, IO} =
         // edit.* で開いた時は、前の文が合わなくても scriptEdited の言葉のバナーを出す。
         let h = started(edited("11", "直した二つ目", hash("前に書いてあった文")));
-        let ctx = App.viewCtxOf(SceneRender.cfgOf("debug", Map.empty())#fontAtlas, SceneRender.design());
+        let ctx = App.viewCtxOf(SceneRender.cfgOf(SceneRender.design(), "debug", Map.empty())#fontAtlas, SceneRender.design());
         let texts = View.hud(ctx, h#resources, h#world) |> List.filterMap(placed -> match placed#item {
             case Render.Item.Text(t) => Some(t#text)
             case _                   => None

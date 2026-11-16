@@ -12,7 +12,7 @@ mod WebMain {
             let downloads = LoadProgress.downloads();
             let loaded = Res.withMissing(downloads#missing(), Controls.loadRes());
             let res = Res.withGame(GameBoot.loadAssets(loaded#game), loaded);
-            let app = Game.app(res, Saves.load(res#kind), localEpochSeconds())
+            let app = Game.appFrom(res, World.opened(Saves.load(res#kind), localEpochSeconds()))
                 |> Game.withAssetLoading(downloads)
                 |> GameBoot.withLoading({ downloads = downloads, decoder = LoadProgress.imageDecoder() })
                 |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),

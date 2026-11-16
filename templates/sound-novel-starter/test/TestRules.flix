@@ -3,7 +3,7 @@
 // 手本のシナリオに無い効果音だけは、テスト用の木（TestKit.fixtureRes）で見る。
 mod TestRules {
 
-    use fge::{App, AudioMixer, Clock, Emit, Vec2, Yarn, YarnRunner}
+    use fge::{App, AudioMixer, Clock, Emit, JsonCodec, Vec2, Yarn, YarnRunner}
     use TestKit.{advance, begun, pick, placeOf, readTo, settle, quiet, w0}
 
     def kind(res: Res.Res): KindDoc.Rec = KindDoc.rec(res#kind)
@@ -531,6 +531,124 @@ mod TestRules {
         let shape = (whole: Saves.Saves) -> { let s = Saves.rec(whole); (Map.keysOf(s#slots), s#seen, s#serial, s#config#cps, s#config#skipScope, s#config#display,
                                         Map.valuesOf(s#slots) |> List.map(slot -> (slot#savedAt, slot#place, Stage.fromSnapshot(slot#mark#stage)#mode, slot#mark#bookmark#node))) };
         Assert.assertEq(expected = shape(saves), shape(back))
+
+    // ── セーブの形の版（Saves.formOf・decode・World.opened） ──
+
+    /// クイックセーブを 1 つ持つセーブの JSON。
+    def savedJson(res: Res.Res): Util.Json.Json =
+        Saves.toJson(quiet(() -> WorldSaves.quickSave(res, begun(res)))#saves)
+
+    /// 一番上の欄 key を value に替えた JSON。
+    def withField(key: String, value: Util.Json.Json, json: Util.Json.Json): Util.Json.Json =
+        Util.Json.Json.JObject(Map.insert(key, value, JsonCodec.expectObject(json) |> Option.getWithDefault(Map.empty())))
+
+    def versioned(v: Int32, json: Util.Json.Json): Util.Json.Json = withField("version", Util.Json.Json.JNumber(JsonCodec.intToBd(v)), json)
+
+    /// どの枠からも "stage" を外した JSON（テンプレートの外で同じ version 3 を使った別の形）。
+    def withoutStage(json: Util.Json.Json): Util.Json.Json =
+        let root = JsonCodec.expectObject(json) |> Option.getWithDefault(Map.empty());
+        let slots = Map.get("slots", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
+            |> Map.map(slot -> Util.Json.Json.JObject(Map.remove("stage", JsonCodec.expectObject(slot) |> Option.getWithDefault(Map.empty()))));
+        withField("slots", Util.Json.Json.JObject(slots), json)
+
+    @Test
+    def testSavesAreWrittenInTheCurrentForm(): Unit \ {Assert, Fs.FileRead} =
+        let json = savedJson(TestKit.res());
+        Assert.assertEq(expected = (Some(Saves.formatVersion()), Saves.Form.Current),
+                        (JsonCodec.expectObject(json) |> Option.flatMap(root -> Map.get("version", root)) |> Option.flatMap(JsonCodec.expectInt), Saves.formOf(json)))
+
+    @Test
+    def testVersion3WithTheStageIsStillRead(): Unit \ {Assert, Fs.FileRead} =
+        // 0.96.0・0.97.0 のテンプレートが書いた version 3（どの枠も "stage" を持つ）は読む。
+        let res = TestKit.res();
+        Assert.assertTrue(Saves.decode(Saves.fresh(res#kind), versioned(3, savedJson(res))) |> Option.exists(Saves.hasAny))
+
+    @Test
+    def testVersion3WithoutTheStageIsRefused(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        Assert.assertEq(expected = None, Saves.decode(Saves.fresh(res#kind), withoutStage(versioned(3, savedJson(res)))) |> Option.map(Saves.hasAny))
+
+    @Test
+    def testVersion2IsReadAsTheLegacyForm(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Saves.Form.Legacy, Saves.formOf(withoutStage(versioned(2, savedJson(TestKit.res())))))
+
+    @Test
+    def testALaterVersionIsRefused(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Saves.Form.Foreign, Saves.formOf(versioned(Saves.formatVersion() + 1, savedJson(TestKit.res()))))
+
+    @Test
+    def testRefusedSavesAreToldAtTheTitle(): Unit \ {Assert, Fs.FileRead} =
+        // 読めない形のセーブだった起動は、タイトルで「この版では読めない」と知らせ、セーブは空。
+        let res = TestKit.res();
+        let w = World.opened({ saves = Saves.fresh(res#kind), refused = true, keptAs = None }, 0i64);
+        Assert.assertEq(expected = ("Title", Some(StoryDoc.labelOf(StoryDoc.Label.SavesRefused, res#story)), false),
+                        (World.sceneName(w), World.toastOf(res, w), Saves.hasAny(w#saves)))
+
+    @Test
+    def testKeptRefusedSavesAreToldAtTheTitle(): Unit \ {Assert, Fs.FileRead} =
+        // 断ったファイルを写して残せた時は、残したことも知らせる。
+        let res = TestKit.res();
+        let w = World.opened({ saves = Saves.fresh(res#kind), refused = true, keptAs = Some(Saves.refusedPath(3)) }, 0i64);
+        Assert.assertEq(expected = Some(StoryDoc.labelOf(StoryDoc.Label.SavesRefusedKept, res#story)), World.toastOf(res, w))
+
+    @Test
+    def testReadableSavesAreNotTold(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        Assert.assertEq(expected = None, World.toastOf(res, World.opened({ saves = Saves.fresh(res#kind), refused = false, keptAs = None }, 0i64)))
+
+    /// files（道 → 中身）を Fs.FileRead に答え、Fs.FileWrite の write を (道, 中身) で written に積んで f を流す（ほかの書き方は Err）。
+    def withFiles(files: Map[String, String], written: Ref[List[(String, String)], r], f: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileWrite) + r =
+        let lookup = path -> Map.get(path, files) |> Option.toOk(IoError.IoError(IoError.ErrorKind.NotFound, path));
+        let refuse = path -> Err(IoError.IoError(IoError.ErrorKind.Unsupported, path));
+        run { f() } with handler Fs.FileRead {
+            def read(path, k)      = k(lookup(path))
+            def readLines(path, k) = k(lookup(path) |> Result.map(String.lines))
+            def readBytes(path, k) = k(lookup(path) |> Result.map(String.toBytes))
+        } with handler Fs.FileWrite {
+            def write(data, path, k)        = { Ref.put((path, data#str) :: Ref.get(written), written); k(Ok(())) }
+            def writeLines(_data, path, k)  = k(refuse(path))
+            def writeBytes(_data, path, k)  = k(refuse(path))
+            def append(_data, path, k)      = k(refuse(path))
+            def appendLines(_data, path, k) = k(refuse(path))
+            def appendBytes(_data, path, k) = k(refuse(path))
+            def truncate(path, k)           = k(refuse(path))
+            def copyWith(_src, dst, _opts, k) = k(refuse(dst))
+            def moveWith(_src, dst, _opts, k) = k(refuse(dst))
+            def delete(path, k)             = k(refuse(path))
+            def mkDir(_dir, k)              = k(Ok(()))
+            def mkDirs(_dir, k)             = k(Ok(()))
+            def mkTempDir(prefix, k)        = k(Err(IoError.IoError(IoError.ErrorKind.Unsupported, prefix)))
+        }
+
+    /// files の上で Saves.load を流し、(断ったか, 残した先, 書いた (道, 中身) の列) を返す。
+    def loadOn(res: Res.Res, files: Map[String, String]): (Bool, Option[String], List[(String, String)]) = region rc {
+        let written = Ref.fresh(rc, Nil);
+        let opened = withFiles(files, written, () -> Saves.load(res#kind));
+        (opened#refused, opened#keptAs, Ref.get(written))
+    }
+
+    def textOf(json: Util.Json.Json): String = Util.Json.toPrettyString(2, json)
+
+    @Test
+    def testRefusedSaveIsCopiedBeforeItIsOverwritten(): Unit \ {Assert, Fs.FileRead} =
+        // stage の無い version 3 を読むと断り、元の中身をそのまま refusedPath(3) へ写す。
+        let res = TestKit.res();
+        let old = textOf(withoutStage(versioned(3, savedJson(res))));
+        Assert.assertEq(expected = (true, Some(Saves.refusedPath(3)), (Saves.refusedPath(3), old) :: Nil),
+                        loadOn(res, Map#{ Saves.path() => old }))
+
+    @Test
+    def testAnEarlierKeptFileIsNotOverwritten(): Unit \ {Assert, Fs.FileRead} =
+        // 前に残したファイルが同じ名前であれば、書かずにそれを残した先にする。
+        let res = TestKit.res();
+        let old = textOf(withoutStage(versioned(3, savedJson(res))));
+        Assert.assertEq(expected = (true, Some(Saves.refusedPath(3)), Nil),
+                        loadOn(res, Map#{ Saves.path() => old, Saves.refusedPath(3) => "前の物" }))
+
+    @Test
+    def testReadableSaveIsNotCopied(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        Assert.assertEq(expected = (false, None, Nil), loadOn(res, Map#{ Saves.path() => textOf(savedJson(res)) }))
 
     @Test
     def testSaveWithShortAmbienceNameReadsTheSoundName(): Unit \ {Assert, Fs.FileRead} =

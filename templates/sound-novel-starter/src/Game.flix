@@ -10,8 +10,12 @@ mod Game {
     /// res = 描く元（Doc とシナリオ）。clockBase = 起動した時のその土地の時刻（1970-01-01 からの秒。セーブの日時の元。テストと描き出しは決めた値）。
     /// App の w は描く元と遊びの状態の組（Resources.With）。系・絵・問いは Resources の口で両方を受ける。
     pub def app(res: Res.Res, saves: Saves.Saves, clockBase: Int64): App.App[Resources.With[Res.Res, World.World], {}] =
+        appFrom(res, World.initial(saves, clockBase))
+
+    /// app の、起動の World を渡す形（Main が読んだセーブを World.opened で据えて渡す）。
+    pub def appFrom(res: Res.Res, start: World.World): App.App[Resources.With[Res.Res, World.World], {}] =
         App.game({
-            init = Resources.of(res, World.initial(saves, clockBase)),
+            init = Resources.of(res, start),
             update = Resources.system((f, r, w) -> Controls.interact(f, r, Controls.step(f, r, w))),
             view = Resources.view(View.frame),
             reloads = Nil

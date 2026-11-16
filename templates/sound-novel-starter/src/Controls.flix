@@ -507,7 +507,8 @@ mod Controls {
           nodesBySource = Talk.nodesBySource(dialogue),
           missing = Set.empty(),
           scriptEdits = ScriptEdits.none(),
-          game = GameRes.load() }
+          game = GameRes.load(),
+          commands = Commands.tableOf(Commands.table()) }
 
     /// 鳴り続けない音の長さ（秒）。シナリオが wait=true で鳴らす効果音のうち、長さが読めない物を 1 行ずつ知らせる（読み込みのたびに 1 回）。
     def loadSoundSeconds(dialogue: Yarn.Program): Map[String, Float64] \ Fs.FileRead =

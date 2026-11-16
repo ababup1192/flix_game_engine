@@ -85,6 +85,8 @@ mod StoryDoc {
         case NoQuickSave
         case NoRollback
         case NoSaveNow
+        case SavesRefused
+        case SavesRefusedKept
         // 素材を待つ間の印（novel.theme.json の loadingMark = ring のラベル）
         case Waiting
         // 始まりの引数で直したシナリオを遊んでいる間のバナー（Starts の talk の edit.*）
@@ -103,7 +105,7 @@ mod StoryDoc {
         Label.AmbienceVolume :: Label.SeVolume :: Label.WindowAlpha :: Label.Reset :: Label.Preview :: Label.Yes ::
         Label.No :: Label.AskOverwrite :: Label.AskDelete :: Label.AskLoad :: Label.AskJump :: Label.AskToTitle ::
         Label.AskQuit :: Label.AskReset :: Label.LostNote :: Label.Saved :: Label.QuickSaved :: Label.Loaded ::
-        Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Label.NoSaveNow :: Label.Waiting ::
+        Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Label.NoSaveNow :: Label.SavesRefused :: Label.SavesRefusedKept :: Label.Waiting ::
         Label.ScriptEdited :: Label.ScriptEditsSkipped :: Nil
 
     /// novel.story.json の labels の鍵。
@@ -180,6 +182,8 @@ mod StoryDoc {
         case Label.NoQuickSave    => ("noQuickSave", "クイックセーブがありません")
         case Label.NoRollback     => ("noRollback", "これ以上は戻れません")
         case Label.NoSaveNow      => ("noSaveNow", "今はセーブできません")
+        case Label.SavesRefused   => ("savesRefused", "前の版のセーブはこの版では読めません")
+        case Label.SavesRefusedKept => ("savesRefusedKept", "前の版のセーブはこの版では読めません（saves/ に別の名前で残しました）")
         case Label.Waiting        => ("waiting", "読み込み中")
         case Label.ScriptEdited   => ("scriptEdited", "直した台本で遊んでいます")
         case Label.ScriptEditsSkipped => ("scriptEditsSkipped", "台本が変わっていたので直しを当てていません")
