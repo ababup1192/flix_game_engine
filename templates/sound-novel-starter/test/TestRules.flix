@@ -837,6 +837,13 @@ mod TestRules {
         Assert.assertEq(expected = ("ユウキの字", 4 :: Nil), (replaced#text, Yarn.rubiesOf(replaced) |> List.map(r -> r#start)))
 
     @Test
+    def testGameLabelsComeFromTheDocOrTheFallback(): Unit \ Assert =
+        // gameLabels に書いた鍵はその言葉（replace も当たる）、書いていない鍵は渡した既定の言葉。
+        let json = "{\"opening\": \"WinterRoute\", \"gameLabels\": {\"endingTrue\": \"××××の朝\"}, \"replace\": {\"××××\": \"ユウキ\"}}";
+        let doc = StoryDoc.fromJson(json) |> Option.getWithDefault(StoryDoc.defaults());
+        Assert.assertEq(expected = ("ユウキの朝", "結末"), (StoryDoc.gameLabelOf("endingTrue", "x", doc), StoryDoc.gameLabelOf("endingBad", "結末", doc)))
+
+    @Test
     def testTheMigrateRecordKeepsTheScriptText(): Unit \ {Assert, Fs.FileRead} =
         // 移行の記録（World.Event.Executed の Said）の字は台本の字のまま（置き換える前）。
         let res = TestKit.res();

@@ -304,9 +304,12 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 ### 血鱗の洗い出しの穴（P〜V）の進み
 
-- P（済み・86b3fcd1）: version 2 の欄だけの枠（`Saves.StageForm.Partial`）は、当て直した舞台に背景・環境音・mode だけを重ねる。
+- P（済み・86b3fcd1、レビュー 2 回目で直し）: version 2 の欄だけの枠（`Saves.StageForm.Partial`）は、当て直した舞台に背景・環境音・particles・mode を重ねる。人物は当て直した方（v2 の cast は使わない）。
 - S（済み・86b3fcd1）: `GameE2e.drives()` を `E2e.table` の reader の後ろに並べる（ゲームの持ち物なので、追随するゲームは `drives() = Nil` を足す）。
 - Q（済み・f3f1cd61）: `GameCommands.onLine(ctx, stage)`。台詞を頁に積む所で呼ぶ（選択肢は数えない・当て直しでも呼ぶ）。追随するゲームは `onLine` を足す。
-- U（吸収済み）: flow の ready は `isWaiting` = ビートの待ちだけを見るので、実行器の `<<wait>>` の間も Busy。
-- R・T・V: まだ。
+- U（吸収済み）: flow の ready はビートの待ちだけを見るので、実行器の `<<wait>>` の間も Busy（`isWaiting` は `isPaused` と同じ物だったので `isPaused` 1 本にした）。
+- R（済み・c88eb615）: `ThemeDoc.PortraitText.Frame(center)` と `ViewText.messageFrameOf`。
+- T（済み）: `novel.story.json` の `gameLabels`（ゲームが決める鍵 → 言葉）と `StoryDoc.gameLabelOf(鍵, 既定, doc)`。`Label` の enum には足させない。
+- V（済み）: GameView の頭に、立ち絵の矩形は `Cast.placedOf(ViewStage.castEnv(env, stage), stage#cast)` で引くと 1 行。
+- レビュー 2 回目の推奨: 待ちの間のセーブは、先に積んだ台詞より前でまだ当てていない命令を試しに当てた舞台で Mark を作る（`WorldRead.withCommandsBehind`）。
 - 廃屋配信: 止める違い 0（承認 9 件。台本の reader の押し方 L の 6 件と、頭の環境音 3 件）。

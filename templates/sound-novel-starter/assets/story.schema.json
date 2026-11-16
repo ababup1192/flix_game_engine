@@ -292,6 +292,13 @@
         }
       },
       "additionalProperties": false
+    },
+    "gameLabels": {
+      "type": "object",
+      "description": "ゲームが決める鍵 → 言葉（結末の名前など、labels の鍵に無い言葉。src/GameView.flix などから StoryDoc.gameLabelOf で引く）",
+      "additionalProperties": {
+        "type": "string"
+      }
     }
   }
 }
