@@ -139,18 +139,21 @@ mod TestYarnRunner {
     //                                RanEnd: 46 end 47 <<stop>> 48 after
     // ══════════════════════════════════════════════════════
 
+    def ranLines(before: YarnRunner.Runner[Clock.Real], after: YarnRunner.Runner[Clock.Real]): List[Int32] =
+        YarnRunner.ranLinesSince(before, after) |> List.map(source -> source#line)
+
     /// 頭から最初の台詞まで: <<set>>・<<if>>・通った枝の台詞の行（偽の枝の 37 行目は無い）。
     @Test
     def testRanLinesHoldSetIfAndTheTakenBranch(): Unit \ Assert + Fs.FileRead =
         let (started, _) = YarnRunner.start(program(), "Ran", at(0.0));
-        Assert.assertEq(expected = List#{33, 34, 35}, YarnRunner.ranLinesSince(YarnRunner.closed(), started))
+        Assert.assertEq(expected = List#{33, 34, 35}, ranLines(YarnRunner.closed(), started))
 
     /// 選んだ後は、その呼び出しで流した行だけ: 選んだ選択肢・<<jump>>・飛んだ先の台詞。
     @Test
     def testRanLinesSinceReadsOnlyTheChooseStep(): Unit \ Assert + Fs.FileRead =
         let (asked, _) = YarnRunner.start(program(), "Ran", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
         let (chosen, _) = YarnRunner.step(YarnRunner.Action.Choose(0), at(0.0), asked);
-        Assert.assertEq(expected = List#{39, 40, 46}, YarnRunner.ranLinesSince(asked, chosen))
+        Assert.assertEq(expected = List#{39, 40, 46}, ranLines(asked, chosen))
 
     /// <<stop>> の行は溜まり、その後ろの行は溜まらない。
     @Test
@@ -158,12 +161,40 @@ mod TestYarnRunner {
         let (asked, _) = YarnRunner.start(program(), "Ran", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
         let (chosen, _) = YarnRunner.step(YarnRunner.Action.Choose(0), at(0.0), asked);
         let (ended, _) = YarnRunner.step(YarnRunner.Action.Advance, at(0.0), chosen);
-        Assert.assertEq(expected = List#{47}, YarnRunner.ranLinesSince(chosen, ended))
+        Assert.assertEq(expected = List#{47}, ranLines(chosen, ended))
 
     /// もう一方の選択肢を選ぶと、選ばなかった選択肢の中の <<jump>>（40 行目）は溜まらない。
     @Test
     def testUnchosenOptionBodyIsNotRan(): Unit \ Assert + Fs.FileRead =
         let (asked, _) = YarnRunner.start(program(), "Ran", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
         let (chosen, _) = YarnRunner.step(YarnRunner.Action.Choose(1), at(0.0), asked);
-        Assert.assertEq(expected = List#{33, 34, 35, 39, 41, 42}, YarnRunner.ranLinesSince(YarnRunner.closed(), chosen))
+        Assert.assertEq(expected = List#{33, 34, 35, 39, 41, 42}, ranLines(YarnRunner.closed(), chosen))
+
+    /// 所にはファイルの名前も入る。
+    @Test
+    def testRanLinesCarryTheFile(): Unit \ Assert + Fs.FileRead =
+        let (started, _) = YarnRunner.start(program(), "Ran", at(0.0));
+        Assert.assertEq(expected = List#{"runner.yarn"}, YarnRunner.ranLinesSince(YarnRunner.closed(), started) |> List.map(source -> source#file) |> List.distinct)
+
+    /// <<wait>> の行は待ちに入った時に、その後ろの台詞の行は明けた時に溜まる。
+    @Test
+    def testWaitLineThenTheLineAfterIt(): Unit \ Assert + Fs.FileRead =
+        let (waiting, _) = YarnRunner.start(program(), "Wait", at(0.0));
+        let (woke, _) = YarnRunner.step(YarnRunner.Action.Tick, at(0.5), waiting);
+        Assert.assertEq(expected = (List#{5}, List#{6}), (ranLines(YarnRunner.closed(), waiting), ranLines(waiting, woke)))
+
+    /// 1 回で読めるのは新しい方の 4096 個まで（jump し合うノードは 1 回の呼び出しで 10000 文を流す）。
+    @Test
+    def testRanLinesKeepTheNewest4096(): Unit \ Assert + Fs.FileRead =
+        let (looped, _) = YarnRunner.start(program(), "Loop", at(0.0));
+        Assert.assertEq(expected = 4096, List.length(YarnRunner.ranLinesSince(YarnRunner.closed(), looped)))
+
+    /// resume で作り直した実行器は、当て直しで流した行を持ち、その後は差だけを読める。
+    @Test
+    def testResumedRunnerReadsOnlyLaterLines(): Unit \ Assert + Fs.FileRead =
+        let (asked, _) = YarnRunner.start(program(), "Ran", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
+        let mark = YarnRunner.bookmarkOf(asked) |> Option.getWithDefault({ node = "", storage = YarnStorage.empty(), steps = Nil });
+        let (resumed, _) = YarnRunner.resume(program(), mark, at(0.0));
+        let (chosen, _) = YarnRunner.step(YarnRunner.Action.Choose(0), at(0.0), resumed);
+        Assert.assertEq(expected = (List#{33, 34, 35, 39}, List#{39, 40, 46}), (ranLines(YarnRunner.closed(), resumed), ranLines(resumed, chosen)))
 }
