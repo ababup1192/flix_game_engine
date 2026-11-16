@@ -2270,3 +2270,26 @@ GL の画と呼び出しの並びは変えていない（集まりの物を inst
   - 診断の drawn は視錐台で間引かない分 GL より多い・CPU の 1 体ごとの値の写しを GPU へ書いた後も持つ・同じ深さで重なる面の勝ち方が GL と逆になりうる（WhyNot に書いた）。
   - 2D の集まり（候補 4 の `withStaticLayers`）・区画ごとの集まりを助ける関数・GL の側の持ち越し（GL は描き方の代金が残り目標の外）。
   - 時間の表を静かな時に取り直す・ブラウザで bundle の道を流していない【未確認】・`Scene3d.hasDrawnInstance` と `StaticRows.hasDrawnItem` が同じ中身（engine の pub を増やさないために 2 本）。
+
+### 12.41 P10: 切り替え（前倒し・2026-11-17・この Mac・Dawn の Metal だけ）
+
+人の指示で P10 を前倒しした。計測（時間の測り・16 ms の判定・欠けの表の時間）は後で行う。engine の外のゲームは触る時に追随する（engine の中のテンプレート・bench は追随した）。engine の pub（ゲームから見える API）は変えていない。
+
+- **決めた事**:
+  - PC の既定の描き手を WebGPU に: `FLIX_GE_BACKEND` を置かない・空・`webgpu` は WebGPU・`gl` は GL・知らない字は 1 行言って WebGPU（`LwjglEnv.parseBackend`）。`FLIX_GE_GL_LOG`（GL の呼び出しの控え）だけを置いた時は GL（GL の backend にしか無い口なので）。
+  - WebGPU を使えない機械: 窓は今までどおり `[backend] WebGPU を使えない: … — GL で起動する` を 1 行言って GL（5 章の fallback = 同じ `RenderList` を流す GL の backend。止めない WhyNot は `LwjglLayer.withWebGpuOrGl`）。Dawn のネイティブは macOS arm64 だけなので、ほかの OS は今はこの道。
+  - 窓なしの 1 枚撮り（`GpuShot`）: 新しい `GpuOffscreen`（WebGPU の `WebGpuPaint` を Dawn の device の上で・または `GlOffscreen`）で、窓と同じ `FLIX_GE_BACKEND` で選ぶ。WebGPU を開けなければ GL、GL も無ければ SoftRaster。history は GL と同じく毎回透明（`WebGpuPaint.withoutHistory`）。
+  - 動画（`VideoOut`）は GL のまま: 塗った物を返す `VideoOut.Painter`（ゲームから見える enum）に WebGPU の case が要るので、人に伺うまで作らない。`GpuOffscreen` に乗せれば数行で移せる。
+  - 既定にすると露わになる欠けを 2 つ埋めた: (1) WebGPU の窓も起動の後に出た字を足す（`RenderGlyphGrow` の上げる口を `Writer` で差し替え・R8 の絵の空いた所へ `writeTexture`。`RenderPaint.Fonts#grow` から GlContext を外した）。(2) WebGPU の窓も F8 の注釈を書く（`LwjglLayer.saveAnnotationWith` に切り出し、WebGPU は中間の texture を読む）。
+  - 層を置く物差し（`docs/flix-conventions.md`）: 描画の新しい機種の切れ目を「`RenderList` の backend の高さ」に書き換え、表に `RenderList` の行を足した（5.1 の宿題）。
+  - GL を前提にした harness に `FLIX_GE_BACKEND=gl` を明示（gl_parity の run・wgsl-rows・webgpu の GL 撮り・shader_cache_soak・texture_upload・webgpu-v1-check の GL 撮り）。窓の性能ベンチ（sprite_stress・crowd2d・scene3d）は既定の WebGPU で測る（GL と比べる時は `FLIX_GE_BACKEND=gl`・`docs/performance.md`）。
+- **gl-capture の基準**: 既定を WebGPU に（`make gl-capture-check [BACKEND=gl]`）。基準は描き手ごとのファイル: WebGPU は `bench/baseline/0.99.0/gl-capture-webgpu-jwebgpu0.3.4-apple-m4-pro.sha256`（名前に jWebGPU の版＝Dawn の版を入れて pin・頭の `#` の行に adapter）・GL は今の `bench/baseline/0.96.0/gl-capture-apple-m4-pro.sha256`。54 枚が 2 回撮りでバイトまで同じ。同じ場面の GL（`CAPTURE_GLYPHS=used`）との差は 9 場面のうち tidepool の 2 場面の字の縁だけ（level 453 px・±2／title 259 px・±1）、ほかは 0 px。
+- **agent-eval**: お題 `pc-backend-gl-fallback` を足し `try-webgpu-backend` を既定に合わせた。rpg-starter の写しで 2 題とも 100 点（1 回目は期待の語が choice に当たらず 50 点だったので語を直した）。
+- **テンプレートの reference**: 比べの絵は SoftRaster なので既定の切り替えで変わらない（3 本とも reference-check 緑・取り直していない）。
+- **門**（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal。CI に載るのは render_gl の GPU の要らないテスト・test-engine・lint だけで、ほかは GPU の要る手元の門）: render_gl のテスト 606 緑（`TestGpuOffscreenDawn`・`testGlLogPicksGlUnlessBackendIsSet` を足した）・`make sync-engine-full` exit 0・`make test-engine` 1,000 緑・`make gl-parity` exit 0・`make gl-capture-check`（WebGPU・基準と一致）と `BACKEND=gl`（基準と一致）exit 0・`make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0（`packages.lock` を消してから）・`make gl-jar-pin-check` exit 0・`make lint ONLY=max-lines` exit 0・テンプレート 3 本の `reference-check` 緑・`make determinism` exit 0。
+- **レビュー（1 回・80 点・必須 4）で直した物**: `FLIX_GE_GL_LOG` が WebGPU の窓で黙って効かない（GL を選ぶようにした）・`bench/texture_upload` が GL を直に呼ぶ（`FLIX_GE_BACKEND=gl`）・WebGPU の 1 枚撮りの history（毎回透明に）・窓の性能ベンチの描き手（文書に書いた）。任意で直した物: 使われていない `GpuOffscreen` の pub を外した・古いコメント・物差しの表の `GpuOffscreen`。
+- 持ち越し:
+  - 動画の既定（`VideoOut.Painter` に WebGPU の case を足すかを伺う）・外のゲームの追随（触る時に）・Studio（別のリポジトリ・GL のまま）・計測（12.16 のまとめ・16 ms の判定・欠けの表の時間）。
+  - F8 の注釈は型検査と GL の振る舞いの読み比べだけで、WebGPU の窓で実際に F8 を押していない【未確認】。WebGPU の窓の起動の後の字の足し方は gl-capture（used）と Dawn のテストでは通らず、auto のゲームを目で見ていない【未確認】。
+  - ブラウザの既定は WebGL2 のまま（`?backend=webgpu`）。
+  - `GpuOffscreen.readImage` は ARGB の画像から RGB へ写す回り道（1 枚撮りの予算で測ってから）。
