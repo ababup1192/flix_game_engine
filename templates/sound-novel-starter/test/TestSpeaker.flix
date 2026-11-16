@@ -3,7 +3,7 @@
 // 人物と小物はテスト用の Doc（test/fixtures/novel.cast.json）、粒・型・字の大きさはテンプレートの Doc から引く。
 mod TestSpeaker {
 
-    use fge::{Clock, Color, DocJson, JsonCodec, Render, Yarn}
+    use fge::{Clock, Color, Curve, DocJson, JsonCodec, Render, Yarn}
     use Commands.Out
 
     def command(name: String, args: List[String]): Yarn.Command =
@@ -80,7 +80,7 @@ mod TestSpeaker {
         Assert.assertEq(expected = Some("bottom"), doc |> Option.map(d -> fst(ThemeDoc.windowOf("Adv", d))))
 
     def advOnly(): Map[String, ThemeDoc.Window] =
-        Map#{ "sub" => { kind = ThemeDoc.WindowKind.Adv, place = ThemeDoc.WindowPlace.Bottom, frame = ThemeDoc.WindowFrame.Outline, showName = true, quotes = true, portrait = ThemeDoc.PortraitText.Page } }
+        Map#{ "sub" => { kind = ThemeDoc.WindowKind.Adv, place = ThemeDoc.WindowPlace.Bottom, frame = ThemeDoc.WindowFrame.Outline, showName = true, quotes = true, portrait = ThemeDoc.PortraitText.Page, align = None } }
 
     @Test
     def testLegacyTargetMissingFromWindowsIsAProblem(): Unit \ Assert =
@@ -367,4 +367,102 @@ mod TestSpeaker {
         let env = View.envOf(Layout.Fit.Regular, res, TestKit.w0(res));
         Assert.assertEq(expected = ("★", Color.toHex(ThemeDoc.speakerOf(id, res#theme)#color)),
                         (line#speaker, Color.toHex(ViewText.speakerOf(line, env)#color)))
+
+    // ── Doc の欄で変える決まり（novel.kind.json の windowFadeSeconds・novel.cast.json の onPage・narration・fadeEase） ──
+
+    @Test
+    def testWindowOffWithoutTimeFadesOverTheDocSeconds(): Unit \ {Assert, Fs.FileRead} =
+        // novel.kind.json の windowFadeSeconds が 2 秒なら、time= を書かない <<window off>> は 1 秒で半分の濃さ。
+        let base = TestKit.res();
+        let res = base |> Res.withKind(KindDoc.Doc.Doc({ windowFadeSeconds = 2.0 | KindDoc.rec(base#kind) }));
+        let st = stageAfter(res, "window", "off" :: Nil, Stage.empty());
+        Assert.assertTrue(TestKit.near(0.5, Stage.windowAlphaAt(at(1.0), st)))
+
+    @Test
+    def testWindowFadeSecondsIsReadFromTheDoc(): Unit \ Assert =
+        let kind = KindDoc.fromJson("{\"version\": 1, \"windowFadeSeconds\": 0.6}") |> Option.map(d -> KindDoc.rec(d)#windowFadeSeconds);
+        Assert.assertEq(expected = Some(0.6), kind)
+
+    /// テスト用の Doc の小物 fan に onPage を書き、一番上に propsOnPage を書いた描く元。
+    def castResWithFanOnPage(propsOnPage: String, onPage: String): Res.Res \ Fs.FileRead =
+        let text = Fs.FileRead.read("test/fixtures/novel.cast.json") |> Result.getWithDefault("{}")
+            |> String.replace(src = "\"highlight\"", dst = "\"propsOnPage\": \"${propsOnPage}\", \"highlight\"")
+            |> String.replace(src = "\"fan\": { \"label\"", dst = "\"fan\": { \"onPage\": \"${onPage}\", \"label\"");
+        TestKit.res() |> Res.withCast(CastDoc.fromJson(text) |> Option.getWithDefault(CastDoc.defaults()))
+
+    @Test
+    def testPropWithOnPageUnderWindowIsDrawnInTheWorldLayer(): Unit \ {Assert, Fs.FileRead} =
+        // 一番上が overWindow でも、fan の onPage が underWindow なら fan は world の層（頁の幕の奥）に描く。
+        Assert.assertTrue(fanInTheWorldLayer(castResWithFanOnPage("overWindow", "underWindow")))
+
+    @Test
+    def testPropWithOnPageOverWindowIsDrawnOnThePage(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertFalse(fanInTheWorldLayer(castResWithFanOnPage("underWindow", "overWindow")))
+
+    @Test
+    def testNarrationKeepsTheSpeakerWhenTheDocSaysKeep(): Unit \ Assert =
+        let spoken = Stage.withSpeaker(Clock.zero(), Some("a"), Stage.empty());
+        let st = Stage.withLineSpeaker(at(1.0), true, None, spoken);
+        Assert.assertEq(expected = Some("a"), PropertyTween.nameEnd(Stage.speakerKey(), st#props))
+
+    @Test
+    def testNarrationClearsTheSpeakerByDefault(): Unit \ Assert =
+        let spoken = Stage.withSpeaker(Clock.zero(), Some("a"), Stage.empty());
+        let st = Stage.withLineSpeaker(at(1.0), false, None, spoken);
+        Assert.assertEq(expected = None, PropertyTween.nameEnd(Stage.speakerKey(), st#props))
+
+    @Test
+    def testNarrationIsReadFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        let text = Fs.FileRead.read("test/fixtures/novel.cast.json") |> Result.getWithDefault("{}")
+            |> String.replace(src = "\"voices\": [\"whale\"]", dst = "\"voices\": [\"whale\"], \"narration\": \"keep\"");
+        let narration = CastDoc.fromJson(text) |> Option.map(d -> CastDoc.rec(d)#highlight#narration);
+        Assert.assertEq(expected = Some(CastDoc.Narration.Keep), narration)
+
+    /// 人物 a を 2 秒で出し始めてから 0.5 秒の、人物の見えている濃さ（ease が curve の時）。
+    def presenceAtAQuarter(res: Res.Res, args: List[String]): Float64 =
+        let st = stageAfter(res, "show", "a" :: "time=2" :: args, Stage.empty());
+        Cast.presenceOf(at(0.5), res#cast, st#cast)
+
+    @Test
+    def testShowFadesAlongTheDocFadeEase(): Unit \ {Assert, Fs.FileRead} =
+        // novel.cast.json の fadeEase が linear なら、2 秒の出だしの 0.5 秒で濃さ 0.25。
+        let base = castRes();
+        let res = base |> Res.withCast(CastDoc.Doc.Doc({ fadeEase = Curve.Ease.Linear | CastDoc.rec(base#cast) }));
+        Assert.assertTrue(TestKit.near(0.25, presenceAtAQuarter(res, Nil)))
+
+    @Test
+    def testShowEaseOverridesTheDocFadeEase(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertTrue(TestKit.near(0.25, presenceAtAQuarter(castRes(), "ease=linear" :: Nil)))
+
+    @Test
+    def testHideEaseOverridesTheDocFadeEase(): Unit \ {Assert, Fs.FileRead} =
+        // ease=linear の <<hide>> は、2 秒の 0.5 秒で濃さ 0.75。
+        let res = castRes();
+        let st = Stage.empty() |> stageAfter(res, "show", "a" :: "time=0" :: Nil) |> stageAfter(res, "hide", "a" :: "time=2" :: "ease=linear" :: Nil);
+        Assert.assertTrue(TestKit.near(0.75, Cast.presenceOf(at(0.5), res#cast, st#cast)))
+
+    /// 型 bottom に align を書いた（書かない）描く元で、<<text align=left>> の後に <<window bottom>> を当てた舞台の揃えの値。
+    def alignAfterSwitching(bottomAlign: Option[ThemeDoc.TextAlign]): Option[String] \ Fs.FileRead =
+        let base = TestKit.res();
+        let r = ThemeDoc.rec(base#theme);
+        let bottom = Map.get("bottom", r#windows) |> Option.map(w -> { align = bottomAlign | w });
+        let theme = bottom |> Option.map(w -> ThemeDoc.Doc.Doc({ windows = Map.insert("bottom", w, r#windows) | r })) |> Option.getWithDefault(base#theme);
+        let res = base |> Res.withTheme(theme);
+        let st = Stage.emptyFor(theme) |> stageAfter(res, "window", "nvl" :: Nil) |> stageAfter(res, "text", "align=left" :: Nil) |> stageAfter(res, "window", "bottom" :: Nil);
+        PropertyTween.nameEnd(Stage.textAlignKey(), st#props)
+
+    @Test
+    def testSwitchingToAWindowWithAlignResetsTheTextAlign(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = None, alignAfterSwitching(Some(ThemeDoc.TextAlign.Center)))
+
+    @Test
+    def testSwitchingToAWindowWithoutAlignKeepsTheTextAlign(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Some("left"), alignAfterSwitching(None))
+
+    @Test
+    def testFadeEaseIsReadFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        let text = Fs.FileRead.read("test/fixtures/novel.cast.json") |> Result.getWithDefault("{}")
+            |> String.replace(src = "\"fadeSeconds\": 0.5,", dst = "\"fadeSeconds\": 0.5, \"fadeEase\": \"outCubic\",");
+        Assert.assertEq(expected = Some(Curve.Ease.OutCubic), CastDoc.fromJson(text) |> Option.map(d -> CastDoc.rec(d)#fadeEase))
+
 }

@@ -88,9 +88,10 @@
           "type": "name"
         },
         {
-          "default": "1.0",
+          "max": 60,
+          "min": 0,
           "name": "time",
-          "type": "time"
+          "type": "num"
         },
         {
           "name": "transition",
@@ -113,9 +114,8 @@
           ]
         },
         {
-          "default": "linear",
           "name": "ease",
-          "type": "ease",
+          "type": "choice",
           "values": [
             "linear",
             "smoothstep",
@@ -146,7 +146,7 @@
           ]
         }
       ],
-      "summary": "背景の写真を時間帯の色で替え、秒かけて切り替える（transition = fade・black・wipe・slide・pan・cut。省くと novel.backdrops.json の defaultTransition・pace = 3D の道筋の歩き方）"
+      "summary": "背景の写真を時間帯の色で替え、秒かけて切り替える（transition = fade・black・wipe・slide・pan・cut。transition・time・ease を省くと novel.backdrops.json の defaultTransition・defaultSeconds・defaultEase・pace = 3D の道筋の歩き方）"
     },
     "camera": {
       "params": [
@@ -304,9 +304,8 @@
           "type": "num"
         },
         {
-          "default": "smoothstep",
           "name": "ease",
-          "type": "ease",
+          "type": "choice",
           "values": [
             "linear",
             "smoothstep",
@@ -337,7 +336,7 @@
           ]
         }
       ],
-      "summary": "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物・to = 端へ滑って消える）"
+      "summary": "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物・to = 端へ滑って消える・ease = 濃さと動きの曲線。省くと濃さは novel.cast.json の fadeEase）"
     },
     "move": {
       "params": [
@@ -668,9 +667,8 @@
           "type": "num"
         },
         {
-          "default": "smoothstep",
           "name": "ease",
-          "type": "ease",
+          "type": "choice",
           "values": [
             "linear",
             "smoothstep",
@@ -701,7 +699,7 @@
           ]
         }
       ],
-      "summary": "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率）"
+      "summary": "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率・ease = 濃さと動きの曲線。省くと濃さは fadeEase）"
     },
     "speak": {
       "params": [
@@ -868,7 +866,7 @@
           "type": "num"
         }
       ],
-      "summary": "メッセージ枠の型（novel.theme.json の windows）に替える・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）・出す（on。time = off・on の薄くなる秒）"
+      "summary": "メッセージ枠の型（novel.theme.json の windows）に替える・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）・出す（on。time = off・on の薄くなる秒・省くと novel.kind.json の windowFadeSeconds）"
     }
   },
   "version": 2

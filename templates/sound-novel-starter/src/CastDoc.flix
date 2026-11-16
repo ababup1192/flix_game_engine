@@ -4,7 +4,7 @@
 // テクスチャの名前は「cast_<名前>_<表情>」で導き、project.json の textures にこの名前で登録する（TestDocs が見る）。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod CastDoc {
-    use fge::{DocJson, JsonCodec}
+    use fge::{Curve, DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 列: Character = 人物、Prop = 小物（既定の重ね順が人物より手前・NVL の頁では既定で幕の上。PropsOnPage）。何人・何個でも同時に出せる。
@@ -42,18 +42,34 @@ mod CastDoc {
     /// scale = 位置の高さに掛ける倍率、face = 既定の表情、slot = 既定の位置、faces = 表情の名前の一覧、
     /// layer = 重ね順（大きいほど手前。既定は人物 500・小物 600・背景に付く絵 100）、attach = 付く先、
     /// markers = 絵の中の点の名前 → 位置（<<fx 名 on=絵.点>>・<<speak>> が粒を出す所）、
-    /// hideWindow = 出ている間は文字の枠と字を消す、speakFx = <<speak 名>> が markers の mouth から一度出す粒（novel.effects.json の particles）。
+    /// hideWindow = 出ている間は文字の枠と字を消す、speakFx = <<speak 名>> が markers の mouth から一度出す粒（novel.effects.json の particles）、
+    /// onPage = 頁の幕がある間のこの小物の重なり順（None なら一番上の propsOnPage。人物には効かない）。
     pub type alias Entry = { label = String, aspect = Float64, scale = Float64, face = String, slot = String, faces = List[String],
-                             layer = Int32, attach = Attach, markers = Map[String, Marker], hideWindow = Bool, speakFx = Option[String] }
+                             layer = Int32, attach = Attach, markers = Map[String, Marker], hideWindow = Bool, speakFx = Option[String],
+                             onPage = Option[PropsOnPage] }
 
     /// 絵の中の点（絵の左上 0・右下 1 の割合）。名前は Godot の Marker2D に合わせた。
     pub type alias Marker = { x = Float64, y = Float64 }
 
     /// 話し手を明るくする: dim = 話していない人物を暗くする量（0 = 暗くしない・1 = 真っ黒）、seconds = 明るさを替える秒、
     /// voices = 立ち絵を持たないが、話している間はほかの人物を暗くする話し手の id（声だけの人物・ゲームが自分で描く人物）。
-    pub type alias Highlight = { dim = Float64, seconds = Float64, voices = Set[String] }
+    /// narration = 地の文の行での明るさ（Brighten = 全員を明るく戻す・Keep = 前の話し手の強調のまま）。
+    pub type alias Highlight = { dim = Float64, seconds = Float64, voices = Set[String], narration = Narration }
 
-    /// fadeSeconds = 出入りと入れ替えの既定の秒、slideDistance = from= / to= で端から滑る距離（画面に対する割合。1 で画面の外まで）、
+    /// 地の文の行での話し手の強調。Brighten = 話し手がいなくなり全員を明るく戻す、Keep = 前の台詞の話し手を強調したまま。
+    pub enum Narration with Eq, ToString {
+        case Brighten
+        case Keep
+    }
+
+    /// novel.cast.json の highlight.narration の字（brighten・keep。知らない字は None）。
+    pub def narrationOf(text: String): Option[Narration] = match text {
+        case "brighten" => Some(Narration.Brighten)
+        case "keep"     => Some(Narration.Keep)
+        case _          => None
+    }
+
+    /// fadeSeconds = 出入りと入れ替えの既定の秒、fadeEase = 出入りと入れ替えの濃さの曲線（Curve.easeTable の名前。<<show>> / <<hide>> の ease= で替えられる）、slideDistance = from= / to= で端から滑る距離（画面に対する割合。1 で画面の外まで）、
     /// sway = 息の揺れの幅（画面の高さに対する割合・0 で止める）、
     /// portraitVeilWithCast = 縦の画面で人物が出ている間に頁の覆いの濃さへ掛ける倍率（1 = 変えない）、highlight = 話し手を明るくする量と秒、
     /// propsOnPage = 頁の幕がある間に小物を描く重なり順、
@@ -61,6 +77,7 @@ mod CastDoc {
     pub type alias Rec = {
         version = Int32,
         fadeSeconds = Float64,
+        fadeEase = Curve.Ease,
         slideDistance = Float64,
         sway = Float64,
         portraitVeilWithCast = Float64,
@@ -81,8 +98,8 @@ mod CastDoc {
 
     /// コード側の既定値（assets/novel.cast.json と同じ値から出発する）。人物と小物は空。
     pub def defaults(): Doc =
-        Doc.Doc({ version = 1, fadeSeconds = 0.4, slideDistance = 1.0, sway = 0.002, portraitVeilWithCast = 1.0,
-                  highlight = { dim = 0.35, seconds = 0.25, voices = Set.empty() },
+        Doc.Doc({ version = 1, fadeSeconds = 0.4, fadeEase = Curve.Ease.InOutSine, slideDistance = 1.0, sway = 0.002, portraitVeilWithCast = 1.0,
+                  highlight = { dim = 0.35, seconds = 0.25, voices = Set.empty(), narration = Narration.Brighten },
                   propsOnPage = PropsOnPage.OverWindow,
                   slots = Map#{ "left" => { x = 0.25, bottom = 1.0, height = 0.9, exclusive = true }, "center" => { x = 0.5, bottom = 1.0, height = 0.9, exclusive = true },
                                 "right" => { x = 0.75, bottom = 1.0, height = 0.9, exclusive = true }, "item" => { x = 0.5, bottom = 0.62, height = 0.36, exclusive = true } },
@@ -99,7 +116,7 @@ mod CastDoc {
         let d = rec(doc);
         let entry = { label = "見本", aspect = 0.4, scale = 1.0, face = "plain", slot = "center", faces = "plain" :: Nil,
                       layer = defaultLayerOf(Kind.Character, Attach.Screen), attach = Attach.Screen,
-                      markers = Map.empty(), hideWindow = false, speakFx = None };
+                      markers = Map.empty(), hideWindow = false, speakFx = None, onPage = None };
         Doc.Doc({ cast = Map.insert(sampleName(), entry, d#cast) | d })
 
     /// 見本の人物の名前。
@@ -152,19 +169,22 @@ mod CastDoc {
               layer = JsonCodec.intOr("layer", defaultLayerOf(kind, attach), obj), attach = attach,
               markers = Map.get("markers", obj) |> Option.flatMap(JsonCodec.decodeStringMap(markerFrom)) |> Option.getWithDefault(Map.empty()),
               hideWindow = JsonCodec.boolOr("hideWindow", false, obj),
-              speakFx = Map.get("speakFx", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.filter(n -> not String.isEmpty(n)) }
+              speakFx = Map.get("speakFx", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.filter(n -> not String.isEmpty(n)),
+              onPage = Map.get("onPage", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(propsOnPageOf) }
         })
 
     /// { "x": 割合, "y": 割合 } を読む（欠けた欄は真ん中）。
     def markerFrom(json: Json): Option[Marker] =
         JsonCodec.expectObject(json) |> Option.map(obj -> { x = JsonCodec.floatOr("x", 0.5, obj), y = JsonCodec.floatOr("y", 0.5, obj) })
 
-    /// "highlight": { "dim", "seconds", "voices" } を読む（欠けた欄は fallback の値）。
+    /// "highlight": { "dim", "seconds", "voices", "narration" } を読む（欠けた欄と知らない字は fallback の値）。
     def highlightFrom(fallback: Highlight, json: Option[Json]): Highlight =
         json |> Option.flatMap(JsonCodec.expectObject)
              |> Option.map(obj -> { dim = JsonCodec.floatOr("dim", fallback#dim, obj), seconds = JsonCodec.floatOr("seconds", fallback#seconds, obj),
                                     voices = Map.get("voices", obj) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString)) |> Option.map(List.toSet)
-                                                 |> Option.getWithDefault(fallback#voices) })
+                                                 |> Option.getWithDefault(fallback#voices),
+                                    narration = Map.get("narration", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(narrationOf)
+                                                    |> Option.getWithDefault(fallback#narration) })
              |> Option.getWithDefault(fallback)
 
     /// "attach": { "bg": { 写真の名前: 横のずれ } } を読む（無い・読めなければ画面に付く）。
@@ -173,10 +193,21 @@ mod CastDoc {
              |> Option.map(bg -> JsonCodec.decodeStringMap(JsonCodec.expectFloat, bg) |> Option.getWithDefault(Map.empty()))
              |> Option.map(Attach.Backdrop) |> Option.getWithDefault(Attach.Screen)
 
+    /// 曲線の名前の欄（Curve.easeTable の名前。無い・知らない名前は fallback）。
+    def easeIn(key: String, fallback: Curve.Ease, obj: Map[String, Json]): Curve.Ease =
+        Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString)
+            |> Option.flatMap(name -> Curve.easeTable() |> List.find(e -> fst(e) == name) |> Option.map(snd))
+            |> Option.getWithDefault(fallback)
+
+    /// 小物 entry を頁の幕の上に描くか（小物の onPage、書いていなければ一番上の propsOnPage）。
+    pub def isOverWindow(doc: Doc, entry: Entry): Bool =
+        Option.getWithDefault(rec(doc)#propsOnPage, entry#onPage) == PropsOnPage.OverWindow
+
     def fromRoot(root: Map[String, Json]): Doc =
         let d = rec(defaults());
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
                   fadeSeconds = JsonCodec.floatOr("fadeSeconds", d#fadeSeconds, root),
+                  fadeEase = easeIn("fadeEase", d#fadeEase, root),
                   slideDistance = JsonCodec.floatOr("slideDistance", d#slideDistance, root),
                   sway = JsonCodec.floatOr("sway", d#sway, root),
                   portraitVeilWithCast = JsonCodec.floatOr("portraitVeilWithCast", d#portraitVeilWithCast, root),

@@ -28,6 +28,18 @@
       "description": "transition= を省いた <<bg>> の切り替え（fade = 重ねる・black = 短く暗転・wipe = 左から塗り替える・slide = 前の写真を左へ送る・pan = 横へ振ったように流れながら重ねる・cut = すぐ替わる）",
       "default": "fade"
     },
+    "defaultSeconds": {
+      "type": "number",
+      "minimum": 0,
+      "default": 1.0,
+      "description": "time= を省いた <<bg>> の切り替えの秒"
+    },
+    "defaultEase": {
+      "type": "string",
+      "enum": ["linear", "smoothstep", "inSine", "outSine", "inOutSine", "inQuad", "outQuad", "inOutQuad", "inCubic", "outCubic", "inOutCubic", "inQuart", "outQuart", "inOutQuart", "inExpo", "outExpo", "inOutExpo", "inBack", "outBack", "inOutBack", "inElastic", "outElastic", "inOutElastic", "inBounce", "outBounce", "inOutBounce"],
+      "default": "linear",
+      "description": "ease= を省いた <<bg>> の切り替えの進みの曲線"
+    },
     "black": {
       "type": "object",
       "description": "transition=black の暗転の形。<<bg … time=>> の秒を、暗くなる間・暗いまま止まる間・明ける間に、この比で分ける（足して 1 でなくてよい）。写真は止まる間の真ん中で替わる。Ren'Py の Fade(out, hold, in) と同じ形",

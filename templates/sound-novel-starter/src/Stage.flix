@@ -101,6 +101,10 @@ mod Stage {
     /// 文字送りの速さに掛ける倍率（設定の文字の速さ × これ）。
     pub def textSpeedKey(): PropertyTween.NumKey = PropertyTween.numKey("text.speed")
 
+    /// 台詞の行の話し手を書く（地の文は None）。keepOnNarration なら、地の文の行では前の話し手のまま（novel.cast.json の highlight.narration が keep）。
+    pub def withLineSpeaker(now: Clock.Time[Story], keepOnNarration: Bool, speaker: Option[String], stage: Stage): Stage =
+        if (keepOnNarration and Option.isEmpty(speaker)) stage else withSpeaker(now, speaker, stage)
+
     /// 話し手を now から speaker に替える（地の文は None。今の話し手と同じなら舞台はそのまま）。
     // WhyNot: 同じ話し手を書き直さない — 替わった時刻が新しくなり、明るさのつなぎ（novel.cast.json の highlight）が台詞ごとにやり直しになる。
     pub def withSpeaker(now: Clock.Time[Story], speaker: Option[String], stage: Stage): Stage =

@@ -11,6 +11,7 @@ mod KindDoc {
     /// 全体と環境音と BGM と効果音の音量 0〜1・文章のウィンドウの濃さ 0〜1）、
     /// autoPerChar = オートの待ちに足す 1 字あたりの秒（長い行ほど長く待つ）、skipInterval = スキップで 1 行を出す間（秒）、
     /// logMax = ログに残す行の数、shakeSeconds / shakePx = 強さを書かない <<shake>> の長さと揺れ幅、shakes = 名前付きの揺れの強さ（<<shake 名前>>）、
+    /// windowFadeSeconds = time= を省いた <<window off>> / <<window on>> で文字の枠と字が薄くなる・戻る秒（0 ですぐ）、
     /// overlayStart = <<overlay>> を一度も書いていない間の覆いの濃さ（0〜1）、overlayLayer = <<overlay layer=stage>> の層の数（world の中・大きいほど手前）、
     /// textSizes = <<text size=名前>> の名前 → 本文とルビの字に掛ける倍率、
     /// fireflies = <<fx fireflies>> のパーティクルの数、snow = <<fx snow>> の雪（Snow）、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、
@@ -40,6 +41,7 @@ mod KindDoc {
         shakeSeconds = Float64,
         shakePx = Float64,
         shakes = Map[String, Shake],
+        windowFadeSeconds = Float64,
         overlayStart = Float64,
         overlayLayer = Int32,
         textSizes = Map[String, Float64],
@@ -92,7 +94,7 @@ mod KindDoc {
         Doc.Doc({ version = 1, bodySize = 22.0, rubySize = 11.0, nameSize = 19.0, lineGap = 14.0,
                   advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, musicVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
-                  shakes = Map.empty(), overlayStart = 0.0, overlayLayer = 900,
+                  shakes = Map.empty(), windowFadeSeconds = 0.0, overlayStart = 0.0, overlayLayer = 900,
                   textSizes = Map#{ "small" => 0.8, "normal" => 1.0, "large" => 1.4, "huge" => 2.0 },
                   fireflies = 28, snow = snowDefaults(), creditsSpeed = 34.0, toastSeconds = 1.6,
                   holdFadeSeconds = 0.4, holdGiveUpSeconds = 20.0, holdMarkSeconds = 0.4,
@@ -154,6 +156,7 @@ mod KindDoc {
                   shakeSeconds = num("shakeSeconds", d#shakeSeconds), shakePx = num("shakePx", d#shakePx),
                   shakes = Map.get("shakes", root) |> Option.flatMap(JsonCodec.decodeStringMap(shakeFrom({ seconds = num("shakeSeconds", d#shakeSeconds), px = num("shakePx", d#shakePx) })))
                       |> Option.getWithDefault(d#shakes),
+                  windowFadeSeconds = Float64.max(0.0, num("windowFadeSeconds", d#windowFadeSeconds)),
                   overlayStart = num("overlayStart", d#overlayStart), overlayLayer = int("overlayLayer", d#overlayLayer),
                   textSizes = Map.get("textSizes", root) |> Option.flatMap(JsonCodec.decodeStringMap(JsonCodec.expectFloat)) |> Option.getWithDefault(d#textSizes),
                   fireflies = int("fireflies", d#fireflies), snow = snow, creditsSpeed = num("creditsSpeed", d#creditsSpeed),

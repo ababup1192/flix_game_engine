@@ -3,10 +3,11 @@
 // 語彙（make talk-vocab。テンプレートの表 all() は assets/talk/vocab.std.json、ゲームの表 GameCommands.all() は assets/talk/vocab.json の commands）の両方が出る。
 //
 //   <<bg 写真 [grade=時間帯] [time=秒] [transition=fade|black|wipe|slide|pan|cut] [pace=walk|run] [ease=]>>
-//                                              背景を「写真」（novel.backdrops.json の photos）に替え、秒かけて切り替える（既定 1 秒）。
-//                                              grade（grades）を省くと今の背景の時間帯のまま・transition を省くと Doc の defaultTransition
+//                                              背景を「写真」（novel.backdrops.json の photos）に替え、秒かけて切り替える。
+//                                              grade（grades）を省くと今の背景の時間帯のまま・transition / time / ease を省くと Doc の defaultTransition / defaultSeconds / defaultEase
 //   <<window 型|clear|off|on [time=]>>        メッセージ枠の型（novel.theme.json の windows。作例は nvl = 画面いっぱい・bottom = 下の枠）に替える /
-//                                              NVL の頁をめくる / 文字の枠と字を消す・出す（off は次の台詞・選択肢か型の指定でも戻る。time は off・on の薄くなる秒）
+//                                              NVL の頁をめくる / 文字の枠と字を消す・出す（off は次の台詞・選択肢か型の指定でも戻る。time は off・on の薄くなる秒・
+//                                              省くと novel.kind.json の windowFadeSeconds）。型を替えると、その型に align があれば字の揃えを型の既定へ戻す
 //   <<text [at=top|center|bottom] [size=名前] [align=left|center] [speed=倍率] [lock=秒]>>
 //                                              字の置き場（NVL の頁の中）・大きさ（novel.kind.json の textSizes）・揃え・文字送りの速さの倍率・押しても送らない秒
 //   <<speak 名前>>                            字を出さずに話す（話し手を明るくし、novel.cast.json の speakFx を markers の mouth から一度出す）
@@ -22,7 +23,8 @@
 //   <<show 名前 [表情] [at=位置] [from=left|right|top|bottom] [x=] [y=] [scale=] [alpha=] [time=秒] [ease=]>>
 //                                              立ち絵か小物（novel.cast.json の cast / props）を出す・表情や位置を替える。何人・何個でも出せ、
 //                                              exclusive の位置にだけは 1 つ（後から出した物が前の物を消す）。省いた物は出ている形のまま
-//                                              （出ていなければ Doc の face・slot）。from は端から slideDistance だけ滑って出る。x〜alpha は actor.<名>.*
+//                                              （出ていなければ Doc の face・slot）。from は端から slideDistance だけ滑って出る。x〜alpha は actor.<名>.*。
+//                                              ease は出入りの濃さと動きの曲線（省くと濃さは novel.cast.json の fadeEase・動きは smoothstep）
 //   <<hide 名前|all [to=left|right|top|bottom] [time=秒] [ease=]>> / <<hide at=位置>>   その人・全部・その位置に出ている物を消す（to は端へ滑って消える）
 //   <<move 名前 [x=|dx=] [y=|dy=] [scale=] [alpha=] [rotate=] [from=] [to=] [time=0.5] [ease=smoothstep]>>
 //                                              出ている絵の位置・大きさ・濃さ・傾きを時間で動かす（dx・dy は今の終わりの値に足す）。
@@ -118,6 +120,18 @@ mod Commands {
     pub def specs(): List[YarnCommands.Spec] = table() |> List.map(c -> c#spec)
 
     def lookup(name: String): Option[Command[Stage.Stage]] = lookupIn(table(), name)
+
+    /// ease=曲線の名前（Curve.easeTable）。書かなければ None（既定は呼ぶ側が Doc から引く）。
+    // WhyNot: Param.ease を使わない — 既定を表に持つので書いたかが分からず、Doc の既定（defaultEase・fadeEase）へ落とせない。
+    def easeParam(): Param.Opt[String] = Param.choice("ease", Curve.easeTable() |> List.map(fst))
+
+    /// 書いた ease= の曲線（書いていなければ None）。
+    def easeArg(h: Param.Opt[String], a: YarnCommands.Args): Option[Curve.Ease] =
+        Param.getOpt(h, a) |> Option.flatMap(name -> Curve.easeTable() |> List.find(e -> fst(e) == name) |> Option.map(snd))
+
+    /// ease= を書いた時だけ、出し入れの濃さの曲線をその曲線にした意味。
+    def withEaseOf(ease: Option[Curve.Ease], cue: Cast.Cue): Cast.Cue =
+        ease |> Option.map(e -> Cast.withCueEase(e, cue)) |> Option.getWithDefault(cue)
 
     def lookupIn(commands: List[Command[Stage.Stage]], name: String): Option[Command[Stage.Stage]] =
         commands |> List.find(c -> YarnCommands.nameOf(c#spec) == name)
@@ -255,19 +269,19 @@ mod Commands {
     pub def bgUsing(switchOf: (Ctx, Option[Stage.Shot], Stage.Shot, Stage.Switch) -> Option[Stage.GameSwitch]): Command[Stage.Stage] =
         let photo = Param.name("photo", backdrops("photos") :: Nil) |> Param.at(1) |> Param.required;
         let grade = Param.name("grade", backdrops("grades") :: Nil);
-        let time = Param.time(1.0);
+        let time = Param.num("time", 0.0, 60.0);
         let transition = Param.choice("transition", BackdropDoc.transitionNames());
         let pace = Param.choice("pace", "walk" :: "run" :: Nil);
-        let ease = Param.ease(Curve.Ease.Linear);
+        let ease = easeParam();
         let gradeOf = (a, prev: Option[Stage.Shot]) -> Param.getOpt(grade, a) |> Option.withDefault(default = prev |> Option.map(s -> s#grade));
-        { spec = YarnCommands.spec("bg", "背景の写真を時間帯の色で替え、秒かけて切り替える（transition = fade・black・wipe・slide・pan・cut。省くと novel.backdrops.json の defaultTransition・pace = 3D の道筋の歩き方）",
+        { spec = YarnCommands.spec("bg", "背景の写真を時間帯の色で替え、秒かけて切り替える（transition = fade・black・wipe・slide・pan・cut。transition・time・ease を省くと novel.backdrops.json の defaultTransition・defaultSeconds・defaultEase・pace = 3D の道筋の歩き方）",
                                    Param.erase(photo) :: Param.erase(grade) :: Param.erase(time) :: Param.erase(transition) :: Param.erase(pace) :: Param.erase(ease) :: Nil),
           timing = Timing.Timed,
           apply = (ctx, a, st) -> {
               let doc = ctx#res#backdrops;
               let name = Param.get(photo, a);
               let switch = { transition = Param.getOpt(transition, a) |> Option.flatMap(BackdropDoc.transitionOf) |> Option.getWithDefault(BackdropDoc.rec(doc)#defaultTransition),
-                             ease = Param.get(ease, a),
+                             ease = easeArg(ease, a) |> Option.getWithDefault(BackdropDoc.rec(doc)#defaultEase),
                              pace = if (Param.getOpt(pace, a) == Some("run")) Stage.Pace.Run else Stage.Pace.Walk,
                              game = None };
               let prev = Stage.shownShot(doc, st);
@@ -279,7 +293,7 @@ mod Commands {
                       else {
                           let shot = { photo = name, grade = g };
                           let owned = if (ctx#instant) None else switchOf(ctx, prev, shot, switch);
-                          let seconds = owned |> Option.map(o -> o#seconds) |> Option.getWithDefault(Param.get(time, a));
+                          let seconds = owned |> Option.map(o -> o#seconds) |> Option.getWithDefault(Param.getOpt(time, a) |> Option.getWithDefault(BackdropDoc.rec(doc)#defaultSeconds));
                           let byGame = if (Option.nonEmpty(owned)) { transition = BackdropDoc.Transition.Fade, game = owned | switch } else switch;
                           let next = Stage.withBackdropBy(ctx#now, shot, seconds, byGame, { shot = prev | st });
                           let waits = if (Option.nonEmpty(owned) and next#fadeSeconds > 0.0) Out.LineWait(next#fadeSeconds) :: Nil else Nil;
@@ -296,16 +310,20 @@ mod Commands {
         let time = Param.num("time", 0.0, 10.0);
         let toMode = (ctx: Ctx, name, st: Stage.Stage) -> {
             let changed = fst(Stage.windowOf(ctx#res#theme, st)) != name;
-            (Stage.withWindowShown(ctx#now, { mode = name | st }), if (changed) Out.ClearPage :: Nil else Nil)
+            let typed = Option.nonEmpty(snd(ThemeDoc.windowOf(name, ctx#res#theme))#align);
+            // WhyNot: align の無い型へ替えた時は <<text align=>> の揃えを消さない — 消すと、今の台本の <<text align=center>> の後の <<window 型>> で見た目が変わる。
+            let props = if (changed and typed) PropertyTween.setName(Stage.textAlignKey(), None, ctx#now, 0.0, st#props) else st#props;
+            (Stage.withWindowShown(ctx#now, { mode = name, props = props | st }), if (changed) Out.ClearPage :: Nil else Nil)
         };
-        { spec = YarnCommands.spec("window", "メッセージ枠の型（novel.theme.json の windows）に替える・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）・出す（on。time = off・on の薄くなる秒）",
+        { spec = YarnCommands.spec("window", "メッセージ枠の型（novel.theme.json の windows）に替える・NVL の頁をめくる（clear）・文字の枠と字を消す（off。次の台詞で戻る）・出す（on。time = off・on の薄くなる秒・省くと novel.kind.json の windowFadeSeconds）",
                                    Param.erase(mode) :: Param.erase(time) :: Nil),
           timing = Timing.Instant,
           apply = (ctx, a, st) -> {
               let secs = Param.getOpt(time, a);
+              let fade = Option.getWithDefault(KindDoc.rec(ctx#res#kind)#windowFadeSeconds, secs);
               match Param.get(mode, a) {
-                  case Or.Word("off") => Ok((Stage.withWindowFade(ctx#now, true, Option.getWithDefault(0.0, secs), st), Nil))
-                  case Or.Word("on")  => Ok((Stage.withWindowFade(ctx#now, false, Option.getWithDefault(0.0, secs), st), Nil))
+                  case Or.Word("off") => Ok((Stage.withWindowFade(ctx#now, true, fade, st), Nil))
+                  case Or.Word("on")  => Ok((Stage.withWindowFade(ctx#now, false, fade, st), Nil))
                   case _ if Option.nonEmpty(secs) => Err("time= は off・on だけ")
                   case Or.Word(_)     => Ok((st, Out.ClearPage :: Nil))
                   case Or.Value(name) =>
@@ -667,18 +685,19 @@ mod Commands {
         let scale = Param.num("scale", 0.0, 10.0);
         let alpha = Param.num("alpha", 0.0, 1.0);
         let time = Param.num("time", 0.0, 10.0);
-        let ease = Param.ease(Curve.Ease.SmoothStep);
-        let cueOf = (res: Res.Res, a) -> Cast.showCue(res#cast, Param.get(who, a), Param.getOpt(face, a), Param.getOpt(slot, a), Param.getOpt(time, a));
+        let ease = easeParam();
+        let cueOf = (res: Res.Res, a) -> Cast.showCue(res#cast, Param.get(who, a), Param.getOpt(face, a), Param.getOpt(slot, a), Param.getOpt(time, a))
+            |> Result.map(withEaseOf(easeArg(ease, a)));
         let targetsOf = a -> ((Stage.ActorField.X, x) :: (Stage.ActorField.Y, y) :: (Stage.ActorField.Scale, scale) :: (Stage.ActorField.Alpha, alpha) :: Nil)
             |> List.filterMap(match (f, h) -> Param.getOpt(h, a) |> Option.map(v -> (f, v))) |> List.toMap;
-        { spec = YarnCommands.spec("show", "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率）",
+        { spec = YarnCommands.spec("show", "立ち絵か小物を出す・表情や位置を替える（time を省くと novel.cast.json の fadeSeconds。from = 端から滑って出る・x〜alpha = 置き場所からのずれと倍率・ease = 濃さと動きの曲線。省くと濃さは fadeEase）",
                                    Param.erase(who) :: Param.erase(face) :: Param.erase(slot) :: Param.erase(fromArg) :: Param.erase(x) :: Param.erase(y) ::
                                    Param.erase(scale) :: Param.erase(alpha) :: Param.erase(time) :: Param.erase(ease) :: Nil),
           timing = Timing.Timed,
           apply = (ctx, a, st) -> cueOf(ctx#res, a) |> Result.map(cue -> {
               let d = CastDoc.rec(ctx#res#cast);
               let motion = { targets = targetsOf(a), fromEdge = Param.getOpt(fromArg, a) |> Option.flatMap(edgeOf), toEdge = None,
-                             seconds = Param.getOpt(time, a) |> Option.getWithDefault(d#fadeSeconds), ease = Param.get(ease, a) };
+                             seconds = Param.getOpt(time, a) |> Option.getWithDefault(d#fadeSeconds), ease = easeArg(ease, a) |> Option.getWithDefault(Curve.Ease.SmoothStep) };
               (withMotion(ctx#now, d#slideDistance, Param.get(who, a), motion, withCast(ctx#now, cue :: Nil, st)), Nil)
           }),
           needs = (res, a, st) -> cueOf(res, a) |> Result.toOption |> Option.flatMap(cue -> Cast.targetOf(cue, st#cast))
@@ -689,8 +708,8 @@ mod Commands {
         let slot = Param.name("at", slots()) |> Param.oneOf("target");
         let toArg = Param.choice("to", edgeNames());
         let time = Param.num("time", 0.0, 10.0);
-        let ease = Param.ease(Curve.Ease.SmoothStep);
-        { spec = YarnCommands.spec("hide", "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物・to = 端へ滑って消える）",
+        let ease = easeParam();
+        { spec = YarnCommands.spec("hide", "立ち絵か小物を消す（all = 全部・at= = その位置に出ている物・to = 端へ滑って消える・ease = 濃さと動きの曲線。省くと濃さは novel.cast.json の fadeEase）",
                                    Param.erase(who) :: Param.erase(slot) :: Param.erase(toArg) :: Param.erase(time) :: Param.erase(ease) :: Nil),
           timing = Timing.Timed,
           apply = (ctx, a, st) -> {
@@ -704,9 +723,9 @@ mod Commands {
               };
               let atSlot = Param.getOpt(slot, a) |> Option.map(s -> Cast.hideAtCues(doc, s, seconds, st#cast)) |> Option.getWithDefault(Nil);
               let motion = { targets = Map.empty(), fromEdge = None, toEdge = Param.getOpt(toArg, a) |> Option.flatMap(edgeOf),
-                             seconds = Option.getWithDefault(d#fadeSeconds, seconds), ease = Param.get(ease, a) };
+                             seconds = Option.getWithDefault(d#fadeSeconds, seconds), ease = easeArg(ease, a) |> Option.getWithDefault(Curve.Ease.SmoothStep) };
               named |> Result.map(cues -> {
-                  let all = List.append(cues, atSlot);
+                  let all = List.append(cues, atSlot) |> List.map(withEaseOf(easeArg(ease, a)));
                   let slid = if (Option.isEmpty(motion#toEdge)) st
                              else Cast.hiddenNamesOf(all, st#cast) |> List.foldLeft((cur, name) -> withMotion(ctx#now, d#slideDistance, name, motion, cur), st);
                   (withCast(ctx#now, all, slid), Nil)

@@ -2,7 +2,7 @@
 // 写真・時間帯・音量の名前・粒の名前は Doc（novel.backdrops.json・novel.mixer.json・novel.effects.json）から引き、期待値は Doc から導く。
 mod TestAudio {
 
-    use fge::{Clock, Render, Yarn}
+    use fge::{Clock, Curve, Render, Yarn}
     use Commands.Out
     use TestKit.{advance, begun, stepBy}
 
@@ -34,6 +34,34 @@ mod TestAudio {
     @Test
     def testOmittedTransitionComesFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
         Assert.assertEq(expected = BackdropDoc.rec(res()#backdrops)#defaultTransition, bg(Nil)#switch#transition)
+
+    /// novel.backdrops.json の defaultSeconds・defaultEase を替えた描く元で <<bg>> を当てた舞台。
+    def bgWithDefaults(seconds: Float64, ease: Curve.Ease, args: List[String]): Stage.Stage \ Fs.FileRead =
+        let base = res();
+        let r = base |> Res.withBackdrops(BackdropDoc.Doc.Doc({ defaultSeconds = seconds, defaultEase = ease | BackdropDoc.rec(base#backdrops) }));
+        executed(r, 0.0, "bg", photo() :: "grade=${grade()}" :: args, Stage.empty()) |> Result.map(fst) |> Result.getWithDefault(Stage.empty())
+
+    @Test
+    def testOmittedTimeComesFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = 3.0, bgWithDefaults(3.0, Curve.Ease.Linear, Nil)#fadeSeconds)
+
+    @Test
+    def testWrittenTimeWinsOverTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = 0.5, bgWithDefaults(3.0, Curve.Ease.Linear, "time=0.5" :: Nil)#fadeSeconds)
+
+    @Test
+    def testOmittedEaseComesFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Curve.Ease.InOutSine, bgWithDefaults(1.0, Curve.Ease.InOutSine, Nil)#switch#ease)
+
+    @Test
+    def testWrittenEaseWinsOverTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Curve.Ease.OutQuad, bgWithDefaults(1.0, Curve.Ease.InOutSine, "ease=outQuad" :: Nil)#switch#ease)
+
+    @Test
+    def testBgDefaultsAreReadFromTheDoc(): Unit \ Assert =
+        let text = "{\"version\": 1, \"photos\": {}, \"grades\": {}, \"defaultSeconds\": 2.5, \"defaultEase\": \"inOutQuad\"}";
+        let read = BackdropDoc.fromJson(text) |> Option.map(d -> (BackdropDoc.rec(d)#defaultSeconds, BackdropDoc.rec(d)#defaultEase));
+        Assert.assertEq(expected = Some((2.5, Curve.Ease.InOutQuad)), read)
 
     @Test
     def testTransitionIsKeptOnTheStage(): Unit \ {Assert, Fs.FileRead} =

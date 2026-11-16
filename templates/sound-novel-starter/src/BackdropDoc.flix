@@ -4,7 +4,7 @@
 // 色の作り方（ぼかし → 彩度 → 露出と色味 → 空の光 → 四隅を落とす）は Backdrop.specOf（コード）、数はここ。
 // fail-open — 読めない欄は既定のまま・知らない写真や時間帯は Stage が知らせて前の背景のまま続ける。
 mod BackdropDoc {
-    use fge::{Color, DocJson, JsonCodec, Log}
+    use fge::{Color, Curve, DocJson, JsonCodec, Log}
     use Util.Json.Json
 
     /// 写真 1 枚。texture = project.json の textures の名前、label = セーブの枠に出す場所の名前、
@@ -90,11 +90,14 @@ mod BackdropDoc {
         let total = b#fadeOut + b#hold + b#fadeIn;
         if (total <= 0.0) 0.5 else (b#fadeOut + b#hold * 0.5) / total
 
-    /// defaultTransition = transition= を省いた <<bg>> の切り替え、black = transition=black の暗転の形、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）、
+    /// defaultTransition = transition= を省いた <<bg>> の切り替え、defaultSeconds / defaultEase = time= / ease= を省いた <<bg>> の秒と進みの曲線、
+    /// black = transition=black の暗転の形、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）、
     /// ground = 写真の下に敷く地の色（blank の写真・素材の待ち・black の暗転で見える色。無ければ Backdrop.groundColor）。
     pub type alias Rec = {
         version = Int32,
         defaultTransition = Transition,
+        defaultSeconds = Float64,
+        defaultEase = Curve.Ease,
         black = Blackout,
         photos = Map[String, Photo],
         grades = Map[String, Grade],
@@ -111,7 +114,7 @@ mod BackdropDoc {
     pub def path(): String = "assets/novel.backdrops.json"
 
     /// 写真も時間帯も無い既定（Doc が読めない時は背景を出さず、地の色の上で読む）。
-    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, black = defaultBlackout(), photos = Map.empty(), grades = Map.empty(), initial = None, title = None, ground = None })
+    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, defaultSeconds = 1.0, defaultEase = Curve.Ease.Linear, black = defaultBlackout(), photos = Map.empty(), grades = Map.empty(), initial = None, title = None, ground = None })
 
     /// 時間帯の欄の既定（欄が欠けた時に使う。写真のまま薄くぼかした色）。
     pub def plainGrade(): Grade =
@@ -145,6 +148,9 @@ mod BackdropDoc {
     def fromRoot(root: Map[String, Json]): Doc =
         Doc.Doc({ version = JsonCodec.intOr("version", 1, root),
                   defaultTransition = transitionOf(JsonCodec.stringOr("defaultTransition", "fade", root)) |> Option.getWithDefault(Transition.Fade),
+                  defaultSeconds = Float64.max(0.0, JsonCodec.floatOr("defaultSeconds", 1.0, root)),
+                  defaultEase = Map.get("defaultEase", root) |> Option.flatMap(JsonCodec.expectString)
+                      |> Option.flatMap(name -> Curve.easeTable() |> List.find(e -> fst(e) == name) |> Option.map(snd)) |> Option.getWithDefault(Curve.Ease.Linear),
                   black = blackoutFrom(Map.get("black", root)),
                   photos = Map.get("photos", root) |> Option.flatMap(JsonCodec.decodeStringMap(photoFromJson))
                       |> Option.getWithDefault(Map.empty()),
