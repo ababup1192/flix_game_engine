@@ -28,17 +28,23 @@
 ## 口
 
 ```
-bin/fge migrate diff <baseline> <new> [--accept FILE] [--game DIR] [--out DIR] [--no-coverage] [--strict] [--times] [--no-auto] [--json]
+bin/fge migrate diff <baseline> <new> [--accept FILE] [--game DIR] [--out DIR] [--no-coverage] [--strict] [--times] [--no-auto] [--no-keys] [--json]
 bin/fge migrate video --old OLD.mp4 --new NEW.mp4 --out OUT.mp4 [--tape NEW/tape.json]
-bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--saves-from DIR] [--no-saves] [--overwrite]
+bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--saves-from DIR] [--no-saves] [--overwrite] [--full] [--no-resident]
+bin/fge migrate fill <記録>
 ```
 
-- `shoot`（ゲームの根で）: flow を並べて流し、記録を `debug/migrate/<名前>` に撮る。flow ごとに `FlowVideo.play` を `FLOW`・`FLOW_OUT`・`MIGRATE_OUT` 付きで流し、続けて `--saves-from`（既定 `debug/migrate/baseline`）の `flows/*/saves.json` を `FlowVideo.restore` で読み戻す。どれも別の JVM で、`--jobs` 本ずつ並べる（既定はコア 4 つに 1 本・メモリ 8 GB に 1 本の少ない方・6 本まで）。並べる時は JVM ごとのヒープを `HEADLESS_JAVA_OPTS` の `-XX:MaxRAMPercentage=60/本数` に絞る（自分で `-Xmx` か `MaxRAMPercentage` を渡せばそれが勝つ）。長い flow（基準の tape.json が大きい物）から流す。
+- `shoot`（ゲームの根で）: flow を並べて流し、記録を `debug/migrate/<名前>` に撮る。flow ごとに `FlowVideo.play` を `FLOW`・`FLOW_OUT`・`MIGRATE_OUT` 付きで流し、続けて `--saves-from`（既定 `debug/migrate/baseline`）の `flows/*/saves.json` を `FlowVideo.restore` で読み戻す。`--jobs` 本ずつ並べる（既定はコア 4 つに 1 本・6 本まで。メモリでは絞らない）。JVM ごとのヒープは `HEADLESS_JAVA_OPTS` に足す `-Xmx3g` で蓋をする（自分で `-Xmx` か `MaxRAMPercentage` を渡せばそれが勝つ。本数 × 3 GB が実メモリの 8 割を超えれば 1 行知らせる）。長い flow（基準の tape.json が大きい物）から流す。
+  - **常駐で流す**: 本数ぶんの JVM を `E2e.serveHeadless`（`HEADLESS_RESIDENT_ENTRY` で替わる）の待ち受けで起こし、flow とセーブの読み戻しを `/run` で 1 本ずつ頼む（JVM の起動・字と Doc の用意を本数ぶんで済ませる）。常駐の印（`HEADLESS_RESIDENT=1`）は付けない（`build/headless/resident.json` を書かず、Studio や headless-run から頼まれない）。待ち受けが開かない・束に入口が無い・途中で落ちた席は、その仕事から 1 本ずつ JVM を起こす道に戻る。`--no-resident`・`--video`・`FLOW_VIDEO` を読まない古い FlowVideo の時は常駐を使わない。待ち受けの JVM の出力は `logs/worker-<席>.log` で、仕事ごとのログはそこから切り出す。
+  - **鍵を先に撮る**: `--saves-from` の基準が読めて、撮る先が基準でなく、`--video`・`--full` の無い時は、比べのコマを鍵（`frames/<層>/drawhash.txt`）だけで撮り（`MIGRATE_PAINT_WORLD=none`・`MIGRATE_PAINT_ALL=none`）、基準と組にしたコマ（組の作り方は diff と同じ）の鍵が違うコマ・組の無いコマ・鍵が `-` のコマだけに PNG を用意する。出所は基準の同じ鍵のコマ → render-cache の同じ鍵（`FGE_RENDER_CACHE=verify` の時は使わない）→ 同じ鍵のコマを 1 か所だけで塗り（その flow を `MIGRATE_PAINT_<層>=frames:A-B,…` で流し直す）、ほかの flow の同じ鍵のコマへ写す、の順。流し直した flow の鍵が 1 回目と違えば止める（決定性の破れ）。用意した後も PNG の要るコマが残れば止める。`MIGRATE_PAINT_*` を読まない古い FlowVideo は 1 回目で PNG を全部書くので、流し直さない（今までと同じ結果）。
+  - **基準は全部の PNG を持つ**: 鍵だけ撮った記録を基準に上げる時は、先に `bin/fge migrate fill <記録>` で欠けた PNG を埋める（同じ親フォルダのほかの記録と render-cache の同じ鍵から写す。埋められなければ終わりの番号 1 で、`shoot --full` で撮り直す）。
+  - **render-cache の置き場**: 撮る前に「基準のコマの数 × 0.9 MB × 2」を見積もり、`render-cache prune` の上限（既定 16,384 MB・`FGE_RENDER_CACHE_MAX_MB`）かディスクの空きより大きければ 1 行知らせる（消えても塗り直すだけで間違わない）。
   - 流す口は `--run`、無ければ環境変数 `HEADLESS_RUN`（ゲームの Makefile の物をそのまま渡せる）、無ければ engine の `bin/headless-run`。
   - `--video` の無い時は flow ごとの video.mp4 を束ねず、`FLOW_VIDEO=off` を渡す（読む FlowVideo は全コマの動画と音を書かない。読まない版は書くので、shoot が消す）。diff は video.mp4 を読まない。
-  - ログと秒: `<記録>/logs/<flow>.log`・`restore-<flow>.log`・`shoot.json`（JVM ごとの秒と終わりの番号）。終わりの番号: 0 全部撮れた・1 どれかが止まった・2 引数の誤り。
+  - ログと秒: `<記録>/logs/<flow>.log`・`restore-<flow>.log`・`<flow>.paint.log`（流し直し）・`shoot.json`（仕事ごとの秒と終わりの番号・常駐か・鍵を先に撮ったか・PNG の出所の数）。終わりの番号: 0 全部撮れた・1 どれかが止まった・2 引数の誤り。
   - 速さの内訳と、テンプレート側に残っている変更は [plans/novel-tape-deck.md](../plans/novel-tape-deck.md)。
 
+- `diff` の鍵: 組になったコマの前と後の鍵（`frames/<層>/drawhash.txt` を `frames[].file` の番号で引く。古いセーブの読み戻しも同じ）が同じなら、画素を読まずに同じと見る（鍵が同じなら PNG は 1 バイトも違わない、が DrawHash の約束。新しい版の PNG は無くてよいが、前の版の PNG が無ければ止める）。鍵が `-` か片方に無ければ画素で比べ、鍵が違うのに新しい版の PNG が無ければ「撮れていない」で止める。engine が違えば鍵は全部違うので自動で画素の比べに戻る。比べた結果は `<new の親>/diff-cache.json` に、前と後の中身（鍵か PNG の SHA-256）・線の種類・時刻のずれ・重ねた線引き・比べ方の版で覚え、同じ組は読み直さない（線を超えた組は差の色の図のために読み直す。書き出すのはその回に使った組だけ）。`--no-keys` はどちらも使わず全部の画素を比べる（鍵の取りこぼしを疑う時。見つけたら DrawHash を直す）。端末の要約に「鍵が前と同じで画素を読まなかった枚数・覚えた結果で通した枚数」、report.json に `framesSameKey`・`framesFromCache` が出る。
 - `diff` の既定: `--accept` は `<new の親>/migrate-accept.json`（無ければ承認なし）・`--game`（カバー率で台本を読むゲームのルート）は `<new>` から上へ辿って最初に `project.json` のあるフォルダ・`--out` は `<new の親>/report`。
 - `diff` が書く物: `<out>/index.html`（上に人が見る区間の目次と使った線引き。flow と大きさごとに、左に前・右に後・下に差の色の図。止める違い・迷った差・自動で通した迷った差（たたむ）・承認済みを分けて並べる。目次の秒は、並べた動画 `<out の親>/<flow>.sbs.mp4` があればその秒へ飛ぶ）・`<out>/report.json`（同じ中身の JSON）・`<out>/heat/*.png`（線を超えたコマの差の色の図。毎回消してから書く）。
 - 頁の上の「承認済みの読み替えと系統の違い」に、`probeMap` で読み替えた値と回数・`restore: refused` で比べたセーブ・systematic の承認（1 つの理由に全部の flow の当たった絵）を並べる。前の版の記録が無い flow と大きさは、新しい版のコマ（`world` と `all`）を全部並べる（承認の後も並べたまま）。どの差にも当たらなかった承認・どの値にも当たらなかった `probeMap`・通る行を指す `coverage` の承認は「使われていない承認」に出す（止めない）。
@@ -53,11 +59,13 @@ bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--sav
 debug/migrate/
   baseline/                          前の版（git worktree で撮る・git に入れない）
     flows/<flow>/<大きさ>/tape.json   大きさは design・tall・short など自由な名前（前と後で同じ名前にそろえる）
-    flows/<flow>/<大きさ>/frames/*.png
+    flows/<flow>/<大きさ>/frames/<層>/f0126.png  比べのコマ（鍵だけ撮った記録では、基準と鍵が同じコマの PNG は無い）
+    flows/<flow>/<大きさ>/frames/<層>/drawhash.txt  コマの番号 → 鍵（VideoOut が書く）
     flows/<flow>/tape.json           大きさを分けない時はこちら（大きさの名前は "-"）
     saves/<名前>/restore.json         古いセーブを読み戻した直後の記録
   new/                               新しい版（同じ形）
   migrate-accept.json                承認（人が書く）
+  diff-cache.json                    diff が比べた結果を覚えておく所（消せば全部を比べ直す）
   report/                            diff が書く頁
 ```
 

@@ -300,8 +300,13 @@ func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string)
 		return nil
 	}
 	m.seen[cmdKey] = true
+	before, after := filepath.Join(dirA, fa.File), filepath.Join(dirB, fb.File)
+	if !fileExists(after) {
+		// 鍵だけ撮ったコマ（鍵が前の版と同じなので絵も同じ）。頁には前の版の絵を左右に並べる。
+		after = before
+	}
 	return &Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fb.T, FrameKind: fa.Kind, Cmd: fb.Cmd,
-		Before: filepath.Join(dirA, fa.File), After: filepath.Join(dirB, fb.File), Review: true,
+		Before: before, After: after, Review: true,
 		Detail: fmt.Sprintf("時間を取る命令 %s の秒が違う（前 %g 秒 / 後 %g 秒。途中のコマは秒に対する割合で撮るので、絵では差が出ない）", fa.Cmd, *fa.Seconds, *fb.Seconds)}
 }
 

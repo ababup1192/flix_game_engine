@@ -33,11 +33,13 @@ type shootArgs struct {
 	name, run, savesFrom    string
 	jobs                    int
 	video, overwrite, saves bool
-	flows                   []string
+	// full は鍵を先に撮らず全部のコマを塗る（基準を撮り直す時）。resident は常駐の JVM で流す（--no-resident で切る）。
+	full, resident bool
+	flows          []string
 }
 
 func parseShootArgs(args []string) (shootArgs, error) {
-	a := shootArgs{saves: true, savesFrom: filepath.Join("debug", "migrate", "baseline")}
+	a := shootArgs{saves: true, resident: true, savesFrom: filepath.Join("debug", "migrate", "baseline")}
 	var pos []string
 	for i := 0; i < len(args); i++ {
 		v := args[i]
@@ -68,6 +70,10 @@ func parseShootArgs(args []string) (shootArgs, error) {
 			a.video = true
 		case "--overwrite":
 			a.overwrite = true
+		case "--full":
+			a.full = true
+		case "--no-resident":
+			a.resident = false
 		default:
 			if strings.HasPrefix(v, "-") {
 				return a, fmt.Errorf("知らない引数: %s", v)
@@ -268,7 +274,15 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		base = append(base, "JAVA_TOOL_OPTIONS=-Djava.awt.headless=true")
 	}
 
+	// WhyNot: 撮る先が基準と同じ時（--overwrite）は鍵を先に撮らない — 突き合わせる基準はもう消してあり、撮る物が次の基準になる（全部の PNG が要る）。
+	var baseSide *Side
+	if !a.video && !a.full && filepath.Clean(out) != filepath.Clean(a.savesFrom) {
+		baseSide, _ = LoadSide(a.savesFrom)
+	}
+	keysFirst := baseSide != nil
+
 	var list []*shootJob
+	flowJobs := map[string]*shootJob{}
 	for _, f := range a.flows {
 		n := flowName(f)
 		rec := filepath.Join(out, FlowsDir, n)
@@ -279,6 +293,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		video := a.video
 		if !video {
 			// 全コマの動画と音を書かない合図（読むのは FlowVideo。読まない版は今まで通り書き、ここで消す）。
+			// WhyNot: FGE_GPU=off を足さない — FLOW_VIDEO を読まない古い FlowVideo は全コマの動画を書くので、GPU を断つと全コマを SoftRaster で塗る。
 			job.env = append(job.env, "FLOW_VIDEO=off")
 		}
 		job.after = func() error {
@@ -289,6 +304,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 			return flowMp4(tmp, filepath.Join(rec, "video.mp4"))
 		}
 		os.RemoveAll(tmp)
+		flowJobs[n] = job
 		list = append(list, job)
 	}
 	for _, s := range saveFiles {
@@ -310,18 +326,125 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	fmt.Fprintf(stdout, "migrate shoot: %s に flow %d 本・古いセーブ %d 個を %d 本ずつ並べて撮る（ログは %s）\n",
-		out, len(a.flows), len(saveFiles), jobs, logs)
+	// WhyNot: 動画を束ねる回（--video）は常駐へ頼まない — 全コマの動画は GPU で塗る事があり、待ち受けの JVM は GL を持たない。
+	entries := []string{"FlowVideo.play"}
+	if len(saveFiles) > 0 {
+		entries = append(entries, "FlowVideo.restore")
+	}
+	useResident := a.resident && !a.video
+	if useResident && !flowVideoSkipsVideo("src") {
+		useResident = false
+		fmt.Fprintln(stderr, "migrate shoot: ゲームの FlowVideo が FLOW_VIDEO=off を読まない（全コマの動画を GPU で書く）ので、常駐へ頼まず 1 本ずつ JVM を起こす")
+	}
+	pool := newShootPool(a.run, base, logs, jobs, useResident, entries)
+	defer pool.close()
+	mode := "全部のコマを塗る"
+	if keysFirst {
+		mode = "比べのコマは鍵を先に撮り、基準と鍵の違うコマだけ塗る"
+	}
+	fmt.Fprintf(stdout, "migrate shoot: %s に flow %d 本・古いセーブ %d 個を %d 本ずつ並べて撮る（%s・%s・ログは %s）\n",
+		out, len(a.flows), len(saveFiles), jobs, mode, map[bool]string{true: "常駐で流す", false: "1 本ずつ JVM を起こす"}[pool.useResident()], logs)
 	start := time.Now()
+	if keysFirst {
+		for _, job := range flowJobs {
+			job.env = append(job.env, paintEnv(nil)...)
+		}
+	}
+	runShootJobs(pool, jobs, list, stdout)
+	all := list
+	var plan *paintPlan
+	if keysFirst {
+		var paintJobs []*shootJob
+		var err error
+		plan, paintJobs, err = paintStage(out, baseSide, flowJobs, logs)
+		if err != nil {
+			fmt.Fprintln(stderr, "migrate shoot: 鍵を先に撮った後に PNG を用意できない:", err)
+			return 1
+		}
+		before := drawHashTexts(filepath.Join(out, FlowsDir))
+		runShootJobs(pool, jobs, paintJobs, stdout)
+		all = append(all, paintJobs...)
+		if bad := sameDrawHashes(before, drawHashTexts(filepath.Join(out, FlowsDir))); len(bad) > 0 {
+			fmt.Fprintf(stderr, "migrate shoot: 塗るために流し直した flow の鍵が 1 回目と違う（決定性が破れている）: %s\n", strings.Join(bad, " "))
+			return 1
+		}
+		for _, c := range plan.Copies {
+			if err := copyFile(c.src, c.dst); err != nil {
+				fmt.Fprintln(stderr, "migrate shoot: 同じ鍵のコマへ写せない:", err)
+			}
+		}
+		if cur, err := LoadSide(out); err == nil {
+			if miss := missingPNGs(cur, baseSide); len(miss) > 0 {
+				fmt.Fprintf(stderr, "migrate shoot: 鍵が基準と違うのに PNG の無いコマが %d 枚（最初: %s）\n", len(miss), miss[0])
+				return 1
+			}
+		}
+		fmt.Fprintf(stdout, "migrate shoot: 鍵が基準と同じで PNG を書かなかった %d 枚・基準から写した %d 枚・render-cache から写した %d 枚・塗った %d 枚（flow %d 本を流し直した）・同じ鍵のほかのコマから写した %d 枚\n",
+			plan.KeysOnly, plan.FromBaseline, plan.FromCache, plan.Painted, len(paintJobs), plan.FromSibling)
+	}
+	wall := time.Since(start).Seconds()
+	for drained := false; !drained; {
+		select {
+		case n := <-pool.notes:
+			fmt.Fprintln(stderr, "migrate shoot:", n)
+		default:
+			drained = true
+		}
+	}
+
+	failed := 0
+	for _, job := range all {
+		if job.Code != 0 {
+			failed++
+		}
+	}
+	summary := map[string]any{"jobs": jobs, "wallSeconds": wall, "runs": all, "resident": pool.useResident(), "keysFirst": keysFirst}
+	if plan != nil {
+		summary["paint"] = plan
+	}
+	if data, err := json.MarshalIndent(summary, "", "  "); err == nil {
+		_ = os.WriteFile(filepath.Join(logs, "shoot.json"), append(data, '\n'), 0o644)
+	}
+	fmt.Fprintf(stdout, "migrate shoot: %.1f 秒で撮った（%d 本・止まった %d 本）\n", wall, len(all), failed)
+	if failed > 0 {
+		for _, job := range all {
+			if job.Code != 0 {
+				fmt.Fprintf(stderr, "  止まった: %s %s（ログ %s）\n", job.Kind, job.Name, job.Log)
+			}
+		}
+		return 1
+	}
+	return 0
+}
+
+// flowVideoSkipsVideo はゲームの FlowVideo.flix が FLOW_VIDEO を読むか（読まない古い版は全コマの動画を書く）。
+// WhyNot: 古い版を常駐へ頼まない — 全コマの動画は GPU で塗り、待ち受けの JVM は入口を主スレッドでなく別の糸で流すので、
+// GL が開けずに全コマを SoftRaster で塗る事がある。
+func flowVideoSkipsVideo(src string) bool {
+	found := false
+	_ = filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || info.Name() != "FlowVideo.flix" {
+			return nil
+		}
+		if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), "FLOW_VIDEO") {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
+// runShootJobs は list を jobs 本ずつ並べて流す（席ごとに 1 本の糸）。
+func runShootJobs(pool *shootPool, jobs int, list []*shootJob, stdout io.Writer) {
 	queue := make(chan *shootJob)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	for w := 0; w < jobs; w++ {
+	for seat := 0; seat < jobs; seat++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for job := range queue {
-				runShootJob(a.run, base, job)
+				pool.exec(seat, job)
 				mu.Lock()
 				mark := "ok"
 				if job.Code != 0 {
@@ -337,28 +460,34 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 	}
 	close(queue)
 	wg.Wait()
-	wall := time.Since(start).Seconds()
+}
 
-	failed := 0
-	for _, job := range list {
-		if job.Code != 0 {
-			failed++
+// paintStage は鍵だけ撮った記録を基準と突き合わせ、写せる PNG を写し、塗るコマのある flow を流し直す仕事を作る。
+func paintStage(out string, baseSide *Side, flowJobs map[string]*shootJob, logs string) (*paintPlan, []*shootJob, error) {
+	cur, err := LoadSide(out)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan, err := planPaint(cur, baseSide, cacheDirForCopy())
+	if err != nil {
+		return nil, nil, err
+	}
+	var paintJobs []*shootJob
+	for _, flow := range sortedKeys(plan.Paint) {
+		first := flowJobs[flow]
+		if first == nil {
+			continue
 		}
-	}
-	summary := map[string]any{"jobs": jobs, "wallSeconds": wall, "runs": list}
-	if data, err := json.MarshalIndent(summary, "", "  "); err == nil {
-		_ = os.WriteFile(filepath.Join(logs, "shoot.json"), append(data, '\n'), 0o644)
-	}
-	fmt.Fprintf(stdout, "migrate shoot: %.1f 秒で撮った（%d 本・止まった %d 本）\n", wall, len(list), failed)
-	if failed > 0 {
-		for _, job := range list {
-			if job.Code != 0 {
-				fmt.Fprintf(stderr, "  止まった: %s %s（ログ %s）\n", job.Kind, job.Name, job.Log)
+		var env []string
+		for _, kv := range first.env {
+			if !strings.HasPrefix(kv, PaintWorldEnv+"=") && !strings.HasPrefix(kv, PaintAllEnv+"=") {
+				env = append(env, kv)
 			}
 		}
-		return 1
+		paintJobs = append(paintJobs, &shootJob{Kind: "paint", Name: flow, Log: filepath.Join(logs, flow+".paint.log"), entry: first.entry,
+			weight: int64(len(plan.Paint[flow])), env: append(env, paintEnv(plan.Paint[flow])...), after: first.after})
 	}
-	return 0
+	return plan, paintJobs, nil
 }
 
 func runShootJob(run string, base []string, job *shootJob) {
