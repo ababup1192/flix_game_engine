@@ -311,7 +311,7 @@ mod Commands {
         let toMode = (ctx: Ctx, name, st: Stage.Stage) -> {
             let changed = fst(Stage.windowOf(ctx#res#theme, st)) != name;
             let typed = Option.nonEmpty(snd(ThemeDoc.windowOf(name, ctx#res#theme))#align);
-            // WhyNot: align の無い型へ替えた時は <<text align=>> の揃えを消さない — 消すと、今の台本の <<text align=center>> の後の <<window 型>> で見た目が変わる。
+            // WhyNot: align の無い型へ替えた時は <<text align=>> の揃えを消さない — 消すと、今のシナリオの <<text align=center>> の後の <<window 型>> で見た目が変わる。
             let props = if (changed and typed) PropertyTween.setName(Stage.textAlignKey(), None, ctx#now, 0.0, st#props) else st#props;
             (Stage.withWindowShown(ctx#now, { mode = name, props = props | st }), if (changed) Out.ClearPage :: Nil else Nil)
         };
