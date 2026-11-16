@@ -1,18 +1,18 @@
-## Flix ゲームエンジン モノレポの workspace コマンド
-##
-## 構成:
-##   engine/       ─ 契約層 flix_engine_core（Game/Audio effect・共有描画型・土台型・描画語彙）
-##   render_gl/    ─ engine（契約層）を実装する GL バックエンド
-##   engine_world/ ─ App/World/UI ランタイム。ゲームが利用する
-##   engine_tools/ ─ ヘッドレス描き出し/reference 工具箱。ゲームが利用する
-##   engine_full/  ─ 上4つのソースを1つに集めた自己完結の全部入り flix_game_engine（配布物）
-##   templates/    ─ 新しいゲームの写し元。各テンプレは `cd templates/<name> && flix ...` で直接動く
-##
-## Makefile に集約するのは workspace 横断の配布作業だけ:
-##   `make sync` … engine の上に載る 3 層の検査用の作業場 (.layers/) を張り、engine_full を
-##                  集約して build-pkg し、templates / bench の lib/github/ababup1192/flix_game_engine/<version>/
-##                  に相対 symlink を張る (cp ではなく ln -sf)。symlink にすることで engine_full を
-##                  作り直せば即座に反映され、例題側で stale な fpkg を持ち回らなくて済む。
+# Flix ゲームエンジン モノレポの workspace コマンド
+#
+# 構成:
+#   engine/       ─ 契約層 flix_engine_core（Game/Audio effect・共有描画型・土台型・描画語彙）
+#   render_gl/    ─ engine（契約層）を実装する GL バックエンド
+#   engine_world/ ─ App/World/UI ランタイム。ゲームが利用する
+#   engine_tools/ ─ ヘッドレス描き出し/reference 工具箱。ゲームが利用する
+#   engine_full/  ─ 上4つのソースを1つに集めた自己完結の全部入り flix_game_engine（配布物）
+#   templates/    ─ 新しいゲームの写し元。各テンプレは `cd templates/<name> && flix ...` で直接動く
+#
+# Makefile に集約するのは workspace 横断の配布作業だけ:
+#   `make sync` … engine の上に載る 3 層の検査用の作業場 (.layers/) を張り、engine_full を
+#                  集約して build-pkg し、templates / bench の lib/github/ababup1192/flix_game_engine/<version>/
+#                  に相対 symlink を張る (cp ではなく ln -sf)。symlink にすることで engine_full を
+#                  作り直せば即座に反映され、例題側で stale な fpkg を持ち回らなくて済む。
 
 # Flix コンパイラは bin/flix ラッパー経由で呼ぶ。ラッパーが devbox (flix.nix) の
 # flix コマンドと手動配置 bin/flix.jar のどちらを使うかを解決し、JVM フラグ
@@ -63,105 +63,35 @@ ENGINE_FULL_TOML_NAME := flix_game_engine-$(VERSION).toml
 # 全体の up 階層数を求め、symlink の相対パスを動的に組み立てる。
 SUBPATH_DEPTH := 5
 
-.PHONY: help status sync sync-layers sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity gl-parity-cpu release release-guard studio-parity release-assets release-verify release-marker-check release-publish bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
+# help・hooks・api・module・mvn-cache-share はゲームの mk/game.mk と共有 (mk/common.mk)。違いはエンジンの置き場の前置きだけ。
+# make api は digest にあってまだ出していない名前を後ろに知らせる (bin/fge check-api-released)。digest は作業ツリーの
+# src/ から作るので未リリースの宣言も載り、ゲームは版を固定した fpkg を引くため、digest を信じて書くとコンパイルで落ちる。
+# WhyNot: 2>/dev/null を付けない — この検査は digest の嘘を見えるようにする物で、何も知らせずに死ぬ形は自己矛盾になる (|| true は助言だから止めない)。
+FGE_PREFIX :=
+MVN_CACHE_SHARE := bin/mvn-cache-share.sh
+HELP_SRC := Makefile mk/common.mk
+HELP_HEAD = echo "エンジンの作業場のターゲット（ゲームの側は make -C <ゲーム> help）:"
+HELP_TAIL = echo ""; echo "絵の差を数で要約するのは bin/fge digest A B（2 枚かフォルダ。目で見る前にまずこれ）"
+HELP_ALL_TAIL = echo ""; echo "lint の名前 (make lint ONLY=<名前>・make lint-<名前>): $(LINT_NAMES)"; \
+	echo "bench の名前 (make bench B=<名前>・make <名前>): $(BENCH_NAMES)"
+API_AFTER = bin/fge check-api-released "$(Q)" || true
 
+# .flix をファイル単位の symlink で別の木へ並べる（sync-engine-full・sync-root-src・gen-light3d・engine_full_web）。
+LINK_FLIX := bin/link-tree.sh --name '*.flix'
+
+
+##@ 現状・型検査・片付け
 # セッション立ち上げの固定費を数百トークンに抑える口。SessionStart フックが毎回呼ぶので
 # 実行や変更は一切せず、残っている記録 (.test-logs/ スナップショット チケット git) を集めるだけ。
-status:
+.PHONY: status
+status: ## | 現状 1 画面（テスト記録・スナップショット・チケット・git）。何も実行しない
 	@bin/fge status
-
-# コミット時のゲート (描き出した絵の混入・規約の配線ずれ・矩形だけの View を止める)。
-# .git/hooks は git 管理外なので、clone ごとに 1 回この配線が要る (status が未配線を知らせる)。
-.PHONY: hooks
-hooks:
-	@git config core.hooksPath bin/githooks
-	@echo "[hooks] 配線しました: pre-commit = bin/githooks/pre-commit (中身は bin/fge precommit)"
 
 # 新しい git worktree へ、git の外の依存 (各パッケージの lib・bin/flix.jar・bin/fge-go・build/gl-jar・fpkg) を
 # main の作業ツリーから張る。WT を省くとこの作業ツリー自身。張り方の理由は bin/worktree-seed.sh。
 .PHONY: worktree-seed
-worktree-seed:
+worktree-seed: ## [WT=<worktree>] | 新しい worktree へ git の外の依存（lib・flix.jar・fge-go・gl-jar・fpkg）を main から張る（Studio の worktree も可）
 	@bin/worktree-seed.sh "$(or $(WT),$(CURDIR))" $(MAIN)
-
-help:
-	@echo "Targets:"
-	@echo "  make status               現状 1 画面 (テスト記録・スナップショット・チケット・git)。何も実行しない"
-	@echo "  make module Q=<語>        やりたいこと → モジュールを 1 行ずつ引く (docs/modules/ の分野:行番号つき)"
-	@echo "  make test                 engine 系パッケージのテストを headless で実行 (templates は test-all)"
-	@echo "  make test-par             同上を並列実行 (実時間 ≈ 最遅パッケージ 1本分。ログは .test-logs/)"
-	@echo "  make test-all / test-par-all  templates まで含めた全量 (リリースのゲート)"
-	@echo "  make test-<name>          1 つだけテスト (例: make test-rpg-starter / make test-engine)"
-	@echo "  make lint-palette         ドット絵 legend の意味色キーが Studio から解けるか検査"
-	@echo "  make lint-view            View が矩形と円だけになっていないか検査"
-	@echo "  make lint-images          git に入れる絵が増えすぎていないか検査"
-	@echo "  make lint-sprite          ドット絵の画素の並び (浮き・塊の分裂・階段・細長さ・色数) を検査"
-	@echo "  make lint-anim            コマ間の飛び・体積・接地と 4 方向のそろいを検査"
-	@echo "  make lint-loop            ループ GIF の継ぎ目 (最終コマ→0 コマ) が浮かないか検査"
-	@echo "  make lint-ui              ui.json の text の折り返し宣言漏れ (はみ出す形) を検査"
-	@echo "  make lint-audio           音名が SfxRender の名・project.json・コードの 3 か所でそろっているか検査"
-	@echo "  make lint-jargon          コメント・文章に独自の比喩語が混ざっていないか検査 (語は bin/lint-rules/jargon.json の words)"
-	@echo "  make lint-fallback        読み込みの途中で bug! していないか検査 (許すのは *OrBug の中だけ)"
-	@echo "  make lint-f32             engine の pub 面に Float32 が出ていないか検査 (Float32 は GL / OpenAL / STB の内側だけ)"
-	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
-	@echo "  make lint-value-discard   値を let _ = で捨てていないか検査 (純粋な式だと Flix が呼び出しごと消す)"
-	@echo "  make lint                 engine の lint のうち 0 件の物をまとめて (forbid・max-lines・value-discard・hoist・record-wrap・state-shape・doc-refs・z-table・f32)"
-	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
-	@echo "  make lint-huge-methods    JVM が JIT しない大きさ (8,000 バイト超) の Flix の関数を jar から数える (JARS=<jar…>。既定はベンチの jar のうち在る物。bin/lint-rules/huge-methods.json)"
-	@echo "  make lint-max-lines       engine の src の .flix の行数の上限 (bin/lint-rules/max-lines.json。超えた物は除外の一覧)"
-	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)・ループの中の List 探しを知らせる (perf-near-scan)"
-	@echo "  make lint-hoist           ループの外に置いた式がループの中へ書き写される形が無いか検査 (全量)"
-	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
-	@echo "  make lint-state-shape     状態の持ち方 (Bool の欄の数・Option[Bool]・名指しの enum への case _・View の効果) を検査"
-	@echo "  make lint-doc-refs        docs/・agents-pack の文書が指す Mod.name・パス・path:行 が実在するか検査"
-	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
-	@echo "  make go-build             go/ を bin/fge-go と、配る先ごとの 5 種にビルド"
-	@echo "  make go-test              go/ のテスト (CIEDE2000 の参照 34 組・外部依存ゼロの検査を含む)"
-	@echo "  make rules                docs/ の規約から .claude/rules/ を作り直す"
-	@echo "  make render-all           render-all ターゲットを持つ全 template の生成物を描き出し直す"
-	@echo "  make render-par           同上を並列実行"
-	@echo "  make render-changed       git で変更のあった template だけ描き出す (engine 側に変更があれば全テンプレ)"
-	@echo "  make diff DIR=<dir>       直す前(スナップショット)と後(gallery)を左右に並べて <dir>/debug/diff/ に描き出す"
-	@echo "  make gl-parity            GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせ (不一致で exit 1)"
-	@echo "  make shader-cache-soak    シェーダープログラムのキャッシュが上限で頭打ちになるかを隠しウィンドウで確認 (増え続ければ exit 1)"
-	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
-	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く・SCENE=field COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1 で物を並べた場面)"
-	@echo "  make webgpu-check         WebGPU の PC の実装 (Dawn) を Flix から通して描いて読み戻す門 (窓なし・2 プロセス・窓。NG で exit 1)"
-	@echo "  make webgpu-v1-check      WebGPU の 2D の描き手の PC の門 (画面なしの比べ・実機の窓の 2 回・GL との pixel-diff・gl_parity の V1 の scene。NG で exit 1)"
-	@echo "  make webgpu-v1-check-web  同じ門のブラウザ版 (rpg-starter の ?capture を WebGL2・?backend=webgpu・WebGPU の無い頁で撮って比べる。NG で exit 1)"
-	@echo "  make webgpu-check-web     同じ門をブラウザの実装 (navigator.gpu) でヘッドレスの Chrome に流す (PC と同じ Flix のコード・canvas。NG で exit 1)"
-	@echo "  make webgpu-check-same    PC とブラウザの門を同じ機械で流し、三角形と firstInstance の絵の digest が同じかを比べる (違えば exit 1)"
-	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
-	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
-	@echo "  make crowd2d-cpu          2D の敵の群れの規則だけを回し、近くを探す処理を全部と比べる形と SpatialGrid で比べる (窓は開かない)"
-	@echo "  make crowd2d-bench        同じ群れを実機の窓で描き、1 コマ・規則・描く時間の p50 / p95 を出す (窓が開く・COUNTS=6000,20000 SEARCH=grid FRAMES=300 で数・探し方・コマ数を替える)"
-	@echo "  make sprite-stress-bench  2D のスプライトを数だけ実機の窓で描き、1 コマの avg / p50 / p95 / p99 を出す (窓が開く・COUNTS=1000,5000,20000 TEX=16 BLEND=alt で数・絵の種類・blend の混在を替える)"
-	@echo "  make bench-web BENCH=<名前> ARGS='n=20000&tex=16'  ベンチ (sprite_stress / crowd2d / scene3d) をブラウザ版へ書き出し、ヘッドレスの Chrome で測って JSON を出す (OUT=<file> で保存)"
-	@echo "  make gen-light3d          光の式の木 (LightModel3d) から CPU の光の関数 engine_tools/src/gen/SoftRaster3dLight.flix と確かめ用の test/gen/SoftRaster3dLightCases.flix を作り直す"
-	@echo "  make gl-capture OUT=<dir> テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える"
-	@echo "  make smoke-devtools [SMOKE_TEMPLATE=<テンプレ>]  隠しウィンドウの DEBUG 起動で、名簿・命令口（/help・/halt・/step・/resume・/perf）・flow の記録・閉じた後の名簿を確かめる"
-	@echo "  make determinism [TARGETS=\"<フォルダ>:<台本> …\"]  隠しウィンドウのテンプレに台本を流して遊んだ記録を書き、画面なしの再生が同じ World になるか (リリースの前)"
-	@echo "  make gl-capture-check [BASE=off] [SKIP=<フォルダ名>]  同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる (SKIP の場面は比べない・違えば exit 1)"
-	@echo "  make gl-capture-baseline  この機械の gl-capture の基準を今の絵で撮る (bench/baseline/<版>/gl-capture-<機械>.sha256)"
-	@echo "  make check-external       外のゲームの写しを今の engine で型検査し、基準 (bench/baseline/) から増えたエラーだけ出す"
-	@echo "  make baseline-check [GALLERY=1]  gl-parity の行と絵・3D の部屋の CPU の絵 (とテンプレの gallery) を基準 (PARITY_BASELINE) と比べる"
-	@echo "                           ONLY_2D=1 で 3D の行と絵を除く・ONLY_KNOWN=1 で基準に無い名前を飛ばす・GALLERY_BASE=<dir> で gallery の基準を別に・COMPARE_MAX=<dir> で 3D の行の max を控えと並べる"
-	@echo "  make sync                 層の作業場を張り、engine_full を build-pkg して templates / bench に配布"
-	@echo "  make sync-layers          render_gl / engine_world / engine_tools の検査用の作業場 (.layers/) を張り直す"
-	@echo "  make sync-root-src        コミュニティビルド用にルート src/ の symlink 集を再生成"
-	@echo "  make clean-locks          flix check 中断で残った Maven cache の *.lock を削除"
-	@echo "  make check                engine の全パッケージ (ルートの src/) を型検査 (bin/fge refactor の --apply の後の確かめもこれ)"
-	@echo "  make checkd-stop          flix check 常駐 (bin/fge checkd) を全部止める (詳細は docs/checkd.md)"
-	@echo "  make clean-game-builds    templates/*/build/ と bench/*/build/ を全削除 (IDE の scene.json glob 高速化用)"
-	@echo "  make sync-engine-full     engine_full だけ src 集約 & build-pkg & 配布 (templates / bench へ)"
-	@echo "  make release              sync→test-par→gl-parity→build-pkg→gh release を一括実行 (未コミットなら中断・tagはHEAD固定)"
-	@echo "  make bump FROM=x TO=y     全 flix.toml の version を一括更新 (lockstep)。release の前に実行する"
-	@echo "  make gl-jar-pin           render_gl/java を直した後、3 つの flix.toml の GL の層の jar の行を置き場 fge-gl-<ハッシュ> へ向ける"
-	@echo "  make gl-jar-pin-check     flix.toml の jar の行がいまの render_gl/java を指しているか (release と precommit の門)"
-	@echo "  make gl-jar-publish       置き場の Release fge-gl-<ハッシュ> を作って jar を載せる (あれば何もしない・main への push で gl-jar.yml も流す)"
-	@echo "  make hooks                git の pre-commit ゲート (bin/githooks) をこの clone に配線する"
-	@echo "  make worktree-seed [WT=<worktree>]  新しい worktree へ git の外の依存 (lib・flix.jar・fge-go・gl-jar・fpkg) を main から張る (Studio の worktree も可)"
-	@echo "  make mvn-cache-share [ROOT=<dir>]  各パッケージの lib/cache を共有の置き場 1 か所へ移して symlink にする (中身は捨てない・使用中は飛ばす)"
-	@echo "  make bundle-zip           Studio に同梱する engine 一式を zip に固める (Release に添える)"
 
 # flix check を Ctrl-C で中断すると lib/cache/.../*.lock が残り、
 # 次回 Maven リゾルバが「他プロセスが取得中」と誤認して無限待ちになる。
@@ -174,22 +104,17 @@ LOCK_DIRS := $(ENGINE_DIR) $(wildcard $(LAYER_DIRS)) $(ENGINE_FULL_DIR) $(wildca
 # WhyNot: 置き場では開いているプロセスの居る lock を消さない — 置き場は他の worktree やゲームの flix と共有で、
 # 取っている最中の lock を消すと 2 つのプロセスが同じ .part に書く。
 MVN_CACHE_DIR = $(shell bin/mvn-cache-share.sh --print-dir)
-clean-locks:
+.PHONY: clean-locks
+clean-locks: ### | flix check の中断で残った Maven cache の *.lock を消す
 	@{ find $(LOCK_DIRS) -type d -name build -prune -o \( -path "*/lib/cache/*" -name "*.lock" -print -exec rm -f {} + \) 2>/dev/null; \
 	   [ ! -d "$(MVN_CACHE_DIR)" ] || find "$(MVN_CACHE_DIR)" -name '*.lock' 2>/dev/null | while read -r f; do \
 	     lsof "$$f" >/dev/null 2>&1 || { rm -f "$$f"; echo "$$f"; }; done; } | awk 'END { print NR " lock(s) removed" }'
-
-# 各パッケージの lib/cache (Maven の取り物) を共有の置き場 1 か所へ移し、symlink にする。ROOT を省くとこの作業ツリー。
-# 置き場・移し方・同時に使っても壊れない根拠は bin/mvn-cache-share.sh。
-.PHONY: mvn-cache-share
-mvn-cache-share:
-	@bin/mvn-cache-share.sh "$(or $(ROOT),$(CURDIR))"
 
 # engine の全パッケージ (ルートの src/ の symlink 集) を 1 つの木として型検査する。bin/fge refactor の --apply の後の
 # 確かめ (refactor.json の verify) もこれを流す。CHECKD=0 で素の flix check・QUIET=0 で全文。
 # WhyNot: 足りない symlink を先に張るのは、パッケージに足したファイルが検査から漏れて緑に見えるため。
 .PHONY: check
-check: sync-root-src-missing
+check: sync-root-src-missing ## [CHECKD=0] [QUIET=0] | engine の全パッケージ（ルートの src/）を型検査する（bin/fge refactor の --apply の後の確かめもこれ）
 	@mkdir -p .test-logs
 	@if [ "$(CHECKD)" != "0" ]; then bin/fge checkd . > .test-logs/check.log 2>&1; code=$$?; \
 	else "$(FLIX)" check > .test-logs/check.log 2>&1; code=$$?; fi; \
@@ -198,18 +123,16 @@ check: sync-root-src-missing
 	exit $$code
 
 # flix check の常駐 (bin/fge checkd) を全部止める。挙動が怪しい時・メモリを空けたい時の逃げ道。
-checkd-stop:
+.PHONY: checkd-stop
+checkd-stop: ### | flix check の常駐（bin/fge checkd）を全部止める（詳しくは docs/checkd.md）
 	@bin/fge checkd --stop-all
 
-# IDE でゲームのプロジェクトを開くと ProjectLoader.findSceneFiles の Fs.Glob が
-# build/class 配下の数十万コンパイル成果物を stat してしまい、プロジェクト読み込みに
-# 数十秒〜数分かかる。IDE 起動前に各プロジェクトの build/ を消して回避する。
-# もう一度 flix run すれば build/ は再生成される (incremental compile は失われる)。
-# engine 自身のパッケージも消す。build/ は呼ぶたび足されるだけで減らないので、
-# 消さずにいると engine_world が 2.1GB / 49 万ファイルまで育つ (実測)。
-# テストの速さへの効きは 2 割ほどで、主な理由はディスクと IDE の glob。
+# テンプレ・bench・engine 自身のパッケージの build/ を消す。build/ は呼ぶたび足されるだけで減らないので、
+# 消さずにいると engine_world が 2.1GB / 49 万ファイルまで育つ (実測)。テストが速くなる分は 2 割ほどで、主な理由はディスク。
+# もう一度 flix を流せば build/ は作り直される (incremental compile は失われる)。
 PKG_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
-clean-game-builds:
+.PHONY: clean-game-builds
+clean-game-builds: ### | templates/*/build/ と bench/*/build/ と engine のパッケージの build/ を消す
 	@removed=0; \
 	for d in templates/*/build bench/*/build $(addsuffix /build,$(PKG_DIRS)); do \
 		if [ -d "$$d" ]; then \
@@ -232,21 +155,25 @@ TEMPLATE_DIRS := $(filter-out templates/game-starter,$(wildcard templates/*))
 #   エンジンを直すたびに払うには重い。退行はリリース前の全量と new-game の産声の確認で拾う。
 # engine の上の 3 層は .layers/ の作業場で回す (張り方は sync-layers)。
 TEST_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
+# 1 つのパッケージ ($$dir) のテストを流す形 (test・test-par・test-<名前> が共有する)。
+PKG_TEST = (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test)
 
-test: sync-layers
+##@ テスト
+.PHONY: test
+test: sync-layers ## | engine 系パッケージのテストを headless で流す（templates は test-all）
 	@for dir in $(TEST_DIRS); do \
 		if [ -f "$$dir/flix.toml" ]; then \
 			echo "===== $$dir ====="; \
-			(cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) || exit 1; \
+			$(PKG_TEST) || exit 1; \
 		fi \
 	done
 
 # テンプレートまで含めた全量（リリースのゲート・テンプレートを直した後）。
 .PHONY: test-all test-par-all
-test-all:
+test-all: ### | templates まで含めた全量を順に流す（リリースの門）
 	@$(MAKE) --no-print-directory test TEST_DIRS="$(TEST_DIRS) $(TEMPLATE_DIRS)"
 
-test-par-all:
+test-par-all: ### | templates まで含めた全量を並べて流す（リリースの門）
 	@$(MAKE) --no-print-directory test-par TEST_DIRS="$(TEST_DIRS) $(TEMPLATE_DIRS)"
 
 # 並列テスト。各パッケージは独立 (別ディレクトリ・別 JVM) なので同時に回せて、
@@ -256,12 +183,13 @@ test-par-all:
 # スクリプトに埋めると「command line cannot be assembled」で 1 本も走らない)。
 # 「1 本も走っていないのに green」の偽陽性は実行数ガードで落とす。
 TEST_PAR_JOBS ?= 6
-test-par: sync-layers
+.PHONY: test-par
+test-par: sync-layers ## [TEST_PAR_JOBS=6] | make test を並べて流す（実時間 ≈ 最遅パッケージ 1 本分。ログは .test-logs/）
 	@mkdir -p .test-logs; rm -f .test-logs/*.log .test-logs/*.fail; \
 	printf '%s\n' $(TEST_DIRS) | xargs -P $(TEST_PAR_JOBS) -n 1 sh -c ' \
 		dir="$$0"; [ -f "$$dir/flix.toml" ] || exit 0; \
 		name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
-		if (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
+		if $(PKG_TEST) > ".test-logs/$$name.log" 2>&1; then \
 			echo "[test-par] PASS $$dir"; \
 		else \
 			echo "[test-par] FAIL $$dir"; touch ".test-logs/$$name.fail"; \
@@ -275,20 +203,42 @@ test-par: sync-layers
 	fi; \
 	echo "[test-par] all green ($$ran packages)"
 
+# 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
+# engine の上の 3 層は .layers/<層> の作業場で流す (make test と同じ。張り方は sync-layers)。
+# 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。
+# make status が「最後にいつ・どれが緑/赤だったか」をこの記録から読む。
+# WhyNot: 層を素のフォルダで流さない — 層のフォルダは engine のソースを持たず、use flix_engine_core の名前が解けずに落ちる。
+$(addprefix test-,$(LAYER_PKGS)): sync-layers
+test-%: ## <名前> | 1 つだけテスト（例: make test-rpg-starter / test-engine / test-engine_world）
+	@mkdir -p .test-logs; \
+	$(if $(filter $*,$(LAYER_PKGS)),dir="$(LAYER_ROOT)/$*",if [ -d "templates/$*" ]; then dir="templates/$*"; else dir="$*"; fi); \
+	name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
+	rm -f ".test-logs/$$name.fail"; \
+	if $(PKG_TEST) > ".test-logs/$$name.log" 2>&1; then \
+		tail -5 ".test-logs/$$name.log"; \
+	else \
+		touch ".test-logs/$$name.fail"; tail -40 ".test-logs/$$name.log"; exit 1; \
+	fi
+
+##@ 描き出し
 # ── render ────────────────────────────────────────────────
 # 各テンプレのギャラリー・効果音などの生成物を一括で描き出し直す。
 # 対象は「Makefile に render-all ターゲットを持つ template」だけ。
 # テンプレ側の素の `render` は場面名 (SHOT) を要求して失敗するので、ここからは必ず render-all を打つ。
-render-all:
+# $$dir のテンプレが render-all を持つか (自前で書いたか game.mk を取り込んだか)。
+HAS_RENDER_ALL = [ -f "$$dir/Makefile" ] && grep -qE "^render-all:|mk/game.mk" "$$dir/Makefile"
+.PHONY: render-all
+render-all: ## | render-all を持つ全 template の生成物を描き出し直す
 	@for dir in $(TEMPLATE_DIRS:%=%/); do \
-		if [ -f "$$dir/Makefile" ] && grep -qE "^render-all:|mk/game.mk" "$$dir/Makefile"; then \
+		if $(HAS_RENDER_ALL); then \
 			echo "===== $$dir ====="; \
 			(cd "$$dir" && make render-all) || exit 1; \
 		fi \
 	done
 
 # 素の render は打ち間違いなので、どのターゲットを打てばいいかを出して止める（テンプレ側と同じ形）。
-render:
+.PHONY: render
+render: ### | 打ち間違いの受け（使い方を出して止める）
 	@echo "usage: make render-all                        全 template を描き出す"; \
 	echo "       make render-changed                    git で変更のあった template だけ描き出す"; \
 	echo "       make -C templates/<name> render SHOT=<場面>   その template の 1 枚だけ描き出す"; \
@@ -303,7 +253,8 @@ render:
 # 変更の有無は git status (未追跡ファイルも含む) で見る。
 # リリース前と engine を直した後の退行検知には全量が要るので、make render-all の代わりにはしない。
 RENDER_ENGINE_DIRS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR)
-render-changed:
+.PHONY: render-changed
+render-changed: ## | git で変更のあった template だけ描き出す（engine 側に変更があれば全テンプレ）
 	@if [ -n "$$(git status --porcelain -- $(RENDER_ENGINE_DIRS))" ]; then \
 		echo "[render-changed] engine 側に変更あり → 全テンプレが対象"; \
 		targets="$(TEMPLATE_DIRS)"; \
@@ -315,7 +266,7 @@ render-changed:
 	fi; \
 	ran=0; \
 	for dir in $$targets; do \
-		if [ -f "$$dir/Makefile" ] && grep -qE "^render-all:|mk/game.mk" "$$dir/Makefile"; then \
+		if $(HAS_RENDER_ALL); then \
 			echo "===== $$dir ====="; \
 			(cd "$$dir" && make render-all) || exit 1; \
 			ran=$$((ran + 1)); \
@@ -326,10 +277,11 @@ render-changed:
 
 # 並列の描き出し。テンプレ同士は生成物が交わらないので同時に走れる。ログ・失敗の扱いは test-par と同じ。
 RENDER_PAR_JOBS ?= 4
-render-par:
+.PHONY: render-par
+render-par: ### [RENDER_PAR_JOBS=4] | make render-all を並べて流す
 	@mkdir -p .test-logs; rm -f .test-logs/render-*.log .test-logs/render-*.fail; \
 	for dir in $(TEMPLATE_DIRS:%=%/); do \
-		if [ -f "$$dir/Makefile" ] && grep -qE "^render-all:|mk/game.mk" "$$dir/Makefile"; then echo "$$dir"; fi; \
+		if $(HAS_RENDER_ALL); then echo "$$dir"; fi; \
 	done | xargs -P $(RENDER_PAR_JOBS) -n 1 sh -c ' \
 		dir="$$0"; name=$$(basename "$$dir"); \
 		if (cd "$$dir" && make render-all) > ".test-logs/render-$$name.log" 2>&1; then \
@@ -352,7 +304,8 @@ render-par:
 #
 # リファレンス画像の PNG は git 管理外（追跡するのは SHA256SUMS.txt だけ）なので、clone 直後は
 # 「前」が手元に無い。その時は一度 make render-all && make reference-update で今の絵を基準に置く。
-diff: sync-layers
+.PHONY: diff
+diff: sync-layers ## DIR=<dir> | 直す前（リファレンス画像）と後（gallery）を左右に並べて <dir>/debug/diff/ に描き出す
 	@test -n "$(DIR)" || { echo "使い方: make diff DIR=templates/rpg-starter"; exit 1; }
 	@ls "$(DIR)"/reference/*.png > /dev/null 2>&1 || { \
 		echo "[diff] $(DIR)/reference に比べる前の絵がありません。"; \
@@ -368,23 +321,47 @@ diff: sync-layers
 			JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" "$(FLIX)" run --entrypoint ReferenceDiff.pairs; \
 	fi
 
-# GL と SoftRaster の突き合わせ (bench/gl_parity)。隠しウィンドウで GL を 1 コマずつ描き出し、
-# 同じ scene 宣言を SoftRaster でも描き出して画素比較する。A 段階 (バイト一致層) に不一致が
-# あれば exit 1。描画経路 (render_gl / SoftRaster / Frame / ShaderEval) を触ったら回す。
-gl-parity:
-	@$(MAKE) -C bench/gl_parity run
+##@ 描き手の門と bench
+# ── bench へ渡すだけのターゲット ───────────────────────────────────
+# 使い方は make bench B=<名前>。古い名前（make scene3d-bench など）も下の表から 1 つずつターゲットを作って残す。
+# 表の 1 行は「bench/ の下のフォルダ その Makefile のターゲット…」。ウィンドウを開く物と時間を測る物は CI に載せない。
+#   gl-parity           GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせる。A 段階（バイト一致）に不一致があれば exit 1。
+#                       描く道（render_gl / SoftRaster / Frame / ShaderEval）を触ったら回す。リリースの門の 1 つ（RELEASE_GATES）
+#   gl-parity-cpu       gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を bench/gl_parity/build/cpu-time.tsv へ（ウィンドウは開かない）。
+#                       基準は bench/baseline/<版>/gl-parity-cpu.tsv。時間は機械と負荷で揺れるので門にはせず、同じ機械で前後を並べて見る
+#   webgpu-check        WebGPU の PC の実装（Dawn）を Flix から通して描き、読み戻した画素を期待と比べる（上限・三角形と面の向き・readRgba・
+#                       firstInstance の 20,000 本・device の取り直し・2 プロセス同時・GLFW のウィンドウ）。GPU の要る門。先に make sync-engine-full
+#   shader-cache-soak   数値だけが違う Spec を 200 本投げ、シェーダープログラムのキャッシュが上限で頭打ちになるか（ShaderCache / ShaderGen を触ったら）
+#   scene3d-still       3D の場面の固定の部屋を CPU で bench/scene3d/debug/room.png に描く（ウィンドウは開かない）
+#   scene3d-bench       同じ部屋を実機のウィンドウで毎コマ描き、1 コマの p50 / p95 を出す（つまみは bench/scene3d/Makefile の頭）
+#   scene3d-cpu         同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す（still の時間はキャッシュの写しを含むので比べに使わない）
+#   crowd2d-cpu         2D の敵の群れの規則だけを回し、近くを探す処理を全部と比べる形と SpatialGrid で比べる（FlowField の比べも出す）
+#   crowd2d-bench       同じ群れを実機のウィンドウで描き、1 コマ・規則・描く時間の p50 / p95 を出す（COUNTS=6000,20000 SEARCH=grid FRAMES=300）
+#   sprite-stress-bench 2D のスプライトを数だけ実機のウィンドウで描き、1 コマの avg / p50 / p95 / p99 を出す（COUNTS=… TEX=16 BLEND=alt）
+BENCH_TO_gl-parity           := gl_parity run
+BENCH_TO_gl-parity-cpu       := gl_parity cpu-time
+BENCH_TO_webgpu-check        := webgpu_check check run two window
+BENCH_TO_shader-cache-soak   := shader_cache_soak run
+BENCH_TO_scene3d-still       := scene3d still
+BENCH_TO_scene3d-bench       := scene3d run
+BENCH_TO_scene3d-cpu         := scene3d cpu-time
+BENCH_TO_crowd2d-cpu         := crowd2d cpu-time
+BENCH_TO_crowd2d-bench       := crowd2d run
+BENCH_TO_sprite-stress-bench := sprite_stress run
+BENCH_NAMES := $(sort $(patsubst BENCH_TO_%,%,$(filter BENCH_TO_%,$(.VARIABLES))))
 
-# gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を bench/gl_parity/build/cpu-time.tsv へ (窓は開かない)。
-# 基準は bench/baseline/<版>/gl-parity-cpu.tsv。時間は機械と負荷で揺れるので門にはせず、同じ機械で前後を並べて見る。
-gl-parity-cpu:
-	@$(MAKE) -C bench/gl_parity cpu-time
+define BENCH_RULE
+.PHONY: $1
+$1:
+	@$$(MAKE) -C bench/$(firstword $(BENCH_TO_$1)) $(wordlist 2,$(words $(BENCH_TO_$1)),$(BENCH_TO_$1))
+endef
+$(foreach n,$(BENCH_NAMES),$(eval $(call BENCH_RULE,$n)))
 
-# WebGPU の PC の実装 (bench/webgpu_check)。Flix から fge.webgpu.WebGpu を通して Dawn で描き、読み戻した画素を期待と比べる:
-# 上限・三角形と面の向き・readRgba・式の行・firstInstance の 20,000 本 (3 ms)・device の取り直し・2 プロセス同時・GLFW の窓
-# (present の前の読み戻し・大きさの作り直し)。どれかが NG なら exit 1。GPU の要る門なので CI には載せない。先に make sync-engine-full。
-.PHONY: webgpu-check
-webgpu-check:
-	@$(MAKE) -C bench/webgpu_check check run two window
+.PHONY: bench
+bench: $(filter $(BENCH_NAMES),$(B)) ### B=<名前> | bench へ渡すだけのターゲット（名前は make help-all の最後）
+	@$(if $(filter $(BENCH_NAMES),$(B)),:,echo "使い方: make bench B=<名前>（名前: $(BENCH_NAMES)）"; exit 2)
+
+##> make gl-parity | GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせ（不一致で exit 1。make bench B=gl-parity と同じ）
 
 # WebGPU の 2D の描き手 (V1・plans/webgpu-v1.md の 8.1) の PC の門。順に:
 #   1. 画面なし: bench/webgpu_v1 で GlOffscreen と同じ場面を描いて比べる (箱・スプライト・幕・放射の絵・字・Pass・生成の絵。WebGPU の誤りの数と submit の数も見る)
@@ -396,7 +373,7 @@ webgpu-check:
 WEBGPU_V1_OUT := build/webgpu-v1
 WEBGPU_V1_TOL := bench/webgpu_v1/tolerance.tsv
 .PHONY: webgpu-v1-check webgpu-v1-check-web
-webgpu-v1-check:
+webgpu-v1-check: ### | WebGPU の 2D の描き手の PC の門（画面なしの比べ・実機のウィンドウの 2 回・GL との pixel-diff・gl_parity の V1 の scene。NG で exit 1）
 	@$(MAKE) -C bench/webgpu_v1 run
 	@rm -rf $(WEBGPU_V1_OUT)/w1 $(WEBGPU_V1_OUT)/w2 $(WEBGPU_V1_OUT)/gl
 	@bin/gl-capture.sh --backend webgpu $(WEBGPU_V1_OUT)/w1 templates/rpg-starter:title
@@ -418,7 +395,7 @@ webgpu-v1-check:
 WEBGPU_V1_WEB := $(WEBGPU_V1_OUT)/web
 # WhyNot: /bin/sh に任せない — pipefail を持たない sh（古い dash など）では撮れなかった回が通る。
 webgpu-v1-check-web: SHELL := /bin/bash
-webgpu-v1-check-web:
+webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-starter の ?capture を WebGL2・?backend=webgpu・WebGPU の無い頁で撮って比べる）
 	@if [ "$(WEB_EXPORT)" != off ]; then bin/fge export-web templates/rpg-starter --out $(WEBGPU_V1_WEB)/rpg; fi
 	@page=$(WEBGPU_V1_WEB)/rpg; { sed -n 1,3p $$page/index.html; cat bench/webgpu_v1/web/nogpu-head.html; sed -n '4,$$p' $$page/index.html; } > $$page/nogpu.html
 	@# WhyNot: 前の回の絵と記録を残したまま撮らない — 撮れなかった回に前の絵で比べて緑になる。
@@ -444,7 +421,7 @@ webgpu-v1-check-web:
 # 先に make sync-engine-full-web。書き出しを省いて頁だけ開き直すなら BENCH_WEB_EXPORT=off。
 WEBGPU_CHECK_WEB_OUT := build/bench-web/webgpu_check.json
 .PHONY: webgpu-check-web
-webgpu-check-web:
+webgpu-check-web: ### [BENCH_WEB_EXPORT=off] | webgpu-check をブラウザの実装（navigator.gpu）でヘッドレスの Chrome に流す
 	@$(MAKE) --no-print-directory bench-web BENCH=webgpu_check OUT=$(WEBGPU_CHECK_WEB_OUT)
 	@grep -q '"name":"webgpu-check","ok":true' $(WEBGPU_CHECK_WEB_OUT) \
 	  || { echo "[webgpu-check-web] NG あり ($(WEBGPU_CHECK_WEB_OUT))"; exit 1; }
@@ -454,7 +431,7 @@ webgpu-check-web:
 WEBGPU_CHECK_PC_OUT := build/bench-web/webgpu_check-pc.txt
 WEBGPU_CHECK_SAME   := triangle-cull-back triangle-cull-none first-instance
 .PHONY: webgpu-check-same
-webgpu-check-same: webgpu-check-web
+webgpu-check-same: webgpu-check-web ### | PC とブラウザの門を同じ機械で流し、三角形と firstInstance の絵の digest が同じかを比べる
 	@mkdir -p $(dir $(WEBGPU_CHECK_PC_OUT))
 	@$(MAKE) --no-print-directory -C bench/webgpu_check run > $(WEBGPU_CHECK_PC_OUT) 2>&1 \
 	  || { echo "[webgpu-check-same] PC の門が NG ($(WEBGPU_CHECK_PC_OUT))"; exit 1; }
@@ -467,45 +444,9 @@ webgpu-check-same: webgpu-check-web
 	[ -z "$$bad" ] || { echo "[webgpu-check-same] 違う:$$bad"; exit 1; }; \
 	echo "[webgpu-check-same] OK"
 
-# シェーダープログラムのキャッシュの上限 (bench/shader_cache_soak)。隠しウィンドウで
-# 数値だけが違う Spec を 200 本投げ、LRU の追い出しでキャッシュが上限に留まるかを見る。
-# 頭打ちにならなければ exit 1。ShaderCache / buildProgram / ShaderGen を触ったら回す。
-shader-cache-soak:
-	@$(MAKE) -C bench/shader_cache_soak run
-
-# 3D の描き物 (Render.scene3d) の固定の部屋 (bench/scene3d)。still は CPU (SoftRaster) で静止画を
-# bench/scene3d/debug/room.png に描く (窓を開かない)。bench は実機の窓で同じ部屋を毎コマ描き、
-# 1 コマの p50 / p95 を出して閉じる (窓が開く)。cpu は CPU で温めてから描き、1 枚の時間の中央値を出す
-# (still の時間は描き出しのキャッシュが写すだけの回を含むので速さの比べに使わない)。
-# Render3d / SoftRaster3d / submitGpuItems を触ったら回す。
-.PHONY: scene3d-still scene3d-bench scene3d-cpu
-scene3d-still:
-	@$(MAKE) -C bench/scene3d still
-
-scene3d-bench:
-	@$(MAKE) -C bench/scene3d run
-
-scene3d-cpu:
-	@$(MAKE) -C bench/scene3d cpu-time
-
-# 2D の敵の群れ (bench/crowd2d)。近くの敵を探す処理を全部と比べる形と SpatialGrid で比べる。cpu は規則だけを回し
-# (窓を開かない・FlowField と 1 体ずつの経路探索の比べも出す)、bench は実機の窓で描いて 1 コマの時間まで出す。
-# SpatialGrid / FlowField / スプライトの描く道を触ったら回す。時間は機械と負荷で揺れるので門にはしない。
-.PHONY: crowd2d-cpu crowd2d-bench
-crowd2d-cpu:
-	@$(MAKE) -C bench/crowd2d cpu-time
-
-crowd2d-bench:
-	@$(MAKE) -C bench/crowd2d run
-
-# 2D のスプライトの数・絵の種類・blend の混在 (bench/sprite_stress)。つまみは bench/sprite_stress/Makefile の頭。
-.PHONY: sprite-stress-bench
-sprite-stress-bench:
-	@$(MAKE) -C bench/sprite_stress run
-
 # 3 つのベンチが共通に使う BenchRun.flix・BenchEnv.flix (bench/common) を各ベンチの src へ写す。直すのは bench/common の物。
 .PHONY: bench-common
-bench-common:
+bench-common: ### | bench/common の BenchRun.flix・BenchEnv.flix を 3 つのベンチの src へ写す
 	@for b in sprite_stress crowd2d scene3d; do cp bench/common/BenchRun.flix bench/common/BenchEnv.flix bench/$$b/src/; done
 	@echo "[bench-common] bench/common の 2 本を 3 つのベンチの src へ写した"
 
@@ -524,7 +465,7 @@ BENCH_WEB_WAIT   ?= $(or $(BENCH_WEB_WAIT_$(BENCH)),600)
 # WhyNot: webgpu_check の書き出しで ⑨ を流さない — ⑨ は App のコマ（?capture）を待つが、この頁はコマを回さず門を流して終わる。wasm を読めるかは門そのものが見る。
 BENCH_WEB_EXPORT_FLAGS_webgpu_check := --no-browser-check
 .PHONY: bench-web-export bench-web
-bench-web-export:
+bench-web-export: ### BENCH=<名前> | ベンチをブラウザ版へ書き出し、結果を出す script を差し込む（build/bench-web/<名前>）
 	@if [ ! -d "bench/$(BENCH)/web" ]; then echo "usage: make bench-web-export BENCH=<sprite_stress|crowd2d|scene3d|webgpu_check>"; exit 2; fi
 	@bin/fge export-web bench/$(BENCH) --out $(BENCH_WEB_DIR) $(BENCH_WEB_EXPORT_FLAGS_$(BENCH))
 	@cp bench/common/bench-overlay.js $(BENCH_WEB_DIR)/bench-overlay.js
@@ -532,7 +473,7 @@ bench-web-export:
 	@grep -q 'bench-overlay.js' $(BENCH_WEB_DIR)/index.html || { echo "[bench-web-export] index.html に </body> が無く、script を差し込めない"; exit 1; }
 	@echo "[bench-web-export] $(BENCH_WEB_DIR)（静的なサーバーで配って index.html?<つまみ> を開く）"
 
-bench-web:
+bench-web: ### BENCH=<名前> [ARGS='n=20000&tex=16'] [OUT=<file>] | ベンチ（sprite_stress / crowd2d / scene3d）をヘッドレスの Chrome で測って JSON を出す
 	@if [ "$(BENCH_WEB_EXPORT)" != off ]; then $(MAKE) --no-print-directory bench-web-export BENCH=$(BENCH); fi
 	@bin/fge web-bench $(BENCH_WEB_DIR) --query '$(ARGS)' --size $(BENCH_WEB_SIZE) --wait $(BENCH_WEB_WAIT) $(if $(OUT),--out $(OUT)) $(if $(JSONL),--jsonl $(JSONL))
 
@@ -541,12 +482,10 @@ bench-web:
 # WhyNot: engine_tools の作業場で流さない — 木を直して生成する関数の引数が変わると、入っている古い生成物と呼ぶ側
 # (SoftRaster3d) が食い違い、engine_tools 全体は組めない。engine と書き出す口 (SoftRaster3dLightGen) だけを束ねて流す。
 .PHONY: gen-light3d
-gen-light3d:
+gen-light3d: ### | 光の式の木（LightModel3d）から CPU の光の関数 engine_tools/src/gen/SoftRaster3dLight.flix と確かめ用の test/gen/SoftRaster3dLightCases.flix を作り直す
 	@dir="$(LAYER_ROOT)/light3d-gen"; rm -rf "$$dir/src"; mkdir -p "$$dir/src"; \
 	ln -sfn "$(CURDIR)/engine_tools/flix.toml" "$$dir/flix.toml"; \
-	(cd "$(ENGINE_DIR)/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-		mkdir -p "$$(dirname "$$dir/src/engine/$$f")"; ln -sfn "$(CURDIR)/$(ENGINE_DIR)/src/$$f" "$$dir/src/engine/$$f"; \
-	done; \
+	$(LINK_FLIX) "$(CURDIR)/$(ENGINE_DIR)/src" "$$dir/src/engine"; \
 	ln -sfn "$(CURDIR)/engine_tools/test/SoftRaster3dLightGen.flix" "$$dir/src/SoftRaster3dLightGen.flix"
 	cd "$(LAYER_ROOT)/light3d-gen" && "$(FLIX)" run --entrypoint SoftRaster3dLightGen.write
 
@@ -555,7 +494,7 @@ gen-light3d:
 # 先に make sync-engine-full。版を上げる段の終わりに回し、増えた物を移行メモで説明できるかを見る。
 BASELINE ?= bench/baseline/0.76.0
 .PHONY: check-external
-check-external:
+check-external: ### [BASELINE=<dir>] | 外のゲームの写しを今の engine で型検査し、基準（bench/baseline/）から増えたエラーだけ出す
 	@mkdir -p build/check-external
 	@EXTERNAL_UPGRADES=$(BASELINE)/upgrade bin/check-external.sh build/check-external/now.tsv && \
 		bin/check-external.sh --compare $(BASELINE)/external.tsv build/check-external/now.tsv
@@ -568,7 +507,7 @@ check-external:
 # WhyNot: 描き出しの基準を BASELINE と分ける — BASELINE は check-external と upgrade の基準で、3D の絵だけを撮り直す版で動かすと外のゲームの基準まで替わる。
 PARITY_BASELINE ?= bench/baseline/0.79.0
 .PHONY: baseline-check
-baseline-check:
+baseline-check: ### [GALLERY=1] [ONLY_2D=1] [ONLY_KNOWN=1] [GALLERY_BASE=<dir>] [COMPARE_MAX=<dir>] | gl-parity の行と絵・3D の部屋の CPU の絵（とテンプレの gallery）を基準（PARITY_BASELINE）と比べる
 	@mkdir -p build/baseline
 	@bin/check-fpkg-fresh.sh
 	@# WhyNot: gl-parity が exit 1 でも止めない — 差の数が許容を超えた行も、基準との違いとして下で並べて見せる。組めずに止まった時は行が無いので下が落とす。
@@ -583,13 +522,13 @@ baseline-check:
 # 名簿に載る・命令口が /help・/halt・/step・/resume・/perf に答える・flow の記録ができる・閉じたら名簿から消える、を確かめる。
 # 先に make sync-engine-full。App のループや開発の道具を触ったら回す。
 .PHONY: smoke-devtools
-smoke-devtools:
+smoke-devtools: ### [SMOKE_TEMPLATE=<テンプレ>] | 隠しウィンドウの DEBUG 起動で、名簿・命令（/help・/halt・/step・/resume・/perf）・flow の記録・閉じた後の名簿を確かめる
 	@bin/smoke-devtools.sh $(SMOKE_TEMPLATE)
 
 # 決定性の門 (bin/determinism.sh): テンプレを隠しウィンドウの DEBUG で起こして台本 (testdata/determinism/*.flow) を流し、
 # 書いた記録を画面なしで再生して指紋と World 全体の要約が同じかを見る。窓を開くので CI には載せない。先に make sync-engine-full。
 .PHONY: determinism
-determinism:
+determinism: ### [TARGETS="<フォルダ>:<シナリオ> …"] | 隠しウィンドウのテンプレにシナリオを流して記録を書き、画面なしの再生が同じ World になるか（リリースの前）
 	@bin/determinism.sh $(TARGETS)
 
 # 実機の GL の絵をテンプレの場面ごとに撮る (bin/gl-capture.sh)。隠しウィンドウ・FLIX_GE_FIXED_DT で dt を固定し、
@@ -597,7 +536,7 @@ determinism:
 # 撮るのはテンプレと bench の lib の engine なので、先に make sync-engine-full (engine のソースが fpkg より新しければ止まる)。
 # GL の絵は機械とドライバで変わるので、比べるのは同じ機械で撮った物どうし。render_gl を触ったら check を回す。
 .PHONY: gl-capture gl-capture-check
-gl-capture:
+gl-capture: ### OUT=<dir> | テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える
 	@if [ -z "$(OUT)" ]; then echo "usage: make gl-capture OUT=<出力のフォルダ>"; exit 2; fi
 	@bin/gl-capture.sh "$(OUT)"
 
@@ -606,7 +545,7 @@ gl-capture:
 GL_CAPTURE_BASELINE ?= bench/baseline/0.96.0
 GL_CAPTURE_MACHINE ?= $(shell sysctl -n machdep.cpu.brand_string 2>/dev/null | tr 'A-Z ' 'a-z-')
 GL_CAPTURE_BASELINE_FILE ?= $(GL_CAPTURE_BASELINE)/gl-capture-$(GL_CAPTURE_MACHINE).sha256
-gl-capture-check:
+gl-capture-check: ### [BASE=off] [SKIP=<フォルダ名>] | 同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる（違えば exit 1）
 	@rm -rf build/gl-capture/a build/gl-capture/b
 	@bin/gl-capture.sh build/gl-capture/a && bin/gl-capture.sh build/gl-capture/b && \
 		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b $(if $(SKIP),--skip $(SKIP))
@@ -616,41 +555,11 @@ gl-capture-check:
 
 # この機械の基準を今の絵で撮る（撮った絵は 2 回撮りで一致した物だけ）。
 .PHONY: gl-capture-baseline
-gl-capture-baseline:
+gl-capture-baseline: ### | この機械の gl-capture の基準を今の絵で撮る（bench/baseline/<版>/gl-capture-<機械>.sha256）
 	@$(MAKE) --no-print-directory gl-capture-check BASE=off
 	@mkdir -p $(GL_CAPTURE_BASELINE)
 	@cp build/gl-capture/a/SHA256SUMS $(GL_CAPTURE_BASELINE_FILE)
 	@echo "[gl-capture] 基準を書いた: $(GL_CAPTURE_BASELINE_FILE)"
-
-# 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
-# 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。
-# make status が「最後にいつ・どれが緑/赤だったか」をこの記録から読む。
-test-%:
-	@mkdir -p .test-logs; \
-	if [ -d "templates/$*" ]; then dir="templates/$*"; else dir="$*"; fi; \
-	name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
-	rm -f ".test-logs/$$name.fail"; \
-	if (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
-		tail -5 ".test-logs/$$name.log"; \
-	else \
-		touch ".test-logs/$$name.fail"; tail -40 ".test-logs/$$name.log"; exit 1; \
-	fi
-
-# ── ゲート: ドット絵の意味色キー ────────────────────────────
-# legend の名前が Studio から実色に解けるかを検査する (解けないと編集画面が仮色で塗り、
-# 実機と配色が食い違う)。テンプレを足す・sprite Doc を触ったら通す。
-lint-palette:
-	@bin/fge palette
-
-# ── ゲート: 音の名前 ────────────────────────────────────────
-# SfxRender の名・project.json の sounds・コード内リテラルの 3 か所で音名がそろっているか検査する
-# (ずれてもエラーは出ず、音だけ鳴らない・別の音が鳴る)。音を足した・改名したら通す。
-lint-audio:
-	@bin/fge audio
-
-.PHONY: lint-jargon
-lint-jargon:
-	@bin/fge jargon --all
 
 # ── Go 版の検査 (画素・波形を扱う層) ────────────────────────
 # 置き場は go/。標準ライブラリだけで書いてあり、go.sum は空のままが正しい。
@@ -667,8 +576,9 @@ GO_LDFLAGS := -s -w
 # 「組み立てる物」と見て実在を問わない — 直に書くと毎回「実在しません」で赤くなる。
 GO_DIST := bin/dist
 
+##@ Go の道具
 .PHONY: go-build
-go-build:
+go-build: ## | go/ を bin/fge-go と、配る先ごとの 5 種にビルドする（go を直したら）
 	@cd go && CGO_ENABLED=0 go build -ldflags="$(GO_LDFLAGS)" -o ../bin/fge-go .
 	@for pair in $(GO_OSARCH); do \
 		os=$${pair%%/*}; arch=$${pair##*/}; \
@@ -682,72 +592,80 @@ go-build:
 # WhyNot: = で置く（:= にしない）のは、go env を呼ぶのをこの口を使う時だけにするため。
 GO_HOST = $(shell cd go && go env GOOS)/$(shell cd go && go env GOARCH)
 .PHONY: go-build-host
-go-build-host:
+go-build-host: ### | 手元の OS/CPU の 1 本だけビルドする（sync-fge-go が配るのはこの 1 本）
 	@$(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
 
 .PHONY: go-test
-go-test:
+go-test: ### | go/ のテスト（CIEDE2000 の参照 34 組・外部依存ゼロの検査を含む）
 	@cd go && CGO_ENABLED=0 go test ./...
-
-# refactor の testdata の索引は道具と一緒に flixlint にある（flixlint の make regen-testdata）。
-.PHONY: refactor-testdata
-refactor-testdata:
-	@echo "refactor の本体は flixlint の go/refactor。testdata の索引は flixlint の中で make regen-testdata"; exit 2
 
 # arm64 の Mac で x86-64 の結果を確かめる（Rosetta）。arm64 は a*b+c を FMA にまとめることがあり、
 # 包み忘れると境目の画素だけが Mac と Windows でずれる（px の積は float64(…) か dot で包む）。
 .PHONY: go-test-amd64
-go-test-amd64:
+go-test-amd64: ### | arm64 の Mac で x86-64 の結果を確かめる（Rosetta。px の FMA のずれ）
 	@cd go && CGO_ENABLED=0 GOARCH=amd64 go test ./internal/px ./internal/pxlib ./internal/anim
 
-# ── ゲート: bug! を置く場所 ──────────────────────────────────
-# 読み込みの途中で bug! すると、既定値で続けてよいかを呼ぶ側が選べない
-# (docs/error-handling.md の決まり 2)。*OrBug という名前の関数の中だけを許す。
-# 残すと決めた bug! は bin/lint-rules/fallback.json の exempt に理由付きで載っている。
-.PHONY: lint-fallback
-lint-fallback:
-	@bin/fge fallback --self-test >/dev/null
-	@bin/fge fallback --all
+##@ lint
+# ── lint ──────────────────────────────────────────────────
+# 中身はどれも bin/fge の検査で、規約は bin/lint-rules/<名前>.json。使い方は make lint ONLY=<名前>[,<名前>…]。
+# 古い名前（make lint-view など）も下の表から 1 つずつターゲットを作って残す（AGENTS.md・スキル・フック・Studio が名前で呼ぶ）。
+#   palette        ドット絵の legend の意味色キーが Studio から実色に解けるか（解けないと編集画面が仮色で塗る）
+#   audio          音名が SfxRender の名・project.json・コードの 3 か所でそろっているか（ずれても音が鳴らないだけで気づけない）
+#   jargon         コメント・文章に独自の比喩語が混ざっていないか（語は bin/lint-rules/jargon.json の words）
+#   fallback       読み込みの途中で bug! していないか（許すのは *OrBug の中だけ。docs/error-handling.md の決まり 2）
+#   f32            engine の pub 面に Float32 が出ていないか（Float32 は GL / OpenAL / STB の境界の内側だけ）
+#   z-table        z を数で決める所がパッケージに 1 か所か（散ると同じ数を取り合う。docs/z-bands.md）
+#   forbid         古い書き方を 1 行の正規表現で止め、代わりの物を出す（bin/lint-rules/forbid.json）
+#   max-lines      engine の src の .flix の行数の上限（超えた物は max-lines.json の exempt）
+#   value-discard  値を let _ = で捨てていないか（純粋な式だと Flix が呼び出しごと消す。docs/error-handling.md の決まり 3）
+#   quadratic      fold の中で蓄積を作り直す二乗の形（docs/performance.md「二乗を書かない」）
+#   hoist          ループの外に置いた式をラムダの中へ Flix が書き写す形（docs/performance.md）
+#   record-wrap    World が直接持つ大きな record を enum で包んでいるか（docs/flix-conventions.md「型の設計」）
+#   state-shape    状態の持ち方（Bool の欄の数・Option[Bool]・名指しの enum への case _・View の効果）
+#   doc-refs       docs/・agents-pack の文書と .flix のコメントが指す Mod.name・パス・path:行 が実在するか
+#   view           View が矩形と円だけになっていないか（絵の下限）
+#   images         git に入れる絵が増えすぎていないか（描き出した絵が紛れ込んでいないか）
+#   sprite         ドット絵の画素の並び（浮き・塊の分裂・階段・細長さ・色数）
+#   anim           コマ間の飛び・体積・接地と 4 方向のそろい
+#   ui             ui.json の text の折り返し宣言漏れ（固定幅の枠 + wrap/fit なし。実寸は測らない）
+#   loop           ループ GIF の継ぎ目（最終コマ→0 コマ）。描き出し済みのコマが前提なので手で回す
+#   huge-methods   JVM が JIT しない大きさ（8,000 バイト超）の関数を jar から数える（JARS=<jar…>）
+#
+# 名前ごとの bin/fge のサブコマンドと引数。LINT_SELF_TEST の物は先に --self-test を通す（自己テストが壊れた lint には門番をさせない）。
+LINT_CMD_palette       := palette
+LINT_CMD_audio         := audio
+LINT_CMD_jargon        := jargon --all
+LINT_CMD_fallback      := fallback --all
+LINT_CMD_f32           := f32
+LINT_CMD_z-table       := z-table --all
+LINT_CMD_forbid        := forbid --all
+LINT_CMD_max-lines     := max-lines --all
+LINT_CMD_value-discard := value-discard --all
+LINT_CMD_quadratic     := quadratic --all
+LINT_CMD_hoist         := hoist --all
+LINT_CMD_record-wrap   := record-wrap --all
+LINT_CMD_state-shape   := state-shape --all
+LINT_CMD_doc-refs      := doc-refs
+LINT_CMD_view          := view
+LINT_CMD_images        := images
+LINT_CMD_sprite        := sprite
+LINT_CMD_anim          := anim
+LINT_CMD_ui            := ui-overflow
+LINT_CMD_loop          := loop
+LINT_SELF_TEST := fallback f32 sprite anim ui loop
+LINT_TABLE := $(patsubst LINT_CMD_%,%,$(filter LINT_CMD_%,$(.VARIABLES)))
+LINT_NAMES := $(sort $(LINT_TABLE) huge-methods)
 
-# ── ゲート: pub 面に Float32 を出さない ───────────────────────
-# ゲームを書く側は Float64 と Int32 だけで済むのが決まり。Float32 は
-# GL / OpenAL / STB の境界の内側だけ (plans/f32-boundary.md)。
-# 残すと決めた Float32 は bin/lint-rules/f32.json の exempt に理由付きで載っている。
-.PHONY: lint-f32
-lint-f32:
-	@bin/fge f32 --self-test >/dev/null
-	@bin/fge f32
+define LINT_RULE
+.PHONY: lint-$1
+lint-$1:
+$(if $(filter $1,$(LINT_SELF_TEST)),	@bin/fge $(firstword $(LINT_CMD_$1)) --self-test >/dev/null)
+	@bin/fge $(LINT_CMD_$1)
+endef
+$(foreach n,$(LINT_TABLE),$(eval $(call LINT_RULE,$n)))
 
-# ── ゲート: z の数の表は 1 か所 ──────────────────────────────
-# z を数で決める所が 1 つのパッケージで複数のファイルに散ると、別のファイルどうしで
-# 同じ数を取り合い、どちらが手前かが描き順まかせになる (docs/z-bands.md)。
-# 表のファイルの中でも、葉の中の z (0..31) の外の数は止まる。
-.PHONY: lint-z-table
-lint-z-table:
-	@bin/fge z-table --all
-
-# ── lint をまとめて流す ─────────────────────────────────────
-# engine の作業場の lint のうち、今 0 件の物を 1 回で流す（コミット時のフックは触ったファイルだけを見るので、全量はここで見る）。
-# WhyNot: lint-quadratic・lint-fallback・lint-jargon をまだ入れない — 全量では前からの当たりが残っていて、ここが毎回赤になる。
-# WhyNot: 依存に並べず順に make を呼ぶ — make -j で並べると出力が混ざり、どの lint が落ちたか読めない。
-# WhyNot: 最初に落ちた所で止めない — 後ろの lint の当たりも 1 回で見たい。
-.PHONY: lint
-lint:
-	@failed=""; \
-	for t in lint-forbid lint-max-lines lint-value-discard lint-hoist lint-record-wrap lint-state-shape lint-doc-refs lint-z-table lint-f32; do \
-		$(MAKE) --no-print-directory $$t || failed="$$failed $$t"; \
-	done; \
-	if [ -n "$$failed" ]; then echo "[lint] 落ちた物:$$failed"; exit 1; fi; \
-	echo "[lint] OK"
-
-# ── ゲート: 古い書き方 (1 行の正規表現 + 代わりの物) ─────────────
-.PHONY: lint-forbid
-lint-forbid:
-	@bin/fge forbid --all
-
-# ── 検査: JVM が JIT しない大きさの関数 ───────────────────────
 # bytecode が 8,000 バイトを超えるメソッドはインタプリタのまま回る (docs/performance.md の 13 節)。超えていて良い物は huge-methods.json の exempt。
-# WhyNot: make lint に束ねない — 見るのは組んだ jar で、ソースを直しても jar を作り直すまで結果が変わらない。
+# WhyNot: 既定の束に入れない — 見るのは組んだ jar で、ソースを直しても jar を作り直すまで結果が変わらない。
 # WhyNot: jar をここで作らない — Flix は main から届く関数だけを jar に入れるので、どの jar を見るかは測る場面で決まる。ベンチを流した後に打つ。
 HUGE_METHODS_JARS ?= $(wildcard bench/sprite_stress/artifact/*.jar bench/crowd2d/artifact/*.jar bench/scene3d/build/headless/headless.jar)
 .PHONY: lint-huge-methods
@@ -756,66 +674,36 @@ lint-huge-methods:
 	if [ -z "$$jars" ]; then echo "[lint-huge-methods] 見る jar がありません。ベンチを 1 回流すか JARS=<jar> で渡してください"; exit 2; fi; \
 	bin/fge huge-methods $$jars
 
-# ── ゲート: engine のソースの 1 ファイルの行数 ─────────────────
-# engine の 4 パッケージの src の .flix が上限 (bin/lint-rules/max-lines.json の maxLines) を超えていないか。
-# 超えている物は同じ JSON の exempt の一覧に載せて通す。分け終えたら --all が「もう鳴らない」と言う。
-.PHONY: lint-max-lines
-lint-max-lines:
-	@bin/fge max-lines --all
+# ONLY が無い時は、今 0 件の物を 1 回で流す（コミット時のフックは触ったファイルだけを見るので、全量はここで見る）。
+# WhyNot: quadratic・fallback・jargon を既定の束にまだ入れない — 全量では前からの当たりが残っていて、ここが毎回赤になる。
+# WhyNot: 依存に並べず順に make を呼ぶ — make -j で並べると出力が混ざり、どの lint が落ちたか読めない。
+# WhyNot: 最初に落ちた所で止めない — 後ろの lint の当たりも 1 回で見たい。
+LINT_DEFAULT := forbid max-lines value-discard hoist record-wrap state-shape doc-refs z-table f32
+comma := ,
+LINT_RUN := $(if $(ONLY),$(subst $(comma), ,$(ONLY)),$(LINT_DEFAULT))
+.PHONY: lint
+lint: ## [ONLY=<名前>,…] | 検査をまとめて流す（無ければ今 0 件の 9 本）。名前は make help-all の最後
+	@$(if $(filter-out $(LINT_NAMES),$(LINT_RUN)),$(error [lint] 知らない名前: $(filter-out $(LINT_NAMES),$(LINT_RUN))（名前: $(LINT_NAMES)）))failed=""; \
+	for t in $(addprefix lint-,$(LINT_RUN)); do \
+		$(MAKE) --no-print-directory $$t || failed="$$failed $$t"; \
+	done; \
+	if [ -n "$$failed" ]; then echo "[lint] 落ちた物:$$failed"; exit 1; fi; \
+	echo "[lint] OK"
 
-# ── ゲート: 値を let _ = で捨てない ──────────────────────────
-# Flix は純粋な式の値を let _ = で捨てると式ごと消す。知らせ (Log.warn) と bug! が黙って消える
-# (docs/error-handling.md の決まり 3)。効果のある式は discard、知らせは Log.warnThen で書く。
-.PHONY: lint-value-discard
-lint-value-discard:
-	@bin/fge value-discard --all
-
-# ── ゲート: fold の中で蓄積を作り直さない ─────────────────
-# List.foldLeft の中で蓄積を List.append の第 1 引数に置く・文字列の蓄積に 1 回ごとに足す形は、
-# 要素数 (文字数) の二乗になる (docs/performance.md「二乗を書かない」)。コミット時は足した行だけを見る。
-.PHONY: lint-quadratic
-lint-quadratic:
-	@bin/fge quadratic --all
-
-# ── ゲート: ループの外に置いた式がループへ戻る形 ─────────────────
-# Flix 0.78 は純粋な let がラムダの中で 1 回だけ使われると式をラムダへ書き写す (@DontInline でも止まらない)。
-# 関数を返す def (エンジンの塗りの道) と、shadeAll / Array.forEachWithIndex のラムダが使う let を見る
-# (docs/performance.md「ループの外に置いた式がループへ戻る」)。
-.PHONY: lint-hoist
-lint-hoist:
-	@bin/fge hoist --all
-
-# ── ゲート: World が持つ大きな record は enum で包む ─────────────
-# record の型エイリアスは使われるたびに中身のまま展開されるので、World の欄に置くと
-# World を取る全 def で型の木が大きくなり flix check が伸びる (docs/flix-conventions.md「型の設計」)。
-.PHONY: lint-record-wrap
-lint-record-wrap:
-	@bin/fge record-wrap --all
-
-# ── ゲート: 状態の持ち方 ───────────────────────────────────
-# record の Bool の欄の数・Option[Bool]・名指しした enum への case _・View の効果。
-# ゲームの設定は bin/lint-rules/state-shape.local.json。--all は緩い歯止めと古い除外も止める。
-.PHONY: lint-state-shape
-lint-state-shape:
-	@bin/fge state-shape --all
-
-# 文書（docs/**/*.md・agents-pack）の ` ` と表と、.flix のコメントが指す Mod.name・パス・path:行 が実在するか。
-# 規約は bin/lint-rules/doc-refs.json・.flix の物の上限は lint/doc-refs/flix.json・呼び手は lint/doc-refs/callers.json。コミットでは触った .md と .flix を precommit が見る。
-.PHONY: lint-doc-refs
-lint-doc-refs:
-	@bin/fge doc-refs
-
+##@ 起動画面の素材
 # ── 起動画面の素材 ────────────────────────────────────────
 # 組み込みフォント (ASCII の 1bit ビットマップ) とロゴを engine/src/render2d/BootFontData.flix へ
 # 作り直す。fpkg は .flix しか運べないので、生成物はコミットする。
 # 起動画面の文言に新しい字を足したとき・ロゴを差し替えたときだけ回す。
 # PREVIEW=<dir> を付けると、作った結果を目視用の PNG でも書き出す。
-boot-font:
+.PHONY: boot-font
+boot-font: ### [PREVIEW=<dir>] | 組み込みフォントとロゴを engine/src/render2d/BootFontData.flix へ作り直す
 	@java bin/BootFontGen.java $(if $(PREVIEW),--preview $(PREVIEW))
 
 # フォントの生成結果のキャッシュを捨てる (次の起動は作り直しになる)。
 # 作り方を変えた・容量が気になる・作り直しを確かめたいときに。
-clean-font-cache:
+.PHONY: clean-font-cache
+clean-font-cache: ### | フォントの生成結果のキャッシュを捨てる（次の起動は作り直し）
 	@rm -rf "$${FLIX_GE_CACHE_DIR:-$$HOME/.cache/flix_game_engine/font}"
 	@echo "[clean-font-cache] キャッシュを捨てました"
 
@@ -851,29 +739,32 @@ GL_JAR_DEPS := build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar build/gl-jar/deps/lwj
 GL_JAR_DEPS += build/gl-jar/deps/webgpu-jni-$(GL_JAR_JWEBGPU).jar \
 	$(foreach m,api-core loader-core runtime-jni,build/gl-jar/deps/$(m)-$(GL_JAR_JPARSER).jar)
 JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
-JAR_TOOL := $(dir $(JAVAC))jar
+# JDK の道具を呼ぶ形（$(call JDK,javac) / java / jar）。PATH に javac が無い時は devbox の JDK の隣の物。
+JDK = $(if $(filter javac,$(JAVAC)),$1,"$(dir $(JAVAC))$1")
+# Maven Central から jar を 1 本取る（引数は maven2/ より後ろのパス）。
+define MAVEN_JAR
+@mkdir -p $(dir $@)
+curl -fsSL -o $@ https://repo1.maven.org/maven2/$1
+endef
 GL_JAR_USERS = $(LAYER_ROOT)/$(RENDER_GL_DIR) . $(ENGINE_FULL_DIR) \
 	$(shell for d in templates/*/ bench/*/; do grep -qs 'ababup1192/flix_game_engine"' "$$d/flix.toml" && echo "$${d%/}"; done)
 
 build/gl-jar/deps/lwjgl-%-$(GL_JAR_LWJGL).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl-$*/$(GL_JAR_LWJGL)/lwjgl-$*-$(GL_JAR_LWJGL).jar
+	$(call MAVEN_JAR,org/lwjgl/lwjgl-$*/$(GL_JAR_LWJGL)/lwjgl-$*-$(GL_JAR_LWJGL).jar)
 
 build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar
+	$(call MAVEN_JAR,org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar)
 
 build/gl-jar/deps/webgpu-jni-$(GL_JAR_JWEBGPU).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/com/github/xpenatan/jWebGPU/webgpu-jni/$(GL_JAR_JWEBGPU)/webgpu-jni-$(GL_JAR_JWEBGPU).jar
+	$(call MAVEN_JAR,com/github/xpenatan/jWebGPU/webgpu-jni/$(GL_JAR_JWEBGPU)/webgpu-jni-$(GL_JAR_JWEBGPU).jar)
 
 build/gl-jar/deps/%-$(GL_JAR_JPARSER).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/com/github/xpenatan/jParser/$*/$(GL_JAR_JPARSER)/$*-$(GL_JAR_JPARSER).jar
+	$(call MAVEN_JAR,com/github/xpenatan/jParser/$*/$(GL_JAR_JPARSER)/$*-$(GL_JAR_JPARSER).jar)
 
+##@ GL の層の jar
 .PHONY: gl-jar gl-jar-hash-ok gl-jar-pin gl-jar-pin-check gl-jar-publish
 # WhyNot: ハッシュが空のまま進めない — fge-gl-.jar という名前で組み、pin がそれを書き込む。
-gl-jar-hash-ok:
+gl-jar-hash-ok: ### | GL の層の jar のハッシュが取れるか（gl-jar の前提）
 	@test -n "$(GL_JAR_HASH)" || { echo "[gl-jar] $(RENDER_GL_DIR)/java の *.java が見つからないか shasum が無く、ハッシュが取れません"; exit 1; }
 
 # WhyNot: --date を外さない — 外すと組むたびに中の時刻が変わり、同じソースでも別のバイトになる。
@@ -883,31 +774,31 @@ $(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_CHECK) $(GL_JAR_DEPS) | gl-jar-hash-ok
 	 bad=$$(grep -H 'jWebGPU:' $(GL_JAR_TOMLS) bench/webgpu_check/flix.toml | grep -v "= *\"$(GL_JAR_JWEBGPU)\""); \
 	 [ "$$v" = "$(GL_JAR_JWEBGPU)" ] && [ -z "$$bad" ] || { echo "[gl-jar] jWebGPU の版がそろっていません: Java=$$v Makefile=$(GL_JAR_JWEBGPU) $$bad"; exit 1; }
 	@rm -rf build/gl-jar/classes && mkdir -p build/gl-jar/classes
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/classes \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/classes \
 		-cp "$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(GL_JAR_SRC)
 	@# 定数の打ち間違いは絵の比べでは場所が分かりにくいので、組んだ所で LWJGL の定数と突き合わせる。
 	@rm -rf build/gl-jar/check && mkdir -p build/gl-jar/check
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/check \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/check \
 		-cp "build/gl-jar/classes:$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(RENDER_GL_DIR)/java-check/GlConstantsCheck.java
-	$(if $(filter javac,$(JAVAC)),java,"$(dir $(JAVAC))java") -cp "build/gl-jar/check:build/gl-jar/classes" GlConstantsCheck
-	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/gl-jar/classes .
+	$(call JDK,java) -cp "build/gl-jar/check:build/gl-jar/classes" GlConstantsCheck
+	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/gl-jar/classes .
 
 # WhyNot: 前の名前の jar を lib/external から消してから置く — 残すと中身の違う同じクラスが 2 つ classpath に載り、どちらが効くか読めない。
-gl-jar: $(GL_JAR)
+gl-jar: $(GL_JAR) ### | GL の層の jar（render_gl/java）を組み、使う所の lib/external へ置く
 	@find build/gl-jar -maxdepth 1 -name 'fge-gl-*.jar' ! -name '$(GL_JAR_NAME)' -exec rm -f {} +
 	@for d in $(GL_JAR_USERS); do mkdir -p "$$d/lib/external"; rm -f "$$d/lib/external"/fge-gl-*.jar; cp -p $(GL_JAR) "$$d/lib/external/$(GL_JAR_NAME)"; done
 	@echo "[gl-jar] $(GL_JAR) を $(words $(GL_JAR_USERS)) か所の lib/external へ置いた"
 	@$(MAKE) --no-print-directory -s gl-jar-pin-check >/dev/null 2>&1 \
 	  || echo "[gl-jar] flix.toml の jar の行が $(GL_JAR_NAME) を指していません。コミットの前に make gl-jar-pin"
 
-gl-jar-pin: gl-jar-hash-ok
+gl-jar-pin: gl-jar-hash-ok ### | render_gl/java を直した後、3 つの flix.toml の GL の層の jar の行を置き場 fge-gl-<ハッシュ> へ向ける
 	@for f in $(GL_JAR_TOMLS); do \
 		grep -q '^"fge-gl-[^"]*\.jar" *= *"url:' "$$f" || { echo "[gl-jar-pin] $$f に fge-gl の行がありません"; exit 1; }; \
 		GL_JAR_PIN_LINE='$(GL_JAR_PIN_LINE)' perl -pi -e 's|^"fge-gl-[^"]*\.jar" *= *"url:[^"]*"|$$ENV{GL_JAR_PIN_LINE}|' "$$f"; \
 	done
 	@echo "[gl-jar-pin] $(words $(GL_JAR_TOMLS)) つの flix.toml を $(GL_JAR_TAG) へ向けた"
 
-gl-jar-pin-check: gl-jar-hash-ok
+gl-jar-pin-check: gl-jar-hash-ok ### | flix.toml の jar の行がいまの render_gl/java を指しているか（release と precommit の門）
 	@bad=; for f in $(GL_JAR_TOMLS); do grep -qxF '$(GL_JAR_PIN_LINE)' "$$f" || bad="$$bad $$f"; done; \
 	 [ -z "$$bad" ] || { echo "[gl-jar-pin-check] render_gl/java の中身 ($(GL_JAR_TAG)) と違う jar を指しています:$$bad"; \
 	   echo "  make gl-jar-pin で書き換え、make gl-jar-publish で置き場を作ってください"; exit 1; }
@@ -918,7 +809,7 @@ gl-jar-pin-check: gl-jar-hash-ok
 # WhyNot: create が落ちても見直す — gl-jar.yml と release-publish が同時に作りに来ると片方が already exists で落ち、
 # 版の公開が途中で止まる。
 GL_JAR_TARGET ?= $(RELEASE_SHA)
-gl-jar-publish: gl-jar-pin-check $(GL_JAR)
+gl-jar-publish: gl-jar-pin-check $(GL_JAR) ### | 置き場の Release fge-gl-<ハッシュ> を作って jar を載せる（あれば何もしない。main への push で gl-jar.yml も流す）
 	@has_jar() { gh release view $(GL_JAR_TAG) --repo $(GL_JAR_REPO) --json assets -q '.assets[].name' 2>/dev/null | grep -qxF '$(GL_JAR_NAME)'; }; \
 	 if has_jar; then echo "[gl-jar-publish] $(GL_JAR_TAG) に $(GL_JAR_NAME) はもうあります"; exit 0; fi; \
 	 if gh release view $(GL_JAR_TAG) --repo $(GL_JAR_REPO) >/dev/null 2>&1; then \
@@ -936,29 +827,23 @@ gl-jar-publish: gl-jar-pin-check $(GL_JAR)
 # WhyNot: レシピで $(MAKE) を呼ばない — precommit は make -q で口の有無を見るが、$(MAKE) の行は -q でも走り、
 # pin のずれが「口が壊れている」と読まれて門が黙って開く。
 .PHONY: precommit-local
-precommit-local: gl-jar-pin-check
+precommit-local: gl-jar-pin-check ### | bin/fge precommit が流すエンジンの門（gl-jar-pin-check）
 
+##@ 配る（engine_full・ブラウザ版）
 # WhyNot: 配り先の packages.lock は配るたびに消す。fpkg は手元の作り直しで毎回中身が変わるので、
 # 残すと Flix 0.77 以降は「packages.lock の記録と違う」で check ごと止まる。
-sync: clean-locks sync-layers sync-engine-full sync-root-src
+.PHONY: sync
+sync: clean-locks sync-layers sync-engine-full sync-root-src ## | 層の作業場を張り、engine_full を build-pkg して templates / bench に配る
 
 # engine_full は engine / render_gl / engine_world / engine_tools のソースを1つに集めた
 # 自己完結パッケージ (依存ゼロ)。ルート src/ と同じくファイル単位の symlink で4パッケージの
 # .flix を engine_full/src/ に集約してから build-pkg し、最後に full を使う templates / bench へ配る。
 # ディレクトリ symlink は Flix のソース走査に追従されないため、必ずファイル単位で張る。
 # エンジンに .flix を追加/削除/改名したら再実行して集約を更新する (sync-root-src と同じ運用)。
-sync-engine-full: gl-jar
+.PHONY: sync-engine-full
+sync-engine-full: gl-jar ## | engine_full だけ src を集めて型検査・build-pkg・配る（templates / bench へ）
 	@for pkg in $(ROOT_SRC_PKGS); do rm -rf "$(ENGINE_FULL_DIR)/src/$$pkg"; done; \
-	for pkg in $(ROOT_SRC_PKGS); do \
-		(cd "$$pkg/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-			d=$$(dirname "$$f"); \
-			if [ "$$d" = "." ]; then dir="$(ENGINE_FULL_DIR)/src/$$pkg"; else dir="$(ENGINE_FULL_DIR)/src/$$pkg/$$d"; fi; \
-			mkdir -p "$$dir"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			up=$$(printf '../%.0s' $$(seq 0 "$$depth")); \
-			ln -sfn "$$up$$pkg/src/$$f" "$$dir/$$(basename "$$f")"; \
-		done; \
-	done; \
+	for pkg in $(ROOT_SRC_PKGS); do $(LINK_FLIX) --relative "$$pkg/src" "$(ENGINE_FULL_DIR)/src/$$pkg" || exit 1; done; \
 	find $(ENGINE_FULL_DIR)/src -type l | awk 'END { print "[sync-engine-full] " NR " source symlink(s)" }'
 	# 固める前に型検査する。build-pkg はソースを zip にするだけで、コンパイルが通るかを
 	# 見ない。ここで検査しないと、壊れたエンジンが fpkg → Studio 同梱 → /Applications まで
@@ -996,14 +881,13 @@ WEB_JAR_SRC      := $(shell find $(WEB_DIR)/java -name '*.java' 2>/dev/null)
 WEB_JAR_DEPS     := $(foreach m,jso jso-apis interop,build/web-jar/deps/teavm-$(m)-$(TEAVM_VERSION).jar)
 
 build/web-jar/deps/teavm-%-$(TEAVM_VERSION).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/teavm/teavm-$*/$(TEAVM_VERSION)/teavm-$*-$(TEAVM_VERSION).jar
+	$(call MAVEN_JAR,org/teavm/teavm-$*/$(TEAVM_VERSION)/teavm-$*-$(TEAVM_VERSION).jar)
 
 $(WEB_JAR): $(WEB_JAR_SRC) $(WEB_JAR_DEPS) $(GL_JAR)
 	@rm -rf build/web-jar/classes && mkdir -p build/web-jar/classes
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/classes \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/web-jar/classes \
 		-cp "$(GL_JAR):$(subst $(eval) ,:,$(WEB_JAR_DEPS))" $(WEB_JAR_SRC)
-	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/classes .
+	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/classes .
 
 # TeaVM の穴の手当て（classlib に無い類の shim と、jar のバイトコードの付け替え Rewrite）と、TeaVM を呼ぶ BuildWasm。書き出しの道具が TeaVM の classpath の頭に置く。
 WEB_TOOLS_JAR      := build/web-jar/fge-web-tools-$(VERSION).jar
@@ -1013,22 +897,19 @@ WEB_TOOLS_DEPS     := $(foreach m,relocated-libs-asm core tooling,build/web-jar/
 # WhyNot: fge.web.EmbeddedCodec を tools の jar へ写さない — 同じ類が TeaVM の classpath に 2 つ載り、どちらが有効になるか読めない。Embed は fge-web.jar を classpath に足して使う。
 $(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS) $(WEB_JAR)
 	@rm -rf build/web-jar/tools-classes && mkdir -p build/web-jar/tools-classes
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/tools-classes \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/web-jar/tools-classes \
 		-cp "$(subst $(eval) ,:,$(WEB_TOOLS_DEPS)):$(WEB_JAR)" $(WEB_TOOLS_SRC)
-	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
+	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
 
 .PHONY: web-jar sync-engine-full-web
-web-jar: $(WEB_JAR) $(WEB_TOOLS_JAR)
+web-jar: $(WEB_JAR) $(WEB_TOOLS_JAR) ### | ブラウザ版の束が使う fge-web と fge-web-tools の jar を組む
 
-sync-engine-full-web: gl-jar web-jar
+sync-engine-full-web: gl-jar web-jar ### | ブラウザ版の束（engine_full + engine_web）を build/engine_full_web に組む（bin/fge export-web が使う）
 	@rm -rf $(WEB_FULL_DIR)/src && mkdir -p $(WEB_FULL_DIR)/src $(WEB_FULL_DIR)/lib/external
 	@# engine_full にだけある物（src/full: VideoOut・GpuShot）も入れる。ゲームの src がそれを use するので、無いと型検査で止まる。
 	@for pkg in $(ROOT_SRC_PKGS) $(WEB_DIR) $(ENGINE_FULL_DIR)/src/full; do \
 		root="$$pkg/src"; [ -d "$$root" ] || root="$$pkg"; name=$$(basename "$$pkg"); \
-		(cd "$$root" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-			mkdir -p "$(WEB_FULL_DIR)/src/$$name/$$(dirname "$$f")"; \
-			ln -sfn "$(CURDIR)/$$root/$$f" "$(WEB_FULL_DIR)/src/$$name/$$f"; \
-		done; \
+		$(LINK_FLIX) "$(CURDIR)/$$root" "$(WEB_FULL_DIR)/src/$$name" || exit 1; \
 	done
 	@awk -v web='"$(WEB_JAR_NAME)" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/v$(VERSION)/$(WEB_JAR_NAME)"' \
 	     -v jso='"org.teavm:teavm-jso" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-jso-apis" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-interop" = "$(TEAVM_VERSION)"' \
@@ -1041,6 +922,7 @@ sync-engine-full-web: gl-jar web-jar
 	cd $(WEB_FULL_DIR) && "$(FLIX)" check
 	cd $(WEB_FULL_DIR) && "$(FLIX)" build-pkg
 
+##@ リリース
 # ── リリース ──────────────────────────────────────────────
 # 自己完結の全部入り engine_full を build-pkg し、既存リポ flix_game_engine の GitHub Release に
 # fpkg と flix.toml を添付する。利用側は github:ababup1192/flix_game_engine の1行でこのバージョンを引く。
@@ -1063,7 +945,8 @@ sync-engine-full-web: gl-jar web-jar
 # test-par-all に不審な挙動があれば逐次にフォールバックする (make release TEST=test-all)。
 RELEASE_SHA := $(shell git rev-parse HEAD)
 TEST := test-par-all
-release-guard:
+.PHONY: release-guard
+release-guard: ### | 公開の前の安全策（未コミット・壊れた flix.toml・flix.jar の版・追随の材料・jar の行）
 	@# WhyNot: 追随の材料も未コミット検査に入れるのは、bump が生成した物をコミットし
 	@# 忘れるとタグの中身に材料が入らず、後からそのバージョンを取り出しても空になるため。
 	@# 見る範囲は配る物すべて（go/・agents-pack/・bin/lint-rules/・mk/ など bin/lint-rules/stage-engine.json
@@ -1097,7 +980,8 @@ release-guard:
 # WhyNot: 1 か所に決め打ちしないのは、clone を置き直すたびに release が止まり、毎回 STUDIO= を足すことになるため。
 STUDIO_CANDIDATES := $(abspath $(CURDIR)/../flix_ge_studio) $(HOME)/Desktop/flix_ge_studio
 STUDIO ?= $(or $(patsubst %/Makefile,%,$(firstword $(wildcard $(addsuffix /Makefile,$(STUDIO_CANDIDATES))))),$(firstword $(STUDIO_CANDIDATES)))
-studio-parity:
+.PHONY: studio-parity
+studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity をこの engine で流す（release-verify の門）
 	@if [ "$(STUDIO)" = "none" ]; then echo "[release] STUDIO=none: Studio との AGENTS の突き合わせを飛ばしました"; exit 0; fi; \
 	 test -f "$(STUDIO)/Makefile" || { echo "[release] Studio の clone が見つかりません ($(STUDIO)・探した所: $(STUDIO_CANDIDATES))。STUDIO=<パス> で指定するか、無い環境なら STUDIO=none"; exit 1; }; \
 	 git -C "$(STUDIO)" fetch -q origin main \
@@ -1108,11 +992,13 @@ studio-parity:
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
 RELEASE_GATES := release-guard studio-parity sync $(TEST) gl-parity
-release: release-verify
+.PHONY: release
+release: release-verify ### [TEST=test-all] | release-verify と同じ
 
 # release-publish の後半 (配る物を組んで Release に付ける)。CI だけが流す。
 # GL の層の jar は版の Release に添えない。flix.toml は版でなく置き場 fge-gl-<ハッシュ> を指す (make gl-jar-publish)。
-release-assets:
+.PHONY: release-assets
+release-assets: ### | 配る物を組んで Release に付ける（CI だけが流す）
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" build-pkg
 	@# WhyNot: build-pkg の後に置くのは、zip の中身に engine_full.fpkg が入るため。
 	@# 先に組むと 1 つ前のバージョンの fpkg を配ってしまう。
@@ -1127,7 +1013,8 @@ release-assets:
 # WhyNot: 印に commit を書き、CI はそこから HEAD までの差が印だけかを見る。版やテストの名前だけだと、
 # 門を通した後に入った変更も同じ印で出てしまう。
 RELEASE_MARKER := release/verified.txt
-release-verify: $(RELEASE_GATES)
+.PHONY: release-verify
+release-verify: $(RELEASE_GATES) ## [STUDIO=none] [TEST=test-all] | リリースの門を手元で通し、通した commit を release/verified.txt に書く（公開は CI の release-publish）
 	@mkdir -p $(dir $(RELEASE_MARKER))
 	@printf 'version %s\nsha %s\ngates %s\nat %s\n' "$(VERSION)" "$(RELEASE_SHA)" "$(RELEASE_GATES)" "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" > $(RELEASE_MARKER)
 	@echo "[release-verify] v$(VERSION) の門を $(RELEASE_SHA) で通しました。次は:"
@@ -1135,7 +1022,8 @@ release-verify: $(RELEASE_GATES)
 	@echo "  → GitHub の Actions で release を main で起動 (CI が make release-publish を流す)"
 
 # CI が公開の前に見る: 印の版が VERSION と同じ・印の commit から HEAD までの差が印だけ・タグがまだ無い。
-release-marker-check:
+.PHONY: release-marker-check
+release-marker-check: ### | CI が公開の前に見るマーカー（版・commit から HEAD までの差・タグ）
 	@test -f $(RELEASE_MARKER) || { echo "[release] $(RELEASE_MARKER) がありません。手元で make release-verify を通して commit してください"; exit 1; }
 	@ver=$$(sed -n 's/^version //p' $(RELEASE_MARKER)); sha=$$(sed -n 's/^sha //p' $(RELEASE_MARKER)); \
 	 [ "$$ver" = "$(VERSION)" ] || { echo "[release] 印の版 $$ver が Makefile の VERSION $(VERSION) と違います。make release-verify をやり直してください"; exit 1; }; \
@@ -1149,7 +1037,8 @@ release-marker-check:
 # CI が流す公開。テストは手元の release-verify が通した物を印で受け取る。
 # WhyNot: CI で全量テストを流し直さない。描き出しのスナップショットは OS と JRE のフォントの差で CI ではずれる
 # (release-gate.yml と同じ理由)。studio-parity も Studio の clone が要るので手元の門に任せる。
-release-publish: release-marker-check
+.PHONY: release-publish
+release-publish: release-marker-check ### | CI が流す公開（マーカーを確かめて組み、gh release）
 	@# WhyNot: go-build を先に置く。release-guard が呼ぶ bin/fge は bin/fge-go を要り、CI の checkout には無い。
 	@$(MAKE) --no-print-directory go-build
 	@$(MAKE) --no-print-directory release-guard
@@ -1181,7 +1070,7 @@ BUNDLE_FLIX_WRAPPER ?= bin/flix
 # WhyNot: 置き場の有無だけで通さないのは、devbox install をし忘れた profile が古い flix を
 # 指したままでも jar は在るため。0.35.5 はこれで 0.75.1 を配り、Studio でゲームが一切
 # ビルドできなくなった (ゲームの flix.toml が求める版に届かない)。
-check-bundle-flix:
+check-bundle-flix: ### | 同梱する flix.jar の版が devbox.json の版と同じか
 	@want=$$(grep -o 'flix_[0-9]*_[0-9]*_[0-9]*' devbox.json | head -n 1 | sed 's/^flix_//; s/_/./g'); \
 	 java=.devbox/nix/profile/default/bin/java; [ -x "$$java" ] || java=java; \
 	 got=$$("$$java" -jar "$(BUNDLE_FLIX_JAR)" --version 2>/dev/null | grep -o '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*' | head -n 1); \
@@ -1194,7 +1083,7 @@ check-bundle-flix:
 # 作業ツリーから、検査の中身 (bin/dist の fge-go) が前に組んだ物から来るため。
 # 別々の経路なので、バイナリだけ古いまま配ると「宣言はあるのに入口が無い」バンドルになり、
 # 配った先の precommit が毎回 exit 2 で止まる (0.32.0 の flix-reserved がこれ)。
-bundle-zip: go-build
+bundle-zip: go-build ### | Studio に同梱する engine 一式を zip に固める（Release に添える）
 	@test -n "$(BUNDLE_FLIX_JAR)" -a -f "$(BUNDLE_FLIX_JAR)" \
 	  || (echo "!! flix.jar が見つかりません (BUNDLE_FLIX_JAR= で場所を指定してください)" && exit 1)
 	@$(MAKE) --no-print-directory check-bundle-flix
@@ -1213,14 +1102,15 @@ bundle-zip: go-build
 # 自パッケージ依存参照の version を一括で上げる。flix コンパイラのバージョン (flix = "...") と
 # flix-random など他リポ依存は触らない。使い方: make bump FROM=0.1.0 TO=0.1.1
 # sed でなく perl なのは BSD/GNU の -i の非互換を踏まないため (toml は ASCII なので byte 処理で安全)。
-bump:
+.PHONY: bump
+bump: ## FROM=x TO=y | 全 flix.toml の version と VERSION を一括で上げる（api-digest と追随の材料も作り直す）
 	@test -n "$(FROM)" && test -n "$(TO)" || { echo "usage: make bump FROM=0.1.0 TO=0.1.1"; exit 1; }
 	@# WhyNot: 書き換える前にも見る — 後でだけ見ると、pin の忘れで止まった時に版の字だけ書き換わった途中の形が残る。
 	@$(MAKE) --no-print-directory gl-jar-pin-check
 	@for f in $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR) $(ENGINE_FULL_DIR); do \
 		perl -pi -e 's/^(version\s*=\s*)"\Q$(FROM)\E"/$${1}"$(TO)"/' "$$f/flix.toml"; \
 	done
-	@for f in $(ENGINE_DIR)/flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_WORLD_DIR)/flix.toml $(ENGINE_TOOLS_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml templates/*/flix.toml bench/*/flix.toml flix_ge_shapes/flix.toml; do \
+	@for f in $(ENGINE_DIR)/flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_WORLD_DIR)/flix.toml $(ENGINE_TOOLS_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml templates/*/flix.toml bench/*/flix.toml; do \
 		[ -f "$$f" ] && perl -pi -e 's|(ababup1192/flix_[a-z_]*"[^"]*version = )"[0-9]+\.[0-9]+\.[0-9]+"|$${1}"$(TO)"|g' "$$f" || true; \
 	done
 	@# GL の層の jar の行は版を持たない（置き場は render_gl/java のハッシュ）。上の置き換えが触っていないかだけ見る。
@@ -1236,9 +1126,10 @@ bump:
 # 1 つ前のリリースからの非互換と、engine 自身の追随例を 1 枚にまとめて書き出す。
 # make bump が呼ぶので普段は直に打たない（作り直したいときだけ）。
 .PHONY: migration-notes
-migration-notes:
+migration-notes: ### | 1 つ前のリリースからの非互換と追随例を 1 枚に書き出す（make bump が呼ぶ）
 	@bin/fge migration-notes
 
+##@ 作業場とゲームへ配る物
 # ── コミュニティビルド用ルート src/ ──────────────────────
 # Flix 公式の community build (flix/flix の community-build.yaml) は、このリポジトリを
 # checkout してルートで `flix build` を実行するだけで、make sync の fpkg 配布は走らない。
@@ -1248,7 +1139,8 @@ migration-notes:
 # エンジンに .flix を追加/削除/改名したら再実行して symlink 集を更新し、コミットする。
 ROOT_SRC_PKGS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR)
 
-sync-root-src:
+.PHONY: sync-root-src
+sync-root-src: ### | コミュニティビルド用のルート src/ の symlink 集を作り直す
 	@for pkg in $(ROOT_SRC_PKGS); do rm -rf "src/$$pkg"; done
 	@$(MAKE) --no-print-directory sync-root-src-missing
 	@find src -type l | awk 'END { print "[sync-root-src] " NR " symlink(s)" }'
@@ -1257,18 +1149,8 @@ sync-root-src:
 # WhyNot: make check から sync-root-src を流さない。先に src/<pkg> を丸ごと消すので、並べて走る別の確かめが
 # 読んでいる最中のソースが消え、偽の赤で正しい書き換えが戻される。
 .PHONY: sync-root-src-missing
-sync-root-src-missing:
-	@for pkg in $(ROOT_SRC_PKGS); do \
-		(cd "$$pkg/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-			d=$$(dirname "$$f"); \
-			if [ "$$d" = "." ]; then dir="src/$$pkg"; else dir="src/$$pkg/$$d"; fi; \
-			[ -L "$$dir/$$(basename "$$f")" ] && continue; \
-			mkdir -p "$$dir"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			up=$$(printf '../%.0s' $$(seq 0 "$$depth")); \
-			ln -sfn "$$up$$pkg/src/$$f" "$$dir/$$(basename "$$f")"; \
-		done; \
-	done; \
+sync-root-src-missing: ### | ルート src/ の足りない symlink だけを張り、先の無い物だけを消す（make check が呼ぶ）
+	@for pkg in $(ROOT_SRC_PKGS); do $(LINK_FLIX) --relative --only-missing "$$pkg/src" "src/$$pkg" || exit 1; done; \
 	find src -type l ! -exec test -e {} \; -exec rm -f {} +
 
 # engine の上に載る 3 層 (render_gl / engine_world / engine_tools) の検査用の作業場を張る。
@@ -1278,7 +1160,8 @@ sync-root-src-missing:
 # ここでのコンパイルが止める。symlink なので、ソースを直したら張り直さずにそのまま組める
 # (.flix を足した・消した・改名したときだけ張り直す。make test は毎回張り直す)。
 # .layers/templates は engine_tools のテストが ../templates/ のフォントを読むための道。
-sync-layers: gl-jar
+.PHONY: sync-layers
+sync-layers: gl-jar ## | render_gl / engine_world / engine_tools の検査用の作業場（.layers/）を張り直す
 	@for pkg in $(LAYER_PKGS); do \
 		dir="$(LAYER_ROOT)/$$pkg"; \
 		rm -rf "$$dir/src" "$$dir/test"; \
@@ -1287,10 +1170,7 @@ sync-layers: gl-jar
 		for part in "$(ENGINE_DIR)/src:src/$(ENGINE_DIR)" "$$pkg/src:src/$$pkg" "$$pkg/test:test"; do \
 			from="$${part%%:*}"; to="$${part#*:}"; \
 			[ -d "$$from" ] || continue; \
-			(cd "$$from" && find . -type f) | sed 's|^\./||' | while read -r f; do \
-				mkdir -p "$$(dirname "$$dir/$$to/$$f")"; \
-				ln -sfn "$(CURDIR)/$$from/$$f" "$$dir/$$to/$$f"; \
-			done; \
+			bin/link-tree.sh "$(CURDIR)/$$from" "$$dir/$$to" || exit 1; \
 		done; \
 	done; \
 	ln -sfn ../templates "$(LAYER_ROOT)/templates"; \
@@ -1302,21 +1182,10 @@ sync-layers: gl-jar
 # バージョンはルート flix.toml でなく $(VERSION) (bump が進める実体) を刻む。ゲーム側の
 # bin/fge status がこの刻印と engine Makefile の VERSION を照らし、陳腐化を知らせる。
 .PHONY: sync-agents
-sync-agents:
+sync-agents: ## GAME=<dir> | agents-pack をゲームに配る（manifest.json が一覧。bin/fge-go も配る）
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make sync-agents GAME=/path/to/game)"; exit 1; fi
 	@bin/fge sync-agents --game "$(GAME)" --version "$(VERSION)"
 	@$(MAKE) --no-print-directory sync-fge-go GAME="$(GAME)"
-
-# Go 移行で役目を終えた Python の道具を、配った先のゲームから消す (一度きりの後始末)。
-# copyDirs (skills・rules・lint-rules) と違って bin/ はゲームが自分の道具も置く場所なので、
-# ミラーにはせず名指しの一覧だけを消す。engine 側にまだある道具は消さない。
-# 素振りは DRY_RUN=1。一覧は go/internal/prunetools の StaleTools。
-# WhyNot: manifest.json に載せないのは、これが恒久の配布規約ではなく一度きりの後始末で、
-# 載せると Studio の Flix にも同じ実装と parity 検査が要るため。
-.PHONY: prune-stale-tools
-prune-stale-tools:
-	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make prune-stale-tools GAME=/path/to/game)"; exit 1; fi
-	@bin/fge prune-stale-tools --game "$(GAME)" $(if $(DRY_RUN),--dry-run,)
 
 # 検査の中身は bin/fge-go (Go のバイナリ)。配る先の OS/CPU に合う 1 つだけを置く。
 # WhyNot: manifest.json の copy に並べないのは、あそこが「どの OS でも同じ物を配る」表で、
@@ -1333,7 +1202,7 @@ prune-stale-tools:
 # mv なら inode が新しくなるので踏まない。
 #
 # WhyNot: 配った版（go/ が無い）は組めないので、同梱の bin/fge-go（配った先の OS/CPU 向けの 1 本）をそのまま配る。
-sync-fge-go:
+sync-fge-go: ### GAME=<dir> | 配る先の OS/CPU に合う bin/fge-go を 1 つだけゲームへ置く
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください"; exit 1; fi
 	@if [ -n "$(IS_BUNDLE)" ]; then \
 	  ext=""; case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ext=".exe" ;; esac; \
@@ -1357,83 +1226,22 @@ sync-fge-go:
 	mv -f "$$tmp" "$(GAME)/bin/fge-go$$ext"; \
 	echo "[sync-fge-go] $$src → $(GAME)/bin/fge-go$$ext"
 
+##@ 規約と文書
 # 規約の本文は docs/ に 1 つだけ置く。CLAUDE.md は AGENTS.md を import するだけ、
 # .claude/rules/ は bin/fge gen-rules の生成物。手で 2 か所に書かないので、ずれない。
 .PHONY: rules
-rules: api-digest
+rules: api-digest ### | docs/ の規約から .claude/rules/ を作り直す（api-digest も）
 	@bin/fge gen-rules
 
 # engine/engine_world/engine_tools の pub API を 1 枚のダイジェストに畳む。
 # AI エージェントが型・引数を調べる時、ソースを grep する前にまずここを読めば済む。
 .PHONY: api-digest
-api-digest:
+api-digest: ### | engine の pub API を docs/api-digest.md に 1 つにまとめる
 	@bin/fge api-digest
-
-# ダイジェストの引き方の近道。例: make api Q=gradPolygon
-# ソースを開かずに pub 宣言 (型・引数・エフェクト・doc 1 行) だけ拾う。
-#
-# digest は作業ツリーの src/ から作るので、まだリリースしていない宣言も載る。
-# ゲームは flix.toml で版を固定して fpkg を引くため、digest を信じて書くと
-# コンパイルで落ちる (2026-08-14: Depth.bands / PxSpriteDoc.Loop で 2 本が落ちた)。
-# だから引くたびに「その名前は未リリースか」を後ろに出す (bin/fge check-api-released)。
-.PHONY: api
-api:
-	@test -n "$(Q)" || { echo "usage: make api Q=<関数名やモジュール名>"; exit 1; }
-	@out=$$(grep -h -i -- "$(Q)" docs/api-digest/*.md 2>/dev/null | head -40); \
-	 if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	 else echo "[api] '$(Q)' はダイジェストに無い。make module Q=<やりたいこと> で別名を探す"; fi
-	@# 2>/dev/null を付けない。この検査の存在理由は「digest の嘘を見えるようにする」ことなので、
-	@# 検査自体が黙って死ぬ形は自己矛盾になる (|| true は助言だから止めない、の意味で残す)。
-	@bin/fge check-api-released "$(Q)" || true
-
-# やりたいこと → モジュールの逆引きを 1 行ずつ引く（docs/modules/<分野>.md の grep）。
-# 例: make module Q=スクロール 。当たった行に「分野のファイル:行番号」が付く。
-# 行の形（表の 1 行 = 1 件・「- **名前** — 説明」= 1 モジュール）は mk/module.sed が読みやすく直す。
-.PHONY: module
-module:
-	@test -n "$(Q)" || { echo "usage: make module Q=<やりたいこと・モジュール名の一部>"; exit 1; }
-	@out=$$(grep -n -i -F -- "$(Q)" $$(ls docs/modules/*.md | grep -v '/engine\.md$$') docs/modules/engine.md 2>/dev/null | sed -f mk/module.sed | head -40); \
-	 if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	 else echo "[module] '$(Q)' に当たりなし。別の言い方で引き直すか、分野の目次 docs/module-index.md から分野のファイルを開く"; fi
-
-# 絵の下限（矩形と円だけになっていないか）。どの OS・どのエージェントからも同じ検査。
-.PHONY: lint-view
-lint-view:
-	@bin/fge view
-
-# git に入れる絵が増えすぎていないか（描き出した絵が紛れ込んでいないか）の検査。
-.PHONY: lint-images
-lint-images:
-	@bin/fge images
-
-# ドット絵の画素の並びの検査。自己テストが壊れた lint には門番をさせない。
-.PHONY: lint-sprite
-lint-sprite:
-	@bin/fge sprite --self-test >/dev/null
-	@bin/fge sprite
-
-.PHONY: lint-anim
-lint-anim:
-	@bin/fge anim --self-test >/dev/null
-	@bin/fge anim
-
-# ui.json の text の折り返し宣言漏れ (固定幅の枠 + wrap/fit なし) の検査。
-# 実寸は測らない構造検査。コード直組みの Text と instance 参照ノードは見えない。
-.PHONY: lint-ui
-lint-ui:
-	@bin/fge ui-overflow --self-test >/dev/null
-	@bin/fge ui-overflow
-
-# ループ GIF の継ぎ目（最終コマ→0 コマ）が浮かないかの検査。描き出し済みのコマが前提なので
-# 保存時フックや pre-commit には乗せない（手動で回す）。
-.PHONY: lint-loop
-lint-loop:
-	@bin/fge loop --self-test >/dev/null
-	@bin/fge loop
 
 # 規約まわりの配線が崩れていないかの検査（生成はしない）。
 .PHONY: check-docs-sync
-check-docs-sync:
+check-docs-sync: ## | 規約まわりの配線が崩れていないかの検査（生成はしない）
 	@ok=1; \
 	if [ ! -f CLAUDE.md ] || [ ! -f AGENTS.md ]; then \
 	  echo "[check-docs-sync] CLAUDE.md か AGENTS.md が見つかりません"; exit 1; \
@@ -1560,6 +1368,7 @@ NG_TITLE = $(if $(TITLE),$(TITLE),$(NAME))
 # $ENV{NG_TITLE} で安全に読む。
 export NG_TITLE
 
+##@ ゲームを産む・上げる
 # engine_full.fpkg がソースより古いまま先へ進むのを止める。
 # WhyNot: 「在るかどうか」だけでは足りない。fpkg のバージョン名は bump で進むので、中身が
 # 古くても名前は新しいバージョンに見える。それがゲームの lib/ や Studio の .app へ写ると、
@@ -1569,7 +1378,7 @@ export NG_TITLE
 # sync-engine-full を 1 回回せば済む側の失敗なので、見逃すよりそちらを選ぶ。
 .PHONY: engine-full-fresh
 # 配った版はリリースが組んだ fpkg をそのまま使う（ソースの時刻は zip を開いた時刻なので、比べると空振りで止まる）。
-engine-full-fresh:
+engine-full-fresh: ### | engine_full.fpkg がソースより古くないか（new-game・upgrade-game の前提）
 	@if [ ! -f "$(ENGINE_FULL_FPKG_SEED)" ]; then \
 	  if [ -n "$(IS_BUNDLE)" ]; then echo "error: $(ENGINE_FULL_FPKG_SEED) がありません（配った engine が欠けています。入れ直してください）"; \
 	  else echo "error: $(ENGINE_FULL_FPKG_SRC) がありません。先に make sync-engine-full を実行してください"; fi; exit 1; \
@@ -1582,7 +1391,7 @@ engine-full-fresh:
 	 fi
 
 .PHONY: new-game
-new-game: engine-full-fresh
+new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make new-game GAME=/abs/path NAME=mygame TITLE=題名 W=240 H=320)"; exit 1; fi
 	@case "$(GAME)" in /*) : ;; *) echo "error: GAME は絶対パスで指定してください: $(GAME)"; exit 1;; esac
 	@if [ -e "$(GAME)" ]; then echo "error: 生成先が既に存在します: $(GAME)"; exit 1; fi
@@ -1667,10 +1476,13 @@ new-game: engine-full-fresh
 # REFERENCE=1 で絵の比較 (reference-check) も回す。既定で回さないのは render-all を
 # 連れてきて数分かかり、得られるのが指示書の 1 行だけのため。
 .PHONY: upgrade-game
-upgrade-game: engine-full-fresh
+upgrade-game: engine-full-fresh ### GAME=/abs/path [REFERENCE=1] | ゲームの engine の版をこの engine へ上げる（ゲームの make engine-upgrade がここへ来る）
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make upgrade-game GAME=/abs/path)"; exit 1; fi
 	@bin/fge upgrade-game --game "$(GAME)" --version "$(VERSION)" \
 	  --fpkg "$(ENGINE_FULL_FPKG_SRC)" --toml "$(ENGINE_FULL_TOML_SRC)" \
 	  --dest "$(ENGINE_FULL_SUBPATH)" --make "$(MAKE)" \
 	  --fpkg-name "$(ENGINE_FULL_FPKG_NAME)" --toml-name "$(ENGINE_FULL_TOML_NAME)" \
 	  $(if $(REFERENCE),--reference,) || [ $$? -eq 3 ]
+
+# WhyNot: 頭で取り込まない — 先に読んだターゲットが既定のターゲットになり、素の make が status でなく help になる。
+include mk/common.mk

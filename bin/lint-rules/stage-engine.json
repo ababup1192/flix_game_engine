@@ -100,6 +100,11 @@
       "why": "make module Q= の当たり行を 1 行で読める形にそろえる (mk/game.mk が読む)"
     },
     {
+      "src": "mk/*.awk",
+      "dest": "mk",
+      "why": "make help の一覧 (mk/help.awk) と make src・src-index の索引 (mk/src-index.awk)。mk/game.mk と mk/common.mk が読む"
+    },
+    {
       "src": "docs/doc-conventions.md",
       "dest": "docs/doc-conventions.md"
     },
