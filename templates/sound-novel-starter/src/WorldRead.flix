@@ -71,9 +71,25 @@ mod WorldRead {
     def pauseOrGo(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], rest: List[(YarnRunner.Event, Int32)],
                   w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) |> Option.flatMap(r -> r#pause) {
+            case Some(p) if p#passInstant => flowInstant(res, replay, last, rest, w)
             case Some(p) => World.mapRead(r -> withGate({ pause = Some({ rest = rest, last = last | p }) | r }), w)
             case None    => absorbFrom(res, replay, last, rest, w)
         }
+
+    /// 時間を取らない命令を先に流す待ち（Out.SwitchWait）の間: 頭の時間を取らない命令を 1 つずつ流し、台詞・選択肢・<<wait>>・
+    /// 時間を取る命令・まだ届いていない素材を待つ命令・流した命令が出した押しても明けない待ちに当たったら、そこから後ろを待ちに預ける。
+    def flowInstant(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], rest: List[(YarnRunner.Event, Int32)],
+                    w: World.World): World.World \ Emit[World.Event] =
+        let passing = World.readOf(w) |> Option.flatMap(r -> r#pause) |> Option.exists(p -> p#passInstant);
+        match rest {
+            case (YarnRunner.Event.Command(c), later) :: tail if passing and isInstant(res, c) and List.isEmpty(namesToWait(res, rest, w)) =>
+                flowInstant(res, replay, last, tail, absorbOne(res, replay, last, YarnRunner.Event.Command(c), later, w))
+            case _ => World.mapRead(r -> withGate({ pause = r#pause |> Option.map(p -> { rest = rest, last = last | p }) | r }), w)
+        }
+
+    /// 時間を取らない命令か（<<wait>> は実行器の待ちなので時間を取る側）。
+    def isInstant(res: Res.Res, c: Yarn.Command): Bool =
+        c#name != "wait" and Commands.timingOf(res, c) == Commands.Timing.Instant
 
     /// 出来事 1 つ。later = その出来事より後ろに出た台詞と選択肢の数。
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
@@ -198,16 +214,18 @@ mod WorldRead {
         case Out.TurnPage        => { page = Page.turn(r#page) | r }
         case Out.Sound(name)     => Emit.emit(World.Event.Cue(name)); r
         case Out.Event(name)     => Emit.emit(World.Event.Signal(name)); r
-        case Out.Wait(secs)      => withPause(now, secs, false, r)
-        case Out.WaitOrTap(secs) => withPause(now, secs, true, r)
+        case Out.Wait(secs)       => withPause(now, secs, false, false, r)
+        case Out.WaitOrTap(secs)  => withPause(now, secs, true, false, r)
+        case Out.SwitchWait(secs) => withPause(now, secs, true, true, r)
     }
 
-    /// 待ちを now から secs 秒に（もう待ちがあれば、明ける時刻は遅い方・押して明けるのは両方とも押して明ける時だけ）。
-    def withPause(now: Clock.Time[Stage.Story], secs: Float64, tappable: Bool, r: World.Read): World.Read =
+    /// 待ちを now から secs 秒に（もう待ちがあれば、明ける時刻は遅い方・押して明けるのと時間を取らない命令を流すのは、両方ともそうな時だけ）。
+    def withPause(now: Clock.Time[Stage.Story], secs: Float64, tappable: Bool, passInstant: Bool, r: World.Read): World.Read =
         let until = Clock.after(Float64.max(0.0, secs), now);
         let later = r#pause |> Option.map(p -> if (Clock.since(p#until, until) > 0.0) until else p#until) |> Option.getWithDefault(until);
         let tap = tappable and (r#pause |> Option.forAll(p -> p#tappable));
-        { pause = Some({ until = later, rest = Nil, last = None, tappable = tap }) | r }
+        let pass = passInstant and (r#pause |> Option.forAll(p -> p#passInstant));
+        { pause = Some({ until = later, rest = Nil, last = None, tappable = tap, passInstant = pass }) | r }
 
     /// 押すと明ける待ち（Out.WaitOrTap）の間か。
     pub def isTapWait(w: World.World): Bool =

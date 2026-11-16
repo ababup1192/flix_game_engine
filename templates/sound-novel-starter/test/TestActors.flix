@@ -211,7 +211,7 @@ mod TestActors {
     def paused(seconds: Float64): World.World \ Fs.FileRead =
         let w = begun(res());
         let line = { speaker = "", text = "待ちの後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } };
-        World.mapRead(r -> { pause = Some({ until = Clock.after(seconds, World.now(w)), rest = (YarnRunner.Event.Line(line), 0) :: Nil, last = None, tappable = false }) | r }, w)
+        World.mapRead(r -> { pause = Some({ until = Clock.after(seconds, World.now(w)), rest = (YarnRunner.Event.Line(line), 0) :: Nil, last = None, tappable = false, passInstant = false }) | r }, w)
 
     def currentText(w: World.World): String = World.pageOf(w)#current |> Option.map(l -> l#text) |> Option.getWithDefault("")
 

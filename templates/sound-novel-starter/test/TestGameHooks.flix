@@ -171,7 +171,7 @@ mod TestGameHooks {
 
     @Test
     def testGameOwnedSwitchWaitsForItsSeconds(): Unit \ {Assert, Fs.FileRead} =
-        Assert.assertEq(expected = Ok(Out.WaitOrTap(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
+        Assert.assertEq(expected = Ok(Out.SwitchWait(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
 
     @Test
     def testInstantDoesNotAskTheGame(): Unit \ {Assert, Fs.FileRead} =
@@ -433,6 +433,56 @@ mod TestGameHooks {
         let r = res();
         let ended = TestKit.stepBy(r, 30.0, waitingBy(r, Out.WaitOrTap(3.0)));
         Assert.assertTrue(readerTaps(r, ended))
+
+    // ══ ゲームが持つ切り替えの待ち（Out.SwitchWait）の間に流す命令 ══
+
+    /// 合図 name を出すだけの命令（timing で時間を取るかを決める）。
+    def signalCommand(name: String, timing: Commands.Timing): Commands.Command[Stage.Stage] =
+        { spec = YarnCommands.spec(name, "合図を出す", Nil), timing = timing,
+          apply = (_, _, st) -> Ok((st, Out.Event(name) :: Nil)), needs = Commands.noAssets }
+
+    /// 3 秒の切り替えの待ちを出す walk・時間を取らない合図 quick・時間を取る合図 slow を、読み進める命令の表に足した描く元。
+    def withSwitchCommands(r: Res.Res): Res.Res =
+        { commands = Commands.tableOf(waitCommand("walk", Out.SwitchWait(3.0)) :: signalCommand("quick", Commands.Timing.Instant)
+                                      :: signalCommand("slow", Commands.Timing.Timed) :: Commands.commandsIn(r#commands)) | r }
+
+    /// 読み始めた所で 0.1 秒の待ちを当て、明けたら walk と rest の命令と台詞を流す World を、0.2 秒進めた所（walk を当てた直後）と、そこで出た合図。
+    def walkedInto(r: Res.Res, rest: List[String]): (World.World, List[String]) =
+        let events = (YarnRunner.Event.Command(command("walk", Nil)), 1) :: (rest |> List.map(name -> (YarnRunner.Event.Command(command(name, Nil)), 1)))
+            ::: ((YarnRunner.Event.Line(heldLine()), 0) :: Nil);
+        let start = begun(r);
+        let w = World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start);
+        let (next, heard) = Emit.collect(() -> WorldRead.step(r, 0.2, TestKit.tickClocks(r, 0.2, w)));
+        (next, heard |> List.filterMap(e -> match e {
+            case World.Event.Signal(name) => Some(name)
+            case _                        => None
+        }))
+
+    @Test
+    def testInstantCommandsRunDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =
+        // 切り替えの待ちの間も、後ろの時間を取らない命令は先に流れ、台詞は待つ。
+        let (w, signals) = walkedInto(withSwitchCommands(res()), "quick" :: Nil);
+        Assert.assertEq(expected = ("quick" :: Nil, true, false), (signals, isPaused(w), currentText(w) == "歩いた後の行。"))
+
+    @Test
+    def testATimedCommandWaitsForTheSwitch(): Unit \ {Assert, Fs.FileRead} =
+        // 時間を取る命令に当たったら止まり、その後ろの時間を取らない命令も待つ。
+        let (_, signals) = walkedInto(withSwitchCommands(res()), "slow" :: "quick" :: Nil);
+        Assert.assertEq(expected = Nil, signals)
+
+    @Test
+    def testTheLineComesAfterTheSwitch(): Unit \ {Assert, Fs.FileRead} =
+        let r = withSwitchCommands(res());
+        let (w, _) = walkedInto(r, "quick" :: Nil);
+        Assert.assertEq(expected = "歩いた後の行。", currentText(TestKit.stepBy(r, 3.5, w)))
+
+    @Test
+    def testAPlainTapWaitHoldsTheInstantCommands(): Unit \ {Assert, Fs.FileRead} =
+        // ゲームのコマンドが出す WaitOrTap の後ろの時間を取らない命令は、待ちが明けてから流れる。
+        let r = { commands = Commands.tableOf(waitCommand("walk", Out.WaitOrTap(3.0)) :: signalCommand("quick", Commands.Timing.Instant)
+                                              :: Commands.commandsIn(res()#commands)) | res() };
+        let (_, signals) = walkedInto(r, "quick" :: Nil);
+        Assert.assertEq(expected = Nil, signals)
 
     // ══ <<tween 鍵>> ══
 
