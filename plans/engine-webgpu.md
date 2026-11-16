@@ -370,10 +370,14 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 9 | P5 | （上の交互の途中で、面の前に）**WGSL の出口**（7 章）。`Codegen.Target.Wgsl`・`ShaderGen` の書き手と、面と材質の draw ごとの値の並び（struct）・組み込み | Dawn で全部の変種が通るテスト。式の行の突き合わせ（画面なしの session の drawFloatRows） | 10〜16 時間 |
 | — | | **リリース 2**: 2D のゲームは WebGPU を「試しに選べる」。選ぶ口は、PC は環境変数（`FLIX_GE_BACKEND=webgpu`）、ブラウザは URL の `?backend=webgpu`。何も付けなければ今までどおり GL。入口が 3D（`withProject3d`）のゲームは、付けても GL のまま起動して理由を知らせる | | |
 | 11 | R2a | **3D の不透明の batch だけ `RenderList` に。** `planScenes` から `gl` と GL の `State` を外す（capability・順の番号・材質の状態を backend に聞く）。`MaterialBatch#entry` を材質の鍵に替える（→ 12.23 で、鍵の字でなく backend の材質の表の番号（`handle`）に）。形と絵の「上げる行」。**`planScene` 系を配列で運ぶ**（決まり 9 の 3D の分。record の欄の引き当てを内側の輪から出す） | `gl-parity` 0 px・**偽の GL を通るテスト 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload。うち GL の呼び出しの並びまで比べるのは 3 ファイル）はそのまま門に残す**（`RenderList` を見るテストは足す）・fps3d_lab が 5% 以内。`bench/scene3d` の動く割合 100%・12,000 個と、東京 1 棟ずつ: 137 ms → 100 ms 以下【目標】 | 8〜11 時間 |
-| 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定**（形のレビュー（3D）は V2b の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25） | 6〜9 時間 |
+| 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定**（形のレビュー（3D）は V2b の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25。V2b のレビューと同時に行い、行の欄と高さはこの形で確定した・9.1・12.26） | 6〜9 時間 |
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
-| 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表で決め直した順・12.26）: (1) 奥行きの書き出し（Output.Depth）／(2) 材質と絵の組／(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／(4) 影／(5) lightmap・空／(6) 半透明・後がけ／(7) ビルボード・環境マップ／(8) 寿命の表。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
+| 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す）／
+(1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号）／(2) 材質と絵の組（values を uniform か storage かをここで決める。uniform は 64 KiB・256 バイト揃えで 256 個が上限）／
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ・mip・preload／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に。
+WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
+bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
 | 16 | P10 | **切り替え。** PC の既定を WebGPU に（画面なしの描き出し・テスト・動画の既定も）。`gl-capture` の基準を取り直す（Dawn の版を pin）。`docs/flix-conventions.md`・`backend-parity.md`・agents-pack・eval・migrations。外のゲームの追随 | リリースの門を全部。CI（GPU が無い）で回る門と手元だけの門を分けて書く | 6〜10 時間 |
 | — | | **リリース 3**: WebGPU が既定 | | |
@@ -442,6 +446,11 @@ mask つきの面も比べる値を mask つきスプライトと同じく前半
 B は標本つきの描き先で pass の切れ目ごとに resolve が増える・スマホのタイル型 GPU では pass の切れ目ごとに描き先の全画面の読み書き（store と load）が増える【推: この Mac では測っていない】。
 MSAA のふちは A で消えない（標本 4 の Pass に描いた 3D の斜めの棒で、標本 4 と 1 の差が GL 4,761 px・WebGPU 4,158 px。GL との差 3,330 px は 3D を使わない 2D の斜めの多角形でも 5,040 px の同じ桁で出る標本の位置の違い（12.25。4 標本の型が上下に鏡写しな事は 12.26 で確かめた）。
 `RenderList` の 1 行の欄と高さ（3D）は R2a の形のままで WebGPU が流せた（`SceneList` の欄のうち使うのは種類・1 体ごとの値の先頭・数）。形のレビュー（3D）は V2b（実物の欠けの一覧）の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25。
+**形のレビュー（3D）の決め（V2b のレビュー 1 回目と同時・コーディネーターの判断・人のおまかせ・2026-11-16）**: 行の欄と高さ（1 行 = batch 1 つ・Int32 で 7 欄・heads・materials・firstMaterial）は**この形で確定**。
+足す物は「欄を末尾へ」「種類（kind）を足す」「pass の側に置く」のどれかで載る（Output.Depth は pass・材質と絵の組は `SceneList` に values と reads を足して行の末尾に位置・lightmap は 1 行 1 体で reads・骨は storage・
+影は光ごとの `SceneList`・空は kindSky・半透明は前半で並べて材質の行として足す・ビルボードは kindBillboard・環境マップは場面の値）。
+行の 1 つ外側で 2 つ替える: (1) 計画が `List[(ScenePassSpec, SceneList)]` を出す形にする（`ScenePassSpec` は ShadowMap(light)・Color・DepthOut(range) のような enum・描き先は 2D の `PassTarget` と同じ attachment の列）。R2b・P8 の (1) Output.Depth と一緒に入れる。
+(2) 形と 3D の絵の番号の寿命の表を前半へ寄せる分を、(8) から (1) の直後・(2) 材質の前へ出す（行に形の番号の欄を 1 つ・材質の絵は reads で番号）。描き先・影の地図の寿命は最後のまま。12.26。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
 **書き味の見本の形**: 同じお題（例: 敵 2,000 体を出す View・町の建物を並べる場面・材質を 1 つ足す）を候補ごとに 30 行以内で書き、前後のベンチの数字と 1 枚に並べる。
@@ -1173,8 +1182,11 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - 新しい `RenderPaint.Internal.SkippedDraws`: 種類 → 回数の表。`add` は初めての種類かを返し、`endFrame` は画面のコマが 300 に届いたコマで表の字を返す（ログは呼ぶ側の `WebGpuPaint` が出す。テストの走り手は stderr へ書いたテストを落とすので、表の側は書かない）。
     知らせは種類ごとの初めの 1 回（今までと同じ「まだ描かない: …」）と、表を起動から 300 コマ目と `WebGpuPaint.release` の時に 1 回ずつ。コマごとには増えない。
     `RUN_SECONDS` で止めると TERM で終わり `release` まで来ないので、表は 300 コマ目の物を読む。1 コマあたりの回数の分母は起動の画面のコマも数える。
-  - 数え方（`Render3d.WebGpuRenderer.Host#skip` に回数を足した）: 材質の物・半透明の材質の物・lightmap の物は**視錐台の内の物の数**（batch の members を引いて `culled` を除く）、骨つきの物は骨つきの batch の数の和、
-    ビルボードは数、影は影を落とす光の数、空・環境マップ・奥行きの書き出し（Output.Depth）は場面の数。2D（描き先と同じ絵を読む行・組んでいない面・起動の後に足す字・preload）は 1 回ずつ。
+  - 数え方（`Render3d.WebGpuRenderer.skipsOf`。`Host#skip` に回数を足した）: 物は計画が間引かなかった物（`culled` でない物）を **1 体 1 回だけ**数える。
+    骨つきの物は材質があっても骨つきの物（WebGPU は材質の順の番号を 0 で答えるので、材質つきの骨つきの物も計画では骨つきの batch に入り、描かれずに消える）。
+    骨つきの物は `Scene3d.isOutsideFrustum` が間引かない（GL も描く）ので、目の後ろの物も数える。lightmap の物は材質の物の内数。
+    ビルボードは数、影は影を落とす光の数、空・環境マップは場面の数。**Output.Depth の場面は「奥行きの書き出し（場面）」の 1 回だけ**で、中身（材質・骨・影など）は数えない（`prepareScene` が描かずに捨てる場面のため）。
+    2D（描き先と同じ絵を読む行・組んでいない面・起動の後に足す字・preload）は 1 回ずつ。
 - 流し方（2 本のフォルダは直していない）: scratchpad へ写し（`build`・`gallery`・`debug`・`reference`・`lib/github` などを除く）、写しの `local.mk` の ENGINE をこの worktree に、`flix.toml` の engine の版を 0.96.0 に、
   `lib/github/…/0.96.0/` をこの worktree の `engine_full/artifact/package.fpkg` への symlink にし、`lib/cache`・`lib/external` を `engine_full/lib` から写した（Maven Central が 429 を返すため）。
   **2 本とも今の engine（0.96.0）でそのまま型が通った**（写しに直しは要らなかった。fps3d_lab は 0.87.0・みやげの町は 0.91.0 から）。
@@ -1185,29 +1197,42 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
 
   | 種類 | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night | 目で見た欠け方 |
   |---|---|---|---|---|---|---|---|
-  | 材質の物（頂点の色で描く） | 123.4 | 120.2 | 1.6 | 17.6 | 26.4 | 33.3 | 絵（木・石・漆喰・石畳・屋根）が無く、頂点の色の白っぽい平らな面になる。ステンドグラスや旗など頂点の色の物は残る |
-  | 骨つきの物 | 25.7 | 0.1 | 0.1 | 127.4 | 127.4 | 127.4 | 人が丸ごと消える（部屋の衛兵・町の旅人と町の人）。町では足元の丸い影（頂点の色の板）だけが黒い楕円で残る |
-  | 奥行きの書き出し（Output.Depth・場面） | 0.9 | 0.9 | 0.0 | 0.9 | 0.9 | 0.9 | **3D の場面が全部ぼける**（被写界深度の後がけが奥行きを読むのに、奥行きの Pass が描かれない）。2D の窓と字はくっきり |
-  | 影（影を落とす光） | 0.9 | 0.9 | 0.0 | 0.9 | 0.9 | 0.9 | 影が無く、部屋も町も明るく平たい |
-  | lightmap の物（今の光で描く） | — | — | — | 11.7 | 21.5 | 30.3 | 前もって計算した光（lightmap）が無い（夜の窓の明かりが地面に落ちない）。材質の物の内数 |
-  | 半透明の材質の物（不透明に描く） | — | — | — | 18.6 | 18.6 | 12.7 | 木の葉・ガラスが不透明の塊になる |
-  | 空（場面） | — | — | — | 0.9 | 0.9 | 0.9 | 見下ろしの画角で空はほとんど映らない（目では違いが見えない） |
-  | 3D の診断の数（未計測で 0） | 1.9 | 2.0 | 0.1 | 1.9 | 1.9 | 1.9 | 絵には出ない（場面を描く Pass と画面の 2 回） |
+  | 材質の物（頂点の色で描く） | 110.5 | 119.3 | 1.6 | 11.9 | 26.4 | 33.3 | 絵（木・石・漆喰・石畳・屋根）が無く、頂点の色の白っぽい平らな面になる。ステンドグラスや旗など頂点の色の物は残る |
+  | 骨つきの物 | 12.8 | 0.0 | 0.0 | 43.1 | 63.7 | 63.7 | 人が丸ごと消える（部屋の衛兵・町の旅人と町の人）。町では足元の丸い影（頂点の色の板）だけが黒い楕円で残る |
+  | 奥行きの書き出し（Output.Depth・場面） | 0.9 | 0.9 | 0.0 | 0.6 | 0.9 | 0.9 | **3D の場面が全部ぼける**（被写界深度の後がけが奥行きを読むのに、奥行きの Pass が描かれない）。2D の窓と字はくっきり |
+  | 影（影を落とす光） | 0.9 | 0.9 | 0.0 | 0.6 | 0.9 | 0.9 | 影が無く、部屋も町も明るく平たい |
+  | lightmap の物（今の光で描く） | — | — | — | 7.9 | 21.5 | 30.3 | 前もって計算した光（lightmap）が無い（夜の窓の明かりが地面に落ちない）。材質の物の内数 |
+  | 半透明の材質の物（不透明に描く） | — | — | — | 12.6 | 18.6 | 12.7 | 木の葉・ガラスが不透明の塊になる |
+  | 空（場面） | — | — | — | 0.6 | 0.9 | 0.9 | 見下ろしの画角で空はほとんど映らない（目では違いが見えない） |
+  | 3D の診断の数（未計測で 0） | 1.9 | 1.9 | 0.1 | 1.3 | 1.9 | 1.9 | 絵には出ない（場面を描く Pass と画面の 2 回） |
 
   - 通路（`START=play`）は 2D（面と多角形とスプライト）で、GL と目で見て同じ。3D は頭の数コマの扉の場面だけ。
   - WebGPU の誤り（検証の誤り）は 6 場面とも 0。落ちた場面も無い。
-  - 骨つきの物の数（127.4）は視錐台の外の物も数えている【推: 骨つきの batch の数の和で、材質と lightmap のように `culled` を除いていない。3 場面で同じ数なのもそのため】。
-  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/v2b/out/<ゲーム>-<場面>-<gl|webgpu>/frame-N.png`（scratchpad なので消えうる。人に見せる絵は残していない）。
-- **R2b と P8 の小分けの順の決め直し**（9 章の表の 13・14 行目に書いた）: 2 本の両方で欠ける物と、欠けると画面全体が崩れる物から。
-  1. **奥行きの書き出し（Output.Depth）**: 2 本とも毎コマ 1 場面で、欠けると 3D の全部がぼける（一番目立つ）。頂点の色の物は `uDepthOut` を立てて R32F の描き先へ描くだけで、`R3dScene` の欄も WGSL の分岐（`Render3dWgsl` の frag）も V2 で入っている【推: 一番安い】。
-     cutout と両面の材質の物は材質の道で描くので (2) で埋まる。P8 では 3D の診断の数（`scene3dCounts`）を一緒に数える（場面のあるコマに毎回知らせが出ている）。
-  2. **材質と絵の組**: 2 本とも欠け、fps3d_lab では 1 コマに 120 個を超える一番大きい欠け。lightmap の物もここの内数（lightmap の欄は材質の道に乗る）。
-  3. **骨と instance**: 2 本とも欠け、みやげの町では 1 コマに 127 個・人が丸ごと消える。元の順（影の後）より前に出す。
+  - 表は V2b のレビュー 1 回目の後に数え方を直して流し直した物（下の「レビュー 1 回目への対応」）。直す前は Output.Depth の場面の中身と材質つきの骨つきの物を重ねて数えていて、骨つきの物が 2 倍前後（町 127.4・部屋 25.7）、部屋の材質の物が 123.4 だった。
+    小分けの順は直す前と同じ（大きい順は変わらない）。arrival は流した回ごとに頭の読み込みのコマの数が違い、場面のあるコマが 300 のうち 199 だったので、1 コマあたりが小さく出ている。
+  - 骨つきの物は目の後ろの物も数える（計画が間引かない・GL も描く）。market と night で同じ数なのは、町の人を全部置いて間引かないため【推】。
+  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/v2b/out/<ゲーム>-<場面>-<gl|webgpu>/frame-N.png`（**scratchpad の物は消えうる**。人に見せる 1 組はコーディネーターが別に扱う）。
+- **R2b と P8 の小分けの順の決め直し**（9 章の表の 13・14 行目に書いた）: 2 本の両方で欠ける物と、欠けると画面全体が崩れる物から。形のレビュー（3D）の決め（下）で (0) と (1b) を足した。
+  0. **`WebGpuPaint` の 3D の分を子の mod へ分ける**（P8 の側だけ・Host・`sceneViewportOf`・`pasteScene`）。`pasteScene` → `notePasted` の配線を守るテストもここで。
+  1. **奥行きの書き出し（Output.Depth）と `ScenePassSpec`**: 2 本とも毎コマ 1 場面で、欠けると 3D の全部がぼける（一番目立つ）。頂点の色の物は `uDepthOut` を立てて R32F の描き先へ描くだけで、`R3dScene` の欄も WGSL の分岐（`Render3dWgsl` の frag）も V2 で入っている【推: 一番安い】。
+     計画が `List[(ScenePassSpec, SceneList)]` を出す形はここで入れる。cutout と両面の材質の物は材質の道で描くので (2) で埋まる。P8 では 3D の診断の数（`scene3dCounts`）を一緒に数える（場面のあるコマに毎回知らせが出ている）。
+  1b. **形と 3D の絵の番号の寿命の表を前半へ**（元の (8) から前へ出した。行に形の番号の欄を 1 つ・材質の絵は reads で番号）。描き先・影の地図の寿命は (8) のまま。
+  2. **材質と絵の組**: 2 本とも欠け、fps3d_lab では 1 コマに 110〜119 個の一番大きい欠け。lightmap の物もここの内数（lightmap の欄は材質の道に乗る）。
+     values を uniform か storage かはここで決める（uniform は 64 KiB・256 バイト揃えで 256 個が上限）。
+  3. **骨と instance**: 2 本とも欠け、みやげの町では 1 コマに 43〜64 体・人が丸ごと消える。元の順（影の後）より前に出す。
   4. **影**: 2 本とも 1 場面に光 1 つ。欠けても形は残る（明るく平たいだけ）ので、骨より後。
   5. **lightmap・空**: みやげの町だけ。元の「環境マップ・空・lightmap」から環境マップを外した（2 本とも 0）。
-  6. **半透明・後がけ**: みやげの町だけ（1 コマに 13〜19 個）。元の「ビルボード・半透明・後がけ」からビルボードを外した（2 本とも 0）。
-  7. **ビルボード・環境マップ**（と P8 の mip・preload）: 2 本とも 0。fps3d_lab とみやげの町で確かめられないので、`bench/scene3d` か `bench/gl_parity` に場面を足して門にする。
-  8. **寿命の表**: 元どおり最後。
+  6. **半透明・後がけ**: みやげの町だけ（1 コマに 13〜19 個）。半透明の物を並べる所（`blendOrderOf`）を前半へ移し、材質の行として足す。元の「ビルボード・半透明・後がけ」からビルボードを外した（2 本とも 0）。
+  7. **ビルボード・環境マップ・mip・preload**: 2 本とも 0。fps3d_lab とみやげの町で確かめられないので、`bench/scene3d` か `bench/gl_parity` に場面を足して門にする。
+  8. **残りの寿命（描き先・影の地図）**: 最後。
+- **形のレビュー（3D）の決め**（V2b のレビュー 1 回目と同時・コーディネーターの判断・人のおまかせ・2026-11-16。9.1 と 9 章の表にも書いた）:
+  - 行の欄と高さ（1 行 = batch 1 つ・Int32 で 7 欄・heads・materials・firstMaterial）は**この形で確定**。足す物は「欄を末尾へ」「種類（kind）を足す」「pass の側に置く」のどれかで載る:
+    Output.Depth は pass・材質と絵の組は `SceneList` に values と reads を足して行の末尾に位置・lightmap は 1 行 1 体で reads・骨は storage・影は光ごとの `SceneList`・空は kindSky・
+    半透明は前半で並べて材質の行として足す・ビルボードは kindBillboard・環境マップは場面の値。
+  - 行の 1 つ外側で 2 つ替える: (1) 計画が `List[(ScenePassSpec, SceneList)]` を出す（`ScenePassSpec` は ShadowMap(light)・Color・DepthOut(range) のような enum・描き先は 2D の `PassTarget` と同じ attachment の列）。上の (1) と一緒に。
+    (2) 形と 3D の絵の番号の寿命の表を前半へ寄せる分を上の (1b) へ前倒し。
+  - P8 の WGSL の決まり: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる
+    （頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage。
 - V2 のレビュー 2 回目の任意:
   - MSAA の門を「WebGPU の標本 4 と 1 の差が、GL の同じ差の半分以上」に（`bench/webgpu_v2` の `msaaOk`。今は GL 4,761 px・WebGPU 4,158 px）。
   - rails と slant の場面に差の最大の上限 ±60 を足した（tolerances の 3 つ目・judge）。標本の位置の違いなら覆う割合 1/4 の段（±55）で止まる。room と roomTurned は勝つ面の入れ替わりで ±82 まで出るので切らない（255）。
@@ -1218,6 +1243,13 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - `TestWebGpuScene3dDawn` が守る所を 12.25 に正しく書いた（`WebGpuPaint.pasteScene` → `notePasted` の配線は守っていない。配線を守るテストは P8 で 3D の分を子の mod へ移す時に）。
   - `packSceneValues` の頭に WhyNot（書く欄の組を場面ごとに変えない・書かない欄は作った時の 0 のまま）。診断の知らせの文を名詞に（「3D の診断の数（scene3dCounts は未計測で 0）」）。
   - `WebGpuPaint` は 1,101 行（上限 1,200）。3D の分を子の mod へ移すのは P8 の最初の小分けのまま（V2b では前倒ししていない）。
+- V2b のレビュー 1 回目（84 点）への対応:
+  - 必須 1（数え方の偏り 3 つ）: (a) Output.Depth の場面は「奥行きの書き出し（場面）」の 1 回だけにした・(b) 材質つきの骨つきの物は骨つきの物として 1 回だけ・
+    (c) 物は `culled` を除く同じ絞り込み（骨つきの物は計画が間引かないので、目の後ろでも数える）。数えは `skipsOf`（場面ごとの種類と回数）に 1 本にまとめ、members を添え字で回す輪にした（任意の List.range をやめる分も兼ねる）。
+    テスト 3 本（`TestWebGpuScene3d`: Depth の場面は奥行きの書き出しだけ・材質つきの骨つきの物は 1 回・目の後ろの材質の物は数えず骨つきの物は数える）。2 本のゲームを流し直して表を差し替えた。順は変わらない。
+  - 必須 2: `bench/webgpu_v2` の `compareAndTime` の入れ子の match を `msaaDiffOf`・`printSlantFlipProbe` へ切り出した。
+  - 任意で直した物: `WebGpuPaint` の `skipped` を `msaaWarned` へ改名・`SkippedDraws.add` の doc（回数を足し、初めての種類かを返す）・`Counts` を Ref にそろえた・
+    railsMsaaClear の 4,761 px が GL の標本 4 と 1 の差と同じ数な理由を tolerances の頭に 1 行【推】・テスト 2 本（frames 0 の "-"・飛ばした物が無い時の 300 コマ目は None）・絵が scratchpad で消えうる事。
 - 窓の WebGPU が 8.3 ms（120 Hz）に張り付く件（12.25 の持ち越し）: **待っているのは `Surface.getCurrentTexture`**（Dawn の Metal の nextDrawable）で、**直せていない**。
   - 測り方: 見える窓の `bench/sprite_stress`（100 個・`FLIX_GE_NO_VSYNC=1`）に、getCurrentTexture・submit・present の時間を出す一時の行を足した（測った後に消した。コミットに入れていない）。
   - 数（300 コマの平均）: getCurrentTexture 7.1〜7.4 ms・submit 0.10〜0.14 ms・present 0.02 ms。**FIFO・IMMEDIATE・MAILBOX のどれで configure しても同じ**で、Dawn の検証の誤りも出ない（IMMEDIATE は configure に通っている）。
@@ -1227,7 +1259,7 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
     確かめていない手: `maximumDrawableCount`・`allowsNextDrawableTimeout`・フルスクリーン（直に画面へ出す道）・Dawn の版を上げる。
   - PC で速さを比べる時は、今までどおり隠した窓（surface を作らず present しない）か `bench/webgpu_v2`（waitIdle まで）で測る。窓の 1 コマの比べは P10 の前にまとめる（12.16）。
 - 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16）:
-  - render_gl のテスト（`.layers/render_gl` で `flix test`）498 緑（前の 492 に `TestSkippedDraws` 6 本）。
+  - render_gl のテスト（`.layers/render_gl` で `flix test`）503 緑（前の 492 に `TestSkippedDraws` 8 本・`TestWebGpuScene3d` の数えの 3 本）。
   - `make -C bench/webgpu_v2 run` 緑・誤り 0: room 14 px（±82）・roomTurned 8 px（±52）・roomDesign 0・railsMsaa 3,330 px（±55）・railsNoMsaa 0・railsMsaaClear 4,761 px（±54）・slant2dMsaa 5,040 px（±55）・
     標本 4 と 1 の差 GL 4,761 px・WebGPU 4,158 px。1 コマ（記録）: GL 0.344〜0.539 ms・WebGPU 0.460〜0.578 ms。
   - `make webgpu-v1-check` 緑・`make gl-parity` 緑（GL の道は触っていない）。テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）。
@@ -1237,4 +1269,4 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - R2b と P8 の小分けごとに、同じ 2 本（写しの作り方は上）を流して欠けの表が減るのを見る。
   - ビルボード・環境マップ・preload は 2 本で確かめられない（上の 7）。
   - 窓の WebGPU の垂直同期（上）。
-  - `WebGpuPaint.pasteScene` → `notePasted` の配線を守るテスト（P8 の最初）。
+  - `WebGpuPaint.pasteScene` → `notePasted` の配線を守るテスト（小分けの (0)）。
