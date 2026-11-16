@@ -27,3 +27,23 @@ one
 <<stop>>
 two
 ===
+title: Ran
+---
+<<declare $n = 0>>
+<<set $n to 1>>
+<<if $n == 1>>
+    taken
+<<else>>
+    skipped
+<<endif>>
+-> right
+    <<jump RanEnd>>
+-> left
+    left
+===
+title: RanEnd
+---
+end
+<<stop>>
+after
+===

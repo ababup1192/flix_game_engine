@@ -132,5 +132,38 @@ mod TestYarnRunner {
     /// ノードの一覧は木の JSON のノードの数に追随する。
     @Test
     def testNodeNamesFollowTheJson(): Unit \ Assert + Fs.FileRead =
-        Assert.assertEq(expected = List#{"Ask", "Loop", "Loop2", "Stopper", "Wait"}, Yarn.nodeNames(program()))
+        Assert.assertEq(expected = List#{"Ask", "Loop", "Loop2", "Ran", "RanEnd", "Stopper", "Wait"}, Yarn.nodeNames(program()))
+
+    // ══════════════════════════════════════════════════════
+    // 流した文の行（ranLinesSince）。Ran: 33 <<set>> 34 <<if>> 35 taken 37 skipped 39 -> right 40 <<jump RanEnd>> 41 -> left 42 left
+    //                                RanEnd: 46 end 47 <<stop>> 48 after
+    // ══════════════════════════════════════════════════════
+
+    /// 頭から最初の台詞まで: <<set>>・<<if>>・通った枝の台詞の行（偽の枝の 37 行目は無い）。
+    @Test
+    def testRanLinesHoldSetIfAndTheTakenBranch(): Unit \ Assert + Fs.FileRead =
+        let (started, _) = YarnRunner.start(program(), "Ran", at(0.0));
+        Assert.assertEq(expected = List#{33, 34, 35}, YarnRunner.ranLinesSince(YarnRunner.closed(), started))
+
+    /// 選んだ後は、その呼び出しで流した行だけ: 選んだ選択肢・<<jump>>・飛んだ先の台詞。
+    @Test
+    def testRanLinesSinceReadsOnlyTheChooseStep(): Unit \ Assert + Fs.FileRead =
+        let (asked, _) = YarnRunner.start(program(), "Ran", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
+        let (chosen, _) = YarnRunner.step(YarnRunner.Action.Choose(0), at(0.0), asked);
+        Assert.assertEq(expected = List#{39, 40, 46}, YarnRunner.ranLinesSince(asked, chosen))
+
+    /// <<stop>> の行は溜まり、その後ろの行は溜まらない。
+    @Test
+    def testRanLinesHoldTheStopButNotWhatFollows(): Unit \ Assert + Fs.FileRead =
+        let (asked, _) = YarnRunner.start(program(), "Ran", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
+        let (chosen, _) = YarnRunner.step(YarnRunner.Action.Choose(0), at(0.0), asked);
+        let (ended, _) = YarnRunner.step(YarnRunner.Action.Advance, at(0.0), chosen);
+        Assert.assertEq(expected = List#{47}, YarnRunner.ranLinesSince(chosen, ended))
+
+    /// もう一方の選択肢を選ぶと、選ばなかった選択肢の中の <<jump>>（40 行目）は溜まらない。
+    @Test
+    def testUnchosenOptionBodyIsNotRan(): Unit \ Assert + Fs.FileRead =
+        let (asked, _) = YarnRunner.start(program(), "Ran", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
+        let (chosen, _) = YarnRunner.step(YarnRunner.Action.Choose(1), at(0.0), asked);
+        Assert.assertEq(expected = List#{33, 34, 35, 39, 41, 42}, YarnRunner.ranLinesSince(YarnRunner.closed(), chosen))
 }
