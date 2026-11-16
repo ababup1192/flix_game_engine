@@ -190,7 +190,7 @@ pub mod RenderPaint.Internal.WebGpuShader {
 
     /// 3D の場面を描いた texture を 2D の描き先へ貼る WGSL（viewport の全面の三角形 1 枚・貼る矩形は scissor で切る）。入口は vs_main・fs_main。
     /// group 0 = 射影の行列（読まない・2D の行と同じ並びにして付け直さない）・group 1 = 場面の texture と、貼る矩形の左上と大きさ（描き先の画素）。
-    /// 出す色は α を掛けた後の値（pipeline の blend が ONE, ONE_MINUS_SRC_ALPHA）。読む texel は GL の Render3d.blitDesign の最も近い画素と同じ式。
+    /// 出す色は α を掛けた後の値（pipeline の blend が ONE, ONE_MINUS_SRC_ALPHA）。読む texel は GL の Render3d.blitDesign と同じ選び方（最も近い画素・縦は下から数える）。
     // WhyNot: viewport を貼る矩形にしない — 画面の外へはみ出した場面の矩形は描き先の外の viewport になり、WebGPU はそれを誤りにする。
     // WhyNot: textureSample で読まない — Native の場面は 1 画素ずつ写したいので、sampler の filter を通さず整数の座標で読む。
     // WhyNot: 縦の texel を上から floor で数えない — GL は下の行が先の FBO を下から数えて floor するので、Design の絵を 2:1 に縮めて貼ると

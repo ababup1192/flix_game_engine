@@ -807,7 +807,7 @@ pub mod Render3d.WebGpuRenderer {
             putScalarsFrom(buf, at, values, width, k + 1, n)
         }
 
-    /// 貼る矩形 rect（描き先の左上が原点）を target の Paste へ書く: 左上と大きさ（0 の辺は 1）。
+    /// 貼る矩形 rect（描き先の左上が原点）を target の Paste へ書く: 左上と大きさ。
     def writePaste(r: Renderer, target: SceneTarget, rect: (Int32, Int32, Int32, Int32)): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let (x, y, w, h) = rect;

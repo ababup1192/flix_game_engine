@@ -248,7 +248,11 @@ mod V2Main {
     /// halfDepthDesign 95,868・9,576・±63、halfDepthNative 0。post は room と同じ所（重なる面の入れ替わり）の差を、ぼかしと FXAA が周りの数画素へ広げた物（差の絵で確かめた）。
     /// postMsaa はウィンドウの画素の標本 4 の Pass の物のふちで、blendMsaaPass と同じ標本の位置の違いをぼかしが広げた物（±2 以上は blendMsaaPass と同じ桁）。
     /// halfDepthDesign と postDesign は、design の画素の絵を 2:1 に縮めて貼る所で貼る画素の真ん中が texel の境目に来て、GL の補間した uv が
-    /// 境目のどちら側に落ちるかが列ごとに揺れる所【推: 右の 1/5 の列はそろい、ほかの列で GL だけ 1 つ手前の texel を読む】。上下は GL と同じ選び方にそろえてある（下の壊して確かめた）。
+    /// 境目のどちら側に落ちるかが列ごとに揺れる所【推: 右の 1/5 の列はそろい、ほかの列で GL だけ 1 つ手前の texel を読む】。上下は GL と同じ選び方にそろえてある。
+    /// 横の選び方を 3 通り試して減らなかった（同じ日）: GL と同じ順に uv を作ってから掛ける形は今と 1 px も同じ・横だけ境目の手前へ寄せると 97,272・12,996・±56・
+    /// 縦横とも手前へ寄せると 232,020・78,732・±62。横はどちらへ寄せても列の半分ほどが外れるので、決まった側に寄せる形では GL にそろわない。
+    /// 壊して確かめた（同じ日に 1 回ずつ）: 縦を上から数える（直す前の式）と halfDepthDesign 233,784・74,952・postDesign 39,305・8,971 で落ちる・
+    /// 面の Linear の sampler を Nearest にすると post 3 場面が 19.9 万〜24.4 万 px・Rgba16Float の Pass を RGBA8 で作ると post 3 場面と roomDepthPass・halfDepthNative が落ちる。
     /// 上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない post を除いて ±128。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
@@ -470,9 +474,9 @@ mod V2Main {
             case _                                            => (0, 0)
         }
 
-    /// on と off の標本 4 と 1 の差を 1 行出し、WebGPU の差が GL の差の半分以上か（MSAA が抜けていないか）を返す。
+    /// WebGPU の on と off（標本 4 と 1）の差が GL の同じ差の半分以上か（MSAA が抜けていないか）。差の数は 1 行出す。
     // WhyNot: WebGPU の差が 0 でなければ良し、にしない — 場面の一部だけ MSAA が抜けても 0 にはならない。GL と同じ桁で掛かっている事を見る。
-    def msaaGate(byName: Shots, on: String, off: String, width: Int32, height: Int32): Bool \ IO =
+    def isMsaaApplied(byName: Shots, on: String, off: String, width: Int32, height: Int32): Bool \ IO =
         let (gl, gpu) = msaaDiffOf(byName, on, off, width, height);
         println("[webgpu-v2] 標本 4 と 1 の差（${on} と ${off}）GL ${Int32.toString(gl)} px・WebGPU ${Int32.toString(gpu)} px（WebGPU が GL の半分未満なら MSAA が抜けている）");
         gl > 0 and 2 * gpu >= gl
@@ -499,8 +503,8 @@ mod V2Main {
                 let rows = shots |> List.map(match (c, gl, shot) -> judge(width, height, c, gl, shot));
                 List.forEach(r -> println(fst(r)), rows);
                 let byName = shots |> List.map(match (c, gl, shot) -> (c#name, (gl, shot))) |> List.toMap;
-                let railsMsaaOk = msaaGate(byName, "railsMsaa", "railsNoMsaa", width, height);
-                let postMsaaOk = msaaGate(byName, "postMsaa", "post", width, height);
+                let railsMsaaOk = isMsaaApplied(byName, "railsMsaa", "railsNoMsaa", width, height);
+                let postMsaaOk = isMsaaApplied(byName, "postMsaa", "post", width, height);
                 let msaaOk = railsMsaaOk and postMsaaOk;
                 printSlantFlipProbe(byName, width, height);
                 let design = (Int32.toFloat64(config#designWidth), Int32.toFloat64(config#designHeight));
