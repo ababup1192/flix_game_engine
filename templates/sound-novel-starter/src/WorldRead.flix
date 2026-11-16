@@ -111,18 +111,17 @@ mod WorldRead {
         case YarnRunner.Event.Done       => (r#stage, NovelBeat.Kind.Done)
     }
 
-    /// 命令の待ち方: 待ちを出さなければ表の timing のまま。待ちを 2 つ出したら長い方で、押して明けるのは両方が押して明ける時だけ・
-    /// 時間を取らない命令を先に流すのは両方が LineWait の時だけ。
+    /// 命令の待ち方: 待ちを 2 つ出したら長い方で、押して明けるのは両方が押して明ける時だけ・
+    /// 後ろの命令を先に流すのは両方が LineWait の時だけ。
     def commandKindOf(res: Res.Res, r: World.Read, w: World.World, c: Yarn.Command): (Stage.Stage, NovelBeat.Kind) =
-        let instant = Commands.timingOf(res, c) == Commands.Timing.Instant;
         let tried = Commands.execute(Commands.Replay.Live, ctxOf(res, r, w), c, r#stage);
         let stage = tried |> Result.map(fst) |> Result.getWithDefault(r#stage);
         let waits = tried |> Result.map(snd) |> Result.getWithDefault(Nil) |> List.filterMap(waitOfOut);
         let secs = waits |> List.map(x -> { let (s, _, _) = x; s }) |> List.maximum |> Option.getWithDefault(0.0);
-        let kind = if (List.isEmpty(waits)) (if (instant) NovelBeat.Kind.Instant else NovelBeat.Kind.Timed)
-                   else if (List.forAll(x -> { let (_, _, line) = x; line }, waits)) NovelBeat.Kind.LineWait(secs, None, instant)
-                   else if (List.forAll(x -> { let (_, tap, _) = x; tap }, waits)) NovelBeat.Kind.WaitOrTap(secs, None, instant)
-                   else NovelBeat.Kind.Wait(secs, instant);
+        let kind = if (List.isEmpty(waits)) NovelBeat.Kind.Command
+                   else if (List.forAll(x -> { let (_, _, line) = x; line }, waits)) NovelBeat.Kind.LineWait(secs, None)
+                   else if (List.forAll(x -> { let (_, tap, _) = x; tap }, waits)) NovelBeat.Kind.WaitOrTap(secs, None)
+                   else NovelBeat.Kind.Wait(secs);
         (stage, kind)
 
     /// 命令が出した待ち: (秒, 押すと明ける, 次の台詞の字だけを待たせる)。
@@ -279,7 +278,8 @@ mod WorldRead {
 
     /// bookmark と、今の舞台と頁（文字送りは出し終えた形）と、今のノードに入った時の舞台で作る戻れる所。
     def markOf(bookmark: YarnRunner.Bookmark, r: World.Read): Saves.Mark =
-        { bookmark = bookmark, stage = Stage.snapshotOf(r#stage), page = Some(Page.revealAll(r#page)), entry = Some(r#entry#start) }
+        { bookmark = bookmark, stage = Stage.snapshotOf(r#stage), page = Some(Page.revealAll(r#page)), entry = Some(r#entry#start),
+          stageForm = Saves.StageForm.Whole }
 
     /// 出来事を反映する前に、ノードに入ったかを見る。別のノードの行か、同じノードで前に通った行より上の行（自分への jump）なら、
     /// 入る直前の舞台と頁を entry に残す。
@@ -632,7 +632,9 @@ mod WorldRead {
     /// バックログと選択肢を作り直し、最後に舞台と頁を Mark の値で置き換える。entry の無い枠は Mark の舞台と空の頁から当て直し、
     /// 頁の無い枠は当て直しで作った頁のまま。画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
     /// Mark v3 の古い mode（Nvl・Adv）は、ここで novel.theme.json の windows の本当の型の名前にする。
+    /// version 2 の欄だけから作った舞台（Saves.StageForm.Partial）は、当て直した舞台を残して背景・環境音・mode だけを Mark の値にする。
     // WhyNot: 当て直した舞台をそのまま使わない — 数え足す値（頁の数など）は当て直しの始まりに頼り、entry の無い枠では合わない。
+    // WhyNot: Partial の枠で Mark の舞台に置き換えない — ノードの頭の <<scene>> で出した人物や game. の鍵が消える。
     pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
         let saved = Stage.withModeResolved(res#theme, Stage.fromSnapshot(mark#stage));
         let start = mark#entry |> Option.map(e -> Stage.withModeResolved(res#theme, Stage.fromSnapshot(e#stage))) |> Option.getWithDefault(saved);
@@ -641,7 +643,16 @@ mod WorldRead {
         let gaveUp = World.readOf(w) |> Option.map(r -> r#gaveUp) |> Option.getWithDefault(Set.empty());
         settled(absorb(res, Commands.Replay.Silent, events, { talk = talk, stage = start, page = startPage, gaveUp = gaveUp | World.emptyRead(res#theme) },
                        { panel = World.Panel.Closed, ask = None | w }))
-            |> World.mapRead(r -> { stage = saved, page = Option.getWithDefault(r#page, mark#page) | r })
+            |> World.mapRead(r -> { stage = restoredStage(mark#stageForm, saved, r#stage), page = Option.getWithDefault(r#page, mark#page) | r })
+
+    /// 戻した後の舞台: 全部の舞台なら Mark の値・version 2 の欄だけなら当て直した舞台に背景・環境音・mode を重ねた物。
+    def restoredStage(form: Saves.StageForm, saved: Stage.Stage, replayed: Stage.Stage): Stage.Stage = match form {
+        case Saves.StageForm.Whole   => saved
+        case Saves.StageForm.Partial =>
+            let ambience = PropertyTween.nameEnd(Stage.ambienceKey(), saved#props);
+            { shot = saved#shot, mode = saved#mode,
+              props = PropertyTween.setName(Stage.ambienceKey(), ambience, Clock.zero(), 0.0, replayed#props) | Stage.settle(replayed) }
+    }
 
     /// 当て直した後の形: 演出の途中は終わりの形にし、今のノードはオートセーブ済みとして扱う（戻った所で同じ物を残さない）。
     def settled(w: World.World): World.World =

@@ -67,7 +67,8 @@ mod E2e {
                     if (not World.isReading(w) or not World.isFree(w) or World.isChoosing(w) or Option.nonEmpty(WorldRead.gateHere(w)) or WorldRead.isPaused(w)) Flow.DriveAct.Restart
                     else if (not Page.isDone(World.pageOf(w))) Flow.DriveAct.Restart
                     else if (waited >= readSeconds()) Flow.DriveAct.Tap("confirm")
-                    else Flow.DriveAct.Idle, h) } :: Nil,
+                    else Flow.DriveAct.Idle, h) } :: Nil
+              ::: GameE2e.drives(),
           ready = Some(onWorld(w -> if (WorldRead.isWaiting(w)) Flow.Ready.Busy("waiting") else if (World.isReading(w) and not Page.isDone(World.pageOf(w))) Flow.Ready.Busy("typing") else Flow.Ready.Ready)),
           replies = Some(onWorld(w -> Emit.countOf(w#events)))
           | Flow.emptyTable() }

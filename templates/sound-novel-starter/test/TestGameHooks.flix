@@ -498,10 +498,10 @@ mod TestGameHooks {
         Assert.assertEq(expected = ("quick" :: Nil, true, 0), (signals, isPaused(w), Page.visibleCount(World.pageOf(w))))
 
     @Test
-    def testATimedCommandWaitsForTheSwitch(): Unit \ {Assert, Fs.FileRead} =
-        // 時間を取る命令に当たったら止まり、その後ろの時間を取らない命令も待つ。
+    def testATimedCommandAlsoRunsDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =
+        // 時間を取る命令も切り替えの頭で流れ、その後ろの時間を取らない命令も流れる（古い版は束の命令を全部その場で当てた）。
         let (_, signals) = walkedInto(withSwitchCommands(res()), "slow" :: "quick" :: Nil);
-        Assert.assertEq(expected = Nil, signals)
+        Assert.assertEq(expected = "slow" :: "quick" :: Nil, signals)
 
     @Test
     def testTheLineComesAfterTheSwitch(): Unit \ {Assert, Fs.FileRead} =
@@ -693,4 +693,11 @@ mod TestGameHooks {
         let lamp = (_: View.Env, _: World.Read) -> { id = "lamp", name = "電灯", rect = Layout.screen(Layout.Fit.Regular) } :: Nil;
         let ids = FlowVideo.objectsUsing(lamp, View.emptyFonts(), Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
         Assert.assertTrue(List.memberOf("lamp", ids))
+
+    // ══ GameE2e.drives ══
+
+    @Test
+    def testGameDrivesComeAfterTheReader(): Unit \ Assert =
+        // flow の drive は、テンプレートの reader の後ろにゲームの drive が並ぶ。
+        Assert.assertEq(expected = "reader" :: (GameE2e.drives() |> List.map(d -> d#name)), E2e.table()#drives |> List.map(d -> d#name))
 }

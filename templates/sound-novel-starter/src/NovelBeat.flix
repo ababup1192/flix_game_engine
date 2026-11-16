@@ -3,7 +3,8 @@
 // 実行器は先に引き出さない: 実行器が <<wait>> で止まった所までの束を並べ、表の終わりに着いたら WorldRead が実行器を Tick して
 // 続きの束を後ろへ足す（表を変えるのは後ろへ足すのと、押すと明ける待ちを今の時刻まで縮めるのだけ。waitFor を途中へ差し込むと
 // PlaybackLog の解いた待ちの数がずれる）。
-// 置き方: 時間を取らない命令は、前の LineWait（次の台詞の字を待たせる待ち）の頭へ寄せる・それ以外は前の待ちが全部済んでから。
+// 置き方: LineWait（次の台詞の字を待たせる待ち）の後ろの命令は、時間を取る命令も含めて LineWait の頭へ寄せる（古い版は束の命令を
+// 全部その場で当て、歩きとコメントは台詞の字と実行器の <<wait>> だけを待たせた）。それ以外は前の待ちが全部済んでから。
 // <<wait>> と流した命令の待ちは LineWait の頭から数えて重なる（古い版の記録: 歩く背景 5.4 秒の後ろの <<wait 0.8>> の後の台詞は
 // 5.4 秒の次のフレーム）。台詞は続いた LineWait の最初の頭で頁に積み、字は待ちが全部済んでから出す（Typed）。
 // 設計は engine の plans/novel-waits-timeline.md。
@@ -13,16 +14,14 @@ mod NovelBeat {
 
     /// 出来事の待ち方。予定の秒と、押して縮めた秒を別々に持つ（記録の秒は予定の秒のまま）。
     pub enum Kind with Eq, ToString {
-        /// 時間を取らない命令
-        case Instant
-        /// 時間を取る演出の命令（絵は Stage の時計で動く。後ろを待たせない）
-        case Timed
-        /// 押しても明けない待ちを出した命令（予定の秒）。instant = 時間を取らない命令が出した（LineWait の頭へ寄せて重ねる）
-        case Wait(Float64, Bool)
+        /// 待ちを出さない命令（時間を取る演出の絵は Stage の時計で動く。後ろを待たせない）
+        case Command
+        /// 押しても明けない待ちを出した命令（予定の秒）
+        case Wait(Float64)
         /// 押すと明ける待ちを出した命令（予定の秒・縮めた秒）
-        case WaitOrTap(Float64, Option[Float64], Bool)
+        case WaitOrTap(Float64, Option[Float64])
         /// 次の台詞の字を待たせる待ちを出した命令（予定の秒・縮めた秒）
-        case LineWait(Float64, Option[Float64], Bool)
+        case LineWait(Float64, Option[Float64])
         /// 実行器の <<wait 秒>>
         case RunnerWait(Float64)
         case Line
@@ -80,11 +79,10 @@ mod NovelBeat {
         let (i, item) = pair;
         let acc = if (item#first) { batchStart = if (hasApply(item#kind)) Some(Key.Apply(i)) else None | acc0 } else acc0;
         match item#kind {
-            case Kind.Instant                    => place(acc, zeroAt(acc#flowFrom, Key.Apply(i)))
-            case Kind.Timed                      => place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0)))
-            case Kind.Wait(secs, instant)        => waitOf(i, secs, instant, acc)
-            case Kind.WaitOrTap(secs, cut, instant) => waitOf(i, lengthOf(secs, cut), instant, acc)
-            case Kind.LineWait(secs, cut, instant)  => lineWaitOf(i, lengthOf(secs, cut), instant, acc)
+            case Kind.Command                    => place(acc, zeroAt(acc#flowFrom, Key.Apply(i)))
+            case Kind.Wait(secs)                 => waitOf(i, secs, acc)
+            case Kind.WaitOrTap(secs, cut)       => waitOf(i, lengthOf(secs, cut), acc)
+            case Kind.LineWait(secs, cut)        => lineWaitOf(i, lengthOf(secs, cut), acc)
             case Kind.RunnerWait(secs)           => runnerWaitOf(i, secs, acc)
             case Kind.Line                       => lineOf(i, acc)
             case Kind.Choices                    => gated(place(place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.waitFor(Key.Choose(i))))
@@ -92,16 +90,13 @@ mod NovelBeat {
             case Kind.Elapsed(secs)              => place(gated(acc), Timeline.append(Key.Hold(i), Duration.Seconds(secs)))
         }
 
-    /// 待ちを出した命令。時間を取らない命令が LineWait の後ろで出した待ちは LineWait の頭から重なり（明けるのは遅い方）、後ろは流さない。
-    def waitOf(i: Int32, secs: Float64, instant: Bool, acc: Acc): Acc =
-        let anchor = if (instant) acc#flowFrom else None;
-        let base = if (instant) acc else gated(acc);
-        gated(place(place(base, zeroAt(anchor, Key.Apply(i))), holdAt(anchor, Key.Hold(i), secs)))
+    /// 押しても・押すと明ける待ちを出した命令。LineWait の後ろなら LineWait の頭から重なり（明けるのは遅い方）、後ろは流さない。
+    def waitOf(i: Int32, secs: Float64, acc: Acc): Acc =
+        gated(place(place(acc, zeroAt(acc#flowFrom, Key.Apply(i))), holdAt(acc#flowFrom, Key.Hold(i), secs)))
 
     /// LineWait: 後ろの時間を取らない命令をこの頭へ寄せる。続いた LineWait は最初の物を台詞の積む時刻に覚えておく。
-    def lineWaitOf(i: Int32, secs: Float64, instant: Bool, acc: Acc): Acc =
-        let anchor = if (instant) acc#flowFrom else None;
-        let started = place(place(acc, zeroAt(anchor, Key.Apply(i))), holdAt(anchor, Key.Hold(i), secs));
+    def lineWaitOf(i: Int32, secs: Float64, acc: Acc): Acc =
+        let started = place(place(acc, zeroAt(acc#flowFrom, Key.Apply(i))), holdAt(acc#flowFrom, Key.Hold(i), secs));
         { flowFrom = Some(Key.Hold(i)), chainStart = Some(Option.getWithDefault(Key.Hold(i), acc#chainStart)) | started }
 
     /// 実行器の <<wait>>: 実行器が束を返した時刻（束の最初の出来事の頭）から数え、前の待ちと重なる（古い版も実行器が <<wait>> に
@@ -137,13 +132,13 @@ mod NovelBeat {
     }
 
     def isTappable(kind: Kind): Bool = match kind {
-        case Kind.WaitOrTap(_, _, _) => true
-        case Kind.LineWait(_, _, _)  => true
+        case Kind.WaitOrTap(_, _) => true
+        case Kind.LineWait(_, _)  => true
         case _                       => false
     }
 
     def isBlockingHold(kind: Kind): Bool = match kind {
-        case Kind.Wait(_, _)    => true
+        case Kind.Wait(_)       => true
         case Kind.RunnerWait(_) => true
         case Kind.Elapsed(_)    => true
         case _                  => false
@@ -278,8 +273,8 @@ mod NovelBeat {
         List.minimum(starts) |> Option.getWithDefault(1.0e9)
 
     def shortened(secs: Float64, kind: Kind): Kind = match kind {
-        case Kind.WaitOrTap(planned, _, instant) => Kind.WaitOrTap(planned, Some(secs), instant)
-        case Kind.LineWait(planned, _, instant)  => Kind.LineWait(planned, Some(secs), instant)
+        case Kind.WaitOrTap(planned, _) => Kind.WaitOrTap(planned, Some(secs))
+        case Kind.LineWait(planned, _)  => Kind.LineWait(planned, Some(secs))
         case other                               => other
     }
 
@@ -288,9 +283,9 @@ mod NovelBeat {
         Vector.nth(i, beat#items) |> Option.flatMap(item -> plannedOf(item#kind))
 
     def plannedOf(kind: Kind): Option[Float64] = match kind {
-        case Kind.Wait(secs, _)         => Some(secs)
-        case Kind.WaitOrTap(secs, _, _) => Some(secs)
-        case Kind.LineWait(secs, _, _)  => Some(secs)
+        case Kind.Wait(secs)         => Some(secs)
+        case Kind.WaitOrTap(secs, _) => Some(secs)
+        case Kind.LineWait(secs, _)  => Some(secs)
         case Kind.RunnerWait(secs)      => Some(secs)
         case _                          => None
     }
