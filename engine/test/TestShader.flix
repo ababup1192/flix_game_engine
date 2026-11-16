@@ -1371,6 +1371,23 @@ def testBlurBindingsWithZeroRadiusEqualOneByOne(): Unit \ Assert =
     Assert.assertEq(expected = rgbBlurSamples(rgbBlurBindings(0.3, (zero, zero, zero), true)),
                     rgbBlurSamples(rgbBlurBindings(0.3, (zero, zero, zero), false)))
 
+/// amount が 0.0 と -0.0 で混ざる r・g・b も、1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsWithSignedZeroAmountsEqualOneByOne(): Unit \ Assert =
+    let amounts = (ShaderDoc.Field.Const(0.0), ShaderDoc.Field.Const(-0.0), ShaderDoc.Field.Const(0.0));
+    Assert.assertEq(expected = rgbBlurSamples(rgbBlurBindings(0.3, amounts, true)), rgbBlurSamples(rgbBlurBindings(0.3, amounts, false)))
+
+/// Rgba16Float の絵を読む r・g・b の bindings も、1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsOnHdrTextureEqualOneByOne(): Unit \ Assert =
+    let one = ShaderDoc.Field.Const(1.0);
+    let hdr = ShaderEval.hdrTextureOf(2, 2, Vector#{ 1.5, 0.25, 0.0, 1.0, 0.5, 2.0, 0.75, 0.5, 0.0, 0.125, 3.0, 1.0, 1.0, 1.0, 1.0, 0.25 });
+    let at = spacer -> {
+        let compiled = ShaderEval.compile(rgbBlurBindings(0.3, (one, one, one), spacer), Map#{ "t" => ShaderEval.TexImage.Rgba16Float(hdr) });
+        ((0.2, 0.3) :: (0.5, 0.5) :: (0.9, 0.8) :: Nil) |> List.map(p -> ShaderEval.evalCompiled(compiled, fst(p), snd(p), 0.0))
+    };
+    Assert.assertEq(expected = at(true), at(false))
+
 /// REPEAT の 3D の材質でも、続けて読む bindings は 1 本ずつ読んだ時と同じ値。
 @Test
 def testBlurBindingsInRepeatMaterialEqualOneByOne(): Unit \ Assert =

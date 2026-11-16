@@ -10,7 +10,7 @@
 pub mod ShaderEval {
 
     import java.lang.{Float => JFloat}
-    use ShaderEval.Internal.{allSlotsEqual, blurGroupEach, blurGroupSame, blurPoints, blurTex, clampTexel, sampleTexAs, wrapTexel, wrapUnit}
+    use ShaderEval.Internal.{isEverySlotEqual, blurGroupPerAmount, blurGroupSharedAmount, blurPoints, blurTex, clampTexel, sampleTexAs, wrapTexel, wrapUnit}
 
     /// テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
     /// GL の pass ターゲットは上下逆格納だが描き出しの pass 画像は正立なので、CPU 側は反転しない
@@ -144,6 +144,7 @@ pub mod ShaderEval {
         case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Vector[Float64], Node, Bool, Bool) // 幅, 高さ, 画素, shift, 半径 x/y, taps, 点の表（blurPoints）, amount, Linear, REPEAT
         // 続いた bindings の TexBlur（絵・半径・taps が同じで shift だけ違う）を 1 回の点の巡りで読む。値は bindings の置き場の
         // 先頭（最後の Int32）から順に置く（後ろの bindings は Ref でそれを読む）。shift の列と amount の列は同じ長さ。
+        // WhyNot: 欄をレコードにまとめない — 画素ごとに名前で引く分が塗りに乗る（Node の他の case と同じ理由）。
         case TexBlurGroup(Int32, Int32, Vector[Int32], Vector[Int32], Float64, Float64, Int32, Vector[Float64], Vector[Node], Bool, Int32) // 幅, 高さ, 画素, shift の列, 半径 x/y, taps, 点の表, amount の列, REPEAT, 先頭の置き場（NEAREST だけ）
         case TexF(Int32, Int32, Vector[Float32], Int32, Bool, Bool)   // Tex の Rgba16Float 版（幅, 高さ, 値, 成分の位置, Linear, REPEAT）
         case TexBlurF(Int32, Int32, Vector[Float32], Int32, Float64, Float64, Int32, Vector[Float64], Node, Bool, Bool) // TexBlur の Rgba16Float 版
@@ -233,15 +234,17 @@ pub mod ShaderEval {
     def blurGroupOf(linear: Bool, texEnv: Map[String, TexImage], bindings: List[(String, ShaderDoc.Field)]): Option[(TexData, BlurRead, List[(String, BlurRead)])] =
         match bindings {
             case (name, ShaderDoc.Field.TexBlur(bl)) :: rest if not linear =>
-                let members = List.reverse(blurRunFrom(bl, Set#{name}, rest, (name, bl) :: Nil));
-                rgba8Of(texEnv, bl#name) |> Option.filter(_ -> List.length(members) >= 2) |> Option.map(td -> (td, bl, members))
+                // WhyNot: 仲間を巡ってから絵を引かない — 8bit でない絵の仲間が続くと、binding ごとに残りを巡り直して二乗になる。
+                rgba8Of(texEnv, bl#name)
+                    |> Option.map(td -> (td, bl, List.reverse(blurRunFrom(bl, Set#{name}, rest, (name, bl) :: Nil))))
+                    |> Option.filter(g -> { let (_, _, members) = g; List.length(members) >= 2 })
             case _ => None
         }
 
     def blurRunFrom(first: BlurRead, names: Set[String], bindings: List[(String, ShaderDoc.Field)],
                     acc: List[(String, BlurRead)]): List[(String, BlurRead)] =
         match bindings {
-            case (name, ShaderDoc.Field.TexBlur(bl)) :: rest if sameBlurSource(first, bl) and not refsAny(names, bl#amount) =>
+            case (name, ShaderDoc.Field.TexBlur(bl)) :: rest if sameBlurSource(first, bl) and not refersToAny(names, bl#amount) =>
                 blurRunFrom(first, Set.insert(name, names), rest, (name, bl) :: acc)
             case _ => acc
         }
@@ -249,7 +252,7 @@ pub mod ShaderEval {
     def sameBlurSource(a: BlurRead, b: BlurRead): Bool =
         a#name == b#name and a#radius#x == b#radius#x and a#radius#y == b#radius#y and ShaderDoc.blurTaps(a#taps) == ShaderDoc.blurTaps(b#taps)
 
-    def refsAny(names: Set[String], field: ShaderDoc.Field): Bool =
+    def refersToAny(names: Set[String], field: ShaderDoc.Field): Bool =
         ShaderDoc.foldField((found, f) -> match f {
             case ShaderDoc.Field.Ref(n) => found or Set.memberOf(n, names)
             case _                      => found
@@ -520,17 +523,7 @@ pub mod ShaderEval {
             // dx/dy は外側 uv で評価してから、of をずらした座標で読む（GLSL の式と同じ組み方）。
             case ShaderDoc.Field.Shift(sh)      => Node.Shift(sub(sh#dx), sub(sh#dy), sub(sh#of))
             case ShaderDoc.Field.TexBlur(bl)    =>
-                match Map.get(bl#name, texEnv) {
-                    case Some(TexImage.Rgba8Unorm(td)) =>
-                        let taps = ShaderDoc.blurTaps(bl#taps);
-                        Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan), bl#radius#x, bl#radius#y, taps, blurPoints(taps),
-                                     sub(bl#amount), sampling#linear, sampling#repeat)
-                    case Some(TexImage.Rgba16Float(HdrTextureData.HdrTextureData(w, h, values))) =>
-                        let taps = ShaderDoc.blurTaps(bl#taps);
-                        Node.TexBlurF(w, h, values, texChanIndex(bl#chan), bl#radius#x, bl#radius#y, taps, blurPoints(taps),
-                                      sub(bl#amount), sampling#linear, sampling#repeat)
-                    case None     => Node.Missing
-                }
+                Map.get(bl#name, texEnv) |> Option.map(img -> blurNodeOf(sampling, bl, img, sub(bl#amount))) |> Option.getWithDefault(Node.Missing)
             // 3D の材質の texEnv は段 0 の絵なので、寸法も段 0 の数（GL の textureSize(…, 0) と同じ）。
             case ShaderDoc.Field.TexSize(ts)    =>
                 let pick = (w: Int32, h: Int32) -> match ts#axis {
@@ -551,6 +544,18 @@ pub mod ShaderEval {
             case ShaderDoc.Field.World(w)       => Node.Ref(inputIndex(false, w#axis))
             case ShaderDoc.Field.Normal(n)      => Node.Ref(inputIndex(true, n#axis))
             case ShaderDoc.Field.VertexColor(vc) => vertexColorNode(vc#chan)
+        }
+
+    /// 絵 img を読むぼかしの節（amount は組み直した場）。
+    def blurNodeOf(sampling: Sampling, bl: BlurRead, img: TexImage, amount: Node): Node =
+        let taps = ShaderDoc.blurTaps(bl#taps);
+        match img {
+            case TexImage.Rgba8Unorm(td) =>
+                Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan), bl#radius#x, bl#radius#y, taps, blurPoints(taps),
+                             amount, sampling#linear, sampling#repeat)
+            case TexImage.Rgba16Float(HdrTextureData.HdrTextureData(w, h, values)) =>
+                Node.TexBlurF(w, h, values, texChanIndex(bl#chan), bl#radius#x, bl#radius#y, taps, blurPoints(taps),
+                              amount, sampling#linear, sampling#repeat)
         }
 
     /// Rgba16Float の 1 画素の中の成分の位置（r, g, b, α の順）。
@@ -783,8 +788,8 @@ pub mod ShaderEval {
                 putAmounts(amounts, x, y, t, slot, 0, env);
                 let k = Array.get(slot, env);
                 let n = Vector.length(shifts);
-                if (allSlotsEqual(k, slot, 1, n, env)) blurGroupSame(w, h, pixels, shifts, repeat, taps, points, x, y, rx * k, ry * k, slot, env)
-                else blurGroupEach(w, h, pixels, shifts, repeat, taps, points, x, y, rx, ry, slot, 0, env);
+                if (isEverySlotEqual(k, slot, 1, n, env)) blurGroupSharedAmount(w, h, pixels, shifts, repeat, taps, points, x, y, rx * k, ry * k, slot, env)
+                else blurGroupPerAmount(w, h, pixels, shifts, repeat, taps, points, x, y, rx, ry, slot, 0, env);
                 Array.get(slot, env)
             case Node.TexF(w, h, values, chan, linear, repeat) => sampleTexFAs(linear, repeat, w, h, values, chan, x, y)
             case Node.TexBlurF(w, h, values, chan, rx, ry, taps, points, amount, linear, repeat) =>
@@ -891,7 +896,6 @@ pub mod ShaderEval {
             let s = sampleTexFAs(linear, repeat, w, h, values, chan, u + Vector.get(2 * i, points) * rx, v + Vector.get(2 * i + 1, points) * ry);
             blurSumF(w, h, values, chan, linear, repeat, taps, points, u, v, rx, ry, i + 1, acc + s)
         }
-
 
     // Pow の CPU 評価。整数指数は反復積（GLSL の powProduct と同じ左結合の並び）で、
     // 非整数のみ Float64.pow を呼ぶ（第 1 引数はレコード）。負の底は 0 で下切り。

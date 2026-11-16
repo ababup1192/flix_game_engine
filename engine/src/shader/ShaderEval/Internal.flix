@@ -1,4 +1,4 @@
-// ShaderEval.Internal — テクスチャの標本（NEAREST・Linear・REPEAT・Rgba16Float）とぼかしの点の巡り。
+// ShaderEval.Internal — 8bit の絵の標本（NEAREST・Linear・REPEAT）とぼかしの点の巡り。
 // 引数は数と列だけで受ける（画素ごと・点ごとに呼ばれるので、レコードを作らず引かない）。
 
 /// ShaderEval の中身。ゲームからは呼ばない（ゲーム向けの関数は ShaderEval にある）。
@@ -20,7 +20,7 @@ pub mod ShaderEval.Internal {
         if (rx == 0.0 and ry == 0.0) sampleTexAs(linear, repeat, w, h, pixels, shift, u, v)
         else blurSum(w, h, pixels, shift, linear, repeat, taps, points, u, v, rx, ry, 0, 0.0) / Int32.toFloat64(taps)
 
-    pub def blurSum(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, linear: Bool, repeat: Bool, taps: Int32, points: Vector[Float64],
+    def blurSum(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, linear: Bool, repeat: Bool, taps: Int32, points: Vector[Float64],
                 u: Float64, v: Float64, rx: Float64, ry: Float64, i: Int32, acc: Float64): Float64 =
         if (i >= taps) acc
         else {
@@ -30,24 +30,24 @@ pub mod ShaderEval.Internal {
 
     // ── TexBlurGroup の点の巡り（値の置き場 env[slot + j] が j 番目の shift の値）──
 
-    pub def allSlotsEqual(k: Float64, slot: Int32, j: Int32, n: Int32, env: Array[Float64, r]): Bool \ r =
+    pub def isEverySlotEqual(k: Float64, slot: Int32, j: Int32, n: Int32, env: Array[Float64, r]): Bool \ r =
         if (j >= n) true
-        else if (Array.get(slot + j, env) == k) allSlotsEqual(k, slot, j + 1, n, env)
+        else if (Array.get(slot + j, env) == k) isEverySlotEqual(k, slot, j + 1, n, env)
         else false
 
     /// amount の値が仲間で 1 つ違う時: 仲間ごとに blurTex（env[slot + j] にある自分の amount で）。
-    pub def blurGroupEach(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, taps: Int32,
+    pub def blurGroupPerAmount(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, taps: Int32,
                       points: Vector[Float64], u: Float64, v: Float64, rx: Float64, ry: Float64, slot: Int32, j: Int32,
                       env: Array[Float64, r]): Unit \ r =
         if (j >= Vector.length(shifts)) ()
         else {
             let k = Array.get(slot + j, env);
             Array.put(blurTex(w, h, pixels, Vector.get(j, shifts), false, repeat, taps, points, u, v, rx * k, ry * k), slot + j, env);
-            blurGroupEach(w, h, pixels, shifts, repeat, taps, points, u, v, rx, ry, slot, j + 1, env)
+            blurGroupPerAmount(w, h, pixels, shifts, repeat, taps, points, u, v, rx, ry, slot, j + 1, env)
         }
 
     /// amount の値が仲間で同じ時: 点を 1 回巡り、点ごとに全部の shift を足す（足す順は shift ごとに blurSum と同じ）。
-    pub def blurGroupSame(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, taps: Int32,
+    pub def blurGroupSharedAmount(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, taps: Int32,
                       points: Vector[Float64], u: Float64, v: Float64, rx: Float64, ry: Float64, slot: Int32, env: Array[Float64, r]): Unit \ r =
         let n = Vector.length(shifts);
         putSlots(0.0, slot, 0, n, env);
@@ -57,13 +57,13 @@ pub mod ShaderEval.Internal {
             divideSlots(Int32.toFloat64(taps), slot, 0, n, env)
         }
 
-    pub def putSlots(value: Float64, slot: Int32, j: Int32, n: Int32, env: Array[Float64, r]): Unit \ r =
+    def putSlots(value: Float64, slot: Int32, j: Int32, n: Int32, env: Array[Float64, r]): Unit \ r =
         if (j >= n) () else { Array.put(value, slot + j, env); putSlots(value, slot, j + 1, n, env) }
 
-    pub def divideSlots(d: Float64, slot: Int32, j: Int32, n: Int32, env: Array[Float64, r]): Unit \ r =
+    def divideSlots(d: Float64, slot: Int32, j: Int32, n: Int32, env: Array[Float64, r]): Unit \ r =
         if (j >= n) () else { Array.put(Array.get(slot + j, env) / d, slot + j, env); divideSlots(d, slot, j + 1, n, env) }
 
-    pub def blurGroupSum(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, taps: Int32,
+    def blurGroupSum(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, taps: Int32,
                      points: Vector[Float64], u: Float64, v: Float64, rx: Float64, ry: Float64, slot: Int32, i: Int32,
                      env: Array[Float64, r]): Unit \ r =
         if (i >= taps) ()
@@ -74,7 +74,7 @@ pub mod ShaderEval.Internal {
 
     /// (u, v) を NEAREST の sampleTexAs と同じテクセルで読み、shift ごとの値を env[slot + j] に足す（テクセルは 1 回だけ引く）。
     /// 寸法が 0 の絵は 0 を足すのと同じなので何もしない。
-    pub def addTap(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, u: Float64, v: Float64,
+    def addTap(w: Int32, h: Int32, pixels: Vector[Int32], shifts: Vector[Int32], repeat: Bool, u: Float64, v: Float64,
                slot: Int32, env: Array[Float64, r]): Unit \ r =
         if (w <= 0 or h <= 0) ()
         else {
@@ -85,7 +85,7 @@ pub mod ShaderEval.Internal {
             addChannels(shifts, Vector.get(iy * w + ix, pixels), slot, 0, env)
         }
 
-    pub def addChannels(shifts: Vector[Int32], argb: Int32, slot: Int32, j: Int32, env: Array[Float64, r]): Unit \ r =
+    def addChannels(shifts: Vector[Int32], argb: Int32, slot: Int32, j: Int32, env: Array[Float64, r]): Unit \ r =
         if (j >= Vector.length(shifts)) ()
         else {
             Array.put(Array.get(slot + j, env) + channelOf(Vector.get(j, shifts), argb), slot + j, env);
@@ -95,7 +95,7 @@ pub mod ShaderEval.Internal {
     /// 8bit の画素 argb の、shift から始まる 8bit を 0..1 にした値。
     // WhyNot: Int32.logicalRightShift を使わない — 名前つき引数（dist =）の record をテクセルごとに作って引く。
     // 算術シフトでも、shift が 0..24 なら下の 8bit は同じ。
-    pub def channelOf(shift: Int32, argb: Int32): Float64 =
+    def channelOf(shift: Int32, argb: Int32): Float64 =
         Int32.toFloat64(Int32.bitwiseAnd(Int32.rightShift(argb, shift), 255)) / 255.0
 
     pub def sampleTexAs(linear: Bool, repeat: Bool, w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
@@ -108,7 +108,7 @@ pub mod ShaderEval.Internal {
     pub def wrapUnit(x: Float64): Float64 = x - Float64.floor(x)
 
     /// Linear の REPEAT の標本（GL の GL_LINEAR + REPEAT と同じ）。0..1 へ戻した座標で、端をまたぐ 4 テクセルは反対の端から読む。
-    pub def sampleTexLinearRepeat(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+    def sampleTexLinearRepeat(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
         sampleLinearWith(true, w, h, pixels, shift, u, v)
 
     /// texel 添字を [0, n−1] へ回す（REPEAT。−1 は n−1・n は 0）。floor 済みの値を受ける。
@@ -119,7 +119,7 @@ pub mod ShaderEval.Internal {
     /// Linear の標本（GL の GL_LINEAR + CLAMP_TO_EDGE と同じ点・同じ重み）。テクセルの中心が (i+0.5)/w なので
     /// 読む点から 0.5 引いた所の左下の 4 テクセルを、端に張り付けて、はみ出した分の割合で混ぜる。
     /// GPU は重みを固定小数（たいてい 8bit）に丸めるので ±1/255 程度ずれうる（docs/backend-parity.md の近似の行）。
-    pub def sampleTexLinear(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+    def sampleTexLinear(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
         sampleLinearWith(false, w, h, pixels, shift, u, v)
 
     /// Linear の 4 テクセルを混ぜる（repeat なら端をまたぐテクセルは反対の端から・偽なら端に張り付ける）。
@@ -150,7 +150,7 @@ pub mod ShaderEval.Internal {
 
     /// テクスチャ標本（NEAREST + CLAMP の釘打ち式 — GL と同じ量子化になるのが backend-parity の契約）。
     /// ix = clamp(floor(u*w), 0, w−1)・iy 同様。チャンネル値は 8bit を 255 で割った 0..1。
-    pub def sampleTex(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+    def sampleTex(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
         if (w <= 0 or h <= 0) 0.0
         else {
             let ix = clampTexel(Float64.floor(u * Int32.toFloat64(w)), w);
