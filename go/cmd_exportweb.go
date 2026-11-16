@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
+	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
@@ -556,7 +557,8 @@ func prepareExportProject(p exportWebPaths) error {
 			return err
 		}
 	}
-	linkSharedMavenCache(p.Project)
+	// WhyNot: project は毎回作り直すので、中に置くと書き出しのたびに取り直しになり Maven Central が 429 を返す。
+	mvncache.Link(p.Project)
 	return copyLocalNativeJars(p, ext)
 }
 
@@ -580,21 +582,6 @@ func copyLocalNativeJars(p exportWebPaths, ext string) error {
 		}
 	}
 	return nil
-}
-
-// linkSharedMavenCache は Flix が Maven の取り物を置く lib/cache を、ゲームをまたいで共有する置き場へ向ける。
-// WhyNot: project は毎回作り直すので、中に置くと書き出しのたびに取り直しになり Maven Central が 429 を返す。
-// WhyNot: 失敗を返さないのは、symlink を張れない環境でも取り直すだけで書き出しは通るため。
-func linkSharedMavenCache(project string) {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return
-	}
-	shared := filepath.Join(base, "flix_game_engine", "mvn-cache")
-	if err := os.MkdirAll(shared, 0o755); err != nil {
-		return
-	}
-	_ = os.Symlink(shared, filepath.Join(project, "lib", "cache"))
 }
 
 // copyGameTree はゲームの根の直下の exportWebCopyExcludes を除いて全部写す（symlink は中身を写す）。

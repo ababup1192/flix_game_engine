@@ -14,6 +14,7 @@
     "section_engine_drift",
     "section_close_request",
     "section_builds",
+    "section_mvn_cache",
     "section_agent_eval",
     "section_notes"
   ],

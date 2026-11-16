@@ -15,6 +15,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
+	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 	"github.com/ababup1192/flix_game_engine/go/internal/refactorhost"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 	"github.com/ababup1192/flixlint/go/refactor"
@@ -139,6 +140,9 @@ func pathWithEngineJava(path, engine string) (string, bool) {
 // sharedServer は make check（checkd の server の道）の常駐と同じ jar・ヒープ・寿命。ゲームの hooks.json に checkd.server が
 // 無いか jar を用意できなければ空（flixlint の既定の jar で、索引だけの常駐になる）。
 func sharedServer(root string) refactor.Shared {
+	if msg := mvncache.Link(root); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+	}
 	r, err := hooks.LoadRules(root)
 	if err != nil {
 		return refactor.Shared{}

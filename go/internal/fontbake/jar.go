@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 )
 
 // jarRevision は生成する入口の jar の作り方の版。mainSource か組み方を変えたら 1 上げる（前の jar を使い回さない）。
@@ -124,6 +126,10 @@ func (r Runner) EnsureJar() (string, error) {
 	lib := filepath.Join(r.GameDir, "lib")
 	if err := os.MkdirAll(lib, 0o755); err != nil {
 		return "", err
+	}
+	// WhyNot: proj/lib はゲームの lib を指すので、ゲームの lib/cache を共有の置き場へ向けておけば ここの取り物もそこへ行く。
+	if msg := mvncache.Link(r.GameDir); msg != "" {
+		fmt.Fprintln(r.Log, msg)
 	}
 	if err := os.Symlink(lib, filepath.Join(proj, "lib")); err != nil {
 		return "", fmt.Errorf("lib を繋げない（%v）— Windows なら開発者モードか管理者で symlink を許してください", err)

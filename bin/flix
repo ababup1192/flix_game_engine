@@ -131,4 +131,9 @@ fi
 # 分け合い、上限が足りないと Flix の最適化 (Inliner) が OutOfMemoryError になる。既定の 25% は
 # 16GB の機械で 4GB で、大きなゲームでは足りないことがある（2026-10-14・Studio の server の
 # EngineTasks.memoryArgs と .app の engine/flix と同じ値）。絶対値 (-Xmx) にしないのは、ゲームが育つと山も育つため。
+# Flix は Maven の取り物を <今の所>/lib/cache に決め打ちで置き、無ければ作って取りに行く。起こす前に共有の置き場への
+# symlink にする（symlink なら test 1 回で抜ける。移し方は bin/mvn-cache-share.sh）。
+if [ ! -L lib/cache ] && [ -f flix.toml ] && [ -x "$SCRIPT_DIR/mvn-cache-share.sh" ]; then
+    "$SCRIPT_DIR/mvn-cache-share.sh" --pkg "$PWD"
+fi
 exec "$JAVA_CMD" -Xss32m -XX:MaxRAMPercentage=50 $FLAGS -jar "$FLIX_JAR" "$@"
