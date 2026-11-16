@@ -33,6 +33,11 @@ func keysOnly(t *testing.T, r *rec, root, flow string) {
 
 func (w planWorld) plan(t *testing.T, cache string) (*paintPlan, *Side, *Side) {
 	t.Helper()
+	return w.planWith(t, cache, PainterSoft)
+}
+
+func (w planWorld) planWith(t *testing.T, cache, painter string) (*paintPlan, *Side, *Side) {
+	t.Helper()
 	base, err := LoadSide(w.base)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +46,7 @@ func (w planWorld) plan(t *testing.T, cache string) (*paintPlan, *Side, *Side) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := planPaint(cur, base, cache)
+	plan, err := planPaint(cur, base, cache, painter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +97,41 @@ func TestPlanCopiesFromRenderCache(t *testing.T) {
 	plan, _, _ := w.plan(t, cache)
 	if plan.FromCache != 1 || plan.Painted != 0 {
 		t.Fatalf("render-cache から写さない: %+v", plan)
+	}
+}
+
+func TestPlanCopiesAGPUFrameFromTheRenderCacheUnderThePainterKey(t *testing.T) {
+	w := newPlanWorld(t)
+	keyedRec(keyA, keyB).writeFlow(t, w.base, "route", "design")
+	keysOnly(t, keyedRec(keyC, keyB), w.cur, "route")
+	cache := t.TempDir()
+	stored := cachedPNGFor(cache, testGPU, keyC)
+	if err := os.MkdirAll(filepath.Dir(stored), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePNG(stored, solid(100, 100, color.NRGBA{R: 9, A: 255})); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, _ := w.planWith(t, cache, testGPU)
+	if plan.FromCache != 1 || plan.Painted != 0 {
+		t.Fatalf("描き手の素性つきの名前から写さない: %+v", plan)
+	}
+}
+
+func TestPlanDoesNotCopyACPUFrameIntoAGPURecord(t *testing.T) {
+	w := newPlanWorld(t)
+	keyedRec(keyA, keyB).writeFlow(t, w.base, "route", "design")
+	keysOnly(t, keyedRec(keyC, keyB), w.cur, "route")
+	cache := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cache, keyC[:2]), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePNG(cachedPNG(cache, keyC), solid(100, 100, color.NRGBA{R: 9, A: 255})); err != nil {
+		t.Fatal(err)
+	}
+	plan, _, _ := w.planWith(t, cache, testGPU)
+	if plan.FromCache != 0 || plan.Painted != 1 {
+		t.Fatalf("CPU で塗った絵を GPU の記録へ写した: %+v", plan)
 	}
 }
 
@@ -182,7 +222,7 @@ func TestPlanRefusesAnUnknownLayer(t *testing.T) {
 	keysOnly(t, c, w.cur, "route")
 	base, _ := LoadSide(w.base)
 	cur, _ := LoadSide(w.cur)
-	if _, err := planPaint(cur, base, ""); err == nil {
+	if _, err := planPaint(cur, base, "", PainterSoft); err == nil {
 		t.Fatal("知らない層のコマを world の旗で塗ろうとした")
 	}
 }

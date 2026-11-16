@@ -195,6 +195,11 @@
   `pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO`
 - writePlainPng の、字の縁を本ごとに決める表（SoftRaster.FontAntialias）つき版。
   `pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO`
+- `pub def painterKeyOf(key: String, painter: String): String \ IO`
+- painter で塗った key のコマが置き場にあれば outPath へ写して true。置き場を使わない・verify・鍵が `-` の時は false（塗る）。
+  `pub def copyPaintedPng(session: Session, painter: String, key: String, outPath: String): Bool \ IO`
+- painter で塗った image を outPath へ（writeFramePng と同じ書き方で）書き、鍵が `-` でなければ置き場へも入れる。
+  `pub def storePaintedPng(session: Session, painter: String, key: String, image: BufferedImage, outPath: String): Unit \ IO`
 - 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
   `pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame, extraImages: Map[String, SoftRaster.PassImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO`
 - 前に inputs から書いた一式（noteWrittenFiles で控えた物）が、そのままのバイト列で残っているか。

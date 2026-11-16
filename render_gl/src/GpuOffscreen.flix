@@ -44,6 +44,30 @@ pub mod GpuOffscreen {
             case LwjglEnv.Backend.WebGpu => openWebGpuOrGl(cfg)
         }
 
+    /// WebGPU だけで開く（開けなければ Err。GL へは戻さない）。描き手が回によって替わってはいけない塗り（移行の比べの PNG）向け。
+    // WhyNot: open の GL へ戻す道を通さない — 比べの記録は描き手の素性で分けるので、WebGPU を頼んで GL の絵が混ざると、
+    //   同じ機械でも回によって描き手が替わる。GL は入口の頭で窓サーバへ繋いでいないと作れない（VideoOut.settingsOf）。
+    pub def openWebGpuOnly(cfg: { config = GameEngine.EngineConfig, scale = Int32 }): Result[String, Session] \ IO =
+        openWebGpu(cfg) |> Result.map(SessionData.WebGpu)
+
+    /// 塗った描き手の素性（`webgpu <アダプターの名前>`・`gl`）。描き手が違う絵を比べないための印。
+    pub def painterOf(session: Session): String \ IO = match session {
+        case SessionData.Gl(_)     => "gl"
+        case SessionData.WebGpu(w) => "webgpu ${w#gpu.adapterInfo()}"
+    }
+
+    /// 今のフォントのアトラス（名前 → アトラス。GL は字が育つと中身が変わるので、コマごとに引き直す）。
+    pub def fontTable(session: Session): Map[String, FontAtlas] \ IO = match session {
+        case SessionData.Gl(s)     => GlOffscreen.fontTable(s)
+        case SessionData.WebGpu(w) => Ref.get(w#fonts#atlases)
+    }
+
+    /// WebGPU の誤りの数と最後の誤りの文（GL は (0, "")）。誤りの出た命令は描かれないので、0 でなければ絵は欠けている。
+    pub def errorsOf(session: Session): (Int32, String) \ IO = match session {
+        case SessionData.Gl(_)     => (0, "")
+        case SessionData.WebGpu(w) => (w#gpu.errorCount(), w#gpu.lastError())
+    }
+
     def openWebGpuOrGl(cfg: { config = GameEngine.EngineConfig, scale = Int32 }): Result[String, Session] \ IO =
         match openWebGpu(cfg) {
             case Ok(data) => Ok(SessionData.WebGpu(data))

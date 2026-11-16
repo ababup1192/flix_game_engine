@@ -94,6 +94,7 @@ flow-video:
 # 前の版（git worktree に出した古いコミット）で make migrate-baseline、新しい版で make migrate-new を流すと、
 # 同じ flow の記録（tape.json・world の層のコマ・古いセーブの読み戻し）を bin/fge migrate diff が突き合わせる。
 #   make migrate-baseline   前の版の記録を debug/migrate/baseline に撮る（flow ごとの video.mp4 は MIGRATE_VIDEO=1 の時）。基準が既にあれば止まる（撮り直すなら MIGRATE_OVERWRITE=1）
+#                           比べのコマは画面なしの WebGPU で塗る（MIGRATE_PAINT=cpu で SoftRaster）。新しい撮りは基準と同じ描き手で塗り、描き手が違えば比べずに止める
 #   make migrate-baseline BASELINE_FROM=<前の版のゲームのフォルダ>
 #                           前の版で撮った debug/migrate/baseline を写すだけ（新しい版で撮らない）
 #   make migrate-new        新しい版の記録を debug/migrate/new に撮り、突き合わせる（頁は debug/migrate/report/index.html）
@@ -107,7 +108,8 @@ MIGRATE_DIFF_FLAGS ?=
 # 撮るのは engine の bin/fge migrate shoot（flow を並べて流し、続けて基準の古いセーブを読み戻す）。flow ごとの video.mp4 は MIGRATE_VIDEO=1 の時だけ束ねる
 # （無い時は FLOW_VIDEO=off で全部のコマと音を書かない）。migrate-new は MIGRATE_ALL=off で frames/all を撮らない（diff は all の画素を比べない）。
 # WhyNot: 基準でも all を省かない — 前の版の無い flow の頁に並べる絵と、migrate-video で見る文字の枠の元が無くなる。
-migrate-shoot = HEADLESS_RUN='$(HEADLESS_RUN)' "$(ENGINE)/bin/fge" migrate shoot $(1) $(if $(filter 1,$(MIGRATE_VIDEO)),--video) $(2) $(MIGRATE_FLOWS) || code=1
+# 比べのコマの PNG を塗る描き手は MIGRATE_PAINT=gpu|cpu（既定: 基準を撮る回は gpu = 画面なしの WebGPU・新しい撮りは基準と同じ描き手）。
+migrate-shoot = HEADLESS_RUN='$(HEADLESS_RUN)' "$(ENGINE)/bin/fge" migrate shoot $(1) $(if $(filter 1,$(MIGRATE_VIDEO)),--video) $(if $(MIGRATE_PAINT),--paint $(MIGRATE_PAINT)) $(2) $(MIGRATE_FLOWS) || code=1
 .PHONY: migrate-baseline migrate-new migrate-diff migrate-video
 migrate-baseline:
 	@if [ -n "$(BASELINE_FROM)" ]; then \

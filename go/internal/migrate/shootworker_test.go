@@ -55,7 +55,7 @@ func TestPaintStageDropsTheKeysOnlyPaintSettings(t *testing.T) {
 	keysOnly(t, keyedRec(keyC, keyB), w.cur, "route")
 	base, _ := LoadSide(w.base)
 	first := &shootJob{Kind: "flow", Name: "route", entry: "FlowVideo.play", env: append([]string{"FLOW=e2e/route.flow"}, paintEnv(nil)...)}
-	_, jobs, err := paintStage(w.cur, base, map[string]*shootJob{"route": first}, t.TempDir())
+	_, jobs, err := paintStage(w.cur, base, map[string]*shootJob{"route": first}, t.TempDir(), PainterSoft)
 	if err != nil || len(jobs) != 1 {
 		t.Fatalf("jobs=%d err=%v", len(jobs), err)
 	}

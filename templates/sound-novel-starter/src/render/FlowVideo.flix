@@ -16,6 +16,7 @@
 //   MIGRATE_ALL=off … frames/all を撮らない（diff は all の画素を比べない。前の版の無い flow の頁に並べる絵が無くなるので、基準を撮る回は撮る）
 //   MIGRATE_PAINT_WORLD・MIGRATE_PAINT_ALL … その層で塗るコマ（FGE_VIDEO_PAINT と同じ字: all・none・frames:A-B,…。無ければ FGE_VIDEO_PAINT のまま）。
 //               塗らないコマも鍵（frames/<層>/drawhash.txt）は書く。bin/fge migrate shoot が鍵を先に撮り、前の版と鍵の違うコマだけを塗る時に渡す
+//   FGE_PNG_PAINTER=webgpu|soft … 比べのコマの PNG を塗る描き手（engine の VideoOut が読む。bin/fge migrate shoot が基準に合わせて渡す）
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
 mod FlowVideo {
     use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Log, Rect2, Render, Resources, Vec2, VideoOut}
@@ -231,8 +232,9 @@ mod FlowVideo {
         let saves = outcome#last#world#saves;
         if (Saves.hasAny(saves)) writeText("${dir}/saves.json", Util.Json.toPrettyString(2, Saves.toJson(saves)) + "\n") else ()
 
-    /// 予定のコマを層ごとのフォルダ（dir/frames/<層>）に SoftRaster で塗る（f<フレームの番号>.png）。塗るのは paint が選んだコマだけで、鍵は全部のコマで書く。
-    // WhyNot: GPU で塗らない — 全部のフレームを選んだ時の GPU の道は PNG でなく frames.mkv を書き、tape.json の file が指す絵が無くなる。
+    /// 予定のコマを層ごとのフォルダ（dir/frames/<層>）に塗る（f<フレームの番号>.png）。描き手は FGE_PNG_PAINTER（bin/fge migrate shoot が渡す。
+    /// webgpu = 画面なしの WebGPU・soft = SoftRaster）。塗るのは paint が選んだコマだけで、鍵は全部のコマで書く。
+    // WhyNot: 動画の GPU の道（FGE_GPU）で塗らない — 全部のフレームを選んだ時のその道は PNG でなく frames.mkv を書き、tape.json の file が指す絵が無くなる。
     def shootFrames(settings: VideoOut.Settings, screen: SceneRender.Screen, fps: Float64, dir: String, shots: List[MigrateOut.Shot],
                     paint: MigrateOut.Layer -> VideoOut.PaintRange, worlds: List[AppState]): Unit \ IO =
         let rate = Float64.tryToInt32(Float64.round(fps)) |> Option.getWithDefault(30);
