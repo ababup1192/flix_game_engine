@@ -49,6 +49,12 @@ mod V2Main {
         sceneCase("blendDesign", Scene3d.Resolution.Design, V2Blend.room(kit)) ::
         sceneCase("blendDepth", Scene3d.Resolution.Native, { output = depthOfRoom() | V2Blend.room(kit) }) ::
         msaaPassCase("blendMsaaPass", V2Blend.room(kit)) ::
+        billboardCase("billboard", { resolution = Scene3d.Resolution.Native | V2Billboards.room(kit) }) ::
+        billboardCase("billboardDesign", { resolution = Scene3d.Resolution.Design | V2Billboards.room(kit) }) ::
+        billboardCase("billboardDepth", { output = depthOfRoom() | V2Billboards.room(kit) }) ::
+        billboardCase("billboardGlass", V2Billboards.behindGlass(kit)) ::
+        billboardMsaaPassCase(kit) ::
+        billboardHistoryCase(kit) ::
         postCase("post", kit, 1, PostProcess.Tonemap.AcesFitted, Scene3d.Resolution.Native) ::
         postCase("postMsaa", kit, 4, PostProcess.Tonemap.AcesFitted, Scene3d.Resolution.Native) ::
         postCase("postDesign", kit, 1, PostProcess.Tonemap.Reinhard, Scene3d.Resolution.Design) ::
@@ -141,6 +147,22 @@ mod V2Main {
         let design = Room.design();
         { name = name, passes = pass :: Nil, targets = Map#{ "msaa" => RenderTarget.withMsaa(4, RenderTarget.defaultDescriptor()) },
           items = Render.blitRegion({ name = "msaa", design = design, src = { position = Vec2.zero(), size = design },
+                                      at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
+
+    /// ビルボードの場面 scene（V2Billboards）を画面へ直に。看板の Pass を先に描く（ビルボードが貼る）。
+    def billboardCase(name: String, scene: Scene3d.Scene3dCmd): Case =
+        { name = name, passes = V2Billboards.signPass() :: Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), scene) :: Nil }
+
+    /// ビルボードの場面を標本 4 の Pass に描いて貼る（ビルボードの pipeline の標本 4 の版・捨てた画素のふち）。
+    def billboardMsaaPassCase(kit: Room.Kit): Case =
+        let c = msaaPassCase("billboardMsaaPass", V2Billboards.room(kit));
+        { passes = V2Billboards.signPass() :: c#passes | c }
+
+    /// Pass の中の場面のビルボードが、その Pass 自身の history を貼る（2D の描き手が history を用意して前のコマの絵を写す）。画面いっぱいに貼る。
+    def billboardHistoryCase(kit: Room.Kit): Case =
+        let design = Room.design();
+        { name = "billboardHistory", passes = V2Billboards.trailPass(kit) :: Nil, targets = Map.empty(),
+          items = Render.blitRegion({ name = V2Billboards.trailName(), design = design, src = { position = Vec2.zero(), size = design },
                                       at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
 
     /// 後がけの鎖（V2Post）: 部屋（yaw 0.3・解像度 resolution）を標本 samples のウィンドウの画素の HDR の Pass に描き、奥行き・ぼかし・ブルーム・トーンマップ（曲線 op）・FXAA の面を通して画面へ。
@@ -254,6 +276,12 @@ mod V2Main {
     /// 壊して確かめた（同じ日に 1 回ずつ）: 縦を上から数える（直す前の式）と halfDepthDesign 233,784・74,952・postDesign 39,305・8,971 で落ちる・
     /// 面の Linear の sampler を Nearest にすると post 3 場面が 19.9 万〜24.4 万 px・Rgba16Float の Pass を RGBA8 で作ると post 3 場面と roomDepthPass・halfDepthNative が落ちる。
     /// 上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない post を除いて ±128。
+    /// ビルボードの場面（同じ機械の実測。違う画素・±2 以上・max）: billboard 61・26・±82、billboardDesign 0・0・±0、billboardDepth 10・1・±2、billboardGlass 14・7・±70、
+    /// billboardMsaaPass 13,212・11,178・±60、billboardHistory 18・0・±1。billboard は room と同じ所（重なる面の入れ替わり・14 px）に、光を当てない放射の絵の
+    /// ビルボードの 1 行（47 px・±1〜2）が足された物: 絵の 256 texel を約 105 px に縮めて最も近い texel を読むので、その行だけ画素の真ん中が texel の境目に来て
+    /// GL と WebGPU が隣の行を読む【推: 差の画素が 1 行に並び、値が隣の texel の値】。billboardGlass は blend と同じ数（ビルボードの画素は差に出ていない）・
+    /// billboardDepth は blendDepth と同じ形・billboardMsaaPass は skyMsaaPass と同じ標本の位置の違い・billboardHistory は入れ子の看板の中の ±1 だけ。
+    /// 上限は実測のほぼ 2 倍（billboardDesign は skyDesign と同じ小さい物の下限）・差の最大は面の入れ替わりで切らない billboard と billboardGlass を除いて ±16（billboardMsaaPass は ±128）。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
@@ -264,7 +292,9 @@ mod V2Main {
              "lmTextured" => (150, 460, 255), "lmNormalLinear" => (160, 580, 255), "lmDepth" => (8, 16, 16),
              "sky" => (4, 16, 16), "skyTurned" => (4, 8, 16), "skyDesign" => (4, 8, 16), "skyDepth" => (4, 8, 16), "skyMsaaPass" => (24000, 28000, 128),
              "blend" => (32, 64, 255), "blendDesign" => (4, 8, 16), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128),
-             "post" => (84, 500, 255), "postMsaa" => (27000, 112000, 128), "postDesign" => (7300, 31000, 128), "halfDepthDesign" => (19000, 192000, 128)}
+             "post" => (84, 500, 255), "postMsaa" => (27000, 112000, 128), "postDesign" => (7300, 31000, 128), "halfDepthDesign" => (19000, 192000, 128),
+             "billboard" => (52, 128, 255), "billboardDesign" => (4, 8, 16), "billboardDepth" => (4, 24, 16), "billboardGlass" => (32, 64, 255),
+             "billboardMsaaPass" => (23000, 27000, 128), "billboardHistory" => (4, 40, 16)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass"}
@@ -451,8 +481,9 @@ mod V2Main {
         };
         let width = config#designWidth * scale();
         let height = config#designHeight * scale();
+        // WhyNot: 1 枚撮りの既定（history は透明）のまま撮らない — WebGPU の描き手はいつも前のコマを写すので、history を読む場面（billboardHistory）が比べられない。
         let session = match GlOffscreen.open({ config = config, scale = scale() }) {
-            case Ok(opened) => opened
+            case Ok(opened) => GlOffscreen.withHistoryKept(opened)
             case Err(why)   => bug!("GL を開けない: ${why}")
         };
         let outcome = run { compareAndTime(config, kit, session, width, height) } with WebGpuDevice.runDawn;

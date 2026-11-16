@@ -5,6 +5,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
     import fge.webgpu.BindGroupLayout
     import fge.webgpu.BindGroupLayoutDesc
     import fge.webgpu.BufferBindingType
+    import fge.webgpu.SamplerBindingType
     import fge.webgpu.ShaderStage
     import fge.webgpu.TextureSampleType
     import fge.webgpu.WebGpu
@@ -44,6 +45,11 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
                 Assert.assertEq(expected = 1, flushes)
         }
 
+    def imageLayout(gpu: WebGpu): BindGroupLayout \ IO =
+        let layoutDesc = new BindGroupLayoutDesc("test image");
+        discard layoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(1, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING);
+        gpu.createBindGroupLayout(layoutDesc)
+
     def pasteLayout(gpu: WebGpu): BindGroupLayout \ IO =
         let layoutDesc = new BindGroupLayoutDesc("test paste");
         discard layoutDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).buffer(1, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
@@ -69,7 +75,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
     /// (1 回目に送った後の group 2 の数, 2 回目が同じ group か, submit の後に送り直した後の group 2 の数, 送り直した group が前と同じか)。
     def posesAroundSubmit(gpu: WebGpu): (Int32, Bool, Int32, Bool) \ IO =
         let layout = pasteLayout(gpu);
-        let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
         let RendererData.RendererData(s) = renderer;
         let rows = snd(Render3d.PoseRows.assignRow(Render3d.FakeGl.poseAt(1.0), Render3d.PoseRows.noRows(16)));
         let found = match packPoses(renderer, rows) {
@@ -115,7 +121,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
     /// 1 体ごとの値の buffer を instanceBytes にした描き手で、骨つきの場面 2 つを 1 回の prepare で描いた時の (submit の数, prepare の後の group 2 の数)。
     def posesAcrossScenes(gpu: WebGpu, instanceBytes: Int32): (Int32, Int32) \ IO =
         let layout = pasteLayout(gpu);
-        let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
         let RendererData.RendererData(s) = renderer;
         Array.get(0, s#instances).destroy();
         Array.put(createInstanceBuffer(gpu, instanceBytes), 0, s#instances);
@@ -123,7 +129,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         Array.put(createPoseBuffer(gpu, 336), 0, s#poses);
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
         discard prepare(renderer, host, dest(), skinnedScene() :: skinnedScene() :: Nil);
         let found = (Ref.get(flushes), List.length(Ref.get(s#poseGroups)));
         discard encoder.finish();
@@ -133,10 +139,10 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
 
     def flushesAround(gpu: WebGpu): Int32 \ IO =
         let layout = pasteLayout(gpu);
-        let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
         let first: Prepared = prepare(renderer, host, dest(), scene() :: Nil);
         afterSubmit(renderer);
         Vector.forEach(found -> Option.forEach(notePasted(renderer), found), first);
@@ -175,11 +181,11 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
     /// 描き先の違う 2 回の prepare（描き先の鍵 0 と 1）を同じ encoder で流した時の (submit の数, prepare の後の group 2 の数, 影の地図を読む group 0 の数, device の誤りの数)。
     def shadowMapsAcrossPrepares(gpu: WebGpu, shadowed: Bool): (Int32, Int32, Int32, Int32) \ IO =
         let layout = pasteLayout(gpu);
-        let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
         let RendererData.RendererData(s) = renderer;
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
         discard prepare(renderer, host, dest(), spotScene(shadowed) :: Nil);
         discard prepare(renderer, host, { key = 1 | dest() }, spotScene(shadowed) :: Nil);
         let found = (Ref.get(flushes), List.length(Ref.get(s#poseGroups)), List.length(Ref.get(s#sceneGroups)));
@@ -189,4 +195,33 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         layout.release();
         let (f, p, g) = found;
         (f, p, g, errors)
+
+    /// ビルボードの pipeline（stride 0 の頂点の buffer・group 0 の場面と group 1 の 2D の絵の layout）を、画面の形式の標本 1 と 4 で Dawn が誤り無しに作る。
+    @Test
+    def testBillboardPipelinesBuildOnDawn(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let errors = billboardPipelineErrors(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = 0, errors)
+        }
+
+    def billboardPipelineErrors(gpu: WebGpu): Int32 \ IO =
+        let layout = pasteLayout(gpu);
+        let image = imageLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, image);
+        let RendererData.RendererData(s) = renderer;
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1);
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 4);
+        let errors = gpu.errorCount();
+        Render3d.WebGpuRenderer.release(renderer);
+        image.release();
+        layout.release();
+        errors
 }

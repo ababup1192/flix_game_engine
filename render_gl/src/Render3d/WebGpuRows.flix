@@ -1,9 +1,9 @@
-// Render3d.WebGpuRows — 3D の場面の不透明の行（Render3d.SceneList）を WebGPU で流す所（WebGPU の backend。GL の Render3d.GlRows と対）と、形の buffer の置き場。
+// Render3d.WebGpuRows — 3D の場面の行（Render3d.SceneList）を WebGPU で流す所（WebGPU の backend。GL の Render3d.GlRows と対）と、形の buffer の置き場。
 // 1 つの場面は uploadRows（形を上げる）→ drawRows（行を描く）の順に通る。行の欄の意味は Render3d.SceneList の頭。
 // 形の番号と上限は前半の表（Render3d.MeshTable）が持ち、ここは番号 → buffer の置き場と、作る・捨てる関数の組（meshAllocator）だけを持つ。
 // 形の頂点は版ごとに 1 本の buffer へ交互に並べる: 位置・法線・色（9 float）の後に、uv つきの形は uv（2）とタンジェント（4）、2 本目の uv つきの形は 2 本目の uv（2）、
 // ジョイントの重みつきの形はジョイントの番号（4・float）と重み（4）。
-// 描くのは頂点の色の行・骨つきの行・材質の行（pipeline と group は RowDrawer が付ける）。
+// 描くのは頂点の色の行・骨つきの行・材質の行（pipeline と group は RowDrawer が付ける）と、ビルボードの行（形を持たず、RowDrawer が描く）。
 // WhyNot: uv・タンジェント・2 本目の uv を別の buffer にしない — 頂点の buffer は 8 本が上限で、骨と instance を storage へ移した後も版ごとに 1 本で足りる形にする（P8 の WGSL の決まり）。
 mod Render3d.WebGpuRows {
     import fge.webgpu.Buffer
@@ -14,7 +14,7 @@ mod Render3d.WebGpuRows {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     use Render3d.MeshTable
-    use Render3d.SceneList.{SceneList, headAt, kindMaterial, kindSkinned, kindVertexColor, meshAt, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, headAt, kindBillboard, kindMaterial, kindSkinned, kindVertexColor, meshAt, rowAt, rowCountOf}
 
     /// GPU に置いた形 1 つ。vertices = 頂点を交互に並べた buffer（並びはこのファイルの頭）・stride = 頂点 1 つのバイト数・
     /// hasUv = uv とタンジェントを持つ（36 バイト目から）・uv2At = 2 本目の uv の位置（バイト・2 本目の uv つきの形だけ）・
@@ -27,11 +27,12 @@ mod Render3d.WebGpuRows {
 
     /// 行を描く時に pipeline と group を付ける関数の組。shape(pass, 形) = 頂点の色の pipeline・skinned(pass, 形) = 骨つきの頂点の色の pipeline と group 1（空）・
     /// material(pass, 行, 行の番号, 形) = 材質の pipeline と group 1。どれも描けない時は偽（その行を飛ばす）。姿勢の group 2 は呼ぶ側が pass の頭で付ける。
-    /// unbound(描く物の数) = 付けられずに飛ばした行を知らせる。
+    /// billboard(pass, 行, 行の番号) = ビルボードの行を描く（描けない時は偽）。unbound(描く物の数) = 付けられずに飛ばした行を知らせる。
     pub type alias RowDrawer = {
         shape = (RenderPass, MeshBuffers) -> Bool \ IO,
         skinned = (RenderPass, MeshBuffers) -> Bool \ IO,
         material = (RenderPass, SceneList, Int32, MeshBuffers) -> Bool \ IO,
+        billboard = (RenderPass, SceneList, Int32) -> Bool \ IO,
         unbound = Int32 -> Unit \ IO
     }
 
@@ -147,6 +148,7 @@ mod Render3d.WebGpuRows {
         let list = ds#list;
         let count = rowAt(list, row, 4);
         if (count <= 0) ()
+        else if (rowAt(list, row, 0) == kindBillboard()) { if ((ds#drawer#billboard)(pass, list, row)) () else (ds#drawer#unbound)(count) }
         else Map.get(meshAt(list, row), ds#meshes) |> Option.forEach(mesh -> {
             if (mesh#indexCount <= 0) ()
             else if (isBound(pass, ds, row, mesh)) {

@@ -30,7 +30,7 @@ mod Render3d.TestSceneList {
         { handle = handle, order = order, kind = plainKind(), material = fieldsOf(red), batch = b }
 
     def listOf(plain: List[MeshBatch], skinned: List[MeshBatch], opaque: List[MaterialBatch[MeshBatch]]): SceneList \ IO =
-        buildSceneList(Render3d.SceneList.contextOf(freshTables(), sceneOf(Nil)), { plain = plain, skinned = skinned, opaque = opaque, blended = Nil })
+        buildSceneList(Render3d.SceneList.contextOf(freshTables(), sceneOf(Nil)), { plain = plain, skinned = skinned, opaque = opaque, blended = Nil, billboards = Nil })
 
     def noRegistered(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
 
@@ -388,7 +388,7 @@ mod Render3d.TestSceneList {
         let head = { fields = Scene3d.instanceFieldsOf(placed), pose = None, poseRow = 0, culled = false };
         let d = { handle = 0, order = 3, kind = { lightmap = true | plainKind() }, material = Scene3d.materialFieldsOf(material), batch = { head = head, count = 1, first = 0 } };
         let list = buildSceneList(Render3d.SceneList.contextOf(freshTables(), { textures = t :: Nil | sceneOf(Nil) }),
-                                  { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil });
+                                  { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil, billboards = Nil });
         let v = (i: Int32) -> Array.get(i, list#values);
         let last = rowAt(list, 0, 10) - 1;
         Assert.assertEq(expected = (1.0f32, 1.0f32, 2.0f32, 2, true, 1, 1, true),
@@ -406,7 +406,7 @@ mod Render3d.TestSceneList {
         let d = { handle = 0, order = 3, kind = { lightmap = true, normalMap = true, uv = true | plainKind() }, material = Scene3d.materialFieldsOf(material),
                   batch = { head = head, count = 1, first = 0 } };
         let list = buildSceneList(Render3d.SceneList.contextOf(freshTables(), { textures = t :: Nil | sceneOf(Nil) }),
-                                  { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil });
+                                  { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil, billboards = Nil });
         let wrapAt = (k: Int32) -> Render3d.SceneList.readAt(list, 0, k, 2);
         Assert.assertEq(expected = (3, 0, 0, 1, 0.0f32), (rowAt(list, 0, 10), wrapAt(0), wrapAt(1), wrapAt(2), Array.get(4, list#values)))
 
@@ -424,7 +424,7 @@ mod Render3d.TestSceneList {
             case ScenePassSpec.DepthOut(dr) => "depth ${dr#near} ${dr#range}"
         };
         let numbered = (p: Render3d.ScenePlan.ScenePlan[SpanBatch]) ->
-            { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil }, shadowPlans = Nil };
+            { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil, billboards = Nil }, shadowPlans = Nil };
         let passes = plans |> List.map(p -> buildScenePasses(freshTables(), numbered(p)) |> List.map(pl -> describe(fst(pl))));
         Assert.assertEq(expected = ("color" :: Nil) :: ("depth 0.5 12.0" :: Nil) :: Nil, passes)
 
@@ -434,7 +434,7 @@ mod Render3d.TestSceneList {
         { kind = { blend = true | plainKind() }, material = Scene3d.materialFieldsOf(materialOf(red) |> Scene3d.withAlphaBlend(true)) | materialBatch(handle, order, red, b) }
 
     def listWithBlended(plain: List[MeshBatch], opaque: List[MaterialBatch[MeshBatch]], blended: List[MaterialBatch[MeshBatch]]): SceneList \ IO =
-        buildSceneList(Render3d.SceneList.contextOf(freshTables(), sceneOf(Nil)), { plain = plain, skinned = Nil, opaque = opaque, blended = blended })
+        buildSceneList(Render3d.SceneList.contextOf(freshTables(), sceneOf(Nil)), { plain = plain, skinned = Nil, opaque = opaque, blended = blended, billboards = Nil })
 
     /// 半透明の行は不透明の行の後ろに来た順のまま並び、firstBlendedRowOf はその頭の行を指す。
     @Test
@@ -483,4 +483,83 @@ mod Render3d.TestSceneList {
         let (plans, _) = planScenes(planner, caps(false), Vector#{1, 2}, g);
         let rows = plans |> List.flatMap(p -> p#draws#blended) |> List.map(d -> MutList.get(d#batch#start, g#members)#poseRow);
         Assert.assertEq(expected = true, List.length(rows) == 2 and List.head(rows) < List.last(rows))
+
+    // ── ビルボード ──
+
+    /// 幅 32・高さ 16 の全体の登録の絵（番号 7・flipped = レンダーターゲット）。
+    def registered(flipped: Bool): Scene3dRenderer.RegisteredTexture = { texId = 7, width = 32.0, height = 16.0, flipped = flipped, version = "" }
+
+    def tablesWith(texture: Option[Scene3dRenderer.RegisteredTexture]): Render3d.SceneList.Tables \ IO =
+        { textureOf = name -> checked_ecast(if (name == "sprite") texture else None) | freshTables() }
+
+    /// 絵 "sprite" の (8, 4) から 16 × 8 を貼る、z = 5 に立てたビルボード（anchor 足元の真ん中・size 2 × 3・tint 白・光を当てる）。
+    def billboardDraw(culled: Bool): Render3d.ScenePlan.BillboardDraw =
+        let b = Scene3d.billboard("sprite", { position = { x = 8.0, y = 4.0 }, size = { x = 16.0, y = 8.0 } }, Vec3.v3(1.0, 2.0, 5.0), { x = 2.0, y = 3.0 });
+        { fields = Scene3d.billboardFieldsOf(b), culled = culled }
+
+    def listWithBillboards(texture: Option[Scene3dRenderer.RegisteredTexture], billboards: List[Render3d.ScenePlan.BillboardDraw]): SceneList \ IO =
+        buildSceneList(Render3d.SceneList.contextOf(tablesWith(texture), sceneOf(Nil)),
+                       { plain = batchOf(triangle(1.0), 0, 1) :: Nil, skinned = Nil, opaque = materialBatch(0, 5, 0.1, batchOf(triangle(2.0), 1, 1)) :: Nil,
+                         blended = blendedBatch(1, 6, 0.2, batchOf(triangle(3.0), 2, 1)) :: Nil, billboards = billboards })
+
+    /// ビルボードの行は不透明の行の後・半透明の行の前に来た順で並び、firstBillboardRowOf と firstBlendedRowOf がその前後を指す。
+    @Test
+    def testBillboardRowsSitBetweenOpaqueAndBlended(): Unit \ {Assert, IO} =
+        let list = listWithBillboards(Some(registered(false)), billboardDraw(false) :: billboardDraw(false) :: Nil);
+        let bb = Render3d.SceneList.kindBillboard();
+        Assert.assertEq(expected = (kindVertexColor() :: kindMaterial() :: bb :: bb :: kindMaterial() :: Nil, 2, 4),
+                        (column(list, 0), Render3d.SceneList.firstBillboardRowOf(list), Render3d.SceneList.firstBlendedRowOf(list)))
+
+    /// 描くビルボードの行は絵の番号・描く物 1・分かれた理由 Billboard を持ち、値は 立てる点と lit・anchor と size・絵の大きさで割った uv・線形の tint の並び。
+    @Test
+    def testBillboardRowWritesValues(): Unit \ {Assert, IO} =
+        let list = listWithBillboards(Some(registered(false)), billboardDraw(false) :: Nil);
+        let at = Render3d.SceneList.valuesAt(list, 2);
+        let values = List.range(0, Render3d.SceneList.billboardValueFloats()) |> List.map(i -> Array.get(at + i, list#values));
+        Assert.assertEq(expected = (7, 1, breakSlotOf(BatchBreak.Billboard),
+                                    1.0f32 :: 2.0f32 :: 5.0f32 :: 1.0f32 :: 0.5f32 :: 1.0f32 :: 2.0f32 :: 3.0f32 ::
+                                    0.25f32 :: 0.25f32 :: 0.5f32 :: 0.5f32 :: 1.0f32 :: 1.0f32 :: 1.0f32 :: 0.0f32 :: Nil),
+                        (rowAt(list, 2, 1), rowAt(list, 2, 4), rowAt(list, 2, 5), values))
+
+    /// レンダーターゲット（flipped）の絵でも値の uv は上の行から数える（GL は billboards から自分で上下を返す）。
+    @Test
+    def testBillboardUvIsTopDownForTargets(): Unit \ {Assert, IO} =
+        let list = listWithBillboards(Some(registered(true)), billboardDraw(false) :: Nil);
+        let at = Render3d.SceneList.valuesAt(list, 2);
+        Assert.assertEq(expected = (0.25f32, 0.5f32), (Array.get(at + 9, list#values), Array.get(at + 11, list#values)))
+
+    /// ビルボードの値は材質の値の後ろに置く（材質の区画のそろえを崩さない）。
+    @Test
+    def testBillboardValuesFollowMaterialValues(): Unit \ {Assert, IO} =
+        let list = listWithBillboards(Some(registered(false)), billboardDraw(false) :: Nil);
+        Assert.assertEq(expected = true, Render3d.SceneList.valuesAt(list, 2) > Render3d.SceneList.valuesAt(list, 3))
+
+    /// 視錐台の外のビルボードの行は描く物 0 で値を持たない（絵の番号は持つ）。
+    @Test
+    def testCulledBillboardRowHasNoValues(): Unit \ {Assert, IO} =
+        let list = listWithBillboards(Some(registered(false)), billboardDraw(true) :: Nil);
+        Assert.assertEq(expected = (7, 0, -1), (rowAt(list, 2, 1), rowAt(list, 2, 4), Render3d.SceneList.valuesAt(list, 2)))
+
+    /// 絵が見つからないビルボードの行は絵の番号 -1・値なしで、欄 4 は視錐台の中の 1 のまま（GL は描く時に絵を引いて知らせる）、名前を missingBillboardTexturesOf が返す。
+    @Test
+    def testMissingBillboardTextureIsListed(): Unit \ {Assert, IO} =
+        let list = listWithBillboards(None, billboardDraw(false) :: Nil);
+        Assert.assertEq(expected = (-1, 1, -1, "sprite" :: Nil),
+                        (rowAt(list, 2, 1), rowAt(list, 2, 4), Render3d.SceneList.valuesAt(list, 2), Render3d.SceneList.missingBillboardTexturesOf(list)))
+
+    /// ビルボードの行は材質を持たず、後ろの半透明の行の材質は引ける。
+    @Test
+    def testBillboardRowHasNoMaterial(): Unit \ {Assert, IO} =
+        let list = listWithBillboards(Some(registered(false)), billboardDraw(false) :: Nil);
+        Assert.assertEq(expected = (true, true), (Option.isEmpty(Render3d.SceneList.materialAt(list, 2)), Option.nonEmpty(Render3d.SceneList.materialAt(list, 3))))
+
+    /// 計画はビルボードを来た順のまま並べ、視錐台の外の物（目の後ろ）に culled を立てる（目は z = −5 で +z を向く）。
+    @Test
+    def testPlanMarksBillboardsOutsideFrustum(): Unit \ {Assert, IO} =
+        let at = (z: Float64) -> Scene3d.billboard("sprite", { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }, Vec3.v3(0.0, 0.0, z), { x = 1.0, y = 1.0 });
+        let scene = { billboards = at(5.0) :: at(-50.0) :: at(10.0) :: Nil | sceneOf(Nil) };
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let (plans, _) = planScenes(planner, caps(false), Vector.empty(), groupScenes(planner, caps(false), 1, cmdOf(scene) :: Nil));
+        Assert.assertEq(expected = (5.0, false) :: (-50.0, true) :: (10.0, false) :: Nil,
+                        plans |> List.flatMap(p -> p#draws#billboards) |> List.map(b -> (b#fields#position#z, b#culled)))
 }

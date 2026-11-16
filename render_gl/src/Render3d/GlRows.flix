@@ -1,5 +1,6 @@
 // Render3d.GlRows — 3D の場面の行（Render3d.SceneList）を GL で流す所（GL の backend）と、場面を描く時に場面の外から渡す物。約束は Render3d.flix の頭。
-// 1 つの場面は uploadRows（形と絵を上げる）→ drawRows（半透明でない行を描く）→（ビルボード）→ drawBlendedRows（半透明の行を重ねる）の順に通る。行の欄の意味は Render3d.SceneList の頭。
+// 1 つの場面は uploadRows（形と絵を上げる）→ drawRows（ビルボードの行の前までを描く）→（ビルボードの行・Render3d.drawBillboards）→ drawBlendedRows（半透明の行を重ねる）の順に通る。
+// 行の欄の意味は Render3d.SceneList の頭。
 mod Render3d.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
@@ -9,7 +10,7 @@ mod Render3d.GlRows {
     use Render3d.Counts.{countInstances}
     use Render3d.Light.{putLights}
     use Render3d.Material.{MaterialTable, bindMaterial, drawWithLook, entryAt, freshBound, releaseBound, resolveTextureAs, useMaterial}
-    use Render3d.SceneList.{SceneList, ScenePasses, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, ScenePasses, firstBillboardRowOf, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindBillboard, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
     use Render3d.Shadow.{putShadow, putSunShadow}
 
     /// 場面を描く時に場面の外から渡す物。passes = 場面の pass と、その行（計画の答え・列の順に描く）・materials = その prepare の材質の表・
@@ -29,7 +30,7 @@ mod Render3d.GlRows {
     /// 2D の並びへ渡す場面 1 つ。
     pub type alias SceneItem = { cmd = Scene3d.RenderCmd, target = SceneTarget }
 
-    /// pass ごとの行の形を置き場へ上げる（無ければ。描く時は行の形の番号で引く）。材質の行（半透明の行も）の絵（材質の絵・法線マップ・lightmap）と
+    /// pass ごとの行の形を置き場へ上げる（無ければ。描く時は行の形の番号で引く・ビルボードの行は飛ばす）。材質の行（半透明の行も）の絵（材質の絵・法線マップ・lightmap）と
     /// タンジェントも上げる（間引いた物も今のコマで使った物として数える）。置いた物 total 個と描く物の数を足す。
     /// 描き始める前に呼ぶ（初めての絵は引く時に今の unit へ貼るので、絵を引いたら unit 0 へ戻す）。
     // WhyNot: 間引いた物を置き場で古いままにしない — 振り向くたびに形と絵を上げ直して止まり、毎コマ作り直しの知らせも鳴る。
@@ -51,6 +52,12 @@ mod Render3d.GlRows {
     /// touched = [絵を引いたら 1, 行の描く物の数の合計]。
     def uploadRow(gl: GlContext, state: State, gen: Int64, source: TextureSource, inputs: SceneInputs, list: SceneList,
                   touched: Array[Int32, Static], row: Int32): Unit \ IO =
+        if (rowAt(list, row, 0) == kindBillboard()) () else uploadMeshRow(gl, state, gen, source, inputs, list, touched, row);
+        // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で uploadRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
+        ()
+
+    def uploadMeshRow(gl: GlContext, state: State, gen: Int64, source: TextureSource, inputs: SceneInputs, list: SceneList,
+                      touched: Array[Int32, Static], row: Int32): Unit \ IO =
         let head = headAt(list, row);
         discard meshEntry(gl, state, gen, head#fields#mesh);
         Array.put(Array.get(1, touched) + rowAt(list, row, 4), 1, touched);
@@ -58,9 +65,7 @@ mod Render3d.GlRows {
             let material = entryAt(inputs#materials, rowAt(list, row, 1));
             uploadTextures(gl, state, gen, source, touched, material, m, head);
             if (hasFlag(list, row, flagNormalMap())) ensureTangents(gl, state, gen, head#fields#mesh) else ()
-        });
-        // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で uploadRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
-        ()
+        })
 
     def uploadTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, touched: Array[Int32, Static], entry: MaterialEntry,
                        m: Scene3d.MaterialFields, head: MeshDraw): Unit \ IO =
@@ -70,12 +75,12 @@ mod Render3d.GlRows {
             discard resolveTextureAs(gl, state, gen, source, label, name, textureUse)
         })
 
-    /// pass 1 つの行 list のうち半透明でない行（firstBlendedRowOf の前）を順に描く（形は uploadRows で上げてある）。頂点の色と骨つきの行は、プログラムが替わる所でプログラムと場面の値（目・光・影か、奥行きの範囲）を付ける。
+    /// pass 1 つの行 list のうちビルボードの行の前（firstBillboardRowOf の前）を順に描く（形は uploadRows で上げてある）。頂点の色と骨つきの行は、プログラムが替わる所でプログラムと場面の値（目・光・影か、奥行きの範囲）を付ける。
     /// 材質の行は材質のプログラムが替わる所で付け替え、描く物の無い材質の行は飛ばす。描き終えたら材質の絵を貼った unit の sampler を外す。
     pub def drawRows(gl: GlContext, state: State, gen: Int64, camera: CameraData, pass: MaterialPass, eye: Vec3.Vec3, source: TextureSource,
                      inputs: SceneInputs, list: SceneList): Unit \ IO =
         drawRowsBetween(gl, state, gen, { camera = camera, pass = pass, eye = eye, source = source, inputs = inputs, list = list, bound = freshBound() },
-                        0, firstBlendedRowOf(list))
+                        0, firstBillboardRowOf(list))
 
     /// 行 list の半透明の行（firstBlendedRowOf から・計画が遠い物から並べた）を、深度を読むが書かずに α で重ねて描く（色の pass だけ）。無ければ何もしない。
     /// 混ぜ方は glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)。描き終えたら blend を切り深度の書き込みを戻す。

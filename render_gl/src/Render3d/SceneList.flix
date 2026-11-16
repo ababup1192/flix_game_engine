@@ -1,14 +1,20 @@
 // Render3d.SceneList — 3D の場面 1 つの batch を描く行の列（RenderList の 3D の分。計画の側が pass ごとに作り（buildScenePasses）、GL の backend は Render3d.GlRows・WebGPU の backend は Render3d.WebGpuRows が流す）。
-// 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物・半透明の材質の物）。ビルボード・空は行にしない。
+// 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物・半透明の材質の物）か、ビルボード 1 つを描く。空は行にしない。
 // 影の地図の pass の行（buildShadowList・計画は Render3d.ShadowMaps）は頂点の色の行と骨つきの行だけで、backend は形だけを深度で描く。
 // rows は 1 行 rowStride() 個: 0=種類（kind*） 1=材質の表の番号（MaterialBatch#handle。頂点の色と骨つきは 0） 2=材質の順の番号（MaterialBatch#order。同じく 0）
 //   3=1 体ごとの値の先頭 4=描く物の数（0 なら描かず、形と絵を今のコマで使った物として数えるだけ） 5=1 つの draw call に分かれた理由（Render3d.Counts.breakSlotOf）
 //   6=フラグ（flag*: 両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方・lightmap） 7=形の番号（Render3d.MeshTable。backend は行を流す前にこの番号の形を作り、描く時にこの番号で引く）
 //   8=材質の値の先頭（values の位置・材質の行で描く物がある時だけ。ほかは -1） 9=絵の組の先頭（reads の組の番号） 10=絵の組の数。
-//   行の順が描く順（頂点の色 → 骨つき → 不透明の材質を順の番号で → firstBlended 行目から半透明の材質を計画が並べた順（遠い物から・1 行 1 体））。
-//   backend は firstBlended の前の行を描き、ビルボードを描いた後に、深度を読むが書かずに α で重ねて残りの行を描く。
-// heads は行ごとの頭の物（形・lightmap・タンジェントを読む）・materials は材質の行の材質（firstMaterial 行目からの並び・半透明の行も含む）。
-// values（Float32）と reads（Int32）は材質の行の draw ごとの値と絵の組（並びは Render3d.MaterialValues の頭）。GL は今も材質の uniform を materials から差す（values と reads を使うのは WebGPU の材質の group 1）。
+//   ビルボードの行（kindBillboard）は 1=全体の登録の絵の番号（RegisteredTexture#texId・見つからなければ -1） 4=視錐台の中なら 1（外なら 0）
+//   5=分かれた理由（Billboard） 7=-1 8=ビルボードの値の先頭（視錐台の中で絵がある行だけ・billboardValueFloats() 個。ほかは -1） で、ほかの欄は 0。
+//   GL は絵を描く時に引き（欄 4 だけを見る）、WebGPU は欄 8 の値のある行だけを描く。
+//   行の順が描く順（頂点の色 → 骨つき → 不透明の材質を順の番号で → firstBillboard 行目からビルボードを場面の来た順で（1 行 1 つ）
+//   → firstBlended 行目から半透明の材質を計画が並べた順（遠い物から・1 行 1 体））。
+//   backend はこの順で 3 つに分けて流す: firstBillboard の前の行（深度を書く）→ ビルボードの行（深度を書く・α < 0.5 を捨てる）→ 残りの行（深度を読むが書かずに α で重ねる）。
+// heads は行ごとの頭の物（形・lightmap・タンジェントを読む。ビルボードの行は無いので headAt を呼ばない）・materials は材質の行の材質（firstMaterial 行目からの並び・半透明の行も含む・
+// ビルボードの行の所は空きで materialAt は None）・billboards はビルボードの行の中身（firstBillboard 行目からの並び）。
+// values（Float32）と reads（Int32）は材質の行の draw ごとの値と絵の組（並びは Render3d.MaterialValues の頭）と、その後ろにビルボードの値（並びは billboardValueFloats）。
+// GL は今も材質の uniform を materials から・ビルボードの uniform を billboards から差す（values と reads を使うのは WebGPU）。
 // WhyNot: 行ごとに MeshBatch の record を backend へ渡さない — backend 2 つが分かれ目に読む欄（種類・材質・範囲・理由・フラグ）を、GL の側で引き直さずに同じ物を読む。
 mod Render3d.SceneList {
     use Render3d.{MeshDraw, TextureSource}
@@ -16,12 +22,12 @@ mod Render3d.SceneList {
     use Render3d.Counts.{BatchBreak, breakSlotOf}
     use Render3d.MaterialValues
     use Render3d.MeshTable
-    use Render3d.ScenePlan.{SceneDraws, ScenePassSpec, ScenePlan, isSkinned}
+    use Render3d.ScenePlan.{BillboardDraw, SceneDraws, ScenePassSpec, ScenePlan, isSkinned}
     use Render3d.TextureTable3d
 
     pub type alias SceneList = {
-        rows = Array[Int32, Static], heads = Array[MeshDraw, Static], materials = Array[Scene3d.MaterialFields, Static], firstMaterial = Int32, firstBlended = Int32,
-        count = Int32, values = Array[Float32, Static], reads = Array[Int32, Static]
+        rows = Array[Int32, Static], heads = Array[MeshDraw, Static], materials = Array[Scene3d.MaterialFields, Static], firstMaterial = Int32, firstBillboard = Int32,
+        firstBlended = Int32, billboards = Array[Scene3d.BillboardFields, Static], count = Int32, values = Array[Float32, Static], reads = Array[Int32, Static]
     }
 
     /// 場面 1 つの pass と、その pass で流す行の列（列の順に pass を積む）。
@@ -52,6 +58,11 @@ mod Render3d.SceneList {
     pub def kindVertexColor(): Int32 = 1
     pub def kindSkinned(): Int32 = 2
     pub def kindMaterial(): Int32 = 3
+    pub def kindBillboard(): Int32 = 4
+
+    /// ビルボードの行の値の float の数: 立てる点の xyz と lit（1 か 0）・anchor の xy と size の xy・貼る範囲の uv（左上 u・v と幅・高さ。上の行が v = 0）・線形へ戻した tint の rgb と 0。
+    // WhyNot: 貼る範囲の v をレンダーターゲットで上下に返さない — 値を読む WebGPU の描き先は上の行が先（GL は行 0 が下なので、GL は billboards から自分で返す）。
+    pub def billboardValueFloats(): Int32 = 16
 
     /// フラグの bit。
     pub def flagDoubleSided(): Int32 = 1
@@ -66,8 +77,18 @@ mod Render3d.SceneList {
 
     pub def rowCountOf(list: SceneList): Int32 = list#count
 
+    /// ビルボードの行の頭（無ければ firstBlendedRowOf と同じ）。
+    pub def firstBillboardRowOf(list: SceneList): Int32 = list#firstBillboard
+
     /// 半透明の材質の行の頭（無ければ rowCountOf と同じ）。
     pub def firstBlendedRowOf(list: SceneList): Int32 = list#firstBlended
+
+    /// 絵が見つからなかったビルボードの行の絵の名前（行の順）。
+    pub def missingBillboardTexturesOf(list: SceneList): List[String] \ IO =
+        List.range(list#firstBillboard, list#firstBlended) |> List.filter(row -> rowAt(list, row, 1) < 0) |> List.map(row -> billboardAt(list, row)#texture)
+
+    /// ビルボードの行 row の中身。
+    pub def billboardAt(list: SceneList, row: Int32): Scene3d.BillboardFields \ IO = Array.get(row - list#firstBillboard, list#billboards)
 
     /// 行 row の欄 col（並びはこのファイルの頭のコメント）。
     pub def rowAt(list: SceneList, row: Int32, col: Int32): Int32 \ IO = Array.get(row * rowStride() + col, list#rows)
@@ -77,9 +98,9 @@ mod Render3d.SceneList {
     /// 行 row の形の番号（Render3d.MeshTable）。
     pub def meshAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, 7)
 
-    /// 材質の行 row の材質（頂点の色と骨つきの行は None）。
+    /// 材質の行 row の材質（頂点の色と骨つきとビルボードの行は None）。
     pub def materialAt(list: SceneList, row: Int32): Option[Scene3d.MaterialFields] \ IO =
-        if (row < list#firstMaterial) None else Some(Array.get(row - list#firstMaterial, list#materials))
+        if (row < list#firstMaterial or (row >= list#firstBillboard and row < list#firstBlended)) None else Some(Array.get(row - list#firstMaterial, list#materials))
 
     /// 行 row の材質の値の先頭（values の位置。値の無い行は -1）。
     pub def valuesAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, 8)
@@ -91,27 +112,74 @@ mod Render3d.SceneList {
     /// 行 row のフラグに flag が立っているか。
     pub def hasFlag(list: SceneList, row: Int32, flag: Int32): Bool \ IO = Int32.bitwiseAnd(rowAt(list, row, 6), flag) != 0
 
-    /// 場面の batch を描く順の行にする（半透明の blended は計画が並べた順のまま末尾へ）。形と材質の絵の番号は ctx の表で振る。
-    // WhyNot: 半透明の頭の行の「前の材質の行と同じ付け方」を不透明の最後の行から続けて見ない — backend は間にビルボードを描き、GL の drawBlendedRows は
+    /// 場面の batch とビルボードを描く順の行にする（ビルボードは不透明の行の後に来た順・半透明の blended は計画が並べた順のまま末尾へ）。形と材質の絵の番号は ctx の表で振る。
+    // WhyNot: 半透明の頭の行の「前の材質の行と同じ付け方」を不透明の最後の行から続けて見ない — 間にビルボードの行が来て、GL の drawBlendedRows は
     //   付けた物の控えを新しく作って始めるので、頭の行に同じ付け方のフラグがあるとプログラムを付けずに描く。
     pub def buildSceneList(ctx: Context, draws: SceneDraws[MeshBatch]): SceneList \ IO =
         let shapes = List.length(draws#plain) + List.length(draws#skinned);
-        let firstBlended = shapes + List.length(draws#opaque);
+        let firstBillboard = shapes + List.length(draws#opaque);
+        let billboards = draws#billboards |> List.map(b -> (b, textureOfBillboard(ctx, b)));
+        let firstBlended = firstBillboard + List.length(billboards);
         let count = firstBlended + List.length(draws#blended);
         let opaque = layoutPairsOf(ctx, draws#opaque);
         let blended = layoutPairsOf(ctx, draws#blended);
         let both = List.append(opaque, blended);
-        let valueTotal = List.sumWith(dl -> Option.getWithDefault(0, Option.map(MaterialValues.valueSizeOf, snd(dl))), both);
+        let materialTotal = List.sumWith(dl -> Option.getWithDefault(0, Option.map(MaterialValues.valueSizeOf, snd(dl))), both);
+        let billboardTotal = billboardValueFloats() * List.count(isDrawnBillboard, billboards);
         let readTotal = both |> List.sumWith(match (d, l) -> Option.getWithDefault(0, Option.map(x -> MaterialValues.readCountOf(x, d#kind), l)));
         let list = { rows = Array.repeat(Static, Int32.max(1, count * rowStride()), 0), heads = Array.empty(Static, count),
-                     materials = Array.empty(Static, count - shapes), firstMaterial = shapes, firstBlended = firstBlended, count = count,
-                     values = Array.repeat(Static, Int32.max(1, valueTotal), 0.0f32), reads = Array.repeat(Static, Int32.max(1, readTotal * MaterialValues.readStride()), 0) };
+                     materials = Array.empty(Static, count - shapes), firstMaterial = shapes, firstBillboard = firstBillboard, firstBlended = firstBlended,
+                     billboards = billboards |> List.map(bt -> fst(bt)#fields) |> List.toArray(Static), count = count,
+                     values = Array.repeat(Static, Int32.max(1, materialTotal + billboardTotal), 0.0f32),
+                     reads = Array.repeat(Static, Int32.max(1, readTotal * MaterialValues.readStride()), 0) };
         let next = Array#{0, 0, 0} @ Static;
         draws#plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.Mesh, b));
         draws#skinned |> List.forEach(b -> putShapeRow(list, next, ctx, kindSkinned(), BatchBreak.Skinned, b));
         discard List.foldLeft(putMaterialRow(list, next, ctx), None, opaque);
+        let valueCursor = Array#{materialTotal} @ Static;
+        billboards |> List.forEach(putBillboardRow(list, next, valueCursor));
         discard List.foldLeft(putMaterialRow(list, next, ctx), None, blended);
         list
+
+    /// ビルボード b の絵（全体の登録の絵。見つからなければ None）。
+    def textureOfBillboard(ctx: Context, b: BillboardDraw): Option[Scene3dRenderer.RegisteredTexture] \ IO = (ctx#naming#source#textureOf)(b#fields#texture)
+
+    def isDrawnBillboard(bt: (BillboardDraw, Option[Scene3dRenderer.RegisteredTexture])): Bool =
+        let (b, texture) = bt;
+        not b#culled and Option.nonEmpty(texture)
+
+    /// ビルボードの行を足す。視錐台の中で絵がある行は values の at[0] からビルボードの値を書いて at[0] を進める。
+    def putBillboardRow(list: SceneList, next: Array[Int32, Static], at: Array[Int32, Static],
+                        bt: (BillboardDraw, Option[Scene3dRenderer.RegisteredTexture])): Unit \ IO =
+        let (b, texture) = bt;
+        let row = Array.get(0, next);
+        let base = row * rowStride();
+        let rows = list#rows;
+        Array.put(kindBillboard(), base, rows);
+        Array.put(texture |> Option.map(t -> t#texId) |> Option.getWithDefault(-1), base + 1, rows);
+        Array.put(if (b#culled) 0 else 1, base + 4, rows);
+        Array.put(breakSlotOf(BatchBreak.Billboard), base + 5, rows);
+        Array.put(-1, base + 7, rows);
+        Array.put(-1, base + 8, rows);
+        texture |> Option.filter(_ -> isDrawnBillboard(bt)) |> Option.forEach(t -> {
+            let v = Array.get(0, at);
+            Array.put(v, base + 8, rows);
+            putBillboardValues(list#values, v, b#fields, t);
+            Array.put(v + billboardValueFloats(), 0, at)
+        });
+        Array.put(row + 1, 0, next)
+
+    /// ビルボード f の値を values の at から書く（並びは billboardValueFloats）。t = 貼る絵（uv を絵の大きさで割る）。
+    def putBillboardValues(values: Array[Float32, Static], at: Int32, f: Scene3d.BillboardFields, t: Scene3dRenderer.RegisteredTexture): Unit \ IO =
+        let w = Float64.max(1.0, t#width);
+        let h = Float64.max(1.0, t#height);
+        let tint = Texture3d.srgbToLinearColor(f#tint);
+        let r = f#regionRect;
+        let floats = f#position#x :: f#position#y :: f#position#z :: (if (f#lit) 1.0 else 0.0) ::
+                     f#anchor#x :: f#anchor#y :: f#size#x :: f#size#y ::
+                     r#position#x / w :: r#position#y / h :: r#size#x / w :: r#size#y / h ::
+                     tint#r :: tint#g :: tint#b :: 0.0 :: Nil;
+        floats |> List.forEachWithIndex((i, x) -> Array.put(RenderUtil.f32(x), at + i, values))
 
     /// 材質の batch ごとの値の並びの元（描く物の無い batch は None で、値を書かない）。
     def layoutPairsOf(ctx: Context, ds: List[MaterialBatch[MeshBatch]]): List[(MaterialBatch[MeshBatch], Option[MaterialValues.Layout])] \ IO =
@@ -121,7 +189,7 @@ mod Render3d.SceneList {
     pub def buildShadowList(ctx: Context, plain: List[MeshBatch], skinned: List[MeshBatch]): SceneList \ IO =
         let count = List.length(plain) + List.length(skinned);
         let list = { rows = Array.repeat(Static, Int32.max(1, count * rowStride()), 0), heads = Array.empty(Static, count),
-                     materials = Array.empty(Static, 0), firstMaterial = count, firstBlended = count, count = count,
+                     materials = Array.empty(Static, 0), firstMaterial = count, firstBillboard = count, firstBlended = count, billboards = Array.empty(Static, 0), count = count,
                      values = Array.repeat(Static, 1, 0.0f32), reads = Array.repeat(Static, 1, 0) };
         let next = Array#{0, 0, 0} @ Static;
         plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.ShadowPass, b));

@@ -29,7 +29,7 @@ pub mod Render3d.InstanceValues {
         let draws = plan#draws;
         { cmd = plan#cmd, mainPass = plan#mainPass,
           draws = { plain = List.map(lit, draws#plain), skinned = List.map(lit, draws#skinned),
-                    opaque = List.map(material, draws#opaque), blended = List.map(material, draws#blended) },
+                    opaque = List.map(material, draws#opaque), blended = List.map(material, draws#blended), billboards = draws#billboards },
           shadowPlans = plan#shadowPlans |> List.map(s -> { plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) | s }) }
 
     /// plan の batch の描く物の数の合計。
