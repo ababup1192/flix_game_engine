@@ -24,7 +24,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import java.nio.ByteBuffer
     import javax.imageio.ImageIO
     use LwjglLayer.{announceFixedDt, applyFullscreen, applyMouseCaptured, closeAudio, cursorModeOf, frameShotLimit,
-                    handleAudio, handleFrameClock, handleLoadProgress, handleTasks, openAudio, openCursors}
+                    handleAudio, handleFrameClock, handleLoadProgress, handleTasks, openAudio, openCursors, saveAnnotationWith}
     use RenderPaint.Internal.WebGpuPaint
 
     /// 開いたウィンドウ。surface = 画面へ出す描き先（隠して起動した時は None）・format = その形式。
@@ -291,7 +291,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             handleLoadProgress({ looping = looping, splash = splash, polledAt = polledAt, devices = devices }, () ->
             handleAudio(audio#state, () ->
             WebGpuPaint.handleTarget(paint, () ->
-            handleAnnotation(() ->
+            handleAnnotation(config, design, audio#shutterSource, present, () ->
             WebGpuPaint.handleDiagnostics(paint, () ->
             handleTasks(() ->
             WebGpuPaint.handleDraw3d(paint, () ->
@@ -372,16 +372,20 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         match ps#frameShotDir {
             case Some(dir) if count < frameShotLimit() =>
                 Array.put(count + 1, 0, ps#frameShotTaken);
-                let (w, h) = Array.get(0, ps#size);
-                let pixels = ByteBuffer.allocateDirect(w * h * 4);
-                WebGpuPaint.readFrame(ps#paint, pixels);
-                writeShot(pixels, w, h, "${dir}/frame-${count + 1}.png")
+                writeShot(frameImage(ps), "${dir}/frame-${count + 1}.png")
             case _ => ()
         }
 
-    /// RGBA（下の行から）を左上原点の ARGB の PNG に書く。
+    /// 最後に描いたコマ（中間の texture）を左上原点の ARGB の画像にする。
+    def frameImage(ps: PresentState): BufferedImage \ IO =
+        let (w, h) = Array.get(0, ps#size);
+        let pixels = ByteBuffer.allocateDirect(w * h * 4);
+        WebGpuPaint.readFrame(ps#paint, pixels);
+        imageOf(pixels, w, h)
+
+    /// RGBA（下の行から）を左上原点の ARGB の画像にする。
     // WhyNot: GlReadback.readBoundPng を呼ばない — bind 中の GL のフレームバッファを読む関数で、WebGPU の画素を渡す口が無い。画素の並べ方と PNG の形は同じにする。
-    def writeShot(pixels: ByteBuffer, w: Int32, h: Int32, path: String): Unit \ IO = region rc {
+    def imageOf(pixels: ByteBuffer, w: Int32, h: Int32): BufferedImage \ IO = region rc {
         let image = new BufferedImage(w, h, 2i32);
         let argb: Array[Int32, rc] = Array.empty(rc, w * h);
         List.forEach(y -> {
@@ -389,11 +393,15 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             putRow(pixels, srcRowStart * 4, argb, y * w, w, 0)
         }, List.range(0, h));
         image.setRGB(0, 0, w, h, argb, 0, w);
+        image
+    }
+
+    /// 画像を PNG に書く（フォルダが無ければ作る）。
+    def writeShot(image: BufferedImage, path: String): Unit \ IO =
         let file = new File(path);
         let parent = file.getParentFile();
         if (not Object.isNull(parent)) discard parent.mkdirs() else ();
         discard ImageIO.write(image, "png", file)
-    }
 
     /// RGBA の 1 行（fromByte バイトから）を ARGB の int の列（toIndex から）へ並べる。
     def putRow(pixels: ByteBuffer, fromByte: Int32, argb: Array[Int32, r], toIndex: Int32, w: Int32, x: Int32): Unit \ r + IO =
@@ -408,17 +416,12 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             putRow(pixels, fromByte, argb, toIndex, w, x + 1)
         }
 
-    /// F8 の注釈は V1 では書かない（初めの 1 回だけ知らせ、None を返す）。
-    def handleAnnotation(f: Unit -> a \ ef): a \ (ef - Platform.Annotation) + IO =
-        let warned = Ref.fresh(Static, false);
+    /// F8 の注釈を GL の枝と同じ形で書く。画面の絵は最後に描いたコマ（中間の texture）を読む。
+    // WhyNot: GL の枝のように最後のコマを塗り直さない — 中間の texture は画面へ出した後もそのコマを持っている。
+    def handleAnnotation(config: GameEngine.EngineConfig, design: Vec2.Vec2, shutterSource: Int32, ps: PresentState,
+                         f: Unit -> a \ ef): a \ (ef - Platform.Annotation) + IO =
         run f() with handler Platform.Annotation {
-            def saveAnnotation(_req, k) = {
-                if (Ref.get(warned)) () else {
-                    Ref.put(true, warned);
-                    Log.warn("[webgpu] V1 では描かない: F8 の注釈")
-                };
-                k(None)
-            }
+            def saveAnnotation(req, k) = k(saveAnnotationWith(config, design, shutterSource, () -> frameImage(ps), req))
         }
 
     /// Platform.Window を GLFW のウィンドウで受ける（カーソル・キャプチャ・フルスクリーンは GL の枝と同じ関数）。
