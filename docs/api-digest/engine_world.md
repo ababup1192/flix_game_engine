@@ -2583,36 +2583,32 @@
   `pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
-- 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは
+- 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す（playheadOn の、解いた時刻だけを持つ形）。
   `pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead`
 - いま解けていない待ちで止まっているか。
   `pub def isWaiting(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Bool`
 - 決定キーを押した。待ちで止まっている間だけ解いた時刻を記録する（待ちに着く前の早押しは数えない）。
   `pub def resume(wall: Float64, resumes: List[Float64], tl: Timeline[a]): List[Float64]`
 - 時刻表の再生の操作の記録。
-  `pub type alias Player = PlayerData`
+  `pub type alias PlaybackLog = LogData`
 - まだ何も操作していない記録（演出の頭）。
-  `pub def player(): Player`
+  `pub def playbackLog(): PlaybackLog`
 - 壁の時刻 wall の再生位置（待ちで止まっている間は待ちの位置）。
-  `pub def playheadOn(wall: Float64, p: Player, tl: Timeline[a]): Playhead`
+  `pub def playheadOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Playhead`
 - wall に解けていない待ちで止まっているか。
-  `pub def isWaitingOn(wall: Float64, p: Player, tl: Timeline[a]): Bool`
+  `pub def isWaitingOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Bool`
 - wall に止まっている待ちに、何秒前に着いたか（止まっていなければ None）。オートで送るまでの間を数える所に。
-  `pub def waitedOn(wall: Float64, p: Player, tl: Timeline[a]): Option[Float64]`
+  `pub def waitedOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Option[Float64]`
 - 決定キーを押した。待ちで止まっている間だけ記録する（待ちに着く前の早押しは数えない）。
-  `pub def resumeOn(wall: Float64, p: Player, tl: Timeline[a]): Player`
+  `pub def resumeOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): PlaybackLog`
 - wall に表の時刻 to へ飛ぶ。戻らない（to が今より前なら何もしない）・次の解けていない待ちより先へは飛ばない。
-  `pub def seekOn(wall: Float64, to: Float64, p: Player, tl: Timeline[a]): Player`
-- tag のクリップの途中なら、その終わりへ飛ぶ（歩きを押して終える）。途中でなければ何もしない。
-  `pub def skipToEndOf(tag: a, wall: Float64, p: Player, tl: Timeline[a]): Player with Order[a]`
-- head に途中のクリップ（stateOf が Active の物。開始の順）。押した時に途中だった演出をまとめて終える所に（O(クリップの数)）。
-  `pub def activeAt(head: Playhead, tl: Timeline[a]): List[Clip[a]] with Order[a]`
+  `pub def seekOn(wall: Float64, to: Float64, p: PlaybackLog, tl: Timeline[a]): PlaybackLog`
 - 次の待ち（無ければ表の終わり）へ飛ぶ（スキップ・ロードで演出を飛ばす）。
-  `pub def skipToNextWait(wall: Float64, p: Player, tl: Timeline[a]): Player`
+  `pub def skipToNextWait(wall: Float64, p: PlaybackLog, tl: Timeline[a]): PlaybackLog`
 - 壁の時刻の前のフレーム prev から今の now までに頭を過ぎたクリップの tag（開始の順。同じ時刻は書いた待ちの順・tag の順）。
-  `pub def startedOnPlayer(playback: Playback, prev: Float64, now: Float64, p: Player, tl: Timeline[a]): List[a] with Order[a]`
+  `pub def startedOnWall(playback: Playback, prev: Float64, now: Float64, p: PlaybackLog, tl: Timeline[a]): List[a] with Order[a]`
 - 壁の時刻の前のフレーム prev から今の now までに鳴らす効果音。区間の中で飛んだ所は、飛ぶ前までを鳴らし、
-  `pub def soundsOnPlayer(playback: Playback, prev: Float64, now: Float64, p: Player, tl: Timeline[a]): List[String]`
+  `pub def soundsOnWall(playback: Playback, prev: Float64, now: Float64, p: PlaybackLog, tl: Timeline[a]): List[String]`
 
 ## Transition — `engine_world/src/Transition.flix`
 - `pub enum Kind with Eq { case FadeOut, case FadeIn, case WipeLeft, case WipeRight }`

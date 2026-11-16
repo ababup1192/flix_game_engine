@@ -33,10 +33,10 @@
 //     別の場所に書けない。音が鳴るフレームで stateOf はもう Active か After を返す。
 //   - waitFor は長さの決まらない待ち（会話を読む・決定キー）。World は解けた時刻を resume で記録するだけ。
 //     待ちの位置ちょうどでは、待ちの前に書いた物だけが済む（Playhead = 時刻と解いた待ちの数）。
-//   - 押すと途中の演出を終える・スキップで飛ばす表は、解いた待ちと飛んだ所を Player 1 つに記録する
-//     （player / resumeOn / seekOn / skipToEndOf / skipToNextWait → playheadOn / isWaitingOn / waitedOn / soundsOnPlayer）。
-//     押した時に途中のクリップは activeAt。seek は waitFor を越えず、飛ばした区間の音は鳴らさない。
-//     クリップの頭（命令を当てる時刻）は startedOnPlayer。こちらは飛ばした区間の物も返す。
+//   - スキップで飛ばす表は、解いた待ちと飛んだ所を PlaybackLog 1 つに記録する（playbackLog / resumeOn / seekOn /
+//     skipToNextWait → playheadOn / isWaitingOn / waitedOn / soundsOnWall）。名前の On は場面の時計の時刻で受ける印。
+//     seek は waitFor を越えず、飛ばした区間の音は鳴らさない。クリップの頭（命令を当てる時刻）は startedOnWall
+//     （こちらは飛ばした区間の物も返す）。
 //   - 書き間違い（同じ名前・まだ置いていない名前を基準・待ちに音・待ちより前へ置く・長さを合わせる音の
 //     食い違い）は build が Err で返す。並びをコードが書く表は buildOrPanic（組めなければ止める）で受け、
 //     場面ごとにテストを 1 本置けば遊ぶ前に止まる。同じ物を何本も並べる所は tag に番号を持たせる（Tick(i)）。
@@ -474,45 +474,27 @@ pub mod Timeline {
 
     // ── 待ち ──
 
-    /// 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは
-    /// そこで止まる。View もこの値を受け取るだけ（時刻の純関数のまま）。O(待ちの数)。
-    pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead = match tl {
-        case Timeline.Timeline(r) =>
-            let walked = walkWaits(wall, r#waits, resumes, 0.0, 0);
-            { t = walked#local, passed = walked#passed }
-    }
+    /// 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す（playheadOn の、解いた時刻だけを持つ形）。
+    /// 解けていない待ちではそこで止まる。View もこの値を受け取るだけ（時刻の純関数のまま）。O(待ちの数)。
+    pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead = playheadOn(wall, logOfResumes(resumes), tl)
 
     /// いま解けていない待ちで止まっているか。
-    pub def isWaiting(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Bool = match tl {
-        case Timeline.Timeline(r) => walkWaits(wall, r#waits, resumes, 0.0, 0)#waiting
-    }
+    pub def isWaiting(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Bool = isWaitingOn(wall, logOfResumes(resumes), tl)
 
     /// 決定キーを押した。待ちで止まっている間だけ解いた時刻を記録する（待ちに着く前の早押しは数えない）。
     pub def resume(wall: Float64, resumes: List[Float64], tl: Timeline[a]): List[Float64] =
         if (isWaiting(wall, resumes, tl)) List.append(resumes, wall :: Nil) else resumes
 
-    def walkWaits(wall: Float64, waits: List[Float64], resumes: List[Float64], waited: Float64, passed: Int32):
-        { local = Float64, waiting = Bool, passed = Int32 } =
-        match waits {
-            case Nil       => { local = wall - waited, waiting = false, passed = passed }
-            case w :: rest =>
-                let reached = w + waited;
-                if (wall < reached) { local = wall - waited, waiting = false, passed = passed }
-                else match resumes {
-                    case Nil => { local = w, waiting = true, passed = passed }
-                    case resumedAt :: more =>
-                        let waitedHere = Float64.max(0.0, resumedAt - reached);
-                        if (wall < reached + waitedHere) { local = w, waiting = true, passed = passed }
-                        else walkWaits(wall, rest, more, waited + waitedHere, passed + 1)
-                }
-        }
+    def logOfResumes(resumes: List[Float64]): PlaybackLog = LogData.LogData(resumes |> List.map(Control.Resume))
 
-    // ── 再生の操作（Player: 待ちを解く resume と、先へ飛ぶ seek を 1 本の記録に持つ） ──
-    // Godot の AnimationPlayer の seek・Unity の PlayableDirector の time / Resume と同じ物。
-    // World は Player を持ち、毎フレーム playheadOn(場面の時計, player, 表) で再生位置を引く。
-    // 押すと明ける演出（歩きの途中で押すと歩きを終える）は skipToEndOf、スキップ・ロードは skipToNextWait。
-    // seek は waitFor を越えない（越えるのは resume だけ。待ちを解いた数 passed を seek が数え違えない）。
-    // 飛ばした区間の音は鳴らさず、飛んだ先ちょうどの音は 1 回鳴らす（soundsOnPlayer）。
+    // ── 再生の操作の記録（PlaybackLog: 待ちを解く resume と、先へ飛ぶ seek を 1 本に持つ） ──
+    // Godot の AnimationPlayer の seek・Unity の PlayableDirector の time / Resume と同じ操作。
+    // World は PlaybackLog を持ち、毎フレーム playheadOn(場面の時計, 記録, 表) で再生位置を引く。
+    // 名前の On は「場面の時計（wall clock）の時刻で受ける」の意味（表の上の時刻 Playhead#t と取り違えない）。
+    // スキップ・ロードは skipToNextWait。seek は waitFor を越えない（越えるのは resume だけ。待ちを解いた数 passed を
+    // seek が数え違えない）。飛ばした区間の音は鳴らさず、飛んだ先ちょうどの音は 1 回鳴らす（soundsOnWall）。
+    // 表は毎フレーム組み直してよい。再生位置が続くのは、今より後ろを縮める・後ろへ足すだけの時（waitFor を途中へ差し込むと
+    // passed の数がずれる）。
 
     /// 操作 1 つ。Resume(壁の時刻) = 待ちを解いた・Seek(壁の時刻, 飛ぶ先の表の時刻) = 先へ飛んだ。
     enum Control with Eq, ToString {
@@ -520,19 +502,19 @@ pub mod Timeline {
         case Seek(Float64, Float64)
     }
 
-    /// 操作の記録（壁の時刻の古い順）。外では player() で作り、resumeOn / seekOn / skipToEndOf / skipToNextWait で足す。
-    enum PlayerData with Eq, ToString {
-        case PlayerData(List[Control])
+    /// 操作の記録（壁の時刻の古い順）。外では playbackLog() で作り、resumeOn / seekOn / skipToNextWait で足す。
+    enum LogData with Eq, ToString {
+        case LogData(List[Control])
     }
 
     /// 時刻表の再生の操作の記録。
-    pub type alias Player = PlayerData
+    pub type alias PlaybackLog = LogData
 
     /// まだ何も操作していない記録（演出の頭）。
-    pub def player(): Player = PlayerData.PlayerData(Nil)
+    pub def playbackLog(): PlaybackLog = LogData.LogData(Nil)
 
-    def controlsOf(p: Player): List[Control] = match p {
-        case PlayerData.PlayerData(cs) => cs
+    def controlsOf(p: PlaybackLog): List[Control] = match p {
+        case LogData.LogData(cs) => cs
     }
 
     def controlWall(c: Control): Float64 = match c {
@@ -540,45 +522,30 @@ pub mod Timeline {
         case Control.Seek(at, _) => at
     }
 
-    def withControl(c: Control, p: Player): Player = PlayerData.PlayerData(List.append(controlsOf(p), c :: Nil))
+    def withControl(c: Control, p: PlaybackLog): PlaybackLog = LogData.LogData(List.append(controlsOf(p), c :: Nil))
 
     /// 壁の時刻 wall の再生位置（待ちで止まっている間は待ちの位置）。
-    pub def playheadOn(wall: Float64, p: Player, tl: Timeline[a]): Playhead = walkOn(wall, p, tl)#head
+    pub def playheadOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Playhead = walkOn(wall, p, tl)#head
 
     /// wall に解けていない待ちで止まっているか。
-    pub def isWaitingOn(wall: Float64, p: Player, tl: Timeline[a]): Bool = walkOn(wall, p, tl)#waiting
+    pub def isWaitingOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Bool = walkOn(wall, p, tl)#waiting
 
     /// wall に止まっている待ちに、何秒前に着いたか（止まっていなければ None）。オートで送るまでの間を数える所に。
-    pub def waitedOn(wall: Float64, p: Player, tl: Timeline[a]): Option[Float64] =
+    pub def waitedOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Option[Float64] =
         let walked = walkOn(wall, p, tl);
         if (walked#waiting) Some(wall - walked#since) else None
 
     /// 決定キーを押した。待ちで止まっている間だけ記録する（待ちに着く前の早押しは数えない）。
-    pub def resumeOn(wall: Float64, p: Player, tl: Timeline[a]): Player =
+    pub def resumeOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): PlaybackLog =
         if (isWaitingOn(wall, p, tl)) withControl(Control.Resume(wall), p) else p
 
     /// wall に表の時刻 to へ飛ぶ。戻らない（to が今より前なら何もしない）・次の解けていない待ちより先へは飛ばない。
-    pub def seekOn(wall: Float64, to: Float64, p: Player, tl: Timeline[a]): Player =
+    pub def seekOn(wall: Float64, to: Float64, p: PlaybackLog, tl: Timeline[a]): PlaybackLog =
         let walked = walkOn(wall, p, tl);
         if (walked#waiting or to <= walked#head#t) p else withControl(Control.Seek(wall, to), p)
 
-    /// tag のクリップの途中なら、その終わりへ飛ぶ（歩きを押して終える）。途中でなければ何もしない。
-    pub def skipToEndOf(tag: a, wall: Float64, p: Player, tl: Timeline[a]): Player with Order[a] =
-        let head = playheadOn(wall, p, tl);
-        match (stateOf(tag, head, tl), clipOf(tag, tl)) {
-            case (ClipState.Active(_), Some(c)) => seekOn(wall, c#start + c#dur, p, tl)
-            case _                              => p
-        }
-
-    /// head に途中のクリップ（stateOf が Active の物。開始の順）。押した時に途中だった演出をまとめて終える所に（O(クリップの数)）。
-    pub def activeAt(head: Playhead, tl: Timeline[a]): List[Clip[a]] with Order[a] =
-        clipsOf(tl) |> List.filter(c -> match stateOf(c#tag, head, tl) {
-            case ClipState.Active(_) => true
-            case _                   => false
-        })
-
     /// 次の待ち（無ければ表の終わり）へ飛ぶ（スキップ・ロードで演出を飛ばす）。
-    pub def skipToNextWait(wall: Float64, p: Player, tl: Timeline[a]): Player = match tl {
+    pub def skipToNextWait(wall: Float64, p: PlaybackLog, tl: Timeline[a]): PlaybackLog = match tl {
         case Timeline.Timeline(r) =>
             let head = playheadOn(wall, p, tl);
             let next = r#waits |> List.drop(head#passed) |> List.head |> Option.getWithDefault(r#duration);
@@ -588,11 +555,11 @@ pub mod Timeline {
     /// 壁の時刻の前のフレーム prev から今の now までに頭を過ぎたクリップの tag（開始の順。同じ時刻は書いた待ちの順・tag の順）。
     /// 音と違い、飛ばした区間で始まる物も返す（Unity の Signal の retroactive。スキップで飛ばした命令も当てる所に）。
     /// 境目は soundsOn と同じ（Play は (prev, now]・Enter は [prev, now]・Seek は何も返さない）。O(クリップの数)。
-    pub def startedOnPlayer(playback: Playback, prev: Float64, now: Float64, p: Player, tl: Timeline[a]): List[a] with Order[a] =
+    pub def startedOnWall(playback: Playback, prev: Float64, now: Float64, p: PlaybackLog, tl: Timeline[a]): List[a] with Order[a] =
         match tl {
             case Timeline.Timeline(r) =>
                 // 最初のフレームは前のフレームが無いので、prev ちょうどの操作より前の位置から数える（頭で飛んだ物も返す）。
-                let before = if (playback == Playback.Enter) playheadOn(prev, PlayerData.PlayerData(controlsOf(p) |> List.filter(c -> controlWall(c) < prev)), tl)
+                let before = if (playback == Playback.Enter) playheadOn(prev, LogData.LogData(controlsOf(p) |> List.filter(c -> controlWall(c) < prev)), tl)
                              else playheadOn(prev, p, tl);
                 let after = playheadOn(now, p, tl);
                 let segmentOf = (tag: a) -> Map.get(tag, r#segments) |> Option.getWithDefault(0);
@@ -614,7 +581,7 @@ pub mod Timeline {
     /// 壁の時刻の前のフレーム prev から今の now までに鳴らす効果音。区間の中で飛んだ所は、飛ぶ前までを鳴らし、
     /// 飛ばした区間は鳴らさず、飛んだ先ちょうどからを鳴らす（Bevy の seek と同じく飛ばした区間の音は出さない）。
     /// playback は区間の頭の扱い（演出の最初のフレームは Enter・ほかは Play。Seek なら何も鳴らさない）。
-    pub def soundsOnPlayer(playback: Playback, prev: Float64, now: Float64, p: Player, tl: Timeline[a]): List[String] =
+    pub def soundsOnWall(playback: Playback, prev: Float64, now: Float64, p: PlaybackLog, tl: Timeline[a]): List[String] =
         let start = playheadOn(prev, p, tl);
         let walked = walkOn(now, p, tl);
         let jumps = walked#jumps |> List.reverse |> List.filter(j -> j#wall > prev);
@@ -633,7 +600,7 @@ pub mod Timeline {
     /// 区間の頭: 壁の時刻 wallAt に表の時刻 localAt から 1:1 で進み始めた・passed = それまでに解いた待ちの数。
     type alias Segment = { wallAt = Float64, localAt = Float64, passed = Int32 }
 
-    def walkOn(wall: Float64, p: Player, tl: Timeline[a]): Walked = match tl {
+    def walkOn(wall: Float64, p: PlaybackLog, tl: Timeline[a]): Walked = match tl {
         case Timeline.Timeline(r) => walkControls(wall, r#waits, controlsOf(p), { wallAt = 0.0, localAt = 0.0, passed = 0 }, Nil)
     }
 
