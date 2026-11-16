@@ -435,6 +435,15 @@ mod WorldRead {
                    };
         { gate = gate | r }
 
+    /// いま選べる選択肢（出している物。viaLine のゲートで台詞の頁のままなら、台詞を送ると出る物）。無ければ空。
+    // WhyNot: テープの picked は選んだフレームの前の World から引く — viaLine は払った 1 フレームの中で台詞を送ってから選ぶので、choices だけ見ると空になる。
+    pub def offeredOf(r: World.Read): List[YarnRunner.DialogueOption] =
+        if (not List.isEmpty(r#choices)) r#choices
+        else match YarnRunner.shownOf(r#talk) {
+            case YarnRunner.Shown.Line(_) => optionsAfterLine(r#talk)
+            case _                        => Nil
+        }
+
     /// 今の台詞を送ると出来事が選択肢だけになる時の、その選択肢（そうでなければ空）。
     def optionsAfterLine(talk: YarnRunner.Runner[Stage.Story]): List[YarnRunner.DialogueOption] =
         match YarnRunner.step(YarnRunner.Action.Advance, Clock.zero(), talk) {

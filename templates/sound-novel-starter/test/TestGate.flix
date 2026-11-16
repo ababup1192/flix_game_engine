@@ -7,15 +7,15 @@ mod TestGate {
     use fge::GameEngine.Key
     use TestKit.{quiet, settle}
 
-    def res(): Res.Res \ Fs.FileRead = TestKit.fixtureRes("test/fixtures/gate", "Gate")
+    pub def res(): Res.Res \ Fs.FileRead = TestKit.fixtureRes("test/fixtures/gate", "Gate")
 
-    def begun(r: Res.Res): World.World = TestKit.begun(r)
+    pub def begun(r: Res.Res): World.World = TestKit.begun(r)
 
     def textOf(w: World.World): String = World.pageOf(w)#current |> Option.map(line -> line#text) |> Option.getWithDefault("")
 
-    def passed(r: Res.Res, input: Gate.Input, w: World.World): World.World = settle(r, quiet(() -> WorldRead.passGate(r, input, w)))
+    pub def passed(r: Res.Res, input: Gate.Input, w: World.World): World.World = settle(r, quiet(() -> WorldRead.passGate(r, input, w)))
 
-    def swipe(dir: Gesture.Direction): Gate.Input = Gate.Input.Did(Gate.Act.Swipe(dir))
+    pub def swipe(dir: Gesture.Direction): Gate.Input = Gate.Input.Did(Gate.Act.Swipe(dir))
 
     def tap(name: String): Gate.Input = Gate.Input.Did(Gate.Act.Tap(name))
 
