@@ -78,8 +78,8 @@ mod World {
 
     /// コマンドが出した待ち（<<wait 秒>> と同じ待ち。続きの出来事を出さずに物語の時計で待つ）。until = 明ける物語の時刻、
     /// rest = 待ちの後ろのシナリオの出来事と、それぞれの後ろの入力の数（明けたら続きから反映する）、last = rest の台詞の戻れる所の元、
-    /// tappable = 人が押すと明ける待ち（Commands.Out.WaitOrTap・SwitchWait だけで出来た待ち）、
-    /// passInstant = 待ちの間も時間を取らない命令は先に流す待ち（Commands.Out.SwitchWait だけで出来た待ち。台詞・選択肢・<<wait>>・時間を取る命令で止まる）。
+    /// tappable = 人が押すと明ける待ち（Commands.Out.WaitOrTap・LineWait だけで出来た待ち）、
+    /// passInstant = 待ちの間も時間を取らない命令は先に流す待ち（Commands.Out.LineWait だけで出来た待ち。台詞・選択肢・<<wait>>・時間を取る命令で止まる）。
     // WhyNot: 実行器（YarnRunner）の待ちに入れない — 実行器はコマンドを返した時にはもう次の台詞まで流し終えていて、外から待ちを差し込めない。
     pub type alias Pause = { until = Clock.Time[Stage.Story], rest = List[(YarnRunner.Event, Int32)], last = Option[YarnRunner.Bookmark],
                              tappable = Bool, passInstant = Bool }

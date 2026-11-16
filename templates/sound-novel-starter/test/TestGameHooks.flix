@@ -17,8 +17,9 @@ mod TestGameHooks {
     /// 背景の Doc に写真 p0・p1（絵は無くてよい）と時間帯 g を足し、initial と title を外した物。
     def withTestPhotos(doc: BackdropDoc.Doc): BackdropDoc.Doc =
         let d = BackdropDoc.rec(doc);
-        let photo = name -> { texture = "test_${name}", label = name, aspect = None };
-        BackdropDoc.Doc.Doc({ photos = d#photos |> Map.insert("p0", photo("p0")) |> Map.insert("p1", photo("p1")),
+        let photo = name -> { texture = "test_${name}", label = name, aspect = None, blank = false };
+        BackdropDoc.Doc.Doc({ photos = d#photos |> Map.insert("p0", photo("p0")) |> Map.insert("p1", photo("p1"))
+                                                |> Map.insert("dark", { texture = "", label = "暗闇", aspect = None, blank = true }),
                               grades = Map.insert("g", BackdropDoc.plainGrade(), d#grades), initial = None, title = None | d })
 
     def t(seconds: Float64): Clock.Time[Stage.Story] = Clock.startAt(seconds) |> Clock.nowOf
@@ -160,6 +161,17 @@ mod TestGameHooks {
         }))
 
     @Test
+    def testABlankPhotoDrawsNothing(): Unit \ {Assert, Fs.FileRead} =
+        // 絵を持たない写真（blank）は、写真の面を描かず（地の色だけが見える）、待つ絵の名前も無い。
+        let r = res();
+        let st = bgTo(r, 0.0, "dark" :: "grade=g" :: "transition=cut" :: Nil, Stage.empty());
+        let shaders = ViewStage.backdropsUsing((_, _, _, _) -> None, screenArea(), envOf(r, 1.0), st) |> List.count(p -> match p#item {
+            case Render.Item.Shader(_) => true
+            case _                     => false
+        });
+        Assert.assertEq(expected = (0, None), (shaders, BackdropDoc.textureOf("dark", r#backdrops)))
+
+    @Test
     def testTemplateTransitionsFadeTheGamePicture(): Unit \ {Assert, Fs.FileRead} =
         // テンプレートの fade の途中は、前の背景（写真 0 番 = x 2000）と今の背景（写真 1 番 = x 1000）の両方を描く。
         let r = res();
@@ -170,8 +182,8 @@ mod TestGameHooks {
     // ══ GameCommands.backdropSwitch ══
 
     @Test
-    def testGameOwnedSwitchWaitsForItsSeconds(): Unit \ {Assert, Fs.FileRead} =
-        Assert.assertEq(expected = Ok(Out.SwitchWait(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
+    def testGameOwnedSwitchWaitsWithALineWait(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Ok(Out.LineWait(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
 
     @Test
     def testInstantDoesNotAskTheGame(): Unit \ {Assert, Fs.FileRead} =
@@ -434,7 +446,27 @@ mod TestGameHooks {
         let ended = TestKit.stepBy(r, 30.0, waitingBy(r, Out.WaitOrTap(3.0)));
         Assert.assertTrue(readerTaps(r, ended))
 
-    // ══ ゲームが持つ切り替えの待ち（Out.SwitchWait）の間に流す命令 ══
+    /// flow の ready が Busy か（入力を受けられない）。
+    def isBusy(r: Res.Res, w: World.World): Bool =
+        E2e.table()#ready |> Option.exists(ready -> match ready(Resources.of(r, w)) {
+            case Flow.Ready.Busy(_) => true
+            case Flow.Ready.Ready   => false
+        })
+
+    @Test
+    def testTheFlowIsBusyDuringAWait(): Unit \ {Assert, Fs.FileRead} =
+        // 命令が出した待ちの間は、flow の tap を待たせる（Busy）。明けて台詞を出し終えたら Ready。
+        let r = res();
+        let w = waitingBy(r, Out.LineWait(3.0));
+        Assert.assertEq(expected = (true, false), (isBusy(r, w), isBusy(r, TestKit.stepBy(r, 30.0, w))))
+
+    @Test
+    def testTheFlowIsBusyDuringTheRunnersWait(): Unit \ {Assert, Fs.FileRead} =
+        // 実行器の <<wait>> の間も Busy（台本 test/fixtures/switch の Enter: 台詞を送ると <<wait 0.9>>）。
+        let r = res() |> Res.withDialogue(Yarn.loadOr(Yarn.empty(), "test/fixtures/switch/dialogue.json")) |> TestKit.withOpening("Enter");
+        Assert.assertTrue(isBusy(r, TestKit.advance(r, begun(r))))
+
+    // ══ 次の台詞を待たせる待ち（Out.LineWait。bg がゲームの切り替えで出す・ゲームのコマンドも出せる）の間に流す命令 ══
 
     /// 合図 name を出すだけの命令（timing で時間を取るかを決める）。
     def signalCommand(name: String, timing: Commands.Timing): Commands.Command[Stage.Stage] =
@@ -443,7 +475,7 @@ mod TestGameHooks {
 
     /// 3 秒の切り替えの待ちを出す walk・時間を取らない合図 quick・時間を取る合図 slow を、読み進める命令の表に足した描く元。
     def withSwitchCommands(r: Res.Res): Res.Res =
-        { commands = Commands.tableOf(waitCommand("walk", Out.SwitchWait(3.0)) :: signalCommand("quick", Commands.Timing.Instant)
+        { commands = Commands.tableOf(waitCommand("walk", Out.LineWait(3.0)) :: signalCommand("quick", Commands.Timing.Instant)
                                       :: signalCommand("slow", Commands.Timing.Timed) :: Commands.commandsIn(r#commands)) | r }
 
     /// 読み始めた所で 0.1 秒の待ちを当て、明けたら walk と rest の命令と台詞を流す World を、0.2 秒進めた所（walk を当てた直後）と、そこで出た合図。
@@ -461,6 +493,18 @@ mod TestGameHooks {
             case World.Event.Signal(name) => Some(name)
             case _                        => None
         }))
+
+    @Test
+    def testAGameCommandLineWaitLetsTheAudioThrough(): Unit \ {Assert, Fs.FileRead} =
+        // ゲームのコマンド（コメントを 1 件流して 0.65 秒置く形）が LineWait を出すと、後ろの <<audio>> は待たずに流れ、台詞だけが待つ。
+        let base = res();
+        let r = { commands = Commands.tableOf(waitCommand("comment", Out.LineWait(0.65)) :: Commands.commandsIn(base#commands)) | base };
+        let start = begun(r);
+        let events = (YarnRunner.Event.Command(command("comment", Nil)), 1) :: (YarnRunner.Event.Command(command("audio", "ambience" :: "amb_river" :: Nil)), 1)
+            :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
+        let w = TestKit.stepBy(r, 0.2, World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start));
+        let ambience = World.readOf(w) |> Option.flatMap(rd -> Stage.ambienceOf(World.now(w), rd#stage));
+        Assert.assertEq(expected = (Some("amb_river"), true), (ambience, isPaused(w)))
 
     @Test
     def testInstantCommandsRunDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =
@@ -487,6 +531,57 @@ mod TestGameHooks {
                                               :: Commands.commandsIn(res()#commands)) | res() };
         let (_, signals) = walkedInto(r, "quick" :: Nil);
         Assert.assertEq(expected = Nil, signals)
+
+    @Test
+    def testAudioCommandsDuringTheSwitchKeepTheWait(): Unit \ {Assert, Fs.FileRead} =
+        // 切り替えの間に流した <<audio>>（命令の出来事になる物）の後も、待ちの秒が明けるまで台詞は出ない。
+        let r = withSwitchCommands(res());
+        let rest = YarnRunner.Event.Command(command("audio", "ambience" :: "amb_river" :: Nil)) :: YarnRunner.Event.Command(command("audio", "all" :: "off" :: Nil))
+            :: YarnRunner.Event.Command(command("wait", "0.8" :: Nil)) :: Nil;
+        let (w, _) = walkedIntoEvents(r, rest);
+        let later = TestKit.stepBy(r, 1.0, w);
+        Assert.assertEq(expected = (true, false), (isPaused(later), currentText(later) == "歩いた後の行。"))
+
+    @Test
+    def testAWalkingBgInTheScriptWaitsThroughSetAndAudio(): Unit \ {Assert, Fs.FileRead} =
+        // 台本（test/fixtures/switch）の歩く <<bg>>（5.4 秒）→ <<set>> → <<audio>> 2 つ → <<wait 0.8>> → 台詞を実行器から流す:
+        // 送ってから 1 秒では台詞が出ず、6.5 秒では出ている。
+        let base = res() |> Res.withDialogue(Yarn.loadOr(Yarn.empty(), "test/fixtures/switch/dialogue.json")) |> TestKit.withOpening("Walk");
+        let r = { commands = Commands.tableOf(Commands.bgUsing(walk(5.4)) :: Commands.commandsIn(base#commands)) | base };
+        let walked = TestKit.advance(r, begun(r));
+        let early = stepFrames(r, 30, walked);
+        let late = stepFrames(r, 165, early);
+        Assert.assertEq(expected = ("「歩く前の行。」", "「歩いた後の行。」"), (currentText(early), currentText(late)))
+
+    @Test
+    def testAWalkingBgAtTheHeadOfAJumpedNodeWaitsThroughSetAndAudio(): Unit \ {Assert, Fs.FileRead} =
+        // <<wait 0.9>> → <<jump>> で入ったノードの頭の歩く <<bg>>（5.4 秒）→ <<set>> → <<audio>> 2 つ → <<wait 0.8>> → 台詞:
+        // 送ってから 0.9 + 1 秒では台詞が出ず、0.9 + 6.5 秒では出ている。
+        let base = res() |> Res.withDialogue(Yarn.loadOr(Yarn.empty(), "test/fixtures/switch/dialogue.json")) |> TestKit.withOpening("Enter");
+        let r = { commands = Commands.tableOf(Commands.bgUsing(walk(5.4)) :: Commands.commandsIn(base#commands)) | base };
+        let walked = TestKit.advance(r, begun(r));
+        let early = stepFrames(r, 57, walked);
+        let late = stepFrames(r, 165, early);
+        Assert.assertEq(expected = ("「歩く前の行。」", "「歩いた後の行。」"), (currentText(early), currentText(late)))
+
+    /// 1/30 秒のフレームを n 回進める（実機と同じく、待ちが明けたフレームの次のフレームで実行器が進む）。
+    def stepFrames(r: Res.Res, n: Int32, w: World.World): World.World =
+        List.range(0, n) |> List.foldLeft((cur, _) -> TestKit.stepBy(r, 1.0 / 30.0, cur), w)
+
+    @Test
+    def testAudioAfterAWalkingBgKeepsTheWait(): Unit \ {Assert, Fs.FileRead} =
+        // 歩く <<bg>>（ゲームの backdropSwitch が 5.4 秒）→ <<audio>> 2 つ → <<wait 0.8>> → 台詞: 1 秒では台詞が出ず、6.5 秒で出る。
+        let base = res();
+        let r = { commands = Commands.tableOf(Commands.bgUsing(walk(5.4)) :: Commands.commandsIn(base#commands)) | base };
+        let events = (YarnRunner.Event.Command(command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)), 1)
+            :: (YarnRunner.Event.Command(command("audio", "ambience" :: "amb_river" :: Nil)), 1)
+            :: (YarnRunner.Event.Command(command("audio", "all" :: "off" :: Nil)), 1)
+            :: (YarnRunner.Event.Command(command("wait", "0.8" :: Nil)), 1) :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
+        let start = begun(r);
+        let w = TestKit.stepBy(r, 0.2, World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start));
+        let early = TestKit.stepBy(r, 1.0, w);
+        let late = TestKit.stepBy(r, 6.5, early);
+        Assert.assertEq(expected = (false, true), (currentText(early) == "歩いた後の行。", currentText(late) == "歩いた後の行。"))
 
     @Test
     def testTheSwitchStopsAtAWait(): Unit \ {Assert, Fs.FileRead} =

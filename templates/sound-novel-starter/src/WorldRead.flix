@@ -76,7 +76,7 @@ mod WorldRead {
             case None    => absorbFrom(res, replay, last, rest, w)
         }
 
-    /// 時間を取らない命令を先に流す待ち（Out.SwitchWait）の間: 頭の時間を取らない命令を 1 つずつ流し、台詞・選択肢・<<wait>>・
+    /// 時間を取らない命令を先に流す待ち（Out.LineWait）の間: 頭の時間を取らない命令を 1 つずつ流し、台詞・選択肢・<<wait>>・
     /// 時間を取る命令・まだ届いていない素材を待つ命令・流した命令が出した押しても明けない待ちに当たったら、そこから後ろを待ちに預ける。
     def flowInstant(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], rest: List[(YarnRunner.Event, Int32)],
                     w: World.World): World.World \ Emit[World.Event] =
@@ -216,7 +216,7 @@ mod WorldRead {
         case Out.Event(name)     => Emit.emit(World.Event.Signal(name)); r
         case Out.Wait(secs)       => withPause(now, secs, false, false, r)
         case Out.WaitOrTap(secs)  => withPause(now, secs, true, false, r)
-        case Out.SwitchWait(secs) => withPause(now, secs, true, true, r)
+        case Out.LineWait(secs) => withPause(now, secs, true, true, r)
     }
 
     /// 待ちを now から secs 秒に（もう待ちがあれば、明ける時刻は遅い方・押して明けるのと時間を取らない命令を流すのは、両方ともそうな時だけ）。
@@ -233,9 +233,18 @@ mod WorldRead {
     pub def isTapWait(w: World.World): Bool =
         World.readOf(w) |> Option.flatMap(r -> r#pause) |> Option.exists(p -> p#tappable)
 
-    /// 命令が出した待ち（Out.Wait・Out.WaitOrTap・Out.SwitchWait）の間か。flow の reader はこの間は押さない（待ちの秒を流し、明けてから読む間を数える）。
+    /// 命令が出した待ち（Out.Wait・Out.WaitOrTap・Out.LineWait）の間か。flow の reader はこの間は押さない（待ちの秒を流し、明けてから読む間を数える）。
     pub def isPaused(w: World.World): Bool =
         World.readOf(w) |> Option.exists(r -> Option.nonEmpty(r#pause))
+
+    /// 命令が出した待ちか、実行器の <<wait>> の間か。flow の ready はこの間は Busy（tap を待ちが明けるまで待たせる）。
+    pub def isWaiting(w: World.World): Bool =
+        isPaused(w) or (World.readOf(w) |> Option.exists(r -> isRunnerWaiting(r#talk)))
+
+    def isRunnerWaiting(talk: YarnRunner.Runner[Stage.Story]): Bool = match YarnRunner.shownOf(talk) {
+        case YarnRunner.Shown.Waiting => true
+        case _                        => false
+    }
 
     /// コマンドが出した待ちが明けた（かスキップで飛ばした）: 待ちを消して、預けておいた続きの出来事を反映する。
     def resumePause(res: Res.Res, p: World.Pause, r: World.Read, w: World.World): World.World \ Emit[World.Event] =

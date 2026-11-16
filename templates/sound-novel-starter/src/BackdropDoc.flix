@@ -8,8 +8,9 @@ mod BackdropDoc {
     use Util.Json.Json
 
     /// 写真 1 枚。texture = project.json の textures の名前、label = セーブの枠に出す場所の名前、
-    /// aspect = 絵の横÷縦（書いた写真は画面を覆うように比を保って真ん中で切り抜く。None は 16:9 の写真として画面に合わせて敷く）。
-    pub type alias Photo = { texture = String, label = String, aspect = Option[Float64] }
+    /// aspect = 絵の横÷縦（書いた写真は画面を覆うように比を保って真ん中で切り抜く。None は 16:9 の写真として画面に合わせて敷く）、
+    /// blank = 絵を持たない写真（何も描かず地の色を見せる暗闇。texture は空でよい）。
+    pub type alias Photo = { texture = String, label = String, aspect = Option[Float64], blank = Bool }
 
     /// 背景が無い間（最初の <<bg>> の前・セーブの背景が null の時）に描く背景。最初の <<bg>> はこの背景から重ねる。
     pub type alias Initial = { photo = String, grade = String }
@@ -96,7 +97,11 @@ mod BackdropDoc {
     pub def photoOf(name: String, doc: Doc): Option[Photo] = Map.get(name, rec(doc)#photos)
 
     /// 写真の名前 → project.json の textures の名前（知らない写真なら None）。
-    pub def textureOf(name: String, doc: Doc): Option[String] = photoOf(name, doc) |> Option.map(photo -> photo#texture)
+    /// 絵を持たない写真（blank）は None（待つ絵も、描き出しで読む絵も無い）。
+    pub def textureOf(name: String, doc: Doc): Option[String] = photoOf(name, doc) |> Option.filter(photo -> not photo#blank) |> Option.map(photo -> photo#texture)
+
+    /// 写真が絵を持たない（blank）か。
+    pub def isBlank(name: String, doc: Doc): Bool = photoOf(name, doc) |> Option.exists(photo -> photo#blank)
 
     pub def gradeOf(name: String, doc: Doc): Option[Grade] = Map.get(name, rec(doc)#grades)
 
@@ -141,7 +146,8 @@ mod BackdropDoc {
     def photoFromJson(json: Json): Option[Photo] =
         JsonCodec.expectObject(json) |> Option.map(obj ->
             { texture = JsonCodec.stringOr("texture", "", obj), label = JsonCodec.stringOr("label", "", obj),
-              aspect = Map.get("aspect", obj) |> Option.flatMap(JsonCodec.expectFloat) |> Option.filter(a -> a > 0.0) })
+              aspect = Map.get("aspect", obj) |> Option.flatMap(JsonCodec.expectFloat) |> Option.filter(a -> a > 0.0),
+              blank = JsonCodec.boolOr("blank", false, obj) })
 
     def gradeFromJson(json: Json): Option[Grade] =
         JsonCodec.expectObject(json) |> Option.map(obj -> {

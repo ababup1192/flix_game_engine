@@ -59,10 +59,10 @@ mod TestDocs {
 
     @Test
     def testEveryPhotoHasATexture(): Unit \ {Assert, Fs.FileRead} =
-        // novel.backdrops.json の写真は、どれも project.json の textures に名前がある（描き出しと実機が同じ名前で読む）。
+        // novel.backdrops.json の写真は、どれも project.json の textures に名前がある（描き出しと実機が同じ名前で読む）。絵を持たない写真（blank）は除く。
         let res = Controls.loadRes();
         let textures = namesIn("textures");
-        let missing = BackdropDoc.rec(res#backdrops)#photos |> Map.valuesOf |> List.map(photo -> photo#texture)
+        let missing = BackdropDoc.rec(res#backdrops)#photos |> Map.valuesOf |> List.filter(photo -> not photo#blank) |> List.map(photo -> photo#texture)
             |> List.filter(t -> not Set.memberOf(t, textures));
         Assert.assertEq(expected = Nil, missing)
 

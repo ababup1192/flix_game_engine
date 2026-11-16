@@ -53,9 +53,9 @@ mod TestAudio {
 
     @Test
     def testSlideBringsThePhotoFromTheRight(): Unit \ {Assert, Fs.FileRead} =
-        // slide の途中は、今の写真の面が右へずれて描かれる（左端が画面の左端より右）。
+        // slide の途中は、今の写真の面が右へずれて描かれる（左端が画面の左端より右）。ゲームの GameView.backdrop は差さない（写真の面だけを見る）。
         let st = applied(1.0, "bg", photo() :: "transition=slide" :: "time=2" :: Nil, bg("transition=cut" :: Nil));
-        let lefts = ViewStage.frame(envAt(2.0), st, true) |> List.filterMap(placed -> match placed#item {
+        let lefts = ViewStage.backdropsUsing((_, _, _, _) -> None, _ -> Layout.screen(Layout.Fit.Regular), envAt(2.0), st) |> List.filterMap(placed -> match placed#item {
             case Render.Item.Shader(s) if Int32.remainder(s#zIndex, View.zWorldStride()) == View.zBackdropShot() => Some(placed#at#x)
             case _                                                           => None
         });

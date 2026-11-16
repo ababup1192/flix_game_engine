@@ -1,0 +1,34 @@
+// テスト用のシナリオ（TestGameHooks）。ゲームが持つ背景の切り替え（歩く <<bg>>）の待ちの間に、後ろの時間を取らない命令
+// （<<set>>・<<audio>>）が流れても、待ちの秒が明けるまで台詞を出さないことを見る。p0・p1・g はテストが Doc に足す写真と時間帯。
+// Walk は台詞を送った所で歩き、Enter は <<wait>> の後に <<jump>> で入ったノードの頭で歩く。
+// 直したら: bin/fge yarn build test/fixtures/switch --no-vocab
+title: Walk
+---
+<<declare $n = 0>>
+<<window bottom>>
+<<bg p0 grade=g time=0>>
+me: 歩く前の行。
+<<bg p1 grade=g>>
+<<set $n to 1>>
+<<audio ambience amb_river>>
+<<audio all off>>
+<<wait 0.8>>
+me: 歩いた後の行。
+===
+title: Enter
+---
+<<window bottom>>
+<<bg p0 grade=g time=0>>
+me: 歩く前の行。
+<<wait 0.9>>
+<<jump Entered>>
+===
+title: Entered
+---
+<<bg p1 grade=g>>
+<<set $n to 2>>
+<<audio ambience amb_river>>
+<<audio all off>>
+<<wait 0.8>>
+me: 歩いた後の行。
+===

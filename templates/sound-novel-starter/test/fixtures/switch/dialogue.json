@@ -1,0 +1,203 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が test/fixtures/switch/switch.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "test/fixtures/switch/switch.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$n",
+      "value": 0,
+      "file": "test/fixtures/switch/switch.yarn",
+      "line": 7
+    }
+  ],
+  "nodes": [
+    {
+      "title": "Walk",
+      "file": "test/fixtures/switch/switch.yarn",
+      "line": 5,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 8,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 9,
+          "name": "bg",
+          "args": [
+            "p0",
+            "grade=g",
+            "time=0"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 10,
+          "speaker": "me",
+          "text": "歩く前の行。"
+        },
+        {
+          "kind": "command",
+          "line": 11,
+          "name": "bg",
+          "args": [
+            "p1",
+            "grade=g"
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 12,
+          "name": "$n",
+          "expr": {
+            "kind": "value",
+            "value": 1
+          }
+        },
+        {
+          "kind": "command",
+          "line": 13,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "amb_river"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 14,
+          "name": "audio",
+          "args": [
+            "all",
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 15,
+          "name": "wait",
+          "args": [
+            "0.8"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "me",
+          "text": "歩いた後の行。"
+        }
+      ]
+    },
+    {
+      "title": "Enter",
+      "file": "test/fixtures/switch/switch.yarn",
+      "line": 18,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 20,
+          "name": "window",
+          "args": [
+            "bottom"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 21,
+          "name": "bg",
+          "args": [
+            "p0",
+            "grade=g",
+            "time=0"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 22,
+          "speaker": "me",
+          "text": "歩く前の行。"
+        },
+        {
+          "kind": "command",
+          "line": 23,
+          "name": "wait",
+          "args": [
+            "0.9"
+          ]
+        },
+        {
+          "kind": "jump",
+          "line": 24,
+          "node": "Entered"
+        }
+      ]
+    },
+    {
+      "title": "Entered",
+      "file": "test/fixtures/switch/switch.yarn",
+      "line": 26,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 28,
+          "name": "bg",
+          "args": [
+            "p1",
+            "grade=g"
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 29,
+          "name": "$n",
+          "expr": {
+            "kind": "value",
+            "value": 2
+          }
+        },
+        {
+          "kind": "command",
+          "line": 30,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "amb_river"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 31,
+          "name": "audio",
+          "args": [
+            "all",
+            "off"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 32,
+          "name": "wait",
+          "args": [
+            "0.8"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 33,
+          "speaker": "me",
+          "text": "歩いた後の行。"
+        }
+      ]
+    }
+  ]
+}

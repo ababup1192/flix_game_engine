@@ -49,9 +49,11 @@ mod Commands {
     ///   Wait(秒) = 物語の時計で秒だけ、続きの台詞・選択肢・コマンドを出さずに待つ（<<wait 秒>> と同じ待ち。Silent では落とす）/
     ///   WaitOrTap(秒) = Wait と同じ待ちで、人が押すと（送りの操作）秒を待たずに明ける。押して明けた時は、ゲームが持つ背景の切り替えも
     ///   終わりの形にする（Stage.withGameSwitchFinished）。オートでは明けない。Silent では落とし、スキップ中は Wait と同じくすぐ明ける /
-    ///   SwitchWait(秒) = ゲームが持つ背景の切り替えの待ち（bg が出す）。WaitOrTap と同じく押すと明け、待ちの間も後ろの時間を取らない命令
-    ///   （<<audio>> など。<<set>> は実行器が先に済ませるので出来事にならない）は先に流し、台詞・選択肢・<<wait>>・時間を取る命令で止まる。
-    // WhyNot: WaitOrTap に時間を取らない命令を流させない — ゲームのコマンド（コメントを順に出す等）の待ちの後ろの効果音は、待ちが明けてから鳴らしたい。
+    ///   LineWait(秒) = 次の台詞を待たせる待ち。WaitOrTap と同じく押すと明け、待ちの間も後ろの時間を取らない命令
+    ///   （<<audio>>・<<jump>> の先の命令など。<<set>> は実行器が先に済ませるので出来事にならない）は先に流し、
+    ///   台詞・選択肢・<<wait>>・時間を取る命令で止まる。bg がゲームの切り替えで出す待ちと、後ろを止めずに次の台詞だけを待たせたい
+    ///   ゲームのコマンド（コメントを 1 件流して間を置く等）が使う。
+    // WhyNot: WaitOrTap に時間を取らない命令を流させない — 待ちが明けてから後ろの効果音を鳴らしたいゲームのコマンドもあり、どちらも選べるよう 2 つ持つ。
     pub enum Out with Eq, ToString {
         case ClearPage
         case TurnPage
@@ -59,7 +61,7 @@ mod Commands {
         case Event(String)
         case Wait(Float64)
         case WaitOrTap(Float64)
-        case SwitchWait(Float64)
+        case LineWait(Float64)
     }
 
     /// 時間を取る演出か。Timed なら、後の <<wait>> の間テープの位置がこの行を指す（World.talkCursorOf）。
@@ -168,7 +170,7 @@ mod Commands {
         case Out.Event(_)  => false
         case Out.Wait(_)   => false
         case Out.WaitOrTap(_) => false
-        case Out.SwitchWait(_) => false
+        case Out.LineWait(_) => false
     }
 
     /// command が時間を取る演出か（読めないコマンドは Instant）。
@@ -270,7 +272,7 @@ mod Commands {
                           let seconds = owned |> Option.map(o -> o#seconds) |> Option.getWithDefault(Param.get(time, a));
                           let byGame = if (Option.nonEmpty(owned)) { transition = BackdropDoc.Transition.Fade, game = owned | switch } else switch;
                           let next = Stage.withBackdropBy(ctx#now, shot, seconds, byGame, { shot = prev | st });
-                          let waits = if (Option.nonEmpty(owned) and next#fadeSeconds > 0.0) Out.SwitchWait(next#fadeSeconds) :: Nil else Nil;
+                          let waits = if (Option.nonEmpty(owned) and next#fadeSeconds > 0.0) Out.LineWait(next#fadeSeconds) :: Nil else Nil;
                           // WhyNot: NVL の頁を背景の切り替えでめくらない — NVL の頁の切れ目は <<window clear>> と行の数が決める。
                           Ok((next, List.append(if (Stage.kindOf(ctx#res#theme, st) == ThemeDoc.WindowKind.Adv) Out.TurnPage :: Nil else Nil, waits)))
                       }

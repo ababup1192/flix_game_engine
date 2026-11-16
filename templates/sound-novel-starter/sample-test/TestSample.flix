@@ -77,4 +77,15 @@ mod TestSample {
         // 描き出しの見本（CastDoc.sample）の表情は、どれも project.json の textures にある（無ければ cast の場面に絵が出ない）。
         let textures = TestDocs.namesIn("textures");
         Assert.assertEq(expected = Nil, TestDocs.castTextures(CastDoc.sample()) |> List.filter(t -> not Set.memberOf(t, textures)))
+
+    @Test
+    def testTheSampleDesignIsTheLandscapeScreen(): Unit \ {Assert, IO} =
+        // 作例の project.json の design は横の 960×540（描き出しの基準の絵はこの大きさ）。
+        let d = SceneRender.design();
+        Assert.assertEq(expected = (960.0, 540.0), (d#x, d#y))
+
+    @Test
+    def testTheSampleDeclaresNoExtraFont(): Unit \ {Assert, Fs.FileRead} =
+        // 作例は本文の本だけで描く（GameBoot.app で App.withFonts に名前を宣言していない）。
+        Assert.assertEq(expected = Nil, SceneRender.declaredFontsOf(TestKit.res()))
 }
