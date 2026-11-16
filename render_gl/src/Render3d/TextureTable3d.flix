@@ -4,7 +4,7 @@
 // 番号は計画の行の絵の組（Render3d.SceneList の reads）に載り、行を流す時に backend が作る（numberOf で振ってから ensure で作る）。
 // WhyNot: 表を backend ごとに持たない — 上限の数え方・先に上げた物の守り方・試し直しの間が 2 本に分かれ、片方だけ直す事になる（Render3d.MeshTable と同じ）。
 mod Render3d.TextureTable3d {
-    use Render3d.{TextureSlot}
+    use Render3d.{TextureSlot, TextureSource}
     use Render3d.Material.{Budget, budgetEvictions, isOverBudget}
 
     /// 作った絵の中身。levels = 段の数・bytes = 段を合わせた置き場の大きさ・stamp = 作り直しの鍵（段つきの写しは元の絵の番号と版・場面の絵は ""）。
@@ -18,6 +18,39 @@ mod Render3d.TextureTable3d {
     pub type alias Table = {
         entries = Ref[Map[TextureSlot, Entry], Static], free = Ref[List[Int32], Static], next = Array[Int32, Static], retry = Ref[Map[TextureSlot, Int64], Static]
     }
+
+    /// 名前で引いた絵。Own = 場面の textures の絵・Registered = 全体の登録の絵。
+    pub enum TextureHit {
+        case Own(Texture3d.Texture3d)
+        case Registered(Scene3dRenderer.RegisteredTexture)
+    }
+
+    /// 名前 name の絵を引く。"tex3d:" は source#own・ほかは全体の登録から。無ければ None。
+    pub def findTexture(source: TextureSource, name: String): Option[TextureHit] \ IO =
+        if (String.startsWith(prefix = Texture3d.namePrefix(), name)) Map.get(name, source#own) |> Option.map(TextureHit.Own)
+        else (source#textureOf)(name) |> Option.map(TextureHit.Registered)
+
+    /// 置き場の鍵の、段の作り方の部分。gpuMip = backend が段を GPU に作らせる（GL の prefersGpuMipmap）。
+    // WhyNot: GPU が段を作る機種で平均の仕方を鍵に入れない — generateMipmap は平均の仕方を選べないので、色と法線に貼った同じ絵が同じ段の 2 枚になる。
+    pub def mipKeyOf(gpuMip: Bool, average: Mip.Average): String =
+        if (gpuMip) "gpu" else ToString.toString(average)
+
+    /// width × height の絵の段の数（段 0 から 1 × 1 まで・次の段の辺は floor(n / 2)。Mip.build と同じ数え方）。
+    pub def levelsOf(width: Int32, height: Int32): Int32 =
+        if (width <= 1 and height <= 1) 1 else 1 + levelsOf(Int32.max(1, width / 2), Int32.max(1, height / 2))
+
+    /// 材質の絵の名前 name を使い方 textureUse で貼る時の、表の鍵と段の数（計画が行の reads と values に書く）。
+    /// gpuMip は mipKeyOf と同じ。上下を返して読む全体の登録の絵（レンダーターゲット）と、どこにも無い名前は None（表に載せない）。
+    pub def readOf(gpuMip: Bool, source: TextureSource, name: String, textureUse: Texture3d.TextureUse): Option[(TextureSlot, Int32)] \ IO =
+        let mipKey = mipKeyOf(gpuMip, Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse)));
+        findTexture(source, name) |> Option.flatMap(hit -> match hit {
+            case TextureHit.Own(t)        => Some((TextureSlot.Scene(Texture3d.contentHash(t) + ":" + mipKey), levelsOf(Texture3d.width(t), Texture3d.height(t))))
+            case TextureHit.Registered(t) =>
+                if (t#flipped) None
+                else Some((TextureSlot.Copy(name + ":" + mipKey), levelsOf(roundSide(t#width), roundSide(t#height))))
+        })
+
+    def roundSide(v: Float64): Int32 = Float64.tryToInt32(Float64.round(v)) |> Option.getWithDefault(1)
 
     /// 作れなかった絵を試し直すまでのコマの数。
     // WhyNot: 毎コマ試し直さない — 機種が絵を持つまでの間、毎コマ GPU のテクスチャを作っては捨てる。

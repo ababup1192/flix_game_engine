@@ -260,6 +260,8 @@ mod Render3d {
         textures3d = Render3d.TextureTable3d.Table,
         // 絵の表の番号 → GL のテクスチャ。
         textureIdsRef = Ref[Map[Int32, Int32], Static],
+        // 材質の値の並びの元（Render3d.MaterialValues。計画が行の values を書く時に引く）。
+        layoutsRef = Render3d.MaterialValues.Layouts,
         // 材質の絵の sampler（[Repeat Nearest, Repeat Linear, Clamp Nearest, Clamp Linear] の段なし 4 つ・段つき 4 つ。0 は未作成）。
         materialSamplers = Array[Int32, Static],
 
@@ -339,6 +341,7 @@ mod Render3d {
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
           shadowTargetsRef = Ref.fresh(Static, Map.empty()), textures3d = Render3d.TextureTable3d.fresh(), textureIdsRef = Ref.fresh(Static, Map.empty()),
+          layoutsRef = Render3d.MaterialValues.freshLayouts(),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static,
           blankTexture = Array#{0} @ Static, countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
@@ -385,7 +388,8 @@ mod Render3d {
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
             let joints = Render3d.JointTexture.upload(gl, state, gen, rows);
             let (numbered, instances) = Render3d.Instancing.upload(gl, state, gen, planned, grouped#members);
-            (numbered, List.map(buildScenePasses(state#meshes, gen), numbered), materials, (joints, instances))
+            let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf };
+            (numbered, List.map(buildScenePasses(tables), numbered), materials, (joints, instances))
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。

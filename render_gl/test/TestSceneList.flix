@@ -30,7 +30,14 @@ mod Render3d.TestSceneList {
         { handle = handle, order = order, kind = plainKind(), material = fieldsOf(red), batch = b }
 
     def listOf(plain: List[MeshBatch], skinned: List[MeshBatch], opaque: List[MaterialBatch[MeshBatch]]): SceneList \ IO =
-        buildSceneList(Render3d.MeshTable.fresh(), 1i64, { plain = plain, skinned = skinned, opaque = opaque, blended = Nil })
+        buildSceneList(Render3d.SceneList.contextOf(freshTables(), sceneOf(Nil)), { plain = plain, skinned = skinned, opaque = opaque, blended = Nil })
+
+    def noRegistered(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
+
+    /// 空の表で行を作る材料（全体の登録の絵は無い）。
+    def freshTables(): Render3d.SceneList.Tables \ IO =
+        { meshes = Render3d.MeshTable.fresh(), textures = Render3d.TextureTable3d.fresh(), layouts = Render3d.MaterialValues.freshLayouts(), gen = 1i64,
+          gpuMip = false, textureOf = noRegistered }
 
     def column(list: SceneList, col: Int32): List[Int32] \ IO =
         List.range(0, rowCountOf(list)) |> List.map(row -> rowAt(list, row, col))
@@ -48,6 +55,16 @@ mod Render3d.TestSceneList {
     def testMaterialRowCarriesHandleAndOrder(): Unit \ {Assert, IO} =
         let list = listOf(Nil, Nil, materialBatch(4, 9, 0.1, batchOf(triangle(1.0), 0, 1)) :: Nil);
         Assert.assertEq(expected = (4, 9), (rowAt(list, 0, 1), rowAt(list, 0, 2)))
+
+    /// 材質の行の値は 2 つの区画を 256 バイトずつそろえて並べ（物ごとの値 64 個・sg 64 個）、cutout を物ごとの値の頭に書く。描く物の無い材質の行と形の行は値を持たない。
+    @Test
+    def testMaterialRowValuesAreAlignedBlocks(): Unit \ {Assert, IO} =
+        let cutout = (b: MeshBatch) -> { material = { cutout = true | fieldsOf(0.1) } | materialBatch(0, 3, 0.1, b) };
+        let list = listOf(batchOf(triangle(4.0), 0, 1) :: Nil, Nil,
+                          cutout(batchOf(triangle(1.0), 1, 1)) :: materialBatch(1, 4, 0.9, batchOf(triangle(2.0), 2, 0))
+                          :: materialBatch(2, 5, 0.5, batchOf(triangle(3.0), 2, 1)) :: Nil);
+        let at = (row: Int32) -> rowAt(list, row, 8);
+        Assert.assertEq(expected = (-1, 0, -1, 128, 1.0f32, 0.0f32, 256), (at(0), at(1), at(2), at(3), Array.get(0, list#values), Array.get(128, list#values), Array.length(list#values)))
 
     /// 行は 1 体ごとの値の先頭と描く物の数を持つ。
     @Test
@@ -376,6 +393,6 @@ mod Render3d.TestSceneList {
         };
         let numbered = (p: Render3d.ScenePlan.ScenePlan[SpanBatch]) ->
             { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil }, shadowPlans = Nil };
-        let passes = plans |> List.map(p -> buildScenePasses(Render3d.MeshTable.fresh(), 1i64, numbered(p)) |> List.map(pl -> describe(fst(pl))));
+        let passes = plans |> List.map(p -> buildScenePasses(freshTables(), numbered(p)) |> List.map(pl -> describe(fst(pl))));
         Assert.assertEq(expected = ("color" :: Nil) :: ("depth 0.5 12.0" :: Nil) :: Nil, passes)
 }

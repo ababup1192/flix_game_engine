@@ -12,6 +12,7 @@ mod Render3d.Material {
     use Render3d.ScenePlan.{MaterialRequest, groupInstances, splitGroups}
     use Render3d.SceneList.{batchBreakOf}
     use Render3d.TextureTable3d
+    use Render3d.TextureTable3d.{TextureHit, findTexture}
 
     // ── 材質の表 ──
 
@@ -233,17 +234,6 @@ mod Render3d.Material {
                 { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
         }
 
-    /// 名前で引いた絵。Own = 場面の textures の絵・Registered = 全体の登録の絵。
-    enum TextureHit {
-        case Own(Texture3d.Texture3d)
-        case Registered(RegisteredTexture)
-    }
-
-    /// 名前 name の絵を引く。"tex3d:" は source#own・ほかは全体の登録から。無ければ None。
-    def findTexture(source: TextureSource, name: String): Option[TextureHit] \ IO =
-        if (String.startsWith(prefix = Texture3d.namePrefix(), name)) Map.get(name, source#own) |> Option.map(TextureHit.Own)
-        else (source#textureOf)(name) |> Option.map(TextureHit.Registered)
-
     /// 全体の登録の絵 t の段つきの写し（average で平均した段。置き場の鍵は名前と平均の仕方。
     /// 無いか、元の絵が作り直されていたら、元の段 0 を読み戻して段を作り、上げ直す）。
     // WhyNot: 登録の絵の画素を Java の側に持ち続けない — STB で直に上げているので持っておらず、全部の絵をヒープに二重に持つことになる。
@@ -263,7 +253,7 @@ mod Render3d.Material {
         }
 
     /// 段つきの写しを作り直す鍵（元の絵の番号と版。どちらかが変われば元の絵が作り直された）。
-    pub def copyStamp(t: RegisteredTexture): String = "${t#texId}:${t#version}"
+    def copyStamp(t: RegisteredTexture): String = "${t#texId}:${t#version}"
 
     /// 表の番号 handle の GL のテクスチャ（作ってあれば。無ければ透明な黒）。
     def textureIdOf(gl: GlContext, state: State, handle: Int32): Int32 \ IO =
@@ -288,10 +278,7 @@ mod Render3d.Material {
 
     def mipCopyKey(gl: GlContext, name: String, average: Mip.Average): String \ IO = name + ":" + mipKeyOf(gl, average)
 
-    /// 置き場の鍵の、段の作り方の部分。
-    // WhyNot: GPU が段を作る機種で平均の仕方を鍵に入れない — generateMipmap は平均の仕方を選べないので、色と法線に貼った同じ絵が同じ段の 2 枚になる。
-    def mipKeyOf(gl: GlContext, average: Mip.Average): String \ IO =
-        if (gl.prefersGpuMipmap()) "gpu" else ToString.toString(average)
+    def mipKeyOf(gl: GlContext, average: Mip.Average): String \ IO = TextureTable3d.mipKeyOf(gl.prefersGpuMipmap(), average)
 
     /// 段つきで上げた絵 1 枚。levels = 段の数・bytes = 段を合わせた置き場の大きさ。
     type alias MippedUpload = { texId = Int32, levels = Int32, bytes = Int64 }

@@ -373,9 +373,9 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定**（形のレビュー（3D）は V2b の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25。V2b のレビューと同時に行い、行の欄と高さはこの形で確定した・9.1・12.26） | 6〜9 時間 |
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
-(1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号）／(2) 材質と絵の組（values を uniform か storage かをここで決める。uniform は 64 KiB・256 バイト揃えで 256 個が上限）／
+(1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
 (3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27）。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に。
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -1355,3 +1355,89 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
     GL では影の地図を Design の場面が読むので 2D の並びより先に描く要があり、ShadowMap を同じ列（`ScenePasses`）に入れると GL の `drawScene` と WebGPU の `drawInto` の前提（列の pass は全部場面の描き先 1 つへ書く）が崩れる。
     影の pass を場面の列と別の列（例 `ScenePlan` の外の、prepare 1 回分の影の組）に持つ案も比べる。
   - 場面の値の buffer は場面の描き先ごとに 1 つで、pass が 2 つ以上になると pass ごとの値（奥行きの書き出しの旗・影の地図の目）を分ける要る【推: (4) で】。
+
+### 12.28 R2b・P8 の (1b) と (2): 形と絵の番号の表を前半へ・材質と絵の組（2026-11-16・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (1b) と (2)。engine の pub（ゲームから見える API）は増えていない（足した型と関数は render_gl の中だけ）。GL の絵と GL の呼び出しの並びは変えていない（下の門）。
+
+- **(1b) 形と 3D の絵の番号と寿命の表を前半へ**（R1b-1 の決め「表は前半・作る消すだけ backend」にそろえた）:
+  - 新しい `Render3d.MeshTable`: 鍵（`Mesh3d.contentHash`）→ 番号・頂点の数・lastUsed・捨てた番号の使い回し・頂点の上限で捨てる物（`Render3d.meshEvictions` の順）を決める。GPU の形を作る・捨てるのは backend の `MeshAllocator{create, destroy}`。
+    番号は計画が振り（`numberOf`・GPU には作らない）、backend は行を流す前に `ensure` で作る。GL は `State#meshEntriesRef`（番号 → VAO）・WebGPU は `WebGpuRows.MeshStore`（番号 → buffer）だけを持つ。
+  - 新しい `Render3d.TextureTable3d`: 3D の材質の絵（`TextureSlot.Scene` = 場面の絵・`Copy` = 全体の登録の絵の段つきの写し）の鍵 → 番号・段の数・大きさ・作り直しの鍵（写しは元の絵の番号と版）・作れなかった絵の試し直しの間（60 コマ）・
+    上限で捨てる物（`Render3d.Material.budgetEvictions`・先に上げた物は後へ）を決める。GL の `textures3dRef`・`mipCopiesRef`・`platformRetryRef` を畳み、GL は番号 → テクスチャ（`textureIdsRef`）だけを持つ。名前から鍵と段の数を引く `readOf`（`findTexture`・`mipKeyOf`・`levelsOf`）も前半へ移した。
+  - `SceneList` の行に欄 7 = 形の番号を足した（末尾。12.26 の確定どおり）。GL も WebGPU も描く時に番号で形を引く（`uploadRows` が行ごとの形の配列を返す形をやめた）。
+  - 描き先・影の地図の寿命は (8) のまま。
+  - GL の呼び出しの並びが変わらない理由: 作る所（`meshEntry`・`resolveTextureAs` の中）と順は前と同じで、表の側が番号を控えるだけ。計画が先に振る番号は GL を呼ばない。
+  - テスト: `TestMeshTable`（番号を振るだけでは作らない・振った番号のまま 1 回だけ作る・上限で捨てて番号を使い回す・stamp が変われば捨ててから作る・作れない絵は 60 コマ試さない・枚数の上限で古い絵を捨てる ほか）。偽の GL を通るテストは置き場の欄の読み方だけ直した（`state#meshesRef` → `MeshTable.createdOf`・`textures3dRef` → `TextureTable3d.createdOf` の場面の絵）。
+- **(2) 材質と絵の組**:
+  - **行と values・reads**（2D の R1b-6 と同じ流儀）: `SceneList` に `values`（Float32）と `reads`（Int32）を足し、行を 11 欄にした（8 = 材質の値の先頭・9 = 絵の組の先頭・10 = 絵の組の数。描く物のある材質の行だけ。ほかは 8 が -1）。
+    並びは新しい `Render3d.MaterialValues`: 材質 1 つ = 物ごとの値の区画 64 個（Render3dWgsl の `R3dDraw`: cutout・法線マップの強さと段の数・lightmap の段の数）＋ sg の区画（`ShaderGen.Wgsl.compile3d` の slots と同じ並び: uTime・uTexLevelsN・uParamN を 64 個の倍数へ切り上げ）。
+    どちらの区画も 256 バイトの倍数の位置（WebGPU の binding の位置のそろえ）。絵の組は 1 つ 3 個（絵の表の番号・補間・読み方）で、材質の絵 → 法線マップの順。uParamN の並びは材質の木の鍵ごとに 1 回だけ求めて控える（`layoutOf`）。
+    GL は今も materials から uniform を差す（values と reads は読まない）。計画が GL にも values と reads を書くのは、行の作り方を backend で分けないため（GL に足した仕事は材質の行ごとの名前の引き当てと値の書き込み）。
+  - **pipeline は材質の handle で決める**: WebGPU は計画の問い合わせ（`MaterialRequest`）ごとに `WebGpuMaterials.resolve` が材質の frag を組み（`ShaderGen.Wgsl.compile3d(…, 1)` と `Render3dWgsl.materialFragmentSource`）、順の番号（program の番号）で答える。
+    行の欄 1（問い合わせの番号）で program を引き、pipeline は (program・描き先の形式・標本・形の頂点のバイト数) の鍵で控える。材質の頂点シェーダーは新しい `Render3dWgsl.materialVertexSource(uv, lightmap)`（GLSL の `materialVertexSource` の骨の無い版と同じ式）。
+  - **bind group**（P8 の WGSL の決まり）: 0 = 場面（今までどおり）・1 = 材質（sg と絵と sampler・`R3dDraw` を binding 16・法線マップを 17・18）・2 = storage（まだ使わない）。`Render3dWgsl.drawDeclarations` を group 2 から group 1 へ移し、`uCutout` を f32 にした（values は Float32）。
+    group 1 は行ごとに作って submit の後に手放す（2D の面と同じ。前の材質の行と同じ付け方の行（flagSameBinding）は付け直さない）。
+  - **形の版**（P8 の WGSL の決まり）: WebGPU の形の頂点を版ごとに 1 本の buffer へ交互に並べた（位置・法線・色 9 個 ＋ uv つきは uv 2 個とタンジェント 4 個 ＋ 2 本目の uv つきは 2 個）。頂点の色の pipeline も頂点のバイト数を鍵に足した。
+  - **材質の絵**: 場面の絵は CPU で段を作って（`Mip.build`・GL の CPU の段と同じ鍵）BGRA8 で上げる。全体の登録の絵は 2D の描き手の texture を段 1 つのまま借りる（`Host#textureOf`・`textureById` を足した）。レンダーターゲットの絵（上下逆に読む物）は表に載せず黒で読む。
+  - **描く版と描かない版**（`WebGpuMaterials.isDrawable`）: 描く = 骨の無い・lightmap の無い・半透明でない・alpha to coverage でない材質（uv・法線マップ・両面・cutout・metallic と roughness を含む）。描かない版は順の番号 0 で答え、計画が頂点の色の道へ回す（数えて知らせる）。
+    - alpha to coverage: `render_gl/java` の `RenderPipelineDesc` に口が無いので描かない。計画には描き先の能力として alpha to one が無いと答えるので、計画は cutout を discard の版にする（ブラウザの GL と同じ）。9.1 の「PC の cutout の縁（discard か sample_mask か）」は比べていない（持ち越し）。
+    - **lightmap は (5) に残した**: lightmap の段の数・色空間・強さは物ごとの値なのに、今の WGSL は色空間と強さを場面の値（`R3dScene`）に置いている。物ごとの値の区画へ移す直しと lightmap の絵の bind を一緒に入れる方がまとまる（lightmap の行は 1 行 1 体で、reads の組が 1 つ増えるだけ）。
+  - **決めた事 — 材質の値は uniform の 256 バイトの区画で読む**（9.1 の流儀で 2 つ作って測った）:
+    - 比べた 2 つ: (A) uniform の buffer を行ごとに 256 バイトの位置で bind する・(B) 同じ区画を読むだけの storage で bind する（WGSL の `var<uniform> sg` と `var<uniform> r3dDraw` を `var<storage, read>` に替え、layout を READ_ONLY_STORAGE に）。
+    - 測り方: `bench/webgpu_v2` の部屋に、params だけが違う材質の小物 300 個（材質の行が 300 本を超える）を足した場面を、貼る形 A の道で 300 コマ描いて GPU を待つ時間の中央値（5 回）。
+    - 数（ms）: uniform 2.949・2.711・2.712・2.693・2.759、storage 3.103・2.709・2.683・2.695・2.697。差は回ごとの揺れ（±0.2 ms）の内。
+    - uniform にした理由: (1) 速さは同じ・(2) `ShaderGen.Wgsl` が出す `var<uniform> sg` のまま使え、storage にするには engine の ShaderGen の出口を替えるか字を置き換える事になる・(3) スマホの上限（12.24）の内: 1 つの binding は 256〜512 バイトで `maxUniformBufferBindingSize` 65,536 に遠く、
+      「uniform は 64 KiB・256 バイト揃えで 256 個が上限」は buffer 全体を 1 つの binding にした時の数で、行ごとに位置を替えて bind する今の形には掛からない（300 個の場面で確かめた）。値の buffer は足りなければ倍に作り直す。
+    - storage の版は比べのために `WebGpuMaterials.ValuesBinding.Storage`（`WebGpuRenderer.createWith`・bench の `SplitPassTrial.openWith`）として残した。
+  - **1 体ごとの値と材質の値の送り方**: 場面ごとに両方の大きさを先に見積もり、どちらかが空きに入らなければ先に 1 回 submit してから両方を送る（片方を送った後にもう片方が submit すると、次の場面が先に送った方を頭から上書きするため）。
+  - **3D の診断の数を WebGPU でも数える**（12.27 の持ち越し）: `Render3d.Counts` の関数を record の欄の組（`countsHolder`・`phaseNsHolder`・`materialBuildsRef`）で受ける形にし、WebGPU の描き手の状態に同じ欄を持たせた。
+    数える物: 置いた物と描く物・draw call と分かれた理由（行の欄 5）・落とした光・形を上げた数と捨てた数・組んだ材質・CPU の区間（split と draw）。`WebGpuPaint` の診断が `scene3dCounts` を返し、「未計測」の知らせを消した。集めていない間は毎コマ捨てる（GL と同じ）。
+- **確かめ — `bench/webgpu_v2`** に 6 場面を足した（部屋の物を箱投影の uv にし、CPU で作った市松の絵を貼る・yaw 0.3）:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大 |
+  |---|---|---|---|
+  | matTextured（絵つき・Linear） | 222（450） | 75（150） | ±77 |
+  | matCutout（穴あきの絵・Nearest・cutout） | 6（32） | 5（16） | ±149 |
+  | matTwoSided（cutout ＋ 両面） | 1,251（2,500） | 1,251（2,500） | ±149 |
+  | matNormal（絵 ＋ 縞の法線マップ） | 248（500） | 76（150） | ±75 |
+  | matDepth（cutout ＋ 両面の奥行きの書き出し） | 6（16） | 3（8） | ±105 |
+  | matMany（params だけ違う材質 300 個） | 219（440） | 214（430） | ±147 |
+
+  - 許す差の理由: ±2 以上の画素は room と同じく重なる面（床と敷物・天板と小物・格子に重ねた小物）で勝つ面が奥行きの丸めで入れ替わる所に固まる（差の絵で確かめた）。matTwoSided だけ多いのは、両面にした敷物の裏の面が床と同じ高さで勝ち負けを争うため。
+    ±1 の画素は面の中に点で散る【推: 絵の段の間の補間と sRGB の戻しの丸め】。絵の上下・読み方・cutout の向き・法線マップの向きを取り違えれば面の中が丸ごと違い、万 px の桁になる【推: わざと壊して確かめてはいない】。上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない。
+  - 絵（git の外）: `bench/webgpu_v2/debug/{gl,webgpu}/mat*.png`。写しと差の絵: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/r2c/v2shots/`（**scratchpad の物は消えうる**）。
+- **確かめ — 実物の 2 本**（12.27 と同じ流し方・engine は 0.97.0 の fpkg・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=40`・頭の 64 コマ）:
+  - **材質の物の欠けは 6 場面とも 0**（fps3d_lab の部屋 110.5・礼拝堂 119.3 → 0）。絵が貼られた: fps3d_lab の部屋の板の床・漆喰の壁・梁・本棚・敷物、礼拝堂の石の壁と柱・床・長椅子、みやげの町の家の壁と屋根が GL と同じ絵になった。
+    全体の登録の絵（fps3d_lab の床と壁）は初めの流しでは黒かった（WebGPU が登録の絵を読まなかった）ので、2D の描き手の texture を借りる形を足して流し直した。WebGPU の誤り 0・落ちた場面なし。
+  - 欠けの表（起動から 300 コマの表の 1 コマあたり。12.27 の表との違い）:
+
+    | 種類 | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+    |---|---|---|---|---|---|---|
+    | 材質の物（頂点の色で描く） | 110.5 → **0** | 119.3 → **0** | 1.6 → **0** | 11.9 → **0** | 26.4 → **0** | 33.3 → **0** |
+    | lightmap の材質の物（頂点の色で描く・今は材質の物の内数でない） | — | — | — | 7.9 | 14.5 | 20.5 |
+    | 半透明の材質の物 | — | — | — | 12.5 | 12.5 | 8.6 |
+    | 骨つきの物 | 25.7 | 0.0 | 0.0 | 85.8 | 85.8 | 86.2 |
+    | 影・空 | 0.9 | 0.9 | 0.0 | 0.6 | 0.6 | 0.6 |
+
+    - lightmap の物は前は「材質の物の内数」で今の光で材質を描くと数えていたが、今は lightmap の版を描かないので、lightmap の物は頂点の色で描く（町の石畳が白い）。(5) で埋める。
+    - market の lightmap の物が 21.5 → 14.5 なのは、300 コマのうち頭の読み込みのコマの数が流した回で違うため【推: 12.26 と同じ注意】。
+  - 残った見え方の違い: 人（骨つき・(3)）・影（(4)）・lightmap と空（(5)）・半透明（(6)）のほかに、全体の登録の絵に段が無いので遠くの床と壁が GL より細かくちらつく（礼拝堂の石の目地がやや明るく硬い）。
+  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/r2c/out/<ゲーム>-<場面>-<gl|webgpu>/frame-N.png`（登録の絵を借りる前の流しは `out-first/`。**scratchpad の物は消えうる**）。
+- テスト: render_gl 525 緑（前の 512 に `TestMeshTable` 11 本・`TestSceneList` の材質の値の区画 1 本・`TestWebGpuScene3d` の描ける材質を数えない 1 本。`TestWebGpuScene3d` の数えの 3 本は種類の名前と、描ける材質を数えない事に合わせて直した）。
+  `TestWgslDawn` は材質の頂点シェーダー 3 本を足して 371 本を Dawn で組んで誤り 0。偽の GL を通るテストは置き場の欄の読み方の直しだけで緑。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16。(1b) のコミットと (2) のコミットの両方で流した）:
+  - render_gl のテスト（`.layers/render_gl` で `flix test`）: (1b) 520 緑・(2) 525 緑。
+  - `make gl-parity` 緑。場面ごとの行（93 行）が (1b) の木と (2) の木で 1 字も同じ。
+  - `make gl-capture-check`（基準 `bench/baseline/0.96.0/gl-capture-apple-m4-pro.sha256`）: (1b)・(2) とも a と b の 54 枚がバイトまで同じ・**基準とも 54 枚がバイトまで同じ**（差 0 枚）。
+  - `make webgpu-v1-check` 緑（誤り 0・draw の数も GL と同じ・終わりの `bench/webgpu_v2` の型検査も緑）。
+  - `make -C bench/webgpu_v2 run` 緑・誤り 0（今までの 10 場面は 12.27 と同じ数・足した材質の 6 場面は上の表）。値の binding の比べの 2 回目（門の回）: uniform 2.986・2.73・2.722・2.73・2.704 ms・storage 2.941・2.717・2.715・2.711・2.69 ms。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）。
+  - `lint-max-lines` 緑（`Render3d.flix` 1,111 行・`WebGpuPaint.flix` 1,072 行・`WebGpuRenderer.flix` 687 行）・`lint-huge-methods` 緑（`bench/webgpu_v1` と `bench/webgpu_v2` の jar を JARS で渡した）・`gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+- 持ち越し:
+  - 全体の登録の絵の段つきの写し（WebGPU は段 1 つの 2D の texture を借りている。GL は読み戻して段を作る）。
+  - WebGPU の材質の program の LRU と、木の鍵がぶつかった材質の見分け（GL の `reuseOrRebuild`）。組めない材質の WGSL は device の誤りに数えられる（12.22 と同じ根）。
+  - 3D の材質の絵の置き場の上限は GameEngine の既定（256 MB・64 枚）で、project.json の値を WebGPU の描き手に届けていない。
+  - PC の cutout の縁（discard か sample_mask か・9.1）と alpha to coverage（java の口）。
+  - lightmap の版（(5)）: 物ごとの値の区画へ色空間と強さを移し、lightmap の絵を reads に足す。
+  - GL は values と reads を読まない（材質の uniform を今の道で差す）。GL を values から差す形に替えるかは、GL の呼び出しの並びを変えてよい小分けで決める。

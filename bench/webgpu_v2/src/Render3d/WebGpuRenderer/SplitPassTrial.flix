@@ -36,13 +36,17 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
     }
 
     pub def open(gpu: WebGpu, width: Int32, height: Int32, design: (Float64, Float64)): Trial \ IO =
+        openWith(gpu, width, height, design, Render3d.WebGpuMaterials.ValuesBinding.Uniform)
+
+    /// open の、材質の値の binding の形を選ぶ版（uniform と storage の比べ・12.28）。
+    pub def openWith(gpu: WebGpu, width: Int32, height: Int32, design: (Float64, Float64), binding: Render3d.WebGpuMaterials.ValuesBinding): Trial \ IO =
         let frameLayout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("trial frame").buffer(0, ShaderStage.VERTEX, BufferBindingType.UNIFORM));
         let imageDesc = new BindGroupLayoutDesc("trial image");
         discard imageDesc.texture(0, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(1, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING);
         let imageLayout = gpu.createBindGroupLayout(imageDesc);
         let frameValues = gpu.createBuffer("trial frame values", 64i64, Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
         let pipes = WebGpuPipelines.fresh(gpu, frameLayout, imageLayout, design);
-        { gpu = gpu, renderer = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout), pipes = pipes, frameLayout = frameLayout, imageLayout = imageLayout,
+        { gpu = gpu, renderer = Render3d.WebGpuRenderer.createWith(gpu, pipes#sceneLayout, binding), pipes = pipes, frameLayout = frameLayout, imageLayout = imageLayout,
           frameValues = frameValues, frameGroup = gpu.createBindGroup(new BindGroupDesc("trial frame", frameLayout).buffer(0, frameValues, 0i64, 64i64)),
           frame = gpu.createTexture("trial frame", width, height, TextureFormat.RGBA8_UNORM,
                                     Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.TEXTURE_BINDING), 1, 1),
@@ -59,7 +63,7 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
 
     /// 1 コマぶんの encoder を貸す Host（submit は frameA・frameB の終わりに 1 回だけ）。
     def hostOf(encoder: CommandEncoder): Host =
-        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()) }
+        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None) }
 
     def viewportOf(t: Trial): Scene3dRenderer.Viewport =
         let (dw, dh) = t#design;
@@ -90,8 +94,8 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
             let scissor = clipBox(vp, rect, plan#cmd#clip);
             let target = targetOf(t#renderer, host, (0, i), { width = rect#width, height = rect#height, format = RenderTarget.Format.Rgba8Unorm, samples = 1 });
             let staged = stageScene(t#renderer, host, target, grouped#members, plan);
-            staged#passes |> List.forEach(match (spec, list) ->
-                encodeScene(t#renderer, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase },
+            staged#passes |> List.forEach(match (spec, list, valuesBase) ->
+                encodeScene(t#renderer, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase },
                             { color = t#frame.defaultView(), resolve = None, clear = None, depth = target#depth.defaultView(),
                               viewport = topLeftOf(t#height, rect), scissor = topLeftOf(t#height, scissor) }))
         });

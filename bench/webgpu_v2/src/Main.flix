@@ -29,6 +29,12 @@ mod V2Main {
         roomCase("roomDesign", kit, 0.0, Scene3d.Resolution.Design) ::
         roomDepthCase(kit) ::
         roomDepthPassCase(kit) ::
+        materialCase("matTextured", kit, V2Materials.textured) ::
+        materialCase("matCutout", kit, V2Materials.cutout) ::
+        materialCase("matTwoSided", kit, V2Materials.twoSided) ::
+        materialCase("matNormal", kit, V2Materials.normalMapped) ::
+        materialDepthCase(kit) ::
+        materialCase("matMany", kit, V2Materials.manyMaterials(manyCount(), kit#torch)) ::
         railsCase("railsMsaa", 4, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsNoMsaa", 1, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsMsaaClear", 4, None, Color.rgb(0.3, 0.15, 0.05)) ::
@@ -52,6 +58,18 @@ mod V2Main {
     def roomCase(name: String, kit: Room.Kit, yaw: Float64, resolution: Scene3d.Resolution): Case =
         { name = name, passes = Nil, targets = Map.empty(),
           items = Render.scene3d(Vec2.zero(), { resolution = resolution | Room.scene(kit, yaw) }) :: Nil }
+
+    /// 値の binding の比べ（matMany と timeValues）で足す材質の小物の数（uniform の buffer 全体を 1 つの binding にすると 256 個が上限になる数を超える）。
+    def manyCount(): Int32 = 300
+
+    /// 部屋の物に材質 restyle（V2Materials）を付けて画面へ直に（Native・yaw 0.3 で家具の側面も映す）。
+    def materialCase(name: String, kit: Room.Kit, restyle: Scene3d.Scene3dCmd -> Scene3d.Scene3dCmd): Case =
+        { name = name, passes = Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), restyle(Room.scene(kit, 0.3))) :: Nil }
+
+    /// 穴あきの両面の材質を奥行きの書き出しで（cutout の穴を抜いた灰色・裏の面も書く）。
+    def materialDepthCase(kit: Room.Kit): Case =
+        { name = "matDepth", passes = Nil, targets = Map.empty(),
+          items = Render.scene3d(Vec2.zero(), { output = depthOfRoom() | V2Materials.twoSided(Room.scene(kit, 0.3)) }) :: Nil }
 
     /// 部屋の奥行きの書き出し（Output.Depth）。目から 1 m で黒・13.5 m で白（部屋の奥の壁まで灰色の坂が入る幅）。
     def depthOfRoom(): Scene3d.Output = Scene3d.Output.Depth({ near = 16.0, range = 200.0 })
@@ -106,8 +124,15 @@ mod V2Main {
     /// roomDepth（2026-11-16・同じ機械の実測で違う画素 3 px・±2 以上 1 px・max ±4）: room と同じく、三角形のふちと重なる面で勝つ面が奥行きの丸めで入れ替わる画素。
     /// 奥行きの灰色は重なる 2 面の距離の差しか違わないので、色の場面（±82）より差の最大が小さい。式（距離・near・幅・空の白）を取り違えれば面の中が丸ごと違い、万 px の桁になる。
     /// roomDepthPass（design の解像度の Rgba16Float の Pass に描いて貼る）は 0 px なので許す差を置かない。
+    /// 材質の場面（2026-11-16・同じ機械の実測。違う画素・±2 以上・max）: matTextured 222・75・±77、matCutout 6・5・±149、matTwoSided 1,251・1,251・±149、
+    /// matNormal 248・76・±75、matDepth 6・3・±105、matMany 219・214・±147。±2 以上の画素は room と同じく重なる面（床と敷物・家具の天板と小物・格子に重ねた小物）で
+    /// 勝つ面が奥行きの丸めで入れ替わる所に固まる（差の絵で確かめた）。matTwoSided だけ多いのは、両面にした敷物の裏の面が床と同じ高さで勝ち負けを争うため。
+    /// ±1 の画素は面の中に点で散る【推: 絵の段の間の補間と sRGB の戻しの丸め】。絵の上下・読み方・cutout の向き・法線マップの向きを取り違えれば面の中が丸ごと違い、万 px の桁になる【推】。
+    /// 上限はどれも実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない（255）。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
-        Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60)}
+        Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
+             "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (2500, 2500, 255), "matNormal" => (150, 500, 255),
+             "matDepth" => (8, 16, 255), "matMany" => (430, 440, 255)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip"}
@@ -164,6 +189,16 @@ mod V2Main {
             let cmds = Render.drawScenes3d(Room.items(kit, yawAt(i)));
             let started = System.nanoTime();
             if (splitPass) SplitPassTrial.frameB(trial, cmds) else SplitPassTrial.frameA(trial, cmds);
+            gpu.waitIdle();
+            System.nanoTime() - started
+        })
+
+    /// 材質の小物 manyCount() 個の場面を貼る形 A で i コマ目を組んで GPU を待つ時間（材質の値の binding の比べ。trial の描き手の binding で読む）。
+    def timeValues(gpu: WebGpu, trial: SplitPassTrial.Trial, kit: Room.Kit): List[Int64] \ IO =
+        List.range(0, timedFrames()) |> List.map(i -> {
+            let cmds = Render.drawScenes3d(Render.scene3d(Vec2.zero(), V2Materials.manyMaterials(manyCount(), kit#torch, Room.scene(kit, yawAt(i)))) :: Nil);
+            let started = System.nanoTime();
+            SplitPassTrial.frameA(trial, cmds);
             gpu.waitIdle();
             System.nanoTime() - started
         })
@@ -323,16 +358,22 @@ mod V2Main {
                 println("[webgpu-v2] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaa))} px・WebGPU ${Int32.toString(snd(msaa))} px（WebGPU が GL の半分未満なら MSAA が抜けている）");
                 let msaaOk = fst(msaa) > 0 and 2 * snd(msaa) >= fst(msaa);
                 printSlantFlipProbe(byName, width, height);
-                let trial = SplitPassTrial.open(gpu, width, height, (Int32.toFloat64(config#designWidth), Int32.toFloat64(config#designHeight)));
+                let design = (Int32.toFloat64(config#designWidth), Int32.toFloat64(config#designHeight));
+                let trial = SplitPassTrial.open(gpu, width, height, design);
+                let storageTrial = SplitPassTrial.openWith(gpu, width, height, design, Render3d.WebGpuMaterials.ValuesBinding.Storage);
                 List.range(0, rounds()) |> List.forEach(round -> {
                     let gl = timeGl(session, kit);
                     let webgpu = timeWebGpu(gpu, paint, fonts, kit);
                     let a = timeTrial(gpu, trial, kit, false);
                     let b = timeTrial(gpu, trial, kit, true);
                     println("[webgpu-v2] 1 コマ（${Int32.toString(round + 1)} 回目・${Int32.toString(timedFrames())} コマの中央値・ms）: GL ${medianMs(gl)}・WebGPU ${medianMs(webgpu)}"
-                        + "・貼る形 A ${medianMs(a)}・B ${medianMs(b)}")
+                        + "・貼る形 A ${medianMs(a)}・B ${medianMs(b)}");
+                    let uniform = timeValues(gpu, trial, kit);
+                    let storage = timeValues(gpu, storageTrial, kit);
+                    println("[webgpu-v2] 材質 ${Int32.toString(manyCount())} 個の 1 コマ（${Int32.toString(round + 1)} 回目・ms）: 値を uniform で ${medianMs(uniform)}・storage で ${medianMs(storage)}")
                 });
                 SplitPassTrial.close(trial);
+                SplitPassTrial.close(storageTrial);
                 let errors = gpu.errorCount();
                 let lastError = gpu.lastError();
                 println("[webgpu-v2] errors ${Int32.toString(errors)}${if (errors == 0) "" else " last=[${lastError}]"}");

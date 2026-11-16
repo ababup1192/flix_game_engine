@@ -1,8 +1,8 @@
 // Render3dWgsl — 3D の描き手の WebGPU の frag の WGSL（Render3dGlsl の材質の frag・頂点の色の frag と、それが使う光・影・色の空間・法線マップ・環境マップ・lightmap の関数）。
 // 式は Render3dGlsl と 1 行ずつ同じに書き、光・かすみ・空の式は同じ LightModel3d の木から LightModel3d.Codegen.toWgsl で作る。
 //
-// bind group: 0 = 場面（`var<uniform> r3d: R3dScene`・影の地図・太陽の影の地図・環境マップ）・1 = 材質（ShaderGen.Wgsl.compile3d の `sg` と絵）・
-// 2 = 物ごと（`var<uniform> r3dDraw: R3dDraw`・法線マップ・lightmap）。varying の location は R3dIn の並び。
+// bind group: 0 = 場面（`var<uniform> r3d: R3dScene`・影の地図・太陽の影の地図・環境マップ・目と射影の行列）・1 = 材質（ShaderGen.Wgsl.compile3d の `sg` と絵・
+// `var<uniform> r3dDraw: R3dDraw`・法線マップ・lightmap）・2 = storage（骨と instance・まだ使わない）。varying の location は R3dIn の並び。
 // 射影の行列は GL の物のまま使い、頂点シェーダーが ShaderGen.Wgsl.clipFromGlSource の sg_clipFromGl で clip の z を 0..w へ移す前提
 // （奥行きの値が GL のウィンドウの奥行きと同じになり、影の比べ ndc.z × 0.5 + 0.5 をそのまま使える）。
 pub mod Render3dWgsl {
@@ -50,14 +50,19 @@ pub mod Render3dWgsl {
         "@group(0) @binding(3) var uEnvMap: texture_2d<f32>;\n" +
         "@group(0) @binding(4) var uEnvSampler: sampler;\n"
 
-    /// 物ごとの値（group 2）。uCutout = cutout の材質か（1）・法線マップの強さと mip のレベルの数・lightmap の mip のレベルの数。
-    /// 法線マップは binding 1・2、lightmap は binding 3・4（使う版だけ宣言する）。
+    /// 物ごとの値（group 1 の drawBinding() から）。uCutout = cutout の材質か（1.0）・法線マップの強さと mip のレベルの数・lightmap の mip のレベルの数。
+    /// 法線マップは drawBinding() + 1・+ 2、lightmap は + 3・+ 4（使う版だけ宣言する）。並びは Render3d.MaterialValues の物ごとの値の区画と同じ。
     // WhyNot: 法線マップの読みの v を上下に返す値（GLSL の uNormalFlip）を持たない — WebGPU の描き先の texture は上の行が先で、ほかの絵と同じ向き。
+    // WhyNot: uCutout を i32 にしない — 値は計画の Float32 の values から読み、整数の bit で書く道を持たない。
     def drawDeclarations(normalMapped: Bool, lightmap: Bool): String =
-        "struct R3dDraw { uCutout: i32, uNormalStrength: f32, uNormalLevels: f32, uLightmapLevels: f32 };\n" +
-        "@group(2) @binding(0) var<uniform> r3dDraw: R3dDraw;\n" +
-        (if (normalMapped) "@group(2) @binding(1) var uNormalMap: texture_2d<f32>;\n@group(2) @binding(2) var uNormalMapSampler: sampler;\n" else "") +
-        (if (lightmap) "@group(2) @binding(3) var uLightmap: texture_2d<f32>;\n@group(2) @binding(4) var uLightmapSampler: sampler;\n" else "")
+        let b = drawBinding();
+        "struct R3dDraw { uCutout: f32, uNormalStrength: f32, uNormalLevels: f32, uLightmapLevels: f32 };\n" +
+        "@group(1) @binding(${b}) var<uniform> r3dDraw: R3dDraw;\n" +
+        (if (normalMapped) "@group(1) @binding(${b + 1}) var uNormalMap: texture_2d<f32>;\n@group(1) @binding(${b + 2}) var uNormalMapSampler: sampler;\n" else "") +
+        (if (lightmap) "@group(1) @binding(${b + 3}) var uLightmap: texture_2d<f32>;\n@group(1) @binding(${b + 4}) var uLightmapSampler: sampler;\n" else "")
+
+    /// group 1 の物ごとの値の binding（材質の絵は ShaderGen.Wgsl の 1〜2 × Scene3d.maxMaterialTextures() を使う）。
+    pub def drawBinding(): Int32 = 16
 
     /// 色の空間の変換（Render3dGlsl.colorSpaceSource と同じ）。
     pub def colorSpaceSource(): String =
@@ -206,7 +211,7 @@ pub mod Render3dWgsl {
         let needsMip = (normalMapped or surface#lightmap) and List.isEmpty(m#texReads);
         let faceNormal = if (surface#doubleSided) "facingNormal" else "normalize(vNormal)";
         let normal = if (normalMapped) "normalMapped(${faceNormal}, vUv, i.vTangent)" else faceNormal;
-        let cutout = if (surface#coverage) "" else "    if (r3dDraw.uCutout == 1 && " + m#cutoutAlpha + " < 0.5) { discard; }\n";
+        let cutout = if (surface#coverage) "" else "    if (r3dDraw.uCutout > 0.5 && " + m#cutoutAlpha + " < 0.5) { discard; }\n";
         let facing = if (surface#doubleSided) "    let facingNormal = select(-normalize(vNormal), normalize(vNormal), i.frontFacing);\n" else "";
         let alpha = if (surface#coverage) "clamp((" + m#cutoutAlpha + " - 0.5) / max(fwidth(" + m#cutoutAlpha + "), 1e-4) + 0.5, 0.0, 1.0)"
                     else if (surface#blend) "albedo.a" else "1.0";
@@ -324,6 +329,59 @@ pub mod Render3dWgsl {
         "    o.vNormal = (normalMatrix * vec4f(v.aNormal, 0.0)).xyz;\n" +
         "    o.vColor = r3d_srgbToLinear3(v.aColor);\n" +
         "    o.vTint = v.tint.rgb;\n" +
+        "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * world);\n" +
+        "    return o;\n" +
+        "}\n"
+
+    /// 材質のプログラムの頂点シェーダー（Render3dGlsl.materialVertexSource の骨の無い版と同じ式）。入口は vs_main。
+    /// 形の頂点は buffer 0 の location 0〜2（位置・法線・色）と、uv つきの版は 11（uv）・12（タンジェント）、2 本目の uv つきは 13（Render3d.WebGpuRows の並び）。
+    /// 1 体ごとの値は litVertexSource と同じ buffer 1 の location 3〜10。varying は materialFragmentSource の R3dIn の並び（frag が読まない物も出す）。
+    /// 頂点の色は線形へ戻さない（材質の式が VertexColor を sRGB のまま読む・GLSL と同じ）。
+    pub def materialVertexSource(uv: Bool, lightmap: Bool): String =
+        cameraDeclarations() +
+        "struct R3dVertexIn {\n" +
+        "    @location(0) aPos: vec3f,\n" +
+        "    @location(1) aNormal: vec3f,\n" +
+        "    @location(2) aColor: vec3f,\n" +
+        "    @location(3) model0: vec4f,\n" +
+        "    @location(4) model1: vec4f,\n" +
+        "    @location(5) model2: vec4f,\n" +
+        "    @location(6) model3: vec4f,\n" +
+        "    @location(7) normal0: vec4f,\n" +
+        "    @location(8) normal1: vec4f,\n" +
+        "    @location(9) normal2: vec4f,\n" +
+        "    @location(10) tint: vec4f,\n" +
+        (if (uv) "    @location(11) aUv: vec2f,\n    @location(12) aTangent: vec4f,\n" else "") +
+        (if (lightmap) "    @location(13) aUv2: vec2f,\n" else "") +
+        "};\n" +
+        "struct R3dMaterialOut {\n" +
+        "    @builtin(position) position: vec4f,\n" +
+        "    @location(0) vWorld: vec3f,\n" +
+        "    @location(1) vNormal: vec3f,\n" +
+        "    @location(2) vColor: vec3f,\n" +
+        "    @location(3) @interpolate(flat) vTint: vec3f,\n" +
+        "    @location(4) @interpolate(flat) vEmissionIntensity: f32,\n" +
+        (if (uv) "    @location(5) vUv: vec2f,\n" else "") +
+        (if (lightmap) "    @location(6) vUv2: vec2f,\n" else "") +
+        (if (uv) "    @location(7) vTangent: vec4f,\n" else "") +
+        "};\n" +
+        ShaderGen.Wgsl.clipFromGlSource() +
+        "@vertex fn vs_main(v: R3dVertexIn) -> R3dMaterialOut {\n" +
+        "    let model = mat4x4f(v.model0, v.model1, v.model2, v.model3);\n" +
+        "    let normalMatrix = mat4x4f(vec4f(v.normal0.xyz, 0.0), vec4f(v.normal1.xyz, 0.0), vec4f(v.normal2.xyz, 0.0), vec4f(0.0, 0.0, 0.0, 1.0));\n" +
+        "    let world = model * vec4f(v.aPos, 1.0);\n" +
+        "    var o: R3dMaterialOut;\n" +
+        "    o.vWorld = world.xyz;\n" +
+        "    o.vNormal = (normalMatrix * vec4f(v.aNormal, 0.0)).xyz;\n" +
+        "    o.vColor = v.aColor;\n" +
+        "    o.vTint = v.tint.rgb;\n" +
+        "    o.vEmissionIntensity = v.normal0.w;\n" +
+        (if (uv)
+            "    o.vUv = v.aUv;\n" +
+            "    let modelLinear = mat3x3f(model[0].xyz, model[1].xyz, model[2].xyz);\n" +
+            "    o.vTangent = vec4f(modelLinear * v.aTangent.xyz, v.aTangent.w * sign(determinant(modelLinear)));\n"
+         else "") +
+        (if (lightmap) "    o.vUv2 = v.aUv2;\n" else "") +
         "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * world);\n" +
         "    return o;\n" +
         "}\n"

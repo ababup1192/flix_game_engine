@@ -110,4 +110,28 @@ mod Render3d.TestMeshTable {
         discard TextureTable3d.ensure(table, destroyRecorder(log), 10i64, TextureSlot.Scene("new"), "", made(1));
         let (victims, over) = TextureTable3d.sweep(table, destroyRecorder(log), 10i64, { count = 1, size = 1000i64 }, Set.empty());
         Assert.assertEq(expected = (TextureSlot.Scene("old") :: Nil, false, "destroy 0" :: Nil), (victims, over, Ref.get(log)))
+
+    // ── 材質の値と版 ──
+
+    /// 段の数は 1 × 1 まで半分ずつ（8 × 4 → 8×4・4×2・2×1・1×1 の 4 段）。
+    @Test
+    def testLevelsHalveToOne(): Unit \ Assert =
+        Assert.assertEq(expected = (4, 1, 6), (TextureTable3d.levelsOf(8, 4), TextureTable3d.levelsOf(1, 1), TextureTable3d.levelsOf(33, 2)))
+
+    /// 材質の値は物ごとの区画 64 個と、sg の欄（uTime・絵の数・params）を 64 個の倍数に切り上げた区画。
+    @Test
+    def testValueSizeRoundsSgBlock(): Unit \ Assert =
+        let size = (reads, params) -> Render3d.MaterialValues.valueSizeOf({ readCount = reads, paramNames = List.range(0, params) |> List.map(Int32.toString) });
+        Assert.assertEq(expected = (128, 128, 192), (size(0, 0), size(6, 57), size(6, 58)))
+
+    def plainKind(): Render3d.ProgramKind =
+        { skinned = false, uv = true, normalMap = true, lightmap = false, blend = false, doubleSided = true, coverage = false, metallicRoughness = true }
+
+    /// WebGPU が描く版は骨・lightmap・半透明・alpha to coverage の無い版（uv・法線マップ・両面・metallic と roughness は描く）。
+    @Test
+    def testDrawableKinds(): Unit \ Assert =
+        let k = plainKind();
+        let drawable = Render3d.WebGpuMaterials.isDrawable;
+        Assert.assertEq(expected = (true, false, false, false, false),
+                        (drawable(k), drawable({ skinned = true | k }), drawable({ lightmap = true | k }), drawable({ blend = true | k }), drawable({ coverage = true | k })))
 }
