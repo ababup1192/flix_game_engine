@@ -107,6 +107,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 **worktree を立てたら最初に `make worktree-seed WT=<worktree>`**（worktree の中からなら WT は省ける）。
 git の外の依存（各パッケージの lib・`bin/flix.jar`・`bin/fge-go`・`build/gl-jar`・fpkg）を main から張る。
 張らずに flix を流すと依存を Maven Central へ取りに行き、HTTP 429 で止まる。Studio の worktree も同じ `make worktree-seed WT=<Studio の worktree>` で張れる（Studio の main から張る）。
+Maven の取り物（各パッケージの `lib/cache`）は `make mvn-cache-share` で共有の置き場 1 か所へまとめてある
+（複数のプロセスが同時に使っても壊れない根拠は `bin/mvn-cache-share.sh`）。新しいパッケージを足したら流し直す。
 
 並行で走らせるときは**同じパッケージを 2 人に触らせない**（型検査は Stop /
 SubagentStop で走り、他人が編集中の赤で止まる。常駐 repl の数の上限は
