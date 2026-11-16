@@ -3,9 +3,11 @@ package migrate
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -159,6 +161,53 @@ func TestPaintEnvLeavesOtherLayerKeysOnly(t *testing.T) {
 func TestSameDrawHashesSpotsAChangedKey(t *testing.T) {
 	if bad := sameDrawHashes(map[string]string{"a": "1 x\n"}, map[string]string{"a": "1 y\n"}); len(bad) != 1 {
 		t.Fatalf("鍵の変わった 2 回目を見逃した: %v", bad)
+	}
+}
+
+func TestSameDrawHashesSkipsLinesThatHadNoKey(t *testing.T) {
+	if bad := sameDrawHashes(map[string]string{"a": "1 -\n2 x\n"}, map[string]string{"a": "1 y\n2 x\n"}); len(bad) != 0 {
+		t.Fatalf("1 回目の鍵が - の行（Pass のあるコマ）で止めた: %v", bad)
+	}
+}
+
+func TestPlanRefusesAnUnknownLayer(t *testing.T) {
+	w := newPlanWorld(t)
+	b := keyedRec(keyA, keyB)
+	b.writeFlow(t, w.base, "route", "design")
+	c := keyedRec(keyC, keyB)
+	frames := c.tape["frames"].([]any)
+	frames[0].(map[string]any)["file"] = "frames/odd/f0001.png"
+	c.frames = map[string]*image.NRGBA{"frames/odd/f0001.png": c.frames["frames/world/f0001.png"]}
+	c.drawhash = map[string]string{"frames/odd": "1 " + keyC + "\n"}
+	keysOnly(t, c, w.cur, "route")
+	base, _ := LoadSide(w.base)
+	cur, _ := LoadSide(w.cur)
+	if _, err := planPaint(cur, base, ""); err == nil {
+		t.Fatal("知らない層のコマを world の旗で塗ろうとした")
+	}
+}
+
+func TestEngineFingerprintReadsVersionAndPackage(t *testing.T) {
+	root := t.TempDir()
+	toml := `[dependencies]` + "\n" + `"github:ababup1192/flix_game_engine" = { version = "1.2.3", mount = "fge" }` + "\n"
+	if err := os.WriteFile(filepath.Join(root, "flix.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(root, "lib", "github", "ababup1192", "flix_game_engine", "1.2.3")
+	if err := os.MkdirAll(pkg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "flix_game_engine-1.2.3.fpkg"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := engineFingerprint(root); !strings.HasPrefix(got, "1.2.3 ") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestEngineDiffersOnlyWhenBothAreKnown(t *testing.T) {
+	if engineDiffers("", "1 a") || !engineDiffers("1 a", "2 b") || engineDiffers("1 a", "1 a") {
+		t.Fatal("engineDiffers の答えが違う")
 	}
 }
 

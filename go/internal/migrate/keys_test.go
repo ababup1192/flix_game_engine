@@ -205,3 +205,52 @@ func TestFrameNumberReadsVideoOutNames(t *testing.T) {
 		t.Fatal("番号の無い名前を読んだ")
 	}
 }
+
+// withRestoreFrame は古いセーブの読み戻しに world のコマ 1 枚（f0000・鍵 key）を足して root に書く。
+func withRestoreFrame(t *testing.T, root, key string, c color.NRGBA) {
+	t.Helper()
+	dir := filepath.Join(root, SavesDir, "quick1")
+	writeJSON(t, filepath.Join(dir, RestoreFile), map[string]any{"save": "quick1.json", "node": "Start", "seq": 1,
+		"probes": map[string]any{"mood": "calm"}, "screen": map[string]any{"w": 100, "h": 100},
+		"frames": []any{map[string]any{"file": "frames/world/f0000.png", "t": 0, "node": "Start", "seq": 1, "kind": "lineDone", "layer": "world"}}})
+	if err := os.MkdirAll(filepath.Join(dir, "frames/world"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePNG(filepath.Join(dir, "frames/world/f0000.png"), solid(100, 100, c)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "frames/world", DrawHashFile), []byte("0 "+key+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreFramesUseKeysToo(t *testing.T) {
+	b := keyedRec(keyA, keyB)
+	w := newWorld(t, b, b.clone())
+	withRestoreFrame(t, w.base, keyC, color.NRGBA{B: 200, A: 255})
+	withRestoreFrame(t, w.cur, keyC, color.NRGBA{R: 200, A: 255})
+	r := w.runKeys(t, false)
+	if r.KeySame != 3 || len(diffsOf(r, WhatFrame)) != 0 {
+		t.Fatalf("古いセーブのコマを鍵で通さない: keySame=%d %+v", r.KeySame, r.Diffs)
+	}
+}
+
+func TestRememberedResultIsKeyedByFrameKind(t *testing.T) {
+	th := DefaultThresholds()
+	done := cacheKey("k:a", "k:b", false, false, 2, 2, false, th)
+	for name, other := range map[string]string{
+		"mid":     cacheKey("k:a", "k:b", true, false, 2, 0, false, th),
+		"still3d": cacheKey("k:a", "k:b", false, true, 3, 2, false, th),
+		"shifted": cacheKey("k:a", "k:b", false, false, 2, 2, true, th),
+	} {
+		if other == done {
+			t.Errorf("%s のコマが演出の後のコマと同じ鍵で覚えられる", name)
+		}
+	}
+}
+
+func TestOneLetterKeyIsNotAKey(t *testing.T) {
+	if validKey("a") {
+		t.Fatal("1 字の鍵を鍵と見た（置き場の頭 2 字が取れない）")
+	}
+}

@@ -60,13 +60,17 @@ func frameNumber(file string) (int, bool) {
 
 // readDrawHash は drawhash.txt を読む（無ければ空）。
 func readDrawHash(path string) map[int]string {
-	out := map[int]string{}
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return out
+		return map[int]string{}
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
+	return parseDrawHash(string(data))
+}
+
+// parseDrawHash は drawhash.txt の中身（「コマ番号 鍵」の行）を読む。
+func parseDrawHash(text string) map[int]string {
+	out := map[int]string{}
+	sc := bufio.NewScanner(strings.NewReader(text))
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
 		if len(fields) != 2 {
@@ -79,8 +83,8 @@ func readDrawHash(path string) map[int]string {
 	return out
 }
 
-// validKey は鍵として突き合わせてよい字か（- と空は鍵でない）。
-func validKey(key string) bool { return key != "" && key != noKey }
+// validKey は鍵として突き合わせてよい字か（- と空と 1 字は鍵でない。置き場は頭の 2 字のフォルダに分ける）。
+func validKey(key string) bool { return len(key) >= 2 && key != noKey }
 
 // sameKey は前と後の鍵が同じで、画素を読まずに同じと言えるか（片方でも鍵が無ければ言えない）。
 // 鍵が同じなら PNG は 1 バイトも違わない（DrawHash の約束）。
@@ -92,12 +96,11 @@ const DiffCacheFile = "diff-cache.json"
 // diffCacheVersion は覚えた結果の形と比べ方の版。比べ方（comparePixels・blockP99）を変えたら上げる。
 const diffCacheVersion = "migrate-diff-1"
 
-// cachedStats は 1 組のコマを比べた数（Block は時刻のずれたコマでブロックの比べをした時だけ）。
+// cachedStats は 1 組のコマを比べた数。線の内で通った組だけを使う（線を超えた組は差の色の図のために読み直す）。
 type cachedStats struct {
-	Mean   float64  `json:"mean"`
-	Max    int      `json:"max"`
-	Within float64  `json:"within"`
-	Block  *float64 `json:"block,omitempty"`
+	Mean   float64 `json:"mean"`
+	Max    int     `json:"max"`
+	Within float64 `json:"within"`
 }
 
 // diffCache は比べた結果を、前と後のコマの中身の名乗りと線引きで引けるように覚える。
@@ -157,11 +160,19 @@ func (c *diffCache) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := c.path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(c.path), filepath.Base(c.path)+".*.part")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, c.path)
+	_, werr := f.Write(append(data, '\n'))
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		os.Remove(f.Name())
+		return werr
+	}
+	return os.Rename(f.Name(), c.path)
 }
 
 // contentID はコマの中身の名乗り: 鍵があれば鍵、無ければ PNG のバイト列の SHA-256（読めなければ空）。

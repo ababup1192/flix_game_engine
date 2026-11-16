@@ -22,8 +22,8 @@ import (
 // flow とセーブの読み戻しを /run で 1 本ずつ頼む。JVM の起動・字と Doc の用意・JIT の温まりを本数ぶんだけで済ませる。
 //
 // WhyNot: bin/fge resident（ゲームの根に 1 つの常駐）を使わない — 1 つの常駐は /run を 1 本ずつしか流さず、並べられない。
-// 常駐の印（HEADLESS_RESIDENT=1）を付けないのは、付けると build/headless/resident.json を書き、Studio や headless-run が
-// この JVM へ頼みに来るため。印の無い待ち受けは入口の出力をその JVM の標準出力へ書くので、JVM ごとのログから切り出す。
+// HEADLESS_RESIDENT=1 を付けないのは、付けると build/headless/resident.json を書き、Studio や headless-run が
+// この JVM へ頼みに来るため。付けない待ち受けは入口の出力をその JVM の標準出力へ書くので、JVM ごとのログから切り出す。
 
 // workerReadyWait は JVM が待ち受けを開くまで待つ秒（jar の読み込みと温めの 1 枚。機械が混んでいると長い）。
 const workerReadyWait = 5 * time.Minute
@@ -99,7 +99,7 @@ func startWorker(run string, base []string, log string, entries []string) (*shoo
 	return w, nil
 }
 
-// errNoEntry は待ち受けの束に頼みたい入口が無い（ゲームの FlowVideo が古い）。どの席でも同じなので、全部の席で常駐をやめる。
+// errNoEntry は待ち受けの束に頼みたい入口が無い（ゲームの FlowVideo が古い）。どの枠でも同じなので、全部の枠で常駐をやめる。
 type errNoEntry struct{ why string }
 
 func (e errNoEntry) Error() string { return e.why }
@@ -140,9 +140,9 @@ func (w *shootWorker) hello() (resident.Hello, error) {
 	return resident.ParseHello(string(body))
 }
 
-// do は job を /run で流し、入口の終了コードを返す。ok が偽なら待ち受けがもう使えない（落ちた・古い jar・メモリ切れ）ので、
-// 呼ぶ側は新しい JVM で流し直す。入口の出力は、この JVM のログのうち流している間に増えた所を job.Log へ写す。
-func (w *shootWorker) do(job *shootJob, env []string) (code int, ok bool) {
+// do は job を /run で流し、終わり方と入口の終了コードを返す。終わり方が EndExit でなければ、その仕事は流れていない
+// （落ちた・古い jar・メモリ切れ）ので、呼ぶ側は新しい JVM で流し直す。入口の出力は、この JVM のログのうち流している間に増えた所を job.Log へ写す。
+func (w *shootWorker) do(job *shootJob, env []string) (resident.End, int) {
 	start := fileSize(w.log)
 	body := resident.RunBody(resident.EnvMap(env))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -156,7 +156,7 @@ func (w *shootWorker) do(job *shootJob, env []string) (code int, ok bool) {
 	}()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.url("/run?entry="+url.QueryEscape(job.entry)), strings.NewReader(body))
 	if err != nil {
-		return 0, false
+		return resident.EndBroken, 0
 	}
 	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
 	end, code := resident.EndBroken, 0
@@ -175,7 +175,17 @@ func (w *shootWorker) do(job *shootJob, env []string) (code int, ok bool) {
 		resp.Body.Close()
 	}
 	copyLogTail(w.log, start, job.Log)
-	return code, end == resident.EndExit
+	return end, code
+}
+
+// alive は JVM がまだ動いているか（servedCap・寿命の窓で自分から終わる事がある）。
+func (w *shootWorker) alive() bool {
+	select {
+	case <-w.exited:
+		return false
+	default:
+		return true
+	}
 }
 
 // copyLogTail は src の from バイト目から後ろを dst へ書く。
@@ -219,7 +229,8 @@ func (w *shootWorker) kill() {
 	<-w.exited
 }
 
-// shootPool は並べる本数ぶんの席。席ごとに待ち受けの JVM を 1 本持ち（最初に頼む時に起こす）、使えなくなった席は新しい JVM で流す。
+// shootPool は並べる本数ぶんの枠（slot）。枠ごとに待ち受けの JVM を 1 本持ち（最初に頼む時に起こす）、
+// 自分から終わった・途中で落ちた JVM は次の仕事で起こし直す。起こせなかった枠は、それからは 1 本ずつ JVM を起こして流す。
 type shootPool struct {
 	run      string
 	base     []string
@@ -228,57 +239,54 @@ type shootPool struct {
 	entries  []string
 	workers  []*shootWorker
 	broken   []bool
+	started  []int
 	notes    chan string
 	mu       sync.Mutex
 }
 
-func newShootPool(run string, base []string, logs string, seats int, resident bool, entries []string) *shootPool {
+func newShootPool(run string, base []string, logs string, slots int, resident bool, entries []string) *shootPool {
 	return &shootPool{run: run, base: base, logs: logs, resident: resident, entries: entries,
-		workers: make([]*shootWorker, seats), broken: make([]bool, seats), notes: make(chan string, 64)}
+		workers: make([]*shootWorker, slots), broken: make([]bool, slots), started: make([]int, slots), notes: make(chan string, 64)}
 }
 
-// exec は席 seat で job を流す（席は同時に 1 本の糸だけが使う）。
-func (p *shootPool) exec(seat int, job *shootJob) {
-	if !p.useResident() || p.broken[seat] {
+// exec は枠 slot で job を流す（枠は同時に 1 本の糸だけが使う）。
+func (p *shootPool) exec(slot int, job *shootJob) {
+	if w := p.workers[slot]; w != nil && !w.alive() {
+		p.workers[slot] = nil
+	}
+	if !p.useResident() || p.broken[slot] {
 		runShootJob(p.run, p.base, job)
 		return
 	}
-	if p.workers[seat] == nil {
-		w, err := startWorker(p.run, p.base, filepath.Join(p.logs, fmt.Sprintf("worker-%d.log", seat)), p.entries)
+	if p.workers[slot] == nil {
+		p.started[slot]++
+		w, err := startWorker(p.run, p.base, filepath.Join(p.logs, fmt.Sprintf("worker-%d-%d.log", slot, p.started[slot])), p.entries)
 		if err != nil {
-			p.broken[seat] = true
+			p.broken[slot] = true
 			if _, ok := err.(errNoEntry); ok {
-				p.mu.Lock()
-				p.resident = false
-				p.mu.Unlock()
+				p.stopResident()
 			}
-			p.note(fmt.Sprintf("席 %d は常駐を使えない（%v）— 新しい JVM で流す", seat, err))
+			p.note(fmt.Sprintf("枠 %d は常駐を使えない（%v）— 新しい JVM で流す", slot, err))
 			runShootJob(p.run, p.base, job)
 			return
 		}
-		p.workers[seat] = w
+		p.workers[slot] = w
 	}
 	t0 := time.Now()
-	code, ok := p.workers[seat].do(job, append(append([]string{}, p.base...), job.env...))
-	if !ok {
-		p.workers[seat].kill()
-		p.workers[seat], p.broken[seat] = nil, true
-		p.note(fmt.Sprintf("席 %d の常駐が %s %s の途中で使えなくなった — 新しい JVM で流し直す", seat, job.Kind, job.Name))
+	end, code := p.workers[slot].do(job, append(append([]string{}, p.base...), job.env...))
+	if end != resident.EndExit {
+		p.workers[slot].kill()
+		p.workers[slot] = nil
+		if end == resident.EndStale {
+			// jar が作り直された。どの枠の JVM も古いので、全部の枠で常駐をやめる。
+			p.stopResident()
+		}
+		p.note(fmt.Sprintf("枠 %d の常駐が %s %s を流せなかった（終わり方 %d）— 新しい JVM で流し直す", slot, job.Kind, job.Name, end))
 		runShootJob(p.run, p.base, job)
 		return
 	}
 	job.Code = code
-	if job.after != nil {
-		if err := job.after(); err != nil {
-			if f, ferr := os.OpenFile(job.Log, os.O_APPEND|os.O_WRONLY, 0o644); ferr == nil {
-				fmt.Fprintf(f, "migrate shoot: %v\n", err)
-				f.Close()
-			}
-			if job.Code == 0 {
-				job.Code = 1
-			}
-		}
-	}
+	finishJob(job)
 	job.Seconds = time.Since(t0).Seconds()
 }
 
@@ -288,6 +296,12 @@ func (p *shootPool) useResident() bool {
 	return p.resident
 }
 
+func (p *shootPool) stopResident() {
+	p.mu.Lock()
+	p.resident = false
+	p.mu.Unlock()
+}
+
 func (p *shootPool) note(s string) {
 	select {
 	case p.notes <- s:
@@ -295,7 +309,7 @@ func (p *shootPool) note(s string) {
 	}
 }
 
-// close は待ち受けの JVM を全部畳む。
+// close は待ち受けの JVM を全部止める。
 func (p *shootPool) close() {
 	for i, w := range p.workers {
 		if w != nil {

@@ -18,7 +18,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/rendercache"
 )
 
-// 1 本の flow を撮る JVM の見積もり（血鱗の route_gem: CPU は平均 5 コア）。本数はコアの数だけで決め、上限は shootMaxJobs。
+// 1 本の flow を撮る JVM の見積もり（長いノベルの flow 1 本で CPU は平均 5 コア。plans/novel-migrate-scale.md の M2）。本数はコアの数だけで決め、上限は shootMaxJobs。
 // ヒープは shootHeap で蓋をする（Full GC の後に生きている物は 0.2 GB 前後・若い世代の GC の後の最大 1.8 GB。plans/novel-migrate-scale.md の M5）。
 const (
 	shootCoresPerJob = 4
@@ -279,6 +279,12 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 	if !a.video && !a.full && filepath.Clean(out) != filepath.Clean(a.savesFrom) {
 		baseSide, _ = LoadSide(a.savesFrom)
 	}
+	engine := engineFingerprint(".")
+	// WhyNot: engine が基準と違う時は鍵を先に撮らない — 鍵に engine の fpkg が入るので 1 枚も合わず、全部の flow を 2 回流すだけになる。
+	if baseSide != nil && engineDiffers(baselineEngine(a.savesFrom), engine) {
+		fmt.Fprintln(stdout, "migrate shoot: 基準と engine が違う（鍵が合わない）ので、鍵を先に撮らず全部のコマを塗る")
+		baseSide = nil
+	}
 	keysFirst := baseSide != nil
 
 	var list []*shootJob
@@ -353,34 +359,15 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 	runShootJobs(pool, jobs, list, stdout)
 	all := list
 	var plan *paintPlan
+	var problems []string
 	if keysFirst {
-		var paintJobs []*shootJob
-		var err error
-		plan, paintJobs, err = paintStage(out, baseSide, flowJobs, logs)
-		if err != nil {
-			fmt.Fprintln(stderr, "migrate shoot: 鍵を先に撮った後に PNG を用意できない:", err)
-			return 1
+		if countFailed(list) > 0 {
+			problems = append(problems, "鍵だけ撮る 1 回目で止まった仕事があるので、鍵の違うコマを塗らずに終える")
+		} else {
+			var paintJobs []*shootJob
+			plan, paintJobs, problems = paintAndCopy(pool, jobs, out, baseSide, flowJobs, logs, stdout)
+			all = append(all, paintJobs...)
 		}
-		before := drawHashTexts(filepath.Join(out, FlowsDir))
-		runShootJobs(pool, jobs, paintJobs, stdout)
-		all = append(all, paintJobs...)
-		if bad := sameDrawHashes(before, drawHashTexts(filepath.Join(out, FlowsDir))); len(bad) > 0 {
-			fmt.Fprintf(stderr, "migrate shoot: 塗るために流し直した flow の鍵が 1 回目と違う（決定性が破れている）: %s\n", strings.Join(bad, " "))
-			return 1
-		}
-		for _, c := range plan.Copies {
-			if err := copyFile(c.src, c.dst); err != nil {
-				fmt.Fprintln(stderr, "migrate shoot: 同じ鍵のコマへ写せない:", err)
-			}
-		}
-		if cur, err := LoadSide(out); err == nil {
-			if miss := missingPNGs(cur, baseSide); len(miss) > 0 {
-				fmt.Fprintf(stderr, "migrate shoot: 鍵が基準と違うのに PNG の無いコマが %d 枚（最初: %s）\n", len(miss), miss[0])
-				return 1
-			}
-		}
-		fmt.Fprintf(stdout, "migrate shoot: 鍵が基準と同じで PNG を書かなかった %d 枚・基準から写した %d 枚・render-cache から写した %d 枚・塗った %d 枚（flow %d 本を流し直した）・同じ鍵のほかのコマから写した %d 枚\n",
-			plan.KeysOnly, plan.FromBaseline, plan.FromCache, plan.Painted, len(paintJobs), plan.FromSibling)
 	}
 	wall := time.Since(start).Seconds()
 	for drained := false; !drained; {
@@ -392,29 +379,73 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	failed := 0
-	for _, job := range all {
-		if job.Code != 0 {
-			failed++
-		}
-	}
-	summary := map[string]any{"jobs": jobs, "wallSeconds": wall, "runs": all, "resident": pool.useResident(), "keysFirst": keysFirst}
+	failed := countFailed(all)
+	summary := map[string]any{"jobs": jobs, "wallSeconds": wall, "runs": all, "resident": pool.useResident(), "keysFirst": keysFirst,
+		"engine": engine, "problems": problems}
 	if plan != nil {
 		summary["paint"] = plan
 	}
 	if data, err := json.MarshalIndent(summary, "", "  "); err == nil {
-		_ = os.WriteFile(filepath.Join(logs, "shoot.json"), append(data, '\n'), 0o644)
+		_ = os.WriteFile(filepath.Join(logs, ShootSummaryFile), append(data, '\n'), 0o644)
 	}
 	fmt.Fprintf(stdout, "migrate shoot: %.1f 秒で撮った（%d 本・止まった %d 本）\n", wall, len(all), failed)
+	for _, p := range problems {
+		fmt.Fprintln(stderr, "migrate shoot:", p)
+	}
 	if failed > 0 {
 		for _, job := range all {
 			if job.Code != 0 {
 				fmt.Fprintf(stderr, "  止まった: %s %s（ログ %s）\n", job.Kind, job.Name, job.Log)
 			}
 		}
+	}
+	if failed > 0 || len(problems) > 0 {
 		return 1
 	}
 	return 0
+}
+
+func countFailed(list []*shootJob) int {
+	n := 0
+	for _, job := range list {
+		if job.Code != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// paintAndCopy は鍵だけ撮った記録に、基準と鍵の違うコマの PNG を用意する（写す・塗るために flow を流し直す・同じ鍵へ写す）。
+// 止める理由があれば problems に返す。
+func paintAndCopy(pool *shootPool, jobs int, out string, baseSide *Side, flowJobs map[string]*shootJob, logs string, stdout io.Writer) (*paintPlan, []*shootJob, []string) {
+	plan, paintJobs, err := paintStage(out, baseSide, flowJobs, logs)
+	if err != nil {
+		return nil, nil, []string{"鍵を先に撮った後に PNG を用意できない: " + err.Error()}
+	}
+	before := drawHashTexts(filepath.Join(out, FlowsDir))
+	runShootJobs(pool, jobs, paintJobs, stdout)
+	if countFailed(paintJobs) > 0 {
+		return plan, paintJobs, []string{"塗るために流し直した flow が止まった"}
+	}
+	if bad := sameDrawHashes(before, drawHashTexts(filepath.Join(out, FlowsDir))); len(bad) > 0 {
+		return plan, paintJobs, []string{"塗るために流し直した flow の鍵が 1 回目と違う（決定性が破れている）: " + strings.Join(bad, " ")}
+	}
+	var problems []string
+	for _, c := range plan.Copies {
+		if err := copyFile(c.src, c.dst); err != nil {
+			problems = append(problems, "同じ鍵のコマへ写せない: "+err.Error())
+		}
+	}
+	cur, err := LoadSide(out)
+	if err != nil {
+		return plan, paintJobs, append(problems, err.Error())
+	}
+	if miss := missingPNGs(cur, baseSide); len(miss) > 0 {
+		problems = append(problems, fmt.Sprintf("鍵が基準と違うのに PNG の無いコマが %d 枚（最初: %s）", len(miss), miss[0]))
+	}
+	fmt.Fprintf(stdout, "migrate shoot: 鍵が基準と同じで PNG を書かなかった %d 枚・基準から写した %d 枚・render-cache から写した %d 枚・塗った %d 枚（flow %d 本を流し直した）・同じ鍵のほかのコマから写した %d 枚\n",
+		plan.KeysOnly, plan.FromBaseline, plan.FromCache, plan.Painted, len(paintJobs), plan.FromSibling)
+	return plan, paintJobs, problems
 }
 
 // flowVideoSkipsVideo はゲームの FlowVideo.flix が FLOW_VIDEO を読むか（読まない古い版は全コマの動画を書く）。
@@ -434,17 +465,17 @@ func flowVideoSkipsVideo(src string) bool {
 	return found
 }
 
-// runShootJobs は list を jobs 本ずつ並べて流す（席ごとに 1 本の糸）。
+// runShootJobs は list を jobs 本ずつ並べて流す（枠ごとに 1 本の糸）。
 func runShootJobs(pool *shootPool, jobs int, list []*shootJob, stdout io.Writer) {
 	queue := make(chan *shootJob)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	for seat := 0; seat < jobs; seat++ {
+	for slot := 0; slot < jobs; slot++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for job := range queue {
-				pool.exec(seat, job)
+				pool.exec(slot, job)
 				mu.Lock()
 				mark := "ok"
 				if job.Code != 0 {
@@ -485,7 +516,7 @@ func paintStage(out string, baseSide *Side, flowJobs map[string]*shootJob, logs 
 			}
 		}
 		paintJobs = append(paintJobs, &shootJob{Kind: "paint", Name: flow, Log: filepath.Join(logs, flow+".paint.log"), entry: first.entry,
-			weight: int64(len(plan.Paint[flow])), env: append(env, paintEnv(plan.Paint[flow])...), after: first.after})
+			weight: first.weight, env: append(env, paintEnv(plan.Paint[flow])...), after: first.after})
 	}
 	return plan, paintJobs, nil
 }
@@ -498,7 +529,6 @@ func runShootJob(run string, base []string, job *shootJob) {
 		job.Code = 2
 		return
 	}
-	defer logf.Close()
 	cmd := exec.Command("bash", "-c", run+" "+job.entry)
 	cmd.Env = append(append([]string{}, base...), job.env...)
 	cmd.Stdout, cmd.Stderr = logf, logf
@@ -508,12 +538,22 @@ func runShootJob(run string, base []string, job *shootJob) {
 			job.Code = ee.ExitCode()
 		}
 	}
-	if job.after != nil {
-		if err := job.after(); err != nil {
-			fmt.Fprintf(logf, "migrate shoot: %v\n", err)
-			if job.Code == 0 {
-				job.Code = 1
-			}
+	logf.Close()
+	finishJob(job)
+}
+
+// finishJob は仕事の後片付け（job.after）を流し、失敗したらログへ書いて止まった事にする。
+func finishJob(job *shootJob) {
+	if job.after == nil {
+		return
+	}
+	if err := job.after(); err != nil {
+		if f, ferr := os.OpenFile(job.Log, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644); ferr == nil {
+			fmt.Fprintf(f, "migrate shoot: %v\n", err)
+			f.Close()
+		}
+		if job.Code == 0 {
+			job.Code = 1
 		}
 	}
 }

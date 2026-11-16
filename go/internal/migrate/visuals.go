@@ -196,7 +196,8 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool, shift
 		}
 		pairs = append(pairs, framePair{i, fa, fb})
 		if fa.Kind == "mid" && !restore {
-			if d := seconds.compare(flow, size, fa, fb, a.dir, b.dir); d != nil {
+			same := c.keys != nil && sameKey(c.keys.of(a.dir, fa.File), c.keys.of(b.dir, fb.File))
+			if d := seconds.compare(flow, size, fa, fb, a.dir, b.dir, same); d != nil {
 				c.add(d)
 			}
 		}
@@ -287,7 +288,8 @@ type midSeconds struct {
 }
 
 // compare は秒が違えば迷った差を返す（同じ命令で 2 回目からは nil）。片方にだけ秒があれば数えるだけ。
-func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string) *Diff {
+// sameKey は前と後のコマの鍵が同じか（同じなら新しい版の PNG が無くても前の版の絵を並べてよい）。
+func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string, sameKey bool) *Diff {
 	if (fa.Seconds == nil) != (fb.Seconds == nil) {
 		m.oneSided++
 		return nil
@@ -301,8 +303,7 @@ func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string)
 	}
 	m.seen[cmdKey] = true
 	before, after := filepath.Join(dirA, fa.File), filepath.Join(dirB, fb.File)
-	if !fileExists(after) {
-		// 鍵だけ撮ったコマ（鍵が前の版と同じなので絵も同じ）。頁には前の版の絵を左右に並べる。
+	if sameKey && !fileExists(after) {
 		after = before
 	}
 	return &Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fb.T, FrameKind: fa.Kind, Cmd: fb.Cmd,
@@ -391,8 +392,6 @@ func (c *comparer) frame(flow, size string, i int, fa, fb Frame, dirA, dirB stri
 	d.Review = true
 	if isShifted {
 		d.Block = blockP99(ia, ib, th.BlockPx, th.BlockShift)
-		block := d.Block
-		remembered.Block = &block
 		if d.Block <= th.BlockP99+1e-9 {
 			d.Auto = AutoBlock
 			d.Detail += fmt.Sprintf("。前と後の時刻が %.3f 秒ずれたコマで、ブロックの比べの 99%% 点 %.1f が %g 以下なので自動で通した", fb.T-fa.T, d.Block, th.BlockP99)
