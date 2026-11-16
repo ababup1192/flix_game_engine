@@ -62,4 +62,7 @@ mod Backdrop {
 
     /// 色を使わない時の地（写真が無い・読めない時に敷く夜の色）。
     pub def groundColor(): Color = { r = 0.04, g = 0.05, b = 0.08 }
+
+    /// novel.backdrops.json の ground（無ければ groundColor）。
+    pub def groundOf(doc: BackdropDoc.Doc): Color = BackdropDoc.rec(doc)#ground |> Option.getWithDefault(groundColor())
 }

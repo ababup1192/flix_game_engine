@@ -122,13 +122,14 @@ mod WorldRead {
     }
 
     /// 命令の待ち方: 待ちを 2 つ出したら長い方で、押して明けるのは両方が押して明ける時だけ・
-    /// 後ろの命令を先に流すのは両方が LineWait の時だけ。
+    /// 後ろの命令を先に流すのは両方が LineWait の時だけ（背景を替えた命令なら SwitchWait）。
     def commandKindOf(res: Res.Res, r: World.Read, w: World.World, c: Yarn.Command): (Stage.Stage, NovelBeat.Kind) =
         let tried = Commands.execute(Commands.Replay.Live, ctxOf(res, r, w), c, r#stage);
         let stage = tried |> Result.map(fst) |> Result.getWithDefault(r#stage);
         let waits = tried |> Result.map(snd) |> Result.getWithDefault(Nil) |> List.filterMap(waitOfOut);
         let secs = waits |> List.map(x -> { let (s, _, _) = x; s }) |> List.maximum |> Option.getWithDefault(0.0);
         let kind = if (List.isEmpty(waits)) NovelBeat.Kind.Command
+                   else if (List.forAll(x -> { let (_, _, line) = x; line }, waits) and isSwitched(r#stage, stage)) NovelBeat.Kind.SwitchWait(secs, None)
                    else if (List.forAll(x -> { let (_, _, line) = x; line }, waits)) NovelBeat.Kind.LineWait(secs, None)
                    else if (List.forAll(x -> { let (_, tap, _) = x; tap }, waits)) NovelBeat.Kind.WaitOrTap(secs, None)
                    else NovelBeat.Kind.Wait(secs);
@@ -141,6 +142,11 @@ mod WorldRead {
         case Out.LineWait(secs)  => Some((secs, true, true))
         case _                   => None
     }
+
+    /// 命令が背景を替えたか（写真か時間帯が変わった）。
+    def isSwitched(before: Stage.Stage, after: Stage.Stage): Bool =
+        let key = (st: Stage.Stage) -> st#shot |> Option.map(s -> (s#photo, s#grade));
+        key(before) != key(after)
 
     /// <<wait 秒>> の秒（秒の形は bin/fge yarn build の検査が止めているので、読めなければ 0 秒）。
     def runnerSecondsOf(c: Yarn.Command): Float64 =

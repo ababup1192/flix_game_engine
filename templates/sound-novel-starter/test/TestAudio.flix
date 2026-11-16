@@ -72,6 +72,17 @@ mod TestAudio {
         Assert.assertTrue(veils |> List.exists(a -> TestKit.near(1.0, a)))
 
     @Test
+    def testBlackWithoutAPreviousBackdropOnlyFadesIn(): Unit \ {Assert, Fs.FileRead} =
+        // 前の背景が無い所からの black は、4 分の 1 の所でも暗くなる側でなく明ける側（覆いの濃さ = 1 - 進み）。
+        let st = applied(1.0, "bg", photo() :: "grade=${grade()}" :: "transition=black" :: "time=2" :: Nil, Stage.empty());
+        let veils = ViewStage.frame(envAt(1.5), st, true) |> List.filterMap(placed -> match placed#item {
+            case Render.Item.Box(b) if b#zIndex >= View.zWorldStride() => Some(b#alpha)
+            case _                                                    => None
+        });
+        let opening = 1.0 - Stage.fadeProgress(t(1.5), st);
+        Assert.assertTrue(veils |> List.exists(a -> TestKit.near(opening, a)))
+
+    @Test
     def testBlackDarkensTheActorsToo(): Unit \ {Assert, Fs.FileRead} =
         // 暗転は背景だけでなく人物の上にも掛かる（覆いと同じ層の数）。
         let shown = Stage.settle(applied(0.0, "show", "a" :: Nil, bg("transition=cut" :: Nil)));

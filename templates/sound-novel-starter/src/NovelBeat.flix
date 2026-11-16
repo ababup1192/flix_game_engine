@@ -21,6 +21,8 @@ mod NovelBeat {
         case WaitOrTap(Float64, Option[Float64])
         /// 次の台詞の字を待たせる待ちを出した命令（予定の秒・押して縮めた秒）
         case LineWait(Float64, Option[Float64])
+        /// 背景を替えた命令が出した LineWait（予定の秒・押して縮めた秒）。続いた LineWait の後ろに並ばず、最初の頭から重なる
+        case SwitchWait(Float64, Option[Float64])
         /// 実行器の <<wait 秒>>（予定の秒）
         case RunnerWait(Float64)
         case Line
@@ -87,6 +89,7 @@ mod NovelBeat {
             case Kind.Wait(planned)           => waitOf(i, planned, acc)
             case Kind.WaitOrTap(planned, cut) => waitOf(i, Option.getWithDefault(planned, cut), acc)
             case Kind.LineWait(planned, cut)  => lineWaitOf(i, Option.getWithDefault(planned, cut), acc)
+            case Kind.SwitchWait(planned, cut) => switchWaitOf(i, Option.getWithDefault(planned, cut), acc)
             case Kind.RunnerWait(planned)     => runnerWaitOf(i, planned, acc)
             case Kind.Line                    => lineOf(i, acc)
             case Kind.Choices                 => gated(place(place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.waitFor(Key.Choose(i))))
@@ -103,6 +106,13 @@ mod NovelBeat {
     def lineWaitOf(i: Int32, secs: Float64, acc: Acc): Acc =
         let started = place(place(acc, Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.append(Key.Hold(i), Duration.Seconds(secs)));
         { chainStart = Some(Option.getWithDefault(Key.Hold(i), acc#chainStart)) | started }
+
+    /// 背景の切り替えの LineWait: 続いた LineWait の最初の頭から重ねて始める（その前に LineWait が無ければ、自分が最初になる）。
+    // WhyNot: コメントの LineWait と同じく後ろに並べない — コメントの後ろの <<jump>> の先の歩きが、コメントの秒だけ遅れて歩き出す。
+    def switchWaitOf(i: Int32, secs: Float64, acc: Acc): Acc = match acc#chainStart {
+        case Some(_) => place(place(acc, zeroAt(acc#chainStart, Key.Apply(i))), holdAt(acc#chainStart, Key.Hold(i), secs))
+        case None    => lineWaitOf(i, secs, acc)
+    }
 
     /// 実行器の <<wait>>: 実行器が束を返した時刻（束の最初の出来事の頭）から数え、前の待ちと重なる。記録の wait はこの頭で書く。
     def runnerWaitOf(i: Int32, secs: Float64, acc: Acc): Acc =
@@ -138,6 +148,7 @@ mod NovelBeat {
     def isTappable(kind: Kind): Bool = match kind {
         case Kind.WaitOrTap(_, _) => true
         case Kind.LineWait(_, _)  => true
+        case Kind.SwitchWait(_, _) => true
         case _                    => false
     }
 
@@ -272,6 +283,7 @@ mod NovelBeat {
     def shortened(secs: Float64, kind: Kind): Kind = match kind {
         case Kind.WaitOrTap(planned, _) => Kind.WaitOrTap(planned, Some(secs))
         case Kind.LineWait(planned, _)  => Kind.LineWait(planned, Some(secs))
+        case Kind.SwitchWait(planned, _) => Kind.SwitchWait(planned, Some(secs))
         case other                      => other
     }
 
@@ -283,6 +295,7 @@ mod NovelBeat {
         case Kind.Wait(planned)         => Some(planned)
         case Kind.WaitOrTap(planned, _) => Some(planned)
         case Kind.LineWait(planned, _)  => Some(planned)
+        case Kind.SwitchWait(planned, _) => Some(planned)
         case Kind.RunnerWait(planned)   => Some(planned)
         case _                          => None
     }

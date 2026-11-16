@@ -6,7 +6,7 @@
 // ゲームの写真と時間帯は残すので、読み始めた World の台本の <<bg>> はそのまま当たる）。
 mod TestGameHooks {
 
-    use fge::{App, Clock, Emit, Flow, Num, RawDraw, Rect2, Render, Resources, Yarn, YarnCommands, YarnRunner}
+    use fge::{App, Clock, Color, Emit, Flow, Num, RawDraw, Rect2, Render, Resources, Yarn, YarnCommands, YarnRunner}
     use Commands.Out
     use TestKit.begun
 
@@ -87,6 +87,14 @@ mod TestGameHooks {
     def testInitialIsReadFromTheDoc(): Unit \ Assert =
         let doc = BackdropDoc.fromJson("{\"initial\": {\"photo\": \"lair\", \"grade\": \"clear\"}}");
         Assert.assertEq(expected = Some(Some(("lair", "clear"))), doc |> Option.map(d -> BackdropDoc.initialOf(d) |> Option.map(i -> (i#photo, i#grade))))
+
+    @Test
+    def testGroundIsReadFromTheDocOrStaysTheNightColor(): Unit \ Assert =
+        // ground を書けばその色、書かなければ夜の紺（Backdrop.groundColor）。
+        let rgb = (c: Color) -> (c#r, c#g, c#b);
+        let black = BackdropDoc.fromJson("{\"ground\": \"#000000\"}") |> Option.map(d -> rgb(Backdrop.groundOf(d)));
+        let plain = BackdropDoc.fromJson("{}") |> Option.map(d -> rgb(Backdrop.groundOf(d)));
+        Assert.assertEq(expected = (Some((0.0, 0.0, 0.0)), Some(rgb(Backdrop.groundColor()))), (black, plain))
 
     @Test
     def testTitleIsReadFromTheDoc(): Unit \ Assert =
@@ -504,6 +512,16 @@ mod TestGameHooks {
         let w = TestKit.stepBy(r, 0.2, beatWith(r, events));
         let ambience = World.readOf(w) |> Option.flatMap(rd -> Stage.ambienceOf(World.now(w), rd#stage));
         Assert.assertEq(expected = (Some("amb_river"), true), (ambience, isPaused(w)))
+
+    @Test
+    def testAWalkAfterACommentStartsWithTheComment(): Unit \ {Assert, Fs.FileRead} =
+        // コメント（LineWait 0.65 秒）の後ろの歩く <<bg>> は、コメントと同じ頭から歩き出す（0.2 秒の足音が最初の 0.5 秒で鳴る）。
+        let base = withWalk(3.0, res());
+        let r = { commands = Commands.tableOf(waitCommand("comment", Out.LineWait(0.65)) :: Commands.commandsIn(base#commands)) | base };
+        let events = YarnRunner.Event.Command(command("comment", Nil))
+            :: YarnRunner.Event.Command(command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)) :: YarnRunner.Event.Line(heldLine()) :: Nil;
+        let (_, heard) = stepHearing(r, 0.5, beatWith(r, events));
+        Assert.assertEq(expected = "se_a" :: Nil, heard)
 
     @Test
     def testInstantCommandsRunDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =

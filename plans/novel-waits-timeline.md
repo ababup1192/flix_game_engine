@@ -313,3 +313,10 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 - V（済み）: GameView の頭に、立ち絵の矩形は `Cast.placedOf(ViewStage.castEnv(env, stage), stage#cast)` で引くと 1 行。
 - レビュー 2 回目の推奨: 待ちの間のセーブは、先に積んだ台詞より前でまだ当てていない命令を試しに当てた舞台で Mark を作る（`WorldRead.withCommandsBehind`）。
 - 廃屋配信: 止める違い 0（承認 9 件。台本の reader の押し方 L の 6 件と、頭の環境音 3 件）。
+
+### 廃屋配信の絵の違い 3 件（迷った差の分析から）
+
+- Gate の頭（0.4〜1.2 秒が暗い無地）: テンプレートの black は前の背景が無くても半分の秒を暗くなる側に使っていた（古い版の `dark` は前が無ければ全部の秒で明ける）。**直した**: 前の背景が絵を持たない（無い・blank）時は、暗い所から全部の秒で明ける（`ViewStage.isFromDark`）。
+- Inside#35 → Upstairs の歩き: コメント（LineWait）の後ろの `<<jump>>` の先の歩く `<<bg>>` が、続いた LineWait として後ろに並び、コメントの秒（0.65 秒）だけ遅れて歩き出していた。古い版はコメントと同じ頭で歩き出す。**直した**: 背景を替えた命令の LineWait は `Kind.SwitchWait` で、続いた LineWait の最初の頭から重なる（コメントどうしは今まで通り後ろに並ぶ）。
+- Found#0 の暗さ: blank の写真（暗闇）の地がテンプレートの夜の紺（10,13,20）で、古い版はほぼ黒（3,3,4）。**直した**: `novel.backdrops.json` の `ground`（地の色）で替えられるようにした（無ければ今の紺）。廃屋配信は追随の時に `"ground": "#030304"` 前後を書く。
+- 廃屋配信はリリースのため止めてあるので、この 3 件の写しは再開の後。
