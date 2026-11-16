@@ -138,9 +138,22 @@ mod Render3d.ScenePlan {
     /// 1 回の prepare の場面を候補に分け、backend に聞く材質を、その材質の物が初めて来た順に並べる。samples = 描き先の標本の数。
     /// 同じプログラム（版と材質の木の鍵が同じで、同じ GLSL を生む）の材質は 1 回だけ聞く（requestOf）。
     pub def groupScenes(planner: Planner, caps: PlanCaps, samples: Int32, cmds: List[Scene3d.RenderCmd]): Grouped \ IO =
+        groupScenesWith(planner, caps, samples, cmds |> List.map(c -> (c, Scene3d.instancesOf(c#scene))))
+
+    /// groupScenes の、場面ごとに計画へ通す置いた物を場面と組で渡す形（組の外の集まりの物は backend が持ち越した行で描く・Render3d.StaticRows）。
+    /// 影を落とす光があるかは組の物でなく場面の全部の物で決める。
+    pub def groupScenesWith(planner: Planner, caps: PlanCaps, samples: Int32, cmds: List[(Scene3d.RenderCmd, List[Scene3d.Instance3d])]): Grouped \ IO =
         let tables = freshTables();
         let scenes = cmds |> List.map(groupScene(planner, tables, caps, samples));
         { scenes = scenes, requests = MutList.toArray(Static, tables#requests) |> Array.toVector, members = tables#members }
+
+    /// 持ち越す物 items を、視錐台で間引かずに候補に分ける（色の pass の材質の候補と、影の地図の形だけの候補）。
+    /// 答えは (色の pass の候補, 影の地図の候補, backend に聞く材質, batch の描く物)。
+    pub def groupCarried(planner: Planner, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
+        let tables = freshTables();
+        let lit = groupWith(grouping(planner, tables, _ -> false, _ -> true, false), items);
+        let shadow = groupWith(grouping(planner, tables, _ -> false, _ -> false, false), items) |> List.map(gr -> gr#batch);
+        (lit, shadow, MutList.toArray(Static, tables#requests) |> Array.toVector, tables#members)
 
     /// 置いた物を候補に分ける（Preload の形。場面の矩形も影も持たない）。outside = 間引く物か。
     pub def groupInstances(planner: Planner, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
@@ -154,7 +167,8 @@ mod Render3d.ScenePlan {
 
     /// 場面の置いた物を、Output に合わせて batch の候補に分け、影の地図の batch も分ける。
     // WhyNot: Design の解像度の描き先に標本を持たせない — ドット絵と画素をそろえる場面に縁のならしは要らない。
-    def groupScene(planner: Planner, tables: Tables, caps: PlanCaps, samples: Int32, cmd: Scene3d.RenderCmd): GroupedScene \ IO =
+    def groupScene(planner: Planner, tables: Tables, caps: PlanCaps, samples: Int32, cd: (Scene3d.RenderCmd, List[Scene3d.Instance3d])): GroupedScene \ IO =
+        let (cmd, drawn) = cd;
         let scene = cmd#scene;
         let outside = Scene3d.isOutsideFrustum(Scene3d.frustumOf(scene));
         let coverage = match scene#resolution {
@@ -163,15 +177,15 @@ mod Render3d.ScenePlan {
         };
         let mainPass = passSpecOf(scene#output);
         let groups = match mainPass {
-            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage), Scene3d.instancesOf(scene))
+            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage), drawn)
             case ScenePassSpec.DepthOut(_) =>
                 // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
                 //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
                 // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
-                let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), Scene3d.instancesOf(scene));
+                let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), drawn);
                 groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false), solidInstances)
         };
-        { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene) }
+        { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn) }
 
     /// instances を候補に分ける。候補の並びは、(形, batch の鍵) が初めて来た順・その中は材質の絵の名前の並びが初めて来た順（Render3d.Batch.groupInOrder と
     /// groupByTextures の並びと同じ）。batch の鍵が無い物は 1 体の候補。
@@ -432,12 +446,12 @@ mod Render3d.ScenePlan {
     /// 影を落とす光（スポットと太陽）ごとに、影の地図を描く batch を分ける。スポットの次に太陽。無ければ空。
     /// 太陽を使えない理由（Scene3d.directionalLightWarning）は、影の有無に関わらずここで鍵ごとに初回 1 回だけ知らせる（場面ごとにここを通る）。
     // WhyNot: 半透明の物に影を落とさせない — 影の地図は 0 か 1 の奥行きで、薄い色ガラスが真っ黒な影を落とす。
-    def shadowPlansOf(planner: Planner, tables: Tables, scene: Scene3d.Scene3dCmd): List[ShadowPlan[SpanBatch]] \ IO =
+    def shadowPlansOf(planner: Planner, tables: Tables, scene: Scene3d.Scene3dCmd, drawn: List[Scene3d.Instance3d]): List[ShadowPlan[SpanBatch]] \ IO =
         Scene3d.directionalLightWarning(scene) |> Option.forEach(line -> warnShadowOnce(planner, "@sun:direction", line));
+        let solid = drawn |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)));
         shadowCastersOf(planner, scene) |> List.map(found -> {
             let (light, caster) = found;
             let outside = Scene3d.isOutsideFrustum(caster#frustum);
-            let solid = Scene3d.instancesOf(scene) |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)));
             let groups = groupWith(grouping(planner, tables, outside, _ -> false, false), solid) |> List.map(gr -> gr#batch);
             let (skinned, plain) = List.partition(b -> isSkinned(b#head), groups);
             { caster = caster, light = light, plain = plain, skinned = skinned }
@@ -554,7 +568,7 @@ mod Render3d.ScenePlan {
         scene#billboards |> List.map(b -> { fields = Scene3d.billboardFieldsOf(b), culled = Scene3d.isBillboardOutsideFrustum(frustum, b) })
 
     /// 材質の batch の描く順。backend の順の番号で並べる。DrawMode.OneByOne は来た順のまま（並べ替えの影響も on と off の差に出す）。
-    def materialsInOrder(planner: Planner, batches: List[MaterialBatch[SpanBatch]]): List[MaterialBatch[SpanBatch]] =
+    pub def materialsInOrder(planner: Planner, batches: List[MaterialBatch[SpanBatch]]): List[MaterialBatch[SpanBatch]] =
         match planner#drawMode {
             case DrawMode.Instanced => inDrawOrder(d -> d#order, batches)
             case DrawMode.OneByOne  => batches

@@ -5,7 +5,7 @@
 #                draw call・3D の描き手の CPU の区間）を出し、4 区間で閉じる（GL の確かめと重さを測る用。垂直同期は切る）
 #   make run SCENE=field … 小さな箱と柱を格子に並べた場面（src/Field.flix）。つまみ:
 #                COUNT=1000（物の数）・SHAPES=1（形の種類。each で物ごとに違う形）・MATS=1（材質の種類）・MOVING=100（動く物の %）・
-#                ALPHA=0（半透明の物の %）・SHADOW=1（太陽の影）。FRAMES=240 で 1 区間で測るコマ数・REPEAT=4 で同じ条件を続けて測る回数
+#                ALPHA=0（半透明の物の %）・SHADOW=1（太陽の影）・GROUP=1（動かない物を Scene3d.staticGroup の集まり 1 つで渡す）。FRAMES=240 で 1 区間で測るコマ数・REPEAT=4 で同じ条件を続けて測る回数
 #   make check … 型検査だけ走らせる
 #
 # 家具は assets/models/*.obj（fps3d_lab の写し。Blender の 1 m = world の 16）。

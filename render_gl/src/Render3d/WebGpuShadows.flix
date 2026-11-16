@@ -30,6 +30,7 @@ mod Render3d.WebGpuShadows {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     use Render3d.{matrixArray}
+    use Render3d.SceneList.{SceneList}
     use Render3d.ShadowMaps.{Key, ShadowPass}
     use Render3d.WebGpuRows.{MeshBuffers, MeshStore, drawRows}
 
@@ -46,11 +47,12 @@ mod Render3d.WebGpuShadows {
     /// 影の地図の pass を積む材料（どれも 3D の描き手 Render3d.WebGpuRenderer の持ち物）。encoder と notePass = 2D の描き手から借りる encoder と、pass を積んだ知らせ・
     /// meshStore = 形の置き場・instances = 1 体ごとの値の buffer・instanceBase = この場面の 1 体ごとの値を送った位置（体の番号）・poseGroup = 姿勢の group 2・
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・emptyLayout と emptyGroup = 空の group 1・poseLayout = group 2 の layout・
-    /// created = 描き先を作った知らせ（診断の数）・unbound = 付けられずに飛ばした行の物の数の知らせ。
+    /// created = 描き先を作った知らせ（診断の数）・unbound = 付けられずに飛ばした行の物の数の知らせ・
+    /// carried = 場面の持ち越した集まりの影の地図の行と、その 1 体ごとの値の buffer（頭から・Render3d.WebGpuStatic）。
     pub type alias ShadowDraw = {
         encoder = CommandEncoder, notePass = Unit -> Unit \ IO, meshStore = MeshStore, instances = Buffer, instanceBase = Int32, poseGroup = Option[BindGroup],
         vertexModule = ShaderModule, skinnedModule = ShaderModule, emptyLayout = BindGroupLayout, emptyGroup = BindGroup, poseLayout = BindGroupLayout,
-        created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO
+        created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO, carried = List[(SceneList, Buffer)]
     }
 
     /// 描き先の深度の形式（色の pass の group 0 の binding 1・2 で読む）。
@@ -146,6 +148,10 @@ mod Render3d.WebGpuShadows {
                 unbound = draw#unbound
             };
             drawRows(rp, draw#meshStore, drawer, pass#list, draw#instanceBase);
+            draw#carried |> List.forEach(match (list, instances) -> {
+                rp.setVertexBuffer(1, instances, 0i64, instances.size());
+                drawRows(rp, draw#meshStore, drawer, list, 0)
+            });
             rp.end()
         })
 
