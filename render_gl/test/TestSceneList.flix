@@ -540,7 +540,7 @@ mod Render3d.TestSceneList {
         let list = listWithBillboards(Some(registered(false)), billboardDraw(true) :: Nil);
         Assert.assertEq(expected = (7, 0, -1), (rowAt(list, 2, 1), rowAt(list, 2, 4), Render3d.SceneList.valuesAt(list, 2)))
 
-    /// 絵が見つからないビルボードの行は絵の番号 -1・値なしで、視錐台の中の印は残し（GL は描く時に絵を引いて知らせる）、名前を missingBillboardTexturesOf が返す。
+    /// 絵が見つからないビルボードの行は絵の番号 -1・値なしで、欄 4 は視錐台の中の 1 のまま（GL は描く時に絵を引いて知らせる）、名前を missingBillboardTexturesOf が返す。
     @Test
     def testMissingBillboardTextureIsListed(): Unit \ {Assert, IO} =
         let list = listWithBillboards(None, billboardDraw(false) :: Nil);
