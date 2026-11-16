@@ -497,8 +497,19 @@ pub mod RenderCache {
         let props = ("java.vendor" :: "java.runtime.version" :: "java.vm.version" :: "os.name" :: "os.version"
                      :: "os.arch" :: "java.awt.headless" :: "sun.java2d.uiScale" :: Nil)
             |> List.map(k -> { let v = System.getProperty(k); "${k}=${if (Object.isNull(v)) "" else v}" });
-        let flags = ManagementFactory.getRuntimeMXBean().getInputArguments().toString();
-        String.intercalate(";", props) + ";args=" + flags
+        let flags = ManagementFactory.getRuntimeMXBean().getInputArguments().toArray()
+            |> Array.toList |> List.map(a -> a.toString());
+        String.intercalate(";", props) + ";args=" + String.intercalate(" ", paintFlagsOf(flags))
+
+    /// JVM の起動旗のうち、塗った絵を変えうる物だけ（純粋）。Java2D・AWT・Swing・字の設定（`-Dsun.java2d.*`・`-Dawt.*`・
+    /// `-Djava.awt.*`・`-Dswing.*`・`-Dsun.font.*`）を残し、並びは起動の順のまま。
+    // WhyNot: 旗を全部入れない — ヒープ（-Xmx・-XX:MaxRAMPercentage）・GC の記録（-Xlog）・-agent は絵を変えないのに、
+    // migrate shoot が並べる本数ごとに MaxRAMPercentage を変えるので、入れると --jobs を変えただけで全部のコマが冷える。
+    // WhyNot: 捨てる旗の一覧で決めない — 知らない旗が増えるたびに冷える側へ倒れる。残す側を名指しする方が、
+    // 絵に効く旗の入れ物（java2d・awt・字）は少なく動かない。
+    pub def paintFlagsOf(flags: List[String]): List[String] =
+        let kept = "-Dsun.java2d." :: "-Dawt." :: "-Djava.awt." :: "-Dswing." :: "-Dsun.font." :: Nil;
+        flags |> List.filter(f -> List.exists(p -> String.startsWith(prefix = p, f), kept))
 
     def sha256(bytes: Array[Int8, Static]): String \ IO =
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))

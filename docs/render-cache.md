@@ -47,7 +47,7 @@ println(RenderCache.statsLine(session))   // [render-cache] 塗った 12・写�
 | フォント（`fontTtf` の中身・`fontAtlas`・`extraFonts` の名前・TTF の中身・atlas） | TTF はファイルの中身の SHA-256（session で 1 回）、atlas は全欄 |
 | pass などの描き出し済み画像（`extraImages`。命令が引く名前だけ） | 画素の SHA-256（型・幅・高さつき）。Keep で前のコマを持ち越す絵もこれで拾う |
 | SoftRaster の版 | エンジンの fpkg（flix.toml が指す版）の中身の SHA-256。`packages.lock` の記録（`fpkg = "sha256:…"`）があればそれを、無ければゲームの `lib/` にある fpkg の中身から取る。jar を取ってきて `lib/` の無い作業場（`bin/fge jar`）でも、lib のある作業場と同じ鍵になる。JVM の中で 1 回だけ取り、lock か fpkg が JVM の起動より新しければ鍵を作らない（起動したままのゲームの裏で組み直した時に、古いコードの絵を新しい鍵でキャッシュに入れない） |
-| JVM と OS | `java.vendor`・`java.runtime.version`・`java.vm.version`・`os.name`・`os.version`・`os.arch`・`java.awt.headless`・`sun.java2d.uiScale`・JVM の起動旗（Java2D の文字と縁は JDK・OS・旗で変わりうる） |
+| JVM と OS | `java.vendor`・`java.runtime.version`・`java.vm.version`・`os.name`・`os.version`・`os.arch`・`java.awt.headless`・`sun.java2d.uiScale`・JVM の起動旗のうち絵を変えうる物（`-Dsun.java2d.*`・`-Dawt.*`・`-Djava.awt.*`・`-Dswing.*`・`-Dsun.font.*`。`RenderCache.paintFlagsOf`）。ヒープ・GC の旗（`-Xmx`・`-XX:MaxRAMPercentage`・`-Xlog`）は入れない — `migrate shoot` は並べる本数で MaxRAMPercentage を変えるので、入れると `--jobs` を変えただけで全部のコマが冷える |
 | PNG の書き方 | `Plain`（SoftRaster.render*）と `Filmstrip`（PNG-8 にしうる）は別の鍵 |
 
 入れない物: 書き先のパス（`outPath`）・欠け名の控え（`warnLog`）。どれも画素に効かない。

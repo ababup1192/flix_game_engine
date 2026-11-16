@@ -205,6 +205,7 @@
   `pub def passImageDigest(image: SoftRaster.PassImage): String \ IO`
 - packages.lock の字から、エンジンの版の fpkg の SHA-256（`fpkg = "sha256:…"`）を取り出す（純粋）。無ければ None。
   `pub def lockedEngineDigestOf(version: String, lock: String): Option[String]`
+- `pub def paintFlagsOf(flags: List[String]): List[String]`
 
 ## RenderLint — `engine_tools/src/RenderLint.flix`
 - 要素の描画種別（リンタ内の分類。ゲームの widget 名とは独立）。
