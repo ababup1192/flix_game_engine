@@ -1623,6 +1623,12 @@ new-game: engine-full-fresh
 	cp "$(ENGINE_FULL_FPKG_SEED)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)"; \
 	cp "$(ENGINE_FULL_TOML_SRC)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
 	if [ -d lib/external ]; then mkdir -p "$(GAME)/lib"; cp -R lib/external "$(GAME)/lib/external"; fi; \
+	: LWJGL の natives の jar（flix.toml の jar-dependencies）は coursier を通らず lib/cache にも入らない。手元の render_gl の物を写す; \
+	: （無ければ Flix が 1 本ずつ Maven Central へ取りに行き、続けて作ると 429 で止まる。export-web の copyLocalNativeJars と同じ）; \
+	for j in render_gl/lib/external/lwjgl-*-natives-*.jar; do \
+	  [ -f "$$j" ] || continue; mkdir -p "$(GAME)/lib/external"; \
+	  [ -e "$(GAME)/lib/external/$${j##*/}" ] || cp "$$j" "$(GAME)/lib/external/"; \
+	done; \
 	: lib/cache（Maven の取り物）は共有の置き場への symlink にする。engine の lib/cache が実体（同梱 engine の種）なら写してから置き場へ移す; \
 	: （移し方は bin/mvn-cache-share.sh。種は置き場へ移るので次のゲームからは写さずに済む）; \
 	if [ -d lib/cache ] && [ ! -L lib/cache ]; then mkdir -p "$(GAME)/lib"; cp -R lib/cache "$(GAME)/lib/cache"; fi; \

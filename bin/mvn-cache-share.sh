@@ -84,24 +84,24 @@ share_one() {
 		if [ "$(cd "$cache" 2>/dev/null && pwd -P)" = "$shared" ]; then
 			note "済み      $rel"
 		else
-			note "飛ばした  $rel（別の所を指す symlink: $(readlink "$cache")）"
+			note "飛ばした  ${rel}（別の所を指す symlink: $(readlink "$cache")）"
 		fi
 		return
 	fi
 	if [ -d "$cache" ]; then
 		# WhyNot: 開いているプロセスがある間は動かさない — 取っている最中の .part とロックを置き場の外に置き去りにする。
 		if [ -n "$(lsof +D "$cache" 2>/dev/null | sed 1d)" ]; then
-			note "飛ばした  $rel（使用中。flix を止めてからもう一度）"
+			note "飛ばした  ${rel}（使用中。flix を止めてからもう一度）"
 			return
 		fi
 		if [ -e "$cache.unmerged" ]; then
-			note "飛ばした  $rel（前の $rel.unmerged が残っている。中を見て片付けてからもう一度）"
+			note "飛ばした  ${rel}（前の $rel.unmerged が残っている。中を見て片付けてからもう一度）"
 			return
 		fi
 		# WhyNot: 先に張れるかを試す — 中身を移した後で張れないと分かると、lib/cache が無いまま取り直しになる。
 		probe="$cache.link-$$"
 		if ! ln -s "$shared" "$probe" 2>/dev/null; then
-			note "飛ばした  $rel（symlink を張れない）"
+			note "飛ばした  ${rel}（symlink を張れない）"
 			return
 		fi
 		conflicts=$(merge_into_shared "$cache")
@@ -111,7 +111,7 @@ share_one() {
 			mv "$probe" "$cache" && note "移した    $rel"
 		else
 			mv "$cache" "$cache.unmerged"
-			mv "$probe" "$cache" && note "移した    $rel（置き場と中身の違う ${conflicts} 件を $rel.unmerged に残した）"
+			mv "$probe" "$cache" && note "移した    ${rel}（置き場と中身の違う ${conflicts} 件を $rel.unmerged に残した）"
 		fi
 		return
 	fi
