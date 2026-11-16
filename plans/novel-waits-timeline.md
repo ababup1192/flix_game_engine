@@ -85,12 +85,14 @@ enum Key {
     Read(Int32)    // 台詞を読み終えるのを待つ（waitFor）
     Choose(Int32)  // 選択肢を選ぶのを待つ（waitFor）
     Gate(Int32)    // 払い・タップで選ぶのを待つ（waitFor）
+    FadeOut(Int32) // 素材を待つ前の暗転（束の頭）
     Assets(Int32)  // 素材が届くのを待つ（waitFor）
+    FadeIn(Int32)  // 暗転から戻し始める印（長さ 0）
     Done           // シナリオの終わり（<<stop>>・閉じた）
 }
 ```
 
-スパイクに入れたのは Apply・Hold・Typed・Read・Assets。Lock・Choose・Gate・Done は本実装で足す。
+スパイクに入れたのは Apply・Hold・Typed・Read・FadeOut・Assets・FadeIn。Lock・Choose・Gate・Done は本実装で足す。
 
 ### 3.3 待ちの出どころ → Timeline の対応表
 
@@ -99,11 +101,11 @@ enum Key {
 | 1 | 実行器の `<<wait 秒>>` | LineWait の後ろなら `atStartOf(LineWait の Hold, Hold(i), 秒)`（歩きの頭から数えて重なる。根拠は 1.2 の記録の 5.433 秒）。それ以外は `append(Hold(i), 秒)`。実行器はここで止まり、後ろは Tick した時に足す | 時間で（押しても明けない） | — |
 | 2 | `Out.Wait(秒)` | `append(Apply(i), 0)` + `append(Hold(i), 秒)`。LineWait の後ろで流した命令が出したら `atStartOf(LineWait の Hold, …)`（重なって、明けるのは遅い方）で、後ろは流さない | 時間で（押しても明けない） | — |
 | 3 | `Out.WaitOrTap(秒)` | #2 と同じ置き方。`Item` は予定の秒と押して縮めた秒を別々に持つ | 押すと縮める（3.6） | 縮めた後ろの音は外すので鳴らない |
-| 4 | `Out.LineWait(秒)` | #3 と同じ + 後ろの時間を取らない命令を `atStartOf(Hold(i), Apply(j), 0)` で頭へ寄せる。時間を取る命令・`<<wait>>`・選択肢・押しても明けない待ち・素材の待ちが来たら寄せるのをやめる。続く LineWait は前の LineWait の後ろに並ぶ | #3 と同じ | 寄せた命令の音は LineWait の頭で鳴る |
+| 4 | `Out.LineWait(秒)` | #3 と同じ + 後ろの時間を取らない命令を `atStartOf(Hold(i), Apply(j), 0)` で頭へ寄せる。時間を取る命令・`<<wait>>`・選択肢・押しても明けない待ちが来たら寄せるのをやめる。続く LineWait は前の LineWait の後ろに並ぶ。寄せた命令の素材が届いていなくても寄せたまま（素材の待ちは束の頭に置く。#8）。歩く bg の後ろの時間を取る命令（Timed）は歩きの後ろへ回る（今のテンプレートの `flowInstant` に合わせた決め。2 本の比べには出ない） | #3 と同じ | 寄せた命令の音は LineWait の頭で鳴る |
 | 5 | 背景の切り替えの歩き | #4 の `Hold(i)` に `withSoundAt(名前, 秒)`（`GameSwitch#sounds` をそのまま） | 縮めた・スキップで飛んだ所で `Stage.withGameSwitchFinished` | `Stage.gameSwitchSoundsBetween` は要らなくなる |
 | 6 | 台詞 | `Apply(i)` は続いた LineWait の最初の頭（無ければ `append`）= 頁に積む時刻。その後に `waitFor(Typed(i))`（前の待ちが全部済んでから字を出し始める）と `waitFor(Read(i))` | Typed・Read は 3.4 | — |
 | 7 | 押しても送らない秒 | 鳴らした命令の所に `Lock(i)` の Hold（押しても明けない待ちではなく、押した手を Read に届けないだけ） | 時間で | — |
-| 8 | 素材を待つ間 | 束を足す時に、まだ届いていない素材を使う命令の前にだけ `append(Fade(i))` + `waitFor(Assets(i))` + `append(Fade(i+1))` を置く（3.5） | 3.4 | — |
+| 8 | 素材を待つ間 | 束を足す時に、束の中（頭へ寄せる命令も含む）で届いていない素材の名前を全部集め、1 つでもあれば束の頭に `append(FadeOut(i), holdFadeSeconds)` + `waitFor(Assets(i))` + `append(FadeIn(i), 0)` を置き、その後に束をいつもどおり並べる（3.5）。FadeIn は戻し始めの印で、戻す絵は Stage の時計で動く。束の残りは戻し始めと同じ時刻から並ぶ（古い版の `holdIfMissing` の「bg と同じ時刻に暗転して待つ」に近い） | 3.4 | — |
 | 9 | 選択肢・ゲート | `Apply(i)`（出す）+ `waitFor(Choose(i))` か `waitFor(Gate(i))` | 3.4 | — |
 | 10 | オート・スキップ・ロード | 3.4 の表（スキップとロードは `skipToNextWait` と `resumeOn`） | — | 飛ばした区間は鳴らさない |
 | 11 | 画面・確認のウィンドウ | 今のまま（物語の時計が止まれば再生位置も止まる） | — | — |
@@ -131,9 +133,9 @@ enum Key {
 1. **後ろへ足す**（Tick した束を `append` する）。
 2. **押すと明ける Hold を縮める**（今の時刻で終わる長さか 0 秒に。今より前の物の位置は動かない）。
 
-これ以外の変え方はしない。素材の待ちは「束を足す時に、まだ届いていない素材を使う命令があれば、その命令の前に waitFor(Assets) を置く」と、足す時に一度だけ決める（足した後は消さない。着いた時に届いていれば、そのフレームで `resumeOn`）。
+これ以外の変え方はしない。素材の待ちは「束を足す時に、束の中で届いていない素材の名前を集め、1 つでもあれば束の頭に FadeOut + waitFor(Assets) + FadeIn を置く」と、足す時に一度だけ決める（足した後は消さない。暗転の途中で届いても、待ちに着いたフレームで `resumeOn` するだけ）。束の頭に置くので、待ちより前の時刻に後ろの物が来ず（`PlacedBeforeWait` にならない）、寄せる命令も歩きの頭のまま。
 
-レビューの案（素材の要る命令の後ろには、届いていても必ず waitFor(Assets) を置く）を採らなかった理由: LineWait の頭へ寄せた命令の後ろに waitFor を置くと、waitFor は表の終わり（歩きの終わり）にしか置けず、その後ろの寄せた命令が waitFor より前の時刻になって `build` が `PlacedBeforeWait` で止める。(1) の並びの `<<audio ambience>>` も素材の要る命令なので、寄せられなくなると古い版（36.5 秒に鳴る）と合わない。
+素材の要る命令ごとに後ろへ waitFor を置く形を採らない理由: 頭へ寄せた命令の後ろの waitFor は表の終わり（歩きの終わり）にしか置けず、続く寄せた命令が waitFor より前の時刻になって `build` が止める。スパイクの `testAMissingAssetOfAFlowedCommandHoldsTheWholeBatchFromFrameZero` が、歩く LineWait の頭へ寄せた命令の素材が届いていない並びで、0 フレーム目から暗転し、届いた 40 フレーム目から歩きと寄せた音が流れる事を見る。
 
 engine のテスト `testShorteningTheRunningClipAndAppendingKeepThePlayhead` が「縮めても後ろへ足しても再生位置が続く」を見る。
 
@@ -170,7 +172,7 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 ## 5. 時刻の一致の確かめ方（レビュー M6・M7）
 
-- `bin/fge migrate diff` の events は順だけを見て、待ちを比べない。音の時刻は ±1 フレームで迷った差（`--strict` で止める）。**決め: 小さな口 `--times` を migrate diff に足す**。line・choice・wait の `t` を、前の出来事からの間（フレームの数）で比べ、±1 フレームを超えたら迷った差にする（`--strict` で止める）。間で比べるのは、古い版が待ちの明けるたびに 1 フレーム遅れる事がある（walk_tour の 23.433 → 24.267・Closet の 191.067 → 191.6 → 192.133 は +1 フレームずつ、full_story の 181.567 → 182.067 → 182.567 はぴったり）ためで、足し上げると続く `<<wait>>`（haioku.yarn 194〜203 行の Escape など）でずれが積み上がる。古い版の 1 フレームは浮動小数の足し算の丸めで出たり出なかったりするので、真似ない。
+- `bin/fge migrate diff` の events は順だけを見て、待ちを比べない。音の時刻は ±1 フレームで迷った差（`--strict` で止める）。**決め: 小さな口 `--times` を migrate diff に足す（段 0 で足し済み）**。line・choice・wait の `t` を、前の出来事からの間（フレームの数）で比べ、±1 フレームを超えたら迷った差にする（`--strict` で止める）。間で比べるのは、古い版が待ちの明けるたびに 1 フレーム遅れる事がある（walk_tour の 23.433 → 24.267・Closet の 191.067 → 191.6 → 192.133 は +1 フレームずつ、full_story の 181.567 → 182.067 → 182.567 はぴったり）ためで、足し上げると続く `<<wait>>`（haioku.yarn 194〜203 行の Escape など）でずれが積み上がる。古い版の 1 フレームは浮動小数の足し算の丸めで出たり出なかったりするので、真似ない。
 - 段 3 の門: 廃屋配信の `make migrate-diff MIGRATE_DIFF_FLAGS="--strict --times"` で止める差が無い（残る差は `migrate-accept.json` に理由つきで）。
 - テープの wait の出来事は `<<wait>>` の Hold の頭（`startedOnWall` で引く）の時刻で書く（古い版も bg と同じ 36.5）。
 - `Item` は予定の秒と縮めた秒を別々に持つ（`commandedOf`・テープの frames の mid の `seconds` は予定の秒のまま。docs/migrate-diff.md の約束）。
@@ -198,14 +200,14 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 ## 8. スパイクの結果
 
-`.layers/engine_world` で全量のテストを流した: **Passed 1544・Failed 0**（足したテスト 31 本を含む）。
+`.layers/engine_world` で全量のテストを流した: **Passed 1547・Failed 0**（足したテスト 34 本を含む）。
 
-- `engine_world/test/TestTimelinePlaybackLog.flix`（11 本・engine に残す）: 操作なしで歩き → 着いた音 → 待ちで止まる・seek で歩きを飛ばすと後ろの足音は鳴らず着いた音は 1 回・seek は待ちを越えない・待ちに着く前の早押しは数えない・飛んだ後の resume は待ちから続く・待ちに着いてからの秒・`skipToNextWait` は飛ばした音を鳴らさない・古い `resume` の列と同じ再生位置・`startedOnWall` は頭で飛ばした区間の物も返す・resume をまたいでもクリップの頭は 1 回ずつ・縮めても後ろへ足しても再生位置が続く。
-- `engine_world/test/TestTimelineNovelSpike.flix`（20 本・スパイク。本実装でテンプレートの `NovelBeat` とそのテストへ移し、engine からは消す）。フレームの番号（30 fps）で比べる:
+- `engine_world/test/TestTimelinePlaybackLog.flix`（12 本・engine に残す）: 操作なしで歩き → 着いた音 → 待ちで止まる・seek で歩きを飛ばすと後ろの足音は鳴らず着いた音は 1 回・seek は待ちを越えない・待ちに着く前の早押しは数えない・飛んだ後の resume は待ちから続く・待ちに着いてからの秒・`skipToNextWait` は飛ばした音を鳴らさない・古い `resume` の列で待ちから続く・列の中の待ちに着く前の時刻は数えない（古い形は「着いた瞬間に解いた」と数えていた。`resume` は着く前の時刻を記録しないので、`resume` で作った列では同じ）・`startedOnWall` は頭で飛ばした区間の物も返す・resume をまたいでもクリップの頭は 1 回ずつ・縮めても後ろへ足しても再生位置が続く。
+- `engine_world/test/TestTimelineNovelSpike.flix`（22 本・スパイク。本実装でテンプレートの `NovelBeat` とそのテストへ移し、engine からは消す）。フレームの番号（30 fps）で比べる:
   - (1) の並び（束 1: 歩く bg 5.4 秒・音 door / step → `<<audio>>` ×2 → `<<wait 0.8>>`、束 2: `<<set>>` → 台詞）: wait の頭 0・`<<set>>` 162（Tick した時。0 ではない）・台詞を積む 162・字を出し始める 162。wait が 6 秒なら字は 180。音は door / ambience / bgm が 0・step が 60。15 フレームで押すと歩きが終わり wait は残って `<<set>>` と字は 24・step は鳴らない。30 で押すと字は 30。待ちの判断は 0.5 秒 Blocking・1 秒 Tappable。歩き → 台詞は台詞を 0 で積み、字は 162。
   - 続くコメント（c1・ping・c2・c3 → 台詞）: ping 0・台詞を積む 0・字 135。15 で 1 回押すとコメントの全部が終わり字は 15。WaitOrTap なら ping は 45。歩きの後ろで流した押しても明けない待ち（6 秒）は、歩きを押して終えても残る（字は 180）。
   - 字・読み終え・次のビート: 30 で押すと字を出し切り、45 で押すと次のビート（`<<set>>` と台詞が 45）。押すまで次のビートは始まらない。オートは字を出し切った 60 + 45 = 105 で次へ。スキップは 0 で全部当て、歩きの音を鳴らさない。
-  - 素材の待ち・ロード: 素材が 40 で届くと命令と字は 40。ロード（Silent）は時計を進めずに Read まで着き `<<set>>` も当てる・素材が無ければ Assets で止まって後ろを当てない・あれば通る。
+  - 素材の待ち・ロード: 束の頭で 0 から暗転し 15 で待ちに着き、素材が 40 で届くと戻し始めと命令と字は 40。暗転の途中（5）で届けば 15 で通る。歩く LineWait の頭へ寄せた命令の素材が届いていなければ、束ごと 0 から暗転して待ち、40 から歩き（door）と寄せた音が流れ、足音は 100、字は 202。ロード（Silent）は時計を進めずに Read まで着き `<<set>>` も当てる・素材が無ければ Assets で止まって後ろを当てない・あれば通る。
 - 今の World との比べは流していない（1.1 は読んだだけ）。本実装の段 1 で App の道のテストを足して確かめる。
 
 ## 9. 本実装の段取りと見積もり（実時間）
@@ -214,16 +216,16 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 | 段 | 中身 | 門 | 見積もり |
 |---|---|---|---|
-| 0 | engine の口を正式にする（スパイクで足し済み）: `agents-pack/AGENTS.core.md` の早見表に 1 行・`agents-pack/agent-eval/engine.json` にお題 1 本・スパイクのテストを engine から外す | engine_world 全量・`make agent-eval ONLY=<お題>` | 1 時間 |
+| 0 | engine の口を正式にする: `PlaybackLog` 一式・`startedOnWall`・`agents-pack/AGENTS.core.md` の早見表に 1 行・`agents-pack/agent-eval/engine.json` にお題 1 本・`docs/modules/time.md` の行。`bin/fge migrate diff --times`（5 章。go/internal/migrate・docs/migrate-diff.md・go のテスト）。**済み**（この枝）。スパイクのテストは段 2 でテンプレートへ移す時に engine から外す | engine_world 全量・`go test ./internal/migrate/`・`make agent-eval ONLY=timeline-skip-and-signals` | 2 時間 |
 | 1 | `TestKit` を `App.advanceFrame` / `App.trace` の道へ（挙動は変えない）。(1) を App の道で見るテストを足す。TestHold は実時間の dt と `World.paceOf` を通るようになるので一度赤くなりうる（直すのもこの段） | テンプレートのテストが全部緑（(1) の新しいテストは別の担当の直しの後に緑） | 3 時間 |
 | 2 | `NovelBeat` と `World.Read#beat` を足し、今の道と並べて走らせる。並走のやり方: 実行器は今の道だけが進め、今の道が `absorbOne` で当てた出来事の束をそのまま beat の後ろへ足す（beat は Tick しない）。beat の `waitingOf` と今の `isWaiting` / `isPaused`、beat の `startedOnWall` と今の道が当てたフレームを比べ、食い違いをテストと flow で一覧にする | テスト緑・flow 6 本の指紋が同じ・食い違いが 3.6 と 5 章の決め（台詞を積む時刻・押した時）の所だけ | 3 時間 |
-| 3 | 読み進める道の切り替え: `absorbFrom` / `pauseOrGo` / `flowInstant` / `readOn` の `<<wait>>` と `pause` を beat に。実行器の Tick は beat が決める。reader・ready・`advance`・`autoOrSkip`・`markHere`・`gateOf`・`waitMark`・`commandedOf` を `waitingOf` に。3.6 の新しい動きをテンプレートのテストで 1 本固定。`Pause` の型はまだ消さない（スキップと Silent が使う） | テスト緑（(1) も緑）・flow 6 本・廃屋配信の `migrate-diff --strict --times` | 6 時間 |
-| 4 | スキップ・ロード・戻る・始まりの場面（Silent: `restore` / `openAt` / `reopenNode` / `buildEntriesWithin` / `Shots.settleWait`）を beat の Silent の繰り返しに。ここで `Pause` を消す | 描き出しの基準（SHA256SUMS）が同じ・TestTape・TestMigrate・TestSaves 緑 | 3 時間 |
+| 3 | 読み進める道の切り替え: `absorbFrom` / `pauseOrGo` / `flowInstant` / `readOn` の `<<wait>>` と `pause` を beat に。スキップ（毎フレーム `skipToNextWait`）も一緒に移す。実行器の Tick は beat が決める（`NovelBeat` に「Tick の条件は表の終わりと実行器が wait で止まっているの両方」の WhyNot を残す）。reader・ready・`advance`・`autoOrSkip`・`markHere`・`gateOf`・`waitMark`・`commandedOf` を `waitingOf` に。3.6 の新しい動きをテンプレートのテストで 1 本固定。`Pause` の型はまだ消さない（Silent が使う） | テスト緑（(1) も緑）・flow 6 本・廃屋配信の `migrate-diff --strict --times` | 6 時間 |
+| 4 | Silent（ロード・戻る・始まりの場面: `restore` / `openAt` / `reopenNode` / `buildEntriesWithin` / `Shots.settleWait`）を beat の Silent の繰り返しに。ここで `Pause` を消す。テストに「ロードで 2 ビート以上を当て直し、目当てが 2 本目の Read」を 1 本足す | 描き出しの基準（SHA256SUMS）が同じ・TestTape・TestMigrate・TestSaves 緑 | 3 時間 |
 | 5 | 素材の待ち（`Hold`）・Typed・オート・押しても送らない秒（Lock）を beat に。`World.paceOf` は `waitingOf` を読む | TestHold・TestCast・TestRules 緑・ブラウザ版の素材の待ちの flow | 3 時間 |
 | 6 | テープの書き手を beat から読む: E2e（reader / ready）・FlowVideo・テープの events の wait（Hold の頭）・frames の mid の step / seconds（予定の秒）・`talkCursorOf` | TestTape・TestFlowVideo 緑・廃屋配信の `migrate-diff --strict --times` | 2 時間 |
-| 7 | `bin/fge migrate diff --times`（5 章）を go に足す。レビュー（1 回目で全部出させ、まとめて直して 2 回目）・廃屋配信と血鱗の追随 | go のテスト・レビュー 80 点以上で必須が直っている・2 本の比べ | 4 時間 |
+| 7 | レビュー（1 回目で全部出させ、まとめて直して 2 回目）・廃屋配信と血鱗の追随 | レビュー 80 点以上で必須が直っている・2 本の比べ | 3 時間 |
 
-合わせて約 25 時間（11.12 の段 11 の直し 1 つが 1〜2 時間だった実績から。段 3 は道の切り替えと読む所 8 つで重いので 6 時間）。
+合わせて約 25 時間（段 0 は済み・残り約 23 時間）（11.12 の段 11 の直し 1 つが 1〜2 時間だった実績から。段 3 は道の切り替えと読む所 8 つで重いので 6 時間）。
 
 ### 9.1 廃屋配信の比べで「前と同じ」を確かめる
 
@@ -244,8 +246,8 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 3. 実行器は先に引き出さず、表の終わりで Tick して後ろへ足す（3.1）。
 4. 押した時は歩きだけを終え、流した命令の押しても明けない待ちは残す（3.6）。
 5. 台詞を積む時刻と字を出し始める時刻を分け、古い版に合わせる（5 章）。
-6. 時刻の比べは間で ±1 フレーム、`migrate diff --times` を足す（5 章）。
+6. 時刻の比べは間で ±1 フレーム、`migrate diff --times` を足した（5 章・段 0）。
+7. 素材の待ちは束の頭にまとめて置く（3.3 の #8・3.5）。
 
 相談したい事:
-1. 3.5 で素材の待ちを「足す時にまだ届いていない命令の前にだけ置く」にした（レビューの案と違う。理由は 3.5）。これでよいか。
-2. スパイクのテスト `TestTimelineNovelSpike.flix` は engine に置いたまま枝にある。本実装の段 0 で外し、段 2 でテンプレートへ移す前提。
+1. スパイクのテスト `TestTimelineNovelSpike.flix` は engine に置いたまま枝にある。本実装の段 0 で外し、段 2 でテンプレートへ移す前提。

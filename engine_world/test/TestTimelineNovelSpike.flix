@@ -23,19 +23,22 @@ mod TestTimelineNovelSpike {
         case LineWait(String, Float64, Option[Float64], List[(Float64, String)])
         /// 実行器の <<wait 秒>>（実行器はここで止まる）
         case RunnerWait(Float64)
-        /// 素材が届くのを待つ（足した時に届いていない素材がある命令の前にだけ置く）
+        /// 素材が届くのを待つ（束を足す時に、束の中で届いていない素材があれば束の頭に置く。台本からは来ない）
         case AwaitAssets(List[String])
         /// 台詞: 字・字を出し切る秒
         case Line(String, Float64)
     }
 
-    /// クリップの名前: Apply = 出来事を当てる時刻・Hold = 出来事が出した待ち・Typed = 字を出し切る・Read = 読み終える・Assets = 素材が届く。
+    /// クリップの名前: Apply = 出来事を当てる時刻・Hold = 出来事が出した待ち・Typed = 字を出し切る・Read = 読み終える・
+    /// FadeOut = 素材を待つ前の暗転・Assets = 素材が届く・FadeIn = 暗転から戻し始める（戻す絵は Stage の時計で動く）。
     enum Key with Eq, Order, ToString {
         case Apply(Int32)
         case Hold(Int32)
         case Typed(Int32)
         case Read(Int32)
+        case FadeOut(Int32)
         case Assets(Int32)
+        case FadeIn(Int32)
     }
 
     // ── 並べ方 ──
@@ -75,7 +78,7 @@ mod TestTimelineNovelSpike {
             case Item.WaitOrTap(_, secs, cut) => waitOf(i, lengthOf(secs, cut), acc)
             case Item.LineWait(_, secs, cut, sounds) => lineWaitOf(i, lengthOf(secs, cut), sounds, acc)
             case Item.RunnerWait(secs)       => runnerWaitOf(i, secs, acc)
-            case Item.AwaitAssets(_)         => place(gated(acc), Timeline.waitFor(Key.Assets(i)))
+            case Item.AwaitAssets(_)         => assetWaitOf(i, acc)
             case Item.Line(_, _)             => lineOf(i, acc)
         }
 
@@ -100,6 +103,14 @@ mod TestTimelineNovelSpike {
         case Some(flow) => gated(place(acc, Timeline.atStartOf(flow, Key.Hold(i), Duration.Seconds(secs))))
         case None       => gated(place(acc, hold(i, secs)))
     }
+
+    def fadeSeconds(): Float64 = 0.5
+
+    /// 素材の待ち: 暗転し切ってから待ち、届いたら戻し始める。束の残りは戻し始めと同じ時刻から並ぶ
+    /// （古い版の holdIfMissing と同じく、暗転の下で歩きと寄せた命令が始まる）。
+    def assetWaitOf(i: Int32, acc: Acc): Acc =
+        let faded = place(gated(acc), Timeline.append(Key.FadeOut(i), Duration.Seconds(fadeSeconds())));
+        place(place(faded, Timeline.waitFor(Key.Assets(i))), Timeline.append(Key.FadeIn(i), Duration.Seconds(0.0)))
 
     /// 台詞: 頁に積む時刻は続いた LineWait の最初の頭（古い版は台詞をすぐ積み、字だけを後へずらした）、
     /// 字を出し始めるのは前の待ちが全部済んでから（Typed）、その後に読み終えるのを待つ（Read）。
@@ -166,7 +177,9 @@ mod TestTimelineNovelSpike {
         if (Timeline.isWaitingOn(wall, beat#log, tl)) waitKindOf(currentWait(beat, head))
         else {
             let active = beat#items |> List.zipWithIndex |> List.filter(pair -> isActive(Timeline.stateOf(Key.Hold(fst(pair)), head, tl))) |> List.map(snd);
-            if (List.isEmpty(active)) Waiting.Free
+            let fading = beat#items |> List.zipWithIndex |> List.exists(pair -> isActive(Timeline.stateOf(Key.FadeOut(fst(pair)), head, tl)));
+            if (fading) Waiting.Blocking
+            else if (List.isEmpty(active)) Waiting.Free
             else if (List.forAll(isTappable, active)) Waiting.Tappable
             else Waiting.Blocking
         }
@@ -252,37 +265,52 @@ mod TestTimelineNovelSpike {
 
     /// 1 手だけ進める: 止まっている待ちを解いてよければ解く・スキップなら次の待ちへ飛ぶ・表の終わりに着いて実行器が
     /// <<wait>> で止まっていれば Tick して続きを後ろへ足す。誰が resumeOn するかは設計書の 3.4 の表。
-    def advanceOnce(mode: Mode, present: Set[String], wall: Float64, beat: Beat): Beat =
+    def advanceOnce(mode: Mode, missing: Set[String], wall: Float64, beat: Beat): Beat =
         let tl = beatOf(beat#items);
         let head = Timeline.playheadOn(wall, beat#log, tl);
-        if (Timeline.isWaitingOn(wall, beat#log, tl)) resolveWait(mode, present, wall, beat, tl, currentWait(beat, head))
+        if (Timeline.isWaitingOn(wall, beat#log, tl)) resolveWait(mode, missing, wall, beat, tl, currentWait(beat, head))
         else if (mode == Mode.Skip and Timeline.skipToNextWait(wall, beat#log, tl) != beat#log) { log = Timeline.skipToNextWait(wall, beat#log, tl) | beat }
-        else if (head#t >= clipsEndOf(tl) and isRunnerStopped(beat#items)) tick(beat)
+        else if (head#t >= clipsEndOf(tl) and isRunnerStopped(beat#items)) tick(missing, beat)
         else beat
 
-    def resolveWait(mode: Mode, present: Set[String], wall: Float64, beat: Beat, tl: Timeline.Timeline[Key], key: Option[Key]): Beat =
+    def resolveWait(mode: Mode, missing: Set[String], wall: Float64, beat: Beat, tl: Timeline.Timeline[Key], key: Option[Key]): Beat =
         let waited = Timeline.waitedOn(wall, beat#log, tl) |> Option.getWithDefault(0.0);
         let items = itemsById(beat#items);
         let resume = match key {
             case Some(Key.Typed(i))  => beat#reveal or mode == Mode.Skip or waited >= typeSecondsOf(i, items)
             case Some(Key.Read(_))   => (mode == Mode.Auto and waited >= autoWait()) or (mode == Mode.Skip and waited >= skipInterval())
-            case Some(Key.Assets(i)) => List.forAll(name -> Set.memberOf(name, present), namesOf(i, items))
+            case Some(Key.Assets(i)) => not List.exists(name -> Set.memberOf(name, missing), namesOf(i, items))
             case _                   => false
         };
         if (resume) { log = Timeline.resumeOn(wall, beat#log, tl) | beat } else beat
 
     /// 実行器を Tick した: 次の <<wait>> か台詞までの出来事を後ろへ足す。
-    def tick(beat: Beat): Beat = match beat#pending {
-        case next :: rest => { items = beat#items ::: next, pending = rest | beat }
+    // WhyNot: 表の終わりに着いただけで Tick しない — 実行器が <<wait>> で止まっていない（台詞・選択肢で止まった）時に
+    //   Tick すると、Read を解く前に次の出来事を引き出してしまう。条件は「表の終わり」と「実行器が wait で止まっている」の両方。
+    def tick(missing: Set[String], beat: Beat): Beat = match beat#pending {
+        case next :: rest => { items = beat#items ::: withAssetWait(missing, next), pending = rest | beat }
         case Nil          => beat
+    }
+
+    /// 束を足す時: 束の中（頭へ寄せる命令も含む）で届いていない素材の名前を集め、1 つでもあれば束の頭に素材の待ちを置く。
+    // WhyNot: 素材の要る命令ごとに後ろへ waitFor を置かない — 頭へ寄せた命令の後ろの waitFor は表の終わりにしか置けず、
+    //   続く寄せた命令が waitFor より前の時刻になって build が PlacedBeforeWait で止める。
+    def withAssetWait(missing: Set[String], batch: List[Item]): List[Item] =
+        let names = batch |> List.flatMap(needsOf) |> List.filter(name -> Set.memberOf(name, missing)) |> List.distinct;
+        if (List.isEmpty(names)) batch else Item.AwaitAssets(names) :: batch
+
+    /// 出来事が使う素材（スパイクでは鳴らす音。本実装では Commands.needsOf）。
+    def needsOf(item: Item): List[String] = match item {
+        case Item.Instant(_, Some(sound)) => sound :: Nil
+        case _                            => Nil
     }
 
     def sameBeat(x: Beat, y: Beat): Bool = x#items == y#items and x#log == y#log and x#pending == y#pending and x#reveal == y#reveal
 
     /// 解ける待ち・飛べる所・Tick が無くなるまで進める（同じフレームの中で続けて起きる）。
-    def settle(fuel: Int32, mode: Mode, present: Set[String], wall: Float64, beat: Beat): Beat =
-        let next = advanceOnce(mode, present, wall, beat);
-        if (fuel <= 0 or sameBeat(next, beat)) beat else settle(fuel - 1, mode, present, wall, next)
+    def settle(fuel: Int32, mode: Mode, missing: Set[String], wall: Float64, beat: Beat): Beat =
+        let next = advanceOnce(mode, missing, wall, beat);
+        if (fuel <= 0 or sameBeat(next, beat)) beat else settle(fuel - 1, mode, missing, wall, next)
 
     /// ビートを読み終えたか（最後の台詞の Read を解いた）。
     def isFinished(beat: Beat, wall: Float64, tl: Timeline.Timeline[Key]): Bool =
@@ -294,6 +322,9 @@ mod TestTimelineNovelSpike {
         case Key.Apply(i) => Map.get(i, items) |> Option.map(applyLabel)
         case Key.Typed(i) => Map.get(i, items) |> Option.map(item -> "text:${lineText(item)}")
         case Key.Hold(i)  => Map.get(i, items) |> Option.filter(item -> not isTappable(item)) |> Option.map(_ -> "wait")
+        case Key.FadeOut(_) => Some("fadeOut")
+        case Key.Assets(_)  => Some("assets")
+        case Key.FadeIn(_)  => Some("fadeIn")
         case _            => None
     }
 
@@ -312,13 +343,17 @@ mod TestTimelineNovelSpike {
         case _                  => ""
     }
 
-    def freshBeat(batches: List[List[Item]]): Beat = match batches {
-        case first :: rest => { items = first, pending = rest, log = Timeline.playbackLog(), reveal = false }
+    def freshBeat(missing: Set[String], batches: List[List[Item]]): Beat = match batches {
+        case first :: rest => { items = withAssetWait(missing, first), pending = rest, log = Timeline.playbackLog(), reveal = false }
         case Nil           => { items = Nil, pending = Nil, log = Timeline.playbackLog(), reveal = false }
     }
 
     /// 流した結果: (フレームの番号, 起きた事) の古い順。
-    type alias Script = { mode = Mode, taps = Set[Int32], arrivals = Map[String, Int32], last = Int32 }
+    /// deferred = 後から届く素材・arrivals = 届くフレーム（無ければ届かない）。
+    type alias Script = { mode = Mode, taps = Set[Int32], deferred = Set[String], arrivals = Map[String, Int32], last = Int32 }
+
+    def missingAt(script: Script, i: Int32): Set[String] =
+        script#deferred |> Set.filter(name -> Map.get(name, script#arrivals) |> Option.forAll(at -> at > i))
 
     /// ビートの列（ビート = 実行器が止まるごとの出来事の列の列）を、フレームごとに流す。
     def playScript(script: Script, beats: List[List[List[Item]]]): List[(Int32, String)] =
@@ -330,14 +365,14 @@ mod TestTimelineNovelSpike {
                 let wall = Int32.toFloat64(i - origin) / 30.0;
                 match rest {
                     case batches :: more if isFinished(next, wall, tl) =>
-                        let (opened, first) = frameOf(script, i, i, freshBeat(batches));
+                        let (opened, first) = frameOf(script, i, i, freshBeat(missingAt(script, i), batches));
                         go(i + 1, i, opened, more, heard ::: out ::: first)
                     case _ => go(i + 1, origin, next, rest, heard ::: out)
                 }
             }
         };
         match beats {
-            case first :: rest => go(0, 0, freshBeat(first), rest, Nil)
+            case first :: rest => go(0, 0, freshBeat(missingAt(script, 0), first), rest, Nil)
             case Nil           => Nil
         }
 
@@ -347,9 +382,9 @@ mod TestTimelineNovelSpike {
         let prev = Int32.toFloat64(i - 1 - origin) / 30.0;
         let playback = if (i == origin) Playback.Enter else Playback.Play;
         let lower = if (i == origin) wall else prev;
-        let present = script#arrivals |> Map.filter(at -> at <= i) |> Map.keysOf;
+        let missing = missingAt(script, i);
         let tapped = if (Set.memberOf(i, script#taps)) tap(beat, wall, beatOf(beat#items)) else beat;
-        let next = settle(32, script#mode, present, wall, tapped);
+        let next = settle(32, script#mode, missing, wall, tapped);
         let tl = beatOf(next#items);
         let items = itemsById(next#items);
         let started = Timeline.startedOnWall(playback, lower, wall, next#log, tl) |> List.filterMap(key -> labelOf(items, key));
@@ -358,9 +393,9 @@ mod TestTimelineNovelSpike {
 
     /// ロード・戻る（Silent）: 時計を進めずに、次の Read まで当て直す。素材の待ちで届いていなければそこで止まる
     /// （止まった所から遊ぶ側が暗転して待つ）。返すのは当てた事と、止まった待ち。
-    def loadTo(present: Set[String], batches: List[List[Item]]): (List[String], Waiting) =
-        let beat = settle(64, Mode.Skip, present, 0.0, freshBeat(batches) |> (b -> { reveal = true | b }));
-        let settled = settle(64, Mode.Manual, present, 0.0, beat);
+    def loadTo(missing: Set[String], batches: List[List[Item]]): (List[String], Waiting) =
+        let beat = settle(64, Mode.Skip, missing, 0.0, freshBeat(missing, batches) |> (b -> { reveal = true | b }));
+        let settled = settle(64, Mode.Manual, missing, 0.0, beat);
         let tl = beatOf(settled#items);
         let items = itemsById(settled#items);
         let started = Timeline.startedOnWall(Playback.Enter, 0.0, 0.0, settled#log, tl) |> List.filterMap(key -> labelOf(items, key));
@@ -369,7 +404,7 @@ mod TestTimelineNovelSpike {
     def frameOfLabel(label: String, heard: List[(Int32, String)]): Int32 =
         heard |> List.find(pair -> snd(pair) == label) |> Option.map(fst) |> Option.getWithDefault(-1)
 
-    def manual(taps: List[Int32]): Script = { mode = Mode.Manual, taps = List.toSet(taps), arrivals = Map.empty(), last = 400 }
+    def manual(taps: List[Int32]): Script = { mode = Mode.Manual, taps = List.toSet(taps), deferred = Set.empty(), arrivals = Map.empty(), last = 400 }
 
     // ── (1) の並び: 歩く bg 5.4 秒 → <<audio>> ×2 → <<wait 0.8>> | <<set>> → 台詞 ──
 
@@ -406,7 +441,7 @@ mod TestTimelineNovelSpike {
 
     @Test
     def testTheWaitJudgementFollowsTheWalkAndTheRunnerWait(): Unit \ Assert =
-        let beat = freshBeat(walkThenWait());
+        let beat = freshBeat(Set.empty(), walkThenWait());
         let tl = beatOf(beat#items);
         Assert.assertEq(expected = (Waiting.Blocking, Waiting.Tappable), (waitingOf(beat, 0.5, tl), waitingOf(beat, 1.0, tl)))
 
@@ -471,12 +506,29 @@ mod TestTimelineNovelSpike {
 
     // ── 素材の待ち・ロード ──
 
-    def withAssets(): List[List[Item]] = List#{ List#{ Item.AwaitAssets(List#{"amb"}), Item.Instant("audio", Some("amb")), Item.Line("next", 1.0) } }
+    def withAssets(): List[List[Item]] = List#{ List#{ Item.Instant("audio", Some("amb")), Item.Line("next", 1.0) } }
+
+    def deferredAmb(arrival: Int32): Script = { deferred = Set#{"amb"}, arrivals = Map#{ "amb" => arrival } | manual(Nil) }
 
     @Test
     def testTheCommandWaitsUntilItsAssetArrives(): Unit \ Assert =
-        let heard = playScript({ arrivals = Map#{ "amb" => 40 } | manual(Nil) }, withAssets() :: Nil);
-        Assert.assertEq(expected = (40, 40), (frameOfLabel("apply:audio", heard), frameOfLabel("text:next", heard)))
+        let heard = playScript(deferredAmb(40), withAssets() :: Nil);
+        Assert.assertEq(expected = (0, 15, 40, 40, 40),
+            (frameOfLabel("fadeOut", heard), frameOfLabel("assets", heard), frameOfLabel("fadeIn", heard), frameOfLabel("apply:audio", heard), frameOfLabel("text:next", heard)))
+
+    @Test
+    def testAMissingAssetOfAFlowedCommandHoldsTheWholeBatchFromFrameZero(): Unit \ Assert =
+        // 歩く LineWait の頭へ寄せた <<audio amb>> の素材が届いていない: 束の頭（0 フレーム目）から暗転して待ち、
+        // 届いた 40 フレーム目から歩きと寄せた音が流れる（歩きの足音は届いてから 2 秒 = 100 フレーム目）。
+        let beats = List#{ List#{ Item.LineWait("bg", 5.4, None, List#{ (0.0, "door"), (2.0, "step") }), Item.Instant("audio", Some("amb")), Item.Line("next", 1.0) } };
+        let heard = playScript(deferredAmb(40), beats :: Nil);
+        Assert.assertEq(expected = (0, 40, 40, 40, 100, 202),
+            (frameOfLabel("fadeOut", heard), frameOfLabel("apply:bg", heard), frameOfLabel("se:door", heard), frameOfLabel("se:amb", heard),
+             frameOfLabel("se:step", heard), frameOfLabel("text:next", heard)))
+
+    @Test
+    def testAnAssetThatArrivesDuringTheFadeIsNotWaitedFor(): Unit \ Assert =
+        Assert.assertEq(expected = 15, frameOfLabel("apply:audio", playScript(deferredAmb(5), withAssets() :: Nil)))
 
     @Test
     def testALoadReachesTheReadWithoutTime(): Unit \ Assert =
@@ -484,9 +536,9 @@ mod TestTimelineNovelSpike {
 
     @Test
     def testALoadStopsAtAMissingAsset(): Unit \ Assert =
-        Assert.assertEq(expected = (false, Waiting.AtAssets), loadTo(Set.empty(), withAssets()) |> (r -> (List.memberOf("apply:audio", fst(r)), snd(r))))
+        Assert.assertEq(expected = (false, Waiting.AtAssets), loadTo(Set#{"amb"}, withAssets()) |> (r -> (List.memberOf("apply:audio", fst(r)), snd(r))))
 
     @Test
     def testALoadPassesAnAssetThatIsThere(): Unit \ Assert =
-        Assert.assertEq(expected = Waiting.Input, snd(loadTo(Set#{"amb"}, withAssets())))
+        Assert.assertEq(expected = Waiting.Input, snd(loadTo(Set.empty(), withAssets())))
 }

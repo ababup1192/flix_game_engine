@@ -155,6 +155,7 @@ type world struct {
 	game, base, cur string
 	acc             *Accept
 	strict          bool
+	times           bool
 }
 
 func newWorld(t *testing.T, base, cur *rec) *world {
@@ -185,7 +186,7 @@ func (w *world) run(t *testing.T) *Result {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Compare(a, b, w.acc, Options{Game: w.game, Strict: w.strict, Th: DefaultThresholds(), Lim: DefaultLimits()})
+	return Compare(a, b, w.acc, Options{Game: w.game, Strict: w.strict, Times: w.times, Th: DefaultThresholds(), Lim: DefaultLimits()})
 }
 
 func diffsOf(r *Result, what string) []*Diff {
@@ -854,5 +855,65 @@ func TestMidSecondsOnOneSideIsNoted(t *testing.T) {
 	}
 	if !r.Passed || len(diffsOf(r, WhatFrame)) != 0 || !noted {
 		t.Fatalf("片方にだけ秒がある時は比べず注意に出すはず: passed=%v notes=%v %+v", r.Passed, r.Notes, r.Diffs)
+	}
+}
+
+// ---- --times: 台詞・選択肢・待ちの時刻を前の出来事からの間で比べる ----
+
+func shiftEvent(r *rec, i int, t float64) {
+	r.tape["events"].([]any)[i].(map[string]any)["t"] = t
+}
+
+func TestShiftedEventIsNotComparedWithoutTimes(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	shiftEvent(c, 1, 3.2)
+	if d := diffsOf(newWorld(t, b, c).run(t), WhatEventTime); len(d) != 0 {
+		t.Fatalf("--times が無いのに出来事の時刻を比べた: %+v", d)
+	}
+}
+
+func TestShiftedEventIsReviewOnlyWithTimes(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	shiftEvent(c, 1, 3.2)
+	w := newWorld(t, b, c)
+	w.times = true
+	r := w.run(t)
+	d := diffsOf(r, WhatEventTime)
+	if !r.Passed || len(d) == 0 || !d[0].Review || d[0].Seq != 1 {
+		t.Fatalf("ずれた選択肢の間は迷った差のはず: passed=%v %+v", r.Passed, d)
+	}
+}
+
+func TestOneFrameLatePerEventDoesNotAddUp(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	shiftEvent(c, 0, 1.0+1.0/30)
+	shiftEvent(c, 1, 3.0+2.0/30)
+	shiftEvent(c, 2, 4.0+3.0/30)
+	w := newWorld(t, b, c)
+	w.times = true
+	if d := diffsOf(w.run(t), WhatEventTime); len(d) != 0 {
+		t.Fatalf("出来事ごとに 1 フレームの遅れは積み上げずに通すはず: %+v", d)
+	}
+}
+
+func TestShiftedEventFailsWhenStrictWithTimes(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	shiftEvent(c, 1, 3.2)
+	w := newWorld(t, b, c)
+	w.times = true
+	w.strict = true
+	if w.run(t).Passed {
+		t.Fatal("--strict --times で間の違いが止めない")
+	}
+}
+
+func TestTimesFlagIsParsed(t *testing.T) {
+	a, err := parseDiffArgs([]string{"--times", "base", "new"})
+	if err != nil || !a.times {
+		t.Fatalf("--times を読んでいない: %+v %v", a, err)
 	}
 }

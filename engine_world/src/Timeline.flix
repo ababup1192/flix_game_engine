@@ -476,6 +476,9 @@ pub mod Timeline {
 
     /// 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す（playheadOn の、解いた時刻だけを持つ形）。
     /// 解けていない待ちではそこで止まる。View もこの値を受け取るだけ（時刻の純関数のまま）。O(待ちの数)。
+    /// 待ちに着く前の時刻は解いた時刻に数えない（resume は着く前の時刻を記録しないので、resume で作った列ではどちらでも同じ）。
+    // WhyNot: 待ちに着く前の解いた時刻を「着いた瞬間に解いた」と数えない — 早押しを数えないのが resume の決まりで、
+    //   手で書いた列だけ早押しが効くと、同じ押し方で PlaybackLog と結果が分かれる。
     pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead = playheadOn(wall, logOfResumes(resumes), tl)
 
     /// いま解けていない待ちで止まっているか。

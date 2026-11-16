@@ -2583,8 +2583,7 @@
   `pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
-- 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す（playheadOn の、解いた時刻だけを持つ形）。
-  `pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead`
+- `pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead`
 - いま解けていない待ちで止まっているか。
   `pub def isWaiting(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Bool`
 - 決定キーを押した。待ちで止まっている間だけ解いた時刻を記録する（待ちに着く前の早押しは数えない）。

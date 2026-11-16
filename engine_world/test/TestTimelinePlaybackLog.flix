@@ -91,12 +91,15 @@ mod TestTimelinePlaybackLog {
         Assert.assertEq(expected = List#{"arrive"}, play((i, wall, p) -> if (i == 0) Timeline.skipToNextWait(wall, p, tl) else p))
 
     @Test
-    def testTheResumeListMatchesTheLog(): Unit \ Assert =
+    def testTheResumeListContinuesFromTheWait(): Unit \ Assert =
+        // 待ち（表の 3 秒）に壁の 3 秒で着き、6 秒で解いた: 6.5 秒には表の 3.5 秒・解いた待ちは 1 つ。
         let tl = cut();
-        let p = Timeline.resumeOn(6.0, Timeline.playbackLog(), tl);
-        let old = Timeline.resume(6.0, Nil, tl);
-        let pair = (h: Timeline.Playhead) -> (h#t, h#passed);
-        Assert.assertEq(expected = pair(Timeline.playheadOf(6.3, old, tl)), pair(Timeline.playheadOn(6.3, p, tl)))
+        let head = Timeline.playheadOf(6.5, Timeline.resume(6.0, Nil, tl), tl);
+        Assert.assertEq(expected = (3.5, 1), (head#t, head#passed))
+
+    @Test
+    def testAResumeTimeBeforeTheWaitIsNotCounted(): Unit \ Assert =
+        Assert.assertEq(expected = true, Timeline.isWaiting(5.0, List#{1.0}, cut()))
 
     @Test
     def testStartedClipsIncludeTheOnesInsideASkippedRange(): Unit \ Assert =
