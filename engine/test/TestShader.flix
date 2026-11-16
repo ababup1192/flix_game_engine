@@ -1308,6 +1308,100 @@ def testBlurWithZeroRadiusEqualsTexExactly(): Unit \ Assert =
     let at = spec -> ShaderEval.evalAlphaTex(spec, { x = 0.75, y = 0.25 }, 0.0, env);
     Assert.assertEq(expected = at(texSpec), at(blurG))
 
+/// テクセルの添字は、Int32 の外・無限大・NaN を 0 として張り付ける・回す（tryToInt32 の None を 0 にした値と同じ）。
+@Test
+def testTexelIndexTreatsOutOfRangeAsZero(): Unit \ Assert =
+    let xs = Float64.nan() :: Float64.positiveInfinity() :: Float64.negativeInfinity() :: 3.0e9 :: -3.0e9 ::
+             2147483647.0 :: -2147483648.0 :: -1.0 :: 0.0 :: 5.0 :: 9.0 :: Nil;
+    let old = x -> Float64.tryToInt32(x) |> Option.getWithDefault(0);
+    let expected = xs |> List.map(x -> (Int32.max(0, Int32.min(6, old(x))), Int32.remainder(Int32.remainder(old(x), 7) + 7, 7)));
+    Assert.assertEq(expected = expected, xs |> List.map(x -> (ShaderEval.Internal.clampTexel(x, 7), ShaderEval.Internal.wrapTexel(x, 7))))
+
+// ── 続いた bindings の blur（r・g・b を 1 回の点の巡りで読む）──
+
+/// 4×3 の色の違う絵（ARGB。r・g・b・α がテクセルごとに違う）。
+def mottled4x3(): ShaderEval.TexData =
+    { width = 4, height = 3,
+      pixels = Vector#{ -65536, -16744448, -16777152, -1, 2130739200, -12566464, -8355712, 16777215,
+                        -15584170, -2039584, 1090519295, -7864320 } }
+
+/// r・g・b を blur で読む bindings（amount は r・g・b の順）。spacer なら仲間の間に使わない binding を挟む（1 本ずつ読む形）。
+/// 色は r・g・b の Ref、α は 3 つの和。
+def rgbBlurBindings(radius: Float64, amounts: (ShaderDoc.Field, ShaderDoc.Field, ShaderDoc.Field), spacer: Bool): ShaderDoc.Spec =
+    let (ar, ag, ab) = amounts;
+    let b = (chan, amount) -> ShaderDoc.Field.TexBlur({ name = "t", chan = chan, radius = { x = radius, y = radius * 0.5 }, taps = 12, amount = amount });
+    let pad = if (spacer) ("pad", ShaderDoc.Field.Const(0.0)) :: Nil else Nil;
+    let ref = ShaderDoc.Field.Ref;
+    let add = (x, y) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add, a = x, b = y });
+    { name = "rgb", cycleRate = 0.0,
+      bindings = ("r", b(ShaderDoc.TexChan.R, ar)) :: pad ::: ("g", b(ShaderDoc.TexChan.G, ag)) :: pad ::: ("b", b(ShaderDoc.TexChan.B, ab)) :: Nil,
+      out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = ref("r"), g = ref("g"), b = ref("b") }),
+                                 alpha = add(add(ref("r"), ref("g")), ref("b")) }) }
+
+/// 端の外・境目・真ん中の点と、2 つの時刻で (r, g, b, α) を並べる。
+def rgbBlurSamples(spec: ShaderDoc.Spec): List[(Float64, Float64, Float64, Float64)] =
+    let compiled = ShaderEval.compile(spec, Map#{ "t" => ShaderEval.TexImage.Rgba8Unorm(mottled4x3()) });
+    let points = (0.13, 0.21) :: (0.5, 0.5) :: (0.97, 0.03) :: (-0.2, 1.3) :: (0.25, 0.6667) :: Nil;
+    (0.0 :: 0.7 :: Nil) |> List.flatMap(t -> points |> List.map(p -> ShaderEval.evalCompiled(compiled, fst(p), snd(p), t)))
+
+/// 同じ amount の r・g・b を続けて読む bindings は、1 本ずつ読んだ時とビットまで同じ値。
+@Test
+def testBlurBindingsReadTogetherEqualOneByOne(): Unit \ Assert =
+    let amount = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add, a = ShaderDoc.Field.Const(0.5),
+                                       b = ShaderDoc.Field.Time({ scale = 1.0, offset = ShaderDoc.Field.Const(0.0) }) });
+    let amounts = (amount, amount, amount);
+    Assert.assertEq(expected = rgbBlurSamples(rgbBlurBindings(0.3, amounts, true)), rgbBlurSamples(rgbBlurBindings(0.3, amounts, false)))
+
+/// amount の値が r・g・b で違う時も、1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsWithDifferentAmountsEqualOneByOne(): Unit \ Assert =
+    let amounts = (ShaderDoc.Field.Const(1.0), ShaderDoc.Field.Const(0.4), ShaderDoc.Field.Const(1.0));
+    Assert.assertEq(expected = rgbBlurSamples(rgbBlurBindings(0.3, amounts, true)), rgbBlurSamples(rgbBlurBindings(0.3, amounts, false)))
+
+/// 後ろの amount が前の仲間（r）を読む時も、1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsWhoseAmountReadsAnEarlierOneEqualOneByOne(): Unit \ Assert =
+    let amounts = (ShaderDoc.Field.Const(1.0), ShaderDoc.Field.Ref("r"), ShaderDoc.Field.Const(1.0));
+    Assert.assertEq(expected = rgbBlurSamples(rgbBlurBindings(0.3, amounts, true)), rgbBlurSamples(rgbBlurBindings(0.3, amounts, false)))
+
+/// 半径 × amount が 0 の r・g・b を続けて読む bindings は、1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsWithZeroRadiusEqualOneByOne(): Unit \ Assert =
+    let zero = ShaderDoc.Field.Const(0.0);
+    Assert.assertEq(expected = rgbBlurSamples(rgbBlurBindings(0.3, (zero, zero, zero), true)),
+                    rgbBlurSamples(rgbBlurBindings(0.3, (zero, zero, zero), false)))
+
+/// amount が 0.0 と -0.0 で混ざる r・g・b も、1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsWithSignedZeroAmountsEqualOneByOne(): Unit \ Assert =
+    let amounts = (ShaderDoc.Field.Const(0.0), ShaderDoc.Field.Const(-0.0), ShaderDoc.Field.Const(0.0));
+    Assert.assertEq(expected = rgbBlurSamples(rgbBlurBindings(0.3, amounts, true)), rgbBlurSamples(rgbBlurBindings(0.3, amounts, false)))
+
+/// Rgba16Float の絵を読む r・g・b の bindings も、1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsOnHdrTextureEqualOneByOne(): Unit \ Assert =
+    let one = ShaderDoc.Field.Const(1.0);
+    let hdr = ShaderEval.hdrTextureOf(2, 2, Vector#{ 1.5, 0.25, 0.0, 1.0, 0.5, 2.0, 0.75, 0.5, 0.0, 0.125, 3.0, 1.0, 1.0, 1.0, 1.0, 0.25 });
+    let at = spacer -> {
+        let compiled = ShaderEval.compile(rgbBlurBindings(0.3, (one, one, one), spacer), Map#{ "t" => ShaderEval.TexImage.Rgba16Float(hdr) });
+        ((0.2, 0.3) :: (0.5, 0.5) :: (0.9, 0.8) :: Nil) |> List.map(p -> ShaderEval.evalCompiled(compiled, fst(p), snd(p), 0.0))
+    };
+    Assert.assertEq(expected = at(true), at(false))
+
+/// REPEAT の 3D の材質でも、続けて読む bindings は 1 本ずつ読んだ時と同じ値。
+@Test
+def testBlurBindingsInRepeatMaterialEqualOneByOne(): Unit \ Assert =
+    let one = ShaderDoc.Field.Const(1.0);
+    let at = spacer -> {
+        let compiled = ShaderEval.compileMaterial({ spec = rgbBlurBindings(0.4, (one, one, one), spacer), emission = None,
+                                                    metallicRoughness = None, params = Map.empty(),
+                                                    textures = Map#{ "t" => Vector#{ mottled4x3() } }, repeat = true });
+        ((0.05, 0.95) :: (1.4, -0.3) :: (0.5, 0.5) :: Nil) |> List.map(p ->
+            ShaderEval.evalCompiled3(compiled, { world = Vec3.zero(), normal = Vec3.zero(), uv = { x = fst(p), y = snd(p) },
+                                                 color = { r = 1.0, g = 1.0, b = 1.0 } }, 0.0))
+    };
+    Assert.assertEq(expected = at(true), at(false))
+
 // ════════════════════════════════════════════════════════════════════
 // 同じ読みの括り出し（CSE / hoist）
 // ════════════════════════════════════════════════════════════════════

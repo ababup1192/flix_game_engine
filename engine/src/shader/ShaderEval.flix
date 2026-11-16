@@ -10,6 +10,7 @@
 pub mod ShaderEval {
 
     import java.lang.{Float => JFloat}
+    use ShaderEval.Internal.{isEverySlotEqual, blurGroupPerAmount, blurGroupSharedAmount, blurPoints, blurTex, clampTexel, sampleTexAs, wrapTexel, wrapUnit}
 
     /// テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
     /// GL の pass ターゲットは上下逆格納だが描き出しの pass 画像は正立なので、CPU 側は反転しない
@@ -140,9 +141,13 @@ pub mod ShaderEval {
         case Tex(Int32, Int32, Vector[Int32], Int32, Bool, Bool)      // 幅, 高さ, 画素, チャンネルの shift, Linear で読むか, REPEAT か
         case MipTex(Int32, Vector[TexData], Int32, Bool, Bool)        // 節の番号, 段の列, チャンネルの shift, Linear で読むか, REPEAT か
         case Shift(Node, Node, Node)                                  // dx, dy, of
-        case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Node, Bool, Bool) // 幅, 高さ, 画素, shift, 半径 x/y, taps, amount, Linear, REPEAT
+        case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Vector[Float64], Node, Bool, Bool) // 幅, 高さ, 画素, shift, 半径 x/y, taps, 点の表（blurPoints）, amount, Linear, REPEAT
+        // 続いた bindings の TexBlur（絵・半径・taps が同じで shift だけ違う）を 1 回の点の巡りで読む。値は bindings の置き場の
+        // 先頭（最後の Int32）から順に置く（後ろの bindings は Ref でそれを読む）。shift の列と amount の列は同じ長さ。
+        // WhyNot: 欄をレコードにまとめない — 画素ごとに名前で引く分が塗りに乗る（Node の他の case と同じ理由）。
+        case TexBlurGroup(Int32, Int32, Vector[Int32], Vector[Int32], Float64, Float64, Int32, Vector[Float64], Vector[Node], Bool, Int32) // 幅, 高さ, 画素, shift の列, 半径 x/y, taps, 点の表, amount の列, REPEAT, 先頭の置き場（NEAREST だけ）
         case TexF(Int32, Int32, Vector[Float32], Int32, Bool, Bool)   // Tex の Rgba16Float 版（幅, 高さ, 値, 成分の位置, Linear, REPEAT）
-        case TexBlurF(Int32, Int32, Vector[Float32], Int32, Float64, Float64, Int32, Node, Bool, Bool) // TexBlur の Rgba16Float 版
+        case TexBlurF(Int32, Int32, Vector[Float32], Int32, Float64, Float64, Int32, Vector[Float64], Node, Bool, Bool) // TexBlur の Rgba16Float 版
     }
 
     /// 面の色。Color は (r, g, b) の位置で持つ。
@@ -183,9 +188,6 @@ pub mod ShaderEval {
     /// mips = 段の列を持つ絵（3D の材質だけ。tex はここにある名前なら lod を求めて段を読む）。
     type alias Sampling = { linear = Bool, repeat = Bool, mips = Map[String, Vector[TexData]] }
 
-    /// 1 枚の読み方（Sampling から段の列を除いた物）。
-    type alias Filter = { linear = Bool, repeat = Bool }
-
     def clampSampling(): Sampling = { linear = false, repeat = false, mips = Map.empty() }
 
     def compileWith(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade], sampling: Sampling,
@@ -194,11 +196,7 @@ pub mod ShaderEval {
         let withInputs = readsSurface(spec) or Option.exists(shade -> readsSurface(specOfShade(shade)), emission)
             or Option.exists(shade -> readsSurface(specOfShade(shade)), metallicRoughness);
         let first = if (withInputs) inputSlots() else 0;
-        let (revBindings, scope, next) = List.foldLeft((acc, nf) -> {
-            let (nodes, sc, i) = acc;
-            let (name, field) = nf;
-            (compileField(sampling, ids, sc, texEnv, field) :: nodes, Map.insert(name, i, sc), i + 1)
-        }, (Nil, Map.empty(), first), spec#bindings);
+        let (revBindings, scope, next) = compileBindings(sampling, ids, texEnv, spec#bindings, (Nil, Map.empty(), first));
         match spec#out {
             case ShaderDoc.Out.Fill(f) =>
                 let shade = compileShade(sampling, ids, scope, texEnv, f#shade);
@@ -213,6 +211,73 @@ pub mod ShaderEval {
                 Compiled.Compiled(List.reverse(revBindings), shade, alpha, spec#cycleRate, size, withInputs, glow, metal, mipCount)
         }
     }
+
+    /// bindings を前から組み直す（acc = 逆順の節・名前 → 置き場・次の置き場）。前から順の場が blurGroupOf に当たれば
+    /// TexBlurGroup 1 つと Ref に組む。
+    def compileBindings(sampling: Sampling, ids: Ref[Int32, r], texEnv: Map[String, TexImage], bindings: List[(String, ShaderDoc.Field)],
+                        acc: (List[Node], Map[String, Int32], Int32)): (List[Node], Map[String, Int32], Int32) \ r =
+        match (blurGroupOf(sampling#linear, texEnv, bindings), bindings) {
+            case (Some((td, first, members)), _) =>
+                compileBindings(sampling, ids, texEnv, List.drop(List.length(members), bindings), compileBlurGroup(sampling, ids, texEnv, td, first, members, acc))
+            case (None, (name, field) :: rest) =>
+                let (nodes, sc, i) = acc;
+                compileBindings(sampling, ids, texEnv, rest, (compileField(sampling, ids, sc, texEnv, field) :: nodes, Map.insert(name, i, sc), i + 1))
+            case (None, Nil) => acc
+        }
+
+    /// ぼかしの節の欄（ShaderDoc.Field.TexBlur の中身）。
+    type alias BlurRead = { name = String, chan = ShaderDoc.TexChan, radius = Vec2.Vec2, taps = Int32, amount = ShaderDoc.Field }
+
+    /// 前から続く TexBlur の bindings で、8bit の同じ絵・同じ半径・同じ taps を読む物（2 つ以上の時だけ）。後ろの amount は
+    /// 前の仲間の名前を Ref しない（仲間の amount は先頭の置き場で全部先に評価するため）。
+    // WhyNot: Linear の読みはまとめない — bindings の高さは Sampler の外で、今は NEAREST しか来ない。来ない道の 4 テクセルの足し方を持たない。
+    def blurGroupOf(linear: Bool, texEnv: Map[String, TexImage], bindings: List[(String, ShaderDoc.Field)]): Option[(TexData, BlurRead, List[(String, BlurRead)])] =
+        match bindings {
+            case (name, ShaderDoc.Field.TexBlur(bl)) :: rest if not linear =>
+                // WhyNot: 仲間を巡ってから絵を引かない — 8bit でない絵の仲間が続くと、binding ごとに残りを巡り直して二乗になる。
+                rgba8Of(texEnv, bl#name)
+                    |> Option.map(td -> (td, bl, List.reverse(blurRunFrom(bl, Set#{name}, rest, (name, bl) :: Nil))))
+                    |> Option.filter(g -> { let (_, _, members) = g; List.length(members) >= 2 })
+            case _ => None
+        }
+
+    def blurRunFrom(first: BlurRead, names: Set[String], bindings: List[(String, ShaderDoc.Field)],
+                    acc: List[(String, BlurRead)]): List[(String, BlurRead)] =
+        match bindings {
+            case (name, ShaderDoc.Field.TexBlur(bl)) :: rest if sameBlurSource(first, bl) and not refersToAny(names, bl#amount) =>
+                blurRunFrom(first, Set.insert(name, names), rest, (name, bl) :: acc)
+            case _ => acc
+        }
+
+    def sameBlurSource(a: BlurRead, b: BlurRead): Bool =
+        a#name == b#name and a#radius#x == b#radius#x and a#radius#y == b#radius#y and ShaderDoc.blurTaps(a#taps) == ShaderDoc.blurTaps(b#taps)
+
+    def refersToAny(names: Set[String], field: ShaderDoc.Field): Bool =
+        ShaderDoc.foldField((found, f) -> match f {
+            case ShaderDoc.Field.Ref(n) => found or Set.memberOf(n, names)
+            case _                      => found
+        }, false, field)
+
+    def rgba8Of(texEnv: Map[String, TexImage], name: String): Option[TexData] =
+        match Map.get(name, texEnv) {
+            case Some(TexImage.Rgba8Unorm(td)) => Some(td)
+            case _                             => None
+        }
+
+    /// members を TexBlurGroup（先頭の置き場）と、後ろの置き場を読む Ref に組む。amount は仲間ごとに、前の仲間までの名前で組む。
+    def compileBlurGroup(sampling: Sampling, ids: Ref[Int32, r], texEnv: Map[String, TexImage], td: TexData, first: BlurRead,
+                         members: List[(String, BlurRead)], acc: (List[Node], Map[String, Int32], Int32)): (List[Node], Map[String, Int32], Int32) \ r =
+        let (nodes, sc, slot) = acc;
+        let (revAmounts, scope, next) = List.foldLeft((a, nb) -> {
+            let (amounts, s, j) = a;
+            let (name, bl) = nb;
+            (compileField(sampling, ids, s, texEnv, bl#amount) :: amounts, Map.insert(name, j, s), j + 1)
+        }, (Nil, sc, slot), members);
+        let shifts = members |> List.map(nb -> texShift(snd(nb)#chan)) |> List.toVector;
+        let taps = ShaderDoc.blurTaps(first#taps);
+        let group = Node.TexBlurGroup(td#width, td#height, td#pixels, shifts, first#radius#x, first#radius#y, taps, blurPoints(taps),
+                                      List.toVector(List.reverse(revAmounts)), sampling#repeat, slot);
+        (List.foldLeft((ns, j) -> Node.Ref(j) :: ns, group :: nodes, List.range(slot + 1, next)), scope, next)
 
     /// Spec が World・Normal・VertexColor のどれかを読むか（読むなら置き場の先頭にその値を取る）。
     def readsSurface(spec: ShaderDoc.Spec): Bool =
@@ -458,15 +523,7 @@ pub mod ShaderEval {
             // dx/dy は外側 uv で評価してから、of をずらした座標で読む（GLSL の式と同じ組み方）。
             case ShaderDoc.Field.Shift(sh)      => Node.Shift(sub(sh#dx), sub(sh#dy), sub(sh#of))
             case ShaderDoc.Field.TexBlur(bl)    =>
-                match Map.get(bl#name, texEnv) {
-                    case Some(TexImage.Rgba8Unorm(td)) => Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan),
-                                                  bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps), sub(bl#amount),
-                                                  sampling#linear, sampling#repeat)
-                    case Some(TexImage.Rgba16Float(HdrTextureData.HdrTextureData(w, h, values))) =>
-                        Node.TexBlurF(w, h, values, texChanIndex(bl#chan), bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps),
-                                      sub(bl#amount), sampling#linear, sampling#repeat)
-                    case None     => Node.Missing
-                }
+                Map.get(bl#name, texEnv) |> Option.map(img -> blurNodeOf(sampling, bl, img, sub(bl#amount))) |> Option.getWithDefault(Node.Missing)
             // 3D の材質の texEnv は段 0 の絵なので、寸法も段 0 の数（GL の textureSize(…, 0) と同じ）。
             case ShaderDoc.Field.TexSize(ts)    =>
                 let pick = (w: Int32, h: Int32) -> match ts#axis {
@@ -487,6 +544,18 @@ pub mod ShaderEval {
             case ShaderDoc.Field.World(w)       => Node.Ref(inputIndex(false, w#axis))
             case ShaderDoc.Field.Normal(n)      => Node.Ref(inputIndex(true, n#axis))
             case ShaderDoc.Field.VertexColor(vc) => vertexColorNode(vc#chan)
+        }
+
+    /// 絵 img を読むぼかしの節（amount は組み直した場）。
+    def blurNodeOf(sampling: Sampling, bl: BlurRead, img: TexImage, amount: Node): Node =
+        let taps = ShaderDoc.blurTaps(bl#taps);
+        match img {
+            case TexImage.Rgba8Unorm(td) =>
+                Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan), bl#radius#x, bl#radius#y, taps, blurPoints(taps),
+                             amount, sampling#linear, sampling#repeat)
+            case TexImage.Rgba16Float(HdrTextureData.HdrTextureData(w, h, values)) =>
+                Node.TexBlurF(w, h, values, texChanIndex(bl#chan), bl#radius#x, bl#radius#y, taps, blurPoints(taps),
+                              amount, sampling#linear, sampling#repeat)
         }
 
     /// Rgba16Float の 1 画素の中の成分の位置（r, g, b, α の順）。
@@ -706,19 +775,26 @@ pub mod ShaderEval {
                 evalNode(of, (Float64.floor(x * cx) + 0.5) / cx, (Float64.floor(y * cy) + 0.5) / cy, t, env)
             case Node.Ref(i) => Array.get(i, env)
             case Node.Missing => 0.0
-            case Node.Tex(w, h, pixels, shift, linear, repeat) => sampleTexAs({ linear = linear, repeat = repeat }, w, h, pixels, shift, x, y)
+            case Node.Tex(w, h, pixels, shift, linear, repeat) => sampleTexAs(linear, repeat, w, h, pixels, shift, x, y)
             case Node.MipTex(id, chain, shift, linear, repeat) => evalMipTex(id, chain, shift, { linear = linear, repeat = repeat }, x, y, env)
             case Node.Shift(fdx, fdy, of) =>
                 let dx = evalNode(fdx, x, y, t, env);
                 let dy = evalNode(fdy, x, y, t, env);
                 evalNode(of, x + dx, y + dy, t, env)
-            case Node.TexBlur(w, h, pixels, shift, rx, ry, taps, amount, linear, repeat) =>
+            case Node.TexBlur(w, h, pixels, shift, rx, ry, taps, points, amount, linear, repeat) =>
                 let k = evalNode(amount, x, y, t, env);
-                blurTex({ w = w, h = h, pixels = pixels, shift = shift, sampling = { linear = linear, repeat = repeat } }, x, y, rx * k, ry * k, taps)
-            case Node.TexF(w, h, values, chan, linear, repeat) => sampleTexFAs({ linear = linear, repeat = repeat }, w, h, values, chan, x, y)
-            case Node.TexBlurF(w, h, values, chan, rx, ry, taps, amount, linear, repeat) =>
+                blurTex(w, h, pixels, shift, linear, repeat, taps, points, x, y, rx * k, ry * k)
+            case Node.TexBlurGroup(w, h, pixels, shifts, rx, ry, taps, points, amounts, repeat, slot) =>
+                putAmounts(amounts, x, y, t, slot, 0, env);
+                let k = Array.get(slot, env);
+                let n = Vector.length(shifts);
+                if (isEverySlotEqual(k, slot, 1, n, env)) blurGroupSharedAmount(w, h, pixels, shifts, repeat, taps, points, x, y, rx * k, ry * k, slot, env)
+                else blurGroupPerAmount(w, h, pixels, shifts, repeat, taps, points, x, y, rx, ry, slot, 0, env);
+                Array.get(slot, env)
+            case Node.TexF(w, h, values, chan, linear, repeat) => sampleTexFAs(linear, repeat, w, h, values, chan, x, y)
+            case Node.TexBlurF(w, h, values, chan, rx, ry, taps, points, amount, linear, repeat) =>
                 let k = evalNode(amount, x, y, t, env);
-                blurTexF({ w = w, h = h, values = values, chan = chan, sampling = { linear = linear, repeat = repeat } }, x, y, rx * k, ry * k, taps)
+                blurTexF(w, h, values, chan, linear, repeat, taps, points, x, y, rx * k, ry * k)
         }
 
     /// 段つきの絵の節 id を座標 (x, y) で読む（値の置き場の最後の番号で、段 0 を読むか・隣の座標を控えるか・lod を求めて読むか）。
@@ -743,9 +819,10 @@ pub mod ShaderEval {
     /// ほかは隣り合う 2 段をそれぞれ sampling の補間で読み、lod の小数で混ぜる。wrap は各段に掛かる。
     def sampleMip(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, shift: Int32, lod: Float64, u: Float64, v: Float64): Float64 =
         let n = Vector.length(chain);
+        let (linear, repeat) = (sampling#linear, sampling#repeat);
         let read = (k: Int32) -> {
             let td = Vector.get(Int32.max(0, Int32.min(n - 1, k)), chain);
-            sampleTexAs(sampling, td#width, td#height, td#pixels, shift, u, v)
+            sampleTexAs(linear, repeat, td#width, td#height, td#pixels, shift, u, v)
         };
         if (n == 0) 0.0
         else if (lod <= 0.0) read(0)
@@ -761,96 +838,14 @@ pub mod ShaderEval {
     pub def sampleMipRgb(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64) =
         (sampleMip(chain, sampling, 16, lod, u, v), sampleMip(chain, sampling, 8, lod, u, v), sampleMip(chain, sampling, 0, lod, u, v))
 
-    /// ぼかしの標本（GLSL の sg_blur と同じ点の並び: i 番目は角度 i×黄金角・距離 √((i+0.5)/taps)）。
-    /// 半径が 0 なら 1 点だけ読む（sg_blur と同じ分岐）。
-    def blurTex(tex: BlurTex, u: Float64, v: Float64, rx: Float64, ry: Float64, taps: Int32): Float64 =
-        if (rx == 0.0 and ry == 0.0) sampleTexAs(tex#sampling, tex#w, tex#h, tex#pixels, tex#shift, u, v)
-        else blurSum(tex, u, v, rx, ry, taps, 0, 0.0) / Int32.toFloat64(taps)
+    // ── TexBlurGroup（値の置き場 env[slot + j] が j 番目の shift の値）──
 
-    /// ぼかしが読む 1 枚（寸法・画素・チャンネルの shift・読み方）。
-    type alias BlurTex = { w = Int32, h = Int32, pixels = Vector[Int32], shift = Int32, sampling = Filter }
-
-    def blurSum(tex: BlurTex, u: Float64, v: Float64,
-                rx: Float64, ry: Float64, taps: Int32, i: Int32, acc: Float64): Float64 =
-        if (i >= taps) acc
+    def putAmounts(amounts: Vector[Node], x: Float64, y: Float64, t: Float64, slot: Int32, j: Int32, env: Array[Float64, r]): Unit \ r =
+        if (j >= Vector.length(amounts)) ()
         else {
-            let fi = Int32.toFloat64(i);
-            let r = Num.sqrt((fi + 0.5) / Int32.toFloat64(taps));
-            let a = fi * 2.39996323;
-            let s = sampleTexAs(tex#sampling, tex#w, tex#h, tex#pixels, tex#shift, u + Num.cos(a) * r * rx, v + Num.sin(a) * r * ry);
-            blurSum(tex, u, v, rx, ry, taps, i + 1, acc + s)
+            Array.put(evalNode(Vector.get(j, amounts), x, y, t, env), slot + j, env);
+            putAmounts(amounts, x, y, t, slot, j + 1, env)
         }
-
-    def sampleTexAs(sampling: Filter, w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
-        match (sampling#linear, sampling#repeat) {
-            case (true, false)  => sampleTexLinear(w, h, pixels, shift, u, v)
-            case (false, false) => sampleTex(w, h, pixels, shift, u, v)
-            case (true, true)   => sampleTexLinearRepeat(w, h, pixels, shift, wrapUnit(u), wrapUnit(v))
-            case (false, true)  => sampleTex(w, h, pixels, shift, wrapUnit(u), wrapUnit(v))
-        }
-
-    /// 座標を 0..1 へ戻す（GL の REPEAT と同じ fract）。
-    def wrapUnit(x: Float64): Float64 = x - Float64.floor(x)
-
-    /// Linear の REPEAT の標本（GL の GL_LINEAR + REPEAT と同じ）。0..1 へ戻した座標で、端をまたぐ 4 テクセルは反対の端から読む。
-    def sampleTexLinearRepeat(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
-        if (w <= 0 or h <= 0) 0.0
-        else {
-            let x = u * Int32.toFloat64(w) - 0.5;
-            let y = v * Int32.toFloat64(h) - 0.5;
-            let x0 = Float64.floor(x);
-            let y0 = Float64.floor(y);
-            let fx = x - x0;
-            let fy = y - y0;
-            let at = (tx, ty) -> {
-                let argb = Vector.get(wrapTexel(ty, h) * w + wrapTexel(tx, w), pixels);
-                Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, argb), 255)) / 255.0
-            };
-            let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * fx;
-            let bottom = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * fx;
-            top + (bottom - top) * fy
-        }
-
-    /// texel 添字を [0, n−1] へ回す（REPEAT。−1 は n−1・n は 0）。floor 済みの値を受ける。
-    def wrapTexel(x: Float64, n: Int32): Int32 =
-        let k = Float64.tryToInt32(x) |> Option.getWithDefault(0);
-        Int32.remainder(Int32.remainder(k, n) + n, n)
-
-    /// Linear の標本（GL の GL_LINEAR + CLAMP_TO_EDGE と同じ点・同じ重み）。テクセルの中心が (i+0.5)/w なので
-    /// 読む点から 0.5 引いた所の左下の 4 テクセルを、端に張り付けて、はみ出した分の割合で混ぜる。
-    /// GPU は重みを固定小数（たいてい 8bit）に丸めるので ±1/255 程度ずれうる（docs/backend-parity.md の近似の行）。
-    def sampleTexLinear(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
-        if (w <= 0 or h <= 0) 0.0
-        else {
-            let x = u * Int32.toFloat64(w) - 0.5;
-            let y = v * Int32.toFloat64(h) - 0.5;
-            let x0 = Float64.floor(x);
-            let y0 = Float64.floor(y);
-            let fx = x - x0;
-            let fy = y - y0;
-            let at = (tx, ty) -> {
-                let argb = Vector.get(clampTexel(ty, h) * w + clampTexel(tx, w), pixels);
-                Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, argb), 255)) / 255.0
-            };
-            let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * fx;
-            let bottom = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * fx;
-            top + (bottom - top) * fy
-        }
-
-    /// テクスチャ標本（NEAREST + CLAMP の釘打ち式 — GL と同じ量子化になるのが backend-parity の契約）。
-    /// ix = clamp(floor(u*w), 0, w−1)・iy 同様。チャンネル値は 8bit を 255 で割った 0..1。
-    def sampleTex(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
-        if (w <= 0 or h <= 0) 0.0
-        else {
-            let ix = clampTexel(Float64.floor(u * Int32.toFloat64(w)), w);
-            let iy = clampTexel(Float64.floor(v * Int32.toFloat64(h)), h);
-            let argb = Vector.get(iy * w + ix, pixels);
-            Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, argb), 255)) / 255.0
-        }
-
-    /// texel 添字を [0, n−1] に張り付ける（CLAMP）。floor 済みの値を受ける。
-    def clampTexel(x: Float64, n: Int32): Int32 =
-        Int32.max(0, Int32.min(n - 1, Float64.tryToInt32(x) |> Option.getWithDefault(0)))
 
     // ── Rgba16Float の標本（点・重み・端の扱いは 8bit の同名の関数と同じ。値を 255 で割らず、α だけ 0..1 に切る）──
     // WhyNot: 8bit の関数に値の読み方を関数で渡して 1 本にしない — テクセルごとに閉包を呼ぶ分が、8bit の面の描き出しに乗る。
@@ -860,13 +855,11 @@ pub mod ShaderEval {
         let v = Float32.toFloat64(Vector.get((iy * w + ix) * 4 + chan, values));
         if (chan == 3) Num.clamp01(v) else v
 
-    def sampleTexFAs(sampling: Filter, w: Int32, h: Int32, values: Vector[Float32], chan: Int32, u: Float64, v: Float64): Float64 =
-        match (sampling#linear, sampling#repeat) {
-            case (true, false)  => sampleTexFLinear(w, h, values, chan, u, v, clampTexel)
-            case (false, false) => sampleTexF(w, h, values, chan, u, v)
-            case (true, true)   => sampleTexFLinear(w, h, values, chan, wrapUnit(u), wrapUnit(v), wrapTexel)
-            case (false, true)  => sampleTexF(w, h, values, chan, wrapUnit(u), wrapUnit(v))
-        }
+    def sampleTexFAs(linear: Bool, repeat: Bool, w: Int32, h: Int32, values: Vector[Float32], chan: Int32, u: Float64, v: Float64): Float64 =
+        if (linear and not repeat) sampleTexFLinear(w, h, values, chan, u, v, clampTexel)
+        else if (not linear and not repeat) sampleTexF(w, h, values, chan, u, v)
+        else if (linear) sampleTexFLinear(w, h, values, chan, wrapUnit(u), wrapUnit(v), wrapTexel)
+        else sampleTexF(w, h, values, chan, wrapUnit(u), wrapUnit(v))
 
     /// NEAREST の標本（sampleTex と同じ添字）。
     def sampleTexF(w: Int32, h: Int32, values: Vector[Float32], chan: Int32, u: Float64, v: Float64): Float64 =
@@ -890,23 +883,18 @@ pub mod ShaderEval {
             top + (bottom - top) * fy
         }
 
-    /// ぼかしが読む Rgba16Float の 1 枚（BlurTex の Rgba16Float 版）。
-    type alias BlurTexF = { w = Int32, h = Int32, values = Vector[Float32], chan = Int32, sampling = Filter }
+    /// blurTex の Rgba16Float 版（点は blurPoints の表）。
+    def blurTexF(w: Int32, h: Int32, values: Vector[Float32], chan: Int32, linear: Bool, repeat: Bool, taps: Int32, points: Vector[Float64],
+                 u: Float64, v: Float64, rx: Float64, ry: Float64): Float64 =
+        if (rx == 0.0 and ry == 0.0) sampleTexFAs(linear, repeat, w, h, values, chan, u, v)
+        else blurSumF(w, h, values, chan, linear, repeat, taps, points, u, v, rx, ry, 0, 0.0) / Int32.toFloat64(taps)
 
-    /// blurTex の Rgba16Float 版（点の並びは同じ）。
-    def blurTexF(tex: BlurTexF, u: Float64, v: Float64, rx: Float64, ry: Float64, taps: Int32): Float64 =
-        if (rx == 0.0 and ry == 0.0) sampleTexFAs(tex#sampling, tex#w, tex#h, tex#values, tex#chan, u, v)
-        else blurSumF(tex, u, v, rx, ry, taps, 0, 0.0) / Int32.toFloat64(taps)
-
-    def blurSumF(tex: BlurTexF, u: Float64, v: Float64,
-                 rx: Float64, ry: Float64, taps: Int32, i: Int32, acc: Float64): Float64 =
+    def blurSumF(w: Int32, h: Int32, values: Vector[Float32], chan: Int32, linear: Bool, repeat: Bool, taps: Int32, points: Vector[Float64],
+                 u: Float64, v: Float64, rx: Float64, ry: Float64, i: Int32, acc: Float64): Float64 =
         if (i >= taps) acc
         else {
-            let fi = Int32.toFloat64(i);
-            let r = Num.sqrt((fi + 0.5) / Int32.toFloat64(taps));
-            let a = fi * 2.39996323;
-            let s = sampleTexFAs(tex#sampling, tex#w, tex#h, tex#values, tex#chan, u + Num.cos(a) * r * rx, v + Num.sin(a) * r * ry);
-            blurSumF(tex, u, v, rx, ry, taps, i + 1, acc + s)
+            let s = sampleTexFAs(linear, repeat, w, h, values, chan, u + Vector.get(2 * i, points) * rx, v + Vector.get(2 * i + 1, points) * ry);
+            blurSumF(w, h, values, chan, linear, repeat, taps, points, u, v, rx, ry, i + 1, acc + s)
         }
 
     // Pow の CPU 評価。整数指数は反復積（GLSL の powProduct と同じ左結合の並び）で、
