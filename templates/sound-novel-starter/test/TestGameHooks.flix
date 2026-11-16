@@ -481,6 +481,20 @@ mod TestGameHooks {
         }))
 
     @Test
+    def testASoundAfterTwoCommentsRingsWithTheFirst(): Unit \ {Assert, Fs.FileRead} =
+        // コメント A・コメント B（どちらも音を鳴らして LineWait 1 秒）の後ろの効果音は、A と同じ頭で鳴り、B は 1 秒後に鳴る。
+        let base = res();
+        let r = { commands = Commands.tableOf(outsCommand("commentA", Out.Sound("se_a") :: Out.LineWait(1.0) :: Nil)
+                                              :: outsCommand("commentB", Out.Sound("se_b") :: Out.LineWait(1.0) :: Nil)
+                                              :: outsCommand("quick", Out.Sound("se_x") :: Nil) :: Commands.commandsIn(base#commands)) | base };
+        let events = YarnRunner.Event.Command(command("commentA", Nil)) :: YarnRunner.Event.Command(command("commentB", Nil))
+            :: YarnRunner.Event.Command(command("quick", Nil)) :: YarnRunner.Event.Line(heldLine()) :: Nil;
+        let (begun0, atStart) = Emit.collect(() -> WorldRead.beginBeat(r, events, begun(r)));
+        let (w1, first) = stepHearing(r, 0.5, begun0);
+        let (_, second) = stepHearing(r, 1.0, w1);
+        Assert.assertEq(expected = ("se_a" :: "se_x" :: Nil, "se_b" :: Nil), (cuesOf(atStart) ::: first, second))
+
+    @Test
     def testAGameCommandLineWaitLetsTheAudioThrough(): Unit \ {Assert, Fs.FileRead} =
         // ゲームのコマンド（コメントを 1 件流して 0.65 秒置く形）が LineWait を出すと、後ろの <<audio>> は待たずに流れ、台詞だけが待つ。
         let base = res();
@@ -698,14 +712,21 @@ mod TestGameHooks {
 
     /// コメント（LineWait 1 秒）と、環境音も替えるコメントと台詞 1 行を流し、3 秒進めた所（台詞は 1 つ目のコメントの頭で積み、
     /// 環境音を替える 2 つ目のコメントは後から当たる）。
-    def commentsThenAmbience(r: Res.Res): World.World =
+    def commentsThenAmbience(r: Res.Res): World.World = commentsThenAmbienceAt(r, 3.0)
+
+    /// 同じ流れを secs 秒進めた所。
+    def commentsThenAmbienceAt(r: Res.Res, secs: Float64): World.World =
+        let withComment = withAmbienceComments(r);
+        let events = YarnRunner.Event.Command(command("comment", Nil)) :: YarnRunner.Event.Command(command("ambcomment", Nil))
+            :: YarnRunner.Event.Line(heldLine()) :: Nil;
+        TestKit.stepBy(withComment, secs, beatWith(withComment, events))
+
+    /// コメント（LineWait 1 秒）と、環境音を amb_river へ替えるコメント（ambcomment）を足した描く元。
+    def withAmbienceComments(r: Res.Res): Res.Res =
         let ambComment = { spec = YarnCommands.spec("ambcomment", "環境音を替えるコメント", Nil), timing = Commands.Timing.Timed,
                            apply = (ctx, _, st) -> Ok(({ props = PropertyTween.setName(Stage.ambienceKey(), Some("amb_river"), ctx#now, 0.0, st#props) | st }, Out.LineWait(1.0) :: Nil)),
                            needs = Commands.noAssets };
-        let withComment = { commands = Commands.tableOf(waitCommand("comment", Out.LineWait(1.0)) :: ambComment :: Commands.commandsIn(r#commands)) | r };
-        let events = YarnRunner.Event.Command(command("comment", Nil)) :: YarnRunner.Event.Command(command("ambcomment", Nil))
-            :: YarnRunner.Event.Line(heldLine()) :: Nil;
-        TestKit.stepBy(withComment, 3.0, beatWith(withComment, events))
+        { commands = Commands.tableOf(waitCommand("comment", Out.LineWait(1.0)) :: ambComment :: Commands.commandsIn(r#commands)) | r }
 
     def ambienceOfMark(m: Saves.Mark): Option[String] = PropertyTween.nameEnd(Stage.ambienceKey(), Stage.fromSnapshot(m#stage)#props)
 
@@ -714,6 +735,15 @@ mod TestGameHooks {
         // 台詞を先に積んだ後に当たった環境音も、その台詞の戻れる所の舞台に入る。
         let w = commentsThenAmbience(res());
         Assert.assertEq(expected = Some(Some("amb_river")), WorldRead.headMarkOf(World.logOf(w)) |> Option.map(ambienceOfMark))
+
+    @Test
+    def testASaveBeforeTheLaterCommandHasItsStage(): Unit \ {Assert, Fs.FileRead} =
+        // 2 つ目のコメントが当たる前（台詞は積んである）にセーブしても、その環境音は戻れる所の舞台に入る。
+        let r = withAmbienceComments(res());
+        let w = commentsThenAmbienceAt(r, 0.5);
+        let head = WorldRead.headMarkOf(World.logOf(w)) |> Option.map(ambienceOfMark);
+        let saved = WorldRead.slotHere(r, w) |> Option.map(slot -> ambienceOfMark(slot#mark));
+        Assert.assertEq(expected = (Some(Some("amb_winter_wind")), Some(Some("amb_river"))), (head, saved))
 
     @Test
     def testRestoringAnEarlyLineKeepsItsAmbienceAndGoesOn(): Unit \ {Assert, Fs.FileRead} =

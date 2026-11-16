@@ -101,7 +101,7 @@ enum Key {
 | 1 | 実行器の `<<wait 秒>>` | LineWait の後ろなら `atStartOf(LineWait の Hold, Hold(i), 秒)`（歩きの頭から数えて重なる。根拠は 1.2 の記録の 5.433 秒）。それ以外は `append(Hold(i), 秒)`。実行器はここで止まり、後ろは Tick した時に足す | 時間で（押しても明けない） | — |
 | 2 | `Out.Wait(秒)` | `append(Apply(i), 0)` + `append(Hold(i), 秒)`。LineWait の後ろで流した命令が出したら `atStartOf(LineWait の Hold, …)`（重なって、明けるのは遅い方）で、後ろは流さない | 時間で（押しても明けない） | — |
 | 3 | `Out.WaitOrTap(秒)` | #2 と同じ置き方。`Item` は予定の秒と押して縮めた秒を別々に持つ | 押すと縮める（3.6） | 縮めた後ろの音は外すので鳴らない |
-| 4 | `Out.LineWait(秒)` | #3 と同じ + 後ろの時間を取らない命令を `atStartOf(Hold(i), Apply(j), 0)` で頭へ寄せる。時間を取る命令・`<<wait>>`・選択肢・押しても明けない待ちが来たら寄せるのをやめる。続く LineWait は前の LineWait の後ろに並ぶ。寄せた命令の素材が届いていなくても寄せたまま（素材の待ちは束の頭に置く。#8）。歩く bg の後ろの時間を取る命令（Timed）は歩きの後ろへ回る（今のテンプレートの `flowInstant` に合わせた決め。2 本の比べには出ない） | #3 と同じ | 寄せた命令の音は LineWait の頭で鳴る |
+| 4 | `Out.LineWait(秒)` | #3 と同じ + 後ろの時間を取らない命令を、続いた LineWait の**最初**の頭へ `atStartOf(Hold(最初の i), Apply(j), 0)` で寄せる（間に別の LineWait があっても最初の頭）。時間を取る命令・`<<wait>>`・選択肢・押しても明けない待ちが来たら寄せるのをやめる。続く LineWait は前の LineWait の後ろに 1 つずつ並ぶ。`<<comment A>><<comment B>><<se x>>` の x は A と同じ頭で鳴り、B より前（古い版と同じ並びで、廃屋配信の音の順も合う。TestGameHooks.testASoundAfterTwoCommentsRingsWithTheFirst で固定）。寄せた命令の素材が届いていなくても寄せたまま（素材の待ちは束の頭に置く。#8）。歩く bg の後ろの時間を取る命令（Timed）は歩きの後ろへ回る（今のテンプレートの `flowInstant` に合わせた決め。2 本の比べには出ない） | #3 と同じ | 寄せた命令の音は LineWait の頭で鳴る |
 | 5 | 背景の切り替えの歩き | #4 の `Hold(i)` に `withSoundAt(名前, 秒)`（`GameSwitch#sounds` をそのまま） | 縮めた・スキップで飛んだ所で `Stage.withGameSwitchFinished` | `Stage.gameSwitchSoundsBetween` は要らなくなる |
 | 6 | 台詞 | `Apply(i)` は続いた LineWait の最初の頭（無ければ `append`）= 頁に積む時刻。その後に `waitFor(Typed(i))`（前の待ちが全部済んでから字を出し始める）と `waitFor(Read(i))` | Typed・Read は 3.4 | — |
 | 7 | 押しても送らない秒 | 鳴らした命令の所に `Lock(i)` の Hold（押しても明けない待ちではなく、押した手を Read に届けないだけ） | 時間で | — |

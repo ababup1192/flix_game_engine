@@ -59,8 +59,8 @@ mod Saves {
         stageForm = StageForm
     }
 
-    /// 戻れる所の舞台の形。Whole = 舞台の全部（version 3 から）、Partial = version 2 の欄だけから作った物
-    /// （ノードの頭の <<scene>> で出した人物や game. の鍵を持たない）。
+    /// 戻れる所の舞台の形。Whole = 舞台の全部（version 3 から）、Partial = version 2 の欄（背景・環境音・particles・mode・cast）
+    /// だけから作った物（game. の鍵と、cast に書かれなかったノードの頭の <<scene>> の人物を持たない）。
     pub enum StageForm with Eq, ToString {
         case Whole
         case Partial

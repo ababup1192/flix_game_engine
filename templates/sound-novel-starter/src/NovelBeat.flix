@@ -83,15 +83,15 @@ mod NovelBeat {
         let (i, item) = pair;
         let acc = if (item#first) { batchStart = if (hasApply(item#kind)) Some(Key.Apply(i)) else None | acc0 } else acc0;
         match item#kind {
-            case Kind.Command      => place(acc, zeroAt(acc#chainStart, Key.Apply(i)))
+            case Kind.Command                 => place(acc, zeroAt(acc#chainStart, Key.Apply(i)))
             case Kind.Wait(planned)           => waitOf(i, planned, acc)
             case Kind.WaitOrTap(planned, cut) => waitOf(i, Option.getWithDefault(planned, cut), acc)
             case Kind.LineWait(planned, cut)  => lineWaitOf(i, Option.getWithDefault(planned, cut), acc)
             case Kind.RunnerWait(planned)     => runnerWaitOf(i, planned, acc)
-            case Kind.Line         => lineOf(i, acc)
-            case Kind.Choices      => gated(place(place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.waitFor(Key.Choose(i))))
-            case Kind.Done         => place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0)))
-            case Kind.Elapsed(secs) => place(gated(acc), Timeline.append(Key.Hold(i), Duration.Seconds(secs)))
+            case Kind.Line                    => lineOf(i, acc)
+            case Kind.Choices                 => gated(place(place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.waitFor(Key.Choose(i))))
+            case Kind.Done                    => place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0)))
+            case Kind.Elapsed(secs)           => place(gated(acc), Timeline.append(Key.Hold(i), Duration.Seconds(secs)))
         }
 
     /// 押しても・押すと明ける待ちを出した命令。LineWait の後ろなら最初の LineWait の頭から重なり（明けるのは遅い方）、後ろは流さない。
@@ -284,7 +284,7 @@ mod NovelBeat {
         case Kind.WaitOrTap(planned, _) => Some(planned)
         case Kind.LineWait(planned, _)  => Some(planned)
         case Kind.RunnerWait(planned)   => Some(planned)
-        case _                  => None
+        case _                          => None
     }
 
     /// 実行器が <<wait>> で止まっている所から始めるビート（当て直しが <<wait>> で止まった時）。secs = 明けるまでの秒。

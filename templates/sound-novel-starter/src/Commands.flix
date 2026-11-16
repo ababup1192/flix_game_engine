@@ -112,7 +112,7 @@ mod Commands {
 
     pub def lineHookOf(f: (Ctx, Stage.Stage) -> Stage.Stage): LineHook = LineHookOf.LineHookOf(f)
 
-    pub def onLineBy(hook: LineHook, ctx: Ctx, st: Stage.Stage): Stage.Stage = let LineHookOf.LineHookOf(f) = hook; f(ctx, st)
+    pub def applyLineHook(hook: LineHook, ctx: Ctx, st: Stage.Stage): Stage.Stage = let LineHookOf.LineHookOf(f) = hook; f(ctx, st)
 
     /// テンプレートとゲームを合わせた全部の命令の表（名前の重なりを見るテスト）。
     pub def specs(): List[YarnCommands.Spec] = table() |> List.map(c -> c#spec)
