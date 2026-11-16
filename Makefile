@@ -63,6 +63,9 @@ ENGINE_FULL_TOML_NAME := flix_game_engine-$(VERSION).toml
 # 全体の up 階層数を求め、symlink の相対パスを動的に組み立てる。
 SUBPATH_DEPTH := 5
 
+# .flix をファイル単位の symlink で別の木へ並べる（sync-engine-full・sync-root-src・gen-light3d・engine_full_web）。
+LINK_FLIX := bin/link-tree.sh --name '*.flix'
+
 .PHONY: help status sync sync-layers sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity gl-parity-cpu release release-guard studio-parity release-assets release-verify release-marker-check release-publish bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
 
 # セッション立ち上げの固定費を数百トークンに抑える口。SessionStart フックが毎回呼ぶので
@@ -544,9 +547,7 @@ bench-web:
 gen-light3d:
 	@dir="$(LAYER_ROOT)/light3d-gen"; rm -rf "$$dir/src"; mkdir -p "$$dir/src"; \
 	ln -sfn "$(CURDIR)/engine_tools/flix.toml" "$$dir/flix.toml"; \
-	(cd "$(ENGINE_DIR)/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-		mkdir -p "$$(dirname "$$dir/src/engine/$$f")"; ln -sfn "$(CURDIR)/$(ENGINE_DIR)/src/$$f" "$$dir/src/engine/$$f"; \
-	done; \
+	$(LINK_FLIX) "$(CURDIR)/$(ENGINE_DIR)/src" "$$dir/src/engine"; \
 	ln -sfn "$(CURDIR)/engine_tools/test/SoftRaster3dLightGen.flix" "$$dir/src/SoftRaster3dLightGen.flix"
 	cd "$(LAYER_ROOT)/light3d-gen" && "$(FLIX)" run --entrypoint SoftRaster3dLightGen.write
 
@@ -851,25 +852,27 @@ GL_JAR_DEPS := build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar build/gl-jar/deps/lwj
 GL_JAR_DEPS += build/gl-jar/deps/webgpu-jni-$(GL_JAR_JWEBGPU).jar \
 	$(foreach m,api-core loader-core runtime-jni,build/gl-jar/deps/$(m)-$(GL_JAR_JPARSER).jar)
 JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
-JAR_TOOL := $(dir $(JAVAC))jar
+# JDK の道具を呼ぶ形（$(call JDK,javac) / java / jar）。PATH に javac が無い時は devbox の JDK の隣の物。
+JDK = $(if $(filter javac,$(JAVAC)),$1,"$(dir $(JAVAC))$1")
+# Maven Central から jar を 1 本取る（引数は maven2/ より後ろのパス）。
+define MAVEN_JAR
+@mkdir -p $(dir $@)
+curl -fsSL -o $@ https://repo1.maven.org/maven2/$1
+endef
 GL_JAR_USERS = $(LAYER_ROOT)/$(RENDER_GL_DIR) . $(ENGINE_FULL_DIR) \
 	$(shell for d in templates/*/ bench/*/; do grep -qs 'ababup1192/flix_game_engine"' "$$d/flix.toml" && echo "$${d%/}"; done)
 
 build/gl-jar/deps/lwjgl-%-$(GL_JAR_LWJGL).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl-$*/$(GL_JAR_LWJGL)/lwjgl-$*-$(GL_JAR_LWJGL).jar
+	$(call MAVEN_JAR,org/lwjgl/lwjgl-$*/$(GL_JAR_LWJGL)/lwjgl-$*-$(GL_JAR_LWJGL).jar)
 
 build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar
+	$(call MAVEN_JAR,org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar)
 
 build/gl-jar/deps/webgpu-jni-$(GL_JAR_JWEBGPU).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/com/github/xpenatan/jWebGPU/webgpu-jni/$(GL_JAR_JWEBGPU)/webgpu-jni-$(GL_JAR_JWEBGPU).jar
+	$(call MAVEN_JAR,com/github/xpenatan/jWebGPU/webgpu-jni/$(GL_JAR_JWEBGPU)/webgpu-jni-$(GL_JAR_JWEBGPU).jar)
 
 build/gl-jar/deps/%-$(GL_JAR_JPARSER).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/com/github/xpenatan/jParser/$*/$(GL_JAR_JPARSER)/$*-$(GL_JAR_JPARSER).jar
+	$(call MAVEN_JAR,com/github/xpenatan/jParser/$*/$(GL_JAR_JPARSER)/$*-$(GL_JAR_JPARSER).jar)
 
 .PHONY: gl-jar gl-jar-hash-ok gl-jar-pin gl-jar-pin-check gl-jar-publish
 # WhyNot: ハッシュが空のまま進めない — fge-gl-.jar という名前で組み、pin がそれを書き込む。
@@ -883,14 +886,14 @@ $(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_CHECK) $(GL_JAR_DEPS) | gl-jar-hash-ok
 	 bad=$$(grep -H 'jWebGPU:' $(GL_JAR_TOMLS) bench/webgpu_check/flix.toml | grep -v "= *\"$(GL_JAR_JWEBGPU)\""); \
 	 [ "$$v" = "$(GL_JAR_JWEBGPU)" ] && [ -z "$$bad" ] || { echo "[gl-jar] jWebGPU の版がそろっていません: Java=$$v Makefile=$(GL_JAR_JWEBGPU) $$bad"; exit 1; }
 	@rm -rf build/gl-jar/classes && mkdir -p build/gl-jar/classes
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/classes \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/classes \
 		-cp "$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(GL_JAR_SRC)
 	@# 定数の打ち間違いは絵の比べでは場所が分かりにくいので、組んだ所で LWJGL の定数と突き合わせる。
 	@rm -rf build/gl-jar/check && mkdir -p build/gl-jar/check
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/check \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/check \
 		-cp "build/gl-jar/classes:$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(RENDER_GL_DIR)/java-check/GlConstantsCheck.java
-	$(if $(filter javac,$(JAVAC)),java,"$(dir $(JAVAC))java") -cp "build/gl-jar/check:build/gl-jar/classes" GlConstantsCheck
-	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/gl-jar/classes .
+	$(call JDK,java) -cp "build/gl-jar/check:build/gl-jar/classes" GlConstantsCheck
+	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/gl-jar/classes .
 
 # WhyNot: 前の名前の jar を lib/external から消してから置く — 残すと中身の違う同じクラスが 2 つ classpath に載り、どちらが効くか読めない。
 gl-jar: $(GL_JAR)
@@ -949,16 +952,7 @@ sync: clean-locks sync-layers sync-engine-full sync-root-src
 # エンジンに .flix を追加/削除/改名したら再実行して集約を更新する (sync-root-src と同じ運用)。
 sync-engine-full: gl-jar
 	@for pkg in $(ROOT_SRC_PKGS); do rm -rf "$(ENGINE_FULL_DIR)/src/$$pkg"; done; \
-	for pkg in $(ROOT_SRC_PKGS); do \
-		(cd "$$pkg/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-			d=$$(dirname "$$f"); \
-			if [ "$$d" = "." ]; then dir="$(ENGINE_FULL_DIR)/src/$$pkg"; else dir="$(ENGINE_FULL_DIR)/src/$$pkg/$$d"; fi; \
-			mkdir -p "$$dir"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			up=$$(printf '../%.0s' $$(seq 0 "$$depth")); \
-			ln -sfn "$$up$$pkg/src/$$f" "$$dir/$$(basename "$$f")"; \
-		done; \
-	done; \
+	for pkg in $(ROOT_SRC_PKGS); do $(LINK_FLIX) --relative "$$pkg/src" "$(ENGINE_FULL_DIR)/src/$$pkg" || exit 1; done; \
 	find $(ENGINE_FULL_DIR)/src -type l | awk 'END { print "[sync-engine-full] " NR " source symlink(s)" }'
 	# 固める前に型検査する。build-pkg はソースを zip にするだけで、コンパイルが通るかを
 	# 見ない。ここで検査しないと、壊れたエンジンが fpkg → Studio 同梱 → /Applications まで
@@ -996,14 +990,13 @@ WEB_JAR_SRC      := $(shell find $(WEB_DIR)/java -name '*.java' 2>/dev/null)
 WEB_JAR_DEPS     := $(foreach m,jso jso-apis interop,build/web-jar/deps/teavm-$(m)-$(TEAVM_VERSION).jar)
 
 build/web-jar/deps/teavm-%-$(TEAVM_VERSION).jar:
-	@mkdir -p $(dir $@)
-	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/teavm/teavm-$*/$(TEAVM_VERSION)/teavm-$*-$(TEAVM_VERSION).jar
+	$(call MAVEN_JAR,org/teavm/teavm-$*/$(TEAVM_VERSION)/teavm-$*-$(TEAVM_VERSION).jar)
 
 $(WEB_JAR): $(WEB_JAR_SRC) $(WEB_JAR_DEPS) $(GL_JAR)
 	@rm -rf build/web-jar/classes && mkdir -p build/web-jar/classes
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/classes \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/web-jar/classes \
 		-cp "$(GL_JAR):$(subst $(eval) ,:,$(WEB_JAR_DEPS))" $(WEB_JAR_SRC)
-	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/classes .
+	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/classes .
 
 # TeaVM の穴の手当て（classlib に無い類の shim と、jar のバイトコードの付け替え Rewrite）と、TeaVM を呼ぶ BuildWasm。書き出しの道具が TeaVM の classpath の頭に置く。
 WEB_TOOLS_JAR      := build/web-jar/fge-web-tools-$(VERSION).jar
@@ -1013,9 +1006,9 @@ WEB_TOOLS_DEPS     := $(foreach m,relocated-libs-asm core tooling,build/web-jar/
 # WhyNot: fge.web.EmbeddedCodec を tools の jar へ写さない — 同じ類が TeaVM の classpath に 2 つ載り、どちらが有効になるか読めない。Embed は fge-web.jar を classpath に足して使う。
 $(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS) $(WEB_JAR)
 	@rm -rf build/web-jar/tools-classes && mkdir -p build/web-jar/tools-classes
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/tools-classes \
+	$(call JDK,javac) --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/web-jar/tools-classes \
 		-cp "$(subst $(eval) ,:,$(WEB_TOOLS_DEPS)):$(WEB_JAR)" $(WEB_TOOLS_SRC)
-	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
+	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
 
 .PHONY: web-jar sync-engine-full-web
 web-jar: $(WEB_JAR) $(WEB_TOOLS_JAR)
@@ -1025,10 +1018,7 @@ sync-engine-full-web: gl-jar web-jar
 	@# engine_full にだけある物（src/full: VideoOut・GpuShot）も入れる。ゲームの src がそれを use するので、無いと型検査で止まる。
 	@for pkg in $(ROOT_SRC_PKGS) $(WEB_DIR) $(ENGINE_FULL_DIR)/src/full; do \
 		root="$$pkg/src"; [ -d "$$root" ] || root="$$pkg"; name=$$(basename "$$pkg"); \
-		(cd "$$root" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-			mkdir -p "$(WEB_FULL_DIR)/src/$$name/$$(dirname "$$f")"; \
-			ln -sfn "$(CURDIR)/$$root/$$f" "$(WEB_FULL_DIR)/src/$$name/$$f"; \
-		done; \
+		$(LINK_FLIX) "$(CURDIR)/$$root" "$(WEB_FULL_DIR)/src/$$name" || exit 1; \
 	done
 	@awk -v web='"$(WEB_JAR_NAME)" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/v$(VERSION)/$(WEB_JAR_NAME)"' \
 	     -v jso='"org.teavm:teavm-jso" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-jso-apis" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-interop" = "$(TEAVM_VERSION)"' \
@@ -1258,17 +1248,7 @@ sync-root-src:
 # 読んでいる最中のソースが消え、偽の赤で正しい書き換えが戻される。
 .PHONY: sync-root-src-missing
 sync-root-src-missing:
-	@for pkg in $(ROOT_SRC_PKGS); do \
-		(cd "$$pkg/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
-			d=$$(dirname "$$f"); \
-			if [ "$$d" = "." ]; then dir="src/$$pkg"; else dir="src/$$pkg/$$d"; fi; \
-			[ -L "$$dir/$$(basename "$$f")" ] && continue; \
-			mkdir -p "$$dir"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			up=$$(printf '../%.0s' $$(seq 0 "$$depth")); \
-			ln -sfn "$$up$$pkg/src/$$f" "$$dir/$$(basename "$$f")"; \
-		done; \
-	done; \
+	@for pkg in $(ROOT_SRC_PKGS); do $(LINK_FLIX) --relative --only-missing "$$pkg/src" "src/$$pkg" || exit 1; done; \
 	find src -type l ! -exec test -e {} \; -exec rm -f {} +
 
 # engine の上に載る 3 層 (render_gl / engine_world / engine_tools) の検査用の作業場を張る。
@@ -1287,10 +1267,7 @@ sync-layers: gl-jar
 		for part in "$(ENGINE_DIR)/src:src/$(ENGINE_DIR)" "$$pkg/src:src/$$pkg" "$$pkg/test:test"; do \
 			from="$${part%%:*}"; to="$${part#*:}"; \
 			[ -d "$$from" ] || continue; \
-			(cd "$$from" && find . -type f) | sed 's|^\./||' | while read -r f; do \
-				mkdir -p "$$(dirname "$$dir/$$to/$$f")"; \
-				ln -sfn "$(CURDIR)/$$from/$$f" "$$dir/$$to/$$f"; \
-			done; \
+			bin/link-tree.sh "$(CURDIR)/$$from" "$$dir/$$to" || exit 1; \
 		done; \
 	done; \
 	ln -sfn ../templates "$(LAYER_ROOT)/templates"; \
