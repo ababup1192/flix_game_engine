@@ -320,3 +320,5 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 - Inside#35 → Upstairs の歩き: コメント（LineWait）の後ろの `<<jump>>` の先の歩く `<<bg>>` が、続いた LineWait として後ろに並び、コメントの秒（0.65 秒）だけ遅れて歩き出していた。古い版はコメントと同じ頭で歩き出す。**直した**: 背景を替えた命令の LineWait は `Kind.SwitchWait` で、続いた LineWait の最初の頭から重なる（コメントどうしは今まで通り後ろに並ぶ）。
 - Found#0 の暗さ: blank の写真（暗闇）の地がテンプレートの夜の紺（10,13,20）で、古い版はほぼ黒（3,3,4）。**直した**: `novel.backdrops.json` の `ground`（地の色）で替えられるようにした（無ければ今の紺）。廃屋配信は追随の時に `"ground": "#030304"` 前後を書く。
 - 廃屋配信はリリースのため止めてあるので、この 3 件の写しは再開の後。
+- レビュー（84 点・4b465242..be8e0763）の推奨は 4d8ca4f2 で直した: 続いた LineWait は前の LineWait の終わりに並ぶ（間の歩きの終わりは待たない・`Acc#lineEnd`）・戻れる所は台詞を積む時に 1 回作る（`refreshHeadMark` を消した）・後で当てる命令の順は `NovelBeat.behindOf`（dueOf と同じ順）・`ground` は schema の color と読めない時の Log。
+- 廃屋配信へ写した（test 611 緑・`--strict --times` で止める違い 0。残りの 43 区間は人が遊んで良しとした理由で承認）。段 11 はこれで閉じた（`plans/novel-vocab-n4-design.md` の 11.13）。
