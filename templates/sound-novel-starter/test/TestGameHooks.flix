@@ -725,6 +725,25 @@ mod TestGameHooks {
         let moved = back |> Option.map(b -> TestKit.placeOf(TestKit.stepBy(r, 30.0, TestKit.advance(r, b))) != TestKit.placeOf(b));
         Assert.assertEq(expected = (Some("amb_river"), Some(true)), (ambience, moved))
 
+    // ══ GameCommands.onLine ══
+
+    /// 台詞を積むたびに game.count の数を 1 つ増やす口を差した描く元。
+    def withLineCounter(r: Res.Res): Res.Res =
+        let key = PropertyTween.nameKey("game.count");
+        let count = (st: Stage.Stage) -> PropertyTween.nameEnd(key, st#props) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(0);
+        { onLine = Commands.lineHookOf((ctx, st) -> { props = PropertyTween.setName(key, Some(Int32.toString(count(st) + 1)), ctx#now, 0.0, st#props) | st }) | r }
+
+    def countOf(r: Res.Res, w: World.World): Option[String] =
+        PropertyTween.nameEnd(PropertyTween.nameKey("game.count"), World.stageOf(r, w)#props)
+
+    @Test
+    def testTheLineHookRunsOncePerLine(): Unit \ {Assert, Fs.FileRead} =
+        // 台詞を 1 行積むたびに口が 1 回呼ばれ、舞台の値が台詞の数だけ進む。
+        let r = withLineCounter(res());
+        let first = begun(r);
+        let second = TestKit.settle(r, TestKit.advance(r, first));
+        Assert.assertEq(expected = (Some("1"), Some("2")), (countOf(r, first), countOf(r, second)))
+
     // ══ GameE2e.drives ══
 
     @Test

@@ -240,7 +240,8 @@ mod WorldRead {
         match event {
             case YarnRunner.Event.Line(said)       =>
                 let line = shownLineOf(res, said);
-                whileReading(cur -> showLine(res, replay, bookmarkAt(last, later), line, { cursor = Some(line#source) | cur }, w), w)
+                whileReading(cur -> showLine(res, replay, bookmarkAt(last, later), line,
+                                             { cursor = Some(line#source), stage = Commands.onLineBy(res#onLine, ctxOf(res, cur, w), cur#stage) | cur }, w), w)
             case YarnRunner.Event.Choices(offered) =>
                 let options = offered |> List.map(option -> { line = shownLineOf(res, option#line) | option });
                 let at = List.head(options) |> Option.map(option -> option#line#source);

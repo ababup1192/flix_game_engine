@@ -104,6 +104,16 @@ mod Commands {
 
     pub def commandsIn(t: Table): List[Command[Stage.Stage]] = let CommandTable.CommandTable(commands) = t; commands
 
+    /// 台詞を 1 行積むたびに舞台を動かす口（GameCommands.onLine）。Res が持ち、テストが差す。
+    // WhyNot: Res に関数をそのまま持たせない — Ctx が Res を持つので、型の別名どうしが互いを指して組めない。
+    enum LineHookOf((Ctx, Stage.Stage) -> Stage.Stage)
+
+    pub type alias LineHook = LineHookOf
+
+    pub def lineHookOf(f: (Ctx, Stage.Stage) -> Stage.Stage): LineHook = LineHookOf.LineHookOf(f)
+
+    pub def onLineBy(hook: LineHook, ctx: Ctx, st: Stage.Stage): Stage.Stage = let LineHookOf.LineHookOf(f) = hook; f(ctx, st)
+
     /// テンプレートとゲームを合わせた全部の命令の表（名前の重なりを見るテスト）。
     pub def specs(): List[YarnCommands.Spec] = table() |> List.map(c -> c#spec)
 
