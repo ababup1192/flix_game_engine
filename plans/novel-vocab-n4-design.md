@@ -730,7 +730,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | — | レビュー 3 | | 0.5〜1 時間 |
 | 10 | 門 | 10.7 の道具と 10.6 の確かめ・`make template-sync`（C5）と、その一覧を毎回見る手順（7.2）。**go の道具（10.8）とテンプレートの側（10.8.1: tape.json の events・buses・frames・screen・restore.json・`make migrate-baseline`・`migrate-new`・`migrate-diff`・`migrate-video`・早見表とお題）は済（2026-11-16）**。ranLines（engine_world の `YarnRunner.ranSourcesSince`）と mid の秒（go）も済・`make template-sync` は未着手 | 9.5〜13 時間 |
 | — | レビュー 4 | 門の道具 | 0.5〜1 時間 |
-| 11 | 移行 | 廃屋配信（先に。分岐が無く flow が短いので門の道具の確かめになる）: **基準は撮った（2026-11-16・5 本・2 回撮って差 0・コマ 691 枚）。テンプレートの直し A〜E を入れてから移す（11.12）**。テンプレートの当て直し（追随の実績から 3〜4 時間）・Walk の行き先は 5.0 のとおり `GameView.backdrop` と `GameCommands.backdropSwitch`（1〜2 時間）・状態バーとコメント欄を `GameView.hud` と変数へ・HUD の変数の宣言（0.5 時間）・テスト 131 本の振り分け（1〜2 時間）・門の振り分け（1〜2 時間） | 8〜12 時間 |
+| 11 | 移行 | 廃屋配信（先に。分岐が無く flow が短いので門の道具の確かめになる）: **基準は撮った（2026-11-16・5 本・2 回撮って差 0・コマ 691 枚）。テンプレートの直し A〜G を入れてから移す（11.12。F・G は移行の担当が後から見つけた）**。テンプレートの当て直し（追随の実績から 3〜4 時間）・Walk の行き先は 5.0 のとおり `GameView.backdrop` と `GameCommands.backdropSwitch`（1〜2 時間）・状態バーとコメント欄を `GameView.hud` と変数へ・HUD の変数の宣言（0.5 時間）・テスト 131 本の振り分け（1〜2 時間）・門の振り分け（1〜2 時間） | 8〜12 時間 |
 | 12 | 移行 | 血鱗: 基準を撮る・テンプレートの当て直し（実績 約 5 時間 → 上書きの決まりで 3〜5 時間）・Whale・Sea・Vial・Ending を GameView の層の数と `src/game/` へ写す（4〜6 時間）・テスト 323 本の振り分け（2〜3 時間）・門の振り分けと古いセーブ（2〜3 時間） | 11〜17 時間 |
 | — | レビュー 5 | 移行の後 | 1 時間 |
 | 13 | — | agent-eval（新しい語彙のお題を 1 本）・早見表・`docs/modules` の行・`forbid.json` で古い名前（`<<char>>` など）を止める | 1〜2 時間 |
@@ -1048,6 +1048,8 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | 廃屋配信 `View.liveBar`・`statusBar`・`chatColumn`（サムネにも出る。zLive 16・zChat 14） | `GameView.hud` の OverWindow（変数は `YarnRunner.valueOf`） |
 | 廃屋配信 `View.blood`（zBlood 4。文字の枠の覆いの下・カメラと揺れを受けない） | `GameView.hud` の UnderWindow（hud の一番奥） |
 | 廃屋配信 `feed`（コメントの列） | GameCommands が `game.feed.<番号>.*` に書き、`GameView.hud` が描く（6.2 の (ii)） |
+| 廃屋配信 状態バー・配信の表示・コメント欄の字（gothic_bold・gothic。古い版は `App.withFonts` と `ctx#fontOf`） | `GameView.hud` の `env#fonts#fontOf`（段 11 の F）。実機は `GameBoot.app` で `App.withFonts` |
+| 廃屋配信 台本の `××××`（古い `Page.lineOf` が heroName に替えた） | `novel.story.json` の `replace`（段 11 の G） |
 | 廃屋配信 `<<feed live/lost>>`（経過時間の始まり） | ゲームのコマンド `<<stream>>`（`game.stream` の鍵と始めた時刻を Stage の props に書く。Yarn の変数では時刻を持てない） |
 | 廃屋配信 カメラの手ぶれ | `GameView.backdrop` で写真を揺らして描く【推】 |
 | 廃屋配信 右の列（コメントを下から積む） | `novel.rail.json` の `anchor: bottom` |
@@ -1129,8 +1131,10 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | C | テンプレートも古い廃屋配信も Saves の version が 3 で見分けられない | 書く版を 4（`Saves.formatVersion`）。読む形を `Saves.formOf` で分ける: version 4 と、どの枠も `"stage"` を持つ version 3 は今の形・version 2 までは前の形（血鱗）・`"stage"` の無い枠がある version 3（古い廃屋配信の枠は stage を持たない）と 5 以上は断る（`Saves.decode` が None）。断った時は元のファイルを `saves/novel.refused-v<版>.json` へ写して残し（同じ名前が既にあれば書かない）、fresh で起動し、タイトルで labels の `savesRefusedKept`（写せなければ `savesRefused`）を知らせる（`Saves.Opened`・`World.opened`・`Game.appFrom`）。写すのは、遊び始めて最初の未読の行か設定の変更で `World.withSaves` が saveRev を進め、`saves/novel.json` が書き直されるため。restore.json は断った枠も `refused: true` で、コマは知らせの出たタイトルから撮る。0.96.0・0.97.0 のテンプレートが書いた version 3 はそのまま読めるので、テンプレートから作ったゲームの遊ぶ人のセーブは消えない（docs/migrations/0.98.0.md） |
 | D | ゲームの問いを足すにはテンプレートの `E2e.table` を直すしかない | ゲームの持ち物 `src/GameE2e.flix` の `GameE2e.probes()`。`E2e.table` は自分の問いの後ろに並べ、移行の記録の問い（`FlowVideo.migrateProbes`）にも載せる。作例の `ownPace`・`sharedTiredness` はそちらへ移した（e2e/vocab.json の問いの並びは変わらない）。名前が重なると TestTape が落ちる |
 | E | `Out.Wait` の間は押しても進まず、廃屋配信の押して飛ばす歩きとコメントを書けない | `Commands.Out.WaitOrTap(秒)`。人の送り（`WorldRead.advance`）だけが明け、オートは明けない。明けた時は `Stage.withGameSwitchFinished`。送る時と同じく今の行を既読にして Paged を出し、効果音の後の lockSeconds の間は明けない。明けた後に続けて押すと明ける待ちが出来れば続けて明け（コメントが続く間に 1 回押すと全部出す。古い版の `testPressingWhileCommentsFlowShowsThemAll`）、台詞・選択肢・押しても明けない待ち・素材の待ちで止まり、出た台詞は字を出し切る。テストで命令を差せるよう、読み進める命令の表を `Res#commands`（`Commands.Table`）に持たせた。1 つのコマンドが Wait と WaitOrTap を両方出したら押しても明けない。`bg` がゲームの切り替えで出す待ちも WaitOrTap に。Silent では落とし、スキップ中はすぐ明ける（Wait と同じ）。flow の reader はこの間は押さない（`WorldRead.isTapWait`。基準の版の reader も歩きの間は押さない）。移行の記録では wait にせず、その命令の秒（`Executed.Commanded` の秒 = 待ちの秒）に入れる（docs/migrate-diff.md）|
+| F | `GameView.hud`・`draw` が受ける `View.Env` に字の本が無く、状態バー・配信の表示・コメント欄の字（gothic_bold・gothic）を描けない。描き出しと flow も既定の本しか読まない | `View.Env#fonts`（`View.Fonts` = `{ atlas, fontOf }`）。描く所は `View.envOfCtx`（ViewCtx の本文の本と fontOf）、字を描かない所（Controls の当たり・バックログの寸法・テープの物）は `View.envOf` で字の形の無い本（`View.noFonts`。Controls は Frame しか受けず本が無いため）。実機で名前の本を引くのは `GameBoot.app` の `App.withFonts`。描き出しと flow は project.json の fonts の default 以外を実機と同じ名前（font_<name>）で組んで混ぜる（`SceneRender.extraFontsOf`・`fontsIn`・`fontOfIn`。描き出しは `HeadlessRender.renderPngFull` に替えた。基準の 45 枚は同じ） |
+| G | 台本の `××××` を主人公の名前に替える口が無い（古い `Page.lineOf` がしていた） | `novel.story.json` の `replace`（台本の字 → 画面の字の表）。labels の heroName を指す形にせず値を直に書くのは、Studio のフォームで 1 か所を直すだけで済み、名前以外の置き換えにも同じ表が使えるため。当てるのは `WorldRead.shownLineOf`（頁・バックログ・選択肢）と `StoryDoc.nameOf`（話し手の呼び名）で、どちらも `StoryDoc.replaceText`。ルビの位置が替わらないよう parts の字にも当てる（`StoryDoc.replaceLine`）。移行の記録（events の text・options、tape.json の lines）は台本の字のまま: 基準の版の tape.json も events と lines に `××××` のまま出していた（showcase・full_story・walk_tour）。tape.json の choices（選んだ所）は画面の字（World の選択肢から作るため） |
 
-**門の結果**: テンプレートで `make check` OK・`make test` 523 緑（前は 498。A・B 8 本・D 2 本・C 7 本・E 9 本を足し、押しても歩きが明けない事を見ていた 1 本を消した。レビュー 1 回目（84 点）の直しの後は 532 緑）・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・`make flow` 6 本 ok（指紋は前と同じ）・`make lint` は lint-doc-refs 15 件のまま（前からの物）・ほか OK・`go test -count=1 ./internal/migrate/` ok（go は変えていない）・agent-eval `novel-tap-wait-game-probe` 100 点（1 回）。古い廃屋配信の bookmark の saves.json をテンプレートの `FlowVideo.restore` に読ませ、`refused: true` の restore.json が出るのを見た。
+**門の結果**: テンプレートで `make check` OK・`make test` 523 緑（前は 498。A・B 8 本・D 2 本・C 7 本・E 9 本を足し、押しても歩きが明けない事を見ていた 1 本を消した。レビュー 1 回目（84 点）の直しの後は 532 緑・F と G の後は 540 緑）・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・`make flow` 6 本 ok（指紋は前と同じ）・`make lint` は lint-doc-refs 15 件のまま（前からの物）・ほか OK・`go test -count=1 ./internal/migrate/` ok（go は変えていない）・agent-eval `novel-tap-wait-game-probe` 100 点（1 回）。古い廃屋配信の bookmark の saves.json をテンプレートの `FlowVideo.restore` に読ませ、`refused: true` の restore.json が出るのを見た。
 
 ## 12. 試した事（スパイク）
 
@@ -1179,6 +1183,10 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - （段 11）【未確認】血鱗も縦の design なら、段 12 でも A（描き出しと flow の 960×540 の決め打ち）に当たっていた。
 - （段 11）C で断ったセーブのファイル `saves/novel.json` は、遊び始めて最初の未読の行か設定の変更で書き直される。その前に起動の時に `saves/novel.refused-v<版>.json` へ写して残す（同じ名前が既にあれば書かない・写せなければ 1 行言って `savesRefused` だけを知らせる）。残したファイルを読み戻す口は無い（古い版のゲームで開き直す時に手で戻す）。
 - （段 11）`Out.WaitOrTap` を押して早く明けた時、移行の記録の mid のコマは予定の秒の割合の所で撮るので、明けた後の絵になる（flow の reader は押さないので門では起きない）。
+- （段 11 の F）`GameView.objects` が受ける Env と、Controls の当たりの Env の fonts は字の形を持たない（`View.noFonts`）。字の幅で矩形を決める物は objects に出せない（要るなら objects に ViewCtx を渡す口を相談する）。
+- （段 11 の F）描き出しは場面ごとに project.json の fonts の本を組み直す（`SceneRender.shootAs` が毎回 `extraFontsOf`）。テンプレートは default だけで 0 本・廃屋配信は 2 本。遅ければ shotsInto で 1 回にする【推】。
+- （段 11 の G）tape.json の choices（選んだ所の options と question）は画面の字（replace を当てた後）で、events と lines の台本の字と違う。廃屋配信は選択肢が無く、テンプレートは replace が空なので今は食い違わない。
+- （段 11 の G）基準の版が tape.json の events と lines に `××××` を出していた事は読んで確かめた。基準のコマの絵は置き換えた名前を描いているので、新しい版のコマと同じになる見込み【推】。
 - （段 8+9）`Scene3d` に `Render.fade` は効かない（3D の背景へ重ねて入るとぱっと出る）。要るなら GameView が自分で暗くする。
 - （段 8+9）`vocab.std.json` を読むのは go の `yarn build`・`check`・`graph` と Doc から語彙を探す所。Studio の `TalkTags.elm` は `vocab.json` の tags・speakerTags だけを読み commands は読まないので、分けても壊れない。
 - （段 8+9）`<<tween>>` の鍵に `game.` や `camera.` を書いた時に build で止める口は無い（`YarnCommands.Param` の name 型に頭の字の決まりを持たせるのは engine_world の変更）。今は実行の時に `game.` を Err にし、ほかは `game.` を前に付けて読む。
