@@ -1,4 +1,4 @@
-// LwjglLayer.Internal.WebGpuWindowLayer — 実機のウィンドウの WebGPU 版（FLIX_GE_BACKEND=webgpu の時の LwjglLayer.withLwjgl の枝）。
+// LwjglLayer.Internal.WebGpuWindowLayer — 実機のウィンドウの WebGPU 版（既定の描き手。LwjglLayer.withLwjgl の枝）。
 // device（Dawn）を先に開き、GLFW のウィンドウ（GLFW_NO_API）と surface を作ってから、塗りを RenderPaint.Internal.WebGpuPaint の handler で受ける。
 // 音・仕事・時計・読み込みの知らせ・カーソル・入力は GL の枝と同じ物（LwjglLayer の pub でない物と LwjglInput）を使う。
 // 開く前に落ちたら（Dawn のネイティブ・device・ウィンドウ）作った物を捨てて Err(理由) を返し、呼ぶ側が GL で起動する。

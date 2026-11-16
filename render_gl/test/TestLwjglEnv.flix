@@ -112,5 +112,13 @@ mod TestLwjglEnv {
     /// 知らない値は既定の WebGPU で起動する（起動を止めない。知らせは load が出す）。
     @Test
     def testUnknownBackendFallsBackToWebGpu(): Unit \ Assert =
-        Assert.assertEq(expected = LwjglEnv.Backend.WebGpu,LwjglEnv.fromMap(Map#{"FLIX_GE_BACKEND" => "vulkan"})#backend)
+        Assert.assertEq(expected = LwjglEnv.Backend.WebGpu, LwjglEnv.fromMap(Map#{"FLIX_GE_BACKEND" => "vulkan"})#backend)
+
+    /// FLIX_GE_BACKEND を置かずに FLIX_GE_GL_LOG を置いたら GL・両方置いたら FLIX_GE_BACKEND が勝つ。
+    @Test
+    def testGlLogPicksGlUnlessBackendIsSet(): Unit \ Assert =
+        let read = env -> LwjglEnv.fromMap(env)#backend;
+        Assert.assertEq(expected = (LwjglEnv.Backend.Gl, LwjglEnv.Backend.WebGpu),
+                        (read(Map#{"FLIX_GE_GL_LOG" => "debug/gl.log"}),
+                         read(Map#{"FLIX_GE_GL_LOG" => "debug/gl.log", "FLIX_GE_BACKEND" => "webgpu"})))
 }

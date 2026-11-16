@@ -379,7 +379,7 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す（**済・12.40**） | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
-| 16 | P10 | **切り替え。** PC の既定を WebGPU に（画面なしの描き出し・テスト・動画の既定も）。`gl-capture` の基準を取り直す（Dawn の版を pin）。`docs/flix-conventions.md`・`backend-parity.md`・agents-pack・eval・migrations。外のゲームの追随 | リリースの門を全部。CI（GPU が無い）で回る門と手元だけの門を分けて書く | 6〜10 時間 |
+| 16 | P10 | **切り替え。** PC の既定を WebGPU に（画面なしの描き出し・テスト・動画の既定も）。`gl-capture` の基準を取り直す（Dawn の版を pin）。`docs/flix-conventions.md`・`backend-parity.md`・agents-pack・eval・migrations。外のゲームの追随（**人の指示で前倒し・12.41。既定の切り替え・基準・文書は済。計測・動画・外のゲームの追随は残り**） | リリースの門を全部。CI（GPU が無い）で回る門と手元だけの門を分けて書く | 6〜10 時間 |
 | — | | **リリース 3**: WebGPU が既定 | | |
 | 後 | | スプライトの集まりの口（決まり 11）・粒子（決まり 12）・GPU の上での間引き（compute で引数のバッファを書く。引数は 1 本のバッファに詰める）・ブラウザで `RenderList` の配列を JS へ 1 回で渡す形（draw が 100 本を超える場面が残った時） | 別に計画して伺う | — |
 

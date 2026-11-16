@@ -201,7 +201,7 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
 | `RenderList`（値・`RenderFrame.Internal.RenderList`）と 3D の `Render3d.SceneList` | 描き手の前半（何を描くか: 2D の z の並べ・run の切り方・3D の計画） ／ backend（どう描くか） | WebGPU の backend（`RenderPaint.Internal.WebGpuPaint`・`Render3d.WebGpuRenderer`。`WebGpu` の上）・GL の backend（`RenderFrame.Internal.GlRows`・`Render3d.GlRows`。`GlContext` の上・WebGPU の無いブラウザと PC の fallback） |
 | `Scene3dRenderer.Renderer`（値） | 2D の描き手 ／ 3D の描き手 | `Render3d.makeRenderer`・`Scene3dRenderer.none()`（ブラウザは `WebLayer.withProject3d` が前者・`withProject` が場面を描かず知らせる物を渡す） |
 | `GlContext`（値・`render_gl/java/fge/gl`） | GL の backend（2D と 3D） ／ GL の API | `LwjglGl`（デスクトップの GL 3.3）・`WebGl2`（ブラウザ）・`RecordingGl`（呼び出しを控える包み）。この 2 つの機種のためだけの層 |
-| `WebGpuDevice`（effect・`render_gl/src`）と `fge.webgpu.WebGpu`（interface・`render_gl/java/fge/webgpu`） | WebGPU を使う側（`WebGpuOffscreen`・`WebGpuPaint`） ／ WebGPU の実装 | Dawn（`WebGpuDevice.runDawn`・PC）・navigator.gpu（`WebLayer.runBrowserWebGpu`・ブラウザの TeaVM の JSO）。入口で handler を差すだけで、使う側のコードは同じ。GlContext と同じく 2 つの機種のためだけの層 |
+| `WebGpuDevice`（effect・`render_gl/src`）と `fge.webgpu.WebGpu`（interface・`render_gl/java/fge/webgpu`） | WebGPU を使う側（`WebGpuOffscreen`・`WebGpuPaint`・`GpuOffscreen`） ／ WebGPU の実装 | Dawn（`WebGpuDevice.runDawn`・PC）・navigator.gpu（`WebLayer.runBrowserWebGpu`・ブラウザの TeaVM の JSO）。入口で handler を差すだけで、使う側のコードは同じ。GlContext と同じく 2 つの機種のためだけの層 |
 
 - **新しい機種（コンシューマなど）の切れ目**: 描画は上の 2 行目の **`RenderList` の backend の高さ**（何を描くかは今の前半を使い、
   その機種の GPU の API で行を流す backend を 1 本足す）。入力・音・窓・ファイルは 1 行目の handler 一式の高さ（`Platform.Services` と Fs と

@@ -4,8 +4,9 @@
 
 .PHONY: run check
 
+# WhyNot: FLIX_GE_BACKEND を外すだけにしない — このベンチは GL を直に呼んで絵を上げ、既定の WebGPU の窓には GL の文脈が無い。
 run:
-	../../bin/flix run
+	FLIX_GE_BACKEND=gl ../../bin/flix run
 
 check:
 	../../bin/flix check

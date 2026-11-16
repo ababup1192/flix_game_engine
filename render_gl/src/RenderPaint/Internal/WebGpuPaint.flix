@@ -139,11 +139,19 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
             drawCounts = RenderDrawCounts.Holder,
             // 3D の場面を描く所（2D の pass の前に場面を自分の texture へ描き、貼る行で貼る）。
-            scenes3d = Render3d.WebGpuRenderer.Renderer
+            scenes3d = Render3d.WebGpuRenderer.Renderer,
+            // Pass の history に前のコマの絵を写すか（偽なら毎回透明。GL の RenderPaint の keepHistory と同じ）。
+            keepHistory = Bool
         })
     }
 
     pub type alias Paint = PaintData
+
+    /// Pass の history を毎回透明にした paint（窓なしの 1 枚撮り。GL の GlOffscreen と同じく、続けて撮った前の 1 枚や
+    /// 字の欠けで描き直す前の試しを history として読まない）。
+    pub def withoutHistory(paint: Paint): Paint =
+        let PaintData.PaintData(p) = paint;
+        PaintData.PaintData({ keepHistory = false | p })
 
     /// instance の 1 体のバイト数（RenderFrame.writeInstAt の float の並び）。
     def instanceBytes(): Int32 = 4 * RenderList.instanceFloats()
@@ -201,7 +209,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
             texWarnLog = Ref.fresh(Static, Set.empty()), msaaWarned = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
-            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout, imageLayout)
+            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout, imageLayout),
+            keepHistory = true
         });
         installBuiltins(paint);
         paint
@@ -730,12 +739,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         }
 
     /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物（スプライト・面・3D の場面のビルボード）が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
-    // WhyNot: 1 枚撮りの「history は透明」（GL の keepHistory = false）を持たない — 窓とその撮影は前のコマを写し、窓なしの 1 枚撮り（GpuOffscreen）は
-    //   人が見る絵だけで比べには使わない（字の欠けで描き直したコマが前の試しを読む差は残す。historyFor へ keep を真で渡す。applyHistory の ClearTransparent の枝は前半の答えを全部受けるために置き、今は通らない）。
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,
-                                             isHistoryReadIn(spec#name, frame), true);
+                                             isHistoryReadIn(spec#name, frame), p#keepHistory);
         TargetTable.rowByName(p#targets, spec#name)
             |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
             |> Option.forEach(match (row, slot) -> {

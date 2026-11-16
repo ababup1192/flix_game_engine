@@ -24,7 +24,7 @@ pub mod GpuOffscreen {
         stamps = Ref[Map[String, (String, Int64, Int64)], Static]
     }
 
-    /// 開いた 1 本。外から作らせない（open と ofGl だけが作る）。
+    /// 開いた 1 本。外から作らせない（open だけが作る）。
     enum SessionData {
         case Gl(GlOffscreen.Session)
         case WebGpu(WebGpuData)
@@ -52,9 +52,6 @@ pub mod GpuOffscreen {
                 GlOffscreen.open(cfg) |> Result.map(SessionData.Gl)
         }
 
-    /// 別に開いた GL の session を包む（動画の口が GL の用意を別の糸で始める時）。
-    pub def ofGl(session: GlOffscreen.Session): Session = SessionData.Gl(session)
-
     /// Dawn の device を開き、塗りのコアとテクスチャ・フォントを用意する。
     def openWebGpu(cfg: { config = GameEngine.EngineConfig, scale = Int32 }): Result[String, WebGpuData] \ IO =
         match run { WebGpuDevice.requestDevice() } with WebGpuDevice.runDawn {
@@ -72,7 +69,7 @@ pub mod GpuOffscreen {
             let height = config#designHeight * cfg#scale;
             println("[backend] webgpu: ${gpu.adapterInfo()}");
             let paint = WebGpuPaint.create(gpu, { designWidth = config#designWidth, designHeight = config#designHeight,
-                                                  clearColor = config#clearColor, width = width, height = height });
+                                                  clearColor = config#clearColor, width = width, height = height }) |> WebGpuPaint.withoutHistory;
             LwjglLayer.Internal.WebGpuWindowLayer.loadTextures(paint, config#textureManifest, (_, _) -> checked_ecast(()));
             let fonts = LwjglLayer.Internal.WebGpuWindowLayer.loadFonts(paint, config, (_, _, _) -> checked_ecast(()));
             let stamps = config#textureManifest
@@ -124,27 +121,6 @@ pub mod GpuOffscreen {
     def textureInfoOf(w: WebGpuData, name: String): Option[RenderAsset.TextureInfo] \ IO =
         WebGpuPaint.handleGpuResources(w#paint, w#fonts, () -> Platform.GpuResources.getTextureInfo(name))
 
-    // ── 字と絵（動画の口が、App を通さずに場面を組む時に使う）──
-
-    /// 今のフォントのアトラス（名前 → アトラス。字が育つと中身が変わるので、コマごとに引き直す）。
-    pub def fontTable(session: Session): Map[String, FontAtlas] \ IO = match session {
-        case SessionData.Gl(s)     => GlOffscreen.fontTable(s)
-        case SessionData.WebGpu(w) => Ref.get(w#fonts#atlases)
-    }
-
-    /// textureName のフォントに字を足す（Platform.GpuResources.ensureGlyphs と同じ）。
-    pub def ensureGlyphs(session: Session, textureName: String, codepoints: Set[Int32]): Unit \ IO = match session {
-        case SessionData.Gl(s)     => GlOffscreen.ensureGlyphs(s, textureName, codepoints)
-        case SessionData.WebGpu(w) => WebGpuPaint.handleGpuResources(w#paint, w#fonts, () -> Platform.GpuResources.ensureGlyphs(textureName, codepoints))
-    }
-
-    /// ファイルの無い絵を名前で載せる。同じ名前・同じ key なら何もしない。argb = width × height の行優先の ARGB。
-    pub def uploadImage(session: Session, name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO = match session {
-        case SessionData.Gl(s)     => GlOffscreen.uploadImage(s, name, key, width, height, argb)
-        case SessionData.WebGpu(w) =>
-            WebGpuPaint.handleGpuResources(w#paint, w#fonts, () -> Platform.GpuResources.ensureTexture(name, key, width, height, argb))
-    }
-
     // ── 塗る ──
 
     /// f の中の Platform の effect と Target を、この session の描き先へ塗る形で受ける（App の 1 コマを描く口をそのまま呼べる）。
@@ -171,14 +147,8 @@ pub mod GpuOffscreen {
 
     // ── 読み戻す ──
 
-    /// 最後に塗った画面のコマを RGBA の生の画素で buf へ読む（width × height × 4 バイト・下の行から）。buf は呼ぶ側が持ち回す。
-    pub def readRgba(session: Session, buf: ByteBuffer): Unit \ IO = match session {
-        case SessionData.Gl(s)     => GlOffscreen.readRgba(s, buf)
-        case SessionData.WebGpu(w) => WebGpuPaint.readFrame(w#paint, buf)
-    }
-
-    /// readRgba の大きさの入れ物（直のメモリ）。
-    pub def freshBuffer(session: Session): ByteBuffer \ IO =
+    /// 画面のコマの大きさの読み戻しの入れ物（直のメモリ）。
+    def freshBuffer(session: Session): ByteBuffer \ IO =
         let (w, h) = sizeOf(session);
         ByteBuffer.allocateDirect(w * h * 4).order(ByteOrder.nativeOrder())
 

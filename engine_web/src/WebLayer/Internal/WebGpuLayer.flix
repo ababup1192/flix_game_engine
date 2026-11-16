@@ -3,7 +3,7 @@
 // 落ちうる準備（device・core-features-and-limits・pipeline・絵とフォントを上げる・中間の texture）を全部 canvas の webgpu の文脈を取る前に済ませ、
 // その前に落ちたら作った物を捨てて Err(理由) を返す（呼ぶ側が WebGL2 の文脈を取って GL で描く）。
 // 絵は頁が解いた ImageBitmap を BrowserWebGpu.copyImageBitmap で RGBA にして上げる（hasAlpha が偽なら alpha を 255 で埋める）。
-// フォントは書き出しが事前生成したアトラス（RenderFontCache の形式）を R8 で上げる。起動の後に足す字は足さない（WebGpuPaint がフォントごとに 1 回知らせる）。
+// フォントは書き出しが事前生成したアトラス（RenderFontCache の形式）を R8 で上げる。起動の後に出た字は足さない（WebGpuPaint が欠けの表に「起動の後に足せなかった字」と数える）。
 // ?capture=<n> は n コマ目の中間の texture を読んで Browser.publishCapture に置く（renderer は "webgpu: <adapter>"）。
 pub mod WebLayer.Internal.WebGpuLayer {
     import fge.web.AnimationFrame
