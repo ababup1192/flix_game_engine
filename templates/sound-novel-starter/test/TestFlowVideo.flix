@@ -1,0 +1,65 @@
+// 描き出しと flow の動画の画面の大きさ（SceneRender.designOf・fitOf・cfgOf・FlowVideo.objectsOf）と、撮るコマの上限（FlowVideo.frameBudgetOf）。
+mod TestFlowVideo {
+
+    use fge::{Flow, ProjectLoader}
+
+    def portraitDesign(): { x = Float64, y = Float64 } = { x = 540.0, y = 960.0 }
+
+    /// このテンプレートの project.json を、design だけ w×h に替えて読んだ物。
+    def projectSized(w: Int32, h: Int32): Result[String, ProjectLoader.Project] \ Fs.FileRead =
+        ProjectLoader.loadProject(".") |> Result.map(p -> { config = { designWidth = w, designHeight = h | p#config } | p })
+
+    @Test
+    def testDesignIsReadFromTheProject(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Ok((540.0, 960.0)), SceneRender.designOf(projectSized(540, 960)) |> Result.map(d -> (d#x, d#y)))
+
+    @Test
+    def testTemplateDesignIsTheLandscapeScreen(): Unit \ {Assert, IO} =
+        let d = SceneRender.design();
+        Assert.assertEq(expected = (960.0, 540.0), (d#x, d#y))
+
+    @Test
+    def testZeroSizedDesignIsAnError(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertTrue(Result.isErr(SceneRender.designOf(projectSized(0, 960))))
+
+    @Test
+    def testPortraitDesignIsDrawnWithThePortraitFit(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertTrue(Layout.isPortrait(SceneRender.fitOf(portraitDesign(), TestKit.res())))
+
+    @Test
+    def testLandscapeDesignIsDrawnWithTheRegularFit(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertFalse(Layout.isPortrait(SceneRender.fitOf(Layout.size(Layout.Fit.Regular), TestKit.res())))
+
+    @Test
+    def testPortraitDesignShootsAFrameOfTheSameSize(): Unit \ {Assert, IO} =
+        let cfg = SceneRender.cfgOf(portraitDesign(), "debug", Map.empty());
+        Assert.assertEq(expected = (540, 960), (cfg#frameW, cfg#frameH))
+
+    @Test
+    def testPortraitObjectsStayInsideTheScreen(): Unit \ {Assert, Fs.FileRead} =
+        // 縦の design で読んでいる間の物（背景・メッセージウィンドウ・クイックメニュー）は、どれも 540 の幅の中に収まる。
+        let r = TestKit.res();
+        let objects = FlowVideo.objectsOf(SceneRender.fitOf(portraitDesign(), r), r, TestKit.begun(r));
+        Assert.assertTrue(not List.isEmpty(objects) and (objects |> List.forAll(o -> o#rect#position#x + o#rect#size#x <= 540.01)))
+
+    def scriptOf(steps: List[Flow.Step]): Flow.Script =
+        { fps = 10.0, ready = None, options = Map.empty(),
+          lines = steps |> List.map(step -> { file = "t.flow", number = 1, text = "", step = step }) }
+
+    @Test
+    def testFrameBudgetCoversWaitsAndUntilMax(): Unit \ Assert =
+        // wait 2 秒と until の max 5 秒を 10fps で: 20 + 1 と 50 + 1 と 1。
+        let steps = Flow.Step.Wait(Flow.Span.Secs(2.0), Flow.noOpt()) :: Flow.Step.Until(Flow.Expr.Name("lineDone"), 5.0) :: Nil;
+        Assert.assertEq(expected = 73, FlowVideo.frameBudgetOf(scriptOf(steps)))
+
+    @Test
+    def testFrameBudgetGivesATapTheReadyWait(): Unit \ Assert =
+        // tap は入力を受けられるまで待つ 10 秒を取りうる（100 + 1 と 1）。
+        Assert.assertEq(expected = 102, FlowVideo.frameBudgetOf(scriptOf(Flow.Step.Tap(Flow.Target.Role("confirm"), Flow.noOpt()) :: Nil)))
+
+    @Test
+    def testFrameBudgetCoversTheRecordedFrames(): Unit \ Assert =
+        // 記録が 30 フレームを書いた wait 1 秒（10 フレーム）は 30 フレームを取る（30 + 1 と 1）。
+        let opt = { ns = List.repeat(30, 16000000i64) | Flow.noOpt() };
+        Assert.assertEq(expected = 32, FlowVideo.frameBudgetOf(scriptOf(Flow.Step.Wait(Flow.Span.Secs(1.0), opt) :: Nil)))
+}

@@ -5,21 +5,25 @@
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
-    use fge::{App, DocJson, Display, HeadlessFont, HeadlessLoad, HeadlessRender, JsonCodec, ProjectLoader, Render, Suggest, Vec2}
+    use fge::{App, DocJson, Display, HeadlessFont, HeadlessLoad, HeadlessRender, JsonCodec, Log, ProjectLoader, Render, Suggest, Vec2}
 
     import java.io.File
     import java.lang.ProcessHandle
 
     /// 描き出しと flow の画面の大きさ（project.json の designWidth / designHeight。デスクトップ版の実機と同じ design）。
+    /// 読めない・大きさが 0 以下なら横の 960×540（1 行言う）。
     pub def design(): Vec2.Vec2 \ IO =
-        let root = run { DocJson.readJson("project.json") } with Fs.FileRead.runWithIO;
-        designIn(root |> Result.toOption |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty()))
+        match designOf(run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO) {
+            case Ok(d)    => d
+            case Err(why) => Log.fellBackThen("render", "project.json の design", "960×540", why, Layout.size(Layout.Fit.Regular))
+        }
 
-    /// project.json の木から design の大きさ（どちらかが欠けるか 0 以下なら横の 960×540）。
-    pub def designIn(root: Map[String, Util.Json.Json]): Vec2.Vec2 =
-        let w = JsonCodec.floatOr("designWidth", 0.0, root);
-        let h = JsonCodec.floatOr("designHeight", 0.0, root);
-        if (w > 0.0 and h > 0.0) { x = w, y = h } else Layout.size(Layout.Fit.Regular)
+    /// 読んだ project.json の design の大きさ（読めない・0 以下は Err）。
+    pub def designOf(loaded: Result[String, ProjectLoader.Project]): Result[String, Vec2.Vec2] =
+        loaded |> Result.flatMap(proj ->
+            if (proj#config#designWidth > 0 and proj#config#designHeight > 0)
+                Ok({ x = Int32.toFloat64(proj#config#designWidth), y = Int32.toFloat64(proj#config#designHeight) })
+            else Err("designWidth / designHeight が 0 以下"))
 
     /// design の大きさで描いた時の並べ方の組（デスクトップ版の実機と同じ: 区分 Large・向きは design の形から。縦の design なら Portrait）。
     pub def fitOf(design: Vec2.Vec2, res: Res.Res): Layout.Fit =
@@ -183,11 +187,14 @@ mod SceneRender {
 
     def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();
-        let cfg = cfgOf(design(), outDir, texturesOf());
+        let d = design();
+        let cfg = cfgOf(d, outDir, texturesOf());
         let loaded = loadRes();
         let regular = Shots.names(loaded) |> List.map(name -> (name, name, Look.Design(Display.SizeClass.Large)));
         let variant = variantShots() |> List.map(match (name, scene) -> (name, scene, Look.Design(Display.SizeClass.Large)));
-        let small = smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Design(Display.SizeClass.Small)));
+        // WhyNot: 縦の design で small-* を撮らない — 縦の design では区分 Small でも縦の並べ方が選ばれ、design の場面と同じ絵になる。
+        let small = if (Display.orientationOf(d) == Display.Orientation.Portrait) Nil
+                    else smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Design(Display.SizeClass.Small)));
         let portrait = portraitShots() |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
         List.flatten(regular :: variant :: small :: portrait :: Nil) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, look) ->
             shootNamed(outDir, cfg, loaded, name, scene, look))

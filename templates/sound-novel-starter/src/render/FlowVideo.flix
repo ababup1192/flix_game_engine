@@ -14,7 +14,7 @@
 //   saves.json  … flow の終わりのセーブデータ（枠が 1 つでもあれば。restore が読み戻す古いセーブ）
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
 mod FlowVideo {
-    use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Rect2, Render, Resources, Vec2, VideoOut}
+    use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Log, Rect2, Render, Resources, Vec2, VideoOut}
 
     import java.io.BufferedOutputStream
     import java.io.DataOutputStream
@@ -79,17 +79,35 @@ mod FlowVideo {
         Res.withGame(HeadlessLoad.handle(() -> GameBoot.loadAssets(loaded#game)), loaded)
 
     /// 撮るコマの上限。環境変数 FLOW_FRAME_CAP（正の整数）があればその数、無ければ flow の手から決めた数（frameBudgetOf）。
-    def frameCapOf(env: Map[String, String], script: Flow.Script): Int32 =
-        Map.get("FLOW_FRAME_CAP", env) |> Option.flatMap(Int32.fromString) |> Option.filter(n -> n > 0)
-            |> Option.getWithDefault(frameBudgetOf(script))
+    /// 読めない FLOW_FRAME_CAP（正の整数でない）は 1 行言って flow から決める。
+    def frameCapOf(env: Map[String, String], script: Flow.Script): Int32 = match Map.get("FLOW_FRAME_CAP", env) {
+        case None       => frameBudgetOf(script)
+        case Some(text) => capOf(text, script)
+    }
 
-    /// flow を最後まで流すのに要るフレームの数の上限: 手ごとに取りうる秒（wait と hold の長さ・until と drive の max・
-    /// tap と hold の前に入力を受けられるまで待つ秒）を足して fps を掛け、手の数だけフレームを足す。
+    def capOf(text: String, script: Flow.Script): Int32 = match Int32.fromString(String.trim(text)) {
+        case Some(n) if n > 0 => n
+        case _ => Log.fellBackThen("flow", "FLOW_FRAME_CAP=${text}", "flow の手から決めた数", "正の整数でない", frameBudgetOf(script))
+    }
+
+    /// flow を最後まで流すのに要るフレームの数の上限: 手ごとに、取りうる秒（wait と hold の長さ・until と drive の max・
+    /// tap と hold の前に入力を受けられるまで待つ秒）× fps と、記録が書いたフレームの数（ns）の大きい方に 1 を足して合わせる。
     // WhyNot: 決めた数にしない — flow の長さは flow ごとに違い、長い flow では上限が先に当たって途中で止まる。
     pub def frameBudgetOf(script: Flow.Script): Int32 =
-        let seconds = script#lines |> List.foldLeft((sum, line) -> sum + stepSeconds(script#fps, line#step), 0.0);
-        let frames = Float64.ceil(seconds * script#fps) |> Float64.tryToInt32 |> Option.getWithDefault(Int32.maxValue() / 2);
-        frames + List.length(script#lines) + 1
+        script#lines |> List.foldLeft((sum, line) -> sum + stepFrames(script#fps, line#step) + 1, 1)
+
+    def stepFrames(fps: Float64, step: Flow.Step): Int32 =
+        let bySeconds = Float64.ceil(stepSeconds(fps, step) * fps) |> Float64.tryToInt32 |> Option.getWithDefault(Int32.maxValue() / 4);
+        Int32.max(bySeconds, recordedFrames(step))
+
+    /// 手に記録が書いたフレームの数（ns の数。書いていなければ 0）。
+    def recordedFrames(step: Flow.Step): Int32 = match step {
+        case Flow.Step.Tap(_, opt)     => List.length(opt#ns)
+        case Flow.Step.Hold(_, _, opt) => List.length(opt#ns)
+        case Flow.Step.Release(_, opt) => List.length(opt#ns)
+        case Flow.Step.Wait(_, opt)    => List.length(opt#ns)
+        case _                         => 0
+    }
 
     /// 手 1 つが取りうる一番長い秒（フレームを使わない手は 0）。
     def stepSeconds(fps: Float64, step: Flow.Step): Float64 = match step {
@@ -108,6 +126,7 @@ mod FlowVideo {
     }
 
     /// tap と hold の前に、入力を受けられるまで Flow.play が待つ秒の上限。
+    // WhyNot: Flow の外で好きな秒にしない — Flow.play の ready の待ちの上限（10 秒）に合わせる。短いと上限が先に当たり、長いと上限が効かない。
     def readyWaitSeconds(): Float64 = 10.0
 
     def write(settings: VideoOut.Settings, design: Vec2.Vec2, fps: Float64, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
@@ -221,12 +240,16 @@ mod FlowVideo {
                 0
         }
 
-    /// 枠を読み戻した直後（読めない形のセーブなら読まずに起動の World のまま）と、断ったか。
-    def restoredOf(readable: Option[Saves.Saves], tab: Saves.Tab, i: Int32, fresh: AppState): (AppState, Bool) = match readable {
+    /// 読み戻した直後と、断ったか（断った時は実機と同じく、読まずに起動した World でタイトルに「読めない」の知らせ）。
+    type alias Restored = { restored = AppState, refused = Bool }
+
+    def restoredOf(readable: Option[Saves.Saves], tab: Saves.Tab, i: Int32, fresh: AppState): Restored = match readable {
         case Some(saves) =>
             let (w, _) = Emit.collect(() -> WorldSaves.loadFrom(fresh#resources, tab, i, { saves = saves | fresh#world }));
-            (Resources.of(fresh#resources, w), false)
-        case None => (fresh, true)
+            { restored = Resources.of(fresh#resources, w), refused = false }
+        case None =>
+            let boot = { saves = fresh#world#saves, refused = true, keptAs = None };
+            { restored = Resources.of(fresh#resources, World.opened(boot, fresh#world#clockBase)), refused = true }
     }
 
     /// 枠の名前（auto0・quick0・n1-0）。
@@ -237,8 +260,9 @@ mod FlowVideo {
     }
 
     def restoreSlot(settings: VideoOut.Settings, design: Vec2.Vec2, probes: List[MigrateOut.ProbeRow], dir: String, name: String,
-                    restored: (AppState, Bool)): Unit \ IO =
-        let (h, refused) = restored;
+                    back: Restored): Unit \ IO =
+        let h = back#restored;
+        let refused = back#refused;
         let res = h#resources;
         let w = h#world;
         let node = World.talkNodeOf(w);
