@@ -1,7 +1,8 @@
 // GpuShot — 窓なしのゲームの 1 枚撮り（Studio の会話のプレビュー・bin/fge talk shot）を GPU で塗る。
 // 塗る道は実機と同じ（App の view → Render.drawWith → render_gl の塗りのコア）で、行き先が窓ではなく
-// GlOffscreen の FBO になるだけ。GL の文脈・フォント・テクスチャは最初の 1 枚で用意し、待ち受けの間持ち続ける。
-// GPU が使えない所（画面の無い機械・GL を作れない）では、渡された SoftRaster の撮り方に戻る。
+// GpuOffscreen の描き先になるだけ（描き手は窓と同じ FLIX_GE_BACKEND で選び、既定は WebGPU）。device・フォント・テクスチャは
+// 最初の 1 枚で用意し、待ち受けの間持ち続ける。WebGPU が使えなければ GL で、GL も使えない所（画面の無い機械）では、
+// 渡された SoftRaster の撮り方に戻る。
 // 比べ（reference-check・compare）には使わない —— 人が見る絵だけ GPU で塗る（docs/design/render-speed.md 柱 3）。
 //
 // ゲームに置く形（src/E2e.flix の窓なしの入口）:
@@ -36,10 +37,10 @@ pub mod GpuShot {
         case _           => Mode.Auto
     }
 
-    /// GL の用意の今。
+    /// GPU の用意の今。
     enum State {
         case NotYet
-        case Ready(GlOffscreen.Session, App.Internal.Paint.TileCache)
+        case Ready(GpuOffscreen.Session, App.Internal.Paint.TileCache)
         case Unavailable(String)
     }
 
@@ -47,8 +48,9 @@ pub mod GpuShot {
     /// SoftRaster の撮り方と同じ物を渡す）、soft = GPU が使えない時の撮り方。返す関数は PNG のパスを返す。
     /// GL は 1 本の糸で: 返す関数は、窓なしのゲームの答える糸（いつも同じ糸）からだけ呼ぶ。入口の頭（AWT を使う前）で作る。
     pub def shotOf(mode: Mode, app: App.App[w, ef], prepare: w -> w, soft: w -> String \ IO):
-            (w -> String \ (ef - GlOffscreen.HandledEffects) + IO) \ IO =
+            (w -> String \ (ef - GpuOffscreen.HandledEffects) + IO) \ IO =
         // AWT（SoftRaster の撮り方・常駐の /run）より先に窓サーバへ繋いでおく（GlOffscreen.connect の doc）。
+        // WhyNot: WebGPU で塗る時も繋ぐのを省かない — WebGPU を開けない機械では GL で塗り、GL は AWT の後では文脈を作れない。
         if (mode == Mode.Off) () else GlOffscreen.connect();
         let state = Ref.fresh(Static, (State.NotYet: State));
         let scale = 2;
@@ -71,20 +73,20 @@ pub mod GpuShot {
                 match ready {
                     case State.Ready(session, cache) =>
                         // 描き直した PNG が次の 1 枚にすぐ出るように、撮る前に絵のファイルを見直す。
-                        Option.forEach(manifest -> discard GlOffscreen.refreshTextures(session, manifest), textureManifest());
-                        let next = GlOffscreen.handle(session, () -> App.Internal.Paint.paintOnce(app, prepare(world), cache));
+                        Option.forEach(manifest -> discard GpuOffscreen.refreshTextures(session, manifest), textureManifest());
+                        let next = GpuOffscreen.handle(session, () -> App.Internal.Paint.paintOnce(app, prepare(world), cache));
                         Ref.put(State.Ready(session, next), state);
-                        writeFastPng(GlOffscreen.readImage(session), shotPath())
+                        writeFastPng(GpuOffscreen.readImage(session), shotPath())
                     case _ if mode == Mode.On => bug!("FGE_GPU=on だが GPU が使えない")
                     case _ => soft(world)
                 }
             }
         }
 
-    def openSession(scale: Int32): Result[String, GlOffscreen.Session] \ IO =
+    def openSession(scale: Int32): Result[String, GpuOffscreen.Session] \ IO =
         match (run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO) {
             case Err(why)   => Err("project.json を読めない: ${why}")
-            case Ok(loaded) => GlOffscreen.open({ config = loaded#config, scale = scale })
+            case Ok(loaded) => GpuOffscreen.open(LwjglEnv.fromMap(LwjglEnv.snapshot())#backend, { config = loaded#config, scale = scale })
         }
 
     /// 今の project.json の textures（読めなければ None = 見直さない）。

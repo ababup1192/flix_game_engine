@@ -730,8 +730,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         }
 
     /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物（スプライト・面・3D の場面のビルボード）が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
-    // WhyNot: 1 枚撮りの「history は透明」（GL の keepHistory = false）を持たない — WebGPU の描き手は窓とその撮影でしか動かず、どちらも前のコマを写す
-    //   （historyFor へ keep を真で渡す。applyHistory の ClearTransparent の枝は前半の答えを全部受けるために置き、今は通らない）。
+    // WhyNot: 1 枚撮りの「history は透明」（GL の keepHistory = false）を持たない — 窓とその撮影は前のコマを写し、窓なしの 1 枚撮り（GpuOffscreen）は
+    //   人が見る絵だけで比べには使わない（字の欠けで描き直したコマが前の試しを読む差は残す。historyFor へ keep を真で渡す。applyHistory の ClearTransparent の枝は前半の答えを全部受けるために置き、今は通らない）。
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,

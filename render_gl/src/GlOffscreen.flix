@@ -335,7 +335,7 @@ pub mod GlOffscreen {
     // ── テクスチャの新しさ ──
 
     /// ファイルの (パス, 大きさ, 更新時刻)。無ければ (パス, -1, -1)。
-    def stampOf(path: String): (String, Int64, Int64) \ IO =
+    pub def stampOf(path: String): (String, Int64, Int64) \ IO =
         let file = new File(path);
         if (file.isFile()) (path, file.length(), file.lastModified()) else (path, -1i64, -1i64)
 
@@ -402,8 +402,8 @@ pub mod GlOffscreen {
         RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> s#glLog#onScreenFrame(), () ->
         RenderPaintHandlers.handleGpuResources(gl, paint, s#fonts, f)))))))
 
-    /// 窓の無い所の入力・窓・時計・注釈: 何も押されていない・閉じない・1/60 秒ずつ進む・注釈は書かない。
-    def handleWindowless(design: Vec2.Vec2, f: Unit -> a \ ef): a \ ef - Platform.Input - Platform.Window - Platform.FrameClock - Platform.Annotation =
+    /// 窓の無い所の入力・窓・時計・注釈: 何も押されていない・閉じない・1/60 秒ずつ進む・注釈は書かない（WebGPU の 1 枚撮りの session も使う）。
+    pub def handleWindowless(design: Vec2.Vec2, f: Unit -> a \ ef): a \ ef - Platform.Input - Platform.Window - Platform.FrameClock - Platform.Annotation =
         run f() with handler Platform.Input {
             def isKeyPressed(_key, k) = k(false)
             def getMousePosition(k) = k(Vec2.zero())

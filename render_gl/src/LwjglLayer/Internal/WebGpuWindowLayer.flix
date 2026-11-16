@@ -159,7 +159,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
 
     /// project.json の絵を GL と同じ読み込み（LwjglAssets.loadTexture）で解いて WebGPU へ上げ、名前で引けるようにする。
     /// onProgress = 読み終えた枚数・全部の枚数（起動画面が進み具合を出す）。
-    def loadTextures(paint: WebGpuPaint.Paint, manifest: List[RenderAsset.TextureEntry], onProgress: (Int32, Int32) -> Unit \ IO): Unit \ IO =
+    pub def loadTextures(paint: WebGpuPaint.Paint, manifest: List[RenderAsset.TextureEntry], onProgress: (Int32, Int32) -> Unit \ IO): Unit \ IO =
         let total = List.length(manifest);
         onProgress(0, total);
         let uploads = WebGpuPaint.webGpuUploads(paint);
@@ -172,7 +172,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
 
     /// project.json のフォントを、GL と同じ「出しうる字」で RenderFontCache.loadOrBake から作り、距離場を R8 で上げる。
     /// 起動の後に出た字は GL と同じ RenderGlyphGrow で作り、R8 の絵の空いた所へ書き足す。
-    def loadFonts(paint: WebGpuPaint.Paint, config: GameEngine.EngineConfig, progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
+    pub def loadFonts(paint: WebGpuPaint.Paint, config: GameEngine.EngineConfig, progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
         let wanted = RenderFont.startupGlyphs(config#rootDir, config#glyphs);
         Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"), wanted);
         println("Baking font atlases...");
@@ -385,7 +385,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
 
     /// RGBA（下の行から）を左上原点の ARGB の画像にする。
     // WhyNot: GlReadback.readBoundPng を呼ばない — bind 中の GL のフレームバッファを読む関数で、WebGPU の画素を渡す口が無い。画素の並べ方と PNG の形は同じにする。
-    def imageOf(pixels: ByteBuffer, w: Int32, h: Int32): BufferedImage \ IO = region rc {
+    pub def imageOf(pixels: ByteBuffer, w: Int32, h: Int32): BufferedImage \ IO = region rc {
         let image = new BufferedImage(w, h, 2i32);
         let argb: Array[Int32, rc] = Array.empty(rc, w * h);
         List.forEach(y -> {
