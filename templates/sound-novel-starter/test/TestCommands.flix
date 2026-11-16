@@ -32,12 +32,15 @@ mod TestCommands {
 
     def namesOfTable(): List[String] = Commands.specs() |> List.map(YarnCommands.nameOf)
 
+    /// テンプレートの表の名前（ゲームの命令の必須の引数はゲームが決めるので、samples はテンプレートの表だけを書く）。
+    def templateNames(): List[String] = Commands.all() |> List.map(c -> YarnCommands.nameOf(c#spec))
+
     @Test
     def testEveryCommandInTheTableRunsWithItsRequiredArguments(): Unit \ {Assert, Fs.FileRead} =
-        // 表の全部のコマンドを、必須の引数だけで 1 回ずつ当てて Ok になる（表に入れていない引数を読む書き忘れを拾う）。
+        // テンプレートの表の全部のコマンドを、必須の引数だけで 1 回ずつ当てて Ok になる（表に入れていない引数を読む書き忘れを拾う）。
         let res = castRes();
         let failed = samples(res) |> List.filter(match (name, args) -> Result.isErr(exec(res, Commands.Replay.Live, name, args, Stage.empty())));
-        Assert.assertEq(expected = (Nil, List.toSet(namesOfTable())), (failed, samples(res) |> List.map(fst) |> List.toSet))
+        Assert.assertEq(expected = (Nil, List.toSet(templateNames())), (failed, samples(res) |> List.map(fst) |> List.toSet))
 
     @Test
     def testCommandNamesAreUnique(): Unit \ Assert =

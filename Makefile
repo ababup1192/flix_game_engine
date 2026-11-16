@@ -1580,6 +1580,8 @@ new-game: engine-full-fresh
 	: 生成物は運ばない。lib は engine_full から置き直す。build はテンプレ 1 本で 500MB 級に育つ; \
 	: ので、運ぶと産まれたゲームがその分太る（パッケージ名が変わるのでどのみち使えない）; \
 	rm -rf "$(GAME)/lib" "$(GAME)/build" "$(GAME)/debug" "$(GAME)/gallery" "$(GAME)/.devbox" "$(GAME)/.test-logs"; \
+	: test/sample は作例そのものを確かめるテスト。ゲームは台本と Doc を書き換えるので運ばない（規則のテストは test/fixtures の写しを読む）; \
+	rm -rf "$(GAME)/test/sample"; \
 	mkdir -p "$(GAME)/gallery" "$(GAME)/reference" "$(GAME)/debug" "$(GAME)/atelier"; \
 	for f in "$(GAME)"/assets/__NAME__.*; do \
 	  [ -e "$$f" ] || continue; \

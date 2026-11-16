@@ -1,6 +1,7 @@
 // ルールと進行だけをテストする。座標・描き方・文字送りの見た目はテストしない。
-// シナリオは本物（yukidoke.yarn を build した木）。行の文字は写さず、ノードの名前・変数・シナリオの木から期待値を導く。
-// 手本のシナリオに無い効果音だけは、テスト用の木（TestKit.fixtureRes）で見る。
+// シナリオは作例の写し（TestKit.res）。行の文字は写さず、ノードの名前・変数・シナリオの木から期待値を導く。
+// 作例のシナリオに無い効果音だけは、テスト用の木（TestKit.fixtureRes）で見る。ゲームの台本と Doc を見るのは Controls.loadRes の物だけ。
+// 作例の筋（どの選択肢でどの結末か）は作例を確かめるテスト（mod TestSample。make new-game が外す）。
 mod TestRules {
 
     use fge::{App, AudioMixer, Clock, Emit, JsonCodec, Vec2, Yarn, YarnRunner}
@@ -30,10 +31,10 @@ mod TestRules {
         Assert.assertEq(expected = ("Reading", opening, List.head(sayLines(res, opening)), "nvl"),
                         (World.sceneName(w), World.talkNodeOf(w), Some(lineNo(w)), World.stageOf(res, w)#mode))
 
-    /// ギャラリーの場面は全部、実機と同じ App から shot:<名前> の始まりで組める。
+    /// ゲームの novel.shots.json の場面は全部、ゲームの Doc と台本で、実機と同じ App から shot:<名前> の始まりで組める。
     @Test
     def testEveryShotBuildsFromTheApp(): Unit \ {Assert, Fs.FileRead} =
-        let res = TestKit.res();
+        let res = Controls.loadRes();
         let app = TestKit.app(res, w0(res));
         Assert.assertEq(expected = Nil,
             Shots.names(res) |> List.filter(name -> Result.isErr(App.buildStart(app, Vec2.zero(), App.shotStartName(name), Map.empty()))))
@@ -134,14 +135,6 @@ mod TestRules {
         Assert.assertEq(expected = (true, placeOf(asking)), (World.isChoosing(after), placeOf(after)))
 
     @Test
-    def testTellingYourPaceSetsOwnPace(): Unit \ {Assert, Fs.FileRead} =
-        // 最初の手紙の選択肢: 坂をゆっくり上がると添える（1 つ目）と、枝を読み終えた所で $own_pace が立ち、2 つ目では立たない。
-        let res = TestKit.res();
-        let asking = TestKit.readUntil(res, World.isChoosing, Nil, begun(res));
-        let ownPace = i -> World.variableOf("$own_pace", readTo(res, "StudioWindow", i :: Nil, asking));
-        Assert.assertEq(expected = ("True", "False"), (ownPace(0), ownPace(1)))
-
-    @Test
     def testConditionalChoiceNeedsBothLetters(): Unit \ {Assert, Fs.FileRead} =
         // 工房の誘いの選択肢の 1 つ目は $own_pace and $shared_tiredness の時だけ選べる。どちらも無ければ選べない目印つきで並び、pick しても動かない。
         let res = TestKit.res();
@@ -159,22 +152,6 @@ mod TestRules {
         Assert.assertEq(expected = (Some(2), Some(1)), (cursorAfter(1), cursorAfter(2)))
 
     @Test
-    def testSlowLettersNeedsBothHonestLetters(): Unit \ {Assert, Fs.FileRead} =
-        // 2 通の手紙で歩調と休む日を伝えると、誘いで春からの手紙を選べ、期限を決めない文通の結末に着く。
-        let res = TestKit.res();
-        let ending = readTo(res, "SlowLetters", 0 :: 0 :: 0 :: Nil, begun(res));
-        Assert.assertEq(expected = ("SlowLetters", "True", "True"),
-                        (World.talkNodeOf(ending), World.variableOf("$own_pace", ending), World.variableOf("$shared_tiredness", ending)))
-
-    @Test
-    def testDecliningKeepsTheMap(): Unit \ {Assert, Fs.FileRead} =
-        // 手紙で歩調も休む日も伝えず、誘いを断ると（選べるのは 2 つ目と 3 つ目）、地図をしまう結末に着き、どちらの変数も立たない。
-        let res = TestKit.res();
-        let ending = readTo(res, "KeptMap", 1 :: 1 :: 2 :: Nil, begun(res));
-        Assert.assertEq(expected = ("KeptMap", "False", "False"),
-                        (World.talkNodeOf(ending), World.variableOf("$own_pace", ending), World.variableOf("$shared_tiredness", ending)))
-
-    @Test
     def testStoryEndRollsTheCredits(): Unit \ {Assert, Fs.FileRead} =
         // シナリオの終わりまで読むとクレジットへ。
         let res = TestKit.res();
@@ -185,8 +162,8 @@ mod TestRules {
 
     @Test
     def testEveryCommandInTheScriptIsUnderstood(): Unit \ {Assert, Fs.FileRead} =
-        // シナリオのコマンドは全部 Commands の表で読めて当てられる（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
-        let res = TestKit.res();
+        // ゲームのシナリオのコマンドは全部、ゲームの命令も入れた Commands の表で読めて当てられる（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
+        let res = Controls.loadRes();
         let ctx = { now = Clock.zero(), node = "", res = res, instant = false };
         let bad = commandsOf(res#dialogue) |> List.filter(c -> c#name != "wait")
             |> List.filterMap(c -> match Commands.execute(Commands.Replay.Silent, ctx, c, Stage.empty()) {

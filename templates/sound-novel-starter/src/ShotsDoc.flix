@@ -36,7 +36,11 @@ mod ShotsDoc {
         at = Float64
     }
 
-    pub type alias Rec = { version = Int32, shots = List[Shot] }
+    /// セーブとロードの画面の場面で、1 ページ目の枠に書いておくセーブ 1 つ（node の上から say 番目の台詞を出し終えた所）。
+    pub type alias Slot = { node = String, say = Int32 }
+
+    /// shots = 場面の並び、slots = セーブとロードの画面の場面が上の枠から書いておくセーブ。
+    pub type alias Rec = { version = Int32, shots = List[Shot], slots = List[Slot] }
 
     /// 型検査が record を展開しないため、Res が持つ Doc は 1 case の enum で包む。
     pub enum Doc(Rec)
@@ -45,7 +49,7 @@ mod ShotsDoc {
 
     pub def path(): String = "assets/novel.shots.json"
 
-    pub def defaults(): Doc = Doc.Doc({ version = 1, shots = Nil })
+    pub def defaults(): Doc = Doc.Doc({ version = 1, shots = Nil, slots = Nil })
 
     /// 名前の場面。
     pub def shotOf(name: String, doc: Doc): Option[Shot] = rec(doc)#shots |> List.find(s -> s#name == name)
@@ -79,7 +83,23 @@ mod ShotsDoc {
 
     def fromRoot(root: Map[String, Json]): Doc =
         Doc.Doc({ version = JsonCodec.intOr("version", 1, root),
-                  shots = decodeRows(root) |> List.filterMap(r -> skipBroken(r)) })
+                  shots = decodeRows(root) |> List.filterMap(r -> skipBroken(r)),
+                  slots = Map.get("slots", root) |> Option.flatMap(JsonCodec.decodeList(Some)) |> Option.getWithDefault(Nil)
+                      |> List.mapWithIndex(decodeSlot) |> List.filterMap(skipBrokenSlot) })
+
+    /// i 番目（0 から）の書いておくセーブ。node が無い・say が 0 以上の整数でない時は理由（say を省けば 0）。
+    def decodeSlot(i: Int32, row: Json): Result[(String, String), Slot] =
+        let which = "slots[${i}]";
+        forM (
+            obj  <- JsonCodec.expectObject(row) |> Option.toOk((which, "object でない"));
+            node <- stringAt("node", obj) |> Option.filter(n -> not String.isEmpty(n)) |> Option.toOk((which, "node が無い"));
+            say  <- optional("say", sayIndex, "0 以上の整数", obj) |> Result.mapErr(reason -> (which, reason))
+        ) yield { node = node, say = Option.getWithDefault(0, say) }
+
+    def skipBrokenSlot(r: Result[(String, String), Slot]): Option[Slot] = match r {
+        case Ok(slot)             => Some(slot)
+        case Err((which, reason)) => Log.fellBackThen("shots", "${path()} の ${which}", "その枠を空ける", reason, None)
+    }
 
     def skipBroken(r: Result[(String, String), Shot]): Option[Shot] = match r {
         case Ok(shot)             => Some(shot)

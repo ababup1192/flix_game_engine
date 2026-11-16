@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "title": "画面の粒の演出",
+  "note": "シナリオの <<fx 名前|off [once=true] [on=絵.点]>> が出す粒の演出。鍵が名前。look = 描き方（fireflies = 漂って明滅する光・snow = 降る雪。数や速さは novel.kind.json の fireflies・snow。puff = 1 つの点から立ちのぼる粒で、count・rise・spread・size・life を同じ行に書く。<<fx 名 on=絵.点>>（novel.cast.json の markers）と <<speak>> の speakFx は puff だけ）、layer = world の層の数（背景 0・背景に付く絵 100・人物 500・小物 600 と並べる。書かなければ 700 = 人物より手前）、onceSeconds = once=true で一度だけ出す秒。この作例は粒を人物の奥（400）に置いて絵を描いている。",
+  "particles": {
+    "fireflies": { "look": "fireflies", "layer": 400, "onceSeconds": 2.0 },
+    "snow": { "look": "snow", "layer": 400, "onceSeconds": 2.0 },
+    "breath": { "look": "puff", "layer": 700, "onceSeconds": 1.6, "count": 8, "rise": 40.0, "spread": 10.0, "size": 2.4, "life": 1.2 }
+  }
+}

@@ -1,11 +1,16 @@
 // テストの共通部品: 実機と同じ App（Game.app）と Doc・シナリオで組んだ始まりの World と、系を直に呼ぶ 1 歩。
-// シナリオは本物（assets/talk/dialogue.json）。効果音のように本物のシナリオに無い物だけはテスト用の木（fixtureRes）で見る。期待値は台本と Doc から導き、行の文字を写さない。
+// Doc とシナリオは作例の写し（test/fixtures/sample。ゲームが台本と Doc を書き換えても替わらない）。効果音のように作例に無い物だけはテスト用の木（fixtureRes）で見る。期待値は台本と Doc から導き、行の文字を写さない。
 mod TestKit {
 
     use fge::{App, Clock, Emit, Resources, Yarn, YarnRunner}
 
-    /// assets の Doc とシナリオをそのまま読んだ描く元。
-    pub def res(): Res.Res \ Fs.FileRead = Controls.loadRes()
+    /// 作例の写しのフォルダ（assets/ の Doc と assets/talk の .yarn と、それを --no-vocab で組んだ dialogue.json を持つ。
+    /// 作例を直したら写し直す。作例を確かめるテストの TestSample が見張る）。
+    pub def sampleRoot(): String = "test/fixtures/sample"
+
+    /// 作例の Doc とシナリオを読み、命令はテンプレートの表だけにした描く元（ゲームの命令はゲームのテストで見る）。
+    pub def res(): Res.Res \ Fs.FileRead =
+        { commands = Commands.tableOf(Commands.all()) | Controls.loadResIn(sampleRoot()) }
 
     /// シナリオをテスト用の木（dir の dialogue.json。test/fixtures/talk・test/fixtures/sound）に替え、「はじめから」を opening のノードにした描く元。
     pub def fixtureRes(dir: String, opening: String): Res.Res \ Fs.FileRead =
@@ -24,7 +29,7 @@ mod TestKit {
     pub def tickClocks(res: Res.Res, dt: Float64, w: World.World): World.World =
         App.tickClocks(app(res, w), dt, Resources.of(res, w))#world
 
-    /// 系を直に呼ぶ 1 歩: 実機と同じく、先に物語の時計を dt 秒ぶん進めてから World.step。
+    /// 系を直に呼ぶ 1 歩: 実機と同じく、先に物語の時計を dt 秒ぶん進めてから WorldRead.step。
     pub def stepBy(res: Res.Res, dt: Float64, w: World.World): World.World =
         quiet(() -> WorldRead.step(res, dt, tickClocks(res, dt, w)))
 
