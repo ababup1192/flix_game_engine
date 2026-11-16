@@ -1,7 +1,7 @@
 // 描き出しと flow の動画の画面の大きさ（SceneRender.designOf・fitOf・cfgOf・FlowVideo.objectsOf）と、撮るコマの上限（FlowVideo.frameBudgetOf）。
 mod TestFlowVideo {
 
-    use fge::{Flow, ProjectLoader}
+    use fge::{App, Flow, FontAtlas, ProjectLoader}
 
     def portraitDesign(): { x = Float64, y = Float64 } = { x = 540.0, y = 960.0 }
 
@@ -62,4 +62,37 @@ mod TestFlowVideo {
         // 記録が 30 フレームを書いた wait 1 秒（10 フレーム）は 30 フレームを取る（30 + 1 と 1）。
         let opt = { ns = List.repeat(30, 16000000i64) | Flow.noOpt() };
         Assert.assertEq(expected = 32, FlowVideo.frameBudgetOf(scriptOf(Flow.Step.Wait(Flow.Span.Secs(1.0), opt) :: Nil)))
+
+    // ── 字の本（project.json の fonts と、ゲームの口に渡る Env#fonts） ──
+
+    /// このテンプレートの project.json の fonts に、本文と同じ TTF の gothic を足して読んだ物。
+    def projectWithGothic(): Result[String, ProjectLoader.Project] \ Fs.FileRead =
+        ProjectLoader.loadProject(".") |> Result.map(p -> {
+            let gothic = { name = "gothic", path = "assets/ShipporiMincho-Regular.subset.ttf", fontSize = 32.0 };
+            { config = { fontManifest = gothic :: p#config#fontManifest | p#config } | p }
+        })
+
+    def atlasNamed(name: String): FontAtlas =
+        { textureName = name, fontSize = 32.0, textureSize = 256.0, ascent = 0.0, descent = 0.0, lineGap = 0.0, glyphs = Map.empty() }
+
+    @Test
+    def testRenderingReadsTheProjectFonts(): Unit \ {Assert, Fs.FileRead, IO} =
+        // 描き出しは project.json の fonts の default 以外を実機と同じ名前（font_<name>）で組み、名前で引ける。
+        let fallback = atlasNamed("default");
+        let picked = projectWithGothic() |> Result.map(p -> SceneRender.fontOfIn(SceneRender.fontsIn(p), fallback))
+            |> Result.map(fontOf -> (fontOf("gothic")#textureName, fontOf("unknown")#textureName));
+        Assert.assertEq(expected = Ok(("font_gothic", "default")), picked)
+
+    @Test
+    def testTheTemplateDrawsWithTheDefaultFontOnly(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertEq(expected = Ok(0), ProjectLoader.loadProject(".") |> Result.map(p -> Map.size(SceneRender.fontsIn(p))))
+
+    @Test
+    def testGameHooksGetTheFontsOfTheFrame(): Unit \ {Assert, Fs.FileRead} =
+        // 描く所の Env の字の本は ViewCtx から: 本文の本と、名前で引く本（GameView.draw・backdrop・hud はこの Env を受ける）。
+        let r = TestKit.res();
+        let ctx = App.viewCtxOfFonts(atlasNamed("body"), name -> if (name == "gothic") atlasNamed("font_gothic") else atlasNamed("body"),
+                                     Layout.size(Layout.Fit.Regular));
+        let fonts = View.envOfCtx(ctx, r, TestKit.w0(r))#fonts;
+        Assert.assertEq(expected = ("body", "font_gothic"), (fonts#atlas#textureName, fonts#fontOf("gothic")#textureName))
 }

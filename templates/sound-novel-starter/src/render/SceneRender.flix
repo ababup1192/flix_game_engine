@@ -5,7 +5,7 @@
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
-    use fge::{App, DocJson, Display, HeadlessFont, HeadlessLoad, HeadlessRender, JsonCodec, Log, ProjectLoader, Render, Suggest, Vec2}
+    use fge::{App, DocJson, Display, FontAtlas, HeadlessFont, HeadlessLoad, HeadlessRender, JsonCodec, Log, ProjectLoader, Render, SoftRaster, Suggest, Vec2}
 
     import java.io.File
     import java.lang.ProcessHandle
@@ -50,6 +50,23 @@ mod SceneRender {
         { design = design, scale = 1, background = Backdrop.groundColor(),
           fontTtf = ttf(), fontAtlas = HeadlessFont.buildUiAtlas(ttf(), ttf()), texturePath = textures,
           outDir = outDir, frameW = pixelsOf(design#x, 960), frameH = pixelsOf(design#y, 540) | HeadlessRender.defaults() }
+
+    /// 既定の本（明朝）のほかに描き出しへ混ぜる本（project.json の fonts の default 以外）。鍵は実機と同じテクスチャの名前（"font_" + name）。
+    /// project.json が読めなければ空（既定の本だけで描く）。
+    pub def extraFontsOf(): Map[String, SoftRaster.FontEntry] \ IO =
+        match run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO {
+            case Ok(proj) => fontsIn(proj)
+            case Err(_)   => Map.empty()
+        }
+
+    /// proj の fonts の default 以外を、実機と同じ名前で組んだ本の表に。
+    pub def fontsIn(proj: ProjectLoader.Project): Map[String, SoftRaster.FontEntry] \ IO =
+        proj#config#fontManifest |> List.filter(f -> f#name != "default" and not String.isEmpty(f#name))
+            |> List.map(f -> ("font_${f#name}", { ttf = f#path, atlas = HeadlessFont.buildAtlas(f#name, f#path) })) |> List.toMap
+
+    /// 名前 → その本（実機の ViewCtx#fontOf と同じ引き方。知らない名前は fallback）。
+    pub def fontOfIn(fonts: Map[String, SoftRaster.FontEntry], fallback: FontAtlas): String -> FontAtlas =
+        name -> Map.get("font_${name}", fonts) |> Option.map(e -> e#atlas) |> Option.getWithDefault(fallback)
 
     /// design の長さを描き出しの画素の数に（読めない長さは fallback）。
     def pixelsOf(length: Float64, fallback: Int32): Int32 = Float64.round(length) |> Float64.tryToInt32 |> Option.getWithDefault(fallback)
@@ -225,10 +242,12 @@ mod SceneRender {
                 let d = portraitDesignOf(view);
                 ({ design = d, frameW = pixelsOf(d#x, 540), frameH = pixelsOf(d#y, 960) | base }, Display.phonePortrait(view, d))
         };
-        let ctx = { display = display | App.viewCtxOf(cfg#fontAtlas, cfg#design) };
+        let fonts = extraFontsOf();
+        let ctx = { display = display | App.viewCtxOfFonts(cfg#fontAtlas, fontOfIn(fonts, cfg#fontAtlas), cfg#design) };
         let items = App.composeScene(None, 1.0, cfg#design, { world = View.frame(ctx, res, w), hud = View.hud(ctx, res, w) });
         let (drawables, polygons) = Render.draw(Render.withoutShaders(items));
-        HeadlessRender.renderPngWith(cfg, drawables, polygons, Render.shaderSurfaces(items), name);
+        HeadlessRender.renderPngFull(cfg, { passes = Nil, drawables = drawables, polygons = polygons, surfaces = Render.shaderSurfaces(items),
+                                            scenes = Nil, fonts = fonts, fontAntialias = Map.empty() }, name);
         let path = "${cfg#outDir}/${name}.png";
         println("rendered: ${path}");
         path

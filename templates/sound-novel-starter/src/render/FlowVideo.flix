@@ -135,7 +135,8 @@ mod FlowVideo {
         writeText("${out}/fps.txt", Int32.toString(rate));
         writeAudio("${out}/audio.f64", fps, outcome);
         let cfg = SceneRender.cfgOf(design, out, SceneRender.texturesOf());
-        let video = { outDir = out, fps = rate, soft = cfg, softFonts = _ -> cfg#fontAtlas, extraFonts = Map.empty(),
+        let extra = SceneRender.extraFontsOf();
+        let video = { outDir = out, fps = rate, soft = cfg, softFonts = SceneRender.fontOfIn(extra, cfg#fontAtlas), extraFonts = extra,
                       images = Nil, scene = fonts -> h -> sceneOf(design, fonts, h), wanted = _ -> true, bakeSurfaces = false,
                       encoders = Nil };
         discard VideoOut.writeFrames(settings, video, Flow.worldsOf(outcome))
@@ -198,7 +199,8 @@ mod FlowVideo {
             else {
                 let out = "${dir}/frames/${MigrateOut.layerName(layer)}";
                 let cfg = SceneRender.cfgOf(design, out, SceneRender.texturesOf());
-                let video = { outDir = out, fps = rate, soft = cfg, softFonts = _ -> cfg#fontAtlas, extraFonts = Map.empty(),
+                let extra = SceneRender.extraFontsOf();
+                let video = { outDir = out, fps = rate, soft = cfg, softFonts = SceneRender.fontOfIn(extra, cfg#fontAtlas), extraFonts = extra,
                               images = Nil, scene = fonts -> h -> layerSceneOf(design, layer, fonts, h), wanted = i -> Set.memberOf(i, wanted),
                               bakeSurfaces = false, encoders = Nil };
                 discard VideoOut.writeFrames(soft, video, worlds)
@@ -208,7 +210,7 @@ mod FlowVideo {
     def layerSceneOf(design: Vec2.Vec2, layer: MigrateOut.Layer, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] = match layer {
         case MigrateOut.Layer.AllLayers  => sceneOf(design, fonts, h)
         case MigrateOut.Layer.WorldLayer =>
-            let ctx = App.viewCtxOf(fonts(""), design);
+            let ctx = App.viewCtxOfFonts(fonts(""), fonts, design);
             App.composeScene(None, 1.0, design, { world = Resources.view(View.worldLayer, ctx, h), hud = Nil })
     }
 
@@ -368,7 +370,7 @@ mod FlowVideo {
 
     /// 1 コマの絵（SceneRender.shoot と同じ合流: 背景は frame、文章とウィンドウは hud）。
     def sceneOf(design: Vec2.Vec2, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] =
-        let ctx = App.viewCtxOf(fonts(""), design);
+        let ctx = App.viewCtxOfFonts(fonts(""), fonts, design);
         App.composeScene(None, 1.0, design, { world = Resources.view(View.frame, ctx, h), hud = Resources.view(View.hud, ctx, h) })
 
     def sampleRate(): Int32 = 44100

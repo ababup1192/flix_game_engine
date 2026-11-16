@@ -26,7 +26,8 @@ mod View {
     use fge::{App, Clock, Color, DrawCmd, FontAtlas, Fx, Num, RawDraw, Rect2, Render, RichText, ShaderDoc, TextDraw, UiScroll, Vec2}
 
     /// どの場面でも使う描く元: Doc とシナリオ（res）・セーブデータ（既読と設定と枠）・マウスの位置・2 本の時計の今・
-    /// 並べ方の組（fit。Controls が当たりを取る時と同じ組）・押している間の掴み（grab。列の長押しのツールチップ）。
+    /// 並べ方の組（fit。Controls が当たりを取る時と同じ組）・押している間の掴み（grab。列の長押しのツールチップ）・
+    /// 字の本（fonts。GameView が Render.textTinted などに渡す）。
     pub type alias Env = {
         res = Res.Res,
         saves = Saves.Saves,
@@ -34,11 +35,27 @@ mod View {
         grab = World.Grab,
         realNow = Clock.Time[Clock.Real],
         storyNow = Clock.Time[Stage.Story],
-        fit = Layout.Fit
+        fit = Layout.Fit,
+        fonts = Fonts
     }
 
+    /// 字の本: atlas = 本文の本（project.json の fonts の default）、fontOf = 名前で引く本（project.json の fonts[].name。
+    /// 実機は GameBoot.app の App.withFonts で宣言した名前だけ引け、知らない名前は atlas が返る）。
+    pub type alias Fonts = { atlas = FontAtlas, fontOf = String -> FontAtlas }
+
+    /// 字を描かない所（当たりを取る・バックログの寸法・テープの物の矩形）の Env。fonts は字の形を持たない本（noFonts）。
     pub def envOf(fit: Layout.Fit, res: Res.Res, w: World.World): Env =
-        { res = res, saves = w#saves, pointer = w#pointer, grab = w#grab, realNow = w#realNow, storyNow = World.now(w), fit = fit }
+        { res = res, saves = w#saves, pointer = w#pointer, grab = w#grab, realNow = w#realNow, storyNow = World.now(w), fit = fit, fonts = noFonts() }
+
+    /// 描く所の Env（並べ方の組と字の本は ctx から）。
+    pub def envOfCtx(ctx: App.ViewCtx, res: Res.Res, w: World.World): Env =
+        { fonts = { atlas = ctx#atlas, fontOf = ctx#fontOf } | envOf(fitOfCtx(ctx, res), res, w) }
+
+    /// 字の形を持たない本（どの字も幅 0 で描かれない）。
+    // WhyNot: 当たりを取る所に実機の本を渡さない — Controls は Frame しか受けず、本は描く側（ViewCtx）にしか無い。
+    pub def noFonts(): Fonts =
+        let empty = { textureName = "", fontSize = 32.0, textureSize = 256.0, ascent = 0.0, descent = 0.0, lineGap = 0.0, glyphs = Map.empty() };
+        { atlas = empty, fontOf = _ -> empty }
 
     /// 描く画面の区分と design の向き・大きさから並べ方の組を選ぶ（Controls が Frame から引く組と同じ）。
     // WhyNot: ctx#visible#size を design の大きさとして読んでよいのは、このゲームが camera を使わないから（HUD は常に design 全体）。
@@ -81,7 +98,7 @@ mod View {
     def zToast(): Int32 = 160
 
     pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
-        let env = envOf(fitOfCtx(ctx, res), res, w);
+        let env = envOfCtx(ctx, res, w);
         match w#scene {
             case World.Scene.Title(_) => ViewStage.titleFrame(env, World.stageOf(res, w))
             case _                    => ViewStage.frame(env, World.stageOf(res, w), not ViewStage.isPropOnPage(env, w))
@@ -90,13 +107,13 @@ mod View {
     /// 舞台だけの絵（frame と、画面に被せる overlay）。文字の枠・HUD・画面・知らせ・素材の待ちの字は描かない（移行の突き合わせの world の層のコマ）。
     // WhyNot: frame だけにしない — layer=screen の overlay は hud の側に描くので、frame だけでは overlay の秒を替えた差が world の層のコマに出ない。
     pub def worldLayer(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
-        let env = envOf(fitOfCtx(ctx, res), res, w);
+        let env = envOfCtx(ctx, res, w);
         let covered = World.readOf(w) |> Option.map(r -> ViewStage.screenOverlay(env, r#stage, zOverlay())) |> Option.getWithDefault(Nil);
         List.append(frame(ctx, res, w), covered)
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let atlas = ctx#atlas;
-        let env = envOf(fitOfCtx(ctx, res), res, w);
+        let env = envOfCtx(ctx, res, w);
         // 画面（バックログ・セーブ・設定）の間は下の画面を描かない（幕越しに字が二重に透けて読みにくい）。背景の写真は frame が描き続ける。
         let screen = if (coversScreen(w#panel)) Nil else match w#scene {
             case World.Scene.Title(item)      => title(atlas, env, item)
