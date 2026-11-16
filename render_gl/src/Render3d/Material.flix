@@ -5,12 +5,11 @@ mod Render3d.Material {
     use Render3d.Shadow.{putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
     use Render3d.Light.{lightLocsOf, putLights}
-    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, drawBatch, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
-    use Render3d.Batch.{MaterialBatch, MeshBatch, SpanBatch}
+    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
+    use Render3d.Batch.{MaterialBatch, SpanBatch}
     use Scene3dRenderer.{RegisteredTexture}
-    use Render3d.Counts.{BatchBreak, Counter, Phase, count, noteMaterialBuild, timed}
+    use Render3d.Counts.{Counter, Phase, count, noteMaterialBuild, timed}
     use Render3d.ScenePlan.{MaterialRequest, groupInstances, splitGroups}
-    use Render3d.SceneList.{batchBreakOf}
     use Render3d.TextureTable3d
     use Render3d.TextureTable3d.{TextureHit, findTexture}
 
@@ -41,24 +40,6 @@ mod Render3d.Material {
             (splitGroups(groups, table#orders), table)
         })
 
-    /// 半透明の材質の batch を draws の順（呼び手が遠い物から並べる）に描く。不透明の batch は Render3d.GlRows が行で描く。
-    /// 続く物が同じプログラムなら組み直さない。描き終えたら、絵を貼った unit の sampler を外して unit 0 へ戻す。
-    pub def drawMaterials(gl: GlContext, state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
-                          table: MaterialTable, draws: List[MaterialBatch[MeshBatch]]): Unit \ IO =
-        let bound = freshBound();
-        let previous: Ref[Option[MaterialBatch[MeshBatch]], Static] = Ref.fresh(Static, None);
-        draws |> List.forEach(d -> {
-            let entry = entryAt(table, d#handle);
-            if (d#batch#count == 0) drawBatch(gl, state, gen, entry#locs#mesh, BatchBreak.Material, d#batch) else {
-                useMaterial(gl, state, camera, pass, bound, entry);
-                let why = batchBreakOf(Ref.get(previous), d);
-                let look = { coverage = entry#coverage, doubleSided = d#material#doubleSided };
-                drawMaterialWith(gl, state, gen, source, bound, entry, d#material, d#batch#head, look, () -> drawBatch(gl, state, gen, entry#locs#mesh, why, d#batch));
-                Ref.put(Some(d), previous)
-            }
-        });
-        releaseBound(gl, bound)
-
     /// 材質を描く間に付けた物の控え。0 = 今のプログラム・1 = 貼った材質の絵の unit の数・2 = 法線マップを貼ったら 1・3 = lightmap を貼ったら 1。
     pub def freshBound(): Array[Int32, Static] \ IO = Array#{0, 0, 0, 0} @ Static
 
@@ -70,13 +51,6 @@ mod Render3d.Material {
             Array.put(program, 0, bound);
             useMaterialProgram(gl, state, camera, pass, entry#locs)
         }
-
-    /// 材質 m（頭の物 head）の batch 1 つを、今付いている entry のプログラムで描く: cutout・params・絵・法線マップ・lightmap を入れて drawMesh を呼ぶ。
-    /// look#coverage なら cutout を discard でなく alpha to coverage で抜く（出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。look#doubleSided ならその間だけカリングを切る。
-    pub def drawMaterialWith(gl: GlContext, state: State, gen: Int64, source: TextureSource, bound: Array[Int32, Static], entry: MaterialEntry,
-                             m: Scene3d.MaterialFields, head: MeshDraw, look: { coverage = Bool, doubleSided = Bool }, drawMesh: Unit -> Unit \ IO): Unit \ IO =
-        bindMaterial(gl, state, gen, source, bound, entry, m, head);
-        drawWithLook(gl, look, drawMesh)
 
     /// 材質 m（頭の物 head）の cutout・params・絵・法線マップ・lightmap を、今付いている entry のプログラムへ入れ、貼った unit を bound に控える。
     pub def bindMaterial(gl: GlContext, state: State, gen: Int64, source: TextureSource, bound: Array[Int32, Static], entry: MaterialEntry,
@@ -97,7 +71,8 @@ mod Render3d.Material {
         if (entry#normalMapped) Array.put(1, 2, bound) else ();
         if (entry#lightmapped) Array.put(1, 3, bound) else ()
 
-    /// drawMesh を、look#coverage なら alpha to coverage を付けて・look#doubleSided ならカリングを切って呼ぶ（呼んだ後に戻す）。
+    /// drawMesh を、look#coverage なら alpha to coverage を付けて（cutout を discard でなく出す α を標本の数に使って抜き、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）・
+    /// look#doubleSided ならカリングを切って呼ぶ（呼んだ後に戻す）。
     pub def drawWithLook(gl: GlContext, look: { coverage = Bool, doubleSided = Bool }, drawMesh: Unit -> Unit \ IO): Unit \ IO =
         if (look#coverage) {
             gl.enable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);

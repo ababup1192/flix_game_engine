@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を group 1 の R3dSky から読む別の pipeline で塗る（**済・12.33**）。mip（決まり 7）と preload は (7) と一緒に。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明・後がけ（人の決めで半分に割る: (6a) 半透明（計画が遠い順に並べ、SceneList の末尾に半透明の材質の行として足す・GL も行で描く・**済・12.34**）・(6b) 後がけ）／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -1830,5 +1830,76 @@ GL の絵と GL の呼び出しの並びは変えていない（GL の `Render3d
 - 持ち越し:
   - 空の frag は描き先の左上を場面の左上として向きを作る（`encodeScene` は任意の viewport を受けるが、空の向きの材料は描き先いっぱいの大きさで書く）。描き先の途中の矩形へ描く形（bench の貼る形 B）を本番に入れる時は、viewport の原点も R3dScene の末尾に足す。
   - 景色を背景に描く場面（sky の無い・`withEnvironmentAsBackground`）は (7) の環境マップと一緒に（空の frag に GLSL の `uEnvOn` の枝を足す）。
-  - 空を前半の行にする（kindSky）かは、空の後に描く物（(6) の後がけ）が来た時に見直す。
+  - 空を前半の行にする（kindSky）かは、空の後に描く物（(6) の後がけ）が来た時に見直す（→ 12.34 で (6a) では変えないと決めた・(6b) で見直す）。
   - 12.28〜12.32 の持ち越しで (5b) で触らなかった物はそのまま。
+
+### 12.34 R2b・P8 の (6a): 半透明（2026-11-16・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (6)「半透明・後がけ」の前半（人の決めで半分に割った。後がけは (6b)・ビルボードと環境マップは (7) で、どちらも触っていない）。
+engine の pub（ゲームから見える API）は増えておらず、engine/ の公開の型シグネチャも変えていない（変えたのは render_gl の中だけ）。GL の画は変えていない（下の門）。GL の呼び出しの並びは変わった。
+
+- **R2b — 半透明の並べ替えを前半へ・半透明を材質の行に**（形のレビュー（3D）の決め「半透明は前半で並べて材質の行として足す」のとおり）:
+  - 計画（`Render3d.ScenePlan.sceneDrawsOf`）が半透明の材質の batch（1 体ずつ）を `Scene3d.blendOrderOf`（目から遠い順・同じ距離なら来た順）で並べる。並べる目は GL が描く時に使っていた目と同じ（`scene#camera#eye`）で、並べ替えは安定なので順は前と同じ。
+    `DrawMode.OneByOne` でも並べる（GL も前から並べていた）。
+  - `Render3d.SceneList` に `firstBlended`（読む口は `firstBlendedRowOf`）を足し、不透明の材質の行の後ろへ半透明の材質の行を計画の順のまま足す。行の欄・値（values）・絵の組（reads）は不透明の材質の行と同じ（12.28 の形のまま。行の欄は増やしていない）。
+    分かれた理由は前と同じ `BatchBreak.Transparent`。「前の材質の行と同じ付け方」（`flagSameBinding`）は半透明の頭の行で数え直す（GL の `drawBlendedRows` は付けた物の控えを新しく作って始めるので、頭の行にフラグがあるとプログラムを付けずに描く）。
+  - GL（`Render3d.GlRows`）: `drawRows` は `firstBlended` の前の行だけを描き、ビルボードの後に `drawBlendedRows` が残りの行を、深度を読むが書かず `glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)` で描く（前の `drawBlended` と同じ状態の付け外し）。
+    形と絵は行の `uploadRows` が上げる（前の `uploadBlended` を消した）。消した物: `Render3d.Material.drawMaterials`・`drawMaterialWith`・`Render3d.drawBatch`・`SceneInputs#blended`。`SceneList.batchBreakOf` は pub でなくした（使うのは SceneList の中だけになった）。
+  - GL の呼び出しが変わった所: 同じ材質の半透明の物が続くと、2 つ目からは `flagSameBinding` でプログラムと材質の uniform と絵を付け直さない（前の `drawMaterials` は物ごとに入れ直していた）。値は材質で決まり、lightmap つきは `isSameBinding` が外すので絵は同じ【推: 画素で確かめたのは下の bench と gl-capture・gl-parity の範囲】。
+  - 1 体ごとの値の番号と姿勢の行は `draws#blended` の並びで振るので、振る順が「来た順」から「遠い順」になった。上限（1 体ごとの値の絵の行・姿勢の行）を超えると後ろから落ちるので、**半透明の物は目に近い物から落ちる**（前は来た順の後ろから）。上限の内側では画は変わらない。`planScenes` の doc に書いた。
+- **P8 — WebGPU で半透明を描く**:
+  - `WebGpuMaterials.isDrawable` から半透明を外した（描けない版は alpha to coverage だけ）。材質の program の鍵（`materialKey` の `+bl`）が半透明の版を分けるので、pipeline の鍵（program の番号・形式・標本・頂点のバイト数）は今のまま。
+  - 半透明の版の pipeline は GL と同じ混ぜ方（色 SRC_ALPHA・ONE_MINUS_SRC_ALPHA、α ONE・ONE_MINUS_SRC_ALPHA）で、深度は LESS で読むが書かない。frag が出す α は材質の albedo の α（`Render3dWgsl.materialFragmentSource` の blend の枝・12.28 で入れてあった）。
+  - 行は今までどおり 1 本の `drawRows` で順に流す（不透明の行の後に半透明の行が来る）。GL が間に描くビルボードを WebGPU はまだ描かないので、この順で GL と同じ重なり（WhyNot に書いた）。
+  - `skipsOf` から「3D の半透明の材質の物」を外した（骨つき・lightmap つきの半透明も描く）。Output.Depth の場面は前から計画が半透明の物を外している（`solidInstances`）ので、深度を書かない pipeline が奥行きの書き出しの pass に乗る事は無い。
+  - スマホの上限（12.24）の内: 足した binding・頂点の buffer・varying は無い（不透明の材質の版と同じ）。
+- **決めた事 — 空は kindSky にしない（12.33 の決めのまま）**: 12.33 は「空の後に描く物が場面の pass の列の途中に挟まる時に見直す」とした。(6a) の半透明は場面の色の pass の中で不透明の行の後（GL はビルボードの後）に描くので、空（pass の頭で地の色の直後）との順は変わらず、列の途中に空を挟む物は増えていない。
+  行にしても GL は `drawSky` のまま行を読まず、backend が 2 つとも読まない kind が増えるだけなのも 12.33 と同じ。後がけ（(6b)）が来た時にもう一度見直す。
+- **確かめ — `bench/webgpu_v2`** に 4 場面を足した（`BlendCases.flix`。部屋の手前に色の違う半透明の板を奥行きをずらして重ね、**目に近い物から**置く（来た順で描くと重なりの色が変わる）。1 枚は他の板と交わる向き（深度を書くと欠ける）・半透明の燭台の形（片面・裏を間引く）も 1 つ）:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大（許容） |
+  |---|---|---|---|
+  | blend（画面へ直に） | 14（64） | 7（32） | ±70（±255） |
+  | blendDesign（design の解像度・α を掛けた後の値で貼る道） | 0（8） | 0（4） | ±0（±16） |
+  | blendDepth（奥行きの書き出し＝半透明は書かない） | 11（24） | 1（4） | ±2（±16） |
+  | blendMsaaPass（標本 4 の Pass に描いて貼る） | 17,181（34,000） | 13,689（28,000） | ±49（±128） |
+
+  - 許す差の理由: blend は room と同じ所（重なる面の入れ替わり・14 px・±82）で同じ数で、半透明の板の画素は差に出ていない。blendDepth は半透明を書かないので部屋の奥行きの書き出しと同じ形の差。blendMsaaPass は skyMsaaPass（14,238）と同じ標本の位置の違い（12.25・12.26）。
+    上限は実測のほぼ 2 倍（blend は room と同じ・blendDesign は skyDesign と同じ小さい物の下限）・差の最大は blend が面の入れ替わりで切らない。
+  - **GL の画が変わらない事の確かめ**: 同じ bench を変更の前の render_gl（main の 10a934b4）でも流し、GL の絵 4 枚（blend・blendDesign・blendDepth・blendMsaaPass）が変更の後とバイトまで同じ。前の木の WebGPU は blend が 134,956 px 違って落ちた（半透明を頂点の色で不透明に描くため・(6a) の前の姿）。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - WebGPU の半透明の pipeline の混ぜ方を外す: blend 134,956 px・blendDesign 135,099 px・blendMsaaPass 148,041 px 違って落ちる（blendDepth は 11 px のまま）。
+    - WebGPU の半透明の pipeline で深度を書く: 交わる板が欠け、blend 12,563 px・blendDesign 12,474 px 違って落ちる（blendMsaaPass は 29,871 px で上限 34,000 の内・blendDepth は 11 px）。
+    - 計画の並べ順を逆にする（近い順）: GL と WebGPU の両方が同じに変わるので bench は通る（GL の blend の絵は正しい順の絵と違う事を確かめた）。守るのは `TestSceneList.testPlanSortsBlendedFarToNear`（「expected m0.2 :: m0.3 :: m0.1, but got m0.1 :: m0.3 :: m0.2」で落ちた）。
+  - 今までの 34 場面は 12.33 と同じ数。目で見て、赤と緑の板の重なり・交わる青い板・半透明の燭台が GL と同じ色で出る（`bench/webgpu_v2/debug/{gl,webgpu}/blend*.png`・git の外）。WebGPU の誤り 0。
+- **欠けの表と実物**（12.33 と同じ流し方・写しは `scratchpad/a6a/setup.sh`・写しの engine はこの worktree の fpkg・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=160`・頭の 64 コマ・WebGPU だけ。
+  前は (5b) の fpkg で同じ日にみやげの町の 3 場面を流し直した物）:
+
+  | 種類（1 コマあたり） | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+  |---|---|---|---|---|---|---|
+  | 半透明の材質の物（前 → 後） | — | — | — | 18.6 → **0** | 18.6 → **0** | 12.7 → **0** |
+  | ほかの種類 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+  - **後は 6 場面とも欠けの表が出ない**（飛ばした物が 0・`まだ描かない` の知らせも 0）。fps3d_lab は前から半透明が無い（12.32・12.33 と同じ）。WebGPU の誤り 0・落ちた場面なし・6 場面とも頭の 64 コマを撮れた。
+  - 前の数は 12.33（18.6・11.4・8.0）と market・night で違う。同じ日の前の回では 18.6・18.6・12.7 で、V2b（12.26）の 12.6・18.6・12.7 とも並ぶ【推: 起動から 300 コマの中で頭の読み込みのコマの数が回ごとに違う（12.33 と同じ注意）】。
+  - 見え方: market の 60 コマ目を 12.32 の GL の絵と並べて違いが見えない（店の窓が手前に出ているコマ）。画素で比べてはいない【推: コマの時刻が 2 本でそろわない】。
+  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/a6a/games/out/<ゲーム>-<場面>-webgpu/`（前は `…/a6a/before/out/`。**scratchpad の物は消えうる**）。
+- テスト: render_gl 553 緑（12.33 の 547 に `TestSceneList` の 6 本: 半透明の行が不透明の行の後に並ぶ・半透明が無ければ頭は行の数・半透明の頭の行は付け直す・半透明の行の値と分かれた理由・計画が遠い順に並べる・骨つきの半透明の姿勢の行を遠い順に振る。
+  `TestWebGpuScene3d` の半透明を数える 2 本は「数えない」と alpha to coverage で数える形に替え、`TestMeshTable.testDrawableKinds` は半透明を描ける版に直した）。engine の `make test-engine` 987 緑（engine は触っていない）。
+- **レビュー（1 回・88 点・必須 2）で直した物**: 必須 1 = 上限を超えた時に半透明は近い物から落ちる事を `planScenes` の doc とこの記録に書いた（番号だけ来た順で振る形は取らなかった: 番号を振る並びと描く並びを別に持つ事になる。近い物から落ちる方が目立つが、上限を超えるのは 1 回知らせの出る異常な場面なので受け入れた）。必須 2 = この記録。
+  任意で直した物: `blendedRowOf` → `firstBlendedRowOf`・`withLayouts` → `layoutPairsOf`（`with*` は値を差し替える意味）・`undrawableOf` → `undrawableCountOf`・GlRows の頭の流れに `drawBlendedRows`・`buildSceneList` の WhyNot に頭の行で付け直す本当の理由・
+  WebGpuRenderer の予定の行を持ち越しへ・bench の許容（blend を room と同じ・blendDesign を skyDesign と同じ）・テストの helper（`skipsOfSceneOn`）と空行・骨つきの半透明の姿勢の行のテスト。
+  直さなかった物: `skipsOf` の奥行きの書き出しの行（今はいつも 0。DepthOut では coverage が偽なので）は 12.27 からの物で (6a) で触らない・半透明の行の値を GL は読まない（1 行 1 体で物ごとに `putMaterialValues` が走る。数千の半透明の場面で測る）。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16。直しの後の木で流し直した）:
+  - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `bin/flix test`）553 緑・`make test-engine` 987 緑。
+  - `make gl-parity` exit 0・`make gl-capture-check` exit 0（a と b の 54 枚がバイトまで同じ・基準とも 54 枚がバイトまで同じ）。
+  - `make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0・誤り 0（38 場面と記録 2・標本 4 と 1 の差 GL 4,761 px・WebGPU 4,158 px）。
+    1 コマ（記録）は GL 1.03〜1.08 ms・WebGPU 1.76〜1.77 ms で、12.27 の 0.34〜0.58 ms より両方とも重い【推: 同じ機械でゲームの写しを流した後で、部屋の場面に半透明は無く (6a) の道を通らない】。
+  - `make lint ONLY=max-lines` exit 0（`Render3d.flix` 1,098 行・`WebGpuRenderer.flix` 927 行）・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
+  - 12.33 の落とし穴（fpkg を作り直した後の bench の `packages.lock`）は、門の前に bench の `packages.lock` を消して流した（この worktree では初めから無かった）。
+- 言える範囲: この Mac（Dawn の Metal）だけ。ブラウザ（12.31 の口）・スマホ（adreno）で半透明の場面は流していない【未確認】。
+- 持ち越し:
+  - ビルボードを WebGPU に足す時（(7)）は、行の流し方を不透明の行・ビルボード・半透明の行の 3 つに分ける（GL の `drawPass` と同じ順）。
+  - 空を前半の行にする（kindSky）かは後がけ（(6b)）で見直す。
+  - 半透明の行の値（values・reads）は GL が読まないのに 1 体ごとに書く。粒子のように半透明が数千ある場面が来たら測る（`docs/performance.md` の候補）。
+  - 12.28〜12.33 の持ち越しで (6a) で触らなかった物はそのまま。

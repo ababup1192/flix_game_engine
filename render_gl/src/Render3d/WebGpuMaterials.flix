@@ -1,7 +1,7 @@
 // Render3d.WebGpuMaterials — WebGPU の 3D の材質の分（材質の program・材質の絵の置き場・draw ごとの値の buffer・材質の pipeline と group 1）。
 // Render3d.WebGpuRenderer が 1 つ持つ。材質は計画の問い合わせ（Render3d.ScenePlan.MaterialRequest）ごとに resolve で答え、行の values と reads
 // （並びは Render3d.MaterialValues の頭）を、値の buffer の区画と絵の表（Render3d.TextureTable3d）の番号で group 1 に付ける。
-// 描く材質: 半透明でない・alpha to coverage でない材質（骨つき・uv・法線マップ・lightmap・両面・cutout・metallic と roughness を含む）。
+// 描く材質: alpha to coverage でない材質（半透明・骨つき・uv・法線マップ・lightmap・両面・cutout・metallic と roughness を含む）。
 // 描かない版は順の番号 0 で答え、計画は頂点の色の道へ回す（知らせるのは Render3d.WebGpuRenderer.skipsOf）。
 // WhyNot: alpha to coverage の版を描かない — render_gl/java の RenderPipelineDesc に alphaToCoverage の口が無い（足すと GL の層の jar のハッシュが動く）。
 //   計画には描き先の能力として「alpha to one が無い」と答え、cutout は discard で抜く（ブラウザの GL と同じ）。
@@ -12,6 +12,8 @@ pub mod Render3d.WebGpuMaterials {
     import fge.webgpu.BindGroupDesc
     import fge.webgpu.BindGroupLayout
     import fge.webgpu.BindGroupLayoutDesc
+    import fge.webgpu.BlendFactor
+    import fge.webgpu.BlendOperation
     import fge.webgpu.Buffer
     import fge.webgpu.BufferBindingType
     import fge.webgpu.BufferUsage
@@ -148,7 +150,7 @@ pub mod Render3d.WebGpuMaterials {
     // ── 材質の program ──
 
     /// 版 kind の材質をこの描き手が描けるか。
-    pub def isDrawable(kind: ProgramKind): Bool = not kind#blend and not kind#coverage
+    pub def isDrawable(kind: ProgramKind): Bool = not kind#coverage
 
     /// 問い合わせ requests に順の番号で答える（描けない版と組めない材質は 0）。答えた表は current に控え、行の欄 1（問い合わせの番号）で引く。
     /// 初めての材質はここで組み、noteBuild(名前) を呼ぶ。
@@ -409,6 +411,7 @@ pub mod Render3d.WebGpuMaterials {
         }
 
     /// program p で形 mesh を mp の描き先へ描く pipeline（無ければ作る）。表の面は時計回りで、両面の材質だけ裏を間引かない。深度は LESS で書く。
+    /// 半透明の版は深度を読むが書かず、GL の Render3d.GlRows.drawBlendedRows と同じ混ぜ方（色は SRC_ALPHA・ONE_MINUS_SRC_ALPHA、α は ONE・ONE_MINUS_SRC_ALPHA）で重ねる。
     /// 骨つきの版は group 2（姿勢）と、形の版のジョイントの番号と重み（location 14・15）を読む（呼ぶ側が mesh#skinAt のある形だけを渡す）。
     /// lightmap の版は 2 本目の uv（location 13）を読む（呼ぶ側が mesh#uv2At のある形だけを渡す）。
     def pipelineOf(m: Materials, mp: MaterialPass, p: Program, mesh: MeshBuffers): RenderPipeline \ IO =
@@ -431,8 +434,11 @@ pub mod Render3d.WebGpuMaterials {
                 discard desc.attribute(VertexFormat.FLOAT32X4, 64, 7).attribute(VertexFormat.FLOAT32X4, 80, 8);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 96, 9).attribute(VertexFormat.FLOAT32X4, 112, 10);
                 discard desc.colorTarget(WebGpuPipelines.textureFormatOf(mp#format));
+                if (p#kind#blend)
+                    discard desc.blend(BlendFactor.SRC_ALPHA, BlendFactor.ONE_MINUS_SRC_ALPHA, BlendOperation.ADD, BlendFactor.ONE, BlendFactor.ONE_MINUS_SRC_ALPHA, BlendOperation.ADD)
+                else ();
                 discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CW, if (p#kind#doubleSided) CullMode.NONE else CullMode.BACK);
-                discard desc.depthStencil(TextureFormat.DEPTH24_PLUS, true, CompareFunction.LESS).multisample(mp#samples);
+                discard desc.depthStencil(TextureFormat.DEPTH24_PLUS, not p#kind#blend, CompareFunction.LESS).multisample(mp#samples);
                 let made = s#gpu.createRenderPipeline(desc);
                 Ref.put(Map.insert(key, made, Ref.get(s#pipelines)), s#pipelines);
                 made

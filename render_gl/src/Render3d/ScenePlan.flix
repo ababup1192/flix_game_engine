@@ -1,4 +1,4 @@
-// Render3d.ScenePlan — 3D の描き手（Render3d）の、prepare の中で場面を描く物へ分ける所（計画の側。GL を呼ばない）。半透明を除く描く順と姿勢の行はここで決まる。約束は Render3d.flix の頭。
+// Render3d.ScenePlan — 3D の描き手（Render3d）の、prepare の中で場面を描く物へ分ける所（計画の側。GL を呼ばない）。描く順（半透明の物の遠い順も）と姿勢の行はここで決まる。約束は Render3d.flix の頭。
 // WhyNot: backend を計画の中から呼ばない — 計画が GL を知ることになり、WebGPU の backend が同じ計画を使えない。描き先の能力と材質の答えは値で受け取る（groupScenes の後・planScenes の前に backend が材質を引く）。
 mod Render3d.ScenePlan {
     import java.lang.Object
@@ -33,8 +33,8 @@ mod Render3d.ScenePlan {
     /// backend に聞いて決める描き先の能力。alphaToOne = 標本つきの描き先で cutout を alpha to coverage で抜けるか・poseRowLimit = 姿勢の行の数の上限。
     pub type alias PlanCaps = { alphaToOne = Bool, poseRowLimit = Int32 }
 
-    /// 場面 1 つを描く材料を batch に分け終えた物（半透明の物の順だけは draw で決める。ほかは描く順に並べてある）。plain = 材質の無い骨の無い物・skinned = 材質の無い骨つきの物・
-    /// opaque = 不透明の材質の物（Output.Depth では材質で描く物）・blended = 半透明の材質の物（1 体ずつの batch。Output.Depth では空）。
+    /// 場面 1 つを描く材料を batch に分け終えた物（どれも描く順に並べてある）。plain = 材質の無い骨の無い物・skinned = 材質の無い骨つきの物・
+    /// opaque = 不透明の材質の物（Output.Depth では材質で描く物）・blended = 半透明の材質の物（1 体ずつの batch を Scene3d.blendOrderOf の順＝目から遠い物から。Output.Depth では空）。
     pub type alias SceneDraws[b] = { plain = List[b], skinned = List[b], opaque = List[MaterialBatch[b]], blended = List[MaterialBatch[b]] }
 
     /// 場面の pass 1 つが場面の描き先へ書く物。Color = 光を当てた色・DepthOut = 目からの距離の灰色（near が黒・near + range が白。Output.Depth）。
@@ -482,7 +482,8 @@ mod Render3d.ScenePlan {
     // ── batch に分けて並べる ──
 
     /// 候補に分けた場面を batch に分けて描く順に並べ、描く物の姿勢の行を振って、割り当てと一緒に返す。orders = backend が聞いた材質の順に返した順の番号。
-    /// 姿勢の行は場面の順に、頂点の色の骨つき → 不透明の材質 → 半透明 → 影の地図の骨つきの batch の順で振る。
+    /// 姿勢の行は場面の順に、頂点の色の骨つき → 不透明の材質 → 半透明（遠い順）→ 影の地図の骨つきの batch の順で振る（1 体ごとの値の番号も同じ並び）。
+    /// 姿勢の行か 1 体ごとの値が上限を超えると後ろから落ちるので、半透明の物は目に近い物から落ちる。
     pub def planScenes(planner: Planner, caps: PlanCaps, orders: Vector[Int32], grouped: Grouped): (List[ScenePlan[SpanBatch]], PoseRows) \ IO =
         let rows = Ref.fresh(Static, noRows(caps#poseRowLimit));
         let plans = grouped#scenes |> List.map(s -> {
@@ -535,7 +536,8 @@ mod Render3d.ScenePlan {
         match s#mainPass {
             case ScenePassSpec.Color =>
                 let (blended, solid) = List.partition(d -> d#material#blend, materials);
-                { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, solid), blended = blended }
+                { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, solid),
+                  blended = Scene3d.blendOrderOf(s#cmd#scene#camera#eye, d -> d#batch#head#fields, blended) }
             case ScenePassSpec.DepthOut(_) =>
                 { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, materials), blended = Nil }
         }

@@ -1,12 +1,13 @@
-// Render3d.SceneList — 3D の場面 1 つの不透明の batch を描く行の列（RenderList の 3D の分。計画の側が pass ごとに作り（buildScenePasses）、GL の backend は Render3d.GlRows・WebGPU の backend は Render3d.WebGpuRows が流す）。
-// 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物）。半透明・ビルボード・空は行にしない。
+// Render3d.SceneList — 3D の場面 1 つの batch を描く行の列（RenderList の 3D の分。計画の側が pass ごとに作り（buildScenePasses）、GL の backend は Render3d.GlRows・WebGPU の backend は Render3d.WebGpuRows が流す）。
+// 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物・半透明の材質の物）。ビルボード・空は行にしない。
 // 影の地図の pass の行（buildShadowList・計画は Render3d.ShadowMaps）は頂点の色の行と骨つきの行だけで、backend は形だけを深度で描く。
 // rows は 1 行 rowStride() 個: 0=種類（kind*） 1=材質の表の番号（MaterialBatch#handle。頂点の色と骨つきは 0） 2=材質の順の番号（MaterialBatch#order。同じく 0）
 //   3=1 体ごとの値の先頭 4=描く物の数（0 なら描かず、形と絵を今のコマで使った物として数えるだけ） 5=1 つの draw call に分かれた理由（Render3d.Counts.breakSlotOf）
 //   6=フラグ（flag*: 両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方・lightmap） 7=形の番号（Render3d.MeshTable。backend は行を流す前にこの番号の形を作り、描く時にこの番号で引く）
 //   8=材質の値の先頭（values の位置・材質の行で描く物がある時だけ。ほかは -1） 9=絵の組の先頭（reads の組の番号） 10=絵の組の数。
-//   行の順が描く順（頂点の色 → 骨つき → 材質を順の番号で）。
-// heads は行ごとの頭の物（形・lightmap・タンジェントを読む）・materials は材質の行の材質（firstMaterial 行目からの並び）。
+//   行の順が描く順（頂点の色 → 骨つき → 不透明の材質を順の番号で → firstBlended 行目から半透明の材質を計画が並べた順（遠い物から・1 行 1 体））。
+//   backend は firstBlended の前の行を描き、ビルボードを描いた後に、深度を読むが書かずに α で重ねて残りの行を描く。
+// heads は行ごとの頭の物（形・lightmap・タンジェントを読む）・materials は材質の行の材質（firstMaterial 行目からの並び・半透明の行も含む）。
 // values（Float32）と reads（Int32）は材質の行の draw ごとの値と絵の組（並びは Render3d.MaterialValues の頭）。GL は今も材質の uniform を materials から差す（values と reads を使うのは WebGPU の材質の group 1）。
 // WhyNot: 行ごとに MeshBatch の record を backend へ渡さない — backend 2 つが分かれ目に読む欄（種類・材質・範囲・理由・フラグ）を、GL の側で引き直さずに同じ物を読む。
 mod Render3d.SceneList {
@@ -19,8 +20,8 @@ mod Render3d.SceneList {
     use Render3d.TextureTable3d
 
     pub type alias SceneList = {
-        rows = Array[Int32, Static], heads = Array[MeshDraw, Static], materials = Array[Scene3d.MaterialFields, Static], firstMaterial = Int32, count = Int32,
-        values = Array[Float32, Static], reads = Array[Int32, Static]
+        rows = Array[Int32, Static], heads = Array[MeshDraw, Static], materials = Array[Scene3d.MaterialFields, Static], firstMaterial = Int32, firstBlended = Int32,
+        count = Int32, values = Array[Float32, Static], reads = Array[Int32, Static]
     }
 
     /// 場面 1 つの pass と、その pass で流す行の列（列の順に pass を積む）。
@@ -65,6 +66,9 @@ mod Render3d.SceneList {
 
     pub def rowCountOf(list: SceneList): Int32 = list#count
 
+    /// 半透明の材質の行の頭（無ければ rowCountOf と同じ）。
+    pub def firstBlendedRowOf(list: SceneList): Int32 = list#firstBlended
+
     /// 行 row の欄 col（並びはこのファイルの頭のコメント）。
     pub def rowAt(list: SceneList, row: Int32, col: Int32): Int32 \ IO = Array.get(row * rowStride() + col, list#rows)
 
@@ -87,27 +91,37 @@ mod Render3d.SceneList {
     /// 行 row のフラグに flag が立っているか。
     pub def hasFlag(list: SceneList, row: Int32, flag: Int32): Bool \ IO = Int32.bitwiseAnd(rowAt(list, row, 6), flag) != 0
 
-    /// 場面の不透明の batch を描く順の行にする（半透明の blended は入れない）。形と材質の絵の番号は ctx の表で振る。
+    /// 場面の batch を描く順の行にする（半透明の blended は計画が並べた順のまま末尾へ）。形と材質の絵の番号は ctx の表で振る。
+    // WhyNot: 半透明の頭の行の「前の材質の行と同じ付け方」を不透明の最後の行から続けて見ない — backend は間にビルボードを描き、GL の drawBlendedRows は
+    //   付けた物の控えを新しく作って始めるので、頭の行に同じ付け方のフラグがあるとプログラムを付けずに描く。
     pub def buildSceneList(ctx: Context, draws: SceneDraws[MeshBatch]): SceneList \ IO =
         let shapes = List.length(draws#plain) + List.length(draws#skinned);
-        let count = shapes + List.length(draws#opaque);
-        let layouts = draws#opaque |> List.map(d -> if (d#batch#count > 0) Some(MaterialValues.layoutOf(ctx#layouts, d#material)) else None);
-        let valueTotal = List.sumWith(l -> Option.getWithDefault(0, Option.map(MaterialValues.valueSizeOf, l)), layouts);
-        let readTotal = List.zip(draws#opaque, layouts) |> List.sumWith(match (d, l) -> Option.getWithDefault(0, Option.map(x -> MaterialValues.readCountOf(x, d#kind), l)));
+        let firstBlended = shapes + List.length(draws#opaque);
+        let count = firstBlended + List.length(draws#blended);
+        let opaque = layoutPairsOf(ctx, draws#opaque);
+        let blended = layoutPairsOf(ctx, draws#blended);
+        let both = List.append(opaque, blended);
+        let valueTotal = List.sumWith(dl -> Option.getWithDefault(0, Option.map(MaterialValues.valueSizeOf, snd(dl))), both);
+        let readTotal = both |> List.sumWith(match (d, l) -> Option.getWithDefault(0, Option.map(x -> MaterialValues.readCountOf(x, d#kind), l)));
         let list = { rows = Array.repeat(Static, Int32.max(1, count * rowStride()), 0), heads = Array.empty(Static, count),
-                     materials = Array.empty(Static, count - shapes), firstMaterial = shapes, count = count,
+                     materials = Array.empty(Static, count - shapes), firstMaterial = shapes, firstBlended = firstBlended, count = count,
                      values = Array.repeat(Static, Int32.max(1, valueTotal), 0.0f32), reads = Array.repeat(Static, Int32.max(1, readTotal * MaterialValues.readStride()), 0) };
         let next = Array#{0, 0, 0} @ Static;
         draws#plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.Mesh, b));
         draws#skinned |> List.forEach(b -> putShapeRow(list, next, ctx, kindSkinned(), BatchBreak.Skinned, b));
-        discard List.zip(draws#opaque, layouts) |> List.foldLeft(putMaterialRow(list, next, ctx), None);
+        discard List.foldLeft(putMaterialRow(list, next, ctx), None, opaque);
+        discard List.foldLeft(putMaterialRow(list, next, ctx), None, blended);
         list
+
+    /// 材質の batch ごとの値の並びの元（描く物の無い batch は None で、値を書かない）。
+    def layoutPairsOf(ctx: Context, ds: List[MaterialBatch[MeshBatch]]): List[(MaterialBatch[MeshBatch], Option[MaterialValues.Layout])] \ IO =
+        ds |> List.map(d -> (d, if (d#batch#count > 0) Some(MaterialValues.layoutOf(ctx#layouts, d#material)) else None))
 
     /// 影の地図の pass の行（骨の無い物 plain → 骨つきの物 skinned の順。どれも分かれた理由は影の pass）。形の番号は ctx の表で振る。
     pub def buildShadowList(ctx: Context, plain: List[MeshBatch], skinned: List[MeshBatch]): SceneList \ IO =
         let count = List.length(plain) + List.length(skinned);
         let list = { rows = Array.repeat(Static, Int32.max(1, count * rowStride()), 0), heads = Array.empty(Static, count),
-                     materials = Array.empty(Static, 0), firstMaterial = count, count = count,
+                     materials = Array.empty(Static, 0), firstMaterial = count, firstBlended = count, count = count,
                      values = Array.repeat(Static, 1, 0.0f32), reads = Array.repeat(Static, 1, 0) };
         let next = Array#{0, 0, 0} @ Static;
         plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.ShadowPass, b));
@@ -179,7 +193,7 @@ mod Render3d.SceneList {
 
     /// 材質の batch d が 1 つの draw call に分かれた理由（優先の順は FrameDiagnostics.Scene3dBatchBreaks）。previous = 同じ並びで前に描いた batch。
     /// 形が前と違って材質が同じ時だけ Mesh（形も材質も同じで分かれたのは、材質の絵の組が違う時）。
-    pub def batchBreakOf(previous: Option[MaterialBatch[MeshBatch]], d: MaterialBatch[MeshBatch]): BatchBreak =
+    def batchBreakOf(previous: Option[MaterialBatch[MeshBatch]], d: MaterialBatch[MeshBatch]): BatchBreak =
         if (d#material#blend) BatchBreak.Transparent
         else if (d#kind#lightmap) BatchBreak.Lightmap
         else if (isSkinned(d#batch#head)) BatchBreak.Skinned
