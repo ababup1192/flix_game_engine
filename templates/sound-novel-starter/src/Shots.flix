@@ -69,9 +69,12 @@ mod Shots {
             case ShotsDoc.Screen.Hold     => holding(res, w)
         }
 
-    /// 次の写真（desk_room）を黒のまま待ち続けている形（待ちの目印が出る長さだけ待った所）。
+    /// 次の写真を黒のまま待ち続けている形（待ちの目印が出る長さだけ待った所）。次の写真は novel.backdrops.json の photos のうち、
+    /// 今出ていない最初の物（鍵の順）。
     def holding(res: Res.Res, w: World.World): World.World =
-        let names = BackdropDoc.textureOf("desk_room", res#backdrops) |> Option.toList;
+        let shown = World.readOf(w) |> Option.flatMap(r -> Stage.shownShot(res#backdrops, r#stage)) |> Option.map(s -> s#photo);
+        let next = BackdropDoc.rec(res#backdrops)#photos |> Map.keysOf |> Set.toList |> List.find(p -> Some(p) != shown);
+        let names = next |> Option.flatMap(p -> BackdropDoc.textureOf(p, res#backdrops)) |> Option.toList;
         let hold = { phase = World.HoldPhase.Waiting, phaseFrom = World.now(w), waited = KindDoc.rec(res#kind)#holdMarkSeconds + 1.0,
                      names = names, rest = Nil, last = None };
         World.mapRead(r -> { hold = Some(hold) | r }, w)

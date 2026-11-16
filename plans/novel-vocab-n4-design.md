@@ -1212,6 +1212,6 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - （段 11 の M）`test/fixtures/sample/` は作例の写しなので、作例（assets の Doc と yukidoke.yarn）を直したら写し直す（`TestSample.testFixtureIsACopyOfTheSample` が落ちて知らせる・dialogue.json は `bin/fge yarn build test/fixtures/sample/assets/talk --no-vocab`）。
 - （段 11 の M）`GameRes.load()` は写しでなくゲームの直下から読む（ゲームの Doc の置き場はゲームが決めるので GameRes.load は root を取らない）。ゲームの Doc に頼るテンプレートのテストは今は無い。
 - （段 11 の M）`slots` を語彙の nodeRefs（`shots[].node` の隣）に足していない。足すと、`slots` を書いていないゲームの `yarn build` が「拾わない」と言って nodeRefs の検査を飛ばすため。知らないノードは `testEveryShotBuildsFromTheApp` が描き出しの知らせで落ちて見つける。
-- （段 11 の M）コードにまだ作例の値が残る: `StoryDoc.defaults` の titlePhoto `slope`・titleAmbience `amb_winter_wind`・opening `WinterRoute`（Doc に欄が無い時の既定）と、`Shots.holding` が待つ写真 `desk_room`（hold の場面の待ちの目印）。ゲームの Doc に欄があれば効かず、テストも落ちない。
+- （段 11 の M）コードにまだ作例の値が残る: `StoryDoc.defaults` の titlePhoto `slope`・titleAmbience `amb_winter_wind`・opening `WinterRoute`（Doc に欄が無い時の既定）。ゲームの Doc に欄があれば効かず、テストも落ちない。`Shots.holding` が待つ写真は作例の `desk_room` をやめ、ゲームの novel.backdrops.json の photos のうち今出ていない最初の物にした（hold と save の場面が作例の名前に頼らない。テスト 2 本はゲームの Doc で見る）。
 - （段 11 の M）【未確認】Studio の新しいゲームの作り方が `make new-game` を通るか（通らなければ `test/sample` が残る。残っても作例を書き換えると落ちるのはそのフォルダの 8 本だけ）。
 - （段 11 の M）README.md・CREDITS.md・Makefile の lint-cast の注釈は作例のファイルを名前で指したまま（doc-refs が見ない文書。ゲームが作例を書き換える時に一緒に書き直す物）。
