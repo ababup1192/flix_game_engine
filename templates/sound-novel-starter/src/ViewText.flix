@@ -13,12 +13,12 @@ mod ViewText {
         }
 
     /// 本文の置き方: outline = 1 つの影でなく周りの縁取りで字を立たせる（地を敷かない型）、
-    /// centered = 改行（\n）で区切った行ごとに、1 行に収まる物を幅の真ん中に寄せる。
+    /// centered = 改行（\n）で区切った行ごとに、1 行に収まる物を幅の中央にそろえる。
     pub type alias Style = { outline = Bool, centered = Bool }
 
     /// 今の舞台の本文の置き方（縁取りはメッセージ枠の型の frame、揃えは <<text align=>>）。
-    // WhyNot: 幅で折り返す行は真ん中に寄せない — 描く RichText に揃えの口が無く、折り目ごとに分けるには折り目の位置を RichText の外で引き直すことになる。
-    //   折り返す行は幅いっぱいなので寄せる量もほぼ無い。改行の切れ目は字で分かるので、そこでだけ分けて置く。
+    // WhyNot: 幅で折り返す行は中央にそろえない — 描く RichText に揃えの API が無く、折り目ごとに分けるには折り目の位置を RichText の外で引き直すことになる。
+    //   折り返す行は幅いっぱいなので動かす量もほぼ無い。改行の切れ目は字で分かるので、そこでだけ分けて置く。
     def styleOf(window: ThemeDoc.Window, stage: Stage.Stage): Style =
         { outline = window#frame == ThemeDoc.WindowFrame.Outline,
           centered = PropertyTween.nameEnd(Stage.textAlignKey(), stage#props) == Some("center") }
@@ -34,7 +34,7 @@ mod ViewText {
 
     /// 1 行を置く（字の下に 1px ずらした影を敷き、写真の明るい所でも字の縁が立つようにする。縁取りの型は周り 8 方向に影）。
     /// sizes = 本文とルビの字の大きさ（行の間は本文の字に比べて novel.kind.json の lineGap の割合）。
-    /// 寄せる時は改行（\n）で区切った行ごとに分けて置き（rowsOf の行の数で下へ送る）、文字送りの数とルビの位置は行の頭の字の位置だけずらす。
+    /// 中央にそろえる時は改行（\n）で区切った行ごとに分けて置き（rowsOf の行の数で下へ送る）、文字送りの数とルビの位置は行の頭の字の位置だけずらす。
     def placeLine(atlas: FontAtlas, pos: Vec2.Vec2, width: Float64, sizes: { body = Float64, ruby = Float64 }, ink: Color, visible: Int32,
                   line: Page.Line, style: Style, env: Env): List[Render.PlacedItem] =
         let k = View.kindOf(env);
@@ -60,7 +60,7 @@ mod ViewText {
         }, (Nil, 0));
         List.reverse(segments)
 
-    /// 改行を含まない 1 行（か寄せない行全体）を置く。1 行に収まり、寄せる時は幅の真ん中へ。
+    /// 改行を含まない 1 行（か中央にそろえない行全体）を置く。1 行に収まり、そろえる時は幅の中央へ。
     def placeSegment(atlas: FontAtlas, pos: Vec2.Vec2, width: Float64, sizes: { body = Float64, ruby = Float64 }, ink: Color, visible: Int32,
                      line: Page.Line, style: Style, env: Env): List[Render.PlacedItem] =
         let k = View.kindOf(env);

@@ -231,7 +231,7 @@ mod ViewStage {
     def shownWidth(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage): Float64 =
         areaOfShot(env, areaOf, Stage.shownShot(env#res#backdrops, stage)) |> Option.getWithDefault(areaOf(None)) |> (r -> r#size#x)
 
-    /// slide で前の写真を今の写真より左へ置く距離: 前の写真の右の縁が今の写真の左の縁に接する（どちらかが無ければ width）。
+    /// slide で前の写真を今の写真より左へ置く距離: 前の写真の右端が今の写真の左端に接する（どちらかが無ければ width）。
     def slideGap(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, under: Option[Stage.Shot], current: Option[Stage.Shot], width: Float64): Float64 =
         let gap = forM (u <- areaOfShot(env, areaOf, under); c <- areaOfShot(env, areaOf, current)) yield u#position#x + u#size#x - c#position#x;
         Option.getWithDefault(width, gap)
