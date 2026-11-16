@@ -135,12 +135,12 @@ mod TestYarnRunner {
         Assert.assertEq(expected = List#{"Ask", "Loop", "Loop2", "Ran", "RanEnd", "Stopper", "Wait"}, Yarn.nodeNames(program()))
 
     // ══════════════════════════════════════════════════════
-    // 流した文の行（ranLinesSince）。Ran: 33 <<set>> 34 <<if>> 35 taken 37 skipped 39 -> right 40 <<jump RanEnd>> 41 -> left 42 left
+    // 流した文の行（ranSourcesSince）。Ran: 33 <<set>> 34 <<if>> 35 taken 37 skipped 39 -> right 40 <<jump RanEnd>> 41 -> left 42 left
     //                                RanEnd: 46 end 47 <<stop>> 48 after
     // ══════════════════════════════════════════════════════
 
     def ranLines(before: YarnRunner.Runner[Clock.Real], after: YarnRunner.Runner[Clock.Real]): List[Int32] =
-        YarnRunner.ranLinesSince(before, after) |> List.map(source -> source#line)
+        YarnRunner.ranSourcesSince(before, after) |> List.map(source -> source#line)
 
     /// 頭から最初の台詞まで: <<set>>・<<if>>・通った枝の台詞の行（偽の枝の 37 行目は無い）。
     @Test
@@ -174,7 +174,7 @@ mod TestYarnRunner {
     @Test
     def testRanLinesCarryTheFile(): Unit \ Assert + Fs.FileRead =
         let (started, _) = YarnRunner.start(program(), "Ran", at(0.0));
-        Assert.assertEq(expected = List#{"runner.yarn"}, YarnRunner.ranLinesSince(YarnRunner.closed(), started) |> List.map(source -> source#file) |> List.distinct)
+        Assert.assertEq(expected = List#{"runner.yarn"}, YarnRunner.ranSourcesSince(YarnRunner.closed(), started) |> List.map(source -> source#file) |> List.distinct)
 
     /// <<wait>> の行は待ちに入った時に、その後ろの台詞の行は明けた時に溜まる。
     @Test
@@ -187,7 +187,7 @@ mod TestYarnRunner {
     @Test
     def testRanLinesKeepTheNewest4096(): Unit \ Assert + Fs.FileRead =
         let (looped, _) = YarnRunner.start(program(), "Loop", at(0.0));
-        Assert.assertEq(expected = 4096, List.length(YarnRunner.ranLinesSince(YarnRunner.closed(), looped)))
+        Assert.assertEq(expected = 4096, List.length(YarnRunner.ranSourcesSince(YarnRunner.closed(), looped)))
 
     /// resume で作り直した実行器は、当て直しで流した行を持ち、その後は差だけを読める。
     @Test

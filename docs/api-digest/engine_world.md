@@ -3302,7 +3302,7 @@
 - 今出している物。Closed = 開いていない・終わった、Waiting = <<wait>> の途中。
   `pub enum Shown { case Closed case Line(Yarn.Line) case Choices(List[DialogueOption]) case Waiting }`
 - before から after までに流した文の .yarn の所（流した順・最大 ranKept の 4096 個）。before と after は同じ実行器の前と後
-  `pub def ranLinesSince(before: Runner[c], after: Runner[c]): List[Yarn.Source]`
+  `pub def ranSourcesSince(before: Runner[c], after: Runner[c]): List[Yarn.Source]`
 - 読んでいる所のブックマーク（セーブに入れる物）。node = 開いているノード、storage = そのノードに入った時の変数と訪れた数、
   `pub type alias Bookmark = { node = String, storage = YarnStorage.Storage, steps = List[Action] }`
 - 実行器。c は <<wait>> を測る時計の名前（ゲームの物語の時計など）。外では start と closed だけが作る。

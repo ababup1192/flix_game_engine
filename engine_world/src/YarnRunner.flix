@@ -69,7 +69,7 @@ pub mod YarnRunner {
 
     def noRan(): Ran = { count = 0i64, sources = Nil }
 
-    /// 読める所の数（ranLinesSince が 1 回に返す数の上限）。
+    /// 読める所の数（ranSourcesSince が 1 回に返す数の上限）。
     // WhyNot: 全部を持ち続けない — 実行器は World に入ったまま遊びの終わりまで生き、列が伸び続ける。読む側はフレームごとに差だけを読む。
     def ranKept(): Int32 = 4096
 
@@ -87,7 +87,7 @@ pub mod YarnRunner {
     /// before から after までに流した文の .yarn の所（流した順・最大 ranKept の 4096 個）。before と after は同じ実行器の前と後
     /// （start・startWith・resume で作り直した実行器は before に closed() を渡す）。台詞・選択肢・選んだ選択肢・コマンド・<<wait>>・
     /// <<set>>・<<jump>>・<<if>>・<<stop>> の所で、通らなかった <<if>> の枝と選ばなかった選択肢の中身は入らない。
-    pub def ranLinesSince(before: Runner[c], after: Runner[c]): List[Yarn.Source] =
+    pub def ranSourcesSince(before: Runner[c], after: Runner[c]): List[Yarn.Source] =
         let Machine.Machine(b) = before;
         let Machine.Machine(a) = after;
         let n = Int64.max(0i64, Int64.min(Int32.toInt64(ranKept()), a#ran#count - b#ran#count));
