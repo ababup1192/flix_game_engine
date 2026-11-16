@@ -148,8 +148,8 @@ mod Render3d.ScenePlan {
         { scenes = scenes, requests = MutList.toArray(Static, tables#requests) |> Array.toVector, members = tables#members }
 
     /// 持ち越す物 items を、視錐台で間引かずに候補に分ける（色の pass の材質の候補と、影の地図の形だけの候補）。
-    // WhyNot: alpha to coverage の版を聞かない — 持ち越すのは alpha to coverage を持たない WebGPU の backend だけ（GL は持ち越さない・Render3d.StaticRows の頭）。
     /// 答えは (色の pass の候補, 影の地図の候補, backend に聞く材質, batch の描く物)。
+    // WhyNot: alpha to coverage の版を聞かない — 持ち越すのは alpha to coverage を持たない WebGPU の backend だけ（GL は持ち越さない・Render3d.StaticRows の頭）。
     pub def groupCarried(planner: Planner, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
         let tables = freshTables();
         let lit = groupWith(grouping(planner, tables, _ -> false, _ -> true, false), items);
