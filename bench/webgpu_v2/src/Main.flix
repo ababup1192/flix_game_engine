@@ -143,7 +143,7 @@ mod V2Main {
           items = Render.blitRegion({ name = "msaa", design = design, src = { position = Vec2.zero(), size = design },
                                       at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
 
-    /// 後がけの鎖（V2Post）: 部屋（yaw 0.3・解像度 resolution）を標本 samples の窓の画素の HDR の Pass に描き、奥行き・ぼかし・ブルーム・トーンマップ（曲線 op）・FXAA の面を通して画面へ。
+    /// 後がけの鎖（V2Post）: 部屋（yaw 0.3・解像度 resolution）を標本 samples のウィンドウの画素の HDR の Pass に描き、奥行き・ぼかし・ブルーム・トーンマップ（曲線 op）・FXAA の面を通して画面へ。
     def postCase(name: String, kit: Room.Kit, samples: Int32, op: PostProcess.Tonemap, resolution: Scene3d.Resolution): Case =
         let c = V2Post.chain(Room.design(), samples, op, { resolution = resolution | Room.scene(kit, 0.3) }, depthOfRoom());
         { name = name, passes = c#passes, targets = c#targets, items = c#items }
@@ -246,7 +246,7 @@ mod V2Main {
     /// 計画の並べ順を逆にすると GL と WebGPU の両方が同じに変わるのでこの比べは通る（GL の blend の絵は変わる・守るのは TestSceneList.testPlanSortsBlendedFarToNear）。
     /// 後がけの場面（同じ機械の実測。違う画素・±2 以上・max）: post 247・42・±34、postMsaa 55,680・13,138・±47、postDesign 15,386・3,624・±48、
     /// halfDepthDesign 95,868・9,576・±63、halfDepthNative 0。post は room と同じ所（重なる面の入れ替わり）の差を、ぼかしと FXAA が周りの数画素へ広げた物（差の絵で確かめた）。
-    /// postMsaa は窓の画素の標本 4 の Pass の物のふちで、blendMsaaPass と同じ標本の位置の違いをぼかしが広げた物（±2 以上は blendMsaaPass と同じ桁）。
+    /// postMsaa はウィンドウの画素の標本 4 の Pass の物のふちで、blendMsaaPass と同じ標本の位置の違いをぼかしが広げた物（±2 以上は blendMsaaPass と同じ桁）。
     /// halfDepthDesign と postDesign は、design の画素の絵を 2:1 に縮めて貼る所で貼る画素の真ん中が texel の境目に来て、GL の補間した uv が
     /// 境目のどちら側に落ちるかが列ごとに揺れる所【推: 右の 1/5 の列はそろい、ほかの列で GL だけ 1 つ手前の texel を読む】。上下は GL と同じ選び方にそろえてある（下の壊して確かめた）。
     /// 上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない post を除いて ±128。
