@@ -26,6 +26,7 @@ pub mod Render3d.WebGpuRenderer {
     import fge.webgpu.FilterMode
     import fge.webgpu.FrontFace
     import fge.webgpu.PrimitiveTopology
+    import fge.webgpu.RenderCommands
     import fge.webgpu.RenderPass
     import fge.webgpu.RenderPassDesc
     import fge.webgpu.RenderPipeline
@@ -44,11 +45,13 @@ pub mod Render3d.WebGpuRenderer {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     import java.nio.FloatBuffer
+    import java.lang.Object
+    import java.util.Objects
     use Render3d.{LightData, MeshDraw, PixelBox, TextureSlot, TextureSource, clipBox, matrixArray, sceneRect}
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
-    use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenes, isSkinned, planScenes}
+    use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenesWith, isSkinned, planScenes}
     use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses}
     use Render3d.Counts.{Phase, countDrawCallAt, countInstances, noteMaterialBuild, timed}
     use Render3d.MeshTable
@@ -57,7 +60,10 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.WebGpuBillboards
     use Render3d.WebGpuMaterials
     use Render3d.WebGpuMaterials.{BoundPipeline, ValuesBinding}
-    use Render3d.WebGpuRows.{MeshBuffers, MeshStore, drawRows, freshStore, meshAllocator, uploadRows}
+    use Render3d.WebGpuRows.{MeshBuffers, MeshStore, RowDrawer, countRowsOf, drawRows, freshStore, meshAllocator, uploadRows}
+    use Render3d.StaticRows
+    use Render3d.WebGpuStatic
+    use Render3d.WebGpuStatic.{Carried}
     use Render3d.ShadowMaps.{ShadowMapUse, ShadowPass, ShadowSampling}
     use Render3d.WebGpuShadows
     use Render3d.WebGpuSky
@@ -99,7 +105,7 @@ pub mod Render3d.WebGpuRenderer {
     /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）, 頂点のバイト数, 骨つきか) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
-    /// poseGroups = 今の encoder の group 2（submit の後に手放す）・sceneGroups = 今の encoder の、影の地図か環境マップを読む場面の group 0（同じく）・shadows = 影の地図の描き先と pass・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
+    /// poseGroups = 今の encoder の group 2（submit の後に手放す）・sceneGroups = 影の地図か環境マップを読む場面の group 0 の控え（描き先と読む絵が同じなら使い回し、コマの間に使わなかった物を手放す）・shadows = 影の地図の描き先と pass・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
     /// cpuInstances・cpuPoses・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
     /// （cpuInstances と cpuPoses は足りなければ倍に作り直す）・gen = 画面のコマの世代（endFrame で進む）。
     enum RendererData {
@@ -134,7 +140,7 @@ pub mod Render3d.WebGpuRenderer {
             poses = Array[Buffer, Static],
             posesUsed = Array[Int32, Static],
             poseGroups = Ref[List[BindGroup], Static],
-            sceneGroups = Ref[List[BindGroup], Static],
+            sceneGroups = Ref[List[SceneGroup], Static],
             shadows = WebGpuShadows.Shadows,
             sky = WebGpuSky.Sky,
             billboards = WebGpuBillboards.Billboards,
@@ -146,6 +152,7 @@ pub mod Render3d.WebGpuRenderer {
             cpuCamera = ByteBuffer,
             cpuPaste = ByteBuffer,
             scratch = Array[Float32, Static],
+            statics = WebGpuStatic.StaticCache,
             gen = Array[Int64, Static]
         })
     }
@@ -214,11 +221,15 @@ pub mod Render3d.WebGpuRenderer {
             cpuPoses = Array#{directBytes(initialPoseBytes())} @ Static,
             cpuScene = directBytes(sceneValueBytes()), cpuCamera = directBytes(Render3dWgsl.cameraBytes()), cpuPaste = directBytes(16),
             scratch = Array.repeat(Static, Render3dWgsl.instanceBytes() / 4, 0.0f32),
+            statics = WebGpuStatic.fresh(),
             gen = Array#{1i64} @ Static
         });
         // WhyNot: 画面（RGBA8・標本 1）の pipeline を初めて場面が出たコマで作らない — Dawn は pipeline を作り終えるまで待つので、そのコマが詰まる（WebGpuPipelines.buildStartupPipelines と同じ）。
         discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, 36, None);
         r
+
+    /// 場面の描き先の深度の形式（描き先・pipeline・持ち越した集まりの bundle で同じ物）。
+    def sceneDepthFormat(): TextureFormat = TextureFormat.DEPTH24_PLUS
 
     def directBytes(bytes: Int32): ByteBuffer \ IO = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN)
 
@@ -236,6 +247,9 @@ pub mod Render3d.WebGpuRenderer {
         Map.forEach((_, p) -> p.release(), Ref.get(s#pipelines));
         Ref.put(Map.empty(), s#pipelines);
         MeshTable.release(s#meshes, meshAllocator(s#gpu, s#meshStore));
+        WebGpuStatic.release(s#statics);
+        Ref.get(s#sceneGroups) |> List.forEach(e -> e#group.release());
+        Ref.put(Nil, s#sceneGroups);
         WebGpuMaterials.release(s#materials);
         afterSubmit(r);
         WebGpuShadows.release(s#shadows);
@@ -267,8 +281,6 @@ pub mod Render3d.WebGpuRenderer {
         Array.put(Array.get(0, s#epoch) + 1i64, 0, s#epoch);
         Ref.get(s#poseGroups) |> List.forEach(g -> g.release());
         Ref.put(Nil, s#poseGroups);
-        Ref.get(s#sceneGroups) |> List.forEach(g -> g.release());
-        Ref.put(Nil, s#sceneGroups);
         WebGpuShadows.afterSubmit(s#shadows);
         WebGpuMaterials.afterSubmit(s#materials);
         Ref.put(Set.empty(), s#written)
@@ -298,10 +310,15 @@ pub mod Render3d.WebGpuRenderer {
         Array.put(gen + 1i64, 0, s#gen);
         discard Render3d.SceneTargets.sweep(s#targets, targetAllocator(r), gen);
         let preloaded = Ref.get(s#preloaded);
-        Render3d.warnDroppedTextures(s#planner, WebGpuMaterials.endFrame(s#materials, gen, limits#textures, preloaded#textures), preloaded#textures);
+        let droppedTextures = WebGpuMaterials.endFrame(s#materials, gen, limits#textures, preloaded#textures);
+        Render3d.warnDroppedTextures(s#planner, droppedTextures, preloaded#textures);
         discard WebGpuShadows.endFrame(s#shadows, gen);
+        let (usedGroups, idleGroups) = List.partition(e -> Array.get(0, e#lastUsed) >= gen, Ref.get(s#sceneGroups));
+        List.forEach(e -> e#group.release(), idleGroups);
+        Ref.put(usedGroups, s#sceneGroups);
         let victims = MeshTable.trim(s#meshes, meshAllocator(s#gpu, s#meshStore), gen, limits#vertices, preloaded#meshes);
         Render3d.warnDroppedMeshes(s#planner, victims, preloaded#meshes);
+        WebGpuStatic.endFrame(s#statics, gen, not List.isEmpty(droppedTextures) or not List.isEmpty(victims));
         let dropped = List.length(victims);
         Render3d.Counts.count(s, Render3d.Counts.Counter.MeshEvictions, dropped);
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る（GL の Render3d.trimToBudget と同じ）。
@@ -335,8 +352,9 @@ pub mod Render3d.WebGpuRenderer {
         let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, _ -> true, _ -> true, false, (cmd#instances)());
         let source = { textureOf = host#textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let allocator = countingAllocator(r);
-        let mp = { base = 0, format = RenderTarget.Format.Rgba8Unorm, samples = 1, sceneLayout = s#sceneLayout, poseLayout = s#poseLayout, hasPoses = false,
-                   bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static };
+        let mp = { base = 0, values = WebGpuMaterials.valuesBufferOf(s#materials), programs = Vector.empty(), format = RenderTarget.Format.Rgba8Unorm, samples = 1,
+                   sceneLayout = s#sceneLayout, poseLayout = s#poseLayout, hasPoses = false, bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static,
+                   groups = WebGpuMaterials.frameGroupsOf(s#materials) };
         let noteBuild = name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First);
         let missing = name -> Render3d.ScenePlan.warnOnce(s#planner, "preload:" + name, Render3d.Preload.missingTextureLine(name));
         let textures = groups |> List.flatMap(g -> {
@@ -366,16 +384,32 @@ pub mod Render3d.WebGpuRenderer {
         else {
             // WhyNot: alpha to one を持つと答えない — 答えると計画が cutout を alpha to coverage の版にし、その版は描けない（Render3d.WebGpuMaterials の頭）。
             let caps = { alphaToOne = false, poseRowLimit = poseRowLimit() };
-            let (plans, grouped, poses) = timed(s, Phase.Split, () -> {
-                let grouped = groupScenes(s#planner, caps, dest#samples, cmds);
+            let (plans, grouped, poses, carried) = timed(s, Phase.Split, () -> {
+                let carried = cmds |> List.map(cmd -> WebGpuStatic.carriedOf(s#statics, staticBuilderOf(r, host), cmd#scene));
+                let perFrame = List.zip(cmds, carried) |> List.map(match (cmd, cs) -> (cmd, StaticRows.perFrameOf(cmd#scene, List.map(c -> c#rows, cs))));
+                let grouped = groupScenesWith(s#planner, caps, dest#samples, perFrame);
                 let orders = WebGpuMaterials.resolve(s#materials, name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First), grouped#requests);
                 List.forEach(scene -> noteSkips(host, skipsOf(grouped#members, scene)), grouped#scenes);
                 let (planned, rows) = planScenes(s#planner, caps, orders, grouped);
                 let shadowUses = Render3d.ShadowMaps.assign(s#planner, List.map(plan -> plan#shadowPlans, planned));
-                (List.zip(planned, shadowUses), grouped, packPoses(r, rows))
+                (List.zip(planned, shadowUses), grouped, packPoses(r, rows), carried)
             });
-            timed(s, Phase.Draw, () -> plans |> List.mapWithIndex((i, pu) -> prepareScene(r, host, dest, { members = grouped#members, poses = poses }, i, pu)) |> List.toVector)
+            let inputs = { members = grouped#members, poses = poses };
+            timed(s, Phase.Draw, () -> List.zip(plans, carried) |> List.mapWithIndex((i, pc) -> prepareScene(r, host, dest, inputs, i, pc)) |> List.toVector)
         }
+
+    /// 持ち越す集まりの行を作る材料（Render3d.WebGpuStatic）。
+    def staticBuilderOf(r: Renderer, host: Host): WebGpuStatic.Builder \ IO =
+        let RendererData.RendererData(s) = r;
+        { gpu = s#gpu, planner = s#planner, materials = s#materials, allocator = countingAllocator(r),
+          noteBuild = name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First),
+          tables = tablesOf(r, host) }
+
+    /// 前半の行の番号を振る表（今のコマの世代）。
+    def tablesOf(r: Renderer, host: Host): Render3d.SceneList.Tables \ IO =
+        let RendererData.RendererData(s) = r;
+        { meshes = s#meshes, textures = WebGpuMaterials.texturesOf(s#materials), layouts = s#layouts, gen = Array.get(0, s#gen), gpuMip = false,
+          textureOf = host#textureOf }
 
     /// 1 回の prepare の場面をまたいで変わらない物。members = batch の描く物（Render3d.ScenePlan.Grouped#members）・poses = その prepare の姿勢（無ければ None）。
     type alias PrepareInputs = { members = MutList[MeshDraw, Static], poses = Option[Poses] }
@@ -384,9 +418,10 @@ pub mod Render3d.WebGpuRenderer {
     /// written = 今の encoder で送った時の (epoch, group 2)（送っていないか、送った後に submit したら書き直す）。
     type alias Poses = { data = ByteBuffer, bytes = Int32, written = Ref[Option[(Int64, BindGroup)], Static] }
 
-    /// 場面 1 つを描いて貼る物を返す（描かない場面・場面の矩形か scissor が空なら None）。pu = 場面の計画と、その影の地図の描き先（Render3d.ShadowMaps.assign の答え）。
-    def prepareScene(r: Renderer, host: Host, dest: Dest, inputs: PrepareInputs, index: Int32, pu: (ScenePlan[SpanBatch], List[ShadowMapUse])): Option[Paste] \ IO =
-        let (plan, uses) = pu;
+    /// 場面 1 つを描いて貼る物を返す（描かない場面・場面の矩形か scissor が空なら None）。pc = (場面の計画と、その影の地図の描き先（Render3d.ShadowMaps.assign の答え）, 場面の持ち越した集まり)。
+    def prepareScene(r: Renderer, host: Host, dest: Dest, inputs: PrepareInputs, index: Int32,
+                     pc: ((ScenePlan[SpanBatch], List[ShadowMapUse]), List[Carried])): Option[Paste] \ IO =
+        let ((plan, uses), carried) = pc;
         let cmd = plan#cmd;
         let vp = dest#viewport;
         let rect = sceneRect(vp, cmd);
@@ -401,7 +436,7 @@ pub mod Render3d.WebGpuRenderer {
                 case Scene3d.Resolution.Design => (Int32.max(1, Num.floorInt(cmd#scene#size#x + 0.5)), Int32.max(1, Num.floorInt(cmd#scene#size#y + 0.5)), 1)
             };
             let target = targetOf(r, host, (dest#key, index), { width = width, height = height, format = dest#format, samples = samples });
-            drawInto(r, host, target, inputs, plan, uses);
+            drawInto(r, host, target, inputs, plan, uses, carried, "${dest#key}:${index}");
             writePaste(r, target, topLeftOf(dest#height, rect));
             noteWritten(r, (dest#key, index));
             Some({ group = target#pasteGroup, scissor = topLeftOf(dest#height, scissor), key = (dest#key, index) })
@@ -442,16 +477,19 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面を target へ描く: 影の地図の pass を積んでから、計画の pass ごとに、地の色（clearOf）と深度を消して行を描く pass を積む。uses = 場面の影の地図の描き先。
     // WhyNot: 列の頭の pass だけ消して残りを前の中身から描く形（GL は場面の頭で 1 回だけ消す）にしない — 場面の描き先へ書く pass は今は場面 1 つに 1 つ（影の地図は描き先が違い、列の外）。
-    def drawInto(r: Renderer, host: Host, target: SceneTarget, inputs: PrepareInputs, plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse]): Unit \ IO =
+    /// targetKey = 描き先の鍵の字（持ち越した集まりの bundle を描き先ごとに分ける）。
+    def drawInto(r: Renderer, host: Host, target: SceneTarget, inputs: PrepareInputs, plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse],
+                 carried: List[Carried], targetKey: String): Unit \ IO =
         let RendererData.RendererData(s) = r;
-        let staged = stageScene(r, host, target, inputs, plan, uses);
+        let staged = stageScene(r, host, target, inputs, plan, uses, carried);
         let encoder = host#encoder();
         let instances = Array.get(0, s#instances);
         let shadowDraw = { encoder = encoder, notePass = host#notePass, meshStore = s#meshStore, instances = instances, instanceBase = staged#instanceBase,
                            poseGroup = staged#poseGroup, vertexModule = s#vertexModule, skinnedModule = s#skinnedModule, emptyLayout = s#emptyLayout,
                            emptyGroup = s#emptyGroup, poseLayout = s#poseLayout,
                            created = () -> Render3d.Counts.count(s, Render3d.Counts.Counter.TargetRebuilds, 1),
-                           unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n) };
+                           unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n),
+                           carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried) };
         staged#shadows |> List.forEach(WebGpuShadows.encode(s#shadows, Array.get(0, s#gen), shadowDraw));
         let sceneGroup = sceneGroupOf(r, target, staged#shadows, staged#environment);
         let scene = plan#cmd#scene;
@@ -460,28 +498,45 @@ pub mod Render3d.WebGpuRenderer {
         let full = (0, 0, target#width, target#height);
         staged#passes |> List.forEach(match (spec, list, valuesBase) ->
             encodeScene(r, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup,
-                                           sceneGroup = sceneGroup, sky = WebGpuSky.isDrawn(scene) },
+                                           sceneGroup = sceneGroup, sky = WebGpuSky.isDrawn(scene), carried = carried, targetKey = targetKey },
                         { color = drawn.defaultView(), resolve = target#msaa |> Option.map(_ -> target#color.defaultView()),
                           clear = Some(clearOf(spec, scene)), depth = target#depth.defaultView(), viewport = full, scissor = full }))
 
     /// 場面の group 0: 影の地図も環境マップも無ければ target の物。どちらかがあれば、スポットと太陽の影の地図（無い方は代わりの絵）を binding 1・2 に、
     /// 環境マップの絵 environment（無ければ代わりの絵）を binding 3 に付けた物を作る（submit の後に手放す）。影の地図の pass を積んだ後に呼ぶ（その間の submit で手放さない）。
-    // WhyNot: 描き先ごとに影の地図を付けた group を控えない — 地図の鍵は prepare ごとに場面の並びで決まり（Render3d.ShadowMaps.assign）、同じ描き先が次のコマで別の地図を読む。
+    /// 描き先と読む絵が同じ group は前のコマの物を使う（持ち越した集まりの bundle が group 0 を参照で比べて使い続ける）。
     def sceneGroupOf(r: Renderer, target: SceneTarget, shadows: List[ShadowPass], environment: Option[(Texture, Int32)]): BindGroup \ IO =
         let RendererData.RendererData(s) = r;
         if (List.isEmpty(shadows) and Option.isEmpty(environment)) target#sceneGroup
         else {
             let viewFor = (isSpot: Bool) -> shadows |> List.find(p -> isSpotSampling(p#map#sampling) == isSpot) |> Option.flatMap(p -> WebGpuShadows.viewOf(s#shadows, p#map#key))
                                                     |> Option.getWithDefault(s#blankDepth.defaultView());
-            let desc = new BindGroupDesc("fge scene3d shadowed or environment", s#sceneLayout);
-            discard desc.buffer(0, target#sceneValues, 0i64, Int32.toInt64(sceneValueBytes()));
-            discard desc.textureView(1, viewFor(true)).textureView(2, viewFor(false));
             let envImage = environment |> Option.map(fst) |> Option.getWithDefault(s#blankImage);
-            discard desc.textureView(3, envImage.defaultView()).sampler(4, s#environmentSampler).buffer(5, target#camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
-            let group = s#gpu.createBindGroup(desc);
-            Ref.put(group :: Ref.get(s#sceneGroups), s#sceneGroups);
-            group
+            let parts: Vector[Object] = Vector#{checked_cast(target#sceneValues), checked_cast(target#camera), checked_cast(viewFor(true)), checked_cast(viewFor(false)),
+                                                checked_cast(envImage.defaultView())};
+            let gen = Array.get(0, s#gen);
+            match Ref.get(s#sceneGroups) |> List.find(e -> isSameParts(e#parts, parts)) {
+                case Some(e) =>
+                    Array.put(gen, 0, e#lastUsed);
+                    e#group
+                case None =>
+                    let desc = new BindGroupDesc("fge scene3d shadowed or environment", s#sceneLayout);
+                    discard desc.buffer(0, target#sceneValues, 0i64, Int32.toInt64(sceneValueBytes()));
+                    discard desc.textureView(1, viewFor(true)).textureView(2, viewFor(false));
+                    discard desc.textureView(3, envImage.defaultView()).sampler(4, s#environmentSampler).buffer(5, target#camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
+                    let group = s#gpu.createBindGroup(desc);
+                    Ref.put({ parts = parts, group = group, lastUsed = Array#{gen} @ Static } :: Ref.get(s#sceneGroups), s#sceneGroups);
+                    group
+            }
         }
+
+    /// 影の地図か環境マップを読む場面の group 0 の控え 1 つ。parts = 付けた物（描き先の値と目の buffer・スポットと太陽の影の地図の view・環境マップの view。参照で比べる）・
+    /// lastUsed = 最後に使ったコマの世代（要素 1 つ）。
+    // WhyNot: 鍵を影の地図の鍵（Render3d.ShadowMaps.Key）にしない — 地図の鍵は prepare ごとに場面の並びで決まり、同じ描き先が次のコマで別の地図を読む。付けた view そのもので比べる。
+    type alias SceneGroup = { parts = Vector[Object], group = BindGroup, lastUsed = Array[Int64, Static] }
+
+    def isSameParts(a: Vector[Object], b: Vector[Object]): Bool \ IO =
+        Vector.length(a) == Vector.length(b) and Vector.forAll(i -> Objects.equals(Vector.get(i, a), Vector.get(i, b)), Vector.range(0, Vector.length(a)))
 
     def isSpotSampling(s: ShadowSampling): Bool = match s {
         case ShadowSampling.Spot(_) => true
@@ -500,7 +555,8 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面 1 つを描く前の仕事を済ませる: 1 体ごとの値と姿勢を送り、影の地図の pass と計画の pass ごとの行の形を上げ、場面の値を target の buffer へ書く。
     /// 返すのは影の地図の pass と、pass ごとの行と形と、1 体ごとの値の位置と姿勢の group。uses = 場面の影の地図の描き先。
-    def stageScene(r: Renderer, host: Host, target: SceneTarget, inputs: PrepareInputs, plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse]): Staged \ IO =
+    def stageScene(r: Renderer, host: Host, target: SceneTarget, inputs: PrepareInputs, plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse],
+                   carried: List[Carried]): Staged \ IO =
         let RendererData.RendererData(s) = r;
         let (passes, shadows, instances) = numberInstances(r, host, inputs#members, plan, uses);
         let gen = Array.get(0, s#gen);
@@ -511,6 +567,7 @@ pub mod Render3d.WebGpuRenderer {
             WebGpuMaterials.uploadTextures(s#materials, source, registeredOf(r, host), gen, list)
         });
         shadows |> List.forEach(p -> uploadRows(s#meshes, allocator, gen, p#list));
+        carried |> List.forEach(WebGpuStatic.stage(s#gpu, s#materials, source, registeredOf(r, host), gen, plan#cmd#scene#time));
         let valueBytes = List.sumWith(pl -> 4 * Array.length(snd(pl)#values) + 4 * Render3d.MaterialValues.valueAlign(), passes);
         let poseBytes = inputs#poses |> Option.filter(p -> not isWrittenNow(r, p)) |> Option.map(p -> p#bytes + storageAlignBytes()) |> Option.getWithDefault(0);
         // WhyNot: 1 体ごとの値・姿勢・材質の値を別々に「入らなければ submit」で送らない — 後に送る方が submit すると、先に送った方を次の場面が頭から上書きする。
@@ -521,7 +578,7 @@ pub mod Render3d.WebGpuRenderer {
         let staged = passes |> List.map(match (spec, list) -> (spec, list, WebGpuMaterials.sendValues(s#materials, list)));
         passes |> List.forEach(pl -> missingBillboardTexturesOf(snd(pl)) |> List.forEach(name ->
             Render3d.ScenePlan.warnOnce(s#planner, "@billboard:" + name, Render3d.missingBillboardTextureLine(name))));
-        countRows(r, plan, passes, shadows);
+        countRows(r, plan, passes, shadows, carried);
         let environment = ensureEnvironment(r, host, source, gen, plan#cmd#scene);
         writeSceneValues(r, target, plan, shadows, environment);
         { shadows = shadows, passes = staged, instanceBase = instanceBase, poseGroup = poseGroup, environment = environment }
@@ -559,30 +616,18 @@ pub mod Render3d.WebGpuRenderer {
     /// 描く行は描く物のある頂点の色の行・骨つきの行と、値のある材質の行とビルボードの行（ビルボードは描く物の数に入れない）。
     /// 数えるのは描く前（GL は描いた時）なので、描く時に pipeline か group が付かずに飛ばした行も数に残る（その行は host#skip にも出る）。
     /// 影の地図の pass の行は draw call と分かれた理由だけを数える（描く物の数は GL と同じく場面の pass の分）。
-    def countRows(r: Renderer, plan: ScenePlan[SpanBatch], passes: ScenePasses, shadows: List[ShadowPass]): Unit \ IO =
+    /// 持ち越した集まり carried の行は、色の pass の行と、影の地図の pass ごとの影の行を数える。
+    def countRows(r: Renderer, plan: ScenePlan[SpanBatch], passes: ScenePasses, shadows: List[ShadowPass], carried: List[Carried]): Unit \ IO =
         let RendererData.RendererData(s) = r;
-        shadows |> List.forEach(p -> discard countRowsFrom(r, p#list, 0, rowCountOf(p#list), 0));
-        let drawn = passes |> List.sumWith(match (_, list) -> countRowsFrom(r, list, 0, rowCountOf(list), 0));
-        countInstances(s, List.length(plan#cmd#scene#instances), drawn);
+        shadows |> List.forEach(p -> discard countRowsOf(s, p#list));
+        shadows |> List.forEach(_ -> carried |> List.forEach(c -> WebGpuStatic.addRowCounts(s, c#shadowCounts)));
+        carried |> List.forEach(c -> WebGpuStatic.addRowCounts(s, c#litCounts));
+        let drawn = passes |> List.sumWith(match (_, list) -> countRowsOf(s, list)) + List.sumWith(c -> c#litCounts#drawn, carried);
+        let placed = StaticRows.placedCountOf(plan#cmd#scene, List.map(c -> c#rows, carried));
+        countInstances(s, placed, drawn);
         let dropped = Scene3d.droppedLightsOf(plan#cmd#scene);
         Render3d.Counts.count(s, Render3d.Counts.Counter.DroppedPointLights, dropped#points);
         Render3d.Counts.count(s, Render3d.Counts.Counter.DroppedSpotLights, dropped#spots)
-
-    /// 行 row から n の前までの描く行の draw call と分かれた理由を数え、描く物の数を acc に足して返す。
-    def countRowsFrom(r: Renderer, list: SceneList, row: Int32, n: Int32, acc: Int32): Int32 \ IO =
-        if (row >= n) acc
-        else countRowsFrom(r, list, row + 1, n, acc + countRow(r, list, row))
-
-    def countRow(r: Renderer, list: SceneList, row: Int32): Int32 \ IO =
-        let RendererData.RendererData(s) = r;
-        let kind = rowAt(list, row, 0);
-        let count = rowAt(list, row, 4);
-        let isMesh = kind == kindVertexColor() or kind == kindSkinned() or (kind == kindMaterial() and valuesAt(list, row) >= 0);
-        if (count <= 0 or not (isMesh or (kind == kindBillboard() and valuesAt(list, row) >= 0))) 0
-        else {
-            countDrawCallAt(s, rowAt(list, row, 5));
-            if (isMesh) count else 0
-        }
 
     /// stageScene の答え。shadows = 影の地図の pass（行の形は上げてある）・passes = 計画の pass ごとの (pass, 行, 行の values を送った位置（バイト）)（行の形と絵は上げてある）・
     /// poseGroup = 姿勢の group 2（姿勢の無い prepare は None）・environment = 環境マップの絵と mip のレベルの数（ensureEnvironment）。
@@ -590,9 +635,9 @@ pub mod Render3d.WebGpuRenderer {
                           environment = Option[(Texture, Int32)] }
 
     /// encodeScene が描く pass 1 つ。valuesBase = 行の values を送った位置（バイト）・poseGroup = 姿勢の group 2・sceneGroup = 場面の group 0（sceneGroupOf）・
-    /// sky = 色の pass の頭で空を描くか（WebGpuSky.isDrawn）。
+    /// sky = 色の pass の頭で空を描くか（WebGpuSky.isDrawn）・carried = 場面の持ち越した集まり（空の後・行の前に描く）・targetKey = 描き先の鍵の字。
     type alias StagedPass = { spec = ScenePassSpec, list = SceneList, instanceBase = Int32, valuesBase = Int32, poseGroup = Option[BindGroup], sceneGroup = BindGroup,
-                              sky = Bool }
+                              sky = Bool, carried = List[Carried], targetKey = String }
 
     /// 場面を描く pass の描き先。color = 描く view・resolve = 標本つきの描き先なら resolve する先・clear = 消す色（None なら前の中身に描き足す）・
     /// depth = 深度の view（いつも 1 で消す）・viewport と scissor = 描き先の左上が原点の (x, y, 幅, 高さ)。
@@ -622,13 +667,35 @@ pub mod Render3d.WebGpuRenderer {
             WebGpuSky.draw(s#sky, pass, target#format, target#samples);
             Render3d.Counts.countDrawCall(s, Render3d.Counts.BatchBreak.Sky)
         } else ();
+        let materialPass = (base: Int32, values: Buffer, programs: Vector[Option[WebGpuMaterials.Program]], groups: Ref[List[BindGroup], Static]) ->
+            { base = base, values = values, programs = programs, format = target#format, samples = target#samples, sceneLayout = s#sceneLayout,
+              poseLayout = s#poseLayout, hasPoses = Option.nonEmpty(staged#poseGroup), bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static,
+              groups = groups };
+        let bundleTarget = { color = Some(WebGpuPipelines.textureFormatOf(target#format)), depth = sceneDepthFormat(), samples = target#samples };
+        // WhyNot: 鍵に描き先を入れずに形式と標本だけにしない — group 0 は描き先ごとに違い、同じ集まりを 2 つの描き先の場面で描くと毎コマ積み直しになる。
+        let bundleKey = "color:${staged#targetKey}:${WebGpuPipelines.formatCode(target#format)}:${target#samples}:${passCodeOf(staged#spec)}";
+        let epoch = WebGpuMaterials.textureEpochOf(s#materials);
+        // WhyNot: 持ち越した物を場面の行の後に描かない — 半透明の行は場面の行の末尾にあり、持ち越した不透明の物より後に重ねる。同じ深さで重なる面の勝ち方は GL（集まりを instances の後ろに並べる）と逆になりうる。
+        staged#carried |> List.forEach(c -> WebGpuStatic.runBundle(s#statics, s#gpu, Array.get(0, s#gen), c, bundleKey, staged#sceneGroup, epoch, bundleTarget, (commands, groups) -> {
+            commands.setVertexBuffer(1, c#instances, 0i64, c#instances.size());
+            drawRows(commands, s#meshStore, rowDrawerOf(r, host, target, staged, materialPass(0, c#values, c#programs, groups)), c#rows#list, 0)
+        }, pass));
+        // WhyNot: bundle を流した後に group 0 を付け直さずに描かない — bundle を流すと pass の bind group と頂点の buffer は付いていない形に戻る。
+        if (List.isEmpty(staged#carried)) () else pass.setBindGroup(0, staged#sceneGroup);
         Option.forEach(g -> pass.setBindGroup(2, g), staged#poseGroup);
         let instances = Array.get(0, s#instances);
         pass.setVertexBuffer(1, instances, 0i64, instances.size());
-        let mp = { base = staged#valuesBase, format = target#format, samples = target#samples, sceneLayout = s#sceneLayout, poseLayout = s#poseLayout,
-                   hasPoses = Option.nonEmpty(staged#poseGroup),
-                   bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static };
-        let bindShape = (p: RenderPass, mesh: MeshBuffers, skin: Option[Int32]) -> {
+        let mp = materialPass(staged#valuesBase, WebGpuMaterials.valuesBufferOf(s#materials), WebGpuMaterials.currentPrograms(s#materials), WebGpuMaterials.frameGroupsOf(s#materials));
+        let drawer = rowDrawerOf(r, host, target, staged, mp);
+        // WhyNot: 不透明の行・ビルボードの行・半透明の行を GL の drawPass のように 3 回に分けて流さない — 行の順（SceneList の頭）がその 3 つの順で、
+        //   GL が分ける理由の深度の書き込みと blend は WebGPU では pipeline ごとに決まっている。
+        drawRows(checked_cast(pass), s#meshStore, drawer, staged#list, staged#instanceBase);
+        pass.end()
+
+    /// 場面の pass の行を描く時に pipeline と group を付ける関数の組（材質の行は mp の値と program で付ける）。
+    def rowDrawerOf(r: Renderer, host: Host, target: SceneTarget, staged: StagedPass, mp: WebGpuMaterials.MaterialPass): RowDrawer =
+        let RendererData.RendererData(s) = r;
+        let bindShape = (p: RenderCommands, mesh: MeshBuffers, skin: Option[Int32]) -> {
             let key = BoundPipeline.Shape(passCodeOf(staged#spec), mesh#stride, Option.nonEmpty(skin));
             if (Ref.get(mp#bound) == key) () else {
                 p.setPipeline(pipelineOf(r, target#format, target#samples, staged#spec, mesh#stride, skin));
@@ -639,22 +706,16 @@ pub mod Render3d.WebGpuRenderer {
             };
             true
         };
-        let drawer = {
-            shape = (p, mesh) -> bindShape(p, mesh, None),
-            skinned = (p, mesh) -> Option.nonEmpty(staged#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
-            material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh),
-            billboard = (p, list, row) -> drawBillboardRow(r, host, mp, p, list, row),
-            unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n)
-        };
-        // WhyNot: 不透明の行・ビルボードの行・半透明の行を GL の drawPass のように 3 回に分けて流さない — 行の順（SceneList の頭）がその 3 つの順で、
-        //   GL が分ける理由の深度の書き込みと blend は WebGPU では pipeline ごとに決まっている。
-        drawRows(pass, s#meshStore, drawer, staged#list, staged#instanceBase);
-        pass.end()
+        { shape = (p, mesh) -> bindShape(p, mesh, None),
+          skinned = (p, mesh) -> Option.nonEmpty(staged#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
+          material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh),
+          billboard = (p, list, row) -> drawBillboardRow(r, host, mp, p, list, row),
+          unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n) }
 
     /// ビルボードの行 row を描く（貼る絵の group が無ければ偽）。絵が見つからなかった行（値の無い行・知らせは stageScene）は描かずに真。
     /// 値は行の values を送った位置（mp#base）から頂点の buffer 0 として読む。
     /// 付けた pipeline と group 1 は材質の行と共用の控え（mp）に書き、次の材質の行が付け直すようにする。
-    def drawBillboardRow(r: Renderer, host: Host, mp: WebGpuMaterials.MaterialPass, p: RenderPass, list: SceneList, row: Int32): Bool \ IO =
+    def drawBillboardRow(r: Renderer, host: Host, mp: WebGpuMaterials.MaterialPass, p: RenderCommands, list: SceneList, row: Int32): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
         match host#groupById(rowAt(list, row, 1)) {
@@ -682,8 +743,7 @@ pub mod Render3d.WebGpuRenderer {
         let out = raw.asFloatBuffer();
         let next = Array#{0} @ Static;
         let numbered = Render3d.InstanceValues.mapBatches(mode -> numberSpan(out, s#scratch, Int32.maxValue(), next, members, mode), plan);
-        let tables = { meshes = s#meshes, textures = WebGpuMaterials.texturesOf(s#materials), layouts = s#layouts, gen = Array.get(0, s#gen), gpuMip = false,
-                       textureOf = host#textureOf };
+        let tables = tablesOf(r, host);
         let passes = buildScenePasses(tables, numbered);
         (passes, Render3d.ShadowMaps.buildPasses(tables, uses, numbered), { data = raw, bytes = bytes })
 
@@ -968,7 +1028,7 @@ pub mod Render3d.WebGpuRenderer {
                                       Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.TEXTURE_BINDING), 1, 1);
         let msaa = if (shape#samples > 1) Some(gpu.createTexture("fge scene3d msaa", shape#width, shape#height, format, TextureUsage.RENDER_ATTACHMENT, 1, shape#samples))
                    else None;
-        let depth = gpu.createTexture("fge scene3d depth", shape#width, shape#height, TextureFormat.DEPTH24_PLUS, TextureUsage.RENDER_ATTACHMENT, 1, shape#samples);
+        let depth = gpu.createTexture("fge scene3d depth", shape#width, shape#height, sceneDepthFormat(), TextureUsage.RENDER_ATTACHMENT, 1, shape#samples);
         let uniformUsage = Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST);
         let sceneValues = gpu.createBuffer("fge scene3d values", Int32.toInt64(sceneValueBytes()), uniformUsage);
         let camera = gpu.createBuffer("fge scene3d camera", Int32.toInt64(Render3dWgsl.cameraBytes()), uniformUsage);
@@ -1034,7 +1094,7 @@ pub mod Render3d.WebGpuRenderer {
                 discard desc.attribute(VertexFormat.FLOAT32X4, 96, 9).attribute(VertexFormat.FLOAT32X4, 112, 10);
                 discard desc.colorTarget(WebGpuPipelines.textureFormatOf(format));
                 discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CW, CullMode.BACK);
-                discard desc.depthStencil(TextureFormat.DEPTH24_PLUS, true, CompareFunction.LESS).multisample(samples);
+                discard desc.depthStencil(sceneDepthFormat(), true, CompareFunction.LESS).multisample(samples);
                 let made = s#gpu.createRenderPipeline(desc);
                 Ref.put(Map.insert(key, made, Ref.get(s#pipelines)), s#pipelines);
                 made

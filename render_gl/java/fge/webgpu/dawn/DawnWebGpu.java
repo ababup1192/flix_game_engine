@@ -551,6 +551,23 @@ public final class DawnWebGpu implements WebGpu {
         return new DawnCommandEncoder(encoder, this);
     }
 
+    @Override public fge.webgpu.RenderBundleEncoder createRenderBundleEncoder(String label, TextureFormat colorFormat, TextureFormat depthFormat, int sampleCount) {
+        WGPURenderBundleEncoderDescriptor desc = new WGPURenderBundleEncoderDescriptor();
+        desc.setLabel(label);
+        WGPUVectorTextureFormat colors = new WGPUVectorTextureFormat();
+        if (colorFormat != null) colors.push_back(DawnFormats.textureFormat(colorFormat));
+        desc.setColorFormats(colors);
+        desc.setDepthStencilFormat(depthFormat == null ? WGPUTextureFormat.Undefined : DawnFormats.textureFormat(depthFormat));
+        desc.setSampleCount(sampleCount);
+        desc.setDepthReadOnly(0);
+        desc.setStencilReadOnly(0);
+        WGPURenderBundleEncoder encoder = new WGPURenderBundleEncoder();
+        device.createRenderBundleEncoder(desc, encoder);
+        desc.dispose();
+        colors.dispose();
+        return new DawnRenderBundleEncoder(encoder);
+    }
+
     // 1 コマに何度も通るので、descriptor は device ごとに 1 組を使い回す（全部の欄を毎回書き直す）。
     private final WGPURenderPassDescriptor passDesc = new WGPURenderPassDescriptor();
     private final WGPURenderPassColorAttachment[] colorScratch = {

@@ -90,7 +90,7 @@ pub mod SoftRaster.Internal.DrawList {
     def argbReadNames(req: RasterReq): Set[String] =
         let fromDrawables = req#drawables |> List.map(DrawCmd.textureOf);
         let fromBillboards = req#scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture));
-        let fromMaterials = req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf));
+        let fromMaterials = req#scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.flatMap(Scene3d.textureNamesOf));
         let fromEnvironment = req#scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene));
         List.toSet(List.append(fromDrawables, List.append(fromBillboards, List.append(fromMaterials, fromEnvironment))))
 

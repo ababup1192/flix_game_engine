@@ -273,7 +273,7 @@ pub mod Annotate {
                 let area = Rect2.intersect(rect, hit#aabb);
                 let center = Vec2.add(area#position, Vec2.div(area#size, 2.0));
                 let ray = Camera3d.screenPointToRay(sc#camera, sc#size, Vec2.sub(center, placed#at));
-                let name = Ray3d.nearestInstance(ray, sc#camera#far, sc#instances)
+                let name = Ray3d.nearestInstance(ray, sc#camera#far, Scene3d.instancesOf(sc))
                     |> Option.map(match (i, _) -> Scene3d.nameOf(i)) |> Option.getWithDefault("");
                 { name = name | hit }
             case _ => hit

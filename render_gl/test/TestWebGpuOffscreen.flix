@@ -13,6 +13,7 @@ mod WebGpuOffscreen.TestWebGpuOffscreen {
     import fge.webgpu.FilterMode
     import fge.webgpu.Limits
     import fge.webgpu.QuerySet
+    import fge.webgpu.RenderBundleEncoder
     import fge.webgpu.RenderPipeline
     import fge.webgpu.RenderPipelineDesc
     import fge.webgpu.Sampler
@@ -88,6 +89,7 @@ mod WebGpuOffscreen.TestWebGpuOffscreen {
             def createRenderPipeline(_this: WebGpu, _d: RenderPipelineDesc): RenderPipeline = unused()
             def createTimestampQuerySet(_this: WebGpu, _label: String, _count: Int32): QuerySet = unused()
             def createCommandEncoder(_this: WebGpu, _label: String): CommandEncoder = unused()
+            def createRenderBundleEncoder(_this: WebGpu, _label: String, _color: TextureFormat, _depth: TextureFormat, _samples: Int32): RenderBundleEncoder = unused()
             def writeBuffer(_this: WebGpu, _b: Buffer, _o: Int64, _d: ByteBuffer, _do: Int32, _s: Int32): Unit = unused()
             def writeTexture(_this: WebGpu, _t: Texture, _m: Int32, _x: Int32, _y: Int32, _w: Int32, _h: Int32, _d: ByteBuffer, _do: Int32, _r: Int32): Unit = unused()
             def submit(_this: WebGpu, _c: CommandBuffer): Unit = unused()

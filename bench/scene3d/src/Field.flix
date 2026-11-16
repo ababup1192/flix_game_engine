@@ -10,17 +10,18 @@ mod Field {
     }
 
     /// つまみ。count = 物の数・materials = 材質の種類・movingPercent = 毎コマ位置と向きを変える物の割合（%）・
-    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか。
-    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool }
+    /// translucentPercent = 半透明の物の割合（%）・sunShadow = 太陽の影を落とすか・staticGroup = 動かない物を Scene3d.staticGroup の集まり 1 つで渡すか。
+    pub type alias Config = { count = Int32, shapes = Shapes, materials = Int32, movingPercent = Int32, translucentPercent = Int32, sunShadow = Bool, staticGroup = Bool }
 
-    /// つまみの表（n・shapes = 数か each・mats・moving・alpha・shadow = 1 で影あり）を読む。
+    /// つまみの表（n・shapes = 数か each・mats・moving・alpha・shadow = 1 で影あり・group = 1 で動かない物を集まりに）を読む。
     pub def configOf(knobs: Map[String, String]): Config =
         { count = Int32.max(1, BenchRun.intKnob("n", 1000, knobs)),
           shapes = if (Map.get("shapes", knobs) == Some("each")) Shapes.PerObject else Shapes.Shared(Int32.max(1, BenchRun.intKnob("shapes", 1, knobs))),
           materials = Int32.max(1, BenchRun.intKnob("mats", 1, knobs)),
           movingPercent = BenchRun.intKnob("moving", 100, knobs),
           translucentPercent = BenchRun.intKnob("alpha", 0, knobs),
-          sunShadow = Map.get("shadow", knobs) == Some("1") }
+          sunShadow = Map.get("shadow", knobs) == Some("1"),
+          staticGroup = Map.get("group", knobs) == Some("1") }
 
     /// 結果の行に足すつまみ（JSON の値）。
     pub def knobFields(c: Config): List[(String, String)] =
@@ -30,7 +31,7 @@ mod Field {
         };
         ("n", Int32.toString(c#count)) :: ("shapes", shapes) :: ("mats", Int32.toString(c#materials)) ::
         ("moving", Int32.toString(c#movingPercent)) :: ("alpha", Int32.toString(c#translucentPercent)) ::
-        ("shadow", if (c#sunShadow) "1" else "0") :: Nil
+        ("shadow", if (c#sunShadow) "1" else "0") :: ("group", if (c#staticGroup) "1" else "0") :: Nil
 
     /// 描き物の大きさ（design px）。
     pub def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
@@ -93,8 +94,10 @@ mod Field {
     /// 置いた物 1 つ。at = 底の真ん中・phase = 動きの位相・moves = 毎コマ動くか・resting = 動かない時の物。
     type alias Placed = { mesh = Mesh3d.Mesh3d, material = Scene3d.Material3d, at = Vec3.Vec3, phase = Float64, moves = Bool, resting = Scene3d.Instance3d }
 
-    /// 場面の作り置き。allResting = 全部が動かない時の物の列（動く割合 0% のコマはこれをそのまま渡す）。
-    pub type alias Kit = { config = Config, extent = Float64, ground = Scene3d.Instance3d, placed = List[Placed], allResting = List[Scene3d.Instance3d] }
+    /// 場面の作り置き。allResting = 全部が動かない時の物の列（動く割合 0% のコマはこれをそのまま渡す）・
+    /// resting = 動かない物の集まり（つまみ group の時に毎コマ渡す）・movers = 動く物（つまみ group の時に毎コマ instances へ置く）。
+    pub type alias Kit = { config = Config, extent = Float64, ground = Scene3d.Instance3d, placed = List[Placed], allResting = List[Scene3d.Instance3d],
+                           resting = Scene3d.StaticGroup, movers = List[Placed] }
 
     /// 格子の 1 辺の物の数。
     def sideOf(count: Int32): Int32 =
@@ -122,7 +125,9 @@ mod Field {
             quad(Vec3.v3(0.0 - extent, 0.0, 0.0 - extent / 2.0), Vec3.v3(0.0 - extent, 0.0, extent * 1.5),
                  Vec3.v3(extent, 0.0, extent * 1.5), Vec3.v3(extent, 0.0, 0.0 - extent / 2.0), Color.rgb(0.42, 0.46, 0.40)) :: Nil);
         { config = c, extent = extent, ground = Scene3d.meshInstance(groundMesh, Mat4.identity()), placed = placed,
-          allResting = placed |> List.map(p -> p#resting) }
+          allResting = placed |> List.map(p -> p#resting),
+          resting = Scene3d.staticGroup("field", placed |> List.filter(p -> not p#moves) |> List.mapWithIndex((i, p) -> (Int32.toString(i), p#resting))),
+          movers = placed |> List.filter(p -> p#moves) }
 
     /// 動く物の t 秒の姿（その場で回りながら上下する）。
     def movedInstance(p: Placed, t: Float64): Scene3d.Instance3d =
@@ -130,7 +135,8 @@ mod Field {
         instanceOf(p#mesh, p#material, Mat4.mul(Mat4.translate(Vec3.add(p#at, Vec3.v3(0.0, lift, 0.0))), Mat4.rotateY(t * 1.5 + p#phase)))
 
     def instancesAt(kit: Kit, t: Float64): List[Scene3d.Instance3d] =
-        if (kit#config#movingPercent <= 0) kit#allResting
+        if (kit#config#staticGroup) kit#movers |> List.map(instanceAt(t))
+        else if (kit#config#movingPercent <= 0) kit#allResting
         else kit#placed |> List.map(instanceAt(t))
 
     /// p の t 秒の姿（動かない物は置いた時の姿）。
@@ -157,6 +163,7 @@ mod Field {
 
     pub def scene(kit: Kit, t: Float64): Scene3d.Scene3dCmd =
         { instances = kit#ground :: instancesAt(kit, t),
+          groups = if (kit#config#staticGroup) kit#resting :: Nil else Nil,
           directionalLight = Some(sun(kit#config, kit#extent)),
           environment = { ambient = Color.rgb(0.38, 0.40, 0.46), hemisphere = 0.3, toonSteps = 0, fog = None,
                           background = Some(Color.rgb(0.55, 0.68, 0.82)) }

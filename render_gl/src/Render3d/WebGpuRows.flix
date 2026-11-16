@@ -9,12 +9,12 @@ mod Render3d.WebGpuRows {
     import fge.webgpu.Buffer
     import fge.webgpu.BufferUsage
     import fge.webgpu.IndexFormat
-    import fge.webgpu.RenderPass
+    import fge.webgpu.RenderCommands
     import fge.webgpu.WebGpu
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     use Render3d.MeshTable
-    use Render3d.SceneList.{SceneList, headAt, kindBillboard, kindMaterial, kindSkinned, kindVertexColor, meshAt, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, headAt, kindBillboard, kindMaterial, kindSkinned, kindVertexColor, meshAt, rowAt, rowCountOf, valuesAt}
 
     /// GPU に置いた形 1 つ。vertices = 頂点を交互に並べた buffer（並びはこのファイルの頭）・stride = 頂点 1 つのバイト数・
     /// hasUv = uv とタンジェントを持つ（36 バイト目から）・uv2At = 2 本目の uv の位置（バイト・2 本目の uv つきの形だけ）・
@@ -29,10 +29,10 @@ mod Render3d.WebGpuRows {
     /// material(pass, 行, 行の番号, 形) = 材質の pipeline と group 1。どれも描けない時は偽（その行を飛ばす）。姿勢の group 2 は呼ぶ側が pass の頭で付ける。
     /// billboard(pass, 行, 行の番号) = ビルボードの行を描く（描けない時は偽）。unbound(描く物の数) = 付けられずに飛ばした行を知らせる。
     pub type alias RowDrawer = {
-        shape = (RenderPass, MeshBuffers) -> Bool \ IO,
-        skinned = (RenderPass, MeshBuffers) -> Bool \ IO,
-        material = (RenderPass, SceneList, Int32, MeshBuffers) -> Bool \ IO,
-        billboard = (RenderPass, SceneList, Int32) -> Bool \ IO,
+        shape = (RenderCommands, MeshBuffers) -> Bool \ IO,
+        skinned = (RenderCommands, MeshBuffers) -> Bool \ IO,
+        material = (RenderCommands, SceneList, Int32, MeshBuffers) -> Bool \ IO,
+        billboard = (RenderCommands, SceneList, Int32) -> Bool \ IO,
         unbound = Int32 -> Unit \ IO
     }
 
@@ -131,20 +131,20 @@ mod Render3d.WebGpuRows {
 
     /// 行を順に描く。group 0・頂点の buffer の 1 番（1 体ごとの値）は呼ぶ側が積んでおく。pipeline と材質の group は drawer が付ける。
     /// 形は行の形の番号で store から引く・instanceBase = この場面の 1 体ごとの値を送った位置（体の番号）。描く物の無い行は飛ばす。
-    pub def drawRows(pass: RenderPass, store: MeshStore, drawer: RowDrawer, list: SceneList, instanceBase: Int32): Unit \ IO =
+    pub def drawRows(pass: RenderCommands, store: MeshStore, drawer: RowDrawer, list: SceneList, instanceBase: Int32): Unit \ IO =
         drawRowsFrom(pass, { meshes = Ref.get(store), drawer = drawer, list = list, instanceBase = instanceBase }, 0, rowCountOf(list))
 
     /// drawRows の 1 回で行をまたいで変わらない物。
     type alias Draws = { meshes = Map[Int32, MeshBuffers], drawer = RowDrawer, list = SceneList, instanceBase = Int32 }
 
-    def drawRowsFrom(pass: RenderPass, ds: Draws, row: Int32, n: Int32): Unit \ IO =
+    def drawRowsFrom(pass: RenderCommands, ds: Draws, row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
             drawRow(pass, ds, row);
             drawRowsFrom(pass, ds, row + 1, n)
         }
 
-    def drawRow(pass: RenderPass, ds: Draws, row: Int32): Unit \ IO =
+    def drawRow(pass: RenderCommands, ds: Draws, row: Int32): Unit \ IO =
         let list = ds#list;
         let count = rowAt(list, row, 4);
         if (count <= 0) ()
@@ -160,8 +160,25 @@ mod Render3d.WebGpuRows {
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
         ()
 
+    /// list の描く行の draw call と分かれた理由を holder に数え、描く物の数を返す（並びと数え方は Render3d.WebGpuRenderer.countRows）。
+    pub def countRowsOf(holder: { countsHolder = Array[Int32, Static] | r }, list: SceneList): Int32 \ IO = countRowsFrom(holder, list, 0, rowCountOf(list), 0)
+
+    def countRowsFrom(holder: { countsHolder = Array[Int32, Static] | r }, list: SceneList, row: Int32, n: Int32, acc: Int32): Int32 \ IO =
+        if (row >= n) acc
+        else countRowsFrom(holder, list, row + 1, n, acc + countRow(holder, list, row))
+
+    def countRow(holder: { countsHolder = Array[Int32, Static] | r }, list: SceneList, row: Int32): Int32 \ IO =
+        let kind = rowAt(list, row, 0);
+        let count = rowAt(list, row, 4);
+        let isMesh = kind == kindVertexColor() or kind == kindSkinned() or (kind == kindMaterial() and valuesAt(list, row) >= 0);
+        if (count <= 0 or not (isMesh or (kind == kindBillboard() and valuesAt(list, row) >= 0))) 0
+        else {
+            Render3d.Counts.countDrawCallAt(holder, rowAt(list, row, 5));
+            if (isMesh) count else 0
+        }
+
     /// 行 row の pipeline（と group）を付けたか（付けられない行は偽）。
-    def isBound(pass: RenderPass, ds: Draws, row: Int32, mesh: MeshBuffers): Bool \ IO =
+    def isBound(pass: RenderCommands, ds: Draws, row: Int32, mesh: MeshBuffers): Bool \ IO =
         let kind = rowAt(ds#list, row, 0);
         if (kind == kindVertexColor()) (ds#drawer#shape)(pass, mesh)
         else if (kind == kindSkinned()) (ds#drawer#skinned)(pass, mesh)

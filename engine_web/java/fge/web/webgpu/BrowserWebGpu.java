@@ -389,6 +389,15 @@ public final class BrowserWebGpu implements WebGpu {
         return new BrowserCommandEncoder(device.createCommandEncoder(desc));
     }
 
+    @Override public fge.webgpu.RenderBundleEncoder createRenderBundleEncoder(String label, TextureFormat colorFormat, TextureFormat depthFormat, int sampleCount) {
+        return new BrowserRenderBundleEncoder(createBundleEncoder(device, label, colorFormat == null ? null : BrowserFormats.textureFormat(colorFormat),
+            depthFormat == null ? null : BrowserFormats.textureFormat(depthFormat), sampleCount));
+    }
+
+    @JSBody(params = {"device", "label", "color", "depth", "samples"},
+            script = "var d = { label: label, colorFormats: color ? [color] : [], sampleCount: samples }; if (depth) d.depthStencilFormat = depth; return device.createRenderBundleEncoder(d);")
+    private static native org.teavm.jso.JSObject createBundleEncoder(GPUDevice device, String label, String color, String depth, int samples);
+
     static GPUDescriptor.RenderPass renderPass(RenderPassDesc desc) {
         List<RenderPassDesc.ColorAttachment> colors = desc.colors();
         GPUDescriptor.RenderPassColorAttachment[] attachments = new GPUDescriptor.RenderPassColorAttachment[colors.size()];
