@@ -36,9 +36,14 @@ mod V2Materials {
 
     /// 部屋の置いた物を、箱投影の uv と材質 material に替えた場面（絵 textures を場面に載せる）。
     def withMaterial(room: Scene3d.Scene3dCmd, textures: List[Texture3d.Texture3d], material: Scene3d.Material3d): Scene3d.Scene3dCmd =
+        liftedWithMaterial(0.0, room, textures, material)
+
+    /// withMaterial の、殻（shell）でない物を lift だけ上へずらす版。
+    def liftedWithMaterial(lift: Float64, room: Scene3d.Scene3dCmd, textures: List[Texture3d.Texture3d], material: Scene3d.Material3d): Scene3d.Scene3dCmd =
         let restyle = (i: Scene3d.Instance3d) -> {
             let f = Scene3d.instanceFieldsOf(i);
-            Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0 / meter(), f#mesh), f#world) |> Scene3d.withTint(f#tint) |> Scene3d.withMaterial(material)
+            let world = if (f#name == "shell") f#world else Mat4.mul(Mat4.translate(Vec3.v3(0.0, lift, 0.0)), f#world);
+            Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0 / meter(), f#mesh), world) |> Scene3d.withTint(f#tint) |> Scene3d.withMaterial(material)
         };
         { instances = List.map(restyle, room#instances), textures = textures | room }
 
@@ -52,10 +57,12 @@ mod V2Materials {
         let t = holeTexture();
         withMaterial(room, t :: Nil, Scene3d.texturedMaterial(Texture3d.name(t), ShaderDoc.FilterMode.Nearest) |> Scene3d.withCutout(true))
 
-    /// 穴あきの cutout を両面にした材質（穴から物の裏の面が見える）。
+    /// 穴あきの cutout を両面にした材質（穴から物の裏の面が見える）。殻でない物は床から 3 cm 浮かせる。
+    // WhyNot: 敷物と家具の足を床に接したままにしない — 両面にすると敷物の裏の面が床と同じ高さで勝ち負けを争い、奥行きの丸めの差だけで千 px の桁が動いて、
+    //   両面の道を取り違えた差と見分けられなくなる。
     pub def twoSided(room: Scene3d.Scene3dCmd): Scene3d.Scene3dCmd =
         let t = holeTexture();
-        withMaterial(room, t :: Nil, Scene3d.texturedMaterial(Texture3d.name(t), ShaderDoc.FilterMode.Nearest) |> Scene3d.withCutout(true) |> Scene3d.withDoubleSided(true))
+        liftedWithMaterial(0.03 * meter(), room, t :: Nil, Scene3d.texturedMaterial(Texture3d.name(t), ShaderDoc.FilterMode.Nearest) |> Scene3d.withCutout(true) |> Scene3d.withDoubleSided(true))
 
     /// 色を Param（r・g・b）で受ける材質の Spec（params が違う物は別の行になる）。
     def paramSpec(): ShaderDoc.Spec =

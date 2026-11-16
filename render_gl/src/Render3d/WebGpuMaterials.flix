@@ -47,6 +47,8 @@ pub mod Render3d.WebGpuMaterials {
     use RenderPaint.Internal.WebGpuPipelines
 
     /// 材質の値（sg と r3dDraw）の binding の形。Uniform = uniform の buffer の 256 バイトの区画・Storage = 読むだけの storage の buffer の同じ区画（比べ用・12.28）。
+    // WhyNot: Storage の版を消さない — 行ごとに group を作らず group 1 つで区画を引く形（storage が効く形）を P9・P10 の前に測る時の比べ相手にする。
+    //   ShaderGen の宣言の字を置き換える形は比べにだけ使い、本番は Uniform。
     pub enum ValuesBinding with Eq {
         case Uniform
         case Storage
@@ -91,6 +93,9 @@ pub mod Render3d.WebGpuMaterials {
 
     /// 値の区画のそろえ（バイト。core の minUniformBufferOffsetAlignment と minStorageBufferOffsetAlignment の上限）。
     def valueAlignBytes(): Int32 = 4 * MaterialValues.valueAlign()
+
+    /// r3dDraw の binding の大きさ（Render3dWgsl の R3dDraw: f32 が 4 つ）。
+    def drawValueBytes(): Int64 = 16i64
 
     pub def create(gpu: WebGpu, binding: ValuesBinding): Materials \ IO =
         let blank = gpu.createTexture("fge material blank", 1, 1, TextureFormat.RGBA8_UNORM, Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
@@ -359,7 +364,7 @@ pub mod Render3d.WebGpuMaterials {
         let buffer = Array.get(0, s#values);
         let at = mp#base + 4 * valuesAt(list, row);
         let desc = new BindGroupDesc("fge material", p#layout);
-        discard desc.buffer(Render3dWgsl.drawBinding(), buffer, Int32.toInt64(at), 16i64);
+        discard desc.buffer(Render3dWgsl.drawBinding(), buffer, Int32.toInt64(at), drawValueBytes());
         discard desc.buffer(0, buffer, Int32.toInt64(at + valueAlignBytes()), Int32.toInt64(roundUp(4 * p#slotCount, 16)));
         let store = Ref.get(s#store);
         let textureAt = (k: Int32) -> Map.get(readAt(list, row, k, 0), store) |> Option.map(g -> g#texture) |> Option.getWithDefault(s#blank);

@@ -1387,9 +1387,12 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
     - 比べた 2 つ: (A) uniform の buffer を行ごとに 256 バイトの位置で bind する・(B) 同じ区画を読むだけの storage で bind する（WGSL の `var<uniform> sg` と `var<uniform> r3dDraw` を `var<storage, read>` に替え、layout を READ_ONLY_STORAGE に）。
     - 測り方: `bench/webgpu_v2` の部屋に、params だけが違う材質の小物 300 個（材質の行が 300 本を超える）を足した場面を、貼る形 A の道で 300 コマ描いて GPU を待つ時間の中央値（5 回）。
     - 数（ms）: uniform 2.949・2.711・2.712・2.693・2.759、storage 3.103・2.709・2.683・2.695・2.697。差は回ごとの揺れ（±0.2 ms）の内。
-    - uniform にした理由: (1) 速さは同じ・(2) `ShaderGen.Wgsl` が出す `var<uniform> sg` のまま使え、storage にするには engine の ShaderGen の出口を替えるか字を置き換える事になる・(3) スマホの上限（12.24）の内: 1 つの binding は 256〜512 バイトで `maxUniformBufferBindingSize` 65,536 に遠く、
+    - **言える範囲**: 比べた 2 つはどちらも行ごとに `createBindGroup` を作る形で、違いは shader が区画を読む読み方だけ。1 コマの時間は group を作る CPU の仕事が大半なので、読み方の差は出にくい。
+      つまり分かったのは「行ごとに group を作る形の中では、uniform と storage は同じ速さ」まで。storage が本当に効く形（group を材質か場面に 1 つ作り、firstInstance か draw の番号で区画を引く）は比べていない。
+      測ったのはこの Mac（Apple M4 Pro・Dawn の Metal）だけで、スマホ（adreno）は測っていない。
+    - uniform にした理由: (1) `ShaderGen.Wgsl` が出す `var<uniform> sg` のまま使える（storage にするには engine の ShaderGen の出口を替えるか字を置き換える）・(2) スマホの上限（12.24）の内: 1 つの binding は 256〜512 バイトで `maxUniformBufferBindingSize` 65,536 に遠く、
       「uniform は 64 KiB・256 バイト揃えで 256 個が上限」は buffer 全体を 1 つの binding にした時の数で、行ごとに位置を替えて bind する今の形には掛からない（300 個の場面で確かめた）。値の buffer は足りなければ倍に作り直す。
-    - storage の版は比べのために `WebGpuMaterials.ValuesBinding.Storage`（`WebGpuRenderer.createWith`・bench の `SplitPassTrial.openWith`）として残した。
+    - storage の版は、group 1 つで区画を引く形を測る時の比べ相手として `WebGpuMaterials.ValuesBinding.Storage`（`WebGpuRenderer.createWith`・bench の `SplitPassTrial.openWith`）に残した（WhyNot に書いた）。
   - **1 体ごとの値と材質の値の送り方**: 場面ごとに両方の大きさを先に見積もり、どちらかが空きに入らなければ先に 1 回 submit してから両方を送る（片方を送った後にもう片方が submit すると、次の場面が先に送った方を頭から上書きするため）。
   - **3D の診断の数を WebGPU でも数える**（12.27 の持ち越し）: `Render3d.Counts` の関数を record の欄の組（`countsHolder`・`phaseNsHolder`・`materialBuildsRef`）で受ける形にし、WebGPU の描き手の状態に同じ欄を持たせた。
     数える物: 置いた物と描く物・draw call と分かれた理由（行の欄 5）・落とした光・形を上げた数と捨てた数・組んだ材質・CPU の区間（split と draw）。`WebGpuPaint` の診断が `scene3dCounts` を返し、「未計測」の知らせを消した。集めていない間は毎コマ捨てる（GL と同じ）。
@@ -1399,13 +1402,18 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   |---|---|---|---|
   | matTextured（絵つき・Linear） | 222（450） | 75（150） | ±77 |
   | matCutout（穴あきの絵・Nearest・cutout） | 6（32） | 5（16） | ±149 |
-  | matTwoSided（cutout ＋ 両面） | 1,251（2,500） | 1,251（2,500） | ±149 |
+  | matTwoSided（cutout ＋ 両面・物を床から 3 cm 浮かせる） | 25（50） | 25（50） | ±68 |
   | matNormal（絵 ＋ 縞の法線マップ） | 248（500） | 76（150） | ±75 |
-  | matDepth（cutout ＋ 両面の奥行きの書き出し） | 6（16） | 3（8） | ±105 |
+  | matDepth（cutout ＋ 両面の奥行きの書き出し・同じく浮かせる） | 2（8） | 1（4） | ±105 |
   | matMany（params だけ違う材質 300 個） | 219（440） | 214（430） | ±147 |
 
-  - 許す差の理由: ±2 以上の画素は room と同じく重なる面（床と敷物・天板と小物・格子に重ねた小物）で勝つ面が奥行きの丸めで入れ替わる所に固まる（差の絵で確かめた）。matTwoSided だけ多いのは、両面にした敷物の裏の面が床と同じ高さで勝ち負けを争うため。
-    ±1 の画素は面の中に点で散る【推: 絵の段の間の補間と sRGB の戻しの丸め】。絵の上下・読み方・cutout の向き・法線マップの向きを取り違えれば面の中が丸ごと違い、万 px の桁になる【推: わざと壊して確かめてはいない】。上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない。
+  - 許す差の理由: ±2 以上の画素は room と同じく重なる面（床と敷物・天板と小物・格子に重ねた小物）で勝つ面が奥行きの丸めで入れ替わる所に固まる（差の絵で確かめた）。
+    初めは matTwoSided が 1,251 px（両面にした敷物の裏の面が床と同じ高さで勝ち負けを争う）で、両面を守る門になっていなかった（レビューの必須 2）。殻でない物を床から 3 cm 浮かせて争いを無くし、許容を締め直した。
+    ±1 の画素は面の中に点で散る【推: 絵の段の間の補間と sRGB の戻しの丸め】。上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - 材質の頂点シェーダーで uv の上下を返す（`vUv = (u, 1 − v)`）: 絵つきの 5 場面が 47.8 万〜51.7 万 px 違って落ちる（matTextured 515,981 px）。matMany（絵なし）は 219 px のまま。
+    - 両面の裏の法線の向きを逆にする（`facingNormal` の select を入れ替える）: matTwoSided が 331,806 px 違って落ちる（ほかは同じ数）。
+    - 両面の材質の裏も間引く（pipeline の CullMode を BACK）: matTwoSided 66,355 px・matDepth 65,617 px 違って落ちる。
   - 絵（git の外）: `bench/webgpu_v2/debug/{gl,webgpu}/mat*.png`。写しと差の絵: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/r2c/v2shots/`（**scratchpad の物は消えうる**）。
 - **確かめ — 実物の 2 本**（12.27 と同じ流し方・engine は 0.97.0 の fpkg・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=40`・頭の 64 コマ）:
   - **材質の物の欠けは 6 場面とも 0**（fps3d_lab の部屋 110.5・礼拝堂 119.3 → 0）。絵が貼られた: fps3d_lab の部屋の板の床・漆喰の壁・梁・本棚・敷物、礼拝堂の石の壁と柱・床・長椅子、みやげの町の家の壁と屋根が GL と同じ絵になった。
@@ -1441,3 +1449,16 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - PC の cutout の縁（discard か sample_mask か・9.1）と alpha to coverage（java の口）。
   - lightmap の版（(5)）: 物ごとの値の区画へ色空間と強さを移し、lightmap の絵を reads に足す。
   - GL は values と reads を読まない（材質の uniform を今の道で差す）。GL を values から差す形に替えるかは、GL の呼び出しの並びを変えてよい小分けで決める。
+  - 値の binding の測り直し（P9・P10 の前）: 行ごとに group を作る代金（材質 300 個で 1 コマ約 2.7 ms の大半）と、group を材質か場面に 1 つ作って firstInstance か draw の番号で区画を引く形（storage）か dynamic offset（java の口が要る）を比べる。スマホ（adreno）でも測る。
+  - レビュー 1 回目（85 点）の任意で持ち越した物（直したのは 5 = storage の版を残す理由の WhyNot と 9 = r3dDraw の binding の大きさを関数に）:
+    - budgetEvictions・isOverBudget・Budget・meshEvictions を表の mod の側へ移す（前半の表が GL の `Render3d.Material` と `Render3d` に寄りかかっている）。
+    - GL が読まない values と reads を毎コマ作る代金を `bench/scene3d` で前後に測る。
+    - `TextureTable3d.touch` が毎回 Map を作り直す → lastUsed を Array[Int64] にして MeshTable にそろえる。
+    - 鍵（場面の絵・段つきの写し・作り直しの鍵）を TextureTable3d の 1 か所にまとめ、GL と WebGpuMaterials の両方から呼ぶ。
+    - 作っていない番号の掃除が、上限を超えるまで走らない（MeshTable.trim）。
+    - MaterialValues の uParamN と uTexLevelsN の位置が ShaderGen.Wgsl.compile3d の slots と同じ事のテスト。
+    - pipeline の控えの鍵の数（`-2 - stride - 1000000 * pass`・`id * 4096 + stride`）を小さな enum にする。
+    - WGSL を組めない材質を欠けの表に数える・いつも 0 の種類（alpha to coverage の材質の物）を doc に書くか外す。
+    - borrowTexture の作り直しの鍵（texId と version）が、2D の絵の作り直しで変わるか確かめる。
+    - uploadTextures・countRows の List.range を添え字の輪にする。
+    - TestMeshTable の同居テストを分け、足りないテスト 3 本（上限超えで作っていない番号も外す・60 コマ後に試し直す・sweep の順）を足す。
