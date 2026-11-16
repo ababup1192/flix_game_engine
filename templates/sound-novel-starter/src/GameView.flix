@@ -15,6 +15,7 @@
 //            OverWindow = 本文の上・選択肢の下（状態バー・コメント欄など）。Yarn の変数は YarnRunner.valueOf(名, read#talk)。
 //            <<window off>> でも消えず、セーブの枠のサムネにも出る。物の中の z は 0..8。
 //   objects  tape.json の画面の物（テープの頁の「物を選ぶ」）に足す矩形。
+// 立ち絵と小物の矩形（吹き出しを人物の上に出すなど）は Cast.placedOf(ViewStage.castEnv(env, stage), stage#cast) の rect で引く。
 mod GameView {
     use fge::{Rect2, Render}
 

@@ -32,10 +32,12 @@ mod ThemeDoc {
     }
 
     /// 縦の画面での字の出し方。Page = 画面いっぱいの頁に行を上から積む、Band(高さ) = 画面の下の帯（下端から高さ px）に今の行だけを出し、
-    /// 覆いは帯の上にだけ敷く（帯より上の写真と HUD は沈めない）。
+    /// 覆いは帯の上にだけ敷く（帯より上の写真と HUD は沈めない）、Frame(真ん中の高さ) = 画面の真ん中の枠に今の行だけを出す
+    /// （枠の真ん中は画面の高さに対する割合。高さは行の数で決まる。Layout.portraitFrame）。
     pub enum PortraitText with Eq, ToString {
         case Page
         case Band(Float64)
+        case Frame(Float64)
     }
 
     /// メッセージ枠の型 1 つ（<<window 型>> の型）。kind = 出し方、place = ADV の枠の置き場、frame = 字の立たせ方、
@@ -224,9 +226,16 @@ mod ThemeDoc {
     /// band の帯の高さの既定（画面の下端から px）。
     pub def defaultBandHeight(): Float64 = 236.0
 
-    /// 型の portrait（"page"・"band"）と bandHeight（帯の高さ px。既定 defaultBandHeight）。知らない字は page。
-    def portraitTextOf(obj: Map[String, Json]): PortraitText =
-        if (JsonCodec.stringOr("portrait", "page", obj) == "band") PortraitText.Band(JsonCodec.floatOr("bandHeight", defaultBandHeight(), obj)) else PortraitText.Page
+    /// 型の portrait（"page"・"band"・"frame"）と bandHeight（帯の高さ px。既定 defaultBandHeight）・frameCenter（枠の真ん中の高さ。
+    /// 既定 defaultFrameCenter）。知らない字は page。
+    def portraitTextOf(obj: Map[String, Json]): PortraitText = match JsonCodec.stringOr("portrait", "page", obj) {
+        case "band"  => PortraitText.Band(JsonCodec.floatOr("bandHeight", defaultBandHeight(), obj))
+        case "frame" => PortraitText.Frame(JsonCodec.floatOr("frameCenter", defaultFrameCenter(), obj))
+        case _       => PortraitText.Page
+    }
+
+    /// 真ん中の枠の真ん中の高さの既定（画面の高さに対する割合。真ん中より少し上）。
+    pub def defaultFrameCenter(): Float64 = 0.4
 
     /// speakers の列（{id, name, color, ink}）。色の無い行は名前の色と本文の色。
     def speakersOf(name: Color, ink: Color, json: Json): Map[String, Speaker] =

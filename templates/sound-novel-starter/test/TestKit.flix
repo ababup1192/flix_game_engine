@@ -111,5 +111,5 @@ mod TestKit {
     /// 2 つの数がほぼ等しいか（足し算の丸めの差を見ない）。
     pub def near(a: Float64, b: Float64): Bool = Float64.abs(a - b) < 0.000001
 
-    pub def isWaiting(w: World.World): Bool = WorldRead.isWaiting(w)
+    pub def isWaiting(w: World.World): Bool = WorldRead.isPaused(w)
 }

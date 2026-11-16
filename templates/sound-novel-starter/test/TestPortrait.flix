@@ -325,4 +325,41 @@ mod TestPortrait {
     def testTheBandShowsOnlyTheCurrentLine(): Unit \ {Assert, Fs.FileRead, IO} =
         let texts = String.intercalate("", bandTexts(bandRes()));
         Assert.assertEq(expected = (true, false), (String.contains(substr = "今", texts), String.contains(substr = "前", texts)))
+
+    // ── 縦の画面の真ん中のメッセージ枠（メッセージ枠の型の portrait: frame） ──
+
+    @Test
+    def testFrameIsReadFromTheWindowType(): Unit \ Assert =
+        let rows = Map#{ "mid" => Util.Json.Json.JObject(Map#{ "kind" => Util.Json.Json.JString("adv"), "portrait" => Util.Json.Json.JString("frame"),
+                                                                "frameCenter" => Util.Json.Json.JNumber(JsonCodec.floatToBd(0.45)) }) };
+        Assert.assertEq(expected = Some(ThemeDoc.PortraitText.Frame(0.45)), Map.get("mid", fst(ThemeDoc.windowsFrom(rows))) |> Option.map(w -> w#portrait))
+
+    @Test
+    def testAShortLineTakesThreeRowsOfFrame(): Unit \ {Assert, Fs.FileRead} =
+        // 1 行の台詞でも 3 行ぶんの高さを取る（台詞ごとに枠が跳ねない）。4 行なら高くなる。
+        let fit = portrait(TestKit.res(), tall());
+        let h = rows -> Layout.portraitFrame(fit, 0.4, 25.0, rows)#size#y;
+        Assert.assertEq(expected = (true, true), (TestKit.near(h(1), h(3)), h(4) > h(3)))
+
+    @Test
+    def testTheFrameIsCenteredAtItsHeight(): Unit \ {Assert, Fs.FileRead} =
+        let fit = portrait(TestKit.res(), tall());
+        let f = Layout.portraitFrame(fit, 0.5, 25.0, 3);
+        Assert.assertTrue(TestKit.near(Layout.height(fit) * 0.5, f#position#y + f#size#y / 2.0))
+
+    @Test
+    def testTheFrameDoesNotRiseAboveTheRail(): Unit \ {Assert, Fs.FileRead} =
+        // 真ん中を高くしても、枠の上端は右の列の一番下のボタンより下。
+        let fit = portrait(TestKit.res(), short());
+        let count = Rail.buttonCount(fit);
+        let last = Rail.button(fit, count - 1);
+        Assert.assertTrue(Layout.portraitFrame(fit, 0.2, 25.0, 12)#position#y >= last#position#y + last#size#y)
+
+    @Test
+    def testTheFrameShowsOnlyTheCurrentLine(): Unit \ {Assert, Fs.FileRead, IO} =
+        let base = TestKit.res();
+        let d = ThemeDoc.rec(base#theme);
+        let res = Res.withTheme(ThemeDoc.Doc.Doc({ windows = d#windows |> Map.map(w -> { portrait = ThemeDoc.PortraitText.Frame(0.4) | w }) | d }), base);
+        let texts = String.intercalate("", bandTexts(res));
+        Assert.assertEq(expected = (true, false), (String.contains(substr = "今", texts), String.contains(substr = "前", texts)))
 }

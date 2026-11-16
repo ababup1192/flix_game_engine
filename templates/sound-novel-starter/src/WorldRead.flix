@@ -122,13 +122,14 @@ mod WorldRead {
     }
 
     /// 命令の待ち方: 待ちを 2 つ出したら長い方で、押して明けるのは両方が押して明ける時だけ・
-    /// 後ろの命令を先に流すのは両方が LineWait の時だけ。
+    /// 後ろの命令を先に流すのは両方が LineWait の時だけ（背景を替えた命令なら SwitchWait）。
     def commandKindOf(res: Res.Res, r: World.Read, w: World.World, c: Yarn.Command): (Stage.Stage, NovelBeat.Kind) =
         let tried = Commands.execute(Commands.Replay.Live, ctxOf(res, r, w), c, r#stage);
         let stage = tried |> Result.map(fst) |> Result.getWithDefault(r#stage);
         let waits = tried |> Result.map(snd) |> Result.getWithDefault(Nil) |> List.filterMap(waitOfOut);
         let secs = waits |> List.map(x -> { let (s, _, _) = x; s }) |> List.maximum |> Option.getWithDefault(0.0);
         let kind = if (List.isEmpty(waits)) NovelBeat.Kind.Command
+                   else if (List.forAll(x -> { let (_, _, line) = x; line }, waits) and isSwitched(r#stage, stage)) NovelBeat.Kind.SwitchWait(secs, None)
                    else if (List.forAll(x -> { let (_, _, line) = x; line }, waits)) NovelBeat.Kind.LineWait(secs, None)
                    else if (List.forAll(x -> { let (_, tap, _) = x; tap }, waits)) NovelBeat.Kind.WaitOrTap(secs, None)
                    else NovelBeat.Kind.Wait(secs);
@@ -141,6 +142,11 @@ mod WorldRead {
         case Out.LineWait(secs)  => Some((secs, true, true))
         case _                   => None
     }
+
+    /// 命令が背景を替えたか（写真か時間帯が変わった）。
+    def isSwitched(before: Stage.Stage, after: Stage.Stage): Bool =
+        let key = (st: Stage.Stage) -> st#shot |> Option.map(s -> (s#photo, s#grade));
+        key(before) != key(after)
 
     /// <<wait 秒>> の秒（秒の形は bin/fge yarn build の検査が止めているので、読めなければ 0 秒）。
     def runnerSecondsOf(c: Yarn.Command): Float64 =
@@ -241,7 +247,7 @@ mod WorldRead {
             case YarnRunner.Event.Line(said)       =>
                 let line = shownLineOf(res, said);
                 whileReading(cur -> showLine(res, replay, bookmarkAt(last, later), line,
-                                             { cursor = Some(line#source), stage = Commands.onLineBy(res#onLine, ctxOf(res, cur, w), cur#stage) | cur }, w), w)
+                                             { cursor = Some(line#source), stage = Commands.applyLineHook(res#onLine, ctxOf(res, cur, w), cur#stage) | cur }, w), w)
             case YarnRunner.Event.Choices(offered) =>
                 let options = offered |> List.map(option -> { line = shownLineOf(res, option#line) | option });
                 let at = List.head(options) |> Option.map(option -> option#line#source);
@@ -363,12 +369,10 @@ mod WorldRead {
     pub def isTapWait(w: World.World): Bool =
         World.readOf(w) |> Option.exists(r -> r#beat#waiting == NovelBeat.Waiting.Tappable)
 
-    /// 演出の待ちの途中か（命令が出した待ち・<<wait>>）。flow の reader はこの間は押さない（待ちの秒を流し、明けてから読む間を数える）。
+    /// 演出の待ちの途中か（命令が出した待ち・実行器の <<wait>>。どちらもビートの待ち）。flow の reader はこの間は押さず、
+    /// ready は Busy にする（待ちの秒を流し、明けてから読む間を数える）。
     pub def isPaused(w: World.World): Bool =
         World.readOf(w) |> Option.exists(r -> NovelBeat.isHolding(r#beat#waiting))
-
-    /// 演出の待ちの途中か（実行器の <<wait>> もビートの待ち）。flow の ready はこの間は Busy（tap を待ちが明けるまで待たせる）。
-    pub def isWaiting(w: World.World): Bool = isPaused(w)
 
     def isRunnerWaiting(talk: YarnRunner.Runner[Stage.Story]): Bool = match YarnRunner.shownOf(talk) {
         case YarnRunner.Shown.Waiting => true
@@ -624,18 +628,39 @@ mod WorldRead {
 
     /// 今の所のデータ（読んでいなければ None）。セーブの画面とクイックセーブが書く。
     pub def slotHere(res: Res.Res, w: World.World): Option[Saves.Slot] =
-        World.readOf(w) |> Option.flatMap(r -> slotAt(res, markHere(r), r, w))
+        World.readOf(w) |> Option.flatMap(r -> slotAt(res, markHere(res, r, w), r, w))
 
     /// 今の所の戻れる所。<<wait>> の間は、バックログの一番新しい行が台詞ならその戻れる所、選んだ選択肢か空なら None（セーブしない）。
     // WhyNot: 待っている間に今のブックマークと舞台で作らない — 当て直しは待ちを飛ばして次の台詞まで進むので、
     //         待つ前の舞台と頁で置き換えると、次の台詞の舞台と頁が食い違う。
     // WhyNot: 選んだ選択肢より前の台詞の戻れる所へさかのぼらない — 戻すと選ぶ前に戻る。
-    def markHere(r: World.Read): Option[Saves.Mark] =
+    def markHere(res: Res.Res, r: World.Read, w: World.World): Option[Saves.Mark] =
         match YarnRunner.shownOf(r#talk) {
             // 字を出している間（Typing）も頭の行の戻れる所: 実行器はもう次の束へ進んでいることがあり、今のブックマークは台詞の後ろを指す。
-            case _ if NovelBeat.isHolding(r#beat#waiting) or r#beat#waiting == NovelBeat.Waiting.Typing => headMarkOf(r#log)
-            case _                        => YarnRunner.bookmarkOf(r#talk) |> Option.map(b -> markOf(b, r))
+            case _ if NovelBeat.isHolding(r#beat#waiting) or r#beat#waiting == NovelBeat.Waiting.Typing =>
+                headMarkOf(r#log) |> Option.map(withCommandsBehind(res, r, w))
+            case _ => YarnRunner.bookmarkOf(r#talk) |> Option.map(b -> markOf(b, r))
         }
+
+    /// 先に積んだ台詞より前にあってまだ当てていない命令を、戻れる所の舞台へ試しに当てた形（音・合図・待ちは落とす）。
+    // WhyNot: 待ちの間はセーブを断る形にしない — コメントが続く場面では台詞を出してから数秒待つのが普通で、その間ずっと
+    //         セーブ・クイックセーブが効かないと壊れたように見える。戻した後は台詞の後ろから進むので、当てていない命令はここで入れるしかない。
+    def withCommandsBehind(res: Res.Res, r: World.Read, w: World.World, mark: Saves.Mark): Saves.Mark =
+        let ctx = ctxOf(res, r, w);
+        let step = (st, command) -> Commands.execute(Commands.Replay.Silent, ctx, command, st) |> Result.map(fst) |> Result.getWithDefault(st);
+        match commandsBehindOf(r#beat#state) {
+            case Nil      => mark
+            case commands => { stage = Stage.snapshotOf(List.foldLeft(step, Stage.fromSnapshot(mark#stage), commands)) | mark }
+        }
+
+    /// ビートの中で、もう当てた一番後ろの出来事より前にあって、まだ当てていない命令（台本の順）。
+    def commandsBehindOf(beat: NovelBeat.Beat): List[Yarn.Command] =
+        let top = Set.maximum(beat#applied) |> Option.getWithDefault(-1);
+        let commandOf = (i, item: NovelBeat.Item) -> match item#event {
+            case Some((YarnRunner.Event.Command(command), _)) if i < top and not Set.memberOf(i, beat#applied) => Some(command)
+            case _ => None
+        };
+        beat#items |> Vector.mapWithIndex(commandOf) |> Vector.toList |> List.flatMap(Option.toList)
 
     /// バックログの一番新しい行の戻れる所（その行が台詞で戻れる所を持つ時だけ）。
     pub def headMarkOf(log: List[World.Entry]): Option[Saves.Mark] = match log {
@@ -674,7 +699,7 @@ mod WorldRead {
     /// バックログと選択肢を作り直し、最後に舞台と頁を Mark の値で置き換える。entry の無い枠は Mark の舞台と空の頁から当て直し、
     /// 頁の無い枠は当て直しで作った頁のまま。画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
     /// Mark v3 の古い mode（Nvl・Adv）は、ここで novel.theme.json の windows の本当の型の名前にする。
-    /// version 2 の欄だけから作った舞台（Saves.StageForm.Partial）は、当て直した舞台を残して背景・環境音・mode だけを Mark の値にする。
+    /// version 2 の欄だけから作った舞台（Saves.StageForm.Partial）は、当て直した舞台を残して背景・環境音・particles・mode を Mark の値にする。
     // WhyNot: 当て直した舞台をそのまま使わない — 数え足す値（頁の数など）は当て直しの始まりに頼り、entry の無い枠では合わない。
     // WhyNot: Partial の枠で Mark の舞台に置き換えない — ノードの頭の <<scene>> で出した人物や game. の鍵が消える。
     pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
@@ -687,13 +712,14 @@ mod WorldRead {
                        { panel = World.Panel.Closed, ask = None | w }))
             |> World.mapRead(r -> { stage = restoredStage(mark#stageForm, saved, r#stage), page = Option.getWithDefault(r#page, mark#page) | r })
 
-    /// 戻した後の舞台: 全部の舞台なら Mark の値・version 2 の欄だけなら当て直した舞台に背景・環境音・mode を重ねた物。
+    /// 戻した後の舞台: 全部の舞台なら Mark の値・version 2 の欄だけなら当て直した舞台（settled で終わりの形）に背景・環境音・particles・mode を重ねた物。
+    // WhyNot: version 2 の cast で人物を置き換えない — 当て直しが同じ所まで人物を出し直すので増える物が無く、cast に書かれなかった
+    //         ノードの頭の <<scene>> の人物が消えるだけ。
     def restoredStage(form: Saves.StageForm, saved: Stage.Stage, replayed: Stage.Stage): Stage.Stage = match form {
         case Saves.StageForm.Whole   => saved
         case Saves.StageForm.Partial =>
-            let ambience = PropertyTween.nameEnd(Stage.ambienceKey(), saved#props);
-            { shot = saved#shot, mode = saved#mode,
-              props = PropertyTween.setName(Stage.ambienceKey(), ambience, Clock.zero(), 0.0, replayed#props) | Stage.settle(replayed) }
+            let carry = (key, props) -> PropertyTween.setName(key, PropertyTween.nameEnd(key, saved#props), Clock.zero(), 0.0, props);
+            { shot = saved#shot, mode = saved#mode, props = replayed#props |> carry(Stage.ambienceKey()) |> carry(Stage.particlesKey()) | replayed }
     }
 
     /// 当て直した後の形: 演出の途中は終わりの形にし、今のノードはオートセーブ済みとして扱う（戻った所で同じ物を残さない）。

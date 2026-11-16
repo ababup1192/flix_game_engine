@@ -131,6 +131,56 @@ mod Layout {
         let top = Float64.max(p#position#y, bottom - tall);
         rect(p#position#x, top, p#size#x, bottom - top)
 
+    // ── 縦の画面の真ん中のメッセージ枠（ThemeDoc.PortraitText.Frame） ──
+
+    /// 枠の行の間（字の大きさ size に比べる）・上下の内側の空き・字の下に送りの印を置く高さ・左右の外の空き・字の左右の内側の空き。
+    pub def frameGap(size: Float64): Float64 = size * 1.75
+
+    def framePad(): Float64 = 28.0
+
+    def frameMarkRoom(): Float64 = 18.0
+
+    def frameSide(): Float64 = 14.0
+
+    pub def frameInset(): Float64 = 24.0
+
+    /// 真ん中の高さのまま上下へ伸ばす行の数の上限。これより行の多い台詞は上端を留めて下へ伸ばす。
+    def frameTallRows(): Int32 = 4
+
+    /// rows 行の台詞（字の大きさ size）を入れる、縦の画面の真ん中のメッセージ枠。高さは行の数で決め、短い台詞でも 3 行ぶんは取る。
+    /// 真ん中は画面の高さの center、上端は右の列の下端より上に出さない。
+    // WhyNot: 短い台詞で枠を縮めない — 台詞ごとに枠の大きさが跳ねる。
+    // WhyNot: 長い台詞の枠を上へも伸ばさない — 枠より上に置いた物（人物・HUD）に被り、台詞の長さで見え方が変わる。
+    pub def portraitFrame(fit: Fit, center: Float64, size: Float64, rows: Int32): Rect2.Rect2 =
+        let h = frameHeight(size, rows);
+        let top = Float64.max(height(fit) * center - h / 2.0, frameTopFloor(fit, center, size));
+        rect(frameSide(), top, width(fit) - 2.0 * frameSide(), h)
+
+    def frameHeight(size: Float64, rows: Int32): Float64 =
+        Int32.toFloat64(Int32.max(3, rows)) * frameGap(size) + 2.0 * framePad() - (frameGap(size) - size) + frameMarkRoom()
+
+    /// 枠の上端を置いてよい一番上: frameTallRows 行の枠を真ん中に置いた時の上端と、右の列の下端の低い方。
+    def frameTopFloor(fit: Fit, center: Float64, size: Float64): Float64 =
+        Float64.max(height(fit) * center - frameHeight(size, frameTallRows()) / 2.0, railBottom(fit))
+
+    /// 右の列の下端から列の隙間だけ下（横の画面は列が下にあるので 0）。
+    def railBottom(fit: Fit): Float64 =
+        let count = Rail.buttonCount(fit);
+        if (not isPortrait(fit) or count == 0) 0.0
+        else {
+            let last = Rail.button(fit, count - 1);
+            let gap = match Rail.recOf(fit)#anchor {
+                case RailDoc.Anchor.Top(g)    => g
+                case RailDoc.Anchor.Bottom(_) => 4.0
+            };
+            last#position#y + last#size#y + gap
+        }
+
+    /// 枠の中の字を置く範囲（上下は framePad・下は送りの印の分を除く・左右は frameInset）。
+    pub def frameText(frame: Rect2.Rect2): Rect2.Rect2 =
+        rect(frame#position#x + frameInset(), frame#position#y + framePad(),
+             frame#size#x - 2.0 * frameInset(), frame#size#y - 2.0 * framePad() - frameMarkRoom())
+
     /// 縦の画面の頁（文を上から積む範囲。幅は折り返す幅）。choiceCount 個の選択肢を出している間は、その上までに縮める。
     /// 右端は右の操作の列の左端から 12 px 左で抑える（列の積み方が top でも bottom でも重ならない）。
     // WhyNot: 折り返す幅を余白いっぱいにしない — 行末の句読点はぶら下げで幅の外へ出るので、右の余白が左より狭く見える。

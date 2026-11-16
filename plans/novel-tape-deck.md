@@ -42,6 +42,11 @@ JVM は flow ごと・セーブのファイルごとに 1 回ずつ起こす（1
 
 ## 2. ① の残り: テンプレート側の変更（Timeline の担当へ渡す粒度）
 
+**入れた（1・2・3）**: `FlowVideo.playJob` は `MIGRATE_OUT` と `FLOW_VIDEO=off` の時に FLOW_OUT の全部のコマ・音・tape.json を書かない（`Writes.MigrateOnly`）。
+`MIGRATE_ALL=off` で frames/all を撮らない（テンプレートの `make migrate-new` が既定で off・基準を撮る `migrate-baseline` は撮る）。
+Makefile の `migrate-shoot` は `bin/fge migrate shoot`（mp4 は `MIGRATE_VIDEO=1` の時だけ）。
+テンプレート自身の 6 本 + 古いセーブ 6 個（キャッシュが当たる 2 回目）: 前の形（全部書く・all も撮る・mp4）98.5 秒 → 7.5 秒。判定は同じ（止める違い 0・迷った差 17 件が同じ組・比べたコマ 439 枚）。
+
 `templates/sound-novel-starter/src/render/FlowVideo.flix` の `playJob`:
 
 1. **`FLOW_VIDEO=off` で全コマの動画と音を書かない**。`MIGRATE_OUT` がある時に `write`（`writeAudio` と `VideoOut.writeFrames` の全コマ）と

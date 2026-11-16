@@ -150,10 +150,11 @@
           "type": {
             "enum": [
               "page",
-              "band"
+              "band",
+              "frame"
             ]
           },
-          "label": "縦の画面での字の出し方（page = 画面いっぱいの頁に上から積む・band = 画面の下の帯に今の行だけ。覆いは帯の上にだけ）",
+          "label": "縦の画面での字の出し方（page = 画面いっぱいの頁に上から積む・band = 画面の下の帯に今の行だけ。覆いは帯の上にだけ・frame = 画面の真ん中の枠に今の行だけ。高さは行の数）",
           "order": 6,
           "default": "page"
         },
@@ -163,6 +164,14 @@
           "order": 7,
           "min": 60,
           "default": 236
+        },
+        "frameCenter": {
+          "type": "float",
+          "label": "portrait が frame の時の枠の真ん中の高さ（画面の高さに対する割合。右の列の下端より上には出さない）",
+          "order": 8,
+          "min": 0.2,
+          "max": 0.8,
+          "default": 0.4
         }
       }
     },

@@ -68,14 +68,16 @@ mod BackdropDoc {
         case _       => None
     }
 
-    /// defaultTransition = transition= を省いた <<bg>> の切り替え、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）。
+    /// defaultTransition = transition= を省いた <<bg>> の切り替え、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）、
+    /// ground = 写真の下に敷く地の色（blank の写真・素材の待ち・black の暗転で見える色。無ければ Backdrop.groundColor）。
     pub type alias Rec = {
         version = Int32,
         defaultTransition = Transition,
         photos = Map[String, Photo],
         grades = Map[String, Grade],
         initial = Option[Initial],
-        title = Option[Title]
+        title = Option[Title],
+        ground = Option[Color]
     }
 
     /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
@@ -86,7 +88,7 @@ mod BackdropDoc {
     pub def path(): String = "assets/novel.backdrops.json"
 
     /// 写真も時間帯も無い既定（Doc が読めない時は背景を出さず、地の色の上で読む）。
-    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, photos = Map.empty(), grades = Map.empty(), initial = None, title = None })
+    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, photos = Map.empty(), grades = Map.empty(), initial = None, title = None, ground = None })
 
     /// 時間帯の欄の既定（欄が欠けた時に使う。写真のまま薄くぼかした色）。
     pub def plainGrade(): Grade =
@@ -125,7 +127,8 @@ mod BackdropDoc {
                   grades = Map.get("grades", root) |> Option.flatMap(JsonCodec.decodeStringMap(gradeFromJson))
                       |> Option.getWithDefault(Map.empty()),
                   initial = Map.get("initial", root) |> Option.flatMap(initialFromJson),
-                  title = Map.get("title", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(titleFromJson) })
+                  title = Map.get("title", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(titleFromJson),
+                  ground = Map.get("ground", root) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(Color.hex) })
 
     /// initial の欄（photo と grade のどちらかが欠けたら無い物とする）。
     def initialFromJson(json: Json): Option[Initial] =

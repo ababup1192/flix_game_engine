@@ -101,7 +101,7 @@ enum Key {
 | 1 | 実行器の `<<wait 秒>>` | LineWait の後ろなら `atStartOf(LineWait の Hold, Hold(i), 秒)`（歩きの頭から数えて重なる。根拠は 1.2 の記録の 5.433 秒）。それ以外は `append(Hold(i), 秒)`。実行器はここで止まり、後ろは Tick した時に足す | 時間で（押しても明けない） | — |
 | 2 | `Out.Wait(秒)` | `append(Apply(i), 0)` + `append(Hold(i), 秒)`。LineWait の後ろで流した命令が出したら `atStartOf(LineWait の Hold, …)`（重なって、明けるのは遅い方）で、後ろは流さない | 時間で（押しても明けない） | — |
 | 3 | `Out.WaitOrTap(秒)` | #2 と同じ置き方。`Item` は予定の秒と押して縮めた秒を別々に持つ | 押すと縮める（3.6） | 縮めた後ろの音は外すので鳴らない |
-| 4 | `Out.LineWait(秒)` | #3 と同じ + 後ろの時間を取らない命令を `atStartOf(Hold(i), Apply(j), 0)` で頭へ寄せる。時間を取る命令・`<<wait>>`・選択肢・押しても明けない待ちが来たら寄せるのをやめる。続く LineWait は前の LineWait の後ろに並ぶ。寄せた命令の素材が届いていなくても寄せたまま（素材の待ちは束の頭に置く。#8）。歩く bg の後ろの時間を取る命令（Timed）は歩きの後ろへ回る（今のテンプレートの `flowInstant` に合わせた決め。2 本の比べには出ない） | #3 と同じ | 寄せた命令の音は LineWait の頭で鳴る |
+| 4 | `Out.LineWait(秒)` | #3 と同じ + 後ろの時間を取らない命令を、続いた LineWait の**最初**の頭へ `atStartOf(Hold(最初の i), Apply(j), 0)` で寄せる（間に別の LineWait があっても最初の頭）。時間を取る命令・`<<wait>>`・選択肢・押しても明けない待ちが来たら寄せるのをやめる。続く LineWait は前の LineWait の後ろに 1 つずつ並ぶ。`<<comment A>><<comment B>><<se x>>` の x は A と同じ頭で鳴り、B より前（古い版と同じ並びで、廃屋配信の音の順も合う。TestGameHooks.testASoundAfterTwoCommentsRingsWithTheFirst で固定）。寄せた命令の素材が届いていなくても寄せたまま（素材の待ちは束の頭に置く。#8）。歩く bg の後ろの時間を取る命令（Timed）は歩きの後ろへ回る（今のテンプレートの `flowInstant` に合わせた決め。2 本の比べには出ない） | #3 と同じ | 寄せた命令の音は LineWait の頭で鳴る |
 | 5 | 背景の切り替えの歩き | #4 の `Hold(i)` に `withSoundAt(名前, 秒)`（`GameSwitch#sounds` をそのまま） | 縮めた・スキップで飛んだ所で `Stage.withGameSwitchFinished` | `Stage.gameSwitchSoundsBetween` は要らなくなる |
 | 6 | 台詞 | `Apply(i)` は続いた LineWait の最初の頭（無ければ `append`）= 頁に積む時刻。その後に `waitFor(Typed(i))`（前の待ちが全部済んでから字を出し始める）と `waitFor(Read(i))` | Typed・Read は 3.4 | — |
 | 7 | 押しても送らない秒 | 鳴らした命令の所に `Lock(i)` の Hold（押しても明けない待ちではなく、押した手を Read に届けないだけ） | 時間で | — |
@@ -304,9 +304,19 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 ### 血鱗の洗い出しの穴（P〜V）の進み
 
-- P（済み・86b3fcd1）: version 2 の欄だけの枠（`Saves.StageForm.Partial`）は、当て直した舞台に背景・環境音・mode だけを重ねる。
+- P（済み・86b3fcd1、レビュー 2 回目で直し）: version 2 の欄だけの枠（`Saves.StageForm.Partial`）は、当て直した舞台に背景・環境音・particles・mode を重ねる。人物は当て直した方（v2 の cast は使わない）。
 - S（済み・86b3fcd1）: `GameE2e.drives()` を `E2e.table` の reader の後ろに並べる（ゲームの持ち物なので、追随するゲームは `drives() = Nil` を足す）。
 - Q（済み・f3f1cd61）: `GameCommands.onLine(ctx, stage)`。台詞を頁に積む所で呼ぶ（選択肢は数えない・当て直しでも呼ぶ）。追随するゲームは `onLine` を足す。
-- U（吸収済み）: flow の ready は `isWaiting` = ビートの待ちだけを見るので、実行器の `<<wait>>` の間も Busy。
-- R・T・V: まだ。
+- U（吸収済み）: flow の ready はビートの待ちだけを見るので、実行器の `<<wait>>` の間も Busy（`isWaiting` は `isPaused` と同じ物だったので `isPaused` 1 本にした）。
+- R（済み・c88eb615）: `ThemeDoc.PortraitText.Frame(center)` と `ViewText.messageFrameOf`。
+- T（済み）: `novel.story.json` の `gameLabels`（ゲームが決める鍵 → 言葉）と `StoryDoc.gameLabelOf(鍵, 既定, doc)`。`Label` の enum には足させない。
+- V（済み）: GameView の頭に、立ち絵の矩形は `Cast.placedOf(ViewStage.castEnv(env, stage), stage#cast)` で引くと 1 行。
+- レビュー 2 回目の推奨: 待ちの間のセーブは、先に積んだ台詞より前でまだ当てていない命令を試しに当てた舞台で Mark を作る（`WorldRead.withCommandsBehind`）。
 - 廃屋配信: 止める違い 0（承認 9 件。台本の reader の押し方 L の 6 件と、頭の環境音 3 件）。
+
+### 廃屋配信の絵の違い 3 件（迷った差の分析から）
+
+- Gate の頭（0.4〜1.2 秒が暗い無地）: テンプレートの black は前の背景が無くても半分の秒を暗くなる側に使っていた（古い版の `dark` は前が無ければ全部の秒で明ける）。**直した**: 前の背景が絵を持たない（無い・blank）時は、暗い所から全部の秒で明ける（`ViewStage.isFromDark`）。
+- Inside#35 → Upstairs の歩き: コメント（LineWait）の後ろの `<<jump>>` の先の歩く `<<bg>>` が、続いた LineWait として後ろに並び、コメントの秒（0.65 秒）だけ遅れて歩き出していた。古い版はコメントと同じ頭で歩き出す。**直した**: 背景を替えた命令の LineWait は `Kind.SwitchWait` で、続いた LineWait の最初の頭から重なる（コメントどうしは今まで通り後ろに並ぶ）。
+- Found#0 の暗さ: blank の写真（暗闇）の地がテンプレートの夜の紺（10,13,20）で、古い版はほぼ黒（3,3,4）。**直した**: `novel.backdrops.json` の `ground`（地の色）で替えられるようにした（無ければ今の紺）。廃屋配信は追随の時に `"ground": "#030304"` 前後を書く。
+- 廃屋配信はリリースのため止めてあるので、この 3 件の写しは再開の後。

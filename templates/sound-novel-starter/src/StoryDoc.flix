@@ -193,7 +193,8 @@ mod StoryDoc {
 
     /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は
     /// novel.backdrops.json の鍵）と環境音（project.json の sounds の名前）、opening = 「はじめから」で開くノード、names = 話し手の id → 呼び名、
-    /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉、replace = 台本の字 → 画面に出す字（主人公の名前など）。
+    /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉、replace = 台本の字 → 画面に出す字（主人公の名前など）、
+    /// gameLabels = ゲームが決める鍵 → 言葉（結末の名前など、Label に無い言葉。引くのは gameLabelOf）。
     pub type alias Rec = {
         version = Int32,
         title = String,
@@ -205,7 +206,8 @@ mod StoryDoc {
         names = Map[String, String],
         vars = Map[String, String],
         labels = Map[String, String],
-        replace = Map[String, String]
+        replace = Map[String, String],
+        gameLabels = Map[String, String]
     }
 
     /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
@@ -218,11 +220,16 @@ mod StoryDoc {
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, title = "雪どけを待たない便り", subtitle = "冬の山里で、坂の上の工房へ便りを届ける。",
                   titlePhoto = "slope", titleGrade = "morning", titleAmbience = "amb_winter_wind",
-                  opening = "WinterRoute", names = Map.empty(), vars = Map.empty(), labels = Map.empty(), replace = Map.empty() })
+                  opening = "WinterRoute", names = Map.empty(), vars = Map.empty(), labels = Map.empty(), replace = Map.empty(), gameLabels = Map.empty() })
 
     /// 鍵の言葉（Doc に無ければ既定の言葉）。
     pub def labelOf(label: Label, doc: Doc): String =
         Map.get(labelKey(label), rec(doc)#labels) |> Option.getWithDefault(snd(entryOf(label)))
+
+    /// ゲームが決めた鍵 key の言葉（gameLabels に無ければ fallback）。replace を当てた字。
+    // WhyNot: Label の enum にゲームの case を足させない — テンプレートの enum を書き換えると、テンプレートの追随のたびにぶつかる。
+    pub def gameLabelOf(key: String, fallback: String, doc: Doc): String =
+        replaceText(doc, Map.getWithDefault(key, fallback, rec(doc)#gameLabels))
 
     /// 呼び名の話し手の id（nameOf の逆。Doc に無い呼び名はそのまま）。
     pub def idOfName(name: String, doc: Doc): String =
@@ -287,7 +294,8 @@ mod StoryDoc {
                   names = strings("names"),
                   vars = strings("vars"),
                   labels = strings("labels"),
-                  replace = strings("replace") })
+                  replace = strings("replace"),
+                  gameLabels = strings("gameLabels") })
 
     /// opening（無い・文字列でない時は 1 行言って既定のノード。go の build はこの欄が無いと最初のノードを照らせない）。
     def openingIn(fallback: String, root: Map[String, Json]): String =

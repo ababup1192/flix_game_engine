@@ -168,7 +168,7 @@ mod ViewStage {
     /// ゲームが持つ切り替え（switch#game）の間は重ねず、今の背景をそのまま描く（ゲームが under と進みから歩く絵を出す）。
     pub def backdropsUsing(paint: BackdropPainter, areaOf: Option[Float64] -> Rect2.Rect2, env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
         let base = areaOf(None);
-        let ground = View.at(base#position#x, base#position#y, RawDraw.box(base#size, Backdrop.groundColor(), 0));
+        let ground = View.at(base#position#x, base#position#y, RawDraw.box(base#size, Backdrop.groundOf(env#res#backdrops), 0));
         let p = Stage.fadeProgress(env#storyNow, stage);
         let photo = (shot: Option[Stage.Shot], dx: Float64, progress, z) -> shot
             |> Option.flatMap(s -> pictureOf(paint, env, stage, s, areaOf)) |> Option.map(match (picture, area) -> placed(picture, area, dx, progress, z))
@@ -178,7 +178,7 @@ mod ViewStage {
         let shift = shiftOf(env, stage);
         let moved = match stage#switch#transition {
             case _ if Option.nonEmpty(stage#switch#game) and p < 1.0 => photo(current, 0.0, 1.0, View.zBackdropShot())
-            case BackdropDoc.Transition.Black => if (p < 0.5) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
+            case BackdropDoc.Transition.Black => if (p < 0.5 and not isFromDark(env, stage)) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
             case BackdropDoc.Transition.Slide => List.append(photo(under, shift - base#size#x, 1.0, View.zBackdropUnder()), photo(current, shift, 1.0, View.zBackdropShot()))
             case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - base#size#x * panShare(), 1.0, View.zBackdropUnder()), photo(current, shift, p, View.zBackdropShot()))
             case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, View.zBackdropUnder()), wiped(paint, env, areaOf, stage, current, p))
@@ -202,14 +202,20 @@ mod ViewStage {
             faded |> Render.movedAll({ x = dx, y = 0.0 }) |> List.map(Render.overItem(mapZ(n -> z + Int32.max(0, Int32.min(2, n)))))
     }
 
-    /// transition=black の暗転のグループ: 前半は暗くなり、後半は明ける。背景だけでなく人物・粒・GameView も暗くするので、覆いと同じ層の数に置く。
+    /// 前の背景が絵を持たないか（無い・blank の写真）。black の切り替えは、この時は暗い所から全部の秒で明ける。
+    def isFromDark(env: View.Env, stage: Stage.Stage): Bool =
+        stage#under |> Option.forAll(s -> BackdropDoc.isBlank(s#photo, env#res#backdrops))
+
+    /// transition=black の暗転のグループ: 前半は暗くなり、後半は明ける（前の背景が絵を持たない時は、暗い所から全部の秒で明ける）。
+    /// 背景だけでなく人物・粒・GameView も暗くするので、覆いと同じ層の数に置く。
+    // WhyNot: 前の背景が絵を持たない時も半分の秒を暗くなる側に使わない — 暗い地がもっと暗くなるだけで、秒の半分は何も変わらない画面になる。
     def blackoutGroup(env: View.Env, stage: Stage.Stage): Group =
         let p = Stage.fadeProgress(env#storyNow, stage);
-        let dark = if (p < 0.5) 2.0 * p else 2.0 * (1.0 - p);
+        let dark = if (isFromDark(env, stage)) 1.0 - p else if (p < 0.5) 2.0 * p else 2.0 * (1.0 - p);
         let items = if (stage#switch#transition != BackdropDoc.Transition.Black or p >= 1.0 or dark <= 0.0) Nil
                     else {
                         let r = backdropRect(env#fit);
-                        View.at(r#position#x, r#position#y, RawDraw.box(r#size, Backdrop.groundColor(), 1) |> Render.fade(Float64.min(1.0, dark))) :: Nil
+                        View.at(r#position#x, r#position#y, RawDraw.box(r#size, Backdrop.groundOf(env#res#backdrops), 1) |> Render.fade(Float64.min(1.0, dark))) :: Nil
                     };
         { layer = View.kindOf(env)#overlayLayer, order = 3, items = items }
 

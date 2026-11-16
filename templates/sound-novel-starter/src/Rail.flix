@@ -21,7 +21,7 @@ mod Rail {
     }
 
     /// 列のボタンの数（WorldMenu.buttonsOf の縦の並び）。
-    def buttonCount(fit: Layout.Fit): Int32 = List.length(WorldMenu.buttonsOf(fit))
+    pub def buttonCount(fit: Layout.Fit): Int32 = List.length(WorldMenu.buttonsOf(fit))
 
     // ── 列と … ──
 

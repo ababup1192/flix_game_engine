@@ -233,7 +233,7 @@ mod View {
             case World.HoldPhase.FadingIn  => 1.0 - progress
         };
         let whole = Layout.screen(env#fit);
-        let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundColor(), zHold()) |> Render.fade(alpha));
+        let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundOf(env#res#backdrops), zHold()) |> Render.fade(alpha));
         let marked = hold#phase == World.HoldPhase.Waiting and hold#waited >= k#holdMarkSeconds;
         let mark = if (marked) loadingMark(atlas, env, theme(env)#loadingMark, whole, { x = 60.0, y = 36.0 }, 1.0, zHoldMark()) else Nil;
         veil :: mark

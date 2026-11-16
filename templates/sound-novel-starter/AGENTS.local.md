@@ -12,7 +12,8 @@
   話し手の呼び名・変数の表示名・「はじめから」で開くノード（`opening`）は `assets/novel.story.json`、描き出しの場面（make render の SHOT）は
   `assets/novel.shots.json` に書く。どちらも `bin/fge yarn build` が vocab.json の from を通して読み、台本の名前と照らす（Flix を走らせずに名前を足せる）。
 - **画面に出す言葉はシナリオか Doc**: シナリオの外の言葉（タイトル画面・ボタン・設定・知らせ）は `assets/novel.story.json` の
-  labels（鍵の正は `StoryDoc.Label`）。調整する数（文字の速さ・オートの待ち・ログの行数・揺れ）は `assets/novel.kind.json`。
+  labels（鍵の正は `StoryDoc.Label`）。ゲームだけの言葉（結末の名前など）は同じ Doc の gameLabels に鍵を決めて書き、
+  `StoryDoc.gameLabelOf(鍵, 既定の言葉, res#story)` で引く（Label の enum には足さない）。調整する数（文字の速さ・オートの待ち・ログの行数・揺れ）は `assets/novel.kind.json`。
 - **セーブはブックマークと、その台詞の舞台と頁**: セーブは YarnRunner のブックマーク（ノード・変数・送りと選択）と、
   その台詞を出した時の舞台の全部（`Stage.Snapshot`。背景・文章の出し方・頁の数・立ち絵と小物・`props` の値）と頁。
   ロードはそのノードに入る直前の舞台と頁（`Saves.Mark` の `entry`）からブックマークを当て直してバックログを作り、
