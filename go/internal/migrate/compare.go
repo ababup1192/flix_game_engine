@@ -580,7 +580,8 @@ func busRuns(pa, pb []BusPoint, end float64, th Thresholds, shift func(float64) 
 	steps := int(math.Floor(end/th.BusStep + 1e-9))
 	for k := 0; k <= steps; k++ {
 		t := float64(k) * th.BusStep
-		d := dbGap(busAt(pa, t), busAt(pb, shift(t)), th.SilentDB)
+		va, vb := busAt(pa, t), busAt(pb, shift(t))
+		d := dbGap(va, vb, th.SilentDB)
 		if d > th.BusDB+1e-9 {
 			if cur == nil {
 				cur = &busRun{from: t}
@@ -588,7 +589,10 @@ func busRuns(pa, pb []BusPoint, end float64, th Thresholds, shift func(float64) 
 			cur.worst = math.Max(cur.worst, d)
 			continue
 		}
-		sum += d * th.BusStep
+		// WhyNot: 無音の近く（両方とも SilentDB + 10 dB より小さい所）の差を足さない — 聞こえない所の 1 dB が、長い flow で積み上がる。
+		if audible(va, th) || audible(vb, th) {
+			sum += d * th.BusStep
+		}
 		if cur != nil {
 			cur.to = t
 			runs = append(runs, *cur)
@@ -601,6 +605,8 @@ func busRuns(pa, pb []BusPoint, end float64, th Thresholds, shift func(float64) 
 	}
 	return runs, sum
 }
+
+func audible(v *float64, th Thresholds) bool { return v != nil && *v > th.SilentDB+10 }
 
 func overlapsAny(r busRun, list []busRun) bool {
 	for _, o := range list {

@@ -41,7 +41,7 @@ type Thresholds struct {
 // DefaultThresholds は 10.3 の表の値。
 func DefaultThresholds() Thresholds {
 	return Thresholds{DoneDelta: 2, DoneRatio: 0.995, MidMean: 3, Still3DDelta: 3, Still3DRatio: 0.99,
-		ShiftPx: 2, RectPx: 2, BusDB: 1, BusStep: 0.1, SilentDB: -60, BusDBSec: 30, EventRoundSec: 0.001,
+		ShiftPx: 2, RectPx: 2, BusDB: 1, BusStep: 0.1, SilentDB: -60, BusDBSec: 5, EventRoundSec: 0.001,
 		BlockPx: 8, BlockShift: 1, BlockP99: 10, BlockWatch: 6, BlockWatchRun: 5}
 }
 

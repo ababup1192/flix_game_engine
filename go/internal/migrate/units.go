@@ -20,7 +20,7 @@ type Unit struct {
 }
 
 // buildUnits は r.Diffs から人に見せる単位を組む。
-// WhyNot: 差を 1 件ずつ見せない — 同じ台本を流す flow（通しと抜き出し）は同じ所で同じ差を出し、揺れの続く場面は
+// WhyNot: 差を 1 件ずつ見せない — 同じシナリオを流す flow（通しと抜き出し）は同じ所で同じ差を出し、揺れの続く場面は
 // コマごとに差が出るので、人が同じ物を何十回も見る。
 func buildUnits(r *Result) []Unit {
 	var idx []int
