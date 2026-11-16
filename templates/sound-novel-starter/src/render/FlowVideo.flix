@@ -12,6 +12,8 @@
 //   tape.json   … 上の tape.json に events・buses（ミキサーにバスがある時）・frames・ranLines・screen を足した物
 //   frames/world/f0000.png … world の層だけのコマ（台詞を出し終えた所と時間を取る命令の途中）、frames/all/ … 全部の層のコマ（台詞を出し終えた所）
 //   saves.json  … flow の終わりのセーブデータ（枠が 1 つでもあれば。restore が読み戻す古いセーブ）
+//   FLOW_VIDEO=off … MIGRATE_OUT の時に、FLOW_OUT の全部のコマ・音・tape.json を書かず、MIGRATE_OUT の記録だけを書く（bin/fge migrate shoot が渡す）
+//   MIGRATE_ALL=off … frames/all を撮らない（diff は all の画素を比べない。前の版の無い flow の頁に並べる絵が無くなるので、基準を撮る回は撮る）
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
 mod FlowVideo {
     use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Log, Rect2, Render, Resources, Vec2, VideoOut}
@@ -39,7 +41,9 @@ mod FlowVideo {
         let settings = VideoOut.settingsOf(env);
         let path = Map.getWithDefault("FLOW", "", env);
         let out = Map.getWithDefault("FLOW_OUT", "debug/video/${nameOf(path)}", env);
-        let migrate = Map.get("MIGRATE_OUT", env) |> Option.filter(dir -> not String.isEmpty(dir));
+        let migrate = Map.get("MIGRATE_OUT", env) |> Option.filter(dir -> not String.isEmpty(dir))
+            |> Option.map(dir -> { dir = dir, layers = layersOf(env) });
+        let writes = if (Option.nonEmpty(migrate) and Map.get("FLOW_VIDEO", env) == Some("off")) Writes.MigrateOnly else Writes.Everything;
         let design = SceneRender.design();
         let played = run {
             let app = appOf();
@@ -53,23 +57,40 @@ mod FlowVideo {
         } with Fs.FileRead.runWithIO;
         match played {
             case Err(why) => println("FAIL ${path} を読めない\n${why}"); 2
-            case Ok((script, declared, played1)) => finishPlay(settings, SceneRender.screenOf(design, declared), path, out, migrate, script, played1)
+            case Ok((script, declared, played1)) => finishPlay(settings, SceneRender.screenOf(design, declared), path, out, writes, migrate, script, played1)
         }
 
+    /// 流した後に書く物。MigrateOnly = 移行の記録だけ（FLOW_OUT の全部のコマ・音・tape.json は書かない）。
+    // WhyNot: FGE_VIDEO_PAINT=none で全部のコマを塗らない形にしない — shootFrames が paint を引き継ぐので、比べのコマの PNG も塗られなくなる。
+    enum Writes with Eq {
+        case Everything
+        case MigrateOnly
+    }
+
+    /// 移行の記録の書き先と、撮る層。
+    type alias MigrateTo = { dir = String, layers = List[MigrateOut.Layer] }
+
+    /// 撮る層（MIGRATE_ALL=off なら world の層だけ）。
+    def layersOf(env: Map[String, String]): List[MigrateOut.Layer] =
+        if (Map.get("MIGRATE_ALL", env) == Some("off")) MigrateOut.Layer.WorldLayer :: Nil
+        else MigrateOut.Layer.WorldLayer :: MigrateOut.Layer.AllLayers :: Nil
+
     /// 流した結果を書く（コマ・音・tape.json・移行の記録）。
-    def finishPlay(settings: VideoOut.Settings, screen: SceneRender.Screen, path: String, out: String, migrate: Option[String],
+    def finishPlay(settings: VideoOut.Settings, screen: SceneRender.Screen, path: String, out: String, writes: Writes, migrate: Option[MigrateTo],
                    script: Flow.Script, played: Result[Flow.Failure[AppState], Flow.Outcome[AppState]]): Int32 \ IO =
+        let video = (upTo: Flow.Outcome[AppState]) -> if (writes == Writes.Everything) {
+            write(settings, screen, script#fps, out, upTo);
+            writeTape(screen, path, script, out, upTo)
+        } else ();
         match played {
             case Ok(outcome) =>
-                write(settings, screen, script#fps, out, outcome);
-                writeTape(screen, path, script, out, outcome);
-                let recorded = migrate |> Option.forAll(dir -> writeMigrate(settings, screen, path, script, dir, outcome));
+                video(outcome);
+                let recorded = migrate |> Option.forAll(to -> writeMigrate(settings, screen, path, script, to, outcome));
                 println("rendered: ${out} (${Int32.toString(List.length(outcome#frames))} frames)");
                 if (recorded) 0 else 2
             case Err(failure) =>
-                write(settings, screen, script#fps, out, failure#upTo);
-                writeTape(screen, path, script, out, failure#upTo);
-                discard (migrate |> Option.forAll(dir -> writeMigrate(settings, screen, path, script, dir, failure#upTo)));
+                video(failure#upTo);
+                discard (migrate |> Option.forAll(to -> writeMigrate(settings, screen, path, script, to, failure#upTo)));
                 println("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: ${failure#why}");
                 println("    ${failure#at#text}");
                 1
@@ -172,17 +193,19 @@ mod FlowVideo {
         ("phase" :: "panel" :: "talk" :: "mode" :: "photo" :: "logSize" :: "gate" :: "choice" :: Nil) ::: (GameE2e.probes() |> List.map(row -> row#name))
 
     /// 移行の記録を dir に書く（tape.json・コマの PNG・セーブデータ）。問いが組めずに書かなかった時は false。
-    def writeMigrate(settings: VideoOut.Settings, screen: SceneRender.Screen, path: String, script: Flow.Script, dir: String, outcome: Flow.Outcome[AppState]): Bool \ IO =
+    def writeMigrate(settings: VideoOut.Settings, screen: SceneRender.Screen, path: String, script: Flow.Script, to: MigrateTo, outcome: Flow.Outcome[AppState]): Bool \ IO =
         match MigrateOut.probeRowsOf(migrateProbes(), outcome#last#resources#dialogue) {
-            case Err(why)   => println("migrate: ${why}（${dir} は書かない）"); false
-            case Ok(probes) => writeMigrateWith(settings, screen, probes, path, script, dir, outcome); true
+            case Err(why)   => println("migrate: ${why}（${to#dir} は書かない）"); false
+            case Ok(probes) => writeMigrateWith(settings, screen, probes, path, script, to, outcome); true
         }
 
-    def writeMigrateWith(settings: VideoOut.Settings, screen: SceneRender.Screen, probes: List[MigrateOut.ProbeRow], path: String, script: Flow.Script, dir: String,
+    def writeMigrateWith(settings: VideoOut.Settings, screen: SceneRender.Screen, probes: List[MigrateOut.ProbeRow], path: String, script: Flow.Script, to: MigrateTo,
                          outcome: Flow.Outcome[AppState]): Unit \ IO =
+        let dir = to#dir;
         discard (new File(dir)).mkdirs();
         let fps = script#fps;
-        let record = MigrateOut.recordOf(fps, probes, outcome#frames);
+        let recorded = MigrateOut.recordOf(fps, probes, outcome#frames);
+        let record = { shots = recorded#shots |> List.filter(shot -> List.memberOf(shot#layer, to#layers)) | recorded };
         let sounds = loadSounds(soundFiles(), Map.empty());
         let lengthOf = name -> Map.get(name, sounds) |> Option.map(st -> Int32.toFloat64(Vector.length(st#left)) / Int32.toFloat64(sampleRate())) |> Option.getWithDefault(0.0);
         shootFrames(settings, screen, fps, dir, record#shots, Flow.worldsOf(outcome));
