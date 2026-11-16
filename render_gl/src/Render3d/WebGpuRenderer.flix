@@ -807,14 +807,13 @@ pub mod Render3d.WebGpuRenderer {
             putScalarsFrom(buf, at, values, width, k + 1, n)
         }
 
-    /// 貼る矩形 rect（描き先の左上が原点）を target の Paste へ書く: 左上と、texture の画素 ÷ 矩形の画素。
+    /// 貼る矩形 rect（描き先の左上が原点）を target の Paste へ書く: 左上と大きさ（0 の辺は 1）。
     def writePaste(r: Renderer, target: SceneTarget, rect: (Int32, Int32, Int32, Int32)): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let (x, y, w, h) = rect;
         let data = s#cpuPaste;
         discard data.putFloat(0, Int32.toFloat32(x)).putFloat(4, Int32.toFloat32(y));
-        discard data.putFloat(8, RenderUtil.f32(Int32.toFloat64(target#width) / Int32.toFloat64(Int32.max(1, w))));
-        discard data.putFloat(12, RenderUtil.f32(Int32.toFloat64(target#height) / Int32.toFloat64(Int32.max(1, h))));
+        discard data.putFloat(8, Int32.toFloat32(Int32.max(1, w))).putFloat(12, Int32.toFloat32(Int32.max(1, h)));
         s#gpu.writeBuffer(target#paste, 0i64, data, 0, 16)
 
     // ── 描き先と pipeline ──
