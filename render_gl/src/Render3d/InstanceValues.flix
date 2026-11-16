@@ -2,14 +2,18 @@
 // 1 体 = 32 float（RGBA の 8 組）: 0〜3 組 = world の列・4〜6 組 = 法線の行列の列の xyz・7 組 = tint の rgb（線形）。4 組の w = emissionIntensity・5 組の w = 姿勢の行（float で 2^24 まで正確）。
 // 番号は prepare（WebGPU は場面）の中の通し番号で、上げるのは backend: GL は RGBA32F の絵（Render3d.GlRows.Instancing・頂点シェーダーが uInstanceBase + gl_InstanceID で引く）・
 // WebGPU は instance の頂点の buffer（Render3d.WebGpuRenderer・行の頭の物は draw の firstInstance）。
-mod Render3d.InstanceValues {
+// WhyNot: pub を外さない — 1 体の長さを GLSL と WGSL の字を作る所（Render3dGlsl・Render3dWgsl。Render3d の外）が読む（親の Render3d が pub でないので、ゲームからは見えない）。
+pub mod Render3d.InstanceValues {
     import java.nio.FloatBuffer
     use Render3d.{MeshDraw}
     use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, SpanBatch}
     use Render3d.ScenePlan.{ScenePlan}
 
+    /// 1 体の RGBA の組の数（GL の絵の texel の数・WGSL の頂点の属性の数）。
+    pub def texelsPerInstance(): Int32 = 8
+
     /// 1 体の float の数。
-    pub def floatsPerInstance(): Int32 = 4 * Render3dGlsl.texelsPerInstance()
+    pub def floatsPerInstance(): Int32 = 4 * texelsPerInstance()
 
     /// 値をどこまで詰めるか。Lit = 全部・ShadowDepth = world と姿勢の行だけ（影の地図は法線と色を使わない）。
     pub enum PackMode {

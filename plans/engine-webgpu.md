@@ -1475,7 +1475,7 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - 3 つは `pub mod`（WhyNot に書いた）: 呼び手の `Render3d` と偽の GL を通るテストは `GlRows` の外で、pub でない孫の mod に届かない。親の `Render3d` が pub でないので、ゲームからは見えない。
   - 偽の GL を通るテスト（Batch・Instancing・JointTexture）は `use` の名前だけ直して緑（中身は替えていない）。
 - **P8 — WebGPU で骨つきの物を描く**:
-  - 計画に姿勢の行の上限（`poseRowLimit` = 16,384）を渡し、計画が振った姿勢の行（`PoseRows`）を prepare ごとに 1 回詰める（頭の 16 バイトに 1 行のジョイントの数・その後に行の順の mat4）。
+  - 計画に姿勢の行の上限（`poseRowLimit` = 姿勢の予算 64 MiB ÷ ジョイント 64 本の行 = 16,384）を渡し、計画が振った姿勢の行（`PoseRows`）を prepare ごとに 1 回詰める（頭の 16 バイトに 1 行のジョイントの数・その後に行の順の mat4）。
   - 頂点の色の骨つきの行（`kindSkinned`）と、骨つきの材質（`WebGpuMaterials.isDrawable` に骨つきを入れた）を描く。形の版の buffer の末尾にジョイントの番号（float 4 つ）と重み（4 つ）を足し、location 14・15 で読む。
     式は GLSL の `skinPrelude` と同じ（重みつきの joint 行列の和を位置に掛けてから model・法線とタンジェントは左上 3×3）。姿勢の行は 1 体ごとの値の normal1.w（GL と同じ並び）。
   - bind group（P8 の WGSL の決まり）: 0 = 場面・1 = 材質（骨つきの頂点の色の pipeline は空の group）・2 = 姿勢（読むだけの storage）。group 2 は pass の頭で 1 回付ける。
@@ -1494,6 +1494,7 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - 言える範囲: 1 コマの大半は CPU（計画と 1 体ごとの値を詰める所）で、頂点の取り込みの差は出にくい。測ったのはこの Mac（Apple M4 Pro・Dawn の Metal）だけで、スマホ（adreno）は測っていない。
   - 頂点の buffer にした理由: (1) 速さが同じ・(2) 2D のスプライト（V1）と同じ形・(3) 属性の数は一番多い版（uv つきの骨つきの材質: 0〜2・3〜10・11・12・14・15）でも 15 個で上限 16 の内・
     (4) storage にすると group 2 を姿勢と 1 体ごとの値で分け合うことになり、骨の無い物まで頂点の段の storage に頼る（互換の版で全部が描けなくなる）。
+  - 骨つきの版は lightmap を読まない（`Scene3d.lightmapOf` が None）ので、(5) で lightmap の版を描くようにしても一番多い版は 15 個のまま（uv と lightmap の版は 14 個）・残りは 1 個。
 - **直しながら足した物**（12.28 の持ち越しのうち (3) で触った所）:
   - pipeline の控えの鍵の数（`-2 - stride - 1000000 * pass`・`id * 4096 + stride`）を enum `WebGpuMaterials.BoundPipeline`（`Unbound`・`Shape(pass, 頂点のバイト数, 骨つきか)`・`Material(program, 頂点のバイト数)`）にした。
   - `countRows`・`uploadTextures`・材質の group の絵を付ける所・場面の値の光の配列を詰める所の `List.range` を添え字の輪にした（毎コマ通る所）。
@@ -1541,7 +1542,31 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
 - 持ち越し:
   - 影の地図の骨つきの物（(4)。計画は影の batch の姿勢の行も振っているので、WebGPU の影の pass は同じ group 2 を読めば足りる【推】）。
   - 1 体ごとの値の置き場の比べはこの Mac だけ。スマホ（adreno）と、group を材質か場面に 1 つ作って区画を引く形（12.28 の持ち越し）と一緒に P9・P10 の前に測り直す。
-  - 姿勢の行の上限は決め打ちの 16,384（device の maxStorageBufferBindingSize を読まない）。上限を下げた機種が出たら読む。
+  - 姿勢の行の上限は予算 64 MiB から求める（device の maxStorageBufferBindingSize を読まない。core の最低保証 128 MiB の内）。上限を下げた機種が出たら読む。
+  - submit が場面の間に入るたびに、prepare の姿勢を全部送り直す（場面が使う行だけに絞らない）。姿勢が数 KB の今は代金が小さいが、人が千体を超える場面で 1 コマに何度も submit が入るなら場面ごとに絞る。
+    診断の JointUploads は GL と同じく prepare 1 回に 1 つ数え、送り直しは数えない（`packPoses` の doc に書いた）。
   - 12.28 の持ち越しで (3) で触らなかった物: `budgetEvictions`・`isOverBudget`・`Budget`・`meshEvictions` を表の mod へ移す・鍵の 1 か所化・`TextureTable3d.touch` の Map・`MeshTable.trim`・
     MaterialValues の位置のテスト・WGSL を組めない材質を欠けの表に数える・`borrowTexture` の作り直しの鍵・`TestMeshTable` の分割と足りないテスト 3 本・GL が読まない values と reads の代金。
   - 2 本のゲームで確かめられない物（骨つきの物の影・骨つきの物の半透明の材質）は (4)・(6) で `bench/webgpu_v2` に場面を足す。
+- レビュー 1 回目（88 点）への対応:
+  - 必須 1（姿勢の送り直しを場面 2 つと途中の submit で守るテストが無い）:
+    - (a) `TestWebGpuScene3dDawn.testSecondSceneResendsPosesAfterSubmitInsidePrepare`: 骨つきの三角 1 枚と骨の無い三角 2 枚の場面を 2 つ、1 回の prepare に渡す。
+      1 体ごとの値の buffer を 512 バイト（場面 1 つが 384 バイト）にすると、2 つ目の場面の前で submit が 1 回入り、2 つ目の場面が送り直した group 2 が 1 つ残る（(1, 1)）。
+      4,096 バイトにすると submit は入らず、2 つ目の場面は 1 つ目の group 2 を使い回す（(0, 1)。姿勢の buffer は 1 回分の見積もりちょうどの 336 バイトにして、送り直しを見積もると submit が増える形にした）。
+    - (b) `bench/webgpu_v2` の skinnedTwice: 小物 1,200 個と人形 24 体の場面を左右に 2 つ並べて 1 回の prepare で描く（左右で yaw ±0.2）。
+      場面の一覧の頭に置き、1 体ごとの値の buffer が始めの 1,024 体のまま、1 つ目（823 体）は入り、2 つ目（801 体）の前で毎コマ submit が入る事を一時の println で確かめた（コミットに入れていない）。
+      GL との差: 違う画素 22 px（許容 64）・±2 以上 14 px（許容 32）・max ±230（255）【推: crowd と同じく重なる小物で勝つ面が入れ替わる画素】。
+    - 壊して確かめた（同じ日に 1 回ずつ・戻した）:
+      - `isWrittenNow` をいつも偽にする（送ってある姿勢も見積もる）: (a) が `((1, 1), (1, 1))` で落ちる（あふれない方で余計な submit が 1 回増える）。
+      - `sendPoses` が submit の後も前の group 2 を使い続ける（epoch を見ない）: (a) が `((1, 0), (0, 1))`・前からの `testPosesAreResentAfterSubmit` も落ちる。
+        `bench/webgpu_v2` は skinnedTwice で手放した group 2 を使い、Dawn が止まって exit 2（Abort trap）。
+      - 画素だけでは `isWrittenNow` の壊れは見えない（submit が 1 回増えるだけで絵は同じ）ので、守るのは (a) のテスト。
+  - 任意で直した物:
+    - `poseRowLimit` を姿勢の予算（64 MiB）÷（`Skin3d.maxJoints()` × 64 バイト）で求める形にし、WhyNot から「GL の上限と同じ桁」を消した（スマホの WebGL2 は 4,096 で成り立たない）。
+    - `WebGpuMaterials.bindRow` も骨つきの材質で姿勢の group と形のジョイントを確かめる（`MaterialPass#hasPoses`）。付けられずに飛ばした行は、`RowDrawer#unbound` が
+      「3D の付けられなかった行の物（pipeline か group が無い・飛ばす）」として欠けの表に数える（材質を組めない時も同じ種類に入る）。
+    - `GlRows.Instancing` の WhyNot を GL の理由（baseInstance が無い）に限った。
+    - 1 体の長さ（8 組 = 32 float）を `Render3d.InstanceValues.texelsPerInstance` に持たせ、`Render3dGlsl.texelsPerInstance` と `Render3dWgsl.instanceBytes` はそれを読む（`InstanceValues` は pub mod にした・WhyNot に書いた）。
+    - `pipelineOf` の鍵にジョイントの番号の位置を入れない理由（形の版の末尾の 8 float なので頂点のバイト数で決まる）を WhyNot に。
+    - 上の持ち越しに送り直しの代金と JointUploads の数え方、決めた事 2 に (5) の後の属性の数。
+  - テスト: render_gl 530 緑（(a) を 1 本足した）。

@@ -25,10 +25,12 @@ mod Render3d.WebGpuRows {
 
     /// 行を描く時に pipeline と group を付ける関数の組。shape(pass, 形) = 頂点の色の pipeline・skinned(pass, 形) = 骨つきの頂点の色の pipeline と group 1（空）・
     /// material(pass, 行, 行の番号, 形) = 材質の pipeline と group 1。どれも描けない時は偽（その行を飛ばす）。姿勢の group 2 は呼ぶ側が pass の頭で付ける。
+    /// unbound(描く物の数) = 付けられずに飛ばした行を知らせる。
     pub type alias RowDrawer = {
         shape = (RenderPass, MeshBuffers) -> Bool \ IO,
         skinned = (RenderPass, MeshBuffers) -> Bool \ IO,
-        material = (RenderPass, SceneList, Int32, MeshBuffers) -> Bool \ IO
+        material = (RenderPass, SceneList, Int32, MeshBuffers) -> Bool \ IO,
+        unbound = Int32 -> Unit \ IO
     }
 
     pub def freshStore(): MeshStore \ IO = Ref.fresh(Static, Map.empty())
@@ -142,11 +144,12 @@ mod Render3d.WebGpuRows {
         let count = rowAt(list, row, 4);
         if (count <= 0) ()
         else Map.get(meshAt(list, row), ds#meshes) |> Option.forEach(mesh -> {
-            if (mesh#indexCount > 0 and isBound(pass, ds, row, mesh)) {
+            if (mesh#indexCount <= 0) ()
+            else if (isBound(pass, ds, row, mesh)) {
                 pass.setVertexBuffer(0, mesh#vertices, 0i64, mesh#vertices.size());
                 pass.setIndexBuffer(mesh#indices, IndexFormat.UINT32, 0i64, mesh#indices.size());
                 pass.drawIndexed(mesh#indexCount, count, 0, 0, ds#instanceBase + rowAt(list, row, 3))
-            } else ()
+            } else (ds#drawer#unbound)(count)
         });
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
         ()

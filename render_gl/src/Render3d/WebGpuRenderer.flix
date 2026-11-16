@@ -146,10 +146,12 @@ pub mod Render3d.WebGpuRenderer {
     /// 姿勢の buffer の始めの大きさ（バイト）。
     def initialPoseBytes(): Int32 = 65536
 
-    /// 1 回の prepare の姿勢の行の数の上限（計画へ渡す）。
-    // WhyNot: device の maxStorageBufferBindingSize から求めない — ジョイント 64 本の行 16,384 本で 64 MiB になり、スマホ（12.24 の S24 Ultra の 128 MiB）の内に収まる。
-    //   GL の上限（MAX_TEXTURE_SIZE。この Mac で 16,384）と同じ桁にそろえ、行をもらえない姿勢の知らせが backend で変わらないようにする。
-    def poseRowLimit(): Int32 = 16384
+    /// 1 回の prepare の姿勢の行の数の上限（計画へ渡す）。姿勢の予算（poseBudgetBytes）を、ジョイントが一番多い行（Skin3d.maxJoints() 本の mat4）で割った数。
+    // WhyNot: device の maxStorageBufferBindingSize から求めない — 予算の 64 MiB はスマホ（12.24 の S24 Ultra の 128 MiB）の内で、core の最低保証（128 MiB）の内でもある。
+    def poseRowLimit(): Int32 = poseBudgetBytes() / (Skin3d.maxJoints() * 64)
+
+    /// 1 回の prepare の姿勢に使ってよいバイト数。
+    def poseBudgetBytes(): Int32 = 64 * 1048576
 
     /// storage の binding の位置のそろえ（core の minStorageBufferOffsetAlignment の上限）。
     def storageAlignBytes(): Int32 = 256
@@ -487,6 +489,7 @@ pub mod Render3d.WebGpuRenderer {
         let instances = Array.get(0, s#instances);
         pass.setVertexBuffer(1, instances, 0i64, instances.size());
         let mp = { base = staged#valuesBase, format = target#format, samples = target#samples, sceneLayout = s#sceneLayout, poseLayout = s#poseLayout,
+                   hasPoses = Option.nonEmpty(staged#poseGroup),
                    bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static };
         let bindShape = (p: RenderPass, mesh: MeshBuffers, skin: Option[Int32]) -> {
             let key = BoundPipeline.Shape(passCodeOf(staged#spec), mesh#stride, Option.nonEmpty(skin));
@@ -502,7 +505,8 @@ pub mod Render3d.WebGpuRenderer {
         let drawer = {
             shape = (p, mesh) -> bindShape(p, mesh, None),
             skinned = (p, mesh) -> Option.nonEmpty(staged#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
-            material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh)
+            material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh),
+            unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n)
         };
         drawRows(pass, s#meshStore, drawer, staged#list, staged#instanceBase);
         pass.end()
@@ -558,6 +562,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 1 回の prepare の姿勢 rows を CPU の入れ物へ詰める（頭の Render3dWgsl.poseHeaderBytes() に 1 行のジョイントの数）。姿勢が無ければ None。
     /// 行をもらえなかった姿勢があれば 1 回知らせる（GL の Render3d.GlRows.JointTexture.upload と同じ文）。
+    /// 診断の JointUploads は GL と同じく prepare 1 回に 1 つ数える（submit の後に送り直した分は数えない）。
     def packPoses(r: Renderer, rows: PoseRows): Option[Poses] \ IO =
         let RendererData.RendererData(s) = r;
         if (rows#dropped > 0)
@@ -807,6 +812,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 形式 format・標本 samples・pass spec・頂点のバイト数 stride（Render3d.WebGpuRows の形の版）の頂点の色の pipeline（無ければ作る）。
     /// skin = 骨つきの版なら形の版のジョイントの番号の位置（バイト。group 1 は空・group 2 に姿勢）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
+    // WhyNot: 鍵にジョイントの番号の位置を入れない — 位置は形の版の末尾の 8 float（Render3d.WebGpuRows.floatsPerVertex）で、頂点のバイト数から 1 つに決まる。
     def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32, spec: ScenePassSpec, stride: Int32, skin: Option[Int32]): RenderPipeline \ IO =
         let RendererData.RendererData(s) = r;
         let key = (WebGpuPipelines.formatCode(format), samples, passCodeOf(spec), stride, Option.nonEmpty(skin));

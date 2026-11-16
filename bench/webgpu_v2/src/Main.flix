@@ -24,6 +24,7 @@ mod V2Main {
     type alias Case = { name = String, passes = List[Render.Pass], targets = Map[String, RenderTarget.Descriptor], items = List[Render.PlacedItem] }
 
     def cases(kit: Room.Kit): List[Case] =
+        skinnedTwiceCase(kit) ::
         roomCase("room", kit, 0.0, Scene3d.Resolution.Native) ::
         roomCase("roomTurned", kit, 0.5, Scene3d.Resolution.Native) ::
         roomCase("roomDesign", kit, 0.0, Scene3d.Resolution.Design) ::
@@ -73,6 +74,14 @@ mod V2Main {
     /// 部屋に restyle（V2Skinned）で物を足して画面へ直に（Native・正面）。output = 場面の Output（Depth なら奥行きの書き出し）。
     def skinnedCase(name: String, kit: Room.Kit, output: Scene3d.Output, restyle: Scene3d.Scene3dCmd -> Scene3d.Scene3dCmd): Case =
         { name = name, passes = Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), { output = output | restyle(Room.scene(kit, 0.0)) }) :: Nil }
+
+    /// 小物 crowdCount() 個と人形の場面を左右に 2 つ並べて 1 回の prepare で描く（左右で yaw を変える）。1 つ目の場面の 1 体ごとの値だけで 1,024 体を超え、
+    /// 2 つ足すと 2,048 体を超えるので、2 つ目の場面の前で 1 体ごとの値の buffer があふれて submit が入り、2 つ目の場面は姿勢を送り直す
+    /// （buffer の始めの大きさ 1,024 体のままでも、前の場面で 2,048 体へ伸びていても同じ）。
+    def skinnedTwiceCase(kit: Room.Kit): Case =
+        let half = (yaw: Float64) -> { size = { x = 0.5 * Room.design()#x, y = Room.design()#y } | V2Skinned.vertexColored(V2Skinned.crowd(crowdCount(), kit#torch, Room.scene(kit, yaw))) };
+        { name = "skinnedTwice", passes = Nil, targets = Map.empty(),
+          items = Render.scene3d(Vec2.zero(), half(-0.2)) :: Render.scene3d({ x = 0.5 * Room.design()#x, y = 0.0 }, half(0.2)) :: Nil }
 
     /// crowd の小物の数（形 2 種で行が 2 本・2 本目の行の頭の物は 1 体ごとの値の途中を指す）。
     def crowdCount(): Int32 = 1200
@@ -141,12 +150,14 @@ mod V2Main {
     /// ±1 の画素は面の中に点で散る【推: 絵の段の間の補間と sRGB の戻しの丸め】。
     /// 壊して確かめた（同じ日に 1 回ずつ）: 材質の頂点シェーダーで uv の上下を返すと絵つきの 5 場面が 47 万〜52 万 px 違う・両面の裏の法線の向きを逆にすると matTwoSided が 33 万 px・
     /// 両面の材質の裏を間引くと matTwoSided と matDepth が 6.6 万 px 違って落ちる。
+    /// 骨つきと小物の場面（同じ日の実測。違う画素・±2 以上・max）: skinned 9・1・±70、skinnedTextured 46・1・±70、skinnedDepth 3・0・±1、crowd 21・10・±146、skinnedTwice 22・14・±230。
+    /// ±2 以上は重なる面（人形と卓・小物どうし）で勝つ面が入れ替わる所【推】。skinnedTwice は 2 つ目の場面の前で submit が入る形（姿勢の送り直し）を通す。
     /// 上限はどれも実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない（255）。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
              "matDepth" => (4, 8, 255), "matMany" => (430, 440, 255),
-             "skinned" => (8, 32, 255), "skinnedTextured" => (8, 100, 255), "skinnedDepth" => (4, 8, 16), "crowd" => (32, 64, 255)}
+             "skinned" => (8, 32, 255), "skinnedTextured" => (8, 100, 255), "skinnedDepth" => (4, 8, 16), "crowd" => (32, 64, 255), "skinnedTwice" => (32, 64, 255)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip"}

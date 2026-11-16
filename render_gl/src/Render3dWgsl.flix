@@ -285,7 +285,7 @@ pub mod Render3dWgsl {
         "}\n"
 
     /// 1 体ごとの値の 1 体のバイト数（Render3d.InstanceValues の 1 体 = 32 float）。
-    pub def instanceBytes(): Int32 = 4 * 4 * Render3dGlsl.texelsPerInstance()
+    pub def instanceBytes(): Int32 = 4 * Render3d.InstanceValues.floatsPerInstance()
 
     /// 目と射影の行列（group 0 の binding 5）。詰める側は uView・uProj の順に列優先で 128 バイト。
     pub def cameraDeclarations(): String =

@@ -89,7 +89,7 @@ pub mod Render3dGlsl {
     pub def dataTextureWidth(): Int32 = Skin3d.maxJoints() * 4
 
     /// 1 体ごとの値の 1 体の幅（texel）。
-    pub def texelsPerInstance(): Int32 = 8
+    pub def texelsPerInstance(): Int32 = Render3d.InstanceValues.texelsPerInstance()
 
     /// 1 体ごとの値のテクスチャの 1 行の体の数（dataTextureWidth は texelsPerInstance で割り切れる）。
     pub def instancesPerRow(): Int32 = dataTextureWidth() / texelsPerInstance()

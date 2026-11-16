@@ -343,13 +343,13 @@ pub mod Render3d.WebGpuMaterials {
     }
 
     /// 材質の行を描く pass の付け方の材料。base = 行の values を送った位置（バイト）・format・samples = 描き先・sceneLayout = group 0 の layout・
-    /// poseLayout = group 2（姿勢）の layout・bound = 今の pipeline・groupRow = 最後に group 1 を付けた行（要素 1 つ・-1 = 付けていないか、付けた物が材質の group でない）。
+    /// poseLayout = group 2（姿勢）の layout・hasPoses = pass の頭で group 2 を付けたか・bound = 今の pipeline・groupRow = 最後に group 1 を付けた行（要素 1 つ・-1 = 付けていないか、付けた物が材質の group でない）。
     pub type alias MaterialPass = {
-        base = Int32, format = RenderTarget.Format, samples = Int32, sceneLayout = BindGroupLayout, poseLayout = BindGroupLayout,
+        base = Int32, format = RenderTarget.Format, samples = Int32, sceneLayout = BindGroupLayout, poseLayout = BindGroupLayout, hasPoses = Bool,
         bound = Ref[BoundPipeline, Static], groupRow = Array[Int32, Static]
     }
 
-    /// 行 row の材質の pipeline と group 1 を pass に付ける（描けない行は偽）。前の材質の行と同じ付け方（flagSameBinding）の行は group を付け直さない。
+    /// 行 row の材質の pipeline と group 1 を pass に付ける（描けない行は偽。骨つきの材質は pass に姿勢の group が無いか、形にジョイントが無ければ偽）。前の材質の行と同じ付け方（flagSameBinding）の行は group を付け直さない。
     pub def bindRow(m: Materials, mp: MaterialPass, pass: RenderPass, list: SceneList, row: Int32, mesh: MeshBuffers): Bool \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let handle = rowAt(list, row, 1);
@@ -357,7 +357,7 @@ pub mod Render3d.WebGpuMaterials {
         let program = if (handle >= 0 and handle < Vector.length(current)) Vector.get(handle, current) else None;
         let valuesOk = valuesAt(list, row) >= 0;
         match program {
-            case Some(p) if valuesOk and (not p#kind#skinned or Option.nonEmpty(mesh#skinAt)) =>
+            case Some(p) if valuesOk and (not p#kind#skinned or (mp#hasPoses and Option.nonEmpty(mesh#skinAt))) =>
                 let key = BoundPipeline.Material(p#id, mesh#stride);
                 if (Ref.get(mp#bound) == key) () else {
                     pass.setPipeline(pipelineOf(m, mp, p, mesh));
