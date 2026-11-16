@@ -30,6 +30,9 @@ func Text(r *Result, reportPath string) string {
 	hard, review, auto := countOpen(r)
 	fmt.Fprintf(&b, "（止める違い %d 件・人が見る迷った差 %d 件（%d 区間）・自動で通した %d 件・承認済み %d 件・通らない命令の行 %d 行・比べたコマ %d 枚）\n",
 		hard, review, len(r.Units), auto, len(r.Diffs)-hard-review-auto, countOpenUncovered(r), r.Frames)
+	if r.KeySame > 0 || r.CacheHits > 0 {
+		fmt.Fprintf(&b, "  （比べたコマのうち、鍵が前と同じで画素を読まなかった %d 枚・覚えた結果で通した %d 枚）\n", r.KeySame, r.CacheHits)
+	}
 	for _, p := range r.Problems {
 		fmt.Fprintf(&b, "  ✗ %s\n", p)
 	}
