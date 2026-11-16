@@ -79,3 +79,6 @@ templates/*/bin/lint-rules/*.json
 
 # devbox が作る手元の錠。テンプレは devbox.json だけを配る
 templates/*/devbox.lock
+
+# LWJGL が実行時にネイティブを展開する置き場
+.lwjgl/

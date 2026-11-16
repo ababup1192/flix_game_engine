@@ -22,3 +22,6 @@ saves/
 
 # 作例のテスト（sample-test/）をテンプレートの中で流す間だけ貼る写し（bin/with-sample-tests）
 test/sample-test--*.flix
+
+# LWJGL が実行時にネイティブを展開する置き場
+.lwjgl/

@@ -17,3 +17,6 @@ local.mk
 # テスト記録 (make status が読む) — マシンごとの物なので共有しない
 .test-logs/
 __pycache__/
+
+# LWJGL が実行時にネイティブを展開する置き場
+.lwjgl/
