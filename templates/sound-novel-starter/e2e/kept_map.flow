@@ -1,0 +1,7 @@
+# 工房の誘いで「この地図、大事にします」と別れる道（KeptMap）。手紙の条件がそろわない時は 1 つ目が選べず、一杯のお茶の次に並ぶ。
+start talk node=Invitation
+drive reader until choice max 60
+tap next                                        # 一杯のお茶の次の「この地図、大事にします」へ
+tap confirm
+drive reader until talk=KeptMap max 30
+drive reader until phase=Credits max 120
