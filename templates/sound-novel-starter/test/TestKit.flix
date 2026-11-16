@@ -109,8 +109,5 @@ mod TestKit {
     /// 2 つの数がほぼ等しいか（足し算の丸めの差を見ない）。
     pub def near(a: Float64, b: Float64): Bool = Float64.abs(a - b) < 0.000001
 
-    pub def isWaiting(w: World.World): Bool = match World.readOf(w) |> Option.map(r -> if (Option.nonEmpty(r#pause)) YarnRunner.Shown.Waiting else YarnRunner.shownOf(r#talk)) {
-        case Some(YarnRunner.Shown.Waiting) => true
-        case _                              => false
-    }
+    pub def isWaiting(w: World.World): Bool = WorldRead.isWaiting(w)
 }

@@ -254,50 +254,43 @@ mod TestGameHooks {
         let instantWhen = (mode: World.Playback) -> World.readOf(w) |> Option.map(rd -> WorldRead.ctxOf(r, { playback = mode | rd }, w)#instant);
         Assert.assertEq(expected = (Some(true), Some(false)), (instantWhen(World.Playback.Skip), instantWhen(World.Playback.Manual)))
 
-    /// 読み始めた所で、ゲームが持つ 3 秒の切り替えを当て、明けたら出す台詞 1 行（.yarn の 99 行目）を預けた World。
-    /// 待ちの出来事は bg の apply が出した物をそのまま WorldRead.takeOut に通す（押すと明ける待ち）。
+    /// 読み始めた所から、出来事 events を新しいビートとして流し始めた World（入力 1 回で実行器が返した束と同じ扱い）。
+    def beatWith(r: Res.Res, events: List[YarnRunner.Event]): World.World = TestKit.quiet(() -> WorldRead.beginBeat(r, events, begun(r)))
+
+    /// 読み始めた所で、ゲームが持つ 3 秒の切り替え（<<bg p1>>）と、その後の台詞 1 行（.yarn の 99 行目）を流し始めた World。
     def walking(r: Res.Res): World.World =
-        let w = begun(r);
-        World.mapRead(rd -> {
-            let c = Commands.bgUsing(walk(3.0));
-            let (stage, outs) = YarnCommands.parse(c#spec, command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)) |> Result.toOption
-                |> Option.flatMap(a -> c#apply({ instant = false | WorldRead.ctxOf(r, rd, w) }, a, rd#stage) |> Result.toOption)
-                |> Option.getWithDefault((rd#stage, Nil));
-            withHeldLine(takenOuts(w, outs, { stage = stage | rd }))
-        }, w)
+        beatWith(withWalk(3.0, r), YarnRunner.Event.Command(command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)) :: YarnRunner.Event.Line(heldLine()) :: Nil)
 
-    /// 読み始めた所で、out の待ちだけを当て、明けたら出す台詞 1 行を預けた World（ゲームが持つ切り替えは無い）。
-    def waitingBy(r: Res.Res, out: Out): World.World =
-        let w = begun(r);
-        World.mapRead(rd -> withHeldLine(takenOuts(w, out :: Nil, rd)), w)
+    /// <<bg>> がゲームの seconds 秒の切り替えで歩く描く元。
+    def withWalk(seconds: Float64, r: Res.Res): Res.Res =
+        { commands = Commands.tableOf(Commands.bgUsing(walk(seconds)) :: Commands.commandsIn(r#commands)) | r }
 
-    def takenOuts(w: World.World, outs: List[Out], rd: World.Read): World.Read =
-        fst(Emit.collect(() -> outs |> List.foldLeft((cur, out) -> WorldRead.takeOut(World.now(w), out, cur), rd)))
+    /// 読み始めた所で、outs を出す命令とその後の台詞 1 行を流し始めた World。
+    def waitingByAll(r: Res.Res, outs: List[Out]): World.World =
+        let withOuts = { commands = Commands.tableOf(outsCommand("waitout", outs) :: Commands.commandsIn(r#commands)) | r };
+        beatWith(withOuts, YarnRunner.Event.Command(command("waitout", Nil)) :: YarnRunner.Event.Line(heldLine()) :: Nil)
 
-    /// 待ちが明けたら出す台詞 1 行（.yarn の 99 行目「歩いた後の行。」）を待ちに預ける。
-    def withHeldLine(rd: World.Read): World.Read = withHeld((YarnRunner.Event.Line(heldLine()), 0) :: Nil, rd)
+    def waitingBy(r: Res.Res, out: Out): World.World = waitingByAll(r, out :: Nil)
 
+    /// 明けたら出す台詞 1 行（.yarn の 99 行目「歩いた後の行。」）。
     def heldLine(): Yarn.Line = { speaker = "", text = "歩いた後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } }
 
-    /// 待ちが明けたら反映する出来事 rest を待ちに預ける。
-    def withHeld(rest: List[(YarnRunner.Event, Int32)], rd: World.Read): World.Read =
-        { pause = rd#pause |> Option.map(p -> { rest = rest | p }) | rd }
-
     /// out を 1 つ出すだけの命令 name。
-    def waitCommand(name: String, out: Out): Commands.Command[Stage.Stage] =
+    def waitCommand(name: String, out: Out): Commands.Command[Stage.Stage] = outsCommand(name, out :: Nil)
+
+    def outsCommand(name: String, outs: List[Out]): Commands.Command[Stage.Stage] =
         { spec = YarnCommands.spec(name, "待ちを出す", Nil), timing = Commands.Timing.Timed,
-          apply = (_, _, st) -> Ok((st, out :: Nil)), needs = Commands.noAssets }
+          apply = (_, _, st) -> Ok((st, outs)), needs = Commands.noAssets }
 
     /// 押すと明ける待ちを出す tapwait と、押しても明けない待ちを出す hardwait を、読み進める命令の表に足した描く元。
     def withWaitCommands(r: Res.Res): Res.Res =
         { commands = Commands.tableOf(waitCommand("tapwait", Out.WaitOrTap(5.0)) :: waitCommand("hardwait", Out.Wait(5.0)) :: Commands.commandsIn(r#commands)) | r }
 
-    /// 読み始めた所で押すと明ける 5 秒の待ちを当て、明けたら rest を反映する World。
-    def tapWaitingWith(r: Res.Res, rest: List[(YarnRunner.Event, Int32)]): World.World =
-        let w = begun(r);
-        World.mapRead(rd -> withHeld(rest, takenOuts(w, Out.WaitOrTap(5.0) :: Nil, rd)), w)
+    /// 読み始めた所で押すと明ける 5 秒の待ち（tapwait）と、その後の出来事 rest を流し始めた World。
+    def tapWaitingWith(r: Res.Res, rest: List[YarnRunner.Event]): World.World =
+        beatWith(withWaitCommands(r), YarnRunner.Event.Command(command("tapwait", Nil)) :: rest)
 
-    def isPaused(w: World.World): Bool = World.readOf(w) |> Option.exists(rd -> Option.nonEmpty(rd#pause))
+    def isPaused(w: World.World): Bool = WorldRead.isPaused(w)
 
     def currentText(w: World.World): String = World.pageOf(w)#current |> Option.map(l -> l#text) |> Option.getWithDefault("")
 
@@ -316,7 +309,7 @@ mod TestGameHooks {
         let r = res();
         let skipped = World.mapRead(rd -> { playback = World.Playback.Skip | rd }, walking(r));
         let after = TestKit.stepBy(r, 0.01, skipped);
-        Assert.assertEq(expected = Some(true), World.readOf(after) |> Option.map(rd -> Option.isEmpty(rd#stage#under) and Option.isEmpty(rd#pause)))
+        Assert.assertEq(expected = Some(true), World.readOf(after) |> Option.map(rd -> Option.isEmpty(rd#stage#under)) |> Option.map(under -> under and not isPaused(after)))
 
     @Test
     def testWalkSoundRingsOnceOnTheStoryClock(): Unit \ {Assert, Fs.FileRead} =
@@ -369,24 +362,20 @@ mod TestGameHooks {
     def testATapWaitWithAPlainWaitIsNotTappable(): Unit \ {Assert, Fs.FileRead} =
         // 1 つのコマンドが Wait と WaitOrTap を両方出したら、押しても明けない待ち。
         let r = res();
-        let start = begun(r);
-        let w = World.mapRead(rd -> withHeldLine(takenOuts(start, Out.WaitOrTap(3.0) :: Out.Wait(1.0) :: Nil, rd)), start);
-        Assert.assertTrue(isPaused(TestKit.advance(r, w)))
+        Assert.assertTrue(isPaused(TestKit.advance(r, waitingByAll(r, Out.WaitOrTap(3.0) :: Out.Wait(1.0) :: Nil))))
 
     @Test
     def testAPlainWaitThenATapWaitIsNotTappable(): Unit \ {Assert, Fs.FileRead} =
         // Wait の後に WaitOrTap を出しても、押しても明けない待ち（出した順に左右されない）。
         let r = res();
-        let start = begun(r);
-        let w = World.mapRead(rd -> withHeldLine(takenOuts(start, Out.Wait(1.0) :: Out.WaitOrTap(3.0) :: Nil, rd)), start);
-        Assert.assertTrue(isPaused(TestKit.advance(r, w)))
+        Assert.assertTrue(isPaused(TestKit.advance(r, waitingByAll(r, Out.Wait(1.0) :: Out.WaitOrTap(3.0) :: Nil))))
 
     @Test
     def testOneTapPassesTheTapWaitsThatFollow(): Unit \ {Assert, Fs.FileRead} =
         // 押すと明ける待ちの後に、押すと明ける待ちを出す命令が 2 つと台詞が続く時、1 回押すと台詞まで出て、字も出し切る。
         let r = withWaitCommands(res());
-        let rest = (YarnRunner.Event.Command(command("tapwait", Nil)), 1) :: (YarnRunner.Event.Command(command("tapwait", Nil)), 1)
-            :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
+        let rest = YarnRunner.Event.Command(command("tapwait", Nil)) :: YarnRunner.Event.Command(command("tapwait", Nil))
+            :: YarnRunner.Event.Line(heldLine()) :: Nil;
         let pressed = TestKit.advance(r, tapWaitingWith(r, rest));
         Assert.assertEq(expected = (false, "歩いた後の行。", true), (isPaused(pressed), currentText(pressed), Page.isDone(World.pageOf(pressed))))
 
@@ -394,7 +383,7 @@ mod TestGameHooks {
     def testOneTapStopsAtAPlainWait(): Unit \ {Assert, Fs.FileRead} =
         // 続いた待ちが押しても明けない待ちなら、そこで止まり、後ろの台詞はまだ出さない。
         let r = withWaitCommands(res());
-        let rest = (YarnRunner.Event.Command(command("hardwait", Nil)), 1) :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
+        let rest = YarnRunner.Event.Command(command("hardwait", Nil)) :: YarnRunner.Event.Line(heldLine()) :: Nil;
         let pressed = TestKit.advance(r, tapWaitingWith(r, rest));
         Assert.assertEq(expected = (true, false), (isPaused(pressed), currentText(pressed) == "歩いた後の行。"))
 
@@ -478,17 +467,14 @@ mod TestGameHooks {
         { commands = Commands.tableOf(waitCommand("walk", Out.LineWait(3.0)) :: signalCommand("quick", Commands.Timing.Instant)
                                       :: signalCommand("slow", Commands.Timing.Timed) :: Commands.commandsIn(r#commands)) | r }
 
-    /// 読み始めた所で 0.1 秒の待ちを当て、明けたら walk と rest の命令と台詞を流す World を、0.2 秒進めた所（walk を当てた直後）と、そこで出た合図。
+    /// 読み始めた所で、walk と rest の命令と台詞を流し始めた World（walk を当てた所）と、そこで出た合図。
     def walkedInto(r: Res.Res, rest: List[String]): (World.World, List[String]) =
         walkedIntoEvents(r, rest |> List.map(name -> YarnRunner.Event.Command(command(name, Nil))))
 
     /// walkedInto の、walk の後ろの出来事 rest を直に渡す形（rest の後ろに台詞 1 行）。
     def walkedIntoEvents(r: Res.Res, rest: List[YarnRunner.Event]): (World.World, List[String]) =
-        let events = (YarnRunner.Event.Command(command("walk", Nil)), 1) :: (rest |> List.map(e -> (e, 1)))
-            ::: ((YarnRunner.Event.Line(heldLine()), 0) :: Nil);
-        let start = begun(r);
-        let w = World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start);
-        let (next, heard) = TestKit.stepHearing(r, 0.2, w);
+        let events = YarnRunner.Event.Command(command("walk", Nil)) :: rest ::: (YarnRunner.Event.Line(heldLine()) :: Nil);
+        let (next, heard) = Emit.collect(() -> WorldRead.beginBeat(r, events, begun(r)));
         (next, heard |> List.filterMap(e -> match e {
             case World.Event.Signal(name) => Some(name)
             case _                        => None
@@ -499,18 +485,17 @@ mod TestGameHooks {
         // ゲームのコマンド（コメントを 1 件流して 0.65 秒置く形）が LineWait を出すと、後ろの <<audio>> は待たずに流れ、台詞だけが待つ。
         let base = res();
         let r = { commands = Commands.tableOf(waitCommand("comment", Out.LineWait(0.65)) :: Commands.commandsIn(base#commands)) | base };
-        let start = begun(r);
-        let events = (YarnRunner.Event.Command(command("comment", Nil)), 1) :: (YarnRunner.Event.Command(command("audio", "ambience" :: "amb_river" :: Nil)), 1)
-            :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
-        let w = TestKit.stepBy(r, 0.2, World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start));
+        let events = YarnRunner.Event.Command(command("comment", Nil)) :: YarnRunner.Event.Command(command("audio", "ambience" :: "amb_river" :: Nil))
+            :: YarnRunner.Event.Line(heldLine()) :: Nil;
+        let w = TestKit.stepBy(r, 0.2, beatWith(r, events));
         let ambience = World.readOf(w) |> Option.flatMap(rd -> Stage.ambienceOf(World.now(w), rd#stage));
         Assert.assertEq(expected = (Some("amb_river"), true), (ambience, isPaused(w)))
 
     @Test
     def testInstantCommandsRunDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =
-        // 切り替えの待ちの間も、後ろの時間を取らない命令は先に流れ、台詞は待つ。
+        // 切り替えの待ちの間も、後ろの時間を取らない命令は先に流れ、台詞は頁に積むが字は出さない（古い版と同じ）。
         let (w, signals) = walkedInto(withSwitchCommands(res()), "quick" :: Nil);
-        Assert.assertEq(expected = ("quick" :: Nil, true, false), (signals, isPaused(w), currentText(w) == "歩いた後の行。"))
+        Assert.assertEq(expected = ("quick" :: Nil, true, 0), (signals, isPaused(w), Page.visibleCount(World.pageOf(w))))
 
     @Test
     def testATimedCommandWaitsForTheSwitch(): Unit \ {Assert, Fs.FileRead} =
@@ -608,12 +593,11 @@ mod TestGameHooks {
         // 歩く <<bg>>（ゲームの backdropSwitch が 5.4 秒）→ <<audio>> 2 つ → <<wait 0.8>> → 台詞: 1 秒では台詞が出ず、6.5 秒で出る。
         let base = res();
         let r = { commands = Commands.tableOf(Commands.bgUsing(walk(5.4)) :: Commands.commandsIn(base#commands)) | base };
-        let events = (YarnRunner.Event.Command(command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)), 1)
-            :: (YarnRunner.Event.Command(command("audio", "ambience" :: "amb_river" :: Nil)), 1)
-            :: (YarnRunner.Event.Command(command("audio", "all" :: "off" :: Nil)), 1)
-            :: (YarnRunner.Event.Command(command("wait", "0.8" :: Nil)), 1) :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
-        let start = begun(r);
-        let w = TestKit.stepBy(r, 0.2, World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start));
+        let events = YarnRunner.Event.Command(command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil))
+            :: YarnRunner.Event.Command(command("audio", "ambience" :: "amb_river" :: Nil))
+            :: YarnRunner.Event.Command(command("audio", "all" :: "off" :: Nil))
+            :: YarnRunner.Event.Command(command("wait", "0.8" :: Nil)) :: YarnRunner.Event.Line(heldLine()) :: Nil;
+        let w = TestKit.stepBy(r, 0.2, beatWith(r, events));
         let early = TestKit.stepBy(r, 1.0, w);
         let late = TestKit.stepBy(r, 6.5, early);
         Assert.assertEq(expected = (false, true), (currentText(early) == "歩いた後の行。", currentText(late) == "歩いた後の行。"))

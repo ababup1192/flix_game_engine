@@ -55,7 +55,7 @@ mod World {
     /// tip = 指の長押しで名前を出した縦の画面の右の列のボタンの番号と出した実時間（ブラウザ版の指は離した時にしか長押しと分からないので、離した後に出す）、
     /// cursor = シナリオの実行位置（今の台詞・選択肢か、<<wait>> で待っている演出コマンドの行。talkCursorOf）、
     /// entry = 今のノードに入った時の舞台（戻れる所の当て直しの始まり。WorldRead.trackEntry）、
-    /// pause = コマンドが出した待ち（Commands.Out.Wait。無ければ None）、
+    /// beat = 今のビート（入力 1 回から次の台詞・選択肢までの出来事の時刻表。NovelBeat）、
     /// gate = 出来事を反映した後の今のゲート（払い・タップで選ぶ選択肢。素材の待ちとコマンドの待ちは見ない。読むのは WorldRead.gateOf）。
     pub type alias Read = {
         talk = YarnRunner.Runner[Stage.Story],
@@ -72,17 +72,16 @@ mod World {
         tip = Option[(Int32, Clock.Time[Clock.Real])],
         cursor = Option[Yarn.Source],
         entry = NodeEntry,
-        pause = Option[Pause],
+        beat = BeatRun,
         gate = Option[Gate.Gate]
     }
 
-    /// コマンドが出した待ち（<<wait 秒>> と同じ待ち。続きの出来事を出さずに物語の時計で待つ）。until = 明ける物語の時刻、
-    /// rest = 待ちの後ろのシナリオの出来事と、それぞれの後ろの入力の数（明けたら続きから反映する）、last = rest の台詞の戻れる所の元、
-    /// tappable = 人が押すと明ける待ち（Commands.Out.WaitOrTap・LineWait だけで出来た待ち）、
-    /// passInstant = 待ちの間も時間を取らない命令は先に流す待ち（Commands.Out.LineWait だけで出来た待ち。台詞・選択肢・<<wait>>・時間を取る命令で止まる）。
-    // WhyNot: 実行器（YarnRunner）の待ちに入れない — 実行器はコマンドを返した時にはもう次の台詞まで流し終えていて、外から待ちを差し込めない。
-    pub type alias Pause = { until = Clock.Time[Stage.Story], rest = List[(YarnRunner.Event, Int32)], last = Option[YarnRunner.Bookmark],
-                             tappable = Bool, passInstant = Bool }
+    /// 今のビート: state = 出来事と解いた待ち（NovelBeat.Beat）、origin = ビートを始めた物語の時刻（時刻表の 0 秒）、
+    /// waiting = このフレームの待ちの判断（WorldRead.settleBeat が毎フレーム NovelBeat.waitingOf で書く。読む所は全部ここを見る）。
+    pub type alias BeatRun = { state = NovelBeat.Beat, origin = Clock.Time[Stage.Story], waiting = NovelBeat.Waiting }
+
+    /// 何も無いビート（読み終えるのを待っている扱い）。
+    pub def idleBeat(): BeatRun = { state = NovelBeat.empty(), origin = Clock.zero(), waiting = NovelBeat.Waiting.Input }
 
     /// 今のノードに入った時の記録。node = ノードの名前、lastLine = そのノードで最後に通った .yarn の行、
     /// visits = ノードに入った回数（自分への jump も 1 回）、start = 入る直前の舞台と頁。
@@ -304,7 +303,7 @@ mod World {
         let stage = Stage.emptyFor(theme);
         { talk = YarnRunner.closed(), stage = stage, page = Page.empty(), choices = Nil, choiceCursor = 0,
           log = Nil, playback = Playback.Manual, doneAt = None, autosavedNode = None, hold = None, gaveUp = Set.empty(), tip = None, cursor = None,
-          entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(stage), page = Page.empty() } }, pause = None, gate = None }
+          entry = { node = "", lastLine = 0, visits = 0, start = { stage = Stage.snapshotOf(stage), page = Page.empty() } }, beat = idleBeat(), gate = None }
 
     // ── 場面を読む口 ──
 

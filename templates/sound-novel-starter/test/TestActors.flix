@@ -205,13 +205,15 @@ mod TestActors {
             "prop" => Json.JObject(Map#{ "name" => Json.JString("cup"), "face" => Json.JString("plain"), "slot" => Json.JString("item") }) });
         Assert.assertEq(expected = "cup" :: Nil, Cast.markFromJson(Some(json))#props |> List.map(f -> f#name))
 
-    // ══ コマンドが出す待ち（Out.Wait） ══
+    // ══ 演出の待ち（<<wait>>） ══
 
     /// 読み始めた所に、seconds 秒の待ちと、明けたら出す台詞 1 行（.yarn の 99 行目）を預けた World。
     def paused(seconds: Float64): World.World \ Fs.FileRead =
         let w = begun(res());
         let line = { speaker = "", text = "待ちの後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } };
-        World.mapRead(r -> { pause = Some({ until = Clock.after(seconds, World.now(w)), rest = (YarnRunner.Event.Line(line), 0) :: Nil, last = None, tappable = false, passInstant = false }) | r }, w)
+        let wait = { name = "wait", args = Float64.toString(seconds) :: Nil, tags = Nil, source = { file = "test", line = 98 } };
+        let r = res();
+        TestKit.quiet(() -> WorldRead.beginBeat(r, YarnRunner.Event.Command(wait) :: YarnRunner.Event.Line(line) :: Nil, w))
 
     def currentText(w: World.World): String = World.pageOf(w)#current |> Option.map(l -> l#text) |> Option.getWithDefault("")
 
@@ -238,13 +240,13 @@ mod TestActors {
     def testSkipPassesThePause(): Unit \ {Assert, Fs.FileRead} =
         // スキップ中は待ちも飛ばす。
         let w = World.mapRead(r -> { playback = World.Playback.Skip | r }, paused(10.0));
-        Assert.assertTrue(Option.isEmpty(World.readOf(stepBy(res(), 0.01, w)) |> Option.flatMap(r -> r#pause)))
+        Assert.assertFalse(WorldRead.isPaused(stepBy(res(), 0.01, w)))
 
     @Test
     def testReopeningTheNodeDropsThePause(): Unit \ {Assert, Fs.FileRead} =
         // 待ちの間にシナリオを直して開き直すと、前の待ちは残らない（Silent の流しを止めない）。
         let w = WorldRead.settleDialogue(res(), paused(10.0));
-        Assert.assertTrue(Option.isEmpty(World.readOf(w) |> Option.flatMap(r -> r#pause)))
+        Assert.assertTrue(World.readOf(w) |> Option.exists(r -> NovelBeat.isEmpty(r#beat#state)))
 
     @Test
     def testSaveDuringAPauseReturnsToTheLineBefore(): Unit \ {Assert, Fs.FileRead} =

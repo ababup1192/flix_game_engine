@@ -251,3 +251,29 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 
 相談したい事:
 1. スパイクのテスト `TestTimelineNovelSpike.flix` は engine に置いたまま枝にある。本実装の段 0 で外し、段 2 でテンプレートへ移す前提。
+
+## 11. 本実装の記録（段 1〜3・2026-11-16）
+
+枝 `novel-waits-timeline`（main 7fcf3cec から）。engine は触っていない（段 0 の口だけを使う）。
+
+### 段 1（5eba847e）
+
+- `TestKit.stepBy` を `App.advanceFrame`（実機と同じ 1 フレーム）に替え、出来事は World の events の差（`Emit.since`）で読む `stepHearing` を足した。`WorldRead.step` を直に呼んでいたテスト 4 か所も寄せた。
+- 素材を諦める 2 本（TestHold）は、App の道だと `Controls.step` が stderr に 1 行言ってテストが落ちるので、規則だけの 1 歩（`TestKit.ruleStepBy`）のまま（WhyNot を残した）。
+- (1) は flow の reader で流すと再現した: `<<jump>>` で入ったノードの頭の歩く `<<bg>>` の後の台詞が 25 フレーム（`<<wait 0.8>>` の秒）で出る（古い版は 163 フレーム）。台詞を送った所の歩きは 164 フレームで古い版と ±1。テスト `testAWalkingBg…OnTheAppPath` 2 本（162〜164 フレームで合格）を赤のまま入れた。
+
+### 段 2＋3（並走を飛ばして切り替え）
+
+- **段 2 の並走は飛ばした。** 並走のためだけの写しを World に持たせるより、切り替えて既存のテスト 578 本・flow 6 本・テンプレート自身の `migrate diff --strict --times`（段 1 の版との比べ）で見る方が安く、同じ物を確かめられたため。
+- テンプレートに `NovelBeat`（純粋）を足し、`World.Read#pause` を `World.Read#beat`（`World.BeatRun`: ビート・頭の物語の時刻・このフレームの待ちの判断）に替えた。`World.Pause` は消した（Silent の当て直しは Commands.execute が待ちを落とすので Pause を使っていなかった。段 4 まで残す理由が無かった）。
+- 人が読み進める道: 入力（送る・選ぶ・はじめから）で新しいビートを始め、実行器が返した束を待ち方で分けて並べる（命令は今の舞台に当ててみて出した待ちを読む）。毎フレーム `settleBeat` が「頭を過ぎた出来事を時刻の順に当てる → 字を出し切った Typed を解く（スキップなら次の待ちへ飛ぶ）→ 表の終わりで実行器が `<<wait>>` で止まっていれば Tick して続きを足す」を繰り返し、最後に `NovelBeat.waitingOf` を `BeatRun#waiting` に書く。reader・ready・送り・送りの印・セーブ・ゲートは全部 `waiting` を読む。
+- 決めの細り: **実行器の `<<wait>>` は束の最初の出来事の頭から数える**（実行器が束を返した時刻 = 古い版の `waitUntil` の起点）。LineWait の頭と同じ時刻なので 1.2 の記録どおりになり、`<<audio se 音 wait=true>>` の後ろの `<<wait 2>>` も重なる（TestAudio の `testSeWaitAndAWaitBehindOverlap`。Commands の冒頭の WhyNot と同じ動き）。
+- 押した時: 演出の途中なら `NovelBeat.tapped`（押すと明ける待ちを今まで縮める・縮めた歩きは終わりの形）→ ビートを進め、字も出し切る。
+- 素材の待ち（Hold）は今の段の仕組みのまま、束を足す所（`feed`）で束の中の未着の素材を集めて束ごと預ける（N1 の「束の頭」）。届いたら `resumeHold` が束を足す。
+- 字: 演出の待ちの途中は字を進めない（台詞は続いた LineWait の最初の頭で頁に積み、字は Typed に着いてから）。
+- テスト: 待ちの中身（Pause・takeOut・rest）を直に作っていたテストは、`WorldRead.beginBeat`（出来事の束を新しいビートとして流し始める）で作る形に替えた。「切り替えの間に台詞は出ない」は「頁に積むが字は 0」に替えた（5 章の決め）。
+
+### 門の結果
+
+- テンプレート: check 緑・test 578 本緑（段 1 で赤だった (1) の 2 本も緑）・flow 6 本は全部 ok（フレームの数は段 1 の版と同じ。指紋は 4 本で変わった — 指紋は World の events の数を含み、比べの記録の差は 0 件なので、出来事の数え方だけの違いと見る）。
+- テンプレート自身の `make migrate-new MIGRATE_DIFF_FLAGS="--strict --times"`（基準は段 1 の版で撮った物）: 止める違い 0・迷った差 0・比べたコマ 439 枚。落ちたのは「どの flow も通らない命令の行」15 行（基準の版でも同じ。flow が通らない所）。
