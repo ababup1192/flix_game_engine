@@ -343,7 +343,7 @@ pub mod Render3d.WebGpuRenderer {
             let head = g#batch#head;
             let mesh = Map.get(MeshTable.ensure(s#meshes, allocator, gen, head#fields#mesh), Ref.get(s#meshStore));
             match g#surface {
-                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, missing, mp, source, registeredOf(host), gen, request, head, mesh)
+                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, missing, mp, source, registeredOf(r, host), gen, request, head, mesh)
                 case None =>
                     mesh |> Option.forEach(b -> preloadShape(r, b, isSkinned(head)));
                     Nil
@@ -508,7 +508,7 @@ pub mod Render3d.WebGpuRenderer {
         let source = { textureOf = host#textureOf, own = plan#cmd#scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         passes |> List.forEach(match (_, list) -> {
             uploadRows(s#meshes, allocator, gen, list);
-            WebGpuMaterials.uploadTextures(s#materials, source, registeredOf(host), gen, list)
+            WebGpuMaterials.uploadTextures(s#materials, source, registeredOf(r, host), gen, list)
         });
         shadows |> List.forEach(p -> uploadRows(s#meshes, allocator, gen, p#list));
         let valueBytes = List.sumWith(pl -> 4 * Array.length(snd(pl)#values) + 4 * Render3d.MaterialValues.valueAlign(), passes);
@@ -531,7 +531,7 @@ pub mod Render3d.WebGpuRenderer {
     def ensureEnvironment(r: Renderer, host: Host, source: TextureSource, gen: Int64, scene: Scene3d.Scene3dCmd): Option[(Texture, Int32)] \ IO =
         let RendererData.RendererData(s) = r;
         Scene3d.environmentTextureNamesOf(scene) |> List.head |> Option.map(name ->
-            match WebGpuMaterials.ensureEnvironmentTexture(s#materials, source, registeredOf(host), gen, name) {
+            match WebGpuMaterials.ensureEnvironmentTexture(s#materials, source, registeredOf(r, host), gen, name) {
                 case Some(found) => found
                 case None =>
                     Render3d.ScenePlan.warnOnce(s#planner, "missing:" + name, "scene3d: 環境マップの絵 '${name}' が見つからない — 0（黒・透明）で読む"
@@ -782,8 +782,10 @@ pub mod Render3d.WebGpuRenderer {
         afterSubmit(r)
 
     /// 材質が全体の登録の絵を読む道（2D の描き手の絵と、その段つきの写しを作る pass を積む encoder）。
-    def registeredOf(host: Host): WebGpuMaterials.Registered =
-        { textureById = host#textureById, encoding = { encoder = host#encoder, notePass = host#notePass } }
+    def registeredOf(r: Renderer, host: Host): WebGpuMaterials.Registered =
+        let RendererData.RendererData(s) = r;
+        { textureById = host#textureById, encoding = { encoder = host#encoder, notePass = host#notePass },
+          noteCopy = () -> Render3d.Counts.count(s, Render3d.Counts.Counter.MipCopies, 1) }
 
     // ── 場面の値 ──
 
@@ -949,7 +951,8 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 鍵 key の描き先（今の encoder で既に値を書いた鍵なら先に submit する）。寿命の表 Render3d.SceneTargets が、大きさ・形式・標本が違えば作り直し、
     /// 最後に使った世代を今の世代にする。値を書き終えたら noteWritten で控える。
-    // WhyNot: 作り直しを TargetRebuilds に数えない — GL は Native の場面を描き先なしで描くので、WebGPU の場面ごとの描き先を数えると GL と数がそろわない。
+    // WhyNot: 作り直しを TargetRebuilds に数えない — GL は Native の場面を描き先なしで描くので、WebGPU の場面ごとの描き先を数えると GL と数がそろわない
+    //   （Design の場面だけを数えても、WebGPU は描き先の番号ごと・GL は形式ごとに鍵を作るので、同じ場面で数が分かれる）。
     def targetOf(r: Renderer, host: Host, key: (Int32, Int32), shape: Render3d.SceneTargets.Shape): SceneTarget \ IO =
         let RendererData.RendererData(s) = r;
         if (Set.memberOf(key, Ref.get(s#written))) flushHost(r, host) else ();

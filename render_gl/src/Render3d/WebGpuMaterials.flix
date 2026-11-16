@@ -61,8 +61,9 @@ pub mod Render3d.WebGpuMaterials {
     /// GPU に置いた材質の絵 1 枚（場面の絵と、全体の登録の絵の mip つきの写し）。
     type alias GpuTexture = { texture = Texture, levels = Int32 }
 
-    /// 全体の登録の絵の読み方。registered = 全体の登録の絵の読み方・encoding = mip つきの写しを作る pass を積む encoder。
-    pub type alias Registered = { textureById = Int32 -> Option[Texture] \ IO, encoding = Render3d.WebGpuMipmaps.Encoding }
+    /// 全体の登録の絵の読み方。textureById = 登録の絵の番号 → 2D の描き手の texture・encoding = mip つきの写しを作る pass を積む encoder・
+    /// noteCopy = 写しを 1 枚作ったと数える（診断の mipCopies）。
+    pub type alias Registered = { textureById = Int32 -> Option[Texture] \ IO, encoding = Render3d.WebGpuMipmaps.Encoding, noteCopy = Unit -> Unit \ IO }
 
     /// 状態。programs = materialKey → 組んだ program（組めなければ None）・current = 今の prepare の問い合わせの順の program（行の欄 1 が引く）・
     /// vertexModules = (uv つきか, lightmap つきか, 骨つきか) → 材質の頂点シェーダー・pipelines = (program, 形式の番号, 標本, 頂点のバイト数) → pipeline・
@@ -310,11 +311,12 @@ pub mod Render3d.WebGpuMaterials {
             |> Option.flatMap(read -> Map.get(TextureTable3d.numberOf(s#textures, gen, fst(read)), Ref.get(s#store)))
             |> Option.map(g -> (g#texture, g#levels))
 
-    /// 2D の描き手の絵 t のmip つきの写し（平均の仕方 average）を GPU で作り、番号 handle で控える（2D の描き手が絵を持っていなければ None）。
-    // WhyNot: 2D の描き手の絵をmip のレベル 1 つのまま借りて貼らない — 遠くの面がレベルを選べず、mip つきの写しを読む GL より細かくちらつく。
+    /// 2D の描き手の絵 t の mip つきの写し（平均の仕方 average）を GPU で作り、番号 handle で控える（2D の描き手が絵を持っていなければ None）。
+    // WhyNot: 2D の描き手の絵を mip のレベル 1 つのまま借りて貼らない — 遠くの面がレベルを選べず、mip つきの写しを読む GL より細かくちらつく。
     def mipCopyTexture(m: Materials, up: TextureUploads, handle: Int32, average: Mip.Average, t: Scene3dRenderer.RegisteredTexture): Option[{ levels = Int32, bytes = Int64 }] \ IO =
         let MaterialsData.MaterialsData(s) = m;
         (up#registered#textureById)(t#texId) |> Option.map(source -> {
+            (up#registered#noteCopy)();
             let copy = Render3d.WebGpuMipmaps.copyOf(s#mipmaps, up#registered#encoding, "fge material mip copy ${t#texId}", source, average);
             Ref.put(Map.insert(handle, { texture = copy#texture, levels = copy#levels }, Ref.get(s#store)), s#store);
             { levels = copy#levels, bytes = copy#bytes }

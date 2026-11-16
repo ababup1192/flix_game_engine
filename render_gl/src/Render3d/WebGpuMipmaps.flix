@@ -25,11 +25,11 @@ mod Render3d.WebGpuMipmaps {
     import fge.webgpu.TextureView
     import fge.webgpu.WebGpu
 
-    /// 写しを作る道具。layout = 読むレベルの group 0（絵 1 枚）・pipelines = レベルの作り方（Step）の番号 → pipeline（初めて使う時に作る）・
+    /// 写しを作る道具。layout = 読むレベルの group 0（絵 1 枚）・pipelines = frag の入口の名前（entryOf）→ pipeline（初めて使う時に作る）・
     /// views と groups = 今の encoder で使ったレベルの view と group（submit の後に手放す）。
     pub type alias Mipmaps = {
         gpu = WebGpu, layout = BindGroupLayout, vertexModule = ShaderModule, fragmentModule = ShaderModule,
-        pipelines = Ref[Map[Int32, RenderPipeline], Static],
+        pipelines = Ref[Map[String, RenderPipeline], Static],
         views = Ref[List[TextureView], Static], groups = Ref[List[BindGroup], Static]
     }
 
@@ -43,12 +43,6 @@ mod Render3d.WebGpuMipmaps {
     enum Step {
         case Copy
         case Halve(Mip.Average)
-    }
-
-    def stepCode(step: Step): Int32 = match step {
-        case Step.Copy                          => 0
-        case Step.Halve(Mip.Average.Raw)        => 1
-        case Step.Halve(Mip.Average.SrgbCurve)  => 2
     }
 
     def entryOf(step: Step): String = match step {
@@ -115,13 +109,13 @@ mod Render3d.WebGpuMipmaps {
         pass.end()
 
     def pipelineOf(mm: Mipmaps, step: Step): RenderPipeline \ IO =
-        let key = stepCode(step);
+        let key = entryOf(step);
         match Map.get(key, Ref.get(mm#pipelines)) {
             case Some(p) => p
             case None =>
                 let desc = new RenderPipelineDesc("fge mip copy");
                 discard desc.bindGroupLayout(mm#layout);
-                discard desc.vertex(mm#vertexModule, "vs_main").fragment(mm#fragmentModule, entryOf(step));
+                discard desc.vertex(mm#vertexModule, "vs_main").fragment(mm#fragmentModule, key);
                 discard desc.colorTarget(TextureFormat.RGBA8_UNORM);
                 discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CW, CullMode.NONE);
                 let made = mm#gpu.createRenderPipeline(desc);
@@ -133,6 +127,7 @@ mod Render3d.WebGpuMipmaps {
     /// 成分は 8bit の値（0〜255 の整数）に直して Mip.build と同じ式で平均し、k / 255 を書く（unorm の描き先は k に戻る）。
     // WhyNot: 線形の量を 8bit の sRGB の値へ戻す所を 255 本のしきい値の表で数えない — しきい値 (k − 0.5) / 255 を線形にした値以下を数えるのは、
     //   linearToSrgb(平均) × 255 + 0.5 の切り捨てと同じ数（曲線が単調）。f32 の丸めでしきい値の際だけ ±1 ずれうる。
+    // WhyNot: 成分を実行時の番号で引いて 1 つずつ平均しない — 値の配列を定数でない番号で引く形を拒む WGSL の実装がある。
     pub def fragmentSource(): String =
         "@group(0) @binding(0) var src: texture_2d<f32>;\n" +
         "fn texel(p: vec2i) -> vec4f { return round(textureLoad(src, p, 0) * 255.0); }\n" +
@@ -143,24 +138,22 @@ mod Render3d.WebGpuMipmaps {
         "    return array<vec4f, 4>(texel(p0), texel(vec2i(p1.x, p0.y)), texel(vec2i(p0.x, p1.y)), texel(p1));\n" +
         "}\n" +
         "fn rawMean(q: array<vec4f, 4>) -> vec4f { return floor((q[0] + q[1] + q[2] + q[3] + 2.0) / 4.0); }\n" +
-        "fn toLinear(v: f32) -> f32 {\n" +
+        "fn toLinear(v: vec3f) -> vec3f {\n" +
         "    let s = v / 255.0;\n" +
-        "    if (s <= 0.04045) { return s / 12.92; }\n" +
-        "    return pow((s + 0.055) / 1.055, 2.4);\n" +
+        "    return select(pow((s + 0.055) / 1.055, vec3f(2.4)), s / 12.92, s <= vec3f(0.04045));\n" +
         "}\n" +
-        "fn toSrgb8(l: f32) -> f32 {\n" +
-        "    let x = max(l, 0.0);\n" +
-        "    var s = x * 12.92;\n" +
-        "    if (x > 0.0031308) { s = 1.055 * pow(x, 1.0 / 2.4) - 0.055; }\n" +
-        "    return clamp(floor(s * 255.0 + 0.5), 0.0, 255.0);\n" +
+        "fn toSrgb8(l: vec3f) -> vec3f {\n" +
+        "    let x = max(l, vec3f(0.0));\n" +
+        "    let s = select(1.055 * pow(x, vec3f(1.0 / 2.4)) - 0.055, x * 12.92, x <= vec3f(0.0031308));\n" +
+        "    return clamp(floor(s * 255.0 + 0.5), vec3f(0.0), vec3f(255.0));\n" +
         "}\n" +
-        "fn srgbMean(q: array<vec4f, 4>, c: i32) -> f32 {\n" +
-        "    return toSrgb8((toLinear(q[0][c]) + toLinear(q[1][c]) + toLinear(q[2][c]) + toLinear(q[3][c])) / 4.0);\n" +
+        "fn srgbMean(q: array<vec4f, 4>) -> vec3f {\n" +
+        "    return toSrgb8((toLinear(q[0].rgb) + toLinear(q[1].rgb) + toLinear(q[2].rgb) + toLinear(q[3].rgb)) / 4.0);\n" +
         "}\n" +
         "@fragment fn fs_copy(@builtin(position) at: vec4f) -> @location(0) vec4f { return textureLoad(src, vec2i(at.xy), 0); }\n" +
         "@fragment fn fs_raw(@builtin(position) at: vec4f) -> @location(0) vec4f { return rawMean(quad(at)) / 255.0; }\n" +
         "@fragment fn fs_srgb(@builtin(position) at: vec4f) -> @location(0) vec4f {\n" +
         "    let q = quad(at);\n" +
-        "    return vec4f(srgbMean(q, 0), srgbMean(q, 1), srgbMean(q, 2), rawMean(q).a) / 255.0;\n" +
+        "    return vec4f(srgbMean(q), rawMean(q).a) / 255.0;\n" +
         "}\n"
 }

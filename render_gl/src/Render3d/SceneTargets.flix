@@ -4,7 +4,8 @@
 // GPU の描き先を作る・捨てるのは backend の Allocator で、作った物は表が値として預かる（v の中は見ない）。
 // WhyNot: 鍵の形を 2 つの backend でそろえない — GL は prepare の中の場面の番号と形式で鍵を作り（画面と HDR の Pass で同じ番号を描いても作り直しが続かない）、
 //   WebGPU は描き先の番号と場面の番号で鍵を作る（同じ encoder で同じ鍵に 2 回書く前に submit する決まりがその鍵で控える）。表は鍵の型を問わない。
-// WhyNot: 影の地図の寿命の表（Render3d.ShadowMaps）とまとめない — 影の地図の鍵は一辺の画素を含み、形が変われば別の鍵になるので、作り直しの比べが要らない。
+// WhyNot: この段で影の地図の寿命の表（Render3d.ShadowMaps）をここへ寄せない — 寄せると GL の Render3d.Shadow と WebGpuShadows の描き先の持ち方（鍵 → FBO・鍵 → texture）を
+//   同時に書き換えることになり、並行して進む動かない物の持ち越し（P9）と触る所が重なる。形がいつも同じ鍵として載せられるので、次に影の地図を触る時に寄せる。
 mod Render3d.SceneTargets {
 
     /// 描き先の形。samples = 標本の数（GL の Design の描き先はいつも 1）。

@@ -14,18 +14,17 @@ mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
         String.contains({ substr = "WebGPU のネイティブはまだ配っていない" }, why) or
         String.contains({ substr = "adapter が無い" }, why) or String.contains({ substr = "No supported adapters" }, why)
 
-    /// 辺が奇数の 5 × 3 の絵（はみ出す列と行で端を繰り返す所を通る）。成分は位置の 2 乗と 3 乗から作るばらばらの値（1 次の式だと 4 つの和が 4 の倍数にそろい、(和 + 2) / 4 の丸めを確かめられない）。
-    def source(): ShaderEval.TexData =
-        { width = 5, height = 3, pixels = Vector.range(0, 15) |> Vector.map(i ->
+    /// w × h の絵。成分は位置の 2 乗と 3 乗から作るばらばらの値（1 次の式だと 4 つの和が 4 の倍数にそろい、(和 + 2) / 4 の丸めを確かめられない）。
+    def source(w: Int32, h: Int32): ShaderEval.TexData =
+        { width = w, height = h, pixels = Vector.range(0, w * h) |> Vector.map(i ->
             Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(byteOf(i * i * 53 + 17), 24), Int32.leftShift(byteOf(i * i * i * 7 + i * 3), 16)),
                             Int32.bitwiseOr(Int32.leftShift(byteOf(i * i * 29 + 200), 8), byteOf(i * i * 13 + i * 71 + 5)))) }
 
     def byteOf(x: Int32): Int32 = Int32.bitwiseAnd(x, 255)
 
     /// average の写しを Dawn で作ってレベルごとに読み戻した ARGB の列と、Mip.build のレベルの列の組（Dawn で開けなければ Err）。
-    def bothChains(average: Mip.Average): Result[String, (List[Vector[Int32]], List[Vector[Int32]])] \ IO =
+    def bothChains(average: Mip.Average, tex: ShaderEval.TexData): Result[String, (List[Vector[Int32]], List[Vector[Int32]])] \ IO =
         WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) |> Result.map(gpu -> {
-            let tex = source();
             let expected = Mip.build(average, tex) |> List.map(td -> td#pixels);
             let found = gpuChain(gpu, average, tex);
             gpu.destroy();
@@ -74,22 +73,43 @@ mod Render3d.WebGpuMipmaps.TestWebGpuMipmapsDawn {
         }, pixels);
         buf
 
-    def assertSameChain(average: Mip.Average): Unit \ {Assert, IO} =
-        match bothChains(average) {
+    /// 写しと Mip.build の、どのレベルのどの画素のどの成分でも差が tolerance 以内（レベルの数か画素の数が違えば偽）。Dawn で開けなければ SKIP。
+    def assertChainWithin(tolerance: Int32, average: Mip.Average, tex: ShaderEval.TexData): Unit \ {Assert, IO} =
+        match bothChains(average, tex) {
             case Err(why) =>
                 if (isSkippable(why)) {
                     println("[mipmaps-dawn] SKIP: Dawn で開かない（${why}）");
                     Assert.assertEq(expected = 0, 0)
                 } else
                     Assert.assertEq(expected = "Dawn の device が開ける", why)
-            case Ok((expected, found)) => Assert.assertEq(expected = expected, found)
+            case Ok((expected, found)) => Assert.assertTrue(isWithin(tolerance, expected, found))
         }
 
-    /// Raw の写しのレベルが、辺が奇数の絵でも Mip.build のレベルと画素まで同じ。
-    @Test
-    def testRawCopyMatchesMipBuild(): Unit \ {Assert, IO} = assertSameChain(Mip.Average.Raw)
+    def isWithin(tolerance: Int32, expected: List[Vector[Int32]], found: List[Vector[Int32]]): Bool =
+        List.length(expected) == List.length(found) and
+        List.forAll(match (e, f) -> Vector.length(e) == Vector.length(f) and Vector.forAll(match (a, b) -> largestChannelDiff(a, b) <= tolerance, Vector.zip(e, f)),
+                    List.zip(expected, found))
 
-    /// SrgbCurve の写しのレベルが、辺が奇数の絵でも Mip.build のレベルと画素まで同じ。
+    def largestChannelDiff(a: Int32, b: Int32): Int32 =
+        List.foldLeft((acc, shift) -> Int32.max(acc, Int32.abs(byteOf(Int32.rightShift(a, shift)) - byteOf(Int32.rightShift(b, shift)))), 0, 0 :: 8 :: 16 :: 24 :: Nil)
+
+    /// Raw の写しのレベルが、辺が奇数の横長の絵（縦の端を繰り返す）で Mip.build のレベルと画素まで同じ。
     @Test
-    def testSrgbCopyMatchesMipBuild(): Unit \ {Assert, IO} = assertSameChain(Mip.Average.SrgbCurve)
+    def testRawCopyMatchesMipBuildOnWideOddTexture(): Unit \ {Assert, IO} = assertChainWithin(0, Mip.Average.Raw, source(5, 3))
+
+    /// Raw の写しのレベルが、縦長の絵（幅が 1 になった後も横の端を繰り返す）で Mip.build のレベルと画素まで同じ。
+    @Test
+    def testRawCopyMatchesMipBuildOnTallTexture(): Unit \ {Assert, IO} = assertChainWithin(0, Mip.Average.Raw, source(3, 8))
+
+    /// 1 × 1 の絵の写しはレベル 0 の 1 つだけで、元の画素のまま。
+    @Test
+    def testOnePixelCopyIsLevelZeroOnly(): Unit \ {Assert, IO} = assertChainWithin(0, Mip.Average.Raw, source(1, 1))
+
+    /// SrgbCurve の写しのレベルが、横長の絵で Mip.build のレベルと成分ごとに ±1 以内（しきい値の際の f32 の丸め）。
+    @Test
+    def testSrgbCopyMatchesMipBuildOnWideOddTexture(): Unit \ {Assert, IO} = assertChainWithin(1, Mip.Average.SrgbCurve, source(5, 3))
+
+    /// SrgbCurve の写しのレベルが、縦長の絵で Mip.build のレベルと成分ごとに ±1 以内。
+    @Test
+    def testSrgbCopyMatchesMipBuildOnTallTexture(): Unit \ {Assert, IO} = assertChainWithin(1, Mip.Average.SrgbCurve, source(3, 8))
 }

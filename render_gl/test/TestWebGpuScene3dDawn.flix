@@ -286,7 +286,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
             case Err(e) => bug!(e)
         };
         discard Render3d.WebGpuMaterials.ensureEnvironmentTexture(s#materials, { textureOf = _ -> checked_ecast(None), own = Map#{Texture3d.name(small) => small} },
-                                                                   { textureById = _ -> checked_ecast(None), encoding = { encoder = () -> gpu.createCommandEncoder("unused"), notePass = () -> checked_ecast(()) } },
+                                                                   { textureById = _ -> checked_ecast(None), encoding = { encoder = () -> gpu.createCommandEncoder("unused"), notePass = () -> checked_ecast(()) }, noteCopy = () -> checked_ecast(()) },
                                                                    later, Texture3d.name(small));
         List.range(0, 3) |> List.forEach(_ -> Render3d.WebGpuRenderer.endFrame(renderer));
         let said = stderrOf(() -> endFrameWithin(renderer, { vertices = 6, textures = { count = 1, size = 1048576i64 } }));
