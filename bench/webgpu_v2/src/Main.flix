@@ -36,6 +36,9 @@ mod V2Main {
         materialCase("matNormal", kit, V2Materials.normalMapped) ::
         materialDepthCase(kit) ::
         materialCase("matMany", kit, V2Materials.manyMaterials(manyCount(), kit#torch)) ::
+        materialCase("lmTextured", kit, V2Lightmaps.textured) ::
+        materialCase("lmNormalLinear", kit, V2Lightmaps.normalLinear) ::
+        lightmapDepthCase(kit) ::
         skinnedCase("skinned", kit, Scene3d.Output.Color, V2Skinned.vertexColored) ::
         skinnedCase("skinnedTextured", kit, Scene3d.Output.Color, V2Skinned.textured(V2Materials.colorTexture())) ::
         skinnedCase("skinnedDepth", kit, depthOfRoom(), V2Skinned.vertexColored) ::
@@ -100,6 +103,11 @@ mod V2Main {
     def materialDepthCase(kit: Room.Kit): Case =
         { name = "matDepth", passes = Nil, targets = Map.empty(),
           items = Render.scene3d(Vec2.zero(), { output = depthOfRoom() | V2Materials.twoSided(Room.scene(kit, 0.3)) }) :: Nil }
+
+    /// lightmap の材質を奥行きの書き出しで（lightmap の版の材質の frag が奥行きの灰色を書く）。
+    def lightmapDepthCase(kit: Room.Kit): Case =
+        { name = "lmDepth", passes = Nil, targets = Map.empty(),
+          items = Render.scene3d(Vec2.zero(), { output = depthOfRoom() | V2Lightmaps.textured(Room.scene(kit, 0.3)) }) :: Nil }
 
     /// 部屋の奥行きの書き出し（Output.Depth）。目から 1 m で黒・13.5 m で白（部屋の奥の壁まで灰色の坂が入る幅）。
     def depthOfRoom(): Scene3d.Output = Scene3d.Output.Depth({ near = 16.0, range = 200.0 })
@@ -168,13 +176,19 @@ mod V2Main {
     /// 最後の bit で入れ替わる画素【推: GL の地図は 24 bit・WebGPU は 32 bit の float】。±1 は面の中に点で散る（絵の補間と光の坂の丸め）。上限は実測のほぼ 2 倍（小さい物は 8）。
     /// 壊して確かめた（同じ日に 1 回ずつ）: 色の pass の影の行列を単位行列にすると 6 場面が 5.8 万〜14.3 万 px・bias を 0 にすると 1.2 万〜17.5 万 px・
     /// 骨つきの物の影の pass で姿勢を読まない（骨の無い版の pipeline で描く）と 5.4 千〜3.1 万 px・影の pass の firstInstance を 1 つずらすと 1.7 万〜10.4 万 px 違って落ちる。
+    /// lightmap の場面（2026-11-16・同じ機械の実測。違う画素・±2 以上・max）: lmTextured 231・74・±79、lmNormalLinear 289・80・±86、lmDepth 3・1・±4。
+    /// 絵つきの材質の場面（matTextured・matNormal）と同じ所（重なる面の入れ替わり）と同じ桁で、lightmap を足して増えたのは ±1 の点だけ【推: lightmap の段の間の補間と sRGB の戻しの丸め】。
+    /// lmDepth は roomDepth と同じ画素。上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない（lmDepth は roomDepth と同じ ±16）。
+    /// 壊して確かめた（同じ日に 1 回ずつ）: 材質の頂点シェーダーで 2 本目の uv の上下を返すと lmTextured と lmNormalLinear が 40 万 px・lightmap の強さを 1 のままにすると
+    /// 2 場面が全 518,400 px・法線マップの版で lightmap の絵の組の番号を 1 つ手前（法線マップ）にすると lmNormalLinear だけが全 px 違って落ちる。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
              "matDepth" => (4, 8, 255), "matMany" => (430, 440, 255),
              "skinned" => (8, 32, 255), "skinnedTextured" => (8, 100, 255), "skinnedDepth" => (4, 8, 16), "crowd" => (32, 64, 255), "skinnedTwice" => (32, 64, 255),
              "shadowSpot" => (8, 32, 255), "shadowSpotTextured" => (8, 350, 255), "shadowSun" => (8, 16, 255), "shadowSunCrowd" => (48, 64, 255),
-             "shadowSunTextured" => (8, 80, 255), "shadowBoth" => (8, 16, 255)}
+             "shadowSunTextured" => (8, 80, 255), "shadowBoth" => (8, 16, 255),
+             "lmTextured" => (150, 460, 255), "lmNormalLinear" => (160, 580, 255), "lmDepth" => (8, 16, 16)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip"}

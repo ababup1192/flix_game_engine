@@ -3,7 +3,7 @@
 // 影の地図の pass の行（buildShadowList・計画は Render3d.ShadowMaps）は頂点の色の行と骨つきの行だけで、backend は形だけを深度で描く。
 // rows は 1 行 rowStride() 個: 0=種類（kind*） 1=材質の表の番号（MaterialBatch#handle。頂点の色と骨つきは 0） 2=材質の順の番号（MaterialBatch#order。同じく 0）
 //   3=1 体ごとの値の先頭 4=描く物の数（0 なら描かず、形と絵を今のコマで使った物として数えるだけ） 5=1 つの draw call に分かれた理由（Render3d.Counts.breakSlotOf）
-//   6=フラグ（flag*: 両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方） 7=形の番号（Render3d.MeshTable。backend は行を流す前にこの番号の形を作り、描く時にこの番号で引く）
+//   6=フラグ（flag*: 両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方・lightmap） 7=形の番号（Render3d.MeshTable。backend は行を流す前にこの番号の形を作り、描く時にこの番号で引く）
 //   8=材質の値の先頭（values の位置・材質の行で描く物がある時だけ。ほかは -1） 9=絵の組の先頭（reads の組の番号） 10=絵の組の数。
 //   行の順が描く順（頂点の色 → 骨つき → 材質を順の番号で）。
 // heads は行ごとの頭の物（形・lightmap・タンジェントを読む）・materials は材質の行の材質（firstMaterial 行目からの並び）。
@@ -58,6 +58,8 @@ mod Render3d.SceneList {
     pub def flagNormalMap(): Int32 = 4
     /// 前に描いた材質の行と同じプログラム・値・絵で描く（backend は付け直さずに draw だけ出してよい）。
     pub def flagSameBinding(): Int32 = 8
+    /// lightmap の版（絵の組の末尾が行の頭の物の lightmap）。
+    pub def flagLightmap(): Int32 = 16
 
     def rowStride(): Int32 = 11
 
@@ -173,7 +175,7 @@ mod Render3d.SceneList {
 
     def flagsOf(d: MaterialBatch[MeshBatch]): Int32 =
         let bit = (on, value) -> if (on) value else 0;
-        bit(d#material#doubleSided, flagDoubleSided()) + bit(d#kind#coverage, flagCoverage()) + bit(d#kind#normalMap, flagNormalMap())
+        bit(d#material#doubleSided, flagDoubleSided()) + bit(d#kind#coverage, flagCoverage()) + bit(d#kind#normalMap, flagNormalMap()) + bit(d#kind#lightmap, flagLightmap())
 
     /// 材質の batch d が 1 つの draw call に分かれた理由（優先の順は FrameDiagnostics.Scene3dBatchBreaks）。previous = 同じ並びで前に描いた batch。
     /// 形が前と違って材質が同じ時だけ Mesh（形も材質も同じで分かれたのは、材質の絵の組が違う時）。

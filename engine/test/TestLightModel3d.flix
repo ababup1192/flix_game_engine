@@ -50,6 +50,14 @@ def testToGlslOtherModelsReadTheirUniforms(): Unit \ Assert =
                       String.contains(substr = "uFogRange.x", fog) and String.contains(substr = "uFogColor.x", fog) and
                       String.contains(substr = "uCurve", sky) and String.contains(substr = "uZenith.x", sky))
 
+/// WGSL の lightmap の式は、色空間と強さを場面の値でなく物ごとの値（r3dDraw）から読む。
+@Test
+def testToWgslLightmapReadsPerDrawValues(): Unit \ Assert =
+    let lightmap = LightModel3d.Codegen.toWgsl("lightmapLightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.LightmapColor :: Nil,
+                                                LightModel3d.lightmapLightingModel());
+    Assert.assertTrue(String.contains(substr = "r3dDraw.uLightmapSrgb", lightmap) and String.contains(substr = "r3dDraw.uLightmapIntensity", lightmap)
+                      and not String.contains(substr = "r3d.uLightmap", lightmap))
+
 /// lightmap の光はベイクした光を線形の量のまま足す（r3d_linearToSrgb で画面の値へ戻さない）。
 @Test
 def testLightmapGlslKeepsBakedLinear(): Unit \ Assert =

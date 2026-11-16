@@ -18,7 +18,7 @@ mod V2Materials {
         }
 
     /// 横縞の法線マップ（緑が上・明るい行と暗い行で傾きを交互に）。
-    def stripes(): Texture3d.Texture3d =
+    pub def stripes(): Texture3d.Texture3d =
         let n = 32;
         let px = Vector.range(0, n * n) |> Vector.map(i -> if (Int32.remainder(i / n / 4, 2) == 0) opaque(128, 192, 255) else opaque(128, 64, 255));
         match Texture3d.fromArgb(n, n, px) {
@@ -27,7 +27,7 @@ mod V2Materials {
         }
 
     /// 不透明の ARGB（0〜255 の r・g・b）。
-    def opaque(r: Int32, g: Int32, b: Int32): Int32 =
+    pub def opaque(r: Int32, g: Int32, b: Int32): Int32 =
         Int32.bitwiseOr(Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(r, 16)), Int32.leftShift(g, 8)), b)
 
     pub def colorTexture(): Texture3d.Texture3d = checker(8, 8, opaque(208, 160, 96), opaque(64, 96, 128), false)

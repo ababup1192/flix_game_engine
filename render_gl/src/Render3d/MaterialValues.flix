@@ -1,8 +1,10 @@
 // Render3d.MaterialValues — 不透明の材質の行の draw ごとの値（Render3d.SceneList の values）と絵の組（reads）を計画の側で書く所。
-// 値の並びは材質ごとに 2 つの区画: 頭の drawValueFloats() 個 = 物ごとの値（Render3dWgsl の R3dDraw: cutout・法線マップの強さ・法線マップの段の数・lightmap の段の数）、
+// 値の並びは材質ごとに 2 つの区画: 頭の drawValueFloats() 個 = 物ごとの値（Render3dWgsl の R3dDraw: cutout・法線マップの強さ・法線マップの段の数・lightmap の段の数・
+// lightmap の色空間（sRGB なら 1）・lightmap の強さ）、
 // 続く区画 = ShaderGen.Wgsl.compile3d の slots の並び（uTime・uTexLevelsN・uParamN）。どちらの区画の頭も valueAlign() 個（256 バイト）の倍数の位置。
 // 絵の組は 1 つ readStride() 個: 0 = 絵の表の番号（Render3d.TextureTable3d。無い絵・上下を返して読む全体の登録の絵は -1）・1 = 補間（0 Nearest・1 Linear）・2 = 読み方（0 Repeat・1 Clamp）。
-// 並びは材質の絵（ShaderDoc.materialTexReads を上限で切った物）→ 法線マップ（法線マップの版だけ）。
+// 並びは材質の絵（ShaderDoc.materialTexReads を上限で切った物）→ 法線マップ（法線マップの版だけ）→ lightmap（lightmap の版だけ・Clamp と段つきの Linear で読む）。
+// lightmap の行は 1 行 1 体（Render3d.Batch が lightmap つきを batch にしない）で、値と絵の組は行の頭の物の lightmap。
 // WhyNot: 区画を 256 バイトにそろえずに詰めない — WebGPU は uniform の binding を 256 バイト（core の minUniformBufferOffsetAlignment の上限）の倍数の位置でしか付けられない（2D の面の values と同じ・12.22）。
 // WhyNot: 値の並びを backend が材質の program を組んだ時に決めない — 計画が backend に聞かずに書け、GL と WebGPU が同じ値を読む（並びは ShaderGen が決め、ここは同じ数え方で写す）。
 mod Render3d.MaterialValues {
@@ -50,7 +52,13 @@ mod Render3d.MaterialValues {
         drawValueFloats() + roundUp(1 + layout#readCount + List.length(layout#paramNames), valueAlign())
 
     /// layout と版 kind の材質 1 つが reads に取る組の数。
-    pub def readCountOf(layout: Layout, kind: ProgramKind): Int32 = layout#readCount + (if (kind#normalMap) 1 else 0)
+    pub def readCountOf(layout: Layout, kind: ProgramKind): Int32 = layout#readCount + (if (kind#normalMap) 1 else 0) + (if (kind#lightmap) 1 else 0)
+
+    /// 絵の組の中の lightmap の番号（readCount = 材質の絵の数・normalMapped = 法線マップの版。並びは材質の絵 → 法線マップ → lightmap）。
+    pub def lightmapReadAt(readCount: Int32, normalMapped: Bool): Int32 = readCount + (if (normalMapped) 1 else 0)
+
+    /// lightmap lm を段の数 textureLevels の絵で読む時の段の数（GL の uniform と WebGPU の values の両方がこの数を使う）。
+    pub def lightmapLevelsOf(lm: Scene3d.Lightmap, textureLevels: Int32): Int32 = Int32.min(textureLevels, lm#maxLevels)
 
     def roundUp(n: Int32, step: Int32): Int32 = ((n + step - 1) / step) * step
 
@@ -74,6 +82,13 @@ mod Render3d.MaterialValues {
             let levels = putRead(naming, n#texture, Texture3d.TextureUse.NormalMap, (1, wrap), reads, readAt + readStride() * layout#readCount);
             Array.put(RenderUtil.f32(n#strength), at + 1, values);
             Array.put(Int32.toFloat32(levels), at + 2, values)
+        }) else ();
+        if (d#kind#lightmap) Scene3d.lightmapOfFields(d#batch#head#fields) |> Option.forEach(lm -> {
+            let k = lightmapReadAt(layout#readCount, d#kind#normalMap);
+            let levels = putRead(naming, lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace), (1, 1), reads, readAt + readStride() * k);
+            Array.put(Int32.toFloat32(lightmapLevelsOf(lm, levels)), at + 3, values);
+            Array.put(if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1.0f32 else 0.0f32, at + 4, values);
+            Array.put(RenderUtil.f32(lm#intensity), at + 5, values)
         }) else ()
 
     /// 絵 name の組を reads の at へ書き、段の数を返す（無い絵は番号 -1・段 1）。how = (補間, 読み方)。

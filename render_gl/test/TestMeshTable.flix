@@ -127,11 +127,11 @@ mod Render3d.TestMeshTable {
     def plainKind(): Render3d.ProgramKind =
         { skinned = false, uv = true, normalMap = true, lightmap = false, blend = false, doubleSided = true, coverage = false, metallicRoughness = true }
 
-    /// WebGPU が描く版は lightmap・半透明・alpha to coverage の無い版（骨つき・uv・法線マップ・両面・metallic と roughness は描く）。
+    /// WebGPU が描く版は半透明・alpha to coverage の無い版（骨つき・uv・法線マップ・lightmap・両面・metallic と roughness は描く）。
     @Test
     def testDrawableKinds(): Unit \ Assert =
         let k = plainKind();
         let drawable = Render3d.WebGpuMaterials.isDrawable;
-        Assert.assertEq(expected = (true, true, false, false, false),
+        Assert.assertEq(expected = (true, true, true, false, false),
                         (drawable(k), drawable({ skinned = true | k }), drawable({ lightmap = true | k }), drawable({ blend = true | k }), drawable({ coverage = true | k })))
 }

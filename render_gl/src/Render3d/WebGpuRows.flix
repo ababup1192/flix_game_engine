@@ -17,8 +17,10 @@ mod Render3d.WebGpuRows {
     use Render3d.SceneList.{SceneList, headAt, kindMaterial, kindSkinned, kindVertexColor, meshAt, rowAt, rowCountOf}
 
     /// GPU に置いた形 1 つ。vertices = 頂点を交互に並べた buffer（並びはこのファイルの頭）・stride = 頂点 1 つのバイト数・
-    /// hasUv = uv とタンジェントを持つ（36 バイト目から）・skinAt = ジョイントの番号と重みの位置（バイト・重みつきの形だけ）・indices = 添え字（u32）。
-    pub type alias MeshBuffers = { vertices = Buffer, indices = Buffer, indexCount = Int32, vertexCount = Int32, stride = Int32, hasUv = Bool, skinAt = Option[Int32] }
+    /// hasUv = uv とタンジェントを持つ（36 バイト目から）・uv2At = 2 本目の uv の位置（バイト・2 本目の uv つきの形だけ）・
+    /// skinAt = ジョイントの番号と重みの位置（バイト・重みつきの形だけ）・indices = 添え字（u32）。
+    pub type alias MeshBuffers = { vertices = Buffer, indices = Buffer, indexCount = Int32, vertexCount = Int32, stride = Int32, hasUv = Bool,
+                                   uv2At = Option[Int32], skinAt = Option[Int32] }
 
     /// 形の表の番号 → GPU に置いた形。
     pub type alias MeshStore = Ref[Map[Int32, MeshBuffers], Static]
@@ -51,6 +53,9 @@ mod Render3d.WebGpuRows {
     pub def floatsPerVertex(mesh: Mesh3d.Mesh3d): Int32 =
         skinFloatAt(mesh) + (if (Option.isEmpty(Mesh3d.skinJoints(mesh))) 0 else 8)
 
+    /// 形 mesh の頂点の中の 2 本目の uv の位置（float）。
+    def uv2FloatAt(mesh: Mesh3d.Mesh3d): Int32 = if (Option.isEmpty(Mesh3d.uvs(mesh))) 9 else 15
+
     /// 形 mesh の頂点の中のジョイントの番号の位置（float。重みはその 4 つ後）。
     def skinFloatAt(mesh: Mesh3d.Mesh3d): Int32 =
         9 + (if (Option.isEmpty(Mesh3d.uvs(mesh))) 0 else 6) + (if (Option.isEmpty(Mesh3d.uvs2(mesh))) 0 else 2)
@@ -69,8 +74,7 @@ mod Render3d.WebGpuRows {
             put(9, 2, uvs);
             Mesh3d.tangents(mesh) |> Option.forEach(put(11, 4))
         });
-        let uv2At = if (Option.isEmpty(Mesh3d.uvs(mesh))) 9 else 15;
-        Mesh3d.uvs2(mesh) |> Option.forEach(put(uv2At, 2));
+        Mesh3d.uvs2(mesh) |> Option.forEach(put(uv2FloatAt(mesh), 2));
         let skinAt = skinFloatAt(mesh);
         Mesh3d.skinJoints(mesh) |> Option.forEach(joints ->
             joints |> Vector.forEachWithIndex((i, j) -> Array.put(Int32.toFloat32(j), (i / 4) * width + skinAt + Int32.remainder(i, 4), out)));
@@ -95,7 +99,7 @@ mod Render3d.WebGpuRows {
         let indexBuffer = gpu.createBuffer("fge mesh3d indices", Int32.toInt64(indexBytes), Int32.bitwiseOr(BufferUsage.INDEX, BufferUsage.COPY_DST));
         gpu.writeBuffer(indexBuffer, 0i64, indexData, 0, indexBytes);
         { vertices = vertexBuffer, indices = indexBuffer, indexCount = indexCount, vertexCount = n, stride = 4 * floatsPerVertex(mesh),
-          hasUv = Option.nonEmpty(Mesh3d.uvs(mesh)), skinAt = Mesh3d.skinJoints(mesh) |> Option.map(_ -> 4 * skinFloatAt(mesh)) }
+          hasUv = Option.nonEmpty(Mesh3d.uvs(mesh)), uv2At = Mesh3d.uvs2(mesh) |> Option.map(_ -> 4 * uv2FloatAt(mesh)), skinAt = Mesh3d.skinJoints(mesh) |> Option.map(_ -> 4 * skinFloatAt(mesh)) }
 
     def destroyMesh(e: MeshBuffers): Unit \ IO =
         e#vertices.destroy();
