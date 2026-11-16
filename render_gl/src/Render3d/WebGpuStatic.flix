@@ -6,7 +6,6 @@ mod Render3d.WebGpuStatic {
     import fge.webgpu.Buffer
     import fge.webgpu.BufferUsage
     import fge.webgpu.RenderPass
-    import fge.webgpu.Texture
     import fge.webgpu.WebGpu
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
@@ -70,9 +69,9 @@ mod Render3d.WebGpuStatic {
 
     /// 場面を描く前に持ち越した物 c を今のコマで使った物にする: 形と材質の絵を今の世代にし（絵は無ければ作る）、場面の時刻 time が変わっていれば値の区画の uTime を書き直す。
     // WhyNot: 同じ集まりを時刻の違う 2 つの場面で描く時に場面ごとに値を分けない — 書いた値は submit の前に効くので、後の場面の時刻で両方を描く。材質の時刻が絵に効く集まりは場面ごとに別の集まりにする。
-    pub def stage(gpu: WebGpu, materials: WebGpuMaterials.Materials, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64, time: Float64, c: Carried): Unit \ IO =
+    pub def stage(gpu: WebGpu, materials: WebGpuMaterials.Materials, source: TextureSource, registered: WebGpuMaterials.Registered, gen: Int64, time: Float64, c: Carried): Unit \ IO =
         MeshTable.touchSlots(c#rows#meshSlots, gen);
-        WebGpuMaterials.uploadTexturesAt(materials, source, textureById, gen, c#rows#list, c#textureRows);
+        WebGpuMaterials.uploadTexturesAt(materials, source, registered, gen, c#rows#list, c#textureRows);
         if (StaticRows.retime(c#rows, time)) {
             let one = ByteBuffer.allocateDirect(4).order(ByteOrder.LITTLE_ENDIAN);
             discard one.putFloat(0, RenderUtil.f32(time));

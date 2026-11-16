@@ -535,7 +535,7 @@ pub mod Render3d.WebGpuRenderer {
             WebGpuMaterials.uploadTextures(s#materials, source, registeredOf(r, host), gen, list)
         });
         shadows |> List.forEach(p -> uploadRows(s#meshes, allocator, gen, p#list));
-        carried |> List.forEach(WebGpuStatic.stage(s#gpu, s#materials, source, host#textureById, gen, plan#cmd#scene#time));
+        carried |> List.forEach(WebGpuStatic.stage(s#gpu, s#materials, source, registeredOf(r, host), gen, plan#cmd#scene#time));
         let valueBytes = List.sumWith(pl -> 4 * Array.length(snd(pl)#values) + 4 * Render3d.MaterialValues.valueAlign(), passes);
         let poseBytes = inputs#poses |> Option.filter(p -> not isWrittenNow(r, p)) |> Option.map(p -> p#bytes + storageAlignBytes()) |> Option.getWithDefault(0);
         // WhyNot: 1 体ごとの値・姿勢・材質の値を別々に「入らなければ submit」で送らない — 後に送る方が submit すると、先に送った方を次の場面が頭から上書きする。

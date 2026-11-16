@@ -279,8 +279,8 @@ pub mod Render3d.WebGpuMaterials {
         }
 
     /// uploadTextures の、行 rows の材質の絵だけを作る形（持ち越した行のうち、値を分け合わない行・Render3d.StaticRows）。
-    pub def uploadTexturesAt(m: Materials, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64, list: SceneList, rows: Vector[Int32]): Unit \ IO =
-        let up = { source = source, textureById = textureById, gen = gen };
+    pub def uploadTexturesAt(m: Materials, source: TextureSource, registered: Registered, gen: Int64, list: SceneList, rows: Vector[Int32]): Unit \ IO =
+        let up = { source = source, registered = registered, gen = gen };
         rows |> Vector.forEach(row -> materialAt(list, row) |> Option.forEach(f -> uploadRowTextures(m, up, list, row, f)))
 
     /// uploadTextures の 1 回で行をまたいで変わらない物。

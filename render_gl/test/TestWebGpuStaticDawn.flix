@@ -93,10 +93,14 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
     })
 
     /// 形の置き場が上限を超えて形を捨てたコマの後は、持ち越しを全部作り直す（行の形の番号が別の形を指しうる）。
+    /// 2・3 コマ目は集まりを描かずに別の四角だけを描き、3 コマ目を締める時に 1 コマ目の集まりの形が捨てられる（今と前のコマで使った形は捨てない）。
     @Test
     def testMeshEvictionDropsCarried(): Unit \ {Assert, IO} = withDawn(gpu -> {
         let g = town();
-        Assert.assertEq(expected = (1, 0) :: (1, 2) :: Nil, fst(framesOf(gpu, 6, sceneWith(g) :: sceneWith(g) :: Nil)))
+        let other = { at = Vec2.zero(), clip = None, scene = { instances = quadAt(4.0) :: Nil | Scene3d.scene(camera(), { x = 64.0, y = 64.0 }) } };
+        let seen = Ref.fresh(Static, Nil);
+        discard Render3d.FakeGl.stderrOf(() -> Ref.put(fst(framesOf(gpu, 6, sceneWith(g) :: other :: other :: sceneWith(g) :: Nil)), seen));
+        Assert.assertEq(expected = (1, 0) :: (1, 0) :: (1, 0) :: (1, 2) :: Nil, Ref.get(seen))
     })
 
     /// 持ち越した物も描いた物の数に入る。
