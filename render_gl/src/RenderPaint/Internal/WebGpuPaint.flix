@@ -3,7 +3,7 @@
 // コマは中間の texture（RGBA8・描き先の画素の大きさ）へ描き、present で画面の texture へ 1 回写す。encoder はコマに 1 つで、submit はコマの終わり。
 // ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
 // 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
-// 面（ShaderDoc）の program と pipeline と draw は WebGpuSurfaces。3D の場面は Render3d.WebGpuRenderer が 2D の pass の前に自分の texture へ描き、2D の並びの z の位置で貼る。
+// 面（ShaderDoc）の program と pipeline と draw は WebGpuSurfaces。3D の場面は Render3d.WebGpuRenderer が 2D の pass の前に自分の texture へ描き、2D の並びの z の位置で貼る（呼ぶ所は WebGpuPaint.Scenes）。
 // まだ描かない物（起動の後に足す字・3D の材質や影など）は描かずに飛ばし、種類ごとの回数を数える（RenderPaint.Internal.SkippedDraws）。
 //
 // 使い方（device を開いた糸で、create から順に）:
@@ -52,6 +52,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     use RenderPaint.Internal.TargetTable
     use RenderPaint.Internal.TextureTable
     use RenderPaint.Internal.TileTable
+    use RenderPaint.Internal.WebGpuPaint.Scenes
     use RenderPaint.Internal.WebGpuPipelines
     use RenderPaint.Internal.WebGpuShader
     use RenderPaint.Internal.WebGpuSurfaces
@@ -589,12 +590,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         };
         let surfaces = p#surfaces;
         let textureOf = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#texture);
-        let scenes = Render3d.WebGpuRenderer.prepare(p#scenes3d, sceneHost(paint),
-                                                     { key = stencilKey, format = format, samples = samples, viewport = sceneViewportOf(paint, pass), height = pass#height },
-                                                     frame#scenes);
-        // WhyNot: 診断の 3D の数を黙って 0 で出さない — bench の JSON で「描いた物が 0」と読み違える（数えるのは P8）。
-        if (List.isEmpty(frame#scenes) or Option.isEmpty(Ref.get(p#diagnosticsRef))) ()
-        else skip(paint, "3D の診断の数（scene3dCounts は未計測で 0）");
+        let scenes = Scenes.prepare(paint, stencilKey, (format, samples), pass, frame#scenes);
         WebGpuRows.renderFrame({
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons, staticRanges = staticRanges, surfaces = frame#surfaces,
             sceneZs = List.toVector(List.map(cmd -> cmd#scene#zIndex, frame#scenes)),
@@ -612,39 +608,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             drawSurface = (pass1, rows, row, reads, stencil, bytes) ->
                 WebGpuSurfaces.draw(surfaces, pass1, (format, samples), stencil, Array.get(0, p#values#gpuBuffer), bytes, textureOf, name -> skip(paint, name),
                                     rows, row, reads),
-            drawScene = (pass1, index, stencil) -> pasteScene(paint, (format, samples), Vector.get(index, scenes), pass1, stencil),
+            drawScene = (pass1, index, stencil) -> Scenes.paste(paint, (format, samples), Vector.get(index, scenes), pass1, stencil),
             skip = name -> skip(paint, name)
         })
-
-    /// 先に描いた場面 1 つ（Render3d.WebGpuRenderer.prepare の答え）を、場面の矩形の scissor で貼り、その描き先の値を今の encoder の中で使い中と控える
-    /// （描く物の無い場面は何もしない）。
-    def pasteScene(paint: Paint, target: (RenderTarget.Format, Int32), scene: Option[Render3d.WebGpuRenderer.Paste],
-                   pass: RenderPass, stencil: Int32): Unit \ IO =
-        let PaintData.PaintData(p) = paint;
-        let pipes = p#pipes;
-        let (format, samples) = target;
-        scene |> Option.forEach(paste -> {
-            Render3d.WebGpuRenderer.notePasted(p#scenes3d, paste);
-            let (x, y, w, h) = paste#scissor;
-            pass.setPipeline(WebGpuPipelines.pipelineOf(pipes, WebGpuRows.shapeScene(), WebGpuRows.blendScene(), format, samples, stencil));
-            pass.setBindGroup(1, paste#group);
-            pass.setScissorRect(x, y, w, h);
-            pass.draw(3, 1, 0, 0)
-        })
-
-    /// 場面の矩形を描き先の画素へ写すための design 領域（GL の左下が原点）と倍率（GL の RenderPaint が Scene3dRenderer.Prepared#draw に渡す物と同じ）。
-    def sceneViewportOf(paint: Paint, pass: PassSpec): Scene3dRenderer.Viewport =
-        let PaintData.PaintData(p) = paint;
-        let (x, y, w, h) = RenderList.glViewportOf(pass);
-        { x = x, y = y, width = w, height = h, scaleX = Int32.toFloat64(w) / p#designW, scaleY = Int32.toFloat64(h) / p#designH }
-
-    /// 3D の描き手へ貸す encoder・submit・知らせ。
-    def sceneHost(paint: Paint): Render3d.WebGpuRenderer.Host =
-        let PaintData.PaintData(p) = paint;
-        { encoder = () -> encoderOf(paint),
-          notePass = () -> Array.put(Array.get(0, p#frameCounters) + 1, 0, p#frameCounters),
-          flush = () -> flushPending(paint),
-          skip = (name, n) -> skipMany(paint, name, n) }
 
     // ── 頂点の buffer（タイルの層・static layer）──
 
