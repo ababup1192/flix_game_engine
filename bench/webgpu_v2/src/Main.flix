@@ -81,6 +81,7 @@ mod V2Main {
     /// 差の最大の上限: 標本の位置の違いなら覆う割合 1/4 の段（±55）で止まる。それを超えるのは色か式の取り違え。room は勝つ面の入れ替わりで ±82 まで出るので切らない。
     /// railsMsaaClear（地の色の無い場面を色の付いた clear の Pass へ貼る・同じ日の実測で違う画素 4,761 px・±2 以上 2,493 px・max ±54）: ±2 以上は railsMsaa と同じ数で、
     /// 増えた 1,431 px は ±1 だけ【推: ふちの α が 1 未満の画素を clear の色に重ねる時の丸め】。違う画素の上限だけ広げる。
+    /// 4,761 px が GL の標本 4 と 1 の差と同じ数なのは偶然でない: 標本 4 で α が 1 未満になるふちの画素の数そのもので、そこが全部 ±1 以上ずれる【推】。
     /// slant2dMsaaFlip を上下に裏返して GL の slant2dMsaa と比べると max ±1（同じ日）なので、MSAA のふちの差は標本の位置が上下に鏡写しな事から来る。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60)}
@@ -262,6 +263,26 @@ mod V2Main {
         println("[webgpu-v2] ${if (ok) "OK" else "NG"}");
         if (ok) () else System.exit(1)
 
+    /// 撮った絵の表（場面の名前 → GL と WebGPU の絵）。
+    type alias Shots = Map[String, (ByteBuffer, ByteBuffer)]
+
+    /// 標本 4 と 1 の Pass の差（GL・WebGPU の違う画素の数）。0 なら MSAA が掛かっていない。場面が無ければ (0, 0)。
+    def msaaDiffOf(byName: Shots, width: Int32, height: Int32): (Int32, Int32) \ IO =
+        match (Map.get("railsMsaa", byName), Map.get("railsNoMsaa", byName)) {
+            case (Some((glOn, gpuOn)), Some((glOff, gpuOff))) => (diffOf(glOn, glOff, width * height)#pixels, diffOf(gpuOn, gpuOff, width * height)#pixels)
+            case _                                            => (0, 0)
+        }
+
+    /// 標本の位置の確かめ（slantFlipProbe）の行を出す（場面が無ければ何もしない）。
+    def printSlantFlipProbe(byName: Shots, width: Int32, height: Int32): Unit \ IO =
+        match (Map.get("slant2dMsaa", byName), Map.get("slant2dMsaaFlip", byName)) {
+            case (Some((glSlant, _)), Some((_, gpuFlip))) =>
+                let probe = slantFlipProbe(width, height, glSlant, gpuFlip);
+                println("[webgpu-v2] 標本の位置の確かめ（記録）: GL の slant2dMsaa と、WebGPU の slant2dMsaaFlip を上下に裏返した絵の差 ${Int32.toString(probe#pixels)} px"
+                    + "・±2 以上 ${Int32.toString(probe#overOne)} px・max ±${Int32.toString(probe#maxDelta)}")
+            case _ => ()
+        }
+
     def compareAndTime(config: GameEngine.EngineConfig, kit: Room.Kit, session: GlOffscreen.Session, width: Int32, height: Int32): Result[String, Bool] \ IO + WebGpuDevice =
         match WebGpuDevice.requestDevice() {
             case Err(why) => Err(why)
@@ -273,22 +294,12 @@ mod V2Main {
                 let shots = cases(kit) |> List.map(c -> (c, shootGl(session, c), shootWebGpu(paint, fonts, c, width, height)));
                 let rows = shots |> List.map(match (c, gl, shot) -> judge(width, height, c, gl, shot));
                 List.forEach(r -> println(fst(r)), rows);
-                // 標本 4 と 1 の Pass の差: 0 なら MSAA が掛かっていない（GL と WebGPU のどちらも）。
                 let byName = shots |> List.map(match (c, gl, shot) -> (c#name, (gl, shot))) |> List.toMap;
-                let msaa = match (Map.get("railsMsaa", byName), Map.get("railsNoMsaa", byName)) {
-                    case (Some((glOn, gpuOn)), Some((glOff, gpuOff))) => (diffOf(glOn, glOff, width * height)#pixels, diffOf(gpuOn, gpuOff, width * height)#pixels)
-                    case _                                            => (0, 0)
-                };
+                let msaa = msaaDiffOf(byName, width, height);
                 // WhyNot: WebGPU の差が 0 でなければ良し、にしない — 場面の一部だけ MSAA が抜けても 0 にはならない。GL と同じ桁で掛かっている事を見る。
                 println("[webgpu-v2] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaa))} px・WebGPU ${Int32.toString(snd(msaa))} px（WebGPU が GL の半分未満なら MSAA が抜けている）");
                 let msaaOk = fst(msaa) > 0 and 2 * snd(msaa) >= fst(msaa);
-                match (Map.get("slant2dMsaa", byName), Map.get("slant2dMsaaFlip", byName)) {
-                    case (Some((glSlant, _)), Some((_, gpuFlip))) =>
-                        let probe = slantFlipProbe(width, height, glSlant, gpuFlip);
-                        println("[webgpu-v2] 標本の位置の確かめ（記録）: GL の slant2dMsaa と、WebGPU の slant2dMsaaFlip を上下に裏返した絵の差 ${Int32.toString(probe#pixels)} px"
-                            + "・±2 以上 ${Int32.toString(probe#overOne)} px・max ±${Int32.toString(probe#maxDelta)}")
-                    case _ => ()
-                };
+                printSlantFlipProbe(byName, width, height);
                 let trial = SplitPassTrial.open(gpu, width, height, (Int32.toFloat64(config#designWidth), Int32.toFloat64(config#designHeight)));
                 List.range(0, rounds()) |> List.forEach(round -> {
                     let gl = timeGl(session, kit);
