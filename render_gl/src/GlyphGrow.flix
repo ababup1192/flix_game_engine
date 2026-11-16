@@ -67,31 +67,47 @@ mod RenderGlyphGrow {
     /// その字が出ないだけで、ゲームは動き続ける。
     pub def ensure(gl: GlContext, table: Ref[Table, Static], atlas: FontAtlas,
                    cps: Set[Int32]): FontAtlas \ IO =
+        ensureWith(glWriter(gl), table, atlas, cps)
+
+    /// 区画を GPU へ上げる口。begin = 上げ始める前に 1 回（GL は texId を bind）・
+    /// put = (x, y, 幅, 高さ, 1 画素 1 バイトの距離場)・finish = 上げ終えた後に 1 回。
+    pub type alias Writer = {
+        begin = Int32 -> Unit \ IO,
+        put = (Int32, Int32, Int32, Int32, ByteBuffer) -> Unit \ IO,
+        finish = Unit -> Unit \ IO
+    }
+
+    /// ensure の上げる所を差し替えた形（WebGPU の描き手は R8 の絵へ writeTexture で上げる）。
+    pub def ensureWith(writer: Writer, table: Ref[Table, Static], atlas: FontAtlas,
+                       cps: Set[Int32]): FontAtlas \ IO =
         let missing = cps |> Set.filter(cp -> Option.isEmpty(Map.get(cp, atlas#glyphs)));
         if (Set.isEmpty(missing)) atlas
         else match Map.get(atlas#textureName, Ref.get(table)) {
             case None       => atlas
-            case Some(font) => growAll(gl, table, atlas, font, Set.toList(missing))
+            case Some(font) => growAll(writer, table, atlas, font, Set.toList(missing))
         }
 
     // ── 内部 ──────────────────────────────────────────────────
 
-    def growAll(gl: GlContext, table: Ref[Table, Static], atlas: FontAtlas, font0: Font,
+    /// GL のテクスチャへ上げる口。上げ直す区画は幅が 4 の倍数とは限らないので、行の先頭のそろえを 1 バイトにしてから上げる。
+    def glWriter(gl: GlContext): Writer =
+        { begin = texId -> { gl.pixelStorei(GlConst.UNPACK_ALIGNMENT, 1); gl.bindTexture(GlConst.TEXTURE_2D, texId) },
+          put = (x, y, w, h, pixels) -> gl.texSubImageAlphaMask(x, y, w, h, pixels),
+          finish = () -> gl.pixelStorei(GlConst.UNPACK_ALIGNMENT, 4) }
+
+    def growAll(writer: Writer, table: Ref[Table, Static], atlas: FontAtlas, font0: Font,
                 cps: List[Int32]): FontAtlas \ IO =
         try {
             let font1 = ensureInfo(font0);
-            // 上げ直す区画は幅が 4 の倍数とは限らない。既定の詰め方のままだと
-            // GL が行の先頭を 4 バイト境界へ揃えようとして絵がずれる。
-            gl.pixelStorei(GlConst.UNPACK_ALIGNMENT, 1);
-            gl.bindTexture(GlConst.TEXTURE_2D, font1#texId);
+            (writer#begin)(font1#texId);
             let result = List.foldLeft((acc, cp) -> {
                 let (glyphs, font) = acc;
-                match growOne(gl, font, cp) {
+                match growOne(writer, font, cp) {
                     case None            => (glyphs, font)
                     case Some((gm, next)) => (Map.insert(cp, gm, glyphs), next)
                 }
             }, (atlas#glyphs, font1), cps);
-            gl.pixelStorei(GlConst.UNPACK_ALIGNMENT, 4);
+            (writer#finish)();
             let (glyphs, font) = result;
             Ref.put(Map.insert(atlas#textureName, font, Ref.get(table)), table);
             { glyphs = glyphs | atlas }
@@ -116,7 +132,7 @@ mod RenderGlyphGrow {
                 { info = Some(info), source = Some(buf) | font }
         }
 
-    def growOne(gl: GlContext, font: Font, cp: Int32): Option[(TextLayout.GlyphMetrics, Font)] \ IO =
+    def growOne(writer: Writer, font: Font, cp: Int32): Option[(TextLayout.GlyphMetrics, Font)] \ IO =
         match font#info {
             case None       => None
             case Some(info) =>
@@ -154,7 +170,7 @@ mod RenderGlyphGrow {
                             STBTruetype.stbtt_FreeSDF(sdf);
                             None
                         } else {
-                            gl.texSubImageAlphaMask(px, py, gw, gh, sdf);
+                            (writer#put)(px, py, gw, gh, sdf);
                             STBTruetype.stbtt_FreeSDF(sdf);
                             let gm = RenderFont.glyphMetricsOf(
                                 { px = px, py = py, gw = gw, gh = gh },

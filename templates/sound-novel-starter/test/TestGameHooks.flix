@@ -6,7 +6,7 @@
 // ゲームの写真と時間帯は残すので、読み始めた World の台本の <<bg>> はそのまま当たる）。
 mod TestGameHooks {
 
-    use fge::{App, Clock, Color, Emit, Flow, Num, RawDraw, Rect2, Render, Resources, Yarn, YarnCommands, YarnRunner}
+    use fge::{App, Clock, Color, Display, Emit, Flow, Num, RawDraw, Rect2, Render, Resources, Yarn, YarnCommands, YarnRunner}
     use Commands.Out
     use TestKit.begun
 
@@ -186,6 +186,45 @@ mod TestGameHooks {
         let st = bgTo(r, 1.0, photoAt(r, 1) :: "transition=fade" :: "time=2" :: Nil, firstShown(r));
         let xs = xsOf(ViewStage.backdropsUsing(marker(r), screenArea(), envOf(r, 2.0), st));
         Assert.assertTrue(List.memberOf(1000.0, xs) and List.memberOf(2000.0, xs))
+
+    // ══ slide の送り ══
+
+    def portraitFit(): Layout.Fit = Layout.Fit.Portrait(PortraitDoc.rec(PortraitDoc.defaults()), Display.defaultPortraitView())
+
+    /// 写真 0 番と 1 番の aspect を替え、1.0 秒から 2 秒の slide で 0 番から 1 番へ送った舞台を、fit の画面で at 秒に描いた写真の面の横の範囲。
+    def slideSpans(fit: Layout.Fit, aspect: Option[Float64], at: Float64): List[(Float64, Float64)] \ Fs.FileRead =
+        let base = res();
+        let shaped = p -> { aspect = aspect | p };
+        let r = withBackdrops(d -> { photos = d#photos |> Map.adjust(shaped, photoAt(base, 0)) |> Map.adjust(shaped, photoAt(base, 1)) | d }, base);
+        let st = bgTo(r, 1.0, photoAt(r, 1) :: "transition=slide" :: "time=2" :: "ease=linear" :: Nil, firstShown(r));
+        let env = { storyNow = t(at) | View.envOf(fit, r, TestKit.w0(r)) };
+        ViewStage.backdropsUsing(noPaint(), ViewStage.photoRect(fit), env, st) |> List.filterMap(p -> match p#item {
+            case Render.Item.Shader(x) => Some((p#at#x, p#at#x + x#rect#size#x))
+            case _                     => None
+        })
+
+    /// 画面の横 0..幅 を 4 px ごとに見て、どの範囲にも入らない所が無いか。
+    def coversTheWidth(fit: Layout.Fit, spans: List[(Float64, Float64)]): Bool =
+        let w = Layout.width(fit);
+        let steps = Float64.ceil(w / 4.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        List.range(0, steps + 1) |> List.map(i -> Float64.min(w, Int32.toFloat64(i) * 4.0))
+            |> List.forAll(x -> spans |> List.exists(match (l, r) -> l <= x and x <= r))
+
+    @Test
+    def testSlideOfTallPhotosOnAPortraitScreenLeavesNoGap(): Unit \ {Assert, Fs.FileRead} =
+        // 縦の画面で縦長の写真を送る途中（3 割・5 割・8 割）も、前と今の写真の面が画面の横をすき間なく覆う。
+        let fit = portraitFit();
+        Assert.assertTrue((0.6 :: 1.0 :: 1.6 :: Nil) |> List.forAll(s -> coversTheWidth(fit, slideSpans(fit, Some(0.5732), 1.0 + s))))
+
+    @Test
+    def testSlideOfWidePhotosOnAPortraitScreenLeavesNoGap(): Unit \ {Assert, Fs.FileRead} =
+        let fit = portraitFit();
+        Assert.assertTrue((0.6 :: 1.0 :: 1.6 :: Nil) |> List.forAll(s -> coversTheWidth(fit, slideSpans(fit, None, 1.0 + s))))
+
+    @Test
+    def testSlideOnALandscapeScreenLeavesNoGap(): Unit \ {Assert, Fs.FileRead} =
+        let fit = Layout.Fit.Regular;
+        Assert.assertTrue((0.6 :: 1.0 :: 1.6 :: Nil) |> List.forAll(s -> coversTheWidth(fit, slideSpans(fit, None, 1.0 + s))))
 
     // ══ GameCommands.backdropSwitch ══
 

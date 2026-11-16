@@ -63,8 +63,28 @@
           "min": 0,
           "max": 3,
           "default": 0.25
+        },
+        "voices": {
+          "type": {
+            "list": "text"
+          },
+          "label": "立ち絵を持たないが、話している間はほかの人物を暗くする話し手の id（声だけの人物・ゲームが自分で描く人物）",
+          "order": 3
         }
       }
+    },
+    "propsOnPage": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "overWindow",
+          "underWindow"
+        ]
+      },
+      "label": "頁の幕がある間（横の NVL・縦の画面の頁）の小物の重なり順（overWindow = 幕の上・字の下でくすまない・underWindow = 人物と同じ層で幕の奥に薄く見える）",
+      "group": "出し方",
+      "order": 3,
+      "default": "overWindow"
     },
     "slots": {
       "kind": "catalog",

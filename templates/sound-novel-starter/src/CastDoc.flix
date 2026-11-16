@@ -7,10 +7,25 @@ mod CastDoc {
     use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
-    /// 列: Character = 人物、Prop = 小物（既定の重ね順が人物より手前・NVL の頁では幕の上）。何人・何個でも同時に出せる。
+    /// 列: Character = 人物、Prop = 小物（既定の重ね順が人物より手前・NVL の頁では既定で幕の上。PropsOnPage）。何人・何個でも同時に出せる。
     pub enum Kind with Eq, Order, ToString {
         case Character
         case Prop
+    }
+
+    /// 頁の幕がある間（横の NVL・縦の画面の頁）に小物を描く重なり順。OverWindow = 頁の幕の上・字の下（幕で小物がくすまない）、
+    /// UnderWindow = 人物と同じ world の層（頁の幕の奥で、幕の濃さだけ薄く見える）。ADV の枠の間はどちらも world の層。
+    /// 名前は GameView.hud の HudBand（UnderWindow・OverWindow）にそろえた。
+    pub enum PropsOnPage with Eq {
+        case OverWindow
+        case UnderWindow
+    }
+
+    /// novel.cast.json の propsOnPage の字（overWindow・underWindow。知らない字は None）。
+    pub def propsOnPageOf(text: String): Option[PropsOnPage] = match text {
+        case "overWindow"  => Some(PropsOnPage.OverWindow)
+        case "underWindow" => Some(PropsOnPage.UnderWindow)
+        case _             => None
     }
 
     /// 位置 1 つ。x / bottom / height は画面に対する割合: x = 絵の中心の横の位置、bottom = 足元の縦の位置、height = 絵の高さ。
@@ -34,12 +49,14 @@ mod CastDoc {
     /// 絵の中の点（絵の左上 0・右下 1 の割合）。名前は Godot の Marker2D に合わせた。
     pub type alias Marker = { x = Float64, y = Float64 }
 
-    /// 話し手を明るくする: dim = 話していない人物を暗くする量（0 = 暗くしない・1 = 真っ黒）、seconds = 明るさを替える秒。
-    pub type alias Highlight = { dim = Float64, seconds = Float64 }
+    /// 話し手を明るくする: dim = 話していない人物を暗くする量（0 = 暗くしない・1 = 真っ黒）、seconds = 明るさを替える秒、
+    /// voices = 立ち絵を持たないが、話している間はほかの人物を暗くする話し手の id（声だけの人物・ゲームが自分で描く人物）。
+    pub type alias Highlight = { dim = Float64, seconds = Float64, voices = Set[String] }
 
     /// fadeSeconds = 出入りと入れ替えの既定の秒、slideDistance = from= / to= で端から滑る距離（画面に対する割合。1 で画面の外まで）、
     /// sway = 息の揺れの幅（画面の高さに対する割合・0 で止める）、
     /// portraitVeilWithCast = 縦の画面で人物が出ている間に頁の覆いの濃さへ掛ける倍率（1 = 変えない）、highlight = 話し手を明るくする量と秒、
+    /// propsOnPage = 頁の幕がある間に小物を描く重なり順、
     /// slots / portraitSlots = 横と縦の画面の位置（名前の集まりは同じにする）、cast = 人物、props = 小物。
     pub type alias Rec = {
         version = Int32,
@@ -48,6 +65,7 @@ mod CastDoc {
         sway = Float64,
         portraitVeilWithCast = Float64,
         highlight = Highlight,
+        propsOnPage = PropsOnPage,
         slots = Map[String, Slot],
         portraitSlots = Map[String, Slot],
         cast = Map[String, Entry],
@@ -64,7 +82,8 @@ mod CastDoc {
     /// コード側の既定値（assets/novel.cast.json と同じ値から出発する）。人物と小物は空。
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, fadeSeconds = 0.4, slideDistance = 1.0, sway = 0.002, portraitVeilWithCast = 1.0,
-                  highlight = { dim = 0.35, seconds = 0.25 },
+                  highlight = { dim = 0.35, seconds = 0.25, voices = Set.empty() },
+                  propsOnPage = PropsOnPage.OverWindow,
                   slots = Map#{ "left" => { x = 0.25, bottom = 1.0, height = 0.9, exclusive = true }, "center" => { x = 0.5, bottom = 1.0, height = 0.9, exclusive = true },
                                 "right" => { x = 0.75, bottom = 1.0, height = 0.9, exclusive = true }, "item" => { x = 0.5, bottom = 0.62, height = 0.36, exclusive = true } },
                   portraitSlots = Map#{ "left" => { x = 0.28, bottom = 1.0, height = 0.6, exclusive = true }, "center" => { x = 0.5, bottom = 1.0, height = 0.6, exclusive = true },
@@ -140,10 +159,12 @@ mod CastDoc {
     def markerFrom(json: Json): Option[Marker] =
         JsonCodec.expectObject(json) |> Option.map(obj -> { x = JsonCodec.floatOr("x", 0.5, obj), y = JsonCodec.floatOr("y", 0.5, obj) })
 
-    /// "highlight": { "dim", "seconds" } を読む（欠けた欄は fallback の値）。
+    /// "highlight": { "dim", "seconds", "voices" } を読む（欠けた欄は fallback の値）。
     def highlightFrom(fallback: Highlight, json: Option[Json]): Highlight =
         json |> Option.flatMap(JsonCodec.expectObject)
-             |> Option.map(obj -> { dim = JsonCodec.floatOr("dim", fallback#dim, obj), seconds = JsonCodec.floatOr("seconds", fallback#seconds, obj) })
+             |> Option.map(obj -> { dim = JsonCodec.floatOr("dim", fallback#dim, obj), seconds = JsonCodec.floatOr("seconds", fallback#seconds, obj),
+                                    voices = Map.get("voices", obj) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString)) |> Option.map(List.toSet)
+                                                 |> Option.getWithDefault(fallback#voices) })
              |> Option.getWithDefault(fallback)
 
     /// "attach": { "bg": { 写真の名前: 横のずれ } } を読む（無い・読めなければ画面に付く）。
@@ -160,6 +181,8 @@ mod CastDoc {
                   sway = JsonCodec.floatOr("sway", d#sway, root),
                   portraitVeilWithCast = JsonCodec.floatOr("portraitVeilWithCast", d#portraitVeilWithCast, root),
                   highlight = highlightFrom(d#highlight, Map.get("highlight", root)),
+                  propsOnPage = Map.get("propsOnPage", root) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(propsOnPageOf)
+                                    |> Option.getWithDefault(d#propsOnPage),
                   slots = catalogOr(root, "slots", slotFrom, d#slots),
                   portraitSlots = catalogOr(root, "portraitSlots", slotFrom, d#portraitSlots),
                   cast = catalogOr(root, "cast", entryFrom(Kind.Character, "center"), d#cast),

@@ -1,10 +1,10 @@
-// LwjglLayer.Internal.WebGpuWindowLayer — 実機のウィンドウの WebGPU 版（FLIX_GE_BACKEND=webgpu の時の LwjglLayer.withLwjgl の枝）。
+// LwjglLayer.Internal.WebGpuWindowLayer — 実機のウィンドウの WebGPU 版（既定の描き手。LwjglLayer.withLwjgl の枝）。
 // device（Dawn）を先に開き、GLFW のウィンドウ（GLFW_NO_API）と surface を作ってから、塗りを RenderPaint.Internal.WebGpuPaint の handler で受ける。
 // 音・仕事・時計・読み込みの知らせ・カーソル・入力は GL の枝と同じ物（LwjglLayer の pub でない物と LwjglInput）を使う。
 // 開く前に落ちたら（Dawn のネイティブ・device・ウィンドウ）作った物を捨てて Err(理由) を返し、呼ぶ側が GL で起動する。
 // FLIX_GE_WEBGPU_FAIL=native|device|window はその 3 つの道をわざと起こす（GL へ落ちる道の確かめ用。無ければ何もしない）。
 // 隠して起動（FLIX_GE_HIDDEN）した時は GLFW の隠したウィンドウだけを作り、surface を作らず画面にも出さない（中間の texture は design の大きさ）。
-// V1 で描かない物: F8 の注釈（1 回知らせて捨てる）・起動の後に足す字（フォントごとに 1 回知らせる）・WebGpuPaint が知らせる物。
+// 描かない物: WebGpuPaint が知らせる物（足せなかった字など）。
 pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import fge.webgpu.PresentMode
     import fge.webgpu.Surface
@@ -24,7 +24,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import java.nio.ByteBuffer
     import javax.imageio.ImageIO
     use LwjglLayer.{announceFixedDt, applyFullscreen, applyMouseCaptured, closeAudio, cursorModeOf, frameShotLimit,
-                    handleAudio, handleFrameClock, handleLoadProgress, handleTasks, openAudio, openCursors}
+                    handleAudio, handleFrameClock, handleLoadProgress, handleTasks, openAudio, openCursors, saveAnnotationWith}
     use RenderPaint.Internal.WebGpuPaint
 
     /// 開いたウィンドウ。surface = 画面へ出す描き先（隠して起動した時は None）・format = その形式。
@@ -159,7 +159,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
 
     /// project.json の絵を GL と同じ読み込み（LwjglAssets.loadTexture）で解いて WebGPU へ上げ、名前で引けるようにする。
     /// onProgress = 読み終えた枚数・全部の枚数（起動画面が進み具合を出す）。
-    def loadTextures(paint: WebGpuPaint.Paint, manifest: List[RenderAsset.TextureEntry], onProgress: (Int32, Int32) -> Unit \ IO): Unit \ IO =
+    pub def loadTextures(paint: WebGpuPaint.Paint, manifest: List[RenderAsset.TextureEntry], onProgress: (Int32, Int32) -> Unit \ IO): Unit \ IO =
         let total = List.length(manifest);
         onProgress(0, total);
         let uploads = WebGpuPaint.webGpuUploads(paint);
@@ -171,23 +171,31 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         }, manifest)
 
     /// project.json のフォントを、GL と同じ「出しうる字」で RenderFontCache.loadOrBake から作り、距離場を R8 で上げる。
-    /// 起動の後に足す字は V1 では足さない（WebGpuPaint の ensureGlyphs がフォントごとに 1 回知らせる）。
-    def loadFonts(paint: WebGpuPaint.Paint, config: GameEngine.EngineConfig, progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
-        let wanted = RenderFont.startupGlyphs(config#rootDir, glyphsModeOf(config#glyphs));
+    /// 起動の後に出た字は GL と同じ RenderGlyphGrow で作り、R8 の絵の空いた所へ書き足す。
+    pub def loadFonts(paint: WebGpuPaint.Paint, config: GameEngine.EngineConfig, progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
+        let wanted = RenderFont.startupGlyphs(config#rootDir, config#glyphs);
         Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"), wanted);
         println("Baking font atlases...");
+        let growTable = RenderGlyphGrow.newTable();
         let atlases = config#fontManifest |> List.foldLeft((acc, entry) -> {
             let phase = "loading font ${entry#name}...";
             let baked = RenderFontCache.loadOrBake(entry, wanted, (done, total) -> progress(phase, done, total));
-            WebGpuPaint.putTexture(baked#atlas#textureName, WebGpuPaint.uploadR8(paint, baked#side, baked#side, baked#pixels), paint);
+            let info = WebGpuPaint.uploadR8(paint, baked#side, baked#side, baked#pixels);
+            WebGpuPaint.putTexture(baked#atlas#textureName, info, paint);
+            RenderGlyphGrow.register(growTable, baked#atlas, { path = entry#path, texId = GpuHandle.textureIdInt(info#id) });
             println("  Font '${entry#name}' baked (${baked#atlas#textureName})");
             Map.insert(entry#name, baked#atlas, acc)
         }, Map#{BootFont.name() => BootFont.atlas()});
-        { atlases = Ref.fresh(Static, atlases), grow = (_, atlas, _) -> checked_ecast(atlas), missing = Ref.fresh(Static, Set.empty()) }
+        let writer = glyphWriter(paint);
+        { atlases = Ref.fresh(Static, atlases), grow = (atlas, cps) -> RenderGlyphGrow.ensureWith(writer, growTable, atlas, cps),
+          missing = Ref.fresh(Static, Set.empty()) }
 
-    /// 起動の時に用意する字の決め方。auto（出た字から順に用意する）は used（ソースとアセットにある字を先に用意する）として引く。
-    // WhyNot: auto のまま引かない — V1 の WebGPU は起動の後に字を足さないので、出た字から足す決め方だと字が欠ける。
-    def glyphsModeOf(mode: String): String = if (mode == "auto") "used" else mode
+    /// 足す字を、register で控えた絵の番号（begin で受ける）の R8 の絵へ書く口。
+    def glyphWriter(paint: WebGpuPaint.Paint): RenderGlyphGrow.Writer \ IO =
+        let slot = Ref.fresh(Static, 0);
+        { begin = id -> checked_ecast(Ref.put(id, slot)),
+          put = (x, y, w, h, pixels) -> WebGpuPaint.writeR8Region(paint, Ref.get(slot), x, y, w, h, pixels),
+          finish = () -> checked_ecast(()) }
 
     // ── 回す ──
 
@@ -283,7 +291,7 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             handleLoadProgress({ looping = looping, splash = splash, polledAt = polledAt, devices = devices }, () ->
             handleAudio(audio#state, () ->
             WebGpuPaint.handleTarget(paint, () ->
-            handleAnnotation(() ->
+            handleAnnotation(config, design, audio#shutterSource, present, () ->
             WebGpuPaint.handleDiagnostics(paint, () ->
             handleTasks(() ->
             WebGpuPaint.handleDraw3d(paint, () ->
@@ -364,16 +372,20 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         match ps#frameShotDir {
             case Some(dir) if count < frameShotLimit() =>
                 Array.put(count + 1, 0, ps#frameShotTaken);
-                let (w, h) = Array.get(0, ps#size);
-                let pixels = ByteBuffer.allocateDirect(w * h * 4);
-                WebGpuPaint.readFrame(ps#paint, pixels);
-                writeShot(pixels, w, h, "${dir}/frame-${count + 1}.png")
+                writeShot(frameImage(ps), "${dir}/frame-${count + 1}.png")
             case _ => ()
         }
 
-    /// RGBA（下の行から）を左上原点の ARGB の PNG に書く。
+    /// 最後に描いたコマ（中間の texture）を左上原点の ARGB の画像にする。
+    def frameImage(ps: PresentState): BufferedImage \ IO =
+        let (w, h) = Array.get(0, ps#size);
+        let pixels = ByteBuffer.allocateDirect(w * h * 4);
+        WebGpuPaint.readFrame(ps#paint, pixels);
+        imageOf(pixels, w, h)
+
+    /// RGBA（下の行から）を左上原点の ARGB の画像にする。
     // WhyNot: GlReadback.readBoundPng を呼ばない — bind 中の GL のフレームバッファを読む関数で、WebGPU の画素を渡す口が無い。画素の並べ方と PNG の形は同じにする。
-    def writeShot(pixels: ByteBuffer, w: Int32, h: Int32, path: String): Unit \ IO = region rc {
+    pub def imageOf(pixels: ByteBuffer, w: Int32, h: Int32): BufferedImage \ IO = region rc {
         let image = new BufferedImage(w, h, 2i32);
         let argb: Array[Int32, rc] = Array.empty(rc, w * h);
         List.forEach(y -> {
@@ -381,11 +393,15 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             putRow(pixels, srcRowStart * 4, argb, y * w, w, 0)
         }, List.range(0, h));
         image.setRGB(0, 0, w, h, argb, 0, w);
+        image
+    }
+
+    /// 画像を PNG に書く（フォルダが無ければ作る）。
+    def writeShot(image: BufferedImage, path: String): Unit \ IO =
         let file = new File(path);
         let parent = file.getParentFile();
         if (not Object.isNull(parent)) discard parent.mkdirs() else ();
         discard ImageIO.write(image, "png", file)
-    }
 
     /// RGBA の 1 行（fromByte バイトから）を ARGB の int の列（toIndex から）へ並べる。
     def putRow(pixels: ByteBuffer, fromByte: Int32, argb: Array[Int32, r], toIndex: Int32, w: Int32, x: Int32): Unit \ r + IO =
@@ -400,17 +416,12 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
             putRow(pixels, fromByte, argb, toIndex, w, x + 1)
         }
 
-    /// F8 の注釈は V1 では書かない（初めの 1 回だけ知らせ、None を返す）。
-    def handleAnnotation(f: Unit -> a \ ef): a \ (ef - Platform.Annotation) + IO =
-        let warned = Ref.fresh(Static, false);
+    /// F8 の注釈を GL の枝と同じ形で書く。画面の絵は最後に描いたコマ（中間の texture）を読む。
+    // WhyNot: GL の枝のように最後のコマを塗り直さない — 中間の texture は画面へ出した後もそのコマを持っている。
+    def handleAnnotation(config: GameEngine.EngineConfig, design: Vec2.Vec2, shutterSource: Int32, ps: PresentState,
+                         f: Unit -> a \ ef): a \ (ef - Platform.Annotation) + IO =
         run f() with handler Platform.Annotation {
-            def saveAnnotation(_req, k) = {
-                if (Ref.get(warned)) () else {
-                    Ref.put(true, warned);
-                    Log.warn("[webgpu] V1 では描かない: F8 の注釈")
-                };
-                k(None)
-            }
+            def saveAnnotation(req, k) = k(saveAnnotationWith(config, design, shutterSource, () -> frameImage(ps), req))
         }
 
     /// Platform.Window を GLFW のウィンドウで受ける（カーソル・キャプチャ・フルスクリーンは GL の枝と同じ関数）。

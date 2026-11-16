@@ -18,7 +18,7 @@ repository  = "github:ababup1192/flix_game_engine"
 "org.lwjgl:lwjgl-glfw"   = "3.4.1"
 "org.lwjgl:lwjgl-sdl"    = "3.4.1"
 
-# WebGPU の PC の実装（fge.webgpu.dawn・jWebGPU の JNI 版の Dawn）と、そのネイティブ（FLIX_GE_BACKEND=webgpu で起動する時に読む。今は macOS arm64 だけ）。
+# WebGPU の PC の実装（fge.webgpu.dawn・jWebGPU の JNI 版の Dawn）と、そのネイティブ（既定の描き手。今は macOS arm64 だけで、ネイティブの無い OS は理由を 1 行言って GL で起動する）。
 # webgpu-core は書かない（入れるとネイティブの無い類が先に読まれて落ちる）。
 "com.github.xpenatan.jWebGPU:webgpu-desktop-jni"                = "0.3.4"
 "com.github.xpenatan.jWebGPU:webgpu-desktop-jni-dawn_mac_arm64" = "0.3.4"

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# gl-capture.sh — テンプレートの場面を実機の GL（隠しウィンドウ）で起動し、頭の数コマの絵を撮って SHA-256 を控える。
+# gl-capture.sh — テンプレートの場面を実機の窓（隠しウィンドウ）で起動し、頭の数コマの絵を撮って SHA-256 を控える。
 #
-#   bin/gl-capture.sh <出力のフォルダ> [<フォルダ>:<START の字> ...]   撮る（フォルダは engine の根から。場面を省くと下の既定の場面）
-#   bin/gl-capture.sh --backend webgpu <出力のフォルダ> [...]          同じ場面を WebGPU の描き手（FLIX_GE_BACKEND=webgpu）で撮る。起動のログに
-#                                                                      '[backend] webgpu:' が無い（GL へ落ちた）・起動の後に足す字の知らせがある時は止める
+#   bin/gl-capture.sh <出力のフォルダ> [<フォルダ>:<START の字> ...]   撮る（フォルダは engine の根から。場面を省くと下の既定の場面）。描き手は既定の
+#                                                                      WebGPU（FLIX_GE_BACKEND=webgpu）。起動のログに '[backend] webgpu:' が無い（GL へ落ちた）・
+#                                                                      起動の後に足せなかった字の知らせがある時は止める
+#   bin/gl-capture.sh --backend gl|webgpu <出力のフォルダ> [...]       描き手を選んで撮る（gl は FLIX_GE_BACKEND=gl の GL の backend）
 #   bin/gl-capture.sh --compare <A> <B> [--skip <フォルダ名> ...]       2 回の SHA を比べる（フォルダか SHA の一覧のファイル。違えば exit 1）
 #                                                                      --skip は撮った物のフォルダ名（例 scene3d・rpg-starter__title）と完全に一致する場面を比べない
 #
@@ -17,7 +18,7 @@
 #
 # 出力: <出力>/<フォルダの名前>__<場面>（場面が空なら名前だけ）/frame-1.png … と <出力>/SHA256SUMS（行は「<SHA>  <名前>__<場面>/frame-N.png」）。
 # START の字が空なら START を置かない（withStarts の無い物・bench/scene3d のように起動の場面が 1 つの物）。
-# GL の絵は機械・ドライバで変わるので、比べるのは同じ機械で撮った 2 回どうし（基準の SHA を別の機械と比べない）。
+# GL と WebGPU の絵は機械・ドライバ（WebGPU は Dawn の版も）で変わるので、比べるのは同じ機械で撮った 2 回どうし（基準の SHA を別の機械と比べない）。
 #
 # 揃わない物: マウスの位置は実のカーソルを読む。撮っている間はマウスを触らない（hover で絵が変わる場面がある）。
 # --compare が落ちたら、まずその回にマウスを動かしていないかを疑う（docs/flow.md の「実機の dt を固定する」）。
@@ -73,7 +74,7 @@ if [ "${1:-}" = "--compare" ]; then
 	exit 1
 fi
 
-backend=gl
+backend=webgpu
 if [ "${1:-}" = "--backend" ]; then
 	if [ $# -lt 2 ] || { [ "$2" != gl ] && [ "$2" != webgpu ]; }; then echo "usage: $0 --backend gl|webgpu <出力のフォルダ> …" >&2; exit 2; fi
 	backend=$2
@@ -101,7 +102,7 @@ if [ $# -gt 0 ]; then scenes=("$@"); else scenes=("${default_scenes[@]}"); fi
 reset_env=(FLIX_GE_SPLASH_SHOT FLIX_GE_FRAME_STATS FLIX_GE_NO_SPLASH FLIX_GE_GLYPHS FLIX_GE_NO_FONT_CACHE
 	FGE_SOFT_SERIAL DEBUG FLOW_RECORD HEADLESS_RESIDENT HEADLESS_JAVA_OPTS JAVA_TOOL_OPTIONS FLIX_GE_CACHE_DIR START
 	FLIX_GE_BACKEND FLIX_GE_WEBGPU_FAIL)
-# 起動の時に用意する字（FLIX_GE_GLYPHS）。WebGPU の V1 は起動の後に字を足さないので、--backend webgpu の既定は used（出しうる字を起動の時に先に作る）。
+# 起動の時に用意する字（FLIX_GE_GLYPHS）。--backend webgpu の既定は used（出しうる字を起動の時に先に作る。webgpu の基準と make webgpu-v1-check の GL との比べが、この並びのアトラスで撮ってある）。
 # GL と画素で比べる時は、GL の側も同じ CAPTURE_GLYPHS で撮る（字のアトラスの並びが変わるので、GLYPHS の無い撮り置きの SHA とは比べない）。
 glyphs=${CAPTURE_GLYPHS:-}
 if [ "$backend" = webgpu ] && [ -z "$glyphs" ]; then glyphs=used; fi
@@ -119,7 +120,7 @@ capture_one() {
 		export FLIX_GE_HIDDEN=1 FLIX_GE_MUTE=1 FLIX_GE_FRAME_SHOT="$dir"
 		if [ -n "$start" ]; then export START="$start"; else unset START; fi
 		if [ "$dt" = off ]; then unset FLIX_GE_FIXED_DT; else export FLIX_GE_FIXED_DT="$dt"; fi
-		if [ "$backend" = webgpu ]; then export FLIX_GE_BACKEND=webgpu; fi
+		export FLIX_GE_BACKEND="$backend"
 		if [ -n "$glyphs" ]; then export FLIX_GE_GLYPHS="$glyphs"; fi
 		export FLIX_CMD="$engine/bin/flix"
 		# WhyNot: jar を作る時間を撮る時間の上限に入れない — 作り直しは 30 秒〜数分かかり、初回だけ撮れなかった扱いになる。
@@ -155,8 +156,8 @@ capture_one() {
 			grep -a '\[backend\]' "$dir/run.log" >&2 || true
 			return 1
 		fi
-		if grep -aq '起動の後に足す字' "$dir/run.log"; then
-			echo "[gl-capture] ${game}: WebGPU が起動の後に足す字を描かなかった（字の欠けた絵。CAPTURE_GLYPHS=used で撮る。${dir}/run.log）" >&2
+		if grep -aq '起動の後に足せなかった字' "$dir/run.log"; then
+			echo "[gl-capture] ${game}: WebGPU が起動の後に字を足せなかった（字の欠けた絵。${dir}/run.log）" >&2
 			return 1
 		fi
 	fi

@@ -309,6 +309,8 @@ pub mod LwjglLayer {
         }
 
     /// WebGPU のウィンドウで起動する。開く前に落ちたら（Dawn のネイティブ・device・ウィンドウ）理由を 1 行言い、GLFW の hint を戻して GL で起動する。
+    // WhyNot: WebGPU を使えない機械で止めない — GL の backend は同じ RenderList を流す fallback で、Dawn のネイティブを
+    //   配っていない OS・古い GPU でも遊べる。黙って GL にすると絵の差を WebGPU の物と取り違えるので、1 行は言う。
     @DontInline
     def withWebGpuOrGl(config: GameEngine.EngineConfig, env: LwjglEnv.Settings, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
         match LwjglLayer.Internal.WebGpuWindowLayer.withWindow(config, env, f) {
@@ -777,53 +779,57 @@ pub mod LwjglLayer {
     /// Platform.Annotation を、直前に塗ったコマの読み戻しとファイルへの書き出しで受ける。
     def handleAnnotation(anno: AnnotationState, f: Unit -> a \ ef): a \ (ef - Platform.Annotation) + IO =
         let window = anno#window;
-        let config = anno#config;
         let paint = anno#paint;
         let gl = anno#gl;
-        let (screenW, screenH) = (anno#design#x, anno#design#y);
-        let shutterSource = anno#shutterSource;
+        // 直前に画面へ塗ったコマ（App が等倍で塗った物）を back buffer に塗り直して読む。
+        // swap しないので画面には映らず、次のフレーム描画がそのまま上書きする。
+        // WhyNot: 依頼に入れた描画命令から組み直さない — シェーダー面・レンダーターゲット・静的層を
+        // 運べず、スクリーンショットだけが画面と違う規則で描かれる。塗ったコマをそのまま塗り直す。
+        let capture = () -> {
+            let stack = MemoryStack.stackPush();
+            let wBuf = stack.mallocInt(1);
+            let hBuf = stack.mallocInt(1);
+            GLFW.glfwGetFramebufferSize(window, wBuf, hBuf);
+            let fbW = wBuf.get(0);
+            let fbH = hBuf.get(0);
+            discard MemoryStack.stackPop();
+            RenderPaint.paintFrame(gl, paint, fbW, fbH, RenderPaint.lastFrame(paint));
+            framebufferImage(fbW, fbH)
+        };
         run f() with handler Platform.Annotation {
-            def saveAnnotation(req, k) = {
-                let saved = try {
-                    let now = LocalDateTime.now();
-                    let dirStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-                    let readableStamp = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    let dirPath = "debug/annotations/${dirStamp}_${sanitizeName(config#title)}_f${req#frame}";
-                    discard (new File(dirPath)).mkdirs();
-                    // 直前に画面へ塗ったコマ（App が等倍で塗った物）を back buffer に塗り直して読む。
-                    // swap しないので画面には映らず、次のフレーム描画がそのまま上書きする。
-                    let stack = MemoryStack.stackPush();
-                    let wBuf = stack.mallocInt(1);
-                    let hBuf = stack.mallocInt(1);
-                    GLFW.glfwGetFramebufferSize(window, wBuf, hBuf);
-                    let fbW = wBuf.get(0);
-                    let fbH = hBuf.get(0);
-                    discard MemoryStack.stackPop();
-                    // WhyNot: 依頼に入れた描画命令から組み直さない — シェーダー面・レンダーターゲット・静的層を
-                    // 運べず、スクリーンショットだけが画面と違う規則で描かれる。塗ったコマをそのまま塗り直す。
-                    RenderPaint.paintFrame(gl, paint, fbW, fbH, RenderPaint.lastFrame(paint));
-                    let image = framebufferImage(fbW, fbH);
-                    writePngFile(image, "${dirPath}/screenshot.png");
-                    burnHighlight(image, designRectToImage(req#rect, fbW, fbH, screenW, screenH));
-                    writePngFile(image, "${dirPath}/highlighted.png");
-                    writeTextFile("${dirPath}/annotation.json", req#json);
-                    if (req#worldDump != "")
-                        writeTextFile("${dirPath}/world.json", req#worldDump)
-                    else ();
-                    writeTextFile("${dirPath}/README.md",
-                        readmeText({title = config#title, stamp = readableStamp,
-                                    frame = req#frame, body = req#readmeBody}));
-                    println("annotation saved: ${dirPath}");
-                    AL10.alSourceStop(shutterSource);
-                    AL10.alSourcePlay(shutterSource);
-                    Some(dirPath)
-                } catch {
-                    case ex: Exception =>
-                        println("annotation save failed: ${ex.getMessage()}");
-                        None
-                };
-                k(saved)
-            }
+            def saveAnnotation(req, k) = k(saveAnnotationWith(anno#config, anno#design, anno#shutterSource, capture, req))
+        }
+
+    /// 注釈を debug/annotations/<時刻>_<題>_f<コマ> に書く（画面の絵・枠を描き込んだ絵・依頼の JSON・World・README）。capture = 直前に塗ったコマの絵。
+    /// 書けたらシャッターの音を鳴らしてフォルダを返す。書けなければ 1 行言って None。
+    def saveAnnotationWith(config: GameEngine.EngineConfig, design: Vec2.Vec2, shutterSource: Int32,
+                           capture: Unit -> BufferedImage \ IO, req: GameEngine.AnnotationRequest): Option[String] \ IO =
+        try {
+            let now = LocalDateTime.now();
+            let dirStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+            let readableStamp = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            let dirPath = "debug/annotations/${dirStamp}_${sanitizeName(config#title)}_f${req#frame}";
+            discard (new File(dirPath)).mkdirs();
+            let image = capture();
+            let (fbW, fbH) = (image.getWidth(), image.getHeight());
+            writePngFile(image, "${dirPath}/screenshot.png");
+            burnHighlight(image, designRectToImage(req#rect, fbW, fbH, design#x, design#y));
+            writePngFile(image, "${dirPath}/highlighted.png");
+            writeTextFile("${dirPath}/annotation.json", req#json);
+            if (req#worldDump != "")
+                writeTextFile("${dirPath}/world.json", req#worldDump)
+            else ();
+            writeTextFile("${dirPath}/README.md",
+                readmeText({title = config#title, stamp = readableStamp,
+                            frame = req#frame, body = req#readmeBody}));
+            println("annotation saved: ${dirPath}");
+            AL10.alSourceStop(shutterSource);
+            AL10.alSourcePlay(shutterSource);
+            Some(dirPath)
+        } catch {
+            case ex: Exception =>
+                println("annotation save failed: ${ex.getMessage()}");
+                None
         }
 
     /// 標準のカーソルを起動時に 1 回だけ作る（setCursor のたびに作って捨てると重く、漏れの元にもなる）。

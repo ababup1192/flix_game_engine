@@ -71,7 +71,7 @@ mod WebAssets {
             }
         }, (Map.empty(), request#registry, 0), request#manifest);
         let warned: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
-        { atlases = atlases, registry = registry, grow = (_, atlas, codepoints) -> noteMissing(warned, atlas, codepoints) }
+        { atlases = atlases, registry = registry, grow = (atlas, codepoints) -> noteMissing(warned, atlas, codepoints) }
 
     def loadAtlas(gl: GlContext, entry: RenderAsset.FontEntry): Option[(FontAtlas, RenderAsset.TextureInfo)] \ IO =
         let path = atlasPathOf(entry);

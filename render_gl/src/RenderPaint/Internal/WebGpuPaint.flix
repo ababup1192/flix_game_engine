@@ -4,7 +4,7 @@
 // ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
 // 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
 // 面（ShaderDoc）の program と pipeline と draw は WebGpuSurfaces。3D の場面は Render3d.WebGpuRenderer が 2D の pass の前に自分の texture へ描き、2D の並びの z の位置で貼る（呼ぶ所は WebGpuPaint.Scenes）。
-// まだ描かない物（起動の後に足す字・3D の材質や影など）は描かずに飛ばし、種類ごとの回数を数える（RenderPaint.Internal.SkippedDraws）。
+// まだ描かない物（起動の後に足せなかった字など）は描かずに飛ばし、種類ごとの回数を数える（RenderPaint.Internal.SkippedDraws）。
 //
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
@@ -139,11 +139,19 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
             drawCounts = RenderDrawCounts.Holder,
             // 3D の場面を描く所（2D の pass の前に場面を自分の texture へ描き、貼る行で貼る）。
-            scenes3d = Render3d.WebGpuRenderer.Renderer
+            scenes3d = Render3d.WebGpuRenderer.Renderer,
+            // Pass の history に前のコマの絵を写すか（偽なら毎回透明。GL の RenderPaint の keepHistory と同じ）。
+            keepHistory = Bool
         })
     }
 
     pub type alias Paint = PaintData
+
+    /// Pass の history を毎回透明にした paint（窓なしの 1 枚撮り。GL の GlOffscreen と同じく、続けて撮った前の 1 枚や
+    /// 字の欠けで描き直す前の試しを history として読まない）。
+    pub def withoutHistory(paint: Paint): Paint =
+        let PaintData.PaintData(p) = paint;
+        PaintData.PaintData({ keepHistory = false | p })
 
     /// instance の 1 体のバイト数（RenderFrame.writeInstAt の float の並び）。
     def instanceBytes(): Int32 = 4 * RenderList.instanceFloats()
@@ -201,7 +209,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
             texWarnLog = Ref.fresh(Static, Set.empty()), msaaWarned = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
-            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout, imageLayout)
+            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout, imageLayout),
+            keepHistory = true
         });
         installBuiltins(paint);
         paint
@@ -326,6 +335,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let texture = p#gpu.createTexture("fge font", width, height, TextureFormat.R8_UNORM, imageUsage(), 1, 1);
         p#gpu.writeTexture(texture, 0, 0, 0, width, height, pixels, 0, width);
         infoOf(addSlot(paint, texture, p#linearRepeat, width, height), width, height)
+
+    /// uploadR8 で作った番号 id の絵の (x, y) から width × height を、字の距離場（1 画素 1 バイト・上の行から）で書き替える。
+    // WhyNot: 積んだ pass を先に submit しない（rewriteSlot と違う）— 書くのは字を置いていない所だけで、前に置いた字の画素は変わらない。
+    pub def writeR8Region(paint: Paint, id: Int32, x: Int32, y: Int32, width: Int32, height: Int32, pixels: ByteBuffer): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        match Map.get(id, Ref.get(p#slots)) {
+            case None       => ()
+            case Some(slot) => p#gpu.writeTexture(slot#texture, 0, x, y, width, height, pixels, 0, width)
+        }
 
     /// ARGB の int の列を little-endian のバイトにする。
     // WhyNot: 1 要素ずつ put しない — Flix の Vector は JVM の int[] のままで、1 回で写せる（RenderTexture.withArgbBuffer と同じ）。
@@ -721,12 +739,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         }
 
     /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物（スプライト・面・3D の場面のビルボード）が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
-    // WhyNot: 1 枚撮りの「history は透明」（GL の keepHistory = false）を持たない — WebGPU の描き手は窓とその撮影でしか動かず、どちらも前のコマを写す
-    //   （historyFor へ keep を真で渡す。applyHistory の ClearTransparent の枝は前半の答えを全部受けるために置き、今は通らない）。
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,
-                                             isHistoryReadIn(spec#name, frame), true);
+                                             isHistoryReadIn(spec#name, frame), p#keepHistory);
         TargetTable.rowByName(p#targets, spec#name)
             |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
             |> Option.forEach(match (row, slot) -> {
@@ -977,7 +993,19 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     // ── handler ──
 
-    /// GPU の資源を paint の登録簿で受ける。fonts = 名前 → アトラス（getFontAtlas の元。足す字は V1 では足さず、フォントごとに 1 回知らせる）。
+    /// 起動の後に出た字を fonts#grow で足す（GL と同じ数え方で glyphsAdded）。足せずに残った字（ブラウザの書き出しのアトラス・
+    /// フォントに無い字・アトラスが満杯）があれば、まだ描かない物として数える。
+    def ensureGlyphsIn(paint: Paint, fonts: RenderPaint.Fonts, textureName: String, codepoints: Set[Int32]): Unit \ IO =
+        if (Set.isEmpty(codepoints)) ()
+        else {
+            RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
+            noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
+            let grown = Ref.get(fonts#atlases) |> Map.findLeft((_, a) -> a#textureName == textureName) |> Option.map(snd);
+            let left = grown |> Option.map(a -> Set.filter(cp -> not Map.memberOf(cp, a#glyphs), codepoints)) |> Option.getWithDefault(codepoints);
+            if (Set.isEmpty(left)) () else skip(paint, "起動の後に足せなかった字（${textureName}）")
+        }
+
+    /// GPU の資源を paint の登録簿で受ける。fonts = 名前 → アトラス（getFontAtlas の元。起動の後に出た字は fonts#grow で足す）。
     pub def handleGpuResources(paint: Paint, fonts: RenderPaint.Fonts, f: Unit -> a \ ef): a \ (ef - Platform.GpuResources) + IO =
         let uploads = webGpuUploads(paint);
         let tables = textureTables(paint);
@@ -996,7 +1024,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 k(())
             }
             def ensureGlyphs(textureName, codepoints, k) = {
-                if (Set.isEmpty(codepoints)) () else skip(paint, "起動の後に足す字（${textureName}）");
+                ensureGlyphsIn(paint, fonts, textureName, codepoints);
                 k(())
             }
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))

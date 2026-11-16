@@ -18,7 +18,7 @@ mod ViewStage {
     /// world の層の物 1 グループ: layer = 層の数、order = 同じ層の数の中の順（絵 0・粒 1・GameView 2・覆い 3）、items = 物（中の z は 0..View.zWorldStride-1）。
     type alias Group = { layer = Int32, order = Int32, items = List[Render.PlacedItem] }
 
-    /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は View が幕の上に描く）。
+    /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は、novel.cast.json の propsOnPage が overWindow なら View が幕の上に描く）。
     pub def frame(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
         let (dx, dy) = Stage.shakeOffset(env#storyNow, Stage.ShakeTarget.Screen, stage);
         layered(env, photoRect(env#fit), stage, withProps) |> withCamera(env, stage) |> Render.movedAll({ x = dx, y = dy })
@@ -175,12 +175,13 @@ mod ViewStage {
             |> Option.getWithDefault(Nil);
         let current = Stage.shownShot(env#res#backdrops, stage);
         let under = if (p >= 1.0) None else stage#under;
-        let shift = shiftOf(env, stage);
+        let shift = shiftOf(env, areaOf, stage);
+        let width = shownWidth(env, areaOf, stage);
         let moved = match stage#switch#transition {
             case _ if Option.nonEmpty(stage#switch#game) and p < 1.0 => photo(current, 0.0, 1.0, View.zBackdropShot())
             case BackdropDoc.Transition.Black => if (p < 0.5 and not isFromDark(env, stage)) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
-            case BackdropDoc.Transition.Slide => List.append(photo(under, shift - base#size#x, 1.0, View.zBackdropUnder()), photo(current, shift, 1.0, View.zBackdropShot()))
-            case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - base#size#x * panShare(), 1.0, View.zBackdropUnder()), photo(current, shift, p, View.zBackdropShot()))
+            case BackdropDoc.Transition.Slide => List.append(photo(under, shift - slideGap(env, areaOf, under, current, width), 1.0, View.zBackdropUnder()), photo(current, shift, 1.0, View.zBackdropShot()))
+            case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - width * panShare(), 1.0, View.zBackdropUnder()), photo(current, shift, p, View.zBackdropShot()))
             case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, View.zBackdropUnder()), wiped(paint, env, areaOf, stage, current, p))
             case _                            => List.append(photo(under, 0.0, 1.0, View.zBackdropUnder()), photo(current, 0.0, p, View.zBackdropShot()))
         };
@@ -222,14 +223,29 @@ mod ViewStage {
                     };
         { layer = View.kindOf(env)#overlayLayer, order = 3, items = items }
 
+    /// 背景 shot を塗る矩形（areaOf に写真の aspect を渡した物）。
+    def areaOfShot(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, shot: Option[Stage.Shot]): Option[Rect2.Rect2] =
+        shot |> Option.map(s -> areaOf(BackdropDoc.aspectOf(s#photo, env#res#backdrops)))
+
+    /// 今の背景を塗る矩形の幅（背景が無ければ aspect の無い写真の幅）。
+    def shownWidth(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage): Float64 =
+        areaOfShot(env, areaOf, Stage.shownShot(env#res#backdrops, stage)) |> Option.getWithDefault(areaOf(None)) |> (r -> r#size#x)
+
+    /// slide で前の写真を今の写真より左へ置く距離: 前の写真の右端が今の写真の左端に接する（どちらかが無ければ width）。
+    def slideGap(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, under: Option[Stage.Shot], current: Option[Stage.Shot], width: Float64): Float64 =
+        let gap = forM (u <- areaOfShot(env, areaOf, under); c <- areaOfShot(env, areaOf, current)) yield u#position#x + u#size#x - c#position#x;
+        Option.getWithDefault(width, gap)
+
     /// pan で写真が流れる距離（背景の幅に対する割合）。
     // WhyNot: 写真を幅いっぱい流さない — 流しながら重ねるので、幅いっぱいだと前の写真が半分見えたまま新しい写真が透けて二重に見える。
     def panShare(): Float64 = 0.25
 
-    /// 今の写真が横へずれている量（px）: slide は右から幅いっぱい、pan は panShare だけ寄ってくる。ほかは 0。
-    def shiftOf(env: View.Env, stage: Stage.Stage): Float64 =
+    /// 今の写真が横へずれている量（px）: slide は右から今の写真の幅いっぱい、pan は panShare だけ寄ってくる。ほかは 0。
+    // WhyNot: 距離を aspect の無い写真の矩形（backdropRect）の幅で決めない — 縦の画面のそれは 16:9 で画面の 3 倍ほど広く、
+    //   aspect を書いた縦長の写真（画面の幅ほど）は送りの大半を画面の外で過ごし、暗い地が見える。
+    def shiftOf(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage): Float64 =
         let p = Stage.fadeProgress(env#storyNow, stage);
-        let width = backdropRect(env#fit)#size#x;
+        let width = shownWidth(env, areaOf, stage);
         match stage#switch#transition {
             case BackdropDoc.Transition.Slide => (1.0 - p) * width
             case BackdropDoc.Transition.Pan   => (1.0 - p) * width * panShare()
@@ -273,9 +289,10 @@ mod ViewStage {
         case _ => false
     }
 
-    /// 小物を頁の幕の上に描く舞台か: 頁に幕があり、文字の枠を消す絵（novel.cast.json の hideWindow）が出ていない。
+    /// 小物を頁の幕の上に描く舞台か: novel.cast.json の propsOnPage が overWindow で、頁に幕があり、文字の枠を消す絵（hideWindow）が出ていない。
     // WhyNot: 文字の枠を消す絵が出ている間も頁に描かない — 枠と一緒に頁の小物まで消え、hideWindow の小物そのものが見えなくなる。
-    pub def propsOnPage(env: View.Env, stage: Stage.Stage): Bool = hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
+    pub def propsOnPage(env: View.Env, stage: Stage.Stage): Bool =
+        CastDoc.rec(env#res#cast)#propsOnPage == CastDoc.PropsOnPage.OverWindow and hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
 
     /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
     pub def hasPageVeil(env: View.Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or Stage.kindOf(env#res#theme, stage) == ThemeDoc.WindowKind.Nvl
@@ -295,7 +312,7 @@ mod ViewStage {
         let shown = Stage.shownShot(env#res#backdrops, stage);
         let light = if (progress >= 1.0) Cast.steadyLight(toneOf(shown)) else { previous = toneOf(stage#under), current = toneOf(shown), progress = progress };
         { doc = env#res#cast, fit = env#fit, storyNow = env#storyNow, realNow = env#realNow, missing = env#res#missing, light = light,
-          props = stage#props, photo = shown |> Option.map(s -> s#photo), backdropShift = shiftOf(env, stage) }
+          props = stage#props, photo = shown |> Option.map(s -> s#photo), backdropShift = shiftOf(env, photoRect(env#fit), stage) }
 
     // ── パーティクル（蛍・雪） ──
 
