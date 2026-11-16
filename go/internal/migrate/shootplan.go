@@ -69,6 +69,15 @@ func planPaint(cur, base *Side, cacheDir string) (*paintPlan, error) {
 			}
 		}
 	}
+	// WhyNot: 全部のコマの数から引かない — MIGRATE_PAINT_* を読まない古い FlowVideo は 1 回目で PNG を全部書くので、PNG を書かなかったコマは 0 枚。
+	missingBefore := 0
+	for _, t := range allTapes(cur) {
+		for _, f := range t.Frames {
+			if !fileExists(filepath.Join(t.Dir, f.File)) {
+				missingBefore++
+			}
+		}
+	}
 	owner := map[string]string{}
 	for _, flow := range sortedKeys(cur.Flows) {
 		for _, size := range sortedKeys(cur.Flows[flow]) {
@@ -117,10 +126,7 @@ func planPaint(cur, base *Side, cacheDir string) (*paintPlan, error) {
 			}
 		}
 	}
-	for _, t := range allTapes(cur) {
-		plan.KeysOnly += len(t.Frames)
-	}
-	plan.KeysOnly -= plan.FromBaseline + plan.FromCache + plan.FromSibling + plan.Painted
+	plan.KeysOnly = missingBefore - (plan.FromBaseline + plan.FromCache + plan.FromSibling + plan.Painted)
 	return plan, nil
 }
 
