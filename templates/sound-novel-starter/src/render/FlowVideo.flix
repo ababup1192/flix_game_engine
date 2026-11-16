@@ -386,7 +386,7 @@ mod FlowVideo {
         root |> Result.toOption |> Option.flatMap(JsonCodec.expectObject)
              |> Option.map(obj -> JsonCodec.stringOr("title", "", obj)) |> Option.getWithDefault("")
 
-    /// 1 コマの絵（SceneRender.shoot と同じ合流: 背景は frame、文章とウィンドウは hud）。
+    /// 1 コマの絵（SceneRender.shootAs と同じ合流: 背景は frame、文章とウィンドウは hud）。
     def sceneOf(screen: SceneRender.Screen, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] =
         let ctx = App.viewCtxOfFonts(fonts(""), fonts, screen#design);
         App.composeScene(None, 1.0, screen#design, { world = Resources.view(View.frame, ctx, h), hud = Resources.view(View.hud, ctx, h) })

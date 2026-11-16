@@ -6,7 +6,7 @@
 // 書き直すのは make talk-vocab。TestDocs が一致を見る）。vocab.std.json はテンプレートの追随で上書きされる物で、ゲームでは直さない。
 // 決まり: vocab.std.json が持つのは commands だけ。tags・speakers・vars・nodes・nodeRefs はゲームの vocab.json に置く（Doc の場所はゲームごとに違う）。
 //
-//   assets/talk/yukidoke.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ World#dialogue
+//   assets/talk/<名前>.yarn ──bin/fge yarn build assets/talk──▶ assets/talk/dialogue.json ──load──▶ Res#dialogue
 mod Talk {
     use fge::{JsonCodec, Yarn, YarnCommands, YarnRunner}
     use Util.Json.Json
@@ -69,7 +69,7 @@ mod Talk {
     def fromVocab(docPath: String): String =
         "../" + (String.stripPrefix(substr = "assets/", docPath) |> Option.getWithDefault(docPath))
 
-    /// build の check が読む語彙（vocab.json の版 2）。名前の正が Doc にある欄は from で Doc の場所だけを書く。
+    /// bin/fge yarn build の検査の語彙（vocab.json の版 2）。名前の正が Doc にある欄は from で Doc の場所だけを書く。
     pub def vocabJson(): String =
         let story = fromVocab(StoryDoc.path());
         let vocab = Json.JObject(Map#{

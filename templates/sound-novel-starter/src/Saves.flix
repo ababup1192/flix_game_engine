@@ -5,7 +5,7 @@
 // セーブの枠は 5 つのページ（Tab）× 6 枠。オートとクイックは「新しい物を先頭に入れ、古い物を後ろへ押し出す」ページ、
 // 1〜3 は人が枠を選んで書くページ。どの枠も中身は「戻れる所」Mark（YarnRunner のブックマークと、その台詞を出した時の
 // 舞台と頁）と、ロード画面に出す物（場所・話し手・台詞・保存した日時・通し番号）。
-// Mark はバックログの行と「戻る」も同じ物を持つ（セーブ・ロード・戻るが 1 つの戻し方 World.restore を通る）。
+// Mark はバックログの行と「戻る」も同じ物を持つ（セーブ・ロード・戻るが 1 つの戻し方 WorldRead.restore を通る）。
 mod Saves {
     use fge::{Clock, DocJson, JsonCodec, Log, YarnRunner}
     use Util.Json.Json

@@ -1,5 +1,5 @@
 // WorldMenu — タイトルのメニュー・クイックメニュー・確認のウィンドウの答え（純粋）。
-// ほかの章（WorldRead・WorldLog・WorldSaves・WorldSettings）を呼ぶ一番上の規則で、入力（Controls）が呼ぶ口の多くはここにある。
+// ほかの章（WorldRead・WorldLog・WorldSaves・WorldSettings）を呼ぶ一番上の規則で、入力から当てる口の多くはここにある。
 mod WorldMenu {
     use fge::{Emit}
 

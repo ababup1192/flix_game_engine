@@ -39,7 +39,7 @@ mod Game {
             |> App.withShots(Resources.shotsOf(Shots.names(res), Shots.worldOf))
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))
-            // WhyNot: 起動した時刻を World 全体の要約に入れない — Main だけが読む外の値で遊んだ記録に残らず、
+            // WhyNot: 起動した時刻を World 全体の要約に入れない — 実機の起動だけが持つ外の値で遊んだ記録に残らず、
             //   画面なしの再生（E2e）は 0 で組むので、決定性の門（make determinism）が毎回食い違う。
             //   セーブは置き換えない（遊ぶ間に書く進行の値）。起動の時に読むセーブも外の値なので、門は saves/ を外して流す。
             //   セーブの枠の日時は clockBase + realNow の秒なので、clockBase の分だけ引いて「起動からの秒」にそろえる

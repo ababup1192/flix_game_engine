@@ -1,5 +1,5 @@
 // WorldRead — 読み進める規則（純粋）: はじめから読む・送る・選ぶ・文字送り・オートとスキップ・戻れる所へ戻す。
-// 文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（YarnRunner が辿る）、演出のコマンドの表は Commands、舞台は Stage、頁は Page。
+// 文章・分岐・結末はシナリオ（assets/talk の .yarn を build した木。YarnRunner が辿る）、演出のコマンドの表は Commands、舞台は Stage、頁は Page。
 // ここの関数は、場面が Reading の時だけ読んでいる値 Read を取り出して動く（ほかの場面では何もしない）。
 //
 // 戻れる所（Saves.Mark）は 3 か所が同じ物を持つ: セーブデータ・バックログの行・「戻る」。戻し方は restore 1 つで、
@@ -38,7 +38,7 @@ mod WorldRead {
                 let (talk, events) = YarnRunner.start(res#dialogue, first, World.now(w));
                 absorbLive(res, YarnRunner.closed(), events, { talk = talk | World.emptyRead(res#theme) }, opened)
             case None =>
-                showLine(res, Commands.Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk/yukidoke.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
+                showLine(res, Commands.Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk の .yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
                                              parts = Nil, tags = Nil, source = { file = "", line = 0 } }, World.emptyRead(res#theme), opened)
         }
 
@@ -203,7 +203,7 @@ mod WorldRead {
             case Err(message)      => Log.warnThen("[stage] ${message}", r)
         }
 
-    /// コマンドの表の apply が読む物。
+    /// コマンドの表の apply に渡す物。
     pub def ctxOf(res: Res.Res, r: World.Read, w: World.World): Commands.Ctx =
         { now = World.now(w), node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault(""), res = res, instant = r#playback == World.Playback.Skip }
 

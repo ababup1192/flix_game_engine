@@ -8,7 +8,7 @@
 //
 //   let k = PropertyTween.numKey("overlay.alpha");
 //   let t = PropertyTween.tween(k, None, 0.6, now, 0.0, 1.5, Curve.Ease.SmoothStep, PropertyTween.empty());
-//   PropertyTween.numAt(now, k, 0.0, t)      // View が読む
+//   PropertyTween.numAt(now, k, 0.0, t)      // 描く時の値
 //   PropertyTween.settle(t)                  // 遅れて始まる物も含め、全部を終わりの値にする
 //   PropertyTween.toJson(t) / fromJson(json) // セーブ（終わりの値だけ）
 //

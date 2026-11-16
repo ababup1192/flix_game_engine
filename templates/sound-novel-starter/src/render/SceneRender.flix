@@ -187,7 +187,7 @@ mod SceneRender {
             case None              => Shots.worldOf(scene, res)
         }
 
-    /// worldOf だけが組む場面: (名前, adv の場面の World をどう変えるか)。
+    /// 描き出しだけの場面: (名前, adv の場面の World をどう変えるか)。
     def ownScenes(): List[(String, World.World -> World.World)] =
         ("menu", w -> World.mapRead(r -> { playback = World.Playback.Auto | r }, { panel = World.Panel.Menu(0) | w })) ::
         ("saveload", w -> { panel = World.Panel.SaveLoadPick(0) | w }) ::
@@ -212,7 +212,7 @@ mod SceneRender {
         List.flatten((variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
                      :: (portraitShots() |> List.map(match (name, _, _) -> name)) :: Nil)
 
-    /// 描き出しだけの名前（novel.shots.json の場面の名前と重なると、どちらを描くか読み違える）: worldOf だけが組む場面と、
+    /// 描き出しだけの名前（novel.shots.json の場面の名前と重なると、どちらを描くか読み違える）: ownScenes の場面と、
     /// 描く元を替えた場面・小さい画面・縦の画面の描き出しの名前。
     pub def renderOnlyNames(): List[String] = (ownScenes() |> List.map(fst)) ::: variantNames()
 
@@ -247,7 +247,7 @@ mod SceneRender {
 
     /// 1 場面を look の画面として PNG に描き出し、そのファイルパスを返す。hud の合流は実機と同じ App.composeScene を通し、
     /// 背景の面は surfaces として別に取り出して画素ごとに評価させる（draw に渡すと代表色のベタ塗りになる）。
-    /// 縦の画面は design と描き出しの大きさを縦の design にし、画面の情報を Display.phonePortrait にする（実機のブラウザの縦と同じ組）。
+    /// 縦の画面は design と描き出しの大きさを縦の design にし、画面の情報を engine の Display の phonePortrait にする（実機のブラウザの縦と同じ組）。
     /// fonts = 描き出しへ混ぜる本（extraFontsOf。場面ごとに組み直さない）。
     def shootAs(look: Look, res: Res.Res, base: HeadlessRender.RenderConfig, fonts: Map[String, SoftRaster.FontEntry], w: World.World, name: String): String \ IO =
         let (cfg, display) = match look {

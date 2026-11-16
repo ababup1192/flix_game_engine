@@ -16,7 +16,7 @@ mod Layout {
         case Portrait(PortraitDoc.Rec, Vec2.Vec2)
     }
 
-    /// 並べ方の組を選ぶ。orientation = design の向き（View は ViewCtx#display#orientation、Controls は Display.orientationOf(Frame#viewport)）、
+    /// 並べ方の組を選ぶ。orientation = design の向き（View は ViewCtx#display#orientation、Controls は Frame#viewport から engine の Display の orientationOf で）、
     /// screen = design の大きさ（View は ViewCtx#visible#size、Controls は Frame#viewport）、sizeClass = 端末の区分。
     /// WhyNot: Medium（タブレット）に Small の組を使わない — 倍率が 1 を超える横持ちなら 960×540 のままでも押せる大きさに近い。
     /// 縦持ちの小さいタブレットと下の帯のボタンは 44 CSS px に届かないので、足りなければ Medium の組を novel.small.json に足す。

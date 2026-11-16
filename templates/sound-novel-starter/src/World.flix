@@ -405,7 +405,7 @@ mod World {
     /// saves を変えて saveRev を進める（= 実機ではセーブのファイルを書く）。
     pub def withSaves(saves: Saves.Saves, w: World): World = { saves = saves, saveRev = w#saveRev + 1 | w }
 
-    /// マウスの位置を写す（Controls が毎フレーム。触れている物を明るくする View が読む）。
+    /// マウスの位置を写す（毎フレーム。触れている物を明るくするのに使う）。
     pub def withPointer(p: { x = Float64, y = Float64 }, w: World): World = { pointer = p | w }
 
     // ── 場面の移り ──
@@ -441,7 +441,7 @@ mod World {
     /// 画面も確認のウィンドウも開いていないか。
     pub def isFree(w: World): Bool = w#panel == Panel.Closed and Option.isEmpty(w#ask)
 
-    /// 物語の時計のこのフレームの進み方（Game の App.addClock が読む）。止める理由は確認のウィンドウと画面と、
+    /// 物語の時計のこのフレームの進み方（App.addClock に渡す）。止める理由は確認のウィンドウと画面と、
     /// 黒へ重ね切って素材を待っている間（Waiting。黒へ重ねる間と戻す間は物語の時計で動くので止めない）。
     pub def paceOf(w: World): Clock.Pace[Stage.Story, Halt] =
         if (Option.nonEmpty(w#ask)) Clock.paceOf(Clock.Run.Paused(Halt.Asking))
