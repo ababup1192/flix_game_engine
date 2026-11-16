@@ -540,11 +540,12 @@ mod Render3d.TestSceneList {
         let list = listWithBillboards(Some(registered(false)), billboardDraw(true) :: Nil);
         Assert.assertEq(expected = (7, 0, -1), (rowAt(list, 2, 1), rowAt(list, 2, 4), Render3d.SceneList.valuesAt(list, 2)))
 
-    /// 絵が見つからないビルボードの行は絵の番号 -1・描く物 0 で、名前を missingBillboardTexturesOf が返す。
+    /// 絵が見つからないビルボードの行は絵の番号 -1・値なしで、視錐台の中の印は残し（GL は描く時に絵を引いて知らせる）、名前を missingBillboardTexturesOf が返す。
     @Test
     def testMissingBillboardTextureIsListed(): Unit \ {Assert, IO} =
         let list = listWithBillboards(None, billboardDraw(false) :: Nil);
-        Assert.assertEq(expected = (-1, 0, "sprite" :: Nil), (rowAt(list, 2, 1), rowAt(list, 2, 4), Render3d.SceneList.missingBillboardTexturesOf(list)))
+        Assert.assertEq(expected = (-1, 1, -1, "sprite" :: Nil),
+                        (rowAt(list, 2, 1), rowAt(list, 2, 4), Render3d.SceneList.valuesAt(list, 2), Render3d.SceneList.missingBillboardTexturesOf(list)))
 
     /// ビルボードの行は材質を持たず、後ろの半透明の行の材質は引ける。
     @Test

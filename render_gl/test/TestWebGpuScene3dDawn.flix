@@ -195,4 +195,33 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         layout.release();
         let (f, p, g) = found;
         (f, p, g, errors)
+
+    /// ビルボードの pipeline（stride 0 の頂点の buffer・group 0 の場面と group 1 の 2D の絵の layout）を、画面の形式の標本 1 と 4 で Dawn が誤り無しに作る。
+    @Test
+    def testBillboardPipelinesBuildOnDawn(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let errors = billboardPipelineErrors(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = 0, errors)
+        }
+
+    def billboardPipelineErrors(gpu: WebGpu): Int32 \ IO =
+        let layout = pasteLayout(gpu);
+        let image = imageLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, image);
+        let RendererData.RendererData(s) = renderer;
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1);
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 4);
+        let errors = gpu.errorCount();
+        Render3d.WebGpuRenderer.release(renderer);
+        image.release();
+        layout.release();
+        errors
 }

@@ -3,7 +3,7 @@
 // ビルボードの値は行の values（Render3d.SceneList.billboardValueFloats）を、材質の値の buffer から stride 0 の instance の頂点の buffer 0 として読む。
 // WhyNot: ビルボードの絵を材質の絵の表（Render3d.TextureTable3d）へ載せない — 2D の描き手の絵の group は絵と sampler を GL の 2D の絵と同じ組で持ち、
 //   借りれば絵ごとの group を作らずに済む（材質の絵の表は段つきの写しと置き場の上限のための物）。
-// WhyNot: 値を行ごとの uniform の区画で読まない — 区画ごとに group を作ることになる。2D の行の値（12.18）と同じく頂点の buffer の位置だけを替える。
+// WhyNot: 値を行ごとの uniform の区画で読まない — 区画ごとに group を作ることになる。頂点の buffer の位置だけを替えれば group は絵の物だけで済む。
 mod Render3d.WebGpuBillboards {
     import fge.webgpu.BindGroupLayout
     import fge.webgpu.CompareFunction

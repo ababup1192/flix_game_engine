@@ -259,6 +259,7 @@ pub mod Render3d.WebGpuRenderer {
         s#sceneLayout.release()
 
     /// 場面のどれかのビルボードが name の絵を貼るか（GL の Render3d.readsTexture と同じ。2D の描き手が Pass の history の要否を決める）。
+    // WhyNot: WebGpuPaint から Render3d.readsTexture を直に呼ばない — 親の Render3d は pub でない mod で、Render3d の子孫でない WebGpuPaint からは届かない（この mod の頭）。
     pub def readsTexture(name: String, scenes: List[Scene3d.RenderCmd]): Bool = Render3d.readsTexture(name, scenes)
 
     /// 2D の描き手が encoder を submit した後に呼ぶ（1 体ごとの値の buffer と場面の値を頭から書き直せる）。
@@ -490,7 +491,8 @@ pub mod Render3d.WebGpuRenderer {
     def sizeOf(b: Buffer): Int32 \ IO =Int64.tryToInt32(b.size()) |> Option.getWithDefault(Int32.maxValue())
 
     /// 場面の置いた物と描く物の数と、行ごとの draw call と分かれた理由を数える（GL の Render3d.GlRows.uploadRows と drawMeshRange と Render3d.drawBillboard と同じ欄）。
-    /// 描く行は描く物のある頂点の色の行・骨つきの行・ビルボードの行と、値のある材質の行（ビルボードは描く物の数に入れない）。
+    /// 描く行は描く物のある頂点の色の行・骨つきの行と、値のある材質の行とビルボードの行（ビルボードは描く物の数に入れない）。
+    /// 数えるのは描く前（GL は描いた時）なので、描く時に pipeline か group が付かずに飛ばした行も数に残る（その行は host#skip にも出る）。
     /// 影の地図の pass の行は draw call と分かれた理由だけを数える（描く物の数は GL と同じく場面の pass の分）。
     def countRows(r: Renderer, plan: ScenePlan[SpanBatch], passes: ScenePasses, shadows: List[ShadowPass]): Unit \ IO =
         let RendererData.RendererData(s) = r;
@@ -511,7 +513,7 @@ pub mod Render3d.WebGpuRenderer {
         let kind = rowAt(list, row, 0);
         let count = rowAt(list, row, 4);
         let isMesh = kind == kindVertexColor() or kind == kindSkinned() or (kind == kindMaterial() and valuesAt(list, row) >= 0);
-        if (count <= 0 or not (isMesh or kind == kindBillboard())) 0
+        if (count <= 0 or not (isMesh or (kind == kindBillboard() and valuesAt(list, row) >= 0))) 0
         else {
             countDrawCallAt(s, rowAt(list, row, 5));
             if (isMesh) count else 0
@@ -583,11 +585,14 @@ pub mod Render3d.WebGpuRenderer {
         drawRows(pass, s#meshStore, drawer, staged#list, staged#instanceBase);
         pass.end()
 
-    /// ビルボードの行 row を描く（貼る絵の group が無ければ偽）。値は行の values を送った位置（mp#base）から頂点の buffer 0 として読む。
+    /// ビルボードの行 row を描く（貼る絵の group が無ければ偽）。絵が見つからなかった行（値の無い行・知らせは stageScene）は描かずに真。
+    /// 値は行の values を送った位置（mp#base）から頂点の buffer 0 として読む。
     /// 付けた pipeline と group 1 は材質の行と共用の控え（mp）に書き、次の材質の行が付け直すようにする。
     def drawBillboardRow(r: Renderer, host: Host, mp: WebGpuMaterials.MaterialPass, p: RenderPass, list: SceneList, row: Int32): Bool \ IO =
         let RendererData.RendererData(s) = r;
+        let values = valuesAt(list, row);
         match host#groupById(rowAt(list, row, 1)) {
+            case _ if values < 0 => true
             case None => false
             case Some(group) =>
                 if (Ref.get(mp#bound) == BoundPipeline.Billboard) () else {
@@ -596,7 +601,7 @@ pub mod Render3d.WebGpuRenderer {
                 };
                 Array.put(-1, 0, mp#groupRow);
                 p.setBindGroup(1, group);
-                p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(mp#base + 4 * valuesAt(list, row)), WebGpuBillboards.valueBytes());
+                p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(mp#base + 4 * values), WebGpuBillboards.valueBytes());
                 p.draw(6, 1, 0, 0);
                 true
         }

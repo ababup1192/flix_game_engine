@@ -110,8 +110,7 @@ mod Render3d {
     type alias LitLocs = { mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs }
 
     /// 1 つの場面の目と光と影（置いた物を描くプログラムへ渡す物）。
-    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadows = SceneShadows,
-                              frustum = Frustum.Frustum }
+    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadows = SceneShadows }
 
     type alias DepthLocs = { mesh = MeshLocs, eye = Int32, depthRange = Int32 }
 
@@ -531,7 +530,6 @@ mod Render3d {
                   area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool }, inputs: SceneInputs,
                   scene: Scene3d.Scene3dCmd): Unit \ IO =
         Array.put(scene#time, 0, state#timeHolder);
-        let frustum = Scene3d.frustumOf(scene);
         let programs = programsOf(gl, state);
         let background = if (area#fillBackground and Option.isEmpty(scene#sky)) scene#environment#background else None;
         beginScene(gl, area#viewport, area#scissor, background);
@@ -544,7 +542,7 @@ mod Render3d {
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let shadows = inputs#shadows;
-        let camera = { view = view, proj = proj, lights = lights, shadows = shadows, frustum = frustum };
+        let camera = { view = view, proj = proj, lights = lights, shadows = shadows };
         Render3d.GlRows.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
         uploadRows(gl, state, gen, source, inputs, List.length(scene#instances));
@@ -907,6 +905,7 @@ mod Render3d {
     // ── ビルボード ──
 
     /// 行 list のビルボードの行（firstBillboardRowOf から firstBlendedRowOf の前まで）を描く。描く物の無い行（視錐台の外）は描かない（見つからない絵の知らせは描く物と同じに出す）。
+    /// 絵は描く時に引く（行の欄 1 の番号は WebGPU の物）。
     def drawBillboards(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
                        camera: CameraData, scene: Scene3d.Scene3dCmd, list: SceneList): Unit \ IO =
         let first = firstBillboardRowOf(list);
@@ -961,7 +960,9 @@ mod Render3d {
                 gl.uniform1i(locs#lit, if (b#lit) 1 else 0);
                 gl.drawArrays(GlConst.TRIANGLES, 0, 6);
                 countDrawCall(state, BatchBreak.Billboard)
-        }
+        };
+        // WhyNot: 末尾を呼び出しで終えない — ビルボードが多い場面で drawBillboardsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
+        ()
 
     /// 貼る範囲の uv（左上 u・v と幅・高さ）。レンダーターゲットは行 0 が下なので v を反転する。
     def putUvRect(gl: GlContext, loc: Int32, texture: Scene3dRenderer.RegisteredTexture, source: Rect2.Rect2): Unit \ IO =

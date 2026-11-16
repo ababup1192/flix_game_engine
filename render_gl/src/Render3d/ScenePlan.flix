@@ -549,7 +549,7 @@ mod Render3d.ScenePlan {
 
     /// 場面のビルボード（来た順）。視錐台は置いた物の間引きと同じ Scene3d.frustumOf。
     // WhyNot: 視錐台の外のビルボードを列から外さない — GL は絵が見つからない知らせを間引く前に出すので、外した物の知らせが消える。
-    pub def billboardDrawsOf(scene: Scene3d.Scene3dCmd): List[BillboardDraw] =
+    def billboardDrawsOf(scene: Scene3d.Scene3dCmd): List[BillboardDraw] =
         let frustum = Scene3d.frustumOf(scene);
         scene#billboards |> List.map(b -> { fields = Scene3d.billboardFieldsOf(b), culled = Scene3d.isBillboardOutsideFrustum(frustum, b) })
 
