@@ -86,7 +86,7 @@ HELP_TAIL = echo ""; echo "make render の場面: $(SHOTS)"; $(if $(RENDER_NOTE)
 fge_space := $(subst ,, )
 include $(subst $(fge_space),\$(fge_space),$(ENGINE))/mk/common.mk
 
-.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries loc src src-index check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade
+.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade
 
 ##@ 遊ぶ・確かめる
 # RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
@@ -370,28 +370,13 @@ video-entries: ### | 動画の見回りが流す入口の一覧を Makefile の 
 	@$(FGE_PICK); "$$fge" video-entries --root .
 
 ##@ ゲームの src を引く
-# ゲームの src/ の地図。pub の定義と各ファイル冒頭 doc の 1 行目を、ファイル別・行番号つきで
-# debug/src-index.md へ書く（正規表現だけの最小版・数秒）。.flix を丸読みせずに位置を引くための物。
+# ゲームの src/ の定義を 1 行で引く（make api Q= のゲーム版・正規表現だけの最小版）。例: make src Q=talkBackdrop
 SRC_INDEX_AWK := $(ENGINE)/mk/src-index.awk
-src-index: ### | src/ の pub 定義と各ファイル冒頭 doc の 1 行目を debug/src-index.md へ
-	@mkdir -p debug
-	@{ echo "# src index ($$(date '+%Y-%m-%d %H:%M'))"; \
-	  echo ""; \
-	  echo "make src-index の生成物。pub の定義と各ファイル冒頭 doc の 1 行目。手で編集しない。"; \
-	  find src -name '*.flix' | sort | xargs awk -v FORMAT=md -f "$(SRC_INDEX_AWK)"; \
-	} > debug/src-index.md
-	@echo "[src-index] debug/src-index.md ($$(wc -l < debug/src-index.md | tr -d ' ') 行)"
-
-# ゲームの src/ の定義を 1 行で引く（make api Q= のゲーム版）。例: make src Q=talkBackdrop
 src: ## Q=<名前> | ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）
 	@test -n "$(Q)" || { echo "usage: make src Q=<関数名や型名>"; exit 1; }
-	@out=$$(find src -name '*.flix' | sort | xargs awk -v FORMAT=flat -f "$(SRC_INDEX_AWK)" | grep -i -- "$(Q)" | head -40); \
+	@out=$$(find src -name '*.flix' | sort | xargs awk -f "$(SRC_INDEX_AWK)" | grep -i -- "$(Q)" | head -40); \
 	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
 	else echo "[src] '$(Q)' の pub 定義なし。grep -n '$(Q)' -r src で使われ方を探す"; fi
-
-# ロジックの大きさ。「全部読める大きさ」（上限 3,000 行）を保つための物差し。
-loc: ### | src/ + test/ の .flix 合計行数（上限 3,000 行）
-	@find src test -name '*.flix' -print0 | xargs -0 wc -l | tail -1
 
 ##@ エージェントの道具選びを測る
 # 文書・スキル・早見表で、何も教えていないエージェントが正しい道具を選べるかを測る。

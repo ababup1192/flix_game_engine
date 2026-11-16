@@ -170,13 +170,13 @@ swap の直前の絵）を、テンプレの場面ごとに頭の 6 コマ撮っ
 | `gl-parity.txt` | gl-parity の行（場面ごとの差の数） | `make gl-parity` |
 | `gl-parity.sha256` | gl-parity の CPU の絵（GPU に依らない。同じ JDK・同じ CPU の種類で比べる）と GL の絵の SHA-256 | `bench/gl_parity/debug/` を shasum |
 | `gl-capture.sha256` | 上の撮り比べの SHA-256（同じ機械でだけ比べる） | `make gl-capture` |
-| `scene3d.txt` | 3D の部屋の CPU の絵の SHA-256 と、CPU で描く時間の中央値 | `FGE_RENDER_CACHE=off make scene3d-still`・`make scene3d-cpu` |
-| `gl-parity-cpu.tsv` | gl-parity の場面ごとの CPU の描く時間の中央値（同じ機械で前後を並べて見る。門にしない） | `make gl-parity-cpu` |
+| `scene3d.txt` | 3D の部屋の CPU の絵の SHA-256 と、CPU で描く時間の中央値 | `FGE_RENDER_CACHE=off make bench B=scene3d-still`・`make bench B=scene3d-cpu` |
+| `gl-parity-cpu.tsv` | gl-parity の場面ごとの CPU の描く時間の中央値（同じ機械で前後を並べて見る。門にしない） | `make bench B=gl-parity-cpu` |
 | `reference.txt` | テンプレの reference-check の結果（前から落ちる場面も） | 各テンプレで `make reference-check` |
 | `reference-gallery.sha256` | テンプレの gallery の絵の SHA-256（前から落ちる場面も絵が前と同じかを見る） | 各テンプレで `make render-all` |
 | `external.tsv`・`external.tsv.revs` | 外のゲームの写しの型検査で通った物と、ファイル・番号ごとのエラーの数／その時の写しの src・test の指紋 | `bin/check-external.sh`（比べるのは `make check-external`） |
 | `upgrade/<ゲーム>.patch` | 0.76 の移行を済ませていないゲームの写しを、移行メモどおりに上げる差分（ゲームの本体には当てない） | 写しを手で直して `diff -ru` |
 
 比べる口: `make baseline-check`（gl-parity の行・CPU の絵・3D の部屋。`GALLERY=1` でテンプレの gallery も）・`make check-external`・
-`make gl-capture-check`（基準の SHA とも比べる。同じ機械だけ）・`make gl-parity-cpu` と `make scene3d-cpu` の中央値を `gl-parity-cpu.tsv`・`scene3d.txt` と見比べる（時間は門にしない）。
+`make gl-capture-check`（基準の SHA とも比べる。同じ機械だけ）・`make bench B=gl-parity-cpu` と `make bench B=scene3d-cpu` の中央値を `gl-parity-cpu.tsv`・`scene3d.txt` と見比べる（時間は門にしない）。
 CPU の 3D の絵の一部は毎回のテストでも守る（engine_tools の `TestSoftRaster3dPinned`: 光・影・半球の光・霧・トゥーンの段の 32×32 の 2 枚の画素の SHA-256）。

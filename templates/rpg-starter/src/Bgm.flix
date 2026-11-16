@@ -31,7 +31,7 @@ mod Bgm {
     }
 
     /// project.json の sounds の論理名（= assets/bgm の WAV の名前）。
-    /// WhyNot: "bgm_" + nameOf(t) と組まない — 名前を字のまま書いておくと make lint-audio と grep が project.json と突き合わせられる。
+    /// WhyNot: "bgm_" + nameOf(t) と組まない — 名前を字のまま書いておくと bin/fge audio と grep が project.json と突き合わせられる。
     pub def soundOf(t: Track): String = match t {
         case Track.Title   => "bgm_title"
         case Track.Village => "bgm_village"

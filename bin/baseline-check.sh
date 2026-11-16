@@ -4,7 +4,7 @@
 #   bin/baseline-check.sh <基準のフォルダ> <gl-parity のログ> [--gallery] [--gallery-base <フォルダ>] [--only-2d] [--only-known]
 #                         [--compare-max <控えのフォルダ>]
 #
-# 先に流しておく物（make baseline-check が順に流す）: make gl-parity（ログを渡す）・FGE_RENDER_CACHE=off make scene3d-still。
+# 先に流しておく物（make baseline-check が順に流す）: make gl-parity（ログを渡す）・FGE_RENDER_CACHE=off make bench B=scene3d-still。
 #   --gallery               テンプレの gallery/*.png（make render-all の後）も reference-gallery.sha256 と比べる
 #   --gallery-base <フォルダ> gallery の基準の reference-gallery.sha256 を <基準のフォルダ> でなくこのフォルダから読む（--gallery と一緒に）
 #   --only-2d               ログの [parity3d] の名前の行（3D の場面を持つ scene）と E 段階の行（3D の式）を、基準と今の両方から除いて比べる。

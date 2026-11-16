@@ -69,7 +69,7 @@ ZStack.mapItems(Render.scaledAllAround(1.0 + bump, center), tree)
 - z を数で決める所（`def zHero(): Int32 = 10`）は 1 つのパッケージで 1 ファイルに集める。
   散ると別のファイルどうしで同じ数を取り合い、どちらが手前かが描き順まかせになる。
   画面が増えて 1 ファイルに収まらなくなったら `ZOrder.flix` を表にして、他のファイルはそこから引く
-  （`bin/fge z-table` がコミット時に警告する。全量は `make lint-z-table`）。
+  （`bin/fge z-table` がコミット時に警告する。全量は `bin/fge z-table --all`）。
 - 描き出しで場面ごとに描画物の z を層の表と突き合わせ、外れた物を TSV（見出し shot・z・what・allowed・layer）に書けば、
   `make render-lint`（`bin/fge z-audit`）が描き出しの後から読み直して止める。表の置き場と直し方の 1 行は
   `bin/lint-rules/z-audit.json`（ゲームは `z-audit.local.json` で上書き）。字の被り・はみ出しの表は `bin/fge text-audit` が同じ形で読む。

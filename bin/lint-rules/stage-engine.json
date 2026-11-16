@@ -102,7 +102,7 @@
     {
       "src": "mk/*.awk",
       "dest": "mk",
-      "why": "make help の一覧 (mk/help.awk) と make src・src-index の索引 (mk/src-index.awk)。mk/game.mk と mk/common.mk が読む"
+      "why": "make help の一覧 (mk/help.awk) と make src の索引 (mk/src-index.awk)。mk/game.mk と mk/common.mk が読む"
     },
     {
       "src": "docs/doc-conventions.md",

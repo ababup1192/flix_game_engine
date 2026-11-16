@@ -11,7 +11,7 @@
 bin/fge checkd [パッケージdir]  # check する (省略時はカレント)。出力と exit code は素の flix check と同じ
 bin/fge checkd --test [dir]     # test する (素の flix test)
 bin/fge checkd --stop [dir]     # そのパッケージの常駐を止める
-bin/fge checkd --stop-all       # 記録のある常駐を全部止める (make checkd-stop と同じ)
+bin/fge checkd --stop-all       # 記録のある常駐を全部止める
 ```
 
 作業の区切りのフックは、engine の層（`render_gl`・`engine_world`・`engine_tools`）を `.layers/<名前>` で検査する。元のフォルダには土台の engine の src が無く、必ず「名前が無い」で赤くなるため。足した・消したファイルのリンクはフックが直す。
@@ -93,7 +93,7 @@ NG が出れば `decision:block`（exit 2）で Claude に差し戻し、緑と�
 ## 困ったら
 
 ```
-make checkd-stop        # 全部止める。次の check が立て直すので、いつ打っても壊れない
+bin/fge checkd --stop-all   # 全部止める。次の check が立て直すので、いつ打っても壊れない
 ```
 
 check の結果がどうしても疑わしい時は `CHECKD=0 make check`（または `bin/flix check`）で素の経路と比べる。

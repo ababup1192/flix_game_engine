@@ -212,7 +212,7 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
   今ある `CollisionShape2D`・`Physics2D` は改名しない（ゲームが使う pub が多く、改名の得が小さい）。新しく作る物から従う。
 - 大きくなったモジュールは、ゲームが呼ぶ pub を元のモジュールに残し、中身を `<元>.Internal.<役>` へ移す（`App.Internal.*`・`Render.Internal.*`・
   `SoftRaster.Internal.*`）。Flix には pub の名前を別の mod の名前で見せ直す口が無いため。ゲームから engine の `<元>.Internal`（App・Render・SoftRaster）を書くと lint-forbid の
-  `app-internal` が止める。engine の 4 パッケージの src の 1 ファイルは 1,200 行まで（`make lint-max-lines`・例外は `bin/lint-rules/max-lines.json`）。
+  `app-internal` が止める。engine の 4 パッケージの src の 1 ファイルは 1,200 行まで（`make lint ONLY=max-lines`・例外は `bin/lint-rules/max-lines.json`）。
 
 ## 二乗を書かない
 
@@ -251,7 +251,7 @@ N はゲームが決める。エンジンは N を知らない（今のテンプ
 - `forM` は効果の逐次実行には使えない
 - 小数は Float64 で書く（`1.0` は Float64。Float32 のリテラルには `f32` サフィックスが要る）。
   engine の pub 面に Float32 は出さない決まりで、Float32 は GL / OpenAL / STB を呼ぶ
-  境界の内側だけ（engine のリポジトリでは `make lint-f32` が検査する）
+  境界の内側だけ（engine のリポジトリでは `make lint ONLY=f32` が検査する）
 - ゲームのモジュールの名前が engine のモジュールと同じ（ゲームの `Camera3d` と engine の `Camera3d` など）でも、engine は `mount = "fge"` で
   `fge::` の下にあるので重ならない。同じファイルで両方を使う時だけ、engine の方を別の名前で入れる（`use fge::{Camera3d => EngineCamera}`）
 
