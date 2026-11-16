@@ -1,10 +1,11 @@
-// joint texture（Render3d.JointTexture）の、行の割り当て・高さ・詰め方と、1 回の prepare につき 1 回だけ上げること。GL は呼び出しを控える偽物。
+// 姿勢の行の割り当て（Render3d.PoseRows）と GL の joint texture（Render3d.GlRows.JointTexture）の、行の割り当て・高さ・詰め方と、1 回の prepare につき 1 回だけ上げること。GL は呼び出しを控える偽物。
 mod Render3d.TestJointTexture {
     import fge.gl.RecordingGl
     import java.nio.FloatBuffer
-    use Render3d.DataTexture.{heightFor}
+    use Render3d.GlRows.DataTexture.{heightFor}
     use Render3d.FakeGl.{cmdOf, dest, freshRecorded, freshState, noTexture, paint, paintTo, passDest, poseAt, recordingGl, sceneOf, shadowSpot, skinnedAt, stderrOf, timesCalled, viewport}
-    use Render3d.JointTexture.{assignRow, noRows, packRows, upload, withPoseRow}
+    use Render3d.PoseRows.{assignRow, noRows, packRows, withPoseRow}
+    use Render3d.GlRows.JointTexture.{upload}
 
     /// n 本のジョイントが親から順につながった姿勢（どの joint 行列も x だけ動く）。
     def poseWithJoints(n: Int32, x: Float64): Pose3d.Pose3d =
@@ -16,7 +17,7 @@ mod Render3d.TestJointTexture {
             case Err(e)   => bug!(e)
         }
 
-    def rowsFrom(poses: List[Pose3d.Pose3d]): (List[Int32], Render3d.JointTexture.PoseRows) =
+    def rowsFrom(poses: List[Pose3d.Pose3d]): (List[Int32], Render3d.PoseRows.PoseRows) =
         let (rowsReversed, table) = poses |> List.foldLeft((acc, pose) -> {
             let (seen, rows) = acc;
             let (row, next) = assignRow(pose, rows);
@@ -70,7 +71,7 @@ mod Render3d.TestJointTexture {
     @Test
     def testSameValueIsNotEqualContent(): Unit \ Assert =
         let p = poseAt(1.0);
-        Assert.assertEq(expected = (true, false), (Render3d.JointTexture.isSameValue(p, p), Render3d.JointTexture.isSameValue(poseAt(1.0), poseAt(1.0))))
+        Assert.assertEq(expected = (true, false), (Render3d.PoseRows.isSameValue(p, p), Render3d.PoseRows.isSameValue(poseAt(1.0), poseAt(1.0))))
 
     // ── 高さと詰め方 ──
 
@@ -105,7 +106,7 @@ mod Render3d.TestJointTexture {
     // ── 上げる（呼び出しを控える偽の GL の上で）──
 
     /// 0.0 から 1.0 ずつ違う姿勢を n 個並べた割り当て。
-    def rowsOfCount(n: Int32): Render3d.JointTexture.PoseRows =
+    def rowsOfCount(n: Int32): Render3d.PoseRows.PoseRows =
         snd(rowsFrom(List.range(0, n) |> List.map(i -> poseAt(Int32.toFloat64(i)))))
 
     /// 姿勢が無い prepare はテクスチャを作らず、GL を 1 つも呼ばない。
@@ -123,9 +124,9 @@ mod Render3d.TestJointTexture {
         let gl = recordingGl(log);
         let state = freshState();
         discard upload(gl, state, 1i64, rowsOfCount(16));
-        Render3d.DataTexture.endFrame(gl, state#joints, 1i64);
-        Render3d.DataTexture.endFrame(gl, state#joints, 2i64);
-        Render3d.DataTexture.endFrame(gl, state#joints, 3i64);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, 1i64);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, 2i64);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, 3i64);
         discard upload(gl, state, 4i64, rowsOfCount(17));
         let (rowCount, xs) = List.head(Ref.get(log#uploaded)) |> Option.getWithDefault((0, Nil));
         Assert.assertEq(expected = (32 :: 16 :: Nil, 17, Some(0.0f32), Some(16.0f32), 1),
@@ -138,9 +139,9 @@ mod Render3d.TestJointTexture {
         let gl = recordingGl(log);
         let state = freshState();
         discard upload(gl, state, 1i64, rowsOfCount(16));
-        Render3d.DataTexture.endFrame(gl, state#joints, 1i64);
-        Render3d.DataTexture.endFrame(gl, state#joints, 2i64);
-        Render3d.DataTexture.endFrame(gl, state#joints, 3i64);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, 1i64);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, 2i64);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, 3i64);
         discard upload(gl, state, 4i64, rowsOfCount(2));
         Assert.assertEq(expected = 16 :: Nil, Ref.get(log#allocated))
 
@@ -186,7 +187,7 @@ mod Render3d.TestJointTexture {
         let frame = (gen: Int64) -> {
             let first = upload(gl, state, gen, rowsOfCount(1));
             let second = upload(gl, state, gen, rowsOfCount(1));
-            Render3d.DataTexture.endFrame(gl, state#joints, gen);
+            Render3d.GlRows.DataTexture.endFrame(gl, state#joints, gen);
             (first, second)
         };
         let one = frame(1i64);
@@ -203,7 +204,7 @@ mod Render3d.TestJointTexture {
         let gl = recordingGl(log);
         let state = freshState();
         discard upload(gl, state, 1i64, rowsOfCount(1));
-        Render3d.DataTexture.endFrame(gl, state#joints, 1000i64);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, 1000i64);
         Assert.assertEq(expected = (0, true), (Map.size(Ref.get(state#joints#texturesRef)), List.memberOf("deleteTexture", Ref.get(log#calls))))
 
     // ── 1 回の prepare につき 1 回（Render3d.prepareNumbered を通して）──

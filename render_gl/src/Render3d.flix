@@ -9,9 +9,9 @@
 //   材質のある物は 色 = fog(albedo × tint × light) + emission（頂点の色は掛けない）。cutout なら α < 0.5 を捨てる。
 //   材質の Tex は unit 0〜5（ShaderDoc.materialTexReads の並び・上限 Scene3d.maxMaterialTextures()）に貼り、材質を描いた後に
 //   その unit の sampler を外して unit 0 へ戻す（ビルボードと 2D の面が unit 0 で読む）。法線マップは unit 6・スポットの影の地図は unit 7・太陽の影の地図は unit 13。
-//   骨つきの物の joint 行列は unit 10 の絵（Render3d.JointTexture）を頂点シェーダーが読む。行は prepare の中で 1 回だけ決めて MeshDraw に持たせる。
+//   骨つきの物の joint 行列は unit 10 の絵（Render3d.GlRows.JointTexture・行の割り当ては Render3d.PoseRows）を頂点シェーダーが読む。行は prepare の中で 1 回だけ決めて MeshDraw に持たせる。
 //   同じ形と材質の物は batch （Render3d.Batch）にして 1 回の instanced draw で描き、batch にならない物も instance 数 1 で同じプログラムで描く。world・法線の行列・tint・emissionIntensity・joint の行は
-//   1 体ごとの値で、unit 11 の絵（Render3d.Instancing）を頂点シェーダーが uInstanceBase + gl_InstanceID で読む。
+//   1 体ごとの値で、unit 11 の絵（Render3d.GlRows.Instancing・並びは Render3d.InstanceValues）を頂点シェーダーが uInstanceBase + gl_InstanceID で読む。
 //   法線マップ（uv つきの形だけ）: T = normalize(T − N (N·T))・B = cross(N, T) × w・c = 絵の rgb・
 //   m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
 //   ビルボードの法線はカメラへ向く向き（−forward）。Output.Depth の灰色は目からの距離で (d − near) / range。
@@ -277,9 +277,9 @@ mod Render3d {
         // 先に上げた物の控え。
         preloadRef = Ref[PreloadState, Static],
         // joint texture の置き場。
-        joints = Render3d.DataTexture.DataTextures,
+        joints = Render3d.GlRows.DataTexture.DataTextures,
         // 1 体ごとの値のテクスチャの置き場。
-        instances = Render3d.DataTexture.DataTextures,
+        instances = Render3d.GlRows.DataTexture.DataTextures,
         // 計画の側の状態（置いた物の描き方と知らせ済みの鍵。GL の物を持たない）。
         planner = Render3d.ScenePlan.Planner
     }
@@ -346,7 +346,7 @@ mod Render3d {
           blankTexture = Array#{0} @ Static, countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
           preloadRef = Ref.fresh(Static, Render3d.Preload.empty()),
-          joints = Render3d.DataTexture.freshTextures(), instances = Render3d.DataTexture.freshTextures(),
+          joints = Render3d.GlRows.DataTexture.freshTextures(), instances = Render3d.GlRows.DataTexture.freshTextures(),
           planner = Render3d.ScenePlan.freshPlanner(drawMode) }
 
     /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限は config（project.json）から読む。
@@ -386,8 +386,8 @@ mod Render3d {
             let grouped = groupScenes(state#planner, caps, dest#samples, cmds);
             let materials = resolveMaterials(gl, state, gen, grouped#requests);
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
-            let joints = Render3d.JointTexture.upload(gl, state, gen, rows);
-            let (numbered, instances) = Render3d.Instancing.upload(gl, state, gen, planned, grouped#members);
+            let joints = Render3d.GlRows.JointTexture.upload(gl, state, gen, rows);
+            let (numbered, instances) = Render3d.GlRows.Instancing.upload(gl, state, gen, planned, grouped#members);
             let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf };
             (numbered, List.map(buildScenePasses(tables), numbered), materials, (joints, instances))
         });
@@ -414,7 +414,7 @@ mod Render3d {
 
     /// 計画が backend に聞く描き先の能力。
     def planCapsOf(gl: GlContext, state: State): PlanCaps \ IO =
-        { alphaToOne = gl.hasAlphaToOne(), poseRowLimit = Render3d.DataTexture.rowLimit(gl, state#joints) }
+        { alphaToOne = gl.hasAlphaToOne(), poseRowLimit = Render3d.GlRows.DataTexture.rowLimit(gl, state#joints) }
 
     /// 場面 1 つを 2D の並びの中で描く。描き終えたら viewport を vp へ、scissor を切り、blend を Normal へ戻す。
     def drawItem(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
@@ -540,8 +540,8 @@ mod Render3d {
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let shadows = inputs#shadows;
         let camera = { view = view, proj = proj, lights = lights, shadows = shadows, frustum = frustum };
-        Render3d.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
-        Render3d.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
+        Render3d.GlRows.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
+        Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
         uploadRows(gl, state, gen, source, inputs, List.length(scene#instances));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = programs#billboard, scene = scene };
         inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, textureOf, ctx, inputs, spec, list));
@@ -872,8 +872,8 @@ mod Render3d {
         sweepMaterials(gl, state, gen);
         sweepShadowTargets(gl, state, gen);
         sweepTextures3d(gl, state, gen);
-        Render3d.DataTexture.endFrame(gl, state#joints, gen);
-        Render3d.DataTexture.endFrame(gl, state#instances, gen);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#joints, gen);
+        Render3d.GlRows.DataTexture.endFrame(gl, state#instances, gen);
         trimToBudget(gl, state, gen)
     })
 

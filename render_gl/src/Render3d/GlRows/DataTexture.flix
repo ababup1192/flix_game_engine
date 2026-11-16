@@ -1,7 +1,8 @@
-// Render3d.DataTexture — 3D の描き手（Render3d）が頂点シェーダーへ渡す数を入れる RGBA32F のテクスチャの置き場。1 回の prepare につき 1 枚を使い、回して書く。
-// 姿勢（Render3d.JointTexture）と 1 体ごとの値（Render3d.Instancing）がこの回し方を共有する。約束は Render3d.flix の頭。
+// Render3d.GlRows.DataTexture — GL の backend の、3D の描き手（Render3d）が頂点シェーダーへ渡す数を入れる RGBA32F のテクスチャの置き場。1 回の prepare につき 1 枚を使い、回して書く。
+// 姿勢（Render3d.GlRows.JointTexture）と 1 体ごとの値（Render3d.GlRows.Instancing）がこの回し方を共有する。約束は Render3d.flix の頭。
 // WhyNot: 1 コマ 1 枚に prepare ごとの行を後ろへ足さない — 前の prepare の draw が読んでいる最中のテクスチャへ書くことになり、ドライバが GPU を待つ。
-mod Render3d.DataTexture {
+// WhyNot: pub を外さない — 呼び手の Render3d（と偽の GL を通るテスト）は GlRows の外で、pub でない孫の mod には届かない（親の Render3d が pub でないので、ゲームからは見えない）。
+pub mod Render3d.GlRows.DataTexture {
     import fge.gl.GlConst
     import fge.gl.GlContext
     import java.nio.FloatBuffer

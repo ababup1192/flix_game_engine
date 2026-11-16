@@ -42,7 +42,7 @@ pub mod Render3d.WebGpuRenderer {
     import java.nio.FloatBuffer
     use Render3d.{LightData, MeshDraw, PixelBox, clipBox, matrixArray, sceneRect}
     use Render3d.Batch.{MeshBatch, SpanBatch}
-    use Render3d.Instancing.{PackMode, numberSpan}
+    use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
     use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenes, isSkinned, planScenes}
     use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses}

@@ -1,14 +1,10 @@
-// Render3d.JointTexture — 3D の描き手（Render3d）の、1 回の prepare の姿勢を 1 枚の RGBA32F のテクスチャへ詰めて上げる所。
-// 1 行 = 1 姿勢・1 ジョイント = 横に 4 texel（mat4 の列の順）。頂点シェーダーは texelFetch 4 本で mat4 に組む（Render3dGlsl.skinDeclarations）。テクスチャの回し方は Render3d.DataTexture。約束は Render3d.flix の頭。
-// WhyNot: UBO に置かない — 最低保証の 16 KB に重複の無い姿勢が入り切らず、1 体ごとに書き直すことになる。SSBO は GL 3.3 と WebGL2 に無い。
-mod Render3d.JointTexture {
-    import fge.gl.GlConst
-    import fge.gl.GlContext
+// Render3d.PoseRows — 1 回の prepare の姿勢に行を割り当てる表と、行の順に joint 行列を詰める所（計画の側。GPU を呼ばない）。
+// 行の数の上限は backend が計画に渡す（Render3d.ScenePlan.PlanCaps#poseRowLimit）。上げるのは backend: GL は 1 行 = 1 姿勢の RGBA32F の絵（Render3d.GlRows.JointTexture）・
+// WebGPU は storage の buffer（Render3d.WebGpuRenderer）。1 行は joints 本の mat4（列優先 16 個 = Mat4.toColumns の並び）。
+mod Render3d.PoseRows {
     import java.nio.FloatBuffer
     import java.util.Objects
-    use Render3d.{MeshDraw, State, jointTextureUnit, warnSceneOnce}
-    use Render3d.DataTexture.{bufferFor, heightFor, takeTexture}
-    use Render3d.Counts.{Counter, count}
+    use Render3d.{MeshDraw}
 
     /// 1 回の prepare の姿勢の行の割り当て。buckets = 姿勢の鍵 → その鍵の (姿勢, 行)・poses = 割り当てた姿勢（新しい物が頭）・
     /// used = 割り当てた行の数・limit = 行の数の上限・dropped = 上限を超えて行をもらえなかった姿勢の数・
@@ -16,11 +12,6 @@ mod Render3d.JointTexture {
     pub type alias PoseRows = {
         buckets = Map[Int64, List[(Pose3d.Pose3d, Int32)]], poses = List[Pose3d.Pose3d], used = Int32, limit = Int32, dropped = Int32, joints = Int32
     }
-
-    /// 1 つの joint 行列の幅（texel）。
-    def texelsPerJoint(): Int32 = 4
-
-    // ── 行の割り当て ──
 
     /// 空の割り当て（行の数の上限 limit）。
     pub def noRows(limit: Int32): PoseRows =
@@ -73,6 +64,12 @@ mod Render3d.JointTexture {
 
     // ── 詰める ──
 
+    /// 割り当てた姿勢を行の順に（頭が 0 行目）。
+    pub def posesInRowOrder(rows: PoseRows): List[Pose3d.Pose3d] = List.reverse(rows#poses)
+
+    /// rows を詰めた時の float の数（行の数 × 1 行のジョイントの数 × 16）。
+    pub def floatCountOf(rows: PoseRows): Int32 = rows#joints * 16 * rows#used
+
     /// poses を row の順に、1 行 joints 本ずつ out の頭から詰める（列優先 16 個 = Mat4.toColumns の並び）。読む範囲が out の position から limit になる。
     // WhyNot: 行の残りを 0 で埋めない — 頂点が引く番号は Scene3d.skinningOf がジョイントの数未満と確かめてあり、残りを読むのは行をもらえなかった姿勢だけで、その形は知らせた上で崩れる。
     pub def packRows(joints: Int32, poses: List[Pose3d.Pose3d], out: FloatBuffer): Unit \ IO =
@@ -85,24 +82,4 @@ mod Render3d.JointTexture {
         });
         discard out.position(List.length(poses) * floatsPerRow);
         discard out.flip()
-
-    // ── 上げる ──
-
-    /// 今の prepare の姿勢をテクスチャへ 1 回で上げて joint の unit に貼り、テクスチャの番号を返す。姿勢が無ければテクスチャを作らず None。
-    pub def upload(gl: GlContext, state: State, gen: Int64, rows: PoseRows): Option[Int32] \ IO =
-        if (rows#dropped > 0)
-            warnSceneOnce(state, "@joint-rows", Log.fellBackLine("scene3d", "1 回の prepare の違う姿勢", "最後の行の姿勢", "${rows#limit} 行を超えた（${rows#dropped} 個）"))
-        else ();
-        if (rows#used == 0) None
-        else {
-            let poses = List.reverse(rows#poses);
-            let buffer = bufferFor(gl, state#joints, rows#joints * 16 * rows#used);
-            packRows(rows#joints, poses, buffer);
-            gl.activeTexture(GlConst.TEXTURE0 + jointTextureUnit());
-            let texture = takeTexture(gl, state#joints, gen, heightFor(rows#limit, rows#used));
-            gl.texSubImageRgba32f(0, 0, rows#joints * texelsPerJoint(), rows#used, buffer);
-            gl.activeTexture(GlConst.TEXTURE0);
-            count(state, Counter.JointUploads, 1);
-            Some(texture#texId)
-        }
 }

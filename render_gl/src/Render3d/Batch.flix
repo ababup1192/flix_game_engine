@@ -1,5 +1,5 @@
 // Render3d.Batch — 3D の描き手（Render3d）の、同じ形・同じ材質の物を 1 回の instanced draw へまとめる所。GL を呼ばずに決まる。約束は Render3d.flix の頭。
-// tint・emissionIntensity・world・姿勢は 1 体ごとの値（Render3d.Instancing）なので、batch を分けない。
+// tint・emissionIntensity・world・姿勢は 1 体ごとの値（Render3d.InstanceValues）なので、batch を分けない。
 mod Render3d.Batch {
     import java.lang.Object
     import java.util.HashMap

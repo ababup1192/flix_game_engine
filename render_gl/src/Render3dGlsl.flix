@@ -94,7 +94,7 @@ pub mod Render3dGlsl {
     /// 1 体ごとの値のテクスチャの 1 行の体の数（dataTextureWidth は texelsPerInstance で割り切れる）。
     pub def instancesPerRow(): Int32 = dataTextureWidth() / texelsPerInstance()
 
-    /// 1 体ごとの値のテクスチャの宣言（並びは Render3d.Instancing の頭）。
+    /// 1 体ごとの値のテクスチャの宣言（並びは Render3d.InstanceValues の頭）。
     def instanceDeclarations(): String =
         "uniform sampler2D uInstanceTexture;\n" +
         "uniform int uInstanceBase;\n" +

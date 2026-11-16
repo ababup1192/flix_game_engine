@@ -1,10 +1,11 @@
-// 同じ形と材質の物の batch（Render3d.Batch）の分け方と、1 体ごとの値の詰め方（Render3d.Instancing）。GL を呼ばずに決まる所。
+// 同じ形と材質の物の batch（Render3d.Batch）の分け方と、1 体ごとの値の詰め方（Render3d.InstanceValues）。GL を呼ばずに決まる所。
 mod Render3d.TestBatch {
     import java.nio.FloatBuffer
     use Render3d.Batch.{BatchKey, batchKeyOf, batchOf, groupByTextures, groupInOrder, shapeBatches}
     use Render3d.DrawMode
     use Render3d.FakeGl.{poseAt}
-    use Render3d.Instancing.{PackMode, numberBatch, packDraw, rowsFor}
+    use Render3d.InstanceValues.{PackMode, numberBatch, packDraw}
+    use Render3d.GlRows.Instancing.{rowsFor}
 
     def triangle(side: Float64): Mesh3d.Mesh3d =
         Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(side, 0.0, 0.0) :: Vec3.v3(0.0, side, 0.0) :: Nil, color = { r = 1.0, g = 1.0, b = 1.0 } } :: Nil)
