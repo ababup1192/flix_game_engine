@@ -429,7 +429,7 @@ mod Controls {
         case World.Event.Cue(name) => Some(name)
         case World.Event.Signal(_) => None
         case World.Event.Executed(_) => None
-        case World.Event.Ran(_)      => None
+        case World.Event.RanLines(_) => None
     }
 
     /// 1 フレームの一発の音（このフレームに溜まった出来事から）。missing = まだ届いていない音の名前。

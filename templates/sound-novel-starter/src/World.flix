@@ -219,7 +219,7 @@ mod World {
     ///   Rolled … 前の行へ戻った / Cue(名前) … シナリオの <<audio se>> の効果音（project.json の sounds の名前）/
     ///   Signal(名前) … コマンドが出したその場の合図（Commands.Out.Event。テンプレートのコマンドは出さない）/
     ///   Executed(何を) … 人が読み進めている時（Live）に、実行器の出来事（台詞・選択肢・コマンド）を 1 つ反映した（記録の書き手が読む。音は鳴らさない）/
-    ///   Ran(行) … 人が読み進めている時に、実行器が 1 回の呼び出しで流した文の .yarn の行（<<set>>・<<jump>>・<<if>>・<<stop>> も。YarnRunner.ranLinesSince）。
+    ///   RanLines(所) … 人が読み進めている時に、実行器が 1 回の呼び出しで流した文の (ファイル, 行)（<<set>>・<<jump>>・<<if>>・<<stop>> も。YarnRunner.ranLinesSince）。
     pub enum Event with Eq, ToString {
         case Paged
         case Revealed
@@ -233,18 +233,19 @@ mod World {
         case Cue(String)
         case Signal(String)
         case Executed(Executed)
-        case Ran(List[Int32])
+        case RanLines(List[(String, Int32)])
     }
 
     /// 反映した実行器の出来事 1 つ（Event.Executed）。Said = 台詞（話し手の id・字）、Offered = 選択肢（字の並び）、
-    /// Ran = コマンド（名前・引数・時間を取る命令ならシナリオに書いた time= の秒）。
+    /// Commanded = コマンド（名前・引数・時間を取る命令か・その命令で舞台が動いた秒（Stage.busySecondsOf。動かなければ None））。
     pub enum Executed with Eq, ToString {
         case Said(Place, String, String)
         case Offered(Place, List[String])
-        case Ran(Place, String, List[String], Option[Float64])
+        case Commanded(Place, String, List[String], Bool, Option[Float64])
     }
 
     /// 出来事の所: (ノード, そのノードに入った回数（Read#entry#visits。入り直すと増える）, .yarn の行)。
+    // WhyNot: レコードにしない — Event は Eq を持ち、Flix のレコードは Eq を持たない。
     pub type alias Place = (String, Int32, Int32)
 
     /// ゲームの状態（遊びの状態だけ。Doc とシナリオは Res が持つ）。scene / panel / ask = 冒頭の「状態の形」、

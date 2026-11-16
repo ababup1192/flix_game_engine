@@ -9,7 +9,7 @@
 //   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・2 つ以上の .yarn にまたがる flow では書かずに理由を出す）
 //
 // MIGRATE_OUT=<フォルダ> の時は、移行の突き合わせ（bin/fge migrate diff）の記録もそこへ書く（MigrateOut）:
-//   tape.json   … 上の tape.json に events・buses・frames・ranLines・screen を足した物
+//   tape.json   … 上の tape.json に events・buses（ミキサーにバスがある時）・frames・ranLines・screen を足した物
 //   frames/world/f0000.png … world の層だけのコマ（台詞を出し終えた所と時間を取る命令の途中）、frames/all/ … 全部の層のコマ（台詞を出し終えた所）
 //   saves.json  … flow の終わりのセーブデータ（枠が 1 つでもあれば。restore が読み戻す古いセーブ）
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
@@ -110,23 +110,30 @@ mod FlowVideo {
 
     // ── 移行の突き合わせの記録（MIGRATE_OUT） ──
 
-    /// 台詞ごとと読み戻した直後に載せる問い（物語の動きに効く物。行の番号・カーソル・出し終えたかは版で替わるか、いつも同じなので載せない）。
-    def migrateProbes(): List[String] =
-        "phase" :: "panel" :: "talk" :: "mode" :: "photo" :: "logSize" :: "gate" :: "choice" :: "ownPace" :: "sharedTiredness" :: Nil
+    /// 台詞ごとと読み戻した直後に載せる決まった問い（物語の動きに効く物。行の番号・カーソル・出し終えたかは版で替わるか、いつも同じなので載せない）。
+    /// シナリオの変数は MigrateOut.probeRowsOf が全部足す。
+    def migrateProbes(): List[String] = "phase" :: "panel" :: "talk" :: "mode" :: "photo" :: "logSize" :: "gate" :: "choice" :: Nil
 
     /// 移行の記録を dir に書く（tape.json・コマの PNG・セーブデータ）。
     def writeMigrate(settings: VideoOut.Settings, path: String, script: Flow.Script, dir: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
+        match MigrateOut.probeRowsOf(migrateProbes(), outcome#last#resources#dialogue) {
+            case Err(why) => println("migrate: ${why}（${dir} は書かない）")
+            case Ok(probes) => writeMigrateWith(settings, probes, path, script, dir, outcome)
+        }
+
+    def writeMigrateWith(settings: VideoOut.Settings, probes: List[MigrateOut.ProbeRow], path: String, script: Flow.Script, dir: String,
+                         outcome: Flow.Outcome[AppState]): Unit \ IO =
         discard (new File(dir)).mkdirs();
         let fps = script#fps;
-        let record = MigrateOut.recordOf(fps, migrateProbes(), outcome#frames);
+        let record = MigrateOut.recordOf(fps, probes, outcome#frames);
         let sounds = loadSounds(soundFiles(), Map.empty());
         let lengthOf = name -> Map.get(name, sounds) |> Option.map(st -> Int32.toFloat64(Vector.length(st#left)) / Int32.toFloat64(sampleRate())) |> Option.getWithDefault(0.0);
         shootFrames(settings, fps, dir, record#shots, Flow.worldsOf(outcome));
-        let extra = Map#{ "events" => Util.Json.Json.JArray(List.toVector(record#events)),
-                          "buses" => MigrateOut.busesJson(fps, lengthOf, outcome#frames),
-                          "frames" => MigrateOut.framesJson(fps, record#shots),
-                          "ranLines" => Util.Json.Json.JArray(MigrateOut.ranLinesOf(outcome#frames) |> List.map(TapeOut.intJson) |> List.toVector),
-                          "screen" => MigrateOut.screenJson(SceneRender.design()) };
+        let fields = Map#{ "events" => Util.Json.Json.JArray(List.toVector(record#events)),
+                           "frames" => MigrateOut.framesJson(fps, record#shots),
+                           "ranLines" => MigrateOut.ranLinesJson(MigrateOut.ranLinesOf(outcome#frames)),
+                           "screen" => MigrateOut.screenJson(SceneRender.design()) };
+        let extra = MigrateOut.busesJson(fps, lengthOf, outcome#frames) |> Option.map(b -> Map.insert("buses", b, fields)) |> Option.getWithDefault(fields);
         writeTapeWith(extra, path, script, dir, outcome);
         let saves = outcome#last#world#saves;
         if (Saves.hasAny(saves)) writeText("${dir}/saves.json", Util.Json.toPrettyString(2, Saves.toJson(saves)) + "\n") else ()
@@ -166,16 +173,16 @@ mod FlowVideo {
         let file = Map.getWithDefault("MIGRATE_SAVE", "", env);
         let out = Map.getWithDefault("MIGRATE_OUT", "debug/migrate/saves", env);
         let prefix = Map.getWithDefault("MIGRATE_NAME", nameOf(file), env);
-        let fresh = run { App.freshWorld(appOf(), SceneRender.design()) } with Fs.FileRead.runWithIO;
-        let parsed = run { DocJson.readJson(file) } with Fs.FileRead.runWithIO;
-        match parsed {
-            case Err(_)   => println("FAIL ${file} を読めない"); 2
-            case Ok(json) =>
+        let (fresh, parsed) = run { (App.freshWorld(appOf(), SceneRender.design()), DocJson.readJson(file)) } with Fs.FileRead.runWithIO;
+        match (parsed, MigrateOut.probeRowsOf(migrateProbes(), fresh#resources#dialogue)) {
+            case (Err(_), _)       => println("FAIL ${file} を読めない"); 2
+            case (_, Err(why))     => println("FAIL ${why}"); 2
+            case (Ok(json), Ok(probes)) =>
                 let saves = Saves.fromJson(fresh#world#saves, json);
                 let loaded = Resources.of(fresh#resources, { saves = saves | fresh#world });
                 Saves.tabs() |> List.forEach(tab -> List.range(0, Saves.perPage()) |> List.forEach(i ->
                     if (Option.isEmpty(Saves.slotOf(tab, i, saves))) ()
-                    else restoreSlot(settings, "${out}/${prefix}-${slotName(tab, i)}", "${prefix}-${slotName(tab, i)}", tab, i, loaded)));
+                    else restoreSlot(settings, probes, "${out}/${prefix}-${slotName(tab, i)}", "${prefix}-${slotName(tab, i)}", tab, i, loaded)));
                 0
         }
 
@@ -186,18 +193,19 @@ mod FlowVideo {
         case Saves.Tab.Numbered(n) => "n${n}-${i}"
     }
 
-    def restoreSlot(settings: VideoOut.Settings, dir: String, name: String, tab: Saves.Tab, i: Int32, loaded: AppState): Unit \ IO =
+    def restoreSlot(settings: VideoOut.Settings, probes: List[MigrateOut.ProbeRow], dir: String, name: String, tab: Saves.Tab, i: Int32,
+                    loaded: AppState): Unit \ IO =
         let res = loaded#resources;
         let (w, _) = Emit.collect(() -> WorldSaves.loadFrom(res, tab, i, loaded#world));
         let h = Resources.of(res, w);
         let node = World.talkNodeOf(w);
-        let seq = MigrateOut.restoredSeqOf(res, w);
+        let seq = MigrateOut.restoredSeqOf(w);
         let shots = { frame = 0, node = node, seq = seq, mid = None, layer = MigrateOut.Layer.WorldLayer } ::
                     { frame = 0, node = node, seq = seq, mid = None, layer = MigrateOut.Layer.AllLayers } :: Nil;
         discard (new File(dir)).mkdirs();
         shootFrames(settings, 30.0, dir, shots, h :: Nil);
         let objects = TapeOut.spansOf(30.0, SceneRender.design(), objectsOf(Layout.Fit.Regular, res, w) :: Nil);
-        writeText("${dir}/restore.json", MigrateOut.restoreJson(name, migrateProbes(), SceneRender.design(), node, seq, h, shots, objects));
+        writeText("${dir}/restore.json", MigrateOut.restoreJson(name, probes, SceneRender.design(), node, seq, h, shots, objects));
         println("restored: ${dir}")
 
     /// テープに渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは横の ADV のウィンドウ（NVL の間は重ねない）。

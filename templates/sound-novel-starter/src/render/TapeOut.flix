@@ -4,6 +4,7 @@
 mod TapeOut {
     use fge::{App, Color, Emit, Flow, JsonCodec, Rect2, Resources, Sort, Vec2, Yarn}
     use Util.Json.Json
+    use TapeJson.{intJson, numJson, probeValue, secondsAt, valueJson}
 
     /// App の w（描く元と World の組）。
     type alias AppState = Resources.With[Res.Res, World.World]
@@ -61,6 +62,7 @@ mod TapeOut {
         let node = List.head(nodes) |> Option.getWithDefault("");
         forM (
             _      <- uniqueMarks(flowRun#marks);
+            _      <- extraFree(extra);
             _      <- singleFile(nodes, res);
             _      <- msgWhenKnown(table);
             probes <- probesOf(table, flowRun#fps, worlds)
@@ -93,6 +95,15 @@ mod TapeOut {
 
     // ── 止める所 ──
 
+    /// 足す欄が tape.json の今の欄と重ならないか（重なると片方が黙って消える）。
+    def extraFree(extra: Map[String, Json]): Result[String, Unit] =
+        let own = Set#{ "game", "title", "flow", "fps", "duration", "yarn", "node", "playUrl", "scenes", "timeline", "lines", "speaker",
+                        "speakers", "sounds", "objects", "branches", "choices", "probes", "probeNames", "msg" };
+        match Map.keysOf(extra) |> Set.toList |> List.find(key -> Set.memberOf(key, own)) {
+            case Some(key) => Err("足す欄 '${key}' が tape.json の欄と重なる")
+            case None      => Ok(())
+        }
+
     /// 同じ名前の mark が無いか（テープのシーンは名前で引くので、2 つ目が 1 つ目を黙って上書きしないように止める）。
     def uniqueMarks(marks: List[String]): Result[String, Unit] =
         let counts = marks |> List.foldLeft((acc, name) -> Map.insertWith((a, b) -> a + b, name, 1, acc), Map.empty());
@@ -111,9 +122,6 @@ mod TapeOut {
         else Err("flow が 2 つ以上の .yarn にまたがっている: ${String.intercalate(", ", files)}（tape.json の行の番号は 1 つのファイルの行。1 つの .yarn の中で止める flow にする）")
 
     // ── 欄ごと ──
-
-    /// i フレーム目の秒（小数 3 桁に丸める）。
-    pub def secondsAt(fps: Float64, i: Int32): Float64 = Float64.round(Int32.toFloat64(i) / fps * 1000.0) / 1000.0
 
     /// 値が変わったフレームだけ（先頭のフレームは必ず載る）。
     def changesOf(values: List[a]): List[(Int32, a)] with Eq[a] =
@@ -278,19 +286,6 @@ mod TapeOut {
             case None => Err("知らない問い '${name}'（E2e.table の probes の名前を書く）")
         }) |> Result.sequence |> Result.map(List.toMap)
 
-    pub def probeValue(read: Flow.Probe[AppState]): AppState -> Flow.Value = h -> match read {
-        case Flow.Probe.Num(f)  => Flow.Value.Num(f(h))
-        case Flow.Probe.Text(f) => Flow.Value.Text(f(h))
-        case Flow.Probe.Flag(f) => Flow.Value.Flag(f(h))
-    }
-
-    /// 数は整数なら整数で書く。
-    pub def valueJson(v: Flow.Value): Json = match v {
-        case Flow.Value.Num(x)  => numJson(x)
-        case Flow.Value.Text(s) => Json.JString(s)
-        case Flow.Value.Flag(b) => Json.JBool(b)
-    }
-
     /// 問いの表示名: 上書きが無ければ doc の頭（「（」か「。」の前）。
     def probeNamesOf(table: Table): List[(String, String)] =
         let docs = E2e.table()#probes |> List.map(row -> (row#name, row#doc)) |> List.toMap;
@@ -314,11 +309,4 @@ mod TapeOut {
             |> Option.getWithDefault(Ok())
 
     def pairJson(t: Float64, v: Json): Json = Json.JArray(Vector#{ numJson(t), v })
-
-    pub def intJson(n: Int32): Json = Json.JNumber(JsonCodec.intToBd(n))
-
-    /// 整数の値は整数（3 → 3）、それ以外は小数 4 桁まで。
-    pub def numJson(x: Float64): Json =
-        if (Float64.floor(x) == x) Float64.tryToInt32(x) |> Option.map(intJson) |> Option.getWithDefault(Json.JNumber(JsonCodec.floatToBd(x)))
-        else Json.JNumber(JsonCodec.floatToBd(Float64.round(x * 10000.0) / 10000.0))
 }

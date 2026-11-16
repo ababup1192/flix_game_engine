@@ -39,10 +39,7 @@ flow-mp4 = fps=$$(cat $(1)/fps.txt); \
 # コマと音は FlowVideo が実機と同じ 1 フレームで書き、ここで mp4 に束ねる。
 .PHONY: showcase-video
 showcase-video:
-	rm -rf debug/video/showcase
-	FLOW=e2e/showcase.flow FLOW_OUT=debug/video/showcase $(HEADLESS_RUN) FlowVideo.play
-	@$(call flow-mp4,debug/video/showcase,debug/video/showcase.mp4)
-	@echo "rendered: debug/video/showcase.mp4"
+	@$(MAKE) --no-print-directory flow-video FLOW=e2e/showcase.flow
 
 # テープの頁（make tape FLOW=e2e/tape.flow → debug/tape/tape/index.html）。
 # ① FlowVideo が flow を流してコマ・音（debug/video/<名前>）と tape.json を書き、② showcase-video と同じ ffmpeg で video.mp4 に束ね、
@@ -83,10 +80,11 @@ lint-cast:
 
 lint: lint-cast
 
-# 1 本の flow を動画に（make flow-video FLOW=e2e/<名前>.flow → debug/video/<名前>.mp4。コマ・音・tape.json は debug/video/<名前>/）。
+# 1 本の flow を動画に（make flow-video FLOW=e2e/<名前>.flow か NAME=<名前> → debug/video/<名前>.mp4。コマ・音・tape.json は debug/video/<名前>/）。
+FLOW ?= $(if $(NAME),e2e/$(NAME).flow)
 .PHONY: flow-video
 flow-video:
-	@test -n "$(TAPE_NAME)" || { echo "使い方: make flow-video FLOW=e2e/<名前>.flow"; exit 2; }
+	@test -n "$(TAPE_NAME)" || { echo "使い方: make flow-video FLOW=e2e/<名前>.flow（か NAME=<名前>）"; exit 2; }
 	rm -rf "debug/video/$(TAPE_NAME)"
 	FLOW=$(FLOW) FLOW_OUT=debug/video/$(TAPE_NAME) $(HEADLESS_RUN) FlowVideo.play
 	@$(call flow-mp4,debug/video/$(TAPE_NAME),debug/video/$(TAPE_NAME).mp4)
@@ -95,13 +93,15 @@ flow-video:
 # ── 移行の突き合わせ（engine の docs/migrate-diff.md）──
 # 前の版（git worktree に出した古いコミット）で make migrate-baseline、新しい版で make migrate-new を流すと、
 # 同じ flow の記録（tape.json・world の層のコマ・古いセーブの読み戻し）を bin/fge migrate diff が突き合わせる。
-#   make migrate-baseline   前の版の記録を debug/migrate/baseline に撮る（flow ごとの video.mp4 も）
+#   make migrate-baseline   前の版の記録を debug/migrate/baseline に撮る（flow ごとの video.mp4 も）。基準が既にあれば止まる（撮り直すなら MIGRATE_OVERWRITE=1）
+#   make migrate-baseline BASELINE_FROM=<前の版のゲームのフォルダ>
+#                           前の版で撮った debug/migrate/baseline を写すだけ（新しい版で撮らない）
 #   make migrate-new        新しい版の記録を debug/migrate/new に撮り、突き合わせる（頁は debug/migrate/report/index.html）
 #   make migrate-diff       撮り直さずに突き合わせだけ（migrate-accept.json を書き直した後。MIGRATE_DIFF_FLAGS=--strict など）
 #   make migrate-video FLOW=e2e/<名前>.flow [OLD=<前の版のゲームのフォルダ>]
-#                           前と後の動画を左右に並べる（debug/migrate/<名前>.sbs.mp4。OLD が無ければ基準の video.mp4 を前にする）
+#                           前と後の動画を左右に並べる（debug/migrate/<名前>.sbs.mp4）。OLD が無ければ基準の video.mp4 を前にする。
+#                           OLD は flow-video の口があれば FLOW= と NAME= の両方を渡して撮り、無ければ tape FLOW= で撮った debug/tape/<名前>/video.mp4 を使う
 # 古いセーブは前の版の flow が終わった時のセーブデータ（baseline/flows/<flow>/saves.json）で、両方の版がそれを読み戻す。
-# 前の版の worktree で撮った baseline は、新しい版の debug/migrate/baseline へ写してから migrate-new を流す。
 MIGRATE_FLOWS ?= $(wildcard e2e/*.flow)
 MIGRATE_DIFF_FLAGS ?=
 # WhyNot: 撮る途中の全フレームのコマを記録のフォルダに置かない — 突き合わせに要らない PNG が数千枚残る。debug/video で mp4 に束ねてから消す。
@@ -117,16 +117,30 @@ migrate-shoot = rm -rf "debug/migrate/$(1)"; mkdir -p "debug/migrate/$(1)"; \
 	done
 .PHONY: migrate-baseline migrate-new migrate-diff migrate-video
 migrate-baseline:
-	@code=0; $(call migrate-shoot,baseline); exit $$code
+	@if [ -n "$(BASELINE_FROM)" ]; then \
+	   test -d "$(BASELINE_FROM)/debug/migrate/baseline/flows" || { echo "migrate-baseline: $(BASELINE_FROM)/debug/migrate/baseline が無い（前の版で make migrate-baseline を流す）"; exit 2; }; \
+	   rm -rf debug/migrate/baseline; mkdir -p debug/migrate; cp -R "$(BASELINE_FROM)/debug/migrate/baseline" debug/migrate/baseline; \
+	   echo "写した: $(BASELINE_FROM)/debug/migrate/baseline → debug/migrate/baseline"; exit 0; \
+	 fi; \
+	 if [ -d debug/migrate/baseline/flows ] && [ -z "$(MIGRATE_OVERWRITE)" ]; then \
+	   echo "migrate-baseline: debug/migrate/baseline が既にある（新しい版で撮ると前の版の基準が消える。撮り直すなら MIGRATE_OVERWRITE=1）"; exit 2; \
+	 fi; \
+	 code=0; $(call migrate-shoot,baseline); exit $$code
 migrate-new:
-	@test -d debug/migrate/baseline/flows || { echo "migrate-new: debug/migrate/baseline が無い（前の版で make migrate-baseline を流して写す）"; exit 2; }
+	@test -d debug/migrate/baseline/flows || { echo "migrate-new: debug/migrate/baseline が無い（前の版で make migrate-baseline を流して BASELINE_FROM= で写す）"; exit 2; }
 	@code=0; $(call migrate-shoot,new); "$(ENGINE)/bin/fge" migrate diff debug/migrate/baseline debug/migrate/new $(MIGRATE_DIFF_FLAGS) || code=1; exit $$code
 migrate-diff:
 	"$(ENGINE)/bin/fge" migrate diff debug/migrate/baseline debug/migrate/new $(MIGRATE_DIFF_FLAGS)
 migrate-video:
 	@test -n "$(TAPE_NAME)" || { echo "使い方: make migrate-video FLOW=e2e/<名前>.flow [OLD=<前の版のゲームのフォルダ>]"; exit 2; }
 	@old="debug/migrate/baseline/flows/$(TAPE_NAME)/video.mp4"; \
-	 if [ -n "$(OLD)" ]; then $(MAKE) -C "$(OLD)" flow-video FLOW=$(FLOW) || exit 1; old="$(OLD)/debug/video/$(TAPE_NAME).mp4"; fi; \
+	 if [ -n "$(OLD)" ]; then \
+	   if $(MAKE) -C "$(OLD)" -n flow-video FLOW=$(FLOW) NAME=$(TAPE_NAME) >/dev/null 2>&1; then \
+	     $(MAKE) -C "$(OLD)" flow-video FLOW=$(FLOW) NAME=$(TAPE_NAME) || exit 1; old="$(OLD)/debug/video/$(TAPE_NAME).mp4"; \
+	   else \
+	     $(MAKE) -C "$(OLD)" tape FLOW=$(FLOW) || exit 1; old="$(OLD)/debug/tape/$(TAPE_NAME)/video.mp4"; \
+	   fi; \
+	 fi; \
 	 test -f "$$old" || { echo "migrate-video: 前の版の動画 $$old が無い（前の版で make migrate-baseline を流すか OLD= を渡す）"; exit 2; }; \
-	 $(MAKE) flow-video FLOW=$(FLOW) || exit 1; \
+	 $(MAKE) --no-print-directory flow-video FLOW=$(FLOW) || exit 1; \
 	 "$(ENGINE)/bin/fge" migrate video --old "$$old" --new "debug/video/$(TAPE_NAME).mp4" --out "debug/migrate/$(TAPE_NAME).sbs.mp4" --tape "debug/video/$(TAPE_NAME)/tape.json"

@@ -308,6 +308,32 @@ mod Stage {
     /// now のパーティクルの演出に替わってからの秒（一度も替えていなければ None）。
     pub def particlesSince(now: Clock.Time[Story], stage: Stage): Option[Float64] = PropertyTween.nameSince(now, particlesKey(), stage#props)
 
+    /// before から after へ替えた時に、now から舞台が動き続ける秒（新しく始まった重ね・tween・trigger・立ち絵と小物の重ねのうち一番遅く終わる物。
+    /// 新しく始まった物が無いか、0 秒なら None）。新しい物は (始まる時刻, 秒) の組が before より増えた分で見る。
+    pub def busySecondsOf(now: Clock.Time[Story], before: Stage, after: Stage): Option[Float64] =
+        let added = spansAdded(now, spansOf(before), spansOf(after));
+        let backdrop = if (after#fadeFrom == now and before#fadeFrom != now)
+                           Some(after#switch#game |> Option.map(g -> g#seconds) |> Option.getWithDefault(after#fadeSeconds)) else None;
+        let ends = added |> List.map(match (start, seconds) -> Clock.since(now, start) + seconds);
+        List.append(Option.toList(backdrop), ends) |> List.maximum |> Option.filter(s -> s > 0.0)
+
+    /// 舞台の時間を取る物の (始まる時刻, 秒)（props の tween と trigger・立ち絵と小物の重ね）。
+    def spansOf(stage: Stage): List[(Clock.Time[Story], Float64)] =
+        let shown = stage#cast#shown |> List.map(s -> (s#startedAt, s#seconds));
+        let leaving = stage#cast#leaving |> List.map(l -> (l#startedAt, l#seconds));
+        List.flatten(PropertyTween.spansOf(stage#props) :: shown :: leaving :: Nil)
+
+    /// after の組のうち、before の組より増えた分（同じ組が 2 つあれば 2 つと数える）。
+    def spansAdded(now: Clock.Time[Story], before: List[(Clock.Time[Story], Float64)], after: List[(Clock.Time[Story], Float64)]): List[(Clock.Time[Story], Float64)] =
+        let keyOf = (pair: (Clock.Time[Story], Float64)) -> (Clock.since(now, fst(pair)), snd(pair));
+        let counts = before |> List.foldLeft((m, pair) -> Map.insertWith((a, b) -> a + b, keyOf(pair), 1, m), Map.empty());
+        let (out, _) = after |> List.foldLeft((acc, pair) -> {
+            let (kept, left) = acc;
+            let n = Map.getWithDefault(keyOf(pair), 0, left);
+            if (n > 0) (kept, Map.insert(keyOf(pair), n - 1, left)) else (pair :: kept, left)
+        }, (Nil, counts));
+        out
+
     /// 演出の途中を終わりの形にする（セーブから戻った時・描き出しで場面を作る時）。
     pub def settle(stage: Stage): Stage =
         { under = None, fadeFrom = Clock.never(), props = PropertyTween.settle(stage#props), cast = Cast.settle(stage#cast) | stage }

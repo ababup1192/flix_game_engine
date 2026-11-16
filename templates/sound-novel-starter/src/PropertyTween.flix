@@ -47,6 +47,13 @@ mod PropertyTween {
     /// 名前の付いた値の表（外からは tween・setName・trigger だけで書く）。
     pub type alias Table[c] = TableOf[c]
 
+    /// 時間を取る予定の全部の (始まる時刻, 秒)（数の tween と trigger。名前の切り替えは時間を取らないので入れない）。
+    pub def spansOf(t: Table[c]): List[(Clock.Time[c], Float64)] =
+        let r = tracks(t);
+        let nums = r#nums |> Map.valuesOf |> List.flatten |> List.map(track -> (track#startsAt, track#seconds));
+        let triggers = r#triggers |> Map.valuesOf |> List.flatten |> List.map(track -> (track#startsAt, track#seconds));
+        List.append(nums, triggers)
+
     pub def numKey(name: String): NumKey = NumKeyOf.NumKeyOf(name)
 
     pub def nameKey(name: String): NameKey = NameKeyOf.NameKeyOf(name)
