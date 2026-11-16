@@ -186,12 +186,12 @@ mod ViewStage {
         };
         ground :: moved
 
-    /// 背景 shot の絵と塗る矩形: ゲームが描けばその絵、描かなければ写真（まだ届いていなければ None で、下の暗い地が見える）。
+    /// 背景 shot の絵と塗る矩形: ゲームが描けばその絵、描かなければ写真（まだ届いていない・絵を持たない写真は None で、下の暗い地が見える）。
     def pictureOf(paint: BackdropPainter, env: View.Env, stage: Stage.Stage, shot: Stage.Shot, areaOf: Option[Float64] -> Rect2.Rect2): Option[(Picture, Rect2.Rect2)] =
         let area = areaOf(BackdropDoc.aspectOf(shot#photo, env#res#backdrops));
         match paint(env, stage, shot#photo, area) {
             case Some(items) => Some((Picture.Painted(items), area))
-            case None        => specOf(shot, env) |> Option.map(spec -> (Picture.Still(spec), area))
+            case None        => if (BackdropDoc.isBlank(shot#photo, env#res#backdrops)) None else specOf(shot, env) |> Option.map(spec -> (Picture.Still(spec), area))
         }
 
     /// 絵を dx だけ横へずらし、濃さ progress で、z の幅 z..z+2 に置く。

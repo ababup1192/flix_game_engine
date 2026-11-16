@@ -58,13 +58,14 @@
       "description": "写真の名前 → 写真",
       "additionalProperties": {
         "type": "object",
-        "required": [
-          "texture"
-        ],
         "properties": {
           "texture": {
             "type": "string",
-            "description": "project.json の textures の名前"
+            "description": "project.json の textures の名前（blank の写真は空でよい）"
+          },
+          "blank": {
+            "type": "boolean",
+            "description": "絵を持たない写真（何も描かず地の色を見せる暗闇）。true なら texture は要らず、描き出しでも何も描かない"
           },
           "label": {
             "type": "string",

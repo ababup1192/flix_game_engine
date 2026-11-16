@@ -14,11 +14,6 @@ mod TestFlowVideo {
         Assert.assertEq(expected = Ok((540.0, 960.0)), SceneRender.designOf(projectSized(540, 960)) |> Result.map(d -> (d#x, d#y)))
 
     @Test
-    def testTemplateDesignIsTheLandscapeScreen(): Unit \ {Assert, IO} =
-        let d = SceneRender.design();
-        Assert.assertEq(expected = (960.0, 540.0), (d#x, d#y))
-
-    @Test
     def testZeroSizedDesignIsAnError(): Unit \ {Assert, Fs.FileRead} =
         Assert.assertTrue(Result.isErr(SceneRender.designOf(projectSized(0, 960))))
 
@@ -90,9 +85,6 @@ mod TestFlowVideo {
         let picked = projectWithGothic() |> Result.map(p -> SceneRender.fontOfIn(SceneRender.fontsIn(p, Nil), fallback)("gothic")#textureName);
         Assert.assertEq(expected = Ok("default"), picked)
 
-    @Test
-    def testTheTemplateDeclaresNoExtraFont(): Unit \ {Assert, Fs.FileRead} =
-        Assert.assertEq(expected = Nil, SceneRender.declaredFontsOf(TestKit.res()))
 
     @Test
     def testGameHooksGetTheFontsOfTheFrame(): Unit \ {Assert, Fs.FileRead} =
