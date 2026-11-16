@@ -77,6 +77,12 @@ hooks:
 	@git config core.hooksPath bin/githooks
 	@echo "[hooks] 配線しました: pre-commit = bin/githooks/pre-commit (中身は bin/fge precommit)"
 
+# 新しい git worktree へ、git の外の依存 (各パッケージの lib・bin/flix.jar・bin/fge-go・build/gl-jar・fpkg) を
+# main の作業ツリーから張る。WT を省くとこの作業ツリー自身。張り方の理由は bin/worktree-seed.sh。
+.PHONY: worktree-seed
+worktree-seed:
+	@bin/worktree-seed.sh "$(or $(WT),$(CURDIR))" $(MAIN)
+
 help:
 	@echo "Targets:"
 	@echo "  make status               現状 1 画面 (テスト記録・スナップショット・チケット・git)。何も実行しない"
@@ -153,6 +159,7 @@ help:
 	@echo "  make gl-jar-pin-check     flix.toml の jar の行がいまの render_gl/java を指しているか (release と precommit の門)"
 	@echo "  make gl-jar-publish       置き場の Release fge-gl-<ハッシュ> を作って jar を載せる (あれば何もしない・main への push で gl-jar.yml も流す)"
 	@echo "  make hooks                git の pre-commit ゲート (bin/githooks) をこの clone に配線する"
+	@echo "  make worktree-seed [WT=<worktree>]  新しい worktree へ git の外の依存 (lib・flix.jar・fge-go・gl-jar・fpkg) を main から張る (Studio の worktree も可)"
 	@echo "  make bundle-zip           Studio に同梱する engine 一式を zip に固める (Release に添える)"
 
 # flix check を Ctrl-C で中断すると lib/cache/.../*.lock が残り、
