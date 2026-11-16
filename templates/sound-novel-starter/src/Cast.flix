@@ -1,7 +1,7 @@
 // Cast — 立ち絵と小物の層（純粋）: シナリオの <<show>> / <<hide>> / <<move>> の引数から作る意味、出す・替える・消すの重ね方、セーブに残す形、置き場所と描き方。
 // 絵は 2D の透過画像（project.json の textures「cast_<名前>_<表情>」）を、2 つの画素の間をなめらかにつなぐシェーダーの面で貼る。
 // 出し入れと位置の名前の替えはクロスフェード。位置のずれ・大きさ・濃さ・傾きは Stage の actor.<名>.* の鍵（PropertyTween）が持ち、ここは描く時に読むだけ。
-// 描くのは字より必ず奥（背景に付く絵は背景のすぐ上・ほかは world の層・小物は頁の幕がある間だけ幕の上。置き分けは View）。
+// 描くのは字より必ず奥（背景に付く絵は背景のすぐ上・ほかは world の層・小物は頁の幕がある間だけ幕の上（novel.cast.json の propsOnPage が overWindow の時）。置き分けは View）。
 // 色は背景の時間帯から掛ける（Light）。
 mod Cast {
     use fge::{Clock, Curve, JsonCodec, Num, Rect2, Render, ShaderDoc, Sort, Sway}

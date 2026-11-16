@@ -18,7 +18,7 @@ mod ViewStage {
     /// world の層の物 1 グループ: layer = 層の数、order = 同じ層の数の中の順（絵 0・粒 1・GameView 2・覆い 3）、items = 物（中の z は 0..View.zWorldStride-1）。
     type alias Group = { layer = Int32, order = Int32, items = List[Render.PlacedItem] }
 
-    /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は View が幕の上に描く）。
+    /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は、novel.cast.json の propsOnPage が overWindow なら View が幕の上に描く）。
     pub def frame(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
         let (dx, dy) = Stage.shakeOffset(env#storyNow, Stage.ShakeTarget.Screen, stage);
         layered(env, photoRect(env#fit), stage, withProps) |> withCamera(env, stage) |> Render.movedAll({ x = dx, y = dy })
@@ -289,9 +289,10 @@ mod ViewStage {
         case _ => false
     }
 
-    /// 小物を頁の幕の上に描く舞台か: 頁に幕があり、文字の枠を消す絵（novel.cast.json の hideWindow）が出ていない。
+    /// 小物を頁の幕の上に描く舞台か: novel.cast.json の propsOnPage が overWindow で、頁に幕があり、文字の枠を消す絵（hideWindow）が出ていない。
     // WhyNot: 文字の枠を消す絵が出ている間も頁に描かない — 枠と一緒に頁の小物まで消え、hideWindow の小物そのものが見えなくなる。
-    pub def propsOnPage(env: View.Env, stage: Stage.Stage): Bool = hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
+    pub def propsOnPage(env: View.Env, stage: Stage.Stage): Bool =
+        CastDoc.rec(env#res#cast)#propsOnPage == CastDoc.PropsOnPage.OverWindow and hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
 
     /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
     pub def hasPageVeil(env: View.Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or Stage.kindOf(env#res#theme, stage) == ThemeDoc.WindowKind.Nvl

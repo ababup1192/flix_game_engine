@@ -73,6 +73,19 @@
         }
       }
     },
+    "propsOnPage": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "overWindow",
+          "underWindow"
+        ]
+      },
+      "label": "頁の幕がある間（横の NVL・縦の画面の頁）の小物の重なり順（overWindow = 幕の上・字の下でくすまない・underWindow = 人物と同じ層で幕の奥に薄く見える）",
+      "group": "出し方",
+      "order": 3,
+      "default": "overWindow"
+    },
     "slots": {
       "kind": "catalog",
       "label": "横の画面の位置（<<show 名前 at=位置>> に書く位置の名前）",
