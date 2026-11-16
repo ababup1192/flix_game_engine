@@ -15,7 +15,7 @@
 **独自の比喩で名付けない。** このリポジトリでしか通じない言い回しは、人が読めない
 だけでなく grep で辿れなくなる（同じ物が別の字で書かれ、1 つの字が 4 つの意味を持つ）。
 コミット時に `bin/fge jargon` が**新しく書いた行だけ**を検査して止める。
-言い換え先（と英語）はその WORDS を見る。手動で全量なら `make lint-jargon`。
+言い換え先（と英語）はその WORDS を見る。手動で全量なら `make lint ONLY=jargon`。
 
 ## .flix の名前を探す（grep の前に・最初の 1 手から）
 
@@ -103,6 +103,14 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 足りる）。自分は分解・検証・報告に専念する。試行錯誤の過程を自分の文脈へ流し込むと、
 肝心の判断に使える余地が減る。**渡さない**のはエンジン拡張の相談・リリース・コミットと、
 受け取った結果の検証（緑の主張は自分で 1 回確かめる）。
+
+**worktree を立てたら最初に `make worktree-seed WT=<worktree>`**（worktree の中からなら WT は省ける）。
+git の外の依存（各パッケージの lib・`bin/flix.jar`・`bin/fge-go`・`build/gl-jar`・fpkg）を main から張る。
+張らずに flix を流すと依存を Maven Central へ取りに行き、HTTP 429 で止まる。Studio の worktree も同じ `make worktree-seed WT=<Studio の worktree>` で張れる（Studio の main から張る）。
+Maven の取り物（各パッケージの `lib/cache`）は共有の置き場 1 か所（`make mvn-cache-share`・`MVN_CACHE` で差し替え）を使う
+（複数のプロセスが同時に使っても壊れない根拠は `bin/mvn-cache-share.sh`）。`bin/flix`・`bin/fge`（checkd・refactor・export-web・font-bake）・
+ゲームの make は、flix を起こす前に lib/cache をその置き場への symlink にする。**`java -jar bin/flix.jar` を直に叩くとこれを通らず、
+Maven へ取りに行く**ので、flix は `bin/flix`・`bin/fge`・make から流す。向いていない lib/cache は `make status` が 1 行で知らせる。
 
 並行で走らせるときは**同じパッケージを 2 人に触らせない**（型検査は Stop /
 SubagentStop で走り、他人が編集中の赤で止まる。常駐 repl の数の上限は

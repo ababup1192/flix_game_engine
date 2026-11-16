@@ -188,7 +188,7 @@ O(N²)=2.00）。1 計測の内側で固定回数だけ呼んで合計を測る�
 戻り値は必ず消費する（JIT が計算ごと消す）。
 
 CPU の描く時間（SoftRaster・SoftRaster3d）は `CpuTiming.measure({ warmup, runs }, 仕事)` で温めてから何回か測り、中央値で比べる（最後の回の値を返すので、使って捨てない）
-（3D の部屋は `make scene3d-cpu`・gl-parity の場面ごとは `make gl-parity-cpu`。描き出しの `renderPng*` はキャッシュが写すだけの回があるので、
+（3D の部屋は `make bench B=scene3d-cpu`・gl-parity の場面ごとは `make bench B=gl-parity-cpu`。描き出しの `renderPng*` はキャッシュが写すだけの回があるので、
 時間を測るのは同じ塗りの `HeadlessRender.renderImageFull` / `renderImageSoft`）。同じ機械でも負荷で 5〜10% ほど揺れる（`bench/baseline/0.76.0/scene3d.txt`）。
 
 **時間で測る物はゲートに乗せない。** `make release` は `test-par` の直後で熱と CPU の
@@ -551,9 +551,9 @@ draw call を減らして効くのは、数が数百を超える場面（細か�
 
 | 口 | 測る物 | つまみ |
 |---|---|---|
-| `make sprite-stress-bench` | 2D のスプライトの数・絵の種類・blend の混在 | `COUNTS=1000,5000,20000 TEX=1/16/256 BLEND=alt` |
-| `make crowd2d-bench` | 2D の群れ（規則 + 描く） | `COUNTS=6000,10000,20000 SEARCH=grid` |
-| `make scene3d-bench` | 3D の部屋。`SCENE=field` で物を並べた場面 | `COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1` |
+| `make bench B=sprite-stress-bench` | 2D のスプライトの数・絵の種類・blend の混在 | `COUNTS=1000,5000,20000 TEX=1/16/256 BLEND=alt` |
+| `make bench B=crowd2d-bench` | 2D の群れ（規則 + 描く） | `COUNTS=6000,10000,20000 SEARCH=grid` |
+| `make bench B=scene3d-bench` | 3D の部屋。`SCENE=field` で物を並べた場面 | `COUNT=12000 SHAPES=16 MATS=16 MOVING=10 ALPHA=10 SHADOW=1` |
 | `make bench-web BENCH=<名前> ARGS='n=20000&tex=16'` | 同じ 3 つのブラウザ版（ヘッドレスの Chrome・WebGL2） | URL の query（鍵は小文字。`n`・`tex`・`blend`・`search`・`scene`・`shapes`・`mats`・`moving`・`alpha`・`shadow`） |
 
 - 共通のつまみ: `FRAMES`（1 区間で測るコマ数）・`DIAG=0`（診断を付けない。GPU の時間の query の重さを見る時）。ブラウザは `frames`・`diag`。
@@ -597,7 +597,7 @@ GL と CPU の描き手は、カメラの視錐台の外の置いた物とビル
 `bin/fge quadratic` は perf-near-scan として、回すラムダの本体とそこから呼ぶ同じファイルの def の中の `List.filter` / `exists` / `find` を知らせる（止めない。回す物の大きさは字から分からない）。
 小さいと決まった列は `quadratic.local.json` の `exempt` へ理由つきで載せると黙る。
 
-2D の群れで `SpatialGrid` と `FlowField` の得を確かめるのは `make crowd2d-cpu`（窓なし）と `make crowd2d-bench`（窓あり・`bench/crowd2d`）。
+2D の群れで `SpatialGrid` と `FlowField` の得を確かめるのは `make bench B=crowd2d-cpu`（窓なし）と `make bench B=crowd2d-bench`（窓あり・`bench/crowd2d`）。
 
 `SpatialGrid` の回す順は行が外側、升の中は入れた順で、同じ入力なら毎回同じ。足す順で丸めが変わるので、手書きの升ごとの小計から置き換えると値がわずかに変わる（1 本の蓄積へ直した版とはビット単位で同じ）。
 
@@ -656,7 +656,7 @@ jfr print --json --events jdk.ExecutionSample /tmp/rec.jfr \
   | sort | uniq -c | sort -rn | head
 ```
 
-8,000 バイトを超えたメソッドは `make lint-huge-methods` で数える（ゲームは遊ぶ時と同じ jar を作って数える。engine はベンチの jar を見るので、ベンチを流した後に打つ）。
+8,000 バイトを超えたメソッドは、ゲームでは `make lint-huge-methods`（遊ぶ時と同じ jar を作って数える）、engine では `make lint ONLY=huge-methods`（ベンチの jar を見るので、ベンチを流した後に打つ）で数える。
 超えていて良い物（1 コマに 1 回・毎コマ通らない）は `bin/lint-rules/huge-methods.json`（ゲームは `huge-methods.local.json`）の exempt に理由 1 行で載せる。
 大きさが 8,000 バイト未満でも、1 コマに 1 回しか呼ばれない関数の中のループは OSR を諦める事がある。こちらは class の大きさでは分からないので、上の 1 の `bin/fge osr-skipped` で見る（1 コマに 1 回だけ回る外側のループは、同じ exempt に `"モジュール.関数::osr-skipped"` で載せる）。
 

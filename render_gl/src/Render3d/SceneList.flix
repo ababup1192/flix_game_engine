@@ -1,5 +1,6 @@
 // Render3d.SceneList — 3D の場面 1 つの不透明の batch を描く行の列（RenderList の 3D の分。計画の側が pass ごとに作り（buildScenePasses）、GL の backend は Render3d.GlRows・WebGPU の backend は Render3d.WebGpuRows が流す）。
-// 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物）。半透明・ビルボード・空・影の地図は行にしない。
+// 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物）。半透明・ビルボード・空は行にしない。
+// 影の地図の pass の行（buildShadowList・計画は Render3d.ShadowMaps）は頂点の色の行と骨つきの行だけで、backend は形だけを深度で描く。
 // rows は 1 行 rowStride() 個: 0=種類（kind*） 1=材質の表の番号（MaterialBatch#handle。頂点の色と骨つきは 0） 2=材質の順の番号（MaterialBatch#order。同じく 0）
 //   3=1 体ごとの値の先頭 4=描く物の数（0 なら描かず、形と絵を今のコマで使った物として数えるだけ） 5=1 つの draw call に分かれた理由（Render3d.Counts.breakSlotOf）
 //   6=フラグ（flag*: 両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方） 7=形の番号（Render3d.MeshTable。backend は行を流す前にこの番号の形を作り、描く時にこの番号で引く）
@@ -98,6 +99,17 @@ mod Render3d.SceneList {
         draws#plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.Mesh, b));
         draws#skinned |> List.forEach(b -> putShapeRow(list, next, ctx, kindSkinned(), BatchBreak.Skinned, b));
         discard List.zip(draws#opaque, layouts) |> List.foldLeft(putMaterialRow(list, next, ctx), None);
+        list
+
+    /// 影の地図の pass の行（骨の無い物 plain → 骨つきの物 skinned の順。どれも分かれた理由は影の pass）。形の番号は ctx の表で振る。
+    pub def buildShadowList(ctx: Context, plain: List[MeshBatch], skinned: List[MeshBatch]): SceneList \ IO =
+        let count = List.length(plain) + List.length(skinned);
+        let list = { rows = Array.repeat(Static, Int32.max(1, count * rowStride()), 0), heads = Array.empty(Static, count),
+                     materials = Array.empty(Static, 0), firstMaterial = count, count = count,
+                     values = Array.repeat(Static, 1, 0.0f32), reads = Array.repeat(Static, 1, 0) };
+        let next = Array#{0, 0, 0} @ Static;
+        plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.ShadowPass, b));
+        skinned |> List.forEach(b -> putShapeRow(list, next, ctx, kindSkinned(), BatchBreak.ShadowPass, b));
         list
 
     def putShapeRow(list: SceneList, next: Array[Int32, Static], ctx: Context, kind: Int32, why: BatchBreak, b: MeshBatch): Unit \ IO =

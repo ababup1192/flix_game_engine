@@ -1,6 +1,6 @@
 // Package docrefs は、文書が指す Flix の名前・ファイル・行が今のリポに在るかを見る lint。
 //
-//	fge-go doc-refs                 見る文書を全部（make lint-doc-refs）
+//	fge-go doc-refs                 見る文書を全部（make lint ONLY=doc-refs・ゲームは make lint-doc-refs）
 //	fge-go doc-refs <file.md> ...   名指しの文書だけ（コミット時はステージした .md。見る文書でない物は飛ばす）
 //	fge-go doc-refs -v | --all      場所を全部画面に（既定は上位 limit 行・全部は fullOut のファイル）
 //	fge-go doc-refs --json          1 件ずつ checkres の形

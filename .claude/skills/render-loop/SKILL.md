@@ -72,7 +72,7 @@ engine リポでテンプレを横断するときも同じで、ルートの `ma
 ## ループ GIF を生成したら継ぎ目を確かめる
 
 完全ループを狙う GIF（コマ 0 に戻る演出）を生成したら、目視の前に
-`make lint-loop`（または `bin/fge loop <framesディレクトリ>`）で
+`make lint ONLY=loop`（または `bin/fge loop <framesディレクトリ>`）で
 最終コマ→0 コマの継ぎ目が浮いていないか機械検査する。fade・wipe など
 最初から戻らない演出は対象外。
 

@@ -146,4 +146,47 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         Render3d.WebGpuRenderer.release(renderer);
         layout.release();
         counted
+
+    /// 骨つきの三角 1 枚と骨の無い三角 2 枚を、影を落とすスポットで照らす場面（影の地図 64 × 64 の鍵 (64, 0)）。shadowed が偽ならスポットに影を付けない。
+    def spotScene(shadowed: Bool): Scene3d.RenderCmd =
+        let base = skinnedScene();
+        let spot = if (shadowed) Render3d.FakeGl.shadowSpot() else { shadow = None | Render3d.FakeGl.shadowSpot() };
+        { scene = { spotLights = spot :: Nil | base#scene } | base }
+
+    /// 同じ encoder の 2 回目の prepare が、1 回目と同じ鍵の影の地図を描き直す時は、送る前に submit を 1 回頼む
+    /// （影の pass の光の目の値は描き先ごとの buffer で、submit せずに書き直すと 1 回目の影の pass も 2 回目の目で描く）。
+    /// submit の後に姿勢を送り直し、影の地図を読む group 0 を作り直す（どちらも 1 つ・手放した物を使わない）。影の無い場面では submit しない。
+    @Test
+    def testSecondPrepareRedrawingAShadowMapFlushesFirst(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let shadowed = shadowMapsAcrossPrepares(gpu, true);
+                let plain = shadowMapsAcrossPrepares(gpu, false);
+                gpu.destroy();
+                Assert.assertEq(expected = ((1, 1, 1, 0), (0, 2, 0, 0)), (shadowed, plain))
+        }
+
+    /// 描き先の違う 2 回の prepare（描き先の鍵 0 と 1）を同じ encoder で流した時の (submit の数, prepare の後の group 2 の数, 影の地図を読む group 0 の数, device の誤りの数)。
+    def shadowMapsAcrossPrepares(gpu: WebGpu, shadowed: Bool): (Int32, Int32, Int32, Int32) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
+        let RendererData.RendererData(s) = renderer;
+        let encoder = gpu.createCommandEncoder("test");
+        let flushes = Ref.fresh(Static, 0);
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None) };
+        discard prepare(renderer, host, dest(), spotScene(shadowed) :: Nil);
+        discard prepare(renderer, host, { key = 1 | dest() }, spotScene(shadowed) :: Nil);
+        let found = (Ref.get(flushes), List.length(Ref.get(s#poseGroups)), List.length(Ref.get(s#sceneGroups)));
+        discard encoder.finish();
+        let errors = gpu.errorCount();
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        let (f, p, g) = found;
+        (f, p, g, errors)
 }

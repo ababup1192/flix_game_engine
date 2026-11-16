@@ -39,6 +39,20 @@
       "why": "bin/flix と bin/headless-run が java と devbox を決める時に読む"
     },
     {
+      "src": "bin/mvn-cache-share.sh",
+      "dest": "bin/mvn-cache-share.sh",
+      "exec": true,
+      "skipOnWindows": true,
+      "why": "mk/game.mk と make new-game が flix を起こす前に lib/cache を共有の置き場への symlink にする"
+    },
+    {
+      "src": "bin/flix-packages.sh",
+      "dest": "bin/flix-packages.sh",
+      "exec": true,
+      "skipOnWindows": true,
+      "why": "mvn-cache-share.sh がパッケージを数える時に呼ぶ（ゲームの make mvn-cache-share）"
+    },
+    {
       "src": "bin/githooks/pre-commit",
       "dest": "bin/githooks/pre-commit",
       "why": "生まれたゲームの pre-commit ゲートの実体"
@@ -84,6 +98,11 @@
       "src": "mk/module.sed",
       "dest": "mk/module.sed",
       "why": "make module Q= の当たり行を 1 行で読める形にそろえる (mk/game.mk が読む)"
+    },
+    {
+      "src": "mk/*.awk",
+      "dest": "mk",
+      "why": "make help の一覧 (mk/help.awk) と make src の索引 (mk/src-index.awk)。mk/game.mk と mk/common.mk が読む"
     },
     {
       "src": "docs/doc-conventions.md",

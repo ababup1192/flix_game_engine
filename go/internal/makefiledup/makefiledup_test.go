@@ -49,6 +49,21 @@ run:
 	}
 }
 
+// game.mk が取り込む隣の .mk (mk/common.mk) のターゲットも共通として止める。
+func TestIncludedSiblingTargetsAreCommon(t *testing.T) {
+	root := lintconf.TestRepo(t, Name, map[string]string{
+		"engine/mk/game.mk":   gameMk + "space := $(subst ,, )\ninclude $(subst $(space),\\$(space),$(ENGINE))/mk/common.mk\n",
+		"engine/mk/common.mk": "help hooks:\n\t@echo help\n",
+		"local.mk":            "ENGINE := engine\n",
+		"Makefile":            "include $(ENGINE)/mk/game.mk\nhooks:\n\t@echo my hooks\n",
+	})
+	t.Setenv("ENGINE", "")
+	code, msg := run(t, root, "Makefile")
+	if code != 1 || !strings.Contains(msg, "Makefile:2 hooks") {
+		t.Fatalf("code=%d msg=%s", code, msg)
+	}
+}
+
 // engine のリポでは隣に mk/game.mk がある Makefile (engine 自身) と、game.mk を
 // include しない Makefile (bench) を見ない。templates/*/Makefile は見る。
 func TestEngineRepoScope(t *testing.T) {

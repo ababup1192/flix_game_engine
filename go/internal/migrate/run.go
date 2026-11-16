@@ -19,6 +19,11 @@ const usage = `使い方:
       「迷った差」として一覧に溜め、止めない（--strict なら止める）。
       --times は台詞・選択肢・待ちの時刻を、前の出来事からの間で比べる（1 フレームを超えたら迷った差）。
       終わりの番号: 0 通った・1 止める違いがある・2 引数か記録が読めない。
+  bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--saves-from DIR] [--no-saves] [--overwrite]
+      ゲームの根で flow を並べて流し、記録を debug/migrate/<名前> に撮る（FlowVideo.play を MIGRATE_OUT 付きで流し、
+      続けて --saves-from（既定 debug/migrate/baseline）の flows/*/saves.json を FlowVideo.restore で読み戻す）。
+      --jobs の既定はコア数とメモリから。--video で flow ごとの video.mp4 も束ねる（既定は束ねない）。
+      --run の既定は環境変数 HEADLESS_RUN か engine の bin/headless-run。JVM ごとのログと秒は <記録>/logs/。
   bin/fge migrate video --old OLD.mp4 --new NEW.mp4 --out OUT.mp4 [--tape NEW/tape.json]
       2 本を左右に並べた mp4 を書く（前の音を左・新しい音を右のチャンネル。--tape があれば台詞のノードと番号の字幕を絵に重ねる）。
 記録の形は docs/migrate-diff.md。`
@@ -34,6 +39,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDiff(args[1:], stdout, stderr)
 	case "video":
 		return runVideo(args[1:], stdout, stderr)
+	case "shoot":
+		return runShoot(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		fmt.Fprintln(stdout, usage)
 		return 0

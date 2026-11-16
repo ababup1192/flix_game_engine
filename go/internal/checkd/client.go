@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
+	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 )
 
 // enginePat は local.mk の「ENGINE := /path/to/engine」の行。
@@ -62,6 +63,10 @@ func debugLog(errOut *strings.Builder, msg string) {
 // checkd-freshness の C-T の記録: 常駐で組んでも縮まず、コード生成のヒープが線を超える）。
 // checkd.server が無い hooks.json と CHECKD_BACKEND=cli は素の flix check。
 func clientRun(r *hooks.Rules, out, errOut *strings.Builder, root, pkg, verb string) int {
+	// WhyNot: bin/flix に任せない — 常駐の道は bin/flix を通らず、Studio が同梱する engine の bin/flix は別の物。
+	if msg := mvncache.Link(pkg); msg != "" {
+		fmt.Fprintln(errOut, msg)
+	}
 	if verb == "check" && useServer(r) {
 		return serverCheck(r, out, errOut, root, pkg)
 	}

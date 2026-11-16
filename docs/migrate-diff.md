@@ -21,7 +21,14 @@
 ```
 bin/fge migrate diff <baseline> <new> [--accept FILE] [--game DIR] [--out DIR] [--no-coverage] [--strict] [--times] [--json]
 bin/fge migrate video --old OLD.mp4 --new NEW.mp4 --out OUT.mp4 [--tape NEW/tape.json]
+bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--saves-from DIR] [--no-saves] [--overwrite]
 ```
+
+- `shoot`（ゲームの根で）: flow を並べて流し、記録を `debug/migrate/<名前>` に撮る。flow ごとに `FlowVideo.play` を `FLOW`・`FLOW_OUT`・`MIGRATE_OUT` 付きで流し、続けて `--saves-from`（既定 `debug/migrate/baseline`）の `flows/*/saves.json` を `FlowVideo.restore` で読み戻す。どれも別の JVM で、`--jobs` 本ずつ並べる（既定はコア 4 つに 1 本・メモリ 8 GB に 1 本の少ない方・6 本まで）。並べる時は JVM ごとのヒープを `HEADLESS_JAVA_OPTS` の `-XX:MaxRAMPercentage=60/本数` に絞る（自分で `-Xmx` か `MaxRAMPercentage` を渡せばそれが勝つ）。長い flow（基準の tape.json が大きい物）から流す。
+  - 流す口は `--run`、無ければ環境変数 `HEADLESS_RUN`（ゲームの Makefile の物をそのまま渡せる）、無ければ engine の `bin/headless-run`。
+  - `--video` の無い時は flow ごとの video.mp4 を束ねず、`FLOW_VIDEO=off` を渡す（読む FlowVideo は全コマの動画と音を書かない。読まない版は書くので、shoot が消す）。diff は video.mp4 を読まない。
+  - ログと秒: `<記録>/logs/<flow>.log`・`restore-<flow>.log`・`shoot.json`（JVM ごとの秒と終わりの番号）。終わりの番号: 0 全部撮れた・1 どれかが止まった・2 引数の誤り。
+  - 速さの内訳と、テンプレート側に残っている変更は [plans/novel-tape-deck.md](../plans/novel-tape-deck.md)。
 
 - `diff` の既定: `--accept` は `<new の親>/migrate-accept.json`（無ければ承認なし）・`--game`（カバー率で台本を読むゲームのルート）は `<new>` から上へ辿って最初に `project.json` のあるフォルダ・`--out` は `<new の親>/report`。
 - `diff` が書く物: `<out>/index.html`（flow と大きさごとに、左に前・右に後・下に差の色の図。止める違い・迷った差・承認済みを分けて並べる）・`<out>/report.json`（同じ中身の JSON）・`<out>/heat/*.png`（線を超えたコマの差の色の図。毎回消してから書く）。

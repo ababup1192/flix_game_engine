@@ -37,7 +37,7 @@ type refactorTree struct {
 	EnginePrefix string
 	// Resident は常駐の flixlint で索引を作るか。
 	// WhyNot: bench を常駐にしない。ルートごとに JVM が 1 本立ち、bench の数だけ並ぶ。bench の索引は小さく（1 本 3 秒ほど）、
-	// 鍵は bench の src と lib の fpkg なので作り直すのは make sync-engine の後だけ。
+	// 鍵は bench の src と lib の fpkg なので作り直すのは make sync-engine-full の後だけ。
 	Resident bool
 }
 
@@ -288,7 +288,7 @@ func (g treeGate) ask(t refactorTree, rest []string) (string, int, string) {
 }
 
 // treeStamp は t の flix.toml・lib・src の中で一番新しい更新時刻（UnixNano）。
-// lib の下の symlink（fpkg）は先の時刻を見る（make sync-engine で作り直すと新しくなる）。
+// lib の下の symlink（fpkg）は先の時刻を見る（make sync-engine-full で作り直すと新しくなる）。
 func treeStamp(t refactorTree) int64 {
 	var newest int64
 	see := func(path string) {

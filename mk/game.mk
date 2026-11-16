@@ -14,15 +14,30 @@
 #   PALETTE     … 色票 JSON のパス。定義したゲームだけ palette の口が生える
 #   RENDER_NOTE … render の使い方に足す 1 行（任意）
 #
-# Flix コンパイラの呼び方は OS で変える:
-#   - macOS/Linux … エンジンリポの bin/flix ラッパ（nix store の flix.jar 解決と JVM フラグ
-#     （-XstartOnFirstThread、test/render の headless）を面倒みる）
-#   - Windows … ラッパ（bash）が無いので、JRE の java で bin/flix.jar を直接叩く
+# help の一覧はターゲットの行末の「## 説明」（make help）と「### 説明」（make help-all だけ）から組む（書き方は mk/help.awk の頭）。
 
 # $(wildcard) は空白入りパス (Studio.app 同梱の engine) を扱えないので shell の test で見る
 ifeq ($(shell test -e "$(ENGINE)/bin/flix" -o -e "$(ENGINE)/bin/flix.jar" && echo ok),)
 $(warning ENGINE が見当たりません ($(ENGINE)) — local.mk に「ENGINE := /path/to/flix_game_engine」を書くか、make <対象> ENGINE=... で指定してください)
 endif
+
+# ── OS で変わる物（Windows はラッパ（bash）が無いので、ここだけで分ける）─────────────
+#   FLIX         … Flix コンパイラ。macOS/Linux はエンジンリポの bin/flix ラッパ（nix store の flix.jar 解決と JVM フラグ
+#                  （-XstartOnFirstThread、test/render の headless）を面倒みる）。Windows は JRE の java で bin/flix.jar を直接叩く
+#   HEADLESS_RUN … 描き出しの入口（render-all・render・ゲームの動画のターゲット）を流す前置き。後ろに入口の名前を 1 つ書く
+#                  （`$(HEADLESS_RUN) SceneRender.all`）。macOS/Linux は bin/headless-run が jar を 1 回だけ作って
+#                  使い回す（src・flix.toml・lib が変わった時だけ作り直す）ので、2 本目からはコンパイルしない。
+#                  Windows は今までどおり毎回コンパイルして流す。描き出しでない長い計算（バランスのシミュレーションなど）も
+#                  同じ前置きで流せる。深い再帰でスタックが足りなければ `HEADLESS_JAVA_OPTS=-Xss64m $(HEADLESS_RUN) 入口`
+#   PLAY_RUN     … 遊ぶ入口。macOS/Linux は描き出しと同じ jar（bin/headless-run）からウィンドウありで流すので、src を変えていない
+#                  2 回目からはコンパイルしない（internet_dungeon でウィンドウが開くまで flix run 36 秒 → 0.5 秒）。jar を作れない時は
+#                  flix run で続ける（遊ぶのを止めない。描き出しのターゲットは止める）
+#   FGE_FLIX_JAR … lint-flixlint が型を見るのに使う flix.jar（FLIXLINT_JAR の既定）
+#   lib/cache    … Flix は Maven の取り物を <ゲーム>/lib/cache に決め打ちで置き、無ければ作って取りに行く。make を読む時に 1 回、
+#                  共有の置き場（MVN_CACHE・既定は <ユーザーの cache>/flix_game_engine/mvn-cache）への symlink にする
+#                  （symlink なら test 1 回で抜ける。移し方は engine の bin/mvn-cache-share.sh）
+# WhyNot: lib/cache の symlink を bin/flix に任せない — Studio が同梱する engine の bin/flix は Studio の物で、この前処理を持たない。
+# WhyNot: Windows で lib/cache を張らない — symlink は開発者モードでないと張れない。今まで通り lib/cache に取る。
 ifeq ($(OS),Windows_NT)
 JAVA   ?= java
 # checkd は flix.jar の場所を bash ラッパー (bin/flix) から引くので、Windows の JAVA+flix.jar 経路では
@@ -32,21 +47,21 @@ CHECKD := 0
 # WhyNot: --sun-misc-unsafe-memory-access を付けない — ここの java は Studio が同梱する JRE 21 のことがあり、
 # 21 はこの旗を知らず起動しない（版を見て付けるのは bash の bin/flix と headless-run だけ）。
 FLIX   := "$(JAVA)" --enable-native-access=ALL-UNNAMED -Xss64m -jar "$(ENGINE)/bin/flix.jar"
+HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint
+PLAY_RUN ?= $(FLIX) run
+FGE_FLIX_JAR = $(ENGINE)/bin/flix.jar
+FGE_NO_BASH := 1
 else
 FLIX   := "$(ENGINE)/bin/flix"
+HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
+PLAY_RUN ?= FGE_HEADLESS_FALLBACK=1 FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --window main
+FGE_FLIX_JAR = $(shell FLIX_PRINT_JAR=1 "$(ENGINE)/bin/flix" 2>/dev/null)
+$(shell [ -L lib/cache ] || [ ! -x "$(ENGINE)/bin/mvn-cache-share.sh" ] || "$(ENGINE)/bin/mvn-cache-share.sh" --pkg "$(CURDIR)")
 endif
 
-# 描き出しの入口（render-all・render・ゲームの動画の口）を流す前置き。後ろに入口の名前を 1 つ書く
-# （`$(HEADLESS_RUN) SceneRender.all`）。macOS/Linux は bin/headless-run が jar を 1 回だけ作って
-# 使い回す（src・flix.toml・lib が変わった時だけ作り直す）ので、2 本目からはコンパイルしない。
-# Windows はラッパ（bash）が無いので今までどおり毎回コンパイルして流す。
-# 描き出しでない長い計算（バランスのシミュレーションなど）も同じ前置きで流せる。深い再帰で
-# スタックが足りなければ `HEADLESS_JAVA_OPTS=-Xss64m $(HEADLESS_RUN) 入口` のように java の旗を足す。
-ifeq ($(OS),Windows_NT)
-HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint
-else
-HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
-endif
+# 検査の道具 bin/fge を決めるシェルの 1 文（後ろで "$$fge" と呼ぶ）。ゲームに配った物を先に使い、無ければ engine の物。
+# WhyNot: make を読む時に決めない — make status が bin/fge を配り直すので、流す時に見る。
+FGE_PICK = fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"
 
 # engine リポの中のテンプレートだけ、lint の前に engine の規約へのリンクを張る（下の lint-rules-link）。
 # WhyNot: 規則の前提は読み込みの時に展開されるので、使う規則より前のここで決める。
@@ -60,131 +75,43 @@ endif
 # JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
 RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
 
-.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+# help・hooks・api・module・mvn-cache-share はエンジンの Makefile と共有（mk/common.mk）。
+# include は make の構文でクォートが効かず空白でパスが割れるので、空白を退避して渡す（Studio 同梱の engine は空白を含む）。
+FGE_PREFIX := $(ENGINE)/
+MVN_CACHE_SHARE := $(ENGINE)/bin/mvn-cache-share.sh
+HELP_SRC := "$(ENGINE)/mk/game.mk" "$(ENGINE)/mk/common.mk"
+HELP_HEAD = echo "共通のターゲット ($(ENGINE)/mk/game.mk):"
+HELP_TAIL = echo ""; echo "make render の場面: $(SHOTS)"; $(if $(RENDER_NOTE),echo "  $(RENDER_NOTE)";) \
+	echo "このゲーム固有のターゲットは Makefile の頭のコメントを見る。"
+fge_space := $(subst ,, )
+include $(subst $(fge_space),\$(fge_space),$(ENGINE))/mk/common.mk
 
-# 共通の口の一覧。engine を上げるとここも一緒に新しくなる
-# （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
-# そのゲーム固有の口は、各 Makefile の頭のコメントを見る。
-help:
-	@echo "共通の口 ($(ENGINE)/mk/game.mk):"
-	@echo "  make run                ゲームを起動する（ウィンドウが開く）"
-	@echo "  SHOT=<場面> make run    ギャラリーの 1 枚と同じ World から DEBUG で開く（F8 で止めた状態。F8 で動き出す）"
-	@echo "  make debug              保存即反映(watchFile)と F8 を有効にして起動"
-	@echo "  make check              型検査だけ（一番速い確認。常駐が居れば 2 回目からサブ秒）"
-	@echo "  make test               テストを headless で実行（記録は .test-logs/）"
-	@echo "  make build              パッケージをビルドする"
-	@echo "  make dist-linux / dist-macos / dist-windows / dist-all  [DIST_OUT=] [DIST_VERSION=] [DIST_NAME=] [DIST_INCLUDE=]"
-	@echo "                          jar・その OS の JRE・起動を build/dist/<名前>-<コミット>-<OS>-<CPU>.<tar.gz|zip> へまとめる（置き方は engine の docs/dist.md）"
-	@echo "  make status             現状 1 画面（テスト記録・絵・チケット・git）。何も実行しない"
-	@echo "  make notes-rotate       NOTES.md の先頭が長すぎたら古い項を notes/<年-月>.md へ送る（閾値は bin/lint-rules/notes-rotate.json）"
-	@echo "  make render SHOT=<場面>  1 枚だけ debug/<場面>.png へ描き出す"
-	@echo "                          場面: $(SHOTS)"
-	@echo "  make render-all         全部 gallery/ へ描き出す（決定的）"
-	@echo "  make gallery-sounds     効果音を debug/sounds/ に集め、波形とスペクトログラムを debug/sounds.png に描く"
-	@echo "  make reference-check    描き出した絵をリファレンス画像とバイト比較し、絵の値段（render-budget）も見る"
-	@echo "  make render-budget      gallery/ の記録で 1 場面の描き物の数を予算と比べる（描き直さない・render-all の後）"
-	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
-	@echo "  make render-lint        描き出しが残した表を読み直す: 字の被り・はみ出し（text-audit）・z の外れ（z-audit）・動画の入口の写し（video-entries --check）"
-	@echo "  make lint-doc-refs      docs/**/*.md・NOTES.md・AGENTS.local.md が指す Mod.name・パス・path:行 が実在するか"
-	@echo "  make lint-record-wrap   World の形（大きな record を包む・Doc と描く元は Resources へ・一番上の欄の数）と古い除外"
-	@echo "  make lint-flixlint      lint/rules.flix の規則（View が World を受けない・依存の向き・テストの形）を型つきの AST で見る（上限は lint/limits/<規則>.json）"
-	@echo "  make lint-huge-methods  JVM が JIT しない大きさ（8,000 バイト超）の関数が無いか（jar を作るので lint には入れていない。毎コマ通らない物は bin/lint-rules/huge-methods.local.json へ）"
-	@echo "  make lint               エンジンの軽い検査（render-lint・lint-doc-refs・lint-record-wrap・lint/rules.flix があれば lint-flixlint）＋ゲームの Makefile が「lint: 口」で足した検査"
-	@echo "  make video-entries      動画の見回りが流す入口の一覧を Makefile の \$$(call video,…) から書き直す"
-	@echo "  make flow FLOW=e2e/<名前>.flow  flow を画面なしで最後まで流す（失敗は行番号つき。Flix は組み直さない）"
-	@echo "  make flow-vocab         flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）"
-	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
-	@echo "  make talk-vocab         会話のシナリオの語彙 assets/talk/vocab.json（ゲームの命令）と vocab.std.json（標準の命令）を書き直す（bin/fge yarn build が合わせて読む）"
-	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
-	@echo "  make module Q=<語>       やりたいこと → エンジンのモジュールを 1 行ずつ引く（自前で書く前にまずこれ）"
-	@echo "  make src Q=<名前>        ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）"
-	@echo "  make src-index          src/ の pub 定義と各ファイル冒頭 doc の 1 行目を debug/src-index.md へ"
-	@echo "  make loc                src/ + test/ の .flix 合計行数（上限 3,000 行）"
-	@echo "  make engine-upgrade     engine の版に追随する（status の「engine 版ズレ」を見たらこれ）"
-	@echo "  make hooks              コミット時のゲートをこの clone に配線する（clone ごとに 1 回）"
-	@echo "  make compare BASE=<ref> [SHOTS=\"a b\" | VIDEOS=\"x-video\"]"
-	@echo "                          基準の版と今を同じエンジン・同じ描き出しで並べ、差を debug/compare/ へ（index.html つき）"
-	@echo "                          基準側だけ別のエンジンにするなら BASE_ENGINE=<版|パス>"
-	@echo "  make agent-eval [ONLY=id,…] [LABEL=名前]  何も教えていない claude にお題（agent-eval/*.json）を渡し、選んだ道具を採点して表に"
-	@echo "  make agent-eval-compare A=前 B=後  2 回の点・トークン・ターン・読んだ数を並べる"
-	@echo "  make agent-eval-release [REPEAT=3] [OVERWRITE=1]  エンジンの版ごとに全部のお題を N 回（鍵は取らない）→ agent-eval/history/<版>.json・前の版と比べる"
-	@echo ""
-	@echo "同じマシンで何本も並んで作業するときの道具 (bin/fge):"
-	@echo "  bin/fge heavy <コマンド...>   重い処理を枠 3 本で流す (render-all・動画・compare と Makefile の HEAVY_LONG は長い物として枠 1〜2 の 2 本まで・枠 3 は短い物だけ)。--status で持ち主と列・--history で待ちの合計"
-	@echo "  bin/fge use-engine <版|パス>  この作業場の local.mk と lib をそのエンジンへ。--status / --restore"
-	@echo "  bin/fge proposal build <proposal.json>  案を選んでもらうページ (index.html) を組む。knobs で片付けの残りを数える"
-	@echo ""
-	@echo "このゲーム固有の口は Makefile の頭のコメントを見る。"
+.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade
 
-# 遊ぶ口。macOS/Linux は描き出しと同じ jar（bin/headless-run）から窓ありで流すので、src を変えていない 2 回目からは
-# コンパイルしない（internet_dungeon で窓が開くまで flix run 36 秒 → 0.5 秒）。jar を作れない時は flix run で続ける
-# （遊ぶのを止めない。描き出しの口は止める）。Windows はラッパ（bash）が無いので今までどおり flix run。
-ifeq ($(OS),Windows_NT)
-PLAY_RUN ?= $(FLIX) run
-else
-PLAY_RUN ?= FGE_HEADLESS_FALLBACK=1 FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --window main
-endif
-
+##@ 遊ぶ・確かめる
 # RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
-# SHOT=<場面> を付けると、ギャラリーの 1 枚（gallery/<場面>.png）と同じ World から DEBUG の起動で開き、F8 で止めた状態で窓が出る
+# SHOT=<場面> を付けると、ギャラリーの 1 枚（gallery/<場面>.png）と同じ World から DEBUG の起動で開き、F8 で止めた状態でウィンドウが出る
 # （START=shot:<場面>。場面の名前は make render の SHOTS と同じ・App.withShots）。F8 で動き出す。
 # WhyNot: kill でゲームの pid だけを止めない — headless-run が java を子として起こすので、子が残る。プロセスの組ごと止める。
 SHOT_ENV = $(if $(SHOT),START="shot:$(SHOT)" DEBUG=1)
-run:
+run: ## [SHOT=<場面>] [RUN_SECONDS=N] | ゲームを起動する（SHOT はギャラリーの 1 枚と同じ World から F8 で止めた状態で開く）
 ifeq ($(RUN_SECONDS),)
 	$(SHOT_ENV) $(PLAY_RUN)
 else
 	@$(SHOT_ENV) perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c '$(PLAY_RUN)'
 endif
 
-debug:
+debug: ## | 保存即反映（watchFile）と F8 を有効にして起動する
 	DEBUG=true $(PLAY_RUN)
-
-# 出力は .test-logs/test.log に落とし、緑なら末尾 5 行だけ見せる。
-# make status が「最後にいつ・緑か赤か」をこの記録から読む。
-#
-# WhyNot: check の常駐（flixlint）に相乗りさせない。テストはゲームのコードを動かすので、固まり・System.exit・窓の
-# 初期化が check と lint の常駐を巻き込む。常駐で組んで別の JVM で流す形も測ったが縮まず、コード生成でヒープが
-# 常駐の線を超えた（flixlint の docs/design/checkd-freshness.md の C-T の記録）。
-test:
-	@mkdir -p .test-logs; rm -f .test-logs/test.fail
-	@export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"; \
-	if [ -x "$(ENGINE)/bin/with-sample-tests" ]; then "$(ENGINE)/bin/with-sample-tests" . $(FLIX) test > .test-logs/test.log 2>&1; \
-	else $(FLIX) test > .test-logs/test.log 2>&1; fi; \
-	if [ $$? = 0 ]; then \
-		tail -5 .test-logs/test.log; \
-	else \
-		touch .test-logs/test.fail; tail -40 .test-logs/test.log; exit 1; \
-	fi
-
-build:
-	$(FLIX) build
-
-# 配布物（Linux x64・macOS arm64・Windows x64）。jar は make run と同じ物（headless-run が src の変わった時だけ作り直す）。
-# DIST_INCLUDE は実行時に作業場からの相対で読む物（jar の隣へ置く）。DIST_VERSION の既定はゲームの短いコミット。
-DIST_INCLUDE ?= assets,project.json
-DIST_ARGS = --dir . --include "$(DIST_INCLUDE)" $(if $(DIST_NAME),--name "$(DIST_NAME)") \
-	$(if $(DIST_VERSION),--version "$(DIST_VERSION)") $(if $(DIST_OUT),--out "$(DIST_OUT)")
-dist-linux: DIST_OS := linux
-dist-macos: DIST_OS := macos
-dist-windows: DIST_OS := windows
-dist-all: DIST_OS := all
-dist-linux dist-macos dist-windows dist-all:
-ifeq ($(OS),Windows_NT)
-	@echo "[dist] Windows では作れません（jar を作る headless-run が bash）。macOS か Linux で流してください"; exit 1
-else
-	FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --build-only
-	"$(ENGINE)/bin/fge" dist $(DIST_OS) $(DIST_ARGS)
-endif
 
 # check の全文は .test-logs/check.log に落とし、画面には要約だけ出す:
 # 成功 = 1 行、失敗 = 最初のエラー全文 + 残りの file:line 一覧 + 処方箋 1 行
 # (bin/fge explain-error が整形。全文が欲しいときは QUIET=0 make check かログを開く)。
 # check は bin/fge checkd が flixlint の常駐（lint・refactor の索引と同じ）に頼み、答えの版をディスクと比べて使う。
 # CHECKD=0 make check で素の check。
-check:
+check: ## [CHECKD=0] [QUIET=0] | 型検査だけ（一番速い確認。常駐が居れば 2 回目からサブ秒）
 	@mkdir -p .test-logs
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	@$(FGE_PICK); \
 	if [ "$(CHECKD)" != "0" ] && [ -x "$$fge" ]; then \
 		"$$fge" checkd . > .test-logs/check.log 2>&1; code=$$?; \
 	else \
@@ -197,52 +124,73 @@ check:
 	fi; \
 	exit $$code
 
-# ロジックの大きさ。「全部読める大きさ」（上限 3,000 行）を保つための物差し。
-loc:
-	@find src test -name '*.flix' -print0 | xargs -0 wc -l | tail -1
+# 出力は .test-logs/test.log に落とし、緑なら末尾 5 行だけ見せる。
+# make status が「最後にいつ・緑か赤か」をこの記録から読む。
+#
+# WhyNot: check の常駐（flixlint）に相乗りさせない。テストはゲームのコードを動かすので、固まり・System.exit・ウィンドウの
+# 初期化が check と lint の常駐を巻き込む。常駐で組んで別の JVM で流す形も測ったが縮まず、コード生成でヒープが
+# 常駐の線を超えた（flixlint の docs/design/checkd-freshness.md の C-T の記録）。
+test: ## | テストを headless で流す（記録は .test-logs/）
+	@mkdir -p .test-logs; rm -f .test-logs/test.fail
+	@export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"; \
+	if [ -x "$(ENGINE)/bin/with-sample-tests" ]; then "$(ENGINE)/bin/with-sample-tests" . $(FLIX) test > .test-logs/test.log 2>&1; \
+	else $(FLIX) test > .test-logs/test.log 2>&1; fi; \
+	if [ $$? = 0 ]; then \
+		tail -5 .test-logs/test.log; \
+	else \
+		touch .test-logs/test.fail; tail -40 .test-logs/test.log; exit 1; \
+	fi
 
-# エンジン API の型・引数を 1 行で引く ($(ENGINE)/docs/api-digest の grep)。
-# 例: make api Q=gradPolygon 。ソースの unzip や丸読みの前にまずこれ。
-api:
-	@test -n "$(Q)" || { echo "usage: make api Q=<関数名やモジュール名>"; exit 1; }
-	@out=$$(grep -h -i -- "$(Q)" "$(ENGINE)/docs/api-digest/"*.md 2>/dev/null | head -40); \
-	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	else echo "[api] '$(Q)' に当たりなし。make module Q=<やりたいこと> で別名を探す"; fi
+build: ### | パッケージをビルドする
+	$(FLIX) build
 
-# やりたいこと → エンジンのモジュールを 1 行ずつ引く ($(ENGINE)/docs/modules/<分野>.md の grep)。
-# 例: make module Q=スクロール 。当たった行に「分野のファイル:行番号」が付く。自前で書く前にまずこれ。
-module:
-	@test -n "$(Q)" || { echo "usage: make module Q=<やりたいこと・モジュール名の一部>"; exit 1; }
-	@# WhyNot: engine.md（engine/src の下請け）を最後に引くのは、ゲームが使う engine_world の行を先に見せるため。
-	@out=$$(grep -n -i -F -- "$(Q)" $$(ls "$(ENGINE)"/docs/modules/*.md | grep -v '/engine\.md$$') "$(ENGINE)/docs/modules/engine.md" 2>/dev/null | sed -f "$(ENGINE)/mk/module.sed" | head -40); \
-	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	else echo "[module] '$(Q)' に当たりなし。別の言い方で引き直すか、分野の目次 $(ENGINE)/docs/module-index.md から分野のファイルを開く"; fi
+# 現状 1 画面 (テスト記録・スナップショット・チケット・git)。何も実行しない。
+# .claude/settings.json の SessionStart フックがセッション開始時に毎回呼ぶ。
+# pack が欠けたゲーム (sync-agents を配りきらない産み方をされた物) はここで配り直す —
+# AGENTS.md がセッションの入口を必ずこの target にしているため、最初の 1 回で自己修復できる。
+status: ## | 現状 1 画面（テスト記録・絵・チケット・git）。何も実行しない
+	@if [ ! -f bin/fge ]; then \
+		echo "[status] agents-pack が未配布です (bin/fge が無い) — $(ENGINE) から配り直します"; \
+		$(MAKE) -C "$(ENGINE)" sync-agents GAME="$(CURDIR)" || { echo "[status] 配布に失敗 — engine リポで make sync-agents GAME=$(CURDIR) を実行してください"; exit 1; }; \
+	fi
+	@bin/fge status
 
-# ゲームの src/ の地図。pub の定義と各ファイル冒頭 doc の 1 行目を、ファイル別・行番号つきで
-# debug/src-index.md へ書く（正規表現だけの最小版・数秒）。.flix を丸読みせずに位置を引くための物。
-SRC_INDEX_AWK := $(ENGINE)/mk/src-index.awk
-src-index:
-	@mkdir -p debug
-	@{ echo "# src index ($$(date '+%Y-%m-%d %H:%M'))"; \
-	  echo ""; \
-	  echo "make src-index の生成物。pub の定義と各ファイル冒頭 doc の 1 行目。手で編集しない。"; \
-	  find src -name '*.flix' | sort | xargs awk -v FORMAT=md -f "$(SRC_INDEX_AWK)"; \
-	} > debug/src-index.md
-	@echo "[src-index] debug/src-index.md ($$(wc -l < debug/src-index.md | tr -d ' ') 行)"
+# NOTES.md の先頭（引き継ぎ）を短く保つ。古い項を notes/<年-月>.md へ送る（捨てない）。
+# コミット時は NOTES.md をステージすると bin/fge precommit が --check で止める。
+.PHONY: notes-rotate
+notes-rotate: ### | NOTES.md の先頭が長すぎたら古い項を notes/<年-月>.md へ送る（閾値は bin/lint-rules/notes-rotate.json）
+	@bin/fge notes-rotate
 
-# ゲームの src/ の定義を 1 行で引く（make api Q= のゲーム版）。例: make src Q=talkBackdrop
-src:
-	@test -n "$(Q)" || { echo "usage: make src Q=<関数名や型名>"; exit 1; }
-	@out=$$(find src -name '*.flix' | sort | xargs awk -v FORMAT=flat -f "$(SRC_INDEX_AWK)" | grep -i -- "$(Q)" | head -40); \
-	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	else echo "[src] '$(Q)' の pub 定義なし。grep -n '$(Q)' -r src で使われ方を探す"; fi
+# engine の版に追随する (flix.toml と lib/ の fpkg 差し替え + pack 配り直し + check)。
+# status の「engine 版ズレ」を見たらこれ。実体は engine 側の upgrade-game。
+engine-upgrade: ## | engine の版に追随する（status の「engine 版ズレ」を見たらこれ）
+	@$(MAKE) -C "$(ENGINE)" upgrade-game GAME="$(CURDIR)"
 
+##@ 配る
+# 配布物（Linux x64・macOS arm64・Windows x64）。jar は make run と同じ物（headless-run が src の変わった時だけ作り直す）。
+# DIST_INCLUDE は実行時に作業場からの相対で読む物（jar の隣へ置く）。DIST_VERSION の既定はゲームの短いコミット。
+DIST_INCLUDE ?= assets,project.json
+DIST_ARGS = --dir . --include "$(DIST_INCLUDE)" $(if $(DIST_NAME),--name "$(DIST_NAME)") \
+	$(if $(DIST_VERSION),--version "$(DIST_VERSION)") $(if $(DIST_OUT),--out "$(DIST_OUT)")
+dist-linux: DIST_OS := linux
+dist-macos: DIST_OS := macos
+dist-windows: DIST_OS := windows
+dist-all: DIST_OS := all
+dist-linux dist-macos dist-windows dist-all: ## [DIST_OUT=] [DIST_VERSION=] [DIST_NAME=] [DIST_INCLUDE=] | jar・その OS の JRE・起動を build/dist/ へまとめる（置き方は engine の docs/dist.md）
+ifeq ($(FGE_NO_BASH),1)
+	@echo "[dist] Windows では作れません（jar を作る headless-run が bash）。macOS か Linux で流してください"; exit 1
+else
+	FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --build-only
+	"$(ENGINE)/bin/fge" dist $(DIST_OS) $(DIST_ARGS)
+endif
+
+##@ 描き出し
 # 色票を持つゲームでは、入力が変わっていれば先に作り直してから描く。
-render-all: $(PALETTE)
+render-all: $(PALETTE) ## | 全部 gallery/ へ描き出す（決定的）
 	$(HEADLESS_RUN) SceneRender.all; rc=$$?; $(RESIDENT_STOP); exit $$rc
 
 # 1 枚だけ debug/<場面>.png へ描き出す（gallery/ は render-all だけが書く）。
-render:
+render: ## SHOT=<場面> | 1 枚だけ debug/<場面>.png へ描き出す（場面の名前は一覧の最後）
 	@if [ -z "$(SHOT)" ]; then \
 		echo "usage: make render SHOT=<場面>   1 枚だけ debug/<場面>.png へ描き出す"; \
 		$(if $(word 2,$(SHOTS)),echo "       make render SHOT=\"$(word 1,$(SHOTS)) $(word 2,$(SHOTS))\"  何枚か";) \
@@ -258,8 +206,8 @@ render:
 #
 # WhyNot: gallery/ へは書かない。描き出した物は git に入れない決まりで、
 # debug/ が目視用の置き場だから。
-gallery-sounds:
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+gallery-sounds: ## | 効果音を debug/sounds/ に集め、波形とスペクトログラムを debug/sounds.png に描く
+	@$(FGE_PICK); \
 	sfx=$$(ls assets/sfx/*.wav 2>/dev/null); \
 	if [ -z "$$sfx" ]; then \
 		echo "[gallery-sounds] assets/sfx/*.wav がありません (効果音を持つゲームなら先に make render-all)"; \
@@ -276,60 +224,95 @@ gallery-sounds:
 	fi
 
 # 仕上げの確認: 基準の絵との差（reference-check.sh）と、絵の値段（render-budget）。
-reference-check: render-all
+reference-check: render-all ## | 描き出した絵をリファレンス画像とバイト比較し、絵の値段（render-budget）も見る
 	@"$(ENGINE)/bin/reference-check.sh" && $(MAKE) --no-print-directory render-budget; rc=$$?; $(RESIDENT_STOP); exit $$rc
+
+# 基準を作り直す回はキャッシュを写さず全部塗り、前のキャッシュと突き合わせる（docs/render-cache.md）。
+# 写した絵を基準にすると、キャッシュが汚れていた時にそれが正しい絵として固まる。
+reference-update: export FGE_RENDER_CACHE := verify
+reference-update: render-all ## | いまの gallery をリファレンス画像として更新する
+	"$(ENGINE)/bin/reference-update.sh"
 
 # 絵の値段（1 場面が組んだ描き物の数）を、render-all が gallery/ に残した記録で裁く。描き直さないので軽い。
 # 上限は engine の bin/lint-rules/check-render-budget.json・場面ごとの上限は reference/ITEMS.caps.tsv。
-render-budget:
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" check-render-budget .
+render-budget: ### | gallery/ の記録で 1 場面の描き物の数を予算と比べる（描き直さない・render-all の後）
+	@$(FGE_PICK); "$$fge" check-render-budget .
 
-# 描き出し（render / render-all）が場面ごとに書いた表を後から読み直して止める（描き直さないので軽い・下の lint が束ねる）。
+# 基準の版（BASE）と今の作業場を同じ描き出しで並べる。SHOTS はゲームの Makefile が全場面の
+# 一覧として持っているので、コマンドラインで渡された時だけ絞り込みとして読む。
+# WhyNot: ゲームの bin/fge より $(ENGINE)/bin/fge を先に使うのは、このターゲットと道具の版を
+# そろえるため（ゲームの bin/fge は sync-agents を流すまで古いままのことがある）。
+compare: ## BASE=<ref> [SHOTS="a b" | VIDEOS="x-video"] [BASE_ENGINE=<版|パス>] | 基準の版と今を同じエンジン・同じ描き出しで並べ、差を debug/compare/ へ（index.html つき）
+	@test -n "$(BASE)" || { echo "usage: make compare BASE=<ref> [SHOTS=\"a b\" | VIDEOS=\"x-video y-video\"] [BASE_ENGINE=<版|パス>]"; exit 1; }
+	@fge="$(ENGINE)/bin/fge"; "$$fge" --list 2>/dev/null | grep -qx compare || fge=bin/fge; \
+	"$$fge" compare --base "$(BASE)" \
+	  $(if $(filter command line,$(origin SHOTS)),--shots "$(SHOTS)") \
+	  $(if $(VIDEOS),--videos "$(VIDEOS)") \
+	  $(if $(BASE_ENGINE),--base-engine "$(BASE_ENGINE)"); \
+	rc=$$?; $(RESIDENT_STOP); exit $$rc
+
+# パレット（Studio の編集画面が読む写し）。PALETTE を決めたゲームにだけ生えるターゲット。
+# render のたびに無条件で走らせると、絵を描くのと同じだけのコンパイル時間を二重に払う。
+# 入力の洗い出しに漏れがあったときは `make palette` で無条件に作り直す。
+# Palette.write は中身が同じなら書き直さない（unchanged）ので、時刻は make が touch で新しくする
+# （そうしないと写しが入力より古いまま残り、make のたびに Palette.write が走る）。
+ifdef PALETTE
+.PHONY: palette
+$(PALETTE): $(PALETTE_DEPS)
+	$(HEADLESS_RUN) Palette.write
+	@touch $@
+
+palette: ### | Studio が読む色の写し（PALETTE）を無条件に作り直す（PALETTE を決めたゲームだけ）
+	$(HEADLESS_RUN) Palette.write
+endif
+
+##@ lint
+# 検査の束。エンジンの軽い検査はここに前提として並べ、エンジンを上げると増えた検査もそのまま届く。
+# ゲームの検査はゲームの Makefile に「lint: lint-view lint-palette」のような前提だけの 1 行で足す
+# （make は前提だけの規則を 1 つにまとめる。レシピを書くと makefile-dup が止める）。
+lint: render-lint lint-doc-refs lint-record-wrap lint-forbid $(if $(wildcard lint/rules.flix),lint-flixlint) ## | エンジンの軽い検査（render-lint・lint-doc-refs・lint-record-wrap・lint-forbid・lint/rules.flix があれば lint-flixlint）＋ゲームの Makefile が足した検査
+
+# 描き出し（render / render-all）が場面ごとに書いた表を後から読み直して止める（描き直さないので軽い・上の lint が束ねる）。
 # 字の被り・はみ出しの許す物は bin/lint-rules/text-audit.local.json の allow に理由つき、表の置き場と直し方の 1 行は
 # bin/lint-rules/{text-audit,z-audit}.json（ゲームは .local.json で上書き）。表が無ければ見ずに通す。
 # 動画の見回りの入口の写し（video-entries）は動画の口が無いゲームでは見ずに通す。
-render-lint: $(LINT_RULES_LINK)
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+render-lint: $(LINT_RULES_LINK) ### | 描き出しが残した表を読み直す: 字の被り・はみ出し（text-audit）・z の外れ（z-audit）・動画の入口の写し（video-entries --check）
+	@$(FGE_PICK); \
 	code=0; "$$fge" text-audit --root . || code=1; "$$fge" z-audit --root . || code=1; \
 	"$$fge" video-entries --check --root . || code=1; exit $$code
 
-# 文書（docs/**/*.md・NOTES.md・AGENTS.local.md）が指す Mod.name・パス・path:行 が今のリポに在るか（下の lint が束ねる）。
+# 文書（docs/**/*.md・NOTES.md・AGENTS.local.md）が指す Mod.name・パス・path:行 が今のリポに在るか（上の lint が束ねる）。
 # 古い記録の文書は bin/lint-rules/doc-refs.local.json の skip へ。コミットでは触った .md だけを precommit が見る。
-lint-doc-refs: $(LINT_RULES_LINK)
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" doc-refs --root .
+lint-doc-refs: $(LINT_RULES_LINK) ### | docs/**/*.md・NOTES.md・AGENTS.local.md が指す Mod.name・パス・path:行 が実在するか
+	@$(FGE_PICK); "$$fge" doc-refs --root .
 
 # 古い書き方を 1 行の正規表現で止める（engine の forbid.json + ゲームの bin/lint-rules/forbid.local.json）。
-lint-forbid: $(LINT_RULES_LINK)
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" forbid --all --root .
+lint-forbid: $(LINT_RULES_LINK) ### | 古い書き方を 1 行の正規表現で止める（engine の forbid.json + ゲームの forbid.local.json）
+	@$(FGE_PICK); "$$fge" forbid --all --root .
+
+# World の形（大きな record を包む・Doc と描く元は Resources へ・一番上の欄の数）と古い除外を見る。
+# ゲームの除外は bin/lint-rules/record-wrap.local.json の exemptRules へ理由つき。
+lint-record-wrap: $(LINT_RULES_LINK) ### | World の形（大きな record を包む・Doc と描く元は Resources へ・一番上の欄の数）と古い除外
+	@$(FGE_PICK); "$$fge" record-wrap --all --root .
 
 # JVM は bytecode が 8,000 バイトを超えるメソッドを JIT しないので、毎コマ通る関数が超えるとインタプリタのまま回る
 # （engine の docs/performance.md の 13 節）。大きさはインライン展開の後に決まるので、遊ぶ時と同じ jar を数える。
 # WhyNot: lint に束ねない — jar を作り直すと数十秒かかり、保存のたびに流す軽い検査の列に入れられない。
 # Windows では流せない（jar を作る headless-run が bash）。
-lint-huge-methods: $(LINT_RULES_LINK)
+lint-huge-methods: $(LINT_RULES_LINK) ### | JVM が JIT しない大きさ（8,000 バイト超）の関数が無いか（jar を作るので lint には入れていない）
 	@FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --build-only
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" huge-methods --root . build/headless/headless.jar
+	@$(FGE_PICK); "$$fge" huge-methods --root . build/headless/headless.jar
 
 # engine リポの中のテンプレートは規約（bin/lint-rules/<名前>.json）を持たない（生成したゲームには new-game が写す）。
 # 無い規約だけ engine の物へのリンクを張り、生成したゲームと同じ形で lint を流す。
 # WhyNot: 道具ごとに「無ければ engine の規約を読む」を足さない — 規約を読む所が道具の数（30 余り）だけあり、1 つ漏れると黙ってずれる。
 # WhyNot: 写さずにリンクにする — 写すと engine の規約を直しても古いまま残る。リンクは .gitignore で追跡しない。
-lint-rules-link:
+lint-rules-link: ### | engine リポの中のテンプレートだけ、無い規約を engine の物へリンクする（lint の前提）
 	@d=bin/lint-rules; mkdir -p "$$d"; \
 	for f in "$(ENGINE_ABS)"/"$$d"/*.json; do \
 	  n=$$(basename "$$f"); case "$$n" in *.local.json) continue;; esac; \
 	  [ -e "$$d/$$n" ] || ln -s "$$f" "$$d/$$n"; \
 	done
-
-# 検査の束。エンジンの軽い検査はここに前提として並べ、エンジンを上げると増えた検査もそのまま届く。
-# ゲームの検査はゲームの Makefile に「lint: lint-view lint-palette」のような前提だけの 1 行で足す
-# （make は前提だけの規則を 1 つにまとめる。レシピを書くと makefile-dup が止める）。
-lint: render-lint lint-doc-refs lint-record-wrap lint-forbid $(if $(wildcard lint/rules.flix),lint-flixlint)
-
-# World の形（大きな record を包む・Doc と描く元は Resources へ・一番上の欄の数）と古い除外を見る。
-# ゲームの除外は bin/lint-rules/record-wrap.local.json の exemptRules へ理由つき。
-lint-record-wrap: $(LINT_RULES_LINK)
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" record-wrap --all --root .
 
 # ゲームの lint/rules.flix（依存の向き・View が World を受けない・テストの形）を flixlint で見る。flixlint の版と shim の jar は
 # エンジンの hooks.json の checkd.server が決め、bin/fge flixlint-prepare がキャッシュへそろえる。数で止める規則の上限は
@@ -338,74 +321,18 @@ lint-record-wrap: $(LINT_RULES_LINK)
 # そのゲームの Makefile が自前で持っていて、同じ名前の口を 2 つ書くと make が後の方で上書きする。
 ifeq ($(wildcard flixlint/bin/flixlint),)
 FLIXLINT_STAGE ?= resolved
-ifeq ($(OS),Windows_NT)
-FLIXLINT_JAR = $(ENGINE)/bin/flix.jar
-else
-FLIXLINT_JAR = $(shell FLIX_PRINT_JAR=1 "$(ENGINE)/bin/flix" 2>/dev/null)
-endif
-lint-flixlint:
+FLIXLINT_JAR = $(FGE_FLIX_JAR)
+lint-flixlint: ### [FLIXLINT_STAGE=typed] | lint/rules.flix の規則（View が World を受けない・依存の向き・テストの形）を型つきの AST で見る（上限は lint/limits/<規則>.json）
 	@[ -f lint/rules.flix ] || { echo "lint-flixlint: lint/rules.flix がありません（手本はテンプレートの lint/rules.flix）"; exit 2; }
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	@$(FGE_PICK); \
 	prep=$$("$$fge" flixlint-prepare) || exit 2; eval "$$prep"; \
 	"$$FLIXLINT_DIR/bin/flixlint" --flix-jar "$(FLIXLINT_JAR)" --shim "$$FLIXLINT_SHIM" --rules lint/rules.flix \
 	  $(if $(wildcard lint/limits),--limits lint/limits) --stage $(FLIXLINT_STAGE) --build-dir build/flixlint src test
 endif
 
-# flow（e2e/<名前>.flow）を画面なしで流す。入口はゲームの E2e.play（中身は Flow.Cli.main）。
-# 描き出しの jar を使うので、flow を直して流し直すのに Flix を組み直さない（jar は src が変わった時だけ作り直す）。
-# 語彙 e2e/vocab.json は毎回書き直す（bin/fge flow check が JVM なしで読む）。
-flow:
-	@[ -n "$(FLOW)" ] || { echo "使い方: make flow FLOW=e2e/<名前>.flow（読むだけなら bin/fge flow check）"; exit 2; }
-	FLOW="$(FLOW)" FLOW_MODE=run $(HEADLESS_RUN) E2e.play
-
-flow-check:
-	@[ -n "$(FLOW)" ] || { echo "使い方: make flow-check FLOW=e2e/<名前>.flow"; exit 2; }
-	FLOW="$(FLOW)" FLOW_MODE=check $(HEADLESS_RUN) E2e.play
-
-flow-vocab:
-	$(HEADLESS_RUN) E2e.vocab
-
-# 動画の見回りが流す入口の一覧（bin/lint-rules/video-entries.json の out）を Makefile の動画の口から書き直す。
-video-entries:
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" video-entries --root .
-
-# 基準を作り直す回はキャッシュを写さず全部塗り、前のキャッシュと突き合わせる（docs/render-cache.md）。
-# 写した絵を基準にすると、キャッシュが汚れていた時にそれが正しい絵として固まる。
-reference-update: export FGE_RENDER_CACHE := verify
-reference-update: render-all
-	"$(ENGINE)/bin/reference-update.sh"
-
-# 現状 1 画面 (テスト記録・スナップショット・チケット・git)。何も実行しない。
-# .claude/settings.json の SessionStart フックがセッション開始時に毎回呼ぶ。
-# pack が欠けたゲーム (sync-agents を配りきらない産み方をされた物) はここで配り直す —
-# AGENTS.md がセッションの入口を必ずこの target にしているため、最初の 1 回で自己修復できる。
-status:
-	@if [ ! -f bin/fge ]; then \
-		echo "[status] agents-pack が未配布です (bin/fge が無い) — $(ENGINE) から配り直します"; \
-		$(MAKE) -C "$(ENGINE)" sync-agents GAME="$(CURDIR)" || { echo "[status] 配布に失敗 — engine リポで make sync-agents GAME=$(CURDIR) を実行してください"; exit 1; }; \
-	fi
-	@bin/fge status
-
-# NOTES.md の先頭（引き継ぎ）を短く保つ。古い項を notes/<年-月>.md へ送る（捨てない）。
-# コミット時は NOTES.md をステージすると bin/fge precommit が --check で止める。
-.PHONY: notes-rotate
-notes-rotate:
-	@bin/fge notes-rotate
-
-# engine の版に追随する (flix.toml と lib/ の fpkg 差し替え + pack 配り直し + check)。
-# status の「engine 版ズレ」を見たらこれ。実体は engine 側の upgrade-game。
-engine-upgrade:
-	@$(MAKE) -C "$(ENGINE)" upgrade-game GAME="$(CURDIR)"
-
-# コミット時のゲート (描き出した絵の混入・矩形だけの View・規約の配線ずれを止める)。
-# .git/hooks は git 管理外なので clone ごとに 1 回この配線が要る (status が未配線を知らせる)。
-hooks:
-	@git config core.hooksPath bin/githooks
-	@echo "[hooks] 配線しました: pre-commit = bin/githooks/pre-commit (中身は bin/fge precommit)"
-
 # 規約の配線ずれの軽い検査 (engine 版のうちゲームで見るべき 3 点だけ)。
 # pre-commit (bin/fge precommit) が .md / .flix を触ったコミットで呼ぶ。生成はしない。
-check-docs-sync:
+check-docs-sync: ### | 規約の配線ずれの軽い検査（CLAUDE.md・AGENTS.md の刻印・スキルの実在）
 	@ok=1; \
 	if ! grep -q '^@AGENTS.md' CLAUDE.md 2>/dev/null; then \
 	  echo "[check-docs-sync] NG: CLAUDE.md は @AGENTS.md の 1 行にする (作り直しは engine 側の make sync-agents GAME=$(CURDIR))"; ok=0; \
@@ -420,19 +347,38 @@ check-docs-sync:
 	done; \
 	if [ "$$ok" = "1" ]; then echo "[check-docs-sync] OK"; else exit 1; fi
 
-# 基準の版（BASE）と今の作業場を同じ描き出しで並べる。SHOTS はゲームの Makefile が全場面の
-# 一覧として持っているので、コマンドラインで渡された時だけ絞り込みとして読む。
-# WhyNot: ゲームの bin/fge より $(ENGINE)/bin/fge を先に使うのは、この口と道具の版を
-# そろえるため（ゲームの bin/fge は sync-agents を流すまで古いままのことがある）。
-compare:
-	@test -n "$(BASE)" || { echo "usage: make compare BASE=<ref> [SHOTS=\"a b\" | VIDEOS=\"x-video y-video\"] [BASE_ENGINE=<版|パス>]"; exit 1; }
-	@fge="$(ENGINE)/bin/fge"; "$$fge" --list 2>/dev/null | grep -qx compare || fge=bin/fge; \
-	"$$fge" compare --base "$(BASE)" \
-	  $(if $(filter command line,$(origin SHOTS)),--shots "$(SHOTS)") \
-	  $(if $(VIDEOS),--videos "$(VIDEOS)") \
-	  $(if $(BASE_ENGINE),--base-engine "$(BASE_ENGINE)"); \
-	rc=$$?; $(RESIDENT_STOP); exit $$rc
+##@ flow・語彙
+# flow（e2e/<名前>.flow）を画面なしで流す。入口はゲームの E2e.play（中身は Flow.Cli.main）。
+# 描き出しの jar を使うので、flow を直して流し直すのに Flix を組み直さない（jar は src が変わった時だけ作り直す）。
+# 語彙 e2e/vocab.json は毎回書き直す（bin/fge flow check が JVM なしで読む）。
+flow: ## FLOW=e2e/<名前>.flow | flow を画面なしで最後まで流す（失敗は行番号つき。読むだけなら bin/fge flow check）
+	@[ -n "$(FLOW)" ] || { echo "使い方: make flow FLOW=e2e/<名前>.flow（読むだけなら bin/fge flow check）"; exit 2; }
+	FLOW="$(FLOW)" FLOW_MODE=run $(HEADLESS_RUN) E2e.play
 
+flow-vocab: ### | flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）
+	$(HEADLESS_RUN) E2e.vocab
+
+# 会話のシナリオ（assets/talk/*.yarn）の語彙（話し手・タグ・コードが開くノード）を、ゲームの Talk.vocab
+# から assets/talk/vocab.json へ書き直す。bin/fge yarn build の check がこれを読む（版 2 の語彙は名前を Doc から集めるので、
+# 書き直すのはコードの側の名前（コマンド）を変えた時だけ）。
+.PHONY: talk-vocab
+talk-vocab: ## | 会話のシナリオの語彙 assets/talk/vocab.json と vocab.std.json を書き直す（bin/fge yarn build が読む）
+	$(HEADLESS_RUN) Talk.vocab
+
+# 動画の見回りが流す入口の一覧（bin/lint-rules/video-entries.json の out）を Makefile の動画のターゲットから書き直す。
+video-entries: ### | 動画の見回りが流す入口の一覧を Makefile の $(call video,…) から書き直す
+	@$(FGE_PICK); "$$fge" video-entries --root .
+
+##@ ゲームの src を引く
+# ゲームの src/ の定義を 1 行で引く（make api Q= のゲーム版・正規表現だけの最小版）。例: make src Q=talkBackdrop
+SRC_INDEX_AWK := $(ENGINE)/mk/src-index.awk
+src: ## Q=<名前> | ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）
+	@test -n "$(Q)" || { echo "usage: make src Q=<関数名や型名>"; exit 1; }
+	@out=$$(find src -name '*.flix' | sort | xargs awk -f "$(SRC_INDEX_AWK)" | grep -i -- "$(Q)" | head -40); \
+	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
+	else echo "[src] '$(Q)' の pub 定義なし。grep -n '$(Q)' -r src で使われ方を探す"; fi
+
+##@ エージェントの道具選びを測る
 # 文書・スキル・早見表で、何も教えていないエージェントが正しい道具を選べるかを測る。
 # お題は agent-eval/*.json（engine.json は engine から配られる共通・それ以外はゲーム固有）。
 # claude -p を 1 お題 1 本（読むだけの道具で）走らせ、記録と表を debug/agent-eval/<LABEL>/ へ。
@@ -440,9 +386,9 @@ compare:
 # WhyNot: heavy の鍵を取らない（bin/fge heavy でも包まない）のは、claude -p は返事を待つ間ほとんど
 #   CPU を使わず、鍵を取ると数十分ほかの作業場の check・test・リリースを止めるため。
 #   同時に走る claude -p の本数は、fge agent-eval がマシン全体の枠（/tmp/fge-agent-eval.slots・既定 3）で守る。
-agent-eval:
+agent-eval: ### [ONLY=id,…] [LABEL=名前] | 何も教えていない claude にお題（agent-eval/*.json）を渡し、選んだ道具を採点して表に
 	@ls agent-eval/*.json >/dev/null 2>&1 || { echo "[agent-eval] agent-eval/*.json がありません（engine 側で make sync-agents GAME=$(CURDIR)）"; exit 1; }
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	@$(FGE_PICK); \
 	"$$fge" agent-eval $(foreach f,$(wildcard agent-eval/*.json),--tasks $(f)) --add-dir "$(ENGINE)" \
 		$(if $(ONLY),--only $(ONLY)) $(if $(LABEL),--label $(LABEL)) $(if $(JOBS),--jobs $(JOBS)) \
 		$(if $(REPEAT),--repeat $(REPEAT))
@@ -453,40 +399,23 @@ agent-eval:
 # WhyNot: make release のゲートに入れないのは、claude を 60 本近く呼んで 20 分ほどかかり、
 #   点にもぶれがあるため（止めるのではなく知らせる物）。
 AGENT_EVAL_REPEAT ?= 3
-agent-eval-release:
+agent-eval-release: ### [REPEAT=3] [OVERWRITE=1] | エンジンの版ごとに全部のお題を N 回 → agent-eval/history/<版>.json・前の版と比べる
 	@ls agent-eval/*.json >/dev/null 2>&1 || { echo "[agent-eval] agent-eval/*.json がありません（engine 側で make sync-agents GAME=$(CURDIR)）"; exit 1; }
 	@ver=$$(sed -n 's/^VERSION *:= *//p' "$(ENGINE)/Makefile" | head -1); \
 	test -n "$$ver" || { echo "[agent-eval] $(ENGINE)/Makefile に VERSION が見当たりません"; exit 1; }; \
-	fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	$(FGE_PICK); \
 	"$$fge" agent-eval $(foreach f,$(wildcard agent-eval/*.json),--tasks $(f)) --add-dir "$(ENGINE)" \
 		--repeat $(or $(REPEAT),$(AGENT_EVAL_REPEAT)) --label "v$$ver" \
 		--history agent-eval/history --version "$$ver" $(if $(JOBS),--jobs $(JOBS)) $(if $(OVERWRITE),--overwrite)
 
-agent-eval-compare:
+agent-eval-compare: ### A=<前> B=<後> | 2 回の点・トークン・ターン・読んだ数を並べる
 	@test -n "$(A)" -a -n "$(B)" || { echo "usage: make agent-eval-compare A=<前の LABEL> B=<後の LABEL>"; exit 1; }
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" agent-eval --compare $(A) $(B)
+	@$(FGE_PICK); "$$fge" agent-eval --compare $(A) $(B)
 
-# 色票（Studio の編集画面が読む写し）。PALETTE を決めたゲームにだけ口が生える。
-# render のたびに無条件で走らせると、絵を描くのと同じだけのコンパイル時間を二重に払う。
-# 入力の洗い出しに漏れがあったときは `make palette` で無条件に作り直す。
-# Palette.write は中身が同じなら書き直さない（unchanged）ので、時刻は make が touch で新しくする
-# （そうしないと写しが入力より古いまま残り、make のたびに Palette.write が走る）。
-ifdef PALETTE
-.PHONY: palette
-$(PALETTE): $(PALETTE_DEPS)
-	$(HEADLESS_RUN) Palette.write
-	@touch $@
-
-palette:
-	$(HEADLESS_RUN) Palette.write
-endif
-
-# 会話のシナリオ（assets/talk/*.yarn）の語彙（話し手・タグ・コードが開くノード）を、ゲームの Talk.vocab
-# から assets/talk/vocab.json へ書き直す。bin/fge yarn build の check がこれを読む（版 2 の語彙は名前を Doc から集めるので、
-# 書き直すのはコードの側の名前（コマンド）を変えた時だけ）。
-.PHONY: talk-vocab
-talk-vocab:
-	$(HEADLESS_RUN) Talk.vocab
+##@ 同じマシンで何本も並んで作業するときの道具 (bin/fge)
+##> bin/fge heavy <コマンド...> | 重い処理を枠 3 本で流す（render-all・動画・compare と Makefile の HEAVY_LONG は長い物として枠 1〜2 の 2 本まで・枠 3 は短い物だけ）。--status で持ち主と列・--history で待ちの合計
+##> bin/fge use-engine <版|パス> | この作業場の local.mk と lib をそのエンジンへ。--status / --restore
+##> bin/fge proposal build <proposal.json> | 案を選んでもらうページ（index.html）を組む。knobs で片付けの残りを数える
 
 # 何も指定せず make と打ったらゲームが起動する（テンプレの元の既定と同じ）。
 .DEFAULT_GOAL := run
