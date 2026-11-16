@@ -55,7 +55,7 @@ mod WorldRead {
                    w: World.World): World.World \ Emit[World.Event] =
         match pairs {
             case Nil => World.mapRead(withGate, w)
-            case (event, later) :: rest => absorbFrom(res, replay, last, rest, absorbOne(res, replay, last, event, later, None, w))
+            case (event, later) :: rest => absorbFrom(res, replay, last, rest, absorbOne(res, replay, last, event, later, None, true, w))
         }
 
     /// 人が読み進めている時: 実行器が before から r#talk までに流した文の所を出してから、出来事の束をビートの後ろへ足す
@@ -172,7 +172,8 @@ mod WorldRead {
         Vector.nth(i, beat#items) |> Option.flatMap(item -> item#event |> Option.map(e -> (item, e)))
             |> Option.map(found -> {
                 let (item, (event, later)) = found;
-                absorbOne(res, Commands.Replay.Live, item#last, event, later, NovelBeat.plannedSecondsOf(i, beat), marked) |> World.mapRead(withGate)
+                let inOrder = Set.maximum(r#beat#state#applied) |> Option.forAll(j -> j < i);
+                absorbOne(res, Commands.Replay.Live, item#last, event, later, NovelBeat.plannedSecondsOf(i, beat), inOrder, marked) |> World.mapRead(withGate)
             })
             |> Option.getWithDefault(marked)
 
@@ -193,9 +194,11 @@ mod WorldRead {
         }
 
     /// 出来事 1 つ。later = その出来事より後ろに出た台詞と選択肢の数。
+    /// inOrder = 台本の順に当てている（台詞を続いた LineWait の頭で先に積んだ後に、その前の命令を当てる時は false）。
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
-                  held: Option[Float64], entering: World.World): World.World \ Emit[World.Event] =
-        let w = World.mapRead(trackEntry(res, event), entering);
+                  held: Option[Float64], inOrder: Bool, entering: World.World): World.World \ Emit[World.Event] =
+        // WhyNot: 台本の順より後に当てる命令でノードの入りを見ない — 先に積んだ台詞より上の行なので、自分への jump に見えて入り直しを数える。
+        let w = if (inOrder) World.mapRead(trackEntry(res, event), entering) else entering;
         if (replay == Commands.Replay.Live) World.readOf(w) |> Option.flatMap(r -> executedOf(res, r#entry, event)) |> Option.forEach(e -> Emit.emit(World.Event.Executed(e))) else ();
         match event {
             case YarnRunner.Event.Line(said)       =>
@@ -208,7 +211,7 @@ mod WorldRead {
                                        stage = Stage.withWindowShown(World.now(w), cur#stage) | cur }, w)
             case YarnRunner.Event.Command(command) =>
                 whileReading(cur -> {
-                    let applied = cue(res, replay, command, { cursor = cursorAfter(res, command, cur#cursor) | cur }, w);
+                    let applied = cue(res, replay, command, { cursor = if (inOrder) cursorAfter(res, command, cur#cursor) else cur#cursor | cur }, w);
                     if (replay == Commands.Replay.Live) Emit.emit(World.Event.Executed(commandedOf(res, World.now(w), cur, applied, command, held))) else ();
                     World.withRead(applied, w)
                 }, w)
@@ -771,7 +774,7 @@ mod WorldRead {
     def absorbTracking(res: Res.Res, events: List[YarnRunner.Event], start: Tracking): Tracking =
         let visitsOf = (w: World.World) -> World.readOf(w) |> Option.map(r -> r#entry#visits) |> Option.getWithDefault(0);
         let step = (t: Tracking, event) -> {
-            let next = fst(Emit.collect(() -> absorbOne(res, Commands.Replay.Silent, None, event, 0, None, t#w)));
+            let next = fst(Emit.collect(() -> absorbOne(res, Commands.Replay.Silent, None, event, 0, None, true, t#w)));
             let entered = World.readOf(next) |> Option.filter(_ -> visitsOf(next) != visitsOf(t#w)) |> Option.map(r -> r#entry);
             match entered {
                 case Some(e) if Map.memberOf(e#node, t#found) => { w = next, revisited = true | t }

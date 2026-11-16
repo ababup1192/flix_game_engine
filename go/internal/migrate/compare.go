@@ -274,7 +274,8 @@ func eventPairs(a, b *Tape) ([]Event, []Event) {
 // 出なかったりする）、続く <<wait>> でずれが積み上がって、どの待ちも 1 フレームの内なのに後ろが全部ずれて見える。
 func (c *comparer) eventTimes(flow, size string, a, b *Tape) {
 	ea, eb := eventPairs(a, b)
-	tol := frameTol(a)
+	// WhyNot: 1 フレームちょうどで切らない — tape.json の t はミリ秒に丸めてあり、間は 2 つの丸めを含むので、1 フレームの遅れが 0.034 秒に見える。
+	tol := frameTol(a) + 0.001
 	prevA, prevB := 0.0, 0.0
 	for i := 0; i < len(ea) && i < len(eb); i++ {
 		gapA, gapB := ea[i].T-prevA, eb[i].T-prevB
