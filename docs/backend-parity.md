@@ -11,8 +11,12 @@
 
 | 経路 | 誰が使うか |
 |---|---|
-| **GL**（`render_gl`） | 実機。`make run` で見える絵 |
+| **GPU**（`render_gl`。既定は WebGPU の backend・`FLIX_GE_BACKEND=gl` か WebGPU を使えない機械は GL の backend） | 実機。`make run` で見える絵・窓なしの 1 枚撮り（`GpuShot`）・動画（`VideoOut`。今は GL） |
 | **SoftRaster**（`engine_tools`） | 生成・スナップショット・F8 注釈・エディタのプレビュー |
+
+下の対応表の「GL」の列は GPU の backend を指す。WebGPU と GL の backend は同じ `RenderList` を流し、
+同じ機械で画素を比べる門がある（`make webgpu-v1-check`（2D・許す差は `bench/webgpu_v1/tolerance.tsv`）・`make -C bench/webgpu_v2 run`（3D・許す差は場面ごとに `bench/webgpu_v2/src`））。
+WebGPU を使えない機械（Dawn のネイティブを配っていない OS など）では、起動の時に `[backend] WebGPU を使えない: … — GL で起動する` を 1 行言って GL で描く。
 
 ## ブラウザ（WebGL2）とデスクトップの絵
 
@@ -87,7 +91,7 @@ SoftRaster が指定を黙って落とすと、**スナップショットは「�
 | シェーダー面の tex 場（`Field.Tex`） | sampler uniform + sampler object | `texEnv`（画素表）を `ShaderEval` が標本 | 標本の量子化は**同一を保証する**: NEAREST（`floor` の釘打ち式）・CLAMP（端に張り付き）・8bit/255 の正規化・pass の上下逆の吸収位置（GL の uTexFlip だけが持つ）。テクスチャ値**以降**の float 合成は宣言シェーダー面と同じく近似。pass の alpha チャンネル（`chan:"a"`）は GL のブレンド副産物なので一致保証なし |
 | レンダーターゲット（Pass） | ○ | ○ | sprite で貼るときの標本は最近傍（NEAREST）を**保証する** — 縮小→再拡大のピクセライズ/モザイクはこれに依存してよい。中の Shader 面も両経路で描く（gl_parity の passChain）。読みの決まり（まだ描いていない pass は黒・自分の名前は history）は `Render.resolvePassReads` 1 か所で書き換え、両経路が同じ結果を使う（passLaterRead）。**history（前のコマ）は突き合わせない** — 描き出しと GL の 1 枚撮り・動画は透明、窓だけが前のコマを写す |
 | 縮んだ pass（`RenderTarget.Descriptor` の scale） | viewport でテクセル寸法へ縮める（投影は design のまま） | design 解像度で描き、GL がテクセルを塗る点で 1 画素拾う（面はその点で評価） | テクセルの格子にそろった座標（scale 0.5 なら偶数）の絵は**同一を保証する**（passHalf）。奇数座標の箱の縁も合わせてある（縦は「境目なら上」— GL のターゲットが上下逆格納のため）。面の中の式（市松の升目など）が標本点にちょうど乗る所は近似。割り切れない倍率（0.33 など）は B 段階（この Mac では 0 px） |
-| tex 場の Linear（`sampler` 節） | sampler object の GL_LINEAR | `ShaderEval.sampleTexLinear`（同じ点・同じ重み） | **近似**: GPU は補間の重みを固定小数に丸めるので ±1/255 程度ずれうる（B 段階 linearRead。この Mac の実測は 0 px） |
+| tex 場の Linear（`sampler` 節） | sampler object の GL_LINEAR | `ShaderEval.Internal.sampleTexLinear`（同じ点・同じ重み） | **近似**: GPU は補間の重みを固定小数に丸めるので ±1/255 程度ずれうる（B 段階 linearRead。この Mac の実測は 0 px） |
 | 面に渡す数（`param`） | uniform `uParamN`（float32） | `ShaderDoc.bindParams` で `const` に置き換えて評価（float64） | `const` と同じ扱い（gl_parity の paramRead は 8bit で半分に乗らない値で A 段階 0 px） |
 | HDR の Pass（`RenderTarget.withHdr` → Rgba16Float） | `GL_RGBA16F` の FBO | `SoftRaster.PassImage.Rgba16Float`（書くたびに half に丸める） | 書き込みの決まり（面の rgb は [0, 65504]・α は [0, 1]）は両経路で同じ（hdrPass は A 段階 0 px）。読む側の補間とぼかしは half と float32 / float64 の丸めで ±1 が出る（B 段階 hdrWindowHalf）。**近似 2 つ**: (1) sprite・字・箱・多角形は 8bit の下書きに描いてから float で混ぜるので、1 を超える色の sprite は下書きで 1 に切られ、1 つの Drawable の中の重なりは 8bit に丸めてから混ぜる。(2) sprite・ビルボードが Rgba16Float の Pass を読む時、描き出しは 0..1 に切ってから tint を掛ける（GL は tint を掛けた後に書き込みで切る）ので、tint が 1 より小さい所で 1 を超えた値の写りが違う。3D の材質の tex 場が Rgba16Float の Pass を読む時は、GPU（`ShaderGen.compile3d`）は切らずに読んで光を掛け、書き込みで切る。描き出しは 0..1 に切ってから読むので、1 を超えた値を読む材質は、光で暗くなる所ほど明るさが違う |
 | テクセルの数（`Field.TexSize`） | `float(textureSize(uTexN, 0))` | texEnv の絵の width / height | **同一を保証する**（整数の数。texSizeScaled は縮んだ Pass を 1 テクセルずつずらして読む B 段階で 0 px）。無い名前は描き出しが 0・実機は何も貼らない unit の寸法（ドライバ次第で、gl_parity では確かめていない） |
@@ -148,14 +152,17 @@ SoftRaster が指定を黙って落とすと、**スナップショットは「�
 - 描画経路（render_gl / SoftRaster / Frame / ShaderEval）を触ったら手で回す。
   CI には載せない（オフスクリーン GL を CI に用意しない判断はそのまま）。
 
-## 実機の GL の絵を撮り比べる（bin/gl-capture.sh）
+## 実機の窓の絵を撮り比べる（bin/gl-capture.sh）
 
 gl-parity は 1 コマずつの場面を GL と CPU で比べる。こちらは**実機の起動の道そのもの**（読み込み・App のループ・
-swap の直前の絵）を、テンプレの場面ごとに頭の 6 コマ撮って SHA-256 で控える。render_gl の書き換えの前後で、
-同じ機械の同じ場面が同じ絵かを見る物差し。
+画面へ出す直前の絵）を、テンプレの場面ごとに頭の 6 コマ撮って SHA-256 で控える。render_gl の書き換えの前後で、
+同じ機械の同じ場面が同じ絵かを見る物差し。描き手は既定の WebGPU で、`BACKEND=gl` で GL の backend を撮る（make の口と script の名前は gl-capture のまま）。
 
-- `make gl-capture OUT=<フォルダ>` — 撮る。場面は `bin/gl-capture.sh` の既定（rpg・ノベル・tidepool の START の場面と bench/scene3d の 3D の部屋）
-- `make gl-capture-check` — 同じ場面を 2 回撮り、全部のコマがバイト一致するかを見て、基準（`bench/baseline/<版>/gl-capture.sha256`）とも比べる（違えば exit 1。別の機械では `BASE=off`）
+- `make gl-capture OUT=<フォルダ> [BACKEND=gl]` — 撮る。場面は `bin/gl-capture.sh` の既定（rpg・ノベル・tidepool の START の場面と bench/scene3d の 3D の部屋）
+- `make gl-capture-check [BACKEND=gl]` — 同じ場面を 2 回撮り、全部のコマがバイト一致するかを見て、この機械の基準とも比べる（違えば exit 1。基準の無い機械は 2 回撮りの一致だけ）。
+  基準は描き手ごとに別: WebGPU は `bench/baseline/0.99.0/gl-capture-webgpu-jwebgpu<版>-<機械>.sha256`（名前に jWebGPU の版＝Dawn の版を入れて pin。頭の `#` の行に撮った adapter）・
+  GL は `bench/baseline/0.96.0/gl-capture-<機械>.sha256`。撮り直すのは `make gl-capture-baseline [BACKEND=gl]`
+- jWebGPU の版を上げると WebGPU の基準のファイル名が変わり、撮り直すまで「基準が無い」と言う（古い Dawn の基準と比べない）
 - 撮っている間はマウスに触れない（マウスの位置は実のカーソルを読むので、hover のある場面の絵が変わる）
 - 組む口: `FLIX_GE_HIDDEN`（framebuffer = design）・`FLIX_GE_FRAME_SHOT`・`FLIX_GE_FIXED_DT`（2 コマ目以降も揃える。docs/flow.md）・`FLIX_GE_MUTE`・`START`
 - GL の絵は機械とドライバで変わる。基準の SHA を別の機械の撮った物と比べない
@@ -169,7 +176,7 @@ swap の直前の絵）を、テンプレの場面ごとに頭の 6 コマ撮っ
 |---|---|---|
 | `gl-parity.txt` | gl-parity の行（場面ごとの差の数） | `make gl-parity` |
 | `gl-parity.sha256` | gl-parity の CPU の絵（GPU に依らない。同じ JDK・同じ CPU の種類で比べる）と GL の絵の SHA-256 | `bench/gl_parity/debug/` を shasum |
-| `gl-capture.sha256` | 上の撮り比べの SHA-256（同じ機械でだけ比べる） | `make gl-capture` |
+| `gl-capture-<機械>.sha256`・`gl-capture-webgpu-jwebgpu<版>-<機械>.sha256` | 上の撮り比べの SHA-256（GL・WebGPU。同じ機械でだけ比べる） | `make gl-capture-baseline [BACKEND=gl]` |
 | `scene3d.txt` | 3D の部屋の CPU の絵の SHA-256 と、CPU で描く時間の中央値 | `FGE_RENDER_CACHE=off make bench B=scene3d-still`・`make bench B=scene3d-cpu` |
 | `gl-parity-cpu.tsv` | gl-parity の場面ごとの CPU の描く時間の中央値（同じ機械で前後を並べて見る。門にしない） | `make bench B=gl-parity-cpu` |
 | `reference.txt` | テンプレの reference-check の結果（前から落ちる場面も） | 各テンプレで `make reference-check` |
