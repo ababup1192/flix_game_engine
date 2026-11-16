@@ -40,6 +40,12 @@ mod V2Main {
         skinnedCase("skinnedTextured", kit, Scene3d.Output.Color, V2Skinned.textured(V2Materials.colorTexture())) ::
         skinnedCase("skinnedDepth", kit, depthOfRoom(), V2Skinned.vertexColored) ::
         skinnedCase("crowd", kit, Scene3d.Output.Color, V2Skinned.crowd(crowdCount(), kit#torch)) ::
+        shadowCase("shadowSpot", V2Shadows.spotRoom(kit)) ::
+        shadowCase("shadowSpotTextured", V2Shadows.spotRoomTextured(kit)) ::
+        shadowCase("shadowSun", V2Shadows.sunYard(kit, 0)) ::
+        shadowCase("shadowSunCrowd", V2Shadows.sunYard(kit, crowdCount())) ::
+        shadowCase("shadowSunTextured", V2Shadows.sunYardTextured(kit)) ::
+        shadowCase("shadowBoth", V2Shadows.spotAndSun(kit)) ::
         railsCase("railsMsaa", 4, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsNoMsaa", 1, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsMsaaClear", 4, None, Color.rgb(0.3, 0.15, 0.05)) ::
@@ -74,6 +80,10 @@ mod V2Main {
     /// 部屋に restyle（V2Skinned）で物を足して画面へ直に（Native・正面）。output = 場面の Output（Depth なら奥行きの書き出し）。
     def skinnedCase(name: String, kit: Room.Kit, output: Scene3d.Output, restyle: Scene3d.Scene3dCmd -> Scene3d.Scene3dCmd): Case =
         { name = name, passes = Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), { output = output | restyle(Room.scene(kit, 0.0)) }) :: Nil }
+
+    /// 影の場面（V2Shadows）を画面へ直に（Native）。
+    def shadowCase(name: String, scene: Scene3d.Scene3dCmd): Case =
+        { name = name, passes = Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), scene) :: Nil }
 
     /// 小物 crowdCount() 個と人形の場面を左右に 2 つ並べて 1 回の prepare で描く（左右で yaw を変える）。1 つ目の場面の 1 体ごとの値だけで 1,024 体を超え、
     /// 2 つ足すと 2,048 体を超えるので、2 つ目の場面の前で 1 体ごとの値の buffer があふれて submit が入り、2 つ目の場面は姿勢を送り直す
@@ -153,11 +163,18 @@ mod V2Main {
     /// 骨つきと小物の場面（同じ日の実測。違う画素・±2 以上・max）: skinned 9・1・±70、skinnedTextured 46・1・±70、skinnedDepth 3・0・±1、crowd 21・10・±146、skinnedTwice 22・14・±230。
     /// ±2 以上は重なる面（人形と卓・小物どうし）で勝つ面が入れ替わる所【推】。skinnedTwice は 2 つ目の場面の前で submit が入る形（姿勢の送り直し）を通す。
     /// 上限はどれも実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない（255）。
+    /// 影の場面（同じ日の実測。違う画素・±2 以上・max）: shadowSpot 12・1・±84、shadowSpotTextured 173・1・±69、shadowSun 4・3・±71、shadowSunCrowd 31・22・±145、
+    /// shadowSunTextured 40・3・±58、shadowBoth 8・2・±83。±2 以上は room と同じく重なる面で勝つ面が入れ替わる所と、影のふちで地図の比べ（z − bias ≦ 地図の値）が
+    /// 最後の bit で入れ替わる画素【推: GL の地図は 24 bit・WebGPU は 32 bit の float】。±1 は面の中に点で散る（絵の補間と光の坂の丸め）。上限は実測のほぼ 2 倍（小さい物は 8）。
+    /// 壊して確かめた（同じ日に 1 回ずつ）: 色の pass の影の行列を単位行列にすると 6 場面が 5.8 万〜14.3 万 px・bias を 0 にすると 1.2 万〜17.5 万 px・
+    /// 骨つきの物の影の pass で姿勢を読まない（骨の無い版の pipeline で描く）と 5.4 千〜3.1 万 px・影の pass の firstInstance を 1 つずらすと 1.7 万〜10.4 万 px 違って落ちる。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
              "matDepth" => (4, 8, 255), "matMany" => (430, 440, 255),
-             "skinned" => (8, 32, 255), "skinnedTextured" => (8, 100, 255), "skinnedDepth" => (4, 8, 16), "crowd" => (32, 64, 255), "skinnedTwice" => (32, 64, 255)}
+             "skinned" => (8, 32, 255), "skinnedTextured" => (8, 100, 255), "skinnedDepth" => (4, 8, 16), "crowd" => (32, 64, 255), "skinnedTwice" => (32, 64, 255),
+             "shadowSpot" => (8, 32, 255), "shadowSpotTextured" => (8, 350, 255), "shadowSun" => (8, 16, 255), "shadowSunCrowd" => (48, 64, 255),
+             "shadowSunTextured" => (8, 80, 255), "shadowBoth" => (8, 16, 255)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip"}

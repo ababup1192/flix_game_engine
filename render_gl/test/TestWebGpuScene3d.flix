@@ -5,7 +5,8 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     use Render3d.ScenePlan.ScenePassSpec
-    use Render3d.WebGpuRenderer.{clearOf, packPassValues, packSceneValues, sceneValueBytes, skipsOf, topLeftOf}
+    use Render3d.ShadowMaps.ShadowSampling
+    use Render3d.WebGpuRenderer.{clearOf, packPassValues, packSceneValues, packShadowValues, sceneValueBytes, skipsOf, topLeftOf}
 
     def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, 3.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
 
@@ -43,6 +44,38 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     def testShadowAndDepthOutputAreOff(): Unit \ {Assert, IO} =
         let buf = packed();
         Assert.assertEq(expected = (0, 0, 0, -1), (buf.getInt(76), buf.getInt(220), buf.getInt(248), buf.getInt(232)))
+
+    def spotSampling(): ShadowSampling =
+        ShadowSampling.Spot({ matrix = Mat4.translate(Vec3.v3(7.0, 0.0, 0.0)), bias = 0.25, pcfRadius = 3, strength = 0.75, spotIndex = 2 })
+
+    def sunSampling(): ShadowSampling =
+        ShadowSampling.Sun({ matrix = Mat4.translate(Vec3.v3(9.0, 0.0, 0.0)), bias = 0.5, normalShift = 1.5, pcfRadius = 2, strength = 0.625,
+                             forward = Vec3.v3(0.1, 0.2, 0.3), distance = 40.0, fadeWidth = 6.0 })
+
+    /// スポットの影: uShadowOn（220）に 1・uShadowSpot（232）・pcf（236）・bias（240）・濃さ（244）・行列の平行移動の x（272 + 48）。
+    @Test
+    def testSpotShadowFieldsSitAtWgslOffsets(): Unit \ {Assert, IO} =
+        let buf = packed();
+        packShadowValues(buf, spotSampling() :: Nil);
+        Assert.assertEq(expected = (1, 2, 3, 0.25f32, 0.75f32, 7.0f32, 0),
+                        (buf.getInt(220), buf.getInt(232), buf.getInt(236), buf.getFloat(240), buf.getFloat(244), buf.getFloat(272 + 48), buf.getInt(76)))
+
+    /// 太陽の影: uSunShadowOn（76）に 1・normalShift（92）・forward の z（104）・bias（108）・薄めの距離と幅（112・116）・pcf（120）・濃さ（124）・行列の平行移動の x（336 + 48）。
+    @Test
+    def testSunShadowFieldsSitAtWgslOffsets(): Unit \ {Assert, IO} =
+        let buf = packed();
+        packShadowValues(buf, sunSampling() :: Nil);
+        Assert.assertEq(expected = (1, 1.5f32, 0.3f32, 0.5f32, 40.0f32, 6.0f32, 2, 0.625f32, 9.0f32, 0),
+                        (buf.getInt(76), buf.getFloat(92), buf.getFloat(104), buf.getFloat(108), buf.getFloat(112), buf.getFloat(116),
+                         buf.getInt(120), buf.getFloat(124), buf.getFloat(336 + 48), buf.getInt(220)))
+
+    /// 影の無い場面は、前の場面が両方の影を書いた入れ物でも uShadowOn（220）と uSunShadowOn（76）を 0 に戻す。
+    @Test
+    def testNoShadowTurnsBothOff(): Unit \ {Assert, IO} =
+        let buf = packed();
+        packShadowValues(buf, spotSampling() :: sunSampling() :: Nil);
+        packShadowValues(buf, Nil);
+        Assert.assertEq(expected = (0, 0), (buf.getInt(220), buf.getInt(76)))
 
     /// 奥行きの書き出しの pass は uDepthRange（224・228）に near と幅・uDepthOut（248）に 1。
     @Test
