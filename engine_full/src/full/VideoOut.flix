@@ -21,6 +21,10 @@ pub mod VideoOut {
     import java.lang.Process
     import java.lang.ProcessBuilder
     import java.lang.ProcessBuilder$Redirect
+    import java.lang.System
+    import java.nio.file.Files
+    import java.nio.file.Paths
+    import java.nio.file.StandardCopyOption
     import java.lang.Throwable
     import java.nio.ByteBuffer
     import java.util.concurrent.ConcurrentHashMap
@@ -150,7 +154,7 @@ pub mod VideoOut {
                         (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
                     }
             }
-            case Painter.Soft     => (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
+            case Painter.Soft     => (Painter.Soft, if (spikeGpu()) writeWebGpu(settings#paint, video, passesOf, baked, jobs) else writeSoft(settings#paint, video, passesOf, baked, jobs))
             case Painter.KeysOnly => (Painter.KeysOnly, writeSoft(PaintRange.Nothing, video, passesOf, baked, jobs))
         };
         writeKeys(video#outDir, keys);
@@ -316,6 +320,93 @@ pub mod VideoOut {
             prepared#issues |> List.forEach(issue -> warn("[video] pass: ${issue}"));
             HeadlessRender.passImagesOf({ texturePath = frame#req#texturePath | video#soft }, video#extraFonts, Map.empty(), prepared#specs)
         }
+
+    // ── WebGPU の PNG（spike）──
+
+    def spikeGpu(): Bool \ IO = Object.toOption(System.getenv("MIGRATE_PAINT")) == Some("gpu")
+
+    def writeWebGpu(paint: PaintRange, video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)]): Map[Int32, String] \ IO =
+        let cfg = video#soft;
+        let opened = match run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO {
+            case Err(why)   => Err("project.json を読めない: ${why}")
+            case Ok(loaded) =>
+                let width = roundInt(cfg#design#x) * cfg#scale;
+                let height = roundInt(cfg#design#y) * cfg#scale;
+                let t0 = System.nanoTime();
+                let r = LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.open(loaded#config, width, height, cfg#background);
+                println("[webgpu-spike] open ${Int64.toString((System.nanoTime() - t0) / 1000000i64)} ms");
+                r
+        };
+        match opened {
+            case Err(why) =>
+                println("[webgpu-spike] 開けない: ${why} — SoftRaster");
+                writeSoft(paint, video, passesOf, baked, jobs)
+            case Ok(session) =>
+                println("[webgpu-spike] adapter ${LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.adapterOf(session)}");
+                let tk = System.nanoTime();
+                let keys = keysInLanes(video, passesOf, baked, jobs);
+                println("[webgpu-spike] 鍵 ${Int64.toString((System.nanoTime() - tk) / 1000000i64)} ms");
+                let t1 = System.nanoTime();
+                let seen: ConcurrentHashMap[String, String] = new ConcurrentHashMap();
+                let wanted = jobs |> List.filter(p -> paints(paint, fst(p)));
+                let (_, dups) = wanted |> List.foldLeft((acc, p) -> {
+                    let (byKey, ds) = acc;
+                    let key = Map.getWithDefault(fst(p), "-", keys);
+                    match Map.get(key, byKey) {
+                        case Some(first) if key != "-" => (byKey, Map.insert(fst(p), first, ds))
+                        case _                         => (Map.insert(key, fst(p), byKey), ds)
+                    }
+                }, (Map.empty(), Map.empty()));
+                let unique = wanted |> List.filter(p -> not Map.memberOf(fst(p), dups));
+                chunksOf(8, unique) |> List.forEach(group -> region rc {
+                    group |> List.forEach(p -> {
+                        let (i, w) = p;
+                        noteProgress(video#outDir, i);
+                        paintWebGpu(video, passesOf, warnOnceIn(seen), session, w);
+                        let img = LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.readImage(session);
+                        spawn Filmstrip.renderFrame(img, framePath(video#outDir, i)) @ rc
+                    })
+                });
+                Map.forEach((i, first) ->
+                    discard Files.copy(Paths.get(framePath(video#outDir, first)), Paths.get(framePath(video#outDir, i)), StandardCopyOption.REPLACE_EXISTING), dups);
+                let (errs, last) = LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.errorsOf(session);
+                println("[webgpu-spike] 塗った ${Int32.toString(List.length(unique))} 枚・写した ${Int32.toString(Map.size(dups))} 枚 ${Int64.toString((System.nanoTime() - t1) / 1000000i64)} ms・誤り ${Int32.toString(errs)} ${last}");
+                LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.close(session);
+                keys
+        }
+
+    def chunksOf(n: Int32, xs: List[a]): List[List[a]] =
+        if (List.isEmpty(xs)) Nil else List.take(n, xs) :: chunksOf(n, List.drop(n, xs))
+
+    def keysInLanes(video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)]): Map[Int32, String] \ IO =
+        let session = RenderCache.freshSession();
+        let textures = SoftRaster.freshTextureCache();
+        let keys: ConcurrentHashMap[Int32, String] = new ConcurrentHashMap();
+        region rc {
+            List.range(0, lanes()) |> List.forEach(lane ->
+                spawn (jobs |> List.filter(p -> Int32.modulo(fst(p), lanes()) == lane) |> List.forEach(p -> {
+                    let (i, w) = p;
+                    discard keys.put(i, keyWithoutPainting(session, textures, video, passesOf, baked, i, w))
+                })) @ rc)
+        };
+        jobs |> List.foldLeft((acc, p) -> {
+            let i = fst(p);
+            Map.insert(i, Option.getWithDefault("-", Object.toOption(keys.get(i))), acc)
+        }, Map.empty())
+
+    def paintWebGpu(video: Video[w], passesOf: PassesOf[w], warn: String -> Unit \ IO, session: LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.Session,
+                    world: w): Unit \ IO =
+        let scene = video#scene;
+        let table = LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.fontTable(session);
+        let fallback = Map.get("default", table) |> Option.getWithDefault(video#soft#fontAtlas);
+        let fonts = name -> Map.get(name, table) |> Option.getWithDefault(fallback);
+        let items = scene(fonts)(world);
+        let plan = planOf(passesOf, fonts, world);
+        LwjglLayer.Internal.WebGpuWindowLayer.Offscreen.handle(session, () -> {
+            if (List.isEmpty(plan#passes)) () else discard App.Internal.Paint.drawPassPlan(warn, video#soft#design, Set.empty(), plan);
+            App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None);
+            Platform.Window.presentFrame()
+        })
 
     // ── GPU ──
 
