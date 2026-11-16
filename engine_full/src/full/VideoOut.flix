@@ -5,16 +5,21 @@
 // 書く物（outDir の中）:
 //   GPU      : frames.mkv（ffv1 の可逆・上下はここで直す）・last.png（最後のコマ）・drawhash.txt・frames.json
 //   SoftRaster: f0000.png …（今まで通りの連番）・drawhash.txt・frames.json
+//   WebGPU の PNG: SoftRaster と同じ連番の PNG を画面なしの WebGPU（Dawn）で塗る（FGE_PNG_PAINTER=webgpu。移行の比べ）
 //   鍵だけ    : drawhash.txt・frames.json（painter=none。FGE_VIDEO_PAINT=none の compare の 1 回目）
 //
 // 鍵はどの塗り方でも SoftRaster の描く命令（HeadlessFont の字）から作るので、GPU・SoftRaster・画面の無い所で同じになる。
-// GL の道は場面を組み直す（GL のフォントのアトラスで scene を呼ぶ）—— 字の並びがアトラスで決まるため。
+// GL・WebGPU の道は場面を組み直す（GPU のフォントのアトラスで scene を呼ぶ）—— 字の並びがアトラスで決まるため。
+// 鍵に描き手は入らないので、frames.json の paintedWith（描き手の素性）で、違う描き手の PNG を比べないようにする（bin/fge migrate）。
 //
 // 環境変数（入口の頭で読んだ表を settingsOf に渡す）:
 //   FGE_GPU=auto|on|off          auto（既定）は GPU を試し、駄目なら SoftRaster にして 1 行知らせる
-//   FGE_VIDEO_PAINT=all|none|frames:A-B[,C-D]  塗るコア（既定 all）。all 以外は SoftRaster で塗る
+//   FGE_VIDEO_PAINT=all|none|frames:A-B[,C-D]  塗るコア（既定 all）。all 以外は PNG で塗る（FGE_PNG_PAINTER の描き手）
+//   FGE_PNG_PAINTER=soft|webgpu  PNG を塗る描き手（既定 soft）。webgpu が開けない・誤りが出た時は SoftRaster で塗り直して 1 行知らせる
 //   FFMPEG                       GPU の道で使う ffmpeg（既定は PATH の ffmpeg）
 pub mod VideoOut {
+
+
     import java.io.File
     import java.io.FileWriter
     import java.io.OutputStream
@@ -23,6 +28,9 @@ pub mod VideoOut {
     import java.lang.ProcessBuilder$Redirect
     import java.lang.Throwable
     import java.nio.ByteBuffer
+    import java.nio.file.Files
+    import java.nio.file.Paths
+    import java.nio.file.StandardCopyOption
     import java.util.concurrent.ConcurrentHashMap
     import javax.imageio.ImageIO
 
@@ -30,9 +38,21 @@ pub mod VideoOut {
     pub enum Painter with Eq, ToString {
         case Gl
         case Soft
+        /// 連番の PNG を画面なしの WebGPU で塗った（FGE_PNG_PAINTER=webgpu）
+        case WebGpu
         /// 鍵だけを流して塗らなかった（FGE_VIDEO_PAINT=none）
         case KeysOnly
     }
+
+    /// 連番の PNG を塗る描き手（FGE_PNG_PAINTER）。
+    pub enum PngPainter with Eq, ToString {
+        case Soft
+        case WebGpu
+    }
+
+    /// `webgpu` は WebGpu、ほかは Soft。
+    pub def pngPainterOf(text: String): PngPainter =
+        if (text == "webgpu") PngPainter.WebGpu else PngPainter.Soft
 
     /// 塗るコマ（FGE_VIDEO_PAINT）。
     pub enum PaintRange with Eq {
@@ -43,8 +63,8 @@ pub mod VideoOut {
     }
 
     /// 入口の頭で環境変数から作る設定。gl = GPU で塗る回に、入口の頭から別の糸で始めた GL の用意（文脈・テクスチャ・字。
-    /// シミュレーションと重ねる。最初の動画 1 本が受け取り、2 本目からは作り直す）。
-    pub type alias Settings = { gpu = GpuShot.Mode, paint = PaintRange, ffmpeg = String, gl = Option[GlOffscreen.Pending] }
+    /// シミュレーションと重ねる。最初の動画 1 本が受け取り、2 本目からは作り直す）。png = 連番の PNG を塗る描き手。
+    pub type alias Settings = { gpu = GpuShot.Mode, paint = PaintRange, ffmpeg = String, gl = Option[GlOffscreen.Pending], png = PngPainter }
 
     /// 環境変数の表から。**入口の頭（AWT を使う前）で呼ぶ** —— GPU で塗る回は、ここで窓サーバへの繋がりを先に取る
     /// （GlOffscreen.connect。AWT の後では GL の文脈が作れない）。
@@ -59,7 +79,8 @@ pub mod VideoOut {
                 case Err(_)     => None
             }
         } else None;
-        { gpu = gpu, paint = paint, ffmpeg = Map.getWithDefault("FFMPEG", "ffmpeg", env), gl = gl }
+        { gpu = gpu, paint = paint, ffmpeg = Map.getWithDefault("FFMPEG", "ffmpeg", env), gl = gl,
+          png = pngPainterOf(Map.getWithDefault("FGE_PNG_PAINTER", "soft", env)) }
 
     /// `all`・`none`・`frames:227-640,700-710`。読めない字は all。
     pub def paintRangeOf(text: String): PaintRange =
@@ -138,24 +159,49 @@ pub mod VideoOut {
         let baked = if (video#bakeSurfaces and settings#paint != PaintRange.Nothing) bakeAll(video, jobs) else Map.empty();
         let chosen =
             if (settings#paint == PaintRange.Nothing) Painter.KeysOnly
-            else if (settings#gpu == GpuShot.Mode.Off or settings#paint != PaintRange.All or not all) Painter.Soft
+            else if (settings#gpu == GpuShot.Mode.Off or settings#paint != PaintRange.All or not all) pngPainterCase(settings#png)
             else Painter.Gl;
-        let (painter, keys) = match chosen {
-            case Painter.Gl => match writeGl(settings, video, passesOf, baked, jobs) {
-                case Ok(keys) => (Painter.Gl, keys)
-                case Err(why) =>
-                    if (settings#gpu == GpuShot.Mode.On) bug!("[video] FGE_GPU=on だが GPU で塗れない: ${why}")
-                    else {
-                        println("[video] GPU が使えない: ${why} — SoftRaster で塗る");
-                        (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
-                    }
-            }
-            case Painter.Soft     => (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
-            case Painter.KeysOnly => (Painter.KeysOnly, writeSoft(PaintRange.Nothing, video, passesOf, baked, jobs))
+        let (painter, keys, paintedWith) = match chosen {
+            case Painter.WebGpu => writeWebGpuOrSoft(settings#paint, video, passesOf, baked, jobs)
+            case other          => withPaintedWith(paintWith(settings, video, passesOf, baked, jobs, other))
         };
         writeKeys(video#outDir, keys);
-        writeFramesJson(video, settings#paint, painter, jobs, keys);
+        writeFramesJson(video, settings#paint, painter, paintedWith, jobs, keys);
         painter
+
+    def pngPainterCase(png: PngPainter): Painter = match png {
+        case PngPainter.Soft   => Painter.Soft
+        case PngPainter.WebGpu => Painter.WebGpu
+    }
+
+    /// 描き手の素性（frames.json の paintedWith）を添える。WebGPU はアダプターの名前を添えるので、ここでは扱わない。
+    def withPaintedWith(painted: (Painter, Map[Int32, String])): (Painter, Map[Int32, String], String) =
+        let (painter, keys) = painted;
+        let name = match painter {
+            case Painter.Gl       => "gl"
+            case Painter.Soft     => "soft"
+            case Painter.WebGpu   => "webgpu"
+            case Painter.KeysOnly => ""
+        };
+        (painter, keys, name)
+
+    def paintWith(settings: Settings, video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)], chosen: Painter): (Painter, Map[Int32, String]) \ IO =
+        match chosen {
+            case Painter.Gl       => writeGlOrSoft(settings, video, passesOf, baked, jobs)
+            case Painter.KeysOnly => (Painter.KeysOnly, writeSoft(PaintRange.Nothing, video, passesOf, baked, jobs))
+            case _                => (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
+        }
+
+    def writeGlOrSoft(settings: Settings, video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)]): (Painter, Map[Int32, String]) \ IO =
+        match writeGl(settings, video, passesOf, baked, jobs) {
+            case Ok(keys) => (Painter.Gl, keys)
+            case Err(why) =>
+                if (settings#gpu == GpuShot.Mode.On) bug!("[video] FGE_GPU=on だが GPU で塗れない: ${why}")
+                else {
+                    println("[video] GPU が使えない: ${why} — SoftRaster で塗る");
+                    (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
+                }
+        }
 
     // ── 鍵（どの塗り方でも SoftRaster の命令から）──
 
@@ -317,6 +363,104 @@ pub mod VideoOut {
             HeadlessRender.passImagesOf({ texturePath = frame#req#texturePath | video#soft }, video#extraFonts, Map.empty(), prepared#specs)
         }
 
+    // ── WebGPU の PNG ──
+
+    /// 連番の PNG を画面なしの WebGPU で塗る（paint が真のコマだけ）。全部のコマの鍵と、描き手の素性（`webgpu <アダプター>`）を返す。
+    /// 開けない・WebGPU の誤りが出た時は SoftRaster で塗り直して 1 行知らせる。
+    // WhyNot: 誤りが出た回の絵を残さない — 誤りの出た命令は描かれず、欠けた絵が「描き手の違い」に紛れて比べを通る。
+    def writeWebGpuOrSoft(paint: PaintRange, video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)]): (Painter, Map[Int32, String], String) \ IO =
+        let keys = keysInLanes(video, passesOf, baked, jobs);
+        match openWebGpu(video) {
+            case Err(why) =>
+                println("[video] WebGPU で塗れない: ${why} — SoftRaster で塗る");
+                (Painter.Soft, writeSoft(paint, video, passesOf, baked, jobs), "soft")
+            case Ok(session) =>
+                let painter = GpuOffscreen.painterOf(session);
+                let cache = RenderCache.freshSession();
+                paintWebGpuFrames(paint, video, passesOf, session, painter, cache, keys, jobs);
+                let (errors, last) = GpuOffscreen.errorsOf(session);
+                GpuOffscreen.close(session);
+                if (errors > 0) {
+                    println("[video] WebGPU の誤り ${Int32.toString(errors)} 件（最後: ${last}）— SoftRaster で塗り直す");
+                    (Painter.Soft, writeSoft(paint, video, passesOf, baked, jobs), "soft")
+                } else {
+                    println(RenderCache.statsLine(cache));
+                    (Painter.WebGpu, keys, painter)
+                }
+        }
+
+    // WhyNot: ファイルの無い絵（video#images）を WebGPU へ上げない — 上げる口が GpuOffscreen に無く、使うのはドット絵の動画（全部のコマを GL で塗る道）だけ。
+    def openWebGpu(video: Video[w]): Result[String, GpuOffscreen.Session] \ IO =
+        let cfg = video#soft;
+        if (not List.isEmpty(video#images)) Err("ファイルの無い絵（${Int32.toString(List.length(video#images))} 枚）を WebGPU へ上げる口が無い")
+        else match run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO {
+            case Err(why)   => Err("project.json を読めない: ${why}")
+            case Ok(loaded) => GpuOffscreen.openWebGpuOnly({ config = { clearColor = cfg#background | loaded#config }, scale = cfg#scale })
+        }
+
+    /// 塗るコマを、render-cache（描き手の素性つきの鍵）→ 同じ鍵のコマ → WebGPU で塗る、の順に用意する。
+    /// 塗るのは呼んだ糸で 1 枚ずつ、PNG に書くのは別の糸で並べて（8 枚ごとに待つ）。
+    def paintWebGpuFrames(paint: PaintRange, video: Video[w], passesOf: PassesOf[w], session: GpuOffscreen.Session, painter: String,
+                          cache: RenderCache.Session, keys: Map[Int32, String], jobs: List[(Int32, w)]): Unit \ IO =
+        let seen: ConcurrentHashMap[String, String] = new ConcurrentHashMap();
+        let wanted = jobs |> List.filter(p -> paints(paint, fst(p)))
+            |> List.filter(p -> not RenderCache.copyPaintedPng(cache, painter, keyAt(keys, fst(p)), framePath(video#outDir, fst(p))));
+        let (_, dups) = wanted |> List.foldLeft((acc, p) -> {
+            let (byKey, ds) = acc;
+            let key = keyAt(keys, fst(p));
+            match Map.get(key, byKey) {
+                case Some(first) if key != "-" => (byKey, Map.insert(fst(p), first, ds))
+                case _                         => (Map.insert(key, fst(p), byKey), ds)
+            }
+        }, (Map.empty(), Map.empty()));
+        let unique = wanted |> List.filter(p -> not Map.memberOf(fst(p), dups));
+        chunksOf(8, unique) |> List.forEach(group -> region rc {
+            group |> List.forEach(p -> {
+                let (i, w) = p;
+                noteProgress(video#outDir, i);
+                paintWebGpuFrame(video, passesOf, warnOnceIn(seen), session, w);
+                let image = GpuOffscreen.readImage(session);
+                spawn RenderCache.storePaintedPng(cache, painter, keyAt(keys, i), image, framePath(video#outDir, i)) @ rc
+            })
+        });
+        Map.forEach((i, first) ->
+            discard Files.copy(Paths.get(framePath(video#outDir, first)), Paths.get(framePath(video#outDir, i)), StandardCopyOption.REPLACE_EXISTING), dups)
+
+    def keyAt(keys: Map[Int32, String], i: Int32): String = Map.getWithDefault(i, "-", keys)
+
+    def chunksOf(n: Int32, xs: List[a]): List[List[a]] =
+        if (List.isEmpty(xs)) Nil else List.take(n, xs) :: chunksOf(n, List.drop(n, xs))
+
+    /// 全部のコマの鍵を、SoftRaster と同じ数の糸で作る。
+    def keysInLanes(video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)]): Map[Int32, String] \ IO =
+        let session = RenderCache.freshSession();
+        let textures = SoftRaster.freshTextureCache();
+        let keys: ConcurrentHashMap[Int32, String] = new ConcurrentHashMap();
+        region rc {
+            List.range(0, lanes()) |> List.forEach(lane ->
+                spawn (jobs |> List.filter(p -> Int32.modulo(fst(p), lanes()) == lane) |> List.forEach(p -> {
+                    let (i, w) = p;
+                    discard keys.put(i, keyWithoutPainting(session, textures, video, passesOf, baked, i, w))
+                })) @ rc)
+        };
+        jobs |> List.foldLeft((acc, p) -> {
+            let i = fst(p);
+            Map.insert(i, Option.getWithDefault("-", Object.toOption(keys.get(i))), acc)
+        }, Map.empty())
+
+    /// 1 コマを WebGPU へ塗る（Pass を宣言順に描いてから本編）。字は開いた時に用意した物だけ（WebGPU は後から字を足さない）。
+    def paintWebGpuFrame(video: Video[w], passesOf: PassesOf[w], warn: String -> Unit \ IO, session: GpuOffscreen.Session, world: w): Unit \ IO =
+        let scene = video#scene;
+        let table = GpuOffscreen.fontTable(session);
+        let fallback = Map.get("default", table) |> Option.getWithDefault(video#soft#fontAtlas);
+        let fonts = name -> Map.get(name, table) |> Option.getWithDefault(fallback);
+        let items = scene(fonts)(world);
+        let plan = planOf(passesOf, fonts, world);
+        GpuOffscreen.handle(session, () -> {
+            if (List.isEmpty(plan#passes)) () else discard App.Internal.Paint.drawPassPlan(warn, video#soft#design, Set.empty(), plan);
+            App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None)
+        })
+
     // ── GPU ──
 
     /// GPU で塗って ffmpeg へ生の画素を流す。鍵は SoftRaster の命令から（GL とは別の糸で並べて作る）。
@@ -451,18 +595,21 @@ pub mod VideoOut {
     /// コマの表。painter・frames（書いたコマ数）・painted（塗った範囲）・fps・keys（鍵のあるコマ数）・last（最後の画面）・
     /// encoded（GPU の道で最後の mp4 まで書いた。mix はもう束ねない）。
     /// 音（sfx.txt・bgm.txt）はこの後に入口が書くので、ここでは持たない（mix が読む）。
-    def writeFramesJson(video: Video[w], paint: PaintRange, painter: Painter, jobs: List[(Int32, w)],
+    def writeFramesJson(video: Video[w], paint: PaintRange, painter: Painter, paintedWith: String, jobs: List[(Int32, w)],
                         keys: Map[Int32, String]): Unit \ IO =
         let frames = List.length(jobs);
         let lastIndex = jobs |> List.last |> Option.map(fst) |> Option.getWithDefault(-1);
+        let lastPng = if (lastIndex >= 0 and paints(paint, lastIndex)) "\"f${String.padLeft(4, '0', Int32.toString(lastIndex))}.png\"" else "null";
         let last = match painter {
             case Painter.Gl       => "\"last.png\""
-            case Painter.Soft     => if (lastIndex >= 0 and paints(paint, lastIndex)) "\"f${String.padLeft(4, '0', Int32.toString(lastIndex))}.png\"" else "null"
+            case Painter.Soft     => lastPng
+            case Painter.WebGpu   => lastPng
             case Painter.KeysOnly => "null"
         };
         let painterName = match painter {
             case Painter.Gl       => "gl"
             case Painter.Soft     => "soft"
+            case Painter.WebGpu   => "webgpu"
             case Painter.KeysOnly => "none"
         };
         let painted = match (painter, paint) {
@@ -472,7 +619,8 @@ pub mod VideoOut {
             case _                                   => "[[0,${Int32.toString(lastIndex)}]]"
         };
         let keyCount = keys |> Map.filter(k -> k != "-") |> Map.size;
-        let text = "{\n  \"painter\": \"${painterName}\",\n  \"frames\": ${Int32.toString(frames)},\n"
+        let quotedWith = paintedWith |> String.replace(src = "\\", dst = "\\\\") |> String.replace(src = "\"", dst = "\\\"");
+        let text = "{\n  \"painter\": \"${painterName}\",\n  \"paintedWith\": \"${quotedWith}\",\n  \"frames\": ${Int32.toString(frames)},\n"
             + "  \"painted\": ${painted},\n  \"fps\": ${Int32.toString(video#fps)},\n  \"keys\": ${Int32.toString(keyCount)},\n"
             + "  \"last\": ${last},\n  \"encoded\": ${if (painter == Painter.Gl and not List.isEmpty(video#encoders)) "true" else "false"}\n}\n";
         let out = new FileWriter("${video#outDir}/frames.json");

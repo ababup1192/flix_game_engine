@@ -36,6 +36,8 @@ type shootArgs struct {
 	// full は鍵を先に撮らず全部のコマを塗る（基準を撮り直す時）。resident は常駐の JVM で流す（--no-resident で切る）。
 	full, resident bool
 	flows          []string
+	// paint は比べのコマの PNG を塗る描き手（gpu・cpu・空 = 既定。painter.go の choosePainter）。
+	paint string
 }
 
 func parseShootArgs(args []string) (shootArgs, error) {
@@ -74,6 +76,10 @@ func parseShootArgs(args []string) (shootArgs, error) {
 			a.full = true
 		case "--no-resident":
 			a.resident = false
+		case "--paint":
+			if a.paint, err = value(); err == nil && a.paint != PaintGPU && a.paint != PaintCPU {
+				err = fmt.Errorf("--paint は gpu か cpu（%q）", a.paint)
+			}
 		default:
 			if strings.HasPrefix(v, "-") {
 				return a, fmt.Errorf("知らない引数: %s", v)
@@ -253,6 +259,20 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 			saveFiles = nil
 		}
 	}
+	// 描き手は基準を消す前に決める（--overwrite の時は基準が撮る先なので、基準に合わせない）。
+	baselinePainter := ""
+	hasBaseline := filepath.Clean(out) != filepath.Clean(a.savesFrom) && isDir(filepath.Join(a.savesFrom, FlowsDir))
+	if hasBaseline {
+		baselinePainter = recordPainter(a.savesFrom)
+	}
+	painterValue, painterNote, painterProblem := choosePainter(a.paint, hasBaseline, baselinePainter)
+	if painterProblem != "" {
+		fmt.Fprintln(stderr, "migrate shoot:", painterProblem)
+		return 2
+	}
+	if painterNote != "" {
+		fmt.Fprintln(stdout, "migrate shoot:", painterNote)
+	}
 	if err := os.RemoveAll(out); err != nil {
 		fmt.Fprintln(stderr, "migrate shoot:", err)
 		return 2
@@ -295,7 +315,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		tmp := filepath.Join("debug", "video", "migrate-"+a.name+"-"+n)
 		job := &shootJob{Kind: "flow", Name: n, Log: filepath.Join(logs, n+".log"), entry: "FlowVideo.play",
 			weight: fileSize(filepath.Join(a.savesFrom, FlowsDir, n, TapeFile)),
-			env:    []string{"FLOW=" + f, "FLOW_OUT=" + tmp, "MIGRATE_OUT=" + rec}}
+			env:    []string{"FLOW=" + f, "FLOW_OUT=" + tmp, "MIGRATE_OUT=" + rec, PngPainterEnv + "=" + painterValue}}
 		video := a.video
 		if !video {
 			// 全コマの動画と音を書かない合図（読むのは FlowVideo。読まない版は今まで通り書き、ここで消す）。
@@ -317,7 +337,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		n := filepath.Base(filepath.Dir(s))
 		list = append(list, &shootJob{Kind: "restore", Name: n, Log: filepath.Join(logs, "restore-"+n+".log"), entry: "FlowVideo.restore",
 			weight: 0,
-			env:    []string{"MIGRATE_SAVE=" + s, "MIGRATE_OUT=" + filepath.Join(out, SavesDir), "MIGRATE_NAME=" + n}})
+			env:    []string{"MIGRATE_SAVE=" + s, "MIGRATE_OUT=" + filepath.Join(out, SavesDir), "MIGRATE_NAME=" + n, PngPainterEnv + "=" + painterValue}})
 	}
 	// 長い flow から先に流す（最後に長い 1 本だけが残って他のコアが遊ぶのを避ける）。
 	sort.SliceStable(list, func(i, j int) bool { return list[i].weight > list[j].weight })
@@ -365,7 +385,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 			problems = append(problems, "鍵だけ撮る 1 回目で止まった仕事があるので、鍵の違うコマを塗らずに終える")
 		} else {
 			var paintJobs []*shootJob
-			plan, paintJobs, problems = paintAndCopy(pool, jobs, out, baseSide, flowJobs, logs, stdout)
+			plan, paintJobs, problems = paintAndCopy(pool, jobs, out, baseSide, flowJobs, logs, stdout, baselinePainter)
 			all = append(all, paintJobs...)
 		}
 	}
@@ -380,8 +400,15 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 	}
 
 	failed := countFailed(all)
+	painter, note, problem := shotPainter(paintedWith(out), painterValue, baselinePainter)
+	if note != "" {
+		fmt.Fprintln(stdout, "migrate shoot:", note)
+	}
+	if problem != "" {
+		problems = append(problems, problem)
+	}
 	summary := map[string]any{"jobs": jobs, "wallSeconds": wall, "runs": all, "resident": pool.useResident(), "keysFirst": keysFirst,
-		"engine": engine, "problems": problems}
+		"engine": engine, "painter": painter, "problems": problems}
 	if plan != nil {
 		summary["paint"] = plan
 	}
@@ -417,8 +444,8 @@ func countFailed(list []*shootJob) int {
 
 // paintAndCopy は鍵だけ撮った記録に、基準と鍵の違うコマの PNG を用意する（写す・塗るために flow を流し直す・同じ鍵へ写す）。
 // 止める理由があれば problems に返す。
-func paintAndCopy(pool *shootPool, jobs int, out string, baseSide *Side, flowJobs map[string]*shootJob, logs string, stdout io.Writer) (*paintPlan, []*shootJob, []string) {
-	plan, paintJobs, err := paintStage(out, baseSide, flowJobs, logs)
+func paintAndCopy(pool *shootPool, jobs int, out string, baseSide *Side, flowJobs map[string]*shootJob, logs string, stdout io.Writer, painter string) (*paintPlan, []*shootJob, []string) {
+	plan, paintJobs, err := paintStage(out, baseSide, flowJobs, logs, painter)
 	if err != nil {
 		return nil, nil, []string{"鍵を先に撮った後に PNG を用意できない: " + err.Error()}
 	}
@@ -494,12 +521,13 @@ func runShootJobs(pool *shootPool, jobs int, list []*shootJob, stdout io.Writer)
 }
 
 // paintStage は鍵だけ撮った記録を基準と突き合わせ、写せる PNG を写し、塗るコマのある flow を流し直す仕事を作る。
-func paintStage(out string, baseSide *Side, flowJobs map[string]*shootJob, logs string) (*paintPlan, []*shootJob, error) {
+// painter は基準の描き手（鍵が基準と同じコマは基準の PNG を写すので、塗るのも同じ描き手。render-cache の名前に混ぜる）。
+func paintStage(out string, baseSide *Side, flowJobs map[string]*shootJob, logs string, painter string) (*paintPlan, []*shootJob, error) {
 	cur, err := LoadSide(out)
 	if err != nil {
 		return nil, nil, err
 	}
-	plan, err := planPaint(cur, baseSide, cacheDirForCopy())
+	plan, err := planPaint(cur, baseSide, cacheDirForCopy(), painter)
 	if err != nil {
 		return nil, nil, err
 	}

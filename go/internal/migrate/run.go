@@ -23,8 +23,9 @@ const usage = `使い方:
       --no-auto はそれも人が見る物に数える。線引きの上書きは migrate-accept.json の thresholds。
       コマは前と後の鍵（frames/<層>/drawhash.txt）が同じなら画素を読まずに同じと見る。比べた結果は <new の親>/diff-cache.json に
       覚え、同じ中身と線引きの組は読み直さない。--no-keys はどちらも使わず全部の画素を比べる。
+      基準と新しい撮りの描き手（logs/shoot.json の painter）が違えば画素を比べず、撮り直し方を 1 行出して終わりの番号 2。
       終わりの番号: 0 通った・1 止める違いがある・2 引数か記録が読めない。
-  bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--saves-from DIR] [--no-saves] [--overwrite] [--full] [--no-resident]
+  bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--saves-from DIR] [--no-saves] [--overwrite] [--full] [--no-resident] [--paint gpu|cpu]
       ゲームの根で flow を並べて流し、記録を debug/migrate/<名前> に撮る（FlowVideo.play を MIGRATE_OUT 付きで流し、
       続けて --saves-from（既定 debug/migrate/baseline）の flows/*/saves.json を FlowVideo.restore で読み戻す）。
       --jobs の既定はコア数から（1 本のヒープは -Xmx3g）。--video で flow ごとの video.mp4 も束ねる（既定は束ねない）。
@@ -32,6 +33,8 @@ const usage = `使い方:
       （基準か render-cache の同じ鍵から写し、無ければ同じ鍵を 1 か所だけで塗って写す）。--full は全部のコマを塗る（基準を撮る回）。
       flow は本数ぶんの常駐の JVM（E2e.serveHeadless）へ配る。--no-resident は 1 本ごとに JVM を起こす。
       --run の既定は環境変数 HEADLESS_RUN か engine の bin/headless-run。JVM ごとのログと秒は <記録>/logs/。
+      --paint は比べのコマの PNG を塗る描き手。基準が無い（--overwrite も）時の既定は gpu（画面なしの WebGPU。開けなければ CPU で塗って知らせる）、
+      基準がある時の既定は基準と同じ描き手。基準と違う描き手を頼むと撮らずに止める（描き手の違いは画素の差になる）。描き手は logs/shoot.json の painter。
   bin/fge migrate fill <記録>
       鍵だけ撮った記録の欠けた PNG を、同じ親フォルダのほかの記録と render-cache の同じ鍵から埋める（新しい記録を基準に上げる前に流す。
       基準は全部の PNG を持つ約束）。埋められないコマが残れば終わりの番号 1（migrate shoot --full で撮り直す）。
@@ -131,6 +134,10 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 	a, err := parseDiffArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "migrate diff: %v\n%s\n", err, usage)
+		return 2
+	}
+	if why := painterMismatch(recordPainter(a.base), recordPainter(a.cur)); why != "" {
+		fmt.Fprintln(stderr, "migrate diff:", why)
 		return 2
 	}
 	base, err := LoadSide(a.base)

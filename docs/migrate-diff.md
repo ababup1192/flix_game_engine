@@ -41,6 +41,7 @@ bin/fge migrate fill <記録>
   - **render-cache の置き場**: 撮る前に「基準のコマの数 × 0.9 MB × 2」を見積もり、`render-cache prune` の上限（既定 16,384 MB・`FGE_RENDER_CACHE_MAX_MB`）かディスクの空きより大きければ 1 行知らせる（消えても塗り直すだけで間違わない）。
   - 流す口は `--run`、無ければ環境変数 `HEADLESS_RUN`（ゲームの Makefile の物をそのまま渡せる）、無ければ engine の `bin/headless-run`。
   - `--video` の無い時は flow ごとの video.mp4 を束ねず、`FLOW_VIDEO=off` を渡す（読む FlowVideo は全コマの動画と音を書かない。読まない版は書くので、shoot が消す）。diff は video.mp4 を読まない。
+  - **描き手**（`--paint gpu|cpu`・make の `MIGRATE_PAINT`）: 比べのコマの PNG を塗る物。基準が無い（`--overwrite` も）時の既定は gpu（画面なしの WebGPU。engine の `VideoOut` が `FGE_PNG_PAINTER=webgpu` で `GpuOffscreen.openWebGpuOnly` を開く。開けない・WebGPU の誤りが出た時は SoftRaster で塗り直して 1 行知らせる）。基準がある時の既定は基準と同じ描き手で、違う描き手を頼むと撮らずに止める。鍵は描く命令から作るので描き手を含まない。そのため記録ごとに描き手の素性（`logs/shoot.json` の `painter` = `soft` か `webgpu <アダプターの名前>`。`frames/<層>/frames.json` の `paintedWith` から集める）を書き、diff は基準と新しい撮りの描き手が違えば画素を比べずに撮り直し方を 1 行出して終わりの番号 2。`painter` の無い `shoot.json` は CPU で塗っていた版の物として `soft` と見る。GPU の絵は同じ機械・同じアダプターならバイトまで同じ（CPU との差は字の縁・小さな丸の縁・面の ±1。docs/backend-parity.md の近似と同じ種類）。render-cache には `RenderCache.painterKeyOf`（鍵と描き手の素性の SHA-256）の名前で入れる。
   - ログと秒: `<記録>/logs/<flow>.log`・`restore-<flow>.log`・`<flow>.paint.log`（流し直し）・`shoot.json`（仕事ごとの秒と終わりの番号・常駐か・鍵を先に撮ったか・PNG の出所の数）。終わりの番号: 0 全部撮れた・1 どれかが止まった・2 引数の誤り。
   - 速さの内訳と、テンプレート側に残っている変更は [plans/novel-tape-deck.md](../plans/novel-tape-deck.md)。
 

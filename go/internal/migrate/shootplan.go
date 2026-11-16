@@ -53,8 +53,8 @@ type paintPlan struct {
 }
 
 // planPaint は撮った記録 cur と基準 base を突き合わせ、PNG の要るコマを集め、基準と render-cache から写せる物はここで写す。
-// cacheDir が空なら render-cache から写さない（使わない設定・verify で毎回塗る設定）。
-func planPaint(cur, base *Side, cacheDir string) (*paintPlan, error) {
+// cacheDir が空なら render-cache から写さない（使わない設定・verify で毎回塗る設定）。painter は塗る描き手の素性（render-cache の名前に混ぜる）。
+func planPaint(cur, base *Side, cacheDir, painter string) (*paintPlan, error) {
 	plan := &paintPlan{Paint: map[string]map[string][]int{}}
 	keys := newDrawKeys()
 	baseByKey := map[string]string{}
@@ -91,10 +91,10 @@ func planPaint(cur, base *Side, cacheDir string) (*paintPlan, error) {
 				case baseByKey[k] != "":
 					src = baseByKey[k]
 					plan.FromBaseline++
-				case cacheDir != "" && copyFile(cachedPNG(cacheDir, k), dst) == nil:
+				case cachedPNGFor(cacheDir, painter, k) != "" && copyFile(cachedPNGFor(cacheDir, painter, k), dst) == nil:
 					// WhyNot: 写せなかった時に止めない — ほかの口の prune が、見つけてから写すまでの間に消す事がある。その時は塗る。
 					now := time.Now()
-					_ = os.Chtimes(cachedPNG(cacheDir, k), now, now)
+					_ = os.Chtimes(cachedPNGFor(cacheDir, painter, k), now, now)
 					plan.FromCache++
 					continue
 				case owner[k] != "":

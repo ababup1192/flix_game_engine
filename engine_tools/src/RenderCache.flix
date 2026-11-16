@@ -110,6 +110,49 @@ pub mod RenderCache {
                  { req = req, surfaces = surfaces, extraFonts = extraFonts, fontAntialias = fontAntialias }, extraImages,
                  SoftRaster.freshTexWarnLog(), s#textures)
 
+    // ── SoftRaster でない描き手の絵（画面なしの WebGPU で塗ったコマ）──
+
+    /// 描き手 painter で塗った絵の置き場の名前（DrawHash の鍵の字 key と描き手の素性の SHA-256 の字）。
+    /// bin/fge migrate（go/internal/migrate の painterKey）も同じ式で引く。
+    // WhyNot: DrawHash の鍵をそのまま置き場の名前に使わない — 鍵は描く命令から作るので描き手を含まず、
+    //   SoftRaster の絵と WebGPU の絵が同じ名前に入って入れ替わる。
+    pub def painterKeyOf(key: String, painter: String): String \ IO =
+        sha256("${key}\n${painter}".getBytes("UTF-8"))
+
+    /// painter で塗った key のコマが置き場にあれば outPath へ写して true。置き場を使わない・verify・鍵が `-` の時は false（塗る）。
+    pub def copyPaintedPng(session: Session, painter: String, key: String, outPath: String): Bool \ IO =
+        let SessionData.SessionData(s) = session;
+        match (s#root, s#mode) {
+            case (Some(dir), Mode.Reuse) if key != "-" =>
+                let stored = paintedPath(dir, painter, key);
+                let copied = new File(stored).isFile() and copyFile(stored, outPath);
+                if (copied) {
+                    discard new File(stored).setLastModified(System.currentTimeMillis());
+                    discard s#reused.incrementAndGet()
+                } else ();
+                copied
+            case _ => false
+        }
+
+    /// painter で塗った image を outPath へ（writeFramePng と同じ書き方で）書き、鍵が `-` でなければ置き場へも入れる。
+    /// verify の時は置き場の前の絵と突き合わせて、違えば知らせる。違う糸から同時に呼んでよい。
+    pub def storePaintedPng(session: Session, painter: String, key: String, image: BufferedImage, outPath: String): Unit \ IO =
+        let SessionData.SessionData(s) = session;
+        match s#root {
+            case Some(dir) if key != "-" =>
+                discard s#painted.incrementAndGet();
+                let stored = paintedPath(dir, painter, key);
+                if (putIntoStore(s#mismatched, DrawHash.PngEncoding.Filmstrip, image, stored) and copyFile(stored, outPath)) ()
+                else encode(DrawHash.PngEncoding.Filmstrip, image, outPath)
+            case _ =>
+                encode(DrawHash.PngEncoding.Filmstrip, image, outPath);
+                discard s#uncached.incrementAndGet()
+        }
+
+    def paintedPath(dir: String, painter: String, key: String): String \ IO =
+        let name = painterKeyOf(key, painter);
+        "${dir}/${String.takeLeft(2, name)}/${name}.png"
+
     /// 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
     /// テクスチャの指紋は `textures` の中の画像（塗る時に使う物）から取る。
     pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame,

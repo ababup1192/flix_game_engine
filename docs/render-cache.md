@@ -89,6 +89,10 @@ writeFramePng と同じ鍵が返る（指紋の取り方を写さない）。
 - `<ゲーム>/bin/mix-video-sfx.py` が動画のために重ねた音も、同じ置き場の `mix/<頭 2 字>/<鍵>.wav` に入れる
   （鍵は sfx.txt・bgm.txt・使う WAV のバイト列・コマ数・fps・旗・台本の中身）。`render-cache prune` は files/ と mix/ も PNG と同じ順に消す
 
+## SoftRaster でない描き手の絵（画面なしの WebGPU）
+
+移行の比べのコマを WebGPU で塗る時（`VideoOut` の `FGE_PNG_PAINTER=webgpu`）は、同じ置き場へ `RenderCache.painterKeyOf(鍵, 描き手の素性)`（`鍵 + "\n" + 素性` の SHA-256）の名前で入れる（`copyPaintedPng`・`storePaintedPng`）。鍵は描く命令から作るので描き手を含まず、そのままの名前だと SoftRaster の絵と入れ替わる。素性はアダプターの名前（Dawn が返す字。OS の版も入る）で、Dawn の版は鍵の engine の fpkg（flix.toml の jWebGPU の版）に入る。`bin/fge migrate` の Go（`painterKey`）も同じ式で引く。
+
 ## 置き場
 
 - `FGE_RENDER_CACHE`（既定 `~/.cache/flix-render-cache`・絶対パスだけ）。1 枚は `<置き場>/<鍵の頭 2 字>/<鍵>.png`

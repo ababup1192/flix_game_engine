@@ -22,10 +22,12 @@ func runFill(args []string, stdout, stderr io.Writer) int {
 	}
 	keys := newDrawKeys()
 	byKey := map[string]string{}
+	painter := recordPainter(root)
 	siblings, _ := os.ReadDir(filepath.Dir(filepath.Clean(root)))
 	for _, e := range siblings {
 		other := filepath.Join(filepath.Dir(filepath.Clean(root)), e.Name())
-		if !e.IsDir() || filepath.Clean(other) == filepath.Clean(root) {
+		// 描き手の違う記録の PNG は写さない（鍵は描き手を含まないので、同じ鍵でも絵が違う）。
+		if !e.IsDir() || filepath.Clean(other) == filepath.Clean(root) || painterMismatch(painter, recordPainter(other)) != "" {
 			continue
 		}
 		if s, err := LoadSide(other); err == nil {
@@ -47,8 +49,8 @@ func runFill(args []string, stdout, stderr io.Writer) int {
 			case !validKey(k):
 			case byKey[k] != "":
 				src = byKey[k]
-			case cache != "" && fileExists(cachedPNG(cache, k)):
-				src = cachedPNG(cache, k)
+			case cachedPNGFor(cache, painter, k) != "" && fileExists(cachedPNGFor(cache, painter, k)):
+				src = cachedPNGFor(cache, painter, k)
 			}
 			if src == "" {
 				left++
