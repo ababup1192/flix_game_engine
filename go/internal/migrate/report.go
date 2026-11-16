@@ -27,9 +27,9 @@ func Text(r *Result, reportPath string) string {
 	} else {
 		b.WriteString("migrate diff: 落ちた")
 	}
-	hard, review := countOpen(r)
-	fmt.Fprintf(&b, "（止める違い %d 件・迷った差 %d 件・承認済み %d 件・通らない命令の行 %d 行・比べたコマ %d 枚）\n",
-		hard, review, len(r.Diffs)-hard-review, countOpenUncovered(r), r.Frames)
+	hard, review, auto := countOpen(r)
+	fmt.Fprintf(&b, "（止める違い %d 件・人が見る迷った差 %d 件（%d 区間）・自動で通した %d 件・承認済み %d 件・通らない命令の行 %d 行・比べたコマ %d 枚）\n",
+		hard, review, len(r.Units), auto, len(r.Diffs)-hard-review-auto, countOpenUncovered(r), r.Frames)
 	for _, p := range r.Problems {
 		fmt.Fprintf(&b, "  ✗ %s\n", p)
 	}
@@ -50,13 +50,15 @@ func Text(r *Result, reportPath string) string {
 	if n > 20 {
 		fmt.Fprintf(&b, "  … 通らない行の残り %d 行は頁で\n", n-20)
 	}
-	if review > 0 {
+	if len(r.Units) > 0 {
 		mark := "?"
 		if r.Strict {
 			mark = "✗"
 		}
-		b.WriteString("迷った差（門は止めない。最後に bin/fge migrate video で動画を並べて人が見て、残す物は migrate-accept.json で承認する）:\n")
-		writeDiffs(&b, r, true, mark)
+		b.WriteString("迷った差（門は止めない。最後に bin/fge migrate video で動画を並べて人が見て、残す物は migrate-accept.json で承認する。秒は新しい版の秒で、並べた動画の字幕と同じ）:\n")
+		for _, u := range r.Units {
+			fmt.Fprintf(&b, "  %s %s/%s %s %s %s%s: %s\n", mark, u.Flow, u.Size, unitSpan(u), u.What, u.Place, unitCount(u), u.Detail)
+		}
 	}
 	for _, s := range groupSkips(r.Skips) {
 		fmt.Fprintf(&b, "  - 比べていない: %s\n", s)
@@ -74,6 +76,27 @@ func Text(r *Result, reportPath string) string {
 		fmt.Fprintf(&b, "頁: %s\n", reportPath)
 	}
 	return b.String()
+}
+
+// unitSpan は単位の秒（並べた動画の字幕と同じ書き方）。
+func unitSpan(u Unit) string {
+	if u.To-u.From < 1e-6 {
+		return srtTime(u.From)
+	}
+	return srtTime(u.From) + "〜" + srtTime(u.To)
+}
+
+// unitCount は単位にまとめた差の数と、ほかの flow（1 つの時は空）。
+func unitCount(u Unit) string {
+	s := ""
+	if len(u.Diffs) > 1 {
+		s = fmt.Sprintf("（%d 件", len(u.Diffs))
+		if len(u.Flows) > 1 {
+			s += "・" + strings.Join(u.Flows, " ")
+		}
+		s += "）"
+	}
+	return s
 }
 
 func writeDiffs(b *strings.Builder, r *Result, review bool, mark string) {
@@ -105,18 +128,20 @@ func place(d *Diff) string {
 	return fmt.Sprintf("%s#%d", d.Node, d.Seq)
 }
 
-// countOpen は承認の無い違いを、門を止める物と迷った差に分けて数える。
-func countOpen(r *Result) (hard, review int) {
+// countOpen は承認の無い違いを、門を止める物・人が見る迷った差・自動で通した迷った差に分けて数える。
+func countOpen(r *Result) (hard, review, auto int) {
 	for _, d := range r.Diffs {
 		switch {
 		case d.Accepted != "":
-		case d.Review:
+		case d.Review && r.needsEye(d):
 			review++
+		case d.Review:
+			auto++
 		default:
 			hard++
 		}
 	}
-	return hard, review
+	return hard, review, auto
 }
 
 func countOpenUncovered(r *Result) int {
@@ -165,6 +190,7 @@ func WriteReport(r *Result, out string) (string, error) {
 
 type htmlDiff struct {
 	*Diff
+	Index               int
 	StepName, Place     string
 	Before, After, Heat string
 	Images, EntryImages []string
@@ -180,7 +206,19 @@ type htmlSection struct {
 	Name   string
 	Open   []htmlDiff
 	Review []htmlDiff
+	Auto   []htmlDiff
 	Groups []htmlGroup
+}
+
+// htmlUnit は目次の 1 行。Video は並べた動画（<out の親>/<flow>.sbs.mp4）があればその秒へ飛ぶ道。
+type htmlUnit struct {
+	Unit
+	Span, Count, Video, Anchor string
+}
+
+type htmlKnob struct {
+	Name  string
+	Value any
 }
 
 func addToGroup(groups []htmlGroup, h htmlDiff) []htmlGroup {
@@ -219,8 +257,8 @@ func renderHTML(r *Result, out string) ([]byte, error) {
 	sections := map[string]*htmlSection{}
 	var names []string
 	var systematic []htmlGroup
-	for _, d := range r.Diffs {
-		h := htmlDiff{Diff: d, StepName: stepNames[d.Step], Place: place(d), Before: rel(d.Before), After: rel(d.After), Heat: rel(d.Heat),
+	for i, d := range r.Diffs {
+		h := htmlDiff{Diff: d, Index: i, StepName: stepNames[d.Step], Place: place(d), Before: rel(d.Before), After: rel(d.After), Heat: rel(d.Heat),
 			Images: rels(d.Images), EntryImages: rels(d.EntryImages)}
 		if d.AcceptKind == KindSystematic {
 			// WhyNot: 系統の違いを flow ごとの節に割らない — 1 つの理由で全部の flow に出る物なので、当たった絵を 1 か所に並べて見る。
@@ -235,6 +273,8 @@ func renderHTML(r *Result, out string) ([]byte, error) {
 			names = append(names, key)
 		}
 		switch {
+		case d.Accepted == "" && d.Review && !r.needsEye(d):
+			s.Auto = append(s.Auto, h)
 		case d.Accepted == "" && d.Review:
 			s.Review = append(s.Review, h)
 		case d.Accepted == "":
@@ -248,13 +288,36 @@ func renderHTML(r *Result, out string) ([]byte, error) {
 	for _, n := range names {
 		list = append(list, sections[n])
 	}
-	hard, review := countOpen(r)
+	hard, review, auto := countOpen(r)
+	units := make([]htmlUnit, 0, len(r.Units))
+	for _, u := range r.Units {
+		h := htmlUnit{Unit: u, Span: unitSpan(u), Count: unitCount(u), Anchor: "d" + fmt.Sprint(u.Diffs[0])}
+		// WhyNot: 動画の名前を記録から読まない — 並べた動画は人が bin/fge migrate video で好きな所に書く。既定の置き場（記録のフォルダの隣）にある時だけ繋ぐ。
+		video := filepath.Join(filepath.Dir(absOut), u.Flow+".sbs.mp4")
+		if fileExists(video) {
+			h.Video = fmt.Sprintf("%s#t=%.3f", rel(video), u.From)
+		}
+		units = append(units, h)
+	}
 	var buf bytes.Buffer
 	err := pageTemplate.Execute(&buf, map[string]any{
 		"R": r, "Sections": list, "Systematic": systematic, "Skips": groupSkips(r.Skips),
-		"Open": hard, "Review": review, "OpenUncovered": countOpenUncovered(r),
+		"Open": hard, "Review": review, "Auto": auto, "OpenUncovered": countOpenUncovered(r),
+		"Units": units, "Knobs": knobsOf(r.Thresholds),
 	})
 	return bytes.TrimLeft(buf.Bytes(), "\n"), err
+}
+
+// knobsOf は頁に並べる使った線引き（json の名前の順）。
+func knobsOf(th Thresholds) []htmlKnob {
+	data, _ := json.Marshal(th)
+	var m map[string]any
+	_ = json.Unmarshal(data, &m)
+	out := make([]htmlKnob, 0, len(m))
+	for _, k := range sortedKeys(m) {
+		out = append(out, htmlKnob{k, m[k]})
+	}
+	return out
 }
 
 var pageTemplate = template.Must(template.New("page").Parse(`{{define "pics"}}{{if or .Before .After}}<div class="pair"><div>{{if .Before}}<img loading="lazy" src="{{.Before}}" alt="前">{{end}}</div><div>{{if .After}}<img loading="lazy" src="{{.After}}" alt="後">{{end}}</div></div>{{end}}
@@ -280,7 +343,11 @@ code{background:#2b2d35;padding:0 4px;border-radius:3px}
 li{margin:2px 0}
 </style></head><body>
 <h1>migrate diff — {{if .R.Passed}}<span class="pass">通った</span>{{else}}<span class="fail">落ちた</span>{{end}}</h1>
-<p>止める違い {{.Open}} 件・迷った差 {{.Review}} 件（止めない。動画を並べて人が見る）・通らない命令の行 {{.OpenUncovered}} 行・比べたコマ {{.R.Frames}} 枚。左が前の版、右が新しい版、下が差の色の図（黄〜赤が差のある所）。</p>
+<p>止める違い {{.Open}} 件・人が見る迷った差 {{.Review}} 件（{{len .Units}} 区間。止めない。動画を並べて人が見る）・自動で通した迷った差 {{.Auto}} 件{{if .R.NoAuto}}（--no-auto なので人が見る方に数えた）{{end}}・通らない命令の行 {{.OpenUncovered}} 行・比べたコマ {{.R.Frames}} 枚。左が前の版、右が新しい版、下が差の色の図（黄〜赤が差のある所）。</p>
+{{if .Units}}<h2>人が見る区間の目次</h2><p class="muted">秒は新しい版の秒（bin/fge migrate video の字幕と同じ）。並べた動画が記録のフォルダの隣にあれば、秒を押すとその所から流れる。</p><ol>
+{{range .Units}}<li><code>{{.Flow}} / {{.Size}}</code> {{if .Video}}<a href="{{.Video}}">{{.Span}}</a>{{else}}{{.Span}}{{end}} <a href="#{{.Anchor}}">{{.What}}</a> <code>{{.Place}}</code>{{.Count}} — {{.Detail}}</li>
+{{end}}</ol>{{end}}
+<details><summary>使った線引き</summary><ul>{{range .Knobs}}<li><code>{{.Name}}</code>: {{.Value}}</li>{{end}}</ul></details>
 {{if .R.Problems}}<h2>止まった理由</h2><ul>{{range .R.Problems}}<li class="fail">{{.}}</li>{{end}}</ul>{{end}}
 {{if .R.Stopped}}<h2>出来事の並びが違うので後ろを比べていない</h2><ul>{{range .R.Stopped}}<li>{{.}}</li>{{end}}</ul>{{end}}
 {{if or .R.Applied .Systematic}}<h2>承認済みの読み替えと系統の違い</h2>
@@ -288,7 +355,8 @@ li{margin:2px 0}
 {{range .Systematic}}{{template "group" .}}{{end}}{{end}}
 {{range .Sections}}<h2>{{.Name}}</h2>
 {{range .Open}}<div class="item ng"><div><b>止める</b> {{template "line" .}}{{if .Pending}} <span class="muted">（承認待ち: approved が無い）</span>{{end}}</div>{{template "pics" .}}</div>{{end}}
-{{range .Review}}<div class="item rv"><div><b>迷った差</b> {{template "line" .}}{{if .Pending}} <span class="muted">（承認待ち: approved が無い）</span>{{end}}</div>{{template "pics" .}}</div>{{end}}
+{{range .Review}}<div class="item rv" id="d{{.Index}}"><div><b>迷った差</b> {{template "line" .}}{{if .Pending}} <span class="muted">（承認待ち: approved が無い）</span>{{end}}</div>{{template "pics" .}}</div>{{end}}
+{{if .Auto}}<details><summary class="muted">自動で通した迷った差 {{len .Auto}} 件（たたむ）</summary>{{range .Auto}}<div class="item ok"><div><b>自動</b> {{template "line" .}}</div>{{template "pics" .}}</div>{{end}}</details>{{end}}
 {{range .Groups}}{{template "group" .}}{{end}}
 {{end}}
 {{if .R.Uncovered}}<h2>どの flow も通らない命令の行</h2><ul>{{range .R.Uncovered}}<li class="{{if .Accepted}}muted{{else}}fail{{end}}"><code>{{.Yarn}}:{{.Line}}</code> {{.Text}}{{if .Accepted}}（承認済み）{{end}}</li>{{end}}</ul>{{end}}

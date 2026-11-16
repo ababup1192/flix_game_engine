@@ -41,7 +41,7 @@ func frameSize(dir string, frames []Frame) *Size {
 // placer は秒から、その時に出ていた台詞（ノードと番号）を引く。
 type placer func(at float64) (string, int)
 
-func (c *comparer) objects(flow, size string, a, b []Object, tol float64, sa, sb *Size, place placer) {
+func (c *comparer) objects(flow, size string, a, b []Object, tol float64, sa, sb *Size, place placer, an *anchor) {
 	if sa == nil || sb == nil {
 		c.skip(flow, size, WhatObject, "画面の大きさ（screen）も world のコマも無いので、矩形は比べていない（数と区間だけ比べた）")
 	}
@@ -59,33 +59,53 @@ func (c *comparer) objects(flow, size string, a, b []Object, tol float64, sa, sb
 		}
 		return m
 	}
-	add := func(at float64, detail string) {
+	add := func(at float64, id, detail string) *Diff {
 		node, seq := place(at)
-		c.add(&Diff{Flow: flow, Size: size, Step: 4, What: WhatObject, Node: node, Seq: seq, T: at, Review: true, Detail: detail})
+		d := &Diff{Flow: flow, Size: size, Step: 4, What: WhatObject, Node: node, Seq: seq, T: at, Review: true, Subject: id, Detail: detail}
+		c.add(d)
+		return d
 	}
 	ga, gb := group(a, true), group(b, false)
 	for _, id := range sortedKeys(ga) {
 		la, lb := ga[id], gb[id]
 		if len(la) != len(lb) {
-			add(la[0].From, fmt.Sprintf("%s の出た回数が違う（前 %d・後 %d）", id, len(la), len(lb)))
+			add(la[0].From, id, fmt.Sprintf("%s の出た回数が違う（前 %d・後 %d）", id, len(la), len(lb)))
 			continue
 		}
 		for i := range la {
-			if why := objectDiff(la[i], lb[i], tol, sa, sb, c.opt.Th.RectPx, c.acc.rectFree(id)); why != "" {
-				add(lb[i].From, fmt.Sprintf("%s の %d 回目: %s", id, i, why))
+			why := objectDiff(la[i], lb[i], tol, sa, sb, c.opt.Th.RectPx, c.acc.rectFree(id), an)
+			if why == "" && an != nil && spanMoved(la[i], lb[i], tol) {
+				d := add(lb[i].From, id, fmt.Sprintf("%s の %d 回目: 出ていた区間が頭からの時刻では違う（前 %.3f〜%.3f / 後 %.3f〜%.3f）。直前の出来事のずれを引くと 1 フレームの内",
+					id, i, la[i].From, la[i].To, lb[i].From, lb[i].To))
+				d.Auto = AutoAnchor
+				continue
+			}
+			if why != "" {
+				add(lb[i].From, id, fmt.Sprintf("%s の %d 回目: %s", id, i, why))
 			}
 		}
 	}
 	for _, id := range sortedKeys(gb) {
 		if _, ok := ga[id]; !ok {
-			add(gb[id][0].From, fmt.Sprintf("%s は新しい版にだけ出る（前の id と同じなら idMap に書く）", id))
+			d := add(gb[id][0].From, id, fmt.Sprintf("%s は新しい版にだけ出る（前の id と同じなら idMap に書く。わざと足した物なら what: newObject と object: %s の承認 1 件で全部の flow に当たる）", id, id))
+			d.What = WhatNewObject
 		}
 	}
 }
 
-func objectDiff(a, b Object, tol float64, sa, sb *Size, px float64, rectFree bool) string {
-	if math.Abs(a.From-b.From) > tol || math.Abs(a.To-b.To) > tol {
-		return fmt.Sprintf("出ていた区間が違う（前 %.3f〜%.3f / 後 %.3f〜%.3f）", a.From, a.To, b.From, b.To)
+func spanMoved(a, b Object, tol float64) bool {
+	return math.Abs(a.From-b.From) > tol || math.Abs(a.To-b.To) > tol
+}
+
+// objectDiff は 1 回分の区間と矩形の違い（無ければ空）。区間は新しい版の時刻を前の版の物差しに直してから比べる。
+func objectDiff(a, b Object, tol float64, sa, sb *Size, px float64, rectFree bool, an *anchor) string {
+	bf, bt := an.toOld(b.From), an.toOld(b.To)
+	if math.Abs(a.From-bf) > tol || math.Abs(a.To-bt) > tol {
+		moved := ""
+		if an != nil {
+			moved = fmt.Sprintf("。直前の出来事のずれを引くと 後 %.3f〜%.3f", bf, bt)
+		}
+		return fmt.Sprintf("出ていた区間が違う（前 %.3f〜%.3f / 後 %.3f〜%.3f%s）", a.From, a.To, b.From, b.To, moved)
 	}
 	if rectFree || sa == nil || sb == nil {
 		return ""
@@ -145,7 +165,8 @@ type framePair struct {
 	fa, fb Frame
 }
 
-func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
+// frames は組になったコマを比べる。shifted は前と後の時刻がこれより離れたコマを「時刻のずれたコマ」と見る秒（0 ならどれも見ない）。
+func (c *comparer) frames(flow, size string, a, b frameSide, restore bool, shifted float64) {
 	if len(a.frames) == 0 {
 		c.skip(flow, size, WhatFrame, "前の版に frames が無い")
 		return
@@ -195,7 +216,10 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 			defer wg.Done()
 			for k := range work {
 				p := pairs[k]
-				results[k] = c.frame(flow, size, p.idx, p.fa, p.fb, a.dir, b.dir, restore)
+				results[k] = c.frame(flow, size, p.idx, p.fa, p.fb, a.dir, b.dir, restore, shifted)
+				if results[k] != nil {
+					results[k].ord = k + 1
+				}
 			}
 		}()
 	}
@@ -210,6 +234,39 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 			c.add(d)
 		}
 	}
+	c.watchBlocks(flow, size, results)
+}
+
+// watchBlocks は見落としの防ぎ: ブロックの比べで自動で通したコマのうち、99% 点が BlockWatch を超える物が
+// 続けて BlockWatchRun 枚あれば、その区間を 1 件の人が見る差として残す。
+// WhyNot: 1 枚ずつの線だけで見ない — 揺れに紛れた小さな本物の違い（色の替わった背景など）は、どのコマも線の内で、続く事で分かる。
+func (c *comparer) watchBlocks(flow, size string, results []*Diff) {
+	th := c.opt.Th
+	var run []*Diff
+	flush := func() {
+		if len(run) >= th.BlockWatchRun {
+			worst := run[0]
+			for _, d := range run {
+				if d.Block > worst.Block {
+					worst = d
+				}
+			}
+			first, last := run[0], run[len(run)-1]
+			c.add(&Diff{Flow: flow, Size: size, Step: first.Step, What: WhatFrame, Node: first.Node, Seq: first.Seq, T: first.T, FrameKind: worst.FrameKind,
+				Cmd: worst.Cmd, Subject: "blockWatch", Before: worst.Before, After: worst.After, Heat: worst.Heat, Block: worst.Block, Review: true, ord: first.ord,
+				Detail: fmt.Sprintf("ブロックの比べで通したコマが 99%% 点 %g を超えたまま %d 枚続いた（%.2f〜%.2f 秒・%s#%d〜%s#%d・最大 %.1f。並べた絵はいちばん大きい所）",
+					th.BlockWatch, len(run), first.T, last.T, first.Node, first.Seq, last.Node, last.Seq, worst.Block)})
+		}
+		run = nil
+	}
+	for _, d := range results {
+		if d != nil && d.Auto == AutoBlock && d.Block > th.BlockWatch+1e-9 {
+			run = append(run, d)
+			continue
+		}
+		flush()
+	}
+	flush()
 }
 
 // newOnlyFrames は新しい版にだけある world のコマの数（新しい版で秒が分かるようになった命令の途中のコマなど）。
@@ -261,9 +318,9 @@ func (c *comparer) missingFrame(flow, size string, fa Frame, dir, key string, re
 }
 
 // frame は 1 組のコマを比べ、10.3 の線を超えた時だけ差を返す（並べて走るので c.r には書かない）。
-func (c *comparer) frame(flow, size string, i int, fa, fb Frame, dirA, dirB string, restore bool) *Diff {
+func (c *comparer) frame(flow, size string, i int, fa, fb Frame, dirA, dirB string, restore bool, shifted float64) *Diff {
 	pa, pb := filepath.Join(dirA, fa.File), filepath.Join(dirB, fb.File)
-	d := &Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fb.T, FrameKind: fa.Kind, Cmd: fb.Cmd, Before: pa, After: pb}
+	d := &Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fb.T, FrameKind: fa.Kind, Cmd: fb.Cmd, Subject: fb.Cmd, Before: pa, After: pb}
 	if restore {
 		d.Step = 6
 	}
@@ -296,6 +353,15 @@ func (c *comparer) frame(flow, size string, i int, fa, fb Frame, dirA, dirB stri
 		return nil
 	}
 	d.Review = true
+	// WhyNot: 同じ時刻のコマにブロックの比べを当てない — 同じ版を 2 回撮ると差は 0 なので、同じ時刻の差は全部本物。
+	// 時刻がずれると、実時間で動くカメラの揺れとざらつきの位相がずれ、画素の線では本物でない差が出る。
+	if shifted > 0 && math.Abs(fa.T-fb.T) > shifted {
+		d.Block = blockP99(ia, ib, th.BlockPx, th.BlockShift)
+		if d.Block <= th.BlockP99+1e-9 {
+			d.Auto = AutoBlock
+			d.Detail += fmt.Sprintf("。前と後の時刻が %.3f 秒ずれたコマで、ブロックの比べの 99%% 点 %.1f が %g 以下なので自動で通した", fb.T-fa.T, d.Block, th.BlockP99)
+		}
+	}
 	if c.opt.Out != "" {
 		heat := filepath.Join(c.opt.Out, "heat", fmt.Sprintf("%s_%s_%d.png", safeName(flow), safeName(size), i))
 		if os.MkdirAll(filepath.Dir(heat), 0o755) == nil && writeHeat(heat, ia, gaps, delta) == nil {
@@ -385,8 +451,8 @@ func (c *comparer) restore(name string, ra, rb *Restore) {
 	}
 	before := len(c.r.Diffs)
 	place := func(float64) (string, int) { return ra.Node, ra.Seq }
-	c.objects(flow, SingleSize, ra.Objects, rb.Objects, math.Inf(1), sa, sb, place)
-	c.frames(flow, SingleSize, frameSide{ra.Frames, ra.Dir}, frameSide{rb.Frames, rb.Dir}, true)
+	c.objects(flow, SingleSize, ra.Objects, rb.Objects, math.Inf(1), sa, sb, place, nil)
+	c.frames(flow, SingleSize, frameSide{ra.Frames, ra.Dir}, frameSide{rb.Frames, rb.Dir}, true, 0)
 	for _, d := range c.r.Diffs[before:] {
 		d.Step = 6
 	}

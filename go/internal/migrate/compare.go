@@ -20,6 +20,7 @@ const (
 	WhatBus        = "bus"
 	WhatProbe      = "probe"
 	WhatObject     = "object"
+	WhatNewObject  = "newObject"
 	WhatFrame      = "frame"
 	WhatRestore    = "restore"
 )
@@ -52,7 +53,21 @@ type Diff struct {
 	Pending     bool     `json:"pending,omitempty"`
 	// Review は迷った差（絵・矩形・音の時刻・音量）。門は止めず、一覧に溜めて最後に動画と並べて人が見る（10.3 の合格線）。
 	Review bool `json:"review,omitempty"`
+	// Auto は迷った差のうち線引きで自動で通した理由（空なら人が見る）。--strict は Auto の無い物だけで止める（--no-auto なら全部）。
+	Auto string `json:"auto,omitempty"`
+	// Block はブロックの比べの 99% 点（比べた時だけ）。
+	Block float64 `json:"block,omitempty"`
+	// Subject は人に見せる単位をまとめる時の名前（音・バスの名前・物の id・コマの命令）。
+	Subject string `json:"subject,omitempty"`
+	// ord はその flow と大きさの中で組になった world のコマの何番目か（1 から。続いたコマを 1 区間にまとめる）。0 は画素を比べたコマでない。
+	ord int
 }
+
+// 自動で通した理由（Diff.Auto）。
+const (
+	AutoAnchor = "anchor" // 頭からの時刻では線を超えたが、直前に組になった出来事のずれを引くと超えない
+	AutoBlock  = "block"  // 前と後の時刻がずれているコマで、ブロックの比べの 99% 点が線の内
+)
 
 // Skip は比べていない物（欄が無い記録）。門は落とさない。
 type Skip struct {
@@ -83,19 +98,27 @@ type Result struct {
 	Stopped   []string    `json:"stopped"`
 	Frames    int         `json:"framesCompared"`
 	Strict    bool        `json:"strict"`
+	NoAuto    bool        `json:"noAuto"`
 	Passed    bool        `json:"passed"`
+	// Thresholds は使った線引き（既定に migrate-accept.json の thresholds を重ねた物）。
+	Thresholds Thresholds `json:"thresholds"`
+	// Units は人に見せる単位（承認の無い迷った差をまとめた物）。
+	Units []Unit `json:"units"`
 }
 
-// Open は門を止める違い（承認の無い、迷った差でない物と通らない命令の行）の数。strict なら迷った差も数える。
+// Open は門を止める違い（承認の無い、迷った差でない物と通らない命令の行）の数。strict なら人が見る迷った差も数える。
 func (r *Result) Open(strict bool) int {
 	n := countOpenUncovered(r)
 	for _, d := range r.Diffs {
-		if d.Accepted == "" && (strict || !d.Review) {
+		if d.Accepted == "" && (!d.Review || strict && r.needsEye(d)) {
 			n++
 		}
 	}
 	return n
 }
+
+// needsEye は迷った差を人が見るか（自動で通した物は --no-auto の時だけ）。
+func (r *Result) needsEye(d *Diff) bool { return d.Auto == "" || r.NoAuto }
 
 // Options は Compare の指定。
 type Options struct {
@@ -103,7 +126,8 @@ type Options struct {
 	Game       string // 新しい版のゲームのルート（カバー率で台本を読む）
 	NoCoverage bool
 	Strict     bool // 迷った差でも門を止める（10.6 の「わざと入れた読み違いで落ちる」を確かめる時）
-	Times      bool // 台詞・選択肢・待ちの時刻を、前の出来事からの間で比べる（--times）
+	Times      bool // 台詞・選択肢・待ちの時刻を、前の出来事からの間で比べる（--times）。音・区間・音量の時刻も合わせ直す
+	NoAuto     bool // 線引きで自動で通した迷った差も人が見る物に数える（--no-auto）
 	Th         Thresholds
 	Lim        Limits
 }
@@ -116,6 +140,10 @@ func Compare(base, cur *Side, acc *Accept, opt Options) *Result {
 		// WhyNot: 前の回の差の色の図を残さない — 直した後の頁に、もう当たらない図が混ざって読み違える。
 		_ = os.RemoveAll(filepath.Join(opt.Out, "heat"))
 	}
+	th, thProblems := acc.overrideThresholds(opt.Th)
+	opt.Th = th
+	r.Thresholds, r.NoAuto = th, opt.NoAuto
+	r.Problems = append(r.Problems, thProblems...)
 	c := &comparer{r: r, acc: acc, opt: opt, rewrites: map[string]int{}}
 	for _, flow := range sortedKeys(base.Flows) {
 		sizes := base.Flows[flow]
@@ -151,6 +179,7 @@ func Compare(base, cur *Side, acc *Accept, opt Options) *Result {
 	r.Problems = append(r.Problems, problems...)
 	c.applyAccept(invalid)
 	c.reportRewrites()
+	r.Units = buildUnits(r)
 	r.Strict = opt.Strict
 	r.Passed = r.Open(opt.Strict) == 0 && len(r.Problems) == 0
 	return r
@@ -174,15 +203,17 @@ func (c *comparer) tape(flow, size string, a, b *Tape) {
 		c.r.Stopped = append(c.r.Stopped, flow+"/"+size)
 		return
 	}
+	var an *anchor
 	if c.opt.Times {
 		c.eventTimes(flow, size, a, b)
+		an = buildAnchor(eventPairs(a, b))
 	}
-	c.sounds(flow, size, a, b)
-	c.buses(flow, size, a, b)
+	c.sounds(flow, size, a, b, an)
+	c.buses(flow, size, a, b, an)
 	c.probes(flow, size, a, b)
 	place := func(at float64) (string, int) { return placeAt(b, at) }
-	c.objects(flow, size, a.Objects, b.Objects, frameTol(a), screenOf(a), screenOf(b), place)
-	c.frames(flow, size, frameSide{a.Frames, a.Dir}, frameSide{b.Frames, b.Dir}, false)
+	c.objects(flow, size, a.Objects, b.Objects, frameTol(a), screenOf(a), screenOf(b), place, an)
+	c.frames(flow, size, frameSide{a.Frames, a.Dir}, frameSide{b.Frames, b.Dir}, false, 0.5/a.FPS)
 }
 
 func frameTol(t *Tape) float64 { return 1/t.FPS + 1e-6 }
@@ -275,14 +306,14 @@ func eventPairs(a, b *Tape) ([]Event, []Event) {
 func (c *comparer) eventTimes(flow, size string, a, b *Tape) {
 	ea, eb := eventPairs(a, b)
 	// WhyNot: 1 フレームちょうどで切らない — tape.json の t はミリ秒に丸めてあり、間は 2 つの丸めを含むので、1 フレームの遅れが 0.034 秒に見える。
-	tol := frameTol(a) + 0.001
+	tol := frameTol(a) + c.opt.Th.EventRoundSec
 	prevA, prevB := 0.0, 0.0
 	for i := 0; i < len(ea) && i < len(eb); i++ {
 		gapA, gapB := ea[i].T-prevA, eb[i].T-prevB
 		if math.Abs(gapA-gapB) > tol {
 			c.add(&Diff{Flow: flow, Size: size, Step: 1, What: WhatEventTime, Node: eb[i].Node, Seq: eb[i].Seq, T: eb[i].T, Review: true,
-				Detail: fmt.Sprintf("%s の前の出来事からの間が %.3f 秒違う（前 %.3f 秒 / 後 %.3f 秒・許すのは 1 フレーム）",
-					describeEvent(eb[i]), gapB-gapA, gapA, gapB)})
+				Detail: fmt.Sprintf("%s の前の出来事からの間が %.3f 秒違う（前 %.3f 秒 / 後 %.3f 秒・許すのは 1 フレーム + %g 秒）",
+					describeEvent(eb[i]), gapB-gapA, gapA, gapB, c.opt.Th.EventRoundSec)})
 		}
 		prevA, prevB = ea[i].T, eb[i].T
 	}
@@ -403,7 +434,9 @@ func pairSound(x Sound, sb []Sound, used []bool, tol float64) int {
 	return -1
 }
 
-func (c *comparer) sounds(flow, size string, a, b *Tape) {
+// sounds は音を時刻の順に組にする。組になれない音は止める差にして、そこを飛ばして比べ続ける。
+// WhyNot: 組になれない音の所で止めない — 新しい版にだけある 1 音（承認済みの環境音など）の後ろの音が、全部比べられずに残る。
+func (c *comparer) sounds(flow, size string, a, b *Tape, an *anchor) {
 	if !a.Has("sounds") || !b.Has("sounds") {
 		c.skip(flow, size, WhatSound, "sounds が無い")
 		return
@@ -411,42 +444,93 @@ func (c *comparer) sounds(flow, size string, a, b *Tape) {
 	sa, sb := byTime(a.Sounds), byTime(b.Sounds)
 	used := make([]bool, len(sb))
 	tol := frameTol(a)
-	for i, x := range sa {
+	add := func(t float64, review bool, name, detail string) *Diff {
+		node, seq := placeAt(b, t)
+		d := &Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: t, Review: review, Subject: name, Detail: detail}
+		c.add(d)
+		return d
+	}
+	for i := 0; i < len(sa); i++ {
+		x := sa[i]
 		k := pairSound(x, sb, used, tol)
 		if k < 0 {
-			node, seq := placeAt(b, x.T)
-			got := "無い"
-			for j := range sb {
-				if !used[j] {
-					got = sb[j].Kind + " " + sb[j].Name
-					break
-				}
+			first := firstUnused(used)
+			if first >= 0 && extraInNew(sa[i:], sb, used, first) {
+				used[first] = true
+				y := sb[first]
+				// WhyNot: 時刻を新しい版の音の秒にしない — 組になれないと分かった所（前の版の音の秒）で承認を当ててきた。
+				add(x.T, false, y.Name, fmt.Sprintf("%s %s は新しい版にだけある（後 %.3f 秒・前のその所 %s %s）。飛ばして比べ続ける", y.Kind, y.Name, y.T, x.Kind, x.Name))
+				i--
+				continue
 			}
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: x.T,
-				Detail: fmt.Sprintf("%d 番目の音が違う（前 %s %s / 後のその所 %s）。後ろの音は比べない", i, x.Kind, x.Name, got)})
-			return
+			got := "無い"
+			if first >= 0 {
+				got = sb[first].Kind + " " + sb[first].Name
+			}
+			add(x.T, false, x.Name, fmt.Sprintf("%d 番目の音 %s %s が新しい版に無い（後のその所 %s）。飛ばして比べ続ける", i, x.Kind, x.Name, got))
+			continue
 		}
 		used[k] = true
 		y := sb[k]
-		if math.Abs(x.T-y.T) > tol {
-			node, seq := placeAt(b, y.T)
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: y.T, Review: true,
-				Detail: fmt.Sprintf("%s の鳴った時刻が %.3f 秒ずれた（前 %.3f / 後 %.3f・許すのは 1 フレーム）", x.Name, y.T-x.T, x.T, y.T)})
+		raw, moved := y.T-x.T, an.toOld(y.T)-x.T
+		if math.Abs(raw) <= tol {
+			continue
+		}
+		detail := fmt.Sprintf("%s の鳴った時刻が %.3f 秒ずれた（前 %.3f / 後 %.3f・許すのは 1 フレーム）", x.Name, raw, x.T, y.T)
+		if an != nil {
+			detail += fmt.Sprintf("。直前の出来事のずれを引くと %.3f 秒", moved)
+		}
+		d := add(y.T, true, x.Name, detail)
+		if an != nil && math.Abs(moved) <= tol {
+			d.Auto = AutoAnchor
 		}
 	}
 	for k, y := range sb {
 		if !used[k] {
-			node, seq := placeAt(b, y.T)
-			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatSound, Node: node, Seq: seq, T: y.T,
-				Detail: fmt.Sprintf("音の数が違う（前 %d・後 %d）。%s %s は新しい版にだけある", len(sa), len(sb), y.Kind, y.Name)})
-			return
+			add(y.T, false, y.Name, fmt.Sprintf("音の数が違う（前 %d・後 %d）。%s %s は新しい版にだけある", len(sa), len(sb), y.Kind, y.Name))
 		}
 	}
 }
 
+func firstUnused(used []bool) int {
+	for k, u := range used {
+		if !u {
+			return k
+		}
+	}
+	return -1
+}
+
+// extraInNew は、前の版の rest[0] と組になれない時に、新しい版の first を「新しい版にだけある音」と見るか。
+// rest[0] が新しい版の後ろにあり、そこまでに飛ばす新しい版の音が、first が前の版の後ろに出るまでに飛ばす音より少なければ true。
+func extraInNew(rest, sb []Sound, used []bool, first int) bool {
+	x := rest[0]
+	skipNew := -1
+	n := 0
+	for k := first; k < len(sb); k++ {
+		if used[k] {
+			continue
+		}
+		if sb[k].Name == x.Name && sb[k].Kind == x.Kind {
+			skipNew = n
+			break
+		}
+		n++
+	}
+	if skipNew < 0 {
+		return false
+	}
+	for j := 1; j < len(rest); j++ {
+		if rest[j].Name == sb[first].Name && rest[j].Kind == sb[first].Kind {
+			return skipNew <= j-1
+		}
+	}
+	return true
+}
+
 // ---- 2. バスの音量 ----
 
-func (c *comparer) buses(flow, size string, a, b *Tape) {
+func (c *comparer) buses(flow, size string, a, b *Tape, an *anchor) {
 	if a.Buses == nil || b.Buses == nil {
 		c.skip(flow, size, WhatBus, "buses が無い")
 		return
@@ -456,14 +540,14 @@ func (c *comparer) buses(flow, size string, a, b *Tape) {
 			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Seq: -1, Review: true, Detail: fmt.Sprintf("バス %s は新しい版にだけある", bus)})
 		}
 	}
-	end := math.Min(busEnd(a), busEnd(b))
+	end := math.Min(busEnd(a), an.toOld(busEnd(b)))
 	for _, bus := range sortedKeys(a.Buses) {
 		pb, ok := b.Buses[bus]
 		if !ok {
 			c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Seq: -1, Review: true, Detail: fmt.Sprintf("バス %s が新しい版に無い", bus)})
 			continue
 		}
-		c.bus(flow, size, bus, a.Buses[bus], pb, end, b)
+		c.bus(flow, size, bus, a.Buses[bus], pb, end, b, an)
 	}
 }
 
@@ -484,32 +568,79 @@ func busEnd(t *Tape) float64 {
 	return end
 }
 
-func (c *comparer) bus(flow, size, bus string, pa, pb []BusPoint, end float64, b *Tape) {
-	th := c.opt.Th
-	runFrom, worst := -1.0, 0.0
-	flush := func(to float64) {
-		if runFrom < 0 {
-			return
-		}
-		node, seq := placeAt(b, runFrom)
-		c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Node: node, Seq: seq, T: runFrom, Review: true,
-			Detail: fmt.Sprintf("バス %s の音量が %.2f〜%.2f 秒で ±%g dB を超えた（最大 %.1f dB）", bus, runFrom, to, th.BusDB, worst)})
-		runFrom, worst = -1, 0
-	}
+// busRun は音量の差が線を超えて続いた所（前の版の秒）。
+type busRun struct{ from, to, worst float64 }
+
+// busRuns は 0.1 秒ごとに、前の版の秒 t の音量と新しい版の shift(t) の音量を比べ、線を超えて続いた所と、
+// 線の内の差を秒で足した合計（dB×秒）を返す。
+func busRuns(pa, pb []BusPoint, end float64, th Thresholds, shift func(float64) float64) ([]busRun, float64) {
+	var runs []busRun
+	var cur *busRun
+	sum := 0.0
 	steps := int(math.Floor(end/th.BusStep + 1e-9))
 	for k := 0; k <= steps; k++ {
 		t := float64(k) * th.BusStep
-		d := dbGap(busAt(pa, t), busAt(pb, t), th.SilentDB)
+		d := dbGap(busAt(pa, t), busAt(pb, shift(t)), th.SilentDB)
 		if d > th.BusDB+1e-9 {
-			if runFrom < 0 {
-				runFrom = t
+			if cur == nil {
+				cur = &busRun{from: t}
 			}
-			worst = math.Max(worst, d)
-		} else {
-			flush(t)
+			cur.worst = math.Max(cur.worst, d)
+			continue
+		}
+		sum += d * th.BusStep
+		if cur != nil {
+			cur.to = t
+			runs = append(runs, *cur)
+			cur = nil
 		}
 	}
-	flush(end)
+	if cur != nil {
+		cur.to = end
+		runs = append(runs, *cur)
+	}
+	return runs, sum
+}
+
+func overlapsAny(r busRun, list []busRun) bool {
+	for _, o := range list {
+		if r.from <= o.to+1e-9 && o.from <= r.to+1e-9 {
+			return true
+		}
+	}
+	return false
+}
+
+// bus は 1 つのバスの音量を比べる。--times の時は合わせ直した時刻で比べ、頭からの時刻でだけ超えた所は自動で通した差にする。
+// WhyNot: 1 dB の線だけで見ない — 0.9 dB の差が flow の終わりまで続いても 1 件も出ない。線の内の差の合計（dB×秒）も見る。
+func (c *comparer) bus(flow, size, bus string, pa, pb []BusPoint, end float64, b *Tape, an *anchor) {
+	th := c.opt.Th
+	add := func(r busRun, auto string) {
+		at := an.toNew(r.from)
+		node, seq := placeAt(b, at)
+		d := &Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Node: node, Seq: seq, T: at, Review: true, Subject: bus, Auto: auto,
+			Detail: fmt.Sprintf("バス %s の音量が %.2f〜%.2f 秒で ±%g dB を超えた（最大 %.1f dB）", bus, at, an.toNew(r.to), th.BusDB, r.worst)}
+		if auto != "" {
+			d.Detail += "。直前の出来事のずれを引くと超えない"
+		}
+		c.add(d)
+	}
+	runs, sum := busRuns(pa, pb, end, th, an.toNew)
+	for _, r := range runs {
+		add(r, "")
+	}
+	if an != nil {
+		raw, _ := busRuns(pa, pb, end, th, func(t float64) float64 { return t })
+		for _, r := range raw {
+			if !overlapsAny(r, runs) {
+				add(r, AutoAnchor)
+			}
+		}
+	}
+	if sum > th.BusDBSec+1e-9 {
+		c.add(&Diff{Flow: flow, Size: size, Step: 2, What: WhatBus, Seq: -1, Review: true, Subject: bus,
+			Detail: fmt.Sprintf("バス %s の ±%g dB 以内の差が flow 全体で %.1f dB×秒（%g を超えた。小さな差が長く続いている）", bus, th.BusDB, sum, th.BusDBSec)})
+	}
 }
 
 func busAt(pts []BusPoint, t float64) *float64 {

@@ -48,6 +48,7 @@ type Entry struct {
 	From     *float64 `json:"from,omitempty"`
 	To       *float64 `json:"to,omitempty"`
 	Command  string   `json:"command,omitempty"`
+	Object   string   `json:"object,omitempty"`
 	Why      string   `json:"why"`
 	Images   []string `json:"images,omitempty"`
 	Approved bool     `json:"approved"`
@@ -72,7 +73,63 @@ type Accept struct {
 	ProbeMap map[string]map[string]string `json:"probeMap,omitempty"`
 	Entries  []Entry                      `json:"entries,omitempty"`
 	Coverage []CoverageEntry              `json:"coverage,omitempty"`
-	dir      string
+	// Thresholds はゲームごとの線引きの上書き（名前は Thresholds の json の名前。thresholdKnobs の範囲の外は使わない）。
+	Thresholds map[string]float64 `json:"thresholds,omitempty"`
+	dir        string
+}
+
+// thresholdKnob は migrate-accept.json で上書きできる線引き 1 つと、その範囲。
+// WhyNot: 範囲を設けずに上書きさせない — 線をいくらでも緩められると、ゲームの側の 1 行で本物の違いが全部消える。
+type thresholdKnob struct {
+	name   string
+	lo, hi float64
+	whole  bool
+	set    func(*Thresholds, float64)
+}
+
+var thresholdKnobs = []thresholdKnob{
+	{"doneDelta", 0, 4, true, func(t *Thresholds, v float64) { t.DoneDelta = int(v) }},
+	{"doneRatio", 0.98, 1, false, func(t *Thresholds, v float64) { t.DoneRatio = v }},
+	{"midMean", 0, 6, false, func(t *Thresholds, v float64) { t.MidMean = v }},
+	{"still3dDelta", 0, 6, true, func(t *Thresholds, v float64) { t.Still3DDelta = int(v) }},
+	{"still3dRatio", 0.95, 1, false, func(t *Thresholds, v float64) { t.Still3DRatio = v }},
+	{"shiftPx", 0, 4, true, func(t *Thresholds, v float64) { t.ShiftPx = int(v) }},
+	{"rectPx", 0, 4, false, func(t *Thresholds, v float64) { t.RectPx = v }},
+	{"busDB", 0, 3, false, func(t *Thresholds, v float64) { t.BusDB = v }},
+	{"busDBSec", 0, 60, false, func(t *Thresholds, v float64) { t.BusDBSec = v }},
+	{"eventRoundSec", 0, 0.005, false, func(t *Thresholds, v float64) { t.EventRoundSec = v }},
+	{"blockP99", 0, 16, false, func(t *Thresholds, v float64) { t.BlockP99 = v }},
+	{"blockWatch", 0, 16, false, func(t *Thresholds, v float64) { t.BlockWatch = v }},
+	{"blockWatchRun", 2, 20, true, func(t *Thresholds, v float64) { t.BlockWatchRun = int(v) }},
+}
+
+// overrideThresholds は既定の線引きに thresholds を重ねる。知らない名前・範囲の外・整数でない物は使わず、止まった理由に出す。
+func (a *Accept) overrideThresholds(base Thresholds) (Thresholds, []string) {
+	var problems []string
+	for _, name := range sortedKeys(a.Thresholds) {
+		v := a.Thresholds[name]
+		k, ok := findKnob(name)
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("thresholds の %s は上書きできる線引きでない", name))
+		case v < k.lo || v > k.hi:
+			problems = append(problems, fmt.Sprintf("thresholds の %s は %g〜%g の間（%g）", name, k.lo, k.hi, v))
+		case k.whole && v != float64(int(v)):
+			problems = append(problems, fmt.Sprintf("thresholds の %s は整数（%g）", name, v))
+		default:
+			k.set(&base, v)
+		}
+	}
+	return base, problems
+}
+
+func findKnob(name string) (thresholdKnob, bool) {
+	for _, k := range thresholdKnobs {
+		if k.name == name {
+			return k, true
+		}
+	}
+	return thresholdKnob{}, false
 }
 
 // LoadAccept は承認のファイルを読む。無ければ空。
@@ -152,8 +209,14 @@ func (e Entry) check(lim Limits) string {
 		}
 		return ""
 	}
+	if e.What == WhatNewObject {
+		if e.Kind != KindIntended || e.Object == "" {
+			return "newObject は intended で、新しい版にだけ出る物の id を object に書く"
+		}
+		return ""
+	}
 	if e.Flow == "" || e.Flow == AnyFlow {
-		return "flow が要る（flow を省けるのは systematic だけ）"
+		return "flow が要る（flow を省けるのは systematic と newObject だけ）"
 	}
 	if e.Kind == KindNoBaseline {
 		return ""
@@ -181,7 +244,7 @@ func (e Entry) label(i int) string {
 
 // matches は差がこの件に当たるか（承認の有無は見ない）。
 func (e Entry) matches(d *Diff, lim Limits) bool {
-	anyFlow := e.Kind == KindSystematic && (e.Flow == "" || e.Flow == AnyFlow)
+	anyFlow := (e.Kind == KindSystematic || e.What == WhatNewObject) && (e.Flow == "" || e.Flow == AnyFlow)
 	if !anyFlow && e.Flow != d.Flow || e.Size != "" && e.Size != d.Size {
 		return false
 	}
@@ -194,6 +257,9 @@ func (e Entry) matches(d *Diff, lim Limits) bool {
 	}
 	if e.What != d.What {
 		return false
+	}
+	if e.What == WhatNewObject {
+		return d.Subject == e.Object
 	}
 	if e.From != nil && e.To != nil {
 		return d.T >= *e.From && d.T <= *e.To
