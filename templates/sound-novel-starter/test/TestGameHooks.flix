@@ -263,9 +263,27 @@ mod TestGameHooks {
         fst(Emit.collect(() -> outs |> List.foldLeft((cur, out) -> WorldRead.takeOut(World.now(w), out, cur), rd)))
 
     /// 待ちが明けたら出す台詞 1 行（.yarn の 99 行目「歩いた後の行。」）を待ちに預ける。
-    def withHeldLine(rd: World.Read): World.Read =
-        let line = { speaker = "", text = "歩いた後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } };
-        { pause = rd#pause |> Option.map(p -> { rest = (YarnRunner.Event.Line(line), 0) :: Nil | p }) | rd }
+    def withHeldLine(rd: World.Read): World.Read = withHeld((YarnRunner.Event.Line(heldLine()), 0) :: Nil, rd)
+
+    def heldLine(): Yarn.Line = { speaker = "", text = "歩いた後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } }
+
+    /// 待ちが明けたら反映する出来事 rest を待ちに預ける。
+    def withHeld(rest: List[(YarnRunner.Event, Int32)], rd: World.Read): World.Read =
+        { pause = rd#pause |> Option.map(p -> { rest = rest | p }) | rd }
+
+    /// out を 1 つ出すだけの命令 name。
+    def waitCommand(name: String, out: Out): Commands.Command[Stage.Stage] =
+        { spec = YarnCommands.spec(name, "待ちを出す", Nil), timing = Commands.Timing.Timed,
+          apply = (_, _, st) -> Ok((st, out :: Nil)), needs = Commands.noAssets }
+
+    /// 押すと明ける待ちを出す tapwait と、押しても明けない待ちを出す hardwait を、読み進める命令の表に足した描く元。
+    def withWaitCommands(r: Res.Res): Res.Res =
+        { commands = Commands.tableOf(waitCommand("tapwait", Out.WaitOrTap(5.0)) :: waitCommand("hardwait", Out.Wait(5.0)) :: Commands.commandsIn(r#commands)) | r }
+
+    /// 読み始めた所で押すと明ける 5 秒の待ちを当て、明けたら rest を反映する World。
+    def tapWaitingWith(r: Res.Res, rest: List[(YarnRunner.Event, Int32)]): World.World =
+        let w = begun(r);
+        World.mapRead(rd -> withHeld(rest, takenOuts(w, Out.WaitOrTap(5.0) :: Nil, rd)), w)
 
     def isPaused(w: World.World): Bool = World.readOf(w) |> Option.exists(rd -> Option.nonEmpty(rd#pause))
 
@@ -339,8 +357,34 @@ mod TestGameHooks {
     def testATapWaitWithAPlainWaitIsNotTappable(): Unit \ {Assert, Fs.FileRead} =
         // 1 つのコマンドが Wait と WaitOrTap を両方出したら、押しても明けない待ち。
         let r = res();
-        let w = World.mapRead(rd -> withHeldLine(takenOuts(begun(r), Out.WaitOrTap(3.0) :: Out.Wait(1.0) :: Nil, rd)), begun(r));
+        let start = begun(r);
+        let w = World.mapRead(rd -> withHeldLine(takenOuts(start, Out.WaitOrTap(3.0) :: Out.Wait(1.0) :: Nil, rd)), start);
         Assert.assertTrue(isPaused(TestKit.advance(r, w)))
+
+    @Test
+    def testAPlainWaitThenATapWaitIsNotTappable(): Unit \ {Assert, Fs.FileRead} =
+        // Wait の後に WaitOrTap を出しても、押しても明けない待ち（出した順に左右されない）。
+        let r = res();
+        let start = begun(r);
+        let w = World.mapRead(rd -> withHeldLine(takenOuts(start, Out.Wait(1.0) :: Out.WaitOrTap(3.0) :: Nil, rd)), start);
+        Assert.assertTrue(isPaused(TestKit.advance(r, w)))
+
+    @Test
+    def testOneTapPassesTheTapWaitsThatFollow(): Unit \ {Assert, Fs.FileRead} =
+        // 押すと明ける待ちの後に、押すと明ける待ちを出す命令が 2 つと台詞が続く時、1 回押すと台詞まで出て、字も出し切る。
+        let r = withWaitCommands(res());
+        let rest = (YarnRunner.Event.Command(command("tapwait", Nil)), 1) :: (YarnRunner.Event.Command(command("tapwait", Nil)), 1)
+            :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
+        let pressed = TestKit.advance(r, tapWaitingWith(r, rest));
+        Assert.assertEq(expected = (false, "歩いた後の行。", true), (isPaused(pressed), currentText(pressed), Page.isDone(World.pageOf(pressed))))
+
+    @Test
+    def testOneTapStopsAtAPlainWait(): Unit \ {Assert, Fs.FileRead} =
+        // 続いた待ちが押しても明けない待ちなら、そこで止まり、後ろの台詞はまだ出さない。
+        let r = withWaitCommands(res());
+        let rest = (YarnRunner.Event.Command(command("hardwait", Nil)), 1) :: (YarnRunner.Event.Line(heldLine()), 0) :: Nil;
+        let pressed = TestKit.advance(r, tapWaitingWith(r, rest));
+        Assert.assertEq(expected = (true, false), (isPaused(pressed), currentText(pressed) == "歩いた後の行。"))
 
     @Test
     def testATapWaitFromAGameCommandEndsOnATap(): Unit \ {Assert, Fs.FileRead} =

@@ -254,13 +254,32 @@ mod WorldRead {
             case _ => w
         }
 
-    /// 押すと明ける待ちを、押した所で明ける（ゲームが持つ背景の切り替えは終わりの形にして、預けた続きを反映する）。
+    /// 押すと明ける待ちを、押した所で明ける。送る時（next）と同じく、今の行を既読にして Paged を出し、効果音の後の lockSeconds の間は明けない。
+    /// 明けた後に続けて押すと明ける待ちが出来れば、それも続けて明け（コメントが続けて流れる間に 1 回押すと全部出す）、
+    /// 次の台詞・選択肢・押しても明けない待ち・素材の待ちで止まる。そこで出た台詞は字を出し切る。
     // WhyNot: next（オートとスキップも通る）で明けない — オートが押す代わりに送ると、待ちの秒を待たずに越える。
     def tapThroughPause(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
-        match r#pause {
-            case Some(p) => resumePause(res, p, { stage = Stage.withGameSwitchFinished(r#stage) | r }, w)
-            case None    => World.withRead(r, w)
+        if (Stage.isTextLocked(World.now(w), r#stage)) World.withRead(r, w)
+        else {
+            Emit.emit(World.Event.Paged);
+            let passed = passTapWaits(res, World.withRead(r, markSeen(r, w)));
+            World.mapRead(cur -> { page = Page.revealAll(cur#page) | cur }, passed)
         }
+
+    /// 押すと明ける待ちを 1 つ明けて（ゲームが持つ背景の切り替えは終わりの形にして、預けた続きを反映する）、台詞か選択肢が出ていなければ次へ。
+    def passTapWaits(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
+        let tapWait = World.readOf(w) |> Option.flatMap(r -> r#pause |> Option.filter(p -> p#tappable and Option.isEmpty(r#hold)) |> Option.map(p -> (r, p)));
+        match tapWait {
+            case Some((r, p)) =>
+                let resumed = resumePause(res, p, { stage = Stage.withGameSwitchFinished(r#stage) | r }, w);
+                if (hasShownSince(r, resumed)) resumed else passTapWaits(res, resumed)
+            case None => w
+        }
+
+    /// before の後に台詞か選択肢が新しく出たか。
+    def hasShownSince(before: World.Read, w: World.World): Bool =
+        let sourceOf = (rd: World.Read) -> rd#page#current |> Option.map(line -> line#source);
+        World.readOf(w) |> Option.exists(after -> sourceOf(after) != sourceOf(before) or not List.isEmpty(after#choices))
 
     /// 今の行を出し切る。
     def reveal(r: World.Read, w: World.World): World.World \ Emit[World.Event] =

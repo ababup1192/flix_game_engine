@@ -86,7 +86,17 @@ mod Commands {
         bg() :: window() :: text() :: speak() :: audio() :: fx() :: shake() :: overlay() :: camera() :: tween() :: show() :: hide() :: move() :: Nil
 
     /// シナリオが使える全部（テンプレートの表とゲームの表）。
-    def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
+    pub def table(): List[Command[Stage.Stage]] = List.append(all(), GameCommands.all())
+
+    /// 読み進める時に当てる命令の表（Res#commands）。
+    // WhyNot: Res に命令の列をそのまま持たせない — Command の Ctx が Res を持つので、型の別名どうしが互いを指して組めない。
+    enum CommandTable(List[Command[Stage.Stage]])
+
+    pub type alias Table = CommandTable
+
+    pub def tableOf(commands: List[Command[Stage.Stage]]): Table = CommandTable.CommandTable(commands)
+
+    pub def commandsIn(t: Table): List[Command[Stage.Stage]] = let CommandTable.CommandTable(commands) = t; commands
 
     /// テンプレートとゲームを合わせた全部の命令の表（名前の重なりを見るテスト）。
     pub def specs(): List[YarnCommands.Spec] = table() |> List.map(c -> c#spec)
@@ -127,13 +137,13 @@ mod Commands {
         }
 
     def parsed(res: Res.Res, command: Yarn.Command): Option[(Command[Stage.Stage], YarnCommands.Args)] =
-        forM (c <- lookup(command#name); args <- argsOf(res#commandArgs, c, command) |> Result.toOption) yield (c, args)
+        forM (c <- lookupIn(commandsIn(res#commands), command#name); args <- argsOf(res#commandArgs, c, command) |> Result.toOption) yield (c, args)
 
     // ── 表を引く ──
 
     /// command を表で読んで st に当てる。Silent の時は Sound と Event を落とし、apply には instant を立てて渡す。
     pub def execute(replay: Replay, ctx: Ctx, command: Yarn.Command, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
-        executeUsing(table(), replay, ctx, command, st)
+        executeUsing(commandsIn(ctx#res#commands), replay, ctx, command, st)
 
     /// execute の、引く表を commands から取る形（テストが命令を差す）。
     pub def executeUsing(commands: List[Command[Stage.Stage]], replay: Replay, ctx: Ctx, command: Yarn.Command, st: Stage.Stage): Result[String, (Stage.Stage, List[Out])] =
