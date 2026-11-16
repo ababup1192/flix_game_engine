@@ -14,14 +14,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/rendercache"
 )
 
-// 1 本の flow を撮る JVM が使う物の見積もり（血鱗の route_gem: CPU は平均 5 コア・最大の常駐が約 10 GB）。
-// 本数はこの 2 つで決め、上限は shootMaxJobs。
+// 1 本の flow を撮る JVM の見積もり（血鱗の route_gem: CPU は平均 5 コア）。本数はコアの数だけで決め、上限は shootMaxJobs。
+// ヒープは shootHeap で蓋をする（Full GC の後に生きている物は 0.2 GB 前後・若い世代の GC の後の最大 1.8 GB。plans/novel-migrate-scale.md の M5）。
 const (
 	shootCoresPerJob = 4
-	shootMemPerJob   = 8 << 30
 	shootMaxJobs     = 6
+	shootHeap        = "-Xmx3g"
+	shootHeapBytes   = 3 << 30
+	// shootPNGBytes は比べのコマの PNG 1 枚の大きさの見積もり（M8 の置き場で 904 枚 781 MB）。
+	shootPNGBytes = 900 << 10
 )
 
 type shootArgs struct {
@@ -109,19 +114,70 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// autoJobs はコア数とメモリから並べる本数を決める。
+// autoJobs はコア数から並べる本数を決める。
+// WhyNot: メモリで絞らない — 1 本のヒープを shootHeap で蓋をしたので、既定のヒープの上限まで膨らむゴミで本数を削る理由が無い。
+// 足りない機械では memoryNote が知らせる。
 func autoJobs() int {
 	n := runtime.NumCPU() / shootCoresPerJob
-	if mem := totalMemory(); mem > 0 {
-		if m := int(mem / shootMemPerJob); m < n {
-			n = m
-		}
-	}
 	if n > shootMaxJobs {
 		n = shootMaxJobs
 	}
 	if n < 1 {
 		n = 1
+	}
+	return n
+}
+
+// shootJavaOpts は HEADLESS_JAVA_OPTS に 1 本のヒープの蓋を足した物（自分で -Xmx か MaxRAMPercentage を渡せばそれが勝つ）。
+// WhyNot: headless-run の既定（MaxRAMPercentage=50）のまま並べない — どの JVM も実メモリの半分までゴミで膨らみ、本数分足すと溢れる。
+func shootJavaOpts(opts string) string {
+	if strings.Contains(opts, "MaxRAMPercentage") || strings.Contains(opts, "-Xmx") {
+		return opts
+	}
+	return strings.TrimSpace(opts + " " + shootHeap)
+}
+
+// memoryNote は本数 × ヒープの蓋が実メモリの 8 割を超える時の 1 行（足りていれば空）。
+func memoryNote(jobs int, mem uint64) string {
+	need := uint64(jobs) * shootHeapBytes
+	if mem == 0 || need*10 <= mem*8 {
+		return ""
+	}
+	return fmt.Sprintf("%d 本 × %s で %d GB 使いうるが、実メモリは %d GB（足りなければ --jobs で減らす）", jobs, shootHeap, need>>30, mem>>30)
+}
+
+// cacheNote は render-cache の置き場が、基準の記録の比べのコマ（前と後の 2 回分）を入れきれない時の 1 行（足りていれば空）。
+// 入れきれないと prune が古い順に消し、毎回冷えた状態から塗り直す（間違えはしない）。
+func cacheNote(baseline, cacheDir string, maxBytes int64, free func(string) int64) string {
+	if cacheDir == "" {
+		return ""
+	}
+	frames := baselineFrameCount(baseline)
+	need := int64(frames) * shootPNGBytes * 2
+	if frames == 0 {
+		return ""
+	}
+	if need > maxBytes {
+		return fmt.Sprintf("render-cache の上限 %d MB が、基準のコマ %d 枚の前と後（約 %d MB）より小さい。prune で消えて毎回塗り直す（%s で上げる）",
+			maxBytes>>20, frames, need>>20, rendercache.MaxMBEnv)
+	}
+	if f := free(cacheDir); f >= 0 && f < need {
+		return fmt.Sprintf("render-cache の置き場 %s のディスクの空き %d MB が、基準のコマ %d 枚の前と後（約 %d MB）より小さい", cacheDir, f>>20, frames, need>>20)
+	}
+	return ""
+}
+
+// baselineFrameCount は基準の記録の tape.json の frames の数の合計（読めない物は数えない）。
+func baselineFrameCount(root string) int {
+	side, err := LoadSide(root)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, sizes := range side.Flows {
+		for _, t := range sizes {
+			n += len(t.Frames)
+		}
 	}
 	return n
 }
@@ -200,14 +256,12 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "migrate shoot:", err)
 		return 2
 	}
-	javaOpts := os.Getenv("HEADLESS_JAVA_OPTS")
-	if !strings.Contains(javaOpts, "MaxRAMPercentage") && !strings.Contains(javaOpts, "-Xmx") {
-		// WhyNot: headless-run の既定（MaxRAMPercentage=50）のまま並べない — どの JVM も実メモリの半分まで膨らみ、本数分足すと溢れる。
-		pct := 60 / jobs
-		if pct < 8 {
-			pct = 8
-		}
-		javaOpts = strings.TrimSpace(javaOpts + " -XX:MaxRAMPercentage=" + strconv.Itoa(pct))
+	javaOpts := shootJavaOpts(os.Getenv("HEADLESS_JAVA_OPTS"))
+	if note := memoryNote(jobs, totalMemory()); note != "" {
+		fmt.Fprintln(stderr, "migrate shoot:", note)
+	}
+	if note := cacheNote(a.savesFrom, rendercache.Dir(), int64(rendercache.MaxMB())<<20, rendercache.FreeBytes); note != "" {
+		fmt.Fprintln(stderr, "migrate shoot:", note)
 	}
 	base := append(os.Environ(), "HEADLESS_JAVA_OPTS="+javaOpts)
 	if os.Getenv("JAVA_TOOL_OPTIONS") == "" {

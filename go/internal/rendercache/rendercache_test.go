@@ -86,3 +86,23 @@ func TestDirRelativeIsEmpty(t *testing.T) {
 		t.Fatalf("Dir()=%q", d)
 	}
 }
+
+func TestMaxMBReadsTheEnvironment(t *testing.T) {
+	t.Setenv(MaxMBEnv, "123")
+	if MaxMB() != 123 {
+		t.Fatalf("MaxMB = %d", MaxMB())
+	}
+}
+
+func TestMaxMBFallsBackOnUnreadableValue(t *testing.T) {
+	t.Setenv(MaxMBEnv, "lots")
+	if MaxMB() != DefaultMaxMB {
+		t.Fatalf("MaxMB = %d", MaxMB())
+	}
+}
+
+func TestFreeBytesWalksUpToAnExistingFolder(t *testing.T) {
+	if FreeBytes(filepath.Join(t.TempDir(), "not", "yet")) <= 0 {
+		t.Fatal("空きを数えられない")
+	}
+}

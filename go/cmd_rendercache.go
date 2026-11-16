@@ -26,7 +26,7 @@ func cmdRenderCache(out, errOut *strings.Builder, rest []string, _ bool) int {
 		rendercache.Status(out, dir)
 		return 0
 	case "prune":
-		maxMB := rendercache.DefaultMaxMB
+		maxMB := rendercache.MaxMB()
 		quiet := false
 		for i := 1; i < len(rest); i++ {
 			switch rest[i] {
