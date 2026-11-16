@@ -1034,7 +1034,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             }
         }
 
-    /// 3D の場面は溜めて、次の renderCommands で 2D の pass の前に描き、2D の並びに z の位置で貼る（Render3d.WebGpuRenderer・WebGpuRows）。先に上げる物の宣言は捨てる。
+    /// 3D の場面は溜めて、次の renderCommands で 2D の pass の前に描き、2D の並びに z の位置で貼る（Render3d.WebGpuRenderer・WebGpuRows）。
+    /// 先に上げる物の宣言は、その場で 3D の描き手に上げさせる（Scenes.preload）。
     pub def handleDraw3d(paint: Paint, f: Unit -> a \ ef): a \ (ef - Platform.Draw3d) + IO =
         run f() with handler Platform.Draw3d {
             def drawScene3d(cmd, k) = {
@@ -1042,8 +1043,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(cmd :: Array.get(0, p#pendingScenes), 0, p#pendingScenes);
                 k(())
             }
-            def preload3d(_cmd, k) = {
-                skip(paint, "3D の場面の preload");
+            def preload3d(cmd, k) = {
+                Scenes.preload(paint, cmd);
                 k(())
             }
         }

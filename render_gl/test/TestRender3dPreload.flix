@@ -265,23 +265,23 @@ mod Render3d.TestPreload {
         let state = freshState();
         let slot = Render3d.TextureSlot.Copy("a");
         let text = stderrOf(() -> {
-            Render3d.warnDroppedMeshes(state, "a" :: Nil, Set#{"a"});
-            Render3d.warnDroppedMeshes(state, "b" :: Nil, Set#{"b"});
-            Render3d.warnDroppedTextures(state, slot :: Nil, Set#{slot});
-            Render3d.warnDroppedTextures(state, slot :: Nil, Set#{slot})
+            Render3d.warnDroppedMeshes(state#planner, "a" :: Nil, Set#{"a"});
+            Render3d.warnDroppedMeshes(state#planner, "b" :: Nil, Set#{"b"});
+            Render3d.warnDroppedTextures(state#planner, slot :: Nil, Set#{slot});
+            Render3d.warnDroppedTextures(state#planner, slot :: Nil, Set#{slot})
         });
         Assert.assertEq(expected = 2, timesWarned(text))
 
     /// 形の知らせは project.json の上限を案内しない（形の上限は変えられない）。
     @Test
     def testMeshWarningDoesNotPointAtTheTextureBudget(): Unit \ {Assert, IO} =
-        let text = stderrOf(() -> Render3d.warnDroppedMeshes(freshState(), "a" :: Nil, Set#{"a"}));
+        let text = stderrOf(() -> Render3d.warnDroppedMeshes(freshState()#planner, "a" :: Nil, Set#{"a"}));
         Assert.assertFalse(String.contains(substr = "project.json", text))
 
     /// 先に上げていない物だけを捨てた時は知らせない。
     @Test
     def testDroppingUnmarkedDoesNotWarn(): Unit \ {Assert, IO} =
-        let text = stderrOf(() -> Render3d.warnDroppedMeshes(freshState(), "plain" :: Nil, Set#{"a"}));
+        let text = stderrOf(() -> Render3d.warnDroppedMeshes(freshState()#planner, "plain" :: Nil, Set#{"a"}));
         Assert.assertEq(expected = 0, timesWarned(text))
 
     /// 置き場にある場面の絵（段つきの写しを除く）。

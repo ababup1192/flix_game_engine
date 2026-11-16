@@ -12,7 +12,7 @@ pub mod Render3dWgsl {
     /// f32 と vec2 の光の配列は、uniform の配列の 16 バイト刻みに合わせて vec4 の配列にした（x・y を読む。LightModel3d.Codegen の WGSL の欄と同じ）。
     /// 詰める側は WGSL の並びの決まり（vec3 と vec4 と mat4 は 16 バイトそろえ・vec2 は 8）に従う。vec3 の後ろの 4 バイトに f32 か i32 を 1 つ入れ、
     /// mat4 の前の隙間は pad0〜pad4 で埋めてあるので、欄は書いた順に 4 バイトずつ続く（uShadowMatrix は 272 バイト目）。
-    /// 末尾の uSky* は空の画素の向きの材料（Scene3d.skyBasisOf の forward・right・up）で、w に描き先の幅と高さ（skyValuesAt から）。
+    /// 末尾の uSky* は空の画素の向きの材料（Scene3d.skyBasisOf の forward・right・up）で、w に描き先の幅と高さと景色を背景に描くか（skyValuesAt から・Render3d.WebGpuSky.packValues）。
     pub def sceneDeclarations(): String =
         let p = Scene3d.maxPointLights();
         let s = Scene3d.maxSpotLights();
@@ -160,19 +160,24 @@ pub mod Render3dWgsl {
         "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
         "}\n"
 
-    // WhyNot: 極で atan2 を選ばない形を if にしない — select は両側を計算するが、atan2(0, 0) の値は捨てられる（Flix の atan2 と同じ 0 を選ぶ）。
+    /// 環境マップの読み environmentColorAt(p, n, albedo × tint, vec3(metallic, roughness, 0))（Render3dGlsl.environmentSource と同じ式。mip のレベルは roughness × (レベルの数 − 1)）。
     pub def environmentSource(): String =
         LightModel3d.Codegen.toWgsl("environmentDirectionAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.Albedo :: Vec3Input.MetallicRoughness :: Nil,
                                     LightModel3d.environmentDirection()) +
-        "fn environmentUv(d: vec3f) -> vec2f {\n" +
-        "    let pole = abs(d.x) + abs(d.z) < 1e-12;\n" +
-        "    let azimuth = select(atan2(d.x, -d.z), 0.0, pole);\n" +
-        "    return vec2f(0.5 + azimuth / 6.283185307179586, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793);\n" +
-        "}\n" +
+        environmentUvSource() +
         "fn environmentColorAt(p: vec3f, n: vec3f, albedo: vec3f, metalRough: vec3f) -> vec3f {\n" +
         "    let d = environmentDirectionAt(p, n, albedo, metalRough);\n" +
         "    let lod = metalRough.y * (r3d.uEnvLevels - 1.0);\n" +
         "    return r3d_srgbToLinear3(textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), lod).rgb) * r3d.uEnvIntensity;\n" +
+        "}\n"
+
+    /// 向き d（長さ 1）で環境マップを読む座標 environmentUv(d)（Render3dGlsl.environmentUvSource と同じ式）。
+    // WhyNot: 極で atan2 を選ばない形を if にしない — select は両側を計算するが、atan2(0, 0) の値は捨てられる（Flix の atan2 と同じ 0 を選ぶ）。
+    def environmentUvSource(): String =
+        "fn environmentUv(d: vec3f) -> vec2f {\n" +
+        "    let pole = abs(d.x) + abs(d.z) < 1e-12;\n" +
+        "    let azimuth = select(atan2(d.x, -d.z), 0.0, pole);\n" +
+        "    return vec2f(0.5 + azimuth / 6.283185307179586, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793);\n" +
         "}\n"
 
     /// lightmap の読みと、lightmap のある面の光の式（Render3dGlsl.lightmapSource と同じ）。
@@ -523,18 +528,22 @@ pub mod Render3dWgsl {
         "    return vec4f(x * 2.0 - 1.0, y * 2.0 - 1.0, 0.0, 1.0);\n" +
         "}\n"
 
-    /// 空の frag（Render3dGlsl.skyFragmentSource の空の枝と同じ式）。空の 3 色と曲がりは場面の値（group 0 の uZenith・uHorizon・uGround・uCurve。
-    /// 空のある場面では LightModel3d.reflectionSkyOf が空の色を線形へ戻した物）、画素の向きの材料と描き先の大きさは同じ R3dScene の末尾の uSky*。入口は fs_main。
+    /// 空の frag（Render3dGlsl.skyFragmentSource と同じ式）。空の 3 色と曲がりは場面の値（group 0 の uZenith・uHorizon・uGround・uCurve。
+    /// 空のある場面では LightModel3d.reflectionSkyOf が空の色を線形へ戻した物）、画素の向きの材料と描き先の大きさは同じ R3dScene の末尾の uSky*。
+    /// uSkyUp.w が 1（景色を背景に描く場面）なら、空の代わりに環境マップの絵を mip のレベル 0 で読み、uEnvIntensity を掛ける。入口は fs_main。
     // WhyNot: NDC の y を GLSL と同じ（画素の y − 原点）÷ 高さで作らない — 描き先の画素の y は上の行が 0 で、GL の gl_FragCoord と向きが逆。
-    // WhyNot: 景色を背景に描く枝（GLSL の uEnvOn）を持たない — 環境マップの絵を WebGPU へ上げる道がまだ無い（景色を背景に描く場面は環境マップとして数える）。
     // WhyNot: 奥行きの書き出しの枝（GLSL の uDepthOut）を持たない — 奥行きの書き出しの pass は空を描かず、地の色の白で消す（WebGpuRenderer.clearOf）。
     pub def skyFragmentSource(): String =
         sceneDeclarations() +
         colorSpaceSource() +
         skyLightSource() +
+        environmentUvSource() +
         "@fragment fn fs_main(@builtin(position) at: vec4f) -> @location(0) vec4f {\n" +
         "    let ndc = vec2f(at.x / r3d.uSkyForward.w * 2.0 - 1.0, 1.0 - at.y / r3d.uSkyRight.w * 2.0);\n" +
         "    let d = normalize(r3d.uSkyForward.xyz + r3d.uSkyRight.xyz * ndc.x + r3d.uSkyUp.xyz * ndc.y);\n" +
+        "    if (r3d.uSkyUp.w > 0.5) {\n" +
+        "        return vec4f(r3d_linearToSrgb3(r3d_srgbToLinear3(textureSampleLevel(uEnvMap, uEnvSampler, environmentUv(d), 0.0).rgb) * r3d.uEnvIntensity), 1.0);\n" +
+        "    }\n" +
         "    return vec4f(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
         "}\n"
 }

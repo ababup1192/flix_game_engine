@@ -164,13 +164,55 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     def testSkyValuesEndTheSceneValues(): Unit \ Assert =
         Assert.assertEq(expected = sceneValueBytes(), Render3dWgsl.skyValuesAt() + 48)
 
-    /// 空を描くのは sky のある場面だけ。景色を背景に描く場面（sky が無い）は環境マップとして数え、空では描かない。
+    /// 空を描くのは sky のある場面と、sky が無く景色を背景に描く場面（GL の drawSky と同じ）。景色を背景に描かない環境マップだけの場面は描かない。
     @Test
-    def testSkyIsDrawnOnlyWithSky(): Unit \ Assert =
+    def testSkyIsDrawnWithSkyOrBackgroundPanorama(): Unit \ Assert =
+        let e = Scene3d.environmentMap(panorama());
+        Assert.assertEq(expected = (true, true, false, false),
+                        (Render3d.WebGpuSky.isDrawn({ sky = Some(sky()) | scene() }),
+                         Render3d.WebGpuSky.isDrawn({ environmentMap = Some(e |> Scene3d.withEnvironmentAsBackground(true)) | scene() }),
+                         Render3d.WebGpuSky.isDrawn({ environmentMap = Some(e) | scene() }), Render3d.WebGpuSky.isDrawn(scene())))
+
+    /// 空の frag が景色を読むかのフラグ（uSkyUp.w）は、sky が無く景色を背景に描く場面だけ 1。sky と背景の景色が両方ある場面は 0（GL も空の坂を描く）。
+    @Test
+    def testBackgroundFlagIsSetOnlyWithoutSky(): Unit \ {Assert, IO} =
         let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentAsBackground(true);
-        Assert.assertEq(expected = (true, false, false),
-                        (Render3d.WebGpuSky.isDrawn({ sky = Some(sky()) | scene() }), Render3d.WebGpuSky.isDrawn({ environmentMap = Some(e) | scene() }),
-                         Render3d.WebGpuSky.isDrawn(scene())))
+        let flagOf = (s: Scene3d.Scene3dCmd) -> {
+            let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
+            Render3d.WebGpuSky.packValues(buf, s, 64, 32);
+            buf.getFloat(Render3dWgsl.skyValuesAt() + 44)
+        };
+        Assert.assertEq(expected = (1.0f32, 0.0f32), (flagOf({ environmentMap = Some(e) | scene() }), flagOf({ sky = Some(sky()), environmentMap = Some(e) | scene() })))
+
+    // ── 環境マップ ──
+
+    /// 環境マップの欄（GL の Render3d.Light.environmentUniforms と同じ値）: uEnvOn（156）・uEnvBoxOn（172）・uEnvBoxMin の x（176）・uEnvLevels（188）・
+    /// uEnvBoxMax の y（196）・uEnvIntensity（204）・uEnvBoxCenter の z（216）。
+    @Test
+    def testEnvironmentFieldsSitAtWgslOffsets(): Unit \ {Assert, IO} =
+        let box = { min = Vec3.v3(-6.0, -5.0, 8.0), max = Vec3.v3(6.0, 5.0, 20.0), center = Vec3.v3(0.0, 0.0, 14.0) };
+        let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentBox(box) |> Scene3d.withEnvironmentIntensity(0.8);
+        let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
+        packSceneValues(buf, Render3d.Light.lightDataOf({ environmentMap = Some(e) | scene() }, 5));
+        Assert.assertEq(expected = (1, 1, -6.0f32, 5.0f32, 5.0f32, 0.8f32, 14.0f32),
+                        (buf.getInt(156), buf.getInt(172), buf.getFloat(176), buf.getFloat(188), buf.getFloat(196), buf.getFloat(204), buf.getFloat(216)))
+
+    /// 環境マップの無い場面は、前の場面が書いた環境マップの欄を on と箱の on の 0 で上書きする（書く欄の組を場面ごとに変えない）。
+    @Test
+    def testSceneWithoutEnvironmentClearsTheFlags(): Unit \ {Assert, IO} =
+        let box = { min = Vec3.v3(-1.0, -1.0, -1.0), max = Vec3.v3(1.0, 1.0, 1.0), center = Vec3.zero() };
+        let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentBox(box);
+        let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
+        packSceneValues(buf, Render3d.Light.lightDataOf({ environmentMap = Some(e) | scene() }, 3));
+        packSceneValues(buf, Render3d.Light.lightDataOf(scene(), 0));
+        Assert.assertEq(expected = (0, 0), (buf.getInt(156), buf.getInt(172)))
+
+    /// 環境マップのある場面は、まだ描けない物に環境マップの種類を出さない（映り込みと背景を描く）。
+    @Test
+    def testEnvironmentMapIsNotCounted(): Unit \ {Assert, IO} =
+        let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentAsBackground(true);
+        let skips = skipsOfScene({ environmentMap = Some(e) | Render3d.FakeGl.sceneOf(plainWithMaterial(Vec3.zero()) :: Nil) });
+        Assert.assertEq(expected = None, Map.get("3D の環境マップ", skips))
 
     /// 空のある場面は、まだ描けない物に空の種類を出さない（色の pass で描く）。
     @Test

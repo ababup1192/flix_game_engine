@@ -649,16 +649,16 @@ mod Render3d {
         gl.useProgram(0);
         gl.bindVertexArray(0)
 
-    /// victims に先に上げた形 preloaded が入っていたら、1 回だけ知らせる。
-    def warnDroppedMeshes(state: State, victims: List[String], preloaded: Set[String]): Unit \ IO =
+    /// victims に先に上げた形 preloaded が入っていたら、planner で 1 回だけ知らせる（GL と WebGPU の両方が呼ぶ）。
+    pub def warnDroppedMeshes(planner: Render3d.ScenePlan.Planner, victims: List[String], preloaded: Set[String]): Unit \ IO =
         if (List.exists(k -> Set.memberOf(k, preloaded), victims))
-            warnSceneOnce(state, "@preload-dropped-mesh", "scene3d: 先に上げた形を、頂点の上限 ${vertexBudget()} が足りないので捨てた — 次に出るコマで上げ直す（先に上げる形を減らす）")
+            Render3d.ScenePlan.warnOnce(planner, "@preload-dropped-mesh", "scene3d: 先に上げた形を、頂点の上限 ${vertexBudget()} が足りないので捨てた — 次に出るコマで上げ直す（先に上げる形を減らす）")
         else ()
 
-    /// victims に先に上げた絵 preloaded が入っていたら、1 回だけ知らせる。
-    def warnDroppedTextures(state: State, victims: List[TextureSlot], preloaded: Set[TextureSlot]): Unit \ IO =
+    /// victims に先に上げた絵 preloaded が入っていたら、planner で 1 回だけ知らせる（GL と WebGPU の両方が呼ぶ）。
+    pub def warnDroppedTextures(planner: Render3d.ScenePlan.Planner, victims: List[TextureSlot], preloaded: Set[TextureSlot]): Unit \ IO =
         if (List.exists(k -> Set.memberOf(k, preloaded), victims))
-            warnSceneOnce(state, "@preload-dropped-texture", "scene3d: 先に上げた絵を、置き場の上限が足りないので捨てた — 次に出るコマで上げ直す"
+            Render3d.ScenePlan.warnOnce(planner, "@preload-dropped-texture", "scene3d: 先に上げた絵を、置き場の上限が足りないので捨てた — 次に出るコマで上げ直す"
                 + "（先に上げる絵を減らすか、project.json の scene3dTextureBudgetCount / scene3dTextureBudgetMB を上げる）")
         else ()
 
@@ -870,7 +870,7 @@ mod Render3d {
         if (List.isEmpty(victims)) ()
         else {
             count(state, Counter.MeshEvictions, List.length(victims));
-            warnDroppedMeshes(state, victims, preloaded);
+            warnDroppedMeshes(state#planner, victims, preloaded);
             Log.warn("scene3d: メッシュの置き場が頂点 ${vertexBudget()} を超えたので、古い形を ${List.length(victims)} 個捨てた")
         }
 

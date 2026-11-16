@@ -196,6 +196,59 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let (f, p, g) = found;
         (f, p, g, errors)
 
+    // ── 先に上げる物（withPreload3d）──
+
+    /// 先に上げる物の宣言: 絵つきの材質の三角と、頂点の色の三角（key = "k"）。絵は場面の textures に載せる 4 × 4。
+    def preloadCmd(key: String): Scene3d.PreloadCmd =
+        let tex = match Texture3d.fromArgb(4, 4, Vector.range(0, 16) |> Vector.map(i -> if (Int32.remainder(i, 2) == 0) -1 else -16777216)) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        };
+        let textured = Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, Render3d.FakeGl.plainTriangle()), Mat4.identity())
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Linear));
+        let plain = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.identity());
+        { key = key, instances = () -> textured :: plain :: Nil, textures = () -> tex :: Nil }
+
+    /// 宣言を上げると、形 2 つ・材質の絵 1 枚（mip のレベル 3 つ）が置き場に載って控えに残り、積んだ pass を先に submit する（1 回）。
+    /// 同じ key の 2 回目は何もしない（submit も数えない）。上げた形と絵は、使わないコマが続いても endFrame の上限の内なら残る。
+    @Test
+    def testPreloadUploadsOnceAndKeepsWhatItUploaded(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let found = preloadedCounts(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = (2, 1, 3, 1, 2, 1, 0), found)
+        }
+
+    /// (形の数, 控えた絵の鍵の数, 絵の mip のレベルの数, submit の数, 2 回目の後の形の数, 2 回目の後の submit の数, Dawn の誤りの数)。
+    /// 2 回目の前に endFrame を 200 回呼ぶ（使わない形と絵が古くなる）。
+    def preloadedCounts(gpu: WebGpu): (Int32, Int32, Int32, Int32, Int32, Int32, Int32) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
+        let RendererData.RendererData(s) = renderer;
+        let encoder = gpu.createCommandEncoder("test");
+        let flushes = Ref.fresh(Static, 0);
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        let meshes = Map.size(Render3d.MeshTable.createdOf(s#meshes));
+        let slots = Ref.get(s#preloaded)#textures |> Set.size;
+        let levels = Render3d.TextureTable3d.createdOf(Render3d.WebGpuMaterials.texturesOf(s#materials)) |> Map.toList |> List.map(kv -> { let (_, (_, c, _)) = kv; c#levels }) |> List.sum;
+        let firstFlushes = Ref.get(flushes);
+        List.range(0, 200) |> List.forEach(_ -> Render3d.WebGpuRenderer.endFrame(renderer));
+        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        let kept = Map.size(Render3d.MeshTable.createdOf(s#meshes));
+        discard encoder.finish();
+        let errors = gpu.errorCount();
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        (meshes, slots, levels, firstFlushes, kept, Ref.get(flushes), errors)
+
     /// ビルボードの pipeline（stride 0 の頂点の buffer・group 0 の場面と group 1 の 2D の絵の layout）を、画面の形式の標本 1 と 4 で Dawn が誤り無しに作る。
     @Test
     def testBillboardPipelinesBuildOnDawn(): Unit \ {Assert, IO} =

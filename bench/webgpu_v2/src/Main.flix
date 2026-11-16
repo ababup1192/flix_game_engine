@@ -60,6 +60,17 @@ mod V2Main {
         postCase("postDesign", kit, 1, PostProcess.Tonemap.Reinhard, Scene3d.Resolution.Design) ::
         halfDepthPassCase("halfDepthDesign", kit, Scene3d.Resolution.Design) ::
         halfDepthPassCase("halfDepthNative", kit, Scene3d.Resolution.Native) ::
+        sceneCase("envSpheres", Scene3d.Resolution.Native, V2Environment.scene(V2Environment.plain(), 0.0, 0.0)) ::
+        sceneCase("envBox", Scene3d.Resolution.Native, V2Environment.scene(V2Environment.boxed(), 0.0, 0.0)) ::
+        sceneCase("envBackground", Scene3d.Resolution.Native, V2Environment.scene(V2Environment.background(), 0.0, -0.2)) ::
+        sceneCase("envBackgroundTurned", Scene3d.Resolution.Native, V2Environment.scene(V2Environment.background(), 2.0, 0.35)) ::
+        sceneCase("envBackgroundDesign", Scene3d.Resolution.Design, V2Environment.scene(V2Environment.background(), 0.0, -0.2)) ::
+        sceneCase("envBackgroundDepth", Scene3d.Resolution.Native,
+                  { output = Scene3d.Output.Depth({ near = 10.0, range = 8.0 }) | V2Environment.scene(V2Environment.background(), 0.0, -0.2) }) ::
+        sceneCase("envSkyAndBackground", Scene3d.Resolution.Native, { sky = Some(V2Sky.sky(1.0)) | V2Environment.scene(V2Environment.background(), 0.0, -0.2) }) ::
+        msaaPassCase("envMsaaPass", V2Environment.scene(V2Environment.background(), 0.4, -0.1)) ::
+        sceneCase("mipFloor", Scene3d.Resolution.Native, V2Environment.mipFloor(Texture3d.name(V2Environment.fineChecker()), V2Environment.fineChecker() :: Nil)) ::
+        sceneCase("mipFloorRegistered", Scene3d.Resolution.Native, V2Environment.mipFloor(RadialBuiltin.lightName(), Nil)) ::
         skinnedCase("skinned", kit, Scene3d.Output.Color, V2Skinned.vertexColored) ::
         skinnedCase("skinnedTextured", kit, Scene3d.Output.Color, V2Skinned.textured(V2Materials.colorTexture())) ::
         skinnedCase("skinnedDepth", kit, depthOfRoom(), V2Skinned.vertexColored) ::
@@ -282,6 +293,13 @@ mod V2Main {
     /// GL と WebGPU が隣の行を読む【推: 差の画素が 1 行に並び、値が隣の texel の値】。billboardGlass は blend と同じ数（ビルボードの画素は差に出ていない）・
     /// billboardDepth は blendDepth と同じ形・billboardMsaaPass は skyMsaaPass と同じ標本の位置の違い・billboardHistory は入れ子の看板の中の ±1 だけ。
     /// 上限は実測のほぼ 2 倍（billboardDesign は skyDesign と同じ小さい物の下限）・差の最大は面の入れ替わりで切らない billboard と billboardGlass を除いて ±16（billboardMsaaPass は ±128）。
+    /// 環境マップと mip の場面（同じ機械の実測。違う画素・±2 以上・max）: envSpheres 7・0・±1、envBox 5・0・±1、envBackground 19・0・±1、envBackgroundTurned 0、
+    /// envBackgroundDesign 0、envBackgroundDepth 1・0・±1、envSkyAndBackground 17・0・±1、envMsaaPass 8,469・4,005・±60、mipFloor 421・2・±2。
+    /// 環境マップの画素はどれも GL と ±1 以内【推: mip のレベルの間の補間と sRGB の戻しの丸め】。envMsaaPass は球のふちで、skyMsaaPass と同じ標本の位置の違い。
+    /// mipFloor の差は床の奥の mip のレベルの切り替わりの所に散る ±1〜2（mip の作り方は GL と同じ CPU の Mip.build で、レベルを選ぶ式 sg_texMip も同じ）。
+    /// 上限は違う画素を実測のほぼ 2 倍・±2 以上は 4（小さい物の下限。mipFloor は 8）・差の最大は ±16（envMsaaPass は ±128）。
+    /// mipFloorRegistered（記録・門にしない）は、全体の登録の絵（組み込みの放射の絵）を材質に貼った同じ床: WebGPU は 2D の描き手の絵を mip 無しのまま借りるので、
+    /// 奥ほど GL（mip つきの写し）と違う（43,823・16,934・±148）。mip つきの写しを GPU で作るには、texture の mip のレベル 1 つを描き先にする view が要る（plans/engine-webgpu.md の 12.37）。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
@@ -294,10 +312,13 @@ mod V2Main {
              "blend" => (32, 64, 255), "blendDesign" => (4, 8, 16), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128),
              "post" => (84, 500, 255), "postMsaa" => (27000, 112000, 128), "postDesign" => (7300, 31000, 128), "halfDepthDesign" => (19000, 192000, 128),
              "billboard" => (52, 128, 255), "billboardDesign" => (4, 8, 16), "billboardDepth" => (4, 24, 16), "billboardGlass" => (32, 64, 255),
-             "billboardMsaaPass" => (23000, 27000, 128), "billboardHistory" => (4, 40, 16)}
+             "billboardMsaaPass" => (23000, 27000, 128), "billboardHistory" => (4, 40, 16),
+             "envSpheres" => (4, 16, 16), "envBox" => (4, 16, 16), "envBackground" => (4, 40, 16), "envBackgroundTurned" => (4, 8, 16),
+             "envBackgroundDesign" => (4, 8, 16), "envBackgroundDepth" => (4, 8, 16), "envSkyAndBackground" => (4, 36, 16), "envMsaaPass" => (8000, 17000, 128),
+             "mipFloor" => (8, 850, 16)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
-    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass"}
+    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass", "mipFloorRegistered"}
 
     def drawFrame(c: Case): Unit \ Platform.Rendering + Platform.Window + RenderTarget.Target =
         drawPasses(c);

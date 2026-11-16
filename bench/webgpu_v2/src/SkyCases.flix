@@ -3,7 +3,7 @@
 mod V2Sky {
 
     /// 3 色の違いがはっきりした空（真上は濃い青・地平は淡い橙・真下は暗い緑）。
-    def sky(curve: Float64): Scene3d.Sky3d =
+    pub def sky(curve: Float64): Scene3d.Sky3d =
         Scene3d.gradientSky(Color.rgb(0.12, 0.28, 0.75), Color.rgb(0.95, 0.78, 0.55), Color.rgb(0.18, 0.3, 0.16)) |> Scene3d.withSkyCurve(curve)
 
     /// 殻（床・壁・天井）を外した部屋の物を V2Shadows の広い床に置き、空 curve の下で目を yaw・pitch へ向けた場面（太陽と影は無い）。

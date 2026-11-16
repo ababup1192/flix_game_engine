@@ -17,13 +17,19 @@ mod Render3d.Preload {
                    cmd: Scene3d.PreloadCmd): Unit \ IO =
         if (Ref.get(state#preloadRef)#builtKey == Some(cmd#key)) ()
         else {
-            let rebuilds = List.take(rebuildStreakLimit(), gen :: Ref.get(state#preloadRef)#rebuilds);
-            if (isRebuildingOften(rebuilds)) warnSceneOnce(state, "@preload-key", "scene3d: withPreload3d の key が ${rebuildStreakLimit()} 回、${rebuildWindow()} コマの内に変わった"
-                + " — そのたびに組み直している。key には、上げる物の中身を決める入力だけを入れる（時刻やコマの番号を混ぜない）")
-            else ();
+            let rebuilds = noteRebuild(state#planner, gen, Ref.get(state#preloadRef)#rebuilds);
             let uploaded = timed(state, Phase.Preload, () -> uploadCmd(gl, state, gen, textureOf, cmd));
             Ref.put({ rebuilds = rebuilds | uploaded }, state#preloadRef)
         }
+
+    /// 宣言を組み直した世代の控え rebuilds（新しい物が頭）に gen を足した物を返す。上限の数の組み直しが rebuildWindow() の内に溜まれば planner で 1 回知らせる
+    /// （GL と WebGPU の両方が呼ぶ）。
+    pub def noteRebuild(planner: Render3d.ScenePlan.Planner, gen: Int64, rebuilds: List[Int64]): List[Int64] \ IO =
+        let next = List.take(rebuildStreakLimit(), gen :: rebuilds);
+        if (isRebuildingOften(next)) Render3d.ScenePlan.warnOnce(planner, "@preload-key", "scene3d: withPreload3d の key が ${rebuildStreakLimit()} 回、${rebuildWindow()} コマの内に変わった"
+            + " — そのたびに組み直している。key には、上げる物の中身を決める入力だけを入れる（時刻やコマの番号を混ぜない）")
+        else ();
+        next
 
     /// 組み直しの回数を見るコマの幅。
     // WhyNot: uploadStreak のように続いたコマで数えない — key を 2 コマに 1 回変えるだけで続きが切れ、鳴らない。
