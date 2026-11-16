@@ -207,7 +207,8 @@ mod V2Main {
     /// 空の画素はどれも GL と ±1 以内で、sky の 7 px も ±1 だけ。skyMsaaPass の差は物のふちで、空を外した比べ相手 yardMsaaPass（13,653・12,195・±64）と同じ桁なので
     /// railsMsaa と同じ標本の位置の違い（空の差ではない）。上限は違う画素を実測のほぼ 2 倍・±2 以上は 4（小さい物の下限）・差の最大は ±16（skyMsaaPass は ±128）。
     /// 壊して確かめた（同じ日に 1 回ずつ）: 空の frag で NDC の y を返さないと skyDepth を除く 4 場面が 43 万〜51 万 px・空の色を sRGB へ戻さないと 43 万〜51 万 px・
-    /// R3dSky の幅と高さを入れ替えると 43 万〜50 万 px 違って落ちる（skyDepth は空を描かず白で消すのでどれでも 0 px）。
+    /// 空の向きの材料の幅と高さを入れ替えると 43 万〜50 万 px 違って落ちる（skyDepth は空を描かず白で消すのでこの 3 つでは 0 px）。
+    /// 空の曲がりを 1 に決め打ちすると曲がりが 1 でない skyTurned と skyMsaaPass が 43 万 px・奥行きの書き出しの pass でも空を描くと skyDepth が 50 万 px 違って落ちる。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),

@@ -1795,8 +1795,10 @@ GL の絵と GL の呼び出しの並びは変えていない（GL の `Render3d
   - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
     - 空の frag で NDC の y を返さない: sky 504,249・skyTurned 432,514・skyDesign 505,134・skyMsaaPass 434,466 px 違って落ちる。
     - 空の色を sRGB へ戻さない（`r3d_linearToSrgb3` を外す）: 同じ 4 場面が 433,538〜505,818 px 違って落ちる。
-    - R3dSky の幅と高さを入れ替える: 同じ 4 場面が 431,149〜503,055 px 違って落ちる。
-    - skyDepth はどれでも 0 px（空を描かず白で消すので）。
+    - 空の向きの材料の幅と高さを入れ替える（初めの版の R3dSky で）: 同じ 4 場面が 431,149〜503,055 px 違って落ちる。
+    - skyDepth は上の 3 つではどれも 0 px（空を描かず白で消すので）。
+    - （レビューの後に足した・R3dScene の末尾へ移した後の木で）空の曲がりを 1 に決め打ちする（場面の値の uCurve に 1）: 曲がりが 1 でない skyTurned 433,538 px・skyMsaaPass 433,170 px 違って落ちる（曲がり 1 の sky と skyDesign は通る）。
+    - 奥行きの書き出しの pass でも空を描く: skyDepth だけが 505,665 px 違って落ちる。
   - 今までの 29 場面は 12.32 と同じ数。目で見て、空の坂（真上の青から地平の橙・床の向こうの緑への寄り）が GL と同じ所に同じ色で出る（`bench/webgpu_v2/debug/{gl,webgpu}/sky*.png`・git の外）。
 - **欠けの表と実物**（12.32 と同じ流し方・写しの engine はこの worktree の fpkg を作り直した物・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・頭の 64 コマ・WebGPU だけ。
   `RUN_SECONDS` は 70（arrival と market は 70 秒では jar を作るだけで 0 コマだったので 160 で流し直した））:
@@ -1811,3 +1813,22 @@ GL の絵と GL の呼び出しの並びは変えていない（GL の `Render3d
   - 半透明の数の揺れ（arrival 12.4 → 18.6・market 12.4 → 11.4）は今回の直しと関わらない（半透明の道は触っていない）【推: 起動から 300 コマの数え方で、頭の読み込みの長さ（今回は 160 秒で流した）によって 300 コマの中で映る物が変わる】。
   - 見え方: night の 60 コマ目を 12.32 の GL の絵と並べて、違いが見えない（みやげの町は見下ろしで空が映らない。空の門は上の bench）。
   - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/sky/games/out/<ゲーム>-<場面>-webgpu/`（**scratchpad の物は消えうる**）。
+- テスト: render_gl 547 緑（12.32 の 542 に `TestWebGpuScene3d` の空の 5 本: 場面の値の空の色が線形の空の色・空の欄の位置・空の欄が場面の値の末尾・空を描くのは sky のある場面だけ・skipsOf が空を数えない。
+  `TestWgslDawn` に空の頂点シェーダーと frag を足して Dawn で 377 本）。engine の `make test-engine` 987 緑（engine は触っていない）。
+- **レビュー（1 回・85 点・必須 1）で直した物**: 必須 1 = 初めの版は向きの材料を描き先ごとの別の buffer（group 1 の R3dSky）に置き、理由を「R3dScene の並びを替えると全部の WGSL に波及する」と書いていたが、
+  末尾に足せば並びは動かない（宣言は 1 か所）ので、R3dScene の末尾へ移した（上の決めた事 3）。
+  任意で直した物: sky と background が両方ある時の知らせ（GL と同じ `Scene3d.skyWarning` の文・1 回）・壊して確かめるを 2 つ足した（曲がり・奥行きの書き出しの pass）・
+  sky と景色を背景に描く環境マップが両方ある場面の書き残し（レビューは「GL は景色の絵を描く」と見立てたが、`backgroundEnvironmentOf` が sky のある場面で None を返すので GL も空の坂を描く。それを書いた）・
+  `noteWritten` の doc・行の group 1 の付け直しの書き方・NDC の y の How を WhyNot へ・テストの期待値を手で書いた値に・skipsOf のテストを 1 つのアサートに。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16。直しの後の木で流し直した）:
+  - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `bin/flix test`）547 緑・`make test-engine` 987 緑。
+  - `make gl-parity` exit 0・`make gl-capture-check` exit 0（54 枚がバイトまで同じ）。
+  - `make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0・誤り 0（34 場面と記録 2）。
+  - `make lint ONLY=max-lines` exit 0・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
+  - 落とし穴: engine の fpkg を作り直す（`engine_full` で `build-pkg`）と、bench の `packages.lock`（git の外）が古い fpkg の sha を持ったまま食い違い、`gl-parity`・`gl-capture-check` が依存の入れ直しで落ちる。bench の `packages.lock` を消して流し直した。逆に作り直さないと `gl-capture-check` と `webgpu-v1-check` が「fpkg が engine のソースより古い」で止まる（直しの後に作り直して流し直した）。最後の回は同じ機械で別の重い仕事が走っていて、bench の 1 コマの時間（記録）は 12.32 の数倍に出た（門の画素の数は同じ）。
+- 言える範囲: この Mac（Dawn の Metal）だけ。ブラウザ（12.31 の口・TeaVM の JSO で頂点の buffer の無い pipeline を作れるか）・スマホ（adreno）で空の場面は流していない【未確認】。
+- 持ち越し:
+  - 空の frag は描き先の左上を場面の左上として向きを作る（`encodeScene` は任意の viewport を受けるが、空の向きの材料は描き先いっぱいの大きさで書く）。描き先の途中の矩形へ描く形（bench の貼る形 B）を本番に入れる時は、viewport の原点も R3dScene の末尾に足す。
+  - 景色を背景に描く場面（sky の無い・`withEnvironmentAsBackground`）は (7) の環境マップと一緒に（空の frag に GLSL の `uEnvOn` の枝を足す）。
+  - 空を前半の行にする（kindSky）かは、空の後に描く物（(6) の後がけ）が来た時に見直す。
+  - 12.28〜12.32 の持ち越しで (5b) で触らなかった物はそのまま。
