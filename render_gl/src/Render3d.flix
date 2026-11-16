@@ -545,7 +545,7 @@ mod Render3d {
         let camera = { view = view, proj = proj, lights = lights, shadows = shadows };
         Render3d.GlRows.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
-        uploadRows(gl, state, gen, source, inputs, List.length(scene#instances));
+        uploadRows(gl, state, gen, source, inputs, List.length(Scene3d.instancesOf(scene)));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = programs#billboard, scene = scene };
         inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, textureOf, ctx, inputs, spec, list));
         releaseEnvironmentMap(gl, scene);

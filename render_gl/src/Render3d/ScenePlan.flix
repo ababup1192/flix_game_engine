@@ -163,12 +163,12 @@ mod Render3d.ScenePlan {
         };
         let mainPass = passSpecOf(scene#output);
         let groups = match mainPass {
-            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage), scene#instances)
+            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage), Scene3d.instancesOf(scene))
             case ScenePassSpec.DepthOut(_) =>
                 // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
                 //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
                 // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
-                let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), scene#instances);
+                let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), Scene3d.instancesOf(scene));
                 groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false), solidInstances)
         };
         { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene) }
@@ -437,7 +437,7 @@ mod Render3d.ScenePlan {
         shadowCastersOf(planner, scene) |> List.map(found -> {
             let (light, caster) = found;
             let outside = Scene3d.isOutsideFrustum(caster#frustum);
-            let solid = scene#instances |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)));
+            let solid = Scene3d.instancesOf(scene) |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)));
             let groups = groupWith(grouping(planner, tables, outside, _ -> false, false), solid) |> List.map(gr -> gr#batch);
             let (skinned, plain) = List.partition(b -> isSkinned(b#head), groups);
             { caster = caster, light = light, plain = plain, skinned = skinned }
@@ -468,7 +468,7 @@ mod Render3d.ScenePlan {
     def spotCasterOf(planner: Planner, scene: Scene3d.Scene3dCmd): Option[(Int32, ShadowCaster)] \ IO =
         match scene#output {
             case Scene3d.Output.Depth(_) => None
-            case Scene3d.Output.Color if List.isEmpty(scene#instances) => None
+            case Scene3d.Output.Color if List.isEmpty(Scene3d.instancesOf(scene)) => None
             case Scene3d.Output.Color =>
                 let casters = Scene3d.pickLights(scene#camera#eye, scene)#spotLights
                     |> List.mapWithIndex((i, spot) -> spot#shadow |> Option.filter(m -> m#mapSize > 0)

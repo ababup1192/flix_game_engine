@@ -124,7 +124,7 @@ pub mod Scene3d {
     /// Output.Depth・置いた物の無い場面・mapSize が 0 以下・太陽を使えない時・distance が near 以下の時は None。
     pub def directionalShadowOf(scene: Scene3dCmd): Option[SunShadowSetup] =
         let castsShadow = match scene#output {
-            case Output.Color    => not List.isEmpty(scene#instances)
+            case Output.Color    => not List.isEmpty(scene#instances) or List.exists(g -> not List.isEmpty(groupInstancesOf(g)), scene#groups)
             case Output.Depth(_) => false
         };
         if (not castsShadow) None
@@ -593,8 +593,9 @@ pub mod Scene3d {
     /// textures = 材質が "tex3d:" の名前（Texture3d.name）で読む絵・
     /// sky = 何も描かれない画素に描く空（gradientSky。Some なら environment の background は使わない）・
     /// environmentMap = metallic と roughness を持つ材質の映り込みが読む周りの景色（environmentMap。None なら空のグラデーションを映す）・
-    /// directionalLight = 太陽（1 つまで。None なら無し。使うかどうかは directionalLightOf で決める）。
-    pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d],
+    /// directionalLight = 太陽（1 つまで。None なら無し。使うかどうかは directionalLightOf で決める）・
+    /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）。
+    pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
                                   textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }
@@ -604,9 +605,61 @@ pub mod Scene3d {
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
     pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd =
-        { size = size, camera = camera, instances = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
+        { size = size, camera = camera, instances = Nil, groups = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
           resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None }
+
+    // ── 動かない物の集まり ──
+
+    /// 動かない物の集まりの中身。name = 診断と知らせに出す名前・items = (鍵, 置いた物) の並び・removed = 描かない物の鍵（withoutItems）・
+    /// tint = 中の物の tint に掛ける色（withGroupTint。白なら変えない）。
+    pub type alias StaticGroupFields = { name = String, items = List[(String, Instance3d)], removed = Set[String], tint = Color }
+
+    enum StaticGroupData { case StaticGroupData(StaticGroupFields) }
+
+    /// 動かない物の集まり（Unity の Static・Unreal の Mobility = Static に当たる）。場面の groups に載せると、中の物は instances と同じ絵で描かれ、
+    /// 描き手は同じ集まりが続くコマで計画と描く行を持ち越す。同じ集まりかは、staticGroup で作った items の値そのもの・removed・tint で見る。
+    /// 集まりは読み込みの時に 1 回作って Resources に持ち、毎コマ同じ値を渡す（毎コマ staticGroup を呼ぶと、絵は同じだが毎コマ作り直しになり遅い）。
+    /// 中の 1 個だけ動かす・色を変える物は withoutItems で外し、instances に普通に置く。
+    pub type alias StaticGroup = StaticGroupData
+
+    /// name の集まり（items の鍵は集まりの中で重ならない物にする。withoutItems が鍵で外す）。
+    pub def staticGroup(name: String, items: List[(String, Instance3d)]): StaticGroup =
+        StaticGroupData.StaticGroupData({ name = name, items = items, removed = Set.empty(), tint = Color.rgb(1.0, 1.0, 1.0) })
+
+    /// keys の鍵の物を描かない集まり（前に外した鍵に足す）。外す物を変えたコマは、描き手が持ち越しを作り直す。
+    pub def withoutItems(keys: Set[String], g: StaticGroup): StaticGroup =
+        let StaticGroupData.StaticGroupData(r) = g;
+        StaticGroupData.StaticGroupData({ removed = Set.union(r#removed, keys) | r })
+
+    /// 中の物の tint に c を掛ける集まり（前の withGroupTint の色は置き換える）。色を変えたコマは、描き手が持ち越しを作り直す。
+    // WhyNot: 毎コマ変わる色をここで渡さない書き方を勧める — 色は 1 体ごとの値に入るので、変わるたびに集まりの物を全部詰め直す。
+    pub def withGroupTint(c: Color, g: StaticGroup): StaticGroup =
+        let StaticGroupData.StaticGroupData(r) = g;
+        StaticGroupData.StaticGroupData({ tint = c | r })
+
+    /// 集まりの中身を読む（描き手が使う）。
+    pub def staticGroupFieldsOf(g: StaticGroup): StaticGroupFields =
+        let StaticGroupData.StaticGroupData(r) = g;
+        r
+
+    /// 集まりの描く物（外した鍵の物を除き、tint を掛けた物・来た順）。
+    pub def groupInstancesOf(g: StaticGroup): List[Instance3d] =
+        let r = staticGroupFieldsOf(g);
+        let white = r#tint#r == 1.0 and r#tint#g == 1.0 and r#tint#b == 1.0;
+        r#items |> List.filterMap(match (key, i) ->
+            if (Set.memberOf(key, r#removed)) None
+            else if (white) Some(i)
+            else Some(tintedBy(r#tint, i)))
+
+    def tintedBy(c: Color, i: Instance3d): Instance3d =
+        let InstanceData.InstanceData(f) = i;
+        InstanceData.InstanceData({ tint = Color.rgb(f#tint#r * c#r, f#tint#g * c#g, f#tint#b * c#b) | f })
+
+    /// 場面の描く物の全部（instances の後ろに groups の物を集まりの順に）。描き手が groups を持ち越さない所はこれを描く。
+    pub def instancesOf(scene: Scene3dCmd): List[Instance3d] =
+        if (List.isEmpty(scene#groups)) scene#instances
+        else List.append(scene#instances, List.flatMap(groupInstancesOf, scene#groups))
 
     // ── 環境マップ ──
 

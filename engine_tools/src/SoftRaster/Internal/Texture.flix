@@ -16,14 +16,14 @@ pub mod SoftRaster.Internal.Texture {
                         scenes: List[Scene3d.RenderCmd]): Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]] \ IO =
         let ownTextures = scenes |> List.flatMap(c -> c#scene#textures) |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap;
         let materials = scenes
-            |> List.flatMap(c -> c#scene#instances |> List.filterMap(i -> Scene3d.instanceFieldsOf(i)#material))
+            |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.filterMap(i -> Scene3d.instanceFieldsOf(i)#material))
             |> List.map(Scene3d.materialFieldsOf);
-        scenes |> List.flatMap(c -> c#scene#instances) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
-        scenes |> List.flatMap(c -> c#scene#instances) |> List.forEach(warnUnusedLightmap(warnLog));
+        scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene)) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
+        scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene)) |> List.forEach(warnUnusedLightmap(warnLog));
         scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
         scenes |> List.filterMap(c -> Scene3d.directionalLightWarning(c#scene)) |> List.forEach(line -> warnSceneOnce(warnLog, "@sun:direction", line));
         let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, Texture3d.mipSpaceOf(textureUse));
-        let lightmapKeys = scenes |> List.flatMap(c -> c#scene#instances |> List.filterMap(Scene3d.lightmapOf))
+        let lightmapKeys = scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.filterMap(Scene3d.lightmapOf))
             |> List.map(lm -> keyOf(lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace)));
         let materialKeys = materials |> List.flatMap(f -> {
             let reads = ShaderDoc.materialTexReads(f#spec, f#emission, f#metallicRoughnessShade);

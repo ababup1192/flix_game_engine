@@ -469,7 +469,7 @@ pub mod SoftRaster3d {
             Map.get(f#texture, materialTextures) |> Option.flatMap(Vector.head) |> Option.map(tex -> (f, tex))
         });
         let inks = placed |> List.map(pair -> inkOf(snd(pair), fst(pair))) |> List.toVector;
-        let numbered = numberMaterials(scene#instances |> List.map(placedOf));
+        let numbered = numberMaterials(Scene3d.instancesOf(scene) |> List.map(placedOf));
         let isDepth = match scene#output {
             case Scene3d.Output.Color    => false
             case Scene3d.Output.Depth(_) => true
