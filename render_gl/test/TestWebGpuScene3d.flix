@@ -123,7 +123,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     def testDepthWithoutSkyClearsBackground(): Unit \ Assert =
         Assert.assertEq(expected = (0.25, 0.5, 0.75, 1.0), clearOf(depthOut(), withBackground(Color.rgb(0.25, 0.5, 0.75), scene())))
 
-    /// 色の pass で空のある場面は透明で消す（空は描かずに数える・background は空があれば使わない）。
+    /// 色の pass で空のある場面は透明で消す（空は pass の頭で塗る・background は空があれば使わない）。
     @Test
     def testColorWithSkyClearsTransparent(): Unit \ Assert =
         let s = { sky = Some(sky()) | withBackground(Color.rgb(0.25, 0.5, 0.75), scene()) };
@@ -135,6 +135,41 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentAsBackground(true);
         let s = { environmentMap = Some(e) | withBackground(Color.rgb(0.25, 0.5, 0.75), scene()) };
         Assert.assertEq(expected = (1.0, 1.0, 1.0, 1.0), clearOf(depthOut(), s))
+
+    // ── 空（Render3d.WebGpuSky）──
+
+    /// 空の frag が場面の値から読む空の 3 色と曲がり（uZenith 128・uCurve 140・uHorizon 144・uGround 160）は、空のある場面では空の色を線形へ戻した物
+    /// （GL の drawSky が空のプログラムへ渡す値と同じ）。
+    @Test
+    def testSkySceneValuesAreLinearSkyColors(): Unit \ {Assert, IO} =
+        let s = { sky = Some(sky() |> Scene3d.withSkyCurve(2.0)) | scene() };
+        let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
+        packSceneValues(buf, Render3d.Light.lightDataOf(s, 0));
+        let lin = (c: Float64) -> RenderUtil.f32(Texture3d.srgbToLinearColor(Color.rgb(c, c, c))#r);
+        Assert.assertEq(expected = (lin(0.1), 2.0f32, lin(0.8), lin(0.3)), (buf.getFloat(128), buf.getFloat(140), buf.getFloat(144), buf.getFloat(160)))
+
+    /// R3dSky の並び: forward（0）・描き先の幅（12）・right（16）・高さ（28）・up（32）。yaw と pitch が 0 の目は -z を見て、up は tan(fovY / 2)。
+    @Test
+    def testSkyValuesSitAtWgslOffsets(): Unit \ {Assert, IO} =
+        let buf = ByteBuffer.allocate(Render3dWgsl.skyValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
+        Render3d.WebGpuSky.packValues(buf, scene(), 640, 360);
+        let basis = Scene3d.skyBasisOf(scene());
+        Assert.assertEq(expected = (RenderUtil.f32(basis#forward#z), 640.0f32, RenderUtil.f32(basis#right#x), 360.0f32, RenderUtil.f32(Num.sin(0.5) / Num.cos(0.5))),
+                        (buf.getFloat(8), buf.getFloat(12), buf.getFloat(16), buf.getFloat(28), buf.getFloat(36)))
+
+    /// 空を描くのは sky のある場面だけ。景色を背景に描く場面（sky が無い）は環境マップとして数え、空では描かない。
+    @Test
+    def testSkyIsDrawnOnlyWithSky(): Unit \ Assert =
+        let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentAsBackground(true);
+        Assert.assertEq(expected = (true, false, false),
+                        (Render3d.WebGpuSky.isDrawn({ sky = Some(sky()) | scene() }), Render3d.WebGpuSky.isDrawn({ environmentMap = Some(e) | scene() }),
+                         Render3d.WebGpuSky.isDrawn(scene())))
+
+    /// 空のある場面は、まだ描けない物に空の種類を出さない（色の pass で描く）。
+    @Test
+    def testSkyIsNotCounted(): Unit \ {Assert, IO} =
+        let skips = skipsOfScene({ sky = Some(sky()) | Render3d.FakeGl.sceneOf(plainWithMaterial(Vec3.zero()) :: Nil) });
+        Assert.assertEq(expected = (None, 0), (Map.get("3D の空", skips), Map.foldLeft((acc, n) -> acc + n, 0, skips)))
 
     // ── まだ描けない物の数え（skipsOf）──
 

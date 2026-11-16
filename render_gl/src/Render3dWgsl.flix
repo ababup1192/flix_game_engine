@@ -432,4 +432,33 @@ pub mod Render3dWgsl {
     /// 空の色の式 skyAt(向き)（Render3dGlsl.skyLightSource と同じ木）。
     pub def skyLightSource(): String =
         LightModel3d.Codegen.toWgsl("skyAt", Vec3Input.SkyDirection :: Nil, LightModel3d.skyModel())
+
+    /// 空の頂点シェーダー: 頂点の buffer を読まず、vertex_index の 3 点で描き先いっぱいを覆う三角形を出す。入口は vs_main。
+    // WhyNot: GL と同じ 6 点の四角の buffer を持たない — 覆う画素は同じで、buffer と頂点の属性の宣言が要らない。
+    pub def skyVertexSource(): String =
+        "@vertex fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n" +
+        "    let x = f32((i << 1u) & 2u);\n" +
+        "    let y = f32(i & 2u);\n" +
+        "    return vec4f(x * 2.0 - 1.0, y * 2.0 - 1.0, 0.0, 1.0);\n" +
+        "}\n"
+
+    /// 空の frag（Render3dGlsl.skyFragmentSource の空の枝と同じ式）。空の 3 色と曲がりは場面の値（group 0 の uZenith・uHorizon・uGround・uCurve。
+    /// 空のある場面では LightModel3d.reflectionSkyOf が空の色を線形へ戻した物）、画素の向きの材料（Scene3d.skyBasisOf）と描き先の大きさは group 1 の R3dSky。入口は fs_main。
+    /// 描き先は上の行が先なので、NDC の y は画素の y の向きを返して作る。
+    // WhyNot: 景色を背景に描く枝（GLSL の uEnvOn）を持たない — 環境マップの絵を WebGPU へ上げる道がまだ無い（景色を背景に描く場面は環境マップとして数える）。
+    // WhyNot: 奥行きの書き出しの枝（GLSL の uDepthOut）を持たない — 奥行きの書き出しの pass は空を描かず、地の色の白で消す（WebGpuRenderer.clearOf）。
+    pub def skyFragmentSource(): String =
+        sceneDeclarations() +
+        colorSpaceSource() +
+        skyLightSource() +
+        "struct R3dSky { uForward: vec3f, uWidth: f32, uRight: vec3f, uHeight: f32, uUp: vec3f, pad0: f32 };\n" +
+        "@group(1) @binding(0) var<uniform> r3dSky: R3dSky;\n" +
+        "@fragment fn fs_main(@builtin(position) at: vec4f) -> @location(0) vec4f {\n" +
+        "    let ndc = vec2f(at.x / r3dSky.uWidth * 2.0 - 1.0, 1.0 - at.y / r3dSky.uHeight * 2.0);\n" +
+        "    let d = normalize(r3dSky.uForward + r3dSky.uRight * ndc.x + r3dSky.uUp * ndc.y);\n" +
+        "    return vec4f(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
+        "}\n"
+
+    /// R3dSky のバイト数（vec3 と f32 の組が 3 つ）。
+    pub def skyValueBytes(): Int32 = 48
 }
