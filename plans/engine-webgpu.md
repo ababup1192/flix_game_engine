@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明・後がけ（人の決めで半分に割る: (6a) 半透明（計画が遠い順に並べ、SceneList の末尾に半透明の材質の行として足す・GL も行で描く・**済・12.34**）・(6b) 後がけ（3D の場面を 2D の Pass に描いて面で加工する形のままで、前半の行は増やさない・空は kindSky にしない・**済・12.35**））／(7) ビルボード・環境マップ（人の決めで半分に割る: (7a) ビルボード（行の種類 kindBillboard を不透明の行と半透明の行の間に 1 行 1 つ・GL と WebGPU の両方が不透明 → ビルボード → 半透明の順に流す・場面の history もここで閉じた・**済・12.36**）・(7b) 環境マップ（mip・preload は P8 の側だけ・前半の行は増やさない・**済・12.37**））／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。後がけは 2D の Pass と面の道のまま描けていて、Design の場面を縮んだ Pass へ貼る WGSL の縦の texel の選び方だけ GL にそろえた（横の境目の揺れは許容を置いて残した・**済・12.35**）。ビルボードは行の順のまま別の pipeline で描き、貼る絵は 2D の描き手の絵の group を借り、値は行の values を stride 0 の頂点の buffer で読む（**済・12.36**）。環境マップは場面の group 0 の binding 3 に材質の絵と同じ置き場の mip つきの絵を付け、景色を背景に描く場面は空の frag が絵を読む。preload は形・材質の program と絵・画面の形式の pipeline を先に上げる（**済・12.37**）。mip（決まり 7）は場面の絵（環境マップを含む）は CPU の Mip.build の mip で GL と同じ。全体の登録の絵の mip つきの写しを GPU の pass で作る分は、texture の mip のレベル 1 つを描き先にする view が `WebGpu` の interface に無く（GL の層の jar の形が変わる）、人に伺う（12.37）。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明・後がけ（人の決めで半分に割る: (6a) 半透明（計画が遠い順に並べ、SceneList の末尾に半透明の材質の行として足す・GL も行で描く・**済・12.34**）・(6b) 後がけ（3D の場面を 2D の Pass に描いて面で加工する形のままで、前半の行は増やさない・空は kindSky にしない・**済・12.35**））／(7) ビルボード・環境マップ（人の決めで半分に割る: (7a) ビルボード（行の種類 kindBillboard を不透明の行と半透明の行の間に 1 行 1 つ・GL と WebGPU の両方が不透明 → ビルボード → 半透明の順に流す・場面の history もここで閉じた・**済・12.36**）・(7b) 環境マップ（mip・preload は P8 の側だけ・前半の行は増やさない・**済・12.37**））／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30。場面の描き先の寿命の表を前半の `Render3d.SceneTargets` へ・GL の Design の FBO と WebGPU の場面の描き先が同じ表を使う・**済・12.39**）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。後がけは 2D の Pass と面の道のまま描けていて、Design の場面を縮んだ Pass へ貼る WGSL の縦の texel の選び方だけ GL にそろえた（横の境目の揺れは許容を置いて残した・**済・12.35**）。ビルボードは行の順のまま別の pipeline で描き、貼る絵は 2D の描き手の絵の group を借り、値は行の values を stride 0 の頂点の buffer で読む（**済・12.36**）。環境マップは場面の group 0 の binding 3 に材質の絵と同じ置き場の mip つきの絵を付け、景色を背景に描く場面は空の frag が絵を読む。preload は形・材質の program と絵・画面の形式の pipeline を先に上げる（**済・12.37**）。mip（決まり 7）は場面の絵（環境マップを含む）は CPU の Mip.build の mip で GL と同じ。全体の登録の絵の mip つきの写しは、`Texture.createView(baseMip, mipCount)` を `WebGpu` の interface に足し、`Render3d.WebGpuMipmaps` が Mip.build と同じ平均を GPU の pass で作る（**済・12.38**）。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -2177,3 +2177,47 @@ engine の pub（ゲームから見える API）は増えておらず、engine/ 
   - 上の伺い事（決まれば `mipFloorRegistered` を門にする）。
   - preload の pipeline を画面の標本数に合わせる・ブラウザでの preload の時間（pipeline を同期で作る）を測る（8 章の「非同期で作る」は今の口に無い）。
   - 12.28〜12.36 の持ち越しで (7b) で触らなかった物はそのまま（Design の縮めの横の揺れ・kindSky は P9・ビルボードのテスト T2〜T4）。
+
+### 12.38 R2b・P8 の (7c): 全体の登録の絵の mip つきの写しを GPU で（2026-11-17・この Mac・Dawn の Metal だけ）
+
+12.37 の伺い事は、コーディネーターが人の代わりに「`WebGpu` の interface に口を足す」と決めた（読み戻し案はブラウザで待てない・CPU の画素を二重に持つ案はメモリ）。engine の pub（ゲームから見える API）は増やしていない。GL の画は変えていない。
+
+- **決めた事**:
+  - `render_gl/java/fge/webgpu/Texture.java` に `createView(baseMip, mipCount)`（面は 1 枚）。Dawn（`DawnObjects`）とブラウザ（`engine_web` の `BrowserObjects`・TeaVM の `GPUDescriptor.TextureView`）に実装。`make gl-jar-pin` で 3 つの flix.toml を `fge-gl-8e4009e92501` へ（publish は push の時の CI）。
+  - `Render3d.WebGpuMipmaps`（新規）: レベル 0 は元の絵を textureLoad で写し、レベル k はレベル k − 1 を読む view とレベル k を描く view で 1 pass。frag が 2 × 2 を Mip.build と同じ決まりで平均する（端の繰り返し・Raw は (和 + 2) / 4 の切り捨て・SrgbCurve は線形で平均して 8bit の sRGB へ・α は Raw）。描き先は RGBA8・段は 1 × 1 まで。
+  - `WebGpuMaterials` は登録の絵を借りる代わりに写しを作る（`mipCopyTexture`・鍵は GL と同じ texId と version）。pass は 3D の描き手の Host の encoder に積み、view と group は submit の後に手放す。写しの数は診断の `mipCopies` に数える（GL と同じ）。
+- **bench（`bench/webgpu_v2`）**: `mipFloorRegistered` を記録から門へ。
+
+  | 場面 | 前（12.37） | 後（許容） |
+  |---|---|---|
+  | mipFloorRegistered 違う画素 | 43,823 | 1,792（3,600） |
+  | ±2 以上 | 16,934 | 0（4） |
+  | 差の最大 | ±148 | ±1（±16） |
+
+  ほかの 58 場面は 12.37 と同じ範囲で OK・WebGPU の誤り 0。
+- **壊して確かめた**（確かめた後に戻した）: 写しのレベルを 1 つに → mipFloorRegistered 43,823 px で落ちる（12.37 の数に戻る）・SrgbCurve を Raw の平均に → 16,765 px・±36 で落ちる・Raw の +2 を外す → `TestWebGpuMipmapsDawn` の Raw と sRGB が落ちる（最初の素材は 1 次の式で 4 つの和が 4 の倍数にそろい捕まえられなかったので、2 乗と 3 乗の素材に替えた）。
+  端の繰り返し（`min(…, last)`）を外しても Dawn では落ちない（Dawn が textureLoad の範囲外を内側へ寄せる【推】）。ブラウザの仕様では範囲外は 0 もありうるので残した。
+- **テスト**: `TestWebGpuMipmapsDawn`（Dawn で写しをレベルごとに読み戻し Mip.build と比べる: 5 × 3・3 × 8・1 × 1 の Raw は画素まで同じ・SrgbCurve は成分ごとに ±1 以内）。
+- 持ち越し: ブラウザ（Chrome・Firefox）で登録の絵を材質に貼った場面を見ていない【未確認】。写しの usage の COPY_SRC はテストの読み戻しのためだけ（害は無い）。
+
+### 12.39 R2b・P8 の (8): 場面の描き先の寿命（2026-11-17・この Mac・Dawn の Metal だけ）
+
+engine の pub は増やしていない。GL の画と GL の呼び出しの並びは変えていない（gl-capture-check 54 枚がバイトまで同じ）。P9 と並行なので、`SceneList` と描く順には触っていない。
+
+- **決めた事**: 場面の描き先の寿命の表を前半の `Render3d.SceneTargets`（新規・GPU を呼ばない）へ。鍵ごとに形（大きさ・形式・標本）と最後に使った世代と backend が作った物を持ち、`ensure`（形が違えば捨てて作る）・`sweep`（`Render3d.idleTargetFrames` を超えて使わなかった物を捨てる）・`release`。作る・捨てるは backend の Allocator（影の地図の `Render3d.ShadowMaps` と同じ分け方）。
+  - GL: Design の解像度の FBO（`Render3d.designTarget`。鍵は場面の番号と形式の名前のまま）。`endFrame` で sweep するようになった（前は鍵の数だけ持ち続けていた）。作り直しは今までどおり TargetRebuilds に数える。
+  - WebGPU: 場面ごとの描き先（`WebGpuRenderer.targetOf`。鍵は描き先の番号と場面の番号のまま・同じ encoder で同じ鍵に 2 回書く前の submit は backend に残した）。`SceneTarget#lastUsed` と WebGPU だけの idleTargetFrames を消した。作り直しは数えない（GL は Native の場面を描き先なしで描くので数がそろわない・WhyNot）。
+  - 影の地図の表は今回は寄せなかった（GL と WebGPU の影の描き先の持ち方を同時に書き換えることになり、P9 と触る所が重なる・WhyNot）。
+- **テスト**: `TestSceneTargets`（同じ形は使い回す・形が変われば前の物を捨てて作り直す・idleTargetFrames を超えた物だけ捨てる）。
+- **bench**: (8) は WebGPU の絵を変えない（webgpu_v2 の 59 場面は (7c) の後と同じ範囲で OK）。
+
+#### (7c)・(8) の共通（門・欠けの表・レビュー）
+
+- **レビュー（2 段をまとめて 1 回・86 点・必須 0）で直した物**: sRGB の平均を値の配列の実行時の番号で引かず vec3 でまとめて計算（拒む WGSL の実装がある）・sRGB のテストを ±1 に（pow の精度は実装ごと）・縦長の絵と 1 × 1 の絵のテスト・WebGPU も mipCopies を数える・pipeline の鍵を frag の入口の名前に・TargetRebuilds の WhyNot に Design の場面の理由を足す・影の地図の表を寄せない WhyNot を書き直す。
+  直さなかった物: COPY_SRC（上）・`SceneTargets.release` のテスト・ブラウザでの確かめ。
+- **門**（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal。直しの後の木で 1 回）: render_gl のテスト 579 緑（12.37 の 571 に TestWebGpuMipmapsDawn 5 本と TestSceneTargets 3 本）・`make sync-engine-full` exit 0・`make test-engine` 995 緑・`make gl-parity` exit 0・`make gl-capture-check` exit 0（54 枚がバイトまで同じ）・
+  `make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0（59 場面と記録 2・誤り 0・`packages.lock` を消してから）・`make gl-jar-pin-check` exit 0・`make lint ONLY=max-lines` exit 0（`WebGpuRenderer.flix` 1,042 行）。
+- **欠けの表**（2 段の後に 1 回・12.37 と同じ流し方・後 = この worktree の fpkg・前 = 12.37 の後・`FLIX_GE_BACKEND=webgpu`・160 秒・頭の 64 コマ）: 10 場面（fps3d_lab の 3・みやげの町の 3・plateau_city・sea_cave_walk・pbr_room・conduit_hive）とも欠け 0 → 0・WebGPU の誤り 0 → 0。
+  みやげの町の 3 場面と試作 4 本は 64 コマが全部 12.37 の後とバイトまで同じ（どれも全体の登録の絵を 3D の材質に貼っていない【推】）。fps3d_lab は 4〜7 コマだけ同じ（12.35〜12.37 と同じく場面の時計が実時間で進む物【推】）。
+  写しの置き場は `scratchpad/e8/{games,others}/out/`（消えうる）。
+- 持ち越し: 影の地図の寿命の表を `SceneTargets` へ寄せる（P9 の後）・12.37 の持ち越し（preload の pipeline の標本数・ブラウザでの preload の時間）と 12.28〜12.36 の持ち越しはそのまま。

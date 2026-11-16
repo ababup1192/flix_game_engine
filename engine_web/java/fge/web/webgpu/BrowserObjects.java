@@ -102,6 +102,16 @@ final class BrowserObjects {
 
         @Override public fge.webgpu.TextureView createView() { return new BrowserTextureView(texture.createView()); }
 
+        @Override public fge.webgpu.TextureView createView(int baseMip, int mipCount) {
+            GPUDescriptor.TextureView desc = GPUDescriptor.create();
+            desc.setDimension("2d");
+            desc.setBaseMipLevel(baseMip);
+            desc.setMipLevelCount(mipCount);
+            desc.setBaseArrayLayer(0);
+            desc.setArrayLayerCount(1);
+            return new BrowserTextureView(texture.createView(desc));
+        }
+
         @Override public fge.webgpu.TextureView defaultView() {
             if (defaultView == null) defaultView = new BrowserTextureView(texture.createView());
             return defaultView;

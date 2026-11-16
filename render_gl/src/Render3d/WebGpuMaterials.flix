@@ -58,8 +58,12 @@ pub mod Render3d.WebGpuMaterials {
     /// slotCount = sg の欄の数（ShaderGen.Wgsl.compile3d の slots）・texCount = 材質の絵の数。
     type alias Program = { id = Int32, kind = ProgramKind, fragment = ShaderModule, layout = BindGroupLayout, slotCount = Int32, texCount = Int32 }
 
-    /// GPU に置いた材質の絵 1 枚。borrowed = 2D の描き手の絵を借りている（全体の登録の絵。捨てるのは 2D の描き手）。
-    type alias GpuTexture = { texture = Texture, levels = Int32, borrowed = Bool }
+    /// GPU に置いた材質の絵 1 枚（場面の絵と、全体の登録の絵の mip つきの写し）。
+    type alias GpuTexture = { texture = Texture, levels = Int32 }
+
+    /// 全体の登録の絵の読み方。textureById = 登録の絵の番号 → 2D の描き手の texture・encoding = mip つきの写しを作る pass を積む encoder・
+    /// noteCopy = 写しを 1 枚作ったと数える（診断の mipCopies）。
+    pub type alias Registered = { textureById = Int32 -> Option[Texture] \ IO, encoding = Render3d.WebGpuMipmaps.Encoding, noteCopy = Unit -> Unit \ IO }
 
     /// 状態。programs = materialKey → 組んだ program（組めなければ None）・current = 今の prepare の問い合わせの順の program（行の欄 1 が引く）・
     /// vertexModules = (uv つきか, lightmap つきか, 骨つきか) → 材質の頂点シェーダー・pipelines = (program, 形式の番号, 標本, 頂点のバイト数) → pipeline・
@@ -82,7 +86,8 @@ pub mod Render3d.WebGpuMaterials {
             values = Array[Buffer, Static],
             valuesUsed = Array[Int32, Static],
             groups = Ref[List[BindGroup], Static],
-            warned = Ref[Set[String], Static]
+            warned = Ref[Set[String], Static],
+            mipmaps = Render3d.WebGpuMipmaps.Mipmaps
         })
     }
 
@@ -110,7 +115,8 @@ pub mod Render3d.WebGpuMaterials {
                               sampler("fge material clamp nearest", FilterMode.NEAREST, AddressMode.CLAMP_TO_EDGE),
                               sampler("fge material clamp linear", FilterMode.LINEAR, AddressMode.CLAMP_TO_EDGE)} @ Static,
             blank = blank, values = Array#{createValueBuffer(gpu, initialValueBytes())} @ Static, valuesUsed = Array#{0} @ Static,
-            groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty())
+            groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty()),
+            mipmaps = Render3d.WebGpuMipmaps.create(gpu)
         })
 
     /// 値の buffer（uniform と storage と、ビルボードの値を読む頂点の buffer として bind する）。
@@ -137,14 +143,16 @@ pub mod Render3d.WebGpuMaterials {
         TextureTable3d.release(s#textures, destroyTexture(s#store));
         Array.forEach(x -> x.release(), s#samplers);
         s#blank.destroy();
-        Array.get(0, s#values).destroy()
+        Array.get(0, s#values).destroy();
+        Render3d.WebGpuMipmaps.release(s#mipmaps)
 
     /// 2D の描き手が encoder を submit した後に呼ぶ（group 1 を手放し、値の buffer を頭から書き直せる）。
     pub def afterSubmit(m: Materials): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
         Ref.get(s#groups) |> List.forEach(g -> g.release());
         Ref.put(Nil, s#groups);
-        Array.put(0, 0, s#valuesUsed)
+        Array.put(0, 0, s#valuesUsed);
+        Render3d.WebGpuMipmaps.afterSubmit(s#mipmaps)
 
     /// 画面のコマの終わりに、材質の絵を置き場の上限 budget で捨て、捨てた鍵を返す。先に上げた絵 preloaded は捨てる順を後へ回す。
     pub def endFrame(m: Materials, gen: Int64, budget: Render3d.Material.Budget, preloaded: Set[TextureSlot]): List[TextureSlot] \ IO =
@@ -235,8 +243,8 @@ pub mod Render3d.WebGpuMaterials {
 
     /// 行 list の材質の行が読む絵を作る（無ければ）。source = 場面の textures と全体の登録・textureById = 登録の絵の番号 → 2D の描き手の texture・
     /// gen = 今の世代。描き始める前に呼ぶ。
-    pub def uploadTextures(m: Materials, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64, list: SceneList): Unit \ IO =
-        uploadTexturesFrom(m, { source = source, textureById = textureById, gen = gen }, list, 0, rowCountOf(list))
+    pub def uploadTextures(m: Materials, source: TextureSource, registered: Registered, gen: Int64, list: SceneList): Unit \ IO =
+        uploadTexturesFrom(m, { source = source, registered = registered, gen = gen }, list, 0, rowCountOf(list))
 
     def uploadTexturesFrom(m: Materials, up: TextureUploads, list: SceneList, row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
@@ -247,7 +255,7 @@ pub mod Render3d.WebGpuMaterials {
         }
 
     /// uploadTextures の 1 回で行をまたいで変わらない物。
-    type alias TextureUploads = { source = TextureSource, textureById = Int32 -> Option[Texture] \ IO, gen = Int64 }
+    type alias TextureUploads = { source = TextureSource, registered = Registered, gen = Int64 }
 
     def uploadRowTextures(m: Materials, up: TextureUploads, list: SceneList, row: Int32, f: Scene3d.MaterialFields): Unit \ IO =
         let readsWith = (colorCount: Int32) -> textureReadsOf(f, colorCount, hasFlag(list, row, flagNormalMap()), hasFlag(list, row, flagLightmap()), headAt(list, row));
@@ -264,8 +272,8 @@ pub mod Render3d.WebGpuMaterials {
 
     /// 先に上げる材質 request（頭の物 head・形の buffer mesh）の program を組み、mp の描き先の pipeline を作り、読む絵を作って、絵の置き場の鍵を返す
     /// （描けない版と組めない材質は何もせず Nil・pipeline は形に要る頂点の属性（2 本目の uv・ジョイント）がある時だけ）。
-    /// source・textureById・gen は uploadTextures と同じ。初めての材質は noteBuild(名前) を呼び、source に無い "tex3d:" の絵は missing(名前) を呼ぶ。
-    pub def preloadMaterial(m: Materials, noteBuild: String -> Unit \ IO, missing: String -> Unit \ IO, mp: MaterialPass, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64,
+    /// source・registered・gen は uploadTextures と同じ。初めての材質は noteBuild(名前) を呼び、source に無い "tex3d:" の絵は missing(名前) を呼ぶ。
+    pub def preloadMaterial(m: Materials, noteBuild: String -> Unit \ IO, missing: String -> Unit \ IO, mp: MaterialPass, source: TextureSource, registered: Registered, gen: Int64,
                             request: MaterialRequest, head: MeshDraw, mesh: Option[MeshBuffers]): List[TextureSlot] \ IO =
         let (fields, kind) = request;
         let program = if (isDrawable(kind)) programOf(m, noteBuild, fields, kind) else None;
@@ -273,16 +281,14 @@ pub mod Render3d.WebGpuMaterials {
             mesh |> Option.filter(b -> (not p#kind#skinned or Option.nonEmpty(b#skinAt)) and (not p#kind#lightmap or Option.nonEmpty(b#uv2At)))
                  |> Option.forEach(b -> discard pipelineOf(m, mp, p, b));
             let reads = textureReadsOf(fields, p#texCount, p#kind#normalMap, p#kind#lightmap, head);
-            let up = { source = source, textureById = textureById, gen = gen };
+            let up = { source = source, registered = registered, gen = gen };
             reads |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse));
             let found = reads |> List.map(match (name, textureUse) -> (name, TextureTable3d.readOf(false, source, name, textureUse) |> Option.map(fst)));
             found |> List.forEach(match (name, slot) -> if (Option.isEmpty(slot) and String.startsWith(prefix = Texture3d.namePrefix(), name)) missing(name) else ());
             found |> List.filterMap(snd)
         })
 
-    /// 絵 name を表の番号で作る。場面の絵は段つきで上げ、全体の登録の絵は 2D の描き手の texture を段 1 つのまま借りる（元の絵が作り直されたら借り直す）。
-    // WhyNot: 全体の登録の絵の mip つきの写しを作らない — GPU で縮める道は、texture の mip のレベル 1 つを描き先にする view が WebGpu の interface に無い。
-    //   読み戻す道（copyTextureToBuffer と readBuffer）は答えが出るまで返らず、ブラウザでは requestAnimationFrame の中で使えない。遠くの面は GL より細かくちらつく（plans/engine-webgpu.md の 12.37）。
+    /// 絵 name を表の番号で作る。場面の絵は CPU で mip のレベルを作って上げ、全体の登録の絵は 2D の描き手の texture から mip つきの写しを GPU で作る（元の絵が作り直されたら作り直す）。
     def ensureTexture(m: Materials, up: TextureUploads, name: String, textureUse: Texture3d.TextureUse): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let average = Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse));
@@ -291,26 +297,29 @@ pub mod Render3d.WebGpuMaterials {
             case (Some((slot, _)), Some(TextureHit.Own(t))) =>
                 discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "", handle -> uploadTexture3d(m, handle, average, t))
             case (Some((slot, _)), Some(TextureHit.Registered(t))) =>
-                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "${t#texId}:${t#version}", handle -> borrowTexture(m, up, handle, t#texId))
+                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "${t#texId}:${t#version}", handle -> mipCopyTexture(m, up, handle, average, t))
             case _ => ()
         }
 
     /// 場面の環境マップの絵 name を、材質の絵と同じ置き場と mip の作り方で作り（無ければ）、その絵と mip のレベルの数を返す。
     /// 場面の textures に無い・作れない絵は None。
     // WhyNot: 上下を返して読む全体の登録の絵（レンダーターゲット）を借りて貼る道を持たない — 環境マップの絵の名前は Scene3d.environmentMap が Texture3d から作る "tex3d:" の名前だけで、全体の登録の絵は来ない。
-    pub def ensureEnvironmentTexture(m: Materials, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64, name: String): Option[(Texture, Int32)] \ IO =
+    pub def ensureEnvironmentTexture(m: Materials, source: TextureSource, registered: Registered, gen: Int64, name: String): Option[(Texture, Int32)] \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        ensureTexture(m, { source = source, textureById = textureById, gen = gen }, name, Texture3d.TextureUse.MaterialTexture);
+        ensureTexture(m, { source = source, registered = registered, gen = gen }, name, Texture3d.TextureUse.MaterialTexture);
         TextureTable3d.readOf(false, source, name, Texture3d.TextureUse.MaterialTexture)
             |> Option.flatMap(read -> Map.get(TextureTable3d.numberOf(s#textures, gen, fst(read)), Ref.get(s#store)))
             |> Option.map(g -> (g#texture, g#levels))
 
-    /// 2D の描き手の絵 texId を番号 handle で借りる（段 1 つ・置き場の大きさに数えない）。
-    def borrowTexture(m: Materials, up: TextureUploads, handle: Int32, texId: Int32): Option[{ levels = Int32, bytes = Int64 }] \ IO =
+    /// 2D の描き手の絵 t の mip つきの写し（平均の仕方 average）を GPU で作り、番号 handle で控える（2D の描き手が絵を持っていなければ None）。
+    // WhyNot: 2D の描き手の絵を mip のレベル 1 つのまま借りて貼らない — 遠くの面がレベルを選べず、mip つきの写しを読む GL より細かくちらつく。
+    def mipCopyTexture(m: Materials, up: TextureUploads, handle: Int32, average: Mip.Average, t: Scene3dRenderer.RegisteredTexture): Option[{ levels = Int32, bytes = Int64 }] \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        (up#textureById)(texId) |> Option.map(texture -> {
-            Ref.put(Map.insert(handle, { texture = texture, levels = 1, borrowed = true }, Ref.get(s#store)), s#store);
-            { levels = 1, bytes = 0i64 }
+        (up#registered#textureById)(t#texId) |> Option.map(source -> {
+            (up#registered#noteCopy)();
+            let copy = Render3d.WebGpuMipmaps.copyOf(s#mipmaps, up#registered#encoding, "fge material mip copy ${t#texId}", source, average);
+            Ref.put(Map.insert(handle, { texture = copy#texture, levels = copy#levels }, Ref.get(s#store)), s#store);
+            { levels = copy#levels, bytes = copy#bytes }
         })
 
     /// 場面の絵 t を CPU で段を作って上げ、番号 handle で控える（機種の側の絵は上げられないので None）。
@@ -325,7 +334,7 @@ pub mod Render3d.WebGpuMaterials {
                 let texture = s#gpu.createTexture("fge material ${Texture3d.name(t)}", Texture3d.width(t), Texture3d.height(t), TextureFormat.BGRA8_UNORM,
                                                   Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), levels, 1);
                 chain |> List.forEachWithIndex((level, td) -> s#gpu.writeTexture(texture, level, 0, 0, td#width, td#height, argbBytes(td#pixels), 0, td#width * 4));
-                Ref.put(Map.insert(handle, { texture = texture, levels = levels, borrowed = false }, Ref.get(s#store)), s#store);
+                Ref.put(Map.insert(handle, { texture = texture, levels = levels }, Ref.get(s#store)), s#store);
                 Some({ levels = levels, bytes = List.foldLeft((acc, td) -> acc + Int32.toInt64(td#width * td#height * 4), 0i64, chain) })
         }
 
@@ -338,7 +347,7 @@ pub mod Render3d.WebGpuMaterials {
         bytes
 
     def destroyTexture(store: Ref[Map[Int32, GpuTexture], Static]): Int32 -> Unit \ IO = handle -> {
-        Map.get(handle, Ref.get(store)) |> Option.forEach(g -> if (g#borrowed) () else g#texture.destroy());
+        Map.get(handle, Ref.get(store)) |> Option.forEach(g -> g#texture.destroy());
         Ref.put(Map.remove(handle, Ref.get(store)), store)
     }
 

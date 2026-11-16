@@ -65,12 +65,11 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面 1 つの描き先と、その場面の値の buffer と bind group（2D の描き手の描き先の鍵とそのコマの場面の番号ごとに 1 つ・大きさか形式か標本が変われば作り直す）。
     /// color = 貼る時に読む 1 標本の texture・msaa = 標本つきの描き先（標本 1 なら None）・depth = 深度（DEPTH24_PLUS）・
-    /// sceneValues = Render3dWgsl の R3dScene・camera = R3dCamera・sceneGroup = group 0・paste = 貼る矩形（WebGpuShader.sceneWgsl の Paste）・pasteGroup = 貼る形の group 1・
-    /// lastUsed = 最後に描いたコマの世代（要素 1 つ）。
+    /// sceneValues = Render3dWgsl の R3dScene・camera = R3dCamera・sceneGroup = group 0・paste = 貼る矩形（WebGpuShader.sceneWgsl の Paste）・pasteGroup = 貼る形の group 1。
     type alias SceneTarget = {
         width = Int32, height = Int32, format = RenderTarget.Format, samples = Int32,
         color = Texture, msaa = Option[Texture], depth = Texture,
-        sceneValues = Buffer, camera = Buffer, sceneGroup = BindGroup, paste = Buffer, pasteGroup = BindGroup, lastUsed = Array[Int64, Static]
+        sceneValues = Buffer, camera = Buffer, sceneGroup = BindGroup, paste = Buffer, pasteGroup = BindGroup
     }
 
     /// 2D の描き手から借りる物。encoder = 今のコマの encoder・notePass = encoder に pass を 1 つ積んだと知らせる・
@@ -128,7 +127,7 @@ pub mod Render3d.WebGpuRenderer {
             countsHolder = Array[Int32, Static],
             phaseNsHolder = Array[Int64, Static],
             materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static],
-            targets = Ref[Map[(Int32, Int32), SceneTarget], Static],
+            targets = Render3d.SceneTargets.Table[(Int32, Int32), SceneTarget],
             written = Ref[Set[(Int32, Int32)], Static],
             instances = Array[Buffer, Static],
             instanceUsed = Array[Int32, Static],
@@ -169,9 +168,6 @@ pub mod Render3d.WebGpuRenderer {
     /// storage の binding の位置のそろえ（core の minStorageBufferOffsetAlignment の上限）。
     def storageAlignBytes(): Int32 = 256
 
-    /// この数の画面のコマ描かなかった場面の描き先は捨てる（GL の Render3d.idleTargetFrames と同じ）。
-    def idleTargetFrames(): Int64 = 128i64
-
     /// device の上に shader module・layout・代わりの絵・1 体ごとの値の buffer を作る。pasteLayout = 貼る形の group 1（WebGpuPipelines の持ち物）・
     /// imageLayout = 2D の描き手の絵の group の layout（ビルボードの group 1・2D の描き手の持ち物）。材質の値は uniform の区画で読む（12.28）。
     pub def create(gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout): Renderer \ IO = createWith(gpu, pasteLayout, imageLayout, ValuesBinding.Uniform)
@@ -207,7 +203,7 @@ pub mod Render3d.WebGpuRenderer {
 
             countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0), phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64),
             materialBuildsRef = Ref.fresh(Static, Nil),
-            targets = Ref.fresh(Static, Map.empty()), written = Ref.fresh(Static, Set.empty()),
+            targets = Render3d.SceneTargets.fresh(), written = Ref.fresh(Static, Set.empty()),
             instances = Array#{createInstanceBuffer(gpu, initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             instanceUsed = Array#{0} @ Static,
             poses = Array#{createPoseBuffer(gpu, initialPoseBytes())} @ Static, posesUsed = Array#{0} @ Static,
@@ -236,8 +232,7 @@ pub mod Render3d.WebGpuRenderer {
     /// device の上に作った物を全部手放す（pasteLayout は持ち主が手放す）。この後 r は使えない。
     pub def release(r: Renderer): Unit \ IO =
         let RendererData.RendererData(s) = r;
-        Map.forEach((_, t) -> destroyTarget(t), Ref.get(s#targets));
-        Ref.put(Map.empty(), s#targets);
+        Render3d.SceneTargets.release(s#targets, targetAllocator(r));
         Map.forEach((_, p) -> p.release(), Ref.get(s#pipelines));
         Ref.put(Map.empty(), s#pipelines);
         MeshTable.release(s#meshes, meshAllocator(s#gpu, s#meshStore));
@@ -301,10 +296,7 @@ pub mod Render3d.WebGpuRenderer {
         let RendererData.RendererData(s) = r;
         let gen = Array.get(0, s#gen);
         Array.put(gen + 1i64, 0, s#gen);
-        let targets = Ref.get(s#targets);
-        let isIdle = (t: SceneTarget) -> Array.get(0, t#lastUsed) + idleTargetFrames() < gen;
-        Map.forEach((_, t) -> if (isIdle(t)) destroyTarget(t) else (), targets);
-        Ref.put(Map.filter(t -> not isIdle(t), targets), s#targets);
+        discard Render3d.SceneTargets.sweep(s#targets, targetAllocator(r), gen);
         let preloaded = Ref.get(s#preloaded);
         Render3d.warnDroppedTextures(s#planner, WebGpuMaterials.endFrame(s#materials, gen, limits#textures, preloaded#textures), preloaded#textures);
         discard WebGpuShadows.endFrame(s#shadows, gen);
@@ -351,7 +343,7 @@ pub mod Render3d.WebGpuRenderer {
             let head = g#batch#head;
             let mesh = Map.get(MeshTable.ensure(s#meshes, allocator, gen, head#fields#mesh), Ref.get(s#meshStore));
             match g#surface {
-                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, missing, mp, source, host#textureById, gen, request, head, mesh)
+                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, missing, mp, source, registeredOf(r, host), gen, request, head, mesh)
                 case None =>
                     mesh |> Option.forEach(b -> preloadShape(r, b, isSkinned(head)));
                     Nil
@@ -516,7 +508,7 @@ pub mod Render3d.WebGpuRenderer {
         let source = { textureOf = host#textureOf, own = plan#cmd#scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         passes |> List.forEach(match (_, list) -> {
             uploadRows(s#meshes, allocator, gen, list);
-            WebGpuMaterials.uploadTextures(s#materials, source, host#textureById, gen, list)
+            WebGpuMaterials.uploadTextures(s#materials, source, registeredOf(r, host), gen, list)
         });
         shadows |> List.forEach(p -> uploadRows(s#meshes, allocator, gen, p#list));
         let valueBytes = List.sumWith(pl -> 4 * Array.length(snd(pl)#values) + 4 * Render3d.MaterialValues.valueAlign(), passes);
@@ -539,7 +531,7 @@ pub mod Render3d.WebGpuRenderer {
     def ensureEnvironment(r: Renderer, host: Host, source: TextureSource, gen: Int64, scene: Scene3d.Scene3dCmd): Option[(Texture, Int32)] \ IO =
         let RendererData.RendererData(s) = r;
         Scene3d.environmentTextureNamesOf(scene) |> List.head |> Option.map(name ->
-            match WebGpuMaterials.ensureEnvironmentTexture(s#materials, source, host#textureById, gen, name) {
+            match WebGpuMaterials.ensureEnvironmentTexture(s#materials, source, registeredOf(r, host), gen, name) {
                 case Some(found) => found
                 case None =>
                     Render3d.ScenePlan.warnOnce(s#planner, "missing:" + name, "scene3d: 環境マップの絵 '${name}' が見つからない — 0（黒・透明）で読む"
@@ -789,6 +781,12 @@ pub mod Render3d.WebGpuRenderer {
         host#flush();
         afterSubmit(r)
 
+    /// 材質が全体の登録の絵を読む道（2D の描き手の絵と、その段つきの写しを作る pass を積む encoder）。
+    def registeredOf(r: Renderer, host: Host): WebGpuMaterials.Registered =
+        let RendererData.RendererData(s) = r;
+        { textureById = host#textureById, encoding = { encoder = host#encoder, notePass = host#notePass },
+          noteCopy = () -> Render3d.Counts.count(s, Render3d.Counts.Counter.MipCopies, 1) }
+
     // ── 場面の値 ──
 
     /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本・末尾に空の vec4 が 3 本）。
@@ -951,25 +949,18 @@ pub mod Render3d.WebGpuRenderer {
         let RendererData.RendererData(s) = r;
         Ref.put(Set.insert(key, Ref.get(s#written)), s#written)
 
-    /// 鍵 key の描き先（今の encoder で既に値を書いた鍵なら先に submit する）。大きさ・形式・標本が違えば作り直す。lastUsed を今の世代にする。
-    /// 値を書き終えたら noteWritten で控える。
-    def targetOf(r: Renderer, host: Host, key: (Int32, Int32), shape: { width = Int32, height = Int32, format = RenderTarget.Format, samples = Int32 }): SceneTarget \ IO =
+    /// 鍵 key の描き先（今の encoder で既に値を書いた鍵なら先に submit する）。寿命の表 Render3d.SceneTargets が、大きさ・形式・標本が違えば作り直し、
+    /// 最後に使った世代を今の世代にする。値を書き終えたら noteWritten で控える。
+    // WhyNot: 作り直しを TargetRebuilds に数えない — GL は Native の場面を描き先なしで描くので、WebGPU の場面ごとの描き先を数えると GL と数がそろわない
+    //   （Design の場面だけを数えても、WebGPU は描き先の番号ごと・GL は形式ごとに鍵を作るので、同じ場面で数が分かれる）。
+    def targetOf(r: Renderer, host: Host, key: (Int32, Int32), shape: Render3d.SceneTargets.Shape): SceneTarget \ IO =
         let RendererData.RendererData(s) = r;
         if (Set.memberOf(key, Ref.get(s#written))) flushHost(r, host) else ();
-        let found = Map.get(key, Ref.get(s#targets));
-        let same = (t: SceneTarget) -> t#width == shape#width and t#height == shape#height and t#format == shape#format and t#samples == shape#samples;
-        let target = match found {
-            case Some(t) if same(t) => t
-            case _ =>
-                Option.forEach(destroyTarget, found);
-                let made = createTarget(r, shape);
-                Ref.put(Map.insert(key, made, Ref.get(s#targets)), s#targets);
-                made
-        };
-        Array.put(Array.get(0, s#gen), 0, target#lastUsed);
-        target
+        fst(Render3d.SceneTargets.ensure(s#targets, targetAllocator(r), Array.get(0, s#gen), key, shape))
 
-    def createTarget(r: Renderer, shape: { width = Int32, height = Int32, format = RenderTarget.Format, samples = Int32 }): SceneTarget \ IO =
+    def targetAllocator(r: Renderer): Render3d.SceneTargets.Allocator[SceneTarget] = { create = createTarget(r), destroy = destroyTarget }
+
+    def createTarget(r: Renderer, shape: Render3d.SceneTargets.Shape): SceneTarget \ IO =
         let RendererData.RendererData(s) = r;
         let gpu = s#gpu;
         let format = WebGpuPipelines.textureFormatOf(shape#format);
@@ -990,7 +981,7 @@ pub mod Render3d.WebGpuRenderer {
         discard pasteDesc.textureView(0, color.defaultView()).buffer(1, paste, 0i64, 16i64);
         { width = shape#width, height = shape#height, format = shape#format, samples = shape#samples, color = color, msaa = msaa, depth = depth,
           sceneValues = sceneValues, camera = camera, sceneGroup = gpu.createBindGroup(sceneDesc),
-          paste = paste, pasteGroup = gpu.createBindGroup(pasteDesc), lastUsed = Array#{0i64} @ Static }
+          paste = paste, pasteGroup = gpu.createBindGroup(pasteDesc) }
 
     def destroyTarget(t: SceneTarget): Unit \ IO =
         t#sceneGroup.release();
