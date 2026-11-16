@@ -1,6 +1,6 @@
 # ノベルの移行の比べと退行の確かめを、長い物語・多い分岐でも速く保つ（設計）
 
-- 日付: 2026-11-16
+- 日付: 2026-11-16（段 J は実装済み・3 章 J の記録）
 - 状態: **設計（レビュー 1 回目 72 点 → 2 回目 88 点で GO・残りの 1 件を直した 3 版）**。試作の測りは済み。engine に手を入れる段（J・E2・F・I2・G）は作る前に人へ相談する。
 - 親: [novel-tape-deck.md](novel-tape-deck.md)（テープとデッキの下書き）・[docs/migrate-diff.md](../docs/migrate-diff.md)・[docs/render-cache.md](../docs/render-cache.md)・[docs/flow.md](../docs/flow.md)
 - 人の依頼: 「今後もっと長いストーリーや分岐が増えるので、根本から速くしたい」
@@ -137,6 +137,51 @@
 - 効き目: ぼかしの部分が 3〜5 倍【推】→ 塗り全体で 1.5〜2 倍（4〜6 → 2.5〜3.5 コア秒）。残りのレコードの欄を引く所（3D・面の塗り）まで手を入れれば、さらに【推: 測るまで分からない】。③ の 35 分 → 約 20 分、④ の 90 分 → 約 50 分。
 - 見積もり: (1)〜(3) 3〜5 時間・ほかの内側の繰り返し 6〜10 時間（どちらも測りと verify の門込み）。**engine の ShaderEval（src/engine/shader）を変える（相談）**。
 
+#### J の記録（2026-11-16・人の了承済み・コミット 6f786995・6433e10d・c3fb393c）
+
+測り方: bs-speed の写しを scratchpad に 3 つ置き（前・段 1・段 2）、engine 0.94.0 の fpkg の `ShaderEval.flix` だけを差し替えた物で
+route_gem を `FGE_RENDER_CACHE=off FGE_GPU=off` で流し、比べのコマ 226 枚（world 187・all 39）を冷えた状態で塗る。前と後を交互に流した。
+**機械は他の担当の JVM で load 50〜310 と大きく揺れていた**ので、実時間はほぼ当てにならない。user の CPU 秒と JFR の割合で読む。
+直す前の ShaderEval.flix は 0.94.0 と main（db7675ed）でバイトまで同じなので、差し替えた fpkg の塗りは main に直しを入れた物と同じ【推: ShaderEval の外の塗りの道は 0.94.0 のまま】。user の秒には塗らない分（起動・flow の計算・鍵・音。塗らずに流すと約 47 秒）も入る。
+
+| 段 | 直した所 | user の CPU 秒（3 回） | 実時間 秒（3 回）と load |
+|---|---|---|---|
+| 前 | — | 1,241・1,226・1,282（平均 1,250） | 215（load 134→81）・393（51→145）・391（313→255） |
+| 段 1 | ぼかし: 点の表・レコードを外へ・r/g/b を 1 回の巡りで（TexBlurGroup）・`logicalRightShift` の名前つき引数をやめる | 663・821・651（平均 712・**前の 0.57 倍**） | 126（81→51）・395（145→309）・241（255→187） |
+| 段 2 | テクセルの添字の `tryToInt32`（Option）をやめる・Linear の 4 テクセルの閉包をやめる | 520・491・521（平均 511・**段 1 の 0.72 倍・前の 0.41 倍**） | 318（164→173）・249（189→106）・417（94→240） |
+
+（段 2 と交互に流した段 1 は 793・638・665。これと比べても段 2 は 0.66〜0.78 倍。最後の木 c3fb393c でもう 1 回: user 512 秒。）
+
+JFR（同じ旗・標本の割合）:
+
+| | 前 | 段 1 の後 | 段 2 の後 |
+|---|---|---|---|
+| ぼかし（blurTex・blurGroup の内側） | 39.0% | 8.7% | 5.4% |
+| clampTexel（tryToInt32 の Option） | 12.0% | 18.9% | 0.0% |
+| RecordExtend（欄を引く所） | 37.1% | 10.6% | 21.9%（半分は ShaderEval の外の countCrossings・Vec3・AudioMixdown） |
+| 3D の材質（SoftRaster3d.materialPixel の内側） | 19.1% | 33.5% | 26.9% |
+
+決めた事:
+- **42% のレコードの欄の正体は、ほとんどが `Int32.logicalRightShift(dist = …)`**（名前つき引数は 1 つの欄のレコード。テクセルを 1 つ読むたびに作って引く）と、
+  ぼかしの `BlurTex`・読み方の `Filter` のレコードだった。算術シフト（shift が 0..24 なら下の 8bit は同じ）と引数渡しにした。
+- r・g・b を同じ絵・半径・taps で読む bindings（背景のぼかしの形）は `TexBlurGroup` にまとめ、点ごとにテクセルを 1 回引いて 3 つの欄に足す。
+  amount の値が仲間で違えば 1 本ずつ読む・後ろの amount が前の仲間を Ref したらまとめない・NEAREST だけ（bindings の高さに Linear は来ない）。
+- 標本とぼかしの巡りは `ShaderEval.Internal`（API 索引の外）へ分けた（ShaderEval が行数の上限 1,200 を超えたため）。Rgba16Float の標本は lint-f32 のため ShaderEval に残す。
+- 直さずに記録だけ（段 1 の後の JFR で 5% 未満）: MipTex の読み方のレコード `{ linear, repeat }` を画素ごとに作る所（約 2.8%）・3D の `putInputs` の `SurfacePoint` の欄（約 1.3%）・
+  `ShaderEval` の外（範囲の外）: `SoftRaster.Internal.Surface.countCrossings` のレコード（約 4.9%）・`SoftRaster.ri` の `tryToInt32`（約 0.8%）・`Vec3` の欄（3D）。
+  段 2 の後の JFR: 3D の材質（SoftRaster3d の内側）が 26.9% で一番大きい。ShaderEval の中で残るのは evalNode の分かれ道そのもの（self 20%）と、MipTex のレコード 2.6%・putInputs と sampleMaterial の欄 1.9%（どれも 5% 未満で記録だけ）。次に手を入れるなら 3D の材質と countCrossings（5.9%）で、どちらも engine_tools を触るので別の相談。
+
+門（最後の木 c3fb393c）:
+- bs-speed の 226 枚: 前と段 1（3 回）・段 2（3 回）・最後の木（1 回）で SHA が全部一致。
+- テンプレート: sound-novel-starter 45 枚・rpg-starter 16 枚・tidepool-starter 8 枚の `make reference-check`（`FGE_RENDER_CACHE=off`）が一致（game-starter は `__WW__` の雛形で組めない）。
+- `make test-engine`（995 緑）・`make sync-engine-full` の後に `make test-engine_tools`（308 緑）。`make gl-capture-check`（54 枚・2 回撮りと基準が一致）・`make gl-parity`（一致）。
+- 壊して確かめた: 点の表の 5 番目の角度だけ 0.5 ずらした engine で塗ると、226 枚のうち 158 枚の SHA が違った（戻した物は一致）。
+- 8 章の問い「点の表にしても double が 1 ビットも変わらないか」→ 変わらなかった（上の SHA）。
+
+③④ の見込みの測り直し【推】: 1 コマの塗り 4〜6 コア秒 → 段 2 の後 **約 1.6〜2.5 コア秒**（user の比 0.41）。
+③（5,000 枚）は 35 分 → **約 14 分**（I1 で鍵の種類まで減らせば約 6〜8 分）。④（31,000 × 0.41 枚）は約 90 分 → **約 37 分**。④ の目標 30 分には、
+I1 と 3D の材質の内側の繰り返し（上の記録）のどちらかがもう 1 つ要る。
+
 ### E. 1 本の常駐の JVM で flow を続けて流す
 
 - E1（Go とテンプレート・engine は変えない）: 今は flow ごと・セーブごとに JVM を起こす（13 + 12 回 → 5 倍 × 3 倍で 40 + 36 回）。1 回あたり起動 1.5 秒 + 字と Doc の用意 + JIT が温まるまで。
@@ -246,5 +291,5 @@ engine を変えない A〜D・D2・E1 で約 13〜20 時間（①② は目標�
 - C: 古いセーブの読み戻しの記録（restore の frames）の隣に drawhash.txt が書かれるか【未確認】。
 - E1: 今の `App.Headless` の常駐で、flow を続けて流した時に前の flow の状態（音の再生・Res のキャッシュ）が残らないか【未確認】。
 - F: `run` の切れ目で手の状態（押したまま・`awaiting`）が必ず空か【未確認】。
-- J: 点の表にしても double が 1 ビットも変わらないか（同じ式・同じ順なら変わらない見込み。verify で確かめる）。
-- ③④ の目標は J のぼかしの段の後に測り直して決め直す。
+- ~~J: 点の表にしても double が 1 ビットも変わらないか~~ → 変わらなかった（3 章 J の記録）。
+- ③④ の目標: J の後の見込みは ③ 約 14 分・④ 約 37 分（3 章 J の記録）。④ の 30 分は I1 か 3D の材質の内側の繰り返しを足して決め直す。
