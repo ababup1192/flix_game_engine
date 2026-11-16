@@ -189,12 +189,14 @@ pub mod RenderPaint.Internal.WebGpuShader {
         "@fragment fn fs_main() -> @location(0) vec4f { return vec4f(0.5, 0.2, 0.2, 1.0); }\n"
 
     /// 3D の場面を描いた texture を 2D の描き先へ貼る WGSL（viewport の全面の三角形 1 枚・貼る矩形は scissor で切る）。入口は vs_main・fs_main。
-    /// group 0 = 射影の行列（読まない・2D の行と同じ並びにして付け直さない）・group 1 = 場面の texture と、貼る矩形の左上（描き先の画素）と texture の画素 ÷ 矩形の画素。
-    /// 出す色は α を掛けた後の値（pipeline の blend が ONE, ONE_MINUS_SRC_ALPHA）。読む texel は GL の Render3d.blitDesign の最も近い画素と同じ式。
+    /// group 0 = 射影の行列（読まない・2D の行と同じ並びにして付け直さない）・group 1 = 場面の texture と、貼る矩形の左上と大きさ（描き先の画素）。
+    /// 出す色は α を掛けた後の値（pipeline の blend が ONE, ONE_MINUS_SRC_ALPHA）。読む texel は GL の Render3d.blitDesign と同じ選び方（最も近い画素・縦は下から数える）。
     // WhyNot: viewport を貼る矩形にしない — 画面の外へはみ出した場面の矩形は描き先の外の viewport になり、WebGPU はそれを誤りにする。
     // WhyNot: textureSample で読まない — Native の場面は 1 画素ずつ写したいので、sampler の filter を通さず整数の座標で読む。
+    // WhyNot: 縦の texel を上から floor で数えない — GL は下の行が先の FBO を下から数えて floor するので、Design の絵を 2:1 に縮めて貼ると
+    //   画素の真ん中が texel の境目にちょうど来て、上から数えると 1 つ下の行を読む（後がけの縮んだ奥行きの Pass で絵が 1 行ずれる）。
     pub def sceneWgsl(): String =
-        "struct Paste { origin: vec2f, scale: vec2f };\n" +
+        "struct Paste { origin: vec2f, size: vec2f };\n" +
         "@group(1) @binding(0) var sceneImage: texture_2d<f32>;\n" +
         "@group(1) @binding(1) var<uniform> paste: Paste;\n" +
         "@vertex fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {\n" +
@@ -202,8 +204,11 @@ pub mod RenderPaint.Internal.WebGpuShader {
         "    return vec4f(corners[vi], 0.0, 1.0);\n" +
         "}\n" +
         "@fragment fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n" +
-        "    let last = vec2i(textureDimensions(sceneImage, 0)) - vec2i(1);\n" +
-        "    let texel = clamp(vec2i(floor((pos.xy - paste.origin) * paste.scale)), vec2i(0), last);\n" +
+        "    let dims = vec2f(textureDimensions(sceneImage, 0));\n" +
+        "    let rel = pos.xy - paste.origin;\n" +
+        "    let fromBottom = vec2i(floor(vec2f(rel.x, paste.size.y - rel.y) * (dims / paste.size)));\n" +
+        "    let last = vec2i(dims) - vec2i(1);\n" +
+        "    let texel = clamp(vec2i(fromBottom.x, last.y - fromBottom.y), vec2i(0), last);\n" +
         "    return textureLoad(sceneImage, texel, 0);\n" +
         "}\n"
 

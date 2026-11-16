@@ -49,6 +49,11 @@ mod V2Main {
         sceneCase("blendDesign", Scene3d.Resolution.Design, V2Blend.room(kit)) ::
         sceneCase("blendDepth", Scene3d.Resolution.Native, { output = depthOfRoom() | V2Blend.room(kit) }) ::
         msaaPassCase("blendMsaaPass", V2Blend.room(kit)) ::
+        postCase("post", kit, 1, PostProcess.Tonemap.AcesFitted, Scene3d.Resolution.Native) ::
+        postCase("postMsaa", kit, 4, PostProcess.Tonemap.AcesFitted, Scene3d.Resolution.Native) ::
+        postCase("postDesign", kit, 1, PostProcess.Tonemap.Reinhard, Scene3d.Resolution.Design) ::
+        halfDepthPassCase("halfDepthDesign", kit, Scene3d.Resolution.Design) ::
+        halfDepthPassCase("halfDepthNative", kit, Scene3d.Resolution.Native) ::
         skinnedCase("skinned", kit, Scene3d.Output.Color, V2Skinned.vertexColored) ::
         skinnedCase("skinnedTextured", kit, Scene3d.Output.Color, V2Skinned.textured(V2Materials.colorTexture())) ::
         skinnedCase("skinnedDepth", kit, depthOfRoom(), V2Skinned.vertexColored) ::
@@ -138,6 +143,11 @@ mod V2Main {
           items = Render.blitRegion({ name = "msaa", design = design, src = { position = Vec2.zero(), size = design },
                                       at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
 
+    /// 後がけの鎖（V2Post）: 部屋（yaw 0.3・解像度 resolution）を標本 samples のウィンドウの画素の HDR の Pass に描き、奥行き・ぼかし・ブルーム・トーンマップ（曲線 op）・FXAA の面を通して画面へ。
+    def postCase(name: String, kit: Room.Kit, samples: Int32, op: PostProcess.Tonemap, resolution: Scene3d.Resolution): Case =
+        let c = V2Post.chain(Room.design(), samples, op, { resolution = resolution | Room.scene(kit, 0.3) }, depthOfRoom());
+        { name = name, passes = c#passes, targets = c#targets, items = c#items }
+
     /// 部屋の奥行きの書き出し（Output.Depth）。目から 1 m で黒・13.5 m で白（部屋の奥の壁まで灰色の坂が入る幅）。
     def depthOfRoom(): Scene3d.Output = Scene3d.Output.Depth({ near = 16.0, range = 200.0 })
 
@@ -145,6 +155,17 @@ mod V2Main {
     def roomDepthCase(kit: Room.Kit): Case =
         { name = "roomDepth", passes = Nil, targets = Map.empty(),
           items = Render.scene3d(Vec2.zero(), { output = depthOfRoom() | Room.scene(kit, 0.3) }) :: Nil }
+
+    /// 後がけの奥行きの Pass と同じ形: 半分の大きさ（design × 0.5）の Rgba16Float の Pass に、解像度 resolution の部屋の奥行きの書き出しを描き、画面いっぱいに貼る。
+    /// Design の場面は design の画素で描いた絵を 2:1 に縮めて貼るので、貼る画素の真ん中がちょうど 2 つの texel の境目に来る（最も近い画素の選び方が絵に出る）。
+    def halfDepthPassCase(name: String, kit: Room.Kit, resolution: Scene3d.Resolution): Case =
+        let room = Room.scene(kit, 0.3);
+        let scene = { output = depthOfRoom(), resolution = resolution, environment = { background = None | room#environment } | room };
+        let pass: Render.Pass = { name = "halfDepth", clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = Render.scene3d(Vec2.zero(), scene) :: Nil };
+        let design = Room.design();
+        { name = name, passes = pass :: Nil, targets = Map#{ "halfDepth" => RenderTarget.withHdr({ scale = 0.5 | RenderTarget.defaultDescriptor() }) },
+          items = Render.blitRegion({ name = "halfDepth", design = design, src = { position = Vec2.zero(), size = design },
+                                      at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
 
     /// ゲームの被写界深度と同じ形: 白で消した Pass（1 を超える値を持つ Rgba16Float）に、地の色の無い部屋の奥行きの書き出しを描き、画面いっぱいに貼る。
     def roomDepthPassCase(kit: Room.Kit): Case =
@@ -223,6 +244,16 @@ mod V2Main {
     /// 壊して確かめた（同じ日に 1 回ずつ）: WebGPU の半透明の pipeline の混ぜ方を外すと blend・blendDesign が 13.5 万 px・blendMsaaPass が 14.8 万 px、
     /// 半透明の pipeline で深度を書くと（交わる板が欠ける）blend と blendDesign が 1.2 万 px 違って落ちる（blendMsaaPass は 2.99 万 px で上限の内）。
     /// 計画の並べ順を逆にすると GL と WebGPU の両方が同じに変わるのでこの比べは通る（GL の blend の絵は変わる・守るのは TestSceneList.testPlanSortsBlendedFarToNear）。
+    /// 後がけの場面（同じ機械の実測。違う画素・±2 以上・max）: post 247・42・±34、postMsaa 55,680・13,138・±47、postDesign 15,386・3,624・±48、
+    /// halfDepthDesign 95,868・9,576・±63、halfDepthNative 0。post は room と同じ所（重なる面の入れ替わり）の差を、ぼかしと FXAA が周りの数画素へ広げた物（差の絵で確かめた）。
+    /// postMsaa はウィンドウの画素の標本 4 の Pass の物のふちで、blendMsaaPass と同じ標本の位置の違いをぼかしが広げた物（±2 以上は blendMsaaPass と同じ桁）。
+    /// halfDepthDesign と postDesign は、design の画素の絵を 2:1 に縮めて貼る所で貼る画素の真ん中が texel の境目に来て、GL の補間した uv が
+    /// 境目のどちら側に落ちるかが列ごとに揺れる所【推: 右の 1/5 の列はそろい、ほかの列で GL だけ 1 つ手前の texel を読む】。上下は GL と同じ選び方にそろえてある。
+    /// 横の選び方を 3 通り試して減らなかった（同じ日）: GL と同じ順に uv を作ってから掛ける形は今と 1 px も同じ・横だけ境目の手前へずらすと 97,272・12,996・±56・
+    /// 縦横とも手前へずらすと 232,020・78,732・±62。横はどちらへずらしても列の多くが外れるので、決まった側を選ぶ形では GL にそろわない。
+    /// 壊して確かめた（同じ日に 1 回ずつ）: 縦を上から数える（直す前の式）と halfDepthDesign 233,784・74,952・postDesign 39,305・8,971 で落ちる・
+    /// 面の Linear の sampler を Nearest にすると post 3 場面が 19.9 万〜24.4 万 px・Rgba16Float の Pass を RGBA8 で作ると post 3 場面と roomDepthPass・halfDepthNative が落ちる。
+    /// 上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない post を除いて ±128。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
@@ -232,7 +263,8 @@ mod V2Main {
              "shadowSunTextured" => (8, 80, 255), "shadowBoth" => (8, 16, 255),
              "lmTextured" => (150, 460, 255), "lmNormalLinear" => (160, 580, 255), "lmDepth" => (8, 16, 16),
              "sky" => (4, 16, 16), "skyTurned" => (4, 8, 16), "skyDesign" => (4, 8, 16), "skyDepth" => (4, 8, 16), "skyMsaaPass" => (24000, 28000, 128),
-             "blend" => (32, 64, 255), "blendDesign" => (4, 8, 16), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128)}
+             "blend" => (32, 64, 255), "blendDesign" => (4, 8, 16), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128),
+             "post" => (84, 500, 255), "postMsaa" => (27000, 112000, 128), "postDesign" => (7300, 31000, 128), "halfDepthDesign" => (19000, 192000, 128)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass"}
@@ -435,12 +467,19 @@ mod V2Main {
     /// 撮った絵の表（場面の名前 → GL と WebGPU の絵）。
     type alias Shots = Map[String, (ByteBuffer, ByteBuffer)]
 
-    /// 標本 4 と 1 の Pass の差（GL・WebGPU の違う画素の数）。0 なら MSAA が掛かっていない。場面が無ければ (0, 0)。
-    def msaaDiffOf(byName: Shots, width: Int32, height: Int32): (Int32, Int32) \ IO =
-        match (Map.get("railsMsaa", byName), Map.get("railsNoMsaa", byName)) {
+    /// 標本 4 の場面 on と標本 1 の場面 off の差（GL・WebGPU の違う画素の数）。0 なら MSAA が掛かっていない。場面が無ければ (0, 0)。
+    def msaaDiffOf(byName: Shots, on: String, off: String, width: Int32, height: Int32): (Int32, Int32) \ IO =
+        match (Map.get(on, byName), Map.get(off, byName)) {
             case (Some((glOn, gpuOn)), Some((glOff, gpuOff))) => (diffOf(glOn, glOff, width * height)#pixels, diffOf(gpuOn, gpuOff, width * height)#pixels)
             case _                                            => (0, 0)
         }
+
+    /// WebGPU の on と off（標本 4 と 1）の差が GL の同じ差の半分以上か（MSAA が抜けていないか）。差の数は 1 行出す。
+    // WhyNot: WebGPU の差が 0 でなければ良し、にしない — 場面の一部だけ MSAA が抜けても 0 にはならない。GL と同じ桁で掛かっている事を見る。
+    def isMsaaApplied(byName: Shots, on: String, off: String, width: Int32, height: Int32): Bool \ IO =
+        let (gl, gpu) = msaaDiffOf(byName, on, off, width, height);
+        println("[webgpu-v2] 標本 4 と 1 の差（${on} と ${off}）GL ${Int32.toString(gl)} px・WebGPU ${Int32.toString(gpu)} px（WebGPU が GL の半分未満なら MSAA が抜けている）");
+        gl > 0 and 2 * gpu >= gl
 
     /// 標本の位置の確かめ（slantFlipProbe）の行を出す（場面が無ければ何もしない）。
     def printSlantFlipProbe(byName: Shots, width: Int32, height: Int32): Unit \ IO =
@@ -464,10 +503,9 @@ mod V2Main {
                 let rows = shots |> List.map(match (c, gl, shot) -> judge(width, height, c, gl, shot));
                 List.forEach(r -> println(fst(r)), rows);
                 let byName = shots |> List.map(match (c, gl, shot) -> (c#name, (gl, shot))) |> List.toMap;
-                let msaa = msaaDiffOf(byName, width, height);
-                // WhyNot: WebGPU の差が 0 でなければ良し、にしない — 場面の一部だけ MSAA が抜けても 0 にはならない。GL と同じ桁で掛かっている事を見る。
-                println("[webgpu-v2] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaa))} px・WebGPU ${Int32.toString(snd(msaa))} px（WebGPU が GL の半分未満なら MSAA が抜けている）");
-                let msaaOk = fst(msaa) > 0 and 2 * snd(msaa) >= fst(msaa);
+                let railsMsaaOk = isMsaaApplied(byName, "railsMsaa", "railsNoMsaa", width, height);
+                let postMsaaOk = isMsaaApplied(byName, "postMsaa", "post", width, height);
+                let msaaOk = railsMsaaOk and postMsaaOk;
                 printSlantFlipProbe(byName, width, height);
                 let design = (Int32.toFloat64(config#designWidth), Int32.toFloat64(config#designHeight));
                 let trial = SplitPassTrial.open(gpu, width, height, design);

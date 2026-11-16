@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明・後がけ（人の決めで半分に割る: (6a) 半透明（計画が遠い順に並べ、SceneList の末尾に半透明の材質の行として足す・GL も行で描く・**済・12.34**）・(6b) 後がけ）／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。mip（決まり 7）と preload は (7) と一緒に。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明・後がけ（人の決めで半分に割る: (6a) 半透明（計画が遠い順に並べ、SceneList の末尾に半透明の材質の行として足す・GL も行で描く・**済・12.34**）・(6b) 後がけ（3D の場面を 2D の Pass に描いて面で加工する形のままで、前半の行は増やさない・空は kindSky にしない・**済・12.35**））／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。後がけは 2D の Pass と面の道のまま描けていて、Design の場面を縮んだ Pass へ貼る WGSL の縦の texel の選び方だけ GL にそろえた（横の境目の揺れは許容を置いて残した・**済・12.35**）。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -1903,3 +1903,100 @@ engine の pub（ゲームから見える API）は増えておらず、engine/ 
   - 空を前半の行にする（kindSky）かは後がけ（(6b)）で見直す。
   - 半透明の行の値（values・reads）は GL が読まないのに 1 体ごとに書く。粒子のように半透明が数千ある場面が来たら測る（`docs/performance.md` の候補）。
   - 12.28〜12.33 の持ち越しで (6a) で触らなかった物はそのまま。
+
+### 12.35 R2b・P8 の (6b): 後がけ（2026-11-17・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (6)「半透明・後がけ」の後半（(6a) の半透明は 12.34。ビルボードと環境マップは (7)・描き先の寿命は (8) で、どちらも触っていない）。
+engine の pub（ゲームから見える API）は増えておらず、engine/ の公開の型シグネチャも変えていない（変えたのは render_gl の中の WGSL の字と、それに渡す uniform の中身だけ）。GL は触っていない（下の門）。
+
+- **後がけに当たる物の一覧**（計画書の 5.1 の表の「3D: ビルボードの集まり・空・後がけ」・`plans/webgpu/survey/B-2d-shader.md` の 5.2・`analysis-render-structure.md`・`docs/shader-doc.md` の「後処理」と `skipsOf` から洗い出した）:
+  後がけは専用の描き手を持たず、**3D の場面を 2D の Pass に描き、ShaderDoc の面で画面全体を加工する**形で組まれている（`withPassPlan`。lamplighter の `PostView.flix` とほぼ同じ物が 9 本の試作にある）。部品は:
+  1. 場面の Pass: ウィンドウの画素・`RenderTarget.withHdr`（Rgba16Float）・`withMsaa`（標本 4 なら resolve してから読む）
+  2. 奥行きの Pass: 同じ場面の `Output.Depth` を縮んだ（0.5 倍など）Rgba16Float の Pass へ（被写界深度の材料）
+  3. ぼかし: `Field.TexBlur`（Linear の sampler・縮んだ Pass に半分・4 分の 1 で 2 段）
+  4. 明るい所: 場面の Pass を Linear で読み、`PostProcess.luma709` と Smoothstep で 1 を超える所だけ残す（ブルームの材料）
+  5. 本編の面: くっきりした場面とぼかした場面を奥行きで混ぜ、ブルームを足し、ビネット（`Field.RadialAspect`）を掛け、`PostProcess.tonemappedWith`（AcesFitted か Reinhard）と彩度で仕上げてウィンドウの画素の Rgba8Unorm の Pass へ
+  6. FXAA: `PostProcess.fxaaSpec` の面で画面へ
+  - `skipsOf`（3D の欠けの数え）に後がけの種類は無い（数えているのは alpha to coverage・ビルボード・環境マップ・奥行きの書き出しの描けない材質だけ）。2D の側の飛ばす口（`WebGpuSurfaces` の「組んでいない program」「値の欄が行の値より多い」・起動の後に足す字・preload）も後がけでは出ない。
+    **外す種類は無かった**: 部品の 1〜6 は R1b（Pass・HDR・MSAA の resolve・面と絵の組・12.19〜12.22）と (1) の奥行きの書き出し（12.27）で、もう WebGPU が描ける。
+- **決めた事 1 — 後がけは前半の行にしない（今の形のまま）**: 後がけは 2D の `(PassSpec, 行)` の列で流れ、場面の pass の列（`ScenePasses`）の外にある。場面の中で後がけを描く形（場面の列に後がけの pass を足す・3D の描き手が自分の後がけを持つ）は、
+  GL も WebGPU も今の 2D の Pass と面で描けて、ゲームの書き方（9 本の `PostView`）も変わらないので取らなかった（読む物の無い kind と、同じ加工の 2 本目の道が増えるだけ）。
+- **決めた事 2 — Design の場面を縮んだ Pass へ貼る時の縦の texel を GL にそろえた**: bench で鎖を比べて見つけた差。Design の場面（design px の描き先に描いた絵）を 2:1 に縮んだ Pass（後がけの奥行きの Pass の形）へ貼ると、
+  貼る画素の真ん中がちょうど 2 つの texel の境目に来る。GL（`Render3d.blitDesign`・FBO は下の行が先・nearest で読む）は縦を下から数えて floor し、WebGPU（`WebGpuShader.sceneWgsl`）は上から数えて floor していたので、縦が 1 行ずれた。
+  - 直し: `sceneWgsl` は縦を下から数えて floor し、上からの行番号に戻す（`last - fromBottom`）。Paste の uniform を（左上・texture の画素 ÷ 矩形の画素）から（左上・矩形の大きさ）へ替えた（`WebGpuRenderer.writePaste`。16 バイトのまま・bind group の layout は同じ）。
+    Native の場面は texture と矩形が同じ大きさなので 1 画素ずつ写す性質は変わらない（bench の Native の場面は全部前と同じ数）。3 倍に拡げる Design の場面（roomDesign など）は境目に来ないので 0 px のまま。
+  - 残った差: halfDepthDesign 233,784 → **95,868 px**・±2 以上 74,952 → **9,576 px**。残りは横で、列ごとに GL の補間した uv が境目のどちら側に落ちるかが揺れる所【推: 差の絵で、右の 1/5 の列はそろい、ほかの列で GL だけ 1 つ手前の texel を読む】。
+    横の選び方を 3 通り試して減らなかった（GL と同じ順に uv を作ってから掛ける形は今と 1 px も同じ・横だけ境目の手前へずらすと 97,272・12,996・縦横とも手前へずらすと 232,020・78,732）。
+    決まった側を選ぶ形では GL にそろわないので、許容（実測のほぼ 2 倍）を置いて残した。GL の補間を写す形（矩形の四角を頂点で描き、uv を頂点から補間する）は、ふちの外へはみ出す矩形の viewport の誤り（`sceneWgsl` の WhyNot）を避ける組み直しが要るので試していない。
+  - 2 本の実物と、`~/Documents/flix_ge_workspace` の試作に Design の場面を使う物は無い（`Resolution.Design` を書いたフォルダが無かった）。この差が出るのは bench の組み合わせだけ【推: 2 本と試作の .flix を字で探しただけ】。
+- **決めた事 3 — 空は kindSky にしない（閉じる）**: 12.33・12.34 は「空の後に描く物が場面の pass の列の途中に挟まる時（後がけ）に見直す」とした。後がけは上のとおり場面の列の外の 2D の Pass で走り、場面の列の途中に空の後で描く物は増えなかった。
+  行にしても GL は `drawSky` のまま行を読まず、backend が 2 つとも読まない kind が増えるだけなのも 12.33 と同じ。**次に見直すのは P9 で行を render bundle として持ち越す時**（空は行の外の別の pipeline なので、bundle と空の draw の並びを決め直す）。
+  (7) の景色を背景に描く場面は空の frag に `uEnvOn` の枝を足す形（12.33 の持ち越し）で、行にする理由にはならない【推】。
+- **確かめ — `bench/webgpu_v2`** に 5 場面を足した（`PostCases.flix` の `V2Post.chain`: 上の部品の 1〜6 を lamplighter の `PostView` と同じ並び・形式・大きさで組み、部屋（yaw 0.3）を通す。`halfDepthPassCase`: 半分の大きさの奥行きの Pass に部屋の奥行きの書き出しを描いて貼る）:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大（許容） |
+  |---|---|---|---|
+  | post（場面の Pass は標本 1・AcesFitted） | 247（500） | 42（84） | ±34（±255） |
+  | postMsaa（場面の Pass は標本 4） | 55,680（112,000） | 13,138（27,000） | ±47（±128） |
+  | postDesign（場面を Design で・Reinhard） | 15,386（31,000） | 3,624（7,300） | ±48（±128） |
+  | halfDepthDesign（Design の奥行きの書き出しを半分の Pass へ） | 95,868（192,000） | 9,576（19,000） | ±63（±128） |
+  | halfDepthNative（Native の奥行きの書き出しを半分の Pass へ） | 0（0） | 0（0） | ±0（±0） |
+
+  - 許す差の理由: post は room と同じ所（重なる面の入れ替わり・14 px）の差をぼかしと FXAA が周りへ広げた物（差の絵で確かめた・家具のふちの数か所に固まる）。postMsaa は blendMsaaPass と同じ標本の位置の違い（±2 以上が同じ桁）をぼかしが広げた物。
+    postDesign と halfDepthDesign は上の決めた事 2 の横の揺れ。上限は実測のほぼ 2 倍・差の最大は post だけ面の入れ替わりで切らない（255）。
+  - MSAA の門を後がけにも足した（`isMsaaApplied`）: postMsaa と post の差は GL 103,546 px・WebGPU 101,880 px（WebGPU が GL の半分未満なら落とす。railsMsaa と railsNoMsaa は GL 4,761・WebGPU 4,158 のまま）。
+  - Reinhard の曲線を通すのは postDesign だけ（解像度と曲線を同時に替えている。落ちた時は halfDepthDesign と見比べて分ける）。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - 縦を上から数える（直す前の式）: halfDepthDesign 233,784 px・±2 以上 74,952、postDesign 39,305・8,971 で落ちる。
+    - 面の Linear の sampler を Nearest にする（`WebGpuSurfaces.fresh`）: post 242,261・postMsaa 244,492・postDesign 199,268 px で落ちる。
+    - Rgba16Float の Pass を RGBA8 で作る（`WebGpuPipelines.textureFormatOf`）: post 380,643・postMsaa 389,924・postDesign 269,794 px と roomDepthPass 13,581・halfDepthNative 14,472 px で落ちる。
+    - 縦の選び方を守るのは bench だけ（`make test` の範囲のテストは無い。`TestWgslDawn` は WGSL を組めるかだけを見る）。
+  - 今までの 38 場面は 12.34 と同じ数。目で見て、ぼけ（手前の卓と奥の壁）・灯りのブルーム・ビネットが GL と同じ所に出る（`bench/webgpu_v2/debug/{gl,webgpu}/post*.png`・git の外）。WebGPU の誤り 0。
+- **比べていない物**（【未確認】）:
+  - 後がけの Pass が history を読む形（Rgba16Float・MSAA の resolve の後の history を面が読む）。history は 2D の 12.19（Rgba8 が中心）で確かめただけ【推: `applyHistory` と写す pipeline は形式を受けるので通る】。
+  - 場面のビルボードが Pass の history を読む時（WebGPU の描き先の使い中の控えがスプライトと面しか見ない件・12.21 の持ち越し）は (7) で。
+  - HUD を FXAA の面の上に重ねる形は 2D だけなので `bench/webgpu_v1` の範囲。
+  - 描き先の外へはみ出す Design の場面を縮んだ Pass へ貼る形（今回 `rel` を使う所が変わった。はみ出す場面は bench に無い）・整数でない縮め比（3:2 などでも境目に来る。2:1 だけ確かめた）・Design の場面を標本 4 の Pass へ貼る形（postDesign は標本 1）。
+  - ブラウザ（12.31 の口）・スマホ（adreno）で後がけの場面は流していない。
+- **欠けの表と実物**（12.34 と同じ流し方・写しは `scratchpad/a6b/setup.sh`・写しの engine はこの worktree の fpkg（後）と (6a) の fpkg（前）・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=160`・頭の 64 コマ・WebGPU だけ）:
+
+  | 種類（1 コマあたり） | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+  |---|---|---|---|---|---|---|
+  | どの種類も（前 → 後） | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 |
+
+  - 前も後も 6 場面とも欠けの表が出ない（`まだ描かない` の知らせも 0）。WebGPU の誤り 0・落ちた場面なし・6 場面とも頭の 64 コマを撮れた。
+  - 2 本とも Design の場面を使わないので、今回の直しは絵を変えないはず。みやげの町の 3 場面は前と後の 64 コマが**全部バイトまで同じ**。
+    fps3d_lab は 3 場面とも頭の 5〜8 コマだけ同じで後は違う。2D だけの通路（`START=play`）でも同じ割合で違うので、場面の時計が実時間で進む物【推: 灯りの揺れや衛兵の動きが撮ったコマの時刻でずれる】で、今回の直しとは関わらない。
+  - 後がけを使うほかの試作 2 本（参考・`~/Documents/flix_ge_workspace` から写して engine だけ 0.98.0 へ向けた・元のフォルダは触っていない・大きな `data`・`assets` は symlink・写しは `scratchpad/a6b/setup-others.sh`）:
+
+    | 試作（場面） | 欠けの表（前 → 後） | WebGPU の誤り | 見え方 |
+    |---|---|---|---|
+    | plateau_city（`SHOT=street`・0.92.0 から） | 0 → 0 | 0 | 町の通りと影・空・後がけが出る（GL と並べていない） |
+    | sea_cave_walk（`SHOT=cave`・0.88.0 から） | 3D の場面の preload 0.8 → 0.5（頭の読み込みのコマの数の揺れ） | **5**（前も同じ 5） | 洞窟の岩と砂が出る。海の材質（`sea:wave`）の WGSL が Dawn の解析の入れ子の深さの上限で組めない（下の持ち越し） |
+
+    - 2 本とも今の engine で写しに直しを入れずに型が通った。どちらも `PostView`（後がけの鎖）を持つ。前と後の 64 コマが 2 本とも全部バイトまで同じ（Design の場面を使わない）。
+    - sea_cave_walk の誤り: 海の材質の frag の 1 行が、同じ `max(0.0, clamp(…))` を 200 段ほど掛け合わせた式（光の鋭さを掛け算で展開した物【推】）で、Tint の「maximum parser recursive depth reached」で組めない。GLSL は通る。
+      材質の WGSL の出し方（(2)・P5 の `ShaderGen` の WGSL の書き手）の問題で、後がけではない。preload は (7)。
+
+- テスト: render_gl 553 緑（12.34 と同じ。足したテストは無い・上の「守るのは bench だけ」）。engine の `make test-engine` 995 緑（engine は触っていない）。
+- **レビュー（1 回・86 点・必須 2）で直した物**: 必須 1 = 残った横の揺れに許容を置く前に、安い別案を試す（GL と同じ順に uv を作ってから掛ける形・横だけ境目の手前へずらす形・縦横とも手前へずらす形を試し、どれも減らなかった事を上の決めた事 2 と bench の許容の記録に書いた）。
+  必須 2 = この記録の「比べていない物」と、kindSky を次に見直す時（P9 の render bundle）を書いた。
+  任意で直した物: `sceneWgsl` の doc を「同じ選び方（最も近い画素・縦は下から数える）」に・`msaaGate` を `isMsaaApplied` に・`writePaste` の doc の要らない括弧を消した・
+  Reinhard を通すのは postDesign だけな事と、縦の選び方を守るのは bench だけな事をこの記録に・9 章の表の 14 行目に横の揺れを残した事を一言。
+  直さなかった物: 縦の選び方の Dawn のテスト（小さな絵を 2:1 で貼って読み戻す 1 本）は足していない（bench が守る。`make test` の範囲で止めるなら P10 の前に）・`PostCases.flix` の小さな helper（`k`・`add` など）は lamplighter の `PostView` と同じ書き方のまま。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-17。直しの後の木で流し直した）:
+
+  - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `bin/flix test`）553 緑・`make test-engine` 995 緑。
+  - `make gl-parity` exit 0・`make gl-capture-check` exit 0（a と b の 54 枚がバイトまで同じ・基準とも 54 枚がバイトまで同じ）。
+  - `make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0・誤り 0（43 場面と記録 2・標本 4 と 1 の差 GL 4,761 px・WebGPU 4,158 px と、postMsaa と post の GL 103,546 px・WebGPU 101,880 px）。
+    1 コマ（記録）は GL 1.00〜1.06 ms・WebGPU 1.58〜1.76 ms（12.34 と同じ桁・同じ機械でゲームの写しを流しながら）。
+  - `make lint ONLY=max-lines` exit 0・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
+  - 12.33 の落とし穴（fpkg を作り直した後の bench の `packages.lock`）は、門の中で `make sync-engine-full` の後に bench の `packages.lock` を消して流した。
+
+- 言える範囲: この Mac（Dawn の Metal）だけ。
+- 持ち越し:
+  - Design の場面を縮めて貼る所の横の境目の揺れ（上の決めた事 2・許容で残した）。GL の補間を写す形を試すなら、はみ出す矩形の viewport の誤りを避ける組み直しと一緒に。
+  - 上の「比べていない物」。
+  - 空を前半の行にする（kindSky）かは P9 の render bundle の時に見直す。
+  - sea_cave_walk の海の材質の WGSL が Tint の解析の入れ子の深さの上限で組めない（上の欠けの表）。材質の WGSL の書き手で、深い式を中間の let に分けて出すか、同じ部分式を 1 回だけ置く（GLSL と同じ式のまま）。fps3d_lab とみやげの町と bench では出ていない。
+  - 12.28〜12.34 の持ち越しで (6b) で触らなかった物はそのまま。
