@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明・後がけ（人の決めで半分に割る: (6a) 半透明（計画が遠い順に並べ、SceneList の末尾に半透明の材質の行として足す・GL も行で描く・**済・12.34**）・(6b) 後がけ（3D の場面を 2D の Pass に描いて面で加工する形のままで、前半の行は増やさない・空は kindSky にしない・**済・12.35**））／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。後がけは 2D の Pass と面の道のまま描けていて、Design の場面を縮んだ Pass へ貼る WGSL の縦の texel の選び方だけ GL にそろえた（横の境目の揺れは許容を置いて残した・**済・12.35**）。mip（決まり 7）と preload は (7) と一緒に。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明・後がけ（人の決めで半分に割る: (6a) 半透明（計画が遠い順に並べ、SceneList の末尾に半透明の材質の行として足す・GL も行で描く・**済・12.34**）・(6b) 後がけ（3D の場面を 2D の Pass に描いて面で加工する形のままで、前半の行は増やさない・空は kindSky にしない・**済・12.35**））／(7) ビルボード・環境マップ（人の決めで半分に割る: (7a) ビルボード（行の種類 kindBillboard を不透明の行と半透明の行の間に 1 行 1 つ・GL と WebGPU の両方が不透明 → ビルボード → 半透明の順に流す・場面の history もここで閉じた・**済・12.36**）・(7b) 環境マップ（mip・preload は P8 の側だけ））／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。後がけは 2D の Pass と面の道のまま描けていて、Design の場面を縮んだ Pass へ貼る WGSL の縦の texel の選び方だけ GL にそろえた（横の境目の揺れは許容を置いて残した・**済・12.35**）。ビルボードは行の順のまま別の pipeline で描き、貼る絵は 2D の描き手の絵の group を借り、値は行の values を stride 0 の頂点の buffer で読む（**済・12.36**）。mip（決まり 7）と preload は (7b) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -2000,3 +2000,87 @@ engine の pub（ゲームから見える API）は増えておらず、engine/ 
   - 空を前半の行にする（kindSky）かは P9 の render bundle の時に見直す。
   - sea_cave_walk の海の材質の WGSL が Tint の解析の入れ子の深さの上限で組めない（上の欠けの表）。材質の WGSL の書き手で、深い式を中間の let に分けて出すか、同じ部分式を 1 回だけ置く（GLSL と同じ式のまま）。fps3d_lab とみやげの町と bench では出ていない。
   - 12.28〜12.34 の持ち越しで (6b) で触らなかった物はそのまま。
+
+### 12.36 R2b・P8 の (7a): ビルボード（2026-11-17・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (7)「ビルボード・環境マップ」の前半（人の決めで半分に割った。環境マップ・mip・preload は (7b)・描き先の寿命は (8) で、どちらも触っていない）。
+engine の pub（ゲームから見える API）は増えておらず、engine/ の公開の型シグネチャも変えていない（変えたのは render_gl の中だけ）。GL の画は変えていない（下の確かめ）。GL の呼び出しの並びは同じ（描く物を行から読むだけ）。
+
+- **R2b — ビルボードを場面の行に**（形のレビュー（3D）の決め「ビルボードは kindBillboard」と、12.34 の持ち越し「行の流し方を不透明・ビルボード・半透明の 3 つに分ける」のとおり）:
+  - 計画（`Render3d.ScenePlan.sceneDrawsOf`）が場面のビルボードを来た順で `SceneDraws#billboards`（`BillboardDraw` = 中身と culled）に置く。視錐台は置いた物と同じ `Scene3d.frustumOf`・間引きは前と同じ `Scene3d.isBillboardOutsideFrustum`。
+    視錐台の外の物も列から外さない（GL は絵が見つからない知らせを間引く前に出すので、外すと知らせが消える）。色の pass と奥行きの書き出しの pass の両方に置く。
+  - `Render3d.SceneList` が不透明の材質の行の後・半透明の行の前に、ビルボードの行（`kindBillboard`・1 行 1 つ）を足す（`firstBillboard`・読む口は `firstBillboardRowOf`）。行の欄は 1 = 全体の登録の絵の番号（見つからなければ -1）・4 = 視錐台の中なら 1・5 = 分かれた理由（Billboard）・8 = 値の先頭。
+    値（16 float: 立てる点と lit・anchor と size・貼る範囲の uv・線形へ戻した tint）は視錐台の中で絵がある行だけ、values の**材質の値の後ろ**に書く（材質の 256 バイトの区画のそろえを崩さない）。貼る範囲の v はレンダーターゲットでも上から数える（読むのは上の行が先の WebGPU）。
+    GL は uniform を今までどおり中身の配列（`billboards`・`billboardAt`）から差す（材質の行が `materials` から差すのと同じ形）。
+  - GL（`Render3d.drawPass`）: `GlRows.drawRows` は `firstBillboard` の前まで・`Render3d.drawBillboards` がビルボードの行・`drawBlendedRows` が残りの行（前と同じ順）。奥行きの書き出しは前の 2 つ。
+    GL は絵を描く時に引き、行の欄 4（視錐台）だけを見る（レビューの必須 2: 計画の時に引いた絵の有無で GL を止めると、計画と描く時で表が違う時に知らせ無しで描かなくなる）。`CameraData#frustum` は読む物が無くなったので消した。
+- **P8 — WebGPU でビルボードを描く**:
+  - `Render3d.WebGpuBillboards`（pipeline の表）と `Render3dWgsl.billboardVertexSource`・`billboardFragmentSource`（GLSL と同じ式）。四角の角は vertex_index の 6 点（GL の `buildQuad` と同じ並び）。裏を間引かず・深度は LESS で書く・α < 0.5 を捨てる（GL と同じ）。
+  - bind group: 0 = 場面（`R3dCamera` にカメラの right・up・−forward を足して 176 バイト。影の地図の pass の camera の buffer も同じ大きさへ）・1 = **2D の描き手の絵の group をそのまま借りる**（`Host#groupById`。絵と sampler が GL の 2D の絵と同じ組で、絵ごとに group を作らない）。
+    値は材質の値の buffer（usage に VERTEX を足した）を stride 0 の instance の頂点の buffer 0 として、行ごとに位置だけ替えて読む（2D の行の値と同じ形）。
+  - 影: ビルボードは影を受けない（GLSL のビルボードのプログラムは uShadowOn・uSunShadowOn を付けず 0 のまま読む）。WGSL は場面の group 0 の on を読まず、`spotShadow` が 1・`r3d_sunLit` が 1 の版（`unshadowedSource`）で光の式を組む。
+  - 行の流し方: WebGPU は行の順のまま 1 本の `drawRows` で流す（行の順が不透明 → ビルボード → 半透明で、GL が 3 回に分ける理由の深度の書き込みと blend は WebGPU では pipeline ごとに決まっている）。ビルボードの行の後は材質の行が pipeline と group 1 を付け直す（共用の控え `mp`）。
+  - 絵が見つからない行は描かず、GL と同じ字（`Render3d.missingBillboardTextureLine`）で 1 回知らせる（`SceneList.missingBillboardTexturesOf`）。draw の数は GL と同じ欄（Billboard）で、描く物の数には入れない。
+  - `skipsOf` から「3D のビルボード」を外した（色の pass・奥行きの書き出しの両方）。
+  - スマホの上限（12.24）の内: varying 5 本・頂点の buffer 1 本（stride 0）・group 0 の binding 5 は 176 バイト・group 1 は絵と sampler の 2 つ。
+- **決めた事 — 場面の history は (7a) で閉じた**（12.21 の持ち越し「場面のビルボードが Pass の history を読む時、WebGPU の `paintTarget` はスプライトと面しか見ない」）:
+  ビルボードが Pass の絵を貼る道そのものが (7a) で入り、直しは 2D の描き手の history の要否に場面のビルボードを足す 1 か所（`WebGpuPaint.isHistoryReadIn`・GL の `RenderPaint.paintTarget` と同じ式）で済んだので、(7b) へ回さなかった。
+- **確かめ — `bench/webgpu_v2`** に 6 場面を足した（`BillboardCases.flix`。絵は組み込みの放射の絵と、毎コマ透明の上に穴の空いた看板を描く Pass（GL は行 0 が下・WebGPU は上なので、uv の上下の取り違えが出る）。
+  光を当てる物・当てない物・家具に半分隠れる物・目の後ろの物・絵の一部を貼る物を混ぜた。GL の撮りも history を写す形（`GlOffscreen.withHistoryKept`）にした）:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大（許容） |
+  |---|---|---|---|
+  | billboard（部屋・画面へ直に） | 61（128） | 26（52） | ±82（±255） |
+  | billboardDesign（design の解像度） | 0（8） | 0（4） | ±0（±16） |
+  | billboardDepth（奥行きの書き出し） | 10（24） | 1（4） | ±2（±16） |
+  | billboardGlass（半透明の板の奥と手前） | 14（64） | 7（32） | ±70（±255） |
+  | billboardMsaaPass（標本 4 の Pass に描いて貼る） | 13,212（27,000） | 11,178（23,000） | ±60（±128） |
+  | billboardHistory（Pass の中の場面のビルボードがその Pass 自身の history を貼る） | 18（40） | 0（4） | ±1（±16） |
+
+  - 許す差の理由: billboard は room と同じ所（重なる面の入れ替わり・14 px）に、光を当てない放射の絵の 1 行（47 px・±1〜2）が足された物（256 texel を約 105 px に縮めて最も近い texel を読み、その行だけ画素の真ん中が texel の境目に来る【推: 差の画素が 1 行に並び、値が隣の texel の値】）。
+    billboardGlass は blend と同じ数・billboardDepth は blendDepth と同じ形・billboardMsaaPass は skyMsaaPass と同じ標本の位置の違い・billboardHistory は入れ子の看板の中の ±1 だけ。上限は実測のほぼ 2 倍。
+  - **GL の画が変わらない事の確かめ**: 変更の前の render_gl（main の 837602dc）へ戻して fpkg を作り直し、`make gl-parity` の GL の絵 63 枚（ビルボードの 3 場面を含む）と `bench/webgpu_v2` の GL の絵 51 枚（上の 6 場面を含む）が、変更の後とバイトまで同じ。前の木の WebGPU はビルボードの 6 場面がどれも落ちた（描かないので 1.9 万〜8.2 万 px）。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - WebGPU のビルボードの pipeline で深度を書かない: billboardGlass が 9,586 px 違って落ちる（手前の看板の後ろの板が上に重なる。ほかの 5 場面は通る）。
+    - WebGPU の uv を GL のように上下に返す: 6 場面とも落ちる（8,011〜38,187 px）。
+    - `isHistoryReadIn` から場面のビルボードを外す: billboardHistory が 18,684 px 違って落ちる（history の絵が無く看板が描かれない）。
+    - 計画の行の順でビルボードを半透明の後へ回す: GL と WebGPU が同じに変わるので bench では止まらない。`TestSceneList` のビルボードの 7 本が落ちる（行の並び・値・材質の引きが崩れる）。
+  - 今までの 43 場面は 12.35 と同じ数。目で見て、看板の色の並び・穴・半透明の板の奥の放射の絵・入れ子の history が GL と同じ所に出る（`bench/webgpu_v2/debug/{gl,webgpu}/billboard*.png`・git の外）。WebGPU の誤り 0。
+- **欠けの表と実物**（12.35 と同じ流し方・写しは `scratchpad/a7a/games.sh`・後 = この worktree の fpkg（レビューの直しの前の木・直しは絵の無いビルボードの道だけ）・前 = (6b) の fpkg・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=160`・頭の 64 コマ・WebGPU だけ）:
+
+  | 種類（1 コマあたり） | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+  |---|---|---|---|---|---|---|
+  | どの種類も（前 → 後） | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 |
+
+  - 2 本ともビルボードを使わない（12.26 の表で 0）ので、前も後も欠けの表が出ない。WebGPU の誤り 0・落ちた場面なし・6 場面とも頭の 64 コマを撮れた。
+    みやげの町の 3 場面は前と後の 64 コマが全部バイトまで同じ。fps3d_lab は頭の 10〜14 コマだけ同じで、12.35 と同じく場面の時計が実時間で進む物【推】。
+  - 参考の試作 2 本（12.35 と同じ写し方・engine だけこの worktree の fpkg へ向けた・元のフォルダは触らない）:
+
+    | 試作（場面） | 欠けの表（前 → 後） | WebGPU の誤り | 64 コマ |
+    |---|---|---|---|
+    | plateau_city（`SHOT=street`） | 0 → 0 | 0 | 前と後でバイトまで同じ |
+    | sea_cave_walk（`SHOT=cave`） | 3D の場面の preload 0.8 → 0.5（頭の読み込みのコマの数の揺れ・12.35 と同じ） | 5（前も同じ 5・海の材質の WGSL の入れ子の深さ・12.35 の持ち越し） | 前と後でバイトまで同じ |
+
+  - ビルボードを使う実物はこの 4 本に無い。ビルボードの門は bench（上の 6 場面）と `bench/gl_parity` の GL の 3 場面だけ。
+- テスト: render_gl 564 緑（12.35 の 553 に、`TestSceneList` の 8 本（行の並び・値・target の uv・値の置き場・視錐台の外・絵が無い・材質を持たない・計画の culled）・
+  `TestWebGpuScene3d` の 2 本（ビルボードを数えない・場面のビルボードが history を読む）・`TestWebGpuScene3dDawn` の 1 本（ビルボードの pipeline を標本 1 と 4 で Dawn が誤り無しに作る）。
+  `TestWgslDawn` にビルボードの WGSL 2 本を足した（379 本）。奥行きの書き出しの数え方のテストは「ビルボードを数えない」形に直した）。`make test-engine` 995 緑（engine は触っていない）。
+- **レビュー（1 回・84 点・必須 3）で直した物**: 必須 1 = この記録と 9 章の表。必須 2 = 絵の有無を GL は描く時だけ引く（行の欄 4 は視錐台だけ・WebGPU は値の無い行を描かない）。必須 3 = 使わなくなった `CameraData#frustum` と `drawScene` の視錐台を消した。
+  任意で直した物: 行の欄 3（billboards の番号）をやめて行の位置で引く・描く条件を `isDrawnBillboard` 1 か所に・`billboardDrawsOf` を pub でなく・局所の名前 `valueCursor`・WhyNot の計画の節の番号を消した・
+  `drawBillboard` の末尾を `()` で終える（JIT・docs/performance.md の 13 節）・`WebGpuRenderer.readsTexture` を通す理由の WhyNot・WebGPU の draw の数を描く前に数える事を doc に・`headAt` をビルボードの行で呼ばない事を SceneList の頭に・ビルボードの pipeline を作る Dawn のテスト（T1）。
+  直さなかった物: `materials` と `heads` の配列のビルボードの行の所の空き（番号を詰めると半透明の行の引きが 2 通りになる。`materialAt` が None を返し、頭のコメントに書いた）・
+  WebGPU の 3D の診断の数（ビルボードの draw の数）のテスト（T2）と、GL の FakeGl でビルボードの行を描く数と知らせが 1 回のテスト（T3・T4）は持ち越し（bench は絵だけを比べる）。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-17。直しの後の木で流した）:
+  - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `bin/flix test`）564 緑・`make test-engine` 995 緑。
+  - `make gl-parity` exit 0・`make gl-capture-check` exit 0（a と b の 54 枚がバイトまで同じ・基準とも 54 枚がバイトまで同じ）。
+  - `make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0・誤り 0（49 場面と記録 2・標本 4 と 1 の差は GL 4,761・WebGPU 4,158 px と GL 103,546・WebGPU 101,880 px で 12.35 と同じ）。
+    1 コマ（記録）は GL 1.04〜1.07 ms・WebGPU 1.50〜1.83 ms（12.35 と同じ桁・ゲームの写しを流しながら）。
+  - `make lint ONLY=max-lines` exit 0（`Render3d.flix` 1,111 行・`WebGpuRenderer.flix` 972 行）・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
+  - fpkg を作り直した後に bench の `packages.lock` を消して流した（12.33 の落とし穴）。
+- 言える範囲: この Mac（Dawn の Metal）だけ。ブラウザ（12.31 の口）・スマホ（adreno）でビルボードの場面は流していない【未確認】。
+- **比べていない物**（【未確認】）: 絵の無いビルボードの知らせが GL と WebGPU で同じ回数出る事（字は同じ関数・回数はテストが無い）・ビルボードを数千立てる場面の速さ（1 行 1 つの draw・束ねるなら欄 4 を数にする）・
+  Rgba16Float の Pass へビルボードを描く形・Design の場面を縮んだ Pass へ貼る形にビルボードを載せる形（12.35 の横の揺れと同じ道）。
+- 持ち越し:
+  - 上のテストの持ち越し（T2〜T4）。
+  - 同じ絵の続くビルボードを 1 つの instanced draw に束ねる（GL も WebGPU も今は 1 行 1 つ。粒子のように数千ある場面が来たら測る・`docs/performance.md` の候補）。
+  - 12.28〜12.35 の持ち越しで (7a) で触らなかった物はそのまま（sea_cave_walk の WGSL の入れ子の深さ・Design の縮めの横の揺れ・kindSky は P9）。
