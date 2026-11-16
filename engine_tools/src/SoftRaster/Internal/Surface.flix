@@ -3,6 +3,7 @@
 // ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Surface {
     import java.awt.image.BufferedImage
+    import java.util.concurrent.ConcurrentHashMap
     use SoftRaster.{HdrCanvas, SurfaceCmd, argbOfRgba, blendPixel, blendPixelF, forEachPixel, onceOutsideLoop, pickedPixel, shadeAll}
     use SoftRaster.Internal.Hdr.{writeRule}
 
@@ -13,8 +14,10 @@ pub mod SoftRaster.Internal.Surface {
     /// 描き出しの時間のほとんどはここなので、Spec は面ごとに 1 回だけ組み直し、
     /// 画素は shadeAll でコアの数だけ並べて評価する。
     /// mask が非空なら「どれかの多角形の内側」の画素だけ塗る（GL のステンシル抜きと同じ意図）。
+    /// memo があれば、混ぜる前の画素の列を面の入力の字（memoKeyOf）で控え、2 回目に見た同じ面から使い回す
+    /// （evalCompiled は面の入力と画素の位置だけで決まる純関数なので、使い回した列は評価し直した列と同じ）。
     pub def drawSurface(image: BufferedImage, sf: Float64, texEnv: Map[String, ShaderEval.TexImage],
-                    texels: Option[(Int32, Int32)], s: SurfaceCmd): Unit \ IO = region rc {
+                    texels: Option[(Int32, Int32)], memo: Option[SurfaceMemo], s: SurfaceCmd): Unit \ IO = region rc {
         let dw = image.getWidth();
         let dh = image.getHeight();
         let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, s#rect);
@@ -29,42 +32,111 @@ pub mod SoftRaster.Internal.Surface {
             let n = w * h;
             let buf: Array[Int32, rc] = Array.empty(rc, n);
             discard image.getRGB(x0, y0, w, h, buf, 0i32, w);
-            let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
             let maskPolys = onceOutsideLoop(rc, List.map(List.toVector, s#mask));
-            let (ox, oy, sw, sh, time) = onceOutsideLoop(rc,
-                (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y, s#time));
             let blend = onceOutsideLoop(rc, s#blend);
             let sample = onceOutsideLoop(rc, sampleRatios(texels, dw, dh));
             // 下地の画素（読むだけ）。1 画素の答えは下地と面の式だけで決まる純関数なので、
             // どの順・どのスレッドで評価しても同じ画素になる。
             let dstPixels = Array.toVector(buf);
-            let pixelOf = i -> {
+            // 出力ピクセル中心 → design px（縮んだターゲットへ拾う時は、この画素を拾うテクセルの中心 = GL がそのテクセルを塗る点）。
+            // 塗らない画素（mask の外・拾われない画素）は None。
+            let pointOf = i -> {
                 let px = Int32.remainder(i, w) + x0;
                 let py = i / w + y0;
-                // 出力ピクセル中心 → design px → rect 内 uv（0..1）。縮んだターゲットへ拾う時は、この画素を拾う
-                // テクセルの中心（GL がそのテクセルを塗る点）で評価する。
                 let (pickedX, sampleX) = samplePoint(px, sample |> Option.map(fst), false);
                 let (pickedY, sampleY) = samplePoint(py, sample |> Option.map(snd), true);
                 let dx = sampleX / sf;
                 let dy = sampleY / sf;
-                let dst = Vector.get(i, dstPixels);
                 let inside = match maskPolys {
                     case Nil => true
                     case _   => insideMask(maskPolys, { x = dx, y = dy })
                 };
-                if (not inside or not pickedX or not pickedY) dst
-                else {
-                    let (r, g, b, a0) = ShaderEval.evalCompiled(compiled, (dx - ox) / sw, (dy - oy) / sh, time);
-                    let a = Float64.max(0.0, Float64.min(1.0, a0));
-                    blendPixel(blend, argbOfRgba(r, g, b, a), dst)
-                }
+                if (not inside or not pickedX or not pickedY) None else Some((dx, dy))
             };
-            image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
+            let src = onceOutsideLoop(rc, srcPixels(rc, texEnv, memo, sf, texels, dw, dh, n, pointOf, s));
+            let mixed = shadeAll(n, i -> {
+                let dst = Vector.get(i, dstPixels);
+                if (Option.isEmpty(pointOf(i))) dst else blendPixel(blend, Vector.get(i, src), dst)
+            });
+            image.setRGB(x0, y0, w, h, mixed, 0i32, w)
         }
     }
 
-    /// 画素 p（1 軸）の評価点と、その画素が縮んだターゲットへ拾われるか。ratio = テクセル / 画素（None は縮めない）。
-    /// p を拾うテクセル（pickedPixel の式）があれば、そのテクセルの中心で評価する。
+    /// 面の混ぜる前の画素の列（memo に控えがあれば写さずに返し、無ければ評価する。2 回目に見た面の列は控える）。
+    def srcPixels(rc: Region[r], texEnv: Map[String, ShaderEval.TexImage], memo: Option[SurfaceMemo],
+                  sf: Float64, texels: Option[(Int32, Int32)], dw: Int32, dh: Int32, n: Int32,
+                  pointOf: Int32 -> Option[(Float64, Float64)], s: SurfaceCmd): Vector[Int32] \ {IO, r} =
+        let key = memo |> Option.flatMap(m -> memoKeyOf(m, sf, texels, dw, dh, s) |> Option.map(k -> (m, k)));
+        let remembered = key |> Option.flatMap(match (m, k) -> recallSrc(m, k, n));
+        match remembered {
+            case Some(src) => src
+            case None =>
+                let src = evalSrc(rc, texEnv, s, n, pointOf);
+                key |> Option.forEach(match (m, k) -> rememberSrc(m, k, src));
+                src
+        }
+
+    /// 面の画素 0..n−1 の、混ぜる前の ARGB の列（塗らない画素は 0。混ぜる側が pointOf で飛ばす）。
+    def evalSrc(rc: Region[r], texEnv: Map[String, ShaderEval.TexImage], s: SurfaceCmd, n: Int32,
+                pointOf: Int32 -> Option[(Float64, Float64)]): Vector[Int32] \ {IO, r} =
+        let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
+        let (ox, oy, sw, sh, time) = onceOutsideLoop(rc,
+            (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y, s#time));
+        Array.toVector(shadeAll(n, i -> match pointOf(i) {
+            case None => 0i32
+            case Some((dx, dy)) =>
+                let (r, g, b, a0) = ShaderEval.evalCompiled(compiled, (dx - ox) / sw, (dy - oy) / sh, time);
+                argbOfRgba(r, g, b, Float64.max(0.0, Float64.min(1.0, a0)))
+        }))
+
+    /// シェーダー面の画素の控え: table = 面の入力の字 → 混ぜる前の画素の列、seen = 1 回見た面の字、
+    /// pathOf = 名前 → ファイルの絵のパス（控えてよい絵だけ）。
+    pub type alias SurfaceMemo = {
+        table = ConcurrentHashMap[String, Vector[Int32]],
+        seen = ConcurrentHashMap[String, Bool],
+        pathOf = String -> Option[String]
+    }
+
+    /// 面の入力の字（rect・Spec・time・mask・倍率・拾い方・出力の大きさ・読む絵のパス）。控えてよくない面は None。
+    // WhyNot: 字を SHA-256 に畳まない — 字そのものを鍵にすれば、違う面が同じ鍵になることが無い。
+    def memoKeyOf(memo: SurfaceMemo, sf: Float64, texels: Option[(Int32, Int32)], dw: Int32, dh: Int32, s: SurfaceCmd): Option[String] =
+        let names = ShaderDoc.texNames(s#spec) |> List.distinct;
+        let paths = names |> List.map(name -> memo#pathOf(name) |> Option.map(path -> "${name}=${path}"));
+        if (List.exists(Option.isEmpty, paths)) None
+        else {
+            let r = s#rect;
+            // WhyNot: doubleToLongBits を使わない — Java の IO になる。Float64.toString は値ごとに 1 つの字（往復で同じ値・-0.0 も別の字）。
+            let bits = x -> Float64.toString(x);
+            let mask = s#mask |> List.map(path -> path |> List.map(v -> "${bits(v#x)},${bits(v#y)}") |> String.intercalate(" ")) |> String.intercalate("|");
+            let fields = bits(r#position#x) :: bits(r#position#y) :: bits(r#size#x) :: bits(r#size#y) ::
+                         bits(s#time) :: bits(sf) :: ToString.toString(texels) :: Int32.toString(dw) :: Int32.toString(dh) :: mask ::
+                         List.filterMap(identity, paths);
+            Some(String.intercalate(";", fields) + "#" + ToString.toString(ShaderJson.toJson(s#spec)))
+        }
+
+    /// 控えた列（長さが合う時だけ）。
+    def recallSrc(memo: SurfaceMemo, key: String, n: Int32): Option[Vector[Int32]] \ IO =
+        let hit: Vector[Int32] = memo#table.get(key);
+        if (Object.isNull(hit) or Vector.length(hit) != n) None else Some(hit)
+
+    /// 1 回目に見た面は字だけを seen に控え、2 回目に評価した列を table に控える。どちらも上限を超えたら全部捨てる。
+    // WhyNot: 1 回目から列を控えない — 時刻で毎コマ変わる面（雪・切り替えの途中）は 2 度と当たらず、控えが画面の大きさの列で膨らむ。
+    def rememberSrc(memo: SurfaceMemo, key: String, src: Vector[Int32]): Unit \ IO =
+        let seen = memo#seen;
+        let table = memo#table;
+        if (seen.containsKey(key)) {
+            if (table.size() >= memoLimit()) table.clear() else ();
+            discard table.put(key, src)
+        } else {
+            if (seen.size() >= seenLimit()) seen.clear() else ();
+            discard seen.put(key, true)
+        }
+
+    /// 控える列の数の上限（1 本は出力の画素の数の Int32。1280×720 なら約 3.7 MB）。
+    def memoLimit(): Int32 = 24
+
+    def seenLimit(): Int32 = 4096
+
     def samplePoint(p: Int32, ratio: Option[Float64], vertical: Bool): (Bool, Float64) =
         match ratio {
             case None => (true, Int32.toFloat64(p) + 0.5)

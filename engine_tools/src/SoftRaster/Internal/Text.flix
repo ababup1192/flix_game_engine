@@ -37,7 +37,7 @@ pub mod SoftRaster.Internal.Text {
     def fontCtxOf(cache: Option[TextureCache], ttfPath: String, atlas: FontAtlas): FontCtx \ IO =
         match cache {
             case None => buildFontCtx(loadFont(ttfPath), atlas)
-            case Some(TextureCache.TextureCache(_, _, fonts, _)) =>
+            case Some(TextureCache.TextureCache(_, _, fonts, _, _, _)) =>
                 let known: List[FontCtx] = fonts.get(ttfPath);
                 let ctxs = if (Object.isNull(known)) Nil else known;
                 match List.find(c -> sameAtlas(c#atlas, atlas), ctxs) {

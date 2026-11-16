@@ -207,4 +207,59 @@ mod TestSoftRaster {
         let fresh = SoftRaster.renderToImage(req);
         Assert.assertEq(expected = red :: red :: red :: blue :: Nil,
             centerOf(plain) :: centerOf(first) :: centerOf(second) :: centerOf(fresh) :: Nil)
+
+    // ── シェーダー面の画素の控え（同じ面を 2 回目から使い回す） ──
+
+    /// 画素ごとに色の違う 4×4 の PNG を書く。
+    def writeRampPng(path: String): Unit \ IO =
+        let img = new BufferedImage(4i32, 4i32, 2i32);
+        List.range(0, 16) |> List.forEach(i -> img.setRGB(Int32.modulo(i, 4), i / 4, argb(255, i * 16, 255 - i * 16, 64)));
+        discard ImageIO.write(img, "png", new File(path))
+
+    /// name の絵を半透明で全面に素通しする面（下地と混ざる）。
+    def halfTexSurface(name: String): SoftRaster.SurfaceCmd =
+        let texOf = chan -> ShaderDoc.Field.Tex({ name = name, chan = chan });
+        { rect = { position = { x = 0.0, y = 0.0 }, size = { x = 4.0, y = 4.0 } },
+          spec = { name = "half", cycleRate = 0.0, bindings = Nil,
+                   out = ShaderDoc.Out.Fill({
+                       shade = ShaderDoc.Shade.Rgb({ r = texOf(ShaderDoc.TexChan.R), g = texOf(ShaderDoc.TexChan.G),
+                                                     b = texOf(ShaderDoc.TexChan.B) }),
+                       alpha = ShaderDoc.Field.Const(0.6) }) },
+          time = 0.0, mask = Nil, zIndex = 1, blend = DrawCmd.BlendMode.Normal }
+
+    def pixelsOf(img: BufferedImage): List[Int32] \ IO =
+        List.range(0, 16) |> List.map(i -> img.getRGB(Int32.modulo(i, 4), i / 4))
+
+    /// 同じキャッシュで同じ面を 3 回描くと（3 回目は控えた画素を使う）、どのコマもキャッシュ無しと同じ画素。
+    @Test
+    def testSurfaceMemoKeepsPixels(): Unit \ {Assert, IO} =
+        let file: File = File.createTempFile("softraster-memo", ".png");
+        file.deleteOnExit();
+        let path: String = file.getPath();
+        writeRampPng(path);
+        let req = { background = { r = 0.2, g = 0.4, b = 0.6 } | texturedReq(path) };
+        let surfaces = halfTexSurface("t") :: Nil;
+        let cache = SoftRaster.freshTextureCache();
+        let warnLog = SoftRaster.freshTexWarnLog();
+        let fresh = pixelsOf(SoftRaster.renderToImageFull(req, surfaces, Map.empty(), Map.empty()));
+        let cached = List.range(0, 3) |> List.map(_ -> pixelsOf(SoftRaster.renderToImageCached(req, surfaces, Map.empty(), Map.empty(), warnLog, cache)));
+        Assert.assertEq(expected = fresh :: fresh :: fresh :: Nil, cached)
+
+    /// Pass の絵を読む面は控えない: 同じ名前の Pass の中身が替われば、同じキャッシュでも新しい中身で描く。
+    @Test
+    def testSurfaceMemoSkipsPassImages(): Unit \ {Assert, IO} =
+        let req = { drawables = Nil, texturePath = Map.empty() | texturedReq("") };
+        let surfaces = halfTexSurface("p") :: Nil;
+        let solid = rgb -> {
+            let img = new BufferedImage(4i32, 4i32, 2i32);
+            List.range(0, 16) |> List.forEach(i -> img.setRGB(Int32.modulo(i, 4), i / 4, rgb));
+            Map#{"p" => SoftRaster.PassImage.Rgba8Unorm(img)}
+        };
+        let green = solid(argb(255, 0, 255, 0));
+        let red = solid(argb(255, 255, 0, 0));
+        let cache = SoftRaster.freshTextureCache();
+        let warnLog = SoftRaster.freshTexWarnLog();
+        List.range(0, 3) |> List.forEach(_ -> discard SoftRaster.renderToImageCached(req, surfaces, Map.empty(), green, warnLog, cache));
+        let after = centerOf(SoftRaster.renderToImageCached(req, surfaces, Map.empty(), red, warnLog, cache));
+        Assert.assertEq(expected = centerOf(SoftRaster.renderToImageFull(req, surfaces, Map.empty(), red)), after)
 }

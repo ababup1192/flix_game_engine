@@ -78,7 +78,7 @@ pub mod SoftRaster.Internal.Texture {
     /// td の段の列（average で平均する。cache と key があれば控えから引き、無ければ作って控える）。
     def mipChainOf(cache: Option[TextureCache], key: Option[String], average: Mip.Average, td: ShaderEval.TexData): Vector[ShaderEval.TexData] \ IO =
         match (cache, key) {
-            case (Some(TextureCache.TextureCache(_, _, _, mips)), Some(k)) =>
+            case (Some(TextureCache.TextureCache(_, _, _, mips, _, _)), Some(k)) =>
                 let averagedKey = k + ":" + ToString.toString(average);
                 let hit: Vector[ShaderEval.TexData] = mips.get(averagedKey);
                 if (not Object.isNull(hit)) hit
