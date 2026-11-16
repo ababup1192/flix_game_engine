@@ -53,7 +53,7 @@ mod Render3d.TestPreload {
         let gl = fakeGl();
         let state = freshState();
         cmds |> List.forEach(Render3d.Preload.upload(gl, state, 1i64, noTexture));
-        Map.size(Ref.get(state#meshesRef))
+        Map.size(Render3d.MeshTable.createdOf(state#meshes))
 
     /// 同じ key の間は、中身が変わっても instances を読まず、最初の形だけが置き場にある。
     @Test
@@ -76,7 +76,7 @@ mod Render3d.TestPreload {
     def testDeclaredTextureIsUploaded(): Unit \ {Assert, IO} =
         let state = freshState();
         Render3d.Preload.upload(fakeGl(), state, 1i64, noTexture, cmdReading(Texture3d.name(texture()), texture() :: Nil));
-        Assert.assertEq(expected = 1, Map.size(Ref.get(state#textures3dRef)))
+        Assert.assertEq(expected = 1, Map.size(sceneTextures(state)))
 
     /// 材質が読む tex3d: の絵が textures に無ければ 1 回知らせる。
     @Test
@@ -116,8 +116,8 @@ mod Render3d.TestPreload {
     def testMarksMatchTheCacheKeys(): Unit \ {Assert, IO} =
         let state = stateAfter(false, cmdReading(Texture3d.name(texture()), texture() :: Nil));
         let marks = Ref.get(state#preloadRef);
-        Assert.assertEq(expected = (Map.keysOf(Ref.get(state#meshesRef)),
-                                    Map.keysOf(Ref.get(state#textures3dRef)) |> Set.map(Render3d.TextureSlot.Scene),
+        Assert.assertEq(expected = (Map.keysOf(Render3d.MeshTable.createdOf(state#meshes)),
+                                    Map.keysOf(sceneTextures(state)),
                                     Map.valuesOf(Ref.get(state#materialsRef)) |> List.map(e -> e#locs#mesh#program) |> List.toSet),
                         (marks#meshes, marks#textures, marks#programs))
 
@@ -170,14 +170,14 @@ mod Render3d.TestPreload {
         let gl = fakeGl();
         let state = freshState();
         Render3d.Preload.upload(gl, state, 1i64, noTexture, cmdReading(Texture3d.name(texture()), texture() :: Nil));
-        let declared = Map.keysOf(Ref.get(state#textures3dRef));
+        let declared = Map.keysOf(sceneTextures(state));
         let other = match Texture3d.fromArgb(1, 1, Vector#{7}) {
             case Ok(t)  => t
             case Err(_) => bug!("1 × 1 の絵は作れる")
         };
         discard Render3d.Material.resolveTextureAs(gl, state, 5i64, sourceWith(other :: Nil, ""), "材質の絵", Texture3d.name(other), Texture3d.TextureUse.MaterialTexture);
         Render3d.endFrame(gl, state, 100i64);
-        Assert.assertEq(expected = declared, Map.keysOf(Ref.get(state#textures3dRef)))
+        Assert.assertEq(expected = declared, Map.keysOf(sceneTextures(state)))
 
     // ── 絵の置き場 ──
 
@@ -283,4 +283,11 @@ mod Render3d.TestPreload {
     def testDroppingUnmarkedDoesNotWarn(): Unit \ {Assert, IO} =
         let text = stderrOf(() -> Render3d.warnDroppedMeshes(freshState(), "plain" :: Nil, Set#{"a"}));
         Assert.assertEq(expected = 0, timesWarned(text))
+
+    /// 置き場にある場面の絵（段つきの写しを除く）。
+    def sceneTextures(state: Render3d.State): Map[Render3d.TextureSlot, (Int32, Render3d.TextureTable3d.Created, Int64)] \ IO =
+        Render3d.TextureTable3d.createdOf(state#textures3d) |> Map.filterWithKey((slot, _) -> match slot {
+            case Render3d.TextureSlot.Scene(_) => true
+            case Render3d.TextureSlot.Copy(_)  => false
+        })
 }

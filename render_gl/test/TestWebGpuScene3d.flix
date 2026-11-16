@@ -122,28 +122,38 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
 
     def cutoutWood(): Scene3d.Material3d = Scene3d.withCutout(true, wood())
 
-    /// Output.Depth の場面は描くので場面としては数えず、骨つきの物・cutout の材質の物（形だけで書く）・ビルボードだけを数える。
-    /// cutout でも両面でもない材質の物は、GL も形だけで書くので数えない。
+    /// Output.Depth の場面は描くので場面としては数えず、骨つきの物・描けない版の材質の物（形だけで書く）・ビルボードだけを数える。
+    /// cutout の材質の物は材質の道で抜いて書くので数えない。
     @Test
     def testDepthSceneCountsOnlyWhatItCannotDraw(): Unit \ {Assert, IO} =
         let cutout = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(cutoutWood());
         let scene = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 })
                       | Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: plainWithMaterial(Vec3.zero()) :: cutout :: Nil) };
-        Assert.assertEq(expected = Map#{"3D の骨つきの物" => 1, "3D の奥行きの書き出しの材質の物（cutout と両面を見ずに形で書く）" => 1, "3D のビルボード" => 0},
+        Assert.assertEq(expected = Map#{"3D の骨つきの物" => 1, "3D の奥行きの書き出しの材質の物（描けない版を形で書く）" => 0, "3D のビルボード" => 0},
                         skipsOfScene(scene))
 
     /// 材質つきの骨つきの物は骨つきの物として 1 回だけ数え、材質の物には数えない。
     @Test
     def testSkinnedWithMaterialIsCountedOnce(): Unit \ {Assert, IO} =
         let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: Nil));
-        Assert.assertEq(expected = (Some(1), Some(0)), (Map.get("3D の骨つきの物", skips), Map.get("3D の材質の物（頂点の色で描く）", skips)))
+        Assert.assertEq(expected = (Some(1), Some(0)), (Map.get("3D の骨つきの物", skips), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips)))
+
+    /// 描ける版の不透明の材質の物（絵つき・cutout）は、まだ描けない物に数えない。
+    @Test
+    def testDrawableMaterialIsNotCounted(): Unit \ {Assert, IO} =
+        let cutout = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(cutoutWood());
+        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(plainWithMaterial(Vec3.zero()) :: cutout :: Nil));
+        Assert.assertEq(expected = 0, Map.foldLeft((acc, n) -> acc + n, 0, skips))
+
+    def glassWood(): Scene3d.Material3d = Scene3d.withAlphaBlend(true, wood())
 
     /// 視錐台の外（目の後ろ）の材質の物は数えない。骨つきの物は計画が間引かない（Scene3d.isOutsideFrustum がいつも偽・GL も描く）ので目の後ろでも数える。
     @Test
     def testCulledThingsAreNotCounted(): Unit \ {Assert, IO} =
         let behind = Vec3.v3(0.0, 0.0, -50.0);
-        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(behind) :: plainWithMaterial(behind) :: plainWithMaterial(Vec3.zero()) :: Nil));
-        Assert.assertEq(expected = (Some(1), Some(1)), (Map.get("3D の骨つきの物", skips), Map.get("3D の材質の物（頂点の色で描く）", skips)))
+        let glass = (at: Vec3.Vec3) -> Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.translate(at)) |> Scene3d.withMaterial(glassWood());
+        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(behind) :: glass(behind) :: glass(Vec3.zero()) :: Nil));
+        Assert.assertEq(expected = (Some(1), Some(1)), (Map.get("3D の骨つきの物", skips), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips)))
 
     /// GL の左下が原点の矩形（y = 20・高さ 40）を、高さ 200 の描き先の左上が原点にすると y は 200 − 20 − 40 = 140。
     @Test

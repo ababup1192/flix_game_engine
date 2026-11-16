@@ -50,7 +50,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout);
         let encoder = gpu.createCommandEncoder("test");
         let flushes = Ref.fresh(Static, 0);
-        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()) };
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None) };
         let first: Prepared = prepare(renderer, host, dest(), scene() :: Nil);
         afterSubmit(renderer);
         Vector.forEach(found -> Option.forEach(notePasted(renderer), found), first);

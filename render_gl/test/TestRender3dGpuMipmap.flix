@@ -51,7 +51,7 @@ mod Render3d.TestGpuMipmap {
         let state = freshState();
         bindOwn(gl, state, argbTexture(4, 2), Texture3d.TextureUse.MaterialTexture);
         bindOwn(gl, state, argbTexture(4, 2), Texture3d.TextureUse.NormalMap);
-        Assert.assertEq(expected = 1, Map.size(Ref.get(state#textures3dRef)))
+        Assert.assertEq(expected = 1, Map.size(sceneTextures(state)))
 
     /// CPU で段を作る描き手は平均の仕方ごとに段が違うので、色と法線で 2 枚
     @Test
@@ -60,7 +60,7 @@ mod Render3d.TestGpuMipmap {
         let state = freshState();
         bindOwn(gl, state, argbTexture(4, 2), Texture3d.TextureUse.MaterialTexture);
         bindOwn(gl, state, argbTexture(4, 2), Texture3d.TextureUse.NormalMap);
-        Assert.assertEq(expected = 2, Map.size(Ref.get(state#textures3dRef)))
+        Assert.assertEq(expected = 2, Map.size(sceneTextures(state)))
 
     /// 機種が持っていない機種の側の絵は置き場に控えない（後から持てば次に貼る時に上がる）
     @Test
@@ -68,7 +68,7 @@ mod Render3d.TestGpuMipmap {
         let (gl, _) = gpuGl(("texImagePlatform", false) :: Nil);
         let state = freshState();
         discard stderrOf(() -> bindOwn(gl, state, platformTexture(), Texture3d.TextureUse.MaterialTexture));
-        Assert.assertEq(expected = 0, Map.size(Ref.get(state#textures3dRef)))
+        Assert.assertEq(expected = 0, Map.size(sceneTextures(state)))
 
     /// 機種が持っていない機種の側の絵は、上げられないと 1 行知らせる
     @Test
@@ -93,7 +93,7 @@ mod Render3d.TestGpuMipmap {
         let (gl, _) = gpuGl(("texImagePlatform", true) :: Nil);
         let state = freshState();
         bindOwn(gl, state, platformTexture(), Texture3d.TextureUse.MaterialTexture);
-        Assert.assertEq(expected = 1, Map.size(Ref.get(state#textures3dRef)))
+        Assert.assertEq(expected = 1, Map.size(sceneTextures(state)))
 
     // ── 全体の登録の絵の段つきの写し ──
 
@@ -140,4 +140,11 @@ mod Render3d.TestGpuMipmap {
     @Test
     def testTangentsAreNotUploadedWithoutANormalMap(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = 0, tangentUploadsAfterTwoFrames(Scene3d.texturedMaterial("wall", ShaderDoc.FilterMode.Nearest)))
+
+    /// 置き場にある場面の絵（段つきの写しを除く）。
+    def sceneTextures(state: Render3d.State): Map[Render3d.TextureSlot, (Int32, Render3d.TextureTable3d.Created, Int64)] \ IO =
+        Render3d.TextureTable3d.createdOf(state#textures3d) |> Map.filterWithKey((slot, _) -> match slot {
+            case Render3d.TextureSlot.Scene(_) => true
+            case Render3d.TextureSlot.Copy(_)  => false
+        })
 }

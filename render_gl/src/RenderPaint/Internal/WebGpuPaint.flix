@@ -712,7 +712,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 Array.put(frame, 0, p#lastFrame);
                 paintScreen(paint, frame);
                 RenderDrawCounts.endScreenFrame(p#drawCounts);
-                if (Option.isEmpty(Ref.get(p#diagnosticsRef))) RenderDrawCounts.discardTotal(p#drawCounts) else ();
+                // WhyNot: 集めていない間の 3D の数を溜め続けない — 誰も引き取らない数が増え続ける（GL の RenderPaint.noteGpuTime と同じ）。
+                if (Option.isEmpty(Ref.get(p#diagnosticsRef))) {
+                    RenderDrawCounts.discardTotal(p#drawCounts);
+                    discard Render3d.WebGpuRenderer.takeCounts(p#scenes3d)
+                } else ();
                 true
         }
 
@@ -964,7 +968,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             case None    => FrameDiagnostics.empty()
             case Some(d) =>
                 Ref.put(Some(FrameDiagnostics.empty()), p#diagnosticsRef);
-                { textureUploads = List.reverse(d#textureUploads), draw2dCounts = draw2d | d }
+                { textureUploads = List.reverse(d#textureUploads), draw2dCounts = draw2d, scene3dCounts = Render3d.WebGpuRenderer.takeCounts(p#scenes3d) | d }
         }
 
     // ── handler ──

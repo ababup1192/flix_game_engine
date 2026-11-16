@@ -11,6 +11,8 @@ mod Render3d.Material {
     use Render3d.Counts.{BatchBreak, Counter, Phase, count, noteMaterialBuild, timed}
     use Render3d.ScenePlan.{MaterialRequest, groupInstances, splitGroups}
     use Render3d.SceneList.{batchBreakOf}
+    use Render3d.TextureTable3d
+    use Render3d.TextureTable3d.{TextureHit, findTexture}
 
     // ── 材質の表 ──
 
@@ -232,35 +234,36 @@ mod Render3d.Material {
                 { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
         }
 
-    /// 名前で引いた絵。Own = 場面の textures の絵・Registered = 全体の登録の絵。
-    enum TextureHit {
-        case Own(Texture3d.Texture3d)
-        case Registered(RegisteredTexture)
-    }
-
-    /// 名前 name の絵を引く。"tex3d:" は source#own・ほかは全体の登録から。無ければ None。
-    def findTexture(source: TextureSource, name: String): Option[TextureHit] \ IO =
-        if (String.startsWith(prefix = Texture3d.namePrefix(), name)) Map.get(name, source#own) |> Option.map(TextureHit.Own)
-        else (source#textureOf)(name) |> Option.map(TextureHit.Registered)
-
     /// 全体の登録の絵 t の段つきの写し（average で平均した段。置き場の鍵は名前と平均の仕方。
     /// 無いか、元の絵が作り直されていたら、元の段 0 を読み戻して段を作り、上げ直す）。
     // WhyNot: 登録の絵の画素を Java の側に持ち続けない — STB で直に上げているので持っておらず、全部の絵をヒープに二重に持つことになる。
     def mipCopyOf(gl: GlContext, state: State, gen: Int64, name: String, average: Mip.Average, t: RegisteredTexture): BoundTexture \ IO =
-        let copies = Ref.get(state#mipCopiesRef);
-        let key = mipCopyKey(gl, name, average);
-        let copy = match Map.get(key, copies) {
-            case Some(c) if c#sourceId == t#texId and c#version == t#version => { lastUsed = gen | c }
-            case old =>
-                old |> Option.forEach(c -> gl.deleteTexture(c#texId));
-                count(state, Counter.MipCopies, 1);
-                let w = Float64.tryToInt32(Float64.round(t#width)) |> Option.getWithDefault(1);
-                let h = Float64.tryToInt32(Float64.round(t#height)) |> Option.getWithDefault(1);
-                let up = mipCopyUpload(gl, state, average, t#texId, w, h);
-                { sourceId = t#texId, version = t#version, texId = up#texId, levels = up#levels, bytes = up#bytes, lastUsed = gen }
+        let slot = TextureSlot.Copy(mipCopyKey(gl, name, average));
+        let make = (handle: Int32) -> {
+            count(state, Counter.MipCopies, 1);
+            let w = Float64.tryToInt32(Float64.round(t#width)) |> Option.getWithDefault(1);
+            let h = Float64.tryToInt32(Float64.round(t#height)) |> Option.getWithDefault(1);
+            let up = mipCopyUpload(gl, state, average, t#texId, w, h);
+            Ref.put(Map.insert(handle, up#texId, Ref.get(state#textureIdsRef)), state#textureIdsRef);
+            Some({ levels = up#levels, bytes = up#bytes })
         };
-        Ref.put(Map.insert(key, copy, copies), state#mipCopiesRef);
-        { texId = copy#texId, flipped = false, levels = copy#levels }
+        match TextureTable3d.ensure(state#textures3d, destroyTexture(gl, state), gen, slot, copyStamp(t), make) {
+            case Some((handle, c)) => { texId = textureIdOf(gl, state, handle), flipped = false, levels = c#levels }
+            case None              => { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
+        }
+
+    /// 段つきの写しを作り直す鍵（元の絵の番号と版。どちらかが変われば元の絵が作り直された）。
+    def copyStamp(t: RegisteredTexture): String = "${t#texId}:${t#version}"
+
+    /// 表の番号 handle の GL のテクスチャ（作ってあれば。無ければ透明な黒）。
+    def textureIdOf(gl: GlContext, state: State, handle: Int32): Int32 \ IO =
+        Map.get(handle, Ref.get(state#textureIdsRef)) |> Option.getWithDefault(blankTextureId(gl, state))
+
+    /// 絵の表（Render3d.TextureTable3d）へ渡す、GL のテクスチャを捨てる関数。
+    def destroyTexture(gl: GlContext, state: State): Int32 -> Unit \ IO = handle -> {
+        Map.get(handle, Ref.get(state#textureIdsRef)) |> Option.forEach(texId -> gl.deleteTexture(texId));
+        Ref.put(Map.remove(handle, Ref.get(state#textureIdsRef)), state#textureIdsRef)
+    }
 
     /// 登録の絵 source（width × height）の段つきの写しを上げる。GPU が段を作る機種は GPU の中で写し、写せなければ読み戻して上げる。
     def mipCopyUpload(gl: GlContext, state: State, average: Mip.Average, source: Int32, width: Int32, height: Int32): MippedUpload \ IO =
@@ -275,10 +278,7 @@ mod Render3d.Material {
 
     def mipCopyKey(gl: GlContext, name: String, average: Mip.Average): String \ IO = name + ":" + mipKeyOf(gl, average)
 
-    /// 置き場の鍵の、段の作り方の部分。
-    // WhyNot: GPU が段を作る機種で平均の仕方を鍵に入れない — generateMipmap は平均の仕方を選べないので、色と法線に貼った同じ絵が同じ段の 2 枚になる。
-    def mipKeyOf(gl: GlContext, average: Mip.Average): String \ IO =
-        if (gl.prefersGpuMipmap()) "gpu" else ToString.toString(average)
+    def mipKeyOf(gl: GlContext, average: Mip.Average): String \ IO = TextureTable3d.mipKeyOf(gl.prefersGpuMipmap(), average)
 
     /// 段つきで上げた絵 1 枚。levels = 段の数・bytes = 段を合わせた置き場の大きさ。
     type alias MippedUpload = { texId = Int32, levels = Int32, bytes = Int64 }
@@ -372,40 +372,23 @@ mod Render3d.Material {
     // ── 場面の絵の置き場 ──
 
     /// 場面の絵を contentHash と段の作り方で引き、無ければ段つきで上げる（uploadTexture3d）。どちらでも lastUsed を今の世代にする。
+    /// 上げられなかった絵は透明な黒を貼る（絵ごとに 1 回知らせ、Render3d.TextureTable3d.retryFrames の後に試し直す）。
     def texture3dBound(gl: GlContext, state: State, gen: Int64, average: Mip.Average, t: Texture3d.Texture3d): BoundTexture \ IO =
         let key = sceneTextureKey(gl, t, average);
-        let held = Ref.get(state#textures3dRef);
-        let retryWaiting = isPlatformRetryWaiting(state, gen, key);
-        match Map.get(key, held) {
-            case Some(found) =>
-                Ref.put(Map.insert(key, { lastUsed = gen | found }, held), state#textures3dRef);
-                { texId = found#texId, flipped = false, levels = found#levels }
-            case None if retryWaiting => { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
-            case None =>
-                count(state, Counter.Texture3dUploads, 1);
-                uploadSceneTexture(gl, state, gen, key, average, t)
-        }
-
-    /// 機種の側から上げられなかった絵を試し直すまでのコマの数。
-    // WhyNot: 毎コマ試し直さない — 機種が絵を持つまでの間、毎コマ GPU のテクスチャを作っては捨てる。
-    def platformRetryFrames(): Int64 = 60i64
-
-    /// 鍵 key の絵を、上げられなかった後の待ちの間で試さないコマか。
-    def isPlatformRetryWaiting(state: State, gen: Int64, key: String): Bool \ IO =
-        Map.get(key, Ref.get(state#platformRetryRef)) |> Option.exists(tried -> gen - tried < platformRetryFrames())
-
-    /// 置き場に無い場面の絵 t を上げて鍵 key で控える。上げられなければ控えず、透明な黒を貼る（絵ごとに 1 回知らせ、platformRetryFrames の後に試し直す）。
-    // WhyNot: 上げられなかった絵を控えない — 控えると機種が後から絵を持っても、置き場から落ちるまで黒いまま。
-    def uploadSceneTexture(gl: GlContext, state: State, gen: Int64, key: String, average: Mip.Average, t: Texture3d.Texture3d): BoundTexture \ IO =
-        match uploadTexture3d(gl, state, average, t) {
-            case Some(up) =>
-                Ref.put(Map.insert(key, { texId = up#texId, levels = up#levels, bytes = up#bytes, lastUsed = gen }, Ref.get(state#textures3dRef)), state#textures3dRef);
-                Ref.put(Map.remove(key, Ref.get(state#platformRetryRef)), state#platformRetryRef);
-                { texId = up#texId, flipped = false, levels = up#levels }
-            case None =>
-                Ref.put(Map.insert(key, gen, Ref.get(state#platformRetryRef)), state#platformRetryRef);
-                warnSceneOnce(state, "platform:" + key, "scene3d: 場面の絵 '${Texture3d.name(t)}' を機種の側から上げられない — 0（黒・透明）で読む");
-                { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
+        let make = (handle: Int32) -> {
+            count(state, Counter.Texture3dUploads, 1);
+            match uploadTexture3d(gl, state, average, t) {
+                case Some(up) =>
+                    Ref.put(Map.insert(handle, up#texId, Ref.get(state#textureIdsRef)), state#textureIdsRef);
+                    Some({ levels = up#levels, bytes = up#bytes })
+                case None =>
+                    warnSceneOnce(state, "platform:" + key, "scene3d: 場面の絵 '${Texture3d.name(t)}' を機種の側から上げられない — 0（黒・透明）で読む");
+                    None
+            }
+        };
+        match TextureTable3d.ensure(state#textures3d, destroyTexture(gl, state), gen, TextureSlot.Scene(key), "", make) {
+            case Some((handle, c)) => { texId = textureIdOf(gl, state, handle), flipped = false, levels = c#levels }
+            case None              => { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
         }
 
     def sceneTextureKey(gl: GlContext, t: Texture3d.Texture3d, average: Mip.Average): String \ IO = Texture3d.contentHash(t) + ":" + mipKeyOf(gl, average)
@@ -463,39 +446,16 @@ mod Render3d.Material {
     /// 今と前のコマで使う物だけで上限を超えていたら 1 回だけ知らせる（Pass の場面は画面のコマの 1 つ前の世代で描かれる）。
     // WhyNot: しばらく使わなかった絵を捨てない — たまにしか出ない物の絵を出すたびに CPU で段を作り直し、そのコマが跳ねる。
     pub def sweepTextures3d(gl: GlContext, state: State, gen: Int64): Unit \ IO =
-        let held = Ref.get(state#textures3dRef);
-        let copies = Ref.get(state#mipCopiesRef);
         let preloaded = Ref.get(state#preloadRef)#textures;
-        let entryOf = (slot, lastUsed, bytes, counted) -> (slot, { lastUsed = lastUsed, size = bytes, counted = counted, preloaded = Set.memberOf(slot, preloaded) });
-        let entries = List.append(
-            Map.toList(held) |> List.map(ke -> entryOf(TextureSlot.Scene(fst(ke)), snd(ke)#lastUsed, snd(ke)#bytes, true)),
-            Map.toList(copies) |> List.map(ke -> entryOf(TextureSlot.Copy(fst(ke)), snd(ke)#lastUsed, snd(ke)#bytes, false)));
         let budget = { count = state#textureCountBudget, size = state#textureByteBudget };
-        let victims = budgetEvictions(budget, gen - 1i64, entries);
-        if (List.isEmpty(victims)) () else dropTextures(gl, state, victims);
+        let (victims, over) = TextureTable3d.sweep(state#textures3d, destroyTexture(gl, state), gen, budget, preloaded);
         warnDroppedTextures(state, victims, preloaded);
-        let victimSet = List.toSet(victims);
         // WhyNot: 捨てる物を選べたかで知らせを決めない — 今と前のコマで使う物だけで超えている時は、捨てる物が無くても超えたまま。
-        if (isOverBudget(budget, List.filter(ke -> not Set.memberOf(fst(ke), victimSet), entries)))
+        if (over)
             warnSceneOnce(state, "@budget", "scene3d: 場面の絵（Texture3d と材質の段つきの写し）が ${state#textureCountBudget} 枚か"
                 + " ${Int64.toString(state#textureByteBudget / 1048576i64)} MB を超えて使われている — 絵を減らすか小さくするか、project.json の scene3dTextureBudgetCount / scene3dTextureBudgetMB を上げる")
         else ()
 
-    /// 置き場から victims の絵を GPU ごと捨てる。
-    def dropTextures(gl: GlContext, state: State, victims: List[TextureSlot]): Unit \ IO =
-        let (held, copies) = victims |> List.foldLeft((acc, slot) -> {
-            let (h, c) = acc;
-            match slot {
-                case TextureSlot.Scene(key) =>
-                    Map.get(key, h) |> Option.forEach(e -> gl.deleteTexture(e#texId));
-                    (Map.remove(key, h), c)
-                case TextureSlot.Copy(key) =>
-                    Map.get(key, c) |> Option.forEach(e -> gl.deleteTexture(e#texId));
-                    (h, Map.remove(key, c))
-            }
-        }, (Ref.get(state#textures3dRef), Ref.get(state#mipCopiesRef)));
-        Ref.put(held, state#textures3dRef);
-        Ref.put(copies, state#mipCopiesRef)
 
     // ── 材質のプログラムの置き場 ──
 

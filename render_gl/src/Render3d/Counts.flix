@@ -1,7 +1,18 @@
-// Render3d.Counts — 3D の描き手（Render3d）の 1 コマの数と CPU の区間の時間（FrameDiagnostics.Scene3dCounts の元）。約束は Render3d.flix の頭。
+// Render3d.Counts — 3D の描き手の 1 コマの数と CPU の区間の時間（FrameDiagnostics.Scene3dCounts の元）。約束は Render3d.flix の頭。
+// 数える入れ物（Holders）は GL の Render3d.State と WebGPU の Render3d.WebGpuRenderer の状態が同じ名前の欄で持ち、ここの関数を両方が呼ぶ。
 mod Render3d.Counts {
     import java.lang.System
     use Render3d.{State, warnSceneOnce}
+
+    /// 数える入れ物の欄（record に足して持つ）。countsHolder = Counter と BatchBreak の数・phaseNsHolder = Phase の時間（ns）・
+    /// materialBuildsRef = 組んだ材質のプログラム（新しい物が頭）。
+    pub type alias Holders[r: RecordRow] = {
+        countsHolder = Array[Int32, Static], phaseNsHolder = Array[Int64, Static], materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static] | r
+    }
+
+    /// 空の入れ物の欄。
+    pub def freshHolders(): { countsHolder = Array[Int32, Static], phaseNsHolder = Array[Int64, Static], materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static] } \ IO =
+        { countsHolder = Array.repeat(Static, counterSlots(), 0), phaseNsHolder = Array.repeat(Static, phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil) }
 
     /// 数える物。並びは countsHolder の添え字（slotOf）。
     pub enum Counter {
@@ -72,13 +83,13 @@ mod Render3d.Counts {
     pub def phaseSlots(): Int32 = 6
 
     /// c を n 足す。
-    pub def count(state: State, c: Counter, n: Int32): Unit \ IO =
+    pub def count(state: { countsHolder = Array[Int32, Static] | r }, c: Counter, n: Int32): Unit \ IO =
         let h = state#countsHolder;
         let i = slotOf(c);
         Array.put(Array.get(i, h) + n, i, h)
 
     /// f を走らせ、かかった時間から中で測った別の区間の時間を引いた残りを p に足す。
-    pub def timed(state: State, p: Phase, f: Unit -> a \ ef): a \ ef + IO =
+    pub def timed(state: { phaseNsHolder = Array[Int64, Static] | r }, p: Phase, f: Unit -> a \ ef): a \ ef + IO =
         let h = state#phaseNsHolder;
         let nestedBefore = Array.foldLeft((acc, ns) -> acc + ns, 0i64, h);
         let start = System.nanoTime();
@@ -90,7 +101,7 @@ mod Render3d.Counts {
         result
 
     /// 前に呼んでからの数と区間の時間を返し、0 に戻す。区間は一度も測らなかった物を除く。
-    pub def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
+    pub def takeCounts(state: Holders[r]): FrameDiagnostics.Scene3dCounts \ IO =
         let h = state#countsHolder;
         let at = (c: Counter) -> Array.get(slotOf(c), h);
         let breakAt = (b: BatchBreak) -> Array.get(breakSlotOf(b), h);
@@ -112,7 +123,7 @@ mod Render3d.Counts {
         counts
 
     /// 場面の置いた物 placed 個と、そのうち視錐台の外で間引かずに描いた drawn 個を数える。
-    pub def countInstances(state: State, placed: Int32, drawn: Int32): Unit \ IO =
+    pub def countInstances(state: { countsHolder = Array[Int32, Static] | r }, placed: Int32, drawn: Int32): Unit \ IO =
         count(state, Counter.Instances, placed);
         count(state, Counter.Drawn, drawn)
 
@@ -124,14 +135,15 @@ mod Render3d.Counts {
         Scene3d.droppedLightsWarnings(scene) |> List.forEach(kl -> warnSceneOnce(state, fst(kl), snd(kl)))
 
     /// 組んだ材質のプログラムを 1 つ控える（name = プログラムの名前）。
-    pub def noteMaterialBuild(state: State, name: String, reason: FrameDiagnostics.BuildReason): Unit \ IO =
+    pub def noteMaterialBuild(state: { materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static] | r }, name: String,
+                              reason: FrameDiagnostics.BuildReason): Unit \ IO =
         Ref.put({ name = name, reason = reason } :: Ref.get(state#materialBuildsRef), state#materialBuildsRef)
 
     /// 3D の draw call を 1 つ数え、それが 1 つの draw call に分かれた理由 why も 1 つ数える。
-    pub def countDrawCall(state: State, why: BatchBreak): Unit \ IO = countDrawCallAt(state, breakSlotOf(why))
+    pub def countDrawCall(state: { countsHolder = Array[Int32, Static] | r }, why: BatchBreak): Unit \ IO = countDrawCallAt(state, breakSlotOf(why))
 
     /// countDrawCall の、理由を breakSlotOf の番号で受ける形。
-    pub def countDrawCallAt(state: State, slot: Int32): Unit \ IO =
+    pub def countDrawCallAt(state: { countsHolder = Array[Int32, Static] | r }, slot: Int32): Unit \ IO =
         count(state, Counter.DrawCalls, 1);
         let h = state#countsHolder;
         Array.put(Array.get(slot, h) + 1, slot, h)
