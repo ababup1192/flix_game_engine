@@ -42,7 +42,7 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.Instancing.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
-    use Render3d.ScenePlan.{Group, GroupedScene, PlanCaps, Planner, ScenePlan, SceneDraws, freshPlanner, groupScenes, planScenes}
+    use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePlan, SceneDraws, freshPlanner, groupScenes, isSkinned, planScenes}
     use Render3d.SceneList.{SceneList, buildSceneList}
     use Render3d.WebGpuRows.{MeshTable, drawRows, freshMeshes, releaseMeshes, trimMeshes, uploadRows}
     use RenderPaint.Internal.WebGpuPipelines
@@ -199,14 +199,13 @@ pub mod Render3d.WebGpuRenderer {
             // WhyNot: 姿勢の行を配らない — 骨つきの物は描かない（P8）。
             let caps = { alphaToOne = false, poseRowLimit = 0 };
             let grouped = groupScenes(s#planner, caps, dest#samples, cmds);
-            List.forEach(noteMaterials(host, grouped#members), grouped#scenes);
+            List.forEach(scene -> noteSkips(host, skipsOf(grouped#members, scene)), grouped#scenes);
             let (plans, _) = planScenes(s#planner, caps, Vector.map(_ -> 0, grouped#requests), grouped);
             plans |> List.mapWithIndex((i, plan) -> prepareScene(r, host, dest, grouped#members, i, plan)) |> List.toVector
         }
 
     /// 場面 1 つを描いて貼る物を返す（描かない場面・場面の矩形か scissor が空なら None）。
     def prepareScene(r: Renderer, host: Host, dest: Dest, members: MutList[MeshDraw, Static], index: Int32, plan: ScenePlan[SpanBatch]): Option[Paste] \ IO =
-        noteUnsupported(host, plan);
         let cmd = plan#cmd;
         let vp = dest#viewport;
         let rect = sceneRect(vp, cmd);
@@ -232,32 +231,45 @@ pub mod Render3d.WebGpuRenderer {
         case Scene3d.Output.Depth(_) => false
     }
 
-    /// 材質の物（頂点の色で描く）を、不透明と半透明に分けて、視錐台の内の物の数で数える。そのうち lightmap を使う物も数える。
-    def noteMaterials(host: Host, members: MutList[MeshDraw, Static], scene: GroupedScene): Unit \ IO =
-        let drawn = (g: Group) -> List.range(g#batch#start, g#batch#start + g#batch#count)
-                                  |> List.map(i -> MutList.get(i, members)) |> List.filter(d -> not d#culled);
-        let tally = scene#groups |> List.foldLeft((acc, g) -> match g#surface {
-            case Some((fields, _)) =>
-                let (opaque, blended, lightmapped) = acc;
-                let ds = drawn(g);
-                let lit = lightmapped + List.count(d -> Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)), ds);
-                if (fields#blend) (opaque, blended + List.length(ds), lit) else (opaque + List.length(ds), blended, lit)
-            case None => acc
-        }, (0, 0, 0));
-        let (opaque, blended, lightmapped) = tally;
-        host#skip("3D の材質の物（頂点の色で描く）", opaque);
-        host#skip("3D の半透明の材質の物（頂点の色で不透明に描く）", blended);
-        host#skip("3D の lightmap の物（今の光で描く）", lightmapped)
+    /// 場面 1 つのまだ描けない物の種類と回数（0 回の種類も並べる。数えるのは host#skip）。
+    /// Output.Depth の場面は奥行きの書き出しの 1 回だけ（prepareScene が描かずに捨てる場面なので、中身は数えない）。
+    /// 物は計画が間引かなかった物（culled でない物・骨つきの物は Scene3d.isOutsideFrustum が間引かない）を 1 体 1 回だけ数える
+    /// （骨つきの物は材質があっても骨つきの物・lightmap の物は材質の物の内数）。
+    /// 影は影を落とす光の数・ビルボードは数・空と環境マップは場面の数。
+    def skipsOf(members: MutList[MeshDraw, Static], scene: GroupedScene): List[(String, Int32)] \ IO =
+        let cmd = scene#cmd#scene;
+        if (not isColorOutput(cmd)) ("3D の奥行きの書き出し（Output.Depth）", 1) :: Nil
+        else {
+            let t = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc),
+                                  { opaque = 0, blended = 0, lightmapped = 0, skinned = 0 }, scene#groups);
+            ("3D の骨つきの物", t#skinned) :: ("3D の材質の物（頂点の色で描く）", t#opaque) ::
+            ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) :: ("3D の lightmap の物（今の光で描く）", t#lightmapped) ::
+            ("3D の影（影を落とす光）", List.length(scene#shadowPlans)) :: ("3D のビルボード", List.length(cmd#billboards)) ::
+            ("3D の空", Option.count(_ -> true, cmd#sky)) :: ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
+        }
 
-    /// 描かない物を種類ごとに数える（骨つきの物は物の数・ビルボードは数・影は光の数・空と環境マップと奥行きの書き出しは場面の数）。
-    def noteUnsupported(host: Host, plan: ScenePlan[SpanBatch]): Unit \ IO =
-        let scene = plan#cmd#scene;
-        host#skip("3D の骨つきの物", List.sumWith(b -> b#count, plan#draws#skinned));
-        host#skip("3D の影（影を落とす光）", List.length(plan#shadowPlans));
-        host#skip("3D のビルボード", List.length(scene#billboards));
-        host#skip("3D の空", Option.count(_ -> true, scene#sky));
-        host#skip("3D の環境マップ", Option.count(_ -> true, scene#environmentMap));
-        host#skip("3D の奥行きの書き出し（Output.Depth）", if (isColorOutput(scene)) 0 else 1)
+    /// skipsOf の物の数え。
+    type alias Tally = { opaque = Int32, blended = Int32, lightmapped = Int32, skinned = Int32 }
+
+    /// group の batch の members の i から end の前までを acc へ数える。
+    def tallyGroup(members: MutList[MeshDraw, Static], g: Group, i: Int32, end: Int32, acc: Tally): Tally \ IO =
+        if (i >= end) acc
+        else tallyGroup(members, g, i + 1, end, tallyDraw(g#surface, MutList.get(i, members), acc))
+
+    /// 物 d 1 つを acc へ数える（視錐台の外の物は数えない）。surface = d の group の材質。
+    // WhyNot: 骨つきの物を材質の道（surface）で分けない — WebGPU は材質の順の番号を 0 で答えるので、材質つきの骨つきの物も計画では骨つきの batch へ入り、描かれずに消える。
+    def tallyDraw(surface: Option[MaterialRequest], d: MeshDraw, acc: Tally): Tally =
+        if (d#culled) acc
+        else if (isSkinned(d)) { skinned = acc#skinned + 1 | acc }
+        else match surface {
+            case Some((fields, _)) =>
+                let lit = { lightmapped = acc#lightmapped + (if (Option.isEmpty(Scene3d.lightmapOfFields(d#fields))) 0 else 1) | acc };
+                if (fields#blend) { blended = lit#blended + 1 | lit } else { opaque = lit#opaque + 1 | lit }
+            case None => acc
+        }
+
+    def noteSkips(host: Host, skips: List[(String, Int32)]): Unit \ IO =
+        List.forEach(match (kind, n) -> host#skip(kind, n), skips)
 
     /// GL の左下が原点の画素の矩形を、描き先の左上が原点の (x, y, 幅, 高さ) にする。
     def topLeftOf(height: Int32, box: PixelBox): (Int32, Int32, Int32, Int32) =

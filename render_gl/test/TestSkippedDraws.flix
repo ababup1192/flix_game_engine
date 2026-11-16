@@ -35,6 +35,20 @@ mod TestSkippedDraws {
         let tables = List.range(0, frames) |> List.filterMap(_ -> SkippedDraws.endFrame(c));
         Assert.assertEq(expected = 1, List.length(tables))
 
+    /// 飛ばした物が無ければ reportFrame のコマでも表は返らない。
+    @Test
+    def testNoTableAtReportFrameWithoutSkips(): Unit \ {Assert, IO} =
+        let c = SkippedDraws.fresh();
+        let frames = Int64.tryToInt32(SkippedDraws.reportFrame()) |> Option.getWithDefault(0);
+        let tables = List.range(0, frames) |> List.filterMap(_ -> SkippedDraws.endFrame(c));
+        Assert.assertEq(expected = 0, List.length(tables))
+
+    /// 数えたコマが 0 なら 1 コマあたりの回数は "-"。
+    @Test
+    def testPerFrameIsDashWithoutFrames(): Unit \ Assert =
+        Assert.assertEq(expected = "[webgpu] まだ描けずに飛ばした物（終わり・種類ごとの回数）:\n  3D の空: 2 回（1 コマあたり -）",
+                        SkippedDraws.buildTable("終わり", 0i64, ("3D の空", 2i64) :: Nil))
+
     /// 飛ばした物が無ければ表は返らない。
     @Test
     def testNoTableWithoutSkips(): Unit \ {Assert, IO} =

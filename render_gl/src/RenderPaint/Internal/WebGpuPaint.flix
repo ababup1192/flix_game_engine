@@ -131,7 +131,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             // 3〜5 = takeSubmitCounts の後のコマの数・そのうち submit が 2 回以上のコマの数・1 コマの submit の一番多い回数。
             frameCounters = Array[Int32, Static],
             texWarnLog = Ref[Set[String], Static],
-            skipped = Ref[Set[String], Static],
+            // 標本の数を丸めたと知らせ終えた描き先の名前（"MSAA " + 名前）。
+            msaaWarned = Ref[Set[String], Static],
             // まだ描けずに飛ばした物の種類ごとの回数。
             skips = SkippedDraws.Counts,
             diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
@@ -197,7 +198,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             frameSize = Array#{cfg#width, cfg#height} @ Static,
             encoder = Array#{(None: Option[CommandEncoder])} @ Static,
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
-            texWarnLog = Ref.fresh(Static, Set.empty()), skipped = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
+            texWarnLog = Ref.fresh(Static, Set.empty()), msaaWarned = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
             scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout)
         });
@@ -968,9 +969,9 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def warnMsaaRounded(paint: Paint, name: String, requested: Int32, drawn: Int32): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let key = "MSAA ${name}";
-        if (Set.memberOf(key, Ref.get(p#skipped))) ()
+        if (Set.memberOf(key, Ref.get(p#msaaWarned))) ()
         else {
-            Ref.put(Set.insert(key, Ref.get(p#skipped)), p#skipped);
+            Ref.put(Set.insert(key, Ref.get(p#msaaWarned)), p#msaaWarned);
             Log.fellBack("render-target", name, "標本 ${Int32.toString(drawn)}",
                          "WebGPU の描き先の標本は 1 か 4（標本 ${Int32.toString(requested)} は ${Int32.toString(drawn)} で描く）")
         }
