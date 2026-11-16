@@ -5,7 +5,7 @@
   "slideDistance": 0.6,
   "sway": 0.0,
   "portraitVeilWithCast": 0.5,
-  "highlight": { "dim": 0.4, "seconds": 0.5 },
+  "highlight": { "dim": 0.4, "seconds": 0.5, "voices": ["whale"] },
   "slots": {
     "left": { "x": 0.25, "bottom": 1.0, "height": 0.9, "exclusive": true },
     "center": { "x": 0.5, "bottom": 1.0, "height": 0.9, "exclusive": true },

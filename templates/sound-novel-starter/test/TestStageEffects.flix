@@ -2,7 +2,7 @@
 // 強さ・覆いの始まり・層の数は Doc（assets/novel.kind.json）、人物と小物はテスト用の Doc（test/fixtures/novel.cast.json）から引く。
 mod TestStageEffects {
 
-    use fge::{Clock, Render, Yarn}
+    use fge::{Clock, Render, RichText, Yarn}
 
     def res(): Res.Res \ Fs.FileRead = TestKit.res() |> Res.withCast(CastDoc.load("test/fixtures/novel.cast.json"))
 
@@ -166,4 +166,49 @@ mod TestStageEffects {
         // 背景に付く絵（shade）は、縦の頁の覆いを薄くする「人物が出ている量」に数えない。
         let st = Stage.settle(applied(0.0, "show", "shade" :: Nil, Stage.empty()));
         Assert.assertTrue(TestKit.near(0.0, Cast.presenceOf(t(10.0), res()#cast, st#cast)))
+
+    // ══ <<text align=center>> の行ごとの真ん中寄せ ══
+
+    /// align を書いた舞台で、今の行 text（ルビ rubies）を shown 字まで出した時に、横の NVL の頁に描いた本文の字の (字, x, y)（影を除く）。
+    def placedGlyphs(align: Option[String], text: String, rubies: List[RichText.Ruby], shown: Float64): List[(String, Float64, Float64)] \ {Fs.FileRead, IO} =
+        let r0 = res();
+        let atlas = SceneRender.cfgOf(Layout.size(Layout.Fit.Regular), "debug", Map.empty())#fontAtlas;
+        let w = TestKit.begun(r0);
+        World.readOf(w) |> Option.map(r -> {
+            let line = { rubies = rubies | Page.plainLine(text, "a:1") };
+            let page = { lines = Nil, current = Some(line), reveal = { text = text, shown = shown } | r#page };
+            let props = align |> Option.map(a -> PropertyTween.setName(Stage.textAlignKey(), Some(a), t(0.0), 0.0, r#stage#props)) |> Option.getWithDefault(r#stage#props);
+            ViewText.textLayer(atlas, View.envOf(Layout.Fit.Regular, r0, w), { page = page, stage = { props = props | r#stage } | r })
+        }) |> Option.getWithDefault(Nil) |> List.filterMap(p -> match p#item {
+            case Render.Item.Text(x) if x#zIndex == View.zText() + 1 => Some((x#text, p#at#x, p#at#y))
+            case _                                                     => None
+        })
+
+    def middleOfTheNvlPage(): Float64 = Layout.nvlText()#x + Layout.nvlText()#width / 2.0
+
+    @Test
+    def testCenteredLineIsCenteredRowByRow(): Unit \ {Assert, Fs.FileRead, IO} =
+        // 改行の後の 1 字の行（き）も、頁の幅の真ん中あたりに置く。
+        let glyphs = placedGlyphs(Some("center"), "あいうえお\nき", Nil, 100.0);
+        let lastRow = glyphs |> List.filter(match (s, _, _) -> s == "き") |> List.map(match (_, x, _) -> x);
+        Assert.assertTrue(lastRow |> List.exists(x -> Float64.abs(x - middleOfTheNvlPage()) < 30.0))
+
+    @Test
+    def testCenteredRowsStayPutWhileTheyAppear(): Unit \ {Assert, Fs.FileRead, IO} =
+        // 文字送りが 2 行目へ入る前（1 行目の 3 字まで）と出し終えた時で、1 行目の字の x が同じ（2 行目はまだ描かない）。
+        let early = placedGlyphs(Some("center"), "あいうえお\nき", Nil, 3.0);
+        let done = placedGlyphs(Some("center"), "あいうえお\nき", Nil, 100.0) |> List.filter(match (s, _, _) -> s == "あ" or s == "い" or s == "う");
+        Assert.assertEq(expected = done, early)
+
+    @Test
+    def testCenteredRowsKeepTheirRuby(): Unit \ {Assert, Fs.FileRead, IO} =
+        // 2 行目の親字（かき = 全体の 6・7 字目）のルビも、親字の上に真ん中寄せで出る。
+        let glyphs = placedGlyphs(Some("center"), "あいうえお\nかき", { start = 6, length = 2, text = "よみ" } :: Nil, 100.0);
+        let rubyX = glyphs |> List.filter(match (s, _, _) -> s == "よみ") |> List.map(match (_, x, _) -> x);
+        Assert.assertTrue(rubyX |> List.exists(x -> Float64.abs(x - middleOfTheNvlPage()) < 30.0))
+
+    @Test
+    def testLeftAlignedLineStaysAtTheLeftEdge(): Unit \ {Assert, Fs.FileRead, IO} =
+        let glyphs = placedGlyphs(None, "あいうえお\nき", Nil, 100.0);
+        Assert.assertEq(expected = Some(Layout.nvlText()#x), glyphs |> List.find(match (s, _, _) -> s == "き") |> Option.map(match (_, x, _) -> x))
 }

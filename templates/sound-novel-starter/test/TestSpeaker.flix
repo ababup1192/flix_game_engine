@@ -223,6 +223,20 @@ mod TestSpeaker {
         Assert.assertEq(expected = 1.0, Cast.brightnessOf(castEnv(res, at(5.0), st), st#cast, CastDoc.Kind.Character, "b"))
 
     @Test
+    def testAVoiceWithoutAPictureDimsTheOthers(): Unit \ {Assert, Fs.FileRead} =
+        // 立ち絵を持たない話し手（テスト用の Doc の highlight.voices の whale）が話す間も、出ている a は dim だけ暗い。
+        let res = castRes();
+        let h = CastDoc.rec(res#cast)#highlight;
+        let st = Stage.empty() |> stageAfter(res, "show", "a" :: "time=0" :: Nil) |> Stage.withSpeaker(Clock.zero(), Some("whale"));
+        Assert.assertTrue(TestKit.near(1.0 - h#dim, Cast.brightnessOf(castEnv(res, at(h#seconds + 1.0), st), st#cast, CastDoc.Kind.Character, "a")))
+
+    @Test
+    def testASpeakerNeitherShownNorAVoiceDimsNoOne(): Unit \ {Assert, Fs.FileRead} =
+        let res = castRes();
+        let st = Stage.empty() |> stageAfter(res, "show", "a" :: "time=0" :: Nil) |> Stage.withSpeaker(Clock.zero(), Some("nobody"));
+        Assert.assertEq(expected = 1.0, Cast.brightnessOf(castEnv(res, at(5.0), st), st#cast, CastDoc.Kind.Character, "a"))
+
+    @Test
     def testNobodyDimsWhenTheSpeakerIsNotShown(): Unit \ {Assert, Fs.FileRead} =
         let res = castRes();
         let st = Stage.withSpeaker(Clock.zero(), Some("someone"), twoShown(res));
@@ -275,6 +289,37 @@ mod TestSpeaker {
             case _                         => None
         });
         Assert.assertTrue(names |> List.exists(n -> String.startsWith(prefix = "picture_${CastDoc.textureOf("cup", "plain")}", n)))
+
+    // ── 頁の幕がある間の小物の重なり順（novel.cast.json の propsOnPage） ──
+
+    /// テスト用の Doc に propsOnPage を書き足した描く元。
+    def castResWith(propsOnPage: String): Res.Res \ Fs.FileRead =
+        let text = Fs.FileRead.read("test/fixtures/novel.cast.json") |> Result.getWithDefault("{}");
+        let doc = CastDoc.fromJson(String.replace(src = "\"highlight\"", dst = "\"propsOnPage\": \"${propsOnPage}\", \"highlight\"", text)) |> Option.getWithDefault(CastDoc.defaults());
+        TestKit.res() |> Res.withCast(doc)
+
+    /// NVL の頁に小物 fan を出した World で、world の層に fan の面を描くか（頁の幕の上で描く時は world の層は描かない）。
+    def fanInTheWorldLayer(res: Res.Res): Bool =
+        let st = stageAfter(res, "show", "fan" :: "time=0" :: Nil, Stage.emptyFor(res#theme));
+        let w = World.withRead({ stage = st | World.emptyRead(res#theme) }, TestKit.w0(res));
+        let env = View.envOf(Layout.Fit.Regular, res, w);
+        ViewStage.frame(env, st, not ViewStage.isPropOnPage(env, w)) |> List.exists(p -> match p#item {
+            case Render.Item.Shader(x) => String.startsWith(prefix = "picture_${CastDoc.textureOf("fan", "plain")}", x#spec#name)
+            case _                     => false
+        })
+
+    @Test
+    def testPropsUnderWindowAreDrawnInTheWorldLayerOnTheNvlPage(): Unit \ {Assert, Fs.FileRead} =
+        // propsOnPage が underWindow なら、NVL の頁でも小物は world の層（頁の幕の奥）に描く。
+        Assert.assertTrue(fanInTheWorldLayer(castResWith("underWindow")))
+
+    @Test
+    def testPropsOverWindowAreDrawnOnThePage(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertFalse(fanInTheWorldLayer(castResWith("overWindow")))
+
+    @Test
+    def testPropsAreDrawnOnThePageWithoutPropsOnPage(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertFalse(fanInTheWorldLayer(castRes()))
 
     @Test
     def testCastWithoutHideWindowKeepsTheWindow(): Unit \ {Assert, Fs.FileRead} =
