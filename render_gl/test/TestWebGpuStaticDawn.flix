@@ -53,68 +53,97 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
                 gpu.destroy()
         }
 
-    /// cmds を 1 コマずつ prepare して submit し（encoder は捨てる）、コマを締める。vertices = 形の頂点の上限。
-    /// 返すのは (コマごとの、締める前の持ち越しの数と、作り直して手放す buffer の数, 最後のコマの描いた物の数)。
-    def framesOf(gpu: WebGpu, vertices: Int32, cmds: List[Scene3d.RenderCmd]): (List[(Int32, Int32)], Int32) \ IO =
+    /// frames を 1 コマずつ prepare して submit し（encoder は捨てる）、コマを締める（1 コマに場面が何個か）。vertices = 形の頂点の上限。
+    /// 返すのは コマごとの (締める前の持ち越しの数, 手放すのを待っている物の数, 形を作った回数) と、(bundle を積んだ回数, 最後のコマの描いた物の数, device の誤りの数)。
+    def framesOf(gpu: WebGpu, vertices: Int32, frames: List[List[Scene3d.RenderCmd]]): (List[(Int32, Int32, Int32)], (Int32, Int32, Int32)) \ IO =
         let paste = layoutOf(gpu, true);
         let renderer = Render3d.WebGpuRenderer.create(gpu, paste, layoutOf(gpu, false));
         let RendererData.RendererData(s) = renderer;
         let drawn = Ref.fresh(Static, 0);
-        let seen = cmds |> List.map(cmd -> {
+        let seen = frames |> List.map(cmds -> {
             let encoder = gpu.createCommandEncoder("test");
             let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()),
                                skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None),
                                groupById = _ -> checked_ecast(None) };
-            discard prepare(renderer, host, dest(), cmd :: Nil);
-            let held = (Render3d.StaticRows.sizeOf(s#statics#cache), List.length(Ref.get(s#statics#retired)));
-            discard encoder.finish();
-            Ref.put(takeCounts(renderer)#drawn, drawn);
+            discard prepare(renderer, host, dest(), cmds);
+            let cached = Render3d.StaticRows.sizeOf(s#statics#cache);
+            let retired = Render3d.WebGpuStatic.retiredCountOf(s#statics);
+            gpu.submit(encoder.finish());
+            let counts = takeCounts(renderer);
+            Ref.put(counts#drawn, drawn);
             afterSubmit(renderer);
             endFrameWithin(renderer, { vertices = vertices, textures = { count = 64, size = 67108864i64 } });
-            held
+            (cached, retired, counts#meshUploads)
         });
+        let recorded = Render3d.WebGpuStatic.recordedCountOf(s#statics);
         Render3d.WebGpuRenderer.release(renderer);
         paste.release();
-        (seen, Ref.get(drawn))
+        (seen, (recorded, Ref.get(drawn), gpu.errorCount()))
 
-    /// 同じ集まりの値を 3 コマ続けて描くと、持ち越しは 1 つのままで作り直さない（手放す buffer が出ない）。
+    def cachedOf(seen: List[(Int32, Int32, Int32)]): List[Int32] = List.map(match (c, _, _) -> c, seen)
+
+    /// 同じ集まりの値を 3 コマ続けて描くと、持ち越しは 1 つのまま、bundle も最初のコマに 1 回積むだけ。
     @Test
     def testSameGroupIsCarriedAcrossFrames(): Unit \ {Assert, IO} = withDawn(gpu -> {
         let g = town();
-        Assert.assertEq(expected = (1, 0) :: (1, 0) :: (1, 0) :: Nil, fst(framesOf(gpu, 4000000, sceneWith(g) :: sceneWith(g) :: sceneWith(g) :: Nil)))
+        let (seen, (recorded, _, errors)) = framesOf(gpu, 4000000, (sceneWith(g) :: Nil) :: (sceneWith(g) :: Nil) :: (sceneWith(g) :: Nil) :: Nil);
+        Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 1, 0), (cachedOf(seen), recorded, errors))
     })
 
-    /// 外す鍵が変わったコマは作り直し、前の buffer 2 本（1 体ごとの値と材質の値）を submit の後に手放す。
+    /// 外す鍵が変わったコマは作り直し、前の物（buffer と bundle）は手放すのを待つ（コマを締めるまで手放さない）。
     @Test
-    def testRemovedKeyRebuildsAndRetires(): Unit \ {Assert, IO} = withDawn(gpu -> {
+    def testRemovedKeyRebuildsAndRetiresAtFrameEnd(): Unit \ {Assert, IO} = withDawn(gpu -> {
         let g = town();
-        let frames = sceneWith(g) :: sceneWith(Scene3d.withoutItems(Set#{"b"}, g)) :: Nil;
-        Assert.assertEq(expected = (1, 0) :: (1, 2) :: Nil, fst(framesOf(gpu, 4000000, frames)))
+        let (seen, (_, _, errors)) = framesOf(gpu, 4000000, (sceneWith(g) :: Nil) :: (sceneWith(Scene3d.withoutItems(Set#{"b"}, g)) :: Nil) :: Nil);
+        Assert.assertEq(expected = ((1, 0) :: (1, 2) :: Nil, 0), (List.map(match (c, r, _) -> (c, r), seen), errors))
+    })
+
+    /// 同じ集まりを描き先の違う 2 つの場面で描いても、bundle は描き先ごとに 1 回積むだけ（コマごとに積み直さない）。
+    @Test
+    def testTwoScenesShareCarriedAndKeepTheirBundles(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let g = town();
+        let both = sceneWith(g) :: sceneWith(g) :: Nil;
+        let (seen, (recorded, _, errors)) = framesOf(gpu, 4000000, both :: both :: both :: Nil);
+        Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 2, 0), (cachedOf(seen), recorded, errors))
+    })
+
+    /// 同じ名前で tint の違う集まりを 2 つの場面で描くと、両方を控えて作り直さず、手放す物も出ない。
+    @Test
+    def testSameNameDifferentTintInTwoScenesKeepsBoth(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let g = town();
+        let both = sceneWith(g) :: sceneWith(Scene3d.withGroupTint(Color.rgb(1.0, 0.5, 0.5), g)) :: Nil;
+        let (seen, (recorded, _, errors)) = framesOf(gpu, 4000000, both :: both :: both :: Nil);
+        Assert.assertEq(expected = ((2, 0) :: (2, 0) :: (2, 0) :: Nil, 2, 0), (List.map(match (c, r, _) -> (c, r), seen), recorded, errors))
     })
 
     /// 形の置き場が上限を超えて形を捨てたコマの後は、持ち越しを全部作り直す（行の形の番号が別の形を指しうる）。
     /// 2・3 コマ目は集まりを描かずに別の四角だけを描き、3 コマ目を締める時に 1 コマ目の集まりの形が捨てられる（今と前のコマで使った形は捨てない）。
+    /// 4 コマ目は作り直すので集まりの形を作り直す（作り直さなければ捨てた形の番号を描き、形を作らない）。
     @Test
     def testMeshEvictionDropsCarried(): Unit \ {Assert, IO} = withDawn(gpu -> {
         let g = town();
         let other = { at = Vec2.zero(), clip = None, scene = { instances = quadAt(4.0) :: Nil | Scene3d.scene(camera(), { x = 64.0, y = 64.0 }) } };
         let seen = Ref.fresh(Static, Nil);
-        discard Render3d.FakeGl.stderrOf(() -> Ref.put(fst(framesOf(gpu, 6, sceneWith(g) :: other :: other :: sceneWith(g) :: Nil)), seen));
-        Assert.assertEq(expected = (1, 0) :: (1, 0) :: (1, 0) :: (1, 2) :: Nil, Ref.get(seen))
+        discard Render3d.FakeGl.stderrOf(() -> Ref.put(fst(framesOf(gpu, 6, (sceneWith(g) :: Nil) :: (other :: Nil) :: (other :: Nil) :: (sceneWith(g) :: Nil) :: Nil)), seen));
+        let uploadsAtEnd = Ref.get(seen) |> List.last |> Option.map(match (_, _, u) -> u) |> Option.getWithDefault(-1);
+        Assert.assertEq(expected = 3, uploadsAtEnd)
     })
 
-    /// 太陽の影のある場面を 3 コマ描いても（色の pass と影の地図の pass の bundle を積んで流す）、device の誤りは出ず、持ち越しも作り直さない。
+    /// 太陽の影のある場面を 3 コマ描いても（色の pass と影の地図の pass の bundle を積んで流す）、device の誤りは出ず、bundle も積み直さない。
     @Test
     def testShadowedBundlesRaiseNoDeviceErrors(): Unit \ {Assert, IO} = withDawn(gpu -> {
         let g = town();
         let sun = { shadow = Some(Scene3d.directionalShadow()) | Scene3d.directionalLight(Vec3.v3(-0.4, -1.0, 0.3)) };
         let sunlit = (cmd: Scene3d.RenderCmd) -> { scene = { directionalLight = Some(sun) | cmd#scene } | cmd };
-        let frames = fst(framesOf(gpu, 4000000, sunlit(sceneWith(g)) :: sunlit(sceneWith(g)) :: sunlit(sceneWith(g)) :: Nil));
-        Assert.assertEq(expected = ((1, 0) :: (1, 0) :: (1, 0) :: Nil, 0), (frames, gpu.errorCount()))
+        let frame = sunlit(sceneWith(g)) :: Nil;
+        let (seen, (recorded, _, errors)) = framesOf(gpu, 4000000, frame :: frame :: frame :: Nil);
+        Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 2, 0), (cachedOf(seen), recorded, errors))
     })
 
     /// 持ち越した物も描いた物の数に入る。
     @Test
-    def testCarriedItemsAreCountedAsDrawn(): Unit \ {Assert, IO} = withDawn(gpu ->
-        Assert.assertEq(expected = 3, snd(framesOf(gpu, 4000000, sceneWith(town()) :: Nil))))
+    def testCarriedItemsAreCountedAsDrawn(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let (_, (_, drawn, _)) = framesOf(gpu, 4000000, (sceneWith(town()) :: Nil) :: Nil);
+        Assert.assertEq(expected = 3, drawn)
+    })
 }

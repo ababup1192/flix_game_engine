@@ -148,6 +148,7 @@ mod Render3d.ScenePlan {
         { scenes = scenes, requests = MutList.toArray(Static, tables#requests) |> Array.toVector, members = tables#members }
 
     /// 持ち越す物 items を、視錐台で間引かずに候補に分ける（色の pass の材質の候補と、影の地図の形だけの候補）。
+    // WhyNot: alpha to coverage の版を聞かない — 持ち越すのは alpha to coverage を持たない WebGPU の backend だけ（GL は持ち越さない・Render3d.StaticRows の頭）。
     /// 答えは (色の pass の候補, 影の地図の候補, backend に聞く材質, batch の描く物)。
     pub def groupCarried(planner: Planner, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
         let tables = freshTables();
@@ -482,7 +483,7 @@ mod Render3d.ScenePlan {
     def spotCasterOf(planner: Planner, scene: Scene3d.Scene3dCmd): Option[(Int32, ShadowCaster)] \ IO =
         match scene#output {
             case Scene3d.Output.Depth(_) => None
-            case Scene3d.Output.Color if List.isEmpty(Scene3d.instancesOf(scene)) => None
+            case Scene3d.Output.Color if not Render3d.StaticRows.hasDrawnItem(scene) => None
             case Scene3d.Output.Color =>
                 let casters = Scene3d.pickLights(scene#camera#eye, scene)#spotLights
                     |> List.mapWithIndex((i, spot) -> spot#shadow |> Option.filter(m -> m#mapSize > 0)

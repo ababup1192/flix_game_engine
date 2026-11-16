@@ -124,7 +124,7 @@ pub mod Scene3d {
     /// Output.Depth・置いた物の無い場面・mapSize が 0 以下・太陽を使えない時・distance が near 以下の時は None。
     pub def directionalShadowOf(scene: Scene3dCmd): Option[SunShadowSetup] =
         let castsShadow = match scene#output {
-            case Output.Color    => not List.isEmpty(scene#instances) or List.exists(g -> not List.isEmpty(groupInstancesOf(g)), scene#groups)
+            case Output.Color    => hasDrawnInstance(scene)
             case Output.Depth(_) => false
         };
         if (not castsShadow) None
@@ -655,6 +655,10 @@ pub mod Scene3d {
     def tintedBy(c: Color, i: Instance3d): Instance3d =
         let InstanceData.InstanceData(f) = i;
         InstanceData.InstanceData({ tint = Color.rgb(f#tint#r * c#r, f#tint#g * c#g, f#tint#b * c#b) | f })
+
+    /// 場面に描く物が 1 つでもあるか（集まりは外していない鍵が 1 つでもあるか。先頭で止まり、描く物の列を作らない）。
+    def hasDrawnInstance(scene: Scene3dCmd): Bool =
+        not List.isEmpty(scene#instances) or List.exists(g -> { let r = staticGroupFieldsOf(g); List.exists(kv -> not Set.memberOf(fst(kv), r#removed), r#items) }, scene#groups)
 
     /// 場面の描く物の全部（instances の後ろに groups の物を集まりの順に）。描き手が groups を持ち越さない所はこれを描く。
     pub def instancesOf(scene: Scene3dCmd): List[Instance3d] =

@@ -3,7 +3,7 @@ mod Render3d.TestStaticRows {
     use Render3d.FakeGl.{camera, plainTriangle, poseAt, sceneOf, skinnedAt, stderrOf}
     use Render3d.SceneList.{flagSameBinding, hasFlag, rowAt, rowCountOf, valuesAt}
     use Render3d.ScenePlan.{freshPlanner}
-    use Render3d.StaticRows.{CarriedRows, build, carriedGroupsOf, freshCache, isCarriedItem, lookup, perFrameOf, retime, sizeOf, sweep}
+    use Render3d.StaticRows.{CarriedRows, build, carriedGroupsOf, ensure, freshCache, isCarriedItem, perFrameOf, setTime, sizeOf, sweep}
 
     def noRegistered(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
 
@@ -32,7 +32,7 @@ mod Render3d.TestStaticRows {
         let cache = freshCache();
         let builds = Ref.fresh(Static, 0);
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        gens |> List.forEach(match (gen, g) -> discard lookup(planner, cache, gen, g, () -> { Ref.put(Ref.get(builds) + 1, builds); Ref.get(builds) }, _ -> ()));
+        gens |> List.forEach(match (gen, g) -> discard ensure(planner, cache, gen, g, () -> { Ref.put(Ref.get(builds) + 1, builds); Ref.get(builds) }, _ -> ()));
         Ref.get(builds)
 
     // ── 前のコマの行を使うか ──
@@ -62,6 +62,19 @@ mod Render3d.TestStaticRows {
         let tinted = Scene3d.withGroupTint(Color.rgb(1.0, 0.5, 0.5), g);
         Assert.assertEq(expected = 2, buildsOver((1i64, g) :: (2i64, tinted) :: (3i64, tinted) :: Nil))
 
+    /// 同じ名前で中身の違う集まりを 1 コマに 2 つ描くと、両方を控え（今のコマで使った物は手放さない）、次のコマからは作り直さない。
+    @Test
+    def testSameNameTwoGroupsInOneFrameAreBothKept(): Unit \ {Assert, IO} =
+        let g = town();
+        let tinted = Scene3d.withGroupTint(Color.rgb(1.0, 0.5, 0.5), g);
+        let retired = Ref.fresh(Static, 0);
+        let cache = freshCache();
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let builds = Ref.fresh(Static, 0);
+        List.range(1, 4) |> List.forEach(gen -> (g :: tinted :: Nil) |> List.forEach(x ->
+            discard ensure(planner, cache, Int32.toInt64(gen), x, () -> { Ref.put(Ref.get(builds) + 1, builds); 0 }, _ -> Ref.put(Ref.get(retired) + 1, retired))));
+        Assert.assertEq(expected = (2, 0, 2), (Ref.get(builds), Ref.get(retired), sizeOf(cache)))
+
     /// 作り直す時は、前の物を destroy に渡す。
     @Test
     def testRebuildDestroysOldPayload(): Unit \ {Assert, IO} =
@@ -69,8 +82,8 @@ mod Render3d.TestStaticRows {
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let destroyed = Ref.fresh(Static, Nil);
         let destroy = (p: Int32) -> Ref.put(p :: Ref.get(destroyed), destroyed);
-        discard lookup(planner, cache, 1i64, town(), () -> 1, destroy);
-        discard lookup(planner, cache, 2i64, town(), () -> 2, destroy);
+        discard ensure(planner, cache, 1i64, town(), () -> 1, destroy);
+        discard ensure(planner, cache, 2i64, town(), () -> 2, destroy);
         Assert.assertEq(expected = 1 :: Nil, Ref.get(destroyed))
 
     /// しばらく描かなかった集まりは sweep が destroy して外し、描いた集まりは残す。
@@ -81,9 +94,9 @@ mod Render3d.TestStaticRows {
         let destroyed = Ref.fresh(Static, Nil);
         let destroy = (p: Int32) -> Ref.put(p :: Ref.get(destroyed), destroyed);
         let kept = town();
-        discard lookup(planner, cache, 1i64, Scene3d.staticGroup("gone", ("x", boxAt(1.0)) :: Nil), () -> 7, destroy);
-        discard lookup(planner, cache, 1i64, kept, () -> 8, destroy);
-        discard lookup(planner, cache, 10i64, kept, () -> 9, destroy);
+        discard ensure(planner, cache, 1i64, Scene3d.staticGroup("gone", ("x", boxAt(1.0)) :: Nil), () -> 7, destroy);
+        discard ensure(planner, cache, 1i64, kept, () -> 8, destroy);
+        discard ensure(planner, cache, 10i64, kept, () -> 9, destroy);
         sweep(cache, 10i64, 5i64, destroy);
         Assert.assertEq(expected = (7 :: Nil, 1), (Ref.get(destroyed), sizeOf(cache)))
 
@@ -92,7 +105,7 @@ mod Render3d.TestStaticRows {
     def testRebuildStreakWarnsOnce(): Unit \ {Assert, IO} =
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        let said = stderrOf(() -> List.range(1, 70) |> List.forEach(gen -> discard lookup(planner, cache, Int32.toInt64(gen), town(), () -> gen, _ -> ())));
+        let said = stderrOf(() -> List.range(1, 70) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), town(), () -> gen, _ -> ())));
         Assert.assertEq(expected = 2, List.length(String.split(regex = "'town'", said)))
 
     /// 作り直しが続かなければ知らせない。
@@ -101,7 +114,7 @@ mod Render3d.TestStaticRows {
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let g = town();
-        List.range(1, 40) |> List.forEach(gen -> discard lookup(planner, cache, Int32.toInt64(gen), g, () -> gen, _ -> ()));
+        List.range(1, 40) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), g, () -> gen, _ -> ()));
         Assert.assertFalse(Set.memberOf("@staticGroup:town", Ref.get(planner#sceneWarnedRef)))
 
     // ── 持ち越す物と毎コマの物 ──
@@ -157,11 +170,11 @@ mod Render3d.TestStaticRows {
 
     /// 時刻が変わると値の uTime を書き直して真、同じなら偽。
     @Test
-    def testRetimeWritesOnlyWhenTimeChanges(): Unit \ {Assert, IO} =
+    def testSetTimeWritesOnlyWhenTimeChanges(): Unit \ {Assert, IO} =
         let rows = built(town());
         let at = Vector.head(rows#timeAt) |> Option.getWithDefault(0);
-        let changed = retime(rows, 2.5);
-        let again = retime(rows, 2.5);
+        let changed = setTime(rows, 2.5);
+        let again = setTime(rows, 2.5);
         Assert.assertEq(expected = (true, false, 2.5f32), (changed, again, Array.get(at, rows#list#values)))
 
     /// 目の位置が違う場面から作っても、行は同じ（持ち越した行は目に依らない）。

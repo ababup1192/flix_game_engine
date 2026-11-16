@@ -27,6 +27,19 @@ mod Render3d.StaticRows {
         case Scene3d.Output.Color    => List.foldRight((c, acc) -> List.append(c#perFrame, acc), Nil, carried) |> List.append(scene#instances)
     }
 
+    /// 場面に描く物が 1 つでもあるか（集まりは外していない鍵が 1 つでもあるか。先頭で止まり、描く物の列を作らない）。
+    pub def hasDrawnItem(scene: Scene3d.Scene3dCmd): Bool =
+        not List.isEmpty(scene#instances) or List.exists(g -> {
+            let r = Scene3d.staticGroupFieldsOf(g);
+            List.exists(kv -> not Set.memberOf(fst(kv), r#removed), r#items)
+        }, scene#groups)
+
+    /// 場面の置いた物の数（診断）。carried = 持ち越した集まり（色の場面）。奥行きの書き出しの場面は集まりの物も数える。
+    pub def placedCountOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): Int32 = match scene#output {
+        case Scene3d.Output.Color    => List.length(scene#instances) + List.sumWith(c -> c#placed + List.length(c#perFrame), carried)
+        case Scene3d.Output.Depth(_) => List.length(Scene3d.instancesOf(scene))
+    }
+
     /// 場面の持ち越す集まり（色の場面だけ）。
     pub def carriedGroupsOf(scene: Scene3d.Scene3dCmd): List[Scene3d.StaticGroup] = match scene#output {
         case Scene3d.Output.Color    => scene#groups
@@ -102,7 +115,7 @@ mod Render3d.StaticRows {
         Vector.append(lit, shadow)
 
     /// 行の values の時刻を time にする（前と同じ時刻なら何もせず偽・書き直したら真）。
-    pub def retime(c: CarriedRows, time: Float64): Bool \ IO =
+    pub def setTime(c: CarriedRows, time: Float64): Bool \ IO =
         if (Array.get(0, c#time) == time) false
         else {
             let t = RenderUtil.f32(time);
@@ -118,8 +131,9 @@ mod Render3d.StaticRows {
     // WhyNot: items を Eq で比べない — 中身の比べは物の数だけ形と材質を辿り、持ち越しで省きたい仕事と同じ重さになる。
     type alias Entry[a] = { items = IdentityHashMap[Object, Object], removed = Set[String], tint = Color, payload = a, lastUsed = Array[Int64, Static] }
 
-    /// 持ち越しの控え（a = backend が GPU に置いた物）。entries = 集まりの名前 → 控え・rebuilds = 名前 → (最後に作り直した世代, 続けて作り直したコマの数)。
-    pub type alias Cache[a] = { entries = Ref[Map[String, Entry[a]], Static], rebuilds = Ref[Map[String, (Int64, Int32)], Static] }
+    /// 持ち越しの控え（a = backend が GPU に置いた物）。entries = 集まりの名前 → 控えの列（同じ名前でも中身の違う集まりを 1 コマに何場面かで描くと 2 つ以上）・
+    /// rebuilds = 名前 → (最後に作り直した世代, 続けて作り直したコマの数)。
+    pub type alias Cache[a] = { entries = Ref[Map[String, List[Entry[a]]], Static], rebuilds = Ref[Map[String, (Int64, Int32)], Static] }
 
     pub def freshCache(): Cache[a] \ IO =
         { entries = Ref.fresh(Static, Map.empty()), rebuilds = Ref.fresh(Static, Map.empty()) }
@@ -127,23 +141,24 @@ mod Render3d.StaticRows {
     /// この数のコマ続けて同じ名前の集まりを作り直したら、1 回知らせる。
     def rebuildStreakLimit(): Int32 = 30
 
-    /// 集まり g の持ち越した物（名前・items の値・外した鍵・tint が控えと同じなら控えの物。違えば古い物を destroy して build で作り直す）。gen = 今のコマの世代。
-    pub def lookup(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, build: Unit -> a \ ef1, destroy: a -> Unit \ ef2): a \ ef1 + ef2 + IO =
+    /// 集まり g の持ち越した物。名前・items の値・外した鍵・tint が同じ控えがあればその物、無ければ build で作る（重い）。gen = 今のコマの世代。
+    /// 作る時は、同じ名前の控えのうち今のコマで使っていない物を retire へ渡す（今のコマで使った物は、ほかの場面が描くので残す）。
+    pub def ensure(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, make: Unit -> a \ ef1, retire: a -> Unit \ ef2): a \ ef1 + ef2 + IO =
         let f = Scene3d.staticGroupFieldsOf(g);
         let items = unchecked_cast(f#items as Object);
-        let held = Map.get(f#name, Ref.get(cache#entries));
-        match held |> Option.filter(e -> isSameGroup(f, e)) |> Option.filter(e -> e#items.containsKey(items)) {
+        let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#entries));
+        match List.find(e -> isSameGroup(f, e) and e#items.containsKey(items), held) {
             case Some(e) =>
                 Array.put(gen, 0, e#lastUsed);
                 e#payload
             case None =>
-                let old = held;
-                Option.forEach(e -> destroy(e#payload), old);
+                let (usedNow, idle) = List.partition(e -> Array.get(0, e#lastUsed) == gen, held);
+                List.forEach(e -> retire(e#payload), idle);
                 noteRebuild(planner, cache, gen, f#name);
                 let key: IdentityHashMap[Object, Object] = new IdentityHashMap();
                 discard key.put(items, items);
-                let made = { items = key, removed = f#removed, tint = f#tint, payload = build(), lastUsed = Array#{gen} @ Static };
-                Ref.put(Map.insert(f#name, made, Ref.get(cache#entries)), cache#entries);
+                let made = { items = key, removed = f#removed, tint = f#tint, payload = make(), lastUsed = Array#{gen} @ Static };
+                Ref.put(Map.insert(f#name, made :: usedNow, Ref.get(cache#entries)), cache#entries);
                 made#payload
         }
 
@@ -165,20 +180,22 @@ mod Render3d.StaticRows {
                 + "（毎コマ staticGroup を呼ぶ・withoutItems や withGroupTint に毎コマ違う値を渡すと持ち越せない・名前が場面の中で重なっていないかも確かめる）")
         else ()
 
-    /// idle のコマより長く描かなかった集まりの物を destroy して控えから外す。
-    pub def sweep(cache: Cache[a], gen: Int64, idle: Int64, destroy: a -> Unit \ ef): Unit \ ef + IO =
-        let entries = Ref.get(cache#entries);
+    /// idle のコマより長く描かなかった集まりの物を retire へ渡して控えから外す。
+    pub def sweep(cache: Cache[a], gen: Int64, idle: Int64, retire: a -> Unit \ ef): Unit \ ef + IO =
         let isStale = (e: Entry[a]) -> Array.get(0, e#lastUsed) + idle < gen;
-        let stale = Map.filter(isStale, entries);
-        let kept = Map.filter(e -> not isStale(e), entries);
-        Map.forEach((_, e) -> destroy(e#payload), stale);
-        Ref.put(kept, cache#entries)
+        let all = Ref.get(cache#entries);
+        Map.forEach((_, es) -> List.forEach(e -> if (isStale(e)) retire(e#payload) else (), es), all);
+        Ref.put(all |> Map.map(List.filter(e -> not isStale(e))) |> Map.filter(es -> not List.isEmpty(es)), cache#entries)
 
-    /// 控えの物を全部 destroy して外す（持ち越した行の形か絵の番号を置き場が捨てた時・描き手を手放す時）。
-    pub def clear(cache: Cache[a], destroy: a -> Unit \ ef): Unit \ ef + IO =
-        Map.forEach((_, e) -> destroy(e#payload), Ref.get(cache#entries));
+    /// 控えの物を全部 retire へ渡して外す（持ち越した行の形か絵の番号を置き場が捨てた時・描き手を手放す時）。
+    pub def clear(cache: Cache[a], retire: a -> Unit \ ef): Unit \ ef + IO =
+        Map.forEach((_, es) -> List.forEach(e -> retire(e#payload), es), Ref.get(cache#entries));
         Ref.put(Map.empty(), cache#entries)
 
-    /// 控えにある集まりの数。
-    pub def sizeOf(cache: Cache[a]): Int32 \ IO = Map.size(Ref.get(cache#entries))
+    /// 控えにある集まりの物の数。
+    pub def sizeOf(cache: Cache[a]): Int32 \ IO = Map.foldLeft((n, es) -> n + List.length(es), 0, Ref.get(cache#entries))
+
+    /// 控えにある物を全部 f に渡す（コマの終わりに backend が中の物を締める）。
+    pub def forEachHeld(f: a -> Unit \ ef, cache: Cache[a]): Unit \ ef + IO =
+        Map.forEach((_, es) -> List.forEach(e -> f(e#payload), es), Ref.get(cache#entries))
 }
