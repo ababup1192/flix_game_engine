@@ -9,8 +9,10 @@ mod Page {
     use fge::{JsonCodec, RichText, UiTypewriter, Yarn}
     use Util.Json.Json
 
-    /// 1 行。speaker = 話し手の呼び名（地の文は空）、text = 出す字（台詞は「」込み）、source = .yarn の「ファイル:行」。
-    pub type alias Line = { speaker = String, text = String, rubies = List[RichText.Ruby], source = String }
+    /// 1 行。speaker = 話し手の呼び名（地の文は空）、speakerId = 台本の話し手の id（地の文と、id を書く前のセーブの行は空）、
+    /// text = 出す字（台詞は「」込み）、source = .yarn の「ファイル:行」。
+    // WhyNot: 呼び名から id を逆引きしない — 呼び名には novel.story.json の replace が当たり、Doc の names と字が合わなくなる。
+    pub type alias Line = { speaker = String, speakerId = String, text = String, rubies = List[RichText.Ruby], source = String }
 
     /// lines = 頁に積んだ読み終えた行（古い順）、current = 文字送り中か読み終えた今の行、reveal = 今の行の文字送り、
     /// next = 次の行を出す時に今の行を頁に積むか（場面が変わった後の最初の行は積まない）。
@@ -29,13 +31,16 @@ mod Page {
     pub def lineOf(name: String, quotes: Bool, line: Yarn.Line): Line =
         let rubies = Yarn.rubiesOf(line);
         if (String.isEmpty(line#speaker) or not quotes)
-            { speaker = if (String.isEmpty(line#speaker)) "" else name, text = line#text, rubies = rubies, source = Yarn.sourceText(line#source) }
+            { speaker = if (String.isEmpty(line#speaker)) "" else name, speakerId = line#speaker, text = line#text, rubies = rubies, source = Yarn.sourceText(line#source) }
         else
-            { speaker = name, text = "「${line#text}」", rubies = rubies |> List.map(r -> { start = r#start + 1 | r }),
+            { speaker = name, speakerId = line#speaker, text = "「${line#text}」", rubies = rubies |> List.map(r -> { start = r#start + 1 | r }),
               source = Yarn.sourceText(line#source) }
 
+    /// 地の文の 1 行（話し手なし・ルビなし）。
+    pub def plainLine(text: String, source: String): Line = { speaker = "", speakerId = "", text = text, rubies = Nil, source = source }
+
     /// 選んだ選択肢をログに残す形（「→ 選んだ字」）。
-    pub def choiceLine(text: String): Line = { speaker = "", text = "→ ${text}", rubies = Nil, source = "" }
+    pub def choiceLine(text: String): Line = plainLine("→ ${text}", "")
 
     /// 次の行を出す。今の行を頁に積んでから出す。場面が変わった後（next が NewPage）は積まない。
     /// 入り切らない時、NVL は頁をめくり（積んだ行を捨てる）、ADV は古い行から落として積み続ける。
@@ -95,7 +100,7 @@ mod Page {
     def lineToJson(line: Line): Json =
         let ruby = (r: RichText.Ruby) -> Json.JObject(Map#{ "start" => Json.JNumber(JsonCodec.intToBd(r#start)),
                                                             "length" => Json.JNumber(JsonCodec.intToBd(r#length)), "text" => Json.JString(r#text) });
-        Json.JObject(Map#{ "speaker" => Json.JString(line#speaker), "text" => Json.JString(line#text),
+        Json.JObject(Map#{ "speaker" => Json.JString(line#speaker), "speakerId" => Json.JString(line#speakerId), "text" => Json.JString(line#text),
                            "rubies" => JsonCodec.encodeList(ruby, line#rubies), "source" => Json.JString(line#source) })
 
     def lineFromJson(json: Json): Option[Line] =
@@ -104,7 +109,7 @@ mod Page {
         JsonCodec.expectObject(json) |> Option.flatMap(obj -> forM (
             text <- Map.get("text", obj) |> Option.flatMap(JsonCodec.expectString);
             rubies <- Map.get("rubies", obj) |> Option.getWithDefault(Json.JArray(Vector.empty())) |> JsonCodec.decodeList(rubyOf)
-        ) yield { speaker = JsonCodec.stringOr("speaker", "", obj), text = text, rubies = rubies, source = JsonCodec.stringOr("source", "", obj) })
+        ) yield { speaker = JsonCodec.stringOr("speaker", "", obj), speakerId = JsonCodec.stringOr("speakerId", "", obj), text = text, rubies = rubies, source = JsonCodec.stringOr("source", "", obj) })
 
     /// セーブの枠の "page" に書く値: { "lines": [行…], "current": 行か null, "next": "Append" か "NewPage" }。文字送りは出し終えた形で残す。
     pub def toJson(page: Page): Json =

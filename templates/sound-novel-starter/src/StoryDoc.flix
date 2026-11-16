@@ -2,7 +2,7 @@
 // 文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
 // 言葉は Label の enum を鍵に引く（鍵の綴りと既定の言葉の正は entryOf。Doc に無い鍵は既定の言葉で出す = fail-open）。
 mod StoryDoc {
-    use fge::{DocJson, JsonCodec, Log, Yarn}
+    use fge::{DocJson, JsonCodec, Log, Sort, Yarn}
     use Util.Json.Json
 
     /// シナリオの外で画面に出す言葉の鍵。
@@ -224,17 +224,28 @@ mod StoryDoc {
 
     /// 呼び名の話し手の id（nameOf の逆。Doc に無い呼び名はそのまま）。
     pub def idOfName(name: String, doc: Doc): String =
-        rec(doc)#names |> Map.toList |> List.find(match (_, shown) -> shown == name) |> Option.map(fst) |> Option.getWithDefault(name)
+        rec(doc)#names |> Map.keysOf |> Set.toList |> List.find(id -> nameOf(id, doc) == name) |> Option.getWithDefault(name)
 
     /// 話し手の id の呼び名（地の文の空の id は空・Doc に無い id はそのまま。replace を当てた字）。
     pub def nameOf(id: String, doc: Doc): String =
         replaceText(doc, Map.getWithDefault(id, id, rec(doc)#names))
 
-    /// text に replace の表を当てる（鍵の字の順に、それぞれの字を全部替える。空の鍵は当てない）。
+    /// text に replace の表を当てる。左から 1 回だけ読み、その所で当たる鍵のうち一番長い物を替える（空の鍵は当てない）。
+    // WhyNot: 鍵ごとに String.replace を重ねない — 置き換えた字に別の鍵がまた当たり、重なる鍵は辞書の順で短い方が先に当たる。
     pub def replaceText(doc: Doc, text: String): String =
-        rec(doc)#replace |> Map.foldLeftWithKey((acc, mark, shown) -> if (String.isEmpty(mark)) acc else String.replace(src = mark, dst = shown, acc), text)
+        let marks = rec(doc)#replace |> Map.toList |> List.filter(match (mark, _) -> not String.isEmpty(mark))
+            |> Sort.sortStableBy(match (mark, _) -> 0 - String.length(mark));
+        if (List.isEmpty(marks)) text else replaceFrom(marks, text, Nil)
 
-    /// 台本の行に replace の表を当てる（字と、ルビの位置を数える切れの両方）。
+    def replaceFrom(marks: List[(String, String)], rest: String, acc: List[String]): String =
+        if (String.isEmpty(rest)) String.intercalate("", List.reverse(acc))
+        else match List.find(match (mark, _) -> String.startsWith(prefix = mark, rest), marks) {
+            case Some((mark, shown)) => replaceFrom(marks, String.dropLeft(String.length(mark), rest), shown :: acc)
+            case None                => replaceFrom(marks, String.dropLeft(1, rest), String.takeLeft(1, rest) :: acc)
+        }
+
+    /// 台本の行に replace の表を当てる（字と、ルビの位置を数える切れの両方）。鍵が parts の切れ目（マークアップや {式}）を
+    /// またぐ所は、text では替わり parts では替わらない。ルビの読み（[ruby=よみ] の値）には当てない。
     // WhyNot: text だけ替えない — 画面とバックログはルビの位置を parts の字の長さから数えるので、長さの替わった字の後ろのルビがずれる。
     pub def replaceLine(doc: Doc, line: Yarn.Line): Yarn.Line =
         if (Map.isEmpty(rec(doc)#replace)) line

@@ -39,7 +39,7 @@ mod TestFlowVideo {
     def testPortraitObjectsStayInsideTheScreen(): Unit \ {Assert, Fs.FileRead} =
         // 縦の design で読んでいる間の物（背景・メッセージウィンドウ・クイックメニュー）は、どれも 540 の幅の中に収まる。
         let r = TestKit.res();
-        let objects = FlowVideo.objectsOf(SceneRender.fitOf(portraitDesign(), r), r, TestKit.begun(r));
+        let objects = FlowVideo.objectsOf(View.emptyFonts(), SceneRender.fitOf(portraitDesign(), r), r, TestKit.begun(r));
         Assert.assertTrue(not List.isEmpty(objects) and (objects |> List.forAll(o -> o#rect#position#x + o#rect#size#x <= 540.01)))
 
     def scriptOf(steps: List[Flow.Step]): Flow.Script =
@@ -77,15 +77,22 @@ mod TestFlowVideo {
 
     @Test
     def testRenderingReadsTheProjectFonts(): Unit \ {Assert, Fs.FileRead, IO} =
-        // 描き出しは project.json の fonts の default 以外を実機と同じ名前（font_<name>）で組み、名前で引ける。
+        // 描き出しは App.withFonts で宣言した名前の本を、実機と同じ名前（font_<name>）で組み、名前で引ける。
         let fallback = atlasNamed("default");
-        let picked = projectWithGothic() |> Result.map(p -> SceneRender.fontOfIn(SceneRender.fontsIn(p), fallback))
+        let picked = projectWithGothic() |> Result.map(p -> SceneRender.fontOfIn(SceneRender.fontsIn(p, "gothic" :: Nil), fallback))
             |> Result.map(fontOf -> (fontOf("gothic")#textureName, fontOf("unknown")#textureName));
         Assert.assertEq(expected = Ok(("font_gothic", "default")), picked)
 
     @Test
-    def testTheTemplateDrawsWithTheDefaultFontOnly(): Unit \ {Assert, Fs.FileRead, IO} =
-        Assert.assertEq(expected = Ok(0), ProjectLoader.loadProject(".") |> Result.map(p -> Map.size(SceneRender.fontsIn(p))))
+    def testAnUndeclaredFontIsTheBodyFontInRenderingToo(): Unit \ {Assert, Fs.FileRead, IO} =
+        // project.json に有っても App.withFonts で宣言していない名前は、実機と同じく描き出しでも本文の本。
+        let fallback = atlasNamed("default");
+        let picked = projectWithGothic() |> Result.map(p -> SceneRender.fontOfIn(SceneRender.fontsIn(p, Nil), fallback)("gothic")#textureName);
+        Assert.assertEq(expected = Ok("default"), picked)
+
+    @Test
+    def testTheTemplateDeclaresNoExtraFont(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Nil, SceneRender.declaredFontsOf(TestKit.res()))
 
     @Test
     def testGameHooksGetTheFontsOfTheFrame(): Unit \ {Assert, Fs.FileRead} =

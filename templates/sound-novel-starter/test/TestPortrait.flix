@@ -254,7 +254,7 @@ mod TestPortrait {
     // ── 縦の頁 ──
 
     def block(text: String, height: Float64, isCurrent: Bool): ViewText.Block =
-        { line = { speaker = "", text = text, rubies = Nil, source = text }, visible = String.length(text), isCurrent = isCurrent, height = height }
+        { line = Page.plainLine(text, text), visible = String.length(text), isCurrent = isCurrent, height = height }
 
     @Test
     def testKeepLatestDropsOldestWholeLines(): Unit \ Assert =

@@ -62,9 +62,9 @@ mod E2e {
               { name = "cursor", doc = "一番手前のカーソルの番号（0 から。確認のウィンドウ → 画面 → 選択肢 → タイトルの順に見る）", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(cursorOf(w)))) } :: Nil
               ::: GameE2e.probes(),
           drives =
-              { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・ゲート・ウィンドウ・タイトル画面・押すと明ける待ちの間は押さない）",
+              { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・ゲート・ウィンドウ・タイトル画面・命令が出した待ちの間は押さない）",
                 act = (waited, h) -> Resources.read((_, w) ->
-                    if (not World.isReading(w) or not World.isFree(w) or World.isChoosing(w) or Option.nonEmpty(WorldRead.gateHere(w)) or WorldRead.isTapWait(w)) Flow.DriveAct.Restart
+                    if (not World.isReading(w) or not World.isFree(w) or World.isChoosing(w) or Option.nonEmpty(WorldRead.gateHere(w)) or WorldRead.isPaused(w)) Flow.DriveAct.Restart
                     else if (not Page.isDone(World.pageOf(w))) Flow.DriveAct.Restart
                     else if (waited >= readSeconds()) Flow.DriveAct.Tap("confirm")
                     else Flow.DriveAct.Idle, h) } :: Nil,

@@ -52,9 +52,9 @@ mod ViewText {
         let isCurrent = Option.exists(c -> c#source == line#source, r#page#current);
         if (isCurrent and Saves.isSeen(line#source, env#saves)) View.theme(env)#inkSeen else speakerOf(line, env)#ink
 
-    /// 行の話し手の色（novel.theme.json の speakers。地の文は空の id）。
+    /// 行の話し手の色（novel.theme.json の speakers。地の文は空の id）。id は行の speakerId で、それを書く前のセーブの行だけ呼び名から引く。
     pub def speakerOf(line: Page.Line, env: Env): ThemeDoc.Speaker =
-        let id = if (String.isEmpty(line#speaker)) "" else StoryDoc.idOfName(line#speaker, env#res#story);
+        let id = if (not String.isEmpty(line#speakerId) or String.isEmpty(line#speaker)) line#speakerId else StoryDoc.idOfName(line#speaker, env#res#story);
         ThemeDoc.speakerOf(id, env#res#theme)
 
     /// 1 行が頁に占める高さ（行の数 × (字 + 行の間)）。行の間は本文の字に比べて novel.kind.json の lineGap の割合（placeLine と同じ）。

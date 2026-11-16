@@ -209,9 +209,13 @@ mod WorldRead {
         let tap = tappable and (r#pause |> Option.forAll(p -> p#tappable));
         { pause = Some({ until = later, rest = Nil, last = None, tappable = tap }) | r }
 
-    /// 押すと明ける待ち（Out.WaitOrTap）の間か。flow の reader はこの間は押さない（人が読む間の秒を待つ）。
+    /// 押すと明ける待ち（Out.WaitOrTap）の間か。
     pub def isTapWait(w: World.World): Bool =
         World.readOf(w) |> Option.flatMap(r -> r#pause) |> Option.exists(p -> p#tappable)
+
+    /// 命令が出した待ち（Out.Wait・Out.WaitOrTap）の間か。flow の reader はこの間は押さない（待ちの秒を流し、明けてから読む間を数える）。
+    pub def isPaused(w: World.World): Bool =
+        World.readOf(w) |> Option.exists(r -> Option.nonEmpty(r#pause))
 
     /// コマンドが出した待ちが明けた（かスキップで飛ばした）: 待ちを消して、預けておいた続きの出来事を反映する。
     def resumePause(res: Res.Res, p: World.Pause, r: World.Read, w: World.World): World.World \ Emit[World.Event] =

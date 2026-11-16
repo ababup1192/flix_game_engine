@@ -76,7 +76,7 @@ mod TestRules {
     @Test
     def testNvlPageTurnsWhenRowsRunOut(): Unit \ {Assert} =
         // 頁に入り切らない行が来たら、頁をめくってその行だけにする。
-        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let line = text -> Page.plainLine(text, text);
         let fits = lines -> List.length(lines) <= 2;
         let page = Page.empty() |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("b"))
                                 |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("c"));
@@ -93,7 +93,7 @@ mod TestRules {
     def testAdvDropsOldestLinesWhenThePageIsFull(): Unit \ Assert =
         // ADV は頁に入り切らない時、頁をめくらずに古い行から落として積み続ける。
         let fits = lines -> List.length(lines) <= 2;
-        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let line = text -> Page.plainLine(text, text);
         let page = Page.empty() |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("b"))
                                 |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("c"));
         Assert.assertEq(expected = ("b" :: Nil, Some("c")), (page#lines |> List.map(l -> l#text), page#current |> Option.map(l -> l#text)))
@@ -116,7 +116,7 @@ mod TestRules {
     def testAdvPageTurnsWhenTheBackdropChanges(): Unit \ Assert =
         // ADV で場面が変わる（背景を替える）と、次の行から新しい頁になる。今の行は次の行まで出したまま。
         let fits = _ -> true;
-        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let line = text -> Page.plainLine(text, text);
         let turned = Page.empty() |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("b")) |> Page.turn;
         let next = turned |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("c"));
         Assert.assertEq(expected = ((0, Some("b")), (0, Some("c"))),
@@ -838,6 +838,17 @@ mod TestRules {
         let id = StoryDoc.speakerIds(res#story) |> List.head |> Option.getWithDefault("");
         let name = StoryDoc.nameOf(id, res#story);
         Assert.assertEq(expected = "★", StoryDoc.nameOf(id, withReplace(Map#{ name => "★" }, res)#story))
+
+    def replacing(table: Map[String, String], text: String): String =
+        StoryDoc.replaceText(StoryDoc.Doc.Doc({ replace = table | StoryDoc.rec(StoryDoc.defaults()) }), text)
+
+    @Test
+    def testTheLongerKeyIsReplacedFirst(): Unit \ Assert =
+        Assert.assertEq(expected = "B", replacing(Map#{ "××" => "A", "××××" => "B" }, "××××"))
+
+    @Test
+    def testReplacedTextIsNotReplacedAgain(): Unit \ Assert =
+        Assert.assertEq(expected = "bc", replacing(Map#{ "a" => "b", "b" => "c" }, "ab"))
 
     @Test
     def testReplaceKeepsTheRubyAfterIt(): Unit \ Assert =

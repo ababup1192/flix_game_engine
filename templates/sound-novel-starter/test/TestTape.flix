@@ -73,7 +73,7 @@ mod TestTape {
           hiddenSounds = Set#{ "ui_open" },
           msg = { x0 = 0.1, x1 = 0.9, cy = 0.8, lh = 0.05, padTop = 0.1, padBot = 0.1, font = 0.04, cps = 30.0, when = Map.empty() },
           probes = "logSize" :: Nil, probeNames = Map.empty(), playUrl = "",
-          objects = h -> FlowVideo.objectsOf(Layout.Fit.Regular, h#resources, h#world) }
+          objects = h -> FlowVideo.objectsOf(View.emptyFonts(), Layout.Fit.Regular, h#resources, h#world) }
 
     /// flow を流して tape.json を作り、JSON の木にする（流せない・作れない時は理由の Err）。
     def tapeOf(marks: List[String]): Result[String, Map[String, Json]] \ Fs.FileRead =

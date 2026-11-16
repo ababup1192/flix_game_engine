@@ -43,9 +43,9 @@ mod View {
     /// 実機は GameBoot.app の App.withFonts で宣言した名前だけ引け、知らない名前は atlas が返る）。
     pub type alias Fonts = { atlas = FontAtlas, fontOf = String -> FontAtlas }
 
-    /// 字を描かない所（当たりを取る・バックログの寸法・テープの物の矩形）の Env。fonts は字の形を持たない本（noFonts）。
+    /// 字を描かない所（当たりを取る・バックログの寸法・テープの物の矩形）の Env。fonts は字の形を持たない本（emptyFonts）。
     pub def envOf(fit: Layout.Fit, res: Res.Res, w: World.World): Env =
-        { res = res, saves = w#saves, pointer = w#pointer, grab = w#grab, realNow = w#realNow, storyNow = World.now(w), fit = fit, fonts = noFonts() }
+        { res = res, saves = w#saves, pointer = w#pointer, grab = w#grab, realNow = w#realNow, storyNow = World.now(w), fit = fit, fonts = emptyFonts() }
 
     /// 描く所の Env（並べ方の組と字の本は ctx から）。
     pub def envOfCtx(ctx: App.ViewCtx, res: Res.Res, w: World.World): Env =
@@ -53,7 +53,7 @@ mod View {
 
     /// 字の形を持たない本（どの字も幅 0 で描かれない）。
     // WhyNot: 当たりを取る所に実機の本を渡さない — Controls は Frame しか受けず、本は描く側（ViewCtx）にしか無い。
-    pub def noFonts(): Fonts =
+    pub def emptyFonts(): Fonts =
         let empty = { textureName = "", fontSize = 32.0, textureSize = 256.0, ascent = 0.0, descent = 0.0, lineGap = 0.0, glyphs = Map.empty() };
         { atlas = empty, fontOf = _ -> empty }
 
@@ -662,7 +662,7 @@ mod View {
 
     def entryLine(entry: World.Entry): Page.Line = match entry {
         case World.Entry.Said(line, _) => line
-        case World.Entry.Chose(text)   => { speaker = "", text = text, rubies = Nil, source = "" }
+        case World.Entry.Chose(text)   => Page.plainLine(text, "")
     }
 
     /// 1 項目の高さ（本文の行の数 + 項目の間）。

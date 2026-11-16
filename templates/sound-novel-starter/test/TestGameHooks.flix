@@ -413,11 +413,26 @@ mod TestGameHooks {
         // flow の reader は押すと明ける待ちの間は押さない（基準の版と同じく、待ちの秒を流す）。
         let r = res();
         let w = walking(r);
-        let tapped = E2e.table()#drives |> List.exists(d -> match d#act(10.0, Resources.of(r, w)) {
+        Assert.assertEq(expected = (true, false), (WorldRead.isTapWait(w), readerTaps(r, w)))
+
+    /// flow の reader が、読み始めてから十分たった所で押すか。
+    def readerTaps(r: Res.Res, w: World.World): Bool =
+        E2e.table()#drives |> List.exists(d -> match d#act(10.0, Resources.of(r, w)) {
             case Flow.DriveAct.Tap(_) => true
             case _                    => false
-        });
-        Assert.assertEq(expected = (true, false), (WorldRead.isTapWait(w), tapped))
+        })
+
+    @Test
+    def testTheFlowReaderDoesNotTapDuringAPlainWait(): Unit \ {Assert, Fs.FileRead} =
+        let r = res();
+        Assert.assertFalse(readerTaps(r, waitingBy(r, Out.Wait(3.0))))
+
+    @Test
+    def testTheFlowReaderTapsAfterTheWaitEnds(): Unit \ {Assert, Fs.FileRead} =
+        // 待ちが明けて預けた台詞を出し終えたら、今まで通り押す。
+        let r = res();
+        let ended = TestKit.stepBy(r, 30.0, waitingBy(r, Out.WaitOrTap(3.0)));
+        Assert.assertTrue(readerTaps(r, ended))
 
     // ══ <<tween 鍵>> ══
 
@@ -487,6 +502,6 @@ mod TestGameHooks {
     def testGameObjectsAreListedWhileReading(): Unit \ {Assert, Fs.FileRead} =
         let r = res();
         let lamp = (_: View.Env, _: World.Read) -> { id = "lamp", name = "電灯", rect = Layout.screen(Layout.Fit.Regular) } :: Nil;
-        let ids = FlowVideo.objectsUsing(lamp, Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
+        let ids = FlowVideo.objectsUsing(lamp, View.emptyFonts(), Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
         Assert.assertTrue(List.memberOf("lamp", ids))
 }

@@ -131,9 +131,9 @@ mod MigrateOut {
                     { frame = done, node = node, seq = seq, mid = None, layer = Layer.AllLayers } :: Nil) |> Option.getWithDefault(Nil);
                 { events = event :: walk#events, shots = List.append(List.reverse(shots), walk#shots),
                   lines = Map.insert(key, seq + 1, walk#lines), steps = Map.insert(key, 0, walk#steps) | walk }
-            case World.Executed.Offered((node, visit, _), options) =>
+            case World.Executed.Offered((node, visit, line), options) =>
                 let seq = Map.getWithDefault((node, visit), 0, walk#lines);
-                let (picked, rest) = pickOf(node, options, walk#picks);
+                let (picked, rest) = pickOf(node, line, List.length(options), walk#picks);
                 let base = Map#{ "t" => TapeJson.numJson(t), "node" => Json.JString(node), "kind" => Json.JString("choice"), "seq" => TapeJson.intJson(seq),
                                  "options" => Json.JArray(options |> List.map(Json.JString) |> List.toVector) };
                 let fields = picked |> Option.map(i -> Map.insert("picked", TapeJson.intJson(i), base)) |> Option.getWithDefault(base);
@@ -157,10 +157,11 @@ mod MigrateOut {
             |> Option.getWithDefault(Nil);
         { shots = List.append(List.reverse(mids), walk#shots), steps = Map.insert(key, step + 1, walk#steps) | walk }
 
-    /// 選択肢 2 つ以上を選んだ所を、出た順に 1 つずつ当てる（同じノードの物だけ）。選ばずに終わった選択肢は None。
-    def pickOf(node: String, options: List[String], picks: List[TapeOut.Choice]): (Option[Int32], List[TapeOut.Choice]) =
+    /// 選択肢 2 つ以上を選んだ所を、出た順に 1 つずつ当てる（同じノードの、最初の選択肢が同じ行の物だけ）。選ばずに終わった選択肢は None。
+    // WhyNot: 選択肢の字で当てない — 出来事の字は台本の字、選んだ所の字は画面の字（novel.story.json の replace を当てた後）で、鍵の字が入ると合わない。
+    def pickOf(node: String, line: Int32, count: Int32, picks: List[TapeOut.Choice]): (Option[Int32], List[TapeOut.Choice]) =
         match picks {
-            case c :: rest if List.length(options) >= 2 and c#node == node and c#options == options => (Some(c#picked), rest)
+            case c :: rest if count >= 2 and c#node == node and c#line == line => (Some(c#picked), rest)
             case _ => (None, picks)
         }
 
