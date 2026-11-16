@@ -67,7 +67,7 @@ mod Render3d.SceneList {
     pub def rowCountOf(list: SceneList): Int32 = list#count
 
     /// 半透明の材質の行の頭（無ければ rowCountOf と同じ）。
-    pub def blendedRowOf(list: SceneList): Int32 = list#firstBlended
+    pub def firstBlendedRowOf(list: SceneList): Int32 = list#firstBlended
 
     /// 行 row の欄 col（並びはこのファイルの頭のコメント）。
     pub def rowAt(list: SceneList, row: Int32, col: Int32): Int32 \ IO = Array.get(row * rowStride() + col, list#rows)
@@ -92,13 +92,14 @@ mod Render3d.SceneList {
     pub def hasFlag(list: SceneList, row: Int32, flag: Int32): Bool \ IO = Int32.bitwiseAnd(rowAt(list, row, 6), flag) != 0
 
     /// 場面の batch を描く順の行にする（半透明の blended は計画が並べた順のまま末尾へ）。形と材質の絵の番号は ctx の表で振る。
-    // WhyNot: 半透明の頭の行の「前の材質の行と同じ付け方」を不透明の最後の行から続けて見ない — backend は間にビルボードを描くので、半透明の頭の行で付け直す。
+    // WhyNot: 半透明の頭の行の「前の材質の行と同じ付け方」を不透明の最後の行から続けて見ない — backend は間にビルボードを描き、GL の drawBlendedRows は
+    //   付けた物の控えを新しく作って始めるので、頭の行に同じ付け方のフラグがあるとプログラムを付けずに描く。
     pub def buildSceneList(ctx: Context, draws: SceneDraws[MeshBatch]): SceneList \ IO =
         let shapes = List.length(draws#plain) + List.length(draws#skinned);
         let firstBlended = shapes + List.length(draws#opaque);
         let count = firstBlended + List.length(draws#blended);
-        let opaque = withLayouts(ctx, draws#opaque);
-        let blended = withLayouts(ctx, draws#blended);
+        let opaque = layoutPairsOf(ctx, draws#opaque);
+        let blended = layoutPairsOf(ctx, draws#blended);
         let both = List.append(opaque, blended);
         let valueTotal = List.sumWith(dl -> Option.getWithDefault(0, Option.map(MaterialValues.valueSizeOf, snd(dl))), both);
         let readTotal = both |> List.sumWith(match (d, l) -> Option.getWithDefault(0, Option.map(x -> MaterialValues.readCountOf(x, d#kind), l)));
@@ -113,7 +114,7 @@ mod Render3d.SceneList {
         list
 
     /// 材質の batch ごとの値の並びの元（描く物の無い batch は None で、値を書かない）。
-    def withLayouts(ctx: Context, ds: List[MaterialBatch[MeshBatch]]): List[(MaterialBatch[MeshBatch], Option[MaterialValues.Layout])] \ IO =
+    def layoutPairsOf(ctx: Context, ds: List[MaterialBatch[MeshBatch]]): List[(MaterialBatch[MeshBatch], Option[MaterialValues.Layout])] \ IO =
         ds |> List.map(d -> (d, if (d#batch#count > 0) Some(MaterialValues.layoutOf(ctx#layouts, d#material)) else None))
 
     /// 影の地図の pass の行（骨の無い物 plain → 骨つきの物 skinned の順。どれも分かれた理由は影の pass）。形の番号は ctx の表で振る。

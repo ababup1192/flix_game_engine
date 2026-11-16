@@ -482,7 +482,8 @@ mod Render3d.ScenePlan {
     // ── batch に分けて並べる ──
 
     /// 候補に分けた場面を batch に分けて描く順に並べ、描く物の姿勢の行を振って、割り当てと一緒に返す。orders = backend が聞いた材質の順に返した順の番号。
-    /// 姿勢の行は場面の順に、頂点の色の骨つき → 不透明の材質 → 半透明 → 影の地図の骨つきの batch の順で振る。
+    /// 姿勢の行は場面の順に、頂点の色の骨つき → 不透明の材質 → 半透明（遠い順）→ 影の地図の骨つきの batch の順で振る（1 体ごとの値の番号も同じ並び）。
+    /// 姿勢の行か 1 体ごとの値が上限を超えると後ろから落ちるので、半透明の物は目に近い物から落ちる。
     pub def planScenes(planner: Planner, caps: PlanCaps, orders: Vector[Int32], grouped: Grouped): (List[ScenePlan[SpanBatch]], PoseRows) \ IO =
         let rows = Ref.fresh(Static, noRows(caps#poseRowLimit));
         let plans = grouped#scenes |> List.map(s -> {

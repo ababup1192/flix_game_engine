@@ -190,8 +190,11 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.translate(at)) |> Scene3d.withMaterial(wood())
 
     /// 場面 1 つを計画の候補に分けて、まだ描けない物の種類と回数を返す。
-    def skipsOfScene(scene: Scene3d.Scene3dCmd): Map[String, Int32] \ IO =
-        let grouped = Render3d.ScenePlan.groupScenes(Render3d.ScenePlan.freshPlanner(Render3d.DrawMode.Instanced), { alphaToOne = false, poseRowLimit = 0 }, 1,
+    def skipsOfScene(scene: Scene3d.Scene3dCmd): Map[String, Int32] \ IO = skipsOfSceneOn(false, 1, scene)
+
+    /// skipsOfScene の、描き先が alpha to one を持つか（alphaToOne）と標本の数 samples を決める版。
+    def skipsOfSceneOn(alphaToOne: Bool, samples: Int32, scene: Scene3d.Scene3dCmd): Map[String, Int32] \ IO =
+        let grouped = Render3d.ScenePlan.groupScenes(Render3d.ScenePlan.freshPlanner(Render3d.DrawMode.Instanced), { alphaToOne = alphaToOne, poseRowLimit = 0 }, samples,
                                                      Render3d.FakeGl.cmdOf(scene) :: Nil);
         grouped#scenes |> List.flatMap(skipsOf(grouped#members)) |> List.toMap
 
@@ -221,6 +224,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let glass = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(glassWood());
         let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedGlass :: glass :: Nil));
         Assert.assertEq(expected = 0, Map.foldLeft((acc, n) -> acc + n, 0, skips))
+
     /// 描ける版の不透明の材質の物（絵つき・cutout）は、まだ描けない物に数えない。
     @Test
     def testDrawableMaterialIsNotCounted(): Unit \ {Assert, IO} =
@@ -238,9 +242,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let cutout = (at: Vec3.Vec3) -> Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.translate(at)) |> Scene3d.withMaterial(cutoutWood());
         let skinnedCutout = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.translate(behind))
             |> Scene3d.withPose(Render3d.FakeGl.poseAt(0.0)) |> Scene3d.withMaterial(cutoutWood());
-        let grouped = Render3d.ScenePlan.groupScenes(Render3d.ScenePlan.freshPlanner(Render3d.DrawMode.Instanced), { alphaToOne = true, poseRowLimit = 0 }, 4,
-                                                     Render3d.FakeGl.cmdOf(Render3d.FakeGl.sceneOf(skinnedCutout :: cutout(behind) :: cutout(Vec3.zero()) :: Nil)) :: Nil);
-        let skips = grouped#scenes |> List.flatMap(skipsOf(grouped#members)) |> List.toMap;
+        let skips = skipsOfSceneOn(true, 4, Render3d.FakeGl.sceneOf(skinnedCutout :: cutout(behind) :: cutout(Vec3.zero()) :: Nil));
         Assert.assertEq(expected = Some(2), Map.get("3D の alpha to coverage の材質の物（頂点の色で描く）", skips))
 
     /// GL の左下が原点の矩形（y = 20・高さ 40）を、高さ 200 の描き先の左上が原点にすると y は 200 − 20 − 40 = 140。

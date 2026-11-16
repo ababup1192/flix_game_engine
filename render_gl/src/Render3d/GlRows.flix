@@ -1,5 +1,5 @@
 // Render3d.GlRows — 3D の場面の行（Render3d.SceneList）を GL で流す所（GL の backend）と、場面を描く時に場面の外から渡す物。約束は Render3d.flix の頭。
-// 1 つの場面は uploadRows（形と絵を上げる）→ drawRows（行を描く）の順に通る。行の欄の意味は Render3d.SceneList の頭。
+// 1 つの場面は uploadRows（形と絵を上げる）→ drawRows（半透明でない行を描く）→（ビルボード）→ drawBlendedRows（半透明の行を重ねる）の順に通る。行の欄の意味は Render3d.SceneList の頭。
 mod Render3d.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
@@ -9,7 +9,7 @@ mod Render3d.GlRows {
     use Render3d.Counts.{countInstances}
     use Render3d.Light.{putLights}
     use Render3d.Material.{MaterialTable, bindMaterial, drawWithLook, entryAt, freshBound, releaseBound, resolveTextureAs, useMaterial}
-    use Render3d.SceneList.{SceneList, ScenePasses, blendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, ScenePasses, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
     use Render3d.Shadow.{putShadow, putSunShadow}
 
     /// 場面を描く時に場面の外から渡す物。passes = 場面の pass と、その行（計画の答え・列の順に描く）・materials = その prepare の材質の表・
@@ -70,18 +70,18 @@ mod Render3d.GlRows {
             discard resolveTextureAs(gl, state, gen, source, label, name, textureUse)
         })
 
-    /// pass 1 つの行 list のうち半透明でない行（blendedRowOf の前）を順に描く（形は uploadRows で上げてある）。頂点の色と骨つきの行は、プログラムが替わる所でプログラムと場面の値（目・光・影か、奥行きの範囲）を付ける。
+    /// pass 1 つの行 list のうち半透明でない行（firstBlendedRowOf の前）を順に描く（形は uploadRows で上げてある）。頂点の色と骨つきの行は、プログラムが替わる所でプログラムと場面の値（目・光・影か、奥行きの範囲）を付ける。
     /// 材質の行は材質のプログラムが替わる所で付け替え、描く物の無い材質の行は飛ばす。描き終えたら材質の絵を貼った unit の sampler を外す。
     pub def drawRows(gl: GlContext, state: State, gen: Int64, camera: CameraData, pass: MaterialPass, eye: Vec3.Vec3, source: TextureSource,
                      inputs: SceneInputs, list: SceneList): Unit \ IO =
         drawRowsBetween(gl, state, gen, { camera = camera, pass = pass, eye = eye, source = source, inputs = inputs, list = list, bound = freshBound() },
-                        0, blendedRowOf(list))
+                        0, firstBlendedRowOf(list))
 
-    /// 行 list の半透明の行（blendedRowOf から・計画が遠い物から並べた）を、深度を読むが書かずに α で重ねて描く（色の pass だけ）。無ければ何もしない。
+    /// 行 list の半透明の行（firstBlendedRowOf から・計画が遠い物から並べた）を、深度を読むが書かずに α で重ねて描く（色の pass だけ）。無ければ何もしない。
     /// 混ぜ方は glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)。描き終えたら blend を切り深度の書き込みを戻す。
     pub def drawBlendedRows(gl: GlContext, state: State, gen: Int64, camera: CameraData, eye: Vec3.Vec3, source: TextureSource,
                             inputs: SceneInputs, list: SceneList): Unit \ IO =
-        let first = blendedRowOf(list);
+        let first = firstBlendedRowOf(list);
         if (first >= rowCountOf(list)) ()
         else {
             gl.depthMask(false);

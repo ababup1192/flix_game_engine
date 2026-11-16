@@ -218,7 +218,8 @@ mod V2Main {
     /// 空の曲がりを 1 に決め打ちすると曲がりが 1 でない skyTurned と skyMsaaPass が 43 万 px・奥行きの書き出しの pass でも空を描くと skyDepth が 50 万 px 違って落ちる。
     /// 半透明の場面（同じ機械の実測。違う画素・±2 以上・max）: blend 14・7・±70、blendDesign 0・0・±0、blendDepth 11・1・±2、blendMsaaPass 17,181・13,689・±49。
     /// blend は room と同じ所（重なる面の入れ替わり）で同じ数（半透明の板の画素は差に出ていない）。blendDepth は半透明の物を書かないので部屋の奥行きの書き出しと同じ形の差。
-    /// blendMsaaPass は skyMsaaPass と同じ標本の位置の違い。上限は実測のほぼ 2 倍・差の最大は blend が面の入れ替わりで切らず、blendDepth は roomDepth と同じ ±16・blendMsaaPass は ±128。
+    /// blendMsaaPass は skyMsaaPass と同じ標本の位置の違い。上限は実測のほぼ 2 倍（blend は room と同じ・blendDesign は skyDesign と同じ小さい物の下限）・
+    /// 差の最大は blend が面の入れ替わりで切らず、blendDesign と blendDepth は roomDepth と同じ ±16・blendMsaaPass は ±128。
     /// 壊して確かめた（同じ日に 1 回ずつ）: WebGPU の半透明の pipeline の混ぜ方を外すと blend・blendDesign が 13.5 万 px・blendMsaaPass が 14.8 万 px、
     /// 半透明の pipeline で深度を書くと（交わる板が欠ける）blend と blendDesign が 1.2 万 px 違って落ちる（blendMsaaPass は 2.99 万 px で上限の内）。
     /// 計画の並べ順を逆にすると GL と WebGPU の両方が同じに変わるのでこの比べは通る（GL の blend の絵は変わる・守るのは TestSceneList.testPlanSortsBlendedFarToNear）。
@@ -231,7 +232,7 @@ mod V2Main {
              "shadowSunTextured" => (8, 80, 255), "shadowBoth" => (8, 16, 255),
              "lmTextured" => (150, 460, 255), "lmNormalLinear" => (160, 580, 255), "lmDepth" => (8, 16, 16),
              "sky" => (4, 16, 16), "skyTurned" => (4, 8, 16), "skyDesign" => (4, 8, 16), "skyDepth" => (4, 8, 16), "skyMsaaPass" => (24000, 28000, 128),
-             "blend" => (16, 32, 255), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128)}
+             "blend" => (32, 64, 255), "blendDesign" => (4, 8, 16), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass"}

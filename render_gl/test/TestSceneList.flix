@@ -436,18 +436,18 @@ mod Render3d.TestSceneList {
     def listWithBlended(plain: List[MeshBatch], opaque: List[MaterialBatch[MeshBatch]], blended: List[MaterialBatch[MeshBatch]]): SceneList \ IO =
         buildSceneList(Render3d.SceneList.contextOf(freshTables(), sceneOf(Nil)), { plain = plain, skinned = Nil, opaque = opaque, blended = blended })
 
-    /// 半透明の行は不透明の行の後ろに来た順のまま並び、blendedRowOf はその頭の行を指す。
+    /// 半透明の行は不透明の行の後ろに来た順のまま並び、firstBlendedRowOf はその頭の行を指す。
     @Test
     def testBlendedRowsFollowOpaqueRows(): Unit \ {Assert, IO} =
         let list = listWithBlended(batchOf(triangle(1.0), 0, 1) :: Nil, materialBatch(0, 5, 0.1, batchOf(triangle(2.0), 1, 1)) :: Nil,
                                    blendedBatch(1, 6, 0.2, batchOf(triangle(3.0), 2, 1)) :: blendedBatch(2, 7, 0.3, batchOf(triangle(4.0), 3, 1)) :: Nil);
-        Assert.assertEq(expected = (2, 4, 2 :: 3 :: Nil), (Render3d.SceneList.blendedRowOf(list), rowCountOf(list), column(list, 3) |> List.drop(2)))
+        Assert.assertEq(expected = (2, 4, 2 :: 3 :: Nil), (Render3d.SceneList.firstBlendedRowOf(list), rowCountOf(list), column(list, 3) |> List.drop(2)))
 
-    /// 半透明の行が無ければ blendedRowOf は行の数と同じ。
+    /// 半透明の行が無ければ firstBlendedRowOf は行の数と同じ。
     @Test
     def testNoBlendedRowsPointsAtEnd(): Unit \ {Assert, IO} =
         let list = listOf(batchOf(triangle(1.0), 0, 1) :: Nil, Nil, materialBatch(0, 5, 0.1, batchOf(triangle(2.0), 1, 1)) :: Nil);
-        Assert.assertEq(expected = rowCountOf(list), Render3d.SceneList.blendedRowOf(list))
+        Assert.assertEq(expected = rowCountOf(list), Render3d.SceneList.firstBlendedRowOf(list))
 
     /// 半透明の頭の行は、前の不透明の行と同じ材質でも付け直す。半透明の行どうしは同じ材質なら付け直さない。
     @Test
@@ -472,4 +472,15 @@ mod Render3d.TestSceneList {
         let cmds = cmdOf(sceneOf(glassAt(0.1, 1.0) :: glassAt(0.2, 20.0) :: glassAt(0.3, 8.0) :: Nil)) :: Nil;
         let (plans, _) = planScenes(planner, caps(false), Vector#{1, 2, 3}, groupScenes(planner, caps(false), 1, cmds));
         Assert.assertEq(expected = ("m0.2" :: "m0.3" :: "m0.1" :: Nil) :: Nil, plans |> List.map(p -> List.map(d -> d#material#spec#name, p#draws#blended)))
+
+    /// 骨つきの半透明の物の姿勢の行は遠い物から振る（遠い z = 20 の物が近い z = 1 の物より小さい行）。
+    @Test
+    def testPlanGivesPoseRowsFarToNear(): Unit \ {Assert, IO} =
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let skinnedGlass = (red: Float64, z: Float64) -> Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.translate(Vec3.v3(0.0, 0.0, z)))
+            |> Scene3d.withPose(poseAt(red)) |> Scene3d.withMaterial(materialOf(red) |> Scene3d.withAlphaBlend(true));
+        let g = groupScenes(planner, caps(false), 1, cmdOf(sceneOf(skinnedGlass(0.1, 1.0) :: skinnedGlass(0.2, 20.0) :: Nil)) :: Nil);
+        let (plans, _) = planScenes(planner, caps(false), Vector#{1, 2}, g);
+        let rows = plans |> List.flatMap(p -> p#draws#blended) |> List.map(d -> MutList.get(d#batch#start, g#members)#poseRow);
+        Assert.assertEq(expected = true, List.length(rows) == 2 and List.head(rows) < List.last(rows))
 }

@@ -364,10 +364,10 @@ pub mod Render3d.WebGpuRenderer {
     /// group の batch の members の i から end の前までの、描けない版の材質の物の数を acc に足して返す。
     def tallyGroup(members: MutList[MeshDraw, Static], g: Group, i: Int32, end: Int32, acc: Int32): Int32 \ IO =
         if (i >= end) acc
-        else tallyGroup(members, g, i + 1, end, acc + undrawableOf(g#surface, MutList.get(i, members)))
+        else tallyGroup(members, g, i + 1, end, acc + undrawableCountOf(g#surface, MutList.get(i, members)))
 
     /// 物 d が描けない版の材質の物なら 1（視錐台の外の物は数えない）。surface = d の group の材質（骨つきの物も同じ。描けない版の材質の骨つきの物は骨つきの頂点の色で描く）。
-    def undrawableOf(surface: Option[MaterialRequest], d: MeshDraw): Int32 =
+    def undrawableCountOf(surface: Option[MaterialRequest], d: MeshDraw): Int32 =
         if (d#culled) 0
         else match surface {
             case Some((_, kind)) if not WebGpuMaterials.isDrawable(kind) => 1
@@ -562,8 +562,7 @@ pub mod Render3d.WebGpuRenderer {
             material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh),
             unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n)
         };
-        // WhyNot: 半透明の行（SceneList.blendedRowOf から）を別に流さない — GL が間に描くビルボードを WebGPU はまだ描かないので、行の順のままで GL と同じ重なり。
-        //   ビルボードを足す時は、不透明の行・ビルボード・半透明の行の 3 つに分ける。
+        // WhyNot: 半透明の行（SceneList.firstBlendedRowOf から）を別に流さない — GL が間に描くビルボードを WebGPU はまだ描かないので、行の順のままで GL と同じ重なり。
         drawRows(pass, s#meshStore, drawer, staged#list, staged#instanceBase);
         pass.end()
 
