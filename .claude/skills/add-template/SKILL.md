@@ -32,7 +32,7 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 - [ ] 1a. World は遊びの状態だけ（Doc と描く元は src/Res.flix・画面は enum。docs/flix-conventions.md「World は遊びの状態だけを持つ」。bin/fge record-wrap が止める）
 - [ ] 1b. Makefile は共有 mk を include するだけにした（共通ターゲットを書かない）
 - [ ] 2. reference/title.png を用意した
-- [ ] 3. make lint-palette が通った
+- [ ] 3. make lint ONLY=palette が通った
 - [ ] 4. Doc の外形規約を守った（全 Doc に version・schema は sections 方言）
 - [ ] 5. 画風を宣言した（AGENTS.local.md + View.flix 冒頭の層の並び）
 - [ ] 6. Studio に登録した（Genesis.flix の families の starter）
@@ -66,7 +66,7 @@ Studio のジャンルカードのサムネイルは `GET /genesis/title` がこ
 除外されているのも同じ理由）。`title.png` は Studio のサムネイル用に手で置く。
 この 1 本を「期待値の更新し忘れ」として直そうとしない。
 
-### 3. `make lint-palette` を通す
+### 3. `make lint ONLY=palette` を通す
 
 ドット絵（`*.sprite.json`）の `legend` に書いた意味色キーは、`*.theme.json` のトップレベル・
 `paletteFile` の指す色票・直下の `palette` のどれかに実体が無いと Studio が仮色で塗り、

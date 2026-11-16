@@ -1,7 +1,7 @@
 ---
 name: critique-render
 description: "描き出し（make render SHOT=… / gallery-sounds 等）の PNG・波形を目視・目聴して、設計原則と絵の下限 5 性質で批評する。絵や音を作った・直した直後の報告の前、スナップショットを更新する前、「見た目はどう？」と聞かれたときに使う。"
-sync: 2026-11-14
+sync: 2026-11-16
 ---
 
 # critique-render — 描き出して批評する
@@ -23,8 +23,8 @@ sync: 2026-11-14
 3. 出力を読む。all.png・各場面 PNG は Read で目視、音は sounds.png（1 音 1 段の波形と
    スペクトログラム。名前・長さ(ms)・サンプルレート・ピーク振幅つき）を Read で目視し、
    debug/sounds/*.wav を聴く。BGM があれば music.png も同じ見方で見る。ループ GIF（コマ 0 に
-   戻る演出）が対象にあれば、目視の前に `make lint-loop`（または
-   `bin/fge loop <framesディレクトリ>`）で継ぎ目を機械検査する。
+   戻る演出）が対象にあれば、目視の前に
+   `bin/fge loop <framesディレクトリ>` で継ぎ目を機械検査する。
    fade・wipe など戻らない演出は対象外。造形が怪しい絵（何の形か読めない・接続や
    接地が変）は、シルエットの描き出し（`HeadlessRender.silhouettePng` — 対象を黒・背景を白）で
    形だけを取り出して確かめる（docs/drawing-floor.md）。

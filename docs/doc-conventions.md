@@ -129,7 +129,7 @@ sprite Doc 直下の `palette`** の 3 つだけで、どれにも無い名前�
 色票の生成忘れに気付ける。書き出しは `PaletteExport.write`（engine_world）に一本化してあり、
 ゲーム側に書くのは「意味色キーの列」と resolver だけでよい。
 
-`make lint-palette` が `templates/` の全 sprite Doc を検査し、
+`make lint ONLY=palette` が `templates/` の全 sprite Doc を検査し、
 解けない名前を挙げる。
 
 ## 配置 Doc は画面 px を持たず world 座標だけを持つ
@@ -213,7 +213,7 @@ Doc は「初期値と見た目の宣言」まで。Doc そのものは World �
 - [ ] 大きさの目安に収まっているか（タブ 8 枚・1 タブ 15 個・総数 30 個・深さ 2 階層）
 - [ ] 単一値が 5 個以上あるなら `group` で束ねたか
 - [ ] 後から名前が増えるデータは `catalog`（名前で引く一覧）にしたか
-- [ ] ドット絵なら `make lint-palette` が通るか（`legend` の名前が色票にあるか）
+- [ ] ドット絵なら `bin/fge palette` が通るか（`legend` の名前が色票にあるか）
 
 ## 任意の推奨規約：いま画面に出ている Doc を名乗る
 
@@ -253,7 +253,7 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
 ## 文書（.md）と .flix のコメントの中で名前・パスを書く記法（doc-refs が読む）
 
 ここまでは JSON の Doc の規約。この節だけは文書（`docs/**/*.md`・`NOTES.md`・`AGENTS.local.md`・agents-pack）の書き方で、
-`bin/fge doc-refs`（`make lint-doc-refs`・コミットでは触った .md を precommit が見る）がこの記法を読む。
+`bin/fge doc-refs`（コミットでは触った .md を precommit が見る）がこの記法を読む。
 文書ごと・1 か所ごとに外す道は無いので、今は無い物を書くときは下のどれかで書く。印は `bin/lint-rules/doc-refs.json` が持つ。
 
 | 書きたい物 | 書き方 | 例 |
@@ -273,7 +273,7 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
   直すのは作る元（`bin/fge check codes --md` なら flixlint の go/checkres の表）。
 - 古い記録の文書（`notes/<年-月>.md` など）は文書ごと `<ゲーム>/bin/lint-rules/doc-refs.local.json` の skip へ。
 - `.flix` のコメント（`///` と `//`）も同じ記法で読む。拾うのは ` ` の中と、地の文の語のうち `Mod.name`・`/` を含むパス・
-  `path:行` の形の物だけ（ほかの地の文は見ない）。`.flix` の物は上限で数える: `make lint-doc-refs` はリポごとの
+  `path:行` の形の物だけ（ほかの地の文は見ない）。`.flix` の物は上限で数える: `bin/fge doc-refs` はリポごとの
   `lint/doc-refs/flix.json`（`{"limit": N}`。無ければ 0）と比べ、増えたら止め、減ったら上限を下げるまで止める。
   `lint/limits/` には置かない（flixlint の上限の置き場で、知らない id の上限を flixlint が止める。古い置き場に残っていれば
   doc-refs が移すよう言って止まる）。

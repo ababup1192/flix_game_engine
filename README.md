@@ -184,7 +184,6 @@ make sync-root-src       # regenerate the root src/ symlinks for the Flix commun
 make clean-locks         # remove stale *.lock left in the Maven cache by an interrupted flix check
 make clean-game-builds   # delete templates/*/build/ and bench/*/build/ (speeds up IDE scene loading)
 make boot-font           # re-bake the built-in splash font & logo into engine sources
-make clean-font-cache    # drop the cached font atlases (next launch re-bakes them)
 ```
 
 ## Startup screen
@@ -221,7 +220,7 @@ and assets at launch (a few tens of milliseconds) and baking those characters up
 editing the project.
 
 Baked atlases are also cached under `~/.cache/flix_game_engine/font`, so later launches skip
-baking entirely. A damaged or outdated cache is ignored and simply re-baked.
+baking entirely. A damaged or outdated cache is ignored and simply re-baked. Delete that folder to force a re-bake.
 
 | Environment variable | Effect |
 |---|---|
@@ -413,7 +412,6 @@ make sync-root-src       # コミュニティビルド用ルート src/ symlink 
 make clean-locks         # flix check 中断で残った Maven cache の *.lock を削除
 make clean-game-builds   # templates/*/build/ と bench/*/build/ を削除（IDE のシーン読み込み高速化用）
 make boot-font           # 起動画面の組み込みフォント・ロゴを engine のソースへ作り直す
-make clean-font-cache    # フォントの生成結果のキャッシュを捨てる（次の起動は作り直し）
 ```
 
 ## 起動画面
@@ -449,7 +447,7 @@ GL の用意ができた時点ですぐ画面を地の色で塗り、ロゴ・�
 見比べられる）。
 
 作った物は `~/.cache/flix_game_engine/font` にも取っておくので、2 回目以降は生成自体が起きない。
-壊れていたり古かったりするキャッシュは黙って捨てて作り直すので、起動が止まることはない。
+壊れていたり古かったりするキャッシュは黙って捨てて作り直すので、起動が止まることはない。作り直させたい時はこのフォルダを消す。
 
 | 環境変数 | 効き方 |
 |---|---|

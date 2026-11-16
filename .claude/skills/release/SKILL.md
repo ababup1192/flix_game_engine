@@ -100,7 +100,7 @@ CI の `make release-publish` は版を出す前に `make gl-jar-publish` で置
   後に直しても同じ指摘が出続ける
 - **sync の出し忘れ**: engine / engine_world / engine_tools のソースを触ったら対応する
   `make sync-<name>` を通してからテストする。古い fpkg のまま緑になっても信用できない
-- **lint 群は先に手で回す**: フック任せにせず `make lint-view lint-palette lint-ui lint-audio` を
+- **lint 群は先に手で回す**: フック任せにせず `make lint ONLY=view,palette,ui,audio` を
   リリース前に一巡させる。既知の赤が残ったままだとゲートで止まる
 - **`make test-par` の偽 FAIL**: ログが依存解決で途切れテスト 0 本なら並列の食い合い。
   当該パッケージを単体 `make test-<name>` で確かめ、必要なら `make release TEST=test`（逐次）
