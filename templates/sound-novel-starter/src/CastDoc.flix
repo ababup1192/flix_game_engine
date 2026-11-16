@@ -34,8 +34,9 @@ mod CastDoc {
     /// 絵の中の点（絵の左上 0・右下 1 の割合）。名前は Godot の Marker2D に合わせた。
     pub type alias Marker = { x = Float64, y = Float64 }
 
-    /// 話し手を明るくする: dim = 話していない人物を暗くする量（0 = 暗くしない・1 = 真っ黒）、seconds = 明るさを替える秒。
-    pub type alias Highlight = { dim = Float64, seconds = Float64 }
+    /// 話し手を明るくする: dim = 話していない人物を暗くする量（0 = 暗くしない・1 = 真っ黒）、seconds = 明るさを替える秒、
+    /// voices = 立ち絵を持たないが、話している間はほかの人物を暗くする話し手の id（声だけの人物・ゲームが自分で描く人物）。
+    pub type alias Highlight = { dim = Float64, seconds = Float64, voices = Set[String] }
 
     /// fadeSeconds = 出入りと入れ替えの既定の秒、slideDistance = from= / to= で端から滑る距離（画面に対する割合。1 で画面の外まで）、
     /// sway = 息の揺れの幅（画面の高さに対する割合・0 で止める）、
@@ -64,7 +65,7 @@ mod CastDoc {
     /// コード側の既定値（assets/novel.cast.json と同じ値から出発する）。人物と小物は空。
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, fadeSeconds = 0.4, slideDistance = 1.0, sway = 0.002, portraitVeilWithCast = 1.0,
-                  highlight = { dim = 0.35, seconds = 0.25 },
+                  highlight = { dim = 0.35, seconds = 0.25, voices = Set.empty() },
                   slots = Map#{ "left" => { x = 0.25, bottom = 1.0, height = 0.9, exclusive = true }, "center" => { x = 0.5, bottom = 1.0, height = 0.9, exclusive = true },
                                 "right" => { x = 0.75, bottom = 1.0, height = 0.9, exclusive = true }, "item" => { x = 0.5, bottom = 0.62, height = 0.36, exclusive = true } },
                   portraitSlots = Map#{ "left" => { x = 0.28, bottom = 1.0, height = 0.6, exclusive = true }, "center" => { x = 0.5, bottom = 1.0, height = 0.6, exclusive = true },
@@ -140,10 +141,12 @@ mod CastDoc {
     def markerFrom(json: Json): Option[Marker] =
         JsonCodec.expectObject(json) |> Option.map(obj -> { x = JsonCodec.floatOr("x", 0.5, obj), y = JsonCodec.floatOr("y", 0.5, obj) })
 
-    /// "highlight": { "dim", "seconds" } を読む（欠けた欄は fallback の値）。
+    /// "highlight": { "dim", "seconds", "voices" } を読む（欠けた欄は fallback の値）。
     def highlightFrom(fallback: Highlight, json: Option[Json]): Highlight =
         json |> Option.flatMap(JsonCodec.expectObject)
-             |> Option.map(obj -> { dim = JsonCodec.floatOr("dim", fallback#dim, obj), seconds = JsonCodec.floatOr("seconds", fallback#seconds, obj) })
+             |> Option.map(obj -> { dim = JsonCodec.floatOr("dim", fallback#dim, obj), seconds = JsonCodec.floatOr("seconds", fallback#seconds, obj),
+                                    voices = Map.get("voices", obj) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString)) |> Option.map(List.toSet)
+                                                 |> Option.getWithDefault(fallback#voices) })
              |> Option.getWithDefault(fallback)
 
     /// "attach": { "bg": { 写真の名前: 横のずれ } } を読む（無い・読めなければ画面に付く）。

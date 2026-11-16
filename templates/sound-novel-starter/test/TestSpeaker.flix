@@ -223,6 +223,20 @@ mod TestSpeaker {
         Assert.assertEq(expected = 1.0, Cast.brightnessOf(castEnv(res, at(5.0), st), st#cast, CastDoc.Kind.Character, "b"))
 
     @Test
+    def testAVoiceWithoutAPictureDimsTheOthers(): Unit \ {Assert, Fs.FileRead} =
+        // 立ち絵を持たない話し手（テスト用の Doc の highlight.voices の whale）が話す間も、出ている a は dim だけ暗い。
+        let res = castRes();
+        let h = CastDoc.rec(res#cast)#highlight;
+        let st = Stage.empty() |> stageAfter(res, "show", "a" :: "time=0" :: Nil) |> Stage.withSpeaker(Clock.zero(), Some("whale"));
+        Assert.assertTrue(TestKit.near(1.0 - h#dim, Cast.brightnessOf(castEnv(res, at(h#seconds + 1.0), st), st#cast, CastDoc.Kind.Character, "a")))
+
+    @Test
+    def testASpeakerNeitherShownNorAVoiceDimsNoOne(): Unit \ {Assert, Fs.FileRead} =
+        let res = castRes();
+        let st = Stage.empty() |> stageAfter(res, "show", "a" :: "time=0" :: Nil) |> Stage.withSpeaker(Clock.zero(), Some("nobody"));
+        Assert.assertEq(expected = 1.0, Cast.brightnessOf(castEnv(res, at(5.0), st), st#cast, CastDoc.Kind.Character, "a"))
+
+    @Test
     def testNobodyDimsWhenTheSpeakerIsNotShown(): Unit \ {Assert, Fs.FileRead} =
         let res = castRes();
         let st = Stage.withSpeaker(Clock.zero(), Some("someone"), twoShown(res));

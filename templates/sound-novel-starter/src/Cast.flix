@@ -424,11 +424,12 @@ mod Cast {
         List.append(under, figureItem(env, shown#now, a, lit, z))
 
     /// 名前の物の今の明るさ（1 = 絵のまま）。話し手（Stage の cast.speaker）が出ている間、ほかの人物を novel.cast.json の highlight の dim だけ暗くし、
-    /// 話し手が替わった時は highlight の seconds で前の明るさからつなぐ。小物・背景に付く絵・話し手が出ていない時と地の文は暗くしない。
+    /// 話し手が替わった時は highlight の seconds で前の明るさからつなぐ。話し手が highlight の voices（立ち絵を持たない話し手）の時も、出ていなくても暗くする。
+    /// 小物・背景に付く絵・話し手が出ていない時（voices を除く）と地の文は暗くしない。
     pub def brightnessOf(env: Env, layer: Layer, kind: Kind, name: String): Float64 =
         let h = CastDoc.rec(env#doc)#highlight;
         let counts = kind == Kind.Character and not (entryOf(env#doc, name) |> Option.exists(CastDoc.isAttachedToBackdrop));
-        let dimFor = (speaker: Option[String]) -> if (speaker |> Option.exists(s -> s != name and isShown(s, layer))) h#dim else 0.0;
+        let dimFor = (speaker: Option[String]) -> if (speaker |> Option.exists(s -> s != name and (isShown(s, layer) or Set.memberOf(s, h#voices)))) h#dim else 0.0;
         if (not counts or h#dim <= 0.0) 1.0
         else {
             let key = Stage.speakerKey();
