@@ -11,13 +11,16 @@ import (
 )
 
 const usage = `使い方:
-  bin/fge migrate diff <baseline> <new> [--accept FILE] [--game DIR] [--out DIR] [--no-coverage] [--strict] [--times] [--json]
+  bin/fge migrate diff <baseline> <new> [--accept FILE] [--game DIR] [--out DIR] [--no-coverage] [--strict] [--times] [--no-auto] [--json]
       前の版と新しい版の記録（flows/<flow>/<大きさ>/tape.json と書き出したコマ・saves/<名前>/restore.json）を突き合わせる。
       --accept 既定 <new の親>/migrate-accept.json・--game 既定 <new> から上へ辿った project.json のあるフォルダ・
       --out 既定 <new の親>/report（index.html と report.json と heat/）。
       台詞・選択肢・問いの値・音の順の違いと通らない命令の行は門を止める。絵・矩形・音の時刻・音量の違いは
       「迷った差」として一覧に溜め、止めない（--strict なら止める）。
-      --times は台詞・選択肢・待ちの時刻を、前の出来事からの間で比べる（1 フレームを超えたら迷った差）。
+      --times は台詞・選択肢・待ちの時刻を、前の出来事からの間で比べる（1 フレーム + 丸めの幅を超えたら迷った差）。
+      音・画面の物の区間・バスの音量も、直前に組になった出来事のずれを引いて比べる。
+      迷った差のうち線引きで自動で通した物（合わせ直し・時刻のずれたコマのブロックの比べ）は --strict でも止めない。
+      --no-auto はそれも人が見る物に数える。線引きの上書きは migrate-accept.json の thresholds。
       終わりの番号: 0 通った・1 止める違いがある・2 引数か記録が読めない。
   bin/fge migrate shoot <名前> <flow>... [--jobs N] [--video] [--run CMD] [--saves-from DIR] [--no-saves] [--overwrite]
       ゲームの根で flow を並べて流し、記録を debug/migrate/<名前> に撮る（FlowVideo.play を MIGRATE_OUT 付きで流し、
@@ -52,6 +55,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 type diffArgs struct {
 	base, cur, accept, game, out      string
 	noCoverage, strict, times, asJSON bool
+	noAuto                            bool
 }
 
 func parseDiffArgs(args []string) (diffArgs, error) {
@@ -80,6 +84,8 @@ func parseDiffArgs(args []string) (diffArgs, error) {
 			a.strict = true
 		case "--times":
 			a.times = true
+		case "--no-auto":
+			a.noAuto = true
 		case "--json":
 			a.asJSON = true
 		default:
@@ -130,7 +136,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "migrate diff:", err)
 		return 2
 	}
-	r := Compare(base, cur, acc, Options{Out: a.out, Game: a.game, NoCoverage: a.noCoverage, Strict: a.strict, Times: a.times, Th: DefaultThresholds(), Lim: DefaultLimits()})
+	r := Compare(base, cur, acc, Options{Out: a.out, Game: a.game, NoCoverage: a.noCoverage, Strict: a.strict, Times: a.times, NoAuto: a.noAuto, Th: DefaultThresholds(), Lim: DefaultLimits()})
 	page, err := WriteReport(r, a.out)
 	if err != nil {
 		fmt.Fprintln(stderr, "migrate diff: 頁を書けない:", err)
