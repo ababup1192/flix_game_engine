@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "note": "クレジットに流す行（上から順）。style は heading（見出し）/ body（本文）/ small（出典の URL など）/ gap（空き）。絵の作り方・音の出典・フォント（SIL OFL）の表記は CREDITS.md と同じ物を置く。",
+  "rows": [
+    { "text": "雪どけを待たない便り", "style": "heading" },
+    { "text": "", "style": "gap" },
+    { "text": "絵", "style": "heading" },
+    { "text": "背景・一枚絵・立ち絵・小物は、画像生成で作りました", "style": "small" },
+    { "text": "", "style": "gap" },
+    { "text": "冬の坂・灯の部屋・工房の軒先・工房・坂の後ろ姿", "style": "body" },
+    { "text": "冬馬（立ち絵）・手描きの地図", "style": "body" },
+    { "text": "", "style": "gap" },
+    { "text": "フォント", "style": "heading" },
+    { "text": "しっぽり明朝 — The Shippori Mincho Project Authors", "style": "body" },
+    { "text": "SIL Open Font License 1.1", "style": "small" },
+    { "text": "", "style": "gap" },
+    { "text": "音", "style": "heading" },
+    { "text": "冬の風 — 効果音ラボ", "style": "body" },
+    { "text": "https://soundeffect-lab.info/", "style": "small" },
+    { "text": "", "style": "gap" },
+    { "text": "返事の音は flix_game_engine の音のシナリオから合成", "style": "body" },
+    { "text": "", "style": "gap" },
+    { "text": "作り", "style": "heading" },
+    { "text": "flix_game_engine — サウンドノベルの手本", "style": "body" },
+    { "text": "", "style": "gap" },
+    { "text": "読んでくださって、ありがとうございました。", "style": "body" }
+  ]
+}

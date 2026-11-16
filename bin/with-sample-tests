@@ -1,0 +1,31 @@
+#!/bin/sh
+# with-sample-tests <フォルダ> <コマンド…>
+# テンプレートの作例そのものを確かめるテスト（<フォルダ>/sample-test/*.flix）を、テンプレートの中で流す時だけ
+# test/ へ貼ってからコマンドを流し、終わったら外す。テンプレートから作ったゲームでは貼らない（作例の台本と Doc を
+# 書き換えるので、作例のテストは落ちる）。
+#
+# WhyNot: sample-test を test/ の下に置かない — flix test は test/ の下を全部拾い、Studio のゲームの作り方は
+#   テンプレートを丸ごと写すので、ゲームでも作例のテストが流れてしまう。
+# WhyNot: テンプレートかどうかを印のファイルで見分けない — 丸ごと写すとゲームにも同じ印が付く。engine の
+#   templates/ の下にあるかで見分ける（ゲームはそこに作らない）。
+set -u
+dir=$1; shift
+root=$(cd "$(dirname "$0")/.." && pwd -P)
+here=$(cd "$dir" && pwd -P)
+links=""
+case "$here/" in
+	"$root/templates/"*)
+		if [ -d "$here/sample-test" ]; then
+			for f in "$here"/sample-test/*.flix; do
+				[ -f "$f" ] || continue
+				link="$here/test/sample-test--$(basename "$f")"
+				ln -sfn "../sample-test/$(basename "$f")" "$link"
+				links="$links $link"
+			done
+		fi
+		;;
+esac
+"$@"
+code=$?
+for l in $links; do rm -f "$l"; done
+exit $code

@@ -145,6 +145,24 @@
           "label": "台詞（話し手のある行）を「」で包むか",
           "order": 5,
           "default": true
+        },
+        "portrait": {
+          "type": {
+            "enum": [
+              "page",
+              "band"
+            ]
+          },
+          "label": "縦の画面での字の出し方（page = 画面いっぱいの頁に上から積む・band = 画面の下の帯に今の行だけ。覆いは帯の上にだけ）",
+          "order": 6,
+          "default": "page"
+        },
+        "bandHeight": {
+          "type": "float",
+          "label": "portrait が band の時の帯の高さ（画面の下端から px。帯の上端から字を出す）",
+          "order": 7,
+          "min": 60,
+          "default": 236
         }
       }
     },

@@ -1,0 +1,6 @@
+# このテンプレートからゲームを作る時に写さないパス（engine の make new-game が読む）。
+# 1 行に 1 つ・テンプレートの根からの相対パス（/ で始めない・.. を含めない）。# から行末は注釈。
+# 生成物（lib・build・debug・gallery・.devbox・.test-logs）は make new-game がどのテンプレートでも外すので、ここには書かない。
+
+# 作例そのものを確かめるテスト（ゲームは台本と Doc を書き換えるので、ゲームでは落ちる。テンプレートの中でだけ bin/with-sample-tests が流す）
+sample-test

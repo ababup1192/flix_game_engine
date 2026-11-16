@@ -5,7 +5,7 @@
 // セーブの枠は 5 つのページ（Tab）× 6 枠。オートとクイックは「新しい物を先頭に入れ、古い物を後ろへ押し出す」ページ、
 // 1〜3 は人が枠を選んで書くページ。どの枠も中身は「戻れる所」Mark（YarnRunner のブックマークと、その台詞を出した時の
 // 舞台と頁）と、ロード画面に出す物（場所・話し手・台詞・保存した日時・通し番号）。
-// Mark はバックログの行と「戻る」も同じ物を持つ（セーブ・ロード・戻るが 1 つの戻し方 World.restore を通る）。
+// Mark はバックログの行と「戻る」も同じ物を持つ（セーブ・ロード・戻るが 1 つの戻し方 WorldRead.restore を通る）。
 mod Saves {
     use fge::{Clock, DocJson, JsonCodec, Log, YarnRunner}
     use Util.Json.Json
@@ -32,12 +32,13 @@ mod Saves {
     }
 
     /// 設定の画面で変える値。cps = 1 秒の字数、autoWait = オートで読み終えてから送るまでの秒、
-    /// masterVolume / ambienceVolume / seVolume = 全体・環境音・効果音の音量（0〜1）、windowAlpha = 文章のウィンドウの濃さ（0〜1）。
+    /// masterVolume / ambienceVolume / musicVolume / seVolume = 全体・環境音・BGM・効果音の音量（0〜1）、windowAlpha = 文章のウィンドウの濃さ（0〜1）。
     pub type alias Config = {
         cps = Float64,
         autoWait = Float64,
         masterVolume = Float64,
         ambienceVolume = Float64,
+        musicVolume = Float64,
         seVolume = Float64,
         windowAlpha = Float64,
         skipScope = SkipScope,
@@ -125,7 +126,7 @@ mod Saves {
     /// 設定の既定（設定の画面の「初期設定に戻す」もこれ）。
     pub def defaultConfig(kind: KindDoc.Doc): Config =
         let k = KindDoc.rec(kind);
-        { cps = k#cps, autoWait = k#autoWait, masterVolume = k#masterVolume, ambienceVolume = k#ambienceVolume,
+        { cps = k#cps, autoWait = k#autoWait, masterVolume = k#masterVolume, ambienceVolume = k#ambienceVolume, musicVolume = k#musicVolume,
           seVolume = k#seVolume, windowAlpha = k#windowAlpha,
           skipScope = SkipScope.ReadOnly, afterChoice = AfterChoice.StopSkip, display = Display.Window }
 
@@ -250,7 +251,7 @@ mod Saves {
             "seen" => Json.JArray(r#seen |> Set.toList |> List.map(Json.JString) |> List.toVector),
             "config" => Json.JObject(Map#{ "cps" => num(c#cps), "autoWait" => num(c#autoWait),
                                            "masterVolume" => num(c#masterVolume),
-                                           "ambienceVolume" => num(c#ambienceVolume), "seVolume" => num(c#seVolume),
+                                           "ambienceVolume" => num(c#ambienceVolume), "musicVolume" => num(c#musicVolume), "seVolume" => num(c#seVolume),
                                            "windowAlpha" => num(c#windowAlpha),
                                            "skipScope" => Json.JString("${c#skipScope}"),
                                            "afterChoice" => Json.JString("${c#afterChoice}"),
@@ -313,6 +314,7 @@ mod Saves {
             { cps = JsonCodec.floatOr("cps", c#cps, obj), autoWait = JsonCodec.floatOr("autoWait", c#autoWait, obj),
               masterVolume = JsonCodec.floatOr("masterVolume", c#masterVolume, obj),
               ambienceVolume = JsonCodec.floatOr("ambienceVolume", c#ambienceVolume, obj),
+              musicVolume = JsonCodec.floatOr("musicVolume", c#musicVolume, obj),
               seVolume = JsonCodec.floatOr("seVolume", c#seVolume, obj),
               windowAlpha = JsonCodec.floatOr("windowAlpha", c#windowAlpha, obj),
               skipScope = if (word("skipScope", "${c#skipScope}") == "Everything") SkipScope.Everything else SkipScope.ReadOnly,

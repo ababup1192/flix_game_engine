@@ -16,7 +16,7 @@ mod Layout {
         case Portrait(PortraitDoc.Rec, Vec2.Vec2)
     }
 
-    /// 並べ方の組を選ぶ。orientation = design の向き（View は ViewCtx#display#orientation、Controls は Display.orientationOf(Frame#viewport)）、
+    /// 並べ方の組を選ぶ。orientation = design の向き（View は ViewCtx#display#orientation、Controls は Frame#viewport から engine の Display の orientationOf で）、
     /// screen = design の大きさ（View は ViewCtx#visible#size、Controls は Frame#viewport）、sizeClass = 端末の区分。
     /// WhyNot: Medium（タブレット）に Small の組を使わない — 倍率が 1 を超える横持ちなら 960×540 のままでも押せる大きさに近い。
     /// 縦持ちの小さいタブレットと下の帯のボタンは 44 CSS px に届かないので、足りなければ Medium の組を novel.small.json に足す。
@@ -119,6 +119,17 @@ mod Layout {
     pub def nvlText(): { x = Float64, y = Float64, width = Float64 } = { x = 110.0, y = 62.0, width = 740.0 }
 
     // ── 縦の画面の頁 ──
+
+    /// 縦の画面の下の帯（下端から bandHeight px。今の行を出す範囲）。幅と下端は頁と同じ、上端は頁より上へは出ない。
+    /// choiceCount 個の選択肢を出している間は、同じ高さのまま 1 つ目の選択肢の上まで持ち上げる（字と選択肢を重ねない）。
+    pub def portraitBand(fit: Fit, bandHeight: Float64, choiceCount: Int32): Rect2.Rect2 =
+        let plain = page(fit, 0);
+        let plainBottom = plain#position#y + plain#size#y;
+        let tall = Float64.max(0.0, plainBottom - Float64.max(plain#position#y, height(fit) - bandHeight));
+        let p = page(fit, choiceCount);
+        let bottom = p#position#y + p#size#y;
+        let top = Float64.max(p#position#y, bottom - tall);
+        rect(p#position#x, top, p#size#x, bottom - top)
 
     /// 縦の画面の頁（文を上から積む範囲。幅は折り返す幅）。choiceCount 個の選択肢を出している間は、その上までに縮める。
     /// 右端は右の操作の列の左端から 12 px 左で抑える（列の積み方が top でも bottom でも重ならない）。

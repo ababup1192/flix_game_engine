@@ -449,12 +449,12 @@ mod Controls {
         let music = PropertyTween.nameAt(now, Stage.bgmKey(), stage#props) |> Option.map(name -> { name = name, volume = volume(Stage.bgmVolumeKey()), pitch = 1.0 }) |> Option.toList;
         List.append(ambient, music) |> List.filter(s -> s#volume > 0.0)
 
-    /// 音の通り道: novel.mixer.json のバスに、設定の音量（全体 × 環境音 / 効果音）を掛ける。
+    /// 音の通り道: novel.mixer.json のバスに、設定の音量（全体 × 環境音 / BGM / 効果音）を掛ける。
     /// 画面や確認のウィンドウを開いている間は snapshot「panel」（環境音を籠もらせる）。
     pub def mixerOf(res: Res.Res, w: World.World): AudioMixer.Mixer =
         let c = Saves.configOf(w#saves);
         let base = res#mixer |> AudioMixer.withBusVolume("ambience", c#masterVolume * c#ambienceVolume)
-                           |> AudioMixer.withBusVolume("bgm", c#masterVolume * c#ambienceVolume)
+                           |> AudioMixer.withBusVolume("bgm", c#masterVolume * c#musicVolume)
                            |> AudioMixer.withBusVolume("se", c#masterVolume * c#seVolume);
         if (World.isFree(w)) base else AudioMixer.withSnapshot("panel", base)
 
@@ -484,24 +484,30 @@ mod Controls {
 
     pub def mixerPath(): String = "assets/novel.mixer.json"
 
-    /// 起動時と描き出しとテストが同じ形で読む描く元（Doc とシナリオ）。
-    pub def loadRes(): Res.Res \ Fs.FileRead =
-        let dialogue = Talk.load();
-        { story = StoryDoc.load(StoryDoc.path()),
-          kind = KindDoc.load(KindDoc.path()),
-          theme = ThemeDoc.load(ThemeDoc.path()),
-          backdrops = BackdropDoc.load(BackdropDoc.path()),
-          credits = CreditsDoc.load(CreditsDoc.path()),
-          keys = KeysDoc.load(KeysDoc.path()),
-          smallScreen = SmallScreenDoc.load(SmallScreenDoc.path()),
-          portrait = loadPortrait(),
-          cast = CastDoc.load(CastDoc.path()),
-          shots = ShotsDoc.load(ShotsDoc.path()),
-          mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
-          mixerExtras = MixerDoc.load(mixerPath()),
-          soundSeconds = loadSoundSeconds(dialogue),
-          effects = EffectsDoc.load(EffectsDoc.path()),
-          prompts = PromptsDoc.load(PromptsDoc.path()),
+    /// 起動時と描き出しが読む描く元（Doc とシナリオ。ゲームの直下から）。
+    pub def loadRes(): Res.Res \ Fs.FileRead = loadResIn("")
+
+    /// root のフォルダを直下と見て、Doc とシナリオと project.json の音を読んだ描く元（root = "" でゲームの直下）。
+    /// テストは作例の写し（test/fixtures/sample）を読み、ゲームの台本と Doc を書き換えても同じ物を見る。
+    /// GameRes はゲームの直下から読む（ゲームの Doc の置き場はゲームが決めるので、GameRes.load は root を取らない）。
+    pub def loadResIn(root: String): Res.Res \ Fs.FileRead =
+        let at = path -> if (root == "") path else "${root}/${path}";
+        let dialogue = Yarn.loadOr(Yarn.empty(), at(Talk.dialoguePath()));
+        { story = StoryDoc.load(at(StoryDoc.path())),
+          kind = KindDoc.load(at(KindDoc.path())),
+          theme = ThemeDoc.load(at(ThemeDoc.path())),
+          backdrops = BackdropDoc.load(at(BackdropDoc.path())),
+          credits = CreditsDoc.load(at(CreditsDoc.path())),
+          keys = KeysDoc.load(at(KeysDoc.path())),
+          smallScreen = SmallScreenDoc.load(at(SmallScreenDoc.path())),
+          portrait = PortraitDoc.withRail(RailDoc.load(at(RailDoc.path())), PortraitDoc.load(at(PortraitDoc.path()))),
+          cast = CastDoc.load(at(CastDoc.path())),
+          shots = ShotsDoc.load(at(ShotsDoc.path())),
+          mixer = AudioMixerDoc.load(AudioMixer.defaults(), at(mixerPath())),
+          mixerExtras = MixerDoc.load(at(mixerPath())),
+          soundSeconds = soundSecondsOf(SoundLength.loadIn(if (root == "") "." else root), dialogue),
+          effects = EffectsDoc.load(at(EffectsDoc.path())),
+          prompts = PromptsDoc.load(at(PromptsDoc.path())),
           dialogue = dialogue,
           commandArgs = Commands.argsTableOf(dialogue),
           nodesBySource = Talk.nodesBySource(dialogue),
@@ -512,7 +518,9 @@ mod Controls {
 
     /// 鳴り続けない音の長さ（秒）。シナリオが wait=true で鳴らす効果音のうち、長さが読めない物を 1 行ずつ知らせる（読み込みのたびに 1 回）。
     def loadSoundSeconds(dialogue: Yarn.Program): Map[String, Float64] \ Fs.FileRead =
-        let seconds = SoundLength.load();
+        soundSecondsOf(SoundLength.load(), dialogue)
+
+    def soundSecondsOf(seconds: Map[String, Float64], dialogue: Yarn.Program): Map[String, Float64] =
         let unread = Commands.waitSoundsOf(dialogue) |> List.filter(name -> not Map.memberOf(name, seconds));
         Log.warnAllThen(unread |> List.map(name -> "[stage] <<audio se ${name} wait=true>> の長さが読めない（project.json の sounds の WAV が読めない）ので、この音では待たない"), seconds)
 

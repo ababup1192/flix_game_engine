@@ -1,6 +1,7 @@
 // ルールと進行だけをテストする。座標・描き方・文字送りの見た目はテストしない。
-// シナリオは本物（yukidoke.yarn を build した木）。行の文字は写さず、ノードの名前・変数・シナリオの木から期待値を導く。
-// 手本のシナリオに無い効果音だけは、テスト用の木（TestKit.fixtureRes）で見る。
+// シナリオは作例の写し（TestKit.res）。行の文字は写さず、ノードの名前・変数・シナリオの木から期待値を導く。
+// 作例のシナリオに無い効果音だけは、テスト用の木（TestKit.fixtureRes）で見る。ゲームの台本と Doc を見るのは Controls.loadRes の物だけ。
+// 作例の筋（どの選択肢でどの結末か）は作例を確かめるテスト（mod TestSample。make new-game が外す）。
 mod TestRules {
 
     use fge::{App, AudioMixer, Clock, Emit, JsonCodec, Vec2, Yarn, YarnRunner}
@@ -30,10 +31,10 @@ mod TestRules {
         Assert.assertEq(expected = ("Reading", opening, List.head(sayLines(res, opening)), "nvl"),
                         (World.sceneName(w), World.talkNodeOf(w), Some(lineNo(w)), World.stageOf(res, w)#mode))
 
-    /// ギャラリーの場面は全部、実機と同じ App から shot:<名前> の始まりで組める。
+    /// ゲームの novel.shots.json の場面は全部、ゲームの Doc と台本で、実機と同じ App から shot:<名前> の始まりで組める。
     @Test
     def testEveryShotBuildsFromTheApp(): Unit \ {Assert, Fs.FileRead} =
-        let res = TestKit.res();
+        let res = Controls.loadRes();
         let app = TestKit.app(res, w0(res));
         Assert.assertEq(expected = Nil,
             Shots.names(res) |> List.filter(name -> Result.isErr(App.buildStart(app, Vec2.zero(), App.shotStartName(name), Map.empty()))))
@@ -76,7 +77,7 @@ mod TestRules {
     @Test
     def testNvlPageTurnsWhenRowsRunOut(): Unit \ {Assert} =
         // 頁に入り切らない行が来たら、頁をめくってその行だけにする。
-        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let line = text -> Page.plainLine(text, text);
         let fits = lines -> List.length(lines) <= 2;
         let page = Page.empty() |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("b"))
                                 |> Page.show(ThemeDoc.WindowKind.Nvl, fits, line("c"));
@@ -93,7 +94,7 @@ mod TestRules {
     def testAdvDropsOldestLinesWhenThePageIsFull(): Unit \ Assert =
         // ADV は頁に入り切らない時、頁をめくらずに古い行から落として積み続ける。
         let fits = lines -> List.length(lines) <= 2;
-        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let line = text -> Page.plainLine(text, text);
         let page = Page.empty() |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("b"))
                                 |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("c"));
         Assert.assertEq(expected = ("b" :: Nil, Some("c")), (page#lines |> List.map(l -> l#text), page#current |> Option.map(l -> l#text)))
@@ -116,7 +117,7 @@ mod TestRules {
     def testAdvPageTurnsWhenTheBackdropChanges(): Unit \ Assert =
         // ADV で場面が変わる（背景を替える）と、次の行から新しい頁になる。今の行は次の行まで出したまま。
         let fits = _ -> true;
-        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let line = text -> Page.plainLine(text, text);
         let turned = Page.empty() |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("a")) |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("b")) |> Page.turn;
         let next = turned |> Page.show(ThemeDoc.WindowKind.Adv, fits, line("c"));
         Assert.assertEq(expected = ((0, Some("b")), (0, Some("c"))),
@@ -132,14 +133,6 @@ mod TestRules {
         let asking = TestKit.readUntil(res, World.isChoosing, Nil, begun(res));
         let after = settle(res, advance(res, asking));
         Assert.assertEq(expected = (true, placeOf(asking)), (World.isChoosing(after), placeOf(after)))
-
-    @Test
-    def testTellingYourPaceSetsOwnPace(): Unit \ {Assert, Fs.FileRead} =
-        // 最初の手紙の選択肢: 坂をゆっくり上がると添える（1 つ目）と、枝を読み終えた所で $own_pace が立ち、2 つ目では立たない。
-        let res = TestKit.res();
-        let asking = TestKit.readUntil(res, World.isChoosing, Nil, begun(res));
-        let ownPace = i -> World.variableOf("$own_pace", readTo(res, "StudioWindow", i :: Nil, asking));
-        Assert.assertEq(expected = ("True", "False"), (ownPace(0), ownPace(1)))
 
     @Test
     def testConditionalChoiceNeedsBothLetters(): Unit \ {Assert, Fs.FileRead} =
@@ -159,22 +152,6 @@ mod TestRules {
         Assert.assertEq(expected = (Some(2), Some(1)), (cursorAfter(1), cursorAfter(2)))
 
     @Test
-    def testSlowLettersNeedsBothHonestLetters(): Unit \ {Assert, Fs.FileRead} =
-        // 2 通の手紙で歩調と休む日を伝えると、誘いで春からの手紙を選べ、期限を決めない文通の結末に着く。
-        let res = TestKit.res();
-        let ending = readTo(res, "SlowLetters", 0 :: 0 :: 0 :: Nil, begun(res));
-        Assert.assertEq(expected = ("SlowLetters", "True", "True"),
-                        (World.talkNodeOf(ending), World.variableOf("$own_pace", ending), World.variableOf("$shared_tiredness", ending)))
-
-    @Test
-    def testDecliningKeepsTheMap(): Unit \ {Assert, Fs.FileRead} =
-        // 手紙で歩調も休む日も伝えず、誘いを断ると（選べるのは 2 つ目と 3 つ目）、地図をしまう結末に着き、どちらの変数も立たない。
-        let res = TestKit.res();
-        let ending = readTo(res, "KeptMap", 1 :: 1 :: 2 :: Nil, begun(res));
-        Assert.assertEq(expected = ("KeptMap", "False", "False"),
-                        (World.talkNodeOf(ending), World.variableOf("$own_pace", ending), World.variableOf("$shared_tiredness", ending)))
-
-    @Test
     def testStoryEndRollsTheCredits(): Unit \ {Assert, Fs.FileRead} =
         // シナリオの終わりまで読むとクレジットへ。
         let res = TestKit.res();
@@ -185,8 +162,8 @@ mod TestRules {
 
     @Test
     def testEveryCommandInTheScriptIsUnderstood(): Unit \ {Assert, Fs.FileRead} =
-        // シナリオのコマンドは全部 Commands の表で読めて当てられる（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
-        let res = TestKit.res();
+        // ゲームのシナリオのコマンドは全部、ゲームの命令も入れた Commands の表で読めて当てられる（写真・時間帯の名前は backdrops にある）。wait は実行器が待つ。
+        let res = Controls.loadRes();
         let ctx = { now = Clock.zero(), node = "", res = res, instant = false };
         let bad = commandsOf(res#dialogue) |> List.filter(c -> c#name != "wait")
             |> List.filterMap(c -> match Commands.execute(Commands.Replay.Silent, ctx, c, Stage.empty()) {
@@ -802,4 +779,74 @@ mod TestRules {
         let saved = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), 0, past));
         let (_, heard) = Emit.collect(() -> WorldSaves.loadFrom(res, Saves.Tab.Numbered(1), 0, saved));
         Assert.assertEq(expected = World.Event.Loaded :: Nil, heard)
+
+    // ── 台本の字の置き換え（novel.story.json の replace） ──
+
+    def withReplace(table: Map[String, String], res: Res.Res): Res.Res =
+        Res.withStory(StoryDoc.Doc.Doc({ replace = table | StoryDoc.rec(res#story) }), res)
+
+    def currentText(w: World.World): String = World.pageOf(w)#current |> Option.map(l -> l#text) |> Option.getWithDefault("")
+
+    /// 最初の台詞の頭の 2 字を ★ に替える表（行の字を写さずに、本物のシナリオの字から作る）。
+    def headTable(res: Res.Res): (String, Map[String, String]) =
+        let head = String.takeLeft(2, currentText(begun(res)));
+        (head, Map#{ head => "★" })
+
+    @Test
+    def testReplaceIsAppliedToTheShownLine(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        let (head, table) = headTable(res);
+        let shown = currentText(begun(withReplace(table, res)));
+        Assert.assertEq(expected = (true, false), (String.startsWith(prefix = "★", shown), String.contains(substr = head, shown)))
+
+    @Test
+    def testReplaceIsAppliedToTheBacklog(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        let (_, table) = headTable(res);
+        let logged = World.logOf(begun(withReplace(table, res))) |> List.filterMap(entry -> match entry {
+            case World.Entry.Said(line, _) => Some(line#text)
+            case _                         => None
+        });
+        Assert.assertTrue(logged |> List.exists(String.startsWith(prefix = "★")))
+
+    @Test
+    def testReplaceIsAppliedToTheSpeakerName(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        let id = StoryDoc.speakerIds(res#story) |> List.head |> Option.getWithDefault("");
+        let name = StoryDoc.nameOf(id, res#story);
+        Assert.assertEq(expected = "★", StoryDoc.nameOf(id, withReplace(Map#{ name => "★" }, res)#story))
+
+    def replacing(table: Map[String, String], text: String): String =
+        StoryDoc.replaceText(StoryDoc.Doc.Doc({ replace = table | StoryDoc.rec(StoryDoc.defaults()) }), text)
+
+    @Test
+    def testTheLongerKeyIsReplacedFirst(): Unit \ Assert =
+        Assert.assertEq(expected = "B", replacing(Map#{ "××" => "A", "××××" => "B" }, "××××"))
+
+    @Test
+    def testReplacedTextIsNotReplacedAgain(): Unit \ Assert =
+        Assert.assertEq(expected = "bc", replacing(Map#{ "a" => "b", "b" => "c" }, "ab"))
+
+    @Test
+    def testReplaceKeepsTheRubyAfterIt(): Unit \ Assert =
+        // ×××× を 3 字に替えると、後ろのルビの始まりも 1 字前へずれる（4 字の印 → 3 字）。
+        let doc = StoryDoc.Doc.Doc({ replace = Map#{ "××××" => "ユウキ" } | StoryDoc.rec(StoryDoc.defaults()) });
+        let line = { speaker = "", text = "××××の字", tags = Nil, source = { file = "t", line = 1 },
+                     parts = Yarn.Part.Literal("××××の") :: Yarn.Part.Markup("ruby", "じ") :: Yarn.Part.Literal("字") :: Yarn.Part.Close("ruby") :: Nil };
+        let replaced = StoryDoc.replaceLine(doc, line);
+        Assert.assertEq(expected = ("ユウキの字", 4 :: Nil), (replaced#text, Yarn.rubiesOf(replaced) |> List.map(r -> r#start)))
+
+    @Test
+    def testTheMigrateRecordKeepsTheScriptText(): Unit \ {Assert, Fs.FileRead} =
+        // 移行の記録（World.Event.Executed の Said）の字は台本の字のまま（置き換える前）。
+        let res = TestKit.res();
+        let (head, table) = headTable(res);
+        let replaced = withReplace(table, res);
+        let started = quiet(() -> WorldRead.newGame(replaced, w0(replaced)));
+        let (_, events) = Emit.collect(() -> WorldRead.step(replaced, 30.0, TestKit.tickClocks(replaced, 30.0, started)));
+        let said = events |> List.filterMap(e -> match e {
+            case World.Event.Executed(World.Executed.Said(_, _, text)) => Some(text)
+            case _                                                    => None
+        });
+        Assert.assertTrue(said |> List.exists(String.startsWith(prefix = head)))
 }

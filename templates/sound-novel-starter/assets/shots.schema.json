@@ -88,6 +88,28 @@
         },
         "additionalProperties": false
       }
+    },
+    "slots": {
+      "type": "array",
+      "description": "save・load の画面の場面で、1 ページ目の上の枠から書いておくセーブ",
+      "items": {
+        "type": "object",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "ノード（シナリオの title:）"
+          },
+          "say": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "ノードの何番目（0 から）の台詞を出し終えた所か（省けば 0）"
+          }
+        },
+        "additionalProperties": false
+      }
     }
   }
 }

@@ -5,7 +5,7 @@
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
-    use fge::{App, DocJson, Display, HeadlessFont, HeadlessLoad, HeadlessRender, JsonCodec, Log, ProjectLoader, Render, Suggest, Vec2}
+    use fge::{App, DocJson, Display, FontAtlas, HeadlessFont, HeadlessLoad, HeadlessRender, JsonCodec, Log, ProjectLoader, Render, SoftRaster, Suggest, Vec2}
 
     import java.io.File
     import java.lang.ProcessHandle
@@ -51,6 +51,37 @@ mod SceneRender {
           fontTtf = ttf(), fontAtlas = HeadlessFont.buildUiAtlas(ttf(), ttf()), texturePath = textures,
           outDir = outDir, frameW = pixelsOf(design#x, 960), frameH = pixelsOf(design#y, 540) | HeadlessRender.defaults() }
 
+    /// 描き出しと flow の画面: design の大きさ・描き出しへ混ぜる本（extraFontsOf）・View に渡す字の本（本文の本と、名前で引く本）。
+    pub type alias Screen = { design = Vec2.Vec2, extra = Map[String, SoftRaster.FontEntry], fonts = View.Fonts }
+
+    /// design と、App.withFonts で宣言した名前 declared から、描き出しの画面を 1 回だけ組む（本を作るのは重いので場面ごとに組まない）。
+    pub def screenOf(design: Vec2.Vec2, declared: List[String]): Screen \ IO =
+        let extra = extraFontsOf(declared);
+        let body = HeadlessFont.buildUiAtlas(ttf(), ttf());
+        { design = design, extra = extra, fonts = { atlas = body, fontOf = fontOfIn(extra, body) } }
+
+    /// ゲームが App.withFonts で宣言した名前（GameBoot.app を通した App の fonts）。
+    pub def declaredFontsOf(res: Res.Res): List[String] = App.rec(Game.app(res, Saves.fresh(res#kind), 0i64))#fonts
+
+    /// 既定の本（明朝）のほかに描き出しへ混ぜる本（project.json の fonts のうち declared に挙げた名前）。鍵は実機と同じテクスチャの名前（"font_" + name）。
+    /// project.json が読めなければ空（既定の本だけで描く）。
+    pub def extraFontsOf(declared: List[String]): Map[String, SoftRaster.FontEntry] \ IO =
+        match run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO {
+            case Ok(proj) => fontsIn(proj, declared)
+            case Err(_)   => Map.empty()
+        }
+
+    /// proj の fonts のうち declared に挙げた名前を、実機と同じ名前で組んだ本の表に。
+    // WhyNot: project.json の fonts を全部組まない — 実機の ViewCtx#fontOf は App.withFonts で宣言した名前しか引けず、宣言していない名前は本文の本になる。
+    pub def fontsIn(proj: ProjectLoader.Project, declared: List[String]): Map[String, SoftRaster.FontEntry] \ IO =
+        let wanted = List.toSet(declared);
+        proj#config#fontManifest |> List.filter(f -> Set.memberOf(f#name, wanted))
+            |> List.map(f -> ("font_${f#name}", { ttf = f#path, atlas = HeadlessFont.buildAtlas(f#name, f#path) })) |> List.toMap
+
+    /// 名前 → その本（実機の ViewCtx#fontOf と同じ引き方。知らない名前は fallback）。
+    pub def fontOfIn(fonts: Map[String, SoftRaster.FontEntry], fallback: FontAtlas): String -> FontAtlas =
+        name -> Map.get("font_${name}", fonts) |> Option.map(e -> e#atlas) |> Option.getWithDefault(fallback)
+
     /// design の長さを描き出しの画素の数に（読めない長さは fallback）。
     def pixelsOf(length: Float64, fallback: Int32): Int32 = Float64.round(length) |> Float64.tryToInt32 |> Option.getWithDefault(fallback)
 
@@ -87,7 +118,7 @@ mod SceneRender {
     pub def shotOf(res: Res.Res, w: World.World): String \ IO =
         discard (new File("debug/shot")).mkdirs();
         let cfg = cfgOf(design(), "debug/shot", texturesOf());
-        shoot(res, cfg, w, "shot-${ProcessHandle.current().pid()}")
+        shootAs(Look.Design(Display.SizeClass.Large), res, cfg, extraFontsOf(declaredFontsOf(res)), w, "shot-${ProcessHandle.current().pid()}")
 
     pub def one(): Unit \ IO = App.Headless.exitWith(oneJob(App.Headless.requestFromProcess()))
 
@@ -156,7 +187,7 @@ mod SceneRender {
             case None              => Shots.worldOf(scene, res)
         }
 
-    /// worldOf だけが組む場面: (名前, adv の場面の World をどう変えるか)。
+    /// 描き出しだけの場面: (名前, adv の場面の World をどう変えるか)。
     def ownScenes(): List[(String, World.World -> World.World)] =
         ("menu", w -> World.mapRead(r -> { playback = World.Playback.Auto | r }, { panel = World.Panel.Menu(0) | w })) ::
         ("saveload", w -> { panel = World.Panel.SaveLoadPick(0) | w }) ::
@@ -181,7 +212,7 @@ mod SceneRender {
         List.flatten((variantShots() |> List.map(fst)) :: (smallShots() |> List.map(fst))
                      :: (portraitShots() |> List.map(match (name, _, _) -> name)) :: Nil)
 
-    /// 描き出しだけの名前（novel.shots.json の場面の名前と重なると、どちらを描くか読み違える）: worldOf だけが組む場面と、
+    /// 描き出しだけの名前（novel.shots.json の場面の名前と重なると、どちらを描くか読み違える）: ownScenes の場面と、
     /// 描く元を替えた場面・小さい画面・縦の画面の描き出しの名前。
     pub def renderOnlyNames(): List[String] = (ownScenes() |> List.map(fst)) ::: variantNames()
 
@@ -190,6 +221,7 @@ mod SceneRender {
         let d = design();
         let cfg = cfgOf(d, outDir, texturesOf());
         let loaded = loadRes();
+        let fonts = extraFontsOf(declaredFontsOf(loaded));
         let regular = Shots.names(loaded) |> List.map(name -> (name, name, Look.Design(Display.SizeClass.Large)));
         let variant = variantShots() |> List.map(match (name, scene) -> (name, scene, Look.Design(Display.SizeClass.Large)));
         // WhyNot: 縦の design で small-* を撮らない — 縦の design では区分 Small でも縦の並べ方が選ばれ、design の場面と同じ絵になる。
@@ -197,14 +229,15 @@ mod SceneRender {
                     else smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Design(Display.SizeClass.Small)));
         let portrait = portraitShots() |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
         List.flatten(regular :: variant :: small :: portrait :: Nil) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, look) ->
-            shootNamed(outDir, cfg, loaded, name, scene, look))
+            shootNamed(outDir, cfg, fonts, loaded, name, scene, look))
 
     /// 描き出しの名前 name を、場面 scene の World と look の画面で描く。場面を組めなければ 1 行言って飛ばす。
-    def shootNamed(outDir: String, cfg: HeadlessRender.RenderConfig, loaded: Res.Res, name: String, scene: String, look: Look): Option[String] \ IO =
+    def shootNamed(outDir: String, cfg: HeadlessRender.RenderConfig, fonts: Map[String, SoftRaster.FontEntry], loaded: Res.Res,
+                   name: String, scene: String, look: Look): Option[String] \ IO =
         let res = resFor(name, loaded);
         match worldOf(scene, res) {
             case Some(w) =>
-                let path = shootAs(look, res, cfg, w, name);
+                let path = shootAs(look, res, cfg, fonts, w, name);
                 App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
                 Some(path)
             case None =>
@@ -212,23 +245,22 @@ mod SceneRender {
                 None
         }
 
-    def shoot(res: Res.Res, cfg: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
-        shootAs(Look.Design(Display.SizeClass.Large), res, cfg, w, name)
-
     /// 1 場面を look の画面として PNG に描き出し、そのファイルパスを返す。hud の合流は実機と同じ App.composeScene を通し、
     /// 背景の面は surfaces として別に取り出して画素ごとに評価させる（draw に渡すと代表色のベタ塗りになる）。
-    /// 縦の画面は design と描き出しの大きさを縦の design にし、画面の情報を Display.phonePortrait にする（実機のブラウザの縦と同じ組）。
-    def shootAs(look: Look, res: Res.Res, base: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
+    /// 縦の画面は design と描き出しの大きさを縦の design にし、画面の情報を engine の Display の phonePortrait にする（実機のブラウザの縦と同じ組）。
+    /// fonts = 描き出しへ混ぜる本（extraFontsOf。場面ごとに組み直さない）。
+    def shootAs(look: Look, res: Res.Res, base: HeadlessRender.RenderConfig, fonts: Map[String, SoftRaster.FontEntry], w: World.World, name: String): String \ IO =
         let (cfg, display) = match look {
             case Look.Design(sizeClass) => (base, { sizeClass = sizeClass | Display.desktop(base#design) })
             case Look.Portrait(view) =>
                 let d = portraitDesignOf(view);
                 ({ design = d, frameW = pixelsOf(d#x, 540), frameH = pixelsOf(d#y, 960) | base }, Display.phonePortrait(view, d))
         };
-        let ctx = { display = display | App.viewCtxOf(cfg#fontAtlas, cfg#design) };
+        let ctx = { display = display | App.viewCtxOfFonts(cfg#fontAtlas, fontOfIn(fonts, cfg#fontAtlas), cfg#design) };
         let items = App.composeScene(None, 1.0, cfg#design, { world = View.frame(ctx, res, w), hud = View.hud(ctx, res, w) });
         let (drawables, polygons) = Render.draw(Render.withoutShaders(items));
-        HeadlessRender.renderPngWith(cfg, drawables, polygons, Render.shaderSurfaces(items), name);
+        HeadlessRender.renderPngFull(cfg, { passes = Nil, drawables = drawables, polygons = polygons, surfaces = Render.shaderSurfaces(items),
+                                            scenes = Nil, fonts = fonts, fontAntialias = Map.empty() }, name);
         let path = "${cfg#outDir}/${name}.png";
         println("rendered: ${path}");
         path

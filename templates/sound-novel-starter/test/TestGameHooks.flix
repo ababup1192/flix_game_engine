@@ -171,7 +171,7 @@ mod TestGameHooks {
 
     @Test
     def testGameOwnedSwitchWaitsForItsSeconds(): Unit \ {Assert, Fs.FileRead} =
-        Assert.assertEq(expected = Ok(Out.WaitOrTap(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
+        Assert.assertEq(expected = Ok(Out.SwitchWait(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
 
     @Test
     def testInstantDoesNotAskTheGame(): Unit \ {Assert, Fs.FileRead} =
@@ -413,11 +413,101 @@ mod TestGameHooks {
         // flow の reader は押すと明ける待ちの間は押さない（基準の版と同じく、待ちの秒を流す）。
         let r = res();
         let w = walking(r);
-        let tapped = E2e.table()#drives |> List.exists(d -> match d#act(10.0, Resources.of(r, w)) {
+        Assert.assertEq(expected = (true, false), (WorldRead.isTapWait(w), readerTaps(r, w)))
+
+    /// flow の reader が、読み始めてから十分たった所で押すか。
+    def readerTaps(r: Res.Res, w: World.World): Bool =
+        E2e.table()#drives |> List.exists(d -> match d#act(10.0, Resources.of(r, w)) {
             case Flow.DriveAct.Tap(_) => true
             case _                    => false
-        });
-        Assert.assertEq(expected = (true, false), (WorldRead.isTapWait(w), tapped))
+        })
+
+    @Test
+    def testTheFlowReaderDoesNotTapDuringAPlainWait(): Unit \ {Assert, Fs.FileRead} =
+        let r = res();
+        Assert.assertFalse(readerTaps(r, waitingBy(r, Out.Wait(3.0))))
+
+    @Test
+    def testTheFlowReaderTapsAfterTheWaitEnds(): Unit \ {Assert, Fs.FileRead} =
+        // 待ちが明けて預けた台詞を出し終えたら、今まで通り押す。
+        let r = res();
+        let ended = TestKit.stepBy(r, 30.0, waitingBy(r, Out.WaitOrTap(3.0)));
+        Assert.assertTrue(readerTaps(r, ended))
+
+    // ══ ゲームが持つ切り替えの待ち（Out.SwitchWait）の間に流す命令 ══
+
+    /// 合図 name を出すだけの命令（timing で時間を取るかを決める）。
+    def signalCommand(name: String, timing: Commands.Timing): Commands.Command[Stage.Stage] =
+        { spec = YarnCommands.spec(name, "合図を出す", Nil), timing = timing,
+          apply = (_, _, st) -> Ok((st, Out.Event(name) :: Nil)), needs = Commands.noAssets }
+
+    /// 3 秒の切り替えの待ちを出す walk・時間を取らない合図 quick・時間を取る合図 slow を、読み進める命令の表に足した描く元。
+    def withSwitchCommands(r: Res.Res): Res.Res =
+        { commands = Commands.tableOf(waitCommand("walk", Out.SwitchWait(3.0)) :: signalCommand("quick", Commands.Timing.Instant)
+                                      :: signalCommand("slow", Commands.Timing.Timed) :: Commands.commandsIn(r#commands)) | r }
+
+    /// 読み始めた所で 0.1 秒の待ちを当て、明けたら walk と rest の命令と台詞を流す World を、0.2 秒進めた所（walk を当てた直後）と、そこで出た合図。
+    def walkedInto(r: Res.Res, rest: List[String]): (World.World, List[String]) =
+        walkedIntoEvents(r, rest |> List.map(name -> YarnRunner.Event.Command(command(name, Nil))))
+
+    /// walkedInto の、walk の後ろの出来事 rest を直に渡す形（rest の後ろに台詞 1 行）。
+    def walkedIntoEvents(r: Res.Res, rest: List[YarnRunner.Event]): (World.World, List[String]) =
+        let events = (YarnRunner.Event.Command(command("walk", Nil)), 1) :: (rest |> List.map(e -> (e, 1)))
+            ::: ((YarnRunner.Event.Line(heldLine()), 0) :: Nil);
+        let start = begun(r);
+        let w = World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start);
+        let (next, heard) = Emit.collect(() -> WorldRead.step(r, 0.2, TestKit.tickClocks(r, 0.2, w)));
+        (next, heard |> List.filterMap(e -> match e {
+            case World.Event.Signal(name) => Some(name)
+            case _                        => None
+        }))
+
+    @Test
+    def testInstantCommandsRunDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =
+        // 切り替えの待ちの間も、後ろの時間を取らない命令は先に流れ、台詞は待つ。
+        let (w, signals) = walkedInto(withSwitchCommands(res()), "quick" :: Nil);
+        Assert.assertEq(expected = ("quick" :: Nil, true, false), (signals, isPaused(w), currentText(w) == "歩いた後の行。"))
+
+    @Test
+    def testATimedCommandWaitsForTheSwitch(): Unit \ {Assert, Fs.FileRead} =
+        // 時間を取る命令に当たったら止まり、その後ろの時間を取らない命令も待つ。
+        let (_, signals) = walkedInto(withSwitchCommands(res()), "slow" :: "quick" :: Nil);
+        Assert.assertEq(expected = Nil, signals)
+
+    @Test
+    def testTheLineComesAfterTheSwitch(): Unit \ {Assert, Fs.FileRead} =
+        let r = withSwitchCommands(res());
+        let (w, _) = walkedInto(r, "quick" :: Nil);
+        Assert.assertEq(expected = "歩いた後の行。", currentText(TestKit.stepBy(r, 3.5, w)))
+
+    @Test
+    def testAPlainTapWaitHoldsTheInstantCommands(): Unit \ {Assert, Fs.FileRead} =
+        // ゲームのコマンドが出す WaitOrTap の後ろの時間を取らない命令は、待ちが明けてから流れる。
+        let r = { commands = Commands.tableOf(waitCommand("walk", Out.WaitOrTap(3.0)) :: signalCommand("quick", Commands.Timing.Instant)
+                                              :: Commands.commandsIn(res()#commands)) | res() };
+        let (_, signals) = walkedInto(r, "quick" :: Nil);
+        Assert.assertEq(expected = Nil, signals)
+
+    @Test
+    def testTheSwitchStopsAtAWait(): Unit \ {Assert, Fs.FileRead} =
+        // <<wait>> は実行器の待ちなので時間を取る側: そこで止まり、後ろの時間を取らない命令も待つ。
+        let (_, signals) = walkedIntoEvents(withSwitchCommands(res()), YarnRunner.Event.Command(command("wait", "1" :: Nil)) :: YarnRunner.Event.Command(command("quick", Nil)) :: Nil);
+        Assert.assertEq(expected = Nil, signals)
+
+    @Test
+    def testTheSwitchStopsAtChoices(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢で止まり、まだ出さない。
+        let line = { text = "行く" | heldLine() };
+        let option = { line = line, available = true };
+        let (w, signals) = walkedIntoEvents(withSwitchCommands(res()), YarnRunner.Event.Choices(option :: Nil) :: YarnRunner.Event.Command(command("quick", Nil)) :: Nil);
+        Assert.assertEq(expected = (Nil, false), (signals, World.isChoosing(w)))
+
+    @Test
+    def testAPlainWaitFromAFlowedCommandIsNotTappable(): Unit \ {Assert, Fs.FileRead} =
+        // 切り替えの間に流した命令が Out.Wait を出したら、押しても明けない待ちになる（音を聞かせる待ちを飛ばさない）。
+        let r = { commands = Commands.tableOf({ timing = Commands.Timing.Instant | waitCommand("sewait", Out.Wait(1.0)) } :: Commands.commandsIn(withSwitchCommands(res())#commands)) | res() };
+        let (w, _) = walkedInto(withSwitchCommands(r), "sewait" :: Nil);
+        Assert.assertEq(expected = (true, false), (isPaused(w), WorldRead.isTapWait(w)))
 
     // ══ <<tween 鍵>> ══
 
@@ -487,6 +577,6 @@ mod TestGameHooks {
     def testGameObjectsAreListedWhileReading(): Unit \ {Assert, Fs.FileRead} =
         let r = res();
         let lamp = (_: View.Env, _: World.Read) -> { id = "lamp", name = "電灯", rect = Layout.screen(Layout.Fit.Regular) } :: Nil;
-        let ids = FlowVideo.objectsUsing(lamp, Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
+        let ids = FlowVideo.objectsUsing(lamp, View.emptyFonts(), Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
         Assert.assertTrue(List.memberOf("lamp", ids))
 }

@@ -1,8 +1,8 @@
 // StoryDoc — novel.story.json（画面に出す言葉: タイトル・メニュー・設定・セーブ・確認のウィンドウの文言と、話し手の呼び名・変数の表示名・最初のノード）の宣言ドキュメント層。
-// 文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
+// 文章・分岐・結末はシナリオ（assets/talk の .yarn。Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
 // 言葉は Label の enum を鍵に引く（鍵の綴りと既定の言葉の正は entryOf。Doc に無い鍵は既定の言葉で出す = fail-open）。
 mod StoryDoc {
-    use fge::{DocJson, JsonCodec, Log}
+    use fge::{DocJson, JsonCodec, Log, Sort, Yarn}
     use Util.Json.Json
 
     /// シナリオの外で画面に出す言葉の鍵。
@@ -60,6 +60,7 @@ mod StoryDoc {
         case FullscreenMode
         case MasterVolume
         case AmbienceVolume
+        case MusicVolume
         case SeVolume
         case WindowAlpha
         case Reset
@@ -102,7 +103,7 @@ mod StoryDoc {
         Label.EmptySlot :: Label.NewBadge :: Label.SlotsHint :: Label.LogHint :: Label.GroupText :: Label.GroupSound ::
         Label.TextSpeed :: Label.AutoWait :: Label.SkipScope :: Label.SkipReadOnly :: Label.SkipEverything :: Label.AfterChoice ::
         Label.StopSkip :: Label.KeepSkip :: Label.Display :: Label.WindowMode :: Label.FullscreenMode :: Label.MasterVolume ::
-        Label.AmbienceVolume :: Label.SeVolume :: Label.WindowAlpha :: Label.Reset :: Label.Preview :: Label.Yes ::
+        Label.AmbienceVolume :: Label.MusicVolume :: Label.SeVolume :: Label.WindowAlpha :: Label.Reset :: Label.Preview :: Label.Yes ::
         Label.No :: Label.AskOverwrite :: Label.AskDelete :: Label.AskLoad :: Label.AskJump :: Label.AskToTitle ::
         Label.AskQuit :: Label.AskReset :: Label.LostNote :: Label.Saved :: Label.QuickSaved :: Label.Loaded ::
         Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Label.NoSaveNow :: Label.SavesRefused :: Label.SavesRefusedKept :: Label.Waiting ::
@@ -159,6 +160,7 @@ mod StoryDoc {
         case Label.FullscreenMode => ("fullscreenMode", "フルスクリーン")
         case Label.MasterVolume   => ("masterVolume", "全体の音量")
         case Label.AmbienceVolume => ("ambienceVolume", "環境音")
+        case Label.MusicVolume    => ("musicVolume", "BGM")
         case Label.SeVolume       => ("seVolume", "効果音")
         case Label.WindowAlpha    => ("windowAlpha", "ウィンドウの濃さ")
         case Label.Reset          => ("reset", "初期設定に戻す")
@@ -191,7 +193,7 @@ mod StoryDoc {
 
     /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は
     /// novel.backdrops.json の鍵）と環境音（project.json の sounds の名前）、opening = 「はじめから」で開くノード、names = 話し手の id → 呼び名、
-    /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉。
+    /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉、replace = 台本の字 → 画面に出す字（主人公の名前など）。
     pub type alias Rec = {
         version = Int32,
         title = String,
@@ -202,7 +204,8 @@ mod StoryDoc {
         opening = String,
         names = Map[String, String],
         vars = Map[String, String],
-        labels = Map[String, String]
+        labels = Map[String, String],
+        replace = Map[String, String]
     }
 
     /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
@@ -215,7 +218,7 @@ mod StoryDoc {
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, title = "雪どけを待たない便り", subtitle = "冬の山里で、坂の上の工房へ便りを届ける。",
                   titlePhoto = "slope", titleGrade = "morning", titleAmbience = "amb_winter_wind",
-                  opening = "WinterRoute", names = Map.empty(), vars = Map.empty(), labels = Map.empty() })
+                  opening = "WinterRoute", names = Map.empty(), vars = Map.empty(), labels = Map.empty(), replace = Map.empty() })
 
     /// 鍵の言葉（Doc に無ければ既定の言葉）。
     pub def labelOf(label: Label, doc: Doc): String =
@@ -223,11 +226,37 @@ mod StoryDoc {
 
     /// 呼び名の話し手の id（nameOf の逆。Doc に無い呼び名はそのまま）。
     pub def idOfName(name: String, doc: Doc): String =
-        rec(doc)#names |> Map.toList |> List.find(match (_, shown) -> shown == name) |> Option.map(fst) |> Option.getWithDefault(name)
+        rec(doc)#names |> Map.keysOf |> Set.toList |> List.find(id -> nameOf(id, doc) == name) |> Option.getWithDefault(name)
 
-    /// 話し手の id の呼び名（地の文の空の id は空・Doc に無い id はそのまま）。
+    /// 話し手の id の呼び名（地の文の空の id は空・Doc に無い id はそのまま。replace を当てた字）。
     pub def nameOf(id: String, doc: Doc): String =
-        Map.getWithDefault(id, id, rec(doc)#names)
+        replaceText(doc, Map.getWithDefault(id, id, rec(doc)#names))
+
+    /// text に replace の表を当てる。左から 1 回だけ読み、その所で当たる鍵のうち一番長い物を替える（空の鍵は当てない）。
+    // WhyNot: 鍵ごとに String.replace を重ねない — 置き換えた字に別の鍵がまた当たり、重なる鍵は辞書の順で短い方が先に当たる。
+    pub def replaceText(doc: Doc, text: String): String =
+        let marks = rec(doc)#replace |> Map.toList |> List.filter(match (mark, _) -> not String.isEmpty(mark))
+            |> Sort.sortStableBy(match (mark, _) -> 0 - String.length(mark));
+        if (List.isEmpty(marks)) text else replaceFrom(marks, text, Nil)
+
+    def replaceFrom(marks: List[(String, String)], rest: String, acc: List[String]): String =
+        if (String.isEmpty(rest)) String.intercalate("", List.reverse(acc))
+        else match List.find(match (mark, _) -> String.startsWith(prefix = mark, rest), marks) {
+            case Some((mark, shown)) => replaceFrom(marks, String.dropLeft(String.length(mark), rest), shown :: acc)
+            case None                => replaceFrom(marks, String.dropLeft(1, rest), String.takeLeft(1, rest) :: acc)
+        }
+
+    /// 台本の行に replace の表を当てる（字と、ルビの位置を数える切れの両方）。鍵が parts の切れ目（マークアップや {式}）を
+    /// またぐ所は、text では替わり parts では替わらない。ルビの読み（[ruby=よみ] の値）には当てない。
+    // WhyNot: text だけ替えない — 画面とバックログはルビの位置を parts の字の長さから数えるので、長さの替わった字の後ろのルビがずれる。
+    pub def replaceLine(doc: Doc, line: Yarn.Line): Yarn.Line =
+        if (Map.isEmpty(rec(doc)#replace)) line
+        else { text = replaceText(doc, line#text), parts = line#parts |> List.map(part -> replacePart(doc, part)) | line }
+
+    def replacePart(doc: Doc, part: Yarn.Part): Yarn.Part = match part {
+        case Yarn.Part.Literal(s) => Yarn.Part.Literal(replaceText(doc, s))
+        case other                => other
+    }
 
     /// 呼び名を持つ話し手の id（names の鍵の順）。
     pub def speakerIds(doc: Doc): List[String] = rec(doc)#names |> Map.keysOf |> Set.toList
@@ -257,7 +286,8 @@ mod StoryDoc {
                   opening = openingIn(d#opening, root),
                   names = strings("names"),
                   vars = strings("vars"),
-                  labels = strings("labels") })
+                  labels = strings("labels"),
+                  replace = strings("replace") })
 
     /// opening（無い・文字列でない時は 1 行言って既定のノード。go の build はこの欄が無いと最初のノードを照らせない）。
     def openingIn(fallback: String, root: Map[String, Json]): String =

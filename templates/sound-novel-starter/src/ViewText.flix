@@ -52,9 +52,9 @@ mod ViewText {
         let isCurrent = Option.exists(c -> c#source == line#source, r#page#current);
         if (isCurrent and Saves.isSeen(line#source, env#saves)) View.theme(env)#inkSeen else speakerOf(line, env)#ink
 
-    /// 行の話し手の色（novel.theme.json の speakers。地の文は空の id）。
+    /// 行の話し手の色（novel.theme.json の speakers。地の文は空の id）。id は行の speakerId で、それを書く前のセーブの行だけ呼び名から引く。
     pub def speakerOf(line: Page.Line, env: Env): ThemeDoc.Speaker =
-        let id = if (String.isEmpty(line#speaker)) "" else StoryDoc.idOfName(line#speaker, env#res#story);
+        let id = if (not String.isEmpty(line#speakerId) or String.isEmpty(line#speaker)) line#speakerId else StoryDoc.idOfName(line#speaker, env#res#story);
         ThemeDoc.speakerOf(id, env#res#theme)
 
     /// 1 行が頁に占める高さ（行の数 × (字 + 行の間)）。行の間は本文の字に比べて novel.kind.json の lineGap の割合（placeLine と同じ）。
@@ -132,8 +132,49 @@ mod ViewText {
     /// 頁の切れ目は World のまま（NVL の <<window clear>> と行の数・ADV の場面の切れ目）。縦の頁に入り切らない時は、古い行から行ごと上へ流して今の行を必ず見せる。
     /// 名前は型の showName が真の時だけ添える。
     pub def portraitPage(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
-        let t = View.theme(env);
         let window = snd(Stage.windowOf(env#res#theme, r#stage));
+        match window#portrait {
+            case ThemeDoc.PortraitText.Band(h) => portraitBand(atlas, env, r, window, h)
+            case ThemeDoc.PortraitText.Page    => portraitStack(atlas, env, r, window)
+        }
+
+    /// 縦の画面の下の帯: 帯の上にだけ下へ濃くなる覆いを敷き、帯の上端から今の行だけを出す（前の行は出さない）。
+    def portraitBand(atlas: FontAtlas, env: Env, r: World.Read, window: ThemeDoc.Window, bandHeight: Float64): List[Render.PlacedItem] =
+        let style = styleOf(window, r#stage);
+        let base = Layout.advTextSizes(env#fit, View.kindOf(env));
+        let body = scaled(env, r#stage, { body = base#body, ruby = base#ruby });
+        let sizes = { body = body#body, ruby = body#ruby, name = base#name };
+        let area = Layout.portraitBand(env#fit, bandHeight, if (Option.nonEmpty(WorldRead.gateOf(r))) 0 else List.length(r#choices));
+        let text = r#page#current |> Option.map(line -> {
+            let speaker = speakerOf(line, env);
+            let placed = portraitBlock(atlas, sizes, area#position, area#size#x, { body = inkOf(line, env, r), name = speaker#color },
+                                       Page.visibleCount(r#page), line, window#showName, style, env);
+            let endY = area#position#y + blockHeight(env, sizes, window#showName, area#size#x, line);
+            List.append(placed, waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - 4.0 }, env, r))
+        }) |> Option.getWithDefault(Nil);
+        let veil = if (style#outline) Nil else bandVeil(env, area#position#y);
+        List.append(veil, text)
+
+    /// 帯の覆いが帯の上端より上で薄く始まる高さ（px）。
+    def bandFadeHeight(): Float64 = 150.0
+
+    /// 帯の覆い: 帯の上端の bandFadeHeight 上から上端まで薄く始まり、上端から画面の下端まで濃くなる（帯より上は沈めない）。
+    def bandVeil(env: Env, top: Float64): List[Render.PlacedItem] =
+        let t = View.theme(env);
+        let a = View.windowAlpha(env);
+        let size = Layout.size(env#fit);
+        let fade = Float64.max(0.0, top - bandFadeHeight());
+        let band = (y0, y1, a0, a1) -> View.at(0.0, y0, Render.gradPolygon(
+            { pos = { x = 0.0, y = 0.0 },     color = t#panel, alpha = a0 } ::
+            { pos = { x = size#x, y = 0.0 },  color = t#panel, alpha = a0 } ::
+            { pos = { x = size#x, y = y1 - y0 }, color = Color.darken(t#panel, 0.2), alpha = a1 } ::
+            { pos = { x = 0.0, y = y1 - y0 },    color = Color.darken(t#panel, 0.2), alpha = a1 } :: Nil,
+            View.zVeil()));
+        band(fade, top, 0.0, Float64.min(0.95, 0.7 * a)) :: band(top, size#y, Float64.min(0.95, 0.7 * a), Float64.min(0.97, 1.05 * a)) :: Nil
+
+    /// 縦の画面の頁: 行を上から積む（portraitPage の Page）。
+    def portraitStack(atlas: FontAtlas, env: Env, r: World.Read, window: ThemeDoc.Window): List[Render.PlacedItem] =
+        let t = View.theme(env);
         let style = styleOf(window, r#stage);
         let base = Layout.advTextSizes(env#fit, View.kindOf(env));
         let body = scaled(env, r#stage, { body = base#body, ruby = base#ruby });

@@ -3,7 +3,7 @@
 // 人物と小物はテスト用の Doc（test/fixtures/novel.cast.json）、粒・型・字の大きさはテンプレートの Doc から引く。
 mod TestSpeaker {
 
-    use fge::{Clock, DocJson, JsonCodec, Render, Yarn}
+    use fge::{Clock, Color, DocJson, JsonCodec, Render, Yarn}
     use Commands.Out
 
     def command(name: String, args: List[String]): Yarn.Command =
@@ -80,7 +80,7 @@ mod TestSpeaker {
         Assert.assertEq(expected = Some("bottom"), doc |> Option.map(d -> fst(ThemeDoc.windowOf("Adv", d))))
 
     def advOnly(): Map[String, ThemeDoc.Window] =
-        Map#{ "sub" => { kind = ThemeDoc.WindowKind.Adv, place = ThemeDoc.WindowPlace.Bottom, frame = ThemeDoc.WindowFrame.Outline, showName = true, quotes = true } }
+        Map#{ "sub" => { kind = ThemeDoc.WindowKind.Adv, place = ThemeDoc.WindowPlace.Bottom, frame = ThemeDoc.WindowFrame.Outline, showName = true, quotes = true, portrait = ThemeDoc.PortraitText.Page } }
 
     @Test
     def testLegacyTargetMissingFromWindowsIsAProblem(): Unit \ Assert =
@@ -310,4 +310,16 @@ mod TestSpeaker {
         let m = CastDoc.markerOf("a", "mouth", res#cast);
         let expected = forM (r <- rect; k <- m) yield (r#position#x + r#size#x * k#x, r#position#y + r#size#y * k#y);
         Assert.assertEq(expected = expected, Cast.markerPointOf(env, st#cast, "a", "mouth") |> Option.map(p -> (p#x, p#y)))
+
+    @Test
+    def testReplacedSpeakerNameKeepsTheSpeakerColor(): Unit \ {Assert, Fs.FileRead} =
+        // novel.story.json の replace で呼び名を替えた話し手の行も、その話し手（theme の speakers の id）の色で描く。
+        let base = TestKit.res();
+        let id = ThemeDoc.rec(base#theme)#speakers |> Map.keysOf |> Set.toList |> List.find(s -> not String.isEmpty(s)) |> Option.getWithDefault("");
+        let res = Res.withStory(StoryDoc.Doc.Doc({ replace = Map#{ StoryDoc.nameOf(id, base#story) => "★" } | StoryDoc.rec(base#story) }), base);
+        let said = { speaker = id, text = "はい。", parts = Yarn.Part.Literal("はい。") :: Nil, tags = Nil, source = { file = "t", line = 1 } };
+        let line = Page.lineOf(StoryDoc.nameOf(id, res#story), true, said);
+        let env = View.envOf(Layout.Fit.Regular, res, TestKit.w0(res));
+        Assert.assertEq(expected = ("★", Color.toHex(ThemeDoc.speakerOf(id, res#theme)#color)),
+                        (line#speaker, Color.toHex(ViewText.speakerOf(line, env)#color)))
 }

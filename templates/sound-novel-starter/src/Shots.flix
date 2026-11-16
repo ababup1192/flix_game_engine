@@ -59,7 +59,7 @@ mod Shots {
             case ShotsDoc.Screen.Title    => w
             // バックログ: 2 通目の選択肢まで読んでから開く（何行も積む）。
             case ShotsDoc.Screen.Log      => quiet(() -> WorldLog.openLog(readThrough(res, w)))
-            // セーブ: 1 ページ目に 3 つ（いちばん新しい物に NEW）。
+            // セーブ: 1 ページ目に novel.shots.json の slots（いちばん新しい物に NEW）。
             case ShotsDoc.Screen.Save     => quiet(() -> WorldSaves.openSave(withSlots(res, w)))
             // ロード: タイトルから開いたロード画面（いちばん新しいデータのページ）。
             case ShotsDoc.Screen.Load     => quiet(() -> WorldSaves.openLoad(World.toTitle(withSlots(res, w))))
@@ -69,9 +69,13 @@ mod Shots {
             case ShotsDoc.Screen.Hold     => holding(res, w)
         }
 
-    /// 次の写真（FirstLetter の desk_room）を黒のまま待ち続けている形（待ちの目印が出る長さだけ待った所）。
+    /// 次の写真を黒のまま待ち続けている形（待ちの目印が出る長さだけ待った所）。次の写真は novel.backdrops.json の photos のうち、
+    /// 今出ていない最初の物（鍵の順。写真が 1 枚だけならその写真）。
     def holding(res: Res.Res, w: World.World): World.World =
-        let names = BackdropDoc.textureOf("desk_room", res#backdrops) |> Option.toList;
+        let shown = World.readOf(w) |> Option.flatMap(r -> Stage.shownShot(res#backdrops, r#stage)) |> Option.map(s -> s#photo);
+        let photos = BackdropDoc.rec(res#backdrops)#photos |> Map.keysOf |> Set.toList;
+        let next = if (List.length(photos) == 1) List.head(photos) else List.find(p -> Some(p) != shown, photos);
+        let names = next |> Option.flatMap(p -> BackdropDoc.textureOf(p, res#backdrops)) |> Option.toList;
         let hold = { phase = World.HoldPhase.Waiting, phaseFrom = World.now(w), waited = KindDoc.rec(res#kind)#holdMarkSeconds + 1.0,
                      names = names, rest = Nil, last = None };
         World.mapRead(r -> { hold = Some(hold) | r }, w)
@@ -99,13 +103,17 @@ mod Shots {
             else walk(fuel - 1, settleWait(res, quiet(() -> WorldRead.advance(res, WorldRead.revealLine(cur)))));
         WorldRead.revealLine(walk(60, settleWait(res, quiet(() -> WorldRead.openAt(res, storage, node, 0, w)))))
 
-    /// 1 ページ目に 3 つ（工房の軒先・灯の部屋・工房）、オートのページに 1 つセーブした World。日時は少しずつずらす。
+    /// 1 ページ目に novel.shots.json の slots を上の枠から、オートのページに 1 つセーブした World。
+    /// 日時は前の枠ほど古く（2 日ほど前から 40 分ずつ）、最後の枠だけ少し前にする。
     def withSlots(res: Res.Res, w: World.World): World.World =
-        let saveAt = (minutes: Int64, i: Int32, scene: World.World, target: World.World) ->
-            { saves = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), i, { saves = target#saves, clockBase = clockBase() + minutes * 60i64 | scene }))#saves | target };
-        w |> saveAt(-2900i64, 0, nthLine(res, "StudioWindow", 3, YarnStorage.empty(), w))
-          |> saveAt(-2860i64, 1, nthLine(res, "Reply", 2, YarnStorage.empty(), w))
-          |> saveAt(-12i64, 2, nthLine(res, "Invitation", 2, YarnStorage.empty(), w))
+        let slots = ShotsDoc.rec(res#shots)#slots;
+        let last = List.length(slots) - 1;
+        let minutesOf = i -> if (i == last) -12i64 else -2900i64 + Int32.toInt64(i) * 40i64;
+        let saveAt = (target: World.World, i: Int32, slot: ShotsDoc.Slot) -> {
+            let scene = nthLine(res, slot#node, slot#say, YarnStorage.empty(), w);
+            { saves = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), i, { saves = target#saves, clockBase = clockBase() + minutesOf(i) * 60i64 | scene }))#saves | target }
+        };
+        slots |> List.zipWithIndex |> List.foldLeft((cur, pair) -> { let (i, slot) = pair; saveAt(cur, i, slot) }, w)
           |> (cur -> { toast = None | cur })
 
     /// はじめから、最初の手紙で歩調を伝える方を選び、2 通目の選択肢まで読んだ World（バックログに何行も積むため。文字送りは待たない）。

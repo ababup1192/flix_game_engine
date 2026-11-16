@@ -54,6 +54,13 @@
         "type": "string"
       }
     },
+    "replace": {
+      "type": "object",
+      "description": "台本の字 → 画面に出す字（台詞・選択肢・話し手の呼び名・バックログに当てる。例 \"××××\": \"ユウキ\" で主人公の名前を入れる）。台本は書き換えない",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "labels": {
       "type": "object",
       "description": "言葉の鍵（src/StoryDoc.flix の Label）→ 言葉。無い鍵は既定の言葉で出る",
@@ -194,6 +201,9 @@
           "type": "string"
         },
         "ambienceVolume": {
+          "type": "string"
+        },
+        "musicVolume": {
           "type": "string"
         },
         "seVolume": {

@@ -4,7 +4,7 @@
 10 分ほどで読み終わり、選び方で結末が 3 つ。ノベルゲームの機能（NVL/ADV・ルビ・選択肢と変数・背景の切り替え・
 環境音・ログ・オート・スキップ・既読・セーブとロード・設定）を一通り見せる教科書。
 
-- **文章・分岐・演出の順番は全部シナリオ**（`assets/talk/yukidoke.yarn`。直したら `bin/fge yarn build assets/talk`）。
+- **文章・分岐・演出の順番は全部シナリオ**（`assets/talk/` の .yarn。作例は yukidoke.yarn。直したら `bin/fge yarn build assets/talk`）。
   演出はコマンド（`<<bg>>` `<<window>>` `<<audio>>` `<<fx>>` `<<shake>>` `<<show>>` `<<hide>>` `<<wait>>`。主の引数は位置・ほかは `key=value`）で書き、
   引数の表と意味は `src/Commands.flix`（表に無い引数・型・Doc に無い名前は `bin/fge yarn build` が止める）。このゲームだけのコマンドは
   `src/GameCommands.flix` に 1 つ足し、後に残る値は `Stage` の `props`（`PropertyTween` の `game.` の鍵）に書いて `src/GameView.flix` で描く

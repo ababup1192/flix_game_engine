@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "title": "入力の案内（払い・タップで選ぶ選択肢）",
+  "note": "組の全部に #act: タグを付けた選択肢（-> 本文 #act:up|down|left|right|tap [#at:当たる物] [#icon:絵] [#mute]）はボタンを出さず、ここの案内を出して払いかタップを待つ。キーボードは ↑↓←→ / WASD（tap の選択肢が 1 つなら決定のキー）、マウスはドラッグ、ブラウザ版は指の払い。icons = #icon: の名前 → { texture（project.json の textures の名前・空なら絵を出さない。正方形に貼る）, color（その選択肢の矢印と輪の色） }、arrow = 矢印の色・1 秒に流れる回数（speed）・矢印の真ん中の高さ（y。画面の高さに対する割合）、edge = 押し始めが左右の端からこの幅（design px）の内なら横の払いにしない帯（スマホの戻る操作と重ねない。縦の払いは見ない）、targets = #at: の名前 → { photo（今の背景がその写真の時）か actor（その絵が出ている時）, rect = 載る先の矩形の中の { x, y, w, h }（左上 0・右下 1 の割合） }、pulse = tap の輪が 1 秒に脈打つ回数（rate）と外の輪が広がる割合（spread）。例: \"icons\": { \"blade\": { \"texture\": \"prompt_blade\", \"color\": \"#f04848\" } }、\"targets\": { \"key\": { \"photo\": \"desk_room\", \"rect\": { \"x\": 0.6, \"y\": 0.7, \"w\": 0.08, \"h\": 0.1 } } }。 margin = 案内を並べる左右の余白（design px）、captionSize = 案内の字の大きさ（入り切らなければ 0.6 倍まで縮める）。",
+  "icons": {},
+  "arrow": {
+    "color": "#e9c873",
+    "speed": 0.8,
+    "y": 0.62
+  },
+  "edge": 24.0,
+  "targets": {},
+  "pulse": {
+    "rate": 0.9,
+    "spread": 0.4
+  },
+  "margin": 24.0,
+  "captionSize": 20.0
+}

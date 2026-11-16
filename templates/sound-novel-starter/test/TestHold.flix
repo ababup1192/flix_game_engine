@@ -274,4 +274,21 @@ mod TestHold {
         // WhyNot: 知らない字を fromJson に通して確かめない — 知らせの 1 行が標準エラーに出ると、テストの道具が失敗と数える。
         let read = ("dots" :: "ring" :: "none" :: "spinner" :: Nil) |> List.map(ThemeDoc.loadingMarkOf);
         Assert.assertEq(expected = Some(ThemeDoc.LoadingMark.Dots) :: Some(ThemeDoc.LoadingMark.Ring) :: Some(ThemeDoc.LoadingMark.Hidden) :: None :: Nil, read)
+
+    /// 描き出しの場面のうち、画面が screen の場面の World（ゲームの Doc と台本から組む）。
+    def scenesOf(res: Res.Res, screen: ShotsDoc.Screen): List[World.World] =
+        Shots.names(res) |> List.filter(name -> ShotsDoc.shotOf(name, res#shots) |> Option.exists(s -> s#open == Some(screen)))
+            |> List.filterMap(name -> Shots.worldOf(name, res))
+
+    @Test
+    def testTheHoldSceneWaitsForAPhotoOfTheGame(): Unit \ {Assert, Fs.FileRead} =
+        // 待ちの場面は、ゲームの novel.backdrops.json の写真を待つ（作例の写真の名前に頼らない）。
+        let holds = scenesOf(Controls.loadRes(), ShotsDoc.Screen.Hold);
+        Assert.assertTrue(holds |> List.forAll(w -> World.readOf(w) |> Option.flatMap(r -> r#hold) |> Option.exists(h -> not List.isEmpty(h#names))))
+
+    @Test
+    def testTheSaveSceneHasSlots(): Unit \ {Assert, Fs.FileRead} =
+        // セーブの場面は、ゲームの novel.shots.json の slots から枠を持つ（作例のノードの名前に頼らない）。
+        let saves = scenesOf(Controls.loadRes(), ShotsDoc.Screen.Save);
+        Assert.assertTrue(saves |> List.forAll(w -> Saves.hasAny(w#saves)))
 }

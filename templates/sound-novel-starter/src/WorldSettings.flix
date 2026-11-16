@@ -9,6 +9,7 @@ mod WorldSettings {
         World.Setting.Slider(World.Slider.TextSpeed) :: World.Setting.Slider(World.Slider.AutoWait) ::
         World.Setting.Pair(World.Pair.SkipScope) :: World.Setting.Pair(World.Pair.AfterChoice) :: World.Setting.Pair(World.Pair.Display) ::
         World.Setting.Slider(World.Slider.MasterVolume) :: World.Setting.Slider(World.Slider.AmbienceVolume) ::
+        World.Setting.Slider(World.Slider.MusicVolume) ::
         World.Setting.Slider(World.Slider.SeVolume) :: World.Setting.Slider(World.Slider.WindowAlpha) :: World.Setting.Reset :: Nil
 
     /// 設定の画面を開く（カーソルは先頭の行）。
@@ -49,6 +50,7 @@ mod WorldSettings {
             case World.Slider.AutoWait       => k#autoWaitSlider
             case World.Slider.MasterVolume   => k#masterVolumeSlider
             case World.Slider.AmbienceVolume => k#ambienceVolumeSlider
+            case World.Slider.MusicVolume    => k#musicVolumeSlider
             case World.Slider.SeVolume       => k#seVolumeSlider
             case World.Slider.WindowAlpha    => k#windowAlphaSlider
         }
@@ -67,6 +69,7 @@ mod WorldSettings {
             case World.Slider.AutoWait       => c#autoWait
             case World.Slider.MasterVolume   => c#masterVolume
             case World.Slider.AmbienceVolume => c#ambienceVolume
+            case World.Slider.MusicVolume    => c#musicVolume
             case World.Slider.SeVolume       => c#seVolume
             case World.Slider.WindowAlpha    => c#windowAlpha
         }
@@ -90,6 +93,7 @@ mod WorldSettings {
             case World.Slider.AutoWait       => { autoWait = clamped | c }
             case World.Slider.MasterVolume   => { masterVolume = clamped | c }
             case World.Slider.AmbienceVolume => { ambienceVolume = clamped | c }
+            case World.Slider.MusicVolume    => { musicVolume = clamped | c }
             case World.Slider.SeVolume       => { seVolume = clamped | c }
             case World.Slider.WindowAlpha    => { windowAlpha = clamped | c }
         };

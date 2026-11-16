@@ -318,7 +318,7 @@ mod Cast {
         let moving = if (CastDoc.isAttachedToBackdrop(entry)) env#backdropShift else 0.0;
         { dx = t#dx + CastDoc.attachShiftOf(env#photo, entry#attach), jitter = { x = t#jitter#x + moving, y = t#jitter#y } | t }
 
-    /// 透過画像を読む面（2 つの画素の間をなめらかにつないで読む。縁の透明な画素の色は art/cast/prepare.py が縁の色で埋めてある）。
+    /// 透過画像を読む面（2 つの画素の間をなめらかにつないで読む。縁の透明な画素の色は、立ち絵を置く時に縁の色で埋めておく前提。埋め方は Makefile の lint-cast の注釈）。
     /// 色: l = 明るさ、c1 = l + 彩度 × (c − l)、c2 = c1 × 倍率 × lit（Param。話し手を明るくする brightnessOf）。彩度と倍率は previous から current へ、面の t（切り替えの進み）でつなぐ。
     /// turned なら、面を傾けた絵の外接する矩形にし、Param の turn_a〜turn_d（tiltParamsOf）で読む座標を回して、絵の外は透かす。
     // WhyNot: Render.sprite で貼らない — 2D の絵は格子に乗せる前提で、縮めると画素を飛ばして読み、輪郭がぎざぎざになる。

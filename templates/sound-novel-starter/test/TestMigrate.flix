@@ -15,8 +15,10 @@ mod TestMigrate {
     def res(): Res.Res \ Fs.FileRead = TestKit.fixtureRes("test/fixtures/migrate", "Station")
 
     /// 見本を流した結果（流せない時は理由の Err）。
-    def outcome(): Result[String, Flow.Outcome[AppState]] \ Fs.FileRead =
-        let r = res();
+    def outcome(): Result[String, Flow.Outcome[AppState]] \ Fs.FileRead = outcomeOf(res())
+
+    /// 描く元 r で見本を流した結果。
+    def outcomeOf(r: Res.Res): Result[String, Flow.Outcome[AppState]] \ Fs.FileRead =
         let app = TestKit.app(r, TestKit.w0(r));
         let title = Resources.of(r, TestKit.w0(r));
         forM (
@@ -25,10 +27,12 @@ mod TestMigrate {
                       |> Result.mapErr(failure -> failure#why)
         ) yield played
 
-    def record(): Result[String, MigrateOut.Record] \ Fs.FileRead =
+    def record(): Result[String, MigrateOut.Record] \ Fs.FileRead = recordOf(res())
+
+    def recordOf(r: Res.Res): Result[String, MigrateOut.Record] \ Fs.FileRead =
         forM (
-            o     <- outcome();
-            probe <- MigrateOut.probeRowsOf("logSize" :: Nil, res()#dialogue)
+            o     <- outcomeOf(r);
+            probe <- MigrateOut.probeRowsOf("logSize" :: Nil, r#dialogue)
         ) yield MigrateOut.recordOf(10.0, probe, o#frames)
 
     def objectOf(row: Json): Map[String, Json] = JsonCodec.expectObject(row) |> Option.getWithDefault(Map.empty())
@@ -75,6 +79,23 @@ mod TestMigrate {
     def testChoiceCarriesThePickedOption(): Unit \ {Assert, Fs.FileRead} =
         let picked = events() |> Result.map(es -> es |> List.filter(e -> textOf("kind", e) == "choice") |> List.map(e -> intOf("picked", e)));
         Assert.assertEq(expected = Ok(0 :: Nil), picked)
+
+    def replacedRes(): Res.Res \ Fs.FileRead =
+        let base = res();
+        Res.withStory(StoryDoc.Doc.Doc({ replace = Map#{ "行く" => "★" } | StoryDoc.rec(base#story) }), base)
+
+    @Test
+    def testReplacedChoiceStillCarriesThePickedOption(): Unit \ {Assert, Fs.FileRead} =
+        // novel.story.json の replace で選択肢の字を替えても（出来事は台本の字・選んだ所は画面の字）、選んだ番号が出る。
+        let picked = recordOf(replacedRes()) |> Result.map(rec -> rec#events |> List.filter(e -> textOf("kind", e) == "choice") |> List.map(e -> intOf("picked", e)));
+        Assert.assertEq(expected = Ok(0 :: Nil), picked)
+
+    @Test
+    def testReplacedChoiceIsShownWithTheReplacedText(): Unit \ {Assert, Fs.FileRead} =
+        // 画面の選択肢（World.choicesOf）は replace を当てた字。
+        let r = replacedRes();
+        let shown = TestKit.readUntil(r, World.isChoosing, Nil, TestKit.begun(r)) |> World.choicesOf |> List.map(o -> o#line#text);
+        Assert.assertTrue(List.memberOf("★", shown))
 
     @Test
     def testLineCarriesTheProbesAndVariablesWhenItIsDone(): Unit \ {Assert, Fs.FileRead} =

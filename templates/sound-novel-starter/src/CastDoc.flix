@@ -71,7 +71,7 @@ mod CastDoc {
                                         "right" => { x = 0.72, bottom = 1.0, height = 0.6, exclusive = true }, "item" => { x = 0.5, bottom = 0.55, height = 0.25, exclusive = true } },
                   cast = Map.empty(), props = Map.empty() })
 
-    /// 描き出しとテストが使う見本: 既定の Doc に、テスト用の透過画像（assets/cast/_sample_plain.png・art/cast/sample.py が作る）の人物を 1 人足した物。
+    /// 描き出しとテストが使う見本: 既定の Doc に、テスト用の透過画像（project.json の textures の cast__sample_plain）の人物を 1 人足した物。
     /// WhyNot: 作例のシナリオと novel.cast.json に載せない — 単色の形は仕組みを確かめるためだけの絵で、物語の人物ではない。
     pub def sample(): Doc = withSample(defaults())
 

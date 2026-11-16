@@ -1,6 +1,8 @@
 // GameView — このゲームだけの絵（GameCommands が Stage の props に書いた game. の値を読んで描く）。
 // env には Doc（res。ゲームの描く元は res#game）・並べ方の組（fit。縦横と大きさは Layout.width / height / isPortrait）・
-// 物語の時計の今（storyNow）・実時間（realNow）が入る。
+// 物語の時計の今（storyNow）・実時間（realNow）・字の本（fonts。本文の本 env#fonts#atlas と、project.json の fonts[].name で引く
+// env#fonts#fontOf("gothic")。名前の本を引くには GameBoot.app で App.withFonts に名前を宣言する。宣言していない名前は、実機でも
+// 描き出しと flow でも本文の本が返る）が入る。objects に渡る env の本は、flow とテープでは描き出しの本、実機の当たりでは字の形を持たない本（View.emptyFonts）。
 // 舞台の値は物語の時計で読む（Stage.particlesOf(env#storyNow, stage) や PropertyTween.numAt(env#storyNow, …)）。
 //
 //   draw     world の層。物ごとに「層の数」を付けて返す（ViewStage が背景・立ち絵・粒と同じ数で並べる。背景 0・背景に付く絵 100・

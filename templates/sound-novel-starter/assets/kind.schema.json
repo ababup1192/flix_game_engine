@@ -92,6 +92,15 @@
       "max": 1,
       "default": 0.7
     },
+    "musicVolume": {
+      "kind": "field",
+      "type": "float",
+      "label": "BGM の音量の既定（0〜1）",
+      "order": 10,
+      "min": 0,
+      "max": 1,
+      "default": 0.7
+    },
     "seVolume": {
       "kind": "field",
       "type": "float",
@@ -499,6 +508,33 @@
     "ambienceVolumeSlider": {
       "kind": "record",
       "label": "環境音の音量のスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 32,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
+    },
+    "musicVolumeSlider": {
+      "kind": "record",
+      "label": "BGM の音量のスライダー",
       "group": "設定の画面のスライダー",
       "order": 32,
       "fields": {

@@ -4,8 +4,11 @@ mod SoundLength {
     use fge::ProjectLoader
 
     /// project.json の sounds のうち鳴り続けない音の、名前 → 長さ（秒）。project.json が読めなければ空。
-    pub def load(): Map[String, Float64] \ Fs.FileRead =
-        match ProjectLoader.loadProject(".") {
+    pub def load(): Map[String, Float64] \ Fs.FileRead = loadIn(".")
+
+    /// dir の project.json の sounds の長さ（load と同じ。WAV の場所は dir から）。project.json が無ければ空。
+    pub def loadIn(dir: String): Map[String, Float64] \ Fs.FileRead =
+        match ProjectLoader.loadProject(dir) {
             case Ok(p) =>
                 p#config#soundManifest |> List.filter(s -> not s#looping)
                     |> List.filterMap(s -> Fs.FileRead.readBytes(s#path) |> Result.toOption |> Option.flatMap(wavSeconds) |> Option.map(v -> (s#name, v)))

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "title": "小さい画面の字とボタンの大きさ",
+  "note": "小さい画面の時だけ使う大きさ（design px。960×540 の中の px）。PC・タブレット・デスクトップ版はこの Doc を読まない。横持ち 892×412 の画面では 1 design px が 0.763 CSS px なので、押せる大きさの 44 CSS px は 58、字の 15 CSS px は 20 前後。title* = タイトル画面のメニュー、button* = 読む間の下の帯のボタン、choice* = 選択肢、adv* = ADV のウィンドウ（本文・ルビ・名前の字と、ウィンドウの高さ）、back* = 画面の右上の「戻る」、tab* = セーブ・ロードのページのタブ、setting* = 設定の行、askButton* = 確認のウィンドウのはい・いいえ。*TextSize = 字の大きさ、*Height = 押せる高さ。NVL の字と頁の切れ目はどの画面でも同じ（novel.kind.json）。",
+  "titleItemTextSize": 28.0,
+  "titleItemHeight": 58.0,
+  "buttonTextSize": 18.0,
+  "buttonHeight": 58.0,
+  "choiceTextSize": 26.0,
+  "choiceHeight": 60.0,
+  "advBodySize": 26.0,
+  "advRubySize": 13.0,
+  "advNameSize": 24.0,
+  "advPanelHeight": 196.0,
+  "backTextSize": 20.0,
+  "backHeight": 58.0,
+  "tabTextSize": 20.0,
+  "tabHeight": 58.0,
+  "settingTextSize": 18.0,
+  "settingRowHeight": 58.0,
+  "askButtonTextSize": 22.0,
+  "askButtonHeight": 58.0
+}

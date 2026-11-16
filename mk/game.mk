@@ -148,7 +148,9 @@ debug:
 # 常駐の線を超えた（flixlint の docs/design/checkd-freshness.md の C-T の記録）。
 test:
 	@mkdir -p .test-logs; rm -f .test-logs/test.fail
-	@JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) test > .test-logs/test.log 2>&1; \
+	@export JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"; \
+	if [ -x "$(ENGINE)/bin/with-sample-tests" ]; then "$(ENGINE)/bin/with-sample-tests" . $(FLIX) test > .test-logs/test.log 2>&1; \
+	else $(FLIX) test > .test-logs/test.log 2>&1; fi; \
 	if [ $$? = 0 ]; then \
 		tail -5 .test-logs/test.log; \
 	else \

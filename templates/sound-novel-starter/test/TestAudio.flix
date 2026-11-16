@@ -185,14 +185,25 @@ mod TestAudio {
         Assert.assertEq(expected = Some(0.3), Controls.ambience(r, w) |> List.head |> Option.map(s -> s#volume))
 
     @Test
-    def testMusicBusFollowsTheAmbienceSetting(): Unit \ {Assert, Fs.FileRead} =
-        // 音楽のバスには、設定の「全体 × 環境音」の音量を掛ける。
+    def testMusicBusFollowsTheMusicSetting(): Unit \ {Assert, Fs.FileRead} =
+        // 音楽のバスには、設定の「全体 × BGM」の音量を掛ける（環境音の設定は掛けない）。
         let r = res();
-        let w = TestKit.w0(r);
+        let w0 = TestKit.w0(r);
+        let w = World.withSaves(Saves.withConfig({ musicVolume = 0.3, ambienceVolume = 0.9 | Saves.configOf(w0#saves) }, w0#saves), w0);
         let c = Saves.configOf(w#saves);
         let mixer = Controls.mixerOf(r, w);
         let bgm = mixer#buses |> List.find(b -> b#name == "bgm") |> Option.map(b -> b#volume) |> Option.getWithDefault(-1.0);
-        Assert.assertTrue(TestKit.near(c#masterVolume * c#ambienceVolume, bgm))
+        Assert.assertTrue(TestKit.near(c#masterVolume * 0.3, bgm))
+
+    @Test
+    def testTheMusicVolumeSurvivesTheSaveJson(): Unit \ {Assert, Fs.FileRead} =
+        let r = res();
+        let saves = Saves.withConfig({ musicVolume = 0.3 | Saves.configOf(Saves.fresh(r#kind)) }, Saves.fresh(r#kind));
+        Assert.assertTrue(TestKit.near(0.3, Saves.configOf(Saves.fromJson(Saves.fresh(r#kind), Saves.toJson(saves)))#musicVolume))
+
+    @Test
+    def testTheSettingsHaveAMusicVolumeRow(): Unit \ Assert =
+        Assert.assertTrue(List.memberOf(World.Setting.Slider(World.Slider.MusicVolume), WorldSettings.settings()))
 
     // ══ <<fx 名 once=true>> ══
 

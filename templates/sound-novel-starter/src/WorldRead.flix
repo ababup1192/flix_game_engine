@@ -1,5 +1,5 @@
 // WorldRead — 読み進める規則（純粋）: はじめから読む・送る・選ぶ・文字送り・オートとスキップ・戻れる所へ戻す。
-// 文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（YarnRunner が辿る）、演出のコマンドの表は Commands、舞台は Stage、頁は Page。
+// 文章・分岐・結末はシナリオ（assets/talk の .yarn を build した木。YarnRunner が辿る）、演出のコマンドの表は Commands、舞台は Stage、頁は Page。
 // ここの関数は、場面が Reading の時だけ読んでいる値 Read を取り出して動く（ほかの場面では何もしない）。
 //
 // 戻れる所（Saves.Mark）は 3 か所が同じ物を持つ: セーブデータ・バックログの行・「戻る」。戻し方は restore 1 つで、
@@ -38,7 +38,7 @@ mod WorldRead {
                 let (talk, events) = YarnRunner.start(res#dialogue, first, World.now(w));
                 absorbLive(res, YarnRunner.closed(), events, { talk = talk | World.emptyRead(res#theme) }, opened)
             case None =>
-                showLine(res, Commands.Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk/yukidoke.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
+                showLine(res, Commands.Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk の .yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
                                              parts = Nil, tags = Nil, source = { file = "", line = 0 } }, World.emptyRead(res#theme), opened)
         }
 
@@ -71,9 +71,25 @@ mod WorldRead {
     def pauseOrGo(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], rest: List[(YarnRunner.Event, Int32)],
                   w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) |> Option.flatMap(r -> r#pause) {
+            case Some(p) if p#passInstant => flowInstant(res, replay, last, rest, w)
             case Some(p) => World.mapRead(r -> withGate({ pause = Some({ rest = rest, last = last | p }) | r }), w)
             case None    => absorbFrom(res, replay, last, rest, w)
         }
+
+    /// 時間を取らない命令を先に流す待ち（Out.SwitchWait）の間: 頭の時間を取らない命令を 1 つずつ流し、台詞・選択肢・<<wait>>・
+    /// 時間を取る命令・まだ届いていない素材を待つ命令・流した命令が出した押しても明けない待ちに当たったら、そこから後ろを待ちに預ける。
+    def flowInstant(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], rest: List[(YarnRunner.Event, Int32)],
+                    w: World.World): World.World \ Emit[World.Event] =
+        let passing = World.readOf(w) |> Option.flatMap(r -> r#pause) |> Option.exists(p -> p#passInstant);
+        match rest {
+            case (YarnRunner.Event.Command(c), later) :: tail if passing and isInstant(res, c) and List.isEmpty(namesToWait(res, rest, w)) =>
+                flowInstant(res, replay, last, tail, absorbOne(res, replay, last, YarnRunner.Event.Command(c), later, w))
+            case _ => World.mapRead(r -> withGate({ pause = r#pause |> Option.map(p -> { rest = rest, last = last | p }) | r }), w)
+        }
+
+    /// 時間を取らない命令か（<<wait>> は実行器の待ちなので時間を取る側）。
+    def isInstant(res: Res.Res, c: Yarn.Command): Bool =
+        c#name != "wait" and Commands.timingOf(res, c) == Commands.Timing.Instant
 
     /// 出来事 1 つ。later = その出来事より後ろに出た台詞と選択肢の数。
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
@@ -82,10 +98,10 @@ mod WorldRead {
         if (replay == Commands.Replay.Live) World.readOf(w) |> Option.flatMap(r -> executedOf(res, r#entry, event)) |> Option.forEach(e -> Emit.emit(World.Event.Executed(e))) else ();
         match event {
             case YarnRunner.Event.Line(said)       =>
-                let line = ScriptEdits.editLine(res#scriptEdits, said);
+                let line = shownLineOf(res, said);
                 whileReading(cur -> showLine(res, replay, bookmarkAt(last, later), line, { cursor = Some(line#source) | cur }, w), w)
             case YarnRunner.Event.Choices(offered) =>
-                let options = offered |> List.map(option -> { line = ScriptEdits.editLine(res#scriptEdits, option#line) | option });
+                let options = offered |> List.map(option -> { line = shownLineOf(res, option#line) | option });
                 let at = List.head(options) |> Option.map(option -> option#line#source);
                 World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options), cursor = if (Option.isEmpty(at)) cur#cursor else at,
                                        stage = Stage.withWindowShown(World.now(w), cur#stage) | cur }, w)
@@ -98,7 +114,13 @@ mod WorldRead {
             case YarnRunner.Event.Done             => World.toCredits(res, w)
         }
 
+    /// 台本の行を画面に出す字に: 始まりの引数の直し（ScriptEdits）と novel.story.json の replace（主人公の名前など）を当てる。
+    /// 頁・バックログ・選択肢・選んだ行はどれもこの字（話し手の呼び名は StoryDoc.nameOf が同じ replace を当てる）。
+    pub def shownLineOf(res: Res.Res, said: Yarn.Line): Yarn.Line =
+        StoryDoc.replaceLine(res#story, ScriptEdits.editLine(res#scriptEdits, said))
+
     /// 反映する実行器の出来事を、記録の書き手が読む形に（台詞と選択肢の字は ScriptEdits を当てた物。会話の終わりは None）。
+    // WhyNot: replace を当てない — 移行の記録の text は台本の字で突き合わせる（tape.json の lines も台本の行。前の版の記録も台本の字）。
     def executedOf(res: Res.Res, entry: World.NodeEntry, event: YarnRunner.Event): Option[World.Executed] =
         let place = line -> (entry#node, entry#visits, line);
         let edited = line -> ScriptEdits.editLine(res#scriptEdits, line);
@@ -181,7 +203,7 @@ mod WorldRead {
             case Err(message)      => Log.warnThen("[stage] ${message}", r)
         }
 
-    /// コマンドの表の apply が読む物。
+    /// コマンドの表の apply に渡す物。
     pub def ctxOf(res: Res.Res, r: World.Read, w: World.World): Commands.Ctx =
         { now = World.now(w), node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault(""), res = res, instant = r#playback == World.Playback.Skip }
 
@@ -192,20 +214,28 @@ mod WorldRead {
         case Out.TurnPage        => { page = Page.turn(r#page) | r }
         case Out.Sound(name)     => Emit.emit(World.Event.Cue(name)); r
         case Out.Event(name)     => Emit.emit(World.Event.Signal(name)); r
-        case Out.Wait(secs)      => withPause(now, secs, false, r)
-        case Out.WaitOrTap(secs) => withPause(now, secs, true, r)
+        case Out.Wait(secs)       => withPause(now, secs, false, false, r)
+        case Out.WaitOrTap(secs)  => withPause(now, secs, true, false, r)
+        case Out.SwitchWait(secs) => withPause(now, secs, true, true, r)
     }
 
-    /// 待ちを now から secs 秒に（もう待ちがあれば、明ける時刻は遅い方・押して明けるのは両方とも押して明ける時だけ）。
-    def withPause(now: Clock.Time[Stage.Story], secs: Float64, tappable: Bool, r: World.Read): World.Read =
+    /// 待ちを now から secs 秒に（もう待ちがあれば、明ける時刻は遅い方・押して明けるのと時間を取らない命令を流すのは、両方ともそうな時だけ）。
+    def withPause(now: Clock.Time[Stage.Story], secs: Float64, tappable: Bool, passInstant: Bool, r: World.Read): World.Read =
         let until = Clock.after(Float64.max(0.0, secs), now);
         let later = r#pause |> Option.map(p -> if (Clock.since(p#until, until) > 0.0) until else p#until) |> Option.getWithDefault(until);
         let tap = tappable and (r#pause |> Option.forAll(p -> p#tappable));
-        { pause = Some({ until = later, rest = Nil, last = None, tappable = tap }) | r }
+        let pass = passInstant and (r#pause |> Option.forAll(p -> p#passInstant));
+        // WhyNot: 切り替えの待ちの間に流した命令が押しても明けない待ち（Out.Wait）を出した時に、押して明ける性質を切り替えの側に残さない —
+        //   <<audio se 音 wait=true>> のような待ちは音を聞かせる待ちで、押して切り替えごと飛ばすと音の途中で次の台詞が出る。
+        { pause = Some({ until = later, rest = Nil, last = None, tappable = tap, passInstant = pass }) | r }
 
-    /// 押すと明ける待ち（Out.WaitOrTap）の間か。flow の reader はこの間は押さない（人が読む間の秒を待つ）。
+    /// 押すと明ける待ち（Out.WaitOrTap）の間か。
     pub def isTapWait(w: World.World): Bool =
         World.readOf(w) |> Option.flatMap(r -> r#pause) |> Option.exists(p -> p#tappable)
+
+    /// 命令が出した待ち（Out.Wait・Out.WaitOrTap・Out.SwitchWait）の間か。flow の reader はこの間は押さない（待ちの秒を流し、明けてから読む間を数える）。
+    pub def isPaused(w: World.World): Bool =
+        World.readOf(w) |> Option.exists(r -> Option.nonEmpty(r#pause))
 
     /// コマンドが出した待ちが明けた（かスキップで飛ばした）: 待ちを消して、預けておいた続きの出来事を反映する。
     def resumePause(res: Res.Res, p: World.Pause, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
