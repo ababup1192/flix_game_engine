@@ -1308,6 +1308,15 @@ def testBlurWithZeroRadiusEqualsTexExactly(): Unit \ Assert =
     let at = spec -> ShaderEval.evalAlphaTex(spec, { x = 0.75, y = 0.25 }, 0.0, env);
     Assert.assertEq(expected = at(texSpec), at(blurG))
 
+/// テクセルの添字は、Int32 の外・無限大・NaN を 0 として張り付ける・回す（tryToInt32 の None を 0 にした値と同じ）。
+@Test
+def testTexelIndexTreatsOutOfRangeAsZero(): Unit \ Assert =
+    let xs = Float64.nan() :: Float64.positiveInfinity() :: Float64.negativeInfinity() :: 3.0e9 :: -3.0e9 ::
+             2147483647.0 :: -2147483648.0 :: -1.0 :: 0.0 :: 5.0 :: 9.0 :: Nil;
+    let old = x -> Float64.tryToInt32(x) |> Option.getWithDefault(0);
+    let expected = xs |> List.map(x -> (Int32.max(0, Int32.min(6, old(x))), Int32.remainder(Int32.remainder(old(x), 7) + 7, 7)));
+    Assert.assertEq(expected = expected, xs |> List.map(x -> (ShaderEval.Internal.clampTexel(x, 7), ShaderEval.Internal.wrapTexel(x, 7))))
+
 // ── 続いた bindings の blur（r・g・b を 1 回の点の巡りで読む）──
 
 /// 4×3 の色の違う絵（ARGB。r・g・b・α がテクセルごとに違う）。

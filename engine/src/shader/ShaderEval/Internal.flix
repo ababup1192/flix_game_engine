@@ -109,32 +109,22 @@ pub mod ShaderEval.Internal {
 
     /// Linear の REPEAT の標本（GL の GL_LINEAR + REPEAT と同じ）。0..1 へ戻した座標で、端をまたぐ 4 テクセルは反対の端から読む。
     pub def sampleTexLinearRepeat(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
-        if (w <= 0 or h <= 0) 0.0
-        else {
-            let x = u * Int32.toFloat64(w) - 0.5;
-            let y = v * Int32.toFloat64(h) - 0.5;
-            let x0 = Float64.floor(x);
-            let y0 = Float64.floor(y);
-            let fx = x - x0;
-            let fy = y - y0;
-            let at = (tx, ty) -> {
-                let argb = Vector.get(wrapTexel(ty, h) * w + wrapTexel(tx, w), pixels);
-                channelOf(shift, argb)
-            };
-            let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * fx;
-            let bottom = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * fx;
-            top + (bottom - top) * fy
-        }
+        sampleLinearWith(true, w, h, pixels, shift, u, v)
 
     /// texel 添字を [0, n−1] へ回す（REPEAT。−1 は n−1・n は 0）。floor 済みの値を受ける。
     pub def wrapTexel(x: Float64, n: Int32): Int32 =
-        let k = Float64.tryToInt32(x) |> Option.getWithDefault(0);
+        let k = texelIndexOf(x);
         Int32.remainder(Int32.remainder(k, n) + n, n)
 
     /// Linear の標本（GL の GL_LINEAR + CLAMP_TO_EDGE と同じ点・同じ重み）。テクセルの中心が (i+0.5)/w なので
     /// 読む点から 0.5 引いた所の左下の 4 テクセルを、端に張り付けて、はみ出した分の割合で混ぜる。
     /// GPU は重みを固定小数（たいてい 8bit）に丸めるので ±1/255 程度ずれうる（docs/backend-parity.md の近似の行）。
     pub def sampleTexLinear(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+        sampleLinearWith(false, w, h, pixels, shift, u, v)
+
+    /// Linear の 4 テクセルを混ぜる（repeat なら端をまたぐテクセルは反対の端から・偽なら端に張り付ける）。
+    // WhyNot: テクセルを読む閉包（at）を作らない — 画素ごとに閉包を作って 6 回呼ぶ。
+    def sampleLinearWith(repeat: Bool, w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
         if (w <= 0 or h <= 0) 0.0
         else {
             let x = u * Int32.toFloat64(w) - 0.5;
@@ -143,14 +133,20 @@ pub mod ShaderEval.Internal {
             let y0 = Float64.floor(y);
             let fx = x - x0;
             let fy = y - y0;
-            let at = (tx, ty) -> {
-                let argb = Vector.get(clampTexel(ty, h) * w + clampTexel(tx, w), pixels);
-                channelOf(shift, argb)
-            };
-            let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * fx;
-            let bottom = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * fx;
+            let ix0 = edgeTexel(repeat, x0, w);
+            let ix1 = edgeTexel(repeat, x0 + 1.0, w);
+            let row0 = edgeTexel(repeat, y0, h) * w;
+            let row1 = edgeTexel(repeat, y0 + 1.0, h) * w;
+            let a00 = channelOf(shift, Vector.get(row0 + ix0, pixels));
+            let a10 = channelOf(shift, Vector.get(row0 + ix1, pixels));
+            let a01 = channelOf(shift, Vector.get(row1 + ix0, pixels));
+            let a11 = channelOf(shift, Vector.get(row1 + ix1, pixels));
+            let top = a00 + (a10 - a00) * fx;
+            let bottom = a01 + (a11 - a01) * fx;
             top + (bottom - top) * fy
         }
+
+    def edgeTexel(repeat: Bool, x: Float64, n: Int32): Int32 = if (repeat) wrapTexel(x, n) else clampTexel(x, n)
 
     /// テクスチャ標本（NEAREST + CLAMP の釘打ち式 — GL と同じ量子化になるのが backend-parity の契約）。
     /// ix = clamp(floor(u*w), 0, w−1)・iy 同様。チャンネル値は 8bit を 255 で割った 0..1。
@@ -165,6 +161,11 @@ pub mod ShaderEval.Internal {
 
     /// texel 添字を [0, n−1] に張り付ける（CLAMP）。floor 済みの値を受ける。
     pub def clampTexel(x: Float64, n: Int32): Int32 =
-        Int32.max(0, Int32.min(n - 1, Float64.tryToInt32(x) |> Option.getWithDefault(0)))
+        Int32.max(0, Int32.min(n - 1, texelIndexOf(x)))
+
+    /// floor 済みの x の Int32（Int32 の外・無限大・NaN は 0）。
+    // WhyNot: Float64.tryToInt32 |> Option.getWithDefault(0) と書かない — テクセルごとに Option を作る。値は同じ。
+    def texelIndexOf(x: Float64): Int32 =
+        if (x >= -2147483648.0 and x <= 2147483647.0) Float64.truncateToInt32(x) else 0
 
 }
