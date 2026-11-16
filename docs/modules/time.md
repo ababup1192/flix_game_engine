@@ -11,6 +11,7 @@
 | 2 つの値の間をどんな速さでつなぐか（ease の名前: linear・smoothstep・Penner の inOutCubic など） | Curve（Ease・ease・easeTable）/ EcsTween（toEase） |
 | 整数を 1 つずつ動かす（数え下がり・数え上がり・巡って止まるルーレット） | EcsTween（steppedInt） |
 | 演出の時刻表（動き・効果音・待ちを 1 本に書く。拍・小節で書いて秒はテンポから。音を絵と同じクリップに付ける） | Timeline（build / buildOrPanic / append / join / atEndOf / insert / withSound / waitFor → stateOf / progressOf / soundsOn / soundsBetween。手順は `engine_world/src/Timeline.flix` 冒頭） |
+| 演出をスキップで飛ばす・読み終えを待つ・続きを後から足す（飛ばした音は鳴らさず、飛ばした所の命令は当てる） | Timeline.PlaybackLog（playbackLog / resumeOn / seekOn / skipToNextWait → playheadOn / isWaitingOn / waitedOn / soundsOnWall / startedOnWall） |
 | 演出の長さ・待ち・溜めの目安（窓の出入り 200〜300ms・待ちは 1 秒まで・溜めは 15F・音と絵のずれ） | docs/pacing.md（目安の表と出典。曲に乗る演出は拍へ読み替えて Timeline に書く） |
 | ポーズ・メニューで止める・ゆっくりにする・ヒットストップで音が鳴り直す・止めても動く物（点滅・雨）を分ける | Clock（型で分けた時計 Clock[c] / Time[c]・Clock.Run / Pace / withSlow）+ App.addClock・実時間は frame#realNow（docs/clock.md。実例: `templates/sound-novel-starter`） |
 | 途中で始まる演出（起点の時刻を World に持つ）の音と進みを、同じ時刻表から引く | 時計を使うゲームは Timeline.soundsOnClock(時計, 起点, 表) / progressOn(時計, 起点, タグ, 表)。秒を World に持つゲームは Timeline.soundsSince(起点, 前の時刻, 今の時刻) / progressSince(起点, 今, タグ) |
@@ -33,7 +34,7 @@
 - **EcsTween** — 値をある値から別の値へ、時間をかけて滑らかに動かす（補間する）。整数を 1 つずつ動かすのは steppedInt（数え下がり・ルーレット）。
 - **Journey** — 脚(出発点・行き先・速さ)の列を「時刻の純関数」で歩く。到着判定(done)と絵の位置(pos)を同じ戻り値で返す。
 - **Motion** — 物の動かし方の小さな道具箱（等速移動と往復運動）。
-- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / insert = 決まった時刻 / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat / ToPickup（次の小節の頭の n 拍前）で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索。待ちの無い表は soundsBetween(前の秒, 今の秒)）で同じクリップを読む。待ちは playheadOf / resume。組んだ表のクリップは clipOf / clipsOf（Clip）で引く。履歴・巻き戻しは Worldline（別物）。
+- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / insert = 決まった時刻 / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat / ToPickup（次の小節の頭の n 拍前）で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索。待ちの無い表は soundsBetween(前の秒, 今の秒)）で同じクリップを読む。待ちは playheadOf / resume。スキップで飛ばす表は PlaybackLog（playbackLog / resumeOn / seekOn / skipToNextWait → playheadOn / soundsOnWall / startedOnWall）。組んだ表のクリップは clipOf / clipsOf（Clip）で引く。履歴・巻き戻しは Worldline（別物）。
 - **TimeScale** — ヒットストップ・スロー。合図からの実秒で「止める → 遅く流す → 等速へ戻す」を決め、毎フレームの dt を gameDt で直す（ゲームの時計ごと遅くする）。光や揺れは realAt の実秒で動かせる。
 - **HoldPress** — 長押しで決める。押している間だけ秒を貯め、満ちたフレームで 1 回だけ合図、合図の後は離すまで貯めない。押した瞬間の拍そのものは InputEdge。
 - **SceneSeq** — カット列の逐次シーケンサ骨格。perform（カットを 1 コマ演じる）と idle（尽きたあと時間だけ流す）を注入し、Skip・打ち切りは notes に残す（fail-open だが無音ではない）。

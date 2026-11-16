@@ -15,6 +15,7 @@ const (
 	WhatMissing    = "missing"
 	WhatNoBaseline = "nobaseline"
 	WhatEvent      = "event"
+	WhatEventTime  = "eventTime"
 	WhatSound      = "sound"
 	WhatBus        = "bus"
 	WhatProbe      = "probe"
@@ -102,6 +103,7 @@ type Options struct {
 	Game       string // 新しい版のゲームのルート（カバー率で台本を読む）
 	NoCoverage bool
 	Strict     bool // 迷った差でも門を止める（10.6 の「わざと入れた読み違いで落ちる」を確かめる時）
+	Times      bool // 台詞・選択肢・待ちの時刻を、前の出来事からの間で比べる（--times）
 	Th         Thresholds
 	Lim        Limits
 }
@@ -172,6 +174,9 @@ func (c *comparer) tape(flow, size string, a, b *Tape) {
 		c.r.Stopped = append(c.r.Stopped, flow+"/"+size)
 		return
 	}
+	if c.opt.Times {
+		c.eventTimes(flow, size, a, b)
+	}
 	c.sounds(flow, size, a, b)
 	c.buses(flow, size, a, b)
 	c.probes(flow, size, a, b)
@@ -237,10 +242,7 @@ func (c *comparer) events(flow, size string, a, b *Tape) bool {
 	if !a.Has("events") || !b.Has("events") {
 		c.skip(flow, size, WhatEvent, "events が無いので待ちは比べていない（台詞と選択肢は timeline と choices から比べた）")
 	}
-	ea, eb := eventsOf(a), eventsOf(b)
-	if a.Has("events") != b.Has("events") {
-		ea, eb = eventsOf(withoutEvents(a)), eventsOf(withoutEvents(b))
-	}
+	ea, eb := eventPairs(a, b)
 	tol := frameTol(a)
 	for i := 0; i < len(ea) || i < len(eb); i++ {
 		if i >= len(ea) || i >= len(eb) {
@@ -256,6 +258,33 @@ func (c *comparer) events(flow, size string, a, b *Tape) bool {
 		}
 	}
 	return true
+}
+
+// eventPairs は比べる 2 本の出来事の並び（片方にだけ events があれば、両方とも timeline と choices から組む）。
+func eventPairs(a, b *Tape) ([]Event, []Event) {
+	if a.Has("events") != b.Has("events") {
+		return eventsOf(withoutEvents(a)), eventsOf(withoutEvents(b))
+	}
+	return eventsOf(a), eventsOf(b)
+}
+
+// eventTimes は並びの同じ 2 本の出来事の時刻を、前の出来事（最初は記録の頭）からの間で比べる。
+// 間の違いが 1 フレームを超えたら迷った差（--strict で止める）。
+// WhyNot: 頭からの時刻で比べない — 前の版は待ちが明けるたびに 1 フレーム遅れる事があり（浮動小数の足し算の丸めで出たり
+// 出なかったりする）、続く <<wait>> でずれが積み上がって、どの待ちも 1 フレームの内なのに後ろが全部ずれて見える。
+func (c *comparer) eventTimes(flow, size string, a, b *Tape) {
+	ea, eb := eventPairs(a, b)
+	tol := frameTol(a)
+	prevA, prevB := 0.0, 0.0
+	for i := 0; i < len(ea) && i < len(eb); i++ {
+		gapA, gapB := ea[i].T-prevA, eb[i].T-prevB
+		if math.Abs(gapA-gapB) > tol {
+			c.add(&Diff{Flow: flow, Size: size, Step: 1, What: WhatEventTime, Node: eb[i].Node, Seq: eb[i].Seq, T: eb[i].T, Review: true,
+				Detail: fmt.Sprintf("%s の前の出来事からの間が %.3f 秒違う（前 %.3f 秒 / 後 %.3f 秒・許すのは 1 フレーム）",
+					describeEvent(eb[i]), gapB-gapA, gapA, gapB)})
+		}
+		prevA, prevB = ea[i].T, eb[i].T
+	}
 }
 
 func withoutEvents(t *Tape) *Tape {

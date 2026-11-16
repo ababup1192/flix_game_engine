@@ -76,6 +76,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の手すり・金網・電線のような細い物が欠ける・ちらつく | 場面の Pass を `RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() \|> RenderTarget.withHdr)`（cutout の縁も alpha to coverage でなめらかになる・画面なしの描き出しには掛からない）・それでも残る縁は `PostProcess.fxaaSpec` |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
+| 演出をスキップで飛ばす・読み終えを待つ・続きを後から足す（音は飛ばし、命令は飛ばした所の物も当てる） | `Timeline.PlaybackLog`（`resumeOn` / `skipToNextWait`）→ `playheadOn`・`soundsOnWall`・`startedOnWall`。表は毎フレーム組み直し、変えるのは後ろへ足すのと今より後ろを縮めるだけ |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
 | 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |
 | 粒（花びら・火の粉）に触れたかを規則で取る | `Fx.particlesOfAll(now, bursts)`（絵と同じ式の番号と中心）+ `Fx.touches` |
