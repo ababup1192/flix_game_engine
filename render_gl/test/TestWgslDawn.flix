@@ -167,6 +167,7 @@ mod TestWgslDawn {
         let metal = Some(Shade.Rgb({ r = Field.Ref("k2"), g = Field.Param({ name = "rough" }), b = c(0.0) }));
         let all = (name: String, shade: Shade) -> fill("mat-" + name, 0.25, allKindsBindings(), shade, Field.Ref("k2"));
         ("scene3d-field", field, None, None) ::
+        ("deep-pow", deepPow(), None, None) ::
         ("textured", textured, None, None) ::
         ("textured-metal", textured, None, metal) ::
         (shades() |> List.flatMap(ns -> {
@@ -174,6 +175,12 @@ mod TestWgslDawn {
             ("all-" + name, all(name, shade), None, None) ::
             ("all-" + name + "-glow-metal", all(name, shade), glow, metal) :: Nil
         }))
+
+    /// 指数 180 の Pow（海の材質の照り返しと同じ形・底も Sat と積の入れ子）を albedo と emission に使う材質。
+    def deepPow(): ShaderDoc.Spec =
+        let glint = Field.Pow({ of = Field.Un({ op = UnOp.Sat, of = Field.Bin({ op = BinOp.Mul, a = Field.Param({ name = "g" }), b = Field.World({ axis = Axis3.Y }) }) }), p = 180.0 });
+        let dim = Field.Pow({ of = Field.Param({ name = "d" }), p = -40.0 });
+        fill("deep-pow", 0.0, Nil, Shade.Rgb({ r = glint, g = dim, b = c(0.5) }), c(1.0))
 
     // ── Dawn で組む ──
 
