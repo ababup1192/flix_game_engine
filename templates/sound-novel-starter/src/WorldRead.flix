@@ -186,17 +186,26 @@ mod WorldRead {
         { now = World.now(w), node = YarnRunner.nodeOf(r#talk) |> Option.getWithDefault(""), res = res, instant = r#playback == World.Playback.Skip }
 
     /// コマンドが出した出来事 1 つ（Silent の時の音と合図と待ちは Commands.execute が落としてある）。
-    /// 待ちは now から秒だけ（続きの出来事は absorbFrom が預ける。1 つのコマンドが 2 つ出したら長い方）。
-    def takeOut(now: Clock.Time[Stage.Story], out: Out, r: World.Read): World.Read \ Emit[World.Event] = match out {
-        case Out.ClearPage    => { page = Page.clear(r#page), stage = Stage.withPageTurned(r#stage) | r }
-        case Out.TurnPage     => { page = Page.turn(r#page) | r }
-        case Out.Sound(name)  => Emit.emit(World.Event.Cue(name)); r
-        case Out.Event(name)  => Emit.emit(World.Event.Signal(name)); r
-        case Out.Wait(secs)   =>
-            let until = Clock.after(Float64.max(0.0, secs), now);
-            let later = r#pause |> Option.map(p -> if (Clock.since(p#until, until) > 0.0) until else p#until) |> Option.getWithDefault(until);
-            { pause = Some({ until = later, rest = Nil, last = None }) | r }
+    /// 待ちは now から秒だけ（続きの出来事は absorbFrom が預ける。1 つのコマンドが 2 つ出したら長い方。押して明けるのは両方が WaitOrTap の時だけ）。
+    pub def takeOut(now: Clock.Time[Stage.Story], out: Out, r: World.Read): World.Read \ Emit[World.Event] = match out {
+        case Out.ClearPage       => { page = Page.clear(r#page), stage = Stage.withPageTurned(r#stage) | r }
+        case Out.TurnPage        => { page = Page.turn(r#page) | r }
+        case Out.Sound(name)     => Emit.emit(World.Event.Cue(name)); r
+        case Out.Event(name)     => Emit.emit(World.Event.Signal(name)); r
+        case Out.Wait(secs)      => withPause(now, secs, false, r)
+        case Out.WaitOrTap(secs) => withPause(now, secs, true, r)
     }
+
+    /// 待ちを now から secs 秒に（もう待ちがあれば、明ける時刻は遅い方・押して明けるのは両方とも押して明ける時だけ）。
+    def withPause(now: Clock.Time[Stage.Story], secs: Float64, tappable: Bool, r: World.Read): World.Read =
+        let until = Clock.after(Float64.max(0.0, secs), now);
+        let later = r#pause |> Option.map(p -> if (Clock.since(p#until, until) > 0.0) until else p#until) |> Option.getWithDefault(until);
+        let tap = tappable and (r#pause |> Option.forAll(p -> p#tappable));
+        { pause = Some({ until = later, rest = Nil, last = None, tappable = tap }) | r }
+
+    /// 押すと明ける待ち（Out.WaitOrTap）の間か。flow の reader はこの間は押さない（人が読む間の秒を待つ）。
+    pub def isTapWait(w: World.World): Bool =
+        World.readOf(w) |> Option.flatMap(r -> r#pause) |> Option.exists(p -> p#tappable)
 
     /// コマンドが出した待ちが明けた（かスキップで飛ばした）: 待ちを消して、預けておいた続きの出来事を反映する。
     def resumePause(res: Res.Res, p: World.Pause, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
@@ -233,15 +242,24 @@ mod WorldRead {
 
     /// 決定 1 回分（読んでいる間・画面が閉じている時）。文字送りの途中なら全文へ、出し終えていれば次の行へ。
     /// 選択肢を出している間は動かない（pick だけが進める）。ゲートの頁は字を出し切るだけで送らない（passGate だけが進める）。
-    /// オートとスキップは止める（人が押したら人の速さに戻す）。
+    /// オートとスキップは止める（人が押したら人の速さに戻す）。押すと明ける待ち（Out.WaitOrTap）の間に出し終えていれば、待ちを明ける。
     pub def advance(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
             case Some(r) if World.isFree(w) and Option.isEmpty(r#hold) and (List.isEmpty(r#choices) or Option.nonEmpty(gateOf(r))) =>
                 let manual = { playback = World.Playback.Manual | r };
                 if (not Page.isDone(r#page)) reveal(manual, w)
                 else if (Option.nonEmpty(gateOf(r))) World.withRead(manual, w)
+                else if (isTapWait(w)) tapThroughPause(res, manual, w)
                 else next(res, manual, w)
             case _ => w
+        }
+
+    /// 押すと明ける待ちを、押した所で明ける（ゲームが持つ背景の切り替えは終わりの形にして、預けた続きを反映する）。
+    // WhyNot: next（オートとスキップも通る）で明けない — オートが押す代わりに送ると、待ちの秒を待たずに越える。
+    def tapThroughPause(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        match r#pause {
+            case Some(p) => resumePause(res, p, { stage = Stage.withGameSwitchFinished(r#stage) | r }, w)
+            case None    => World.withRead(r, w)
         }
 
     /// 今の行を出し切る。

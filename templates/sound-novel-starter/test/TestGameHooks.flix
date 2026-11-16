@@ -6,7 +6,7 @@
 // ゲームの写真と時間帯は残すので、読み始めた World の台本の <<bg>> はそのまま当たる）。
 mod TestGameHooks {
 
-    use fge::{Clock, Emit, Num, RawDraw, Rect2, Render, Yarn, YarnCommands, YarnRunner}
+    use fge::{Clock, Emit, Flow, Num, RawDraw, Rect2, Render, Resources, Yarn, YarnCommands, YarnRunner}
     use Commands.Out
     use TestKit.begun
 
@@ -171,7 +171,7 @@ mod TestGameHooks {
 
     @Test
     def testGameOwnedSwitchWaitsForItsSeconds(): Unit \ {Assert, Fs.FileRead} =
-        Assert.assertEq(expected = Ok(Out.Wait(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
+        Assert.assertEq(expected = Ok(Out.WaitOrTap(3.0) :: Nil), ownedBy(res(), walk(3.0), false, Nil) |> Result.map(snd))
 
     @Test
     def testInstantDoesNotAskTheGame(): Unit \ {Assert, Fs.FileRead} =
@@ -243,16 +243,33 @@ mod TestGameHooks {
         Assert.assertEq(expected = (Some(true), Some(false)), (instantWhen(World.Playback.Skip), instantWhen(World.Playback.Manual)))
 
     /// 読み始めた所で、ゲームが持つ 3 秒の切り替えを当て、明けたら出す台詞 1 行（.yarn の 99 行目）を預けた World。
+    /// 待ちの出来事は bg の apply が出した物をそのまま WorldRead.takeOut に通す（押すと明ける待ち）。
     def walking(r: Res.Res): World.World =
         let w = begun(r);
-        let line = { speaker = "", text = "歩いた後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } };
         World.mapRead(rd -> {
             let c = Commands.bgUsing(walk(3.0));
-            let stage = YarnCommands.parse(c#spec, command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)) |> Result.toOption
-                |> Option.flatMap(a -> c#apply({ instant = false | WorldRead.ctxOf(r, rd, w) }, a, rd#stage) |> Result.toOption) |> Option.map(fst)
-                |> Option.getWithDefault(rd#stage);
-            { stage = stage, pause = Some({ until = Clock.after(3.0, World.now(w)), rest = (YarnRunner.Event.Line(line), 0) :: Nil, last = None }) | rd }
+            let (stage, outs) = YarnCommands.parse(c#spec, command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil)) |> Result.toOption
+                |> Option.flatMap(a -> c#apply({ instant = false | WorldRead.ctxOf(r, rd, w) }, a, rd#stage) |> Result.toOption)
+                |> Option.getWithDefault((rd#stage, Nil));
+            withHeldLine(takenOuts(w, outs, { stage = stage | rd }))
         }, w)
+
+    /// 読み始めた所で、out の待ちだけを当て、明けたら出す台詞 1 行を預けた World（ゲームが持つ切り替えは無い）。
+    def waitingBy(r: Res.Res, out: Out): World.World =
+        let w = begun(r);
+        World.mapRead(rd -> withHeldLine(takenOuts(w, out :: Nil, rd)), w)
+
+    def takenOuts(w: World.World, outs: List[Out], rd: World.Read): World.Read =
+        fst(Emit.collect(() -> outs |> List.foldLeft((cur, out) -> WorldRead.takeOut(World.now(w), out, cur), rd)))
+
+    /// 待ちが明けたら出す台詞 1 行（.yarn の 99 行目「歩いた後の行。」）を待ちに預ける。
+    def withHeldLine(rd: World.Read): World.Read =
+        let line = { speaker = "", text = "歩いた後の行。", parts = Nil, tags = Nil, source = { file = "test", line = 99 } };
+        { pause = rd#pause |> Option.map(p -> { rest = (YarnRunner.Event.Line(line), 0) :: Nil | p }) | rd }
+
+    def isPaused(w: World.World): Bool = World.readOf(w) |> Option.exists(rd -> Option.nonEmpty(rd#pause))
+
+    def currentText(w: World.World): String = World.pageOf(w)#current |> Option.map(l -> l#text) |> Option.getWithDefault("")
 
     def cuesOf(events: List[World.Event]): List[String] = events |> List.filterMap(e -> match e {
         case World.Event.Cue(name) => Some(name)
@@ -287,15 +304,76 @@ mod TestGameHooks {
         let (_, heard) = stepHearing(r, 2.0, opened);
         Assert.assertEq(expected = Nil, heard)
 
+    // ══ 押すと明ける待ち（Out.WaitOrTap） ══
+
     @Test
-    def testTheNextLineWaitsUntilTheWalkEnds(): Unit \ {Assert, Fs.FileRead} =
-        // 歩いている間は押しても次の台詞へ進まず、3 秒の後に待ちが明ける。
+    def testWithoutATapTheWalkEndsByItsSeconds(): Unit \ {Assert, Fs.FileRead} =
+        // 押さなければ、1 秒では明けず、3 秒の後に明けて預けた台詞を出す。
+        let r = res();
+        let early = TestKit.stepBy(r, 1.0, walking(r));
+        let ended = TestKit.stepBy(r, 2.5, early);
+        Assert.assertEq(expected = (true, false, "歩いた後の行。"), (isPaused(early), isPaused(ended), currentText(ended)))
+
+    @Test
+    def testATapEndsTheWalk(): Unit \ {Assert, Fs.FileRead} =
+        // 歩いている途中に押すと、待ちが明けて預けた台詞を出す。
+        let r = res();
+        let pressed = TestKit.advance(r, TestKit.stepBy(r, 1.0, walking(r)));
+        Assert.assertEq(expected = (false, "歩いた後の行。"), (isPaused(pressed), currentText(pressed)))
+
+    @Test
+    def testATapLeavesTheWalkFinished(): Unit \ {Assert, Fs.FileRead} =
+        // 押して明けた時は、ゲームが持つ切り替えも終わりの形（前の背景を持たない）。
+        let r = res();
+        let pressed = TestKit.advance(r, TestKit.stepBy(r, 1.0, walking(r)));
+        Assert.assertEq(expected = Some(true), World.readOf(pressed) |> Option.map(rd -> Option.isEmpty(rd#stage#under)))
+
+    @Test
+    def testATapDoesNotEndAPlainWait(): Unit \ {Assert, Fs.FileRead} =
+        // Out.Wait の待ちは押しても明けない。
+        let r = res();
+        let pressed = TestKit.advance(r, TestKit.stepBy(r, 1.0, waitingBy(r, Out.Wait(3.0))));
+        Assert.assertTrue(isPaused(pressed))
+
+    @Test
+    def testATapWaitWithAPlainWaitIsNotTappable(): Unit \ {Assert, Fs.FileRead} =
+        // 1 つのコマンドが Wait と WaitOrTap を両方出したら、押しても明けない待ち。
+        let r = res();
+        let w = World.mapRead(rd -> withHeldLine(takenOuts(begun(r), Out.WaitOrTap(3.0) :: Out.Wait(1.0) :: Nil, rd)), begun(r));
+        Assert.assertTrue(isPaused(TestKit.advance(r, w)))
+
+    @Test
+    def testATapWaitFromAGameCommandEndsOnATap(): Unit \ {Assert, Fs.FileRead} =
+        // ゲームのコマンドが出す WaitOrTap（ゲームが持つ切り替えは無い）も、押すと明ける。
+        let r = res();
+        let pressed = TestKit.advance(r, waitingBy(r, Out.WaitOrTap(5.0)));
+        Assert.assertEq(expected = "歩いた後の行。", currentText(pressed))
+
+    @Test
+    def testTheWalkDoesNotGoOnWhileAScreenIsOpen(): Unit \ {Assert, Fs.FileRead} =
+        // 画面（ログ）を開いている間は、秒が過ぎても押しても待ちは明けない。
+        let r = res();
+        let opened = TestKit.quiet(() -> WorldLog.openLog(walking(r)));
+        let w = TestKit.advance(r, TestKit.stepBy(r, 5.0, opened));
+        Assert.assertTrue(isPaused(w))
+
+    @Test
+    def testAutoDoesNotTapThroughTheWalk(): Unit \ {Assert, Fs.FileRead} =
+        // オートは押す代わりに送っても、押すと明ける待ちを秒より先には明けない。
+        let r = res();
+        let auto = World.mapRead(rd -> { playback = World.Playback.Auto | rd }, walking(r));
+        Assert.assertTrue(isPaused(TestKit.stepBy(r, 2.0, auto)))
+
+    @Test
+    def testTheFlowReaderDoesNotTapDuringATapWait(): Unit \ {Assert, Fs.FileRead} =
+        // flow の reader は押すと明ける待ちの間は押さない（基準の版と同じく、待ちの秒を流す）。
         let r = res();
         let w = walking(r);
-        let pressed = TestKit.advance(r, TestKit.stepBy(r, 1.0, w));
-        let ended = TestKit.stepBy(r, 2.5, pressed);
-        Assert.assertEq(expected = (TestKit.placeOf(w), false, true),
-                        (TestKit.placeOf(pressed), World.readOf(pressed) |> Option.exists(rd -> Option.isEmpty(rd#pause)), World.readOf(ended) |> Option.exists(rd -> Option.isEmpty(rd#pause))))
+        let tapped = E2e.table()#drives |> List.exists(d -> match d#act(10.0, Resources.of(r, w)) {
+            case Flow.DriveAct.Tap(_) => true
+            case _                    => false
+        });
+        Assert.assertEq(expected = (true, false), (WorldRead.isTapWait(w), tapped))
 
     // ══ <<tween 鍵>> ══
 
