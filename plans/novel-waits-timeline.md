@@ -301,3 +301,12 @@ engine に要る物はもうある: `App.advanceFrame(app, frame, state, world)`
 - LineWait の後ろの命令は、時間を取る命令も含めて**続いた LineWait の最初の頭**へ寄せる（古い版は束の命令を全部その場で当てた。コメントの後ろの `<<bg>>` と `<<audio bgm>>` が 1 コメント遅れて、Inside#34 の音の順が食い違っていた）。
 - 続いた LineWait どうしは前の LineWait の後ろに並ぶ（コメントは 1 つずつ間を空けて出る。最初の頭へ重ねるとコメントが全部同じ時刻に出て、効果音も 1 回にまとまる）。
 - 承認（人の決め）: 続いたコメントの後ろの台詞が新しい版で 1 コメント遅い差は intended（古い版の flow の reader がコメントの間にも押していたため。ゲームの振る舞いの違いではない。reader の取り決め（待ちの間は押さない）は替えない）。stairs の頭の amb_house は bookmark・showcase と同じ種類として intended。
+
+### 血鱗の洗い出しの穴（P〜V）の進み
+
+- P（済み・86b3fcd1）: version 2 の欄だけの枠（`Saves.StageForm.Partial`）は、当て直した舞台に背景・環境音・mode だけを重ねる。
+- S（済み・86b3fcd1）: `GameE2e.drives()` を `E2e.table` の reader の後ろに並べる（ゲームの持ち物なので、追随するゲームは `drives() = Nil` を足す）。
+- Q（済み・f3f1cd61）: `GameCommands.onLine(ctx, stage)`。台詞を頁に積む所で呼ぶ（選択肢は数えない・当て直しでも呼ぶ）。追随するゲームは `onLine` を足す。
+- U（吸収済み）: flow の ready は `isWaiting` = ビートの待ちだけを見るので、実行器の `<<wait>>` の間も Busy。
+- R・T・V: まだ。
+- 廃屋配信: 止める違い 0（承認 9 件。台本の reader の押し方 L の 6 件と、頭の環境音 3 件）。
