@@ -378,7 +378,7 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を R3dScene の末尾から読む別の pipeline で塗る（**済・12.33**）。半透明は材質の pipeline の半透明の版（GL と同じ混ぜ方・深度を書かない）で、行の末尾の半透明の行を描く（**済・12.34**）。後がけは 2D の Pass と面の道のまま描けていて、Design の場面を縮んだ Pass へ貼る WGSL の縦の texel の選び方だけ GL にそろえた（横の境目の揺れは許容を置いて残した・**済・12.35**）。ビルボードは行の順のまま別の pipeline で描き、貼る絵は 2D の描き手の絵の group を借り、値は行の values を stride 0 の頂点の buffer で読む（**済・12.36**）。環境マップは場面の group 0 の binding 3 に材質の絵と同じ置き場の mip つきの絵を付け、景色を背景に描く場面は空の frag が絵を読む。preload は形・材質の program と絵・画面の形式の pipeline を先に上げる（**済・12.37**）。mip（決まり 7）は場面の絵（環境マップを含む）は CPU の Mip.build の mip で GL と同じ。全体の登録の絵の mip つきの写しは、`Texture.createView(baseMip, mipCount)` を `WebGpu` の interface に足し、`Render3d.WebGpuMipmaps` が Mip.build と同じ平均を GPU の pass で作る（**済・12.38**）。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
-| 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
+| 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す（**済・12.40**） | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
 | 16 | P10 | **切り替え。** PC の既定を WebGPU に（画面なしの描き出し・テスト・動画の既定も）。`gl-capture` の基準を取り直す（Dawn の版を pin）。`docs/flix-conventions.md`・`backend-parity.md`・agents-pack・eval・migrations。外のゲームの追随 | リリースの門を全部。CI（GPU が無い）で回る門と手元だけの門を分けて書く | 6〜10 時間 |
 | — | | **リリース 3**: WebGPU が既定 | | |
 | 後 | | スプライトの集まりの口（決まり 11）・粒子（決まり 12）・GPU の上での間引き（compute で引数のバッファを書く。引数は 1 本のバッファに詰める）・ブラウザで `RenderList` の配列を JS へ 1 回で渡す形（draw が 100 本を超える場面が残った時） | 別に計画して伺う | — |
@@ -2221,3 +2221,52 @@ engine の pub は増やしていない。GL の画と GL の呼び出しの並�
   みやげの町の 3 場面と試作 4 本は 64 コマが全部 12.37 の後とバイトまで同じ（どれも全体の登録の絵を 3D の材質に貼っていない【推】）。fps3d_lab は 4〜7 コマだけ同じ（12.35〜12.37 と同じく場面の時計が実時間で進む物【推】）。
   写しの置き場は `scratchpad/e8/{games,others}/out/`（消えうる）。
 - 持ち越し: 影の地図の寿命の表を `SceneTargets` へ寄せる（P9 の後）・12.37 の持ち越し（preload の pipeline の標本数・ブラウザでの preload の時間）と 12.28〜12.36 の持ち越しはそのまま。
+
+### 12.40 P9: 動かない物の持ち越し（2026-11-17・この Mac・Dawn の Metal だけ）
+
+表の 15 行目（決まり 10）。engine の pub を足した（人の了承: 候補 1・ゲームが明示・1 個だけ変える物は外して instances に置く・`engine-scene3d-cpu.md` の結果は待たない）。
+GL の画と呼び出しの並びは変えていない（集まりの物を instances の後ろに並べて今の道で描く・gl-capture-check 54 枚がバイトまで同じ）。16 ms の目標は WebGPU だけ（人の決め）。
+
+- **決めた事 1 — 宣言は `Scene3d.staticGroup`**: 型 `StaticGroup`（非 pub の enum + alias）・`staticGroup(名前, (鍵, 物) の列)`・`withoutItems(鍵の Set)`・`withGroupTint`・`staticGroupFieldsOf`・`groupInstancesOf`・`instancesOf(場面)`、`Scene3dCmd#groups`。
+  持ち越さない描き手（CPU・DrawHash・注釈・GL・preload）は `instancesOf` を描く（DrawHash は集まりの物を instances の後ろに並べた場面と同じ鍵）。早見表に 1 行・agent-eval に `static-group-many-buildings`（100 点）。
+- **決めた事 2 — 前半 `Render3d.StaticRows`**: 集まりごとに 1 回だけ候補に分け（視錐台で間引かない）、1 体ごとの値を詰め、色の pass の行（頂点の色 → 不透明の材質）と影の地図の行を作る。
+  同じ集まりかは名前・items の参照・removed・tint（中身は比べない）。同じ名前で中身の違う集まりは 1 コマに何個でも控え、外れた時は今のコマで使っていない物だけ手放す。
+  半透明（遠い順に並べ直す）と骨つき（姿勢が毎コマ変わる）と奥行きの書き出しの場面は毎コマ計画へ（`groupScenesWith` に場面と組で渡す）。同じ付け方の行は前の行の値を指し、時刻（uTime）を書き直す区画を付け方の数にした。
+  30 コマ続けて同じ名前を作り直したら 1 回知らせる。
+- **決めた事 3 — WebGPU `Render3d.WebGpuStatic`**: 1 体ごとの値と材質の値の buffer を 1 回書き、毎コマは形と絵を使った物にして時刻の区画だけ書き直す。色の pass の空の後・場面の行の前と、影の地図の pass に描く。
+  行は render bundle に積む（鍵 = 描き先・形式・標本・pass。影は地図の鍵）。group 0 か材質の絵の世代（`WebGpuMaterials.textureEpochOf`）が替わったら積み直す。
+  影の地図か環境マップを読む場面の group 0 は、描き先と付ける view が同じなら前のコマの物を使う（`sceneGroups`。bundle が参照で比べる）。手放すのはコマを締めた後（endFrame）だけ。置き場が形か絵を捨てたコマは持ち越しを全部作り直す。
+- **決めた事 4 — jar の形**（(7c)/(8) の merge の後・人の了承）: `RenderCommands`（pass と bundle に共通の命令）・`RenderBundleEncoder`・`RenderBundle`・`RenderPass.executeBundle`・`WebGpu.createRenderBundleEncoder`。Dawn と `BrowserObjects`（bundle は命令ごとに JS を呼ぶ・pass の命令の列に乗せない WhyNot）。jar `fge-gl-46f52a0dcfbb`（gl-jar-pin 済み・置き場は main への push で作る）。
+
+- **時間**（WebGPU・ms。**どれも PC が混んでいる時（load average 9〜33）の数で【未確認】**。人の決めで、16 ms の判定と時間の測りは後でまとめて取る。下は途中で取った参考）:
+
+  | 場面 | 前（集まり無し） | 集まり・bundle 無し | 集まり・bundle |
+  |---|---|---|---|
+  | bench/scene3d field n=12000 shapes=each moving=0 | p50 90.4〜113.1（split 17〜21・draw 68〜86） | p50 13.2〜16.4（split 1.9・draw 6〜9.5） | **p50 8.6**（split 0.9・draw 2.1） |
+  | 同 shadow=1（draw call 24,002） | — | p50 21.4（split 2.1・draw 10.4） | **p50 12.6**（split 1.1・draw 3.2） |
+  | 東京 1 棟ずつ（plateau_city `3k_each`・aerial3k・600 コマの間隔の平均・太陽の影） | 116.5〜164.5 | 22.9〜24.7 | **12.6〜14.9** |
+
+  - field shapes=1 moving=0 は前から p50 14.4〜15.9（16 ms 以下）。GL の field each は 140 ms（GL は集まりでも今の道・目標の外）。
+  - 東京は試作の写し（`scratchpad/p9/plateau_city`・`PLATEAU_STATIC=1` で読み込みの時に `staticGroup` 1 つへ移す）。元のゲームは触っていない。
+- **壊して確かめた**（確かめた後に戻した）: 持ち越した行を色の pass に描かない → bench/webgpu_v2 の static 5 場面が 13.7 万〜51.8 万 px 違って落ちる（staticDepth は持ち越さないので OK のまま）・
+  影の地図に描かない → staticSunTextured 52,172 px・staticSpotAndSun 81,600 px で落ちる・置き場が捨てた後に作り直さない → `testMeshEvictionDropsCarried`・
+  bundle の鍵から描き先を外す → `testTwoScenesShareCarriedAndKeepTheirBundles`（積んだ回数 2 → 6）が落ちる。いつも使い回す・いつも作り直すは `TestStaticRows` の作り直しの 5 本（同じ値・作り直した値・外す鍵・tint・同じ名前 2 つ）が止める。
+- **欠けの表**（12.39 と同じ流し方・`FLIX_GE_BACKEND=webgpu`・160 秒・頭の 64 コマ・後 = bundle を入れた後・レビューの直しの前の fpkg（直しは集まりのある場面だけに効く）・前 = 12.39 の fpkg（e8））:
+
+  | 場面 | 欠け（前 → 後） | WebGPU の誤り | 頭の 64 コマが前とバイトまで同じ |
+  |---|---|---|---|
+  | fps3d_lab 部屋・礼拝堂・通路 | 0 → 0 | 0 | 12・3・3 コマ（12.35〜12.39 と同じく場面の時計が実時間で進む【推】） |
+  | みやげの町 arrival・market・night | 0 → 0 | 0 | 64・64・64 |
+  | plateau_city（`SHOT=street`）・sea_cave_walk（`SHOT=cave`） | 0 → 0 | 0 | 64・64 |
+
+  どれも集まりを使っていない（GL と WebGPU の今の道が変わらない事の確かめ）。写しは `scratchpad/p9g/{before,after}/out/`（消えうる）。
+- **bench**: `bench/webgpu_v2` に static 6 場面（部屋の小物・絵つき・半透明・奥行きの書き出し・太陽の影・スポットと太陽）。どれも集まり無しの同じ場面と同じ差（65 場面 OK・誤り 0）。`bench/scene3d` に `GROUP=1`。
+- **テスト**: render_gl 604 緑（`TestStaticRows` 18 本・`TestWebGpuStaticDawn` 7 本）・`make test-engine` 1000 緑（`TestScene3dStaticGroup` 5 本）。
+- **門**（この Mac・直しの後の木で 1 回）: render_gl のテスト・`make sync-engine-full`・`make test-engine`・`make gl-parity`・`make gl-capture-check`（54 枚がバイトまで同じ）・`make webgpu-v1-check`・
+  `bench/webgpu_v2 run`（`packages.lock` を消してから・65 場面と記録・誤り 0）・`make gl-jar-pin-check`・`make lint ONLY=max-lines` がどれも exit 0。
+- **レビュー**: 1 回目 78 点（必須 3: 同じ名前の集まりを 2 場面で描くと作り直しと使用中の buffer の破棄・bundle を描き先ごとに分けていない・影の有無で集まりの列を毎コマ作る）→ 直して 2 回目 88 点・必須 0。
+- 持ち越し:
+  - 置き場が 1 つでも捨てたら持ち越しを全部作り直す（捨てた slot を持つ集まりだけにする）・材質の絵の世代が全体で 1 本（毎コマ版が変わる登録の絵を材質に使うと毎コマ積み直す）。
+  - 診断の drawn は視錐台で間引かない分 GL より多い・CPU の 1 体ごとの値の写しを GPU へ書いた後も持つ・同じ深さで重なる面の勝ち方が GL と逆になりうる（WhyNot に書いた）。
+  - 2D の集まり（候補 4 の `withStaticLayers`）・区画ごとの集まりを助ける関数・GL の側の持ち越し（GL は描き方の代金が残り目標の外）。
+  - 時間の表を静かな時に取り直す・ブラウザで bundle の道を流していない【未確認】・`Scene3d.hasDrawnInstance` と `StaticRows.hasDrawnItem` が同じ中身（engine の pub を増やさないために 2 本）。

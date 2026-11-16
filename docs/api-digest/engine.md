@@ -1432,8 +1432,23 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
+- 動かない物の集まりの中身。name = 診断と知らせに出す名前・items = (鍵, 置いた物) の並び・removed = 描かない物の鍵（withoutItems）・
+  `pub type alias StaticGroupFields = { name = String, items = List[(String, Instance3d)], removed = Set[String], tint = Color }`
+- 動かない物の集まり（Unity の Static・Unreal の Mobility = Static に当たる）。場面の groups に載せると、中の物は instances と同じ絵で描かれ、
+  `pub type alias StaticGroup = StaticGroupData`
+- name の集まり（items の鍵は集まりの中で重ならない物にする。withoutItems が鍵で外す）。
+  `pub def staticGroup(name: String, items: List[(String, Instance3d)]): StaticGroup`
+- keys の鍵の物を描かない集まり（前に外した鍵に足す）。外す物を変えたコマは、描き手が持ち越しを作り直す。
+  `pub def withoutItems(keys: Set[String], g: StaticGroup): StaticGroup`
+- `pub def withGroupTint(c: Color, g: StaticGroup): StaticGroup`
+- 集まりの中身を読む（描き手が使う）。
+  `pub def staticGroupFieldsOf(g: StaticGroup): StaticGroupFields`
+- 集まりの描く物（外した鍵の物を除き、tint を掛けた物・来た順）。
+  `pub def groupInstancesOf(g: StaticGroup): List[Instance3d]`
+- 場面の描く物の全部（instances の後ろに groups の物を集まりの順に）。描き手が groups を持ち越さない所はこれを描く。
+  `pub def instancesOf(scene: Scene3dCmd): List[Instance3d]`
 - 環境マップの箱。室内の壁の位置（world）。min・max = 箱の対角の 2 点・center = 絵を撮った点（景色の向きの中心）。
   `pub type alias EnvironmentBox = { min = Vec3.Vec3, max = Vec3.Vec3, center = Vec3.Vec3 }`
 - 環境マップの中身。texture = 場面の textures の絵の名前（Texture3d.name）・intensity = 線形の量に戻した後に掛ける倍率・

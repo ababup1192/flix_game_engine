@@ -105,6 +105,9 @@ mod Render3d.SceneList {
     /// 行 row の材質の値の先頭（values の位置。値の無い行は -1）。
     pub def valuesAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, 8)
 
+    /// 材質の行 row の値の位置を at にする（同じ中身の値を前の行と分け合う時・Render3d.StaticRows）。
+    pub def setValuesAt(list: SceneList, row: Int32, at: Int32): Unit \ IO = Array.put(at, row * rowStride() + 8, list#rows)
+
     /// 行 row の絵の組の k 番目の欄 col（並びは Render3d.MaterialValues の頭）。
     pub def readAt(list: SceneList, row: Int32, k: Int32, col: Int32): Int32 \ IO =
         Array.get((rowAt(list, row, 9) + k) * MaterialValues.readStride() + col, list#reads)

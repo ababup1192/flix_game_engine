@@ -81,6 +81,12 @@ mod V2Main {
         shadowCase("shadowSunCrowd", V2Shadows.sunYard(kit, crowdCount())) ::
         shadowCase("shadowSunTextured", V2Shadows.sunYardTextured(kit)) ::
         shadowCase("shadowBoth", V2Shadows.spotAndSun(kit)) ::
+        sceneCase("staticRoom", Scene3d.Resolution.Native, V2Static.propsOnly("room", Room.scene(kit, 0.0))) ::
+        sceneCase("staticTextured", Scene3d.Resolution.Native, V2Static.all("textured", V2Materials.textured(Room.scene(kit, 0.0)))) ::
+        sceneCase("staticBlend", Scene3d.Resolution.Native, V2Static.all("blend", V2Blend.room(kit))) ::
+        sceneCase("staticDepth", Scene3d.Resolution.Native, { output = depthOfRoom() | V2Static.all("depth", Room.scene(kit, 0.0)) }) ::
+        shadowCase("staticSunTextured", V2Static.all("sunTextured", V2Shadows.sunYardTextured(kit))) ::
+        shadowCase("staticSpotAndSun", V2Static.all("spotAndSun", V2Shadows.spotAndSun(kit))) ::
         railsCase("railsMsaa", 4, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsNoMsaa", 1, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsMsaaClear", 4, None, Color.rgb(0.3, 0.15, 0.05)) ::
@@ -308,6 +314,8 @@ mod V2Main {
              "skinned" => (8, 32, 255), "skinnedTextured" => (8, 100, 255), "skinnedDepth" => (4, 8, 16), "crowd" => (32, 64, 255), "skinnedTwice" => (32, 64, 255),
              "shadowSpot" => (8, 32, 255), "shadowSpotTextured" => (8, 350, 255), "shadowSun" => (8, 16, 255), "shadowSunCrowd" => (48, 64, 255),
              "shadowSunTextured" => (8, 80, 255), "shadowBoth" => (8, 16, 255),
+             "staticRoom" => (32, 64, 255), "staticTextured" => (150, 450, 255), "staticBlend" => (32, 64, 255), "staticDepth" => (8, 16, 16),
+             "staticSunTextured" => (8, 80, 255), "staticSpotAndSun" => (8, 16, 255),
              "lmTextured" => (150, 460, 255), "lmNormalLinear" => (160, 580, 255), "lmDepth" => (8, 16, 16),
              "sky" => (4, 16, 16), "skyTurned" => (4, 8, 16), "skyDesign" => (4, 8, 16), "skyDepth" => (4, 8, 16), "skyMsaaPass" => (24000, 28000, 128),
              "blend" => (32, 64, 255), "blendDesign" => (4, 8, 16), "blendDepth" => (4, 24, 16), "blendMsaaPass" => (28000, 34000, 128),

@@ -61,7 +61,7 @@ mod SceneBench {
 
     pub def go(): Unit \ IO =
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
-                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: Nil);
+                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>

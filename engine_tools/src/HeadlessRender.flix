@@ -232,7 +232,7 @@ pub mod HeadlessRender {
             |> List.filter(c -> silhouetteKeeps(scope, c#scene#zIndex))
             |> List.map(c -> {
                 let sc = c#scene;
-                { scene = { instances = sc#instances |> List.map(Scene3d.withTint(silhouetteInk())),
+                { scene = { instances = Scene3d.instancesOf(sc) |> List.map(Scene3d.withTint(silhouetteInk())), groups = Nil,
                             billboards = sc#billboards |> List.map(b -> Scene3d.unlit(Scene3d.withBillboardTint(silhouetteInk(), b))),
                             environment = { fog = None, background = None | sc#environment },
                             output = Scene3d.Output.Color | sc } | c }

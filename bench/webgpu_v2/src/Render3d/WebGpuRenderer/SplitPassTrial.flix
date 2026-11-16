@@ -93,11 +93,11 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
             let rect = sceneRect(vp, plan#cmd);
             let scissor = clipBox(vp, rect, plan#cmd#clip);
             let target = targetOf(t#renderer, host, (0, i), { width = rect#width, height = rect#height, format = RenderTarget.Format.Rgba8Unorm, samples = 1 });
-            let staged = stageScene(t#renderer, host, target, { members = grouped#members, poses = None }, plan, Nil);
+            let staged = stageScene(t#renderer, host, target, { members = grouped#members, poses = None }, plan, Nil, Nil);
             // WhyNot: 空を描かない — 空の frag は描き先の左上を場面の左上として向きを作り、画面の途中の矩形へ描く形 B では向きがずれる（比べる部屋の場面に空は無い）。
             staged#passes |> List.forEach(match (spec, list, valuesBase) ->
                 encodeScene(t#renderer, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup,
-                                                       sceneGroup = target#sceneGroup, sky = false },
+                                                       sceneGroup = target#sceneGroup, sky = false, carried = Nil, targetKey = "split" },
                             { color = t#frame.defaultView(), resolve = None, clear = None, depth = target#depth.defaultView(),
                               viewport = topLeftOf(t#height, rect), scissor = topLeftOf(t#height, scissor) }))
         });

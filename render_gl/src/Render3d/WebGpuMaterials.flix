@@ -22,7 +22,7 @@ pub mod Render3d.WebGpuMaterials {
     import fge.webgpu.FilterMode
     import fge.webgpu.FrontFace
     import fge.webgpu.PrimitiveTopology
-    import fge.webgpu.RenderPass
+    import fge.webgpu.RenderCommands
     import fge.webgpu.RenderPipeline
     import fge.webgpu.RenderPipelineDesc
     import fge.webgpu.Sampler
@@ -56,7 +56,7 @@ pub mod Render3d.WebGpuMaterials {
 
     /// 組んだ材質の program 1 つ。id = 順の番号（計画へ返す・0 でない）・fragment = 材質の frag・layout = group 1 の layout・
     /// slotCount = sg の欄の数（ShaderGen.Wgsl.compile3d の slots）・texCount = 材質の絵の数。
-    type alias Program = { id = Int32, kind = ProgramKind, fragment = ShaderModule, layout = BindGroupLayout, slotCount = Int32, texCount = Int32 }
+    pub type alias Program = { id = Int32, kind = ProgramKind, fragment = ShaderModule, layout = BindGroupLayout, slotCount = Int32, texCount = Int32 }
 
     /// GPU に置いた材質の絵 1 枚（場面の絵と、全体の登録の絵の mip つきの写し）。
     type alias GpuTexture = { texture = Texture, levels = Int32 }
@@ -87,6 +87,7 @@ pub mod Render3d.WebGpuMaterials {
             valuesUsed = Array[Int32, Static],
             groups = Ref[List[BindGroup], Static],
             warned = Ref[Set[String], Static],
+            textureEpoch = Array[Int64, Static],
             mipmaps = Render3d.WebGpuMipmaps.Mipmaps
         })
     }
@@ -115,13 +116,24 @@ pub mod Render3d.WebGpuMaterials {
                               sampler("fge material clamp nearest", FilterMode.NEAREST, AddressMode.CLAMP_TO_EDGE),
                               sampler("fge material clamp linear", FilterMode.LINEAR, AddressMode.CLAMP_TO_EDGE)} @ Static,
             blank = blank, values = Array#{createValueBuffer(gpu, initialValueBytes())} @ Static, valuesUsed = Array#{0} @ Static,
-            groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty()),
+            groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty()), textureEpoch = Array#{0i64} @ Static,
             mipmaps = Render3d.WebGpuMipmaps.create(gpu)
         })
 
     /// 値の buffer（uniform と storage と、ビルボードの値を読む頂点の buffer として bind する）。
     def createValueBuffer(gpu: WebGpu, bytes: Int32): Buffer \ IO =
         gpu.createBuffer("fge material values", Int32.toInt64(bytes), Int32.bitwiseOr(Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.STORAGE), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST)))
+
+    /// values を頭から書いた、値の buffer と同じ使い方の buffer（持ち越した行の値・Render3d.WebGpuStatic。手放すのは呼ぶ側）。
+    pub def createValuesOf(m: Materials, label: String, values: Array[Float32, Static]): Buffer \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        let bytes = 4 * Array.length(values);
+        let buffer = s#gpu.createBuffer(label, Int32.toInt64(Int32.max(valueAlignBytes(), bytes)),
+                                        Int32.bitwiseOr(Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.STORAGE), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST)));
+        let data = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN);
+        discard data.asFloatBuffer().put(values);
+        s#gpu.writeBuffer(buffer, 0i64, data, 0, bytes);
+        buffer
 
     /// 今の値の buffer（sendValues が書いた位置はこの buffer の中。sendValues が作り直すので、描く時に引く）。
     pub def valuesBufferOf(m: Materials): Buffer \ IO =
@@ -168,9 +180,22 @@ pub mod Render3d.WebGpuMaterials {
     /// 初めての材質はここで組み、noteBuild(名前) を呼ぶ。
     pub def resolve(m: Materials, noteBuild: String -> Unit \ IO, requests: Vector[MaterialRequest]): Vector[Int32] \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        let programs = requests |> Vector.map(match (fields, kind) -> if (isDrawable(kind)) programOf(m, noteBuild, fields, kind) else None);
+        let programs = programsFor(m, noteBuild, requests);
         Ref.put(programs, s#current);
+        ordersOf(programs)
+
+    /// 問い合わせ requests の program の並び（描けない版と組めない材質は None。current には控えない — 持ち越した行が自分の並びを持つ・Render3d.StaticRows）。
+    pub def programsFor(m: Materials, noteBuild: String -> Unit \ IO, requests: Vector[MaterialRequest]): Vector[Option[Program]] \ IO =
+        requests |> Vector.map(match (fields, kind) -> if (isDrawable(kind)) programOf(m, noteBuild, fields, kind) else None)
+
+    /// program の並びの順の番号（無ければ 0）。
+    pub def ordersOf(programs: Vector[Option[Program]]): Vector[Int32] =
         Vector.map(p -> p |> Option.map(x -> x#id) |> Option.getWithDefault(0), programs)
+
+    /// 今の prepare の問い合わせの順の program（resolve が控えた物）。
+    pub def currentPrograms(m: Materials): Vector[Option[Program]] \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        Ref.get(s#current)
 
     def programOf(m: Materials, noteBuild: String -> Unit \ IO, fields: Scene3d.MaterialFields, kind: ProgramKind): Option[Program] \ IO =
         let MaterialsData.MaterialsData(s) = m;
@@ -254,6 +279,11 @@ pub mod Render3d.WebGpuMaterials {
             uploadTexturesFrom(m, up, list, row + 1, n)
         }
 
+    /// uploadTextures の、行 rows の材質の絵だけを作る形（持ち越した行のうち、値を分け合わない行・Render3d.StaticRows）。
+    pub def uploadTexturesAt(m: Materials, source: TextureSource, registered: Registered, gen: Int64, list: SceneList, rows: Vector[Int32]): Unit \ IO =
+        let up = { source = source, registered = registered, gen = gen };
+        rows |> Vector.forEach(row -> materialAt(list, row) |> Option.forEach(f -> uploadRowTextures(m, up, list, row, f)))
+
     /// uploadTextures の 1 回で行をまたいで変わらない物。
     type alias TextureUploads = { source = TextureSource, registered = Registered, gen = Int64 }
 
@@ -295,11 +325,25 @@ pub mod Render3d.WebGpuMaterials {
         let hit = TextureTable3d.findTexture(up#source, name);
         match (TextureTable3d.readOf(false, up#source, name, textureUse), hit) {
             case (Some((slot, _)), Some(TextureHit.Own(t))) =>
-                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "", handle -> uploadTexture3d(m, handle, average, t))
+                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "", handle -> { noteTextureMade(m); uploadTexture3d(m, handle, average, t) })
             case (Some((slot, _)), Some(TextureHit.Registered(t))) =>
-                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "${t#texId}:${t#version}", handle -> mipCopyTexture(m, up, handle, average, t))
+                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "${t#texId}:${t#version}", handle -> { noteTextureMade(m); mipCopyTexture(m, up, handle, average, t) })
             case _ => ()
         }
+
+    def noteTextureMade(m: Materials): Unit \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        Array.put(Array.get(0, s#textureEpoch) + 1i64, 0, s#textureEpoch)
+
+    /// 材質の絵を作った（作り直した）回数。group 1 を持ち越す所（Render3d.WebGpuStatic の bundle）が、作り直した絵を読み続けないために見る。
+    pub def textureEpochOf(m: Materials): Int64 \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        Array.get(0, s#textureEpoch)
+
+    /// 今の encoder の group 1 の置き場（submit の後に手放す）。
+    pub def frameGroupsOf(m: Materials): Ref[List[BindGroup], Static] =
+        let MaterialsData.MaterialsData(s) = m;
+        s#groups
 
     /// 場面の環境マップの絵 name を、材質の絵と同じ置き場と mip の作り方で作り（無ければ）、その絵と mip のレベルの数を返す。
     /// 場面の textures に無い・作れない絵は None。
@@ -394,19 +438,20 @@ pub mod Render3d.WebGpuMaterials {
         case Billboard
     }
 
-    /// 材質の行を描く pass の付け方の材料。base = 行の values を送った位置（バイト）・format・samples = 描き先・sceneLayout = group 0 の layout・
-    /// poseLayout = group 2（姿勢）の layout・hasPoses = pass の頭で group 2 を付けたか・bound = 今の pipeline・groupRow = 最後に group 1 を付けた行（要素 1 つ・-1 = 付けていないか、付けた物が材質の group でない）。
+    /// 材質の行を描く pass の付け方の材料。base = 行の values を送った位置（バイト）・values = その buffer・programs = 行の欄 1 が引く program の並び・
+    /// format・samples = 描き先・sceneLayout = group 0 の layout・poseLayout = group 2（姿勢）の layout・hasPoses = pass の頭で group 2 を付けたか・
+    /// bound = 今の pipeline・groupRow = 最後に group 1 を付けた行（要素 1 つ・-1 = 付けていないか、付けた物が材質の group でない）・
+    /// groups = 作った group 1 の置き場（今の encoder の物は frameGroupsOf・bundle に積む物は bundle の持ち主の置き場）。
     pub type alias MaterialPass = {
-        base = Int32, format = RenderTarget.Format, samples = Int32, sceneLayout = BindGroupLayout, poseLayout = BindGroupLayout, hasPoses = Bool,
-        bound = Ref[BoundPipeline, Static], groupRow = Array[Int32, Static]
+        base = Int32, values = Buffer, programs = Vector[Option[Program]], format = RenderTarget.Format, samples = Int32, sceneLayout = BindGroupLayout,
+        poseLayout = BindGroupLayout, hasPoses = Bool, bound = Ref[BoundPipeline, Static], groupRow = Array[Int32, Static], groups = Ref[List[BindGroup], Static]
     }
 
     /// 行 row の材質の pipeline と group 1 を pass に付ける（描けない行は偽。骨つきの材質は pass に姿勢の group が無いか、形にジョイントが無ければ偽・
     /// lightmap の材質は形に 2 本目の uv が無ければ偽）。前の材質の行と同じ付け方（flagSameBinding）の行は group を付け直さない。
-    pub def bindRow(m: Materials, mp: MaterialPass, pass: RenderPass, list: SceneList, row: Int32, mesh: MeshBuffers): Bool \ IO =
-        let MaterialsData.MaterialsData(s) = m;
+    pub def bindRow(m: Materials, mp: MaterialPass, pass: RenderCommands, list: SceneList, row: Int32, mesh: MeshBuffers): Bool \ IO =
         let handle = rowAt(list, row, 1);
-        let current = Ref.get(s#current);
+        let current = mp#programs;
         let program = if (handle >= 0 and handle < Vector.length(current)) Vector.get(handle, current) else None;
         let valuesOk = valuesAt(list, row) >= 0;
         match program {
@@ -429,7 +474,7 @@ pub mod Render3d.WebGpuMaterials {
     /// 行 row の group 1（値の区画 2 つと、reads の絵と sampler。並びは材質の絵 → 法線マップ → lightmap）。submit の後に手放す。
     def buildGroup(m: Materials, mp: MaterialPass, p: Program, list: SceneList, row: Int32): BindGroup \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        let buffer = Array.get(0, s#values);
+        let buffer = mp#values;
         let at = mp#base + 4 * valuesAt(list, row);
         let desc = new BindGroupDesc("fge material", p#layout);
         discard desc.buffer(Render3dWgsl.drawBinding(), buffer, Int32.toInt64(at), drawValueBytes());
@@ -446,7 +491,7 @@ pub mod Render3d.WebGpuMaterials {
             discard desc.textureView(draw + 3, textureAt(k).defaultView()).sampler(draw + 4, samplerAt(k))
         } else ();
         let group = s#gpu.createBindGroup(desc);
-        Ref.put(group :: Ref.get(s#groups), s#groups);
+        Ref.put(group :: Ref.get(mp#groups), mp#groups);
         group
 
     /// 材質の絵の k 番目から n の前までを desc の 1 + 2k（絵）と 2 + 2k（sampler）へ。

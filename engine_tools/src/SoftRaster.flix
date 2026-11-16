@@ -237,16 +237,18 @@ pub mod SoftRaster {
     /// 3 つ目の表はフォント（TTF のパス → 読んだ Font とアトラスごとのグリフの逆引き表）。1 枚描くたびに
     /// TTF を読み直して表を組み直すと、ギャラリー 1 周で数秒になる。寿命は画像と同じ。
     /// 4 つ目の表は 3D の材質が読む絵の段（Mip.build。鍵は "tex3d:" + Texture3d の contentHash か、"file:" + パス + 更新時刻）。
+    /// 5 つ目の表はシェーダー面の、混ぜる前の画素の列（SoftRaster.Internal.Surface の memoKeyOf → 列）、6 つ目は 1 回見た面の鍵。
     pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String],
-                          ConcurrentHashMap[String, List[FontCtx]], ConcurrentHashMap[String, Vector[ShaderEval.TexData]])
+                          ConcurrentHashMap[String, List[FontCtx]], ConcurrentHashMap[String, Vector[ShaderEval.TexData]],
+                          ConcurrentHashMap[String, Vector[Int32]], ConcurrentHashMap[String, Bool])
 
     /// 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
     pub def freshTextureCache(): TextureCache \ IO =
-        TextureCache.TextureCache(new ConcurrentHashMap(), new ConcurrentHashMap(), new ConcurrentHashMap(), new ConcurrentHashMap())
+        TextureCache.TextureCache(new ConcurrentHashMap(), new ConcurrentHashMap(), new ConcurrentHashMap(), new ConcurrentHashMap(), new ConcurrentHashMap(), new ConcurrentHashMap())
 
     /// キャッシュからパスの画像を引く（無ければ読んで入れる。読み方は塗る時と同じ）。無い・読めないなら None。
     pub def cachedTexture(cache: TextureCache, path: String): Option[BufferedImage] \ IO =
-        let TextureCache.TextureCache(table, _, _, _) = cache;
+        let TextureCache.TextureCache(table, _, _, _, _, _) = cache;
         let hit: BufferedImage = table.get(path);
         if (not Object.isNull(hit)) Some(hit)
         else match loadTexture(path) {

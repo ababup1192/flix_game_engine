@@ -37,7 +37,8 @@ mod Render3d.MeshTable {
         };
         slot#handle
 
-    def slotOf(table: Table, gen: Int64, mesh: Mesh3d.Mesh3d): Slot \ IO =
+    /// 形 mesh の控え（無ければ番号を振る。GPU には作らない）。lastUsed を gen にする。
+    pub def slotOf(table: Table, gen: Int64, mesh: Mesh3d.Mesh3d): Slot \ IO =
         let key = Mesh3d.contentHash(mesh);
         match Map.get(key, Ref.get(table#slots)) {
             case Some(found) =>
@@ -48,6 +49,10 @@ mod Render3d.MeshTable {
                 Ref.put(Map.insert(key, made, Ref.get(table#slots)), table#slots);
                 made
         }
+
+    /// 控え slots の lastUsed を gen にする（行を持ち越した形を、表を引き直さずに今のコマで使った物にする）。
+    pub def touchSlots(slots: Vector[Slot], gen: Int64): Unit \ IO =
+        Vector.forEach(s -> Array.put(gen, 0, s#lastUsed), slots)
 
     def takeHandle(table: Table): Int32 \ IO = match Ref.get(table#free) {
         case h :: rest =>

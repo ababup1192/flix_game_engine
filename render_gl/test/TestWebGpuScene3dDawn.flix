@@ -165,7 +165,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
 
     /// 同じ encoder の 2 回目の prepare が、1 回目と同じ鍵の影の地図を描き直す時は、送る前に submit を 1 回頼む
     /// （影の pass の光の目の値は描き先ごとの buffer で、submit せずに書き直すと 1 回目の影の pass も 2 回目の目で描く）。
-    /// submit の後に姿勢を送り直し、影の地図を読む group 0 を作り直す（どちらも 1 つ・手放した物を使わない）。影の無い場面では submit しない。
+    /// submit の後に姿勢を送り直す（1 つ・手放した物を使わない）。影の地図を読む group 0 は描き先ごとに控える（2 つ・submit では手放さない）。影の無い場面では submit しない。
     @Test
     def testSecondPrepareRedrawingAShadowMapFlushesFirst(): Unit \ {Assert, IO} =
         match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
@@ -179,7 +179,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
                 let shadowed = shadowMapsAcrossPrepares(gpu, true);
                 let plain = shadowMapsAcrossPrepares(gpu, false);
                 gpu.destroy();
-                Assert.assertEq(expected = ((1, 1, 1, 0), (0, 2, 0, 0)), (shadowed, plain))
+                Assert.assertEq(expected = ((1, 1, 2, 0), (0, 2, 0, 0)), (shadowed, plain))
         }
 
     /// 描き先の違う 2 回の prepare（描き先の鍵 0 と 1）を同じ encoder で流した時の (submit の数, prepare の後の group 2 の数, 影の地図を読む group 0 の数, device の誤りの数)。

@@ -69,7 +69,7 @@ pub mod DrawHash {
         let fromBillboards = frame#req#scenes
             |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture))
             |> List.toSet;
-        let fromMaterials = frame#req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf)) |> List.toSet;
+        let fromMaterials = frame#req#scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.flatMap(Scene3d.textureNamesOf)) |> List.toSet;
         let fromEnvironment = frame#req#scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene)) |> List.toSet;
         Set.union(fromDrawables, Set.union(fromSurfaces, Set.union(fromBillboards, Set.union(fromMaterials, fromEnvironment))))
 
@@ -189,12 +189,14 @@ pub mod DrawHash {
     }
 
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
-        case { size = size, camera = camera, instances = instances, billboards = billboards,
+        // WhyNot: 集まりを別の印で書かない — 集まりは instances と同じ絵なので、中の物を instances の後ろに並べた場面と同じ鍵にする。
+        case { size = size, camera = camera, instances = _, groups = _, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, directionalLight = _, environment = environment,
                resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
+            let instances = Scene3d.instancesOf(scene);
             putSize(out, List.length(instances));
             instances |> List.forEach(i -> putInstance(out, Scene3d.instanceFieldsOf(i)));
             putSize(out, List.length(billboards));

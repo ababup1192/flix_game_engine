@@ -301,13 +301,84 @@ final class BrowserObjects {
             ops[count++] = baseVertex; ops[count++] = firstInstance;
         }
 
+        @Override public void executeBundle(fge.webgpu.RenderBundle bundle) {
+            flush(false);
+            executeBundles(pass, ((BrowserRenderBundle) bundle).bundle);
+        }
+
         @Override public void end() { flush(true); }
+
+        @JSBody(params = {"pass", "bundle"}, script = "pass.executeBundles([bundle]);")
+        private static native void executeBundles(GPURenderPassEncoder pass, org.teavm.jso.JSObject bundle);
 
         @JSBody(params = {"slot", "object"}, script = "fgePassObjs[slot] = object;")
         private static native void putObject(int slot, org.teavm.jso.JSObject object);
 
         @JSBody(params = {"pass", "ops", "count", "end"}, script = "fgeRunPass(pass, ops, count, end);")
         private static native void runPass(GPURenderPassEncoder pass, Int32Array ops, int count, boolean end);
+    }
+
+    /** 積み終えた bundle（JS の GPURenderBundle）。 */
+    static final class BrowserRenderBundle implements fge.webgpu.RenderBundle {
+        final org.teavm.jso.JSObject bundle;
+
+        BrowserRenderBundle(org.teavm.jso.JSObject bundle) { this.bundle = bundle; }
+
+        @Override public void release() {}
+    }
+
+    /**
+     * bundle に命令を積む物。命令ごとに JS の bundle の encoder を呼ぶ。
+     * WhyNot: BrowserRenderPass の命令の列（fgePassObjs の番号）に乗せない — bundle は開いた pass の途中で積み、同じ表の番号を頭から振り直すと、
+     *   pass のまだ流していない命令が指す物を上書きする。bundle を積むのは集まりを作り直したコマだけで、行き来の代金は毎コマには乗らない。
+     */
+    static final class BrowserRenderBundleEncoder implements fge.webgpu.RenderBundleEncoder {
+        final org.teavm.jso.JSObject encoder;
+
+        BrowserRenderBundleEncoder(org.teavm.jso.JSObject encoder) { this.encoder = encoder; }
+
+        @Override public void setPipeline(fge.webgpu.RenderPipeline pipeline) { setPipeline(encoder, ((BrowserRenderPipeline) pipeline).pipeline); }
+
+        @Override public void setBindGroup(int index, fge.webgpu.BindGroup group) { setBindGroup(encoder, index, ((BrowserBindGroup) group).group); }
+
+        @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
+            setVertexBuffer(encoder, slot, ((BrowserBuffer) buffer).buffer, (double) offset, (double) size);
+        }
+
+        @Override public void setIndexBuffer(fge.webgpu.Buffer buffer, IndexFormat format, long offset, long size) {
+            setIndexBuffer(encoder, ((BrowserBuffer) buffer).buffer, format == IndexFormat.UINT16 ? "uint16" : "uint32", (double) offset, (double) size);
+        }
+
+        @Override public void draw(int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
+            draw(encoder, vertexCount, instanceCount, firstVertex, firstInstance);
+        }
+
+        @Override public void drawIndexed(int indexCount, int instanceCount, int firstIndex, int baseVertex, int firstInstance) {
+            drawIndexed(encoder, indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        }
+
+        @Override public fge.webgpu.RenderBundle finish() { return new BrowserRenderBundle(finish(encoder)); }
+
+        @JSBody(params = {"e", "p"}, script = "e.setPipeline(p);")
+        private static native void setPipeline(org.teavm.jso.JSObject e, org.teavm.jso.JSObject p);
+
+        @JSBody(params = {"e", "i", "g"}, script = "e.setBindGroup(i, g);")
+        private static native void setBindGroup(org.teavm.jso.JSObject e, int i, org.teavm.jso.JSObject g);
+
+        @JSBody(params = {"e", "s", "b", "o", "n"}, script = "e.setVertexBuffer(s, b, o, n);")
+        private static native void setVertexBuffer(org.teavm.jso.JSObject e, int s, org.teavm.jso.JSObject b, double o, double n);
+
+        @JSBody(params = {"e", "b", "f", "o", "n"}, script = "e.setIndexBuffer(b, f, o, n);")
+        private static native void setIndexBuffer(org.teavm.jso.JSObject e, org.teavm.jso.JSObject b, String f, double o, double n);
+
+        @JSBody(params = {"e", "a", "b", "c", "d"}, script = "e.draw(a, b, c, d);")
+        private static native void draw(org.teavm.jso.JSObject e, int a, int b, int c, int d);
+
+        @JSBody(params = {"e", "a", "b", "c", "d", "f"}, script = "e.drawIndexed(a, b, c, d, f);")
+        private static native void drawIndexed(org.teavm.jso.JSObject e, int a, int b, int c, int d, int f);
+
+        @JSBody(params = {"e"}, script = "return e.finish();")
+        private static native org.teavm.jso.JSObject finish(org.teavm.jso.JSObject e);
     }
 
     static final class BrowserCommandEncoder implements fge.webgpu.CommandEncoder {

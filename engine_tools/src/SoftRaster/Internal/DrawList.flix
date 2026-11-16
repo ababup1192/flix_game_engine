@@ -11,7 +11,7 @@ pub mod SoftRaster.Internal.DrawList {
     use SoftRaster.Internal.Sprite.{drawDrawable, drawPolygon}
     use SoftRaster.Internal.Blend.{blendedDraw, drawableAabb, polygonAabb}
     use SoftRaster.Internal.Hdr.{blendedDrawHdr}
-    use SoftRaster.Internal.Surface.{drawSurface, drawSurfaceHdr}
+    use SoftRaster.Internal.Surface.{SurfaceMemo, drawSurface, drawSurfaceHdr}
     use SoftRaster.Internal.Gradient.{drawGradPolygon, drawGradPolygonHdr}
 
     /// 1 枚を描くのに要る物（描き先の形式によらない）。textures = sprite・ビルボード・材質が読む 8bit の絵（Rgba16Float の Pass は 0..1 に切った物）・
@@ -77,6 +77,17 @@ pub mod SoftRaster.Internal.DrawList {
         let sorted = tagged |> Sort.sortStableBy(zOf);
         { textures = textures, fonts = fctx, texEnv = texEnv, sceneTextures = sceneTextures, items = sorted }
 
+    /// シェーダー面の画素の控え（cache が無ければ控えない）。pathOf はファイルの絵として読んだ名前だけ、その絵のパスを返す。
+    // WhyNot: Pass の絵（extraImages）を読む面を控えない — Pass の画素はそのコマの命令で毎コマ描き直され、名前だけでは中身が決まらない。
+    def surfaceMemoOf(cache: Option[TextureCache], req: RasterReq, extraImages: Map[String, PassImage],
+                      texEnv: Map[String, ShaderEval.TexImage]): Option[SurfaceMemo] =
+        cache |> Option.map(c -> {
+            let TextureCache.TextureCache(_, _, _, _, table, seen) = c;
+            let fromPass = name -> Map.memberOf(name, extraImages) or Map.memberOf(texelsName(name), extraImages);
+            { table = table, seen = seen,
+              pathOf = name -> if (fromPass(name) or not Map.memberOf(name, texEnv)) None else Map.get(name, req#texturePath) }
+        })
+
     /// 面の tex / blur の読み先 name の絵。縮んだ Pass のテクセルの絵（texelsName）→ Pass の絵 → ファイルの絵の順に探す。
     def texImageOf(fileTextures: Map[String, BufferedImage], extraImages: Map[String, PassImage], name: String): Option[ShaderEval.TexImage] \ IO =
         let fromPass = Map.get(texelsName(name), extraImages) |> Option.withDefault(default = Map.get(name, extraImages));
@@ -90,7 +101,7 @@ pub mod SoftRaster.Internal.DrawList {
     def argbReadNames(req: RasterReq): Set[String] =
         let fromDrawables = req#drawables |> List.map(DrawCmd.textureOf);
         let fromBillboards = req#scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture));
-        let fromMaterials = req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf));
+        let fromMaterials = req#scenes |> List.flatMap(c -> Scene3d.instancesOf(c#scene) |> List.flatMap(Scene3d.textureNamesOf));
         let fromEnvironment = req#scenes |> List.flatMap(c -> Scene3d.environmentTextureNamesOf(c#scene));
         List.toSet(List.append(fromDrawables, List.append(fromBillboards, List.append(fromMaterials, fromEnvironment))))
 
@@ -114,6 +125,7 @@ pub mod SoftRaster.Internal.DrawList {
         let plan = planDraw(req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, cache);
         let textures = plan#textures;
         let fctx = plan#fonts;
+        let memo = surfaceMemoOf(cache, req, extraImages, plan#texEnv);
         let g: Graphics2D = image.createGraphics();
         applyQualityHints(g, hintsOf(req));
         // blend=Normal は従来どおり Graphics2D（SrcOver）で直接描く。Add / Multiply は
@@ -134,7 +146,7 @@ pub mod SoftRaster.Internal.DrawList {
                 else
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
-            case RItem.RSurf(s) => drawSurface(image, sf, plan#texEnv, texels, s)
+            case RItem.RSurf(s) => drawSurface(image, sf, plan#texEnv, texels, memo, s)
             case RItem.RScene(c) => SoftRaster3d.drawScene(image, sf, plan#sceneTextures, c#scene#time, c)
         }, plan#items);
         g.dispose()
