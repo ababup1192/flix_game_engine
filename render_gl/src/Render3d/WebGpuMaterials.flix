@@ -37,7 +37,7 @@ pub mod Render3d.WebGpuMaterials {
     import fge.webgpu.WebGpu
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
-    use Render3d.{ProgramKind, TextureSource, materialKey}
+    use Render3d.{MeshDraw, ProgramKind, TextureSlot, TextureSource, materialKey}
     use Render3d.MaterialValues
     use Render3d.ScenePlan.{MaterialRequest}
     use Render3d.SceneList.{SceneList, flagLightmap, flagNormalMap, flagSameBinding, hasFlag, headAt, kindMaterial, materialAt, readAt, rowAt, rowCountOf, valuesAt}
@@ -146,12 +146,10 @@ pub mod Render3d.WebGpuMaterials {
         Ref.put(Nil, s#groups);
         Array.put(0, 0, s#valuesUsed)
 
-    /// 画面のコマの終わりに、材質の絵を置き場の上限（GameEngine の既定）で捨てる。
-    // WhyNot: project.json の scene3dTextureBudgetMB・Count を読まない — WebGPU の描き手を作る所（WebGpuPaint）に config が届いていない。届けるのは engine の口に触れる時（持ち越し）。
-    pub def endFrame(m: Materials, gen: Int64): Unit \ IO =
+    /// 画面のコマの終わりに、材質の絵を置き場の上限 budget で捨て、捨てた鍵を返す。先に上げた絵 preloaded は捨てる順を後へ回す。
+    pub def endFrame(m: Materials, gen: Int64, budget: Render3d.Material.Budget, preloaded: Set[TextureSlot]): List[TextureSlot] \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        let budget = { count = GameEngine.defaultScene3dTextureBudgetCount(), size = Int32.toInt64(GameEngine.defaultScene3dTextureBudgetMB()) * 1048576i64 };
-        discard TextureTable3d.sweep(s#textures, destroyTexture(s#store), gen, budget, Set.empty())
+        fst(TextureTable3d.sweep(s#textures, destroyTexture(s#store), gen, budget, preloaded))
 
     // ── 材質の program ──
 
@@ -252,16 +250,39 @@ pub mod Render3d.WebGpuMaterials {
     type alias TextureUploads = { source = TextureSource, textureById = Int32 -> Option[Texture] \ IO, gen = Int64 }
 
     def uploadRowTextures(m: Materials, up: TextureUploads, list: SceneList, row: Int32, f: Scene3d.MaterialFields): Unit \ IO =
-        let normal = if (hasFlag(list, row, flagNormalMap())) f#normalMap |> Option.map(n -> (n#texture, Texture3d.TextureUse.NormalMap)) |> Option.toList else Nil;
-        let baked = if (hasFlag(list, row, flagLightmap()))
-                        Scene3d.lightmapOfFields(headAt(list, row)#fields) |> Option.map(lm -> (lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace))) |> Option.toList
+        let readsWith = (colorCount: Int32) -> textureReadsOf(f, colorCount, hasFlag(list, row, flagNormalMap()), hasFlag(list, row, flagLightmap()), headAt(list, row));
+        readsWith(rowAt(list, row, 10) - List.length(readsWith(0))) |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse))
+
+    /// 材質 f で頭の物 head を描く時に読む絵の (名前, 使い方)（並びは材質の絵 colorCount 枚 → 法線マップ → lightmap。行の reads と同じ）。
+    def textureReadsOf(f: Scene3d.MaterialFields, colorCount: Int32, normalMapped: Bool, lightmapped: Bool, head: MeshDraw): List[(String, Texture3d.TextureUse)] =
+        let normal = if (normalMapped) f#normalMap |> Option.map(n -> (n#texture, Texture3d.TextureUse.NormalMap)) |> Option.toList else Nil;
+        let baked = if (lightmapped)
+                        Scene3d.lightmapOfFields(head#fields) |> Option.map(lm -> (lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace))) |> Option.toList
                     else Nil;
-        let count = rowAt(list, row, 10) - List.length(normal) - List.length(baked);
-        let colors = ShaderDoc.materialTexReads(f#spec, f#emission, f#metallicRoughnessShade) |> List.take(count) |> List.map(nf -> (fst(nf), Texture3d.TextureUse.MaterialTexture));
-        List.flatten(colors :: normal :: baked :: Nil) |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse))
+        let colors = ShaderDoc.materialTexReads(f#spec, f#emission, f#metallicRoughnessShade) |> List.take(colorCount) |> List.map(nf -> (fst(nf), Texture3d.TextureUse.MaterialTexture));
+        List.flatten(colors :: normal :: baked :: Nil)
+
+    /// 先に上げる材質 request（頭の物 head・形の buffer mesh）の program を組み、mp の描き先の pipeline を作り、読む絵を作って、絵の置き場の鍵を返す
+    /// （描けない版と組めない材質は何もせず Nil・pipeline は形に要る頂点の属性（2 本目の uv・ジョイント）がある時だけ）。
+    /// source・textureById・gen は uploadTextures と同じ。初めての材質は noteBuild(名前) を呼び、source に無い "tex3d:" の絵は missing(名前) を呼ぶ。
+    pub def preloadMaterial(m: Materials, noteBuild: String -> Unit \ IO, missing: String -> Unit \ IO, mp: MaterialPass, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64,
+                            request: MaterialRequest, head: MeshDraw, mesh: Option[MeshBuffers]): List[TextureSlot] \ IO =
+        let (fields, kind) = request;
+        let program = if (isDrawable(kind)) programOf(m, noteBuild, fields, kind) else None;
+        program |> Option.toList |> List.flatMap(p -> {
+            mesh |> Option.filter(b -> (not p#kind#skinned or Option.nonEmpty(b#skinAt)) and (not p#kind#lightmap or Option.nonEmpty(b#uv2At)))
+                 |> Option.forEach(b -> discard pipelineOf(m, mp, p, b));
+            let reads = textureReadsOf(fields, p#texCount, p#kind#normalMap, p#kind#lightmap, head);
+            let up = { source = source, textureById = textureById, gen = gen };
+            reads |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse));
+            let found = reads |> List.map(match (name, textureUse) -> (name, TextureTable3d.readOf(false, source, name, textureUse) |> Option.map(fst)));
+            found |> List.forEach(match (name, slot) -> if (Option.isEmpty(slot) and String.startsWith(prefix = Texture3d.namePrefix(), name)) missing(name) else ());
+            found |> List.filterMap(snd)
+        })
 
     /// 絵 name を表の番号で作る。場面の絵は段つきで上げ、全体の登録の絵は 2D の描き手の texture を段 1 つのまま借りる（元の絵が作り直されたら借り直す）。
-    // WhyNot: 全体の登録の絵の段つきの写しを作らない — 2D の texture から段を作る道（読み戻すか GPU で縮める）が WebGPU にまだ無い。遠くの面は GL より細かくちらつく（持ち越し）。
+    // WhyNot: 全体の登録の絵の mip つきの写しを作らない — GPU で縮める道は、texture の mip のレベル 1 つを描き先にする view が WebGpu の interface に無い。
+    //   読み戻す道（copyTextureToBuffer と readBuffer）は答えが出るまで返らず、ブラウザでは requestAnimationFrame の中で使えない。遠くの面は GL より細かくちらつく（plans/engine-webgpu.md の 12.37）。
     def ensureTexture(m: Materials, up: TextureUploads, name: String, textureUse: Texture3d.TextureUse): Unit \ IO =
         let MaterialsData.MaterialsData(s) = m;
         let average = Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse));
@@ -273,6 +294,16 @@ pub mod Render3d.WebGpuMaterials {
                 discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "${t#texId}:${t#version}", handle -> borrowTexture(m, up, handle, t#texId))
             case _ => ()
         }
+
+    /// 場面の環境マップの絵 name を、材質の絵と同じ置き場と mip の作り方で作り（無ければ）、その絵と mip のレベルの数を返す。
+    /// 場面の textures に無い・作れない絵は None。
+    // WhyNot: 上下を返して読む全体の登録の絵（レンダーターゲット）を借りて貼る道を持たない — 環境マップの絵の名前は Scene3d.environmentMap が Texture3d から作る "tex3d:" の名前だけで、全体の登録の絵は来ない。
+    pub def ensureEnvironmentTexture(m: Materials, source: TextureSource, textureById: Int32 -> Option[Texture] \ IO, gen: Int64, name: String): Option[(Texture, Int32)] \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        ensureTexture(m, { source = source, textureById = textureById, gen = gen }, name, Texture3d.TextureUse.MaterialTexture);
+        TextureTable3d.readOf(false, source, name, Texture3d.TextureUse.MaterialTexture)
+            |> Option.flatMap(read -> Map.get(TextureTable3d.numberOf(s#textures, gen, fst(read)), Ref.get(s#store)))
+            |> Option.map(g -> (g#texture, g#levels))
 
     /// 2D の描き手の絵 texId を番号 handle で借りる（段 1 つ・置き場の大きさに数えない）。
     def borrowTexture(m: Materials, up: TextureUploads, handle: Int32, texId: Int32): Option[{ levels = Int32, bytes = Int64 }] \ IO =

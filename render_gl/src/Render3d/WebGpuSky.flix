@@ -35,7 +35,8 @@ mod Render3d.WebGpuSky {
         sky#fragmentModule.release()
 
     /// 場面 scene の空の向きの材料（Scene3d.skyBasisOf）と描き先の大きさ width・height を、R3dScene の末尾の uSkyForward・uSkyRight・uSkyUp の並び
-    /// （xyz に forward・right・up、w に幅・高さ・0）で buf へ詰める（位置は Render3dWgsl.skyValuesAt）。
+    /// （xyz に forward・right・up、w に幅・高さ・景色を背景に描くかのフラグ（Scene3d.backgroundEnvironmentOf が Some なら 1））で buf へ詰める（位置は Render3dWgsl.skyValuesAt）。
+    // WhyNot: 景色を背景に描くかを R3dScene の uEnvOn で見ない — uEnvOn は環境マップがあれば立ち（材質の映り込み）、sky と背景の景色が両方ある場面は空の坂を描く。
     // WhyNot: 空の無い場面で詰めるのを飛ばさない — buf は場面をまたいで使い回し、書く欄の組を場面ごとに変えない（WebGpuRenderer.packSceneValues と同じ決まり）。
     pub def packValues(buf: ByteBuffer, scene: Scene3d.Scene3dCmd, width: Int32, height: Int32): Unit \ IO =
         let at = Render3dWgsl.skyValuesAt();
@@ -45,16 +46,15 @@ mod Render3d.WebGpuSky {
         putVec3(buf, at + 16, basis#right);
         discard buf.putFloat(at + 28, Int32.toFloat32(height));
         putVec3(buf, at + 32, basis#up);
-        discard buf.putFloat(at + 44, 0.0f32)
+        discard buf.putFloat(at + 44, if (Option.isEmpty(Scene3d.backgroundEnvironmentOf(scene))) 0.0f32 else 1.0f32)
 
     def putVec3(buf: ByteBuffer, at: Int32, v: Vec3.Vec3): Unit \ IO =
         discard buf.putFloat(at, RenderUtil.f32(v#x));
         discard buf.putFloat(at + 4, RenderUtil.f32(v#y));
         discard buf.putFloat(at + 8, RenderUtil.f32(v#z))
 
-    /// 色の pass で空を描く場面か（sky がある場面）。
-    // WhyNot: Scene3d.drawnSkyOf で決めない — sky の無い場面でも景色を背景に描くと Some になるが、その場面の空は景色の絵で、環境マップの絵を上げる道がまだ無い。
-    pub def isDrawn(scene: Scene3d.Scene3dCmd): Bool = Option.nonEmpty(scene#sky)
+    /// 色の pass で空を描く場面か（sky がある場面と、sky が無く景色を背景に描く場面。GL の Render3d.drawSky と同じ Scene3d.drawnSkyOf）。
+    pub def isDrawn(scene: Scene3d.Scene3dCmd): Bool = Option.nonEmpty(Scene3d.drawnSkyOf(scene))
 
     /// 開いた pass p へ空を描く（group 0 は付いている前提・pipeline は付け替える）。形式 format・標本 samples は描き先の物。
     pub def draw(sky: Sky, p: RenderPass, format: RenderTarget.Format, samples: Int32): Unit \ IO =

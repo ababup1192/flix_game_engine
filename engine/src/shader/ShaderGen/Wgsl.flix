@@ -39,6 +39,7 @@ pub mod ShaderGen.Wgsl {
             valuesDecl(0, slots) ::
             textureDecls(0, reads) ::
             prelude() ::
+            powiSource() ::
             smoothstepSource() ::
             (if (ShaderDoc.usesBlur(spec)) blurSource() else "") ::
             (if (ShaderDoc.usesDiv(spec)) divSource() else "") ::
@@ -106,6 +107,7 @@ pub mod ShaderGen.Wgsl {
         { declarations = valuesDecl(group, slots) + textureDecls(group, reads),
           functions = joinParts(
               prelude() ::
+              powiSource() ::
               smoothstepSource() ::
               (if (readsTextures) blurSource() + texMipSource() else "") ::
               divSource() ::
@@ -317,6 +319,15 @@ pub mod ShaderGen.Wgsl {
         "    let noMip = levels <= 1.0 || rho <= 1.0;\n" +
         "    let lod = select(0.0, min(levels - 1.0, log2(rho)), !noMip);\n" +
         "    return textureSampleLevel(tex, smp, c, lod);\n" +
+        "}\n"
+
+    /// 整数の指数の積。b を左から 1 回ずつ n − 1 回掛ける（GLSL の入れ子の積と同じ順）。
+    // WhyNot: prelude に置かない — prelude は GLSL の preludeSource と数のリテラルを 1 つずつ突き合わせる（TestWgslPairs）。GLSL に対の関数は無い。
+    def powiSource(): String =
+        "fn sg_powi(b: f32, n: i32) -> f32 {\n" +
+        "    var r = b;\n" +
+        "    for (var i = 1; i < n; i++) { r = r * b; }\n" +
+        "    return r;\n" +
         "}\n"
 
     /// 割り算（ShaderGen.divSource と同じ）。

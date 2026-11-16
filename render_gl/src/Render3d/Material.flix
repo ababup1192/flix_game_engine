@@ -424,7 +424,7 @@ mod Render3d.Material {
         let preloaded = Ref.get(state#preloadRef)#textures;
         let budget = { count = state#textureCountBudget, size = state#textureByteBudget };
         let (victims, over) = TextureTable3d.sweep(state#textures3d, destroyTexture(gl, state), gen, budget, preloaded);
-        warnDroppedTextures(state, victims, preloaded);
+        warnDroppedTextures(state#planner, victims, preloaded);
         // WhyNot: 捨てる物を選べたかで知らせを決めない — 今と前のコマで使う物だけで超えている時は、捨てる物が無くても超えたまま。
         if (over)
             warnSceneOnce(state, "@budget", "scene3d: 場面の絵（Texture3d と材質の段つきの写し）が ${state#textureCountBudget} 枚か"

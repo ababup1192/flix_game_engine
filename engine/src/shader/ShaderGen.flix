@@ -1159,11 +1159,11 @@ pub mod ShaderGen {
             case ShaderDoc.Field.Pow(pw) =>
                 // 整数指数は pow() でなく反復積の文字列にして CPU 側の反復積と構造を合わせる
                 // （GPU/CPU で丸め順が揃いパリティが強くなる）。負の底の非整数乗は NaN なので 0 で下切り。
-                if (pw#p < 0.0) negPowExpr(fieldExpr(pw#of, uv, env, tex), pw#p)
+                if (pw#p < 0.0) negPowExpr(fieldExpr(pw#of, uv, env, tex), pw#p, tex)
                 else {
                     let base = "max(0.0, " + fieldExpr(pw#of, uv, env, tex) + ")";
                     if (Float64.floor(pw#p) == pw#p)
-                        powProduct(base, Float64.floor(pw#p))
+                        powProductFor(tex, base, Float64.floor(pw#p))
                     else
                         "pow(max(0.0, (" + fieldExpr(pw#of, uv, env, tex) + ")), " + f(pw#p) + ")"
                 }
@@ -1308,11 +1308,19 @@ pub mod ShaderGen {
     def snapCells(c: Float64): Float64 = Float64.max(1.0, c)
 
     /// 負の指数の pow（ShaderEval.negPow と同じ下切り・上切り・掛け順）。
-    def negPowExpr(x: String, p: Float64): String =
+    def negPowExpr(x: String, p: Float64, tex: Map[String, Int32]): String =
         let base = "max(" + f(ShaderDoc.negPowFloor()) + ", " + x + ")";
-        let raw = if (Float64.floor(p) == p) "(1.0 / " + powProduct(base, Float64.floor(-p)) + ")"
+        let raw = if (Float64.floor(p) == p) "(1.0 / " + powProductFor(tex, base, Float64.floor(-p)) + ")"
                   else "pow(" + base + ", " + f(p) + ")";
         "min(" + f(ShaderDoc.negPowCeil()) + ", " + raw + ")"
+
+    /// base を n 回掛けた式（powProduct と同じ値・同じ掛け順）。WGSL の 2 回以上は ShaderGen.Wgsl の sg_powi を呼ぶ。
+    // WhyNot: WGSL でも積を入れ子の括弧で書かない — 指数 180 の式は括弧が 179 重になり、Tint の構文解析の深さの上限（maximum parser recursive depth）で組めない。
+    //   sg_powi は左から 1 回ずつ掛ける輪で、入れ子の積と同じ順に丸める。
+    def powProductFor(tex: Map[String, Int32], base: String, n: Float64): String =
+        let k = Int32.max(0, Float64.tryToInt32(n) |> Option.getWithDefault(0));
+        if (isWgsl(tex) and k >= 2) "sg_powi(" + base + ", " + iLit(k) + ")"
+        else powProduct(base, n)
 
     /// base を n 回掛けた GLSL 積の文字列（n=0 は 1.0・n=1 は base そのもの）。
     /// CPU 側の反復積と同じ左結合の並びにする。

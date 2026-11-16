@@ -9,7 +9,11 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
     import fge.webgpu.ShaderStage
     import fge.webgpu.TextureSampleType
     import fge.webgpu.WebGpu
-    use Render3d.WebGpuRenderer.{Dest, Host, Prepared, RendererData, afterSubmit, createInstanceBuffer, createPoseBuffer, notePasted, packPoses, prepare, sendPoses}
+    import java.io.ByteArrayOutputStream
+    import java.io.PrintStream
+    import java.lang.RuntimeException
+    import java.lang.System
+    use Render3d.WebGpuRenderer.{Dest, Host, Prepared, RendererData, afterSubmit, createInstanceBuffer, createPoseBuffer, endFrameWithin, ensureEnvironment, notePasted, packPoses, prepare, sendPoses}
 
     def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
 
@@ -195,6 +199,151 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         layout.release();
         let (f, p, g) = found;
         (f, p, g, errors)
+
+    // ── 先に上げる物（withPreload3d）──
+
+    /// 先に上げる物の宣言: 絵つきの材質の三角と、頂点の色の三角（key = "k"）。絵は場面の textures に載せる 4 × 4。
+    def preloadCmd(key: String): Scene3d.PreloadCmd =
+        let tex = match Texture3d.fromArgb(4, 4, Vector.range(0, 16) |> Vector.map(i -> if (Int32.remainder(i, 2) == 0) -1 else -16777216)) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        };
+        let textured = Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, Render3d.FakeGl.plainTriangle()), Mat4.identity())
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Linear));
+        let plain = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.identity());
+        { key = key, instances = () -> textured :: plain :: Nil, textures = () -> tex :: Nil }
+
+    /// 宣言を上げると、形 2 つ・材質の絵 1 枚（mip のレベル 3 つ）が置き場に載って控えに残り、submit は頼まない。
+    /// 同じ key の 2 回目は何もしない。上げた形と絵は、使わないコマが続いても endFrame の上限の内なら残る。
+    @Test
+    def testPreloadUploadsOnceAndKeepsWhatItUploaded(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let found = preloadedCounts(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = (2, 1, 3, 0, 2, 0, 0), found)
+        }
+
+    /// (形の数, 控えた絵の鍵の数, 絵の mip のレベルの数, submit の数, 2 回目の後の形の数, 2 回目の後の submit の数, Dawn の誤りの数)。
+    /// 2 回目の前に endFrame を 200 回呼ぶ（使わない形と絵が古くなる）。
+    def preloadedCounts(gpu: WebGpu): (Int32, Int32, Int32, Int32, Int32, Int32, Int32) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
+        let RendererData.RendererData(s) = renderer;
+        let encoder = gpu.createCommandEncoder("test");
+        let flushes = Ref.fresh(Static, 0);
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> Ref.put(Ref.get(flushes) + 1, flushes), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        let meshes = Map.size(Render3d.MeshTable.createdOf(s#meshes));
+        let slots = Ref.get(s#preloaded)#textures |> Set.size;
+        let levels = Render3d.TextureTable3d.createdOf(Render3d.WebGpuMaterials.texturesOf(s#materials)) |> Map.toList |> List.map(kv -> { let (_, (_, c, _)) = kv; c#levels }) |> List.sum;
+        let firstFlushes = Ref.get(flushes);
+        List.range(0, 200) |> List.forEach(_ -> Render3d.WebGpuRenderer.endFrame(renderer));
+        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        let kept = Map.size(Render3d.MeshTable.createdOf(s#meshes));
+        discard encoder.finish();
+        let errors = gpu.errorCount();
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        (meshes, slots, levels, firstFlushes, kept, Ref.get(flushes), errors)
+
+    /// 上限を超えた endFrame は、先に上げた形と絵より、後で使った先に上げていない形と絵を先に捨てる（使った世代は先に上げた物の方が古い）。
+    /// 上限は先に上げた形 2 つ（頂点 6）と絵 1 枚がちょうど入る大きさ。
+    @Test
+    def testEndFrameDropsWhatWasNotPreloadedFirst(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let found = keptAfterOverBudget(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = (2, 1, 0, false), found)
+        }
+
+    /// (上限を超えた endFrame の後の形の数, 絵の数, Dawn の誤りの数, 先に上げた物を捨てた知らせが出たか)。先に上げていない形（四角）と絵（2 × 2）を 1 コマ後に足す。
+    def keptAfterOverBudget(gpu: WebGpu): (Int32, Int32, Int32, Bool) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
+        let RendererData.RendererData(s) = renderer;
+        let host = quietHost(gpu);
+        Render3d.WebGpuRenderer.preload(renderer, host, preloadCmd("k"));
+        Render3d.WebGpuRenderer.endFrame(renderer);
+        let later = Array.get(0, s#gen);
+        let quad = Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 1.0) :: Vec3.v3(0.0, 1.0, 1.0) :: Vec3.v3(1.0, 1.0, 1.0) :: Vec3.v3(1.0, 0.0, 1.0) :: Nil, color = Color.rgb(1.0, 1.0, 1.0) } :: Nil);
+        discard Render3d.MeshTable.ensure(s#meshes, Render3d.WebGpuRows.meshAllocator(gpu, s#meshStore), later, quad);
+        let small = match Texture3d.fromArgb(2, 2, Vector#{-1, -1, -1, -1}) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        };
+        discard Render3d.WebGpuMaterials.ensureEnvironmentTexture(s#materials, { textureOf = _ -> checked_ecast(None), own = Map#{Texture3d.name(small) => small} },
+                                                                   _ -> checked_ecast(None), later, Texture3d.name(small));
+        List.range(0, 3) |> List.forEach(_ -> Render3d.WebGpuRenderer.endFrame(renderer));
+        let said = stderrOf(() -> endFrameWithin(renderer, { vertices = 6, textures = { count = 1, size = 1048576i64 } }));
+        let found = (Map.size(Render3d.MeshTable.createdOf(s#meshes)), Map.size(Render3d.TextureTable3d.createdOf(Render3d.WebGpuMaterials.texturesOf(s#materials))),
+                     gpu.errorCount(), String.contains(substr = "先に上げた", said));
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        found
+
+    /// f を流す間に標準エラーへ出た字（知らせを数える・テストの走り手は標準エラーに出たテストを落とす）。
+    def stderrOf(f: Unit -> Unit \ IO): String \ IO =
+        let saved = System.err;
+        let buffer = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(buffer, true, "UTF-8"));
+        let failure = try { f(); None } catch { case ex: RuntimeException => Some(ex) };
+        System.setErr(saved);
+        failure |> Option.forEach(ex -> throw ex);
+        buffer.toString("UTF-8")
+
+    def quietHost(gpu: WebGpu): Host \ IO =
+        let encoder = gpu.createCommandEncoder("test");
+        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) }
+
+    /// 環境マップの絵が場面の textures に無い場面は、代わりの絵を mip のレベル 1 つで読む（GL の bindEnvironmentMap と同じ）。環境マップの無い場面は None。
+    @Test
+    def testMissingEnvironmentTextureReadsTheBlankImage(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let found = missingEnvironment(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = (Some(1), true, None, true), found)
+        }
+
+    /// (絵の無い環境マップの mip のレベルの数, 読む絵が代わりの絵（1 × 1・宣言した絵は 2 × 2）か, 環境マップの無い場面の答えのレベルの数, 見つからない知らせが出たか)。
+    def missingEnvironment(gpu: WebGpu): (Option[Int32], Bool, Option[Int32], Bool) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
+        let host = quietHost(gpu);
+        let tex = match Texture3d.fromArgb(2, 2, Vector#{-1, -1, -1, -1}) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        };
+        let source = { textureOf = host#textureOf, own = Map.empty() };
+        let base = scene()#scene;
+        let missing = Ref.fresh(Static, None);
+        let said = stderrOf(() -> Ref.put(ensureEnvironment(renderer, host, source, 1i64, { environmentMap = Some(Scene3d.environmentMap(tex)) | base }), missing));
+        let none = ensureEnvironment(renderer, host, source, 1i64, base);
+        let found = (Option.map(snd, Ref.get(missing)), Option.exists(e -> fst(e).width() == 1, Ref.get(missing)), Option.map(snd, none),
+                     String.contains(substr = "環境マップの絵 '${Texture3d.name(tex)}' が見つからない", said));
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        found
 
     /// ビルボードの pipeline（stride 0 の頂点の buffer・group 0 の場面と group 1 の 2D の絵の layout）を、画面の形式の標本 1 と 4 で Dawn が誤り無しに作る。
     @Test

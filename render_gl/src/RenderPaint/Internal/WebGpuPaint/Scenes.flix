@@ -19,6 +19,11 @@ pub mod RenderPaint.Internal.WebGpuPaint.Scenes {
                                         { key = stencilKey, format = format, samples = samples, viewport = viewportOf(paint, pass), height = pass#height },
                                         scenes)
 
+    /// 先に上げる物の宣言 cmd（withPreload3d）の形と絵と材質を 3D の描き手に上げさせる（前と同じ key なら何もしない）。
+    pub def preload(paint: Paint, cmd: Scene3d.PreloadCmd): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        Render3d.WebGpuRenderer.preload(p#scenes3d, hostOf(paint), cmd)
+
     /// 先に描いた場面 1 つ（prepare の答え）を、場面の矩形の scissor で貼り、その描き先の値を今の encoder の中で使い中と控える
     /// （描く物の無い場面は何もしない）。
     pub def paste(paint: Paint, target: (RenderTarget.Format, Int32), scene: Option[Render3d.WebGpuRenderer.Paste],
