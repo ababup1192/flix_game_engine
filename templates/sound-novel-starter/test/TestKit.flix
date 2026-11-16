@@ -29,9 +29,30 @@ mod TestKit {
     pub def tickClocks(res: Res.Res, dt: Float64, w: World.World): World.World =
         App.tickClocks(app(res, w), dt, Resources.of(res, w))#world
 
-    /// 系を直に呼ぶ 1 歩: 実機と同じく、先に物語の時計を dt 秒ぶん進めてから WorldRead.step。
-    pub def stepBy(res: Res.Res, dt: Float64, w: World.World): World.World =
+    /// 何も押していないフレーム（design の大きさ・マウスは画面の外）。
+    pub def idleFrame(dt: Float64): App.Frame =
+        { dt = dt, viewport = Layout.size(Layout.Fit.Regular), cursor = { x = -1.0, y = -1.0 } | App.emptyFrame() }
+
+    /// App の道の 1 フレーム: 実機と同じ App.advanceFrame（実時間と物語の時計を進め、Controls.step → Controls.interact）。
+    /// 実時間の時計は World の realNow から続ける。
+    // WhyNot: フレームをまたいで StepState を持ち回さない — このゲームは withFixedStep を使わず、持ち越す秒と取り置く押しが
+    //   いつも空なので、呼ぶ側が持ち回す物を増やすだけになる（持ち越す物は実時間の時計だけで、それは World の realNow にある）。
+    pub def frameBy(res: Res.Res, frame: App.Frame, w: World.World): World.World =
+        let state = { real = Clock.startAt(Clock.secondsOf(w#realNow)) | App.freshStepState() };
+        fst(App.advanceFrame(app(res, w), frame, state, Resources.of(res, w)))#world
+
+    /// 何も押さずに dt 秒進める 1 フレーム（App の道）。
+    pub def stepBy(res: Res.Res, dt: Float64, w: World.World): World.World = frameBy(res, idleFrame(dt), w)
+
+    /// 規則だけの 1 歩（物語の時計を進めてから WorldRead.step。Controls と入力の解釈は通らない）。
+    // WhyNot: 素材を諦める所を App の道で流さない — Controls.step が諦めた素材を stderr に 1 行言い、stderr に出たテストは落ちる。
+    pub def ruleStepBy(res: Res.Res, dt: Float64, w: World.World): World.World =
         quiet(() -> WorldRead.step(res, dt, tickClocks(res, dt, w)))
+
+    /// stepBy と、そのフレームで規則が出した出来事（古い順）。
+    pub def stepHearing(res: Res.Res, dt: Float64, w: World.World): (World.World, List[World.Event]) =
+        let next = stepBy(res, dt, w);
+        (next, Emit.since(w#events, next#events))
 
     /// 規則が出す返事の出来事（Emit）を捨てて World だけを見る。
     pub def quiet(f: Unit -> World.World \ Emit[World.Event]): World.World = fst(Emit.collect(f))
@@ -54,7 +75,7 @@ mod TestKit {
     /// readUntil と同じ読み方で、途中で規則が出した出来事（返事・<<audio se>>）も古い順に返す。
     pub def readHearing(res: Res.Res, until: World.World -> Bool, picks: List[Int32], w: World.World): (World.World, List[World.Event]) =
         let heard = (f: Unit -> World.World \ Emit[World.Event]) -> Emit.collect(f);
-        let tick = (cur: World.World) -> heard(() -> WorldRead.step(res, 30.0, tickClocks(res, 30.0, cur)));
+        let tick = (cur: World.World) -> stepHearing(res, 30.0, cur);
         def go(fuel: Int32, rest: List[Int32], cur: World.World, acc: List[World.Event]): (World.World, List[World.Event]) =
             if (fuel <= 0 or until(cur) or not World.isReading(cur)) (cur, acc)
             else {
@@ -90,8 +111,5 @@ mod TestKit {
     /// 2 つの数がほぼ等しいか（足し算の丸めの差を見ない）。
     pub def near(a: Float64, b: Float64): Bool = Float64.abs(a - b) < 0.000001
 
-    pub def isWaiting(w: World.World): Bool = match World.readOf(w) |> Option.map(r -> if (Option.nonEmpty(r#pause)) YarnRunner.Shown.Waiting else YarnRunner.shownOf(r#talk)) {
-        case Some(YarnRunner.Shown.Waiting) => true
-        case _                              => false
-    }
+    pub def isWaiting(w: World.World): Bool = WorldRead.isWaiting(w)
 }

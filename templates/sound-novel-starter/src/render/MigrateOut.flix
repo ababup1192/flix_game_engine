@@ -90,31 +90,54 @@ mod MigrateOut {
         Json.JArray(sources |> List.map(match (file, line) -> Json.JObject(Map#{ "file" => Json.JString(file), "line" => TapeJson.intJson(line) })) |> List.toVector)
 
     /// 出来事ごとに、それより後ろで最初に出来事が出たフレーム（無ければ None）。台詞を出し終えたコマはその 1 つ前のフレーム。
-    def nextFramesOf(executed: List[(Int32, World.Executed)]): List[(Int32, World.Executed, Option[Int32])] =
+    /// 台本の順より後に記録された命令（behindOf）は、前の出来事の「次」に数えない。
+    def nextFramesOf(executed: List[(Int32, World.Executed)]): List[Row] =
+        let flagged = List.zip(executed, behindOf(executed));
         let (out, _) = List.foldRight((one, acc) -> {
             let (rows, right) = acc;
-            let (f, x) = one;
+            let ((f, x), behind) = one;
             let later = match right {
                 case Some((rf, rLater)) => if (rf > f) Some(rf) else rLater
                 case None               => None
             };
-            ((f, x, later) :: rows, Some((f, later)))
-        }, (Nil, None), executed);
+            ({ frame = f, executed = x, later = later, behind = behind } :: rows, if (behind) right else Some((f, later)))
+        }, (Nil, None), flagged);
         out
 
-    /// 持ち回す物: 出来事の JSON（新しい順）・コマの予定（新しい順）・ノードの訪問ごとの台詞の数と時間を取る命令の数・残りの選んだ所。
+    /// 記録の 1 行: 出来事を記録したフレーム・出来事・次の出来事のフレーム・台本の順より後に記録された命令か（behindOf）。
+    type alias Row = { frame = Int32, executed = World.Executed, later = Option[Int32], behind = Bool }
+
+    /// 出来事ごとに、台本の順より後に記録された命令か: 同じノードの同じ訪問で、もう記録した台詞より上の行の命令
+    /// （台詞を続いた LineWait の最初の頭で先に積み、その前の命令を後から当てた時）。
+    def behindOf(executed: List[(Int32, World.Executed)]): List[Bool] =
+        let step = (acc, one) -> {
+            let (said, flags) = acc;
+            let (_, x) = one;
+            match x {
+                case World.Executed.Said((node, visit, line), _, _) => (Map.insert((node, visit), line, said), false :: flags)
+                case World.Executed.Commanded((node, visit, line), _, _, _, _) =>
+                    (said, Map.get((node, visit), said) |> Option.exists(s -> line < s) :: flags)
+                case World.Executed.Offered(_, _) => (said, false :: flags)
+            }
+        };
+        List.reverse(snd(List.foldLeft(step, (Map.empty(), Nil), executed)))
+
+    /// 持ち回す物: 出来事の JSON（新しい順）・コマの予定（新しい順）・ノードの訪問ごとの台詞の数と時間を取る命令の数・残りの選んだ所・
+    /// 最後の台詞より前の時間を取る命令の数（stepsBefore。台本の順より後に記録された命令が続きから数える）。
     type alias Walk = { events = List[Json], shots = List[Shot], lines = Map[(String, Int32), Int32], steps = Map[(String, Int32), Int32],
-                        picks = List[TapeOut.Choice] }
+                        picks = List[TapeOut.Choice], stepsBefore = Map[(String, Int32), Int32] }
 
     /// events の欄と、書き出すコマの予定。probes = 台詞ごとに載せる問い（probeRowsOf）。
     pub def recordOf(fps: Float64, probes: List[ProbeRow], frames: List[Flow.Played[AppState]]): Record =
         let worlds = frames |> List.map(played -> played#step#after) |> List.toVector;
-        let start = { events = Nil, shots = Nil, lines = Map.empty(), steps = Map.empty(), picks = TapeOut.choicesOf(frames) };
+        let start = { events = Nil, shots = Nil, lines = Map.empty(), steps = Map.empty(), picks = TapeOut.choicesOf(frames), stepsBefore = Map.empty() };
         let walked = nextFramesOf(executedOf(frames)) |> List.foldLeft((walk, row) -> stepOf(fps, probes, worlds, row, walk), start);
         { events = List.reverse(walked#events), shots = List.reverse(walked#shots) }
 
-    def stepOf(fps: Float64, probes: List[ProbeRow], worlds: Vector[AppState], row: (Int32, World.Executed, Option[Int32]), walk: Walk): Walk =
-        let (f, x, later) = row;
+    def stepOf(fps: Float64, probes: List[ProbeRow], worlds: Vector[AppState], row: Row, walk: Walk): Walk =
+        let f = row#frame;
+        let later = row#later;
+        let x = row#executed;
         let t = TapeJson.secondsAt(fps, f);
         match x {
             case World.Executed.Said((node, visit, _), who, text) =>
@@ -130,7 +153,8 @@ mod MigrateOut {
                     { frame = done, node = node, seq = seq, mid = None, layer = Layer.WorldLayer } ::
                     { frame = done, node = node, seq = seq, mid = None, layer = Layer.AllLayers } :: Nil) |> Option.getWithDefault(Nil);
                 { events = event :: walk#events, shots = List.append(List.reverse(shots), walk#shots),
-                  lines = Map.insert(key, seq + 1, walk#lines), steps = Map.insert(key, 0, walk#steps) | walk }
+                  lines = Map.insert(key, seq + 1, walk#lines), steps = Map.insert(key, 0, walk#steps),
+                  stepsBefore = Map.insert(key, Map.getWithDefault(key, 0, walk#steps), walk#stepsBefore) | walk }
             case World.Executed.Offered((node, visit, line), options) =>
                 let seq = Map.getWithDefault((node, visit), 0, walk#lines);
                 let (picked, rest) = pickOf(node, line, List.length(options), walk#picks);
@@ -140,12 +164,15 @@ mod MigrateOut {
                 { events = Json.JObject(fields) :: walk#events, picks = rest | walk }
             case World.Executed.Commanded((node, visit, _), name, args, timed, seconds) =>
                 let key = (node, visit);
-                let seq = Map.getWithDefault(key, 0, walk#lines);
+                let behind = row#behind;
+                let seq = Map.getWithDefault(key, 0, walk#lines) - (if (behind) 1 else 0);
                 let waited = if (name == "wait") List.head(args) |> Option.flatMap(Float64.fromString) else None;
                 let events = waited |> Option.map(s -> Json.JObject(Map#{ "t" => TapeJson.numJson(t), "node" => Json.JString(node), "kind" => Json.JString("wait"),
                                                                           "seq" => TapeJson.intJson(seq), "seconds" => TapeJson.numJson(s) }) :: walk#events)
                     |> Option.getWithDefault(walk#events);
-                if (timed) midsOf(worlds, f, key, name, seq, seconds, { events = events | walk }) else { events = events | walk }
+                if (timed and behind) midsBehind(worlds, f, key, name, seq, seconds, { events = events | walk })
+                else if (timed) midsOf(worlds, f, key, name, seq, seconds, { events = events | walk })
+                else { events = events | walk }
         }
 
     /// 時間を取る命令 1 つ: その台詞の後の時間を取る命令の数を 1 つ進め、秒が分かれば途中のコマ（midPoints の所・world の層だけ）を予定に足す。
@@ -156,6 +183,13 @@ mod MigrateOut {
             { frame = j, node = fst(key), seq = seq - 1, mid = Some({ cmd = name, step = step, at = share, seconds = s }), layer = Layer.WorldLayer })))
             |> Option.getWithDefault(Nil);
         { shots = List.append(List.reverse(mids), walk#shots), steps = Map.insert(key, step + 1, walk#steps) | walk }
+
+    /// 台本の順より後に記録された時間を取る命令: 先に積んだ台詞の前の命令として、その前の命令の数の続きから数える。
+    def midsBehind(worlds: Vector[AppState], f: Int32, key: (String, Int32), name: String, seq: Int32, seconds: Option[Float64], walk: Walk): Walk =
+        let steps = walk#steps;
+        let before = Map.getWithDefault(key, 0, walk#stepsBefore);
+        let counted = midsOf(worlds, f, key, name, seq, seconds, { steps = Map.insert(key, before, steps) | walk });
+        { steps = steps, stepsBefore = Map.insert(key, before + 1, walk#stepsBefore) | counted }
 
     /// 選択肢 2 つ以上を選んだ所を、出た順に 1 つずつ当てる（同じノードの、最初の選択肢が同じ行の物だけ）。選ばずに終わった選択肢は None。
     // WhyNot: 選択肢の字で当てない — 出来事の字は台本の字、選んだ所の字は画面の字（novel.story.json の replace を当てた後）で、鍵の字が入ると合わない。

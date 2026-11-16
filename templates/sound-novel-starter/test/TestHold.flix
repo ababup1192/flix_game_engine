@@ -127,7 +127,7 @@ mod TestHold {
         let desk = texture(res, "desk_room");
         let held = missingOf(desk :: Nil, res);
         let almost = stepBy(held, kind(res)#holdGiveUpSeconds - 1.0, waitingForLetter(res));
-        let w = stepBy(held, 1.01, almost);
+        let w = TestKit.ruleStepBy(held, 1.01, almost);
         Assert.assertEq(expected = (Some(World.HoldPhase.Waiting), Some(World.HoldPhase.FadingIn), Some("desk_room"), true),
                         (World.holdPhaseOf(almost), World.holdPhaseOf(w), photoOf(w), Set.memberOf(desk, gaveUpOf(w))))
 
@@ -136,7 +136,7 @@ mod TestHold {
         // 諦めた写真は、黒から戻した後も待ち直さない（届かないまま読み進める）。
         let res = TestKit.res();
         let held = missingOf(texture(res, "desk_room") :: Nil, res);
-        let w = stepBy(held, kind(res)#holdGiveUpSeconds + 0.01, waitingForLetter(res))
+        let w = TestKit.ruleStepBy(held, kind(res)#holdGiveUpSeconds + 0.01, waitingForLetter(res))
             |> stepBy(held, kind(res)#holdFadeSeconds + 0.01) |> stepBy(held, 1.0 / 60.0);
         Assert.assertEq(expected = false, World.isHolding(w))
 

@@ -24,4 +24,9 @@ mod GameCommands {
     /// None なら台本の transition と time= でテンプレートが重ねる。ゲームの素材がまだ届いていない時も None（2D で替わる）。
     /// Silent の当て直しとスキップ中（ctx#instant）は呼ばれない。
     pub def backdropSwitch(_ctx: Commands.Ctx, _prev: Option[Stage.Shot], _to: Stage.Shot, _switch: Stage.Switch): Option[Stage.GameSwitch] = None
+
+    /// 台詞を 1 行積むたびに舞台を動かす口（頁ごとに沈む人物・台詞の数で替わる HUD など）。選択肢は数えない。
+    /// ロード・戻る・始まりの場面の当て直しでも同じ順に呼ばれる（数える値は Stage の props に game. の鍵で書けば、セーブにもそのまま残る）。
+    /// 数え直す所（<<scene>> など）は、そのゲームの命令が同じ鍵を 0 にする。
+    pub def onLine(_ctx: Commands.Ctx, stage: Stage.Stage): Stage.Stage = stage
 }

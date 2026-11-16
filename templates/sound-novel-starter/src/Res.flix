@@ -14,7 +14,8 @@ mod Res {
     /// scriptEdits = 始まりの引数（edit.<行>）で当てたシナリオの直し（ふだんは空）・
     /// commandArgs = シナリオのコマンドを表で読んだ結果・nodesBySource = .yarn の「ファイル:行」→ その行を持つノード
     /// （どちらも dialogue と一緒に作り直す。withDialogue）・game = このゲームだけの描く元（GameRes。テンプレートは中身を見ない）・
-    /// commands = 読み進める時に当てる命令の表（テンプレートの Commands.all とゲームの GameCommands.all。テストが命令を差す）。
+    /// commands = 読み進める時に当てる命令の表（テンプレートの Commands.all とゲームの GameCommands.all。テストが命令を差す）・
+    /// onLine = 台詞を 1 行積むたびに舞台を動かす口（GameCommands.onLine。テストが差す）。
     pub type alias Res = {
         story = StoryDoc.Doc,
         kind = KindDoc.Doc,
@@ -37,7 +38,8 @@ mod Res {
         missing = Set[String],
         scriptEdits = ScriptEdits.Applied,
         game = GameRes.Data,
-        commands = Commands.Table
+        commands = Commands.Table,
+        onLine = Commands.LineHook
     }
 
     // ── Doc の差し替え（保存即反映。Controls.docTable の reload） ──

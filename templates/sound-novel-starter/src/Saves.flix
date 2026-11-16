@@ -50,11 +50,20 @@ mod Saves {
     /// entry = そのノードに入る直前の舞台と頁（当て直しの始まり）。page と entry は、それを書く前のセーブから読んだ枠では None
     /// （頁は当て直しで作った物を使い、当て直しは stage と空の頁から始める）。
     /// 戻す時は entry からブックマークを当て直してバックログを作り、舞台と頁はこの値で置き換える（WorldRead.restore）。
+    /// stageForm = stage が舞台の全部か、version 2 の欄（背景・環境音・粒・mode・cast）だけから作った物か。
     pub type alias Mark = {
         bookmark = YarnRunner.Bookmark,
         stage = Stage.Snapshot,
         page = Option[Page.Page],
-        entry = Option[NodeStart]
+        entry = Option[NodeStart],
+        stageForm = StageForm
+    }
+
+    /// 戻れる所の舞台の形。Whole = 舞台の全部（version 3 から）、Partial = version 2 の欄だけから作った物
+    /// （ノードの頭の <<scene>> で出した人物や game. の鍵を持たない）。
+    pub enum StageForm with Eq, ToString {
+        case Whole
+        case Partial
     }
 
     /// ノードに入る直前の舞台と頁（頁は文字送りを出し終えた形）。
@@ -295,7 +304,8 @@ mod Saves {
                 bookmark <- Map.get("bookmark", obj) |> Option.flatMap(YarnRunner.bookmarkFromJson)
             ) yield {
                 { mark = { bookmark = bookmark, stage = stageOf(obj), page = Map.get("page", obj) |> Option.flatMap(Page.fromJson),
-                           entry = Map.get("entry", obj) |> Option.flatMap(nodeStartIn) },
+                           entry = Map.get("entry", obj) |> Option.flatMap(nodeStartIn),
+                           stageForm = if (Map.memberOf("stage", obj)) StageForm.Whole else StageForm.Partial },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),
                   savedAt = Float64.tryToInt64(JsonCodec.floatOr("savedAt", 0.0, obj)) |> Option.getWithDefault(0i64),

@@ -120,7 +120,7 @@ mod ViewText {
 
     /// 送りの印（行を出し終えて、送れる時だけ明滅する。コマンドが出した待ちの間とゲートの頁は送れないので出さない）。オートの間は点けたまま（押さなくても進むと分かる）。
     def waitMark(atlas: FontAtlas, pos: Vec2.Vec2, env: Env, r: World.Read): List[Render.PlacedItem] =
-        if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current) or Option.nonEmpty(r#pause) or Option.nonEmpty(WorldRead.gateOf(r))) Nil
+        if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current) or NovelBeat.isHolding(r#beat#waiting) or Option.nonEmpty(WorldRead.gateOf(r))) Nil
         else {
             let alpha = if (r#playback == World.Playback.Auto) 0.9 else 0.35 + 0.55 * (0.5 + 0.5 * Num.sin(View.realSeconds(env) * 4.0));
             { at = pos, item = Render.textTinted("▼", atlas, 14.0, View.theme(env)#accent, View.zText() + 2) |> Render.fade(alpha) } :: Nil

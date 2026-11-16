@@ -529,4 +529,17 @@ mod TestCast {
             Map.valuesOf(slots) |> List.map(slot -> inside(fit, slot))
         });
         Assert.assertEq(expected = List.map(_ -> true, checks), checks)
+
+    @Test
+    def testAPartialSaveKeepsTheActorsTheReplayShowed(): Unit \ {Assert, Fs.FileRead} =
+        // version 2 の欄だけから作った舞台（人物を持たない）の枠から戻すと、ノードの頭から当て直して出した人物が残る。
+        let r = res();
+        let shownOf = (w: World.World) -> Cast.shownNames(World.stageOf(r, w)#cast);
+        let live = everyLine(r, 0 :: Nil) |> List.find(w -> not List.isEmpty(shownOf(w)));
+        let restored = live |> Option.flatMap(w -> WorldRead.headMarkOf(World.logOf(w)) |> Option.map(m -> {
+            let partial = { stage = Stage.snapshotOf({ cast = Cast.empty() | Stage.fromSnapshot(m#stage) }), entry = None,
+                            stageForm = Saves.StageForm.Partial | m };
+            settle(r, quiet(() -> WorldRead.restore(r, partial, w)))
+        }));
+        Assert.assertEq(expected = (true, live |> Option.map(shownOf)), (Option.nonEmpty(live), restored |> Option.map(shownOf)))
 }
