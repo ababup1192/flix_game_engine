@@ -3,7 +3,7 @@
 // 手本のシナリオに無い効果音だけは、テスト用の木（TestKit.fixtureRes）で見る。
 mod TestRules {
 
-    use fge::{App, AudioMixer, Clock, Emit, Vec2, Yarn, YarnRunner}
+    use fge::{App, AudioMixer, Clock, Emit, JsonCodec, Vec2, Yarn, YarnRunner}
     use TestKit.{advance, begun, pick, placeOf, readTo, settle, quiet, w0}
 
     def kind(res: Res.Res): KindDoc.Rec = KindDoc.rec(res#kind)
@@ -531,6 +531,63 @@ mod TestRules {
         let shape = (whole: Saves.Saves) -> { let s = Saves.rec(whole); (Map.keysOf(s#slots), s#seen, s#serial, s#config#cps, s#config#skipScope, s#config#display,
                                         Map.valuesOf(s#slots) |> List.map(slot -> (slot#savedAt, slot#place, Stage.fromSnapshot(slot#mark#stage)#mode, slot#mark#bookmark#node))) };
         Assert.assertEq(expected = shape(saves), shape(back))
+
+    // ── セーブの形の版（Saves.formOf・decode・World.opened） ──
+
+    /// クイックセーブを 1 つ持つセーブの JSON。
+    def savedJson(res: Res.Res): Util.Json.Json =
+        Saves.toJson(quiet(() -> WorldSaves.quickSave(res, begun(res)))#saves)
+
+    /// 一番上の欄 key を value に替えた JSON。
+    def withField(key: String, value: Util.Json.Json, json: Util.Json.Json): Util.Json.Json =
+        Util.Json.Json.JObject(Map.insert(key, value, JsonCodec.expectObject(json) |> Option.getWithDefault(Map.empty())))
+
+    def versioned(v: Int32, json: Util.Json.Json): Util.Json.Json = withField("version", Util.Json.Json.JNumber(JsonCodec.intToBd(v)), json)
+
+    /// どの枠からも "stage" を外した JSON（テンプレートの外で同じ version 3 を使った別の形）。
+    def withoutStage(json: Util.Json.Json): Util.Json.Json =
+        let root = JsonCodec.expectObject(json) |> Option.getWithDefault(Map.empty());
+        let slots = Map.get("slots", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
+            |> Map.map(slot -> Util.Json.Json.JObject(Map.remove("stage", JsonCodec.expectObject(slot) |> Option.getWithDefault(Map.empty()))));
+        withField("slots", Util.Json.Json.JObject(slots), json)
+
+    @Test
+    def testSavesAreWrittenInTheCurrentForm(): Unit \ {Assert, Fs.FileRead} =
+        let json = savedJson(TestKit.res());
+        Assert.assertEq(expected = (Some(Saves.formatVersion()), Saves.Form.Current),
+                        (JsonCodec.expectObject(json) |> Option.flatMap(root -> Map.get("version", root)) |> Option.flatMap(JsonCodec.expectInt), Saves.formOf(json)))
+
+    @Test
+    def testVersion3WithTheStageIsStillRead(): Unit \ {Assert, Fs.FileRead} =
+        // 0.96.0・0.97.0 のテンプレートが書いた version 3（どの枠も "stage" を持つ）は読む。
+        let res = TestKit.res();
+        Assert.assertTrue(Saves.decode(Saves.fresh(res#kind), versioned(3, savedJson(res))) |> Option.exists(Saves.hasAny))
+
+    @Test
+    def testVersion3WithoutTheStageIsRefused(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        Assert.assertEq(expected = None, Saves.decode(Saves.fresh(res#kind), withoutStage(versioned(3, savedJson(res)))) |> Option.map(Saves.hasAny))
+
+    @Test
+    def testVersion2IsReadAsTheLegacyForm(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Saves.Form.Legacy, Saves.formOf(withoutStage(versioned(2, savedJson(TestKit.res())))))
+
+    @Test
+    def testALaterVersionIsRefused(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Saves.Form.Foreign, Saves.formOf(versioned(Saves.formatVersion() + 1, savedJson(TestKit.res()))))
+
+    @Test
+    def testRefusedSavesAreToldAtTheTitle(): Unit \ {Assert, Fs.FileRead} =
+        // 読めない形のセーブだった起動は、タイトルで「この版では読めない」と知らせ、セーブは空。
+        let res = TestKit.res();
+        let w = World.opened({ saves = Saves.fresh(res#kind), refused = true }, 0i64);
+        Assert.assertEq(expected = ("Title", Some(StoryDoc.labelOf(StoryDoc.Label.SavesRefused, res#story)), false),
+                        (World.sceneName(w), World.toastOf(res, w), Saves.hasAny(w#saves)))
+
+    @Test
+    def testReadableSavesAreNotTold(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        Assert.assertEq(expected = None, World.toastOf(res, World.opened({ saves = Saves.fresh(res#kind), refused = false }, 0i64)))
 
     @Test
     def testSaveWithShortAmbienceNameReadsTheSoundName(): Unit \ {Assert, Fs.FileRead} =

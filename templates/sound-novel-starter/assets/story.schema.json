@@ -265,6 +265,9 @@
         "noSaveNow": {
           "type": "string"
         },
+        "savesRefused": {
+          "type": "string"
+        },
         "waiting": {
           "type": "string"
         },

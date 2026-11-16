@@ -225,12 +225,13 @@ mod MigrateOut {
         World.readOf(w) |> Option.flatMap(r -> YarnRunner.bookmarkOf(r#talk))
             |> Option.map(b -> b#steps |> List.count(step -> step == YarnRunner.Action.Advance)) |> Option.getWithDefault(-1)
 
-    /// restore.json の文字。save = セーブの名前、node・seq = 戻った所、h = 読み戻した直後、shots = 書き出したコマ、objects = 出ている物。
-    pub def restoreJson(save: String, probes: List[ProbeRow], design: Vec2.Vec2, node: String, seq: Int32, h: AppState,
+    /// restore.json の文字。save = セーブの名前、refused = この版では読めない形なので読まなかった（h は起動の World）、
+    /// node・seq = 戻った所、h = 読み戻した直後、shots = 書き出したコマ、objects = 出ている物。
+    pub def restoreJson(save: String, refused: Bool, probes: List[ProbeRow], design: Vec2.Vec2, node: String, seq: Int32, h: AppState,
                         shots: List[Shot], objects: List[TapeOut.Span]): String =
         Util.Json.toPrettyString(2, Json.JObject(Map#{
             "save" => Json.JString(save),
-            "refused" => Json.JBool(false),
+            "refused" => Json.JBool(refused),
             "node" => Json.JString(node),
             "seq" => TapeJson.intJson(seq),
             "probes" => Json.JObject(probesJson(probes, h)),

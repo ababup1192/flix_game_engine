@@ -201,6 +201,37 @@ mod Saves {
 
     // ── JSON ──
 
+    /// 書くセーブの形の版。
+    pub def formatVersion(): Int32 = 4
+
+    /// 読んだセーブの JSON の形。Current = この版の形（version 4 か、全部の枠が "stage" を持つ version 3）、
+    /// Legacy = version 2 より前（枠の舞台は photo・grade などの欄から作る）、Foreign = この版では読めない形。
+    pub enum Form with Eq, ToString {
+        case Current
+        case Legacy
+        case Foreign
+    }
+
+    /// JSON の形を見分ける。version 3 で "stage" の無い枠があれば、テンプレートの外で同じ版の数を使った別の形なので Foreign。
+    /// version が formatVersion より大きい（後の版が書いた）物も Foreign。
+    // WhyNot: version 3 をまとめて断らない — 0.96.0・0.97.0 のテンプレートが書いたセーブ（どの枠も "stage" を持つ）は今の形と同じで、そのまま読める。
+    pub def formOf(json: Json): Form =
+        let root = JsonCodec.expectObject(json) |> Option.getWithDefault(Map.empty());
+        let version = JsonCodec.intOr("version", 0, root);
+        if (version == formatVersion()) Form.Current
+        else if (version == 3) { if (slotsHaveStage(root)) Form.Current else Form.Foreign }
+        else if (version >= 0 and version <= 2) Form.Legacy
+        else Form.Foreign
+
+    /// どの枠も "stage" の鍵を持つか（枠が無ければ true）。
+    def slotsHaveStage(root: Map[String, Json]): Bool =
+        Map.get("slots", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
+            |> Map.valuesOf |> List.forAll(j -> JsonCodec.expectObject(j) |> Option.exists(obj -> Map.memberOf("stage", obj)))
+
+    /// この版で読める JSON なら読み（fromJson）、読めない形（Foreign）なら None。
+    pub def decode(fallback: Saves, json: Json): Option[Saves] =
+        if (formOf(json) == Form.Foreign) None else Some(fromJson(fallback, json))
+
     pub def toJson(saves: Saves): Json =
         let num = x -> Json.JNumber(JsonCodec.floatToBd(x));
         let slot = (s: Slot) -> Json.JObject(Map#{
@@ -213,7 +244,7 @@ mod Saves {
         let r = rec(saves);
         let c = r#config;
         Json.JObject(Map#{
-            "version" => num(3.0),
+            "version" => num(Int32.toFloat64(formatVersion())),
             "serial" => num(Int32.toFloat64(r#serial)),
             "slots" => Json.JObject(r#slots |> Map.toList |> List.map(match (i, s) -> (Int32.toString(i), slot(s))) |> List.toMap),
             "seen" => Json.JArray(r#seen |> Set.toList |> List.map(Json.JString) |> List.toVector),
@@ -291,12 +322,16 @@ mod Saves {
         let topSerial = slots |> Map.valuesOf |> List.map(s -> s#serial) |> List.foldLeft(Int32.max, 0);
         Saves.Saves({ slots = slots, seen = seen, config = config, serial = Int32.max(topSerial, JsonCodec.intOr("serial", 0, root)) })
 
-    /// 起動の 1 回: 無い・読めない時は fresh（初めて遊ぶ時と同じ）。
-    pub def load(kind: KindDoc.Doc): Saves \ Fs.FileRead =
+    /// 起動の時に読んだセーブ。refused = この版では読めない形（Form.Foreign）だったので読まずに fresh にした。
+    pub type alias Opened = { saves = Saves, refused = Bool }
+
+    /// 起動の 1 回: 無い・壊れている時は fresh（初めて遊ぶ時と同じ）。この版では読めない形の時も fresh で、refused を立てる。
+    pub def load(kind: KindDoc.Doc): Opened \ Fs.FileRead =
         let fallback = fresh(kind);
-        match Fs.FileRead.read(path()) {
-            case Ok(text) => DocJson.parse(text) |> Option.map(json -> fromJson(fallback, json)) |> Option.getWithDefault(fallback)
-            case Err(_)   => fallback
+        let json = Fs.FileRead.read(path()) |> Result.toOption |> Option.flatMap(DocJson.parse);
+        match json {
+            case Some(j) => decode(fallback, j) |> Option.map(s -> { saves = s, refused = false }) |> Option.getWithDefault({ saves = fallback, refused = true })
+            case None    => { saves = fallback, refused = false }
         }
 
     /// 書く（App.addOutput の write）。書けない時は 1 行知らせて続ける（遊びは止めない）。

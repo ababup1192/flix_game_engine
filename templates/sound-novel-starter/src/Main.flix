@@ -16,7 +16,7 @@ def main(): Unit \ IO =
                 let downloads = LoadProgress.downloads();
                 let loaded = Res.withMissing(downloads#missing(), Controls.loadRes());
                 let res = Res.withGame(GameBoot.loadAssets(loaded#game), loaded);
-                Game.app(res, Saves.load(res#kind), localEpochSeconds())
+                Game.appFrom(res, World.opened(Saves.load(res#kind), localEpochSeconds()))
                     |> Game.withAssetLoading(downloads)
                     |> GameBoot.withLoading({ downloads = downloads, decoder = LoadProgress.imageDecoder() })
                     // セーブデータ・既読・設定を書く（saveRev が変わった実機のフレームの後でだけ。テスト・flow・描き出しは書かない）。

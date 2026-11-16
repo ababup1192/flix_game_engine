@@ -209,13 +209,25 @@ mod FlowVideo {
             case (Err(_), _)       => println("FAIL ${file} を読めない"); 2
             case (_, Err(why))     => println("FAIL ${why}"); 2
             case (Ok(json), Ok(probes)) =>
-                let saves = Saves.fromJson(fresh#world#saves, json);
-                let loaded = Resources.of(fresh#resources, { saves = saves | fresh#world });
+                // WhyNot: 枠を decode の結果から数えない — 読めない形のセーブは None になり、断った枠の restore.json（refused）が書かれない。
+                let listed = Saves.fromJson(fresh#world#saves, json);
+                let readable = Saves.decode(fresh#world#saves, json);
                 Saves.tabs() |> List.forEach(tab -> List.range(0, Saves.perPage()) |> List.forEach(i ->
-                    if (Option.isEmpty(Saves.slotOf(tab, i, saves))) ()
-                    else restoreSlot(settings, design, probes, "${out}/${prefix}-${slotName(tab, i)}", "${prefix}-${slotName(tab, i)}", tab, i, loaded)));
+                    if (Option.isEmpty(Saves.slotOf(tab, i, listed))) ()
+                    else {
+                        let name = "${prefix}-${slotName(tab, i)}";
+                        restoreSlot(settings, design, probes, "${out}/${name}", name, restoredOf(readable, tab, i, fresh))
+                    }));
                 0
         }
+
+    /// 枠を読み戻した直後（読めない形のセーブなら読まずに起動の World のまま）と、断ったか。
+    def restoredOf(readable: Option[Saves.Saves], tab: Saves.Tab, i: Int32, fresh: AppState): (AppState, Bool) = match readable {
+        case Some(saves) =>
+            let (w, _) = Emit.collect(() -> WorldSaves.loadFrom(fresh#resources, tab, i, { saves = saves | fresh#world }));
+            (Resources.of(fresh#resources, w), false)
+        case None => (fresh, true)
+    }
 
     /// 枠の名前（auto0・quick0・n1-0）。
     def slotName(tab: Saves.Tab, i: Int32): String = match tab {
@@ -224,11 +236,11 @@ mod FlowVideo {
         case Saves.Tab.Numbered(n) => "n${n}-${i}"
     }
 
-    def restoreSlot(settings: VideoOut.Settings, design: Vec2.Vec2, probes: List[MigrateOut.ProbeRow], dir: String, name: String, tab: Saves.Tab, i: Int32,
-                    loaded: AppState): Unit \ IO =
-        let res = loaded#resources;
-        let (w, _) = Emit.collect(() -> WorldSaves.loadFrom(res, tab, i, loaded#world));
-        let h = Resources.of(res, w);
+    def restoreSlot(settings: VideoOut.Settings, design: Vec2.Vec2, probes: List[MigrateOut.ProbeRow], dir: String, name: String,
+                    restored: (AppState, Bool)): Unit \ IO =
+        let (h, refused) = restored;
+        let res = h#resources;
+        let w = h#world;
         let node = World.talkNodeOf(w);
         let seq = MigrateOut.restoredSeqOf(w);
         let shots = { frame = 0, node = node, seq = seq, mid = None, layer = MigrateOut.Layer.WorldLayer } ::
@@ -236,7 +248,7 @@ mod FlowVideo {
         discard (new File(dir)).mkdirs();
         shootFrames(settings, design, 30.0, dir, shots, h :: Nil);
         let objects = TapeOut.spansOf(30.0, design, objectsOf(SceneRender.fitOf(design, res), res, w) :: Nil);
-        writeText("${dir}/restore.json", MigrateOut.restoreJson(name, probes, design, node, seq, h, shots, objects));
+        writeText("${dir}/restore.json", MigrateOut.restoreJson(name, refused, probes, design, node, seq, h, shots, objects));
         println("restored: ${dir}")
 
     /// テープに渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは design の画面の ADV のウィンドウ（NVL の間は重ねない）。

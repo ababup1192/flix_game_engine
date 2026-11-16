@@ -155,7 +155,7 @@ mod TestMigrate {
         let place = forM (
             o      <- outcome();
             probes <- MigrateOut.probeRowsOf("logSize" :: Nil, res()#dialogue);
-            root   <- DocJson.parse(MigrateOut.restoreJson("s1", probes, Layout.size(Layout.Fit.Regular), "Again", 1, o#last, Nil, Nil))
+            root   <- DocJson.parse(MigrateOut.restoreJson("s1", false, probes, Layout.size(Layout.Fit.Regular), "Again", 1, o#last, Nil, Nil))
                       |> Option.toOk("restore.json が JSON でない")
         ) yield (textOf("save", root), textOf("node", root), intOf("seq", root), Map.get("probes", objectOf(root)) |> Option.map(p -> intOf("$n", p)));
         Assert.assertEq(expected = Ok(("s1", "Again", 1, Some(3))), place)
