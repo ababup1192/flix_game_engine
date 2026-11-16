@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,9 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	if asJSON {
 		rest = append(dropJSONFlag(rest), "--json")
 	}
+	if _, self := status.FindEngineDir(root, "mk/game.mk"); self {
+		reportRootSrcSync(root)
+	}
 	useEngineFlixlint(root, rest)
 	useEngineJava(engineDirOf(repoRoot()))
 	opts := refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)}
@@ -60,6 +64,19 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 		},
 	}
 	return r.run(out, errOut, rest, asJSON, q, trees, notes)
+}
+
+// reportRootSrcSync は engine のルートで索引を作る前に、ルートの src/（索引の元）を各パッケージの src に追いつかせる。
+// WhyNot: make sync-root-src-missing を呼ばない。make の無い所（Windows の素の shell）でも refactor は流れる。
+func reportRootSrcSync(root string) {
+	added, removed, err := syncRootSrc(root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[refactor] ルートの src/ の symlink を張り直せない: %v（make sync-root-src で張り直す）\n", err)
+		return
+	}
+	if added+removed > 0 {
+		fmt.Fprintf(os.Stderr, "[refactor] ルートの src/ の symlink を %d 本足し %d 本消した（git に入れる）\n", added, removed)
+	}
 }
 
 // useEngineFlixlint は、ゲームが flixlint を名指ししていない時（submodule・--flixlint・FGE_FLIXLINT・FLIXLINT_BIN・
@@ -241,4 +258,78 @@ func runDirect(dir string, cmd []string, log string, env []string) int {
 		return 2
 	}
 	return 0
+}
+
+// syncRootSrc は root/src/<名前>/ のうち、パッケージ（root/<名前>/flix.toml と root/<名前>/src）の写しである物を、
+// その src の .flix に合わせる: 足りない symlink を相対で張り、先の無い symlink を消す（make sync-root-src-missing と同じ）。
+// WhyNot: 写しを丸ごと消して張り直さない。並べて走る make check・別の索引が読んでいる最中のソースが消える。
+// WhyNot: 写すパッケージの一覧を Makefile の ROOT_SRC_PKGS から持ってこない。src/ に在る写しから引けば、一覧を 2 か所に持たずに済む。
+func syncRootSrc(root string) (added, removed int, err error) {
+	entries, err := os.ReadDir(filepath.Join(root, "src"))
+	if err != nil {
+		return 0, 0, nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !isPackageDir(filepath.Join(root, e.Name())) {
+			continue
+		}
+		a, r, err := mirrorFlixTree(filepath.Join(root, e.Name(), "src"), filepath.Join(root, "src", e.Name()))
+		added += a
+		removed += r
+		if err != nil {
+			return added, removed, err
+		}
+	}
+	return added, removed, nil
+}
+
+func isPackageDir(dir string) bool {
+	if info, err := os.Stat(filepath.Join(dir, "flix.toml")); err != nil || info.IsDir() {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(dir, "src"))
+	return err == nil && info.IsDir()
+}
+
+// mirrorFlixTree は from の下の .flix を to の下へ同じ形の相対 symlink で並べ、to の下の先の無い symlink を消す。
+func mirrorFlixTree(from, to string) (added, removed int, err error) {
+	err = filepath.WalkDir(from, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".flix") {
+			return err
+		}
+		rel, _ := filepath.Rel(from, path)
+		link := filepath.Join(to, rel)
+		if _, err := os.Lstat(link); err == nil {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+			return err
+		}
+		target, err := filepath.Rel(filepath.Dir(link), path)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(target, link); err != nil && !os.IsExist(err) {
+			return err
+		}
+		added++
+		return nil
+	})
+	if err != nil {
+		return added, removed, err
+	}
+	err = filepath.WalkDir(to, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.Type()&fs.ModeSymlink == 0 {
+			return err
+		}
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		removed++
+		return nil
+	})
+	return added, removed, err
 }

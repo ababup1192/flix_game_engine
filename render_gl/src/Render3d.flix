@@ -241,8 +241,8 @@ mod Render3d {
         skinnedRef = Ref[Option[SkinnedPrograms], Static],
         // 空を初めて描く時に組む（空を使わない場面は空のプログラムのコンパイルを払わない）。
         skyRef = Ref[Option[SkyLocs], Static],
-        // Design の解像度の描き先（そのコマの Design の場面の並びの番号 → FBO。大きさが同じなら使い回す）。
-        designTargetsRef = Ref[Map[(Int32, String), RenderTargetGl.Entry], Static],
+        // Design の解像度の描き先の寿命の表（(そのコマの Design の場面の並びの番号, 形式の名前) → FBO。形が同じなら使い回す）。
+        designTargets = Render3d.SceneTargets.Table[(Int32, String), RenderTargetGl.Entry],
         // 見つからないと知らせたビルボードのテクスチャの名前。
         missingTexturesRef = Ref[Set[String], Static],
         // "3d:" + spec の名前 → 材質のプログラム（2D の Shader 面のキャッシュとは分ける）。
@@ -287,7 +287,7 @@ mod Render3d {
 
     // ── 決まりの数 ──
 
-    /// この数のコマ使われなかった影の地図の描き先は GPU から捨てる。
+    /// この数の画面のコマ使われなかった描き先（影の地図と場面の描き先）は GPU から捨てる。
     def idleTargetFrames(): Int64 = 128i64
 
     /// 置き場の頂点の合計の上限。超えたら古い物から捨てる。
@@ -338,7 +338,7 @@ mod Render3d {
           textureCountBudget = Int32.max(1, textureBudget#count), meshes = Render3d.MeshTable.fresh(), meshEntriesRef = Ref.fresh(Static, Map.empty()),
           uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
           skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None),
-          designTargetsRef = Ref.fresh(Static, Map.empty()), missingTexturesRef = Ref.fresh(Static, Set.empty()),
+          designTargets = Render3d.SceneTargets.fresh(), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
           shadowMaps = Render3d.ShadowMaps.fresh(), shadowTargetsRef = Ref.fresh(Static, Map.empty()), textures3d = Render3d.TextureTable3d.fresh(), textureIdsRef = Ref.fresh(Static, Map.empty()),
@@ -471,7 +471,7 @@ mod Render3d {
         let h = Int32.max(1, Num.floorInt(cmd#scene#size#y + 0.5));
         if (cmd#scene#size#x <= 0.0 or cmd#scene#size#y <= 0.0) None
         else {
-            let target = designTarget(gl, state, slot, w, h);
+            let target = designTarget(gl, state, gen, slot, w, h);
             RenderTargetGl.bind(gl, target);
             let full = { x = 0, y = 0, width = w, height = h };
             gl.viewport(0, 0, w, h);
@@ -483,22 +483,18 @@ mod Render3d {
             Some(target)
         }
 
-    /// (番号, 形式) の Design の描き先。大きさが変わったら作り直し、古い方は捨てる。
+    /// (番号, 形式) の Design の描き先（寿命の表 Render3d.SceneTargets。大きさが変わったら作り直し、古い方は捨てる）。gen = 今の世代。
     /// WhyNot: 鍵を番号だけにしない — 画面（Rgba8Unorm）と HDR の Pass で同じ番号の場面を描くと、コマごとに作り直しが続く。
     /// 鍵の形式は Format の名前（Map の鍵には Order が要り、Format は Eq と ToString だけを持つ）。
-    def designTarget(gl: GlContext, state: State, slot: (Int32, RenderTarget.Format), w: Int32, h: Int32): RenderTargetGl.Entry \ IO =
+    def designTarget(gl: GlContext, state: State, gen: Int64, slot: (Int32, RenderTarget.Format), w: Int32, h: Int32): RenderTargetGl.Entry \ IO =
         let (index, format) = slot;
-        let key = (index, ToString.toString(format));
-        let targets = Ref.get(state#designTargetsRef);
-        match Map.get(key, targets) {
-            case Some(e) if e#width == w and e#height == h => e
-            case old =>
-                Option.forEach(e -> RenderTargetGl.destroy(gl, e), old);
-                count(state, Counter.TargetRebuilds, 1);
-                let made = RenderTargetGl.create(gl, w, h, format);
-                Ref.put(Map.insert(key, made, targets), state#designTargetsRef);
-                made
-        }
+        let shape = { width = w, height = h, format = format, samples = 1 };
+        let (target, made) = Render3d.SceneTargets.ensure(state#designTargets, designAllocator(gl), gen, (index, ToString.toString(format)), shape);
+        if (made) count(state, Counter.TargetRebuilds, 1) else ();
+        target
+
+    def designAllocator(gl: GlContext): Render3d.SceneTargets.Allocator[RenderTargetGl.Entry] =
+        { create = shape -> RenderTargetGl.create(gl, shape#width, shape#height, shape#format), destroy = e -> RenderTargetGl.destroy(gl, e) }
 
     /// Design の FBO のテクスチャを、場面の矩形へ最も近い画素で α で重ねる。FBO の色は α を掛けた後の値として重ねる
     /// （GL_ONE, GL_ONE_MINUS_SRC_ALPHA）: 透明から描いた FBO に半透明を重ねると、色は src × α・α は α になるため。
@@ -856,6 +852,7 @@ mod Render3d {
         noteMaterialStreak(state);
         sweepMaterials(gl, state, gen);
         sweepShadowTargets(gl, state, gen);
+        discard Render3d.SceneTargets.sweep(state#designTargets, designAllocator(gl), gen);
         sweepTextures3d(gl, state, gen);
         Render3d.GlRows.DataTexture.endFrame(gl, state#joints, gen);
         Render3d.GlRows.DataTexture.endFrame(gl, state#instances, gen);

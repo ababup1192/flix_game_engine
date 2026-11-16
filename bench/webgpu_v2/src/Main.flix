@@ -304,8 +304,9 @@ mod V2Main {
     /// 環境マップの画素はどれも GL と ±1 以内【推: mip のレベルの間の補間と sRGB の戻しの丸め】。envMsaaPass は球のふちで、skyMsaaPass と同じ標本の位置の違い。
     /// mipFloor の差は床の奥の mip のレベルの切り替わりの所に散る ±1〜2（mip の作り方は GL と同じ CPU の Mip.build で、レベルを選ぶ式 sg_texMip も同じ）。
     /// 上限は違う画素を実測のほぼ 2 倍・±2 以上は 4（小さい物の下限。mipFloor は 8）・差の最大は ±16（envMsaaPass は ±128）。
-    /// mipFloorRegistered（記録・門にしない）は、全体の登録の絵（組み込みの放射の絵）を材質に貼った同じ床: WebGPU は 2D の描き手の絵を mip 無しのまま借りるので、
-    /// 奥ほど GL（mip つきの写し）と違う（43,823・16,934・±148）。mip つきの写しを GPU で作るには、texture の mip のレベル 1 つを描き先にする view が要る（plans/engine-webgpu.md の 12.37）。
+    /// mipFloorRegistered は、全体の登録の絵（組み込みの放射の絵）を材質に貼った同じ床（実測 1,792・0・±1）: GL（PC）は段 0 を読み戻して CPU の Mip.build で、
+    /// WebGPU は Render3d.WebGpuMipmaps が同じ決まりの平均を GPU の pass で作る。差は mipFloor と同じく段の切り替わりの所の ±1【推: sRGB の戻しの f32 の丸めと段の間の補間】。
+    /// 上限は違う画素を実測のほぼ 2 倍・±2 以上は小さい物の下限 4・差の最大は ±16。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
@@ -323,10 +324,10 @@ mod V2Main {
              "billboardMsaaPass" => (23000, 27000, 128), "billboardHistory" => (4, 40, 16),
              "envSpheres" => (4, 16, 16), "envBox" => (4, 16, 16), "envBackground" => (4, 40, 16), "envBackgroundTurned" => (4, 8, 16),
              "envBackgroundDesign" => (4, 8, 16), "envBackgroundDepth" => (4, 8, 16), "envSkyAndBackground" => (4, 36, 16), "envMsaaPass" => (8000, 17000, 128),
-             "mipFloor" => (8, 850, 16)}
+             "mipFloor" => (8, 850, 16), "mipFloorRegistered" => (4, 3600, 16)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
-    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass", "mipFloorRegistered"}
+    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass"}
 
     def drawFrame(c: Case): Unit \ Platform.Rendering + Platform.Window + RenderTarget.Target =
         drawPasses(c);
