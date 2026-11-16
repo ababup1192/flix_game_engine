@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認のウィンドウ・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label。names の鍵はシナリオの話し手、vars の鍵はシナリオの変数（$ を付けない名前）で、値は人に見せる名前。opening は「はじめから」で開くノード。話し手・変数・opening は bin/fge yarn build が assets/talk/vocab.json の from を通してここから読み、台本の名前と照らす。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
+  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認のウィンドウ・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label。names の鍵はシナリオの話し手、vars の鍵はシナリオの変数（$ を付けない名前）で、値は人に見せる名前。opening は「はじめから」で開くノード。話し手・変数・opening は bin/fge yarn build が assets/talk/vocab.json の from を通してここから読み、台本の名前と照らす。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。replace は台本の字 → 画面に出す字（台詞・選択肢・話し手の呼び名・バックログに当てる。例 \"××××\": \"ユウキ\" で主人公の名前を入れる。台本は書き換えない）。",
   "title": "雪どけを待たない便り",
   "subtitle": "冬の山里で、坂の上の工房へ便りを届ける。",
   "titlePhoto": "slope",
@@ -17,6 +17,7 @@
     "own_pace": "自分の歩調を伝えた",
     "shared_tiredness": "休む日を伝えた"
   },
+  "replace": {},
   "labels": {
     "newGame": "はじめから",
     "continue": "つづきから",

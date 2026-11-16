@@ -2,7 +2,7 @@
 // 文章・分岐・結末はシナリオ assets/talk/yukidoke.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
 // 言葉は Label の enum を鍵に引く（鍵の綴りと既定の言葉の正は entryOf。Doc に無い鍵は既定の言葉で出す = fail-open）。
 mod StoryDoc {
-    use fge::{DocJson, JsonCodec, Log}
+    use fge::{DocJson, JsonCodec, Log, Yarn}
     use Util.Json.Json
 
     /// シナリオの外で画面に出す言葉の鍵。
@@ -191,7 +191,7 @@ mod StoryDoc {
 
     /// title / subtitle = タイトル画面の文言、titlePhoto / titleGrade / titleAmbience = タイトル画面の背景（写真・時間帯は
     /// novel.backdrops.json の鍵）と環境音（project.json の sounds の名前）、opening = 「はじめから」で開くノード、names = 話し手の id → 呼び名、
-    /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉。
+    /// vars = シナリオの変数の名前（$ を付けない）→ 表示名、labels = Label の鍵 → 言葉、replace = 台本の字 → 画面に出す字（主人公の名前など）。
     pub type alias Rec = {
         version = Int32,
         title = String,
@@ -202,7 +202,8 @@ mod StoryDoc {
         opening = String,
         names = Map[String, String],
         vars = Map[String, String],
-        labels = Map[String, String]
+        labels = Map[String, String],
+        replace = Map[String, String]
     }
 
     /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
@@ -215,7 +216,7 @@ mod StoryDoc {
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, title = "雪どけを待たない便り", subtitle = "冬の山里で、坂の上の工房へ便りを届ける。",
                   titlePhoto = "slope", titleGrade = "morning", titleAmbience = "amb_winter_wind",
-                  opening = "WinterRoute", names = Map.empty(), vars = Map.empty(), labels = Map.empty() })
+                  opening = "WinterRoute", names = Map.empty(), vars = Map.empty(), labels = Map.empty(), replace = Map.empty() })
 
     /// 鍵の言葉（Doc に無ければ既定の言葉）。
     pub def labelOf(label: Label, doc: Doc): String =
@@ -225,9 +226,24 @@ mod StoryDoc {
     pub def idOfName(name: String, doc: Doc): String =
         rec(doc)#names |> Map.toList |> List.find(match (_, shown) -> shown == name) |> Option.map(fst) |> Option.getWithDefault(name)
 
-    /// 話し手の id の呼び名（地の文の空の id は空・Doc に無い id はそのまま）。
+    /// 話し手の id の呼び名（地の文の空の id は空・Doc に無い id はそのまま。replace を当てた字）。
     pub def nameOf(id: String, doc: Doc): String =
-        Map.getWithDefault(id, id, rec(doc)#names)
+        replaceText(doc, Map.getWithDefault(id, id, rec(doc)#names))
+
+    /// text に replace の表を当てる（鍵の字の順に、それぞれの字を全部替える。空の鍵は当てない）。
+    pub def replaceText(doc: Doc, text: String): String =
+        rec(doc)#replace |> Map.foldLeftWithKey((acc, mark, shown) -> if (String.isEmpty(mark)) acc else String.replace(src = mark, dst = shown, acc), text)
+
+    /// 台本の行に replace の表を当てる（字と、ルビの位置を数える切れの両方）。
+    // WhyNot: text だけ替えない — 画面とバックログはルビの位置を parts の字の長さから数えるので、長さの替わった字の後ろのルビがずれる。
+    pub def replaceLine(doc: Doc, line: Yarn.Line): Yarn.Line =
+        if (Map.isEmpty(rec(doc)#replace)) line
+        else { text = replaceText(doc, line#text), parts = line#parts |> List.map(part -> replacePart(doc, part)) | line }
+
+    def replacePart(doc: Doc, part: Yarn.Part): Yarn.Part = match part {
+        case Yarn.Part.Literal(s) => Yarn.Part.Literal(replaceText(doc, s))
+        case other                => other
+    }
 
     /// 呼び名を持つ話し手の id（names の鍵の順）。
     pub def speakerIds(doc: Doc): List[String] = rec(doc)#names |> Map.keysOf |> Set.toList
@@ -257,7 +273,8 @@ mod StoryDoc {
                   opening = openingIn(d#opening, root),
                   names = strings("names"),
                   vars = strings("vars"),
-                  labels = strings("labels") })
+                  labels = strings("labels"),
+                  replace = strings("replace") })
 
     /// opening（無い・文字列でない時は 1 行言って既定のノード。go の build はこの欄が無いと最初のノードを照らせない）。
     def openingIn(fallback: String, root: Map[String, Json]): String =

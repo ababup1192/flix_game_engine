@@ -82,10 +82,10 @@ mod WorldRead {
         if (replay == Commands.Replay.Live) World.readOf(w) |> Option.flatMap(r -> executedOf(res, r#entry, event)) |> Option.forEach(e -> Emit.emit(World.Event.Executed(e))) else ();
         match event {
             case YarnRunner.Event.Line(said)       =>
-                let line = ScriptEdits.editLine(res#scriptEdits, said);
+                let line = shownLineOf(res, said);
                 whileReading(cur -> showLine(res, replay, bookmarkAt(last, later), line, { cursor = Some(line#source) | cur }, w), w)
             case YarnRunner.Event.Choices(offered) =>
-                let options = offered |> List.map(option -> { line = ScriptEdits.editLine(res#scriptEdits, option#line) | option });
+                let options = offered |> List.map(option -> { line = shownLineOf(res, option#line) | option });
                 let at = List.head(options) |> Option.map(option -> option#line#source);
                 World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options), cursor = if (Option.isEmpty(at)) cur#cursor else at,
                                        stage = Stage.withWindowShown(World.now(w), cur#stage) | cur }, w)
@@ -98,7 +98,13 @@ mod WorldRead {
             case YarnRunner.Event.Done             => World.toCredits(res, w)
         }
 
+    /// 台本の行を画面に出す字に: 始まりの引数の直し（ScriptEdits）と novel.story.json の replace（主人公の名前など）を当てる。
+    /// 頁・バックログ・選択肢・選んだ行はどれもこの字（話し手の呼び名は StoryDoc.nameOf が同じ replace を当てる）。
+    pub def shownLineOf(res: Res.Res, said: Yarn.Line): Yarn.Line =
+        StoryDoc.replaceLine(res#story, ScriptEdits.editLine(res#scriptEdits, said))
+
     /// 反映する実行器の出来事を、記録の書き手が読む形に（台詞と選択肢の字は ScriptEdits を当てた物。会話の終わりは None）。
+    // WhyNot: replace を当てない — 移行の記録の text は台本の字で突き合わせる（tape.json の lines も台本の行。前の版の記録も台本の字）。
     def executedOf(res: Res.Res, entry: World.NodeEntry, event: YarnRunner.Event): Option[World.Executed] =
         let place = line -> (entry#node, entry#visits, line);
         let edited = line -> ScriptEdits.editLine(res#scriptEdits, line);

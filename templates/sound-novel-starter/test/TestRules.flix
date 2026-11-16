@@ -802,4 +802,63 @@ mod TestRules {
         let saved = quiet(() -> WorldSaves.writeSlot(res, Saves.Tab.Numbered(1), 0, past));
         let (_, heard) = Emit.collect(() -> WorldSaves.loadFrom(res, Saves.Tab.Numbered(1), 0, saved));
         Assert.assertEq(expected = World.Event.Loaded :: Nil, heard)
+
+    // ── 台本の字の置き換え（novel.story.json の replace） ──
+
+    def withReplace(table: Map[String, String], res: Res.Res): Res.Res =
+        Res.withStory(StoryDoc.Doc.Doc({ replace = table | StoryDoc.rec(res#story) }), res)
+
+    def currentText(w: World.World): String = World.pageOf(w)#current |> Option.map(l -> l#text) |> Option.getWithDefault("")
+
+    /// 最初の台詞の頭の 2 字を ★ に替える表（行の字を写さずに、本物のシナリオの字から作る）。
+    def headTable(res: Res.Res): (String, Map[String, String]) =
+        let head = String.takeLeft(2, currentText(begun(res)));
+        (head, Map#{ head => "★" })
+
+    @Test
+    def testReplaceIsAppliedToTheShownLine(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        let (head, table) = headTable(res);
+        let shown = currentText(begun(withReplace(table, res)));
+        Assert.assertEq(expected = (true, false), (String.startsWith(prefix = "★", shown), String.contains(substr = head, shown)))
+
+    @Test
+    def testReplaceIsAppliedToTheBacklog(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        let (_, table) = headTable(res);
+        let logged = World.logOf(begun(withReplace(table, res))) |> List.filterMap(entry -> match entry {
+            case World.Entry.Said(line, _) => Some(line#text)
+            case _                         => None
+        });
+        Assert.assertTrue(logged |> List.exists(String.startsWith(prefix = "★")))
+
+    @Test
+    def testReplaceIsAppliedToTheSpeakerName(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        let id = StoryDoc.speakerIds(res#story) |> List.head |> Option.getWithDefault("");
+        let name = StoryDoc.nameOf(id, res#story);
+        Assert.assertEq(expected = "★", StoryDoc.nameOf(id, withReplace(Map#{ name => "★" }, res)#story))
+
+    @Test
+    def testReplaceKeepsTheRubyAfterIt(): Unit \ Assert =
+        // ×××× を 3 字に替えると、後ろのルビの始まりも 1 字前へずれる（4 字の印 → 3 字）。
+        let doc = StoryDoc.Doc.Doc({ replace = Map#{ "××××" => "ユウキ" } | StoryDoc.rec(StoryDoc.defaults()) });
+        let line = { speaker = "", text = "××××の字", tags = Nil, source = { file = "t", line = 1 },
+                     parts = Yarn.Part.Literal("××××の") :: Yarn.Part.Markup("ruby", "じ") :: Yarn.Part.Literal("字") :: Yarn.Part.Close("ruby") :: Nil };
+        let replaced = StoryDoc.replaceLine(doc, line);
+        Assert.assertEq(expected = ("ユウキの字", 4 :: Nil), (replaced#text, Yarn.rubiesOf(replaced) |> List.map(r -> r#start)))
+
+    @Test
+    def testTheMigrateRecordKeepsTheScriptText(): Unit \ {Assert, Fs.FileRead} =
+        // 移行の記録（World.Event.Executed の Said）の字は台本の字のまま（置き換える前）。
+        let res = TestKit.res();
+        let (head, table) = headTable(res);
+        let replaced = withReplace(table, res);
+        let started = quiet(() -> WorldRead.newGame(replaced, w0(replaced)));
+        let (_, events) = Emit.collect(() -> WorldRead.step(replaced, 30.0, TestKit.tickClocks(replaced, 30.0, started)));
+        let said = events |> List.filterMap(e -> match e {
+            case World.Event.Executed(World.Executed.Said(_, _, text)) => Some(text)
+            case _                                                    => None
+        });
+        Assert.assertTrue(said |> List.exists(String.startsWith(prefix = head)))
 }
