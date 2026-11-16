@@ -14,7 +14,7 @@ mod LwjglEnv {
     /// fixedDt: FLIX_GE_FIXED_DT の秒（空なら無し）。毎コマの dt を実時間の代わりにこの値にする（同じ操作で同じ絵になるかを確かめる用）。
     /// portraitView: FLIX_GE_PORTRAIT の画面の大きさ（空・"0" なら無し。"1" は Display.defaultPortraitView・"390x844" はその大きさ）。
     /// 縦の指定（web.portraitDesign）を持つゲームを、縦に持ったスマホの design で起動する（LwjglLayer.withProject）。
-    /// backend: FLIX_GE_BACKEND（無い・"gl" は Gl・"webgpu" は WebGpu・ほかは Gl で 1 行言う）。
+    /// backend: FLIX_GE_BACKEND（無い・空・"webgpu" は WebGpu・"gl" は Gl・ほかは WebGpu で 1 行言う。置かずに FLIX_GE_GL_LOG がある時は Gl）。
     pub type alias Settings = {
         hidden = Bool,
         noVsync = Bool,
@@ -27,17 +27,17 @@ mod LwjglEnv {
         backend = Backend
     }
 
-    /// 実機のウィンドウで描く道。Gl = OpenGL 3.3（既定）・WebGpu = Dawn の WebGPU（V1 は 2D だけ。使えない時は GL で起動する）。
+    /// 描く道。WebGpu = Dawn の WebGPU（既定。窓では、使えない機械なら理由を 1 行言って GL で起動する）・Gl = OpenGL 3.3。
     pub enum Backend with Eq, ToString {
         case Gl
         case WebGpu
     }
 
-    /// FLIX_GE_BACKEND の字を道にする（無い・空・"gl" は Gl・"webgpu" は WebGpu・ほかは Err）。大文字と小文字は区別しない。
+    /// FLIX_GE_BACKEND の字を道にする（無い・空・"webgpu" は WebGpu・"gl" は Gl・ほかは Err）。大文字と小文字は区別しない。
     def parseBackend(text: Option[String]): Result[String, Backend] =
         match text |> Option.map(t -> String.toLowerCase(String.trim(t))) {
-            case None           => Ok(Backend.Gl)
-            case Some("")       => Ok(Backend.Gl)
+            case None           => Ok(Backend.WebGpu)
+            case Some("")       => Ok(Backend.WebGpu)
             case Some("gl")     => Ok(Backend.Gl)
             case Some("webgpu") => Ok(Backend.WebGpu)
             case Some(other)    => Err("gl か webgpu を書く（'${other}' は知らない）")
@@ -52,6 +52,7 @@ mod LwjglEnv {
         warnUnreadableFixedDt(env, settings);
         warnUnreadablePortrait(env, settings);
         warnUnknownBackend(env);
+        if (isGlLogWithoutBackend(env)) println("[backend] FLIX_GE_GL_LOG があるので GL で起動する（WebGPU で起動するなら FLIX_GE_BACKEND=webgpu）") else ();
         settings
 
     /// 3D の置いた物の描き方。FGE_INSTANCING=off は全部の物を batch にせず、物ごとの材質で来た順に描く（batch の鍵と順の確かめの比べ相手）。
@@ -75,7 +76,16 @@ mod LwjglEnv {
           splashShotPath = filled("FLIX_GE_SPLASH_SHOT"),
           fixedDt = filled("FLIX_GE_FIXED_DT") |> Option.flatMap(text -> Result.toOption(parseFixedDt(text))),
           portraitView = filled("FLIX_GE_PORTRAIT") |> Option.filter(text -> text != "0") |> Option.flatMap(text -> Result.toOption(parsePortraitView(text))),
-          backend = parseBackend(Map.get("FLIX_GE_BACKEND", env)) |> Result.getWithDefault(Backend.Gl) }
+          backend = backendOf(env) }
+
+    /// 描く道。FLIX_GE_BACKEND を置いていなくて FLIX_GE_GL_LOG がある時は Gl（GL の呼び出しを控える口は GL の backend にしか無い）。
+    def backendOf(env: Map[String, String]): Backend =
+        if (isGlLogWithoutBackend(env)) Backend.Gl
+        else parseBackend(Map.get("FLIX_GE_BACKEND", env)) |> Result.getWithDefault(Backend.WebGpu)
+
+    def isGlLogWithoutBackend(env: Map[String, String]): Bool =
+        let filled = name -> Map.get(name, env) |> Option.exists(value -> String.trim(value) != "");
+        filled("FLIX_GE_GL_LOG") and not filled("FLIX_GE_BACKEND")
 
     /// FLIX_GE_PORTRAIT の字を画面の大きさにする。"1" は Display.defaultPortraitView、"<幅>x<高さ>" は縦長（高さ > 幅 > 0）の時だけ受ける。
     pub def parsePortraitView(text: String): Result[String, Vec2.Vec2] =
@@ -128,7 +138,7 @@ mod LwjglEnv {
 
     def warnUnknownBackend(env: Map[String, String]): Unit \ IO =
         match parseBackend(Map.get("FLIX_GE_BACKEND", env)) {
-            case Err(why) => checked_ecast(Log.fellBack("backend", "FLIX_GE_BACKEND", "gl", why))
+            case Err(why) => checked_ecast(Log.fellBack("backend", "FLIX_GE_BACKEND", "webgpu", why))
             case Ok(_)    => ()
         }
 

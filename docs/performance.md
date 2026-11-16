@@ -557,6 +557,7 @@ draw call を減らして効くのは、数が数百を超える場面（細か�
 | `make bench-web BENCH=<名前> ARGS='n=20000&tex=16'` | 同じ 3 つのブラウザ版（ヘッドレスの Chrome・WebGL2） | URL の query（鍵は小文字。`n`・`tex`・`blend`・`search`・`scene`・`shapes`・`mats`・`moving`・`alpha`・`shadow`） |
 
 - 共通のつまみ: `FRAMES`（1 区間で測るコマ数）・`DIAG=0`（診断を付けない。GPU の時間の query の重さを見る時）。ブラウザは `frames`・`diag`。
+- PC の窓の 3 つは既定の WebGPU で描く（WebGPU では GPU の時間 `gpuNs` が出ない）。`RESULTS.md` の GL の数字と比べる時は `FLIX_GE_BACKEND=gl make bench B=…` で GL を測る。
 - ブラウザ版は `make sync-engine-full-web` の後。頁は結果を上に字で出し、`window.__bench` に JSON で置く。スマホでは `build/bench-web/<名前>` を
   静的なサーバーで配って `index.html?<つまみ>` を開く。ブラウザは rAF に合わせて待つので、比べるのは `cpu_p50`（wasm が 1 コマに使った時間）。
 - 決まった組を通しで回すのは `bench/baseline.sh <出力> [pc|web|all]`（同じ組を 2 回。1 本ごとにプロセスを分けて間を空ける）。

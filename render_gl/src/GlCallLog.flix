@@ -1,6 +1,6 @@
 // GlCallLog — デスクトップの描き手（LwjglLayer・GlOffscreen）が GL の値（GlContext の LWJGL 版）を作る所。
 // 環境変数 FLIX_GE_GL_LOG=<ファイル> がある時だけ、呼び出しを 1 行ずつ控える版（RecordingGl）で包み、画面のコマを出すたびに
-// 控えをファイルへ足す（描く手順を替える前と後で、呼び出しの並びを比べる用。控える間は起動画面を描かない — RenderSplash.disabled）。控えるのは起動の分と、頭の FLIX_GE_GL_LOG_FRAMES コマ（既定 6）。
+// 控えをファイルへ足す（描く手順を替える前と後で、呼び出しの並びを比べる用。控える間は起動画面を描かない — RenderSplash.disabled）。控えるのは起動の分と、頭の FLIX_GE_GL_LOG_FRAMES コマ（既定 6）。FLIX_GE_BACKEND を置かなければ窓は GL で起動する（LwjglEnv.backendOf）。
 mod GlCallLog {
     import fge.gl.GlContext
     import fge.gl.LwjglGl

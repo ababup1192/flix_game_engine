@@ -16,9 +16,11 @@
 # WhyNot: sh のままにしない — webgpu の口が tee の前の終わりの番号（PIPESTATUS）を見る。
 SHELL := /bin/bash
 
+# WhyNot: GL で描く口で FLIX_GE_BACKEND を外すだけにしない — 既定の描き手は WebGPU なので、外すと WebGPU の絵を GL の絵として比べる。
+
 run:
 	rm -rf debug/gl debug/soft debug/diff
-	unset FLIX_GE_SPLASH_SHOT; FLIX_GE_HIDDEN=1 FLIX_GE_FRAME_SHOT=debug/gl ../../bin/flix run
+	unset FLIX_GE_SPLASH_SHOT; FLIX_GE_BACKEND=gl FLIX_GE_HIDDEN=1 FLIX_GE_FRAME_SHOT=debug/gl ../../bin/flix run
 
 # WebGPU の描き手（FLIX_GE_BACKEND=webgpu）で V1 が描く scene だけを画面口で流し、SoftRaster と比べる（run と同じ表）。
 # 続けて同じ scene を GL でも画面口で撮り、GL と WebGPU を bin/fge pixel-diff で比べる（許す差は 0）。起動のログに WebGPU で起動した行が無ければ止める。
@@ -33,7 +35,7 @@ webgpu:
 		../../bin/flix run 2>&1 | tee build/parity-webgpu.log; test $${PIPESTATUS[0]} -eq 0
 	@grep -q '\[backend\] webgpu:' build/parity-webgpu.log || { echo "[parity-webgpu] WebGPU で起動していない（build/parity-webgpu.log）"; exit 1; }
 	mv debug/gl debug/webgpu
-	unset FLIX_GE_SPLASH_SHOT FLIX_GE_BACKEND; PARITY_SCENES=$(V1_SCENES) PARITY_VIA_SCREEN=1 FLIX_GE_HIDDEN=1 FLIX_GE_FRAME_SHOT=debug/gl ../../bin/flix run
+	unset FLIX_GE_SPLASH_SHOT; PARITY_SCENES=$(V1_SCENES) PARITY_VIA_SCREEN=1 FLIX_GE_BACKEND=gl FLIX_GE_HIDDEN=1 FLIX_GE_FRAME_SHOT=debug/gl ../../bin/flix run
 	mv debug/gl debug/gl-screen
 	@bad=; for s in $$(echo $(V1_SCENES) | tr , ' '); do \
 		../../bin/fge pixel-diff debug/gl-screen/$$s.png debug/webgpu/$$s.png --name $$s --out debug/diff/webgpu-$$s.png || bad="$$bad $$s"; \
@@ -41,7 +43,7 @@ webgpu:
 
 # ShaderDoc の面と 3D の材質を GL（GLSL）と WebGPU（WGSL・Dawn）で 1 行ずつ塗り、8 bit に丸める前の値を比べる（src/WgslRows.flix）。上限を超えたら exit 1。
 wgsl-rows:
-	unset FLIX_GE_SPLASH_SHOT FLIX_GE_BACKEND; PARITY_WGSL_ROWS=1 FLIX_GE_HIDDEN=1 ../../bin/flix run
+	unset FLIX_GE_SPLASH_SHOT; PARITY_WGSL_ROWS=1 FLIX_GE_BACKEND=gl FLIX_GE_HIDDEN=1 ../../bin/flix run
 
 cpu-time:
 	@mkdir -p build

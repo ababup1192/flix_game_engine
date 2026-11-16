@@ -412,7 +412,7 @@ mod RenderPaint {
     /// atlases = 名前 → アトラス（組み込みフォントを含む）、grow = テクスチャ名の字を足す、missing = 知らせたフォント名。
     pub type alias Fonts = {
         atlases = Ref[Map[String, FontAtlas], Static],
-        grow = (GlContext, FontAtlas, Set[Int32]) -> FontAtlas \ IO,
+        grow = (FontAtlas, Set[Int32]) -> FontAtlas \ IO,
         missing = Ref[Set[String], Static]
     }
 
@@ -429,7 +429,7 @@ mod RenderPaint {
 
     /// 用意したフォント。atlases = 名前 → アトラス・registry = アトラスの画像を足した登録簿・grow = 起動時に用意しなかった字を足す。
     pub type alias FontsLoaded = { atlases = Map[String, FontAtlas], registry = RenderAsset.TextureRegistry,
-                                   grow = (GlContext, FontAtlas, Set[Int32]) -> FontAtlas \ IO }
+                                   grow = (FontAtlas, Set[Int32]) -> FontAtlas \ IO }
 
     /// project.json の textures・fonts を読み、組み込みの放射テクスチャと一緒に登録簿へ載せる。
     /// progress = 進み具合（文言・済んだ数・全部の数。窓では起動画面に出す。出さないなら何もしない関数）。
@@ -474,13 +474,13 @@ mod RenderPaint {
         }
 
     /// Game.ensureGlyphs の中身。起動時に用意しなかった字を出そうとした。いま作って足す（無ければ何も起きない）。
-    pub def ensureGlyphs(gl: GlContext, fonts: Fonts, textureName: String, codepoints: Set[Int32]): Unit \ IO =
+    pub def ensureGlyphs(fonts: Fonts, textureName: String, codepoints: Set[Int32]): Unit \ IO =
         let atlases = Ref.get(fonts#atlases);
         match atlases |> Map.findLeft((_n, a) -> a#textureName == textureName) {
             case None         => ()
             case Some((n, a)) =>
                 let grow = fonts#grow;
-                Ref.put(Map.insert(n, grow(gl, a, codepoints), atlases), fonts#atlases)
+                Ref.put(Map.insert(n, grow(a, codepoints), atlases), fonts#atlases)
         }
 
     // ── テクスチャ ──

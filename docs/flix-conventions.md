@@ -197,13 +197,15 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
 
 | 境目 | 何と何を分けるか | 今ある実装 |
 |---|---|---|
-| 機種の handler 一式: `Platform.Services`（`Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`RenderTarget.Target`・`GameEngine.Audio`・`Tasks`）と `Fs.FileRead`・`Fs.FileWrite`・`LoadProgress` | ゲームとエンジンの論理 ／ 機種 | 実機（`LwjglLayer`）・ブラウザ（`WebLayer`）・実機とブラウザの WebGPU（2D だけ。`RenderPaint.Internal.WebGpuPaint` の handler・`LwjglLayer.Internal.WebGpuWindowLayer`・`WebLayer.Internal.WebGpuLayer`。`FLIX_GE_BACKEND=webgpu`・頁の `?backend=webgpu` で選ぶ）・画面なしとテスト（`GlOffscreen`・`HeadlessLoad`・偽物の handler）。後でコンシューマ |
+| 機種の handler 一式: `Platform.Services`（`Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`RenderTarget.Target`・`GameEngine.Audio`・`Tasks`）と `Fs.FileRead`・`Fs.FileWrite`・`LoadProgress` | ゲームとエンジンの論理 ／ 機種 | 実機（`LwjglLayer`。描き手は既定の WebGPU（`LwjglLayer.Internal.WebGpuWindowLayer`）と、`FLIX_GE_BACKEND=gl` か WebGPU を使えない機械の GL）・ブラウザ（`WebLayer`。頁の `?backend=webgpu` で `WebLayer.Internal.WebGpuLayer`）・画面なしとテスト（`GpuOffscreen`（WebGPU か `GlOffscreen`）・`HeadlessLoad`・偽物の handler）。後でコンシューマ |
+| `RenderList`（値・`RenderFrame.Internal.RenderList`）と 3D の `Render3d.SceneList` | 描き手の前半（何を描くか: 2D の z の並べ・run の切り方・3D の計画） ／ backend（どう描くか） | WebGPU の backend（`RenderPaint.Internal.WebGpuPaint`・`Render3d.WebGpuRenderer`。`WebGpu` の上）・GL の backend（`RenderFrame.Internal.GlRows`・`Render3d.GlRows`。`GlContext` の上・WebGPU の無いブラウザと PC の fallback） |
 | `Scene3dRenderer.Renderer`（値） | 2D の描き手 ／ 3D の描き手 | `Render3d.makeRenderer`・`Scene3dRenderer.none()`（ブラウザは `WebLayer.withProject3d` が前者・`withProject` が場面を描かず知らせる物を渡す） |
-| `GlContext`（値・`render_gl/java/fge/gl`） | GL を使う描き手の本体（2D と 3D） ／ GL の API | `LwjglGl`（デスクトップの GL 3.3）・`WebGl2`（ブラウザ）・`RecordingGl`（呼び出しを控える包み）。この 2 つの機種のためだけの層 |
-| `WebGpuDevice`（effect・`render_gl/src`）と `fge.webgpu.WebGpu`（interface・`render_gl/java/fge/webgpu`） | WebGPU を使う側（`WebGpuOffscreen`・`WebGpuPaint`） ／ WebGPU の実装 | Dawn（`WebGpuDevice.runDawn`・PC）・navigator.gpu（`WebLayer.runBrowserWebGpu`・ブラウザの TeaVM の JSO）。入口で handler を差すだけで、使う側のコードは同じ。GlContext と同じく 2 つの機種のためだけの層 |
+| `GlContext`（値・`render_gl/java/fge/gl`） | GL の backend（2D と 3D） ／ GL の API | `LwjglGl`（デスクトップの GL 3.3）・`WebGl2`（ブラウザ）・`RecordingGl`（呼び出しを控える包み）。この 2 つの機種のためだけの層 |
+| `WebGpuDevice`（effect・`render_gl/src`）と `fge.webgpu.WebGpu`（interface・`render_gl/java/fge/webgpu`） | WebGPU を使う側（`WebGpuOffscreen`・`WebGpuPaint`・`GpuOffscreen`） ／ WebGPU の実装 | Dawn（`WebGpuDevice.runDawn`・PC）・navigator.gpu（`WebLayer.runBrowserWebGpu`・ブラウザの TeaVM の JSO）。入口で handler を差すだけで、使う側のコードは同じ。GlContext と同じく 2 つの機種のためだけの層 |
 
-- **新しい機種（コンシューマなど）の切れ目は、上の 1 行目の handler 一式の高さ**。その機種は `Platform.Services` と Fs と `LoadProgress` の
-  handler を自分の描き手と自分のファイルの読み書きで書き、render_gl も `GlContext` も使わない。GL の無い機種のために `GlContext` を広げない。
+- **新しい機種（コンシューマなど）の切れ目**: 描画は上の 2 行目の **`RenderList` の backend の高さ**（何を描くかは今の前半を使い、
+  その機種の GPU の API で行を流す backend を 1 本足す）。入力・音・窓・ファイルは 1 行目の handler 一式の高さ（`Platform.Services` と Fs と
+  `LoadProgress` の handler を自分で書く）。GL の無い機種のために `GlContext` を広げない。
 - 機種の差を、ビルドの時に同じ名前の **Flix のモジュール**を束ごとに差し替えて吸収しない（束ごとに別のファイルを組む手間が増え、片方の版は普段の型検査を通らない）。
   JVM のバイトコードを訳して動かす機種（ブラウザの TeaVM など）で足りない Java の部品は、訳す前の付け替えの道具で手当てする。
 - 層を足す前に、2 つ目の実装がいつ・どこで要るかを 1 行で書く（エンジン拡張の相談の時に添える）。書けなければ足さない。

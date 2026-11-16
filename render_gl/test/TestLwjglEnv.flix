@@ -101,16 +101,24 @@ mod TestLwjglEnv {
 
     // ── 描く道（FLIX_GE_BACKEND）─────────────────────────────────────────
 
-    /// 置かない・空・"gl" は GL・"webgpu" は大文字小文字と前後の空白を問わず WebGPU。
+    /// 置かない・空は WebGPU・"gl" は GL・"webgpu" は大文字小文字と前後の空白を問わず WebGPU。
     @Test
     def testBackendReadsGlAndWebGpu(): Unit \ Assert =
         let read = env -> LwjglEnv.fromMap(env)#backend;
-        Assert.assertEq(expected = (LwjglEnv.Backend.Gl, LwjglEnv.Backend.Gl, LwjglEnv.Backend.Gl, LwjglEnv.Backend.WebGpu),
-                        (read(Map.empty()), read(Map#{"FLIX_GE_BACKEND" => ""}), read(Map#{"FLIX_GE_BACKEND" => "gl"}),
+        Assert.assertEq(expected = (LwjglEnv.Backend.WebGpu, LwjglEnv.Backend.WebGpu, LwjglEnv.Backend.Gl, LwjglEnv.Backend.WebGpu),
+                        (read(Map.empty()), read(Map#{"FLIX_GE_BACKEND" => ""}), read(Map#{"FLIX_GE_BACKEND" => " GL "}),
                          read(Map#{"FLIX_GE_BACKEND" => " WebGPU "})))
 
-    /// 知らない値は GL で起動する（起動を止めない。知らせは load が出す）。
+    /// 知らない値は既定の WebGPU で起動する（起動を止めない。知らせは load が出す）。
     @Test
-    def testUnknownBackendFallsBackToGl(): Unit \ Assert =
-        Assert.assertEq(expected = LwjglEnv.Backend.Gl, LwjglEnv.fromMap(Map#{"FLIX_GE_BACKEND" => "vulkan"})#backend)
+    def testUnknownBackendFallsBackToWebGpu(): Unit \ Assert =
+        Assert.assertEq(expected = LwjglEnv.Backend.WebGpu, LwjglEnv.fromMap(Map#{"FLIX_GE_BACKEND" => "vulkan"})#backend)
+
+    /// FLIX_GE_BACKEND を置かずに FLIX_GE_GL_LOG を置いたら GL・両方置いたら FLIX_GE_BACKEND が勝つ。
+    @Test
+    def testGlLogPicksGlUnlessBackendIsSet(): Unit \ Assert =
+        let read = env -> LwjglEnv.fromMap(env)#backend;
+        Assert.assertEq(expected = (LwjglEnv.Backend.Gl, LwjglEnv.Backend.WebGpu),
+                        (read(Map#{"FLIX_GE_GL_LOG" => "debug/gl.log"}),
+                         read(Map#{"FLIX_GE_GL_LOG" => "debug/gl.log", "FLIX_GE_BACKEND" => "webgpu"})))
 }

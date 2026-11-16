@@ -19,7 +19,7 @@ mod RenderPaintHandlers {
                 k(())
             }
             def ensureGlyphs(textureName, codepoints, k) = {
-                RenderPaint.ensureGlyphs(gl, fonts, textureName, codepoints);
+                RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
                 if (Set.isEmpty(codepoints)) ()
                 else RenderPaint.noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
                 k(())
