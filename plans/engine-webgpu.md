@@ -1570,3 +1570,38 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
     - `pipelineOf` の鍵にジョイントの番号の位置を入れない理由（形の版の末尾の 8 float なので頂点のバイト数で決まる）を WhyNot に。
     - 上の持ち越しに送り直しの代金と JointUploads の数え方、決めた事 2 に (5) の後の属性の数。
   - テスト: render_gl 530 緑（(a) を 1 本足した）。
+
+### 12.31 ブラウザの 3D を WebGPU で（2026-11-16・この Mac・Chrome 156 の headless・WebGPU は apple metal-3 だけ）
+
+`WebLayer.withProject3d` も `?backend=webgpu` で WebGPU で描く。2D の入口と同じ `withWebGpuOrGl` を通し、WebGPU の文脈を取る前に落ちたら理由を console に出して WebGL2 で描く。
+3D の描き手は WebGPU の塗りのコア（`WebGpuPaint`）が前から持っているので、ブラウザの側で足した物は無い。`withWebGpuOrGl` が「WebGL2 へ落ちた時の 3D の描き手の作り方」を受け取るようにしただけ（2D の入口は今までどおり場面を描かない描き手）。
+engine の pub と render_gl は触っていない。
+
+- 確かめた場面と絵（`bin/fge export-web` の出力を 127.0.0.1 で配り、headless の Chrome で `?capture=<n>`。console は頁の頭に差した script で全部拾った）:
+
+  | 場面 | 大きさ | WebGL2 と比べた差 | 欠けの表（300 コマ目） |
+  |---|---|---|---|
+  | `bench/scene3d` の部屋（`?capture=6`） | 320 × 180（design） | 0 px（max ±0） | 出ない（飛ばした物が無い） |
+  | `bench/scene3d` の field（n=2000・alpha=10・shadow=1） | 960 × 540 | 比べていない | 半透明の材質 200 回/コマ・影 1 回/コマ |
+  | fps3d_lab の部屋（`?room&capture=240`） | 480 × 270（design） | 121,434 / 129,600 px が違う。影が無いぶん床と壁が明るい（目で見て差は影だけ） | 影 288 回（0.9/コマ） |
+  | fps3d_lab の礼拝堂・通路（2D） | 960 × 540 | 比べていない（目で見て描けている） | 影だけ |
+
+  どれも真っ黒・真っ白でない。`renderer: webgpu: WebGPU apple metal-3`。WebGPU の誤り（validation error・device lost）は 1 つも出ない。欠けの表に出たのは影と半透明だけ（空と lightmap はこの 2 本が使わないので出ていない）。
+- 数（Chrome 156 headless・960 × 540・コマは 60 Hz の描き替えで頭打ち）:
+  - `bench/scene3d` の部屋（`make bench-web` と同じ口・240 コマ × 3 区間）: WebGL2 の cpu p50 1.4〜2.4 ms・WebGPU 1.5〜2.1 ms。どちらも 60 fps。
+  - field n=2000（257 draw）: WebGL2 の cpu p50 10.5〜10.6 ms・WebGPU 10.9〜11.0 ms。field n=12000 は WebGL2 12.7 fps・WebGPU 14.8 fps。
+  - fps3d_lab の部屋（rAF の中で wasm が使った時間・12 秒）: WebGL2 median 11.2 ms・WebGPU 10.3 ms。礼拝堂 7.3 ms・通路 5.3 ms（WebGPU）。どれも 60 fps。
+  - 起動の一番長いコマ（押した後・最初のコマの前）: WebGL2 約 260 ms・WebGPU 約 400〜420 ms。WebGPU は canvas の文脈を取る前に pipeline を同期で作って絵とフォントを上げるので、その分が 1 コマに乗る。遊んでいる間に 50 ms を超えるコマは無い。
+- 落ちる道: `?webgpuFail=prepare` は WebGL2 の絵と 0 px 差（3D の描き手つき）。`?webgpuFail=canvas` は頁を開き直して WebGL2 で部屋を描く。
+- 2D を壊していない: `make webgpu-v1-check-web`（rpg-starter・WebGL2 と WebGPU と WebGPU の無い頁）OK・差 0 px。
+- wasm の大きさ: `bench/scene3d` 6.3 MB → 7.6 MB（gzip 1.5 MB → 1.8 MB）。前は WebGPU の塗りのコアが 3D の入口から届かず TeaVM が捨てていた。fps3d_lab 10.5 MB（gzip 2.5 MB）。
+- ブラウザでだけ起きると見ていた物の扱い:
+  - shader の組み立て・pipeline を同期で作る時間: 上の起動の 1 コマ（+150 ms 前後）だけ。遊ぶ間に新しい材質が出た時の pipeline はこの 2 本では見ていない（部屋ごとに起動で揃う）。
+  - storage の上限: device は adapter の上限をそのまま頼む（`BrowserWebGpu`）。姿勢の行の予算 64 MiB は core の最低保証 128 MiB の内なので、この Mac では当たらない。
+  - canvas の形式: この Mac の Chrome は `bgra8unorm` を選び、そのまま描けた。`rgba8unorm` を選ぶ機種（Android の Chrome）は確かめていない。
+  - 直した物は無い（ブラウザだけの誤りは出なかった）。
+- 持ち越し:
+  - 点光源が 8 本を超えた時の知らせ（「scene3d: 点光源が 11 本ある」）は WebGL2 の頁にだけ出て、WebGPU の頁には出ない（fps3d_lab の部屋）。PC の WebGPU でも同じか、(4) の後に `WebGpuRenderer` の側で見る。
+  - 2D の入口（`withProject`）も `?backend=webgpu` なら 3D の場面を描く（WebGPU の塗りのコアが 3D の描き手を持つため）。WebGL2 の 2D の入口は描かずに 1 回知らせるので、振る舞いが分かれている。
+  - Retina の 2 倍・Android の Chrome・Safari・空と lightmap を使う場面は確かめていない。
+  - fps3d_lab は engine 0.87.0 のままなので、写しを 0.97.0 にして書き出した（コードは直さずに通った）。font-bake は無い字 178 字で止まるので、font-bake が作ったアトラスを `--font-atlas-dir` で渡した（ゲームのフォントの話で WebGPU とは別）。

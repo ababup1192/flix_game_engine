@@ -51,17 +51,17 @@ pub mod WebLayer {
 
     /// 2D のゲームの入口。3D の描き手を持たないので、Scene3d の場面は描かず初回に 1 回知らせる。
     // WhyNot: 2D の入口を withProject3d に寄せて 1 本にしない — ここから Render3d へ届くと、3D を使わないゲームの wasm まで太る。
-    /// 頁が ?backend=webgpu で開かれていれば WebGPU で描く（V1 は 2D だけ。使えなければ理由を console に出して WebGL2 で描く）。
+    /// 頁が ?backend=webgpu で開かれていれば WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
-        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(config, f)
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), config, f)
         else withWeb((_, _) -> makeWarningRenderer(), config, f)
 
-    /// Scene3d を描くゲームの入口。?backend=webgpu でも WebGL2 で描き、理由を console に出す（V1 の WebGPU は 3D を描かない）。
+    /// Scene3d を描くゲームの入口。頁が ?backend=webgpu で開かれていれば 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);
-        if (Browser.backendRequest() == "webgpu") withGlFallback("3D の入口（WebLayer.withProject3d）は WebGL2 で描く", makeRenderer, config, f)
+        if (Browser.backendRequest() == "webgpu") withWebGpuOrGl(makeRenderer, config, f)
         else withWeb(makeRenderer, config, f)
 
     /// `rootDir` 直下の project.json を読んで起動に使う設定にする。読めなければ止める（LwjglLayer.withProject と同じ）。
@@ -72,11 +72,13 @@ pub mod WebLayer {
         }
 
     /// WebGPU で描く。webgpu の文脈を取る前に落ちたら、理由を console に出して WebGL2 で描く。
+    /// makeRenderer = WebGL2 へ落ちた時の 3D の描き手の作り方（WebGPU の 3D の描き手は塗りのコアが持つ）。
     @DontInline
-    def withWebGpuOrGl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
+    def withWebGpuOrGl(makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
+                       config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
         match WebLayer.Internal.WebGpuLayer.withWeb(config, f) {
             case Ok(result) => result
-            case Err(why)   => withGlFallback(why, (_, _) -> makeWarningRenderer(), config, f)
+            case Err(why)   => withGlFallback(why, makeRenderer, config, f)
         }
 
     /// WebGPU を使えなかった理由を出して WebGL2 の文脈を取り、GL で描く。canvas が既に webgpu の文脈を持っていれば、頁が開き直すのを待つ。
