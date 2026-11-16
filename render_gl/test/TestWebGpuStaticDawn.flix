@@ -103,6 +103,16 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
         Assert.assertEq(expected = (1, 0) :: (1, 0) :: (1, 0) :: (1, 2) :: Nil, Ref.get(seen))
     })
 
+    /// 太陽の影のある場面を 3 コマ描いても（色の pass と影の地図の pass の bundle を積んで流す）、device の誤りは出ず、持ち越しも作り直さない。
+    @Test
+    def testShadowedBundlesRaiseNoDeviceErrors(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let g = town();
+        let sun = { shadow = Some(Scene3d.directionalShadow()) | Scene3d.directionalLight(Vec3.v3(-0.4, -1.0, 0.3)) };
+        let sunlit = (cmd: Scene3d.RenderCmd) -> { scene = { directionalLight = Some(sun) | cmd#scene } | cmd };
+        let frames = fst(framesOf(gpu, 4000000, sunlit(sceneWith(g)) :: sunlit(sceneWith(g)) :: sunlit(sceneWith(g)) :: Nil));
+        Assert.assertEq(expected = ((1, 0) :: (1, 0) :: (1, 0) :: Nil, 0), (frames, gpu.errorCount()))
+    })
+
     /// 持ち越した物も描いた物の数に入る。
     @Test
     def testCarriedItemsAreCountedAsDrawn(): Unit \ {Assert, IO} = withDawn(gpu ->

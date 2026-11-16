@@ -15,6 +15,7 @@ mod Render3d.WebGpuShadows {
     import fge.webgpu.CullMode
     import fge.webgpu.FrontFace
     import fge.webgpu.PrimitiveTopology
+    import fge.webgpu.RenderCommands
     import fge.webgpu.RenderPass
     import fge.webgpu.RenderPassDesc
     import fge.webgpu.RenderPipeline
@@ -48,16 +49,17 @@ mod Render3d.WebGpuShadows {
     /// meshStore = 形の置き場・instances = 1 体ごとの値の buffer・instanceBase = この場面の 1 体ごとの値を送った位置（体の番号）・poseGroup = 姿勢の group 2・
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・emptyLayout と emptyGroup = 空の group 1・poseLayout = group 2 の layout・
     /// created = 描き先を作った知らせ（診断の数）・unbound = 付けられずに飛ばした行の物の数の知らせ・
-    /// carried = 場面の持ち越した集まりの影の地図の行と、その 1 体ごとの値の buffer（頭から・Render3d.WebGpuStatic）。
+    /// carried = 場面の持ち越した集まりの影の地図の行を流す関数（pass, 地図の鍵の字, 地図の group 0, 行を積む関数 (積み先, 行, 1 体ごとの値の buffer)）（Render3d.WebGpuStatic.shadowRunnerOf）。
     pub type alias ShadowDraw = {
         encoder = CommandEncoder, notePass = Unit -> Unit \ IO, meshStore = MeshStore, instances = Buffer, instanceBase = Int32, poseGroup = Option[BindGroup],
         vertexModule = ShaderModule, skinnedModule = ShaderModule, emptyLayout = BindGroupLayout, emptyGroup = BindGroup, poseLayout = BindGroupLayout,
-        created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO, carried = List[(SceneList, Buffer)]
+        created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO,
+        carried = List[(RenderPass, String, BindGroup, (RenderCommands, SceneList, Buffer) -> Unit \ IO) -> Unit \ IO]
     }
 
     /// 描き先の深度の形式（色の pass の group 0 の binding 1・2 で読む）。
     // WhyNot: DEPTH24_PLUS にしない — 機種ごとに中身の形式が決まらず、比べる値（ndc.z × 0.5 + 0.5 − bias）との丸めが機種で変わる。GL の 24 bit との違いは比べの最後の bit だけ。
-    def depthFormat(): TextureFormat = TextureFormat.DEPTH32_FLOAT
+    pub def depthFormat(): TextureFormat = TextureFormat.DEPTH32_FLOAT
 
     pub def create(gpu: WebGpu): Shadows \ IO =
         let layoutDesc = new BindGroupLayoutDesc("fge scene3d shadow camera");
@@ -130,30 +132,32 @@ mod Render3d.WebGpuShadows {
             rp.setBindGroup(0, target#group);
             Option.forEach(g -> rp.setBindGroup(2, g), draw#poseGroup);
             rp.setVertexBuffer(1, draw#instances, 0i64, draw#instances.size());
-            let bound = Ref.fresh(Static, (-1, (None: Option[Int32])));
-            let bindShape = (p: RenderPass, mesh: MeshBuffers, skin: Option[Int32]) -> {
-                let k = (mesh#stride, skin);
-                if (Ref.get(bound) == k) () else {
-                    p.setPipeline(pipelineOf(sh, draw, mesh#stride, skin));
-                    if (Option.nonEmpty(skin)) p.setBindGroup(1, draw#emptyGroup) else ();
-                    Ref.put(k, bound)
-                };
-                true
+            drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw), pass#list, draw#instanceBase);
+            let drawCarried = (commands: RenderCommands, list: SceneList, instances: Buffer) -> {
+                commands.setVertexBuffer(1, instances, 0i64, instances.size());
+                drawRows(commands, draw#meshStore, drawerOf(sh, draw), list, 0)
             };
-            let drawer = {
-                shape = (p, mesh) -> bindShape(p, mesh, None),
-                skinned = (p, mesh) -> Option.nonEmpty(draw#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
-                material = (_, _, _, _) -> checked_ecast(false),
-                billboard = (_, _, _) -> checked_ecast(false),
-                unbound = draw#unbound
-            };
-            drawRows(rp, draw#meshStore, drawer, pass#list, draw#instanceBase);
-            draw#carried |> List.forEach(match (list, instances) -> {
-                rp.setVertexBuffer(1, instances, 0i64, instances.size());
-                drawRows(rp, draw#meshStore, drawer, list, 0)
-            });
+            draw#carried |> List.forEach(runCarried -> runCarried(rp, ToString.toString(key), target#group, drawCarried));
             rp.end()
         })
+
+    /// 影の地図の行を形だけで描く時に pipeline を付ける関数の組（付けた pipeline の控えは組ごと・bundle は付けた物を持たずに始まる）。
+    def drawerOf(sh: Shadows, draw: ShadowDraw): Render3d.WebGpuRows.RowDrawer \ IO =
+        let bound = Ref.fresh(Static, (-1, (None: Option[Int32])));
+        let bindShape = (p: RenderCommands, mesh: MeshBuffers, skin: Option[Int32]) -> {
+            let k = (mesh#stride, skin);
+            if (Ref.get(bound) == k) () else {
+                p.setPipeline(pipelineOf(sh, draw, mesh#stride, skin));
+                if (Option.nonEmpty(skin)) p.setBindGroup(1, draw#emptyGroup) else ();
+                Ref.put(k, bound)
+            };
+            true
+        };
+        { shape = (p, mesh) -> bindShape(p, mesh, None),
+          skinned = (p, mesh) -> Option.nonEmpty(draw#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
+          material = (_, _, _, _) -> checked_ecast(false),
+          billboard = (_, _, _) -> checked_ecast(false),
+          unbound = draw#unbound }
 
     /// 光の目（world → 光の clip）と単位行列の射影を、R3dCamera の並び（uView・uProj）で target の buffer へ書く。
     def writeCamera(sh: Shadows, target: ShadowTarget, pass: ShadowPass): Unit \ IO =

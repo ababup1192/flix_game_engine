@@ -10,7 +10,7 @@ import java.nio.ByteBuffer;
  * 待つ関数（readBuffer・getCompilationInfo・waitIdle）は結果が出るまで返らない。ブラウザではコマの描き（requestAnimationFrame）の外、
  * effect の handler の中でしか呼べない。
  *
- * WhyNot: WebGPU の全部を写さない — backend が使う物だけにし、要る物はその段で足す（compute・render bundle・storage texture はまだ無い）。
+ * WhyNot: WebGPU の全部を写さない — backend が使う物だけにし、要る物はその段で足す（compute・storage texture はまだ無い）。
  * WhyNot: descriptor を配列で渡さない — Flix から Java の物の配列を組む形は型が合わせにくいので、つないで書く Desc の類で渡す。
  * WhyNot: map を非同期の形で出さない — PC は待てば済み、ブラウザは TeaVM の JSPromise.await で同じ形に待てる。
  */
@@ -60,6 +60,9 @@ public interface WebGpu {
     QuerySet createTimestampQuerySet(String label, int count);
 
     CommandEncoder createCommandEncoder(String label);
+
+    /** colorFormat（色を持たない描き先は null）・depthFormat・sampleCount の描き先の pass で流す bundle を積む物。 */
+    RenderBundleEncoder createRenderBundleEncoder(String label, TextureFormat colorFormat, TextureFormat depthFormat, int sampleCount);
 
     // ── queue ──
     /** data の [dataOffset, dataOffset + size) を buffer の offset へ写す（data は direct）。 */

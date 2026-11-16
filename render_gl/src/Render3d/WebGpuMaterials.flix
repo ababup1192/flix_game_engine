@@ -22,7 +22,7 @@ pub mod Render3d.WebGpuMaterials {
     import fge.webgpu.FilterMode
     import fge.webgpu.FrontFace
     import fge.webgpu.PrimitiveTopology
-    import fge.webgpu.RenderPass
+    import fge.webgpu.RenderCommands
     import fge.webgpu.RenderPipeline
     import fge.webgpu.RenderPipelineDesc
     import fge.webgpu.Sampler
@@ -87,6 +87,7 @@ pub mod Render3d.WebGpuMaterials {
             valuesUsed = Array[Int32, Static],
             groups = Ref[List[BindGroup], Static],
             warned = Ref[Set[String], Static],
+            textureEpoch = Array[Int64, Static],
             mipmaps = Render3d.WebGpuMipmaps.Mipmaps
         })
     }
@@ -115,7 +116,7 @@ pub mod Render3d.WebGpuMaterials {
                               sampler("fge material clamp nearest", FilterMode.NEAREST, AddressMode.CLAMP_TO_EDGE),
                               sampler("fge material clamp linear", FilterMode.LINEAR, AddressMode.CLAMP_TO_EDGE)} @ Static,
             blank = blank, values = Array#{createValueBuffer(gpu, initialValueBytes())} @ Static, valuesUsed = Array#{0} @ Static,
-            groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty()),
+            groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty()), textureEpoch = Array#{0i64} @ Static,
             mipmaps = Render3d.WebGpuMipmaps.create(gpu)
         })
 
@@ -324,11 +325,25 @@ pub mod Render3d.WebGpuMaterials {
         let hit = TextureTable3d.findTexture(up#source, name);
         match (TextureTable3d.readOf(false, up#source, name, textureUse), hit) {
             case (Some((slot, _)), Some(TextureHit.Own(t))) =>
-                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "", handle -> uploadTexture3d(m, handle, average, t))
+                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "", handle -> { noteTextureMade(m); uploadTexture3d(m, handle, average, t) })
             case (Some((slot, _)), Some(TextureHit.Registered(t))) =>
-                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "${t#texId}:${t#version}", handle -> mipCopyTexture(m, up, handle, average, t))
+                discard TextureTable3d.ensure(s#textures, destroyTexture(s#store), up#gen, slot, "${t#texId}:${t#version}", handle -> { noteTextureMade(m); mipCopyTexture(m, up, handle, average, t) })
             case _ => ()
         }
+
+    def noteTextureMade(m: Materials): Unit \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        Array.put(Array.get(0, s#textureEpoch) + 1i64, 0, s#textureEpoch)
+
+    /// 材質の絵を作った（作り直した）回数。group 1 を持ち越す所（Render3d.WebGpuStatic の bundle）が、作り直した絵を読み続けないために見る。
+    pub def textureEpochOf(m: Materials): Int64 \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        Array.get(0, s#textureEpoch)
+
+    /// 今の encoder の group 1 の置き場（submit の後に手放す）。
+    pub def frameGroupsOf(m: Materials): Ref[List[BindGroup], Static] =
+        let MaterialsData.MaterialsData(s) = m;
+        s#groups
 
     /// 場面の環境マップの絵 name を、材質の絵と同じ置き場と mip の作り方で作り（無ければ）、その絵と mip のレベルの数を返す。
     /// 場面の textures に無い・作れない絵は None。
@@ -425,15 +440,16 @@ pub mod Render3d.WebGpuMaterials {
 
     /// 材質の行を描く pass の付け方の材料。base = 行の values を送った位置（バイト）・values = その buffer・programs = 行の欄 1 が引く program の並び・
     /// format・samples = 描き先・sceneLayout = group 0 の layout・poseLayout = group 2（姿勢）の layout・hasPoses = pass の頭で group 2 を付けたか・
-    /// bound = 今の pipeline・groupRow = 最後に group 1 を付けた行（要素 1 つ・-1 = 付けていないか、付けた物が材質の group でない）。
+    /// bound = 今の pipeline・groupRow = 最後に group 1 を付けた行（要素 1 つ・-1 = 付けていないか、付けた物が材質の group でない）・
+    /// groups = 作った group 1 の置き場（今の encoder の物は frameGroupsOf・bundle に積む物は bundle の持ち主の置き場）。
     pub type alias MaterialPass = {
         base = Int32, values = Buffer, programs = Vector[Option[Program]], format = RenderTarget.Format, samples = Int32, sceneLayout = BindGroupLayout,
-        poseLayout = BindGroupLayout, hasPoses = Bool, bound = Ref[BoundPipeline, Static], groupRow = Array[Int32, Static]
+        poseLayout = BindGroupLayout, hasPoses = Bool, bound = Ref[BoundPipeline, Static], groupRow = Array[Int32, Static], groups = Ref[List[BindGroup], Static]
     }
 
     /// 行 row の材質の pipeline と group 1 を pass に付ける（描けない行は偽。骨つきの材質は pass に姿勢の group が無いか、形にジョイントが無ければ偽・
     /// lightmap の材質は形に 2 本目の uv が無ければ偽）。前の材質の行と同じ付け方（flagSameBinding）の行は group を付け直さない。
-    pub def bindRow(m: Materials, mp: MaterialPass, pass: RenderPass, list: SceneList, row: Int32, mesh: MeshBuffers): Bool \ IO =
+    pub def bindRow(m: Materials, mp: MaterialPass, pass: RenderCommands, list: SceneList, row: Int32, mesh: MeshBuffers): Bool \ IO =
         let handle = rowAt(list, row, 1);
         let current = mp#programs;
         let program = if (handle >= 0 and handle < Vector.length(current)) Vector.get(handle, current) else None;
@@ -475,7 +491,7 @@ pub mod Render3d.WebGpuMaterials {
             discard desc.textureView(draw + 3, textureAt(k).defaultView()).sampler(draw + 4, samplerAt(k))
         } else ();
         let group = s#gpu.createBindGroup(desc);
-        Ref.put(group :: Ref.get(s#groups), s#groups);
+        Ref.put(group :: Ref.get(mp#groups), mp#groups);
         group
 
     /// 材質の絵の k 番目から n の前までを desc の 1 + 2k（絵）と 2 + 2k（sampler）へ。

@@ -197,9 +197,62 @@ final class DawnObjects {
         DawnCommandBuffer(WGPUCommandBuffer commands) { this.commands = commands; }
     }
 
+    static final class DawnRenderBundle implements fge.webgpu.RenderBundle {
+        final WGPURenderBundle bundle;
+        private boolean released;
+
+        DawnRenderBundle(WGPURenderBundle bundle) { this.bundle = bundle; }
+
+        @Override public void release() {
+            if (released) return;
+            released = true;
+            bundle.release();
+        }
+    }
+
+    static final class DawnRenderBundleEncoder implements fge.webgpu.RenderBundleEncoder {
+        final WGPURenderBundleEncoder encoder;
+
+        DawnRenderBundleEncoder(WGPURenderBundleEncoder encoder) { this.encoder = encoder; }
+
+        @Override public void setPipeline(fge.webgpu.RenderPipeline pipeline) {
+            encoder.setPipeline(((DawnRenderPipeline) pipeline).pipeline);
+        }
+
+        @Override public void setBindGroup(int index, fge.webgpu.BindGroup group) {
+            encoder.setBindGroup(index, ((DawnBindGroup) group).group);
+        }
+
+        @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
+            encoder.setVertexBuffer(slot, ((DawnBuffer) buffer).buffer, Math.toIntExact(offset), Math.toIntExact(size));
+        }
+
+        @Override public void setIndexBuffer(fge.webgpu.Buffer buffer, fge.webgpu.IndexFormat format, long offset, long size) {
+            encoder.setIndexBuffer(((DawnBuffer) buffer).buffer,
+                format == fge.webgpu.IndexFormat.UINT16 ? WGPUIndexFormat.Uint16 : WGPUIndexFormat.Uint32,
+                Math.toIntExact(offset), Math.toIntExact(size));
+        }
+
+        @Override public void draw(int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
+            encoder.draw(vertexCount, instanceCount, firstVertex, firstInstance);
+        }
+
+        @Override public void drawIndexed(int indexCount, int instanceCount, int firstIndex, int baseVertex, int firstInstance) {
+            encoder.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+        }
+
+        @Override public fge.webgpu.RenderBundle finish() {
+            WGPURenderBundle bundle = new WGPURenderBundle();
+            encoder.finish(WGPURenderBundleDescriptor.NULL, bundle);
+            encoder.release();
+            return new DawnRenderBundle(bundle);
+        }
+    }
+
     static final class DawnRenderPass implements fge.webgpu.RenderPass {
         final WGPURenderPassEncoder pass;
         private final WGPUColor blendConstant = new WGPUColor();
+        private WGPUVectorRenderBundle bundles;
 
         DawnRenderPass(WGPURenderPassEncoder pass) { this.pass = pass; }
 
@@ -242,10 +295,18 @@ final class DawnObjects {
             pass.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
         }
 
+        @Override public void executeBundle(fge.webgpu.RenderBundle bundle) {
+            if (bundles == null) bundles = new WGPUVectorRenderBundle();
+            bundles.clear();
+            bundles.push_back(((DawnRenderBundle) bundle).bundle);
+            pass.executeBundles(bundles);
+        }
+
         @Override public void end() {
             pass.end();
             pass.release();
             blendConstant.dispose();
+            if (bundles != null) bundles.dispose();
         }
     }
 
