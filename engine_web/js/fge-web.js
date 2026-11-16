@@ -255,6 +255,35 @@ function fgePublishCapture(rgba, w, h, renderer) {
   window.fgeCaptureReady = true;
 }
 
+// ── WebGPU の pass の命令の列（BrowserObjects.BrowserRenderPass が end で 1 回だけ渡す）──
+// 命令の番号と並びは BrowserRenderPass と組。物の番号は 0 以上なら fgePassObjs（pass ごとに頭から振り直す）・負なら fgeGpuObjs（buffer・pipeline の一生の表）。
+var fgePassObjs = [];
+var fgeGpuObjs = [];
+var fgeGpuFree = [];
+function fgePassObj(i) { return i >= 0 ? fgePassObjs[i] : fgeGpuObjs[-1 - i]; }
+var fgePassBits = new Int32Array(6);
+var fgePassFloats = new Float32Array(fgePassBits.buffer);
+function fgeRunPass(pass, ops, count, end) {
+  var o = fgePassObj, f = fgePassFloats, bits = fgePassBits;
+  for (var i = 0; i < count;) {
+    switch (ops[i]) {
+      case 1: pass.setPipeline(o(ops[i + 1])); i += 2; break;
+      case 2: pass.setBindGroup(ops[i + 1], o(ops[i + 2])); i += 3; break;
+      case 3: pass.setVertexBuffer(ops[i + 1], o(ops[i + 2]), ops[i + 3], ops[i + 4]); i += 5; break;
+      case 4: pass.setIndexBuffer(o(ops[i + 1]), ops[i + 2] === 0 ? "uint16" : "uint32", ops[i + 3], ops[i + 4]); i += 5; break;
+      case 5:
+        for (var k = 0; k < 6; k++) bits[k] = ops[i + 1 + k];
+        pass.setViewport(f[0], f[1], f[2], f[3], f[4], f[5]); i += 7; break;
+      case 6: pass.setScissorRect(ops[i + 1], ops[i + 2], ops[i + 3], ops[i + 4]); i += 5; break;
+      case 7: pass.setStencilReference(ops[i + 1]); i += 2; break;
+      case 8: pass.draw(ops[i + 1], ops[i + 2], ops[i + 3], ops[i + 4]); i += 5; break;
+      case 9: pass.drawIndexed(ops[i + 1], ops[i + 2], ops[i + 3], ops[i + 4], ops[i + 5]); i += 6; break;
+      default: throw new Error("fgeRunPass: 知らない命令 " + ops[i] + "（" + i + " 番目）");
+    }
+  }
+  if (end) pass.end();
+}
+
 // ── 描き手の選び分け（?backend=webgpu）──
 // WhyNot: navigator.gpu の無い頁で WebGPU を頼まない — wasm は WebGPU を知らないブラウザでも読めるが、頼めば GL へ戻すまでに一手間かかる。
 var fgeBackendFallbackKey = "fge-backend-fallback";

@@ -6,6 +6,7 @@ import fge.webgpu.RenderPassDesc;
 import fge.webgpu.SurfaceStatus;
 import fge.webgpu.TextureFormat;
 import org.teavm.jso.JSBody;
+import org.teavm.jso.typedarrays.Int32Array;
 import org.teavm.jso.webgpu.GPUBindGroup;
 import org.teavm.jso.webgpu.GPUBuffer;
 import org.teavm.jso.webgpu.GPUCanvasContext;
@@ -27,7 +28,37 @@ import org.teavm.jso.webgpu.GPUTexture;
 final class BrowserObjects {
     private BrowserObjects() {}
 
-    static final class BrowserBuffer implements fge.webgpu.Buffer {
+    /** pass の記録の中で JS の物を指す番号（同じ pass の 2 回目からは JS へ渡し直さない）。 */
+    static class PassSlot {
+        int passEpoch;
+        int passSlot;
+    }
+
+    /**
+     * 一生の長い物（buffer・pipeline）は初めて pass で使う時に JS の表 fgeGpuObjs へ置き、負の番号（-1 - 表の位置）で指す。
+     * buffer は destroy で表から外す。pipeline は作った物を控えて使い回すので数が増えない。
+     */
+    static class LongSlot extends PassSlot {
+        int longSlot = -1;
+
+        int longSlotOf(org.teavm.jso.JSObject object) {
+            if (longSlot < 0) longSlot = putLong(object);
+            return -1 - longSlot;
+        }
+
+        void dropLong() {
+            if (longSlot >= 0) dropLong(longSlot);
+            longSlot = -1;
+        }
+
+        @JSBody(params = {"object"}, script = "var i = fgeGpuFree.length > 0 ? fgeGpuFree.pop() : fgeGpuObjs.length; fgeGpuObjs[i] = object; return i;")
+        private static native int putLong(org.teavm.jso.JSObject object);
+
+        @JSBody(params = {"slot"}, script = "fgeGpuObjs[slot] = null; fgeGpuFree.push(slot);")
+        private static native void dropLong(int slot);
+    }
+
+    static final class BrowserBuffer extends LongSlot implements fge.webgpu.Buffer {
         final GPUBuffer buffer;
         final long size;
         private boolean destroyed;
@@ -42,6 +73,7 @@ final class BrowserObjects {
         @Override public void destroy() {
             if (destroyed) return;
             destroyed = true;
+            dropLong();
             buffer.destroy();
         }
     }
@@ -114,7 +146,7 @@ final class BrowserObjects {
         @Override public void release() { }
     }
 
-    static final class BrowserBindGroup implements fge.webgpu.BindGroup {
+    static final class BrowserBindGroup extends PassSlot implements fge.webgpu.BindGroup {
         final GPUBindGroup group;
 
         BrowserBindGroup(GPUBindGroup group) { this.group = group; }
@@ -122,7 +154,7 @@ final class BrowserObjects {
         @Override public void release() { }
     }
 
-    static final class BrowserRenderPipeline implements fge.webgpu.RenderPipeline {
+    static final class BrowserRenderPipeline extends LongSlot implements fge.webgpu.RenderPipeline {
         final GPUPipeline.Render pipeline;
 
         BrowserRenderPipeline(GPUPipeline.Render pipeline) { this.pipeline = pipeline; }
@@ -155,48 +187,117 @@ final class BrowserObjects {
         BrowserCommandBuffer(GPUCommandEncoder.CommandBuffer commands) { this.commands = commands; }
     }
 
+    /**
+     * pass の命令を Int32 の列に積み、end で fge-web.js の fgeRunPass へ 1 回で渡す（JS がその場で pass に流す）。
+     * 命令の形は fgeRunPass と組（番号を変える時は両方を直す）。物（pipeline・group・buffer）は pass の中の番号で指し、
+     * 初めて使う時だけ JS の表 fgePassObjs へ置く。
+     * WhyNot: 命令ごとに JS の pass を呼ばない — 1 回の行き来ごとに引数の包み直しが付き、3D の場面は 1 コマに数百の命令を積む。
+     * WhyNot: 物の番号を device の一生で振らない — release で JS の物を手放さない（上の決まり）ので、表が毎コマの group で伸び続ける。
+     */
     static final class BrowserRenderPass implements fge.webgpu.RenderPass {
+        static final int PIPELINE = 1, BIND_GROUP = 2, VERTEX_BUFFER = 3, INDEX_BUFFER = 4, VIEWPORT = 5, SCISSOR = 6,
+                         STENCIL = 7, DRAW = 8, DRAW_INDEXED = 9;
+        private static int epochs;
+
         final GPURenderPassEncoder pass;
+        private final int epoch = ++epochs;
+        private int objects;
+        private int[] ops = new int[512];
+        private int count;
 
         BrowserRenderPass(GPURenderPassEncoder pass) { this.pass = pass; }
 
+        private int slotOf(PassSlot owner, org.teavm.jso.JSObject object) {
+            if (owner.passEpoch != epoch) {
+                owner.passEpoch = epoch;
+                owner.passSlot = objects++;
+                putObject(owner.passSlot, object);
+            }
+            return owner.passSlot;
+        }
+
+        private void room(int n) {
+            if (count + n > ops.length) ops = java.util.Arrays.copyOf(ops, Math.max(ops.length * 2, count + n));
+        }
+
+        private void op1(int code, int a) { room(2); ops[count++] = code; ops[count++] = a; }
+
+        private void flush(boolean end) {
+            if (count > 0 || end) runPass(pass, Int32Array.copyFromJavaArray(java.util.Arrays.copyOf(ops, count)), count, end);
+            count = 0;
+        }
+
+        private static boolean fitsInt(long v) { return v >= 0 && v <= Integer.MAX_VALUE; }
+
         @Override public void setPipeline(fge.webgpu.RenderPipeline pipeline) {
-            pass.setPipeline(((BrowserRenderPipeline) pipeline).pipeline);
+            BrowserRenderPipeline p = (BrowserRenderPipeline) pipeline;
+            op1(PIPELINE, p.longSlotOf(p.pipeline));
         }
 
         @Override public void setBindGroup(int index, fge.webgpu.BindGroup group) {
-            pass.setBindGroup(index, ((BrowserBindGroup) group).group);
+            BrowserBindGroup g = (BrowserBindGroup) group;
+            int slot = slotOf(g, g.group);
+            room(3); ops[count++] = BIND_GROUP; ops[count++] = index; ops[count++] = slot;
         }
 
         @Override public void setVertexBuffer(int slot, fge.webgpu.Buffer buffer, long offset, long size) {
-            pass.setVertexBuffer(slot, ((BrowserBuffer) buffer).buffer, offset, size);
+            BrowserBuffer b = (BrowserBuffer) buffer;
+            if (!fitsInt(offset) || !fitsInt(size)) {
+                flush(false);
+                pass.setVertexBuffer(slot, b.buffer, offset, size);
+                return;
+            }
+            int at = b.longSlotOf(b.buffer);
+            room(5); ops[count++] = VERTEX_BUFFER; ops[count++] = slot; ops[count++] = at; ops[count++] = (int) offset; ops[count++] = (int) size;
         }
 
         @Override public void setIndexBuffer(fge.webgpu.Buffer buffer, IndexFormat format, long offset, long size) {
-            pass.setIndexBuffer(((BrowserBuffer) buffer).buffer, format == IndexFormat.UINT16 ? "uint16" : "uint32", offset, size);
+            BrowserBuffer b = (BrowserBuffer) buffer;
+            if (!fitsInt(offset) || !fitsInt(size)) {
+                flush(false);
+                pass.setIndexBuffer(b.buffer, format == IndexFormat.UINT16 ? "uint16" : "uint32", offset, size);
+                return;
+            }
+            int at = b.longSlotOf(b.buffer);
+            room(5); ops[count++] = INDEX_BUFFER; ops[count++] = at; ops[count++] = format == IndexFormat.UINT16 ? 0 : 1;
+            ops[count++] = (int) offset; ops[count++] = (int) size;
         }
 
+        // WhyNot: 位置と大きさを float の bit で渡す — GPU は viewport を float で持つので、double から落とす所が JS の手前に移るだけ。
         @Override public void setViewport(double x, double y, double width, double height, double minDepth, double maxDepth) {
-            pass.setViewport(x, y, width, height, minDepth, maxDepth);
+            room(7); ops[count++] = VIEWPORT;
+            ops[count++] = Float.floatToRawIntBits((float) x); ops[count++] = Float.floatToRawIntBits((float) y);
+            ops[count++] = Float.floatToRawIntBits((float) width); ops[count++] = Float.floatToRawIntBits((float) height);
+            ops[count++] = Float.floatToRawIntBits((float) minDepth); ops[count++] = Float.floatToRawIntBits((float) maxDepth);
         }
 
-        @Override public void setScissorRect(int x, int y, int width, int height) { pass.setScissorRect(x, y, width, height); }
+        @Override public void setScissorRect(int x, int y, int width, int height) {
+            room(5); ops[count++] = SCISSOR; ops[count++] = x; ops[count++] = y; ops[count++] = width; ops[count++] = height;
+        }
 
-        @Override public void setStencilReference(int reference) { pass.setStencilReference(reference); }
+        @Override public void setStencilReference(int reference) { op1(STENCIL, reference); }
 
         @Override public void setBlendConstant(double r, double g, double b, double a) {
+            flush(false);
             pass.setBlendConstant(BrowserWebGpu.color(r, g, b, a));
         }
 
         @Override public void draw(int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
-            pass.draw(vertexCount, instanceCount, firstVertex, firstInstance);
+            room(5); ops[count++] = DRAW; ops[count++] = vertexCount; ops[count++] = instanceCount; ops[count++] = firstVertex; ops[count++] = firstInstance;
         }
 
         @Override public void drawIndexed(int indexCount, int instanceCount, int firstIndex, int baseVertex, int firstInstance) {
-            pass.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
+            room(6); ops[count++] = DRAW_INDEXED; ops[count++] = indexCount; ops[count++] = instanceCount; ops[count++] = firstIndex;
+            ops[count++] = baseVertex; ops[count++] = firstInstance;
         }
 
-        @Override public void end() { pass.end(); }
+        @Override public void end() { flush(true); }
+
+        @JSBody(params = {"slot", "object"}, script = "fgePassObjs[slot] = object;")
+        private static native void putObject(int slot, org.teavm.jso.JSObject object);
+
+        @JSBody(params = {"pass", "ops", "count", "end"}, script = "fgeRunPass(pass, ops, count, end);")
+        private static native void runPass(GPURenderPassEncoder pass, Int32Array ops, int count, boolean end);
     }
 
     static final class BrowserCommandEncoder implements fge.webgpu.CommandEncoder {
