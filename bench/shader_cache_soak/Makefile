@@ -10,7 +10,7 @@
 .PHONY: run check
 
 run:
-	unset FLIX_GE_SPLASH_SHOT; FLIX_GE_HIDDEN=1 ../../bin/flix run
+	unset FLIX_GE_SPLASH_SHOT; FLIX_GE_BACKEND=gl FLIX_GE_HIDDEN=1 ../../bin/flix run
 
 check:
 	../../bin/flix check

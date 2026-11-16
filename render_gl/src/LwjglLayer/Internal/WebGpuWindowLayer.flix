@@ -4,7 +4,7 @@
 // 開く前に落ちたら（Dawn のネイティブ・device・ウィンドウ）作った物を捨てて Err(理由) を返し、呼ぶ側が GL で起動する。
 // FLIX_GE_WEBGPU_FAIL=native|device|window はその 3 つの道をわざと起こす（GL へ落ちる道の確かめ用。無ければ何もしない）。
 // 隠して起動（FLIX_GE_HIDDEN）した時は GLFW の隠したウィンドウだけを作り、surface を作らず画面にも出さない（中間の texture は design の大きさ）。
-// V1 で描かない物: F8 の注釈（1 回知らせて捨てる）・起動の後に足す字（フォントごとに 1 回知らせる）・WebGpuPaint が知らせる物。
+// 描かない物: WebGpuPaint が知らせる物（足せなかった字など）。
 pub mod LwjglLayer.Internal.WebGpuWindowLayer {
     import fge.webgpu.PresentMode
     import fge.webgpu.Surface
@@ -171,23 +171,31 @@ pub mod LwjglLayer.Internal.WebGpuWindowLayer {
         }, manifest)
 
     /// project.json のフォントを、GL と同じ「出しうる字」で RenderFontCache.loadOrBake から作り、距離場を R8 で上げる。
-    /// 起動の後に足す字は V1 では足さない（WebGpuPaint の ensureGlyphs がフォントごとに 1 回知らせる）。
+    /// 起動の後に出た字は GL と同じ RenderGlyphGrow で作り、R8 の絵の空いた所へ書き足す。
     def loadFonts(paint: WebGpuPaint.Paint, config: GameEngine.EngineConfig, progress: (String, Int32, Int32) -> Unit \ IO): RenderPaint.Fonts \ IO =
-        let wanted = RenderFont.startupGlyphs(config#rootDir, glyphsModeOf(config#glyphs));
+        let wanted = RenderFont.startupGlyphs(config#rootDir, config#glyphs);
         Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"), wanted);
         println("Baking font atlases...");
+        let growTable = RenderGlyphGrow.newTable();
         let atlases = config#fontManifest |> List.foldLeft((acc, entry) -> {
             let phase = "loading font ${entry#name}...";
             let baked = RenderFontCache.loadOrBake(entry, wanted, (done, total) -> progress(phase, done, total));
-            WebGpuPaint.putTexture(baked#atlas#textureName, WebGpuPaint.uploadR8(paint, baked#side, baked#side, baked#pixels), paint);
+            let info = WebGpuPaint.uploadR8(paint, baked#side, baked#side, baked#pixels);
+            WebGpuPaint.putTexture(baked#atlas#textureName, info, paint);
+            RenderGlyphGrow.register(growTable, baked#atlas, { path = entry#path, texId = GpuHandle.textureIdInt(info#id) });
             println("  Font '${entry#name}' baked (${baked#atlas#textureName})");
             Map.insert(entry#name, baked#atlas, acc)
         }, Map#{BootFont.name() => BootFont.atlas()});
-        { atlases = Ref.fresh(Static, atlases), grow = (_, atlas, _) -> checked_ecast(atlas), missing = Ref.fresh(Static, Set.empty()) }
+        let writer = glyphWriter(paint);
+        { atlases = Ref.fresh(Static, atlases), grow = (atlas, cps) -> RenderGlyphGrow.ensureWith(writer, growTable, atlas, cps),
+          missing = Ref.fresh(Static, Set.empty()) }
 
-    /// 起動の時に用意する字の決め方。auto（出た字から順に用意する）は used（ソースとアセットにある字を先に用意する）として引く。
-    // WhyNot: auto のまま引かない — V1 の WebGPU は起動の後に字を足さないので、出た字から足す決め方だと字が欠ける。
-    def glyphsModeOf(mode: String): String = if (mode == "auto") "used" else mode
+    /// 足す字を、register で控えた絵の番号（begin で受ける）の R8 の絵へ書く口。
+    def glyphWriter(paint: WebGpuPaint.Paint): RenderGlyphGrow.Writer \ IO =
+        let slot = Ref.fresh(Static, 0);
+        { begin = id -> checked_ecast(Ref.put(id, slot)),
+          put = (x, y, w, h, pixels) -> WebGpuPaint.writeR8Region(paint, Ref.get(slot), x, y, w, h, pixels),
+          finish = () -> checked_ecast(()) }
 
     // ── 回す ──
 

@@ -370,7 +370,7 @@ pub mod GlOffscreen {
     /// textureName のフォントに字を足す（Platform.GpuResources.ensureGlyphs と同じ）。
     pub def ensureGlyphs(session: Session, textureName: String, codepoints: Set[Int32]): Unit \ IO =
         let SessionData.SessionData(s) = session;
-        RenderPaint.ensureGlyphs(s#glLog#gl, s#fonts, textureName, codepoints)
+        RenderPaint.ensureGlyphs(s#fonts, textureName, codepoints)
 
     /// ファイルの無い絵（ドット絵のアトラスなど）を名前で載せる。同じ名前・同じ key なら何もしない。
     /// argb = width × height の行優先の ARGB。

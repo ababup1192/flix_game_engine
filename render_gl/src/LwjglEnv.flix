@@ -14,7 +14,7 @@ mod LwjglEnv {
     /// fixedDt: FLIX_GE_FIXED_DT の秒（空なら無し）。毎コマの dt を実時間の代わりにこの値にする（同じ操作で同じ絵になるかを確かめる用）。
     /// portraitView: FLIX_GE_PORTRAIT の画面の大きさ（空・"0" なら無し。"1" は Display.defaultPortraitView・"390x844" はその大きさ）。
     /// 縦の指定（web.portraitDesign）を持つゲームを、縦に持ったスマホの design で起動する（LwjglLayer.withProject）。
-    /// backend: FLIX_GE_BACKEND（無い・"gl" は Gl・"webgpu" は WebGpu・ほかは Gl で 1 行言う）。
+    /// backend: FLIX_GE_BACKEND（無い・空・"webgpu" は WebGpu・"gl" は Gl・ほかは WebGpu で 1 行言う）。
     pub type alias Settings = {
         hidden = Bool,
         noVsync = Bool,
@@ -27,17 +27,17 @@ mod LwjglEnv {
         backend = Backend
     }
 
-    /// 実機のウィンドウで描く道。Gl = OpenGL 3.3（既定）・WebGpu = Dawn の WebGPU（V1 は 2D だけ。使えない時は GL で起動する）。
+    /// 描く道。WebGpu = Dawn の WebGPU（既定。窓では、使えない機械なら理由を 1 行言って GL で起動する）・Gl = OpenGL 3.3。
     pub enum Backend with Eq, ToString {
         case Gl
         case WebGpu
     }
 
-    /// FLIX_GE_BACKEND の字を道にする（無い・空・"gl" は Gl・"webgpu" は WebGpu・ほかは Err）。大文字と小文字は区別しない。
+    /// FLIX_GE_BACKEND の字を道にする（無い・空・"webgpu" は WebGpu・"gl" は Gl・ほかは Err）。大文字と小文字は区別しない。
     def parseBackend(text: Option[String]): Result[String, Backend] =
         match text |> Option.map(t -> String.toLowerCase(String.trim(t))) {
-            case None           => Ok(Backend.Gl)
-            case Some("")       => Ok(Backend.Gl)
+            case None           => Ok(Backend.WebGpu)
+            case Some("")       => Ok(Backend.WebGpu)
             case Some("gl")     => Ok(Backend.Gl)
             case Some("webgpu") => Ok(Backend.WebGpu)
             case Some(other)    => Err("gl か webgpu を書く（'${other}' は知らない）")
@@ -75,7 +75,7 @@ mod LwjglEnv {
           splashShotPath = filled("FLIX_GE_SPLASH_SHOT"),
           fixedDt = filled("FLIX_GE_FIXED_DT") |> Option.flatMap(text -> Result.toOption(parseFixedDt(text))),
           portraitView = filled("FLIX_GE_PORTRAIT") |> Option.filter(text -> text != "0") |> Option.flatMap(text -> Result.toOption(parsePortraitView(text))),
-          backend = parseBackend(Map.get("FLIX_GE_BACKEND", env)) |> Result.getWithDefault(Backend.Gl) }
+          backend = parseBackend(Map.get("FLIX_GE_BACKEND", env)) |> Result.getWithDefault(Backend.WebGpu) }
 
     /// FLIX_GE_PORTRAIT の字を画面の大きさにする。"1" は Display.defaultPortraitView、"<幅>x<高さ>" は縦長（高さ > 幅 > 0）の時だけ受ける。
     pub def parsePortraitView(text: String): Result[String, Vec2.Vec2] =
@@ -128,7 +128,7 @@ mod LwjglEnv {
 
     def warnUnknownBackend(env: Map[String, String]): Unit \ IO =
         match parseBackend(Map.get("FLIX_GE_BACKEND", env)) {
-            case Err(why) => checked_ecast(Log.fellBack("backend", "FLIX_GE_BACKEND", "gl", why))
+            case Err(why) => checked_ecast(Log.fellBack("backend", "FLIX_GE_BACKEND", "webgpu", why))
             case Ok(_)    => ()
         }
 

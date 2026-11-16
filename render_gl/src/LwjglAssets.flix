@@ -71,7 +71,7 @@ mod LwjglAssets {
         let growTable = RenderGlyphGrow.newTable();
         List.forEach(entry -> registerGrowth(growTable, atlases, registry, entry), request#manifest);
         { atlases = atlases, registry = registry,
-          grow = (g, atlas, cps) -> RenderGlyphGrow.ensure(g, growTable, atlas, cps) }
+          grow = (atlas, cps) -> RenderGlyphGrow.ensure(gl, growTable, atlas, cps) }
 
     /// 1 本のフォントを、後から字を足せるように登録する（アトラスか、その画像が無ければ 1 行言うだけ）。
     def registerGrowth(growTable: Ref[Map[String, RenderGlyphGrow.Font], Static], atlases: Map[String, FontAtlas],

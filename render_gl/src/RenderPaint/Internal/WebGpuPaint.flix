@@ -4,7 +4,7 @@
 // ただし、そのコマに積んだ pass があるうちに絵や頂点の buffer を作る・書き替える・捨てる・Pass の texture を作り直す・instance などの buffer を伸ばす時は、
 // 先に submit する（そのままだと、前に積んだ pass が新しい絵で描かれ、捨てた物を指したまま submit することになる）。
 // 面（ShaderDoc）の program と pipeline と draw は WebGpuSurfaces。3D の場面は Render3d.WebGpuRenderer が 2D の pass の前に自分の texture へ描き、2D の並びの z の位置で貼る（呼ぶ所は WebGpuPaint.Scenes）。
-// まだ描かない物（起動の後に足す字・3D の材質や影など）は描かずに飛ばし、種類ごとの回数を数える（RenderPaint.Internal.SkippedDraws）。
+// まだ描かない物（起動の後に足せなかった字など）は描かずに飛ばし、種類ごとの回数を数える（RenderPaint.Internal.SkippedDraws）。
 //
 // 使い方（device を開いた糸で、create から順に）:
 //   let paint = WebGpuPaint.create(gpu, { designWidth, designHeight, clearColor, width, height });
@@ -326,6 +326,15 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         let texture = p#gpu.createTexture("fge font", width, height, TextureFormat.R8_UNORM, imageUsage(), 1, 1);
         p#gpu.writeTexture(texture, 0, 0, 0, width, height, pixels, 0, width);
         infoOf(addSlot(paint, texture, p#linearRepeat, width, height), width, height)
+
+    /// uploadR8 で作った番号 id の絵の (x, y) から width × height を、字の距離場（1 画素 1 バイト・上の行から）で書き替える。
+    // WhyNot: 積んだ pass を先に submit しない（rewriteSlot と違う）— 書くのは字を置いていない所だけで、前に置いた字の画素は変わらない。
+    pub def writeR8Region(paint: Paint, id: Int32, x: Int32, y: Int32, width: Int32, height: Int32, pixels: ByteBuffer): Unit \ IO =
+        let PaintData.PaintData(p) = paint;
+        match Map.get(id, Ref.get(p#slots)) {
+            case None       => ()
+            case Some(slot) => p#gpu.writeTexture(slot#texture, 0, x, y, width, height, pixels, 0, width)
+        }
 
     /// ARGB の int の列を little-endian のバイトにする。
     // WhyNot: 1 要素ずつ put しない — Flix の Vector は JVM の int[] のままで、1 回で写せる（RenderTexture.withArgbBuffer と同じ）。
@@ -977,7 +986,19 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     // ── handler ──
 
-    /// GPU の資源を paint の登録簿で受ける。fonts = 名前 → アトラス（getFontAtlas の元。足す字は V1 では足さず、フォントごとに 1 回知らせる）。
+    /// 起動の後に出た字を fonts#grow で足す（GL と同じ数え方で glyphsAdded）。足せずに残った字（ブラウザの書き出しのアトラス・
+    /// フォントに無い字・アトラスが満杯）があれば、まだ描かない物として数える。
+    def ensureGlyphsIn(paint: Paint, fonts: RenderPaint.Fonts, textureName: String, codepoints: Set[Int32]): Unit \ IO =
+        if (Set.isEmpty(codepoints)) ()
+        else {
+            RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
+            noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
+            let grown = Ref.get(fonts#atlases) |> Map.findLeft((_, a) -> a#textureName == textureName) |> Option.map(snd);
+            let left = grown |> Option.map(a -> Set.filter(cp -> not Map.memberOf(cp, a#glyphs), codepoints)) |> Option.getWithDefault(codepoints);
+            if (Set.isEmpty(left)) () else skip(paint, "起動の後に足せなかった字（${textureName}）")
+        }
+
+    /// GPU の資源を paint の登録簿で受ける。fonts = 名前 → アトラス（getFontAtlas の元。起動の後に出た字は fonts#grow で足す）。
     pub def handleGpuResources(paint: Paint, fonts: RenderPaint.Fonts, f: Unit -> a \ ef): a \ (ef - Platform.GpuResources) + IO =
         let uploads = webGpuUploads(paint);
         let tables = textureTables(paint);
@@ -996,7 +1017,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 k(())
             }
             def ensureGlyphs(textureName, codepoints, k) = {
-                if (Set.isEmpty(codepoints)) () else skip(paint, "起動の後に足す字（${textureName}）");
+                ensureGlyphsIn(paint, fonts, textureName, codepoints);
                 k(())
             }
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))

@@ -200,7 +200,7 @@ pub mod WebLayer.Internal.WebGpuLayer {
                     Log.warnThen("font: '${entry#name}' のアトラス ${path} が束に無いか壊れている — 組み込みフォントで出す（bin/fge export-web で書き出し直す）", acc)
             }
         }, Map#{BootFont.name() => BootFont.atlas()});
-        { atlases = Ref.fresh(Static, atlases), grow = (_, atlas, _) -> checked_ecast(atlas), missing = Ref.fresh(Static, Set.empty()) }
+        { atlases = Ref.fresh(Static, atlases), grow = (atlas, _) -> checked_ecast(atlas), missing = Ref.fresh(Static, Set.empty()) }
 
     /// 届いた後回しの絵を、予算の内で道ごとに上げる（WebLayer.registerArrivedTextures と同じ予算の決まり）。
     def registerArrivedTextures(gpu: BrowserWebGpu, paint: WebGpuPaint.Paint, st: State): Unit \ IO =

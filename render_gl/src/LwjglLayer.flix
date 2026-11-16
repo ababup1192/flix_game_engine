@@ -309,6 +309,8 @@ pub mod LwjglLayer {
         }
 
     /// WebGPU のウィンドウで起動する。開く前に落ちたら（Dawn のネイティブ・device・ウィンドウ）理由を 1 行言い、GLFW の hint を戻して GL で起動する。
+    // WhyNot: WebGPU を使えない機械で止めない — GL の backend は同じ RenderList を流す fallback で、Dawn のネイティブを
+    //   配っていない OS・古い GPU でも遊べる。黙って GL にすると絵の差を WebGPU の物と取り違えるので、1 行は言う。
     @DontInline
     def withWebGpuOrGl(config: GameEngine.EngineConfig, env: LwjglEnv.Settings, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
         match LwjglLayer.Internal.WebGpuWindowLayer.withWindow(config, env, f) {
