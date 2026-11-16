@@ -49,3 +49,67 @@ func TestLocalNamesFlixlintOnlyWhenTheFieldIsSet(t *testing.T) {
 		}
 	}
 }
+
+// ルートの src/ は各パッケージの src/ をファイル単位で写す。足した・消した・名前を変えたファイルに索引の前で追いつく。
+func TestSyncRootSrcFollowsAddedRemovedAndRenamedFiles(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte("mod X {}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := func(rel, target string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.Symlink(target, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("render_gl/flix.toml")
+	write("render_gl/src/Render3d.flix")
+	write("render_gl/src/Render3d/Old.flix")
+	write("render_gl/src/Render3d/Mipmaps.flix")
+	write("render_gl/src/notes.txt")
+	write("src/Main.flix")
+	link("src/render_gl/Render3d.flix", "../../render_gl/src/Render3d.flix")
+	link("src/render_gl/Render3d/Old.flix", "../../../render_gl/src/Render3d/Old.flix")
+	link("src/render_gl/Render3d/Gone.flix", "../../../render_gl/src/Render3d/Gone.flix")
+	os.Rename(filepath.Join(root, "render_gl/src/Render3d/Old.flix"), filepath.Join(root, "render_gl/src/Render3d/New.flix"))
+
+	added, removed, err := syncRootSrc(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 2 || removed != 2 {
+		t.Errorf("足した %d・消した %d（2・2 のはず）", added, removed)
+	}
+	for _, rel := range []string{"src/render_gl/Render3d/Mipmaps.flix", "src/render_gl/Render3d/New.flix", "src/render_gl/Render3d.flix", "src/Main.flix"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("%s が読めない: %v", rel, err)
+		}
+	}
+	if got, _ := os.Readlink(filepath.Join(root, "src/render_gl/Render3d/Mipmaps.flix")); got != "../../../render_gl/src/Render3d/Mipmaps.flix" {
+		t.Errorf("相対の symlink のはず: %q", got)
+	}
+	for _, rel := range []string{"src/render_gl/Render3d/Old.flix", "src/render_gl/Render3d/Gone.flix", "src/render_gl/notes.txt"} {
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+			t.Errorf("%s は無いはず", rel)
+		}
+	}
+}
+
+// src/ の下にパッケージ（<名前>/flix.toml と <名前>/src）の写しが無い所（ゲームの src）は触らない。
+func TestSyncRootSrcLeavesNonMirrorTreesAlone(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "src", "Game"), 0o755)
+	os.Symlink("../../nowhere.flix", filepath.Join(root, "src", "Game", "Dangling.flix"))
+	added, removed, err := syncRootSrc(root)
+	if err != nil || added != 0 || removed != 0 {
+		t.Errorf("触らないはず: %d %d %v", added, removed, err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "src", "Game", "Dangling.flix")); err != nil {
+		t.Errorf("消したらいけない: %v", err)
+	}
+}
