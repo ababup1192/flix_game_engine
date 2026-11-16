@@ -1,12 +1,13 @@
-// Render3d.Shadow — 3D の描き手（Render3d）の影の地図（描く・置き場・塗りへ渡す）。約束は Render3d.flix の頭と Scene3d.shadowMatrix の doc。
+// Render3d.Shadow — 3D の描き手（Render3d）の影の地図の GL の backend（描き先の FBO・行を深度で描く・塗りへ渡す）。約束は Render3d.flix の頭と Scene3d.shadowMatrix の doc。
+// どの描き先へ何を描くか（pass の計画）と描き先の寿命は前半の Render3d.ShadowMaps が決め、ここは鍵 → FBO だけを持つ。
 mod Render3d.Shadow {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{SceneShadows, ShadowCaster, ShadowLight, ShadowPlan, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, drawBatch, matrixArray, maxShadowMapSize,
-                  maxShadowPcfRadius, idleTargetFrames, programsOf, blankTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram, loc}
-    use Render3d.Batch.{MeshBatch}
-    use Render3d.Counts.{BatchBreak, Counter, count}
-    use Render3d.ScenePlan.{warnShadowOnce}
+    use Render3d.{SceneShadows, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, MeshLocs, drawMeshRange, matrixArray, meshEntry,
+                  programsOf, blankTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram}
+    use Render3d.Counts.{Counter, count}
+    use Render3d.SceneList.{SceneList, headAt, kindSkinned, rowAt, rowCountOf}
+    use Render3d.ShadowMaps.{Key, ShadowPass, ShadowSampling}
 
     // ── 影の地図 ──
 
@@ -16,22 +17,16 @@ mod Render3d.Shadow {
         case Sun(SunShadowUse)
     }
 
-    /// 場面ごとに、plans（場面と同じ並び）の影の地図を描き、塗りへ渡す物を返す。骨つきの物は今 joint の unit に貼ってある joint texture を読む。
+    /// 場面ごとに、passes（場面と同じ並び・Render3d.ShadowMaps.buildPasses の答え）の影の地図を描き、塗りへ渡す物を返す。骨つきの物は今 joint の unit に貼ってある joint texture を読む。
     /// 描き終えたら深度と scissor を切り、program と VAO を外す。描き先は呼ぶ側が戻す。
     // WhyNot: viewport をここで戻さない — glGet で前の値を読まない決まりで、この後に描く Design の場面と
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, plans: List[List[ShadowPlan[MeshBatch]]]): List[SceneShadows] \ IO =
-        let usedPerSize = Ref.fresh(Static, (Map.empty(): Map[Int32, Int32]));
-        let shadows = plans |> List.map(scenePlans -> {
-            let casts = scenePlans |> List.map(plan -> {
-                let caster = plan#caster;
-                let size = shadowMapSizeOf(state, caster#settings);
-                // 同じ mapSize の場面が 1 コマに 2 つあっても（1 つの場面のスポットと太陽でも）地図を分ける — 塗るのは全部の地図を描き終えた後。
-                let ordinal = Map.getWithDefault(size, 0, Ref.get(usedPerSize));
-                Ref.put(Map.insert(size, ordinal + 1, Ref.get(usedPerSize)), usedPerSize);
-                let target = shadowTarget(gl, state, gen, size, ordinal);
-                renderShadowMap(gl, state, gen, target, plan);
-                shadowUseOf(state, target, caster, plan#light)
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, passes: List[List[ShadowPass]]): List[SceneShadows] \ IO =
+        let shadows = passes |> List.map(scenePasses -> {
+            let casts = scenePasses |> List.map(pass -> {
+                let target = shadowTarget(gl, state, gen, pass#map#key);
+                renderShadowMap(gl, state, gen, target, pass);
+                castOf(target, pass#map#sampling)
             });
             { spot = List.findMap(spotOf, casts), sun = List.findMap(sunOf, casts) }
         });
@@ -48,28 +43,30 @@ mod Render3d.Shadow {
         case Cast.Spot(_)      => None
     }
 
-    def shadowMapSizeOf(state: State, m: Scene3d.ShadowMap): Int32 \ IO =
-        if (m#mapSize > maxShadowMapSize()) {
-            warnShadowOnce(state#planner, "size","scene3d: 影の地図の mapSize ${m#mapSize} は大きすぎる — ${maxShadowMapSize()} で描く");
-            maxShadowMapSize()
-        } else m#mapSize
+    /// 鍵 key の影の描き先（無ければ寿命の表が作らせる）。
+    def shadowTarget(gl: GlContext, state: State, gen: Int64, key: Key): ShadowTarget \ IO =
+        discard Render3d.ShadowMaps.ensure(state#shadowMaps, allocatorOf(gl, state), gen, key);
+        Map.get(key, Ref.get(state#shadowTargetsRef)) |> Option.getWithDefault({ fbo = 0, tex = 0, size = fst(key) })
 
-    /// 大きさ size の ordinal 枚目の影の描き先（無ければ作る）。lastUsed を今の世代にする。
-    def shadowTarget(gl: GlContext, state: State, gen: Int64, size: Int32, ordinal: Int32): ShadowTarget \ IO =
-        let targets = Ref.get(state#shadowTargetsRef);
-        let target = match Map.get((size, ordinal), targets) {
-            case Some(found) => { lastUsed = gen | found }
-            case None        =>
-                count(state, Counter.TargetRebuilds, 1);
-                createShadowTarget(gl, gen, size)
-        };
-        Ref.put(Map.insert((size, ordinal), target, targets), state#shadowTargetsRef);
-        target
+    /// 寿命の表（Render3d.ShadowMaps）へ渡す、GL の影の描き先を作る・捨てる関数の組。
+    def allocatorOf(gl: GlContext, state: State): Render3d.ShadowMaps.Allocator =
+        { create = key -> {
+              count(state, Counter.TargetRebuilds, 1);
+              let made = createShadowTarget(gl, fst(key));
+              Ref.put(Map.insert(key, made, Ref.get(state#shadowTargetsRef)), state#shadowTargetsRef)
+          },
+          destroy = key -> {
+              Map.get(key, Ref.get(state#shadowTargetsRef)) |> Option.forEach(t -> {
+                  gl.deleteFramebuffer(t#fbo);
+                  gl.deleteTexture(t#tex)
+              });
+              Ref.put(Map.remove(key, Ref.get(state#shadowTargetsRef)), state#shadowTargetsRef)
+          } }
 
     /// 深度テクスチャだけを付けた FBO を作る（作った FBO を bind したまま返す）。
     // WhyNot: 深度を renderbuffer にしない — 塗りのシェーダーが標本として読む。
     // WhyNot: 比べを sampler2DShadow（GL_COMPARE_REF_TO_TEXTURE）に任せない — 比べ方と周りの数え方を CPU の描き手とそろえる。
-    def createShadowTarget(gl: GlContext, gen: Int64, size: Int32): ShadowTarget \ IO =
+    def createShadowTarget(gl: GlContext, size: Int32): ShadowTarget \ IO =
         // 作る間の bind で unit 0（sprite・font が共用する）の中身を替えない。
         gl.activeTexture(GlConst.TEXTURE0 + shadowTextureUnit());
         let tex = gl.createTexture();
@@ -87,7 +84,7 @@ mod Render3d.Shadow {
         gl.framebufferTexture2D(GlConst.FRAMEBUFFER, GlConst.DEPTH_ATTACHMENT, GlConst.TEXTURE_2D, tex, 0);
         gl.useNoColorBuffer();
         checkShadowFramebuffer(gl, size);
-        { fbo = fbo, tex = tex, size = size, lastUsed = gen }
+        { fbo = fbo, tex = tex, size = size }
 
     def checkShadowFramebuffer(gl: GlContext, size: Int32): Unit \ IO =
         let status = gl.checkFramebufferStatus(GlConst.FRAMEBUFFER);
@@ -95,8 +92,8 @@ mod Render3d.Shadow {
             Log.warn("scene3d: 影の地図の FBO (${size}×${size}) が完成しない status=${status} — 影が正しく出ない")
         else ()
 
-    /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。ビルボードは影を落とさない。
-    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, plan: ShadowPlan[MeshBatch]): Unit \ IO =
+    /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。ビルボードは影を落とさない。行は骨の無い物 → 骨つきの物の順（Render3d.SceneList.buildShadowList）。
+    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, pass: ShadowPass): Unit \ IO =
         let locs = programsOf(gl, state)#depth;
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
         gl.viewport(0, 0, target#size, target#size);
@@ -111,21 +108,41 @@ mod Render3d.Shadow {
             // WhyNot: 背面を捨てない — 厚みの無い板を裏から照らすと面が全部捨てられ、影が抜ける。
             gl.disable(GlConst.CULL_FACE);
             // WhyNot: 深度だけのプログラムを影のために別に組まない — 色の出力は描き先が無いので捨てられる。
-            let lightView = matrixArray(plan#caster#matrix);
-            let identity = matrixArray(Mat4.identity());
-            useMeshProgram(gl, locs#mesh, lightView, identity);
-            plan#plain |> List.forEach(drawBatch(gl, state, gen, locs#mesh, BatchBreak.ShadowPass));
-            // 骨つきの物は曲がった形で影を落とす（深度だけの骨つきの版を Output.Depth と共用）。
-            if (List.isEmpty(plan#skinned)) ()
-            else {
-                let skinnedDepth = skinnedProgramsOf(gl, state)#depth;
-                if (skinnedDepth#mesh#program == 0) ()
-                else {
-                    useMeshProgram(gl, skinnedDepth#mesh, lightView, identity);
-                    plan#skinned |> List.forEach(drawBatch(gl, state, gen, skinnedDepth#mesh, BatchBreak.ShadowPass))
-                }
-            }
+            let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{locs#mesh#program} @ Static };
+            useMeshProgram(gl, locs#mesh, frame#lightView, frame#identity);
+            drawShadowRows(gl, state, gen, frame, 0, rowCountOf(pass#list))
         }
+
+    /// drawShadowRows の 1 回で行をまたいで変わらない物。bound = 今付いているプログラム（要素 1 つ）。
+    type alias ShadowFrame = { list = SceneList, lightView = Array[Float32, Static], identity = Array[Float32, Static], bound = Array[Int32, Static] }
+
+    def drawShadowRows(gl: GlContext, state: State, gen: Int64, frame: ShadowFrame, row: Int32, n: Int32): Unit \ IO =
+        if (row >= n) ()
+        else {
+            drawShadowRow(gl, state, gen, frame, row);
+            drawShadowRows(gl, state, gen, frame, row + 1, n)
+        }
+
+    /// 行 row を深度だけのプログラムで描く。骨つきの行は骨つきの版（Output.Depth と共用）で、曲がった形で影を落とす。描く物の無い行も形を今のコマで使った物として数える。
+    def drawShadowRow(gl: GlContext, state: State, gen: Int64, frame: ShadowFrame, row: Int32): Unit \ IO =
+        let list = frame#list;
+        let mesh = shadowLocsFor(gl, state, rowAt(list, row, 0) == kindSkinned());
+        if (mesh#program == 0) ()
+        else {
+            if (mesh#program == Array.get(0, frame#bound)) ()
+            else {
+                Array.put(mesh#program, 0, frame#bound);
+                useMeshProgram(gl, mesh, frame#lightView, frame#identity)
+            };
+            let entry = meshEntry(gl, state, gen, headAt(list, row)#fields#mesh);
+            drawMeshRange(gl, state, mesh, rowAt(list, row, 5), (entry#vao, entry#indexCount), rowAt(list, row, 3), rowAt(list, row, 4))
+        };
+        // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawShadowRows のループが JIT から外れる（docs/performance.md の 13 節）。
+        ()
+
+    /// 骨つきの版は骨つきの行がある時だけ組む。
+    def shadowLocsFor(gl: GlContext, state: State, skinned: Bool): MeshLocs \ IO =
+        if (skinned) skinnedProgramsOf(gl, state)#depth#mesh else programsOf(gl, state)#depth#mesh
 
     def endShadowPass(gl: GlContext): Unit \ IO =
         gl.disable(GlConst.DEPTH_TEST);
@@ -135,21 +152,16 @@ mod Render3d.Shadow {
         gl.useProgram(0);
         gl.bindVertexArray(0)
 
-    def shadowUseOf(state: State, target: ShadowTarget, caster: ShadowCaster, light: ShadowLight): Cast \ IO = match light {
-        case ShadowLight.Spot(spotIndex) =>
-            let r = caster#settings#pcfRadius;
-            let radius = if (r > maxShadowPcfRadius()) {
-                warnShadowOnce(state#planner, "pcf","scene3d: 影の pcfRadius ${r} は大きすぎる — ${maxShadowPcfRadius()} で数える");
-                maxShadowPcfRadius()
-            } else Int32.max(0, r);
-            Cast.Spot({ tex = target#tex, matrix = matrixArray(caster#matrix), bias = caster#settings#bias,
-                        pcfRadius = radius, strength = caster#settings#strength, spotIndex = spotIndex })
-        case ShadowLight.Sun(setup) =>
-            let f = setup#forward;
-            Cast.Sun({ tex = target#tex, matrix = matrixArray(caster#matrix), bias = setup#depthBias, normalShift = setup#normalShift,
-                       pcfRadius = setup#pcfRadius, strength = setup#strength,
+    /// 描いた地図 target と、色の pass が引く値 sampling（Render3d.ShadowMaps.assign が頭打ちにした値）を塗りへ渡す形にする。
+    def castOf(target: ShadowTarget, sampling: ShadowSampling): Cast \ IO = match sampling {
+        case ShadowSampling.Spot(s) =>
+            Cast.Spot({ tex = target#tex, matrix = matrixArray(s#matrix), bias = s#bias, pcfRadius = s#pcfRadius, strength = s#strength, spotIndex = s#spotIndex })
+        case ShadowSampling.Sun(s) =>
+            let f = s#forward;
+            Cast.Sun({ tex = target#tex, matrix = matrixArray(s#matrix), bias = s#bias, normalShift = s#normalShift,
+                       pcfRadius = s#pcfRadius, strength = s#strength,
                        forward = Array#{ RenderUtil.f32(f#x), RenderUtil.f32(f#y), RenderUtil.f32(f#z) } @ Static,
-                       distance = setup#distance, fadeWidth = setup#fadeWidth })
+                       distance = s#distance, fadeWidth = s#fadeWidth })
     }
 
     /// 塗りの間だけ影の地図を影の unit（スポットは 7・太陽は 13）に貼る（unit 0 へ戻して返す）。None なら何もしない。
@@ -200,18 +212,9 @@ mod Render3d.Shadow {
                 gl.uniform2f(locs#fade, RenderUtil.f32(s#distance), RenderUtil.f32(s#fadeWidth))
         }
 
-    /// 使われない影の描き先を捨てる（画面のコマの終わりに 1 回）。
+    /// 使われない影の描き先を捨てる（画面のコマの終わりに 1 回・どれを捨てるかは寿命の表）。
     pub def sweepShadowTargets(gl: GlContext, state: State, gen: Int64): Unit \ IO =
-        let targets = Ref.get(state#shadowTargetsRef);
-        let idle = Map.filter(t -> gen - t#lastUsed > idleTargetFrames(), targets);
-        if (Map.isEmpty(idle)) ()
-        else {
-            Map.forEach((_key, t) -> {
-                gl.deleteFramebuffer(t#fbo);
-                gl.deleteTexture(t#tex)
-            }, idle);
-            Ref.put(Map.difference(targets, idle), state#shadowTargetsRef)
-        }
+        discard Render3d.ShadowMaps.sweep(state#shadowMaps, allocatorOf(gl, state), gen)
 
     pub def shadowLocsOf(gl: GlContext, program: Int32): Render3d.ShadowLocs \ IO =
         { on = Render3d.loc(gl, program, "uShadowOn"), spot = Render3d.loc(gl, program, "uShadowSpot"), matrix = Render3d.loc(gl, program, "uShadowMatrix"),

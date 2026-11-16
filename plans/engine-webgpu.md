@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。mip（決まり 7）と preload は (7) と一緒に。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -1570,6 +1570,67 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
     - `pipelineOf` の鍵にジョイントの番号の位置を入れない理由（形の版の末尾の 8 float なので頂点のバイト数で決まる）を WhyNot に。
     - 上の持ち越しに送り直しの代金と JointUploads の数え方、決めた事 2 に (5) の後の属性の数。
   - テスト: render_gl 530 緑（(a) を 1 本足した）。
+
+### 12.30 R2b・P8 の (4): 影（2026-11-16・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (4)。engine の pub（ゲームから見える API）は増えていない（足した型と関数は render_gl の中だけ）。GL の絵は変えていない（下の門）。
+
+- **R2b — 影の地図の pass の計画と描き先の寿命を前半へ**（R1b-1 の決め「表は前半・作る消すだけ backend」と (1b) の `MeshTable` にそろえた）:
+  - 新しい `Render3d.ShadowMaps`（GPU を呼ばない）: `assign` が prepare 1 回の場面ごとの影の材料（`ScenePlan#shadowPlans`）に描き先の鍵（一辺の画素, 同じ prepare の中で同じ一辺の何枚目か）と
+    色の pass が地図を引く値（`ShadowSampling` = Spot・Sun。行列・bias・pcf・濃さ・太陽は normalShift と forward と薄め）を決める。一辺と pcf の頭打ちと知らせ（"size"・"pcf"）は GL の `Render3d.Shadow` から移した（同じ文・同じ鍵）。
+    `buildPasses` が 1 体ごとの値の番号を振った材料から `ShadowPass = { map, list }` の列を作る（行は `Render3d.SceneList.buildShadowList`: 頂点の色の行 → 骨つきの行・分かれた理由はどれも影の pass）。
+    寿命の表（鍵 → 最後に使った世代）の `ensure`・`sweep`（`Render3d.idleTargetFrames()` = 128 コマ）・`release` が、backend の `Allocator{create, destroy}` に作らせ捨てさせる。
+  - GL: `Render3d.Shadow` は鍵 → FBO（`ShadowTarget` から lastUsed を外した）だけを持ち、地図は `ShadowPass` の行を流して描く（`drawShadowRow`。プログラムの付け方・`meshEntry`・`drawMeshRange` の順は前の `drawBatch` と同じ）。
+    GL の `prepareScenes` は場面の pass の行を作った後に `assign` と `buildPasses` を呼ぶ（形の表の番号の振り順を前と同じにするため）。
+- **決めた事 1 — 影の pass は `ScenePassSpec` の case にせず、場面の列の外の別の型（`ShadowPass`）にした**（12.26・12.27 の「(4) で ShadowMap(light) の case を足す・別の列の案も比べる」への答え）:
+  - case にすると、場面の列（`ScenePasses`）を流す GL の `drawScene` と WebGPU の `drawInto` の前提「列の pass は全部場面の描き先 1 つへ書く」が崩れ、両方に読まない case が生える。GL は地図を Design の場面より先に prepare の全部の場面の分を描くので、列の順にも乗らない。
+  - 別の型なら、描き先が深度だけなことが型で決まり、`attachment の列を値で持つ形`（12.27 の持ち越し）は読む所が無いので入れていない（色と深度の組は今も 2 つの case で同じ値）。
+  - 9.1 の流儀の「2 つ作って比べる」はしていない（case の形は書いていない）。上の理由は形の上の物【推: 書き味の差は case の形を書けば確かめられる】。
+- **P8 — WebGPU で影の地図を描き、材質と頂点の色の物で影を引く**:
+  - 新しい `Render3d.WebGpuShadows`: 鍵 → 描き先（DEPTH32_FLOAT の texture・光の目の値の buffer 128 バイト・その group 0）。影の pass は frag の無い深度だけの pipeline（頂点シェーダーは頂点の色の物と同じ `litVertexSource`・裏の面も描く・LESS）で、
+    group 0 = 光の目と単位行列の射影（binding 5）・1 = 空・2 = 姿勢（色の pass と同じ group 2 を読む＝骨つきの物の影は作り直しなく描けた・12.29 の【推】を確かめた）。1 体ごとの値は場面の値の後ろに ShadowDepth で詰め、色の pass と同じ instance の buffer で読む。
+  - 場面ごとに影の pass を先に積み、色の pass の group 0 の binding 1（スポット）・2（太陽）に地図を付けた group を作る（submit の後に手放す）。影の無い場面は前と同じ描き先の group。場面の値の影の欄は `packShadowValues` が毎回書く（地図の無い方は on を 0）。
+  - WGSL は 12.25 から入っていた `shadowSource`（行を上下に返して読む・PCF は GLSL と同じ数え方）をそのまま使った。属性の数・varying の数は変えていない（影の座標は frag で world の位置から作る）。
+  - 欠けの数え（`skipsOf`）から「3D の影（影を落とす光）」を外した。WebGPU の診断も影の pass の draw call と分かれた理由（影の pass）と描き先を作った数（TargetRebuilds）を GL と同じ欄で数える。
+- **決めた事 2 — 寿命の決まり**: 光の目の値は描き先ごとの buffer で、writeBuffer は encoder の全部の pass より先に効く。同じ encoder の 2 回目の prepare が同じ鍵の地図を描き直す時は、
+  1 体ごとの値・姿勢・材質の値と同じ見積もりの所（`stageScene` の頭）で先に submit する（`WebGpuShadows.needsFlush`）。送った後に submit すると、送った姿勢の group 2 を手放した後の影の pass が読む。
+  - 回帰テスト `TestWebGpuScene3dDawn.testSecondPrepareRedrawingAShadowMapFlushesFirst`: 描き先の違う 2 回の prepare を同じ encoder で流すと、影のある場面は submit 1・group 2 が 1・地図を読む group 0 が 1・device の誤り 0、影の無い場面は submit 0・group 2 が 2・group 0 が 0。
+  - **壊して確かめた**: `needsFlush` を外すと `((0, 2, 2, 0), …)` で落ちる。submit を姿勢を送った後へ動かすと、手放した group 2 を影の pass が使い、テストが Dawn の abort（exit 134）で止まる。
+- **確かめ — `bench/webgpu_v2`** に 6 場面を足した（`ShadowCases.flix`）: 部屋に天井の近くから人形の格子を照らす影つきのスポット（地図 1024・PCF 1）、殻を外した部屋の物と広い市松の床に奥の右上から差す太陽（地図 2048・PCF 1・影が目の側へ伸びる）。
+  影を落とす物は骨の無い家具・骨つきの人形 24 体・小物 1,200 個（instance）。受ける物は頂点の色の床と壁・絵つきの材質の床と家具と人形。
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大 |
+  |---|---|---|---|
+  | shadowSpot（スポット・頂点の色の人形と部屋） | 12（32） | 1（8） | ±84 |
+  | shadowSpotTextured（スポット・絵つきの材質の部屋と人形） | 173（350） | 1（8） | ±69 |
+  | shadowSun（太陽・家具と人形） | 4（16） | 3（8） | ±71 |
+  | shadowSunCrowd（太陽・小物 1,200 個も） | 31（64） | 22（48） | ±145 |
+  | shadowSunTextured（太陽・絵つきの材質の床と家具） | 40（80） | 3（8） | ±58 |
+  | shadowBoth（1 つの場面にスポットと太陽の地図 2 枚） | 8（16） | 2（8） | ±83 |
+
+  - 許す差の理由: ±2 以上は room と同じく重なる面で勝つ面が入れ替わる所と、影のふちで比べ（z − bias ≦ 地図の値）が最後の bit で入れ替わる画素【推: GL の地図は 24 bit・WebGPU は 32 bit の float。画素を 1 つずつは見ていない】。
+    ±1 は面の中に点で散る（絵の補間と光の坂の丸め）。上限は実測のほぼ 2 倍（小さい物は 8）・差の最大は面の入れ替わりで切らない（255）。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - 色の pass の影の行列（スポットと太陽）を単位行列にする: 6 場面が 57,738〜143,125 px 違って落ちる。
+    - bias を 0 にする: 11,552〜175,392 px 違って落ちる（影のにきび）。
+    - 骨つきの物の影の pass で姿勢を読まない（骨の無い版の pipeline で描く）: 5,396〜30,818 px 違って落ちる。
+    - 影の pass の firstInstance を 1 つずらす: 17,426〜103,938 px 違って落ちる。
+  - 今までの 22 場面は 12.29 と同じ数。絵（git の外）: `bench/webgpu_v2/debug/{gl,webgpu}/shadow*.png`。目で見て、人形と家具と小物の影が GL と同じ所に同じ濃さで落ちる。
+- 欠けの表と実物: （下の「実物の 2 本」）
+- テスト: render_gl 537 緑（前の 530 に `TestShadowMaps` 6 本（同じ一辺は場面をまたいで次の番号・上限の一辺・pcf の頭打ち・1 回だけ作る・使わない物だけ捨てる・捨てた鍵を作り直す）と
+  `TestWebGpuScene3dDawn` の 1 本）。偽の GL を通るテスト（Sun・JointTexture の影の数え）は直さずに緑。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16）:
+  - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `java -jar ../../bin/flix.jar test`）: 537 緑・exit 0。
+  - `make gl-parity` exit 0。場面ごとの行（81 行）が 12.29 の木の門の記録と 1 字も同じ。
+  - `make gl-capture-check` exit 0（基準 `bench/baseline/0.96.0/gl-capture-apple-m4-pro.sha256`）: a と b の 54 枚がバイトまで同じ・**基準とも 54 枚がバイトまで同じ**。
+  - `make webgpu-v1-check` exit 0。`make -C bench/webgpu_v2 run` exit 0・誤り 0。
+  - `make lint-max-lines` exit 0（`WebGpuRenderer.flix` 928 行・`Render3d.flix` 1,116 行）・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
+- 言える範囲: この Mac（Dawn の Metal）だけ。スマホ（adreno）・ブラウザ（TeaVM の JSO の実装で frag の無い pipeline と色の無い pass が通るか）は未確認【未確認】。
+- 持ち越し:
+  - WebGPU の影の pass の CPU の区間を `Phase.Shadows` で数えていない（prepare 全体が `Phase.Draw` の中で、入れ子に数えると二重になる）。
+  - 影の地図の描き先を場面の描き先ごとに控えず、影のある場面は毎回 group 0 を作る（場面 1 つに 1 つ・submit の後に手放す）。
+  - 影を落とす物の間引き（視錐台）は計画の今のまま。地図の一辺は上限 `Scene3d.maxShadowMapSize()` のまま device の maxTextureDimension2D を読まない（スマホ 12.24 の上限の内【推】）。
+  - 12.28・12.29 の持ち越しで (4) で触らなかった物（`budgetEvictions` などを表の mod へ・鍵の 1 か所化・`TestMeshTable` の分割・`TextureTable3d.touch` の Map ほか）はそのまま（触った所に無かった）。
 
 ### 12.31 ブラウザの 3D を WebGPU で（2026-11-16・この Mac・Chrome 156 の headless・WebGPU は apple metal-3 だけ）
 

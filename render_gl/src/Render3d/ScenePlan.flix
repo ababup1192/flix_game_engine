@@ -39,7 +39,7 @@ mod Render3d.ScenePlan {
 
     /// 場面の pass 1 つが場面の描き先へ書く物。Color = 光を当てた色・DepthOut = 目からの距離の灰色（near が黒・near + range が白。Output.Depth）。
     /// どちらも描き先の attachment は色 1 つ（場面の描き先の形式）と深度で、2D の pass（RenderFrame.Internal.RenderList.PassSpec の
-    /// ColorAttachment と DepthStencil.Depth）と同じ組。光ごとの影の地図（深度だけを書き、色を持たない pass）はここに case を足して載せる。
+    /// ColorAttachment と DepthStencil.Depth）と同じ組。光ごとの影の地図（深度だけを書き、色を持たない pass）は Render3d.ShadowMaps.ShadowPass（場面の列の外）。
     // WhyNot: 描き先の texture の番号を持たない — 場面の描き先は backend が場面の番号で持つ（WebGPU の Render3d.WebGpuRenderer.SceneTarget・GL は 2D の描き先か Design の描き先）。
     pub enum ScenePassSpec {
         case Color

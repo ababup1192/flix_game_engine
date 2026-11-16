@@ -76,8 +76,8 @@ mod Render3d {
         case Sun(Scene3d.SunShadowSetup)
     }
 
-    /// 影の地図の描き先 1 枚（深度テクスチャだけを付けた FBO）。size = 縦横の画素・lastUsed = 最後に描いたコマの世代。
-    type alias ShadowTarget = { fbo = Int32, tex = Int32, size = Int32, lastUsed = Int64 }
+    /// 影の地図の描き先 1 枚（深度テクスチャだけを付けた FBO）。size = 縦横の画素。作る・捨てるのは寿命の表（Render3d.ShadowMaps）が決める。
+    type alias ShadowTarget = { fbo = Int32, tex = Int32, size = Int32 }
 
     /// 影を落とす光 1 つ（光の種類に依らない）。matrix = world → 光の clip（Scene3d が Float64 で出す）・
     /// frustum = 影を落とす物の間引き・settings = mapSize・bias・pcfRadius・strength。
@@ -254,7 +254,9 @@ mod Render3d {
         thrashWarnedRef = Ref[Set[String], Static],
         // 材質の uTime（秒）。prepareScenes が毎回置く。
         timeHolder = Array[Float64, Static],
-        // 影の地図の描き先（(mapSize, 同じ prepareScenes の中で同じ mapSize の何枚目か) → FBO）。
+        // 影の地図の描き先の寿命の表（鍵 = (mapSize, 同じ prepareScenes の中で同じ mapSize の何枚目か)）。
+        shadowMaps = Render3d.ShadowMaps.Table,
+        // 影の地図の鍵 → FBO。
         shadowTargetsRef = Ref[Map[(Int32, Int32), ShadowTarget], Static],
         // 場面の絵と段つきの写しの表（番号・上限・試し直し）。
         textures3d = Render3d.TextureTable3d.Table,
@@ -340,7 +342,7 @@ mod Render3d {
           designTargetsRef = Ref.fresh(Static, Map.empty()), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
-          shadowTargetsRef = Ref.fresh(Static, Map.empty()), textures3d = Render3d.TextureTable3d.fresh(), textureIdsRef = Ref.fresh(Static, Map.empty()),
+          shadowMaps = Render3d.ShadowMaps.fresh(), shadowTargetsRef = Ref.fresh(Static, Map.empty()), textures3d = Render3d.TextureTable3d.fresh(), textureIdsRef = Ref.fresh(Static, Map.empty()),
           layoutsRef = Render3d.MaterialValues.freshLayouts(),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static,
           blankTexture = Array#{0} @ Static, countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
@@ -381,7 +383,7 @@ mod Render3d {
     def prepareScenes(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                       dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
         // 影の地図は全部の場面の姿勢を上げた後に描く — 影の道も同じ行を読む。
-        let (plans, lists, materials, textures) = timed(state, Phase.Split, () -> {
+        let (plans, lists, materials, textures, shadowPasses) = timed(state, Phase.Split, () -> {
             let caps = planCapsOf(gl, state);
             let grouped = groupScenes(state#planner, caps, dest#samples, cmds);
             let materials = resolveMaterials(gl, state, gen, grouped#requests);
@@ -389,11 +391,14 @@ mod Render3d {
             let joints = Render3d.GlRows.JointTexture.upload(gl, state, gen, rows);
             let (numbered, instances) = Render3d.GlRows.Instancing.upload(gl, state, gen, planned, grouped#members);
             let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf };
-            (numbered, List.map(buildScenePasses(tables), numbered), materials, (joints, instances))
+            let lists = List.map(buildScenePasses(tables), numbered);
+            let shadowUses = Render3d.ShadowMaps.assign(state#planner, List.map(plan -> plan#shadowPlans, numbered));
+            let shadowPasses = List.zip(shadowUses, numbered) |> List.map(match (uses, plan) -> Render3d.ShadowMaps.buildPasses(tables, uses, plan));
+            (numbered, lists, materials, (joints, instances), shadowPasses)
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, List.map(plan -> plan#shadowPlans, plans)));
+        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, shadowPasses));
         let designCount = Array#{0} @ Static;
         let items = List.zip(List.zip(plans, lists), shadows) |> List.map(pls -> {
             let ((plan, passes), shadow) = pls;
