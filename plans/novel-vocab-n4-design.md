@@ -449,7 +449,7 @@ N4〜N6 の後にゲームが持つ .flix は次だけにする。ほかのテ�
 | `src/GameView.flix` | `draw`（world の層・層の数つき）と ★`hud`（hud の範囲）と ★`objects`（tape.json の画面の物に出す矩形。10.2 の id の表） | `draw` だけある |
 | ★`src/GameRes.flix` | ゲームの Doc を読む（血鱗の ScenesDoc・LairDoc など）・Res に入れる値の型 | 無い（C12） |
 | ★`src/GameBoot.flix` | 起動の時の口（血鱗のドットのアトラスを `App.withSpriteAtlases` で渡す・後から取る素材） | 無い（C12） |
-| `src/E2e.flix` の `gameProbes` | ゲームの問い（`place`・`viewers`・`ending` など） | 問いの表はテンプレートの E2e の中（口を分ける） |
+| `src/GameE2e.flix` の `probes` | ゲームの問い（`place`・`viewers`・`ending` など）。テンプレートの `E2e.table` が自分の問いの後ろに並べる | ある（段 11 の D。11.12） |
 | `src/Shots.flix` の `extra()` | コードで組む場面（3D の部屋） | ある（N1） |
 | `src/game/*.flix` | 上の口が呼ぶ、1 本だけの部品（血鱗の Whale・Vial など） | 決まりだけ |
 
@@ -730,7 +730,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | — | レビュー 3 | | 0.5〜1 時間 |
 | 10 | 門 | 10.7 の道具と 10.6 の確かめ・`make template-sync`（C5）と、その一覧を毎回見る手順（7.2）。**go の道具（10.8）とテンプレートの側（10.8.1: tape.json の events・buses・frames・screen・restore.json・`make migrate-baseline`・`migrate-new`・`migrate-diff`・`migrate-video`・早見表とお題）は済（2026-11-16）**。ranLines（engine_world の `YarnRunner.ranSourcesSince`）と mid の秒（go）も済・`make template-sync` は未着手 | 9.5〜13 時間 |
 | — | レビュー 4 | 門の道具 | 0.5〜1 時間 |
-| 11 | 移行 | 廃屋配信（先に。分岐が無く flow が短いので門の道具の確かめになる）: 基準を撮る・テンプレートの当て直し（追随の実績から 3〜4 時間）・Walk を `novel.backdrops3d.json` へ（1〜2 時間）・状態バーとコメント欄を `GameView.hud` と変数へ・HUD の変数の宣言（0.5 時間）・テスト 131 本の振り分け（1〜2 時間）・門の振り分け（1〜2 時間） | 8〜12 時間 |
+| 11 | 移行 | 廃屋配信（先に。分岐が無く flow が短いので門の道具の確かめになる）: **基準は撮った（2026-11-16・5 本・2 回撮って差 0・コマ 691 枚）。テンプレートの直し A〜E を入れてから移す（11.12）**。テンプレートの当て直し（追随の実績から 3〜4 時間）・Walk の行き先は 5.0 のとおり `GameView.backdrop` と `GameCommands.backdropSwitch`（1〜2 時間）・状態バーとコメント欄を `GameView.hud` と変数へ・HUD の変数の宣言（0.5 時間）・テスト 131 本の振り分け（1〜2 時間）・門の振り分け（1〜2 時間） | 8〜12 時間 |
 | 12 | 移行 | 血鱗: 基準を撮る・テンプレートの当て直し（実績 約 5 時間 → 上書きの決まりで 3〜5 時間）・Whale・Sea・Vial・Ending を GameView の層の数と `src/game/` へ写す（4〜6 時間）・テスト 323 本の振り分け（2〜3 時間）・門の振り分けと古いセーブ（2〜3 時間） | 11〜17 時間 |
 | — | レビュー 5 | 移行の後 | 1 時間 |
 | 13 | — | agent-eval（新しい語彙のお題を 1 本）・早見表・`docs/modules` の行・`forbid.json` で古い名前（`<<char>>` など）を止める | 1〜2 時間 |
@@ -1043,11 +1043,15 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | 廃屋配信 `WorldRead.backdropCueOf`（道筋と部屋が届いていれば歩く・Silent とスキップは 0 秒）・`Walk.totalSeconds` | `GameCommands.backdropSwitch`（`ctx#instant` で呼ばれない） |
 | 廃屋配信 `View.walkLayers`・`placeSurface` | `GameView.backdrop`（歩く間は `stage#under`・`fadeFrom` から `Walk.frameAt`） |
 | 廃屋配信 `Controls.walkSounds` | `Stage.GameSwitch#sounds`（World が物語の時計で鳴らす） |
-| 廃屋配信 `Page.show(Stage.walkEndOf …)`（歩き終えるまで字を出さない） | `bg` が出す `Out.Wait` |
+| 廃屋配信 `Page.show(Stage.walkEndOf …)`（歩き終えるまで字を出さない） | `bg` が出す待ち（段 11 の E で `Out.Wait` から `Out.WaitOrTap` に替えた） |
 | 廃屋配信 `Res` の `walks`・`rooms`・`roomsPending`・`Controls.loadResWithRooms`・`Game.withAssetLoading` の `withBackgroundLoad` | `GameRes`・`GameBoot.loadAssets`・`GameBoot.withLoading` |
 | 廃屋配信 `View.liveBar`・`statusBar`・`chatColumn`（サムネにも出る。zLive 16・zChat 14） | `GameView.hud` の OverWindow（変数は `YarnRunner.valueOf`） |
 | 廃屋配信 `View.blood`（zBlood 4。文字の枠の覆いの下・カメラと揺れを受けない） | `GameView.hud` の UnderWindow（hud の一番奥） |
 | 廃屋配信 `feed`（コメントの列） | GameCommands が `game.feed.<番号>.*` に書き、`GameView.hud` が描く（6.2 の (ii)） |
+| 廃屋配信 `<<feed live/lost>>`（経過時間の始まり） | ゲームのコマンド `<<stream>>`（`game.stream` の鍵と始めた時刻を Stage の props に書く。Yarn の変数では時刻を持てない） |
+| 廃屋配信 カメラの手ぶれ | `GameView.backdrop` で写真を揺らして描く【推】 |
+| 廃屋配信 右の列（コメントを下から積む） | `novel.rail.json` の `anchor: bottom` |
+| 廃屋配信 押して飛ばす歩きとコメント（`testTapSkipsTheWalk`） | `Commands.Out.WaitOrTap`（段 11 の E。`bg` がゲームの切り替えで出す待ちもこれ） |
 
 **設計とのずれ**
 
@@ -1099,6 +1103,35 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 **門の結果**: `make check` OK・`make test` 478 緑・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・`make flow` 6 本 ok・`make lint` は lint-doc-refs 15 件のまま（前からの物）・`go test ./internal/yarn/ ./internal/docshape/` ok・agent-eval `novel-3d-backdrop-walk` 100 点（1 回）。
 
+### 11.12 段 11 の記録（2026-11-16・廃屋配信の基準と、テンプレートの直し A〜E）
+
+**基準**（移行の担当が古い版で撮った。枝 `n4-baseline`・フォルダ `haioku-n4-baseline`・コミット 11a4a2b・push していない）
+
+| flow | 長さ |
+|---|---|
+| bookmark | 21.2 秒 |
+| full_story | 290.8 秒 |
+| showcase | 123.8 秒 |
+| stairs | 31.0 秒 |
+| walk_tour | 201.2 秒 |
+
+- 画面 540×960・バスは ambience・bgm・se・古いセーブ 15 枠。5 本を 2 回撮って差 0・コマ 691 枚。
+- 古い版の記録の書き手（基準の枝にだけ入れた）は、時間を取る命令の秒を、命令を当てる前と後の舞台の差で測った（歩きは道筋の全体の秒・一度だけの演出は novel.kind.json の長さ）。
+- comment は Timed（秒は `commentInterval`）にそろえた（新しい版のゲームのコマンドで同じ秒の待ちを出す前提）。
+- ranLines は古い版に `YarnRunner.ranSourcesSince` が無いので書いていない。カバー率は新しい版の記録だけで見る。
+
+**移す前に見つかったテンプレートの足りない所と直し**（触ったのはテンプレートと docs・agents-pack。engine・engine_world・render_gl と go は変えていない）
+
+| # | 足りない所 | 直し |
+|---|---|---|
+| A | `SceneRender.design()` と FlowVideo が 960×540・`Layout.Fit.Regular` の決め打ちで、縦の design のゲームを flow で撮れない | `SceneRender.design()` が project.json の `designWidth`・`designHeight` を読み（`designIn`）、並べ方の組は `SceneRender.fitOf`（デスクトップ版の実機と同じ: 区分 Large・向きは design の形）。`cfgOf(design, …)` の描き出しの大きさも design から。FlowVideo は flow の頭で 1 回読んだ design を描き出し・tape.json・移行の記録・restore に渡す。描き出しの `Look.Landscape` は `Look.Design`（縦の design なら縦の並べ方になるので）。横のテンプレートの基準の 45 枚は変わらない。縦はテストと、design を 540×960 に替えた写しで `make flow-video FLOW=e2e/tape.flow` を流して 540×960 の縦の頁のコマを見た |
+| B | `FlowVideo.frameCap` が 9000 の決め打ち（full_story は 60fps で超える） | 環境変数 `FLOW_FRAME_CAP`（移行の担当が古い版で使った名前にそろえた）か、flow の手が取りうる秒の合計（wait・hold の長さ・until と drive の max・tap と hold の前に入力を待つ 10 秒）× fps + 手の数（`FlowVideo.frameBudgetOf`） |
+| C | テンプレートも古い廃屋配信も Saves の version が 3 で見分けられない | 書く版を 4（`Saves.formatVersion`）。読む形を `Saves.formOf` で分ける: version 4 と、どの枠も `"stage"` を持つ version 3 は今の形・version 2 までは前の形（血鱗）・`"stage"` の無い枠がある version 3（古い廃屋配信の枠は stage を持たない）と 5 以上は断る（`Saves.decode` が None）。断った時は fresh で起動し、タイトルで labels の `savesRefused` を知らせる（`Saves.Opened`・`World.opened`・`Game.appFrom`）。restore.json は断った枠も `refused: true` で書く。0.96.0・0.97.0 のテンプレートが書いた version 3 はそのまま読めるので、テンプレートから作ったゲームの遊ぶ人のセーブは消えない（docs/migrations/0.98.0.md） |
+| D | ゲームの問いを足すにはテンプレートの `E2e.table` を直すしかない | ゲームの持ち物 `src/GameE2e.flix` の `GameE2e.probes()`。`E2e.table` は自分の問いの後ろに並べ、移行の記録の問い（`FlowVideo.migrateProbes`）にも載せる。作例の `ownPace`・`sharedTiredness` はそちらへ移した（e2e/vocab.json の問いの並びは変わらない）。名前が重なると TestTape が落ちる |
+| E | `Out.Wait` の間は押しても進まず、廃屋配信の押して飛ばす歩きとコメントを書けない | `Commands.Out.WaitOrTap(秒)`。人の送り（`WorldRead.advance`）だけが明け、オートは明けない。明けた時は `Stage.withGameSwitchFinished`。1 つのコマンドが Wait と WaitOrTap を両方出したら押しても明けない。`bg` がゲームの切り替えで出す待ちも WaitOrTap に。Silent では落とし、スキップ中はすぐ明ける（Wait と同じ）。flow の reader はこの間は押さない（`WorldRead.isTapWait`。基準の版の reader も歩きの間は押さない）。移行の記録では wait にせず、その命令の秒（`Executed.Commanded` の秒 = 待ちの秒）に入れる（docs/migrate-diff.md）|
+
+**門の結果**: テンプレートで `make check` OK・`make test` 523 緑（前は 498。A・B 8 本・D 2 本・C 7 本・E 9 本を足し、押しても歩きが明けない事を見ていた 1 本を消した）・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・`make flow` 6 本 ok（指紋は前と同じ）・`make lint` は lint-doc-refs 15 件のまま（前からの物）・ほか OK・`go test -count=1 ./internal/migrate/` ok（go は変えていない）・agent-eval `novel-tap-wait-game-probe` 100 点（1 回）。古い廃屋配信の bookmark の saves.json をテンプレートの `FlowVideo.restore` に読ませ、`refused: true` の restore.json が出るのを見た。
+
 ## 12. 試した事（スパイク）
 
 | 試した事 | 置き場 | 結果 |
@@ -1141,7 +1174,11 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 相談中: C14（一発の効果音を止める口・8.3）。決まるまで `audio all off` は鳴り続ける音だけを止める。
 - GameView の物の中の z を 0〜7 へ丸める時に知らせが無い（`GameView.backdrop` の 0..2・`GameView.hud` の 0..8 も同じ）。描き物は純粋で、Log に「1 回だけ知らせる」口が無いため。
 - `templates/sound-novel-starter/assets/mixer.schema.json` はエンジンの `docs/mixer.schema.json` の写しに `volumes`・`lockSeconds` を足した物。エンジンの schema に欄が増えたら、ここへも写す。
-- （段 8+9）廃屋配信の「押すと歩きを終える」（`testTapSkipsTheWalk`）は、`Out.Wait` の間は押しても進まないので書けない。移行で要るなら、(1) `Out.WaitOrTap(秒)`（押すと明ける待ち。明けた時にゲームが持つ切り替えも終わりの形にする）か、(2) `GameSwitch` に `skippable` を持たせ、押した時にテンプレートが `Stage.withGameSwitchFinished` と待ちの明けを当てる、のどちらかを相談する。
+- （段 8+9）廃屋配信の「押すと歩きを終える」（`testTapSkipsTheWalk`）は、`Out.Wait` の間は押しても進まないので書けない。移行で要るなら、(1) `Out.WaitOrTap(秒)`（押すと明ける待ち。明けた時にゲームが持つ切り替えも終わりの形にする）か、(2) `GameSwitch` に `skippable` を持たせ、押した時にテンプレートが `Stage.withGameSwitchFinished` と待ちの明けを当てる、のどちらかを相談する。→ 段 11 で (1) を入れた（11.12 の E）。
+- （段 11）古い廃屋配信の Stage は `<<signal>>` の前も 4G の 4 本を持つ（最初の台詞より前に `<<signal 4G 3>>` が流れるので、台詞ごとの問いには効かない）。
+- （段 11）【未確認】血鱗も縦の design なら、段 12 でも A（描き出しと flow の 960×540 の決め打ち）に当たっていた。
+- （段 11）C で断ったセーブのファイルは、断った後に遊んでセーブを書くと上書きされる（古い版へ戻すと前のセーブは無い）。退避の口は作っていない。
+- （段 11）`Out.WaitOrTap` を押して早く明けた時、移行の記録の mid のコマは予定の秒の割合の所で撮るので、明けた後の絵になる（flow の reader は押さないので門では起きない）。
 - （段 8+9）`Scene3d` に `Render.fade` は効かない（3D の背景へ重ねて入るとぱっと出る）。要るなら GameView が自分で暗くする。
 - （段 8+9）`vocab.std.json` を読むのは go の `yarn build`・`check`・`graph` と Doc から語彙を探す所。Studio の `TalkTags.elm` は `vocab.json` の tags・speakerTags だけを読み commands は読まないので、分けても壊れない。
 - （段 8+9）`<<tween>>` の鍵に `game.` や `camera.` を書いた時に build で止める口は無い（`YarnCommands.Param` の name 型に頭の字の決まりを持たせるのは engine_world の変更）。今は実行の時に `game.` を Err にし、ほかは `game.` を前に付けて読む。
