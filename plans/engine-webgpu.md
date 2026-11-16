@@ -1637,7 +1637,7 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
 - テスト: render_gl 540 緑（前の 530 に `TestShadowMaps` 6 本（同じ一辺は場面をまたいで次の番号・上限の一辺・pcf の頭打ち・1 回だけ作る・使わない物だけ捨てる・捨てた鍵を作り直す）と
   `TestWebGpuScene3dDawn` の 1 本と、`TestWebGpuScene3d` の影の欄の位置 3 本（スポット・太陽・影の無い場面で両方 0））。偽の GL を通るテスト（Sun・JointTexture の影の数え）は直さずに緑。
 - 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16）:
-  - 引き継いだ後に今の main（daa80f28）の上で全部流し直した（下の数はレビューの直しの前の門。直しの後は render_gl のテストと `bench/webgpu_v2` を流し直し、同じ数）。
+  - 引き継いだ後に今の main（daa80f28）の上で全部流し直した（レビューの直しの後にもう一度全部流し、下の数と同じ。gl-parity の場面ごとの行 81 行は前の担当の記録と 1 字も同じ）。
   - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `java -jar ../../bin/flix.jar test`）: 537 緑・exit 0（直しの後 540 緑）。
   - `make gl-parity` exit 0。場面ごとの行（81 行）が 12.29 の木の門の記録と 1 字も同じ。
   - `make gl-capture-check` exit 0（基準 `bench/baseline/0.96.0/gl-capture-apple-m4-pro.sha256`）: a と b の 54 枚がバイトまで同じ・**基準とも 54 枚がバイトまで同じ**。
