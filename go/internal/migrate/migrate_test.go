@@ -929,3 +929,14 @@ func TestOneFrameLateRoundedToMillisecondsPasses(t *testing.T) {
 		t.Fatalf("ミリ秒に丸めた 1 フレームの遅れは通すはず: %+v", d)
 	}
 }
+
+func TestTwoMillisecondsOverOneFrameIsReviewed(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	shiftEvent(c, 1, 3.0+1.0/30+0.002)
+	w := newWorld(t, b, c)
+	w.times = true
+	if d := diffsOf(w.run(t), WhatEventTime); len(d) == 0 {
+		t.Fatal("1 フレーム + 2 ミリ秒の遅れは迷った差のはず")
+	}
+}

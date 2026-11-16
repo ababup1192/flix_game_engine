@@ -35,6 +35,8 @@ mod TestKit {
 
     /// App の道の 1 フレーム: 実機と同じ App.advanceFrame（実時間と物語の時計を進め、Controls.step → Controls.interact）。
     /// 実時間の時計は World の realNow から続ける。
+    // WhyNot: フレームをまたいで StepState を持ち回さない — このゲームは withFixedStep を使わず、持ち越す秒と取り置く押しが
+    //   いつも空なので、呼ぶ側が持ち回す物を増やすだけになる（持ち越す物は実時間の時計だけで、それは World の realNow にある）。
     pub def frameBy(res: Res.Res, frame: App.Frame, w: World.World): World.World =
         let state = { real = Clock.startAt(Clock.secondsOf(w#realNow)) | App.freshStepState() };
         fst(App.advanceFrame(app(res, w), frame, state, Resources.of(res, w)))#world

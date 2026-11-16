@@ -48,8 +48,20 @@ mod WorldRead {
     /// Commands.execute が落とす）。r は反映を始める読んでいる値（新しいシナリオの位置 talk を入れた物）。
     /// 台詞ごとの戻れる所は、最後のブックマークから「その台詞より後に受けた入力」の数だけ入力を外した物（inputsAfter と markAt）。
     /// [遷移: シナリオが終わる(Done) → Credits]
+    /// 当て直しが実行器の <<wait>> で止まったら、その待ち 1 つのビートを始める（明けたら settleBeat が Tick して続く）。
     def absorb(res: Res.Res, replay: Replay, events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         absorbFrom(res, replay, YarnRunner.bookmarkOf(r#talk), List.zip(events, inputsAfter(events)), World.withRead({ beat = World.idleBeat() | r }, w))
+            |> beginRunnerWait
+
+    // WhyNot: 何も無いビートのまま実行器の <<wait>> を待たせない — ビートが空だと settleBeat は Tick せず、待ちの判断も
+    //   実行器を別に見る所が要って、待ちの持ち主が 2 つになる。
+    def beginRunnerWait(w: World.World): World.World =
+        World.mapRead(r -> match YarnRunner.waitUntilOf(r#talk) {
+            case Some(until) if NovelBeat.isEmpty(r#beat#state) and isRunnerWaiting(r#talk) =>
+                let beat = NovelBeat.runnerWaitBeat(Clock.since(World.now(w), until));
+                { beat = { state = beat, origin = World.now(w), waiting = NovelBeat.Waiting.Blocking } | r }
+            case _ => r
+        }, w)
 
     def absorbFrom(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], pairs: List[(YarnRunner.Event, Int32)],
                    w: World.World): World.World \ Emit[World.Event] =
@@ -88,10 +100,8 @@ mod WorldRead {
             { beat = { state = NovelBeat.appended(wallOf(r, w), items, r#beat#state) | r#beat } | r }
         }, w)
 
-    /// ビートの頭からの秒（物語の時計）。
-    // WhyNot: 物語の時刻の差をそのまま使わない — 頭 2.6 秒と今 3.5 秒の差は 0.8999… になり、実行器が 3.5 秒に明けると決めた
-    //   <<wait 0.9>> がビートの上ではまだ明けず、明ける時刻へ据え直して進める所（描き出しの場面）が止まらなくなる。
-    def wallOf(r: World.Read, w: World.World): Float64 = Clock.since(r#beat#origin, World.now(w)) + 1.0e-6
+    /// ビートの頭からの秒（物語の時計。NovelBeat.wallOf の幅を足した物）。
+    def wallOf(r: World.Read, w: World.World): Float64 = NovelBeat.wallOf(Clock.since(r#beat#origin, World.now(w)))
 
     /// 束の出来事を待ち方で分ける。命令は今の舞台に順に当ててみて（出来事は出さない）、出した待ちを読む。
     def itemsOf(res: Res.Res, last: Option[YarnRunner.Bookmark], pairs: List[(YarnRunner.Event, Int32)], r: World.Read, w: World.World): List[NovelBeat.Item] =
@@ -148,21 +158,22 @@ mod WorldRead {
 
     def settleStep(res: Res.Res, fuel: Int32, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let wall = wallOf(r, w);
-        match NovelBeat.dueOf(wall, r#beat#state) {
+        let tl = NovelBeat.timelineOf(r#beat#state);
+        match NovelBeat.dueOf(wall, r#beat#state, tl) {
             case i :: _ => settleWithin(res, fuel - 1, applyItem(res, i, r, w))
-            case Nil    => resolveOrTick(res, fuel, wall, r, w)
+            case Nil    => resolveOrTick(res, fuel, wall, tl, r, w)
         }
 
     /// 当てる出来事が無い時: 字を出し切った待ちを解く・スキップなら次の待ちまで飛ぶ（飛んだ歩きは終わりの形）・表の終わりなら Tick。
-    def resolveOrTick(res: Res.Res, fuel: Int32, wall: Float64, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+    def resolveOrTick(res: Res.Res, fuel: Int32, wall: Float64, tl: NovelBeat.Table, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let skipping = r#playback == World.Playback.Skip;
-        let resolved = NovelBeat.resolveTyped(skipping or Page.isDone(r#page), wall, r#beat#state);
-        let flown = if (skipping) NovelBeat.skipped(wall, resolved) else resolved;
+        let resolved = NovelBeat.resolveTyped(skipping or Page.isDone(r#page), wall, r#beat#state, tl);
+        let flown = if (skipping) NovelBeat.skipped(wall, resolved, tl) else resolved;
         let stage = if (flown#log != resolved#log) Stage.withGameSwitchFinished(r#stage) else r#stage;
         let cur = { beat = { state = flown | r#beat }, stage = stage | r };
         if (flown#log != r#beat#state#log) settleWithin(res, fuel - 1, World.withRead(cur, w))
-        else if (NovelBeat.isAtEnd(wall, flown) and isRunnerWaiting(cur#talk)) settleWithin(res, fuel - 1, tick(res, cur, w))
-        else withWaiting(World.withRead(cur, w))
+        else if (NovelBeat.isAtEnd(wall, flown, tl) and isRunnerWaiting(cur#talk)) settleWithin(res, fuel - 1, tick(res, cur, w))
+        else World.withRead({ beat = { waiting = NovelBeat.waitingOf(wall, flown, tl) | cur#beat } | cur }, w)
 
     /// 出来事 i を当てる（台詞は頁へ・命令は舞台へ・選択肢は出す）。記録の秒は予定の秒。
     def applyItem(res: Res.Res, i: Int32, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
@@ -172,9 +183,36 @@ mod WorldRead {
             |> Option.map(found -> {
                 let (item, (event, later)) = found;
                 let inOrder = Set.maximum(r#beat#state#applied) |> Option.forAll(j -> j < i);
-                absorbOne(res, Commands.Replay.Live, item#last, event, later, NovelBeat.plannedSecondsOf(i, beat), inOrder, marked) |> World.mapRead(withGate)
+                let applied = absorbOne(res, Commands.Replay.Live, item#last, event, later, NovelBeat.plannedSecondsOf(i, beat), inOrder, marked) |> World.mapRead(withGate);
+                if (inOrder) applied else refreshHeadMark(applied)
             })
             |> Option.getWithDefault(marked)
+
+    /// 先に積んだ台詞の後に当てた命令の舞台を、その台詞の戻れる所（バックログの頭と、同じ所を書いたオートセーブ）に入れ直す。
+    // WhyNot: 待ちの間のセーブを 1 つ前の台詞へ戻す形にしない — 先に積んだ台詞はもう頁とバックログに出ていて、戻すと読んだ行が
+    //   もう一度出る。オートセーブも台詞を積んだ時に書くので、どちらの形でも入れ直しが要る。
+    def refreshHeadMark(w: World.World): World.World =
+        match World.readOf(w) |> Option.flatMap(r -> headSaidOf(r#log) |> Option.map(found -> (r, found))) {
+            case Some((r, (entry, mark))) =>
+                let fresh = { stage = Stage.snapshotOf(r#stage) | mark };
+                let saves = autoSlotWith(mark, fresh, w#saves);
+                World.withSaves(saves, World.withRead({ log = World.Entry.Said(entry, Some(fresh)) :: List.drop(1, r#log) | r }, w))
+            case None => w
+        }
+
+    /// バックログの頭が戻れる所を持つ台詞なら、その行と戻れる所。
+    def headSaidOf(log: List[World.Entry]): Option[(Page.Line, Saves.Mark)] = match log {
+        case World.Entry.Said(entry, Some(mark)) :: _ => Some((entry, mark))
+        case _                                        => None
+    }
+
+    /// オートセーブの一番新しい枠が mark と同じ所なら、戻れる所を fresh にする。
+    def autoSlotWith(mark: Saves.Mark, fresh: Saves.Mark, saves: Saves.Saves): Saves.Saves =
+        match Saves.slotOf(Saves.Tab.Auto, 0, saves) {
+            case Some(slot) if YarnRunner.bookmarkToJson(slot#mark#bookmark) == YarnRunner.bookmarkToJson(mark#bookmark) =>
+                Saves.withSlot(Saves.Tab.Auto, 0, { mark = fresh | slot }, saves)
+            case _ => saves
+        }
 
     /// 実行器を Tick した（<<wait>> の時刻を渡す）: 続きの束をビートの後ろへ足す。
     def tick(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
@@ -183,7 +221,7 @@ mod WorldRead {
         absorbLive(res, r#talk, events, false, { talk = talk | r }, w)
 
     def withWaiting(w: World.World): World.World =
-        World.mapRead(r -> { beat = { waiting = NovelBeat.waitingOf(wallOf(r, w), r#beat#state) | r#beat } | r }, w)
+        World.mapRead(r -> { beat = { waiting = NovelBeat.waitingOf(wallOf(r, w), r#beat#state, NovelBeat.timelineOf(r#beat#state)) | r#beat } | r }, w)
 
     /// 束の中で使う背景・環境音・立ち絵のうち、まだ届いていなくて諦めてもいない物（スキップ中は止まった所で待つので空）。
     def pendingInBatch(res: Res.Res, pairs: List[(YarnRunner.Event, Int32)], w: World.World): List[String] =
@@ -328,9 +366,8 @@ mod WorldRead {
     pub def isPaused(w: World.World): Bool =
         World.readOf(w) |> Option.exists(r -> NovelBeat.isHolding(r#beat#waiting))
 
-    /// 演出の待ちの途中か、実行器が <<wait>> で止まっているか。flow の ready はこの間は Busy（tap を待ちが明けるまで待たせる）。
-    pub def isWaiting(w: World.World): Bool =
-        isPaused(w) or (World.readOf(w) |> Option.exists(r -> NovelBeat.isEmpty(r#beat#state) and isRunnerWaiting(r#talk)))
+    /// 演出の待ちの途中か（実行器の <<wait>> もビートの待ち）。flow の ready はこの間は Busy（tap を待ちが明けるまで待たせる）。
+    pub def isWaiting(w: World.World): Bool = isPaused(w)
 
     def isRunnerWaiting(talk: YarnRunner.Runner[Stage.Story]): Bool = match YarnRunner.shownOf(talk) {
         case YarnRunner.Shown.Waiting => true
@@ -373,7 +410,7 @@ mod WorldRead {
         match World.readOf(w) {
             case Some(r) if World.isFree(w) and Option.isEmpty(r#hold) and (List.isEmpty(r#choices) or Option.nonEmpty(gateOf(r))) =>
                 let manual = { playback = World.Playback.Manual | r };
-                if (NovelBeat.isHolding(NovelBeat.waitingOf(wallOf(r, w), r#beat#state))) tapBeat(res, manual, w)
+                if (NovelBeat.isHolding(r#beat#waiting)) tapBeat(res, manual, w)
                 else if (not Page.isDone(r#page)) reveal(manual, w)
                 else if (Option.nonEmpty(gateOf(r))) World.withRead(manual, w)
                 else next(res, manual, w)
@@ -381,16 +418,20 @@ mod WorldRead {
         }
 
     /// 演出の途中で押した: 押すと明ける待ちを今の時刻まで縮め（縮めた歩きは終わりの形にする）、その先の字も出し切る。
-    /// 送る時（next）と同じく今の行を既読にして Paged を出し、効果音の後の lockSeconds の間は押しても効かない。
+    /// 縮めた時だけ、送る時（next）と同じく今の行を既読にして Paged を出す。効果音の後の lockSeconds の間は押しても効かない。
     // WhyNot: next（オートとスキップも通る）で縮めない — オートが押す代わりに縮めると、待ちの秒を待たずに越える。
+    // WhyNot: 押しても明けない待ちが重なっている間（Blocking）も押すと明ける待ちは縮める — 歩きと実行器の <<wait>> が重なる所で、
+    //   押すと歩きだけを終えて <<wait>> は残る（縮めて組み直すので、押しても明けない待ちの秒は変わらない）。
     def tapBeat(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
-        if (Stage.isTextLocked(World.now(w), r#stage)) World.withRead(r, w)
-        else {
-            Emit.emit(World.Event.Paged);
-            let (beat, cut) = NovelBeat.tapped(wallOf(r, w), r#beat#state);
-            let stage = if (cut) Stage.withGameSwitchFinished(r#stage) else r#stage;
-            settleBeat(res, World.withRead({ beat = { state = beat | r#beat }, stage = stage | r }, markSeen(r, w)))
-                |> World.mapRead(cur -> if (NovelBeat.isHolding(cur#beat#waiting)) cur else { page = Page.revealAll(cur#page) | cur })
+        let tapped = if (Stage.isTextLocked(World.now(w), r#stage)) None
+                     else NovelBeat.tapped(wallOf(r, w), r#beat#state, NovelBeat.timelineOf(r#beat#state));
+        match tapped {
+            case None       => World.withRead(r, w)
+            case Some(beat) =>
+                Emit.emit(World.Event.Paged);
+                let stage = Stage.withGameSwitchFinished(r#stage);
+                settleBeat(res, World.withRead({ beat = { state = beat | r#beat }, stage = stage | r }, markSeen(r, w)))
+                    |> World.mapRead(cur -> if (NovelBeat.isHolding(cur#beat#waiting)) cur else { page = Page.revealAll(cur#page) | cur })
         }
 
     /// 今の行を出し切る。
@@ -590,8 +631,8 @@ mod WorldRead {
     // WhyNot: 選んだ選択肢より前の台詞の戻れる所へさかのぼらない — 戻すと選ぶ前に戻る。
     def markHere(r: World.Read): Option[Saves.Mark] =
         match YarnRunner.shownOf(r#talk) {
+            // 字を出している間（Typing）も頭の行の戻れる所: 実行器はもう次の束へ進んでいることがあり、今のブックマークは台詞の後ろを指す。
             case _ if NovelBeat.isHolding(r#beat#waiting) or r#beat#waiting == NovelBeat.Waiting.Typing => headMarkOf(r#log)
-            case YarnRunner.Shown.Waiting => headMarkOf(r#log)
             case _                        => YarnRunner.bookmarkOf(r#talk) |> Option.map(b -> markOf(b, r))
         }
 

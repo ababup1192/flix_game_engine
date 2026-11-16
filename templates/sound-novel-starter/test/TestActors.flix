@@ -243,10 +243,18 @@ mod TestActors {
         Assert.assertFalse(WorldRead.isPaused(stepBy(res(), 0.01, w)))
 
     @Test
-    def testReopeningTheNodeDropsThePause(): Unit \ {Assert, Fs.FileRead} =
-        // 待ちの間にシナリオを直して開き直すと、前の待ちは残らない（Silent の流しを止めない）。
-        let w = WorldRead.settleDialogue(res(), paused(10.0));
-        Assert.assertTrue(World.readOf(w) |> Option.exists(r -> NovelBeat.isEmpty(r#beat#state)))
+    def testReopeningTheNodeDropsThePauseAndGoesOn(): Unit \ {Assert, Fs.FileRead} =
+        // 10 秒の待ちの間にシナリオを直して開き直すと、前の待ちは残らない。
+        let reopened = WorldRead.settleDialogue(res(), paused(10.0));
+        Assert.assertFalse(TestKit.isWaiting(reopened))
+
+    @Test
+    def testReopeningAtAWaitGoesOnToTheFirstLine(): Unit \ {Assert, Fs.FileRead} =
+        // 作例の最初のノードは頭に <<wait 2>> がある。開き直すとその待ちで止まり、明けると最初の台詞へ進む。
+        let r = TestKit.res();
+        let reopened = WorldRead.settleDialogue(r, begun(r));
+        let later = stepBy(r, 3.0, reopened);
+        Assert.assertEq(expected = (true, false, currentText(begun(r))), (TestKit.isWaiting(reopened), TestKit.isWaiting(later), currentText(later)))
 
     @Test
     def testSaveDuringAPauseReturnsToTheLineBefore(): Unit \ {Assert, Fs.FileRead} =

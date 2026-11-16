@@ -493,13 +493,13 @@ mod TestGameHooks {
 
     @Test
     def testInstantCommandsRunDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =
-        // 切り替えの待ちの間も、後ろの時間を取らない命令は先に流れ、台詞は頁に積むが字は出さない（古い版と同じ）。
+        // 切り替えの待ちの間も、後ろの時間を取らない命令は先に流れ、台詞は頁に積むが字は出さない。
         let (w, signals) = walkedInto(withSwitchCommands(res()), "quick" :: Nil);
         Assert.assertEq(expected = ("quick" :: Nil, true, 0), (signals, isPaused(w), Page.visibleCount(World.pageOf(w))))
 
     @Test
     def testATimedCommandAlsoRunsDuringTheSwitch(): Unit \ {Assert, Fs.FileRead} =
-        // 時間を取る命令も切り替えの頭で流れ、その後ろの時間を取らない命令も流れる（古い版は束の命令を全部その場で当てた）。
+        // 時間を取る命令も切り替えの頭で流れ、その後ろの時間を取らない命令も流れる。
         let (_, signals) = walkedInto(withSwitchCommands(res()), "slow" :: "quick" :: Nil);
         Assert.assertEq(expected = "slow" :: "quick" :: Nil, signals)
 
@@ -574,8 +574,8 @@ mod TestGameHooks {
 
     @Test
     def testAWalkingBgThenAWaitShowsTheLineWhenTheWalkEndsOnTheAppPath(): Unit \ {Assert, Fs.FileRead} =
-        // 古い版の記録（廃屋配信 walk_tour）: 歩く <<bg genkan>> 5.4 秒 → <<audio>> 2 つ → <<wait 0.8>> → 台詞は bg から 163 フレーム
-        // （<<wait>> は歩きの頭から数えて重なる）。間の比べ（migrate diff --times）と同じく ±1 フレームで見る。
+        // 歩く <<bg>> 5.4 秒 → <<audio>> 2 つ → <<wait 0.8>> → 台詞: <<wait>> は歩きの頭から数えて重なるので、台詞は歩きの終わり
+        // 162 フレームの前後に出る。間の比べ（migrate diff --times）と同じく ±1 フレームの幅で見る。
         let frames = walkFramesByFlow("Walk", 16) |> Result.getWithDefault(-1);
         Assert.assertTrue(frames >= 162 and frames <= 164)
 
@@ -693,6 +693,37 @@ mod TestGameHooks {
         let lamp = (_: View.Env, _: World.Read) -> { id = "lamp", name = "電灯", rect = Layout.screen(Layout.Fit.Regular) } :: Nil;
         let ids = FlowVideo.objectsUsing(lamp, View.emptyFonts(), Layout.Fit.Regular, r, begun(r)) |> List.map(o -> o#id);
         Assert.assertTrue(List.memberOf("lamp", ids))
+
+    // ══ 先に積んだ台詞の戻れる所 ══
+
+    /// コメント（LineWait 1 秒）と、環境音も替えるコメントと台詞 1 行を流し、3 秒進めた所（台詞は 1 つ目のコメントの頭で積み、
+    /// 環境音を替える 2 つ目のコメントは後から当たる）。
+    def commentsThenAmbience(r: Res.Res): World.World =
+        let ambComment = { spec = YarnCommands.spec("ambcomment", "環境音を替えるコメント", Nil), timing = Commands.Timing.Timed,
+                           apply = (ctx, _, st) -> Ok(({ props = PropertyTween.setName(Stage.ambienceKey(), Some("amb_river"), ctx#now, 0.0, st#props) | st }, Out.LineWait(1.0) :: Nil)),
+                           needs = Commands.noAssets };
+        let withComment = { commands = Commands.tableOf(waitCommand("comment", Out.LineWait(1.0)) :: ambComment :: Commands.commandsIn(r#commands)) | r };
+        let events = YarnRunner.Event.Command(command("comment", Nil)) :: YarnRunner.Event.Command(command("ambcomment", Nil))
+            :: YarnRunner.Event.Line(heldLine()) :: Nil;
+        TestKit.stepBy(withComment, 3.0, beatWith(withComment, events))
+
+    def ambienceOfMark(m: Saves.Mark): Option[String] = PropertyTween.nameEnd(Stage.ambienceKey(), Stage.fromSnapshot(m#stage)#props)
+
+    @Test
+    def testCommandsAppliedAfterAnEarlyLineAreInItsMark(): Unit \ {Assert, Fs.FileRead} =
+        // 台詞を先に積んだ後に当たった環境音も、その台詞の戻れる所の舞台に入る。
+        let w = commentsThenAmbience(res());
+        Assert.assertEq(expected = Some(Some("amb_river")), WorldRead.headMarkOf(World.logOf(w)) |> Option.map(ambienceOfMark))
+
+    @Test
+    def testRestoringAnEarlyLineKeepsItsAmbienceAndGoesOn(): Unit \ {Assert, Fs.FileRead} =
+        // その戻れる所から戻すと環境音が残り、送ると先へ進む。
+        let r = res();
+        let w = commentsThenAmbience(r);
+        let back = WorldRead.headMarkOf(World.logOf(w)) |> Option.map(m -> TestKit.stepBy(r, 30.0, TestKit.quiet(() -> WorldRead.restore(r, m, w))));
+        let ambience = back |> Option.flatMap(b -> World.readOf(b) |> Option.flatMap(rd -> Stage.ambienceOf(World.now(b), rd#stage)));
+        let moved = back |> Option.map(b -> TestKit.placeOf(TestKit.stepBy(r, 30.0, TestKit.advance(r, b))) != TestKit.placeOf(b));
+        Assert.assertEq(expected = (Some("amb_river"), Some(true)), (ambience, moved))
 
     // ══ GameE2e.drives ══
 
