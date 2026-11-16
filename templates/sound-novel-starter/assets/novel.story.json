@@ -65,6 +65,7 @@
     "fullscreenMode": "フルスクリーン",
     "masterVolume": "全体の音量",
     "ambienceVolume": "環境音",
+    "musicVolume": "BGM",
     "seVolume": "効果音",
     "windowAlpha": "ウィンドウの濃さ",
     "reset": "初期設定に戻す",

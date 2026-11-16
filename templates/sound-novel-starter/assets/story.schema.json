@@ -203,6 +203,9 @@
         "ambienceVolume": {
           "type": "string"
         },
+        "musicVolume": {
+          "type": "string"
+        },
         "seVolume": {
           "type": "string"
         },

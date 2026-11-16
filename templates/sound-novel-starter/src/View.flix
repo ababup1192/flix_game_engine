@@ -965,6 +965,7 @@ mod View {
         case World.Setting.Slider(World.Slider.AutoWait)       => StoryDoc.Label.AutoWait
         case World.Setting.Slider(World.Slider.MasterVolume)   => StoryDoc.Label.MasterVolume
         case World.Setting.Slider(World.Slider.AmbienceVolume) => StoryDoc.Label.AmbienceVolume
+        case World.Setting.Slider(World.Slider.MusicVolume)    => StoryDoc.Label.MusicVolume
         case World.Setting.Slider(World.Slider.SeVolume)       => StoryDoc.Label.SeVolume
         case World.Setting.Slider(World.Slider.WindowAlpha)    => StoryDoc.Label.WindowAlpha
         case World.Setting.Pair(World.Pair.SkipScope)          => StoryDoc.Label.SkipScope

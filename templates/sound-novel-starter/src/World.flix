@@ -179,6 +179,7 @@ mod World {
         case AutoWait
         case MasterVolume
         case AmbienceVolume
+        case MusicVolume
         case SeVolume
         case WindowAlpha
     }

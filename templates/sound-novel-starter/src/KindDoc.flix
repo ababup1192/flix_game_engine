@@ -7,8 +7,8 @@ mod KindDoc {
 
     /// bodySize / rubySize / nameSize = 本文・ルビ・名前の字の大きさ（px）、lineGap = 行の間（ルビが入るので rubySize 以上）、
     /// advRows / nvlRows = ADV のウィンドウ・NVL の頁に入る行の数（あふれる前に頁をめくる）、
-    /// cps / autoWait / masterVolume / ambienceVolume / seVolume / windowAlpha = 設定の既定（1 秒の字数・オートで読み終えてから送るまでの秒・
-    /// 全体と環境音と効果音の音量 0〜1・文章のウィンドウの濃さ 0〜1）、
+    /// cps / autoWait / masterVolume / ambienceVolume / musicVolume / seVolume / windowAlpha = 設定の既定（1 秒の字数・オートで読み終えてから送るまでの秒・
+    /// 全体と環境音と BGM と効果音の音量 0〜1・文章のウィンドウの濃さ 0〜1）、
     /// autoPerChar = オートの待ちに足す 1 字あたりの秒（長い行ほど長く待つ）、skipInterval = スキップで 1 行を出す間（秒）、
     /// logMax = ログに残す行の数、shakeSeconds / shakePx = 強さを書かない <<shake>> の長さと揺れ幅、shakes = 名前付きの揺れの強さ（<<shake 名前>>）、
     /// overlayStart = <<overlay>> を一度も書いていない間の覆いの濃さ（0〜1）、overlayLayer = <<overlay layer=stage>> の層の数（world の中・大きいほど手前）、
@@ -31,6 +31,7 @@ mod KindDoc {
         autoWait = Float64,
         masterVolume = Float64,
         ambienceVolume = Float64,
+        musicVolume = Float64,
         seVolume = Float64,
         windowAlpha = Float64,
         autoPerChar = Float64,
@@ -57,6 +58,7 @@ mod KindDoc {
         autoWaitSlider = Slider,
         masterVolumeSlider = Slider,
         ambienceVolumeSlider = Slider,
+        musicVolumeSlider = Slider,
         seVolumeSlider = Slider,
         windowAlphaSlider = Slider
     }
@@ -88,7 +90,7 @@ mod KindDoc {
     /// コード側の既定値（assets/novel.kind.json と同じ値から出発する）。
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, bodySize = 22.0, rubySize = 11.0, nameSize = 19.0, lineGap = 14.0,
-                  advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
+                  advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, musicVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
                   shakes = Map.empty(), overlayStart = 0.0, overlayLayer = 900,
                   textSizes = Map#{ "small" => 0.8, "normal" => 1.0, "large" => 1.4, "huge" => 2.0 },
@@ -96,7 +98,7 @@ mod KindDoc {
                   holdFadeSeconds = 0.4, holdGiveUpSeconds = 20.0, holdMarkSeconds = 0.4,
                   tapSlop = 12.0, longPressSeconds = 0.65, swipeMin = 60.0, swipeSeconds = 0.5,
                   cpsSlider = { min = 10.0, max = 130.0, step = 10.0 }, autoWaitSlider = { min = 0.2, max = 4.0, step = 0.2 },
-                  masterVolumeSlider = volume(), ambienceVolumeSlider = volume(), seVolumeSlider = volume(),
+                  masterVolumeSlider = volume(), ambienceVolumeSlider = volume(), musicVolumeSlider = volume(), seVolumeSlider = volume(),
                   windowAlphaSlider = { min = 0.2, max = 1.0, step = 0.1 } })
 
     def snowDefaults(): Snow =
@@ -145,7 +147,7 @@ mod KindDoc {
                   advRows = int("advRows", d#advRows), nvlRows = int("nvlRows", d#nvlRows),
                   cps = num("cps", d#cps), autoWait = num("autoWait", d#autoWait),
                   masterVolume = num("masterVolume", d#masterVolume),
-                  ambienceVolume = num("ambienceVolume", d#ambienceVolume), seVolume = num("seVolume", d#seVolume),
+                  ambienceVolume = num("ambienceVolume", d#ambienceVolume), musicVolume = num("musicVolume", d#musicVolume), seVolume = num("seVolume", d#seVolume),
                   windowAlpha = num("windowAlpha", d#windowAlpha),
                   autoPerChar = num("autoPerChar", d#autoPerChar), skipInterval = num("skipInterval", d#skipInterval),
                   logMax = int("logMax", d#logMax),
@@ -164,6 +166,7 @@ mod KindDoc {
                   cpsSlider = slider("cpsSlider", d#cpsSlider), autoWaitSlider = slider("autoWaitSlider", d#autoWaitSlider),
                   masterVolumeSlider = slider("masterVolumeSlider", d#masterVolumeSlider),
                   ambienceVolumeSlider = slider("ambienceVolumeSlider", d#ambienceVolumeSlider),
+                  musicVolumeSlider = slider("musicVolumeSlider", d#musicVolumeSlider),
                   seVolumeSlider = slider("seVolumeSlider", d#seVolumeSlider),
                   windowAlphaSlider = slider("windowAlphaSlider", d#windowAlphaSlider) })
 

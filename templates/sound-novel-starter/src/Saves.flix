@@ -32,12 +32,13 @@ mod Saves {
     }
 
     /// 設定の画面で変える値。cps = 1 秒の字数、autoWait = オートで読み終えてから送るまでの秒、
-    /// masterVolume / ambienceVolume / seVolume = 全体・環境音・効果音の音量（0〜1）、windowAlpha = 文章のウィンドウの濃さ（0〜1）。
+    /// masterVolume / ambienceVolume / musicVolume / seVolume = 全体・環境音・BGM・効果音の音量（0〜1）、windowAlpha = 文章のウィンドウの濃さ（0〜1）。
     pub type alias Config = {
         cps = Float64,
         autoWait = Float64,
         masterVolume = Float64,
         ambienceVolume = Float64,
+        musicVolume = Float64,
         seVolume = Float64,
         windowAlpha = Float64,
         skipScope = SkipScope,
@@ -125,7 +126,7 @@ mod Saves {
     /// 設定の既定（設定の画面の「初期設定に戻す」もこれ）。
     pub def defaultConfig(kind: KindDoc.Doc): Config =
         let k = KindDoc.rec(kind);
-        { cps = k#cps, autoWait = k#autoWait, masterVolume = k#masterVolume, ambienceVolume = k#ambienceVolume,
+        { cps = k#cps, autoWait = k#autoWait, masterVolume = k#masterVolume, ambienceVolume = k#ambienceVolume, musicVolume = k#musicVolume,
           seVolume = k#seVolume, windowAlpha = k#windowAlpha,
           skipScope = SkipScope.ReadOnly, afterChoice = AfterChoice.StopSkip, display = Display.Window }
 
@@ -250,7 +251,7 @@ mod Saves {
             "seen" => Json.JArray(r#seen |> Set.toList |> List.map(Json.JString) |> List.toVector),
             "config" => Json.JObject(Map#{ "cps" => num(c#cps), "autoWait" => num(c#autoWait),
                                            "masterVolume" => num(c#masterVolume),
-                                           "ambienceVolume" => num(c#ambienceVolume), "seVolume" => num(c#seVolume),
+                                           "ambienceVolume" => num(c#ambienceVolume), "musicVolume" => num(c#musicVolume), "seVolume" => num(c#seVolume),
                                            "windowAlpha" => num(c#windowAlpha),
                                            "skipScope" => Json.JString("${c#skipScope}"),
                                            "afterChoice" => Json.JString("${c#afterChoice}"),
@@ -313,6 +314,7 @@ mod Saves {
             { cps = JsonCodec.floatOr("cps", c#cps, obj), autoWait = JsonCodec.floatOr("autoWait", c#autoWait, obj),
               masterVolume = JsonCodec.floatOr("masterVolume", c#masterVolume, obj),
               ambienceVolume = JsonCodec.floatOr("ambienceVolume", c#ambienceVolume, obj),
+              musicVolume = JsonCodec.floatOr("musicVolume", c#musicVolume, obj),
               seVolume = JsonCodec.floatOr("seVolume", c#seVolume, obj),
               windowAlpha = JsonCodec.floatOr("windowAlpha", c#windowAlpha, obj),
               skipScope = if (word("skipScope", "${c#skipScope}") == "Everything") SkipScope.Everything else SkipScope.ReadOnly,

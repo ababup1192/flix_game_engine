@@ -60,6 +60,7 @@ mod StoryDoc {
         case FullscreenMode
         case MasterVolume
         case AmbienceVolume
+        case MusicVolume
         case SeVolume
         case WindowAlpha
         case Reset
@@ -102,7 +103,7 @@ mod StoryDoc {
         Label.EmptySlot :: Label.NewBadge :: Label.SlotsHint :: Label.LogHint :: Label.GroupText :: Label.GroupSound ::
         Label.TextSpeed :: Label.AutoWait :: Label.SkipScope :: Label.SkipReadOnly :: Label.SkipEverything :: Label.AfterChoice ::
         Label.StopSkip :: Label.KeepSkip :: Label.Display :: Label.WindowMode :: Label.FullscreenMode :: Label.MasterVolume ::
-        Label.AmbienceVolume :: Label.SeVolume :: Label.WindowAlpha :: Label.Reset :: Label.Preview :: Label.Yes ::
+        Label.AmbienceVolume :: Label.MusicVolume :: Label.SeVolume :: Label.WindowAlpha :: Label.Reset :: Label.Preview :: Label.Yes ::
         Label.No :: Label.AskOverwrite :: Label.AskDelete :: Label.AskLoad :: Label.AskJump :: Label.AskToTitle ::
         Label.AskQuit :: Label.AskReset :: Label.LostNote :: Label.Saved :: Label.QuickSaved :: Label.Loaded ::
         Label.Deleted :: Label.ResetDone :: Label.NoSave :: Label.NoQuickSave :: Label.NoRollback :: Label.NoSaveNow :: Label.SavesRefused :: Label.SavesRefusedKept :: Label.Waiting ::
@@ -159,6 +160,7 @@ mod StoryDoc {
         case Label.FullscreenMode => ("fullscreenMode", "フルスクリーン")
         case Label.MasterVolume   => ("masterVolume", "全体の音量")
         case Label.AmbienceVolume => ("ambienceVolume", "環境音")
+        case Label.MusicVolume    => ("musicVolume", "BGM")
         case Label.SeVolume       => ("seVolume", "効果音")
         case Label.WindowAlpha    => ("windowAlpha", "ウィンドウの濃さ")
         case Label.Reset          => ("reset", "初期設定に戻す")

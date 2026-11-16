@@ -449,12 +449,12 @@ mod Controls {
         let music = PropertyTween.nameAt(now, Stage.bgmKey(), stage#props) |> Option.map(name -> { name = name, volume = volume(Stage.bgmVolumeKey()), pitch = 1.0 }) |> Option.toList;
         List.append(ambient, music) |> List.filter(s -> s#volume > 0.0)
 
-    /// 音の通り道: novel.mixer.json のバスに、設定の音量（全体 × 環境音 / 効果音）を掛ける。
+    /// 音の通り道: novel.mixer.json のバスに、設定の音量（全体 × 環境音 / BGM / 効果音）を掛ける。
     /// 画面や確認のウィンドウを開いている間は snapshot「panel」（環境音を籠もらせる）。
     pub def mixerOf(res: Res.Res, w: World.World): AudioMixer.Mixer =
         let c = Saves.configOf(w#saves);
         let base = res#mixer |> AudioMixer.withBusVolume("ambience", c#masterVolume * c#ambienceVolume)
-                           |> AudioMixer.withBusVolume("bgm", c#masterVolume * c#ambienceVolume)
+                           |> AudioMixer.withBusVolume("bgm", c#masterVolume * c#musicVolume)
                            |> AudioMixer.withBusVolume("se", c#masterVolume * c#seVolume);
         if (World.isFree(w)) base else AudioMixer.withSnapshot("panel", base)
 
