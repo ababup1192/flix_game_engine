@@ -374,7 +374,7 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号）／(2) 材質と絵の組（values を uniform か storage かをここで決める。uniform は 64 KiB・256 バイト揃えで 256 個が上限）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ・mip・preload／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
 | 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
@@ -445,7 +445,7 @@ mask つきの面も比べる値を mask つきスプライトと同じく前半
 それでも A にした理由: 道が 1 本（Design の解像度の場面はどちらの形でも自分の texture が要る）・B は 2D の pass を行の途中で開き直す道（viewport・控え・黒帯・stencil の張り直し）が要る・
 B は標本つきの描き先で pass の切れ目ごとに resolve が増える・スマホのタイル型 GPU では pass の切れ目ごとに描き先の全画面の読み書き（store と load）が増える【推: この Mac では測っていない】。
 MSAA のふちは A で消えない（標本 4 の Pass に描いた 3D の斜めの棒で、標本 4 と 1 の差が GL 4,761 px・WebGPU 4,158 px。GL との差 3,330 px は 3D を使わない 2D の斜めの多角形でも 5,040 px の同じ桁で出る標本の位置の違い（12.25。4 標本の型が上下に鏡写しな事は 12.26 で確かめた）。
-`RenderList` の 1 行の欄と高さ（3D）は R2a の形のままで WebGPU が流せた（`SceneList` の欄のうち使うのは種類・1 体ごとの値の先頭・数）。形のレビュー（3D）は V2b（実物の欠けの一覧）の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25。
+`RenderList` の 1 行の欄と高さ（3D）は R2a の形のままで WebGPU が流せた（`SceneList` の欄のうち使うのは種類・1 体ごとの値の先頭・数）。形のレビュー（3D）は V2b（実物の欠けの一覧）の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。→ 下の「形のレビュー（3D）の決め」で確定した。12.25。
 **形のレビュー（3D）の決め（V2b のレビュー 1 回目と同時・コーディネーターの判断・人のおまかせ・2026-11-16）**: 行の欄と高さ（1 行 = batch 1 つ・Int32 で 7 欄・heads・materials・firstMaterial）は**この形で確定**。
 足す物は「欄を末尾へ」「種類（kind）を足す」「pass の側に置く」のどれかで載る（Output.Depth は pass・材質と絵の組は `SceneList` に values と reads を足して行の末尾に位置・lightmap は 1 行 1 体で reads・骨は storage・
 影は光ごとの `SceneList`・空は kindSky・半透明は前半で並べて材質の行として足す・ビルボードは kindBillboard・環境マップは場面の値）。
