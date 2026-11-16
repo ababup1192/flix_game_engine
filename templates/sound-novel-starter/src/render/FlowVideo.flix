@@ -328,17 +328,18 @@ mod FlowVideo {
                 List.flatten(backdrop :: cast :: game({ fonts = fonts | View.envOf(fit, res, w) }, r) :: hud :: Nil)
         }
 
-    /// 縦の画面のメッセージウィンドウの矩形（型の portrait が band なら下の帯、page なら頁）。
-    def portraitMessage(fit: Layout.Fit, window: ThemeDoc.Window, choiceCount: Int32): Rect2.Rect2 = match window#portrait {
-        case ThemeDoc.PortraitText.Band(h) => Layout.portraitBand(fit, h, choiceCount)
-        case ThemeDoc.PortraitText.Page    => Layout.page(fit, choiceCount)
+    /// 縦の画面のメッセージウィンドウの矩形（型の portrait が band なら下の帯、page なら頁、frame なら真ん中の枠）。
+    def portraitMessage(fit: Layout.Fit, res: Res.Res, r: World.Read, window: ThemeDoc.Window, choiceCount: Int32): Rect2.Rect2 = match window#portrait {
+        case ThemeDoc.PortraitText.Band(h)  => Layout.portraitBand(fit, h, choiceCount)
+        case ThemeDoc.PortraitText.Page     => Layout.page(fit, choiceCount)
+        case ThemeDoc.PortraitText.Frame(_) => ViewText.messageFrameOf(fit, res, r) |> Option.getWithDefault(Layout.page(fit, choiceCount))
     }
 
     def readingHud(fit: Layout.Fit, res: Res.Res, r: World.Read): List[TapeOut.ScreenObject] =
         let choiceCount = List.length(r#choices);
         let buttonCount = List.length(WorldMenu.buttonsOf(fit));
         let window = snd(Stage.windowOf(res#theme, r#stage));
-        let message = if (Layout.isPortrait(fit)) portraitMessage(fit, window, choiceCount)
+        let message = if (Layout.isPortrait(fit)) portraitMessage(fit, res, r, window, choiceCount)
             else match window {
                 case w if w#kind == ThemeDoc.WindowKind.Adv => Layout.advPanelAt(fit, w#place)
                 case _ =>

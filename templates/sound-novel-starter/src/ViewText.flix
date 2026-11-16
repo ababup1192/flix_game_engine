@@ -1,7 +1,7 @@
 // ViewText — 読んでいる間の文字の層（純粋）: メッセージ枠の型（novel.theme.json の windows）ごとの NVL の頁・ADV の枠・縦の画面の頁と、
 // 本文の 1 行の置き方・送りの印。字の置き場・大きさ・揃えは Stage の text.* の値（<<text>>）。
 mod ViewText {
-    use fge::{Color, FontAtlas, Num, RawDraw, Render, RichText, TextDraw, Vec2}
+    use fge::{Color, DrawCmd, FontAtlas, Num, RawDraw, Rect2, Render, RichText, TextDraw, Vec2}
     use View.Env
 
     /// 横の画面の文字の層。メッセージ枠の型の出し方（NVL・ADV）で描き分ける。
@@ -134,9 +134,47 @@ mod ViewText {
     pub def portraitPage(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let window = snd(Stage.windowOf(env#res#theme, r#stage));
         match window#portrait {
-            case ThemeDoc.PortraitText.Band(h) => portraitBand(atlas, env, r, window, h)
-            case ThemeDoc.PortraitText.Page    => portraitStack(atlas, env, r, window)
+            case ThemeDoc.PortraitText.Band(h)       => portraitBand(atlas, env, r, window, h)
+            case ThemeDoc.PortraitText.Page          => portraitStack(atlas, env, r, window)
+            case ThemeDoc.PortraitText.Frame(center) => portraitFrame(atlas, env, r, window, center)
         }
+
+    /// 縦の画面の真ん中のメッセージ枠の矩形（型の portrait が frame で、縦の画面の時だけ）。GameView が枠のそばに物を置く時と、
+    /// 移行の記録の画面の物が読む。
+    pub def messageFrameOf(fit: Layout.Fit, res: Res.Res, r: World.Read): Option[Rect2.Rect2] =
+        match snd(Stage.windowOf(res#theme, r#stage))#portrait {
+            case ThemeDoc.PortraitText.Frame(center) if Layout.isPortrait(fit) => Some(frameRectOf(fit, res, r, center))
+            case _ => None
+        }
+
+    /// 今の行の行の数で決めた枠（行の無い時は 1 行）。
+    def frameRectOf(fit: Layout.Fit, res: Res.Res, r: World.Read, center: Float64): Rect2.Rect2 =
+        let sizes = Layout.advTextSizes(fit, KindDoc.rec(res#kind));
+        let width = Layout.width(fit) - 2.0 * 14.0 - 2.0 * Layout.frameInset();
+        let rows = r#page#current |> Option.map(line -> Page.rowsOf(sizes#body, sizes#ruby, width, line)) |> Option.getWithDefault(1);
+        Layout.portraitFrame(fit, center, sizes#body, rows)
+
+    /// 縦の画面の真ん中の枠: 半透明の暗い角丸の地と外へぼける影を敷き、枠の中に今の行だけを出す（前の行は出さない）。
+    def portraitFrame(atlas: FontAtlas, env: Env, r: World.Read, window: ThemeDoc.Window, center: Float64): List[Render.PlacedItem] =
+        let t = View.theme(env);
+        let style = styleOf(window, r#stage);
+        let base = Layout.advTextSizes(env#fit, View.kindOf(env));
+        let sizes = { body = base#body, ruby = base#ruby, name = base#name };
+        let frame = frameRectOf(env#fit, env#res, r, center);
+        let area = Layout.frameText(frame);
+        let a = Float64.min(0.9, View.windowAlpha(env) * 0.8);
+        let mid = { x = frame#position#x + frame#size#x / 2.0, y = frame#position#y + frame#size#y / 2.0 };
+        let halo = Render.glowAt(mid, frame#size#y * 0.5 + 120.0, Color.darken(t#panel, 0.4), { alpha = 0.3, blend = DrawCmd.BlendMode.Normal }, View.zVeil());
+        let ground = View.at(frame#position#x, frame#position#y,
+                             RawDraw.box(frame#size, t#panel, View.zVeil() + 1) |> Render.fade(a)
+                                 |> Render.outlineA({ color = t#accent, alpha = 0.25, width = 1.0 }) |> Render.rounded(16.0));
+        let text = r#page#current |> Option.map(line -> {
+            let speaker = speakerOf(line, env);
+            let placed = portraitBlock(atlas, sizes, area#position, area#size#x, { body = inkOf(line, env, r), name = speaker#color },
+                                       Page.visibleCount(r#page), line, window#showName, style, env);
+            List.append(placed, waitMark(atlas, { x = frame#position#x + frame#size#x - Layout.frameInset(), y = frame#position#y + frame#size#y - 12.0 }, env, r))
+        }) |> Option.getWithDefault(Nil);
+        List.flatten(halo :: (ground :: Nil) :: text :: Nil)
 
     /// 縦の画面の下の帯: 帯の上にだけ下へ濃くなる覆いを敷き、帯の上端から今の行だけを出す（前の行は出さない）。
     def portraitBand(atlas: FontAtlas, env: Env, r: World.Read, window: ThemeDoc.Window, bandHeight: Float64): List[Render.PlacedItem] =
