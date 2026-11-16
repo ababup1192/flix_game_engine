@@ -526,6 +526,29 @@ func TestApprovedCoverageEntryPasses(t *testing.T) {
 	}
 }
 
+func TestRanLinesWithFileAreCounted(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	at := func(line int) map[string]any { return map[string]any{"file": "assets/talk/story.yarn", "line": line} }
+	c.tape["ranLines"] = []any{at(3), at(4), at(5), at(7), at(14)}
+	r := newWorld(t, b, c).run(t)
+	if len(r.Uncovered) != 1 || r.Uncovered[0].Line != 9 {
+		t.Fatalf("{file, line} の ranLines を数えていない: %+v", r.Uncovered)
+	}
+}
+
+func TestNewOnlyFramesAreNoted(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	frames := c.tape["frames"].([]any)
+	extra := map[string]any{"file": "frames/mid.png", "t": 0.7, "node": "Start", "seq": -1, "kind": "mid", "cmd": "show", "step": 1, "at": 0.5, "layer": "world"}
+	c.tape["frames"] = append(frames, extra)
+	r := newWorld(t, b, c).run(t)
+	if !strings.Contains(strings.Join(r.Notes, "\n"), "新しい版にだけある world のコマが 1 枚") {
+		t.Fatalf("新しい版にだけあるコマの数が注意に出ない: %v", r.Notes)
+	}
+}
+
 func TestCoverageCountsEveryCommandLine(t *testing.T) {
 	b := baseRec()
 	c := b.clone()

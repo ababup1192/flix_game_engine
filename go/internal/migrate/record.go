@@ -141,8 +141,32 @@ type Tape struct {
 	Events   []Event
 	Buses    map[string][]BusPoint
 	Frames   []Frame
-	RanLines []int
+	RanLines []RanLine
 	has      map[string]bool
+}
+
+// RanLine は ranLines の 1 つ（流した文の所）。File が空なら tape.json の yarn のファイル（行番号だけを書いた記録）。
+type RanLine struct {
+	File string
+	Line int
+}
+
+// UnmarshalJSON は行番号だけの形（古い記録）と {file, line} の形の両方を読む。
+func (r *RanLine) UnmarshalJSON(b []byte) error {
+	var n int
+	if json.Unmarshal(b, &n) == nil {
+		r.File, r.Line = "", n
+		return nil
+	}
+	var o struct {
+		File string `json:"file"`
+		Line int    `json:"line"`
+	}
+	if err := json.Unmarshal(b, &o); err != nil {
+		return fmt.Errorf("ranLines の 1 つは行番号か {file, line}: %w", err)
+	}
+	r.File, r.Line = o.File, o.Line
+	return nil
 }
 
 // TimelineRow は timeline の 1 行（Line が nil なら台詞の無い所）。

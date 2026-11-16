@@ -180,6 +180,9 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 			}
 		}
 	}
+	if extra := newOnlyFrames(byA, byB); extra > 0 {
+		c.r.Notes = append(c.r.Notes, fmt.Sprintf("%s/%s: 新しい版にだけある world のコマが %d 枚（前の版に組む相手が無いので比べていない）", flow, size, extra))
+	}
 	if seconds.oneSided > 0 {
 		c.r.Notes = append(c.r.Notes, fmt.Sprintf("%s/%s: 途中のコマ %d 枚は片方の版にしか命令の秒（seconds）が無いので、秒を比べていない", flow, size, seconds.oneSided))
 	}
@@ -207,6 +210,17 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 			c.add(d)
 		}
 	}
+}
+
+// newOnlyFrames は新しい版にだけある world のコマの数（新しい版で秒が分かるようになった命令の途中のコマなど）。
+func newOnlyFrames(byA, byB map[string]Frame) int {
+	n := 0
+	for key, f := range byB {
+		if _, ok := byA[key]; !ok && f.Layer == "world" {
+			n++
+		}
+	}
+	return n
 }
 
 // midSeconds は組になった途中のコマの命令の秒を比べる。同じ命令の 0.25・0.5・0.75 の 3 枚は 1 件にまとめる。
