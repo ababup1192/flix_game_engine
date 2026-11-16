@@ -372,10 +372,10 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 11 | R2a | **3D の不透明の batch だけ `RenderList` に。** `planScenes` から `gl` と GL の `State` を外す（capability・順の番号・材質の状態を backend に聞く）。`MaterialBatch#entry` を材質の鍵に替える（→ 12.23 で、鍵の字でなく backend の材質の表の番号（`handle`）に）。形と絵の「上げる行」。**`planScene` 系を配列で運ぶ**（決まり 9 の 3D の分。record の欄の引き当てを内側の輪から出す） | `gl-parity` 0 px・**偽の GL を通るテスト 6 ファイル（Batch・Instancing・JointTexture・Sun・GpuMipmap・Preload。うち GL の呼び出しの並びまで比べるのは 3 ファイル）はそのまま門に残す**（`RenderList` を見るテストは足す）・fps3d_lab が 5% 以内。`bench/scene3d` の動く割合 100%・12,000 個と、東京 1 棟ずつ: 137 ms → 100 ms 以下【目標】 | 8〜11 時間 |
 | 12 | V2 | **縦に 1 本（3D）。** WebGPU の backend に不透明と頂点の色・光 1 つ。`bench/scene3d` の部屋を出す。3D を 2D へ貼る形（5.4）を `bench/scene3d` で測る（fps3d_lab での確かめは P8 の終わり） | GL の backend と画素を比べる。**形のレビュー（3D）で確定**（形のレビュー（3D）は V2b の直後（コーディネーターの判断・人のおまかせ・2026-11-16）。12.25。V2b のレビューと同時に行い、行の欄と高さはこの形で確定した・9.1・12.26） | 6〜9 時間 |
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
-| 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す）／
+| 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号）／(2) 材質と絵の組（values を uniform か storage かをここで決める。uniform は 64 KiB・256 バイト揃えで 256 個が上限）／
 (3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に。
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27）。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -449,7 +449,7 @@ MSAA のふちは A で消えない（標本 4 の Pass に描いた 3D の斜�
 **形のレビュー（3D）の決め（V2b のレビュー 1 回目と同時・コーディネーターの判断・人のおまかせ・2026-11-16）**: 行の欄と高さ（1 行 = batch 1 つ・Int32 で 7 欄・heads・materials・firstMaterial）は**この形で確定**。
 足す物は「欄を末尾へ」「種類（kind）を足す」「pass の側に置く」のどれかで載る（Output.Depth は pass・材質と絵の組は `SceneList` に values と reads を足して行の末尾に位置・lightmap は 1 行 1 体で reads・骨は storage・
 影は光ごとの `SceneList`・空は kindSky・半透明は前半で並べて材質の行として足す・ビルボードは kindBillboard・環境マップは場面の値）。
-行の 1 つ外側で 2 つ替える: (1) 計画が `List[(ScenePassSpec, SceneList)]` を出す形にする（`ScenePassSpec` は ShadowMap(light)・Color・DepthOut(range) のような enum・描き先は 2D の `PassTarget` と同じ attachment の列）。R2b・P8 の (1) Output.Depth と一緒に入れる。
+行の 1 つ外側で 2 つ替える: (1) 計画が `List[(ScenePassSpec, SceneList)]` を出す形にする（`ScenePassSpec` は ShadowMap(light)・Color・DepthOut(range) のような enum・描き先は 2D の `PassTarget` と同じ attachment の列 → 12.27 で attachment の列を値で持つ形は (4) へ回した）。R2b・P8 の (1) Output.Depth と一緒に入れる。
 (2) 形と 3D の絵の番号の寿命の表を前半へ寄せる分を、(8) から (1) の直後・(2) 材質の前へ出す（行に形の番号の欄を 1 つ・材質の絵は reads で番号）。描き先・影の地図の寿命は最後のまま。12.26。
 
 決めた結果と数字は、この文書の該当の節に書き足す（候補を捨てた理由も 1 行）。
@@ -1214,7 +1214,7 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/v2b/out/<ゲーム>-<場面>-<gl|webgpu>/frame-N.png`（**scratchpad の物は消えうる**。人に見せる 1 組はコーディネーターが別に扱う）。
 - **R2b と P8 の小分けの順の決め直し**（9 章の表の 13・14 行目に書いた）: 2 本の両方で欠ける物と、欠けると画面全体が崩れる物から。形のレビュー（3D）の決め（下）で (0) と (1b) を足した。
   0. **`WebGpuPaint` の 3D の分を子の mod へ分ける**（P8 の側だけ・Host・`sceneViewportOf`・`pasteScene`）。`pasteScene` → `notePasted` の配線を守るテストもここで。
-  1. **奥行きの書き出し（Output.Depth）と `ScenePassSpec`**: 2 本とも毎コマ 1 場面で、欠けると 3D の全部がぼける（一番目立つ）。頂点の色の物は `uDepthOut` を立てて R32F の描き先へ描くだけで、`R3dScene` の欄も WGSL の分岐（`Render3dWgsl` の frag）も V2 で入っている【推: 一番安い】。
+  1. **奥行きの書き出し（Output.Depth）と `ScenePassSpec`**: 2 本とも毎コマ 1 場面で、欠けると 3D の全部がぼける（一番目立つ）。頂点の色の物は `uDepthOut` を立てて R32F の描き先へ描くだけ（→ 12.27 で R32F は作らず、場面の描き先の形式のまま）で、`R3dScene` の欄も WGSL の分岐（`Render3dWgsl` の frag）も V2 で入っている【推: 一番安い】。
      計画が `List[(ScenePassSpec, SceneList)]` を出す形はここで入れる。cutout と両面の材質の物は材質の道で描くので (2) で埋まる。P8 では 3D の診断の数（`scene3dCounts`）を一緒に数える（場面のあるコマに毎回知らせが出ている）。
   1b. **形と 3D の絵の番号の寿命の表を前半へ**（元の (8) から前へ出した。行に形の番号の欄を 1 つ・材質の絵は reads で番号）。描き先・影の地図の寿命は (8) のまま。
   2. **材質と絵の組**: 2 本とも欠け、fps3d_lab では 1 コマに 110〜119 個の一番大きい欠け。lightmap の物もここの内数（lightmap の欄は材質の道に乗る）。
@@ -1270,3 +1270,88 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - ビルボード・環境マップ・preload は 2 本で確かめられない（上の 7）。
   - 窓の WebGPU の垂直同期（上）。
   - `WebGpuPaint.pasteScene` → `notePasted` の配線を守るテスト（小分けの (0)）。
+
+### 12.27 R2b・P8 の (0) と (1): 3D の分を子の mod へ・奥行きの書き出しと `ScenePassSpec`（2026-11-16・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (0) と (1)。engine の pub（ゲームから見える API）は増えていない。GL の絵は変えていない（下の門）。
+
+- **(0) `WebGpuPaint` の 3D の分を子の mod へ**: 3D の描き手へ貸す Host・場面の design 領域・prepare の呼び出し（診断の知らせを含む）・貼る所を `RenderPaint.Internal.WebGpuPaint.Scenes`（`prepare`・`paste`）へ移した。動きは同じ。
+  - 兄弟（例 `RenderPaint.Internal.WebGpuScenes`）でなく子の mod にした: Host は `WebGpuPaint` の encoder・submit・数え（`encoderOf`・`flushPending`・`skipMany`・`frameCounters`）を借りるので、兄弟にするとそれらを pub にすることになる。子の mod は親の pub でない物に届く。
+  - `WebGpuPaint.flix` は 1,101 → 1,068 行（上限 1,200）。
+  - 配線を守るテスト `TestScenesDawn`（Dawn を開く・`WebGpuPaint` の子の mod から `openPass` と `flushPending` を直に呼ぶ）: 場面を描く → submit → `Scenes.paste` で 2D の pass に貼る → 同じ描き先をもう一度描く、で 2 回目が submit を 1 回頼む。
+    **`paste` の中の `notePasted` を外すと「expected 1, but got 0」で落ちる**のを確かめた（12.25・12.26 の持ち越しを埋めた）。
+- **(1) 決めた事 1 — `ScenePassSpec` の形**: `Render3d.ScenePlan.ScenePassSpec` は `Color`・`DepthOut({ near, range })` の enum（影の地図は (4) で `ShadowMap(light)` の case を足す。今は作っていない）。
+  - 計画が決める: `GroupedScene` と `ScenePlan` に `mainPass`（場面の置いた物を場面の描き先へ描く pass。影の地図の pass は含まない）の欄を足し、`groupScene` が `Output` から 1 回だけ決め（`passSpecOf`・pub でない）、
+    候補の分け方と `sceneDrawsOf` は `mainPass` を見る（`Output` を見直さない）。
+  - 計画の答え: `Render3d.SceneList.buildScenePasses(plan)`（1 体ごとの値の番号を振り終えた `ScenePlan[MeshBatch]` を丸ごと受ける。(4) で影の組を足す時に引数を替えずに済む）が `ScenePasses = List[(ScenePassSpec, SceneList)]`（今は場面ごとに 1 組）を出す。GL（`Render3d.prepareScenes`）と WebGPU（`numberInstances`）の両方がこれを呼ぶ。
+    `ScenePlan` に `SceneList` を直に持たせなかったのは、行の 1 体ごとの値の先頭が backend の番号の振り方（GL は `Instancing.upload`・WebGPU は `numberSpan` で instance の buffer）で決まり、計画の時には決まらないため。
+  - 描き先: 2 つの case はどちらも「色 1 つ（場面の描き先の形式）と深度」で、2D の `PassSpec` の `ColorAttachment` と `DepthStencil.Depth` と同じ組（enum の doc に書いた）。
+    **texture の番号は持たせなかった**: 場面の描き先は backend が場面の番号で持つ（WebGPU の `SceneTarget`・GL は 2D の描き先か Design の描き先）。2D の `PassTarget` の型をそのまま使う形は、影の地図（色を持たない）を `Target(ColorAttachment, …)` に入れられないので取らなかった。
+    attachment の列を値で持つ形（`{ color = Option[…], depth = DepthStencil }`）は、今の 2 つの case で同じ値しか返さず読む所が無いので、影の地図を足す時に入れる。
+  - GL: `GlRows.SceneInputs#list` を `passes` にし、`uploadRows` は pass ごとの形の置き場（`List[Array[Int32]]`）を返す。`Render3d.drawScene` は pass ごとに `drawPass`（色の pass はビルボード・半透明も重ねる・`DepthOut` は `MaterialPass.Depth` で行とビルボード）。
+    `MaterialPass`（GL の材質の道の中の enum）は残した: 影の地図の case は材質の道を通らない（`Render3d.Shadow` の別のプログラム）ので、`ScenePassSpec` に寄せると材質の道に読まない case が生える。
+    ビルボードの灰色と空の白は今も `scene#output` で決める（どちらも行になっていない間は、場面の pass が 1 つで spec と output が 1 対 1・WhyNot に書いた）。
+- **(1) 決めた事 2 — WebGPU の奥行きの書き出し**: `DepthOut` の pass は、頂点の色の頂点シェーダー（`litVertexSource`）と、GL の `depthFragmentSource` と同じ式の `Render3dWgsl.depthFragmentSource`（`vWorld` だけを読み、`depthGray` の灰色を書く）の pipeline で描く。
+  pipeline の鍵は (形式, 標本, pass の番号)。奥行きの書き出しの pipeline は起動の時に作らない（画面の RGBA8・標本 1 の色の pipeline だけを作る今の方針のまま。初めて Output.Depth が出たコマで Dawn が組み終えるのを待つ）。
+  - pass ごとに色と深度を消す（GL は場面の頭で 1 回）。列の頭の pass だけ消して残りを前の中身から描く形は入れていない: 今は列に pass が 1 つで、2 つ目を足す (4) の影の地図は描き先が違う（WhyNot に書いた）。
+  - 場面の値は `mainPass` で書く（場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、1 つの encoder の中で pass ごとに書き替えるとどの pass も最後の値で描く。WhyNot に書いた）。
+  - 描き先は**場面の描き先のまま**（2D の Pass の形式 Rgba8Unorm か Rgba16Float）。R32F は作らない: GL も Output.Depth を 2D の Pass の色へ灰色で書き、被写界深度はその R を読む（`RenderTarget.Format` に R32F は無い）。場面の texture を α を掛けた後の値で貼る道（V2 の A）はそのまま。
+  - 場面の値: `uDepthRange`（224・228）と `uDepthOut`（248）は `packPassValues` が毎回書く（入れ物は場面をまたいで使い回すので、色の pass で `uDepthOut` を 0 に戻す。幅は GL の `putDepthRange` と同じく 0.000001 を下限）。
+    `uDepthOut` は今の頂点の色の道では読まない（材質の frag が読む・(2)）が、書く欄の組を pass で変えないために書く。
+  - 地の色（`clearOf`）: GL と同じく空の無い場面は background（無ければ透明）。奥行きの書き出しで空を塗る場面（`Scene3d.drawnSkyOf`）は一番奥の白（GL の空の frag の `uDepthOut` の枝と同じ）。
+  - 奥行きの書き出しで、まだ GL と同じに書けない物は描かずに（か形のまま書いて）数える: 骨つきの物（飛ばす）・cutout と両面の材質の物（「3D の奥行きの書き出しの材質の物（cutout と両面を見ずに形で書く）」。
+    WebGPU は材質を全部「使えない」と答えるので頂点の色の道へ回り、裏の面の間引きと cutout の抜きが GL と違う。(2) で材質の道に乗る）・ビルボード（飛ばす）。影と環境マップは奥行きの書き出しで読まないので数えない。
+  - スマホの上限（12.24）の内: varying は頂点シェーダーが 4 つ出し、frag は 1 つ読む・bind group は 1 つ（場面の値）・頂点の buffer 2 本・storage は使わない。
+- **確かめ — `bench/webgpu_v2`** に 2 場面を足した（部屋を yaw 0.3 で・near 16・幅 200 = 目から 1 m で黒・13.5 m で白）:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大（許容） |
+  |---|---|---|---|
+  | roomDepth（画面へ直に・Native・地の色は部屋の黒） | 3 px / 518,400（16） | 1 px（8） | ±4（±16） |
+  | roomDepthPass（白で消した Rgba16Float の Pass に地の色の無い奥行きの書き出しを描き、画面いっぱいに貼る＝ゲームの被写界深度の形） | 0 px（0） | 0 px（0） | ±0（±0） |
+
+  - 許す差の理由: roomDepth の 3 px は room（14 px・±82）と同じく、三角形のふちと重なる面で勝つ面が奥行きの丸めで入れ替わる画素【推: 画素を 1 つずつは見ていない。room と同じ所で起き、灰色は重なる 2 面の距離の差しか違わないので差の最大が小さい】。
+    式（距離・near・幅・空の白）を取り違えれば面の中が丸ごと違い、万 px の桁になる。roomDepthPass は design の解像度で描くので 0 px（roomDesign と同じ）。
+  - 絵: `bench/webgpu_v2/debug/{gl,webgpu}/roomDepth.png`・`roomDepthPass.png`（git の外）。目で見て、家具の手前が黒く奥の壁へ白くなる灰色の坂が GL と同じ。
+- **確かめ — 実物の 2 本**（V2b の写しを写し直し、engine をこの worktree に向けた。流し方は 12.26 と同じ・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=40`・頭の 64 コマ）:
+  - **奥行きの書き出しの欠けは 6 場面とも 0**（表から行が消えた）。3D のぼけが直った: fps3d_lab の部屋・礼拝堂、みやげの町の arrival・market・night で、WebGPU の絵が GL と同じ所にピントが合い（部屋は中ほどの本棚と卓・町は画面の中ほど）、
+    GL と同じく手前と奥がぼける（町の左下の木など）。V2b では WebGPU だけ画面の全部がぼけていた。WebGPU の誤り 0・落ちた場面なし。
+  - 欠けの表（起動から 300 コマの表の 1 コマあたり。V2b の表との違いだけ）:
+
+    | 種類 | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+    |---|---|---|---|---|---|---|
+    | 奥行きの書き出し（Output.Depth・場面） | 0.9 → **0** | 0.9 → **0** | 0 | 0.6 → **0** | 0.9 → **0** | 0.9 → **0** |
+    | 骨つきの物 | 12.8 → 25.2 | 0.0 → 0.0 | 0.0 → 0.0 | 43.1 → 84.5 | 63.7 → 81.4 | 63.7 → 86.2 |
+    | 奥行きの書き出しの材質の物（cutout と両面） | 0 | 0 | 0 | 0 | 0 | 0 |
+
+    - 骨つきの物が 2 倍前後になったのは、奥行きの書き出しの場面の中身を数えるようになったため（V2b では場面ごと 1 回だけ数えていた・12.26 の必須 1 の (a)）。同じ人を色の場面と奥行きの場面で 2 回描くので、欠けも 2 回。
+      market は 300 コマのうち頭の読み込みのコマの数が流した回で違う（12.26 と同じ注意）。
+    - 奥行きの書き出しの材質の物（cutout と両面）は 2 本とも 0（奥行きの場面に cutout と両面の材質が無い【推: 2 本の材質を全部は読んでいない】）。
+    - 材質の物・半透明・lightmap・影・空は V2b と同じ桁（(2) 以降）。
+  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/r2b/out/<ゲーム>-<場面>-<gl|webgpu>/frame-N.png`（**scratchpad の物は消えうる**）。
+- テスト: render_gl 512 緑（前の 503 に 9 本: `TestScenesDawn` 1 本・`TestWebGpuScene3d` の奥行きの書き出しの欄 3 本（near と幅と旗・色の pass で旗を戻す・幅は下限 0.000001）と地の色 4 本（下のレビュー 1 回目の必須 1）・`TestSceneList` の pass が Output に従う 1 本。
+  `TestWebGpuScene3d` の「Depth の場面は奥行きの書き出しだけを数える」を「描けない物だけを数える」へ替えた）。`TestWgslDawn` は奥行きの書き出しの frag を足して 368 本を Dawn で組んで誤り 0。偽の GL を通るテストは直さずに緑。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16）:
+  - render_gl のテスト（`.layers/render_gl` で `flix test`）512 緑（main の 0.97.0 に rebase した後）。
+  - `make gl-parity` 緑。**場面ごとの行（93 行）が (1) を入れる前の木（(0) のコミット）の行と 1 字も同じ**（GL の道は形を変えたが絵を変えていない）。
+  - `make gl-capture-check`（基準 `bench/baseline/0.96.0/gl-capture-apple-m4-pro.sha256`）: a と b の 54 枚がバイトまで同じ・**基準とも 54 枚がバイトまで同じ**（差 0 枚。この worktree には 12.25 の novel の中断セーブが無い）。
+  - `make webgpu-v1-check` 緑（36 場面・draw の数も GL と同じ・誤り 0・終わりの `bench/webgpu_v2` の型検査も緑）。
+  - `make -C bench/webgpu_v2 run` 緑・誤り 0: room 14 px（±82）・roomTurned 8 px（±52）・roomDesign 0・**roomDepth 3 px（±4）・roomDepthPass 0**・railsMsaa 3,330 px（±55）・railsNoMsaa 0・
+    railsMsaaClear 4,761 px（±54）・slant2dMsaa 5,040 px（±55）・標本 4 と 1 の差 GL 4,761 px・WebGPU 4,158 px。`SplitPassTrial` は pass ごとの組を読む形に直した（比べる中身は同じ）。
+  - テンプレ 3 本の `reference-check` 緑（rpg 16・novel 45・tidepool 8）。
+  - `lint-max-lines` 緑（`Render3d.flix` 1,119 行・`WebGpuPaint.flix` 1,068 行）・`lint-huge-methods` 緑（`bench/webgpu_v1` と `bench/webgpu_v2` の jar を JARS で渡した）・`gl-jar-pin-check` 緑（`render_gl/java` は触っていない）。
+- レビュー 1 回目（86 点）への対応:
+  - 必須 1（`clearOf` の空の白の枝にテストが無い）: `TestWebGpuScene3d` に 4 本 — 奥行きの書き出しで sky がある → 白（background があっても）・sky が無く background がある → background・
+    色の pass で sky がある → 透明・sky が無く景色を背景に描く（`withEnvironmentAsBackground` で `drawnSkyOf` が Some）→ 白。
+  - 必須 2（`scene3dCounts` の持ち越しの理由と行き先）: 下の持ち越しと 9 章の表の 14 行目に、外した理由と行き先 (2) を書いた。
+  - 必須 3: `Render3d.flix` の `PassAround` と `around` を `PassContext` と `ctx` に。
+  - 任意で直した物: `buildScenePasses` は番号を振り終えた `ScenePlan[MeshBatch]` を丸ごと受ける形に（WebGPU は影の材料を空にした plan を組んで渡す）・
+    計画の欄 `pass` を `mainPass` に（(4) で影の pass と取り違えない）・`passSpecOf` を pub でなく・pass ごとに消す事と `writeSceneValues` が `mainPass` に縛られる事を WhyNot と上の決めた事 2 に・
+    (4) の持ち越しに影の地図を 2D の並びより先に描く要と別の列の案・9.1 と 12.26 の 1 に 12.27 への書き戻し・欠けの表の「—」を 0 に・テストを use で短く・幅の下限のテストを値で比べる・奥行きの書き出しの pipeline を起動の時に作らない事。
+- 持ち越し:
+  - P8 の (1) の 3D の診断の数（`scene3dCounts`）を WebGPU で数える（今も「未計測」の知らせ）→ **(2) の材質と絵の組へ**。外した理由: 数える所（`Render3d.Counts.count` など）が GL の `State#countsHolder` に足す形で、
+    WebGPU の描き手に同じ入れ物と draw の分かれた理由の数えを持たせる仕事が、Output.Depth（frag 1 つと場面の値の 3 欄）と別の大きさだった。分かれた理由の大半（材質・絵）が (2) で WebGPU に生まれるので、そこで一緒に数える。
+  - 奥行きの書き出しの cutout と両面の材質（(2) の材質の道で）・骨つきの物（(3)）・ビルボード（(7)）。
+  - 影の地図の pass（(4)）: `ScenePassSpec` に case を足し、計画が光ごとの組を出す。その時に attachment の列を値で持つ形と、pass ごとの描き先の付け替えを入れる。
+    GL では影の地図を Design の場面が読むので 2D の並びより先に描く要があり、ShadowMap を同じ列（`ScenePasses`）に入れると GL の `drawScene` と WebGPU の `drawInto` の前提（列の pass は全部場面の描き先 1 つへ書く）が崩れる。
+    影の pass を場面の列と別の列（例 `ScenePlan` の外の、prepare 1 回分の影の組）に持つ案も比べる。
+  - 場面の値の buffer は場面の描き先ごとに 1 つで、pass が 2 つ以上になると pass ごとの値（奥行きの書き出しの旗・影の地図の目）を分ける要る【推: (4) で】。

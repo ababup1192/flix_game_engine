@@ -1,4 +1,4 @@
-// Render3d.SceneList — 3D の場面 1 つの不透明の batch を描く行の列（RenderList の 3D の分。計画の側が作り、GL の backend は Render3d.GlRows が流す）。
+// Render3d.SceneList — 3D の場面 1 つの不透明の batch を描く行の列（RenderList の 3D の分。計画の側が pass ごとに作り（buildScenePasses）、GL の backend は Render3d.GlRows・WebGPU の backend は Render3d.WebGpuRows が流す）。
 // 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物）。半透明・ビルボード・空・影の地図は行にしない。
 // rows は 1 行 rowStride() 個: 0=種類（kind*） 1=材質の表の番号（MaterialBatch#handle。頂点の色と骨つきは 0） 2=材質の順の番号（MaterialBatch#order。同じく 0）
 //   3=1 体ごとの値の先頭 4=描く物の数（0 なら描かず、形と絵を今のコマで使った物として数えるだけ） 5=1 つの draw call に分かれた理由（Render3d.Counts.breakSlotOf）
@@ -10,11 +10,18 @@ mod Render3d.SceneList {
     use Render3d.{MeshDraw}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.Counts.{BatchBreak, breakSlotOf}
-    use Render3d.ScenePlan.{SceneDraws, isSkinned}
+    use Render3d.ScenePlan.{SceneDraws, ScenePassSpec, ScenePlan, isSkinned}
 
     pub type alias SceneList = {
         rows = Array[Int32, Static], heads = Array[MeshDraw, Static], materials = Array[Scene3d.MaterialFields, Static], firstMaterial = Int32, count = Int32
     }
+
+    /// 場面 1 つの pass と、その pass で流す行の列（列の順に pass を積む）。
+    pub type alias ScenePasses = List[(ScenePassSpec, SceneList)]
+
+    /// 1 体ごとの値の番号を振り終えた場面の計画 plan を、pass ごとの行の列にする（今は場面の置いた物を描く pass 1 つ）。
+    pub def buildScenePasses(plan: ScenePlan[MeshBatch]): ScenePasses \ IO =
+        (plan#mainPass, buildSceneList(plan#draws)) :: Nil
 
     /// 行の種類。
     pub def kindVertexColor(): Int32 = 1

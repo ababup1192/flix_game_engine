@@ -1,12 +1,12 @@
 // 3D の不透明の batch の行（Render3d.SceneList）と、行を作るまでの計画（Render3d.ScenePlan）。計画は GL を呼ばずに決まり、backend の答えは値で渡す。
 mod Render3d.TestSceneList {
     import java.nio.FloatBuffer
-    use Render3d.Batch.{MaterialBatch, MeshBatch, batchKeyOf, groupByTextures, groupInOrder}
+    use Render3d.Batch.{MaterialBatch, MeshBatch, SpanBatch, batchKeyOf, groupByTextures, groupInOrder}
     use Render3d.Counts.{BatchBreak, breakSlotOf}
     use Render3d.Instancing.{PackMode, numberSpan}
     use Render3d.FakeGl.{cmdOf, freshRecorded, freshState, paint, plainTriangle, poseAt, recordingGl, sceneOf, timesCalled}
-    use Render3d.SceneList.{SceneList, buildSceneList, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf}
-    use Render3d.ScenePlan.{PlanCaps, freshPlanner, groupScenes, kindOf, meshDrawOf, planScenes}
+    use Render3d.SceneList.{SceneList, buildSceneList, buildScenePasses, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf}
+    use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, freshPlanner, groupScenes, kindOf, meshDrawOf, planScenes}
 
     def triangle(side: Float64): Mesh3d.Mesh3d =
         Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(side, 0.0, 0.0) :: Vec3.v3(0.0, side, 0.0) :: Nil, color = { r = 1.0, g = 1.0, b = 1.0 } } :: Nil)
@@ -360,4 +360,22 @@ mod Render3d.TestSceneList {
         let t = argbTexture();
         let baked = (side: Float64) -> texturedOn(t, bakedTriangle(side)) |> Scene3d.withLightmap(Scene3d.lightmap(Texture3d.name(t)));
         Assert.assertTrue(snd(bindCounts(baked(1.0) :: baked(2.0) :: Nil, t :: Nil)) > snd(bindCounts(baked(1.0) :: Nil, t :: Nil)))
+
+    // ── pass ──
+
+    /// 場面の Output から計画の pass を決め、pass ごとの行の列は 1 つ（色の場面は Color・Output.Depth の場面は同じ near と幅の DepthOut）。
+    @Test
+    def testScenePassFollowsOutput(): Unit \ {Assert, IO} =
+        let depth = { output = Scene3d.Output.Depth({ near = 0.5, range = 12.0 }) | sceneOf(placed(0.1) :: Nil) };
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let (plans, _) = planScenes(planner, caps(false), Vector#{0}, groupScenes(planner, caps(false), 1, cmdOf(sceneOf(placed(0.1) :: Nil)) :: cmdOf(depth) :: Nil));
+        let unnumbered = (b: SpanBatch) -> ({ head = b#head, count = 0, first = 0 }: MeshBatch);
+        let describe = (spec: ScenePassSpec) -> match spec {
+            case ScenePassSpec.Color        => "color"
+            case ScenePassSpec.DepthOut(dr) => "depth ${dr#near} ${dr#range}"
+        };
+        let numbered = (p: Render3d.ScenePlan.ScenePlan[SpanBatch]) ->
+            { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil }, shadowPlans = Nil };
+        let passes = plans |> List.map(p -> buildScenePasses(numbered(p)) |> List.map(pl -> describe(fst(pl))));
+        Assert.assertEq(expected = ("color" :: Nil) :: ("depth 0.5 12.0" :: Nil) :: Nil, passes)
 }

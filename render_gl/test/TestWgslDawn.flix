@@ -260,6 +260,7 @@ mod TestWgslDawn {
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
+        ("frag depth", Render3dWgsl.depthFragmentSource()) ::
         ("vertex lit", Render3dWgsl.litVertexSource()) ::
         ("sky", head + Render3dWgsl.skyLightSource() +
                 "@fragment fn fs_main(@location(0) d: vec3f) -> @location(0) vec4f { return vec4f(skyAt(d), 1.0); }\n") :: Nil

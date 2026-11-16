@@ -2,8 +2,9 @@
 // 1 回の renderCommands で、2D の pass を開く前に prepare が場面ごとに自分の texture（色と深度。標本つきなら resolve まで）へ描き、
 // 2D の並びの z の位置で 2D の描き手がその texture を貼る（plans/engine-webgpu.md の 5.4）。計画（Render3d.ScenePlan）と行（Render3d.SceneList）は GL と同じ物を使い、
 // 行を流すのは Render3d.WebGpuRows。式は GL と同じ WGSL（Render3dWgsl の頂点の色の頂点シェーダーと frag）。
-// 描くのは不透明の頂点の色の物と光（点光源・スポット・太陽・環境光・hemisphere・かすみ）。材質・骨つき・ビルボード・空・影・環境マップ・lightmap・Output.Depth は描かずに種類ごとの回数を host へ数えさせる
-// （材質の物は GL が「使えない」と答えた材質と同じく頂点の色で描く）。
+// 描くのは不透明の頂点の色の物と光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、奥行きの書き出し（Output.Depth の場面の形の灰色）。
+// 材質・骨つき・ビルボード・空・影・環境マップ・lightmap は描かずに種類ごとの回数を host へ数えさせる（材質の物は GL が「使えない」と答えた材質と同じく頂点の色か形で描く）。
+// 場面は計画の pass（Render3d.ScenePlan.ScenePassSpec）ごとの行の列（Render3d.SceneList.ScenePasses）で描き、pass の種類で frag を替える。
 // WhyNot: 兄弟（Render3d.GlRows など）と同じく pub を外さない — 呼び手の RenderPaint.Internal.WebGpuPaint は Render3d の子孫でなく、pub でない子の mod には届かない
 //   （親の Render3d が pub でないので、別のパッケージのゲームからは見えない）。
 pub mod Render3d.WebGpuRenderer {
@@ -42,8 +43,8 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.Instancing.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
-    use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePlan, SceneDraws, freshPlanner, groupScenes, isSkinned, planScenes}
-    use Render3d.SceneList.{SceneList, buildSceneList}
+    use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenes, isSkinned, planScenes}
+    use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses}
     use Render3d.WebGpuRows.{MeshTable, drawRows, freshMeshes, releaseMeshes, trimMeshes, uploadRows}
     use RenderPaint.Internal.WebGpuPipelines
 
@@ -73,7 +74,7 @@ pub mod Render3d.WebGpuRenderer {
     pub type alias Prepared = Vector[Option[Paste]]
 
     /// 描き手の状態。欄の中身:
-    /// pipelines = (形式の番号, 標本の数) → 頂点の色の pipeline・blankDepth と blankImage = 影の地図と環境マップの代わり（場面の値が影と環境マップを切っているので読まれない）・
+    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（場面の値が影と環境マップを切っているので読まれない）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・cpuInstances・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
     /// （cpuInstances は足りなければ倍に作り直す）・gen = 画面のコマの世代（endFrame で進む）。
@@ -85,7 +86,8 @@ pub mod Render3d.WebGpuRenderer {
             pasteLayout = BindGroupLayout,
             vertexModule = ShaderModule,
             fragmentModule = ShaderModule,
-            pipelines = Ref[Map[(Int32, Int32), RenderPipeline], Static],
+            depthModule = ShaderModule,
+            pipelines = Ref[Map[(Int32, Int32, Int32), RenderPipeline], Static],
             blankDepth = Texture,
             blankImage = Texture,
             environmentSampler = Sampler,
@@ -126,6 +128,7 @@ pub mod Render3d.WebGpuRenderer {
             sceneLayout = gpu.createBindGroupLayout(layoutDesc), pasteLayout = pasteLayout,
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource()),
             fragmentModule = gpu.createShaderModule("fge scene3d lit fs", Render3dWgsl.litFragmentSource()),
+            depthModule = gpu.createShaderModule("fge scene3d depth fs", Render3dWgsl.depthFragmentSource()),
             pipelines = Ref.fresh(Static, Map.empty()),
             blankDepth = gpu.createTexture("fge scene3d blank depth", 1, 1, TextureFormat.DEPTH32_FLOAT, TextureUsage.TEXTURE_BINDING, 1, 1),
             blankImage = blankImage,
@@ -139,7 +142,7 @@ pub mod Render3d.WebGpuRenderer {
             gen = Array#{1i64} @ Static
         });
         // WhyNot: 画面（RGBA8・標本 1）の pipeline を初めて場面が出たコマで作らない — Dawn は pipeline を作り終えるまで待つので、そのコマが詰まる（WebGpuPipelines.buildStartupPipelines と同じ）。
-        discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1);
+        discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color);
         r
 
     def directBytes(bytes: Int32): ByteBuffer \ IO = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN)
@@ -161,6 +164,7 @@ pub mod Render3d.WebGpuRenderer {
         s#environmentSampler.release();
         s#vertexModule.release();
         s#fragmentModule.release();
+        s#depthModule.release();
         s#sceneLayout.release()
 
     /// 2D の描き手が encoder を submit した後に呼ぶ（1 体ごとの値の buffer と場面の値を頭から書き直せる）。
@@ -211,7 +215,7 @@ pub mod Render3d.WebGpuRenderer {
         let rect = sceneRect(vp, cmd);
         let scissor = clipBox(vp, rect, cmd#clip);
         let visible = rect#width > 0 and rect#height > 0 and scissor#width > 0 and scissor#height > 0
-                      and cmd#scene#size#x > 0.0 and cmd#scene#size#y > 0.0 and isColorOutput(cmd#scene);
+                      and cmd#scene#size#x > 0.0 and cmd#scene#size#y > 0.0;
         if (not visible) None
         else {
             let (width, height, samples) = match cmd#scene#resolution {
@@ -226,26 +230,25 @@ pub mod Render3d.WebGpuRenderer {
             Some({ group = target#pasteGroup, scissor = topLeftOf(dest#height, scissor), key = (dest#key, index) })
         }
 
-    def isColorOutput(scene: Scene3d.Scene3dCmd): Bool = match scene#output {
-        case Scene3d.Output.Color    => true
-        case Scene3d.Output.Depth(_) => false
-    }
-
     /// 場面 1 つのまだ描けない物の種類と回数（0 回の種類も並べる。数えるのは host#skip）。
-    /// Output.Depth の場面は奥行きの書き出しの 1 回だけ（prepareScene が描かずに捨てる場面なので、中身は数えない）。
     /// 物は計画が間引かなかった物（culled でない物・骨つきの物は Scene3d.isOutsideFrustum が間引かない）を 1 体 1 回だけ数える
     /// （骨つきの物は材質があっても骨つきの物・lightmap の物は材質の物の内数）。
     /// 影は影を落とす光の数・ビルボードは数・空と環境マップは場面の数。
+    /// 奥行きの書き出しの場面は、形だけで書く物のうち材質の道で書くはずの物（cutout と両面。計画が半透明の物と、cutout でも両面でもない材質を外してある）と
+    /// 骨つきの物とビルボードだけを数える（空は一番奥の白で塗り、影と環境マップは読まない）。
     def skipsOf(members: MutList[MeshDraw, Static], scene: GroupedScene): List[(String, Int32)] \ IO =
         let cmd = scene#cmd#scene;
-        if (not isColorOutput(cmd)) ("3D の奥行きの書き出し（Output.Depth）", 1) :: Nil
-        else {
-            let t = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc),
-                                  { opaque = 0, blended = 0, lightmapped = 0, skinned = 0 }, scene#groups);
-            ("3D の骨つきの物", t#skinned) :: ("3D の材質の物（頂点の色で描く）", t#opaque) ::
-            ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) :: ("3D の lightmap の物（今の光で描く）", t#lightmapped) ::
-            ("3D の影（影を落とす光）", List.length(scene#shadowPlans)) :: ("3D のビルボード", List.length(cmd#billboards)) ::
-            ("3D の空", Option.count(_ -> true, cmd#sky)) :: ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
+        let t = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc),
+                              { opaque = 0, blended = 0, lightmapped = 0, skinned = 0 }, scene#groups);
+        match scene#mainPass {
+            case ScenePassSpec.DepthOut(_) =>
+                ("3D の骨つきの物", t#skinned) :: ("3D の奥行きの書き出しの材質の物（cutout と両面を見ずに形で書く）", t#opaque) ::
+                ("3D のビルボード", List.length(cmd#billboards)) :: Nil
+            case ScenePassSpec.Color =>
+                ("3D の骨つきの物", t#skinned) :: ("3D の材質の物（頂点の色で描く）", t#opaque) ::
+                ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) :: ("3D の lightmap の物（今の光で描く）", t#lightmapped) ::
+                ("3D の影（影を落とす光）", List.length(scene#shadowPlans)) :: ("3D のビルボード", List.length(cmd#billboards)) ::
+                ("3D の空", Option.count(_ -> true, cmd#sky)) :: ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
         }
 
     /// skipsOf の物の数え。
@@ -275,28 +278,46 @@ pub mod Render3d.WebGpuRenderer {
     def topLeftOf(height: Int32, box: PixelBox): (Int32, Int32, Int32, Int32) =
         (box#x, height - box#y - box#height, box#width, box#height)
 
-    /// 場面を target へ描く pass を積む: 地の色（空の無い場面の background。無ければ透明）と深度を消し、頂点の色の行を描く。
+    /// 場面を target へ描く: 計画の pass ごとに、地の色（clearOf）と深度を消して行を描く pass を積む。
+    // WhyNot: pass ごとに描き先を替えない — 今の pass（色と奥行きの書き出し）はどちらも場面の描き先へ書き、場面 1 つに 1 つ。描き先の違う影の地図の pass を足す時に替える。
+    // WhyNot: 列の頭の pass だけ消して残りを前の中身から描く形（GL は場面の頭で 1 回だけ消す）にしない — 今は列に pass が 1 つしか無く、2 つ目を足す (4) の影の地図は描き先が違う。
     def drawInto(r: Renderer, host: Host, target: SceneTarget, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch]): Unit \ IO =
         let staged = stageScene(r, host, target, members, plan);
         let scene = plan#cmd#scene;
-        let background = if (Option.isEmpty(scene#sky)) scene#environment#background else None;
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
-        encodeScene(r, host, target, staged,
-                    { color = drawn.defaultView(), resolve = target#msaa |> Option.map(_ -> target#color.defaultView()),
-                      clear = Some(background |> Option.map(c -> (c#r, c#g, c#b, 1.0)) |> Option.getWithDefault((0.0, 0.0, 0.0, 0.0))),
-                      depth = target#depth.defaultView(), viewport = full, scissor = full })
+        staged#passes |> List.forEach(match (spec, list, meshes) ->
+            encodeScene(r, host, target, { spec = spec, list = list, meshes = meshes, instanceBase = staged#instanceBase },
+                        { color = drawn.defaultView(), resolve = target#msaa |> Option.map(_ -> target#color.defaultView()),
+                          clear = Some(clearOf(spec, scene)), depth = target#depth.defaultView(), viewport = full, scissor = full }))
 
-    /// 場面 1 つを描く前の仕事を済ませる: 1 体ごとの値を送り、形を上げ、場面の値を target の buffer へ書く。返すのは行と形と 1 体ごとの値の位置。
+    /// pass spec の地の色（GL の Render3d.drawScene の beginScene と drawSky と同じ）: 空の無い場面は background（無ければ透明）。
+    /// 奥行きの書き出しは、空を塗る場面（Scene3d.drawnSkyOf）なら一番奥の白。
+    def clearOf(spec: ScenePassSpec, scene: Scene3d.Scene3dCmd): (Float64, Float64, Float64, Float64) =
+        let background = if (Option.isEmpty(scene#sky)) scene#environment#background else None;
+        let ground = background |> Option.map(c -> (c#r, c#g, c#b, 1.0)) |> Option.getWithDefault((0.0, 0.0, 0.0, 0.0));
+        match spec {
+            case ScenePassSpec.DepthOut(_) if Option.nonEmpty(Scene3d.drawnSkyOf(scene)) => (1.0, 1.0, 1.0, 1.0)
+            case _                                                                       => ground
+        }
+
+    /// 場面 1 つを描く前の仕事を済ませる: 1 体ごとの値を送り、pass ごとの行の形を上げ、場面の値を target の buffer へ書く。返すのは pass ごとの行と形と、1 体ごとの値の位置。
     def stageScene(r: Renderer, host: Host, target: SceneTarget, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch]): Staged \ IO =
         let RendererData.RendererData(s) = r;
-        let (list, instanceBase) = numberInstances(r, host, members, plan#draws);
-        let meshes = uploadRows(s#gpu, s#meshes, Array.get(0, s#gen), list);
-        writeSceneValues(r, target, plan#cmd#scene);
-        { list = list, meshes = meshes, instanceBase = instanceBase }
+        let (passes, instanceBase) = numberInstances(r, host, members, plan);
+        let gen = Array.get(0, s#gen);
+        let uploaded = passes |> List.map(match (spec, list) -> (spec, list, uploadRows(s#gpu, s#meshes, gen, list)));
+        writeSceneValues(r, target, plan);
+        { passes = uploaded, instanceBase = instanceBase }
 
-    /// stageScene の答え。
-    type alias Staged = { list = SceneList, meshes = Array[Option[Render3d.WebGpuRows.MeshBuffers], Static], instanceBase = Int32 }
+    /// 行 list の形の置き場（Render3d.WebGpuRows.uploadRows の答え）。
+    type alias Meshes = Array[Option[Render3d.WebGpuRows.MeshBuffers], Static]
+
+    /// stageScene の答え。passes = 計画の pass ごとの (pass, 行, 形)。
+    type alias Staged = { passes = List[(ScenePassSpec, SceneList, Meshes)], instanceBase = Int32 }
+
+    /// encodeScene が描く pass 1 つ。
+    type alias StagedPass = { spec = ScenePassSpec, list = SceneList, meshes = Meshes, instanceBase = Int32 }
 
     /// 場面を描く pass の描き先。color = 描く view・resolve = 標本つきの描き先なら resolve する先・clear = 消す色（None なら前の中身に描き足す）・
     /// depth = 深度の view（いつも 1 で消す）・viewport と scissor = 描き先の左上が原点の (x, y, 幅, 高さ)。
@@ -305,8 +326,8 @@ pub mod Render3d.WebGpuRenderer {
         depth = TextureView, viewport = (Int32, Int32, Int32, Int32), scissor = (Int32, Int32, Int32, Int32)
     }
 
-    /// 場面の行を onto へ描く pass を積む（pipeline は target の形式と標本・場面の値は target の group 0）。
-    def encodeScene(r: Renderer, host: Host, target: SceneTarget, staged: Staged, onto: PassTarget): Unit \ IO =
+    /// 場面の pass 1 つの行を onto へ描く pass を積む（pipeline は target の形式と標本と pass の種類・場面の値は target の group 0）。
+    def encodeScene(r: Renderer, host: Host, target: SceneTarget, staged: StagedPass, onto: PassTarget): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let desc = new RenderPassDesc("fge scene3d");
         match onto#clear {
@@ -321,17 +342,18 @@ pub mod Render3d.WebGpuRenderer {
         pass.setViewport(Int32.toFloat64(vx), Int32.toFloat64(vy), Int32.toFloat64(vw), Int32.toFloat64(vh), 0.0, 1.0);
         let (sx, sy, sw, sh) = onto#scissor;
         pass.setScissorRect(sx, sy, sw, sh);
-        pass.setPipeline(pipelineOf(r, target#format, target#samples));
+        pass.setPipeline(pipelineOf(r, target#format, target#samples, staged#spec));
         pass.setBindGroup(0, target#sceneGroup);
         let instances = Array.get(0, s#instances);
         pass.setVertexBuffer(1, instances, 0i64, instances.size());
         drawRows(pass, staged#list, staged#meshes, staged#instanceBase);
         pass.end()
 
-    /// 場面の頂点の色の batch に 1 体ごとの値の番号を振って 1 体ごとの値の buffer へ送り、行の列と、送った位置（体の番号）を返す。
+    /// 場面の頂点の色の batch に 1 体ごとの値の番号を振って 1 体ごとの値の buffer へ送り、計画の pass ごとの行の列と、送った位置（体の番号）を返す。
     /// 骨つきの batch は描く物を 0 にする（形も上げない）。材質の batch は無い（prepare が材質を全部「使えない」と答える）。
-    def numberInstances(r: Renderer, host: Host, members: MutList[MeshDraw, Static], draws: SceneDraws[SpanBatch]): (SceneList, Int32) \ IO =
+    def numberInstances(r: Renderer, host: Host, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch]): (ScenePasses, Int32) \ IO =
         let RendererData.RendererData(s) = r;
+        let draws = plan#draws;
         let total = List.sumWith(b -> b#count, draws#plain);
         let bytes = total * Render3dWgsl.instanceBytes();
         let raw = cpuInstancesFor(r, bytes);
@@ -339,8 +361,11 @@ pub mod Render3d.WebGpuRenderer {
         let next = Array#{0} @ Static;
         let plain = List.map(numberSpan(out, s#scratch, Int32.maxValue(), next, members, PackMode.Lit), draws#plain);
         let unseen = (b: SpanBatch) -> ({ head = b#head, count = 0, first = 0 }: MeshBatch);
-        let list = buildSceneList({ plain = plain, skinned = List.map(unseen, draws#skinned), opaque = Nil, blended = Nil });
-        (list, sendInstances(r, host, raw, bytes))
+        // WhyNot: 影の地図の batch に番号を振らない — 影は描かない（P8 の (4)）ので、計画の影の材料は空のまま渡す。
+        let numbered = { cmd = plan#cmd, mainPass = plan#mainPass, draws = { plain = plain, skinned = List.map(unseen, draws#skinned), opaque = Nil, blended = Nil },
+                         shadowPlans = Nil };
+        let passes = buildScenePasses(numbered);
+        (passes, sendInstances(r, host, raw, bytes))
 
     /// bytes を書ける 1 体ごとの値の CPU の入れ物（足りなければ要る大きさか倍の大きい方へ作り直す）。
     def cpuInstancesFor(r: Renderer, bytes: Int32): ByteBuffer \ IO =
@@ -378,12 +403,16 @@ pub mod Render3d.WebGpuRenderer {
     /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本）。
     pub def sceneValueBytes(): Int32 = 400 + 16 * (3 * Scene3d.maxPointLights() + 5 * Scene3d.maxSpotLights())
 
-    /// 場面の値（光・かすみ・目）と目と射影の行列を target の buffer へ書く。影・環境マップ・lightmap・奥行きの書き出しは切る。
-    def writeSceneValues(r: Renderer, target: SceneTarget, scene: Scene3d.Scene3dCmd): Unit \ IO =
+    /// 場面の値（光・かすみ・目・奥行きの書き出し）と目と射影の行列を target の buffer へ書く。影・環境マップ・lightmap は切る。
+    def writeSceneValues(r: Renderer, target: SceneTarget, plan: ScenePlan[SpanBatch]): Unit \ IO =
         let RendererData.RendererData(s) = r;
+        let scene = plan#cmd#scene;
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         let values = s#cpuScene;
         packSceneValues(values, lightDataOf(picked, 0));
+        // WhyNot: pass ごとに場面の値を書き分けない — 場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、
+        //   1 つの encoder の中で pass ごとに書き替えると、どの pass も最後に書いた値で描く。pass が場面の置いた物の 1 つの間は mainPass で足りる。
+        packPassValues(values, plan#mainPass);
         s#gpu.writeBuffer(target#sceneValues, 0i64, values, 0, sceneValueBytes());
         let camera = s#cpuCamera;
         let floats = camera.asFloatBuffer();
@@ -391,10 +420,10 @@ pub mod Render3d.WebGpuRenderer {
         discard floats.put(matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene))));
         s#gpu.writeBuffer(target#camera, 0i64, camera, 0, 128)
 
-    /// 光の値 d を R3dScene の並びで buf へ詰める（欄の位置は Render3dWgsl.sceneDeclarations の頭のコメント）。影・環境マップ・lightmap・奥行きの書き出しの欄は切る値。
+    /// 光の値 d を R3dScene の並びで buf へ詰める（欄の位置は Render3dWgsl.sceneDeclarations の頭のコメント）。影・環境マップ・lightmap の欄は切る値（奥行きの書き出しの欄は packPassValues）。
     /// GL の Render3d.Light.putLights が渡す欄と同じ値を、同じ名前の欄へ入れる。
     // WhyNot: 書く欄の組を場面ごとに変えない — buf は場面をまたいで使い回すので、ある場面だけ書いた欄には次の場面で前の値が残る。
-    //   ここで書く欄は毎回すべて書き、書かない欄（影と奥行きの書き出しの on など）は作った時の 0 のまま読ませる。
+    //   ここで書く欄は毎回すべて書き、書かない欄（影の on など）は作った時の 0 のまま読ませる。
     pub def packSceneValues(buf: ByteBuffer, d: LightData): Unit \ IO =
         putVec3(buf, 0, d#ambient, 0);
         discard buf.putFloat(12, d#hemisphere);
@@ -416,7 +445,6 @@ pub mod Render3d.WebGpuRenderer {
         putVec3(buf, 160, d#reflectGround, 0);
         discard buf.putFloat(188, d#envLevels);
         discard buf.putFloat(204, d#envIntensity);
-        discard buf.putFloat(228, 1.0f32);
         discard buf.putInt(232, -1);
         discard buf.putFloat(256, 1.0f32);
         let p = Scene3d.maxPointLights();
@@ -431,6 +459,17 @@ pub mod Render3d.WebGpuRenderer {
         putVec3Array(buf, spots + 32 * sp, d#spotColor, sp);
         putScalarArray(buf, spots + 48 * sp, d#spotRange, 1, sp);
         putScalarArray(buf, spots + 64 * sp, d#spotCone, 2, sp)
+
+    /// pass spec の奥行きの書き出しの欄を R3dScene の並びで buf へ詰める: uDepthRange（224・228。GL の Render3d.putDepthRange と同じく幅は 0 にしない）と uDepthOut（248）。
+    /// 色の pass では uDepthOut が 0 で、uDepthRange は読まれない（0 で割る式を残さないよう幅は 1）。
+    pub def packPassValues(buf: ByteBuffer, spec: ScenePassSpec): Unit \ IO =
+        let (near, range, on) = match spec {
+            case ScenePassSpec.Color        => (0.0, 1.0, 0)
+            case ScenePassSpec.DepthOut(dr) => (dr#near, Float64.max(0.000001, dr#range), 1)
+        };
+        discard buf.putFloat(224, RenderUtil.f32(near));
+        discard buf.putFloat(228, RenderUtil.f32(range));
+        discard buf.putInt(248, on)
 
     /// values の i 番目の vec3（3 個ずつ）を buf の at へ。
     def putVec3(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], i: Int32): Unit \ IO =
@@ -516,15 +555,29 @@ pub mod Render3d.WebGpuRenderer {
         t#camera.destroy();
         t#paste.destroy()
 
-    /// 形式 format・標本 samples の頂点の色の pipeline（無ければ作る）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
-    def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32): RenderPipeline \ IO =
+    /// pass の種類の番号（pipeline の鍵）。
+    def passCodeOf(spec: ScenePassSpec): Int32 = match spec {
+        case ScenePassSpec.Color       => 0
+        case ScenePassSpec.DepthOut(_) => 1
+    }
+
+    /// pass の種類の frag（色の pass は光の frag・奥行きの書き出しは灰色の frag）。
+    def fragmentOf(r: Renderer, spec: ScenePassSpec): ShaderModule =
         let RendererData.RendererData(s) = r;
-        let key = (WebGpuPipelines.formatCode(format), samples);
+        match spec {
+            case ScenePassSpec.Color       => s#fragmentModule
+            case ScenePassSpec.DepthOut(_) => s#depthModule
+        }
+
+    /// 形式 format・標本 samples・pass spec の頂点の色の pipeline（無ければ作る）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
+    def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32, spec: ScenePassSpec): RenderPipeline \ IO =
+        let RendererData.RendererData(s) = r;
+        let key = (WebGpuPipelines.formatCode(format), samples, passCodeOf(spec));
         match Map.get(key, Ref.get(s#pipelines)) {
             case Some(p) => p
             case None =>
                 let desc = new RenderPipelineDesc("fge scene3d lit");
-                discard desc.bindGroupLayout(s#sceneLayout).vertex(s#vertexModule, "vs_main").fragment(s#fragmentModule, "fs_main");
+                discard desc.bindGroupLayout(s#sceneLayout).vertex(s#vertexModule, "vs_main").fragment(fragmentOf(r, spec), "fs_main");
                 discard desc.vertexBuffer(36, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);
                 discard desc.vertexBuffer(Render3dWgsl.instanceBytes(), true);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 0, 3).attribute(VertexFormat.FLOAT32X4, 16, 4);
