@@ -14,7 +14,7 @@
 //   saves.json  … flow の終わりのセーブデータ（枠が 1 つでもあれば。restore が読み戻す古いセーブ）
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
 mod FlowVideo {
-    use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Rect2, Render, Resources, VideoOut}
+    use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Rect2, Render, Resources, Vec2, VideoOut}
 
     import java.io.BufferedOutputStream
     import java.io.DataOutputStream
@@ -40,29 +40,29 @@ mod FlowVideo {
         let path = Map.getWithDefault("FLOW", "", env);
         let out = Map.getWithDefault("FLOW_OUT", "debug/video/${nameOf(path)}", env);
         let migrate = Map.get("MIGRATE_OUT", env) |> Option.filter(dir -> not String.isEmpty(dir));
+        let design = SceneRender.design();
         let played = run {
             let app = appOf();
-            let design = SceneRender.design();
             let fresh = App.freshWorld(app, design);
             match Flow.Parse.parseFile(Flow.vocabOf(app, fresh), path, Flow.Cli.readText) {
                 case Err(problems) => Err(Flow.Parse.problemsText(problems))
                 case Ok(script)    =>
                     let start = { world = Flow.Cli.startWorld(app, design, fresh, script), state = App.freshStepState() };
-                    Ok((script, Flow.play(app, { design = design, limit = frameCap() }, script, start)))
+                    Ok((script, Flow.play(app, { design = design, limit = frameCapOf(env, script) }, script, start)))
             }
         } with Fs.FileRead.runWithIO;
         match played {
             case Err(why) => println("FAIL ${path} を読めない\n${why}"); 2
             case Ok((script, Ok(outcome))) =>
-                write(settings, script#fps, out, outcome);
-                writeTape(path, script, out, outcome);
-                let recorded = migrate |> Option.forAll(dir -> writeMigrate(settings, path, script, dir, outcome));
+                write(settings, design, script#fps, out, outcome);
+                writeTape(design, path, script, out, outcome);
+                let recorded = migrate |> Option.forAll(dir -> writeMigrate(settings, design, path, script, dir, outcome));
                 println("rendered: ${out} (${Int32.toString(List.length(outcome#frames))} frames)");
                 if (recorded) 0 else 2
             case Ok((script, Err(failure))) =>
-                write(settings, script#fps, out, failure#upTo);
-                writeTape(path, script, out, failure#upTo);
-                discard (migrate |> Option.forAll(dir -> writeMigrate(settings, path, script, dir, failure#upTo)));
+                write(settings, design, script#fps, out, failure#upTo);
+                writeTape(design, path, script, out, failure#upTo);
+                discard (migrate |> Option.forAll(dir -> writeMigrate(settings, design, path, script, dir, failure#upTo)));
                 println("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: ${failure#why}");
                 println("    ${failure#at#text}");
                 1
@@ -78,32 +78,61 @@ mod FlowVideo {
         let loaded = Controls.loadRes();
         Res.withGame(HeadlessLoad.handle(() -> GameBoot.loadAssets(loaded#game)), loaded)
 
-    /// 撮るコマの上限（30fps で 5 分。flow の until の max が先に当たる）。
-    def frameCap(): Int32 = 9000
+    /// 撮るコマの上限。環境変数 FLOW_FRAME_CAP（正の整数）があればその数、無ければ flow の手から決めた数（frameBudgetOf）。
+    def frameCapOf(env: Map[String, String], script: Flow.Script): Int32 =
+        Map.get("FLOW_FRAME_CAP", env) |> Option.flatMap(Int32.fromString) |> Option.filter(n -> n > 0)
+            |> Option.getWithDefault(frameBudgetOf(script))
 
-    def write(settings: VideoOut.Settings, fps: Float64, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
+    /// flow を最後まで流すのに要るフレームの数の上限: 手ごとに取りうる秒（wait と hold の長さ・until と drive の max・
+    /// tap と hold の前に入力を受けられるまで待つ秒）を足して fps を掛け、手の数だけフレームを足す。
+    // WhyNot: 決めた数にしない — flow の長さは flow ごとに違い、長い flow では上限が先に当たって途中で止まる。
+    pub def frameBudgetOf(script: Flow.Script): Int32 =
+        let seconds = script#lines |> List.foldLeft((sum, line) -> sum + stepSeconds(script#fps, line#step), 0.0);
+        let frames = Float64.ceil(seconds * script#fps) |> Float64.tryToInt32 |> Option.getWithDefault(Int32.maxValue() / 2);
+        frames + List.length(script#lines) + 1
+
+    /// 手 1 つが取りうる一番長い秒（フレームを使わない手は 0）。
+    def stepSeconds(fps: Float64, step: Flow.Step): Float64 = match step {
+        case Flow.Step.Wait(span, _)          => spanSeconds(fps, span)
+        case Flow.Step.Tap(_, _)              => readyWaitSeconds()
+        case Flow.Step.Hold(_, Some(span), _) => readyWaitSeconds() + spanSeconds(fps, span)
+        case Flow.Step.Hold(_, None, _)       => readyWaitSeconds()
+        case Flow.Step.Until(_, max)          => max
+        case Flow.Step.Drive(_, _, max)       => max
+        case _                                => 0.0
+    }
+
+    def spanSeconds(fps: Float64, span: Flow.Span): Float64 = match span {
+        case Flow.Span.Secs(s)   => s
+        case Flow.Span.Frames(n) => if (fps > 0.0) Int32.toFloat64(n) / fps else 0.0
+    }
+
+    /// tap と hold の前に、入力を受けられるまで Flow.play が待つ秒の上限。
+    def readyWaitSeconds(): Float64 = 10.0
+
+    def write(settings: VideoOut.Settings, design: Vec2.Vec2, fps: Float64, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
         discard (new File(out)).mkdirs();
         let rate = Float64.tryToInt32(Float64.round(fps)) |> Option.getWithDefault(30);
         writeText("${out}/fps.txt", Int32.toString(rate));
         writeAudio("${out}/audio.f64", fps, outcome);
-        let cfg = SceneRender.cfgOf(out, SceneRender.texturesOf());
+        let cfg = SceneRender.cfgOf(design, out, SceneRender.texturesOf());
         let video = { outDir = out, fps = rate, soft = cfg, softFonts = _ -> cfg#fontAtlas, extraFonts = Map.empty(),
-                      images = Nil, scene = fonts -> h -> sceneOf(fonts, h), wanted = _ -> true, bakeSurfaces = false,
+                      images = Nil, scene = fonts -> h -> sceneOf(design, fonts, h), wanted = _ -> true, bakeSurfaces = false,
                       encoders = Nil };
         discard VideoOut.writeFrames(settings, video, Flow.worldsOf(outcome))
 
     /// tape.json（flow が途中で止まった時もそこまで）。書けない理由（同じ名前の mark・2 つ以上の .yarn にまたがる）は 1 行出す。
-    def writeTape(path: String, script: Flow.Script, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
-        writeTapeWith(Map.empty(), path, script, out, outcome)
+    def writeTape(design: Vec2.Vec2, path: String, script: Flow.Script, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
+        writeTapeWith(design, Map.empty(), path, script, out, outcome)
 
-    def writeTapeWith(extra: Map[String, Util.Json.Json], path: String, script: Flow.Script, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
+    def writeTapeWith(design: Vec2.Vec2, extra: Map[String, Util.Json.Json], path: String, script: Flow.Script, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
         let marks = script#lines |> List.filterMap(line -> match line#step {
             case Flow.Step.Mark(name) => Some(name)
             case _                    => None
         });
-        let flowRun = { game = (new File(".")).getCanonicalFile().getName(), flow = path, fps = script#fps, design = SceneRender.design(),
+        let flowRun = { game = (new File(".")).getCanonicalFile().getName(), flow = path, fps = script#fps, design = design,
                         marks = marks, outcome = outcome };
-        match TapeOut.toJsonWith(extra, tapeTable(outcome#last), flowRun) {
+        match TapeOut.toJsonWith(extra, tapeTable(design, outcome#last), flowRun) {
             case Ok(text) => writeText("${out}/tape.json", text)
             case Err(why) => println("tape: ${why}（${out}/tape.json は書かない）")
         }
@@ -111,36 +140,37 @@ mod FlowVideo {
     // ── 移行の突き合わせの記録（MIGRATE_OUT） ──
 
     /// 台詞ごとと読み戻した直後に載せる決まった問い（物語の動きに効く物。行の番号・カーソル・出し終えたかは版で替わるか、いつも同じなので載せない）。
-    /// シナリオの変数は MigrateOut.probeRowsOf が全部足す。
-    def migrateProbes(): List[String] = "phase" :: "panel" :: "talk" :: "mode" :: "photo" :: "logSize" :: "gate" :: "choice" :: Nil
+    /// ゲームの問い（GameE2e.probes）は全部載せる。シナリオの変数は MigrateOut.probeRowsOf が全部足す。
+    def migrateProbes(): List[String] =
+        ("phase" :: "panel" :: "talk" :: "mode" :: "photo" :: "logSize" :: "gate" :: "choice" :: Nil) ::: (GameE2e.probes() |> List.map(row -> row#name))
 
     /// 移行の記録を dir に書く（tape.json・コマの PNG・セーブデータ）。問いが組めずに書かなかった時は false。
-    def writeMigrate(settings: VideoOut.Settings, path: String, script: Flow.Script, dir: String, outcome: Flow.Outcome[AppState]): Bool \ IO =
+    def writeMigrate(settings: VideoOut.Settings, design: Vec2.Vec2, path: String, script: Flow.Script, dir: String, outcome: Flow.Outcome[AppState]): Bool \ IO =
         match MigrateOut.probeRowsOf(migrateProbes(), outcome#last#resources#dialogue) {
             case Err(why)   => println("migrate: ${why}（${dir} は書かない）"); false
-            case Ok(probes) => writeMigrateWith(settings, probes, path, script, dir, outcome); true
+            case Ok(probes) => writeMigrateWith(settings, design, probes, path, script, dir, outcome); true
         }
 
-    def writeMigrateWith(settings: VideoOut.Settings, probes: List[MigrateOut.ProbeRow], path: String, script: Flow.Script, dir: String,
+    def writeMigrateWith(settings: VideoOut.Settings, design: Vec2.Vec2, probes: List[MigrateOut.ProbeRow], path: String, script: Flow.Script, dir: String,
                          outcome: Flow.Outcome[AppState]): Unit \ IO =
         discard (new File(dir)).mkdirs();
         let fps = script#fps;
         let record = MigrateOut.recordOf(fps, probes, outcome#frames);
         let sounds = loadSounds(soundFiles(), Map.empty());
         let lengthOf = name -> Map.get(name, sounds) |> Option.map(st -> Int32.toFloat64(Vector.length(st#left)) / Int32.toFloat64(sampleRate())) |> Option.getWithDefault(0.0);
-        shootFrames(settings, fps, dir, record#shots, Flow.worldsOf(outcome));
+        shootFrames(settings, design, fps, dir, record#shots, Flow.worldsOf(outcome));
         let fields = Map#{ "events" => Util.Json.Json.JArray(List.toVector(record#events)),
                            "frames" => MigrateOut.framesJson(fps, record#shots),
                            "ranLines" => MigrateOut.ranLinesJson(MigrateOut.ranLinesOf(outcome#frames)),
-                           "screen" => MigrateOut.screenJson(SceneRender.design()) };
+                           "screen" => MigrateOut.screenJson(design) };
         let extra = MigrateOut.busesJson(fps, lengthOf, outcome#frames) |> Option.map(b -> Map.insert("buses", b, fields)) |> Option.getWithDefault(fields);
-        writeTapeWith(extra, path, script, dir, outcome);
+        writeTapeWith(design, extra, path, script, dir, outcome);
         let saves = outcome#last#world#saves;
         if (Saves.hasAny(saves)) writeText("${dir}/saves.json", Util.Json.toPrettyString(2, Saves.toJson(saves)) + "\n") else ()
 
     /// 予定のコマを層ごとのフォルダ（dir/frames/<層>）に SoftRaster で塗る（f<フレームの番号>.png）。
     // WhyNot: GPU で塗らない — 全部のフレームを選んだ時の GPU の道は PNG でなく frames.mkv を書き、tape.json の file が指す絵が無くなる。
-    def shootFrames(settings: VideoOut.Settings, fps: Float64, dir: String, shots: List[MigrateOut.Shot], worlds: List[AppState]): Unit \ IO =
+    def shootFrames(settings: VideoOut.Settings, design: Vec2.Vec2, fps: Float64, dir: String, shots: List[MigrateOut.Shot], worlds: List[AppState]): Unit \ IO =
         let soft = { gpu = GpuShot.Mode.Off, gl = None | settings };
         let rate = Float64.tryToInt32(Float64.round(fps)) |> Option.getWithDefault(30);
         (MigrateOut.Layer.WorldLayer :: MigrateOut.Layer.AllLayers :: Nil) |> List.forEach(layer -> {
@@ -148,19 +178,19 @@ mod FlowVideo {
             if (Set.isEmpty(wanted)) ()
             else {
                 let out = "${dir}/frames/${MigrateOut.layerName(layer)}";
-                let cfg = SceneRender.cfgOf(out, SceneRender.texturesOf());
+                let cfg = SceneRender.cfgOf(design, out, SceneRender.texturesOf());
                 let video = { outDir = out, fps = rate, soft = cfg, softFonts = _ -> cfg#fontAtlas, extraFonts = Map.empty(),
-                              images = Nil, scene = fonts -> h -> layerSceneOf(layer, fonts, h), wanted = i -> Set.memberOf(i, wanted),
+                              images = Nil, scene = fonts -> h -> layerSceneOf(design, layer, fonts, h), wanted = i -> Set.memberOf(i, wanted),
                               bakeSurfaces = false, encoders = Nil };
                 discard VideoOut.writeFrames(soft, video, worlds)
             }
         })
 
-    def layerSceneOf(layer: MigrateOut.Layer, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] = match layer {
-        case MigrateOut.Layer.AllLayers  => sceneOf(fonts, h)
+    def layerSceneOf(design: Vec2.Vec2, layer: MigrateOut.Layer, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] = match layer {
+        case MigrateOut.Layer.AllLayers  => sceneOf(design, fonts, h)
         case MigrateOut.Layer.WorldLayer =>
-            let ctx = App.viewCtxOf(fonts(""), SceneRender.design());
-            App.composeScene(None, 1.0, SceneRender.design(), { world = Resources.view(View.worldLayer, ctx, h), hud = Nil })
+            let ctx = App.viewCtxOf(fonts(""), design);
+            App.composeScene(None, 1.0, design, { world = Resources.view(View.worldLayer, ctx, h), hud = Nil })
     }
 
     /// 古いセーブ（MIGRATE_SAVE の saves.json）の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/ に restore.json とコマを書く。
@@ -173,7 +203,8 @@ mod FlowVideo {
         let file = Map.getWithDefault("MIGRATE_SAVE", "", env);
         let out = Map.getWithDefault("MIGRATE_OUT", "debug/migrate/saves", env);
         let prefix = Map.getWithDefault("MIGRATE_NAME", nameOf(file), env);
-        let (fresh, parsed) = run { (App.freshWorld(appOf(), SceneRender.design()), DocJson.readJson(file)) } with Fs.FileRead.runWithIO;
+        let design = SceneRender.design();
+        let (fresh, parsed) = run { (App.freshWorld(appOf(), design), DocJson.readJson(file)) } with Fs.FileRead.runWithIO;
         match (parsed, MigrateOut.probeRowsOf(migrateProbes(), fresh#resources#dialogue)) {
             case (Err(_), _)       => println("FAIL ${file} を読めない"); 2
             case (_, Err(why))     => println("FAIL ${why}"); 2
@@ -182,7 +213,7 @@ mod FlowVideo {
                 let loaded = Resources.of(fresh#resources, { saves = saves | fresh#world });
                 Saves.tabs() |> List.forEach(tab -> List.range(0, Saves.perPage()) |> List.forEach(i ->
                     if (Option.isEmpty(Saves.slotOf(tab, i, saves))) ()
-                    else restoreSlot(settings, probes, "${out}/${prefix}-${slotName(tab, i)}", "${prefix}-${slotName(tab, i)}", tab, i, loaded)));
+                    else restoreSlot(settings, design, probes, "${out}/${prefix}-${slotName(tab, i)}", "${prefix}-${slotName(tab, i)}", tab, i, loaded)));
                 0
         }
 
@@ -193,7 +224,7 @@ mod FlowVideo {
         case Saves.Tab.Numbered(n) => "n${n}-${i}"
     }
 
-    def restoreSlot(settings: VideoOut.Settings, probes: List[MigrateOut.ProbeRow], dir: String, name: String, tab: Saves.Tab, i: Int32,
+    def restoreSlot(settings: VideoOut.Settings, design: Vec2.Vec2, probes: List[MigrateOut.ProbeRow], dir: String, name: String, tab: Saves.Tab, i: Int32,
                     loaded: AppState): Unit \ IO =
         let res = loaded#resources;
         let (w, _) = Emit.collect(() -> WorldSaves.loadFrom(res, tab, i, loaded#world));
@@ -203,23 +234,24 @@ mod FlowVideo {
         let shots = { frame = 0, node = node, seq = seq, mid = None, layer = MigrateOut.Layer.WorldLayer } ::
                     { frame = 0, node = node, seq = seq, mid = None, layer = MigrateOut.Layer.AllLayers } :: Nil;
         discard (new File(dir)).mkdirs();
-        shootFrames(settings, 30.0, dir, shots, h :: Nil);
-        let objects = TapeOut.spansOf(30.0, SceneRender.design(), objectsOf(Layout.Fit.Regular, res, w) :: Nil);
-        writeText("${dir}/restore.json", MigrateOut.restoreJson(name, probes, SceneRender.design(), node, seq, h, shots, objects));
+        shootFrames(settings, design, 30.0, dir, shots, h :: Nil);
+        let objects = TapeOut.spansOf(30.0, design, objectsOf(SceneRender.fitOf(design, res), res, w) :: Nil);
+        writeText("${dir}/restore.json", MigrateOut.restoreJson(name, probes, design, node, seq, h, shots, objects));
         println("restored: ${dir}")
 
-    /// テープに渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは横の ADV のウィンドウ（NVL の間は重ねない）。
-    def tapeTable(h: AppState): TapeOut.Table \ IO =
+    /// テープに渡すこのゲームの表。題名は project.json、UI の返事の音（ui_）は載せない、メッセージウィンドウは design の画面の ADV のウィンドウ（NVL の間は重ねない）。
+    def tapeTable(design: Vec2.Vec2, h: AppState): TapeOut.Table \ IO =
+        let fit = SceneRender.fitOf(design, h#resources);
         { title = projectTitle(),
           sceneNames = Map#{ "title" => "タイトル", "station" => "無人の駅", "clear" => "頁をめくる" },
           soundLabels = Map#{ "amb_evening" => "夕方の環境音", "amb_night" => "夜の環境音", "amb_river" => "川の環境音",
                               "amb_morning" => "朝の環境音", "se_slap" => "背中を叩く", "se_furin" => "風鈴" },
           hiddenSounds = soundFiles() |> List.map(match (name, _, _) -> name) |> List.filter(String.startsWith({prefix = "ui_"})) |> List.toSet,
-          msg = advMsg(h),
+          msg = advMsg(fit, h),
           probes = "phase" :: "mode" :: "photo" :: "logSize" :: Nil,
           probeNames = Map#{ "phase" => "場面", "mode" => "出し方", "photo" => "背景", "logSize" => "ログ" },
           playUrl = "",
-          objects = h1 -> objectsOf(Layout.Fit.Regular, h1#resources, h1#world) }
+          objects = h1 -> objectsOf(SceneRender.fitOf(design, h1#resources), h1#resources, h1#world) }
 
     /// 画面に出ている物（テープの頁の「物を選ぶ」）。タイトルは題字とメニュー、読む間は背景・立ち絵と小物・メッセージウィンドウ・選択肢・クイックメニュー。
     /// 置き場は View と同じ Layout・Cast の関数から引く（描いた所と枠がずれない）。
@@ -275,9 +307,8 @@ mod FlowVideo {
 
     def rectOf(x: Float64, y: Float64, w: Float64, h: Float64): Rect2.Rect2 = { position = { x = x, y = y }, size = { x = w, y = h } }
 
-    /// 横の ADV のウィンドウの寸法を画面の割合に（Layout と novel.kind.json から導く）。
-    def advMsg(h: AppState): TapeOut.Msg =
-        let fit = Layout.Fit.Regular;
+    /// 並べ方の組 fit の ADV のウィンドウの寸法を画面の割合に（Layout と novel.kind.json から導く。縦の画面は頁）。
+    def advMsg(fit: Layout.Fit, h: AppState): TapeOut.Msg =
         let size = Layout.size(fit);
         let k = KindDoc.rec(h#resources#kind);
         let panel = Layout.advPanel(fit);
@@ -300,9 +331,9 @@ mod FlowVideo {
              |> Option.map(obj -> JsonCodec.stringOr("title", "", obj)) |> Option.getWithDefault("")
 
     /// 1 コマの絵（SceneRender.shoot と同じ合流: 背景は frame、文章とウィンドウは hud）。
-    def sceneOf(fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] =
-        let ctx = App.viewCtxOf(fonts(""), SceneRender.design());
-        App.composeScene(None, 1.0, SceneRender.design(), { world = Resources.view(View.frame, ctx, h), hud = Resources.view(View.hud, ctx, h) })
+    def sceneOf(design: Vec2.Vec2, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] =
+        let ctx = App.viewCtxOf(fonts(""), design);
+        App.composeScene(None, 1.0, design, { world = Resources.view(View.frame, ctx, h), hud = Resources.view(View.hud, ctx, h) })
 
     def sampleRate(): Int32 = 44100
 

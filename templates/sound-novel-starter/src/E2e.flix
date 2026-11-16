@@ -34,7 +34,7 @@ mod E2e {
     /// 行を読み終えてから送るまでの秒（人が読んでいる間）。
     def readSeconds(): Float64 = 0.4
 
-    /// flow の表: 役（novel.keys.json の割り当て）・問い・名前付きの操作・返事の通し番号（出来事の総数）。
+    /// flow の表: 役（novel.keys.json の割り当て）・問い（テンプレートの問いの後ろにゲームの GameE2e.probes）・名前付きの操作・返事の通し番号（出来事の総数）。
     pub def table(): Flow.Table[Resources.With[Res.Res, World.World]] =
         { roles = Resources.read((res, _) -> {
               let keys = KeysDoc.rec(res#keys);
@@ -59,9 +59,8 @@ mod E2e {
               { name = "lineDone", doc = "今の行を出し終えた", read = Flow.Probe.Flag(onWorld(w -> Page.isDone(World.pageOf(w)))) } ::
               { name = "gate", doc = "今のゲート（払い・タップで選ぶ選択肢）で選べる操作（up・down・left・right・tap・tap:当たる物 を | でつなぐ。ゲートでなければ空）", read = Flow.Probe.Text(onWorld(gateText)) } ::
               { name = "choice", doc = "選択肢を出している", read = Flow.Probe.Flag(onWorld(World.isChoosing)) } ::
-              { name = "cursor", doc = "一番手前のカーソルの番号（0 から。確認のウィンドウ → 画面 → 選択肢 → タイトルの順に見る）", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(cursorOf(w)))) } ::
-              { name = "ownPace", doc = "シナリオの変数 $own_pace（最初の手紙で歩調を伝えた）", read = Flow.Probe.Flag(onWorld(w -> World.variableOf("$own_pace", w) == "True")) } ::
-              { name = "sharedTiredness", doc = "シナリオの変数 $shared_tiredness（2 通目で休む日を伝えた）", read = Flow.Probe.Flag(onWorld(w -> World.variableOf("$shared_tiredness", w) == "True")) } :: Nil,
+              { name = "cursor", doc = "一番手前のカーソルの番号（0 から。確認のウィンドウ → 画面 → 選択肢 → タイトルの順に見る）", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(cursorOf(w)))) } :: Nil
+              ::: GameE2e.probes(),
           drives =
               { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・ゲート・ウィンドウ・タイトル画面では押さない）",
                 act = (waited, h) -> Resources.read((_, w) ->

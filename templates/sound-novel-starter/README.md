@@ -100,7 +100,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
       タイトル画面・クレジット・蛍と雪の粒子・知らせは実時間 `realNow`。
       規則は音を鳴らさず、返事を出来事（`Emit`）として出す。Controls が集めて音へ替える。
    4. `src/Commands.flix` … 演出のコマンド（`<<bg>>` など）の引数の表と意味。`src/Stage.flix` … 舞台の状態（時間で動く値は `PropertyTween`）。
-      `src/GameCommands.flix`・`src/GameView.flix` … このゲームだけのコマンドと絵を足す口（テンプレートは空）。`src/Page.flix` … NVL の頁と ADV の 1 行。
+      `src/GameCommands.flix`・`src/GameView.flix` … このゲームだけのコマンドと絵を足す口（テンプレートは空）。`src/GameE2e.flix` … このゲームだけの flow の問い（テンプレートの E2e が自分の問いの後ろに並べる）。`src/Page.flix` … NVL の頁と ADV の 1 行。
    5. `src/Backdrop.flix` … 写真をぼかして時間帯の色にするシェーダーの式（ShaderDoc を code で組む）。
    6. `src/View.flix` … 状態を絵に写す（背景と蛍・雪は `frame`、文章・ウィンドウ・タイトル画面は `hud`）。
       部品は World を丸ごと受けず、描く元（`Env.res`）・セーブ・時刻だけの `Env` と、その場面の payload（`Read`・`TitleItem` など）を受ける。

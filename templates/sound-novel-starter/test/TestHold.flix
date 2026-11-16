@@ -232,7 +232,7 @@ mod TestHold {
 
     /// 描き出しと同じ字のアトラスで、横の画面の hud を組む。
     def hudOf(res: Res.Res, w: World.World): List[Render.PlacedItem] \ IO =
-        let ctx = App.viewCtxOf(SceneRender.cfgOf("debug", Map.empty())#fontAtlas, SceneRender.design());
+        let ctx = App.viewCtxOf(SceneRender.cfgOf(SceneRender.design(), "debug", Map.empty())#fontAtlas, SceneRender.design());
         View.hud(ctx, res, w)
 
     def textsOf(items: List[Render.PlacedItem]): List[String] =

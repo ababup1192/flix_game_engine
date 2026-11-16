@@ -420,4 +420,66 @@ mod TestTape {
             |> List.find(row -> textAt("id", row) == "title_menu")
             |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(obj -> Map.get("from", obj)) |> Option.flatMap(JsonCodec.expectInt));
         Assert.assertEq(expected = Ok(Some(0)), first)
+
+    // ── ゲームの問い（GameE2e.probes） ──
+
+    @Test
+    def testGameProbesDoNotShareANameWithTheTemplates(): Unit \ Assert =
+        let names = E2e.table()#probes |> List.map(row -> row#name);
+        Assert.assertEq(expected = List.length(names), Set.size(List.toSet(names)))
+
+    @Test
+    def testGameProbesAreInTheFlowTable(): Unit \ Assert =
+        let names = E2e.table()#probes |> List.map(row -> row#name) |> List.toSet;
+        Assert.assertTrue(GameE2e.probes() |> List.forAll(row -> Set.memberOf(row#name, names)))
+
+    // ── 縦の design の画面（SceneRender.designIn・fitOf・cfgOf）と撮るコマの上限（FlowVideo.frameBudgetOf） ──
+
+    def portraitDesign(): { x = Float64, y = Float64 } = { x = 540.0, y = 960.0 }
+
+    @Test
+    def testDesignIsReadFromTheProjectJson(): Unit \ Assert =
+        let root = Map#{ "designWidth" => Json.JNumber(JsonCodec.floatToBd(540.0)), "designHeight" => Json.JNumber(JsonCodec.floatToBd(960.0)) };
+        let d = SceneRender.designIn(root);
+        Assert.assertEq(expected = (540.0, 960.0), (d#x, d#y))
+
+    @Test
+    def testDesignWithoutTheSizeIsTheLandscapeScreen(): Unit \ Assert =
+        let d = SceneRender.designIn(Map.empty());
+        Assert.assertEq(expected = (960.0, 540.0), (d#x, d#y))
+
+    @Test
+    def testPortraitDesignIsDrawnWithThePortraitFit(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertTrue(Layout.isPortrait(SceneRender.fitOf(portraitDesign(), TestKit.res())))
+
+    @Test
+    def testLandscapeDesignIsDrawnWithTheRegularFit(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertFalse(Layout.isPortrait(SceneRender.fitOf(Layout.size(Layout.Fit.Regular), TestKit.res())))
+
+    @Test
+    def testPortraitDesignShootsAFrameOfTheSameSize(): Unit \ {Assert, IO} =
+        let cfg = SceneRender.cfgOf(portraitDesign(), "debug", Map.empty());
+        Assert.assertEq(expected = (540, 960), (cfg#frameW, cfg#frameH))
+
+    @Test
+    def testPortraitObjectsStayInsideTheScreen(): Unit \ {Assert, Fs.FileRead} =
+        // 縦の design で読んでいる間の物（背景・メッセージウィンドウ・クイックメニュー）は、どれも 540 の幅の中に収まる。
+        let r = TestKit.res();
+        let objects = FlowVideo.objectsOf(SceneRender.fitOf(portraitDesign(), r), r, TestKit.begun(r));
+        Assert.assertTrue(not List.isEmpty(objects) and (objects |> List.forAll(o -> o#rect#position#x + o#rect#size#x <= 540.01)))
+
+    def scriptOf(steps: List[Flow.Step]): Flow.Script =
+        { fps = 10.0, ready = None, options = Map.empty(),
+          lines = steps |> List.map(step -> { file = "t.flow", number = 1, text = "", step = step }) }
+
+    @Test
+    def testFrameBudgetCoversWaitsAndUntilMax(): Unit \ Assert =
+        // wait 2 秒と until の max 5 秒を 10fps で: 70 フレームに手の数 2 と 1 を足す。
+        let steps = Flow.Step.Wait(Flow.Span.Secs(2.0), Flow.noOpt()) :: Flow.Step.Until(Flow.Expr.Name("lineDone"), 5.0) :: Nil;
+        Assert.assertEq(expected = 73, FlowVideo.frameBudgetOf(scriptOf(steps)))
+
+    @Test
+    def testFrameBudgetGivesATapTheReadyWait(): Unit \ Assert =
+        // tap は入力を受けられるまで待つ 10 秒を取りうる（100 フレームに手の数 1 と 1）。
+        Assert.assertEq(expected = 102, FlowVideo.frameBudgetOf(scriptOf(Flow.Step.Tap(Flow.Target.Role("confirm"), Flow.noOpt()) :: Nil)))
 }
