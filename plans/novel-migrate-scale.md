@@ -399,3 +399,46 @@ bs-speed の FlowVideo は血鱗の書き直し前の写しで `FLOW_VIDEO`・`M
   クオリティの約束（揺れ方は同じで、始まりだけが替わる）を跳びなしで守る形は、「背景の切り替えの頭で時刻を戻し、重ねの間は前の時刻の雪と新しい時刻の雪を重ねて入れ替える」くらいしか見つからず、それは切り替えの間の見た目を変える。**人に見せてから決める**（作っていない。試作の差分は 3 ファイル十数行で、src の World・WorldRead・View）。
 - **手 2** は測る前に見送った: 塗りが時間の 85% で、手 2 が減らすのは flow を流す 1〜2 秒だけ（2 章の M7・3 章 G の 4）。手 1 を入れない限り、ノードの頭から流しても後ろのコマの鍵は全部変わるので塗る枚数は減らない。engine_world に口が要る。
 - **手 4**（diff の読み直し）: diff は既に 0.07〜0.15 秒（C）。残る時間は shoot の前の headless の jar の作り直し（make build の後の 1 回目で 15〜20 秒）と、flow 7 本 + 古いセーブ 7 個の 1 回目（約 5 秒）。
+
+## 11. 比べのコマを GPU（画面なしの WebGPU）で塗る（2026-11-17）
+
+人の指示: 「GPU で塗りをやろう」。場所と場面は 10 章と同じ（sound-novel-starter・コマ 786 枚・①③④）。塗るのは Apple M4 Pro の Dawn Metal。
+render-cache は毎回空から。字の距離場のアトラスは取ってある状態（下の持ち越し）。CPU（K）と GPU を交互に流した。
+
+| 場面 | CPU（K）shoot の壁 / user | GPU shoot の壁 / user | 判定 |
+|---|---|---|---|
+| ① 初めて | 24.3〜36.8 秒 / 234〜245（4 回・load 5〜57） | 10.8〜17.0 秒 / 69〜73（5 回） | — |
+| ③ 台詞 1 字（塗る 95） | 12.2〜12.3 秒 / 94〜97 | 10.1〜10.8 秒 / 51〜53 | 両方 止める 4・比べたコマ 103 |
+| ④ 待ち 1 か所（塗る 91） | 12.3〜15.7 秒 / 102〜105 | 9.7〜13.9 秒 / 53〜59 | 両方 止める 3・比べたコマ 159 |
+| 往復（① + ③・静かな回） | 36.5 秒 | 20.9 秒 | |
+
+- ③④ の壁は約 1〜2 割しか縮まない（flow の流し直しが大半）。CPU 時間は約半分。① は壁が約半分・CPU 時間は約 3 割。
+- 同じ機械での繰り返し: GPU の記録 6 回（試しの道と GpuOffscreen の道・フォントを作り直した回と読んだ回・常駐の割り振りの違い）で PNG の SHA が全部一致（① 786 枚・③ 156 枚）。
+- CPU との差（① 786 枚）: 全部の層で違う画素 34%（ほぼ ±1〜2）・±2 を超えるのは 1.13%（字の縁。SDF と TTF。docs/backend-parity.md の「近似」）。
+  world の層（字なし）は ±2 を超えるのが 0.059%・最大 ±208（雪の粒が CPU は丸くならした点・GPU は四角い点）。残りは面の ±1。
+
+### 決めた事
+
+- engine: `VideoOut.Settings` に `png`（`PngPainter`・`FGE_PNG_PAINTER=soft|webgpu`・既定 soft）、`Painter.WebGpu`、frames.json に `paintedWith`（描き手の素性 `soft`・`webgpu <アダプターの名前>`）。
+  塗りは P10 の `GpuOffscreen` に乗せた（WebGPU だけで開く `openWebGpuOnly`・`painterOf`・`errorsOf`・`fontTable` を足した。GL へは戻さない — 回によって描き手が替わる）。
+  開けない・WebGPU の誤りが出た時は SoftRaster で塗り直して 1 行知らせる。鍵は 4 本の糸で先に作り、同じ鍵のコマは写し、PNG の書き出しは別の糸で並べる。
+- `RenderCache.painterKeyOf`（鍵 + 改行 + 素性の SHA-256）・`copyPaintedPng`・`storePaintedPng`。Go の `painterKey` も同じ式（両方のテストで同じ値）。
+- `bin/fge migrate shoot --paint gpu|cpu`（make の `MIGRATE_PAINT`）。基準が無い（`--overwrite`）回の既定は gpu、基準がある回の既定は基準と同じ描き手。
+  基準と違う描き手を頼むと撮らずに止める。撮った記録の描き手は `logs/shoot.json` の `painter`（frames.json から集める。混ざれば止める・GPU を頼んで CPU になれば 1 行知らせる）。
+  `painter` の無い shoot.json は CPU の版の物として soft と見る。diff は描き手が違えば画素を比べず、撮り直し方を 1 行出して終わりの番号 2。fill も描き手の違う記録から写さない。
+- 機械をまたいで同じ絵にしない（人の方針「十分速ければその機械で 2 回撮り直す」）。別の機械の GPU の基準は止めて `make migrate-baseline MIGRATE_OVERWRITE=1 MIGRATE_PAINT=gpu` を案内する（自動で塗り直すには前の版のフォルダが要り、いつも分かるとは限らない）。
+- **移ってすぐの制約**: GPU で塗れるのはこの変更が入った engine から。それより古い版の基準は CPU でしか撮れないので、`migrate-new` も基準に合わせて CPU で塗って比べる。
+- テンプレートの `reference-check`・compare・`make video` の部分塗りは CPU のまま（`FGE_PNG_PAINTER` は shoot だけが渡す）。
+
+### 門
+
+`make test-engine_tools` 312 緑・`.layers/render_gl` 606 緑・`make gl-capture-check` 54 枚一致・テンプレートの `make test` 609 緑・`reference-check`（`FGE_RENDER_CACHE=off`）45 枚一致・
+`go test ./internal/migrate ./internal/rendercache` 緑・`make lint ONLY=max-lines` OK。比べ: GPU の基準 → ③④ の `migrate-new`（GPU）・CPU の基準 → ③④（CPU に合わせた）・CPU の基準に `MIGRATE_PAINT=gpu` → 撮らずに止める、を確かめた。
+
+### 持ち越し
+
+- 字の距離場のアトラスの置き場（`~/.cache/flix_game_engine/font`）を worktree どうしが消し合う（`RenderFontCache.dropStaleSiblings` が同じフォントの別の字の組を消す）。消されると常駐の JVM ごとに 6〜10 秒かけて作り直す（測りは `FLIX_GE_CACHE_DIR` を分けた）。台詞に新しい字を足した時も同じだけかかる。
+- GPU の session を JVM の中で持ち回さない（層ごと・flow ごとに開く。1 回 0.1〜0.7 秒）。
+- GPU の無い機械での CPU へ戻る道は、Go のテストと engine の分岐を読んで確かめただけ【未確認】（この機械では WebGPU が開ける）。
+- 血鱗（bs-speed）での秒は測っていない。agent-eval のお題 `novel-migrate-painter` は足したが、ゲームの足元で当てていない。
+- `runShoot` の「古いセーブの元を消す」守り（`fileExists(out/flows)`）はフォルダを見ないので効いていない（make の側の守りで足りている。今回は描き手の判定だけフォルダを見る形に直した）。
