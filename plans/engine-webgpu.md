@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空）／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。mip（決まり 7）と preload は (7) と一緒に。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空（前半の行にはしない・GL は今の drawSky のまま・**済・12.33**））／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。空は色の pass の頭で、空の 3 色と曲がりを group 0 の場面の値から・向きの材料を group 1 の R3dSky から読む別の pipeline で塗る（**済・12.33**）。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -1748,9 +1748,64 @@ engine の pub（ゲームから見える API）は増えておらず、公開�
   - `make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0・誤り 0（29 場面）。
   - `make lint ONLY=max-lines` exit 0（`WebGpuRenderer.flix` 914 行・`WebGpuMaterials.flix` 453 行・`Render3d.flix` 1,116 行）・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
 - 言える範囲: この Mac（Dawn の Metal）だけ。ブラウザ（12.31 の口）・スマホ（adreno）で lightmap の場面は流していない【未確認】。
-- (5b) へ回した物: 空（kindSky・`skipsOf` の「3D の空」はそのまま）。みやげの町の空は見下ろしの画角でほとんど映らないので、`bench/webgpu_v2` に空の場面を足して門にする。
+- (5b) へ回した物（→ 12.33 で入れた）: 空（kindSky・`skipsOf` の「3D の空」はそのまま）。みやげの町の空は見下ろしの画角でほとんど映らないので、`bench/webgpu_v2` に空の場面を足して門にする。
 - 持ち越し:
   - `drawValueBytes`（32）は `R3dDraw` の欄の数と手で合わせている（欄を足す時は両方を直す）。
   - lightmap の行は物ごとに group 1 を作る（GL も物ごとに付け直すので同じ桁）。lightmap の物が数百ある場面が来たら、(絵の番号, 値の区画) の鍵で控える形を測る。
   - bench で壊して確かめていない所: 段の数（欄 3）・色空間（欄 4 は `TestSceneList` で守る）・Clamp と Repeat の取り違え（2 本目の uv を 0..1 に収めたので出にくい）。
   - 12.28・12.30 の持ち越しで (5a) で触らなかった物はそのまま。
+
+### 12.33 R2b・P8 の (5b): 空（2026-11-16・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (5) の後半（(5a) の lightmap は 12.32）。engine の pub（ゲームから見える API）は増えておらず、engine/ の公開の型シグネチャも変えていない（足した型と関数は render_gl の中だけ）。
+GL の絵と GL の呼び出しの並びは変えていない（GL の `Render3d.drawSky` は 1 字も触っていない・下の門）。
+
+- **決めた事 1 — 空は前半の行（kindSky）にしない**: 12.26 の見立ては「空は kindSky」だったが、空は場面に 1 回の draw で、形も材質も絵の組も持たない（読むのは場面の値と向きの材料だけ）。
+  行にすると前半の `SceneList` に読む欄の無い kind が 1 つ増え、GL は行を読まず今の `drawSky` のまま（12.28 の決め「GL の呼び出しの並びは変えない」）なので、backend が 2 つとも行を使わない。
+  そこで WebGPU の backend の中で、場面の色の pass の頭（地の色で消した直後・行の前）に描く形にした。行にする得が出るのは、空を場面の pass の列の途中に挟む物（空の後に描く後がけ・(6)）が来た時で、その時に見直す。
+- **決めた事 2 — 空の 3 色と曲がりは場面の値（group 0 の R3dScene）から読む**: R3dScene の `uZenith`・`uHorizon`・`uGround`・`uCurve` は映り込みの空の値（`LightModel3d.reflectionSkyOf`）で、
+  空のある場面では空の色を線形へ戻した物と `Scene3d.skyCurveOf` ＝ GL の `drawSky` が空のプログラムへ渡す値（`putLinearizedColor`）と同じ。空の frag はこの欄をそのまま読む（`LightModel3d.Codegen.toWgsl` の `skyAt` が `r3d.uZenith` 等を読む形のまま・engine の字は触っていない）。
+  前提は `TestWebGpuScene3d.testSkySceneValuesAreLinearSkyColors` で固定した。
+- **決めた事 3 — 向きの材料は描き先ごとの R3dSky（group 1・48 バイト）**: forward・right・up（`Scene3d.skyBasisOf`）と描き先の幅と高さ。R3dScene の空き欄（pad1〜pad4）では 9 個が入らず、R3dScene の並びを替えると材質と頂点の色の全部の WGSL に波及するので別の buffer にした。
+  buffer と group は場面の描き先（`SceneTarget#sky`）と同じ寿命で、writeBuffer は場面の値と同じ所（`writeSceneValues`）で書く（描き先ごとに 1 つなので、同じ encoder で同じ描き先を 2 回書く時は今までの `noteWritten` の submit がそのまま効く）。
+  ほかの案: 頂点シェーダーで隅の 3 点の向きを作って補間する（補間は画面の上で 1 次なので式は同じだが、GL は画素ごとに作る）・目と射影の行列（binding 5）から逆に作る（tan と縦横の比を行列から戻す丸めが入る）。どちらも取らなかった。
+- **WGSL**（`Render3dWgsl.skyVertexSource`・`skyFragmentSource`）: 頂点は buffer を読まず `vertex_index` の 3 点で描き先いっぱいを覆う三角形（GL は 6 点の四角の vbo）。frag は GLSL の空の枝と同じ式で、描き先の上の行が先なので NDC の y は画素の y を返して作る。
+  GLSL の `uEnvOn`（景色を背景に描く枝）と `uDepthOut`（奥行きの書き出しの白）の枝は持たない: 前者は環境マップの絵を上げる道がまだ無い（(7)）・後者は奥行きの書き出しの pass が空を描かず地の色の白で消す（12.27 の `clearOf`）。
+- **pipeline**（新しい `Render3d.WebGpuSky`）: 鍵は (形式, 標本)。group 0 = 場面の layout・group 1 = R3dSky。深度は読まず書かない（`ALWAYS`・書かない。GL は深度の判定を切って描く）が、pass が深度を持つので形式（DEPTH24_PLUS）だけ合わせる。裏の面は間引かない。
+  空を描いた後は行の pipeline と group 1 を付け直す（行を描く `bindShape` は Unbound から始まり、材質の行の `groupRow` は -1 から始まるので、今の行の流しのまま）。draw call は GL と同じく `BatchBreak.Sky` で数える。
+- **描く場面**: `WebGpuSky.isDrawn` = sky のある場面だけ。sky の無い景色を背景に描く場面（`Scene3d.drawnSkyOf` は Some）は今までどおり「3D の環境マップ」として数え、空では描かない（(7)）。
+  `skipsOf` から「3D の空」を外した。`bench/webgpu_v2` の貼る形 B（`SplitPassTrial`）は画面の途中の矩形へ描くので空を描かない（空の frag は描き先の左上を場面の左上として向きを作る・比べる部屋に空は無い・WhyNot に書いた）。
+- **確かめ — `bench/webgpu_v2`** に 5 場面を足した（`SkyCases.flix`。殻を外した部屋の物を影の場面の広い床に置き、3 色のはっきりした空の下で目を上へ向ける。真上は濃い青・地平は淡い橙・真下は暗い緑）。
+  比べ相手 1 つは記録だけ（門にしない）:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大（許容） |
+  |---|---|---|---|
+  | sky（見上げ・curve 1） | 7（16） | 0（4） | ±1（±16） |
+  | skyTurned（後ろ向きに見下ろし・床の向こうに地平と真下の色・curve 0.6） | 0（8） | 0（4） | ±0（±16） |
+  | skyDesign（sky を design の解像度で） | 0（8） | 0（4） | ±0（±16） |
+  | skyDepth（sky を奥行きの書き出しで＝空は白） | 0（8） | 0（4） | ±0（±16） |
+  | skyMsaaPass（標本 4 の Pass に描いて貼る・空の pipeline の標本 4 の版） | 14,238（28,000） | 12,249（24,000） | ±60（±128） |
+  | yardMsaaPass（skyMsaaPass から空を外した比べ相手・記録） | 13,653 | 12,195 | ±64 |
+
+  - 空の画素はどれも GL と ±1 以内（sky の 7 px も ±1 だけ）。skyMsaaPass の差は物のふちで、空を外しても同じ桁なので railsMsaa と同じ標本の位置の違い（bench の slantFlipProbe で確かめた物）で、空の差ではない。
+    上限は違う画素を実測のほぼ 2 倍・±2 以上は小さい物の下限の 4・差の最大は ±16（skyMsaaPass は MSAA のふちが ±64 まで出るので ±128）。
+  - 初めに目を下へ向けた版（pitch が正だと下を向く）で流した時は、sky が 5 px・±77、skyDesign が 45 px・±227 だった（床と家具のふちで面の入れ替わり・room と同じ形）。今の版は空の割合を増やして面の重なりを減らした物【推: 差は空でなく重なる面】。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - 空の frag で NDC の y を返さない: sky 504,249・skyTurned 432,514・skyDesign 505,134・skyMsaaPass 434,466 px 違って落ちる。
+    - 空の色を sRGB へ戻さない（`r3d_linearToSrgb3` を外す）: 同じ 4 場面が 433,538〜505,818 px 違って落ちる。
+    - R3dSky の幅と高さを入れ替える: 同じ 4 場面が 431,149〜503,055 px 違って落ちる。
+    - skyDepth はどれでも 0 px（空を描かず白で消すので）。
+  - 今までの 29 場面は 12.32 と同じ数。目で見て、空の坂（真上の青から地平の橙・床の向こうの緑への寄り）が GL と同じ所に同じ色で出る（`bench/webgpu_v2/debug/{gl,webgpu}/sky*.png`・git の外）。
+- **欠けの表と実物**（12.32 と同じ流し方・写しの engine はこの worktree の fpkg を作り直した物・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・頭の 64 コマ・WebGPU だけ。
+  `RUN_SECONDS` は 70（arrival と market は 70 秒では jar を作るだけで 0 コマだったので 160 で流し直した））:
+
+  | 種類（1 コマあたり） | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+  |---|---|---|---|---|---|---|
+  | 空（場面） | — | — | — | 0.6 → **0** | 0.6 → **0** | 0.6 → **0** |
+  | 半透明の材質の物 | — | — | — | 12.4 → 18.6 | 12.4 → 11.4 | 8.0 → 8.0 |
+  | lightmap・骨つきの物・影 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+  - みやげの町に残った欠けは半透明（(6)）だけ。fps3d_lab の 3 場面は欠けの表が出ない（12.32 と同じ）。WebGPU の誤り 0・落ちた場面なし。
+  - 半透明の数の揺れ（arrival 12.4 → 18.6・market 12.4 → 11.4）は今回の直しと関わらない（半透明の道は触っていない）【推: 起動から 300 コマの数え方で、頭の読み込みの長さ（今回は 160 秒で流した）によって 300 コマの中で映る物が変わる】。
+  - 見え方: night の 60 コマ目を 12.32 の GL の絵と並べて、違いが見えない（みやげの町は見下ろしで空が映らない。空の門は上の bench）。
+  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/sky/games/out/<ゲーム>-<場面>-webgpu/`（**scratchpad の物は消えうる**）。

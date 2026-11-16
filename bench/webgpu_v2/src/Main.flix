@@ -203,6 +203,11 @@ mod V2Main {
     /// lmDepth は roomDepth と同じ画素。上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない（lmDepth は roomDepth と同じ ±16）。
     /// 壊して確かめた（同じ日に 1 回ずつ）: 材質の頂点シェーダーで 2 本目の uv の上下を返すと lmTextured と lmNormalLinear が 40 万 px・lightmap の強さを 1 のままにすると
     /// 2 場面が全 518,400 px・法線マップの版で lightmap の絵の組の番号を 1 つ手前（法線マップ）にすると lmNormalLinear だけが全 px 違って落ちる。
+    /// 空の場面（2026-11-16・同じ機械の実測。違う画素・±2 以上・max）: sky 7・0・±1、skyTurned 0・0・±0、skyDesign 0・0・±0、skyDepth 0・0・±0、skyMsaaPass 14,238・12,249・±60。
+    /// 空の画素はどれも GL と ±1 以内で、sky の 7 px も ±1 だけ。skyMsaaPass の差は物のふちで、空を外した比べ相手 yardMsaaPass（13,653・12,195・±64）と同じ桁なので
+    /// railsMsaa と同じ標本の位置の違い（空の差ではない）。上限は違う画素を実測のほぼ 2 倍・±2 以上は 4（小さい物の下限）・差の最大は ±16（skyMsaaPass は ±128）。
+    /// 壊して確かめた（同じ日に 1 回ずつ）: 空の frag で NDC の y を返さないと skyDepth を除く 4 場面が 43 万〜51 万 px・空の色を sRGB へ戻さないと 43 万〜51 万 px・
+    /// R3dSky の幅と高さを入れ替えると 43 万〜50 万 px 違って落ちる（skyDepth は空を描かず白で消すのでどれでも 0 px）。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
         Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60),
              "matTextured" => (150, 450, 255), "matCutout" => (16, 32, 255), "matTwoSided" => (50, 50, 255), "matNormal" => (150, 500, 255),
