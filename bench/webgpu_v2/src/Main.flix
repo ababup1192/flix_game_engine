@@ -27,13 +27,17 @@ mod V2Main {
         roomCase("room", kit, 0.0, Scene3d.Resolution.Native) ::
         roomCase("roomTurned", kit, 0.5, Scene3d.Resolution.Native) ::
         roomCase("roomDesign", kit, 0.0, Scene3d.Resolution.Design) ::
-        railsCase("railsMsaa", 4) ::
-        railsCase("railsNoMsaa", 1) ::
-        slantCase("slant2dMsaa") :: Nil
+        railsCase("railsMsaa", 4, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
+        railsCase("railsNoMsaa", 1, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
+        railsCase("railsMsaaClear", 4, None, Color.rgb(0.3, 0.15, 0.05)) ::
+        slantCase("slant2dMsaa", false) ::
+        slantCase("slant2dMsaaFlip", true) :: Nil
 
     /// railsMsaa と同じ標本 4 の Pass に、3D を使わず 2D の斜めの細い多角形 3 本を描いて貼る（3D の貼る形に依らない MSAA のふちの差を見る比べ相手）。
-    def slantCase(name: String): Case =
-        let bar = (x: Float64, tilt: Float64) -> RawDraw.polygon({ x = x, y = 150.0 } :: { x = x + tilt, y = 30.0 } :: { x = x + tilt + 3.0, y = 30.0 } :: { x = x + 3.0, y = 150.0 } :: Nil,
+    /// flipped = 多角形を design の上下に裏返して描く（標本の位置の確かめ・slantFlipProbe）。
+    def slantCase(name: String, flipped: Bool): Case =
+        let y = (v: Float64) -> if (flipped) Room.design()#y - v else v;
+        let bar = (x: Float64, tilt: Float64) -> RawDraw.polygon({ x = x, y = y(150.0) } :: { x = x + tilt, y = y(30.0) } :: { x = x + tilt + 3.0, y = y(30.0) } :: { x = x + 3.0, y = y(150.0) } :: Nil,
                                                                 Color.rgb(0.9, 0.9, 0.9), 1);
         let place = (x: Float64, tilt: Float64) -> ({ at = Vec2.zero(), item = bar(x, tilt) }: Render.PlacedItem);
         let pass: Render.Pass = { name = "slant", clear = RenderTarget.LoadOp.Clear(Color.rgb(0.04, 0.04, 0.12)),
@@ -49,16 +53,17 @@ mod V2Main {
 
     /// 標本 samples の Pass（design の解像度）に、斜めの細い棒 3 本（bench/gl_parity の msaaEdges の手すりと同じ形・頂点の色）の 3D の場面を描き、
     /// スプライトで画面いっぱいに貼る（bench/gl_parity の passPaste と同じ道）。標本 4 では 3D の場面を標本 4 で描いて resolve してから、標本 4 の Pass へ貼る。
-    def railsCase(name: String, samples: Int32): Case =
+    /// background = 場面の地の色（None なら透明のまま貼り、Pass の clear の色が透ける）・clear = Pass を消す色。
+    def railsCase(name: String, samples: Int32, background: Option[Color], clear: Color): Case =
         let bar = (x: Float64, tilt: Float64) -> { points = Vec3.v3(x, -4.0, 12.0) :: Vec3.v3(x + tilt, 4.0, 12.0)
                                                             :: Vec3.v3(x + tilt + 0.15, 4.0, 12.0) :: Vec3.v3(x + 0.15, -4.0, 12.0) :: Nil,
                                                    color = Color.rgb(0.9, 0.9, 0.9) };
         let rails = Scene3d.meshInstance(Mesh3d.fromPolygons(bar(-6.0, 3.0) :: bar(-4.0, 2.0) :: bar(-2.0, 1.2) :: Nil), Mat4.identity());
         let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
         let scene = { instances = rails :: Nil, zIndex = 1,
-                      environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(Color.rgb(0.04, 0.04, 0.12)) }
+                      environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = background }
                       | Scene3d.scene(camera, Room.design()) };
-        let pass: Render.Pass = { name = "rails", clear = RenderTarget.LoadOp.Clear(Color.rgb(0.0, 0.0, 0.0)), items = Render.scene3d(Vec2.zero(), scene) :: Nil };
+        let pass: Render.Pass = { name = "rails", clear = RenderTarget.LoadOp.Clear(clear), items = Render.scene3d(Vec2.zero(), scene) :: Nil };
         let design = Room.design();
         { name = name, passes = pass :: Nil, targets = Map#{ "rails" => RenderTarget.withMsaa(samples, RenderTarget.defaultDescriptor()) },
           items = Render.blitRegion({ name = "rails", design = design, src = { position = Vec2.zero(), size = design },
@@ -71,9 +76,18 @@ mod V2Main {
     /// 式の取り違え（光・かすみ・色の空間・面の向き）なら面の中が丸ごと違い、千 px の桁になる。
     /// railsMsaa と slant2dMsaa（同じ日の実測で違う画素 3,330 px・5,040 px・±2 以上 2,493 px・4,464 px・どちらも max ±55 = 覆う割合 1/4 の段）: 斜めのふちの画素だけで、
     /// 3D を使わない 2D の多角形でも同じ桁で出るので、3D の貼る形ではなく GL と WebGPU の標本の位置の違い
-    /// 【推: 描き先の行の並びが上下逆で、4 標本の位置の型が上下に鏡写しになる。軸に沿ったふち（bench/webgpu_v1 の msaaPass）は 0 px】。
-    /// MSAA が消えたかは許す差でなく、標本 4 と 1 の差（GL と WebGPU の両方で 0 でない）で見る。
-    def tolerances(): Map[String, (Int32, Int32)] = Map#{"room" => (32, 64), "roomTurned" => (32, 64), "railsMsaa" => (3000, 4000), "slant2dMsaa" => (5400, 6000)}
+    /// （4 標本の位置の型が上下に鏡写し・slantFlipProbe で確かめた【推: 描き先の行の並びが上下逆な事から】。軸に沿ったふち（bench/webgpu_v1 の msaaPass）は 0 px）。
+    /// MSAA が消えたかは許す差でなく、標本 4 と 1 の差（WebGPU の差が GL の差の半分以上）で見る。
+    /// 差の最大の上限: 標本の位置の違いなら覆う割合 1/4 の段（±55）で止まる。それを超えるのは色か式の取り違え。room は勝つ面の入れ替わりで ±82 まで出るので切らない。
+    /// railsMsaaClear（地の色の無い場面を色の付いた clear の Pass へ貼る・同じ日の実測で違う画素 4,761 px・±2 以上 2,493 px・max ±54）: ±2 以上は railsMsaa と同じ数で、
+    /// 増えた 1,431 px は ±1 だけ【推: ふちの α が 1 未満の画素を clear の色に重ねる時の丸め】。違う画素の上限だけ広げる。
+    /// 4,761 px が GL の標本 4 と 1 の差と同じ数なのは偶然でない: 標本 4 で α が 1 未満になるふちの画素の数そのもので、そこが全部 ±1 以上ずれる【推】。
+    /// slant2dMsaaFlip を上下に裏返して GL の slant2dMsaa と比べると max ±1（同じ日）なので、MSAA のふちの差は標本の位置が上下に鏡写しな事から来る。
+    def tolerances(): Map[String, (Int32, Int32, Int32)] =
+        Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60)}
+
+    /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
+    def probes(): Set[String] = Set#{"slant2dMsaaFlip"}
 
     def drawFrame(c: Case): Unit \ Platform.Rendering + Platform.Window + RenderTarget.Target =
         drawPasses(c);
@@ -202,10 +216,21 @@ mod V2Main {
         LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gl, width, height, "debug/gl/${c#name}.png");
         LwjglLayer.Internal.WebGpuWindowLayer.V1Assets.writePng(gpu, width, height, "debug/webgpu/${c#name}.png");
         let diff = diffOf(gl, gpu, width * height);
-        let (limit, limitAll) = Map.getWithDefault(c#name, (0, 0), tolerances());
-        let ok = diff#overOne <= limit and diff#pixels <= limitAll;
-        ("[webgpu-v2] ${pad(c#name, 12)} ${if (ok) "OK" else "NG"}  差 ${Int32.toString(diff#pixels)} px（許容 ${Int32.toString(limitAll)}）"
-            + "・±2 以上 ${Int32.toString(diff#overOne)} px（許容 ${Int32.toString(limit)}）・max ±${Int32.toString(diff#maxDelta)}・全 ${Int32.toString(width * height)} px", ok)
+        let (limit, limitAll, limitMax) = Map.getWithDefault(c#name, (0, 0, 0), tolerances());
+        let probe = Set.memberOf(c#name, probes());
+        let ok = probe or (diff#overOne <= limit and diff#pixels <= limitAll and diff#maxDelta <= limitMax);
+        let verdict = if (probe) "記録" else if (ok) "OK" else "NG";
+        ("[webgpu-v2] ${pad(c#name, 15)} ${verdict}  差 ${Int32.toString(diff#pixels)} px（許容 ${Int32.toString(limitAll)}）"
+            + "・±2 以上 ${Int32.toString(diff#overOne)} px（許容 ${Int32.toString(limit)}）・max ±${Int32.toString(diff#maxDelta)}（許容 ±${Int32.toString(limitMax)}）"
+            + "・全 ${Int32.toString(width * height)} px", ok)
+
+    /// 標本の位置が GL と WebGPU で上下に鏡写しかの確かめ（記録・門ではない）: GL の slant2dMsaa と、WebGPU の slant2dMsaaFlip を上下に裏返した絵の差。
+    /// 鏡写しなら、裏返した形を描いて裏返し戻した WebGPU の絵は GL の絵に重なり、差が slant2dMsaa の行より大きく減る。
+    def slantFlipProbe(width: Int32, height: Int32, gl: ByteBuffer, gpuFlipped: ByteBuffer): Diff \ IO =
+        let back = ByteBuffer.allocateDirect(width * height * 4);
+        let row = width * 4;
+        List.range(0, height) |> List.forEach(y -> List.range(0, row) |> List.forEach(i -> discard back.put((height - 1 - y) * row + i, gpuFlipped.get(y * row + i))));
+        diffOf(gl, back, width * height)
 
     /// ns の列の中央値（ms・小数 3 桁の字）。
     def medianMs(xs: List[Int64]): String =
@@ -238,6 +263,26 @@ mod V2Main {
         println("[webgpu-v2] ${if (ok) "OK" else "NG"}");
         if (ok) () else System.exit(1)
 
+    /// 撮った絵の表（場面の名前 → GL と WebGPU の絵）。
+    type alias Shots = Map[String, (ByteBuffer, ByteBuffer)]
+
+    /// 標本 4 と 1 の Pass の差（GL・WebGPU の違う画素の数）。0 なら MSAA が掛かっていない。場面が無ければ (0, 0)。
+    def msaaDiffOf(byName: Shots, width: Int32, height: Int32): (Int32, Int32) \ IO =
+        match (Map.get("railsMsaa", byName), Map.get("railsNoMsaa", byName)) {
+            case (Some((glOn, gpuOn)), Some((glOff, gpuOff))) => (diffOf(glOn, glOff, width * height)#pixels, diffOf(gpuOn, gpuOff, width * height)#pixels)
+            case _                                            => (0, 0)
+        }
+
+    /// 標本の位置の確かめ（slantFlipProbe）の行を出す（場面が無ければ何もしない）。
+    def printSlantFlipProbe(byName: Shots, width: Int32, height: Int32): Unit \ IO =
+        match (Map.get("slant2dMsaa", byName), Map.get("slant2dMsaaFlip", byName)) {
+            case (Some((glSlant, _)), Some((_, gpuFlip))) =>
+                let probe = slantFlipProbe(width, height, glSlant, gpuFlip);
+                println("[webgpu-v2] 標本の位置の確かめ（記録）: GL の slant2dMsaa と、WebGPU の slant2dMsaaFlip を上下に裏返した絵の差 ${Int32.toString(probe#pixels)} px"
+                    + "・±2 以上 ${Int32.toString(probe#overOne)} px・max ±${Int32.toString(probe#maxDelta)}")
+            case _ => ()
+        }
+
     def compareAndTime(config: GameEngine.EngineConfig, kit: Room.Kit, session: GlOffscreen.Session, width: Int32, height: Int32): Result[String, Bool] \ IO + WebGpuDevice =
         match WebGpuDevice.requestDevice() {
             case Err(why) => Err(why)
@@ -249,14 +294,12 @@ mod V2Main {
                 let shots = cases(kit) |> List.map(c -> (c, shootGl(session, c), shootWebGpu(paint, fonts, c, width, height)));
                 let rows = shots |> List.map(match (c, gl, shot) -> judge(width, height, c, gl, shot));
                 List.forEach(r -> println(fst(r)), rows);
-                // 標本 4 と 1 の Pass の差: 0 なら MSAA が掛かっていない（GL と WebGPU のどちらも）。
                 let byName = shots |> List.map(match (c, gl, shot) -> (c#name, (gl, shot))) |> List.toMap;
-                let msaa = match (Map.get("railsMsaa", byName), Map.get("railsNoMsaa", byName)) {
-                    case (Some((glOn, gpuOn)), Some((glOff, gpuOff))) => (diffOf(glOn, glOff, width * height)#pixels, diffOf(gpuOn, gpuOff, width * height)#pixels)
-                    case _                                            => (0, 0)
-                };
-                println("[webgpu-v2] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaa))} px・WebGPU ${Int32.toString(snd(msaa))} px（0 なら MSAA が掛かっていない）");
-                let msaaOk = fst(msaa) > 0 and snd(msaa) > 0;
+                let msaa = msaaDiffOf(byName, width, height);
+                // WhyNot: WebGPU の差が 0 でなければ良し、にしない — 場面の一部だけ MSAA が抜けても 0 にはならない。GL と同じ桁で掛かっている事を見る。
+                println("[webgpu-v2] 標本 4 と 1 の差 GL ${Int32.toString(fst(msaa))} px・WebGPU ${Int32.toString(snd(msaa))} px（WebGPU が GL の半分未満なら MSAA が抜けている）");
+                let msaaOk = fst(msaa) > 0 and 2 * snd(msaa) >= fst(msaa);
+                printSlantFlipProbe(byName, width, height);
                 let trial = SplitPassTrial.open(gpu, width, height, (Int32.toFloat64(config#designWidth), Int32.toFloat64(config#designHeight)));
                 List.range(0, rounds()) |> List.forEach(round -> {
                     let gl = timeGl(session, kit);

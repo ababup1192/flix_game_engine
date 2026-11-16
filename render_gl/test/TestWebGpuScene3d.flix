@@ -1,10 +1,10 @@
-// WebGPU の 3D の描き手の、GPU を呼ばない所（場面の値を R3dScene の欄の位置へ詰める・矩形の上下の向き）を固定する。
+// WebGPU の 3D の描き手の、GPU を呼ばない所（場面の値を R3dScene の欄の位置へ詰める・矩形の上下の向き・まだ描けない物の数え）を固定する。
 // 欄の位置は Render3dWgsl.sceneDeclarations の並び（vec3 の後ろの 4 バイトに f32 か i32・光の配列は 400 バイト目から 16 バイト刻みの vec4）。
 // WhyNot: mod TestWebGpuScene3d にしない — topLeftOf は Render3d.WebGpuRenderer の中の pub でない関数で、子のモジュールからしか呼べない。
 mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
-    use Render3d.WebGpuRenderer.{packSceneValues, sceneValueBytes, topLeftOf}
+    use Render3d.WebGpuRenderer.{packSceneValues, sceneValueBytes, skipsOf, topLeftOf}
 
     def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, 3.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
 
@@ -42,6 +42,42 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     def testShadowAndDepthOutputAreOff(): Unit \ {Assert, IO} =
         let buf = packed();
         Assert.assertEq(expected = (0, 0, 0, -1), (buf.getInt(76), buf.getInt(220), buf.getInt(248), buf.getInt(232)))
+
+    // ── まだ描けない物の数え（skipsOf）──
+
+    def wood(): Scene3d.Material3d = Scene3d.texturedMaterial("tex3d:0123456789abcdef", ShaderDoc.FilterMode.Nearest)
+
+    def skinnedWithMaterial(at: Vec3.Vec3): Scene3d.Instance3d =
+        Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.translate(at))
+            |> Scene3d.withPose(Render3d.FakeGl.poseAt(0.0)) |> Scene3d.withMaterial(wood())
+
+    def plainWithMaterial(at: Vec3.Vec3): Scene3d.Instance3d =
+        Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.translate(at)) |> Scene3d.withMaterial(wood())
+
+    /// 場面 1 つを計画の候補に分けて、まだ描けない物の種類と回数を返す。
+    def skipsOfScene(scene: Scene3d.Scene3dCmd): Map[String, Int32] \ IO =
+        let grouped = Render3d.ScenePlan.groupScenes(Render3d.ScenePlan.freshPlanner(Render3d.DrawMode.Instanced), { alphaToOne = false, poseRowLimit = 0 }, 1,
+                                                     Render3d.FakeGl.cmdOf(scene) :: Nil);
+        grouped#scenes |> List.flatMap(skipsOf(grouped#members)) |> List.toMap
+
+    /// Output.Depth の場面は奥行きの書き出しの 1 回だけで、中身（材質の物・骨つきの物）は数えない。
+    @Test
+    def testDepthSceneCountsOnlyTheDepthOutput(): Unit \ {Assert, IO} =
+        let scene = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 }) | Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: plainWithMaterial(Vec3.zero()) :: Nil) };
+        Assert.assertEq(expected = Map#{"3D の奥行きの書き出し（Output.Depth）" => 1}, skipsOfScene(scene))
+
+    /// 材質つきの骨つきの物は骨つきの物として 1 回だけ数え、材質の物には数えない。
+    @Test
+    def testSkinnedWithMaterialIsCountedOnce(): Unit \ {Assert, IO} =
+        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: Nil));
+        Assert.assertEq(expected = (Some(1), Some(0)), (Map.get("3D の骨つきの物", skips), Map.get("3D の材質の物（頂点の色で描く）", skips)))
+
+    /// 視錐台の外（目の後ろ）の材質の物は数えない。骨つきの物は計画が間引かない（Scene3d.isOutsideFrustum がいつも偽・GL も描く）ので目の後ろでも数える。
+    @Test
+    def testCulledThingsAreNotCounted(): Unit \ {Assert, IO} =
+        let behind = Vec3.v3(0.0, 0.0, -50.0);
+        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(behind) :: plainWithMaterial(behind) :: plainWithMaterial(Vec3.zero()) :: Nil));
+        Assert.assertEq(expected = (Some(1), Some(1)), (Map.get("3D の骨つきの物", skips), Map.get("3D の材質の物（頂点の色で描く）", skips)))
 
     /// GL の左下が原点の矩形（y = 20・高さ 40）を、高さ 200 の描き先の左上が原点にすると y は 200 − 20 − 40 = 140。
     @Test
