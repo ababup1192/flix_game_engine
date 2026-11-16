@@ -1766,14 +1766,16 @@ GL の絵と GL の呼び出しの並びは変えていない（GL の `Render3d
 - **決めた事 2 — 空の 3 色と曲がりは場面の値（group 0 の R3dScene）から読む**: R3dScene の `uZenith`・`uHorizon`・`uGround`・`uCurve` は映り込みの空の値（`LightModel3d.reflectionSkyOf`）で、
   空のある場面では空の色を線形へ戻した物と `Scene3d.skyCurveOf` ＝ GL の `drawSky` が空のプログラムへ渡す値（`putLinearizedColor`）と同じ。空の frag はこの欄をそのまま読む（`LightModel3d.Codegen.toWgsl` の `skyAt` が `r3d.uZenith` 等を読む形のまま・engine の字は触っていない）。
   前提は `TestWebGpuScene3d.testSkySceneValuesAreLinearSkyColors` で固定した。
-- **決めた事 3 — 向きの材料は描き先ごとの R3dSky（group 1・48 バイト）**: forward・right・up（`Scene3d.skyBasisOf`）と描き先の幅と高さ。R3dScene の空き欄（pad1〜pad4）では 9 個が入らず、R3dScene の並びを替えると材質と頂点の色の全部の WGSL に波及するので別の buffer にした。
-  buffer と group は場面の描き先（`SceneTarget#sky`）と同じ寿命で、writeBuffer は場面の値と同じ所（`writeSceneValues`）で書く（描き先ごとに 1 つなので、同じ encoder で同じ描き先を 2 回書く時は今までの `noteWritten` の submit がそのまま効く）。
-  ほかの案: 頂点シェーダーで隅の 3 点の向きを作って補間する（補間は画面の上で 1 次なので式は同じだが、GL は画素ごとに作る）・目と射影の行列（binding 5）から逆に作る（tan と縦横の比を行列から戻す丸めが入る）。どちらも取らなかった。
+- **決めた事 3 — 向きの材料は R3dScene の末尾の vec4 3 本**（`uSkyForward`・`uSkyRight`・`uSkyUp`・48 バイト・位置は `Render3dWgsl.skyValuesAt`）: xyz に forward・right・up（`Scene3d.skyBasisOf`）、w に描き先の幅と高さ。光の配列の後ろへ足したので今までの欄の位置は 1 つも動かず、R3dScene の宣言は `sceneDeclarations` の 1 か所だけ。
+  `packSceneValues` と同じく空の無い場面でも毎回書く（書く欄の組を場面ごとに変えない決まり）。場面の値の buffer は描き先ごとに 1 つなので、同じ encoder で同じ描き先を 2 回書く時は今までの `noteWritten` の submit がそのまま効く。
+  初めの版は描き先ごとの別の buffer（group 1 の R3dSky）にしていたが、レビューで「末尾に足せば並びは動かない」と指摘され、group 1 の layout・描き先ごとの buffer と bind group・その寿命の行がまるごと要らなくなるので替えた。
+  頂点シェーダーで隅の 3 点の向きを作って補間する形も、どちらにしても基底を送る場所が要るので取らなかった。目と射影の行列（binding 5）から逆に作る形は、tan と縦横の比を行列から戻す丸めが入るので取らなかった。
 - **WGSL**（`Render3dWgsl.skyVertexSource`・`skyFragmentSource`）: 頂点は buffer を読まず `vertex_index` の 3 点で描き先いっぱいを覆う三角形（GL は 6 点の四角の vbo）。frag は GLSL の空の枝と同じ式で、描き先の上の行が先なので NDC の y は画素の y を返して作る。
   GLSL の `uEnvOn`（景色を背景に描く枝）と `uDepthOut`（奥行きの書き出しの白）の枝は持たない: 前者は環境マップの絵を上げる道がまだ無い（(7)）・後者は奥行きの書き出しの pass が空を描かず地の色の白で消す（12.27 の `clearOf`）。
-- **pipeline**（新しい `Render3d.WebGpuSky`）: 鍵は (形式, 標本)。group 0 = 場面の layout・group 1 = R3dSky。深度は読まず書かない（`ALWAYS`・書かない。GL は深度の判定を切って描く）が、pass が深度を持つので形式（DEPTH24_PLUS）だけ合わせる。裏の面は間引かない。
-  空を描いた後は行の pipeline と group 1 を付け直す（行を描く `bindShape` は Unbound から始まり、材質の行の `groupRow` は -1 から始まるので、今の行の流しのまま）。draw call は GL と同じく `BatchBreak.Sky` で数える。
+- **pipeline**（新しい `Render3d.WebGpuSky`）: 鍵は (形式, 標本)。group は 0 = 場面の layout だけ。深度は読まず書かない（`ALWAYS`・書かない。GL は深度の判定を切って描く）が、pass が深度を持つので形式（DEPTH24_PLUS）だけ合わせる。裏の面は間引かない。
+  空を描いた後は行の pipeline を付け直す（行を描く `bindShape` は Unbound から始まる）。group 1 は空が付けないので、材質の行（`groupRow` が -1 から）と骨つきの形の行（空の group）が今までどおり付ける。骨の無い形の行は group 1 を付けず、その pipeline の layout に group 1 が無いので通る（形の pipeline に group 1 を足す時は付け直しが要る）。draw call は GL と同じく `BatchBreak.Sky` で数え、sky と background が両方ある場面は GL と同じ文（`Scene3d.skyWarning`）で 1 回知らせる。
 - **描く場面**: `WebGpuSky.isDrawn` = sky のある場面だけ。sky の無い景色を背景に描く場面（`Scene3d.drawnSkyOf` は Some）は今までどおり「3D の環境マップ」として数え、空では描かない（(7)）。
+  sky と景色を背景に描く環境マップが両方ある場面は、GL は空の坂を描く（`Scene3d.backgroundEnvironmentOf` は sky があれば None で、GL の空の frag の `uEnvOn` は 0）。WebGPU も今回から同じ空の坂を描く（環境マップは今までどおり数える）。
   `skipsOf` から「3D の空」を外した。`bench/webgpu_v2` の貼る形 B（`SplitPassTrial`）は画面の途中の矩形へ描くので空を描かない（空の frag は描き先の左上を場面の左上として向きを作る・比べる部屋に空は無い・WhyNot に書いた）。
 - **確かめ — `bench/webgpu_v2`** に 5 場面を足した（`SkyCases.flix`。殻を外した部屋の物を影の場面の広い床に置き、3 色のはっきりした空の下で目を上へ向ける。真上は濃い青・地平は淡い橙・真下は暗い緑）。
   比べ相手 1 つは記録だけ（門にしない）:

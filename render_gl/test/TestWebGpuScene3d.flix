@@ -148,14 +148,21 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let lin = (c: Float64) -> RenderUtil.f32(Texture3d.srgbToLinearColor(Color.rgb(c, c, c))#r);
         Assert.assertEq(expected = (lin(0.1), 2.0f32, lin(0.8), lin(0.3)), (buf.getFloat(128), buf.getFloat(140), buf.getFloat(144), buf.getFloat(160)))
 
-    /// R3dSky の並び: forward（0）・描き先の幅（12）・right（16）・高さ（28）・up（32）。yaw と pitch が 0 の目は -z を見て、up は tan(fovY / 2)。
+    /// R3dScene の末尾の空の欄（skyValuesAt から）: forward の z（+8）・描き先の幅（+12）・right の x（+16）・高さ（+28）・up の y（+36）。
+    /// yaw と pitch が 0 の目（fovY 1）は +z を見て、right の x は tan(0.5) × 縦横の比（320 / 180）・up の y は tan(0.5)。
     @Test
     def testSkyValuesSitAtWgslOffsets(): Unit \ {Assert, IO} =
-        let buf = ByteBuffer.allocate(Render3dWgsl.skyValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
+        let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
         Render3d.WebGpuSky.packValues(buf, scene(), 640, 360);
-        let basis = Scene3d.skyBasisOf(scene());
-        Assert.assertEq(expected = (RenderUtil.f32(basis#forward#z), 640.0f32, RenderUtil.f32(basis#right#x), 360.0f32, RenderUtil.f32(Num.sin(0.5) / Num.cos(0.5))),
-                        (buf.getFloat(8), buf.getFloat(12), buf.getFloat(16), buf.getFloat(28), buf.getFloat(36)))
+        let at = Render3dWgsl.skyValuesAt();
+        let tanHalf = Num.sin(0.5) / Num.cos(0.5);
+        Assert.assertEq(expected = (1.0f32, 640.0f32, RenderUtil.f32(tanHalf * 320.0 / 180.0), 360.0f32, RenderUtil.f32(tanHalf)),
+                        (buf.getFloat(at + 8), buf.getFloat(at + 12), buf.getFloat(at + 16), buf.getFloat(at + 28), buf.getFloat(at + 36)))
+
+    /// 空の欄は R3dScene の最後の 48 バイト（光の配列の後ろ）で、場面の値のバイト数の内に収まる。
+    @Test
+    def testSkyValuesEndTheSceneValues(): Unit \ Assert =
+        Assert.assertEq(expected = sceneValueBytes(), Render3dWgsl.skyValuesAt() + 48)
 
     /// 空を描くのは sky のある場面だけ。景色を背景に描く場面（sky が無い）は環境マップとして数え、空では描かない。
     @Test
@@ -169,7 +176,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     @Test
     def testSkyIsNotCounted(): Unit \ {Assert, IO} =
         let skips = skipsOfScene({ sky = Some(sky()) | Render3d.FakeGl.sceneOf(plainWithMaterial(Vec3.zero()) :: Nil) });
-        Assert.assertEq(expected = (None, 0), (Map.get("3D の空", skips), Map.foldLeft((acc, n) -> acc + n, 0, skips)))
+        Assert.assertEq(expected = None, Map.get("3D の空", skips))
 
     // ── まだ描けない物の数え（skipsOf）──
 

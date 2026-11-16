@@ -12,6 +12,7 @@ pub mod Render3dWgsl {
     /// f32 と vec2 の光の配列は、uniform の配列の 16 バイト刻みに合わせて vec4 の配列にした（x・y を読む。LightModel3d.Codegen の WGSL の欄と同じ）。
     /// 詰める側は WGSL の並びの決まり（vec3 と vec4 と mat4 は 16 バイトそろえ・vec2 は 8）に従う。vec3 の後ろの 4 バイトに f32 か i32 を 1 つ入れ、
     /// mat4 の前の隙間は pad0〜pad4 で埋めてあるので、欄は書いた順に 4 バイトずつ続く（uShadowMatrix は 272 バイト目）。
+    /// 末尾の uSky* は空の画素の向きの材料（Scene3d.skyBasisOf の forward・right・up）で、w に描き先の幅と高さ（skyValuesAt から）。
     pub def sceneDeclarations(): String =
         let p = Scene3d.maxPointLights();
         let s = Scene3d.maxSpotLights();
@@ -43,6 +44,9 @@ pub mod Render3dWgsl {
         "    uSpotColor: array<vec4f, ${s}>,\n" +
         "    uSpotRange: array<vec4f, ${s}>,\n" +
         "    uSpotCone: array<vec4f, ${s}>,\n" +
+        "    uSkyForward: vec4f,\n" +
+        "    uSkyRight: vec4f,\n" +
+        "    uSkyUp: vec4f,\n" +
         "};\n" +
         "@group(0) @binding(0) var<uniform> r3d: R3dScene;\n" +
         "@group(0) @binding(1) var uShadowMap: texture_depth_2d;\n" +
@@ -433,6 +437,9 @@ pub mod Render3dWgsl {
     pub def skyLightSource(): String =
         LightModel3d.Codegen.toWgsl("skyAt", Vec3Input.SkyDirection :: Nil, LightModel3d.skyModel())
 
+    /// R3dScene の uSkyForward のバイトの位置（光の配列の後ろ・uSkyRight と uSkyUp が 16 バイトずつ続く）。
+    pub def skyValuesAt(): Int32 = 400 + 16 * (3 * Scene3d.maxPointLights() + 5 * Scene3d.maxSpotLights())
+
     /// 空の頂点シェーダー: 頂点の buffer を読まず、vertex_index の 3 点で描き先いっぱいを覆う三角形を出す。入口は vs_main。
     // WhyNot: GL と同じ 6 点の四角の buffer を持たない — 覆う画素は同じで、buffer と頂点の属性の宣言が要らない。
     pub def skyVertexSource(): String =
@@ -443,22 +450,17 @@ pub mod Render3dWgsl {
         "}\n"
 
     /// 空の frag（Render3dGlsl.skyFragmentSource の空の枝と同じ式）。空の 3 色と曲がりは場面の値（group 0 の uZenith・uHorizon・uGround・uCurve。
-    /// 空のある場面では LightModel3d.reflectionSkyOf が空の色を線形へ戻した物）、画素の向きの材料（Scene3d.skyBasisOf）と描き先の大きさは group 1 の R3dSky。入口は fs_main。
-    /// 描き先は上の行が先なので、NDC の y は画素の y の向きを返して作る。
+    /// 空のある場面では LightModel3d.reflectionSkyOf が空の色を線形へ戻した物）、画素の向きの材料と描き先の大きさは同じ R3dScene の末尾の uSky*。入口は fs_main。
+    // WhyNot: NDC の y を GLSL と同じ（画素の y − 原点）÷ 高さで作らない — 描き先の画素の y は上の行が 0 で、GL の gl_FragCoord と向きが逆。
     // WhyNot: 景色を背景に描く枝（GLSL の uEnvOn）を持たない — 環境マップの絵を WebGPU へ上げる道がまだ無い（景色を背景に描く場面は環境マップとして数える）。
     // WhyNot: 奥行きの書き出しの枝（GLSL の uDepthOut）を持たない — 奥行きの書き出しの pass は空を描かず、地の色の白で消す（WebGpuRenderer.clearOf）。
     pub def skyFragmentSource(): String =
         sceneDeclarations() +
         colorSpaceSource() +
         skyLightSource() +
-        "struct R3dSky { uForward: vec3f, uWidth: f32, uRight: vec3f, uHeight: f32, uUp: vec3f, pad0: f32 };\n" +
-        "@group(1) @binding(0) var<uniform> r3dSky: R3dSky;\n" +
         "@fragment fn fs_main(@builtin(position) at: vec4f) -> @location(0) vec4f {\n" +
-        "    let ndc = vec2f(at.x / r3dSky.uWidth * 2.0 - 1.0, 1.0 - at.y / r3dSky.uHeight * 2.0);\n" +
-        "    let d = normalize(r3dSky.uForward + r3dSky.uRight * ndc.x + r3dSky.uUp * ndc.y);\n" +
+        "    let ndc = vec2f(at.x / r3d.uSkyForward.w * 2.0 - 1.0, 1.0 - at.y / r3d.uSkyRight.w * 2.0);\n" +
+        "    let d = normalize(r3d.uSkyForward.xyz + r3d.uSkyRight.xyz * ndc.x + r3d.uSkyUp.xyz * ndc.y);\n" +
         "    return vec4f(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
         "}\n"
-
-    /// R3dSky のバイト数（vec3 と f32 の組が 3 つ）。
-    pub def skyValueBytes(): Int32 = 48
 }

@@ -63,11 +63,11 @@ pub mod Render3d.WebGpuRenderer {
     /// 場面 1 つの描き先と、その場面の値の buffer と bind group（2D の描き手の描き先の鍵とそのコマの場面の番号ごとに 1 つ・大きさか形式か標本が変われば作り直す）。
     /// color = 貼る時に読む 1 標本の texture・msaa = 標本つきの描き先（標本 1 なら None）・depth = 深度（DEPTH24_PLUS）・
     /// sceneValues = Render3dWgsl の R3dScene・camera = R3dCamera・sceneGroup = group 0・paste = 貼る矩形（WebGpuShader.sceneWgsl の Paste）・pasteGroup = 貼る形の group 1・
-    /// sky = 空の R3dSky の buffer と group 1・lastUsed = 最後に描いたコマの世代（要素 1 つ）。
+    /// lastUsed = 最後に描いたコマの世代（要素 1 つ）。
     type alias SceneTarget = {
         width = Int32, height = Int32, format = RenderTarget.Format, samples = Int32,
         color = Texture, msaa = Option[Texture], depth = Texture,
-        sceneValues = Buffer, camera = Buffer, sceneGroup = BindGroup, paste = Buffer, pasteGroup = BindGroup, sky = WebGpuSky.Binding, lastUsed = Array[Int64, Static]
+        sceneValues = Buffer, camera = Buffer, sceneGroup = BindGroup, paste = Buffer, pasteGroup = BindGroup, lastUsed = Array[Int64, Static]
     }
 
     /// 2D の描き手から借りる物。encoder = 今のコマの encoder・notePass = encoder に pass を 1 つ積んだと知らせる・
@@ -401,6 +401,7 @@ pub mod Render3d.WebGpuRenderer {
         staged#shadows |> List.forEach(WebGpuShadows.encode(s#shadows, Array.get(0, s#gen), shadowDraw));
         let sceneGroup = sceneGroupOf(r, target, staged#shadows);
         let scene = plan#cmd#scene;
+        Scene3d.skyWarning(scene) |> Option.forEach(line -> Render3d.ScenePlan.warnOnce(s#planner, "@sky+background", line));
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
         staged#passes |> List.forEach(match (spec, list, valuesBase) ->
@@ -540,7 +541,7 @@ pub mod Render3d.WebGpuRenderer {
         pass.setScissorRect(sx, sy, sw, sh);
         pass.setBindGroup(0, staged#sceneGroup);
         if (staged#sky and isColorPass(staged#spec)) {
-            WebGpuSky.draw(s#sky, pass, target#format, target#samples, target#sky);
+            WebGpuSky.draw(s#sky, pass, target#format, target#samples);
             Render3d.Counts.countDrawCall(s, Render3d.Counts.BatchBreak.Sky)
         } else ();
         Option.forEach(g -> pass.setBindGroup(2, g), staged#poseGroup);
@@ -681,10 +682,10 @@ pub mod Render3d.WebGpuRenderer {
 
     // ── 場面の値 ──
 
-    /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本）。
-    pub def sceneValueBytes(): Int32 = 400 + 16 * (3 * Scene3d.maxPointLights() + 5 * Scene3d.maxSpotLights())
+    /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本・末尾に空の vec4 が 3 本）。
+    pub def sceneValueBytes(): Int32 = Render3dWgsl.skyValuesAt() + 48
 
-    /// 場面の値（光・かすみ・目・奥行きの書き出し・影の地図 shadows を引く値）と目と射影の行列を target の buffer へ書く。環境マップは切る（lightmap は物ごとの値・Render3d.MaterialValues）。
+    /// 場面の値（光・かすみ・目・奥行きの書き出し・影の地図 shadows を引く値・空の向きの材料）と目と射影の行列を target の buffer へ書く。環境マップは切る（lightmap は物ごとの値・Render3d.MaterialValues）。
     def writeSceneValues(r: Renderer, target: SceneTarget, plan: ScenePlan[SpanBatch], shadows: List[ShadowPass]): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let scene = plan#cmd#scene;
@@ -695,13 +696,13 @@ pub mod Render3d.WebGpuRenderer {
         // WhyNot: pass ごとに場面の値を書き分けない — 場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、
         //   1 つの encoder の中で pass ごとに書き替えると、どの pass も最後に書いた値で描く。pass が場面の置いた物の 1 つの間は mainPass で足りる。
         packPassValues(values, plan#mainPass);
+        WebGpuSky.packValues(values, scene, target#width, target#height);
         s#gpu.writeBuffer(target#sceneValues, 0i64, values, 0, sceneValueBytes());
         let camera = s#cpuCamera;
         let floats = camera.asFloatBuffer();
         discard floats.put(matrixArray(Camera3d.viewMatrix(scene#camera)));
         discard floats.put(matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene))));
-        s#gpu.writeBuffer(target#camera, 0i64, camera, 0, 128);
-        WebGpuSky.writeValues(s#sky, target#sky, scene, target#width, target#height)
+        s#gpu.writeBuffer(target#camera, 0i64, camera, 0, 128)
 
     /// 光の値 d を R3dScene の並びで buf へ詰める（欄の位置は Render3dWgsl.sceneDeclarations の頭のコメント）。影・環境マップの欄は切る値
     /// （影の地図を引く値は packShadowValues・奥行きの書き出しの欄は packPassValues）。GL の Render3d.Light.putLights が渡す欄と同じ値を、同じ名前の欄へ入れる。
@@ -823,7 +824,7 @@ pub mod Render3d.WebGpuRenderer {
 
     // ── 描き先と pipeline ──
 
-    /// 鍵 key の描き先の値（場面の値・目・貼る矩形）を今の encoder で書いたと控える。
+    /// 鍵 key の描き先の値（場面の値（空の向きの材料を含む）・目・貼る矩形）を今の encoder で書いたと控える。
     // WhyNot: targetOf の頭で控えない — 値を書く途中で 1 体ごとの値の buffer があふれて submit すると控えが消え、
     //   同じ encoder で同じ鍵を 2 回目に書く時に、まだ submit していない 2D の pass の貼る矩形を上書きする。
     def noteWritten(r: Renderer, key: (Int32, Int32)): Unit \ IO =
@@ -869,7 +870,7 @@ pub mod Render3d.WebGpuRenderer {
         discard pasteDesc.textureView(0, color.defaultView()).buffer(1, paste, 0i64, 16i64);
         { width = shape#width, height = shape#height, format = shape#format, samples = shape#samples, color = color, msaa = msaa, depth = depth,
           sceneValues = sceneValues, camera = camera, sceneGroup = gpu.createBindGroup(sceneDesc),
-          paste = paste, pasteGroup = gpu.createBindGroup(pasteDesc), sky = WebGpuSky.createBinding(s#sky), lastUsed = Array#{0i64} @ Static }
+          paste = paste, pasteGroup = gpu.createBindGroup(pasteDesc), lastUsed = Array#{0i64} @ Static }
 
     def destroyTarget(t: SceneTarget): Unit \ IO =
         t#sceneGroup.release();
@@ -879,8 +880,7 @@ pub mod Render3d.WebGpuRenderer {
         t#depth.destroy();
         t#sceneValues.destroy();
         t#camera.destroy();
-        t#paste.destroy();
-        WebGpuSky.releaseBinding(t#sky)
+        t#paste.destroy()
 
     def isColorPass(spec: ScenePassSpec): Bool = match spec {
         case ScenePassSpec.Color       => true
