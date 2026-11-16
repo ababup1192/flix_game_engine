@@ -4,7 +4,7 @@
 mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
-    use Render3d.WebGpuRenderer.{packSceneValues, sceneValueBytes, skipsOf, topLeftOf}
+    use Render3d.WebGpuRenderer.{packPassValues, packSceneValues, sceneValueBytes, skipsOf, topLeftOf}
 
     def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, 3.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
 
@@ -37,11 +37,33 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let buf = packed();
         Assert.assertEq(expected = (8.0f32, 9.0f32), (buf.getFloat(400 + 16), buf.getFloat(400 + 32 * p + 16)))
 
-    /// 影と奥行きの書き出しは切る: uSunShadowOn（76）・uShadowOn（220）・uDepthOut（248）が 0・uShadowSpot（232）が -1。
+    /// 影は切り、奥行きの書き出しの欄は書かない: uSunShadowOn（76）・uShadowOn（220）・uDepthOut（248）が 0・uShadowSpot（232）が -1。
     @Test
     def testShadowAndDepthOutputAreOff(): Unit \ {Assert, IO} =
         let buf = packed();
         Assert.assertEq(expected = (0, 0, 0, -1), (buf.getInt(76), buf.getInt(220), buf.getInt(248), buf.getInt(232)))
+
+    /// 奥行きの書き出しの pass は uDepthRange（224・228）に near と幅・uDepthOut（248）に 1。
+    @Test
+    def testDepthPassWritesRangeAndFlag(): Unit \ {Assert, IO} =
+        let buf = packed();
+        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
+        Assert.assertEq(expected = (0.5f32, 12.0f32, 1), (buf.getFloat(224), buf.getFloat(228), buf.getInt(248)))
+
+    /// 色の pass は、前の場面が奥行きの書き出しでも uDepthOut を 0 に戻し、幅を 1 にする（入れ物を場面をまたいで使い回す）。
+    @Test
+    def testColorPassClearsDepthFlag(): Unit \ {Assert, IO} =
+        let buf = packed();
+        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
+        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.Color);
+        Assert.assertEq(expected = (1.0f32, 0), (buf.getFloat(228), buf.getInt(248)))
+
+    /// 奥行きの書き出しの幅が 0 でも 0 で割らない（GL の Render3d.putDepthRange と同じ下限）。
+    @Test
+    def testDepthPassRangeIsNeverZero(): Unit \ {Assert, IO} =
+        let buf = packed();
+        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.DepthOut({ near = 0.5, range = 0.0 }));
+        Assert.assertEq(expected = true, buf.getFloat(228) > 0.0f32)
 
     // ── まだ描けない物の数え（skipsOf）──
 
@@ -60,11 +82,17 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
                                                      Render3d.FakeGl.cmdOf(scene) :: Nil);
         grouped#scenes |> List.flatMap(skipsOf(grouped#members)) |> List.toMap
 
-    /// Output.Depth の場面は奥行きの書き出しの 1 回だけで、中身（材質の物・骨つきの物）は数えない。
+    def cutoutWood(): Scene3d.Material3d = Scene3d.withCutout(true, wood())
+
+    /// Output.Depth の場面は描くので場面としては数えず、骨つきの物・cutout の材質の物（形だけで書く）・ビルボードだけを数える。
+    /// cutout でも両面でもない材質の物は、GL も形だけで書くので数えない。
     @Test
-    def testDepthSceneCountsOnlyTheDepthOutput(): Unit \ {Assert, IO} =
-        let scene = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 }) | Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: plainWithMaterial(Vec3.zero()) :: Nil) };
-        Assert.assertEq(expected = Map#{"3D の奥行きの書き出し（Output.Depth）" => 1}, skipsOfScene(scene))
+    def testDepthSceneCountsOnlyWhatItCannotDraw(): Unit \ {Assert, IO} =
+        let cutout = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(cutoutWood());
+        let scene = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 })
+                      | Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: plainWithMaterial(Vec3.zero()) :: cutout :: Nil) };
+        Assert.assertEq(expected = Map#{"3D の骨つきの物" => 1, "3D の奥行きの書き出しの材質の物（cutout と両面を見ずに形で書く）" => 1, "3D のビルボード" => 0},
+                        skipsOfScene(scene))
 
     /// 材質つきの骨つきの物は骨つきの物として 1 回だけ数え、材質の物には数えない。
     @Test

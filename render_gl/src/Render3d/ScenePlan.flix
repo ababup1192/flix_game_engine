@@ -37,8 +37,23 @@ mod Render3d.ScenePlan {
     /// opaque = 不透明の材質の物（Output.Depth では材質で描く物）・blended = 半透明の材質の物（1 体ずつの batch。Output.Depth では空）。
     pub type alias SceneDraws[b] = { plain = List[b], skinned = List[b], opaque = List[MaterialBatch[b]], blended = List[MaterialBatch[b]] }
 
-    /// prepare の中で分け終えた場面 1 つ。shadowPlans = 影の地図を描く材料（影を落とす光ごとに 1 つ。無ければ空。スポットの次に太陽）。
-    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, draws = SceneDraws[b], shadowPlans = List[ShadowPlan[b]] }
+    /// 場面の pass 1 つが場面の描き先へ書く物。Color = 光を当てた色・DepthOut = 目からの距離の灰色（near が黒・near + range が白。Output.Depth）。
+    /// どちらも描き先の attachment は色 1 つ（場面の描き先の形式）と深度で、2D の pass（RenderFrame.Internal.RenderList.PassSpec の
+    /// ColorAttachment と DepthStencil.Depth）と同じ組。光ごとの影の地図（深度だけを書き、色を持たない pass）はここに case を足して載せる。
+    // WhyNot: 描き先の texture の番号を持たない — 場面の描き先は backend が場面の番号で持つ（WebGPU の Render3d.WebGpuRenderer.SceneTarget・GL は 2D の描き先か Design の描き先）。
+    pub enum ScenePassSpec {
+        case Color
+        case DepthOut({ near = Float64, range = Float64 })
+    }
+
+    /// 場面の Output で決まる pass。
+    pub def passSpecOf(output: Scene3d.Output): ScenePassSpec = match output {
+        case Scene3d.Output.Color    => ScenePassSpec.Color
+        case Scene3d.Output.Depth(r) => ScenePassSpec.DepthOut(r)
+    }
+
+    /// prepare の中で分け終えた場面 1 つ。pass = 場面の物を描く pass・shadowPlans = 影の地図を描く材料（影を落とす光ごとに 1 つ。無ければ空。スポットの次に太陽）。
+    pub type alias ScenePlan[b] = { cmd = Scene3d.RenderCmd, pass = ScenePassSpec, draws = SceneDraws[b], shadowPlans = List[ShadowPlan[b]] }
 
     /// 材質を backend に聞く 1 つ（材質とプログラムの版）。聞く並びの番号が、そのまま材質の表の番号（MaterialBatch#handle）になる。
     pub type alias MaterialRequest = (Scene3d.MaterialFields, ProgramKind)
@@ -47,7 +62,7 @@ mod Render3d.ScenePlan {
     pub type alias Group = { batch = SpanBatch, surface = Option[MaterialRequest], handle = Int32 }
 
     /// 置いた物を batch の候補に分け終えた場面 1 つ。shadowPlans = 影の地図の batch（姿勢の行はまだ振っていない）。
-    pub type alias GroupedScene = { cmd = Scene3d.RenderCmd, groups = List[Group], shadowPlans = List[ShadowPlan[SpanBatch]] }
+    pub type alias GroupedScene = { cmd = Scene3d.RenderCmd, pass = ScenePassSpec, groups = List[Group], shadowPlans = List[ShadowPlan[SpanBatch]] }
 
     /// 1 回の prepare の計画の答え。members = batch の描く物（batch ごとに続けて並ぶ・SpanBatch の start が指す）・requests = backend に聞く材質（聞いた順）。
     pub type alias Grouped = { scenes = List[GroupedScene], requests = Vector[MaterialRequest], members = MutList[MeshDraw, Static] }
@@ -142,16 +157,17 @@ mod Render3d.ScenePlan {
             case Scene3d.Resolution.Native => samples > 1 and caps#alphaToOne
             case Scene3d.Resolution.Design => false
         };
-        let groups = match scene#output {
-            case Scene3d.Output.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage), scene#instances)
-            case Scene3d.Output.Depth(_) =>
+        let pass = passSpecOf(scene#output);
+        let groups = match pass {
+            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage), scene#instances)
+            case ScenePassSpec.DepthOut(_) =>
                 // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
                 //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
                 // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
                 let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), scene#instances);
                 groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false), solidInstances)
         };
-        { cmd = cmd, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene) }
+        { cmd = cmd, pass = pass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene) }
 
     /// instances を候補に分ける。候補の並びは、(形, batch の鍵) が初めて来た順・その中は材質の絵の名前の並びが初めて来た順（Render3d.Batch.groupInOrder と
     /// groupByTextures の並びと同じ）。batch の鍵が無い物は 1 体の候補。
@@ -473,7 +489,7 @@ mod Render3d.ScenePlan {
             let draws = sceneDrawsOf(planner, orders, s);
             withPoseRows(rows, grouped#members, draws);
             s#shadowPlans |> List.forEach(sp -> sp#skinned |> List.forEach(spanPoseRows(rows, grouped#members)));
-            { cmd = s#cmd, draws = draws, shadowPlans = s#shadowPlans }
+            { cmd = s#cmd, pass = s#pass, draws = draws, shadowPlans = s#shadowPlans }
         });
         (plans, Ref.get(rows))
 
@@ -516,11 +532,11 @@ mod Render3d.ScenePlan {
     def sceneDrawsOf(planner: Planner, orders: Vector[Int32], s: GroupedScene): SceneDraws[SpanBatch] =
         let (vertexColored, materials) = splitGroups(s#groups, orders);
         let (skinned, plain) = List.partition(b -> isSkinned(b#head), vertexColored);
-        match s#cmd#scene#output {
-            case Scene3d.Output.Color =>
+        match s#pass {
+            case ScenePassSpec.Color =>
                 let (blended, solid) = List.partition(d -> d#material#blend, materials);
                 { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, solid), blended = blended }
-            case Scene3d.Output.Depth(_) =>
+            case ScenePassSpec.DepthOut(_) =>
                 { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, materials), blended = Nil }
         }
 

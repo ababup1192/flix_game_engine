@@ -27,6 +27,8 @@ mod V2Main {
         roomCase("room", kit, 0.0, Scene3d.Resolution.Native) ::
         roomCase("roomTurned", kit, 0.5, Scene3d.Resolution.Native) ::
         roomCase("roomDesign", kit, 0.0, Scene3d.Resolution.Design) ::
+        roomDepthCase(kit) ::
+        roomDepthPassCase(kit) ::
         railsCase("railsMsaa", 4, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsNoMsaa", 1, Some(Color.rgb(0.04, 0.04, 0.12)), Color.rgb(0.0, 0.0, 0.0)) ::
         railsCase("railsMsaaClear", 4, None, Color.rgb(0.3, 0.15, 0.05)) ::
@@ -50,6 +52,24 @@ mod V2Main {
     def roomCase(name: String, kit: Room.Kit, yaw: Float64, resolution: Scene3d.Resolution): Case =
         { name = name, passes = Nil, targets = Map.empty(),
           items = Render.scene3d(Vec2.zero(), { resolution = resolution | Room.scene(kit, yaw) }) :: Nil }
+
+    /// 部屋の奥行きの書き出し（Output.Depth）。目から 1 m で黒・13.5 m で白（部屋の奥の壁まで灰色の坂が入る幅）。
+    def depthOfRoom(): Scene3d.Output = Scene3d.Output.Depth({ near = 16.0, range = 200.0 })
+
+    /// 部屋の奥行きの書き出しを画面へ直に（Native）。地の色は部屋の background（黒）。
+    def roomDepthCase(kit: Room.Kit): Case =
+        { name = "roomDepth", passes = Nil, targets = Map.empty(),
+          items = Render.scene3d(Vec2.zero(), { output = depthOfRoom() | Room.scene(kit, 0.3) }) :: Nil }
+
+    /// ゲームの被写界深度と同じ形: 白で消した Pass（1 を超える値を持つ Rgba16Float）に、地の色の無い部屋の奥行きの書き出しを描き、画面いっぱいに貼る。
+    def roomDepthPassCase(kit: Room.Kit): Case =
+        let room = Room.scene(kit, 0.3);
+        let scene = { output = depthOfRoom(), environment = { background = None | room#environment } | room };
+        let pass: Render.Pass = { name = "depth", clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = Render.scene3d(Vec2.zero(), scene) :: Nil };
+        let design = Room.design();
+        { name = "roomDepthPass", passes = pass :: Nil, targets = Map#{ "depth" => RenderTarget.withHdr(RenderTarget.defaultDescriptor()) },
+          items = Render.blitRegion({ name = "depth", design = design, src = { position = Vec2.zero(), size = design },
+                                      at = { x = design#x * 0.5, y = design#y * 0.5 }, size = design, z = 1 }) :: Nil }
 
     /// 標本 samples の Pass（design の解像度）に、斜めの細い棒 3 本（bench/gl_parity の msaaEdges の手すりと同じ形・頂点の色）の 3D の場面を描き、
     /// スプライトで画面いっぱいに貼る（bench/gl_parity の passPaste と同じ道）。標本 4 では 3D の場面を標本 4 で描いて resolve してから、標本 4 の Pass へ貼る。
@@ -83,8 +103,11 @@ mod V2Main {
     /// 増えた 1,431 px は ±1 だけ【推: ふちの α が 1 未満の画素を clear の色に重ねる時の丸め】。違う画素の上限だけ広げる。
     /// 4,761 px が GL の標本 4 と 1 の差と同じ数なのは偶然でない: 標本 4 で α が 1 未満になるふちの画素の数そのもので、そこが全部 ±1 以上ずれる【推】。
     /// slant2dMsaaFlip を上下に裏返して GL の slant2dMsaa と比べると max ±1（同じ日）なので、MSAA のふちの差は標本の位置が上下に鏡写しな事から来る。
+    /// roomDepth（2026-11-16・同じ機械の実測で違う画素 3 px・±2 以上 1 px・max ±4）: room と同じく、三角形のふちと重なる面で勝つ面が奥行きの丸めで入れ替わる画素。
+    /// 奥行きの灰色は重なる 2 面の距離の差しか違わないので、色の場面（±82）より差の最大が小さい。式（距離・near・幅・空の白）を取り違えれば面の中が丸ごと違い、万 px の桁になる。
+    /// roomDepthPass（design の解像度の Rgba16Float の Pass に描いて貼る）は 0 px なので許す差を置かない。
     def tolerances(): Map[String, (Int32, Int32, Int32)] =
-        Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60)}
+        Map#{"room" => (32, 64, 255), "roomTurned" => (32, 64, 255), "roomDepth" => (8, 16, 16), "railsMsaa" => (3000, 4000, 60), "railsMsaaClear" => (3000, 6000, 60), "slant2dMsaa" => (5400, 6000, 60)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
     def probes(): Set[String] = Set#{"slant2dMsaaFlip"}

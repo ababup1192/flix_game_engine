@@ -28,8 +28,8 @@ mod Render3d {
                        depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
-    use Render3d.ScenePlan.{PlanCaps, groupScenes, planScenes}
-    use Render3d.SceneList.{buildSceneList}
+    use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, groupScenes, planScenes}
+    use Render3d.SceneList.{SceneList, buildScenePasses}
     use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawRows, uploadRows}
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, drawMaterials, resolveMaterials, sweepMaterials, sweepTextures3d}
@@ -392,15 +392,15 @@ mod Render3d {
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
             let joints = Render3d.JointTexture.upload(gl, state, gen, rows);
             let (numbered, instances) = Render3d.Instancing.upload(gl, state, gen, planned, grouped#members);
-            (numbered, List.map(plan -> buildSceneList(plan#draws), numbered), materials, (joints, instances))
+            (numbered, List.map(plan -> buildScenePasses(plan#pass, plan#draws), numbered), materials, (joints, instances))
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
         let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, List.map(plan -> plan#shadowPlans, plans)));
         let designCount = Array#{0} @ Static;
         let items = List.zip(List.zip(plans, lists), shadows) |> List.map(pls -> {
-            let ((plan, list), shadow) = pls;
-            let inputs = { list = list, blended = plan#draws#blended, materials = materials, shadows = shadow,
+            let ((plan, passes), shadow) = pls;
+            let inputs = { passes = passes, blended = plan#draws#blended, materials = materials, shadows = shadow,
                            jointTexture = jointTexture, instanceTexture = instanceTexture };
             let target = match plan#cmd#scene#resolution {
                 case Scene3d.Resolution.Native => SceneTarget.Native(inputs)
@@ -546,20 +546,33 @@ mod Render3d {
         Render3d.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
         let meshes = uploadRows(gl, state, gen, source, inputs, List.length(scene#instances));
-        let eye = scene#camera#eye;
-        match scene#output {
-            case Scene3d.Output.Color =>
-                bindShadowMap(gl, shadows);
-                drawRows(gl, state, gen, camera, MaterialPass.Color, eye, source, inputs, meshes);
-                drawBillboards(gl, state, textureOf, programs#billboard, camera, scene);
-                drawBlended(gl, state, gen, camera, source, eye, inputs#materials, inputs#blended);
-                unbindShadowMap(gl, shadows)
-            case Scene3d.Output.Depth(dr) =>
-                drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), eye, source, inputs, meshes);
-                drawBillboards(gl, state, textureOf, programs#billboard, camera, scene)
-        };
+        let around = { camera = camera, eye = scene#camera#eye, source = source, billboard = programs#billboard, scene = scene };
+        List.zip(inputs#passes, meshes) |> List.forEach(pm -> {
+            let ((spec, list), passMeshes) = pm;
+            drawPass(gl, state, gen, textureOf, around, inputs, spec, list, passMeshes)
+        });
         releaseEnvironmentMap(gl, scene);
         endScene(gl)
+
+    /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム。
+    type alias PassAround = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = BillboardLocs, scene = Scene3d.Scene3dCmd }
+
+    /// 場面の pass spec の行 list を描く（meshes = uploadRows の答えのうち list の物）。行になっていないビルボードと半透明の物も、その pass の所で描く。
+    // WhyNot: ビルボードの灰色と空の白を spec でなく scene#output で決めたままにする — どちらも行になっていない間は、場面の pass が 1 つで spec と output が 1 対 1。
+    def drawPass(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, around: PassAround,
+                 inputs: SceneInputs, spec: ScenePassSpec, list: SceneList, meshes: Array[Int32, Static]): Unit \ IO =
+        let camera = around#camera;
+        match spec {
+            case ScenePassSpec.Color =>
+                bindShadowMap(gl, inputs#shadows);
+                drawRows(gl, state, gen, camera, MaterialPass.Color, around#eye, around#source, inputs, list, meshes);
+                drawBillboards(gl, state, textureOf, around#billboard, camera, around#scene);
+                drawBlended(gl, state, gen, camera, around#source, around#eye, inputs#materials, inputs#blended);
+                unbindShadowMap(gl, inputs#shadows)
+            case ScenePassSpec.DepthOut(dr) =>
+                drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), around#eye, around#source, inputs, list, meshes);
+                drawBillboards(gl, state, textureOf, around#billboard, camera, around#scene)
+        }
 
     /// 半透明の材質の物を Scene3d.blendOrderOf の順（遠い物から）に、深度を読むが書かずに重ねる。無ければ何もしない。
     def drawBlended(gl: GlContext, state: State, gen: Int64, camera: CameraData, source: TextureSource, eye: Vec3.Vec3, table: MaterialTable,

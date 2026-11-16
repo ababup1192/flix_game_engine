@@ -5,7 +5,7 @@ mod Render3d.TestSceneList {
     use Render3d.Counts.{BatchBreak, breakSlotOf}
     use Render3d.Instancing.{PackMode, numberSpan}
     use Render3d.FakeGl.{cmdOf, freshRecorded, freshState, paint, plainTriangle, poseAt, recordingGl, sceneOf, timesCalled}
-    use Render3d.SceneList.{SceneList, buildSceneList, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, buildSceneList, buildScenePasses, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf}
     use Render3d.ScenePlan.{PlanCaps, freshPlanner, groupScenes, kindOf, meshDrawOf, planScenes}
 
     def triangle(side: Float64): Mesh3d.Mesh3d =
@@ -360,4 +360,21 @@ mod Render3d.TestSceneList {
         let t = argbTexture();
         let baked = (side: Float64) -> texturedOn(t, bakedTriangle(side)) |> Scene3d.withLightmap(Scene3d.lightmap(Texture3d.name(t)));
         Assert.assertTrue(snd(bindCounts(baked(1.0) :: baked(2.0) :: Nil, t :: Nil)) > snd(bindCounts(baked(1.0) :: Nil, t :: Nil)))
+
+    // ── pass ──
+
+    /// 場面の Output から計画の pass を決め、pass ごとの行の列は 1 つ（色の場面は Color・Output.Depth の場面は同じ near と幅の DepthOut）。
+    @Test
+    def testScenePassFollowsOutput(): Unit \ {Assert, IO} =
+        let depth = { output = Scene3d.Output.Depth({ near = 0.5, range = 12.0 }) | sceneOf(placed(0.1) :: Nil) };
+        let planner = freshPlanner(Render3d.DrawMode.Instanced);
+        let (plans, _) = planScenes(planner, caps(false), Vector#{0}, groupScenes(planner, caps(false), 1, cmdOf(sceneOf(placed(0.1) :: Nil)) :: cmdOf(depth) :: Nil));
+        let unnumbered = (b: Render3d.Batch.SpanBatch) -> ({ head = b#head, count = 0, first = 0 }: MeshBatch);
+        let describe = (spec: Render3d.ScenePlan.ScenePassSpec) -> match spec {
+            case Render3d.ScenePlan.ScenePassSpec.Color        => "color"
+            case Render3d.ScenePlan.ScenePassSpec.DepthOut(dr) => "depth ${dr#near} ${dr#range}"
+        };
+        let passes = plans |> List.map(p -> buildScenePasses(p#pass, { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil })
+                                            |> List.map(pl -> describe(fst(pl))));
+        Assert.assertEq(expected = ("color" :: Nil) :: ("depth 0.5 12.0" :: Nil) :: Nil, passes)
 }

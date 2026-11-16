@@ -253,6 +253,15 @@ pub mod Render3dWgsl {
             "    return vec4f(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), vTint, light, emission, vEmissionIntensity, vWorld, true), " + alpha + ");\n") +
         "}\n"
 
+    /// 奥行きの書き出し（Output.Depth）の形だけの frag（Render3dGlsl.depthFragmentSource と同じ）。頂点シェーダーは litVertexSource で、読む varying は vWorld だけ。入口は fs_main。
+    pub def depthFragmentSource(): String =
+        sceneDeclarations() +
+        depthGraySource() +
+        "@fragment fn fs_main(@location(0) vWorld: vec3f) -> @location(0) vec4f {\n" +
+        "    let g = depthGray(vWorld);\n" +
+        "    return vec4f(g, g, g, 1.0);\n" +
+        "}\n"
+
     /// 頂点の色のプログラムの frag（Render3dGlsl.litFragmentSource と同じ。vColor は頂点シェーダーが線形へ戻し済み）。入口は fs_main。
     pub def litFragmentSource(): String =
         sceneDeclarations() +

@@ -90,9 +90,10 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
             let scissor = clipBox(vp, rect, plan#cmd#clip);
             let target = targetOf(t#renderer, host, (0, i), { width = rect#width, height = rect#height, format = RenderTarget.Format.Rgba8Unorm, samples = 1 });
             let staged = stageScene(t#renderer, host, target, grouped#members, plan);
-            encodeScene(t#renderer, host, target, staged,
-                        { color = t#frame.defaultView(), resolve = None, clear = None, depth = target#depth.defaultView(),
-                          viewport = topLeftOf(t#height, rect), scissor = topLeftOf(t#height, scissor) })
+            staged#passes |> List.forEach(match (spec, list, meshes) ->
+                encodeScene(t#renderer, host, target, { spec = spec, list = list, meshes = meshes, instanceBase = staged#instanceBase },
+                            { color = t#frame.defaultView(), resolve = None, clear = None, depth = target#depth.defaultView(),
+                              viewport = topLeftOf(t#height, rect), scissor = topLeftOf(t#height, scissor) }))
         });
         open2d(t, encoder, false).end();
         finish(t, encoder)
