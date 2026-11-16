@@ -107,7 +107,7 @@ MIGRATE_DIFF_FLAGS ?=
 # 撮るのは engine の bin/fge migrate shoot（flow を並べて流し、続けて基準の古いセーブを読み戻す）。flow ごとの video.mp4 は MIGRATE_VIDEO=1 の時だけ束ねる
 # （無い時は FLOW_VIDEO=off で全部のコマと音を書かない）。migrate-new は MIGRATE_ALL=off で frames/all を撮らない（diff は all の画素を比べない）。
 # WhyNot: 基準でも all を省かない — 前の版の無い flow の頁に並べる絵と、migrate-video で見る文字の枠の元が無くなる。
-migrate-shoot = HEADLESS_RUN='$(HEADLESS_RUN)' "$(ENGINE)/bin/fge" migrate shoot $(1) $(if $(MIGRATE_VIDEO),--video) $(2) $(MIGRATE_FLOWS) || code=1
+migrate-shoot = HEADLESS_RUN='$(HEADLESS_RUN)' "$(ENGINE)/bin/fge" migrate shoot $(1) $(if $(filter 1,$(MIGRATE_VIDEO)),--video) $(2) $(MIGRATE_FLOWS) || code=1
 .PHONY: migrate-baseline migrate-new migrate-diff migrate-video
 migrate-baseline:
 	@if [ -n "$(BASELINE_FROM)" ]; then \

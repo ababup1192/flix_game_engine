@@ -64,12 +64,12 @@ mod NovelBeat {
     // ── 並べ方 ──
 
     /// 並べる途中: steps = 書いた行（新しい順）・chainStart = 続いた LineWait の最初（後ろの命令を寄せ、台詞を頁に積む時刻）・
-    /// batchStart = 今の束の最初の出来事を当てる時刻。
-    type alias Acc = { steps = List[Timeline.Step[Key]], chainStart = Option[Key], batchStart = Option[Key] }
+    /// lineEnd = 一番新しい LineWait（次の LineWait をこの終わりに並べる）・batchStart = 今の束の最初の出来事を当てる時刻。
+    type alias Acc = { steps = List[Timeline.Step[Key]], chainStart = Option[Key], lineEnd = Option[Key], batchStart = Option[Key] }
 
     def place(acc: Acc, step: Timeline.Step[Key]): Acc = { steps = step :: acc#steps | acc }
 
-    def gated(acc: Acc): Acc = { chainStart = None | acc }
+    def gated(acc: Acc): Acc = { chainStart = None, lineEnd = None | acc }
 
     def zeroAt(anchor: Option[Key], tag: Key): Timeline.Step[Key] = match anchor {
         case Some(hold) => Timeline.atStartOf(hold, tag, Duration.Seconds(0.0))
@@ -85,29 +85,35 @@ mod NovelBeat {
         let (i, item) = pair;
         let acc = if (item#first) { batchStart = if (hasApply(item#kind)) Some(Key.Apply(i)) else None | acc0 } else acc0;
         match item#kind {
-            case Kind.Command                 => place(acc, zeroAt(acc#chainStart, Key.Apply(i)))
-            case Kind.Wait(planned)           => waitOf(i, planned, acc)
-            case Kind.WaitOrTap(planned, cut) => waitOf(i, Option.getWithDefault(planned, cut), acc)
-            case Kind.LineWait(planned, cut)  => lineWaitOf(i, Option.getWithDefault(planned, cut), acc)
+            case Kind.Command                  => place(acc, zeroAt(acc#chainStart, Key.Apply(i)))
+            case Kind.Wait(planned)            => waitOf(i, planned, acc)
+            case Kind.WaitOrTap(planned, cut)  => waitOf(i, Option.getWithDefault(planned, cut), acc)
+            case Kind.LineWait(planned, cut)   => lineWaitOf(i, Option.getWithDefault(planned, cut), acc)
             case Kind.SwitchWait(planned, cut) => switchWaitOf(i, Option.getWithDefault(planned, cut), acc)
-            case Kind.RunnerWait(planned)     => runnerWaitOf(i, planned, acc)
-            case Kind.Line                    => lineOf(i, acc)
-            case Kind.Choices                 => gated(place(place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.waitFor(Key.Choose(i))))
-            case Kind.Done                    => place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0)))
-            case Kind.Elapsed(secs)           => place(gated(acc), Timeline.append(Key.Hold(i), Duration.Seconds(secs)))
+            case Kind.RunnerWait(planned)      => runnerWaitOf(i, planned, acc)
+            case Kind.Line                     => lineOf(i, acc)
+            case Kind.Choices                  => gated(place(place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.waitFor(Key.Choose(i))))
+            case Kind.Done                     => place(gated(acc), Timeline.append(Key.Apply(i), Duration.Seconds(0.0)))
+            case Kind.Elapsed(secs)            => place(gated(acc), Timeline.append(Key.Hold(i), Duration.Seconds(secs)))
         }
 
     /// 押しても・押すと明ける待ちを出した命令。LineWait の後ろなら最初の LineWait の頭から重なり（明けるのは遅い方）、後ろは流さない。
     def waitOf(i: Int32, secs: Float64, acc: Acc): Acc =
         gated(place(place(acc, zeroAt(acc#chainStart, Key.Apply(i))), holdAt(acc#chainStart, Key.Hold(i), secs)))
 
-    /// LineWait: 前の待ちが済んでから始める（続いたコメントは 1 つずつ間を空けて出る）。最初の物を、後ろの命令を寄せて台詞を積む時刻に覚える。
+    /// LineWait: 前の LineWait（lineEnd）が済んでから始める（続いたコメントは 1 つずつ間を空けて出る。間に挟まった歩きの終わりは待たない）。
+    /// 前の LineWait が無ければ前の待ちが全部済んでから。最初の物を、後ろの命令を寄せて台詞を積む時刻に覚える。
     // WhyNot: 続いた LineWait を最初の LineWait の頭へ重ねない — コメントが全部同じ時刻に出て、効果音も 1 回にまとまる。
     def lineWaitOf(i: Int32, secs: Float64, acc: Acc): Acc =
-        let started = place(place(acc, Timeline.append(Key.Apply(i), Duration.Seconds(0.0))), Timeline.append(Key.Hold(i), Duration.Seconds(secs)));
-        { chainStart = Some(Option.getWithDefault(Key.Hold(i), acc#chainStart)) | started }
+        let after = (tag, length) -> match acc#lineEnd {
+            case Some(prev) => Timeline.atEndOf(prev, tag, Duration.Seconds(length))
+            case None       => Timeline.append(tag, Duration.Seconds(length))
+        };
+        let started = place(place(acc, after(Key.Apply(i), 0.0)), after(Key.Hold(i), secs));
+        { chainStart = Some(Option.getWithDefault(Key.Hold(i), acc#chainStart)), lineEnd = Some(Key.Hold(i)) | started }
 
-    /// 背景の切り替えの LineWait: 続いた LineWait の最初の頭から重ねて始める（その前に LineWait が無ければ、自分が最初になる）。
+    /// 背景の切り替えの LineWait: 続いた LineWait の最初の頭から重ねて始め、後ろのコメントはこの終わりを待たない
+    /// （その前に LineWait が無ければ、自分が最初になり、後ろのコメントはこの後に並ぶ）。
     // WhyNot: コメントの LineWait と同じく後ろに並べない — コメントの後ろの <<jump>> の先の歩きが、コメントの秒だけ遅れて歩き出す。
     def switchWaitOf(i: Int32, secs: Float64, acc: Acc): Acc = match acc#chainStart {
         case Some(_) => place(place(acc, zeroAt(acc#chainStart, Key.Apply(i))), holdAt(acc#chainStart, Key.Hold(i), secs))
@@ -132,7 +138,7 @@ mod NovelBeat {
 
     /// ビートの時刻表。
     pub def timelineOf(beat: Beat): Table =
-        let acc = beat#items |> Vector.toList |> List.zipWithIndex |> List.foldLeft(stepOf, { steps = Nil, chainStart = None, batchStart = None });
+        let acc = beat#items |> Vector.toList |> List.zipWithIndex |> List.foldLeft(stepOf, { steps = Nil, chainStart = None, lineEnd = None, batchStart = None });
         Timeline.buildOrPanic("beat", Timeline.noTempo(), List.reverse(acc#steps))
 
     /// 待ちの名前を書いた順に（PlaybackLog の passed 番目がいま止まっている待ち）。
@@ -146,10 +152,10 @@ mod NovelBeat {
     }
 
     def isTappable(kind: Kind): Bool = match kind {
-        case Kind.WaitOrTap(_, _) => true
-        case Kind.LineWait(_, _)  => true
+        case Kind.WaitOrTap(_, _)  => true
+        case Kind.LineWait(_, _)   => true
         case Kind.SwitchWait(_, _) => true
-        case _                    => false
+        case _                     => false
     }
 
     def isBlockingHold(kind: Kind): Bool = match kind {
@@ -210,6 +216,14 @@ mod NovelBeat {
     }
 
     // ── 進める ──
+
+    /// もう当てた一番後ろの出来事より前にあって、まだ当てていない出来事の番号。dueOf と同じ順（時刻の順・同じ時刻は書いた順）。
+    pub def behindOf(beat: Beat): List[Int32] =
+        let tl = timelineOf(beat);
+        let top = Set.maximum(beat#applied) |> Option.getWithDefault(-1);
+        List.range(0, top) |> List.filter(i -> not Set.memberOf(i, beat#applied))
+            |> List.map(i -> ((Timeline.clipOf(Key.Apply(i), tl) |> Option.map(c -> c#start) |> Option.getWithDefault(1.0e9), i), i))
+            |> Sort.sortStableBy(fst) |> List.map(snd)
 
     /// まだ当てていない出来事のうち、wall までに頭を過ぎた物の番号（時刻の順・同じ時刻は書いた順）。
     pub def dueOf(wall: Float64, beat: Beat, tl: Table): List[Int32] =
@@ -281,10 +295,10 @@ mod NovelBeat {
         List.minimum(starts) |> Option.getWithDefault(1.0e9)
 
     def shortened(secs: Float64, kind: Kind): Kind = match kind {
-        case Kind.WaitOrTap(planned, _) => Kind.WaitOrTap(planned, Some(secs))
-        case Kind.LineWait(planned, _)  => Kind.LineWait(planned, Some(secs))
+        case Kind.WaitOrTap(planned, _)  => Kind.WaitOrTap(planned, Some(secs))
+        case Kind.LineWait(planned, _)   => Kind.LineWait(planned, Some(secs))
         case Kind.SwitchWait(planned, _) => Kind.SwitchWait(planned, Some(secs))
-        case other                      => other
+        case other                       => other
     }
 
     /// 出来事 i の予定の待ちの秒（記録の秒。待ちを出さない出来事は None）。
@@ -292,12 +306,12 @@ mod NovelBeat {
         Vector.nth(i, beat#items) |> Option.flatMap(item -> plannedOf(item#kind))
 
     def plannedOf(kind: Kind): Option[Float64] = match kind {
-        case Kind.Wait(planned)         => Some(planned)
-        case Kind.WaitOrTap(planned, _) => Some(planned)
-        case Kind.LineWait(planned, _)  => Some(planned)
+        case Kind.Wait(planned)          => Some(planned)
+        case Kind.WaitOrTap(planned, _)  => Some(planned)
+        case Kind.LineWait(planned, _)   => Some(planned)
         case Kind.SwitchWait(planned, _) => Some(planned)
-        case Kind.RunnerWait(planned)   => Some(planned)
-        case _                          => None
+        case Kind.RunnerWait(planned)    => Some(planned)
+        case _                           => None
     }
 
     /// 実行器が <<wait>> で止まっている所から始めるビート（当て直しが <<wait>> で止まった時）。secs = 明けるまでの秒。

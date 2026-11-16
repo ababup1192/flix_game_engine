@@ -730,8 +730,8 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | — | レビュー 3 | | 0.5〜1 時間 |
 | 10 | 門 | 10.7 の道具と 10.6 の確かめ・`make template-sync`（C5）と、その一覧を毎回見る手順（7.2）。**go の道具（10.8）とテンプレートの側（10.8.1: tape.json の events・buses・frames・screen・restore.json・`make migrate-baseline`・`migrate-new`・`migrate-diff`・`migrate-video`・早見表とお題）は済（2026-11-16）**。ranLines（engine_world の `YarnRunner.ranSourcesSince`）と mid の秒（go）も済・`make template-sync` は未着手 | 9.5〜13 時間 |
 | — | レビュー 4 | 門の道具 | 0.5〜1 時間 |
-| 11 | 移行 | 廃屋配信（先に。分岐が無く flow が短いので門の道具の確かめになる）: **基準は撮った（2026-11-16・5 本・2 回撮って差 0・コマ 691 枚）。テンプレートの直し A〜G を入れてから移す（11.12。F・G は移行の担当が後から見つけた）**。テンプレートの当て直し（追随の実績から 3〜4 時間）・Walk の行き先は 5.0 のとおり `GameView.backdrop` と `GameCommands.backdropSwitch`（1〜2 時間）・状態バーとコメント欄を `GameView.hud` と変数へ・HUD の変数の宣言（0.5 時間）・テスト 131 本の振り分け（1〜2 時間）・門の振り分け（1〜2 時間） | 8〜12 時間 |
-| 12 | 移行 | 血鱗: 基準を撮る・テンプレートの当て直し（実績 約 5 時間 → 上書きの決まりで 3〜5 時間）・Whale・Sea・Vial・Ending を GameView の層の数と `src/game/` へ写す（4〜6 時間）・テスト 323 本の振り分け（2〜3 時間）・門の振り分けと古いセーブ（2〜3 時間） | 11〜17 時間 |
+| 11 | 移行 | **済（2026-11-16。11.12・11.13）** 廃屋配信（先に。分岐が無く flow が短いので門の道具の確かめになる）: **基準は撮った（2026-11-16・5 本・2 回撮って差 0・コマ 691 枚）。テンプレートの直し A〜G を入れてから移す（11.12。F・G は移行の担当が後から見つけた）**。テンプレートの当て直し（追随の実績から 3〜4 時間）・Walk の行き先は 5.0 のとおり `GameView.backdrop` と `GameCommands.backdropSwitch`（1〜2 時間）・状態バーとコメント欄を `GameView.hud` と変数へ・HUD の変数の宣言（0.5 時間）・テスト 131 本の振り分け（1〜2 時間）・門の振り分け（1〜2 時間） | 8〜12 時間 |
+| 12 | 移行 | **基準と洗い出しは済（11.13）・書き直しは新しい担当へ** 血鱗: 基準を撮る・テンプレートの当て直し（実績 約 5 時間 → 上書きの決まりで 3〜5 時間）・Whale・Sea・Vial・Ending を GameView の層の数と `src/game/` へ写す（4〜6 時間）・テスト 323 本の振り分け（2〜3 時間）・門の振り分けと古いセーブ（2〜3 時間） | 11〜17 時間 |
 | — | レビュー 5 | 移行の後 | 1 時間 |
 | 13 | — | agent-eval（新しい語彙のお題を 1 本）・早見表・`docs/modules` の行・`forbid.json` で古い名前（`<<char>>` など）を止める | 1〜2 時間 |
 
@@ -1150,6 +1150,36 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 
 **門の結果**: テンプレートで `make check` OK・`make test` 523 緑（前は 498。A・B 8 本・D 2 本・C 7 本・E 9 本を足し、押しても歩きが明けない事を見ていた 1 本を消した。レビュー 1 回目（84 点）の直しの後は 532 緑・F と G の後は 540 緑・F・G の直しと L・H・I・K の後は 558 緑・M の後は 564 緑・レビュー 86 点の直しの後は 568 緑・直し 3 と N・O の後は 576 緑（テンプレートの中では sample-test の 10 本を含む。ゲームでは 566）。H の 4 枚の基準の絵は撮り直した）・`make reference-check` 45 枚すべて一致・`bin/fge yarn check assets/talk` ok・`make flow` 6 本 ok（指紋は前と同じ）・`make lint` は lint-doc-refs 15 件のまま（前からの物）・ほか OK・`go test -count=1 ./internal/migrate/` ok（go は変えていない）・agent-eval `novel-tap-wait-game-probe` 100 点（1 回）。古い廃屋配信の bookmark の saves.json をテンプレートの `FlowVideo.restore` に読ませ、`refused: true` の restore.json が出るのを見た。 M の後は 562 緑（558 から: 写しが作例と同じか 1・重ねた音の名前 1・slots を読む 1・立ち絵の見本を分けた 1 を足した。このうち 8 本は test/sample にあり、ゲームでは 554 本）・`make reference-check` は H の 4 枚だけ FAILED（save・load は同じ）・`make flow` 6 本の指紋は前と同じ（HEAD の写しで流して比べた）・`make lint` の lint-doc-refs は 0 件。
 
+### 11.13 段 11 を閉じる（2026-11-16・廃屋配信の移行の結果）と段 12 の洗い出し
+
+**廃屋配信の移行の結果**（作業場 `haioku-n4-migrate`・枝 n4-migrate。公開は haioku-live へ 0780aff + 191a161）
+
+- 人が公開した版を遊んで「良きだったので、これを正で進めていい」と判断した（2026-11-16）。これで段 11 を閉じる。
+- 門: `make test` 611 本緑。`make migrate-new` は止める違い 0。`bin/fge migrate diff --strict --times` は承認の前で止める違い 0・人が見る迷った差 293 件（43 区間）。
+  残った区間（台詞を出し終えたコマの画素がカメラのノイズと揺れで 40〜58% 違う物・reader L 由来の音の時刻のずれ 0.633 / 1.267 秒・新しい版にだけ出る画面の物 live_bar・chat・message・quick_menu・credits・title_menu・title_logo など）は、並べた動画を作らず `migrate-accept.json` に intended「人が遊んで良しとした（2026-11-16）」で承認した（157 件・同じ why なので flow ごとの上限には 1 件と数える）。
+  承認の後: 止める違い 0・人が見る迷った差 0・承認済み 386 件・自動で通した 593 件・比べたコマ 676 枚。古いセーブ 15 枠は `restore: refused`（C）。
+- 見つかったテンプレートの穴は A〜O（11.12 の表）。そのうち待ちに関わる物（E の WaitOrTap・I と直し 3 の LineWait・L の reader・N の ready）は、待ちの判断が World の 4 か所に分かれていたのが元だった。段 11 の後、待ちを Timeline 1 本（`Timeline.PlaybackLog`）に寄せて直した（`plans/novel-waits-timeline.md`。テンプレートの `NovelBeat` と `World.BeatRun#waiting` の 1 か所が判断する）。
+- 寄せた後に見つかった絵の違い 3 件（前の背景が無い所からの black が秒の半分を無駄にする・コメントの後ろの歩きが 0.65 秒遅れる・暗闇の地の色が紺）は、元の作りに合わせて直した（`ViewStage.isFromDark`・`Kind.SwitchWait`・`novel.backdrops.json` の `ground`）。廃屋配信は `"ground": "#030304"`。
+- 撮るのは `bin/fge migrate shoot`（flow を並べる・全部のコマの動画と音は書かない）。廃屋配信の 5 本と古いセーブで 80 秒。
+
+**段 12（血鱗）の洗い出し**
+
+- 基準: 古い版で 13 本の flow と古いセーブ 12 ファイルを撮った（`plans/novel-tape-deck.md` の 1 章の数字はこの基準で測った）。
+- テンプレートの穴 P〜V と行き先（どれもテンプレートに入れた。`plans/novel-waits-timeline.md` の「血鱗の洗い出しの穴」）:
+
+| # | 穴 | 行き先 |
+|---|---|---|
+| P | version 2 のセーブ（舞台の欄だけ）を戻すと、当て直した舞台の人物が消える | `Saves.StageForm.Partial`: 当て直した舞台に背景・環境音・particles・mode を重ねる（人物は当て直した方） |
+| Q | 台詞を 1 行積むたびに舞台を動かす口が無い | `GameCommands.onLine(ctx, stage)`（`Commands.LineHook`） |
+| R | 縦の画面で真ん中にメッセージ枠を出せない | `ThemeDoc.PortraitText.Frame(center)`・`ViewText.messageFrameOf` |
+| S | ゲームが flow の手（drive）を足せない | `GameE2e.drives()` |
+| T | 結末の名前などゲームだけの言葉を Doc に置けない（`StoryDoc.Label` が閉じた enum） | `novel.story.json` の `gameLabels`・`StoryDoc.gameLabelOf` |
+| U | flow の ready が実行器の `<<wait>>` の間も Ready | 待ちを Timeline に寄せた時に吸収（ready はビートの待ちを見る） |
+| V | GameView から立ち絵の矩形を引く方法が書いていない | GameView の頭に `Cast.placedOf(ViewStage.castEnv(env, stage), stage#cast)` の 1 行 |
+
+- テスト 323 本の振り分け: テンプレートのテストで足りる 259 本・ゲームへ写す 32 本・要らなくなる 10 本・書き直す 22 本。
+- 書き直し（テンプレートへの当て直しと Whale・Sea・Vial・Ending の写し）は新しい担当に渡す。
+
 ## 12. 試した事（スパイク）
 
 | 試した事 | 置き場 | 結果 |
@@ -1177,6 +1207,9 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | 粒と画面の質感の Doc | `novel.effects.json`（`particles` と、後で標準にする時の `filters` を 1 つの Doc の 2 つの欄に） | 別々の Doc 2 つ（`/doc-design` の「Doc を増やしすぎない」。どちらも名前 → 素材のファイルの短い表なので 1 つで足りる） |
 
 ## 14. 持ち越しと未確認
+
+- （段 11 の後）待ちの判断が World の 4 か所（Pause・runner の <<wait>>・素材の待ち・Typed）に分かれていたのを、Timeline 1 本（`Timeline.PlaybackLog`）に寄せて直す: `plans/novel-waits-timeline.md`（段 0〜3 と P〜V・絵の 3 件まで済）。
+- （段 11）廃屋配信の `make reference-check` は場面の名前の組が SHA256SUMS と違って NG のまま（移行の前からの物。撮り直しは人の判断）。
 
 - 【未確認】廃屋配信の「縦の UI と入力」（約 565 行）のうち、今のテンプレートの縦の画面（PortraitDoc・Layout）で書ける量。廃屋配信の写しはテンプレートが縦の画面を持つ前の物なので、当て直してから数える。9.3 の幅はここが大きい。
 - 【未確認】血鱗の縦の Layout と Controls の違いのうち、払い以外の物の行き先（7.2）。

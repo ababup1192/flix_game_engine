@@ -514,6 +514,20 @@ mod TestGameHooks {
         Assert.assertEq(expected = (Some("amb_river"), true), (ambience, isPaused(w)))
 
     @Test
+    def testACommentAfterAWalkWaitsOnlyForTheCommentBefore(): Unit \ {Assert, Fs.FileRead} =
+        // コメント A・歩く <<bg>>（3 秒）・コメント B の B は、歩きの終わりでなく A の 0.65 秒の後に鳴る（足音 se_a の 0.2 秒の後）。
+        let base = withWalk(3.0, res());
+        let r = { commands = Commands.tableOf(outsCommand("commentA", Out.LineWait(0.65) :: Nil)
+                                              :: outsCommand("commentB", Out.Sound("se_b") :: Out.LineWait(0.65) :: Nil)
+                                              :: Commands.commandsIn(base#commands)) | base };
+        let events = YarnRunner.Event.Command(command("commentA", Nil))
+            :: YarnRunner.Event.Command(command("bg", photoAt(r, 1) :: "grade=${grade(r)}" :: Nil))
+            :: YarnRunner.Event.Command(command("commentB", Nil)) :: YarnRunner.Event.Line(heldLine()) :: Nil;
+        let (w1, first) = stepHearing(r, 0.5, beatWith(r, events));
+        let (_, second) = stepHearing(r, 0.5, w1);
+        Assert.assertEq(expected = ("se_a" :: Nil, "se_b" :: Nil), (first, second))
+
+    @Test
     def testAWalkAfterACommentStartsWithTheComment(): Unit \ {Assert, Fs.FileRead} =
         // コメント（LineWait 0.65 秒）の後ろの歩く <<bg>> は、コメントと同じ頭から歩き出す（0.2 秒の足音が最初の 0.5 秒で鳴る）。
         let base = withWalk(3.0, res());
@@ -756,12 +770,12 @@ mod TestGameHooks {
 
     @Test
     def testASaveBeforeTheLaterCommandHasItsStage(): Unit \ {Assert, Fs.FileRead} =
-        // 2 つ目のコメントが当たる前（台詞は積んである）にセーブしても、その環境音は戻れる所の舞台に入る。
+        // 2 つ目のコメントが当たる前（台詞は積んである）でも、その環境音はバックログの頭の戻れる所とセーブの舞台の両方に入っている。
         let r = withAmbienceComments(res());
         let w = commentsThenAmbienceAt(r, 0.5);
         let head = WorldRead.headMarkOf(World.logOf(w)) |> Option.map(ambienceOfMark);
         let saved = WorldRead.slotHere(r, w) |> Option.map(slot -> ambienceOfMark(slot#mark));
-        Assert.assertEq(expected = (Some(Some("amb_winter_wind")), Some(Some("amb_river"))), (head, saved))
+        Assert.assertEq(expected = (Some(Some("amb_river")), Some(Some("amb_river"))), (head, saved))
 
     @Test
     def testRestoringAnEarlyLineKeepsItsAmbienceAndGoesOn(): Unit \ {Assert, Fs.FileRead} =
