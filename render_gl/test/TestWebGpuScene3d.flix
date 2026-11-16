@@ -4,7 +4,8 @@
 mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
-    use Render3d.WebGpuRenderer.{packPassValues, packSceneValues, sceneValueBytes, skipsOf, topLeftOf}
+    use Render3d.ScenePlan.ScenePassSpec
+    use Render3d.WebGpuRenderer.{clearOf, packPassValues, packSceneValues, sceneValueBytes, skipsOf, topLeftOf}
 
     def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, 3.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
 
@@ -47,23 +48,60 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     @Test
     def testDepthPassWritesRangeAndFlag(): Unit \ {Assert, IO} =
         let buf = packed();
-        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
+        packPassValues(buf, ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
         Assert.assertEq(expected = (0.5f32, 12.0f32, 1), (buf.getFloat(224), buf.getFloat(228), buf.getInt(248)))
 
     /// 色の pass は、前の場面が奥行きの書き出しでも uDepthOut を 0 に戻し、幅を 1 にする（入れ物を場面をまたいで使い回す）。
     @Test
     def testColorPassClearsDepthFlag(): Unit \ {Assert, IO} =
         let buf = packed();
-        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
-        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.Color);
+        packPassValues(buf, ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
+        packPassValues(buf, ScenePassSpec.Color);
         Assert.assertEq(expected = (1.0f32, 0), (buf.getFloat(228), buf.getInt(248)))
 
     /// 奥行きの書き出しの幅が 0 でも 0 で割らない（GL の Render3d.putDepthRange と同じ下限）。
     @Test
     def testDepthPassRangeIsNeverZero(): Unit \ {Assert, IO} =
         let buf = packed();
-        packPassValues(buf, Render3d.ScenePlan.ScenePassSpec.DepthOut({ near = 0.5, range = 0.0 }));
-        Assert.assertEq(expected = true, buf.getFloat(228) > 0.0f32)
+        packPassValues(buf, ScenePassSpec.DepthOut({ near = 0.5, range = 0.0 }));
+        Assert.assertEq(expected = RenderUtil.f32(0.000001), buf.getFloat(228))
+
+    // ── 場面の地の色（clearOf）──
+
+    def depthOut(): ScenePassSpec = ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 })
+
+    def sky(): Scene3d.Sky3d = Scene3d.gradientSky(Color.rgb(0.1, 0.2, 0.9), Color.rgb(0.8, 0.8, 0.9), Color.rgb(0.3, 0.3, 0.3))
+
+    def withBackground(c: Color, s: Scene3d.Scene3dCmd): Scene3d.Scene3dCmd = { environment = { background = Some(c) | s#environment } | s }
+
+    def panorama(): Texture3d.Texture3d = match Texture3d.fromArgb(2, 2, Vector#{0, 0, 0, 0}) {
+        case Ok(t)  => t
+        case Err(e) => bug!(e)
+    }
+
+    /// 奥行きの書き出しで空を塗る場面は、background があっても一番奥の白で消す（GL は空の frag が白を塗る）。
+    @Test
+    def testDepthWithSkyClearsWhite(): Unit \ Assert =
+        let s = { sky = Some(sky()) | withBackground(Color.rgb(0.25, 0.5, 0.75), scene()) };
+        Assert.assertEq(expected = (1.0, 1.0, 1.0, 1.0), clearOf(depthOut(), s))
+
+    /// 奥行きの書き出しで空の無い場面は background で消す（GL の beginScene と同じ）。
+    @Test
+    def testDepthWithoutSkyClearsBackground(): Unit \ Assert =
+        Assert.assertEq(expected = (0.25, 0.5, 0.75, 1.0), clearOf(depthOut(), withBackground(Color.rgb(0.25, 0.5, 0.75), scene())))
+
+    /// 色の pass で空のある場面は透明で消す（空は描かずに数える・background は空があれば使わない）。
+    @Test
+    def testColorWithSkyClearsTransparent(): Unit \ Assert =
+        let s = { sky = Some(sky()) | withBackground(Color.rgb(0.25, 0.5, 0.75), scene()) };
+        Assert.assertEq(expected = (0.0, 0.0, 0.0, 0.0), clearOf(ScenePassSpec.Color, s))
+
+    /// sky が無くても景色を背景に描く場面（Scene3d.drawnSkyOf が Some を返す）は、奥行きの書き出しで白で消す。
+    @Test
+    def testDepthWithBackgroundPanoramaClearsWhite(): Unit \ Assert =
+        let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentAsBackground(true);
+        let s = { environmentMap = Some(e) | withBackground(Color.rgb(0.25, 0.5, 0.75), scene()) };
+        Assert.assertEq(expected = (1.0, 1.0, 1.0, 1.0), clearOf(depthOut(), s))
 
     // ── まだ描けない物の数え（skipsOf）──
 

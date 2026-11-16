@@ -10,7 +10,7 @@ mod Render3d.SceneList {
     use Render3d.{MeshDraw}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.Counts.{BatchBreak, breakSlotOf}
-    use Render3d.ScenePlan.{SceneDraws, ScenePassSpec, isSkinned}
+    use Render3d.ScenePlan.{SceneDraws, ScenePassSpec, ScenePlan, isSkinned}
 
     pub type alias SceneList = {
         rows = Array[Int32, Static], heads = Array[MeshDraw, Static], materials = Array[Scene3d.MaterialFields, Static], firstMaterial = Int32, count = Int32
@@ -19,9 +19,9 @@ mod Render3d.SceneList {
     /// 場面 1 つの pass と、その pass で流す行の列（列の順に pass を積む）。
     pub type alias ScenePasses = List[(ScenePassSpec, SceneList)]
 
-    /// pass で描く場面の batch draws を、pass ごとの行の列にする（今は場面の物を描く pass 1 つ）。
-    pub def buildScenePasses(pass: ScenePassSpec, draws: SceneDraws[MeshBatch]): ScenePasses \ IO =
-        (pass, buildSceneList(draws)) :: Nil
+    /// 1 体ごとの値の番号を振り終えた場面の計画 plan を、pass ごとの行の列にする（今は場面の置いた物を描く pass 1 つ）。
+    pub def buildScenePasses(plan: ScenePlan[MeshBatch]): ScenePasses \ IO =
+        (plan#mainPass, buildSceneList(plan#draws)) :: Nil
 
     /// 行の種類。
     pub def kindVertexColor(): Int32 = 1

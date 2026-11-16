@@ -28,7 +28,7 @@ mod Render3d.Instancing {
         let shadowDepth = f(PackMode.ShadowDepth);
         let material = d -> { handle = d#handle, order = d#order, kind = d#kind, material = d#material, batch = lit(d#batch) };
         let draws = plan#draws;
-        { cmd = plan#cmd, pass = plan#pass,
+        { cmd = plan#cmd, mainPass = plan#mainPass,
           draws = { plain = List.map(lit, draws#plain), skinned = List.map(lit, draws#skinned),
                     opaque = List.map(material, draws#opaque), blended = List.map(material, draws#blended) },
           shadowPlans = plan#shadowPlans |> List.map(s -> { plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) | s }) }

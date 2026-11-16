@@ -240,7 +240,7 @@ pub mod Render3d.WebGpuRenderer {
         let cmd = scene#cmd#scene;
         let t = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc),
                               { opaque = 0, blended = 0, lightmapped = 0, skinned = 0 }, scene#groups);
-        match scene#pass {
+        match scene#mainPass {
             case ScenePassSpec.DepthOut(_) =>
                 ("3D の骨つきの物", t#skinned) :: ("3D の奥行きの書き出しの材質の物（cutout と両面を見ずに形で書く）", t#opaque) ::
                 ("3D のビルボード", List.length(cmd#billboards)) :: Nil
@@ -280,6 +280,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面を target へ描く: 計画の pass ごとに、地の色（clearOf）と深度を消して行を描く pass を積む。
     // WhyNot: pass ごとに描き先を替えない — 今の pass（色と奥行きの書き出し）はどちらも場面の描き先へ書き、場面 1 つに 1 つ。描き先の違う影の地図の pass を足す時に替える。
+    // WhyNot: 列の頭の pass だけ消して残りを前の中身から描く形（GL は場面の頭で 1 回だけ消す）にしない — 今は列に pass が 1 つしか無く、2 つ目を足す (4) の影の地図は描き先が違う。
     def drawInto(r: Renderer, host: Host, target: SceneTarget, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch]): Unit \ IO =
         let staged = stageScene(r, host, target, members, plan);
         let scene = plan#cmd#scene;
@@ -360,7 +361,10 @@ pub mod Render3d.WebGpuRenderer {
         let next = Array#{0} @ Static;
         let plain = List.map(numberSpan(out, s#scratch, Int32.maxValue(), next, members, PackMode.Lit), draws#plain);
         let unseen = (b: SpanBatch) -> ({ head = b#head, count = 0, first = 0 }: MeshBatch);
-        let passes = buildScenePasses(plan#pass, { plain = plain, skinned = List.map(unseen, draws#skinned), opaque = Nil, blended = Nil });
+        // WhyNot: 影の地図の batch に番号を振らない — 影は描かない（P8 の (4)）ので、計画の影の材料は空のまま渡す。
+        let numbered = { cmd = plan#cmd, mainPass = plan#mainPass, draws = { plain = plain, skinned = List.map(unseen, draws#skinned), opaque = Nil, blended = Nil },
+                         shadowPlans = Nil };
+        let passes = buildScenePasses(numbered);
         (passes, sendInstances(r, host, raw, bytes))
 
     /// bytes を書ける 1 体ごとの値の CPU の入れ物（足りなければ要る大きさか倍の大きい方へ作り直す）。
@@ -406,7 +410,9 @@ pub mod Render3d.WebGpuRenderer {
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         let values = s#cpuScene;
         packSceneValues(values, lightDataOf(picked, 0));
-        packPassValues(values, plan#pass);
+        // WhyNot: pass ごとに場面の値を書き分けない — 場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、
+        //   1 つの encoder の中で pass ごとに書き替えると、どの pass も最後に書いた値で描く。pass が場面の置いた物の 1 つの間は mainPass で足りる。
+        packPassValues(values, plan#mainPass);
         s#gpu.writeBuffer(target#sceneValues, 0i64, values, 0, sceneValueBytes());
         let camera = s#cpuCamera;
         let floats = camera.asFloatBuffer();
