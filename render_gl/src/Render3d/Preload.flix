@@ -22,6 +22,10 @@ mod Render3d.Preload {
             Ref.put({ rebuilds = rebuilds | uploaded }, state#preloadRef)
         }
 
+    /// 先に上げる物の材質が読む "tex3d:" の絵 name が宣言の textures に無い時の知らせの文（GL と WebGPU の両方が出す）。
+    pub def missingTextureLine(name: String): String =
+        "scene3d: 先に上げる物の材質が読む絵 '${name}' が withPreload3d の textures に無い — 上げられない"
+
     /// 宣言を組み直した世代の控え rebuilds（新しい物が頭）に gen を足した物を返す。上限の数の組み直しが rebuildWindow() の内に溜まれば planner で 1 回知らせる
     /// （GL と WebGPU の両方が呼ぶ）。
     pub def noteRebuild(planner: Render3d.ScenePlan.Planner, gen: Int64, rebuilds: List[Int64]): List[Int64] \ IO =
@@ -79,8 +83,7 @@ mod Render3d.Preload {
                     discard resolveTextureAs(gl, state, gen, source, label, name, textureUse);
                     Set.insert(slot, held)
                 case None =>
-                    if (String.startsWith(prefix = Texture3d.namePrefix(), name))
-                        warnSceneOnce(state, "preload:" + name, "scene3d: 先に上げる物の材質が読む絵 '${name}' が withPreload3d の textures に無い — 上げられない")
+                    if (String.startsWith(prefix = Texture3d.namePrefix(), name)) warnSceneOnce(state, "preload:" + name, missingTextureLine(name))
                     else ();
                     held
             }

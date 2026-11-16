@@ -97,10 +97,10 @@ pub mod Render3d.WebGpuRenderer {
     /// 描き手の状態。欄の中身:
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・poseLayout = group 2（姿勢）の layout・
     /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・
-    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）, 頂点のバイト数, 骨つきか) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（場面の値がその影と環境マップを切っているので読まれない）・
+    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）, 頂点のバイト数, 骨つきか) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
-    /// poseGroups = 今の encoder の group 2（submit の後に手放す）・sceneGroups = 今の encoder の、影の地図を読む場面の group 0（同じく）・shadows = 影の地図の描き先と pass・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
+    /// poseGroups = 今の encoder の group 2（submit の後に手放す）・sceneGroups = 今の encoder の、影の地図か環境マップを読む場面の group 0（同じく）・shadows = 影の地図の描き先と pass・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
     /// cpuInstances・cpuPoses・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
     /// （cpuInstances と cpuPoses は足りなければ倍に作り直す）・gen = 画面のコマの世代（endFrame で進む）。
     enum RendererData {
@@ -291,7 +291,13 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 画面のコマを締めて submit した後に 1 回呼ぶ。頂点の上限を超えた形と、置き場の上限を超えた材質の絵（先に上げた物は後へ回す）と、
     /// しばらく描かなかった場面の描き先を捨てて、世代を進める。
+    // WhyNot: project.json の scene3dTextureBudgetMB・Count を読まない — WebGPU の描き手を作る所（WebGpuPaint）に config が届いていない。届けるのは engine の口に触れる時（持ち越し）。
     pub def endFrame(r: Renderer): Unit \ IO =
+        endFrameWithin(r, { vertices = Render3d.vertexBudget(),
+                            textures = { count = GameEngine.defaultScene3dTextureBudgetCount(), size = Int32.toInt64(GameEngine.defaultScene3dTextureBudgetMB()) * 1048576i64 } })
+
+    /// endFrame の、形の頂点の上限 vertices と材質の絵の置き場の上限 textures を受ける版。
+    def endFrameWithin(r: Renderer, limits: { vertices = Int32, textures = Render3d.Material.Budget }): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let gen = Array.get(0, s#gen);
         Array.put(gen + 1i64, 0, s#gen);
@@ -300,15 +306,15 @@ pub mod Render3d.WebGpuRenderer {
         Map.forEach((_, t) -> if (isIdle(t)) destroyTarget(t) else (), targets);
         Ref.put(Map.filter(t -> not isIdle(t), targets), s#targets);
         let preloaded = Ref.get(s#preloaded);
-        Render3d.warnDroppedTextures(s#planner, WebGpuMaterials.endFrame(s#materials, gen, preloaded#textures), preloaded#textures);
+        Render3d.warnDroppedTextures(s#planner, WebGpuMaterials.endFrame(s#materials, gen, limits#textures, preloaded#textures), preloaded#textures);
         discard WebGpuShadows.endFrame(s#shadows, gen);
-        let victims = MeshTable.trim(s#meshes, meshAllocator(s#gpu, s#meshStore), gen, Render3d.vertexBudget(), preloaded#meshes);
+        let victims = MeshTable.trim(s#meshes, meshAllocator(s#gpu, s#meshStore), gen, limits#vertices, preloaded#meshes);
         Render3d.warnDroppedMeshes(s#planner, victims, preloaded#meshes);
         let dropped = List.length(victims);
         Render3d.Counts.count(s, Render3d.Counts.Counter.MeshEvictions, dropped);
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る（GL の Render3d.trimToBudget と同じ）。
         if (dropped == 0) ()
-        else Log.warn("scene3d: メッシュの置き場が頂点 ${Render3d.vertexBudget()} を超えたので、古い形を ${dropped} 個捨てた")
+        else Log.warn("scene3d: メッシュの置き場が頂点 ${limits#vertices} を超えたので、古い形を ${dropped} 個捨てた")
 
     // ── 先に上げる物（withPreload3d）──
 
@@ -317,7 +323,7 @@ pub mod Render3d.WebGpuRenderer {
     type alias Preloaded = { builtKey = Option[DrawCmd.StaticKey], meshes = Set[String], textures = Set[TextureSlot], rebuilds = List[Int64] }
 
     /// 宣言 cmd の形と絵と材質の program と、画面の形式（RGBA8・標本 1）の pipeline を上げる（GL の Render3d.Preload.upload と同じ約束）。
-    /// 最後に上げた宣言と同じ key なら何もしない（cmd の中身も読まない）。積んだ pass があれば先に submit する。
+    /// 最後に上げた宣言と同じ key なら何もしない（cmd の中身も読まない）。
     // WhyNot: pipeline を場面の描き先の形式ごとに作らない — 描き先の形式と標本は場面ごとに決まり、宣言の時には分からない（GL の coverageVersions と同じ）。
     //   画面へ直に描く場面の形だけを作り、ほかは初めて描くコマで作る。
     pub def preload(r: Renderer, host: Host, cmd: Scene3d.PreloadCmd): Unit \ IO =
@@ -327,8 +333,6 @@ pub mod Render3d.WebGpuRenderer {
         else {
             let gen = Array.get(0, s#gen);
             let rebuilds = Render3d.Preload.noteRebuild(s#planner, gen, held#rebuilds);
-            // WhyNot: 積んだ pass を残したまま上げない — 絵の作り直し（版の違う全体の登録の絵の借り直し）が、まだ submit していない pass の読む絵を捨てる。
-            flushHost(r, host);
             let uploaded = timed(s, Phase.Preload, () -> preloadCmd(r, host, gen, cmd));
             Ref.put({ rebuilds = rebuilds | uploaded }, s#preloaded)
         }
@@ -336,17 +340,18 @@ pub mod Render3d.WebGpuRenderer {
     /// cmd の置いた物を候補に分け、候補ごとに形と、材質の program と絵か頂点の色の pipeline を上げて、上げた物の控えを返す。
     def preloadCmd(r: Renderer, host: Host, gen: Int64, cmd: Scene3d.PreloadCmd): Preloaded \ IO =
         let RendererData.RendererData(s) = r;
-        let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, _ -> false, _ -> true, false, (cmd#instances)());
+        let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, _ -> true, _ -> true, false, (cmd#instances)());
         let source = { textureOf = host#textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let allocator = countingAllocator(r);
         let mp = { base = 0, format = RenderTarget.Format.Rgba8Unorm, samples = 1, sceneLayout = s#sceneLayout, poseLayout = s#poseLayout, hasPoses = false,
                    bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static };
         let noteBuild = name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First);
+        let missing = name -> Render3d.ScenePlan.warnOnce(s#planner, "preload:" + name, Render3d.Preload.missingTextureLine(name));
         let textures = groups |> List.flatMap(g -> {
             let head = g#batch#head;
             let mesh = Map.get(MeshTable.ensure(s#meshes, allocator, gen, head#fields#mesh), Ref.get(s#meshStore));
             match g#surface {
-                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, mp, source, host#textureById, gen, request, head, mesh)
+                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, missing, mp, source, host#textureById, gen, request, head, mesh)
                 case None =>
                     mesh |> Option.forEach(b -> preloadShape(r, b, isSkinned(head)));
                     Nil
@@ -476,7 +481,7 @@ pub mod Render3d.WebGpuRenderer {
         else {
             let viewFor = (isSpot: Bool) -> shadows |> List.find(p -> isSpotSampling(p#map#sampling) == isSpot) |> Option.flatMap(p -> WebGpuShadows.viewOf(s#shadows, p#map#key))
                                                     |> Option.getWithDefault(s#blankDepth.defaultView());
-            let desc = new BindGroupDesc("fge scene3d shadowed", s#sceneLayout);
+            let desc = new BindGroupDesc("fge scene3d shadowed or environment", s#sceneLayout);
             discard desc.buffer(0, target#sceneValues, 0i64, Int32.toInt64(sceneValueBytes()));
             discard desc.textureView(1, viewFor(true)).textureView(2, viewFor(false));
             let envImage = environment |> Option.map(fst) |> Option.getWithDefault(s#blankImage);
@@ -525,16 +530,16 @@ pub mod Render3d.WebGpuRenderer {
         passes |> List.forEach(pl -> missingBillboardTexturesOf(snd(pl)) |> List.forEach(name ->
             Render3d.ScenePlan.warnOnce(s#planner, "@billboard:" + name, Render3d.missingBillboardTextureLine(name))));
         countRows(r, plan, passes, shadows);
-        let environment = environmentOf(r, host, source, gen, plan#cmd#scene);
+        let environment = ensureEnvironment(r, host, source, gen, plan#cmd#scene);
         writeSceneValues(r, target, plan, shadows, environment);
         { shadows = shadows, passes = staged, instanceBase = instanceBase, poseGroup = poseGroup, environment = environment }
 
     /// 場面の環境マップの絵と mip のレベルの数（環境マップの無い場面は None）。絵が見つからなければ代わりの絵（透明な黒・mip 無し）で読み、名前ごとに 1 回知らせる
     /// （GL の Render3d.Material.bindEnvironmentMap と同じ）。
-    def environmentOf(r: Renderer, host: Host, source: TextureSource, gen: Int64, scene: Scene3d.Scene3dCmd): Option[(Texture, Int32)] \ IO =
+    def ensureEnvironment(r: Renderer, host: Host, source: TextureSource, gen: Int64, scene: Scene3d.Scene3dCmd): Option[(Texture, Int32)] \ IO =
         let RendererData.RendererData(s) = r;
         Scene3d.environmentTextureNamesOf(scene) |> List.head |> Option.map(name ->
-            match WebGpuMaterials.environmentTextureOf(s#materials, source, host#textureById, gen, name) {
+            match WebGpuMaterials.ensureEnvironmentTexture(s#materials, source, host#textureById, gen, name) {
                 case Some(found) => found
                 case None =>
                     Render3d.ScenePlan.warnOnce(s#planner, "missing:" + name, "scene3d: 環境マップの絵 '${name}' が見つからない — 0（黒・透明）で読む"
@@ -588,7 +593,7 @@ pub mod Render3d.WebGpuRenderer {
         }
 
     /// stageScene の答え。shadows = 影の地図の pass（行の形は上げてある）・passes = 計画の pass ごとの (pass, 行, 行の values を送った位置（バイト）)（行の形と絵は上げてある）・
-    /// poseGroup = 姿勢の group 2（姿勢の無い prepare は None）・environment = 環境マップの絵と mip のレベルの数（environmentOf）。
+    /// poseGroup = 姿勢の group 2（姿勢の無い prepare は None）・environment = 環境マップの絵と mip のレベルの数（ensureEnvironment）。
     type alias Staged = { shadows = List[ShadowPass], passes = List[(ScenePassSpec, SceneList, Int32)], instanceBase = Int32, poseGroup = Option[BindGroup],
                           environment = Option[(Texture, Int32)] }
 
@@ -790,7 +795,7 @@ pub mod Render3d.WebGpuRenderer {
     pub def sceneValueBytes(): Int32 = Render3dWgsl.skyValuesAt() + 48
 
     /// 場面の値（光・かすみ・目・環境マップ・奥行きの書き出し・影の地図 shadows を引く値・空の向きの材料）と目と射影の行列とカメラの向き（Render3dWgsl.cameraDeclarations）を
-    /// target の buffer へ書く。environment = 環境マップの絵と mip のレベルの数（environmentOf。lightmap は物ごとの値・Render3d.MaterialValues）。
+    /// target の buffer へ書く。environment = 環境マップの絵と mip のレベルの数（ensureEnvironment。lightmap は物ごとの値・Render3d.MaterialValues）。
     def writeSceneValues(r: Renderer, target: SceneTarget, plan: ScenePlan[SpanBatch], shadows: List[ShadowPass], environment: Option[(Texture, Int32)]): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let scene = plan#cmd#scene;

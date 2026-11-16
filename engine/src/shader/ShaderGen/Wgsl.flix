@@ -163,7 +163,6 @@ pub mod ShaderGen.Wgsl {
     def prelude(): String = joinParts(
         "fn sg_mod(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }\n" ::
         "fn sg_mod2(x: vec2f, y: vec2f) -> vec2f { return x - y * floor(x / y); }\n" ::
-
         "fn sg_hash1(p: vec2f, seed: f32) -> f32 {\n" ::
         "    return fract(sin(dot(p, vec2f(127.1, 311.7)) + seed * 0.017) * 43758.5453123);\n" ::
         "}\n" ::
