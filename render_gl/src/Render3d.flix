@@ -16,7 +16,7 @@
 //   m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
 //   ビルボードの法線はカメラへ向く向き（−forward）。Output.Depth の灰色は目からの距離で (d − near) / range。
 //   半透明（材質の blend）・両面（doubleSided）・空（sky）の約束は SoftRaster3d の頭と同じ:
-//   描く順は 不透明（頂点の色 → 材質をプログラムごと）→ ビルボード → 半透明（計画 Render3d.ScenePlan が Scene3d.blendOrderOf で並べた行の順・深度は読むが書かない・
+//   描く順は 不透明（頂点の色 → 材質をプログラムごと）→ ビルボード（来た順の行）→ 半透明（計画 Render3d.ScenePlan が Scene3d.blendOrderOf で並べた行の順・深度は読むが書かない・
 //   glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)・出す α は材質の albedo.a）。
 //   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
 //   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は LightModel3d.skyModel）。
@@ -29,7 +29,7 @@ mod Render3d {
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, groupScenes, planScenes}
-    use Render3d.SceneList.{SceneList, buildScenePasses}
+    use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, firstBillboardRowOf, firstBlendedRowOf, rowAt}
     use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawBlendedRows, drawRows, uploadRows}
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, resolveMaterials, sweepMaterials, sweepTextures3d}
@@ -556,8 +556,8 @@ mod Render3d {
     /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム。
     type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = BillboardLocs, scene = Scene3d.Scene3dCmd }
 
-    /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。行になっていないビルボードも、その pass の所で描く（色の pass は不透明の行 → ビルボード → 半透明の行）。
-    // WhyNot: ビルボードの灰色と空の白を spec でなく scene#output で決めたままにする — どちらも行になっていない間は、場面の pass が 1 つで spec と output が 1 対 1。
+    /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。色の pass は不透明の行 → ビルボードの行 → 半透明の行・奥行きの書き出しは不透明の行 → ビルボードの行。
+    // WhyNot: ビルボードの灰色と空の白を spec でなく scene#output で決めたままにする — 場面の pass が 1 つで spec と output が 1 対 1（空は行になっていない）。
     def drawPass(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, ctx: PassContext,
                  inputs: SceneInputs, spec: ScenePassSpec, list: SceneList): Unit \ IO =
         let camera = ctx#camera;
@@ -565,12 +565,12 @@ mod Render3d {
             case ScenePassSpec.Color =>
                 bindShadowMap(gl, inputs#shadows);
                 drawRows(gl, state, gen, camera, MaterialPass.Color, ctx#eye, ctx#source, inputs, list);
-                drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene);
+                drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene, list);
                 drawBlendedRows(gl, state, gen, camera, ctx#eye, ctx#source, inputs, list);
                 unbindShadowMap(gl, inputs#shadows)
             case ScenePassSpec.DepthOut(dr) =>
                 drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), ctx#eye, ctx#source, inputs, list);
-                drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene)
+                drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene, list)
         }
 
     /// プログラム entry と材質 m で頭の物 head の batch を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
@@ -906,10 +906,12 @@ mod Render3d {
 
     // ── ビルボード ──
 
-    /// 場面のビルボードを描く。視錐台の外のビルボード（外接球で見る）は描かない（見つからない絵の知らせは描く物と同じに出す）。
+    /// 行 list のビルボードの行（firstBillboardRowOf から firstBlendedRowOf の前まで）を描く。描く物の無い行（視錐台の外）は描かない（見つからない絵の知らせは描く物と同じに出す）。
     def drawBillboards(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
-                       camera: CameraData, scene: Scene3d.Scene3dCmd): Unit \ IO =
-        if (List.isEmpty(scene#billboards) or locs#program == 0) ()
+                       camera: CameraData, scene: Scene3d.Scene3dCmd, list: SceneList): Unit \ IO =
+        let first = firstBillboardRowOf(list);
+        let end = firstBlendedRowOf(list);
+        if (first >= end or locs#program == 0) ()
         else {
             // WhyNot: ビルボードに裏の面の間引き（GL_CULL_FACE）を掛けない — 四角はいつもカメラを向くので裏は来ず、頂点の巻き方を合わせる手間だけが増える。
             gl.disable(GlConst.CULL_FACE);
@@ -923,10 +925,17 @@ mod Render3d {
             putBillboardOutput(gl, locs, scene#output);
             gl.activeTexture(GlConst.TEXTURE0);
             gl.bindVertexArray(programsOf(gl, state)#quadVao);
-            scene#billboards |> List.forEach(b ->
-                drawBillboard(gl, state, textureOf, locs, Scene3d.isBillboardOutsideFrustum(camera#frustum, b), Scene3d.billboardFieldsOf(b)));
+            drawBillboardsFrom(gl, state, textureOf, locs, list, first, end);
             gl.bindVertexArray(0);
             gl.enable(GlConst.CULL_FACE)
+        }
+
+    def drawBillboardsFrom(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
+                           list: SceneList, row: Int32, end: Int32): Unit \ IO =
+        if (row >= end) ()
+        else {
+            drawBillboard(gl, state, textureOf, locs, rowAt(list, row, 4) == 0, billboardAt(list, row));
+            drawBillboardsFrom(gl, state, textureOf, locs, list, row + 1, end)
         }
 
     def putBillboardOutput(gl: GlContext, locs: BillboardLocs, output: Scene3d.Output): Unit \ IO =
@@ -972,9 +981,12 @@ mod Render3d {
         if (Set.memberOf(name, warned)) ()
         else {
             Ref.put(Set.insert(name, warned), state#missingTexturesRef);
-            Log.warn("scene3d: ビルボードのテクスチャ '${name}' が見つからない — 描かない"
-                + "（project.json の textures に同名の宣言があるか確認）")
+            Log.warn(missingBillboardTextureLine(name))
         }
+
+    /// ビルボードの絵 name が見つからない時の知らせ（GL と WebGPU の backend が同じ字で出す）。
+    def missingBillboardTextureLine(name: String): String =
+        "scene3d: ビルボードのテクスチャ '${name}' が見つからない — 描かない（project.json の textures に同名の宣言があるか確認）"
 
     def putVec3(gl: GlContext, loc: Int32, v: Vec3.Vec3): Unit \ IO =
         gl.uniform3f(loc, RenderUtil.f32(v#x), RenderUtil.f32(v#y), RenderUtil.f32(v#z))

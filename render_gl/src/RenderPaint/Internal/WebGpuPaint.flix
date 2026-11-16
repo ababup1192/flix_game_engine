@@ -201,7 +201,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             frameCounters = Array#{0, 0, 0, 0, 0, 0} @ Static,
             texWarnLog = Ref.fresh(Static, Set.empty()), msaaWarned = Ref.fresh(Static, Set.empty()), skips = SkippedDraws.fresh(),
             diagnosticsRef = Ref.fresh(Static, None), drawCounts = RenderDrawCounts.fresh(),
-            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout)
+            scenes3d = Render3d.WebGpuRenderer.create(gpu, pipes#sceneLayout, imageLayout)
         });
         installBuiltins(paint);
         paint
@@ -720,13 +720,13 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                 true
         }
 
-    /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
+    /// 開いている Pass の texture へ描く（表に無い名前なら何もしない）。描く物（スプライト・面・3D の場面のビルボード）が自分の history を読むなら、pass を開く前に前のコマの絵を写す。
     // WhyNot: 1 枚撮りの「history は透明」（GL の keepHistory = false）を持たない — WebGPU の描き手は窓とその撮影でしか動かず、どちらも前のコマを写す
     //   （historyFor へ keep を真で渡す。applyHistory の ClearTransparent の枝は前半の答えを全部受けるために置き、今は通らない）。
     def paintTarget(paint: Paint, spec: RenderTarget.TargetSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let history = TargetTable.historyFor(webGpuTargetAllocator(paint), textureTables(paint), p#targets, (p#designW, p#designH), spec,
-                                             TargetTable.isHistoryRead(spec#name, frame#sprites, frame#surfaces), true);
+                                             isHistoryReadIn(spec#name, frame), true);
         TargetTable.rowByName(p#targets, spec#name)
             |> Option.flatMap(row -> Map.get(row#texture, Ref.get(p#slots)) |> Option.map(slot -> (row, slot)))
             |> Option.forEach(match (row, slot) -> {
@@ -737,6 +737,10 @@ pub mod RenderPaint.Internal.WebGpuPaint {
                    applyHistory(paint, row#texture, slot#texture, row#format, pass#history);
                    paintInto(paint, slot#texture, msaa, row#texture, pass, frame)
                })
+
+    /// 描き先 name へ描く frame が name の history を読むか（GL の RenderPaint.paintTarget と同じく、スプライトと面と 3D の場面のビルボードを見る）。
+    pub def isHistoryReadIn(name: String, frame: RenderPaint.Frame): Bool =
+        TargetTable.isHistoryRead(name, frame#sprites, frame#surfaces) or Render3d.WebGpuRenderer.readsTexture(RenderTarget.historyName(name), frame#scenes)
 
     /// pass を開く前の history の始末（TargetTable.historyFor の答え）を、同じ encoder へ積む。
     /// sourceId・source = 開いている描き先の slots の番号と texture（resolve 済みの 1 標本）。

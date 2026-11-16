@@ -34,8 +34,12 @@ mod Render3d.ScenePlan {
     pub type alias PlanCaps = { alphaToOne = Bool, poseRowLimit = Int32 }
 
     /// 場面 1 つを描く材料を batch に分け終えた物（どれも描く順に並べてある）。plain = 材質の無い骨の無い物・skinned = 材質の無い骨つきの物・
-    /// opaque = 不透明の材質の物（Output.Depth では材質で描く物）・blended = 半透明の材質の物（1 体ずつの batch を Scene3d.blendOrderOf の順＝目から遠い物から。Output.Depth では空）。
-    pub type alias SceneDraws[b] = { plain = List[b], skinned = List[b], opaque = List[MaterialBatch[b]], blended = List[MaterialBatch[b]] }
+    /// opaque = 不透明の材質の物（Output.Depth では材質で描く物）・blended = 半透明の材質の物（1 体ずつの batch を Scene3d.blendOrderOf の順＝目から遠い物から。Output.Depth では空）・
+    /// billboards = 場面のビルボード（来た順のまま・視錐台の外の物も culled を立てて残す）。
+    pub type alias SceneDraws[b] = { plain = List[b], skinned = List[b], opaque = List[MaterialBatch[b]], blended = List[MaterialBatch[b]], billboards = List[BillboardDraw] }
+
+    /// ビルボード 1 つ。culled = 視錐台の外（外接球で見る・Scene3d.isBillboardOutsideFrustum）なので描かない（見つからない絵の知らせは描く物と同じに出す）。
+    pub type alias BillboardDraw = { fields = Scene3d.BillboardFields, culled = Bool }
 
     /// 場面の pass 1 つが場面の描き先へ書く物。Color = 光を当てた色・DepthOut = 目からの距離の灰色（near が黒・near + range が白。Output.Depth）。
     /// どちらも描き先の attachment は色 1 つ（場面の描き先の形式）と深度で、2D の pass（RenderFrame.Internal.RenderList.PassSpec の
@@ -533,14 +537,21 @@ mod Render3d.ScenePlan {
     def sceneDrawsOf(planner: Planner, orders: Vector[Int32], s: GroupedScene): SceneDraws[SpanBatch] =
         let (vertexColored, materials) = splitGroups(s#groups, orders);
         let (skinned, plain) = List.partition(b -> isSkinned(b#head), vertexColored);
+        let billboards = billboardDrawsOf(s#cmd#scene);
         match s#mainPass {
             case ScenePassSpec.Color =>
                 let (blended, solid) = List.partition(d -> d#material#blend, materials);
                 { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, solid),
-                  blended = Scene3d.blendOrderOf(s#cmd#scene#camera#eye, d -> d#batch#head#fields, blended) }
+                  blended = Scene3d.blendOrderOf(s#cmd#scene#camera#eye, d -> d#batch#head#fields, blended), billboards = billboards }
             case ScenePassSpec.DepthOut(_) =>
-                { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, materials), blended = Nil }
+                { plain = plain, skinned = skinned, opaque = materialsInOrder(planner, materials), blended = Nil, billboards = billboards }
         }
+
+    /// 場面のビルボード（来た順）。視錐台は置いた物の間引きと同じ Scene3d.frustumOf。
+    // WhyNot: 視錐台の外のビルボードを列から外さない — GL は絵が見つからない知らせを間引く前に出すので、外した物の知らせが消える。
+    pub def billboardDrawsOf(scene: Scene3d.Scene3dCmd): List[BillboardDraw] =
+        let frustum = Scene3d.frustumOf(scene);
+        scene#billboards |> List.map(b -> { fields = Scene3d.billboardFieldsOf(b), culled = Scene3d.isBillboardOutsideFrustum(frustum, b) })
 
     /// 材質の batch の描く順。backend の順の番号で並べる。DrawMode.OneByOne は来た順のまま（並べ替えの影響も on と off の差に出す）。
     def materialsInOrder(planner: Planner, batches: List[MaterialBatch[SpanBatch]]): List[MaterialBatch[SpanBatch]] =

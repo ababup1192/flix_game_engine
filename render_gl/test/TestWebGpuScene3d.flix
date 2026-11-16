@@ -200,14 +200,14 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
 
     def cutoutWood(): Scene3d.Material3d = Scene3d.withCutout(true, wood())
 
-    /// Output.Depth の場面は描くので場面としては数えず、描けない版の材質の物（形だけで書く）・ビルボードだけを数える。
+    /// Output.Depth の場面は描くので場面としては数えず、描けない版の材質の物（形だけで書く）だけを数える（ビルボードは描く）。
     /// cutout の材質の物は材質の道で抜いて書き、骨つきの物も描くので数えない。
     @Test
     def testDepthSceneCountsOnlyWhatItCannotDraw(): Unit \ {Assert, IO} =
         let cutout = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(cutoutWood());
         let scene = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 })
                       | Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: plainWithMaterial(Vec3.zero()) :: cutout :: Nil) };
-        Assert.assertEq(expected = Map#{"3D の奥行きの書き出しの材質の物（描けない版を形で書く）" => 0, "3D のビルボード" => 0},
+        Assert.assertEq(expected = Map#{"3D の奥行きの書き出しの材質の物（描けない版を形で書く）" => 0},
                         skipsOfScene(scene))
 
     /// 描ける版の材質の骨つきの物は数えない（骨つきの物の種類も無い）。
@@ -231,6 +231,26 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let cutout = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(cutoutWood());
         let skips = skipsOfScene(Render3d.FakeGl.sceneOf(plainWithMaterial(Vec3.zero()) :: cutout :: Nil));
         Assert.assertEq(expected = 0, Map.foldLeft((acc, n) -> acc + n, 0, skips))
+
+    def billboardAt(texture: String, z: Float64): Scene3d.Billboard3d =
+        Scene3d.billboard(texture, { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }, Vec3.v3(0.0, 0.0, z), { x = 1.0, y = 1.0 })
+
+    /// ビルボードは色の場面でも奥行きの書き出しの場面でも描くので、まだ描けない物に数えない。
+    @Test
+    def testBillboardsAreNotCounted(): Unit \ {Assert, IO} =
+        let scene = { billboards = billboardAt("sprite", 5.0) :: billboardAt("sprite", 8.0) :: Nil | Render3d.FakeGl.sceneOf(Nil) };
+        let depth = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 }) | scene };
+        let total = (m: Map[String, Int32]) -> Map.foldLeft((acc, n) -> acc + n, 0, m);
+        Assert.assertEq(expected = (0, 0), (total(skipsOfScene(scene)), total(skipsOfScene(depth))))
+
+    /// 2D の描き手は、Pass の中の 3D の場面のビルボードがその Pass の history を貼る時も history を用意する（スプライトと面だけを見ない）。
+    @Test
+    def testSceneBillboardReadsPassHistory(): Unit \ Assert =
+        let reading = { billboards = billboardAt(RenderTarget.historyName("trail"), 5.0) :: Nil | Render3d.FakeGl.sceneOf(Nil) };
+        let frameWith = (scene: Scene3d.Scene3dCmd) -> { scenes = Render3d.FakeGl.cmdOf(scene) :: Nil | RenderPaint.emptyFrame() };
+        Assert.assertEq(expected = (true, false),
+                        (RenderPaint.Internal.WebGpuPaint.isHistoryReadIn("trail", frameWith(reading)),
+                         RenderPaint.Internal.WebGpuPaint.isHistoryReadIn("other", frameWith(reading))))
 
     def glassWood(): Scene3d.Material3d = Scene3d.withAlphaBlend(true, wood())
 

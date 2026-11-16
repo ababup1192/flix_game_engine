@@ -46,7 +46,7 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
         let imageLayout = gpu.createBindGroupLayout(imageDesc);
         let frameValues = gpu.createBuffer("trial frame values", 64i64, Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
         let pipes = WebGpuPipelines.fresh(gpu, frameLayout, imageLayout, design);
-        { gpu = gpu, renderer = Render3d.WebGpuRenderer.createWith(gpu, pipes#sceneLayout, binding), pipes = pipes, frameLayout = frameLayout, imageLayout = imageLayout,
+        { gpu = gpu, renderer = Render3d.WebGpuRenderer.createWith(gpu, pipes#sceneLayout, imageLayout, binding), pipes = pipes, frameLayout = frameLayout, imageLayout = imageLayout,
           frameValues = frameValues, frameGroup = gpu.createBindGroup(new BindGroupDesc("trial frame", frameLayout).buffer(0, frameValues, 0i64, 64i64)),
           frame = gpu.createTexture("trial frame", width, height, TextureFormat.RGBA8_UNORM,
                                     Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.TEXTURE_BINDING), 1, 1),
@@ -63,7 +63,7 @@ pub mod Render3d.WebGpuRenderer.SplitPassTrial {
 
     /// 1 コマぶんの encoder を貸す Host（submit は frameA・frameB の終わりに 1 回だけ）。
     def hostOf(encoder: CommandEncoder): Host =
-        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None) }
+        { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) }
 
     def viewportOf(t: Trial): Scene3dRenderer.Viewport =
         let (dw, dh) = t#design;

@@ -1,8 +1,8 @@
 // Render3dWgsl — 3D の描き手の WebGPU の frag の WGSL（Render3dGlsl の材質の frag・頂点の色の frag と、それが使う光・影・色の空間・法線マップ・環境マップ・lightmap の関数）。
 // 式は Render3dGlsl と 1 行ずつ同じに書き、光・かすみ・空の式は同じ LightModel3d の木から LightModel3d.Codegen.toWgsl で作る。
 //
-// bind group: 0 = 場面（`var<uniform> r3d: R3dScene`・影の地図・太陽の影の地図・環境マップ・目と射影の行列）・1 = 材質（ShaderGen.Wgsl.compile3d の `sg` と絵・
-// `var<uniform> r3dDraw: R3dDraw`・法線マップ・lightmap）・2 = storage（骨と instance・まだ使わない）。varying の location は R3dIn の並び。
+// bind group: 0 = 場面（`var<uniform> r3d: R3dScene`・影の地図・太陽の影の地図・環境マップ・目と射影の行列とカメラの向き）・1 = 材質（ShaderGen.Wgsl.compile3d の `sg` と絵・
+// `var<uniform> r3dDraw: R3dDraw`・法線マップ・lightmap。ビルボードは 2D の描き手の絵と sampler）・2 = storage（姿勢）。varying の location は R3dIn の並び。
 // 射影の行列は GL の物のまま使い、頂点シェーダーが ShaderGen.Wgsl.clipFromGlSource の sg_clipFromGl で clip の z を 0..w へ移す前提
 // （奥行きの値が GL のウィンドウの奥行きと同じになり、影の比べ ndc.z × 0.5 + 0.5 をそのまま使える）。
 pub mod Render3dWgsl {
@@ -81,8 +81,11 @@ pub mod Render3dWgsl {
         "}\n"
 
     /// 光の式（lightAt）・かすみ（fogged）・影と、色を作る最後の組み立て（Render3dGlsl.lightSource と同じ）。sceneDeclarations と colorSpaceSource の後に置く。
-    pub def lightSource(): String =
-        shadowSource() +
+    pub def lightSource(): String = lightSourceWith(shadowSource())
+
+    /// lightSource の、影の関数（spotShadow と r3d_sunLit）を shadows に替えた版。
+    def lightSourceWith(shadows: String): String =
+        shadows +
         LightModel3d.Codegen.toWgsl("lightAt", Vec3Input.Position :: Vec3Input.Normal :: Nil, LightModel3d.lightingModel()) +
         LightModel3d.Codegen.toWgsl("fogAt", Vec3Input.Position :: Vec3Input.Color :: Nil, LightModel3d.fogModel()) +
         "fn fogged(c: vec3f, p: vec3f) -> vec3f {\n" +
@@ -134,6 +137,12 @@ pub mod Render3dWgsl {
         "    if (fade <= 0.0) { return 1.0; }\n" +
         "    return 1.0 - r3d.uSunStrength * fade * (1.0 - shadowLitFraction(uSunMap, r3d.uSunMatrix, r3d.uSunBias, r3d.uSunPcf, r3d.uSunNormalShift, g, p));\n" +
         "}\n"
+
+    /// 影を受けない物（ビルボード）の影の関数: どのスポットも太陽も遮らない（GLSL のビルボードのプログラムは uShadowOn と uSunShadowOn を付けず 0 のまま読む）。
+    // WhyNot: 場面の値の uShadowOn・uSunShadowOn で切らない — 場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
+    def unshadowedSource(): String =
+        "fn spotShadow(i: i32, p: vec3f) -> f32 { return 1.0; }\n" +
+        "var<private> r3d_sunLit: f32 = 1.0;\n"
 
     def depthGraySource(): String =
         "fn depthGray(p: vec3f) -> f32 {\n" +
@@ -292,10 +301,75 @@ pub mod Render3dWgsl {
     /// 1 体ごとの値の 1 体のバイト数（Render3d.InstanceValues の 1 体 = 32 float）。
     pub def instanceBytes(): Int32 = 4 * Render3d.InstanceValues.floatsPerInstance()
 
-    /// 目と射影の行列（group 0 の binding 5）。詰める側は uView・uProj の順に列優先で 128 バイト。
+    /// 目と射影の行列とカメラの向き（group 0 の binding 5）。詰める側は uView・uProj の順に列優先で 128 バイトの後に、
+    /// カメラの right・up・カメラへ向く向き（−forward）を xyz に 16 バイトずつ（ビルボードが四角を立て、法線にする。GLSL の uRight・uUp・uFacing）。
     pub def cameraDeclarations(): String =
-        "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f };\n" +
+        "struct R3dCamera { uView: mat4x4f, uProj: mat4x4f, uRight: vec4f, uUp: vec4f, uFacing: vec4f };\n" +
         "@group(0) @binding(5) var<uniform> r3dCamera: R3dCamera;\n"
+
+    /// R3dCamera のバイト数。
+    pub def cameraBytes(): Int32 = 176
+
+    /// ビルボードの頂点シェーダー（Render3dGlsl.billboardVertexSource と同じ式）。入口は vs_main。
+    /// 四角の角は vertex_index の 6 点（GL の Render3d.buildQuad と同じ並び・y は下向き）。ビルボードの値は buffer 0（instance・stride 0）の location 0〜3
+    /// （並びは Render3d.SceneList.billboardValueFloats: 点と lit・anchor と size・貼る範囲の uv・tint）。
+    pub def billboardVertexSource(): String =
+        cameraDeclarations() +
+        "struct R3dBillboardIn {\n" +
+        "    @location(0) center: vec4f,\n" +
+        "    @location(1) anchorSize: vec4f,\n" +
+        "    @location(2) uvRect: vec4f,\n" +
+        "    @location(3) tint: vec4f,\n" +
+        "};\n" +
+        billboardVaryings("R3dBillboardOut", true) +
+        ShaderGen.Wgsl.clipFromGlSource() +
+        "@vertex fn vs_main(@builtin(vertex_index) i: u32, v: R3dBillboardIn) -> R3dBillboardOut {\n" +
+        "    var corners = array<vec2f, 6>(vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0), vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(0.0, 1.0));\n" +
+        "    let corner = corners[i];\n" +
+        "    let world = v.center.xyz + r3dCamera.uRight.xyz * ((corner.x - v.anchorSize.x) * v.anchorSize.z)\n" +
+        "                             + r3dCamera.uUp.xyz * ((v.anchorSize.y - corner.y) * v.anchorSize.w);\n" +
+        "    var o: R3dBillboardOut;\n" +
+        "    o.vWorld = world;\n" +
+        "    o.vUv = v.uvRect.xy + corner * v.uvRect.zw;\n" +
+        "    o.vTint = v.tint.rgb;\n" +
+        "    o.vLit = v.center.w;\n" +
+        "    o.vFacing = r3dCamera.uFacing.xyz;\n" +
+        "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * vec4f(world, 1.0));\n" +
+        "    return o;\n" +
+        "}\n"
+
+    /// ビルボードの varying（頂点シェーダーの出口は position つき）。
+    def billboardVaryings(name: String, withPosition: Bool): String =
+        "struct ${name} {\n" +
+        (if (withPosition) "    @builtin(position) position: vec4f,\n" else "") +
+        "    @location(0) vWorld: vec3f,\n" +
+        "    @location(1) vUv: vec2f,\n" +
+        "    @location(2) @interpolate(flat) vTint: vec3f,\n" +
+        "    @location(3) @interpolate(flat) vLit: f32,\n" +
+        "    @location(4) @interpolate(flat) vFacing: vec3f,\n" +
+        "};\n"
+
+    /// ビルボードの frag（Render3dGlsl.billboardFragmentSource と同じ式）。貼る絵は group 1（2D の描き手の絵の group: binding 0 = 絵・1 = sampler）。入口は fs_main。
+    pub def billboardFragmentSource(): String =
+        sceneDeclarations() +
+        "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
+        "@group(1) @binding(1) var uImageSampler: sampler;\n" +
+        billboardVaryings("R3dBillboardIn", false) +
+        colorSpaceSource() +
+        lightSourceWith(unshadowedSource()) +
+        depthGraySource() +
+        "@fragment fn fs_main(i: R3dBillboardIn) -> @location(0) vec4f {\n" +
+        "    let texel = textureSample(uImage, uImageSampler, i.vUv);\n" +
+        "    if (texel.a < 0.5) { discard; }\n" +
+        "    if (r3d.uDepthOut == 1) {\n" +
+        "        let g = depthGray(i.vWorld);\n" +
+        "        return vec4f(g, g, g, 1.0);\n" +
+        "    }\n" +
+        "    let lit = i.vLit > 0.5;\n" +
+        "    var light = vec3f(1.0);\n" +
+        "    if (lit) { light = lightAt(i.vWorld, normalize(i.vFacing)); }\n" +
+        "    return vec4f(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), i.vTint, light, vec3f(0.0), 1.0, i.vWorld, lit), 1.0);\n" +
+        "}\n"
 
     /// 姿勢の行列（group 2 の binding 0・読むだけの storage）。詰める側（Render3d.WebGpuRenderer）は頭の 16 バイトに 1 行のジョイントの数（u32）、
     /// その後に行の順に 1 行 jointsPerRow 本の mat4（列優先・Render3d.PoseRows.packRows の並び）。

@@ -33,7 +33,7 @@ mod Render3d.WebGpuShadows {
     use Render3d.ShadowMaps.{Key, ShadowPass}
     use Render3d.WebGpuRows.{MeshBuffers, MeshStore, drawRows}
 
-    /// 影の地図の描き先 1 枚。depth = 深度の texture（色の pass が texture_depth_2d で読む）・camera = 光の目と単位行列の射影（128 バイト）・group = group 0。
+    /// 影の地図の描き先 1 枚。depth = 深度の texture（色の pass が texture_depth_2d で読む）・camera = 光の目と単位行列の射影（Render3dWgsl.cameraBytes() のうち頭の 128 バイト・カメラの向きは読まない）・group = group 0。
     type alias ShadowTarget = { depth = Texture, camera = Buffer, group = BindGroup }
 
     /// 影の地図の backend の状態。table = 前半の寿命の表・targets = 鍵 → 描き先・layout = group 0 の layout・pipelines = (頂点のバイト数, ジョイントの番号の位置) → pipeline・
@@ -62,7 +62,7 @@ mod Render3d.WebGpuShadows {
         discard layoutDesc.buffer(5, ShaderStage.VERTEX, BufferBindingType.UNIFORM);
         { gpu = gpu, table = Render3d.ShadowMaps.fresh(), targets = Ref.fresh(Static, Map.empty()), layout = gpu.createBindGroupLayout(layoutDesc),
           pipelines = Ref.fresh(Static, Map.empty()), written = Ref.fresh(Static, Set.empty()),
-          cpuCamera = ByteBuffer.allocateDirect(128).order(ByteOrder.LITTLE_ENDIAN) }
+          cpuCamera = ByteBuffer.allocateDirect(Render3dWgsl.cameraBytes()).order(ByteOrder.LITTLE_ENDIAN) }
 
     /// device の上に作った物を全部手放す。この後 sh は使えない。
     pub def release(sh: Shadows): Unit \ IO =
@@ -100,9 +100,9 @@ mod Render3d.WebGpuShadows {
     def createTarget(sh: Shadows, size: Int32): ShadowTarget \ IO =
         let gpu = sh#gpu;
         let depth = gpu.createTexture("fge scene3d shadow map", size, size, depthFormat(), Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.TEXTURE_BINDING), 1, 1);
-        let camera = gpu.createBuffer("fge scene3d shadow camera", 128i64, Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
+        let camera = gpu.createBuffer("fge scene3d shadow camera", Int32.toInt64(Render3dWgsl.cameraBytes()), Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
         let desc = new BindGroupDesc("fge scene3d shadow camera", sh#layout);
-        discard desc.buffer(5, camera, 0i64, 128i64);
+        discard desc.buffer(5, camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
         { depth = depth, camera = camera, group = gpu.createBindGroup(desc) }
 
     def destroyTarget(t: ShadowTarget): Unit \ IO =
@@ -142,6 +142,7 @@ mod Render3d.WebGpuShadows {
                 shape = (p, mesh) -> bindShape(p, mesh, None),
                 skinned = (p, mesh) -> Option.nonEmpty(draw#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
                 material = (_, _, _, _) -> checked_ecast(false),
+                billboard = (_, _, _) -> checked_ecast(false),
                 unbound = draw#unbound
             };
             drawRows(rp, draw#meshStore, drawer, pass#list, draw#instanceBase);
@@ -153,7 +154,7 @@ mod Render3d.WebGpuShadows {
         let floats = sh#cpuCamera.asFloatBuffer();
         discard floats.put(matrixArray(pass#map#view));
         discard floats.put(matrixArray(Mat4.identity()));
-        sh#gpu.writeBuffer(target#camera, 0i64, sh#cpuCamera, 0, 128)
+        sh#gpu.writeBuffer(target#camera, 0i64, sh#cpuCamera, 0, Render3dWgsl.cameraBytes())
 
     /// 頂点のバイト数 stride（Render3d.WebGpuRows の形の版）・ジョイントの番号の位置 skin の、深度だけを書く pipeline（無ければ作る）。
     // WhyNot: frag を付けない — 描き先は深度だけで、色を書く段は捨てられる（GL は色の描き先の無い FBO で同じ事をする）。

@@ -49,7 +49,8 @@ pub mod RenderPaint.Internal.WebGpuPaint.Scenes {
           flush = () -> flushPending(paint),
           skip = (name, n) -> skipMany(paint, name, n),
           textureOf = name -> registeredOf(paint, name),
-          textureById = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#texture) }
+          textureById = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#texture),
+          groupById = id -> Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#group) }
 
     /// 3D の材質が名前で読む全体の登録の絵（GL の RenderPaint.registeredTexture と同じ欄。レンダーターゲットは上下逆に読む印）。
     def registeredOf(paint: Paint, name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =

@@ -113,8 +113,14 @@ pub mod Render3d.WebGpuMaterials {
             groups = Ref.fresh(Static, Nil), warned = Ref.fresh(Static, Set.empty())
         })
 
+    /// 値の buffer（uniform と storage と、ビルボードの値を読む頂点の buffer として bind する）。
     def createValueBuffer(gpu: WebGpu, bytes: Int32): Buffer \ IO =
-        gpu.createBuffer("fge material values", Int32.toInt64(bytes), Int32.bitwiseOr(Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.STORAGE), BufferUsage.COPY_DST))
+        gpu.createBuffer("fge material values", Int32.toInt64(bytes), Int32.bitwiseOr(Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.STORAGE), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST)))
+
+    /// 今の値の buffer（sendValues が書いた位置はこの buffer の中。sendValues が作り直すので、描く時に引く）。
+    pub def valuesBufferOf(m: Materials): Buffer \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        Array.get(0, s#values)
 
     /// 絵の表（行の reads の番号を振る表）。
     pub def texturesOf(m: Materials): TextureTable3d.Table =
@@ -340,11 +346,12 @@ pub mod Render3d.WebGpuMaterials {
     // ── 描く ──
 
     /// pass の中で今付けている pipeline（同じ物を付け直さないための鍵）。Shape(pass の番号, 頂点のバイト数, 骨つきか) = 頂点の色の pipeline・
-    /// Material(program の順の番号, 頂点のバイト数) = 材質の pipeline。
+    /// Material(program の順の番号, 頂点のバイト数) = 材質の pipeline・Billboard = ビルボードの pipeline（group 1 は 2D の描き手の絵の group）。
     pub enum BoundPipeline with Eq {
         case Unbound
         case Shape(Int32, Int32, Bool)
         case Material(Int32, Int32)
+        case Billboard
     }
 
     /// 材質の行を描く pass の付け方の材料。base = 行の values を送った位置（バイト）・format・samples = 描き先・sceneLayout = group 0 の layout・
