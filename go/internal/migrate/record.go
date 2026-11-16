@@ -86,17 +86,20 @@ type Event struct {
 // Frame は書き出したコマの 1 枚。Kind は lineDone（台詞を出し終えた所）か mid（時間を取る命令の途中）。
 // mid は Cmd（命令の名前）・Step（その台詞の後で何番目の時間を取る命令か）・At（命令の秒に対する割合）を持つ。
 // Layer は world（文字の枠・HUD・UI を描かない）か all。画素を比べるのは world だけ。
+// Seconds は mid の命令の秒（シナリオに書いた秒）。at は秒に対する割合なので、秒だけが替わると同じ割合のコマが同じ絵になり、
+// 画素では差が出ない。組になった mid どうしで秒を比べてその差を拾う。
 type Frame struct {
-	File       string  `json:"file"`
-	T          float64 `json:"t"`
-	Node       string  `json:"node"`
-	Seq        int     `json:"seq"`
-	Kind       string  `json:"kind"`
-	Cmd        string  `json:"cmd,omitempty"`
-	Step       int     `json:"step,omitempty"`
-	At         float64 `json:"at,omitempty"`
-	Layer      string  `json:"layer"`
-	Backdrop3d bool    `json:"backdrop3d,omitempty"`
+	File       string   `json:"file"`
+	T          float64  `json:"t"`
+	Node       string   `json:"node"`
+	Seq        int      `json:"seq"`
+	Kind       string   `json:"kind"`
+	Cmd        string   `json:"cmd,omitempty"`
+	Step       int      `json:"step,omitempty"`
+	At         float64  `json:"at,omitempty"`
+	Layer      string   `json:"layer"`
+	Backdrop3d bool     `json:"backdrop3d,omitempty"`
+	Seconds    *float64 `json:"seconds,omitempty"`
 }
 
 // Key は前と後のコマを組にする鍵の土台（同じノードへ入り直すと同じ土台が何度も出るので、組にする時は何回目かを足す）。
