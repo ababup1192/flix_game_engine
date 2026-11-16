@@ -3,8 +3,8 @@
 // 2D の並びの z の位置で 2D の描き手がその texture を貼る（plans/engine-webgpu.md の 5.4）。計画（Render3d.ScenePlan）と行（Render3d.SceneList）は GL と同じ物を使い、
 // 行を流すのは Render3d.WebGpuRows・材質の program と絵と値は Render3d.WebGpuMaterials。式は GL と同じ WGSL（Render3dWgsl と ShaderGen.Wgsl.compile3d）。
 // 描くのは不透明の頂点の色の物と、不透明の材質の物（Render3d.WebGpuMaterials.isDrawable の版）と、そのどちらも骨つきの物（姿勢は group 2 の storage）と
-// 光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、スポットと太陽の影（Render3d.WebGpuShadows）と、奥行きの書き出し（Output.Depth の場面の形の灰色）。
-// 半透明・lightmap・alpha to coverage の材質・ビルボード・空・環境マップは描かずに種類ごとの回数を
+// 光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、スポットと太陽の影（Render3d.WebGpuShadows）と、lightmap（材質の group 1）と、奥行きの書き出し（Output.Depth の場面の形の灰色）。
+// 半透明・alpha to coverage の材質・ビルボード・空・環境マップは描かずに種類ごとの回数を
 // host へ数えさせる（描かない版の材質の物は GL が「使えない」と答えた材質と同じく頂点の色か形で描く）。3D の診断の数（Render3d.Counts）も GL と同じ欄で数える。
 // 場面は、影の地図の pass（Render3d.ShadowMaps.ShadowPass）を先に積み、計画の pass（Render3d.ScenePlan.ScenePassSpec）ごとの行の列（Render3d.SceneList.ScenePasses）で描き、pass の種類で frag を替える。
 // WhyNot: 兄弟（Render3d.GlRows など）と同じく pub を外さない — 呼び手の RenderPaint.Internal.WebGpuPaint は Render3d の子孫でなく、pub でない子の mod には届かない
@@ -346,20 +346,20 @@ pub mod Render3d.WebGpuRenderer {
     def skipsOf(members: MutList[MeshDraw, Static], scene: GroupedScene): List[(String, Int32)] \ IO =
         let cmd = scene#cmd#scene;
         let t = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc),
-                              { opaque = 0, blended = 0, lightmapped = 0 }, scene#groups);
+                              { opaque = 0, blended = 0 }, scene#groups);
         match scene#mainPass {
             case ScenePassSpec.DepthOut(_) =>
-                ("3D の奥行きの書き出しの材質の物（描けない版を形で書く）", t#opaque + t#lightmapped) ::
+                ("3D の奥行きの書き出しの材質の物（描けない版を形で書く）", t#opaque) ::
                 ("3D のビルボード", List.length(cmd#billboards)) :: Nil
             case ScenePassSpec.Color =>
                 ("3D の alpha to coverage の材質の物（頂点の色で描く）", t#opaque) ::
-                ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) :: ("3D の lightmap の材質の物（頂点の色で描く）", t#lightmapped) ::
+                ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) ::
                 ("3D のビルボード", List.length(cmd#billboards)) ::
                 ("3D の空", Option.count(_ -> true, cmd#sky)) :: ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
         }
 
-    /// skipsOf の物の数え（opaque = 描けない版の不透明の材質の物・lightmapped = lightmap の材質の物）。
-    type alias Tally = { opaque = Int32, blended = Int32, lightmapped = Int32 }
+    /// skipsOf の物の数え（opaque = 描けない版の不透明の材質の物）。
+    type alias Tally = { opaque = Int32, blended = Int32 }
 
     /// group の batch の members の i から end の前までを acc へ数える。
     def tallyGroup(members: MutList[MeshDraw, Static], g: Group, i: Int32, end: Int32, acc: Tally): Tally \ IO =
@@ -370,7 +370,6 @@ pub mod Render3d.WebGpuRenderer {
     def tallyDraw(surface: Option[MaterialRequest], d: MeshDraw, acc: Tally): Tally =
         if (d#culled) acc
         else match surface {
-            case Some((_, kind)) if kind#lightmap  => { lightmapped = acc#lightmapped + 1 | acc }
             case Some((_, kind)) if kind#blend     => { blended = acc#blended + 1 | acc }
             case Some((_, kind)) if not WebGpuMaterials.isDrawable(kind) => { opaque = acc#opaque + 1 | acc }
             case _ => acc
@@ -675,7 +674,7 @@ pub mod Render3d.WebGpuRenderer {
     /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本）。
     pub def sceneValueBytes(): Int32 = 400 + 16 * (3 * Scene3d.maxPointLights() + 5 * Scene3d.maxSpotLights())
 
-    /// 場面の値（光・かすみ・目・奥行きの書き出し・影の地図 shadows を引く値）と目と射影の行列を target の buffer へ書く。環境マップ・lightmap は切る。
+    /// 場面の値（光・かすみ・目・奥行きの書き出し・影の地図 shadows を引く値）と目と射影の行列を target の buffer へ書く。環境マップは切る（lightmap は物ごとの値・Render3d.MaterialValues）。
     def writeSceneValues(r: Renderer, target: SceneTarget, plan: ScenePlan[SpanBatch], shadows: List[ShadowPass]): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let scene = plan#cmd#scene;
@@ -693,7 +692,7 @@ pub mod Render3d.WebGpuRenderer {
         discard floats.put(matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene))));
         s#gpu.writeBuffer(target#camera, 0i64, camera, 0, 128)
 
-    /// 光の値 d を R3dScene の並びで buf へ詰める（欄の位置は Render3dWgsl.sceneDeclarations の頭のコメント）。影・環境マップ・lightmap の欄は切る値
+    /// 光の値 d を R3dScene の並びで buf へ詰める（欄の位置は Render3dWgsl.sceneDeclarations の頭のコメント）。影・環境マップの欄は切る値
     /// （影の地図を引く値は packShadowValues・奥行きの書き出しの欄は packPassValues）。GL の Render3d.Light.putLights が渡す欄と同じ値を、同じ名前の欄へ入れる。
     // WhyNot: 書く欄の組を場面ごとに変えない — buf は場面をまたいで使い回すので、ある場面だけ書いた欄には次の場面で前の値が残る。
     //   ここで書く欄は毎回すべて書き、書かない欄（環境マップの on など）は作った時の 0 のまま読ませる。
@@ -719,7 +718,6 @@ pub mod Render3d.WebGpuRenderer {
         discard buf.putFloat(188, d#envLevels);
         discard buf.putFloat(204, d#envIntensity);
         discard buf.putInt(232, -1);
-        discard buf.putFloat(256, 1.0f32);
         let p = Scene3d.maxPointLights();
         let sp = Scene3d.maxSpotLights();
         let arrays = 400;

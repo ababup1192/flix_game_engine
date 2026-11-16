@@ -11,7 +11,7 @@ pub mod Render3dWgsl {
     /// 場面の値の struct と、場面の絵の宣言（group 0）。欄の名前は Render3dGlsl の uniform と同じ。
     /// f32 と vec2 の光の配列は、uniform の配列の 16 バイト刻みに合わせて vec4 の配列にした（x・y を読む。LightModel3d.Codegen の WGSL の欄と同じ）。
     /// 詰める側は WGSL の並びの決まり（vec3 と vec4 と mat4 は 16 バイトそろえ・vec2 は 8）に従う。vec3 の後ろの 4 バイトに f32 か i32 を 1 つ入れ、
-    /// mat4 の前の隙間は pad0〜pad2 で埋めてあるので、欄は書いた順に 4 バイトずつ続く（uShadowMatrix は 272 バイト目）。
+    /// mat4 の前の隙間は pad0〜pad4 で埋めてあるので、欄は書いた順に 4 バイトずつ続く（uShadowMatrix は 272 バイト目）。
     pub def sceneDeclarations(): String =
         let p = Scene3d.maxPointLights();
         let s = Scene3d.maxSpotLights();
@@ -31,8 +31,8 @@ pub mod Render3dWgsl {
         "    uEnvBoxMax: vec3f, uEnvIntensity: f32,\n" +
         "    uEnvBoxCenter: vec3f, uShadowOn: i32,\n" +
         "    uDepthRange: vec2f, uShadowSpot: i32, uShadowPcf: i32,\n" +
-        "    uShadowBias: f32, uShadowStrength: f32, uDepthOut: i32, uLightmapSrgb: i32,\n" +
-        "    uLightmapIntensity: f32, pad0: f32, pad1: f32, pad2: f32,\n" +
+        "    uShadowBias: f32, uShadowStrength: f32, uDepthOut: i32, pad0: i32,\n" +
+        "    pad1: f32, pad2: f32, pad3: f32, pad4: f32,\n" +
         "    uShadowMatrix: mat4x4f,\n" +
         "    uSunMatrix: mat4x4f,\n" +
         "    uPointPos: array<vec4f, ${p}>,\n" +
@@ -50,13 +50,14 @@ pub mod Render3dWgsl {
         "@group(0) @binding(3) var uEnvMap: texture_2d<f32>;\n" +
         "@group(0) @binding(4) var uEnvSampler: sampler;\n"
 
-    /// 物ごとの値（group 1 の drawBinding() から）。uCutout = cutout の材質か（1.0）・法線マップの強さと mip のレベルの数・lightmap の mip のレベルの数。
+    /// 物ごとの値（group 1 の drawBinding() から）。uCutout = cutout の材質か（1.0）・法線マップの強さと mip のレベルの数・lightmap の mip のレベルの数と
+    /// 色空間（sRGB なら 1.0）と強さ（LightModel3d.Codegen の WGSL が r3dDraw.uLightmapSrgb・uLightmapIntensity で読む）。
     /// 法線マップは drawBinding() + 1・+ 2、lightmap は + 3・+ 4（使う版だけ宣言する）。並びは Render3d.MaterialValues の物ごとの値の区画と同じ。
     // WhyNot: 法線マップの読みの v を上下に返す値（GLSL の uNormalFlip）を持たない — WebGPU の描き先の texture は上の行が先で、ほかの絵と同じ向き。
     // WhyNot: uCutout を i32 にしない — 値は計画の Float32 の values から読み、整数の bit で書く道を持たない。
     def drawDeclarations(normalMapped: Bool, lightmap: Bool): String =
         let b = drawBinding();
-        "struct R3dDraw { uCutout: f32, uNormalStrength: f32, uNormalLevels: f32, uLightmapLevels: f32 };\n" +
+        "struct R3dDraw { uCutout: f32, uNormalStrength: f32, uNormalLevels: f32, uLightmapLevels: f32, uLightmapSrgb: f32, uLightmapIntensity: f32 };\n" +
         "@group(1) @binding(${b}) var<uniform> r3dDraw: R3dDraw;\n" +
         (if (normalMapped) "@group(1) @binding(${b + 1}) var uNormalMap: texture_2d<f32>;\n@group(1) @binding(${b + 2}) var uNormalMapSampler: sampler;\n" else "") +
         (if (lightmap) "@group(1) @binding(${b + 3}) var uLightmap: texture_2d<f32>;\n@group(1) @binding(${b + 4}) var uLightmapSampler: sampler;\n" else "")

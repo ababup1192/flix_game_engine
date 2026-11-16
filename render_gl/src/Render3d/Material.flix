@@ -152,7 +152,7 @@ mod Render3d.Material {
             let bound = resolveTextureAs(gl, state, gen, source, "lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace));
             gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
             gl.bindSampler(unit, materialSampler(gl, state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
-            gl.uniform1f(entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Int32.min(bound#levels, lm#maxLevels))));
+            gl.uniform1f(entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Render3d.MaterialValues.lightmapLevelsOf(lm, bound#levels))));
             gl.uniform1i(entry#locs#lightmapSrgb, if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1 else 0);
             gl.uniform1f(entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity))
         })

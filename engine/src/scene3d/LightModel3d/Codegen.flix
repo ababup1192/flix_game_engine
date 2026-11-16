@@ -112,8 +112,9 @@ pub mod LightModel3d.Codegen {
         case (Target.Wgsl, ScalarInput.FogNear)           => "r3d.uFogRange.x"
         case (Target.Wgsl, ScalarInput.FogFar)            => "r3d.uFogRange.y"
         case (Target.Wgsl, ScalarInput.SkyCurve)          => "r3d.uCurve"
-        case (Target.Wgsl, ScalarInput.LightmapSrgb)      => "f32(r3d.uLightmapSrgb)"
-        case (Target.Wgsl, ScalarInput.LightmapIntensity) => "r3d.uLightmapIntensity"
+        // WhyNot: lightmap の色空間と強さを場面の値（r3d）から読まない — どちらも物ごとの値で、WebGPU の場面の値は描き先ごとに 1 つしかない（材質の group 1 の r3dDraw に置く）。
+        case (Target.Wgsl, ScalarInput.LightmapSrgb)      => "r3dDraw.uLightmapSrgb"
+        case (Target.Wgsl, ScalarInput.LightmapIntensity) => "r3dDraw.uLightmapIntensity"
         case (Target.Wgsl, ScalarInput.EnvironmentOn)     => "f32(r3d.uEnvOn)"
         case (Target.Wgsl, ScalarInput.EnvironmentBoxOn)  => "f32(r3d.uEnvBoxOn)"
     }
