@@ -33,7 +33,7 @@
 - **EcsTween** — 値をある値から別の値へ、時間をかけて滑らかに動かす（補間する）。整数を 1 つずつ動かすのは steppedInt（数え下がり・ルーレット）。
 - **Journey** — 脚(出発点・行き先・速さ)の列を「時刻の純関数」で歩く。到着判定(done)と絵の位置(pos)を同じ戻り値で返す。
 - **Motion** — 物の動かし方の小さな道具箱（等速移動と往復運動）。
-- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / insert = 決まった時刻 / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat / ToPickup（次の小節の頭の n 拍前）で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索。待ちの無い表は soundsBetween(前の秒, 今の秒)）で同じクリップを読む。待ちは playheadOf / resume。組んだ表のクリップは clipOf / clipsOf（Clip）で引く。履歴・巻き戻しは Worldline（別物）。
+- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / insert = 決まった時刻 / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat / ToPickup（次の小節の頭の n 拍前）で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索。待ちの無い表は soundsBetween(前の秒, 今の秒)）で同じクリップを読む。待ちは playheadOf / resume。押すと演出を終える・スキップで飛ばす表は Player（resumeOn / seekOn / skipToEndOf / skipToNextWait → playheadOn / soundsOnPlayer。途中のクリップは activeAt）。組んだ表のクリップは clipOf / clipsOf（Clip）で引く。履歴・巻き戻しは Worldline（別物）。
 - **TimeScale** — ヒットストップ・スロー。合図からの実秒で「止める → 遅く流す → 等速へ戻す」を決め、毎フレームの dt を gameDt で直す（ゲームの時計ごと遅くする）。光や揺れは realAt の実秒で動かせる。
 - **HoldPress** — 長押しで決める。押している間だけ秒を貯め、満ちたフレームで 1 回だけ合図、合図の後は離すまで貯めない。押した瞬間の拍そのものは InputEdge。
 - **SceneSeq** — カット列の逐次シーケンサ骨格。perform（カットを 1 コマ演じる）と idle（尽きたあと時間だけ流す）を注入し、Skip・打ち切りは notes に残す（fail-open だが無音ではない）。
