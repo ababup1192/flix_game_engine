@@ -2,9 +2,10 @@
 // 1 回の renderCommands で、2D の pass を開く前に prepare が場面ごとに自分の texture（色と深度。標本つきなら resolve まで）へ描き、
 // 2D の並びの z の位置で 2D の描き手がその texture を貼る（plans/engine-webgpu.md の 5.4）。計画（Render3d.ScenePlan）と行（Render3d.SceneList）は GL と同じ物を使い、
 // 行を流すのは Render3d.WebGpuRows・材質の program と絵と値は Render3d.WebGpuMaterials。式は GL と同じ WGSL（Render3dWgsl と ShaderGen.Wgsl.compile3d）。
-// 描くのは不透明の頂点の色の物と、不透明の材質の物（Render3d.WebGpuMaterials.isDrawable の版）と、そのどちらも骨つきの物（姿勢は group 2 の storage）と
+// 描くのは不透明の頂点の色の物と、材質の物（Render3d.WebGpuMaterials.isDrawable の版。半透明の物は計画が並べた行の順に、深度を書かずに α で重ねる）と、
+// そのどちらも骨つきの物（姿勢は group 2 の storage）と
 // 光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、スポットと太陽の影（Render3d.WebGpuShadows）と、lightmap（材質の group 1）と、空（Render3d.WebGpuSky）と、
-// 奥行きの書き出し（Output.Depth の場面の形の灰色）。半透明・alpha to coverage の材質・ビルボード・環境マップは描かずに種類ごとの回数を
+// 奥行きの書き出し（Output.Depth の場面の形の灰色）。alpha to coverage の材質・ビルボード・環境マップは描かずに種類ごとの回数を
 // host へ数えさせる（描かない版の材質の物は GL が「使えない」と答えた材質と同じく頂点の色か形で描く）。3D の診断の数（Render3d.Counts）も GL と同じ欄で数える。
 // 場面は、影の地図の pass（Render3d.ShadowMaps.ShadowPass）を先に積み、計画の pass（Render3d.ScenePlan.ScenePassSpec）ごとの行の列（Render3d.SceneList.ScenePasses）で描き、pass の種類で frag を替える。
 // WhyNot: 兄弟（Render3d.GlRows など）と同じく pub を外さない — 呼び手の RenderPaint.Internal.WebGpuPaint は Render3d の子孫でなく、pub でない子の mod には届かない
@@ -349,34 +350,28 @@ pub mod Render3d.WebGpuRenderer {
     /// ビルボードだけを数える（空は一番奥の白で塗り、影と環境マップは読まない）。
     def skipsOf(members: MutList[MeshDraw, Static], scene: GroupedScene): List[(String, Int32)] \ IO =
         let cmd = scene#cmd#scene;
-        let t = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc),
-                              { opaque = 0, blended = 0 }, scene#groups);
+        let undrawable = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc), 0, scene#groups);
         match scene#mainPass {
             case ScenePassSpec.DepthOut(_) =>
-                ("3D の奥行きの書き出しの材質の物（描けない版を形で書く）", t#opaque) ::
+                ("3D の奥行きの書き出しの材質の物（描けない版を形で書く）", undrawable) ::
                 ("3D のビルボード", List.length(cmd#billboards)) :: Nil
             case ScenePassSpec.Color =>
-                ("3D の alpha to coverage の材質の物（頂点の色で描く）", t#opaque) ::
-                ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) ::
+                ("3D の alpha to coverage の材質の物（頂点の色で描く）", undrawable) ::
                 ("3D のビルボード", List.length(cmd#billboards)) ::
                 ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
         }
 
-    /// skipsOf の物の数え（opaque = 描けない版の不透明の材質の物）。
-    type alias Tally = { opaque = Int32, blended = Int32 }
-
-    /// group の batch の members の i から end の前までを acc へ数える。
-    def tallyGroup(members: MutList[MeshDraw, Static], g: Group, i: Int32, end: Int32, acc: Tally): Tally \ IO =
+    /// group の batch の members の i から end の前までの、描けない版の材質の物の数を acc に足して返す。
+    def tallyGroup(members: MutList[MeshDraw, Static], g: Group, i: Int32, end: Int32, acc: Int32): Int32 \ IO =
         if (i >= end) acc
-        else tallyGroup(members, g, i + 1, end, tallyDraw(g#surface, MutList.get(i, members), acc))
+        else tallyGroup(members, g, i + 1, end, acc + undrawableOf(g#surface, MutList.get(i, members)))
 
-    /// 物 d 1 つを acc へ数える（視錐台の外の物は数えない）。surface = d の group の材質（骨つきの物も同じ。描けない版の材質の骨つきの物は骨つきの頂点の色で描く）。
-    def tallyDraw(surface: Option[MaterialRequest], d: MeshDraw, acc: Tally): Tally =
-        if (d#culled) acc
+    /// 物 d が描けない版の材質の物なら 1（視錐台の外の物は数えない）。surface = d の group の材質（骨つきの物も同じ。描けない版の材質の骨つきの物は骨つきの頂点の色で描く）。
+    def undrawableOf(surface: Option[MaterialRequest], d: MeshDraw): Int32 =
+        if (d#culled) 0
         else match surface {
-            case Some((_, kind)) if kind#blend     => { blended = acc#blended + 1 | acc }
-            case Some((_, kind)) if not WebGpuMaterials.isDrawable(kind) => { opaque = acc#opaque + 1 | acc }
-            case _ => acc
+            case Some((_, kind)) if not WebGpuMaterials.isDrawable(kind) => 1
+            case _ => 0
         }
 
     def noteSkips(host: Host, skips: List[(String, Int32)]): Unit \ IO =
@@ -567,12 +562,13 @@ pub mod Render3d.WebGpuRenderer {
             material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh),
             unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n)
         };
+        // WhyNot: 半透明の行（SceneList.blendedRowOf から）を別に流さない — GL が間に描くビルボードを WebGPU はまだ描かないので、行の順のままで GL と同じ重なり。
+        //   ビルボードを足す時は、不透明の行・ビルボード・半透明の行の 3 つに分ける。
         drawRows(pass, s#meshStore, drawer, staged#list, staged#instanceBase);
         pass.end()
 
-    /// 場面の頂点の色の batch・骨つきの batch・不透明の材質の batch と、影の地図の batch（world と姿勢の行だけ）に 1 体ごとの値の番号を振って CPU の入れ物へ詰め、
+    /// 場面の頂点の色の batch・骨つきの batch・材質の batch（半透明も）と、影の地図の batch（world と姿勢の行だけ）に 1 体ごとの値の番号を振って CPU の入れ物へ詰め、
     /// 計画の pass ごとの行の列と、uses の描き先への影の地図の pass と、詰めた値（送るのは呼ぶ側）を返す。
-    /// 半透明の材質の batch は空（prepare が半透明の版を「使えない」と答える）。
     def numberInstances(r: Renderer, host: Host, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse]):
             (ScenePasses, List[ShadowPass], { data = ByteBuffer, bytes = Int32 }) \ IO =
         let RendererData.RendererData(s) = r;

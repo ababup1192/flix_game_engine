@@ -16,7 +16,7 @@
 //   m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
 //   ビルボードの法線はカメラへ向く向き（−forward）。Output.Depth の灰色は目からの距離で (d − near) / range。
 //   半透明（材質の blend）・両面（doubleSided）・空（sky）の約束は SoftRaster3d の頭と同じ:
-//   描く順は 不透明（頂点の色 → 材質をプログラムごと）→ ビルボード → 半透明（Scene3d.blendOrderOf の順・深度は読むが書かない・
+//   描く順は 不透明（頂点の色 → 材質をプログラムごと）→ ビルボード → 半透明（計画 Render3d.ScenePlan が Scene3d.blendOrderOf で並べた行の順・深度は読むが書かない・
 //   glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)・出す α は材質の albedo.a）。
 //   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
 //   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は LightModel3d.skyModel）。
@@ -30,9 +30,9 @@ mod Render3d {
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, groupScenes, planScenes}
     use Render3d.SceneList.{SceneList, buildScenePasses}
-    use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawRows, uploadRows}
+    use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawBlendedRows, drawRows, uploadRows}
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
-    use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, drawMaterials, resolveMaterials, sweepMaterials, sweepTextures3d}
+    use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, resolveMaterials, sweepMaterials, sweepTextures3d}
     use Render3d.Counts.{BatchBreak, Counter, Phase, breakSlotOf, count, countDrawCall, countDrawCallAt, noteDroppedLights, takeCounts, timed}
 
     // ── 型 ──
@@ -402,7 +402,7 @@ mod Render3d {
         let designCount = Array#{0} @ Static;
         let items = List.zip(List.zip(plans, lists), shadows) |> List.map(pls -> {
             let ((plan, passes), shadow) = pls;
-            let inputs = { passes = passes, blended = plan#draws#blended, materials = materials, shadows = shadow,
+            let inputs = { passes = passes, materials = materials, shadows = shadow,
                            jointTexture = jointTexture, instanceTexture = instanceTexture };
             let target = match plan#cmd#scene#resolution {
                 case Scene3d.Resolution.Native => SceneTarget.Native(inputs)
@@ -556,7 +556,7 @@ mod Render3d {
     /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム。
     type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = BillboardLocs, scene = Scene3d.Scene3dCmd }
 
-    /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。行になっていないビルボードと半透明の物も、その pass の所で描く。
+    /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。行になっていないビルボードも、その pass の所で描く（色の pass は不透明の行 → ビルボード → 半透明の行）。
     // WhyNot: ビルボードの灰色と空の白を spec でなく scene#output で決めたままにする — どちらも行になっていない間は、場面の pass が 1 つで spec と output が 1 対 1。
     def drawPass(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, ctx: PassContext,
                  inputs: SceneInputs, spec: ScenePassSpec, list: SceneList): Unit \ IO =
@@ -566,24 +566,11 @@ mod Render3d {
                 bindShadowMap(gl, inputs#shadows);
                 drawRows(gl, state, gen, camera, MaterialPass.Color, ctx#eye, ctx#source, inputs, list);
                 drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene);
-                drawBlended(gl, state, gen, camera, ctx#source, ctx#eye, inputs#materials, inputs#blended);
+                drawBlendedRows(gl, state, gen, camera, ctx#eye, ctx#source, inputs, list);
                 unbindShadowMap(gl, inputs#shadows)
             case ScenePassSpec.DepthOut(dr) =>
                 drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), ctx#eye, ctx#source, inputs, list);
                 drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene)
-        }
-
-    /// 半透明の材質の物を Scene3d.blendOrderOf の順（遠い物から）に、深度を読むが書かずに重ねる。無ければ何もしない。
-    def drawBlended(gl: GlContext, state: State, gen: Int64, camera: CameraData, source: TextureSource, eye: Vec3.Vec3, table: MaterialTable,
-                    draws: List[MaterialBatch[MeshBatch]]): Unit \ IO =
-        if (List.isEmpty(draws)) ()
-        else {
-            gl.depthMask(false);
-            gl.enable(GlConst.BLEND);
-            gl.blendFuncSeparate(GlConst.SRC_ALPHA, GlConst.ONE_MINUS_SRC_ALPHA, GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA);
-            drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, table, Scene3d.blendOrderOf(eye, d -> d#batch#head#fields, draws));
-            gl.disable(GlConst.BLEND);
-            gl.depthMask(true)
         }
 
     /// プログラム entry と材質 m で頭の物 head の batch を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
@@ -696,11 +683,6 @@ mod Render3d {
         gl.uniformMatrix4fv(locs#view, false, view);
         gl.uniformMatrix4fv(locs#proj, false, proj)
 
-    /// batch b を描く（形が置き場に無ければ上げる）。why = この batch が 1 つの draw call に分かれた理由（数えるだけ）。描く物の無い batch は、形を今のコマで使った物として置き場に数えるだけ。
-    // WhyNot: 間引いた batch を meshEntry に通さずに飛ばさない — 置き場があふれると最後に使ったのが古い形から捨てるので、間引いた物から消え、振り向くたびに頂点を上げ直す。
-    def drawBatch(gl: GlContext, state: State, gen: Int64, locs: MeshLocs, why: BatchBreak, b: MeshBatch): Unit \ IO =
-        let entry = meshEntry(gl, state, gen, b#head#fields#mesh);
-        drawMeshRange(gl, state, locs, breakSlotOf(why), (entry#vao, entry#indexCount), b#first, b#count)
 
     /// 置き場の形 mesh = (VAO, 添え字の数) の、1 体ごとの値の first 番から count 体を 1 回の instanced draw で描く（どちらかが 0 以下なら何もしない）。
     /// why = 分かれた理由の Counts.breakSlotOf の番号（数えるだけ）。

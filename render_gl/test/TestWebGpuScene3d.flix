@@ -213,14 +213,14 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: Nil));
         Assert.assertEq(expected = (None, 0), (Map.get("3D の骨つきの物", skips), Map.foldLeft((acc, n) -> acc + n, 0, skips)))
 
-    /// 半透明の材質の骨つきの物は、半透明の材質の物として 1 回数える（骨つきの頂点の色で描く）。
+    /// 半透明の材質の物は骨つきの物も含めて描くので、まだ描けない物に数えない。
     @Test
-    def testSkinnedWithBlendedMaterialIsCountedAsBlended(): Unit \ {Assert, IO} =
+    def testBlendedMaterialIsNotCounted(): Unit \ {Assert, IO} =
         let skinnedGlass = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.identity())
             |> Scene3d.withPose(Render3d.FakeGl.poseAt(0.0)) |> Scene3d.withMaterial(glassWood());
-        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedGlass :: Nil));
-        Assert.assertEq(expected = Some(1), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips))
-
+        let glass = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(glassWood());
+        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedGlass :: glass :: Nil));
+        Assert.assertEq(expected = 0, Map.foldLeft((acc, n) -> acc + n, 0, skips))
     /// 描ける版の不透明の材質の物（絵つき・cutout）は、まだ描けない物に数えない。
     @Test
     def testDrawableMaterialIsNotCounted(): Unit \ {Assert, IO} =
@@ -231,14 +231,17 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     def glassWood(): Scene3d.Material3d = Scene3d.withAlphaBlend(true, wood())
 
     /// 視錐台の外（目の後ろ）の材質の物は数えない。骨つきの物は計画が間引かない（Scene3d.isOutsideFrustum がいつも偽・GL も描く）ので目の後ろでも数える。
+    /// 描けない版は alpha to coverage の cutout（alpha to one を持つ標本 4 の描き先で計画した物）。
     @Test
     def testCulledThingsAreNotCounted(): Unit \ {Assert, IO} =
         let behind = Vec3.v3(0.0, 0.0, -50.0);
-        let glass = (at: Vec3.Vec3) -> Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.translate(at)) |> Scene3d.withMaterial(glassWood());
-        let skinnedGlass = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.translate(behind))
-            |> Scene3d.withPose(Render3d.FakeGl.poseAt(0.0)) |> Scene3d.withMaterial(glassWood());
-        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedGlass :: glass(behind) :: glass(Vec3.zero()) :: Nil));
-        Assert.assertEq(expected = Some(2), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips))
+        let cutout = (at: Vec3.Vec3) -> Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.translate(at)) |> Scene3d.withMaterial(cutoutWood());
+        let skinnedCutout = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.translate(behind))
+            |> Scene3d.withPose(Render3d.FakeGl.poseAt(0.0)) |> Scene3d.withMaterial(cutoutWood());
+        let grouped = Render3d.ScenePlan.groupScenes(Render3d.ScenePlan.freshPlanner(Render3d.DrawMode.Instanced), { alphaToOne = true, poseRowLimit = 0 }, 4,
+                                                     Render3d.FakeGl.cmdOf(Render3d.FakeGl.sceneOf(skinnedCutout :: cutout(behind) :: cutout(Vec3.zero()) :: Nil)) :: Nil);
+        let skips = grouped#scenes |> List.flatMap(skipsOf(grouped#members)) |> List.toMap;
+        Assert.assertEq(expected = Some(2), Map.get("3D の alpha to coverage の材質の物（頂点の色で描く）", skips))
 
     /// GL の左下が原点の矩形（y = 20・高さ 40）を、高さ 200 の描き先の左上が原点にすると y は 200 − 20 − 40 = 140。
     @Test
