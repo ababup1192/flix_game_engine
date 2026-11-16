@@ -526,6 +526,29 @@ func TestApprovedCoverageEntryPasses(t *testing.T) {
 	}
 }
 
+func TestRanLinesWithFileAreCounted(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	at := func(line int) map[string]any { return map[string]any{"file": "assets/talk/story.yarn", "line": line} }
+	c.tape["ranLines"] = []any{at(3), at(4), at(5), at(7), at(14)}
+	r := newWorld(t, b, c).run(t)
+	if len(r.Uncovered) != 1 || r.Uncovered[0].Line != 9 {
+		t.Fatalf("{file, line} の ranLines を数えていない: %+v", r.Uncovered)
+	}
+}
+
+func TestNewOnlyFramesAreNoted(t *testing.T) {
+	b := baseRec()
+	c := b.clone()
+	frames := c.tape["frames"].([]any)
+	extra := map[string]any{"file": "frames/mid.png", "t": 0.7, "node": "Start", "seq": -1, "kind": "mid", "cmd": "show", "step": 1, "at": 0.5, "layer": "world"}
+	c.tape["frames"] = append(frames, extra)
+	r := newWorld(t, b, c).run(t)
+	if !strings.Contains(strings.Join(r.Notes, "\n"), "新しい版にだけある world のコマが 1 枚") {
+		t.Fatalf("新しい版にだけあるコマの数が注意に出ない: %v", r.Notes)
+	}
+}
+
 func TestCoverageCountsEveryCommandLine(t *testing.T) {
 	b := baseRec()
 	c := b.clone()
@@ -776,5 +799,60 @@ func TestSideBySideWritesVideo(t *testing.T) {
 	err = SideBySide(clip("old.mp4", "red"), clip("new.mp4", "blue"), out, filepath.Join(dir, "rec", FlowsDir, "route", "design", TapeFile), ff)
 	if err != nil || !fileExists(out) {
 		t.Fatalf("横並びの動画が書けない: %v", err)
+	}
+}
+
+// ---- 途中のコマの命令の秒 ----
+
+// midWithSeconds は baseRec の途中のコマに命令の秒を載せる（nil なら載せない）。
+func midWithSeconds(r *rec, seconds any) *rec {
+	mid := r.tape["frames"].([]any)[1].(map[string]any)
+	if seconds == nil {
+		delete(mid, "seconds")
+	} else {
+		mid["seconds"] = seconds
+	}
+	return r
+}
+
+func TestMidSameSecondsPasses(t *testing.T) {
+	b := midWithSeconds(baseRec(), 2.5)
+	c := midWithSeconds(b.clone(), 2.5)
+	r := newWorld(t, b, c).run(t)
+	if !r.Passed || len(diffsOf(r, WhatFrame)) != 0 {
+		t.Fatalf("同じ秒で違いが出た: %+v", r.Diffs)
+	}
+}
+
+func TestMidChangedSecondsIsReview(t *testing.T) {
+	b := midWithSeconds(baseRec(), 2.5)
+	c := midWithSeconds(b.clone(), 2.0)
+	r := newWorld(t, b, c).run(t)
+	d := diffsOf(r, WhatFrame)
+	if !r.Passed || len(d) != 1 || !d[0].Review {
+		t.Fatalf("秒の違いは迷った差のはず: passed=%v %+v", r.Passed, d)
+	}
+}
+
+func TestMidChangedSecondsFailsWhenStrict(t *testing.T) {
+	b := midWithSeconds(baseRec(), 2.5)
+	c := midWithSeconds(b.clone(), 2.0)
+	w := newWorld(t, b, c)
+	w.strict = true
+	if w.run(t).Passed {
+		t.Fatal("--strict で秒の違いが止めない")
+	}
+}
+
+func TestMidSecondsOnOneSideIsNoted(t *testing.T) {
+	b := midWithSeconds(baseRec(), nil)
+	c := midWithSeconds(b.clone(), 2.0)
+	r := newWorld(t, b, c).run(t)
+	noted := false
+	for _, n := range r.Notes {
+		noted = noted || strings.Contains(n, "seconds")
+	}
+	if !r.Passed || len(diffsOf(r, WhatFrame)) != 0 || !noted {
+		t.Fatalf("片方にだけ秒がある時は比べず注意に出すはず: passed=%v notes=%v %+v", r.Passed, r.Notes, r.Diffs)
 	}
 }

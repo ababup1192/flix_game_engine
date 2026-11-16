@@ -38,7 +38,16 @@ func (c *comparer) coverage(cur *Side) {
 				covered[t.Yarn][n] = covered[t.Yarn][n] || !t.Has("ranLines")
 			}
 			for _, n := range t.RanLines {
-				covered[t.Yarn][n] = true
+				file := n.File
+				if file == "" {
+					file = t.Yarn
+				}
+				if covered[file] == nil {
+					covered[file] = map[int]bool{}
+					byRan[file] = true
+				}
+				folders[filepath.ToSlash(filepath.Dir(file))] = true
+				covered[file][n.Line] = true
 			}
 		}
 	}

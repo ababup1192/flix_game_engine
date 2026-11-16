@@ -36,7 +36,7 @@ mod WorldRead {
         match Yarn.nodeOf(first, res#dialogue) {
             case Some(_) =>
                 let (talk, events) = YarnRunner.start(res#dialogue, first, World.now(w));
-                absorb(res, Commands.Replay.Live, events, { talk = talk | World.emptyRead(res#theme) }, opened)
+                absorbLive(res, YarnRunner.closed(), events, { talk = talk | World.emptyRead(res#theme) }, opened)
             case None =>
                 showLine(res, Commands.Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk/yukidoke.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
                                              parts = Nil, tags = Nil, source = { file = "", line = 0 } }, World.emptyRead(res#theme), opened)
@@ -49,6 +49,11 @@ mod WorldRead {
     /// [遷移: シナリオが終わる(Done) → Credits]
     def absorb(res: Res.Res, replay: Replay, events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         absorbFrom(res, replay, YarnRunner.bookmarkOf(r#talk), List.zip(events, inputsAfter(events)), World.withRead(r, w))
+
+    /// 人が読み進めている時の absorb: 実行器が before から r#talk までに流した文の所を出してから反映する（start で作り直した時の before は closed()）。
+    def absorbLive(res: Res.Res, before: YarnRunner.Runner[Stage.Story], events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        Emit.emit(World.Event.RanLines(YarnRunner.ranSourcesSince(before, r#talk) |> List.map(source -> (source#file, source#line))));
+        absorb(res, Commands.Replay.Live, events, r, w)
 
     /// 出来事を頭から 1 つずつ反映する。人が読み進めている時（Live）に、まだ届いていない背景・環境音へ切り替えるコマンドに
     /// 当たったら、そこから先を素材の待ち（Hold）に預けて止まる（届いたら resumeHold が続きから反映する）。
@@ -74,6 +79,7 @@ mod WorldRead {
     def absorbOne(res: Res.Res, replay: Replay, last: Option[YarnRunner.Bookmark], event: YarnRunner.Event, later: Int32,
                   entering: World.World): World.World \ Emit[World.Event] =
         let w = World.mapRead(trackEntry(res, event), entering);
+        if (replay == Commands.Replay.Live) World.readOf(w) |> Option.flatMap(r -> executedOf(res, r#entry, event)) |> Option.forEach(e -> Emit.emit(World.Event.Executed(e))) else ();
         match event {
             case YarnRunner.Event.Line(said)       =>
                 let line = ScriptEdits.editLine(res#scriptEdits, said);
@@ -84,9 +90,37 @@ mod WorldRead {
                 World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options), cursor = if (Option.isEmpty(at)) cur#cursor else at,
                                        stage = Stage.withWindowShown(World.now(w), cur#stage) | cur }, w)
             case YarnRunner.Event.Command(command) =>
-                whileReading(cur -> World.withRead(cue(res, replay, command, { cursor = cursorAfter(res, command, cur#cursor) | cur }, w), w), w)
+                whileReading(cur -> {
+                    let applied = cue(res, replay, command, { cursor = cursorAfter(res, command, cur#cursor) | cur }, w);
+                    if (replay == Commands.Replay.Live) Emit.emit(World.Event.Executed(commandedOf(res, World.now(w), cur, applied, command))) else ();
+                    World.withRead(applied, w)
+                }, w)
             case YarnRunner.Event.Done             => World.toCredits(res, w)
         }
+
+    /// 反映する実行器の出来事を、記録の書き手が読む形に（台詞と選択肢の字は ScriptEdits を当てた物。会話の終わりは None）。
+    def executedOf(res: Res.Res, entry: World.NodeEntry, event: YarnRunner.Event): Option[World.Executed] =
+        let place = line -> (entry#node, entry#visits, line);
+        let edited = line -> ScriptEdits.editLine(res#scriptEdits, line);
+        match event {
+            case YarnRunner.Event.Line(said)       => let line = edited(said); Some(World.Executed.Said(place(line#source#line), line#speaker, line#text))
+            case YarnRunner.Event.Choices(offered) => List.head(offered) |> Option.map(first ->
+                World.Executed.Offered(place(first#line#source#line), offered |> List.map(option -> edited(option#line)#text)))
+            case YarnRunner.Event.Command(_)       => None
+            case YarnRunner.Event.Done             => None
+        }
+
+    /// 反映したコマンドを記録の書き手が読む形に。秒は当てる前と後の舞台から、その命令で舞台が動いた長さ（命令の表が読んだ秒・Doc の既定の秒）と、
+    /// その命令が出した待ち（Out.Wait）の長さの大きい方。
+    // WhyNot: シナリオの time= を読まない — 秒を位置の引数で書く版や既定の秒で動く命令は time= を書かず、途中のコマが撮れない。
+    def commandedOf(res: Res.Res, now: Clock.Time[Stage.Story], before: World.Read, after: World.Read, command: Yarn.Command): World.Executed =
+        let timed = Commands.timingOf(res, command) == Commands.Timing.Timed;
+        let untilOf = (r: World.Read) -> r#pause |> Option.map(p -> p#until);
+        let paused = if (untilOf(after) == untilOf(before)) None
+                     else untilOf(after) |> Option.map(until -> Clock.since(now, until)) |> Option.filter(s -> s > 0.0);
+        let busy = Stage.busySecondsOf(now, before#stage, after#stage);
+        World.Executed.Commanded((before#entry#node, before#entry#visits, command#source#line), command#name, command#args, timed,
+                                 List.maximum(Option.toList(busy) ::: Option.toList(paused)))
 
     /// コマンドを通った後の実行位置。時間を取る演出コマンド（表の timing が Timed）だけが位置を取り、<<wait>> と
     /// 時間を取らないコマンドは前の位置のまま（<<wait>> は直前の演出の続き）。
@@ -266,7 +300,7 @@ mod WorldRead {
             case YarnRunner.Shown.Line(_) =>
                 Emit.emit(World.Event.Paged);
                 let (talk, events) = YarnRunner.step(YarnRunner.Action.Advance, World.now(marked), r#talk);
-                absorb(res, Commands.Replay.Live, events, { talk = talk | r }, marked)
+                absorbLive(res, r#talk, events, { talk = talk | r }, marked)
             case YarnRunner.Shown.Closed => World.toCredits(res, World.withRead(r, marked))
             case _                       => World.withRead(r, marked)
         }
@@ -295,7 +329,7 @@ mod WorldRead {
                         let log = if (isLoneGate(r)) r#log else List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Chose(option#line#text) :: r#log);
                         let logged = { log = log, choices = Nil, gate = None | r };
                         let (talk, events) = YarnRunner.step(YarnRunner.Action.Choose(i), World.now(w), r#talk);
-                        absorb(res, Commands.Replay.Live, events, { talk = talk | logged }, marked)
+                        absorbLive(res, r#talk, events, { talk = talk | logged }, marked)
                     case _ => w
                 }
             case _ => w
@@ -355,7 +389,7 @@ mod WorldRead {
                 // スキップ中は待ちも飛ばす（明ける時刻をそのまま渡す）。
                 let at = if (r#playback == World.Playback.Skip) YarnRunner.waitUntilOf(r#talk) |> Option.getWithDefault(World.now(w)) else World.now(w);
                 let (talk, events) = YarnRunner.step(YarnRunner.Action.Tick, at, r#talk);
-                absorb(res, Commands.Replay.Live, events, { talk = talk | r }, w)
+                absorbLive(res, r#talk, events, { talk = talk | r }, w)
             case _ => w
         };
         switchSounds(waited);

@@ -1,0 +1,183 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が test/fixtures/migrate/migrate.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "test/fixtures/migrate/migrate.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$n",
+      "value": 0,
+      "file": "test/fixtures/migrate/migrate.yarn",
+      "line": 5
+    }
+  ],
+  "nodes": [
+    {
+      "title": "Station",
+      "file": "test/fixtures/migrate/migrate.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 6,
+          "name": "audio",
+          "args": [
+            "ambience",
+            "amb_river"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 7,
+          "name": "audio",
+          "args": [
+            "se",
+            "se_slap"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 8,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 9,
+          "text": "夏草の駅に降りると、蜩の声が押し寄せてきた。"
+        },
+        {
+          "kind": "command",
+          "line": 10,
+          "name": "bg",
+          "args": [
+            "slope",
+            "grade=dusk",
+            "time=1.0"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 11,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 12,
+          "speaker": "chinatsu",
+          "text": "夏草の駅に降りると、蜩の声が押し寄せてきた。"
+        },
+        {
+          "kind": "options",
+          "line": 13,
+          "options": [
+            {
+              "line": 13,
+              "text": "行く",
+              "body": [
+                {
+                  "kind": "set",
+                  "line": 14,
+                  "name": "$n",
+                  "expr": {
+                    "kind": "value",
+                    "value": 1
+                  }
+                },
+                {
+                  "kind": "jump",
+                  "line": 15,
+                  "node": "Again"
+                }
+              ]
+            },
+            {
+              "line": 16,
+              "text": "戻る",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 17,
+                  "text": "夏草の駅に降りると、蜩の声が押し寄せてきた。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Again",
+      "file": "test/fixtures/migrate/migrate.yarn",
+      "line": 19,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 21,
+          "text": "夏草の駅に降りると、蜩の声が押し寄せてきた。"
+        },
+        {
+          "kind": "set",
+          "line": 22,
+          "name": "$n",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$n"
+              },
+              {
+                "kind": "value",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "kind": "if",
+          "line": 23,
+          "clauses": [
+            {
+              "line": 23,
+              "condition": {
+                "kind": "<",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$n"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 3
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 24,
+                  "node": "Again"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 26,
+          "text": "夏草の駅に降りると、蜩の声が押し寄せてきた。"
+        }
+      ]
+    }
+  ]
+}

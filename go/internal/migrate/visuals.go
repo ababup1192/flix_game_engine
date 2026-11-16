@@ -162,6 +162,7 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 		}
 	}
 	var pairs []framePair
+	seconds := midSeconds{seen: map[string]bool{}}
 	for i, key := range orderA {
 		fa := byA[key]
 		if fa.Layer != "world" {
@@ -173,6 +174,17 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 			continue
 		}
 		pairs = append(pairs, framePair{i, fa, fb})
+		if fa.Kind == "mid" && !restore {
+			if d := seconds.compare(flow, size, fa, fb, a.dir, b.dir); d != nil {
+				c.add(d)
+			}
+		}
+	}
+	if extra := newOnlyFrames(byA, byB); extra > 0 {
+		c.r.Notes = append(c.r.Notes, fmt.Sprintf("%s/%s: 新しい版にだけある world のコマが %d 枚（前の版に組む相手が無いので比べていない）", flow, size, extra))
+	}
+	if seconds.oneSided > 0 {
+		c.r.Notes = append(c.r.Notes, fmt.Sprintf("%s/%s: 途中のコマ %d 枚は片方の版にしか命令の秒（seconds）が無いので、秒を比べていない", flow, size, seconds.oneSided))
 	}
 	results := make([]*Diff, len(pairs))
 	work := make(chan int)
@@ -198,6 +210,42 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool) {
 			c.add(d)
 		}
 	}
+}
+
+// newOnlyFrames は新しい版にだけある world のコマの数（新しい版で秒が分かるようになった命令の途中のコマなど）。
+func newOnlyFrames(byA, byB map[string]Frame) int {
+	n := 0
+	for key, f := range byB {
+		if _, ok := byA[key]; !ok && f.Layer == "world" {
+			n++
+		}
+	}
+	return n
+}
+
+// midSeconds は組になった途中のコマの命令の秒を比べる。同じ命令の 0.25・0.5・0.75 の 3 枚は 1 件にまとめる。
+type midSeconds struct {
+	seen     map[string]bool
+	oneSided int
+}
+
+// compare は秒が違えば迷った差を返す（同じ命令で 2 回目からは nil）。片方にだけ秒があれば数えるだけ。
+func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string) *Diff {
+	if (fa.Seconds == nil) != (fb.Seconds == nil) {
+		m.oneSided++
+		return nil
+	}
+	if fa.Seconds == nil || math.Abs(*fa.Seconds-*fb.Seconds) <= 1e-9 {
+		return nil
+	}
+	cmdKey := fmt.Sprintf("%s#%d|%d|%s|%g|%g", fa.Node, fa.Seq, fa.Step, fa.Cmd, *fa.Seconds, *fb.Seconds)
+	if m.seen[cmdKey] {
+		return nil
+	}
+	m.seen[cmdKey] = true
+	return &Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fb.T, FrameKind: fa.Kind, Cmd: fb.Cmd,
+		Before: filepath.Join(dirA, fa.File), After: filepath.Join(dirB, fb.File), Review: true,
+		Detail: fmt.Sprintf("時間を取る命令 %s の秒が違う（前 %g 秒 / 後 %g 秒。途中のコマは秒に対する割合で撮るので、絵では差が出ない）", fa.Cmd, *fa.Seconds, *fb.Seconds)}
 }
 
 // missingFrame は新しい版で撮っていないコマの差。途中のコマは命令を組み替えると生まれない事があるので、

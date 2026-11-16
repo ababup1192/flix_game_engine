@@ -49,7 +49,8 @@ pub mod YarnRunner {
     }
 
     /// node = 開いているノード（閉じていれば空）、stack = これから流す文の並び（選択肢と <<if>> の中身を流す間は、
-    /// その後ろの文がその下に残る）、pending = 出している選択肢、waitUntil = <<wait>> が明ける時刻、storage = 変数と訪れた数。
+    /// その後ろの文がその下に残る）、pending = 出している選択肢、waitUntil = <<wait>> が明ける時刻、storage = 変数と訪れた数、
+    /// ran = 流した文の所（新しい順）。
     enum Machine[c]({
         program = Yarn.Program,
         node = String,
@@ -58,8 +59,39 @@ pub mod YarnRunner {
         pending = List[Yarn.Choice],
         waitUntil = Option[Clock.Time[c]],
         storage = YarnStorage.Storage,
-        entry = Bookmark
+        entry = Bookmark,
+        ran = Ran
     })
+
+    /// 流した文の .yarn の所。count = 流した文の総数（増えるだけ）、sources = 新しい順の所（ranKept の倍数の数ごとに ranKept まで切るので、
+    /// 持つのは ranKept の 2 倍未満）。セーブ（Bookmark）には入らない。
+    type alias Ran = { count = Int64, sources = List[Yarn.Source] }
+
+    def noRan(): Ran = { count = 0i64, sources = Nil }
+
+    /// 読める所の数（ranSourcesSince が 1 回に返す数の上限）。
+    // WhyNot: 全部を持ち続けない — 実行器は World に入ったまま遊びの終わりまで生き、列が伸び続ける。読む側はフレームごとに差だけを読む。
+    def ranKept(): Int32 = 4096
+
+    /// 流した文の所を 1 つ足す（無ければそのまま）。
+    def noteRan(source: Option[Yarn.Source], runner: Runner[c]): Runner[c] = match source {
+        case Some(at) =>
+            let Machine.Machine(m) = runner;
+            let count = m#ran#count + 1i64;
+            let sources = at :: m#ran#sources;
+            let kept = if (Int64.remainder(count, Int32.toInt64(ranKept())) == 0i64) List.take(ranKept(), sources) else sources;
+            Machine.Machine({ ran = { count = count, sources = kept } | m })
+        case None => runner
+    }
+
+    /// before から after までに流した文の .yarn の所（流した順・最大 ranKept の 4096 個）。before と after は同じ実行器の前と後
+    /// （start・startWith・resume で作り直した実行器は before に closed() を渡す）。台詞・選択肢・選んだ選択肢・コマンド・<<wait>>・
+    /// <<set>>・<<jump>>・<<if>>・<<stop>> の所で、通らなかった <<if>> の枝と選ばなかった選択肢の中身は入らない。
+    pub def ranSourcesSince(before: Runner[c], after: Runner[c]): List[Yarn.Source] =
+        let Machine.Machine(b) = before;
+        let Machine.Machine(a) = after;
+        let n = Int64.max(0i64, Int64.min(Int32.toInt64(ranKept()), a#ran#count - b#ran#count));
+        List.reverse(List.take(Int64.tryToInt32(n) |> Option.getWithDefault(0), a#ran#sources))
 
     /// 読んでいる所のブックマーク（セーブに入れる物）。node = 開いているノード、storage = そのノードに入った時の変数と訪れた数、
     /// steps = 入ってから受けた入力（Advance と Choose だけ。<<wait>> は待たずに越える）。resume が node の頭から
@@ -76,7 +108,7 @@ pub mod YarnRunner {
     /// 開いていない実行器（World の初期値）。
     pub def closed(): Runner[c] =
         Machine.Machine({ program = Yarn.empty(), node = "", stack = Nil, shown = Shown.Closed, pending = Nil, waitUntil = None,
-                          storage = YarnStorage.empty(), entry = { node = "", storage = YarnStorage.empty(), steps = Nil } })
+                          storage = YarnStorage.empty(), entry = { node = "", storage = YarnStorage.empty(), steps = Nil }, ran = noRan() })
 
     /// node の頭から、最初に待つ所（台詞・選択肢・wait）か終わりまで流す。node が無ければすぐ Done。
     /// 変数は全部 <<declare>> の初めの値から始まる（前の会話の値を持ち越すなら startWith）。
@@ -86,7 +118,7 @@ pub mod YarnRunner {
     /// start と同じだが、変数と訪れた数を storage から始める（前の会話の storageOf・セーブから読んだ物）。
     pub def startWith(storage: YarnStorage.Storage, program: Yarn.Program, node: String, now: Clock.Time[c]): (Runner[c], List[Event]) =
         let begin = opened -> Machine.Machine({ program = program, node = opened, stack = Nil, shown = Shown.Closed, pending = Nil,
-                                                waitUntil = None, storage = storage, entry = { node = opened, storage = storage, steps = Nil } });
+                                                waitUntil = None, storage = storage, entry = { node = opened, storage = storage, steps = Nil }, ran = noRan() });
         match Yarn.nodeOf(node, program) {
             case Some(found) => flow(fuel(), now, withStack(found#body :: Nil, begin(node)), Nil)
             case None        => finish(begin(""), Nil)
@@ -99,7 +131,7 @@ pub mod YarnRunner {
             case (Action.Advance, Shown.Line(_))     => flow(fuel(), now, record(action, runner), Nil)
             case (Action.Choose(i), Shown.Choices(options)) => match List.nth(i, m#pending) {
                 case Some(choice) if isAvailable(i, options) =>
-                    let Machine.Machine(r) = record(action, runner);
+                    let Machine.Machine(r) = noteRan(Some(choice#line#source), record(action, runner));
                     let resumed = Machine.Machine({ pending = Nil, stack = choice#body :: r#stack | r });
                     flow(fuel(), now, resumed, Nil)
                 case _ => (runner, Nil)
@@ -186,6 +218,17 @@ pub mod YarnRunner {
             }
             case _ => Nil
         }
+
+    /// 文そのものの所（選択肢の並びは最初の選択肢の所。選択肢の無い並びは None）。
+    def sourceOf(statement: Yarn.Statement): Option[Yarn.Source] = match statement {
+        case Yarn.Statement.Say(line)         => Some(line#source)
+        case Yarn.Statement.Choose(choices)   => List.head(choices) |> Option.map(choice -> choice#line#source)
+        case Yarn.Statement.Jump(_, source)   => Some(source)
+        case Yarn.Statement.Stop(source)      => Some(source)
+        case Yarn.Statement.Command(command)  => Some(command#source)
+        case Yarn.Statement.Set(_, _, source) => Some(source)
+        case Yarn.Statement.If(_, source)     => Some(source)
+    }
 
     /// 文が持つ行（選択肢と <<if>> は中身も）。
     def linesOf(statement: Yarn.Statement): List[Int32] = match statement {
@@ -389,7 +432,8 @@ pub mod YarnRunner {
             case Nil              => finish(runner, acc)
             case Nil :: rest      => flow(budget - 1, now, withStack(rest, runner), acc)
             case (statement :: more) :: rest =>
-                let next = withStack(more :: rest, runner);
+                let ran = noteRan(sourceOf(statement), runner);
+                let next = withStack(more :: rest, ran);
                 match statement {
                     case Yarn.Statement.Say(line) =>
                         let shown = substitute(m, line);
@@ -405,7 +449,7 @@ pub mod YarnRunner {
                         }
                     case Yarn.Statement.Jump(target, _) => match Yarn.nodeOf(target, m#program) {
                         case Some(found) =>
-                            let Machine.Machine(n) = withStack(found#body :: Nil, leave(runner));
+                            let Machine.Machine(n) = withStack(found#body :: Nil, leave(ran));
                             flow(budget - 1, now, Machine.Machine({ node = target, entry = { node = target, storage = n#storage, steps = Nil } | n }), acc)
                         case None => finish(next, acc)
                     }
@@ -414,7 +458,7 @@ pub mod YarnRunner {
                         flow(budget - 1, now, Machine.Machine({ storage = YarnStorage.set(name, evaluate(m, expr), n#storage) | n }), acc)
                     case Yarn.Statement.If(branches, _) =>
                         let body = branches |> List.find(branch -> isTrue(evaluate(m, branch#condition))) |> Option.map(branch -> branch#body) |> Option.getWithDefault(Nil);
-                        flow(budget - 1, now, withStack(body :: more :: rest, runner), acc)
+                        flow(budget - 1, now, withStack(body :: more :: rest, ran), acc)
                     case Yarn.Statement.Stop(_) => finish(next, acc)
                     case Yarn.Statement.Command(command) => match waitSecondsOf(command) {
                         case Some(seconds) =>

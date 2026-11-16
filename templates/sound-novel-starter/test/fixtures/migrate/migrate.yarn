@@ -1,0 +1,27 @@
+// テスト用のシナリオ（TestMigrate）。同じフレームで流れるコマンド・時間を取る <<bg>>・<<wait>>・選択肢・<<set>>・自分への <<jump>> での入り直し。
+// 直したら: bin/fge yarn build test/fixtures/migrate --no-vocab
+title: Station
+---
+<<declare $n = 0>>
+<<audio ambience amb_river>>
+<<audio se se_slap>>
+<<wait 1>>
+夏草の駅に降りると、蜩の声が押し寄せてきた。
+<<bg slope grade=dusk time=1.0>>
+<<wait 1>>
+chinatsu: 夏草の駅に降りると、蜩の声が押し寄せてきた。
+-> 行く
+    <<set $n to 1>>
+    <<jump Again>>
+-> 戻る
+    夏草の駅に降りると、蜩の声が押し寄せてきた。
+===
+title: Again
+---
+夏草の駅に降りると、蜩の声が押し寄せてきた。
+<<set $n to $n + 1>>
+<<if $n < 3>>
+    <<jump Again>>
+<<endif>>
+夏草の駅に降りると、蜩の声が押し寄せてきた。
+===

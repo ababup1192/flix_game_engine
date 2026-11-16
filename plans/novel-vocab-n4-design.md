@@ -643,11 +643,13 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 ### 10.4 古い版にだけ入れる差
 
 - 廃屋配信の worktree に TapeOut を入れる。2 本の worktree に `FLOW_LAYERS=world` と足す欄の差を入れる。どれも撮るためだけの差で、ゲームのリポジトリにはコミットしない（worktree ごと捨てる）。
+- **写す差の一覧**（段 10 のテンプレートの側を入れた後・2026-11-16）: `src/render/MigrateOut.flix`・`src/render/TapeJson.flix`・FlowVideo の差（`MIGRATE_OUT`・`restore`・`shootFrames`・`migrateProbes`）・WorldRead の 2 か所（`absorbLive` と、`absorbOne` の `Executed` を出す所）・`World.Event` の `Executed`・`RanLines` と `World.Executed`・`View.worldLayer`・`Stage.busySecondsOf` と `PropertyTween.spansOf`（または下の「その版の書き方の秒」）・Makefile の口（`migrate-baseline`・`flow-video`）・TapeOut（廃屋配信には無いので丸ごと）。engine は `YarnRunner.ranSourcesSince` のある版（この枝の engine_world）で build する。
+- **必須: 秒はその版の命令の書き方で返す**。2 本は `time=` を書かず、秒を位置の引数で書く（例 `<<bg deep deep0 1.6>>`）。古い版の書き手（Commanded の秒）は、その版の命令の表が読んだ秒（位置の引数・Doc の既定）か、当てる前と後の舞台の差（`Stage.busySecondsOf` の形が写せるなら）で返す。`time=` だけを読むと基準に mid が 1 枚も出ず、10.3 の演出の途中の比べと 10.6 の (2) が黙って効かない。step は時間を取る命令を全部数える（秒の分かる物だけを数えると、新しい版で秒が分かるようになった時に後ろの step が全部ずれる）。古い版の書き手は、なるべく `busySecondsOf` と同じ測り方（当てる前と後の舞台の差）で写す。命令の引数で返すなら、Doc の既定の秒などで系統の秒の迷った差が出ると見込み、`systematic` で承認する。古い版で「時間を取る命令」（Timed。step を数える基準）とする命令が新しい版と食い違うと、step がずれて鍵が組めない（その版の表の Timed を新しい版にそろえて写す）。
 
 ### 10.5 自動では見えない物は動画を並べて人が見る
 
 - 手触り（払いの効き・タップの間）・テンポ（待ちの長さ・音の間）・音の混ざり具合は、機械の比べでは見えない。
-- 書き出し: 前の版（worktree）と新しい版で同じ flow を `make flow-video NAME=<flow>` で撮り、ffmpeg の `hstack` で横に並べた mp4（`debug/migrate/<flow>.sbs.mp4`）にする。音は 2 本を混ぜず、**前の音を左・新しい音を右**のチャンネルに入れる（`amerge` + `pan`）。片耳ずつ聞けば、音の間と音量の差が分かる。上に台詞の行（ノード・番号）と時刻の字幕をベイクする（tape.json の `timeline` から）。`make migrate-video FLOW=<flow>` の 1 つの口にする【推】。
+- 書き出し: 前の版（worktree）と新しい版で同じ flow を撮り（テンプレートの `make migrate-video FLOW=e2e/<flow>.flow OLD=<前の版のフォルダ>` が、前の版に flow-video の口があれば `flow-video FLOW= NAME=` の両方を渡し、無ければ `tape FLOW=` の `debug/tape/<flow>/video.mp4` を使う。廃屋配信は `flow-video NAME=`・血鱗は `tape FLOW=` だけ。血鱗の Makefile はリポジトリの `game/` の下にあるので `OLD=…/blood-scale/game` を渡す）、ffmpeg の `hstack` で横に並べた mp4（`debug/migrate/<flow>.sbs.mp4`）にする。音は 2 本を混ぜず、**前の音を左・新しい音を右**のチャンネルに入れる（`amerge` + `pan`）。片耳ずつ聞けば、音の間と音量の差が分かる。上に台詞の行（ノード・番号）と時刻の字幕をベイクする（tape.json の `timeline` から）。`make migrate-video FLOW=<flow>` の 1 つの口にした（10.8.1）。
 - 見る flow: 血鱗は route_gem・route_bone・route_leave・showcase・final_swipe（払い）、廃屋配信は full_story・walk_tour・showcase。人が見て気になった時刻を `migrate-accept.json` か読み違いの一覧に書く。
 - 実機の手触り（スマホの払い）は動画では見えないので、移した後の Web 版をスマホで 1 回通して触る（血鱗のゲート 15 か所）。
 
@@ -690,6 +692,20 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - 血鱗の今の tape.json 3 本（`debug/video/tape_*`）を前と後の両方に置いて流すと（レビュー 2 の直しの後に流し直しても同じ数）、止める違い 0・迷った差 0 で、通らない命令の行が 3 行（結末の 3 つのノードの「タイトルへ戻る」の選択肢の中の `<<stop>>`）出た。テープの flow はその選択肢を選ばず、`lines` にもその行が載らないため（260 行目で確かめた。328・355 行目は同じ形と見た【推】）。
 - agents-pack の早見表と eval のお題には足さない。この道具はエンジンの作業場で 2 本の移行（段 11・12）にだけ使い、ゲームを作る人が普段使う口ではない。`make migrate-baseline` と `make migrate-video` をテンプレートの Makefile に足す段で、早見表に 1 行と eval のお題を 1 本足す（ゲームに配る口になるため）。
 
+#### 10.8.1 テンプレートの側（2026-11-16・レビュー 1 回目 74 点の直しの後）
+
+`templates/sound-novel-starter` が記録を書くようにした。engine は ranLines のために engine_world の `YarnRunner` へ口を 1 つ足した（人の承認・2026-11-16・案 A）。
+
+- **書き手**: `FlowVideo.play` に `MIGRATE_OUT=<フォルダ>` を渡すと、そこへ tape.json（今の欄に `events`・`buses`・`frames`・`ranLines`・`screen` を足した物）・`frames/world/f<番号>.png`・`frames/all/f<番号>.png`・`saves.json`（flow の終わりのセーブデータ）を書く。欄を作るのは純粋な `src/render/MigrateOut.flix`（値の小物は `src/render/TapeJson.flix`）、コマを塗るのは FlowVideo（SoftRaster。GPU の道は全部のフレームを選ぶと PNG でなく frames.mkv を書くため）。
+- **`events`**: 実行器の出来事を反映した所（`WorldRead.absorbOne`）で、人が読み進めている時（Live）だけ `World.Event.Executed`（`Said`・`Offered`・`Commanded` と `(ノード, 訪問, 行)`）を出す。記録はフレームごとの出来事の差（`Emit.since`）から組むので、同じフレームで流れるコマンドも落とさない。`who` は話し手の id（呼び名は版で替わりうる）。line の `probes` は次の出来事の 1 つ前のフレーム（台詞を出し終えた所）の値。載せる問いは決まった問い（`FlowVideo.migrateProbes`: phase・panel・talk・mode・photo・logSize・gate・choice。行の番号・カーソルは版で替わるので載せない）と、シナリオに宣言した変数の全部（`$名前`。`MigrateOut.probeRowsOf` が Yarn の宣言から足す）。知らない問いの名前は Err（記録を書かない）。`mode` は版で値の言い方が替わる（`Nvl`・`Adv` → 型の名前）ので、移行では `probeMap` の承認が要る。
+- **`frames`**: lineDone は次の出来事の 1 つ前のフレーム（字を出し終えていれば world と all の 2 枚）。mid は時間を取る命令（`timing = Timed`）の、命令が実際に取った秒（`Stage.busySecondsOf`: 当てる前と後の舞台を比べ、新しく始まった背景の重ね（今の背景の写真か時間帯が替わった時）・tween・trigger・立ち絵と小物の重ねのうち一番遅く終わる物。位置の引数・`time=`・Doc の既定のどれで書いても同じに取れる。命令が出した待ち（`Out.Wait`）があれば、その秒との大きい方）の 0.25・0.5・0.75 の最初のフレーム（world だけ）で、`seconds` も載せる。step は時間を取る命令を全部数え（秒の分からない物も）、撮るのは秒が分かる物だけ。world の層は `View.worldLayer`（`View.frame` と layer=screen の overlay。文字の枠・HUD・画面・知らせ・素材の待ちの字は描かない）。
+- **`buses`**: ミキサーは `Controls.mixerOf`（Res の `novel.mixer.json` に World の設定の音量と snapshot を掛けた物）から読め、実機と同じ `AudioMixer.step` をフレームごとに回して `busGainOf`（バスの今の音量 × ダッキング）を dB（小数 2 桁・無音は null）にし、変わったフレームだけ載せる。ミキサーにバスが 1 本も無ければ欄ごと出さない。FlowVideo の音の書き出し（`AudioMixdown.mixdownStereo`）と同じ step を 1 本にまとめるのは、AudioMixdown が状態を外へ出さないのでしていない。
+- **`ranLines`**: engine_world の `YarnRunner.ranSourcesSince(before: Runner[c], after: Runner[c]): List[Yarn.Source]` で読む（同じ実行器の前と後の間に流した文の所を流した順で。作り直した実行器は before に `closed()` を渡す。台詞・選択肢・選んだ選択肢・コマンド・`<<wait>>`・`<<set>>`・`<<jump>>`・`<<if>>`・`<<stop>>`。通らなかった枝と選ばなかった選択肢の中身は入らない。セーブの Bookmark には入らず、1 回に読めるのは 4096 個まで）。テンプレートは `WorldRead.absorbLive`（人が読み進めている時の absorb。はじめからは `closed()` を渡す）で `World.Event.RanLines(所)` を出し、MigrateOut が `[{file, line}]` で書く。ロード・戻るの当て直し（Silent）は数えない。go は `{file, line}` と行番号だけの古い形の両方を読み、ranLines がある記録では `lines` で代わりに数えない。
+- **`restore.json`**: `FlowVideo.restore` が `MIGRATE_SAVE` の saves.json の枠を 1 つずつ `WorldSaves.loadFrom` で読み戻し、`saves/<flow>-<枠>/restore.json`（`auto0`・`n1-0` など）に書く。`refused` はいつも false（テンプレートは版の違うセーブを断らない）。`seq` はブックマークの steps の Advance の数（今のノードに入ってから送った数。入り直すと 0 から。events の seq と同じ数え方）。
+- **make の口**（テンプレートの Makefile）: `make migrate-baseline`（e2e の flow を全部流して debug/migrate/baseline に記録と flow ごとの video.mp4・saves.json を読み戻した restore.json。基準が既にあれば止まり、撮り直しは `MIGRATE_OVERWRITE=1`・前の版の基準を写すのは `BASELINE_FROM=<前の版のフォルダ>`）・`make migrate-new`（同じ物を debug/migrate/new に撮って `bin/fge migrate diff`）・`make migrate-diff`（突き合わせだけ）・`make migrate-video FLOW= [OLD=<前の版のフォルダ>]`（OLD に flow-video の口があれば `FLOW=` と `NAME=` の両方を渡して撮り、無ければ `tape FLOW=` の `debug/tape/<名前>/video.mp4`。OLD が無ければ基準の video.mp4）・`make flow-video FLOW=`（か `NAME=`。`showcase-video` もこれを呼ぶ）。早見表（agents-pack/AGENTS.core.md）に 1 行、eval のお題 `novel-migrate-gate` を 1 本足した（テンプレートの足元で 100 点）。
+- **mid の秒と新しい版にだけあるコマ（go）**: 組になった mid どうしで `seconds` を比べ、違えば迷った差（同じ命令の 3 枚は 1 件）。片方の版にだけ `seconds` があれば比べず注意に出す。新しい版にだけある world のコマは数を注意に出す（10.8 の S2）。
+- **10.6 の確かめ（テンプレート自身・6 本の flow・セーブ 15 枠・レビューの直しの後に取り直し）**: (1) 何も変えずに 2 回撮ると、止める違い 0・迷った差 0・比べたコマ 439 枚（命令が実際に取った秒で撮るので、`time=` の無い show・hide・shake にも mid が出る。基準の mid は bg 49・show 57・hide 27・shake 6）。止まったのはカバー率の 15 行だけで、どれも本当に通らない行（届かない結末の 14 行と、どの flow も選ばない選択肢の中の `<<jump KeptMap>>`（222 行目））。ranLines を書く前に出ていた `<<set>>` 81・145 行目の偽の止まりは消えた。(2) 台詞を 1 字替える（27 行目）と「1.出来事の並び」で止まる。(3) `<<bg … time=2.5>>` を 2.0 にすると、mid の `seconds` の違いが迷った差 1 件に出る（`--strict` で止まる。直す前は通っていた）。
+
 ## 11. 小分けの順と見積もり
 
 物差し:
@@ -712,7 +728,7 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 | 8 | N4d | **5.0 で取りやめ・段 9 に合流・済（2026-11-16。11.10）**（汎用の口 3 つと initial・title・still の切り抜き）。元の中身: engine_world の `Backdrop3d`（C1）・テンプレートの bg と `camera path=` の配線・道筋の選び方と音（World の `Timeline`）・still の切り抜き（5.5）・`novel.backdrops3d.json` の schema | 5〜7 時間 |
 | 9 | 口 | **済（2026-11-16。11.10）** `GameRes`・`GameBoot`・`GameView.hud`・`GameView.objects`（C12）・`Commands.applyText`（C9）・`vocab.std.json`（C8）と、段 8 の口（`GameView.backdrop`・`GameCommands.backdropSwitch`・`<<tween>>`・`initial`・`title`・`aspect`） | 1.5〜2.5 時間（段 8 と合わせて実績 約 3 時間） |
 | — | レビュー 3 | | 0.5〜1 時間 |
-| 10 | 門 | 10.7 の道具と 10.6 の確かめ・`make template-sync`（C5）と、その一覧を毎回見る手順（7.2） | 9.5〜13 時間 |
+| 10 | 門 | 10.7 の道具と 10.6 の確かめ・`make template-sync`（C5）と、その一覧を毎回見る手順（7.2）。**go の道具（10.8）とテンプレートの側（10.8.1: tape.json の events・buses・frames・screen・restore.json・`make migrate-baseline`・`migrate-new`・`migrate-diff`・`migrate-video`・早見表とお題）は済（2026-11-16）**。ranLines（engine_world の `YarnRunner.ranSourcesSince`）と mid の秒（go）も済・`make template-sync` は未着手 | 9.5〜13 時間 |
 | — | レビュー 4 | 門の道具 | 0.5〜1 時間 |
 | 11 | 移行 | 廃屋配信（先に。分岐が無く flow が短いので門の道具の確かめになる）: 基準を撮る・テンプレートの当て直し（追随の実績から 3〜4 時間）・Walk を `novel.backdrops3d.json` へ（1〜2 時間）・状態バーとコメント欄を `GameView.hud` と変数へ・HUD の変数の宣言（0.5 時間）・テスト 131 本の振り分け（1〜2 時間）・門の振り分け（1〜2 時間） | 8〜12 時間 |
 | 12 | 移行 | 血鱗: 基準を撮る・テンプレートの当て直し（実績 約 5 時間 → 上書きの決まりで 3〜5 時間）・Whale・Sea・Vial・Ending を GameView の層の数と `src/game/` へ写す（4〜6 時間）・テスト 323 本の振り分け（2〜3 時間）・門の振り分けと古いセーブ（2〜3 時間） | 11〜17 時間 |
@@ -1132,3 +1148,8 @@ SHA はコマ全体の値なので、層を分けて比べられない。当て�
 - （段 8+9）サムネはどの写真も画面ちょうどに伸ばす（`aspect` の切り抜きは実際の画面だけ）。`ShaderDoc.Field` の `Tiling`・`Shift` で UV の側で切り抜けばサムネでも伸びない見込み【推】。描き出しの基準の絵が全部替わりうるので、今回は試していない。
 
 - 段 10 の go の道具（`bin/fge migrate diff`・`migrate video`）を main へ入れた（2026-11-16・レビュー 80 → 86 → 92）。3 回目の任意で残した物: S1 撮っていないコマの差の Detail に「同じ土台が前の版で N 枚・新しい版で M 枚。欠けた回は後ろへずれて見える事がある」を一文・S2 新しい版にだけあるコマの数を Notes に出す・S3 `pairSound` で窓の外の同じ名前は時刻の近い物を先に探す・S4 `keyed` の同じ時刻をフレームの番号で比べる。移行の段 11 で頁を実際に読む時に、要るものから入れる。
+- （段 10）engine の fpkg を作り直した後、テンプレートの常駐の型検査（`bin/fge checkd`）は古い fpkg のまま `Undefined name` を返した（`bin/fge checkd --stop <テンプレート>` で直る）。
+- （段 10）画面の大きさは design の 1 通りだけを撮る（tall・short は未）。
+- （段 10）10.6 の (2) のうち「効果音を 1 つ消す」「選択肢の後の `jump` を 1 つ替える」「sink の GameCommands が `lair.dive` を当てない」は、テンプレートで試していない（テンプレートの確かめは台詞の 1 字と bg の秒）。段 11・12 で古い版と新しい版を撮る時に、それぞれ 10.2 の 2・1・5 で落ちるかを確かめる。
+- （段 10）`mode` の問いは版で値の言い方が替わる（`Nvl`・`Adv` → 型の名前）ので、`migrate-accept.json` の `probeMap` で読み替えを承認する。
+- （段 10）`Stage.busySecondsOf` は (始まる時刻, 秒) の組が増えた分で見るので、同じフレームで同じ組を差し替えるだけの命令（同じ秒の重ねを同じ時刻にかけ直す）は None になる（step には数える）。

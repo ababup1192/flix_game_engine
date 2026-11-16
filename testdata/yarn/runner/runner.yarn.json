@@ -1,9 +1,17 @@
 {
-  "version": 1,
+  "version": 2,
   "note": "bin/fge yarn build が runner.yarn から書いた木。手で直さない（.yarn を直して build する）",
   "vocab": "",
   "files": [
     "runner.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$n",
+      "value": 0,
+      "file": "runner.yarn",
+      "line": 32
+    }
   ],
   "nodes": [
     {
@@ -122,6 +130,112 @@
           "kind": "line",
           "line": 28,
           "text": "two"
+        }
+      ]
+    },
+    {
+      "title": "Ran",
+      "file": "runner.yarn",
+      "line": 30,
+      "headers": [],
+      "body": [
+        {
+          "kind": "set",
+          "line": 33,
+          "name": "$n",
+          "expr": {
+            "kind": "value",
+            "value": 1
+          }
+        },
+        {
+          "kind": "if",
+          "line": 34,
+          "clauses": [
+            {
+              "line": 34,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$n"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 1
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 35,
+                  "text": "taken"
+                }
+              ]
+            },
+            {
+              "line": 36,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 37,
+                  "text": "skipped"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "options",
+          "line": 39,
+          "options": [
+            {
+              "line": 39,
+              "text": "right",
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 40,
+                  "node": "RanEnd"
+                }
+              ]
+            },
+            {
+              "line": 41,
+              "text": "left",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 42,
+                  "text": "left"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "RanEnd",
+      "file": "runner.yarn",
+      "line": 44,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 46,
+          "text": "end"
+        },
+        {
+          "kind": "stop",
+          "line": 47
+        },
+        {
+          "kind": "line",
+          "line": 48,
+          "text": "after"
         }
       ]
     }

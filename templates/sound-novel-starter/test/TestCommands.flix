@@ -3,7 +3,7 @@
 // 写真・時間帯・音の名前は Doc（novel.backdrops.json・project.json）から引く。
 mod TestCommands {
 
-    use fge::{Clock, Yarn, YarnCommands}
+    use fge::{Clock, Curve, Yarn, YarnCommands}
     use Commands.Out
 
     def command(name: String, args: List[String]): Yarn.Command =
@@ -142,4 +142,49 @@ mod TestCommands {
         let mid = Clock.after(k#shakeSeconds / 3.0, Clock.zero());
         Assert.assertEq(expected = (true, (0.0, 0.0)),
                         (Stage.shakeOffset(mid, Stage.ShakeTarget.Screen, shook) != (0.0, 0.0), Stage.shakeOffset(mid, Stage.ShakeTarget.Screen, Stage.settle(shook))))
+
+    // ── 命令で舞台が動いた秒（Stage.busySecondsOf）。秒は Doc（test/fixtures/novel.cast.json の fadeSeconds）と引数から引く ──
+
+    /// 命令を当てた後の舞台（当たらなければ当てる前のまま）。
+    def applied(res: Res.Res, name: String, args: List[String], st: Stage.Stage): Stage.Stage =
+        exec(res, Commands.Replay.Live, name, args, st) |> Result.map(fst) |> Result.getWithDefault(st)
+
+    def busyOf(res: Res.Res, name: String, args: List[String], st: Stage.Stage): Option[Float64] =
+        Stage.busySecondsOf(Clock.zero(), st, applied(res, name, args, st))
+
+    /// Doc の写真の名前を 2 つ（同じフレームで続けて替える）。
+    def twoPhotos(res: Res.Res): (String, String) =
+        let names = BackdropDoc.rec(res#backdrops)#photos |> Map.keysOf |> Set.toList;
+        (List.head(names) |> Option.getWithDefault(""), List.nth(1, names) |> Option.getWithDefault(""))
+
+    @Test
+    def testShowWithoutTimeTakesTheDocFadeSeconds(): Unit \ {Assert, Fs.FileRead} =
+        let res = castRes();
+        Assert.assertEq(expected = Some(CastDoc.rec(res#cast)#fadeSeconds), busyOf(res, "show", "a" :: Nil, Stage.empty()))
+
+    @Test
+    def testDelayedTweenAddsTheDelayToItsSeconds(): Unit \ Assert =
+        // 0.3 秒待ってから 0.5 秒かけて動く値は、今から 0.8 秒動く。
+        let props = PropertyTween.tween(PropertyTween.numKey("game.t"), Some(0.0), 1.0, Clock.zero(), 0.3, 0.5, Curve.Ease.Linear, PropertyTween.empty());
+        Assert.assertEq(expected = Some(0.8), Stage.busySecondsOf(Clock.zero(), Stage.empty(), { props = props | Stage.empty() }))
+
+    @Test
+    def testSecondShowInTheSameFrameIsCounted(): Unit \ {Assert, Fs.FileRead} =
+        // 同じ時刻・同じ秒の重ねが 1 つ増えた分を数える（1 つ目の show と組が同じでも取りこぼさない）。
+        let res = castRes();
+        let first = applied(res, "show", "a" :: Nil, Stage.empty());
+        Assert.assertEq(expected = Some(CastDoc.rec(res#cast)#fadeSeconds), busyOf(res, "show", "b" :: Nil, first))
+
+    @Test
+    def testCommandThatDoesNotMoveTheStageHasNoSeconds(): Unit \ {Assert, Fs.FileRead} =
+        let res = castRes();
+        Assert.assertEq(expected = None, busyOf(res, "text", "speed=1" :: Nil, Stage.empty()))
+
+    @Test
+    def testSecondBackdropInTheSameFrameIsCounted(): Unit \ {Assert, Fs.FileRead} =
+        // 同じフレームの 2 つ目の <<bg>> も、その秒（time=1.5）を返す。
+        let res = castRes();
+        let (one, two) = twoPhotos(res);
+        let first = applied(res, "bg", one :: "grade=${gradeOf(res)}" :: "time=1.0" :: Nil, Stage.empty());
+        Assert.assertEq(expected = Some(1.5), busyOf(res, "bg", two :: "grade=${gradeOf(res)}" :: "time=1.5" :: Nil, first))
 }
