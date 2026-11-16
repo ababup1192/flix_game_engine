@@ -225,13 +225,15 @@ mod WorldRead {
         let later = r#pause |> Option.map(p -> if (Clock.since(p#until, until) > 0.0) until else p#until) |> Option.getWithDefault(until);
         let tap = tappable and (r#pause |> Option.forAll(p -> p#tappable));
         let pass = passInstant and (r#pause |> Option.forAll(p -> p#passInstant));
+        // WhyNot: 切り替えの待ちの間に流した命令が押しても明けない待ち（Out.Wait）を出した時に、押して明ける性質を切り替えの側に残さない —
+        //   <<audio se 音 wait=true>> のような待ちは音を聞かせる待ちで、押して切り替えごと飛ばすと音の途中で次の台詞が出る。
         { pause = Some({ until = later, rest = Nil, last = None, tappable = tap, passInstant = pass }) | r }
 
     /// 押すと明ける待ち（Out.WaitOrTap）の間か。
     pub def isTapWait(w: World.World): Bool =
         World.readOf(w) |> Option.flatMap(r -> r#pause) |> Option.exists(p -> p#tappable)
 
-    /// 命令が出した待ち（Out.Wait・Out.WaitOrTap）の間か。flow の reader はこの間は押さない（待ちの秒を流し、明けてから読む間を数える）。
+    /// 命令が出した待ち（Out.Wait・Out.WaitOrTap・Out.SwitchWait）の間か。flow の reader はこの間は押さない（待ちの秒を流し、明けてから読む間を数える）。
     pub def isPaused(w: World.World): Bool =
         World.readOf(w) |> Option.exists(r -> Option.nonEmpty(r#pause))
 

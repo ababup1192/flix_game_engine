@@ -221,9 +221,12 @@ mod ThemeDoc {
                                       portrait = portraitTextOf(obj) })
         })
 
-    /// 型の portrait（"page"・"band"）と bandHeight（帯の高さ px。既定 236）。知らない字は page。
+    /// band の帯の高さの既定（画面の下端から px）。
+    pub def defaultBandHeight(): Float64 = 236.0
+
+    /// 型の portrait（"page"・"band"）と bandHeight（帯の高さ px。既定 defaultBandHeight）。知らない字は page。
     def portraitTextOf(obj: Map[String, Json]): PortraitText =
-        if (JsonCodec.stringOr("portrait", "page", obj) == "band") PortraitText.Band(JsonCodec.floatOr("bandHeight", 236.0, obj)) else PortraitText.Page
+        if (JsonCodec.stringOr("portrait", "page", obj) == "band") PortraitText.Band(JsonCodec.floatOr("bandHeight", defaultBandHeight(), obj)) else PortraitText.Page
 
     /// speakers の列（{id, name, color, ink}）。色の無い行は名前の色と本文の色。
     def speakersOf(name: Color, ink: Color, json: Json): Map[String, Speaker] =

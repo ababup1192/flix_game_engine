@@ -50,7 +50,7 @@ mod Commands {
     ///   WaitOrTap(秒) = Wait と同じ待ちで、人が押すと（送りの操作）秒を待たずに明ける。押して明けた時は、ゲームが持つ背景の切り替えも
     ///   終わりの形にする（Stage.withGameSwitchFinished）。オートでは明けない。Silent では落とし、スキップ中は Wait と同じくすぐ明ける /
     ///   SwitchWait(秒) = ゲームが持つ背景の切り替えの待ち（bg が出す）。WaitOrTap と同じく押すと明け、待ちの間も後ろの時間を取らない命令
-    ///   （<<audio>>・<<set>> など）は先に流し、台詞・選択肢・<<wait>>・時間を取る命令で止まる。
+    ///   （<<audio>> など。<<set>> は実行器が先に済ませるので出来事にならない）は先に流し、台詞・選択肢・<<wait>>・時間を取る命令で止まる。
     // WhyNot: WaitOrTap に時間を取らない命令を流させない — ゲームのコマンド（コメントを順に出す等）の待ちの後ろの効果音は、待ちが明けてから鳴らしたい。
     pub enum Out with Eq, ToString {
         case ClearPage

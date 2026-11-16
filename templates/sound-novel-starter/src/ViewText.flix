@@ -144,7 +144,7 @@ mod ViewText {
         let base = Layout.advTextSizes(env#fit, View.kindOf(env));
         let body = scaled(env, r#stage, { body = base#body, ruby = base#ruby });
         let sizes = { body = body#body, ruby = body#ruby, name = base#name };
-        let area = Layout.portraitBand(env#fit, bandHeight);
+        let area = Layout.portraitBand(env#fit, bandHeight, if (Option.nonEmpty(WorldRead.gateOf(r))) 0 else List.length(r#choices));
         let text = r#page#current |> Option.map(line -> {
             let speaker = speakerOf(line, env);
             let placed = portraitBlock(atlas, sizes, area#position, area#size#x, { body = inkOf(line, env, r), name = speaker#color },
@@ -155,12 +155,15 @@ mod ViewText {
         let veil = if (style#outline) Nil else bandVeil(env, area#position#y);
         List.append(veil, text)
 
-    /// 帯の覆い: 帯の上端の 150 px 上から上端まで薄く始まり、上端から画面の下端まで濃くなる（帯より上は沈めない）。
+    /// 帯の覆いが帯の上端より上で薄く始まる高さ（px）。
+    def bandFadeHeight(): Float64 = 150.0
+
+    /// 帯の覆い: 帯の上端の bandFadeHeight 上から上端まで薄く始まり、上端から画面の下端まで濃くなる（帯より上は沈めない）。
     def bandVeil(env: Env, top: Float64): List[Render.PlacedItem] =
         let t = View.theme(env);
         let a = View.windowAlpha(env);
         let size = Layout.size(env#fit);
-        let fade = Float64.max(0.0, top - 150.0);
+        let fade = Float64.max(0.0, top - bandFadeHeight());
         let band = (y0, y1, a0, a1) -> View.at(0.0, y0, Render.gradPolygon(
             { pos = { x = 0.0, y = 0.0 },     color = t#panel, alpha = a0 } ::
             { pos = { x = size#x, y = 0.0 },  color = t#panel, alpha = a0 } ::

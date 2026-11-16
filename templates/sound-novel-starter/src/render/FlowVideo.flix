@@ -330,7 +330,7 @@ mod FlowVideo {
 
     /// 縦の画面のメッセージウィンドウの矩形（型の portrait が band なら下の帯、page なら頁）。
     def portraitMessage(fit: Layout.Fit, window: ThemeDoc.Window, choiceCount: Int32): Rect2.Rect2 = match window#portrait {
-        case ThemeDoc.PortraitText.Band(h) => Layout.portraitBand(fit, h)
+        case ThemeDoc.PortraitText.Band(h) => Layout.portraitBand(fit, h, choiceCount)
         case ThemeDoc.PortraitText.Page    => Layout.page(fit, choiceCount)
     }
 

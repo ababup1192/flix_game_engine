@@ -293,7 +293,14 @@ mod TestPortrait {
     @Test
     def testTheBandStartsItsHeightAboveTheBottom(): Unit \ {Assert, Fs.FileRead} =
         let fit = portrait(TestKit.res(), tall());
-        Assert.assertTrue(TestKit.near(Layout.height(fit) - 236.0, Layout.portraitBand(fit, 236.0)#position#y))
+        Assert.assertTrue(TestKit.near(Layout.height(fit) - 236.0, Layout.portraitBand(fit, 236.0, 0)#position#y))
+
+    @Test
+    def testTheBandRisesAboveTheChoices(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢を出している間は、帯の字の範囲が 1 つ目の選択肢より上で終わる（字と選択肢を重ねない）。
+        let fit = portrait(TestKit.res(), short());
+        let band = Layout.portraitBand(fit, 236.0, 3);
+        Assert.assertTrue(band#position#y + band#size#y <= Layout.choice(fit, 0, 3)#position#y and band#size#y > 0.0)
 
     /// どのメッセージ枠の型も縦の画面で下の帯に出す描く元。
     def bandRes(): Res.Res \ Fs.FileRead =

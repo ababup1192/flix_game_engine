@@ -217,7 +217,7 @@ test: sync-layers
 	@for dir in $(TEST_DIRS); do \
 		if [ -f "$$dir/flix.toml" ]; then \
 			echo "===== $$dir ====="; \
-			(cd "$$dir" && "$(FLIX_TEST)" test) || exit 1; \
+			(cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) || exit 1; \
 		fi \
 	done
 
@@ -241,7 +241,7 @@ test-par: sync-layers
 	printf '%s\n' $(TEST_DIRS) | xargs -P $(TEST_PAR_JOBS) -n 1 sh -c ' \
 		dir="$$0"; [ -f "$$dir/flix.toml" ] || exit 0; \
 		name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
-		if (cd "$$dir" && "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
+		if (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
 			echo "[test-par] PASS $$dir"; \
 		else \
 			echo "[test-par] FAIL $$dir"; touch ".test-logs/$$name.fail"; \
@@ -610,7 +610,7 @@ test-%:
 	if [ -d "templates/$*" ]; then dir="templates/$*"; else dir="$*"; fi; \
 	name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
 	rm -f ".test-logs/$$name.fail"; \
-	if (cd "$$dir" && "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
+	if (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
 		tail -5 ".test-logs/$$name.log"; \
 	else \
 		touch ".test-logs/$$name.fail"; tail -40 ".test-logs/$$name.log"; exit 1; \
@@ -1580,8 +1580,12 @@ new-game: engine-full-fresh
 	: 生成物は運ばない。lib は engine_full から置き直す。build はテンプレ 1 本で 500MB 級に育つ; \
 	: ので、運ぶと産まれたゲームがその分太る（パッケージ名が変わるのでどのみち使えない）; \
 	rm -rf "$(GAME)/lib" "$(GAME)/build" "$(GAME)/debug" "$(GAME)/gallery" "$(GAME)/.devbox" "$(GAME)/.test-logs"; \
-	: test/sample は作例そのものを確かめるテスト。ゲームは台本と Doc を書き換えるので運ばない（規則のテストは test/fixtures の写しを読む）; \
-	rm -rf "$(GAME)/test/sample"; \
+	: テンプレートが new-game.exclude に挙げたパス（作例そのもののテストなど）は運ばない。1 行に 1 つ・テンプレートの根からの相対パス・# から行末は注釈; \
+	if [ -f "$(GAME)/new-game.exclude" ]; then \
+	  sed -e 's/#.*//' -e 's/[[:space:]]*$$//' "$(GAME)/new-game.exclude" | while IFS= read -r p; do \
+	    case "$$p" in ""|/*|*..*) continue;; esac; rm -rf "$(GAME)/$$p"; \
+	  done; \
+	fi; \
 	mkdir -p "$(GAME)/gallery" "$(GAME)/reference" "$(GAME)/debug" "$(GAME)/atelier"; \
 	for f in "$(GAME)"/assets/__NAME__.*; do \
 	  [ -e "$$f" ] || continue; \

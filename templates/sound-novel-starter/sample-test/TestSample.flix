@@ -1,5 +1,6 @@
 // 作例（雪どけを待たない便り）そのものを確かめるテスト: 作例の筋・作例の Doc の値・描き出しの見本の絵・テストが読む写しが作例と同じか。
-// make new-game はこのフォルダを消す（ゲームは台本と Doc を書き換えるので、ここは作例の時だけ意味がある）。
+// test/ の外に置き、engine の templates/ の下で流す時だけ bin/with-sample-tests が test/ へ貼る（make test・engine の test-all）。
+// ゲームでは流れない（ゲームは台本と Doc を書き換えるので、ここは作例の時だけ意味がある）。make new-game は new-game.exclude を読んで消す。
 // テンプレートの規則のテストは test/ の直下で、作例の写し（test/fixtures/sample）を読む。
 mod TestSample {
 

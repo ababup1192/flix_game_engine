@@ -19,3 +19,6 @@ local.mk
 __pycache__/
 # セーブ・既読・設定（遊んだ人ごとの物）
 saves/
+
+# 作例のテスト（sample-test/）をテンプレートの中で流す間だけ貼る写し（bin/with-sample-tests）
+test/sample-test--*.flix

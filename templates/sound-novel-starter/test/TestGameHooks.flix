@@ -448,7 +448,11 @@ mod TestGameHooks {
 
     /// 読み始めた所で 0.1 秒の待ちを当て、明けたら walk と rest の命令と台詞を流す World を、0.2 秒進めた所（walk を当てた直後）と、そこで出た合図。
     def walkedInto(r: Res.Res, rest: List[String]): (World.World, List[String]) =
-        let events = (YarnRunner.Event.Command(command("walk", Nil)), 1) :: (rest |> List.map(name -> (YarnRunner.Event.Command(command(name, Nil)), 1)))
+        walkedIntoEvents(r, rest |> List.map(name -> YarnRunner.Event.Command(command(name, Nil))))
+
+    /// walkedInto の、walk の後ろの出来事 rest を直に渡す形（rest の後ろに台詞 1 行）。
+    def walkedIntoEvents(r: Res.Res, rest: List[YarnRunner.Event]): (World.World, List[String]) =
+        let events = (YarnRunner.Event.Command(command("walk", Nil)), 1) :: (rest |> List.map(e -> (e, 1)))
             ::: ((YarnRunner.Event.Line(heldLine()), 0) :: Nil);
         let start = begun(r);
         let w = World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start);
@@ -483,6 +487,27 @@ mod TestGameHooks {
                                               :: Commands.commandsIn(res()#commands)) | res() };
         let (_, signals) = walkedInto(r, "quick" :: Nil);
         Assert.assertEq(expected = Nil, signals)
+
+    @Test
+    def testTheSwitchStopsAtAWait(): Unit \ {Assert, Fs.FileRead} =
+        // <<wait>> は実行器の待ちなので時間を取る側: そこで止まり、後ろの時間を取らない命令も待つ。
+        let (_, signals) = walkedIntoEvents(withSwitchCommands(res()), YarnRunner.Event.Command(command("wait", "1" :: Nil)) :: YarnRunner.Event.Command(command("quick", Nil)) :: Nil);
+        Assert.assertEq(expected = Nil, signals)
+
+    @Test
+    def testTheSwitchStopsAtChoices(): Unit \ {Assert, Fs.FileRead} =
+        // 選択肢で止まり、まだ出さない。
+        let line = { text = "行く" | heldLine() };
+        let option = { line = line, available = true };
+        let (w, signals) = walkedIntoEvents(withSwitchCommands(res()), YarnRunner.Event.Choices(option :: Nil) :: YarnRunner.Event.Command(command("quick", Nil)) :: Nil);
+        Assert.assertEq(expected = (Nil, false), (signals, World.isChoosing(w)))
+
+    @Test
+    def testAPlainWaitFromAFlowedCommandIsNotTappable(): Unit \ {Assert, Fs.FileRead} =
+        // 切り替えの間に流した命令が Out.Wait を出したら、押しても明けない待ちになる（音を聞かせる待ちを飛ばさない）。
+        let r = { commands = Commands.tableOf({ timing = Commands.Timing.Instant | waitCommand("sewait", Out.Wait(1.0)) } :: Commands.commandsIn(withSwitchCommands(res())#commands)) | res() };
+        let (w, _) = walkedInto(withSwitchCommands(r), "sewait" :: Nil);
+        Assert.assertEq(expected = (true, false), (isPaused(w), WorldRead.isTapWait(w)))
 
     // ══ <<tween 鍵>> ══
 
