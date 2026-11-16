@@ -206,5 +206,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 - 作業に入る前に当たるスキル（一覧は末尾）を読む。サブエージェントには rules とスキルの自動読みが効かないので、
   委ねる親は読ませる rules とスキルを prompt で名指しする。
 - フックの無いエージェントは手で: 最初に `make status`・`.flix` を直すたび `make check`・clone ごとに `make hooks`。
+- flix は make か `bin/fge` から流す（`java -jar flix.jar` を直に叩くと Maven の取り物の共有の置き場を通らず、
+  Maven Central が 429 を返す）。`make status` に mvn の行が出たら `make mvn-cache-share`。
   スキルの実体は `.claude/skills/<名前>/SKILL.md`（Codex は `.agents/skills/`・`.codex/hooks.json` は project trust の後に効く）。
 - 「engine の `docs/…`」はゲームの `Makefile` の `ENGINE` が指す所にある。

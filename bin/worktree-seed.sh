@@ -54,11 +54,11 @@ seed() {
 	src="$main/$rel"
 	dst="$wt/$rel"
 	if [ ! -e "$src" ]; then
-		note "飛ばした  $rel（main に無い）"
+		note "飛ばした  ${rel}（main に無い）"
 		return
 	fi
 	if [ -e "$dst" ] || [ -L "$dst" ]; then
-		note "飛ばした  $rel（既にある）"
+		note "飛ばした  ${rel}（既にある）"
 		return
 	fi
 	# WhyNot: 張る前に git の無視を確かめる — 張った lib を git add すると、別の枝の取り込みで
@@ -67,7 +67,7 @@ seed() {
 	probe=$rel
 	[ -d "$src" ] && probe="$rel/"
 	if ! git -C "$wt" check-ignore -q "$probe"; then
-		note "飛ばした  $rel（.gitignore に無い。張ると git に入る）"
+		note "飛ばした  ${rel}（.gitignore に無い。張ると git に入る）"
 		return
 	fi
 	mkdir -p "$(dirname "$dst")"
@@ -75,9 +75,9 @@ seed() {
 		# WhyNot: main の lib/cache が共有の置き場 (make mvn-cache-share) への symlink なら、その先を直に指す。
 		# main を経由すると main の作業ツリーを動かした時に worktree の cache まで切れる。
 		[ -d "$src" ] && src=$(cd "$src" && pwd -P)
-		ln -s "$src" "$dst" && note "張った    $rel（symlink）"
+		ln -s "$src" "$dst" && note "張った    ${rel}（symlink）"
 	else
-		clone "$src" "$dst" && note "張った    $rel（clone）"
+		clone "$src" "$dst" && note "張った    ${rel}（clone）"
 	fi
 }
 

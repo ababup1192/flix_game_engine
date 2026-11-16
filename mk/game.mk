@@ -36,6 +36,15 @@ else
 FLIX   := "$(ENGINE)/bin/flix"
 endif
 
+# Flix は Maven の取り物を <ゲーム>/lib/cache に決め打ちで置き、無ければ作って取りに行く。make を読む時に 1 回、
+# 共有の置き場（MVN_CACHE・既定は <ユーザーの cache>/flix_game_engine/mvn-cache）への symlink にする
+# （symlink なら test 1 回で抜ける。移し方は engine の bin/mvn-cache-share.sh）。
+# WhyNot: bin/flix に任せない — Studio が同梱する engine の bin/flix は Studio の物で、この前処理を持たない。
+# WhyNot: Windows では張らない — ラッパ（bash）が無く、symlink は開発者モードでないと張れない。今まで通り lib/cache に取る。
+ifneq ($(OS),Windows_NT)
+$(shell [ -L lib/cache ] || [ ! -x "$(ENGINE)/bin/mvn-cache-share.sh" ] || "$(ENGINE)/bin/mvn-cache-share.sh" --pkg "$(CURDIR)")
+endif
+
 # 描き出しの入口（render-all・render・ゲームの動画の口）を流す前置き。後ろに入口の名前を 1 つ書く
 # （`$(HEADLESS_RUN) SceneRender.all`）。macOS/Linux は bin/headless-run が jar を 1 回だけ作って
 # 使い回す（src・flix.toml・lib が変わった時だけ作り直す）ので、2 本目からはコンパイルしない。
@@ -60,7 +69,7 @@ endif
 # JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
 RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
 
-.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release mvn-cache-share
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -102,6 +111,7 @@ help:
 	@echo "  make loc                src/ + test/ の .flix 合計行数（上限 3,000 行）"
 	@echo "  make engine-upgrade     engine の版に追随する（status の「engine 版ズレ」を見たらこれ）"
 	@echo "  make hooks              コミット時のゲートをこの clone に配線する（clone ごとに 1 回）"
+	@echo "  make mvn-cache-share    lib/cache（Maven の取り物）を共有の置き場への symlink にする（status が「向いていない」と言ったら）"
 	@echo "  make compare BASE=<ref> [SHOTS=\"a b\" | VIDEOS=\"x-video\"]"
 	@echo "                          基準の版と今を同じエンジン・同じ描き出しで並べ、差を debug/compare/ へ（index.html つき）"
 	@echo "                          基準側だけ別のエンジンにするなら BASE_ENGINE=<版|パス>"
@@ -385,6 +395,10 @@ status:
 		$(MAKE) -C "$(ENGINE)" sync-agents GAME="$(CURDIR)" || { echo "[status] 配布に失敗 — engine リポで make sync-agents GAME=$(CURDIR) を実行してください"; exit 1; }; \
 	fi
 	@bin/fge status
+
+# lib/cache を共有の置き場へ移して symlink にする（中身は捨てない・使用中は飛ばす）。status の mvn の行を見たらこれ。
+mvn-cache-share:
+	@"$(ENGINE)/bin/mvn-cache-share.sh" "$(CURDIR)"
 
 # NOTES.md の先頭（引き継ぎ）を短く保つ。古い項を notes/<年-月>.md へ送る（捨てない）。
 # コミット時は NOTES.md をステージすると bin/fge precommit が --check で止める。

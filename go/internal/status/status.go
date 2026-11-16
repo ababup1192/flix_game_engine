@@ -21,12 +21,14 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/agenteval"
+	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 	"github.com/ababup1192/flix_game_engine/go/internal/renderbudget"
 )
 
@@ -516,6 +518,46 @@ func sectionBuilds(c *ctx, out *[]string) {
 		"(複製と glob が遅くなる。消しても再生成される) → make clean-game-builds", heavy))
 }
 
+// sectionMvnCache は共有の置き場を向いていない lib/cache を 1 行で知らせる（直すのは人。status は何も変えない）。
+// パッケージは git が知る flix.toml と、make が組み立てる build/*/flix.toml（lib/ を持つ物だけ。bin/flix-packages.sh と同じ）。
+func sectionMvnCache(c *ctx, out *[]string) {
+	// WhyNot: Windows では言わない — symlink は開発者モードでないと張れず、mk/game.mk も張らないので毎回の小言になる。
+	if runtime.GOOS == "windows" {
+		return
+	}
+	tomls := strings.Split(c.git("ls-files", "--", "flix.toml", "*/flix.toml"), "\n")
+	tomls = append(tomls, c.glob("build/*/flix.toml")...)
+	if c.isFile("flix.toml") {
+		tomls = append(tomls, "flix.toml")
+	}
+	seen := map[string]bool{}
+	var off []string
+	for _, t := range tomls {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		pkg := path.Dir(t)
+		if seen[pkg] || !c.isDir(path.Join(pkg, "lib")) {
+			continue
+		}
+		seen[pkg] = true
+		if how := mvncache.Off(c.abs(pkg)); how != "" {
+			off = append(off, path.Join(pkg, "lib/cache")+"（"+how+"）")
+		}
+	}
+	if len(off) == 0 {
+		return
+	}
+	sort.Strings(off)
+	more := ""
+	if len(off) > 1 {
+		more = " ほか"
+	}
+	*out = append(*out, fmt.Sprintf("mvn      共有の置き場を向いていない lib/cache が %d 個（%s%s）→ make mvn-cache-share",
+		len(off), off[0], more))
+}
+
 // sectionAgentEval は版ごとの agent-eval の記録（make agent-eval-release が書く）の最新を 1 行。
 // 記録が無いゲームでは黙る（測るかどうかは任意）。
 func sectionAgentEval(c *ctx, out *[]string) {
@@ -600,6 +642,7 @@ var sectionsByName = map[string]func(*ctx, *[]string){
 	"section_builds":        sectionBuilds,
 	"section_agent_eval":    sectionAgentEval,
 	"section_notes":         sectionNotes,
+	"section_mvn_cache":     sectionMvnCache,
 }
 
 // Options は Run の付加情報。
