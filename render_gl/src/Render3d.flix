@@ -37,14 +37,14 @@ mod Render3d {
 
     // ── 型 ──
 
-    /// GPU に置いたメッシュ 1 つ。vbo は位置・法線・色の 9 個ずつを交互に並べた物。lastUsed = 最後に描いたコマの世代（要素 1 つ）。
+    /// GPU に置いたメッシュ 1 つ（Render3d.MeshTable の番号で引く）。vbo は位置・法線・色の 9 個ずつを交互に並べた物。
     /// skin = ジョイントの番号と重みの VBO（ジョイントの無い形は None）。
     /// surface = uv（location 5）の VBO（uv の無い形は None）。tangents = タンジェント（location 6）の VBO（要素 1 つ・0 はまだ上げていない）。
     // WhyNot: uv を位置・法線・色の並びへ混ぜない — uv の無い形まで stride が伸び、uv の無い形の頂点バッファの中身が変わる。
     // WhyNot: タンジェントを uv と同じ VBO で形を上げる時に上げない — 法線マップの材質で描く時まで求めずに済ませる（Mesh3d が初めて読む時に求める）。
     pub type alias MeshEntry = {
         vao = Int32, vbo = Int32, ibo = Int32, skin = Option[SkinBuffers], surface = Option[Int32], tangents = Array[Int32, Static], uv2 = Option[Int32],
-        indexCount = Int32, vertexCount = Int32, lastUsed = Array[Int64, Static]
+        indexCount = Int32, vertexCount = Int32
     }
 
     /// 頂点ごとのジョイントの番号（ivec4・location 3）と重み（vec4・location 4）の VBO。
@@ -159,14 +159,6 @@ mod Render3d {
     /// own = 場面の textures（Texture3d.name → 絵）。
     type alias TextureSource = { textureOf = String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, own = Map[String, Texture3d.Texture3d] }
 
-    /// GPU に上げた場面の絵 1 枚（Texture3d の contentHash で引く）。levels = 段の数・bytes = 段を合わせた置き場の大きさ・
-    /// lastUsed = 最後に貼ったコマの世代。
-    type alias Texture3dEntry = { texId = Int32, levels = Int32, bytes = Int64, lastUsed = Int64 }
-
-    /// 全体の登録の絵を 3D の材質のために段つきで上げ直した写し。sourceId と version が元の絵と食い違えば作り直す。
-    /// bytes = 段を合わせた置き場の大きさ（場面の絵と同じ上限に数える）。
-    // WhyNot: 元のテクスチャに段を足さない — 2D の sprite と面は段の無い元の絵を読む決まりで、そちらの絵を変えない。
-    type alias MipCopy = { sourceId = Int32, version = String, texId = Int32, levels = Int32, bytes = Int64, lastUsed = Int64 }
 
     /// 材質の 1 枚を貼る材料。levels = 段の数（1 なら段の無い sampler で段 0 を読む）。
     type alias BoundTexture = { texId = Int32, flipped = Bool, levels = Int32 }
@@ -202,7 +194,9 @@ mod Render3d {
         case OneByOne
     }
 
-    /// 置き場の上限に数える絵の鍵。Scene = 場面の絵（textures3dRef の鍵）・Copy = 全体の登録の絵の段つきの写し（mipCopiesRef の鍵）。
+    /// 置き場の上限に数える絵の鍵（Render3d.TextureTable3d の鍵）。Scene = 場面の絵（Texture3d の contentHash と段の作り方）・
+    /// Copy = 全体の登録の絵の段つきの写し（名前と段の作り方。元の絵が作り直されたら写しも作り直す）。
+    // WhyNot: 全体の登録の絵の元のテクスチャに段を足さない — 2D の sprite と面は段の無い元の絵を読む決まりで、そちらの絵を変えない。
     pub enum TextureSlot with Eq, Order, ToString {
         case Scene(String)
         case Copy(String)
@@ -230,15 +224,14 @@ mod Render3d {
         sunDir = Array[Float32, Static], sunColor = Array[Float32, Static]
     }
 
-    /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshesRef = contentHash → GPU に置いたメッシュ。
+    /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshes = 形の置き場の表（番号と上限）・meshEntriesRef = 表の番号 → GPU に置いたメッシュ。
     pub type alias State = {
-        meshesRef = Ref[Map[String, MeshEntry], Static],
+        meshes = Render3d.MeshTable.Table,
+        meshEntriesRef = Ref[Map[Int32, MeshEntry], Static],
         // 場面の絵を GPU に持つ量の上限（バイト）。
         textureByteBudget = Int64,
         // 場面の絵の置き場の枚数の上限（project.json の scene3dTextureBudgetCount）。
         textureCountBudget = Int32,
-        // 置き場の頂点の合計。
-        vertexTotal = Array[Int32, Static],
         // [新しい鍵を上げたコマが続いた数, 知らせ済みなら 1, このコマで新しい鍵を上げたら 1]。
         uploadStreak = Array[Int32, Static],
         // uploadStreak と同じ形の、材質のプログラムを新しく組んだコマの続き。
@@ -263,16 +256,16 @@ mod Render3d {
         timeHolder = Array[Float64, Static],
         // 影の地図の描き先（(mapSize, 同じ prepareScenes の中で同じ mapSize の何枚目か) → FBO）。
         shadowTargetsRef = Ref[Map[(Int32, Int32), ShadowTarget], Static],
-        // 場面の絵（Texture3d の contentHash → GPU のテクスチャ）。
-        textures3dRef = Ref[Map[String, Texture3dEntry], Static],
+        // 場面の絵と段つきの写しの表（番号・上限・試し直し）。
+        textures3d = Render3d.TextureTable3d.Table,
+        // 絵の表の番号 → GL のテクスチャ。
+        textureIdsRef = Ref[Map[Int32, Int32], Static],
         // 材質の絵の sampler（[Repeat Nearest, Repeat Linear, Clamp Nearest, Clamp Linear] の段なし 4 つ・段つき 4 つ。0 は未作成）。
         materialSamplers = Array[Int32, Static],
-        // 全体の登録の絵の段つきの写し（絵の名前 → 写し）。
-        mipCopiesRef = Ref[Map[String, MipCopy], Static],
+
         // 見つからない材質の絵に貼る 1 × 1 の透明な黒（0 は未作成）。
         blankTexture = Array[Int32, Static],
-        // 機種の側から上げられなかった場面の絵の鍵 → 最後に試したコマの世代（間を置いて試し直す）。
-        platformRetryRef = Ref[Map[String, Int64], Static],
+
         // 前に takeCounts してからの数（添え字は Render3d.Counts.Counter。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
         countsHolder = Array[Int32, Static],
         // 前に takeCounts してからの CPU の区間の時間（ns。添え字は Render3d.Counts.Phase）。
@@ -339,15 +332,15 @@ mod Render3d {
     /// 3D の描き手を、空の置き場で作る（textureBudget = 場面の絵の置き場の上限）。
     def fresh(textureBudget: TextureBudget, drawMode: DrawMode): State \ IO =
         { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
-          textureCountBudget = Int32.max(1, textureBudget#count), meshesRef = Ref.fresh(Static, Map.empty()), vertexTotal = Array#{0} @ Static,
+          textureCountBudget = Int32.max(1, textureBudget#count), meshes = Render3d.MeshTable.fresh(), meshEntriesRef = Ref.fresh(Static, Map.empty()),
           uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
           skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None),
           designTargetsRef = Ref.fresh(Static, Map.empty()), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
-          shadowTargetsRef = Ref.fresh(Static, Map.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
-          materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
-          blankTexture = Array#{0} @ Static, platformRetryRef = Ref.fresh(Static, Map.empty()), countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
+          shadowTargetsRef = Ref.fresh(Static, Map.empty()), textures3d = Render3d.TextureTable3d.fresh(), textureIdsRef = Ref.fresh(Static, Map.empty()),
+          materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static,
+          blankTexture = Array#{0} @ Static, countsHolder = Array.repeat(Static, Render3d.Counts.counterSlots(), 0),
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
           preloadRef = Ref.fresh(Static, Render3d.Preload.empty()),
           joints = Render3d.DataTexture.freshTextures(), instances = Render3d.DataTexture.freshTextures(),
@@ -392,7 +385,7 @@ mod Render3d {
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
             let joints = Render3d.JointTexture.upload(gl, state, gen, rows);
             let (numbered, instances) = Render3d.Instancing.upload(gl, state, gen, planned, grouped#members);
-            (numbered, List.map(buildScenePasses, numbered), materials, (joints, instances))
+            (numbered, List.map(buildScenePasses(state#meshes, gen), numbered), materials, (joints, instances))
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
@@ -545,32 +538,29 @@ mod Render3d {
         let camera = { view = view, proj = proj, lights = lights, shadows = shadows, frustum = frustum };
         Render3d.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
-        let meshes = uploadRows(gl, state, gen, source, inputs, List.length(scene#instances));
+        uploadRows(gl, state, gen, source, inputs, List.length(scene#instances));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = programs#billboard, scene = scene };
-        List.zip(inputs#passes, meshes) |> List.forEach(pm -> {
-            let ((spec, list), passMeshes) = pm;
-            drawPass(gl, state, gen, textureOf, ctx, inputs, spec, list, passMeshes)
-        });
+        inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, textureOf, ctx, inputs, spec, list));
         releaseEnvironmentMap(gl, scene);
         endScene(gl)
 
     /// drawPass が場面 1 つの中で pass をまたいで使う物。billboard = ビルボードのプログラム。
     type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = BillboardLocs, scene = Scene3d.Scene3dCmd }
 
-    /// 場面の pass spec の行 list を描く（meshes = uploadRows の答えのうち list の物）。行になっていないビルボードと半透明の物も、その pass の所で描く。
+    /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。行になっていないビルボードと半透明の物も、その pass の所で描く。
     // WhyNot: ビルボードの灰色と空の白を spec でなく scene#output で決めたままにする — どちらも行になっていない間は、場面の pass が 1 つで spec と output が 1 対 1。
     def drawPass(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, ctx: PassContext,
-                 inputs: SceneInputs, spec: ScenePassSpec, list: SceneList, meshes: Array[Int32, Static]): Unit \ IO =
+                 inputs: SceneInputs, spec: ScenePassSpec, list: SceneList): Unit \ IO =
         let camera = ctx#camera;
         match spec {
             case ScenePassSpec.Color =>
                 bindShadowMap(gl, inputs#shadows);
-                drawRows(gl, state, gen, camera, MaterialPass.Color, ctx#eye, ctx#source, inputs, list, meshes);
+                drawRows(gl, state, gen, camera, MaterialPass.Color, ctx#eye, ctx#source, inputs, list);
                 drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene);
                 drawBlended(gl, state, gen, camera, ctx#source, ctx#eye, inputs#materials, inputs#blended);
                 unbindShadowMap(gl, inputs#shadows)
             case ScenePassSpec.DepthOut(dr) =>
-                drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), ctx#eye, ctx#source, inputs, list, meshes);
+                drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), ctx#eye, ctx#source, inputs, list);
                 drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene)
         }
 
@@ -723,25 +713,32 @@ mod Render3d {
 
     // ── メッシュの置き場 ──
 
-    /// contentHash で引き、無ければ上げる。どちらでも lastUsed を今の世代にする。
-    // WhyNot: lastUsed を置き場の Map の値に持ち直さない — batch ごとに Map の道を作り直すことになり、小物の多い場面の draw の代金が増える。
+    /// 形の表で引き（無ければ番号を振って上げる）、GPU に置いたメッシュを返す。どちらでも lastUsed を今の世代にする。
     def meshEntry(gl: GlContext, state: State, gen: Int64, mesh: Mesh3d.Mesh3d): MeshEntry \ IO =
-        let key = Mesh3d.contentHash(mesh);
-        match Map.get(key, Ref.get(state#meshesRef)) {
-            case Some(found) =>
-                Array.put(gen, 0, found#lastUsed);
-                found
-            case None =>
-                Array.put(1, 2, state#uploadStreak);
-                count(state, Counter.MeshUploads, 1);
-                let made = uploadMesh(gl, gen, mesh);
-                Array.put(Array.get(0, state#vertexTotal) + made#vertexCount, 0, state#vertexTotal);
-                Ref.put(Map.insert(key, made, Ref.get(state#meshesRef)), state#meshesRef);
-                made
-        }
+        meshEntryAt(state, Render3d.MeshTable.ensure(state#meshes, meshAllocator(gl, state), gen, mesh))
+
+    /// 形の表の番号 handle のメッシュ（Render3d.SceneList の形の番号の欄。行を流す前に meshEntry で上げてある）。
+    /// 上げていない番号は添え字 0 の空の形（drawMeshRange が描かずに飛ばす）。
+    def meshEntryAt(state: State, handle: Int32): MeshEntry \ IO =
+        Map.get(handle, Ref.get(state#meshEntriesRef)) |> Option.getWithDefault(
+            { vao = 0, vbo = 0, ibo = 0, skin = None, surface = None, tangents = Array#{0} @ Static, uv2 = None, indexCount = 0, vertexCount = 0 })
+
+    /// 形の表（Render3d.MeshTable）へ渡す、GL のメッシュを作る・捨てる関数の組。
+    def meshAllocator(gl: GlContext, state: State): Render3d.MeshTable.MeshAllocator =
+        { create = (handle, mesh) -> {
+              Array.put(1, 2, state#uploadStreak);
+              count(state, Counter.MeshUploads, 1);
+              let made = uploadMesh(gl, mesh);
+              Ref.put(Map.insert(handle, made, Ref.get(state#meshEntriesRef)), state#meshEntriesRef);
+              made#vertexCount
+          },
+          destroy = handle -> {
+              Map.get(handle, Ref.get(state#meshEntriesRef)) |> Option.forEach(deleteMesh(gl));
+              Ref.put(Map.remove(handle, Ref.get(state#meshEntriesRef)), state#meshEntriesRef)
+          } }
 
     /// 形を GPU へ上げる（位置・法線・色を 9 個ずつ交互に並べた vbo と、添え字の ibo）。
-    def uploadMesh(gl: GlContext, gen: Int64, mesh: Mesh3d.Mesh3d): MeshEntry \ IO =
+    def uploadMesh(gl: GlContext, mesh: Mesh3d.Mesh3d): MeshEntry \ IO =
         let n = Mesh3d.vertexCount(mesh);
         let vertices = interleave(mesh, n);
         let indices = Mesh3d.indices(mesh);
@@ -768,7 +765,7 @@ mod Render3d {
         gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
         gl.bindBuffer(GlConst.ELEMENT_ARRAY_BUFFER, 0);
         { vao = vao, vbo = vbo, ibo = ibo, skin = skin, surface = surface, tangents = Array#{0} @ Static, uv2 = uv2, indexCount = Vector.length(indices),
-          vertexCount = n, lastUsed = Array#{gen} @ Static }
+          vertexCount = n }
 
     /// ジョイントの番号と重みを、bind 中の VAO の location 3・4 へ上げる（ジョイントの無い形は None・何もしない）。
     /// 骨の無い版のプログラムはこの 2 つを宣言しないので、同じ VAO のまま曲げずに描ける。
@@ -873,28 +870,19 @@ mod Render3d {
         sweepTextures3d(gl, state, gen);
         Render3d.DataTexture.endFrame(gl, state#joints, gen);
         Render3d.DataTexture.endFrame(gl, state#instances, gen);
-        if (Array.get(0, state#vertexTotal) > vertexBudget()) trimToBudget(gl, state, gen) else ()
+        trimToBudget(gl, state, gen)
     })
 
-    def dropMeshes(gl: GlContext, state: State, dropped: Map[String, MeshEntry], kept: Map[String, MeshEntry]): Unit \ IO =
-        Map.forEach((_key, e) -> deleteMesh(gl, e), dropped);
-        count(state, Counter.MeshEvictions, Map.size(dropped));
-        let freed = Map.foldLeft((acc, e) -> acc + e#vertexCount, 0, dropped);
-        Array.put(Array.get(0, state#vertexTotal) - freed, 0, state#vertexTotal);
-        Ref.put(kept, state#meshesRef)
-
-    /// 頂点の合計が上限に収まるまで、形を捨てる（捨てる順は meshEvictions）。
+    /// 頂点の合計が上限に収まるまで、形を捨てる（捨てる順は meshEvictions・選ぶのは Render3d.MeshTable.trim）。
     def trimToBudget(gl: GlContext, state: State, gen: Int64): Unit \ IO =
-        let meshes = Ref.get(state#meshesRef);
         let preloaded = Ref.get(state#preloadRef)#meshes;
-        let victims = meshEvictions(vertexBudget(), gen, preloaded, Map.toList(meshes) |> List.map(ke -> (fst(ke), snd(ke)#vertexCount, Array.get(0, snd(ke)#lastUsed))));
-        let dropped = victims |> List.filterMap(key -> Map.get(key, meshes) |> Option.map(e -> (key, e))) |> List.toMap;
+        let victims = Render3d.MeshTable.trim(state#meshes, meshAllocator(gl, state), gen, vertexBudget(), preloaded);
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る。
-        if (Map.isEmpty(dropped)) ()
+        if (List.isEmpty(victims)) ()
         else {
-            dropMeshes(gl, state, dropped, Map.difference(meshes, dropped));
+            count(state, Counter.MeshEvictions, List.length(victims));
             warnDroppedMeshes(state, victims, preloaded);
-            Log.warn("scene3d: メッシュの置き場が頂点 ${vertexBudget()} を超えたので、古い形を ${Map.size(dropped)} 個捨てた")
+            Log.warn("scene3d: メッシュの置き場が頂点 ${vertexBudget()} を超えたので、古い形を ${List.length(victims)} 個捨てた")
         }
 
     /// entries = (鍵, 頂点の数, 最後に使った世代)。頂点の合計を vertexLimit に収めるために捨てる形の鍵。今と前のコマで使った物

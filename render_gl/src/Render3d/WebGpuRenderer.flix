@@ -45,7 +45,8 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.Light.{lightDataOf}
     use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenes, isSkinned, planScenes}
     use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses}
-    use Render3d.WebGpuRows.{MeshTable, drawRows, freshMeshes, releaseMeshes, trimMeshes, uploadRows}
+    use Render3d.MeshTable
+    use Render3d.WebGpuRows.{MeshStore, drawRows, freshStore, meshAllocator, uploadRows}
     use RenderPaint.Internal.WebGpuPipelines
 
     /// 場面 1 つの描き先と、その場面の値の buffer と bind group（2D の描き手の描き先の鍵とそのコマの場面の番号ごとに 1 つ・大きさか形式か標本が変われば作り直す）。
@@ -91,7 +92,8 @@ pub mod Render3d.WebGpuRenderer {
             blankDepth = Texture,
             blankImage = Texture,
             environmentSampler = Sampler,
-            meshes = MeshTable,
+            meshes = MeshTable.Table,
+            meshStore = MeshStore,
             targets = Ref[Map[(Int32, Int32), SceneTarget], Static],
             written = Ref[Set[(Int32, Int32)], Static],
             instances = Array[Buffer, Static],
@@ -133,7 +135,7 @@ pub mod Render3d.WebGpuRenderer {
             blankDepth = gpu.createTexture("fge scene3d blank depth", 1, 1, TextureFormat.DEPTH32_FLOAT, TextureUsage.TEXTURE_BINDING, 1, 1),
             blankImage = blankImage,
             environmentSampler = gpu.createSampler("fge scene3d environment", FilterMode.LINEAR, FilterMode.LINEAR, AddressMode.REPEAT),
-            meshes = freshMeshes(), targets = Ref.fresh(Static, Map.empty()), written = Ref.fresh(Static, Set.empty()),
+            meshes = MeshTable.fresh(), meshStore = freshStore(), targets = Ref.fresh(Static, Map.empty()), written = Ref.fresh(Static, Set.empty()),
             instances = Array#{createInstanceBuffer(gpu, initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             instanceUsed = Array#{0} @ Static,
             cpuInstances = Array#{directBytes(initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
@@ -157,7 +159,7 @@ pub mod Render3d.WebGpuRenderer {
         Ref.put(Map.empty(), s#targets);
         Map.forEach((_, p) -> p.release(), Ref.get(s#pipelines));
         Ref.put(Map.empty(), s#pipelines);
-        releaseMeshes(s#meshes);
+        MeshTable.release(s#meshes, meshAllocator(s#gpu, s#meshStore));
         Array.get(0, s#instances).destroy();
         s#blankDepth.destroy();
         s#blankImage.destroy();
@@ -188,7 +190,7 @@ pub mod Render3d.WebGpuRenderer {
         let isIdle = (t: SceneTarget) -> Array.get(0, t#lastUsed) + idleTargetFrames() < gen;
         Map.forEach((_, t) -> if (isIdle(t)) destroyTarget(t) else (), targets);
         Ref.put(Map.filter(t -> not isIdle(t), targets), s#targets);
-        let dropped = trimMeshes(s#meshes, gen);
+        let dropped = List.length(MeshTable.trim(s#meshes, meshAllocator(s#gpu, s#meshStore), gen, Render3d.vertexBudget(), Set.empty()));
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る（GL の Render3d.trimToBudget と同じ）。
         if (dropped == 0) ()
         else Log.warn("scene3d: メッシュの置き場が頂点 ${Render3d.vertexBudget()} を超えたので、古い形を ${dropped} 個捨てた")
@@ -286,8 +288,8 @@ pub mod Render3d.WebGpuRenderer {
         let scene = plan#cmd#scene;
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
-        staged#passes |> List.forEach(match (spec, list, meshes) ->
-            encodeScene(r, host, target, { spec = spec, list = list, meshes = meshes, instanceBase = staged#instanceBase },
+        staged#passes |> List.forEach(match (spec, list) ->
+            encodeScene(r, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase },
                         { color = drawn.defaultView(), resolve = target#msaa |> Option.map(_ -> target#color.defaultView()),
                           clear = Some(clearOf(spec, scene)), depth = target#depth.defaultView(), viewport = full, scissor = full }))
 
@@ -306,18 +308,15 @@ pub mod Render3d.WebGpuRenderer {
         let RendererData.RendererData(s) = r;
         let (passes, instanceBase) = numberInstances(r, host, members, plan);
         let gen = Array.get(0, s#gen);
-        let uploaded = passes |> List.map(match (spec, list) -> (spec, list, uploadRows(s#gpu, s#meshes, gen, list)));
+        passes |> List.forEach(match (_, list) -> uploadRows(s#gpu, s#meshes, s#meshStore, gen, list));
         writeSceneValues(r, target, plan);
-        { passes = uploaded, instanceBase = instanceBase }
+        { passes = passes, instanceBase = instanceBase }
 
-    /// 行 list の形の置き場（Render3d.WebGpuRows.uploadRows の答え）。
-    type alias Meshes = Array[Option[Render3d.WebGpuRows.MeshBuffers], Static]
-
-    /// stageScene の答え。passes = 計画の pass ごとの (pass, 行, 形)。
-    type alias Staged = { passes = List[(ScenePassSpec, SceneList, Meshes)], instanceBase = Int32 }
+    /// stageScene の答え。passes = 計画の pass ごとの (pass, 行)（行の形は上げてある）。
+    type alias Staged = { passes = ScenePasses, instanceBase = Int32 }
 
     /// encodeScene が描く pass 1 つ。
-    type alias StagedPass = { spec = ScenePassSpec, list = SceneList, meshes = Meshes, instanceBase = Int32 }
+    type alias StagedPass = { spec = ScenePassSpec, list = SceneList, instanceBase = Int32 }
 
     /// 場面を描く pass の描き先。color = 描く view・resolve = 標本つきの描き先なら resolve する先・clear = 消す色（None なら前の中身に描き足す）・
     /// depth = 深度の view（いつも 1 で消す）・viewport と scissor = 描き先の左上が原点の (x, y, 幅, 高さ)。
@@ -346,7 +345,7 @@ pub mod Render3d.WebGpuRenderer {
         pass.setBindGroup(0, target#sceneGroup);
         let instances = Array.get(0, s#instances);
         pass.setVertexBuffer(1, instances, 0i64, instances.size());
-        drawRows(pass, staged#list, staged#meshes, staged#instanceBase);
+        drawRows(pass, s#meshStore, staged#list, staged#instanceBase);
         pass.end()
 
     /// 場面の頂点の色の batch に 1 体ごとの値の番号を振って 1 体ごとの値の buffer へ送り、計画の pass ごとの行の列と、送った位置（体の番号）を返す。
@@ -364,7 +363,7 @@ pub mod Render3d.WebGpuRenderer {
         // WhyNot: 影の地図の batch に番号を振らない — 影は描かない（P8 の (4)）ので、計画の影の材料は空のまま渡す。
         let numbered = { cmd = plan#cmd, mainPass = plan#mainPass, draws = { plain = plain, skinned = List.map(unseen, draws#skinned), opaque = Nil, blended = Nil },
                          shadowPlans = Nil };
-        let passes = buildScenePasses(numbered);
+        let passes = buildScenePasses(s#meshes, Array.get(0, s#gen), numbered);
         (passes, sendInstances(r, host, raw, bytes))
 
     /// bytes を書ける 1 体ごとの値の CPU の入れ物（足りなければ要る大きさか倍の大きい方へ作り直す）。

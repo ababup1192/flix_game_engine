@@ -75,7 +75,7 @@ mod Render3d.TestInstancing {
         };
         draw(1i64);
         draw(7i64);
-        let used = Ref.get(state#meshesRef) |> Map.valuesOf |> List.map(e -> Array.get(0, e#lastUsed));
+        let used = Render3d.MeshTable.createdOf(state#meshes) |> Map.valuesOf |> List.map(e -> { let (_, _, lastUsed) = e; lastUsed });
         Assert.assertEq(expected = (Nil, 7i64 :: Nil), (Ref.get(log#instanceCounts), used))
 
     /// 真ん中の物だけ間引いた batch は 2 体の draw で、番号は 0 から、値は描く物の world が並ぶ（平行移動の x が 12 個目と 44 個目）。

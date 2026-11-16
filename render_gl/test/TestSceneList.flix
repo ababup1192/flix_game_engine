@@ -30,7 +30,7 @@ mod Render3d.TestSceneList {
         { handle = handle, order = order, kind = plainKind(), material = fieldsOf(red), batch = b }
 
     def listOf(plain: List[MeshBatch], skinned: List[MeshBatch], opaque: List[MaterialBatch[MeshBatch]]): SceneList \ IO =
-        buildSceneList({ plain = plain, skinned = skinned, opaque = opaque, blended = Nil })
+        buildSceneList(Render3d.MeshTable.fresh(), 1i64, { plain = plain, skinned = skinned, opaque = opaque, blended = Nil })
 
     def column(list: SceneList, col: Int32): List[Int32] \ IO =
         List.range(0, rowCountOf(list)) |> List.map(row -> rowAt(list, row, col))
@@ -376,6 +376,6 @@ mod Render3d.TestSceneList {
         };
         let numbered = (p: Render3d.ScenePlan.ScenePlan[SpanBatch]) ->
             { cmd = p#cmd, mainPass = p#mainPass, draws = { plain = List.map(unnumbered, p#draws#plain), skinned = Nil, opaque = Nil, blended = Nil }, shadowPlans = Nil };
-        let passes = plans |> List.map(p -> buildScenePasses(numbered(p)) |> List.map(pl -> describe(fst(pl))));
+        let passes = plans |> List.map(p -> buildScenePasses(Render3d.MeshTable.fresh(), 1i64, numbered(p)) |> List.map(pl -> describe(fst(pl))));
         Assert.assertEq(expected = ("color" :: Nil) :: ("depth 0.5 12.0" :: Nil) :: Nil, passes)
 }
