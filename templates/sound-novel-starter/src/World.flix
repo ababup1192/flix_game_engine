@@ -219,7 +219,7 @@ mod World {
     ///   Rolled … 前の行へ戻った / Cue(名前) … シナリオの <<audio se>> の効果音（project.json の sounds の名前）/
     ///   Signal(名前) … コマンドが出したその場の合図（Commands.Out.Event。テンプレートのコマンドは出さない）/
     ///   Executed(何を) … 人が読み進めている時（Live）に、実行器の出来事（台詞・選択肢・コマンド）を 1 つ反映した（記録の書き手が読む。音は鳴らさない）/
-    ///   RanLines(所) … 人が読み進めている時に、実行器が 1 回の呼び出しで流した文の (ファイル, 行)（<<set>>・<<jump>>・<<if>>・<<stop>> も。YarnRunner.ranLinesSince）。
+    ///   RanLines(所) … 人が読み進めている時に、実行器が 1 回の呼び出しで流した文の (ファイル, 行)（<<set>>・<<jump>>・<<if>>・<<stop>> も。YarnRunner.ranSourcesSince）。
     pub enum Event with Eq, ToString {
         case Paged
         case Revealed
@@ -245,7 +245,7 @@ mod World {
     }
 
     /// 出来事の所: (ノード, そのノードに入った回数（Read#entry#visits。入り直すと増える）, .yarn の行)。
-    // WhyNot: レコードにしない — Event は Eq を持ち、Flix のレコードは Eq を持たない。
+    // WhyNot: レコードにしない — Event の Eq の derive は中身の型にも Eq を求め、Flix のレコードには Eq が無い（E7027 で止まる）。
     pub type alias Place = (String, Int32, Int32)
 
     /// ゲームの状態（遊びの状態だけ。Doc とシナリオは Res が持つ）。scene / panel / ask = 冒頭の「状態の形」、

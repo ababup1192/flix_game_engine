@@ -60,16 +60,15 @@ mod TapeOut {
         let cursors = worlds |> List.map(h -> World.talkCursorOf(h#world));
         let nodes = nodesOf(worlds);
         let node = List.head(nodes) |> Option.getWithDefault("");
-        forM (
+        let fields = forM (
             _      <- uniqueMarks(flowRun#marks);
-            _      <- extraFree(extra);
             _      <- singleFile(nodes, res);
             _      <- msgWhenKnown(table);
             probes <- probesOf(table, flowRun#fps, worlds)
         ) yield {
             let yarn = yarnOf(node, cursors, res);
             let timeOf = i -> secondsAt(flowRun#fps, i);
-            Util.Json.toPrettyString(2, Json.JObject(Map.union(extra, Map#{
+            Map#{
                 "game" => Json.JString(flowRun#game),
                 "title" => Json.JString(table#title),
                 "flow" => Json.JString(flowRun#flow),
@@ -90,18 +89,17 @@ mod TapeOut {
                 "probes" => Json.JObject(probes),
                 "probeNames" => Json.JObject(probeNamesOf(table) |> List.map(match (name, shown) -> (name, Json.JString(shown))) |> List.toMap),
                 "msg" => msgJson(table#msg)
-            })))
-        }
+            }
+        };
+        fields |> Result.flatMap(withExtra(extra)) |> Result.map(all -> Util.Json.toPrettyString(2, Json.JObject(all)))
 
     // ── 止める所 ──
 
-    /// 足す欄が tape.json の今の欄と重ならないか（重なると片方が黙って消える）。
-    def extraFree(extra: Map[String, Json]): Result[String, Unit] =
-        let own = Set#{ "game", "title", "flow", "fps", "duration", "yarn", "node", "playUrl", "scenes", "timeline", "lines", "speaker",
-                        "speakers", "sounds", "objects", "branches", "choices", "probes", "probeNames", "msg" };
-        match Map.keysOf(extra) |> Set.toList |> List.find(key -> Set.memberOf(key, own)) {
+    /// tape.json の欄に extra を足す（今の欄と重なる名前があれば Err。重なると片方が黙って消える）。
+    def withExtra(extra: Map[String, Json], fields: Map[String, Json]): Result[String, Map[String, Json]] =
+        match Map.keysOf(extra) |> Set.toList |> List.find(key -> Map.memberOf(key, fields)) {
             case Some(key) => Err("足す欄 '${key}' が tape.json の欄と重なる")
-            case None      => Ok(())
+            case None      => Ok(Map.union(extra, fields))
         }
 
     /// 同じ名前の mark が無いか（テープのシーンは名前で引くので、2 つ目が 1 つ目を黙って上書きしないように止める）。

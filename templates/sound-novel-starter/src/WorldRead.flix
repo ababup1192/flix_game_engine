@@ -52,7 +52,7 @@ mod WorldRead {
 
     /// 人が読み進めている時の absorb: 実行器が before から r#talk までに流した文の所を出してから反映する（start で作り直した時の before は closed()）。
     def absorbLive(res: Res.Res, before: YarnRunner.Runner[Stage.Story], events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
-        Emit.emit(World.Event.RanLines(YarnRunner.ranLinesSince(before, r#talk) |> List.map(source -> (source#file, source#line))));
+        Emit.emit(World.Event.RanLines(YarnRunner.ranSourcesSince(before, r#talk) |> List.map(source -> (source#file, source#line))));
         absorb(res, Commands.Replay.Live, events, r, w)
 
     /// 出来事を頭から 1 つずつ反映する。人が読み進めている時（Live）に、まだ届いていない背景・環境音へ切り替えるコマンドに
@@ -110,12 +110,17 @@ mod WorldRead {
             case YarnRunner.Event.Done             => None
         }
 
-    /// 反映したコマンドを記録の書き手が読む形に。秒は当てる前と後の舞台から、その命令で舞台が動いた長さ（命令の表が読んだ秒・Doc の既定の秒）。
+    /// 反映したコマンドを記録の書き手が読む形に。秒は当てる前と後の舞台から、その命令で舞台が動いた長さ（命令の表が読んだ秒・Doc の既定の秒）と、
+    /// その命令が出した待ち（Out.Wait）の長さの大きい方。
     // WhyNot: シナリオの time= を読まない — 秒を位置の引数で書く版や既定の秒で動く命令は time= を書かず、途中のコマが撮れない。
     def commandedOf(res: Res.Res, now: Clock.Time[Stage.Story], before: World.Read, after: World.Read, command: Yarn.Command): World.Executed =
         let timed = Commands.timingOf(res, command) == Commands.Timing.Timed;
+        let untilOf = (r: World.Read) -> r#pause |> Option.map(p -> p#until);
+        let paused = if (untilOf(after) == untilOf(before)) None
+                     else untilOf(after) |> Option.map(until -> Clock.since(now, until)) |> Option.filter(s -> s > 0.0);
+        let busy = Stage.busySecondsOf(now, before#stage, after#stage);
         World.Executed.Commanded((before#entry#node, before#entry#visits, command#source#line), command#name, command#args, timed,
-                                 Stage.busySecondsOf(now, before#stage, after#stage))
+                                 List.maximum(Option.toList(busy) ::: Option.toList(paused)))
 
     /// コマンドを通った後の実行位置。時間を取る演出コマンド（表の timing が Timed）だけが位置を取り、<<wait>> と
     /// 時間を取らないコマンドは前の位置のまま（<<wait>> は直前の演出の続き）。

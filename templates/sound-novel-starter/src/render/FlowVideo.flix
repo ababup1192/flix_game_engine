@@ -32,7 +32,7 @@ mod FlowVideo {
         App.Headless.videoJob("FlowVideo", "play", req -> playJob(req)) ::
         App.Headless.videoJob("FlowVideo", "restore", req -> restoreJob(req)) :: Nil
 
-    /// 終了コード: 0 = 撮れた・1 = flow が途中で止まった（そこまでは書く）・2 = flow を読めない。
+    /// 終了コード: 0 = 撮れた・1 = flow が途中で止まった（そこまでは書く）・2 = flow を読めない・移行の記録を書けない（MIGRATE_OUT の時）。
     pub def playJob(req: App.Headless.Request): Int32 \ IO =
         let env = App.Headless.envOf(req);
         // WhyNot: 設定を字の用意より後に作らない —— GPU で塗る回は AWT より先に GL へ繋ぐ必要がある（VideoOut.settingsOf）。
@@ -56,13 +56,13 @@ mod FlowVideo {
             case Ok((script, Ok(outcome))) =>
                 write(settings, script#fps, out, outcome);
                 writeTape(path, script, out, outcome);
-                migrate |> Option.forEach(dir -> writeMigrate(settings, path, script, dir, outcome));
+                let recorded = migrate |> Option.forAll(dir -> writeMigrate(settings, path, script, dir, outcome));
                 println("rendered: ${out} (${Int32.toString(List.length(outcome#frames))} frames)");
-                0
+                if (recorded) 0 else 2
             case Ok((script, Err(failure))) =>
                 write(settings, script#fps, out, failure#upTo);
                 writeTape(path, script, out, failure#upTo);
-                migrate |> Option.forEach(dir -> writeMigrate(settings, path, script, dir, failure#upTo));
+                discard (migrate |> Option.forAll(dir -> writeMigrate(settings, path, script, dir, failure#upTo)));
                 println("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: ${failure#why}");
                 println("    ${failure#at#text}");
                 1
@@ -114,11 +114,11 @@ mod FlowVideo {
     /// シナリオの変数は MigrateOut.probeRowsOf が全部足す。
     def migrateProbes(): List[String] = "phase" :: "panel" :: "talk" :: "mode" :: "photo" :: "logSize" :: "gate" :: "choice" :: Nil
 
-    /// 移行の記録を dir に書く（tape.json・コマの PNG・セーブデータ）。
-    def writeMigrate(settings: VideoOut.Settings, path: String, script: Flow.Script, dir: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
+    /// 移行の記録を dir に書く（tape.json・コマの PNG・セーブデータ）。問いが組めずに書かなかった時は false。
+    def writeMigrate(settings: VideoOut.Settings, path: String, script: Flow.Script, dir: String, outcome: Flow.Outcome[AppState]): Bool \ IO =
         match MigrateOut.probeRowsOf(migrateProbes(), outcome#last#resources#dialogue) {
-            case Err(why) => println("migrate: ${why}（${dir} は書かない）")
-            case Ok(probes) => writeMigrateWith(settings, probes, path, script, dir, outcome)
+            case Err(why)   => println("migrate: ${why}（${dir} は書かない）"); false
+            case Ok(probes) => writeMigrateWith(settings, probes, path, script, dir, outcome); true
         }
 
     def writeMigrateWith(settings: VideoOut.Settings, probes: List[MigrateOut.ProbeRow], path: String, script: Flow.Script, dir: String,

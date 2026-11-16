@@ -308,11 +308,14 @@ mod Stage {
     /// now のパーティクルの演出に替わってからの秒（一度も替えていなければ None）。
     pub def particlesSince(now: Clock.Time[Story], stage: Stage): Option[Float64] = PropertyTween.nameSince(now, particlesKey(), stage#props)
 
-    /// before から after へ替えた時に、now から舞台が動き続ける秒（新しく始まった重ね・tween・trigger・立ち絵と小物の重ねのうち一番遅く終わる物。
-    /// 新しく始まった物が無いか、0 秒なら None）。新しい物は (始まる時刻, 秒) の組が before より増えた分で見る。
+    /// before から after へ替えた時に、now から舞台が動き続ける秒（新しく始まった背景の重ね・tween・trigger・立ち絵と小物の重ねのうち一番遅く終わる物。
+    /// 新しく始まった物が無いか、0 秒なら None）。新しい物は (始まる時刻, 秒) の組が before より増えた分で見る（同じ組を差し替えただけなら数えない）。
+    /// 背景の重ねは、今の背景（写真と時間帯）が替わって now から重ね始めた時。
+    // WhyNot: 背景を fadeFrom が now に替わったかで見ない — 同じフレームの 2 つ目の <<bg>> では前の <<bg>> がもう now にしていて、秒を取りこぼす。
     pub def busySecondsOf(now: Clock.Time[Story], before: Stage, after: Stage): Option[Float64] =
         let added = spansAdded(now, spansOf(before), spansOf(after));
-        let backdrop = if (after#fadeFrom == now and before#fadeFrom != now)
+        let shotKey = (stage: Stage) -> stage#shot |> Option.map(shot -> (shot#photo, shot#grade));
+        let backdrop = if (after#fadeFrom == now and shotKey(after) != shotKey(before))
                            Some(after#switch#game |> Option.map(g -> g#seconds) |> Option.getWithDefault(after#fadeSeconds)) else None;
         let ends = added |> List.map(match (start, seconds) -> Clock.since(now, start) + seconds);
         List.append(Option.toList(backdrop), ends) |> List.maximum |> Option.filter(s -> s > 0.0)
