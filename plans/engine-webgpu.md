@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。mip（決まり 7）と preload は (7) と一緒に。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影（影の地図の pass の計画と描き先の寿命の表を前半の `Render3d.ShadowMaps` へ・GL の FBO は `Render3d.Shadow` の中の鍵 → FBO だけ・影の pass は場面の列の外の別の型・**済・12.30**）／(5) lightmap・空（人の決めで半分に割る: (5a) lightmap（lightmap の値と絵の組を前半の `Render3d.MaterialValues` が材質の行に書く・GL は uniform の道のまま・**済・12.32**）・(5b) 空）／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先。影の地図の寿命は (4) で前半へ・12.30）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。影は深度だけの pass を場面の前に積み、色の pass が group 0 の binding 1・2 で読む（**済・12.30**）。lightmap は材質の group 1 の r3dDraw と binding 19・20 で読む（**済・12.32**）。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -1382,7 +1382,7 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - **材質の絵**: 場面の絵は CPU で段を作って（`Mip.build`・GL の CPU の段と同じ鍵）BGRA8 で上げる。全体の登録の絵は 2D の描き手の texture を段 1 つのまま借りる（`Host#textureOf`・`textureById` を足した）。レンダーターゲットの絵（上下逆に読む物）は表に載せず黒で読む。
   - **描く版と描かない版**（`WebGpuMaterials.isDrawable`）: 描く = 骨の無い・lightmap の無い・半透明でない・alpha to coverage でない材質（uv・法線マップ・両面・cutout・metallic と roughness を含む）。描かない版は順の番号 0 で答え、計画が頂点の色の道へ回す（数えて知らせる）。
     - alpha to coverage: `render_gl/java` の `RenderPipelineDesc` に口が無いので描かない。計画には描き先の能力として alpha to one が無いと答えるので、計画は cutout を discard の版にする（ブラウザの GL と同じ）。9.1 の「PC の cutout の縁（discard か sample_mask か）」は比べていない（持ち越し）。
-    - **lightmap は (5) に残した**: lightmap の段の数・色空間・強さは物ごとの値なのに、今の WGSL は色空間と強さを場面の値（`R3dScene`）に置いている。物ごとの値の区画へ移す直しと lightmap の絵の bind を一緒に入れる方がまとまる（lightmap の行は 1 行 1 体で、reads の組が 1 つ増えるだけ）。
+    - **lightmap は (5) に残した**（→ 12.32 で入れた・R3dDraw に色空間と強さを足し、R3dScene の 2 欄は pad にした）: lightmap の段の数・色空間・強さは物ごとの値なのに、今の WGSL は色空間と強さを場面の値（`R3dScene`）に置いている。物ごとの値の区画へ移す直しと lightmap の絵の bind を一緒に入れる方がまとまる（lightmap の行は 1 行 1 体で、reads の組が 1 つ増えるだけ）。
   - **決めた事 — 材質の値は uniform の 256 バイトの区画で読む**（9.1 の流儀で 2 つ作って測った）:
     - 比べた 2 つ: (A) uniform の buffer を行ごとに 256 バイトの位置で bind する・(B) 同じ区画を読むだけの storage で bind する（WGSL の `var<uniform> sg` と `var<uniform> r3dDraw` を `var<storage, read>` に替え、layout を READ_ONLY_STORAGE に）。
     - 測り方: `bench/webgpu_v2` の部屋に、params だけが違う材質の小物 300 個（材質の行が 300 本を超える）を足した場面を、貼る形 A の道で 300 コマ描いて GPU を待つ時間の中央値（5 回）。
@@ -1447,7 +1447,7 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
   - WebGPU の材質の program の LRU と、木の鍵がぶつかった材質の見分け（GL の `reuseOrRebuild`）。組めない材質の WGSL は device の誤りに数えられる（12.22 と同じ根）。
   - 3D の材質の絵の置き場の上限は GameEngine の既定（256 MB・64 枚）で、project.json の値を WebGPU の描き手に届けていない。
   - PC の cutout の縁（discard か sample_mask か・9.1）と alpha to coverage（java の口）。
-  - lightmap の版（(5)）: 物ごとの値の区画へ色空間と強さを移し、lightmap の絵を reads に足す。
+  - lightmap の版（(5)）: 物ごとの値の区画へ色空間と強さを移し、lightmap の絵を reads に足す（→ 12.32 で済）。
   - GL は values と reads を読まない（材質の uniform を今の道で差す）。GL を values から差す形に替えるかは、GL の呼び出しの並びを変えてよい小分けで決める。
   - 値の binding の測り直し（P9・P10 の前）: 行ごとに group を作る代金（材質 300 個で 1 コマ約 2.7 ms の大半）と、group を材質か場面に 1 つ作って firstInstance か draw の番号で区画を引く形（storage）か dynamic offset（java の口が要る）を比べる。スマホ（adreno）でも測る。
   - レビュー 1 回目（85 点）の任意で持ち越した物（直したのは 5 = storage の版を残す理由の WhyNot と 9 = r3dDraw の binding の大きさを関数に）:
@@ -1690,3 +1690,67 @@ engine の pub と render_gl は触っていない。
   - 2D の入口（`withProject`）も `?backend=webgpu` なら 3D の場面を描く（WebGPU の塗りのコアが 3D の描き手を持つため）。WebGL2 の 2D の入口は描かずに 1 回知らせるので、振る舞いが分かれている。
   - Retina の 2 倍・Android の Chrome・Safari・空と lightmap を使う場面は確かめていない。
   - fps3d_lab は engine 0.87.0 のままなので、写しを 0.97.0 にして書き出した（コードは直さずに通った）。font-bake は無い字 178 字で止まるので、font-bake が作ったアトラスを `--font-atlas-dir` で渡した（ゲームのフォントの話で WebGPU とは別）。
+
+### 12.32 R2b・P8 の (5a): lightmap（2026-11-16・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (5)「lightmap・空」の前半。(5) 以降の小分けは半分ずつに割る（人の決め）ので、空は (5b) として次の担当へ回した（触っていない）。
+engine の pub（ゲームから見える API）は増えておらず、公開の型シグネチャも変えていない。GL の絵は変えていない（下の門）。
+
+- **R2b — lightmap の値と絵の組を前半へ**（12.28 で残した「lightmap の版」の続き）:
+  - 前半の `Render3d.MaterialValues.put` が、lightmap の版の材質の行（1 行 1 体。`Render3d.Batch` が lightmap つきを batch にしない）に、物ごとの値の区画の欄 3 = 段の数（`lightmapLevelsOf` = 絵の段の数と `maxLevels` の小さい方）・
+    欄 4 = 色空間（sRGB なら 1）・欄 5 = 強さを書き、絵の組の末尾に lightmap（`TextureUse.Lightmap(colorSpace)`・Linear・Clamp）を足す。並びは 材質の絵 → 法線マップ → lightmap（番号は `lightmapReadAt` の 1 か所）。
+    `readCountOf` は lightmap の版で 1 つ多い。行のフラグに `flagLightmap`（16）を足した。
+  - lightmap の絵の番号と寿命は (1b) の `Render3d.TextureTable3d` のまま（新しい表は要らなかった。lightmap は場面の textures の絵だけ＝`Scene3d.lightmapProblem` が名前で止める）。
+  - **GL の backend の中に残した物**: lightmap の unit（8）・uniform の位置・2 本目の uv を location 7 の別の vbo で上げる道・`bindLightmap` が物ごとに付け直す順。
+    GL は今も values と reads を読まない（12.28 の決めのまま）。段の数の切り方だけ `lightmapLevelsOf` を GL と前半で共有した（GL の呼び出しの並びは同じ）。
+- **P8 — WebGPU で lightmap を描く**:
+  - **決めた事 — 色空間と強さは場面の値でなく物ごとの値（`r3dDraw`）で読む**: 12.28 の WGSL は `R3dScene`（group 0）の `uLightmapSrgb`・`uLightmapIntensity` を読んでいた。場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、物ごとに替えられない。
+    そこで engine の `LightModel3d.Codegen` の WGSL の字だけを `r3dDraw.uLightmapSrgb`・`r3dDraw.uLightmapIntensity` に替えた（GLSL は 1 字も変えていない・型シグネチャは同じ）。`R3dDraw` は f32 が 6 つ（binding は 32 バイト）・`R3dScene` の 2 欄は pad にした（欄の位置は変えない）。
+    ほかの案: (a) lightmap の色を frag で先に線形へ戻して強さを掛け、場面の値は「線形・強さ 1」に固定する（engine を触らないが、LightModel3d の式を render_gl に写すことになる）・(b) 生成した字を置き換える（字の形に寄りかかる）。どちらも取らなかった。
+  - bind group は計画の決め（0 = コマと場面・1 = 材質（と lightmap）・2 = storage）のまま: lightmap の絵と sampler は group 1 の `drawBinding()` + 3・+ 4（19・20。`Render3dWgsl.drawDeclarations` と layout と bind group の 3 か所が同じ番号）。
+  - 2 本目の uv は形の版の 1 本の buffer の中（uv つきは 15 float 目・uv なしは 9 float 目・`WebGpuRows.MeshBuffers#uv2At`）を location 13 で読む（WGSL の決まり「形の並びは版ごとに 1 本の buffer へ交互」のまま。新しい buffer は足していない）。varying は 8 個（上限 16 の内）。
+  - 材質の頂点シェーダーの鍵を (uv, lightmap, 骨) にした（骨つきは lightmap を読まない）。pipeline の鍵は program の番号で、program の鍵（`materialKey`）に `+lm` があるので lightmap の版は別の pipeline。lightmap の行は毎回 group 1 を作る（`isSameBinding` が lightmap の行を同じ付け方にしない）。
+  - `WebGpuMaterials.isDrawable` から lightmap を外し、欠けの数え（`WebGpuRenderer.skipsOf`）から「3D の lightmap の材質の物」を消した。lightmap つきの半透明の材質は今は半透明の物として数える（(6)）。
+- **確かめ — `bench/webgpu_v2`** に 3 場面を足した（`LightmapCases.flix`。部屋の物を箱投影の uv にし、2 本目の uv は同じ投影を部屋 1 つ分で 0..1 に縮めた物。lightmap の絵は CPU で作る 64 × 64 の明るさと色の坂に 4 × 4 の升の濃淡）:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大 |
+  |---|---|---|---|
+  | lmTextured（絵つきの材質・sRGB の lightmap・強さ 1.5） | 231（460） | 74（150） | ±79 |
+  | lmNormalLinear（絵 ＋ 縞の法線マップ・線形の lightmap・強さ 2・段 2 まで＝絵の組 3 つ） | 289（580） | 80（160） | ±86 |
+  | lmDepth（lmTextured を奥行きの書き出しで） | 3（16） | 1（8） | ±4（±16） |
+
+  - 許す差の理由: matTextured（222・75）・matNormal（248・76）と同じ所（重なる面の入れ替わり）で同じ桁。lightmap を足して増えたのは ±1 の点だけ【推: lightmap の段の間の補間と sRGB の戻しの丸め】。lmDepth は roomDepth と同じ画素。上限は実測のほぼ 2 倍・差の最大は面の入れ替わりで切らない（lmDepth は roomDepth と同じ ±16）。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - 材質の頂点シェーダーで 2 本目の uv の上下を返す: lmTextured 399,946 px・lmNormalLinear 401,241 px 違って落ちる（lmDepth は 3 px のまま）。
+    - lightmap の強さを 1 のままにする（欄 5 に 1.0）: lmTextured と lmNormalLinear が全 518,400 px 違って落ちる。
+    - 法線マップの版で lightmap の絵の組の番号を 1 つ手前（法線マップの絵）にする: lmNormalLinear だけが全 518,400 px 違って落ちる（lmTextured は 231 px のまま）。
+  - 今までの 26 場面は 12.30 と同じ数。目で見て、lightmap の坂と升の濃淡が GL と同じ所に同じ明るさで乗る（`bench/webgpu_v2/debug/{gl,webgpu}/lm*.png`・git の外）。
+- **欠けの表と実物**（12.28 と同じ流し方・写しの engine はこの worktree の fpkg・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=40`（arrival の WebGPU は 40 秒で頭の読み込みが終わらず 0 コマだったので 70 秒で流し直した）・頭の 64 コマ）:
+
+  | 種類（1 コマあたり） | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+  |---|---|---|---|---|---|---|
+  | lightmap の材質の物（12.28 の数） | — | — | — | 7.9 → **0** | 14.5 → **0** | 20.5 → **0** |
+  | 半透明の材質の物 | — | — | — | 12.4 | 12.4 | 8.0 |
+  | 空（場面） | — | — | — | 0.6 | 0.6 | 0.6 |
+  | 骨つきの物・影 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+  - fps3d_lab の 3 場面は欠けの表が出ない（飛ばした物が 0・12.30 と同じ）。みやげの町は半透明（(6)）と空（(5b)）だけが残った。WebGPU の誤り 0・落ちた場面なし。
+  - 骨つきの物と影はみやげの町でも 0（(3)・(4) の後にみやげの町を流したのはこれが初めて・12.30 の (4b) の確かめの 1 つ）。
+  - 見え方: night の 60 コマ目を GL と並べた。町の石畳・壁の lightmap の明るさ（窓の明かりが地面に落ちる所）が GL と同じに見える（12.28 では石畳が白かった）。画素で比べてはいない【推: コマの時刻が 2 本でそろわない】。
+  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/lm/games/out/<ゲーム>-<場面>-<gl|webgpu>/frame-N.png`（**scratchpad の物は消えうる**）。
+- テスト: render_gl 542 緑（前の 540 に `TestSceneList` の lightmap の行の値と絵の組 2 本。`TestMeshTable.testDrawableKinds` は lightmap を描く版に直した。`TestWgslDawn` に uv の無い lightmap の頂点シェーダーを足した）。
+  engine の `make test-engine` 987 緑（`TestLightModel3d` に WGSL の lightmap の式が `r3dDraw` から読む 1 本）。
+- **レビュー（1 回・86 点・必須 2）で直した物**: 必須 1 = この記録（12.32 と 9 章の表と 12.28 の指し）。必須 2 = lightmap の行のテストが色空間を書き漏らしても通った（線形で期待 0 は初めの値と同じ）ので sRGB に替え、線形は法線マップと lightmap の両方の行のテストで見る。
+  任意で直した物: 絵の組の lightmap の番号を `MaterialValues.lightmapReadAt` の 1 か所に・頂点シェーダーの鍵と中身へ同じ丸めた値を渡す・足りないテスト 3 本（uv の無い lightmap の頂点シェーダー・WGSL の式・法線マップと lightmap の並び）。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16。直しの後の木で流し直した）:
+  - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `java -jar ../../bin/flix.jar test`）542 緑・`make test-engine` 987 緑。
+  - `make gl-parity` exit 0・`make gl-capture-check` exit 0（a と b の 54 枚がバイトまで同じ・基準とも 54 枚がバイトまで同じ）。
+  - `make webgpu-v1-check` exit 0・`make -C bench/webgpu_v2 run` exit 0・誤り 0（29 場面）。
+  - `make lint ONLY=max-lines` exit 0（`WebGpuRenderer.flix` 914 行・`WebGpuMaterials.flix` 453 行・`Render3d.flix` 1,116 行）・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
+- 言える範囲: この Mac（Dawn の Metal）だけ。ブラウザ（12.31 の口）・スマホ（adreno）で lightmap の場面は流していない【未確認】。
+- (5b) へ回した物: 空（kindSky・`skipsOf` の「3D の空」はそのまま）。みやげの町の空は見下ろしの画角でほとんど映らないので、`bench/webgpu_v2` に空の場面を足して門にする。
+- 持ち越し:
+  - `drawValueBytes`（32）は `R3dDraw` の欄の数と手で合わせている（欄を足す時は両方を直す）。
+  - lightmap の行は物ごとに group 1 を作る（GL も物ごとに付け直すので同じ桁）。lightmap の物が数百ある場面が来たら、(絵の番号, 値の区画) の鍵で控える形を測る。
+  - bench で壊して確かめていない所: 段の数（欄 3）・色空間（欄 4 は `TestSceneList` で守る）・Clamp と Repeat の取り違え（2 本目の uv を 0..1 に収めたので出にくい）。
+  - 12.28・12.30 の持ち越しで (5a) で触らなかった物はそのまま。
