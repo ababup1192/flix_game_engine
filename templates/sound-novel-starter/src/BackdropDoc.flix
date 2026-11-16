@@ -68,11 +68,34 @@ mod BackdropDoc {
         case _       => None
     }
 
-    /// defaultTransition = transition= を省いた <<bg>> の切り替え、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）、
+    /// transition=black の暗転の形。fadeOut = 暗くなる間・hold = 暗いまま止まる間・fadeIn = 明ける間の、<<bg … time=>> の秒に対する割合
+    /// （足して 1 でなくてよく、比で分ける）。<<bg … transition=black>> の形。
+    pub type alias Blackout = { fadeOut = Float64, hold = Float64, fadeIn = Float64 }
+
+    /// 暗転の形の既定（半分で暗くなりきり、止まらずに明ける）。
+    pub def defaultBlackout(): Blackout = { fadeOut = 0.5, hold = 0.0, fadeIn = 0.5 }
+
+    /// 暗転の進み p（0〜1）での暗さ（0 = 見える・1 = 真っ暗）。
+    pub def blackoutDarknessOf(b: Blackout, p: Float64): Float64 =
+        let total = b#fadeOut + b#hold + b#fadeIn;
+        let out = if (total <= 0.0) 0.5 else b#fadeOut / total;
+        let held = if (total <= 0.0) 0.0 else b#hold / total;
+        if (p < out) p / out
+        else if (p < out + held) 1.0
+        else if (out + held >= 1.0) 1.0
+        else (1.0 - p) / (1.0 - out - held)
+
+    /// 暗転の進みのどこで写真を替えるか（暗いまま止まる間の真ん中）。
+    pub def blackoutSwapAt(b: Blackout): Float64 =
+        let total = b#fadeOut + b#hold + b#fadeIn;
+        if (total <= 0.0) 0.5 else (b#fadeOut + b#hold * 0.5) / total
+
+    /// defaultTransition = transition= を省いた <<bg>> の切り替え、black = transition=black の暗転の形、initial = 背景が無い間の背景、title = タイトルの背景の動き（無ければ動かさない）、
     /// ground = 写真の下に敷く地の色（blank の写真・素材の待ち・black の暗転で見える色。無ければ Backdrop.groundColor）。
     pub type alias Rec = {
         version = Int32,
         defaultTransition = Transition,
+        black = Blackout,
         photos = Map[String, Photo],
         grades = Map[String, Grade],
         initial = Option[Initial],
@@ -88,7 +111,7 @@ mod BackdropDoc {
     pub def path(): String = "assets/novel.backdrops.json"
 
     /// 写真も時間帯も無い既定（Doc が読めない時は背景を出さず、地の色の上で読む）。
-    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, photos = Map.empty(), grades = Map.empty(), initial = None, title = None, ground = None })
+    pub def defaults(): Doc = Doc.Doc({ version = 1, defaultTransition = Transition.Fade, black = defaultBlackout(), photos = Map.empty(), grades = Map.empty(), initial = None, title = None, ground = None })
 
     /// 時間帯の欄の既定（欄が欠けた時に使う。写真のまま薄くぼかした色）。
     pub def plainGrade(): Grade =
@@ -122,6 +145,7 @@ mod BackdropDoc {
     def fromRoot(root: Map[String, Json]): Doc =
         Doc.Doc({ version = JsonCodec.intOr("version", 1, root),
                   defaultTransition = transitionOf(JsonCodec.stringOr("defaultTransition", "fade", root)) |> Option.getWithDefault(Transition.Fade),
+                  black = blackoutFrom(Map.get("black", root)),
                   photos = Map.get("photos", root) |> Option.flatMap(JsonCodec.decodeStringMap(photoFromJson))
                       |> Option.getWithDefault(Map.empty()),
                   grades = Map.get("grades", root) |> Option.flatMap(JsonCodec.decodeStringMap(gradeFromJson))
@@ -129,6 +153,14 @@ mod BackdropDoc {
                   initial = Map.get("initial", root) |> Option.flatMap(initialFromJson),
                   title = Map.get("title", root) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(titleFromJson),
                   ground = groundIn(root) })
+
+    /// "black": { "fadeOut", "hold", "fadeIn" } を読む（欠けた欄は既定の形の値）。
+    def blackoutFrom(json: Option[Json]): Blackout =
+        let d = defaultBlackout();
+        json |> Option.flatMap(JsonCodec.expectObject)
+             |> Option.map(obj -> { fadeOut = Float64.max(0.0, JsonCodec.floatOr("fadeOut", d#fadeOut, obj)), hold = Float64.max(0.0, JsonCodec.floatOr("hold", d#hold, obj)),
+                                    fadeIn = Float64.max(0.0, JsonCodec.floatOr("fadeIn", d#fadeIn, obj)) })
+             |> Option.getWithDefault(d)
 
     /// ground の欄（無ければ None。書いてあるのに #rrggbb として読めなければ 1 行言って None = 夜の紺）。
     def groundIn(root: Map[String, Json]): Option[Color] = Map.get("ground", root) |> Option.flatMap(groundOf)

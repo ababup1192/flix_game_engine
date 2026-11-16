@@ -179,7 +179,7 @@ mod ViewStage {
         let width = shownWidth(env, areaOf, stage);
         let moved = match stage#switch#transition {
             case _ if Option.nonEmpty(stage#switch#game) and p < 1.0 => photo(current, 0.0, 1.0, View.zBackdropShot())
-            case BackdropDoc.Transition.Black => if (p < 0.5 and not isFromDark(env, stage)) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
+            case BackdropDoc.Transition.Black => if (p < BackdropDoc.blackoutSwapAt(BackdropDoc.rec(env#res#backdrops)#black) and not isFromDark(env, stage)) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
             case BackdropDoc.Transition.Slide => List.append(photo(under, shift - slideGap(env, areaOf, under, current, width), 1.0, View.zBackdropUnder()), photo(current, shift, 1.0, View.zBackdropShot()))
             case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - width * panShare(), 1.0, View.zBackdropUnder()), photo(current, shift, p, View.zBackdropShot()))
             case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, View.zBackdropUnder()), wiped(paint, env, areaOf, stage, current, p))
@@ -210,12 +210,12 @@ mod ViewStage {
     def isFromDark(env: View.Env, stage: Stage.Stage): Bool =
         stage#under |> Option.forAll(s -> BackdropDoc.isBlank(s#photo, env#res#backdrops))
 
-    /// transition=black の暗転のグループ: 前半は暗くなり、後半は明ける（前の背景が絵を持たない時は、暗い所から全部の秒で明ける）。
+    /// transition=black の暗転のグループ: novel.backdrops.json の black の割合で暗くなり・止まり・明ける（前の背景が絵を持たない時は、暗い所から全部の秒で明ける）。
     /// 背景だけでなく人物・粒・GameView も暗くするので、覆いと同じ層の数に置く。
     // WhyNot: 前の背景が絵を持たない時も半分の秒を暗くなる側に使わない — 暗い地がもっと暗くなるだけで、秒の半分は何も変わらない画面になる。
     def blackoutGroup(env: View.Env, stage: Stage.Stage): Group =
         let p = Stage.fadeProgress(env#storyNow, stage);
-        let dark = if (isFromDark(env, stage)) 1.0 - p else if (p < 0.5) 2.0 * p else 2.0 * (1.0 - p);
+        let dark = if (isFromDark(env, stage)) 1.0 - p else BackdropDoc.blackoutDarknessOf(BackdropDoc.rec(env#res#backdrops)#black, p);
         let items = if (stage#switch#transition != BackdropDoc.Transition.Black or p >= 1.0 or dark <= 0.0) Nil
                     else {
                         let r = backdropRect(env#fit);

@@ -62,6 +62,25 @@ mod TestAudio {
         Assert.assertTrue(lefts |> List.exists(x -> x > 0.0))
 
     @Test
+    def testBlackoutHoldsDarkForItsShare(): Unit \ Assert =
+        // fadeOut 0.4・hold 0.2・fadeIn 0.4 の暗転は、進み 0.55 でまだ真っ暗。
+        Assert.assertEq(expected = 1.0, BackdropDoc.blackoutDarknessOf({ fadeOut = 0.4, hold = 0.2, fadeIn = 0.4 }, 0.55))
+
+    @Test
+    def testDefaultBlackoutIsHalfDarkAtAQuarter(): Unit \ Assert =
+        Assert.assertTrue(TestKit.near(0.5, BackdropDoc.blackoutDarknessOf(BackdropDoc.defaultBlackout(), 0.25)))
+
+    @Test
+    def testBlackoutSwapsThePhotoInTheMiddleOfTheHold(): Unit \ Assert =
+        Assert.assertTrue(TestKit.near(0.5, BackdropDoc.blackoutSwapAt({ fadeOut = 0.3, hold = 0.4, fadeIn = 0.3 })))
+
+    @Test
+    def testBlackoutIsReadFromTheDoc(): Unit \ Assert =
+        let text = "{\"version\": 1, \"photos\": {}, \"grades\": {}, \"black\": {\"hold\": 0.3}}";
+        let hold = BackdropDoc.fromJson(text) |> Option.map(d -> BackdropDoc.rec(d)#black#hold);
+        Assert.assertEq(expected = Some(0.3), hold)
+
+    @Test
     def testBlackCoversTheScreenHalfway(): Unit \ {Assert, Fs.FileRead} =
         // black の真ん中は、暗い地の覆いが濃さ 1 で掛かる。
         let st = applied(1.0, "bg", photo() :: "transition=black" :: "time=2" :: Nil, bg("transition=cut" :: Nil));
