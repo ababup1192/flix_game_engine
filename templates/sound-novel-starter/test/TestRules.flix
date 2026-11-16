@@ -843,7 +843,7 @@ mod TestRules {
         let (head, table) = headTable(res);
         let replaced = withReplace(table, res);
         let started = quiet(() -> WorldRead.newGame(replaced, w0(replaced)));
-        let (_, events) = Emit.collect(() -> WorldRead.step(replaced, 30.0, TestKit.tickClocks(replaced, 30.0, started)));
+        let (_, events) = TestKit.stepHearing(replaced, 30.0, started);
         let said = events |> List.filterMap(e -> match e {
             case World.Event.Executed(World.Executed.Said(_, _, text)) => Some(text)
             case _                                                    => None

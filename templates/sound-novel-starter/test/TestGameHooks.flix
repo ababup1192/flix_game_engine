@@ -6,7 +6,7 @@
 // ゲームの写真と時間帯は残すので、読み始めた World の台本の <<bg>> はそのまま当たる）。
 mod TestGameHooks {
 
-    use fge::{Clock, Emit, Flow, Num, RawDraw, Rect2, Render, Resources, Yarn, YarnCommands, YarnRunner}
+    use fge::{App, Clock, Emit, Flow, Num, RawDraw, Rect2, Render, Resources, Yarn, YarnCommands, YarnRunner}
     use Commands.Out
     use TestKit.begun
 
@@ -307,7 +307,7 @@ mod TestGameHooks {
     })
 
     def stepHearing(r: Res.Res, dt: Float64, w: World.World): (World.World, List[String]) =
-        let (next, events) = Emit.collect(() -> WorldRead.step(r, dt, TestKit.tickClocks(r, dt, w)));
+        let (next, events) = TestKit.stepHearing(r, dt, w);
         (next, cuesOf(events))
 
     @Test
@@ -488,7 +488,7 @@ mod TestGameHooks {
             ::: ((YarnRunner.Event.Line(heldLine()), 0) :: Nil);
         let start = begun(r);
         let w = World.mapRead(rd -> withHeld(events, takenOuts(start, Out.Wait(0.1) :: Nil, rd)), start);
-        let (next, heard) = Emit.collect(() -> WorldRead.step(r, 0.2, TestKit.tickClocks(r, 0.2, w)));
+        let (next, heard) = TestKit.stepHearing(r, 0.2, w);
         (next, heard |> List.filterMap(e -> match e {
             case World.Event.Signal(name) => Some(name)
             case _                        => None
@@ -563,6 +563,41 @@ mod TestGameHooks {
         let early = stepFrames(r, 57, walked);
         let late = stepFrames(r, 165, early);
         Assert.assertEq(expected = ("「歩く前の行。」", "「歩いた後の行。」"), (currentText(early), currentText(late)))
+
+    /// 台本（test/fixtures/switch）の node を、実機と同じ 1 フレーム（Flow.play・30 fps・flow の reader が読んで送る）で流し、
+    /// 歩く <<bg p1>> を当てたフレームから「歩いた後の行。」を出したフレームまでのフレームの数。
+    def walkFramesByFlow(node: String, lineNo: Int32): Result[String, Int32] \ Fs.FileRead =
+        let base = res() |> Res.withDialogue(Yarn.loadOr(Yarn.empty(), "test/fixtures/switch/dialogue.json")) |> TestKit.withOpening(node);
+        let r = { commands = Commands.tableOf(Commands.bgUsing(walk(5.4)) :: Commands.commandsIn(base#commands)) | base };
+        let app = TestKit.app(r, TestKit.w0(r));
+        let title = Resources.of(r, TestKit.w0(r));
+        let text = "fps 30\nwait 0.5\ntap confirm\ndrive reader until talkLine=test/fixtures/switch/switch.yarn:${Int32.toString(lineNo)} max 20\nwait 0.5\n";
+        forM (
+            script <- Flow.Parse.parseText(Flow.vocabOf(app, title), "switch-test.flow", text) |> Result.mapErr(Flow.Parse.problemsText);
+            played <- Flow.play(app, { design = Layout.size(Layout.Fit.Regular), limit = 1200 }, script, { world = title, state = App.freshStepState() })
+                      |> Result.mapErr(failure -> failure#why)
+        ) yield framesFromWalkToLine(Flow.worldsOf(played) |> List.map(h -> h#world))
+
+    def framesFromWalkToLine(worlds: List[World.World]): Int32 =
+        let indexed = List.zipWithIndex(worlds);
+        let walkAt = indexed |> List.find(p -> World.readOf(snd(p)) |> Option.exists(rd -> rd#stage#shot |> Option.exists(shot -> shot#photo == "p1"))) |> Option.map(fst);
+        let lineAt = indexed |> List.find(p -> currentText(snd(p)) == "「歩いた後の行。」") |> Option.map(fst);
+        match (walkAt, lineAt) {
+            case (Some(a), Some(b)) => b - a
+            case _                  => -1
+        }
+
+    @Test
+    def testAWalkingBgThenAWaitShowsTheLineWhenTheWalkEndsOnTheAppPath(): Unit \ {Assert, Fs.FileRead} =
+        // 古い版の記録（廃屋配信 walk_tour）: 歩く <<bg genkan>> 5.4 秒 → <<audio>> 2 つ → <<wait 0.8>> → 台詞は bg から 163 フレーム
+        // （<<wait>> は歩きの頭から数えて重なる）。間の比べ（migrate diff --times）と同じく ±1 フレームで見る。
+        let frames = walkFramesByFlow("Walk", 16) |> Result.getWithDefault(-1);
+        Assert.assertTrue(frames >= 162 and frames <= 164)
+
+    @Test
+    def testAWalkingBgAtTheHeadOfAJumpedNodeShowsTheLineWhenTheWalkEndsOnTheAppPath(): Unit \ {Assert, Fs.FileRead} =
+        let frames = walkFramesByFlow("Enter", 33) |> Result.getWithDefault(-1);
+        Assert.assertTrue(frames >= 162 and frames <= 164)
 
     /// 1/30 秒のフレームを n 回進める（実機と同じく、待ちが明けたフレームの次のフレームで実行器が進む）。
     def stepFrames(r: Res.Res, n: Int32, w: World.World): World.World =
@@ -662,7 +697,7 @@ mod TestGameHooks {
     def testThumbnailHudUnderTheWindowIsAboveTheWorldAndBelowTheText(): Unit \ {Assert, Fs.FileRead} =
         // サムネでは world を 0..8 に詰め、UnderWindow の hud はその上（9）・字（zVeil 10）の下にまとめる。
         let r = res();
-        let st = TestKit.quiet(() -> WorldRead.step(r, 0.0, begun(r))) |> World.readOf |> Option.map(rd -> rd#stage) |> Option.getWithDefault(Stage.empty());
+        let st = TestKit.stepBy(r, 0.0, begun(r)) |> World.readOf |> Option.map(rd -> rd#stage) |> Option.getWithDefault(Stage.empty());
         let worldTop = ViewStage.thumbnail(envOf(r, 0.0), applied(r, 0.0, "show", "a" :: Nil, st), true) |> List.map(p -> ViewStage.zOf(p#item)) |> List.maximum |> Option.getWithDefault(0);
         let hud = (_: View.Env, _: World.Read) -> (View.HudBand.UnderWindow, View.at(0.0, 0.0, RawDraw.box({ x = 1.0, y = 1.0 }, { r = 1.0, g = 0.0, b = 0.0 }, 5))) :: Nil;
         let hudZs = World.readOf(begun(r)) |> Option.map(rd -> View.thumbHudUsing(hud, envOf(r, 0.0), rd) |> List.map(p -> ViewStage.zOf(p#item))) |> Option.getWithDefault(Nil);
