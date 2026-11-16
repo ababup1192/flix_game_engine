@@ -378,11 +378,11 @@ mod Render3d.TestSceneList {
         let baked = (side: Float64) -> texturedOn(t, bakedTriangle(side)) |> Scene3d.withLightmap(Scene3d.lightmap(Texture3d.name(t)));
         Assert.assertTrue(snd(bindCounts(baked(1.0) :: baked(2.0) :: Nil, t :: Nil)) > snd(bindCounts(baked(1.0) :: Nil, t :: Nil)))
 
-    /// lightmap の版の行は、物ごとの値に段の数（maxLevels で切る）・色空間・強さを書き、絵の組の末尾に lightmap を Clamp と Linear で足し、lightmap のフラグを立てる。
+    /// lightmap の版の行は、物ごとの値に段の数（maxLevels で切る）・色空間（sRGB は 1）・強さを書き、絵の組の末尾に lightmap を Clamp と Linear で足し、lightmap のフラグを立てる。
     @Test
     def testLightmapRowWritesValuesAndRead(): Unit \ {Assert, IO} =
         let t = argbTexture();
-        let lm = { colorSpace = Texture3d.ColorSpace.Linear, intensity = 2.0, maxLevels = 1 | Scene3d.lightmap(Texture3d.name(t)) };
+        let lm = { intensity = 2.0, maxLevels = 1 | Scene3d.lightmap(Texture3d.name(t)) };
         let material = Scene3d.texturedMaterial(Texture3d.name(t), ShaderDoc.FilterMode.Nearest);
         let placed = Scene3d.meshInstance(bakedTriangle(1.0), Mat4.identity()) |> Scene3d.withMaterial(material) |> Scene3d.withLightmap(lm);
         let head = { fields = Scene3d.instanceFieldsOf(placed), pose = None, poseRow = 0, culled = false };
@@ -391,9 +391,24 @@ mod Render3d.TestSceneList {
                                   { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil });
         let v = (i: Int32) -> Array.get(i, list#values);
         let last = rowAt(list, 0, 10) - 1;
-        Assert.assertEq(expected = (1.0f32, 0.0f32, 2.0f32, 2, true, 1, 1, true),
+        Assert.assertEq(expected = (1.0f32, 1.0f32, 2.0f32, 2, true, 1, 1, true),
                         (v(3), v(4), v(5), rowAt(list, 0, 10), hasFlag(list, 0, Render3d.SceneList.flagLightmap()),
                          Render3d.SceneList.readAt(list, 0, last, 1), Render3d.SceneList.readAt(list, 0, last, 2), Render3d.SceneList.readAt(list, 0, last, 0) >= 0))
+
+    /// 法線マップと lightmap の両方を持つ行の絵の組は 材質の絵 → 法線マップ（材質の読み方 Repeat）→ lightmap（Clamp）の順で、線形の lightmap は色空間の欄が 0。
+    @Test
+    def testNormalMapThenLightmapReads(): Unit \ {Assert, IO} =
+        let t = argbTexture();
+        let lm = { colorSpace = Texture3d.ColorSpace.Linear | Scene3d.lightmap(Texture3d.name(t)) };
+        let material = Scene3d.texturedMaterial(Texture3d.name(t), ShaderDoc.FilterMode.Nearest) |> Scene3d.withNormalMap({ texture = Texture3d.name(t), strength = 1.0 });
+        let placed = Scene3d.meshInstance(bakedTriangle(1.0), Mat4.identity()) |> Scene3d.withMaterial(material) |> Scene3d.withLightmap(lm);
+        let head = { fields = Scene3d.instanceFieldsOf(placed), pose = None, poseRow = 0, culled = false };
+        let d = { handle = 0, order = 3, kind = { lightmap = true, normalMap = true, uv = true | plainKind() }, material = Scene3d.materialFieldsOf(material),
+                  batch = { head = head, count = 1, first = 0 } };
+        let list = buildSceneList(Render3d.SceneList.contextOf(freshTables(), { textures = t :: Nil | sceneOf(Nil) }),
+                                  { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil });
+        let wrapAt = (k: Int32) -> Render3d.SceneList.readAt(list, 0, k, 2);
+        Assert.assertEq(expected = (3, 0, 0, 1, 0.0f32), (rowAt(list, 0, 10), wrapAt(0), wrapAt(1), wrapAt(2), Array.get(4, list#values)))
 
     // ── pass ──
 

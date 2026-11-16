@@ -265,6 +265,7 @@ mod TestWgslDawn {
         ("vertex material", Render3dWgsl.materialVertexSource(false, false, false)) ::
         ("vertex material uv", Render3dWgsl.materialVertexSource(true, false, false)) ::
         ("vertex material uv lightmap", Render3dWgsl.materialVertexSource(true, true, false)) ::
+        ("vertex material lightmap", Render3dWgsl.materialVertexSource(false, true, false)) ::
         ("vertex lit skinned", Render3dWgsl.litVertexSource(true)) ::
         ("vertex material skinned", Render3dWgsl.materialVertexSource(false, false, true)) ::
         ("vertex material uv skinned", Render3dWgsl.materialVertexSource(true, false, true)) ::

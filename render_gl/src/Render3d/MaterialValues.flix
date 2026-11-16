@@ -54,6 +54,9 @@ mod Render3d.MaterialValues {
     /// layout と版 kind の材質 1 つが reads に取る組の数。
     pub def readCountOf(layout: Layout, kind: ProgramKind): Int32 = layout#readCount + (if (kind#normalMap) 1 else 0) + (if (kind#lightmap) 1 else 0)
 
+    /// 絵の組の中の lightmap の番号（readCount = 材質の絵の数・normalMapped = 法線マップの版。並びは材質の絵 → 法線マップ → lightmap）。
+    pub def lightmapReadAt(readCount: Int32, normalMapped: Bool): Int32 = readCount + (if (normalMapped) 1 else 0)
+
     /// lightmap lm を段の数 textureLevels の絵で読む時の段の数（GL の uniform と WebGPU の values の両方がこの数を使う）。
     pub def lightmapLevelsOf(lm: Scene3d.Lightmap, textureLevels: Int32): Int32 = Int32.min(textureLevels, lm#maxLevels)
 
@@ -81,7 +84,7 @@ mod Render3d.MaterialValues {
             Array.put(Int32.toFloat32(levels), at + 2, values)
         }) else ();
         if (d#kind#lightmap) Scene3d.lightmapOfFields(d#batch#head#fields) |> Option.forEach(lm -> {
-            let k = layout#readCount + (if (d#kind#normalMap) 1 else 0);
+            let k = lightmapReadAt(layout#readCount, d#kind#normalMap);
             let levels = putRead(naming, lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace), (1, 1), reads, readAt + readStride() * k);
             Array.put(Int32.toFloat32(lightmapLevelsOf(lm, levels)), at + 3, values);
             Array.put(if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1.0f32 else 0.0f32, at + 4, values);

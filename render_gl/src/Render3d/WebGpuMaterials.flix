@@ -393,7 +393,7 @@ pub mod Render3d.WebGpuMaterials {
         let draw = Render3dWgsl.drawBinding();
         if (normalMapped) discard desc.textureView(draw + 1, textureAt(p#texCount).defaultView()).sampler(draw + 2, samplerAt(p#texCount)) else ();
         if (p#kind#lightmap) {
-            let k = p#texCount + (if (normalMapped) 1 else 0);
+            let k = MaterialValues.lightmapReadAt(p#texCount, normalMapped);
             discard desc.textureView(draw + 3, textureAt(k).defaultView()).sampler(draw + 4, samplerAt(k))
         } else ();
         let group = s#gpu.createBindGroup(desc);
@@ -441,11 +441,12 @@ pub mod Render3d.WebGpuMaterials {
     /// 材質の頂点シェーダー（uv つきの版か・lightmap つきの版か・骨つきの版か。無ければ作る）。
     def vertexModuleOf(m: Materials, uv: Bool, lightmap: Bool, skinned: Bool): ShaderModule \ IO =
         let MaterialsData.MaterialsData(s) = m;
-        let key = (uv, lightmap and not skinned, skinned);
+        let baked = lightmap and not skinned;
+        let key = (uv, baked, skinned);
         match Map.get(key, Ref.get(s#vertexModules)) {
             case Some(found) => found
             case None =>
-                let made = s#gpu.createShaderModule("fge material vs", Render3dWgsl.materialVertexSource(uv, lightmap, skinned));
+                let made = s#gpu.createShaderModule("fge material vs", Render3dWgsl.materialVertexSource(uv, baked, skinned));
                 Ref.put(Map.insert(key, made, Ref.get(s#vertexModules)), s#vertexModules);
                 made
         }
