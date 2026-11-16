@@ -1,1 +1,0 @@
-../../../../render_gl/src/Render3d/JointTexture.flix

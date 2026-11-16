@@ -1,20 +1,19 @@
-// Render3d.Instancing — 3D の描き手（Render3d）の、1 回の prepare の全部の batch の 1 体ごとの値を 1 枚の RGBA32F のテクスチャへ詰めて上げる所。
-// 1 体 = 横に 8 texel: 0〜3 = world の列・4〜6 = 法線の行列の列の xyz・7 = tint の rgb（線形）。4 の w = emissionIntensity・5 の w = joint texture の行（float で 2^24 まで正確）。
-// 番号は prepare の中の通し番号で、頂点シェーダーは uInstanceBase + gl_InstanceID で引く（Render3dGlsl.instanceDeclarations）。テクスチャの回し方は Render3d.DataTexture。約束は Render3d.flix の頭。
-// WhyNot: 頂点の属性に置かない — batch にならない draw ごとに 8 本の属性を指し直すことになり、WebGL2 では submit が 3 倍を超える。location の 16 個も使い切る。
-mod Render3d.Instancing {
-    import fge.gl.GlConst
-    import fge.gl.GlContext
+// Render3d.InstanceValues — 1 回の prepare の batch に 1 体ごとの値の番号を振り、値を Float の並びへ詰める所（計画の側。GPU を呼ばない）。
+// 1 体 = 32 float（RGBA の 8 組）: 0〜3 組 = world の列・4〜6 組 = 法線の行列の列の xyz・7 組 = tint の rgb（線形）。4 組の w = emissionIntensity・5 組の w = 姿勢の行（float で 2^24 まで正確）。
+// 番号は prepare（WebGPU は場面）の中の通し番号で、上げるのは backend: GL は RGBA32F の絵（Render3d.GlRows.Instancing・頂点シェーダーが uInstanceBase + gl_InstanceID で引く）・
+// WebGPU は instance の頂点の buffer（Render3d.WebGpuRenderer・行の頭の物は draw の firstInstance）。
+// WhyNot: pub を外さない — 1 体の長さを GLSL と WGSL の字を作る所（Render3dGlsl・Render3dWgsl。Render3d の外）が読む（親の Render3d が pub でないので、ゲームからは見えない）。
+pub mod Render3d.InstanceValues {
     import java.nio.FloatBuffer
-    use Render3d.{MeshDraw, State, instanceTextureUnit, warnSceneOnce}
+    use Render3d.{MeshDraw}
     use Render3d.Batch.{MaterialBatch, MeshBatch, PlannedBatch, SpanBatch}
-    use Render3d.DataTexture.{bufferFor, heightFor, rowLimit, takeTexture, textureWidth}
-    use Render3dGlsl.{instancesPerRow, texelsPerInstance}
     use Render3d.ScenePlan.{ScenePlan}
 
-    /// count 体を入れる行の数。
-    pub def rowsFor(count: Int32): Int32 =
-        (count + instancesPerRow() - 1) / instancesPerRow()
+    /// 1 体の RGBA の組の数（GL の絵の texel の数・WGSL の頂点の属性の数）。
+    pub def texelsPerInstance(): Int32 = 8
+
+    /// 1 体の float の数。
+    pub def floatsPerInstance(): Int32 = 4 * texelsPerInstance()
 
     /// 値をどこまで詰めるか。Lit = 全部・ShadowDepth = world と姿勢の行だけ（影の地図は法線と色を使わない）。
     pub enum PackMode {
@@ -23,7 +22,7 @@ mod Render3d.Instancing {
     }
 
     /// plan の全部の batch へ f を当てる（色・深度の場面の batch の後にその場面の影の batch）。
-    def mapBatches(f: PackMode -> SpanBatch -> MeshBatch \ ef, plan: ScenePlan[SpanBatch]): ScenePlan[MeshBatch] \ ef =
+    pub def mapBatches(f: PackMode -> SpanBatch -> MeshBatch \ ef, plan: ScenePlan[SpanBatch]): ScenePlan[MeshBatch] \ ef =
         let lit = f(PackMode.Lit);
         let shadowDepth = f(PackMode.ShadowDepth);
         let material = d -> { handle = d#handle, order = d#order, kind = d#kind, material = d#material, batch = lit(d#batch) };
@@ -34,40 +33,12 @@ mod Render3d.Instancing {
           shadowPlans = plan#shadowPlans |> List.map(s -> { plain = List.map(shadowDepth, s#plain), skinned = List.map(shadowDepth, s#skinned) | s }) }
 
     /// plan の batch の描く物の数の合計。
-    def countOf(plan: ScenePlan[SpanBatch]): Int32 =
+    pub def countOf(plan: ScenePlan[SpanBatch]): Int32 =
         let draws = plan#draws;
         let meshes = (bs: List[SpanBatch]) -> List.sumWith(b -> b#count, bs);
         let materials = (ds: List[MaterialBatch[SpanBatch]]) -> List.sumWith(d -> d#batch#count, ds);
         meshes(draws#plain) + meshes(draws#skinned) + materials(draws#opaque) + materials(draws#blended)
             + List.sumWith(s -> meshes(s#plain) + meshes(s#skinned), plan#shadowPlans)
-
-    /// 今の prepare の全部の batch に番号を振り、1 体ごとの値をテクスチャへ 1 回で上げて、振り終えた plans とテクスチャの番号を返す。描く物が無ければテクスチャを作らず None。
-    /// テクスチャに入り切らない batch の物は描かない（1 回知らせる）。members = batch の描く物（Render3d.ScenePlan.Grouped#members）。
-    pub def upload(gl: GlContext, state: State, gen: Int64, plans: List[ScenePlan[SpanBatch]], members: MutList[MeshDraw, Static]): (List[ScenePlan[MeshBatch]], Option[Int32]) \ IO =
-        let total = List.sumWith(countOf, plans);
-        if (total == 0) (plans |> List.map(mapBatches(_ -> b -> { head = b#head, count = 0, first = 0 })), None)
-        else {
-            let limit = rowLimit(gl, state#instances);
-            let capacity = limit * instancesPerRow();
-            if (total > capacity)
-                warnSceneOnce(state, "@instance-rows", Log.fellBackLine("scene3d", "1 回の prepare の描く物", "入り切らない物を描かない", "${capacity} 体を超えた（${total} 体）"))
-            else ();
-            let kept = Int32.min(total, capacity);
-            let rows = rowsFor(kept);
-            let width = if (rows == 1) kept * texelsPerInstance() else textureWidth();
-            let out = bufferFor(gl, state#instances, rows * textureWidth() * 4);
-            discard out.clear();
-            let scratch = Array.repeat(Static, texelsPerInstance() * 4, 0.0f32);
-            let next = Array#{0} @ Static;
-            let numbered = plans |> List.map(mapBatches(numberSpan(out, scratch, capacity, next, members)));
-            discard out.position(0);
-            discard out.limit(rows * width * 4);
-            gl.activeTexture(GlConst.TEXTURE0 + instanceTextureUnit());
-            let texture = takeTexture(gl, state#instances, gen, heightFor(limit, rows));
-            gl.texSubImageRgba32f(0, 0, width, rows, out);
-            gl.activeTexture(GlConst.TEXTURE0);
-            (numbered, Some(texture#texId))
-        }
 
     /// numberBatch の、描く物を members の [b#start, b#start + b#count) で受ける形。
     pub def numberSpan(out: FloatBuffer, scratch: Array[Float32, Static], capacity: Int32, next: Array[Int32, Static], members: MutList[MeshDraw, Static],

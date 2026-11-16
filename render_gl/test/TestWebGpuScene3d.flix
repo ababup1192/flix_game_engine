@@ -122,21 +122,29 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
 
     def cutoutWood(): Scene3d.Material3d = Scene3d.withCutout(true, wood())
 
-    /// Output.Depth の場面は描くので場面としては数えず、骨つきの物・描けない版の材質の物（形だけで書く）・ビルボードだけを数える。
-    /// cutout の材質の物は材質の道で抜いて書くので数えない。
+    /// Output.Depth の場面は描くので場面としては数えず、描けない版の材質の物（形だけで書く）・ビルボードだけを数える。
+    /// cutout の材質の物は材質の道で抜いて書き、骨つきの物も描くので数えない。
     @Test
     def testDepthSceneCountsOnlyWhatItCannotDraw(): Unit \ {Assert, IO} =
         let cutout = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(cutoutWood());
         let scene = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 })
                       | Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: plainWithMaterial(Vec3.zero()) :: cutout :: Nil) };
-        Assert.assertEq(expected = Map#{"3D の骨つきの物" => 1, "3D の奥行きの書き出しの材質の物（描けない版を形で書く）" => 0, "3D のビルボード" => 0},
+        Assert.assertEq(expected = Map#{"3D の奥行きの書き出しの材質の物（描けない版を形で書く）" => 0, "3D のビルボード" => 0},
                         skipsOfScene(scene))
 
-    /// 材質つきの骨つきの物は骨つきの物として 1 回だけ数え、材質の物には数えない。
+    /// 描ける版の材質の骨つきの物は数えない（骨つきの物の種類も無い）。
     @Test
-    def testSkinnedWithMaterialIsCountedOnce(): Unit \ {Assert, IO} =
+    def testSkinnedWithDrawableMaterialIsNotCounted(): Unit \ {Assert, IO} =
         let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(Vec3.zero()) :: Nil));
-        Assert.assertEq(expected = (Some(1), Some(0)), (Map.get("3D の骨つきの物", skips), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips)))
+        Assert.assertEq(expected = (None, 0), (Map.get("3D の骨つきの物", skips), Map.foldLeft((acc, n) -> acc + n, 0, skips)))
+
+    /// 半透明の材質の骨つきの物は、半透明の材質の物として 1 回数える（骨つきの頂点の色で描く）。
+    @Test
+    def testSkinnedWithBlendedMaterialIsCountedAsBlended(): Unit \ {Assert, IO} =
+        let skinnedGlass = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.identity())
+            |> Scene3d.withPose(Render3d.FakeGl.poseAt(0.0)) |> Scene3d.withMaterial(glassWood());
+        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedGlass :: Nil));
+        Assert.assertEq(expected = Some(1), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips))
 
     /// 描ける版の不透明の材質の物（絵つき・cutout）は、まだ描けない物に数えない。
     @Test
@@ -152,11 +160,29 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     def testCulledThingsAreNotCounted(): Unit \ {Assert, IO} =
         let behind = Vec3.v3(0.0, 0.0, -50.0);
         let glass = (at: Vec3.Vec3) -> Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.translate(at)) |> Scene3d.withMaterial(glassWood());
-        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedWithMaterial(behind) :: glass(behind) :: glass(Vec3.zero()) :: Nil));
-        Assert.assertEq(expected = (Some(1), Some(1)), (Map.get("3D の骨つきの物", skips), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips)))
+        let skinnedGlass = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.translate(behind))
+            |> Scene3d.withPose(Render3d.FakeGl.poseAt(0.0)) |> Scene3d.withMaterial(glassWood());
+        let skips = skipsOfScene(Render3d.FakeGl.sceneOf(skinnedGlass :: glass(behind) :: glass(Vec3.zero()) :: Nil));
+        Assert.assertEq(expected = Some(2), Map.get("3D の半透明の材質の物（頂点の色で不透明に描く）", skips))
 
     /// GL の左下が原点の矩形（y = 20・高さ 40）を、高さ 200 の描き先の左上が原点にすると y は 200 − 20 − 40 = 140。
     @Test
     def testTopLeftFlipsGlOrigin(): Unit \ Assert =
         Assert.assertEq(expected = (10, 140, 30, 40), topLeftOf(200, { x = 10, y = 20, width = 30, height = 40 }))
+
+    // ── 形の版の並び（Render3d.WebGpuRows）──
+
+    /// ジョイントの重みつきの形（uv 無し）は 1 頂点 17 float: 位置・法線・色の 9 の後にジョイントの番号 4（float）と重み 4。
+    @Test
+    def testSkinnedVersionAppendsJointsAndWeights(): Unit \ {Assert, IO} =
+        let mesh = Render3d.FakeGl.skinnedTriangle();
+        let out = Render3d.WebGpuRows.interleaveVersion(mesh);
+        let width = Render3d.WebGpuRows.floatsPerVertex(mesh);
+        let at = (v: Int32, k: Int32) -> Array.get(v * width + k, out);
+        Assert.assertEq(expected = (17, 0.0f32, 1.0f32, 1.0f32, 0.0f32), (width, at(1, 9), at(1, 13), at(2, 13), at(2, 15)))
+
+    /// 骨の無い形の版は今までどおり 9 float（位置・法線・色）。
+    @Test
+    def testPlainVersionHasNoSkin(): Unit \ Assert =
+        Assert.assertEq(expected = 9, Render3d.WebGpuRows.floatsPerVertex(Render3d.FakeGl.plainTriangle()))
 }

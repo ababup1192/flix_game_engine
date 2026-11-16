@@ -1,4 +1,4 @@
-// 1 体ごとの値（Render3d.Instancing）を、場面の準備から draw まで通した試験。GL は呼び出しを控える偽物。
+// 1 体ごとの値（Render3d.InstanceValues と GL の Render3d.GlRows.Instancing）を、場面の準備から draw まで通した試験。GL は呼び出しを控える偽物。
 mod Render3d.TestInstancing {
     use Render3d.FakeGl.{Recorded, cmdOf, dest, freshOneByOne, freshRecorded, freshState, noTexture, paint, plainTriangle, poseAt, recordingGl, sceneOf, skinnedAt, stderrOf, timesCalled, viewport}
 

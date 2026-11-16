@@ -7,7 +7,7 @@ mod Render3d.ScenePlan {
     import java.util.Objects
     use Render3d.{DrawMode, MeshDraw, ProgramKind, ShadowCaster, ShadowLight, ShadowPlan, maxShadowMapSize, maxShadowPcfRadius}
     use Render3d.Batch.{BatchKey, MaterialBatch, SpanBatch, batchKeyOf}
-    use Render3d.JointTexture.{PoseRows, noRows, withPoseRow}
+    use Render3d.PoseRows.{PoseRows, noRows, withPoseRow}
 
     /// 計画の側の状態（GL の物を持たない）。drawMode = 置いた物の描き方・sceneWarnedRef = 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・
     /// 場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）・skinWarnedRef = ジョイントの数の食い違いを知らせた形（contentHash）・shadowWarnedRef = 影について知らせ済みの種類。

@@ -374,8 +374,8 @@ dual-source blending を使えば 1 本にできるが、iOS でほぼ使えな�
 | 12b | V2b | **実物の欠けの一覧（人の判断・2026-11-16）。** WebGPU の backend に「まだ描けない物は描かずに飛ばし、種類ごとの回数を知らせる」口を足し、fps3d_lab の部屋とみやげの町（`~/Documents/flix_ge_workspace/lamplighter`）を `FLIX_GE_BACKEND=webgpu` で流す。欠けた種類と回数の表で R2b・P8 の小分けの順を決め直す。以後、R2b と P8 の小分けごとに同じ 2 本を流して欠けが減るのを見る（**済・12.26**。欠けの表は 12.26。下の 2 行の小分けの順を決め直した） | 欠けた絵は画素で比べない（門は今までどおり gl-parity と `bench/scene3d`）。飛ばす口が GL の道と既定の起動を変えない事・知らせが 1 コマごとに増えない事 | 1〜2 時間 |
 | 13 | R2b | **3D の残りを `RenderList` に。** 小分け（V2b の欠けの表と形のレビュー（3D）で決め直した順・12.26）: (0) `WebGpuPaint` の 3D の分を子の mod へ分ける（P8 の側だけ・**済・12.27**）／(1) 奥行きの書き出し（Output.Depth）と `ScenePassSpec`（計画が `List[(ScenePassSpec, SceneList)]` を出す・**済・12.27**）／
 (1b) 形と 3D の絵の番号の寿命の表を前半へ（行に形の番号の欄を 1 つ・材質の絵は reads で番号・**済・12.28**）／(2) 材質と絵の組（values は uniform の 256 バイトの区画で読むと決めた・lightmap の版と alpha to coverage の版は残した・**済・12.28**）／
-(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
-| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`。mip（決まり 7）と preload は (7) と一緒に。
+(3) 骨と instance（`DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ・姿勢は storage・1 体ごとの値は instance の頂点の buffer のまま・**済・12.29**）／(4) 影／(5) lightmap・空／(6) 半透明（並べる所を前半へ移す）・後がけ／(7) ビルボード・環境マップ（mip・preload は P8 の側だけ）／(8) 残りの寿命（描き先・影の地図）。小分けごとに P8 の同じ番号と交互に進め、終わるたびに fps3d_lab とみやげの町を `FLIX_GE_BACKEND=webgpu` で流して欠けの表が減るのを見る | R2a と同じ門 | 8〜12 時間 |
+| 14 | P8 | **WebGPU の backend・3D の残り。** R2b の小分けの順（12.26）。(1) に 3D の診断の数（`scene3dCounts`）を添える（(0)・(1) の Output.Depth は済・12.27。`scene3dCounts` は (1) から外して (2) へ: 数える所（`Render3d.Counts`）が GL の `State` の入れ物に足す形で、WebGPU に同じ入れ物を持たせる仕事が Output.Depth と別の大きさだったため・12.27。(2) で数えるようにした・**済・12.28**）。骨と instance は storage buffer と `firstInstance`（姿勢は group 2 の storage・1 体ごとの値は比べて instance の頂点の buffer のまま・**済・12.29**）。mip（決まり 7）と preload は (7) と一緒に。
 WGSL の決まり（形のレビュー（3D））: 影の座標は頂点で作って渡さず frag で world の位置から作る（頂点 → 画素の値 16 の余裕を残す）・形の並びは版ごとに 1 本の buffer へ交互に並べる（頂点の buffer 8 本の上限のため。`ensureTangents` のように後から別の buffer を足す形をまねない）・
 bind group は 0 = コマと場面・1 = 材質（と lightmap）・2 = storage | P6 と同じ形の門。fps3d_lab の部屋と `bench/scene3d` が GL より遅くない（5% 以内） | 12〜16 時間 |
 | 15 | P9 | **動かない物の持ち越し**（決まり 10）。前半は描く行を持ち越し、WebGPU の backend は行と render bundle を持ち越す | `bench/scene3d` の動く割合 0%・12,000 個が 16 ms 以下【目標】。東京 1 棟ずつが 16 ms 以下【目標】（届かなければ内訳を出して人に伺う） | 8〜12 時間 |
@@ -1100,7 +1100,7 @@ WebGPU で場面そのものを描くのは V2・P8 なので、WebGPU の backe
     (3) 標本つきの描き先では、B は pass の切れ目ごとに resolve が増える。(4) スマホのタイル型 GPU では、pass の切れ目ごとに描き先の全画面の読み書き（store と load）が増える【推: この Mac では測っていない】。
   - MSAA のふちは A で消えない（必須 3 で見た・下の門の表の railsMsaa）。P8 の終わりに fps3d_lab の部屋で確かめる（5.4 のとおり）。
 - **決めた事 2 — 1 体ごとの値は instance の頂点の buffer**（GL の 1 体ごとの値のテクスチャ・`Render3d.Instancing` の 1 体 8 texel の並びのまま 128 バイト）を location 3〜10 で読み、行の頭の物は `drawIndexed` の firstInstance で引く。
-  storage buffer にしないのは 2D のスプライト（V1）とそろえるため。骨の行と一緒に storage へ移すかは P8 で決める。並びは `Instancing.numberSpan` をそのまま使う（GL と同じ詰め方）。
+  storage buffer にしないのは 2D のスプライト（V1）とそろえるため。骨の行と一緒に storage へ移すかは P8 で決める（→ 12.29 で比べて instance の頂点の buffer のままにした）。並びは `Instancing.numberSpan` をそのまま使う（GL と同じ詰め方）。
 - **決めた事 3 — 材質・骨つき・ビルボード・空・影・Output.Depth は描かずに名前ごとに 1 回知らせる**（「まだ描かない: 3D の材質（頂点の色で描く）」など）。材質は backend に「使えない」（順の番号 0）と答えるので、GL が使えないと答えた材質と同じく頂点の色で描く。
   診断の 3D の数（`scene3dCounts`）は数えないので、診断が有効で場面のあるコマに「まだ描かない: 3D の数を数える事（診断の scene3dCounts は 0 のまま・未計測）」を 1 回出す（`FrameDiagnostics` に「未計測」の値を足すのは engine の pub の変更なので取らない）。
 - **`RenderList` の 1 行の欄と高さ（3D）**（9.1）: R2a の `SceneList` の行のまま WebGPU で流せた。WebGPU の側で読む欄は種類・1 体ごとの値の先頭・数だけ（材質の表の番号・フラグは P8 の材質で読む）。行を流す所は `Render3d.WebGpuRows` の 128 行（形の置き場を含む）・GL の `Render3d.GlRows` は 177 行。
@@ -1462,3 +1462,111 @@ engine の pub（ゲームから見える API）は増えていない。GL の�
     - borrowTexture の作り直しの鍵（texId と version）が、2D の絵の作り直しで変わるか確かめる。
     - uploadTextures・countRows の List.range を添え字の輪にする。
     - TestMeshTable の同居テストを分け、足りないテスト 3 本（上限超えで作っていない番号も外す・60 コマ後に試し直す・sweep の順）を足す。
+
+### 12.29 R2b・P8 の (3): 骨と instance（2026-11-16・この Mac・Dawn の Metal だけ）
+
+表の 13・14 行目の小分け (3)。engine の pub（ゲームから見える API）は増えていない（足した型と関数は render_gl の中だけ）。GL の絵と GL の呼び出しの並びは変えていない（下の門）。
+
+- **R2b — `DataTexture`・`Instancing`・`JointTexture` を GL の backend の中へ**:
+  - 前半（計画の側。GPU を呼ばない）へ 2 つを分けた: 新しい `Render3d.PoseRows`（姿勢に行を割り当てる表・同じ姿勢かの見分け・行の順に joint 行列を詰める `packRows`）と、
+    新しい `Render3d.InstanceValues`（1 体ごとの値の番号の振り方と詰め方・`PackMode`・`numberSpan`・`packDraw`）。計画（`Render3d.ScenePlan`）は `PoseRows` を、WebGPU は両方を使う。
+  - GL の backend に残る物は `Render3d.GlRows` の子の mod へ移した: `Render3d.GlRows.DataTexture`（RGBA32F の絵の置き場と回し方）・`Render3d.GlRows.Instancing`（`upload`・`rowsFor`）・
+    `Render3d.GlRows.JointTexture`（`upload`）。中身は前と同じで、mod の名前と `use` だけが替わった（`git mv` で履歴を残した）。
+  - 3 つは `pub mod`（WhyNot に書いた）: 呼び手の `Render3d` と偽の GL を通るテストは `GlRows` の外で、pub でない孫の mod に届かない。親の `Render3d` が pub でないので、ゲームからは見えない。
+  - 偽の GL を通るテスト（Batch・Instancing・JointTexture）は `use` の名前だけ直して緑（中身は替えていない）。
+- **P8 — WebGPU で骨つきの物を描く**:
+  - 計画に姿勢の行の上限（`poseRowLimit` = 姿勢の予算 64 MiB ÷ ジョイント 64 本の行 = 16,384）を渡し、計画が振った姿勢の行（`PoseRows`）を prepare ごとに 1 回詰める（頭の 16 バイトに 1 行のジョイントの数・その後に行の順の mat4）。
+  - 頂点の色の骨つきの行（`kindSkinned`）と、骨つきの材質（`WebGpuMaterials.isDrawable` に骨つきを入れた）を描く。形の版の buffer の末尾にジョイントの番号（float 4 つ）と重み（4 つ）を足し、location 14・15 で読む。
+    式は GLSL の `skinPrelude` と同じ（重みつきの joint 行列の和を位置に掛けてから model・法線とタンジェントは左上 3×3）。姿勢の行は 1 体ごとの値の normal1.w（GL と同じ並び）。
+  - bind group（P8 の WGSL の決まり）: 0 = 場面・1 = 材質（骨つきの頂点の色の pipeline は空の group）・2 = 姿勢（読むだけの storage）。group 2 は pass の頭で 1 回付ける。
+  - 寿命の決まり: 姿勢は prepare で 1 回詰め、encoder の中で初めて使う場面で送る（submit の数 `epoch` で控え、submit の後の最初の場面で送り直す）。
+    1 体ごとの値・姿勢・材質の値の空きを場面ごとにまとめて見積もり、どれかが入らなければ先に 1 回 submit する（片方を送った後にもう片方が submit すると、次の場面が先に送った方を頭から上書きする・12.28 と同じ決まりに姿勢を足した）。
+    group 2 は submit の後に手放す。回帰テスト `TestWebGpuScene3dDawn.testPosesAreResentAfterSubmit`（同じ encoder の 2 回目は同じ group・submit の後は新しい group）。
+  - 欠けの数え（`skipsOf`）から「骨つきの物」の種類を外した。描けない版の材質の骨つきの物（半透明・alpha to coverage）は骨つきの頂点の色で描き、その材質の種類で数える。
+- **決めた事 1 — 姿勢は group 2 の読むだけの storage**:
+  - uniform にしない: 1 回の prepare の違う姿勢を 1 つの binding に入れると 64 KiB を超える（ジョイント 64 本の姿勢 1 つで 4 KiB・16 体で上限）。姿勢ごとに区画を bind すると行ごとに group を作ることになり、姿勢を共有する batch が分かれる。
+  - GL と同じ RGBA32F の絵にしない: storage は番号で引くだけで、絵の幅（4 × ジョイントの数）と高さの上限に縛られない。WebGPU の core は頂点の段の storage を保証する（スマホの上限 12.24 の storage 128 MiB の内・行 16,384 本 × 64 本で 64 MiB）。
+  - 頂点の段で storage を読めない機種（WebGPU の互換の版）では骨つきの物が描けない【推: 互換の版は今の対象（PC の Dawn・Chrome・iPhone の Safari）の外】。
+- **決めた事 2 — 1 体ごとの値は instance の頂点の buffer のまま**（storage から `instance_index` で引く形と比べた・9.1 の流儀）:
+  - 比べ方: 頂点の色の pipeline だけを storage から引く形に一時の直しで替え（group 2 に 1 体ごとの値の buffer 全体・頂点の buffer の 1 番を外す）、`bench/webgpu_v2` の小物 4,800 個の場面（形 2 種）を貼る形 A の道で 300 コマ描いて GPU を待つ時間の中央値を、
+    5 区間 × 2 回ずつ流した（JIT の温まる頭の 2 区間を除いた 3 区間ずつ）。一時の直しはコミットに入れていない。storage の形でも crowd と room の差の画素は今の形と 1 px も違わなかった（読む値が同じ）。
+  - 数（ms）: 頂点の buffer 3.659・3.44・3.238／3.213・3.253・3.182、storage 3.443・3.229・3.17／7.713・3.292・3.245（7.713 は 1 区間だけの外れ）。差は揺れの内。
+  - 言える範囲: 1 コマの大半は CPU（計画と 1 体ごとの値を詰める所）で、頂点の取り込みの差は出にくい。測ったのはこの Mac（Apple M4 Pro・Dawn の Metal）だけで、スマホ（adreno）は測っていない。
+  - 頂点の buffer にした理由: (1) 速さが同じ・(2) 2D のスプライト（V1）と同じ形・(3) 属性の数は一番多い版（uv つきの骨つきの材質: 0〜2・3〜10・11・12・14・15）でも 15 個で上限 16 の内・
+    (4) storage にすると group 2 を姿勢と 1 体ごとの値で分け合うことになり、骨の無い物まで頂点の段の storage に頼る（互換の版で全部が描けなくなる）。
+  - 骨つきの版は lightmap を読まない（`Scene3d.lightmapOf` が None）ので、(5) で lightmap の版を描くようにしても一番多い版は 15 個のまま（uv と lightmap の版は 14 個）・残りは 1 個。
+- **直しながら足した物**（12.28 の持ち越しのうち (3) で触った所）:
+  - pipeline の控えの鍵の数（`-2 - stride - 1000000 * pass`・`id * 4096 + stride`）を enum `WebGpuMaterials.BoundPipeline`（`Unbound`・`Shape(pass, 頂点のバイト数, 骨つきか)`・`Material(program, 頂点のバイト数)`）にした。
+  - `countRows`・`uploadTextures`・材質の group の絵を付ける所・場面の値の光の配列を詰める所の `List.range` を添え字の輪にした（毎コマ通る所）。
+- **確かめ — `bench/webgpu_v2`** に 4 場面を足した（部屋・正面）。人形はジョイント 3 本（根・腰・胸）で曲がる柱（4 面・高さで 6 つのリングに割り、頂点を下と上のジョイントへ高さで振り分けた重み）を 24 体。
+  姿勢は人形ごとに違い、3 体に 1 体は同じ 1 つの姿勢を共有する（同じ行を読む）。向きと tint も人形ごと:
+
+  | 場面 | 違う画素（許容） | ±2 以上（許容） | 差の最大（許容） |
+  |---|---|---|---|
+  | skinned（頂点の色の人形 24 体） | 9（32） | 1（8） | ±70（255） |
+  | skinnedTextured（絵つきの材質の人形・uv とタンジェント） | 46（100） | 1（8） | ±70（255） |
+  | skinnedDepth（人形の奥行きの書き出し） | 3（8） | 0（4） | ±1（±16） |
+  | crowd（小物 1,200 個・松明と骨の無い柱の 2 種・物ごとに向きと tint・行の頭が 1 体ごとの値の途中を指す） | 21（64） | 10（32） | ±146（255） |
+
+  - 許す差の理由: ±2 以上の画素は room と同じく重なる面（人形と卓・小物どうし）で勝つ面が奥行きの丸めで入れ替わる所【推: 画素を 1 つずつは見ていない。room と同じ桁で、奥行きの書き出しは ±1 で止まる】。
+    ±1 の画素は面の中に点で散る【推: 光の坂と絵の補間の丸め】。上限は実測のほぼ 2〜4 倍・差の最大は面の入れ替わりで切らない（skinnedDepth は roomDepth と同じ ±16）。
+  - **壊して確かめた**（同じ日に 1 回ずつ・確かめた後に戻した）:
+    - 骨の行列の掛け順を逆にする（WGSL の位置を `skin * vec4f(aPos, 1)` から `vec4f(aPos, 1) * skin` へ）: skinned 52,573 px・skinnedTextured 52,574 px・skinnedDepth 51,895 px 違って落ちる（crowd は 21 px のまま）。
+    - instance の番号を 1 つずらす（`drawIndexed` の firstInstance を行の頭 + 1）: 3D の 15 場面が 31 万〜50 万 px（crowd 364,124 px）・rails の 3 場面が 6 千〜8.5 千 px 違って落ちる。
+  - 絵（git の外）: `bench/webgpu_v2/debug/{gl,webgpu}/skinned*.png`・`crowd.png`。目で見て、人形が腰と胸で曲がり、GL と同じ形と色。
+  - 1 コマ（記録・門ではない）: 小物 1,200 個と人形 24 体の場面を貼る形 A で 300 コマの中央値（5 区間）: 2.838・1.97・1.302・1.373・1.282 ms。
+- **確かめ — 実物の 2 本**（12.28 と同じ流し方・engine は 0.97.0 の fpkg をこの worktree で作り直した物・`FGE_JAR_CACHE=off`・`FLIX_GE_HIDDEN=1`・`RUN_SECONDS=40`（fps3d_lab の部屋は 70。40 では他の門と同時に流して 300 コマに届かなかった）・WebGPU だけ）:
+  - **骨つきの物の欠けは 6 場面とも 0**（表から行が消えた）。fps3d_lab の部屋の衛兵と、みやげの町の主人公と町の人が WebGPU で描かれ、GL の同じコマと同じ姿勢（部屋の 50 コマ目・night の 40 コマ目を GL と並べて目で見た）。WebGPU の誤り 0・落ちた場面なし。
+  - 欠けの表（起動から 300 コマの表の 1 コマあたり。12.28 の表との違い）:
+
+    | 種類 | fps3d_lab 部屋 | 礼拝堂 | 通路 | みやげの町 arrival | market | night |
+    |---|---|---|---|---|---|---|
+    | 骨つきの物 | 25.7 → **0** | 0 | 0 | 85.8 → **0** | 85.8 → **0** | 86.2 → **0** |
+    | lightmap の材質の物 | — | — | — | 7.9 → 7.8 | 14.5 → 21.5 | 20.5 → 30.3 |
+    | 半透明の材質の物 | — | — | — | 12.5 → 12.4 | 12.5 → 18.6 | 8.6 → 12.7 |
+    | 影・空 | 0.9 | 0.9 | 0.0 | 0.6 | 0.9 | 0.9 |
+
+    - 「instance の物」という種類は欠けの表に元から無い（1 体ごとの値の batch は V2 から描いている）。この小分けの instance の分は 1 体ごとの値の置き場を決める事（決めた事 2）と、骨つきの batch に番号を振る事。
+    - market と night の lightmap と半透明が増えたのは、300 コマのうち頭の読み込みのコマの数が流した回で違うため【推: 12.26 と同じ注意。V2b の表（21.5・30.3・18.6・12.7）と同じ数に戻った】。
+  - 絵の置き場: `/private/tmp/claude-501/-Users-abab-Desktop-flix-game-engine/1e409b86-520d-4126-86d6-d8af78577988/scratchpad/r2d/out/<ゲーム>-<場面>-webgpu/frame-N.png`（market の GL は `lamplighter-market-gl`。**scratchpad の物は消えうる**）。
+- テスト: render_gl 529 緑（前の 525 に 4 本: `TestWebGpuScene3d` の形の版の並び 2 本（骨つきは 17 float・骨の無い形は 9 float）と半透明の材質の骨つきの物を半透明として数える 1 本・`TestWebGpuScene3dDawn` の姿勢を submit の後に送り直す 1 本。
+  `TestWebGpuScene3d` の骨つきの物を数えていた 3 本と `TestMeshTable` の描ける版の 1 本は、骨つきを描く事に合わせて直した）。`TestWgslDawn` は骨つきの頂点シェーダー 3 本を足して 374 本を Dawn で組んで誤り 0。偽の GL を通るテストは `use` の名前の直しだけで緑。
+- 門（この Mac・Apple M4 Pro・macOS 27・Dawn の Metal・2026-11-16）:
+  - render_gl のテスト（`make sync-layers` の後 `.layers/render_gl` で `java -jar ../../bin/flix.jar test`）: 529 緑・exit 0。
+  - `make gl-parity` exit 0。場面ごとの行（81 行）が 12.28 の木の門の記録と 1 字も同じ（GL の道は mod の名前を替えただけ）。
+  - `make gl-capture-check` exit 0（基準 `bench/baseline/0.96.0/gl-capture-apple-m4-pro.sha256`）: a と b の 54 枚がバイトまで同じ・**基準とも 54 枚がバイトまで同じ**（差 0 枚）。
+  - `make webgpu-v1-check` exit 0（誤り 0・draw の数も GL と同じ・終わりの `bench/webgpu_v2` の型検査も緑）。
+  - `make -C bench/webgpu_v2 run` exit 0・誤り 0（今までの 16 場面は 12.28 と同じ数・足した 4 場面は上の表）。
+  - `make lint-max-lines` exit 0（`WebGpuRenderer.flix` 834 行・`Render3d.flix` 1,111 行）・`make gl-jar-pin-check` exit 0（`render_gl/java` は触っていない）。
+  - `make sync-engine-full` exit 0（engine_full の型検査と fpkg）。
+- 持ち越し:
+  - 影の地図の骨つきの物（(4)。計画は影の batch の姿勢の行も振っているので、WebGPU の影の pass は同じ group 2 を読めば足りる【推】）。
+  - 1 体ごとの値の置き場の比べはこの Mac だけ。スマホ（adreno）と、group を材質か場面に 1 つ作って区画を引く形（12.28 の持ち越し）と一緒に P9・P10 の前に測り直す。
+  - 姿勢の行の上限は予算 64 MiB から求める（device の maxStorageBufferBindingSize を読まない。core の最低保証 128 MiB の内）。上限を下げた機種が出たら読む。
+  - submit が場面の間に入るたびに、prepare の姿勢を全部送り直す（場面が使う行だけに絞らない）。姿勢が数 KB の今は代金が小さいが、人が千体を超える場面で 1 コマに何度も submit が入るなら場面ごとに絞る。
+    診断の JointUploads は GL と同じく prepare 1 回に 1 つ数え、送り直しは数えない（`packPoses` の doc に書いた）。
+  - 12.28 の持ち越しで (3) で触らなかった物: `budgetEvictions`・`isOverBudget`・`Budget`・`meshEvictions` を表の mod へ移す・鍵の 1 か所化・`TextureTable3d.touch` の Map・`MeshTable.trim`・
+    MaterialValues の位置のテスト・WGSL を組めない材質を欠けの表に数える・`borrowTexture` の作り直しの鍵・`TestMeshTable` の分割と足りないテスト 3 本・GL が読まない values と reads の代金。
+  - 2 本のゲームで確かめられない物（骨つきの物の影・骨つきの物の半透明の材質）は (4)・(6) で `bench/webgpu_v2` に場面を足す。
+- レビュー 1 回目（88 点）への対応:
+  - 必須 1（姿勢の送り直しを場面 2 つと途中の submit で守るテストが無い）:
+    - (a) `TestWebGpuScene3dDawn.testSecondSceneResendsPosesAfterSubmitInsidePrepare`: 骨つきの三角 1 枚と骨の無い三角 2 枚の場面を 2 つ、1 回の prepare に渡す。
+      1 体ごとの値の buffer を 512 バイト（場面 1 つが 384 バイト）にすると、2 つ目の場面の前で submit が 1 回入り、2 つ目の場面が送り直した group 2 が 1 つ残る（(1, 1)）。
+      4,096 バイトにすると submit は入らず、2 つ目の場面は 1 つ目の group 2 を使い回す（(0, 1)。姿勢の buffer は 1 回分の見積もりちょうどの 336 バイトにして、送り直しを見積もると submit が増える形にした）。
+    - (b) `bench/webgpu_v2` の skinnedTwice: 小物 1,200 個と人形 24 体の場面を左右に 2 つ並べて 1 回の prepare で描く（左右で yaw ±0.2）。
+      場面の一覧の頭に置き、1 体ごとの値の buffer が始めの 1,024 体のまま、1 つ目（823 体）は入り、2 つ目（801 体）の前で毎コマ submit が入る事を一時の println で確かめた（コミットに入れていない）。
+      GL との差: 違う画素 22 px（許容 64）・±2 以上 14 px（許容 32）・max ±230（255）【推: crowd と同じく重なる小物で勝つ面が入れ替わる画素】。
+    - 壊して確かめた（同じ日に 1 回ずつ・戻した）:
+      - `isWrittenNow` をいつも偽にする（送ってある姿勢も見積もる）: (a) が `((1, 1), (1, 1))` で落ちる（あふれない方で余計な submit が 1 回増える）。
+      - `sendPoses` が submit の後も前の group 2 を使い続ける（epoch を見ない）: (a) が `((1, 0), (0, 1))`・前からの `testPosesAreResentAfterSubmit` も落ちる。
+        `bench/webgpu_v2` は skinnedTwice で手放した group 2 を使い、Dawn が止まって exit 2（Abort trap）。
+      - 画素だけでは `isWrittenNow` の壊れは見えない（submit が 1 回増えるだけで絵は同じ）ので、守るのは (a) のテスト。
+  - 任意で直した物:
+    - `poseRowLimit` を姿勢の予算（64 MiB）÷（`Skin3d.maxJoints()` × 64 バイト）で求める形にし、WhyNot から「GL の上限と同じ桁」を消した（スマホの WebGL2 は 4,096 で成り立たない）。
+    - `WebGpuMaterials.bindRow` も骨つきの材質で姿勢の group と形のジョイントを確かめる（`MaterialPass#hasPoses`）。付けられずに飛ばした行は、`RowDrawer#unbound` が
+      「3D の付けられなかった行の物（pipeline か group が無い・飛ばす）」として欠けの表に数える（材質を組めない時も同じ種類に入る）。
+    - `GlRows.Instancing` の WhyNot を GL の理由（baseInstance が無い）に限った。
+    - 1 体の長さ（8 組 = 32 float）を `Render3d.InstanceValues.texelsPerInstance` に持たせ、`Render3dGlsl.texelsPerInstance` と `Render3dWgsl.instanceBytes` はそれを読む（`InstanceValues` は pub mod にした・WhyNot に書いた）。
+    - `pipelineOf` の鍵にジョイントの番号の位置を入れない理由（形の版の末尾の 8 float なので頂点のバイト数で決まる）を WhyNot に。
+    - 上の持ち越しに送り直しの代金と JointUploads の数え方、決めた事 2 に (5) の後の属性の数。
+  - テスト: render_gl 530 緑（(a) を 1 本足した）。

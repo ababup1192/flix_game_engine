@@ -2,8 +2,8 @@
 // 1 回の renderCommands で、2D の pass を開く前に prepare が場面ごとに自分の texture（色と深度。標本つきなら resolve まで）へ描き、
 // 2D の並びの z の位置で 2D の描き手がその texture を貼る（plans/engine-webgpu.md の 5.4）。計画（Render3d.ScenePlan）と行（Render3d.SceneList）は GL と同じ物を使い、
 // 行を流すのは Render3d.WebGpuRows・材質の program と絵と値は Render3d.WebGpuMaterials。式は GL と同じ WGSL（Render3dWgsl と ShaderGen.Wgsl.compile3d）。
-// 描くのは不透明の頂点の色の物と、不透明の材質の物（Render3d.WebGpuMaterials.isDrawable の版）と光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、
-// 奥行きの書き出し（Output.Depth の場面の形の灰色）。骨つき・半透明・lightmap・alpha to coverage の材質・ビルボード・空・影・環境マップは描かずに種類ごとの回数を
+// 描くのは不透明の頂点の色の物と、不透明の材質の物（Render3d.WebGpuMaterials.isDrawable の版）と、そのどちらも骨つきの物（姿勢は group 2 の storage）と
+// 光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、奥行きの書き出し（Output.Depth の場面の形の灰色）。半透明・lightmap・alpha to coverage の材質・ビルボード・空・影・環境マップは描かずに種類ごとの回数を
 // host へ数えさせる（描かない版の材質の物は GL が「使えない」と答えた材質と同じく頂点の色か形で描く）。3D の診断の数（Render3d.Counts）も GL と同じ欄で数える。
 // 場面は計画の pass（Render3d.ScenePlan.ScenePassSpec）ごとの行の列（Render3d.SceneList.ScenePasses）で描き、pass の種類で frag を替える。
 // WhyNot: 兄弟（Render3d.GlRows など）と同じく pub を外さない — 呼び手の RenderPaint.Internal.WebGpuPaint は Render3d の子孫でなく、pub でない子の mod には届かない
@@ -23,6 +23,7 @@ pub mod Render3d.WebGpuRenderer {
     import fge.webgpu.FilterMode
     import fge.webgpu.FrontFace
     import fge.webgpu.PrimitiveTopology
+    import fge.webgpu.RenderPass
     import fge.webgpu.RenderPassDesc
     import fge.webgpu.RenderPipeline
     import fge.webgpu.RenderPipelineDesc
@@ -42,17 +43,18 @@ pub mod Render3d.WebGpuRenderer {
     import java.nio.FloatBuffer
     use Render3d.{LightData, MeshDraw, PixelBox, clipBox, matrixArray, sceneRect}
     use Render3d.Batch.{MeshBatch, SpanBatch}
-    use Render3d.Instancing.{PackMode, numberSpan}
+    use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
     use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenes, isSkinned, planScenes}
     use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses}
     use Render3d.Batch.{MaterialBatch}
     use Render3d.Counts.{Phase, countDrawCallAt, countInstances, noteMaterialBuild, timed}
     use Render3d.MeshTable
-    use Render3d.SceneList.{kindMaterial, kindVertexColor, rowAt, rowCountOf, valuesAt}
+    use Render3d.PoseRows.{PoseRows, floatCountOf, packRows, posesInRowOrder}
+    use Render3d.SceneList.{kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf, valuesAt}
     use Render3d.WebGpuMaterials
-    use Render3d.WebGpuMaterials.{ValuesBinding}
-    use Render3d.WebGpuRows.{MeshStore, drawRows, freshStore, meshAllocator, uploadRows}
+    use Render3d.WebGpuMaterials.{BoundPipeline, ValuesBinding}
+    use Render3d.WebGpuRows.{MeshBuffers, MeshStore, drawRows, freshStore, meshAllocator, uploadRows}
     use RenderPaint.Internal.WebGpuPipelines
 
     /// 場面 1 つの描き先と、その場面の値の buffer と bind group（2D の描き手の描き先の鍵とそのコマの場面の番号ごとに 1 つ・大きさか形式か標本が変われば作り直す）。
@@ -85,10 +87,14 @@ pub mod Render3d.WebGpuRenderer {
     pub type alias Prepared = Vector[Option[Paste]]
 
     /// 描き手の状態。欄の中身:
-    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（場面の値が影と環境マップを切っているので読まれない）・
+    /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・poseLayout = group 2（姿勢）の layout・
+    /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・
+    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）, 頂点のバイト数, 骨つきか) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（場面の値が影と環境マップを切っているので読まれない）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
-    /// instanceUsed = 今の encoder で使ったそのバイト数・cpuInstances・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
-    /// （cpuInstances は足りなければ倍に作り直す）・gen = 画面のコマの世代（endFrame で進む）。
+    /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
+    /// poseGroups = 今の encoder の group 2（submit の後に手放す）・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
+    /// cpuInstances・cpuPoses・cpuScene・cpuCamera・cpuPaste・scratch = 毎回作らずに使い回す CPU の入れ物
+    /// （cpuInstances と cpuPoses は足りなければ倍に作り直す）・gen = 画面のコマの世代（endFrame で進む）。
     enum RendererData {
         case RendererData({
             gpu = WebGpu,
@@ -96,9 +102,13 @@ pub mod Render3d.WebGpuRenderer {
             sceneLayout = BindGroupLayout,
             pasteLayout = BindGroupLayout,
             vertexModule = ShaderModule,
+            skinnedModule = ShaderModule,
             fragmentModule = ShaderModule,
             depthModule = ShaderModule,
-            pipelines = Ref[Map[(Int32, Int32, Int32), RenderPipeline], Static],
+            poseLayout = BindGroupLayout,
+            emptyLayout = BindGroupLayout,
+            emptyGroup = BindGroup,
+            pipelines = Ref[Map[(Int32, Int32, Int32, Int32, Bool), RenderPipeline], Static],
             blankDepth = Texture,
             blankImage = Texture,
             environmentSampler = Sampler,
@@ -114,7 +124,12 @@ pub mod Render3d.WebGpuRenderer {
             written = Ref[Set[(Int32, Int32)], Static],
             instances = Array[Buffer, Static],
             instanceUsed = Array[Int32, Static],
+            poses = Array[Buffer, Static],
+            posesUsed = Array[Int32, Static],
+            poseGroups = Ref[List[BindGroup], Static],
+            epoch = Array[Int64, Static],
             cpuInstances = Array[ByteBuffer, Static],
+            cpuPoses = Array[ByteBuffer, Static],
             cpuScene = ByteBuffer,
             cpuCamera = ByteBuffer,
             cpuPaste = ByteBuffer,
@@ -127,6 +142,19 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 1 体ごとの値の buffer の始めの大きさ（体の数）。
     def initialInstances(): Int32 = 1024
+
+    /// 姿勢の buffer の始めの大きさ（バイト）。
+    def initialPoseBytes(): Int32 = 65536
+
+    /// 1 回の prepare の姿勢の行の数の上限（計画へ渡す）。姿勢の予算（poseBudgetBytes）を、ジョイントが一番多い行（Skin3d.maxJoints() 本の mat4）で割った数。
+    // WhyNot: device の maxStorageBufferBindingSize から求めない — 予算の 64 MiB はスマホ（12.24 の S24 Ultra の 128 MiB）の内で、core の最低保証（128 MiB）の内でもある。
+    def poseRowLimit(): Int32 = poseBudgetBytes() / (Skin3d.maxJoints() * 64)
+
+    /// 1 回の prepare の姿勢に使ってよいバイト数。
+    def poseBudgetBytes(): Int32 = 64 * 1048576
+
+    /// storage の binding の位置のそろえ（core の minStorageBufferOffsetAlignment の上限）。
+    def storageAlignBytes(): Int32 = 256
 
     /// この数の画面のコマ描かなかった場面の描き先は捨てる（GL の Render3d.idleTargetFrames と同じ）。
     def idleTargetFrames(): Int64 = 128i64
@@ -142,15 +170,21 @@ pub mod Render3d.WebGpuRenderer {
         discard layoutDesc.texture(1, ShaderStage.FRAGMENT, TextureSampleType.DEPTH).texture(2, ShaderStage.FRAGMENT, TextureSampleType.DEPTH);
         discard layoutDesc.texture(3, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(4, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING);
         discard layoutDesc.buffer(5, ShaderStage.VERTEX, BufferBindingType.UNIFORM);
+        let poseDesc = new BindGroupLayoutDesc("fge scene3d poses");
+        discard poseDesc.buffer(0, ShaderStage.VERTEX, BufferBindingType.READ_ONLY_STORAGE);
+        let emptyLayout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("fge scene3d empty"));
         let blankImage = gpu.createTexture("fge scene3d blank", 1, 1, TextureFormat.RGBA8_UNORM,
                                            Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
         gpu.writeTexture(blankImage, 0, 0, 0, 1, 1, ByteBuffer.allocateDirect(4), 0, 4);
         let r = RendererData.RendererData({
             gpu = gpu, planner = freshPlanner(Render3d.DrawMode.Instanced),
             sceneLayout = gpu.createBindGroupLayout(layoutDesc), pasteLayout = pasteLayout,
-            vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource()),
+            vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource(false)),
+            skinnedModule = gpu.createShaderModule("fge scene3d skinned vs", Render3dWgsl.litVertexSource(true)),
             fragmentModule = gpu.createShaderModule("fge scene3d lit fs", Render3dWgsl.litFragmentSource()),
             depthModule = gpu.createShaderModule("fge scene3d depth fs", Render3dWgsl.depthFragmentSource()),
+            poseLayout = gpu.createBindGroupLayout(poseDesc), emptyLayout = emptyLayout,
+            emptyGroup = gpu.createBindGroup(new BindGroupDesc("fge scene3d empty", emptyLayout)),
             pipelines = Ref.fresh(Static, Map.empty()),
             blankDepth = gpu.createTexture("fge scene3d blank depth", 1, 1, TextureFormat.DEPTH32_FLOAT, TextureUsage.TEXTURE_BINDING, 1, 1),
             blankImage = blankImage,
@@ -162,13 +196,16 @@ pub mod Render3d.WebGpuRenderer {
             targets = Ref.fresh(Static, Map.empty()), written = Ref.fresh(Static, Set.empty()),
             instances = Array#{createInstanceBuffer(gpu, initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             instanceUsed = Array#{0} @ Static,
+            poses = Array#{createPoseBuffer(gpu, initialPoseBytes())} @ Static, posesUsed = Array#{0} @ Static,
+            poseGroups = Ref.fresh(Static, Nil), epoch = Array#{0i64} @ Static,
             cpuInstances = Array#{directBytes(initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
+            cpuPoses = Array#{directBytes(initialPoseBytes())} @ Static,
             cpuScene = directBytes(sceneValueBytes()), cpuCamera = directBytes(128), cpuPaste = directBytes(16),
             scratch = Array.repeat(Static, Render3dWgsl.instanceBytes() / 4, 0.0f32),
             gen = Array#{1i64} @ Static
         });
         // WhyNot: 画面（RGBA8・標本 1）の pipeline を初めて場面が出たコマで作らない — Dawn は pipeline を作り終えるまで待つので、そのコマが詰まる（WebGpuPipelines.buildStartupPipelines と同じ）。
-        discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, 36);
+        discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, 36, None);
         r
 
     def directBytes(bytes: Int32): ByteBuffer \ IO = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN)
@@ -176,6 +213,9 @@ pub mod Render3d.WebGpuRenderer {
 
     def createInstanceBuffer(gpu: WebGpu, bytes: Int32): Buffer \ IO =
         gpu.createBuffer("fge scene3d instances", Int32.toInt64(bytes), Int32.bitwiseOr(BufferUsage.VERTEX, BufferUsage.COPY_DST))
+
+    def createPoseBuffer(gpu: WebGpu, bytes: Int32): Buffer \ IO =
+        gpu.createBuffer("fge scene3d poses", Int32.toInt64(bytes), Int32.bitwiseOr(BufferUsage.STORAGE, BufferUsage.COPY_DST))
 
     /// device の上に作った物を全部手放す（pasteLayout は持ち主が手放す）。この後 r は使えない。
     pub def release(r: Renderer): Unit \ IO =
@@ -186,7 +226,13 @@ pub mod Render3d.WebGpuRenderer {
         Ref.put(Map.empty(), s#pipelines);
         MeshTable.release(s#meshes, meshAllocator(s#gpu, s#meshStore));
         WebGpuMaterials.release(s#materials);
+        afterSubmit(r);
         Array.get(0, s#instances).destroy();
+        Array.get(0, s#poses).destroy();
+        s#emptyGroup.release();
+        s#emptyLayout.release();
+        s#poseLayout.release();
+        s#skinnedModule.release();
         s#blankDepth.destroy();
         s#blankImage.destroy();
         s#environmentSampler.release();
@@ -199,6 +245,10 @@ pub mod Render3d.WebGpuRenderer {
     pub def afterSubmit(r: Renderer): Unit \ IO =
         let RendererData.RendererData(s) = r;
         Array.put(0, 0, s#instanceUsed);
+        Array.put(0, 0, s#posesUsed);
+        Array.put(Array.get(0, s#epoch) + 1i64, 0, s#epoch);
+        Ref.get(s#poseGroups) |> List.forEach(g -> g.release());
+        Ref.put(Nil, s#poseGroups);
         WebGpuMaterials.afterSubmit(s#materials);
         Ref.put(Set.empty(), s#written)
 
@@ -236,20 +286,27 @@ pub mod Render3d.WebGpuRenderer {
         let RendererData.RendererData(s) = r;
         if (List.isEmpty(cmds)) Vector.empty()
         else {
-            // WhyNot: 姿勢の行を配らない — 骨つきの物は描かない（P8 の (3)）。
             // WhyNot: alpha to one を持つと答えない — 答えると計画が cutout を alpha to coverage の版にし、その版は描けない（Render3d.WebGpuMaterials の頭）。
-            let caps = { alphaToOne = false, poseRowLimit = 0 };
-            let (plans, grouped) = timed(s, Phase.Split, () -> {
+            let caps = { alphaToOne = false, poseRowLimit = poseRowLimit() };
+            let (plans, grouped, poses) = timed(s, Phase.Split, () -> {
                 let grouped = groupScenes(s#planner, caps, dest#samples, cmds);
                 let orders = WebGpuMaterials.resolve(s#materials, name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First), grouped#requests);
                 List.forEach(scene -> noteSkips(host, skipsOf(grouped#members, scene)), grouped#scenes);
-                (fst(planScenes(s#planner, caps, orders, grouped)), grouped)
+                let (planned, rows) = planScenes(s#planner, caps, orders, grouped);
+                (planned, grouped, packPoses(r, rows))
             });
-            timed(s, Phase.Draw, () -> plans |> List.mapWithIndex((i, plan) -> prepareScene(r, host, dest, grouped#members, i, plan)) |> List.toVector)
+            timed(s, Phase.Draw, () -> plans |> List.mapWithIndex((i, plan) -> prepareScene(r, host, dest, { members = grouped#members, poses = poses }, i, plan)) |> List.toVector)
         }
 
+    /// 1 回の prepare の場面をまたいで変わらない物。members = batch の描く物（Render3d.ScenePlan.Grouped#members）・poses = その prepare の姿勢（無ければ None）。
+    type alias PrepareInputs = { members = MutList[MeshDraw, Static], poses = Option[Poses] }
+
+    /// 1 回の prepare の姿勢。data = 詰めた値（頭の Render3dWgsl.poseHeaderBytes() に 1 行のジョイントの数）・bytes = その長さ・
+    /// written = 今の encoder で送った時の (epoch, group 2)（送っていないか、送った後に submit したら書き直す）。
+    type alias Poses = { data = ByteBuffer, bytes = Int32, written = Ref[Option[(Int64, BindGroup)], Static] }
+
     /// 場面 1 つを描いて貼る物を返す（描かない場面・場面の矩形か scissor が空なら None）。
-    def prepareScene(r: Renderer, host: Host, dest: Dest, members: MutList[MeshDraw, Static], index: Int32, plan: ScenePlan[SpanBatch]): Option[Paste] \ IO =
+    def prepareScene(r: Renderer, host: Host, dest: Dest, inputs: PrepareInputs, index: Int32, plan: ScenePlan[SpanBatch]): Option[Paste] \ IO =
         let cmd = plan#cmd;
         let vp = dest#viewport;
         let rect = sceneRect(vp, cmd);
@@ -264,7 +321,7 @@ pub mod Render3d.WebGpuRenderer {
                 case Scene3d.Resolution.Design => (Int32.max(1, Num.floorInt(cmd#scene#size#x + 0.5)), Int32.max(1, Num.floorInt(cmd#scene#size#y + 0.5)), 1)
             };
             let target = targetOf(r, host, (dest#key, index), { width = width, height = height, format = dest#format, samples = samples });
-            drawInto(r, host, target, members, plan);
+            drawInto(r, host, target, inputs, plan);
             writePaste(r, target, topLeftOf(dest#height, rect));
             noteWritten(r, (dest#key, index));
             Some({ group = target#pasteGroup, scissor = topLeftOf(dest#height, scissor), key = (dest#key, index) })
@@ -272,38 +329,35 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面 1 つのまだ描けない物の種類と回数（0 回の種類も並べる。数えるのは host#skip）。
     /// 物は計画が間引かなかった物（culled でない物・骨つきの物は Scene3d.isOutsideFrustum が間引かない）を 1 体 1 回だけ数える
-    /// （骨つきの物は材質があっても骨つきの物・lightmap の物は材質の物の内数）。
     /// 影は影を落とす光の数・ビルボードは数・空と環境マップは場面の数。
     /// 奥行きの書き出しの場面は、形だけで書く物のうち材質の道で書くはずの物（cutout と両面。計画が半透明の物と、cutout でも両面でもない材質を外してある）と
-    /// 骨つきの物とビルボードだけを数える（空は一番奥の白で塗り、影と環境マップは読まない）。
+    /// ビルボードだけを数える（空は一番奥の白で塗り、影と環境マップは読まない）。
     def skipsOf(members: MutList[MeshDraw, Static], scene: GroupedScene): List[(String, Int32)] \ IO =
         let cmd = scene#cmd#scene;
         let t = List.foldLeft((acc, g) -> tallyGroup(members, g, g#batch#start, g#batch#start + g#batch#count, acc),
-                              { opaque = 0, blended = 0, lightmapped = 0, skinned = 0 }, scene#groups);
+                              { opaque = 0, blended = 0, lightmapped = 0 }, scene#groups);
         match scene#mainPass {
             case ScenePassSpec.DepthOut(_) =>
-                ("3D の骨つきの物", t#skinned) :: ("3D の奥行きの書き出しの材質の物（描けない版を形で書く）", t#opaque + t#lightmapped) ::
+                ("3D の奥行きの書き出しの材質の物（描けない版を形で書く）", t#opaque + t#lightmapped) ::
                 ("3D のビルボード", List.length(cmd#billboards)) :: Nil
             case ScenePassSpec.Color =>
-                ("3D の骨つきの物", t#skinned) :: ("3D の alpha to coverage の材質の物（頂点の色で描く）", t#opaque) ::
+                ("3D の alpha to coverage の材質の物（頂点の色で描く）", t#opaque) ::
                 ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) :: ("3D の lightmap の材質の物（頂点の色で描く）", t#lightmapped) ::
                 ("3D の影（影を落とす光）", List.length(scene#shadowPlans)) :: ("3D のビルボード", List.length(cmd#billboards)) ::
                 ("3D の空", Option.count(_ -> true, cmd#sky)) :: ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
         }
 
     /// skipsOf の物の数え（opaque = 描けない版の不透明の材質の物・lightmapped = lightmap の材質の物）。
-    type alias Tally = { opaque = Int32, blended = Int32, lightmapped = Int32, skinned = Int32 }
+    type alias Tally = { opaque = Int32, blended = Int32, lightmapped = Int32 }
 
     /// group の batch の members の i から end の前までを acc へ数える。
     def tallyGroup(members: MutList[MeshDraw, Static], g: Group, i: Int32, end: Int32, acc: Tally): Tally \ IO =
         if (i >= end) acc
         else tallyGroup(members, g, i + 1, end, tallyDraw(g#surface, MutList.get(i, members), acc))
 
-    /// 物 d 1 つを acc へ数える（視錐台の外の物は数えない）。surface = d の group の材質。
-    // WhyNot: 骨つきの物を材質の道（surface）で分けない — WebGPU は材質の順の番号を 0 で答えるので、材質つきの骨つきの物も計画では骨つきの batch へ入り、描かれずに消える。
+    /// 物 d 1 つを acc へ数える（視錐台の外の物は数えない）。surface = d の group の材質（骨つきの物も同じ。描けない版の材質の骨つきの物は骨つきの頂点の色で描く）。
     def tallyDraw(surface: Option[MaterialRequest], d: MeshDraw, acc: Tally): Tally =
         if (d#culled) acc
-        else if (isSkinned(d)) { skinned = acc#skinned + 1 | acc }
         else match surface {
             case Some((_, kind)) if kind#lightmap  => { lightmapped = acc#lightmapped + 1 | acc }
             case Some((_, kind)) if kind#blend     => { blended = acc#blended + 1 | acc }
@@ -321,13 +375,13 @@ pub mod Render3d.WebGpuRenderer {
     /// 場面を target へ描く: 計画の pass ごとに、地の色（clearOf）と深度を消して行を描く pass を積む。
     // WhyNot: pass ごとに描き先を替えない — 今の pass（色と奥行きの書き出し）はどちらも場面の描き先へ書き、場面 1 つに 1 つ。描き先の違う影の地図の pass を足す時に替える。
     // WhyNot: 列の頭の pass だけ消して残りを前の中身から描く形（GL は場面の頭で 1 回だけ消す）にしない — 今は列に pass が 1 つしか無く、2 つ目を足す (4) の影の地図は描き先が違う。
-    def drawInto(r: Renderer, host: Host, target: SceneTarget, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch]): Unit \ IO =
-        let staged = stageScene(r, host, target, members, plan);
+    def drawInto(r: Renderer, host: Host, target: SceneTarget, inputs: PrepareInputs, plan: ScenePlan[SpanBatch]): Unit \ IO =
+        let staged = stageScene(r, host, target, inputs, plan);
         let scene = plan#cmd#scene;
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
         staged#passes |> List.forEach(match (spec, list, valuesBase) ->
-            encodeScene(r, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase },
+            encodeScene(r, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup },
                         { color = drawn.defaultView(), resolve = target#msaa |> Option.map(_ -> target#color.defaultView()),
                           clear = Some(clearOf(spec, scene)), depth = target#depth.defaultView(), viewport = full, scissor = full }))
 
@@ -341,10 +395,10 @@ pub mod Render3d.WebGpuRenderer {
             case _                                                                       => ground
         }
 
-    /// 場面 1 つを描く前の仕事を済ませる: 1 体ごとの値を送り、pass ごとの行の形を上げ、場面の値を target の buffer へ書く。返すのは pass ごとの行と形と、1 体ごとの値の位置。
-    def stageScene(r: Renderer, host: Host, target: SceneTarget, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch]): Staged \ IO =
+    /// 場面 1 つを描く前の仕事を済ませる: 1 体ごとの値と姿勢を送り、pass ごとの行の形を上げ、場面の値を target の buffer へ書く。返すのは pass ごとの行と形と、1 体ごとの値の位置と姿勢の group。
+    def stageScene(r: Renderer, host: Host, target: SceneTarget, inputs: PrepareInputs, plan: ScenePlan[SpanBatch]): Staged \ IO =
         let RendererData.RendererData(s) = r;
-        let (passes, instances) = numberInstances(r, host, members, plan);
+        let (passes, instances) = numberInstances(r, host, inputs#members, plan);
         let gen = Array.get(0, s#gen);
         let allocator = countingAllocator(r);
         let source = { textureOf = host#textureOf, own = plan#cmd#scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
@@ -353,13 +407,15 @@ pub mod Render3d.WebGpuRenderer {
             WebGpuMaterials.uploadTextures(s#materials, source, host#textureById, gen, list)
         });
         let valueBytes = List.sumWith(pl -> 4 * Array.length(snd(pl)#values) + 4 * Render3d.MaterialValues.valueAlign(), passes);
-        // WhyNot: 1 体ごとの値と材質の値を別々に「入らなければ submit」で送らない — 後に送る方が submit すると、先に送った方を次の場面が頭から上書きする。
-        if (needsFlush(r, instances#bytes, valueBytes)) flushHost(r, host) else ();
+        let poseBytes = inputs#poses |> Option.filter(p -> not isWrittenNow(r, p)) |> Option.map(p -> p#bytes + storageAlignBytes()) |> Option.getWithDefault(0);
+        // WhyNot: 1 体ごとの値・姿勢・材質の値を別々に「入らなければ submit」で送らない — 後に送る方が submit すると、先に送った方を次の場面が頭から上書きする。
+        if (needsFlush(r, instances#bytes, valueBytes, poseBytes)) flushHost(r, host) else ();
         let instanceBase = sendInstances(r, host, instances#data, instances#bytes);
+        let poseGroup = inputs#poses |> Option.map(sendPoses(r));
         let staged = passes |> List.map(match (spec, list) -> (spec, list, WebGpuMaterials.sendValues(s#materials, list)));
         countRows(r, plan, passes);
         writeSceneValues(r, target, plan);
-        { passes = staged, instanceBase = instanceBase }
+        { passes = staged, instanceBase = instanceBase, poseGroup = poseGroup }
 
 
     /// 形を作るたびに MeshUploads を数える、形の表へ渡す関数の組。
@@ -368,32 +424,42 @@ pub mod Render3d.WebGpuRenderer {
         let inner = meshAllocator(s#gpu, s#meshStore);
         { create = (handle, mesh) -> { Render3d.Counts.count(s, Render3d.Counts.Counter.MeshUploads, 1); inner#create(handle, mesh) }, destroy = inner#destroy }
 
-    /// 1 体ごとの値 instanceBytes と材質の値 valueBytes の、どちらかが今の encoder の空きに入らないか。
-    def needsFlush(r: Renderer, instanceBytes: Int32, valueBytes: Int32): Bool \ IO =
+    /// 1 体ごとの値 instanceBytes・材質の値 valueBytes・姿勢 poseBytes（そろえの余りを含む）の、どれかが今の encoder の空きに入らないか。
+    def needsFlush(r: Renderer, instanceBytes: Int32, valueBytes: Int32, poseBytes: Int32): Bool \ IO =
         let RendererData.RendererData(s) = r;
-        let capacity = Int64.tryToInt32(Array.get(0, s#instances).size()) |> Option.getWithDefault(Int32.maxValue());
+        let capacity = sizeOf(Array.get(0, s#instances));
         Array.get(0, s#instanceUsed) + instanceBytes > capacity or not WebGpuMaterials.hasRoom(s#materials, valueBytes)
+            or (poseBytes > 0 and Array.get(0, s#posesUsed) + poseBytes > sizeOf(Array.get(0, s#poses)))
+
+    def sizeOf(b: Buffer): Int32 \ IO =Int64.tryToInt32(b.size()) |> Option.getWithDefault(Int32.maxValue())
 
     /// 場面の置いた物と描く物の数と、行ごとの draw call と分かれた理由を数える（GL の Render3d.GlRows.uploadRows と drawMeshRange と同じ欄）。
-    /// 描く行は描く物のある頂点の色の行と、値のある材質の行。
+    /// 描く行は描く物のある頂点の色の行・骨つきの行と、値のある材質の行。
     def countRows(r: Renderer, plan: ScenePlan[SpanBatch], passes: ScenePasses): Unit \ IO =
         let RendererData.RendererData(s) = r;
-        let drawn = passes |> List.sumWith(match (_, list) -> List.range(0, rowCountOf(list)) |> List.sumWith(row -> {
-            let kind = rowAt(list, row, 0);
-            let count = rowAt(list, row, 4);
-            let draws = count > 0 and (kind == kindVertexColor() or (kind == kindMaterial() and valuesAt(list, row) >= 0));
-            if (draws) { countDrawCallAt(s, rowAt(list, row, 5)); count } else 0
-        }));
+        let drawn = passes |> List.sumWith(match (_, list) -> countRowsFrom(r, list, 0, rowCountOf(list), 0));
         countInstances(s, List.length(plan#cmd#scene#instances), drawn);
         let dropped = Scene3d.droppedLightsOf(plan#cmd#scene);
         Render3d.Counts.count(s, Render3d.Counts.Counter.DroppedPointLights, dropped#points);
         Render3d.Counts.count(s, Render3d.Counts.Counter.DroppedSpotLights, dropped#spots)
 
-    /// stageScene の答え。passes = 計画の pass ごとの (pass, 行, 行の values を送った位置（バイト）)（行の形と絵は上げてある）。
-    type alias Staged = { passes = List[(ScenePassSpec, SceneList, Int32)], instanceBase = Int32 }
+    /// 行 row から n の前までの描く行の draw call と分かれた理由を数え、描く物の数を acc に足して返す。
+    def countRowsFrom(r: Renderer, list: SceneList, row: Int32, n: Int32, acc: Int32): Int32 \ IO =
+        if (row >= n) acc
+        else countRowsFrom(r, list, row + 1, n, acc + countRow(r, list, row))
 
-    /// encodeScene が描く pass 1 つ。valuesBase = 行の values を送った位置（バイト）。
-    type alias StagedPass = { spec = ScenePassSpec, list = SceneList, instanceBase = Int32, valuesBase = Int32 }
+    def countRow(r: Renderer, list: SceneList, row: Int32): Int32 \ IO =
+        let RendererData.RendererData(s) = r;
+        let kind = rowAt(list, row, 0);
+        let count = rowAt(list, row, 4);
+        let draws = count > 0 and (kind == kindVertexColor() or kind == kindSkinned() or (kind == kindMaterial() and valuesAt(list, row) >= 0));
+        if (draws) { countDrawCallAt(s, rowAt(list, row, 5)); count } else 0
+
+    /// stageScene の答え。passes = 計画の pass ごとの (pass, 行, 行の values を送った位置（バイト）)（行の形と絵は上げてある）・poseGroup = 姿勢の group 2（姿勢の無い prepare は None）。
+    type alias Staged = { passes = List[(ScenePassSpec, SceneList, Int32)], instanceBase = Int32, poseGroup = Option[BindGroup] }
+
+    /// encodeScene が描く pass 1 つ。valuesBase = 行の values を送った位置（バイト）・poseGroup = 姿勢の group 2。
+    type alias StagedPass = { spec = ScenePassSpec, list = SceneList, instanceBase = Int32, valuesBase = Int32, poseGroup = Option[BindGroup] }
 
     /// 場面を描く pass の描き先。color = 描く view・resolve = 標本つきの描き先なら resolve する先・clear = 消す色（None なら前の中身に描き足す）・
     /// depth = 深度の view（いつも 1 で消す）・viewport と scissor = 描き先の左上が原点の (x, y, 幅, 高さ)。
@@ -419,41 +485,48 @@ pub mod Render3d.WebGpuRenderer {
         let (sx, sy, sw, sh) = onto#scissor;
         pass.setScissorRect(sx, sy, sw, sh);
         pass.setBindGroup(0, target#sceneGroup);
+        Option.forEach(g -> pass.setBindGroup(2, g), staged#poseGroup);
         let instances = Array.get(0, s#instances);
         pass.setVertexBuffer(1, instances, 0i64, instances.size());
-        let bound = Array#{-1, -1} @ Static;
-        let mp = { base = staged#valuesBase, format = target#format, samples = target#samples, sceneLayout = s#sceneLayout, bound = bound };
+        let mp = { base = staged#valuesBase, format = target#format, samples = target#samples, sceneLayout = s#sceneLayout, poseLayout = s#poseLayout,
+                   hasPoses = Option.nonEmpty(staged#poseGroup),
+                   bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static };
+        let bindShape = (p: RenderPass, mesh: MeshBuffers, skin: Option[Int32]) -> {
+            let key = BoundPipeline.Shape(passCodeOf(staged#spec), mesh#stride, Option.nonEmpty(skin));
+            if (Ref.get(mp#bound) == key) () else {
+                p.setPipeline(pipelineOf(r, target#format, target#samples, staged#spec, mesh#stride, skin));
+                // WhyNot: 骨つきの版で group 1 を付けずに描かない — pipeline の layout に group 2 があると group 1 も付いていなければならず、前の材質の group 1 は layout が違う。
+                if (Option.nonEmpty(skin)) p.setBindGroup(1, s#emptyGroup) else ();
+                Ref.put(key, mp#bound);
+                Array.put(-1, 0, mp#groupRow)
+            };
+            true
+        };
         let drawer = {
-            shape = (p, stride) -> {
-                let key = -2 - stride - 1000000 * passCodeOf(staged#spec);
-                if (Array.get(0, bound) == key) () else {
-                    p.setPipeline(pipelineOf(r, target#format, target#samples, staged#spec, stride));
-                    Array.put(key, 0, bound);
-                    Array.put(-1, 1, bound)
-                };
-                true
-            },
-            material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh)
+            shape = (p, mesh) -> bindShape(p, mesh, None),
+            skinned = (p, mesh) -> Option.nonEmpty(staged#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
+            material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh),
+            unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n)
         };
         drawRows(pass, s#meshStore, drawer, staged#list, staged#instanceBase);
         pass.end()
 
-    /// 場面の頂点の色の batch と不透明の材質の batch に 1 体ごとの値の番号を振って CPU の入れ物へ詰め、計画の pass ごとの行の列と、詰めた値（送るのは呼ぶ側）を返す。
-    /// 骨つきの batch は描く物を 0 にする（形も上げない）。半透明の材質の batch は無い（prepare が半透明の版を「使えない」と答える）。
+    /// 場面の頂点の色の batch・骨つきの batch・不透明の材質の batch に 1 体ごとの値の番号を振って CPU の入れ物へ詰め、計画の pass ごとの行の列と、詰めた値（送るのは呼ぶ側）を返す。
+    /// 半透明の材質の batch は無い（prepare が半透明の版を「使えない」と答える）。
     def numberInstances(r: Renderer, host: Host, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch]): (ScenePasses, { data = ByteBuffer, bytes = Int32 }) \ IO =
         let RendererData.RendererData(s) = r;
         let draws = plan#draws;
-        let total = List.sumWith(b -> b#count, draws#plain) + List.sumWith(d -> d#batch#count, draws#opaque);
+        let total = List.sumWith(b -> b#count, draws#plain) + List.sumWith(b -> b#count, draws#skinned) + List.sumWith(d -> d#batch#count, draws#opaque);
         let bytes = total * Render3dWgsl.instanceBytes();
         let raw = cpuInstancesFor(r, bytes);
         let out = raw.asFloatBuffer();
         let next = Array#{0} @ Static;
         let pack = numberSpan(out, s#scratch, Int32.maxValue(), next, members, PackMode.Lit);
         let plain = List.map(pack, draws#plain);
+        let skinned = List.map(pack, draws#skinned);
         let opaque = draws#opaque |> List.map((d: MaterialBatch[SpanBatch]) -> ({ handle = d#handle, order = d#order, kind = d#kind, material = d#material, batch = pack(d#batch) }: MaterialBatch[MeshBatch]));
-        let unseen = (b: SpanBatch) -> ({ head = b#head, count = 0, first = 0 }: MeshBatch);
         // WhyNot: 影の地図の batch に番号を振らない — 影は描かない（P8 の (4)）ので、計画の影の材料は空のまま渡す。
-        let numbered = { cmd = plan#cmd, mainPass = plan#mainPass, draws = { plain = plain, skinned = List.map(unseen, draws#skinned), opaque = opaque, blended = Nil },
+        let numbered = { cmd = plan#cmd, mainPass = plan#mainPass, draws = { plain = plain, skinned = skinned, opaque = opaque, blended = Nil },
                          shadowPlans = Nil };
         let tables = { meshes = s#meshes, textures = WebGpuMaterials.texturesOf(s#materials), layouts = s#layouts, gen = Array.get(0, s#gen), gpuMip = false,
                        textureOf = host#textureOf };
@@ -474,7 +547,7 @@ pub mod Render3d.WebGpuRenderer {
     /// 頭からでも入らなければ buffer を要る大きさか倍の大きい方へ作り直す。
     def sendInstances(r: Renderer, host: Host, data: ByteBuffer, bytes: Int32): Int32 \ IO =
         let RendererData.RendererData(s) = r;
-        let capacity = Int64.tryToInt32(Array.get(0, s#instances).size()) |> Option.getWithDefault(Int32.maxValue());
+        let capacity = sizeOf(Array.get(0, s#instances));
         if (Array.get(0, s#instanceUsed) + bytes > capacity) flushHost(r, host) else ();
         if (bytes > capacity) {
             Array.get(0, s#instances).destroy();
@@ -484,6 +557,69 @@ pub mod Render3d.WebGpuRenderer {
         if (bytes > 0) s#gpu.writeBuffer(Array.get(0, s#instances), Int32.toInt64(at), data, 0, bytes) else ();
         Array.put(at + bytes, 0, s#instanceUsed);
         at / Render3dWgsl.instanceBytes()
+
+    // ── 姿勢 ──
+
+    /// 1 回の prepare の姿勢 rows を CPU の入れ物へ詰める（頭の Render3dWgsl.poseHeaderBytes() に 1 行のジョイントの数）。姿勢が無ければ None。
+    /// 行をもらえなかった姿勢があれば 1 回知らせる（GL の Render3d.GlRows.JointTexture.upload と同じ文）。
+    /// 診断の JointUploads は GL と同じく prepare 1 回に 1 つ数える（submit の後に送り直した分は数えない）。
+    def packPoses(r: Renderer, rows: PoseRows): Option[Poses] \ IO =
+        let RendererData.RendererData(s) = r;
+        if (rows#dropped > 0)
+            Render3d.ScenePlan.warnOnce(s#planner, "@joint-rows", Log.fellBackLine("scene3d", "1 回の prepare の違う姿勢", "最後の行の姿勢", "${rows#limit} 行を超えた（${rows#dropped} 個）"))
+        else ();
+        if (rows#used == 0) None
+        else {
+            let header = Render3dWgsl.poseHeaderBytes();
+            let bytes = header + 4 * floatCountOf(rows);
+            let held = Array.get(0, s#cpuPoses);
+            let data = if (held.capacity() >= bytes) held else {
+                let grown = directBytes(Int32.max(bytes, 2 * held.capacity()));
+                Array.put(grown, 0, s#cpuPoses);
+                grown
+            };
+            discard data.putInt(0, rows#joints);
+            discard data.position(header);
+            let floats = data.slice().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+            discard data.position(0);
+            packRows(rows#joints, posesInRowOrder(rows), floats);
+            Render3d.Counts.count(s, Render3d.Counts.Counter.JointUploads, 1);
+            Some({ data = data, bytes = bytes, written = Ref.fresh(Static, None) })
+        }
+
+    /// 姿勢 p を今の encoder で送ってあるか。
+    def isWrittenNow(r: Renderer, p: Poses): Bool \ IO =
+        let RendererData.RendererData(s) = r;
+        Option.exists(w -> fst(w) == Array.get(0, s#epoch), Ref.get(p#written))
+
+    /// 姿勢 p の group 2（今の encoder で送ってなければ姿勢の buffer の空きへ送って作る）。呼ぶ前に needsFlush で空きを確かめておく。
+    /// それでも入らない（buffer を使っていない時に 1 つの prepare で足りない）なら、buffer を要る大きさか倍の大きい方へ作り直す。
+    // WhyNot: prepare の頭で 1 回だけ送らない — 場面の間で submit が入る（1 体ごとの値の buffer があふれる）と、次の prepare が同じ encoder の頭から書き、
+    //   まだ submit していない後の場面の姿勢を上書きする。submit の後の最初の場面で送り直す。
+    def sendPoses(r: Renderer, p: Poses): BindGroup \ IO =
+        let RendererData.RendererData(s) = r;
+        let now = Array.get(0, s#epoch);
+        match Ref.get(p#written) {
+            case Some((epoch, group)) if epoch == now => group
+            case _ =>
+                let capacity = sizeOf(Array.get(0, s#poses));
+                if (Array.get(0, s#posesUsed) == 0 and p#bytes > capacity) {
+                    Array.get(0, s#poses).destroy();
+                    Array.put(createPoseBuffer(s#gpu, Int32.max(p#bytes, 2 * capacity)), 0, s#poses)
+                } else ();
+                let at = roundUp(Array.get(0, s#posesUsed), storageAlignBytes());
+                let buffer = Array.get(0, s#poses);
+                s#gpu.writeBuffer(buffer, Int32.toInt64(at), p#data, 0, p#bytes);
+                Array.put(at + p#bytes, 0, s#posesUsed);
+                let desc = new BindGroupDesc("fge scene3d poses", s#poseLayout);
+                discard desc.buffer(0, buffer, Int32.toInt64(at), Int32.toInt64(p#bytes));
+                let group = s#gpu.createBindGroup(desc);
+                Ref.put(group :: Ref.get(s#poseGroups), s#poseGroups);
+                Ref.put(Some((now, group)), p#written);
+                group
+        }
+
+    def roundUp(n: Int32, step: Int32): Int32 = ((n + step - 1) / step) * step
 
     /// 積んだ pass を submit し、1 体ごとの値と場面の値を頭から書けるようにする（積んだ pass が無く submit しなかった時も、書いた物を読む pass が無いので頭から書いてよい）。
     def flushHost(r: Renderer, host: Host): Unit \ IO =
@@ -570,12 +706,25 @@ pub mod Render3d.WebGpuRenderer {
         discard buf.putFloat(at + 8, Array.get(3 * i + 2, values))
 
     /// 3 個ずつの values の count 本を、16 バイト刻みの vec4 の配列として at から。
-    def putVec3Array(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], count: Int32): Unit \ IO =
-        List.range(0, count) |> List.forEach(i -> putVec3(buf, at + 16 * i, values, i))
+    def putVec3Array(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], count: Int32): Unit \ IO = putVec3sFrom(buf, at, values, 0, count)
+
+    def putVec3sFrom(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], i: Int32, count: Int32): Unit \ IO =
+        if (i >= count) ()
+        else {
+            putVec3(buf, at + 16 * i, values, i);
+            putVec3sFrom(buf, at, values, i + 1, count)
+        }
 
     /// width 個ずつの values の count 本を、16 バイト刻みの vec4 の頭の width 個として at から。
     def putScalarArray(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], width: Int32, count: Int32): Unit \ IO =
-        List.range(0, count * width) |> List.forEach(k -> discard buf.putFloat(at + 16 * (k / width) + 4 * Int32.remainder(k, width), Array.get(k, values)))
+        putScalarsFrom(buf, at, values, width, 0, count * width)
+
+    def putScalarsFrom(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], width: Int32, k: Int32, n: Int32): Unit \ IO =
+        if (k >= n) ()
+        else {
+            discard buf.putFloat(at + 16 * (k / width) + 4 * Int32.remainder(k, width), Array.get(k, values));
+            putScalarsFrom(buf, at, values, width, k + 1, n)
+        }
 
     /// 貼る矩形 rect（描き先の左上が原点）を target の Paste へ書く: 左上と、texture の画素 ÷ 矩形の画素。
     def writePaste(r: Renderer, target: SceneTarget, rect: (Int32, Int32, Int32, Int32)): Unit \ IO =
@@ -662,16 +811,20 @@ pub mod Render3d.WebGpuRenderer {
         }
 
     /// 形式 format・標本 samples・pass spec・頂点のバイト数 stride（Render3d.WebGpuRows の形の版）の頂点の色の pipeline（無ければ作る）。
-    /// 表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
-    def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32, spec: ScenePassSpec, stride: Int32): RenderPipeline \ IO =
+    /// skin = 骨つきの版なら形の版のジョイントの番号の位置（バイト。group 1 は空・group 2 に姿勢）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
+    // WhyNot: 鍵にジョイントの番号の位置を入れない — 位置は形の版の末尾の 8 float（Render3d.WebGpuRows.floatsPerVertex）で、頂点のバイト数から 1 つに決まる。
+    def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32, spec: ScenePassSpec, stride: Int32, skin: Option[Int32]): RenderPipeline \ IO =
         let RendererData.RendererData(s) = r;
-        let key = (WebGpuPipelines.formatCode(format), samples, passCodeOf(spec) + 4 * stride);
+        let key = (WebGpuPipelines.formatCode(format), samples, passCodeOf(spec), stride, Option.nonEmpty(skin));
         match Map.get(key, Ref.get(s#pipelines)) {
             case Some(p) => p
             case None =>
                 let desc = new RenderPipelineDesc("fge scene3d lit");
-                discard desc.bindGroupLayout(s#sceneLayout).vertex(s#vertexModule, "vs_main").fragment(fragmentOf(r, spec), "fs_main");
+                let vertexModule = if (Option.nonEmpty(skin)) s#skinnedModule else s#vertexModule;
+                discard desc.bindGroupLayout(s#sceneLayout).vertex(vertexModule, "vs_main").fragment(fragmentOf(r, spec), "fs_main");
+                if (Option.nonEmpty(skin)) discard desc.bindGroupLayout(s#emptyLayout).bindGroupLayout(s#poseLayout) else ();
                 discard desc.vertexBuffer(stride, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);
+                skin |> Option.forEach(at -> discard desc.attribute(VertexFormat.FLOAT32X4, at, 14).attribute(VertexFormat.FLOAT32X4, at + 16, 15));
                 discard desc.vertexBuffer(Render3dWgsl.instanceBytes(), true);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 0, 3).attribute(VertexFormat.FLOAT32X4, 16, 4);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 32, 5).attribute(VertexFormat.FLOAT32X4, 48, 6);

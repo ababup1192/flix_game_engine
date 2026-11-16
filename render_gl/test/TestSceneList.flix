@@ -3,7 +3,7 @@ mod Render3d.TestSceneList {
     import java.nio.FloatBuffer
     use Render3d.Batch.{MaterialBatch, MeshBatch, SpanBatch, batchKeyOf, groupByTextures, groupInOrder}
     use Render3d.Counts.{BatchBreak, breakSlotOf}
-    use Render3d.Instancing.{PackMode, numberSpan}
+    use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.FakeGl.{cmdOf, freshRecorded, freshState, paint, plainTriangle, poseAt, recordingGl, sceneOf, timesCalled}
     use Render3d.SceneList.{SceneList, buildSceneList, buildScenePasses, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, freshPlanner, groupScenes, kindOf, meshDrawOf, planScenes}
