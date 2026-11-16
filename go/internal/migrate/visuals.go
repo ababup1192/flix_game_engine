@@ -196,7 +196,8 @@ func (c *comparer) frames(flow, size string, a, b frameSide, restore bool, shift
 		}
 		pairs = append(pairs, framePair{i, fa, fb})
 		if fa.Kind == "mid" && !restore {
-			if d := seconds.compare(flow, size, fa, fb, a.dir, b.dir); d != nil {
+			same := c.keys != nil && sameKey(c.keys.of(a.dir, fa.File), c.keys.of(b.dir, fb.File))
+			if d := seconds.compare(flow, size, fa, fb, a.dir, b.dir, same); d != nil {
 				c.add(d)
 			}
 		}
@@ -287,7 +288,8 @@ type midSeconds struct {
 }
 
 // compare は秒が違えば迷った差を返す（同じ命令で 2 回目からは nil）。片方にだけ秒があれば数えるだけ。
-func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string) *Diff {
+// sameKey は前と後のコマの鍵が同じか（同じなら新しい版の PNG が無くても前の版の絵を並べてよい）。
+func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string, sameKey bool) *Diff {
 	if (fa.Seconds == nil) != (fb.Seconds == nil) {
 		m.oneSided++
 		return nil
@@ -300,8 +302,12 @@ func (m *midSeconds) compare(flow, size string, fa, fb Frame, dirA, dirB string)
 		return nil
 	}
 	m.seen[cmdKey] = true
+	before, after := filepath.Join(dirA, fa.File), filepath.Join(dirB, fb.File)
+	if sameKey && !fileExists(after) {
+		after = before
+	}
 	return &Diff{Flow: flow, Size: size, Step: 5, What: WhatFrame, Node: fa.Node, Seq: fa.Seq, T: fb.T, FrameKind: fa.Kind, Cmd: fb.Cmd,
-		Before: filepath.Join(dirA, fa.File), After: filepath.Join(dirB, fb.File), Review: true,
+		Before: before, After: after, Review: true,
 		Detail: fmt.Sprintf("時間を取る命令 %s の秒が違う（前 %g 秒 / 後 %g 秒。途中のコマは秒に対する割合で撮るので、絵では差が出ない）", fa.Cmd, *fa.Seconds, *fb.Seconds)}
 }
 
@@ -324,15 +330,6 @@ func (c *comparer) frame(flow, size string, i int, fa, fb Frame, dirA, dirB stri
 	if restore {
 		d.Step = 6
 	}
-	ia, err := loadNRGBA(pa)
-	var ib *image.NRGBA
-	if err == nil {
-		ib, err = loadNRGBA(pb)
-	}
-	if err != nil {
-		d.Detail = "コマを読めない: " + err.Error()
-		return d
-	}
 	th := c.opt.Th
 	delta, shift := th.DoneDelta, th.ShiftPx
 	if fa.Backdrop3d {
@@ -343,25 +340,64 @@ func (c *comparer) frame(flow, size string, i int, fa, fb Frame, dirA, dirB stri
 		// WhyNot: 途中のコマでずれを探さない — なめらかな背景では近くに同じ色が見つかり、overlay の濃さの差が隠れる。
 		shift = 0
 	}
+	// WhyNot: 同じ時刻のコマにブロックの比べを当てない — 同じ版を 2 回撮ると差は 0 なので、同じ時刻の差は全部本物。
+	// 時刻がずれると、実時間で動くカメラの揺れとざらつきの位相がずれ、画素の線では本物でない差が出る。
+	isShifted := shifted > 0 && math.Abs(fa.T-fb.T) > shifted
+	ka, kb := noKey, noKey
+	if c.keys != nil {
+		ka, kb = c.keys.of(dirA, fa.File), c.keys.of(dirB, fb.File)
+	}
+	if sameKey(ka, kb) {
+		// 新しい版の PNG は無くてよい（鍵だけ撮った回）。前の版は頁と承認が指すので、無ければ止める。
+		if !fileExists(pa) {
+			d.Detail = "コマを読めない: 前の版の記録に PNG が無い（" + pa + "）"
+			return d
+		}
+		c.keySame.Add(1)
+		return nil
+	}
+	if !fileExists(pb) {
+		d.What = WhatMissing
+		d.Detail = "新しい版の記録にこのコマの PNG が無い（鍵が前の版と違うか無いので、画素で比べる要がある）: " + pb
+		return d
+	}
+	ck := ""
+	if c.cache != nil {
+		ck = cacheKey(contentID(ka, pa), contentID(kb, pb), mid, fa.Backdrop3d, delta, shift, isShifted, th)
+	}
+	if s, ok := c.cache.get(ck); ok && c.frameRule(fa, PixelStats{Mean: s.Mean, Max: s.Max, Within: s.Within}, delta, mid) == "" {
+		c.cacheHits.Add(1)
+		return nil
+	}
+	ia, err := loadNRGBA(pa)
+	var ib *image.NRGBA
+	if err == nil {
+		ib, err = loadNRGBA(pb)
+	}
+	if err != nil {
+		d.Detail = "コマを読めない: " + err.Error()
+		return d
+	}
 	st, gaps, cerr := comparePixels(ia, ib, delta, shift)
 	d.Mean, d.Max, d.Within = st.Mean, st.Max, st.Within
 	if cerr != nil {
 		d.Detail = cerr.Error()
 		return d
 	}
+	remembered := cachedStats{Mean: st.Mean, Max: st.Max, Within: st.Within}
 	if d.Detail = c.frameRule(fa, st, delta, mid); d.Detail == "" {
+		c.cache.put(ck, remembered)
 		return nil
 	}
 	d.Review = true
-	// WhyNot: 同じ時刻のコマにブロックの比べを当てない — 同じ版を 2 回撮ると差は 0 なので、同じ時刻の差は全部本物。
-	// 時刻がずれると、実時間で動くカメラの揺れとざらつきの位相がずれ、画素の線では本物でない差が出る。
-	if shifted > 0 && math.Abs(fa.T-fb.T) > shifted {
+	if isShifted {
 		d.Block = blockP99(ia, ib, th.BlockPx, th.BlockShift)
 		if d.Block <= th.BlockP99+1e-9 {
 			d.Auto = AutoBlock
 			d.Detail += fmt.Sprintf("。前と後の時刻が %.3f 秒ずれたコマで、ブロックの比べの 99%% 点 %.1f が %g 以下なので自動で通した", fb.T-fa.T, d.Block, th.BlockP99)
 		}
 	}
+	c.cache.put(ck, remembered)
 	if c.opt.Out != "" {
 		heat := filepath.Join(c.opt.Out, "heat", fmt.Sprintf("%s_%s_%d.png", safeName(flow), safeName(size), i))
 		if os.MkdirAll(filepath.Dir(heat), 0o755) == nil && writeHeat(heat, ia, gaps, delta) == nil {

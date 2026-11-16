@@ -2,7 +2,7 @@
 // キャッシュに入れる場所の見張り役。キャッシュの読み書きは Flix 側だけがする。ここは大きさを見て、古い物から消すだけ。
 //
 //	fge render-cache status           置き場・枚数・大きさ
-//	fge render-cache prune [--max-mb N] [--quiet]   N MB（既定 4096）を超えた分を、使った時刻の古い順に消す
+//	fge render-cache prune [--max-mb N] [--quiet]   N MB（既定は MaxMB）を超えた分を、使った時刻の古い順に消す
 //
 // 置き場は FGE_RENDER_CACHE（既定 ~/.cache/flix-render-cache・"off" / "0" で使わない）。Flix 側と同じ決め方。
 // キャッシュの 1 枚は <置き場>/<鍵の頭 2 字>/<鍵>.png。写すたびに時刻を今にするので、時刻は「最後に使った時」。
@@ -17,12 +17,25 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// DefaultMaxMB は prune が残す大きさの既定。動画 1 本（コマ 1000 枚前後）が数百 MB になる。
-const DefaultMaxMB = 4096
+// DefaultMaxMB は prune が残す大きさの既定。動画 1 本（コマ 1000 枚前後）が数百 MB、ノベルの移行の比べ
+// （plans/novel-migrate-scale.md の B）は鍵の種類だけで 10 GB を超える。
+const DefaultMaxMB = 16384
+
+// MaxMBEnv は prune の上限を差し替える環境変数（MB）。
+const MaxMBEnv = "FGE_RENDER_CACHE_MAX_MB"
+
+// MaxMB は prune が残す大きさ（MB）。MaxMBEnv が正の整数ならその値、無い・読めなければ DefaultMaxMB。
+func MaxMB() int {
+	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(MaxMBEnv))); err == nil && n > 0 {
+		return n
+	}
+	return DefaultMaxMB
+}
 
 // Dir は置き場。使わない設定・相対パスなら空（Flix 側と同じ決め方）。
 func Dir() string {

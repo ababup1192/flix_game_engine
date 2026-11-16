@@ -38,6 +38,8 @@ type rec struct {
 	tape    map[string]any
 	frames  map[string]*image.NRGBA // ファイル名 → 絵
 	restore map[string]any
+	// drawhash は層のフォルダ（tape.json からの相対）→ drawhash.txt の中身。
+	drawhash map[string]string
 }
 
 func intp(n int) *int { return &n }
@@ -108,6 +110,12 @@ func (r *rec) clone() *rec {
 	_ = json.Unmarshal(b, &out.tape)
 	b, _ = json.Marshal(r.restore)
 	_ = json.Unmarshal(b, &out.restore)
+	if r.drawhash != nil {
+		out.drawhash = map[string]string{}
+		for k, v := range r.drawhash {
+			out.drawhash[k] = v
+		}
+	}
 	for k, v := range r.frames {
 		cp := image.NewNRGBA(v.Rect)
 		copy(cp.Pix, v.Pix)
@@ -135,6 +143,11 @@ func (r *rec) writeFlow(t *testing.T, root, flow, size string) {
 			t.Fatal(err)
 		}
 		if err := writePNG(p, img); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for sub, text := range r.drawhash {
+		if err := os.WriteFile(filepath.Join(dir, sub, DrawHashFile), []byte(text), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

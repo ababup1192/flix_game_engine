@@ -14,6 +14,8 @@
 //   saves.json  … flow の終わりのセーブデータ（枠が 1 つでもあれば。restore が読み戻す古いセーブ）
 //   FLOW_VIDEO=off … MIGRATE_OUT の時に、FLOW_OUT の全部のコマ・音・tape.json を書かず、MIGRATE_OUT の記録だけを書く（bin/fge migrate shoot が渡す）
 //   MIGRATE_ALL=off … frames/all を撮らない（diff は all の画素を比べない。前の版の無い flow の頁に並べる絵が無くなるので、基準を撮る回は撮る）
+//   MIGRATE_PAINT_WORLD・MIGRATE_PAINT_ALL … その層で塗るコマ（FGE_VIDEO_PAINT と同じ字: all・none・frames:A-B,…。無ければ FGE_VIDEO_PAINT のまま）。
+//               塗らないコマも鍵（frames/<層>/drawhash.txt）は書く。bin/fge migrate shoot が鍵を先に撮り、前の版と鍵の違うコマだけを塗る時に渡す
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
 mod FlowVideo {
     use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Log, Rect2, Render, Resources, Vec2, VideoOut}
@@ -42,7 +44,7 @@ mod FlowVideo {
         let path = Map.getWithDefault("FLOW", "", env);
         let out = Map.getWithDefault("FLOW_OUT", "debug/video/${nameOf(path)}", env);
         let migrate = Map.get("MIGRATE_OUT", env) |> Option.filter(dir -> not String.isEmpty(dir))
-            |> Option.map(dir -> { dir = dir, layers = layersOf(env) });
+            |> Option.map(dir -> { dir = dir, layers = layersOf(env), paint = paintOf(env, settings#paint) });
         let writes = if (Option.nonEmpty(migrate) and Map.get("FLOW_VIDEO", env) == Some("off")) Writes.MigrateOnly else Writes.Everything;
         let design = SceneRender.design();
         let played = run {
@@ -61,19 +63,28 @@ mod FlowVideo {
         }
 
     /// 流した後に書く物。MigrateOnly = 移行の記録だけ（FLOW_OUT の全部のコマ・音・tape.json は書かない）。
-    // WhyNot: FGE_VIDEO_PAINT=none で全部のコマを塗らない形にしない — shootFrames が paint を引き継ぐので、比べのコマの PNG も塗られなくなる。
+    // WhyNot: FGE_VIDEO_PAINT=none で全部のコマを塗らない形にしない — 比べのコマは層ごとの MIGRATE_PAINT_* が無ければ FGE_VIDEO_PAINT を引き継ぐので、比べのコマの PNG も塗られなくなる。
     enum Writes with Eq {
         case Everything
         case MigrateOnly
     }
 
-    /// 移行の記録の書き先と、撮る層。
-    type alias MigrateTo = { dir = String, layers = List[MigrateOut.Layer] }
+    /// 移行の記録の書き先と、撮る層と、層ごとに塗るコマ。
+    type alias MigrateTo = { dir = String, layers = List[MigrateOut.Layer], paint = MigrateOut.Layer -> VideoOut.PaintRange }
 
     /// 撮る層（MIGRATE_ALL=off なら world の層だけ）。
     def layersOf(env: Map[String, String]): List[MigrateOut.Layer] =
         if (Map.get("MIGRATE_ALL", env) == Some("off")) MigrateOut.Layer.WorldLayer :: Nil
         else MigrateOut.Layer.WorldLayer :: MigrateOut.Layer.AllLayers :: Nil
+
+    /// 層で塗るコマ（MIGRATE_PAINT_WORLD・MIGRATE_PAINT_ALL。無ければ fallback = FGE_VIDEO_PAINT）。
+    def paintOf(env: Map[String, String], fallback: VideoOut.PaintRange, layer: MigrateOut.Layer): VideoOut.PaintRange =
+        Map.get(paintEnvOf(layer), env) |> Option.map(VideoOut.paintRangeOf) |> Option.getWithDefault(fallback)
+
+    def paintEnvOf(layer: MigrateOut.Layer): String = match layer {
+        case MigrateOut.Layer.WorldLayer => "MIGRATE_PAINT_WORLD"
+        case MigrateOut.Layer.AllLayers  => "MIGRATE_PAINT_ALL"
+    }
 
     /// 流した結果を書く（コマ・音・tape.json・移行の記録）。
     def finishPlay(settings: VideoOut.Settings, screen: SceneRender.Screen, path: String, out: String, writes: Writes, migrate: Option[MigrateTo],
@@ -210,7 +221,7 @@ mod FlowVideo {
         let record = { shots = recorded#shots |> List.filter(shot -> List.memberOf(shot#layer, to#layers)) | recorded };
         let sounds = loadSounds(soundFiles(), Map.empty());
         let lengthOf = name -> Map.get(name, sounds) |> Option.map(st -> Int32.toFloat64(Vector.length(st#left)) / Int32.toFloat64(sampleRate())) |> Option.getWithDefault(0.0);
-        shootFrames(settings, screen, fps, dir, record#shots, Flow.worldsOf(outcome));
+        shootFrames(settings, screen, fps, dir, record#shots, to#paint, Flow.worldsOf(outcome));
         let fields = Map#{ "events" => Util.Json.Json.JArray(List.toVector(record#events)),
                            "frames" => MigrateOut.framesJson(fps, record#shots),
                            "ranLines" => MigrateOut.ranLinesJson(MigrateOut.ranLinesOf(outcome#frames)),
@@ -220,10 +231,10 @@ mod FlowVideo {
         let saves = outcome#last#world#saves;
         if (Saves.hasAny(saves)) writeText("${dir}/saves.json", Util.Json.toPrettyString(2, Saves.toJson(saves)) + "\n") else ()
 
-    /// 予定のコマを層ごとのフォルダ（dir/frames/<層>）に SoftRaster で塗る（f<フレームの番号>.png）。
+    /// 予定のコマを層ごとのフォルダ（dir/frames/<層>）に SoftRaster で塗る（f<フレームの番号>.png）。塗るのは paint が選んだコマだけで、鍵は全部のコマで書く。
     // WhyNot: GPU で塗らない — 全部のフレームを選んだ時の GPU の道は PNG でなく frames.mkv を書き、tape.json の file が指す絵が無くなる。
-    def shootFrames(settings: VideoOut.Settings, screen: SceneRender.Screen, fps: Float64, dir: String, shots: List[MigrateOut.Shot], worlds: List[AppState]): Unit \ IO =
-        let soft = { gpu = GpuShot.Mode.Off, gl = None | settings };
+    def shootFrames(settings: VideoOut.Settings, screen: SceneRender.Screen, fps: Float64, dir: String, shots: List[MigrateOut.Shot],
+                    paint: MigrateOut.Layer -> VideoOut.PaintRange, worlds: List[AppState]): Unit \ IO =
         let rate = Float64.tryToInt32(Float64.round(fps)) |> Option.getWithDefault(30);
         (MigrateOut.Layer.WorldLayer :: MigrateOut.Layer.AllLayers :: Nil) |> List.forEach(layer -> {
             let wanted = shots |> List.filter(shot -> shot#layer == layer) |> List.map(shot -> shot#frame) |> List.toSet;
@@ -235,7 +246,7 @@ mod FlowVideo {
                 let video = { outDir = out, fps = rate, soft = cfg, softFonts = SceneRender.fontOfIn(extra, cfg#fontAtlas), extraFonts = extra,
                               images = Nil, scene = fonts -> h -> layerSceneOf(screen, layer, fonts, h), wanted = i -> Set.memberOf(i, wanted),
                               bakeSurfaces = false, encoders = Nil };
-                discard VideoOut.writeFrames(soft, video, worlds)
+                discard VideoOut.writeFrames({ gpu = GpuShot.Mode.Off, gl = None, paint = paint(layer) | settings }, video, worlds)
             }
         })
 
@@ -308,7 +319,7 @@ mod FlowVideo {
         let shots = { frame = 0, node = node, seq = seq, mid = None, layer = MigrateOut.Layer.WorldLayer } ::
                     { frame = 0, node = node, seq = seq, mid = None, layer = MigrateOut.Layer.AllLayers } :: Nil;
         discard (new File(dir)).mkdirs();
-        shootFrames(settings, screen, 30.0, dir, shots, h :: Nil);
+        shootFrames(settings, screen, 30.0, dir, shots, _ -> settings#paint, h :: Nil);
         let objects = TapeOut.spansOf(30.0, screen#design, objectsOf(screen#fonts, SceneRender.fitOf(screen#design, res), res, w) :: Nil);
         writeText("${dir}/restore.json", MigrateOut.restoreJson(name, refused, probes, screen#design, node, seq, h, shots, objects));
         println("restored: ${dir}")

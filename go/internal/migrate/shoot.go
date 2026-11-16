@@ -14,25 +14,32 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/rendercache"
 )
 
-// 1 本の flow を撮る JVM が使う物の見積もり（血鱗の route_gem: CPU は平均 5 コア・最大の常駐が約 10 GB）。
-// 本数はこの 2 つで決め、上限は shootMaxJobs。
+// 1 本の flow を撮る JVM の見積もり（長いノベルの flow 1 本で CPU は平均 5 コア。plans/novel-migrate-scale.md の M2）。本数はコアの数だけで決め、上限は shootMaxJobs。
+// ヒープは shootHeap で蓋をする（Full GC の後に生きている物は 0.2 GB 前後・若い世代の GC の後の最大 1.8 GB。plans/novel-migrate-scale.md の M5）。
 const (
 	shootCoresPerJob = 4
-	shootMemPerJob   = 8 << 30
 	shootMaxJobs     = 6
+	shootHeap        = "-Xmx3g"
+	shootHeapBytes   = 3 << 30
+	// shootPNGBytes は比べのコマの PNG 1 枚の大きさの見積もり（M8 の置き場で 904 枚 781 MB）。
+	shootPNGBytes = 900 << 10
 )
 
 type shootArgs struct {
 	name, run, savesFrom    string
 	jobs                    int
 	video, overwrite, saves bool
-	flows                   []string
+	// full は鍵を先に撮らず全部のコマを塗る（基準を撮り直す時）。resident は常駐の JVM で流す（--no-resident で切る）。
+	full, resident bool
+	flows          []string
 }
 
 func parseShootArgs(args []string) (shootArgs, error) {
-	a := shootArgs{saves: true, savesFrom: filepath.Join("debug", "migrate", "baseline")}
+	a := shootArgs{saves: true, resident: true, savesFrom: filepath.Join("debug", "migrate", "baseline")}
 	var pos []string
 	for i := 0; i < len(args); i++ {
 		v := args[i]
@@ -63,6 +70,10 @@ func parseShootArgs(args []string) (shootArgs, error) {
 			a.video = true
 		case "--overwrite":
 			a.overwrite = true
+		case "--full":
+			a.full = true
+		case "--no-resident":
+			a.resident = false
 		default:
 			if strings.HasPrefix(v, "-") {
 				return a, fmt.Errorf("知らない引数: %s", v)
@@ -109,19 +120,70 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// autoJobs はコア数とメモリから並べる本数を決める。
+// autoJobs はコア数から並べる本数を決める。
+// WhyNot: メモリで絞らない — 1 本のヒープを shootHeap で蓋をしたので、既定のヒープの上限まで膨らむゴミで本数を削る理由が無い。
+// 足りない機械では memoryNote が知らせる。
 func autoJobs() int {
 	n := runtime.NumCPU() / shootCoresPerJob
-	if mem := totalMemory(); mem > 0 {
-		if m := int(mem / shootMemPerJob); m < n {
-			n = m
-		}
-	}
 	if n > shootMaxJobs {
 		n = shootMaxJobs
 	}
 	if n < 1 {
 		n = 1
+	}
+	return n
+}
+
+// shootJavaOpts は HEADLESS_JAVA_OPTS に 1 本のヒープの蓋を足した物（自分で -Xmx か MaxRAMPercentage を渡せばそれが勝つ）。
+// WhyNot: headless-run の既定（MaxRAMPercentage=50）のまま並べない — どの JVM も実メモリの半分までゴミで膨らみ、本数分足すと溢れる。
+func shootJavaOpts(opts string) string {
+	if strings.Contains(opts, "MaxRAMPercentage") || strings.Contains(opts, "-Xmx") {
+		return opts
+	}
+	return strings.TrimSpace(opts + " " + shootHeap)
+}
+
+// memoryNote は本数 × ヒープの蓋が実メモリの 8 割を超える時の 1 行（足りていれば空）。
+func memoryNote(jobs int, mem uint64) string {
+	need := uint64(jobs) * shootHeapBytes
+	if mem == 0 || need*10 <= mem*8 {
+		return ""
+	}
+	return fmt.Sprintf("%d 本 × %s で %d GB 使いうるが、実メモリは %d GB（足りなければ --jobs で減らす）", jobs, shootHeap, need>>30, mem>>30)
+}
+
+// cacheNote は render-cache の置き場が、基準の記録の比べのコマ（前と後の 2 回分）を入れきれない時の 1 行（足りていれば空）。
+// 入れきれないと prune が古い順に消し、毎回冷えた状態から塗り直す（間違えはしない）。
+func cacheNote(baseline, cacheDir string, maxBytes int64, free func(string) int64) string {
+	if cacheDir == "" {
+		return ""
+	}
+	frames := baselineFrameCount(baseline)
+	need := int64(frames) * shootPNGBytes * 2
+	if frames == 0 {
+		return ""
+	}
+	if need > maxBytes {
+		return fmt.Sprintf("render-cache の上限 %d MB が、基準のコマ %d 枚の前と後（約 %d MB）より小さい。prune で消えて毎回塗り直す（%s で上げる）",
+			maxBytes>>20, frames, need>>20, rendercache.MaxMBEnv)
+	}
+	if f := free(cacheDir); f >= 0 && f < need {
+		return fmt.Sprintf("render-cache の置き場 %s のディスクの空き %d MB が、基準のコマ %d 枚の前と後（約 %d MB）より小さい", cacheDir, f>>20, frames, need>>20)
+	}
+	return ""
+}
+
+// baselineFrameCount は基準の記録の tape.json の frames の数の合計（読めない物は数えない）。
+func baselineFrameCount(root string) int {
+	side, err := LoadSide(root)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, sizes := range side.Flows {
+		for _, t := range sizes {
+			n += len(t.Frames)
+		}
 	}
 	return n
 }
@@ -200,21 +262,33 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "migrate shoot:", err)
 		return 2
 	}
-	javaOpts := os.Getenv("HEADLESS_JAVA_OPTS")
-	if !strings.Contains(javaOpts, "MaxRAMPercentage") && !strings.Contains(javaOpts, "-Xmx") {
-		// WhyNot: headless-run の既定（MaxRAMPercentage=50）のまま並べない — どの JVM も実メモリの半分まで膨らみ、本数分足すと溢れる。
-		pct := 60 / jobs
-		if pct < 8 {
-			pct = 8
-		}
-		javaOpts = strings.TrimSpace(javaOpts + " -XX:MaxRAMPercentage=" + strconv.Itoa(pct))
+	javaOpts := shootJavaOpts(os.Getenv("HEADLESS_JAVA_OPTS"))
+	if note := memoryNote(jobs, totalMemory()); note != "" {
+		fmt.Fprintln(stderr, "migrate shoot:", note)
+	}
+	if note := cacheNote(a.savesFrom, rendercache.Dir(), int64(rendercache.MaxMB())<<20, rendercache.FreeBytes); note != "" {
+		fmt.Fprintln(stderr, "migrate shoot:", note)
 	}
 	base := append(os.Environ(), "HEADLESS_JAVA_OPTS="+javaOpts)
 	if os.Getenv("JAVA_TOOL_OPTIONS") == "" {
 		base = append(base, "JAVA_TOOL_OPTIONS=-Djava.awt.headless=true")
 	}
 
+	// WhyNot: 撮る先が基準と同じ時（--overwrite）は鍵を先に撮らない — 突き合わせる基準はもう消してあり、撮る物が次の基準になる（全部の PNG が要る）。
+	var baseSide *Side
+	if !a.video && !a.full && filepath.Clean(out) != filepath.Clean(a.savesFrom) {
+		baseSide, _ = LoadSide(a.savesFrom)
+	}
+	engine := engineFingerprint(".")
+	// WhyNot: engine が基準と違う時は鍵を先に撮らない — 鍵に engine の fpkg が入るので 1 枚も合わず、全部の flow を 2 回流すだけになる。
+	if baseSide != nil && engineDiffers(baselineEngine(a.savesFrom), engine) {
+		fmt.Fprintln(stdout, "migrate shoot: 基準と engine が違う（鍵が合わない）ので、鍵を先に撮らず全部のコマを塗る")
+		baseSide = nil
+	}
+	keysFirst := baseSide != nil
+
 	var list []*shootJob
+	flowJobs := map[string]*shootJob{}
 	for _, f := range a.flows {
 		n := flowName(f)
 		rec := filepath.Join(out, FlowsDir, n)
@@ -225,6 +299,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		video := a.video
 		if !video {
 			// 全コマの動画と音を書かない合図（読むのは FlowVideo。読まない版は今まで通り書き、ここで消す）。
+			// WhyNot: FGE_GPU=off を足さない — FLOW_VIDEO を読まない古い FlowVideo は全コマの動画を書くので、GPU を断つと全コマを SoftRaster で塗る。
 			job.env = append(job.env, "FLOW_VIDEO=off")
 		}
 		job.after = func() error {
@@ -235,6 +310,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 			return flowMp4(tmp, filepath.Join(rec, "video.mp4"))
 		}
 		os.RemoveAll(tmp)
+		flowJobs[n] = job
 		list = append(list, job)
 	}
 	for _, s := range saveFiles {
@@ -256,18 +332,150 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	fmt.Fprintf(stdout, "migrate shoot: %s に flow %d 本・古いセーブ %d 個を %d 本ずつ並べて撮る（ログは %s）\n",
-		out, len(a.flows), len(saveFiles), jobs, logs)
+	// WhyNot: 動画を束ねる回（--video）は常駐へ頼まない — 全コマの動画は GPU で塗る事があり、待ち受けの JVM は GL を持たない。
+	entries := []string{"FlowVideo.play"}
+	if len(saveFiles) > 0 {
+		entries = append(entries, "FlowVideo.restore")
+	}
+	useResident := a.resident && !a.video
+	if useResident && !flowVideoSkipsVideo("src") {
+		useResident = false
+		fmt.Fprintln(stderr, "migrate shoot: ゲームの FlowVideo が FLOW_VIDEO=off を読まない（全コマの動画を GPU で書く）ので、常駐へ頼まず 1 本ずつ JVM を起こす")
+	}
+	pool := newShootPool(a.run, base, logs, jobs, useResident, entries)
+	defer pool.close()
+	mode := "全部のコマを塗る"
+	if keysFirst {
+		mode = "比べのコマは鍵を先に撮り、基準と鍵の違うコマだけ塗る"
+	}
+	fmt.Fprintf(stdout, "migrate shoot: %s に flow %d 本・古いセーブ %d 個を %d 本ずつ並べて撮る（%s・%s・ログは %s）\n",
+		out, len(a.flows), len(saveFiles), jobs, mode, map[bool]string{true: "常駐で流す", false: "1 本ずつ JVM を起こす"}[pool.useResident()], logs)
 	start := time.Now()
+	if keysFirst {
+		for _, job := range flowJobs {
+			job.env = append(job.env, paintEnv(nil)...)
+		}
+	}
+	runShootJobs(pool, jobs, list, stdout)
+	all := list
+	var plan *paintPlan
+	var problems []string
+	if keysFirst {
+		if countFailed(list) > 0 {
+			problems = append(problems, "鍵だけ撮る 1 回目で止まった仕事があるので、鍵の違うコマを塗らずに終える")
+		} else {
+			var paintJobs []*shootJob
+			plan, paintJobs, problems = paintAndCopy(pool, jobs, out, baseSide, flowJobs, logs, stdout)
+			all = append(all, paintJobs...)
+		}
+	}
+	wall := time.Since(start).Seconds()
+	for drained := false; !drained; {
+		select {
+		case n := <-pool.notes:
+			fmt.Fprintln(stderr, "migrate shoot:", n)
+		default:
+			drained = true
+		}
+	}
+
+	failed := countFailed(all)
+	summary := map[string]any{"jobs": jobs, "wallSeconds": wall, "runs": all, "resident": pool.useResident(), "keysFirst": keysFirst,
+		"engine": engine, "problems": problems}
+	if plan != nil {
+		summary["paint"] = plan
+	}
+	if data, err := json.MarshalIndent(summary, "", "  "); err == nil {
+		_ = os.WriteFile(filepath.Join(logs, ShootSummaryFile), append(data, '\n'), 0o644)
+	}
+	fmt.Fprintf(stdout, "migrate shoot: %.1f 秒で撮った（%d 本・止まった %d 本）\n", wall, len(all), failed)
+	for _, p := range problems {
+		fmt.Fprintln(stderr, "migrate shoot:", p)
+	}
+	if failed > 0 {
+		for _, job := range all {
+			if job.Code != 0 {
+				fmt.Fprintf(stderr, "  止まった: %s %s（ログ %s）\n", job.Kind, job.Name, job.Log)
+			}
+		}
+	}
+	if failed > 0 || len(problems) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func countFailed(list []*shootJob) int {
+	n := 0
+	for _, job := range list {
+		if job.Code != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// paintAndCopy は鍵だけ撮った記録に、基準と鍵の違うコマの PNG を用意する（写す・塗るために flow を流し直す・同じ鍵へ写す）。
+// 止める理由があれば problems に返す。
+func paintAndCopy(pool *shootPool, jobs int, out string, baseSide *Side, flowJobs map[string]*shootJob, logs string, stdout io.Writer) (*paintPlan, []*shootJob, []string) {
+	plan, paintJobs, err := paintStage(out, baseSide, flowJobs, logs)
+	if err != nil {
+		return nil, nil, []string{"鍵を先に撮った後に PNG を用意できない: " + err.Error()}
+	}
+	before := drawHashTexts(filepath.Join(out, FlowsDir))
+	runShootJobs(pool, jobs, paintJobs, stdout)
+	if countFailed(paintJobs) > 0 {
+		return plan, paintJobs, []string{"塗るために流し直した flow が止まった"}
+	}
+	if bad := sameDrawHashes(before, drawHashTexts(filepath.Join(out, FlowsDir))); len(bad) > 0 {
+		return plan, paintJobs, []string{"塗るために流し直した flow の鍵が 1 回目と違う（決定性が破れている）: " + strings.Join(bad, " ")}
+	}
+	var problems []string
+	for _, c := range plan.Copies {
+		if err := copyFile(c.src, c.dst); err != nil {
+			problems = append(problems, "同じ鍵のコマへ写せない: "+err.Error())
+		}
+	}
+	cur, err := LoadSide(out)
+	if err != nil {
+		return plan, paintJobs, append(problems, err.Error())
+	}
+	if miss := missingPNGs(cur, baseSide); len(miss) > 0 {
+		problems = append(problems, fmt.Sprintf("鍵が基準と違うのに PNG の無いコマが %d 枚（最初: %s）", len(miss), miss[0]))
+	}
+	fmt.Fprintf(stdout, "migrate shoot: 鍵が基準と同じで PNG を書かなかった %d 枚・基準から写した %d 枚・render-cache から写した %d 枚・塗った %d 枚（flow %d 本を流し直した）・同じ鍵のほかのコマから写した %d 枚\n",
+		plan.KeysOnly, plan.FromBaseline, plan.FromCache, plan.Painted, len(paintJobs), plan.FromSibling)
+	return plan, paintJobs, problems
+}
+
+// flowVideoSkipsVideo はゲームの FlowVideo.flix が FLOW_VIDEO を読むか（読まない古い版は全コマの動画を書く）。
+// WhyNot: 古い版を常駐へ頼まない — 全コマの動画は GPU で塗り、待ち受けの JVM は入口を主スレッドでなく別の糸で流すので、
+// GL が開けずに全コマを SoftRaster で塗る事がある。
+func flowVideoSkipsVideo(src string) bool {
+	found := false
+	_ = filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || info.Name() != "FlowVideo.flix" {
+			return nil
+		}
+		if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), "FLOW_VIDEO") {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
+// runShootJobs は list を jobs 本ずつ並べて流す（枠ごとに 1 本の糸）。
+func runShootJobs(pool *shootPool, jobs int, list []*shootJob, stdout io.Writer) {
 	queue := make(chan *shootJob)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	for w := 0; w < jobs; w++ {
+	for slot := 0; slot < jobs; slot++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for job := range queue {
-				runShootJob(a.run, base, job)
+				pool.exec(slot, job)
 				mu.Lock()
 				mark := "ok"
 				if job.Code != 0 {
@@ -283,28 +491,34 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 	}
 	close(queue)
 	wg.Wait()
-	wall := time.Since(start).Seconds()
+}
 
-	failed := 0
-	for _, job := range list {
-		if job.Code != 0 {
-			failed++
+// paintStage は鍵だけ撮った記録を基準と突き合わせ、写せる PNG を写し、塗るコマのある flow を流し直す仕事を作る。
+func paintStage(out string, baseSide *Side, flowJobs map[string]*shootJob, logs string) (*paintPlan, []*shootJob, error) {
+	cur, err := LoadSide(out)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan, err := planPaint(cur, baseSide, cacheDirForCopy())
+	if err != nil {
+		return nil, nil, err
+	}
+	var paintJobs []*shootJob
+	for _, flow := range sortedKeys(plan.Paint) {
+		first := flowJobs[flow]
+		if first == nil {
+			continue
 		}
-	}
-	summary := map[string]any{"jobs": jobs, "wallSeconds": wall, "runs": list}
-	if data, err := json.MarshalIndent(summary, "", "  "); err == nil {
-		_ = os.WriteFile(filepath.Join(logs, "shoot.json"), append(data, '\n'), 0o644)
-	}
-	fmt.Fprintf(stdout, "migrate shoot: %.1f 秒で撮った（%d 本・止まった %d 本）\n", wall, len(list), failed)
-	if failed > 0 {
-		for _, job := range list {
-			if job.Code != 0 {
-				fmt.Fprintf(stderr, "  止まった: %s %s（ログ %s）\n", job.Kind, job.Name, job.Log)
+		var env []string
+		for _, kv := range first.env {
+			if !strings.HasPrefix(kv, PaintWorldEnv+"=") && !strings.HasPrefix(kv, PaintAllEnv+"=") {
+				env = append(env, kv)
 			}
 		}
-		return 1
+		paintJobs = append(paintJobs, &shootJob{Kind: "paint", Name: flow, Log: filepath.Join(logs, flow+".paint.log"), entry: first.entry,
+			weight: first.weight, env: append(env, paintEnv(plan.Paint[flow])...), after: first.after})
 	}
-	return 0
+	return plan, paintJobs, nil
 }
 
 func runShootJob(run string, base []string, job *shootJob) {
@@ -315,7 +529,6 @@ func runShootJob(run string, base []string, job *shootJob) {
 		job.Code = 2
 		return
 	}
-	defer logf.Close()
 	cmd := exec.Command("bash", "-c", run+" "+job.entry)
 	cmd.Env = append(append([]string{}, base...), job.env...)
 	cmd.Stdout, cmd.Stderr = logf, logf
@@ -325,12 +538,22 @@ func runShootJob(run string, base []string, job *shootJob) {
 			job.Code = ee.ExitCode()
 		}
 	}
-	if job.after != nil {
-		if err := job.after(); err != nil {
-			fmt.Fprintf(logf, "migrate shoot: %v\n", err)
-			if job.Code == 0 {
-				job.Code = 1
-			}
+	logf.Close()
+	finishJob(job)
+}
+
+// finishJob は仕事の後片付け（job.after）を流し、失敗したらログへ書いて止まった事にする。
+func finishJob(job *shootJob) {
+	if job.after == nil {
+		return
+	}
+	if err := job.after(); err != nil {
+		if f, ferr := os.OpenFile(job.Log, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644); ferr == nil {
+			fmt.Fprintf(f, "migrate shoot: %v\n", err)
+			f.Close()
+		}
+		if job.Code == 0 {
+			job.Code = 1
 		}
 	}
 }

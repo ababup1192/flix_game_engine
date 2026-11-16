@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 // 差の種類（Diff.What と承認の what）。
@@ -97,9 +98,12 @@ type Result struct {
 	Unused    []string    `json:"unused"`
 	Stopped   []string    `json:"stopped"`
 	Frames    int         `json:"framesCompared"`
-	Strict    bool        `json:"strict"`
-	NoAuto    bool        `json:"noAuto"`
-	Passed    bool        `json:"passed"`
+	// KeySame は組になったコマのうち、前と後の鍵が同じで画素を読まなかった数。CacheHits は覚えた結果で通した数。
+	KeySame   int  `json:"framesSameKey"`
+	CacheHits int  `json:"framesFromCache"`
+	Strict    bool `json:"strict"`
+	NoAuto    bool `json:"noAuto"`
+	Passed    bool `json:"passed"`
 	// Thresholds は使った線引き（既定に migrate-accept.json の thresholds を重ねた物）。
 	Thresholds Thresholds `json:"thresholds"`
 	// Units は人に見せる単位（承認の無い迷った差をまとめた物）。
@@ -128,8 +132,12 @@ type Options struct {
 	Strict     bool // 迷った差でも門を止める（10.6 の「わざと入れた読み違いで落ちる」を確かめる時）
 	Times      bool // 台詞・選択肢・待ちの時刻を、前の出来事からの間で比べる（--times）。音・区間・音量の時刻も合わせ直す
 	NoAuto     bool // 線引きで自動で通した迷った差も人が見る物に数える（--no-auto）
-	Th         Thresholds
-	Lim        Limits
+	// NoKeys は鍵（drawhash.txt）でコマを同じと見ず、覚えた結果も使わずに、全部の画素を比べる（--no-keys）。
+	NoKeys bool
+	// CachePath は比べた結果を覚えておくファイル（空なら覚えない）。
+	CachePath string
+	Th        Thresholds
+	Lim       Limits
 }
 
 // Compare は前と後の記録を突き合わせる。
@@ -145,6 +153,9 @@ func Compare(base, cur *Side, acc *Accept, opt Options) *Result {
 	r.Thresholds, r.NoAuto = th, opt.NoAuto
 	r.Problems = append(r.Problems, thProblems...)
 	c := &comparer{r: r, acc: acc, opt: opt, rewrites: map[string]int{}}
+	if !opt.NoKeys {
+		c.keys, c.cache = newDrawKeys(), loadDiffCache(opt.CachePath)
+	}
 	for _, flow := range sortedKeys(base.Flows) {
 		sizes := base.Flows[flow]
 		for _, size := range sortedKeys(sizes) {
@@ -180,16 +191,27 @@ func Compare(base, cur *Side, acc *Accept, opt Options) *Result {
 	c.applyAccept(invalid)
 	c.reportRewrites()
 	r.Units = buildUnits(r)
+	r.KeySame = int(c.keySame.Load())
+	r.CacheHits = int(c.cacheHits.Load())
+	if c.cache != nil {
+		if err := c.cache.save(); err != nil {
+			r.Notes = append(r.Notes, "比べた結果を覚えられない: "+err.Error())
+		}
+	}
 	r.Strict = opt.Strict
 	r.Passed = r.Open(opt.Strict) == 0 && len(r.Problems) == 0
 	return r
 }
 
 type comparer struct {
-	r        *Result
-	acc      *Accept
-	opt      Options
-	rewrites map[string]int // 「問い mode: "Nvl" → "nvl"」→ 読み替えた回数
+	r         *Result
+	acc       *Accept
+	opt       Options
+	rewrites  map[string]int // 「問い mode: "Nvl" → "nvl"」→ 読み替えた回数
+	keys      *drawKeys      // nil なら鍵を見ない（--no-keys）
+	cache     *diffCache     // nil なら覚えない（--no-keys）
+	keySame   atomic.Int64
+	cacheHits atomic.Int64
 }
 
 func (c *comparer) add(d *Diff) { c.r.Diffs = append(c.r.Diffs, d) }

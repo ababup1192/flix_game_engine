@@ -227,8 +227,8 @@ func run(o Options) error {
 		return err
 	}
 	printSummary(o, items, base.failed, cur.failed)
-	if removed, _ := rendercache.Prune(rendercache.Dir(), rendercache.DefaultMaxMB<<20); removed > 0 {
-		fmt.Fprintf(o.Err, "[compare] 塗った PNG のキャッシュから古い %d 枚を消しました（上限 %d MB）\n", removed, rendercache.DefaultMaxMB)
+	if removed, _ := rendercache.Prune(rendercache.Dir(), int64(rendercache.MaxMB())<<20); removed > 0 {
+		fmt.Fprintf(o.Err, "[compare] 塗った PNG のキャッシュから古い %d 枚を消しました（上限 %d MB）\n", removed, rendercache.MaxMB())
 	}
 	return nil
 }
