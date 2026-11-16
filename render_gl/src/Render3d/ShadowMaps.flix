@@ -10,8 +10,22 @@ mod Render3d.ShadowMaps {
     use Render3d.ScenePlan.{Planner, ScenePlan, warnShadowOnce}
     use Render3d.SceneList.{SceneList, Tables}
 
-    /// 影の地図の描き先 1 枚の鍵: (一辺の画素, 同じ prepare の中で同じ一辺の何枚目か)。
-    pub type alias Key = (Int32, Int32)
+    /// 影の地図の描き先 1 枚の鍵: Key(一辺の画素, 同じ prepare の中で同じ一辺の何枚目か)。作るのは keyOf。
+    pub enum Key with Eq, Order, ToString {
+        case Key(Int32, Int32)
+    }
+
+    pub def keyOf(size: Int32, ordinal: Int32): Key = Key.Key(size, ordinal)
+
+    /// 鍵の描き先の一辺の画素。
+    pub def sizeOf(key: Key): Int32 = match key {
+        case Key.Key(size, _) => size
+    }
+
+    /// 鍵の (一辺の画素, 何枚目か)。
+    pub def pairOf(key: Key): (Int32, Int32) = match key {
+        case Key.Key(size, ordinal) => (size, ordinal)
+    }
 
     /// 色の pass が影の地図を引く値（Render3dGlsl の uShadow* と uSun* の欄）。Spot = スポットの影（spotIndex = pickLights の後のスポットの並びの番号）・
     /// Sun = 太陽の影（Scene3d.directionalShadowOf の値。bias = 地図の値から引く量・normalShift = 受ける点を法線へずらす world の長さ・forward = カメラの前の向き）。
@@ -22,7 +36,7 @@ mod Render3d.ShadowMaps {
     }
 
     /// 影を落とす光 1 つに決めた描き先と引く値。view = world → 光の clip（地図を描く頂点シェーダーの目の行列。射影は単位行列）。
-    pub type alias ShadowMapUse = { key = Key, size = Int32, view = Mat4.Mat4, sampling = ShadowSampling }
+    pub type alias ShadowMapUse = { key = Key, view = Mat4.Mat4, sampling = ShadowSampling }
 
     /// 影の地図を描く pass 1 つ（map の描き先へ list の行を深度だけで描く）。行は頂点の色の行（骨の無い物）と骨つきの行だけで、どれも分かれた理由は影の pass。
     pub type alias ShadowPass = { map = ShadowMapUse, list = SceneList }
@@ -47,7 +61,7 @@ mod Render3d.ShadowMaps {
             let size = mapSizeOf(planner, plan#caster#settings);
             let ordinal = Map.getWithDefault(size, 0, Ref.get(used));
             Ref.put(Map.insert(size, ordinal + 1, Ref.get(used)), used);
-            { key = (size, ordinal), size = size, view = plan#caster#matrix, sampling = samplingOf(planner, plan) }
+            { key = keyOf(size, ordinal), view = plan#caster#matrix, sampling = samplingOf(planner, plan) }
         }))
 
     def mapSizeOf(planner: Planner, m: Scene3d.ShadowMap): Int32 \ IO =

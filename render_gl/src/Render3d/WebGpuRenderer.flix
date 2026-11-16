@@ -48,7 +48,6 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.Light.{lightDataOf}
     use Render3d.ScenePlan.{Group, GroupedScene, MaterialRequest, PlanCaps, Planner, ScenePassSpec, ScenePlan, freshPlanner, groupScenes, isSkinned, planScenes}
     use Render3d.SceneList.{SceneList, ScenePasses, buildScenePasses}
-    use Render3d.Batch.{MaterialBatch}
     use Render3d.Counts.{Phase, countDrawCallAt, countInstances, noteMaterialBuild, timed}
     use Render3d.MeshTable
     use Render3d.PoseRows.{PoseRows, floatCountOf, packRows, posesInRowOrder}
@@ -563,26 +562,15 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面の頂点の色の batch・骨つきの batch・不透明の材質の batch と、影の地図の batch（world と姿勢の行だけ）に 1 体ごとの値の番号を振って CPU の入れ物へ詰め、
     /// 計画の pass ごとの行の列と、uses の描き先への影の地図の pass と、詰めた値（送るのは呼ぶ側）を返す。
-    /// 半透明の材質の batch は無い（prepare が半透明の版を「使えない」と答える）。
+    /// 半透明の材質の batch は空（prepare が半透明の版を「使えない」と答える）。
     def numberInstances(r: Renderer, host: Host, members: MutList[MeshDraw, Static], plan: ScenePlan[SpanBatch], uses: List[ShadowMapUse]):
             (ScenePasses, List[ShadowPass], { data = ByteBuffer, bytes = Int32 }) \ IO =
         let RendererData.RendererData(s) = r;
-        let draws = plan#draws;
-        let spans = (bs: List[SpanBatch]) -> List.sumWith(b -> b#count, bs);
-        let total = spans(draws#plain) + spans(draws#skinned) + List.sumWith(d -> d#batch#count, draws#opaque)
-                    + List.sumWith(sp -> spans(sp#plain) + spans(sp#skinned), plan#shadowPlans);
-        let bytes = total * Render3dWgsl.instanceBytes();
+        let bytes = Render3d.InstanceValues.countOf(plan) * Render3dWgsl.instanceBytes();
         let raw = cpuInstancesFor(r, bytes);
         let out = raw.asFloatBuffer();
         let next = Array#{0} @ Static;
-        let pack = numberSpan(out, s#scratch, Int32.maxValue(), next, members, PackMode.Lit);
-        let plain = List.map(pack, draws#plain);
-        let skinned = List.map(pack, draws#skinned);
-        let opaque = draws#opaque |> List.map((d: MaterialBatch[SpanBatch]) -> ({ handle = d#handle, order = d#order, kind = d#kind, material = d#material, batch = pack(d#batch) }: MaterialBatch[MeshBatch]));
-        let packDepth = numberSpan(out, s#scratch, Int32.maxValue(), next, members, PackMode.ShadowDepth);
-        let shadowPlans = plan#shadowPlans |> List.map(sp -> { plain = List.map(packDepth, sp#plain), skinned = List.map(packDepth, sp#skinned) | sp });
-        let numbered = { cmd = plan#cmd, mainPass = plan#mainPass, draws = { plain = plain, skinned = skinned, opaque = opaque, blended = Nil },
-                         shadowPlans = shadowPlans };
+        let numbered = Render3d.InstanceValues.mapBatches(mode -> numberSpan(out, s#scratch, Int32.maxValue(), next, members, mode), plan);
         let tables = { meshes = s#meshes, textures = WebGpuMaterials.texturesOf(s#materials), layouts = s#layouts, gen = Array.get(0, s#gen), gpuMip = false,
                        textureOf = host#textureOf };
         let passes = buildScenePasses(tables, numbered);

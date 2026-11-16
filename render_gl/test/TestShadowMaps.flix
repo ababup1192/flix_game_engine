@@ -16,7 +16,7 @@ mod Render3d.TestShadowMaps {
         { caster = { matrix = Scene3d.shadowMatrix(spot), frustum = Scene3d.shadowFrustumOf(spot), settings = settings },
           light = Render3d.ShadowLight.Spot(index), plain = Nil, skinned = Nil }
 
-    def keysOf(uses: List[List[ShadowMapUse]]): List[List[(Int32, Int32)]] = uses |> List.map(List.map(u -> u#key))
+    def keysOf(uses: List[List[ShadowMapUse]]): List[List[(Int32, Int32)]] = uses |> List.map(List.map(u -> ShadowMaps.pairOf(u#key)))
 
     def pcfOf(u: ShadowMapUse): Int32 = match u#sampling {
         case ShadowSampling.Spot(s) => s#pcfRadius
@@ -29,10 +29,14 @@ mod Render3d.TestShadowMaps {
         discard Render3d.FakeGl.stderrOf(() -> Ref.put(f(), out));
         Ref.get(out)
 
+    def labelOf(key: ShadowMaps.Key): String = match ShadowMaps.pairOf(key) {
+        case (size, ordinal) => "${size}/${ordinal}"
+    }
+
     /// 呼ばれた順を控える Allocator。
     def recordingAllocator(log: Ref[List[String], Static]): ShadowMaps.Allocator =
-        { create = key -> Ref.put("create ${fst(key)}/${snd(key)}" :: Ref.get(log), log),
-          destroy = key -> Ref.put("destroy ${fst(key)}/${snd(key)}" :: Ref.get(log), log) }
+        { create = key -> Ref.put("create ${labelOf(key)}" :: Ref.get(log), log),
+          destroy = key -> Ref.put("destroy ${labelOf(key)}" :: Ref.get(log), log) }
 
     // ── 計画 ──
 
@@ -61,8 +65,8 @@ mod Render3d.TestShadowMaps {
     def testEnsureCreatesOnce(): Unit \ {Assert, IO} =
         let log = Ref.fresh(Static, Nil);
         let table = ShadowMaps.fresh();
-        let first = ShadowMaps.ensure(table, recordingAllocator(log), 1i64, (64, 0));
-        let second = ShadowMaps.ensure(table, recordingAllocator(log), 2i64, (64, 0));
+        let first = ShadowMaps.ensure(table, recordingAllocator(log), 1i64, ShadowMaps.keyOf(64, 0));
+        let second = ShadowMaps.ensure(table, recordingAllocator(log), 2i64, ShadowMaps.keyOf(64, 0));
         Assert.assertEq(expected = (true, false, "create 64/0" :: Nil), (first, second, Ref.get(log)))
 
     /// Render3d.idleTargetFrames() を超えて使わなかった描き先だけを捨てさせる。
@@ -71,10 +75,10 @@ mod Render3d.TestShadowMaps {
         let log = Ref.fresh(Static, Nil);
         let table = ShadowMaps.fresh();
         let idle = Render3d.idleTargetFrames();
-        discard ShadowMaps.ensure(table, recordingAllocator(log), 1i64, (64, 0));
-        discard ShadowMaps.ensure(table, recordingAllocator(log), 1i64 + idle, (64, 1));
+        discard ShadowMaps.ensure(table, recordingAllocator(log), 1i64, ShadowMaps.keyOf(64, 0));
+        discard ShadowMaps.ensure(table, recordingAllocator(log), 1i64 + idle, ShadowMaps.keyOf(64, 1));
         let dropped = ShadowMaps.sweep(table, recordingAllocator(log), 2i64 + idle);
-        Assert.assertEq(expected = (1, "destroy 64/0" :: "create 64/1" :: "create 64/0" :: Nil, Map#{ (64, 1) => 1i64 + idle }),
+        Assert.assertEq(expected = (1, "destroy 64/0" :: "create 64/1" :: "create 64/0" :: Nil, Map#{ ShadowMaps.keyOf(64, 1) => 1i64 + idle }),
                         (dropped, Ref.get(log), ShadowMaps.createdOf(table)))
 
     /// 捨てた鍵をもう一度使うと作り直させる。
@@ -82,7 +86,7 @@ mod Render3d.TestShadowMaps {
     def testSweptKeyIsCreatedAgain(): Unit \ {Assert, IO} =
         let log = Ref.fresh(Static, Nil);
         let table = ShadowMaps.fresh();
-        discard ShadowMaps.ensure(table, recordingAllocator(log), 1i64, (64, 0));
+        discard ShadowMaps.ensure(table, recordingAllocator(log), 1i64, ShadowMaps.keyOf(64, 0));
         discard ShadowMaps.sweep(table, recordingAllocator(log), 2i64 + Render3d.idleTargetFrames());
-        Assert.assertTrue(ShadowMaps.ensure(table, recordingAllocator(log), 3i64 + Render3d.idleTargetFrames(), (64, 0)))
+        Assert.assertTrue(ShadowMaps.ensure(table, recordingAllocator(log), 3i64 + Render3d.idleTargetFrames(), ShadowMaps.keyOf(64, 0)))
 }

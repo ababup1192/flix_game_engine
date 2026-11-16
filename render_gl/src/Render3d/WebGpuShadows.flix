@@ -90,7 +90,7 @@ mod Render3d.WebGpuShadows {
     def allocatorOf(sh: Shadows, created: Unit -> Unit \ IO): Render3d.ShadowMaps.Allocator =
         { create = key -> {
               created();
-              Ref.put(Map.insert(key, createTarget(sh, fst(key)), Ref.get(sh#targets)), sh#targets)
+              Ref.put(Map.insert(key, createTarget(sh, Render3d.ShadowMaps.sizeOf(key)), Ref.get(sh#targets)), sh#targets)
           },
           destroy = key -> {
               Map.get(key, Ref.get(sh#targets)) |> Option.forEach(destroyTarget);
@@ -118,7 +118,7 @@ mod Render3d.WebGpuShadows {
         Map.get(key, Ref.get(sh#targets)) |> Option.forEach(target -> {
             writeCamera(sh, target, pass);
             Ref.put(Set.insert(key, Ref.get(sh#written)), sh#written);
-            let size = pass#map#size;
+            let size = Render3d.ShadowMaps.sizeOf(key);
             let desc = new RenderPassDesc("fge scene3d shadow map");
             discard desc.clearDepth(target#depth.defaultView(), 1.0);
             let rp = draw#encoder.beginRenderPass(desc);

@@ -257,7 +257,7 @@ mod Render3d {
         // 影の地図の描き先の寿命の表（鍵 = (mapSize, 同じ prepareScenes の中で同じ mapSize の何枚目か)）。
         shadowMaps = Render3d.ShadowMaps.Table,
         // 影の地図の鍵 → FBO。
-        shadowTargetsRef = Ref[Map[(Int32, Int32), ShadowTarget], Static],
+        shadowTargetsRef = Ref[Map[Render3d.ShadowMaps.Key, ShadowTarget], Static],
         // 場面の絵と段つきの写しの表（番号・上限・試し直し）。
         textures3d = Render3d.TextureTable3d.Table,
         // 絵の表の番号 → GL のテクスチャ。

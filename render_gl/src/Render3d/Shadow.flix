@@ -23,11 +23,10 @@ mod Render3d.Shadow {
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
     pub def renderShadows(gl: GlContext, state: State, gen: Int64, passes: List[List[ShadowPass]]): List[SceneShadows] \ IO =
         let shadows = passes |> List.map(scenePasses -> {
-            let casts = scenePasses |> List.map(pass -> {
-                let target = shadowTarget(gl, state, gen, pass#map#key);
+            let casts = scenePasses |> List.filterMap(pass -> shadowTarget(gl, state, gen, pass#map#key) |> Option.map(target -> {
                 renderShadowMap(gl, state, gen, target, pass);
                 castOf(target, pass#map#sampling)
-            });
+            }));
             { spot = List.findMap(spotOf, casts), sun = List.findMap(sunOf, casts) }
         });
         if (List.exists(s -> Option.nonEmpty(s#spot) or Option.nonEmpty(s#sun), shadows)) endShadowPass(gl) else ();
@@ -43,16 +42,17 @@ mod Render3d.Shadow {
         case Cast.Spot(_)      => None
     }
 
-    /// 鍵 key の影の描き先（無ければ寿命の表が作らせる）。
-    def shadowTarget(gl: GlContext, state: State, gen: Int64, key: Key): ShadowTarget \ IO =
+    /// 鍵 key の影の描き先（無ければ寿命の表が作らせる。引けない鍵は None で、その地図は描かない）。
+    // WhyNot: 引けない時に fbo 0 の描き先で続けない — 深度を画面の framebuffer へ描き、WebGPU の backend（描かずに飛ばす）と振る舞いが分かれる。
+    def shadowTarget(gl: GlContext, state: State, gen: Int64, key: Key): Option[ShadowTarget] \ IO =
         discard Render3d.ShadowMaps.ensure(state#shadowMaps, allocatorOf(gl, state), gen, key);
-        Map.get(key, Ref.get(state#shadowTargetsRef)) |> Option.getWithDefault({ fbo = 0, tex = 0, size = fst(key) })
+        Map.get(key, Ref.get(state#shadowTargetsRef))
 
     /// 寿命の表（Render3d.ShadowMaps）へ渡す、GL の影の描き先を作る・捨てる関数の組。
     def allocatorOf(gl: GlContext, state: State): Render3d.ShadowMaps.Allocator =
         { create = key -> {
               count(state, Counter.TargetRebuilds, 1);
-              let made = createShadowTarget(gl, fst(key));
+              let made = createShadowTarget(gl, Render3d.ShadowMaps.sizeOf(key));
               Ref.put(Map.insert(key, made, Ref.get(state#shadowTargetsRef)), state#shadowTargetsRef)
           },
           destroy = key -> {
