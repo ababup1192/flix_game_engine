@@ -3,8 +3,8 @@
 // 2D の並びの z の位置で 2D の描き手がその texture を貼る（plans/engine-webgpu.md の 5.4）。計画（Render3d.ScenePlan）と行（Render3d.SceneList）は GL と同じ物を使い、
 // 行を流すのは Render3d.WebGpuRows・材質の program と絵と値は Render3d.WebGpuMaterials。式は GL と同じ WGSL（Render3dWgsl と ShaderGen.Wgsl.compile3d）。
 // 描くのは不透明の頂点の色の物と、不透明の材質の物（Render3d.WebGpuMaterials.isDrawable の版）と、そのどちらも骨つきの物（姿勢は group 2 の storage）と
-// 光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、スポットと太陽の影（Render3d.WebGpuShadows）と、lightmap（材質の group 1）と、奥行きの書き出し（Output.Depth の場面の形の灰色）。
-// 半透明・alpha to coverage の材質・ビルボード・空・環境マップは描かずに種類ごとの回数を
+// 光（点光源・スポット・太陽・環境光・hemisphere・かすみ）と、スポットと太陽の影（Render3d.WebGpuShadows）と、lightmap（材質の group 1）と、空（Render3d.WebGpuSky）と、
+// 奥行きの書き出し（Output.Depth の場面の形の灰色）。半透明・alpha to coverage の材質・ビルボード・環境マップは描かずに種類ごとの回数を
 // host へ数えさせる（描かない版の材質の物は GL が「使えない」と答えた材質と同じく頂点の色か形で描く）。3D の診断の数（Render3d.Counts）も GL と同じ欄で数える。
 // 場面は、影の地図の pass（Render3d.ShadowMaps.ShadowPass）を先に積み、計画の pass（Render3d.ScenePlan.ScenePassSpec）ごとの行の列（Render3d.SceneList.ScenePasses）で描き、pass の種類で frag を替える。
 // WhyNot: 兄弟（Render3d.GlRows など）と同じく pub を外さない — 呼び手の RenderPaint.Internal.WebGpuPaint は Render3d の子孫でなく、pub でない子の mod には届かない
@@ -57,6 +57,7 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.WebGpuRows.{MeshBuffers, MeshStore, drawRows, freshStore, meshAllocator, uploadRows}
     use Render3d.ShadowMaps.{ShadowMapUse, ShadowPass, ShadowSampling}
     use Render3d.WebGpuShadows
+    use Render3d.WebGpuSky
     use RenderPaint.Internal.WebGpuPipelines
 
     /// 場面 1 つの描き先と、その場面の値の buffer と bind group（2D の描き手の描き先の鍵とそのコマの場面の番号ごとに 1 つ・大きさか形式か標本が変われば作り直す）。
@@ -131,6 +132,7 @@ pub mod Render3d.WebGpuRenderer {
             poseGroups = Ref[List[BindGroup], Static],
             sceneGroups = Ref[List[BindGroup], Static],
             shadows = WebGpuShadows.Shadows,
+            sky = WebGpuSky.Sky,
             epoch = Array[Int64, Static],
             cpuInstances = Array[ByteBuffer, Static],
             cpuPoses = Array[ByteBuffer, Static],
@@ -180,9 +182,10 @@ pub mod Render3d.WebGpuRenderer {
         let blankImage = gpu.createTexture("fge scene3d blank", 1, 1, TextureFormat.RGBA8_UNORM,
                                            Int32.bitwiseOr(TextureUsage.TEXTURE_BINDING, TextureUsage.COPY_DST), 1, 1);
         gpu.writeTexture(blankImage, 0, 0, 0, 1, 1, ByteBuffer.allocateDirect(4), 0, 4);
+        let sceneLayout = gpu.createBindGroupLayout(layoutDesc);
         let r = RendererData.RendererData({
             gpu = gpu, planner = freshPlanner(Render3d.DrawMode.Instanced),
-            sceneLayout = gpu.createBindGroupLayout(layoutDesc), pasteLayout = pasteLayout,
+            sceneLayout = sceneLayout, pasteLayout = pasteLayout,
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource(false)),
             skinnedModule = gpu.createShaderModule("fge scene3d skinned vs", Render3dWgsl.litVertexSource(true)),
             fragmentModule = gpu.createShaderModule("fge scene3d lit fs", Render3dWgsl.litFragmentSource()),
@@ -201,7 +204,7 @@ pub mod Render3d.WebGpuRenderer {
             instances = Array#{createInstanceBuffer(gpu, initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             instanceUsed = Array#{0} @ Static,
             poses = Array#{createPoseBuffer(gpu, initialPoseBytes())} @ Static, posesUsed = Array#{0} @ Static,
-            poseGroups = Ref.fresh(Static, Nil), sceneGroups = Ref.fresh(Static, Nil), shadows = WebGpuShadows.create(gpu), epoch = Array#{0i64} @ Static,
+            poseGroups = Ref.fresh(Static, Nil), sceneGroups = Ref.fresh(Static, Nil), shadows = WebGpuShadows.create(gpu), sky = WebGpuSky.create(gpu, sceneLayout), epoch = Array#{0i64} @ Static,
             cpuInstances = Array#{directBytes(initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             cpuPoses = Array#{directBytes(initialPoseBytes())} @ Static,
             cpuScene = directBytes(sceneValueBytes()), cpuCamera = directBytes(128), cpuPaste = directBytes(16),
@@ -232,6 +235,7 @@ pub mod Render3d.WebGpuRenderer {
         WebGpuMaterials.release(s#materials);
         afterSubmit(r);
         WebGpuShadows.release(s#shadows);
+        WebGpuSky.release(s#sky);
         Array.get(0, s#instances).destroy();
         Array.get(0, s#poses).destroy();
         s#emptyGroup.release();
@@ -340,7 +344,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面 1 つのまだ描けない物の種類と回数（0 回の種類も並べる。数えるのは host#skip）。
     /// 物は計画が間引かなかった物（culled でない物・骨つきの物は Scene3d.isOutsideFrustum が間引かない）を 1 体 1 回だけ数える
-    /// ビルボードは数・空と環境マップは場面の数（影の地図は描く）。
+    /// ビルボードは数・環境マップは場面の数（影の地図と空は描く）。
     /// 奥行きの書き出しの場面は、形だけで書く物のうち材質の道で書くはずの物（cutout と両面。計画が半透明の物と、cutout でも両面でもない材質を外してある）と
     /// ビルボードだけを数える（空は一番奥の白で塗り、影と環境マップは読まない）。
     def skipsOf(members: MutList[MeshDraw, Static], scene: GroupedScene): List[(String, Int32)] \ IO =
@@ -355,7 +359,7 @@ pub mod Render3d.WebGpuRenderer {
                 ("3D の alpha to coverage の材質の物（頂点の色で描く）", t#opaque) ::
                 ("3D の半透明の材質の物（頂点の色で不透明に描く）", t#blended) ::
                 ("3D のビルボード", List.length(cmd#billboards)) ::
-                ("3D の空", Option.count(_ -> true, cmd#sky)) :: ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
+                ("3D の環境マップ", Option.count(_ -> true, cmd#environmentMap)) :: Nil
         }
 
     /// skipsOf の物の数え（opaque = 描けない版の不透明の材質の物）。
@@ -397,11 +401,12 @@ pub mod Render3d.WebGpuRenderer {
         staged#shadows |> List.forEach(WebGpuShadows.encode(s#shadows, Array.get(0, s#gen), shadowDraw));
         let sceneGroup = sceneGroupOf(r, target, staged#shadows);
         let scene = plan#cmd#scene;
+        Scene3d.skyWarning(scene) |> Option.forEach(line -> Render3d.ScenePlan.warnOnce(s#planner, "@sky+background", line));
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
         staged#passes |> List.forEach(match (spec, list, valuesBase) ->
             encodeScene(r, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup,
-                                           sceneGroup = sceneGroup },
+                                           sceneGroup = sceneGroup, sky = WebGpuSky.isDrawn(scene) },
                         { color = drawn.defaultView(), resolve = target#msaa |> Option.map(_ -> target#color.defaultView()),
                           clear = Some(clearOf(spec, scene)), depth = target#depth.defaultView(), viewport = full, scissor = full }))
 
@@ -506,8 +511,10 @@ pub mod Render3d.WebGpuRenderer {
     /// poseGroup = 姿勢の group 2（姿勢の無い prepare は None）。
     type alias Staged = { shadows = List[ShadowPass], passes = List[(ScenePassSpec, SceneList, Int32)], instanceBase = Int32, poseGroup = Option[BindGroup] }
 
-    /// encodeScene が描く pass 1 つ。valuesBase = 行の values を送った位置（バイト）・poseGroup = 姿勢の group 2・sceneGroup = 場面の group 0（sceneGroupOf）。
-    type alias StagedPass = { spec = ScenePassSpec, list = SceneList, instanceBase = Int32, valuesBase = Int32, poseGroup = Option[BindGroup], sceneGroup = BindGroup }
+    /// encodeScene が描く pass 1 つ。valuesBase = 行の values を送った位置（バイト）・poseGroup = 姿勢の group 2・sceneGroup = 場面の group 0（sceneGroupOf）・
+    /// sky = 色の pass の頭で空を描くか（WebGpuSky.isDrawn）。
+    type alias StagedPass = { spec = ScenePassSpec, list = SceneList, instanceBase = Int32, valuesBase = Int32, poseGroup = Option[BindGroup], sceneGroup = BindGroup,
+                              sky = Bool }
 
     /// 場面を描く pass の描き先。color = 描く view・resolve = 標本つきの描き先なら resolve する先・clear = 消す色（None なら前の中身に描き足す）・
     /// depth = 深度の view（いつも 1 で消す）・viewport と scissor = 描き先の左上が原点の (x, y, 幅, 高さ)。
@@ -533,6 +540,10 @@ pub mod Render3d.WebGpuRenderer {
         let (sx, sy, sw, sh) = onto#scissor;
         pass.setScissorRect(sx, sy, sw, sh);
         pass.setBindGroup(0, staged#sceneGroup);
+        if (staged#sky and isColorPass(staged#spec)) {
+            WebGpuSky.draw(s#sky, pass, target#format, target#samples);
+            Render3d.Counts.countDrawCall(s, Render3d.Counts.BatchBreak.Sky)
+        } else ();
         Option.forEach(g -> pass.setBindGroup(2, g), staged#poseGroup);
         let instances = Array.get(0, s#instances);
         pass.setVertexBuffer(1, instances, 0i64, instances.size());
@@ -671,10 +682,10 @@ pub mod Render3d.WebGpuRenderer {
 
     // ── 場面の値 ──
 
-    /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本）。
-    pub def sceneValueBytes(): Int32 = 400 + 16 * (3 * Scene3d.maxPointLights() + 5 * Scene3d.maxSpotLights())
+    /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本・末尾に空の vec4 が 3 本）。
+    pub def sceneValueBytes(): Int32 = Render3dWgsl.skyValuesAt() + 48
 
-    /// 場面の値（光・かすみ・目・奥行きの書き出し・影の地図 shadows を引く値）と目と射影の行列を target の buffer へ書く。環境マップは切る（lightmap は物ごとの値・Render3d.MaterialValues）。
+    /// 場面の値（光・かすみ・目・奥行きの書き出し・影の地図 shadows を引く値・空の向きの材料）と目と射影の行列を target の buffer へ書く。環境マップは切る（lightmap は物ごとの値・Render3d.MaterialValues）。
     def writeSceneValues(r: Renderer, target: SceneTarget, plan: ScenePlan[SpanBatch], shadows: List[ShadowPass]): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let scene = plan#cmd#scene;
@@ -685,6 +696,7 @@ pub mod Render3d.WebGpuRenderer {
         // WhyNot: pass ごとに場面の値を書き分けない — 場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、
         //   1 つの encoder の中で pass ごとに書き替えると、どの pass も最後に書いた値で描く。pass が場面の置いた物の 1 つの間は mainPass で足りる。
         packPassValues(values, plan#mainPass);
+        WebGpuSky.packValues(values, scene, target#width, target#height);
         s#gpu.writeBuffer(target#sceneValues, 0i64, values, 0, sceneValueBytes());
         let camera = s#cpuCamera;
         let floats = camera.asFloatBuffer();
@@ -812,7 +824,7 @@ pub mod Render3d.WebGpuRenderer {
 
     // ── 描き先と pipeline ──
 
-    /// 鍵 key の描き先の値（場面の値・目・貼る矩形）を今の encoder で書いたと控える。
+    /// 鍵 key の描き先の値（場面の値（空の向きの材料を含む）・目・貼る矩形）を今の encoder で書いたと控える。
     // WhyNot: targetOf の頭で控えない — 値を書く途中で 1 体ごとの値の buffer があふれて submit すると控えが消え、
     //   同じ encoder で同じ鍵を 2 回目に書く時に、まだ submit していない 2D の pass の貼る矩形を上書きする。
     def noteWritten(r: Renderer, key: (Int32, Int32)): Unit \ IO =
@@ -869,6 +881,11 @@ pub mod Render3d.WebGpuRenderer {
         t#sceneValues.destroy();
         t#camera.destroy();
         t#paste.destroy()
+
+    def isColorPass(spec: ScenePassSpec): Bool = match spec {
+        case ScenePassSpec.Color       => true
+        case ScenePassSpec.DepthOut(_) => false
+    }
 
     /// pass の種類の番号（pipeline の鍵）。
     def passCodeOf(spec: ScenePassSpec): Int32 = match spec {

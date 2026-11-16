@@ -269,6 +269,8 @@ mod TestWgslDawn {
         ("vertex lit skinned", Render3dWgsl.litVertexSource(true)) ::
         ("vertex material skinned", Render3dWgsl.materialVertexSource(false, false, true)) ::
         ("vertex material uv skinned", Render3dWgsl.materialVertexSource(true, false, true)) ::
+        ("vertex sky", Render3dWgsl.skyVertexSource()) ::
+        ("frag sky", Render3dWgsl.skyFragmentSource()) ::
         ("sky", head + Render3dWgsl.skyLightSource() +
                 "@fragment fn fs_main(@location(0) d: vec3f) -> @location(0) vec4f { return vec4f(skyAt(d), 1.0); }\n") :: Nil
 

@@ -51,7 +51,7 @@ mod V2Shadows {
         { spotLights = spot() :: Nil | sunYard(kit, 0) }
 
     /// 上を向く 1 m の市松の床（−4 m..12 m × −2 m..10 m）。
-    def floor(): Mesh3d.Mesh3d =
+    pub def floor(): Mesh3d.Mesh3d =
         let m = meter();
         let tile = (i: Int32, j: Int32) -> {
             let x0 = Int32.toFloat64(i - 4) * m;
