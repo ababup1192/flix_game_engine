@@ -1,9 +1,8 @@
-// MigrateOut — 移行の突き合わせ（bin/fge migrate diff）の記録: tape.json に足す欄（events・buses・frames・screen）と
+// MigrateOut — 移行の突き合わせ（bin/fge migrate diff）の記録: tape.json に足す欄（events・buses・frames・ranLines・screen）と
 // restore.json を、flow を流した結果から作る（純粋）。欄の名前・型・書き手への約束は engine の docs/migrate-diff.md。
 // コマの PNG は塗らず、どのフレームを・どの層で撮るかの予定だけを返す（塗るのは MIGRATE_OUT を渡した FlowVideo）。
 //
-// ranLines は書かない: 実行器（engine の YarnRunner）は set・jump・<<if>>・<<stop>> を通っても出来事を返さないので、
-// 実行した文の全部をその時に記録できない。欠けた ranLines は偽の「通らない行」で門を止めるので、欄ごと出さない。
+// ranLines は実行器が流した文の行（World.Event.Ran）を、流した時に集める（コマのシナリオの位置からは作らない）。
 mod MigrateOut {
     use fge::{AudioMixer, Clock, Emit, Flow, Num, Resources, Vec2}
     use Util.Json.Json
@@ -17,8 +16,8 @@ mod MigrateOut {
     }
 
     /// 書き出すコマ 1 枚。frame = flow のフレームの番号、seq = 直前に出し終えた台詞の番号（まだなら -1）、
-    /// mid = 時間を取る命令の途中のコマなら (命令の名前, その台詞の後で何番目の時間を取る命令か, 命令の秒に対する割合)。
-    pub type alias Shot = { frame = Int32, node = String, seq = Int32, mid = Option[(String, Int32, Float64)], layer = Layer }
+    /// mid = 時間を取る命令の途中のコマなら (命令の名前, その台詞の後で何番目の時間を取る命令か, 命令の秒に対する割合, 命令の秒)。
+    pub type alias Shot = { frame = Int32, node = String, seq = Int32, mid = Option[(String, Int32, Float64, Float64)], layer = Layer }
 
     /// events の欄と、書き出すコマの予定。
     pub type alias Record = { events = List[Json], shots = List[Shot] }
@@ -44,6 +43,14 @@ mod MigrateOut {
                 case World.Event.Executed(x) => Some((i, x))
                 case _                       => None
             }))
+
+    /// ranLines の欄: 人が読み進めた間に実行器が流した文の行（重ねずに小さい順）。
+    pub def ranLinesOf(frames: List[Flow.Played[AppState]]): List[Int32] =
+        frames |> List.flatMap(played ->
+            Emit.since(played#step#before#world#events, played#step#after#world#events) |> List.flatMap(e -> match e {
+                case World.Event.Ran(lines) => lines
+                case _                      => Nil
+            })) |> List.toSet |> Set.toList
 
     /// 出来事ごとに、それより後ろで最初に出来事が出たフレーム（無ければ None）。台詞を出し終えたコマはその 1 つ前のフレーム。
     def nextFramesOf(rans: List[(Int32, World.Executed)]): List[(Int32, World.Executed, Option[Int32])] =
@@ -116,7 +123,7 @@ mod MigrateOut {
             case Some(s) =>
                 let step = Map.getWithDefault(key, 0, walk#steps);
                 let mids = midPoints() |> List.filterMap(share -> frameAfter(worlds, f, share * s) |> Option.map(j ->
-                    { frame = j, node = fst(key), seq = seq - 1, mid = Some((name, step, share)), layer = Layer.WorldLayer }));
+                    { frame = j, node = fst(key), seq = seq - 1, mid = Some((name, step, share, s)), layer = Layer.WorldLayer }));
                 { shots = List.append(List.reverse(mids), walk#shots), steps = Map.insert(key, step + 1, walk#steps) | walk }
             case None => walk
         }
@@ -147,7 +154,8 @@ mod MigrateOut {
         let base = Map#{ "file" => Json.JString(fileOf(shot)), "t" => TapeOut.numJson(t), "node" => Json.JString(shot#node),
                          "seq" => TapeOut.intJson(shot#seq), "layer" => Json.JString(layerName(shot#layer)) };
         let fields = match shot#mid {
-            case Some((cmd, step, share)) => base |> Map.insert("kind", Json.JString("mid")) |> Map.insert("cmd", Json.JString(cmd))
+            case Some((cmd, step, share, seconds)) => base |> Map.insert("kind", Json.JString("mid")) |> Map.insert("cmd", Json.JString(cmd))
+                                                  |> Map.insert("seconds", TapeOut.numJson(seconds))
                                                   |> Map.insert("step", TapeOut.intJson(step)) |> Map.insert("at", TapeOut.numJson(share))
             case None                     => Map.insert("kind", Json.JString("lineDone"), base)
         };

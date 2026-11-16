@@ -9,7 +9,7 @@
 //   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・2 つ以上の .yarn にまたがる flow では書かずに理由を出す）
 //
 // MIGRATE_OUT=<フォルダ> の時は、移行の突き合わせ（bin/fge migrate diff）の記録もそこへ書く（MigrateOut）:
-//   tape.json   … 上の tape.json に events・buses・frames・screen を足した物
+//   tape.json   … 上の tape.json に events・buses・frames・ranLines・screen を足した物
 //   frames/world/f0000.png … world の層だけのコマ（台詞を出し終えた所と時間を取る命令の途中）、frames/all/ … 全部の層のコマ（台詞を出し終えた所）
 //   saves.json  … flow の終わりのセーブデータ（枠が 1 つでもあれば。restore が読み戻す古いセーブ）
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
@@ -125,6 +125,7 @@ mod FlowVideo {
         let extra = Map#{ "events" => Util.Json.Json.JArray(List.toVector(record#events)),
                           "buses" => MigrateOut.busesJson(fps, lengthOf, outcome#frames),
                           "frames" => MigrateOut.framesJson(fps, record#shots),
+                          "ranLines" => Util.Json.Json.JArray(MigrateOut.ranLinesOf(outcome#frames) |> List.map(TapeOut.intJson) |> List.toVector),
                           "screen" => MigrateOut.screenJson(SceneRender.design()) };
         writeTapeWith(extra, path, script, dir, outcome);
         let saves = outcome#last#world#saves;

@@ -48,6 +48,8 @@ mod WorldRead {
     /// 台詞ごとの戻れる所は、最後のブックマークから「その台詞より後に受けた入力」の数だけ入力を外した物（inputsAfter と markAt）。
     /// [遷移: シナリオが終わる(Done) → Credits]
     def absorb(res: Res.Res, replay: Replay, events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+        let before = World.readOf(w) |> Option.map(old -> old#talk) |> Option.getWithDefault(YarnRunner.closed());
+        if (replay == Commands.Replay.Live) Emit.emit(World.Event.Ran(YarnRunner.ranLinesSince(before, r#talk))) else ();
         absorbFrom(res, replay, YarnRunner.bookmarkOf(r#talk), List.zip(events, inputsAfter(events)), World.withRead(r, w))
 
     /// 出来事を頭から 1 つずつ反映する。人が読み進めている時（Live）に、まだ届いていない背景・環境音へ切り替えるコマンドに

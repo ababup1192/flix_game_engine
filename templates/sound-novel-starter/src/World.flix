@@ -218,7 +218,8 @@ mod World {
     ///   Picked … 選択肢を選んだ / Opened・Closed … 画面や確認のウィンドウを開けた・閉じた / Saved・Loaded … セーブした・ロードした /
     ///   Rolled … 前の行へ戻った / Cue(名前) … シナリオの <<audio se>> の効果音（project.json の sounds の名前）/
     ///   Signal(名前) … コマンドが出したその場の合図（Commands.Out.Event。テンプレートのコマンドは出さない）/
-    ///   Executed(何を) … 人が読み進めている時（Live）に、実行器の出来事（台詞・選択肢・コマンド）を 1 つ反映した（記録の書き手が読む。音は鳴らさない）。
+    ///   Executed(何を) … 人が読み進めている時（Live）に、実行器の出来事（台詞・選択肢・コマンド）を 1 つ反映した（記録の書き手が読む。音は鳴らさない）/
+    ///   Ran(行) … 人が読み進めている時に、実行器が 1 回の呼び出しで流した文の .yarn の行（<<set>>・<<jump>>・<<if>>・<<stop>> も。YarnRunner.ranLinesSince）。
     pub enum Event with Eq, ToString {
         case Paged
         case Revealed
@@ -232,6 +233,7 @@ mod World {
         case Cue(String)
         case Signal(String)
         case Executed(Executed)
+        case Ran(List[Int32])
     }
 
     /// 反映した実行器の出来事 1 つ（Event.Executed）。Said = 台詞（話し手の id・字）、Offered = 選択肢（字の並び）、

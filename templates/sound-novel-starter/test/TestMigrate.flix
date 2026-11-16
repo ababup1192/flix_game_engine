@@ -56,6 +56,12 @@ mod TestMigrate {
     }
 
     @Test
+    def testRanLinesHoldEveryStatementTheRunnerRan(): Unit \ {Assert, Fs.FileRead} =
+        // 台詞・コマンド・<<wait>> の行が全部（流した文の行は実行器が数える）。
+        let lines = outcome() |> Result.map(o -> MigrateOut.ranLinesOf(o#frames));
+        Assert.assertEq(expected = Ok(10 :: 11 :: 12 :: 13 :: 14 :: 15 :: 16 :: 17 :: 18 :: Nil), lines)
+
+    @Test
     def testEveryRunnerEventIsRecordedEvenInTheSameFrame(): Unit \ {Assert, Fs.FileRead} =
         // 同じフレームで流れる 2 つの <<audio>> も落とさず、実行器が出した文が全部、出た順に載る。
         let lines = outcome() |> Result.map(o -> MigrateOut.executedOf(o#frames) |> List.map(match (_, x) -> ranLine(x)));
@@ -78,7 +84,7 @@ mod TestMigrate {
     def testTimedCommandGetsThreeMidShotsAfterTheFirstLine(): Unit \ {Assert, Fs.FileRead} =
         // time=1.0 の <<bg>> は 0.25・0.5・0.75 の 3 枚（world の層・1 行目の後の 0 番目の時間を取る命令）。
         let mids = record() |> Result.map(rec -> rec#shots |> List.filterMap(s -> s#mid |> Option.map(m -> (s#seq, m, s#layer))));
-        let bg = share -> (0, ("bg", 0, share), MigrateOut.Layer.WorldLayer);
+        let bg = share -> (0, ("bg", 0, share, 1.0), MigrateOut.Layer.WorldLayer);
         Assert.assertEq(expected = Ok(bg(0.25) :: bg(0.5) :: bg(0.75) :: Nil), mids)
 
     @Test
