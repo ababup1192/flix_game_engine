@@ -73,6 +73,8 @@
    片方だけ撮るなら `TAPE_VIEWS=pc`（か `phone`）。既定でブラウザ版も書き出し（`bin/fge export-web`・作業フォルダは `/tmp/fge-tape-web/<ゲーム>`）、
    頁の上の「はじめから遊ぶ」が見ている画面の向きでタイトルから開く。書き出しが要らなければ `TAPE_PLAY=0`（ボタンは出ない）。
    縦の画面は SoftRaster で塗るので、横より撮るのが遅い。
+   ディスクを溜めない: `make tape` は mp4 を作った後に元のコマ（`debug/video/<名前>[-phone]`・8 GB 超もある）を消す（残すなら `TAPE_KEEP_FRAMES=1`）。
+   `bin/fge tape publish` は同じゲームの同じ flow の古い版の動画を置き場から外す（既定は最新 1 版だけ残す・頁は残して「動画は消えた」と最新へのリンクを出す・`--keep-videos N|all`）。
 
 ## この画面の画風
 
