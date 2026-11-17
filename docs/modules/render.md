@@ -14,6 +14,7 @@
 | 3D の金属の映り込みに周りの景色（部屋・空のパノラマの絵）を映す・室内の壁の位置を補正する | Scene3d（environmentMap / withEnvironmentIntensity / withEnvironmentBox。Scene3dCmd の environmentMap 欄）（[scene3d.md](../scene3d.md)） |
 | 画面全体の後がけ（トーンマップ・露出・ブルーム・色の仕上げ・ビネット・奥行きのぼかし・FXAA）を値の束で付ける（HUD には掛けない） | PostStack（`App.withPostStack`・`PostStack.preset` / `with*` / `loadOr`（`assets/post.json`・schema は [post.schema.json](../post.schema.json)）/ `build`） |
 | 画面を時間で揺らがせる（火山の陽炎・水の中・魔法。画面全体・画面の下側の帯・マスクの絵） | PostStack（`withDistortion(Some({ strength, noiseSize, speed, mask }))` + `withTime(遊びの時計)`・post.json の `distortion`・[scene3d.md](../scene3d.md) の「画面の歪み」） |
+| 3D の場面に地面を這う霧（高さと距離で濃くなる・むらが流れる・街灯がにじむ） | PostStack（`withHeightFog(Some({ color, density, baseHeight, heightFalloff, startDistance, maxOpacity, noise, lightGlow }))`・post.json の `heightFog`・[scene3d.md](../scene3d.md) の「地面を這う霧」） |
 | 明るい所へ入った直後に白飛びして、だんだん目が慣れる（露出を狙いへ近づける） | ExposureAdaptation（`step` で World の明るさを狙いへ寄せ、`computeExposure` を `PostStack.withExposure` へ。絵は測らない） |
 | 3D の場面の光・空・かすみ・露出・bloom の値を決める・post process の組み方・途中の Pass の絵を 1 枚描き出す | [art-ref/visual-dict/reference-3d.md](../art-ref/visual-dict/reference-3d.md)（見た目の名前 → 値の組。API は Scene3d / PostProcess / RenderTarget / HeadlessRender.renderPassImage） |
 | Scene3d のゲームをブラウザで描く | WebLayer.withProject3d（web/WebMain.flix の入口。2D の withProject は 3D を描かず 1 回知らせる・[対応表](../backend-parity.md)） |

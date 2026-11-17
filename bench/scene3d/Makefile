@@ -11,6 +11,8 @@
 #   make run SCENE=orb POST=agx … 光る球の場面（view transform の見比べ。POST は standard / agx / neutral）
 #   make run POST=1 … 同じ場面に画面全体の後がけ（App.withPostStack・夕方の屋外の preset）を掛ける（後がけの重さを POST なしと並べる）
 #   make run POST=haze … POST=1 に床から立つ陽炎（PostStack.Distortion）を足す（歪みの Pass の重さを POST=1 と並べる）
+#   make run POST=fog … POST=1 に床を這う霧（PostStack.HeightFog）を足す
+#   make haze-video [LOOK=haze|fog|off] … 陽炎か霧の部屋を VideoOut で書き出す（FGE_GPU=on で GL・FGE_PNG_PAINTER=webgpu で WebGPU・FGE_GPU=off で CPU。src/render/HazeVideo.flix）
 #   make check … 型検査だけ走らせる
 #
 # 家具は assets/models/*.obj（fps3d_lab の写し。Blender の 1 m = world の 16）。

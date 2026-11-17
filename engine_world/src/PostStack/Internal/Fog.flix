@@ -69,8 +69,8 @@ pub mod PostStack.Internal.Fog {
         let cam = cmd#camera;
         let distance = Vec3.length(Vec3.sub(l#position, cam#eye));
         let tanHalf = Num.sin(cam#fovY / 2.0) / Num.cos(cam#fovY / 2.0);
-        // にじみの半径（画面の高さ = 1）: 届く距離の半分を、その距離で画面へ写した長さ。
-        let radius = 0.5 * l#range / Float64.max(0.001, distance) / (2.0 * tanHalf) * cmd#size#y / size#y;
+        // にじみの半径（画面の高さ = 1）: 届く距離の 0.2 倍を、その距離で画面へ写した長さ（届く距離いっぱいにすると画面ごと染まる）。
+        let radius = 0.2 * l#range / Float64.max(0.001, distance) / (2.0 * tanHalf) * cmd#size#y / size#y;
         let thick = 1.0 - Float64.exp(0.0 - densityAt(fog, l#position#y) * l#range);
         let amp = fog#lightGlow * l#intensity * thick;
         match Camera3d.worldToScreen(cam, cmd#size, l#position) {

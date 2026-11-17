@@ -341,6 +341,34 @@ App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
 - 値は post.json の `distortion` でも書ける（schema は [post.schema.json](post.schema.json)）
 - Unity の Lens Distortion（樽型の歪み）とは別物。Unreal・Unity HDRP の Distortion（読む位置をずらす屈折）と同じ系統
 
+## 地面を這う霧（高さの霧・街灯のにじみ）
+
+夜の町の低い霧。地面の近くほど濃く、遠いほど濃くなり、むらがゆっくり流れ、点光源のまわりの霧が明るくなる。PostStack の欄の 1 つ:
+
+```flix
+App.withPostStack(w -> PostStack.preset(PostStack.Preset.NightOutdoor)
+    |> PostStack.withHeightFog(Some({ color = Color.rgb(0.42, 0.46, 0.56), density = 0.05, baseHeight = 0.0, heightFalloff = 0.15,
+                                      startDistance = 0.0, maxOpacity = 0.92,
+                                      noise = Some({ size = 40.0, amount = 0.6, speed = { x = 10.0, y = 4.0 } }), lightGlow = 0.5 }))
+    |> PostStack.withTime(Clock.nowOf(w#playClock)))
+```
+
+- 式は Unreal の Exponential Height Fog と同じ（名前もそろえた）: 高さ y の濃さ = `density × e^(−heightFalloff × (y − baseHeight))`。目から面までその濃さを積み、
+  `1 − e^(−積んだ量)` だけ `color` に寄せる（`maxOpacity` で上限）。`startDistance` までは積まない
+- 長さは Scene3d の場面の長さ（Blender の 1 m を 16 にした場面なら、地面から 0.4 m で e 分の 1 に薄くするには `heightFalloff = 1 / (0.4 × 16)`）
+- `noise`: むらの大きさ（場面の長さ）・揺らす割合・流れる速さ（x と z）。遠くでは細かい波がちらつかないよう、粒の 24 倍の距離で消える
+- `lightGlow`: 場面の `pointLights` の目に近い 8 つのまわりの霧を明るくする（届く距離の 0.2 倍を画面へ写した半径のにじみ・灯りの高さの霧の濃さで強さが決まる・
+  灯りより手前に面があればにじまない）
+- 3D の場面の奥行きの絵（目からの距離・窓の画素）を PostStack が作って読む。場面がもう 1 回描かれる（bench/scene3d の部屋で draw call 10 → 20）。
+  奥行きの絵に入らない半透明の物はその奥の面の霧が掛かる。View の中の 2D の絵は、その下の 3D の奥行きで霧が掛かる（字の窓は `App.withHudView` に置く）
+- 掛かる順は後がけの一番先（自分の BeforeBloom の後・画面の歪みの前）。霧の中の明るい灯りにもブルームが掛かる
+- 毎コマ動かしてよいのは色・濃さ・高さの落ち方・`startDistance`・`maxOpacity`・`noise.amount`・`lightGlow` とカメラと灯り（Param で渡る）。`noise.size` を動かすと program を作り直す
+- `density` か `maxOpacity` が 0 以下なら Pass を足さない（使わない時の絵と DrawHash は前と同じ）
+- 3 つの描き手は同じ Spec を読む（e^x は `(1 + x/32)^−32` で近づける・むらは歪みと同じ波の和）。bench/scene3d の部屋で GL・WebGPU・CPU の絵の PSNR は 59〜66 dB（霧なしの描き手どうしの差と同じ）
+- 重さ: 960×540（M4 Pro・GL）で GPU +0.04〜0.09 ms・1 コマの CPU +0.3〜0.5 ms（奥行きの絵の分）。スマホは【未測定】
+- 確かめの入口: bench/scene3d の `make haze-video LOOK=fog`・`make run POST=fog`
+- 材質の式の中の霧（`Environment3d.fog` の DistanceFog）とは別物で、両方掛けてもよい（DistanceFog は物ごと・HeightFog は画面全体の後がけ）
+
 ### 明るい所へ入った直後の白飛び（ExposureAdaptation）
 
 ```flix

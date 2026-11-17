@@ -8,7 +8,7 @@
 use fge::LwjglLayer
 
 mod SceneBench {
-    use fge::{App, Clock, LwjglLayer, Num, PostStack, Render}
+    use fge::{App, Clock, Color, LwjglLayer, Num, PostStack, Render}
 
     import java.lang.System
 
@@ -61,6 +61,7 @@ mod SceneBench {
     /// つまみの表の post（1 = 夕方の屋外の preset・standard / agx / neutral = その view transform だけを替えた同じ後がけ・preset-<名前> = その preset・無し = 掛けない）。
     pub def postOf(knobs: Map[String, String]): Option[PostStack.Stack] = match Map.get("post", knobs) {
         case Some("1")        => Some(PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3))
+        case Some("fog")      => Some(PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3) |> PostStack.withHeightFog(Some(fogOf())))
         case Some("haze")     => Some(PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3) |> PostStack.withDistortion(Some(hazeOf())))
         case Some("standard") => Some(lookOf(PostStack.ViewTransform.Standard))
         case Some("agx")      => Some(lookOf(PostStack.ViewTransform.AgX))
@@ -73,6 +74,11 @@ mod SceneBench {
     pub def hazeOf(): PostStack.Distortion =
         { strength = { x = 3.0, y = 1.5 }, noiseSize = 20.0, speed = { x = 0.0, y = -24.0 },
           mask = PostStack.DistortionMask.BottomBand({ top = 0.45, soft = 0.35 }) }
+
+    /// 床を這う夜の霧（たいまつのまわりがにじむ・むらがゆっくり流れる）。POST=fog と make haze-video LOOK=fog の見比べで使う。
+    pub def fogOf(): PostStack.HeightFog =
+        { color = Color.rgb(0.42, 0.46, 0.56), density = 0.05, baseHeight = 0.0, heightFalloff = 0.15, startDistance = 0.0, maxOpacity = 0.92,
+          noise = Some({ size = 40.0, amount = 0.6, speed = { x = 10.0, y = 4.0 } }), lightGlow = 0.5 }
 
     /// view transform の見比べの後がけ（ブルームと FXAA は同じ・露出 0）。
     def lookOf(vt: PostStack.ViewTransform): PostStack.Stack =
