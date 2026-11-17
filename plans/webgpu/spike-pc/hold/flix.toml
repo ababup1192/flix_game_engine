@@ -1,6 +1,6 @@
 [package]
 version     = "0.1.0"
-flix        = "0.78.0"
+flix        = "0.80.0"
 
 # jWebGPU は Maven Central から。依存の木: webgpu-desktop-jni → webgpu-jni → runtime-jni・api-core・loader-core、
 # ネイティブの jar（…-dawn_mac_arm64）→ runtime-desktop-jni_mac_arm64（scope は runtime）。

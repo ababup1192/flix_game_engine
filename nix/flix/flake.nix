@@ -1,5 +1,6 @@
 {
-  # Cj-bc/flix.nix に 0.78.0 が入ったら、devbox.json を "github:Cj-bc/flix.nix#flix_0_78_0" に戻してこの flake を消す。
+  # Cj-bc/flix.nix に 0.80.0 が入ったら、devbox.json を "github:Cj-bc/flix.nix#flix_0_80_0" に戻してこの flake を消す。
+  # WhyNot: 0.78.0 の行を消さない。0.78.0 のゲームの devbox.json がこの flake の flix_0_78_0 を指している。
   # Flix コンパイラの jar を、Cj-bc/flix.nix にまだ載っていない版で取るための flake。
   # flix.nix の包み方（nixpkgs の flix パッケージ）をそのまま使い、jar の版とハッシュだけ差し替える。
   # 版を足すときは nix-prefetch-url https://github.com/flix/flix/releases/download/vX.Y.Z/flix.jar で
@@ -12,6 +13,7 @@
     let
       versions = {
         "0.78.0" = "0mq96fkh2qm5qadakimmh16yfr4zak8xsmb2x8d7asg23xx2ka7n";
+        "0.80.0" = "187xq5hwccbggn9n5vz4wxsbb008kx4qgqd2mdgdl6h7jcgfr78f";
       };
       attrName = version: "flix_${builtins.replaceStrings [ "." ] [ "_" ] version}";
       systems = builtins.attrNames flix-nix.packages;

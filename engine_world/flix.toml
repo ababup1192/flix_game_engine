@@ -1,6 +1,6 @@
 [package]
 version     = "0.99.0"
-flix        = "0.78.0"
+flix        = "0.80.0"
 repository  = "github:ababup1192/flix_engine_world"
 
 # flix_game_engine（契約層）の上に載る「作家向けフレームワーク」。App ループが契約を
