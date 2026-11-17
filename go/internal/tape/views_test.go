@@ -420,3 +420,37 @@ func TestTopBarFitsNarrowPhones(t *testing.T) {
 		}
 	}
 }
+
+// switchedStrip は縦横 2 本のテープを横で開き、縦の strip を 5 列 3 行の格子と見なして縦へ替え、js の値を返す。
+// WhyNot: 縦の strip をそのまま使わない — 試験の 2 本は同じ長さで格子の形も同じになり、描き直しを抜いても値が変わらない
+func switchedStrip[T any](t *testing.T, js string) T {
+	t.Helper()
+	p := openTapePage(t, phone)
+	loadPlain(t, p, viewsSite(t)+"?view=pc")
+	var out T
+	if err := p.Eval(`(() => { VIEWS.phone.strip = { ...VIEWS.phone.strip, cols: 5, rows: 3 }; setTapeView("phone"); return `+js+`; })()`, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestSwitchingViewSetsTheThumbSizeOfTheNewStrip(t *testing.T) {
+	// 縦へ替えると、チャプターの見出しの絵の背景の大きさは縦の strip の格子から出し直す。
+	if ok := switchedStrip[bool](t, `document.documentElement.style.getPropertyValue("--chap-bg") === (CHAP_W * 5) + "px " + (53 * 3) + "px"`); !ok {
+		t.Fatal("--chap-bg が縦の strip の 5 列 3 行の値でない")
+	}
+}
+
+func TestSwitchingViewLaysTheFilmOutAgain(t *testing.T) {
+	// 縦へ替えると、映像の帯は縦の strip の行の数だけの区間に並べ直す。
+	if ok := switchedStrip[bool](t, `film.children.length === 3`); !ok {
+		t.Fatal("帯の区間の数が縦の strip の行の数でない")
+	}
+}
+
+func TestSwitchingViewKeepsTheCurrentScene(t *testing.T) {
+	// 縦へ替えても、タイムラインの今のシーンの強調は残る。
+	if ok := switchedStrip[bool](t, `!!$("scenes").querySelector(".scene.cur")`); !ok {
+		t.Fatal("今のシーンの強調が消えた")
+	}
+}

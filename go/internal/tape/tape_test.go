@@ -3,6 +3,9 @@ package tape
 import (
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/jpeg"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,8 +75,8 @@ var mockFixes = [][2]string{
 		"$(\"playHereBtn\").onclick = () => {\n  video.pause(); const link = playLink(video.currentTime); $(\"playHereBtn\").href = link.href;\n  toast(link.dropped ? `直しの一部（${link.dropped} 件）は URL に乗らないので当てずに開きます` : \"別のタブでゲームを開きます\");\n};"},
 	{"function applyTape() {\n  const root = document.documentElement.style;\n",
 		"function applyTape() {\n  const root = document.documentElement.style;\n  TAPE.speakers.forEach((s, i) => root.setProperty(`--speaker-${i}`, s.color));\n"},
-	{"  root.setProperty(\"--chap-w\", CHAP_W + \"px\"); root.setProperty(\"--chap-bg\", `${CHAP_W * TAPE.strip.count}px 53px`);\n}\n",
-		"  root.setProperty(\"--chap-w\", CHAP_W + \"px\"); root.setProperty(\"--chap-bg\", `${CHAP_W * TAPE.strip.count}px 53px`);\n" +
+	{"  applyStrip();\n}\n",
+		"  applyStrip();\n" +
 			"  $(\"tapeTitle\").textContent = TAPE.title; $(\"tcDur\").textContent = mmss(TAPE.duration);\n" +
 			"  if (!TAPE.playUrl) $(\"playHereBtn\").style.display = \"none\";\n" +
 			"}\n"},
@@ -206,7 +209,7 @@ function setTapeView(v) {
   tapeView = v;
   TAPE.video = d.video; TAPE.videoBytes = d.videoBytes; TAPE.strip = d.strip; TAPE.objects = d.objects.slice();
   Object.keys(MSG).forEach(k => delete MSG[k]); Object.assign(MSG, d.msg);
-  document.documentElement.style.setProperty("--strip", ` + "`" + `url("${encodeURI(d.strip.file)}")` + "`" + `);
+  applyStrip(); layoutFilm();
   // WhyNot: 頁を読み直して替えない — 書きかけの注釈・開いている欄・帯の広げ具合が消え、動画も最初から取り直す
   try { const u = new URL(location.href); if (v === "pc") u.searchParams.set("view", "pc"); else u.searchParams.delete("view"); history.replaceState(history.state, "", u.href); } catch {}
   syncViewBtn(); showSwitching(v, null);
@@ -565,7 +568,7 @@ func TestBuildWritesStripAndIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := string(readFile(t, filepath.Join(dir, IndexFile)))
-	if !strings.Contains(page, `"strip":{"file":"strip.jpg","count":13,"w":54,"h":96}`) || !strings.Contains(page, `"commit":"abc1234"`) {
+	if !strings.Contains(page, `"strip":{"file":"strip.jpg","count":13,"w":54,"h":96,"cols":13,"rows":1}`) || !strings.Contains(page, `"commit":"abc1234"`) {
 		t.Fatal("index.html に strip と commit が入っていない")
 	}
 }
@@ -640,18 +643,109 @@ func TestStarterTapeHasMessageObject(t *testing.T) {
 	t.Fatalf("objects に message が無い: %+v", m.Objects)
 }
 
-func TestStripCellSizeKeepsLongTapeUnderJpegLimit(t *testing.T) {
+func TestStripGridKeepsLongTapeUnderTheSideLimit(t *testing.T) {
+	// 643 秒（1287 コマ）のテープも、縦横とも maxStripSide に収まる格子になる。
 	n := StripCount(643.5)
-	w, _ := stripCellSize(n)
-	if n*w > maxJpegSide {
-		t.Fatalf("%d 枚 × %d px = %d px（上限 %d）", n, w, n*w, maxJpegSide)
+	w, h, cols, rows := stripGrid(n)
+	if cols*w > maxStripSide || rows*h > maxStripSide || cols*rows < n {
+		t.Fatalf("%d 枚 → %dx%d px のコマを %d 列 %d 行（%dx%d px・上限 %d）", n, w, h, cols, rows, cols*w, rows*h, maxStripSide)
 	}
 }
 
-func TestStripCellSizeLeavesShortTapeAsIs(t *testing.T) {
-	w, h := stripCellSize(StripCount(60))
-	if w != StripW || h != StripH {
+func TestStripGridLeavesTheCellSizeOfALongTape(t *testing.T) {
+	// 行を重ねて収まる長さなら、コマを細くしない。
+	if w, h, _, _ := stripGrid(StripCount(643.5)); w != StripW || h != StripH {
 		t.Fatalf("%dx%d（%dx%d のはず）", w, h, StripW, StripH)
+	}
+}
+
+func TestStripGridIsOneRowForAShortTape(t *testing.T) {
+	// 1 行に収まる短いテープは 1 行（列の数 = コマの数）。
+	n := StripCount(60)
+	if _, _, cols, rows := stripGrid(n); cols != n || rows != 1 {
+		t.Fatalf("%d 列 %d 行（%d 列 1 行のはず）", cols, rows, n)
+	}
+}
+
+func TestStripGridNarrowsCellsOnlyWhenRowsOverflow(t *testing.T) {
+	// 行を重ねても収まらない長さ（4 時間）だけ、コマを細くして収める。
+	n := StripCount(4 * 3600)
+	w, h, cols, rows := stripGrid(n)
+	if w >= StripW || cols*w > maxStripSide || rows*h > maxStripSide || cols*rows < n {
+		t.Fatalf("%d 枚 → %dx%d px を %d 列 %d 行", n, w, h, cols, rows)
+	}
+}
+
+func TestMakeStripStacksRowsForALongTape(t *testing.T) {
+	// 90 秒（180 コマ・1 列なら 9720 px）の strip は、横が maxStripSide に収まるよう 2 行に重ねて書く。
+	dir := t.TempDir()
+	makeVideoSized(t, filepath.Join(dir, VideoFile), 90, "108x192")
+	st, err := MakeStrip("", filepath.Join(dir, VideoFile), filepath.Join(dir, StripFile), 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Count != 180 || st.Cols*st.W > maxStripSide || st.Rows != 2 {
+		t.Fatalf("%+v", st)
+	}
+}
+
+func TestSceneThumbFindsTheBrightCellOnTheSecondRow(t *testing.T) {
+	// 格子の strip でも、一番明るいコマ（2 行目の 2 列目・5 コマ目）をシーンの見出しの絵に選ぶ。
+	st := Strip{File: StripFile, Count: 6, W: StripW, H: StripH, Cols: 3, Rows: 2}
+	img := image.NewRGBA(image.Rect(0, 0, 3*StripW, 2*StripH))
+	draw.Draw(img, image.Rect(StripW, StripH, 2*StripW, 2*StripH), image.White, image.Point{}, draw.Src)
+	path := filepath.Join(t.TempDir(), StripFile)
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := jpeg.Encode(f, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	tp := parsed(t, forkTapeWith(t, func(m map[string]any) { m["scenes"] = []any{sceneOf("title", "はじまり", 0)} }))
+	pickSceneThumbs(tp, path, st)
+	var scenes []struct{ Thumb int }
+	if err := json.Unmarshal(tp.raw["scenes"], &scenes); err != nil || scenes[0].Thumb != 4 {
+		t.Fatalf("thumb %+v（%v）", scenes, err)
+	}
+}
+
+func TestMakeStripFillsTheSecondRowWithFrames(t *testing.T) {
+	// 2 行目のコマ（最後の 180 コマ目）にも映像が入る（ffmpeg の並びと cellOrigin の行・列の向きが同じ）。
+	dir := t.TempDir()
+	makeVideoSized(t, filepath.Join(dir, VideoFile), 90, "108x192")
+	path := filepath.Join(dir, StripFile)
+	st, err := MakeStrip("", filepath.Join(dir, VideoFile), path, 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := jpeg.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, y := st.cellOrigin(st.Count - 1)
+	if l := cellLuma(img, x, y, st.W, st.H); l < 1000 {
+		t.Fatalf("最後のコマ（%d, %d）が黒い: %v", x, y, l)
+	}
+}
+
+func TestStripCellOriginWalksRowByRow(t *testing.T) {
+	// 格子の strip のコマは、左上から行ごとに並ぶ（3 列なら 4 枚目は 2 行目の頭）。
+	if x, y := (Strip{Count: 5, W: 54, H: 96, Cols: 3, Rows: 2}).cellOrigin(3); x != 0 || y != 96 {
+		t.Fatalf("(%d, %d)", x, y)
+	}
+}
+
+func TestStripCellOriginOfAnOldPageIsOneRow(t *testing.T) {
+	// cols の無い前の版の strip は横 1 列。
+	if x, y := (Strip{Count: 5, W: 54, H: 96}).cellOrigin(3); x != 162 || y != 0 {
+		t.Fatalf("(%d, %d)", x, y)
 	}
 }
 

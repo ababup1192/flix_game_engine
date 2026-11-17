@@ -235,8 +235,42 @@ func TestOtherTapeFilmUsesItsOwnStripCountOnWide(t *testing.T) {
 	// 13 コマの strip のテープ（6.2 秒）は、広い画面のタイムラインでも 13 コマ分の幅で並べる。
 	p := openTapePage(t, desktop)
 	loadPlain(t, p, builtSite(t, otherPath, 6.2, "540x960"))
-	if !evalBool(t, p, `TAPE.strip.count === 13 && film.style.backgroundSize.split(" ")[0] === PPS / TAPE.stripPerSec * 13 + "px"`) {
-		t.Fatalf("映像のトラックの幅 %s（13 コマ分でない）", evalString(t, p, `film.style.backgroundSize`))
+	if !evalBool(t, p, `TAPE.strip.count === 13 && film.children[0].style.width === PPS / TAPE.stripPerSec * 13 + "px"`) {
+		t.Fatalf("映像のトラックの幅 %s（13 コマ分でない）", evalString(t, p, `film.children[0].style.width`))
+	}
+}
+
+// gridFilm は 13 コマのテープの strip を 5 列 3 行の格子と見なして帯と見出しの絵を並べ直し、js の値を返す。
+func gridFilm[T any](t *testing.T, v view, js string) T {
+	t.Helper()
+	p := openTapePage(t, v)
+	loadPlain(t, p, builtSite(t, otherPath, 6.2, "540x960"))
+	var out T
+	if err := p.Eval(`(() => { TAPE.strip = { ...TAPE.strip, cols: 5, rows: 3 }; applyStrip(); layoutTimeline(); return `+js+`; })()`, &out); err != nil {
+		t.Fatal(err)
+	}
+	noErrors(t, p, "grid")
+	return out
+}
+
+func TestGridStripFilmHasOneSpanPerRow(t *testing.T) {
+	// 格子の strip の帯は、strip の 1 行を 1 つの区間にして行の順に横へつなぐ（3 行目は 10 コマ目から残りの 3 コマ）。
+	if ok := gridFilm[bool](t, desktop, `film.children.length === 3 && film.children[2].style.left === 10 * PPS / TAPE.stripPerSec + "px" && film.children[2].style.width === 3 * PPS / TAPE.stripPerSec + "px"`); !ok {
+		t.Fatal("3 行目の区間が 10 コマ目から 3 コマ分でない")
+	}
+}
+
+func TestGridStripFilmShowsTheRowOfItsSpan(t *testing.T) {
+	// 区間 r の背景は、strip の r 行目をトラックの高さに合わせて見せる（スマホのトラックは 44px）。
+	if pos := gridFilm[string](t, phone, `film.children[1].style.backgroundPosition`); pos != "0px -44px" {
+		t.Fatalf("2 行目の区間の背景の位置 %s", pos)
+	}
+}
+
+func TestGridStripThumbFindsTheRowAndColumn(t *testing.T) {
+	// 5 列の格子では、7 コマ目（3.5 秒）の見出しの絵は 2 行目の 3 列目。
+	if ok := gridFilm[bool](t, phone, `thumbPos(3.5) === (-2 * THUMB_W) + "px -60px"`); !ok {
+		t.Fatal("7 コマ目の位置が 2 行目の 3 列目でない")
 	}
 }
 
