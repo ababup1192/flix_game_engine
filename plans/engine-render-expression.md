@@ -1,6 +1,6 @@
 # 3D の表現力を上げる仕組み — 後がけの値（PostStack）と、3D が出す名前つきの絵（prepass）
 
-状態: 設計とスパイクだけ（engine の本体は変えていない）。作業場 worktree `worktree-agent-ad56639e9d8579117`（v0.100.0 起点）。rev1（レビュー 1 回目 68 点の指摘を反映。記録は付録 B）。
+状態: 設計とスパイクだけ（engine の本体は変えていない）。作業場 worktree `worktree-agent-ad56639e9d8579117`（v0.100.0 起点）。rev2（レビュー 1 回目 68 点・2 回目 78 点の指摘を反映。記録は付録 B）。
 **engine の拡張なので、実装の前にこの文書で人と決める（AGENTS.md）。** 人に決めてほしい事は §10。
 印: 【確】= コード・数で確かめた / 【推】= 推測 / 【未確認】= 確かめていない。
 
@@ -138,9 +138,9 @@ Blender の流れ: 描画（DoF はカメラ側）→ compositor（Glare・Color
 | 順 | 効果 | 掛ける値 | Blender で対応する段 |
 |---|---|---|---|
 | 0 | 場面の Pass を読み、線形へ戻す（S1b） | 画面の値 → 線形 | （Blender は最初から線形） |
-| 1 | DepthOfField | 線形 | Camera の Depth of Field（描画の中） |
-| 2 | AmbientOcclusion（S3・後がけで掛ける形の時） | 線形 | Cycles の AO の pass（§10 の 7） |
-| 3 | LightShafts（S4） | 線形 | （Blender に無い。compositor の Sun Beams が近い） |
+| 1 | AmbientOcclusion（S3・後がけで掛ける形の時） | 線形 | Cycles の AO の pass（shading の一部・ぼけの前。§10 の 7） |
+| 2 | LightShafts（S4） | 線形 | （Blender に無い。compositor の Sun Beams が近い） |
+| 3 | DepthOfField | 線形 | Camera の Depth of Field（描画の中） |
 | 4 | Bloom | 線形 | compositor の Glare（Bloom） |
 | 5 | ColorGrade（lift・gamma・gain・saturation） | 線形（Blender の式どおり中で往復） | compositor の Color Balance・Hue/Saturation/Value |
 | 6 | Vignette | 線形 | compositor（Ellipse Mask × Mix） |
@@ -152,13 +152,19 @@ Blender の流れ: 描画（DoF はカメラ側）→ compositor（Glare・Color
 - 8 の出力は「表示の値（sRGB の OETF を掛けた値）」で、Rgba8Unorm の Pass にそのまま入れる。S1a は今と同じ（画面の値のままトーンマップし、OETF を掛け直さない）。
 - `Custom` の置き場は `BeforeBloom`（線形）・`AfterViewTransform`（表示の値）の 2 つ。
 
-### 2.2 後がけに通す物の境目（z の帯）
+### 2.2 後がけに通す物の境目（層で決める・z の数で決めない）
 
-- `App.withPostStack` は View が返す物のうち **world の帯（`docs/z-bands.md` の world の範囲）だけ**を場面の Pass に入れる。ui.json の層（z = layer × 10000）・Transition（z = 100000）・
-  `withHudView`・デバッグは、後がけの面の上にそのまま重ねる。z-bands.md に「world の帯 = 後がけが掛かる帯」を 1 行足す。
+`ZBand` が持つ底は `hudBase`（10 億）と `debugBase`（20 億）だけで、world・ui.json の層（layer × 10000）・Transition（100000）・ゲームの `SortingLayer` は同じ範囲の中にいる【確: レビュー 2 回目】。
+z の数で「world の帯」を切る線はコードに無いので、新しい底は足さず、**後がけを掛ける範囲は View と HUD の分け目で決める**（案 A【推】）。
+
+- `App.withPostStack` が掛けるのは **View が返す全部**（`withHudView` とデバッグの外）。会話の窓・確認・メニュー・字幕など、トーンマップもぼかしも掛けたくない物は `withHudView` に置く決まりにする。
+  早見表に 1 行・`bin/fge view` の匂い（View の中に UI の窓がありかつ PostStack を使う）に 1 行足す。z-bands.md の「world の範囲」の言い方は「後がけは View の全部・HUD は外」に直す。
+- 帰結: Transition の幕（View の中・z 100000）には後がけが掛かる（暗転は露出とトーンマップの後でも黒のまま・ワイプの色は view transform を通る）。幕を後がけの外にしたいゲームは幕を HUD に置く。
+- 別案 B（取らない）: ゲームが境目の z を言う（`PostStack.withCeiling(z)`）。窓を HUD へ移さずに済むが、AI が z の数を覚える事になり z-bands の決まり（z を数で書かせない）とぶつかる。
 - ゲームの `withPassPlan` と同時に使う時: ゲームの Pass が先、PostStack の Pass が後。PostStack の Pass の名前は予約の接頭辞 `ps_`（今の `pp_` と同じ扱い・ゲームが同じ名前を書くと `PassPlanIssue`）。
   ゲームの Pass は `Custom` から名前で読める。2 つの `PassPlan` は名前の衝突が無い時だけ足す（`Render.mergePassPlans`（新）・衝突は issue）。
-- 低い口 `PostStack.build` は App を通さない人（bench・自前の並び）向け。戻り値の `plan` を自分の計画に足し、`present` を world の帯の代わりに置く。
+- 低い口 `PostStack.build` は App を通さない人（bench・自前の並び）向け。戻り値の `plan` を自分の計画に足し、`present` を後がけを掛けたい items の代わりに置く。
+- history（前のコマ）を読む効果は S1〜S3 に無いので、描き出しと実機の絵は同じ式で出る（TAA を入れる時に決め直す）。
 
 ### 2.3 Spec と数（毎コマ組み直さない）
 
@@ -176,10 +182,10 @@ Blender の流れ: 描画（DoF はカメラ側）→ compositor（Glare・Color
 | 段 | 何を | 門 | 見積もり |
 |---|---|---|---|
 | **S0** | CPU（SoftRaster）で Rgba16Float の Pass へ 3D を描く道の 370 ms を直す。HDR が要らない Stack（`Standard` だけ・Bloom 無し）は Rgba8 で描く選び方 | bench/scene3d の prepass の CPU 1 枚 441 → 100 ms 以下・既存の絵はバイト不変 | 2〜3 時間 |
-| **S1a** | `PostStack`（Bloom・ViewTransform（今の式 `AcesNarkowicz` と `Standard`）・Exposure・Vignette・ColorGrade・FilmGrain・DepthOfField（奥行きの prepass を自分で足す）・Fxaa・Custom）・z の帯の境目・`Param` で数を渡す・`App.withPostStack`・`post.json` とエンジンの schema・`Quality` | (1) lamplighter の写しを S1a に移して **0 px**（スパイク (a) と同じ式の preset を 1 つ作る。回帰の錨）。(2) 許す差の表（§5）で gl-parity に 2 場面。(3) PC で `FLIX_GE_NO_VSYNC=1` のコマの時間の p95 と cpu の ms の前後の差を出す。(4) eval 2 題・早見表 2 行 | 6〜9 時間 |
-| **S1b** | 読む所で線形へ戻す（§6.2）・`Field.Lut3d`（2D に並べた 3D の LUT。NEAREST で読み中で補間・CPU と同じ重み）・Blender が書き出した LUT で `AgX`（look つき）・`KhronosNeutral`・`Filmic`・Blender の式の ColorGrade・preset 8 つの値の決め直し（Blender の手本と並べて人が見る） | (1) 曲線の門（§6.3）: 最大 2/255。(2) 露出の門。(3) preset ごとに Blender と並べた 1 枚を人が見る。(4) スマホの頁の数（§7.1） | 8〜12 時間（+ 人の目 1〜2 時間） |
+| **S1a** | `PostStack`（Bloom・ViewTransform（今の式 `AcesNarkowicz` と `Standard`）・Exposure・Vignette・ColorGrade・FilmGrain・DepthOfField（奥行きの prepass を自分で足す）・Fxaa・Custom）・z の帯の境目・`Param` で数を渡す・`App.withPostStack`・`post.json` とエンジンの schema・`Quality` | (1) lamplighter の写しを S1a に移して **0 px**（回帰の錨）。錨の Stack は互換の欄だけで組む: `AcesNarkowicz({ whitePoint = 4.0, saturationAfter = 0.06 })`（トーンマップの後の足し算の彩度）・`DepthOfField.DepthBand`（ゲームが渡す奥行きの絵の 0.5 を中心とする帯）・Quality は `Fixed`（Bloom の taps と縮みをスパイクと同じ値に固定）。(2) 許す差の表（§5）で gl-parity に 2 場面。(3) PC で `FLIX_GE_NO_VSYNC=1` のコマの時間の p95 と cpu の ms の前後の差を出す。(4) eval 2 題・早見表 2 行 | 6〜9 時間 |
+| **S1b** | 読む所で線形へ戻す（§6.2）・`Field.Lut3d`（2D に並べた 3D の LUT。NEAREST で読み中で補間・CPU と同じ重み。絵は engine の fpkg の中に入れ、engine が登録する組み込みの絵（`pp_` と同じ予約の名前・project.json の textures への登録は要らない・CPU の texEnv と web の書き出しにも engine が載せる））・Blender が書き出した LUT で `AgX`（look つき）・`KhronosNeutral`・`Filmic`・Blender の式の ColorGrade・preset 8 つの値の決め直し（Blender の手本と並べて人が見る） | (1) 曲線の門（§6.3）: 最大 2/255。(2) 露出の門。(3) preset ごとに Blender と並べた 1 枚を人が見る。(4) スマホの頁の数（§7.1） | 8〜12 時間（+ 人の目 1〜2 時間） |
 | S2 | 式の木: `Field.Let`・`Field.Taps`・`Field.ScreenUv`（S3 の前提）→ `Field3`（vec3）・`Shade.Vec`。生成器（GLSL・WGSL）・`ShaderEval`・`ShaderJson`・schema。`LightModel3d` の生成器と部品を共有する一歩（§4.2） | 既存の shader.json と後がけの絵が前後で 0 px・古い JSON はそのまま読める・WebGPU の pipeline を作る時間と `eqSpec` の時間の前後 | 6〜9 時間（let・taps 4〜5・vec3 3〜4） |
-| S3 | prepass（`Scene3d.Output.DepthNormal`）を本体へ（法線の詰め方は octahedral を検討）・`AmbientOcclusion`（S2 の taps・落ち方を「距離の中で当たったか」に寄せる・画面の外の点を数えない・奥行きで縁を残すぼかし）・CPU は Approx | AO 無しの絵が 3 描き手でバイト不変・許す差の表の線・Blender の Cycles と相関 ≥ 0.85・差の p95 ≤ 0.25（§1.4 の 0.81 / 0.28 から一段上げる。届かなければ線を人と決め直す）・スマホの数 | 8〜12 時間 |
+| S3 | prepass（`Scene3d.Output.DepthNormal`）を本体へ（法線の詰め方は octahedral を検討）・`AmbientOcclusion`（S2 の taps・落ち方を「距離の中で当たったか」に寄せる・画面の外の点を数えない・奥行きで縁を残すぼかし）・CPU は Approx | AO 無しの絵が 3 描き手でバイト不変・許す差の表の線・Blender の Cycles との相関と差の p95 を **EEVEE からの相対の線**で（相関 ≥ EEVEE と Cycles の相関 − 0.03・p95 ≤ EEVEE の p95。§1.4 では 0.853 − 0.03 = 0.82・0.392）。内部の係数 1.4 と factor の較正は 1 場面・1 カメラの数なので、pbr_room でもう 1 場面確かめるまで仮・スマホの数 | 8〜12 時間 |
 | S4 | 空とかすみ: 太陽の円と大気の色の空（`Scene3d.Sky.Physical`）・高さのかすみ・光の筋（`LightShafts`・奥行きの prepass で遮る）・雲（空に 2D の fbm の層） | Blender の Sky Texture（Multiple Scattering）と並べた色の差（K の D 節）・光の筋は Neighborhood | 8〜12 時間 |
 | S5 | 水: 材質の出口に法線（`Out.Surface{ albedo, normal, roughness, emission }`）・法線マップの uv の倍率とずらし・画面の座標で色の Pass を読む（屈折）・平面の映り込み。前提: §6.2 の残るずれ（半透明の blend が画面の値のまま） | 時刻を変えた 3 枚・Blender の Principled BSDF（transmission）と並べる | 10〜14 時間 |
 | S6 | 影: 光の大きさで柔らかさ（Blender の light の Radius・PCSS）・太陽の段（cascade 2〜3）・点光源の影 1 本 | 影の端の幅を Cycles と並べる・gl-parity・スマホ | 10〜14 時間 |
@@ -213,7 +219,6 @@ mod PostStack {
     /// 後がけの全部の欄（Godot の Environment・Unity の Volume と同じく、効果ごとの欄を持つ値 1 つ）。外から作らせない。
     pub type alias Stack = StackImpl
     pub def preset(p: Preset): Stack
-    pub def neutral(): Stack                                   // Standard・露出 0・ほかは無し
 
     // 欄を替えた新しい値を返す（Scene3d.Material3d と同じ流儀）
     pub def withExposure(stops: Float64, s: Stack): Stack                       // 必ずある欄
@@ -227,16 +232,17 @@ mod PostStack {
     pub def withCustom(c: List[CustomPass], s: Stack): Stack                   // 複数可（後の物が勝つ、の外）
     pub def withQuality(q: Quality, s: Stack): Stack
 
-    pub enum ViewTransform { case Standard  case AgX(AgxLook)  case KhronosNeutral  case Filmic  case AcesNarkowicz }
+    pub enum ViewTransform { case Standard  case AgX(AgxLook)  case KhronosNeutral  case Filmic  case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 }) }   // AcesNarkowicz は今のゲームとの互換（Blender の門の外）
     pub enum AgxLook { case Base  case Punchy  case Greyscale  case HighContrast  case MediumHighContrast
                        case MediumContrast  case MediumLowContrast  case LowContrast }          // Blender 5.2.3 の Look の名前（S1b で版の名前を確かめる）
     pub enum DepthOfField { case Physical({ focusDistance = Float64, fStop = Float64 })     // m・Blender の Camera の DoF
+                            case DepthBand({ focusDistance = Float64, band = Float64, soft = Float64, blur = Float64 })   // 互換: ピントの奥行きを中心とする帯（今のゲームの形）
                             case TiltShift({ row = Float64, band = Float64, blur = Float64 }) }  // 画面の行で決めるピント（hd2d_lab）
-    pub enum Quality { case Auto  case Low  case Medium  case High }      // Auto = 画面の区分から（§7.1）
+    pub enum Quality { case Auto  case Low  case Medium  case High  case Fixed({ bloomTaps = Int32, bloomScale = Float64 }) }   // Auto = 画面の区分から（§7.1）・Fixed は錨と移行用
     pub enum Msaa { case Off  case X4 }                                    // WebGPU は 1 か 4
-    pub type alias CustomPass = { name = String, at = CustomAt, spec = ShaderDoc.Spec, reads = List[Input], scale = Float64 }
+    pub type alias CustomPass = { name = String, at = CustomAt, spec = ShaderDoc.Spec, reads = List[Read], scale = Float64 }
     pub enum CustomAt { case BeforeBloom  case AfterViewTransform }
-    pub enum Input { case SceneLinear  case SceneDepth  case SceneNormal  case Pass(String) }   // 読める物と、要る prepass の宣言
+    pub enum Read { case SceneLinear  case SceneDepth  case SceneNormal  case Pass(String) }   // 読める物と、要る prepass の宣言（engine の Input と字を分ける）
     pub enum Preset { case Neutral  case DuskOutdoor  case NightOutdoor  case SunnyCity  case EveningBeach  case Cave  case NightCorridor  case TorchRoom }
     pub enum DebugView { case Final  case Linear  case Bloom  case Depth  case Normal  case Occlusion }
     pub enum Issue { ... }                                                  // §7.2
@@ -248,16 +254,21 @@ mod PostStack {
 
     /// 低い口（App を通さない人）。計画と、world の帯の代わりに置く面を 1 回で返す。
     pub def build(input: BuildInput, s: Stack): { plan = Render.PassPlan, present = Render.PlacedItem }
-    pub type alias BuildInput = { size = Vec2.Vec2, clear = Color, world = List[Render.PlacedItem], msaa = Msaa, unitsPerMeter = Float64 }
+    pub type alias BuildInput = { size = Vec2.Vec2, clear = Color, world = List[Render.PlacedItem], msaa = Msaa }
 }
 // App の欄（Bevy の camera の component に当たる）。View は world の帯の items を返すだけ。
 App.withPostStack(w -> PostStack.Stack \ ef)
+// Render（低い口の合わせ）
+Render.mergePassPlans(a: Render.PassPlan, b: Render.PassPlan): Result[List[PassPlanIssue], Render.PassPlan]   // （新）名前が衝突しない時だけ
+// Scene3d（場面の性質。DoF・AO・後の光の Radius が同じ物を読む）
+Scene3d.withUnitsPerMeter(k: Float64, scene: Scene3d.Scene3dCmd): Scene3d.Scene3dCmd                       // （新）既定 1
 ```
 
 - 欄を持つ閉じた型にしたので「Tonemap が無い・2 つある」は型で起きない。`ViewTransform` と `Exposure` は必ずある（Blender も常に何かの view transform を掛ける）。
 - **3D の場面の元は 1 つ**: prepass は world の帯の items の中の `Render.Item.Scene3d` から作る（`scene3d` を別に渡さない）。
   1 つなら全画面でも矩形でもその場面・その矩形で作る。2 つ以上なら一番大きい矩形の物を使い `Issue.SeveralScenes` を 1 回知らせる。0 なら DoF の `Physical` と AO は掛けずに `Issue.NoScene3d`。
-- **単位**: `unitsPerMeter`（既定 1 = glTF・Blender と同じ）。DoF の focusDistance・AO の distance・光の Radius は m で受け、ここで換算する。fps3d_lab の家具（1 m = 16）は 16 を渡す。§10 の 6。
+- **単位**: 場面の性質として `Scene3dCmd` の欄に置く（`Scene3d.withUnitsPerMeter`・既定 1 = glTF・Blender と同じ）。DoF の focusDistance・AO の distance・後の光の Radius は m で受け、PostStack は prepass の元の場面からこの値を読む（`App.withPostStack` の道でも言える）。fps3d_lab の家具（1 m = 16）は 16。§10 の 6。
+- `Preset.Neutral` が「Standard・露出 0・ほかは無し」（別の `neutral()` は置かない）。
 - 名前: `PostStack` は Unity の Post-processing Stack と同じ言い方。既存の `PostProcess`（低い部品: トーンマップの式・FXAA・luma）との使い分けは、`PostProcess` の頭の doc と早見表に 1 行（「画面全体の後がけは PostStack・式の部品が要る時だけ PostProcess」）。
   効果の enum を作らない（Flix の effect と字が重なる・欄の型で足りる）。
 
@@ -326,7 +337,7 @@ Scene3d.Output.DepthNormal({ near = Float64, range = Float64 })        // ゲー
 | `ColorGrade.saturation` | Hue/Saturation/Value の Saturation | 掛け算・中立 1（今のゲームの「足し算・中立 0」とは別。移す時に換算） | 同上 |
 | `Bloom.threshold/smoothness/size/strength` | compositor の Glare（Bloom）の Threshold・Smoothness・Size・Strength | threshold・strength は同じ意味。size はぼかしの広さでカーネルは別物 | Blender（Neighborhood の比べ）。4.x の途中で Glare の欄の意味と型が変わったので 5.2.3 の物で【未確認】 |
 | `AmbientOcclusion.distance/factor` | Cycles の AO（World の `light_settings.distance`・AO 節の Distance） | distance は m（§1.4・内部の係数で吸収）。factor 1 = 同じ distance の Cycles の平均 | Cycles（EEVEE は 4.2 以降の horizon scan で、それ自体が近似） |
-| `DepthOfField.Physical{focusDistance, fStop}` | Camera → Depth of Field（`camera.data.dof.focus_distance`・`aperture_fstop`） | 薄いレンズの式でぼけの半径へ。センサーは `sensor_fit` に合わせる（エンジンは縦の画角を持つので VERTICAL・`sensor_height` 既定 24 mm【未確認】）。奥行きの Pass は 16F（8bit の灰色では m に戻すと粗い） | EEVEE（画面空間のぼけ） |
+| `DepthOfField.Physical{focusDistance, fStop}` | Camera → Depth of Field（`camera.data.dof.focus_distance`・`aperture_fstop`） | 薄いレンズの式でぼけの半径へ。センサーは `sensor_fit` に合わせる（エンジンは縦の画角を持つので VERTICAL・`sensor_height` 既定 24 mm【未確認】）。奥行きの Pass は 16F（8bit の灰色では m に戻すと粗い） | Cycles（物理のカメラのぼけ）。EEVEE は参考に並べる |
 | （S6）影の柔らかさ | Light → Radius（`shadow_soft_size`） | 光の大きさの m | Cycles |
 | （S4）空 | World → Sky Texture（Multiple Scattering） | 太陽の高さ・空気の濃さ | Cycles |
 
@@ -373,11 +384,15 @@ Blender の view transform は線形のシーンの値に掛かるので、**Pos
 
 見込みの計算（AO の例）【推】: PC の GL で SSAO の分は 0.865 − 0.393 = 0.47 ms（960×540・暗さは 1 辺半分 = 480×270・12 点）。
 Adreno 750 を M4 Pro の 4〜6 倍遅いとし、画素を 4.9 倍とすると **9〜14 ms**（1 辺半分のまま）。60 fps（16.7 ms）の残りは 4 ms ほどなので入らない。
-→ **品質は「読む絵の大きさを画素の数で頭打ち」にする**: Low の AO は暗さの Pass を 480×270（0.13 MP）まで・8 点・ぼかしは暗さの Pass の中で 1 回 → 暗さ 0.3 ms × 0.67 × 5 ≈ 1.0 ms + 最後の面（全画面 1 回読み）約 0.5 ms ≈ 1.5 ms。
+→ **品質は「読む絵の大きさを画素の数で頭打ち」にする**。Low の AO:
+- prepass も 0.13 MP（480×270）で描く: PC の GL で prepass は +0.10 ms（960×540・0.52 MP）→ 0.13 MP なら約 0.03 ms × 5 ≈ 0.15 ms。wasm の draw call は物の batch の数だけ倍（PC の submit で +0.2 ms → スマホ 10〜15 倍で +2〜3 ms の CPU。**CPU の側が先に詰まる**【推】。staticGroup の render bundle を prepass でも使い回すのが前提）。
+- 暗さの Pass は 0.13 MP・8 点・ぼかしは暗さの Pass の中で 1 回: 暗さの分（PC 0.47 ms のうち最後の面を除いた約 0.3 ms）× 8/12 × 5 ≈ 1.0 ms。
+- 暗さを掛けるのは本編の面（§2.1 の順の中で 1 回だけ全画面を描く面）の中に畳み、全画面の Pass を 1 つ増やさない（スパイクの最後の面は TexBlur 8 点を全画面で読み、そのまま縮めると 4 ms 級になる）。本編の面の上乗せは 1 回の読み（約 0.1〜0.2 ms【推】）。
+- 合わせて GPU 約 1.3〜1.5 ms・CPU +2〜3 ms【推】。
 
 | 区分 | 予算（GPU） | 中身 |
 |---|---|---|
-| S1 の標準の Stack | 2.5 ms | 明るい所を 1 辺 1/2（上限 0.5 MP）・ぼかし 2 回 1/4・本編 1 回・FXAA 1 回 |
+| S1 の標準の Stack | 2.5 ms | 明るい所を 1 辺 1/2（上限 0.5 MP）・ぼかし 2 回 1/4・本編 1 回（ここに LUT の読み 8 回 × 3 チャンネルが入る・S1b）・FXAA 1 回 |
 | AO（S3） | Low 1.5 ms / High 3 ms（PC 向け） | Low = 0.13 MP まで・8 点。スマホ（`Display.SizeClass.Small`）の `Auto` は Low |
 | 空・光の筋（S4） | 1 ms | 光の筋は 0.13 MP まで・16 点 |
 | CPU（wasm） | +1 ms まで | Spec は構造の鍵が変わった時だけ作る（§2.3） |
@@ -421,7 +436,7 @@ Adreno 750 を M4 Pro の 4〜6 倍遅いとし、画素を 4.9 倍とすると 
 }
 ```
 
-- `preset` が出発点で、**書いた欄だけが上書き**。上書きは効果の欄ごとの深い merge（`"vignette": { "strength": 0.3 }` は strength だけ替え、inner・outer・center は preset の値）。
+- `preset` が出発点で、**書いた欄だけが上書き**。上書きは効果の欄ごとの深い merge（`"vignette": { "strength": 0.3 }` は strength だけ替え、inner・outer・center は preset の値）。`kind` を持つ欄（viewTransform・depthOfField）は、**kind が preset と同じ時だけ欄ごとに混ぜ、違えば丸ごと替える**（書いていない欄は新しい kind の既定）。
   `null` はその効果を外す。コードの `with*` は効果ごとに丸ごと替える（Doc と違う所なので doc に書く）。
 - 欄は効果ごとの組に入れて、一番上のスカラーを 5 つ以内に保つ（目安の 30 を超えない）。lift・gamma・gain は 1 を超えるので色（hex）でなく `[r, g, b]` の数で持つ。
 - 読み方は `load`（Result）→ `loadOr`（fail-open・`Log.fellBack`）。知らない `preset`・`viewTransform`・`look` は既定へ落として 1 行言う。
@@ -449,9 +464,10 @@ Adreno 750 を M4 Pro の 4〜6 倍遅いとし、画素を 4.9 倍とすると 
 3. **トーンマップの入力を線形にする（§6.2）か**【推: する】。今のゲームの見え方とは変わる（移すかはゲームを触る時・`AcesNarkowicz` で今の見え方を残す）。
 4. **Blender の曲線の門と、Blender が書き出した LUT を使うか**（Blender 5.2.3 を手元の門の道具にする・CI では回さない）【推: 使う・ライセンスを先に確かめる】。
 5. 法線は**別 pass**（スパイク (b)・約 140 行）で始め、MRT は後か【推: 別 pass】。
-6. **単位の決まり: 1 = 1 m（glTF・Blender の既定）を既定にし、違う場面は `unitsPerMeter` で渡す**でよいか【推】。
+6. **単位の決まり: 1 = 1 m（glTF・Blender の既定）を既定にし、違う場面は `Scene3d.withUnitsPerMeter` で言う**でよいか【推】。
+11. **後がけを掛ける範囲を「View の全部・HUD は外」にする（§2.2 の案 A）**でよいか【推】。会話の窓などを HUD へ置く決まりになる（今のゲームで View に窓を描いている物は、PostStack に移す時に窓を HUD へ移す）。
 7. **AO の掛け方**: 後がけで最後の色に掛ける（絵作りの近道・直接光と emission も暗くなる）か、材質の ambient と間接の項にだけ効かせる（Cycles・EEVEE と同じ・材質が画面の座標で AO の絵を読む口が要り S3 が 4〜6 時間増える）か【推: S3 は後がけで入れ、材質の ambient に効かせるのは光の単位の計画と一緒に】。
-8. 光の単位の計画（K の案 (i)）を S1 の後・S3 の前に挟むか【推: S3 の後。後がけの門は光の式と切り離して測れる】。
+8. 光の単位の計画（K の案 (i)）を S1 の後・S3 の前に挟むか【推: S3 の後。後がけの門は光の式と切り離して測れる】。制約: 2 で Blender の順（Exposure がブルームの後）を選ぶと、K の案 (i)（光の側へ先に露出を掛ける Filament 式）とぶつかるので、光の単位の計画では露出を光に掛けず「Exposure の欄に EV100 から換算した stops を入れる」形に寄せ直す。S1b で決め直す preset の値も、光の単位の計画の後でもう 1 度動く。
 9. スマホの既定の品質（AO は Low・ブルームは標準）と、Studio 側の preset の見せ方を S1a の後にやるか。
 10. 外のゲーム（ws の約 10 本）の `PostView` を移すか・いつか【推: 触る時に】。
 
@@ -483,4 +499,15 @@ Adreno 750 を M4 Pro の 4〜6 倍遅いとし、画素を 4.9 倍とすると 
   - M12 AO の掛け方と単位 → §10 の 6・7。
   - 推奨: R1 閉じた型・R2 型で止める（AgxLook・DoF の enum・Msaa）・R3 `AcesNarkowicz`・R4 S1a / S1b に分ける・R5 Doc（名前・title・深い merge・Studio・schema の置き場・load / loadOr）・R6 FilmGrain を Neighborhood へ・R7 版を固定・R8 センサーの辺・R9 線形化で残るずれ・R10 光の単位の範囲（§6.4）・R11 Neighborhood の線の決め方・R12 WebGL2 の 16F と描き出しの品質・R13 API の一覧 → 全部反映。
   - 任意: O1 `PostProcess` との使い分け・effect の字（enum を作らない）・O2 S2 を let / taps と vec3 に分ける・O3 生成器の部品を共有・O4 octahedral・O5 消す物の連鎖・O6 言い方・O7 `Look.None` → 反映（O7 は `AgxLook.Base`・欄名 `body`）。
-- 2 回目: （追記待ち）
+- **2 回目: 78 点**（rev1 に対して）。必須 2・推奨 8。1 回目の必須は M2 を除いて直った（M1・M3〜M12）。rev2 で直した所:
+  - N1（必須・M2 の残り）`ZBand` に world の底は無く、z で「world の帯」を切れない → §2.2 を「層で決める」に書き直し、案 A（View の全部に掛け、窓は HUD へ）を推した。Transition の帰結・案 B を取らない理由・§10 の 11。
+  - N2（必須）S1a の 0 px の錨が rev1 の API で届かない（彩度がトーンマップの後・DoF が奥行きの帯・白の点が無い）→ `AcesNarkowicz({ whitePoint, saturationAfter })`・`DepthOfField.DepthBand`・`Quality.Fixed` を足し、S1a の門 (1) に錨の Stack の形を書いた。
+  - P1 AO の見込みに prepass と draw call の倍化が無い・最後の面の根拠が無い → §7.1 に足し、暗さを本編の面に畳む形にした（CPU の側が先に詰まる見込み）。
+  - P2 AO と光の筋は DoF の前 → §2.1 の順を AO → LightShafts → DoF → Bloom に。
+  - P3 S3 の門の相関 ≥ 0.85 は無理筋 → EEVEE からの相対の線にし、係数の較正は仮と書いた。
+  - P4 `unitsPerMeter` が App の道から言えない → `Scene3d.withUnitsPerMeter`（場面の性質）へ。
+  - P5 LUT の絵の置き場 → engine の fpkg の組み込みの絵・予算の行に LUT の読みを足した。
+  - P6 kind を持つ欄の merge → kind が同じ時だけ欄ごと・違えば丸ごと。
+  - P7 Blender の順と K の案 (i) の衝突 → §10 の 8 に制約を足した。
+  - P8 小物: DoF の正解の相手を Cycles にそろえた・`Render.mergePassPlans` を §4.1 に・`neutral()` を消し `Preset.Neutral` に・`Input` を `Read` に・history を読む効果が無い事を §2.2 に。
+- 3 回目は取っていない（「レビューは最大 3 回・80 点以上で必須が直っていれば GO」の決まりに対し、2 回目の必須 2 つを直した所で止めた。点は 2 回目の 78 点のまま）。
