@@ -537,7 +537,7 @@ Adreno 750 を M4 Pro の 4〜6 倍遅いとし、画素を 4.9 倍とすると 
 ### 11.3 先送りにした物（残り）
 
 - S1a の範囲: FilmGrain（noise の絵を engine が登録する口が要る・LUT と同じ道）・TiltShift（使うゲームが無い）。
-- S1b の後半: `Field.Lut3d`・AgX（look）・Filmic（Blender の LUT。下）・preset の値の決め直し（AgX の上で人が見る）・スマホの数（§7.1）・ColorGrade と Blender の比べ（式は `colorbalance_lgg` を写したが未比較）。
+- S1b の後半の残り: AgX の Look（Punchy など。Blender の値を写さずには合わない）・Filmic（下の 11.6）・preset の値を人の目で決めること・スマホの数（§7.1・未計測）・ColorGrade と Blender の比べ（式は `colorbalance_lgg` を写したが未比較）。`Field.Lut3d` は LUT を配らないので作らない。
 - 検査: `HdrNeeded`・`FxaaOnScaledPass`・`SpecRebuiltEveryFrame`・描き出しの lint で止める口・`bin/fge view` の匂い・「View で tonemappedWith を直に組む」の知らせ。ゲームの計画の `ps_` の Pass は実機で 1 行知らせるだけ。
 - 中身の比べの重さ: 毎コマ新しい Spec を描き手が中身で比べる。wasm の CPU の予算（+1 ms）に効くかは bench/scene3d の POST=1 を web で測ってから。
 
@@ -554,4 +554,18 @@ Adreno 750 を M4 Pro の 4〜6 倍遅いとし、画素を 4.9 倍とすると 
 - gl-parity: postStackLook 2,188 px（±4）・postStackDepthBand 547 px（±72・縁の帯）。上限 3,000・800。
 - bench/scene3d（隠し窓・`FLIX_GE_NO_VSYNC=1`・240 コマ × 2 区間 × 2 回・負荷の高い機械）: 後がけなし frame p95 1.04〜1.63 ms → POST=1（DuskOutdoor）1.69〜3.33 ms。submit p50 0.31〜0.49 → 0.47〜1.02 ms・2D の draw call 0 → 5。
 - 曲線の門（`TestPostStackBlender`）: Standard（露出 0・±2）・Khronos PBR Neutral（0・±2）が 2/255 以内。Neutral は Blender が log2 の 2^-9〜2^10 の LUT で 0 の成分を 2^-9 と読むので、暗い色で成分に 0 がある物（最大 6/255）は比べない。
+
+### 11.6 S1b の後半（人の決め: Blender の LUT は配らず、AgX は公開の式で自前に組む）
+
+- `ViewTransform.AgX`（Look は Base）: Rec.709 → Rec.2020・inset・log2 で中間の灰色の −10〜+6.5 stop を 0..1 に詰める・S 字の曲線（中間の灰色で傾き 2.4・
+  両端は 1.5 乗の双曲線で 0 と 1 に届く）・2.4 乗で線形へ・outset・sRGB へ。inset と outset の行列は three.js（MIT）と Filament（Apache-2.0）が公開している物。
+  ShaderDoc の `math1` に `log2` を足した（2^-40 で下切り）。
+- Blender 5.2.3 の AgX との近さ（`TestPostStackBlender`・帯 468 点）: 灰色は全部 2/255 以内（曲線は合っている）。全部の点では露出 0 で 86%・+2 で 83%・−2 で 89% が 2/255 以内・最大 18/255。
+  残る差は彩度 1 の原色の緑と青。順を「outset → 2.4 乗」に入れ替えると最大 35/255 に増える（python の写しで測った）ので、順ではなく行列の違いと見ている。
+  Blender の config.ocio の inset と outset の数（LUT ではない）を使えば 2/255 に届く見込みだが、Blender 由来の値を持ち込まない決めなので使っていない（伺い事）。門は 80% と 20/255。
+- Filmic は入れない: Blender の Filmic は LUT（spi1d）で作られていて、自前で組む元になる公開の式が無い。
+- preset（Neutral 以外の 7 つ）は AgX にし、露出・ブルーム・ビネット・彩度は reference-3d.md の場面の行の値を線形の値に掛ける前提で置いた。人の目で見る前の値（bench/scene3d の `make presets`）。
+- `withBackground` の既定は画面の地の色（実機は起動で project.json の clearColor・描き出しは `App.withScreenClear`）。
+- `Quality.Auto` はスマホで Low（明るい所 1/4・読む点 8）。スマホの実機の数は未計測（`make bench-web BENCH=scene3d ARGS='post=1'`・`post=agx`）。
+- 見比べの場面: bench/scene3d の `SCENE=orb`（暗い部屋の丸い卓に強く光る緑の球・ろうそく・赤い瓶・本）。`POST=standard|agx|neutral` で view transform だけを替える。
 

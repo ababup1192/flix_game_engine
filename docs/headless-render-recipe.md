@@ -177,6 +177,9 @@ bin/fge digest gallery/my_scene.png                       # 目視の前に数�
 
 ## pass（レンダーターゲット）を使う場面
 
+`App.withPostStack` を使うゲームは、`App.buildFrame(app |> App.withScreenClear(project#config#clearColor), design, ctx, world, view)` が実機と同じ計画（`plan`）と絵（`items`）を返す
+（`project` は `ProjectLoader.loadProject(".")` の中身。渡さないと地の色が黒になる）。計画は下と同じく `Render.passSpecsOf` に渡す。
+
 実機で `App.withPassPlan` に渡している計画を、描き出しでもそのまま
 `Render.passSpecsOf` に渡す。倍率（`targets`）と読みの決まり（まだ描いていない pass は黒・自分の名前は history）が
 実機と同じになる。pass の列を 1 枚ずつ `Render.passSpecOf` で下ろすと、この 2 つが抜ける（`bin/fge forbid` が止める）。

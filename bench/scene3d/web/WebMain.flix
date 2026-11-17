@@ -16,7 +16,7 @@ mod WebMain {
             case Err(why)  => println("[scene3d] 家具を読めない: ${why}")
             case Ok(scene) =>
                 SceneBench.app(SceneBench.planOf(knobs), line -> Browser.log(line), scene)
-                    |> SceneBench.withPost(SceneBench.isPost(knobs))
+                    |> SceneBench.withPost(SceneBench.postOf(knobs))
                     |> App.quitWhen((_frame, _w) -> checked_ecast(false))
                     |> App.launchForBench
         }

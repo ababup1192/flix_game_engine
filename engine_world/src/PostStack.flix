@@ -165,6 +165,11 @@ pub mod PostStack {
             case Preset.TorchRoom     => { bloom = bloom(1.0, 0.6, 0.05, 0.8), vignette = presetVignette(0.45), colorGrade = saturated(1.1) | agx(0.0) }
         })
 
+    /// preset の全部（宣言の順）。
+    pub def presets(): List[Preset] =
+        Preset.Neutral :: Preset.DuskOutdoor :: Preset.NightOutdoor :: Preset.SunnyCity :: Preset.EveningBeach
+            :: Preset.Cave :: Preset.NightCorridor :: Preset.TorchRoom :: Nil
+
     def mapFields(f: Fields -> Fields, s: Stack): Stack = StackData.StackData(f(fieldsOf(s)))
 
     /// 露出（stop の数。線形の値に 2^stops を掛ける。Blender の Color Management → Exposure）。ブルームと色の仕上げの後に掛かる。

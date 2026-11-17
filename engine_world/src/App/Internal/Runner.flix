@@ -27,10 +27,11 @@ pub mod App.Internal.Runner {
                 else App.buildStartOn(app, base(), name, args) |> Result.map(world -> (world, Some((name, args))))
         }
 
-    /// project.json の clearColor を画面の地の色として App に持たせる（後がけの場面の Pass を消す色の既定）。読めなければ黒のまま。
+    /// project.json の clearColor を画面の地の色として App に持たせる（後がけの場面の Pass を消す色の既定）。読めなければ黒のまま 1 行言う。
+    // WhyNot: backend が読んだ config から取らない — Platform に口が要る（機種ごとの handler を全部触る）。根は "." で、withProject(".") と同じ所を読む。
     def withProjectClear(app: App[w, ef]): App[w, ef] \ Fs.FileRead = match ProjectLoader.loadProject(".") {
-        case Ok(loaded) => App.App({ screenClear = loaded#config#clearColor | App.rec(app) })
-        case Err(_)     => app
+        case Ok(loaded) => App.withScreenClear(loaded#config#clearColor, app)
+        case Err(why)   => Log.fellBackThen("app", "project.json の clearColor", "黒", why, app)
     }
 
     /// 開発の道具（hooks）を開いて起動の World を組み、閉じるまでループを回し、道具を閉じる。

@@ -294,11 +294,20 @@ mod TestPostStack {
 
     @Test
     def testNamedPresetsUseAgX(): Unit \ Assert =
-        let agx = match PostStack.viewTransformOf(PostStack.preset(PostStack.Preset.TorchRoom)) {
+        let isAgx = (p: PostStack.Preset) -> match PostStack.viewTransformOf(PostStack.preset(p)) {
             case PostStack.ViewTransform.AgX => true
             case _                           => false
         };
-        Assert.assertEq(expected = true, agx)
+        Assert.assertEq(expected = Nil, PostStack.presets() |> List.filter(p -> p != PostStack.Preset.Neutral and not isAgx(p)))
+
+    @Test
+    def testScreenClearIsTheDefaultBackground(): Unit \ Assert =
+        let frame = App.buildFrame(postApp() |> App.withScreenClear(Color.rgb(0.1, 0.2, 0.3)), size(), App.pickCtx(size()), 0, (_, _) -> Nil);
+        let clear = frame#plan#passes |> List.find(p -> p#name == PostStack.sceneName()) |> Option.map(p -> match p#clear {
+            case RenderTarget.LoadOp.Clear(c) => (c#r, c#g, c#b)
+            case _                            => (-1.0, -1.0, -1.0)
+        });
+        Assert.assertEq(expected = Some((0.1, 0.2, 0.3)), clear)
 
     @Test
     def testDocOtherKindReplacesTheWholeField(): Unit \ Assert =

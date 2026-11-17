@@ -374,6 +374,9 @@ pub mod App {
     pub def withPostStack(f: w -> PostStack.Stack \ ef, app: App[w, ef]): App[w, ef] =
         App.App({ postStack = Some(f) | rec(app) })
 
+    /// 画面の地の色（後がけの場面の Pass を消す色の既定）。実機は起動で project.json の clearColor を入れる。描き出しは ProjectLoader の clearColor を渡す。
+    pub def withScreenClear(c: Color, app: App[w, ef]): App[w, ef] = App.App({ screenClear = c | rec(app) })
+
     /// 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
     /// ここで宣言した名前だけが view の ViewCtx#fontOf で引ける（宣言していない名前は既定
     /// フォントが返る）。話し手ごとに字を変えるようなゲームで使う。

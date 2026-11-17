@@ -40,7 +40,7 @@ mod Still {
             case Err(why)   => println("[scene3d] 家具を読めない: ${why}")
             case Ok(meshes) =>
                 let world = Room.items(Room.kitOf(meshes), 0.0);
-                presetList() |> List.forEach(p -> {
+                PostStack.presets() |> List.forEach(p -> {
                     let built = PostStack.build({ size = Room.design(), clear = Color.rgb(0.0, 0.0, 0.0), world = world }, PostStack.preset(p));
                     let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
                         |> List.map(s -> { name = s#name, clear = s#clear, drawables = s#drawables, polygons = s#polygons, surfaces = s#surfaces, scenes = s#scenes, target = s#target });
@@ -50,10 +50,6 @@ mod Still {
                     println("[scene3d] debug/preset_${p}.png")
                 })
         }
-
-    def presetList(): List[PostStack.Preset] =
-        PostStack.Preset.Neutral :: PostStack.Preset.DuskOutdoor :: PostStack.Preset.NightOutdoor :: PostStack.Preset.SunnyCity
-            :: PostStack.Preset.EveningBeach :: PostStack.Preset.Cave :: PostStack.Preset.NightCorridor :: PostStack.Preset.TorchRoom :: Nil
 
     pub def time(): Unit \ IO =
         let (cfg, soft) = roomScene();

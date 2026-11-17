@@ -162,6 +162,8 @@
   `pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef]`
 - 画面全体の後がけ（PostStack: 奥行きのぼかし・ブルーム・色の仕上げ・ビネット・露出・トーンマップ・FXAA）を繋ぐ。
   `pub def withPostStack(f: w -> PostStack.Stack \ ef, app: App[w, ef]): App[w, ef]`
+- 画面の地の色（後がけの場面の Pass を消す色の既定）。実機は起動で project.json の clearColor を入れる。描き出しは ProjectLoader の clearColor を渡す。
+  `pub def withScreenClear(c: Color, app: App[w, ef]): App[w, ef]`
 - 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
   `pub def withFonts(names: List[String], app: App[w, ef]): App[w, ef]`
 - ゲーム 1 本の標準形を 1 つのレコードで宣言する入口（初学者向け）。
@@ -1838,6 +1840,8 @@
   `pub type alias Stack = StackData`
 - 見た目の名前の出発点。Neutral は「Standard・露出 0・ほかは無し」。
   `pub def preset(p: Preset): Stack`
+- preset の全部（宣言の順）。
+  `pub def presets(): List[Preset]`
 - 露出（stop の数。線形の値に 2^stops を掛ける。Blender の Color Management → Exposure）。ブルームと色の仕上げの後に掛かる。
   `pub def withExposure(stops: Float64, s: Stack): Stack`
 - `pub def withViewTransform(v: ViewTransform, s: Stack): Stack`

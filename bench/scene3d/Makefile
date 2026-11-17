@@ -7,6 +7,7 @@
 #   make run SCENE=field … 小さな箱と柱を格子に並べた場面（src/Field.flix）。つまみ:
 #                COUNT=1000（物の数）・SHAPES=1（形の種類。each で物ごとに違う形）・MATS=1（材質の種類）・MOVING=100（動く物の %）・
 #                ALPHA=0（半透明の物の %）・SHADOW=1（太陽の影）・GROUP=1（動かない物を Scene3d.staticGroup の集まり 1 つで渡す）。FRAMES=240 で 1 区間で測るコマ数・REPEAT=4 で同じ条件を続けて測る回数
+#   make run SCENE=orb POST=agx … 光る球の場面（view transform の見比べ。POST は standard / agx / neutral）
 #   make run POST=1 … 同じ場面に画面全体の後がけ（App.withPostStack・夕方の屋外の preset）を掛ける（後がけの重さを POST なしと並べる）
 #   make check … 型検査だけ走らせる
 #
