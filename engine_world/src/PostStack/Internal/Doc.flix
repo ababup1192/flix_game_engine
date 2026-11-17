@@ -11,7 +11,7 @@ pub mod PostStack.Internal.Doc {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JNull}
     use Util.Json.JsonError
-    use PostStack.{Fields, Stack, StackData, Bloom, Vignette, ColorGrade, ViewTransform, DepthOfField, Quality, Msaa, Preset}
+    use PostStack.{Fields, Stack, StackData, Bloom, Vignette, ColorGrade, ViewTransform, DepthOfField, Quality, Msaa, Preset, Distortion, DistortionMask}
 
     pub def load(path: String): Result[JsonError, Stack] \ Fs.FileRead =
         DocJson.readJson(path) |> Result.flatMap(fromJson)
@@ -48,8 +48,9 @@ pub mod PostStack.Internal.Doc {
               vignette <- effectFrom("vignette", vignetteFrom, { strength = 0.3, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } }, top, start#vignette);
               grade <- effectFrom("colorGrade", gradeFrom, { lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.0, 1.0, 1.0), saturation = 1.0 }, top, start#colorGrade);
               dof <- dofFrom(Map.get("depthOfField", top), start#depthOfField);
-              fxaa <- boolOr("fxaa", start#fxaa, top))
-        yield { exposure = exposure, viewTransform = vt, bloom = bloom, vignette = vignette, colorGrade = grade, depthOfField = dof, fxaa = fxaa,
+              fxaa <- boolOr("fxaa", start#fxaa, top);
+              distortion <- effectFrom("distortion", distortionFrom, { strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 }, mask = DistortionMask.Full }, top, start#distortion))
+        yield { exposure = exposure, viewTransform = vt, bloom = bloom, vignette = vignette, colorGrade = grade, depthOfField = dof, fxaa = fxaa, distortion = distortion,
                 quality = qualityFrom(top, start#quality), msaa = msaaFrom(top, start#msaa) | start }
 
     // ── 名前の欄 ──
@@ -136,6 +137,47 @@ pub mod PostStack.Internal.Doc {
         forM (lift <- rgbOr("lift", c#lift, m); gamma <- rgbOr("gamma", c#gamma, m); gain <- rgbOr("gain", c#gain, m);
               saturation <- numOr("saturation", c#saturation, m))
         yield { lift = lift, gamma = gamma, gain = gain, saturation = saturation }
+
+    def distortionFrom(m: Map[String, Json], d: Distortion): Result[JsonError, Distortion] =
+        forM (sx <- pairOr("distortion.strength", 0, d#strength#x, Map.get("strength", m));
+              sy <- pairOr("distortion.strength", 1, d#strength#y, Map.get("strength", m));
+              size <- numOr("noiseSize", d#noiseSize, m);
+              vx <- pairOr("distortion.speed", 0, d#speed#x, Map.get("speed", m));
+              vy <- pairOr("distortion.speed", 1, d#speed#y, Map.get("speed", m));
+              mask <- maskFrom(Map.get("mask", m), d#mask))
+        yield { strength = { x = sx, y = sy }, noiseSize = size, speed = { x = vx, y = vy }, mask = mask }
+
+    def pairOr(key: String, index: Int32, fallback: Float64, json: Option[Json]): Result[JsonError, Float64] = match json {
+        case None            => Ok(fallback)
+        case Some(JArray(v)) => Vector.nth(index, v) |> Option.flatMap(JsonCodec.expectFloat) |> Option.toOk(err("${key} は [x, y] の数 2 つで書く"))
+        case Some(_)         => Err(err("${key} は [x, y] の数 2 つで書く"))
+    }
+
+    /// mask は kind で丸ごと決める（BottomBand は kind が出発点と同じ時だけ欄ごとに混ぜる）。
+    def maskFrom(json: Option[Json], start: DistortionMask): Result[JsonError, DistortionMask] = match json {
+        case None             => Ok(start)
+        case Some(JObject(m)) => maskOfObject(m, start)
+        case Some(_)          => Err(err("distortion.mask は object で書く"))
+    }
+
+    def maskOfObject(m: Map[String, Json], start: DistortionMask): Result[JsonError, DistortionMask] =
+        let band = bandOf(start);
+        match kindOf(m) {
+            case Some("Full")       => Ok(DistortionMask.Full)
+            case Some("BottomBand") =>
+                forM (top <- numOr("top", band#top, m); soft <- numOr("soft", band#soft, m))
+                yield DistortionMask.BottomBand({ top = top, soft = soft })
+            case Some("Texture")    =>
+                Map.get("name", m) |> Option.flatMap(JsonCodec.expectString) |> Option.map(DistortionMask.Texture)
+                    |> Option.toOk(err("distortion.mask の Texture は name（絵の名前）を書く"))
+            case Some(other)        => Ok(Log.fellBackThen("post", "distortion.mask ${other}", "出発点の mask", "知らない kind", start))
+            case None               => Err(err("distortion.mask は kind を書く"))
+        }
+
+    def bandOf(start: DistortionMask): { top = Float64, soft = Float64 } = match start {
+        case DistortionMask.BottomBand(b) => b
+        case _                            => { top = 0.5, soft = 0.3 }
+    }
 
     // ── kind を持つ欄 ──
 

@@ -40,6 +40,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | Blender の画面（Color Management）と同じ色にする | `PostStack.withViewTransform(PostStack.ViewTransform.AgX)`（Blender と preset の既定・Look は Base）か `KhronosNeutral`・`Standard` + `PostStack.withExposure(Blender の Exposure)`（線形の値に掛ける・Filmic は無い） |
 | 後がけを掛けたくない会話の窓・メニュー・字幕 | `App.withHudView` に置く（`App.withPostStack` は View の絵の全部に掛かり、HUD には掛からない） |
 | 3D の場面の奥行きでぼかす（ピントを主人公に） | `PostStack.withDepthOfField(Some(PostStack.DepthOfField.Physical({ focusDistance, fStop })))`（m・F 値。奥行きの絵はエンジンが場面から作る。場面の長さが m でなければ `Scene3d.withUnitsPerMeter`） |
+| 画面を時間で揺らがせる（陽炎・水の中・魔法）・明るい所へ入った直後の白飛び | `PostStack.withDistortion(Some({ strength, noiseSize, speed, mask = PostStack.DistortionMask.BottomBand({ top, soft }) }))` + `PostStack.withTime(遊びの時計)`（Shift と Fbm で Spec を手で組まない）・白飛びは `ExposureAdaptation.step` → `computeExposure` → `PostStack.withExposure` |
 | 3D の場面の光・空・かすみ・露出・bloom の値を決める（夕方の屋外・夜の部屋・洞窟など） | engine の `docs/art-ref/visual-dict/reference-3d.md`（見た目の名前 → 値の組・Pass の並びの手本・見た目が悪い時の切り分け。前のゲームの値を写す前に引く） |
 | bloom・tonemap・被写界深度の出方がおかしい時に、途中の Pass の絵を 1 枚描き出して確かめる | `PostStack.withDebugView(PostStack.DebugView.Bloom)`（`Scene`・`Depth`）を `make render` で 1 枚・手で並べた Pass は `HeadlessRender.renderPassImage(cfg, p, None)`（前の Pass を読む Pass は `renderPassImageWith(cfg, 前の Pass の絵, p, None)`）→ `SoftRaster.toArgbImage` → `Filmstrip.renderFrame`・奥行きの絵は場面の `output = Scene3d.Output.Depth({ near, range })` |
 | 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |

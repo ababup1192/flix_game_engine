@@ -314,6 +314,40 @@ let plan = { targets = Map#{ "scene" => RenderTarget.withMsaa(4, RenderTarget.wi
   効き目と GPU の時間は `App.withDiagnostics()` の `gpuPasses`（Pass ごと）で見比べ、切れるようにしておく
 - 既定は 1（今までどおり）
 
+## 画面の歪み（熱のゆらぎ・水の中・魔法）
+
+火山の陽炎のように、時間で流れるノイズで画面の絵を読む位置をずらす。PostStack の欄の 1 つで、3D の場面にも 2D の View にも掛かる（HUD には掛からない）:
+
+```flix
+App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
+    |> PostStack.withDistortion(Some({ strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 },
+                                       mask = PostStack.DistortionMask.BottomBand({ top = 0.5, soft = 0.3 }) }))
+    |> PostStack.withTime(Clock.nowOf(w#playClock)))
+```
+
+- `strength` = ずらす最大の量（design の px・x と y 別）・`noiseSize` = ノイズの粒（design の px・縦横比を直した丸い粒）・
+  `speed` = 模様が流れる速さ（px / 秒・y は下が +。陽炎は上へ流すので負）
+- `mask`: `Full`（画面全体）・`BottomBand({ top, soft })`（上から top で 0、top + soft で 1。地面から立つ陽炎）・`Texture(名前)`（project.json の絵か Pass の r を重みに。
+  画面いっぱいに引き伸ばして読む。無い名前は歪まない）
+- 時刻は `withTime` で渡す（渡さなければ止まった模様）。遊びの時計を渡せばポーズで止まり、描き出しは決まった時刻で同じ絵になる
+- 毎コマ動かしてよいのは `strength` と時刻（Param で渡る。溶岩に近づくほど強める、など）。`noiseSize`・`mask` を動かすと描き手が program を作り直す
+- 掛かる順は後がけの一番先（自分の BeforeBloom の Pass の後・奥行きのぼかしとブルームの前）。ぼかしの奥行きの絵は歪めないので、ぼけの縁が strength px ほどずれる
+- `strength` が x・y とも 0 か `noiseSize` ≤ 0 なら Pass を足さない（使わない時の絵と DrawHash は前と同じ）
+- 3 つの描き手（GL・WebGPU・CPU）は同じ Spec を読む（新しい式は無い。ノイズは `FbmTile` を周期 64 マスで折り返して流すので、長く遊んでも模様が崩れない）
+- 値は post.json の `distortion` でも書ける（schema は [post.schema.json](post.schema.json)）
+- Unity の Lens Distortion（樽型の歪み）とは別物。Unreal・Unity HDRP の Distortion（読む位置をずらす屈折）と同じ系統
+
+### 明るい所へ入った直後の白飛び（ExposureAdaptation）
+
+```flix
+// World に ev を持つ。dt は実時間（ポーズ中も目は慣れる）。
+let ev = ExposureAdaptation.step(ExposureAdaptation.defaults(), dt, ExposureAdaptation.evOf(placeBrightness), w#ev);
+PostStack.withExposure(ExposureAdaptation.computeExposure(ExposureAdaptation.defaults(), ev), stack)
+```
+
+- 絵を測らない（ゲームが場所ごとの狙いの明るさを持つ）。3 つの描き手と描き出しで同じ値。明るくなる時は `speedUp`（既定 3/秒）、暗くなる時は `speedDown`（1/秒）で寄る
+- 露出はブルームの後に掛かるので、白飛びの間もブルームが光り始める明るさは変わらない
+
 ## 場面の絵の予算
 
 場面の絵（Texture3d）を GPU に持つ量は 256 MB・64 枚まで（project.json の `scene3dTextureBudgetMB`・`scene3dTextureBudgetCount`）。

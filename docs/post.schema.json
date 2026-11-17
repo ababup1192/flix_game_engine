@@ -76,7 +76,27 @@
       },
       "required": ["kind"]
     },
-    "fxaa": { "type": "boolean", "label": "FXAA", "description": "縁のギザギザをならす（曲線の後の表示の値に掛ける）" }
+    "fxaa": { "type": "boolean", "label": "FXAA", "description": "縁のギザギザをならす（曲線の後の表示の値に掛ける）" },
+    "distortion": {
+      "type": ["object", "null"], "label": "画面の歪み",
+      "description": "時間で流れるノイズで場面の絵を読む位置をずらす（熱のゆらぎ・水の中・魔法）。ほかの後がけより先に掛かる。流れの時刻は View の withTime で渡す（Doc に置かない）。strength は毎コマ動かしてよい。noiseSize・mask を動かすと描き手が作り直す。null で外す",
+      "properties": {
+        "strength": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 32 }, "minItems": 2, "maxItems": 2, "label": "強さ [x, y]（px）", "description": "ずらす最大の量（design の px）。既定 [2, 1]" },
+        "noiseSize": { "type": "number", "minimum": 1, "maximum": 512, "label": "ノイズの粒（px）", "description": "粒の大きさ（design の px・縦横比を直した丸い粒）。既定 24" },
+        "speed": { "type": "array", "items": { "type": "number", "minimum": -400, "maximum": 400 }, "minItems": 2, "maxItems": 2, "label": "流れる速さ [x, y]（px/秒）", "description": "模様が流れる速さ。y は下が +（陽炎は上へ流すので負）。既定 [0, -20]" },
+        "mask": {
+          "type": "object", "label": "範囲",
+          "description": "Full = 画面全体・BottomBand = 上から top で 0、top + soft で 1（下ほど強い）・Texture = 名前の絵の r を重みにする（無い名前は歪まない）",
+          "properties": {
+            "kind": { "type": "string", "enum": ["Full", "BottomBand", "Texture"], "label": "種類" },
+            "top": { "type": "number", "minimum": 0, "maximum": 1, "label": "掛かり始める高さ（BottomBand）", "description": "画面の上を 0・下を 1 とした位置。既定 0.5" },
+            "soft": { "type": "number", "minimum": 0, "maximum": 1, "label": "強くなり切るまでの幅（BottomBand）", "description": "既定 0.3" },
+            "name": { "type": "string", "label": "マスクの絵（Texture）", "description": "project.json の絵か Pass の名前" }
+          },
+          "required": ["kind"]
+        }
+      }
+    }
   },
   "$defs": {
     "rgb": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 4 }, "minItems": 3, "maxItems": 3, "description": "[r, g, b]（1 で何もしない）" }

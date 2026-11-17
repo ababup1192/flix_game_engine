@@ -2,13 +2,13 @@
 // ゲームからは呼ばない（PostStack の中身。入口は PostStack.build）。
 //
 // Pass の並び（無い効果の Pass は作らない）:
-//   ps_scene（View の絵・窓の画素・HDR）→ 自分の BeforeBloom → ps_depth（奥行きの絵・半分）→ ps_soft（ぼかした場面・半分）
+//   ps_scene（View の絵・窓の画素・HDR）→ 自分の BeforeBloom → ps_distort（歪めた場面）→ ps_depth（奥行きの絵・半分）→ ps_soft（ぼかした場面・半分）
 //   → ps_bright（明るい所）→ ps_bloomA → ps_bloomB（ぼかし 2 回）→ ps_post（本編の面・窓の画素の Rgba8）→ 自分の AfterViewTransform。
 // 画面へ置くのは、FXAA があれば最後の Pass をならした面・無ければ本編の面（ps_post を作らない）か最後の Pass の写し。
 pub mod PostStack.Internal.Passes {
 
-    use PostStack.{Fields, Issue, Bloom, Vignette, ColorGrade, ViewTransform, DepthOfField, Quality, Msaa, CustomAt, CustomPass, Read, DebugView}
-    use ShaderDoc.{BinOp, Field, Shade, Out, TexChan, UnOp}
+    use PostStack.{Fields, Issue, Bloom, Vignette, ColorGrade, ViewTransform, DepthOfField, Quality, Msaa, CustomAt, CustomPass, Read, DebugView, Distortion, DistortionMask}
+    use ShaderDoc.{Axis, BinOp, Field, Shade, Out, TexChan, UnOp}
 
     def depthPass(): String = PostStack.depthName()
     def softPass(): String = "ps_soft"
@@ -16,6 +16,7 @@ pub mod PostStack.Internal.Passes {
     def bloomPassA(): String = "ps_bloomA"
     def bloomPassB(): String = "ps_bloomB"
     def linearPass(): String = "ps_linear"
+    def distortPass(): String = "ps_distort"
 
     /// 読む点の数と縮み（Quality から）。basis = 縮んだ Pass の倍率の基準。
     type alias Tuning = { bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32, basis = RenderTarget.Basis }
@@ -54,7 +55,15 @@ pub mod PostStack.Internal.Passes {
         let largest = largestScene(scenes);
         let customDepth = List.exists(c -> List.memberOf(Read.SceneDepth, c#reads), customs);
         let wantsDepth = Option.nonEmpty(f#depthOfField) or customDepth;
-        let current = before |> List.map(c -> c#name) |> List.last |> Option.getWithDefault(PostStack.sceneName());
+        let afterCustom = before |> List.map(c -> c#name) |> List.last |> Option.getWithDefault(PostStack.sceneName());
+        let distortion = f#distortion |> Option.filter(isDistortionVisible);
+        let distortTarget = if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor();
+        let distortPasses = distortion |> Option.map(d ->
+            ({ name = distortPass(), clear = black,
+               items = Render.withShaderParams(distortParams(input#size, f#time, d), fill(distortSpec(aspect, input#size, afterCustom, d))) :: Nil },
+             distortTarget) :: Nil)
+            |> Option.getWithDefault(Nil);
+        let current = if (Option.isEmpty(distortion)) afterCustom else distortPass();
         let focus = forM (d <- f#depthOfField; s <- largest; fo <- focusOf(d, s)) yield fo;
         let depthOnly = if (Option.isEmpty(focus) and customDepth) largest |> Option.map(s -> depthItemOf(s, 0.0, cameraFar(s))) else None;
         let issues = List.flatten(
@@ -90,7 +99,7 @@ pub mod PostStack.Internal.Passes {
         let focusParams = focus |> Option.map(fo -> fo#params) |> Option.getWithDefault(Map.empty());
         let main = Render.withShaderParams(Map.union(paramsOf(f), focusParams), fill(mainSpec(aspect, current, f, focus)));
         let finishing = finishingOf(input#size, f#fxaa, main, after);
-        let all = List.flatten((scenePass :: beforePasses) :: depthPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
+        let all = List.flatten((scenePass :: beforePasses) :: distortPasses :: depthPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
         { plan = { targets = List.toMap(List.map(e -> (fst(e)#name, snd(e)), all)) | Render.passPlan(List.map(fst, all)) },
           present = finishing#present, issues = issues }
 
@@ -195,6 +204,60 @@ pub mod PostStack.Internal.Passes {
                        params = Map#{ "ps_focus" => cam#focusDistance * unit, "ps_cocGain" => gain } })
             }
     }
+
+    // ── 画面の歪み ──
+
+    def isDistortionVisible(d: Distortion): Bool =
+        d#noiseSize > 0.0 and (d#strength#x != 0.0 or d#strength#y != 0.0)
+
+    /// ノイズを折り返すマスの数（FbmTile の period）。画面に並ぶ粒の数より十分大きく、繰り返しが見えない数。
+    def distortPeriod(): Float64 = 64.0
+
+    def distortOctaves(): Int32 = 3
+
+    /// FbmTile の値の真ん中（振れ幅 0.5 から半分ずつ足すので 0..2c に入り、平均が c）。
+    def distortCenter(): Float64 = 0.5 * (1.0 - Float64.pow(base = 0.5, Int32.toFloat64(distortOctaves())))
+
+    /// 面に渡す数: ps_distortX・Y = ずらす最大の量（uv）・ps_distortPhaseU・V = 時刻ぶん模様を流した読む位置のずれ（uv）。
+    // WhyNot: 時刻を Field.Time（面の t）で掛けない — 時刻 × 速さが増え続けると GL の float32 の hash が崩れて模様が出る。流した量を period で折り返してから渡す。
+    def distortParams(size: Vec2.Vec2, time: Float64, d: Distortion): Map[String, Float64] =
+        let cells = size#y / d#noiseSize;
+        let period = distortPeriod();
+        let wrap = (x: Float64) -> x - period * Float64.floor(x / period);
+        let phase = (speed: Float64) -> 0.0 - wrap(speed * time / d#noiseSize) / cells;
+        Map#{ "ps_distortX" => d#strength#x / size#x, "ps_distortY" => d#strength#y / size#y,
+              "ps_distortPhaseU" => phase(d#speed#x), "ps_distortPhaseV" => phase(d#speed#y) }
+
+    /// 歪みを掛ける重み（0..1・画素の位置で読む）。
+    def distortWeight(m: DistortionMask): Field = match m {
+        case DistortionMask.Full          => k(1.0)
+        // WhyNot: soft = 0 をそのまま渡さない — GLSL の smoothstep は lo ≥ hi の答えが決まっていない。
+        case DistortionMask.BottomBand(b) => Field.Smoothstep({ lo = b#top, hi = b#top + Float64.max(0.001, b#soft), of = Field.Uv({ axis = Axis.V }) })
+        case DistortionMask.Texture(name) => linear(Field.Tex({ name = name, chan = TexChan.R }))
+    }
+
+    /// 画素ごとの読む位置のずれ（uv）を ps_du・ps_dv に置く binding。
+    /// Fbm は uv を 1 つの倍率でしか掛けないので、Shift の dx に u × (aspect − 1) を足して (aspect·u, v) で読ませ、粒を丸くする。
+    def distortOffsetBindings(aspect: Float64, size: Vec2.Vec2, d: Distortion): List[(String, Field)] =
+        let cells = size#y / d#noiseSize;
+        let period = distortPeriod();
+        let noise = (seed: Int32) -> Field.Shift({
+            dx = add(mul(Field.Uv({ axis = Axis.U }), k(aspect - 1.0)), p("ps_distortPhaseU")),
+            dy = p("ps_distortPhaseV"),
+            of = Field.FbmTile({ octaves = distortOctaves(), scale = cells, period = { x = period, y = period }, seed = seed }) });
+        let c = distortCenter();
+        let signed = (ref: String) -> mul(sub(Field.Ref(ref), k(c)), k(1.0 / c));
+        ("ps_dn_u", noise(11)) :: ("ps_dn_v", noise(23)) :: ("ps_dw", distortWeight(d#mask))
+            :: ("ps_du", mul(signed("ps_dn_u"), mul(p("ps_distortX"), Field.Ref("ps_dw"))))
+            :: ("ps_dv", mul(signed("ps_dn_v"), mul(p("ps_distortY"), Field.Ref("ps_dw")))) :: Nil
+
+    /// source をずらして読み、そのまま写す面。
+    // WhyNot: 奥行きの絵（ps_depth）は歪めない — 3D の場面から直に作るので、ぼかしの縁が strength px ほど歪んだ場面とずれる。数 px なので、
+    // 本編の面でノイズをもう 1 回組んで奥行きを同じずれで読む値段を払わない。
+    def distortSpec(aspect: Float64, size: Vec2.Vec2, source: String, d: Distortion): ShaderDoc.Spec =
+        let read = chan -> Field.Shift({ dx = Field.Ref("ps_du"), dy = Field.Ref("ps_dv"), of = linear(Field.Tex({ name = source, chan = chan })) });
+        { name = "ps_distort", cycleRate = 0.0, bindings = distortOffsetBindings(aspect, size, d),
+          out = rgbOf(read(TexChan.R), read(TexChan.G), read(TexChan.B)) }
 
     // ── 面 ──
 

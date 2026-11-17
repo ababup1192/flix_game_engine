@@ -3,7 +3,7 @@
 // ゲームは「どの効果をどの値で」を言い、順・Pass・描き先の大きさと形式・Spec はここが決める。中身は Render.Pass と ShaderDoc の面に展開する純粋な関数で、
 // 描き手（GL・WebGPU・CPU）は触らない。式の部品（トーンマップの曲線・FXAA・luma）が要る時だけ PostProcess を使う。
 //
-// 掛かる順（Blender の Color Management の順）: 奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA。
+// 掛かる順（Blender の Color Management の順。歪みはその前で、場面の絵そのものを読み替える）: 画面の歪み → 奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA。
 // Standard と KhronosNeutral は場面の値を線形へ戻してから掛ける（Blender と同じ線形の値の上の式。曲線の門は engine_world/test の TestPostStackBlender）。
 // 掛ける範囲は View が返す絵の全部（App.withPostStack）。HUD（App.withHudView）とデバッグの重ねには掛からない —
 // トーンマップもぼかしも掛けたくない UI（会話の窓・メニュー・字幕）は HUD に置く。
@@ -65,6 +65,24 @@ pub mod PostStack {
         case High
         case Fixed({ bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32 })
     }
+
+    /// 画面の歪み（Distortion）を掛ける範囲。
+    /// Full = 画面全体・BottomBand = 画面の上から top（0..1）で 0、top + soft で 1（下ほど強い。地面から立つ陽炎）・
+    /// Texture = 名前の絵（project.json の絵か Pass）の r（0..1）を重みにする（画面いっぱいに引き伸ばして読む。無い名前は 0 で歪まない）。
+    pub enum DistortionMask {
+        case Full
+        case BottomBand({ top = Float64, soft = Float64 })
+        case Texture(String)
+    }
+
+    /// 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れるノイズで、場面の絵を読む位置をずらす。
+    /// Unreal・Unity HDRP の Distortion（屈折で読む位置をずらす物）と同じ系統で、Unity の Lens Distortion（樽型の歪み）とは別物。
+    /// strength = ずらす最大の量（design の px・x と y 別。ノイズの山と谷でちょうどこの量）・noiseSize = ノイズの粒の大きさ（design の px・縦横比を直した丸い粒）・
+    /// speed = 模様が流れる速さ（design の px / 秒・y は下が +。陽炎は上へ流すので負）・mask = 掛ける範囲。
+    /// 流れの時刻は withTime で渡す（渡さなければ 0 で止まった模様）。
+    /// 毎コマ動かしてよいのは strength と時刻（Param で渡る）。noiseSize・mask を毎コマ動かすと描き手が program を作り直す。
+    /// noiseSize ≤ 0 か strength が x・y とも 0 なら Pass を足さない（無いのと同じ絵）。
+    pub type alias Distortion = { strength = Vec2.Vec2, noiseSize = Float64, speed = Vec2.Vec2, mask = DistortionMask }
 
     /// 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
     pub enum Msaa with Eq, ToString {
@@ -135,14 +153,15 @@ pub mod PostStack {
 
     type alias Fields = { exposure = Float64, viewTransform = ViewTransform, bloom = Option[Bloom], colorGrade = Option[ColorGrade],
                           vignette = Option[Vignette], depthOfField = Option[DepthOfField], fxaa = Bool, custom = List[CustomPass],
-                          quality = Quality, msaa = Msaa, debugView = DebugView, background = Option[Color] }
+                          quality = Quality, msaa = Msaa, debugView = DebugView, background = Option[Color],
+                          distortion = Option[Distortion], time = Float64 }
 
     def fieldsOf(s: Stack): Fields = match s { case StackData.StackData(f) => f }
 
     def neutralFields(): Fields =
         { exposure = 0.0, viewTransform = ViewTransform.Standard, bloom = None, colorGrade = None, vignette = None,
           depthOfField = None, fxaa = false, custom = Nil, quality = Quality.Auto, msaa = Msaa.Off, debugView = DebugView.Final,
-          background = None }
+          background = None, distortion = None, time = 0.0 }
 
     def presetVignette(strength: Float64): Option[Vignette] = Some({ strength = strength, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } })
 
@@ -201,6 +220,12 @@ pub mod PostStack {
     /// 言わなければ画面の地の色（実機は project.json の clearColor）。
     pub def withBackground(c: Color, s: Stack): Stack = mapFields(f -> { background = Some(c) | f }, s)
 
+    pub def withDistortion(d: Option[Distortion], s: Stack): Stack = mapFields(f -> { distortion = d | f }, s)
+
+    /// 時間で動く後がけ（今は Distortion）の時刻。陽炎は遊びの時計（ポーズで止まる）を渡す。描き出しとテストは決まった時刻を渡す。
+    // WhyNot: App が自分の時刻を配らない — App は遊びの時計と実時間のどちらで流すかを知らない（docs/clock.md）。
+    pub def withTime(t: Clock.Time[c], s: Stack): Stack = mapFields(f -> { time = Clock.secondsOf(t) | f }, s)
+
     // ── 読む口（Doc の値を確かめる・テストする） ──
 
     pub def exposureOf(s: Stack): Float64 = fieldsOf(s)#exposure
@@ -226,6 +251,11 @@ pub mod PostStack {
     pub def customOf(s: Stack): List[CustomPass] = fieldsOf(s)#custom
 
     pub def backgroundOf(s: Stack): Option[Color] = fieldsOf(s)#background
+
+    pub def distortionOf(s: Stack): Option[Distortion] = fieldsOf(s)#distortion
+
+    /// withTime の秒。
+    pub def timeOf(s: Stack): Float64 = fieldsOf(s)#time
 
     // ── Pass の名前（自分の Spec が Field.Tex で読む） ──
 

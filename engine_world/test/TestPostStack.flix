@@ -328,4 +328,188 @@ mod TestPostStack {
             case _                            => (-1.0, -1.0, -1.0)
         });
         Assert.assertEq(expected = Some((0.2, 0.4, 0.6)), clear)
+
+    // ── 画面の歪み（Distortion） ──
+
+    def haze(mask: PostStack.DistortionMask): PostStack.Distortion =
+        { strength = { x = 3.0, y = 2.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 }, mask = mask }
+
+    def at(seconds: Float64): Clock.Time[Clock.Real] = Clock.after(seconds, Clock.zero())
+
+    /// 計画と画面の面を字にした物（Pass の名前・描き先・面の Spec と数と時刻）。
+    def planText(b: { plan = Render.PassPlan, present = Render.PlacedItem, issues = List[PostStack.Issue] }): String =
+        let itemText = (i: Render.PlacedItem) -> match i#item {
+            case Render.Item.Shader(sh) => "${ShaderJson.toJson(sh#spec)} ${sh#params} ${sh#t}"
+            case _                      => "${i#at#x},${i#at#y}"
+        };
+        let passes = b#plan#passes |> List.map(p -> {
+            let d = Render.targetDescriptorOf(b#plan, p#name);
+            "${p#name} ${d#format} ${d#scale} ${d#samples} ${List.map(itemText, p#items)}"
+        });
+        "${passes} ${itemText(b#present)}"
+
+    @Test
+    def testTimeWithoutDistortionKeepsThePlanAndThePicture(): Unit \ Assert =
+        let s = PostStack.preset(PostStack.Preset.DuskOutdoor);
+        Assert.assertEq(expected = planText(built(sceneItem() :: Nil, s)), planText(built(sceneItem() :: Nil, s |> PostStack.withTime(at(5.0)))))
+
+    @Test
+    def testZeroStrengthDrawsNoDistortPass(): Unit \ Assert =
+        let still = { strength = { x = 0.0, y = 0.0 } | haze(PostStack.DistortionMask.Full) };
+        Assert.assertEq(expected = planText(built(Nil, neutral())), planText(built(Nil, neutral() |> PostStack.withDistortion(Some(still)))))
+
+    @Test
+    def testZeroNoiseSizeDrawsNoDistortPass(): Unit \ Assert =
+        let flat = { noiseSize = 0.0 | haze(PostStack.DistortionMask.Full) };
+        Assert.assertEq(expected = planText(built(Nil, neutral())), planText(built(Nil, neutral() |> PostStack.withDistortion(Some(flat)))))
+
+    @Test
+    def testDistortionAddsOnePassAfterTheScene(): Unit \ Assert =
+        Assert.assertEq(expected = "ps_scene" :: "ps_distort" :: "ps_bright" :: "ps_bloomA" :: "ps_bloomB" :: Nil,
+                        passNames(neutral() |> PostStack.withBloom(Some(bloom())) |> PostStack.withDistortion(Some(haze(PostStack.DistortionMask.Full)))))
+
+    @Test
+    def testMainSurfaceReadsTheDistortedScene(): Unit \ Assert =
+        let spec = built(Nil, neutral() |> PostStack.withDistortion(Some(haze(PostStack.DistortionMask.Full))))#present |> specOf;
+        Assert.assertEq(expected = Some(true), spec |> Option.map(sp -> String.contains(substr = "ps_distort", "${ShaderJson.toJson(sp)}")))
+
+    @Test
+    def testDistortPassHasNoMsaa(): Unit \ Assert =
+        let b = built(Nil, neutral() |> PostStack.withMsaa(PostStack.Msaa.X4) |> PostStack.withDistortion(Some(haze(PostStack.DistortionMask.Full))));
+        Assert.assertEq(expected = (4, 1), (Render.targetDescriptorOf(b#plan, "ps_scene")#samples, Render.targetDescriptorOf(b#plan, "ps_distort")#samples))
+
+    def distortItem(s: PostStack.Stack): Option[Render.PlacedItem] =
+        built(Nil, s)#plan#passes |> List.find(p -> p#name == "ps_distort") |> Option.flatMap(p -> List.head(p#items))
+
+    def distortSpecText(s: PostStack.Stack): Option[String] =
+        distortItem(s) |> Option.flatMap(specOf) |> Option.map(sp -> "${ShaderJson.toJson(sp)}")
+
+    @Test
+    def testChangingStrengthAndTimeKeepsTheSameSpec(): Unit \ Assert =
+        let a = neutral() |> PostStack.withDistortion(Some(haze(PostStack.DistortionMask.Full)));
+        let b = neutral() |> PostStack.withDistortion(Some({ strength = { x = 6.0, y = 0.5 } | haze(PostStack.DistortionMask.Full) })) |> PostStack.withTime(at(12.5));
+        Assert.assertEq(expected = distortSpecText(a), distortSpecText(b))
+
+    @Test
+    def testStrengthIsPassedAsAShareOfTheScreen(): Unit \ Assert =
+        let item = distortItem(neutral() |> PostStack.withDistortion(Some(haze(PostStack.DistortionMask.Full))));
+        Assert.assertEq(expected = (Some(3.0 / 320.0), Some(2.0 / 180.0)),
+                        (item |> Option.flatMap(i -> paramOf("ps_distortX", i)), item |> Option.flatMap(i -> paramOf("ps_distortY", i))))
+
+    // ── 画面の歪みを CPU で描いた絵 ──
+    // 場面は r = 横の位置・g = 縦の位置の傾きの絵。Linear で読むので、出た r・g と位置の差が、そのまま読んだ位置のずれ（uv）になる。
+
+    def gradeW(): Int32 = 64
+
+    def gradeH(): Int32 = 36
+
+    def gradient(): ShaderEval.TexImage =
+        let rgba = List.range(0, gradeH()) |> List.flatMap(y -> List.range(0, gradeW()) |> List.flatMap(x ->
+            (Int32.toFloat64(x) + 0.5) / Int32.toFloat64(gradeW()) :: (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(gradeH()) :: 0.0 :: 1.0 :: Nil));
+        ShaderEval.TexImage.Rgba16Float(ShaderEval.hdrTextureOf(gradeW(), gradeH(), List.toVector(rgba)))
+
+    /// 傾きの絵の画素の真ん中の位置（端の 4 画素は除く。端は張り付きで読むので、ずれが測れない）。
+    def samplePoints(): List[(Float64, Float64)] =
+        List.range(4, gradeH() - 4) |> List.flatMap(y -> List.range(4, gradeW() - 4) |> List.map(x ->
+            ((Int32.toFloat64(x) + 0.5) / Int32.toFloat64(gradeW()), (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(gradeH()))))
+
+    /// 画素 (u, v) で読んだ位置のずれ（design の px）。
+    def offsetsAt(s: PostStack.Stack, points: List[(Float64, Float64)]): List[(Float64, Float64)] =
+        match distortItem(s) |> Option.map(i -> i#item) {
+            case Some(Render.Item.Shader(sh)) =>
+                let compiled = ShaderEval.compile(ShaderDoc.bindParams(sh#params, sh#spec), Map#{ PostStack.sceneName() => gradient() });
+                points |> List.map(pt -> {
+                    let (u, v) = pt;
+                    let (r, g, _, _) = ShaderEval.evalCompiled(compiled, u, v, sh#t);
+                    ((r - u) * size()#x, (g - v) * size()#y)
+                })
+            case _ => Nil
+        }
+
+    def hazy(mask: PostStack.DistortionMask, seconds: Float64): PostStack.Stack =
+        neutral() |> PostStack.withDistortion(Some(haze(mask))) |> PostStack.withTime(at(seconds))
+
+    def isMoved(o: (Float64, Float64)): Bool = let (dx, dy) = o; Float64.abs(dx) > 0.05 or Float64.abs(dy) > 0.05
+
+    @Test
+    def testCpuDistortionMovesPixelsWithinTheStrength(): Unit \ Assert =
+        let offs = offsetsAt(hazy(PostStack.DistortionMask.Full, 1.5), samplePoints());
+        let maxX = offs |> List.map(o -> Float64.abs(fst(o))) |> List.maximum |> Option.getWithDefault(0.0);
+        let maxY = offs |> List.map(o -> Float64.abs(snd(o))) |> List.maximum |> Option.getWithDefault(0.0);
+        Assert.assertEq(expected = (true, true, true), (List.count(isMoved, offs) > List.length(offs) / 2, maxX <= 3.0 + 0.2, maxY <= 2.0 + 0.2))
+
+    @Test
+    def testCpuDistortionAveragesToNoShift(): Unit \ Assert =
+        let offs = offsetsAt(hazy(PostStack.DistortionMask.Full, 0.0), samplePoints());
+        let n = Int32.toFloat64(Int32.max(1, List.length(offs)));
+        let meanX = (offs |> List.map(fst) |> List.foldLeft((a, x) -> a + x, 0.0)) / n;
+        let meanY = (offs |> List.map(snd) |> List.foldLeft((a, x) -> a + x, 0.0)) / n;
+        Assert.assertEq(expected = (true, true), (Float64.abs(meanX) < 0.75, Float64.abs(meanY) < 0.5))
+
+    @Test
+    def testCpuBottomBandLeavesTheTopHalfStill(): Unit \ Assert =
+        let pts = samplePoints();
+        let offs = List.zip(pts, offsetsAt(hazy(PostStack.DistortionMask.BottomBand({ top = 0.5, soft = 0.0 }), 2.0), pts));
+        let movedAbove = offs |> List.count(e -> snd(fst(e)) < 0.49 and isMoved(snd(e)));
+        let movedBelow = offs |> List.count(e -> snd(fst(e)) > 0.51 and isMoved(snd(e)));
+        Assert.assertEq(expected = (0, true), (movedAbove, movedBelow > 0))
+
+    @Test
+    def testCpuSameTimeDrawsTheSamePicture(): Unit \ Assert =
+        Assert.assertEq(expected = offsetsAt(hazy(PostStack.DistortionMask.Full, 3.0), samplePoints()),
+                        offsetsAt(hazy(PostStack.DistortionMask.Full, 3.0), samplePoints()))
+
+    @Test
+    def testCpuOtherTimeDrawsAnotherPicture(): Unit \ Assert =
+        Assert.assertEq(expected = false, offsetsAt(hazy(PostStack.DistortionMask.Full, 0.0), samplePoints()) == offsetsAt(hazy(PostStack.DistortionMask.Full, 0.5), samplePoints()))
+
+    /// 模様が speed（design の px / 秒）で流れるか: 時刻 t の点 p のずれと、時刻 0 の点 p − speed × t のずれの差の最大（px）。
+    def flowGap(speed: Vec2.Vec2, seconds: Float64): Float64 =
+        let d = { speed = speed | haze(PostStack.DistortionMask.Full) };
+        let stackAt = (sec: Float64) -> neutral() |> PostStack.withDistortion(Some(d)) |> PostStack.withTime(at(sec));
+        let pts = samplePoints() |> List.filter(pt -> { let (u, v) = pt; u > 0.25 and u < 0.75 and v > 0.25 and v < 0.75 });
+        let back = pts |> List.map(pt -> { let (u, v) = pt; (u - speed#x * seconds / size()#x, v - speed#y * seconds / size()#y) });
+        List.zip(offsetsAt(stackAt(seconds), pts), offsetsAt(stackAt(0.0), back))
+            |> List.map(e -> { let ((ax, ay), (bx, by)) = e; Float64.max(Float64.abs(ax - bx), Float64.abs(ay - by)) })
+            |> List.maximum |> Option.getWithDefault(99.0)
+
+    @Test
+    def testCpuPatternFlowsUpAtTheSpeed(): Unit \ Assert =
+        Assert.assertEq(expected = true, flowGap({ x = 0.0, y = -20.0 }, 0.5) < 0.2)
+
+    @Test
+    def testCpuPatternFlowsSidewaysAtTheSpeedOnAWideScreen(): Unit \ Assert =
+        Assert.assertEq(expected = true, flowGap({ x = 30.0, y = 0.0 }, 0.5) < 0.2)
+
+    @Test
+    def testFlowAfterALongTimeStaysWithinOnePeriod(): Unit \ Assert =
+        let phase = distortItem(hazy(PostStack.DistortionMask.Full, 1000000.0)) |> Option.flatMap(i -> paramOf("ps_distortPhaseV", i));
+        let onePeriod = 64.0 / (180.0 / 24.0);
+        Assert.assertEq(expected = Some(true), phase |> Option.map(ph -> ph <= 0.0 and ph >= 0.0 - onePeriod))
+
+    @Test
+    def testCpuMissingMaskTextureLeavesThePictureStill(): Unit \ Assert =
+        Assert.assertEq(expected = 0, offsetsAt(hazy(PostStack.DistortionMask.Texture("no_such_mask"), 1.0), samplePoints()) |> List.count(isMoved))
+
+    // ── post.json の歪み ──
+
+    def bandOf(m: PostStack.DistortionMask): (Float64, Float64) = match m {
+        case PostStack.DistortionMask.BottomBand(b) => (b#top, b#soft)
+        case _                                      => (-1.0, -1.0)
+    }
+
+    @Test
+    def testDocReadsTheDistortion(): Unit \ Assert =
+        let read = parsed("{\"distortion\": {\"strength\": [1.5, 0.5], \"noiseSize\": 30, \"mask\": {\"kind\": \"BottomBand\", \"top\": 0.6}}}")
+            |> Result.toOption |> Option.flatMap(PostStack.distortionOf)
+            |> Option.map(x -> (x#strength#x, x#strength#y, x#noiseSize, x#speed#y, bandOf(x#mask)));
+        Assert.assertEq(expected = Some((1.5, 0.5, 30.0, -20.0, (0.6, 0.3))), read)
+
+    @Test
+    def testDocTextureMaskNeedsAName(): Unit \ Assert =
+        Assert.assertEq(expected = true, Result.isErr(parsed("{\"distortion\": {\"mask\": {\"kind\": \"Texture\"}}}")))
+
+    @Test
+    def testDocWithoutDistortionHasNone(): Unit \ Assert =
+        Assert.assertEq(expected = Some(true), parsed("{\"preset\": \"DuskOutdoor\"}") |> Result.toOption |> Option.map(x -> Option.isEmpty(PostStack.distortionOf(x))))
 }

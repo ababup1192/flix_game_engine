@@ -201,7 +201,10 @@ Studio（別のリポジトリ）の preset の見せ方（継いだ値と上書
 SSR は S3 の奥行きと法線の絵を使い回すので、S3 のすぐ後に「後」の行から前へ出す。
 
 HD-2D（`plans/engine-hd2d.md`）の下準備も同じ列に入れる（人の言葉「HD-2D に必要なものは事前に作っておこう」）:
-- S2 の後・S3 の前に、PostStack の部品 2 つを足す: **TiltShift**（`DepthOfField.TiltShift`・hd2d の E2）と **画面の歪み**（`Distortion`。時間で動くノイズで場面の絵を読む座標をずらす 1 Pass。熱のゆらぎ・水の中・魔法に使い回す。`Field.ScreenUv` を使うので S2 の後）。
+- S2 の後・S3 の前に、PostStack の部品 2 つを足す: **TiltShift**（`DepthOfField.TiltShift`・hd2d の E2）と **画面の歪み**（`Distortion`。時間で動くノイズで場面の絵を読む座標をずらす 1 Pass。熱のゆらぎ・水の中・魔法に使い回す）。
+  **Distortion は S2 を待たずに入れた（2026-11-18・`PostStack.withDistortion`・`withTime`）**: 後がけの面の中では `Field.Uv` がそのまま画面の位置なので、ScreenUv は要らなかった。
+  S2 で ScreenUv が入ったら、ずらし量の場（`PostStack.Internal.Passes.distortOffsetBindings`）を材質の屈折（水・魔法の面）へ使い回す。
+  同じ時に `ExposureAdaptation`（狙いの明るさへ露出を近づける純粋な関数・lens-post スパイクの B2）も入れた。
 - PostStack の外の HD-2D の下準備（ビルボードの影 E1・mip の上限 E4・画素スナップ E5・点光源の 8 本の上限の確かめ）は、この列と別の担当で並べて進める（触るファイルが重ならないため）。
 
 その後の順の推し【推】: S6 のうち光の大きさで影の縁をぼかす所 → S4（空とかすみ・光の筋） → TAA → S5（水）。リアルタイムの GI は焼き込みとプローブ止まり。
