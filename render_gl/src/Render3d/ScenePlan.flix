@@ -5,7 +5,7 @@ mod Render3d.ScenePlan {
     import java.util.HashMap
     import java.util.IdentityHashMap
     import java.util.Objects
-    use Render3d.{DrawMode, MeshDraw, ProgramKind, ShaderVariant, ShadowCaster, ShadowLight, ShadowPlan, defaultShaderVariant, maxShadowMapSize, maxShadowPcfRadius, shaderVariantOf}
+    use Render3d.{DrawMode, MeshDraw, ProgramKind, ShaderVariant, ShadowCaster, ShadowLight, ShadowPlan, defaultShaderVariant, maxShadowMapSize, maxShadowPcfRadius}
     use Render3d.Batch.{BatchKey, MaterialBatch, SpanBatch, batchKeyOf}
     use Render3d.PoseRows.{PoseRows, noRows, withPoseRow}
 
@@ -178,7 +178,7 @@ mod Render3d.ScenePlan {
             case Scene3d.Resolution.Design => false
         };
         let mainPass = passSpecOf(scene#output);
-        let variant = shaderVariantOf(scene);
+        let variant = Render3d.passVariantOf(scene);
         let groups = match mainPass {
             case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage, variant), drawn)
             case ScenePassSpec.DepthOut(_) =>
@@ -186,7 +186,7 @@ mod Render3d.ScenePlan {
                 //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
                 // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
                 let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), drawn);
-                groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false, defaultShaderVariant()), solidInstances)
+                groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false, variant), solidInstances)
         };
         { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn) }
 

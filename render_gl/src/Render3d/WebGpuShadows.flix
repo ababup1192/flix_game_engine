@@ -35,8 +35,11 @@ mod Render3d.WebGpuShadows {
     use Render3d.ShadowMaps.{Key, ShadowPass}
     use Render3d.WebGpuRows.{MeshBuffers, MeshStore, drawRows}
 
-    /// 影の地図の描き先 1 枚。depth = 深度の texture（色の pass が texture_depth_2d で読む）・camera = 光の目と単位行列の射影とビルボードの板の横と縦（Render3dWgsl.cameraBytes() の並び・uFacing は読まない）・group = group 0。
-    type alias ShadowTarget = { depth = Texture, camera = Buffer, group = BindGroup }
+    /// 影の地図の描き先 1 枚。depth = 深度の texture（色の pass が texture_depth_2d で読む）・width と height = 画素・
+    /// camera = 光の目と単位行列の射影とビルボードの板の横と縦（Render3dWgsl.cameraBytes() の並び・uFacing は読まない）・group = group 0・
+    /// tiles = 点光源の影の atlas の面ごとの (camera, group)（面の原点 (x, y) → 初めて描く時に作る）。
+    // WhyNot: atlas の面どうしで光の目の buffer を 1 つにしない — writeBuffer は encoder の全部の pass より先に効き、どの面も最後に書いた面の目で描く。
+    type alias ShadowTarget = { depth = Texture, width = Int32, height = Int32, camera = Buffer, group = BindGroup, tiles = Ref[Map[(Int32, Int32), (Buffer, BindGroup)], Static] }
 
     /// 影の地図の backend の状態。table = 前半の寿命の表・targets = 鍵 → 描き先・layout = group 0 の layout・pipelines = (頂点のバイト数, ジョイントの番号の位置) → pipeline・
     /// written = 今の encoder（submit まで）で描いた描き先の鍵・cpuCamera = 光の目の値を詰める入れ物。
@@ -101,43 +104,72 @@ mod Render3d.WebGpuShadows {
     def allocatorOf(sh: Shadows, created: Unit -> Unit \ IO): Render3d.ShadowMaps.Allocator =
         { create = key -> {
               created();
-              Ref.put(Map.insert(key, createTarget(sh, fst(Render3d.ShadowMaps.extentOf(key))), Ref.get(sh#targets)), sh#targets)
+              Ref.put(Map.insert(key, createTarget(sh, Render3d.ShadowMaps.extentOf(key)), Ref.get(sh#targets)), sh#targets)
           },
           destroy = key -> {
               Map.get(key, Ref.get(sh#targets)) |> Option.forEach(destroyTarget);
               Ref.put(Map.remove(key, Ref.get(sh#targets)), sh#targets)
           } }
 
-    def createTarget(sh: Shadows, size: Int32): ShadowTarget \ IO =
-        let gpu = sh#gpu;
-        let depth = gpu.createTexture("fge scene3d shadow map", size, size, depthFormat(), Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.TEXTURE_BINDING), 1, 1);
-        let camera = gpu.createBuffer("fge scene3d shadow camera", Int32.toInt64(Render3dWgsl.cameraBytes()), Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
+    def createTarget(sh: Shadows, extent: (Int32, Int32)): ShadowTarget \ IO =
+        let (width, height) = extent;
+        let depth = sh#gpu.createTexture("fge scene3d shadow map", width, height, depthFormat(), Int32.bitwiseOr(TextureUsage.RENDER_ATTACHMENT, TextureUsage.TEXTURE_BINDING), 1, 1);
+        let (camera, group) = createCamera(sh);
+        { depth = depth, width = width, height = height, camera = camera, group = group, tiles = Ref.fresh(Static, Map.empty()) }
+
+    /// 光の目の buffer と、それを付けた group 0。
+    def createCamera(sh: Shadows): (Buffer, BindGroup) \ IO =
+        let camera = sh#gpu.createBuffer("fge scene3d shadow camera", Int32.toInt64(Render3dWgsl.cameraBytes()), Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST));
         let desc = new BindGroupDesc("fge scene3d shadow camera", sh#layout);
         discard desc.buffer(5, camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
-        { depth = depth, camera = camera, group = gpu.createBindGroup(desc) }
+        (camera, sh#gpu.createBindGroup(desc))
+
+    /// target の面 t の光の目の buffer と group 0（無ければ作る）。
+    def tileCameraOf(sh: Shadows, target: ShadowTarget, t: Render3d.ShadowMaps.Tile): (Buffer, BindGroup) \ IO =
+        let at = (t#x, t#y);
+        match Map.get(at, Ref.get(target#tiles)) {
+            case Some(found) => found
+            case None =>
+                let made = createCamera(sh);
+                Ref.put(Map.insert(at, made, Ref.get(target#tiles)), target#tiles);
+                made
+        }
 
     def destroyTarget(t: ShadowTarget): Unit \ IO =
         t#group.release();
         t#camera.destroy();
+        Map.forEach((_, cg) -> { let (camera, group) = cg; group.release(); camera.destroy() }, Ref.get(t#tiles));
         t#depth.destroy()
 
+    /// 面 t の WebGPU の viewport と scissor の (x, y, 一辺)（塊の原点は GL の数え方・height = 描き先の高さ。Render3d.ShadowMaps.Tile の doc）。
+    pub def tileViewportOf(height: Int32, t: Render3d.ShadowMaps.Tile): (Int32, Int32, Int32) = (t#x, height - (t#y + t#size), t#size)
+
     /// 影の地図の pass 1 つを積む: 描き先を（無ければ作って）光の目の値を書き、深度を 1 で消して行を形だけで描く。呼ぶ前に needsFlush で submit を済ませておく。
+    /// 点光源の影の atlas の面（pass#map#tile が Some）は、今の encoder で初めての面だけ atlas の全体を消し、ほかの面は前の中身に描き足す。viewport と scissor は面の塊（tileViewportOf）。
     /// 骨つきの行は姿勢の group 2 がある時だけ描く。裏の面も描く（GL の Render3d.Shadow と同じ）。ビルボードの行は draw#billboard が描く（values は staged#valuesBase から）。
     pub def encode(sh: Shadows, gen: Int64, draw: ShadowDraw, staged: StagedShadow): Unit \ IO =
         let pass = staged#pass;
         let key = pass#map#key;
         discard Render3d.ShadowMaps.ensure(sh#table, allocatorOf(sh, draw#created), gen, key);
         Map.get(key, Ref.get(sh#targets)) |> Option.forEach(target -> {
-            writeCamera(sh, target, pass);
+            let first = not Set.memberOf(key, Ref.get(sh#written));
+            let (camera, group) = match pass#map#tile {
+                case None    => (target#camera, target#group)
+                case Some(t) => tileCameraOf(sh, target, t)
+            };
+            writeCamera(sh, camera, pass);
             Ref.put(Set.insert(key, Ref.get(sh#written)), sh#written);
-            let size = fst(Render3d.ShadowMaps.extentOf(key));
+            let (vx, vy, vw, vh) = match pass#map#tile {
+                case None    => (0, 0, target#width, target#height)
+                case Some(t) => { let (x, y, size) = tileViewportOf(target#height, t); (x, y, size, size) }
+            };
             let desc = new RenderPassDesc("fge scene3d shadow map");
-            discard desc.clearDepth(target#depth.defaultView(), 1.0);
+            if (first) discard desc.clearDepth(target#depth.defaultView(), 1.0) else discard desc.loadDepthStencil(target#depth.defaultView(), false);
             let rp = draw#encoder.beginRenderPass(desc);
             draw#notePass();
-            rp.setViewport(0.0, 0.0, Int32.toFloat64(size), Int32.toFloat64(size), 0.0, 1.0);
-            rp.setScissorRect(0, 0, size, size);
-            rp.setBindGroup(0, target#group);
+            rp.setViewport(Int32.toFloat64(vx), Int32.toFloat64(vy), Int32.toFloat64(vw), Int32.toFloat64(vh), 0.0, 1.0);
+            rp.setScissorRect(vx, vy, vw, vh);
+            rp.setBindGroup(0, group);
             Option.forEach(g -> rp.setBindGroup(2, g), draw#poseGroup);
             rp.setVertexBuffer(1, draw#instances, 0i64, draw#instances.size());
             drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase), pass#list, draw#instanceBase);
@@ -145,9 +177,32 @@ mod Render3d.WebGpuShadows {
                 commands.setVertexBuffer(1, instances, 0i64, instances.size());
                 drawRows(commands, draw#meshStore, drawerOf(sh, draw, -1), list, 0)
             };
-            draw#carried |> List.forEach(runCarried -> runCarried(rp, ToString.toString(key), target#group, drawCarried));
+            let bundleKey = ToString.toString(key) + (pass#map#tile |> Option.map(t -> ":${t#x}:${t#y}") |> Option.getWithDefault(""));
+            draw#carried |> List.forEach(runCarried -> runCarried(rp, bundleKey, group, drawCarried));
             rp.end()
         })
+
+    /// 変種の場面の R3dLight の値（Render3dWgsl.lightValueBytes の並び）を buf へ詰める: samplings の点光源の影の atlas の値（無ければ全部の slot が −1）と
+    /// 場面の 1 / unitsPerMeter²（GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）。
+    pub def packLightValues(buf: ByteBuffer, scene: Scene3d.Scene3dCmd, samplings: List[Render3d.ShadowMaps.ShadowSampling]): Unit \ IO =
+        let values = samplings |> List.findMap(pointAtlasOf) |> Option.map(a -> Render3d.Shadow.pointShadowUseOf(0, a));
+        let none = Vector.repeat(Scene3d.maxPointLights(), (-1.0f32, 0.0f32, 0.0f32, 0.0f32));
+        values |> Option.map(v -> v#casters) |> Option.getWithDefault(none) |> Vector.forEachWithIndex((i, c) -> {
+            let (slot, a, b, strength) = c;
+            discard buf.putFloat(16 * i, slot).putFloat(16 * i + 4, a).putFloat(16 * i + 8, b).putFloat(16 * i + 12, strength)
+        });
+        let at = 16 * Scene3d.maxPointLights();
+        let (size, columns, scale, pcf) = values |> Option.map(v -> v#atlas) |> Option.getWithDefault((1.0f32, 1.0f32, 1.0f32, 0.0f32));
+        discard buf.putFloat(at, size).putFloat(at + 4, columns).putFloat(at + 8, scale).putFloat(at + 12, pcf);
+        let (bias, normalBias) = values |> Option.map(v -> v#bias) |> Option.getWithDefault((0.0f32, 0.0f32));
+        discard buf.putFloat(at + 16, bias).putFloat(at + 20, normalBias);
+        discard buf.putFloat(at + 24, RenderUtil.f32(Render3d.Light.inverseUnitsPerMeterSquaredOf(scene))).putFloat(at + 28, 0.0f32)
+
+    def pointAtlasOf(s: Render3d.ShadowMaps.ShadowSampling): Option[Scene3d.PointShadows.Atlas] = match s {
+        case Render3d.ShadowMaps.ShadowSampling.Point(a) => Some(a)
+        case Render3d.ShadowMaps.ShadowSampling.Spot(_)  => None
+        case Render3d.ShadowMaps.ShadowSampling.Sun(_)   => None
+    }
 
     /// 影の地図の行を形だけで描く時に pipeline を付ける関数の組（付けた pipeline の控えは組ごと・bundle は付けた物を持たずに始まる）。
     /// valuesBase = 行の values を送った位置（ビルボードの行の無い列は -1）。ビルボードの行は draw#billboard が付けて描き、次の形の行が pipeline を付け直す。
@@ -172,15 +227,15 @@ mod Render3d.WebGpuShadows {
           unbound = draw#unbound }
 
     /// 光の目（world → 光の clip）と単位行列の射影と、ビルボードの板の横（pass#billboardRight）と縦（world の上）を、R3dCamera の並び（uView・uProj・uRight・uUp）で
-    /// target の buffer へ書く（uFacing は読まない）。
-    def writeCamera(sh: Shadows, target: ShadowTarget, pass: ShadowPass): Unit \ IO =
+    /// camera の buffer へ書く（uFacing は読まない）。
+    def writeCamera(sh: Shadows, camera: Buffer, pass: ShadowPass): Unit \ IO =
         let floats = sh#cpuCamera.asFloatBuffer();
         let r = pass#billboardRight;
         discard floats.put(matrixArray(pass#map#view));
         discard floats.put(matrixArray(Mat4.identity()));
         discard floats.put(Array#{RenderUtil.f32(r#x), RenderUtil.f32(r#y), RenderUtil.f32(r#z), 0.0f32, 0.0f32, 1.0f32, 0.0f32, 0.0f32,
                                   0.0f32, 0.0f32, 0.0f32, 0.0f32} @ Static);
-        sh#gpu.writeBuffer(target#camera, 0i64, sh#cpuCamera, 0, Render3dWgsl.cameraBytes())
+        sh#gpu.writeBuffer(camera, 0i64, sh#cpuCamera, 0, Render3dWgsl.cameraBytes())
 
     /// 頂点のバイト数 stride（Render3d.WebGpuRows の形の版）・ジョイントの番号の位置 skin の、深度だけを書く pipeline（無ければ作る）。
     // WhyNot: frag を付けない — 描き先は深度だけで、色を書く段は捨てられる（GL は色の描き先の無い FBO で同じ事をする）。

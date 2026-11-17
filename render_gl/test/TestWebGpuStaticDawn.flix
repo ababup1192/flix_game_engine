@@ -140,6 +140,17 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
         Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 2, 0), (cachedOf(seen), recorded, errors))
     })
 
+    /// 点光源の影の場面の持ち越した物は、色の pass の bundle 1 つと atlas の面ごとの bundle 6 つを積み、続くコマはそれを使い回す（device の誤りは無い）。
+    @Test
+    def testPointShadowedBundlesAreKeptPerFace(): Unit \ {Assert, IO} = withDawn(gpu -> {
+        let lamp = { position = Vec3.v3(0.0, 0.0, 6.0), color = { r = 1.0, g = 1.0, b = 1.0 }, intensity = 1.0, range = 20.0 };
+        let shadowed = { maxShadowedLights = 1, mapSize = 32 | Scene3d.pointShadowMap() };
+        let lit = (cmd: Scene3d.RenderCmd) -> { scene = Scene3d.withPointShadows(shadowed, { pointLights = lamp :: Nil | cmd#scene }) | cmd };
+        let frame = lit(sceneWith(town())) :: Nil;
+        let (seen, (recorded, _, errors)) = framesOf(gpu, 4000000, frame :: frame :: frame :: Nil);
+        Assert.assertEq(expected = (1 :: 1 :: 1 :: Nil, 7, 0), (cachedOf(seen), recorded, errors))
+    })
+
     /// 持ち越した物も描いた物の数に入る。
     @Test
     def testCarriedItemsAreCountedAsDrawn(): Unit \ {Assert, IO} = withDawn(gpu -> {

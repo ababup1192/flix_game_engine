@@ -32,7 +32,7 @@ mod Render3d.TestStaticRows {
         let cache = freshCache();
         let builds = Ref.fresh(Static, 0);
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        gens |> List.forEach(match (gen, g) -> discard ensure(planner, cache, gen, g, () -> { Ref.put(Ref.get(builds) + 1, builds); Ref.get(builds) }, _ -> ()));
+        gens |> List.forEach(match (gen, g) -> discard ensure(planner, cache, gen, g, "", () -> { Ref.put(Ref.get(builds) + 1, builds); Ref.get(builds) }, _ -> ()));
         Ref.get(builds)
 
     // ── 前のコマの行を使うか ──
@@ -72,7 +72,7 @@ mod Render3d.TestStaticRows {
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let builds = Ref.fresh(Static, 0);
         List.range(1, 4) |> List.forEach(gen -> (g :: tinted :: Nil) |> List.forEach(x ->
-            discard ensure(planner, cache, Int32.toInt64(gen), x, () -> { Ref.put(Ref.get(builds) + 1, builds); 0 }, _ -> Ref.put(Ref.get(retired) + 1, retired))));
+            discard ensure(planner, cache, Int32.toInt64(gen), x, "", () -> { Ref.put(Ref.get(builds) + 1, builds); 0 }, _ -> Ref.put(Ref.get(retired) + 1, retired))));
         Assert.assertEq(expected = (2, 0, 2), (Ref.get(builds), Ref.get(retired), sizeOf(cache)))
 
     /// 作り直す時は、前の物を destroy に渡す。
@@ -82,8 +82,8 @@ mod Render3d.TestStaticRows {
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let destroyed = Ref.fresh(Static, Nil);
         let destroy = (p: Int32) -> Ref.put(p :: Ref.get(destroyed), destroyed);
-        discard ensure(planner, cache, 1i64, town(), () -> 1, destroy);
-        discard ensure(planner, cache, 2i64, town(), () -> 2, destroy);
+        discard ensure(planner, cache, 1i64, town(), "", () -> 1, destroy);
+        discard ensure(planner, cache, 2i64, town(), "", () -> 2, destroy);
         Assert.assertEq(expected = 1 :: Nil, Ref.get(destroyed))
 
     /// しばらく描かなかった集まりは sweep が destroy して外し、描いた集まりは残す。
@@ -94,9 +94,9 @@ mod Render3d.TestStaticRows {
         let destroyed = Ref.fresh(Static, Nil);
         let destroy = (p: Int32) -> Ref.put(p :: Ref.get(destroyed), destroyed);
         let kept = town();
-        discard ensure(planner, cache, 1i64, Scene3d.staticGroup("gone", ("x", boxAt(1.0)) :: Nil), () -> 7, destroy);
-        discard ensure(planner, cache, 1i64, kept, () -> 8, destroy);
-        discard ensure(planner, cache, 10i64, kept, () -> 9, destroy);
+        discard ensure(planner, cache, 1i64, Scene3d.staticGroup("gone", ("x", boxAt(1.0)) :: Nil), "", () -> 7, destroy);
+        discard ensure(planner, cache, 1i64, kept, "", () -> 8, destroy);
+        discard ensure(planner, cache, 10i64, kept, "", () -> 9, destroy);
         sweep(cache, 10i64, 5i64, destroy);
         Assert.assertEq(expected = (7 :: Nil, 1), (Ref.get(destroyed), sizeOf(cache)))
 
@@ -105,7 +105,7 @@ mod Render3d.TestStaticRows {
     def testRebuildStreakWarnsOnce(): Unit \ {Assert, IO} =
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
-        let said = stderrOf(() -> List.range(1, 70) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), town(), () -> gen, _ -> ())));
+        let said = stderrOf(() -> List.range(1, 70) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), town(), "", () -> gen, _ -> ())));
         Assert.assertEq(expected = 2, List.length(String.split(regex = "'town'", said)))
 
     /// 作り直しが続かなければ知らせない。
@@ -114,7 +114,7 @@ mod Render3d.TestStaticRows {
         let cache = freshCache();
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let g = town();
-        List.range(1, 40) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), g, () -> gen, _ -> ()));
+        List.range(1, 40) |> List.forEach(gen -> discard ensure(planner, cache, Int32.toInt64(gen), g, "", () -> gen, _ -> ()));
         Assert.assertFalse(Set.memberOf("@staticGroup:town", Ref.get(planner#sceneWarnedRef)))
 
     // ── 持ち越す物と毎コマの物 ──

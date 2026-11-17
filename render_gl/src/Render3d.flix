@@ -202,6 +202,12 @@ mod Render3d {
     pub def shaderVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant =
         { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == Scene3d.LightUnits.Physical }
 
+    /// 場面 scene の pass のプログラムの変種（色の場面は shaderVariantOf・奥行きの書き出しは既定。Render3d.ScenePlan の groupScene と同じ決め方）。
+    pub def passVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant = match scene#output {
+        case Scene3d.Output.Color    => shaderVariantOf(scene)
+        case Scene3d.Output.Depth(_) => defaultShaderVariant()
+    }
+
     /// 材質のプログラムの版 kind の変種。
     pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = { pointShadows = kind#pointShadows, physicalUnits = kind#physicalUnits }
 
@@ -584,7 +590,7 @@ mod Render3d {
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let shadows = inputs#shadows;
-        let variant = shaderVariantOf(scene);
+        let variant = passVariantOf(scene);
         let camera = { view = view, proj = proj, lights = lights, shadows = shadows, variant = variant };
         Render3d.GlRows.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);

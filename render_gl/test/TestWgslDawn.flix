@@ -247,6 +247,7 @@ mod TestWgslDawn {
     def kindLabel(k: Render3d.ProgramKind): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
         bit(k#uv, "u") + bit(k#normalMap, "n") + bit(k#lightmap, "l") + bit(k#blend, "b") + bit(k#doubleSided, "d") + bit(k#coverage, "c") + bit(k#metallicRoughness, "m")
+            + bit(k#pointShadows, "s") + bit(k#physicalUnits, "p")
 
     /// 3D の材質の frag の変種: 絵を読む材質と読まない材質は ProgramKind の全部の組・ほかの材質は 2 つの組。
     def materialFragments(): List[(String, String)] =
@@ -256,7 +257,8 @@ mod TestWgslDawn {
             let (name, spec, glow, metal) = v;
             let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 1);
             let chosen = if (name == "scene3d-field" or name == "textured-metal") kinds else few;
-            chosen |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
+            let variants = if (name == "textured-metal") few |> List.flatMap(k -> { pointShadows = true | k } :: { physicalUnits = true | k } :: { pointShadows = true, physicalUnits = true | k } :: Nil) else Nil;
+            (chosen ::: variants) |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
         })
 
     /// 手で書いた 2D の面の WGSL（組めない面の単色の代わり）。
@@ -268,6 +270,10 @@ mod TestWgslDawn {
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
+        ("frag lit +ps", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = false })) ::
+        ("frag lit +pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = true })) ::
+        ("frag lit +ps+pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = true })) ::
+        ("frag billboard +pu", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true })) ::
         ("frag depth", Render3dWgsl.depthFragmentSource()) ::
         ("vertex lit", Render3dWgsl.litVertexSource(false)) ::
         ("vertex material", Render3dWgsl.materialVertexSource(false, false, false)) ::

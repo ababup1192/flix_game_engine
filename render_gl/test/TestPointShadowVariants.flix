@@ -108,6 +108,42 @@ mod Render3d.TestPointShadowVariants {
         Assert.assertEq(expected = (true, true),
             (has("r3d_pointLit[i]", Render3dGlsl.metallicRoughnessSourceFor(v)), has("uInverseUnitsPerMeterSquared", Render3dGlsl.lightmapLightSourceFor(v))))
 
+    // ── 変種の字（WebGPU）──
+
+    @Test
+    def testWgslPointShadowFillsPointLitBeforeLight(): Unit \ Assert =
+        let source = Render3dWgsl.materialFragmentSource(solidWgsl(), { pointShadows = true | plainKind() });
+        let fill = String.indexOf(substr = "    r3d_pointShadowsAt(vWorld, normalize(vNormal), n);\n", source) |> Option.getWithDefault(-1);
+        let light = String.indexOf(substr = "    let light = lightAt(vWorld, n);\n", source) |> Option.getWithDefault(-1);
+        Assert.assertTrue(fill >= 0 and fill < light)
+
+    @Test
+    def testWgslVariantBindingsFollowTheSceneGroup(): Unit \ Assert =
+        Assert.assertEq(expected = (true, true, false),
+            (has("@group(0) @binding(6) var<uniform> r3dLight: R3dLight;", Render3dWgsl.variantDeclarations(physical())),
+             has("@group(0) @binding(7) var uPointShadowMap: texture_depth_2d;", Render3dWgsl.variantDeclarations(shadowed())),
+             has("binding(7)", Render3dWgsl.variantDeclarations(physical()))))
+
+    @Test
+    def testWgslAtlasRowIsFlippedOnlyWhenRead(): Unit \ Assert =
+        let wgsl = Render3dWgsl.lightSourceFor(shadowed());
+        Assert.assertEq(expected = (true, true),
+            (has("let t = origin + clamp(center + vec2i(dx, dy), vec2i(0), last);", wgsl), has("textureLoad(uPointShadowMap, vec2i(t.x, top - t.y), 0)", wgsl)))
+
+    @Test
+    def testWgslBillboardIgnoresPointShadows(): Unit \ Assert =
+        Assert.assertEq(expected = Render3dWgsl.billboardFragmentSource(), Render3dWgsl.billboardFragmentSourceFor(shadowed()))
+
+    @Test
+    def testLightValueBytesHoldEightCastersAndTail(): Unit \ Assert =
+        Assert.assertEq(expected = 160, Render3dWgsl.lightValueBytes())
+
+    @Test
+    def testLayoutCodesAreDefaultLightAtlas(): Unit \ Assert =
+        Assert.assertEq(expected = 0 :: 1 :: 2 :: 2 :: Nil,
+            Render3d.WebGpuRenderer.layoutCodeOf(Render3d.defaultShaderVariant()) :: Render3d.WebGpuRenderer.layoutCodeOf(physical())
+                :: Render3d.WebGpuRenderer.layoutCodeOf(shadowed()) :: Render3d.WebGpuRenderer.layoutCodeOf({ pointShadows = true, physicalUnits = true }) :: Nil)
+
     // ── 場面の変種 ──
 
     def lamp(): Scene3d.PointLight = { position = Vec3.v3(0.0, 1.0, 0.0), color = { r = 1.0, g = 1.0, b = 1.0 }, intensity = 1.0, range = 10.0 }

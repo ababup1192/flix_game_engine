@@ -14,10 +14,10 @@ mod Render3d.WebGpuSky {
     import fge.webgpu.WebGpu
     import java.nio.ByteBuffer
 
-    /// 空の backend の状態。sceneLayout = group 0 の layout（3D の描き手の持ち物）・pipelines = (形式の番号, 標本の数) → pipeline。
+    /// 空の backend の状態。sceneLayout = group 0 の layout（3D の描き手の持ち物）・pipelines = (形式の番号, 標本の数, group 0 の形の番号) → pipeline。
     pub type alias Sky = {
         gpu = WebGpu, sceneLayout = BindGroupLayout, vertexModule = ShaderModule, fragmentModule = ShaderModule,
-        pipelines = Ref[Map[(Int32, Int32), RenderPipeline], Static]
+        pipelines = Ref[Map[(Int32, Int32, Int32), RenderPipeline], Static]
     }
 
     /// device の上に shader module を作る。sceneLayout = 場面の group 0 の layout（持ち主が手放す）。
@@ -56,20 +56,23 @@ mod Render3d.WebGpuSky {
     /// 色の pass で空を描く場面か（sky がある場面と、sky が無く景色を背景に描く場面。GL の Render3d.drawSky と同じ Scene3d.drawnSkyOf）。
     pub def isDrawn(scene: Scene3d.Scene3dCmd): Bool = Option.nonEmpty(Scene3d.drawnSkyOf(scene))
 
-    /// 開いた pass p へ空を描く（group 0 は付いている前提・pipeline は付け替える）。形式 format・標本 samples は描き先の物。
-    pub def draw(sky: Sky, p: RenderPass, format: RenderTarget.Format, samples: Int32): Unit \ IO =
-        p.setPipeline(pipelineOf(sky, format, samples));
+    /// 開いた pass p へ空を描く（group 0 は付いている前提・pipeline は付け替える）。形式 format・標本 samples は描き先の物・
+    /// group0 = 場面の group 0 の (形の番号, layout)（変種の場面は R3dLight を足した layout。空の frag は読まない）。
+    pub def draw(sky: Sky, p: RenderPass, format: RenderTarget.Format, samples: Int32, group0: (Int32, BindGroupLayout)): Unit \ IO =
+        p.setPipeline(pipelineOf(sky, format, samples, group0));
         p.draw(3, 1, 0, 0)
 
-    /// 形式 format・標本 samples の空の pipeline（無ければ作る）。group 0 は場面の layout。
+    /// 形式 format・標本 samples・場面の group 0 の空の pipeline（無ければ作る）。
     /// 深度は読まず書かない（GL の drawSky が深度の判定を切って描く）。描き先の pass は深度を持つので、形式だけ合わせる。
-    def pipelineOf(sky: Sky, format: RenderTarget.Format, samples: Int32): RenderPipeline \ IO =
-        let key = (RenderPaint.Internal.WebGpuPipelines.formatCode(format), samples);
+    // WhyNot: 変種の場面でも既定の layout で作らない — pass の頭で付けた group 0 は変種の layout で、layout の違う pipeline へは付けられない。
+    def pipelineOf(sky: Sky, format: RenderTarget.Format, samples: Int32, group0: (Int32, BindGroupLayout)): RenderPipeline \ IO =
+        let (code, layout) = group0;
+        let key = (RenderPaint.Internal.WebGpuPipelines.formatCode(format), samples, code);
         match Map.get(key, Ref.get(sky#pipelines)) {
             case Some(p) => p
             case None =>
                 let desc = new RenderPipelineDesc("fge scene3d sky");
-                discard desc.bindGroupLayout(sky#sceneLayout);
+                discard desc.bindGroupLayout(layout);
                 discard desc.vertex(sky#vertexModule, "vs_main").fragment(sky#fragmentModule, "fs_main");
                 discard desc.colorTarget(RenderPaint.Internal.WebGpuPipelines.textureFormatOf(format));
                 discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CW, CullMode.NONE);

@@ -367,8 +367,12 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let image = imageLayout(gpu);
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout, image);
         let RendererData.RendererData(s) = renderer;
-        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1);
-        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 4);
+        let plain = Render3d.defaultShaderVariant();
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, plain, (0, s#sceneLayout));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 4, plain, (0, s#sceneLayout));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { physicalUnits = true | plain }, (1, s#lightLayout));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true | plain }, (2, s#atlasLayout));
+        discard Render3d.WebGpuBillboards.pipelineOf(s#billboards, RenderTarget.Format.Rgba8Unorm, 1, { pointShadows = true, physicalUnits = true }, (2, s#atlasLayout));
         let errors = gpu.errorCount();
         Render3d.WebGpuRenderer.release(renderer);
         image.release();

@@ -129,7 +129,8 @@ mod Render3d.StaticRows {
     /// 集まり 1 つの控え。items = staticGroup で作った items の値だけを鍵に持つ表（参照で比べる）・removed と tint = 作った時の外した鍵と色・
     /// payload = backend が置いた物・lastUsed = 最後に描いたコマの世代（要素 1 つ）。
     // WhyNot: items を Eq で比べない — 中身の比べは物の数だけ形と材質を辿り、持ち越しで省きたい仕事と同じ重さになる。
-    type alias Entry[a] = { items = IdentityHashMap[Object, Object], removed = Set[String], tint = Color, payload = a, lastUsed = Array[Int64, Static] }
+    /// variant = 作った時の場面のシェーダーの変種の鍵（Render3d.variantKeyOf。材質のプログラムの版が変種で違う）。
+    type alias Entry[a] = { items = IdentityHashMap[Object, Object], removed = Set[String], tint = Color, variant = String, payload = a, lastUsed = Array[Int64, Static] }
 
     /// 持ち越しの控え（a = backend が GPU に置いた物）。entries = 集まりの名前 → 控えの列（同じ名前でも中身の違う集まりを 1 コマに何場面かで描くと 2 つ以上）・
     /// rebuilds = 名前 → (最後に作り直した世代, 続けて作り直したコマの数)。
@@ -141,13 +142,13 @@ mod Render3d.StaticRows {
     /// この数のコマ続けて同じ名前の集まりを作り直したら、1 回知らせる。
     def rebuildStreakLimit(): Int32 = 30
 
-    /// 集まり g の持ち越した物。名前・items の値・外した鍵・tint が同じ控えがあればその物、無ければ build で作る（重い）。gen = 今のコマの世代。
+    /// 集まり g の持ち越した物。名前・items の値・外した鍵・tint・場面の変種の鍵 variant が同じ控えがあればその物、無ければ build で作る（重い）。gen = 今のコマの世代。
     /// 作る時は、同じ名前の控えのうち今のコマで使っていない物を retire へ渡す（今のコマで使った物は、ほかの場面が描くので残す）。
-    pub def ensure(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, make: Unit -> a \ ef1, retire: a -> Unit \ ef2): a \ ef1 + ef2 + IO =
+    pub def ensure(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, make: Unit -> a \ ef1, retire: a -> Unit \ ef2): a \ ef1 + ef2 + IO =
         let f = Scene3d.staticGroupFieldsOf(g);
         let items = unchecked_cast(f#items as Object);
         let held = Map.getWithDefault(f#name, Nil, Ref.get(cache#entries));
-        match List.find(e -> isSameGroup(f, e) and e#items.containsKey(items), held) {
+        match List.find(e -> isSameGroup(f, e) and e#variant == variant and e#items.containsKey(items), held) {
             case Some(e) =>
                 Array.put(gen, 0, e#lastUsed);
                 e#payload
@@ -157,7 +158,7 @@ mod Render3d.StaticRows {
                 noteRebuild(planner, cache, gen, f#name);
                 let key: IdentityHashMap[Object, Object] = new IdentityHashMap();
                 discard key.put(items, items);
-                let made = { items = key, removed = f#removed, tint = f#tint, payload = make(), lastUsed = Array#{gen} @ Static };
+                let made = { items = key, removed = f#removed, tint = f#tint, variant = variant, payload = make(), lastUsed = Array#{gen} @ Static };
                 Ref.put(Map.insert(f#name, made :: usedNow, Ref.get(cache#entries)), cache#entries);
                 made#payload
         }
