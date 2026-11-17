@@ -221,6 +221,15 @@ HD-2D（`plans/engine-hd2d.md`）の下準備も同じ列に入れる（人の�
 
 1 の時刻の口は §3.0 の Distortion（熱のゆらぎ）と共用、`ExposureAdaptation` は HD-2D の入りの白飛び（plans/engine-hd2d.md §3.2）にも使う。2 は HD-2D の追従と寄り（同 §3.2.7 の 1）にも使う。
 
+### 3.0.2 ドット絵のジオラマの後がけ（人が「いいね」と言った・2026-11-17）
+
+元は https://github.com/sloemo01/diorama（MIT）の pixel の見た目: 低い解像度で描く・64 色へ減らす・Bayer の格子のディザ・奥行きと法線の輪郭。
+スパイク（枝 `worktree-agent-a39a5c79a9e71cfab` の `spikes/pixel-diorama/`。夜の屋台・雨のバス停・灯台の小島）は engine の今の部品だけで組めたが、
+画面なしで design の大きさに描き出す時だけ成り立つ（窓では後がけが窓の画素で評価される【未確認・コードから】）・木が大きい（GLSL 116 KB・CPU 1 コマの 87%）・ゲームが場面を 3 回組む。
+ゲームで使うには PostStack に `withPixelate`・`withPaletteQuantize`・`withOrderedDither`・`withOutline` と `Read.SceneNormal` を足す（順は ViewTransform の後・Fxaa の前に Outline → Dither → Palette）。
+奥行きと法線は S3 の `Scene3d.Output.DepthNormal` と共用するので、S3 の後に入れる。engine の拡張なので作る前に相談する。
+人の好みは「すっきり」なので、ディザは控えめを既定にする（灯台の海のまだらが弱点）。
+
 ### 3.1 最初の段に S1 を推す理由【推】
 
 物差し: (1) 何本のゲームの絵が変わるか (2) 描き手に入るか (3) 正解の絵と比べられるか (4) スマホの値段。
