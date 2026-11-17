@@ -2291,5 +2291,22 @@ GL の画と呼び出しの並びは変えていない（集まりの物を inst
 - 持ち越し:
   - 動画の既定（`VideoOut.Painter` に WebGPU の case を足すかを伺う）・外のゲームの追随（触る時に）・Studio（別のリポジトリ・GL のまま）・計測（12.16 のまとめ・16 ms の判定・欠けの表の時間）。
   - F8 の注釈は型検査と GL の振る舞いの読み比べだけで、WebGPU の窓で実際に F8 を押していない【未確認】。WebGPU の窓の起動の後の字の足し方は gl-capture（used）と Dawn のテストでは通らず、auto のゲームを目で見ていない【未確認】。
-  - ブラウザの既定は WebGL2 のまま（`?backend=webgpu`）。
+  - ブラウザの既定は WebGL2 のまま（`?backend=webgpu`）→ 12.42 で WebGPU に替えた。
   - `GpuOffscreen.readImage` は ARGB の画像から RGB へ写す回り道（1 枚撮りの予算で測ってから）。
+
+### 12.42 ブラウザの既定も WebGPU に（2026-11-17・この Mac・Chrome 156）
+
+人の指示「ブラウザの既定も WebGPU にして」。スマホ（Galaxy S24 Ultra の Chrome）で scene3d の 12,000 個が WebGPU・staticGroup ありで 60 fps・cpu 9 ms（WebGL2 は 541 ms）、fps3d の部屋は同じか WebGPU が 1〜2 fps 速く、見た目の崩れの報告も無いため。engine の pub は変えていない（選ぶのは頁の JS で、`Browser.backendRequest` の答えが替わるだけ）。
+
+- **決めた事**:
+  - 選び方（`engine_web/js/fge-web.js`）: 何も付けない・`?backend=webgpu`・知らない字は WebGPU。`?backend=webgl2` と `?backend=gl` は WebGL2（PC の `FLIX_GE_BACKEND=gl` に合わせて `gl` も受ける）。
+  - 戻す段は今の作りのまま 3 つ: (1) `navigator.gpu` が無い頁は起動の前に WebGL2 を選ぶ。(2) adapter・device・core-features-and-limits・pipeline（WGSL）・絵とフォントを上げる所で落ちたら、webgpu の文脈を取る前なので同じ canvas からその場で WebGL2 を取る（`WebLayer.withGlFallback`）。(3) 文脈を取った後に落ちた時だけ頁を開き直す。開き直す URL は前は `?backend` を外していたが、既定が WebGPU になると同じ所で落ちて開き直しを繰り返すので `?backend=webgl2` を付ける。起動の前に全部を判定しない WhyNot は `fgeFallbackToWebGl2` に書いた（device と pipeline は wasm の main で作るまで落ちるか分からない）。
+  - どの段も console に `[backend] WebGPU を使えない: <理由> — WebGL2 で起動する` を 1 行（開き直した頁は「前の頁で WebGPU を使えなかった」を 1 行）。`?backend=webgl2` で選んだ頁は `[backend] webgl2: …` を 1 行。
+  - `bin/fge export-web` の ⑨ は既定の頁と `?backend=webgl2` の頁の 2 つを開く（既定だけだと WebGL2 の道を書き出しの時に通さなくなる）。go のテストを 1 本足した。
+  - `?fps=1` の表示とベンチの頁（bench-overlay）に、実際に描いている描き手（webgpu / webgl2。文脈を取れたかで言う）を出す。overlay の `env.renderer` は overlay が自分で取った WebGL2 の名前のままなので、`env.backend` は WebGPU の時だけ入る（前と同じ）。`make bench-web` は既定で WebGPU を測る（WebGL2 は `ARGS='…&backend=webgl2'`）。
+  - `make webgpu-v1-check-web` の 3 枚を `?backend=webgl2`・既定・WebGPU の無い頁に替え、`?backend=webgl2` の頁が WebGL2 と名乗るかも見る。
+  - `hud=1` は sprite_stress のつまみ（ゲームの中の HUD）で、描き手とは関わらない。
+- **PC の Chrome（headless）で確かめた事**（rpg-starter を export-web で書き出し）: 既定 → `renderer: webgpu: WebGPU apple metal-3`・`?backend=webgl2` と `?backend=gl` → ANGLE Metal。`--disable-gpu --enable-unsafe-swiftshader`（adapter が取れない）→ `[backend] WebGPU を使えない: device を開けない: … adapter が無い — WebGL2 で起動する` の後 WebGL2（SwiftShader）で描いた。`?webgpuFail=prepare` はその場で WebGL2、`?webgpuFail=canvas` は `?backend=webgl2` で 1 回だけ開き直して WebGL2。`--disable-features=WebGPU` と `--disable-blink-features=WebGPU` は Chrome 156 では効かず WebGPU のまま（navigator.gpu を消す道は `make webgpu-v1-check-web` の nogpu 頁で見た）。
+- **門**: `make webgpu-v1-check-web` exit 0（既定と `?backend=webgl2` の差 0 px・nogpu も 0 px）・`make webgpu-check-web` exit 0（全部通った）・`make sync-engine-full-web`（engine_web の check と build-pkg）exit 0・export-web の ⑨（2 つの頁）通過・go の `TestCheckWebLoads*` 3 本緑・`make lint ONLY=max-lines` exit 0。engine は触っていないので `make test-engine` は流していない。engine_web にテストは無い。
+- 持ち越し: スマホ（Android の Chrome・iOS の Safari）で既定の頁を開いて WebGPU で起動するか【未確認】。Safari は WebGPU を持つ版と持たない版があり、持たない版は (1) の道。
+- **agent-eval**: `try-webgpu-backend` を「ブラウザで WebGL2 に戻して見比べる」に替えた（期待は `backend=webgl2`・`backend=webgpu を付け` は減点）。rpg-starter の写しで 100 点（1 回目は「使えないブラウザでどうなるか」の期待の語が choice に当たらず 50 点。答えの本文は正しかったので、道具でない期待を外した）。
