@@ -395,8 +395,23 @@ pub mod VideoOut {
         if (not List.isEmpty(video#images)) Err("ファイルの無い絵（${Int32.toString(List.length(video#images))} 枚）を WebGPU へ上げる口が無い")
         else match run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO {
             case Err(why)   => Err("project.json を読めない: ${why}")
-            case Ok(loaded) => GpuOffscreen.openWebGpuOnly({ config = { clearColor = cfg#background | loaded#config }, scale = cfg#scale })
+            case Ok(loaded) => GpuOffscreen.openWebGpuOnly({ config = { clearColor = cfg#background | sizedConfig(cfg#design, loaded#config) }, scale = cfg#scale })
         }
+
+    /// 描き先の design を、いま撮っている画面の design（video#soft#design）にした config。project.json の design（横）は縦の画面と違う。
+    def sizedConfig(design: Vec2.Vec2, config: GameEngine.EngineConfig): GameEngine.EngineConfig =
+        { designWidth = roundInt(design#x), designHeight = roundInt(design#y) | config }
+
+    /// sizedConfig の、画素の幅と高さを偶数にそろえた形（ffmpeg へ流す描き先）。奇数の辺は design を 1 足し、右か下に 1 列を足す（design の外へはみ出して描いた背景か、無ければ地の色が入る）。
+    // WhyNot: 縮めて偶数にしない — 1169 → 1168 の縮みは全部の字と線を混ぜてにじませる。
+    // WhyNot: 端の 1 列を切らない — 縦の画面の一番下に置く UI（送りのボタン・ページの印）が欠ける。足した列は左上を原点のまま
+    //   増やすので、tape.json の design の座標と動画の画素は 1:1 のまま（頁の重ね絵もずれない）。
+    // WhyNot: scale 倍の後に 1 画素だけ足さない — 塗りのコアは design × scale の描き先しか作らない。辺が奇数になるのは design も scale も
+    //   奇数の時だけなので、design に 1 足せば辺は偶数になる。
+    def evenSizedConfig(design: Vec2.Vec2, scale: Int32, config: GameEngine.EngineConfig): GameEngine.EngineConfig =
+        let sized = sizedConfig(design, config);
+        let even = side -> if (Int32.modulo(side * scale, 2) == 0) side else side + 1;
+        { designWidth = even(sized#designWidth), designHeight = even(sized#designHeight) | sized }
 
     /// 塗るコマを、render-cache（描き手の素性つきの鍵）→ 同じ鍵のコマ → WebGPU で塗る、の順に用意する。
     /// 塗るのは呼んだ糸で 1 枚ずつ、PNG に書くのは別の糸で並べて（8 枚ごとに待つ）。
@@ -471,11 +486,18 @@ pub mod VideoOut {
             case Err(why) => Err("project.json を読めない: ${why}")
             case Ok(loaded) =>
                 let cfg = video#soft;
+                let sized = { clearColor = cfg#background | evenSizedConfig(cfg#design, cfg#scale, loaded#config) };
+                let sameSize = sized#designWidth == loaded#config#designWidth and sized#designHeight == loaded#config#designHeight;
                 let started = settings#gl |> Option.flatMap(pending ->
                     GlOffscreen.await(pending, { scale = cfg#scale, background = cfg#background }));
+                // WhyNot: 大きさの違う用意を捨て置かない — 用意は project.json の design で始めてあり、文脈を持ったまま残すと
+                //   常駐（App.Headless.serveJobs）で縦を撮るたびに GL の文脈が 1 つずつ溜まる。
                 let opened = match started {
-                    case Some(result) => result
-                    case None         => GlOffscreen.open({ config = { clearColor = cfg#background | loaded#config }, scale = cfg#scale })
+                    case Some(result) if sameSize => result
+                    case Some(result)             =>
+                        Result.forEach(GlOffscreen.close, result);
+                        GlOffscreen.open({ config = sized, scale = cfg#scale })
+                    case None                     => GlOffscreen.open({ config = sized, scale = cfg#scale })
                 };
                 match opened {
                     case Err(why) => Err(why)
