@@ -37,6 +37,12 @@
   （入口は `Game.withAssetLoading` で、Main とブラウザの入口だけが足す。テスト・flow・描き出しは全部届いた形のまま）。
 - 文字送り（UiTypewriter）・ルビつきの字の配置と折り返し（RichText.placeRuby）・シナリオの実行（YarnRunner）・
   ミキサー（AudioMixer）はエンジンの物を使う。自前の文字折り・会話の進め方・音量の掛け算を書かない。
+  例外はクレジットの行（`src/CreditsLayout.flix`）: 中央そろえの行を禁則つきで読点・中黒・括弧の所で折り、流れ切る長さも同じ並びから出す
+  （engine の RichText の折りは字の境目で切り、禁則を持たない）。
+- **クレジットの書き方の決まり**（`assets/novel.credits.json` と `CREDITS.md`）: 画像生成で作った絵や、engine・自作の合成で作った音は、
+  場面や音の種類を並べない（「背景は画像生成で作りました」「効果音の一部は合成」くらい）。外の素材で規約が表記を求める物
+  （作者名・曲名・サイト・ライセンス）は書く。縦の画面（540 幅）に入らない行は折って流れるが、1 行は短いほど読みやすい。
+  縦の画面のクレジットは `make render SHOT=credits VIEW=phone`（数秒で `debug/portrait-credits.png`）で確かめる。
 - **BGM・効果音を外から足す時は、engine の `docs/audio.md` の「外から持ってくる BGM・効果音」の候補から選ぶ**（ノベルには魔王魂・PeriTune・甘茶の音楽工房、効果音は効果音ラボ）。
   規約の要点（魔王魂はクレジット必須・PeriTune の曲を有償の作品に入れる時と、音を自由に鳴らせる画面を作る時は相談）と書く所（`CREDITS.md` と `assets/novel.credits.json` の 2 か所）もそこにある。
 

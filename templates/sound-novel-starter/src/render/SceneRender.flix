@@ -2,6 +2,7 @@
 // 実行: make render-all → gallery/*.png と gallery/<場面>.json（場面の正は novel.shots.json・World を組むのは Shots）
 //       make render SHOT=nvl → debug/nvl.png（1 枚だけ）。small-<場面> は同じ場面を小さい画面（スマホ）の並べ方で描く。
 //       portrait-<場面> は縦に持ったスマホ（390×844 → 縦の design 540×1169）、portrait-short-<場面> は太い縦の画面（360×640 → 540×960）で描く
+//       make render SHOT=credits VIEW=phone は SHOT の場面を縦に持ったスマホで 1 枚描く（novel.shots.json のどの場面でも。名前は portrait-<場面>）
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
@@ -128,9 +129,12 @@ mod SceneRender {
     pub def one(): Unit \ IO = App.Headless.exitWith(oneJob(App.Headless.requestFromProcess()))
 
     pub def oneJob(req: App.Headless.Request): Int32 \ IO =
-        let wanted = Map.getWithDefault("SHOT", "", App.Headless.envOf(req)) |> String.splitOn(substr = " ")
-            |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n));
-        let names = allNames(loadRes());
+        let env = App.Headless.envOf(req);
+        let phone = Map.get("VIEW", env) == Some("phone");
+        let wanted = Map.getWithDefault("SHOT", "", env) |> String.splitOn(substr = " ")
+            |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n)) |> List.map(n -> if (phone) phoneNameOf(n) else n);
+        let loaded = loadRes();
+        let names = allNames(loaded) ::: (onDemandPortraitShots(loaded) |> List.map(match (name, _, _) -> name));
         let known = List.toSet(names);
         let unknown = wanted |> List.filter(n -> not Set.memberOf(n, known));
         if (List.isEmpty(wanted) or not List.isEmpty(unknown)) {
@@ -139,7 +143,7 @@ mod SceneRender {
             1
         } else {
             let picked = List.toSet(wanted);
-            discard shotsInto("debug", n -> Set.memberOf(n, picked));
+            discard shotsWith("debug", onDemandPortraitShots(loaded), n -> Set.memberOf(n, picked));
             0
         }
 
@@ -178,7 +182,7 @@ mod SceneRender {
             :: ("portrait-settings", "settings", tall) :: ("portrait-ask", "ask", tall)
             :: ("portrait-eaves", "eaves", tall) :: ("portrait-ending", "ending", tall) :: ("portrait-menu", "menu", tall)
             :: ("portrait-saveload", "saveload", tall) :: ("portrait-tooltip", "tooltip", tall)
-            :: ("portrait-hold-ring", "hold", tall) :: ("portrait-cast-sample", "cast", tall) :: ("portrait-cast-veil", "cast", tall)
+            :: ("portrait-credits", "credits", tall) :: ("portrait-hold-ring", "hold", tall) :: ("portrait-cast-sample", "cast", tall) :: ("portrait-cast-veil", "cast", tall)
             :: ("portrait-short-nvl", "nvl", short) :: ("portrait-short-save", "save", short)
             :: ("portrait-short-settings", "settings", short) :: Nil
 
@@ -221,7 +225,19 @@ mod SceneRender {
     /// 描く元を替えた場面・小さい画面・縦の画面の描き出しの名前。
     pub def renderOnlyNames(): List[String] = (ownScenes() |> List.map(fst)) ::: variantNames()
 
-    def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
+    def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO = shotsWith(outDir, Nil, keep)
+
+    /// VIEW=phone で SHOT の名前を縦の画面の描き出しの名前へ替える（portrait- が付いていればそのまま）。
+    def phoneNameOf(name: String): String = if (String.startsWith(prefix = "portrait-", name)) name else "portrait-${name}"
+
+    /// make render SHOT=<場面> VIEW=phone で 1 枚だけ撮れる縦の画面の場面: portraitShots に無い novel.shots.json の場面を、縦に持ったスマホで。
+    // WhyNot: portraitShots（render-all の一覧）へ全部を足さない — gallery と基準の絵が場面の数だけ増え、縦で崩れやすい所を選んだ一覧でなくなる。
+    def onDemandPortraitShots(res: Res.Res): List[(String, String, Vec2.Vec2)] =
+        let listed = portraitShots() |> List.map(match (name, _, _) -> name) |> List.toSet;
+        Shots.names(res) |> List.map(scene -> ("portrait-${scene}", scene, Display.defaultPortraitView()))
+            |> List.filter(match (name, _, _) -> not Set.memberOf(name, listed))
+
+    def shotsWith(outDir: String, extraPortrait: List[(String, String, Vec2.Vec2)], keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();
         let d = design();
         let cfg = cfgOf(d, outDir, texturesOf());
@@ -232,7 +248,7 @@ mod SceneRender {
         // WhyNot: 縦の design で small-* を撮らない — 縦の design では区分 Small でも縦の並べ方が選ばれ、design の場面と同じ絵になる。
         let small = if (Display.orientationOf(d) == Display.Orientation.Portrait) Nil
                     else smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Design(Display.SizeClass.Small)));
-        let portrait = portraitShots() |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
+        let portrait = (portraitShots() ::: extraPortrait) |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
         List.flatten(regular :: variant :: small :: portrait :: Nil) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, look) ->
             shootNamed(outDir, cfg, fonts, loaded, name, scene, look))
 

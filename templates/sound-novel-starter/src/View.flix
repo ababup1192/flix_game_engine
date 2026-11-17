@@ -582,21 +582,18 @@ mod View {
         let scrolled = Clock.since(startedAt, env#realNow) * kindOf(env)#creditsSpeed;
         let screenH = Layout.height(env#fit);
         let veil = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), t#panel, zVeil()) |> Render.fade(0.7));
-        let (items, _) = CreditsDoc.rec(env#res#credits)#rows |> List.foldLeft((acc, row) -> {
-            let (done, y) = acc;
-            let (size, color) = match row#style {
-                case CreditsDoc.Style.Heading => (26.0, t#accent)
-                case CreditsDoc.Style.Body    => (19.0, t#ink)
-                case CreditsDoc.Style.Small   => (13.0, t#inkSeen)
-                case CreditsDoc.Style.Gap     => (0.0, t#ink)
-            };
-            let visible = y > -60.0 and y < screenH + 10.0 and size > 0.0;
-            let placed = if (visible)
-                TextDraw.centered({ text = row#text, atlas = atlas, size = size, color = color, z = zText(),
-                                    centerX = Layout.width(env#fit) / 2.0, y = y }) :: done
-                else done;
-            (placed, y + World.creditsRowHeight(row#style))
-        }, (Nil, screenH - scrolled));
+        let room = CreditsLayout.room(Layout.width(env#fit));
+        let top = screenH - scrolled;
+        let measure = (text, size) -> TextDraw.width(text, atlas, size);
+        let colorOf = style -> match style {
+            case CreditsDoc.Style.Heading => t#accent
+            case CreditsDoc.Style.Small   => t#inkSeen
+            case _                        => t#ink
+        };
+        let items = CreditsLayout.lines(room, CreditsDoc.rec(env#res#credits)#rows)
+            |> List.filter(line -> top + line#y > -60.0 and top + line#y < screenH + 10.0)
+            |> List.map(line -> TextDraw.centered({ text = line#text, atlas = atlas, size = CreditsLayout.drawSize(measure, room, line),
+                                                    color = colorOf(line#style), z = zText(), centerX = Layout.width(env#fit) / 2.0, y = top + line#y }));
         veil :: items
 
     // ── 画面（バックログ・セーブ・ロード・設定・隠す） ──
