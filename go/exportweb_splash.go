@@ -183,12 +183,17 @@ func pngDataURL(b []byte) string {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b)
 }
 
+// bootFontDataPath は起動画面のロゴと字の元（make boot-font の生成物）の道。
+func bootFontDataPath(engine string) string {
+	return filepath.Join(engine, "engine", "src", "render2d", "BootFontData.flix")
+}
+
 // buildWebSplash は engine の BootFontData.flix から起動画面の材料を作る。読めない時は文言だけの splash と知らせの行を返す
 // （頁はロゴと題字を描かずにゲージと文言だけを出す）。
 // WhyNot: 読めない時に書き出しを止めない — 起動画面の飾りが欠けるだけで、ゲームは遊べる。
 func buildWebSplash(engine, prompt string, portrait *webPortraitDesignOut) (webSplash, string) {
 	s := webSplash{StartPrompt: prompt, PortraitDesign: portrait}
-	path := filepath.Join(engine, "engine", "src", "render2d", "BootFontData.flix")
+	path := bootFontDataPath(engine)
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return s, fmt.Sprintf("起動画面のロゴと字を読めない（%v）— 頁はゲージと文言だけを出す", err)

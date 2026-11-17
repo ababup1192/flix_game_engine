@@ -24,7 +24,7 @@ import (
 )
 
 const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--out <dir>] [--check] [--id <名前>] [--font-atlas-dir <dir>]
-                       [--work <dir>] [--engine <dir>] [--keep-work] [--no-browser-check]
+                       [--work <dir>] [--engine <dir>] [--keep-work] [--no-browser-check] [--reuse]
   ゲームをブラウザ版（TeaVM の WASM GC）へ書き出す。出力の既定は <ゲーム>/build/web。
   --check           作業フォルダで flix check だけ流す（web/WebMain.flix の型検査）
   --id              bundle.json の id（既定はゲームのフォルダの名前）
@@ -33,6 +33,8 @@ const exportWebUsage = `使い方: fge export-web <ゲームのフォルダ> [--
   --engine          engine の根（既定は bin/fge-go の置き場から引く）
   --keep-work       終わった後も作業フォルダの project/ を残す
   --no-browser-check  最後の「ヘッドレスの Chrome で頁を開き、wasm を読んで数コマ回せるか」を飛ばす
+  --reuse           書き出しの中身を決める物（写すゲームの全部・engine の束と jar・この bin/fge・変換の道具）の指紋が
+                    前の書き出しと同じで、書き出し先がその時のままなら組まずに使い回す（指紋は作業フォルダの export.inputs）
   環境変数: FLIX_GE_TEAVM_DIR（TeaVM の jar のフォルダ。無ければ Maven から取る）・JAVA・FLIX_JAR・
             FGE_CHROME（確かめに使う Chrome）・FLIX_GE_WEB_CHECK_WAIT（確かめで待つ秒・既定 90）
   終わりの番号: 0 書き出せた / 1 組み立てか TeaVM か素材かブラウザでの読み込みで失敗 / 2 呼び方の誤りか下ごしらえが無い`
@@ -43,7 +45,7 @@ func init() {
 
 type exportWebOptions struct {
 	Game, Out, Work, Engine, ID, FontAtlasDir string
-	Check, KeepWork, NoBrowserCheck           bool
+	Check, KeepWork, NoBrowserCheck, Reuse    bool
 }
 
 // exportWebCopyExcludes はゲームの根の直下で写さない物。
@@ -100,6 +102,10 @@ func parseExportWebArgs(args []string) (exportWebOptions, error) {
 		}
 		if a == "--no-browser-check" {
 			o.NoBrowserCheck = true
+			continue
+		}
+		if a == "--reuse" {
+			o.Reuse = true
 			continue
 		}
 		if a == "--json" {
@@ -208,6 +214,22 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 
 	if line := scene3dEntryWarning(p.Game, entry); line != "" {
 		ewLogf("%s", line)
+	}
+
+	fingerprint := ""
+	if o.Reuse && !o.Check {
+		fingerprint, err = exportInputsFingerprint(p, o, id, findWebEncoders(p.Engine, compress))
+		if err != nil {
+			fmt.Fprintf(errOut, "fge export-web: 指紋を作れない: %v\n", err)
+			return 2
+		}
+		if canReuseExport(p, fingerprint) {
+			version, _ := os.ReadFile(filepath.Join(p.Out, "version.txt"))
+			fmt.Fprintf(out, "export-web: %s（版 %s・前と同じ入力なので使い回した）\n", p.Out, strings.TrimSpace(string(version)))
+			return 0
+		}
+		// WhyNot: 前の指紋を残したまま組まない — 途中で止まると、半端な書き出し先を前の指紋が「同じ」と言う。
+		os.Remove(exportReuseStamp(p))
 	}
 
 	ewLogf("① ゲームを %s へ写す（engine_full_web %s）", p.Project, p.Version)
@@ -381,6 +403,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		}
 	}
 	cleanupExportWork(p, o.KeepWork)
+	if fingerprint != "" {
+		if err := os.WriteFile(exportReuseStamp(p), []byte(exportReuseLine(fingerprint, p.Out, hash)), 0o644); err != nil {
+			ewLogf("知らせ: 指紋を残せない（次の --reuse も組み直す）: %v", err)
+		}
+	}
 
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
 	writeExportSizes(out, p.Out, b, atlases, report)
