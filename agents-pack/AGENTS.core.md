@@ -37,7 +37,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
 | 3D の場面に写真のような仕上げ（白飛びを収める・灯りのにじみ・縁を暗く・縁をならす）を付ける | `App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor) \|> PostStack.withExposure(..))`（順・Pass・描き先はエンジン。値は `assets/post.json` を `PostStack.loadOr`・schema は engine の `docs/post.schema.json`。Pass を手で並べて `PostProcess.tonemappedWith` を組まない） |
-| Blender の画面（Color Management）と同じ色にする | `PostStack.withViewTransform(PostStack.ViewTransform.KhronosNeutral)`（か `Standard`）+ `PostStack.withExposure(Blender の Exposure)`（線形の値に掛ける。AgX・Filmic はまだ無い） |
+| Blender の画面（Color Management）と同じ色にする | `PostStack.withViewTransform(PostStack.ViewTransform.KhronosNeutral)`（か `Standard`）+ `PostStack.withExposure(Blender の Exposure)`（線形の値に掛ける。`AgX` もある（Look は Base）・Filmic は無い） |
 | 後がけを掛けたくない会話の窓・メニュー・字幕 | `App.withHudView` に置く（`App.withPostStack` は View の絵の全部に掛かり、HUD には掛からない） |
 | 3D の場面の奥行きでぼかす（ピントを主人公に） | `PostStack.withDepthOfField(Some(PostStack.DepthOfField.Physical({ focusDistance, fStop })))`（m・F 値。奥行きの絵はエンジンが場面から作る。場面の長さが m でなければ `Scene3d.withUnitsPerMeter`） |
 | 3D の場面の光・空・かすみ・露出・bloom の値を決める（夕方の屋外・夜の部屋・洞窟など） | engine の `docs/art-ref/visual-dict/reference-3d.md`（見た目の名前 → 値の組・Pass の並びの手本・見た目が悪い時の切り分け。前のゲームの値を写す前に引く） |

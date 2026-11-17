@@ -26,7 +26,7 @@
       "type": "object", "label": "view transform",
       "description": "Blender の Color Management → View Transform。AcesNarkowicz は今までのゲームの見え方との互換（Blender に無い曲線）",
       "properties": {
-        "kind": { "type": "string", "enum": ["Standard", "KhronosNeutral", "AcesNarkowicz"], "label": "曲線", "description": "Standard（曲線なし・1 で切る）と KhronosNeutral（Khronos PBR Neutral）は Blender と同じく線形の値に掛ける。AcesNarkowicz は画面の値のまま掛ける互換" },
+        "kind": { "type": "string", "enum": ["Standard", "KhronosNeutral", "AgX", "AcesNarkowicz"], "label": "曲線", "description": "Standard（曲線なし・1 で切る）・KhronosNeutral（Khronos PBR Neutral）・AgX（Look は Base）は Blender と同じく線形の値に掛ける。AcesNarkowicz は画面の値のまま掛ける互換" },
         "whitePoint": { "type": "number", "minimum": 0.5, "maximum": 16, "label": "白の点（AcesNarkowicz）", "description": "この明るさで 1 になる。既定 4" },
         "saturationAfter": { "type": "number", "minimum": -1, "maximum": 1, "label": "曲線の後の彩度（AcesNarkowicz）", "description": "0..1 の色の彩度に足す（0 = そのまま）" }
       },

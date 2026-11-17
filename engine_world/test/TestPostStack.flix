@@ -245,7 +245,7 @@ mod TestPostStack {
     // GLSL と WGSL は binding ごとに変数を 1 つ宣言するので、同じ名前が 2 つあると shader が作れない。
     @Test
     def testBindingNamesAreUniqueWithEveryEffect(): Unit \ Assert =
-        let views = PostStack.ViewTransform.Standard :: PostStack.ViewTransform.KhronosNeutral
+        let views = PostStack.ViewTransform.Standard :: PostStack.ViewTransform.KhronosNeutral :: PostStack.ViewTransform.AgX
             :: PostStack.ViewTransform.AcesNarkowicz({ whitePoint = 4.0, saturationAfter = 0.1 }) :: Nil;
         let dupes = views |> List.flatMap(v -> { let names = bindingNames(everything(v)); if (List.length(names) == Set.size(List.toSet(names))) Nil else names :: Nil });
         Assert.assertEq(expected = Nil, dupes)

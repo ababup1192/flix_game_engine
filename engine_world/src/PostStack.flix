@@ -32,12 +32,15 @@ pub mod PostStack {
 
     /// 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる。Standard と KhronosNeutral は、場面の値を読む所で
     /// 線形へ戻し（描き手の Pass は画面の値を持つ）、ブルーム・色の仕上げ・ビネット・露出を線形の値に掛けてから曲線と sRGB の曲線で表示の値にする
-    /// （Standard = 曲線なしで 1 で切る・KhronosNeutral = Khronos PBR Neutral）。
+    /// （Standard = 曲線なしで 1 で切る・KhronosNeutral = Khronos PBR Neutral・AgX = AgX の Base）。
     /// AcesNarkowicz は今までのゲームの見え方との互換で、画面の値のまま掛ける（Narkowicz 2015 の ACES の近似を whitePoint で 1 にそろえ、曲線の後に
     /// 0..1 の色の彩度を saturationAfter だけ足す。0 = そのまま。Blender に無い曲線）。
     pub enum ViewTransform {
         case Standard
         case KhronosNeutral
+        /// AgX（Look は Base だけ）。Blender の AgX と同じ考え方の式（Rec.2020 で色を少し内へ寄せ、明るさを log2 で 16.5 stop に詰め、
+        /// S 字の曲線を掛けてから外へ戻す）を自前で組んだ物。Blender の絵との近さは engine_world/test の TestPostStackBlender。
+        case AgX
         case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 })
     }
 

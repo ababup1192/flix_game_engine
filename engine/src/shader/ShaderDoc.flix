@@ -58,6 +58,7 @@ pub mod ShaderDoc {
         case Sat        // 0..1 に丸める
         case OneMinus   // 1 から引く（反転）
         case Sqrt       // 平方根。負の数は 0 として扱う（NaN の画素を出さない）
+        case Log2       // 2 を底にした対数（明るさを stop の数にする）。2^-40 より小さい数（0 と負）は 2^-40 として扱う（-∞ の画素を出さない）
     }
 
     /// 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
@@ -608,6 +609,9 @@ pub mod ShaderDoc {
 
     /// 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
     pub def negPowFloor(): Float64 = 0.000001
+
+    /// 2 を底にした対数（UnOp.Log2）の下限（2^-40。0 と負の数をこの値として扱い、GLSL と CPU で同じ値にする）。
+    pub def log2Floor(): Float64 = 9.094947017729282e-13
 
     /// 負の指数の pow の答えの上限。
     /// WhyNot: 上切りしないと、底が小さく指数が -7 以下の所で GPU（float32）は inf、CPU（float64）は有限になって割れる。
