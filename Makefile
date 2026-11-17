@@ -54,14 +54,18 @@ IS_BUNDLE := $(shell test -d go || echo 1)
 # new-game が種付けに使う fpkg（作業コピーは組んだ package.fpkg・配った版は付け替えた engine_full.fpkg）。
 ENGINE_FULL_FPKG_SEED := $(if $(IS_BUNDLE),$(ENGINE_FULL_FPKG_BUNDLED),$(ENGINE_FULL_FPKG_SRC))
 ENGINE_FULL_TOML_SRC  := $(ENGINE_FULL_DIR)/flix.toml
+# ゲームへ写す束と toml を決めるシェルの 1 文（fpkg= と toml= を置く）。作業コピーは置き場（bin/fpkg-store.sh・make sync-engine-full が入れる）の
+# 今のエントリ（無いことは engine-full-fresh が止める）、配った版は付け替えた engine_full.fpkg。
+# WhyNot: make の変数で 2 回引かない — 間に sync-engine-full が current を替えると、束と toml を別のエントリから取る。
+ifeq ($(IS_BUNDLE),1)
+ENGINE_FULL_GAME_FILES = fpkg="$(ENGINE_FULL_FPKG_BUNDLED)"; toml="$(ENGINE_FULL_TOML_SRC)"
+else
+ENGINE_FULL_GAME_FILES = entry=$$(bin/fpkg-store.sh path engine_full) || { echo "error: 置き場に engine_full がありません。make sync-engine-full" >&2; exit 1; }; \
+	fpkg="$$entry/package.fpkg"; toml="$$entry/flix.toml"
+endif
 ENGINE_FULL_SUBPATH   := lib/github/ababup1192/flix_game_engine/$(VERSION)
 ENGINE_FULL_FPKG_NAME := flix_game_engine-$(VERSION).fpkg
 ENGINE_FULL_TOML_NAME := flix_game_engine-$(VERSION).toml
-
-# lib/github/ababup1192/<pkg>/<version> サブパスの階層数 (= 5)。
-# `$$dir` のスラッシュ数 (render_gl/ や engine_full/ なら 1、templates/<name>/ なら 2) と足して
-# 全体の up 階層数を求め、symlink の相対パスを動的に組み立てる。
-SUBPATH_DEPTH := 5
 
 # make lint ONLY=a,b・make bench B=a,b の区切り。
 comma := ,
@@ -818,8 +822,6 @@ gl-jar-publish: gl-jar-pin-check $(GL_JAR) ### | 置き場の Release fge-gl-<�
 precommit-local: gl-jar-pin-check ### | bin/fge precommit が流すエンジンの門（gl-jar-pin-check）
 
 ##@ 配る（engine_full・ブラウザ版）
-# WhyNot: 配り先の packages.lock は配るたびに消す。fpkg は手元の作り直しで毎回中身が変わるので、
-# 残すと Flix 0.77 以降は「packages.lock の記録と違う」で check ごと止まる。
 .PHONY: sync
 sync: clean-locks sync-layers sync-engine-full sync-root-src ## | 層の作業場を張り、engine_full を build-pkg して templates / bench に配る
 
@@ -828,8 +830,13 @@ sync: clean-locks sync-layers sync-engine-full sync-root-src ## | 層の作業�
 # .flix を engine_full/src/ に集約してから build-pkg し、最後に full を使う templates / bench へ配る。
 # ディレクトリ symlink は Flix のソース走査に追従されないため、必ずファイル単位で張る。
 # エンジンに .flix を追加/削除/改名したら再実行して集約を更新する (sync-root-src と同じ運用)。
-.PHONY: sync-engine-full
-sync-engine-full: gl-jar ## | engine_full だけ src を集めて型検査・build-pkg・配る（templates / bench へ）
+# WhyNot: 中身を置き場の鍵（bin/fpkg-store.sh locked）の内側で流す — 2 本の sync が重なると、片方の build-pkg が書いている
+# 途中の package.fpkg をもう片方が置き場へ写し、壊れた束が不変のエントリとして固まってゲームへ広がる。gc も同じ鍵の内側。
+.PHONY: sync-engine-full sync-engine-full-unlocked
+sync-engine-full: ## | engine_full だけ src を集めて型検査・build-pkg・配る（templates / bench へ）
+	@bin/fpkg-store.sh locked $(MAKE) --no-print-directory sync-engine-full-unlocked
+
+sync-engine-full-unlocked: gl-jar ### | sync-engine-full の中身（置き場の鍵を取らない。直に打たない）
 	@for pkg in $(ROOT_SRC_PKGS); do rm -rf "$(ENGINE_FULL_DIR)/src/$$pkg"; done; \
 	for pkg in $(ROOT_SRC_PKGS); do $(LINK_FLIX) --relative "$$pkg/src" "$(ENGINE_FULL_DIR)/src/$$pkg" || exit 1; done; \
 	find $(ENGINE_FULL_DIR)/src -type l | awk 'END { print "[sync-engine-full] " NR " source symlink(s)" }'
@@ -840,21 +847,22 @@ sync-engine-full: gl-jar ## | engine_full だけ src を集めて型検査・bui
 	# 偽の緑を返す (checkd 自身がこの形を見つけたら素の CLI へ落ちるようにしてある)。
 	@echo "[sync-engine-full] 固める前に型検査"
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" check
+	@# WhyNot: symlink の package.fpkg を消してから組む — worktree-seed の古い形で main の build を指していると、build-pkg がその先（main）へ書く。
+	@[ ! -L $(ENGINE_FULL_FPKG_SRC) ] || rm -f $(ENGINE_FULL_FPKG_SRC)
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" build-pkg
+	@# WhyNot: lib から engine_full/artifact/package.fpkg を直に指さない — 次の build-pkg がそれを書き換えている間に、
+	@# 別のテンプレートの build が半分の束を読む。置き場（bin/fpkg-store.sh）のエントリは置いた後は変わらず、張り替えは rename で一度に替わる。
+	@# WhyNot: packages.lock を消さず sha をそろえる — 消すと、走っている build が古い sha で書き戻した lock と区別が付かない。
+	@entry=$$(bin/fpkg-store.sh put engine_full $(VERSION) $(ENGINE_FULL_FPKG_SRC) $(ENGINE_FULL_TOML_SRC)) || exit 1; \
+	 echo "[sync-engine-full] 置き場 $$entry"
 	@for dir in templates/*/ bench/*/; do \
 		toml="$$dir/flix.toml"; \
 		if [ -f "$$toml" ] && grep -q 'ababup1192/flix_game_engine"' "$$toml"; then \
-			target="$${dir}$(ENGINE_FULL_SUBPATH)"; \
-			mkdir -p "$$target"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			upcnt=$$((depth + $(SUBPATH_DEPTH))); \
-			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
-			ln -sfn "$${rel}$(ENGINE_FULL_FPKG_SRC)" "$$target/$(ENGINE_FULL_FPKG_NAME)"; \
-			ln -sfn "$${rel}$(ENGINE_FULL_TOML_SRC)" "$$target/$(ENGINE_FULL_TOML_NAME)"; \
-			rm -f "$${dir}packages.lock"; \
-			echo "[sync-engine-full] $$target"; \
+			bin/fpkg-store.sh link "$$dir" "$(ENGINE_FULL_SUBPATH)" "$(ENGINE_FULL_FPKG_NAME)" "$(ENGINE_FULL_TOML_NAME)" || exit 1; \
+			echo "[sync-engine-full] $${dir}$(ENGINE_FULL_SUBPATH)"; \
 		fi \
 	done
+	@bin/fpkg-store.sh gc
 
 # ── ブラウザ版の束（engine_full_web）──────────────────────────
 # engine_full と同じソースの木に engine_web（WebLayer・WebFs・WebAssets）を足した 2 本目の束。書き出しの道具（bin/fge export-web）だけが使う。
@@ -889,10 +897,14 @@ $(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS) $(WEB_JAR)
 		-cp "$(subst $(eval) ,:,$(WEB_TOOLS_DEPS)):$(WEB_JAR)" $(WEB_TOOLS_SRC)
 	$(call JDK,jar) --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
 
-.PHONY: web-jar sync-engine-full-web
+.PHONY: web-jar sync-engine-full-web sync-engine-full-web-unlocked
 web-jar: $(WEB_JAR) $(WEB_TOOLS_JAR) ### | ブラウザ版の束が使う fge-web と fge-web-tools の jar を組む
 
-sync-engine-full-web: gl-jar web-jar ### | ブラウザ版の束（engine_full + engine_web）を build/engine_full_web に組む（bin/fge export-web が使う）
+# 鍵の内側で流す理由は sync-engine-full と同じ（jar の組み直しも鍵の内側に入る）。
+sync-engine-full-web: ### | ブラウザ版の束（engine_full + engine_web）を build/engine_full_web に組み、置き場へ入れる（bin/fge export-web が使う）
+	@bin/fpkg-store.sh locked $(MAKE) --no-print-directory sync-engine-full-web-unlocked
+
+sync-engine-full-web-unlocked: gl-jar web-jar ### | sync-engine-full-web の中身（置き場の鍵を取らない。直に打たない）
 	@rm -rf $(WEB_FULL_DIR)/src && mkdir -p $(WEB_FULL_DIR)/src $(WEB_FULL_DIR)/lib/external
 	@# engine_full にだけある物（src/full: VideoOut・GpuShot）も入れる。ゲームの src がそれを use するので、無いと型検査で止まる。
 	@for pkg in $(ROOT_SRC_PKGS) $(WEB_DIR) $(ENGINE_FULL_DIR)/src/full; do \
@@ -903,12 +915,23 @@ sync-engine-full-web: gl-jar web-jar ### | ブラウザ版の束（engine_full +
 	     -v jso='"org.teavm:teavm-jso" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-jso-apis" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-interop" = "$(TEAVM_VERSION)"' \
 	     '{ print } /^\[jar-dependencies\]/ { print web } /^\[mvn-dependencies\]/ { print jso }' \
 	     $(ENGINE_FULL_TOML_SRC) > $(WEB_FULL_DIR)/flix.toml
-	@rm -f $(WEB_FULL_DIR)/lib/external/fge-gl-*.jar
+	@rm -f $(WEB_FULL_DIR)/lib/external/fge-gl-*.jar $(WEB_FULL_DIR)/lib/external/$(WEB_JAR_NAME)
 	@cp -p $(GL_JAR) $(WEB_JAR) $(WEB_FULL_DIR)/lib/external/
 	@rm -f $(WEB_FULL_DIR)/packages.lock
 	@find $(WEB_FULL_DIR)/src -type l | awk 'END { print "[sync-engine-full-web] " NR " source symlink(s)" }'
 	cd $(WEB_FULL_DIR) && "$(FLIX)" check
+	@[ ! -L $(WEB_FULL_DIR)/artifact/package.fpkg ] || rm -f $(WEB_FULL_DIR)/artifact/package.fpkg
 	cd $(WEB_FULL_DIR) && "$(FLIX)" build-pkg
+	@# WhyNot: jar もエントリに入れる — make gl-jar・web-jar が build/ の jar を組み直している間に、別のゲームの書き出しが数分後に tools の jar を読む。
+	@entry=$$(bin/fpkg-store.sh put engine_full_web $(VERSION) $(WEB_FULL_DIR)/artifact/package.fpkg $(WEB_FULL_DIR)/flix.toml \
+	   $(GL_JAR) $(WEB_JAR) $(WEB_TOOLS_JAR)) || exit 1; \
+	 echo "[sync-engine-full-web] 置き場 $$entry"
+	@bin/fpkg-store.sh gc
+
+# 束の置き場（build/fpkg-store）の掃除。sync-engine-full と sync-engine-full-web の終わりにも走る。決まりは bin/fpkg-store.sh の頭。
+.PHONY: fpkg-store-gc
+fpkg-store-gc: ### [DRY=1] | 束の置き場（build/fpkg-store）から、どこからも指されていない古いエントリを消す
+	@bin/fpkg-store.sh locked bin/fpkg-store.sh gc $(if $(DRY),--dry-run,)
 
 ##@ リリース
 # ── リリース ──────────────────────────────────────────────
@@ -1366,6 +1389,13 @@ engine-full-fresh: ### | engine_full.fpkg がソースより古くないか（ne
 	   echo "error: $(ENGINE_FULL_FPKG_SRC) がソースより古いです。make sync-engine-full で作り直してください"; \
 	   echo "$$newer" | sed 's/^/  新しい: /'; exit 1; \
 	 fi
+	@# WhyNot: 置き場の今のエントリが組んだ束・toml・版と同じかまで見る — 手で build-pkg した後や、版を上げて sync していない時は、
+	@# ゲームへ写すのが置き場の古い束（中の version も古い）になる。
+	@[ -z "$(IS_BUNDLE)" ] || exit 0; \
+	 entry=$$(bin/fpkg-store.sh path engine_full) || { echo "error: 置き場（build/fpkg-store）に engine_full がありません。make sync-engine-full で入れてください"; exit 1; }; \
+	 case "$${entry##*/}" in engine_full-$(VERSION)-*) ;; *) echo "error: 置き場の今のエントリ（$${entry##*/}）が v$(VERSION) の物ではありません。make sync-engine-full で入れ直してください"; exit 1;; esac; \
+	 { cmp -s "$$entry/package.fpkg" "$(ENGINE_FULL_FPKG_SRC)" && cmp -s "$$entry/flix.toml" "$(ENGINE_FULL_TOML_SRC)"; } || \
+	   { echo "error: 置き場の今の束（$$entry）が $(ENGINE_FULL_FPKG_SRC)・$(ENGINE_FULL_TOML_SRC) と違います。make sync-engine-full で入れ直してください"; exit 1; }
 
 .PHONY: new-game
 new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）
@@ -1406,8 +1436,11 @@ new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [
 	fi; \
 	printf '%s\n' '# このマシンの実行環境 (git には入れない — .gitignore 済み)。make new-game が生成。' '# ?= なのは Studio が環境変数 ENGINE で渡してくる同梱 engine を勝たせるため。' 'ENGINE ?= $(CURDIR)' > "$(GAME)/local.mk"; \
 	mkdir -p "$(GAME)/$(ENGINE_FULL_SUBPATH)"; \
-	cp "$(ENGINE_FULL_FPKG_SEED)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)"; \
-	cp "$(ENGINE_FULL_TOML_SRC)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
+	: 置き場の束は読むだけ（0444）なので、写した後に書ける形へ戻す（次の engine-upgrade の入れ替えと人の手の差し替えのため）; \
+	$(ENGINE_FULL_GAME_FILES); \
+	cp "$$fpkg" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)"; \
+	cp "$$toml" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
+	chmod 0644 "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
 	if [ -d lib/external ]; then mkdir -p "$(GAME)/lib"; cp -R lib/external "$(GAME)/lib/external"; fi; \
 	: LWJGL の natives の jar（flix.toml の jar-dependencies）は coursier を通らず lib/cache にも入らない。手元の render_gl の物を写す; \
 	: （無ければ Flix が 1 本ずつ Maven Central へ取りに行き、続けて作ると 429 で止まる。export-web の copyLocalNativeJars と同じ）; \
@@ -1455,11 +1488,12 @@ new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [
 .PHONY: upgrade-game
 upgrade-game: engine-full-fresh ### GAME=/abs/path [REFERENCE=1] | ゲームの engine の版をこの engine へ上げる（ゲームの make engine-upgrade がここへ来る）
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください (make upgrade-game GAME=/abs/path)"; exit 1; fi
-	@bin/fge upgrade-game --game "$(GAME)" --version "$(VERSION)" \
-	  --fpkg "$(ENGINE_FULL_FPKG_SRC)" --toml "$(ENGINE_FULL_TOML_SRC)" \
+	@$(ENGINE_FULL_GAME_FILES); \
+	bin/fge upgrade-game --game "$(GAME)" --version "$(VERSION)" \
+	  --fpkg "$$fpkg" --toml "$$toml" \
 	  --dest "$(ENGINE_FULL_SUBPATH)" --make "$(MAKE)" \
 	  --fpkg-name "$(ENGINE_FULL_FPKG_NAME)" --toml-name "$(ENGINE_FULL_TOML_NAME)" \
-	  $(if $(REFERENCE),--reference,) || [ $$? -eq 3 ]
+	  $(if $(IS_BUNDLE),--no-content-swap,) $(if $(REFERENCE),--reference,) || [ $$? -eq 3 ]
 
 # WhyNot: 頭で取り込まない — 先に読んだターゲットが既定のターゲットになり、素の make が status でなく help になる。
 include mk/common.mk

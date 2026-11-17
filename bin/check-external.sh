@@ -76,8 +76,10 @@ shift
 if [ $# -gt 0 ]; then games=("$@"); else games=("${default_games[@]}"); fi
 
 version=$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$engine/engine_full/flix.toml" | head -1)
-fpkg="$engine/engine_full/artifact/package.fpkg"
 "$engine/bin/check-fpkg-fresh.sh"
+# WhyNot: artifact を直に写さない — 別の sync の build-pkg が書いている途中の束を掴む。置き場（bin/fpkg-store.sh）のエントリは変わらない。
+entry=$("$engine/bin/fpkg-store.sh" path engine_full) || { echo "error: 置き場に engine_full が無い。先に make sync-engine-full" >&2; exit 1; }
+fpkg="$entry/package.fpkg"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work" "$out.tmp" "$out.revs.tmp"' EXIT
@@ -118,7 +120,7 @@ for game in "${games[@]}"; do
 		done
 	done
 	cp "$fpkg" "$lib/flix_game_engine-$version.fpkg"
-	cp "$engine/engine_full/flix.toml" "$lib/flix_game_engine-$version.toml"
+	cp "$entry/flix.toml" "$lib/flix_game_engine-$version.toml"
 	echo "[check-external] ${name}（engine ${version}）"
 	log="$work/$name.log"
 	if (cd "$copy" && nice "$engine/bin/flix" check) > "$log" 2>&1; then

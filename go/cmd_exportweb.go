@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 	"github.com/ababup1192/flix_game_engine/go/internal/javacmd"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
@@ -146,6 +147,8 @@ func ewLogf(format string, a ...any) { fmt.Fprintf(exportWebLog, "[export-web] "
 type exportWebPaths struct {
 	Game, Engine, Version, Work, Project, Out                                       string
 	FullWebFpkg, FullWebToml, GlJar, WebJar, WebToolsJar, WebJS, IndexHTML, FlixJar string
+	// 置き場（build/fpkg-store）のエントリ。空なら置き場が無く、build/engine_full_web などを直に読んでいる。
+	FullWebEntry string
 }
 
 func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
@@ -232,7 +235,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		os.Remove(exportReuseStamp(p))
 	}
 
-	ewLogf("① ゲームを %s へ写す（engine_full_web %s）", p.Project, p.Version)
+	if p.FullWebEntry != "" {
+		ewLogf("① ゲームを %s へ写す（engine_full_web %s・置き場 %s）", p.Project, p.Version, filepath.Base(p.FullWebEntry))
+	} else {
+		ewLogf("① ゲームを %s へ写す（engine_full_web %s・置き場が無いので build/engine_full_web を直に読む。make sync-engine-full-web で置き場に入る）", p.Project, p.Version)
+	}
 	if err := prepareExportProject(p); err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 2
@@ -483,11 +490,23 @@ func resolveExportWebPaths(o exportWebOptions) (exportWebPaths, int, error) {
 	}
 
 	v := p.Version
-	p.FullWebFpkg = filepath.Join(p.Engine, "build", "engine_full_web", "artifact", "package.fpkg")
-	p.FullWebToml = filepath.Join(p.Engine, "build", "engine_full_web", "flix.toml")
-	p.GlJar = filepath.Join(p.Engine, "build", "gl-jar", glJarNameOf(p.FullWebToml, v))
-	p.WebJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-"+v+".jar")
-	p.WebToolsJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-tools-"+v+".jar")
+	// WhyNot: build/engine_full_web と build/gl-jar・build/web-jar を直に読まない — 別の所で make sync-engine-full-web が走ると、
+	// 書き出しの途中（TeaVM は数分後に fge-web-tools を読む）で中身が書き換わる。置き場のエントリは置いた後は変わらない。
+	// 置き場が無い engine（配った版・置き場を作る前の作業コピー）だけ前の置き場を読む。
+	if entry, ok := fpkgstore.Current(p.Engine, fpkgstore.EngineFullWeb); ok {
+		p.FullWebEntry = entry
+		p.FullWebFpkg = filepath.Join(entry, "package.fpkg")
+		p.FullWebToml = filepath.Join(entry, "flix.toml")
+		p.GlJar = filepath.Join(entry, glJarNameOf(p.FullWebToml, v))
+		p.WebJar = filepath.Join(entry, "fge-web-"+v+".jar")
+		p.WebToolsJar = filepath.Join(entry, "fge-web-tools-"+v+".jar")
+	} else {
+		p.FullWebFpkg = filepath.Join(p.Engine, "build", "engine_full_web", "artifact", "package.fpkg")
+		p.FullWebToml = filepath.Join(p.Engine, "build", "engine_full_web", "flix.toml")
+		p.GlJar = filepath.Join(p.Engine, "build", "gl-jar", glJarNameOf(p.FullWebToml, v))
+		p.WebJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-"+v+".jar")
+		p.WebToolsJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-tools-"+v+".jar")
+	}
 	p.WebJS = filepath.Join(p.Engine, "engine_web", "js", "fge-web.js")
 	p.IndexHTML = filepath.Join(p.Engine, "engine_web", "js", "index.html")
 	var missing []string

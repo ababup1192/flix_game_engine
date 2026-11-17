@@ -10,8 +10,6 @@
 package useengine
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
@@ -207,7 +206,12 @@ func isEngineReady(dir string) bool {
 // FindFpkg はエンジン dir の組んだ fpkg（use-engine がゲームの lib/ へ写す物）。
 func FindFpkg(engine string) (string, error) { return findFpkg(engine) }
 
+// WhyNot: 置き場（build/fpkg-store）を先に見る — engine_full/artifact/package.fpkg は make sync-engine-full の build-pkg が
+// 書いている最中のことがあり、写すと半分の束を掴む。置き場のエントリは置いた後は変わらない。
 func findFpkg(engine string) (string, error) {
+	if dir, ok := fpkgstore.Current(engine, fpkgstore.EngineFull); ok && isFile(filepath.Join(dir, "package.fpkg")) {
+		return filepath.Join(dir, "package.fpkg"), nil
+	}
 	for _, name := range []string{"package.fpkg", "engine_full.fpkg"} {
 		p := filepath.Join(engine, "engine_full", "artifact", name)
 		if isFile(p) {
@@ -220,6 +224,14 @@ func findFpkg(engine string) (string, error) {
 		"  タグから組ませる: bin/fge use-engine <版> --repo <engine の clone>（~/.flix_ge_studio/engines/<版> があればそれを使い、無ければタグを worktree に出して組む）\n"+
 		"  配った版（Release の zip・Studio の engines）は engine_full.fpkg が入っているので、そのフォルダを渡す",
 		engine, engine)
+}
+
+// tomlBeside は fpkg と組の toml（置き場のエントリなら同じエントリの flix.toml・そうでなければ engine_full/flix.toml）。
+func tomlBeside(engine, fpkg string) string {
+	if t := filepath.Join(filepath.Dir(fpkg), "flix.toml"); fpkgstore.IsInStore(engine, fpkg) && isFile(t) {
+		return t
+	}
+	return filepath.Join(engine, "engine_full", "flix.toml")
 }
 
 // buildTag はエンジンのタグを worktree に出して組む。
@@ -363,11 +375,11 @@ func Use(dir string, o Options) error {
 	if err := copyFile(fpkg, filepath.Join(dest, "flix_game_engine-"+version+".fpkg")); err != nil {
 		return err
 	}
-	if err := copyFile(filepath.Join(dir, "engine_full", "flix.toml"),
-		filepath.Join(dest, "flix_game_engine-"+version+".toml")); err != nil {
+	engToml := tomlBeside(dir, fpkg)
+	if err := copyFile(engToml, filepath.Join(dest, "flix_game_engine-"+version+".toml")); err != nil {
 		return err
 	}
-	if err := syncLock(o, &st, version, fpkg, filepath.Join(dir, "engine_full", "flix.toml")); err != nil {
+	if err := syncLock(o, &st, version, fpkg, engToml); err != nil {
 		return err
 	}
 	if err := writeLocalMk(o.Game, dir, st); err != nil {
@@ -394,15 +406,15 @@ func syncLock(o Options, st *State, version, fpkg, toml string) error {
 	if err != nil {
 		return nil
 	}
-	fpkgSum, err := sha256File(fpkg)
+	fpkgSum, err := fpkgstore.Sha256File(fpkg)
 	if err != nil {
 		return err
 	}
-	tomlSum, err := sha256File(toml)
+	tomlSum, err := fpkgstore.Sha256File(toml)
 	if err != nil {
 		return err
 	}
-	updated, found := withEngineLock(string(data), version, tomlSum, fpkgSum)
+	updated, found := fpkgstore.WithEngineLock(string(data), version, tomlSum, fpkgSum)
 	if !found || updated == string(data) {
 		return nil
 	}
@@ -415,44 +427,6 @@ func syncLock(o Options, st *State, version, fpkg, toml string) error {
 	}
 	fmt.Fprintf(o.Err, "[use-engine] packages.lock のエンジン v%s の指紋を向けた先の fpkg にそろえました（--restore で戻る。commit しない）\n", version)
 	return nil
-}
-
-var lockKeyRe = regexp.MustCompile(`^(\s*(toml|fpkg)\s*=\s*)"sha256:[0-9a-f]*"`)
-
-// withEngineLock は lock の [packages."github:ababup1192/flix_game_engine"."<版>"] の toml・fpkg の行を差し替える。
-// 節が無ければ found=false。
-func withEngineLock(lock, version, tomlSum, fpkgSum string) (string, bool) {
-	header := `[packages."github:ababup1192/flix_game_engine"."` + version + `"]`
-	lines := strings.Split(lock, "\n")
-	in, found := false, false
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[") {
-			in = trimmed == header
-			found = found || in
-			continue
-		}
-		if !in {
-			continue
-		}
-		if m := lockKeyRe.FindStringSubmatch(line); m != nil {
-			sum := fpkgSum
-			if m[2] == "toml" {
-				sum = tomlSum
-			}
-			lines[i] = lockKeyRe.ReplaceAllString(line, `${1}"sha256:`+sum+`"`)
-		}
-	}
-	return strings.Join(lines, "\n"), found
-}
-
-func sha256File(p string) (string, error) {
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 // refuseSharedLib は lib（かその中のエンジンのフォルダ）が symlink なら断る。
@@ -707,24 +681,11 @@ func isDir(p string) bool {
 }
 
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	body, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	tmp := dst + ".tmp"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
+	return fpkgstore.WriteFileAtomic(dst, body, 0o644)
 }
 
 func copyTree(src, dst string) error {

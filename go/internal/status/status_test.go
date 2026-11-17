@@ -216,6 +216,63 @@ func TestEngineDriftReportsPinnedVersion(t *testing.T) {
 	}
 }
 
+// 版の字が同じまま engine の束が作り直されると、engine-upgrade を打つ理由が版のズレの行に出ない。
+func TestSameVersionNewerEngineBundleIsReported(t *testing.T) {
+	root := t.TempDir()
+	engine := filepath.Join(t.TempDir(), "engine")
+	write(t, filepath.Join(engine, "Makefile"), "VERSION := 0.0.1\n")
+	write(t, filepath.Join(engine, "build/fpkg-store/engine_full-0.0.1-0123456789abcdef/package.fpkg"), "new")
+	if err := os.MkdirAll(filepath.Join(engine, "build/fpkg-store/current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../engine_full-0.0.1-0123456789abcdef", filepath.Join(engine, "build/fpkg-store/current/engine_full")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "local.mk"), "ENGINE := "+engine+"\n")
+	write(t, filepath.Join(root, "flix.toml"),
+		"\"github:ababup1192/flix_game_engine\" = { version = \"0.0.1\" }\n")
+	write(t, filepath.Join(root, "lib/github/ababup1192/flix_game_engine/0.0.1/flix_game_engine-0.0.1.fpkg"), "old")
+	line := find(t, build(t, root), "engine   同じ v0.0.1 のまま")
+	if !strings.Contains(line, "make engine-upgrade") {
+		t.Errorf("次の 1 手がありません: %s", line)
+	}
+}
+
+// packages.lock の sha が lib の束と違うと flix も refactor の索引も止まる。
+func TestLockShaThatDoesNotMatchTheLibIsReported(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "flix.toml"),
+		"\"github:ababup1192/flix_game_engine\" = { version = \"0.0.1\" }\n")
+	write(t, filepath.Join(root, "lib/github/ababup1192/flix_game_engine/0.0.1/flix_game_engine-0.0.1.fpkg"), "old")
+	write(t, filepath.Join(root, "packages.lock"), "[lock]\nversion = 1\n\n"+
+		`[packages."github:ababup1192/flix_game_engine"."0.0.1"]`+"\n"+`toml = "sha256:aa"`+"\n"+`fpkg = "sha256:bb"`+"\n")
+	find(t, build(t, root), "packages.lock の fpkg の sha が lib の束と合わない")
+}
+
+// engine の作業場で templates の lib が artifact を直に指していたら古い形と知らせ、置き場を指していれば黙る。
+func TestEngineLibThatSkipsTheStoreIsReported(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "Makefile"), "VERSION := 0.0.1\n")
+	write(t, filepath.Join(root, "engine_full/artifact/package.fpkg"), "x")
+	write(t, filepath.Join(root, "build/fpkg-store/engine_full-0.0.1-0123456789abcdef/package.fpkg"), "x")
+	dir := "lib/github/ababup1192/flix_game_engine/0.0.1"
+	link := func(pkg, target string) {
+		p := filepath.Join(root, "templates", pkg, dir)
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(p, "flix_game_engine-0.0.1.fpkg")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link("old", filepath.Join(root, "engine_full/artifact/package.fpkg"))
+	link("new", filepath.Join(root, "build/fpkg-store/engine_full-0.0.1-0123456789abcdef/package.fpkg"))
+	line := find(t, build(t, root), "fpkg     engine の束を置き場")
+	if !strings.Contains(line, "1 個（templates/old）") {
+		t.Errorf("古い形の lib の数か名前が違います: %s", line)
+	}
+}
+
 func TestPackStampReportsOldVersion(t *testing.T) {
 	root := t.TempDir()
 	engine := filepath.Join(t.TempDir(), "engine")

@@ -15,6 +15,7 @@
     "section_close_request",
     "section_builds",
     "section_mvn_cache",
+    "section_fpkg_store",
     "section_agent_eval",
     "section_notes"
   ],
