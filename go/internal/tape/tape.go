@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/yarn"
@@ -201,6 +202,9 @@ func build(opt Options, t *Tape) (string, error) {
 		return "", err
 	}
 	addScript(opt.Dir, t, opt.Warn)
+	if err := nameScenes(t); err != nil {
+		return "", err
+	}
 	if opt.Branches != nil {
 		b, err := json.Marshal(*opt.Branches)
 		if err != nil {
@@ -376,6 +380,67 @@ func addScript(dir string, t *Tape, warn io.Writer) {
 	if err != nil && warn != nil {
 		fmt.Fprintf(warn, "tape: 注意: シナリオ %s を読めないので、グラフとシナリオ原稿を載せない: %v\n", folder, err)
 	}
+}
+
+// markSlack は mark の秒より前でも、そのシーンの最初の行として数える幅（秒）。flow は行を出したコマの次のコマで mark を打つことがある。
+const markSlack = 0.1
+
+// nameScenes は名前の表に無かったシーン（name が id のまま）の name を、そのシーンの最初の台詞か地の文の見出し（yarn.ShortHeading）にする。
+// 文の行が 1 つも無いシーンは id のまま。選択肢の行は文に数えない。
+// WhyNot: ゲームの tape.json を書き直させない — 名前の表を書き足さないと英語の mark の名前が出て、撮り直さないと直らない。
+// WhyNot: 表で id と同じ名前を付けたシーンも書き替える — tape.json は表に無いのか同じ名前なのかを持たず、id と同じ名前は英語の mark の名前の時がほとんど。
+func nameScenes(t *Tape) error {
+	var scenes []scene
+	var timeline [][2]*float64
+	var lines map[string]line
+	if err := json.Unmarshal(t.raw["scenes"], &scenes); err != nil {
+		return err
+	}
+	_ = json.Unmarshal(t.raw["timeline"], &timeline)
+	_ = json.Unmarshal(t.raw["lines"], &lines)
+	for i, s := range scenes {
+		if *s.Name != *s.ID {
+			continue
+		}
+		end := t.Duration
+		if i+1 < len(scenes) {
+			end = *scenes[i+1].T
+		}
+		if h := firstHeading(timeline, lines, t.Choices, *s.T-markSlack, end-markSlack); h != "" {
+			scenes[i].Name = &h
+		}
+	}
+	b, err := json.Marshal(scenes)
+	if err != nil {
+		return err
+	}
+	t.raw["scenes"] = b
+	return nil
+}
+
+// firstHeading は秒 from 以上 to 未満に出た最初の文の行（選択肢の行を除く）の見出し（無ければ空）。
+func firstHeading(timeline [][2]*float64, lines map[string]line, choices []Choice, from, to float64) string {
+	for _, row := range timeline {
+		if row[0] == nil || row[1] == nil || *row[0] < from || *row[0] >= to || isChoiceRow(choices, *row[0], int(*row[1])) {
+			continue
+		}
+		if l := lines[strconv.Itoa(int(*row[1]))]; l.Text != nil {
+			if h := yarn.ShortHeading(*l.Text); h != "" {
+				return h
+			}
+		}
+	}
+	return ""
+}
+
+// isChoiceRow は timeline の行が選択肢の行か（選択肢が出た秒の行か、選択肢の行番号の並びの中）。
+func isChoiceRow(choices []Choice, t float64, ln int) bool {
+	for _, ch := range choices {
+		if t == ch.T || (ln >= ch.Line && ln < ch.Line+len(ch.Options)) {
+			return true
+		}
+	}
+	return false
 }
 
 func gitShortHead(dir string) (string, error) {

@@ -168,6 +168,25 @@
   .chap.cur .nm { color: var(--accent); }
   .chap::before { content: ""; position: absolute; left: 14px; top: -8px; bottom: -8px; width: 2px; background: rgba(255,255,255,.08); z-index: -1; }
   .mini { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 700; color: #111; }
+  .fpt { position: relative; padding: 4px 0 6px 34px; }
+  .fpt::before { content: ""; position: absolute; left: 14px; top: -8px; bottom: -8px; width: 2px; background: rgba(255,255,255,.08); z-index: -1; }
+  .fpt .fq { display: flex; align-items: baseline; gap: 6px; min-height: 28px; padding: 4px 0; font-size: 12px; color: var(--dim); cursor: pointer; }
+  .fpt .fq::before { content: ""; position: absolute; left: 9px; top: 12px; width: 10px; height: 10px; transform: rotate(45deg); border-radius: 2px; background: #fff; box-shadow: 0 0 0 3px var(--surface); }
+  .fpt .fq b { flex: none; font-weight: 700; color: var(--text); }
+  .fpt .fq .q { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fpt .fq time { flex: none; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .route { position: relative; display: flex; align-items: baseline; gap: 6px; min-height: 30px; padding: 5px 0 5px 14px; font-size: 13px; color: inherit; text-decoration: none; }
+  .route::before { content: ""; position: absolute; left: -19px; top: 0; width: 28px; height: 15px; border-left: 2px solid rgba(255,255,255,.2); border-bottom: 2px solid rgba(255,255,255,.2); border-bottom-left-radius: 8px; }
+  .route .lb { min-width: 0; overflow-wrap: anywhere; }
+  .route small { flex: none; margin-left: auto; font-size: 10px; color: var(--faint); white-space: nowrap; }
+  .route.here { font-weight: 700; color: var(--accent); }
+  .route.here::before { border-color: var(--accent); }
+  .route.link .lb { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(255,255,255,.35); }
+  .route.none { color: var(--faint); }
+  .fpt details > summary { list-style: none; cursor: pointer; }
+  .fpt details > summary::-webkit-details-marker { display: none; }
+  .fpt details > summary .lb::before { content: "▸ "; }
+  .fpt details[open] > summary .lb::before { content: "▾ "; }
   .scriptrow { display: flex; align-items: center; gap: 8px; margin: 16px 0 4px; }
   .scriptrow .label { flex: 1; margin: 0; }
   .scriptdl { height: 28px; padding: 0 10px; border-radius: 99px; background: rgba(255,255,255,.1); font-size: 12px; font-weight: 600; white-space: nowrap; }
@@ -266,6 +285,8 @@
   .bin-body { flex: 1; min-height: 0; overflow: auto; padding: 2px 12px 12px; position: relative; z-index: 0; }
   .bin-body .chap .tm { flex-wrap: wrap; row-gap: 3px; }
   .bin-body .mini { white-space: nowrap; }
+  .bin-body .route { flex-wrap: wrap; }
+  .bin-body .route .lb { flex: 1 0 auto; max-width: 100%; }
   .bin-body .flash { outline: 2px solid #fff; outline-offset: 2px; border-radius: 8px; }
   body.wide.input-mouse .keys { display: grid; flex: none; grid-template-columns: repeat(3, auto); justify-content: space-between; gap: 5px 8px; padding: 9px 12px;
     border-bottom: 1px solid var(--hair); font-size: 11px; color: var(--faint); }
@@ -626,18 +647,54 @@ function renderTracks() {
   if (form !== "phone") renderMarks();
   markSelection();
 }
+// 分岐の点: 隣のテープとつないだ分岐（branches）と、このテープが選んだ選択肢（choices）を秒の順に。
+// WhyNot: branches だけにしない — 1 本だけのテープ（--dir）は branches が空で、グラフに分岐があってもチャプターとタイムラインに出ない
+function forkPoints() {
+  const pts = TAPE.branches.map(br => ({ t: br.t, line: br.line, question: br.question, routes: br.routes, example: br.example }));
+  (TAPE.choices || []).forEach(ch => {
+    if (TAPE.branches.some(br => br.line === ch.line && br.t === ch.t)) return;
+    pts.push({ t: ch.t, line: ch.line, question: questionHead(ch.question || ch.node), routes: ch.options.map((label, i) => i === ch.picked ? { label, here: true, note: "このテープ" } : { label, note: "まだ撮っていない" }) });
+  });
+  return pts.sort((a, b) => a.t - b.t);
+}
+// 問いの頭。branches の問い（Go の questionOf）と同じ切り方にそろえる。
+// WhyNot: 選択肢を Go で branches へ足さない — branches は隣のテープとつないだ分岐の欄で、置き場へ出す時（publish）にも読み返す
+function questionHead(text) {
+  let q = text.replace(/／/g, "");
+  const i = q.search(/[。！？]/);
+  if (i > 0) q = q.slice(0, i);
+  const r = [...q];
+  return r.length > 14 ? r.slice(0, 13).join("") + "…" : q;
+}
+// これより道が多い分岐は、撮っていない道（2 本以上の時）を畳む。WhyNot: 撮っていない道を全部並べない — 探索の選択肢（調べる物 5 つ）が並ぶと、チャプターの一覧がシーンより分岐で埋まる
+const FOLD_ROUTES = 3;
+let openForks = new Set();
+function forkHtml(p, i, idPrefix) {
+  const route = r => {
+    const lb = `<span class="lb">${esc(r.label)}</span><small>${esc(r.note || "")}</small>`;
+    if (r.here) return `<div class="route here">${lb}</div>`;
+    if (r.href) return `<a class="route link" href="${esc(r.href)}">${lb}</a>`;
+    return `<div class="route none">${lb}</div>`;
+  };
+  const shown = p.routes.filter(r => r.here || r.href), rest = p.routes.filter(r => !r.here && !r.href);
+  const tail = p.routes.length > FOLD_ROUTES && rest.length > 1
+    ? `<details data-fork="${i}"${openForks.has(i) ? " open" : ""}><summary class="route none"><span class="lb">ほか ${rest.length} 本</span><small>まだ撮っていない</small></summary>${rest.map(route).join("")}</details>`
+    : rest.map(route).join("");
+  return `<div class="fpt" id="${idPrefix}${i}"><div class="fq" data-t="${p.t}"><b>分岐</b><span class="q">${esc(p.question)}</span><time>${mmss(p.t)}</time></div>${shown.map(route).join("")}${tail}</div>`;
+}
 function renderForks() {
-  $("forks").innerHTML = TAPE.branches.map((br, i) => `<div class="fork" data-i="${i}" style="left:${br.t * PPS}px"><i>分</i></div>`).join("");
+  $("forks").innerHTML = forkPoints().map((p, i) => `<div class="fork" data-i="${i}" style="left:${p.t * PPS}px"><i>分</i></div>`).join("");
   $("forks").querySelectorAll(".fork").forEach(n => n.onclick = () => openChapters(true, +n.dataset.i));
 }
 function openChapters(toFork, fork = 0) {
   video.pause();
   // 分岐の印から来たら、その選択肢のあるノードを選んだグラフを開く（グラフの無いテープはチャプターへ）
-  if (toFork && GRAPH) { if (TAPE.branches[fork]) gPick = branchNode(TAPE.branches[fork]); setView("graph"); return; }
-  if (form === "three") { focusBin(); return; }
+  const pt = forkPoints()[fork];
+  if (toFork && GRAPH) { if (pt) gPick = branchNode(pt); setView("graph"); return; }
+  if (form === "three") { focusBin(toFork ? fork : null); return; }
   renderChapters($("chapBody"), "fork");
   open("chapSheet");
-  setTimeout(() => $("chapBody").querySelector(".chap.cur")?.scrollIntoView({ block: "center" }), 300);
+  setTimeout(() => (toFork && pt ? $("fork" + fork) : $("chapBody").querySelector(".chap.cur"))?.scrollIntoView({ block: "center" }), 300);
 }
 function renderChapters(body, forkId) { body.innerHTML = chaptersHtml(forkId); wireChapters(body); }
 function chaptersHtml(forkId) {
@@ -646,15 +703,23 @@ function chaptersHtml(forkId) {
     const by = k => anns.filter(a => annTrack(a) === k && sceneAt(a.seconds).id === s.id).length + (k === "script" ? Object.keys(edits).filter(n => sceneAt(lineStart(+n)).id === s.id).length : 0);
     return ["video", "script", "sound"].map(k => by(k) ? `<span class="mini" style="background:${TRACK[k].c}">${TRACK[k].name} ${by(k)}</span>` : "").join("");
   };
-  const rows = [];
+  const rows = [], pts = forkPoints();
+  let k = 0;
+  const forksBefore = end => { while (k < pts.length && pts[k].t < end - 1e-6) { rows.push(forkHtml(pts[k], k, forkId)); k++; } };
   TAPE.scenes.forEach(s => {
+    forksBefore(s.t);
     rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * CHAP_W}px 0"></div>
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
   });
-  return `<div class="ctxline">通し · ${TAPE.scenes.length} シーン · 分岐 ${TAPE.branches.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>` + rows.join("") + scriptRow();
+  forksBefore(Infinity);
+  return `<div class="ctxline">通し · ${TAPE.scenes.length} シーン · 分岐 ${pts.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>` + rows.join("") + scriptRow();
 }
 function wireChapters(body) {
   body.querySelectorAll(".chap").forEach(n => n.onclick = () => { close(); seek(+n.dataset.t + .05); });
+  body.querySelectorAll(".fq").forEach(n => n.onclick = () => { close(); seek(+n.dataset.t + .05); });
+  // WhyNot: 描く時に href へ view を書き込まない — renderBin は字が同じなら描き直さず、画面を替えた後も古い href が残る
+  body.querySelectorAll(".route.link").forEach(a => a.onclick = e => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; e.preventDefault(); location.href = withTapeView(a.getAttribute("href")); });
+  body.querySelectorAll("details[data-fork]").forEach(n => n.ontoggle = () => { const i = +n.dataset.fork; n.open ? openForks.add(i) : openForks.delete(i); });
   body.querySelectorAll(".scriptdl").forEach(n => n.onclick = () => saveFile(TAPE.script, `${TAPE.game}.md`));
 }
 // ── 分岐のグラフ: 「映像 / グラフ」で見る物を切り替える（シナリオの全体を見る）。bin/fge yarn graph と同じ置き場で箱と矢印を描き、
@@ -1192,9 +1257,9 @@ function renderBin() {
   if (performance.now() - binScrolledAt > 1500) body.querySelector(".chap.cur")?.scrollIntoView({ block: "nearest" });
 }
 ["wheel", "touchstart", "pointerdown"].forEach(ev => $("binBody").addEventListener(ev, () => { binScrolledAt = performance.now(); }, { passive: true }));
-function focusBin() {
+function focusBin(fork = null) {
   renderBin();
-  const n = $("binBody").querySelector(".chap.cur");
+  const n = fork !== null ? $("bfork" + fork) : $("binBody").querySelector(".chap.cur");
   if (!n) return;
   n.scrollIntoView({ block: "center", behavior: "smooth" });
   n.classList.add("flash"); setTimeout(() => n.classList.remove("flash"), 900);
@@ -1343,7 +1408,7 @@ function tipFor(n) {
     if (m.a) return `<span class="m">${TRACK[m.k].name}: ${esc(label(m.a))} · ${mmss(m.t)}</span>\n${esc(m.a.note)}`;
     return `<span class="m">台本: 文章の直し · ${yarn}:${m.ln}</span>\n<span class="mincho">${esc(edits[m.ln].replace(/／/g, "\n"))}</span>`;
   }
-  if (n.classList.contains("fork")) { const br = TAPE.branches[+n.dataset.i]; return `分岐: ${esc(br.question)}\n<span class="m">${br.routes.map(r => (r.here ? "✓ " : "") + esc(r.label)).join(" / ")}</span>`; }
+  if (n.classList.contains("fork")) { const br = forkPoints()[+n.dataset.i]; return `分岐: ${esc(br.question)}\n<span class="m">${br.routes.map(r => (r.here ? "✓ " : "") + esc(r.label)).join(" / ")}</span>`; }
   if (n.classList.contains("card") && !n.disabled) return esc(n.querySelector(".v").textContent);
   return "";
 }
