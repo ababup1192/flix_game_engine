@@ -782,15 +782,15 @@ pub mod Render3d.WebGpuRenderer {
         }
 
     /// 影の地図のビルボードの行 row を描く（貼る絵の group が無ければ偽）。値は行の values を送った位置 valuesBase から頂点の buffer 0 として読む（場面の行の drawBillboardRow と同じ）。
-    /// group 0（光の目と板の向き）は pass の頭で付けてある。
-    def drawShadowBillboardRow(r: Renderer, host: Host, p: RenderCommands, list: SceneList, row: Int32, valuesBase: Int32): Bool \ IO =
+    /// group 0（光の目と板の向き）は pass の頭で付けてある。rightPerBillboard なら板の横の向きを行の値から読む pipeline（点光源の面）。
+    def drawShadowBillboardRow(r: Renderer, host: Host, p: RenderCommands, list: SceneList, row: Int32, valuesBase: Int32, rightPerBillboard: Bool): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
         match host#groupById(rowAt(list, row, 1)) {
             case _ if values < 0 => true
             case None => false
             case Some(group) =>
-                p.setPipeline(WebGpuBillboards.shadowPipelineOf(s#billboards, WebGpuShadows.layoutOf(s#shadows), WebGpuShadows.depthFormat()));
+                p.setPipeline(WebGpuBillboards.shadowPipelineOf(s#billboards, WebGpuShadows.layoutOf(s#shadows), WebGpuShadows.depthFormat(), rightPerBillboard));
                 p.setBindGroup(1, group);
                 p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(valuesBase + 4 * values), WebGpuBillboards.valueBytes());
                 p.draw(6, 1, 0, 0);

@@ -53,8 +53,9 @@ mod Render3d.ShadowMaps {
 
     /// 影の地図を描く pass 1 つ（map の描き先へ list の行を深度だけで描く）。行は頂点の色の行（骨の無い物）と骨つきの行と、太陽の地図だけはその後に
     /// castShadows のビルボードの行（Scene3d.shadowCastingBillboardsOf）で、どれも分かれた理由は影の pass。
-    /// billboardRight = ビルボードの板の横の向き（Scene3d.billboardShadowRightOf。縦は world の上）。
-    pub type alias ShadowPass = { map = ShadowMapUse, list = SceneList, billboardRight = Vec3.Vec3 }
+    /// billboardRight = ビルボードの板の横の向き（Scene3d.billboardShadowRightOf。縦は world の上）・
+    /// rightPerBillboard = 板ごとの横の向きを行の値（Render3d.SceneList.putBillboardRights）から読むか（点光源の面。真なら billboardRight は読まない）。
+    pub type alias ShadowPass = { map = ShadowMapUse, list = SceneList, billboardRight = Vec3.Vec3, rightPerBillboard = Bool }
 
     /// backend が描き先を作る・捨てる関数の組（鍵で控える）。
     pub type alias Allocator = { create = Key -> Unit \ IO, destroy = Key -> Unit \ IO }
@@ -135,15 +136,25 @@ mod Render3d.ShadowMaps {
         let scene = plan#cmd#scene;
         let ctx = Render3d.SceneList.contextOf(tables, scene);
         let right = Scene3d.billboardShadowRightOfScene(scene);
-        List.zip(uses, plan#shadowPlans) |> List.map(match (m, sp) -> {
-            // WhyNot: 点光源の面にビルボードを描かない — 板の向きを光ごと面ごとに決める約束が無く、HD-2D の点光源の影は別の話（plans/engine-point-shadows.md §7）。
-            let billboards = match sp#light {
-                case ShadowLight.Sun(_)   => Scene3d.shadowCastingBillboardsOf(sp#caster#frustum, scene)
-                case ShadowLight.Spot(_)  => Nil
-                case ShadowLight.Point(_) => Nil
-            };
-            { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, billboards), billboardRight = right }
+        List.zip(uses, plan#shadowPlans) |> List.map(match (m, sp) -> match sp#light {
+            case ShadowLight.Sun(_)   =>
+                { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, Scene3d.shadowCastingBillboardsOf(sp#caster#frustum, scene)),
+                  billboardRight = right, rightPerBillboard = false }
+            case ShadowLight.Spot(_)  =>
+                { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, Nil), billboardRight = right, rightPerBillboard = false }
+            case ShadowLight.Point(p) =>
+                let boards = Scene3d.PointShadows.castingBillboardsOf(scene, p#light) |> List.filter(fr -> isBoardInside(sp#caster#frustum, fst(fr)));
+                let list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, List.map(fst, boards));
+                Render3d.SceneList.putBillboardRights(list, List.map(snd, boards));
+                { map = m, list = list, billboardRight = right, rightPerBillboard = true }
         })
+
+    /// 影の地図に描く板 f（大きさは倍率を掛けた後）が視錐台 frustum に掛かるか（外接球で見る。Scene3d.isBillboardOutsideFrustum と同じ半径）。
+    def isBoardInside(frustum: Frustum.Frustum, f: Scene3d.BillboardFields): Bool =
+        let reach = (a: Float64) -> Float64.max(Float64.abs(a), Float64.abs(1.0 - a));
+        let rx = f#size#x * reach(f#anchor#x);
+        let ry = f#size#y * reach(f#anchor#y);
+        Frustum.intersectsSphere(frustum, f#position, Num.sqrt(rx * rx + ry * ry))
 
     /// 鍵 key の描き先を（無ければ allocator で作って）今の世代 gen で使ったと控える。作ったら真。
     pub def ensure(table: Table, allocator: Allocator, gen: Int64, key: Key): Bool \ IO =

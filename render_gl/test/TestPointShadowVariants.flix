@@ -248,4 +248,67 @@ mod Render3d.TestPointShadowVariants {
             paint(recordingGl(freshRecorded()), state, cmdOf(scene) :: Nil)
         });
         Assert.assertEq(expected = 1, String.split(regex = "点光源の影の mapSize", printed) |> List.length |> (n -> n - 1))
+
+    // ── ビルボードの影の板（点光源の面・倍率）──
+
+    def charsTexture(name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =
+        checked_ecast(if (name == "chars") Some({ texId = 3, width = 16.0, height = 16.0, flipped = false, version = "" }) else None)
+
+    def paintWithChars(log: Render3d.FakeGl.Recorded, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        let prepared = Render3d.prepareNumbered(recordingGl(log), freshState(), 1i64, charsTexture, Render3d.FakeGl.dest(), cmdOf(scene) :: Nil);
+        prepared#draw(Render3d.FakeGl.viewport(), 0)
+
+    def boardAt(x: Float64): Scene3d.Billboard3d =
+        Scene3d.billboard("chars", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } }, Vec3.v3(x, 0.0, 0.0), { x = 1.0, y = 2.0 })
+
+    def boardScene(boards: List[Scene3d.Billboard3d]): Scene3d.Scene3dCmd = { billboards = boards | lampScene(lamp() :: Nil) }
+
+    def drawsWith(scene: Scene3d.Scene3dCmd): Int32 \ IO =
+        let log = freshRecorded();
+        paintWithChars(log, scene);
+        timesCalled("drawArrays", log)
+
+    @Test
+    def testCastingBillboardIsDrawnIntoPointFaces(): Unit \ {Assert, IO} =
+        let plain = drawsWith(boardScene(boardAt(0.5) :: Nil));
+        let casting = drawsWith(boardScene((boardAt(0.5) |> Scene3d.withCastShadows(true)) :: Nil));
+        Assert.assertEq(expected = (1, true), (plain, casting > 1))
+
+    @Test
+    def testZeroCasterScaleDrawsNoPointShadowBoard(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = 1, drawsWith(boardScene((boardAt(0.5) |> Scene3d.withCastShadows(true) |> Scene3d.withShadowCasterScale({ x = 0.0, y = 1.0 })) :: Nil)))
+
+    def rightToward(x: Float64): (Float32, Float32, Float32) =
+        let r = Scene3d.billboardShadowRightOf(Vec3.sub(lamp()#position, Vec3.v3(x, 0.0, 0.0)), Camera3d.right(Render3d.FakeGl.camera()));
+        (RenderUtil.f32(r#x), RenderUtil.f32(r#y), RenderUtil.f32(r#z))
+
+    @Test
+    def testEachPointShadowBoardTurnsToTheLamp(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paintWithChars(log, boardScene((boardAt(0.5) |> Scene3d.withCastShadows(true)) :: (boardAt(-0.7) |> Scene3d.withCastShadows(true)) :: Nil));
+        let put = Ref.get(log#vec3s);
+        Assert.assertEq(expected = (true, true, false), (List.memberOf(rightToward(0.5), put), List.memberOf(rightToward(-0.7), put), rightToward(0.5) == rightToward(-0.7)))
+
+    def sunBoardScene(scale: Vec2.Vec2): Scene3d.Scene3dCmd =
+        let sun = { shadow = Some({ mapSize = 64, pcfRadius = 1 | Scene3d.directionalShadow() }) | Scene3d.directionalLight(Vec3.v3(0.3, -1.0, 0.4)) };
+        { billboards = (boardAt(0.5) |> Scene3d.withCastShadows(true) |> Scene3d.withShadowCasterScale(scale)) :: Nil, directionalLight = Some(sun) | sceneOf(triangle() :: Nil) }
+
+    @Test
+    def testCasterScaleShrinksTheSunShadowBoard(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paintWithChars(log, sunBoardScene({ x = 0.5, y = 0.25 }));
+        let put = Ref.get(log#vec2s);
+        Assert.assertEq(expected = (true, true), (List.memberOf((0.5f32, 0.5f32), put), List.memberOf((1.0f32, 2.0f32), put)))
+
+    @Test
+    def testDefaultCasterScaleKeepsTheSunShadowBoard(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paintWithChars(log, sunBoardScene({ x = 1.0, y = 1.0 }));
+        Assert.assertEq(expected = 2, Ref.get(log#vec2s) |> List.count(v -> v == (1.0f32, 2.0f32)))
+
+    @Test
+    def testRowRightVertexSourceOnlyChangesTheRight(): Unit \ Assert =
+        let base = Render3dWgsl.billboardVertexSource();
+        Assert.assertEq(expected = (true, base), (has("r3dCamera.uRight.xyz * ((corner.x", base),
+            String.replace(src = "v.tint.xyz * ((corner.x", dst = "r3dCamera.uRight.xyz * ((corner.x", Render3dWgsl.billboardRowRightVertexSource())))
 }

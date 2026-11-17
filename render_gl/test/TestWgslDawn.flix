@@ -286,6 +286,7 @@ mod TestWgslDawn {
         ("vertex sky", Render3dWgsl.skyVertexSource()) ::
         ("frag sky", Render3dWgsl.skyFragmentSource()) ::
         ("vertex billboard", Render3dWgsl.billboardVertexSource()) ::
+        ("vertex billboard row right", Render3dWgsl.billboardRowRightVertexSource()) ::
         ("frag billboard", Render3dWgsl.billboardFragmentSource()) ::
         ("sky", head + Render3dWgsl.skyLightSource() +
                 "@fragment fn fs_main(@location(0) d: vec3f) -> @location(0) vec4f { return vec4f(skyAt(d), 1.0); }\n") :: Nil

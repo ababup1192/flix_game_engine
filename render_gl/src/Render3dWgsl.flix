@@ -434,7 +434,13 @@ pub mod Render3dWgsl {
     /// ビルボードの頂点シェーダー（Render3dGlsl.billboardVertexSource と同じ式）。入口は vs_main。
     /// 四角の角は vertex_index の 6 点（GL の Render3d.buildQuad と同じ並び・y は下向き）。ビルボードの値は buffer 0（instance・stride 0）の location 0〜3
     /// （並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を板から離す長さ）。影の地図へ描く時も同じ（group 0 が光の目と板の向き）。
-    pub def billboardVertexSource(): String =
+    pub def billboardVertexSource(): String = billboardVertexSourceWith("r3dCamera.uRight.xyz")
+
+    /// 板の横の向きを行の値の tint の rgb から読む billboardVertexSource（点光源の影の面へ描く時。Render3d.SceneList.putBillboardRights）。
+    pub def billboardRowRightVertexSource(): String = billboardVertexSourceWith("v.tint.xyz")
+
+    /// right = 板の横の向きの式。
+    def billboardVertexSourceWith(right: String): String =
         cameraDeclarations() +
         "struct R3dBillboardIn {\n" +
         "    @location(0) center: vec4f,\n" +
@@ -447,7 +453,7 @@ pub mod Render3dWgsl {
         "@vertex fn vs_main(@builtin(vertex_index) i: u32, v: R3dBillboardIn) -> R3dBillboardOut {\n" +
         "    var corners = array<vec2f, 6>(vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0), vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(0.0, 1.0));\n" +
         "    let corner = corners[i];\n" +
-        "    let world = v.center.xyz + r3dCamera.uRight.xyz * ((corner.x - v.anchorSize.x) * v.anchorSize.z)\n" +
+        "    let world = v.center.xyz + " + right + " * ((corner.x - v.anchorSize.x) * v.anchorSize.z)\n" +
         "                             + r3dCamera.uUp.xyz * ((v.anchorSize.y - corner.y) * v.anchorSize.w);\n" +
         "    var o: R3dBillboardOut;\n" +
         "    o.vWorld = world;\n" +

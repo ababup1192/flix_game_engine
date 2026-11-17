@@ -58,7 +58,7 @@ mod Render3d.WebGpuShadows {
         vertexModule = ShaderModule, skinnedModule = ShaderModule, emptyLayout = BindGroupLayout, emptyGroup = BindGroup, poseLayout = BindGroupLayout,
         created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO,
         carried = List[(RenderPass, String, BindGroup, (RenderCommands, SceneList, Buffer) -> Unit \ IO) -> Unit \ IO],
-        billboard = (RenderCommands, SceneList, Int32, Int32) -> Bool \ IO
+        billboard = (RenderCommands, SceneList, Int32, Int32, Bool) -> Bool \ IO
     }
 
     /// 影の地図の pass 1 つと、その行の values を送った位置（バイト。ビルボードの行の無い pass は -1）。
@@ -172,10 +172,10 @@ mod Render3d.WebGpuShadows {
             rp.setBindGroup(0, group);
             Option.forEach(g -> rp.setBindGroup(2, g), draw#poseGroup);
             rp.setVertexBuffer(1, draw#instances, 0i64, draw#instances.size());
-            drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase), pass#list, draw#instanceBase);
+            drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase, pass#rightPerBillboard), pass#list, draw#instanceBase);
             let drawCarried = (commands: RenderCommands, list: SceneList, instances: Buffer) -> {
                 commands.setVertexBuffer(1, instances, 0i64, instances.size());
-                drawRows(commands, draw#meshStore, drawerOf(sh, draw, -1), list, 0)
+                drawRows(commands, draw#meshStore, drawerOf(sh, draw, -1, false), list, 0)
             };
             let bundleKey = ToString.toString(key) + (pass#map#tile |> Option.map(t -> ":${t#x}:${t#y}") |> Option.getWithDefault(""));
             draw#carried |> List.forEach(runCarried -> runCarried(rp, bundleKey, group, drawCarried));
@@ -206,7 +206,8 @@ mod Render3d.WebGpuShadows {
 
     /// 影の地図の行を形だけで描く時に pipeline を付ける関数の組（付けた pipeline の控えは組ごと・bundle は付けた物を持たずに始まる）。
     /// valuesBase = 行の values を送った位置（ビルボードの行の無い列は -1）。ビルボードの行は draw#billboard が付けて描き、次の形の行が pipeline を付け直す。
-    def drawerOf(sh: Shadows, draw: ShadowDraw, valuesBase: Int32): Render3d.WebGpuRows.RowDrawer \ IO =
+    /// rightPerBillboard = 板ごとの横の向きを行の値から読むか（Render3d.ShadowMaps.ShadowPass の欄）。
+    def drawerOf(sh: Shadows, draw: ShadowDraw, valuesBase: Int32, rightPerBillboard: Bool): Render3d.WebGpuRows.RowDrawer \ IO =
         let bound = Ref.fresh(Static, (-1, (None: Option[Int32])));
         let bindShape = (p: RenderCommands, mesh: MeshBuffers, skin: Option[Int32]) -> {
             let k = (mesh#stride, skin);
@@ -222,7 +223,7 @@ mod Render3d.WebGpuShadows {
           material = (_, _, _, _) -> checked_ecast(false),
           billboard = (p, list, row) -> {
               Ref.put((-1, None), bound);
-              valuesBase >= 0 and (draw#billboard)(p, list, row, valuesBase)
+              valuesBase >= 0 and (draw#billboard)(p, list, row, valuesBase, rightPerBillboard)
           },
           unbound = draw#unbound }
 

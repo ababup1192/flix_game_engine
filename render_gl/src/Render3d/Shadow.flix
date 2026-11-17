@@ -6,7 +6,7 @@ mod Render3d.Shadow {
     use Render3d.{BillboardLocs, PointShadowLocs, PointShadowUse, SceneShadows, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, MeshLocs, drawMeshRange, matrixArray, meshEntry,
                   programsOf, blankTextureUnit, pointShadowTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram, putBillboardShape}
     use Render3d.Counts.{BatchBreak, Counter, count, countDrawCall}
-    use Render3d.SceneList.{SceneList, billboardAt, firstBillboardRowOf, firstBlendedRowOf, headAt, kindSkinned, rowAt}
+    use Render3d.SceneList.{SceneList, billboardAt, firstBillboardRowOf, firstBlendedRowOf, headAt, kindSkinned, rowAt, valuesAt}
     use Render3d.ShadowMaps.{Key, ShadowPass, ShadowSampling}
 
     // ── 影の地図 ──
@@ -190,9 +190,18 @@ mod Render3d.Shadow {
             gl.uniform3f(locs#up, 0.0f32, 1.0f32, 0.0f32);
             gl.activeTexture(GlConst.TEXTURE0);
             gl.bindVertexArray(programsOf(gl, state)#quadVao);
-            List.range(first, end) |> List.forEach(row -> drawShadowBillboard(gl, state, textureOf, locs, billboardAt(list, row)));
+            List.range(first, end) |> List.forEach(row -> {
+                if (pass#rightPerBillboard) putRowRight(gl, locs, list, row) else ();
+                drawShadowBillboard(gl, state, textureOf, locs, billboardAt(list, row))
+            });
             gl.bindVertexArray(0)
         }
+
+    /// 行 row の板の横の向き（Render3d.SceneList.putBillboardRights が値に入れた物）を uRight に入れる（値の無い行は描かないので何もしない）。
+    def putRowRight(gl: GlContext, locs: BillboardLocs, list: SceneList, row: Int32): Unit \ IO =
+        let at = valuesAt(list, row);
+        if (at < 0) ()
+        else gl.uniform3f(locs#right, Array.get(at + 12, list#values), Array.get(at + 13, list#values), Array.get(at + 14, list#values))
 
     def drawShadowBillboard(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
                             b: Scene3d.BillboardFields): Unit \ IO =
