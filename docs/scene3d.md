@@ -58,6 +58,61 @@ let flashlight = { color = Color.rgb(1.0, 0.95, 0.85), intensity = 3.0, range = 
   光を 8 本から 9 本へ増やしたコマでは、7・8 番目がその場で暗くなる（光そのものが増えるので、つなぎはしない）
 - F3 の診断の `droppedPointLights` と `Scene3d.droppedLightsOf` は「渡した本数 − 8」。画面の外で落とした光も数える（カメラを回すたびに数が揺れないように）
 
+### 点光源の影（街灯・たいまつの放射状の影）
+
+```flix
+let scene = { pointLights = lamps | Scene3d.scene(camera, size) }
+    |> Scene3d.withPointShadows({ maxShadowedLights = 2 | Scene3d.pointShadowMap() });
+```
+
+光から見た 6 方向（+X・−X・+Y・−Y・+Z・−Z）の深度を 1 枚の絵（atlas）に並べ、受ける点が落ちる方向の面を引く（Unity・Unreal の Shadow Atlas・Bevy の PointLightShadowMap）。
+GL・WebGPU・CPU が同じ約束（`Scene3d.PointShadows.atlasOf` の doc）で描く。
+
+| 欄 | 既定 | 意味 |
+|---|---|---|
+| `maxShadowedLights` | 4 | 影を落とす灯りの数の上限（0 以下で影なし・8 まで） |
+| `mapSize` | 512 | 面 1 つの一辺の画素（16 以上。atlas が 4096 に収まるよう縮める: 8 本で 512・4 本で 682・1 本で 1365） |
+| `bias` | 0.05 | world の長さ。比べる奥行きから引く量（太陽の `bias` と同じ単位） |
+| `normalBias` | 1.0 | 受ける点を形の法線の向きに「面 1 画素の world の幅 × normalBias」ずらす（床が自分の影を拾う縞を消す） |
+| `pcfRadius` | 1 | 周りを平均する幅（画素）。大きいほど影の縁が柔らかい |
+| `strength` | 0.8 | 影の濃さ（0〜1） |
+
+- 影を落とす灯り: `pickLights` で選んだ 8 本のうち、画面の真ん中に近い順に `maxShadowedLights` 本。候補が上限より多い時は最後の 1 本の影の濃さを次の候補との点数の差でなめらかに 0 へ寄せ、入れ替わる瞬間に影がぱっと出たり消えたりしない（上限 1 本の時は寄せない）
+- 灯り 1 本ごとの影の切り替えは無い（`PointLight` の欄は増やさない）。影を落とさない灯りを混ぜたいなら上限で絞る
+- 影を落とす物: 不透明の置いた物（骨つきも曲がった形で）と `withCastShadows(true)` のビルボード（板を光の方へ向けて立てる）。半透明は落とさない
+- 影を受ける物: 頂点の色の物と材質の物（lightmap の面も。点光源はベイクの上に足す光なので影も掛かる）。ビルボードは受けない
+- 影の割合は木の外で画素ごとに 1 回求め、点光源の拡散と鏡面の両方に掛ける。光が届かない点（range の外）と面が光に背を向けた点は地図を引かない
+- 面の継ぎ目は guard band（面の角を 90° より少し広く取り、PCF の周りの画素が隣の面へはみ出さない）で筋を出さない
+- 重さ: 影の地図の draw は面 6 × 灯り × 範囲に入る物（`drawCalls` の `shadowPass`・時間は `Phase.Shadows`）。PCF は (2r+1)² 回を光が届く画素だけ。
+  スマホは `{ maxShadowedLights = 1, mapSize = 256 | Scene3d.pointShadowMap() }`（atlas 768 × 512）を勧める
+- 既定（`pointShadows = None`）は今までの絵と同じ（GPU のシェーダーの字も同じ）。影つきの場面だけ別のプログラム（`+ps`）を組む
+
+### 光の量の読み方（Legacy / Physical）
+
+```flix
+let scene = Scene3d.scene(camera, size) |> Scene3d.withLightUnits(Scene3d.LightUnits.Physical) |> Scene3d.withUnitsPerMeter(16.0);
+```
+
+| 項 | `Legacy`（既定） | `Physical` |
+|---|---|---|
+| 点・スポットの落ち方 | (1 − d² / range²)² | 逆二乗 × range の窓 clamp01(1 − (d² / range²)²)² / max(d_m², 1e−4)（d_m = d / unitsPerMeter。Filament・UE4 と同じ形） |
+| 点・スポット・太陽の拡散 | albedo × E × facing | albedo / π × E × facing |
+| 鏡面・ambient・hemisphere・lightmap・emission | — | 同じ（ambient と hemisphere は入る放射輝度の意味で、一様な空の拡散は albedo × L と 1/π が相殺する） |
+
+- `Physical` の intensity は点・スポットが 1 m の所の照度（cd に当たる）・太陽が照度（lux に当たる）。単位の型（lux・cd・EV100）はまだ無い
+- 今の値のまま切り替えると拡散が 1/π に暗く、光の近くが明るく遠くが暗くなる。intensity（拡散を同じ明るさにするなら π 倍）と ambient を決め直す
+- 場面の長さが m でない時は `Scene3d.withUnitsPerMeter`（逆二乗を m で測る）。`Legacy` では unitsPerMeter は描き方を変えない
+
+### ビルボードの影の板の大きさ
+
+```flix
+Scene3d.billboard(..) |> Scene3d.withCastShadows(true) |> Scene3d.withShadowCasterScale(Vec2.v2(0.6, 0.7))
+```
+
+- 影の地図に描く板だけ幅（x）と高さ（y）に倍率を掛ける（見えている板は変えない）。ドット絵のキャラの影が「人形がそのまま大きくなった」ように太く長い時に絞る
+- 板は anchor を中心に縮む（anchor が足元なら影の根元は足元のまま）。太陽と点光源の影の両方に効く。成分が 0 以下なら影を描かない
+- 既定 (1, 1) は今までの絵と同じ（描き出しの鍵も同じ）
+
 ### 太陽（平行光源）と、その影
 
 屋外の町・都市・野原の光は、遠くの 1 つの光（太陽）で足りる。Unity・Unreal の Directional Light・Godot の DirectionalLight3D に当たる。
@@ -110,7 +165,7 @@ let hero = Scene3d.billboard("chars", frame, at, { x = 0.9, y = 1.6 })
 - **影を受ける**: 絵の中の高さごとに、影の地図の板の真ん中の縦の線の上の点を、板から水平に幅の半分だけ離れるまで太陽の方へ進めた点で影を引く（`Scene3d.billboardShadowPointOf`）。
   建物の影に入ると絵の行ごとに暗くなる。太陽の高さ約 75° までは自分の影を受けない（それより高い太陽では足元から自分の影を拾い始める）。
   幅の広い板（看板・木）は点が板から遠くへ出るので、軒の影の縁では明るさの切り替わりが板の幅の半分ずれる
-- 太陽の影だけ（スポットの影の地図には描かず、スポットの影も受けない）。影の地図の無い場面（置いた物が 1 つも無い・Output.Depth）では何もしない。既定はどちらも偽で、今までの絵のまま
+- 影を落とすのは太陽と点光源（`withPointShadows`）の影の地図。受けるのは太陽の影だけ（スポットの影の地図には描かず、スポットと点光源の影は受けない）。影の地図の無い場面（置いた物が 1 つも無い・Output.Depth）では何もしない。既定はどちらも偽で、今までの絵のまま。影の板の大きさは「ビルボードの影の板の大きさ」
 - 影の地図の draw がビルボード 1 枚につき 1 つ増える（`drawCalls` の `shadowPass`）。地図の画素の数は変わらない
 - カメラへ向いた板なので、太陽がカメラの正面（板の裏）にあると板は太陽の光を受けず、影を受けても見え方は変わらない
 
