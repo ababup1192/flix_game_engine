@@ -14,7 +14,10 @@ mod Video {
 
     def mapPath(): String = "assets/town_avenue.map.json"
 
-    def lookPath(): String = "assets/town.json"
+    /// 見た目のつまみの Doc（環境変数 LOOK で替える: assets/town_night.json など）。
+    pub def lookPath(): String \ IO =
+        let v = System.getenv("LOOK");
+        if (Object.isNull(v) or v == "") "assets/town.json" else v
 
     /// 使う地図の差分（草を 0.25 m 上げて縁石と笠石を立てる版）。
     def variant(): String = "step"
@@ -35,8 +38,11 @@ mod Video {
 
 
     /// 地図とつまみを読み、町を組む（読めなければ止める: 描き出しの入口で、続ける当てが無い）。
-    def loadAll(skipNpcColumn: Bool): (TownMap, Res) \ IO =
-        let look = run { TownLook.loadOr(lookPath()) } with Fs.FileRead.runWithIO;
+    pub def loadAll(skipNpcColumn: Bool): (TownMap, Res) \ IO =
+        loadWith(run { TownLook.loadOr(lookPath()) } with Fs.FileRead.runWithIO, skipNpcColumn)
+
+    /// loadAll の見た目のつまみを渡す形（GPU の窓は板の絵を project.json の名前で引くつまみで組む）。
+    pub def loadWith(look: Look, skipNpcColumn: Bool): (TownMap, Res) \ IO =
         let loaded = (run { TownMap.load(variant(), mapPath()) } with Fs.FileRead.runWithIO)
             |> Result.flatMap(m -> TownScene.load(m, look, if (skipNpcColumn) Some(m#walk#col) else None) |> Result.map(res -> (m, res)));
         match loaded {
@@ -71,8 +77,9 @@ mod Video {
         let camera = TownCamera.cameraAt(lens, look#far, eye);
         let focus = focusOf(eye, Int32.toFloat64(m#height) - m#frame#targetRow, m#frame#targetZ);
         let scale = envInt("SCALE", 6);
-        HeadlessRender.renderPngFull(configOf(scale, "debug"), fullSceneOf(look, focus, TownScene.sceneOf(res, camera, design(), Nil, Nil)), "compare_engine");
-        println("[hd2d_town] debug/compare_engine.png（${Int32.toString(320 * scale)}×${Int32.toString(180 * scale)}・目の高さ ${Float64.toString(eye#height)} m・lensShift ${Float64.toString(lens#shiftY)}）")
+        let name = { let v = System.getenv("SHOT"); if (Object.isNull(v) or v == "") "compare_engine" else v };
+        HeadlessRender.renderPngFull(configOf(scale, "debug"), fullSceneOf(look, focus, { time = 4.0 | TownScene.sceneOf(res, camera, design(), Nil, Nil) }), name);
+        println("[hd2d_town] debug/${name}.png（${Int32.toString(320 * scale)}×${Int32.toString(180 * scale)}・目の高さ ${Float64.toString(eye#height)} m・lensShift ${Float64.toString(lens#shiftY)}）")
 
     /// 歩く台本の 1 コマの場面と、ピントの距離（目から先頭の足元まで）。
     pub type alias Shot = { scene = Scene3d.Scene3dCmd, focus = Float64 }
@@ -93,7 +100,10 @@ mod Video {
 
     /// 時刻 t の場面（隊列の板と足元の影・追従カメラ）。位置とカメラは snapToTexels の時 1 テクセルに丸める
     /// （先頭とカメラの間の距離も丸めた値にそろえ、2 つを別々に丸めた差でキャラが画面で震えないようにする）。
-    pub def shotAt(m: TownMap, res: Res, wk: Walking, t: Float64): Shot =
+    pub def shotAt(m: TownMap, res: Res, wk: Walking, t: Float64): Shot = shotSized(m, res, wk, design(), t)
+
+    /// shotAt の描き物の大きさを渡す形（GPU の窓は 1280×720）。
+    pub def shotSized(m: TownMap, res: Res, wk: Walking, size: Vec2.Vec2, t: Float64): Shot =
         let look = res#look;
         let snap = (v: Float64) -> if (look#snapToTexels) TownCamera.snapToTexel(v) else v;
         let tl = wk#timeline;
@@ -104,7 +114,7 @@ mod Video {
         let eye = { z = snap(Party.cameraTargetY(m, tl, t) - wk#feetDepth) | wk#eye };
         let camera = TownCamera.cameraAt(wk#lens, look#far, eye);
         let leaderY = snap(snd(Party.memberAt(m, tl, t, 0)));
-        { scene = TownScene.sceneOf(res, camera, design(), List.map(fst, members), List.map(snd, members)),
+        { scene = { time = t | TownScene.sceneOf(res, camera, size, List.map(fst, members), List.map(snd, members)) },
           focus = focusOf(eye, leaderY, wk#groundZ) }
 
     def pad4(i: Int32): String = String.padLeft(4, '0', Int32.toString(i))

@@ -39,6 +39,33 @@ mod TownGpu {
         { frame = w#frame + 1, scene = Some(scene), focus = focus, grouping = grouping, progress = progress,
           finished = if (bench) progress#done else w#frame + 1 >= Int32.min(st#track#frames, first + shotsPerLaunch()) }
 
+    /// HD2D_MODE=walk: 地図の walk の台本で歩いて止まる場面（Video.frames と同じ）を GPU で撮る（64 コマずつ）。
+    def goWalk(look: TownScene.Look, first: Int32): Unit \ IO =
+        let look0 = look;
+        let (m, res1) = Video.loadWith(look0, true);
+        let wk = Video.walkingOf(m, look0);
+        let n = Party.frameCount(wk#timeline, 30);
+        let step1 = (_frame: App.Frame, w: WalkWorld) -> {
+            let shot = Video.shotSized(m, res1, wk, size(), Int32.toFloat64(w#frame) / 30.0);
+            { frame = w#frame + 1, scene = Some(shot#scene), focus = shot#focus, finished = w#frame + 1 >= Int32.min(n, first + shotsPerLaunch()) }
+        };
+        println("[hd2d_town] GPU walk: コマ ${Int32.toString(n)}");
+        let app0 = App.make({ frame = first, scene = None, focus = 10.0, finished = false })
+            |> App.addSystem(step1)
+            |> App.withView((_ctx, w) -> checked_ecast(w#scene |> Option.map(sc -> Render.scene3d(Vec2.zero(), sc)) |> Option.toList))
+            |> App.quitWhen((_frame, w) -> checked_ecast(w#finished))
+            |> App.withPostStack(w -> checked_ecast(TownScene.postOf(look0, w#focus)));
+        run { App.launchForBench(app0) }
+            with LwjglLayer.withProject(".")
+            with Fs.FileRead.runWithIO
+            with Fs.FileWrite.runWithIO
+            with Fs.Glob.runWithIO
+            with Fs.ModificationTime.runWithFileTime
+            with Fs.FileTime.runWithIO
+
+    /// HD2D_MODE=walk の毎コマの状態。
+    pub type alias WalkWorld = { frame = Int32, scene = Option[Scene3d.Scene3dCmd], focus = Float64, finished = Bool }
+
     def envOr(name: String, fallback: String): String \ IO =
         let v = System.getenv(name);
         if (Object.isNull(v) or v == "") fallback else v
@@ -48,16 +75,24 @@ mod TownGpu {
         let bench = mode == "bench";
         let post = envOr("POST", "1") == "1";
         let shadow = envOr("SHADOW", "1") == "1";
-        let look0 = run { TownLook.loadOr("assets/town.json") } with Fs.FileRead.runWithIO;
+        let look0 = run { TownLook.loadOr(Video.lookPath()) } with Fs.FileRead.runWithIO;
         let look = if (shadow) look0 else { shadowMapSize = 0 | look0 };
         let first = Int32.fromString(envOr("HD2D_FRAME_FROM", "0")) |> Option.getWithDefault(0);
-        match BuildVideo.setup({ billboardTextures = TownScene.BillboardTextures.ProjectTextures | look }) {
+        let extra = Int32.fromString(envOr("EXTRA_LAMPS", "-1")) |> Option.getWithDefault(-1);
+        let fog = envOr("FOG", "");
+        let look1 = { billboardTextures = TownScene.BillboardTextures.ProjectTextures, extraLamps = if (extra >= 0) extra else look#extraLamps,
+                      groundFog = if (fog == "0") 0.0 else look#groundFog,
+                      fogFar = if (fog == "0") 400.0 else look#fogFar, fogNear = if (fog == "0") 300.0 else look#fogNear | look };
+        if (mode == "walk") goWalk(look1, first) else
+        match BuildVideo.setup(look1) {
             case Err(why) =>
                 println("[hd2d_town] 町を組めない: ${why}");
                 System.exit(1)
             case Ok(st0) =>
                 let st = { show = { dustTexture = "dust" | st0#show } | st0 };
-                let knobs = ("bench", BenchRun.quoted("hd2d_town")) :: ("post", if (post) "1" else "0") :: ("shadow", if (shadow) "1" else "0") :: Nil;
+                let knobs = ("bench", BenchRun.quoted("hd2d_town")) :: ("post", if (post) "1" else "0") :: ("shadow", if (shadow) "1" else "0") ::
+                            ("look", BenchRun.quoted(Video.lookPath())) :: ("lights", Int32.toString(List.length(TownScene.lampLights(st#res)))) ::
+                            ("ground_fog", Float64.toString(look1#groundFog)) :: Nil;
                 println("[hd2d_town] GPU ${mode}: コマ ${Int32.toString(st#track#frames)}・後がけ ${if (post) "あり" else "なし"}・太陽の影 ${if (shadow) "あり" else "なし"}");
                 let app0 = App.make({ frame = first, scene = None, focus = 10.0, grouping = BuildVideo.startGrouping(st), progress = BenchRun.start(), finished = false })
                     |> App.addSystem(step(st, bench, first, knobs))

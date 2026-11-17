@@ -1,7 +1,7 @@
 // TownScene — 組んだ町（TileMap3d）と絵（Images）から、毎コマ渡す 3D の場面を作る。
 // 動かない面と足元の影は読み込みで 1 回 staticGroup にまとめ、毎コマは隊列の板とカメラだけを差し替える。
 mod TownScene {
-    use fge::{Camera3d, Color, Mat4, Mesh3d, Num, PostStack, Rect2, Render, Scene3d, Texture3d, Transform3d, Vec2, Vec3}
+    use fge::{Camera3d, Color, Mat4, Mesh3d, Num, PostStack, Rect2, Render, Scene3d, ShaderDoc, Texture3d, Transform3d, Vec2, Vec3}
     use fge::ShaderDoc.FilterMode
     use Faces.{Quad, Rgb}
     use TileMap3d.{Board}
@@ -13,13 +13,17 @@ mod TownScene {
     /// ambient = どこにでも当たる光（画面の値）・hemisphere = 上を向く面ほど明るくする量・
     /// boardTint = 板（木・街灯・キャラ）の明るさの掛け目・snapToTexels = 板とカメラの位置を 1 テクセルに丸めるか・
     /// fogNear・fogFar・fog = かすみ（目からの距離と色）・sky = 背景の色・exposure・bloom・fStop・saturation・lift・gamma・gain（暗い所・中間・明るい所の持ち上げ。1 で何もしない）・vignette・fxaa = 後がけ・
-    /// billboardTextures = 板の絵の引き方。
+    /// billboardTextures = 板の絵の引き方・sunColor = 太陽（夜は月）の色・
+    /// lampIntensity・lampRange・lampColor = 街灯の点光源（強さ 0 で灯さない）・lampGlow = 街灯の火袋の光る板の強さ（ブルームでにじむ・0 で置かない）・
+    /// extraLamps = 重さを測るために足す点光源の数（広場に並べる）・groundFog・groundFogColor = 地面を這う低い霧の板の濃さ（0 で置かない）と色。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
                             fogNear = Float64, fogFar = Float64, fog = Color, sky = Color,
                             exposure = Float64, bloomStrength = Float64, fStop = Float64, saturation = Float64, lift = Color, gamma = Color, gain = Color, vignette = Float64, fxaa = Bool,
-                            billboardTextures = BillboardTextures }
+                            billboardTextures = BillboardTextures,
+                            sunColor = Color, lampIntensity = Float64, lampRange = Float64, lampColor = Color, lampGlow = Float64,
+                            extraLamps = Int32, groundFog = Float64, groundFogColor = Color }
 
     /// 板の絵の引き方。SceneTextures = 場面の textures の Texture3d の名前（CPU の描き出し）・ProjectTextures = project.json の textures の名前（GPU の描き手）。
     pub enum BillboardTextures with Eq {
@@ -159,7 +163,7 @@ mod TownScene {
         let el = look#sunElevation * Num.pi() / 180.0;
         let az = look#sunAzimuth * Num.pi() / 180.0;
         let toward = Vec3.v3(Num.cos(el) * Num.sin(az), Num.sin(el), 0.0 - Num.cos(el) * Num.cos(az));
-        { intensity = look#sunIntensity, color = Color.rgb(1.0, 0.95, 0.86),
+        { intensity = look#sunIntensity, color = look#sunColor,
           shadow = Some({ distance = look#shadowDistance, mapSize = look#shadowMapSize, strength = look#shadowStrength, bias = 0.03, normalBias = 1.0 | Scene3d.directionalShadow() })
           | Scene3d.directionalLight(Vec3.mul(toward, -1.0)) }
 
@@ -171,11 +175,63 @@ mod TownScene {
     /// 1 コマの場面。billboards・instances = 毎コマ変わる板と置いた物（隊列）。
     pub def sceneOf(res: Res, camera: Camera3d.Camera3d, size: Vec2.Vec2, billboards: List[Scene3d.Billboard3d], instances: List[Scene3d.Instance3d]): Scene3d.Scene3dCmd =
         let look = res#look;
-        { groups = res#group :: Nil, instances = instances, billboards = List.append(res#boards, billboards),
-          directionalLight = Some(sunOf(look)), textures = res#textures,
+        { groups = res#group :: Nil, instances = List.append(nightInstances(res), instances), billboards = List.append(res#boards, billboards),
+          directionalLight = Some(sunOf(look)), textures = res#textures, pointLights = lampLights(res),
           environment = { ambient = look#ambient, hemisphere = look#hemisphere, toonSteps = 0,
                           fog = Some({ color = look#fog, near = look#fogNear, far = look#fogFar }), background = Some(look#sky) }
           | Scene3d.scene(camera, size) }
+
+    /// 街灯の足元（地図の座標）。
+    def lampFeet(res: Res): List[Board] = res#town#boards |> List.filter(b -> b#sprite == "sprites/street_lamp.png")
+
+    /// 街灯の火袋の高さ（足元から m。絵の 96 px = 3 m の上から 0.3 m ほどの所）。
+    def lampHeadHeight(): Float64 = 2.7
+
+    /// 街灯の点光源（火袋の少し手前）と、重さを測るために足す点光源（広場の 2 行に並べる）。
+    pub def lampLights(res: Res): List[Scene3d.PointLight] =
+        let look = res#look;
+        if (look#lampIntensity <= 0.0) Nil
+        else {
+            let light = (x: Float64, y: Float64, z: Float64) ->
+                { position = Vec3.v3(x, z + lampHeadHeight(), y - 0.25), color = look#lampColor, intensity = look#lampIntensity, range = look#lampRange };
+            let lamps = lampFeet(res) |> List.map(b -> light(b#x, b#y, b#z));
+            let extra = List.range(0, look#extraLamps) |> List.map(i -> light(2.5 + Int32.toFloat64(Int32.modulo(i, 12)) * 2.0, 3.5 + Int32.toFloat64(i / 12) * 4.0, 1.0));
+            List.append(lamps, extra)
+        }
+
+    /// 夜の置いた物（街灯の火袋の光る板・地面を這う霧の板）。読み込みで作った形を毎コマ置くだけ。
+    def nightInstances(res: Res): List[Scene3d.Instance3d] =
+        let look = res#look;
+        let glows = if (look#lampGlow <= 0.0) Nil else lampFeet(res) |> List.map(b ->
+            Scene3d.meshInstance(res#contactMesh, Mat4.mul(Mat4.translate(Vec3.v3(b#x, b#z + lampHeadHeight(), b#y - 0.06)),
+                                                          Mat4.mul(Mat4.rotateX(0.0 - Num.pi() / 2.0), Mat4.scale(Vec3.v3(0.16, 1.0, 0.22)))))
+                |> Scene3d.withMaterial(glowMaterial(look)));
+        let fogs = if (look#groundFog <= 0.0) Nil else (0.35 :: 0.8 :: Nil) |> List.mapWithIndex((i, h) ->
+            Scene3d.meshInstance(res#contactMesh, Mat4.mul(Mat4.translate(Vec3.v3(13.5, 1.0 + h, 13.0)), Mat4.scale(Vec3.v3(60.0, 1.0, 60.0))))
+                |> Scene3d.withMaterial(fogMaterial(look, i)));
+        List.append(glows, fogs)
+
+    /// 火袋の光る板の材質（光の計算の後に足す色・ブルームが拾う明るさ）。
+    def glowMaterial(look: Look): Scene3d.Material3d =
+        let c = (v: Float64) -> ShaderDoc.Field.Const(v);
+        Scene3d.material({ name = "hd2d:lamp-glow", cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = c(look#lampColor#r), g = c(look#lampColor#g), b = c(look#lampColor#b) }), alpha = c(1.0) }) })
+            |> Scene3d.withEmission(ShaderDoc.Shade.Rgb({ r = c(look#lampColor#r), g = c(look#lampColor#g), b = c(look#lampColor#b) }))
+            |> Scene3d.withEmissionIntensity(look#lampGlow)
+            |> Scene3d.withDoubleSided(true)
+
+    /// 地面を這う霧の板の材質（周期つきの雲状ノイズを時刻でゆっくり流し、濃い所だけ半透明で残す）。layer = 板の段（段ごとに模様と流れを替える）。
+    def fogMaterial(look: Look, layer: Int32): Scene3d.Material3d =
+        let c = (v: Float64) -> ShaderDoc.Field.Const(v);
+        let speed = if (layer == 0) { x = 0.004, y = 0.0015 } else { x = -0.003, y = 0.0025 };
+        let noise = ShaderDoc.Field.Scaled({ factor = 1.0, scroll = speed,
+                                             of = ShaderDoc.Field.FbmTile({ octaves = 3, scale = 8.0, period = { x = 8.0, y = 8.0 }, seed = 11 + layer }) });
+        let alpha = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = ShaderDoc.Field.Smoothstep({ lo = 0.4, hi = 0.75, of = noise }), b = c(look#groundFog) });
+        Scene3d.material({ name = "hd2d:ground-fog", cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = c(look#groundFogColor#r), g = c(look#groundFogColor#g), b = c(look#groundFogColor#b) }),
+                                                      alpha = alpha }) })
+            |> Scene3d.withAlphaBlend(true)
+            |> Scene3d.withDoubleSided(true)
 
     /// 後がけ（AgX・露出・ブルーム・ピントの奥行きでぼかす・彩度・周りを暗く）。focus = ピントの合う奥行き（m）。
     pub def postOf(look: Look, focus: Float64): PostStack.Stack =

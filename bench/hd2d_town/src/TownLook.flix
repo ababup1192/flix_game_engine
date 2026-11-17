@@ -10,7 +10,9 @@ mod TownLook {
           sunElevation = 55.0, sunAzimuth = 35.0, sunIntensity = 2.2,
           ambient = Color.rgb(0.55, 0.6, 0.72), hemisphere = 0.3, boardTint = 1.0, snapToTexels = true,
           fogNear = 30.0, fogFar = 80.0, fog = Color.rgb(0.88, 0.92, 0.98), sky = Color.rgb(0.7, 0.8, 0.95),
-          exposure = 0.25, bloomStrength = 0.35, fStop = 0.07, saturation = 0.85, lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.05, 1.0, 0.92), vignette = 0.35, fxaa = false, billboardTextures = TownScene.BillboardTextures.SceneTextures }
+          exposure = 0.25, bloomStrength = 0.35, fStop = 0.07, saturation = 0.85, lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.05, 1.0, 0.92), vignette = 0.35, fxaa = false, billboardTextures = TownScene.BillboardTextures.SceneTextures,
+          sunColor = Color.rgb(1.0, 0.95, 0.86), lampIntensity = 0.0, lampRange = 7.0, lampColor = Color.rgb(1.0, 0.72, 0.42), lampGlow = 0.0,
+          extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8) }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -36,5 +38,8 @@ mod TownLook {
           fogNear = num("fogNear", d#fogNear), fogFar = num("fogFar", d#fogFar), fog = color("fog", d#fog), sky = color("sky", d#sky),
           exposure = num("exposure", d#exposure), bloomStrength = num("bloomStrength", d#bloomStrength), fStop = num("fStop", d#fStop),
           saturation = num("saturation", d#saturation), lift = color("lift", d#lift), gamma = color("gamma", d#gamma), gain = color("gain", d#gain), vignette = num("vignette", d#vignette),
-          fxaa = JsonCodec.boolOr("fxaa", d#fxaa, m), billboardTextures = TownScene.BillboardTextures.SceneTextures }
+          fxaa = JsonCodec.boolOr("fxaa", d#fxaa, m), billboardTextures = d#billboardTextures,
+          sunColor = color("sunColor", d#sunColor), lampIntensity = num("lampIntensity", d#lampIntensity), lampRange = num("lampRange", d#lampRange),
+          lampColor = color("lampColor", d#lampColor), lampGlow = num("lampGlow", d#lampGlow), extraLamps = JsonCodec.intOr("extraLamps", d#extraLamps, m),
+          groundFog = num("groundFog", d#groundFog), groundFogColor = color("groundFogColor", d#groundFogColor) }
 }

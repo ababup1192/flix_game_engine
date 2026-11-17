@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "shadowDistance": 28.0,
+  "shadowMapSize": 2048,
+  "sunElevation": 40.0,
+  "sunAzimuth": -30.0,
+  "sunIntensity": 0.2,
+  "ambient": [
+    0.05,
+    0.06,
+    0.12
+  ],
+  "hemisphere": 0.08,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 10.0,
+  "fogFar": 42.0,
+  "fog": [
+    0.16,
+    0.19,
+    0.3
+  ],
+  "sky": [
+    0.05,
+    0.07,
+    0.14
+  ],
+  "exposure": -1.8,
+  "bloomStrength": 0.25,
+  "fStop": 0.08,
+  "saturation": 1.0,
+  "vignette": 0.45,
+  "gain": [
+    1.0,
+    0.98,
+    1.0
+  ],
+  "shadowStrength": 0.6,
+  "fxaa": true,
+  "lift": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "note": "夜と霧（遠くが霞む DistanceFog と、地面を這う低い霧の板 2 枚を時刻でゆっくり流す）",
+  "sunColor": [
+    0.55,
+    0.65,
+    1.0
+  ],
+  "lampIntensity": 6.0,
+  "lampRange": 5.0,
+  "lampColor": [
+    1.0,
+    0.72,
+    0.42
+  ],
+  "lampGlow": 6.0,
+  "groundFog": 0.75,
+  "groundFogColor": [
+    0.62,
+    0.68,
+    0.86
+  ]
+}

@@ -1,6 +1,6 @@
 #!/bin/bash
 # GPU（隠しウィンドウ）で町を描く: build = 町が出来ていく動画のコマを <出力のフォルダ>/frame-N.png へ・bench = 1 コマの重さを測る。
-# usage: bin/gpu_run.sh build <出力のフォルダ> | bin/gpu_run.sh bench <ログ>   （環境変数 POST・SHADOW・FLIX_GE_BACKEND はそのまま通る）
+# usage: bin/gpu_run.sh build|walk <出力のフォルダ> | bin/gpu_run.sh bench <ログ>（walk = 地図の walk の台本で歩いて止まる場面）   （環境変数 POST・SHADOW・FLIX_GE_BACKEND はそのまま通る）
 # 起動した JVM はプロセスの組ごと PID で止め、ps で消えたのを確かめてから抜ける（窓を残さない）。上限 LIMIT 秒（既定 900）。
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -8,7 +8,7 @@ mode=$1; out=$2
 engine=$(cd ../.. && pwd)
 limit=${LIMIT:-900}
 "$engine/bin/headless-run" --build-only > /tmp/hd2d_gpu_build.log 2>&1 || { tail -20 /tmp/hd2d_gpu_build.log; exit 1; }
-if [ "$mode" = build ]; then
+if [ "$mode" = build ] || [ "$mode" = walk ]; then
   rm -rf "$out"; mkdir -p "$out"
   export FLIX_GE_FRAME_SHOT="$out"
   log="$out/run.log"
