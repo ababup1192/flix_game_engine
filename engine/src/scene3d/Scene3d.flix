@@ -594,20 +594,25 @@ pub mod Scene3d {
     /// sky = 何も描かれない画素に描く空（gradientSky。Some なら environment の background は使わない）・
     /// environmentMap = metallic と roughness を持つ材質の映り込みが読む周りの景色（environmentMap。None なら空のグラデーションを映す）・
     /// directionalLight = 太陽（1 つまで。None なら無し。使うかどうかは directionalLightOf で決める）・
-    /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）。
+    /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）・
+    /// unitsPerMeter = 1 m が場面の長さのいくつか（withUnitsPerMeter。描き方は変えず、m で受ける値（PostStack の奥行きのぼかし）が読む）。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
-                                  textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }
+                                  textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64 }
 
-    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし）。
+    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1）。
     /// time = 材質の ShaderDoc の時刻（秒）（ゲームの遊びの時計を渡すと、ポーズやヒットストップで材質の動きも止まる）。
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
     pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd =
         { size = size, camera = camera, instances = Nil, groups = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
-          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None }
+          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None,
+          unitsPerMeter = 1.0 }
+
+    /// 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
+    pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd = { unitsPerMeter = k | scene }
 
     // ── 動かない物の集まり ──
 

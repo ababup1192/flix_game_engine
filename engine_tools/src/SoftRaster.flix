@@ -400,7 +400,7 @@ pub mod SoftRaster {
                         let picked = (nearestPick(i / w, h, sh, true) * sw + nearestPick(Int32.remainder(i, w), w, sw, false)) * 4;
                         Array.put(ShaderEval.hdrChannelOf(hdr, picked + Int32.remainder(k, 4)), k, out)
                     });
-                    PassImage.Rgba16Float(ShaderEval.hdrTextureOf(w, h, Array.toVector(out)))
+                    PassImage.Rgba16Float(frozenHdr(w, h, out))
                 }
         }
 
@@ -473,6 +473,13 @@ pub mod SoftRaster {
         stream.forEach(new IntConsumer {
             def accept(_this: IntConsumer, i: Int32): Unit \ IO = pixelFn(i)
         })
+
+    /// width × height の描き先の値（1 画素に r, g, b, α の 4 つ）を half に丸めて凍らせる（ShaderEval.hdrTextureOf と同じ値）。
+    def frozenHdr(width: Int32, height: Int32, rgba: Array[Float64, Static]): ShaderEval.HdrTexture \ IO =
+        let n = Int32.max(1, width) * Int32.max(1, height) * 4;
+        let halves: Array[Float32, Static] = Array.repeat(Static, n, 0.0f32);
+        forEachPixel(Int32.min(n, Array.length(rgba)), i -> Array.put(Float64.truncateToFloat32(ShaderEval.roundToHalf(Array.get(i, rgba))), i, halves));
+        ShaderEval.hdrTextureOfHalves(width, height, Array.toVector(halves))
 
     // ════════════════════════════════════════════════════════
     // 画素の道具（SoftRaster.Internal.* の描き手も使う）

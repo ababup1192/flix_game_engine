@@ -1,5 +1,6 @@
 {
   "exempt": {
-    "RenderUtil.f32": "Float64 → Float32 の変換そのもの。GL の uniform へ渡す境界の入り口で、ここが Float32 を返さないと境界の内側が書けない"
+    "RenderUtil.f32": "Float64 → Float32 の変換そのもの。GL の uniform へ渡す境界の入り口で、ここが Float32 を返さないと境界の内側が書けない",
+    "ShaderEval.hdrTextureOfHalves": "Rgba16Float の Pass を CPU で持つ値（half の精度の Float32）をそのまま受ける口。作るのは CPU の描き手（SoftRaster）だけで、ゲームは呼ばない。Float64 で受けると 2,000,000 個を写し直す輪が要り、それが遅さの元"
   }
 }

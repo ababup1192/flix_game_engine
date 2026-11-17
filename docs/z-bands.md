@@ -63,6 +63,7 @@ ZStack.mapItems(Render.scaledAllAround(1.0 + bump, center), tree)
 
 ## ゲーム側の指針
 
+- 画面全体の後がけ（`App.withPostStack`）は View の絵の全部に掛かり、HUD には掛からない。トーンマップもぼかしも掛けたくない窓・字幕・メニューは HUD に置く（z の数で後がけの範囲を切らない）。
 - スコア・案内文・幕（モーダル）は `App.withHudView` に繋ぐ。world 側に文字を
   直書きすると高い z の絵に隠されうる（`bin/fge view` が匂いを警告する）。
 - world の z を HUD の範囲（10 億）に自分で寄せない。範囲の仕切りはエンジンの仕事。

@@ -178,7 +178,7 @@
         "lib"
       ],
       "pattern": "\\b2\\.51\\b|\\b2\\.43\\b",
-      "hint": "トーンマップの曲線（ACES の近似の 2.51 / 2.43）を手で書かない。PostProcess.tonemapped / tonemappedWith を使う（x の式を 1 回だけ評価し、白の点で正規化し、GPU と CPU で同じ木を通る）。場面の Pass は RenderTarget.withHdr にして 1 を超えた明るさを持つ（engine の docs/shader-doc.md「後処理（PostProcess）」）"
+      "hint": "トーンマップの曲線（ACES の近似の 2.51 / 2.43）を手で書かない。画面全体なら App.withPostStack（PostStack）・式の部品が要る時だけ PostProcess.tonemapped / tonemappedWith / tonemapCurve を使う（x の式を 1 回だけ評価し、白の点で正規化し、GPU と CPU で同じ木を通る）。場面の Pass は RenderTarget.withHdr にして 1 を超えた明るさを持つ（engine の docs/shader-doc.md「後処理（PostProcess）」）"
     },
     {
       "id": "launch-for-bench",
@@ -364,8 +364,8 @@
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "engine_web/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "src/engine_web/", "lib/", "build/"],
       "skipDirs": ["build", "lib"],
-      "pattern": "\\b(?:App|Render|RenderFrame|RenderPaint|LwjglLayer|WebLayer|SoftRaster|BackgroundLoad)\\.Internal\\b",
-      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。make api Q=App.）。足りない関数があれば engine に足すよう相談する"
+      "pattern": "\\b(?:App|Render|RenderFrame|RenderPaint|LwjglLayer|WebLayer|SoftRaster|BackgroundLoad|PostStack)\\.Internal\\b",
+      "hint": "App.Internal・Render.Internal・RenderFrame.Internal・RenderPaint.Internal・LwjglLayer.Internal・WebLayer.Internal・SoftRaster.Internal・BackgroundLoad.Internal・PostStack.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene・App.withBackgroundLoad など。make api Q=App.）。足りない関数があれば engine に足すよう相談する"
     },
     {
       "id": "dev-request-outside-main",
@@ -403,6 +403,14 @@
       "skip": ["engine_full/", "lib/", "build/"],
       "pattern": "\\b(Vector|Array|Chain|MutList|Nel)\\.sort(By|With|Within)?\\b",
       "hint": "標準の Vector・Array・Chain・MutList・Nel の sort 族も List と同じ単純なクイックソートで、並んだ入力で二乗になる。List.toList などで列にして Sort.sortStable・sortStableBy・sortStableWith を通し、戻す（どんな入力でも n log n・安定）"
+    },
+    {
+      "id": "app-with-passes",
+      "suffixes": [".flix"],
+      "skip": ["lib/", "build/"],
+      "skipDirs": ["build", "lib"],
+      "pattern": "\\bApp\\.withPasses\\b",
+      "hint": "App.withPasses は 0.101.0 で消した。Pass の列は Render.passPlan(列) で包んで App.withPassPlan へ渡す（倍率は targets）。画面全体のトーンマップ・ブルーム・奥行きのぼかしは App.withPostStack（engine の docs/migrations/0.101.0.md）"
     }
   ],
   "exempt": {

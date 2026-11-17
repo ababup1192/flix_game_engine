@@ -109,6 +109,18 @@ mod TestRenderPassesHdr {
     def testHdrTextureOfRoundsToHalf(): Unit \ Assert =
         Assert.assertEq(expected = 0.0999755859375, ShaderEval.hdrChannelOf(ShaderEval.hdrTextureOf(1, 1, Vector#{0.1, 0.0, 0.0, 1.0}), 0))
 
+    @Test
+    def testHdrTextureOfHalvesKeepsRoundedValue(): Unit \ Assert =
+        Assert.assertEq(expected = 1.5, ShaderEval.hdrChannelOf(ShaderEval.hdrTextureOfHalves(1, 1, Vector#{0.0f32, 1.5f32, 0.0f32, 1.0f32}), 1))
+
+    @Test
+    def testHdrTextureOfHalvesPadsShortInputWithZero(): Unit \ Assert =
+        Assert.assertEq(expected = 0.0, ShaderEval.hdrChannelOf(ShaderEval.hdrTextureOfHalves(2, 1, Vector#{3.0f32, 3.0f32, 3.0f32, 1.0f32}), 4))
+
+    @Test
+    def testHdrTextureOfHalvesRoundsWhenLengthDiffers(): Unit \ Assert =
+        Assert.assertEq(expected = 0.0999755859375, ShaderEval.hdrChannelOf(ShaderEval.hdrTextureOfHalves(2, 1, Vector#{0.1f32, 0.0f32, 0.0f32, 1.0f32}), 0))
+
     // ════════════════════════════════════════════════════════
     // 8bit へ落とす所
     // ════════════════════════════════════════════════════════

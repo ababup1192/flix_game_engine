@@ -8,7 +8,7 @@
 - 値の単位と色の扱い
 - 見た目の名前 → 値の組（光と空気 / post process）
 - したい事 → API
-- post process の Pass の並びの手本
+- post process の組み方（PostStack）
 - 途中の Pass の絵を見る
 - 見た目が悪い時の切り分け
 - 出どころ
@@ -99,94 +99,35 @@
 | 絵の板を 3D に立てる | `Scene3d.billboard(texture, regionRect, position, size)` + `withAnchor` / `withBillboardTint` / `unlit` | 炎や光る物は `unlit`。影は受けない |
 | ドット絵と画素をそろえる / 窓の画素で描く | 場面の `resolution = Scene3d.Resolution.Design` / `Native` | Design の場面に MSAA は掛からない |
 | HDR の Pass | `RenderTarget.withHdr(RenderTarget.windowDescriptor())` を `targets` へ（`App.withPassPlan`） | 透明から始める Pass（`LoadOp.ClearTransparent`）の中の 3D は CPU の描き出しに出ない。`Clear(色)` で始める |
-| tonemap | `PostProcess.tonemapped(曲線, 露出, 白の点, spec)`・仕上げ付きは `tonemappedWith` | 1 で切って白飛びを隠さない。`pp_` で始まる名前は予約 |
-| bloom | 下の手本（明るい所を抜く → 縮めてぼかす → 足す） | 全面で `TexBlur` を読まない。縮んだ Pass でぼかして `Sampler`（Linear）で読む |
-| 被写界深度 | 同じ場面を `output = Scene3d.Output.Depth({ near, range })` で奥行きの Pass に描く | 場面を 2 回組む事になる。奥行きの Pass では空は白（一番奥） |
+| 後がけ全部（tonemap・bloom・ビネット・被写界深度・FXAA） | `App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor) \|> PostStack.withExposure(-0.3))`・値は `assets/post.json` を `PostStack.loadOr` | 順・Pass・描き先はエンジンが決める。View の絵に掛かり HUD には掛からない |
+| bloom | `PostStack.withBloom(Some({ threshold, smoothness, size, strength }))` | しきいは HDR の目盛り（1 を超える所が光る所） |
+| 被写界深度 | `PostStack.withDepthOfField(Some(DepthOfField.Physical({ focusDistance, fStop })))`（m・F 値）か `DepthBand` | 奥行きの絵は PostStack が View の 3D の場面から作る（場面を 2 回組まない）。毎コマ動かすピントは View で |
 | 細い物の欠け | `RenderTarget.withMsaa(4, ..)` を場面の Pass に | CPU の描き出しには出ない（描き出した絵の縁は固いまま） |
-| 縁をならす | `PostProcess.fxaaSpec("post")` | 読む Pass は窓の画素・scale 1・tonemap 済みの Rgba8Unorm。縮んだ Pass では縁がずれる |
-| HUD | `App.withHudView` か、FXAA の面より上の層 | HUD と UI は tonemap しない（本編の面だけを包む） |
+| 縁をならす | `PostStack.withFxaa(true)` | 曲線の後の表示の値に掛かる |
+| HUD | `App.withHudView` | 後がけ（tonemap・ぼかし）を掛けたくない窓・字幕・メニューは HUD に置く |
 
 ## post process の Pass の並びの手本
 
-HDR の場面 → 明るい所を抜く → 縮めてぼかす（2 回）→ 足して tonemap → FXAA。`Look` はゲームの Doc の値（上の表の欄）。
-**型検査を通していない見本。名前は `docs/api-digest/` で確かめた。**
+**手で Pass を並べない。** `PostStack` が値の束から Pass と面を組む（順は Blender の Color Management と同じ:
+奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA）。
 
 ```flix
-mod PostView {
-    use fge::{Color, PostProcess, Render, RenderTarget, ShaderDoc, Vec2}
-    use fge::ShaderDoc.{BinOp, Field, Out, Shade, TexChan}
-
-    def k(v: Float64): Field = Field.Const(v)
-    def add(a: Field, b: Field): Field = Field.Bin({ op = BinOp.Add, a = a, b = b })
-    def mul(a: Field, b: Field): Field = Field.Bin({ op = BinOp.Mul, a = a, b = b })
-    def linear(f: Field): Field = Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = f })
-    def rgb(name: String, bindings: List[(String, Field)], f: TexChan -> Field): ShaderDoc.Spec =
-        { name = name, cycleRate = 0.0, bindings = bindings,
-          out = Out.Fill({ shade = Shade.Rgb({ r = f(TexChan.R), g = f(TexChan.G), b = f(TexChan.B) }), alpha = k(1.0) }) }
-    def fill(size: Vec2.Vec2, spec: ShaderDoc.Spec): Render.PlacedItem =
-        Render.shaderFill(spec, { position = Vec2.zero(), size = size }, 0.0, 0)
-
-    def bright(look: Look): ShaderDoc.Spec =
-        let read = c -> linear(Field.Tex({ name = "scene", chan = c }));
-        let luma = PostProcess.luma709(read(TexChan.R), read(TexChan.G), read(TexChan.B));
-        let over = Field.Smoothstep({ lo = look#bloomThreshold, hi = look#bloomThreshold + Float64.max(0.01, look#bloomKnee), of = luma });
-        rgb("post_bright", ("over", over) :: Nil, c -> mul(read(c), Field.Ref("over")))
-
-    def blur(aspect: Float64, src: String, radius: Float64, taps: Int32): ShaderDoc.Spec =
-        rgb("post_blur_${src}", Nil, c -> linear(Field.TexBlur({ name = src, chan = c, radius = { x = radius / aspect, y = radius },
-                                                              taps = ShaderDoc.blurTaps(taps), amount = k(1.0) })))
-
-    def main(look: Look): ShaderDoc.Spec =
-        let bloom = c -> mul(k(look#bloomStrength), linear(Field.Tex({ name = "bloomB", chan = c })));
-        PostProcess.tonemapped(PostProcess.Tonemap.AcesFitted, look#exposure, look#whitePoint,
-                               rgb("post_main", Nil, c -> add(Field.Tex({ name = "scene", chan = c }), bloom(c))))
-
-    pub def chain(size: Vec2.Vec2, look: Look, clear: Color, scene: List[Render.PlacedItem]): Render.PassPlan =
-        let black = RenderTarget.LoadOp.Clear(Color.rgb(0.0, 0.0, 0.0));
-        let aspect = size#x / size#y;
-        let small = s -> RenderTarget.withHdr({ scale = s | RenderTarget.defaultDescriptor() });
-        let pass = (name, spec) -> { name = name, clear = black, items = fill(size, spec) :: Nil };
-        { targets = Map#{ "scene" => RenderTarget.withMsaa(look#msaaSamples, RenderTarget.withHdr(RenderTarget.windowDescriptor())),
-                          "bright" => small(0.5), "bloomA" => small(0.25), "bloomB" => small(0.25),
-                          "post" => RenderTarget.windowDescriptor() }
-          | Render.passPlan({ name = "scene", clear = RenderTarget.LoadOp.Clear(clear), items = scene }
-                :: pass("bright", bright(look)) :: pass("bloomA", blur(aspect, "bright", look#bloomRadius, look#bloomTaps))
-                :: pass("bloomB", blur(aspect, "bloomA", look#bloomRadius * 0.5, look#bloomTaps)) :: pass("post", main(look)) :: Nil) }
-
-    pub def screenFill(size: Vec2.Vec2): Render.PlacedItem = fill(size, PostProcess.fxaaSpec("post"))
-}
+// Main（App を組む所）。View は場面（3D と 2D）を返すだけ。会話の窓・メニューは App.withHudView に置く
+|> App.withPostStack(Resources.read((res, w) -> res#post |> PostStack.withDepthOfField(Some(PostStack.DepthOfField.Physical({ focusDistance = World.focusOf(w), fStop = 2.8 })))))
+// 読み込み（res#post）: PostStack.loadOr(PostStack.preset(PostStack.Preset.DuskOutdoor), "assets/post.json")
 ```
 
-使い方: `App.withPassPlan` に `chain(..)` を渡し、View は `screenFill(size)` を 1 枚置く。描き出しは同じ計画を `Render.passSpecsOf` に通して
-`HeadlessRender.renderPngWithPasses` へ渡す（`issues` が空でなければ Pass の読む順が違う）。
+| 欄 | 何を決めるか |
+|---|---|
+| `preset` | 出発点（下の表の場面の名前）。`Neutral` は曲線なし・露出 0・効果なし |
+| `withExposure` | stop（2 の stops 乗）。ブルームの後に掛かる |
+| `withViewTransform` | 曲線。今までの見え方は `AcesNarkowicz({ whitePoint = 4.0, saturationAfter })` |
+| `withQuality` | 読む点の数と縮み（`Auto` はスマホで `Low`）。値の意味は変えない |
+| `withCustom` | エンジンの欄に無い効果（自分の Spec を `BeforeBloom` か `AfterViewTransform` に挟む）。場面は `PostStack.sceneName()` で読む |
+| `withDebugView` | 途中の絵（`Scene`・`Bloom`・`Depth`）をそのまま画面へ出す |
 
-| Pass | 大きさと形式 | 決め方 |
-|---|---|---|
-| `scene` | 窓の画素・Rgba16Float・MSAA 4 | 3D はここだけで描く。ドット絵と画素をそろえる場面は design の大きさ（`defaultDescriptor`）で MSAA なし |
-| `bright` | 0.5 倍・Rgba16Float | 縮んだ Pass へ Linear で読むと 2 × 2 の平均になる |
-| `bloomA`・`bloomB` | 0.25 倍・Rgba16Float | 2 回目は半径を半分に。480 × 270 の全面は 129,600 画素・0.5 倍は 32,400・0.25 倍は 8,160 で、ぼかしの重さは画素 × taps |
-| `post` | 窓の画素・Rgba8Unorm・scale 1 | FXAA が 1 テクセル = 1 画素を前提にする。FXAA の読みは 27 回 |
-
-- 同じ名前・同じ補間・同じ半径と taps の読みは、r・g・b の 3 本に書いても 1 回だけ読む。
-- **Spec は読み込みの時に 1 回組んで持つ。** View で毎コマ組むと、描き手が毎コマ木の中身を比べ直す。コマごとに変わる数（ピント・明るさの倍率）は `Field.Param` + `Render.withShaderParams` で渡す。
-- 彩度・暗い所の色・フィルムの粒は 0..1 を前提にするので、`PostProcess.tonemappedWith` の `after` の中（tonemap の後）で掛ける。ビネットは tonemap の前の色に掛けている。
-- MSAA の置き場は標本の数の倍（1920 × 1080 の Rgba16Float で 4 標本なら色 約 63 MB・深度 約 32 MB）。
-
-### 被写界深度を足す時の差分（型検査を通していない）
-
-```flix
-// chain の passes に足す（"scene" の後ろ）。depthScene = 同じ場面を output = Scene3d.Output.Depth({ near, range }) で組んだ物
-:: { name = "depth", clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = depthScene }
-:: pass("soft", blur(aspect, "scene", look#tiltBlur, look#tiltTaps))
-// targets に足す: "depth" => small(0.5), "soft" => small(0.5)
-// main の中: ピントの奥行き（灰色の 0.5）からの離れ具合で、くっきりした場面とぼかした場面を混ぜる。bindings に ("tilt", tilt) を置く
-let depth = linear(Field.Tex({ name = "depth", chan = TexChan.R }));
-let away = mul(k(2.0), Field.Un({ op = ShaderDoc.UnOp.Abs, of = add(depth, k(-0.5)) }));
-let tilt = Field.Smoothstep({ lo = look#dofBand, hi = look#dofBand + look#dofSoft, of = away });
-let sharp = c -> Field.Blend({ a = Field.Tex({ name = "scene", chan = c }), b = linear(Field.Tex({ name = "soft", chan = c })), by = Field.Ref("tilt") });
-```
-
-ピントを合わせたい距離が灰色の 0.5 になるよう `near` と `range` を決める。ぼかした場面は 0.5 倍の Pass に 1 回だけ作る（窓の画素ごとに何十回も場面を読まない）。
+App を通さない描き方（自前の Pass の並び・描き出し）は `PostStack.build({ size, clear, world }, stack)` が `plan`（自分の計画に `Render.mergePassPlans` で足す）と
+`present`（world の代わりに置く面）を返す。App を使うゲームの描き出しは `App.buildFrame` が実機と同じ計画と絵を返す。
 
 ## 途中の Pass の絵を見る
 
@@ -198,6 +139,7 @@ let images = specs |> List.foldLeft((done, p) -> Map.insert(p#name, HeadlessRend
 Map.get("bright", images) |> Option.forEach(img -> Filmstrip.renderFrame(SoftRaster.toArgbImage(img), "debug/pass_bright.png"))
 ```
 
+- `PostStack` で組んだ後がけは `PostStack.withDebugView(PostStack.DebugView.Bloom)`（`Scene`・`Depth` も）で途中の絵をそのまま画面に出せる。Pass の名前は `ps_scene`・`ps_depth`・`ps_bright`・`ps_bloomB`・`ps_post`。
 - 前の Pass を読まない Pass（`scene`・`depth`）だけなら `HeadlessRender.renderPassImage(cfg, p, None)` で足りる。全部まとめては `HeadlessRender.passImagesOf`。
 - `SoftRaster.toArgbImage` は HDR の絵を 0..1 に切って 8bit にする。**`scene` の絵で真っ白な所が、tonemap の前に 1 を超えている所**。
 - 見る順: `scene`（光と material）→ `bright`（何が光る物として残ったか）→ `bloomB`（にじみの広さ）→ `post`（露出と色の仕上げ）。

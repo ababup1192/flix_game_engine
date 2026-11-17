@@ -215,7 +215,7 @@ pub mod Light {
     //   - 光マップ方式 = 環境光のある夜。光源が何個でも、光ごとに向きの違う影が落ちる。
     //     放射は組み込みテクスチャ（Render.lightAt）なので GlowAssets の焼き・転記が要らない
 
-    /// 光マップ方式の設定。lightMapPass（App.withPasses へ）と lightMapOverlay（view の列へ）の
+    /// 光マップ方式の設定。lightMapPass（Render.passPlan で包んで App.withPassPlan へ）と lightMapOverlay（view の列へ）の
     /// **両方に同じ値を渡す** — 2 か所で別々に組むと passName / z が食い違う。
     /// lights / occluders はオーバーレイ方式（SceneLightConfig）と同じ形をそのまま使う。
     /// ambient = 影の底の色（環境光。真っ黒にしない — 影は「この色へ戻る」）。
@@ -242,7 +242,7 @@ pub mod Light {
     /// shadowStrength の既定の目安（影がはっきり見えつつ、灯りの気配がわずかに残る濃さ）。
     pub def defaultShadowStrength(): Float64 = 0.85
 
-    /// 光マップの Pass を導く純関数（App.withPasses へ渡す）。並びは
+    /// 光マップの Pass を導く純関数（Render.passPlan で包んで App.withPassPlan へ渡す）。並びは
     /// 環境光の全面 box → 各光の放射（Render.lightAt の Add）→ 光×遮蔽物ごとの影
     /// （Shadow.shadowQuads の四角形を環境光色の Normal Poly で置く = 灯りを打ち消して
     /// 環境光へ戻す。真っ黒にしないので破綻しない）。

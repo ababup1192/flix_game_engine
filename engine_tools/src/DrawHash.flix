@@ -189,10 +189,11 @@ pub mod DrawHash {
     }
 
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
+        // WhyNot: unitsPerMeter を鍵に入れない — 描き方を変えない値（m で受ける後がけが読むだけ）で、同じ絵が別の鍵になる。
         // WhyNot: 集まりを別の印で書かない — 集まりは instances と同じ絵なので、中の物を instances の後ろに並べた場面と同じ鍵にする。
         case { size = size, camera = camera, instances = _, groups = _, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, directionalLight = _, environment = environment,
-               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap } =>
+               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap, unitsPerMeter = _ } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);

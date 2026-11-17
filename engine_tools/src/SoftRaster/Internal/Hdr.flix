@@ -4,7 +4,7 @@
 pub mod SoftRaster.Internal.Hdr {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D
-    use SoftRaster.{HdrCanvas, PassImage, QualityHints, applyQualityHints, blendPixelF, channelOf, forEachPixel, passImageSize, putHdr, withClip}
+    use SoftRaster.{HdrCanvas, PassImage, QualityHints, applyQualityHints, blendPixelF, channelOf, forEachPixel, frozenHdr, passImageSize, putHdr, withClip}
 
     pub def blankHdrCanvas(w: Int32, h: Int32): HdrCanvas \ IO =
         { width = w, height = h, rgba = Array.repeat(Static, Int32.max(1, w * h) * 4, 0.0) }
@@ -29,7 +29,7 @@ pub mod SoftRaster.Internal.Hdr {
 
     /// 描き終えた描き先を凍らせる（以降は PassImage として読むだけ）。
     pub def freezeHdr(canvas: HdrCanvas): ShaderEval.HdrTexture \ IO =
-        ShaderEval.hdrTextureOf(canvas#width, canvas#height, Array.toVector(canvas#rgba))
+        frozenHdr(canvas#width, canvas#height, canvas#rgba)
 
     /// 描き先の全面を c の不透明で塗る（fillClear の Rgba16Float 版。c は 0..1 に切らない）。
     pub def fillClearHdr(canvas: HdrCanvas, c: Color): Unit \ IO =

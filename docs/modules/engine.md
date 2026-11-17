@@ -41,7 +41,7 @@
 | シェーダー宣言を GLSL のソースへ変換する仕組みを知りたい | ShaderGen |
 | シェーダーの式を GPU なしで評価したい（テスト・SoftRaster の描き出し） | ShaderEval |
 | shader.json を読み書きしたい | ShaderJson |
-| 1 を超える明るさの Pass を 0..1 に収めたい（トーンマップ・露出・白の点）・縁のギザギザをならしたい（FXAA）・明るさ（709）を場で作りたい | PostProcess（tonemapped / tonemappedWith / fxaaSpec / luma709。使い方は [shader-doc.md](../shader-doc.md) の「後処理」） |
+| 1 を超える明るさの Pass を 0..1 に収めたい（トーンマップ・露出・白の点）・縁のギザギザをならしたい（FXAA）・明るさ（709）を場で作りたい | 画面全体なら engine_world の PostStack（`App.withPostStack`）。式の部品は PostProcess（tonemapped / tonemappedWith / fxaaSpec / luma709。使い方は [shader-doc.md](../shader-doc.md) の「後処理」） |
 | 面の中でテクスチャ（Pass）のテクセルの数を読む・1 テクセルずつずらす | ShaderDoc.Field.TexSize（`Div(Const(1), TexSize)` がずらす量） |
 | 入力・ウィンドウ・時計・描く・GPU の資源の effect を知りたい（テストの偽物を役割ごとに張る） | Platform（`Platform.Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`Annotation`、束は `Platform.Services`） |
 | シェーダー面を描く・GPU のプログラムを作る effect を知りたい | Platform.Draw2d.drawSurface・Platform.GpuResources.buildProgram（型は DrawCmd.SurfaceRenderCmd） |
@@ -109,7 +109,7 @@
 | 放射グラデの組み込みテクスチャ（`__radial_light` / `__radial_dark`）の画素・名前・寸法を知りたい | RadialBuiltin（ゲーム側の入口は engine_world の `Render.lightAt` / `Render.darkAt`） |
 | Drawable 経路のカメラ・投影を知りたい（`view = None` のゲーム以外では使わない） | Camera / Projection |
 | Pass のターゲットを画面（窓・書き出し）の画素で描きたい（3D・後処理を design より細かく） | RenderTarget.windowDescriptor（Descriptor の basis = Window。寸法は RenderTarget.texelSizeOf） |
-| 画面でなくレンダーターゲットに描いてテクスチャとして読み返したい（`eff Target`） | RenderTarget（GL 実装は render_gl の Target.flix / RenderTargetGl。ゲーム側の入口は engine_world の `Render.Pass` + `App.withPasses`、[逆引き](../module-index.md)を参照） |
+| 画面でなくレンダーターゲットに描いてテクスチャとして読み返したい（`eff Target`） | RenderTarget（GL 実装は render_gl の Target.flix / RenderTargetGl。ゲーム側の入口は engine_world の `Render.Pass` + `App.withPassPlan`（画面全体の後がけは `App.withPostStack`）、[逆引き](../module-index.md)を参照） |
 | いま bind 中のフレームバッファ（FBO でも既定でも）を画像 / PNG に吸い出したい | GlReadback（render_gl の GlReadback.flix。`readBoundImage`（RGBA・左上原点）/ `readBoundImageRgb`（RGB に落とす皮）/ `readBoundPng`。splashShot・注釈スクショ・GL 突き合わせ（bench/gl_parity）が共有する読み出しの核） |
 
 ## 土台
@@ -132,7 +132,7 @@
 
 ## レンダーターゲット（RenderTarget）
 
-- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。描き込み先の切り替えは描く op の外側の関心なので `Platform.Draw2d` に入れず、ターゲットを持たない描き出し・テストの偽物はこれを張らずに描ける。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `render_gl` の `RenderPaintHandlers.handleTarget`（窓ありと窓なしの描き手が重ねる）が持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPasses` を使う（[逆引き](../module-index.md)を参照）。
+- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。描き込み先の切り替えは描く op の外側の関心なので `Platform.Draw2d` に入れず、ターゲットを持たない描き出し・テストの偽物はこれを張らずに描ける。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `render_gl` の `RenderPaintHandlers.handleTarget`（窓ありと窓なしの描き手が重ねる）が持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPassPlan` を使う（[逆引き](../module-index.md)を参照）。
 
 ## core（基礎の値と計算）
 

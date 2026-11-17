@@ -42,7 +42,7 @@ mod TestPreload3d {
         { textureName = "", fontSize = 1.0, textureSize = 1.0, ascent = 0.0, descent = 0.0, lineGap = 0.0, glyphs = Map.empty() }
 
     def withOnePass(app: App[Int32, ef]): App[Int32, ef] =
-        app |> App.withPasses(_ -> checked_ecast({ name = "pass", clear = RenderTarget.LoadOp.ClearTransparent, items = Nil } :: Nil))
+        app |> App.withPassPlan(_ -> checked_ecast(Render.passPlan({ name = "pass", clear = RenderTarget.LoadOp.ClearTransparent, items = Nil } :: Nil)))
 
     def drawing(app: App[Int32, ef]): App[Int32, ef] =
         app |> App.withView((_ctx, _world) -> checked_ecast(Nil))

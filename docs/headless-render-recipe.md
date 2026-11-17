@@ -177,7 +177,7 @@ bin/fge digest gallery/my_scene.png                       # 目視の前に数�
 
 ## pass（レンダーターゲット）を使う場面
 
-実機で `App.withPassPlan`（または `App.withPasses`）に渡している計画を、描き出しでもそのまま
+実機で `App.withPassPlan` に渡している計画を、描き出しでもそのまま
 `Render.passSpecsOf` に渡す。倍率（`targets`）と読みの決まり（まだ描いていない pass は黒・自分の名前は history）が
 実機と同じになる。pass の列を 1 枚ずつ `Render.passSpecOf` で下ろすと、この 2 つが抜ける（`bin/fge forbid` が止める）。
 
