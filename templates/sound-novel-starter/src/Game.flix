@@ -30,6 +30,8 @@ mod Game {
             |> App.withFullscreen(Resources.read((_, w) -> WorldSettings.isFullscreen(w)))
             // 文章・ウィンドウ・タイトル画面・クレジットは withHudView — 背景の z に隠されない。
             |> App.withHudView(Resources.view(View.hud))
+            // PC の横長の窓・全画面で、縦の画面の左右の余りを、背景の写真を広げてぼかした絵で塗る（黒い帯にしない）。
+            |> App.withLetterboxView(Resources.view(View.letterbox))
             |> App.withAudio(ws -> Controls.sounds(ws#after#resources#missing, { before = ws#before#world, after = ws#after#world }))
             |> App.withSustained(Resources.read(Controls.ambience))
             |> App.withMixer(Resources.read(Controls.mixerOf))

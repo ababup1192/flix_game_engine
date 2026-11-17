@@ -101,6 +101,10 @@ pub mod Platform {
                            staticLayer: Option[GameEngine.StaticLayerCmd]): Unit
         /// 宣言シェーダーの面 1 枚を、次の renderCommands の列へ積む。
         def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit
+        /// 次の画面への renderCommands で、design の外の余り（レターボックス・ピラーボックス）を、texture（Pass の名前。design の大きさに描いた絵）を
+        /// 縦横比を保って窓いっぱいに広げた絵で塗る（はみ出しは真ん中で切る。2 つの画素の間をなめらかにつないで読む）。余りが無いコマ・登録簿に無い名前は何もしない（余りは黒）。
+        /// ゲームからは呼ばず、App.withLetterboxView で宣言する。
+        def fillLetterbox(texture: String): Unit
     }
 
     /// 3D の場面を出す口。

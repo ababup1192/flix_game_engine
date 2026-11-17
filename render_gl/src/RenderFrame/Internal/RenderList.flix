@@ -314,12 +314,20 @@ pub mod RenderFrame.Internal.RenderList {
     /// resolveTo = 標本が 2 以上の時、pass の終わりに標本の平均を写す先の表の番号（描く所は backend が texture ごとに持つ標本つきの描き先）。
     pub type alias ColorAttachment = { texture = Int32, format = RenderTarget.Format, load = RenderTarget.LoadOp, resolveTo = Option[Int32] }
 
-    /// 描き先。Screen = 画面（色の attachment は画面か中間の texture の 1 つで、backend が決める。letterbox = 黒帯があるか）・
+    /// 描き先。Screen = 画面（色の attachment は画面か中間の texture の 1 つで、backend が決める。letterbox = design の外の余りの始末）・
     /// Target = Pass の texture（頭の色の attachment と、その後ろの attachment の列。今は頭の 1 つだけ使う）。
     // WhyNot: 色の attachment を List 1 本で持たない — Pass は必ず 1 つ持つので、空の列を読む枝（既定値か bug!）が要らない形にする。
     pub enum PassTarget {
-        case Screen({ clearColor = Color, letterbox = Bool })
+        case Screen({ clearColor = Color, letterbox = Letterbox })
         case Target(ColorAttachment, List[ColorAttachment])
+    }
+
+    /// 画面の pass の design の外（レターボックス・ピラーボックス）の始末。Absent = 余りが無い（viewport が描き先の全面）・
+    /// Black = 余りを黒で塗る・Kept = 余りはこのコマに先に塗ってあるので残す（App.withLetterboxView の絵を広げた後の本編の pass）。
+    pub enum Letterbox with Eq, ToString {
+        case Absent
+        case Black
+        case Kept
     }
 
     /// pass を開く前の history（前のコマの描き先の絵）の始末。CopyTo(n) = 描き先の今の中身を表の番号 n へ写す・
@@ -349,8 +357,24 @@ pub mod RenderFrame.Internal.RenderList {
         let (designW, designH) = design;
         let (vpX, vpY, vpW, vpH) = RenderFrame.calcViewport(width, height, designW, designH);
         let viewport = (vpX, height - vpY - vpH, vpW, vpH);
-        { target = PassTarget.Screen({ clearColor = clearColor, letterbox = viewport != (0, 0, width, height) }),
+        let letterbox = if (viewport != (0, 0, width, height)) Letterbox.Black else Letterbox.Absent;
+        { target = PassTarget.Screen({ clearColor = clearColor, letterbox = letterbox }),
           width = width, height = height, viewport = viewport, depthStencil = depthStencil, samples = 1, history = PassHistory.NoHistory }
+
+    /// 画面の pass の余りを、先に塗った物のまま残す形にする（余りの無い pass と Pass はそのまま）。
+    pub def withLetterboxKept(pass: PassSpec): PassSpec =
+        match pass#target {
+            case PassTarget.Screen(screen) if screen#letterbox == Letterbox.Black =>
+                { target = PassTarget.Screen({ letterbox = Letterbox.Kept | screen }) | pass }
+            case _ => pass
+        }
+
+    /// 描き先の全面を viewport にした画面の pass（design の矩形を描き先の全面へ伸ばして写す。余りは無い）。
+    /// App.withLetterboxView の絵を広げて塗る pass で、本編の pass より先に開く。
+    pub def fullTargetPass(size: (Int32, Int32), clearColor: Color, depthStencil: DepthStencil): PassSpec =
+        let (width, height) = size;
+        { target = PassTarget.Screen({ clearColor = clearColor, letterbox = Letterbox.Absent }),
+          width = width, height = height, viewport = (0, 0, width, height), depthStencil = depthStencil, samples = 1, history = PassHistory.NoHistory }
 
     /// Pass の texture 1 枚の pass。design の全面を描き先の全面へ写す（縦横の倍率が少し違ってよい — uv で読む限りずれない）。
     /// samples = backend が実際に描く標本の数。2 以上なら pass の終わりに color の texture へ resolve する（pass ごと）。
@@ -382,13 +406,18 @@ pub mod RenderFrame.Internal.RenderList {
             case PassTarget.Target(color, _) => color#resolveTo
         }
 
-    /// 頭の色の attachment の始末（画面は黒帯があれば黒・無ければ clearColor）。
+    /// 頭の色の attachment の始末（画面は余りを黒で塗るなら黒・余りを残すなら前の中身のまま・余りが無ければ clearColor）。
     pub def loadOpOf(pass: PassSpec): RenderTarget.LoadOp =
         match pass#target {
-            case PassTarget.Screen(screen) =>
-                RenderTarget.LoadOp.Clear(if (screen#letterbox) { r = 0.0, g = 0.0, b = 0.0 } else screen#clearColor)
+            case PassTarget.Screen(screen) => screenLoadOp(screen#letterbox, screen#clearColor)
             case PassTarget.Target(color, _) => color#load
         }
+
+    def screenLoadOp(letterbox: Letterbox, clearColor: Color): RenderTarget.LoadOp = match letterbox {
+        case Letterbox.Absent => RenderTarget.LoadOp.Clear(clearColor)
+        case Letterbox.Black  => RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 })
+        case Letterbox.Kept   => RenderTarget.LoadOp.Keep
+    }
 
     /// 描き先の色の attachment の表の番号（画面は -1）。この番号の絵を読む行は描けない。
     pub def targetTextureOf(pass: PassSpec): Int32 =
@@ -411,11 +440,18 @@ pub mod RenderFrame.Internal.RenderList {
             case PassTarget.Target(_, _)   => None
         }
 
-    /// 画面の pass で黒帯があるか。
+    /// 画面の pass で design の外に余りがあるか（黒で塗るか、先に塗った物を残すか）。
     pub def hasLetterbox(pass: PassSpec): Bool =
         match pass#target {
-            case PassTarget.Screen(screen) => screen#letterbox
+            case PassTarget.Screen(screen) => screen#letterbox != Letterbox.Absent
             case PassTarget.Target(_, _)   => false
+        }
+
+    /// 画面の pass の余りの始末（Pass は Absent）。
+    pub def letterboxOf(pass: PassSpec): Letterbox =
+        match pass#target {
+            case PassTarget.Screen(screen) => screen#letterbox
+            case PassTarget.Target(_, _)   => Letterbox.Absent
         }
 
     /// viewport を GL の左下が原点の (x, y, 幅, 高さ) で。

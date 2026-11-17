@@ -108,10 +108,14 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             msaaTargets = Ref[Map[Int32, (Texture, Int32)], Static],
             // history へ写す元の bind group（写す元の描き先の slots の番号 → bind group。描き先を捨てる時に手放す）。
             copyGroups = Ref[Map[Int32, BindGroup], Static],
+            // 窓いっぱいに広げて貼る絵（App.withLetterboxView の Pass）を、2 つの画素の間をなめらかにつないで読む bind group（slots の番号 → bind group。dropSlot が手放す）。
+            linearGroups = Ref[Map[Int32, BindGroup], Static],
             lastFrame = Array[RenderPaint.Frame, Static],
             // このコマ（か Pass）に溜まった 3D の場面と面（drawScene3d と drawSurface が積み、submitFrame が取り出す。新しい順）。
             pendingScenes = Array[List[Scene3d.RenderCmd], Static],
             pendingSurfaces = Array[List[DrawCmd.SurfaceRenderCmd], Static],
+            // 次の画面のコマで design の外へ広げる絵の名前（fillLetterbox が置き、submitFrame が取り出す）。
+            pendingLetterbox = Array[Option[String], Static],
             // 面の program と pipeline の表。
             surfaces = WebGpuSurfaces.Surfaces,
             // スプライトの instance・多角形の頂点・draw ごとの値（RenderList の values）の Stream。
@@ -193,9 +197,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             blank = blank, slots = Ref.fresh(Static, Map.empty()), nextSlot = Array#{1} @ Static,
             registryRef = Ref.fresh(Static, Map.empty()), textureKeyRef = Ref.fresh(Static, Map.empty()),
             targets = TargetTable.fresh(), msaaTargets = Ref.fresh(Static, Map.empty()), copyGroups = Ref.fresh(Static, Map.empty()),
+            linearGroups = Ref.fresh(Static, Map.empty()),
             lastFrame = Array#{RenderPaint.emptyFrame()} @ Static,
             pendingScenes = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static,
             pendingSurfaces = Array#{(Nil: List[DrawCmd.SurfaceRenderCmd])} @ Static,
+            pendingLetterbox = Array#{(None: Option[String])} @ Static,
             surfaces = WebGpuSurfaces.fresh(gpu, { layout = frameLayout, group = frameGroup }, { nearest = nearestClamp, linear = linearClamp }),
             instances = freshStream(gpu, "fge instances", vertexUsage(), 4096 * instanceBytes()),
             vertices = freshStream(gpu, "fge vertices", vertexUsage(), 4096 * 4 * RenderList.vertexFloats()),
@@ -302,6 +308,8 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             case Some(slot) =>
                 flushPending(paint);
                 slot#group.release();
+                Map.get(id, Ref.get(p#linearGroups)) |> Option.forEach(g -> g.release());
+                Ref.put(Map.remove(id, Ref.get(p#linearGroups)), p#linearGroups);
                 slot#texture.destroy();
                 Ref.put(Map.remove(id, Ref.get(p#slots)), p#slots)
         }
@@ -597,6 +605,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     /// 1 回の renderCommands の描き物を texture へ描く。pass = 描き先の指定（画面は中間の texture・Pass はその texture）。
     /// msaa = 標本を持つ描き先と標本の数（Pass の pass の samples が 2 以上の時だけ Some）・stencilKey = mask の stencil を引く描き先の番号（中間の texture は 0）。
     def paintInto(paint: Paint, texture: Texture, msaa: Option[(Texture, Int32)], stencilKey: Int32, pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
+        paintIntoWith(paint, groupOf(paint), texture, msaa, stencilKey, pass, frame)
+
+    /// paintInto の、行の絵の bind group を groupFor で引く形（広げて貼る絵は linearGroupOf で読む）。
+    def paintIntoWith(paint: Paint, groupFor: Int32 -> BindGroup \ IO, texture: Texture, msaa: Option[(Texture, Int32)], stencilKey: Int32,
+                      pass: PassSpec, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         // WhyNot: 画面の形式を描き先に問わない — 画面は中間の texture（RGBA8）へ描き、present で画面の形式へ写す。
         let format = RenderList.targetFormatOf(pass) |> Option.getWithDefault(RenderTarget.Format.Rgba8Unorm);
@@ -620,7 +633,7 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             upload = (n, m, values, k) -> upload(paint, n, m, values, k),
             openPass = spec -> openPass(paint, texture, msaa, stencilKey, spec),
             setPipeline = (pass1, shape, blendC, stencil) -> pass1.setPipeline(WebGpuPipelines.pipelineOf(pipes, shape, blendC, format, samples, stencil)),
-            setTexture = (pass1, id) -> pass1.setBindGroup(1, groupOf(paint, id)),
+            setTexture = (pass1, id) -> pass1.setBindGroup(1, groupFor(id)),
             setVertices = (pass1, kind, buffer) -> setVertices(paint, pass1, kind, buffer),
             setValues = (pass1, bytes) -> setValues(paint, pass1, bytes),
             drawSurface = (pass1, rows, row, reads, stencil, bytes) ->
@@ -694,6 +707,21 @@ pub mod RenderPaint.Internal.WebGpuPaint {
               Ref.put(Map.remove(id, Ref.get(p#staticBuffers)), p#staticBuffers)
           }) }
 
+    /// 番号 id の絵を、2 つの画素の間をなめらかにつないで読む bind group（無ければ作って控える）。表に無い番号は空の絵。
+    // WhyNot: Pass の slot の sampler を linear に替えない — Pass を読むほかの描き物（後がけ・合成）は画素を 1 つずつ読む前提で組んである。
+    def linearGroupOf(paint: Paint, id: Int32): BindGroup \ IO =
+        let PaintData.PaintData(p) = paint;
+        match (Map.get(id, Ref.get(p#linearGroups)), Map.get(id, Ref.get(p#slots))) {
+            case (Some(group), _) => group
+            case (None, Some(slot)) =>
+                let desc = new BindGroupDesc("fge image linear", p#imageLayout);
+                discard desc.textureView(0, slot#texture.defaultView()).sampler(1, p#linearClamp);
+                let group = p#gpu.createBindGroup(desc);
+                Ref.put(Map.insert(id, group, Ref.get(p#linearGroups)), p#linearGroups);
+                group
+            case (None, None) => p#blank#group
+        }
+
     def groupOf(paint: Paint, id: Int32): BindGroup \ IO =
         let PaintData.PaintData(p) = paint;
         Map.get(id, Ref.get(p#slots)) |> Option.map(slot -> slot#group) |> Option.getWithDefault(p#blank#group)
@@ -720,15 +748,18 @@ pub mod RenderPaint.Internal.WebGpuPaint {
         Array.put(Nil, 0, p#pendingScenes);
         let surfaces = List.reverse(Array.get(0, p#pendingSurfaces));
         Array.put(Nil, 0, p#pendingSurfaces);
-        let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer, surfaces = surfaces, scenes = scenes };
+        let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons, staticLayer = staticLayer, surfaces = surfaces, scenes = scenes,
+                      letterbox = None };
         match TargetTable.activeSpec(p#targets) {
             case Some(spec) =>
                 // タイルの層と static layer は画面のコマの物（GL の RenderPaint.paintTarget と同じく Pass には乗せない）。
                 paintTarget(paint, spec, { tileMaps = Nil, staticLayer = None | frame });
                 false
             case None =>
-                Array.put(frame, 0, p#lastFrame);
-                paintScreen(paint, frame);
+                let screenFrame = { letterbox = Array.get(0, p#pendingLetterbox) | frame };
+                Array.put(None, 0, p#pendingLetterbox);
+                Array.put(screenFrame, 0, p#lastFrame);
+                paintScreen(paint, screenFrame);
                 RenderDrawCounts.endScreenFrame(p#drawCounts);
                 // WhyNot: 集めていない間の 3D の数を溜め続けない — 誰も引き取らない数が増え続ける（GL の RenderPaint.noteGpuTime と同じ）。
                 if (Option.isEmpty(Ref.get(p#diagnosticsRef))) {
@@ -814,8 +845,24 @@ pub mod RenderPaint.Internal.WebGpuPaint {
     def paintScreen(paint: Paint, frame: RenderPaint.Frame): Unit \ IO =
         let PaintData.PaintData(p) = paint;
         let size = (Array.get(0, p#frameSize), Array.get(1, p#frameSize));
-        paintInto(paint, Array.get(0, p#frameTexture), None, 0,
-                  RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil), frame)
+        let screen = RenderList.screenPass(size, (p#designW, p#designH), p#clearColor, DepthStencil.NoDepthStencil);
+        let pass = if (fillLetterbox(paint, size, screen, frame#letterbox)) RenderList.withLetterboxKept(screen) else screen;
+        paintInto(paint, Array.get(0, p#frameTexture), None, 0, pass, frame)
+
+    /// 画面の pass に余りがあり、広げる絵 letterbox が登録簿にあれば、中間の texture の全面を viewport にした pass でその絵を窓いっぱいに広げて塗り、真を返す。
+    /// 塗らなかった時は偽（本編の pass が余りを黒で塗る）。GL の RenderPaint.fillLetterbox と同じ。
+    def fillLetterbox(paint: Paint, size: (Int32, Int32), screen: PassSpec, letterbox: Option[String]): Bool \ IO =
+        let PaintData.PaintData(p) = paint;
+        let texInfo = letterbox |> Option.filter(_ -> RenderList.hasLetterbox(screen))
+                                |> Option.flatMap(name -> Map.get(name, Ref.get(p#registryRef)) |> Option.map(info -> (name, info)));
+        match texInfo {
+            case None => false
+            case Some((name, info)) =>
+                let fill = RenderFrame.letterboxFillOf(size, (p#designW, p#designH), name, (info#width, info#height));
+                paintIntoWith(paint, linearGroupOf(paint), Array.get(0, p#frameTexture), None, 0,
+                              RenderList.fullTargetPass(size, p#clearColor, DepthStencil.NoDepthStencil), { sprites = fill :: Nil | RenderPaint.emptyFrame() });
+                true
+        }
 
     /// 最後に画面へ描いたコマを中間の texture へ描き直す（大きさが変わった時。控えも数も進めない）。続けて present を呼ぶ。
     pub def repaintLast(paint: Paint): Unit \ IO =
@@ -1058,6 +1105,11 @@ pub mod RenderPaint.Internal.WebGpuPaint {
             def drawSurface(cmd, k) = {
                 let PaintData.PaintData(p) = paint;
                 Array.put(cmd :: Array.get(0, p#pendingSurfaces), 0, p#pendingSurfaces);
+                k(())
+            }
+            def fillLetterbox(texture, k) = {
+                let PaintData.PaintData(p) = paint;
+                Array.put(Some(texture), 0, p#pendingLetterbox);
                 k(())
             }
         }

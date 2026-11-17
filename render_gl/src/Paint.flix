@@ -23,7 +23,9 @@ mod RenderPaint {
         polygons = List[GameEngine.PolygonRenderCmd],
         staticLayer = Option[GameEngine.StaticLayerCmd],
         surfaces = List[DrawCmd.SurfaceRenderCmd],
-        scenes = List[Scene3d.RenderCmd]
+        scenes = List[Scene3d.RenderCmd],
+        // design の外（レターボックス・ピラーボックス）へ広げて塗る絵の名前（Platform.Draw2d.fillLetterbox。無ければ余りは黒）。
+        letterbox = Option[String]
     }
 
     /// 塗りのコアの状態。作るのは create だけ。
@@ -53,6 +55,8 @@ mod RenderPaint {
         pendingShaderHolder = Array[List[DrawCmd.SurfaceRenderCmd], Static],
         // このコマに溜まった 3D の場面（queueScene3d が積み、submitFrame が取り出す。新しい順）。
         pendingScene3dHolder = Array[List[Scene3d.RenderCmd], Static],
+        // 次の画面のコマで design の外へ広げる絵の名前（fillLetterbox が置き、submitFrame が取り出す）。
+        pendingLetterboxHolder = Array[Option[String], Static],
         // 3D の場面の描き手（作る側が渡す）。
         scene3d = Scene3dRenderer.Renderer,
         // Pass の頭で unit 0 に貼っておく 1 × 1 の透明な黒。
@@ -101,7 +105,7 @@ mod RenderPaint {
 
     /// 空のコマ。
     pub def emptyFrame(): Frame =
-        { sprites = Nil, tileMaps = Nil, polygons = Nil, staticLayer = None, surfaces = Nil, scenes = Nil }
+        { sprites = Nil, tileMaps = Nil, polygons = Nil, staticLayer = None, surfaces = Nil, scenes = Nil, letterbox = None }
 
     /// GL の資源を作り、空の登録簿で塗りのコアを始める。GL の文脈が今の糸に付いていること。
     /// design = 描く座標の寸（ゲームの designWidth × designHeight）、clearColor = design の中の地の色、
@@ -240,7 +244,8 @@ mod RenderPaint {
           tiles = TileTable.fresh(), tileVboRegistry = tileVboRegistry, shaderProgramCache = shaderProgramCache,
           frameGenHolder = frameGenHolder, programUsedAtRef = programUsedAtRef,
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
-          pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, scene3d = cfg#scene3d,
+          pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static,
+          pendingLetterboxHolder = Array#{(None: Option[String])} @ Static, scene3d = cfg#scene3d,
           blankTexture = GpuHandle.textureIdInt(RenderTexture.loadTextureFromPixels(gl, 1, 1, Vector#{0})#id),
           targets = targets, targetEntries = Ref.fresh(Static, Map.empty()),
           targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
@@ -268,7 +273,36 @@ mod RenderPaint {
             staticRanges = staticRanges,
             surfaces = frame#surfaces, scenes = prepared,
             targetNames = TargetTable.names(paint#targets) | paint#frameArgsBase };
-        GlRows.renderPass(gl, args, GlRows.passOfArgs(args))
+        let screen = GlRows.passOfArgs(args);
+        if (fillLetterbox(gl, paint, args, screen, frame#letterbox)) GlRows.renderPass(gl, args, RenderList.withLetterboxKept(screen))
+        else GlRows.renderPass(gl, args, screen)
+
+    /// 絵 tex の拡大と縮小の読み方を filter にする。
+    // WhyNot: Pass の絵をいつも LINEAR で作らない — Pass を読むほかの描き物（後がけ・合成）は画素を 1 つずつ読む前提で組んである。広げて貼る間だけ替える。
+    // WhyNot: 元の bind に戻さない — 本編の pass は行ごとに絵を bind し直す。
+    def setFilter(gl: GlContext, tex: Int32, filter: Int32): Unit \ IO =
+        gl.bindTexture(GlConst.TEXTURE_2D, tex);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MIN_FILTER, filter);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAG_FILTER, filter)
+
+    /// 画面の pass に余りがあり、広げる絵 letterbox が登録簿にあれば、描き先の全面を viewport にした pass でその絵を窓いっぱいに広げて塗り、真を返す。
+    /// 塗らなかった時は偽（本編の pass が余りを黒で塗る）。
+    def fillLetterbox(gl: GlContext, paint: Paint, args: RenderFrame.FrameArgs, screen: RenderList.PassSpec, letterbox: Option[String]): Bool \ IO =
+        let texInfo = letterbox |> Option.filter(_ -> RenderList.hasLetterbox(screen))
+                                |> Option.flatMap(name -> Map.get(name, args#registry) |> Option.map(info -> (name, info)));
+        match texInfo {
+            case None => false
+            case Some((name, info)) =>
+                let fill = RenderFrame.letterboxFillOf((args#fbW, args#fbH), (paint#screenW, paint#screenH), name,
+                                                       (info#width, info#height));
+                let only = { sprites = fill :: Nil, tileMaps = Nil, polygons = Nil, staticRanges = Nil, surfaces = Nil,
+                             scenes = Scene3dRenderer.noScenes() | args };
+                let tex = GpuHandle.textureIdInt(info#id);
+                setFilter(gl, tex, GlConst.LINEAR);
+                GlRows.renderPass(gl, only, RenderList.fullTargetPass((args#fbW, args#fbH), args#clearColor, RenderList.DepthStencil.DepthAndStencil));
+                setFilter(gl, tex, GlConst.NEAREST);
+                true
+        }
 
     /// レンダーターゲットへの 1 フレーム。画面用の paintFrame と違い、黒帯 clear を
     /// せず（targetClear）、タイル層・静的レンジは乗らない。シェーダー面は画面と同じく z で合流する。
@@ -345,8 +379,10 @@ mod RenderPaint {
                 // 順序は積んだ順（drawShaders の列順）に戻す。z の合流は renderFrameMixed が行う。
                 let surfaces = List.reverse(Array.get(0, paint#pendingShaderHolder));
                 Array.put(Nil, 0, paint#pendingShaderHolder);
+                let letterbox = Array.get(0, paint#pendingLetterboxHolder);
+                Array.put(None, 0, paint#pendingLetterboxHolder);
                 let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons,
-                              staticLayer = staticLayer, surfaces = surfaces, scenes = takeScenes(paint) };
+                              staticLayer = staticLayer, surfaces = surfaces, scenes = takeScenes(paint), letterbox = letterbox };
                 Array.put(frame, 0, paint#lastFrameHolder);
                 // 進めるのはここ 1 箇所だけ。上のレンダーターゲットへの分岐でも進めると、
                 // Pass を N 枚描くゲームでは絵 1 枚あたり N+1 回進み、「現世代 = いま描いて
@@ -693,6 +729,10 @@ mod RenderPaint {
     pub def noteFrame(paint: Paint, submitNs: Int64, swapNs: Int64, drawItems: Unit -> Int32): Unit \ IO =
         noteDiagnostics(paint, d -> { submitNs = d#submitNs + submitNs, swapNs = d#swapNs + swapNs,
                                       drawItems = d#drawItems + drawItems() | d })
+
+    /// 次の画面のコマで design の外へ広げて塗る絵の名前を置く（Platform.Draw2d.fillLetterbox の中身）。
+    pub def queueLetterbox(paint: Paint, texture: String): Unit \ IO =
+        Array.put(Some(texture), 0, paint#pendingLetterboxHolder)
 
     /// Platform.Draw2d.drawSurface の中身。実描画はこのフレームの clear 直後（renderFrameMixed 内）で行う。ここでは溜めるだけ。
     pub def queueSurface(paint: Paint, cmd: DrawCmd.SurfaceRenderCmd): Unit \ IO =

@@ -340,10 +340,12 @@ pub mod App.Internal.Paint {
                 uploadAtlases((r#spriteAtlases)(world));
                 preloadCmd(app, tileCache#gen, world) |> Option.forEach(cmd -> Platform.Draw3d.preload3d(cmd));
                 let atlas = Platform.GpuResources.getFontAtlas("default");
-                let frame = buildFrame(app, design, baseCtx(app, design, display, atlas, warnOnce, diagnostics), world, toItems);
+                let ctx = baseCtx(app, design, display, atlas, warnOnce, diagnostics);
+                let frame = buildFrame(app, design, ctx, world, toItems);
                 let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, frame#plan));
                 let passList = plan#passes;
                 renderPasses(warnOnce, design, plan);
+                let letterboxItems = renderLetterbox(app, warnOnce, design, ctx, world);
                 let cacheSeen = { passTargets = passList |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), tileCache#passTargets)
                                   | tileCache };
                 // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
@@ -359,7 +361,7 @@ pub mod App.Internal.Paint {
                 let items = if (List.isEmpty(look#fixed)) inspected else List.append(inspected, look#fixed);
                 // 字の欠け照合はレンダーターゲットの中の字も一緒に見る（ターゲットも本編と
                 // 同じ「初めて出る字は 1 コマ遅れる」に乗せる）。
-                let itemsForGlyphs = List.append(List.flatMap(p -> p#items, passList), items);
+                let itemsForGlyphs = List.append(List.append(List.flatMap(p -> p#items, passList), letterboxItems), items);
                 // アトラスに無い字があれば、描く前に用意してもらう（初めて出る字は 1 コマ遅れる）。
                 // たいていは空振りで、そのときは何も起きない。glyphSeen は「欠けが無かった
                 // フレームの字の指紋」— 同じ指紋の間は 1 字ずつの照合を引き直さない。
@@ -413,6 +415,38 @@ pub mod App.Internal.Paint {
             submitGpuItems(warnOnce, p#items, Nil, None);
             RenderTarget.Target.endTarget()
         }, plan#passes)
+
+    /// withLetterboxView があり窓に余りがあれば、その絵を Pass（letterboxTarget。design の 1/4 の画素）へ描き、
+    /// 次の画面のコマで余りへ広げて塗るよう描き手に頼む（Platform.Draw2d.fillLetterbox）。描いた絵を返す（字の用意と絵の値段に数える）。余りの無いコマは何もしない。
+    // WhyNot: テクセルを design の大きさにしない — 余りは窓いっぱいに広げてぼかして見せる所で、小さく描いて 2 つの画素の間をなめらかにつないで広げる方が
+    //   ぼけが強く、ぼかしの shader を塗る画素も 1/16 で済む。
+    def renderLetterbox(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, base: App.ViewCtx, world: w):
+            List[Render.PlacedItem] \ (ef + Platform.Rendering + RenderTarget.Target) =
+        match App.rec(app)#letterboxView {
+            case Some(v) if isLetterboxed(base#display, design) =>
+                let items = App.composeScene(None, 1.0, design, { world = v({ visible = App.visibleOf(None, 1.0, design) | base }, world), hud = Nil });
+                let size = n -> Int32.max(1, Float64.tryToInt32(Float64.round(n)) |> Option.getWithDefault(1));
+                RenderTarget.Target.beginTarget({ name = letterboxTarget(), width = size(design#x / 4.0), height = size(design#y / 4.0),
+                                                  format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 }),
+                                                  samples = 1 });
+                submitGpuItems(warnOnce, items, Nil, None);
+                RenderTarget.Target.endTarget();
+                Platform.Draw2d.fillLetterbox(letterboxTarget());
+                items
+            case _ => Nil
+        }
+
+    /// withLetterboxView の絵を描く Pass の名前。
+    pub def letterboxTarget(): String = "fge_letterbox"
+
+    /// 窓の大きさ display#size と design の縦横比が、余りの出るほど違うか（幅と高さの比で 0.5% より大きく違う時）。
+    pub def isLetterboxed(display: Display.Display, design: Vec2.Vec2): Bool =
+        if (display#size#x <= 0.0 or display#size#y <= 0.0 or design#x <= 0.0 or design#y <= 0.0) false
+        else {
+            let window = display#size#x / display#size#y;
+            let wanted = design#x / design#y;
+            Float64.abs(window - wanted) > wanted * 0.005
+        }
 
     /// Pass の計画を、本編より先に今の描き先へ描く（実機の毎コマと同じ道: resolvePassReads → 倍率 → drawShaders → renderCommands）。
     /// known = これまでに作ったターゲットの名前（コマをまたいで増える。実機の TileCache#passTargets と同じ役）。返すのは次の known。

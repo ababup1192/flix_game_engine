@@ -102,6 +102,10 @@ mod ViewStage {
             }) |> Option.getWithDefault(Nil);
         { layer = View.kindOf(env)#overlayLayer, order = 3, items = items }
 
+    /// 背景の上に重ねる暗さ（<<overlay>> の置き場が stage の覆いと、transition=black の暗転）。PC の窓の左右の余りを真ん中と同じ濃さにする（View.letterbox）。
+    pub def shadeOf(env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
+        List.append(overlayGroup(env, stage)#items, blackoutGroup(env, stage)#items)
+
     /// 覆いの置き場が screen の時に hud の z に描く物（文字の枠より手前）。
     pub def screenOverlay(env: View.Env, stage: Stage.Stage, z: Int32): List[Render.PlacedItem] =
         overlayOf(env, stage) |> Option.filter(match (_, _, onScreen) -> onScreen)

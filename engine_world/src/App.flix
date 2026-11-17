@@ -180,6 +180,8 @@ pub mod App {
         // カメラを掛けずに描く絵（スコア等の HUD）。合流時に z が HUD の範囲（ZBand.liftHud）へ
         // 持ち上がるので、world の z に関わらず必ず手前。zIndex が決めるのは HUD の中の前後だけ。
         hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef],
+        // design の外（レターボックス・ピラーボックス）を塗る絵。design の大きさに描いた絵を、描き手が窓いっぱいに広げて余りへ塗る。
+        letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef],
         audio = { before = w, after = w } -> List[String] \ ef,    // 1 フレームの前後から鳴らす音名を導く
         // 「このフレームで鳴り続けていてほしい音」の宣言。宣言が続く間は鳴り続け、消えたフレームで
         // 止まる（風・雨・炎・機械の唸り・足音のループ）。毎フレーム音量と高さを与えられる。
@@ -293,6 +295,7 @@ pub mod App {
           cameraBounds = None,
           parallaxLayers = Nil,
           hudView = None,
+          letterboxView = None,
           staticLayer = None,
           preload3d = None,
           tileLayers = None,
@@ -503,6 +506,12 @@ pub mod App {
     pub def withHudView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef,
                         app: App[w, ef]): App[w, ef] =
         App.App({ hudView = Some(v) | rec(app) })
+
+    /// 窓の比が design と違う時の design の外の余り（レターボックス・ピラーボックス）を、黒でなくこの絵で塗る。v は design の大きさの画面に
+    /// 描くつもりで絵を返し、描き手が縦横比を保って窓いっぱいに広げて余りにだけ見せる（design の中・HUD・デバッグの重ねは今までどおり）。
+    /// 余りの無いコマ・画面なしの描き出し・テストでは呼ばない。広げるので細部は消える — ぼかした背景を渡す。描き先は Pass「fge_letterbox」。
+    pub def withLetterboxView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef, app: App[w, ef]): App[w, ef] =
+        App.App({ letterboxView = Some(v) | rec(app) })
 
     /// 1 フレームの前後の World（{before, after}）から鳴らす音名を導く関数を繋ぐ
     /// （再生は App が引き受ける）。同じ名前が同じフレームに 2 回入っても 1 回だけ鳴る。

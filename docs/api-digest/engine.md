@@ -1007,6 +1007,8 @@
   `pub eff Draw2d { def renderCommands(sprites: List[GameEngine.Drawable], tileMaps: List[GameEngine.TileMapRenderCmd], polygons: List[GameEngine.PolygonRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Unit }`
 - 宣言シェーダーの面 1 枚を、次の renderCommands の列へ積む。
   `pub eff Draw2d { def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit }`
+- 次の画面への renderCommands で、design の外の余り（レターボックス・ピラーボックス）を、texture（Pass の名前。design の大きさに描いた絵）を
+  `pub eff Draw2d { def fillLetterbox(texture: String): Unit }`
 - 3D の場面を出す口。
   `pub eff Draw3d`
 - 3D の場面 1 つを、次の Draw2d.renderCommands の列へ積む（深度で前後を決め、2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
