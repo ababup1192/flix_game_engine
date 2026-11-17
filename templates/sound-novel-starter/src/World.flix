@@ -417,23 +417,16 @@ mod World {
     pub def toCredits(res: Res.Res, w: World): World =
         { scene = Scene.Credits(w#realNow, stageOf(res, w)), panel = Panel.Closed, ask = None | w }
 
-    /// クレジットが流れ切ったか（行の高さの合計 + 画面の高さ screenHeight を流れたら）。縦の画面は高いぶん長く流れる。
-    pub def creditsOver(res: Res.Res, screenHeight: Float64, w: World): Bool = match w#scene {
+    /// クレジットが流れ切ったか（画面 screen の幅で折った行の長さ + 画面の高さを流れたら）。縦の画面は高く、行も折れるぶん長く流れる。
+    pub def creditsOver(res: Res.Res, screen: { x = Float64, y = Float64 }, w: World): Bool = match w#scene {
         case Scene.Credits(startedAt, _) =>
-            Clock.since(startedAt, w#realNow) * KindDoc.rec(res#kind)#creditsSpeed >= creditsLength(res) + screenHeight
+            Clock.since(startedAt, w#realNow) * KindDoc.rec(res#kind)#creditsSpeed >= creditsLength(res, screen#x) + screen#y
         case _ => false
     }
 
-    /// クレジットの行を並べた長さ（View が置く間隔と同じ決まり）。
-    pub def creditsLength(res: Res.Res): Float64 =
-        CreditsDoc.rec(res#credits)#rows |> List.foldLeft((sum, row) -> sum + creditsRowHeight(row#style), 0.0)
-
-    pub def creditsRowHeight(style: CreditsDoc.Style): Float64 = match style {
-        case CreditsDoc.Style.Heading => 52.0
-        case CreditsDoc.Style.Body    => 34.0
-        case CreditsDoc.Style.Small   => 24.0
-        case CreditsDoc.Style.Gap     => 40.0
-    }
+    /// クレジットの行を画面の幅 screenWidth で折って並べた長さ（View が置く並びと同じ CreditsLayout）。
+    pub def creditsLength(res: Res.Res, screenWidth: Float64): Float64 =
+        CreditsLayout.length(CreditsLayout.room(screenWidth), CreditsDoc.rec(res#credits)#rows)
 
     // ── 画面・確認のウィンドウ・知らせ ──
 

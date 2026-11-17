@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "クレジット（novel.credits.json）",
-  "description": "クレジットに流す行（上から順）。写真とフォントの出典は CREDITS.md と同じ物を置く。",
+  "description": "クレジットに流す行（上から順）。絵・音・フォントの出典は CREDITS.md と同じ物を置く。画像生成の絵と、engine や自作の合成の音は、場面や音の種類を並べない（「背景は画像生成で作りました」「効果音の一部は合成」くらい）。外の素材で規約が表記を求める物（作者名・曲名・サイト・ライセンス）は書く。画面の幅に入らない行は読点・中黒・括弧・空白の所で折って流す。",
   "type": "object",
   "required": [
     "version",
@@ -24,7 +24,8 @@
         ],
         "properties": {
           "text": {
-            "type": "string"
+            "type": "string",
+            "description": "出す字。画面の幅に入らなければ折る（半角の語 1 つが幅を越える時だけ字を縮める）"
           },
           "style": {
             "enum": [

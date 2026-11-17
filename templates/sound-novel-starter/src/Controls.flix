@@ -52,7 +52,7 @@ mod Controls {
             case World.Scene.Reading(_)    => if (World.isHolding(w)) dropLongPress(w) else readingInput(res, frame, w)
             case World.Scene.Credits(_, _) =>
                 let k = keysOf(res);
-                if (World.creditsOver(res, Layout.height(fitOf(res, frame)), w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
+                if (World.creditsOver(res, Layout.size(fitOf(res, frame)), w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
                 else w
         }
 

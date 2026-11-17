@@ -1,6 +1,8 @@
 // CreditsDoc — novel.credits.json（クレジットに流す行）の宣言ドキュメント層。
-// 写真（CC BY は作者と許諾を画面に出すのが条件）とフォント（SIL OFL）の表記はここに書き、
+// 外の素材（CC BY の写真・規約が表記を求める曲や効果音）とフォント（SIL OFL）の表記はここに書き、
 // 同じ物を CREDITS.md にも書く（配る物の中で、遊ぶ人にも読む人にも見える所に置く）。
+// 画像生成の絵と、engine や自作の合成の音は、場面や音の種類を並べない（「背景は画像生成で作りました」くらい）。
+// 画面の幅で折った並びは CreditsLayout。
 // 行の style は heading（見出し）/ body（本文）/ small（出典の URL など）/ gap（空き）。
 mod CreditsDoc {
     use fge::{DocJson, JsonCodec}

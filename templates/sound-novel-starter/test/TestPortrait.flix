@@ -2,7 +2,7 @@
 // 当たりの矩形は View が描く所と同じ Layout の関数から引く（座標の数を写さない）。Frame#viewport が縦長なら縦の並べ方になる。
 mod TestPortrait {
 
-    use fge::{App, Clock, Display, JsonCodec, Rect2, Render}
+    use fge::{App, Clock, Display, JsonCodec, Rect2, Render, TextDraw}
     use fge::GameEngine.Key
     use TestKit.{begun, w0}
 
@@ -247,9 +247,57 @@ mod TestPortrait {
         // クレジットは画面の高さ分も流れるので、縦の画面は横より長く流れてから終わる。
         let res = TestKit.res();
         let started = World.toCredits(res, w0(res));
-        let length = World.creditsLength(res);
+        let wide = { x = 960.0, y = 540.0 };
+        let length = World.creditsLength(res, wide#x);
         let at = { realNow = Clock.after((length + 600.0) / KindDoc.rec(res#kind)#creditsSpeed, started#realNow) | started };
-        Assert.assertEq(expected = (true, false), (World.creditsOver(res, 540.0, at), World.creditsOver(res, 1169.0, at)))
+        Assert.assertEq(expected = (true, false), (World.creditsOver(res, wide, at), World.creditsOver(res, tall(), at)))
+
+    // ── 縦の画面のクレジット（長い行を幅で折る） ──
+
+    def listedRow(): String = "私の部屋・須藤の家・廊下・須藤の部屋・運動会の園庭・公園"
+
+    /// 縦の画面で収まらなかった長い行（中黒で並べた行と、外の素材の表記）。
+    def longCreditsRows(): List[CreditsDoc.Row] =
+        { text = listedRow(), style = CreditsDoc.Style.Body } ::
+        { text = "New Post Horn Galop（United States Navy Band・パブリックドメイン）", style = CreditsDoc.Style.Body } ::
+        { text = "テープのノイズ・デッキの駆動音・砂嵐などは合成（ffmpeg・Python）", style = CreditsDoc.Style.Body } ::
+        { text = "", style = CreditsDoc.Style.Gap } ::
+        { text = "https://soundeffect-lab.info/agreement/", style = CreditsDoc.Style.Small } :: Nil
+
+    def portraitCreditLines(): List[CreditsLayout.Line] =
+        CreditsLayout.lines(CreditsLayout.room(tall()#x), longCreditsRows())
+
+    @Test
+    def testLongCreditsRowsFitThePortraitWidth(): Unit \ Assert =
+        // 縦の画面の幅でも、長いクレジットの行は折って、どの行も左右の余白の内に収まる（折る時と同じ近似の字幅で測る）。
+        let room = CreditsLayout.room(tall()#x);
+        Assert.assertTrue(portraitCreditLines() |> List.forAll(l -> CreditsLayout.widthOf(l#size, l#text) <= room + 0.01))
+
+    @Test
+    def testLongCreditsRowsFitThePortraitWidthWithTheRealFont(): Unit \ {Assert, IO} =
+        // 本文の字の本で実際に測っても、折った行は縮めずに縦の画面の幅に収まる。
+        let atlas = SceneRender.cfgOf(SceneRender.design(), "debug", Map.empty())#fontAtlas;
+        let room = CreditsLayout.room(tall()#x);
+        Assert.assertTrue(portraitCreditLines() |> List.forAll(l -> TextDraw.width(l#text, atlas, l#size) <= room + 0.01))
+
+    @Test
+    def testListedCreditRowBreaksAfterTheMiddleDot(): Unit \ Assert =
+        // 中黒で並べた行は、語の途中でなく中黒の後で切れる（最後の行のほかは中黒で終わる）。
+        let wrapped = CreditsLayout.wrap(CreditsLayout.room(tall()#x), CreditsLayout.sizeOf(CreditsDoc.Style.Body), listedRow());
+        Assert.assertTrue(List.length(wrapped) > 1 and (List.take(List.length(wrapped) - 1, wrapped) |> List.forAll(String.endsWith(suffix = "・"))))
+
+    @Test
+    def testWrappedCreditLinesNeverStartWithClosingMarks(): Unit \ Assert =
+        // 折った行の頭に、中黒・読点・句点・閉じ括弧が来ない（禁則）。
+        let closing = Set#{'・', '、', '。', '）'};
+        let heads = portraitCreditLines() |> List.flatMap(l -> String.toList(l#text) |> List.head |> Option.toList);
+        Assert.assertTrue(heads |> List.forAll(c -> not Set.memberOf(c, closing)))
+
+    @Test
+    def testWrappedCreditsRunLongerOnThePortraitScreen(): Unit \ {Assert, Fs.FileRead} =
+        // 縦の画面で折れて行が増えたぶん、クレジットは横の画面より長く並ぶ（流れ切る時刻も遅れる）。
+        let res = Res.withCredits(CreditsDoc.Doc.Doc({ version = 1, rows = longCreditsRows() }), TestKit.res());
+        Assert.assertTrue(World.creditsLength(res, tall()#x) > World.creditsLength(res, 960.0))
 
     // ── 縦の頁 ──
 
