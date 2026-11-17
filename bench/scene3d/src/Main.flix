@@ -1,6 +1,7 @@
 // 入口。実機の窓で場面を毎コマ描き、区間ごとに 1 行の JSON（BenchRun）を出して閉じる。場面は 2 つ:
 //   部屋（既定）… 固定の部屋をカメラを左右へゆっくり振りながら描く
 //   物を並べた場面（SCENE=field）… Field のつまみ（Makefile の頭）で物の数・形・材質・動く割合・半透明・影を替える
+//   書斎の場面（SCENE=study）… 実写スキャンの家具（Poly Haven の glb。MODELS=<フォルダ>・既定 ../../build/polyhaven-glb・git に入れない）の卓に光る球・燭台・ランタン（src/Study.flix）
 //   光る球の場面（SCENE=orb）… 暗い部屋に強く光る緑の球・ろうそく・赤い瓶・本（src/Orb.flix。view transform の見比べ用）
 // POST=1 で画面全体の後がけ（App.withPostStack の夕方の屋外の preset）を掛ける（後がけの重さを前後で比べる・PostStack の手本）。
 // 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Platform.Draw3d.drawScene3d）。
@@ -16,6 +17,7 @@ mod SceneBench {
         case Room(Room.Kit)
         case Field(Field.Kit)
         case Orb
+        case Study(Study.Kit)
     }
 
     pub type alias World = { t = Float64, progress = BenchRun.Run }
@@ -41,6 +43,7 @@ mod SceneBench {
             case Scene.Room(_)    => List.append(head, ("scene", BenchRun.quoted("room")) :: Nil)
             case Scene.Field(kit) => List.append(head, ("scene", BenchRun.quoted("field")) :: Field.knobFields(kit#config))
             case Scene.Orb        => List.append(head, ("scene", BenchRun.quoted("orb")) :: Nil)
+            case Scene.Study(_)   => List.append(head, ("scene", BenchRun.quoted("study")) :: Nil)
         }
 
     pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO =
@@ -51,15 +54,17 @@ mod SceneBench {
         case Scene.Room(kit)  => Room.items(kit, yawAt(w#t))
         case Scene.Field(kit) => Field.items(kit, w#t)
         case Scene.Orb        => Orb.items(0.0)
+        case Scene.Study(kit) => Study.items(kit)
     }
 
-    /// つまみの表の post（1 = 夕方の屋外の preset・standard / agx / neutral = その view transform だけを替えた同じ後がけ・無し = 掛けない）。
+    /// つまみの表の post（1 = 夕方の屋外の preset・standard / agx / neutral = その view transform だけを替えた同じ後がけ・preset-<名前> = その preset・無し = 掛けない）。
     pub def postOf(knobs: Map[String, String]): Option[PostStack.Stack] = match Map.get("post", knobs) {
         case Some("1")        => Some(PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3))
         case Some("standard") => Some(lookOf(PostStack.ViewTransform.Standard))
         case Some("agx")      => Some(lookOf(PostStack.ViewTransform.AgX))
         case Some("neutral")  => Some(lookOf(PostStack.ViewTransform.KhronosNeutral))
-        case _                => None
+        case Some(name)       => PostStack.presets() |> List.find(p -> "preset-${p}" == name) |> Option.map(PostStack.preset)
+        case None             => None
     }
 
     /// view transform の見比べの後がけ（ブルームと FXAA は同じ・露出 0）。
@@ -80,14 +85,15 @@ mod SceneBench {
         case None    => app0
     }
 
-    def loadScene(knobs: Map[String, String]): Result[String, Scene] \ Fs.FileRead =
+    def loadScene(knobs: Map[String, String]): Result[String, Scene] \ Fs.FileRead + IO =
         if (isField(knobs)) Ok(Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else if (Map.get("scene", knobs) == Some("orb")) Ok(Scene.Orb)
+        else if (Map.get("scene", knobs) == Some("study")) Study.load(Map.getWithDefault("models", "../../build/polyhaven-glb", knobs)) |> Result.map(Scene.Study)
         else Room.loadMeshes() |> Result.map(meshes -> Scene.Room(Room.kitOf(meshes)))
 
     pub def go(): Unit \ IO =
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
-                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: Nil);
+                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: ("MODELS", "models") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>
