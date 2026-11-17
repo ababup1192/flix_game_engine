@@ -67,9 +67,10 @@ type Choice struct {
 }
 
 type scene struct {
-	ID   *string  `json:"id"`
-	Name *string  `json:"name"`
-	T    *float64 `json:"t"`
+	ID    *string  `json:"id"`
+	Name  *string  `json:"name"`
+	T     *float64 `json:"t"`
+	Thumb *int     `json:"thumb,omitempty"`
 }
 
 type line struct {

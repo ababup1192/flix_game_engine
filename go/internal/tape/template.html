@@ -689,7 +689,7 @@ function chaptersHtml(forkId) {
   const forksBefore = end => { while (k < pts.length && pts[k].t < end - 1e-6) { rows.push(forkHtml(pts[k], k, forkId)); k++; } };
   TAPE.scenes.forEach(s => {
     forksBefore(s.t);
-    rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * CHAP_W}px 0"></div>
+    rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${-(s.thumb ?? Math.floor(s.t * TAPE.stripPerSec + 1)) * CHAP_W}px 0"></div>
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
   });
   forksBefore(Infinity);

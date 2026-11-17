@@ -205,6 +205,7 @@ func build(opt Options, t *Tape) (string, error) {
 	if err := nameScenes(t); err != nil {
 		return "", err
 	}
+	pickSceneThumbs(t, filepath.Join(opt.Dir, StripFile), strip)
 	if opt.Branches != nil {
 		b, err := json.Marshal(*opt.Branches)
 		if err != nil {
