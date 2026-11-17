@@ -65,3 +65,17 @@ func TestCheckWebLoadsFailsWhenWasmDoesNotCompile(t *testing.T) {
 		t.Fatalf("compile で落ちる頁は止まるはず: %v", err)
 	}
 }
+
+func TestCheckWebLoadsFailsWhenOnlyWebGl2PageStops(t *testing.T) {
+	skipWithoutChrome(t)
+	dir := writeWebCheckPage(t, "[0,97,115,109,1,0,0,0]")
+	stopOnGl := strings.Replace(webCheckPage, "WASM", "[0,97,115,109,1,0,0,0]", 1)
+	stopOnGl = strings.Replace(stopOnGl, "<script>", `<script>if (new URLSearchParams(location.search).get("backend") === "webgl2") window.fgeCaptureError = "WebGL2 の道で止まった";`, 1)
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte(stopOnGl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := checkWebLoads(dir, 3, 20*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "?backend=webgl2") {
+		t.Fatalf("?backend=webgl2 の頁だけで止まる時も止まるはず: %v", err)
+	}
+}

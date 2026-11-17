@@ -41,9 +41,15 @@ func checkWebLoads(out string, frames int, wait time.Duration) (skipped string, 
 	srv := &http.Server{Handler: http.FileServer(http.Dir(out)), ReadHeaderTimeout: 10 * time.Second}
 	go srv.Serve(ln)
 	defer srv.Close()
-	url := fmt.Sprintf("http://%s/index.html?capture=%d", ln.Addr().String(), frames)
-	if _, err := cdp.Capture(cdp.Options{URL: url, Wait: wait}); err != nil {
-		return "", err
+	// WhyNot: 既定の頁（WebGPU）だけを開かない — WebGL2 は WebGPU を使えないブラウザで頼る道で、書き出しの時に通さないと配った先で初めて落ちる。
+	for _, query := range []string{"", "&backend=webgl2"} {
+		url := fmt.Sprintf("http://%s/index.html?capture=%d%s", ln.Addr().String(), frames, query)
+		if _, err := cdp.Capture(cdp.Options{URL: url, Wait: wait}); err != nil {
+			if query == "" {
+				return "", err
+			}
+			return "", fmt.Errorf("?backend=webgl2 の頁: %w", err)
+		}
 	}
 	return "", nil
 }

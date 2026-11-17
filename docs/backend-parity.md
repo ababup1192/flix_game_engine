@@ -17,6 +17,9 @@
 下の対応表の「GL」の列は GPU の backend を指す。WebGPU と GL の backend は同じ `RenderList` を流し、
 同じ機械で画素を比べる門がある（`make webgpu-v1-check`（2D・許す差は `bench/webgpu_v1/tolerance.tsv`）・`make -C bench/webgpu_v2 run`（3D・許す差は場面ごとに `bench/webgpu_v2/src`））。
 WebGPU を使えない機械（Dawn のネイティブを配っていない OS など）では、起動の時に `[backend] WebGPU を使えない: … — GL で起動する` を 1 行言って GL で描く。
+ブラウザも既定は WebGPU（`navigator.gpu`）で、頁の `?backend=webgl2`（`?backend=gl` も同じ）で WebGL2。WebGPU を使えないブラウザ
+（`navigator.gpu` が無い・adapter や device が取れない・pipeline（WGSL）や絵を上げる所で落ちた）は console に
+`[backend] WebGPU を使えない: … — WebGL2 で起動する` を 1 行出して WebGL2 で描く。下の節の WebGL2 の数は `?backend=webgl2` の頁の物。
 
 ## ブラウザ（WebGL2）とデスクトップの絵
 

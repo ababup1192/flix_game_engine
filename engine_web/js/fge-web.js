@@ -284,19 +284,23 @@ function fgeRunPass(pass, ops, count, end) {
   if (end) pass.end();
 }
 
-// ── 描き手の選び分け（?backend=webgpu）──
+// ── 描き手の選び分け（既定は WebGPU・?backend=webgl2 か ?backend=gl で WebGL2）──
 // WhyNot: navigator.gpu の無い頁で WebGPU を頼まない — wasm は WebGPU を知らないブラウザでも読めるが、頼めば GL へ戻すまでに一手間かかる。
+// WhyNot: 知らない ?backend の値で止めない — 古い頁の ?backend=webgpu も、打ち間違いも、既定の WebGPU で開く。
 var fgeBackendFallbackKey = "fge-backend-fallback";
-var fgeWantWebGpu = fgeQueryParam("backend") === "webgpu" && !!navigator.gpu;
+var fgeBackendParam = fgeQueryParam("backend");
+var fgeAskedWebGl2 = fgeBackendParam === "webgl2" || fgeBackendParam === "gl";
+var fgeWantWebGpu = !fgeAskedWebGl2 && !!navigator.gpu;
 var fgeWebGpuTaken = false;
-if (fgeQueryParam("backend") === "webgpu" && !navigator.gpu) {
-  console.warn("[backend] WebGPU を使えない: このブラウザには navigator.gpu が無い — WebGL2 で起動する");
-}
 (function () {
+  var why = null;
   try {
-    var why = sessionStorage.getItem(fgeBackendFallbackKey);
-    if (why) { sessionStorage.removeItem(fgeBackendFallbackKey); console.warn("[backend] 前の頁で WebGPU を使えなかった: " + why + " — WebGL2 で開き直した"); }
+    why = sessionStorage.getItem(fgeBackendFallbackKey);
+    if (why) sessionStorage.removeItem(fgeBackendFallbackKey);
   } catch (e) { /* sessionStorage を使えない頁 */ }
+  if (why) console.warn("[backend] 前の頁で WebGPU を使えなかった: " + why + " — WebGL2 で開き直した");
+  else if (fgeAskedWebGl2) console.log("[backend] webgl2: ?backend=" + fgeBackendParam + " で選んだ");
+  else if (!navigator.gpu) console.warn("[backend] WebGPU を使えない: このブラウザには navigator.gpu が無い — WebGL2 で起動する");
 })();
 
 // canvas の WebGL2 の文脈を取る（GL の道の頭）。
@@ -310,14 +314,17 @@ function fgeInitWebGl2() {
 }
 
 // WebGPU を使えなかった時: 理由を console に出して WebGL2 の文脈を取る。canvas が既に webgpu の文脈を持っていれば同じ canvas から WebGL2 は取れないので、
-// ?backend を外した URL で開き直し（理由は sessionStorage に残して開き直した頁でも出す）、偽を返す。
+// ?backend=webgl2 の URL で開き直し（理由は sessionStorage に残して開き直した頁でも出す）、偽を返す。
 // WhyNot: canvas を作り直して続けない — 入力と大きさの購読を全部付け直すことになる。
+// WhyNot: 開き直す URL から ?backend を外さない — 既定が WebGPU なので、外すと同じ所で落ちて開き直しを繰り返す。
+// WhyNot: 起動の前に全部を判定しない — device と WGSL の pipeline は wasm の main の中で作るまで落ちるか分からない。
+// 準備（webgpu の文脈を取る前）で落ちればその場で WebGL2 を取り、取った後に落ちた時だけ開き直す。
 function fgeFallbackToWebGl2(reason) {
   console.warn("[backend] WebGPU を使えない: " + reason + " — WebGL2 で起動する");
   if (window.fgeWebGpuTaken) {
     try { sessionStorage.setItem(fgeBackendFallbackKey, reason); } catch (e) { /* sessionStorage を使えない頁 */ }
     var url = new URL(location.href);
-    url.searchParams.delete("backend");
+    url.searchParams.set("backend", "webgl2");
     location.replace(url.toString());
     return false;
   }
@@ -1162,12 +1169,14 @@ function fgeWireFpsOverlay() {
   var el = document.createElement("div");
   el.style.cssText = "position:fixed;left:8px;top:calc(8px + env(safe-area-inset-top,0px));z-index:9999;padding:4px 8px;font:14px/1.3 monospace;color:#fff;background:rgba(0,0,0,.65);pointer-events:none";
   document.body.appendChild(el);
+  // WhyNot: 頼んだ描き手（fgeWantWebGpu）を出さない — WebGPU を頼んでも準備で落ちれば WebGL2 で描いている。文脈を取れたかで言う。
+  var backend = window.fgeWebGpuTaken ? "webgpu" : "webgl2";
   var frames = 0, since = performance.now();
   var tick = function (now) {
     frames++;
     if (now - since >= 500) {
       var cpu = fgeStats.cpuRing.summary();
-      el.textContent = (frames * 1000 / (now - since)).toFixed(1) + " fps / cpu " + (cpu.frames ? cpu.median : "-") + " ms";
+      el.textContent = (frames * 1000 / (now - since)).toFixed(1) + " fps / cpu " + (cpu.frames ? cpu.median : "-") + " ms / " + backend;
       frames = 0; since = now;
     }
     requestAnimationFrame(tick);

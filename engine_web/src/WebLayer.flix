@@ -51,13 +51,13 @@ pub mod WebLayer {
 
     /// 2D のゲームの入口。3D の描き手を持たないので、Scene3d の場面は描かず初回に 1 回知らせる。
     // WhyNot: 2D の入口を withProject3d に寄せて 1 本にしない — ここから Render3d へ届くと、3D を使わないゲームの wasm まで太る。
-    /// 頁が ?backend=webgpu で開かれていれば WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。
+    /// 既定は WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?backend=webgl2 で開かれていれば WebGL2 で描く。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         if (Browser.backendRequest() == "webgpu") withWebGpuOrGl((_, _) -> makeWarningRenderer(), config, f)
         else withWeb((_, _) -> makeWarningRenderer(), config, f)
 
-    /// Scene3d を描くゲームの入口。頁が ?backend=webgpu で開かれていれば 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。
+    /// Scene3d を描くゲームの入口。既定は 3D も WebGPU で描く（使えなければ理由を console に出して WebGL2 で描く）。頁が ?backend=webgl2 で開かれていれば WebGL2 で描く。
     pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         let config = loadBootConfigOrBug(rootDir);
         let makeRenderer = (gl, cfg) -> Render3d.makeRenderer(gl, cfg, Render3d.DrawMode.Instanced);

@@ -68,13 +68,15 @@ bin/fge export-web bench/scene3d --out <出力>            # 静的なサーバ�
 bin/fge web-capture "http://127.0.0.1:<port>/index.html?capture=6" <出力.png> --size 640x360 --wait 60
 ```
 
-同じ `?` に `backend=webgpu` を足すと、頁は WebGL2 の文脈を取らずに WebGPU（navigator.gpu）で描き、n コマ目の中間の texture を
+頁の既定の描き手は WebGPU（navigator.gpu）で、n コマ目の中間の texture を
 同じ形（`origin: "bottom-left"`・canvas は opaque なので alpha は 1）で置く。`renderer` は `webgpu: <adapter>`。WebGPU を使えない頁
 （`navigator.gpu` が無い・device が取れない）は理由を console に出して WebGL2 で描くので、`renderer` を見て WebGPU で撮れたかを確かめる。
-書き出したフォルダは `--dir` で配れる（静的なサーバーを起こさずに済む）。V1 の門は `make webgpu-v1-check-web`（WebGL2・WebGPU・WebGPU の無い頁を撮って比べる）。
+同じ `?` に `backend=webgl2`（`backend=gl` も同じ）を足すと WebGL2 で描く（`renderer` は WebGL2 の名前）。WebGL2 の絵と比べる時はこちら。
+書き出したフォルダは `--dir` で配れる（静的なサーバーを起こさずに済む）。V1 の門は `make webgpu-v1-check-web`（`?backend=webgl2`・既定・WebGPU の無い頁を撮って比べる）。
 
 ```
-bin/fge web-capture "index.html?capture=6&backend=webgpu" <出力.png> --dir <書き出したフォルダ> --size 640x600 --wait 90
+bin/fge web-capture "index.html?capture=6&backend=webgl2" <WebGL2 の絵.png> --dir <書き出したフォルダ> --size 640x600 --wait 90
+bin/fge web-capture "index.html?capture=6" <WebGPU の絵.png> --dir <書き出したフォルダ> --size 640x600 --wait 90
 bin/fge pixel-diff <WebGL2 の絵.png> <WebGPU の絵.png> --tolerance bench/webgpu_v1/tolerance.tsv --name <場面>
 ```
 
