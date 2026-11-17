@@ -11,19 +11,26 @@ mod SoftRaster3d.PointShadows {
     /// 影の割合がどの灯りも 1 の並び（影の無い場面は画素ごとに作らずこれを使い回す）。
     pub def allLit(): Vector[Float64] = Vector.repeat(Scene3d.maxPointLights(), 1.0)
 
-    /// 場面（pickLights の後）の点光源の影の地図を描く（影が無ければ None）。instances = 影を落とす不透明の物。
-    pub def build(instances: List[Placed], scene: Scene3d.Scene3dCmd): Option[Set] \ IO =
+    /// 場面（pickLights の後）の点光源の影の地図を描く（影が無ければ None）。instances = 影を落とす不透明の物・
+    /// textureOf = ビルボードの絵の名前 → 段 0 の絵（castShadows のビルボードを光の方へ向けて描く）。
+    pub def build(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): Option[Set] \ IO =
         Scene3d.PointShadows.atlasOf(scene) |> Option.map(atlas -> {
-            let maps = atlas#lights |> List.map(light -> (light#pointIndex, (light, facesOf(instances, atlas, light)))) |> List.toMap;
+            let maps = atlas#lights |> List.map(light -> {
+                let casters = Scene3d.PointShadows.castingBillboardsOf(scene, light)
+                    |> List.filterMap(pair -> { let (f, right) = pair; textureOf(f#texture) |> Option.map(tex -> (f, tex, right)) });
+                (light#pointIndex, (light, facesOf(instances, casters, atlas, light)))
+            }) |> List.toMap;
             Set.Set(atlas, Vector.range(0, Scene3d.maxPointLights()) |> Vector.map(i -> Map.get(i, maps)))
         })
 
-    def facesOf(instances: List[Placed], atlas: Scene3d.PointShadows.Atlas, light: Scene3d.PointShadows.ShadowedPointLight): Vector[Vector[Float64]] \ IO =
+    def facesOf(instances: List[Placed], casters: List[(Scene3d.BillboardFields, ShaderEval.TexData, Vec3.Vec3)],
+                atlas: Scene3d.PointShadows.Atlas, light: Scene3d.PointShadows.ShadowedPointLight): Vector[Vector[Float64]] \ IO =
+        let billboards = { casters = casters, basis = { right = Vec3.v3(1.0, 0.0, 0.0), up = Vec3.v3(0.0, 1.0, 0.0), facing = Vec3.v3(0.0, 0.0, -1.0) } };
         Vector.range(0, 6) |> Vector.map(face -> {
             let eye: LightEye = { view = Scene3d.PointShadows.faceViewOf(light#position, face),
                                   proj = Scene3d.PointShadows.faceProjectionOf(light#near, light#far, atlas#guardScale),
                                   projection = Projection.Perspective(light#near) };
-            SoftRaster3d.ShadowMaps.buildShadowMap(instances, SoftRaster3d.ShadowMaps.noBillboards(), eye, Vector.get(face, light#frustums), atlas#tileSize)
+            SoftRaster3d.ShadowMaps.buildShadowMap(instances, billboards, eye, Vector.get(face, light#frustums), atlas#tileSize)
         })
 
     /// 点 p（g = 形の法線・n = 光の計算の法線）で、点光源の番号ごとの影の割合（maxPointLights() 個。影を落とさない・光が届かない・面が背を向けた灯りは 1）。

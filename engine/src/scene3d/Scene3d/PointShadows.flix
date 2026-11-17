@@ -153,6 +153,17 @@ pub mod Scene3d.PointShadows {
             Some({ face = face, x = texel(ndcX), y = texel(ndcY), ref = ref })
         }
 
+    /// 点光源 light の影の地図に描くビルボード（castShadows が真で shadowCasterScale の成分が両方正・板の外の円が光の range の球に掛かる物。来た順）と、
+    /// その板の横の向き（板から光への向きで billboardShadowRightOf。光が板の真上ならカメラの right）。大きさは shadowCasterFieldsOf の物。
+    /// 板は地面に垂直に立て、光の方へ向けて描く（太陽の影の板と同じ約束で、向きだけ灯りごと・板ごとに変わる）。面ごとの間引きは描き手が face の視錐台で行う。
+    pub def castingBillboardsOf(scene: Scene3d.Scene3dCmd, light: ShadowedPointLight): List[(Scene3d.BillboardFields, Vec3.Vec3)] =
+        let fallback = Camera3d.right(scene#camera);
+        scene#billboards |> List.map(Scene3d.billboardFieldsOf) |> List.filter(f -> {
+            let c = Scene3d.shadowCasterFieldsOf(f);
+            let reach = light#range + Float64.abs(c#size#x) + Float64.abs(c#size#y);
+            f#castShadows and f#shadowCasterScale#x > 0.0 and f#shadowCasterScale#y > 0.0 and Vec3.distanceSquared(f#position, light#position) < reach * reach
+        }) |> List.map(f -> (Scene3d.shadowCasterFieldsOf(f), Scene3d.billboardShadowRightOf(Vec3.sub(light#position, f#position), fallback)))
+
     /// 受ける点 p（n = 光の計算の法線）で点光源 light の影の地図を引くか（光が届き、面が光へ向いている時だけ）。
     pub def isSampled(light: ShadowedPointLight, p: Vec3.Vec3, n: Vec3.Vec3): Bool =
         let toLight = Vec3.sub(light#position, p);

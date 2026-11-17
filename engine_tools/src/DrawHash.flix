@@ -363,7 +363,7 @@ pub mod DrawHash {
 
     def putBillboard(out: DataOutputStream, b: Scene3d.BillboardFields): Unit \ IO = match b {
         case { texture = texture, regionRect = regionRect, position = position, size = size,
-               anchor = anchor, tint = tint, lit = lit, castShadows = castShadows, receiveShadows = receiveShadows } =>
+               anchor = anchor, tint = tint, lit = lit, castShadows = castShadows, receiveShadows = receiveShadows, shadowCasterScale = scale } =>
             putStr(out, texture);
             putRect(out, regionRect);
             putVec3(out, position);
@@ -373,7 +373,8 @@ pub mod DrawHash {
             putBool(out, lit);
             // WhyNot: 偽の時に何も書かない — 欄を足す前のビルボードの鍵の字を保つ（影の欄の無い場面のキャッシュを塗り直させない）。
             if (castShadows) out.writeByte(0x63) else ();
-            if (lit and receiveShadows) out.writeByte(0x72) else ()
+            if (lit and receiveShadows) out.writeByte(0x72) else ();
+            if (castShadows and (scale#x != 1.0 or scale#y != 1.0)) { out.writeByte(0x73); putVec2(out, scale) } else ()
     }
 
     def putPointLight(out: DataOutputStream, l: Scene3d.PointLight): Unit \ IO = match l {

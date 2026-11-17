@@ -528,7 +528,7 @@ pub mod SoftRaster3d {
         };
         let sun = SoftRaster3d.ShadowMaps.sunOf(solidNumbered |> List.map(fst), name -> Map.get(name, materialTextures) |> Option.flatMap(Vector.head), scene);
         let pointShadows = match scene#output {
-            case Scene3d.Output.Color    => SoftRaster3d.PointShadows.build(solidNumbered |> List.map(fst), picked)
+            case Scene3d.Output.Color    => SoftRaster3d.PointShadows.build(solidNumbered |> List.map(fst), name -> Map.get(name, materialTextures) |> Option.flatMap(Vector.head), picked)
             case Scene3d.Output.Depth(_) => None
         };
         let lights = hoist(rc, SoftRaster3d.PointShadows.withSceneLighting(pointShadows, picked, compileLinearLights(picked#environment, picked#pointLights, picked#spotLights, shadow, sun)));

@@ -415,8 +415,8 @@
   `pub enum Set { case Set(Scene3d.PointShadows.Atlas, Vector[Option[(Scene3d.PointShadows.ShadowedPointLight, Vector[Vector[Float64]])]]) }`
 - 影の割合がどの灯りも 1 の並び（影の無い場面は画素ごとに作らずこれを使い回す）。
   `pub def allLit(): Vector[Float64]`
-- 場面（pickLights の後）の点光源の影の地図を描く（影が無ければ None）。instances = 影を落とす不透明の物。
-  `pub def build(instances: List[Placed], scene: Scene3d.Scene3dCmd): Option[Set] \ IO`
+- 場面（pickLights の後）の点光源の影の地図を描く（影が無ければ None）。instances = 影を落とす不透明の物・
+  `pub def build(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): Option[Set] \ IO`
 - 点 p（g = 形の法線・n = 光の計算の法線）で、点光源の番号ごとの影の割合（maxPointLights() 個。影を落とさない・光が届かない・面が背を向けた灯りは 1）。
   `pub def litAt(set: Option[Set], p: Vec3.Vec3, g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64]`
 - lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)。GL の uniform と同じ値）を入れた物。
@@ -431,8 +431,8 @@
   `pub def shadowOf(instances: List[Placed], spots: List[Scene3d.SpotLight]): SpotShadow \ IO`
 - 場面の太陽（Scene3d.directionalLightOf）と、その影の地図（Scene3d.directionalShadowOf の箱で、影を落とす物から作る）。
   `pub def sunOf(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): SoftRaster3d.Sun.Light \ IO`
-- 影の地図に描くビルボード（中身と段 0 の絵）と、その板の向き。
-  `pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }`
+- 影の地図に描くビルボード（中身と段 0 の絵と板の横の向き）と、その板の縦と前の向き（basis の right は使わず、板ごとの横の向きを使う）。
+  `pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData, Vec3.Vec3)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }`
 - `pub def noBillboards(): BillboardCasters`
 - `pub def buildShadowMap(instances: List[Placed], billboards: BillboardCasters, eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO`
 

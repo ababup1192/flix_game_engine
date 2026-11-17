@@ -27,14 +27,15 @@ mod SoftRaster3d.ShadowMaps {
         let shadow = Scene3d.directionalShadowOf(scene) |> Option.map(setup -> {
             let eye = { view = Mat4.identity(), proj = setup#matrix, projection = Projection.Orthographic };
             let toward = light |> Option.map(l -> Scene3d.sunTermsOf(l)#toward) |> Option.getWithDefault(Vec3.v3(0.0, 1.0, 0.0));
-            let casters = Scene3d.shadowCastingBillboardsOf(setup#frustum, scene) |> List.filterMap(f -> textureOf(f#texture) |> Option.map(tex -> (f, tex)));
-            let basis = { right = Scene3d.billboardShadowRightOfScene(scene), up = Vec3.v3(0.0, 1.0, 0.0), facing = toward };
+            let right = Scene3d.billboardShadowRightOfScene(scene);
+            let casters = Scene3d.shadowCastingBillboardsOf(setup#frustum, scene) |> List.filterMap(f -> textureOf(f#texture) |> Option.map(tex -> (f, tex, right)));
+            let basis = { right = right, up = Vec3.v3(0.0, 1.0, 0.0), facing = toward };
             SoftRaster3d.Sun.shadowOf(setup, scene#camera#eye, buildShadowMap(instances, { casters = casters, basis = basis }, eye, setup#frustum, setup#mapSize))
         });
         SoftRaster3d.Sun.of(light, shadow)
 
-    /// 影の地図に描くビルボード（中身と段 0 の絵）と、その板の向き。
-    pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }
+    /// 影の地図に描くビルボード（中身と段 0 の絵と板の横の向き）と、その板の縦と前の向き（basis の right は使わず、板ごとの横の向きを使う）。
+    pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData, Vec3.Vec3)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }
 
     pub def noBillboards(): BillboardCasters = { casters = Nil, basis = { right = Vec3.v3(1.0, 0.0, 0.0), up = Vec3.v3(0.0, 1.0, 0.0), facing = Vec3.v3(0.0, 0.0, -1.0) } }
 
@@ -51,12 +52,12 @@ mod SoftRaster3d.ShadowMaps {
         let meshTris = instances |> List.filter(f -> not Scene3d.isOutsideFrustumFields(frustum, f#fields))
             |> List.flatMap(f -> instanceTris(view, proj, screen, None, false, f, -1));
         let casterTris = List.zipWithIndex(billboards#casters) |> List.flatMap(entry -> {
-            let (index, (f, _)) = entry;
-            billboardQuadTris(view, proj, screen, billboards#basis, index, f)
+            let (index, (f, _, right)) = entry;
+            billboardQuadTris(view, proj, screen, { right = right | billboards#basis }, index, f)
         });
         let tris = hoist(rc, List.append(meshTris, casterTris) |> List.toVector);
         let bins = hoist(rc, binRows(rc, n, tris));
-        let inks = hoist(rc, billboards#casters |> List.map(pair -> inkOf(snd(pair), fst(pair))) |> List.toVector);
+        let inks = hoist(rc, billboards#casters |> List.map(c -> { let (f, tex, _) = c; inkOf(tex, f) }) |> List.toVector);
         let noMats: Vector[Mat] = Vector.empty();
         let out: Array[Float64, Static] = Array.repeat(Static, n * n, 1.0);
         forEachRow(n, y -> region rr {

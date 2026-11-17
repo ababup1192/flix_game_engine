@@ -609,9 +609,11 @@ pub mod Scene3d {
     /// ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
     /// size = world の幅と高さ・anchor = position に合わせる絵の中の点（0〜1。(0.5, 1) で足元の真ん中）・
     /// tint = 絵に掛ける色・lit = 光とかすみを当てるか・
-    /// castShadows = 太陽の影の地図に描くか（withCastShadows）・receiveShadows = 太陽の影を受けるか（withReceiveShadows。lit の時だけ効く）。
+    /// castShadows = 太陽と点光源の影の地図に描くか（withCastShadows）・receiveShadows = 太陽の影を受けるか（withReceiveShadows。lit の時だけ効く）・
+    /// shadowCasterScale = 影の地図に描く板の幅と高さに掛ける倍率（withShadowCasterScale。既定 (1, 1)）。
     pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2,
-                                       anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool }
+                                       anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool,
+                                       shadowCasterScale = Vec2.Vec2 }
 
     enum BillboardData { case BillboardData(BillboardFields) }
 
@@ -622,15 +624,30 @@ pub mod Scene3d {
     pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d =
         BillboardData.BillboardData({ texture = texture, regionRect = regionRect, position = position, size = size,
                                       anchor = { x = 0.5, y = 1.0 }, tint = Color.rgb(1.0, 1.0, 1.0), lit = true,
-                                      castShadows = false, receiveShadows = false })
+                                      castShadows = false, receiveShadows = false, shadowCasterScale = Vec2.one() })
 
     /// 太陽の影の地図に描く（Unity の Cast Shadows・Godot の cast_shadow）。地図の中では、同じ大きさの板を地面に垂直に立て、
     /// 太陽の方へ向けて（billboardShadowRightOf）絵の α < 0.5 を捨てて描くので、影は絵の形で太陽の向きに伸びる。
-    /// 太陽の影だけ（スポットの影の地図には描かない）。影の地図の無い場面では何もしない。
+    /// 点光源の影（withPointShadows）の地図にも、板を光の方へ向けて描く（Scene3d.PointShadows.castingBillboardsOf）。スポットの影の地図には描かない。影の地図の無い場面では何もしない。
     // WhyNot: スポットの影に入れない — スポットの影の判定は光の式の木の中（spotShadow）で受ける点を動かせず、ビルボードが自分の影を受けて黒くなる。
     pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d =
         let BillboardData.BillboardData(r) = b;
         BillboardData.BillboardData({ castShadows = on | r })
+
+    /// 影の地図に描く板の大きさの倍率（x = 幅・y = 高さ。既定 (1, 1)）。見えている板は変えず、影だけを細く・短くする
+    /// （ドット絵のキャラの影が「人形がそのまま大きくなった」ように見える時に、幅を 0.5〜0.7・高さを 0.6〜0.8 に絞る）。
+    /// 板は anchor を中心に縮むので、anchor が足元なら影の根元は足元のまま。太陽と点光源の影の両方に効く。0 以下の成分は影を描かない。
+    // WhyNot: 影の板をカメラの向きへ寄せる角度で細くしない — 太陽が横からの時ほど細り方が変わり、点光源では灯りごとに違う角度になる。倍率なら光の向きに依らず同じ細さ。
+    pub def withShadowCasterScale(scale: Vec2.Vec2, b: Billboard3d): Billboard3d =
+        let BillboardData.BillboardData(r) = b;
+        BillboardData.BillboardData({ shadowCasterScale = scale | r })
+
+    /// 影の地図に描く時の板（size に shadowCasterScale を掛けた物）。描き手は影の地図にこの値を描く。
+    pub def shadowCasterFieldsOf(f: BillboardFields): BillboardFields =
+        { size = Vec2.v2(f#size#x * f#shadowCasterScale#x, f#size#y * f#shadowCasterScale#y) | f }
+
+    /// 影の地図に描く大きさが残るか（shadowCasterScale の成分が両方とも正）。
+    def hasShadowCasterSize(f: BillboardFields): Bool = f#shadowCasterScale#x > 0.0 and f#shadowCasterScale#y > 0.0
 
     /// 太陽の影を受ける（Unity の Receive Shadows）。lit の時だけ効く。受ける点は絵の中の高さごとに 1 つ（billboardShadowPointOf）で、
     /// 建物の影に入ると絵の行ごとに暗くなる。
@@ -671,9 +688,10 @@ pub mod Scene3d {
     /// billboardShadowPointOf が割る、太陽への向きの水平の長さの下限（太陽の高さ約 75.5°）。GLSL・WGSL の字にも同じ数を書く。
     pub def billboardShadowMinFlat(): Float64 = 0.25
 
-    /// 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。
+    /// 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。大きさは shadowCasterFieldsOf の物。
     pub def shadowCastingBillboardsOf(frustum: Frustum.Frustum, scene: Scene3dCmd): List[BillboardFields] =
-        scene#billboards |> List.filter(b -> billboardFieldsOf(b)#castShadows and not isBillboardOutsideFrustum(frustum, b)) |> List.map(billboardFieldsOf)
+        scene#billboards |> List.filter(b -> { let f = billboardFieldsOf(b); f#castShadows and hasShadowCasterSize(f) } and not isBillboardOutsideFrustum(frustum, b))
+            |> List.map(b -> shadowCasterFieldsOf(billboardFieldsOf(b)))
 
     pub def withAnchor(a: Vec2.Vec2, b: Billboard3d): Billboard3d =
         let BillboardData.BillboardData(r) = b;

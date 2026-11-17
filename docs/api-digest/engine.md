@@ -1458,12 +1458,15 @@
 - 置いた物が読む絵の名前（材質の tex 場と emission・法線マップ・使える lightmap）。材質の絵の上限（maxMaterialTextures）で切らずに全部。
   `pub def textureNamesOf(i: Instance3d): List[String]`
 - ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
-  `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool }`
+  `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool, shadowCasterScale = Vec2.Vec2 }`
 - 深度つきのビルボード（ドット絵を 3D に立てる。閉じた型 — 欄を後から足してもゲームの値が壊れない）。
   `pub type alias Billboard3d = BillboardData`
 - anchor 足元の真ん中・tint 白・光を当てる・影を落とさない・影を受けない。
   `pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d`
 - `pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d`
+- `pub def withShadowCasterScale(scale: Vec2.Vec2, b: Billboard3d): Billboard3d`
+- 影の地図に描く時の板（size に shadowCasterScale を掛けた物）。描き手は影の地図にこの値を描く。
+  `pub def shadowCasterFieldsOf(f: BillboardFields): BillboardFields`
 - 太陽の影を受ける（Unity の Receive Shadows）。lit の時だけ効く。受ける点は絵の中の高さごとに 1 つ（billboardShadowPointOf）で、
   `pub def withReceiveShadows(on: Bool, b: Billboard3d): Billboard3d`
 - `pub def billboardShadowRightOf(toward: Vec3.Vec3, fallback: Vec3.Vec3): Vec3.Vec3`
@@ -1474,7 +1477,7 @@
   `pub def billboardShadowOffsetOf(f: BillboardFields): Float64`
 - billboardShadowPointOf が割る、太陽への向きの水平の長さの下限（太陽の高さ約 75.5°）。GLSL・WGSL の字にも同じ数を書く。
   `pub def billboardShadowMinFlat(): Float64`
-- 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。
+- 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。大きさは shadowCasterFieldsOf の物。
   `pub def shadowCastingBillboardsOf(frustum: Frustum.Frustum, scene: Scene3dCmd): List[BillboardFields]`
 - `pub def withAnchor(a: Vec2.Vec2, b: Billboard3d): Billboard3d`
 - `pub def withBillboardTint(c: Color, b: Billboard3d): Billboard3d`
@@ -1594,6 +1597,8 @@
   `pub def depthTermsOf(light: ShadowedPointLight): (Float64, Float64)`
 - 受ける点 p（g = 形の法線・長さ 1）が引く面と、その面の中の真ん中の画素 (x, y)（0..tileSize − 1 に寄せた後）と、地図の値と比べる値 ref。
   `pub def sampleOf(atlas: Atlas, light: ShadowedPointLight, p: Vec3.Vec3, g: Vec3.Vec3): Option[{ face = Int32, x = Int32, y = Int32, ref = Float64 }]`
+- 点光源 light の影の地図に描くビルボード（castShadows が真で shadowCasterScale の成分が両方正・板の外の円が光の range の球に掛かる物。来た順）と、
+  `pub def castingBillboardsOf(scene: Scene3d.Scene3dCmd, light: ShadowedPointLight): List[(Scene3d.BillboardFields, Vec3.Vec3)]`
 - 受ける点 p（n = 光の計算の法線）で点光源 light の影の地図を引くか（光が届き、面が光へ向いている時だけ）。
   `pub def isSampled(light: ShadowedPointLight, p: Vec3.Vec3, n: Vec3.Vec3): Bool`
 
