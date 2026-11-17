@@ -27,12 +27,20 @@ pub mod App.Internal.Runner {
                 else App.buildStartOn(app, base(), name, args) |> Result.map(world -> (world, Some((name, args))))
         }
 
+    /// project.json の clearColor を画面の地の色として App に持たせる（後がけの場面の Pass を消す色の既定）。読めなければ黒のまま 1 行言う。
+    // WhyNot: backend が読んだ config から取らない — Platform に口が要る（機種ごとの handler を全部触る）。根は "." で、withProject(".") と同じ所を読む。
+    def withProjectClear(app: App[w, ef]): App[w, ef] \ Fs.FileRead = match ProjectLoader.loadProject(".") {
+        case Ok(loaded) => App.withScreenClear(loaded#config#clearColor, app)
+        case Err(why)   => Log.fellBackThen("app", "project.json の clearColor", "黒", why, app)
+    }
+
     /// 開発の道具（hooks）を開いて起動の World を組み、閉じるまでループを回し、道具を閉じる。
-    pub def runLoop(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools]): Unit \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+    pub def runLoop(app0: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools]): Unit \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
         // 下ごしらえの間、画面にはバックエンドが最後に出した起動画面（「preparing game...」）が出たまま残る。
         // 長い下ごしらえは、ゲームが LoadProgress.report で区切りを知らせ、バックエンドの handler が起動画面を進める。
         // WhyNot: ここで起動画面を出し直さない — 間引きも中止スイッチも持たない 2 つ目の経路が生まれる。
         let design = Platform.Window.getViewportRect()#size;
+        let app = withProjectClear(app0);
         let (booted, opened) = hooks#open((request, reread) -> bootFrom(app, design, request, reread));
         let (closing, last) = match booted {
             // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。

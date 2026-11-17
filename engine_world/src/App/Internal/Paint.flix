@@ -60,7 +60,7 @@ pub mod App.Internal.Paint {
             case None    => plain
             case Some(f) =>
                 let stack = PostStack.resolveQuality(base#display#sizeClass, f(world));
-                let built = PostStack.build({ size = design, clear = PostStack.backgroundOf(stack), world = layers#world }, stack);
+                let built = PostStack.build({ size = design, clear = PostStack.backgroundOf(stack) |> Option.getWithDefault(r#screenClear), world = layers#world }, stack);
                 let reserved = gamePlan#passes |> List.filter(p -> String.startsWith(prefix = PostStack.reservedPrefix(), p#name))
                     |> List.map(p -> "[post] withPassPlan の Pass '${p#name}' が ps_ で始まる（ps_ は PostStack の Pass。名前を替える）");
                 let noted = List.append(built#issues |> List.map(issue -> "[post] ${PostStack.issueText(issue)}"), reserved) |> List.forEach(base#warnOnce);

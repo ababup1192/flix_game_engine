@@ -1155,6 +1155,7 @@ pub mod ShaderGen {
                     case ShaderDoc.UnOp.Sat      => "clamp(" + x + ", 0.0, 1.0)"
                     case ShaderDoc.UnOp.OneMinus => "(1.0 - (" + x + "))"
                     case ShaderDoc.UnOp.Sqrt     => "sqrt(max(" + x + ", 0.0))"
+                    case ShaderDoc.UnOp.Log2     => "log2(max(" + x + ", " + Float64.toString(ShaderDoc.log2Floor()) + "))"
                 }
             case ShaderDoc.Field.Pow(pw) =>
                 // 整数指数は pow() でなく反復積の文字列にして CPU 側の反復積と構造を合わせる

@@ -143,7 +143,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[w -> PostStack.Stack \ ef], fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[{ key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[w -> PostStack.Stack \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[{ key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -162,6 +162,8 @@
   `pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef]`
 - 画面全体の後がけ（PostStack: 奥行きのぼかし・ブルーム・色の仕上げ・ビネット・露出・トーンマップ・FXAA）を繋ぐ。
   `pub def withPostStack(f: w -> PostStack.Stack \ ef, app: App[w, ef]): App[w, ef]`
+- 画面の地の色（後がけの場面の Pass を消す色の既定）。実機は起動で project.json の clearColor を入れる。描き出しは ProjectLoader の clearColor を渡す。
+  `pub def withScreenClear(c: Color, app: App[w, ef]): App[w, ef]`
 - 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
   `pub def withFonts(names: List[String], app: App[w, ef]): App[w, ef]`
 - ゲーム 1 本の標準形を 1 つのレコードで宣言する入口（初学者向け）。
@@ -1815,7 +1817,7 @@
 - 色の仕上げ（Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation の式を写した物。Blender の絵とは未比較）。
   `pub type alias ColorGrade = { lift = Color, gamma = Color, gain = Color, saturation = Float64 }`
 - 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる。Standard と KhronosNeutral は、場面の値を読む所で
-  `pub enum ViewTransform { case Standard case KhronosNeutral case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 }) }`
+  `pub enum ViewTransform { case Standard case KhronosNeutral case AgX case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 }) }`
 - 奥行きのぼかし。ぼかしに使う奥行きの絵は、View が返す絵の中の 3D の場面から PostStack が作る（ゲームが場面を 2 回組まない）。
   `pub enum DepthOfField { case Physical({ focusDistance = Float64, fStop = Float64 }) case DepthBand({ focusDistance = Float64, range = Float64, band = Float64, soft = Float64, blur = Float64 }) }`
 - 重さと細かさの段。読む点の数と描き先の大きさだけを変え、値の意味は変えない。
@@ -1838,6 +1840,8 @@
   `pub type alias Stack = StackData`
 - 見た目の名前の出発点。Neutral は「Standard・露出 0・ほかは無し」。
   `pub def preset(p: Preset): Stack`
+- preset の全部（宣言の順）。
+  `pub def presets(): List[Preset]`
 - 露出（stop の数。線形の値に 2^stops を掛ける。Blender の Color Management → Exposure）。ブルームと色の仕上げの後に掛かる。
   `pub def withExposure(stops: Float64, s: Stack): Stack`
 - `pub def withViewTransform(v: ViewTransform, s: Stack): Stack`
@@ -1852,7 +1856,7 @@
 - `pub def withQuality(q: Quality, s: Stack): Stack`
 - `pub def withMsaa(m: Msaa, s: Stack): Stack`
 - `pub def withDebugView(v: DebugView, s: Stack): Stack`
-- 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。既定は黒。
+- 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。
   `pub def withBackground(c: Color, s: Stack): Stack`
 - `pub def exposureOf(s: Stack): Float64`
 - `pub def viewTransformOf(s: Stack): ViewTransform`
@@ -1865,7 +1869,7 @@
 - `pub def msaaOf(s: Stack): Msaa`
 - `pub def debugViewOf(s: Stack): DebugView`
 - `pub def customOf(s: Stack): List[CustomPass]`
-- `pub def backgroundOf(s: Stack): Color`
+- `pub def backgroundOf(s: Stack): Option[Color]`
 - 場面（View が返す絵）を描いた Pass。BeforeBloom の自分の Spec はこれを読む。
   `pub def sceneName(): String`
 - 奥行きの絵（DepthBand は ±range の帯を 0..1・Physical は目からの距離を camera の far で割った値。r に入る）。

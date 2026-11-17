@@ -58,6 +58,7 @@ mod WgslRows {
         ("hash1", Field.Hash1({ scale = 16.0, seed = 10, bucket = Some(c(0.5)) })) ::
         ("hash2", Field.Hash2({ scale = 16.0, seed = 11, comp = Axis.V, bucket = None })) ::
         ("sqrt", Field.Un({ op = UnOp.Sqrt, of = Field.Bin({ op = BinOp.Sub, a = u(), b = c(0.25) }) })) ::
+        ("log2", Field.Un({ op = UnOp.Log2, of = Field.Bin({ op = BinOp.Mul, a = u(), b = c(8.0) }) })) ::
         ("sin", Field.Un({ op = UnOp.Sin, of = Field.Bin({ op = BinOp.Mul, a = u(), b = c(20.0) }) })) ::
         ("powInt", Field.Pow({ of = u(), p = 3.0 })) ::
         ("powFrac", Field.Pow({ of = u(), p = 2.5 })) ::

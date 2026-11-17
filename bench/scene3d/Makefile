@@ -1,21 +1,26 @@
 # scene3d — 3D の描き物（Render.Item.Scene3d）の固定の部屋 1 つ（床と壁・家具 12・松明 4）。
 #   make still … CPU（SoftRaster）で静止画を 1 枚描く → debug/room.png（窓を開かない）
+#   make presets … 部屋に PostStack の preset を 1 つずつ掛けて debug/preset_<名前>.png に書く（preset の値を人が目で見る用・窓を開かない）
 #   make cpu-time … CPU で同じ部屋を温めてから何回か描き（回数は Still.timingPlan）、1 枚の時間の中央値を出す（窓を開かない。PNG は書かない）
 #   make run   … 実機の窓で毎コマ同じ部屋を描き、カメラを少しずつ回す。区間ごとに 1 行の JSON（[bench] result …。1 コマ・GL へ送る・GPU の時間・
 #                draw call・3D の描き手の CPU の区間）を出し、4 区間で閉じる（GL の確かめと重さを測る用。垂直同期は切る）
 #   make run SCENE=field … 小さな箱と柱を格子に並べた場面（src/Field.flix）。つまみ:
 #                COUNT=1000（物の数）・SHAPES=1（形の種類。each で物ごとに違う形）・MATS=1（材質の種類）・MOVING=100（動く物の %）・
 #                ALPHA=0（半透明の物の %）・SHADOW=1（太陽の影）・GROUP=1（動かない物を Scene3d.staticGroup の集まり 1 つで渡す）。FRAMES=240 で 1 区間で測るコマ数・REPEAT=4 で同じ条件を続けて測る回数
+#   make run SCENE=orb POST=agx … 光る球の場面（view transform の見比べ。POST は standard / agx / neutral）
 #   make run POST=1 … 同じ場面に画面全体の後がけ（App.withPostStack・夕方の屋外の preset）を掛ける（後がけの重さを POST なしと並べる）
 #   make check … 型検査だけ走らせる
 #
 # 家具は assets/models/*.obj（fps3d_lab の写し。Blender の 1 m = world の 16）。
 # 基準は RESULTS.md。ブラウザ版は engine の根で make bench-web BENCH=scene3d ARGS='scene=field&n=12000'。
 
-.PHONY: common-fresh still cpu-time run check
+.PHONY: common-fresh still presets cpu-time run check
 
 still:
 	../../bin/flix run --entrypoint Still.write
+
+presets:
+	../../bin/flix run --entrypoint Still.presets
 
 cpu-time:
 	../../bin/flix run --entrypoint Still.time

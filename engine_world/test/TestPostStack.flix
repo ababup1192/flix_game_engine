@@ -245,7 +245,7 @@ mod TestPostStack {
     // GLSL と WGSL は binding ごとに変数を 1 つ宣言するので、同じ名前が 2 つあると shader が作れない。
     @Test
     def testBindingNamesAreUniqueWithEveryEffect(): Unit \ Assert =
-        let views = PostStack.ViewTransform.Standard :: PostStack.ViewTransform.KhronosNeutral
+        let views = PostStack.ViewTransform.Standard :: PostStack.ViewTransform.KhronosNeutral :: PostStack.ViewTransform.AgX
             :: PostStack.ViewTransform.AcesNarkowicz({ whitePoint = 4.0, saturationAfter = 0.1 }) :: Nil;
         let dupes = views |> List.flatMap(v -> { let names = bindingNames(everything(v)); if (List.length(names) == Set.size(List.toSet(names))) Nil else names :: Nil });
         Assert.assertEq(expected = Nil, dupes)
@@ -285,12 +285,29 @@ mod TestPostStack {
 
     @Test
     def testDocWithoutKindKeepsTheStartingViewTransform(): Unit \ Assert =
-        let vt = parsed("{\"preset\": \"DuskOutdoor\", \"viewTransform\": {\"saturationAfter\": 0.3}}") |> Result.toOption |> Option.map(PostStack.viewTransformOf);
-        let sat = match vt {
-            case Some(PostStack.ViewTransform.AcesNarkowicz(a)) => Some(a#saturationAfter)
-            case _                                               => None
+        let vt = parsed("{\"preset\": \"DuskOutdoor\", \"viewTransform\": {\"whitePoint\": 8.0}}") |> Result.toOption |> Option.map(PostStack.viewTransformOf);
+        let agx = match vt {
+            case Some(PostStack.ViewTransform.AgX) => true
+            case _                                 => false
         };
-        Assert.assertEq(expected = Some(0.3), sat)
+        Assert.assertEq(expected = true, agx)
+
+    @Test
+    def testNamedPresetsUseAgX(): Unit \ Assert =
+        let isAgx = (p: PostStack.Preset) -> match PostStack.viewTransformOf(PostStack.preset(p)) {
+            case PostStack.ViewTransform.AgX => true
+            case _                           => false
+        };
+        Assert.assertEq(expected = Nil, PostStack.presets() |> List.filter(p -> p != PostStack.Preset.Neutral and not isAgx(p)))
+
+    @Test
+    def testScreenClearIsTheDefaultBackground(): Unit \ Assert =
+        let frame = App.buildFrame(postApp() |> App.withScreenClear(Color.rgb(0.1, 0.2, 0.3)), size(), App.pickCtx(size()), 0, (_, _) -> Nil);
+        let clear = frame#plan#passes |> List.find(p -> p#name == PostStack.sceneName()) |> Option.map(p -> match p#clear {
+            case RenderTarget.LoadOp.Clear(c) => (c#r, c#g, c#b)
+            case _                            => (-1.0, -1.0, -1.0)
+        });
+        Assert.assertEq(expected = Some((0.1, 0.2, 0.3)), clear)
 
     @Test
     def testDocOtherKindReplacesTheWholeField(): Unit \ Assert =

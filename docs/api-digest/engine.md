@@ -1537,7 +1537,7 @@
 - 2 つの場を合わせる素の計算。混ぜる意図（0..1 の重み）は Blend を使い、これは生の値の合成。
   `pub enum BinOp with Eq, ToString { case Add case Sub case Mul case Min case Max case Step case Div }`
 - 1 つの場に掛ける素の関数。
-  `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus case Sqrt }`
+  `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus case Sqrt case Log2 }`
 - 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
   `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case TexSize({ name = String, axis = Axis }) case Sampler({ filter = FilterMode, of = Field }) case Param({ name = String }) case World({ axis = Axis3 }) case Normal({ axis = Axis3 }) case VertexColor({ chan = TexChan }) }`
 - 面の色（rgb）。
@@ -1580,6 +1580,8 @@
   `pub def remappedChild(field: Field): Option[Field]`
 - 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
   `pub def negPowFloor(): Float64`
+- 2 を底にした対数（UnOp.Log2）の下限（2^-40。0 と負の数をこの値として扱い、GLSL と CPU で同じ値にする）。
+  `pub def log2Floor(): Float64`
 - 負の指数の pow の答えの上限。
   `pub def negPowCeil(): Float64`
 - taps を 1..64 に丸める（GLSL のループの上限と CPU の評価で同じ数を読む）。

@@ -64,6 +64,7 @@ mod TestWgslDawn {
         :: Field.Un({ op = UnOp.Sat, of = c(0.6) })
         :: Field.Un({ op = UnOp.OneMinus, of = c(0.6) })
         :: Field.Un({ op = UnOp.Sqrt, of = Field.Uv({ axis = Axis.U }) })
+        :: Field.Un({ op = UnOp.Log2, of = Field.Uv({ axis = Axis.U }) })
         :: Field.Pow({ of = Field.Uv({ axis = Axis.U }), p = 2.0 })
         :: Field.Pow({ of = Field.Uv({ axis = Axis.U }), p = 2.5 })
         :: Field.Pow({ of = Field.Uv({ axis = Axis.U }), p = -2.0 })

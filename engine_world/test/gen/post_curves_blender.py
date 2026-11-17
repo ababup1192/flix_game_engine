@@ -5,7 +5,7 @@
 #       --python engine_world/test/gen/post_curves_blender.py -- engine_world/test/gen/PostCurveCases.flix
 #
 # 帯: 明るさ 2^-8〜2^4（13 段）× 色相 12 × 彩度 3（0・0.5・1）。色は HSV（明度 1）を線形の値として 2^段 を掛けた物。
-# Blender の設定: 表示 sRGB・Look なし・gamma 1・カーブなし・ディザ 0・8bit PNG（Image.save_render が view transform を掛ける）。
+# Blender の設定: 表示 sRGB・Look は表のとおり・gamma 1・カーブなし・ディザ 0・8bit PNG（Image.save_render が view transform を掛ける）。
 # Blender の版を上げた時はこれを流し直し、出た表を差分で見る。
 import bpy
 import colorsys
@@ -14,13 +14,16 @@ import sys
 import tempfile
 
 CONFIGS = [
-    # (Flix の関数名, Blender の view transform, 露出)
-    ("standardZero", "Standard", 0.0),
-    ("standardPlusTwo", "Standard", 2.0),
-    ("standardMinusTwo", "Standard", -2.0),
-    ("neutralZero", "Khronos PBR Neutral", 0.0),
-    ("neutralPlusTwo", "Khronos PBR Neutral", 2.0),
-    ("neutralMinusTwo", "Khronos PBR Neutral", -2.0),
+    # (Flix の関数名, Blender の view transform, 露出, Look)
+    ("standardZero", "Standard", 0.0, "None"),
+    ("standardPlusTwo", "Standard", 2.0, "None"),
+    ("standardMinusTwo", "Standard", -2.0, "None"),
+    ("neutralZero", "Khronos PBR Neutral", 0.0, "None"),
+    ("neutralPlusTwo", "Khronos PBR Neutral", 2.0, "None"),
+    ("neutralMinusTwo", "Khronos PBR Neutral", -2.0, "None"),
+    ("agxZero", "AgX", 0.0, "None"),
+    ("agxPlusTwo", "AgX", 2.0, "None"),
+    ("agxMinusTwo", "AgX", -2.0, "None"),
 ]
 
 
@@ -35,12 +38,12 @@ def band():
     return out
 
 
-def render(samples, view, exposure, tmp):
+def render(samples, view, exposure, look, tmp):
     scene = bpy.context.scene
     scene.display_settings.display_device = "sRGB"
     vs = scene.view_settings
     vs.view_transform = view
-    vs.look = "None"
+    vs.look = look
     vs.exposure = exposure
     vs.gamma = 1.0
     vs.use_curve_mapping = False
@@ -74,10 +77,10 @@ def main():
         "mod PostCurveCases {",
     ]
     with tempfile.TemporaryDirectory() as tmp:
-        for (name, view, exposure) in CONFIGS:
-            got = render(samples, view, exposure, tmp)
+        for (name, view, exposure, look) in CONFIGS:
+            got = render(samples, view, exposure, look, tmp)
             rows = ["%.9g %.9g %.9g %d %d %d" % (s[0], s[1], s[2], o[0], o[1], o[2]) for (s, o) in zip(samples, got)]
-            lines.append("    /// %s・露出 %+g。" % (view, exposure))
+            lines.append("    /// %s・露出 %+g・Look %s。" % (view, exposure, look))
             lines.append("    pub def %s(): String =" % name)
             lines.append("        \"" + "\\n".join(rows) + "\"")
             lines.append("")

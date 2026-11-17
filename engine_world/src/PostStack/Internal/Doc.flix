@@ -59,16 +59,12 @@ pub mod PostStack.Internal.Doc {
             case None    => "Neutral"
             case Some(j) => JsonCodec.expectString(j) |> Option.getWithDefault("（字でない値）")
         };
-        let found = presets() |> List.find(pr -> "${pr}" == name);
+        let found = PostStack.presets() |> List.find(pr -> "${pr}" == name);
         let chosen = match found {
             case Some(pr) => pr
             case None     => Log.fellBackThen("post", "preset ${name}", "Neutral", "知らない preset", Preset.Neutral)
         };
         PostStack.fieldsOf(PostStack.preset(chosen))
-
-    def presets(): List[Preset] =
-        Preset.Neutral :: Preset.DuskOutdoor :: Preset.NightOutdoor :: Preset.SunnyCity :: Preset.EveningBeach
-            :: Preset.Cave :: Preset.NightCorridor :: Preset.TorchRoom :: Nil
 
     def qualityFrom(top: Map[String, Json], start: Quality): Quality =
         match Map.get("quality", top) |> Option.flatMap(JsonCodec.expectString) {
@@ -155,6 +151,7 @@ pub mod PostStack.Internal.Doc {
             match kindOf(m) {
                 case Some("Standard")      => Ok(ViewTransform.Standard)
                 case Some("KhronosNeutral") => Ok(ViewTransform.KhronosNeutral)
+                case Some("AgX")            => Ok(ViewTransform.AgX)
                 case Some("AcesNarkowicz") =>
                     forM (wp <- numOr("whitePoint", acesStart#whitePoint, m); sat <- numOr("saturationAfter", acesStart#saturationAfter, m))
                     yield ViewTransform.AcesNarkowicz({ whitePoint = wp, saturationAfter = sat })

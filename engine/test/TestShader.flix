@@ -1587,6 +1587,27 @@ def testParamJsonRoundTripAndBadName(): Unit \ Assert =
     };
     Assert.assertEq(expected = (true, true), (same, badIsErr))
 
+// ── 2 を底にした対数 ──
+
+@Test
+def testLog2OfAQuarterIsMinusTwo(): Unit \ Assert =
+    Assert.assertEq(expected = -2.0, ShaderEval.evalField(ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Log2, of = ShaderDoc.Field.Const(0.25) }), { x = 0.5, y = 0.5 }, 0.0))
+
+@Test
+def testLog2SurvivesJsonRoundTrip(): Unit \ Assert =
+    let spec: ShaderDoc.Spec = { name = "log2", cycleRate = 0.0, bindings = Nil,
+        out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 1.0, g = 1.0, b = 1.0 }),
+                                   alpha = ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Log2, of = ShaderDoc.Field.Const(0.5) }) }) };
+    let same = match ShaderJson.parse(ShaderJson.toJson(spec)) {
+        case Ok(s2) => ShaderGen.compile(s2) == ShaderGen.compile(spec)
+        case Err(_) => false
+    };
+    Assert.assertTrue(same)
+
+@Test
+def testLog2OfZeroStopsAtTheFloor(): Unit \ Assert =
+    Assert.assertEq(expected = -40.0, ShaderEval.evalField(ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Log2, of = ShaderDoc.Field.Const(0.0) }), { x = 0.5, y = 0.5 }, 0.0))
+
 // ── 平方根と長さ ──
 
 def sqrtOf(x: Float64): ShaderDoc.Field =

@@ -161,6 +161,7 @@ pub mod App {
         passes = w -> Render.PassPlan \ ef,
         // 画面全体の後がけ（withPostStack）。View が返す絵に掛け、HUD とデバッグの重ねには掛けない。
         postStack = Option[w -> PostStack.Stack \ ef],
+        screenClear = Color,                                       // 画面の地の色（実機の起動で project.json の clearColor・後がけの場面の Pass を消す色の既定）
         // 既定フォント以外に使うフォントの名前（project.json の fonts[].name）。ここに宣言した
         // 名前だけが ViewCtx#fontOf で引ける。withFonts で足す。
         fonts = List[String],
@@ -286,7 +287,7 @@ pub mod App {
           reloadPaths = Some(Nil),
           view = None,
           passes = _ -> checked_ecast(Render.passPlan(Nil)),
-          postStack = None,
+          postStack = None, screenClear = Color.rgb(0.0, 0.0, 0.0),
           fonts = Nil,
           camera = None,
           zoom = None,
@@ -369,9 +370,12 @@ pub mod App {
     /// 画面全体の後がけ（PostStack: 奥行きのぼかし・ブルーム・色の仕上げ・ビネット・露出・トーンマップ・FXAA）を繋ぐ。
     /// 掛けるのは View（と視差レイヤ）が返す絵の全部で、HUD（withHudView）とデバッグの重ねには掛けない — 掛けたくない UI は HUD に置く。
     /// withTileLayers・withStaticLayer の層は描き手が画面へ直に描き、後がけの面（全画面・不透明・z 0）より奥の層は隠れ、手前の層は後がけ無しで出る（後がけを掛けるなら View の絵にする）。
-    /// Pass は withPassPlan の計画の後ろに足される（名前は ps_ で始まる）。View が描かない所の色は PostStack.withBackground（既定は黒）。
+    /// Pass は withPassPlan の計画の後ろに足される（名前は ps_ で始まる）。View が描かない所の色は PostStack.withBackground（既定は project.json の clearColor）。
     pub def withPostStack(f: w -> PostStack.Stack \ ef, app: App[w, ef]): App[w, ef] =
         App.App({ postStack = Some(f) | rec(app) })
+
+    /// 画面の地の色（後がけの場面の Pass を消す色の既定）。実機は起動で project.json の clearColor を入れる。描き出しは ProjectLoader の clearColor を渡す。
+    pub def withScreenClear(c: Color, app: App[w, ef]): App[w, ef] = App.App({ screenClear = c | rec(app) })
 
     /// 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
     /// ここで宣言した名前だけが view の ViewCtx#fontOf で引ける（宣言していない名前は既定

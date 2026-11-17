@@ -542,7 +542,8 @@ pub mod ShaderJson {
             case "sat"      => Ok(ShaderDoc.UnOp.Sat)
             case "oneMinus" => Ok(ShaderDoc.UnOp.OneMinus)
             case "sqrt"     => Ok(ShaderDoc.UnOp.Sqrt)
-            case other      => Err(err("math1 op must be neg/abs/fract/floor/sin/cos/sat/oneMinus/sqrt (got '${other}')"))
+            case "log2"     => Ok(ShaderDoc.UnOp.Log2)
+            case other      => Err(err("math1 op must be neg/abs/fract/floor/sin/cos/sat/oneMinus/sqrt/log2 (got '${other}')"))
         }) yield o
 
     def parseWorleyOut(m: Map[String, Json]): Result[JsonError, ShaderDoc.WorleyOut] =
@@ -883,6 +884,7 @@ pub mod ShaderJson {
             case ShaderDoc.UnOp.Sat      => "sat"
             case ShaderDoc.UnOp.OneMinus => "oneMinus"
             case ShaderDoc.UnOp.Sqrt     => "sqrt"
+            case ShaderDoc.UnOp.Log2     => "log2"
         }
 
     def colorToJson(c: Color): Json =

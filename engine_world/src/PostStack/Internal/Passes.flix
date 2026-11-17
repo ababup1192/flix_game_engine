@@ -284,10 +284,76 @@ pub mod PostStack.Internal.Passes {
             case ViewTransform.KhronosNeutral =>
                 ("ps_er", exposed("ps_r")) :: ("ps_eg", exposed("ps_g")) :: ("ps_eb", exposed("ps_b"))
                     :: List.append(neutralBindings(), ("ps_tr", toSrgb(ref("ps_nr"))) :: ("ps_tg", toSrgb(ref("ps_ng"))) :: ("ps_tb", toSrgb(ref("ps_nb"))) :: Nil)
+            case ViewTransform.AgX =>
+                ("ps_agx_exposed_r", exposed("ps_r")) :: ("ps_agx_exposed_g", exposed("ps_g")) :: ("ps_agx_exposed_b", exposed("ps_b"))
+                    :: List.append(agxBindings(), ("ps_tr", toSrgb(ref("ps_agx_out_r"))) :: ("ps_tg", toSrgb(ref("ps_agx_out_g"))) :: ("ps_tb", toSrgb(ref("ps_agx_out_b"))) :: Nil)
             case ViewTransform.AcesNarkowicz(a) =>
                 let curve = (ch: String) -> PostProcess.tonemapCurve(PostProcess.Tonemap.AcesFitted, a#whitePoint, maxF(exposed(ch), k(0.0)));
                 ("ps_tr", curve("ps_r")) :: ("ps_tg", curve("ps_g")) :: ("ps_tb", curve("ps_b")) :: Nil
         }
+
+    /// 3 つの binding（ps_<stage>_r・_g・_b）に、行列 m（行ごと）を ps_<source>_r・_g・_b に掛けた値を置く。
+    def matrixBindings(stage: String, source: String, m: List[(Float64, Float64, Float64)]): List[(String, Field)] =
+        let ref = Field.Ref;
+        let row = (r: (Float64, Float64, Float64)) -> {
+            let (a, b, c) = r;
+            add(add(mul(k(a), ref("${source}_r")), mul(k(b), ref("${source}_g"))), mul(k(c), ref("${source}_b")))
+        };
+        List.zip("r" :: "g" :: "b" :: Nil, m) |> List.map(e -> ("${stage}_${fst(e)}", row(snd(e))))
+
+    /// 3 つの binding に、ps_<source> の成分ごとに f を掛けた値を置く。
+    def perChannel(stage: String, source: String, f: Field -> Field): List[(String, Field)] =
+        ("r" :: "g" :: "b" :: Nil) |> List.map(ch -> ("${stage}_${ch}", f(Field.Ref("${source}_${ch}"))))
+
+    /// AgX の Base。ps_agx_exposed_r・_g・_b（露出を掛けた線形の sRGB）から ps_agx_out_r・_g・_b（線形の sRGB）を作る。
+    /// Rec.2020 へ移し、色を少し内へ寄せ（inset）、log2 で中間の灰色の −10〜+6.5 stop を 0..1 に詰め、S 字の曲線（中間の灰色で傾き 2.4・
+    /// 両端は 1.5 乗の双曲線で 0 と 1 に寄る）を掛け、2.4 乗で線形へ戻し、色を外へ戻して（outset）sRGB へ戻す。
+    /// inset・outset の行列は three.js（MIT）と Filament（Apache-2.0）が公開している AgX の行列。
+    def agxBindings(): List[(String, Field)] =
+        let lo = -12.47393;
+        let hi = 4.026069;
+        List.flatten(
+            matrixBindings("ps_agx_rec2020", "ps_agx_exposed", agxFromSrgb())
+                :: matrixBindings("ps_agx_inset", "ps_agx_rec2020", agxInset())
+                :: perChannel("ps_agx_log", "ps_agx_inset", x -> Field.Un({ op = UnOp.Sat, of = mul(sub(Field.Un({ op = UnOp.Log2, of = x }), k(lo)), k(1.0 / (hi - lo))) }))
+                :: perChannel("ps_agx_curve", "ps_agx_log", agxCurve(lo, hi))
+                :: perChannel("ps_agx_linear", "ps_agx_curve", x -> Field.Pow({ of = x, p = 2.4 }))
+                :: matrixBindings("ps_agx_outset", "ps_agx_linear", agxOutset())
+                :: matrixBindings("ps_agx_out", "ps_agx_outset", agxToSrgb())
+                :: Nil)
+
+    /// AgX の S 字の曲線（0..1 → 0..1）。中間の灰色（0.18）の位置で 0.18^(1/2.4) を通り、そこでの傾きが 2.4。
+    /// 両側は t / (1 + |t|^1.5)^(1/1.5) の形で、0 と 1 にちょうど届くよう倍率を決める。
+    def agxCurve(lo: Float64, hi: Float64): Field -> Field = x -> {
+        let slope = 2.4;
+        let power = 1.5;
+        let xp = (Num.log(0.18) / Num.log(2.0) - lo) / (hi - lo);
+        let yp = Float64.pow(base = 0.18, 1.0 / 2.4);
+        let side = (xs: Float64, ys: Float64) -> {
+            let u = Float64.pow(base = Float64.pow(base = slope * xs / ys, power) - 1.0, 1.0 / power);
+            let scale = slope * xs / u;
+            let w = mul(sub(x, k(xp)), k(slope / scale));
+            add(k(yp), mul(k(scale), Field.Bin({ op = BinOp.Div, a = w,
+                b = Field.Pow({ of = add(k(1.0), Field.Pow({ of = Field.Un({ op = UnOp.Abs, of = w }), p = power })), p = 1.0 / power }) })))
+        };
+        Field.Blend({ a = side(xp, yp), b = side(1.0 - xp, 1.0 - yp), by = Field.Bin({ op = BinOp.Step, a = k(xp), b = x }) })
+    }
+
+    def agxFromSrgb(): List[(Float64, Float64, Float64)] =
+        (0.6274040, 0.3292820, 0.0433136) :: (0.0690970, 0.9195400, 0.0113612) :: (0.0163916, 0.0880132, 0.8955950) :: Nil
+
+    def agxToSrgb(): List[(Float64, Float64, Float64)] =
+        (1.6604910, -0.5876411, -0.0728499) :: (-0.1245505, 1.1328999, -0.0083494) :: (-0.0181508, -0.1005789, 1.1187297) :: Nil
+
+    def agxInset(): List[(Float64, Float64, Float64)] =
+        (0.856627153315983, 0.0951212405381588, 0.0482516061458583)
+            :: (0.137318972929847, 0.761241990602591, 0.101439036467562)
+            :: (0.11189821299995, 0.0767994186031903, 0.811302368396859) :: Nil
+
+    def agxOutset(): List[(Float64, Float64, Float64)] =
+        (1.1271005818144368, -0.11060664309660323, -0.016493938717834573)
+            :: (-0.1413297634984383, 1.157823702216272, -0.016493938717834257)
+            :: (-0.14132976349843826, -0.11060664309660294, 1.2519364065950405) :: Nil
 
     /// Khronos PBR Neutral（Khronos の仕様の式）。ps_er・ps_eg・ps_eb（露出を掛けた線形の値）から ps_nr・ps_ng・ps_nb（線形の値）を作る。
     /// 一番暗い成分で暗い所を少し沈め、一番明るい成分が 0.76 を超えたら肩で 1 へ寄せ、寄せた分だけ白へ近づける。
@@ -348,7 +414,10 @@ pub mod PostStack.Internal.Passes {
     /// ps_cr・ps_cg・ps_cb に仕上げた色を置く。lift・gain は sRGB の曲線の上で掛け（Blender の式どおり 1 往復する）、gamma は線形へ戻した後の累乗。
     /// saturation は HSV の S への掛け算と同じ（一番明るい成分を保ち、ほかを近づける・遠ざける。S が 1 を超える所で止める）。
     def gradeBindings(c: ColorGrade, r: Field, g: Field, b: Field): List[(String, Field)] =
-        let one = (x: Field, lift: Float64, gamma: Float64, gain: Float64) -> {
+        let white = (x: Color) -> x#r == 1.0 and x#g == 1.0 and x#b == 1.0;
+        // WhyNot: lift・gamma・gain が全部 1 の時も 1 往復の式を通さない — 画素ごとに sRGB の曲線を 2 回と累乗を 3 回払い、saturation だけの preset でスマホが重い。
+        let neutralBalance = white(c#lift) and white(c#gamma) and white(c#gain);
+        let one = (x: Field, lift: Float64, gamma: Float64, gain: Float64) -> if (neutralBalance) x else {
             let y = maxF(mul(add(mul(sub(toSrgb(x), k(1.0)), k(2.0 - lift)), k(1.0)), k(gain)), k(0.0));
             Field.Pow({ of = toLinear(y), p = if (gamma <= 0.0) 1000000.0 else 1.0 / gamma })
         };
