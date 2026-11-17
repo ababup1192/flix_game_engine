@@ -639,3 +639,18 @@ func TestStarterTapeHasMessageObject(t *testing.T) {
 	}
 	t.Fatalf("objects に message が無い: %+v", m.Objects)
 }
+
+func TestStripCellSizeKeepsLongTapeUnderJpegLimit(t *testing.T) {
+	n := StripCount(643.5)
+	w, _ := stripCellSize(n)
+	if n*w > maxJpegSide {
+		t.Fatalf("%d 枚 × %d px = %d px（上限 %d）", n, w, n*w, maxJpegSide)
+	}
+}
+
+func TestStripCellSizeLeavesShortTapeAsIs(t *testing.T) {
+	w, h := stripCellSize(StripCount(60))
+	if w != StripW || h != StripH {
+		t.Fatalf("%dx%d（%dx%d のはず）", w, h, StripW, StripH)
+	}
+}
