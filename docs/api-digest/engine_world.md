@@ -1840,6 +1840,10 @@
   `pub enum DistortionMask { case Full case BottomBand({ top = Float64, soft = Float64 }) case Texture(String) }`
 - 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れる揺らぎの模様（向きと長さの違う波を重ねた物）で、場面の絵を読む位置をずらす。
   `pub type alias Distortion = { strength = Vec2.Vec2, noiseSize = Float64, speed = Vec2.Vec2, mask = DistortionMask }`
+- 霧のむら（ゆっくり流れる濃い所と薄い所）。size = むらの大きさ（場面の長さ）・amount = 濃さを揺らす割合（0..1）・
+  `pub type alias FogNoise = { size = Float64, amount = Float64, speed = Vec2.Vec2 }`
+- 高さの霧（地面の近くほど濃く、遠いほど濃くなる霧）。Unreal の Exponential Height Fog と同じ式で、名前もそろえた。
+  `pub type alias HeightFog = { color = Color, density = Float64, baseHeight = Float64, heightFalloff = Float64, startDistance = Float64, maxOpacity = Float64, noise = Option[FogNoise], lightGlow = Float64 }`
 - 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
   `pub enum Msaa with Eq, ToString { case Off case X4 }`
 - 自分の Spec を挟む所。BeforeBloom = 場面の Pass の値（描き手が書いた画面の値・1 を超える）を読んで同じ形の値を書く（線形へ戻すのはこの後）・
@@ -1877,6 +1881,7 @@
 - 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。
   `pub def withBackground(c: Color, s: Stack): Stack`
 - `pub def withDistortion(d: Option[Distortion], s: Stack): Stack`
+- `pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack`
 - `pub def withTime(t: Clock.Time[c], s: Stack): Stack`
 - `pub def exposureOf(s: Stack): Float64`
 - `pub def viewTransformOf(s: Stack): ViewTransform`
@@ -1891,6 +1896,7 @@
 - `pub def customOf(s: Stack): List[CustomPass]`
 - `pub def backgroundOf(s: Stack): Option[Color]`
 - `pub def distortionOf(s: Stack): Option[Distortion]`
+- `pub def heightFogOf(s: Stack): Option[HeightFog]`
 - withTime の秒。
   `pub def timeOf(s: Stack): Float64`
 - 場面（View が返す絵）を描いた Pass。BeforeBloom の自分の Spec はこれを読む。

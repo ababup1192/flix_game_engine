@@ -3,7 +3,7 @@
 // ゲームは「どの効果をどの値で」を言い、順・Pass・描き先の大きさと形式・Spec はここが決める。中身は Render.Pass と ShaderDoc の面に展開する純粋な関数で、
 // 描き手（GL・WebGPU・CPU）は触らない。式の部品（トーンマップの曲線・FXAA・luma）が要る時だけ PostProcess を使う。
 //
-// 掛かる順（Blender の Color Management の順。歪みはその前で、場面の絵そのものを読み替える）: 画面の歪み → 奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA。
+// 掛かる順（Blender の Color Management の順。霧と歪みはその前で、場面の絵そのものを描き替える）: 高さの霧 → 画面の歪み → 奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA。
 // Standard と KhronosNeutral は場面の値を線形へ戻してから掛ける（Blender と同じ線形の値の上の式。曲線の門は engine_world/test の TestPostStackBlender）。
 // 掛ける範囲は View が返す絵の全部（App.withPostStack）。HUD（App.withHudView）とデバッグの重ねには掛からない —
 // トーンマップもぼかしも掛けたくない UI（会話の窓・メニュー・字幕）は HUD に置く。
@@ -84,6 +84,20 @@ pub mod PostStack {
     /// noiseSize ≤ 0 か strength が x・y とも 0 なら Pass を足さない（無いのと同じ絵）。
     pub type alias Distortion = { strength = Vec2.Vec2, noiseSize = Float64, speed = Vec2.Vec2, mask = DistortionMask }
 
+    /// 霧のむら（ゆっくり流れる濃い所と薄い所）。size = むらの大きさ（場面の長さ）・amount = 濃さを揺らす割合（0..1）・
+    /// speed = 流れる速さ（場面の長さ / 秒・x と z）。
+    pub type alias FogNoise = { size = Float64, amount = Float64, speed = Vec2.Vec2 }
+
+    /// 高さの霧（地面の近くほど濃く、遠いほど濃くなる霧）。Unreal の Exponential Height Fog と同じ式で、名前もそろえた。
+    /// color = 霧の色（sRGB の 0..1）・density = 高さ baseHeight での濃さ（場面の長さ 1 あたり）・heightFalloff = 高さが 1 上がるごとに濃さが e^−heightFalloff 倍になる量・
+    /// startDistance = 目からこの距離までは霧を積まない・maxOpacity = 霧の濃さの上限（0..1。1 で遠くは霧の色だけになる）・noise = むら（None で無し）・
+    /// lightGlow = 点光源のまわりの霧が明るくなる強さ（0 で無し。街灯のにじみ）。長さはどれも Scene3d の場面の長さ（m で考えるなら Scene3d.withUnitsPerMeter の倍率を掛ける）。
+    /// 3D の場面の奥行きの絵から積むので、View の絵に 3D の場面が無ければ掛からない（Issue.NoScene3d）。View の中の 2D の絵は、その下の 3D の奥行きで霧が掛かる（字の窓は HUD に置く）。
+    /// 毎コマ動かしてよいのは color・density・heightFalloff・startDistance・maxOpacity・noise.amount・lightGlow（Param で渡る）。noise.size を動かすと描き手が program を作り直す。
+    /// 灯りは目に近い 8 つまで（Scene3d の pointLights から）。半透明の物は奥行きの絵に入らないので、その奥の面の霧が掛かる。
+    pub type alias HeightFog = { color = Color, density = Float64, baseHeight = Float64, heightFalloff = Float64, startDistance = Float64,
+                                 maxOpacity = Float64, noise = Option[FogNoise], lightGlow = Float64 }
+
     /// 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
     pub enum Msaa with Eq, ToString {
         case Off
@@ -154,14 +168,14 @@ pub mod PostStack {
     type alias Fields = { exposure = Float64, viewTransform = ViewTransform, bloom = Option[Bloom], colorGrade = Option[ColorGrade],
                           vignette = Option[Vignette], depthOfField = Option[DepthOfField], fxaa = Bool, custom = List[CustomPass],
                           quality = Quality, msaa = Msaa, debugView = DebugView, background = Option[Color],
-                          distortion = Option[Distortion], time = Float64 }
+                          distortion = Option[Distortion], time = Float64, heightFog = Option[HeightFog] }
 
     def fieldsOf(s: Stack): Fields = match s { case StackData.StackData(f) => f }
 
     def neutralFields(): Fields =
         { exposure = 0.0, viewTransform = ViewTransform.Standard, bloom = None, colorGrade = None, vignette = None,
           depthOfField = None, fxaa = false, custom = Nil, quality = Quality.Auto, msaa = Msaa.Off, debugView = DebugView.Final,
-          background = None, distortion = None, time = 0.0 }
+          background = None, distortion = None, time = 0.0, heightFog = None }
 
     def presetVignette(strength: Float64): Option[Vignette] = Some({ strength = strength, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } })
 
@@ -222,7 +236,9 @@ pub mod PostStack {
 
     pub def withDistortion(d: Option[Distortion], s: Stack): Stack = mapFields(f -> { distortion = d | f }, s)
 
-    /// 時間で動く後がけ（今は Distortion）の時刻。陽炎は遊びの時計（ポーズで止まる）を渡す。描き出しとテストは決まった時刻を渡す。
+    pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack = mapFields(f -> { heightFog = h | f }, s)
+
+    /// 時間で動く後がけ（Distortion と HeightFog のむら）の時刻。陽炎と霧は遊びの時計（ポーズで止まる）を渡す。描き出しとテストは決まった時刻を渡す。
     // WhyNot: App が自分の時刻を配らない — App は遊びの時計と実時間のどちらで流すかを知らない（docs/clock.md）。
     pub def withTime(t: Clock.Time[c], s: Stack): Stack = mapFields(f -> { time = Clock.secondsOf(t) | f }, s)
 
@@ -253,6 +269,8 @@ pub mod PostStack {
     pub def backgroundOf(s: Stack): Option[Color] = fieldsOf(s)#background
 
     pub def distortionOf(s: Stack): Option[Distortion] = fieldsOf(s)#distortion
+
+    pub def heightFogOf(s: Stack): Option[HeightFog] = fieldsOf(s)#heightFog
 
     /// withTime の秒。
     pub def timeOf(s: Stack): Float64 = fieldsOf(s)#time

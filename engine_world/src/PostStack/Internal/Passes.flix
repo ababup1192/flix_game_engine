@@ -2,13 +2,15 @@
 // ゲームからは呼ばない（PostStack の中身。入口は PostStack.build）。
 //
 // Pass の並び（無い効果の Pass は作らない）:
-//   ps_scene（View の絵・窓の画素・HDR）→ 自分の BeforeBloom → ps_distort（歪めた場面）→ ps_depth（奥行きの絵・半分）→ ps_soft（ぼかした場面・半分）
+//   ps_scene（View の絵・窓の画素・HDR）→ 自分の BeforeBloom → ps_depth（奥行きの絵・半分。霧があれば窓の画素）→ ps_fogdepth（DepthBand と霧の時だけ）→ ps_fog（霧を掛けた場面）→ ps_distort（歪めた場面）→ ps_soft（ぼかした場面・半分）
 //   → ps_bright（明るい所）→ ps_bloomA → ps_bloomB（ぼかし 2 回）→ ps_post（本編の面・窓の画素の Rgba8）→ 自分の AfterViewTransform。
 // 画面へ置くのは、FXAA があれば最後の Pass をならした面・無ければ本編の面（ps_post を作らない）か最後の Pass の写し。
 pub mod PostStack.Internal.Passes {
 
     use PostStack.{Fields, Issue, Bloom, Vignette, ColorGrade, ViewTransform, DepthOfField, Quality, Msaa, CustomAt, CustomPass, Read, DebugView, Distortion, DistortionMask}
     use ShaderDoc.{Axis, BinOp, Field, Shade, Out, TexChan, UnOp}
+    use PostStack.Internal.Waves
+    use PostStack.Internal.Waves.Wave
 
     def depthPass(): String = PostStack.depthName()
     def softPass(): String = "ps_soft"
@@ -17,6 +19,8 @@ pub mod PostStack.Internal.Passes {
     def bloomPassB(): String = "ps_bloomB"
     def linearPass(): String = "ps_linear"
     def distortPass(): String = "ps_distort"
+    def fogPass(): String = "ps_fog"
+    def fogDepthPass(): String = "ps_fogdepth"
 
     /// 読む点の数と縮み（Quality から）。basis = 縮んだ Pass の倍率の基準。
     type alias Tuning = { bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32, basis = RenderTarget.Basis }
@@ -54,18 +58,32 @@ pub mod PostStack.Internal.Passes {
         let scenes = scenesOf(input#world);
         let largest = largestScene(scenes);
         let customDepth = List.exists(c -> List.memberOf(Read.SceneDepth, c#reads), customs);
-        let wantsDepth = Option.nonEmpty(f#depthOfField) or customDepth;
+        let fog = f#heightFog |> Option.filter(isFogVisible);
+        let wantsDepth = Option.nonEmpty(f#depthOfField) or customDepth or Option.nonEmpty(fog);
         let afterCustom = before |> List.map(c -> c#name) |> List.last |> Option.getWithDefault(PostStack.sceneName());
+        let focus = forM (d <- f#depthOfField; s <- largest; fo <- focusOf(d, s)) yield fo;
+        // DepthBand の奥行きの絵は帯に切り出した値なので、霧は目からの距離の絵を別に描く。
+        let fogOwnDepth = Option.nonEmpty(fog) and Option.nonEmpty(focus) and isDepthBand(f#depthOfField);
+        let fogDepth = if (fogOwnDepth) fogDepthPass() else depthPass();
+        let sceneLikeTarget = if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor();
+        let fogScene = forM (fo <- fog; s <- largest) yield (fo, s);
+        let fogDepthPasses = if (fogOwnDepth) fogScene |> Option.map(e ->
+            ({ name = fogDepthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = depthItemOf(snd(e), 0.0, cameraFar(snd(e))) :: Nil }, hdrAt(1.0)) :: Nil)
+            |> Option.getWithDefault(Nil) else Nil;
+        let fogPasses = fogScene |> Option.map(e ->
+            ({ name = fogPass(), clear = black,
+               items = PostStack.Internal.Fog.surface(fst(e), input#size, f#time, snd(e), afterCustom, fogDepth, isLinear(f#viewTransform)) :: Nil },
+             sceneLikeTarget) :: Nil)
+            |> Option.getWithDefault(Nil);
+        let afterFog = if (List.isEmpty(fogPasses)) afterCustom else fogPass();
         let distortion = f#distortion |> Option.filter(isDistortionVisible);
-        let distortTarget = if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor();
         let distortPasses = distortion |> Option.map(d ->
             ({ name = distortPass(), clear = black,
-               items = Render.withShaderParams(distortParams(input#size, f#time, d), fill(distortSpec(input#size, afterCustom, d))) :: Nil },
-             distortTarget) :: Nil)
+               items = Render.withShaderParams(distortParams(input#size, f#time, d), fill(distortSpec(input#size, afterFog, d))) :: Nil },
+             sceneLikeTarget) :: Nil)
             |> Option.getWithDefault(Nil);
-        let current = if (Option.isEmpty(distortion)) afterCustom else distortPass();
-        let focus = forM (d <- f#depthOfField; s <- largest; fo <- focusOf(d, s)) yield fo;
-        let depthOnly = if (Option.isEmpty(focus) and customDepth) largest |> Option.map(s -> depthItemOf(s, 0.0, cameraFar(s))) else None;
+        let current = if (Option.isEmpty(distortion)) afterFog else distortPass();
+        let depthOnly = if (Option.isEmpty(focus) and (customDepth or Option.nonEmpty(fog))) largest |> Option.map(s -> depthItemOf(s, 0.0, cameraFar(s))) else None;
         let issues = List.flatten(
             (reserved |> List.map(c -> Issue.ReservedPassName(c#name)))
                 :: (if (wantsDepth and Option.isEmpty(largest)) Issue.NoScene3d :: Nil else Nil)
@@ -81,7 +99,7 @@ pub mod PostStack.Internal.Passes {
             case None     => depthOnly
         };
         let depthPasses = depthItem |> Option.map(item ->
-            ({ name = depthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = item :: Nil }, shrunk(0.5)) :: Nil)
+            ({ name = depthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = item :: Nil }, if (Option.nonEmpty(fog) and not fogOwnDepth) hdrAt(1.0) else shrunk(0.5)) :: Nil)
             |> Option.getWithDefault(Nil);
         let toLinear = isLinear(f#viewTransform);
         // WhyNot: ぼかしの中で線形へ戻さない — TexBlur は読む点ごとに式を挟めず、画面の値をぼかしてから戻すと明るい縁が細る。
@@ -99,7 +117,7 @@ pub mod PostStack.Internal.Passes {
         let focusParams = focus |> Option.map(fo -> fo#params) |> Option.getWithDefault(Map.empty());
         let main = Render.withShaderParams(Map.union(paramsOf(f), focusParams), fill(mainSpec(aspect, current, f, focus)));
         let finishing = finishingOf(input#size, f#fxaa, main, after);
-        let all = List.flatten((scenePass :: beforePasses) :: distortPasses :: depthPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
+        let all = List.flatten((scenePass :: beforePasses) :: depthPasses :: fogDepthPasses :: fogPasses :: distortPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
         { plan = { targets = List.toMap(List.map(e -> (fst(e)#name, snd(e)), all)) | Render.passPlan(List.map(fst, all)) },
           present = finishing#present, issues = issues }
 
@@ -207,37 +225,29 @@ pub mod PostStack.Internal.Passes {
 
     // ── 画面の歪み ──
 
+    def isFogVisible(h: PostStack.HeightFog): Bool = h#density > 0.0 and h#maxOpacity > 0.0
+
+    def isDepthBand(d: Option[DepthOfField]): Bool = match d {
+        case Some(DepthOfField.DepthBand(_)) => true
+        case _                               => false
+    }
+
     def isDistortionVisible(d: Distortion): Bool =
         d#noiseSize > 0.0 and (d#strength#x != 0.0 or d#strength#y != 0.0)
 
-    /// 揺らぎの模様の波 1 本: angle = 進む向き（ラジアン・画面の px の上で）・length = 波長（noiseSize に掛ける倍率）・weight = 重み（1 つの軸の重みの和が 1）・phase0 = 頭の位相。
-    type alias Wave = { angle = Float64, length = Float64, weight = Float64, phase0 = Float64 }
-
-    /// 横のずれ（u）と縦のずれ（v）を作る波の組（向きと長さを散らし、重ねて 1 本ずつの縞が見えないようにした数）。
+    /// 横のずれ（u）と縦のずれ（v）を作る波の組（向きと長さを散らし、重ねて 1 本ずつの縞が見えないようにした数）。長さは noiseSize に掛ける倍率。
     def distortWaves(): (List[Wave], List[Wave]) =
-        let pi = 3.141592653589793;
+        let pi = Waves.pi();
         ({ angle = 0.42 * pi, length = 2.0, weight = 0.4, phase0 = 0.0 } :: { angle = 0.61 * pi, length = 1.37, weight = 0.3, phase0 = 1.3 }
              :: { angle = 0.17 * pi, length = 0.91, weight = 0.2, phase0 = 2.9 } :: { angle = 0.83 * pi, length = 0.59, weight = 0.1, phase0 = 4.1 } :: Nil,
          { angle = 0.55 * pi, length = 1.83, weight = 0.4, phase0 = 0.7 } :: { angle = 0.31 * pi, length = 1.21, weight = 0.3, phase0 = 2.2 }
              :: { angle = 0.72 * pi, length = 0.83, weight = 0.2, phase0 = 3.6 } :: { angle = 0.06 * pi, length = 0.53, weight = 0.1, phase0 = 5.3 } :: Nil)
 
-    /// 波の、px あたりの位相の進み（x, y）。
-    def waveNumber(d: Distortion, w: Wave): (Float64, Float64) =
-        let kappa = 2.0 * 3.141592653589793 / (d#noiseSize * w#length);
-        (kappa * Num.cos(w#angle), kappa * Num.sin(w#angle))
-
     /// 面に渡す数: ps_distortX・Y = ずらす最大の量（uv）・ps_dph<i> = 波 i の、時刻ぶん流した位相（0..2π）。
-    // WhyNot: 時刻を Field.Time（面の t）で掛けない — 時刻 × 速さが増え続けると GL の float32 の sin が崩れる。CPU の Float64 で 2π に折り返してから渡す。
     def distortParams(size: Vec2.Vec2, time: Float64, d: Distortion): Map[String, Float64] =
         let (wu, wv) = distortWaves();
-        let twoPi = 2.0 * 3.141592653589793;
-        let phaseOf = (w: Wave) -> {
-            let (kx, ky) = waveNumber(d, w);
-            let raw = w#phase0 - (kx * d#speed#x + ky * d#speed#y) * time;
-            raw - twoPi * Float64.floor(raw / twoPi)
-        };
         List.append(wu, wv) |> List.zipWithIndex
-            |> List.foldLeft((m, e) -> { let (i, w) = e; Map.insert("ps_dph${i}", phaseOf(w), m) },
+            |> List.foldLeft((m, e) -> { let (i, w) = e; Map.insert("ps_dph${i}", Waves.phaseAt(d#noiseSize, d#speed, time, w), m) },
                              Map#{ "ps_distortX" => d#strength#x / size#x, "ps_distortY" => d#strength#y / size#y })
 
     /// 歪みを掛ける重み（0..1・画素の位置で読む）。
@@ -248,15 +258,14 @@ pub mod PostStack.Internal.Passes {
         case DistortionMask.Texture(name) => linear(Field.Tex({ name = name, chan = TexChan.R }))
     }
 
-    /// 波を重ねた揺らぎ（−1..1）。波 i の位相は Param ps_dph<first + i>。
-    // WhyNot: Fbm・FbmTile（hash の value noise）を使わない — hash は fract(sin(大きい数) × 43758) で、GPU の float32 と CPU の Float64 で
-    // 模様がまるごと違う（3 つの描き手で同じ絵にならない）。sin の引数が数十までの波の和なら float32 でも 1e-5 ほどしか違わない。
+    /// 画面の px の上の揺らぎ（−1..1）。波 i の位相は Param ps_dph<first + i>。
+    // WhyNot: Waves.field に u × W を渡さない — 画素ごとの掛け算が波 1 本に 1 つ増える。px への倍率を波の数に畳んで Const にする。
     def waveSum(size: Vec2.Vec2, d: Distortion, first: Int32, waves: List[Wave]): Field =
         let u = Field.Uv({ axis = Axis.U });
         let v = Field.Uv({ axis = Axis.V });
         waves |> List.zipWithIndex |> List.map(e -> {
             let (i, w) = e;
-            let (kx, ky) = waveNumber(d, w);
+            let (kx, ky) = Waves.waveNumber(d#noiseSize, w);
             let arg = add(add(mul(u, k(kx * size#x)), mul(v, k(ky * size#y))), p("ps_dph${first + i}"));
             mul(k(w#weight), Field.Un({ op = UnOp.Sin, of = arg }))
         }) |> List.reduceLeft(add) |> Option.getWithDefault(k(0.0))
