@@ -1,6 +1,6 @@
 [package]
 version     = "0.99.0"
-flix        = "0.78.0"
+flix        = "0.80.0"
 repository  = "github:ababup1192/flix_engine_tools"
 
 # GL コンテキストの無い場所（リファレンス画像テスト・CI・IDE プレビュー）で成果物を生成・検査する

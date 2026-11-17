@@ -1,6 +1,6 @@
 [package]
 version     = "0.1.0"
-flix        = "0.78.0"
+flix        = "0.80.0"
 
 # The jars are placed by hand in lib/external (build.sh); the url is never fetched.
 [jar-dependencies]

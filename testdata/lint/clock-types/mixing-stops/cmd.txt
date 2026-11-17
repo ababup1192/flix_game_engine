@@ -4,5 +4,5 @@ mkdir -p "$WORK/src"
 for f in Clock TimeScale Lifetime Timeline; do ln -s "$ENGINE/engine_world/src/$f.flix" "$WORK/src/$f.flix"; done
 ln -s "$ENGINE/engine/src/core/Num.flix" "$WORK/src/Num.flix"
 cp src/*.flix "$WORK/src/"
-printf '[package]\nversion = "0.1.0"\nflix = "0.78.0"\n' > "$WORK/flix.toml"
+printf '[package]\nversion = "0.1.0"\nflix = "0.80.0"\n' > "$WORK/flix.toml"
 cd "$WORK" && "$ENGINE/bin/flix" check 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^-- ' | sed -E 's/ -+ / /' | sort
