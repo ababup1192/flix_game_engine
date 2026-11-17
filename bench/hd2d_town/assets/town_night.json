@@ -56,8 +56,8 @@
     0.64,
     0.98
   ],
-  "lampIntensity": 7.0,
-  "lampRange": 8.0,
+  "lampIntensity": 5.5,
+  "lampRange": 6.5,
   "lampColor": [
     1.0,
     0.66,
@@ -66,10 +66,10 @@
   "lampGlow": 6.0,
   "charShadow": "silhouette",
   "shadowPcf": 2,
-  "boardLamplight": 1.6,
+  "boardLamplight": 0.9,
   "boardNightBase": [
-    0.34,
-    0.3,
-    0.5
+    0.26,
+    0.24,
+    0.42
   ]
 }

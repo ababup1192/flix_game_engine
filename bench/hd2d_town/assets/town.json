@@ -5,9 +5,9 @@
   "far": 60.0,
   "shadowDistance": 28.0,
   "shadowMapSize": 4096,
-  "sunElevation": 40.0,
+  "sunElevation": 27.0,
   "sunAzimuth": 35.0,
-  "sunIntensity": 3.3,
+  "sunIntensity": 3.9,
   "ambient": [
     0.15,
     0.17,
