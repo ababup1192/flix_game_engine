@@ -9,9 +9,9 @@
   "sunAzimuth": -35.0,
   "sunIntensity": 0.2,
   "ambient": [
-    0.07,
-    0.05,
-    0.12
+    0.03,
+    0.015,
+    0.06
   ],
   "hemisphere": 0.08,
   "boardTint": 1.0,
@@ -19,17 +19,17 @@
   "fogNear": 13.0,
   "fogFar": 25.0,
   "fog": [
-    0.36,
-    0.28,
-    0.44
+    0.2,
+    0.12,
+    0.3
   ],
   "sky": [
     0.045,
     0.03,
     0.1
   ],
-  "exposure": -1.8,
-  "bloomStrength": 1.0,
+  "exposure": -2.0,
+  "bloomStrength": 0.0,
   "fStop": 0.16,
   "saturation": 1.0,
   "vignette": 0.45,
@@ -41,9 +41,9 @@
   "shadowStrength": 0.6,
   "fxaa": true,
   "lift": [
-    0.98,
-    0.97,
-    1.06
+    1.02,
+    0.94,
+    1.1
   ],
   "gamma": [
     1.0,
@@ -56,8 +56,8 @@
     0.64,
     0.98
   ],
-  "lampIntensity": 5.5,
-  "lampRange": 5.5,
+  "lampIntensity": 22.0,
+  "lampRange": 5.0,
   "lampColor": [
     1.0,
     0.7,
@@ -67,9 +67,9 @@
   "groundFog": 0.0,
   "heightFog": {
     "color": [
-      0.62,
-      0.55,
-      0.75
+      0.34,
+      0.22,
+      0.5
     ],
     "density": 1.6,
     "baseHeight": 1.0,
@@ -82,19 +82,19 @@
       0.5,
       0.2
     ],
-    "lightGlow": 1.2
+    "lightGlow": 0.4
   },
   "charShadow": "silhouette",
   "shadowPcf": 2,
-  "boardLamplight": 0.9,
+  "boardLamplight": 2.6,
   "boardNightBase": [
-    0.26,
-    0.24,
-    0.42
+    0.36,
+    0.3,
+    0.52
   ],
   "bloomThreshold": 1.2,
   "bloomSize": 0.85,
-  "haloGlow": 7.0,
+  "haloGlow": 4.5,
   "haloSize": 1.9,
   "haloFalloff": 2.2,
   "lanternCore": [
