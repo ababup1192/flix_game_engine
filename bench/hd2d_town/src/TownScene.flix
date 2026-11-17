@@ -40,10 +40,10 @@ mod TownScene {
                            town = TileMap3d.Town, materials = Map[String, (Scene3d.Material3d, Rgb)], sprites = Map[String, Images.Loaded] }
 
     /// 地図と絵を読み、町を組む。skipNpcColumn = 地図の 1・2・3 を置かない列（隊列で歩かせる列）。
-    pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32]): Result[String, Res] \ IO =
+    pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
         let sprites = "sprites/tree_broadleaf.png" :: "sprites/tree_cypress.png" :: "sprites/street_lamp.png" ::
                       "sprites/traveler_td.png" :: "sprites/merchant_td.png" :: Nil;
-        let stripPaths = List.append(m#walk#party |> List.map(p -> p#strip), "sprites/traveler_walk4.png" :: "sprites/merchant_walk4.png" :: Nil) |> List.distinct;
+        let stripPaths = List.flatten(m#walk#party |> List.map(p -> p#strip) :: ("sprites/traveler_walk4.png" :: "sprites/merchant_walk4.png" :: Nil) :: extraStrips :: Nil) |> List.distinct;
         let tilePaths = TileMap3d.materialTable() |> Map.valuesOf |> List.map(fst) |> List.distinct;
         forM (
             tiles <- Result.traverse(Images.load, tilePaths);
@@ -79,11 +79,15 @@ mod TownScene {
     /// 背中・右・正面の 4 コマずつを横に並べた帯（dirs "nes"）の 1 人の板と足元の影。dirIndex = 0 背中・1 右・2 正面・
     /// flip = 左右反転（左向きは右の反転）・影は足元の楕円だけ（太陽の影は落とさない）。
     pub def walkerBoard(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, Scene3d.Instance3d)] =
+        walkerBoardScaled(res, strip, tint, dirIndex, frame, flip, 1.0, x, y, z)
+
+    /// walkerBoard の板の縦の倍率 stretch を渡す形（息遣い。足元はそのまま）。
+    pub def walkerBoardScaled(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, stretch: Float64, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, Scene3d.Instance3d)] =
         Map.get(strip, res#strips) |> Option.map(l -> {
             let cellW = l#width / 12;
             let source = { position = { x = Int32.toFloat64(cellW * (dirIndex * 4 + frame)), y = 0.0 }, size = { x = Int32.toFloat64(cellW), y = Int32.toFloat64(l#height) } };
             let w = Int32.toFloat64(cellW) / 32.0;
-            let h = Int32.toFloat64(l#height) / 32.0;
+            let h = Int32.toFloat64(l#height) / 32.0 * stretch;
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint), false),
              contactInstance(res#contactMesh, res#contactMaterial, x, y, z, w))
         })

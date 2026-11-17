@@ -499,12 +499,13 @@ mod TileMap3d {
 
     def marginQuads(ctx: Ctx): List[Quad] =
         let m = ctx#map;
-        let z = fl(m#margin#level) * m#heightStep;
+        let low = fl(m#margin#level) * m#heightStep;
         let n = fl(m#margin#cells);
         let (w, h) = (fl(m#width), fl(m#height));
-        ((0.0 - n, 0.0 - n, w + n, 0.0) :: (0.0 - n, h, w + n, h + n * 3.0) :: (0.0 - n, 0.0, 0.0, h) :: (w, 0.0, w + n, h) :: Nil)
+        let south = fl(TownMap.southLevel(m)) * m#heightStep;
+        ((0.0 - n, 0.0 - n, w + n, 0.0, south) :: (0.0 - n, h, w + n, h + n * 3.0, low) :: (0.0 - n, 0.0, 0.0, h, low) :: (w, 0.0, w + n, h, low) :: Nil)
             |> List.map(rect -> {
-                let (x0, y0, x1, y1) = rect;
+                let (x0, y0, x1, y1, z) = rect;
                 Faces.quad("grass", Faces.p3(x0, y0, z) :: Faces.p3(x1, y0, z) :: Faces.p3(x1, y1, z) :: Faces.p3(x0, y1, z) :: Nil,
                            (x0, y0) :: (x1, y0) :: (x1, y1) :: (x0, y1) :: Nil, 0.7 :: 0.7 :: 0.7 :: 0.7 :: Nil)
             })

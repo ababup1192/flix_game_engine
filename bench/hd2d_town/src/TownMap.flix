@@ -209,9 +209,15 @@ mod TownMap {
     /// 地面の材質（地図の外は草）。
     pub def groundAt(m: TownMap, c: Int32, r: Int32): Ground = cell(m#ground, Ground.Grass, c, r)
 
-    /// 高さのレベル（地図の外は margin のレベル）。
+    /// 高さのレベル（地図の外は margin のレベル。ただし南の外（カメラの手前）は地図の一番南の行と同じ高さ）。
+    // WhyNot: 南の外も margin の低い地面にしない — 地図の南の端の崖の面がカメラのすぐ前に横たわり、画面の下を屋根のような帯が横切る。
     pub def levelAt(m: TownMap, c: Int32, r: Int32): Int32 =
-        if (inside(m, c, r)) cell(m#levels, 0, c, r) else m#margin#level
+        if (inside(m, c, r)) cell(m#levels, 0, c, r)
+        else if (r >= m#height and c >= 0 and c < m#width) cell(m#levels, 0, c, m#height - 1)
+        else m#margin#level
+
+    /// 南の外（カメラの手前）の地面の高さのレベル。
+    pub def southLevel(m: TownMap): Int32 = cell(m#levels, m#margin#level, 0, m#height - 1)
 
     pub def shapeAt(m: TownMap, c: Int32, r: Int32): Shape = cell(m#shapes, Shape.Flat, c, r)
 
@@ -226,8 +232,11 @@ mod TownMap {
     /// 1 階の高さ（壁タイル 3 段 = 下・窓・上）。
     pub def floorHeight(): Float64 = 3.0
 
-    /// マスの上面の高さ（m）。水路は底・草は縁石の分だけ上げる・建物の足元は地面の高さ。
+    /// マスの上面の高さ（m）。水路は底・草は縁石の分だけ上げる・建物の足元は地面の高さ・南の外は一番南の行と同じ高さ。
     pub def topAt(m: TownMap, c: Int32, r: Int32): Float64 =
+        if (r >= m#height and c >= 0 and c < m#width and m#height > 0) topAt(m, c, m#height - 1) else insideTopAt(m, c, r)
+
+    def insideTopAt(m: TownMap, c: Int32, r: Int32): Float64 =
         let z = Int32.toFloat64(levelAt(m, c, r)) * m#heightStep;
         match groundAt(m, c, r) {
             case Ground.Water => z - waterDrop()

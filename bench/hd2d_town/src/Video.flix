@@ -44,7 +44,7 @@ mod Video {
     /// loadAll の見た目のつまみを渡す形（GPU の窓は板の絵を project.json の名前で引くつまみで組む）。
     pub def loadWith(look: Look, skipNpcColumn: Bool): (TownMap, Res) \ IO =
         let loaded = (run { TownMap.load(variant(), mapPath()) } with Fs.FileRead.runWithIO)
-            |> Result.flatMap(m -> TownScene.load(m, look, if (skipNpcColumn) Some(m#walk#col) else None) |> Result.map(res -> (m, res)));
+            |> Result.flatMap(m -> TownScene.load(m, look, if (skipNpcColumn) Some(m#walk#col) else None, Nil) |> Result.map(res -> (m, res)));
         match loaded {
             case Err(why)     => bug!("[hd2d_town] 町を組めない: ${why}")
             case Ok((m, res)) =>
