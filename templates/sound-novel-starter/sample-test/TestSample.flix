@@ -80,7 +80,7 @@ mod TestSample {
 
     @Test
     def testTheSampleDesignIsThePortraitScreen(): Unit \ {Assert, IO} =
-        // 作例の project.json の design は縦の 540×1170（描き出しの基準の絵と PC の窓の中身はこの大きさ）。
+        // 作例の project.json の design は縦の 540×1170（描き出しの基準の絵と PC のウィンドウの中身はこの大きさ）。
         let d = SceneRender.design();
         Assert.assertEq(expected = (540.0, 1170.0), (d#x, d#y))
 
