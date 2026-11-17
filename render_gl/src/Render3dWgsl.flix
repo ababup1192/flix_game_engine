@@ -106,6 +106,15 @@ pub mod Render3dWgsl {
     /// 地図の画素の数え方は GL と同じ（行 0 が NDC の y = −1）で、読む時だけ行を上下に返す: WebGPU で描いた地図は行 0 が NDC の y = +1。
     // WhyNot: 周りの画素を返した後の行で端にそろえない — 端にそろえる（clamp）のを GL の行で済ませてから返せば、CPU の描き手と同じ画素の組を読む。
     pub def shadowSource(): String =
+        shadowLitFractionSource() +
+        "fn spotShadow(i: i32, p: vec3f) -> f32 {\n" +
+        "    if (r3d.uShadowOn == 0 || i != r3d.uShadowSpot) { return 1.0; }\n" +
+        "    return 1.0 - r3d.uShadowStrength * (1.0 - shadowLitFraction(uShadowMap, r3d.uShadowMatrix, r3d.uShadowBias, r3d.uShadowPcf, 0.0, vec3f(0.0), p));\n" +
+        "}\n" +
+        sunShadowSource()
+
+    /// 影の地図の PCF（shadowSource の頭）。
+    def shadowLitFractionSource(): String =
         "fn shadowLitFraction(map: texture_depth_2d, lightMatrix: mat4x4f, bias: f32, pcf: i32, shift: f32, n: vec3f, p: vec3f) -> f32 {\n" +
         "    let c = lightMatrix * vec4f(p + n * shift, 1.0);\n" +
         "    if (c.w <= 0.0) { return 1.0; }\n" +
@@ -125,11 +134,10 @@ pub mod Render3dWgsl {
         "        }\n" +
         "    }\n" +
         "    return f32(lit) / f32(total);\n" +
-        "}\n" +
-        "fn spotShadow(i: i32, p: vec3f) -> f32 {\n" +
-        "    if (r3d.uShadowOn == 0 || i != r3d.uShadowSpot) { return 1.0; }\n" +
-        "    return 1.0 - r3d.uShadowStrength * (1.0 - shadowLitFraction(uShadowMap, r3d.uShadowMatrix, r3d.uShadowBias, r3d.uShadowPcf, 0.0, vec3f(0.0), p));\n" +
-        "}\n" +
+        "}\n"
+
+    /// 太陽の影の割合 sunLitAt と r3d_sunLit（shadowSource の末尾）。
+    def sunShadowSource(): String =
         "var<private> r3d_sunLit: f32 = 1.0;\n" +
         "fn sunLitAt(p: vec3f, g: vec3f, n: vec3f) -> f32 {\n" +
         "    if (r3d.uSunShadowOn == 0 || dot(n, r3d.uSunDir) <= 0.0) { return 1.0; }\n" +
@@ -138,11 +146,13 @@ pub mod Render3dWgsl {
         "    return 1.0 - r3d.uSunStrength * fade * (1.0 - shadowLitFraction(uSunMap, r3d.uSunMatrix, r3d.uSunBias, r3d.uSunPcf, r3d.uSunNormalShift, g, p));\n" +
         "}\n"
 
-    /// 影を受けない物（ビルボード）の影の関数: どのスポットも太陽も遮らない（GLSL のビルボードのプログラムは uShadowOn と uSunShadowOn を付けず 0 のまま読む）。
-    // WhyNot: 場面の値の uShadowOn・uSunShadowOn で切らない — 場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
-    def unshadowedSource(): String =
+    /// ビルボードの影の関数: スポットは遮らない（GLSL のビルボードのプログラムは uShadowOn を付けず 0 のまま読む）。太陽の sunLitAt は置いた物と同じで、
+    /// r3d_sunLit は frag が受ける物（vLit が 2）の時だけ代入する（GLSL の uReceive）。
+    // WhyNot: 場面の値の uShadowOn で切らない — 場面の group 0 は同じ場面の物の影の地図と on を持ち、ビルボードだけ値を替える binding が無い。
+    def billboardShadowSource(): String =
+        shadowLitFractionSource() +
         "fn spotShadow(i: i32, p: vec3f) -> f32 { return 1.0; }\n" +
-        "var<private> r3d_sunLit: f32 = 1.0;\n"
+        sunShadowSource()
 
     def depthGraySource(): String =
         "fn depthGray(p: vec3f) -> f32 {\n" +
@@ -317,7 +327,7 @@ pub mod Render3dWgsl {
 
     /// ビルボードの頂点シェーダー（Render3dGlsl.billboardVertexSource と同じ式）。入口は vs_main。
     /// 四角の角は vertex_index の 6 点（GL の Render3d.buildQuad と同じ並び・y は下向き）。ビルボードの値は buffer 0（instance・stride 0）の location 0〜3
-    /// （並びは Render3d.SceneList.billboardValueFloats: 点と lit・anchor と size・貼る範囲の uv・tint）。
+    /// （並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を板から離す長さ）。影の地図へ描く時も同じ（group 0 が光の目と板の向き）。
     pub def billboardVertexSource(): String =
         cameraDeclarations() +
         "struct R3dBillboardIn {\n" +
@@ -339,11 +349,14 @@ pub mod Render3dWgsl {
         "    o.vTint = v.tint.rgb;\n" +
         "    o.vLit = v.center.w;\n" +
         "    o.vFacing = r3dCamera.uFacing.xyz;\n" +
+        "    o.vShadowBase = v.center.xyz + vec3f(0.0, (v.anchorSize.y - corner.y) * v.anchorSize.w, 0.0);\n" +
+        "    o.vShadowOffset = v.tint.w;\n" +
         "    o.position = sg_clipFromGl(r3dCamera.uProj * r3dCamera.uView * vec4f(world, 1.0));\n" +
         "    return o;\n" +
         "}\n"
 
-    /// ビルボードの varying（頂点シェーダーの出口は position つき）。
+    /// ビルボードの varying（頂点シェーダーの出口は position つき）。vLit = 光の当て方（Render3d.SceneList.billboardValueFloats）・
+    /// vShadowBase と vShadowOffset = 太陽の影を受ける点を太陽の方へ進める前の点と、板から水平に離す長さ（Render3dGlsl の vShadowBase・uShadowOffset）。
     def billboardVaryings(name: String, withPosition: Bool): String =
         "struct ${name} {\n" +
         (if (withPosition) "    @builtin(position) position: vec4f,\n" else "") +
@@ -352,16 +365,19 @@ pub mod Render3dWgsl {
         "    @location(2) @interpolate(flat) vTint: vec3f,\n" +
         "    @location(3) @interpolate(flat) vLit: f32,\n" +
         "    @location(4) @interpolate(flat) vFacing: vec3f,\n" +
+        "    @location(5) vShadowBase: vec3f,\n" +
+        "    @location(6) @interpolate(flat) vShadowOffset: f32,\n" +
         "};\n"
 
     /// ビルボードの frag（Render3dGlsl.billboardFragmentSource と同じ式）。貼る絵は group 1（2D の描き手の絵の group: binding 0 = 絵・1 = sampler）。入口は fs_main。
+    /// vLit が 2（光を当てて太陽の影も受ける）の物だけ、太陽の影の地図を引く。
     pub def billboardFragmentSource(): String =
         sceneDeclarations() +
         "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
         "@group(1) @binding(1) var uImageSampler: sampler;\n" +
         billboardVaryings("R3dBillboardIn", false) +
         colorSpaceSource() +
-        lightSourceWith(unshadowedSource()) +
+        lightSourceWith(billboardShadowSource()) +
         depthGraySource() +
         "@fragment fn fs_main(i: R3dBillboardIn) -> @location(0) vec4f {\n" +
         "    let texel = textureSample(uImage, uImageSampler, i.vUv);\n" +
@@ -371,9 +387,19 @@ pub mod Render3dWgsl {
         "        return vec4f(g, g, g, 1.0);\n" +
         "    }\n" +
         "    let lit = i.vLit > 0.5;\n" +
+        "    if (i.vLit > 1.5) { r3d_sunLit = sunLitAt(i.vShadowBase + r3d.uSunDir * (i.vShadowOffset / max(length(r3d.uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), r3d.uSunDir, normalize(i.vFacing)); }\n" +
         "    var light = vec3f(1.0);\n" +
         "    if (lit) { light = lightAt(i.vWorld, normalize(i.vFacing)); }\n" +
         "    return vec4f(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), i.vTint, light, vec3f(0.0), 1.0, i.vWorld, lit), 1.0);\n" +
+        "}\n"
+
+    /// ビルボードを影の地図へ描く frag（色を出さず、絵の α < 0.5 の画素を捨てるだけ。GL は billboardFragmentSource の uDepthOut の枝で同じ事をする）。
+    /// 頂点シェーダーは billboardVertexSource（group 0 は影の地図の光の目・R3dCamera の uRight と uUp に板の向き）。貼る絵は group 1。入口は fs_main。
+    pub def billboardShadowFragmentSource(): String =
+        "@group(1) @binding(0) var uImage: texture_2d<f32>;\n" +
+        "@group(1) @binding(1) var uImageSampler: sampler;\n" +
+        "@fragment fn fs_main(@location(1) vUv: vec2f) {\n" +
+        "    if (textureSample(uImage, uImageSampler, vUv).a < 0.5) { discard; }\n" +
         "}\n"
 
     /// 姿勢の行列（group 2 の binding 0・読むだけの storage）。詰める側（Render3d.WebGpuRenderer）は頭の 16 バイトに 1 行のジョイントの数（u32）、

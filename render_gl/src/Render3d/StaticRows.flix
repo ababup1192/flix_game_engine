@@ -76,7 +76,7 @@ mod Render3d.StaticRows {
         let numberedShadow = List.map(numberSpan(out, scratch, Int32.maxValue(), next, members, PackMode.ShadowDepth), shadow);
         let ctx = contextOf(tables, scene);
         let list = buildSceneList(ctx, { plain = numberedPlain, skinned = Nil, opaque = numberedOpaque, blended = Nil, billboards = Nil });
-        let shadowList = buildShadowList(ctx, numberedShadow, Nil);
+        let shadowList = buildShadowList(ctx, numberedShadow, Nil, Nil);
         { list = list, shadowList = shadowList, instances = raw, instanceCount = Array.get(0, next), requests = requests, timeAt = shareSameValues(list),
           time = Array#{scene#time} @ Static, placed = List.length(items), meshSlots = slotsOf(tables, list, shadowList), perFrame = perFrame }
 

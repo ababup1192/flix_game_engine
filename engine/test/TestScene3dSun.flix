@@ -132,3 +132,16 @@ def testShadowSettingsAreClamped(): Unit \ Assert =
     let big = { mapSize = 100000, pcfRadius = 100 | sunShadowSettings() };
     let setup = sunSetupOf(sunSceneWith(sunCamera(Vec3.zero(), 0.0, 0.0), Some(sunLightOf(Some(big)))));
     Assert.assertEq(expected = (Scene3d.maxShadowMapSize(), Scene3d.maxShadowPcfRadius()), (setup#mapSize, setup#pcfRadius))
+
+/// スポットの影の地図の目の near は far / 100（1 まで）: 卓上の range 3 の灯りは 0.03（1 = 1 m の部屋で光から 1 m 以内の物も影を落とす）・range 200 は 1。
+@Test
+def testSpotShadowNearFollowsRange(): Unit \ Assert =
+    let spotOf = (range: Float64) -> { range = range | Scene3d.spotLight(Vec3.v3(0.0, 1.4, 0.0), Vec3.v3(0.5, 1.0, 0.2), 1.2) };
+    Assert.assertEq(expected = (0.03, 1.0), (Scene3d.shadowCamera(spotOf(3.0))#near, Scene3d.shadowCamera(spotOf(200.0))#near))
+
+/// スポットの影の bias は near が 1 の光（range 200）ではそのまま・range 8（near 0.08）では bias × 0.08 × 7 / 7.92 に縮める。
+@Test
+def testSpotShadowBiasScalesWithNear(): Unit \ Assert =
+    let spotOf = (range: Float64) -> { range = range | Scene3d.spotLight(Vec3.v3(0.0, 3.0, 0.0), Vec3.zero(), 1.0) };
+    let scaled = Scene3d.spotShadowDepthBiasOf(spotOf(8.0), 0.005);
+    Assert.assertTrue(Scene3d.spotShadowDepthBiasOf(spotOf(200.0), 0.005) == 0.005 and Float64.abs(scaled - 0.005 * 0.08 * 7.0 / 7.92) < 1.0e-12)

@@ -322,7 +322,7 @@ pub mod DrawHash {
     def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match Scene3d.materialFieldsOf(m) {
         case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap,
                blend = blend, doubleSided = doubleSided, emissionIntensity = emissionIntensity,
-               metallicRoughness = metallicRoughness, metallicRoughnessShade = _, shaderHash = _ } =>
+               metallicRoughness = metallicRoughness, metallicRoughnessShade = _, shaderHash = _, maxMipLevels = maxMipLevels } =>
             putStr(out, ToString.toString(ShaderJson.toJson(spec)));
             putSize(out, Map.size(params));
             params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });
@@ -338,7 +338,8 @@ pub mod DrawHash {
             if (doubleSided) out.writeByte(0x44) else ();
             if (emissionIntensity != 1.0) { out.writeByte(0x45); putF(out, emissionIntensity) } else ();
             // WhyNot: 値（metallic・roughness）をここで書かない — params に入っていて上で書いてある。絵の有無と名前だけを足す。
-            metallicRoughness |> Option.forEach(mr -> { out.writeByte(0x4d); putStr(out, Option.getWithDefault("", mr#texture)) })
+            metallicRoughness |> Option.forEach(mr -> { out.writeByte(0x4d); putStr(out, Option.getWithDefault("", mr#texture)) });
+            if (maxMipLevels != Int32.maxValue()) { out.writeByte(0x4c); out.writeInt(maxMipLevels) } else ()
     }
 
     /// Shade を 1 枚の Spec の Out に包む（JSON に書く口が Spec にしか無いため）。
@@ -348,14 +349,17 @@ pub mod DrawHash {
 
     def putBillboard(out: DataOutputStream, b: Scene3d.BillboardFields): Unit \ IO = match b {
         case { texture = texture, regionRect = regionRect, position = position, size = size,
-               anchor = anchor, tint = tint, lit = lit } =>
+               anchor = anchor, tint = tint, lit = lit, castShadows = castShadows, receiveShadows = receiveShadows } =>
             putStr(out, texture);
             putRect(out, regionRect);
             putVec3(out, position);
             putVec2(out, size);
             putVec2(out, anchor);
             putColor(out, tint);
-            putBool(out, lit)
+            putBool(out, lit);
+            // WhyNot: 偽の時に何も書かない — 欄を足す前のビルボードの鍵の字を保つ（影の欄の無い場面のキャッシュを塗り直させない）。
+            if (castShadows) out.writeByte(0x63) else ();
+            if (lit and receiveShadows) out.writeByte(0x72) else ()
     }
 
     def putPointLight(out: DataOutputStream, l: Scene3d.PointLight): Unit \ IO = match l {

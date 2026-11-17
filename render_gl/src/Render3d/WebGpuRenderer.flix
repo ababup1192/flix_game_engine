@@ -56,7 +56,7 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.Counts.{Phase, countDrawCallAt, countInstances, noteMaterialBuild, timed}
     use Render3d.MeshTable
     use Render3d.PoseRows.{PoseRows, floatCountOf, packRows, posesInRowOrder}
-    use Render3d.SceneList.{kindBillboard, kindMaterial, kindSkinned, kindVertexColor, missingBillboardTexturesOf, rowAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{firstBillboardRowOf, firstBlendedRowOf, kindBillboard, kindMaterial, kindSkinned, kindVertexColor, missingBillboardTexturesOf, rowAt, rowCountOf, valuesAt}
     use Render3d.WebGpuBillboards
     use Render3d.WebGpuMaterials
     use Render3d.WebGpuMaterials.{BoundPipeline, ValuesBinding}
@@ -489,9 +489,10 @@ pub mod Render3d.WebGpuRenderer {
                            emptyGroup = s#emptyGroup, poseLayout = s#poseLayout,
                            created = () -> Render3d.Counts.count(s, Render3d.Counts.Counter.TargetRebuilds, 1),
                            unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n),
-                           carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried) };
+                           carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried),
+                           billboard = drawShadowBillboardRow(r, host) };
         staged#shadows |> List.forEach(WebGpuShadows.encode(s#shadows, Array.get(0, s#gen), shadowDraw));
-        let sceneGroup = sceneGroupOf(r, target, staged#shadows, staged#environment);
+        let sceneGroup = sceneGroupOf(r, target, List.map(st -> st#pass, staged#shadows), staged#environment);
         let scene = plan#cmd#scene;
         Scene3d.skyWarning(scene) |> Option.forEach(line -> Render3d.ScenePlan.warnOnce(s#planner, "@sky+background", line));
         let drawn = target#msaa |> Option.getWithDefault(target#color);
@@ -568,7 +569,8 @@ pub mod Render3d.WebGpuRenderer {
         });
         shadows |> List.forEach(p -> uploadRows(s#meshes, allocator, gen, p#list));
         carried |> List.forEach(WebGpuStatic.stage(s#gpu, s#materials, source, registeredOf(r, host), gen, plan#cmd#scene#time));
-        let valueBytes = List.sumWith(pl -> 4 * Array.length(snd(pl)#values) + 4 * Render3d.MaterialValues.valueAlign(), passes);
+        let shadowValueBytes = List.sumWith(p -> if (hasBillboardRows(p#list)) 4 * Array.length(p#list#values) + 4 * Render3d.MaterialValues.valueAlign() else 0, shadows);
+        let valueBytes = List.sumWith(pl -> 4 * Array.length(snd(pl)#values) + 4 * Render3d.MaterialValues.valueAlign(), passes) + shadowValueBytes;
         let poseBytes = inputs#poses |> Option.filter(p -> not isWrittenNow(r, p)) |> Option.map(p -> p#bytes + storageAlignBytes()) |> Option.getWithDefault(0);
         // WhyNot: 1 体ごとの値・姿勢・材質の値を別々に「入らなければ submit」で送らない — 後に送る方が submit すると、先に送った方を次の場面が頭から上書きする。
         // WhyNot: 影の地図の描き先を描き直す submit を送った後に回さない — 送った姿勢の group 2 と 1 体ごとの値の位置を、submit の後の影の描き込みが使う。
@@ -576,12 +578,16 @@ pub mod Render3d.WebGpuRenderer {
         let instanceBase = sendInstances(r, host, instances#data, instances#bytes);
         let poseGroup = inputs#poses |> Option.map(sendPoses(r));
         let staged = passes |> List.map(match (spec, list) -> (spec, list, WebGpuMaterials.sendValues(s#materials, list)));
+        let stagedShadows = shadows |> List.map(p -> { pass = p, valuesBase = if (hasBillboardRows(p#list)) WebGpuMaterials.sendValues(s#materials, p#list) else -1 });
         passes |> List.forEach(pl -> missingBillboardTexturesOf(snd(pl)) |> List.forEach(name ->
             Render3d.ScenePlan.warnOnce(s#planner, "@billboard:" + name, Render3d.missingBillboardTextureLine(name))));
         countRows(r, plan, passes, shadows, carried);
         let environment = ensureEnvironment(r, host, source, gen, plan#cmd#scene);
         writeSceneValues(r, target, plan, shadows, environment);
-        { shadows = shadows, passes = staged, instanceBase = instanceBase, poseGroup = poseGroup, environment = environment }
+        { shadows = stagedShadows, passes = staged, instanceBase = instanceBase, poseGroup = poseGroup, environment = environment }
+
+    /// 影の地図の行の列 list にビルボードの行があるか。
+    def hasBillboardRows(list: SceneList): Bool = firstBillboardRowOf(list) < firstBlendedRowOf(list)
 
     /// 場面の環境マップの絵と mip のレベルの数（環境マップの無い場面は None）。絵が見つからなければ代わりの絵（透明な黒・mip 無し）で読み、名前ごとに 1 回知らせる
     /// （GL の Render3d.Material.bindEnvironmentMap と同じ）。
@@ -631,7 +637,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// stageScene の答え。shadows = 影の地図の pass（行の形は上げてある）・passes = 計画の pass ごとの (pass, 行, 行の values を送った位置（バイト）)（行の形と絵は上げてある）・
     /// poseGroup = 姿勢の group 2（姿勢の無い prepare は None）・environment = 環境マップの絵と mip のレベルの数（ensureEnvironment）。
-    type alias Staged = { shadows = List[ShadowPass], passes = List[(ScenePassSpec, SceneList, Int32)], instanceBase = Int32, poseGroup = Option[BindGroup],
+    type alias Staged = { shadows = List[WebGpuShadows.StagedShadow], passes = List[(ScenePassSpec, SceneList, Int32)], instanceBase = Int32, poseGroup = Option[BindGroup],
                           environment = Option[(Texture, Int32)] }
 
     /// encodeScene が描く pass 1 つ。valuesBase = 行の values を送った位置（バイト）・poseGroup = 姿勢の group 2・sceneGroup = 場面の group 0（sceneGroupOf）・
@@ -729,6 +735,22 @@ pub mod Render3d.WebGpuRenderer {
                 Array.put(-1, 0, mp#groupRow);
                 p.setBindGroup(1, group);
                 p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(mp#base + 4 * values), WebGpuBillboards.valueBytes());
+                p.draw(6, 1, 0, 0);
+                true
+        }
+
+    /// 影の地図のビルボードの行 row を描く（貼る絵の group が無ければ偽）。値は行の values を送った位置 valuesBase から頂点の buffer 0 として読む（場面の行の drawBillboardRow と同じ）。
+    /// group 0（光の目と板の向き）は pass の頭で付けてある。
+    def drawShadowBillboardRow(r: Renderer, host: Host, p: RenderCommands, list: SceneList, row: Int32, valuesBase: Int32): Bool \ IO =
+        let RendererData.RendererData(s) = r;
+        let values = valuesAt(list, row);
+        match host#groupById(rowAt(list, row, 1)) {
+            case _ if values < 0 => true
+            case None => false
+            case Some(group) =>
+                p.setPipeline(WebGpuBillboards.shadowPipelineOf(s#billboards, WebGpuShadows.layoutOf(s#shadows), WebGpuShadows.depthFormat()));
+                p.setBindGroup(1, group);
+                p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(valuesBase + 4 * values), WebGpuBillboards.valueBytes());
                 p.draw(6, 1, 0, 0);
                 true
         }

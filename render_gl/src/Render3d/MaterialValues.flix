@@ -73,7 +73,7 @@ mod Render3d.MaterialValues {
         names |> List.forEachWithIndex((k, nf) -> {
             let (name, filter) = nf;
             let levels = putRead(naming, name, Texture3d.TextureUse.MaterialTexture, (filterCodeOf(filter), wrap), reads, readAt + readStride() * k);
-            Array.put(Int32.toFloat32(levels), sg + 1 + k, values)
+            Array.put(Int32.toFloat32(Scene3d.materialMipLevelsOf(m, levels)), sg + 1 + k, values)
         });
         layout#paramNames |> List.forEachWithIndex((i, name) ->
             Array.put(RenderUtil.f32(Map.getWithDefault(name, 0.0, m#params)), sg + 1 + layout#readCount + i, values));

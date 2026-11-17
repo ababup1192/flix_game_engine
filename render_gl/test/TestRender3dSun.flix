@@ -56,6 +56,41 @@ mod Render3d.TestRender3dSun {
         paint(recordingGl(log), freshState(), cmdOf(scene) :: Nil);
         Assert.assertEq(expected = (2, 3), (timesCalled("texImageDepth24", log), timesCalled("drawElementsInstanced", log)))
 
+    /// 全体の登録の絵 "chars"（番号 3）だけがある絵の引き先。
+    def charsTexture(name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =
+        checked_ecast(if (name == "chars") Some({ texId = 3, width = 16.0, height = 16.0, flipped = false, version = "" }) else None)
+
+    /// 1 回の prepare で絵 "chars" を引ける場面を準備して描く。
+    def paintWithChars(log: Render3d.FakeGl.Recorded, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        let prepared = Render3d.prepareNumbered(recordingGl(log), freshState(), 1i64, charsTexture, Render3d.FakeGl.dest(), cmdOf(scene) :: Nil);
+        prepared#draw(Render3d.FakeGl.viewport(), 0)
+
+    /// 目の前（z = 0）に立てた絵 "chars" のビルボード。
+    def charBoard(): Scene3d.Billboard3d =
+        Scene3d.billboard("chars", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } }, Vec3.v3(0.3, 0.0, 0.0), { x = 0.5, y = 0.8 })
+
+    /// castShadows のビルボードは、色の pass の 1 回に加えて太陽の影の地図にも 1 回描く。
+    @Test
+    def testCastingBillboardIsDrawnIntoSunMap(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paintWithChars(log, { billboards = (charBoard() |> Scene3d.withCastShadows(true)) :: Nil | sunScene(Some(sunLight(Some(smallShadow())))) });
+        Assert.assertEq(expected = 2, timesCalled("drawArrays", log))
+
+    /// castShadows でないビルボードは影の地図に描かない（色の pass の 1 回だけ）。
+    @Test
+    def testPlainBillboardIsNotDrawnIntoSunMap(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paintWithChars(log, { billboards = charBoard() :: Nil | sunScene(Some(sunLight(Some(smallShadow())))) });
+        Assert.assertEq(expected = 1, timesCalled("drawArrays", log))
+
+    /// スポットの影の地図には castShadows のビルボードも描かない（太陽の地図の 1 回だけが足される）。
+    @Test
+    def testCastingBillboardSkipsSpotMap(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        let base = sunScene(Some(sunLight(Some(smallShadow()))));
+        paintWithChars(log, { billboards = (charBoard() |> Scene3d.withCastShadows(true)) :: Nil, spotLights = shadowSpot() :: Nil | base });
+        Assert.assertEq(expected = 2, timesCalled("drawArrays", log))
+
     /// 使わない太陽は理由を 1 回だけ知らせる（2 コマ描いても 1 行）。
     @Test
     def testUnusableSunWarnsOnce(): Unit \ {Assert, IO} =
@@ -88,9 +123,9 @@ mod Render3d.TestRender3dSun {
         let source = materialSource({ doubleSided = true | plainKind() });
         Assert.assertTrue(indexOf("r3d_sunLit = sunLitAt(vWorld, facingNormal, n);", source) >= 0)
 
-    /// ビルボードは影を受けない（sunLitAt を呼ばず、太陽の影の割合は 1 のまま）。
+    /// ビルボードは receiveShadows の物（uReceive = 1）で光を当てる時だけ太陽の影を引き、ほかは太陽の影の割合が 1 のまま。
     @Test
-    def testBillboardDoesNotReceiveSunShadow(): Unit \ Assert =
+    def testBillboardReceivesSunShadowOnlyWhenAsked(): Unit \ Assert =
         let source = Render3dGlsl.billboardFragmentSource();
-        Assert.assertEq(expected = (false, true), (indexOf("r3d_sunLit = sunLitAt(", source) >= 0, indexOf("float r3d_sunLit = 1.0;", source) >= 0))
+        Assert.assertTrue(indexOf("if (uLit == 1 && uReceive == 1) r3d_sunLit = sunLitAt(", source) >= 0)
 }

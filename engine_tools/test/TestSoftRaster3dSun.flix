@@ -3,6 +3,7 @@
 //   影 = 板の下の床は sunLit = 1 − strength（pcf 0・全部が影の画素）・distance の外（薄める幅の外）は影なし。
 // 場面は 16 × 16（倍率 1）。カメラは (0, 6, −6) から斜め下を見て、真ん中の画素は床の (0, 0, −0.2) あたりに当たる。
 mod SoftRaster3d.TestSoftRaster3dSun {
+    import java.awt.image.BufferedImage
 
     def gray(v: Float64): Color = { r = v, g = v, b = v }
 
@@ -92,6 +93,57 @@ mod SoftRaster3d.TestSoftRaster3dSun {
     def testBeyondDistanceHasNoShadow(): Unit \ {Assert, IO} =
         let near = { shadow = Some({ distance = 3.0 | shadowSettings() }) | downward() };
         Assert.assertTrue(isNear(0.5, centerRed(sceneOf(Some(near), true))))
+
+    // ── ビルボードの太陽の影 ──
+
+    /// 1 × 1 の不透明の白の絵 "white" を引ける絵の表で、side × side の黒の上へ場面を描いた絵。
+    def renderWithWhite(side: Int32, scene: Scene3d.Scene3dCmd): BufferedImage \ IO =
+        let img = new BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB);
+        List.range(0, side * side) |> List.forEach(k -> img.setRGB(Int32.remainder(k, side), k / side, -16777216));
+        let white = Vector#{ { width = 1, height = 1, pixels = Vector#{-1} } };
+        let textures = Map#{ ("white", Texture3d.mipSpaceOf(Texture3d.TextureUse.MaterialTexture)) => white };
+        SoftRaster3d.drawScene(img, 1.0, textures, 0.0, { at = Vec2.zero(), clip = None, scene = scene });
+        img
+
+    /// 床の (0, 0, −0.2) に立てた白い板（幅 1・高さ 2）。
+    def whiteBoard(): Scene3d.Billboard3d =
+        Scene3d.billboard("white", { position = Vec2.zero(), size = { x = 1.0, y = 1.0 } }, Vec3.v3(0.0, 0.0, -0.2), { x = 1.0, y = 2.0 })
+
+    /// 左手前の上から差す影つきの太陽（板の影が右奥へ伸び、床の (1.2, 0, 1.0) は板の高さ 1.2 の所の影に入る）。
+    def slanted(): Scene3d.DirectionalLight =
+        { direction = Vec3.v3(1.0, -1.0, 1.0), shadow = Some({ pcfRadius = 1 | shadowSettings() }) | downward() }
+
+    /// 画素 (x, y) の赤（0〜255）。
+    def redAt(img: BufferedImage, x: Int32, y: Int32): Int32 \ IO = Int32.bitwiseAnd(Int32.logicalRightShift(dist = 16, img.getRGB(x, y)), 255)
+
+    /// castShadows の板は太陽の影の地図に入り、板の右奥の床（画素 (10, 6) ≈ 床の (1.2, 0, 1.0)）を暗くする。
+    @Test
+    def testCastingBillboardDarkensTheFloorBehindIt(): Unit \ {Assert, IO} =
+        let scene = (b: Scene3d.Billboard3d) -> { billboards = b :: Nil | sceneOf(Some(slanted()), false) };
+        let plain = redAt(renderWithWhite(16, scene(whiteBoard())), 10, 6);
+        let casting = redAt(renderWithWhite(16, scene(whiteBoard() |> Scene3d.withCastShadows(true))), 10, 6);
+        Assert.assertTrue(casting < plain)
+
+    /// receiveShadows の板（z = −1・真ん中の画素に映る）は、浮いた板（y = 3）の影の中で暗くなる。受けない板は太陽の明るさのまま。
+    @Test
+    def testReceivingBillboardDarkensInShade(): Unit \ {Assert, IO} =
+        let small = Scene3d.billboard("white", { position = Vec2.zero(), size = { x = 1.0, y = 1.0 } }, Vec3.v3(0.0, 0.0, -1.0), { x = 1.0, y = 1.5 });
+        let tilted = { direction = Vec3.v3(0.0, -1.0, 0.2), shadow = Some(shadowSettings()) | downward() };
+        let scene = (b: Scene3d.Billboard3d) -> { billboards = b :: Nil | sceneOf(Some(tilted), true) };
+        let plain = redAt(renderWithWhite(16, scene(small)), 8, 8);
+        let receiving = redAt(renderWithWhite(16, scene(small |> Scene3d.withReceiveShadows(true))), 8, 8);
+        Assert.assertTrue(receiving < plain)
+
+    /// 高さ 70° の太陽で、影を落として受ける板は自分の影を受けない（影を落とすだけの板と同じ明るさ）。
+    @Test
+    def testReceivingBillboardIgnoresItsOwnShadowUnderHighSun(): Unit \ {Assert, IO} =
+        let board = Scene3d.billboard("white", { position = Vec2.zero(), size = { x = 1.0, y = 1.0 } }, Vec3.v3(0.0, 0.0, -1.0), { x = 1.0, y = 1.5 })
+            |> Scene3d.withCastShadows(true);
+        let high = { direction = Vec3.v3(0.0, -0.9397, 0.342), shadow = Some({ pcfRadius = 1 | shadowSettings() }) | downward() };
+        let scene = (b: Scene3d.Billboard3d) -> { billboards = b :: Nil | sceneOf(Some(high), false) };
+        let castOnly = redAt(renderWithWhite(16, scene(board)), 8, 8);
+        let both = redAt(renderWithWhite(16, scene(board |> Scene3d.withReceiveShadows(true))), 8, 8);
+        Assert.assertEq(expected = castOnly, both)
 
     /// 太陽の鏡面は metallic と roughness を持つ材質にだけ足される: 光の向きを目への跳ね返りの向きにそろえると（板の拡散は同じ）、
     /// 持つ材質は鏡面の分だけ明るく、持たない材質は拡散だけ。

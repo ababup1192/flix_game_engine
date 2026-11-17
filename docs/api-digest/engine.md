@@ -1326,13 +1326,19 @@
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
   `pub type alias NormalMap = { texture = String, strength = Float64 }`
 - 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64] }`
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64], maxMipLevels = Int32 }`
 - 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
   `pub type alias MetallicRoughness = { metallic = Float64, roughness = Float64, texture = Option[String] }`
 - 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
   `pub type alias Material3d = MaterialData`
 - spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
   `pub def material(spec: ShaderDoc.Spec): Material3d`
+- spec の Tex の絵を読む mip のレベルの数を levels までにする（1 以上に直す。1 なら縮んでも元の絵だけを読む）。
+  `pub def withMaxMipLevels(levels: Int32, m: Material3d): Material3d`
+- 一辺 tilePx の正方形のタイルを、tilePx の倍数の位置に詰めたアトラスで、隣のタイルを混ぜない mip のレベルの数（withMaxMipLevels へ渡す）。
+  `pub def atlasMipLevelsFor(tilePx: Int32): Int32`
+- 材質の絵を段の数 textureLevels の絵で読む時の段の数（GL の uniform・WebGPU の values・CPU の描き手が同じ数を使う）。
+  `pub def materialMipLevelsOf(m: MaterialFields, textureLevels: Int32): Int32`
 - spec の Param に渡す値（Unity のマテリアルの float の値を渡すのと同じ。渡さない名前は 0）。
   `pub def withParams(p: Map[String, Float64], m: Material3d): Material3d`
 - on が真なら α が 0.5 未満の画素を捨てる（深度も書かない）。
@@ -1424,11 +1430,24 @@
 - 置いた物が読む絵の名前（材質の tex 場と emission・法線マップ・使える lightmap）。材質の絵の上限（maxMaterialTextures）で切らずに全部。
   `pub def textureNamesOf(i: Instance3d): List[String]`
 - ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
-  `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool }`
+  `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool }`
 - 深度つきのビルボード（ドット絵を 3D に立てる。閉じた型 — 欄を後から足してもゲームの値が壊れない）。
   `pub type alias Billboard3d = BillboardData`
-- anchor 足元の真ん中・tint 白・光を当てる。
+- anchor 足元の真ん中・tint 白・光を当てる・影を落とさない・影を受けない。
   `pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d`
+- `pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d`
+- 太陽の影を受ける（Unity の Receive Shadows）。lit の時だけ効く。受ける点は絵の中の高さごとに 1 つ（billboardShadowPointOf）で、
+  `pub def withReceiveShadows(on: Bool, b: Billboard3d): Billboard3d`
+- `pub def billboardShadowRightOf(toward: Vec3.Vec3, fallback: Vec3.Vec3): Vec3.Vec3`
+- 場面の太陽の影の地図に描くビルボードの板の横の向き（太陽の無い場面はカメラの right）。GL・WebGPU・CPU の描き手がこれ 1 つを読む。
+  `pub def billboardShadowRightOfScene(scene: Scene3dCmd): Vec3.Vec3`
+- `pub def billboardShadowPointOf(f: BillboardFields, toward: Vec3.Vec3, v: Float64): Vec3.Vec3`
+- 影を受ける点を板から水平に離す長さ（板の幅の半分）。billboardShadowPointOf が太陽の高さで割って太陽の方へ進める。
+  `pub def billboardShadowOffsetOf(f: BillboardFields): Float64`
+- billboardShadowPointOf が割る、太陽への向きの水平の長さの下限（太陽の高さ約 75.5°）。GLSL・WGSL の字にも同じ数を書く。
+  `pub def billboardShadowMinFlat(): Float64`
+- 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。
+  `pub def shadowCastingBillboardsOf(frustum: Frustum.Frustum, scene: Scene3dCmd): List[BillboardFields]`
 - `pub def withAnchor(a: Vec2.Vec2, b: Billboard3d): Billboard3d`
 - `pub def withBillboardTint(c: Color, b: Billboard3d): Billboard3d`
 - 光とかすみを当てない（炎・光る目）。
@@ -1509,8 +1528,8 @@
   `pub def maxShadowMapSize(): Int32`
 - pcfRadius の上限（(2r+1)² 回の読みを画素ごとに行うので、大きすぎる値で GPU を止めない）。GL と CPU が同じ値で頭打ちにする。
   `pub def maxShadowPcfRadius(): Int32`
-- スポットライトから見たカメラ（影の地図を描く目）。位置から target を向き、fovY の角で見る。near は 1・far は range。
-  `pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d`
+- `pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d`
+- `pub def spotShadowDepthBiasOf(spot: SpotLight, bias: Float64): Float64`
 - 影の地図の行列（world → 光の clip 空間。縦横の比は 1）。GL と CPU が同じ物を使う。
   `pub def shadowMatrix(spot: SpotLight): Mat4.Mat4`
 - 上限を超えた光を、目に近い物から選んで残す（同じ距離なら並びの前の物）。残った物は元の並びの順のまま。

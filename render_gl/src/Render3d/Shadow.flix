@@ -3,10 +3,10 @@
 mod Render3d.Shadow {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{SceneShadows, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, MeshLocs, drawMeshRange, matrixArray, meshEntry,
-                  programsOf, blankTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram}
-    use Render3d.Counts.{Counter, count}
-    use Render3d.SceneList.{SceneList, headAt, kindSkinned, rowAt, rowCountOf}
+    use Render3d.{BillboardLocs, SceneShadows, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, MeshLocs, drawMeshRange, matrixArray, meshEntry,
+                  programsOf, blankTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram, putBillboardShape}
+    use Render3d.Counts.{BatchBreak, Counter, count, countDrawCall}
+    use Render3d.SceneList.{SceneList, billboardAt, firstBillboardRowOf, firstBlendedRowOf, headAt, kindSkinned, rowAt}
     use Render3d.ShadowMaps.{Key, ShadowPass, ShadowSampling}
 
     // ── 影の地図 ──
@@ -21,10 +21,12 @@ mod Render3d.Shadow {
     /// 描き終えたら深度と scissor を切り、program と VAO を外す。描き先は呼ぶ側が戻す。
     // WhyNot: viewport をここで戻さない — glGet で前の値を読まない決まりで、この後に描く Design の場面と
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, passes: List[List[ShadowPass]]): List[SceneShadows] \ IO =
+    /// textureOf = ビルボードの行の絵を引く元（全体の登録）。
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+                          passes: List[List[ShadowPass]]): List[SceneShadows] \ IO =
         let shadows = passes |> List.map(scenePasses -> {
             let casts = scenePasses |> List.filterMap(pass -> shadowTarget(gl, state, gen, pass#map#key) |> Option.map(target -> {
-                renderShadowMap(gl, state, gen, target, pass);
+                renderShadowMap(gl, state, gen, textureOf, target, pass);
                 castOf(target, pass#map#sampling)
             }));
             { spot = List.findMap(spotOf, casts), sun = List.findMap(sunOf, casts) }
@@ -92,8 +94,9 @@ mod Render3d.Shadow {
             Log.warn("scene3d: 影の地図の FBO (${size}×${size}) が完成しない status=${status} — 影が正しく出ない")
         else ()
 
-    /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。ビルボードは影を落とさない。行は骨の無い物 → 骨つきの物の順（Render3d.SceneList.buildShadowList）。
-    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, pass: ShadowPass): Unit \ IO =
+    /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。行は骨の無い物 → 骨つきの物 → castShadows のビルボードの順（Render3d.SceneList.buildShadowList）。
+    def renderShadowMap(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+                        target: ShadowTarget, pass: ShadowPass): Unit \ IO =
         let locs = programsOf(gl, state)#depth;
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
         gl.viewport(0, 0, target#size, target#size);
@@ -110,8 +113,46 @@ mod Render3d.Shadow {
             // WhyNot: 深度だけのプログラムを影のために別に組まない — 色の出力は描き先が無いので捨てられる。
             let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{locs#mesh#program} @ Static };
             useMeshProgram(gl, locs#mesh, frame#lightView, frame#identity);
-            drawShadowRows(gl, state, gen, frame, 0, rowCountOf(pass#list))
+            drawShadowRows(gl, state, gen, frame, 0, firstBillboardRowOf(pass#list));
+            drawShadowBillboards(gl, state, textureOf, frame, pass)
         }
+
+    /// 行 list のビルボードの行を、ビルボードのプログラムで影の地図へ描く: 板の横は pass#billboardRight・縦は world の上・目は光の行列（射影は単位行列）。
+    /// uDepthOut = 1 で、絵の α < 0.5 の画素を捨てた後に色を出さずに返る（描き先に色は無い）。絵の無い行は描かない（知らせは場面の行が出す）。
+    // WhyNot: 影の地図のためのビルボードのプログラムを別に組まない — 色の段を捨てる描き先で、α で捨てる所まではビルボードのプログラムと同じ。
+    // WhyNot: uSunMap を描いている地図の unit へ向けたままにしない — 読まない枝でも、描き先に付けた絵を sampler が指すと WebGL2 が feedback loop と見て draw を止める。
+    def drawShadowBillboards(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+                             frame: ShadowFrame, pass: ShadowPass): Unit \ IO =
+        let list = pass#list;
+        let first = firstBillboardRowOf(list);
+        let end = firstBlendedRowOf(list);
+        let locs = programsOf(gl, state)#billboard;
+        if (first >= end or locs#program == 0) ()
+        else {
+            gl.useProgram(locs#program);
+            Array.put(locs#program, 0, frame#bound);
+            gl.uniformMatrix4fv(locs#view, false, frame#lightView);
+            gl.uniformMatrix4fv(locs#proj, false, frame#identity);
+            putSunShadow(gl, locs#sunShadow, None);
+            gl.uniform1i(locs#depthOut, 1);
+            gl.uniform1i(locs#lit, 0);
+            gl.uniform1i(locs#receive, 0);
+            let right = pass#billboardRight;
+            gl.uniform3f(locs#right, RenderUtil.f32(right#x), RenderUtil.f32(right#y), RenderUtil.f32(right#z));
+            gl.uniform3f(locs#up, 0.0f32, 1.0f32, 0.0f32);
+            gl.activeTexture(GlConst.TEXTURE0);
+            gl.bindVertexArray(programsOf(gl, state)#quadVao);
+            List.range(first, end) |> List.forEach(row -> drawShadowBillboard(gl, state, textureOf, locs, billboardAt(list, row)));
+            gl.bindVertexArray(0)
+        }
+
+    def drawShadowBillboard(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
+                            b: Scene3d.BillboardFields): Unit \ IO =
+        textureOf(b#texture) |> Option.forEach(texture -> {
+            putBillboardShape(gl, locs, texture, b);
+            gl.drawArrays(GlConst.TRIANGLES, 0, 6);
+            countDrawCall(state, BatchBreak.ShadowPass)
+        })
 
     /// drawShadowRows の 1 回で行をまたいで変わらない物。bound = 今付いているプログラム（要素 1 つ）。
     type alias ShadowFrame = { list = SceneList, lightView = Array[Float32, Static], identity = Array[Float32, Static], bound = Array[Int32, Static] }

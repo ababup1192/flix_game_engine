@@ -30,9 +30,9 @@ mod Render3d.Batch {
         case Surface(SurfaceKey)
     }
 
-    /// プログラムの版（kindBits）・木の鍵（MaterialFields#shaderHash）・wrap が Clamp か・cutout・params・法線マップの (絵の名前, 強さ)。
+    /// プログラムの版（kindBits）・木の鍵（MaterialFields#shaderHash）・wrap が Clamp か・cutout・params・法線マップの (絵の名前, 強さ)・mip のレベルの数の上限。
     // WhyNot: 同じ shaderHash の木を比べて確かめない — 比べるのは物の数だけ木を辿る手間で、batch の分だけ材質の解決を減らした意味が消える。64 ビットの鍵の衝突は、batch の頭の木で描く絵の誤りになるだけで止まらない。
-    pub type alias SurfaceKey = (Int32, Int64, Bool, Bool, Map[String, Float64], Option[(String, Float64)])
+    pub type alias SurfaceKey = (Int32, Int64, Bool, Bool, Map[String, Float64], Option[(String, Float64)], Int32)
 
     /// 置いた物 d の鍵（batch にしない物は None）。surface = 描く材質とプログラムの版（無ければ頂点の色で描く）。
     /// DrawMode.OneByOne は全部の物を batch にしない。
@@ -44,7 +44,7 @@ mod Render3d.Batch {
             case Some((m, kind)) if m#blend or kind#lightmap => None
             case Some((m, kind))                             =>
                 Some(BatchKey.Surface((kindBits(kind), force m#shaderHash, m#wrap == Scene3d.Wrap.Clamp, m#cutout, m#params,
-                                       m#normalMap |> Option.map(n -> (n#texture, n#strength)))))
+                                       m#normalMap |> Option.map(n -> (n#texture, n#strength)), m#maxMipLevels)))
         }
 
     /// 鍵に入るプログラムの版（lightmap と blend は batch にしないので入らない）。

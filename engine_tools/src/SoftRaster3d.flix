@@ -42,18 +42,20 @@
 //   外れる側に倒した判定（画素を 1 つも出さない物だけを間引く）なので、絵は間引かない時と同じ。
 // ジョイント: Scene3d.skinningOf が Some の置いた物は、頂点を GL の Render3d と同じ式で曲げてから写す（式は placedOf の doc。影の地図も同じ形）。
 //
-// 影（GL の Render3d と同じ約束。本文は Scene3d.shadowMatrix の doc）:
+// 影（GL の Render3d と同じ約束。本文は Scene3d.shadowMatrix の doc・地図を作るのは SoftRaster3d.ShadowMaps）:
 //   影を落とすのは、pickLights の後の並びで shadow が Some の最初のスポット 1 本だけ（2 本目以降の shadow は無視）。
 //   地図 = mapSize × mapSize。置いた物の三角形を表も裏も shadowMatrix で写して near で切り、画素ごとに一番近い z × 0.5 + 0.5。
-//          何も無い画素は 1。ビルボードは影を落とさない。
+//          何も無い画素は 1。ビルボードはスポットの影を落とさない。
 //   地図の画素 = ((x × 0.5 + 0.5) × mapSize, (y × 0.5 + 0.5) × mapSize) の切り捨て（NDC の x・y）。行 0 が NDC の y = −1 側（GL のテクスチャと同じ向き）。
 //   pcf の周りの画素が地図の外に出たら端の画素を読む（GL の CLAMP_TO_EDGE）。
+//   castShadows のビルボードは太陽の影の地図にだけ描く: 板を地面に垂直に立て、横を Scene3d.billboardShadowRightOf の向きにして、絵の α が billboardCutoff() 未満の画素を捨てる。
+//   receiveShadows のビルボード（lit の時）は、画素の絵の中の縦の位置の Scene3d.billboardShadowPointOf で太陽の影を引く（点をずらす向きは太陽への向き）。
 //   光の w が 0 以下（光の後ろ）の点は、NDC の外と同じく影にしない。
 //   影はスポットの光の量（att × facing × cone）に掛け、環境光・半球・点光源には掛けない。Output.Depth では地図を作らない。
 // 太陽（Scene3d.directionalLightOf が Some の時。式は LightModel3d の頭・影の地図の約束は Scene3d.directionalShadowOf の doc・判定は SoftRaster3d.Sun）:
 //   拡散と鏡面は光の式の木が足す（lightmap の面は拡散を足さず鏡面だけ）。影の割合 sunLit は木の外で画素ごとに 1 回だけ求めて木へ渡す
-//   （法線マップを当てる前の法線で点をずらして地図を引く。ビルボードは影を受けず 1）。
-//   地図は Scene3d.directionalShadowOf の正射影の行列で、半透明でない置いた物から作る（Output.Depth では作らない）。
+//   （法線マップを当てる前の法線で点をずらして地図を引く。ビルボードは receiveShadows の物だけが受け、ほかは 1）。
+//   地図は Scene3d.directionalShadowOf の正射影の行列で、半透明でない置いた物と castShadows のビルボードから作る（Output.Depth では作らない）。
 // WhyNot: 半透明の混ぜを線形の量どうしで行わない — GL は描き先の画面の値の上でハードウェアで混ぜ、MSAA の平均も画面の値どうし。
 //   線形で混ぜるには 3D を別の float の描き先へ描いて貼り直す形が要り、背景の無い場面の縁は 2D の上で結局画面の値で混ざる。
 pub mod SoftRaster3d {
@@ -375,7 +377,12 @@ pub mod SoftRaster3d {
         let f = Scene3d.materialFieldsOf(m);
         let (spec, emission, metallicRoughness) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), f#spec, f#emission, f#metallicRoughnessShade);
         let repeat = f#wrap == Scene3d.Wrap.Repeat;
-        let compiled = ShaderEval.compileMaterial({ spec = spec, emission = emission, metallicRoughness = metallicRoughness, params = f#params, textures = materialTextures,
+        // WhyNot: 上限つきの材質で全部の絵の表を作り直さない — matOf は置いた物ごとに呼ばれ、置いた物 × 場面の絵の数になる。材質が読む名前だけを差し替える。
+        let capped = if (f#maxMipLevels == Int32.maxValue()) materialTextures
+                     else ShaderDoc.materialTexReads(spec, emission, metallicRoughness) |> List.foldLeft((acc, nf) ->
+                         Map.get(fst(nf), materialTextures) |> Option.map(levels -> Map.insert(fst(nf), Vector.take(Scene3d.materialMipLevelsOf(f, Vector.length(levels)), levels), acc))
+                             |> Option.getWithDefault(acc), materialTextures);
+        let compiled = ShaderEval.compileMaterial({ spec = spec, emission = emission, metallicRoughness = metallicRoughness, params = f#params, textures = capped,
                                                     repeat = repeat });
         let normal = if (not hasUv) None else f#normalMap |> Option.map(n ->
             { texture = Map.getWithDefault((n#texture, Texture3d.mipSpaceOf(Texture3d.TextureUse.NormalMap)), blackTexture(), textures),
@@ -449,8 +456,9 @@ pub mod SoftRaster3d {
     def vec4At(v: Vector[Float64], k: Int32): (Vec3.Vec3, Float64) =
         (Vec3.v3(Vector.get(k * 4, v), Vector.get(k * 4 + 1, v), Vector.get(k * 4 + 2, v)), Vector.get(k * 4 + 3, v))
 
-    /// ビルボード 1 枚の絵。画素・region の px 矩形（x0, y0, x1, y1。x1・y1 は含まない）・tint r, g, b・光を当てるか。
-    enum Ink { case Ink(ShaderEval.TexData, Int32, Int32, Int32, Int32, Float64, Float64, Float64, Bool) }
+    /// ビルボード 1 枚の絵。画素・region の px 矩形（x0, y0, x1, y1。x1・y1 は含まない）・tint r, g, b・光を当てるか・太陽の影を受けるか（lit の時だけ真）・
+    /// ビルボードの中身（影を受ける点を求める）。
+    enum Ink { case Ink(ShaderEval.TexData, Int32, Int32, Int32, Int32, Float64, Float64, Float64, Bool, Bool, Scene3d.BillboardFields) }
 
     /// 場面を lw × lh（行優先）の out に塗る。
     def renderLayer(scene: Scene3d.Scene3dCmd, lw: Int32, lh: Int32,
@@ -503,10 +511,10 @@ pub mod SoftRaster3d {
         let tris = hoist(rc, List.append(meshTris, billboardTris) |> List.toVector);
         let bins = hoist(rc, binRows(rc, lh, tris));
         let shadow = match scene#output {
-            case Scene3d.Output.Color    => shadowOf(solidNumbered |> List.map(fst), picked#spotLights)
+            case Scene3d.Output.Color    => SoftRaster3d.ShadowMaps.shadowOf(solidNumbered |> List.map(fst), picked#spotLights)
             case Scene3d.Output.Depth(_) => None
         };
-        let sun = sunOf(solidNumbered |> List.map(fst), scene);
+        let sun = SoftRaster3d.ShadowMaps.sunOf(solidNumbered |> List.map(fst), name -> Map.get(name, materialTextures) |> Option.flatMap(Vector.head), scene);
         let lights = hoist(rc, compileLinearLights(picked#environment, picked#pointLights, picked#spotLights, shadow, sun));
         let fog = hoist(rc, compileLinearFog(scene#environment#fog));
         let inkTable = hoist(rc, inks);
@@ -666,69 +674,10 @@ pub mod SoftRaster3d {
             def accept(_this: IntConsumer, i: Int32): Unit \ IO = rowFn(i)
         })
 
-    // ── 影の地図 ─────────────────────────────────────────
-
-    /// spots（pickLights の後の並び）のうち shadow が Some の最初の 1 本の地図。mapSize が 0 以下なら影を落とさない。
-    def shadowOf(instances: List[Placed], spots: List[Scene3d.SpotLight]): SpotShadow \ IO =
-        let caster = List.zipWithIndex(spots) |> List.findMap(entry -> {
-            let (index, spot) = entry;
-            spot#shadow |> Option.filter(sm -> sm#mapSize > 0) |> Option.map(sm -> (index, spot, sm))
-        });
-        match caster {
-            case None => None
-            case Some((index, spot, sm)) =>
-                let rows = rowMajorOf(Scene3d.shadowMatrix(spot));
-                let size = Int32.min(sm#mapSize, Scene3d.maxShadowMapSize());
-                let pcf = Int32.min(sm#pcfRadius, Scene3d.maxShadowPcfRadius());
-                let cam = Scene3d.shadowCamera(spot);
-                let eye = { view = Camera3d.viewMatrix(cam), proj = Camera3d.projectionMatrix(cam, 1.0), projection = Projection.Perspective(cam#near) };
-                let map = buildShadowMap(instances, eye, Scene3d.shadowFrustumOf(spot), size);
-                spotShadowOf(index * LightModel3d.spotStride(), rows, size, sm#bias, pcf, sm#strength, map)
-        }
-
-    /// 場面の太陽（Scene3d.directionalLightOf）と、その影の地図（Scene3d.directionalShadowOf の箱で、影を落とす物から作る）。
-    def sunOf(instances: List[Placed], scene: Scene3d.Scene3dCmd): SoftRaster3d.Sun.Light \ IO =
-        let shadow = Scene3d.directionalShadowOf(scene) |> Option.map(setup -> {
-            let eye = { view = Mat4.identity(), proj = setup#matrix, projection = Projection.Orthographic };
-            SoftRaster3d.Sun.shadowOf(setup, scene#camera#eye, buildShadowMap(instances, eye, setup#frustum, setup#mapSize))
-        });
-        SoftRaster3d.Sun.of(Scene3d.directionalLightOf(scene), shadow)
-
-    /// 置いた物を光の目 eye から見た n × n の深度の地図（buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
+    /// 置いた物を光の目 eye から見た n × n の深度の地図（SoftRaster3d.ShadowMaps.buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
     /// engine の開発用の口: 正射影の三角形の道を gl-parity と単体テストが確かめる。
     pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO =
-        buildShadowMap(instances |> List.map(placedOf), eye, Frustum.ofClipMatrix(Mat4.mul(eye#proj, eye#view)), n)
-
-    /// 光から見た n × n の地図（一番近い面の NDC の z × 0.5 + 0.5。何も無い画素は 1。行 0 が NDC の y = −1 側）。
-    /// eye =光の目（view → proj の順に掛ける。正射影の光は view を単位行列にして proj に world → clip の行列を渡してよい）・
-    /// frustum = 影を落とす物の間引き（目に見えない物も影は落とす）。スポットと平行光源で共有する。
-    // WhyNot: 裏の面を捨てない — 薄い板や片面だけの物は、光へ裏を向けていても影を落としてほしい。
-    // WhyNot: cutout の材質の α を見ない — 材質を画素ごとに評価すると地図が場面の塗りと同じくらい重くなる。抜いた穴の影は今は埋まる。
-    def buildShadowMap(instances: List[Placed], eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO = region rc {
-        let view = eye#view;
-        let proj = eye#proj;
-        let screen = { w = Int32.toFloat64(n), h = Int32.toFloat64(n), projection = eye#projection };
-        let tris = hoist(rc, instances |> List.filter(f -> not Scene3d.isOutsideFrustumFields(frustum, f#fields))
-            |> List.flatMap(f -> instanceTris(view, proj, screen, None, false, f, -1)) |> List.toVector);
-        let bins = hoist(rc, binRows(rc, n, tris));
-        let noInks: Vector[Ink] = Vector.empty();
-        let noMats: Vector[Mat] = Vector.empty();
-        let out: Array[Float64, Static] = Array.repeat(Static, n * n, 1.0);
-        forEachRow(n, y -> region rr {
-            let depth: Array[Float64, rr] = Array.repeat(rr, n, 2.0);
-            let winner: Array[Int32, rr] = Array.repeat(rr, n, -1);
-            let w0: Array[Float64, rr] = Array.repeat(rr, n, 0.0);
-            let w1: Array[Float64, rr] = Array.repeat(rr, n, 0.0);
-            let py = Int32.toFloat64(y) + 0.5;
-            Vector.get(y, bins) |> List.forEach(ti -> coverRow(n, py, tris, noInks, noMats, 0.0, ti, depth, winner, w0, w1));
-            // WhyNot: 画面の行の順（上が行 0）のまま置かない — GL の深度テクスチャは行 0 が NDC の y = −1 側で、向きをそろえる。
-            List.range(0, n) |> List.forEach(x -> {
-                let z = Array.get(x, depth);
-                if (z <= 1.0) Array.put(z * 0.5 + 0.5, (n - 1 - y) * n + x, out) else ()
-            })
-        });
-        Array.toVector(out)
-    }
+        SoftRaster3d.ShadowMaps.buildShadowMap(instances |> List.map(placedOf), SoftRaster3d.ShadowMaps.noBillboards(), eye, Frustum.ofClipMatrix(Mat4.mul(eye#proj, eye#view)), n)
 
     def inkOf(tex: ShaderEval.TexData, f: Scene3d.BillboardFields): Ink =
         let r = f#regionRect;
@@ -737,7 +686,7 @@ pub mod SoftRaster3d {
         let x1 = Int32.max(x0 + 1, Int32.min(tex#width, SoftRaster3d.Internal.floorInt(r#position#x + r#size#x)));
         let y1 = Int32.max(y0 + 1, Int32.min(tex#height, SoftRaster3d.Internal.floorInt(r#position#y + r#size#y)));
         let tint = Texture3d.srgbToLinearColor(f#tint);
-        Ink.Ink(tex, x0, y0, x1, y1, tint#r, tint#g, tint#b, f#lit)
+        Ink.Ink(tex, x0, y0, x1, y1, tint#r, tint#g, tint#b, f#lit, f#lit and f#receiveShadows, f)
 
     // ── 三角形を組む ─────────────────────────────────────
 
@@ -816,9 +765,14 @@ pub mod SoftRaster3d {
     // WhyNot: 裏を捨てない — 四角はいつもカメラへ向くので、裏になるのは size が負の時だけで、それは左右・上下の反転として描く。
     def billboardTris(view: Mat4.Mat4, proj: Mat4.Mat4, screen: Screen, cam: Camera3d.Camera3d,
                       index: Int32, f: Scene3d.BillboardFields): List[Tri] =
-        let right = Camera3d.right(cam);
-        let up = Camera3d.up(cam);
-        let facing = Vec3.mul(Camera3d.forward(cam), -1.0);
+        billboardQuadTris(view, proj, screen, { right = Camera3d.right(cam), up = Camera3d.up(cam), facing = Vec3.mul(Camera3d.forward(cam), -1.0) }, index, f)
+
+    /// ビルボード 1 枚の三角形 2 枚を、板の横 right・縦 up・法線 facing で立てる（見える板はカメラの向き・影の地図の板は太陽へ向けた向き）。
+    def billboardQuadTris(view: Mat4.Mat4, proj: Mat4.Mat4, screen: Screen, basis: { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 },
+                  index: Int32, f: Scene3d.BillboardFields): List[Tri] =
+        let right = basis#right;
+        let up = basis#up;
+        let facing = basis#facing;
         let r = f#regionRect;
         let corner = (u: Float64, v: Float64) -> {
             let p = Vec3.add(f#position, Vec3.add(Vec3.mul(right, (u - f#anchor#x) * f#size#x),
@@ -1067,7 +1021,7 @@ pub mod SoftRaster3d {
         (attr(v, uvSlot(), b0, b1, b2), attr(v, uvSlot() + 1, b0, b1, b2))
 
     def sampleInk(ink: Ink, u: Float64, v: Float64): Int32 =
-        let Ink.Ink(tex, x0, y0, x1, y1, _, _, _, _) = ink;
+        let Ink.Ink(tex, x0, y0, x1, y1, _, _, _, _, _, _) = ink;
         let ix = Int32.max(x0, Int32.min(x1 - 1, SoftRaster3d.Internal.floorInt(u)));
         let iy = Int32.max(y0, Int32.min(y1 - 1, SoftRaster3d.Internal.floorInt(v)));
         Vector.get(iy * tex#width + ix, tex#pixels)
@@ -1102,10 +1056,13 @@ pub mod SoftRaster3d {
                     let (lr, lg, lb) = evalLight(lights, px, py, pz, n#x, n#y, n#z, sunLit);
                     applyFog(fog, ex, ey, ez, px, py, pz, br * lr, bg * lg, bb * lb)
                 };
-                // ビルボードは影を受けない（太陽の光は受ける）。
-                let billboardLit = (base: (Float64, Float64, Float64)) -> litWith(1.0, base);
                 let meshLit = (base: (Float64, Float64, Float64)) -> litWith(sunLitOf(lights, (px, py, pz), point#normal, point#normal), base);
-                if (ink >= 0) { let (r, g, b) = inkColor(lut, Vector.get(ink, inks), point#uv#x, point#uv#y, billboardLit); toSrgbOpaque(lut, r, g, b) }
+                if (ink >= 0) {
+                    let drawn = Vector.get(ink, inks);
+                    let billboardLit = (base: (Float64, Float64, Float64)) -> litWith(billboardSunLit(lights, drawn, point), base);
+                    let (r, g, b) = inkColor(lut, drawn, point#uv#x, point#uv#y, billboardLit);
+                    toSrgbOpaque(lut, r, g, b)
+                }
                 else if (mat < 0) { let (r, g, b) = meshLit((point#color#r, point#color#g, point#color#b)); toSrgbOpaque(lut, r, g, b) }
                 else { let (r, g, b, _) = materialPixel(tri, Vector.get(mat, mats), Vector.get(mat, bakes), env, pixel, l0, l1); toSrgbOpaque(lut, r, g, b) }
         }
@@ -1153,10 +1110,25 @@ pub mod SoftRaster3d {
         };
         materialColor(material, env#lut, env#time, point, neighbors, litFogged, glossyFogged)
 
+    /// ビルボード ink の画素 point（uv の欄は絵の px）が受ける太陽の影の割合。影を受けない物は 1。
+    /// 受ける点は Scene3d.billboardShadowPointOf・点をずらす向きは太陽への向き・光の計算の法線はカメラへ向く向き（GL の billboardFragmentSource と同じ）。
+    def billboardSunLit(lights: Lights, ink: Ink, point: ShaderEval.SurfacePoint): Float64 =
+        let Ink.Ink(_, _, _, _, _, _, _, _, _, receives, f) = ink;
+        if (not receives) 1.0
+        else {
+            let Lights.Lights(_, _, _, _, _, _, _, _, sun) = lights;
+            let (tx, ty, tz, _, _, _) = SoftRaster3d.Sun.terms(sun);
+            let toward = Vec3.v3(tx, ty, tz);
+            let r = f#regionRect;
+            let v = if (r#size#y == 0.0) 0.0 else (point#uv#y - r#position#y) / r#size#y;
+            let p = Scene3d.billboardShadowPointOf(f, toward, v);
+            sunLitOf(lights, (p#x, p#y, p#z), toward, point#normal)
+        }
+
     /// ビルボードの絵の (u, v) の色（線形の量へ戻す）に tint を掛け、lit なら光とかすみを当てる。
     def inkColor(lut: Texture3d.ColorLut, ink: Ink, u: Float64, v: Float64,
                  litFogged: ((Float64, Float64, Float64)) -> (Float64, Float64, Float64)): (Float64, Float64, Float64) =
-        let Ink.Ink(_, _, _, _, _, tr, tg, tb, isLit) = ink;
+        let Ink.Ink(_, _, _, _, _, tr, tg, tb, isLit, _, _) = ink;
         let texel = sampleInk(ink, u, v);
         let toLinear = Texture3d.srgbToLinearLut(lut);
         let base = (toLinear(channel01(16, texel)) * tr, toLinear(channel01(8, texel)) * tg, toLinear(channel01(0, texel)) * tb);

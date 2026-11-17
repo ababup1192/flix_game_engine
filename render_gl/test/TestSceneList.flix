@@ -553,6 +553,23 @@ mod Render3d.TestSceneList {
         let list = listWithBillboards(Some(registered(false)), billboardDraw(false) :: Nil);
         Assert.assertEq(expected = (true, true), (Option.isEmpty(Render3d.SceneList.materialAt(list, 2)), Option.nonEmpty(Render3d.SceneList.materialAt(list, 3))))
 
+    /// 太陽の影を受けるビルボードの値は、光の当て方が 2 で、末尾に影を受ける点を進める長さ（板の幅の半分）を持つ。
+    @Test
+    def testReceivingBillboardWritesLeadValue(): Unit \ {Assert, IO} =
+        let d = billboardDraw(false);
+        let receiving = { fields = { receiveShadows = true | d#fields } | d };
+        let list = listWithBillboards(Some(registered(false)), receiving :: Nil);
+        let at = Render3d.SceneList.valuesAt(list, 2);
+        Assert.assertEq(expected = (2.0f32, 1.0f32), (Array.get(at + 3, list#values), Array.get(at + 15, list#values)))
+
+    /// 影の地図の行は形の行の後に、地図に描くビルボードの行（分かれた理由は影の pass・値あり）を並べる。
+    @Test
+    def testShadowListPutsBillboardRowsAfterShapes(): Unit \ {Assert, IO} =
+        let ctx = Render3d.SceneList.contextOf(tablesWith(Some(registered(false))), sceneOf(Nil));
+        let list = Render3d.SceneList.buildShadowList(ctx, batchOf(triangle(1.0), 0, 1) :: Nil, Nil, billboardDraw(false)#fields :: Nil);
+        Assert.assertEq(expected = (kindVertexColor() :: Render3d.SceneList.kindBillboard() :: Nil, 1, breakSlotOf(BatchBreak.ShadowPass), 0),
+                        (column(list, 0), Render3d.SceneList.firstBillboardRowOf(list), rowAt(list, 1, 5), Render3d.SceneList.valuesAt(list, 1)))
+
     /// 計画はビルボードを来た順のまま並べ、視錐台の外の物（目の後ろ）に culled を立てる（目は z = −5 で +z を向く）。
     @Test
     def testPlanMarksBillboardsOutsideFrustum(): Unit \ {Assert, IO} =

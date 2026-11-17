@@ -214,9 +214,11 @@ pub mod Scene3d {
     /// shaderHash = GLSL を決める中身（spec・emission・metallicRoughnessShade）の鍵（ShaderGen.hashMaterial。params・cutout などは入れない。GL が材質のプログラムを引く。初めて読んだ時に求める）。
     /// spec の Tex の名前は、"tex3d:" で始まれば場面の textures（Texture3d.name）、ほかは全体の登録（project.json の textures・
     /// レンダーターゲット）から引く。無い名前は 0（黒・透明）。1 つの材質が読める (名前, 補間) の組は maxMaterialTextures() まで。
+    /// maxMipLevels = spec の Tex の絵を読む mip のレベルの数の上限（withMaxMipLevels。既定は上限なし。Lightmap の maxLevels と同じ考え）。
     pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
                                       normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64,
-                                      metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64] }
+                                      metallicRoughness = Option[MetallicRoughness], metallicRoughnessShade = Option[ShaderDoc.Shade], shaderHash = Lazy[Int64],
+                                      maxMipLevels = Int32 }
 
     /// 材質の金属っぽさ（metallic・0 で絶縁体・1 で金属）と粗さ（roughness・0 で鏡・1 でざらざら）。どちらも 0..1。
     /// texture = 絵の名前（glTF の metallicRoughnessTexture と同じ決まり: B = metallic・G = roughness。絵の値に metallic・roughness を掛ける）・None なら値だけ。
@@ -231,7 +233,24 @@ pub mod Scene3d {
     pub def material(spec: ShaderDoc.Spec): Material3d =
         MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat,
                                     blend = false, doubleSided = false, emissionIntensity = 1.0,
-                                    metallicRoughness = None, metallicRoughnessShade = None, shaderHash = shaderHashOf(spec, None, None) })
+                                    metallicRoughness = None, metallicRoughnessShade = None, shaderHash = shaderHashOf(spec, None, None),
+                                    maxMipLevels = Int32.maxValue() })
+
+    /// spec の Tex の絵を読む mip のレベルの数を levels までにする（1 以上に直す。1 なら縮んでも元の絵だけを読む）。
+    /// ドット絵のアトラスを貼る材質で、遠くや斜めで 1 つのタイルが 1 画素より小さく縮んだ所に隣のタイルの色が混ざるのを止める（atlasMipLevelsFor）。
+    /// 法線マップの絵には掛けない。
+    pub def withMaxMipLevels(levels: Int32, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ maxMipLevels = Int32.max(1, levels) | r })
+
+    /// 一辺 tilePx の正方形のタイルを、tilePx の倍数の位置に詰めたアトラスで、隣のタイルを混ぜない mip のレベルの数（withMaxMipLevels へ渡す）。
+    /// レベル k の 1 テクセルは 2^k の倍数の位置から始まる 2^k px の塊の平均なので、2^k が tilePx を割り切るレベルまでは 1 つのタイルの中だけを平均する。
+    /// 16 px で 5（レベル 0〜4）・32 px で 6・24 px で 4・48 px で 5。アトラスの幅と高さも 2^(レベルの数 − 1) で割り切れる大きさにする。
+    pub def atlasMipLevelsFor(tilePx: Int32): Int32 =
+        if (tilePx < 2 or Int32.remainder(tilePx, 2) != 0) 1 else 1 + atlasMipLevelsFor(tilePx / 2)
+
+    /// 材質の絵を段の数 textureLevels の絵で読む時の段の数（GL の uniform・WebGPU の values・CPU の描き手が同じ数を使う）。
+    pub def materialMipLevelsOf(m: MaterialFields, textureLevels: Int32): Int32 = Int32.min(textureLevels, m#maxMipLevels)
 
     /// spec と emission の鍵を、初めて読まれた時に求める形で持つ。
     // WhyNot: 作る時にすぐ求めない — View で毎コマ材質を組み直すゲームでは、CPU の描き出しのように鍵を読まない描き手でも払うことになる。
@@ -557,19 +576,72 @@ pub mod Scene3d {
 
     /// ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
     /// size = world の幅と高さ・anchor = position に合わせる絵の中の点（0〜1。(0.5, 1) で足元の真ん中）・
-    /// tint = 絵に掛ける色・lit = 光とかすみを当てるか。
+    /// tint = 絵に掛ける色・lit = 光とかすみを当てるか・
+    /// castShadows = 太陽の影の地図に描くか（withCastShadows）・receiveShadows = 太陽の影を受けるか（withReceiveShadows。lit の時だけ効く）。
     pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2,
-                                       anchor = Vec2.Vec2, tint = Color, lit = Bool }
+                                       anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool }
 
     enum BillboardData { case BillboardData(BillboardFields) }
 
     /// 深度つきのビルボード（ドット絵を 3D に立てる。閉じた型 — 欄を後から足してもゲームの値が壊れない）。
     pub type alias Billboard3d = BillboardData
 
-    /// anchor 足元の真ん中・tint 白・光を当てる。
+    /// anchor 足元の真ん中・tint 白・光を当てる・影を落とさない・影を受けない。
     pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d =
         BillboardData.BillboardData({ texture = texture, regionRect = regionRect, position = position, size = size,
-                                      anchor = { x = 0.5, y = 1.0 }, tint = Color.rgb(1.0, 1.0, 1.0), lit = true })
+                                      anchor = { x = 0.5, y = 1.0 }, tint = Color.rgb(1.0, 1.0, 1.0), lit = true,
+                                      castShadows = false, receiveShadows = false })
+
+    /// 太陽の影の地図に描く（Unity の Cast Shadows・Godot の cast_shadow）。地図の中では、同じ大きさの板を地面に垂直に立て、
+    /// 太陽の方へ向けて（billboardShadowRightOf）絵の α < 0.5 を捨てて描くので、影は絵の形で太陽の向きに伸びる。
+    /// 太陽の影だけ（スポットの影の地図には描かない）。影の地図の無い場面では何もしない。
+    // WhyNot: スポットの影に入れない — スポットの影の判定は光の式の木の中（spotShadow）で受ける点を動かせず、ビルボードが自分の影を受けて黒くなる。
+    pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d =
+        let BillboardData.BillboardData(r) = b;
+        BillboardData.BillboardData({ castShadows = on | r })
+
+    /// 太陽の影を受ける（Unity の Receive Shadows）。lit の時だけ効く。受ける点は絵の中の高さごとに 1 つ（billboardShadowPointOf）で、
+    /// 建物の影に入ると絵の行ごとに暗くなる。
+    pub def withReceiveShadows(on: Bool, b: Billboard3d): Billboard3d =
+        let BillboardData.BillboardData(r) = b;
+        BillboardData.BillboardData({ receiveShadows = on | r })
+
+    /// 影の地図に描くビルボードの板の横の向き（長さ 1・水平）。toward = 点から太陽への向き・fallback = 太陽が真上の時の向き（カメラの right）。
+    /// 太陽がカメラの後ろにある時にカメラの right と同じ向きになる（影の絵が見える絵と左右で合う）。
+    // WhyNot: 太陽が前（逆光）の時にカメラの right へそろえ直さない — 光の側から見た板の絵は左右が返るのが本当の影の向きで、
+    //   そろえ直すと太陽が真横を回る所で影の絵がぱっと左右に入れ替わる。
+    pub def billboardShadowRightOf(toward: Vec3.Vec3, fallback: Vec3.Vec3): Vec3.Vec3 =
+        let hx = toward#x;
+        let hz = toward#z;
+        let len = Num.sqrt(hx * hx + hz * hz);
+        if (len < 1.0e-6) fallback
+        else Vec3.v3(0.0 - hz / len, 0.0, hx / len)
+
+    /// 場面の太陽の影の地図に描くビルボードの板の横の向き（太陽の無い場面はカメラの right）。GL・WebGPU・CPU の描き手がこれ 1 つを読む。
+    pub def billboardShadowRightOfScene(scene: Scene3dCmd): Vec3.Vec3 =
+        let fallback = Camera3d.right(scene#camera);
+        directionalLightOf(scene) |> Option.map(l -> billboardShadowRightOf(sunTermsOf(l)#toward, fallback)) |> Option.getWithDefault(fallback)
+
+    /// ビルボードが太陽の影を受ける点: 絵の中の縦の位置 v（0 = 絵の上・1 = 絵の下）の、影の地図に描いた板の真ん中の縦の線の上の点を、
+    /// 太陽の方へ billboardShadowOffsetOf(f) / max(toward の水平の長さ, billboardShadowMinFlat()) だけ進めた点。GL・WebGPU・CPU の描き手が画素ごとに同じ式で求める。
+    /// 板から水平に幅の半分だけ離れるので、太陽の高さ約 75° までは pcf の周りの画素でも自分の影を拾わない（それより高い太陽では足元から拾い始める）。
+    // WhyNot: 見えている板（カメラへ向く）の上の点で引かない — 影の地図の板は太陽へ向けて立てた別の向きで、見えている板の半分が自分の影に入る。
+    // WhyNot: 太陽の方へ進めずに板の上の点で引かない — 点が自分の影の板の上に乗り、pcf の周りの画素で板の傾きの分だけ自分の影を拾う。
+    // WhyNot: 太陽が高いほど進める長さを上限なしに伸ばさない — 点が上へ逃げ、軒下に立った板が軒の影から抜けて明るくなる。
+    pub def billboardShadowPointOf(f: BillboardFields, toward: Vec3.Vec3, v: Float64): Vec3.Vec3 =
+        let flat = Float64.max(billboardShadowMinFlat(), Num.sqrt(toward#x * toward#x + toward#z * toward#z));
+        let offset = billboardShadowOffsetOf(f) / flat;
+        Vec3.v3(f#position#x + toward#x * offset, f#position#y + (f#anchor#y - v) * f#size#y + toward#y * offset, f#position#z + toward#z * offset)
+
+    /// 影を受ける点を板から水平に離す長さ（板の幅の半分）。billboardShadowPointOf が太陽の高さで割って太陽の方へ進める。
+    pub def billboardShadowOffsetOf(f: BillboardFields): Float64 = 0.5 * Float64.abs(f#size#x)
+
+    /// billboardShadowPointOf が割る、太陽への向きの水平の長さの下限（太陽の高さ約 75.5°）。GLSL・WGSL の字にも同じ数を書く。
+    pub def billboardShadowMinFlat(): Float64 = 0.25
+
+    /// 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。
+    pub def shadowCastingBillboardsOf(frustum: Frustum.Frustum, scene: Scene3dCmd): List[BillboardFields] =
+        scene#billboards |> List.filter(b -> billboardFieldsOf(b)#castShadows and not isBillboardOutsideFrustum(frustum, b)) |> List.map(billboardFieldsOf)
 
     pub def withAnchor(a: Vec2.Vec2, b: Billboard3d): Billboard3d =
         let BillboardData.BillboardData(r) = b;
@@ -803,15 +875,26 @@ pub mod Scene3d {
     /// pcfRadius の上限（(2r+1)² 回の読みを画素ごとに行うので、大きすぎる値で GPU を止めない）。GL と CPU が同じ値で頭打ちにする。
     pub def maxShadowPcfRadius(): Int32 = 8
 
-    /// スポットライトから見たカメラ（影の地図を描く目）。位置から target を向き、fovY の角で見る。near は 1・far は range。
+    /// スポットライトから見たカメラ（影の地図を描く目）。位置から target を向き、fovY の角で見る。far は max(2, range)・near は min(1, far / 100)。
     /// target が位置と同じ所なら真下を向く。
+    // WhyNot: near を 1 に決め打ちしない — 1 = 1 m の部屋の卓上の灯り（光から 1 m 以内に物がある）では、影を落とす物も受ける面も near の手前で切れて影が出ない。
+    // WhyNot: near を range に依らず小さく決めない — 奥行きの値の細かさは far / near で決まり、range の長い光（街の灯り）の影の地図が粗くなる。
     pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d =
         let d = Vec3.sub(spot#target, spot#position);
         let len = Vec3.length(d);
         let dir = if (len < 0.000001) { x = 0.0, y = -1.0, z = 0.0 } else Vec3.mul(d, 1.0 / len);
         let flat = Num.sqrt(dir#x * dir#x + dir#z * dir#z);
+        let far = Float64.max(2.0, spot#range);
         { eye = spot#position, yaw = Num.atan2(dir#x, dir#z), pitch = Num.atan2(0.0 - dir#y, flat),
-          fovY = spot#fovY, near = 1.0, far = Float64.max(2.0, spot#range) }
+          fovY = spot#fovY, near = Float64.min(1.0, far / 100.0), far = far }
+
+    /// スポットの影の判定で地図の値と比べる時に引く値（ShadowMap の bias を、shadowCamera の near で縮めた物）。GL・WebGPU・CPU の描き手がこの値を使う。
+    /// bias × near × (far − 1) / (far − near)。near が 1 の光（range 100 以上）は bias のまま。
+    // WhyNot: bias をそのまま引かない — 透視の奥行きの値の傾きは near に比例し、同じ bias が world で表す長さは near に反比例する。
+    //   near を 1 から下げた分そのまま引くと、range の短いスポットの影が物の根元から浮く（range 8 で約 12 倍）。
+    pub def spotShadowDepthBiasOf(spot: SpotLight, bias: Float64): Float64 =
+        let c = shadowCamera(spot);
+        bias * c#near * (c#far - 1.0) / (c#far - c#near)
 
     /// 影の地図の行列（world → 光の clip 空間。縦横の比は 1）。GL と CPU が同じ物を使う。
     /// 影の判定の約束（GL と CPU で同じ）:

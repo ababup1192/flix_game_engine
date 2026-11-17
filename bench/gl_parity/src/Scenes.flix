@@ -53,6 +53,9 @@ mod Scenes {
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
             :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d()
             :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d()
+            :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
+            :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
+            :: billboardShadowOf(BillboardShadowYard.SunSide.Side, "billboardShadowSide")
             :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
@@ -133,6 +136,9 @@ mod Scenes {
         case "sunShadow3d"     => Some(100)
         case "sunSpotShadow3d" => Some(200)
         case "sunPbr3d"        => Some(300)
+        case "billboardShadowAxis"     => Some(100)
+        case "billboardShadowDiagonal" => Some(100)
+        case "billboardShadowSide"     => Some(100)
         case _                 => None
     }
 
@@ -650,6 +656,13 @@ mod Scenes {
         { name = "sunSpotShadow3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 0.0, y = 0.0 }, sunScene(sunOf(true), true, true)) ::
             Render.scene3d({ x = 160.0, y = 0.0 }, sunScene(sunOf(true), false, true)) :: Nil }
+
+    // ビルボードの太陽の影（BillboardShadowYard）: 左は影の欄なし（今までの絵）・右は影の欄つき（日なたの人が地面へ人の形の影を落とし、屋根の影の中の人が暗くなる）。
+    def billboardShadowOf(side: BillboardShadowYard.SunSide, name: String): Scene =
+        let half = { x = designW() * 0.5, y = designH() };
+        { name = name, via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = BillboardShadowYard.charPass() :: Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, BillboardShadowYard.scene(side, half, false)) ::
+            Render.scene3d({ x = half#x, y = 0.0 }, BillboardShadowYard.scene(side, half, true)) :: Nil }
 
     // 太陽と PBR の球: 鏡面ハイライトが太陽の向きに出て、球どうしが影を落とす。
     def sunPbr3d(): Scene =

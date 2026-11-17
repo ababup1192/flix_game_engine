@@ -401,12 +401,22 @@
   `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
   `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
-- 置いた物を光の目 eye から見た n × n の深度の地図（buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
+- 置いた物を光の目 eye から見た n × n の深度の地図（SoftRaster3d.ShadowMaps.buildShadowMap と同じ形。視錐台の間引きは eye の行列から作る）。
   `pub def depthMapOf(instances: List[Scene3d.Instance3d], eye: LightEye, n: Int32): Vector[Float64] \ IO`
 - `pub enum Projection { case Perspective(Float64) case Orthographic }`
 - 影の地図を描く光の目。
   `pub type alias LightEye = { view = Mat4.Mat4, proj = Mat4.Mat4, projection = Projection }`
 - `pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3`
+
+## SoftRaster3d.ShadowMaps — `engine_tools/src/SoftRaster3d/ShadowMaps.flix`
+- spots（pickLights の後の並び）のうち shadow が Some の最初の 1 本の地図。mapSize が 0 以下なら影を落とさない。
+  `pub def shadowOf(instances: List[Placed], spots: List[Scene3d.SpotLight]): SpotShadow \ IO`
+- 場面の太陽（Scene3d.directionalLightOf）と、その影の地図（Scene3d.directionalShadowOf の箱で、影を落とす物から作る）。
+  `pub def sunOf(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): SoftRaster3d.Sun.Light \ IO`
+- 影の地図に描くビルボード（中身と段 0 の絵）と、その板の向き。
+  `pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }`
+- `pub def noBillboards(): BillboardCasters`
+- `pub def buildShadowMap(instances: List[Placed], billboards: BillboardCasters, eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO`
 
 ## SoftRaster3d.Sun — `engine_tools/src/SoftRaster3d/Sun.flix`
 - 影の判定に要る値。matrix = 光の行列の 16 個（行優先）・mapSize・depthBias・pcfRadius・normalShift・strength・
