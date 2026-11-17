@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "note": "描き比べ用の色の門。色票 assets/palette.json の外の色と純黒を止める。",
+  "default": "game",
+  "styles": {
+    "game": {
+      "label": "色票（palette.json）の外",
+      "from": "assets/palette.json",
+      "fidelity": 0.6
+    }
+  },
+  "deny": [
+    {"color": "#000000", "why": "輪郭と影はその素材のランプの最暗色にする"}
+  ],
+  "files": {}
+}
