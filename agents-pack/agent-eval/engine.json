@@ -236,6 +236,17 @@
       ]
     },
     {
+      "id": "tape-speed",
+      "prompt": "分岐の結末 8 本を make tape FLOWS=... で撮ると 30 分以上かかる。src は変えていないのに毎回ブラウザ版を書き出し直しているように見える。速くする口はある？ 撮り直しはまだしないで、何を変えればいいかだけ",
+      "expect": [
+        {"re": "--reuse|TAPE_WEB_REUSE", "why": "書き出しは指紋が同じなら使い回す（--reuse・TAPE_WEB_REUSE）"},
+        {"re": "TAPE_JOBS", "why": "録画と書き出しを並べる本数は TAPE_JOBS"}
+      ],
+      "avoid": [
+        {"re": "TAPE_PLAY=0", "why": "はじめから遊ぶを捨てるのは速くする口ではない"}
+      ]
+    },
+    {
       "id": "tape-publish",
       "prompt": "debug/tape/intro に作ったテープの頁を、テープ用の GitHub Pages のリポジトリ ababup1192/flix_ge_tapes に置いて、レビュワーに渡す URL を出したい。まだ push はしないで、何が置かれて何が消えるかだけ見せて",
       "expect": [
