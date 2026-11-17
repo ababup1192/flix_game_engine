@@ -205,6 +205,7 @@ HD-2D（`plans/engine-hd2d.md`）の下準備も同じ列に入れる（人の�
   **Distortion は S2 を待たずに入れた（2026-11-18・`PostStack.withDistortion`・`withTime`）**: 後がけの面の中では `Field.Uv` がそのまま画面の位置なので、ScreenUv は要らなかった。
   S2 で ScreenUv が入ったら、ずらし量の場（`PostStack.Internal.Passes.distortOffsetBindings`）を材質の屈折（水・魔法の面）へ使い回す。
   同じ時に `ExposureAdaptation`（狙いの明るさへ露出を近づける純粋な関数・lens-post スパイクの B2）も入れた。
+  積み残し: `ps_bright` の閾値に `ps_exposure` を掛ける（白飛びの間ほど光る。今の絵が変わるので相談）・PostStack の全部の面に `ps_time`・`ps_frame` を配る土台（`BuildInput` の書き方が変わる）。
 - PostStack の外の HD-2D の下準備（ビルボードの影 E1・mip の上限 E4・画素スナップ E5・点光源の 8 本の上限の確かめ）は、この列と別の担当で並べて進める（触るファイルが重ならないため）。
 
 その後の順の推し【推】: S6 のうち光の大きさで影の縁をぼかす所 → S4（空とかすみ・光の筋） → TAA → S5（水）。リアルタイムの GI は焼き込みとプローブ止まり。

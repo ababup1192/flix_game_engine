@@ -211,7 +211,11 @@ pub mod PostStack.Internal.Passes {
         d#noiseSize > 0.0 and (d#strength#x != 0.0 or d#strength#y != 0.0)
 
     /// ノイズを折り返すマスの数（FbmTile の period）。画面に並ぶ粒の数より十分大きく、繰り返しが見えない数。
-    def distortPeriod(): Float64 = 64.0
+    /// 横に並ぶ粒の数を 2 の累乗へ切り上げた数（下限 64）。
+    def distortPeriod(size: Vec2.Vec2, d: Distortion): Float64 =
+        let across = size#x / d#noiseSize;
+        def grow(p: Float64): Float64 = if (p >= across) p else grow(p * 2.0);
+        grow(64.0)
 
     def distortOctaves(): Int32 = 3
 
@@ -222,7 +226,7 @@ pub mod PostStack.Internal.Passes {
     // WhyNot: 時刻を Field.Time（面の t）で掛けない — 時刻 × 速さが増え続けると GL の float32 の hash が崩れて模様が出る。流した量を period で折り返してから渡す。
     def distortParams(size: Vec2.Vec2, time: Float64, d: Distortion): Map[String, Float64] =
         let cells = size#y / d#noiseSize;
-        let period = distortPeriod();
+        let period = distortPeriod(size, d);
         let wrap = (x: Float64) -> x - period * Float64.floor(x / period);
         let phase = (speed: Float64) -> 0.0 - wrap(speed * time / d#noiseSize) / cells;
         Map#{ "ps_distortX" => d#strength#x / size#x, "ps_distortY" => d#strength#y / size#y,
@@ -240,7 +244,7 @@ pub mod PostStack.Internal.Passes {
     /// Fbm は uv を 1 つの倍率でしか掛けないので、Shift の dx に u × (aspect − 1) を足して (aspect·u, v) で読ませ、粒を丸くする。
     def distortOffsetBindings(aspect: Float64, size: Vec2.Vec2, d: Distortion): List[(String, Field)] =
         let cells = size#y / d#noiseSize;
-        let period = distortPeriod();
+        let period = distortPeriod(size, d);
         let noise = (seed: Int32) -> Field.Shift({
             dx = add(mul(Field.Uv({ axis = Axis.U }), k(aspect - 1.0)), p("ps_distortPhaseU")),
             dy = p("ps_distortPhaseV"),

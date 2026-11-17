@@ -8,7 +8,7 @@
 use fge::LwjglLayer
 
 mod SceneBench {
-    use fge::{App, LwjglLayer, Num, PostStack, Render}
+    use fge::{App, Clock, LwjglLayer, Num, PostStack, Render}
 
     import java.lang.System
 
@@ -20,9 +20,10 @@ mod SceneBench {
         case Study(Study.Kit)
     }
 
-    pub type alias World = { t = Float64, progress = BenchRun.Run }
+    pub type alias World = { t = Float64, now = Clock.Time[Clock.Real], progress = BenchRun.Run }
 
-    pub def initialWorld(): World = { t = 0.0, progress = BenchRun.start() }
+    pub def initialWorld(): World = { t = 0.0, now = Clock.zero(), progress = BenchRun.start() }
+
 
     /// 起動直後は JIT とメッシュの初めての上げで dt が荒れるため、各区間の頭を捨てる。
     def warmup(): Int32 = 60
@@ -48,7 +49,7 @@ mod SceneBench {
 
     pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO =
         if (w#progress#done) w
-        else { t = w#t + frame#dt, progress = BenchRun.advance(plan, emit, knobsOf(scene), BenchRun.sampleOf(frame, 0.0), w#progress) }
+        else { t = w#t + frame#dt, now = frame#realNow, progress = BenchRun.advance(plan, emit, knobsOf(scene), BenchRun.sampleOf(frame, 0.0), w#progress) }
 
     pub def items(scene: Scene, w: World): List[Render.PlacedItem] = match scene {
         case Scene.Room(kit)  => Room.items(kit, yawAt(w#t))
@@ -60,12 +61,18 @@ mod SceneBench {
     /// つまみの表の post（1 = 夕方の屋外の preset・standard / agx / neutral = その view transform だけを替えた同じ後がけ・preset-<名前> = その preset・無し = 掛けない）。
     pub def postOf(knobs: Map[String, String]): Option[PostStack.Stack] = match Map.get("post", knobs) {
         case Some("1")        => Some(PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3))
+        case Some("haze")     => Some(PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3) |> PostStack.withDistortion(Some(hazeOf())))
         case Some("standard") => Some(lookOf(PostStack.ViewTransform.Standard))
         case Some("agx")      => Some(lookOf(PostStack.ViewTransform.AgX))
         case Some("neutral")  => Some(lookOf(PostStack.ViewTransform.KhronosNeutral))
         case Some(name)       => PostStack.presets() |> List.find(p -> "preset-${p}" == name) |> Option.map(PostStack.preset)
         case None             => None
     }
+
+    /// 床から立つ陽炎（画面の下側の帯）。POST=haze と make haze の見比べで使う。
+    pub def hazeOf(): PostStack.Distortion =
+        { strength = { x = 3.0, y = 1.5 }, noiseSize = 20.0, speed = { x = 0.0, y = -24.0 },
+          mask = PostStack.DistortionMask.BottomBand({ top = 0.45, soft = 0.35 }) }
 
     /// view transform の見比べの後がけ（ブルームと FXAA は同じ・露出 0）。
     def lookOf(vt: PostStack.ViewTransform): PostStack.Stack =
@@ -81,7 +88,7 @@ mod SceneBench {
 
     /// 後がけの手本: View は場面を返すだけで、トーンマップ・ブルーム・ビネット・FXAA の Pass は PostStack が組む。
     pub def withPost(post: Option[PostStack.Stack], app0: App.App[World, IO]): App.App[World, IO] = match post {
-        case Some(s) => app0 |> App.withPostStack(_ -> checked_ecast(s))
+        case Some(s) => app0 |> App.withPostStack(w -> checked_ecast(s |> PostStack.withTime(w#now)))
         case None    => app0
     }
 
