@@ -1,6 +1,7 @@
 // PostProcess — 画面の仕上げの面（Unity URP / Unreal の Post Process と同じ並び）を ShaderDoc の Spec で組む部品。
 // トーンマッピング（1 を超える明るさを 0..1 へなめらかに収める）と FXAA（縁のギザギザをならす）を持つ。
 // どれも ShaderDoc の今の場と bindings で組むので、GPU（ShaderGen）と CPU（ShaderEval）が同じ木を評価する。
+// 画面全体の後がけは PostStack（engine_world）が値の束から組む。ここは式の部品で、PostStack の中身と、自前の Pass の並びが使う。
 // 利用例: 本編を Rgba16Float の Pass に描き、`tonemapped(AcesFitted, defaultExposure(), defaultWhitePoint(), 本編の面)` を
 // Rgba8Unorm の Pass へ書き、`fxaaSpec(その Pass の名前)` の面を画面へ。HUD と UI は包まない。
 
@@ -16,7 +17,7 @@ pub mod PostProcess {
         case Reinhard
     }
 
-    /// 既定の露出（stop の数。2^stops 倍してから曲線に掛ける）。曲線の正規化で落ちる白を持ち上げる値で、
+    /// 既定の露出（stop の数。2^stops 倍してから曲線に掛ける）。PostStack の既定は 0（withExposure）。曲線の正規化で落ちる白を持ち上げる値で、
     /// 既定の白の点と合わせると 8bit の 1.0 は AcesFitted でおよそ 0.83〜0.9・Reinhard でおよそ 0.62 になる。
     /// 色をガンマのまま扱う所では中間の明るさも持ち上がる（0.3 → 0.55）。中間を保つなら −0.6 前後（docs/shader-doc.md の後処理の節）。
     pub def defaultExposure(): Float64 = 0.4
@@ -107,6 +108,9 @@ pub mod PostProcess {
         }
 
     /// 曲線を whitePoint で 1 になるようにそろえ、0..1 に切った場（x は露出を掛けて 0 で下切りした値）。whitePoint が 0 以下ならそろえない。
+    /// x は式に何度も出るので、重い木なら bindings の Ref にしてから渡す（tonemapped はそうする）。
+    pub def tonemapCurve(op: Tonemap, whitePoint: Float64, x: Field): Field = curveField(op, whitePoint, x)
+
     def curveField(op: Tonemap, whitePoint: Float64, x: Field): Field =
         match op {
             case Tonemap.AcesFitted =>

@@ -1,11 +1,12 @@
 // 入口。実機の窓で場面を毎コマ描き、区間ごとに 1 行の JSON（BenchRun）を出して閉じる。場面は 2 つ:
 //   部屋（既定）… 固定の部屋をカメラを左右へゆっくり振りながら描く
 //   物を並べた場面（SCENE=field）… Field のつまみ（Makefile の頭）で物の数・形・材質・動く割合・半透明・影を替える
+// POST=1 で画面全体の後がけ（App.withPostStack の夕方の屋外の preset）を掛ける（後がけの重さを前後で比べる・PostStack の手本）。
 // 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Platform.Draw3d.drawScene3d）。
 use fge::LwjglLayer
 
 mod SceneBench {
-    use fge::{App, LwjglLayer, Num, Render}
+    use fge::{App, LwjglLayer, Num, PostStack, Render}
 
     import java.lang.System
 
@@ -48,6 +49,9 @@ mod SceneBench {
         case Scene.Field(kit) => Field.items(kit, w#t)
     }
 
+    /// つまみの表の post が 1 かどうか（後がけを掛けるか）。
+    pub def isPost(knobs: Map[String, String]): Bool = Map.get("post", knobs) == Some("1")
+
     /// デスクトップとブラウザの入口が同じ App を組む。
     pub def app(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene): App.App[World, IO] =
         App.make(initialWorld())
@@ -55,13 +59,18 @@ mod SceneBench {
             |> BenchRun.withDiagnostics(plan)
             |> App.withView((_ctx, w) -> checked_ecast(items(scene, w)))
 
+    /// 後がけの手本: View は場面を返すだけで、トーンマップ・ブルーム・ビネット・FXAA の Pass は PostStack が組む。
+    pub def withPost(on: Bool, app0: App.App[World, IO]): App.App[World, IO] =
+        if (on) app0 |> App.withPostStack(_ -> checked_ecast(PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3)))
+        else app0
+
     def loadScene(knobs: Map[String, String]): Result[String, Scene] \ Fs.FileRead =
         if (isField(knobs)) Ok(Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else Room.loadMeshes() |> Result.map(meshes -> Scene.Room(Room.kitOf(meshes)))
 
     pub def go(): Unit \ IO =
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
-                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: Nil);
+                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>
@@ -69,6 +78,7 @@ mod SceneBench {
                     System.exit(1)
                 case Ok(scene) =>
                     app(planOf(knobs), BenchEnv.emit, scene)
+                        |> withPost(isPost(knobs))
                         |> App.quitWhen((_frame, w) -> checked_ecast(w#progress#done))
                         |> App.launchForBench
             }

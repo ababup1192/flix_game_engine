@@ -162,7 +162,7 @@ pub mod Render {
     /// 組み込みの放射テクスチャ（RadialBuiltin）を Add で重ねるので、ゲーム側の
     /// アセット・配線は要らない。radius は見た目の半径 px、strength は中心の濃さ 0..1。
     /// glowAt（同心円の輪を積む）と違い 1 枚ものなので、大半径でも継ぎ目が出ず部品数も増えない。
-    /// 定石: 光マップのレンダーターゲット（App.withPasses）へ Add で灯りを集め、それを
+    /// 定石: 光マップのレンダーターゲット（App.withPassPlan）へ Add で灯りを集め、それを
     /// blended(Multiply) で本編に掛けると「暗闇に灯りだけが浮かぶ」絵になる。
     pub def lightAt(spec: { at = Vec2.Vec2, radius = Float64, color = Color,
                             strength = Float64, z = Int32 }): PlacedItem =
@@ -707,7 +707,7 @@ pub mod Render {
 
     // ── レンダーターゲット（描いた結果を読み返せる描き込み先。Pass に描いて blit で貼る）──
 
-    /// 本編より先にレンダーターゲットへ描く 1 枚ぶんの宣言（App.withPasses で列を渡す）。
+    /// 本編より先にレンダーターゲットへ描く 1 枚ぶんの宣言（App.withPassPlan の計画に並べる）。
     /// name はそのままテクスチャ名になり、本編から Render.sprite(name, z) で貼れる。
     /// ターゲットの寸法は常に design 解像度（投影が design 前提で固定されているため —
     /// 別寸法のターゲットは投影の差し替えごと将来の拡張）。clear は開くたびの前の中身の始末
@@ -790,6 +790,14 @@ pub mod Render {
 
     /// 作り方を全部既定にした計画。
     pub def passPlan(passes: List[Pass]): PassPlan = { passes = passes, targets = Map.empty() }
+
+    /// 2 つの計画を a の後ろに b をつないで 1 つにする（a の Pass が先に描かれ、b の Pass は a の Pass を名前で読める）。
+    /// 名前が両方にあれば足さず、重なった名前ごとに DuplicatePass を返す（PostStack の計画をゲームの計画に足す口）。
+    pub def mergePassPlans(a: PassPlan, b: PassPlan): Result[List[PassPlanIssue], PassPlan] =
+        let names = a#passes |> List.map(p -> p#name) |> List.toSet;
+        let clashes = b#passes |> List.filter(p -> Set.memberOf(p#name, names)) |> List.map(p -> PassPlanIssue.DuplicatePass(p#name));
+        if (not List.isEmpty(clashes)) Err(clashes)
+        else Ok({ passes = List.append(a#passes, b#passes), targets = Map.union(a#targets, b#targets) })
 
     /// 計画の中の、読み方・宣言の問題（resolvePassReads が知らせる物）。payload は (Pass の名前, 読んだ名前)。
     pub enum PassPlanIssue with Eq, ToString {

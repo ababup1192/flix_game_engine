@@ -159,6 +159,8 @@ pub mod App {
         // 掛からない（ターゲットの中は常に design 座標そのまま — カメラを効かせたい絵は
         // view と同じ composeScene をゲーム側で通してから渡す）。
         passes = w -> Render.PassPlan \ ef,
+        // 画面全体の後がけ（withPostStack）。View が返す絵に掛け、HUD とデバッグの重ねには掛けない。
+        postStack = Option[w -> PostStack.Stack \ ef],
         // 既定フォント以外に使うフォントの名前（project.json の fonts[].name）。ここに宣言した
         // 名前だけが ViewCtx#fontOf で引ける。withFonts で足す。
         fonts = List[String],
@@ -284,6 +286,7 @@ pub mod App {
           reloadPaths = Some(Nil),
           view = None,
           passes = _ -> checked_ecast(Render.passPlan(Nil)),
+          postStack = None,
           fonts = Nil,
           camera = None,
           zoom = None,
@@ -355,20 +358,19 @@ pub mod App {
                      app: App[w, ef]): App[w, ef] =
         App.App({ view = Some(v) | rec(app) })
 
-    /// 本編より先にレンダーターゲット（描いた結果を読み返せる描き込み先）へ描く列を
-    /// World から導く関数を繋ぐ。1 枚は Render.Pass（名前・クリア指定・絵の列）で、
-    /// 名前がそのままテクスチャ名になる — view からは Render.sprite(名前, z) で普通の
-    /// スプライトとして貼れる（部分切り出し regionRect・blend・拡大も既存の道がそのまま効く）。
-    /// 複数光源の光マップ・画面を素材にする演出・残像（clear = RenderTarget.LoadOp.Keep で
-    /// 前フレームを残す）に使う。
-    /// 倍率（RenderTarget.Descriptor）を付けるなら withPassPlan を使う。
-    pub def withPasses(f: w -> List[Render.Pass] \ ef, app: App[w, ef]): App[w, ef] =
-        withPassPlan(w -> Render.passPlan(f(w)), app)
-
-    /// withPasses の、名前ごとのターゲットの作り方（倍率）も付ける形。描き出しは同じ PassPlan を
-    /// Render.passSpecsOf に渡す（倍率を 2 か所に書かない）。Pass の中の読みは Render.resolvePassReads の決まりに従う。
+    /// 本編より先にレンダーターゲット（描いた結果を読み返せる描き込み先）へ描く計画（Render.PassPlan）を World から導く関数を繋ぐ。
+    /// 1 枚は Render.Pass（名前・クリア指定・絵の列）で、名前がそのままテクスチャ名になる — view からは Render.sprite(名前, z) で貼れる。
+    /// 光マップ・画面を素材にする演出・残像（clear = RenderTarget.LoadOp.Keep）に使う。倍率は計画の targets（RenderTarget.Descriptor）。
+    /// 描き出しは同じ PassPlan を Render.passSpecsOf に渡す。Pass の中の読みは Render.resolvePassReads の決まりに従う。
+    /// 画面全体の後がけ（トーンマップ・ブルーム・奥行きのぼかし）は withPostStack（この計画の後ろに足される）。
     pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef] =
         App.App({ passes = f | rec(app) })
+
+    /// 画面全体の後がけ（PostStack: 奥行きのぼかし・ブルーム・色の仕上げ・ビネット・露出・トーンマップ・FXAA）を繋ぐ。
+    /// 掛けるのは View（と視差レイヤ）が返す絵の全部で、HUD（withHudView）とデバッグの重ねには掛けない — 掛けたくない UI は HUD に置く。
+    /// withTileLayers・withStaticLayer の層は描き手が画面へ直に描くので掛からない。Pass は withPassPlan の計画の後ろに足される（名前は ps_ で始まる）。
+    pub def withPostStack(f: w -> PostStack.Stack \ ef, app: App[w, ef]): App[w, ef] =
+        App.App({ postStack = Some(f) | rec(app) })
 
     /// 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
     /// ここで宣言した名前だけが view の ViewCtx#fontOf で引ける（宣言していない名前は既定
@@ -1098,21 +1100,14 @@ pub mod App {
     /// base の visible は層ごとに見えている矩形へ置き換わり、ほかの欄（字・知らせ・診断）はどの層にも同じ値で渡る。
     pub def buildSceneItems(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w,
                             toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ ef =
-        let r = rec(app);
-        let (center, z) = App.Internal.Paint.resolvedCamera(r, world, design);
-        let hud = match r#hudView {
-            case None    => Nil
-            // HUD は画面固定なので、見えている矩形は常に design 全体（原点起点）で zoom も掛けない。
-            case Some(h) => h({ visible = visibleOf(None, 1.0, design) | base }, world)
-        };
-        // 視差レイヤ: 見かけの center（parallaxCenter）で culling も合成も行う。hud は混ぜない。
-        let layers = r#parallaxLayers |> List.flatMap(fl -> {
-            let (factor, lview) = fl;
-            let lcenter = Option.map(c -> CameraRig.parallaxCenter(factor, c, design = design), center);
-            composeScene(lcenter, z, design, { world = lview({ visible = visibleOf(lcenter, z, design) | base }, world), hud = Nil })
-        });
-        let ctx = { visible = visibleOf(center, z, design) | base };
-        List.append(layers, composeScene(center, z, design, { world = toItems(ctx, world), hud = hud }))
+        let layers = App.Internal.Paint.sceneLayers(app, design, base, world, toItems);
+        List.append(layers#world, layers#hud)
+
+    /// 1 コマの Pass の計画（withPassPlan の計画に withPostStack の Pass を足した物）と画面の絵（後がけを掛けた物）。
+    /// 実機の毎コマと同じ物で、画面なしの描き出しが App から同じ絵を組む口。問題の知らせは base の warnOnce へ。
+    pub def buildFrame(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w,
+                       toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): { plan = Render.PassPlan, items = List[Render.PlacedItem] } \ ef =
+        App.Internal.Paint.frameOf(app, design, base, world, toItems)
 
     /// 一時停止を抜ける地点: スクラブで表示していた瞬間の World を現在とし、
     /// 履歴とフレーム番号もそこを基準に数え直す（未来側の履歴は捨てる）。

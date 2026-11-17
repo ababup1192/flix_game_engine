@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "post.schema.json",
+  "title": "flix_game_engine post.json document",
+  "description": "PostStack.load / loadOr が読む画面全体の後がけ（奥行きのぼかし・ブルーム・色の仕上げ・ビネット・露出・view transform・FXAA）。preset が出発点で、書いた欄だけが上書きになる。効果の欄（bloom・vignette・colorGrade）は欄ごとに混ぜ、kind を持つ欄（viewTransform・depthOfField）は kind が出発点と同じ時だけ欄ごとに混ぜ、違えば丸ごと替える。null はその効果を外す。名前と数の意味は Blender の Color Management と compositor に合わせる。",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "enum": [1], "label": "版" },
+    "title": { "type": "string", "label": "題", "description": "この仕上げの名前（絵には影響しない）" },
+    "preset": {
+      "type": "string", "label": "出発点",
+      "enum": ["Neutral", "DuskOutdoor", "NightOutdoor", "SunnyCity", "EveningBeach", "Cave", "NightCorridor", "TorchRoom"],
+      "description": "見た目の名前の出発点（docs/art-ref/visual-dict/reference-3d.md の行の名前）。Neutral は曲線なし・露出 0・効果なし。知らない名前は Neutral"
+    },
+    "quality": {
+      "type": "string", "label": "品質", "enum": ["Auto", "Low", "Medium", "High"],
+      "description": "読む点の数と描き先の大きさ（値の意味は変えない）。Auto はスマホで Low・ほかは Medium"
+    },
+    "msaa": { "type": "string", "label": "MSAA", "enum": ["Off", "X4"], "description": "場面の Pass の縁のならし（WebGPU は 1 か 4）" },
+    "exposure": {
+      "type": "number", "minimum": -4, "maximum": 4, "label": "露出（stop）",
+      "description": "Blender の Color Management → Exposure。線形の値に 2^露出 を掛ける。ブルームと色の仕上げの後に掛かる"
+    },
+    "viewTransform": {
+      "type": "object", "label": "view transform",
+      "description": "Blender の Color Management → View Transform。AcesNarkowicz は今までのゲームの見え方との互換（Blender に無い曲線）",
+      "properties": {
+        "kind": { "type": "string", "enum": ["Standard", "AcesNarkowicz"], "label": "曲線" },
+        "whitePoint": { "type": "number", "minimum": 0.5, "maximum": 16, "label": "白の点（AcesNarkowicz）", "description": "この明るさで 1 になる。既定 4" },
+        "saturationAfter": { "type": "number", "minimum": -1, "maximum": 1, "label": "曲線の後の彩度（AcesNarkowicz）", "description": "0..1 の色の彩度に足す（0 = そのまま）" }
+      },
+      "required": ["kind"]
+    },
+    "bloom": {
+      "type": ["object", "null"], "label": "ブルーム",
+      "description": "Blender の compositor の Glare（Bloom）。明るい所をにじませて足す。null で外す",
+      "properties": {
+        "threshold": { "type": "number", "minimum": 0, "maximum": 8, "label": "しきい（Threshold）", "description": "にじみ始める明るさ（1 を超える所が光る所）" },
+        "smoothness": { "type": "number", "minimum": 0, "maximum": 4, "label": "なめらかさ（Smoothness）", "description": "しきいからにじみ切るまでの明るさの幅" },
+        "size": { "type": "number", "minimum": 0, "maximum": 0.2, "label": "広さ（Size）", "description": "にじみの半径（画面の高さを 1 とした長さ）。Blender の Size とはぼかし方が違う" },
+        "strength": { "type": "number", "minimum": 0, "maximum": 2, "label": "強さ（Strength）" }
+      }
+    },
+    "colorGrade": {
+      "type": ["object", "null"], "label": "色の仕上げ",
+      "description": "Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation。どれも 1 が何もしない。null で外す",
+      "properties": {
+        "lift": { "$ref": "#/$defs/rgb", "label": "Lift（暗い所）" },
+        "gamma": { "$ref": "#/$defs/rgb", "label": "Gamma（中間）" },
+        "gain": { "$ref": "#/$defs/rgb", "label": "Gain（明るい所）" },
+        "saturation": { "type": "number", "minimum": 0, "maximum": 2, "label": "彩度（Saturation）", "description": "掛け算（0 = 灰色・1 = そのまま）" }
+      }
+    },
+    "vignette": {
+      "type": ["object", "null"], "label": "ビネット",
+      "description": "画面の縁を暗くする。null で外す",
+      "properties": {
+        "strength": { "type": "number", "minimum": 0, "maximum": 1, "label": "強さ" },
+        "inner": { "type": "number", "minimum": 0, "maximum": 2, "label": "暗くなり始める距離", "description": "真ん中からの距離（高さ = 1）" },
+        "outer": { "type": "number", "minimum": 0, "maximum": 2, "label": "暗くなり切る距離" },
+        "center": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "label": "真ん中 [x, y]", "description": "0..1（既定 [0.5, 0.5]）" }
+      }
+    },
+    "depthOfField": {
+      "type": ["object", "null"], "label": "奥行きのぼかし",
+      "description": "Physical は Blender の Camera → Depth of Field（距離は m・F 値）。DepthBand はピントの奥行きを中心に ±range の帯を見て、帯の中の割合 band までくっきり・band + soft でぼかし切る。毎コマ動かすピントは Doc でなく View の withDepthOfField で渡す。null で外す",
+      "properties": {
+        "kind": { "type": "string", "enum": ["Physical", "DepthBand"], "label": "種類" },
+        "focusDistance": { "type": "number", "minimum": 0, "label": "ピントの距離", "description": "Physical は m（Scene3d.withUnitsPerMeter で場面の長さへ）・DepthBand は場面の長さ" },
+        "fStop": { "type": "number", "minimum": 0.5, "maximum": 64, "label": "F 値（Physical）" },
+        "range": { "type": "number", "minimum": 0, "label": "帯の半分の長さ（DepthBand）" },
+        "band": { "type": "number", "minimum": 0, "maximum": 1, "label": "くっきりの幅（DepthBand）" },
+        "soft": { "type": "number", "minimum": 0, "maximum": 1, "label": "ぼけ切るまでの幅（DepthBand）" },
+        "blur": { "type": "number", "minimum": 0, "maximum": 0.05, "label": "ぼかしの半径（DepthBand）", "description": "画面の高さを 1 とした長さ" }
+      },
+      "required": ["kind"]
+    },
+    "fxaa": { "type": "boolean", "label": "FXAA", "description": "縁のギザギザをならす（曲線の後の表示の値に掛ける）" }
+  },
+  "$defs": {
+    "rgb": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 4 }, "minItems": 3, "maxItems": 3, "description": "[r, g, b]（1 で何もしない）" }
+  },
+  "patternProperties": { "^//": {} },
+  "additionalProperties": false
+}

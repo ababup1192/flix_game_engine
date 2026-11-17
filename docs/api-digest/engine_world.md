@@ -143,7 +143,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[{ key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[w -> PostStack.Stack \ ef], fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[{ key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -158,10 +158,10 @@
   `pub def watchFile(path: String, f: w -> w \ {Fs.FileRead}, app: App[w, ef]): App[w, ef]`
 - World を絵（(置き場所, 見せたい物) の列）へ投影する関数を繋ぐ。
   `pub def withView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef, app: App[w, ef]): App[w, ef]`
-- 本編より先にレンダーターゲット（描いた結果を読み返せる描き込み先）へ描く列を
-  `pub def withPasses(f: w -> List[Render.Pass] \ ef, app: App[w, ef]): App[w, ef]`
-- withPasses の、名前ごとのターゲットの作り方（倍率）も付ける形。描き出しは同じ PassPlan を
+- 本編より先にレンダーターゲット（描いた結果を読み返せる描き込み先）へ描く計画（Render.PassPlan）を World から導く関数を繋ぐ。
   `pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef]`
+- 画面全体の後がけ（PostStack: 奥行きのぼかし・ブルーム・色の仕上げ・ビネット・露出・トーンマップ・FXAA）を繋ぐ。
+  `pub def withPostStack(f: w -> PostStack.Stack \ ef, app: App[w, ef]): App[w, ef]`
 - 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
   `pub def withFonts(names: List[String], app: App[w, ef]): App[w, ef]`
 - ゲーム 1 本の標準形を 1 つのレコードで宣言する入口（初学者向け）。
@@ -314,6 +314,8 @@
   `pub def visibleOf(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Rect2.Rect2`
 - ViewCtx を 1 つ受けて、view・hudView・視差レイヤの絵に camera を掛けて 1 コマぶん並べる（窓なしで呼べる）。
   `pub def buildSceneItems(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ ef`
+- 1 コマの Pass の計画（withPassPlan の計画に withPostStack の Pass を足した物）と画面の絵（後がけを掛けた物）。
+  `pub def buildFrame(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): { plan = Render.PassPlan, items = List[Render.PlacedItem] } \ ef`
 - 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
   `pub def historyLimit(): Int32`
 - 開発の道具（リモートデバッグの命令口・ゲームの名簿・flow の記録・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出し・
@@ -1630,13 +1632,13 @@
   `pub type alias MultiLightConfig = { lights = List[Light], darkness = Float64, viewport = Vec2.Vec2, haloSprite = String, haloSourceSize = Float64, z = Int32 }`
 - 複数光源の近似。全面オーバーレイ（Multiply, 一様darkness）+各光位置にAddハロ、という
   `pub def multiLightItems(cfg: MultiLightConfig): List[Render.PlacedItem]`
-- 光マップ方式の設定。lightMapPass（App.withPasses へ）と lightMapOverlay（view の列へ）の
+- 光マップ方式の設定。lightMapPass（Render.passPlan で包んで App.withPassPlan へ）と lightMapOverlay（view の列へ）の
   `pub type alias LightMapConfig = { lights = List[Light], occluders = List[List[Vec2.Vec2]], viewport = Vec2.Vec2, ambient = Color, shadowStrength = Float64, extrudeLength = Float64, passName = String, z = Int32 }`
 - ambient の既定の目安（#1a1826 の夜の青み。k/255 で割り切れる値なので
   `pub def defaultAmbient(): Color`
 - shadowStrength の既定の目安（影がはっきり見えつつ、灯りの気配がわずかに残る濃さ）。
   `pub def defaultShadowStrength(): Float64`
-- 光マップの Pass を導く純関数（App.withPasses へ渡す）。並びは
+- 光マップの Pass を導く純関数（Render.passPlan で包んで App.withPassPlan へ渡す）。並びは
   `pub def lightMapPass(cfg: LightMapConfig): Render.Pass`
 - 光マップを本編へ Multiply で 1 枚貼る PlacedItem（view の列の末尾側に足す）。
   `pub def lightMapOverlay(cfg: LightMapConfig): Render.PlacedItem`
@@ -1804,6 +1806,83 @@
   `pub def bounce(contacts: List[Contact], restitutions: Map[EntityId, Float64], velocities: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
 - 各接触のめり込みを解消するよう位置を押し出す。動かせる側（velocities に居る側）だけを動かし、
   `pub def separate(contacts: List[Contact], velocities: Map[EntityId, Vec2.Vec2], positions: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
+
+## PostStack — `engine_world/src/PostStack.flix`
+- ブルーム（明るい所をにじませて足す）。threshold = にじみ始める明るさ（1 を超える所が光る所）・smoothness = threshold から
+  `pub type alias Bloom = { threshold = Float64, smoothness = Float64, size = Float64, strength = Float64 }`
+- 画面の縁を暗くする。画面の真ん中 center（0..1）から inner〜outer の距離（縦横比を直し、高さ = 1）で、1 から 1 − strength へ落ちる。
+  `pub type alias Vignette = { strength = Float64, inner = Float64, outer = Float64, center = Vec2.Vec2 }`
+- 色の仕上げ（Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation）。
+  `pub type alias ColorGrade = { lift = Color, gamma = Color, gain = Color, saturation = Float64 }`
+- 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる（Standard は曲線なし）。
+  `pub enum ViewTransform { case Standard case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 }) }`
+- 奥行きのぼかし。ぼかしに使う奥行きの絵は、View が返す絵の中の 3D の場面から PostStack が作る（ゲームが場面を 2 回組まない）。
+  `pub enum DepthOfField { case Physical({ focusDistance = Float64, fStop = Float64 }) case DepthBand({ focusDistance = Float64, range = Float64, band = Float64, soft = Float64, blur = Float64 }) }`
+- 重さと細かさの段。読む点の数と描き先の大きさだけを変え、値の意味は変えない。
+  `pub enum Quality { case Auto case Low case Medium case High case Fixed({ bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32 }) }`
+- 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
+  `pub enum Msaa with Eq, ToString { case Off case X4 }`
+- 自分の Spec を挟む所。BeforeBloom = 場面の値（1 を超える）を読んで場面の値を書く・AfterViewTransform = 表示の値（0..1）を読んで書く。
+  `pub enum CustomAt with Eq, ToString { case BeforeBloom case AfterViewTransform }`
+- 自分の Spec の読む物の宣言（SceneDepth があれば PostStack が奥行きの絵の Pass を足す）。名前は sceneName()・depthName()・postName() か Pass の名前で読む。
+  `pub enum Read with Eq, ToString { case SceneColor case SceneDepth case Pass(String) }`
+- 自分の Spec の Pass 1 枚。name は Pass の名前（ps_ で始めない）・scale は描き先の倍率（窓の画素 = 1）。
+  `pub type alias CustomPass = { name = String, at = CustomAt, spec = ShaderDoc.Spec, reads = List[Read], scale = Float64 }`
+- 途中の絵を画面へ出す（make render で 1 枚見る用）。Final = 仕上がり・Scene = 露出と曲線の前の場面の値・Bloom = ブルームの絵・Depth = 奥行きの絵。
+  `pub enum DebugView with Eq, ToString { case Final case Scene case Bloom case Depth }`
+- 見た目の名前から引く出発点（docs/art-ref/visual-dict/reference-3d.md の行の名前と同じ）。値は PostStack.preset。
+  `pub enum Preset with Eq, ToString { case Neutral case DuskOutdoor case NightOutdoor case SunnyCity case EveningBeach case Cave case NightCorridor case TorchRoom }`
+- 組み方の問題（build が返す。実機は 1 回だけ知らせ、描き出しの lint は止める）。
+  `pub enum Issue with Eq, ToString { case NoScene3d case SeveralScenes(Int32) case ReservedPassName(String) }`
+- 後がけの値の束（Godot の Environment・Unity の Volume のように、効果ごとの欄を持つ値 1 つ）。
+  `pub type alias Stack = StackData`
+- 見た目の名前の出発点。Neutral は「Standard・露出 0・ほかは無し」。
+  `pub def preset(p: Preset): Stack`
+- 露出（stop の数。線形の値に 2^stops を掛ける。Blender の Color Management → Exposure）。ブルームと色の仕上げの後に掛かる。
+  `pub def withExposure(stops: Float64, s: Stack): Stack`
+- `pub def withViewTransform(v: ViewTransform, s: Stack): Stack`
+- None で外す（with* はどれも効果の欄を丸ごと替える。Doc の上書きは欄ごとに混ぜる — load の doc）。
+  `pub def withBloom(b: Option[Bloom], s: Stack): Stack`
+- `pub def withColorGrade(c: Option[ColorGrade], s: Stack): Stack`
+- `pub def withVignette(v: Option[Vignette], s: Stack): Stack`
+- `pub def withDepthOfField(d: Option[DepthOfField], s: Stack): Stack`
+- `pub def withFxaa(on: Bool, s: Stack): Stack`
+- 自分の Spec の Pass の列（前の列を丸ごと替える）。
+  `pub def withCustom(c: List[CustomPass], s: Stack): Stack`
+- `pub def withQuality(q: Quality, s: Stack): Stack`
+- `pub def withMsaa(m: Msaa, s: Stack): Stack`
+- `pub def withDebugView(v: DebugView, s: Stack): Stack`
+- `pub def exposureOf(s: Stack): Float64`
+- `pub def viewTransformOf(s: Stack): ViewTransform`
+- `pub def bloomOf(s: Stack): Option[Bloom]`
+- `pub def colorGradeOf(s: Stack): Option[ColorGrade]`
+- `pub def vignetteOf(s: Stack): Option[Vignette]`
+- `pub def depthOfFieldOf(s: Stack): Option[DepthOfField]`
+- `pub def isFxaa(s: Stack): Bool`
+- `pub def qualityOf(s: Stack): Quality`
+- `pub def msaaOf(s: Stack): Msaa`
+- 場面（View が返す絵）を描いた Pass。BeforeBloom の自分の Spec はこれを読む。
+  `pub def sceneName(): String`
+- 奥行きの絵（DepthBand は ±range の帯を 0..1・Physical は目からの距離を camera の far で割った値。r に入る）。
+  `pub def depthName(): String`
+- 曲線を掛けた後の表示の値の Pass。AfterViewTransform の自分の Spec はこれを読む。
+  `pub def postName(): String`
+- PostStack の Pass の名前の頭（ゲームの Pass はこれで始めない）。
+  `pub def reservedPrefix(): String`
+- post.json（schema は engine の docs/post.schema.json）を読む。preset が出発点で、書いた欄だけが上書き
+  `pub def load(path: String): Result[JsonError, Stack] \ Fs.FileRead`
+- load の、読めない・壊れている時に fallback で続ける形（1 行知らせる。ファイルが無いのは正常系で黙る）。
+  `pub def loadOr(fallback: Stack, path: String): Stack \ Fs.FileRead`
+- JSON の字から読む（load の中身・テストと Studio の保存即反映の口）。
+  `pub def parse(text: String): Result[JsonError, Stack]`
+- build に渡す物。size = 画面（design）の大きさ・clear = 場面の Pass を消す色・world = 後がけを掛ける絵（View が返す物）。
+  `pub type alias BuildInput = { size = Vec2.Vec2, clear = Color, world = List[Render.PlacedItem] }`
+- 先に描く Pass の計画・world の代わりに画面へ置く面 1 枚・組み方の問題。
+  `pub def build(input: BuildInput, s: Stack): { plan = Render.PassPlan, present = Render.PlacedItem, issues = List[Issue] }`
+- Auto を画面の区分で決めた Stack（スマホは Low・ほかは Medium）。App.withPostStack は描く前にこれを通す。
+  `pub def resolveQuality(sizeClass: Display.SizeClass, s: Stack): Stack`
+- 問題 1 件の知らせの字。
+  `pub def issueText(issue: Issue): String`
 
 ## ProcessEnv — `engine_world/src/ProcessEnv.flix`
 - `pub def snapshot(): Map[String, String] \ IO`
@@ -2097,7 +2176,7 @@
   `pub def checker(c: { color = Color, alpha = Float64, cell = Float64 }, item: Item): Item`
 - 大きさ系の属性を factor 倍する（全種類の item に効く）。camera の zoom 適用の芯:
   `pub def scaled(factor: Float64, item: Item): Item`
-- 本編より先にレンダーターゲットへ描く 1 枚ぶんの宣言（App.withPasses で列を渡す）。
+- 本編より先にレンダーターゲットへ描く 1 枚ぶんの宣言（App.withPassPlan の計画に並べる）。
   `pub type alias Pass = { name = String, clear = RenderTarget.LoadOp, items = List[PlacedItem] }`
 - レンダーターゲット（Pass の name）を design 全面へ等倍で貼る（中心置き）。ターゲットは
   `pub def blit(name: String, design: Vec2.Vec2, z: Int32): PlacedItem`
@@ -2113,6 +2192,8 @@
   `pub type alias PassPlan = { passes = List[Pass], targets = Map[String, RenderTarget.Descriptor] }`
 - 作り方を全部既定にした計画。
   `pub def passPlan(passes: List[Pass]): PassPlan`
+- 2 つの計画を a の後ろに b をつないで 1 つにする（a の Pass が先に描かれ、b の Pass は a の Pass を名前で読める）。
+  `pub def mergePassPlans(a: PassPlan, b: PassPlan): Result[List[PassPlanIssue], PassPlan]`
 - 計画の中の、読み方・宣言の問題（resolvePassReads が知らせる物）。payload は (Pass の名前, 読んだ名前)。
   `pub enum PassPlanIssue with Eq, ToString { case ReadsLaterPass(String, String) case ReadsUndeclaredTarget(String, String) case DuplicatePass(String) case ReservedPassName(String) case UnknownDescriptor(String) case ScaleOutOfRange(String, Float64) }`
 - Pass の名前 → このコマで使うターゲットの倍率（RenderTarget.scaleOf で範囲に収めた値）。

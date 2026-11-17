@@ -545,7 +545,7 @@ pub mod HeadlessRender {
 
     /// pass つきの renderGif（renderPngWithPasses の GIF 版）。toCmds が各コマの
     /// (pass 列, 描き物, 多角形, シェーダー面) を返し、コマごとに pass を宣言順に生成してから
-    /// 本編と合成する — 実機の App.withPasses と同じ順序で、後の pass は先に生成した pass の
+    /// 本編と合成する — 実機の App.withPassPlan と同じ順序で、後の pass は先に生成した pass の
     /// 名前を貼れる。items は本編・pass とも Render.withoutShaders → Render.draw で下ろす
     /// こと（renderPngWithPasses と同じ決まり。pass は Render.passSpecOf が外してくれる）。
     /// pass の Keep はコマをまたいで持ち越さない — 実機の Keep は前フレームの画面を

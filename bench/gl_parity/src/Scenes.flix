@@ -52,7 +52,8 @@ mod Scenes {
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
             :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d()
-            :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d() :: Nil
+            :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d()
+            :: PostScenes.postStackLook() :: PostScenes.postStackDepthBand() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -81,6 +82,9 @@ mod Scenes {
     /// 太陽の 4 つ（Apple Silicon で sunLit3d 0 px・sunShadow3d 0 px・sunSpotShadow3d 45 px・sunPbr3d 87 px）: 影の縁の画素が地図の奥行きの比べ（Float32 と Float64）で割れるのと、
     /// 球の鏡面の坂の丸め（±3 まで）。太陽の項か影の地図の箱を取り違えると、床の面（数千 px）が丸ごと違い、桁が変わる。
     /// batch の頭の物の tint か emission で描くと板 1 枚で 300 px を超えて列ごとに違い、行を取り違えると板の曲がりが変わって縁の数が桁で増える。
+    /// PostStack の 2 つ（Apple Silicon で postStackLook 2,188 px ±4・postStackDepthBand 547 px ±72）: 前者は tonemap と同じ HDR の補間の丸めの ±1〜4 が
+    /// 平らな面とブルームの坂に出る。後者は奥行きの絵の縁（板と床の境・床の奥の端）で、くっきりとぼかした場面の混ぜ方が奥行きの丸めで割れる 1〜2 px の帯。
+    /// 奥行きの帯の取り違え（near・range）やブルームの足し忘れは面の全部（数万 px）が違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
@@ -99,6 +103,8 @@ mod Scenes {
         case "texSizeScaled"   => Some(100)
         case "tonemap"         => Some(7000)
         case "fxaa"            => Some(300)
+        case "postStackLook"      => Some(3000)
+        case "postStackDepthBand" => Some(800)
         case "lightmapBaked3d" => Some(600)
         case "lightmapNormal3d" => Some(400)
         case "spotSoftEdge3d"  => Some(100)
@@ -974,6 +980,13 @@ mod Scenes {
     // Pass に Add の箱を重ね（180/255 × 2 ≈ 1.41・200/255 × 3 ≈ 2.35）、1 を超える色の面（1.5, 2.0, 0.25）を置き、本編の面が
     // 0.5 倍して読む。Rgba8Unorm なら 1 に切られて 128 になる所が 180・255 などになる（切っていないことを絵で示す）。
     // 値は half の丸めと 8bit の丸めがどちらの経路でも同じ側に落ちる数（×255 が .5 から離れる）にしてある。
+    /// HDR の Pass に描く 2D の絵（PostScenes の後がけの場面も読む）。
+    pub def hdrWorld(): List[Render.PlacedItem] = hdrPassItems()
+
+    /// 太陽で照らした床と板の 3D の場面を画面いっぱいに 1 つ（PostScenes の奥行きのぼかしの場面が読む）。
+    pub def sunWorld(): List[Render.PlacedItem] =
+        Render.scene3d({ x = 0.0, y = 0.0 }, { size = { x = designW(), y = designH() } | sunScene(sunOf(false), true, false) }) :: Nil
+
     def hdrPassItems(): List[Render.PlacedItem] =
         let add = (x, y, w, h, c) -> at(x, y, RawDraw.box({ x = w, y = h }, c, 1) |> Render.blended(DrawCmd.BlendMode.Add));
         let bright: ShaderDoc.Spec = { name = "parity_bright", cycleRate = 0.0, bindings = Nil,

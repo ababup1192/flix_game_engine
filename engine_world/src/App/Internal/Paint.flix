@@ -19,9 +19,57 @@ pub mod App.Internal.Paint {
                        diagnostics: Option[FrameDiagnostics.Diagnostics], world: w,
                        toItems: (App.ViewCtx, w) -> List[Render.PlacedItem] \ ef):
             List[Render.PlacedItem] \ (ef + Platform.GpuResources) =
-        let base = { atlas = atlas, fontOf = fontResolver(App.rec(app), atlas),
-                     visible = App.visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display };
-        App.buildSceneItems(app, design, base, world, toItems)
+        App.buildSceneItems(app, design, baseCtx(app, design, display, atlas, warnOnce, diagnostics), world, toItems)
+
+    /// view・hudView に渡す ViewCtx の元（visible は層ごとに置き換わる）。
+    def baseCtx(app: App[w, ef], design: Vec2.Vec2, display: Display.Display, atlas: FontAtlas, warnOnce: String -> Unit,
+                diagnostics: Option[FrameDiagnostics.Diagnostics]): App.ViewCtx \ Platform.GpuResources =
+        { atlas = atlas, fontOf = fontResolver(App.rec(app), atlas),
+          visible = App.visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display }
+
+    /// view・視差レイヤの絵に camera を掛けた物（world）と、HUD の範囲へ持ち上げた hudView の絵（hud）。
+    /// base の visible は層ごとに見えている矩形へ置き換わり、ほかの欄（字・知らせ・診断）はどの層にも同じ値で渡る。
+    pub def sceneLayers(app: App[w, ef], design: Vec2.Vec2, base: App.ViewCtx, world: w,
+                        toItems: (App.ViewCtx, w) -> List[Render.PlacedItem] \ ef): { world = List[Render.PlacedItem], hud = List[Render.PlacedItem] } \ ef =
+        let r = App.rec(app);
+        let (center, z) = resolvedCamera(r, world, design);
+        let hud = match r#hudView {
+            case None    => Nil
+            // HUD は画面固定なので、見えている矩形は常に design 全体（原点起点）で zoom も掛けない。
+            case Some(h) => h({ visible = App.visibleOf(None, 1.0, design) | base }, world)
+        };
+        // 視差レイヤ: 見かけの center（parallaxCenter）で culling も合成も行う。hud は混ぜない。
+        let layers = r#parallaxLayers |> List.flatMap(fl -> {
+            let (factor, lview) = fl;
+            let lcenter = Option.map(c -> CameraRig.parallaxCenter(factor, c, design = design), center);
+            App.composeScene(lcenter, z, design, { world = lview({ visible = App.visibleOf(lcenter, z, design) | base }, world), hud = Nil })
+        });
+        let ctx = { visible = App.visibleOf(center, z, design) | base };
+        { world = List.append(layers, App.composeScene(center, z, design, { world = toItems(ctx, world), hud = Nil })),
+          hud = App.composeScene(None, 1.0, design, { world = Nil, hud = hud }) }
+
+    /// 1 コマの Pass の計画と画面の絵（App.buildFrame の中身）。withPostStack があれば world を後がけの Pass へ回し、
+    /// 画面には後がけの面と HUD を置く。計画の名前が重なれば後がけを掛けずに 1 行知らせる。
+    pub def frameOf(app: App[w, ef], design: Vec2.Vec2, base: App.ViewCtx, world: w,
+                    toItems: (App.ViewCtx, w) -> List[Render.PlacedItem] \ ef): { plan = Render.PassPlan, items = List[Render.PlacedItem] } \ ef =
+        let r = App.rec(app);
+        let layers = sceneLayers(app, design, base, world, toItems);
+        let gamePlan = (r#passes)(world);
+        let plain = { plan = gamePlan, items = List.append(layers#world, layers#hud) };
+        match r#postStack {
+            case None    => plain
+            case Some(f) =>
+                let stack = PostStack.resolveQuality(base#display#sizeClass, f(world));
+                let built = PostStack.build({ size = design, clear = Color.rgb(0.0, 0.0, 0.0), world = layers#world }, stack);
+                let noted = built#issues |> List.forEach(issue -> base#warnOnce("[post] ${PostStack.issueText(issue)}"));
+                match (noted, Render.mergePassPlans(gamePlan, built#plan)) {
+                    case ((), Ok(plan))     => { plan = plan, items = built#present :: layers#hud }
+                    case ((), Err(clashes)) =>
+                        match clashes |> List.forEach(c -> base#warnOnce("[post] withPassPlan の Pass と名前が重なる（${c}）— 後がけを掛けない")) {
+                            case () => plain
+                        }
+                }
+        }
 
     /// 生成したアトラスを描画部へ渡しておく（同じ key の間は何も起きない）。
     /// 同じ名前が 2 つ来たら後の方だけを使う — 両方渡すと毎フレーム key が入れ替わり、
@@ -290,7 +338,8 @@ pub mod App.Internal.Paint {
                 uploadAtlases((r#spriteAtlases)(world));
                 preloadCmd(app, tileCache#gen, world) |> Option.forEach(cmd -> Platform.Draw3d.preload3d(cmd));
                 let atlas = Platform.GpuResources.getFontAtlas("default");
-                let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, (r#passes)(world)));
+                let frame = frameOf(app, design, baseCtx(app, design, display, atlas, warnOnce, diagnostics), world, toItems);
+                let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, frame#plan));
                 let passList = plan#passes;
                 renderPasses(warnOnce, design, plan);
                 let cacheSeen = { passTargets = passList |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), tileCache#passTargets)
@@ -298,7 +347,7 @@ pub mod App.Internal.Paint {
                 // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
                 // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
                 let retained = Annotate.isIdentity(look#view);
-                let scene = sceneItems(app, design, display, atlas, warnOnce, diagnostics, world, toItems);
+                let scene = frame#items;
                 let base = if (retained) scene
                            else List.append(tilePausedItems(app, design, world),
                                             List.append(scene, staticPausedItems(app, design, world)));

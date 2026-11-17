@@ -36,9 +36,11 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 会話の窓・通知の帯の高さを、折り返す文章の行数に合わせる（固定の px で書くと 2 行目が下枠に被る） | `Flex.box`（pad つき）の子に `Flex.wrappedText(look, 文)`・文字送りの途中でも窓を変えないなら `Flex.wrappedTextShowing(look, 全文, 見せる分)`。寸法だけなら `TextDraw.wrappedSize(文, atlas, fontSize, wrapWidth)` |
 | 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
-| 3D の場面を窓の画素で描く・白飛びを HDR とトーンマップで収める・縁を FXAA でならす | `RenderTarget.windowDescriptor()` / `withHdr` の Pass → 本編の面を `PostProcess.tonemappedWith` → 8bit の Pass を `PostProcess.fxaaSpec`（1 で切って白飛びを抑えない） |
+| 3D の場面に写真のような仕上げ（白飛びを収める・灯りのにじみ・縁を暗く・縁をならす）を付ける | `App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor) \|> PostStack.withExposure(..))`（順・Pass・描き先はエンジン。値は `assets/post.json` を `PostStack.loadOr`・schema は engine の `docs/post.schema.json`。Pass を手で並べて `PostProcess.tonemappedWith` を組まない） |
+| 後がけを掛けたくない会話の窓・メニュー・字幕 | `App.withHudView` に置く（`App.withPostStack` は View の絵の全部に掛かり、HUD には掛からない） |
+| 3D の場面の奥行きでぼかす（ピントを主人公に） | `PostStack.withDepthOfField(Some(PostStack.DepthOfField.Physical({ focusDistance, fStop })))`（m・F 値。奥行きの絵はエンジンが場面から作る。場面の長さが m でなければ `Scene3d.withUnitsPerMeter`） |
 | 3D の場面の光・空・かすみ・露出・bloom の値を決める（夕方の屋外・夜の部屋・洞窟など） | engine の `docs/art-ref/visual-dict/reference-3d.md`（見た目の名前 → 値の組・Pass の並びの手本・見た目が悪い時の切り分け。前のゲームの値を写す前に引く） |
-| bloom・tonemap・被写界深度の出方がおかしい時に、途中の Pass の絵を 1 枚描き出して確かめる | `HeadlessRender.renderPassImage(cfg, p, None)`（前の Pass を読む Pass は `renderPassImageWith(cfg, 前の Pass の絵, p, None)`）→ `SoftRaster.toArgbImage` → `Filmstrip.renderFrame`・奥行きの絵は場面の `output = Scene3d.Output.Depth({ near, range })` |
+| bloom・tonemap・被写界深度の出方がおかしい時に、途中の Pass の絵を 1 枚描き出して確かめる | `PostStack.withDebugView(PostStack.DebugView.Bloom)`（`Scene`・`Depth`）を `make render` で 1 枚・手で並べた Pass は `HeadlessRender.renderPassImage(cfg, p, None)`（前の Pass を読む Pass は `renderPassImageWith(cfg, 前の Pass の絵, p, None)`）→ `SoftRaster.toArgbImage` → `Filmstrip.renderFrame`・奥行きの絵は場面の `output = Scene3d.Output.Depth({ near, range })` |
 | 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |
 | 系・View の中で平方根・sin・cos・角（atan2）・π を使う | `Num.sqrt` / `Num.sin` / `Num.cos` / `Num.atan2` / `Num.pi` / `Num.tau`（`java.lang.Math` を呼ばない。Vec2 の旧い数の関数は 0.84.0 で消えた） |
 | 面の中で光の向きや距離を計算する（平方根・長さ 1 にそろえる） | ShaderDoc の `math1` の `sqrt`（`UnOp.Sqrt`）・`ShaderDoc.lengthOf` / `normalized`（近い値で代わりにしない） |

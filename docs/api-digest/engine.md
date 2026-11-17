@@ -1085,7 +1085,7 @@
 ## PostProcess — `engine/src/shader/PostProcess.flix`
 - トーンマップの曲線（Unity の Tonemapping Mode・Unreal の Filmic と同じ役目）。
   `pub enum Tonemap with Eq, ToString { case AcesFitted case Reinhard }`
-- 既定の露出（stop の数。2^stops 倍してから曲線に掛ける）。曲線の正規化で落ちる白を持ち上げる値で、
+- 既定の露出（stop の数。2^stops 倍してから曲線に掛ける）。PostStack の既定は 0（withExposure）。曲線の正規化で落ちる白を持ち上げる値で、
   `pub def defaultExposure(): Float64`
 - 既定の白の点（この明るさで 1 になる）。
   `pub def defaultWhitePoint(): Float64`
@@ -1095,6 +1095,8 @@
   `pub def tonemapped(op: Tonemap, exposureStops: Float64, whitePoint: Float64, spec: ShaderDoc.Spec): ShaderDoc.Spec`
 - tonemapped の、トーンマップの後の色に after を掛ける形（色調・かすみなど 0..1 を前提にした仕上げを同じ面の中で）。
   `pub def tonemappedWith(op: Tonemap, exposureStops: Float64, whitePoint: Float64, after: (Field, Field, Field) -> Shade, spec: ShaderDoc.Spec): ShaderDoc.Spec`
+- 曲線を whitePoint で 1 になるようにそろえ、0..1 に切った場（x は露出を掛けて 0 で下切りした値）。whitePoint が 0 以下ならそろえない。
+  `pub def tonemapCurve(op: Tonemap, whitePoint: Float64, x: Field): Field`
 - source の Pass を FXAA 3.11（PC の簡単な版）でならした面。斜めの 4 点（NW・NE・SW・SE）と真ん中の明るさから縁の向きを出し、
   `pub def fxaaSpec(source: String): ShaderDoc.Spec`
 
@@ -1432,8 +1434,10 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap] }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64 }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
+- 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
+  `pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd`
 - 動かない物の集まりの中身。name = 診断と知らせに出す名前・items = (鍵, 置いた物) の並び・removed = 描かない物の鍵（withoutItems）・
   `pub type alias StaticGroupFields = { name = String, items = List[(String, Instance3d)], removed = Set[String], tint = Color }`
 - 動かない物の集まり（Unity の Static・Unreal の Mobility = Static に当たる）。場面の groups に載せると、中の物は instances と同じ絵で描かれ、
