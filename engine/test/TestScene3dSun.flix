@@ -2,7 +2,7 @@
 // 描き手が読む値の約束（使える太陽の決め方・影の地図の箱の決め方と丸め）を、GL と CPU の描き手に依らずに確かめる。
 
 def sunCamera(eye: Vec3.Vec3, yaw: Float64, pitch: Float64): Camera3d.Camera3d =
-    { eye = eye, yaw = yaw, pitch = pitch, fovY = 1.0, near = 0.5, far = 100.0 }
+    { eye = eye, yaw = yaw, pitch = pitch, fovY = 1.0, near = 0.5, far = 100.0, lensShift = Vec2.zero() }
 
 def sunShadowSettings(): Scene3d.DirectionalShadow =
     { mapSize = 256, bias = 0.05, normalBias = 1.0, pcfRadius = 1, strength = 0.8, distance = 40.0, casterReach = 20.0 }

@@ -252,7 +252,7 @@ mod V2Main {
                                                             :: Vec3.v3(x + tilt + 0.15, 4.0, 12.0) :: Vec3.v3(x + 0.15, -4.0, 12.0) :: Nil,
                                                    color = Color.rgb(0.9, 0.9, 0.9) };
         let rails = Scene3d.meshInstance(Mesh3d.fromPolygons(bar(-6.0, 3.0) :: bar(-4.0, 2.0) :: bar(-2.0, 1.2) :: Nil), Mat4.identity());
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         let scene = { instances = rails :: Nil, zIndex = 1,
                       environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = background }
                       | Scene3d.scene(camera, Room.design()) };

@@ -156,6 +156,27 @@ pub mod Scene3d {
 
     /// カメラの視錐台のうち、前の向きの奥行きが near..far の部分を囲む球（中心, 半径）。式は directionalShadowOf の doc。
     def frustumSphereOf(cam: Camera3d.Camera3d, aspect: Float64, far: Float64): (Vec3.Vec3, Float64) =
+        if (Camera3d.hasLensShift(cam)) shiftedFrustumSphereOf(cam, aspect, far) else centeredFrustumSphereOf(cam, aspect, far)
+
+    /// レンズシフトのある視錐台の near..far の 8 つの角を囲む球（角の平均を中心に、一番遠い角まで）。
+    /// 半径はカメラの位置と向きによらない（角の並びは目から見て同じ形のまま回るだけ）ので、影の地図の画素は動いても揺れない。
+    def shiftedFrustumSphereOf(cam: Camera3d.Camera3d, aspect: Float64, far: Float64): (Vec3.Vec3, Float64) =
+        let half = cam#fovY / 2.0;
+        let tanHalf = Num.sin(half) / Num.cos(half);
+        let f = Camera3d.forward(cam);
+        let r = Camera3d.right(cam);
+        let u = Camera3d.up(cam);
+        let sx = cam#lensShift#x;
+        let sy = cam#lensShift#y;
+        let cornerAt = (d, kx, ky) -> Vec3.add(cam#eye, Vec3.add(Vec3.mul(f, d),
+            Vec3.add(Vec3.mul(r, (kx + 2.0 * sx) * tanHalf * aspect * d), Vec3.mul(u, (ky + 2.0 * sy) * tanHalf * d))));
+        let corners = List.flatMap(d -> List.flatMap(kx -> List.map(ky -> cornerAt(d, kx, ky), -1.0 :: 1.0 :: Nil), -1.0 :: 1.0 :: Nil),
+                                   cam#near :: far :: Nil);
+        let center = Vec3.mul(List.foldLeft(Vec3.add, Vec3.zero(), corners), 1.0 / 8.0);
+        let radius = List.foldLeft((acc, p) -> Float64.max(acc, Vec3.length(Vec3.sub(p, center))), 0.0, corners);
+        (center, radius)
+
+    def centeredFrustumSphereOf(cam: Camera3d.Camera3d, aspect: Float64, far: Float64): (Vec3.Vec3, Float64) =
         let half = cam#fovY / 2.0;
         let tanHalf = Num.sin(half) / Num.cos(half);
         let k2 = (1.0 + aspect * aspect) * tanHalf * tanHalf;
@@ -170,7 +191,7 @@ pub mod Scene3d {
     def sunViewMatrix(direction: Vec3.Vec3): Mat4.Mat4 =
         let flat = Num.sqrt(direction#x * direction#x + direction#z * direction#z);
         Camera3d.viewMatrix({ eye = Vec3.zero(), yaw = Num.atan2(direction#x, direction#z), pitch = Num.atan2(0.0 - direction#y, flat),
-                              fovY = 1.0, near = 1.0, far = 2.0 })
+                              fovY = 1.0, near = 1.0, far = 2.0, lensShift = Vec2.zero() })
 
     /// 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
     pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }
@@ -842,7 +863,7 @@ pub mod Scene3d {
         let c = skyFieldsOf(s)#curve;
         if (Float64.isFinite(c) and c > 0.0) c else 1.0
 
-    /// 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 見ている向き・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
+    /// 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 画面の真ん中の画素の向き（レンズシフトが 0 なら見ている向き。長さは 1 とは限らない）・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
     /// up = 画面の上の向き × tan(fovY / 2)。NDC の点 (x, y) の向きは skyDirectionOf（Camera3d.screenPointToRay と同じ式）。
     pub type alias SkyBasis = { forward = Vec3.Vec3, right = Vec3.Vec3, up = Vec3.Vec3 }
 
@@ -851,7 +872,12 @@ pub mod Scene3d {
         let c = scene#camera;
         let half = c#fovY / 2.0;
         let tanHalf = Num.sin(half) / Num.cos(half);
-        { forward = Camera3d.forward(c), right = Vec3.mul(Camera3d.right(c), tanHalf * aspectOf(scene)), up = Vec3.mul(Camera3d.up(c), tanHalf) }
+        let right = Vec3.mul(Camera3d.right(c), tanHalf * aspectOf(scene));
+        let up = Vec3.mul(Camera3d.up(c), tanHalf);
+        let center = if (Camera3d.hasLensShift(c))
+                Vec3.add(Camera3d.forward(c), Vec3.add(Vec3.mul(right, 2.0 * c#lensShift#x), Vec3.mul(up, 2.0 * c#lensShift#y)))
+            else Camera3d.forward(c);
+        { forward = center, right = right, up = up }
 
     /// NDC の点 ndc（−1..1・y は上へ）を通って目から伸びる向き（長さ 1）。
     pub def skyDirectionOf(b: SkyBasis, ndc: Vec2.Vec2): Vec3.Vec3 =
@@ -886,7 +912,7 @@ pub mod Scene3d {
         let flat = Num.sqrt(dir#x * dir#x + dir#z * dir#z);
         let far = Float64.max(2.0, spot#range);
         { eye = spot#position, yaw = Num.atan2(dir#x, dir#z), pitch = Num.atan2(0.0 - dir#y, flat),
-          fovY = spot#fovY, near = Float64.min(1.0, far / 100.0), far = far }
+          fovY = spot#fovY, near = Float64.min(1.0, far / 100.0), far = far, lensShift = Vec2.zero() }
 
     /// スポットの影の判定で地図の値と比べる時に引く値（ShadowMap の bias を、shadowCamera の near で縮めた物）。GL・WebGPU・CPU の描き手がこの値を使う。
     /// bias × near × (far − 1) / (far − near)。near が 1 の光（range 100 以上）は bias のまま。
@@ -926,7 +952,7 @@ pub mod Scene3d {
         else {
             let frustum = frustumOf(cmd);
             let ranked = List.zip(List.range(0, List.length(cmd#pointLights)), cmd#pointLights)
-                |> List.filterMap(pair -> pointPickScoreOf(cmd#camera, frustum, snd(pair)) |> Option.map(score -> (score, pair)))
+                |> List.filterMap(pair -> pointPickScoreOf(cmd#camera, aspectOf(cmd), frustum, snd(pair)) |> Option.map(score -> (score, pair)))
                 |> Sort.sortStableBy(fst);
             let scores = ranked |> List.map(fst) |> List.toVector;
             ranked
@@ -940,7 +966,7 @@ pub mod Scene3d {
         }
 
     /// 点光源を選ぶ点数（小さいほど先に選ぶ）。選ばない光は None。
-    /// 目が球の外: (見ている向きと光の中心の向きの間の角 − asin(range / 距離) + π/2 + 1) ÷ 球が視錐台へ入っている度合い。
+    /// 目が球の外: (画面の真ん中の向き（Camera3d.centerRayDirection）と光の中心の向きの間の角 − asin(range / 距離) + π/2 + 1) ÷ 球が視錐台へ入っている度合い。
     /// 目が球の中: (距離 / range) × (角 + 1) ÷ 度合いを 1 へ (1 − 距離 / range) だけ近づけた物。どちらも球の表面で同じ値になる。
     // WhyNot: 目からの距離で選ばない — 見下ろしの遠いカメラでは画面の下の端の光ばかり選ばれ、画面の真ん中から奥の光の溜まりが出ない。
     // WhyNot: 注目点を視線と地面の交点にしない — 場面に地面の高さの約束が無く、水平に見るカメラでは交わらない。
@@ -950,14 +976,14 @@ pub mod Scene3d {
     //   度合いも、視錐台より大きな球は 0.5 から上がらないので、目の周りを照らす光ほど 1 へ近づける。
     // WhyNot: `+ π/2 + 1` を足さずに割らない — 角は負になりうるので、度合いで割って大きくするには分子を正にしておく。
     // WhyNot: `insideRatio <= 0.0` で落とさない — NaN の位置や range も落とす。
-    def pointPickScoreOf(camera: Camera3d.Camera3d, frustum: Frustum.Frustum, light: PointLight): Option[Float64] =
+    def pointPickScoreOf(camera: Camera3d.Camera3d, aspect: Float64, frustum: Frustum.Frustum, light: PointLight): Option[Float64] =
         let insideRatio = Frustum.sphereInsideRatio(frustum, light#position, light#range);
         if (not (insideRatio > 0.0 and light#range > 0.0 and light#intensity > 0.0)) None
         else {
             let toLight = Vec3.sub(light#position, camera#eye);
             let dist = Vec3.length(toLight);
             let reach = light#range;
-            let forward = Camera3d.forward(camera);
+            let forward = Camera3d.centerRayDirection(camera, aspect);
             let centerAngle = Num.atan2(Vec3.length(Vec3.cross(forward, toLight)), Vec3.dot(forward, toLight));
             if (dist > reach)
                 Some((centerAngle - Num.asin(reach / dist) + Num.pi() / 2.0 + 1.0) / insideRatio)

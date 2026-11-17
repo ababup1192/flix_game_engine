@@ -273,7 +273,7 @@ mod TestRenderPasses {
         let plate = Scene3d.meshInstance(Mesh3d.fromPolygons(
             { points = Vec3.v3(-2.0, 2.0, 2.0) :: Vec3.v3(-0.6, 2.0, 2.0) :: Vec3.v3(-0.6, -2.0, 2.0) :: Vec3.v3(-2.0, -2.0, 2.0) :: Nil,
               color = red } :: Nil), Mat4.identity());
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 };
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
         let base = Scene3d.scene(camera, { x = 4.0, y = 4.0 });
         let scene = { instances = plate :: Nil, environment = { background = Some({ r = 0.0, g = 0.0, b = 1.0 }) | base#environment } | base };
         let img = renderArgb(cfg(scale),

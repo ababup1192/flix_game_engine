@@ -31,7 +31,7 @@ def testSkyCurveFallsBackToOne(): Unit \ Assert =
 /// 画面の真ん中（NDC の 0, 0）の向きは見ている向き。
 @Test
 def testSkyDirectionAtCenterIsForward(): Unit \ Assert =
-    let camera = { eye = Vec3.zero(), yaw = 0.3, pitch = 0.4, fovY = 1.0, near = 0.1, far = 100.0 };
+    let camera = { eye = Vec3.zero(), yaw = 0.3, pitch = 0.4, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
     let basis = Scene3d.skyBasisOf(Scene3d.scene(camera, { x = 320.0, y = 180.0 }));
     Assert.assertTrue(Vec3.distanceSquared(Scene3d.skyDirectionOf(basis, { x = 0.0, y = 0.0 }), Camera3d.forward(camera)) < 1.0e-12)
 
@@ -39,21 +39,31 @@ def testSkyDirectionAtCenterIsForward(): Unit \ Assert =
 @Test
 def testSkyHorizonRowFollowsPitch(): Unit \ Assert =
     let pitch = 20.0 * Num.pi() / 180.0;
-    let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = pitch, fovY = 1.0, near = 0.1, far = 100.0 };
+    let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = pitch, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
     let basis = Scene3d.skyBasisOf(Scene3d.scene(camera, { x = 320.0, y = 180.0 }));
     let ndcY = (Num.sin(pitch) / Num.cos(pitch)) / (Num.sin(0.5) / Num.cos(0.5));
     Assert.assertTrue(Float64.abs(Scene3d.skyDirectionOf(basis, { x = 0.0, y = ndcY })#y) < 1.0e-9)
 
+/// レンズシフトのある水平のカメラでも、空の画素の向きは screenPointToRay と同じ（画面の真ん中の行が地平より下を向く）。
+@Test
+def testSkyDirectionFollowsLensShift(): Unit \ Assert =
+    let camera = { eye = Vec3.zero(), yaw = 0.2, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.v2(0.05, -0.4) };
+    let size = { x = 320.0, y = 180.0 };
+    let basis = Scene3d.skyBasisOf(Scene3d.scene(camera, size));
+    let sky = Scene3d.skyDirectionOf(basis, { x = 0.5, y = -0.25 });
+    let ray = Ray3d.direction(Camera3d.screenPointToRay(camera, size, { x = 240.0, y = 112.5 }));
+    Assert.assertTrue(Vec3.distanceSquared(sky, ray) < 1.0e-12)
+
 /// 空なしの場面は scene の既定。
 @Test
 def testSceneHasNoSkyByDefault(): Unit \ Assert =
-    Assert.assertTrue(Option.isEmpty(Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 },
+    Assert.assertTrue(Option.isEmpty(Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() },
                                                    { x = 10.0, y = 10.0 })#sky))
 
 /// sky と background が両方ある時だけ知らせる。
 @Test
 def testSkyWarningOnlyWhenBothAreSet(): Unit \ Assert =
-    let base = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, { x = 10.0, y = 10.0 });
+    let base = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }, { x = 10.0, y = 10.0 });
     let withSky = { sky = Some(threeColorSky()) | base };
     let both = { environment = { background = Some(Color.rgb(0.0, 0.0, 0.0)) | withSky#environment } | withSky };
     Assert.assertEq(expected = (false, true), (Option.nonEmpty(Scene3d.skyWarning(withSky)), Option.nonEmpty(Scene3d.skyWarning(both))))

@@ -57,7 +57,7 @@ mod V2Environment {
 
     /// 球の格子を点光源とスポットで照らし、環境マップ env を付けた場面（地の色は暗い紺）。yaw・pitch = 目の向き。
     pub def scene(env: Scene3d.EnvironmentMap, yaw: Float64, pitch: Float64): Scene3d.Scene3dCmd =
-        let camera = { eye = Vec3.zero(), yaw = yaw, pitch = pitch, fovY = 1.0, near = 0.5, far = 100.0 };
+        let camera = { eye = Vec3.zero(), yaw = yaw, pitch = pitch, fovY = 1.0, near = 0.5, far = 100.0, lensShift = Vec2.zero() };
         { instances = spheres(), textures = panorama() :: Nil, environmentMap = Some(env),
           pointLights = { position = Vec3.v3(-6.0, 6.0, 6.0), color = c8(255, 240, 220), intensity = 1.6, range = 40.0 } :: Nil,
           spotLights = { color = c8(200, 220, 255), intensity = 1.2, range = 40.0 | Scene3d.spotLight(Vec3.v3(7.0, 4.0, 5.0), Vec3.v3(0.0, 0.0, 14.0), 1.2) } :: Nil,
@@ -81,7 +81,7 @@ mod V2Environment {
     pub def mipFloor(name: String, textures: List[Texture3d.Texture3d]): Scene3d.Scene3dCmd =
         let plane = Mesh3d.fromPolygons({ points = Vec3.v3(-8.0, 0.0, 1.0) :: Vec3.v3(-8.0, 0.0, 61.0) :: Vec3.v3(8.0, 0.0, 61.0) :: Vec3.v3(8.0, 0.0, 1.0) :: Nil,
                                           color = Color.rgb(1.0, 1.0, 1.0) } :: Nil) |> Mesh3d.withBoxUvs(0.25);
-        let camera = { eye = Vec3.v3(0.0, 1.5, 0.0), yaw = 0.0, pitch = 0.12, fovY = 1.0, near = 0.5, far = 100.0 };
+        let camera = { eye = Vec3.v3(0.0, 1.5, 0.0), yaw = 0.0, pitch = 0.12, fovY = 1.0, near = 0.5, far = 100.0, lensShift = Vec2.zero() };
         { instances = Scene3d.meshInstance(plane, Mat4.identity()) |> Scene3d.withMaterial(Scene3d.texturedMaterial(name, ShaderDoc.FilterMode.Linear)) :: Nil,
           textures = textures,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }

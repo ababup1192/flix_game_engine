@@ -105,7 +105,7 @@ mod TestRay3d {
     // カメラから
     // ════════════════════════════════════════════════════════════════════
 
-    def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 1.5, -2.0), yaw = 0.3, pitch = 0.2, fovY = 1.0, near = 0.1, far = 100.0 }
+    def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 1.5, -2.0), yaw = 0.3, pitch = 0.2, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     /// 描き物の真ん中の点のレイは、目から見ている向きのレイと同じ（向きの差が 1e-9 より小さい）。
     @Test

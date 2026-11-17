@@ -24,7 +24,7 @@ mod TestRenderScene3d {
           warnOnce = _ -> (), diagnostics = None, display = Display.desktop({ x = 1.0, y = 1.0 }) }
 
     def camera(): Camera3d.Camera3d =
-        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
+        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() }
 
     /// 大きさ 100×50・z の空の場面。
     def sceneCmd(z: Int32): Scene3d.Scene3dCmd =

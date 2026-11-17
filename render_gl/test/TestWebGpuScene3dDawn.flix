@@ -15,7 +15,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
     import java.lang.System
     use Render3d.WebGpuRenderer.{Dest, Host, Prepared, RendererData, afterSubmit, createInstanceBuffer, createPoseBuffer, endFrameWithin, ensureEnvironment, notePasted, packPoses, prepare, sendPoses}
 
-    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
+    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() }
 
     /// 目の前（z = 10）に四角 1 枚を置いた 64 × 64 の場面。
     def scene(): Scene3d.RenderCmd =

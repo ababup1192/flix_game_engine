@@ -8,7 +8,7 @@ mod TestSoftRaster3dEnvironment {
     def gray(v: Float64): Color = { r = v, g = v, b = v }
 
     def camera(): Camera3d.Camera3d =
-        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 }
+        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     def argbOf(r: Int32, g: Int32, b: Int32): Int32 =
         Int32.bitwiseOr(-16777216, Int32.bitwiseOr(Int32.leftShift(r, 16), Int32.bitwiseOr(Int32.leftShift(g, 8), b)))

@@ -4,7 +4,7 @@
 mod TestScene3dRenderer {
 
     def camera(): Camera3d.Camera3d =
-        { eye = { x = 0.0, y = 0.0, z = 0.0 }, yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }
+        { eye = { x = 0.0, y = 0.0, z = 0.0 }, yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     def sceneWithBillboard(texture: String): Scene3d.RenderCmd =
         let b = Scene3d.billboard(texture, { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } },

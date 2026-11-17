@@ -23,7 +23,7 @@ mod SoftRaster3d.TestLightmap {
         (c(24), c(16), c(8), c(0))
 
     def camera(): Camera3d.Camera3d =
-        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 }
+        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     /// 環境光が白の場面。
     def sceneOf(textures: List[Texture3d.Texture3d], instances: List[Scene3d.Instance3d]): Scene3d.Scene3dCmd =

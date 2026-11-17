@@ -28,7 +28,7 @@ mod TestSoftRaster3dPinned {
 
     /// 床（y = −1）・宙に浮く板（y = 1・下のカメラへ裏を向ける）・奥の赤い壁と、真上の影を落とすスポット・左の点光源。
     def scene(): Scene3d.Scene3dCmd =
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 };
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
         let floor = quad(white(), Vec3.v3(-5.0, -1.0, -5.0) :: Vec3.v3(-5.0, -1.0, 5.0) :: Vec3.v3(5.0, -1.0, 5.0) :: Vec3.v3(5.0, -1.0, -5.0) :: Nil);
         let board = quad({ r = 0.2, g = 0.6, b = 0.9 }, Vec3.v3(-1.0, 1.0, 1.5) :: Vec3.v3(-1.0, 1.0, 3.5) :: Vec3.v3(1.0, 1.0, 3.5) :: Vec3.v3(1.0, 1.0, 1.5) :: Nil);
         let wall = quad({ r = 0.8, g = 0.2, b = 0.2 }, Vec3.v3(-3.0, 3.0, 4.0) :: Vec3.v3(3.0, 3.0, 4.0) :: Vec3.v3(3.0, -1.0, 4.0) :: Vec3.v3(-3.0, -1.0, 4.0) :: Nil);

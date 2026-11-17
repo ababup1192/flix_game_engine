@@ -2,7 +2,7 @@
 mod TestFrustum {
 
     /// 原点から +Z を向くカメラ（縦の画角 90°・near 1・far 100・縦横の比 1）。
-    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = Num.pi() / 2.0, near = 1.0, far = 100.0 }
+    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = Num.pi() / 2.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() }
 
     def frustum(): Frustum.Frustum = Camera3d.frustum(camera(), 1.0)
 

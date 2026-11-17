@@ -11,7 +11,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuStaticDawn {
     import fge.webgpu.WebGpu
     use Render3d.WebGpuRenderer.{Dest, Host, RendererData, afterSubmit, endFrameWithin, prepare, takeCounts}
 
-    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
+    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() }
 
     /// 目の前（z = 10）に置く幅 side の四角。
     def quadAt(side: Float64): Scene3d.Instance3d =

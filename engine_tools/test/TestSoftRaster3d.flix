@@ -20,7 +20,7 @@ mod TestSoftRaster3d {
     def green(): Color = { r = 0.0, g = 1.0, b = 0.0 }
 
     def camera(): Camera3d.Camera3d =
-        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 }
+        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     /// 奥行き z に立つ板（x は left..right・y は bottom..top）。カメラから見て時計回り（表がカメラを向く）。
     def plate(color: Color, z: Float64, left: Float64, right: Float64, bottom: Float64, top: Float64): Scene3d.Instance3d =

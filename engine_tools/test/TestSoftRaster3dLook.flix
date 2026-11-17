@@ -14,7 +14,7 @@ mod TestSoftRaster3dLook {
     def black(): Color = { r = 0.0, g = 0.0, b = 0.0 }
 
     def cameraPitched(pitch: Float64): Camera3d.Camera3d =
-        { eye = Vec3.zero(), yaw = 0.0, pitch = pitch, fovY = 1.5707963267948966, near = 0.1, far = 100.0 }
+        { eye = Vec3.zero(), yaw = 0.0, pitch = pitch, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     /// 奥行き z の四角（x と y は −h..h）。front = 真ならカメラへ表を向ける（時計回り）。
     def quad(color: Color, z: Float64, h: Float64, front: Bool): Mesh3d.Polygon =

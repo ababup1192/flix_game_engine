@@ -105,7 +105,7 @@ mod Study {
             :: placed(kit#books, at(0.3, y, -0.18, 0.0 - Num.pi() / 2.0, 1.0), 1.0)
             :: placed(kit#glass, Mat4.mul(Mat4.translate(v(-0.1, y + 0.014, -0.28)), Mat4.mul(Mat4.rotateY(0.7), Mat4.rotateX(Num.pi() / 2.0))), 1.0)
             :: Nil);
-        let camera = { eye = v(0.0, 1.3, -0.82), yaw = 0.0, pitch = 0.27, fovY = 0.7, near = 0.03, far = 20.0 };
+        let camera = { eye = v(0.0, 1.3, -0.82), yaw = 0.0, pitch = 0.27, fovY = 0.7, near = 0.03, far = 20.0, lensShift = Vec2.zero() };
         { instances = instances,
           pointLights = { position = orbAt, color = green(), intensity = 1.6, range = 2.4 }
               :: { position = v(lanternAt#x, y + 0.095, lanternAt#z), color = warm(), intensity = 1.4, range = 1.8 }

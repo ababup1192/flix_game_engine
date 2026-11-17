@@ -6,7 +6,7 @@ mod TestPostStack {
 
     def black(): Color = Color.rgb(0.0, 0.0, 0.0)
 
-    def camera(): Camera3d.Camera3d = { eye = Vec3.v3(0.0, 2.0, 10.0), yaw = 0.0, pitch = 0.0, fovY = 0.8, near = 0.1, far = 100.0 }
+    def camera(): Camera3d.Camera3d = { eye = Vec3.v3(0.0, 2.0, 10.0), yaw = 0.0, pitch = 0.0, fovY = 0.8, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     def sceneItem(): Render.PlacedItem = Render.scene3d(Vec2.zero(), Scene3d.scene(camera(), size()))
 

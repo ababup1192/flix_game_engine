@@ -51,7 +51,7 @@ def testShadowPointAtTheTopIsTheBoardHeight(): Unit \ Assert =
 /// 影の地図に描くのは castShadows の板だけ（来た順）。
 @Test
 def testOnlyCastingBillboardsAreShadowCasters(): Unit \ Assert =
-    let camera = { eye = Vec3.v3(0.0, 2.0, -5.0), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 0.5, far = 100.0 };
+    let camera = { eye = Vec3.v3(0.0, 2.0, -5.0), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 0.5, far = 100.0, lensShift = Vec2.zero() };
     let caster = shadowBoard() |> Scene3d.withCastShadows(true) |> Scene3d.withBillboardTint(Color.rgb(1.0, 0.0, 0.0));
     let scene = { billboards = shadowBoard() :: caster :: Nil | Scene3d.scene(camera, { x = 160.0, y = 90.0 }) };
     let found = Scene3d.shadowCastingBillboardsOf(Scene3d.frustumOf(scene), scene);

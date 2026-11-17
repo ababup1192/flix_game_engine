@@ -263,7 +263,7 @@ mod TestRenderPassesHdr {
 
     /// 環境光が黒・光の無い場面に、黒の材質で emission の r が 1.6 の板（design 4×4 を覆う）。
     def glowingPlateScene(): Scene3d.RenderCmd =
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 };
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
         let material = Scene3d.material({ name = "glow", cycleRate = 0.0, bindings = Nil,
                 out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(gray(0.0)), alpha = ShaderDoc.Field.Const(1.0) }) })
             |> Scene3d.withEmission(ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Const(1.6), g = ShaderDoc.Field.Const(0.0),

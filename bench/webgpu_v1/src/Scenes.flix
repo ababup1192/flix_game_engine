@@ -413,7 +413,7 @@ mod V1Scenes {
     /// 2 つの箱の run が切れる理由は場面だけで、GL と WebGPU の draw の数が同じ所で切れる事を Main が見る（期待は Main.expectedDraws）。
     /// 場面の行の後の箱と市松の絵が、場面の前と同じ状態（blend・scissor・viewport）で描かれる事も見る。WebGPU は場面を描かずに知らせる。
     def sceneBetween(): Scene =
-        let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
+        let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         { name = "sceneBetween", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = Some(1), items = still(
             at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(40, 80, 200), 1)) ::
             Render.scene3d(v(60.0, 40.0), { zIndex = 2 | Scene3d.scene(camera, v(160.0, 100.0)) }) ::
@@ -423,7 +423,7 @@ mod V1Scenes {
 
     /// WebGPU がまだ描かない物だけの場面（3D の場面）。GL とは比べない。
     pub def unsupported(): Scene =
-        let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 };
+        let camera: Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         { name = "unsupported", warmup = Nil, tiles = noTiles(), staticLayer = None, passes = Nil, targets = Map.empty(), submits = None, items = still(
             Render.scene3d(v(120.0, 60.0), { zIndex = 2 | Scene3d.scene(camera, v(100.0, 50.0)) }) ::
             Nil) }

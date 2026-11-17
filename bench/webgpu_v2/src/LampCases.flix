@@ -30,7 +30,7 @@ mod V2Lamps {
 
     /// カメラを x へ dx だけずらした夜の町（大きさ size）。
     pub def night(dx: Float64, size: Vec2.Vec2): Scene3d.Scene3dCmd =
-        let camera = { eye = Vec3.v3(dx, 13.0, -9.0), yaw = 0.0, pitch = 0.82, fovY = 0.75, near = 1.0, far = 80.0 };
+        let camera = { eye = Vec3.v3(dx, 13.0, -9.0), yaw = 0.0, pitch = 0.82, fovY = 0.75, near = 1.0, far = 80.0, lensShift = Vec2.zero() };
         let base = Scene3d.scene(camera, size);
         { instances = floor() :: Nil, pointLights = lampPositions() |> List.map(lamp), billboards = lampPositions() |> List.map(head),
           environment = { ambient = Color.rgb(0.08, 0.09, 0.16), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(Color.rgb(0.02, 0.02, 0.05)) }

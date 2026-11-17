@@ -45,7 +45,7 @@ mod TestEnvironmentMap {
     @Test
     def testDefaults(): Unit \ Assert =
         let f = Scene3d.environmentMapFieldsOf(Scene3d.environmentMap(sample()));
-        let scene = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, Vec2.zero());
+        let scene = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }, Vec2.zero());
         Assert.assertTrue(f#intensity == 1.0 and Option.isEmpty(f#box) and not f#asBackground and f#texture == Texture3d.name(sample()) and Option.isEmpty(scene#environmentMap))
 
     /// 強さの負・NaN・無限は 0 として描く。
@@ -63,7 +63,7 @@ mod TestEnvironmentMap {
     /// 景色を背景に描くのは asBackground が真で sky が無い時だけ（sky があれば sky が勝つ）。
     @Test
     def testBackgroundIsUsedOnlyWithoutSky(): Unit \ Assert =
-        let scene = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, Vec2.zero());
+        let scene = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }, Vec2.zero());
         let on = Scene3d.environmentMap(sample()) |> Scene3d.withEnvironmentAsBackground(true);
         let sky = Scene3d.gradientSky(Color.rgb(0.0, 0.0, 1.0), Color.rgb(1.0, 1.0, 1.0), Color.rgb(0.0, 0.0, 0.0));
         let a = { environmentMap = Some(on) | scene };
@@ -76,7 +76,7 @@ mod TestEnvironmentMap {
     /// 環境マップの絵の名前は読む絵の名前に数える。
     @Test
     def testTextureNamesIncludeTheEnvironmentMap(): Unit \ Assert =
-        let scene = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, Vec2.zero());
+        let scene = Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }, Vec2.zero());
         let withMap = { environmentMap = Some(Scene3d.environmentMap(sample())) | scene };
         Assert.assertTrue(Scene3d.environmentTextureNamesOf(scene) == Nil and Scene3d.environmentTextureNamesOf(withMap) == (Texture3d.name(sample()) :: Nil))
 }

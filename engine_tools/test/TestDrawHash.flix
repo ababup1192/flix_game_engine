@@ -191,7 +191,7 @@ mod TestDrawHash {
 
     /// 置いた物 i 1 つだけの 3D の場面。
     def sceneWith(i: Scene3d.Instance3d): Scene3d.RenderCmd =
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 };
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() };
         { at = Vec2.zero(), clip = None,
           scene = { instances = i :: Nil | Scene3d.scene(camera, { x = 64.0, y = 64.0 }) } }
 
@@ -203,6 +203,15 @@ mod TestDrawHash {
             case Ok(skin) => Pose3d.compute(skin, Vector#{ { rotation = rotation | rest } })
             case Err(e)   => bug!(e)
         }
+
+    // カメラのレンズシフトが違えば鍵が違う（0 の時は鍵に書かないので、前の場面の鍵は変わらない）。
+    @Test
+    def testLensShiftChangesKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneWith(Scene3d.meshInstance(redTriangle(), Mat4.identity()));
+        let shifted = { scene = { camera = { lensShift = Vec2.v2(0.0, -0.3) | base#scene#camera } | base#scene } | base };
+        let keyWith = (s: Scene3d.RenderCmd) -> keyOf(inputs(), { req = { scenes = s :: Nil | f#req } | f });
+        Assert.assertTrue(keyWith(base) != keyWith(shifted))
 
     // 同じ板・同じ行列でも、ジョイントの向きが違う pose なら鍵が違う（joint 行列の 16 個 × 本数を鍵に入れている）。
     @Test

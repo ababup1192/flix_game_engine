@@ -161,7 +161,11 @@
 
 ## Camera3d — `engine/src/scene3d/Camera3d.flix`
 - eye = 目の位置・yaw / pitch = 向き（ラジアン。座標の約束はファイルの頭）・fovY = 縦の画角（ラジアン）・near / far = 写す奥行きの範囲。
-  `pub type alias Camera3d = { eye = Vec3.Vec3, yaw = Float64, pitch = Float64, fovY = Float64, near = Float64, far = Float64 }`
+  `pub type alias Camera3d = { eye = Vec3.Vec3, yaw = Float64, pitch = Float64, fovY = Float64, near = Float64, far = Float64, lensShift = Vec2.Vec2 }`
+- レンズシフトが 0 か（0 の時は 0 の式を通らず、前と同じ値の行列を返すために使う）。
+  `pub def hasLensShift(c: Camera3d): Bool`
+- 画面の真ん中の画素を通る向き（長さ 1）。レンズシフトが 0 なら forward と同じ。
+  `pub def centerRayDirection(c: Camera3d, aspect: Float64): Vec3.Vec3`
 - 見ている向き（長さ 1）。
   `pub def forward(c: Camera3d): Vec3.Vec3`
 - 画面の右の向き（長さ 1）。
@@ -1514,7 +1518,7 @@
   `pub def skyFieldsOf(s: Sky3d): SkyFields`
 - 描く時に使う曲がり（0 以下・NaN・無限は 1）。GL と CPU が同じ値を使う。
   `pub def skyCurveOf(s: Sky3d): Float64`
-- 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 見ている向き・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
+- 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 画面の真ん中の画素の向き（レンズシフトが 0 なら見ている向き。長さは 1 とは限らない）・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
   `pub type alias SkyBasis = { forward = Vec3.Vec3, right = Vec3.Vec3, up = Vec3.Vec3 }`
 - 場面 scene のカメラと縦横の比（aspectOf）で、空の画素の向きを組む材料を作る。GL と CPU が同じ物を使う。
   `pub def skyBasisOf(scene: Scene3dCmd): SkyBasis`

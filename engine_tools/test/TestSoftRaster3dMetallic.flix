@@ -8,7 +8,7 @@ mod TestSoftRaster3dMetallic {
     def gray(v: Float64): Color = { r = v, g = v, b = v }
 
     def camera(): Camera3d.Camera3d =
-        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 }
+        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     /// 環境光 ambient の場面に、z = 2 の板（頂点の色は白）へ材質 m を付けて置く。
     def sceneOf(ambient: Color, hemisphere: Float64, m: Scene3d.Material3d): Scene3d.Scene3dCmd =

@@ -93,7 +93,7 @@ mod BillboardShadowYard {
         let sun = { intensity = 1.0, color = Color.rgb(1.0, 0.95, 0.85),
                     shadow = Some({ mapSize = 1024, pcfRadius = 1, distance = 30.0, casterReach = 20.0 | Scene3d.directionalShadow() })
                     | Scene3d.directionalLight(directionOf(side)) };
-        let camera = { eye = Vec3.v3(0.3, 6.0, -7.0), yaw = 0.0, pitch = 0.5, fovY = 0.62, near = 1.0, far = 60.0 };
+        let camera = { eye = Vec3.v3(0.3, 6.0, -7.0), yaw = 0.0, pitch = 0.5, fovY = 0.62, near = 1.0, far = 60.0, lensShift = Vec2.zero() };
         let base = Scene3d.scene(camera, size);
         { instances = shapeOf(floorPolys()) :: roof :: house :: Nil,
           billboards = person(Vec3.v3(1.0, 0.0, 1.0), Color.rgb(1.0, 1.0, 1.0), withShadows) ::

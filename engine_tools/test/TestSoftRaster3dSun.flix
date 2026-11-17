@@ -8,7 +8,7 @@ mod SoftRaster3d.TestSoftRaster3dSun {
     def gray(v: Float64): Color = { r = v, g = v, b = v }
 
     def camera(): Camera3d.Camera3d =
-        { eye = Vec3.v3(0.0, 6.0, -6.0), yaw = 0.0, pitch = 0.8, fovY = 1.0, near = 0.1, far = 100.0 }
+        { eye = Vec3.v3(0.0, 6.0, -6.0), yaw = 0.0, pitch = 0.8, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     def up(x0: Float64, x1: Float64, z0: Float64, z1: Float64, y: Float64): Mesh3d.Polygon =
         { points = Vec3.v3(x0, y, z0) :: Vec3.v3(x0, y, z1) :: Vec3.v3(x1, y, z1) :: Vec3.v3(x1, y, z0) :: Nil, color = gray(1.0) }

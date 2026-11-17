@@ -8,7 +8,7 @@
 
 /// 縦の画角 1 ラジアン・near 0.1・far 100 のカメラ。
 def cameraAt(eye: Vec3.Vec3, yaw: Float64): Camera3d.Camera3d =
-    { eye = eye, yaw = yaw, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }
+    { eye = eye, yaw = yaw, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
 /// 色と強さを固定した点光源。
 def pointLightAt(x: Float64): Scene3d.PointLight =
@@ -122,6 +122,53 @@ def testCamera3dPointBehindIsNone(): Unit \ Assert =
     let camera = cameraAt(Vec3.zero(), 0.0);
     Assert.assertTrue(Option.isEmpty(Camera3d.worldToScreen(camera, { x = 200.0, y = 100.0 }, Vec3.v3(0.0, 0.0, -10.0))))
 
+/// レンズシフト y = −0.25 の水平のカメラでは、真っ直ぐ前の点は画面の高さの 1/4 だけ上（y = 25）に写る。
+@Test
+def testCamera3dLensShiftDownMovesStraightAheadUp(): Unit \ Assert =
+    let camera = { lensShift = Vec2.v2(0.0, -0.25) | cameraAt(Vec3.zero(), 0.0) };
+    match Camera3d.worldToScreen(camera, { x = 200.0, y = 100.0 }, Vec3.v3(0.0, 0.0, 10.0)) {
+        case Some(p) => Assert.assertTrue(Float64.abs(p#x - 100.0) < 0.001 and Float64.abs(p#y - 25.0) < 0.001)
+        case None    => bug!("the point in front of the camera was not projected")
+    }
+
+/// レンズシフト x = 0.25 では、真っ直ぐ前の点は画面の幅の 1/4 だけ左（x = 50）に写る。
+@Test
+def testCamera3dLensShiftRightMovesStraightAheadLeft(): Unit \ Assert =
+    let camera = { lensShift = Vec2.v2(0.25, 0.0) | cameraAt(Vec3.zero(), 0.0) };
+    match Camera3d.worldToScreen(camera, { x = 200.0, y = 100.0 }, Vec3.v3(0.0, 0.0, 10.0)) {
+        case Some(p) => Assert.assertTrue(Float64.abs(p#x - 50.0) < 0.001)
+        case None    => bug!("the point in front of the camera was not projected")
+    }
+
+/// レンズシフトのあるカメラで、画面の点から伸ばしたレイは worldToScreen でその点に戻る（2 つが同じ値を読む）。
+@Test
+def testCamera3dLensShiftRayRoundTripsThroughWorldToScreen(): Unit \ Assert =
+    let camera = { lensShift = Vec2.v2(0.1, -0.6) | cameraAt(Vec3.v3(1.0, 9.0, -3.0), 0.3) };
+    let size = { x = 320.0, y = 180.0 };
+    let ray = Camera3d.screenPointToRay(camera, size, { x = 70.0, y = 150.0 });
+    let far = Vec3.add(Ray3d.origin(ray), Vec3.mul(Ray3d.direction(ray), 20.0));
+    match Camera3d.worldToScreen(camera, size, far) {
+        case Some(p) => Assert.assertTrue(Float64.abs(p#x - 70.0) < 0.001 and Float64.abs(p#y - 150.0) < 0.001)
+        case None    => bug!("the point on the ray was not projected")
+    }
+
+/// 水平のカメラを下へずらすと、目より下の地面の点が写る範囲（視錐台）に入る。ずらさなければ入らない。
+@Test
+def testCamera3dLensShiftFrustumHoldsGroundBelow(): Unit \ Assert =
+    let level = cameraAt(Vec3.v3(0.0, 10.0, 0.0), 0.0);
+    let shifted = { lensShift = Vec2.v2(0.0, -0.8) | level };
+    let ground = Vec3.v3(0.0, 0.0, 8.0);
+    let inside = (c: Camera3d.Camera3d) -> Frustum.intersectsSphere(Camera3d.frustum(c, 16.0 / 9.0), ground, 0.01);
+    Assert.assertEq(expected = (false, true), (inside(level), inside(shifted)))
+
+/// 画面の真ん中の向きは、レンズシフトが 0 なら見ている向きそのもの。
+@Test
+def testCamera3dCenterRayIsForwardWithoutShift(): Unit \ Assert =
+    let camera = cameraAt(Vec3.zero(), 0.7);
+    let f = Camera3d.forward(camera);
+    let c = Camera3d.centerRayDirection(camera, 2.0);
+    Assert.assertEq(expected = (f#x, f#y, f#z), (c#x, c#y, c#z))
+
 // ════════════════════════════════════════════════════════════════════
 // Mesh3d
 // ════════════════════════════════════════════════════════════════════
@@ -215,7 +262,7 @@ def testPickLightsDropsLightsOutsideTheFrustum(): Unit \ Assert =
 /// 見下ろしのカメラ（高さ 13・pitch 0.82）では、目に近い画面の下の端の 8 本より、画面の真ん中の奥の 1 本を先に選ぶ。
 @Test
 def testPickLightsPrefersTheScreenCenterOverTheEye(): Unit \ Assert =
-    let camera = { eye = Vec3.v3(0.0, 13.0, -9.0), yaw = 0.0, pitch = 0.82, fovY = 0.75, near = 1.0, far = 80.0 };
+    let camera = { eye = Vec3.v3(0.0, 13.0, -9.0), yaw = 0.0, pitch = 0.82, fovY = 0.75, near = 1.0, far = 80.0, lensShift = Vec2.zero() };
     let lamp = (x: Float64, z: Float64) -> { position = Vec3.v3(x, 2.2, z), range = 2.0 | pointLightAt(0.0) };
     let bottom = List.range(0, 8) |> List.map(i -> lamp(-3.5 + Int32.toFloat64(i), -1.0));
     let center = Vec3.add(camera#eye, Vec3.mul(Camera3d.forward(camera), 16.0));

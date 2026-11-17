@@ -87,7 +87,7 @@ mod Orb {
                 :: placed(sphere(v(0.0, 0.92, 0.25), 0.15, green()), glowing("orb_orb", green(), 8.0))
                 :: books :: bottle :: Nil)
                 :: candle(-0.42, 0.45) :: candle(0.4, -0.02) :: Nil);
-        let camera = { eye = v(0.0, 1.22, -1.15), yaw = 0.0, pitch = 0.22, fovY = 0.75, near = 0.05, far = 20.0 };
+        let camera = { eye = v(0.0, 1.22, -1.15), yaw = 0.0, pitch = 0.22, fovY = 0.75, near = 0.05, far = 20.0, lensShift = Vec2.zero() };
         { instances = instances,
           pointLights = { position = v(0.0, 0.92, 0.25), color = green(), intensity = 2.0, range = 2.2 }
               :: { position = v(-0.42, 0.95, 0.45), color = flame(), intensity = 1.2, range = 1.6 }

@@ -4,7 +4,24 @@
 pub mod Camera3d {
 
     /// eye = 目の位置・yaw / pitch = 向き（ラジアン。座標の約束はファイルの頭）・fovY = 縦の画角（ラジアン）・near / far = 写す奥行きの範囲。
-    pub type alias Camera3d = { eye = Vec3.Vec3, yaw = Float64, pitch = Float64, fovY = Float64, near = Float64, far = Float64 }
+    /// lensShift = 写す範囲を画面の上下左右へずらす量（Unity の Physical Camera の Lens Shift・Blender の Shift X/Y と同じ物）。
+    /// 単位は画面の幅（x）と高さ（y）に対する比で、y = −0.5 なら画面の高さの半分だけ下を写す。向き（pitch）は変えないので、
+    /// 水平のカメラ（pitch 0）で y を負にすると、縦の線は平行のまま地面だけが奥へすぼまる（HD-2D の見下ろし）。既定は `Vec2.zero()`。
+    pub type alias Camera3d = { eye = Vec3.Vec3, yaw = Float64, pitch = Float64, fovY = Float64, near = Float64, far = Float64,
+                                lensShift = Vec2.Vec2 }
+
+    /// レンズシフトが 0 か（0 の時は 0 の式を通らず、前と同じ値の行列を返すために使う）。
+    pub def hasLensShift(c: Camera3d): Bool = c#lensShift#x != 0.0 or c#lensShift#y != 0.0
+
+    /// 画面の真ん中の画素を通る向き（長さ 1）。レンズシフトが 0 なら forward と同じ。
+    pub def centerRayDirection(c: Camera3d, aspect: Float64): Vec3.Vec3 =
+        if (not hasLensShift(c)) forward(c)
+        else {
+            let half = c#fovY / 2.0;
+            let tanHalf = Num.sin(half) / Num.cos(half);
+            Vec3.normalized(Vec3.add(forward(c), Vec3.add(Vec3.mul(right(c), 2.0 * c#lensShift#x * tanHalf * aspect),
+                                                          Vec3.mul(up(c), 2.0 * c#lensShift#y * tanHalf))))
+        }
 
     /// 見ている向き（長さ 1）。
     pub def forward(c: Camera3d): Vec3.Vec3 =
@@ -27,7 +44,10 @@ pub mod Camera3d {
     pub def projectionMatrix(c: Camera3d, aspect: Float64): Mat4.Mat4 =
         let half = c#fovY / 2.0;
         let focal = Num.cos(half) / Num.sin(half);
-        Mat4.perspective({ xScale = focal / aspect, yScale = focal, near = c#near, far = c#far })
+        let base = Mat4.perspective({ xScale = focal / aspect, yScale = focal, near = c#near, far = c#far });
+        // WhyNot: 0 の時も translate を掛けると -0.0 が混じり、描き出しのバイトが前と変わりうるので掛けない。
+        if (not hasLensShift(c)) base
+        else Mat4.mul(Mat4.translate(Vec3.v3(-2.0 * c#lensShift#x, -2.0 * c#lensShift#y, 0.0)), base)
 
     /// このカメラに写る範囲（視錐台）。aspect = 幅 / 高さ。光や羽虫をゲームの側で間引く・数える時に使う
     /// （置いた物とビルボードは描き手が同じ判定で間引くので、ゲームが間引かなくてよい）。
@@ -44,8 +64,8 @@ pub mod Camera3d {
         else {
             let half = c#fovY / 2.0;
             let tanHalf = Num.sin(half) / Num.cos(half);
-            let ndcX = p#x / size#x * 2.0 - 1.0;
-            let ndcY = 1.0 - p#y / size#y * 2.0;
+            let ndcX = p#x / size#x * 2.0 - 1.0 + 2.0 * c#lensShift#x;
+            let ndcY = 1.0 - p#y / size#y * 2.0 + 2.0 * c#lensShift#y;
             let toward = Vec3.add(forward(c), Vec3.add(Vec3.mul(right(c), ndcX * tanHalf * size#x / size#y), Vec3.mul(up(c), ndcY * tanHalf)));
             Ray3d.ray3d(c#eye, toward)
         }

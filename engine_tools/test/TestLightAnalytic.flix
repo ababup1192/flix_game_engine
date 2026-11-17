@@ -69,7 +69,7 @@ mod SoftRaster3d.TestLightAnalytic {
         r
 
     def emptyEnvironment(): Scene3d.Environment3d =
-        Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, Vec2.zero())#environment
+        Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }, Vec2.zero())#environment
 
     /// 白い材質が線形の光の量 l を受けた時に HDR の Pass へ書く値（r・GL の r3d_surfaceOut と同じ式）。
     def hdrPassValue(l: Float64): Float64 =

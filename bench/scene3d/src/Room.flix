@@ -176,7 +176,7 @@ mod Room {
     /// 目の高さ（1.6 m）・南の壁の近くから北を向くカメラ。yaw はラジアン。
     pub def camera(yaw: Float64): Camera3d.Camera3d =
         { eye = Vec3.v3(4.0 * meter(), 1.7 * meter(), 0.35 * meter()), yaw = yaw, pitch = 0.14,
-          fovY = 1.05, near = 1.0, far = 400.0 }
+          fovY = 1.05, near = 1.0, far = 400.0, lensShift = Vec2.zero() }
 
     pub def scene(kit: Kit, yaw: Float64): Scene3d.Scene3dCmd =
         { instances = (Scene3d.meshInstance(kit#shell, Mat4.identity()) |> Scene3d.withName("shell")) ::

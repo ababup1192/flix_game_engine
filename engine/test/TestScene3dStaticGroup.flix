@@ -11,7 +11,7 @@ def town(): Scene3d.StaticGroup =
     Scene3d.staticGroup("town", ("a", placedAt("a", 0.0)) :: ("b", placedAt("b", 1.0)) :: ("c", placedAt("c", 2.0)) :: Nil)
 
 def groupScene(): Scene3d.Scene3dCmd =
-    Scene3d.scene({ eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, { x = 64.0, y = 64.0 })
+    Scene3d.scene({ eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }, { x = 64.0, y = 64.0 })
 
 /// 集まりの物は instances の後ろに、集まりの中の来た順で並ぶ。
 @Test

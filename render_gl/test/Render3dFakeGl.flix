@@ -145,7 +145,7 @@ mod Render3d.FakeGl {
         Scene3d.meshInstance(skinnedTriangle(), Mat4.identity()) |> Scene3d.withPose(pose)
 
     pub def camera(): Camera3d.Camera3d =
-        { eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }
+        { eye = Vec3.v3(0.0, 0.0, -5.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
 
     pub def sceneOf(instances: List[Scene3d.Instance3d]): Scene3d.Scene3dCmd =
         { instances = instances | Scene3d.scene(camera(), { x = 64.0, y = 64.0 }) }

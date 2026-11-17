@@ -410,7 +410,7 @@ mod TestAnnotate {
 
     /// (20, 10) に置いた 100×80 の場面。目は原点で +Z を見る。真ん中の奥に「door」・右に外れて「lamp」。
     def roomScene(): Render.PlacedItem =
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 50.0 };
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 50.0, lensShift = Vec2.zero() };
         Render.scene3d({ x = 20.0, y = 10.0 }, { instances = quadAt("lamp", 6.0, 4.0) :: quadAt("door", 0.0, 5.0) :: Nil
                                                  | Scene3d.scene(camera, { x = 100.0, y = 80.0 }) })
 

@@ -138,6 +138,24 @@ let camera = { eye = Vec3.v3(snap(eyeX), eyeY, snap(eyeZ)) | camera0 };
   カメラがキャラを追う時はカメラも丸めないと 15 回とも変わる（地面が揺れる）
 - 1 テクセルが画面の 3 px 前後の拡大（`Resolution.Native`）では、丸めた後もテクセルの幅が ±1 px 揺れる。気になれば `Resolution.Design` で描く
 
+### 縦の線を平行のまま見下ろす（レンズシフト・HD-2D のカメラ）
+
+カメラを水平（`pitch = 0`）に向けたまま、写す範囲だけを下へずらす。建物の縦の線は平行のまま、地面だけが奥へ強くすぼまる
+（建築写真のあおり補正と同じ見え方）。Unity の Physical Camera の Lens Shift・Blender の Shift X/Y・Godot の Camera3D の frustum offset と同じ物。
+
+```flix
+// 画面の上の端で地面を 15°、下の端で 50° 見下ろす（目の高さ h・水平に向ける）
+let ta = Num.tan(15° を rad で); let tb = Num.tan(50° を rad で);
+let tanHalf = (tb - ta) / 2.0;                       // 縦の画角の半分の tan
+let camera = { eye = Vec3.v3(x, h, z), yaw = 0.0, pitch = 0.0, fovY = 2.0 * Num.atan(tanHalf),
+               near = 0.5, far = 120.0, lensShift = Vec2.v2(0.0, 0.0 - (ta + tb) / 2.0 / (2.0 * tanHalf)) };
+```
+
+- `lensShift` の単位は画面の幅（x）と高さ（y）に対する比。y = −0.5 で画面の高さの半分だけ下を写す。向き（`pitch`・`yaw`）は変えない。既定は `Vec2.zero()`（今までの絵とバイトまで同じ）
+- `Camera3d.projectionMatrix`・`frustum`・`worldToScreen`・`screenPointToRay`・空の向き（`Scene3d.skyBasisOf`）・太陽の影の範囲・点光源の選び方（画面の真ん中 = `Camera3d.centerRayDirection`）が同じ値を読む。GL・WebGPU・CPU の描き手は `projectionMatrix` を使うので、描き手ごとの設定は要らない
+- カメラが水平なので、カメラへ向くビルボードは地面に垂直に立つ。板の高さを `1 / cos(pitch)` 倍に伸ばす補正は要らない
+- `pitch` を傾けてシフトで縦を直す形にはしない（縦の線が平行になるのは pitch 0 の時だけ）
+
 ## glb のノードを名前で引く
 
 `Gltf.load` / `loadTexturedUsing` は、glTF のノードを全部（mesh の無い empty・ライト・カメラも）`model#nodes` に入れる。

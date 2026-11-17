@@ -275,9 +275,16 @@ pub mod DrawHash {
         }
 
     def putCamera(out: DataOutputStream, c: Camera3d.Camera3d): Unit \ IO = match c {
-        case { eye = eye, yaw = yaw, pitch = pitch, fovY = fovY, near = near, far = far } =>
+        case { eye = eye, yaw = yaw, pitch = pitch, fovY = fovY, near = near, far = far, lensShift = lensShift } =>
             putVec3(out, eye);
-            (yaw :: pitch :: fovY :: near :: far :: Nil) |> List.forEach(putF(out))
+            (yaw :: pitch :: fovY :: near :: far :: Nil) |> List.forEach(putF(out));
+            // WhyNot: 0 の時に書くと、レンズシフトを使わない場面の鍵が全部変わり、描き出しのキャッシュとテープの指紋が外れる。
+            if (lensShift#x == 0.0 and lensShift#y == 0.0) ()
+            else {
+                out.writeByte(0x4c);
+                putF(out, lensShift#x);
+                putF(out, lensShift#y)
+            }
     }
 
     // WhyNot: メッシュの頂点を畳まない — 作る時に中身から求めた contentHash が中身の代わりになる（GL が頂点バッファを引く鍵と同じ）。

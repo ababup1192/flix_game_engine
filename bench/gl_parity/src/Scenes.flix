@@ -511,7 +511,7 @@ mod Scenes {
         { points = Vec3.v3(x0, y0, z) :: Vec3.v3(x0, y1, z) :: Vec3.v3(x1, y1, z) :: Vec3.v3(x1, y0, z) :: Nil, color = color }
 
     def flatCamera(): Camera3d.Camera3d =
-        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
+        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() }
 
     def flatScene(size: Vec2.Vec2, z: Int32, instances: List[Scene3d.Instance3d], billboards: List[Scene3d.Billboard3d]): Scene3d.Scene3dCmd =
         { instances = instances, billboards = billboards, zIndex = z,
@@ -615,7 +615,7 @@ mod Scenes {
           intensity = 1.0, range = 20.0, shadow = Some({ mapSize = 512, bias = 0.0015, pcfRadius = 1, strength = 0.8 }) }
 
     def shadowScene(withBoard: Bool): Scene3d.Scene3dCmd =
-        let camera = { eye = Vec3.v3(0.0, 7.0, 0.0), yaw = 0.0, pitch = 0.73, fovY = 1.0, near = 1.0, far = 100.0 };
+        let camera = { eye = Vec3.v3(0.0, 7.0, 0.0), yaw = 0.0, pitch = 0.73, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         let floor = shape(upQuad(-8.0, 8.0, 2.0, 18.0, -2.0, c8(200, 200, 200)) :: Nil);
         let board = shape(upQuad(-1.5, 1.5, 8.5, 11.5, 2.0, c8(200, 80, 60)) :: Nil);
         { instances = if (withBoard) floor :: board :: Nil else floor :: Nil, spotLights = shadowSpot() :: Nil, zIndex = 1,
@@ -887,7 +887,7 @@ mod Scenes {
         }
 
     def floorScene(name: String, mesh: Mesh3d.Mesh3d, material: Scene3d.Material3d, tex: Texture3d.Texture3d): Scene =
-        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 1.0, far = 100.0 };
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         let floor = Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material);
         let scene = { instances = floor :: Nil, textures = tex :: Nil, zIndex = 1,
                       environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
@@ -1171,7 +1171,7 @@ mod Scenes {
         { range = 20.0, innerFovY = innerFovY | Scene3d.spotLight(Vec3.v3(x, 6.0, 10.0), Vec3.v3(x, -2.0, 10.0), 1.0) }
 
     def spotSoftEdge3d(): Scene =
-        let camera = { eye = Vec3.v3(0.0, 9.0, 1.0), yaw = 0.0, pitch = 0.9, fovY = 1.0, near = 1.0, far = 100.0 };
+        let camera = { eye = Vec3.v3(0.0, 9.0, 1.0), yaw = 0.0, pitch = 0.9, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         let floor = shape(upQuad(-12.0, 12.0, 0.0, 22.0, -2.0, c8(200, 200, 200)) :: Nil);
         let scene = { instances = floor :: Nil, spotLights = softEdgeSpot(-4.0, Some(0.3)) :: softEdgeSpot(4.0, None) :: Nil, zIndex = 1,
                       environment = { ambient = c8(30, 30, 30), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
@@ -1223,7 +1223,7 @@ mod Scenes {
     // NDC の y = tan(20°) / tan(0.7)（場面の上から約 32 % の行）に来る。画角を広く取り、上の端で天頂の色へ寄る所まで写す。手前に赤い箱を 1 つ置き、空が物の後ろだけに出ることも見る。
     // 空の向きを取り違える（pitch の符号・縦横の比）と地平の行がずれ、天頂と地面の色の帯（数千 px）が丸ごと違う。
     def skyGradient3d(): Scene =
-        let camera = { eye = Vec3.v3(0.0, 2.0, 0.0), yaw = 0.3, pitch = 20.0 * Num.pi() / 180.0, fovY = 1.4, near = 0.5, far = 100.0 };
+        let camera = { eye = Vec3.v3(0.0, 2.0, 0.0), yaw = 0.3, pitch = 20.0 * Num.pi() / 180.0, fovY = 1.4, near = 0.5, far = 100.0, lensShift = Vec2.zero() };
         let box = shape(facingQuad(-1.0, 1.0, 0.5, 2.5, 8.0, c8(200, 40, 40)) :: Nil);
         let sky = Scene3d.gradientSky(c8(20, 30, 90), c8(240, 180, 120), c8(60, 40, 30)) |> Scene3d.withSkyCurve(0.7);
         let scene = { instances = box :: Nil, sky = Some(sky), zIndex = 1 | Scene3d.scene(camera, { x = 320.0, y = 180.0 }) };

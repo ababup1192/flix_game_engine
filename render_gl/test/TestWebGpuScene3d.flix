@@ -8,7 +8,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     use Render3d.ShadowMaps.ShadowSampling
     use Render3d.WebGpuRenderer.{clearOf, packPassValues, packSceneValues, packShadowValues, sceneValueBytes, skipsOf, topLeftOf}
 
-    def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, 3.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
+    def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, 3.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() }
 
     def light(x: Float64, range: Float64): Scene3d.PointLight =
         { position = Vec3.v3(x, 4.0, 5.0), color = Color.rgb(1.0, 0.5, 0.25), intensity = 2.0, range = range }

@@ -46,8 +46,8 @@ mod V2Atlas {
     /// low が真なら地面すれすれ（目の高さ 1.2 m）・偽なら見下ろし（HD-2D の画角）。capped が真なら mip のレベルの数を 16 px のタイルの分（Scene3d.atlasMipLevelsFor）までにする。
     pub def yard(low: Bool, capped: Bool): Scene3d.Scene3dCmd =
         let tex = atlas();
-        let camera = if (low) { eye = Vec3.v3(0.0, 1.2, -1.0), yaw = 0.0, pitch = 0.05, fovY = 1.0, near = 0.3, far = 100.0 }
-                     else { eye = Vec3.v3(0.0, 17.0, -14.0), yaw = 0.0, pitch = 0.7, fovY = 0.42, near = 1.0, far = 100.0 };
+        let camera = if (low) { eye = Vec3.v3(0.0, 1.2, -1.0), yaw = 0.0, pitch = 0.05, fovY = 1.0, near = 0.3, far = 100.0, lensShift = Vec2.zero() }
+                     else { eye = Vec3.v3(0.0, 17.0, -14.0), yaw = 0.0, pitch = 0.7, fovY = 0.42, near = 1.0, far = 100.0, lensShift = Vec2.zero() };
         let material = Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest);
         let drawn = if (capped) material |> Scene3d.withMaxMipLevels(Scene3d.atlasMipLevelsFor(16)) else material;
         { instances = Scene3d.meshInstance(ground(), Mat4.identity()) |> Scene3d.withMaterial(drawn) :: Nil,

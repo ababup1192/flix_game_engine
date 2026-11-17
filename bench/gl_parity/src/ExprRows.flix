@@ -199,7 +199,7 @@ mod ExprRows {
             (toward, color)
         });
         let towardShadow = direction(rng);
-        let camera = { eye = Vec3.v3(0.0, 0.0, 0.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.5, far = 100.0 };
+        let camera = { eye = Vec3.v3(0.0, 0.0, 0.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.5, far = 100.0, lensShift = { x = 0.0, y = 0.0 } };
         let light = { shadow = Some({ mapSize = 64, bias = 0.01, normalBias = 1.5, pcfRadius = 1, strength = 0.8, distance = 8.0, casterReach = 10.0 | Scene3d.directionalShadow() })
                       | Scene3d.directionalLight(Vec3.mul(towardShadow, -1.0)) };
         let scene = { instances = Scene3d.meshInstance(Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 1.0) :: Vec3.v3(1.0, 0.0, 1.0) :: Vec3.v3(0.0, 1.0, 1.0) :: Nil, color = Color.rgb(1.0, 1.0, 1.0) } :: Nil), Mat4.identity()) :: Nil,

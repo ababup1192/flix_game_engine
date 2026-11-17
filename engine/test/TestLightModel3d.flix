@@ -66,7 +66,7 @@ def testLightmapGlslKeepsBakedLinear(): Unit \ Assert =
     Assert.assertFalse(String.contains(substr = "r3d_linearToSrgb", lightmap))
 
 def emptyScene(): Scene3d.Scene3dCmd =
-    Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 }, Vec2.zero())
+    Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0, lensShift = Vec2.zero() }, Vec2.zero())
 
 /// 空が無い場面の映り込みの色は ambient + hemisphere（線形の量・3 色とも同じ・曲がり 1）。
 @Test

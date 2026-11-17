@@ -154,7 +154,7 @@ mod Field {
 
     /// 格子の全部が入る高さと引きのカメラ（南の外から北を見下ろす）。
     def camera(extent: Float64): Camera3d.Camera3d =
-        { eye = Vec3.v3(0.0, extent * 0.45, 0.0 - extent * 0.55), yaw = 0.0, pitch = 0.49, fovY = 1.05, near = 1.0, far = extent * 4.0 + 100.0 }
+        { eye = Vec3.v3(0.0, extent * 0.45, 0.0 - extent * 0.55), yaw = 0.0, pitch = 0.49, fovY = 1.05, near = 1.0, far = extent * 4.0 + 100.0, lensShift = Vec2.zero() }
 
     def sun(c: Config, extent: Float64): Scene3d.DirectionalLight =
         let light = { intensity = 0.9 | Scene3d.directionalLight(Vec3.v3(-0.45, -1.0, 0.35)) };
