@@ -1,0 +1,114 @@
+{
+ "version": 1,
+ "title": "地面タイル 4 種",
+ "paletteFile": "assets/palette.json",
+ "legend": {
+  "g": "grass",
+  "G": "grass_dk",
+  "h": "grass_hi",
+  "d": "dirt",
+  "D": "dirt_dk",
+  "e": "dirt_hi",
+  "s": "stone_dk",
+  "c": "stone",
+  "C": "stone_hi",
+  "w": "water",
+  "W": "water_dk",
+  "v": "water_hi",
+  "f": "foam"
+ },
+ "sprites": {
+  "grass": {
+   "kind": "tile",
+   "frames": {
+    "f0": [
+     "ggggggggggGGgggg",
+     "gggghggggGGggggg",
+     "gGGghhgggggggggg",
+     "gGGGgggggggggggg",
+     "gggggggggggghggg",
+     "ggggggggggghhggg",
+     "ggggggGGgggggghg",
+     "ghgggggggggggghg",
+     "ghgggggggggggggg",
+     "gggggggghghgGGgg",
+     "gggggggghhhgGGgg",
+     "gggGGGgggggggGgg",
+     "ggggGggggggghggg",
+     "ggggggghgggggggg",
+     "hggggghhggggggGG",
+     "hhgggggggggggggg"
+    ]
+   }
+  },
+  "dirt": {
+   "kind": "tile",
+   "frames": {
+    "f0": [
+     "dddddddddddddddd",
+     "ddDDDddddddddddd",
+     "ddDDdddddddddddd",
+     "dddddeedddDDdddd",
+     "dddddDDdddDDdddd",
+     "dddddddddddddddd",
+     "ddeedddddddddddd",
+     "ddDDdddddddddedd",
+     "ddddddDDDDdddedd",
+     "dddddddDDddddddd",
+     "dddddddddddeeddd",
+     "dddddddddddDdDDd",
+     "dDDddddddddddDdd",
+     "dddddedddddddddd",
+     "dddddedddDDDdddd",
+     "ddddddddddddddee"
+    ]
+   }
+  },
+  "cobble": {
+   "kind": "tile",
+   "frames": {
+    "f0": [
+     "ssCCCsssCCCCCCCs",
+     "sCcccssCcccccccs",
+     "sCcccssCcccccccs",
+     "sCcccssCccsscccs",
+     "sCcccssCcccccccs",
+     "sCcccssCcccccccs",
+     "ssssssssssssssss",
+     "ssssssssssssssss",
+     "CsssCCCCCCsssCCC",
+     "cssCccccccssCccc",
+     "cssCccccccssCccc",
+     "cssCccCCccssCccc",
+     "cssCccccccssCccc",
+     "cssCccccccssCccc",
+     "ssssssssssssssss",
+     "ssssssssssssssss"
+    ]
+   }
+  },
+  "water": {
+   "kind": "tile",
+   "frames": {
+    "f0": [
+     "wwwwwwwvvwwwwwww",
+     "wwfwwwwwwwwwwwww",
+     "wwvvvwwwwwwwwwww",
+     "WWWWWWwwwwwwwwww",
+     "wwwwwwWWwwwwwwww",
+     "wwwwwwwwwwwffwww",
+     "wwwwwwwwwwvvvvww",
+     "wwwwwwwwwWWWWWWW",
+     "wwwwwwwwwwwwwwww",
+     "wwwwwwwwwwwwwwww",
+     "wwwwwfwwwwwwwwww",
+     "WwwwvvvwwwwwwwWW",
+     "wwwWWWWWwwwwwwww",
+     "wwwwwwwwwwwwwwww",
+     "wwwwwwwwwwwwwvvv",
+     "wwwwwwwwwwwwWWWW"
+    ]
+   }
+  }
+ }
+}

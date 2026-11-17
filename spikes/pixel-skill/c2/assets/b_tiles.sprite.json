@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "title": "地面タイル（真上から）",
+  "note": "16×16・上下左右で回る。光は左上。",
+  "paletteFile": "assets/palette.json",
+  "legend": {
+    "g": "grass0",
+    "G": "grass1",
+    "k": "grass2",
+    "K": "grass3",
+    "l": "dirt0",
+    "d": "dirt1",
+    "x": "dirt2",
+    "L": "stone0",
+    "R": "stone1",
+    "r": "stone2",
+    "m": "stone3",
+    "a": "water0",
+    "w": "water1",
+    "W": "water2",
+    "D": "water3"
+  },
+  "sprites": {
+    "grass": {
+      "kind": "tile",
+      "frames": {
+        "f0": [
+          "GGGGGGGGGGGGGGGG",
+          "GGGGGGGGGGGgGGGG",
+          "GgGGGGGGGGkgkGGG",
+          "kgkGGGGGGGGGGGGG",
+          "GGGGGGkkGGGGGGGG",
+          "GGGGGGGkGGGGGgGg",
+          "GGGGGGGGGGGGGkgk",
+          "GGGgGGGGGGGGGGGG",
+          "GGkgkGGGGgGgGGGG",
+          "GGGGGGGGGkgkGGGG",
+          "GGGGGGGGGGGGGGGG",
+          "KKGGGGGGGGGGGGkK",
+          "GGGGGgGGGGGGGGGG",
+          "GGGGkgkGGGGGgGGG",
+          "GGGGGGGGGGGkgkGG",
+          "GGGGGGGGGGGGGGGG"
+        ]
+      }
+    },
+    "dirt": {
+      "kind": "tile",
+      "frames": {
+        "f0": [
+          "dddddddddddddddd",
+          "ddddddddddllddld",
+          "dlldddddddlxdddd",
+          "dlxdddddddddddxd",
+          "ddddddxxdddddddd",
+          "dddddddddddddddd",
+          "dddllddddddddddd",
+          "dddlxddddddddxxd",
+          "ddddddddddlldddd",
+          "ddddddddddlxdddd",
+          "xdddddddddddddxx",
+          "dddddllddddddddd",
+          "dddddlxddddlldld",
+          "ddddddddddddxddd",
+          "ddxddddddddddddd",
+          "dddddddddddddddd"
+        ]
+      }
+    },
+    "cobble": {
+      "kind": "tile",
+      "frames": {
+        "f0": [
+          "LRRRrrrrrrrrrRLL",
+          "LRRRrrRRRRRrrRRL",
+          "RRRRrRRLLLRRrRRR",
+          "RRRRrRRLLRRRrRRR",
+          "mmmrrRRRRRRRrrmm",
+          "rrrrrrmmmmmrrrrr",
+          "rRRRrrrrrrrrRRrr",
+          "RRRRRRrrRRRRRRRr",
+          "RRLLRRrRRLLLRRRr",
+          "RRLRRRrRRRLLRRRr",
+          "RRRRRRrRRRRRRRRr",
+          "rmmmmrrrmmmmmmrr",
+          "rrrrrrrrrrrrrrrr",
+          "RRRrrrRRRRRrrrRR",
+          "RRRRrRRLLLRRrRRR",
+          "LRRRrrmmmmmrrRRL"
+        ]
+      }
+    },
+    "water": {
+      "kind": "tile",
+      "frames": {
+        "f0": [
+          "WWWWWWWWWWWWWWWW",
+          "WWWWWWWWWWwwWWWW",
+          "WWWWWWWWWwaawWWW",
+          "WWwwWWWWWWWWWWWW",
+          "WwaawWWWWWWWWWWW",
+          "WWWWWWWWWWWWWDDW",
+          "WWWWWWWWWWWWDDDW",
+          "WWWWWWwwwWWWWWWW",
+          "WWWWWwaaWWWWWWWW",
+          "WWWWWWWWWWWWWWWW",
+          "WDDWWWWWWWWWWWwW",
+          "DDDWWWWWWWWWWwaa",
+          "WWWWWWWWWWWWWWWW",
+          "WWWWWWWWwwWWWWWW",
+          "WWWWWWWwaawWWWWW",
+          "WWWWWWWWWWWWWWWW"
+        ]
+      }
+    }
+  }
+}
