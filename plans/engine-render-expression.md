@@ -201,10 +201,27 @@ Studio（別のリポジトリ）の preset の見せ方（継いだ値と上書
 SSR は S3 の奥行きと法線の絵を使い回すので、S3 のすぐ後に「後」の行から前へ出す。
 
 HD-2D（`plans/engine-hd2d.md`）の下準備も同じ列に入れる（人の言葉「HD-2D に必要なものは事前に作っておこう」）:
-- S2 の後・S3 の前に、PostStack の部品 2 つを足す: **TiltShift**（`DepthOfField.TiltShift`・hd2d の E2）と **画面の歪み**（`Distortion`。時間で動くノイズで場面の絵を読む座標をずらす 1 Pass。熱のゆらぎ・水の中・魔法に使い回す。`Field.ScreenUv` を使うので S2 の後）。
+- S2 の後・S3 の前に、PostStack の部品 2 つを足す: **TiltShift**（`DepthOfField.TiltShift`・hd2d の E2）と **画面の歪み**（`Distortion`。時間で動くノイズで場面の絵を読む座標をずらす 1 Pass。熱のゆらぎ・水の中・魔法に使い回す）。
+  **Distortion は S2 を待たずに入れた（2026-11-18・`PostStack.withDistortion`・`withTime`）**: 後がけの面の中では `Field.Uv` がそのまま画面の位置なので、ScreenUv は要らなかった。
+  S2 で ScreenUv が入ったら、ずらし量の場（`PostStack.Internal.Passes.distortOffsetBindings`）を材質の屈折（水・魔法の面）へ使い回す。
+  同じ時に `ExposureAdaptation`（狙いの明るさへ露出を近づける純粋な関数・lens-post スパイクの B2）も入れた。
+  積み残し: `ps_bright` の閾値に `ps_exposure` を掛ける（白飛びの間ほど光る。今の絵が変わるので相談）・PostStack の全部の面に `ps_time`・`ps_frame` を配る土台（`BuildInput` の書き方が変わる）。
 - PostStack の外の HD-2D の下準備（ビルボードの影 E1・mip の上限 E4・画素スナップ E5・点光源の 8 本の上限の確かめ）は、この列と別の担当で並べて進める（触るファイルが重ならないため）。
 
 その後の順の推し【推】: S6 のうち光の大きさで影の縁をぼかす所 → S4（空とかすみ・光の筋） → TAA → S5（水）。リアルタイムの GI は焼き込みとプローブ止まり。
+
+### 3.0.0 順の組み替え（人の決め 2026-11-17・「おまかせ」）
+
+AgX の preset を Blender の手本と並べた比べ（枝 `worktree-agent-ace2c9a4aaa9ada54` の `spikes/agx-presets/`）で、人は Blender の方を「明らかにいい」と言った（明るさ・影の表現・色味・机まわりの陰）。
+差の元は preset の値ではなく光の計算（逆二乗でない落ち方と全体を一色に染める ambient・点光源の影が無い・接地の暗さが無い・たいまつが光る物でない）。
+一方、カメラの頭の動き・レンズの後がけ・植物は「差があまり分からない」。そこで §3.0 の列を次へ組み替える:
+
+1. **光の単位**（§6.4・§10 の 8 の K の案 (i): 拡散の 1/π・逆二乗・ambient の見直し）。§10 の 8 の推し「S3 の後」を覆して先頭へ出す。preset の値はこの後で決め直す（露出 +0.3・彩度の直しの推しはその時に当て直す）。
+2. **点光源の影**（S6 のうち点光源の影 1 本。影の地図 6 方向・スマホの重さを見る）
+3. S2（式の木）→ TiltShift・Distortion → S3（AO）→ SSR（§3.0 のまま）
+4. §3.0.1 の cat-garden の物（レンズの小物・カメラの頭の動き・樽型の歪み・植物と風）と §3.0.2 のドット絵のジオラマ
+
+並べ直しの場面では、たいまつの炎を光る物（emission）にしてブルームが掛かる形で比べる。どれも engine の拡張なので段ごとに作る前に相談する。
 
 ### 3.0.1 cat-garden から取る物の順（人の決め 2026-11-17・「お任せ」）
 
@@ -220,6 +237,15 @@ HD-2D（`plans/engine-hd2d.md`）の下準備も同じ列に入れる（人の�
 | 後 | 絵から測る自動露出（TAA と一緒に）・楕円の絞り（DoF を点で撒く形にした時）・モーションブラー（入れない推し） | — | — | — | — |
 
 1 の時刻の口は §3.0 の Distortion（熱のゆらぎ）と共用、`ExposureAdaptation` は HD-2D の入りの白飛び（plans/engine-hd2d.md §3.2）にも使う。2 は HD-2D の追従と寄り（同 §3.2.7 の 1）にも使う。
+
+### 3.0.2 ドット絵のジオラマの後がけ（人が「いいね」と言った・2026-11-17）
+
+元は https://github.com/sloemo01/diorama（MIT）の pixel の見た目: 低い解像度で描く・64 色へ減らす・Bayer の格子のディザ・奥行きと法線の輪郭。
+スパイク（枝 `worktree-agent-a39a5c79a9e71cfab` の `spikes/pixel-diorama/`。夜の屋台・雨のバス停・灯台の小島）は engine の今の部品だけで組めたが、
+画面なしで design の大きさに描き出す時だけ成り立つ（窓では後がけが窓の画素で評価される【未確認・コードから】）・木が大きい（GLSL 116 KB・CPU 1 コマの 87%）・ゲームが場面を 3 回組む。
+ゲームで使うには PostStack に `withPixelate`・`withPaletteQuantize`・`withOrderedDither`・`withOutline` と `Read.SceneNormal` を足す（順は ViewTransform の後・Fxaa の前に Outline → Dither → Palette）。
+奥行きと法線は S3 の `Scene3d.Output.DepthNormal` と共用するので、S3 の後に入れる。engine の拡張なので作る前に相談する。
+人の好みは「すっきり」なので、ディザは控えめを既定にする（灯台の海のまだらが弱点）。
 
 ### 3.1 最初の段に S1 を推す理由【推】
 

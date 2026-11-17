@@ -13,6 +13,9 @@
 | 3D の材質に金属・磨いた石・濡れた床の光沢（鏡面ハイライトと空の映り込み）を付ける | Scene3d（withMetallicRoughness / withMetallicRoughnessTexture / withoutMetallicRoughness）・glb は Gltf.loadTexturedPbrUsing で読んだ時だけ付く（[scene3d.md](../scene3d.md)） |
 | 3D の金属の映り込みに周りの景色（部屋・空のパノラマの絵）を映す・室内の壁の位置を補正する | Scene3d（environmentMap / withEnvironmentIntensity / withEnvironmentBox。Scene3dCmd の environmentMap 欄）（[scene3d.md](../scene3d.md)） |
 | 画面全体の後がけ（トーンマップ・露出・ブルーム・色の仕上げ・ビネット・奥行きのぼかし・FXAA）を値の束で付ける（HUD には掛けない） | PostStack（`App.withPostStack`・`PostStack.preset` / `with*` / `loadOr`（`assets/post.json`・schema は [post.schema.json](../post.schema.json)）/ `build`） |
+| 画面を時間で揺らがせる（火山の陽炎・水の中・魔法。画面全体・画面の下側の帯・マスクの絵） | PostStack（`withDistortion(Some({ strength, noiseSize, speed, mask }))` + `withTime(遊びの時計)`・post.json の `distortion`・[scene3d.md](../scene3d.md) の「画面の歪み」） |
+| 3D の場面に地面を這う霧（高さと距離で濃くなる・むらが流れる・街灯がにじむ） | PostStack（`withHeightFog(Some({ color, density, baseHeight, heightFalloff, startDistance, maxOpacity, noise, lightGlow }))`・post.json の `heightFog`・[scene3d.md](../scene3d.md) の「地面を這う霧」） |
+| 明るい所へ入った直後に白飛びして、だんだん目が慣れる（露出を狙いへ近づける） | ExposureAdaptation（`step` で World の明るさを狙いへ寄せ、`computeExposure` を `PostStack.withExposure` へ。絵は測らない） |
 | 3D の場面の光・空・かすみ・露出・bloom の値を決める・post process の組み方・途中の Pass の絵を 1 枚描き出す | [art-ref/visual-dict/reference-3d.md](../art-ref/visual-dict/reference-3d.md)（見た目の名前 → 値の組。API は Scene3d / PostProcess / RenderTarget / HeadlessRender.renderPassImage） |
 | Scene3d のゲームをブラウザで描く | WebLayer.withProject3d（web/WebMain.flix の入口。2D の withProject は 3D を描かず 1 回知らせる・[対応表](../backend-parity.md)） |
 | 絵を傾ける・集まりを丸ごと傾ける（カードの傾き・振り子） | Render（turned / turnedAll）/ ui.json の rotation |
@@ -33,6 +36,7 @@
 ## モジュール 1 行紹介
 
 - **PostStack** — 画面全体の後がけを値の束 1 つで言う（Unity の Post-processing Stack・Godot の Environment と同じ役目）。順・Pass・描き先はエンジンが決め、View の絵に掛けて HUD には掛けない。中身は Render.Pass と ShaderDoc の面への展開で、描き手は触らない。
+- **ExposureAdaptation** — 露出を、ゲームが決めた場所の狙いの明るさへ時間をかけて近づける純粋な関数（明るい所へ入った直後の白飛び）。絵を測る自動露出ではない（AutoExposure の名前は空けてある）。
 - **Render** — 「何をどう見せたいか」だけ書いた Item を、描画部が食べられる形に変換する。
 - **RawDraw** — 単色ベタの図形プリミティブ（box / circle / star / ellipse / sector / ngon など）。材料であって、View に直接並べる完成品ではない。正当な用途は HUD 下地・デバッグ描画・fail-open の仮板。
 - **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems）。z の数は葉の中の小さな前後（0..31）だけ。

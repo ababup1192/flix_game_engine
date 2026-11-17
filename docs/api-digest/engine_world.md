@@ -1,4 +1,4 @@
-<!-- engine v0.101.1 / 生成: 2026-11-17 -->
+<!-- engine v0.101.1 / 生成: 2026-11-18 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1127,6 +1127,18 @@
 - before の後に after へ足された出来事（出た順）。audio に ws#before#events と ws#after#events を渡す。
   `pub def since(before: Events[e], after: Events[e]): List[e]`
 
+## ExposureAdaptation — `engine_world/src/ExposureAdaptation.flix`
+- compensation = 狙いのずらし（stop・+ で明るめ）・minExposure / maxExposure = 掛ける露出の上下限（stop）・
+  `pub type alias Settings = { compensation = Float64, minExposure = Float64, maxExposure = Float64, speedUp = Float64, speedDown = Float64 }`
+- 0・−4・+4・3・1（明るい所へは速く、暗い所へはゆっくり慣れる）。
+  `pub def defaults(): Settings`
+- 前に追った明るさ prevEv から、狙い targetEv へ dt 秒ぶん近づけた明るさ（1 − e^(−速さ × dt) の割合だけ寄る。dt を細かく刻んでも同じ所へ着く）。
+  `pub def step(s: Settings, dt: Float64, targetEv: Float64, prevEv: Float64): Float64`
+- 追った明るさ ev（stop）→ 掛ける露出（stop）。その明るさを中間の灰色 0.18 に持っていく露出に compensation を足し、上下限で切る。
+  `pub def computeExposure(s: Settings, ev: Float64): Float64`
+- 線形の明るさ（0 より大きい）→ ev（log2）。0 以下は −16（真っ暗）として扱う。
+  `pub def evOf(luminance: Float64): Float64`
+
 ## Flex — `engine_world/src/Flex.flix`
 - レイアウトノード。Leaf = 実寸つき描画物、Box = 子を並べる容器、
   `pub enum Node { case Leaf({ size = Vec2.Vec2, draw = Rect2.Rect2 -> List[Render.PlacedItem] }) case Box({ style = UiLayout.Style, draw = Option[Rect2.Rect2 -> List[Render.PlacedItem]], children = List[Node] }) case Keyed({ key = String, inner = Node }) }`
@@ -1824,6 +1836,14 @@
   `pub enum DepthOfField { case Physical({ focusDistance = Float64, fStop = Float64 }) case DepthBand({ focusDistance = Float64, range = Float64, band = Float64, soft = Float64, blur = Float64 }) }`
 - 重さと細かさの段。読む点の数と描き先の大きさだけを変え、値の意味は変えない。
   `pub enum Quality { case Auto case Low case Medium case High case Fixed({ bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32 }) }`
+- 画面の歪み（Distortion）を掛ける範囲。
+  `pub enum DistortionMask { case Full case BottomBand({ top = Float64, soft = Float64 }) case Texture(String) }`
+- 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れる揺らぎの模様（向きと長さの違う波を重ねた物）で、場面の絵を読む位置をずらす。
+  `pub type alias Distortion = { strength = Vec2.Vec2, noiseSize = Float64, speed = Vec2.Vec2, mask = DistortionMask }`
+- 霧のむら（ゆっくり流れる濃い所と薄い所）。size = むらの大きさ（場面の長さ）・amount = 濃さを揺らす割合（0..1）・
+  `pub type alias FogNoise = { size = Float64, amount = Float64, speed = Vec2.Vec2 }`
+- 高さの霧（地面の近くほど濃く、遠いほど濃くなる霧）。Unreal の Exponential Height Fog と同じ式で、名前もそろえた。
+  `pub type alias HeightFog = { color = Color, density = Float64, baseHeight = Float64, heightFalloff = Float64, startDistance = Float64, maxOpacity = Float64, noise = Option[FogNoise], lightGlow = Float64 }`
 - 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
   `pub enum Msaa with Eq, ToString { case Off case X4 }`
 - 自分の Spec を挟む所。BeforeBloom = 場面の Pass の値（描き手が書いた画面の値・1 を超える）を読んで同じ形の値を書く（線形へ戻すのはこの後）・
@@ -1860,6 +1880,9 @@
 - `pub def withDebugView(v: DebugView, s: Stack): Stack`
 - 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。
   `pub def withBackground(c: Color, s: Stack): Stack`
+- `pub def withDistortion(d: Option[Distortion], s: Stack): Stack`
+- `pub def withHeightFog(h: Option[HeightFog], s: Stack): Stack`
+- `pub def withTime(t: Clock.Time[c], s: Stack): Stack`
 - `pub def exposureOf(s: Stack): Float64`
 - `pub def viewTransformOf(s: Stack): ViewTransform`
 - `pub def bloomOf(s: Stack): Option[Bloom]`
@@ -1872,6 +1895,10 @@
 - `pub def debugViewOf(s: Stack): DebugView`
 - `pub def customOf(s: Stack): List[CustomPass]`
 - `pub def backgroundOf(s: Stack): Option[Color]`
+- `pub def distortionOf(s: Stack): Option[Distortion]`
+- `pub def heightFogOf(s: Stack): Option[HeightFog]`
+- withTime の秒。
+  `pub def timeOf(s: Stack): Float64`
 - 場面（View が返す絵）を描いた Pass。BeforeBloom の自分の Spec はこれを読む。
   `pub def sceneName(): String`
 - 奥行きの絵（DepthBand は ±range の帯を 0..1・Physical は目からの距離を camera の far で割った値。r に入る）。

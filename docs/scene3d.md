@@ -335,6 +335,73 @@ let plan = { targets = Map#{ "scene" => RenderTarget.withMsaa(4, RenderTarget.wi
   効き目と GPU の時間は `App.withDiagnostics()` の `gpuPasses`（Pass ごと）で見比べ、切れるようにしておく
 - 既定は 1（今までどおり）
 
+## 画面の歪み（熱のゆらぎ・水の中・魔法）
+
+火山の陽炎のように、時間で流れるノイズで画面の絵を読む位置をずらす。PostStack の欄の 1 つで、3D の場面にも 2D の View にも掛かる（HUD には掛からない）:
+
+```flix
+App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
+    |> PostStack.withDistortion(Some({ strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 },
+                                       mask = PostStack.DistortionMask.BottomBand({ top = 0.5, soft = 0.3 }) }))
+    |> PostStack.withTime(Clock.nowOf(w#playClock)))
+```
+
+- `strength` = ずらす最大の量（design の px・x と y 別）・`noiseSize` = ノイズの粒（design の px・縦横比を直した丸い粒）・
+  `speed` = 模様が流れる速さ（px / 秒・y は下が +。陽炎は上へ流すので負）
+- `mask`: `Full`（画面全体）・`BottomBand({ top, soft })`（上から top で 0、top + soft で 1。地面から立つ陽炎）・`Texture(名前)`（project.json の絵か Pass の r を重みに。
+  画面いっぱいに引き伸ばして読む。無い名前は歪まない）
+- 時刻は `withTime` で渡す（渡さなければ止まった模様）。遊びの時計を渡せばポーズで止まり、描き出しは決まった時刻で同じ絵になる
+- 毎コマ動かしてよいのは `strength` と時刻（Param で渡る。溶岩に近づくほど強める、など）。`noiseSize`・`mask` を動かすと描き手が program を作り直す
+- 掛かる順は後がけの一番先（自分の BeforeBloom の Pass の後・奥行きのぼかしとブルームの前）。ぼかしの奥行きの絵は歪めないので、ぼけの縁が strength px ほどずれる
+- `strength` が x・y とも 0 か `noiseSize` ≤ 0 なら Pass を足さない（使わない時の絵と DrawHash は前と同じ）
+- 3 つの描き手（GL・WebGPU・CPU）は同じ Spec を読む（新しい式は無い）。揺らぎの模様は向きと長さの違う波を 4 本ずつ重ねた物で、hash のノイズ（Fbm）を使わないので
+  GPU の float32 と CPU の Float64 でも同じ模様になる（bench/scene3d の部屋で GL・WebGPU・CPU の絵の PSNR は 61〜67 dB。歪みなしの描き手どうしの差は 60 dB）。
+  流した位相は CPU で 2π に折り返して渡すので、長く遊んでも崩れない
+- 重さ: 960×540 の窓（M4 Pro・GL の GPU 時間の query）で後がけ全体が 0.71〜0.77 ms → 0.78〜0.86 ms（+0.1 ms ほど）。スマホは【未測定】
+- 確かめの入口: bench/scene3d の `make haze-video`（`FGE_GPU=on` で GL・`FGE_PNG_PAINTER=webgpu` で WebGPU・`FGE_GPU=off` で CPU）・`make run POST=haze`
+- 値は post.json の `distortion` でも書ける（schema は [post.schema.json](post.schema.json)）
+- Unity の Lens Distortion（樽型の歪み）とは別物。Unreal・Unity HDRP の Distortion（読む位置をずらす屈折）と同じ系統
+
+## 地面を這う霧（高さの霧・街灯のにじみ）
+
+夜の町の低い霧。地面の近くほど濃く、遠いほど濃くなり、むらがゆっくり流れ、点光源のまわりの霧が明るくなる。PostStack の欄の 1 つ:
+
+```flix
+App.withPostStack(w -> PostStack.preset(PostStack.Preset.NightOutdoor)
+    |> PostStack.withHeightFog(Some({ color = Color.rgb(0.42, 0.46, 0.56), density = 0.05, baseHeight = 0.0, heightFalloff = 0.15,
+                                      startDistance = 0.0, maxOpacity = 0.92,
+                                      noise = Some({ size = 40.0, amount = 0.6, speed = { x = 10.0, y = 4.0 } }), lightGlow = 0.5 }))
+    |> PostStack.withTime(Clock.nowOf(w#playClock)))
+```
+
+- 式は Unreal の Exponential Height Fog と同じ（名前もそろえた）: 高さ y の濃さ = `density × e^(−heightFalloff × (y − baseHeight))`。目から面までその濃さを積み、
+  `1 − e^(−積んだ量)` だけ `color` に寄せる（`maxOpacity` で上限）。`startDistance` までは積まない
+- 長さは Scene3d の場面の長さ（Blender の 1 m を 16 にした場面なら、地面から 0.4 m で e 分の 1 に薄くするには `heightFalloff = 1 / (0.4 × 16)`）
+- `noise`: むらの大きさ（場面の長さ）・揺らす割合・流れる速さ（x と z）。遠くでは細かい波がちらつかないよう、粒の 24 倍の距離で消える
+- `lightGlow`: 場面の `pointLights` の目に近い 8 つのまわりの霧を明るくする（届く距離の 0.2 倍を画面へ写した半径のにじみ・灯りの高さの霧の濃さで強さが決まる・
+  灯りより手前に面があればにじまない・目の前の灯りを先に選ぶ）。Unreal の体積の霧（Volumetric Fog）の光の散らしの、安い代わり
+- 3D の場面の奥行きの絵（目からの距離・窓の画素）を PostStack が作って読む。場面がもう 1 回描かれる（bench/scene3d の部屋で draw call 10 → 20）。
+  奥行きの絵に入らない半透明の物はその奥の面の霧が掛かる。3D の場面の矩形の中の 2D の絵は、その下の 3D の奥行きで霧が掛かる（字の窓は `App.withHudView` に置く）。矩形の外には掛からない
+- 何も描かれない空の画素は camera の far まで積む（Unreal と同じく地平の近くの空が霧の色に染まる）。far を大きくすると空が霧の色ばかりになる
+- 掛かる順は後がけの一番先（自分の BeforeBloom の後・画面の歪みの前）。霧の中の明るい灯りにもブルームが掛かる
+- 毎コマ動かしてよいのは色・濃さ・高さの落ち方・`startDistance`・`maxOpacity`・`noise.amount`・`lightGlow` とカメラと灯り（Param で渡る）。`noise.size` を動かすと program を作り直す
+- `density` か `maxOpacity` が 0 以下なら Pass を足さない（使わない時の絵と DrawHash は前と同じ）
+- 3 つの描き手は同じ Spec を読む（e^x は `(1 + x/32)^−32` で近づける・むらは歪みと同じ波の和）。bench/scene3d の部屋で GL・WebGPU・CPU の絵の PSNR は 59〜66 dB（霧なしの描き手どうしの差と同じ）
+- 重さ: 960×540（M4 Pro・GL）で GPU +0.04〜0.09 ms・1 コマの CPU +0.3〜0.5 ms（奥行きの絵の分）。スマホは【未測定】
+- 確かめの入口: bench/scene3d の `make haze-video LOOK=fog`・`make run POST=fog`
+- 材質の式の中の霧（`Environment3d.fog` の DistanceFog）とは別物で、両方掛けてもよい（DistanceFog は物ごと・HeightFog は画面全体の後がけ）
+
+### 明るい所へ入った直後の白飛び（ExposureAdaptation）
+
+```flix
+// World に ev を持つ。dt は実時間（ポーズ中も目は慣れる）。
+let ev = ExposureAdaptation.step(ExposureAdaptation.defaults(), dt, ExposureAdaptation.evOf(placeBrightness), w#ev);
+PostStack.withExposure(ExposureAdaptation.computeExposure(ExposureAdaptation.defaults(), ev), stack)
+```
+
+- 絵を測らない（ゲームが場所ごとの狙いの明るさを持つ）。3 つの描き手と描き出しで同じ値。明るくなる時は `speedUp`（既定 3/秒）、暗くなる時は `speedDown`（1/秒）で寄る
+- 露出はブルームの後に掛かるので、白飛びの間もブルームが光り始める明るさは変わらない
+
 ## 場面の絵の予算
 
 場面の絵（Texture3d）を GPU に持つ量は 256 MB・64 枚まで（project.json の `scene3dTextureBudgetMB`・`scene3dTextureBudgetCount`）。

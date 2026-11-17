@@ -76,7 +76,48 @@
       },
       "required": ["kind"]
     },
-    "fxaa": { "type": "boolean", "label": "FXAA", "description": "縁のギザギザをならす（曲線の後の表示の値に掛ける）" }
+    "fxaa": { "type": "boolean", "label": "FXAA", "description": "縁のギザギザをならす（曲線の後の表示の値に掛ける）" },
+    "heightFog": {
+      "type": ["object", "null"], "label": "高さの霧",
+      "description": "地面の近くほど濃く遠いほど濃い霧（Unreal の Exponential Height Fog と同じ式）。3D の場面の奥行きの絵から積む。長さは Scene3d の場面の長さ。むらの流れの時刻は View の withTime で渡す。noise.size を動かすと描き手が作り直す。null で外す",
+      "properties": {
+        "color": { "$ref": "#/$defs/rgb", "label": "霧の色", "description": "sRGB の 0..1。既定 [0.62, 0.66, 0.74]" },
+        "density": { "type": "number", "minimum": 0, "maximum": 2, "label": "濃さ（density）", "description": "高さ baseHeight での濃さ（場面の長さ 1 あたり）。既定 0.02" },
+        "baseHeight": { "type": "number", "label": "基準の高さ（baseHeight）", "description": "濃さが density になる高さ（場面の y）。既定 0" },
+        "heightFalloff": { "type": "number", "minimum": 0, "maximum": 4, "label": "高さの落ち方（heightFalloff）", "description": "高さが 1 上がるごとに濃さが e^−heightFalloff 倍。大きいほど地面に張り付く。既定 0.2" },
+        "startDistance": { "type": "number", "minimum": 0, "label": "霧の始まる距離", "description": "目からこの距離までは積まない。既定 0" },
+        "maxOpacity": { "type": "number", "minimum": 0, "maximum": 1, "label": "濃さの上限", "description": "1 で遠くは霧の色だけ。既定 1" },
+        "lightGlow": { "type": "number", "minimum": 0, "maximum": 4, "label": "灯りのにじみ", "description": "点光源のまわりの霧が明るくなる強さ（0 で無し）。既定 0" },
+        "noise": {
+          "type": ["object", "null"], "label": "むら",
+          "properties": {
+            "size": { "type": "number", "minimum": 0.01, "label": "むらの大きさ", "description": "場面の長さ。既定 8" },
+            "amount": { "type": "number", "minimum": 0, "maximum": 1, "label": "揺らす割合", "description": "既定 0.4" },
+            "speed": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "label": "流れる速さ [x, z]", "description": "場面の長さ / 秒。既定 [0.5, 0.2]" }
+          }
+        }
+      }
+    },
+    "distortion": {
+      "type": ["object", "null"], "label": "画面の歪み",
+      "description": "時間で流れるノイズで場面の絵を読む位置をずらす（熱のゆらぎ・水の中・魔法）。ほかの後がけより先に掛かる。流れの時刻は View の withTime で渡す（Doc に置かない）。strength は毎コマ動かしてよい。noiseSize・mask を動かすと描き手が作り直す。null で外す",
+      "properties": {
+        "strength": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 32 }, "minItems": 2, "maxItems": 2, "label": "強さ [x, y]（px）", "description": "ずらす最大の量（design の px）。既定 [2, 1]" },
+        "noiseSize": { "type": "number", "minimum": 1, "maximum": 512, "label": "ノイズの粒（px）", "description": "粒の大きさ（design の px・縦横比を直した丸い粒）。既定 24" },
+        "speed": { "type": "array", "items": { "type": "number", "minimum": -400, "maximum": 400 }, "minItems": 2, "maxItems": 2, "label": "流れる速さ [x, y]（px/秒）", "description": "模様が流れる速さ。y は下が +（陽炎は上へ流すので負）。既定 [0, -20]" },
+        "mask": {
+          "type": "object", "label": "範囲",
+          "description": "Full = 画面全体・BottomBand = 上から top で 0、top + soft で 1（下ほど強い）・Texture = 名前の絵の r を重みにする（無い名前は歪まない）",
+          "properties": {
+            "kind": { "type": "string", "enum": ["Full", "BottomBand", "Texture"], "label": "種類" },
+            "top": { "type": "number", "minimum": 0, "maximum": 1, "label": "掛かり始める高さ（BottomBand）", "description": "画面の上を 0・下を 1 とした位置。既定 0.5" },
+            "soft": { "type": "number", "minimum": 0, "maximum": 1, "label": "強くなり切るまでの幅（BottomBand）", "description": "既定 0.3" },
+            "name": { "type": "string", "label": "マスクの絵（Texture）", "description": "project.json の絵か Pass の名前" }
+          },
+          "required": ["kind"]
+        }
+      }
+    }
   },
   "$defs": {
     "rgb": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 4 }, "minItems": 3, "maxItems": 3, "description": "[r, g, b]（1 で何もしない）" }

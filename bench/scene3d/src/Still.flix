@@ -2,7 +2,7 @@
 // write は 1 枚を debug/room.png に書き、time は温めてから何回か描いて 1 枚の時間の中央値を出す。
 // 実機と同じ描き物の列を Render.softSceneOf で分けて渡す。
 mod Still {
-    use fge::{Color, CpuTiming, HeadlessFont, HeadlessRender, PostStack, Render}
+    use fge::{Clock, Color, CpuTiming, HeadlessFont, HeadlessRender, PostStack, Render}
 
     import java.lang.System
 
@@ -49,6 +49,32 @@ mod Still {
                                                         scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() }, "preset_${p}");
                     println("[scene3d] debug/preset_${p}.png")
                 })
+        }
+
+    /// 陽炎（PostStack.Distortion を画面の下側の帯に）の見比べ。debug/haze/off.png（歪みなし）と debug/haze/on_<コマ>.png（24 コマ / 秒で 2 秒）を書く（make haze）。
+    pub def haze(): Unit \ IO =
+        let (cfg0, _) = roomScene();
+        let cfg = { outDir = "debug/haze" | cfg0 };
+        match (run { Room.loadMeshes() } with Fs.FileRead.runWithIO) {
+            case Err(why)   => println("[scene3d] 家具を読めない: ${why}")
+            case Ok(meshes) =>
+                let world = Room.items(Room.kitOf(meshes), 0.0);
+                let base = PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3);
+                let draw = (name: String, s: PostStack.Stack) -> {
+                    let built = PostStack.build({ size = Room.design(), clear = Color.rgb(0.0, 0.0, 0.0), world = world }, s);
+                    let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
+                        |> List.map(sp -> { name = sp#name, clear = sp#clear, drawables = sp#drawables, polygons = sp#polygons, surfaces = sp#surfaces, scenes = sp#scenes, target = sp#target });
+                    let soft = Render.softSceneOf(_ -> None, built#present :: Nil);
+                    HeadlessRender.renderPngFull(cfg, { passes = specs, drawables = soft#drawables, polygons = soft#polygons, surfaces = soft#surfaces,
+                                                        scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() }, name)
+                };
+                draw("off", base);
+                List.zipWithIndex(HazeMoments.frames()) |> List.forEach(e -> {
+                    let (i, t) = e;
+                    draw("on_${String.padLeft(3, '0', Int32.toString(i))}",
+                         base |> PostStack.withDistortion(Some(SceneBench.hazeOf())) |> PostStack.withTime(t))
+                });
+                println("[scene3d] debug/haze/off.png と debug/haze/on_000〜047.png")
         }
 
     pub def time(): Unit \ IO =
