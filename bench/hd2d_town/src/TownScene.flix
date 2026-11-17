@@ -16,7 +16,7 @@ mod TownScene {
     /// billboardTextures = 板の絵の引き方・sunColor = 太陽（夜は月）の色・
     /// lampIntensity・lampRange・lampColor = 街灯の点光源（強さ 0 で灯さない）・lampGlow = 街灯の火袋の光る板の強さ（ブルームでにじむ・0 で置かない）・
     /// extraLamps = 重さを測るために足す点光源の数（広場に並べる）・groundFog・groundFogColor = 地面を這う低い霧の板の濃さ（0 で置かない）と色・
-    /// charShadow = 隊列のキャラの影の付け方。
+    /// charShadow = 隊列のキャラの影の付け方・heightFog = 地面を這う高さの霧（engine の PostStack.HeightFog・長さは m）。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
@@ -24,7 +24,8 @@ mod TownScene {
                             exposure = Float64, bloomStrength = Float64, fStop = Float64, saturation = Float64, lift = Color, gamma = Color, gain = Color, vignette = Float64, fxaa = Bool,
                             billboardTextures = BillboardTextures,
                             sunColor = Color, lampIntensity = Float64, lampRange = Float64, lampColor = Color, lampGlow = Float64,
-                            extraLamps = Int32, groundFog = Float64, groundFogColor = Color, charShadow = CharShadow }
+                            extraLamps = Int32, groundFog = Float64, groundFogColor = Color, charShadow = CharShadow,
+                            heightFog = Option[PostStack.HeightFog] }
 
     /// 隊列のキャラの影。Silhouette = 板の絵の形の太陽の影（斜めに伸びる人形の影・足元は薄い小さな楕円だけ）・Soft = 薄い足元の楕円（前の版）・Dense = 濃く少し大きい楕円（案 1）・
     /// DenseCast = 案 1 に、太陽の向きへ薄く短く伸びる影の板を足す（案 2）・SmallBlob = 小さく濃い柔らかい塊を太陽の影の側へ少しずらす（案 3）。
@@ -284,8 +285,13 @@ mod TownScene {
             |> Scene3d.withDoubleSided(true)
 
     /// 後がけ（AgX・露出・ブルーム・ピントの奥行きでぼかす・彩度・周りを暗く）。focus = ピントの合う奥行き（m）。
-    pub def postOf(look: Look, focus: Float64): PostStack.Stack =
+    pub def postOf(look: Look, focus: Float64): PostStack.Stack = postAt(look, focus, 0.0)
+
+    /// postOf に時刻 t（秒・霧のむらを流す）を渡す形。
+    pub def postAt(look: Look, focus: Float64, t: Float64): PostStack.Stack =
         PostStack.preset(PostStack.Preset.Neutral)
+            |> PostStack.withHeightFog(look#heightFog)
+            |> PostStack.withTime(ShotClock.at(t))
             |> PostStack.withViewTransform(PostStack.ViewTransform.AgX)
             |> PostStack.withExposure(look#exposure)
             |> PostStack.withBloom(Some({ threshold = 0.8, smoothness = 0.5, size = 0.6, strength = look#bloomStrength }))

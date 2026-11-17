@@ -157,7 +157,7 @@ mod BuildVideo {
         let partyBoards = List.map(fst, members);
         let partyShadows = List.flatMap(snd, members);
         if (t >= show#done)
-            (TownScene.sceneWith(res, camera, size, res#group :: Nil, List.append(res#boards, partyBoards), partyShadows, textures), focus)
+            ({ time = t | TownScene.sceneWith(res, camera, size, res#group :: Nil, List.append(res#boards, partyBoards), partyShadows, textures) }, focus)
         else {
             let fr = Buildup.frameAt(show, t);
             let contacts = fr#contacts |> List.map(c -> {
@@ -165,12 +165,12 @@ mod BuildVideo {
                 TownScene.contactInstance(res#contactMesh, res#contactMaterial, p#x, p#z, p#y, w * k)
             });
             let (settledGroup, loose) = groupOf(fr#settled);
-            (TownScene.sceneWith(res, camera, size, show#fixed :: settledGroup :: Nil, List.append(fr#billboards, partyBoards),
-                                 List.flatten(fr#moving :: loose :: contacts :: partyShadows :: Nil), textures), focus)
+            ({ time = t | TownScene.sceneWith(res, camera, size, show#fixed :: settledGroup :: Nil, List.append(fr#billboards, partyBoards),
+                                 List.flatten(fr#moving :: loose :: contacts :: partyShadows :: Nil), textures) }, focus)
         }
 
     def fullSceneOf(look: TownScene.Look, focus: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
-        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postOf(look, focus));
+        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postAt(look, focus, scene#time));
         let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
             |> List.map(sp -> { name = sp#name, clear = sp#clear, drawables = sp#drawables, polygons = sp#polygons, surfaces = sp#surfaces, scenes = sp#scenes, target = sp#target });
         let soft = Render.softSceneOf(_ -> None, built#present :: Nil);

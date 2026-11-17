@@ -1,6 +1,6 @@
 // TownLook — 見た目のつまみの Doc（assets/town.json）を読む。無い欄は既定値で続ける。
 mod TownLook {
-    use fge::{Color, DocJson, JsonCodec, Log}
+    use fge::{Color, DocJson, JsonCodec, Log, PostStack}
     use Util.Json.Json
     use TownScene.{Look}
 
@@ -12,7 +12,8 @@ mod TownLook {
           fogNear = 30.0, fogFar = 80.0, fog = Color.rgb(0.88, 0.92, 0.98), sky = Color.rgb(0.7, 0.8, 0.95),
           exposure = 0.25, bloomStrength = 0.35, fStop = 0.07, saturation = 0.85, lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.05, 1.0, 0.92), vignette = 0.35, fxaa = false, billboardTextures = TownScene.BillboardTextures.SceneTextures,
           sunColor = Color.rgb(1.0, 0.95, 0.86), lampIntensity = 0.0, lampRange = 7.0, lampColor = Color.rgb(1.0, 0.72, 0.42), lampGlow = 0.0,
-          extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8), charShadow = TownScene.CharShadow.Soft }
+          extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8), charShadow = TownScene.CharShadow.Soft,
+          heightFog = None }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -42,7 +43,25 @@ mod TownLook {
           sunColor = color("sunColor", d#sunColor), lampIntensity = num("lampIntensity", d#lampIntensity), lampRange = num("lampRange", d#lampRange),
           lampColor = color("lampColor", d#lampColor), lampGlow = num("lampGlow", d#lampGlow), extraLamps = JsonCodec.intOr("extraLamps", d#extraLamps, m),
           groundFog = num("groundFog", d#groundFog), groundFogColor = color("groundFogColor", d#groundFogColor),
-          charShadow = charShadowOf(JsonCodec.stringOr("charShadow", "soft", m)) }
+          charShadow = charShadowOf(JsonCodec.stringOr("charShadow", "soft", m)),
+          heightFog = Map.get("heightFog", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(heightFogOf) }
+
+    /// 地面を這う高さの霧の欄（長さは m・speed は [x, z] の m/秒）。
+    def heightFogOf(h: Map[String, Json]): PostStack.HeightFog =
+        let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, h);
+        let pair = (key: String) -> Map.get(key, h) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat));
+        let color = pair("color") |> Option.flatMap(xs -> match xs {
+            case r :: g :: b :: _ => Some(Color.rgb(r, g, b))
+            case _                => None
+        }) |> Option.getWithDefault(Color.rgb(0.32, 0.3, 0.52));
+        let speed = pair("noiseSpeed") |> Option.flatMap(xs -> match xs {
+            case x :: z :: _ => Some({ x = x, y = z })
+            case _           => None
+        }) |> Option.getWithDefault({ x = 0.6, y = 0.25 });
+        { color = color, density = num("density", 0.12), baseHeight = num("baseHeight", 1.0), heightFalloff = num("heightFalloff", 1.6),
+          startDistance = num("startDistance", 0.0), maxOpacity = num("maxOpacity", 0.8),
+          noise = if (num("noiseSize", 6.0) > 0.0) Some({ size = num("noiseSize", 6.0), amount = num("noiseAmount", 0.7), speed = speed }) else None,
+          lightGlow = num("lightGlow", 1.0) }
 
     /// 隊列のキャラの影の名前（silhouette・soft・dense・denseCast・smallBlob）。
     pub def charShadowOf(name: String): TownScene.CharShadow = match name {

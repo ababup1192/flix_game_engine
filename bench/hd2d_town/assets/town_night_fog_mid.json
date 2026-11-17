@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "shadowDistance": 28.0,
+  "shadowMapSize": 2048,
+  "sunElevation": 40.0,
+  "sunAzimuth": -35.0,
+  "sunIntensity": 0.2,
+  "ambient": [
+    0.05,
+    0.06,
+    0.12
+  ],
+  "hemisphere": 0.08,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 12.0,
+  "fogFar": 40.0,
+  "fog": [
+    0.26,
+    0.24,
+    0.46
+  ],
+  "sky": [
+    0.05,
+    0.07,
+    0.14
+  ],
+  "exposure": -1.8,
+  "bloomStrength": 0.25,
+  "fStop": 0.08,
+  "saturation": 1.0,
+  "vignette": 0.45,
+  "gain": [
+    1.0,
+    0.98,
+    1.0
+  ],
+  "shadowStrength": 0.6,
+  "fxaa": true,
+  "lift": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "note": "夜と霧（中）。地面を這う霧は engine の PostStack.HeightFog（長さは m）・奥の霞は DistanceFog",
+  "sunColor": [
+    0.45,
+    0.55,
+    1.0
+  ],
+  "lampIntensity": 7.0,
+  "lampRange": 5.5,
+  "lampColor": [
+    1.0,
+    0.72,
+    0.42
+  ],
+  "lampGlow": 6.0,
+  "groundFog": 0.0,
+  "heightFog": {
+    "color": [
+      0.56,
+      0.52,
+      0.82
+    ],
+    "density": 0.8,
+    "baseHeight": 1.0,
+    "heightFalloff": 1.2,
+    "startDistance": 0.0,
+    "maxOpacity": 0.8,
+    "noiseSize": 4.5,
+    "noiseAmount": 0.75,
+    "noiseSpeed": [
+      0.5,
+      0.2
+    ],
+    "lightGlow": 1.2
+  }
+}

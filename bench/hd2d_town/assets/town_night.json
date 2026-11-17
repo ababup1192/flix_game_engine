@@ -6,7 +6,7 @@
   "shadowDistance": 28.0,
   "shadowMapSize": 2048,
   "sunElevation": 40.0,
-  "sunAzimuth": -30.0,
+  "sunAzimuth": -35.0,
   "sunIntensity": 0.2,
   "ambient": [
     0.05,
@@ -52,12 +52,12 @@
   ],
   "note": "夜（月明かりの弱い青・街灯の点光源と火袋の光る板・ブルーム）。昼の town.json から替えた欄だけが違う",
   "sunColor": [
+    0.45,
     0.55,
-    0.65,
     1.0
   ],
-  "lampIntensity": 6.0,
-  "lampRange": 5.0,
+  "lampIntensity": 7.0,
+  "lampRange": 5.5,
   "lampColor": [
     1.0,
     0.72,
