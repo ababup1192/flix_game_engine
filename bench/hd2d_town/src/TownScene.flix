@@ -8,11 +8,11 @@ mod TownScene {
     use TownMap.{TownMap}
 
     /// 見た目のつまみ（Doc assets/town.json）。
-    /// topDeg・bottomDeg = 画面の上の端・下の端で地面を見下ろす角度・far = カメラの奥の端（m）・shadowDistance = 太陽の影を描く奥行き（m）・
+    /// topDeg・bottomDeg = 画面の上の端・下の端で地面を見下ろす角度・far = カメラの奥の端（m）・shadowDistance・shadowMapSize = 太陽の影を描く奥行き（m）と地図の一辺の画素・
     /// sunElevation・sunAzimuth = 太陽の高さと方位（度。方位は南 = 手前から東へ）・sunIntensity = 太陽の強さ・
     /// ambient = どこにでも当たる光（画面の値）・hemisphere = 上を向く面ほど明るくする量・
     /// boardTint = 板（木・街灯・キャラ）の明るさの掛け目・snapToTexels = 板とカメラの位置を 1 テクセルに丸めるか・
-    /// fogNear・fogFar・fog = かすみ（目からの距離と色）・exposure・bloom・fStop・saturation・gain（色の掛け目）・vignette = 後がけ。
+    /// fogNear・fogFar・fog = かすみ（目からの距離と色）・sky = 背景の色・exposure・bloom・fStop・saturation・gain（色の掛け目）・vignette = 後がけ。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,

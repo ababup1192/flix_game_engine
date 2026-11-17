@@ -6,7 +6,7 @@ mod Party {
     use TownMap.{TownMap, Walk}
 
     /// 台本の時刻の決まり。speed = 歩く速さ（m/秒）・length = 歩く道のり（m）・
-    /// startAt・stopAt = 先頭が歩き出す・止まる時刻（秒）・total = 撮る長さ（秒）。
+    /// startAt・stopAt = 先頭が歩き出す・止まる時刻（秒）・settle = カメラが止まるのにかける秒・total = 撮る長さ（秒）。
     pub type alias Timeline = { speed = Float64, length = Float64, startAt = Float64, stopAt = Float64, settle = Float64, total = Float64 }
 
     /// 歩く速さ speed の台本の時刻を決める。
@@ -39,8 +39,9 @@ mod Party {
     pub def frameOf(w: Walk, tl: Timeline, t: Float64, i: Int32): Int32 =
         if (not isWalking(tl, t)) 1
         else {
-            let s = leaderAt(tl, t) - Int32.toFloat64(i);
             let step = w#cycleTiles / Int32.toFloat64(w#frames);
+            // WhyNot: 仲間の位相を道のりのままにしない — 間隔 1 マスとコマの 1 巡 1 マスが重なり、3 人が同じ足で歩いて機械的に見える。
+            let s = leaderAt(tl, t) - Int32.toFloat64(i) + Int32.toFloat64(Int32.modulo(i, 2)) * w#cycleTiles / 2.0;
             Int32.modulo(Float64.floor(s / step) |> Float64.tryToInt32 |> Option.getWithDefault(0), w#frames)
         }
 

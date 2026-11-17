@@ -145,10 +145,11 @@ let camera = { eye = Vec3.v3(snap(eyeX), eyeY, snap(eyeZ)) | camera0 };
 
 ```flix
 // 画面の上の端で地面を 15°、下の端で 50° 見下ろす（目の高さ h・水平に向ける）
-let ta = Num.tan(15° を rad で); let tb = Num.tan(50° を rad で);
+let tanOf = (deg: Float64) -> Num.sin(deg * Num.pi() / 180.0) / Num.cos(deg * Num.pi() / 180.0);
+let ta = tanOf(15.0); let tb = tanOf(50.0);
 let tanHalf = (tb - ta) / 2.0;                       // 縦の画角の半分の tan
 let camera = { far = 60.0, lensShift = Vec2.v2(0.0, 0.0 - (ta + tb) / 2.0 / (2.0 * tanHalf))
-             | Camera3d.camera(Vec3.v3(x, h, z), 0.0, 0.0, 2.0 * Num.atan(tanHalf)) };
+             | Camera3d.camera(Vec3.v3(x, h, z), 0.0, 0.0, 2.0 * Num.atan2(tanHalf, 1.0)) };
 ```
 
 - `lensShift` の単位は画面の幅（x）と高さ（y）に対する比。y = −0.5 で画面の高さの半分だけ下を写す。向き（`pitch`・`yaw`）は変えない。既定は `Vec2.zero()`（今までの絵とバイトまで同じ）

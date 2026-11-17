@@ -449,7 +449,7 @@ mod TileMap3d {
         let xb = if (isHedge(c + 1, r)) x0 + 1.0 else x0 + 0.92;
         let ya = if (isHedge(c, r + 1)) y0 else y0 + 0.12;
         let yb = if (isHedge(c, r - 1)) y0 + 1.0 else y0 + 0.88;
-        box(oneMat("hedge"), Faces.p3(xa, ya, z), Faces.p3(xb, yb, z + 1.0), "t" + String.flatten(open), 0.45)
+        box(oneMat("hedge"), Faces.p3(xa, ya, z), Faces.p3(xb, yb, z + 1.0), "t" + String.flatten(open), 0.65)
 
     def crate(x: Float64, y: Float64, z: Float64): List[Quad] =
         let s = 0.8;

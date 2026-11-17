@@ -3,17 +3,17 @@
   "topDeg": 15.0,
   "bottomDeg": 50.0,
   "far": 60.0,
-  "shadowDistance": 40.0,
+  "shadowDistance": 28.0,
   "shadowMapSize": 2048,
   "sunElevation": 55.0,
   "sunAzimuth": 35.0,
-  "sunIntensity": 1.7,
+  "sunIntensity": 2.1,
   "ambient": [
-    0.72,
-    0.76,
-    0.86
+    0.5,
+    0.54,
+    0.64
   ],
-  "hemisphere": 0.25,
+  "hemisphere": 0.5,
   "boardTint": 1.0,
   "snapToTexels": true,
   "fogNear": 18.0,
@@ -28,14 +28,14 @@
     0.8,
     0.95
   ],
-  "exposure": 0.0,
+  "exposure": 0.1,
   "bloomStrength": 0.35,
-  "fStop": 0.07,
+  "fStop": 0.08,
   "saturation": 0.9,
   "vignette": 0.35,
   "gain": [
     1.04,
-    1.0,
-    0.94
+    0.98,
+    0.9
   ]
 }
