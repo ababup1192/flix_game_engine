@@ -1582,6 +1582,10 @@
   `pub def basisOf(face: Int32): { right = Vec3.Vec3, up = Vec3.Vec3, forward = Vec3.Vec3 }`
 - 面 f の world → 光の clip の行列 = perspective(s, s, near, far) × ofLinearRows(R, U, −F) × translate(−位置)（s = guard）。
   `pub def faceMatrixOf(position: Vec3.Vec3, near: Float64, far: Float64, guard: Float64, face: Int32): Mat4.Mat4`
+- 面 f の world → 光の目の座標（GL の目の座標・−Z を見る）= ofLinearRows(R, U, −F) × translate(−位置)。
+  `pub def faceViewOf(position: Vec3.Vec3, face: Int32): Mat4.Mat4`
+- 面の射影 = perspective(s, s, near, far)（s = guard。6 面で同じ）。
+  `pub def faceProjectionOf(near: Float64, far: Float64, guard: Float64): Mat4.Mat4`
 - 光から点への向き d が写る面（|x| ≥ |y| かつ |x| ≥ |z| なら X・ほかに |y| ≥ |z| なら Y・ほかは Z。成分が 0 以上なら + の面）。
   `pub def faceOf(d: Vec3.Vec3): Int32`
 - atlas の中の slot 番目の灯りの面 f の画素の原点 (x, y)（行 0 が ndc.y = −1 の側。GL の深度テクスチャと CPU の地図の数え方）。

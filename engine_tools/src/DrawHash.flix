@@ -189,11 +189,12 @@ pub mod DrawHash {
     }
 
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
-        // WhyNot: unitsPerMeter を鍵に入れない — 描き方を変えない値（m で受ける後がけが読むだけ）で、同じ絵が別の鍵になる。
+        // WhyNot: Legacy の光で unitsPerMeter を鍵に入れない — 描き方を変えない値（m で受ける後がけが読むだけ）で、同じ絵が別の鍵になる。Physical の光では逆二乗が読むので入れる。
         // WhyNot: 集まりを別の印で書かない — 集まりは instances と同じ絵なので、中の物を instances の後ろに並べた場面と同じ鍵にする。
         case { size = size, camera = camera, instances = _, groups = _, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, directionalLight = _, environment = environment,
-               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap, unitsPerMeter = _ } =>
+               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky, environmentMap = environmentMap, unitsPerMeter = unitsPerMeter,
+               pointShadows = pointShadows, lightUnits = lightUnits } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
@@ -219,8 +220,21 @@ pub mod DrawHash {
             putSceneTextures(out, textures);
             sky |> Option.forEach(putSky(out));
             environmentMap |> Option.forEach(putEnvironmentMap(out));
-            Scene3d.directionalLightOf(scene) |> Option.forEach(putDirectionalLight(out))
+            Scene3d.directionalLightOf(scene) |> Option.forEach(putDirectionalLight(out));
+            pointShadows |> Option.forEach(putPointShadowMap(out));
+            if (lightUnits == Scene3d.LightUnits.Physical) { out.writeByte(0x55); putF(out, unitsPerMeter) } else ()
     }
+
+    // WhyNot: 点光源の影の無い場面・Legacy の光の場面に印を書かない — 欄を足す前の鍵の字を保ち、キャッシュの PNG を塗り直させない。
+    //   ある時は印を先に書き、後ろの欄の中身と同じバイト列にならないようにする。
+    def putPointShadowMap(out: DataOutputStream, m: Scene3d.PointShadowMap): Unit \ IO =
+        out.writeByte(0x50);
+        out.writeInt(m#maxShadowedLights);
+        out.writeInt(m#mapSize);
+        putF(out, m#bias);
+        putF(out, m#normalBias);
+        out.writeInt(m#pcfRadius);
+        putF(out, m#strength)
 
     // WhyNot: 太陽の無い場面に印を書かない — directionalLight の欄を足す前の鍵の字を保ち、太陽の無い場面のキャッシュの PNG を塗り直させない。
     // 使わない太陽（directionalLightOf が None）も書かない: 太陽なしと同じ絵なので、同じ鍵にして使い回す。
