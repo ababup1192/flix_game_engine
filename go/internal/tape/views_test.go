@@ -188,7 +188,7 @@ func TestCopyTapeCopiesPhoneAndPlay(t *testing.T) {
 	if _, err := Build(Options{Dir: src, Commit: "abc1234", Play: web}); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyTape(src, dst); err != nil {
+	if err := copyTape(src, dst, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{PhoneVideoFile, PhoneStripFile, filepath.Join(PlayDir, "index.html"), filepath.Join(PlayDir, "assets", "classes.wasm")} {

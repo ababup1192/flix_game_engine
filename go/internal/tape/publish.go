@@ -64,6 +64,13 @@ const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>
   --seed-from <file>   published.jsonl の行から、tapes.json に無い公開を一覧へ埋める（何度でも付けられる）。
                        渡したテープのフォルダの隣の published.jsonl は付けなくても読む
 
+  大きい動画: video.mp4・video-phone.mp4 が 1 本 95 MB を超えたら dry run でも知らせ、--yes の時は
+  テンプレートの flow-mp4 と同じ設定（libx264 -preset slow -crf 32 -tune animation）で縮めてから置き、
+  頁の videoBytes を縮めた大きさにそろえる（手元のテープのフォルダは書き換えない）。
+  縮めても 95 MB を超えたら push せずに止める（GitHub は 1 ファイル 100 MB を超えると push ごと断る）。
+  置く木の全部の大きさも出し、1 GB（Pages のサイトの目安）を超えたら知らせ、2 GB（1 回の push の上限）を超えたら
+  --yes では止める（置き場は履歴を残さず木を丸ごと push するので、前に置いた分も数える）。
+
   置く時に index.html の <head> へ noindex を足す。30 日を過ぎたテープは publish のたびに置き場から外す。
   置いた物の一覧はテープのフォルダの隣の published.jsonl（手元だけ）に 1 行ずつ足す。
 
@@ -98,6 +105,12 @@ type PublishOptions struct {
 	Now      time.Time
 	// Name は置くフォルダ名。空なら日付と crypto/rand の 16 桁で作る。
 	Name string
+	// VideoLimit は置く動画 1 本の上限（0 なら VideoLimit）。超えた動画は Yes の時に縮めて置く。
+	VideoLimit int64
+	// FFmpeg は動画を縮める ffmpeg（空なら環境変数 FFMPEG、それも無ければ PATH の ffmpeg）。
+	FFmpeg string
+	// PushLimit は置く木の全部の上限（0 なら PushLimit）。超えれば Yes の時に止める。
+	PushLimit int64
 	// CheckPages は push の前に Pages が有効かを確かめる。nil なら確かめない。
 	CheckPages func(repo string) error
 	Log        io.Writer
@@ -407,6 +420,28 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 		}
 	}
 	warnMissingRoutes(srcs, subs, log)
+	limit := opt.VideoLimit
+	if limit <= 0 {
+		limit = VideoLimit
+	}
+	big, err := findBigVideos(srcs, limit)
+	if err != nil {
+		return res, err
+	}
+	reportBigVideos(log, big, limit, opt.Yes)
+	var shrink *videoShrink
+	if len(big) > 0 {
+		// WhyNot: ffmpeg が無いのを縮める所まで黙らない — clone と並べ替えを済ませた後に落ち、待たせた分が無駄になる。
+		ff, err := resolveFFmpeg(opt.FFmpeg)
+		switch {
+		case err != nil && opt.Yes:
+			return res, fmt.Errorf("大きい動画を縮められない: %w", err)
+		case err != nil:
+			fmt.Fprintf(log, "注意: --yes の時に大きい動画を縮められない: %v\n", err)
+		case opt.Yes:
+			shrink = &videoShrink{ffmpeg: ff, limit: limit, log: log}
+		}
+	}
 	if opt.CheckPages != nil {
 		if err := opt.CheckPages(opt.Repo); err != nil {
 			var nd pagesNotDocsError
@@ -493,7 +528,7 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	sort.Strings(res.Removed)
 
 	for i, src := range srcs {
-		if err := copyTape(src, filepath.Join(tapes, name, subs[i])); err != nil {
+		if err := copyTape(src, filepath.Join(tapes, name, subs[i]), shrink); err != nil {
 			return res, err
 		}
 	}
@@ -502,6 +537,13 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 		return res, err
 	}
 	if res.Pruned, err = pruneOldVideos(site, res.Entries, opt.KeepVideos); err != nil {
+		return res, err
+	}
+	pushLimit := opt.PushLimit
+	if pushLimit <= 0 {
+		pushLimit = PushLimit
+	}
+	if err := checkTreeSize(site, pushLimit, opt.Yes, log); err != nil {
 		return res, err
 	}
 	if top, err := os.ReadDir(site); err == nil {
@@ -787,7 +829,8 @@ func guardNotGameRepo(src, repo, remote string) error {
 	return nil
 }
 
-func copyTape(src, dst string) error {
+// copyTape は src のテープを dst へ写す。shrink が nil でなければ、上限を超えた動画を縮めて写し、頁の videoBytes をそろえる。
+func copyTape(src, dst string, shrink *videoShrink) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
 	}
@@ -799,22 +842,38 @@ func copyTape(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dst, IndexFile), page, 0o644); err != nil {
+	if err := copyTapeFile(filepath.Join(src, StripFile), filepath.Join(dst, StripFile)); err != nil {
 		return err
 	}
-	for _, f := range []string{VideoFile, StripFile} {
-		if err := copyTapeFile(filepath.Join(src, f), filepath.Join(dst, f)); err != nil {
-			return err
-		}
+	// 縦の画面の分（video-phone.mp4・strip-phone.jpg）は撮った時だけある（頁の TAPE.views が指す）。
+	if err := copyIfExists(filepath.Join(src, PhoneStripFile), filepath.Join(dst, PhoneStripFile)); err != nil {
+		return err
 	}
-	// 縦の画面の分は撮った時だけある（頁の TAPE.views が指す）。
-	for _, f := range []string{PhoneVideoFile, PhoneStripFile} {
-		if _, err := os.Stat(filepath.Join(src, f)); os.IsNotExist(err) {
+	for _, f := range videoFiles {
+		from := filepath.Join(src, f)
+		if _, err := os.Stat(from); f != VideoFile && os.IsNotExist(err) {
 			continue
 		}
-		if err := copyTapeFile(filepath.Join(src, f), filepath.Join(dst, f)); err != nil {
+		if shrink == nil {
+			if err := copyTapeFile(from, filepath.Join(dst, f)); err != nil {
+				return err
+			}
+			continue
+		}
+		n, shrunk, err := shrink.copyVideo(from, filepath.Join(dst, f))
+		if err != nil {
 			return err
 		}
+		if !shrunk {
+			continue
+		}
+		var count int
+		if page, count = setVideoBytes(page, f, n); count == 0 {
+			fmt.Fprintf(shrink.log, "注意: %s の頁に %s の videoBytes が無い（古い版の頁）。読み込みの割合の表示がずれる\n", filepath.Base(src), f)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dst, IndexFile), page, 0o644); err != nil {
+		return err
 	}
 	// ゲームのブラウザ版（頁の「はじめから遊ぶ」が指す）も、書き出した時だけある。
 	play := filepath.Join(src, PlayDir)
@@ -828,6 +887,13 @@ func copyTape(src, dst string) error {
 		return err
 	}
 	return copyTree(play, filepath.Join(dst, PlayDir))
+}
+
+func copyIfExists(src, dst string) error {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return nil
+	}
+	return copyTapeFile(src, dst)
 }
 
 func copyTapeFile(src, dst string) error {
