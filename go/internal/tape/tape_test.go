@@ -106,9 +106,11 @@ var mockFixes = [][2]string{
 	{"style=\"padding-left:${r.d * 10}px\">${esc(r.t)}</span>", "style=\"padding-left:${r.d * 10}px\">${withVarNames(esc(r.t))}</span>"},
 	// 縦（スマホ）と横（PC）の 2 本の動画の切り替えと、頁の隣に置いたブラウザ版をはじめから開くボタン（plans/tape/spec.md の「縦と横の 2 本」）。
 	{"  .modes button.on { background: #fff; color: #111; }\n",
-		"  .modes button.on { background: #fff; color: #111; }\n  .topbtn { flex: none; height: 30px; min-width: 30px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 99px; background: var(--raised); color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; text-decoration: none; }\n  .topbtn[hidden] { display: none; }\n  .topbtn .long { display: none; }\n  body.wide .topbtn .long { display: inline; }\n  body.topbtns .titlebtn b { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }\n  body.topbtns .titlebtn small { max-width: 100%; overflow: hidden; white-space: nowrap; }\n"},
+		"  .modes button.on { background: #fff; color: #111; }\n  .topbtn { flex: none; height: 30px; min-width: 30px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 99px; background: var(--raised); color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; text-decoration: none; }\n  .topbtn[hidden] { display: none; }\n  .topbtn .long { display: none; }\n  body.wide .topbtn .long { display: inline; }\n  body.topbtns .titlebtn b { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }\n  body.topbtns .titlebtn small { max-width: 100%; overflow: hidden; white-space: nowrap; }\n" + narrowTopCSS},
 	{"    <button class=\"export\" id=\"exportBtn\">書き出す</button>",
-		"    <a class=\"topbtn\" id=\"startBtn\" target=\"_blank\" rel=\"noopener\" href=\"#\" hidden aria-label=\"ゲームをはじめから遊ぶ（別のタブ）\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 5v14\"/><path d=\"M10 12l9-6v12z\" fill=\"currentColor\"/></svg><span class=\"long\">はじめから遊ぶ</span></a>\n    <button class=\"topbtn\" id=\"viewBtn\" hidden></button>\n    <button class=\"export\" id=\"exportBtn\">書き出す</button>"},
+		"    <a class=\"topbtn\" id=\"startBtn\" target=\"_blank\" rel=\"noopener\" href=\"#\" hidden aria-label=\"ゲームをはじめから遊ぶ（別のタブ）\">" + startIcon + "<span class=\"long\">はじめから遊ぶ</span></a>\n    <button class=\"topbtn\" id=\"viewBtn\" hidden></button>\n    <button class=\"export\" id=\"exportBtn\">書き出す</button>"},
+	{"      <div class=\"editpill\" id=\"editPill\"></div>\n",
+		"      <div class=\"editpill\" id=\"editPill\"></div>\n      <div class=\"viewpill\" id=\"viewPill\" role=\"status\"></div>\n"},
 	{"// 注釈は 3 つの帯のどれかに付く。",
 		"// 縦と横の 2 本を撮ったテープ（views.phone がある）は縦で開き、?view=pc の時だけ横で開く。上の欄の video・strip・msg・objects は横の分\nconst VIEWS = TAPE.views && TAPE.views.phone ? { pc: { video: TAPE.video, videoBytes: TAPE.videoBytes, strip: TAPE.strip, msg: TAPE.msg, objects: TAPE.objects }, phone: TAPE.views.phone } : null;\nlet tapeView = VIEWS ? (new URLSearchParams(location.search).get(\"view\") === \"pc\" ? \"pc\" : \"phone\") : null;\n// WhyNot: 選んだ分の msg をそのまま TAPE に入れない — 切り替えで MSG の中身を入れ替えるので、同じ物を指すと元の分が書き換わる\nif (VIEWS) Object.assign(TAPE, VIEWS[tapeView], { msg: { ...VIEWS[tapeView].msg }, objects: VIEWS[tapeView].objects.slice() });\n// 注釈は 3 つの帯のどれかに付く。"},
 	{"location.href = n.dataset.href;",
@@ -125,10 +127,36 @@ var mockFixes = [][2]string{
 		"${a.script ? \" · \" + yarn + \":\" + a.script.line : \"\"}${a.screen ? \" · \" + SCREEN_NAME[a.screen] : \"\"}] ${a.note}`));"},
 }
 
+// startIcon ははじめから遊ぶの絵（ここから遊ぶと同じゲーム機。|◀ の形は「頭へ戻る」に読まれた）。
+const startIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="7" width="18" height="11" rx="4"/><path d="M8 11v3M6.5 12.5h3" stroke-linecap="round"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="17.5" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>`
+
+// narrowTopCSS ははじめから遊ぶを字の入った目立つボタンにし、狭いスマホで上の帯を 2 段に組み、切り替えの様子を出す CSS。
+const narrowTopCSS = `  body.topbtns .titlebtn br { display: none; }
+  #startBtn { background: var(--c-video); color: #04121c; padding: 0 12px 0 9px; }
+  #startBtn .long { display: inline; }
+  #viewBtn.busy { color: var(--c-video); }
+  .viewpill { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 99px; background: rgba(0,0,0,.72);
+    backdrop-filter: blur(10px); font-size: 13px; font-weight: 600; white-space: nowrap; pointer-events: none; display: none; font-variant-numeric: tabular-nums; z-index: 3; }
+  .viewpill.on { display: block; }
+  /* 狭いスマホ: 1 段目に一覧・題名・書き出す、2 段目に映像/グラフ・画面の切り替え・はじめから遊ぶ */
+  @media (max-width: 560px) {
+    body.topbtns:not(.wide) .top { flex-wrap: wrap; height: auto; row-gap: 2px; padding-bottom: 6px; }
+    body.topbtns:not(.wide) .top::after { content: ""; order: 4; flex-basis: 100%; height: 0; }
+    body.topbtns:not(.wide) #listBtn { order: 1; }
+    body.topbtns:not(.wide) #chapBtn { order: 2; min-height: 40px; }
+    body.topbtns:not(.wide) #exportBtn { order: 3; }
+    body.topbtns:not(.wide) #modes { order: 5; margin-left: 6px; }
+    body.topbtns:not(.wide) #viewBtn { order: 6; }
+    body.topbtns:not(.wide) #viewBtn::after { content: attr(data-short); }
+    body.topbtns:not(.wide) #startBtn { order: 7; margin-left: auto; height: 34px; font-size: 13px; }
+  }
+`
+
 // viewScript は縦と横の動画の切り替えとはじめから遊ぶボタンの script（頁の最後に足す）。
 const viewScript = `
 // ── 縦（スマホ）と横（PC）の動画の切り替え: 秒・止めているか・選んでいる物・帯と一覧はそのまま、動画・帯の絵・メッセージウィンドウ・物の枠だけを替える ──
 const SCREEN_NAME = { phone: "スマホの画面", pc: "PC の画面" };
+const SHORT_NAME = { phone: "スマホ", pc: "PC" };
 const ICON_PC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="11" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>';
 const ICON_PHONE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg>';
 // 選んでいる画面を隣の頁（分岐の道）へ持っていく。縦は既定なので何も足さない
@@ -150,8 +178,25 @@ function syncViewBtn() {
   b.hidden = false; document.body.classList.add("topbtns");
   const to = tapeView === "phone" ? "pc" : "phone";
   b.innerHTML = (to === "pc" ? ICON_PC : ICON_PHONE) + ` + "`" + `<span class="long">${SCREEN_NAME[to]}</span>` + "`" + `;
+  b.dataset.short = SHORT_NAME[to];
   b.setAttribute("aria-label", ` + "`" + `${SCREEN_NAME[to]}で撮った動画に替える` + "`" + `);
   syncStartBtn();
+}
+// 切り替えている間はボタンと動画の上に様子を出す（ratio は取った割合・割合が分からない時は null・終わったら false）
+function showSwitching(v, ratio) {
+  const b = $("viewBtn"), p = $("viewPill"), on = ratio !== false;
+  b.classList.toggle("busy", on); p.classList.toggle("on", on);
+  if (!on) { syncViewBtn(); return; }
+  const pct = ratio === null ? "" : ` + "`" + ` ${Math.floor(ratio * 100)}%` + "`" + `;
+  b.dataset.short = "切り替え中" + pct; b.querySelector(".long").textContent = "切り替え中…" + pct;
+  p.textContent = ` + "`" + `${SCREEN_NAME[v]}に切り替え中…${pct}` + "`" + `;
+}
+// 置き場が Range を返すか。返すなら動画の URL を video.src へ直に渡し、取り終えるのを待たずに秒へ送る
+let rangeOk = null;
+async function canRange(url) {
+  if (rangeOk !== null) return rangeOk;
+  try { const r = await fetch(url, { headers: { Range: "bytes=0-1" } }); rangeOk = r.status === 206; r.body?.cancel?.(); } catch { rangeOk = false; }
+  return rangeOk;
 }
 // 取り終えた動画（blob の URL）を画面ごとに持ち、行き来で取り直さない
 const viewSrc = {};
@@ -164,13 +209,20 @@ function setTapeView(v) {
   document.documentElement.style.setProperty("--strip", ` + "`" + `url("${encodeURI(d.strip.file)}")` + "`" + `);
   // WhyNot: 頁を読み直して替えない — 書きかけの注釈・開いている欄・帯の広げ具合が消え、動画も最初から取り直す
   try { const u = new URL(location.href); if (v === "pc") u.searchParams.set("view", "pc"); else u.searchParams.delete("view"); history.replaceState(history.state, "", u.href); } catch {}
-  syncViewBtn();
+  syncViewBtn(); showSwitching(v, null);
   if (video.src.startsWith("blob:")) viewSrc[from] = video.src;
-  // WhyNot: 動画の URL を video.src へ直に渡さない — Range を返さない置き場（手元の簡易な http サーバ）では秒へ送れず、頭へ戻る
-  const src = viewSrc[v] ? Promise.resolve(viewSrc[v]) : fetch(d.video).then(r => r.ok ? r.blob() : Promise.reject()).then(b => viewSrc[v] = URL.createObjectURL(b)).catch(() => d.video);
+  // WhyNot: Range を返さない置き場（手元の簡易な http サーバ）で URL を video.src へ直に渡さない — 秒へ送れず頭へ戻る。その時だけ丸ごと取って割合を出す
+  const src = viewSrc[v] ? Promise.resolve(viewSrc[v]) : canRange(d.video).then(ok => ok ? d.video
+    : fetchVideo(d.video, d.videoBytes, (got, total) => { if (tapeView === v) showSwitching(v, total > 0 ? Math.min(1, got / total) : null); })
+      .then(b => viewSrc[v] = URL.createObjectURL(b))).catch(() => d.video);
   src.then(url => {
     if (tapeView !== v) return;
-    video.addEventListener("loadedmetadata", () => { refresh(); seek(Math.min(t, TAPE.duration - .01)); if (playing) video.play(); }, { once: true });
+    const done = () => { if (tapeView === v) showSwitching(v, false); };
+    video.addEventListener("loadedmetadata", () => {
+      video.addEventListener("seeked", done, { once: true });
+      refresh(); seek(Math.min(t, TAPE.duration - .01)); if (playing) video.play();
+    }, { once: true });
+    video.addEventListener("error", done, { once: true });
     video.src = url;
   });
 }
@@ -264,20 +316,20 @@ function splashHide() {
   splash.on = false; splash.el.classList.add("gone"); setTimeout(() => splash.el.remove(), 200);
 }
 // WhyNot: r.blob() で一息に取らない — 45MB ほどの動画を取り終えるまで何割取れたかが分からず、起動画面のゲージが進まない
-async function fetchVideo() {
-  const r = await fetch(TAPE.video);
-  if (!r.ok) throw new Error(TAPE.video + ": " + r.status);
-  const total = +r.headers.get("Content-Length") || TAPE.videoBytes || 0;
+async function fetchVideo(url, bytes, progress) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ": " + r.status);
+  const total = +r.headers.get("Content-Length") || bytes || 0;
   if (!r.body?.getReader) return r.blob();
   const reader = r.body.getReader(), parts = [];
   let got = 0;
-  splashProgress(0, total);
+  progress(0, total);
   for (let part = await reader.read(); !part.done; part = await reader.read()) {
-    parts.push(part.value); got += part.value.length; splashProgress(got, total);
+    parts.push(part.value); got += part.value.length; progress(got, total);
   }
   return new Blob(parts, { type: r.headers.get("Content-Type") || "video/mp4" });
 }
-fetchVideo().then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = TAPE.video; }).finally(splashHide);
+fetchVideo(TAPE.video, TAPE.videoBytes, splashProgress).then(b => { video.src = URL.createObjectURL(b); }).catch(() => { video.src = TAPE.video; }).finally(splashHide);
 `
 
 // tapeLiteral は頁の「const TAPE = …;」の右辺を返す（モックは JS の書き方、雛形は JSON なので比べずに差し替える）。

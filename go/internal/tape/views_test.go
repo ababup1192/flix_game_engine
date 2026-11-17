@@ -201,6 +201,25 @@ func TestCopyTapeCopiesPhoneAndPlay(t *testing.T) {
 // viewsSite は縦と横の 2 本と書き出しを持つテープを 1 つの origin に置く。
 func viewsSite(t *testing.T) string {
 	t.Helper()
+	srv := httptest.NewServer(http.FileServer(http.Dir(viewsDir(t))))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/"
+}
+
+// viewsSiteNoRange は Range を読まずいつも丸ごと返す置き場（手元の簡易な http サーバ）に viewsSite と同じ物を置く。
+func viewsSiteNoRange(t *testing.T) string {
+	t.Helper()
+	fs := http.FileServer(http.Dir(viewsDir(t)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Del("Range")
+		fs.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/"
+}
+
+func viewsDir(t *testing.T) string {
+	t.Helper()
 	dir, web := t.TempDir(), t.TempDir()
 	tape := readFile(t, otherPath)
 	writeViews(t, dir, tape, phoneTape(t, tape, nil))
@@ -208,9 +227,7 @@ func viewsSite(t *testing.T) string {
 	if _, err := Build(Options{Dir: dir, Commit: "abc1234", Play: web}); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
-	t.Cleanup(srv.Close)
-	return srv.URL + "/"
+	return dir
 }
 
 // shownView は今の動画の向き・URL の query・ボタンの字・はじめから遊ぶの href・MSG の cy。
@@ -356,5 +373,50 @@ func TestGraphJumpToTheOtherPageKeepsPcView(t *testing.T) {
 	}
 	if err := p.WaitFor(`location.pathname.startsWith("/dark/") && location.search === "?view=pc" && location.hash === "#t=4" && typeof video !== "undefined" && video.readyState >= 1 && video.videoWidth > video.videoHeight`, 30*time.Second); err != nil {
 		t.Fatalf("dark の頁へ横のまま移っていない: %v（%s）", err, evalString(t, p, `location.href + " " + video.readyState + " " + video.videoWidth + "x" + video.videoHeight + " " + tapeView + " " + TAPE.video`))
+	}
+}
+
+func TestSwitchWithoutRangeKeepsTheTime(t *testing.T) {
+	// Range を返さない置き場では丸ごと取ってから替える。それでも秒が頭へ戻らない。
+	at, got := switched(t, viewsSiteNoRange(t), phone, 1)
+	if got.Tall || at < 2.95 || at > 3.05 {
+		t.Fatalf("帯 %v 秒・%+v", at, got)
+	}
+}
+
+func TestSwitchShowsProgressAtOnce(t *testing.T) {
+	// 押したその場で「切り替え中…」が出る（スマホの回線で取り終えるまで何も起きないように見えない）。
+	p := openTapePage(t, phone)
+	loadPlain(t, p, viewsSite(t))
+	if got := evalString(t, p, `($("viewBtn").click(), $("viewPill").classList.contains("on") + " " + $("viewPill").textContent)`); got != "true PC の画面に切り替え中…" {
+		t.Fatalf("押した直後: %s", got)
+	}
+	if err := p.WaitFor(`!$("viewPill").classList.contains("on") && video.videoWidth > video.videoHeight`, 20*time.Second); err != nil {
+		t.Fatalf("切り替えの様子が消えない: %v", err)
+	}
+}
+
+// topBarJS は（グラフの無いテープでも映像/グラフを出して一番狭い形にして）上の帯のボタンが画面の中に収まり、互いに重ならないか。重なり・はみ出しを 1 つずつ返す。
+const topBarJS = `(() => {
+  const ids = ["listBtn", "chapBtn", "modes", "viewBtn", "startBtn", "exportBtn"], out = [];
+  $("modes").style.display = "";
+  const r = ids.map(id => [id, $(id).getBoundingClientRect()]);
+  r.forEach(([id, b]) => { if (b.left < 0 || b.right > innerWidth + .5 || b.top < 0 || b.width === 0) out.push(id + " が外" + JSON.stringify([b.left, b.right, b.top, b.width, innerWidth])); });
+  r.forEach(([a, x], i) => r.slice(i + 1).forEach(([b, y]) => {
+    if (x.left < y.right - .5 && y.left < x.right - .5 && x.top < y.bottom - .5 && y.top < x.bottom - .5) out.push(a + " と " + b + " が重なる");
+  }));
+  const t = $("tapeTitle").getBoundingClientRect(), c = $("chapBtn").getBoundingClientRect();
+  if (t.top < c.top - .5 || t.bottom > c.bottom + .5) out.push("題名が枠の外");
+  if (!$("startBtn").textContent.includes("はじめから遊ぶ") || $("startBtn").querySelector(".long").offsetWidth === 0) out.push("はじめから遊ぶの字が出ない");
+  return out.join(" / ");
+})()`
+
+func TestTopBarFitsNarrowPhones(t *testing.T) {
+	for _, w := range []int{360, 375, 411, 768, 1280} {
+		p := openTapePage(t, view{w, 800, w < 720, w < 720})
+		loadPlain(t, p, viewsSite(t))
+		if got := evalString(t, p, topBarJS); got != "" {
+			t.Errorf("幅 %d: %s", w, got)
+		}
 	}
 }
