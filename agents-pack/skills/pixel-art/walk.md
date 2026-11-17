@@ -10,6 +10,7 @@ Key poses: contact, passing, and their mirrors.
 - Arms swing opposite to legs
 - 2 つの Contact（左足前と右足前）は必ず形を変える（ずらしただけのコマは歩いて見えない）。
 - 頭頂と足元の行を 4 方向で同じにする。
+- 四足や小さな生き物も、歩きで胴を 1px 上下させる（胴が動かないと硬く見える）。はねる時は、つぶれと伸びを大きく取る。
 
 英文の 7 行は AbsolutelySkilled の pixel-art-sprites の「Build a walk cycle animation」の節から引いた
 （https://github.com/maddhruv/absolute/blob/24b943bdc6bb600905ca15cc09e78bf31b8c32f9/skills/pixel-art-sprites/SKILL.md）。
