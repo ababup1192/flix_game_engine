@@ -12,11 +12,11 @@ mod SceneRender {
     import java.lang.ProcessHandle
 
     /// 描き出しと flow の画面の大きさ（project.json の designWidth / designHeight。デスクトップ版の実機と同じ design）。
-    /// 読めない・大きさが 0 以下なら横の 960×540（1 行言う）。
+    /// 読めない・大きさが 0 以下なら縦の 540×1170（1 行言う）。
     pub def design(): Vec2.Vec2 \ IO =
         match designOf(run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO) {
             case Ok(d)    => d
-            case Err(why) => Log.fellBackThen("render", "project.json の design", "960×540", why, Layout.size(Layout.Fit.Regular))
+            case Err(why) => Log.fellBackThen("render", "project.json の design", "540×1170", why, { x = 540.0, y = 1170.0 })
         }
 
     /// 読んだ project.json の design の大きさ（読めない・0 以下は Err）。

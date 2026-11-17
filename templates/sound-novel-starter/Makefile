@@ -49,15 +49,16 @@ showcase-video:
 # flow が途中で止まった時も、そこまでの頁を作ってから止まった印（終了コード 1）を返す。
 # 分岐: 結末ごとに 1 本ずつ flow を書き（同じ始まりから別の選択肢を選ぶ）、make tape FLOWS="e2e/a.flow e2e/b.flow" で
 # まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐にして、頁のグラフの箱から隣の頁へつなぐ。
-# 画面: 既定は縦（スマホを縦に持った時・FLOW_VIEW=phone）と横（PC の画面）の 2 回撮る。頁は縦で開き、上のボタンで横へ替える。
-# 縦の分は debug/video/<名前>-phone で撮り、debug/tape/<名前> の tape-phone.json・video-phone.mp4 に置く（横は今までどおり tape.json・video.mp4）。
-# 片方だけ撮るなら TAPE_VIEWS=pc か TAPE_VIEWS=phone（1 つだけの時はその画面を tape.json・video.mp4 に置き、頁は切り替えのボタンを出さない）。
+# 画面: 既定は縦（スマホを縦に持った時・FLOW_VIEW=phone）の 1 回だけ撮り、tape.json・video.mp4 に置く（頁は切り替えのボタンを出さない）。
+# このゲームは design が縦で、PC の画面も同じ縦の組みを真ん中に置くだけなので、PC の分を別に撮らない。
+# WhyNot: 既定を pc（同じ 540×1170・マウス）にしない — テープはスマホで見てもらう頁で、指の入力（区分 Small・Touch）の見え方をそろえる。
+# 2 つ並べて比べたい時だけ TAPE_VIEWS="phone pc"（縦の分は debug/video/<名前>-phone で撮り tape-phone.json・video-phone.mp4 に、PC の分は tape.json・video.mp4 に置き、頁は縦で開いて上のボタンで替える）。
 # はじめから遊ぶ: 既定でゲームのブラウザ版も書き出し（bin/fge export-web）、各テープの play/ に写す。頁の上の「はじめから遊ぶ」がタイトルから開く。
 # 後始末: mp4 に束ねたら元のコマ（debug/video/<名前>[-phone]・1 本で 8 GB を超えることがある）を消す。残すなら TAPE_KEEP_FRAMES=1
 # （flow が途中で止まった時も残す）。同じ名前を撮り直す時は、前の debug/video・debug/tape の出力を先に消して置き換える。
 # 書き出さないなら TAPE_PLAY=0（頁はボタンを出さない）。書き出しの作業フォルダと出口は TAPE_WEB（既定 /tmp/fge-tape-web/<ゲームのフォルダ名>）。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
-TAPE_VIEWS = phone pc
+TAPE_VIEWS = phone
 TAPE_PLAY = 1
 TAPE_KEEP_FRAMES = 0
 # WhyNot: 書き出しの作業フォルダをゲームの下（既定の build/web-export）にしない — 組んだ所のパスが wasm に残り、公開した頁からユーザー名が読める。

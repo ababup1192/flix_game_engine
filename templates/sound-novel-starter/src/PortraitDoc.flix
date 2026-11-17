@@ -1,5 +1,5 @@
-// PortraitDoc — novel.portrait.json（縦の画面 = 縦に持ったスマホ・タブレットで縦の design で起動した時だけ使う字と押せる物の大きさ）の宣言ドキュメント層。
-// 置き場所（どこに並べるか）は Layout のコードが決め、ここは大きさだけ。横の画面（PC・横持ち・デスクトップ版）は読まない。
+// PortraitDoc — novel.portrait.json（縦の design の画面 = このゲームの基本の画面で使う字と押せる物の大きさ。PC もスマホも同じ）の宣言ドキュメント層。
+// 置き場所（どこに並べるか）は Layout のコードが決め、ここは大きさだけ。design が横のゲームの横の画面は読まない。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod PortraitDoc {
     use fge::{DocJson, JsonCodec}

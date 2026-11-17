@@ -5,7 +5,7 @@ flix_game_engine のサウンドノベルの手本。冬の山里で午前だけ
 
 背景は昼の光の実写風の絵（画像生成。作り方は [CREDITS.md](CREDITS.md)）を使い、
 **ぼかしと時間帯の色はゲームの中でシェーダーが付ける**（同じ昼の絵が、夕方にも灯りの下にも夜にもなる）。
-文章は小説のように画面いっぱいに積む NVL と、下のウィンドウに 1 行ずつ出す ADV を、場面ごとに切り替える。
+画面は縦（スマホを縦に持った形。PC でも同じ縦の画面を真ん中に出す）。文章は画面いっぱいの頁に上から積み、NVL も ADV も同じ頁（ADV の台詞は名前を小さく添える）。
 字は明朝（しっぽり明朝・OFL）。
 
 ## 始め方
@@ -27,7 +27,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 ## 遊び方
 
 クリック / Enter / Space / Z で読み進める。文字が出ている途中で押すと全文が出る。
-選択肢は ↑↓（またはマウス）で選んで決定。下の帯のボタンか、キーで:
+選択肢は ↑↓（またはマウス）で選んで決定。右端のアイコンの列（しおり・ログ・オート）と右上の …、またはキーで:
 
 | 操作 | キー |
 |---|---|
@@ -37,11 +37,12 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | スキップ（既定は読んだ行だけ。選択肢の後に止めるかは設定） | K / Tab |
 | クイックセーブ・クイックロード | F5 / F9 |
 | ウィンドウを隠す（写真だけを見る） | H / Esc |
-| セーブ・ロード・設定・タイトルへ | 下の帯のボタン |
+| セーブ・ロード | 右の列のしおり（[セーブ｜ロード] が開く） |
+| 設定・タイトルへ・隠す | 右上の … のメニュー |
 
 ブラウザ版の指: タップと上下の払いで 1 行送る（`web.touchGestures` の `swipeUp` / `swipeDown` が `flickUp` / `flickDown` のキー。払いで選ぶ選択肢では上下の払い）・左へ払うと 1 行戻る・長押しでウィンドウを隠す（`longPress` が指の長押しだけの `touchHold` のキー。縦の画面の右の列の上ならボタンの名前を出し、オートはスキップに入る）。
 
-- **セーブ・ロード**: 枠は 1 ページ 6 枠（2 列 × 3 行）。ページは「オート」「クイック」と番号の 3 ページ（Q / E で切り替え）。
+- **セーブ・ロード**: 枠は 1 ページ 6 枠（縦に 1 列。design が横のゲームは 2 列 × 3 行）。ページは「オート」「クイック」と番号の 3 ページ（Q / E で切り替え）。
   枠にはセーブした時の画面をそのまま縮めたサムネ・保存した日時・場所・話し手と台詞の頭が出る。上書き・削除（× か Delete）・
   読んでいる途中のロードは確認のウィンドウで尋ねる。オートセーブは場面（ノード）が変わるたびにオートのページの頭へ積む。
   ロードの画面は一番新しいセーブのページから開き、「続きから」は一番新しいセーブを読む。
@@ -75,9 +76,9 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | 確認のウィンドウ | 文言は `novel.story.json` の labels | `World.askFor`・`WorldMenu.answer`・`View.askLayer` |
 | 設定 | スライダーの範囲は `novel.kind.json` の `*Slider` | `WorldSettings.adjust` / `activate` / `withLevel` / `withSide`・`View.settingsPanel` |
 | タイトル画面・クレジット | `assets/novel.story.json`・`assets/novel.credits.json` | `View.title` / `View.credits` |
-| スマホ（横持ち）の字とボタンの大きさ | `assets/novel.small.json` | `Layout.Fit.Small` |
+| スマホ（横持ち）の字とボタンの大きさ（design が横のゲームの時だけ） | `assets/novel.small.json` | `Layout.Fit.Small` |
 | ブラウザ版で背景・音をタイトルの後に裏で取る（届く前の背景・環境音は暗転して待ち、20 秒で諦めて進む。一発の効果音は鳴らさず進む） | `project.json` の `web.deferred`（タイトルの写真と最初に鳴る音は入れない）・`web.compress`・秒は `novel.kind.json` の `hold*`・待つ間の印は `novel.theme.json` の `loadingMark`（`dots` = 右下の点 3 つ・`ring` = 真ん中の回る輪と labels の `waiting` の字・`none` = 黒だけ） | `Game.withAssetLoading`（Main と `web/WebMain.flix` だけが足す）・`WorldRead` の「素材の待ち」・`Controls.decodeBudget`・`View.holdLayer`・`View.loadingMark`。確かめ方: `bin/fge export-web` の大きさの表の「起動／後回し」・頁の `?loadtime=1`・描き出しの `hold`・`hold-ring`・`hold-none`・`portrait-hold-ring` |
-| スマホを縦に持った時の縦の画面（沈めた写真の上に画面いっぱいの頁・右端にアイコンの列（しおり・ログ・オート）・右上の … のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json`・列と … の積み方と大きさと長押しの秒は `assets/novel.rail.json` | `Layout.Fit.Portrait`・`Rail`（矩形と押しの判定 `Rail.judge`）・`View.portraitPage` / `portraitButtons` / `menuPanel` / `saveLoadPanel`・`WorldMenu.menuItems` / `saveLoadItems` / `longPressOf`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
+| 縦の画面（基本の画面。スマホを縦に持った時も PC も同じ。沈めた写真の上に画面いっぱいの頁・右端にアイコンの列（しおり・ログ・オート）・右上の … のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json`・列と … の積み方と大きさと長押しの秒は `assets/novel.rail.json` | `Layout.Fit.Portrait`・`Rail`（矩形と押しの判定 `Rail.judge`）・`View.portraitPage` / `portraitButtons` / `menuPanel` / `saveLoadPanel`・`WorldMenu.menuItems` / `saveLoadItems` / `longPressOf`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`make run`（design が縦なので PC の窓も縦の画面） |
 
 ## 読む順
 
@@ -136,8 +137,8 @@ stateDiagram-v2
 
 ## 素材を差し替える
 
-- **写真**: `assets/bg/` に 960×540 の JPG を置き、`project.json` の `textures` と `assets/novel.backdrops.json` の
-  `photos` に名前を足す。出典とライセンスは `CREDITS.md` と `assets/novel.credits.json` の両方に書く（CC BY は
+- **写真**: `assets/bg/` に縦の構図（9:19.5 前後・720×1560 など）の JPG を置き、`project.json` の `textures` と `assets/novel.backdrops.json` の
+  `photos` に名前と `aspect`（横÷縦）を足す（作り方は AGENTS.local.md の「縦が基本」）。出典とライセンスは `CREDITS.md` と `assets/novel.credits.json` の両方に書く（CC BY は
   作者名・ライセンス・元の場所を画面にも出す）。ぼかすので、写真の解像度は低くてよい。
 - **時間帯の色**: `novel.backdrops.json` の `grades`。夜は `exposure` を落とし `tint` を青へ、夕暮れは `sky` を橙へ。
 - **字**: `project.json` の `fonts`。使う字だけに縮めた subset を置いている（シナリオに無い字を足したら作り直す）。

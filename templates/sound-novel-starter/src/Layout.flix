@@ -7,8 +7,8 @@ mod Layout {
     use fge::{Display, Rect2, Vec2}
 
     /// 並べ方の組。Regular = PC・タブレット・デスクトップ版（マウスで押す大きさ）、
-    /// Small = 横に持ったスマホ（指で押せる大きさ。大きさは novel.small.json）。どちらも design は 960×540。
-    /// Portrait = 縦の design で起動した時（大きさは novel.portrait.json・画面の大きさは起動の時に決まった縦の design）。
+    /// Small = 横に持ったスマホ（指で押せる大きさ。大きさは novel.small.json）。どちらも design が横の 960×540 のゲームの時だけ。
+    /// Portrait = 縦の design（このゲームの基本。PC もスマホも。大きさは novel.portrait.json・画面の大きさは起動の時に決まった縦の design）。
     /// NVL の頁の切れ目は World が横の幅で数えるので、どの組でも同じ（nvlText は Fit を受けない）。
     pub enum Fit {
         case Regular
@@ -31,7 +31,7 @@ mod Layout {
             case Display.SizeClass.Large  => Fit.Regular
         }
 
-    /// 横の画面の大きさ（project.json の designWidth / designHeight と同じ値）。
+    /// design が横のゲームの横の画面の大きさ（その時の project.json の designWidth / designHeight と同じ値）。
     def landscapeSize(): Vec2.Vec2 = { x = 960.0, y = 540.0 }
 
     /// 画面の大きさ（横は 960×540、縦は起動の時に決まった縦の design）。

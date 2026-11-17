@@ -8,7 +8,7 @@
 //   fps.txt   … コマの速さ（flow の fps）
 //   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・2 つ以上の .yarn にまたがる flow では書かずに理由を出す）
 //
-// FLOW_VIEW=phone の時は、縦に持ったスマホの画面（Display.defaultPortraitView の大きさ・縦の design）で流して撮る。無いか pc なら横（project.json の design）。
+// FLOW_VIEW=phone の時は、縦に持ったスマホの画面（Display.defaultPortraitView の大きさ・縦の design・指）で流して撮る。無いか pc なら PC の画面（project.json の design・マウス）。
 //
 // MIGRATE_OUT=<フォルダ> の時は、移行の突き合わせ（bin/fge migrate diff）の記録もそこへ書く（MigrateOut）:
 //   tape.json   … 上の tape.json に events・buses（ミキサーにバスがある時）・frames・ranLines・screen を足した物
@@ -66,28 +66,28 @@ mod FlowVideo {
             case Ok((script, declared, played1)) => finishPlay(settings, screenOf(view, design, declared), path, out, writes, migrate, script, played1)
         }
 
-    /// 撮る画面の形: 横（project.json の design・デスクトップ版の実機）か、大きさ（CSS px）を持つ縦に持ったスマホ。
+    /// 撮る画面の形: PC（project.json の design・デスクトップ版の実機）か、大きさ（CSS px）を持つ縦に持ったスマホ。
     enum Shape {
-        case Landscape
+        case Desktop
         case Phone(Vec2.Vec2)
     }
 
-    /// FLOW_VIEW（phone か pc。無ければ pc）。知らない字は 1 行言って横。
+    /// FLOW_VIEW（phone か pc。無ければ pc）。知らない字は 1 行言って PC。
     def viewOf(env: Map[String, String]): Shape = match Map.get("FLOW_VIEW", env) |> Option.map(String.trim) {
-        case None          => Shape.Landscape
-        case Some("")      => Shape.Landscape
-        case Some("pc")    => Shape.Landscape
+        case None          => Shape.Desktop
+        case Some("")      => Shape.Desktop
+        case Some("pc")    => Shape.Desktop
         case Some("phone") => Shape.Phone(Display.defaultPortraitView())
-        case Some(other)   => Log.fellBackThen("flow", "FLOW_VIEW=${other}", "pc（横）", "phone か pc でない", Shape.Landscape)
+        case Some(other)   => Log.fellBackThen("flow", "FLOW_VIEW=${other}", "pc", "phone か pc でない", Shape.Desktop)
     }
 
     def designOf(shape: Shape): Vec2.Vec2 \ IO = match shape {
-        case Shape.Landscape   => SceneRender.design()
+        case Shape.Desktop     => SceneRender.design()
         case Shape.Phone(size) => SceneRender.portraitDesignOf(size)
     }
 
     def screenOf(shape: Shape, design: Vec2.Vec2, declared: List[String]): SceneRender.Screen \ IO = match shape {
-        case Shape.Landscape   => SceneRender.screenOf(design, declared)
+        case Shape.Desktop     => SceneRender.screenOf(design, declared)
         case Shape.Phone(size) => SceneRender.phoneScreenOf(size, design, declared)
     }
 
