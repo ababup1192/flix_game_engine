@@ -1838,7 +1838,7 @@
   `pub enum Quality { case Auto case Low case Medium case High case Fixed({ bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32 }) }`
 - 画面の歪み（Distortion）を掛ける範囲。
   `pub enum DistortionMask { case Full case BottomBand({ top = Float64, soft = Float64 }) case Texture(String) }`
-- 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れるノイズで、場面の絵を読む位置をずらす。
+- 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れる揺らぎの模様（向きと長さの違う波を重ねた物）で、場面の絵を読む位置をずらす。
   `pub type alias Distortion = { strength = Vec2.Vec2, noiseSize = Float64, speed = Vec2.Vec2, mask = DistortionMask }`
 - 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
   `pub enum Msaa with Eq, ToString { case Off case X4 }`

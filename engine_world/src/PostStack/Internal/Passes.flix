@@ -60,7 +60,7 @@ pub mod PostStack.Internal.Passes {
         let distortTarget = if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor();
         let distortPasses = distortion |> Option.map(d ->
             ({ name = distortPass(), clear = black,
-               items = Render.withShaderParams(distortParams(input#size, f#time, d), fill(distortSpec(aspect, input#size, afterCustom, d))) :: Nil },
+               items = Render.withShaderParams(distortParams(input#size, f#time, d), fill(distortSpec(input#size, afterCustom, d))) :: Nil },
              distortTarget) :: Nil)
             |> Option.getWithDefault(Nil);
         let current = if (Option.isEmpty(distortion)) afterCustom else distortPass();
@@ -210,27 +210,35 @@ pub mod PostStack.Internal.Passes {
     def isDistortionVisible(d: Distortion): Bool =
         d#noiseSize > 0.0 and (d#strength#x != 0.0 or d#strength#y != 0.0)
 
-    /// ノイズを折り返すマスの数（FbmTile の period）。画面に並ぶ粒の数より十分大きく、繰り返しが見えない数。
-    /// 横に並ぶ粒の数を 2 の累乗へ切り上げた数（下限 64）。
-    def distortPeriod(size: Vec2.Vec2, d: Distortion): Float64 =
-        let across = size#x / d#noiseSize;
-        def grow(p: Float64): Float64 = if (p >= across) p else grow(p * 2.0);
-        grow(64.0)
+    /// 揺らぎの模様の波 1 本: angle = 進む向き（ラジアン・画面の px の上で）・length = 波長（noiseSize に掛ける倍率）・weight = 重み（1 つの軸の重みの和が 1）・phase0 = 頭の位相。
+    type alias Wave = { angle = Float64, length = Float64, weight = Float64, phase0 = Float64 }
 
-    def distortOctaves(): Int32 = 3
+    /// 横のずれ（u）と縦のずれ（v）を作る波の組（向きと長さを散らし、重ねて 1 本ずつの縞が見えないようにした数）。
+    def distortWaves(): (List[Wave], List[Wave]) =
+        let pi = 3.141592653589793;
+        ({ angle = 0.42 * pi, length = 2.0, weight = 0.4, phase0 = 0.0 } :: { angle = 0.61 * pi, length = 1.37, weight = 0.3, phase0 = 1.3 }
+             :: { angle = 0.17 * pi, length = 0.91, weight = 0.2, phase0 = 2.9 } :: { angle = 0.83 * pi, length = 0.59, weight = 0.1, phase0 = 4.1 } :: Nil,
+         { angle = 0.55 * pi, length = 1.83, weight = 0.4, phase0 = 0.7 } :: { angle = 0.31 * pi, length = 1.21, weight = 0.3, phase0 = 2.2 }
+             :: { angle = 0.72 * pi, length = 0.83, weight = 0.2, phase0 = 3.6 } :: { angle = 0.06 * pi, length = 0.53, weight = 0.1, phase0 = 5.3 } :: Nil)
 
-    /// FbmTile の値の真ん中（振れ幅 0.5 から半分ずつ足すので 0..2c に入り、平均が c）。
-    def distortCenter(): Float64 = 0.5 * (1.0 - Float64.pow(base = 0.5, Int32.toFloat64(distortOctaves())))
+    /// 波の、px あたりの位相の進み（x, y）。
+    def waveNumber(d: Distortion, w: Wave): (Float64, Float64) =
+        let kappa = 2.0 * 3.141592653589793 / (d#noiseSize * w#length);
+        (kappa * Num.cos(w#angle), kappa * Num.sin(w#angle))
 
-    /// 面に渡す数: ps_distortX・Y = ずらす最大の量（uv）・ps_distortPhaseU・V = 時刻ぶん模様を流した読む位置のずれ（uv）。
-    // WhyNot: 時刻を Field.Time（面の t）で掛けない — 時刻 × 速さが増え続けると GL の float32 の hash が崩れて模様が出る。流した量を period で折り返してから渡す。
+    /// 面に渡す数: ps_distortX・Y = ずらす最大の量（uv）・ps_dph<i> = 波 i の、時刻ぶん流した位相（0..2π）。
+    // WhyNot: 時刻を Field.Time（面の t）で掛けない — 時刻 × 速さが増え続けると GL の float32 の sin が崩れる。CPU の Float64 で 2π に折り返してから渡す。
     def distortParams(size: Vec2.Vec2, time: Float64, d: Distortion): Map[String, Float64] =
-        let cells = size#y / d#noiseSize;
-        let period = distortPeriod(size, d);
-        let wrap = (x: Float64) -> x - period * Float64.floor(x / period);
-        let phase = (speed: Float64) -> 0.0 - wrap(speed * time / d#noiseSize) / cells;
-        Map#{ "ps_distortX" => d#strength#x / size#x, "ps_distortY" => d#strength#y / size#y,
-              "ps_distortPhaseU" => phase(d#speed#x), "ps_distortPhaseV" => phase(d#speed#y) }
+        let (wu, wv) = distortWaves();
+        let twoPi = 2.0 * 3.141592653589793;
+        let phaseOf = (w: Wave) -> {
+            let (kx, ky) = waveNumber(d, w);
+            let raw = w#phase0 - (kx * d#speed#x + ky * d#speed#y) * time;
+            raw - twoPi * Float64.floor(raw / twoPi)
+        };
+        List.append(wu, wv) |> List.zipWithIndex
+            |> List.foldLeft((m, e) -> { let (i, w) = e; Map.insert("ps_dph${i}", phaseOf(w), m) },
+                             Map#{ "ps_distortX" => d#strength#x / size#x, "ps_distortY" => d#strength#y / size#y })
 
     /// 歪みを掛ける重み（0..1・画素の位置で読む）。
     def distortWeight(m: DistortionMask): Field = match m {
@@ -240,27 +248,32 @@ pub mod PostStack.Internal.Passes {
         case DistortionMask.Texture(name) => linear(Field.Tex({ name = name, chan = TexChan.R }))
     }
 
+    /// 波を重ねた揺らぎ（−1..1）。波 i の位相は Param ps_dph<first + i>。
+    // WhyNot: Fbm・FbmTile（hash の value noise）を使わない — hash は fract(sin(大きい数) × 43758) で、GPU の float32 と CPU の Float64 で
+    // 模様がまるごと違う（3 つの描き手で同じ絵にならない）。sin の引数が数十までの波の和なら float32 でも 1e-5 ほどしか違わない。
+    def waveSum(size: Vec2.Vec2, d: Distortion, first: Int32, waves: List[Wave]): Field =
+        let u = Field.Uv({ axis = Axis.U });
+        let v = Field.Uv({ axis = Axis.V });
+        waves |> List.zipWithIndex |> List.map(e -> {
+            let (i, w) = e;
+            let (kx, ky) = waveNumber(d, w);
+            let arg = add(add(mul(u, k(kx * size#x)), mul(v, k(ky * size#y))), p("ps_dph${first + i}"));
+            mul(k(w#weight), Field.Un({ op = UnOp.Sin, of = arg }))
+        }) |> List.reduceLeft(add) |> Option.getWithDefault(k(0.0))
+
     /// 画素ごとの読む位置のずれ（uv）を ps_du・ps_dv に置く binding。
-    /// Fbm は uv を 1 つの倍率でしか掛けないので、Shift の dx に u × (aspect − 1) を足して (aspect·u, v) で読ませ、粒を丸くする。
-    def distortOffsetBindings(aspect: Float64, size: Vec2.Vec2, d: Distortion): List[(String, Field)] =
-        let cells = size#y / d#noiseSize;
-        let period = distortPeriod(size, d);
-        let noise = (seed: Int32) -> Field.Shift({
-            dx = add(mul(Field.Uv({ axis = Axis.U }), k(aspect - 1.0)), p("ps_distortPhaseU")),
-            dy = p("ps_distortPhaseV"),
-            of = Field.FbmTile({ octaves = distortOctaves(), scale = cells, period = { x = period, y = period }, seed = seed }) });
-        let c = distortCenter();
-        let signed = (ref: String) -> mul(sub(Field.Ref(ref), k(c)), k(1.0 / c));
-        ("ps_dn_u", noise(11)) :: ("ps_dn_v", noise(23)) :: ("ps_dw", distortWeight(d#mask))
-            :: ("ps_du", mul(signed("ps_dn_u"), mul(p("ps_distortX"), Field.Ref("ps_dw"))))
-            :: ("ps_dv", mul(signed("ps_dn_v"), mul(p("ps_distortY"), Field.Ref("ps_dw")))) :: Nil
+    def distortOffsetBindings(size: Vec2.Vec2, d: Distortion): List[(String, Field)] =
+        let (wu, wv) = distortWaves();
+        ("ps_dw", distortWeight(d#mask))
+            :: ("ps_du", mul(waveSum(size, d, 0, wu), mul(p("ps_distortX"), Field.Ref("ps_dw"))))
+            :: ("ps_dv", mul(waveSum(size, d, List.length(wu), wv), mul(p("ps_distortY"), Field.Ref("ps_dw")))) :: Nil
 
     /// source をずらして読み、そのまま写す面。
     // WhyNot: 奥行きの絵（ps_depth）は歪めない — 3D の場面から直に作るので、ぼかしの縁が strength px ほど歪んだ場面とずれる。数 px なので、
     // 本編の面でノイズをもう 1 回組んで奥行きを同じずれで読む値段を払わない。
-    def distortSpec(aspect: Float64, size: Vec2.Vec2, source: String, d: Distortion): ShaderDoc.Spec =
+    def distortSpec(size: Vec2.Vec2, source: String, d: Distortion): ShaderDoc.Spec =
         let read = chan -> Field.Shift({ dx = Field.Ref("ps_du"), dy = Field.Ref("ps_dv"), of = linear(Field.Tex({ name = source, chan = chan })) });
-        { name = "ps_distort", cycleRate = 0.0, bindings = distortOffsetBindings(aspect, size, d),
+        { name = "ps_distort", cycleRate = 0.0, bindings = distortOffsetBindings(size, d),
           out = rgbOf(read(TexChan.R), read(TexChan.G), read(TexChan.B)) }
 
     // ── 面 ──

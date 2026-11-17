@@ -75,9 +75,9 @@ pub mod PostStack {
         case Texture(String)
     }
 
-    /// 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れるノイズで、場面の絵を読む位置をずらす。
+    /// 画面の歪み（熱のゆらぎ・水の中・魔法）。時間で流れる揺らぎの模様（向きと長さの違う波を重ねた物）で、場面の絵を読む位置をずらす。
     /// Unreal・Unity HDRP の Distortion（屈折で読む位置をずらす物）と同じ系統で、Unity の Lens Distortion（樽型の歪み）とは別物。
-    /// strength = ずらす最大の量（design の px・x と y 別）・noiseSize = ノイズの粒の大きさ（design の px・縦横比を直した丸い粒）・
+    /// strength = ずらす最大の量（design の px・x と y 別）・noiseSize = 揺らぎの粒の大きさ（design の px・一番長い波の半分の長さ）・
     /// speed = 模様が流れる速さ（design の px / 秒・y は下が +。陽炎は上へ流すので負）・mask = 掛ける範囲。
     /// 流れの時刻は withTime で渡す（渡さなければ 0 で止まった模様）。
     /// 毎コマ動かしてよいのは strength と時刻（Param で渡る）。noiseSize・mask を毎コマ動かすと描き手が program を作り直す。

@@ -482,10 +482,16 @@ mod TestPostStack {
         Assert.assertEq(expected = true, flowGap({ x = 30.0, y = 0.0 }, 0.5) < 0.2)
 
     @Test
-    def testFlowAfterALongTimeStaysWithinOnePeriod(): Unit \ Assert =
-        let phase = distortItem(hazy(PostStack.DistortionMask.Full, 1000000.0)) |> Option.flatMap(i -> paramOf("ps_distortPhaseV", i));
-        let onePeriod = 64.0 / (180.0 / 24.0);
-        Assert.assertEq(expected = Some(true), phase |> Option.map(ph -> ph <= 0.0 and ph >= 0.0 - onePeriod))
+    def testFlowAfterALongTimeKeepsThePhasesWithinOneTurn(): Unit \ Assert =
+        let item = distortItem(hazy(PostStack.DistortionMask.Full, 1000000.0));
+        let phases = List.range(0, 8) |> List.filterMap(i -> item |> Option.flatMap(it -> paramOf("ps_dph${i}", it)));
+        let turn = 2.0 * 3.141592653589793;
+        Assert.assertEq(expected = (8, true), (List.length(phases), List.forAll(ph -> ph >= 0.0 and ph < turn, phases)))
+
+    @Test
+    def testCpuDistortionNeverPassesTheStrength(): Unit \ Assert =
+        let offs = List.range(0, 6) |> List.flatMap(i -> offsetsAt(hazy(PostStack.DistortionMask.Full, Int32.toFloat64(i) * 0.37), samplePoints()));
+        Assert.assertEq(expected = true, List.forAll(o -> Float64.abs(fst(o)) <= 3.0 + 0.05 and Float64.abs(snd(o)) <= 2.0 + 0.05, offs))
 
     @Test
     def testCpuMissingMaskTextureLeavesThePictureStill(): Unit \ Assert =

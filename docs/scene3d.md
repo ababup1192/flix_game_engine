@@ -333,7 +333,11 @@ App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
 - 毎コマ動かしてよいのは `strength` と時刻（Param で渡る。溶岩に近づくほど強める、など）。`noiseSize`・`mask` を動かすと描き手が program を作り直す
 - 掛かる順は後がけの一番先（自分の BeforeBloom の Pass の後・奥行きのぼかしとブルームの前）。ぼかしの奥行きの絵は歪めないので、ぼけの縁が strength px ほどずれる
 - `strength` が x・y とも 0 か `noiseSize` ≤ 0 なら Pass を足さない（使わない時の絵と DrawHash は前と同じ）
-- 3 つの描き手（GL・WebGPU・CPU）は同じ Spec を読む（新しい式は無い。ノイズは `FbmTile` を周期 64 マスで折り返して流すので、長く遊んでも模様が崩れない）
+- 3 つの描き手（GL・WebGPU・CPU）は同じ Spec を読む（新しい式は無い）。揺らぎの模様は向きと長さの違う波を 4 本ずつ重ねた物で、hash のノイズ（Fbm）を使わないので
+  GPU の float32 と CPU の Float64 でも同じ模様になる（bench/scene3d の部屋で GL・WebGPU・CPU の絵の PSNR は 61〜67 dB。歪みなしの描き手どうしの差は 60 dB）。
+  流した位相は CPU で 2π に折り返して渡すので、長く遊んでも崩れない
+- 重さ: 960×540 の窓（M4 Pro・GL の GPU 時間の query）で後がけ全体が 0.71〜0.77 ms → 0.78〜0.86 ms（+0.1 ms ほど）。スマホは【未測定】
+- 確かめの入口: bench/scene3d の `make haze-video`（`FGE_GPU=on` で GL・`FGE_PNG_PAINTER=webgpu` で WebGPU・`FGE_GPU=off` で CPU）・`make run POST=haze`
 - 値は post.json の `distortion` でも書ける（schema は [post.schema.json](post.schema.json)）
 - Unity の Lens Distortion（樽型の歪み）とは別物。Unreal・Unity HDRP の Distortion（読む位置をずらす屈折）と同じ系統
 

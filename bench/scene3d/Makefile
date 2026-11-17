@@ -16,7 +16,7 @@
 # 家具は assets/models/*.obj（fps3d_lab の写し。Blender の 1 m = world の 16）。
 # 基準は RESULTS.md。ブラウザ版は engine の根で make bench-web BENCH=scene3d ARGS='scene=field&n=12000'。
 
-.PHONY: common-fresh still presets haze cpu-time run check
+.PHONY: common-fresh still presets haze haze-video cpu-time run check
 
 still:
 	../../bin/flix run --entrypoint Still.write
@@ -26,6 +26,9 @@ presets:
 
 haze:
 	../../bin/flix run --entrypoint Still.haze
+
+haze-video:
+	../../bin/flix run --entrypoint HazeVideo.write
 
 cpu-time:
 	../../bin/flix run --entrypoint Still.time
