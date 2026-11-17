@@ -18,7 +18,7 @@ pub mod ShaderEval {
     pub type alias TexData = { width = Int32, height = Int32, pixels = Vector[Int32] }
 
     /// 1 を超える値を持てる画素（Rgba16Float の Pass を CPU で読む形。1 画素に r, g, b, α の 4 つ・行優先・正立）。
-    /// 値は half の精度に丸めた物。外から作らせない（hdrTextureOf だけが作る・読むのは hdrWidthOf / hdrHeightOf / hdrChannelOf）。
+    /// 値は half の精度に丸めた物。外から作らせない（hdrTextureOf と hdrTextureOfHalves だけが作る・読むのは hdrWidthOf / hdrHeightOf / hdrChannelOf）。
     enum HdrTextureData {
         case HdrTextureData(Int32, Int32, Vector[Float32])
     }
@@ -37,6 +37,21 @@ pub mod ShaderEval {
         let n = w * h * 4;
         let values = if (Vector.length(rgba) >= n) Vector.take(n, rgba) else Vector.append(rgba, Vector.repeat(n - Vector.length(rgba), 0.0));
         HdrTextureData.HdrTextureData(w, h, Vector.map(x -> RenderUtil.f32(roundToHalf(x)), values))
+
+    /// hdrTextureOf の、丸め終えた値を受ける版。halves は 1 画素に r, g, b, α の 4 つ・行優先で、どれも roundToHalf を通した値（長さは width × height × 4）。
+    /// 長さが合わなければ hdrTextureOf と同じく足りない分を 0 にする。
+    // WhyNot: hdrTextureOf の中で丸めを速くしない — 1 回の呼び出しの中の長い輪は JVM が途中から JIT せず（末尾呼び出しの輪で OSR が諦める）、
+    // 960×540 の Pass 1 枚で約 240 ms かかる。画素ごとの関数を Java の stream で回せる描き手（SoftRaster）が丸めて渡す。
+    pub def hdrTextureOfHalves(width: Int32, height: Int32, halves: Vector[Float32]): HdrTexture =
+        let w = Int32.max(1, width);
+        let h = Int32.max(1, height);
+        let n = w * h * 4;
+        if (Vector.length(halves) == n) HdrTextureData.HdrTextureData(w, h, halves)
+        else HdrTextureData.HdrTextureData(w, h, Vector.map(x -> RenderUtil.f32(roundToHalf(x)), hdrPadded(n, halves)))
+
+    def hdrPadded(n: Int32, halves: Vector[Float32]): Vector[Float64] =
+        let values = Vector.map(Float32.toFloat64, halves);
+        if (Vector.length(values) >= n) Vector.take(n, values) else Vector.append(values, Vector.repeat(n - Vector.length(values), 0.0))
 
     /// 幅（テクセルの数）。
     pub def hdrWidthOf(tex: HdrTexture): Int32 = let HdrTextureData.HdrTextureData(w, _, _) = tex; w

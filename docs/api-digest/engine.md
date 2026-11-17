@@ -1612,6 +1612,7 @@
   `pub def roundToHalf(x: Float64): Float64`
 - width × height の画素（rgba = 1 画素に r, g, b, α の 4 つ・行優先）を half に丸めて凍らせる。足りない分は 0。
   `pub def hdrTextureOf(width: Int32, height: Int32, rgba: Vector[Float64]): HdrTexture`
+- `pub def hdrTextureOfHalves(width: Int32, height: Int32, halves: Vector[Float32]): HdrTexture`
 - 幅（テクセルの数）。
   `pub def hdrWidthOf(tex: HdrTexture): Int32`
 - 高さ（テクセルの数）。
