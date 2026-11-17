@@ -7,13 +7,13 @@
   "shadowMapSize": 2048,
   "sunElevation": 55.0,
   "sunAzimuth": 35.0,
-  "sunIntensity": 2.1,
+  "sunIntensity": 3.0,
   "ambient": [
-    0.5,
-    0.54,
-    0.64
+    0.15,
+    0.17,
+    0.24
   ],
-  "hemisphere": 0.5,
+  "hemisphere": 0.15,
   "boardTint": 1.0,
   "snapToTexels": true,
   "fogNear": 18.0,
@@ -28,14 +28,26 @@
     0.8,
     0.95
   ],
-  "exposure": 0.1,
-  "bloomStrength": 0.35,
+  "exposure": -0.3,
+  "bloomStrength": 0.0,
   "fStop": 0.08,
-  "saturation": 0.9,
+  "saturation": 1.05,
   "vignette": 0.35,
   "gain": [
-    1.04,
-    0.98,
-    0.9
+    1.06,
+    0.99,
+    0.88
+  ],
+  "shadowStrength": 1.0,
+  "fxaa": true,
+  "lift": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
   ]
 }

@@ -8,16 +8,16 @@ mod TownScene {
     use TownMap.{TownMap}
 
     /// 見た目のつまみ（Doc assets/town.json）。
-    /// topDeg・bottomDeg = 画面の上の端・下の端で地面を見下ろす角度・far = カメラの奥の端（m）・shadowDistance・shadowMapSize = 太陽の影を描く奥行き（m）と地図の一辺の画素・
+    /// topDeg・bottomDeg = 画面の上の端・下の端で地面を見下ろす角度・far = カメラの奥の端（m）・shadowDistance・shadowMapSize・shadowStrength = 太陽の影を描く奥行き（m）・地図の一辺の画素・影の濃さ（0〜1）・
     /// sunElevation・sunAzimuth = 太陽の高さと方位（度。方位は南 = 手前から東へ）・sunIntensity = 太陽の強さ・
     /// ambient = どこにでも当たる光（画面の値）・hemisphere = 上を向く面ほど明るくする量・
     /// boardTint = 板（木・街灯・キャラ）の明るさの掛け目・snapToTexels = 板とカメラの位置を 1 テクセルに丸めるか・
-    /// fogNear・fogFar・fog = かすみ（目からの距離と色）・sky = 背景の色・exposure・bloom・fStop・saturation・gain（色の掛け目）・vignette = 後がけ。
-    pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32,
+    /// fogNear・fogFar・fog = かすみ（目からの距離と色）・sky = 背景の色・exposure・bloom・fStop・saturation・lift・gamma・gain（暗い所・中間・明るい所の持ち上げ。1 で何もしない）・vignette・fxaa = 後がけ。
+    pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
                             fogNear = Float64, fogFar = Float64, fog = Color, sky = Color,
-                            exposure = Float64, bloomStrength = Float64, fStop = Float64, saturation = Float64, gain = Color, vignette = Float64 }
+                            exposure = Float64, bloomStrength = Float64, fStop = Float64, saturation = Float64, lift = Color, gamma = Color, gain = Color, vignette = Float64, fxaa = Bool }
 
     /// 読み込みで 1 回作る物。group = 動かない面と足元の影・boards = 動かない板・textures = 場面に渡す絵・
     /// strips = 隊列の歩きの絵（4 コマを横に並べた物）・contact = 足元の影の形と材質。
@@ -117,7 +117,7 @@ mod TownScene {
         let az = look#sunAzimuth * Num.pi() / 180.0;
         let toward = Vec3.v3(Num.cos(el) * Num.sin(az), Num.sin(el), 0.0 - Num.cos(el) * Num.cos(az));
         { intensity = look#sunIntensity, color = Color.rgb(1.0, 0.95, 0.86),
-          shadow = Some({ distance = look#shadowDistance, mapSize = look#shadowMapSize, bias = 0.03, normalBias = 1.0 | Scene3d.directionalShadow() })
+          shadow = Some({ distance = look#shadowDistance, mapSize = look#shadowMapSize, strength = look#shadowStrength, bias = 0.03, normalBias = 1.0 | Scene3d.directionalShadow() })
           | Scene3d.directionalLight(Vec3.mul(toward, -1.0)) }
 
     /// 1 コマの場面。billboards・instances = 毎コマ変わる板と置いた物（隊列）。
@@ -136,8 +136,9 @@ mod TownScene {
             |> PostStack.withExposure(look#exposure)
             |> PostStack.withBloom(Some({ threshold = 0.8, smoothness = 0.5, size = 0.6, strength = look#bloomStrength }))
             |> PostStack.withDepthOfField(if (look#fStop > 0.0) Some(PostStack.DepthOfField.Physical({ focusDistance = focus, fStop = look#fStop })) else None)
-            |> PostStack.withColorGrade(Some({ lift = Color.rgb(0.0, 0.0, 0.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = look#gain, saturation = look#saturation }))
+            |> PostStack.withColorGrade(Some({ lift = look#lift, gamma = look#gamma, gain = look#gain, saturation = look#saturation }))
             |> PostStack.withVignette(Some({ strength = look#vignette, inner = 0.45, outer = 1.1, center = { x = 0.5, y = 0.5 } }))
+            |> PostStack.withFxaa(look#fxaa)
 
     /// 描き物の列（画面いっぱいに場面を 1 つ）。
     pub def items(scene: Scene3d.Scene3dCmd): List[Render.PlacedItem] = Render.scene3d(Vec2.zero(), scene) :: Nil
