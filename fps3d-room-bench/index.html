@@ -18,8 +18,8 @@
 <body>
 <h3>fps3d-room bench</h3>
 <p class="note">部屋のカメラを 1 コマに 0.75 度ずつ回し（480 コマで 1 周）、部屋に入ってから 90 コマ後の 960 コマ（2 周）を測ります。
-WebGPU と WebGL2 は同じコマ番号で同じ向きを見るので、そのまま比べられます。WebGPU 前（0.97.0）→ WebGPU 後（pass の命令を JS へ 1 回で渡す枝）→ WebGL2 を 2 回くり返し、続けて部屋の MSAA を切った回（480 コマ・1 周）、呼び出しを数える回と engine の診断の行を出す回（各 240 コマ・どちらも時間は読まない）を流します。
-スマホは横向き・画面を消さずに 3〜4 分。終わると下に表が出ます。</p>
+WebGPU と WebGL2 は同じコマ番号で同じ向きを見るので、そのまま比べられます。WebGPU（main 05926221）→ WebGL2 を 2 回くり返し、続けて部屋の MSAA を切った回（480 コマ・1 周）、呼び出しを数える回と engine の診断の行を出す回（各 240 コマ・どちらも時間は読まない）を流します。
+スマホは横向き・画面を消さずに 2〜3 分。終わると下に表が出ます。前の基準（Galaxy S24 Ultra・WebGL2）は 46.5 fps・cpu 20.7 ms。</p>
 <button id="go" type="button">始める</button>
 <div id="out"></div>
 <script>
@@ -42,11 +42,10 @@ WebGPU と WebGL2 は同じコマ番号で同じ向きを見るので、その�
     if (extra) extra.split("&").forEach(function (kv) { var i = kv.indexOf("="); if (i > 0) p.set(kv.slice(0, i), kv.slice(i + 1)); });
     plan.push({ dir: dir, p: p });
   }
-  // game = engine の今の枝（pass の命令を JS へ 1 回で渡す）・game-before = 0.97.0（main a3735aee）の書き出し。
-  for (var r = 0; r < rounds; r++) { add("game-before", "webgpu", "time", frames); add("game", "webgpu", "time", frames); add("game", "gl", "time", frames); }
-  if (withMsaa1) { add("game-before", "webgpu", "time", "480", "msaa=1"); add("game", "webgpu", "time", "480", "msaa=1"); add("game", "gl", "time", "480", "msaa=1"); }
-  if (withCounts) { add("game-before", "webgpu", "count", "240"); add("game", "webgpu", "count", "240"); add("game", "gl", "count", "240"); }
-  if (withDiag) { add("game-before", "webgpu", "diag", "240", "diag=1"); add("game", "webgpu", "diag", "240", "diag=1"); add("game", "gl", "diag", "240", "diag=1"); }
+  for (var r = 0; r < rounds; r++) { add("game", "webgpu", "time", frames); add("game", "gl", "time", frames); }
+  if (withMsaa1) { add("game", "webgpu", "time", "480", "msaa=1"); add("game", "gl", "time", "480", "msaa=1"); }
+  if (withCounts) { add("game", "webgpu", "count", "240"); add("game", "gl", "count", "240"); }
+  if (withDiag) { add("game", "webgpu", "diag", "240", "diag=1"); add("game", "gl", "diag", "240", "diag=1"); }
   // 後ろから URL をつなぐ（各回が次の回の URL を bnext に持つ。次の回の頁から見た道）。
   var next = "";
   for (var i = plan.length - 1; i >= 0; i--) {
@@ -65,7 +64,7 @@ WebGPU と WebGL2 は同じコマ番号で同じ向きを見るので、その�
   else if (q.get("auto") === "1") start();
 
   function label(r) {
-    var name = r.backend === "webgl2" ? "WebGL2" : (r.build === "game-before" ? "WebGPU 前" : "WebGPU 後");
+    var name = r.backend === "webgl2" ? "WebGL2" : "WebGPU";
     return name + (/msaa=1/.test(r.knobs) ? " msaa=1" : "");
   }
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }

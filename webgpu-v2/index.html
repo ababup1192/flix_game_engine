@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebGPU の新しい機能の見た目 — 環境マップ・mip・staticGroup</title>
+<style>
+  body { margin: 0; padding: 14px; background: #111; color: #ddd; font: 15px/1.6 system-ui, sans-serif; }
+  table { border-collapse: collapse; margin: 8px 0 16px; }
+  td, th { border: 1px solid #444; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #222; }
+  a { color: #8bb4ff; font-weight: 700; }
+  .note { color: #aaa; font-size: 13px; }
+</style>
+</head>
+<body>
+<h3>WebGPU の新しい機能の見た目</h3>
+<p class="note">開いたら画面をタップして始めます。左下に、URL の描き手・fps・console の [backend] の行（WebGPU なら adapter の名前）が出ます。
+WebGPU と WebGL2 で同じ絵になるかを見比べてください。この頁の fps は見ません（場面の絵を毎コマ作り直す作りなので遅い）。</p>
+
+<table>
+  <tr><th>場面</th><th>WebGPU</th><th>WebGL2</th><th>正しい見た目</th></tr>
+  <tr><td>環境マップ（球 12 個）</td>
+    <td><a href="game/index.html?backend=webgpu&view=env&hud=1">開く</a></td>
+    <td><a href="game/index.html?view=env&hud=1">開く</a></td>
+    <td>金色の球が 3 列 × 4 行。右の列ほど金属で、上の段ほど景色（青い空・赤と黄の縞・茶の床）がくっきり映り、下の段ほどぼやける。ゆっくり左右に首を振る。</td></tr>
+  <tr><td>環境マップ（箱で補正）</td>
+    <td><a href="game/index.html?backend=webgpu&view=envbox&hud=1">開く</a></td>
+    <td><a href="game/index.html?view=envbox&hud=1">開く</a></td>
+    <td>上と同じ並び。映り込みの位置が球ごとに少しずれる。</td></tr>
+  <tr><td>環境マップを背景にも</td>
+    <td><a href="game/index.html?backend=webgpu&view=envbg&hud=1">開く</a></td>
+    <td><a href="game/index.html?view=envbg&hud=1">開く</a></td>
+    <td>後ろに空・赤と黄の縦縞・茶の床の景色。球に同じ景色が映る。</td></tr>
+  <tr><td>mip（場面の絵の市松）</td>
+    <td><a href="game/index.html?backend=webgpu&view=mip&hud=1">開く</a></td>
+    <td><a href="game/index.html?view=mip&hud=1">開く</a></td>
+    <td>長い床の市松が、遠くでちらつかずに灰色へなめらかに溶ける。</td></tr>
+  <tr><td>mip（登録の絵・放射の光）</td>
+    <td><a href="game/index.html?backend=webgpu&view=mipreg&hud=1">開く</a></td>
+    <td><a href="game/index.html?view=mipreg&hud=1">開く</a></td>
+    <td>白い丸い光が床に並び、遠くへ行くほど小さく、ちらつかずに溶ける。</td></tr>
+</table>
+
+<p class="note">staticGroup（動かない物の持ち越し・WebGPU では render bundle の道）の見た目は <a href="../scene3d-bench/">scene3d bench</a> の「staticGroup あり」で見られます（箱の格子が「なし」と同じに見えれば良い）。</p>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scene3d bench — staticGroup あり・なし × WebGPU・WebGL2</title>
+<style>
+  body { margin: 0; padding: 14px; background: #111; color: #ddd; font: 15px/1.6 system-ui, sans-serif; }
+  h3 { margin: 4px 0 8px; }
+  table { border-collapse: collapse; margin: 8px 0 16px; }
+  td, th { border: 1px solid #444; padding: 8px 10px; text-align: left; }
+  th { background: #222; }
+  a { color: #8bb4ff; font-weight: 700; }
+  .note { color: #aaa; font-size: 13px; }
+  code { font: 12px ui-monospace, Menlo, monospace; color: #ccc; }
+</style>
+</head>
+<body>
+<h3>scene3d bench（形が物ごとに違う 12,000 個・動く物 0%）</h3>
+<p class="note">開くと測り始め、終わると画面の上に結果の行（fps・cpu の ms など）が出ます。120 コマを 2 区間測ります。WebGL2 の staticGroup なしは PC でも 1 コマ 0.3 秒ほどかかる重さなので、スマホでは 1 本 数分かかります。横向き・画面を消さずに。
+「JSON をコピー」で結果を写せます。WebGPU が使えない時は WebGL2 で起動します（結果の行の backend を見てください）。</p>
+
+<table>
+  <tr><th></th><th>staticGroup あり</th><th>staticGroup なし</th></tr>
+  <tr><th>WebGPU</th>
+    <td><a href="game/index.html?backend=webgpu&scene=field&n=12000&shapes=each&mats=1&moving=0&group=1&frames=120&repeat=2">開く</a></td>
+    <td><a href="game/index.html?backend=webgpu&scene=field&n=12000&shapes=each&mats=1&moving=0&group=0&frames=120&repeat=2">開く</a></td></tr>
+  <tr><th>WebGL2</th>
+    <td><a href="game/index.html?scene=field&n=12000&shapes=each&mats=1&moving=0&group=1&frames=120&repeat=2">開く</a></td>
+    <td><a href="game/index.html?scene=field&n=12000&shapes=each&mats=1&moving=0&group=0&frames=120&repeat=2">開く</a></td></tr>
+</table>
+
+<h3>影あり（太陽の影 shadow=1）</h3>
+<table>
+  <tr><th></th><th>staticGroup あり</th><th>staticGroup なし</th></tr>
+  <tr><th>WebGPU</th>
+    <td><a href="game/index.html?backend=webgpu&scene=field&n=12000&shapes=each&mats=1&moving=0&shadow=1&group=1&frames=120&repeat=2">開く</a></td>
+    <td><a href="game/index.html?backend=webgpu&scene=field&n=12000&shapes=each&mats=1&moving=0&shadow=1&group=0&frames=120&repeat=2">開く</a></td></tr>
+  <tr><th>WebGL2</th>
+    <td><a href="game/index.html?scene=field&n=12000&shapes=each&mats=1&moving=0&shadow=1&group=1&frames=120&repeat=2">開く</a></td>
+    <td><a href="game/index.html?scene=field&n=12000&shapes=each&mats=1&moving=0&shadow=1&group=0&frames=120&repeat=2">開く</a></td></tr>
+</table>
+
+<p class="note">見る所: fps と cpu_p50（1 コマで wasm が使った ms）。staticGroup ありの方が cpu が小さければ、動かない物の持ち越しが効いています。
+箱が欠ける・ちらつく・色が違うなど、4 本で見た目が違えば教えてください。<br>
+つまみは URL の query で替えられます（例 <code>n=4000</code>・<code>frames=240</code>・<code>repeat=4</code>）。</p>
+</body>
+</html>
