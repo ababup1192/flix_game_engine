@@ -206,6 +206,21 @@ HD-2D（`plans/engine-hd2d.md`）の下準備も同じ列に入れる（人の�
 
 その後の順の推し【推】: S6 のうち光の大きさで影の縁をぼかす所 → S4（空とかすみ・光の筋） → TAA → S5（水）。リアルタイムの GI は焼き込みとプローブ止まり。
 
+### 3.0.1 cat-garden から取る物の順（人の決め 2026-11-17・「お任せ」）
+
+元は https://github.com/BubbleBrainBB/awesome-fable-5.2/tree/main/cat-garden（自前のパストレーサーで 1080p・110 秒を 1 コマ 3.3 秒で描いたオフラインのムービー）。
+描き方そのものは取らず、1 コマの時間に関係しない物だけを取る。3 つのスパイク（どれも worktree の枝・engine は無改修）の相性と手間で順を決めた。どれも engine の拡張なので、作る前に段ごとに相談する。
+
+| 順 | 段 | 中身 | 相性 | 手間 | スパイク |
+|---|---|---|---|---|---|
+| 1 | **S1c レンズの小物**（S1b の後・S2 の前） | PostStack の面に時刻とコマ番号を配る・`CustomPass` に Param・色ずれを本編の面に・フィルムグレインを present の面（Fxaa の後）に・`ExposureAdaptation`（ゲームが狙いの明るさを決める露出の追い方） | 65〜78 | 12〜20 時間 | 枝 `worktree-agent-a136923d1c3615a98` の `spikes/lens-post/` |
+| 2 | **カメラの頭の動き**（engine_world・HD-2D のスパイクの前） | `SpringInterp`（2 次のバネ）・`Curve.monotoneCubic`・`HeadBob`・`CameraAim`。注目の台本はゲームの側。ロールは別の相談 | 64 | 5.5〜7.5 時間 | 枝 `worktree-agent-a098f5187672e7b1c` の `spikes/camera-rig/` |
+| 3 | 樽型の歪み（S2 の後の TiltShift・Distortion の段） | Panini Projection と見比べてから、カメラの射影の欄か PostStack かを決める | 42 | 12〜20 時間 | 同じ `spikes/lens-post/` |
+| 4 | 植物と風（S3 の後） | `Mesh3d.fromArrays` で葉の面を組む `PlantMesh`・頂点を時刻で動かす `Scene3d.Wind3d`（今は時刻が頂点の段に届かない）・拡散の透過 | 63 | 植物 5〜8・風 12〜18・透過 4〜6 時間 | 枝 `worktree-agent-abcfae2ad7b307740` の `spikes/foliage/` |
+| 後 | 絵から測る自動露出（TAA と一緒に）・楕円の絞り（DoF を点で撒く形にした時）・モーションブラー（入れない推し） | — | — | — | — |
+
+1 の時刻の口は §3.0 の Distortion（熱のゆらぎ）と共用、`ExposureAdaptation` は HD-2D の入りの白飛び（plans/engine-hd2d.md §3.2）にも使う。2 は HD-2D の追従と寄り（同 §3.2.7 の 1）にも使う。
+
 ### 3.1 最初の段に S1 を推す理由【推】
 
 物差し: (1) 何本のゲームの絵が変わるか (2) 描き手に入るか (3) 正解の絵と比べられるか (4) スマホの値段。
