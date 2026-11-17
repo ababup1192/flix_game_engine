@@ -28,13 +28,22 @@ endif
 space := $(subst ,, )
 include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 
-# FlowVideo が書いたコマと音（$(1) のフォルダ）を、X に載せられる H.264 + AAC の mp4（$(2)）に束ねるシェルの 1 文。
+# FlowVideo が書いたコマと音（$(1) のフォルダ）を H.264 + AAC の mp4（$(2)）に束ねるシェルの 1 文。映像の旗は $(3)、音の旗は $(4)。
 # GPU で塗れた時は frames.mkv（幅と高さは engine が偶数にそろえる）、塗れない時は連番 PNG（縦の design は 540×1169 のように奇数のまま）。
 # WhyNot: crop を外さない — SoftRaster で塗った連番 PNG は奇数のままで、yuv420p の H.264 は幅と高さが偶数でないと ffmpeg が書かずに止まる。
 flow-mp4 = fps=$$(cat $(1)/fps.txt); \
 	if [ -f $(1)/frames.mkv ]; then frames="-i $(1)/frames.mkv"; else frames="-framerate $$fps -i $(1)/f%04d.png"; fi; \
 	ffmpeg -y -loglevel error $$frames -f f64be -ar 44100 -ac 2 -i $(1)/audio.f64 \
-	  -vf "crop=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -pix_fmt yuv420p -crf 20 -r $$fps -c:a aac -b:a 192k -shortest -movflags +faststart $(2)
+	  -vf "crop=trunc(iw/2)*2:trunc(ih/2)*2" $(3) -r $$fps $(4) -shortest -movflags +faststart $(2)
+# テープ（make tape）の符号化: 字の頁が続くノベル向けに小さく（雨の降る 540×1170 の画面で 10 分 40 MB ほど・字は crf 20 と見分けがつかない）。
+# 置き場（GitHub）は 1 ファイル 100 MB まで。bin/fge tape publish は 95 MB を超えた動画を同じ設定で縮めてから置く（go/internal/tape の ShrinkVideoArgs とそろえる）。
+# WhyNot: crf 20 に戻さない — 雨や粒が動く画面は 1 分 75 MB になり、4 分で GitHub に置けなくなる。
+# WhyNot: -preset veryfast にしない — 同じ大きさなら背景の雨がつぶれて汚い（字はどれも読める）。
+TAPE_X264 ?= -c:v libx264 -preset slow -crf 32 -tune animation -pix_fmt yuv420p
+TAPE_AAC ?= -c:a aac -b:a 96k
+# 紹介の動画（make flow-video・showcase-video）の符号化: X に載せる物なので大きさより画質（X は 1 本 512 MB まで）。
+VIDEO_X264 ?= -c:v libx264 -pix_fmt yuv420p -crf 20
+VIDEO_AAC ?= -c:a aac -b:a 192k
 
 # 見せ場をつないだ紹介の動画（e2e/showcase.flow → debug/video/showcase.mp4）。
 # コマと音は FlowVideo が実機と同じ 1 フレームで書き、ここで mp4 に束ねる。
@@ -88,7 +97,7 @@ tape-shoot = code=0; rm -rf debug/video/$(2) debug/video/$(2)-phone debug/tape/$
 	  FLOW=$(1) FLOW_OUT=$$src FLOW_VIEW=$$v $(HEADLESS_RUN) FlowVideo.play || code=1; \
 	  test -f $$src/tape.json || { echo "tape: $$src/tape.json を書けなかった"; exit 2; }; \
 	  cp $$src/tape.json debug/tape/$(2)/tape$$suf.json; \
-	  { $(call flow-mp4,$$src,debug/tape/$(2)/video$$suf.mp4); } || exit 2; \
+	  { $(call flow-mp4,$$src,debug/tape/$(2)/video$$suf.mp4,$(TAPE_X264),$(TAPE_AAC)); } || exit 2; \
 	  test "$(TAPE_KEEP_FRAMES)" = 1 -o "$$code" = 1 || rm -rf $$src; \
 	done; exit $$code
 .PHONY: tape
@@ -151,7 +160,7 @@ flow-video:
 	@test -n "$(TAPE_NAME)" || { echo "使い方: make flow-video FLOW=e2e/<名前>.flow（か NAME=<名前>）"; exit 2; }
 	rm -rf "debug/video/$(TAPE_NAME)"
 	FLOW=$(FLOW) FLOW_OUT=debug/video/$(TAPE_NAME) $(HEADLESS_RUN) FlowVideo.play
-	@$(call flow-mp4,debug/video/$(TAPE_NAME),debug/video/$(TAPE_NAME).mp4)
+	@$(call flow-mp4,debug/video/$(TAPE_NAME),debug/video/$(TAPE_NAME).mp4,$(VIDEO_X264),$(VIDEO_AAC))
 	@echo "rendered: debug/video/$(TAPE_NAME).mp4"
 
 # ── 移行の突き合わせ（engine の docs/migrate-diff.md）──

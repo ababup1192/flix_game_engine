@@ -32,17 +32,26 @@ func stripCellSize(n int) (int, int) {
 	return w, int(math.Round(float64(w)*StripH/StripW)) &^ 1
 }
 
-// MakeStrip は動画から 0.5 秒ごとのコマを StripW×StripH に縮めて（比が違えば真ん中から切り抜いて）横 1 列に並べた jpg を書く。
-func MakeStrip(ffmpeg, video, out string, duration float64) (Strip, error) {
+// resolveFFmpeg は ffmpeg（空なら環境変数 FFMPEG、それも無ければ PATH の ffmpeg）の道を返す。
+func resolveFFmpeg(ffmpeg string) (string, error) {
 	if ffmpeg == "" {
 		ffmpeg = os.Getenv("FFMPEG")
 	}
 	if ffmpeg == "" {
-		p, err := exec.LookPath("ffmpeg")
-		if err != nil {
-			return Strip{}, fmt.Errorf("ffmpeg が見つからない（PATH に置くか devbox の中で流す）: %w", err)
-		}
-		ffmpeg = p
+		ffmpeg = "ffmpeg"
+	}
+	p, err := exec.LookPath(ffmpeg)
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg が見つからない（%s・PATH に置くか devbox の中で流す）: %w", ffmpeg, err)
+	}
+	return p, nil
+}
+
+// MakeStrip は動画から 0.5 秒ごとのコマを StripW×StripH に縮めて（比が違えば真ん中から切り抜いて）横 1 列に並べた jpg を書く。
+func MakeStrip(ffmpeg, video, out string, duration float64) (Strip, error) {
+	ffmpeg, err := resolveFFmpeg(ffmpeg)
+	if err != nil {
+		return Strip{}, err
 	}
 	n := StripCount(duration)
 	if n < 1 {
