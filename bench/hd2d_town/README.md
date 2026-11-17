@@ -1,0 +1,48 @@
+# hd2d_town — HD-2D の町の試作（タイル地図 → 3D の町・パーティが歩く）
+
+plans/engine-hd2d.md の段階 0 のうち、「タイル地図 JSON から 3D の地面と箱を組み、2D の絵を立てる町」と
+「パーティ 3 人が大通りを歩いて止まる」を、エンジン（Scene3d）だけで組んだ試作。どの口も窓を開かない。
+
+| 口 | 中身 |
+|---|---|
+| `make compare` | Blender の試作（`~/Desktop/hd2d_lab/art/hd2d_gen/out/blender_tilemap_avenue_15_50_day.png`）と同じ止めたカメラ・同じ配置で 1 枚描き、左右に並べる（`debug/compare_side_by_side.png`） |
+| `make frames` → `make video` | 地図の `walk` の台本で歩いて止まる 30 fps のコマを CPU（SoftRaster）で描き（`debug/frames/`）、mp4 にする（`debug/hd2d_town_walk.mp4`） |
+| `make time` | 歩く場面の 1 コマの CPU の時間（後がけつき・なし） |
+| `make test` | 地図の読み・立体の決まり・面の向きと uv・カメラの式・隊列と追従カメラ |
+
+## 作り
+
+- **地図**: `assets/town_avenue.map.json`（hd2d_lab の写し。ground・height・shape・objects の文字の格子・buildings・margin・camera.frame・walk・variants）。
+  差分 `variants.step`（草を 0.25 m 上げて縁石と笠石）を使う。
+- **立体の組み立て**（`src/TileMap3d.flix`。Godot の GridMap・Unity の Tilemap に当たる）: Blender の試作 `blender_tilemap.py` の決まりを写した。
+  床（座標のハッシュで 90° 回しと反転・頂点の AO）・段の側面（隣より高いマスのふち）・縁石と笠石・下げた水路と水面・建物（壁タイル 3 段・窓と扉は壁の絵の差し替え・階の境の帯・厚みのある切妻屋根）・
+  面ごとにタイルを貼る箱（生垣は隣の生垣と面を省く・木箱・柵・目印の石の柱）・地図の外（低い地面と暗い森）。
+  面は材質ごとに 1 つの形にして `Scene3d.staticGroup` 1 つにまとめる（読み込みで 1 回）。
+- **板の物**（木・低木・街灯・町の人・隊列）: `Scene3d.billboard` + `withCastShadows(true)` + `withReceiveShadows(true)`。32 画素 = 1 m。
+  カメラが水平なので板は地面に垂直に立つ（1/cos の伸ばし無し）。足元の楕円の影はコードで作った絵を半透明の四角に貼る。
+- **カメラ**（`src/TownCamera.flix`）: `Camera3d.lensShift`（段 1 でエンジンに足した欄）。画面の上の端で 15°・下の端で 50° 地面を見下ろす
+  （lensShift.y ≈ −0.79・縦の画角 ≈ 49.6°）。目の位置は地図の `camera.frame` から Blender と同じ式で決める。
+- **隊列と追従カメラ**（`src/Party.flix`）: 先頭が `walk.col` 列を `fromRow` → `toRow` へ北へ歩き、仲間は 1 マス・2 マス後ろの道をなぞる。
+  歩く速さは「画面の真ん中の行で地面が `groundFlowH`（画面の高さ/秒）流れる」値（この地図で約 2.3 m/s）。
+  カメラは歩く間は先頭と同じだけ動き（遅れ 0）、止まる時だけ `stopSec`（0.7 秒）かけてなめらかに止まる（先頭が止まる前後に半分ずつ・後ろへ戻らない）。
+  `CameraRig.followDelta` は「目標との差 × min(1, k·dt)」なので、等速で歩く間ずっと速さ / k の遅れが残る。遅れ 0 の追従には足りないので使っていない。
+- **テクセルに丸める**: `assets/town.json` の `snapToTexels`（既定 true）。隊列の位置とカメラを 1/32 m に丸め、先頭とカメラの距離も丸めた値にそろえる。
+- **見た目のつまみ**: `assets/town.json`（角度・太陽・環境光・かすみ・露出・ブルーム・F 値・彩度・色の掛け目・周りの暗さ・影の奥行き）。
+
+## 確かめた事と、確かめていない事
+
+- CPU（SoftRaster）の描き出しだけで確かめた。**GL・WebGPU の窓では見ていない【未確認】**（人が「今ゲーム起動しないで」と言ったため）。
+- 後がけ（AgX・ブルーム・ピントの奥行きでぼかす・彩度・周りの暗さ）は CPU の後がけの道（`PostStack.build` → `HeadlessRender.renderPngFull`）で掛けた。
+- 窓で入力で歩く版（`Main`）は作っていない。台本で歩く。
+
+## 人に決めてほしい事（推しつき）
+
+1. **lensShift を `Camera3d` の欄にした事**（閉じたレコードに欄を足した）。外のゲームで `{ eye = .., far = .. }` と全部の欄を字で書いたカメラはコンパイルできなくなる（リポジトリの中の 60 か所は直した。外の fps3d_lab・lamplighter などは engine-upgrade の時に `lensShift = Vec2.zero()` を足すか `Camera3d.camera(..)` へ替える）。
+   推し: このまま（Unity の Lens Shift と同じ欄・作る関数 `Camera3d.camera` も足した）。リリースの移行メモに 1 行載せる。
+2. **TileMap3d をこの bench に置いた事**（engine_world へ上げていない）。理由は「層を置く物差し」（使い手が 1 本だけ）。
+   推し: lensShift が出たら hd2d_lab へ移して、ここは消す（2 つの写しが別々に育たないように）。
+3. **見た目の差**（並べた 1 枚）: 形・配置・カメラは Blender とほぼ重なる。色はエンジンの方が石畳が明るく白っぽく、Blender の方が暖かく霞む。
+   推し: 色合わせはつまみ（`assets/town.json`）で続ける。Blender の板は「法線を太陽へ向けた」光の当て方で、エンジンの板は法線がカメラ向き（太陽 55°/35° で約半分の当たり）なので、板の明るさは `boardTint` で寄せる。
+   法線を太陽へ向ける欄をエンジンに足すかは相談（ビルボードの光の法線）。
+4. **森の板は影を落とさない**（CPU の 1 コマが重くなるわりに見えない）。Blender は落とす。推し: このまま。
+5. **四角の対角線を AO で選び直している**（Minecraft の頂点 AO）。Blender は選び直さないので、暗い角の形が少し違って見える。推し: このまま（良くなる方の違い）。
