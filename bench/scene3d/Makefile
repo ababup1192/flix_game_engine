@@ -1,5 +1,6 @@
 # scene3d — 3D の描き物（Render.Item.Scene3d）の固定の部屋 1 つ（床と壁・家具 12・松明 4）。
 #   make still … CPU（SoftRaster）で静止画を 1 枚描く → debug/room.png（窓を開かない）
+#   make presets … 部屋に PostStack の preset を 1 つずつ掛けて debug/preset_<名前>.png に書く（preset の値を人が目で見る用・窓を開かない）
 #   make cpu-time … CPU で同じ部屋を温めてから何回か描き（回数は Still.timingPlan）、1 枚の時間の中央値を出す（窓を開かない。PNG は書かない）
 #   make run   … 実機の窓で毎コマ同じ部屋を描き、カメラを少しずつ回す。区間ごとに 1 行の JSON（[bench] result …。1 コマ・GL へ送る・GPU の時間・
 #                draw call・3D の描き手の CPU の区間）を出し、4 区間で閉じる（GL の確かめと重さを測る用。垂直同期は切る）
@@ -12,10 +13,13 @@
 # 家具は assets/models/*.obj（fps3d_lab の写し。Blender の 1 m = world の 16）。
 # 基準は RESULTS.md。ブラウザ版は engine の根で make bench-web BENCH=scene3d ARGS='scene=field&n=12000'。
 
-.PHONY: common-fresh still cpu-time run check
+.PHONY: common-fresh still presets cpu-time run check
 
 still:
 	../../bin/flix run --entrypoint Still.write
+
+presets:
+	../../bin/flix run --entrypoint Still.presets
 
 cpu-time:
 	../../bin/flix run --entrypoint Still.time

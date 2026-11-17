@@ -285,12 +285,20 @@ mod TestPostStack {
 
     @Test
     def testDocWithoutKindKeepsTheStartingViewTransform(): Unit \ Assert =
-        let vt = parsed("{\"preset\": \"DuskOutdoor\", \"viewTransform\": {\"saturationAfter\": 0.3}}") |> Result.toOption |> Option.map(PostStack.viewTransformOf);
-        let sat = match vt {
-            case Some(PostStack.ViewTransform.AcesNarkowicz(a)) => Some(a#saturationAfter)
-            case _                                               => None
+        let vt = parsed("{\"preset\": \"DuskOutdoor\", \"viewTransform\": {\"whitePoint\": 8.0}}") |> Result.toOption |> Option.map(PostStack.viewTransformOf);
+        let agx = match vt {
+            case Some(PostStack.ViewTransform.AgX) => true
+            case _                                 => false
         };
-        Assert.assertEq(expected = Some(0.3), sat)
+        Assert.assertEq(expected = true, agx)
+
+    @Test
+    def testNamedPresetsUseAgX(): Unit \ Assert =
+        let agx = match PostStack.viewTransformOf(PostStack.preset(PostStack.Preset.TorchRoom)) {
+            case PostStack.ViewTransform.AgX => true
+            case _                           => false
+        };
+        Assert.assertEq(expected = true, agx)
 
     @Test
     def testDocOtherKindReplacesTheWholeField(): Unit \ Assert =

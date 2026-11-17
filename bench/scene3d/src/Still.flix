@@ -2,7 +2,7 @@
 // write は 1 枚を debug/room.png に書き、time は温めてから何回か描いて 1 枚の時間の中央値を出す。
 // 実機と同じ描き物の列を Render.softSceneOf で分けて渡す。
 mod Still {
-    use fge::{CpuTiming, HeadlessFont, HeadlessRender, Render}
+    use fge::{Color, CpuTiming, HeadlessFont, HeadlessRender, PostStack, Render}
 
     import java.lang.System
 
@@ -32,6 +32,28 @@ mod Still {
         let (cfg, soft) = roomScene();
         HeadlessRender.renderPngSoft(cfg, soft, "room");
         println("[scene3d] debug/room.png（描く時間は make cpu-time で測る）")
+
+    /// 部屋に PostStack の preset を 1 つずつ掛けて debug/preset_<名前>.png に書く（人が preset の値を目で見る用。make presets）。
+    pub def presets(): Unit \ IO =
+        let (cfg, _) = roomScene();
+        match (run { Room.loadMeshes() } with Fs.FileRead.runWithIO) {
+            case Err(why)   => println("[scene3d] 家具を読めない: ${why}")
+            case Ok(meshes) =>
+                let world = Room.items(Room.kitOf(meshes), 0.0);
+                presetList() |> List.forEach(p -> {
+                    let built = PostStack.build({ size = Room.design(), clear = Color.rgb(0.0, 0.0, 0.0), world = world }, PostStack.preset(p));
+                    let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
+                        |> List.map(s -> { name = s#name, clear = s#clear, drawables = s#drawables, polygons = s#polygons, surfaces = s#surfaces, scenes = s#scenes, target = s#target });
+                    let soft = Render.softSceneOf(_ -> None, built#present :: Nil);
+                    HeadlessRender.renderPngFull(cfg, { passes = specs, drawables = soft#drawables, polygons = soft#polygons, surfaces = soft#surfaces,
+                                                        scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() }, "preset_${p}");
+                    println("[scene3d] debug/preset_${p}.png")
+                })
+        }
+
+    def presetList(): List[PostStack.Preset] =
+        PostStack.Preset.Neutral :: PostStack.Preset.DuskOutdoor :: PostStack.Preset.NightOutdoor :: PostStack.Preset.SunnyCity
+            :: PostStack.Preset.EveningBeach :: PostStack.Preset.Cave :: PostStack.Preset.NightCorridor :: PostStack.Preset.TorchRoom :: Nil
 
     pub def time(): Unit \ IO =
         let (cfg, soft) = roomScene();

@@ -135,32 +135,34 @@ pub mod PostStack {
 
     type alias Fields = { exposure = Float64, viewTransform = ViewTransform, bloom = Option[Bloom], colorGrade = Option[ColorGrade],
                           vignette = Option[Vignette], depthOfField = Option[DepthOfField], fxaa = Bool, custom = List[CustomPass],
-                          quality = Quality, msaa = Msaa, debugView = DebugView, background = Color }
+                          quality = Quality, msaa = Msaa, debugView = DebugView, background = Option[Color] }
 
     def fieldsOf(s: Stack): Fields = match s { case StackData.StackData(f) => f }
 
     def neutralFields(): Fields =
         { exposure = 0.0, viewTransform = ViewTransform.Standard, bloom = None, colorGrade = None, vignette = None,
           depthOfField = None, fxaa = false, custom = Nil, quality = Quality.Auto, msaa = Msaa.Off, debugView = DebugView.Final,
-          background = Color.rgb(0.0, 0.0, 0.0) }
-
-    def aces(saturation: Float64): ViewTransform = ViewTransform.AcesNarkowicz({ whitePoint = 4.0, saturationAfter = saturation })
+          background = None }
 
     def presetVignette(strength: Float64): Option[Vignette] = Some({ strength = strength, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } })
 
     /// 見た目の名前の出発点。Neutral は「Standard・露出 0・ほかは無し」。
+    /// 曲線は AgX（Blender の既定の view transform）。露出・ブルーム・ビネット・彩度は reference-3d.md の場面の行の値を、線形の値に掛ける前提で置いた物
+    /// （画面の値のまま掛けていた頃の露出 −0.6 の打ち消しは要らない）。人の目で Blender の絵と並べて決め直す前の値。
     pub def preset(p: Preset): Stack =
         let n = neutralFields();
-        let bloom = (threshold, strength) -> Some({ threshold = threshold, smoothness = 0.5, size = 0.04, strength = strength });
+        let agx = (exposure: Float64) -> { exposure = exposure, viewTransform = ViewTransform.AgX, fxaa = true | n };
+        let bloom = (threshold, smoothness, size, strength) -> Some({ threshold = threshold, smoothness = smoothness, size = size, strength = strength });
+        let saturated = (k: Float64) -> Some({ lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.0, 1.0, 1.0), saturation = k });
         StackData.StackData(match p {
             case Preset.Neutral       => n
-            case Preset.DuskOutdoor   => { viewTransform = aces(0.06), bloom = bloom(0.95, 0.6), vignette = presetVignette(0.3), fxaa = true | n }
-            case Preset.NightOutdoor  => { exposure = -0.2, viewTransform = aces(0.0), bloom = bloom(0.8, 0.9), vignette = presetVignette(0.4), fxaa = true | n }
-            case Preset.SunnyCity     => { viewTransform = aces(0.1), bloom = bloom(1.4, 0.3), vignette = presetVignette(0.18), fxaa = true | n }
-            case Preset.EveningBeach  => { viewTransform = aces(0.08), bloom = bloom(1.0, 0.5), vignette = presetVignette(0.25), fxaa = true | n }
-            case Preset.Cave          => { exposure = -0.3, viewTransform = aces(-0.05), bloom = bloom(0.7, 0.8), vignette = presetVignette(0.5), fxaa = true | n }
-            case Preset.NightCorridor => { exposure = -0.2, viewTransform = aces(0.0), bloom = bloom(0.75, 1.0), vignette = presetVignette(0.45), fxaa = true | n }
-            case Preset.TorchRoom     => { viewTransform = aces(0.05), bloom = bloom(0.9, 0.8), vignette = presetVignette(0.4), fxaa = true | n }
+            case Preset.DuskOutdoor   => { bloom = bloom(0.95, 0.7, 0.045, 0.9), vignette = presetVignette(0.34) | agx(0.0) }
+            case Preset.NightOutdoor  => { bloom = bloom(0.9, 0.7, 0.045, 0.95), vignette = presetVignette(0.42) | agx(-0.15) }
+            case Preset.SunnyCity     => { bloom = bloom(1.0, 0.6, 0.03, 0.25), vignette = presetVignette(0.18), colorGrade = saturated(1.12) | agx(0.0) }
+            case Preset.EveningBeach  => { bloom = bloom(0.85, 0.5, 0.05, 0.6), vignette = presetVignette(0.25) | agx(0.0) }
+            case Preset.Cave          => { bloom = bloom(0.9, 0.6, 0.035, 0.45), vignette = presetVignette(0.45), colorGrade = saturated(1.18) | agx(0.1) }
+            case Preset.NightCorridor => { bloom = bloom(2.0, 0.6, 0.04, 0.4), vignette = presetVignette(0.35) | agx(-0.3) }
+            case Preset.TorchRoom     => { bloom = bloom(1.0, 0.6, 0.05, 0.8), vignette = presetVignette(0.45), colorGrade = saturated(1.1) | agx(0.0) }
         })
 
     def mapFields(f: Fields -> Fields, s: Stack): Stack = StackData.StackData(f(fieldsOf(s)))
@@ -190,8 +192,9 @@ pub mod PostStack {
 
     pub def withDebugView(v: DebugView, s: Stack): Stack = mapFields(f -> { debugView = v | f }, s)
 
-    /// 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。既定は黒。
-    pub def withBackground(c: Color, s: Stack): Stack = mapFields(f -> { background = c | f }, s)
+    /// 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。
+    /// 言わなければ画面の地の色（実機は project.json の clearColor）。
+    pub def withBackground(c: Color, s: Stack): Stack = mapFields(f -> { background = Some(c) | f }, s)
 
     // ── 読む口（Doc の値を確かめる・テストする） ──
 
@@ -217,7 +220,7 @@ pub mod PostStack {
 
     pub def customOf(s: Stack): List[CustomPass] = fieldsOf(s)#custom
 
-    pub def backgroundOf(s: Stack): Color = fieldsOf(s)#background
+    pub def backgroundOf(s: Stack): Option[Color] = fieldsOf(s)#background
 
     // ── Pass の名前（自分の Spec が Field.Tex で読む） ──
 

@@ -119,7 +119,7 @@
 
 | 欄 | 何を決めるか |
 |---|---|
-| `preset` | 出発点（下の表の場面の名前）。`Neutral` は曲線なし・露出 0・効果なし |
+| `preset` | 出発点（上の表の場面の名前。曲線は AgX・値はこの表の行を線形の値に掛ける前提で置いた物）。`Neutral` は曲線なし・露出 0・効果なし。bench/scene3d の `make presets` で 8 つを部屋に掛けて見比べる |
 | `withExposure` | stop（2 の stops 乗）。ブルームの後に掛かる |
 | `withViewTransform` | 曲線。今までの見え方は `AcesNarkowicz({ whitePoint = 4.0, saturationAfter })` |
 | `withQuality` | 読む点の数と縮み（`Auto` はスマホで `Low`）。値の意味は変えない |
