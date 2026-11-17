@@ -4,10 +4,10 @@
   "bottomDeg": 50.0,
   "far": 60.0,
   "shadowDistance": 28.0,
-  "shadowMapSize": 2048,
-  "sunElevation": 55.0,
+  "shadowMapSize": 4096,
+  "sunElevation": 40.0,
   "sunAzimuth": 35.0,
-  "sunIntensity": 3.0,
+  "sunIntensity": 3.3,
   "ambient": [
     0.15,
     0.17,
@@ -49,5 +49,7 @@
     1.0,
     1.0,
     1.0
-  ]
+  ],
+  "charShadow": "silhouette",
+  "shadowPcf": 2
 }

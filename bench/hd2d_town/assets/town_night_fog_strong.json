@@ -4,7 +4,7 @@
   "bottomDeg": 50.0,
   "far": 60.0,
   "shadowDistance": 28.0,
-  "shadowMapSize": 2048,
+  "shadowMapSize": 4096,
   "sunElevation": 40.0,
   "sunAzimuth": -35.0,
   "sunIntensity": 0.2,
@@ -83,5 +83,13 @@
       0.2
     ],
     "lightGlow": 1.2
-  }
+  },
+  "charShadow": "silhouette",
+  "shadowPcf": 2,
+  "boardLamplight": 1.6,
+  "boardNightBase": [
+    0.32,
+    0.35,
+    0.55
+  ]
 }

@@ -16,7 +16,9 @@ mod TownScene {
     /// billboardTextures = 板の絵の引き方・sunColor = 太陽（夜は月）の色・
     /// lampIntensity・lampRange・lampColor = 街灯の点光源（強さ 0 で灯さない）・lampGlow = 街灯の火袋の光る板の強さ（ブルームでにじむ・0 で置かない）・
     /// extraLamps = 重さを測るために足す点光源の数（広場に並べる）・groundFog・groundFogColor = 地面を這う低い霧の板の濃さ（0 で置かない）と色・
-    /// charShadow = 隊列のキャラの影の付け方・heightFog = 地面を這う高さの霧（engine の PostStack.HeightFog・長さは m）。
+    /// charShadow = 隊列のキャラの影の付け方・heightFog = 地面を這う高さの霧（engine の PostStack.HeightFog・長さは m）・
+    /// boardLamplight・boardNightBase = 夜の板（キャラ・木）の明るさ（0 なら光の計算のまま。正なら光を当てない板にして、
+    /// 色の掛け目を boardNightBase に、近くの街灯の色を距離で足した物にする・強さの倍率）。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
@@ -25,7 +27,7 @@ mod TownScene {
                             billboardTextures = BillboardTextures,
                             sunColor = Color, lampIntensity = Float64, lampRange = Float64, lampColor = Color, lampGlow = Float64,
                             extraLamps = Int32, groundFog = Float64, groundFogColor = Color, charShadow = CharShadow,
-                            heightFog = Option[PostStack.HeightFog] }
+                            heightFog = Option[PostStack.HeightFog], boardLamplight = Float64, boardNightBase = Color }
 
     /// 隊列のキャラの影。Silhouette = 板の絵の形の太陽の影（斜めに伸びる人形の影・足元は薄い小さな楕円だけ）・Soft = 薄い足元の楕円（前の版）・Dense = 濃く少し大きい楕円（案 1）・
     /// DenseCast = 案 1 に、太陽の向きへ薄く短く伸びる影の板を足す（案 2）・SmallBlob = 小さく濃い柔らかい塊を太陽の影の側へ少しずらす（案 3）。
@@ -72,7 +74,7 @@ mod TownScene {
             let contactMaterial = Scene3d.texturedMaterial(Texture3d.name(shadow), FilterMode.Linear) |> Scene3d.withAlphaBlend(true);
             let items = List.append(groupItems(byPath, town#quads), contactItems(contactMesh, contactMaterial, town#boards));
             { map = m, look = look, group = Scene3d.staticGroup("town", items),
-              boards = town#boards |> List.filterMap(billboardOf(byPath, look)),
+              boards = town#boards |> List.filterMap(billboardOf(byPath, look, lampBoards(town))),
               textures = shadow :: dense :: List.append(List.map(l -> l#texture, List.append(tiles, boards)), List.map(l -> l#texture, strips)),
               strips = strips |> List.map(l -> (l#path, l)) |> List.toMap,
               contactMesh = contactMesh, contactMaterial = contactMaterial,
@@ -89,7 +91,10 @@ mod TownScene {
         }) |> List.toMap
 
     /// 板 1 枚のビルボード（演出が板の出し方を決める時に使う）。
-    pub def boardBillboard(res: Res, b: Board): Option[Scene3d.Billboard3d] = billboardOf(res#sprites, res#look, b)
+    pub def boardBillboard(res: Res, b: Board): Option[Scene3d.Billboard3d] = billboardOf(res#sprites, res#look, lampBoards(res#town), b)
+
+    /// 街灯の板（夜の板の明るさを決める）。
+    def lampBoards(town: TileMap3d.Town): List[Board] = town#boards |> List.filter(b -> b#sprite == "sprites/street_lamp.png")
 
     /// 背中・右・正面の 4 コマずつを横に並べた帯（dirs "nes"）の 1 人の板と足元の影。dirIndex = 0 背中・1 右・2 正面・
     /// flip = 左右反転（左向きは右の反転）・影は足元の楕円だけ（太陽の影は落とさない）。
@@ -108,7 +113,7 @@ mod TownScene {
             let w = Int32.toFloat64(cellW) / 32.0;
             let h = Int32.toFloat64(l#height) / 32.0 * stretch;
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint),
-                      res#look#charShadow == CharShadow.Silhouette),
+                      res#look#charShadow == CharShadow.Silhouette) |> lampLit(res#look, lampBoards(res#town), x, y, tint),
              characterShadows(res, x, y, z, w))
         })
 
@@ -184,10 +189,28 @@ mod TownScene {
         else Texture3d.name(l#texture)
 
     /// 板 1 枚。カメラが水平なので、カメラへ向く板は地面に垂直に立つ（高さを伸ばす補正は要らない）。
-    def billboardOf(byPath: Map[String, Images.Loaded], look: Look, b: Board): Option[Scene3d.Billboard3d] =
+    def billboardOf(byPath: Map[String, Images.Loaded], look: Look, lamps: List[Board], b: Board): Option[Scene3d.Billboard3d] =
         Map.get(b#sprite, byPath) |> Option.map(l ->
             standing(billboardName(look, l), { position = Vec2.zero(), size = { x = Int32.toFloat64(l#width), y = Int32.toFloat64(l#height) } },
-                     Vec3.v3(b#x, b#z, b#y), if (b#flip) 0.0 - b#width else b#width, b#height, tintColor(look, b#tint), b#shadow == TileMap3d.BoardShadow.Grounded))
+                     Vec3.v3(b#x, b#z, b#y), if (b#flip) 0.0 - b#width else b#width, b#height, tintColor(look, b#tint), b#shadow == TileMap3d.BoardShadow.Grounded)
+                |> (bb -> if (b#sprite == "sprites/street_lamp.png") bb else lampLit(look, lamps, b#x, b#y, b#tint, bb)))
+
+    /// 夜の板の明るさ（boardLamplight が正の時だけ）: 光を当てない板にして、色の掛け目を夜の地の明るさに近くの街灯の色を足した物にする。
+    // WhyNot: 光の計算のまま夜の板を照らさない — 板の光の法線はいつもカメラ向きで、キャラの北に立つ街灯の光は板の裏から当たり、真っ黒な影絵になる。
+    def lampLit(look: Look, lamps: List[Board], x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
+        if (look#boardLamplight <= 0.0) bb
+        else {
+            let reach = look#lampRange * 1.2;
+            let glow = lamps |> List.foldLeft((acc, lamp) -> {
+                let d = Num.sqrt((lamp#x - x) * (lamp#x - x) + (lamp#y - y) * (lamp#y - y));
+                let k = Num.clamp(0.0, 1.0, 1.0 - d / reach);
+                acc + k * k * look#boardLamplight
+            }, 0.0);
+            let c = (base: Float64, lamp: Float64, tint: Float64) -> Num.clamp(0.0, 1.0, (base + lamp * glow) * tint);
+            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(Color.rgb(c(look#boardNightBase#r, look#lampColor#r, t#r),
+                                                                     c(look#boardNightBase#g, look#lampColor#g, t#g),
+                                                                     c(look#boardNightBase#b, look#lampColor#b, t#b)))
+        }
 
     def standing(texture: String, source: Rect2.Rect2, at: Vec3.Vec3, width: Float64, height: Float64, tint: Color, cast: Bool): Scene3d.Billboard3d =
         Scene3d.billboard(texture, source, at, { x = width, y = height })
