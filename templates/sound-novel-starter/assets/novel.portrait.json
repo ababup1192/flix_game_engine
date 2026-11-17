@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "縦の画面の字とボタンの大きさ",
-  "note": "縦の画面（縦に持ったスマホ・タブレットで、縦の design で起動した時）だけ使う大きさ（design px。幅 540 の中の px）。横の画面（PC・横持ち・デスクトップ版）はこの Doc を読まない。375 幅の画面では 1 design px が 0.694 CSS px、360 幅では 0.667 CSS px なので、押せる大きさの 44 CSS px は 66、字の 16 CSS px は 23〜24。body* = 頁の本文、name* = 台詞に添える名前、log* = バックログ、pageBottom = 頁と選択肢の下端から画面の下までの空き（下にツールバーを重ねるブラウザが隠す分）、menuItem* = 右上の … から開くメニューと、しおりから開く [セーブ｜ロード] の 1 項目、choice* = 選択肢、titleItem* = タイトル画面のメニュー、back* = 画面の右上の「戻る」、tab* = セーブ・ロードのタブ、setting* = 設定の行、askButton* = 確認のウィンドウのはい・いいえ。*TextSize = 字の大きさ、*Height = 押せる高さ。右端の操作の列と … の大きさ・積み方・長押しの秒は novel.rail.json。頁の切れ目は横と同じ（novel.kind.json の nvlRows）で、縦の頁に入り切らない時は古い行から上へ流す。",
+  "note": "縦の design の画面（このゲームの基本の画面。PC・デスクトップ版・スマホのブラウザのどれも）の大きさ（design px。幅 540 の中の px）。design が横のゲームの横の画面だけはこの Doc を読まない。375 幅の画面では 1 design px が 0.694 CSS px、360 幅では 0.667 CSS px なので、押せる大きさの 44 CSS px は 66、字の 16 CSS px は 23〜24。body* = 頁の本文、name* = 台詞に添える名前、log* = バックログ、pageBottom = 頁と選択肢の下端から画面の下までの空き（下にツールバーを重ねるブラウザが隠す分）、menuItem* = 右上の … から開くメニューと、しおりから開く [セーブ｜ロード] の 1 項目、choice* = 選択肢、titleItem* = タイトル画面のメニュー、back* = 画面の右上の「戻る」、tab* = セーブ・ロードのタブ、setting* = 設定の行、askButton* = 確認のウィンドウのはい・いいえ。*TextSize = 字の大きさ、*Height = 押せる高さ。右端の操作の列と … の大きさ・積み方・長押しの秒は novel.rail.json。頁の切れ目は横と同じ（novel.kind.json の nvlRows）で、縦の頁に入り切らない時は古い行から上へ流す。",
   "bodySize": 25.0,
   "rubySize": 12.0,
   "nameSize": 16.0,

@@ -9,7 +9,7 @@ wait 1
 start talk node=StudioWindow
 drive reader until logSize>=4 max 30            # 工房の軒先（ADV）で冬馬が出る
 wait 1.2
-hold 501,115 0.1                                  # 右の列のしおり
+tap 501,115                                     # 右の列のしおり
 wait 0.6
 tap 276,115                                     # しおりから開いた選びの「セーブ」
 expect panel=SaveSlots

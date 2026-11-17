@@ -51,6 +51,7 @@ showcase-video:
 # まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐にして、頁のグラフの箱から隣の頁へつなぐ。
 # 画面: 既定は縦（スマホを縦に持った時・FLOW_VIEW=phone）の 1 回だけ撮り、tape.json・video.mp4 に置く（頁は切り替えのボタンを出さない）。
 # このゲームは design が縦で、PC の画面も同じ縦の組みを真ん中に置くだけなので、PC の分を別に撮らない。
+# WhyNot: 既定を pc（同じ 540×1170・マウス）にしない — テープはスマホで見てもらう頁で、指の入力（区分 Small・Touch）の見え方をそろえる。
 # 2 つ並べて比べたい時だけ TAPE_VIEWS="phone pc"（縦の分は debug/video/<名前>-phone で撮り tape-phone.json・video-phone.mp4 に、PC の分は tape.json・video.mp4 に置き、頁は縦で開いて上のボタンで替える）。
 # はじめから遊ぶ: 既定でゲームのブラウザ版も書き出し（bin/fge export-web）、各テープの play/ に写す。頁の上の「はじめから遊ぶ」がタイトルから開く。
 # 後始末: mp4 に束ねたら元のコマ（debug/video/<名前>[-phone]・1 本で 8 GB を超えることがある）を消す。残すなら TAPE_KEEP_FRAMES=1

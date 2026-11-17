@@ -1,6 +1,6 @@
 // RailDoc — novel.rail.json（縦の画面の操作の列 = 右端のアイコンの列と右上の …）の宣言ドキュメント層。
 // 置き場所の決まり（どの順に積むか・どこから開くか）は Rail のコードが決め、ここは積み方の選びと大きさと長押しの秒だけ。
-// 読み込む時に PortraitDoc の rail 欄へ組む（Controls.loadPortrait）。横の画面は読まない。
+// 読み込む時に PortraitDoc の rail 欄へ組む（Controls.loadPortrait）。design が横のゲームの横の画面は読まない。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod RailDoc {
     use fge::{DocJson, JsonCodec, Log}

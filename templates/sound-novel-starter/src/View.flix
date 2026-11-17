@@ -203,10 +203,11 @@ mod View {
         TextDraw.centered({ text = text, atlas = atlas, size = fitted, color = color, z = z,
                             centerX = r#position#x + r#size#x / 2.0, y = r#position#y + (r#size#y - fitted) / 2.0 - 1.0 })
 
-    /// 1 行の字が幅 room に入る大きさ（入るなら size のまま）。
+    /// 1 行の字が幅 room に入る大きさ（入るなら size のまま・縮めても size の 0.6 倍まで）。
+    // WhyNot: 0.6 倍より縮めない — 読めない大きさで黙って入れるより、はみ出して描き出しの字の監査（text-audit）に見つかる方が直せる。
     def fittedSize(text: String, atlas: FontAtlas, size: Float64, room: Float64): Float64 =
         let w = TextDraw.width(text, atlas, size);
-        if (room <= 0.0 or w <= room) size else size * room / w
+        if (room <= 0.0 or w <= room) size else Float64.max(size * 0.6, size * room / w)
 
     /// 平らなボタンの地と縁（lit = 選んでいる・触れている）。
     def plate(r: Rect2.Rect2, lit: Bool, env: Env, z: Int32): Render.PlacedItem =
