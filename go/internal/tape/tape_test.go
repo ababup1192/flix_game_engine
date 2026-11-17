@@ -55,8 +55,8 @@ var mockFixes = [][2]string{
 	{`<b id="tcNow">0:00.0</b> / 0:43.6</div>`, `<b id="tcNow">0:00.0</b> / <span id="tcDur"></span></div>`},
 	{`const WHO = { "魔女": "var(--witch)", "少女": "var(--girl)", "地の文": "var(--narr)" };`,
 		"const WHO = Object.fromEntries(TAPE.speakers.map((s, i) => [s.name, `var(--speaker-${i})`]));"},
-	{"`<div class=\"ctxline\">通し · ${TAPE.scenes.length} シーン · 分岐 ${TAPE.branches.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>`",
-		"`<div class=\"ctxline\">通し · ${TAPE.scenes.length} シーン${TAPE.branches.length ? ` · 分岐 ${TAPE.branches.length}${TAPE.branches.some(br => br.example) ? \"（例の分岐は見せ方を試すための仮の物です）\" : \"\"}` : \"\"}</div>`"},
+	{"`<div class=\"ctxline\">通し · ${TAPE.scenes.length} シーン · 分岐 ${pts.length}（この序章には分岐が無いので、分岐は見せ方の例です）</div>`",
+		"`<div class=\"ctxline\">通し · ${TAPE.scenes.length} シーン${pts.length ? ` · 分岐 ${pts.length}${pts.some(p => p.example) ? \"（例の分岐は見せ方を試すための仮の物です）\" : \"\"}` : \"\"}</div>`"},
 	{"// 枠の寸法は動画から測った値: 横は画面の 2.8%〜97.2%、縦は 1 行目の中心から 47px 上〜最終行の中心から 32px 下、行の間 43.6px、中心は 466px（540×960 で）\n", ""},
 	{"const MSG = { x0: .028, x1: .972, cy: 466 / 960, lh: 43.6 / 960, padTop: 47 / 960, padBot: 32 / 960, font: 25 / 960, cps: 28 };\n" +
 		`const SPEAKER_INK = { "魔女": "#e2c2ff", "少女": "#ffd29a", "地の文": "#f4f4f4" };`,
@@ -652,5 +652,67 @@ func TestStripCellSizeLeavesShortTapeAsIs(t *testing.T) {
 	w, h := stripCellSize(StripCount(60))
 	if w != StripW || h != StripH {
 		t.Fatalf("%dx%d（%dx%d のはず）", w, h, StripW, StripH)
+	}
+}
+
+// sceneNamesAfter は fork の見本の scenes を scenes に替えて nameScenes を通し、各シーンの name を返す。
+func sceneNamesAfter(t *testing.T, scenes []any) []string {
+	t.Helper()
+	tp := parsed(t, forkTapeWith(t, func(m map[string]any) { m["scenes"] = scenes }))
+	if err := nameScenes(tp); err != nil {
+		t.Fatal(err)
+	}
+	var out []struct{ Name string }
+	if err := json.Unmarshal(tp.raw["scenes"], &out); err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(out))
+	for i, s := range out {
+		names[i] = s.Name
+	}
+	return names
+}
+
+func sceneOf(id, name string, t float64) map[string]any {
+	return map[string]any{"id": id, "name": name, "t": t}
+}
+
+func TestSceneWithoutNameTakesTheHeadOfItsFirstLine(t *testing.T) {
+	// 名前の表に無かったシーン（name が id のまま）は、演出の行を飛ばした最初の文の 1 文目を名前にする。
+	got := sceneNamesAfter(t, []any{sceneOf("title", "はじまり", 0), sceneOf("shore", "shore", 1.5)})
+	if got[1] != "今夜は風が強い。" {
+		t.Fatalf("names: %q", got)
+	}
+}
+
+func TestSceneNameFromTheTableIsKept(t *testing.T) {
+	// 名前の表にあった名前（id と違う name）はそのまま。
+	got := sceneNamesAfter(t, []any{sceneOf("title", "はじまり", 0), sceneOf("shore", "浜辺", 1.5)})
+	if got[1] != "浜辺" {
+		t.Fatalf("names: %q", got)
+	}
+}
+
+func TestSceneNameCountsALineOneFrameBeforeTheMark(t *testing.T) {
+	// mark が行の 1 コマ後に打たれても（4.033 秒の mark と 4 秒の行）、その行をシーンの最初の行として数える。
+	got := sceneNamesAfter(t, []any{sceneOf("title", "はじまり", 0), sceneOf("tower", "tower", 4.033)})
+	if got[1] != "灯台守は階段を上った" {
+		t.Fatalf("names: %q", got)
+	}
+}
+
+func TestSceneNameDoesNotTakeTheLineOfTheNextScene(t *testing.T) {
+	// 文の行の無いシーンは、次のシーンの行を借りずに id のまま。
+	got := sceneNamesAfter(t, []any{sceneOf("title", "はじまり", 0), sceneOf("blank", "blank", 1.5), sceneOf("talk", "話", 2)})
+	if got[1] != "blank" {
+		t.Fatalf("names: %q", got)
+	}
+}
+
+func TestSceneNameSkipsTheChoiceRows(t *testing.T) {
+	// 選択肢で始まるシーンは、選択肢の行（3.2 秒の「灯をともす」）を飛ばした次の文の行を名前にする。
+	got := sceneNamesAfter(t, []any{sceneOf("title", "はじまり", 0), sceneOf("decide", "decide", 3.2)})
+	if got[1] != "灯台守は階段を上った" {
+		t.Fatalf("names: %q", got)
 	}
 }

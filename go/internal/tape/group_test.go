@@ -460,3 +460,97 @@ func TestGraphKeepsAllNodesOfTheScript(t *testing.T) {
 		t.Fatalf("箱: %s", ids)
 	}
 }
+
+// evalOnSolo は分岐の見本を 1 本だけ --dir で組んだ頁（branches は空・choices だけ）を開いて js の値を返す。
+func evalOnSolo[T any](t *testing.T, js string) T {
+	t.Helper()
+	root := t.TempDir()
+	writeGame(t, root)
+	dirs := writeForkDirs(t, root, []string{"solo"}, [][]byte{forkTape(t, 0)})
+	if _, err := Build(Options{Dir: dirs[0], Commit: "abc1234"}); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.FileServer(http.Dir(root)))
+	t.Cleanup(srv.Close)
+	p := openTapePage(t, phone)
+	loadPlain(t, p, srv.URL+"/solo/")
+	var v T
+	if err := p.Eval(js, &v); err != nil {
+		t.Fatal(err)
+	}
+	noErrors(t, p, "solo")
+	return v
+}
+
+// chapterRows はチャプターの一覧の行を、シーンは名前・分岐の点は ◇ で並べる。
+const chapterRows = `(() => { openChapters(false); return [...$("chapBody").children].map(n => n.classList.contains("fpt") ? "◇" : n.classList.contains("chap") ? n.querySelector(".nm").textContent : "").filter(Boolean).join(","); })()`
+
+func TestChaptersPutTheForkBetweenItsScenes(t *testing.T) {
+	// 分岐の点（3.2 秒）は、その秒のシーン（浜辺 1.5〜4 秒）の後・次のシーン（灯台）の前に挟まる。
+	if rows := evalOnFork[string](t, chapterRows); rows != "はじまり,浜辺,◇,灯台" {
+		t.Fatalf("行: %s", rows)
+	}
+}
+
+func TestChapterHeadCountsTheForkRows(t *testing.T) {
+	// 見出しの「分岐 N」は、一覧に挟んだ分岐の点の数と同じ。
+	if ok := evalOnFork[bool](t, `(() => { openChapters(false); return $("chapBody").querySelector(".ctxline").textContent.includes("分岐 " + $("chapBody").querySelectorAll(".fpt").length); })()`); !ok {
+		t.Fatal("見出しの分岐の数が一覧の分岐の点の数と違う")
+	}
+}
+
+func TestChapterForkLinksTheOtherTape(t *testing.T) {
+	// 隣のテープで撮った道は、そのテープの分岐の秒へ移るリンクになる。
+	if href := evalOnFork[string](t, `(() => { openChapters(false); return $("chapBody").querySelector(".route.link").href; })()`); !strings.HasSuffix(href, "/dark/index.html#t=3.2") {
+		t.Fatalf("href: %s", href)
+	}
+}
+
+func TestSingleTapeShowsItsChoiceAsAFork(t *testing.T) {
+	// branches の無い 1 本のテープでも、選んだ選択肢を分岐の点にし、選んだ道と撮っていない道を分けて出す。
+	if routes := evalOnSolo[string](t, `(() => { openChapters(false); return [...$("chapBody").querySelectorAll(".fpt .route")].map(n => n.className.replace("route ", "") + ":" + n.querySelector(".lb").textContent).join(","); })()`); routes != "here:灯をともす,none:眠る" {
+		t.Fatalf("道: %s", routes)
+	}
+}
+
+func TestManyRoutesNotFilmedAreFolded(t *testing.T) {
+	// 撮っていない道が多い分岐（探索の選択肢など）は、畳んで数だけ出す。
+	if label := evalOnSolo[string](t, `(() => { TAPE.choices[0].options = ["灯をともす", "眠る", "海を見る", "歌う", "帰る"]; openChapters(false); return $("chapBody").querySelector("details summary .lb").textContent; })()`); label != "ほか 4 本" {
+		t.Fatalf("畳んだ行: %s", label)
+	}
+}
+
+func TestTimelineMarksTheChoiceOfASingleTape(t *testing.T) {
+	// 1 本のテープの選択肢も、タイムラインに分岐の印を出す（チャプターの分岐の点と同じ数）。
+	if n := evalOnSolo[int](t, `$("forks").children.length`); n != 1 {
+		t.Fatalf("分岐の印: %d", n)
+	}
+}
+
+func TestChapterForkLinkCarriesThePCView(t *testing.T) {
+	// PC の画面で見ている時は、チャプターから隣のテープへ移っても PC の画面のまま（?view=pc を持っていく）。
+	p := openTapePage(t, phone)
+	loadPlain(t, p, forkSite(t)+"/light/")
+	if err := p.Eval(`(() => { tapeView = "pc"; openChapters(false); $("chapBody").querySelector(".route.link").click(); return true; })()`, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitFor(`location.pathname.startsWith("/dark/") && location.search === "?view=pc" && location.hash === "#t=3.2"`, 30*time.Second); err != nil {
+		t.Fatalf("PC の画面のまま dark の頁へ移っていない: %v", err)
+	}
+}
+
+func TestForkAtTheHeadOfASceneGoesUnderThatScene(t *testing.T) {
+	// シーンの頭と同じ秒の分岐の点は、前のシーンでなくそのシーンの下に並ぶ。
+	if rows := evalOnSolo[string](t, `(() => { TAPE.scenes[2].t = 3.2; return `+chapterRows+`; })()`); rows != "はじまり,浜辺,灯台,◇" {
+		t.Fatalf("行: %s", rows)
+	}
+}
+
+func TestOpenedFoldStaysOpenAfterRedraw(t *testing.T) {
+	// 開いた「ほか N 本」は、一覧を描き直しても開いたまま。
+	if open := evalOnSolo[bool](t, `(async () => { TAPE.choices[0].options = ["灯をともす", "眠る", "海を見る", "歌う", "帰る"]; openChapters(false);
+	  $("chapBody").querySelector("details").open = true; await new Promise(r => setTimeout(r, 50)); renderChapters($("chapBody"), "fork");
+	  return $("chapBody").querySelector("details").open; })()`); !open {
+		t.Fatal("描き直すと閉じた")
+	}
+}

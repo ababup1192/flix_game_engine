@@ -223,6 +223,30 @@ func TestGraphHeadingIsTheFirstLineClippedTo11Chars(t *testing.T) {
 	}
 }
 
+func TestShortHeadingStopsAtTheFirstSentence(t *testing.T) {
+	if h := ShortHeading("部屋の奥に置かれた仏壇。ほかの家具と同じ"); h != "部屋の奥に置かれた仏壇。" {
+		t.Fatalf("1 文目が句点の前まで 11 字に収まれば、句点で止めて … を付けないはず: %q", h)
+	}
+}
+
+func TestShortHeadingStopsAtAnExclamation(t *testing.T) {
+	if h := ShortHeading("誰だ！　そこにいるのは"); h != "誰だ！" {
+		t.Fatalf("！ も 1 文目の終わりとして止めるはず: %q", h)
+	}
+}
+
+func TestShortHeadingCutsAtTheLastCommaInTheLimit(t *testing.T) {
+	if h := ShortHeading("人通りのない通りに、その家はあった。"); h != "人通りのない通りに…" {
+		t.Fatalf("11 字に収まらない文は、11 字の中の最後の読点の前で切るはず: %q", h)
+	}
+}
+
+func TestShortHeadingIgnoresACommaNearTheHead(t *testing.T) {
+	if h := ShortHeading("――っ、あああああああああ"); h != "――っ、あああああああ…" {
+		t.Fatalf("読点が頭に近い時は 11 字で切るはず: %q", h)
+	}
+}
+
 func TestGraphHeadingWithoutTextIsTheCommentBeforeTitle(t *testing.T) {
 	g := graphOf(t, "// ── 汎用海中: 払うたびに暗くなる ──\ntitle: A\n---\n<<bg x>>\n===\n", nil, GraphConfig{})
 	if h := nodeOf(g, "A").Heading; h != "〔汎用海中〕" {

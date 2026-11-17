@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // 演出の分類（HTML の色）。vocab.json の graph.categories のキーはこの中から選ぶ。
@@ -291,22 +292,47 @@ const headingLength = 11
 
 // headingOf はノードの見出し。英語のノード名より、人がシナリオで覚えている冒頭の文の方が箱を見分けやすい。
 func headingOf(n *Node, commentHeads map[string]string) string {
-	text := firstText(n.Body)
-	// WhyNot: ／ でも切る —— 縦のノベルで ／ を改行の目印に使うシナリオがあり、切らないと 2 行目の頭まで見出しに入る。
-	if i := strings.IndexAny(text, "／\n"); i >= 0 {
-		text = text[:i]
-	}
-	text = strings.TrimSpace(text)
-	if r := []rune(text); len(r) > headingLength {
-		return string(r[:headingLength]) + "…"
-	}
-	if text != "" {
-		return text
+	if h := ShortHeading(firstText(n.Body)); h != "" {
+		return h
 	}
 	if h, ok := commentHeads[n.Title]; ok {
 		return "〔" + h + "〕"
 	}
 	return "（文なし）"
+}
+
+// ShortHeading は文の頭の見出し（グラフの箱とテープのチャプターの名前）。／ か改行の前までを headingLength 字に切る。
+// 1 文目（。！？まで）が headingLength 字に収まれば、そこで止める。収まらなければ、headingLength 字の中の最後の読点（、）の前で切って「…」。
+// 文が無ければ空。
+func ShortHeading(text string) string {
+	// WhyNot: ／ でも切る —— 縦のノベルで ／ を改行の目印に使うシナリオがあり、切らないと 2 行目の頭まで見出しに入る。
+	if i := strings.IndexAny(text, "／\n"); i >= 0 {
+		text = text[:i]
+	}
+	text = strings.TrimSpace(text)
+	// WhyNot: 句点を字の数に入れない —— 1 文目がちょうど収まる時に句点だけがはみ出して「…」が付き、続きがあるように見える。
+	if i := strings.IndexAny(text, "。！？"); i >= 0 && len([]rune(text[:i])) <= headingLength {
+		_, size := utf8.DecodeRuneInString(text[i:])
+		return text[:i+size]
+	}
+	r := []rune(text)
+	if len(r) <= headingLength {
+		return text
+	}
+	// WhyNot: 字の数で切る所を読点より優先しない —— 「通りに、そ…」のように言葉の途中で切れて読めない。読点が頭に近すぎる時だけ字の数で切る。
+	if i := lastRune(r[:headingLength], '、'); i >= headingLength/2 {
+		return string(r[:i]) + "…"
+	}
+	return string(r[:headingLength]) + "…"
+}
+
+func lastRune(r []rune, c rune) int {
+	for i := len(r) - 1; i >= 0; i-- {
+		if r[i] == c {
+			return i
+		}
+	}
+	return -1
 }
 
 // firstText は最初の台詞か地の文の字（マークアップは木の Text で既に抜けている）。選択肢の中まで見る。
