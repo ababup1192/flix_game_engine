@@ -25,7 +25,13 @@ mod Images {
 
     /// 足元の楕円の影の絵（32×32）。真ん中が濃く、縁へ同じ傾きで薄くなる（色は暗い青紫・α の最大 0.6）。
     /// 絵の中の楕円は四角いっぱいの円で、四角の縦横比で楕円になる。
-    pub def contactShadow(): Result[String, Texture3d.Texture3d] =
+    pub def contactShadow(): Result[String, Texture3d.Texture3d] = blobShadow(0.6, 1.4, 2.4)
+
+    /// 濃い足元の影の絵（芯は不透明に近く、縁は柔らかい）。
+    pub def denseShadow(): Result[String, Texture3d.Texture3d] = blobShadow(0.95, 1.8, 3.4)
+
+    /// 丸い影の絵。peak = α の最大・core・falloff = 真ん中からの距離 d で α = clamp(core − falloff × d) × peak。
+    def blobShadow(peak: Float64, core: Float64, falloff: Float64): Result[String, Texture3d.Texture3d] =
         let side = 32;
         // 線形の (0.05, 0.04, 0.08) を画面の値にした色
         let color = Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(63, 16), Int32.leftShift(57, 8)), 80);
@@ -33,7 +39,7 @@ mod Images {
             let u = (Int32.toFloat64(x) + 0.5) / Int32.toFloat64(side) - 0.5;
             let v = (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(side) - 0.5;
             let len = Num.sqrt(u * u + v * v);
-            let a = Num.clamp(0.0, 1.0, 1.4 - 2.4 * len) * 0.6;
+            let a = Num.clamp(0.0, 1.0, core - falloff * len) * peak;
             let alpha = Float64.round(a * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
             Int32.bitwiseOr(Int32.leftShift(alpha, 24), color)
         })) |> List.toVector;

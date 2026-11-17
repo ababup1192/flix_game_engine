@@ -8,22 +8,33 @@ mod TownScene {
     use TownMap.{TownMap}
 
     /// 見た目のつまみ（Doc assets/town.json）。
-    /// topDeg・bottomDeg = 画面の上の端・下の端で地面を見下ろす角度・far = カメラの奥の端（m）・shadowDistance・shadowMapSize・shadowStrength = 太陽の影を描く奥行き（m）・地図の一辺の画素・影の濃さ（0〜1）・
+    /// topDeg・bottomDeg = 画面の上の端・下の端で地面を見下ろす角度・far = カメラの奥の端（m）・shadowDistance・shadowMapSize・shadowStrength・shadowPcf = 太陽の影を描く奥行き（m）・地図の一辺の画素・影の濃さ（0〜1）・縁をならす幅（画素）・
     /// sunElevation・sunAzimuth = 太陽の高さと方位（度。方位は南 = 手前から東へ）・sunIntensity = 太陽の強さ・
     /// ambient = どこにでも当たる光（画面の値）・hemisphere = 上を向く面ほど明るくする量・
     /// boardTint = 板（木・街灯・キャラ）の明るさの掛け目・snapToTexels = 板とカメラの位置を 1 テクセルに丸めるか・
     /// fogNear・fogFar・fog = かすみ（目からの距離と色）・sky = 背景の色・exposure・bloom・fStop・saturation・lift・gamma・gain（暗い所・中間・明るい所の持ち上げ。1 で何もしない）・vignette・fxaa = 後がけ・
     /// billboardTextures = 板の絵の引き方・sunColor = 太陽（夜は月）の色・
     /// lampIntensity・lampRange・lampColor = 街灯の点光源（強さ 0 で灯さない）・lampGlow = 街灯の火袋の光る板の強さ（ブルームでにじむ・0 で置かない）・
-    /// extraLamps = 重さを測るために足す点光源の数（広場に並べる）・groundFog・groundFogColor = 地面を這う低い霧の板の濃さ（0 で置かない）と色。
-    pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64,
+    /// extraLamps = 重さを測るために足す点光源の数（広場に並べる）・groundFog・groundFogColor = 地面を這う低い霧の板の濃さ（0 で置かない）と色・
+    /// charShadow = 隊列のキャラの影の付け方。
+    pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
                             fogNear = Float64, fogFar = Float64, fog = Color, sky = Color,
                             exposure = Float64, bloomStrength = Float64, fStop = Float64, saturation = Float64, lift = Color, gamma = Color, gain = Color, vignette = Float64, fxaa = Bool,
                             billboardTextures = BillboardTextures,
                             sunColor = Color, lampIntensity = Float64, lampRange = Float64, lampColor = Color, lampGlow = Float64,
-                            extraLamps = Int32, groundFog = Float64, groundFogColor = Color }
+                            extraLamps = Int32, groundFog = Float64, groundFogColor = Color, charShadow = CharShadow }
+
+    /// 隊列のキャラの影。Silhouette = 板の絵の形の太陽の影（斜めに伸びる人形の影・足元は薄い小さな楕円だけ）・Soft = 薄い足元の楕円（前の版）・Dense = 濃く少し大きい楕円（案 1）・
+    /// DenseCast = 案 1 に、太陽の向きへ薄く短く伸びる影の板を足す（案 2）・SmallBlob = 小さく濃い柔らかい塊を太陽の影の側へ少しずらす（案 3）。
+    pub enum CharShadow with Eq {
+        case Silhouette
+        case Soft
+        case Dense
+        case DenseCast
+        case SmallBlob
+    }
 
     /// 板の絵の引き方。SceneTextures = 場面の textures の Texture3d の名前（CPU の描き出し）・ProjectTextures = project.json の textures の名前（GPU の描き手）。
     pub enum BillboardTextures with Eq {
@@ -37,7 +48,8 @@ mod TownScene {
     pub type alias Res = { map = TownMap, look = Look, group = Scene3d.StaticGroup, boards = List[Scene3d.Billboard3d],
                            textures = List[Texture3d.Texture3d], strips = Map[String, Images.Loaded],
                            contactMesh = Mesh3d.Mesh3d, contactMaterial = Scene3d.Material3d,
-                           town = TileMap3d.Town, materials = Map[String, (Scene3d.Material3d, Rgb)], sprites = Map[String, Images.Loaded] }
+                           town = TileMap3d.Town, materials = Map[String, (Scene3d.Material3d, Rgb)], sprites = Map[String, Images.Loaded],
+                           denseMaterial = Scene3d.Material3d }
 
     /// 地図と絵を読み、町を組む。skipNpcColumn = 地図の 1・2・3 を置かない列（隊列で歩かせる列）。
     pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
@@ -50,6 +62,7 @@ mod TownScene {
             boards <- Result.traverse(Images.load, sprites);
             strips <- Result.traverse(Images.load, stripPaths);
             shadow <- Images.contactShadow();
+            dense <- Images.denseShadow();
             contactMesh <- unitContactMesh()
         ) yield {
             let byPath = List.append(tiles, boards) |> List.map(l -> (l#path, l)) |> List.toMap;
@@ -59,10 +72,11 @@ mod TownScene {
             let items = List.append(groupItems(byPath, town#quads), contactItems(contactMesh, contactMaterial, town#boards));
             { map = m, look = look, group = Scene3d.staticGroup("town", items),
               boards = town#boards |> List.filterMap(billboardOf(byPath, look)),
-              textures = shadow :: List.append(List.map(l -> l#texture, List.append(tiles, boards)), List.map(l -> l#texture, strips)),
+              textures = shadow :: dense :: List.append(List.map(l -> l#texture, List.append(tiles, boards)), List.map(l -> l#texture, strips)),
               strips = strips |> List.map(l -> (l#path, l)) |> List.toMap,
               contactMesh = contactMesh, contactMaterial = contactMaterial,
-              town = town, materials = materialsOf(byPath), sprites = byPath }
+              town = town, materials = materialsOf(byPath), sprites = byPath,
+              denseMaterial = Scene3d.texturedMaterial(Texture3d.name(dense), FilterMode.Linear) |> Scene3d.withAlphaBlend(true) }
         }
 
     /// 材質の名前 → (置いた物の材質, 色の掛け目)。
@@ -78,19 +92,46 @@ mod TownScene {
 
     /// 背中・右・正面の 4 コマずつを横に並べた帯（dirs "nes"）の 1 人の板と足元の影。dirIndex = 0 背中・1 右・2 正面・
     /// flip = 左右反転（左向きは右の反転）・影は足元の楕円だけ（太陽の影は落とさない）。
-    pub def walkerBoard(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, Scene3d.Instance3d)] =
+    pub def walkerBoard(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, List[Scene3d.Instance3d])] =
         walkerBoardScaled(res, strip, tint, dirIndex, frame, flip, 1.0, x, y, z)
 
     /// walkerBoard の板の縦の倍率 stretch を渡す形（息遣い。足元はそのまま）。
-    pub def walkerBoardScaled(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, stretch: Float64, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, Scene3d.Instance3d)] =
+    pub def walkerBoardScaled(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, stretch: Float64, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, List[Scene3d.Instance3d])] =
         Map.get(strip, res#strips) |> Option.map(l -> {
             let cellW = l#width / 12;
             let source = { position = { x = Int32.toFloat64(cellW * (dirIndex * 4 + frame)), y = 0.0 }, size = { x = Int32.toFloat64(cellW), y = Int32.toFloat64(l#height) } };
             let w = Int32.toFloat64(cellW) / 32.0;
             let h = Int32.toFloat64(l#height) / 32.0 * stretch;
-            (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint), false),
-             contactInstance(res#contactMesh, res#contactMaterial, x, y, z, w))
+            (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint),
+                      res#look#charShadow == CharShadow.Silhouette),
+             characterShadows(res, x, y, z, w))
         })
+
+    /// 太陽の影が伸びる地面の向き（地図の座標・長さ 1）。
+    def shadowDirection(look: Look): (Float64, Float64) =
+        let az = look#sunAzimuth * Num.pi() / 180.0;
+        (0.0 - Num.sin(az), Num.cos(az))
+
+    /// 隊列のキャラ 1 人の影（Look の charShadow で替える）。w = 板の幅（m）。
+    pub def characterShadows(res: Res, x: Float64, y: Float64, z: Float64, w: Float64): List[Scene3d.Instance3d] =
+        let (dx, dy) = shadowDirection(res#look);
+        let ellipse = (mat: Scene3d.Material3d, cx: Float64, cy: Float64, sx: Float64, sz: Float64) ->
+            Scene3d.meshInstance(res#contactMesh, Transform3d.toMat4({ scale = Vec3.v3(sx, 1.0, sz) | Transform3d.of(Vec3.v3(cx, z + 0.015, cy)) }))
+                |> Scene3d.withMaterial(mat);
+        let (soft, softDepth) = (Float64.min(w * 0.8, 1.6), Float64.min(0.5, w * 0.4));
+        match res#look#charShadow {
+            case CharShadow.Silhouette => ellipse(res#contactMaterial, x, y, soft * 0.6, softDepth * 0.6) :: Nil
+            case CharShadow.Soft      => ellipse(res#contactMaterial, x, y, soft, softDepth) :: Nil
+            case CharShadow.Dense     => ellipse(res#denseMaterial, x, y, soft * 1.2, softDepth * 1.2) :: Nil
+            case CharShadow.DenseCast =>
+                let len = 0.7;
+                let cast = Scene3d.meshInstance(res#contactMesh,
+                    Mat4.mul(Mat4.translate(Vec3.v3(x + dx * len / 2.0, z + 0.012, y + dy * len / 2.0)),
+                             Mat4.mul(Mat4.rotateY(Num.atan2(dx, dy)), Mat4.scale(Vec3.v3(soft * 0.55, 1.0, len)))))
+                    |> Scene3d.withMaterial(res#contactMaterial);
+                ellipse(res#denseMaterial, x, y, soft * 1.2, softDepth * 1.2) :: cast :: Nil
+            case CharShadow.SmallBlob => ellipse(res#denseMaterial, x + dx * 0.12, y + dy * 0.12, soft * 0.75, softDepth * 0.85) :: Nil
+        }
 
     /// 材質ごとに 1 つの形（色の掛け目は頂点の色に焼き込み、絵ごとの材質は 1 つ）。
     // WhyNot: 裏の面を捨てる材質にしない — 写した決まり（Blender の試作）は両面で描いており、妻壁や軒の裏の巡りが面ごとに揃っていない。
@@ -168,7 +209,8 @@ mod TownScene {
         let az = look#sunAzimuth * Num.pi() / 180.0;
         let toward = Vec3.v3(Num.cos(el) * Num.sin(az), Num.sin(el), 0.0 - Num.cos(el) * Num.cos(az));
         { intensity = look#sunIntensity, color = look#sunColor,
-          shadow = Some({ distance = look#shadowDistance, mapSize = look#shadowMapSize, strength = look#shadowStrength, bias = 0.03, normalBias = 1.0 | Scene3d.directionalShadow() })
+          shadow = Some({ distance = look#shadowDistance, mapSize = look#shadowMapSize, strength = look#shadowStrength, pcfRadius = look#shadowPcf,
+                          bias = 0.03, normalBias = 1.0 | Scene3d.directionalShadow() })
           | Scene3d.directionalLight(Vec3.mul(toward, -1.0)) }
 
     /// 1 コマの場面（動かない物の集まりと板を渡す形・町が出来ていく間）。

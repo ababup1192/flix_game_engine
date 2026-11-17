@@ -80,8 +80,13 @@ mod TownGpu {
         let first = Int32.fromString(envOr("HD2D_FRAME_FROM", "0")) |> Option.getWithDefault(0);
         let extra = Int32.fromString(envOr("EXTRA_LAMPS", "-1")) |> Option.getWithDefault(-1);
         let fog = envOr("FOG", "");
+        let charShadow = envOr("CHAR_SHADOW", "");
+        let mapSize = Int32.fromString(envOr("SHADOW_MAP", "0")) |> Option.getWithDefault(0);
+        let pcf = Int32.fromString(envOr("SHADOW_PCF", "-1")) |> Option.getWithDefault(-1);
         let look1 = { billboardTextures = TownScene.BillboardTextures.ProjectTextures, extraLamps = if (extra >= 0) extra else look#extraLamps,
                       groundFog = if (fog == "0") 0.0 else look#groundFog,
+                      charShadow = if (charShadow == "") look#charShadow else TownLook.charShadowOf(charShadow),
+                      shadowMapSize = if (mapSize > 0) mapSize else look#shadowMapSize, shadowPcf = if (pcf >= 0) pcf else look#shadowPcf,
                       fogFar = if (fog == "0") 400.0 else look#fogFar, fogNear = if (fog == "0") 300.0 else look#fogNear | look };
         if (mode == "walk") goWalk(look1, first) else
         match BuildVideo.setup(look1) {

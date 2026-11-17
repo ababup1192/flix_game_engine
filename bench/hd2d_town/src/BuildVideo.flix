@@ -152,7 +152,7 @@ mod BuildVideo {
         let focus = Num.sqrt((leaderY - eye#z) * (leaderY - eye#z) + (eye#height - tr#groundZ) * (eye#height - tr#groundZ));
         let textures = st#dust :: res#textures;
         let partyBoards = List.map(fst, members);
-        let partyShadows = List.map(snd, members);
+        let partyShadows = List.flatMap(snd, members);
         if (t >= show#done)
             (TownScene.sceneWith(res, camera, size, res#group :: Nil, List.append(res#boards, partyBoards), partyShadows, textures), focus)
         else {

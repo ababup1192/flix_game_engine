@@ -6,13 +6,13 @@ mod TownLook {
 
     /// 既定の値（Blender の試作の昼: 15°→50°・太陽 55°/35°・影の奥行き 40 m）。
     pub def defaults(): Look =
-        { topDeg = 15.0, bottomDeg = 50.0, far = 60.0, shadowDistance = 40.0, shadowMapSize = 2048, shadowStrength = 0.8,
+        { topDeg = 15.0, bottomDeg = 50.0, far = 60.0, shadowDistance = 40.0, shadowMapSize = 2048, shadowStrength = 0.8, shadowPcf = 1,
           sunElevation = 55.0, sunAzimuth = 35.0, sunIntensity = 2.2,
           ambient = Color.rgb(0.55, 0.6, 0.72), hemisphere = 0.3, boardTint = 1.0, snapToTexels = true,
           fogNear = 30.0, fogFar = 80.0, fog = Color.rgb(0.88, 0.92, 0.98), sky = Color.rgb(0.7, 0.8, 0.95),
           exposure = 0.25, bloomStrength = 0.35, fStop = 0.07, saturation = 0.85, lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.05, 1.0, 0.92), vignette = 0.35, fxaa = false, billboardTextures = TownScene.BillboardTextures.SceneTextures,
           sunColor = Color.rgb(1.0, 0.95, 0.86), lampIntensity = 0.0, lampRange = 7.0, lampColor = Color.rgb(1.0, 0.72, 0.42), lampGlow = 0.0,
-          extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8) }
+          extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8), charShadow = TownScene.CharShadow.Soft }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -31,7 +31,7 @@ mod TownLook {
             }) |> Option.getWithDefault(fallback);
         { topDeg = num("topDeg", d#topDeg), bottomDeg = num("bottomDeg", d#bottomDeg), far = num("far", d#far),
           shadowDistance = num("shadowDistance", d#shadowDistance), shadowMapSize = JsonCodec.intOr("shadowMapSize", d#shadowMapSize, m),
-          shadowStrength = num("shadowStrength", d#shadowStrength),
+          shadowStrength = num("shadowStrength", d#shadowStrength), shadowPcf = JsonCodec.intOr("shadowPcf", d#shadowPcf, m),
           sunElevation = num("sunElevation", d#sunElevation), sunAzimuth = num("sunAzimuth", d#sunAzimuth), sunIntensity = num("sunIntensity", d#sunIntensity),
           ambient = color("ambient", d#ambient), hemisphere = num("hemisphere", d#hemisphere), boardTint = num("boardTint", d#boardTint),
           snapToTexels = JsonCodec.boolOr("snapToTexels", d#snapToTexels, m),
@@ -41,5 +41,15 @@ mod TownLook {
           fxaa = JsonCodec.boolOr("fxaa", d#fxaa, m), billboardTextures = d#billboardTextures,
           sunColor = color("sunColor", d#sunColor), lampIntensity = num("lampIntensity", d#lampIntensity), lampRange = num("lampRange", d#lampRange),
           lampColor = color("lampColor", d#lampColor), lampGlow = num("lampGlow", d#lampGlow), extraLamps = JsonCodec.intOr("extraLamps", d#extraLamps, m),
-          groundFog = num("groundFog", d#groundFog), groundFogColor = color("groundFogColor", d#groundFogColor) }
+          groundFog = num("groundFog", d#groundFog), groundFogColor = color("groundFogColor", d#groundFogColor),
+          charShadow = charShadowOf(JsonCodec.stringOr("charShadow", "soft", m)) }
+
+    /// 隊列のキャラの影の名前（silhouette・soft・dense・denseCast・smallBlob）。
+    pub def charShadowOf(name: String): TownScene.CharShadow = match name {
+        case "dense"     => TownScene.CharShadow.Dense
+        case "denseCast" => TownScene.CharShadow.DenseCast
+        case "smallBlob" => TownScene.CharShadow.SmallBlob
+        case "silhouette" => TownScene.CharShadow.Silhouette
+        case _           => TownScene.CharShadow.Soft
+    }
 }
