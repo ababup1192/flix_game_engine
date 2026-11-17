@@ -67,7 +67,9 @@
     if (canvas) bench.env.canvas = canvas.width + "x" + canvas.height;
     var name = bench.results.length > 0 ? (bench.results[0].bench || bench.results[0].name) : "bench";
     var state = bench.done ? "終わり" : (bench.measuring ? "測っている（区間 " + (bench.results.length + 1) + "）" : "温めている");
-    text.textContent = name + " " + location.search + " — " + state + "\n" + bench.env.renderer + " / canvas " + bench.env.canvas +
+    // WhyNot: env.renderer だけを描き手として出さない — overlay が自分で取った WebGL2 の名前で、頁が WebGPU で描いていても同じ字になる。
+    var backend = window.fgeWebGpuTaken ? (bench.env.backend || "webgpu") : "webgl2";
+    text.textContent = name + " " + location.search + " — " + state + "\n" + backend + " / " + bench.env.renderer + " / canvas " + bench.env.canvas +
       " / dpr " + bench.env.devicePixelRatio + "\n" + bench.results.map(resultLine).join("\n");
     if (!box.parentNode && document.body) document.body.appendChild(box);
   }
@@ -97,7 +99,7 @@
       try { handle(line.slice(8)); } catch (e) { bench.error = String(e && e.message || e); }
     }
     // 頁が描き手を名乗った行（"[backend] webgpu: <adapter>"）。env.renderer は overlay が自分で取った WebGL2 の名前なので、WebGPU で描いたかはこちらで見る。
-    if (typeof line === "string" && line.indexOf("[backend] ") === 0) bench.env.backend = line.slice(10);
+    if (typeof line === "string" && line.indexOf("[backend] webgpu:") === 0) bench.env.backend = line.slice(10);
     return log.apply(console, arguments);
   };
 })();

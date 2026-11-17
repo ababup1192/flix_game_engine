@@ -1,4 +1,4 @@
-// WebLayer.Internal.WebGpuLayer — ブラウザ版の WebGPU で描く頁（?backend=webgpu）の handler 一式。塗りは RenderPaint.Internal.WebGpuPaint の handler で受け、
+// WebLayer.Internal.WebGpuLayer — ブラウザ版の WebGPU で描く頁（既定。?backend=webgl2 で開いた頁と navigator.gpu の無い頁は使わない）の handler 一式。塗りは RenderPaint.Internal.WebGpuPaint の handler で受け、
 // 音・時計・入力・読み込みの知らせは WebLayer の WebGL2 の頁と同じ物を使う。
 // 落ちうる準備（device・core-features-and-limits・pipeline・絵とフォントを上げる・中間の texture）を全部 canvas の webgpu の文脈を取る前に済ませ、
 // その前に落ちたら作った物を捨てて Err(理由) を返す（呼ぶ側が WebGL2 の文脈を取って GL で描く）。

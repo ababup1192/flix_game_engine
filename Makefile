@@ -389,24 +389,26 @@ webgpu-v1-check: ### | WebGPU の 2D の描き手の PC の門（画面なしの
 	@$(MAKE) -C bench/webgpu_v2 check
 	@echo "[webgpu-v1-check] OK"
 
-# 同じ V1 の門のブラウザ版: rpg-starter を書き出し、web-capture の ?capture=6 を WebGL2・?backend=webgpu・WebGPU の無い頁
+# 同じ V1 の門のブラウザ版: rpg-starter を書き出し、web-capture の ?capture=6 を ?backend=webgl2・既定（WebGPU）・WebGPU の無い頁
 # (navigator.gpu と GPU* の大域の名前を消した頁・bench/webgpu_v1/web/nogpu-head.html) で撮って比べる。
-# WebGPU の頁の renderer に webgpu: が無い・WebGPU の無い頁の renderer に webgpu: がある・WebGL2 の絵と違う、のどれかで exit 1。
+# 既定の頁の renderer に webgpu: が無い・?backend=webgl2 か WebGPU の無い頁の renderer に webgpu: がある・WebGL2 の絵と違う、のどれかで exit 1。
 # PC の WebGPU (make webgpu-v1-check の w1) があれば、それとも比べる (alpha は見ない)。書き出しを省くなら WEB_EXPORT=off。先に make sync-engine-full-web。
 WEBGPU_V1_WEB := $(WEBGPU_V1_OUT)/web
 # WhyNot: /bin/sh に任せない — pipefail を持たない sh（古い dash など）では撮れなかった回が通る。
 webgpu-v1-check-web: SHELL := /bin/bash
-webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-starter の ?capture を WebGL2・?backend=webgpu・WebGPU の無い頁で撮って比べる）
+webgpu-v1-check-web: ### [WEB_EXPORT=off] | 同じ門のブラウザ版（rpg-starter の ?capture を ?backend=webgl2・既定の WebGPU・WebGPU の無い頁で撮って比べる）
 	@if [ "$(WEB_EXPORT)" != off ]; then bin/fge export-web templates/rpg-starter --out $(WEBGPU_V1_WEB)/rpg; fi
 	@page=$(WEBGPU_V1_WEB)/rpg; { sed -n 1,3p $$page/index.html; cat bench/webgpu_v1/web/nogpu-head.html; sed -n '4,$$p' $$page/index.html; } > $$page/nogpu.html
 	@# WhyNot: 前の回の絵と記録を残したまま撮らない — 撮れなかった回に前の絵で比べて緑になる。
 	@rm -f $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/gl.log $(WEBGPU_V1_WEB)/webgpu.png $(WEBGPU_V1_WEB)/webgpu.log $(WEBGPU_V1_WEB)/nogpu.png $(WEBGPU_V1_WEB)/nogpu.log
-	@set -e -o pipefail; for pair in "gl:index.html?capture=6" "webgpu:index.html?capture=6&backend=webgpu" "nogpu:nogpu.html?capture=6&backend=webgpu"; do \
+	@set -e -o pipefail; for pair in "gl:index.html?capture=6&backend=webgl2" "webgpu:index.html?capture=6" "nogpu:nogpu.html?capture=6"; do \
 		name=$${pair%%:*}; url=$${pair#*:}; \
 		bin/fge web-capture "$$url" $(WEBGPU_V1_WEB)/$$name.png --dir $(WEBGPU_V1_WEB)/rpg --size 640x600 --wait 90 | tee $(WEBGPU_V1_WEB)/$$name.log \
 			|| { echo "[webgpu-v1-check-web] $$name を撮れなかった ($(WEBGPU_V1_WEB)/$$name.log)"; exit 1; }; \
 	done
-	@grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/webgpu.log || { echo "[webgpu-v1-check-web] ?backend=webgpu の頁が WebGPU で描いていない"; exit 1; }
+	@grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/webgpu.log || { echo "[webgpu-v1-check-web] 既定の頁が WebGPU で描いていない"; exit 1; }
+	@grep -q 'renderer: ' $(WEBGPU_V1_WEB)/gl.log && ! grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/gl.log \
+		|| { echo "[webgpu-v1-check-web] ?backend=webgl2 の頁が WebGL2 で描いたと名乗っていない ($(WEBGPU_V1_WEB)/gl.log)"; exit 1; }
 	@grep -q 'renderer: ' $(WEBGPU_V1_WEB)/nogpu.log && ! grep -q 'renderer: webgpu:' $(WEBGPU_V1_WEB)/nogpu.log \
 		|| { echo "[webgpu-v1-check-web] WebGPU の無い頁が WebGL2 で描いたと名乗っていない ($(WEBGPU_V1_WEB)/nogpu.log)"; exit 1; }
 	@bin/fge pixel-diff $(WEBGPU_V1_WEB)/gl.png $(WEBGPU_V1_WEB)/webgpu.png --name rpg-starter__title --tolerance $(WEBGPU_V1_TOL) --out $(WEBGPU_V1_WEB)/diff-webgpu.png
