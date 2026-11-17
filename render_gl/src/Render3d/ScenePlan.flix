@@ -5,7 +5,7 @@ mod Render3d.ScenePlan {
     import java.util.HashMap
     import java.util.IdentityHashMap
     import java.util.Objects
-    use Render3d.{DrawMode, MeshDraw, ProgramKind, ShadowCaster, ShadowLight, ShadowPlan, maxShadowMapSize, maxShadowPcfRadius}
+    use Render3d.{DrawMode, MeshDraw, ProgramKind, ShaderVariant, ShadowCaster, ShadowLight, ShadowPlan, defaultShaderVariant, maxShadowMapSize, maxShadowPcfRadius, shaderVariantOf}
     use Render3d.Batch.{BatchKey, MaterialBatch, SpanBatch, batchKeyOf}
     use Render3d.PoseRows.{PoseRows, noRows, withPoseRow}
 
@@ -98,19 +98,19 @@ mod Render3d.ScenePlan {
         }, (Map.empty(): Map[Int32, List[a]]), xs);
         Map.foldRightWithKey((_, group, acc) -> List.reverse(group) ::: acc, Nil, byKey)
 
-    /// 置いた物 d を材質 m で描くプログラムの版。法線マップは uv つきの形にだけ当てる。
-    pub def kindOf(coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind =
+    /// 置いた物 d を材質 m で、場面の変種 variant で描くプログラムの版。法線マップは uv つきの形にだけ当てる。
+    pub def kindOf(coverage: Bool, variant: ShaderVariant, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind =
         let uv = hasUv(d);
         { skinned = isSkinned(d), uv = uv, normalMap = Option.nonEmpty(m#normalMap) and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
           blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m),
-          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade) }
+          metallicRoughness = Option.nonEmpty(m#metallicRoughnessShade), pointShadows = variant#pointShadows, physicalUnits = variant#physicalUnits }
 
-    /// プログラムの版の 8 つの欄を 1 つの数にした物（Render3d.materialKey の版の部分と同じ欄）。
+    /// プログラムの版の 10 の欄を 1 つの数にした物（Render3d.materialKey の版の部分と同じ欄）。
     // WhyNot: Render3d.Batch.kindBits を使わない — あちらは batch にしない版（lightmap・blend）を落とした batch の鍵で、材質の問い合わせは別のプログラムの版を分けなければいけない。
     def kindCodeOf(kind: ProgramKind): Int32 =
         let bit = (on, value) -> if (on) value else 0;
         bit(kind#skinned, 1) + bit(kind#uv, 2) + bit(kind#normalMap, 4) + bit(kind#lightmap, 8) + bit(kind#blend, 16) + bit(kind#doubleSided, 32)
-            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128)
+            + bit(kind#coverage, 64) + bit(kind#metallicRoughness, 128) + bit(kind#pointShadows, 256) + bit(kind#physicalUnits, 512)
 
     // ── 候補に分ける ──
 
@@ -129,10 +129,10 @@ mod Render3d.ScenePlan {
     /// key = batch の鍵の番号（-1 = batch にしない）・texture = 材質の絵の名前の並びの番号・needsUv = 法線マップを持つ材質（uv の無い形なら知らせる）。
     type alias Placement = { surface = Option[MaterialRequest], handle = Int32, key = Int32, texture = Int32, needsUv = Bool }
 
-    /// 候補に分ける時に変わらない物。cache = 材質の値（同じ 1 つの値）→ 頂点の形の番号 → Placement。
+    /// 候補に分ける時に変わらない物。variant = 場面のシェーダーの変種・cache = 材質の値（同じ 1 つの値）→ 頂点の形の番号 → Placement。
     type alias Grouping = {
         planner = Planner, tables = Tables, outside = Scene3d.Instance3d -> Bool, wants = Scene3d.MaterialFields -> Bool, coverage = Bool,
-        cache = IdentityHashMap[Object, Object]
+        variant = ShaderVariant, cache = IdentityHashMap[Object, Object]
     }
 
     /// 1 回の prepare の場面を候補に分け、backend に聞く材質を、その材質の物が初めて来た順に並べる。samples = 描き先の標本の数。
@@ -147,24 +147,25 @@ mod Render3d.ScenePlan {
         let scenes = cmds |> List.map(groupScene(planner, tables, caps, samples));
         { scenes = scenes, requests = MutList.toArray(Static, tables#requests) |> Array.toVector, members = tables#members }
 
-    /// 持ち越す物 items を、視錐台で間引かずに候補に分ける（色の pass の材質の候補と、影の地図の形だけの候補）。
+    /// 持ち越す物 items を、視錐台で間引かずに候補に分ける（色の pass の材質の候補と、影の地図の形だけの候補）。variant = 場面のシェーダーの変種。
     /// 答えは (色の pass の候補, 影の地図の候補, backend に聞く材質, batch の描く物)。
     // WhyNot: alpha to coverage の版を聞かない — 持ち越すのは alpha to coverage を持たない WebGPU の backend だけ（GL は持ち越さない・Render3d.StaticRows の頭）。
-    pub def groupCarried(planner: Planner, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
+    pub def groupCarried(planner: Planner, variant: ShaderVariant, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
         let tables = freshTables();
-        let lit = groupWith(grouping(planner, tables, _ -> false, _ -> true, false), items);
-        let shadow = groupWith(grouping(planner, tables, _ -> false, _ -> false, false), items) |> List.map(gr -> gr#batch);
+        let lit = groupWith(grouping(planner, tables, _ -> false, _ -> true, false, variant), items);
+        let shadow = groupWith(grouping(planner, tables, _ -> false, _ -> false, false, variant), items) |> List.map(gr -> gr#batch);
         (lit, shadow, MutList.toArray(Static, tables#requests) |> Array.toVector, tables#members)
 
-    /// 置いた物を候補に分ける（Preload の形。場面の矩形も影も持たない）。outside = 間引く物か。
-    pub def groupInstances(planner: Planner, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
+    /// 置いた物を候補に分ける（Preload の形。場面の矩形も影も持たない）。outside = 間引く物か・variant = 組むプログラムの変種。
+    pub def groupInstances(planner: Planner, variant: ShaderVariant, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                            instances: List[Scene3d.Instance3d]): (List[Group], Vector[MaterialRequest]) \ IO =
         let tables = freshTables();
-        let groups = groupWith(grouping(planner, tables, outside, wants, coverage), instances);
+        let groups = groupWith(grouping(planner, tables, outside, wants, coverage, variant), instances);
         (groups, MutList.toArray(Static, tables#requests) |> Array.toVector)
 
-    def grouping(planner: Planner, tables: Tables, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool): Grouping \ IO =
-        { planner = planner, tables = tables, outside = outside, wants = wants, coverage = coverage, cache = new IdentityHashMap() }
+    def grouping(planner: Planner, tables: Tables, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
+                 variant: ShaderVariant): Grouping \ IO =
+        { planner = planner, tables = tables, outside = outside, wants = wants, coverage = coverage, variant = variant, cache = new IdentityHashMap() }
 
     /// 場面の置いた物を、Output に合わせて batch の候補に分け、影の地図の batch も分ける。
     // WhyNot: Design の解像度の描き先に標本を持たせない — ドット絵と画素をそろえる場面に縁のならしは要らない。
@@ -177,14 +178,15 @@ mod Render3d.ScenePlan {
             case Scene3d.Resolution.Design => false
         };
         let mainPass = passSpecOf(scene#output);
+        let variant = shaderVariantOf(scene);
         let groups = match mainPass {
-            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage), drawn)
+            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage, variant), drawn)
             case ScenePassSpec.DepthOut(_) =>
                 // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
                 //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
                 // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
                 let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), drawn);
-                groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false), solidInstances)
+                groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false, defaultShaderVariant()), solidInstances)
         };
         { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn) }
 
@@ -278,7 +280,7 @@ mod Render3d.ScenePlan {
     def materialPlacement(g: Grouping, d: MeshDraw, m: Scene3d.MaterialFields): Placement \ IO =
         if (not (g#wants)(m)) plainPlacement(g, d)
         else {
-            let kind = kindOf(g#coverage, d, m);
+            let kind = kindOf(g#coverage, g#variant, d, m);
             let names = ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade) |> List.map(fst);
             { surface = Some((m, kind)), handle = requestOf(g#tables, m, kind), key = keySlotOf(g#tables, batchKeyOf(g#planner#drawMode, d, Some((m, kind)))),
               texture = textureSlotOf(g#tables, names), needsUv = Option.nonEmpty(m#normalMap) }
@@ -453,16 +455,30 @@ mod Render3d.ScenePlan {
         shadowCastersOf(planner, scene) |> List.map(found -> {
             let (light, caster) = found;
             let outside = Scene3d.isOutsideFrustum(caster#frustum);
-            let groups = groupWith(grouping(planner, tables, outside, _ -> false, false), solid) |> List.map(gr -> gr#batch);
+            let groups = groupWith(grouping(planner, tables, outside, _ -> false, false, defaultShaderVariant()), solid) |> List.map(gr -> gr#batch);
             let (skinned, plain) = List.partition(b -> isSkinned(b#head), groups);
             { caster = caster, light = light, plain = plain, skinned = skinned }
         })
 
-    /// 影を落とす光（スポットがあれば先・太陽が後）。Output.Depth の場面と、置いた物の無い場面は空。
+    /// 影を落とす光（スポットがあれば先・太陽・点光源の面の順）。Output.Depth の場面と、置いた物の無い場面は空。
     def shadowCastersOf(planner: Planner, scene: Scene3d.Scene3dCmd): List[(ShadowLight, ShadowCaster)] \ IO =
         let spot = spotCasterOf(planner, scene) |> Option.map(found -> { let (i, caster) = found; (ShadowLight.Spot(i), caster) }) |> Option.toList;
         let sun = Scene3d.directionalShadowOf(scene) |> Option.map(sunCasterOf(planner, scene)) |> Option.toList;
-        List.append(spot, sun)
+        List.flatten(spot :: sun :: pointCastersOf(planner, scene) :: Nil)
+
+    /// 点光源の影の面（影を落とす灯り × 面 6 つ・灯りは slot の順・面は 0〜5）。面ごとの視錐台で影を落とす物を間引く。
+    /// atlas を maxShadowMapSize() に収めるため面の一辺を縮めた時は 1 回知らせる（縮めた値は Scene3d.PointShadows.atlasOf が決める）。
+    def pointCastersOf(planner: Planner, scene: Scene3d.Scene3dCmd): List[(ShadowLight, ShadowCaster)] \ IO =
+        Scene3d.PointShadows.atlasOf(Scene3d.pickLights(scene)) |> Option.toList |> List.flatMap(atlas -> {
+            if (atlas#requestedSize > atlas#tileSize)
+                warnShadowOnce(planner, "pointSize", "scene3d: 点光源の影の mapSize ${atlas#requestedSize} は atlas（上限 ${maxShadowMapSize()}）に収まらない"
+                    + " — 面の一辺 ${atlas#tileSize} で描く（maxShadowedLights を減らすか mapSize を下げる）")
+            else ();
+            atlas#lights |> List.flatMap(light -> List.range(0, 6) |> List.map(face ->
+                (ShadowLight.Point({ atlas = atlas, light = light, face = face }),
+                 { matrix = Vector.get(face, light#faces), frustum = Vector.get(face, light#frustums),
+                   settings = { mapSize = atlas#tileSize, bias = atlas#bias, pcfRadius = atlas#pcfRadius, strength = light#strength } })))
+        })
 
     /// 太陽の影の地図を描く光。設定が上限を超えて頭打ちになった時は 1 回知らせる（頭打ちの値は Scene3d.directionalShadowOf が決める）。
     def sunCasterOf(planner: Planner, scene: Scene3d.Scene3dCmd, setup: Scene3d.SunShadowSetup): (ShadowLight, ShadowCaster) \ IO =

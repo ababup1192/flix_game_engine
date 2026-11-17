@@ -21,6 +21,7 @@ mod Render3d.TestShadowMaps {
     def pcfOf(u: ShadowMapUse): Int32 = match u#sampling {
         case ShadowSampling.Spot(s) => s#pcfRadius
         case ShadowSampling.Sun(s)  => s#pcfRadius
+        case ShadowSampling.Point(a) => a#pcfRadius
     }
 
     /// f の答え（f が標準エラーへ書く知らせは捨てる）。

@@ -2,7 +2,7 @@
 mod Render3d.Material {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.Shadow.{putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
+    use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow, shadowLocsOf, sunShadowLocsOf}
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
     use Render3d.Light.{lightLocsOf, putLights}
     use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialEntry, MaterialLocs, MaterialPass, MeshDraw, State, TextureSlot, TextureSource, bindDataTextureUnits, ensureTangents, environmentTextureUnit, lightmapTextureUnit, loc, meshLocsOf, normalMapTextureUnit, putDepthRange, useMeshProgram, warnDroppedTextures, warnSceneOnce}
@@ -35,7 +35,7 @@ mod Render3d.Material {
     pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                             instances: List[Scene3d.Instance3d]): ((List[SpanBatch], List[MaterialBatch[SpanBatch]]), MaterialTable) \ IO =
         timed(state, Phase.Split, () -> {
-            let (groups, requests) = groupInstances(state#planner, outside, wants, coverage, instances);
+            let (groups, requests) = groupInstances(state#planner, Render3d.defaultShaderVariant(), outside, wants, coverage, instances);
             let table = resolveMaterials(gl, state, gen, requests);
             (splitGroups(groups, table#orders), table)
         })
@@ -108,6 +108,7 @@ mod Render3d.Material {
         putLights(gl, locs#light, camera#lights);
         putShadow(gl, locs#shadow, camera#shadows#spot);
         putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
+        putPointShadow(gl, locs#pointShadow, camera#shadows#point);
         gl.uniform1f(locs#time, RenderUtil.f32(Array.get(0, state#timeHolder)));
         match pass {
             case MaterialPass.Color     => gl.uniform1i(locs#depthOut, 0)
@@ -500,7 +501,8 @@ mod Render3d.Material {
         let glsl = ShaderGen.compile3d(spec, emission, metallicRoughness);
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
             + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
-            + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "") + ":${m#spec#name}";
+            + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + (if (kind#metallicRoughness) ":mr" else "")
+            + String.replace(src = "+", dst = ":", Render3d.variantKeyOf(Render3d.shaderVariantOfKind(kind))) + ":${m#spec#name}";
         noteMaterialBuild(state, label, reason);
         let vertex = materialVertexSource({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap });
         let fragment = materialFragmentSource(glsl, kind);
@@ -509,12 +511,14 @@ mod Render3d.Material {
             case None    =>
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
         };
+        let base = materialLocsOf(gl, program, glsl#paramNames, List.length(glsl#texReads));
+        let (light, point) = Render3d.VariantPrograms.variantLocsOf(gl, program, Render3d.shaderVariantOfKind(kind), base#light);
         bindDataTextureUnits(gl, program);
         bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap, kind#metallicRoughness);
         { spec = m#spec, emission = m#emission, metallicRoughness = m#metallicRoughnessShade,
           known = (m#spec, m#emission, m#metallicRoughnessShade) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
           lightmapped = kind#lightmap, coverage = kind#coverage,
-          locs = materialLocsOf(gl, program, glsl#paramNames, List.length(glsl#texReads)), lastUsed = gen }
+          locs = { light = light, pointShadow = point | base }, lastUsed = gen }
 
     /// uTexN を unit N へ、uNormalMap を法線マップの unit へ向ける（プログラムごとに 1 回。組めなかったプログラムと、
     /// 絵も法線マップも無い材質は何もしない）。
@@ -544,7 +548,7 @@ mod Render3d.Material {
 
     def materialLocsOf(gl: GlContext, program: Int32, paramNames: List[String], texCount: Int32): MaterialLocs \ IO =
         { mesh = meshLocsOf(gl, program), light = lightLocsOf(gl, program), shadow = shadowLocsOf(gl, program),
-          sunShadow = sunShadowLocsOf(gl, program), time = loc(gl, program, "uTime"), cutout = loc(gl, program, "uCutout"),
+          sunShadow = sunShadowLocsOf(gl, program), pointShadow = Render3d.Shadow.noPointShadowLocs(), time = loc(gl, program, "uTime"), cutout = loc(gl, program, "uCutout"),
           depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"),
           params = paramNames |> List.mapWithIndex((i, _) -> loc(gl, program, "uParam${i}")),
           texFlips = List.range(0, texCount) |> List.map(i -> loc(gl, program, "uTexFlip${i}")),

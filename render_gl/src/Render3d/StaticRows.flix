@@ -62,7 +62,7 @@ mod Render3d.StaticRows {
     pub def build(planner: Planner, tables: Tables, resolve: Vector[MaterialRequest] -> Vector[Int32] \ ef, scene: Scene3d.Scene3dCmd,
                   g: Scene3d.StaticGroup): CarriedRows \ ef + IO =
         let (items, perFrame) = Scene3d.groupInstancesOf(g) |> List.partition(isCarriedItem);
-        let (lit, shadow, requests, members) = groupCarried(planner, items);
+        let (lit, shadow, requests, members) = groupCarried(planner, Render3d.shaderVariantOf(scene), items);
         let (plain, materials) = splitGroups(lit, resolve(requests));
         let opaque = materialsInOrder(planner, materials);
         let total = List.sumWith(b -> b#count, plain) + List.sumWith(d -> d#batch#count, opaque) + List.sumWith(b -> b#count, shadow);

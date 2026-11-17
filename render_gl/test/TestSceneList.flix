@@ -17,7 +17,7 @@ mod Render3d.TestSceneList {
     def batchOf(mesh: Mesh3d.Mesh3d, first: Int32, count: Int32): MeshBatch = { head = drawOf(mesh), count = count, first = first }
 
     def plainKind(): Render3d.ProgramKind =
-        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false }
+        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false }
 
     /// 赤の量 red で木の違う、名前 name の材質。
     def materialOf(red: Float64): Scene3d.Material3d =
@@ -242,7 +242,7 @@ mod Render3d.TestSceneList {
         let planner = freshPlanner(Render3d.DrawMode.Instanced);
         let outside = Scene3d.isOutsideFrustum(Scene3d.frustumOf(sceneOf(instances)));
         let draws = instances |> List.map(meshDrawOf(planner, outside));
-        let surfaceOf = (d: Render3d.MeshDraw) -> d#fields#material |> Option.map(Scene3d.materialFieldsOf) |> Option.map(m -> (m, kindOf(false, d, m)));
+        let surfaceOf = (d: Render3d.MeshDraw) -> d#fields#material |> Option.map(Scene3d.materialFieldsOf) |> Option.map(m -> (m, kindOf(false, Render3d.defaultShaderVariant(), d, m)));
         groupInOrder(d -> Mesh3d.contentHash(d#fields#mesh), d -> batchKeyOf(Render3d.DrawMode.Instanced, d, surfaceOf(d)), draws)
             |> List.flatMap(groupByTextures(d -> Option.map(fst, surfaceOf(d))))
             |> List.filterMap(members -> List.head(members) |> Option.map(head -> { let b = Render3d.Batch.batchOf(head, members); describe(b#head, b#count) }))

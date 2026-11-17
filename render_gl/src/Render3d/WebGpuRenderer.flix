@@ -349,7 +349,7 @@ pub mod Render3d.WebGpuRenderer {
     /// cmd の置いた物を候補に分け、候補ごとに形と、材質の program と絵か頂点の色の pipeline を上げて、上げた物の控えを返す。
     def preloadCmd(r: Renderer, host: Host, gen: Int64, cmd: Scene3d.PreloadCmd): Preloaded \ IO =
         let RendererData.RendererData(s) = r;
-        let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, _ -> true, _ -> true, false, (cmd#instances)());
+        let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, Render3d.defaultShaderVariant(), _ -> true, _ -> true, false, (cmd#instances)());
         let source = { textureOf = host#textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let allocator = countingAllocator(r);
         let mp = { base = 0, values = WebGpuMaterials.valuesBufferOf(s#materials), programs = Vector.empty(), format = RenderTarget.Format.Rgba8Unorm, samples = 1,
@@ -540,8 +540,9 @@ pub mod Render3d.WebGpuRenderer {
         Vector.length(a) == Vector.length(b) and Vector.forAll(i -> Objects.equals(Vector.get(i, a), Vector.get(i, b)), Vector.range(0, Vector.length(a)))
 
     def isSpotSampling(s: ShadowSampling): Bool = match s {
-        case ShadowSampling.Spot(_) => true
-        case ShadowSampling.Sun(_)  => false
+        case ShadowSampling.Spot(_)  => true
+        case ShadowSampling.Sun(_)   => false
+        case ShadowSampling.Point(_) => false
     }
 
     /// pass spec の地の色（GL の Render3d.drawScene の beginScene と drawSky と同じ）: 空の無い場面は background（無ければ透明）。
@@ -969,6 +970,7 @@ pub mod Render3d.WebGpuRenderer {
                 discard buf.putInt(120, sun#pcfRadius);
                 discard buf.putFloat(124, RenderUtil.f32(sun#strength));
                 putMatrix(buf, 336, sun#matrix)
+            case ShadowSampling.Point(_) => ()
         })
 
     /// 行列 m を列優先 16 個の float で buf の at へ。

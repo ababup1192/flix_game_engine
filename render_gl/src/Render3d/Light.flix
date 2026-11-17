@@ -37,7 +37,7 @@ mod Render3d.Light {
         let reflectArray = (c: Color) -> { let a = Array.repeat(Static, 3, 0.0f32); fillVec3(a, 0, colorVec(c)); a };
         let environment = environmentUniforms(scene, environmentLevels);
         let sun = sunUniforms(scene);
-        { sunDir = sun#direction, sunColor = sun#color, ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
+        { sunDir = sun#direction, sunColor = sun#color, inverseUnitsPerMeterSquared = RenderUtil.f32(inverseUnitsPerMeterSquaredOf(scene)), ambient = ambient, hemisphere = RenderUtil.f32(env#hemisphere), toonSteps = env#toonSteps,
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
           spotCount = List.length(spots), spotPos = spot#position, spotDir = spot#direction, spotColor = spot#color,
           spotRange = spot#range, spotCone = spot#cone,
@@ -46,6 +46,10 @@ mod Render3d.Light {
           reflectCurve = RenderUtil.f32(reflection#curve),
           envOn = environment#on, envBoxOn = environment#boxOn, envBoxMin = environment#boxMin, envBoxMax = environment#boxMax,
           envBoxCenter = environment#boxCenter, envLevels = environment#levels, envIntensity = environment#intensity }
+
+    /// Physical の光の逆二乗を m で測る 1 / unitsPerMeter²（unitsPerMeter² が 1e−12 より小さければ 1e−12 で割る）。
+    pub def inverseUnitsPerMeterSquaredOf(scene: Scene3d.Scene3dCmd): Float64 =
+        1.0 / Float64.max(scene#unitsPerMeter * scene#unitsPerMeter, 1.0e-12)
 
     /// 太陽の uniform（点から太陽への向きと color × intensity。式は Scene3d.sunTermsOf）。太陽が無い場面は両方 0（拡散も鏡面も 0 になる）。
     def sunUniforms(scene: Scene3d.Scene3dCmd): { direction = Array[Float32, Static], color = Array[Float32, Static] } \ IO =
@@ -118,6 +122,7 @@ mod Render3d.Light {
         gl.uniform3fv(locs#eye, d#eye);
         gl.uniform3fv(locs#sunDir, d#sunDir);
         gl.uniform3fv(locs#sunColor, d#sunColor);
+        if (locs#inverseUnitsPerMeterSquared < 0) () else gl.uniform1f(locs#inverseUnitsPerMeterSquared, d#inverseUnitsPerMeterSquared);
         putReflection(gl, locs, d)
 
     /// 映り込みに使う空の 3 色と curve を渡す（metallic と roughness を持つ材質のプログラムだけが宣言している。無いプログラムは何も呼ばない）。
@@ -154,5 +159,5 @@ mod Render3d.Light {
           envOn = Render3d.loc(gl, program, "uEnvOn"), envBoxOn = Render3d.loc(gl, program, "uEnvBoxOn"), envBoxMin = Render3d.loc(gl, program, "uEnvBoxMin"),
           envBoxMax = Render3d.loc(gl, program, "uEnvBoxMax"), envBoxCenter = Render3d.loc(gl, program, "uEnvBoxCenter"),
           envLevels = Render3d.loc(gl, program, "uEnvLevels"), envIntensity = Render3d.loc(gl, program, "uEnvIntensity"),
-          sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor") }
+          sunDir = Render3d.loc(gl, program, "uSunDir"), sunColor = Render3d.loc(gl, program, "uSunColor"), inverseUnitsPerMeterSquared = -1 }
 }

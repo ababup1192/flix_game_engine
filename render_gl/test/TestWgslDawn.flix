@@ -241,7 +241,7 @@ mod TestWgslDawn {
             flags |> List.flatMap(lightmap -> flags |> List.flatMap(blend -> flags |> List.flatMap(doubleSided ->
                 flags |> List.flatMap(coverage -> flags |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic })))))
+                      coverage = coverage, metallicRoughness = metallic, pointShadows = false, physicalUnits = false })))))
         })
 
     def kindLabel(k: Render3d.ProgramKind): String =
@@ -373,6 +373,6 @@ mod TestWgslDawn {
     @Test
     def testNormalMappedFragmentDoesNotFlipRows(): Unit \ Assert =
         let textured = fill("textured", 0.0, Nil, Shade.Solid(red()), Field.Tex({ name = "albedo", chan = TexChan.A }));
-        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false };
+        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false };
         Assert.assertFalse(String.contains(substr = "Flip", Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(textured, None, None, 1), kind)))
 }

@@ -1,0 +1,215 @@
+// 点光源の影（+ps）と Physical の光（+pu）の変種のプログラム: 既定の GLSL・WGSL の字が変わらないこと・変種の鍵と字・uniform の入れ方・atlas の pass。
+mod Render3d.TestPointShadowVariants {
+    import java.security.MessageDigest
+    import java.util.HexFormat
+    use Render3d.FakeGl.{cmdOf, freshRecorded, freshState, paint, recordingGl, sceneOf, timesCalled}
+
+    def sha256(text: String): String = unsafe IO {
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(String.toBytes(text)))
+    }
+
+    def solidGlsl(): ShaderGen.MaterialGlsl =
+        { uniforms = "uniform float uTime;\n", functions = "void materialEval(out vec4 albedo, out vec3 emission) {}\n",
+          paramNames = Nil, texReads = Nil, cutoutAlpha = "albedo.a" }
+
+    def solidWgsl(): ShaderGen.Wgsl.MaterialWgsl =
+        { declarations = "", functions = "fn materialEval(vUv: vec2f, vWorld: vec3f, vNormal: vec3f, vColor: vec3f) -> SgMaterial {}\n",
+          slots = Nil, paramNames = Nil, texReads = Nil, cutoutAlpha = "albedo.a" }
+
+    def bits(n: Int32): List[List[Bool]] =
+        if (n <= 0) Nil :: Nil
+        else bits(n - 1) |> List.flatMap(rest -> (false :: rest) :: (true :: rest) :: Nil)
+
+    def kindOf(b: List[Bool]): Render3d.ProgramKind =
+        let at = (i: Int32) -> List.nth(i, b) |> Option.getWithDefault(false);
+        { skinned = false, uv = at(0), normalMap = at(1), lightmap = at(2), blend = at(3), doubleSided = at(4), coverage = at(5),
+          metallicRoughness = at(6), pointShadows = false, physicalUnits = false }
+
+    def defaultGlsl(): String =
+        Render3dGlsl.lightSource() + Render3dGlsl.litFragmentSource() + Render3dGlsl.billboardFragmentSource() +
+        Render3dGlsl.metallicRoughnessSource() + Render3dGlsl.lightmapLightSource() +
+        (bits(7) |> List.map(b -> Render3dGlsl.materialFragmentSource(solidGlsl(), kindOf(b))) |> String.flatten)
+
+    def defaultWgsl(): String =
+        Render3dWgsl.lightSource() + Render3dWgsl.litFragmentSource() + Render3dWgsl.billboardFragmentSource() +
+        Render3dWgsl.metallicRoughnessSource() + Render3dWgsl.sceneDeclarations() +
+        (bits(7) |> List.map(b -> Render3dWgsl.materialFragmentSource(solidWgsl(), kindOf(b))) |> String.flatten)
+
+    @Test
+    def testDefaultGlslIsUnchanged(): Unit \ Assert =
+        Assert.assertEq(expected = "0dc5779846de9b786a8737aa705308c3466682bdb404dccb5c39d1134568a40d", sha256(defaultGlsl()))
+
+    @Test
+    def testDefaultWgslIsUnchanged(): Unit \ Assert =
+        Assert.assertEq(expected = "f5e2e06d52f998f72e531ac738c6365485a36df1b043368c80ab4efb65c200b4", sha256(defaultWgsl()))
+
+    // ── 変種の鍵と字（GL）──
+
+    def has(part: String, s: String): Bool = String.contains(substr = part, s)
+
+    def shadowed(): Render3d.ShaderVariant = { pointShadows = true, physicalUnits = false }
+
+    def physical(): Render3d.ShaderVariant = { pointShadows = false, physicalUnits = true }
+
+    def plainKind(): Render3d.ProgramKind = kindOf(Nil)
+
+    def keyPrefix(kind: Render3d.ProgramKind): String =
+        let key = Render3d.materialKey(Scene3d.materialFieldsOf(Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear)), kind);
+        String.takeWhile(c -> c != ':', key)
+
+    @Test
+    def testVariantKeysAppendPsAndPu(): Unit \ Assert =
+        Assert.assertEq(expected = "3d" :: "3d+ps" :: "3d+pu" :: "3d+ps+pu" :: Nil,
+            keyPrefix(plainKind()) :: keyPrefix({ pointShadows = true | plainKind() }) :: keyPrefix({ physicalUnits = true | plainKind() })
+                :: keyPrefix({ pointShadows = true, physicalUnits = true | plainKind() }) :: Nil)
+
+    @Test
+    def testPointShadowMaterialFillsPointLitBeforeLight(): Unit \ Assert =
+        let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { pointShadows = true | plainKind() });
+        let fill = String.indexOf(substr = "    r3d_pointShadowsAt(vWorld, normalize(vNormal), n);\n", source) |> Option.getWithDefault(-1);
+        let light = String.indexOf(substr = "    vec3 light = lightAt(vWorld, n);\n", source) |> Option.getWithDefault(-1);
+        Assert.assertTrue(fill >= 0 and fill < light)
+
+    @Test
+    def testPointShadowDeclaresAtlasUniformsOnlyInPs(): Unit \ Assert =
+        Assert.assertEq(expected = (true, false),
+            (has("uniform vec4 uPointShadow[8];", Render3dGlsl.lightSourceFor(shadowed())), has("uPointShadow", Render3dGlsl.lightSourceFor(physical()))))
+
+    @Test
+    def testPhysicalDeclaresUnitsUniformOnlyInPu(): Unit \ Assert =
+        Assert.assertEq(expected = (true, false),
+            (has("uniform float uInverseUnitsPerMeterSquared;", Render3dGlsl.lightSourceFor(physical())),
+             has("uInverseUnitsPerMeterSquared", Render3dGlsl.lightSourceFor(shadowed()))))
+
+    @Test
+    def testPhysicalTreeReadsUnitsUniform(): Unit \ Assert =
+        Assert.assertTrue(has("* uInverseUnitsPerMeterSquared", Render3dGlsl.lightSourceFor(physical())))
+
+    @Test
+    def testPointShadowTreeReadsPointLit(): Unit \ Assert =
+        Assert.assertTrue(has("r3d_pointLit[i]", Render3dGlsl.lightSourceFor(shadowed())))
+
+    @Test
+    def testLitFragmentFillsPointLitWithFaceNormal(): Unit \ Assert =
+        Assert.assertTrue(has("    r3d_pointShadowsAt(vWorld, n, n);\n", Render3dGlsl.litFragmentSourceFor(shadowed())))
+
+    @Test
+    def testBillboardIgnoresPointShadows(): Unit \ Assert =
+        Assert.assertEq(expected = Render3dGlsl.billboardFragmentSource(), Render3dGlsl.billboardFragmentSourceFor(shadowed()))
+
+    @Test
+    def testBillboardTakesPhysicalUnits(): Unit \ Assert =
+        let source = Render3dGlsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true });
+        Assert.assertEq(expected = (true, false), (has("uInverseUnitsPerMeterSquared", source), has("uPointShadow", source)))
+
+    @Test
+    def testPbrAndLightmapUseTheVariantTree(): Unit \ Assert =
+        let v = { pointShadows = true, physicalUnits = true };
+        Assert.assertEq(expected = (true, true),
+            (has("r3d_pointLit[i]", Render3dGlsl.metallicRoughnessSourceFor(v)), has("uInverseUnitsPerMeterSquared", Render3dGlsl.lightmapLightSourceFor(v))))
+
+    // ── 場面の変種 ──
+
+    def lamp(): Scene3d.PointLight = { position = Vec3.v3(0.0, 1.0, 0.0), color = { r = 1.0, g = 1.0, b = 1.0 }, intensity = 1.0, range = 10.0 }
+
+    def triangle(): Scene3d.Instance3d = Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity())
+
+    def smallMap(): Scene3d.PointShadowMap = { maxShadowedLights = 1, mapSize = 32 | Scene3d.pointShadowMap() }
+
+    def lampScene(lights: List[Scene3d.PointLight]): Scene3d.Scene3dCmd =
+        { pointLights = lights | sceneOf(triangle() :: Nil) } |> Scene3d.withPointShadows(smallMap())
+
+    @Test
+    def testSceneWithoutShadowedLampsKeepsPs(): Unit \ Assert =
+        Assert.assertTrue(Render3d.shaderVariantOf(lampScene(Nil))#pointShadows)
+
+    @Test
+    def testDefaultSceneIsDefaultVariant(): Unit \ Assert =
+        Assert.assertEq(expected = "", Render3d.variantKeyOf(Render3d.shaderVariantOf(sceneOf(triangle() :: Nil))))
+
+    @Test
+    def testPhysicalSceneIsPu(): Unit \ Assert =
+        Assert.assertEq(expected = "+pu", Render3d.variantKeyOf(Render3d.shaderVariantOf(Scene3d.withLightUnits(Scene3d.LightUnits.Physical, sceneOf(triangle() :: Nil)))))
+
+    // ── uniform の値 ──
+
+    def atlasOf(scene: Scene3d.Scene3dCmd): Scene3d.PointShadows.Atlas =
+        match Scene3d.PointShadows.atlasOf(Scene3d.pickLights(scene)) {
+            case Some(a) => a
+            case None    => bug!("atlas が無い")
+        }
+
+    @Test
+    def testCastersPutSlotAtThePointIndex(): Unit \ Assert =
+        let side = { position = Vec3.v3(8.0, 1.0, 0.0) | lamp() };
+        let values = Render3d.Shadow.pointShadowUseOf(5, atlasOf(lampScene(side :: lamp() :: Nil)));
+        let slotAt = (i: Int32) -> { let (slot, _, _, _) = Vector.get(i, values#casters); slot };
+        Assert.assertEq(expected = (-1.0f32, 0.0f32), (slotAt(0), slotAt(1)))
+
+    @Test
+    def testShadowedCasterCarriesDepthTerms(): Unit \ Assert =
+        let atlas = atlasOf(lampScene(lamp() :: Nil));
+        let values = Render3d.Shadow.pointShadowUseOf(5, atlas);
+        let expected = atlas#lights |> List.map(light -> {
+            let (a, b) = Scene3d.PointShadows.depthTermsOf(light);
+            (0.0f32, RenderUtil.f32(a), RenderUtil.f32(b), RenderUtil.f32(light#strength))
+        });
+        Assert.assertEq(expected = expected, Vector.get(0, values#casters) :: Nil)
+
+    @Test
+    def testUnusedCastersAreMinusOne(): Unit \ Assert =
+        let values = Render3d.Shadow.pointShadowUseOf(5, atlasOf(lampScene(lamp() :: Nil)));
+        Assert.assertTrue(Vector.forAll(c -> { let (slot, _, _, _) = c; slot == -1.0f32 }, Vector.drop(1, values#casters)))
+
+    @Test
+    def testAtlasUniformIsTileColumnsScalePcf(): Unit \ Assert =
+        let atlas = atlasOf(lampScene(lamp() :: Nil));
+        let values = Render3d.Shadow.pointShadowUseOf(5, atlas);
+        Assert.assertEq(expected = (32.0f32, 1.0f32, RenderUtil.f32(atlas#guardScale), 1.0f32), values#atlas)
+
+    // ── atlas の pass（GL）──
+
+    @Test
+    def testAtlasIsOneDepthTextureOfThreeByTwoTiles(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paint(recordingGl(log), freshState(), cmdOf(lampScene(lamp() :: Nil)) :: Nil);
+        Assert.assertEq(expected = (96, 64) :: Nil, Ref.get(log#depthTextures))
+
+    @Test
+    def testAtlasFacesSetViewportPerTile(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paint(recordingGl(log), freshState(), cmdOf(lampScene(lamp() :: Nil)) :: Nil);
+        let tiles = Ref.get(log#viewports) |> List.reverse |> List.filter(v -> { let (_, _, w, _) = v; w == 32 });
+        Assert.assertEq(expected = (0, 0, 32, 32) :: (32, 0, 32, 32) :: (64, 0, 32, 32) :: (0, 32, 32, 32) :: (32, 32, 32, 32) :: (64, 32, 32, 32) :: Nil, tiles)
+
+    @Test
+    def testAtlasIsClearedOnce(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paint(recordingGl(log), freshState(), cmdOf({ pointLights = Nil | lampScene(Nil) }) :: Nil);
+        let base = timesCalled("clear", log);
+        let log2 = freshRecorded();
+        paint(recordingGl(log2), freshState(), cmdOf(lampScene(lamp() :: Nil)) :: Nil);
+        Assert.assertEq(expected = base + 1, timesCalled("clear", log2))
+
+    @Test
+    def testNoShadowedLampDrawsNoAtlas(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paint(recordingGl(log), freshState(), cmdOf(lampScene(Nil)) :: Nil);
+        Assert.assertEq(expected = 0, timesCalled("texImageDepth24", log))
+
+    @Test
+    def testTwoShadowedScenesUseTwoAtlases(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        paint(recordingGl(log), freshState(), cmdOf(lampScene(lamp() :: Nil)) :: cmdOf(lampScene(lamp() :: Nil)) :: Nil);
+        Assert.assertEq(expected = 2, timesCalled("texImageDepth24", log))
+
+    @Test
+    def testShrunkAtlasWarnsOnce(): Unit \ {Assert, IO} =
+        let scene = { pointLights = lamp() :: Nil | sceneOf(triangle() :: Nil) } |> Scene3d.withPointShadows({ maxShadowedLights = 1, mapSize = 4096 | Scene3d.pointShadowMap() });
+        let state = freshState();
+        let printed = Render3d.FakeGl.stderrOf(() -> {
+            paint(recordingGl(freshRecorded()), state, cmdOf(scene) :: Nil);
+            paint(recordingGl(freshRecorded()), state, cmdOf(scene) :: Nil)
+        });
+        Assert.assertEq(expected = 1, String.split(regex = "点光源の影の mapSize", printed) |> List.length |> (n -> n - 1))
+}
