@@ -292,12 +292,13 @@ mod Buildup {
     // ── 台本の Doc（assets/buildup.json） ──
 
     /// 歩く隊列の 1 人。strip = 背中・右・正面の 4 コマずつの帯・tint = 色の掛け目（線形）。
-    /// idleStrip = 止まっている間の息遣いのコマの帯（背中・右・正面の 4 コマずつ・届いたら buildup.json の party に足す。無ければ歩きの帯で代える）。
+    /// idleStrip = 止まっている間の息遣いのコマの帯（背中・右・正面の 吸った・吐いた 2 コマずつ・左は右の反転。無ければ歩きの帯で代える）。
     pub type alias Walker = { strip = String, tint = Faces.Rgb, idleStrip = Option[String] }
 
     /// 歩く台本。path = 曲がり角・endFace = 止まった後の向き・ほかは Doc の note のとおり。
     pub type alias Plan = { path = List[Route.Waypoint], idleSec = Float64, holdSec = Float64, frameSec = Float64, groundFlowH = Float64,
-                            feetV = Float64, stopSec = Float64, camZLagK = Float64, endFace = Route.Dir, party = List[Walker], timing = Timing, idle = Idle }
+                            feetV = Float64, stopSec = Float64, camZLagK = Float64, endFace = Route.Dir, party = List[Walker], timing = Timing, idle = Idle,
+                            idleFrameSec = Float64, idlePhaseSec = Float64 }
 
     /// 止まっている間の動き。Breath = 息遣い（縦に少し伸び縮み）・Step = 足踏み（歩きのコマをゆっくりその場で）。
     pub enum Idle with Eq {
@@ -349,6 +350,7 @@ mod Buildup {
                   groundFlowH = num("groundFlowH", 0.21), feetV = num("feetV", 0.55), stopSec = num("stopSec", 0.7),
                   camZLagK = num("camZLagK", 2.5), endFace = faceOf(JsonCodec.stringOr("endFace", "s", m)), party = party,
                   idle = idleOf(JsonCodec.stringOr("idle", "breath", m)),
+                  idleFrameSec = num("idleFrameSec", 0.8), idlePhaseSec = num("idlePhaseSec", 0.27),
                   timing = { lead = num("lead", d#lead), afterRowsPerSec = num("afterRowsPerSec", d#afterRowsPerSec),
                              rippleSec = num("rippleSec", d#rippleSec), startDelay = num("startDelay", d#startDelay) | d } }
 

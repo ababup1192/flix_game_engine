@@ -66,15 +66,18 @@ mod BuildVideo {
         (next#group, loose)
 
     /// 止まっている間の 1 人の絵（帯・コマ・縦の倍率）。3 人の位相は 1 人ごとに少しずらす。
-    /// 息遣い = 1.8 秒周期で縦に ±1.5%（足元はそのまま）・足踏み = 歩きのコマを 0.5 秒ごとにその場で替える。息遣いのコマの帯が届いていればそれを 0.45 秒ごとに。
-    def idlePose(plan: Plan, w: Buildup.Walker, i: Int32, t: Float64): { strip = String, frame = Int32, stretch = Float64 } =
+    /// 息遣い = 1.8 秒周期で縦に ±1.5%（足元はそのまま）・足踏み = 歩きのコマを 0.5 秒ごとにその場で替える。
+    /// 息遣いのコマの帯（向きごとに 吸った・吐いた の 2 コマ）があれば、それを idleFrameSec ごとに・1 人ごとに idlePhaseSec ずらして替える。
+    def idlePose(plan: Plan, w: Buildup.Walker, i: Int32, t: Float64): { strip = String, frame = Int32, perDir = Int32, stretch = Float64 } =
         let phase = Int32.toFloat64(i) * 0.37;
         let cycleFrame = (sec: Float64) -> Int32.modulo(Float64.floor(t / sec + phase * 4.0) |> Float64.tryToInt32 |> Option.getWithDefault(0), 4);
         match (w#idleStrip, plan#idle) {
-            case (Some(strip), _)          => { strip = strip, frame = cycleFrame(0.45), stretch = 1.0 }
-            case (None, Buildup.Idle.Step) => { strip = w#strip, frame = cycleFrame(0.5), stretch = 1.0 }
+            case (Some(strip), _) =>
+                let k = Float64.floor((t + Int32.toFloat64(i) * plan#idlePhaseSec) / plan#idleFrameSec) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+                { strip = strip, frame = Int32.modulo(k, 2), perDir = 2, stretch = 1.0 }
+            case (None, Buildup.Idle.Step) => { strip = w#strip, frame = cycleFrame(0.5), perDir = 4, stretch = 1.0 }
             case (None, Buildup.Idle.Breath) =>
-                { strip = w#strip, frame = 1, stretch = 1.0 + 0.015 * Num.sin(2.0 * Num.pi() * (t / 1.8 + phase)) }
+                { strip = w#strip, frame = 1, perDir = 4, stretch = 1.0 + 0.015 * Num.sin(2.0 * Num.pi() * (t / 1.8 + phase)) }
         }
 
     /// 読み込んだ物（地図・台本・町・土ぼこりの絵・演出の部品・毎コマの決まり）。
@@ -140,8 +143,8 @@ mod BuildVideo {
             let ((x, y), d0) = Route.pointAt(route, s - Int32.toFloat64(i));
             let d = if (not walking and t >= route#endAt) plan#endFace else d0;
             let (row, flip) = dirCell(d);
-            let pose = if (walking) { strip = w#strip, frame = walkFrame, stretch = 1.0 } else idlePose(plan, w, i, t);
-            TownScene.walkerBoardScaled(res, pose#strip, w#tint, row, pose#frame, flip, pose#stretch, snap(x), snap(y), tr#groundZ)
+            let pose = if (walking) { strip = w#strip, frame = walkFrame, perDir = 4, stretch = 1.0 } else idlePose(plan, w, i, t);
+            TownScene.walkerBoardFrames(res, pose#strip, w#tint, row, pose#perDir, pose#frame, flip, pose#stretch, snap(x), snap(y), tr#groundZ)
         }) |> List.filterMap(identity);
         let shake = Buildup.shakeAt(show, t);
         let at = (v: Vector[Float64], fallback: Float64) -> Vector.nth(f, v) |> Option.getWithDefault(fallback);

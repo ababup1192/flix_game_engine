@@ -97,9 +97,13 @@ mod TownScene {
 
     /// walkerBoard の板の縦の倍率 stretch を渡す形（息遣い。足元はそのまま）。
     pub def walkerBoardScaled(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, stretch: Float64, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, List[Scene3d.Instance3d])] =
+        walkerBoardFrames(res, strip, tint, dirIndex, 4, frame, flip, stretch, x, y, z)
+
+    /// walkerBoardScaled の 1 つの向きのコマ数 perDir を渡す形（息遣いの帯は 2 コマずつ）。
+    pub def walkerBoardFrames(res: Res, strip: String, tint: Rgb, dirIndex: Int32, perDir: Int32, frame: Int32, flip: Bool, stretch: Float64, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, List[Scene3d.Instance3d])] =
         Map.get(strip, res#strips) |> Option.map(l -> {
-            let cellW = l#width / 12;
-            let source = { position = { x = Int32.toFloat64(cellW * (dirIndex * 4 + frame)), y = 0.0 }, size = { x = Int32.toFloat64(cellW), y = Int32.toFloat64(l#height) } };
+            let cellW = l#width / (3 * Int32.max(1, perDir));
+            let source = { position = { x = Int32.toFloat64(cellW * (dirIndex * perDir + frame)), y = 0.0 }, size = { x = Int32.toFloat64(cellW), y = Int32.toFloat64(l#height) } };
             let w = Int32.toFloat64(cellW) / 32.0;
             let h = Int32.toFloat64(l#height) / 32.0 * stretch;
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint),

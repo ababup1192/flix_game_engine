@@ -53,10 +53,12 @@
   "endFace": "s",
   "party": [
     {
-      "strip": "sprites/traveler_walk4.png"
+      "strip": "sprites/traveler_walk4.png",
+      "idleStrip": "sprites/traveler_idle.png"
     },
     {
-      "strip": "sprites/merchant_walk4.png"
+      "strip": "sprites/merchant_walk4.png",
+      "idleStrip": "sprites/merchant_idle.png"
     },
     {
       "strip": "sprites/traveler_walk4.png",
@@ -64,12 +66,15 @@
         0.82,
         0.86,
         1.05
-      ]
+      ],
+      "idleStrip": "sprites/traveler_idle.png"
     }
   ],
   "startDelay": 0.3,
   "lead": 4.0,
   "afterRowsPerSec": 2.5,
   "rippleSec": 0.18,
-  "idle": "breath"
+  "idle": "breath",
+  "idleFrameSec": 0.8,
+  "idlePhaseSec": 0.27
 }

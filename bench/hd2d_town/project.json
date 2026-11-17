@@ -59,6 +59,16 @@
       "name": "dust",
       "path": "assets/sprites/dust.png",
       "hasAlpha": true
+    },
+    {
+      "name": "traveler_idle",
+      "path": "assets/sprites/traveler_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "merchant_idle",
+      "path": "assets/sprites/merchant_idle.png",
+      "hasAlpha": true
     }
   ],
   "fonts": [],
