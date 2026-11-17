@@ -45,7 +45,8 @@ func pickSceneThumbs(t *Tape, stripPath string, strip Strip) {
 		}
 		best, bestLuma := first, -1.0
 		for c := first; c < last && c < strip.Count; c++ {
-			if l := cellLuma(img, c*strip.W, strip.W, strip.H); l > bestLuma {
+			x, y := strip.cellOrigin(c)
+			if l := cellLuma(img, x, y, strip.W, strip.H); l > bestLuma {
 				best, bestLuma = c, l
 			}
 		}
@@ -57,10 +58,10 @@ func pickSceneThumbs(t *Tape, stripPath string, strip Strip) {
 	}
 }
 
-// cellLuma は strip の 1 コマ（x0 から幅 w・高さ h）の明るさの平均（4 画素おきに間引いて読む）。
-func cellLuma(img image.Image, x0, w, h int) float64 {
+// cellLuma は strip の 1 コマ（左上 x0・y0 から幅 w・高さ h）の明るさの平均（4 画素おきに間引いて読む）。
+func cellLuma(img image.Image, x0, y0, w, h int) float64 {
 	sum, n := 0.0, 0
-	for y := 0; y < h; y += 4 {
+	for y := y0; y < y0+h; y += 4 {
 		for x := x0; x < x0+w; x += 4 {
 			r, g, b, _ := img.At(x, y).RGBA()
 			sum += 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)

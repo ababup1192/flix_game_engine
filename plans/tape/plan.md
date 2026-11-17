@@ -34,7 +34,7 @@ bin/fge tape publish debug/tape/<名前>                （新・Go）
 | commit | 文字 | Go が `git rev-parse --short HEAD` | T2 |
 | fps・duration | 数 | Outcome（コマの数 ÷ fps） | T1 |
 | video | 文字 | 固定 `video.mp4` | T2 |
-| stripPerSec・strip | 数・`{file, count, w, h}` | Go が ffmpeg で 0.5 秒ごと（stripPerSec はモックの名前のまま） | T2 |
+| stripPerSec・strip | 数・`{file, count, w, h, cols, rows}` | Go が ffmpeg で 0.5 秒ごと（stripPerSec はモックの名前のまま）。コマは左上から行ごとの格子（縦横とも 8000 px 以下。cols の無い前の版の頁は横 1 列） | T2 |
 | yarn・node | 文字 | 台本のファイル名・ノード名（**1 本のテープは 1 ノードだけ**と制約。またぐ flow は止めて言う） | T1 |
 | playUrl | 文字 | TapeOut に渡す「ゲームの表」（テンプレの値・ゲームが上書き。project.json の web には足さない）。無ければ「ここから遊ぶ」を出さない | T1 |
 | scenes | `[{id, name, t}]` | flow の `mark`（`Outcome.marks`）。表示名はゲームが渡す表（mark 名 → 名前。無ければ mark 名）。同じ名前の mark はテープの flow では禁止。Outcome.marks は Map で上書き済みなので、FlowVideo が読んだ script の `Step.Mark` の並びを TapeOut に渡し、そこで数えて止める | T1 |

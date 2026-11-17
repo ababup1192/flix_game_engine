@@ -60,7 +60,8 @@
   .wrap { position: relative; height: 100%; padding: 0 50vw; width: max-content; }
   .lanes { position: relative; height: 100%; }
   .row { position: absolute; left: 0; }
-  .film { top: 6px; height: 44px; border-radius: 6px; overflow: hidden; background-image: var(--strip); background-repeat: no-repeat; }
+  .film { top: 6px; height: 44px; border-radius: 6px; overflow: hidden; }
+  .film i { position: absolute; top: 0; bottom: 0; background-image: var(--strip); background-repeat: no-repeat; }
   .scene { position: absolute; top: 6px; height: 44px; border-left: 2px solid rgba(0,0,0,.9); }
   .scene span { position: absolute; left: 4px; bottom: 3px; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,.62);
     white-space: nowrap; max-width: calc(100% - 8px); overflow: hidden; text-overflow: ellipsis; }
@@ -596,7 +597,11 @@ const mmss = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const flat = s => s.replace(/／/g, " ");
 const THUMB_W = Math.round(60 * TAPE.strip.w / TAPE.strip.h), CHAP_W = Math.round(53 * TAPE.strip.w / TAPE.strip.h);
-const thumbPos = t => `${-Math.min(TAPE.strip.count - 1, Math.floor(t * TAPE.stripPerSec)) * THUMB_W}px 0`;
+// strip は左上から行ごとに並べた格子（cols の無い前の版の頁は横 1 列）
+const stripCols = () => TAPE.strip.cols || TAPE.strip.count, stripRows = () => TAPE.strip.rows || 1;
+const cellPos = (i, w, h) => `${-(i % stripCols()) * w}px ${-Math.floor(i / stripCols()) * h}px`;
+const cellSize = (w, h) => `${w * stripCols()}px ${h * stripRows()}px`;
+const thumbPos = t => cellPos(Math.min(TAPE.strip.count - 1, Math.floor(t * TAPE.stripPerSec)), THUMB_W, 60);
 function toast(m) { const e = $("toast"); e.textContent = m; e.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => e.classList.remove("on"), 1800); }
 const scriptRef = ln => { if (!ln) return null; const l = TAPE.lines[ln] || {};
   return l.cmd ? { file: TAPE.yarn, node: TAPE.node, line: ln, command: l.cmd } : { file: TAPE.yarn, node: TAPE.node, line: ln, speaker: TAPE.speaker[l.who] ?? l.who, text: textOf(ln) }; };
@@ -612,13 +617,23 @@ function buildTimeline() {
 function layoutTimeline() {
   const W = TAPE.duration * PPS, TILE = PPS / TAPE.stripPerSec, wide = form !== "phone";
   $("lanes").style.width = W + "px";
-  const film = $("film"); film.style.width = W + "px";
-  // WhyNot: 広い形の映像のトラックの絵を、トラックの高さへ引き伸ばさない — 人の顔が潰れて読めない
-  if (wide) { film.style.backgroundSize = `${TILE * TAPE.strip.count}px ${Math.max(62, TILE * TAPE.strip.h / TAPE.strip.w)}px`; film.style.backgroundPosition = "0 50%"; }
-  else { film.style.backgroundSize = `${TILE * TAPE.strip.count}px 44px`; film.style.backgroundPosition = ""; }
+  $("film").style.width = W + "px";
+  layoutFilm();
   $("scenes").innerHTML = TAPE.scenes.map(s => `<div class="scene" data-id="${s.id}" style="left:${s.t * PPS}px;width:${(sceneEnd(s) - s.t) * PPS}px"><span>${esc(s.name)}</span></div>`).join("");
   $("scenes").querySelectorAll(".scene").forEach(n => n.onclick = () => { const s = TAPE.scenes.find(x => x.id === n.dataset.id); seek(s.t + .05); select({ track: "video" }); });
   if (wide) layoutRuler(W);
+}
+function layoutFilm() {
+  const film = $("film"), TILE = PPS / TAPE.stripPerSec, boxH = film.clientHeight, cols = stripCols();
+  // WhyNot: 高さ 0（タイムラインが隠れている間）で描かない — コマの高さも 0 になって帯の絵が消える。見える時の relayout で描く
+  if (!boxH) return;
+  // WhyNot: 広い形の映像のトラックの絵を、トラックの高さへ引き伸ばさない — 人の顔が潰れて読めない。トラックより高いコマは上下の真ん中を見せる
+  const cellH = form !== "phone" ? Math.max(boxH, TILE * TAPE.strip.h / TAPE.strip.w) : boxH;
+  // WhyNot: 帯を背景 1 枚で並べない — strip は行を重ねた格子で、1 枚の背景では次の行へ続けられない。strip の 1 行を 1 つの区間にする。
+  // 区間の端は整数の px に丸める — ズームで小数の px になると、行の境目に細い隙間が出る
+  const x = i => Math.round(i * TILE);
+  film.innerHTML = Array.from({ length: stripRows() }, (_, r) => `<i style="left:${x(r * cols)}px;width:${x(Math.min(TAPE.strip.count, (r + 1) * cols)) - x(r * cols)}px;` +
+    `background-size:${cols * TILE}px ${stripRows() * cellH}px;background-position:0 ${(boxH - cellH) / 2 - r * cellH}px"></i>`).join("");
 }
 function layoutRuler(W) {
   const step = [1, 2, 5, 10, 15].find(s => s * PPS >= 64) || 30, minor = PPS >= 10 ? PPS : step * PPS;
@@ -708,7 +723,7 @@ function chaptersHtml(forkId) {
   const forksBefore = end => { while (k < pts.length && pts[k].t < end - 1e-6) { rows.push(forkHtml(pts[k], k, forkId)); k++; } };
   TAPE.scenes.forEach(s => {
     forksBefore(s.t);
-    rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${-Math.floor(s.t * TAPE.stripPerSec + 1) * CHAP_W}px 0"></div>
+    rows.push(`<div class="chap ${s.id === cur ? "cur" : ""}" data-t="${s.t}"><div class="thumb" style="background-position:${cellPos(s.thumb ?? Math.floor(s.t * TAPE.stripPerSec + 1), CHAP_W, 53)}"></div>
       <div class="main"><div class="nm">${esc(s.name)}</div><div class="tm">${mmss(s.t)} – ${mmss(sceneEnd(s))} ${cnt(s)}</div></div></div>`);
   });
   forksBefore(Infinity);
@@ -1180,11 +1195,15 @@ async function saveFile(text, name) {
 $("saveBtn").onclick = () => saveFile($("exportText").textContent, fileName());
 $("copyBtn").onclick = async () => { try { await navigator.clipboard.writeText($("exportText").textContent); toast("コピーしました"); } catch { toast("コピーできませんでした"); } };
 
-function applyTape() {
+function applyStrip() {
   const root = document.documentElement.style;
   root.setProperty("--strip", `url("${encodeURI(TAPE.strip.file)}")`);
-  root.setProperty("--thumb-w", THUMB_W + "px"); root.setProperty("--thumb-bg", `${THUMB_W * TAPE.strip.count}px 60px`);
-  root.setProperty("--chap-w", CHAP_W + "px"); root.setProperty("--chap-bg", `${CHAP_W * TAPE.strip.count}px 53px`);
+  root.setProperty("--thumb-w", THUMB_W + "px"); root.setProperty("--thumb-bg", cellSize(THUMB_W, 60));
+  root.setProperty("--chap-w", CHAP_W + "px"); root.setProperty("--chap-bg", cellSize(CHAP_W, 53));
+}
+function applyTape() {
+  const root = document.documentElement.style;
+  applyStrip();
 }
 function refresh() {
   const n = anns.length + Object.keys(edits).length;

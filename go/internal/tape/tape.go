@@ -51,12 +51,14 @@ const (
 	StripH = 96
 )
 
-// Strip は頁の TAPE.strip。
+// Strip は頁の TAPE.strip。Cols・Rows は格子の列と行の数（無い頁は前の版の横 1 列）。
 type Strip struct {
 	File  string `json:"file"`
 	Count int    `json:"count"`
 	W     int    `json:"w"`
 	H     int    `json:"h"`
+	Cols  int    `json:"cols,omitempty"`
+	Rows  int    `json:"rows,omitempty"`
 }
 
 // Options は Build の指定。
