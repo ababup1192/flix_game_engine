@@ -486,24 +486,31 @@ pub mod Render3dGlsl {
         "uniform vec4 uUvRect;\n" +
         "out vec3 vWorld;\n" +
         "out vec2 vUv;\n" +
+        "out vec3 vShadowBase;\n" +
         "void main() {\n" +
         "    vec3 world = uCenter + uRight * ((aCorner.x - uAnchor.x) * uSize.x)\n" +
         "                         + uUp * ((uAnchor.y - aCorner.y) * uSize.y);\n" +
         "    vWorld = world;\n" +
         "    vUv = uUvRect.xy + aCorner * uUvRect.zw;\n" +
+        "    vShadowBase = uCenter + vec3(0.0, (uAnchor.y - aCorner.y) * uSize.y, 0.0);\n" +
         "    gl_Position = uProj * uView * vec4(world, 1.0);\n" +
         "}\n"
 
+    /// uReceive = 1 なら太陽の影を受ける（lit の時だけ）。受ける点は vShadowBase（Scene3d.billboardShadowPointOf の太陽の方へ進める前の点）を
+    /// 太陽の方へ uShadowOffset / max(太陽への向きの水平の長さ, Scene3d.billboardShadowMinFlat()) だけ進めた点。影の地図に描く時（Render3d.Shadow）は uDepthOut = 1 で、α で捨てた後に色を出さずに返る。
     pub def billboardFragmentSource(): String =
         "#version 330 core\n" +
         "in vec3 vWorld;\n" +
         "in vec2 vUv;\n" +
+        "in vec3 vShadowBase;\n" +
         "out vec4 fragColor;\n" +
         "uniform sampler2D uImage;\n" +
         "uniform vec3 uTint;\n" +
         "uniform int uLit;\n" +
         "uniform vec3 uFacing;\n" +
         "uniform int uDepthOut;\n" +
+        "uniform int uReceive;\n" +
+        "uniform float uShadowOffset;\n" +
         colorSpaceSource() +
         lightSource() +
         depthGraySource() +
@@ -515,6 +522,7 @@ pub mod Render3dGlsl {
         "        fragColor = vec4(g, g, g, 1.0);\n" +
         "        return;\n" +
         "    }\n" +
+        "    if (uLit == 1 && uReceive == 1) r3d_sunLit = sunLitAt(vShadowBase + uSunDir * (uShadowOffset / max(length(uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), uSunDir, normalize(uFacing));\n" +
         "    vec3 light = uLit == 1 ? lightAt(vWorld, normalize(uFacing)) : vec3(1.0);\n" +
         "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), uTint, light, vec3(0.0), 1.0, vWorld, uLit == 1), 1.0);\n" +
         "}\n"

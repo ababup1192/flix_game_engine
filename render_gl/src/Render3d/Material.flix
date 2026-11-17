@@ -181,7 +181,7 @@ mod Render3d.Material {
                 gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
                 gl.bindSampler(unit, materialSampler(gl, state, m#wrap, filter, bound#levels > 1));
                 gl.uniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
-                gl.uniform1f(levelsLoc, RenderUtil.f32(Int32.toFloat64(bound#levels)))
+                gl.uniform1f(levelsLoc, RenderUtil.f32(Int32.toFloat64(Scene3d.materialMipLevelsOf(m, bound#levels))))
             });
             List.length(reads)
         }

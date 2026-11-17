@@ -52,6 +52,11 @@ mod Render3d.TestBatch {
         let posed = { pose = Some(poseAt(1.0)) | plainDraw(1.0, false) };
         Assert.assertTrue(batchKeyOf(DrawMode.Instanced, posed, None) != batchKeyOf(DrawMode.Instanced, plainDraw(1.0, false), None))
 
+    /// mip のレベルの数の上限の違う材質は違う鍵（batch の頭の材質の上限で全部を描かない）。
+    @Test
+    def testMaxMipLevelsSplits(): Unit \ Assert =
+        Assert.assertTrue(keyOf(Scene3d.materialFieldsOf(solidMaterial() |> Scene3d.withMaxMipLevels(5))) != keyOf(solidFields()))
+
     /// cutout の違う材質は違う鍵。
     @Test
     def testCutoutSplits(): Unit \ Assert =

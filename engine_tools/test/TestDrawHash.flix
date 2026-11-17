@@ -315,6 +315,16 @@ mod TestDrawHash {
         let f = frame();
         Assert.assertEq(expected = "73983f80c098083aae3bb0301e8f088057b10d4b1b24c064e066cecfedee2262", keyOf(inputs(), { req = { scenes = sceneAt(Mat4.identity()) :: Nil | f#req } | f }))
 
+    // ビルボードの castShadows は鍵を変え、lit でない板の receiveShadows（効かない値）は鍵を変えない。
+    @Test
+    def testBillboardShadowFlagsInKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let board = Scene3d.billboard("chars", { position = Vec2.zero(), size = { x = 8.0, y = 8.0 } }, Vec3.v3(0.0, 0.0, 3.0), { x = 1.0, y = 1.0 });
+        let at = (b: Scene3d.Billboard3d) -> keyOf(inputs(), { req = { scenes = { scene = { billboards = b :: Nil | base#scene } | base } :: Nil | f#req } | f });
+        Assert.assertTrue(at(board) != at(board |> Scene3d.withCastShadows(true))
+                          and at(Scene3d.unlit(board)) == at(Scene3d.unlit(board) |> Scene3d.withReceiveShadows(true)))
+
     // スポットの影の濃さ（strength）だけが違う場面は鍵が違う（shadow の欄を鍵に入れている）。
     @Test
     def testSpotShadowStrengthChangesKey(): Unit \ Assert =

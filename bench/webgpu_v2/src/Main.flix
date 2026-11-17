@@ -53,6 +53,13 @@ mod V2Main {
         billboardCase("billboardDesign", { resolution = Scene3d.Resolution.Design | V2Billboards.room(kit) }) ::
         billboardCase("billboardDepth", { output = depthOfRoom() | V2Billboards.room(kit) }) ::
         billboardCase("billboardGlass", V2Billboards.behindGlass(kit)) ::
+        billboardCase("billboardSunShadow", V2Billboards.sunYard(kit)) ::
+        billboardShadowCase("billboardShadowAxis", BillboardShadowYard.SunSide.Axis) ::
+        billboardShadowCase("billboardShadowDiagonal", BillboardShadowYard.SunSide.Diagonal) ::
+        billboardShadowCase("billboardShadowSide", BillboardShadowYard.SunSide.Side) ::
+        sceneCase("atlasNearestHigh", Scene3d.Resolution.Native, V2Atlas.yard(false, false)) ::
+        sceneCase("atlasNearestLow", Scene3d.Resolution.Native, V2Atlas.yard(true, false)) ::
+        sceneCase("atlasNearestLowCapped", Scene3d.Resolution.Native, V2Atlas.yard(true, true)) ::
         billboardMsaaPassCase(kit) ::
         billboardHistoryCase(kit) ::
         postCase("post", kit, 1, PostProcess.Tonemap.AcesFitted, Scene3d.Resolution.Native) ::
@@ -169,6 +176,13 @@ mod V2Main {
     /// ビルボードの場面 scene（V2Billboards）を画面へ直に。看板の Pass を先に描く（ビルボードが貼る）。
     def billboardCase(name: String, scene: Scene3d.Scene3dCmd): Case =
         { name = name, passes = V2Billboards.signPass() :: Nil, targets = Map.empty(), items = Render.scene3d(Vec2.zero(), scene) :: Nil }
+
+    /// ビルボードの太陽の影の町の一角（bench/gl_parity の BillboardShadowYard を写した物）: 左は影の欄なし・右は影の欄つき。人の形の Pass を先に描く。
+    def billboardShadowCase(name: String, side: BillboardShadowYard.SunSide): Case =
+        let half = { x = Room.design()#x * 0.5, y = Room.design()#y };
+        { name = name, passes = BillboardShadowYard.charPass() :: Nil, targets = Map.empty(),
+          items = Render.scene3d(Vec2.zero(), BillboardShadowYard.scene(side, half, false)) ::
+                  Render.scene3d({ x = half#x, y = 0.0 }, BillboardShadowYard.scene(side, half, true)) :: Nil }
 
     /// ビルボードの場面を標本 4 の Pass に描いて貼る（ビルボードの pipeline の標本 4 の版・捨てた画素のふち）。
     def billboardMsaaPassCase(kit: Room.Kit): Case =
@@ -299,6 +313,8 @@ mod V2Main {
     /// GL と WebGPU が隣の行を読む【推: 差の画素が 1 行に並び、値が隣の texel の値】。billboardGlass は blend と同じ数（ビルボードの画素は差に出ていない）・
     /// billboardDepth は blendDepth と同じ形・billboardMsaaPass は skyMsaaPass と同じ標本の位置の違い・billboardHistory は入れ子の看板の中の ±1 だけ。
     /// 上限は実測のほぼ 2 倍（billboardDesign は skyDesign と同じ小さい物の下限）・差の最大は面の入れ替わりで切らない billboard と billboardGlass を除いて ±16（billboardMsaaPass は ±128）。
+    /// ビルボードの太陽の影（同じ機械の実測）: billboardSunShadow 1・1・±71、billboardShadowAxis 0、billboardShadowDiagonal 12・12・±6、billboardShadowSide 0。
+    /// 差は影の縁の画素が地図の奥行きの比べで割れる物（shadowSun と同じ形）。板の向きか受ける点を取り違えると人の形の影か暗くなる人の面（数百 px）が丸ごと違う。
     /// 環境マップと mip の場面（同じ機械の実測。違う画素・±2 以上・max）: envSpheres 7・0・±1、envBox 5・0・±1、envBackground 19・0・±1、envBackgroundTurned 0、
     /// envBackgroundDesign 0、envBackgroundDepth 1・0・±1、envSkyAndBackground 17・0・±1、envMsaaPass 8,469・4,005・±60、mipFloor 421・2・±2。
     /// 環境マップの画素はどれも GL と ±1 以内【推: mip のレベルの間の補間と sRGB の戻しの丸め】。envMsaaPass は球のふちで、skyMsaaPass と同じ標本の位置の違い。
@@ -322,12 +338,13 @@ mod V2Main {
              "post" => (84, 500, 255), "postMsaa" => (27000, 112000, 128), "postDesign" => (7300, 31000, 128), "halfDepthDesign" => (19000, 192000, 128),
              "billboard" => (52, 128, 255), "billboardDesign" => (4, 8, 16), "billboardDepth" => (4, 24, 16), "billboardGlass" => (32, 64, 255),
              "billboardMsaaPass" => (23000, 27000, 128), "billboardHistory" => (4, 40, 16),
+             "billboardSunShadow" => (8, 16, 255), "billboardShadowAxis" => (8, 16, 255), "billboardShadowDiagonal" => (24, 32, 255), "billboardShadowSide" => (8, 16, 255),
              "envSpheres" => (4, 16, 16), "envBox" => (4, 16, 16), "envBackground" => (4, 40, 16), "envBackgroundTurned" => (4, 8, 16),
              "envBackgroundDesign" => (4, 8, 16), "envBackgroundDepth" => (4, 8, 16), "envSkyAndBackground" => (4, 36, 16), "envMsaaPass" => (8000, 17000, 128),
              "mipFloor" => (8, 850, 16), "mipFloorRegistered" => (4, 3600, 16)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
-    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass"}
+    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass", "atlasNearestHigh", "atlasNearestLow", "atlasNearestLowCapped"}
 
     def drawFrame(c: Case): Unit \ Platform.Rendering + Platform.Window + RenderTarget.Target =
         drawPasses(c);

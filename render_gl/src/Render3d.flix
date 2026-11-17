@@ -100,7 +100,7 @@ mod Render3d {
     /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
     type alias MeshLocs = { program = Int32, view = Int32, proj = Int32, instanceBase = Int32 }
 
-    /// 影の uniform の location（頂点の色のプログラムと材質のプログラム。ビルボードは影を受けない）。
+    /// 影の uniform の location（頂点の色のプログラムと材質のプログラム。ビルボードはスポットの影を受けない）。
     pub type alias ShadowLocs = { on = Int32, spot = Int32, matrix = Int32, map = Int32, bias = Int32, pcf = Int32, strength = Int32 }
 
     /// 太陽の影の uniform の location（ShadowLocs と同じ決まり。on = uSunShadowOn）。
@@ -117,7 +117,7 @@ mod Render3d {
     type alias BillboardLocs = {
         program = Int32, view = Int32, proj = Int32, center = Int32, right = Int32, up = Int32,
         anchor = Int32, size = Int32, uvRect = Int32, tint = Int32, lit = Int32, facing = Int32,
-        depthOut = Int32, depthRange = Int32, light = LightLocs
+        depthOut = Int32, depthRange = Int32, light = LightLocs, receive = Int32, shadowOffset = Int32, sunShadow = SunShadowLocs
     }
 
     type alias Programs = { lit = LitLocs, depth = DepthLocs, billboard = BillboardLocs, blit = Int32, quadVao = Int32, quadVbo = Int32 }
@@ -397,7 +397,7 @@ mod Render3d {
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, shadowPasses));
+        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, textureOf, shadowPasses));
         let designCount = Array#{0} @ Static;
         let items = List.zip(List.zip(plans, lists), shadows) |> List.map(pls -> {
             let ((plan, passes), shadow) = pls;
@@ -915,6 +915,7 @@ mod Render3d {
             gl.uniformMatrix4fv(locs#view, false, camera#view);
             gl.uniformMatrix4fv(locs#proj, false, camera#proj);
             putLights(gl, locs#light, camera#lights);
+            Render3d.Shadow.putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
             putVec3(gl, locs#right, Camera3d.right(scene#camera));
             putVec3(gl, locs#up, Camera3d.up(scene#camera));
             putVec3(gl, locs#facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
@@ -948,18 +949,24 @@ mod Render3d {
             case None          => warnMissingTexture(state, b#texture)
             case Some(_) if culled => ()
             case Some(texture) =>
-                gl.bindTexture(GlConst.TEXTURE_2D, texture#texId);
-                putVec3(gl, locs#center, b#position);
-                gl.uniform2f(locs#anchor, RenderUtil.f32(b#anchor#x), RenderUtil.f32(b#anchor#y));
-                gl.uniform2f(locs#size, RenderUtil.f32(b#size#x), RenderUtil.f32(b#size#y));
-                putUvRect(gl, locs#uvRect, texture, b#regionRect);
+                putBillboardShape(gl, locs, texture, b);
                 putLinearizedColor(gl, locs#tint, b#tint);
                 gl.uniform1i(locs#lit, if (b#lit) 1 else 0);
+                gl.uniform1i(locs#receive, if (b#receiveShadows) 1 else 0);
+                gl.uniform1f(locs#shadowOffset, RenderUtil.f32(Scene3d.billboardShadowOffsetOf(b)));
                 gl.drawArrays(GlConst.TRIANGLES, 0, 6);
                 countDrawCall(state, BatchBreak.Billboard)
         };
         // WhyNot: 末尾を呼び出しで終えない — ビルボードが多い場面で drawBillboardsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
         ()
+
+    /// ビルボード b の絵を unit 0 に貼り、四角の形（立てる点・anchor・size・貼る範囲）の uniform を入れる（色の pass と影の地図の pass で同じ）。
+    def putBillboardShape(gl: GlContext, locs: BillboardLocs, texture: Scene3dRenderer.RegisteredTexture, b: Scene3d.BillboardFields): Unit \ IO =
+        gl.bindTexture(GlConst.TEXTURE_2D, texture#texId);
+        putVec3(gl, locs#center, b#position);
+        gl.uniform2f(locs#anchor, RenderUtil.f32(b#anchor#x), RenderUtil.f32(b#anchor#y));
+        gl.uniform2f(locs#size, RenderUtil.f32(b#size#x), RenderUtil.f32(b#size#y));
+        putUvRect(gl, locs#uvRect, texture, b#regionRect)
 
     /// 貼る範囲の uv（左上 u・v と幅・高さ）。レンダーターゲットは行 0 が下なので v を反転する。
     def putUvRect(gl: GlContext, loc: Int32, texture: Scene3dRenderer.RegisteredTexture, source: Rect2.Rect2): Unit \ IO =
@@ -1086,7 +1093,8 @@ mod Render3d {
           center = loc(gl, program, "uCenter"), right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"),
           anchor = loc(gl, program, "uAnchor"), size = loc(gl, program, "uSize"), uvRect = loc(gl, program, "uUvRect"),
           tint = loc(gl, program, "uTint"), lit = loc(gl, program, "uLit"), facing = loc(gl, program, "uFacing"),
-          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"), light = Render3d.Light.lightLocsOf(gl, program) }
+          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"), light = Render3d.Light.lightLocsOf(gl, program),
+          receive = loc(gl, program, "uReceive"), shadowOffset = loc(gl, program, "uShadowOffset"), sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program) }
 
     /// 四角の 6 頂点（角の 0〜1。y は下向き = 絵の上が 0）。ビルボードと Design の重ねで共有する。
     def buildQuad(gl: GlContext): (Int32, Int32) \ IO =

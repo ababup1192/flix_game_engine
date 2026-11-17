@@ -50,6 +50,17 @@ mod V2Billboards {
         let front = sign({ position = { x = 0.0, y = 0.0 }, size = Room.design() }, m(4.4, 1.0, 1.6), 0.8, 0.45);
         { billboards = back :: front :: Nil | r }
 
+    /// 太陽の影の場面（V2Shadows.sunYard）に、影を落として受けるビルボードを立てた場面（影の地図の板・穴の空いた看板の影・家具の影に入る板・影を受けない板）。
+    pub def sunYard(kit: Room.Kit): Scene3d.Scene3dCmd =
+        let yard = V2Shadows.sunYard(kit, 0);
+        let both = (b: Scene3d.Billboard3d) -> b |> Scene3d.withCastShadows(true) |> Scene3d.withReceiveShadows(true);
+        let whole = { position = { x = 0.0, y = 0.0 }, size = Room.design() };
+        let boards = both(sign(whole, m(4.1, 0.0, 4.6), 2.0, 1.125)) ::
+                     both(radial(m(2.7, 0.0, 2.6), 0.6, 1.4) |> Scene3d.withBillboardTint(Color.rgb(1.0, 0.75, 0.5))) ::
+                     both(radial(m(5.6, 0.0, 3.0), 0.5, 1.2)) ::
+                     (radial(m(1.6, 0.0, 3.4), 0.5, 1.2) |> Scene3d.withCastShadows(true)) :: Nil;
+        { billboards = boards | yard }
+
     /// history の場面の Pass の名前。
     pub def trailName(): String = "v2trail"
 

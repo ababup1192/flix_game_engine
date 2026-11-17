@@ -487,7 +487,8 @@ mod Render3d.ScenePlan {
             case Scene3d.Output.Color =>
                 let casters = Scene3d.pickLights(scene#camera#eye, scene)#spotLights
                     |> List.mapWithIndex((i, spot) -> spot#shadow |> Option.filter(m -> m#mapSize > 0)
-                        |> Option.map(m -> (i, { matrix = Scene3d.shadowMatrix(spot), frustum = Scene3d.shadowFrustumOf(spot), settings = m })))
+                        |> Option.map(m -> (i, { matrix = Scene3d.shadowMatrix(spot), frustum = Scene3d.shadowFrustumOf(spot),
+                                                 settings = { bias = Scene3d.spotShadowDepthBiasOf(spot, m#bias) | m } })))
                     |> List.filterMap(identity);
                 if (List.length(casters) > 1)
                     warnShadowOnce(planner, "second", "scene3d: 影を落とすスポットが 1 つの場面に 2 本以上ある — 最初の 1 本だけが影を落とす")

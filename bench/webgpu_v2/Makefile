@@ -30,6 +30,7 @@ tree:
 	done
 	@mkdir -p "$(TREE)/src/bench/$$(dirname $(V1_ASSETS))" && ln -sfn "$(CURDIR)/../webgpu_v1/src/$(V1_ASSETS)" "$(TREE)/src/bench/$(V1_ASSETS)"
 	@sed '/^    use fge::{/d' ../scene3d/src/Room.flix > $(TREE)/src/bench/Room.flix
+	@sed '/^    use fge::{/d' ../gl_parity/src/BillboardShadowYard.flix > $(TREE)/src/bench/BillboardShadowYard.flix
 	@grep -v '^repository' ../../engine_full/flix.toml > $(TREE)/flix.toml
 	@[ -d $(TREE)/lib/cache ] || { [ -d ../../engine_full/lib/cache ] && cp -R ../../engine_full/lib/cache $(TREE)/lib/; } || true
 	@[ -d ../webgpu_check/lib/cache ] && cp -Rn ../webgpu_check/lib/cache/ $(TREE)/lib/cache/ 2>/dev/null || true

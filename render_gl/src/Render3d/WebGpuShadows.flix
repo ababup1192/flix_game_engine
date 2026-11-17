@@ -35,7 +35,7 @@ mod Render3d.WebGpuShadows {
     use Render3d.ShadowMaps.{Key, ShadowPass}
     use Render3d.WebGpuRows.{MeshBuffers, MeshStore, drawRows}
 
-    /// 影の地図の描き先 1 枚。depth = 深度の texture（色の pass が texture_depth_2d で読む）・camera = 光の目と単位行列の射影（Render3dWgsl.cameraBytes() のうち頭の 128 バイト・カメラの向きは読まない）・group = group 0。
+    /// 影の地図の描き先 1 枚。depth = 深度の texture（色の pass が texture_depth_2d で読む）・camera = 光の目と単位行列の射影とビルボードの板の横と縦（Render3dWgsl.cameraBytes() の並び・uFacing は読まない）・group = group 0。
     type alias ShadowTarget = { depth = Texture, camera = Buffer, group = BindGroup }
 
     /// 影の地図の backend の状態。table = 前半の寿命の表・targets = 鍵 → 描き先・layout = group 0 の layout・pipelines = (頂点のバイト数, ジョイントの番号の位置) → pipeline・
@@ -54,8 +54,12 @@ mod Render3d.WebGpuShadows {
         encoder = CommandEncoder, notePass = Unit -> Unit \ IO, meshStore = MeshStore, instances = Buffer, instanceBase = Int32, poseGroup = Option[BindGroup],
         vertexModule = ShaderModule, skinnedModule = ShaderModule, emptyLayout = BindGroupLayout, emptyGroup = BindGroup, poseLayout = BindGroupLayout,
         created = Unit -> Unit \ IO, unbound = Int32 -> Unit \ IO,
-        carried = List[(RenderPass, String, BindGroup, (RenderCommands, SceneList, Buffer) -> Unit \ IO) -> Unit \ IO]
+        carried = List[(RenderPass, String, BindGroup, (RenderCommands, SceneList, Buffer) -> Unit \ IO) -> Unit \ IO],
+        billboard = (RenderCommands, SceneList, Int32, Int32) -> Bool \ IO
     }
+
+    /// 影の地図の pass 1 つと、その行の values を送った位置（バイト。ビルボードの行の無い pass は -1）。
+    pub type alias StagedShadow = { pass = ShadowPass, valuesBase = Int32 }
 
     /// 描き先の深度の形式（色の pass の group 0 の binding 1・2 で読む）。
     // WhyNot: DEPTH24_PLUS にしない — 機種ごとに中身の形式が決まらず、比べる値（ndc.z × 0.5 + 0.5 − bias）との丸めが機種で変わる。GL の 24 bit との違いは比べの最後の bit だけ。
@@ -74,6 +78,9 @@ mod Render3d.WebGpuShadows {
         Map.forEach((_, p) -> p.release(), Ref.get(sh#pipelines));
         Ref.put(Map.empty(), sh#pipelines);
         sh#layout.release()
+
+    /// group 0（光の目）の layout（ビルボードの影の地図の pipeline も同じ layout で作る）。
+    pub def layoutOf(sh: Shadows): BindGroupLayout = sh#layout
 
     /// encoder を submit した後に呼ぶ（どの描き先の光の目の値も書き直せる）。
     pub def afterSubmit(sh: Shadows): Unit \ IO = Ref.put(Set.empty(), sh#written)
@@ -115,8 +122,9 @@ mod Render3d.WebGpuShadows {
         t#depth.destroy()
 
     /// 影の地図の pass 1 つを積む: 描き先を（無ければ作って）光の目の値を書き、深度を 1 で消して行を形だけで描く。呼ぶ前に needsFlush で submit を済ませておく。
-    /// 骨つきの行は姿勢の group 2 がある時だけ描く。裏の面も描く（GL の Render3d.Shadow と同じ）。
-    pub def encode(sh: Shadows, gen: Int64, draw: ShadowDraw, pass: ShadowPass): Unit \ IO =
+    /// 骨つきの行は姿勢の group 2 がある時だけ描く。裏の面も描く（GL の Render3d.Shadow と同じ）。ビルボードの行は draw#billboard が描く（values は staged#valuesBase から）。
+    pub def encode(sh: Shadows, gen: Int64, draw: ShadowDraw, staged: StagedShadow): Unit \ IO =
+        let pass = staged#pass;
         let key = pass#map#key;
         discard Render3d.ShadowMaps.ensure(sh#table, allocatorOf(sh, draw#created), gen, key);
         Map.get(key, Ref.get(sh#targets)) |> Option.forEach(target -> {
@@ -132,17 +140,18 @@ mod Render3d.WebGpuShadows {
             rp.setBindGroup(0, target#group);
             Option.forEach(g -> rp.setBindGroup(2, g), draw#poseGroup);
             rp.setVertexBuffer(1, draw#instances, 0i64, draw#instances.size());
-            drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw), pass#list, draw#instanceBase);
+            drawRows(checked_cast(rp), draw#meshStore, drawerOf(sh, draw, staged#valuesBase), pass#list, draw#instanceBase);
             let drawCarried = (commands: RenderCommands, list: SceneList, instances: Buffer) -> {
                 commands.setVertexBuffer(1, instances, 0i64, instances.size());
-                drawRows(commands, draw#meshStore, drawerOf(sh, draw), list, 0)
+                drawRows(commands, draw#meshStore, drawerOf(sh, draw, -1), list, 0)
             };
             draw#carried |> List.forEach(runCarried -> runCarried(rp, ToString.toString(key), target#group, drawCarried));
             rp.end()
         })
 
     /// 影の地図の行を形だけで描く時に pipeline を付ける関数の組（付けた pipeline の控えは組ごと・bundle は付けた物を持たずに始まる）。
-    def drawerOf(sh: Shadows, draw: ShadowDraw): Render3d.WebGpuRows.RowDrawer \ IO =
+    /// valuesBase = 行の values を送った位置（ビルボードの行の無い列は -1）。ビルボードの行は draw#billboard が付けて描き、次の形の行が pipeline を付け直す。
+    def drawerOf(sh: Shadows, draw: ShadowDraw, valuesBase: Int32): Render3d.WebGpuRows.RowDrawer \ IO =
         let bound = Ref.fresh(Static, (-1, (None: Option[Int32])));
         let bindShape = (p: RenderCommands, mesh: MeshBuffers, skin: Option[Int32]) -> {
             let k = (mesh#stride, skin);
@@ -156,14 +165,21 @@ mod Render3d.WebGpuShadows {
         { shape = (p, mesh) -> bindShape(p, mesh, None),
           skinned = (p, mesh) -> Option.nonEmpty(draw#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
           material = (_, _, _, _) -> checked_ecast(false),
-          billboard = (_, _, _) -> checked_ecast(false),
+          billboard = (p, list, row) -> {
+              Ref.put((-1, None), bound);
+              valuesBase >= 0 and (draw#billboard)(p, list, row, valuesBase)
+          },
           unbound = draw#unbound }
 
-    /// 光の目（world → 光の clip）と単位行列の射影を、R3dCamera の並び（uView・uProj）で target の buffer へ書く。
+    /// 光の目（world → 光の clip）と単位行列の射影と、ビルボードの板の横（pass#billboardRight）と縦（world の上）を、R3dCamera の並び（uView・uProj・uRight・uUp）で
+    /// target の buffer へ書く（uFacing は読まない）。
     def writeCamera(sh: Shadows, target: ShadowTarget, pass: ShadowPass): Unit \ IO =
         let floats = sh#cpuCamera.asFloatBuffer();
+        let r = pass#billboardRight;
         discard floats.put(matrixArray(pass#map#view));
         discard floats.put(matrixArray(Mat4.identity()));
+        discard floats.put(Array#{RenderUtil.f32(r#x), RenderUtil.f32(r#y), RenderUtil.f32(r#z), 0.0f32, 0.0f32, 1.0f32, 0.0f32, 0.0f32,
+                                  0.0f32, 0.0f32, 0.0f32, 0.0f32} @ Static);
         sh#gpu.writeBuffer(target#camera, 0i64, sh#cpuCamera, 0, Render3dWgsl.cameraBytes())
 
     /// 頂点のバイト数 stride（Render3d.WebGpuRows の形の版）・ジョイントの番号の位置 skin の、深度だけを書く pipeline（無ければ作る）。

@@ -20,9 +20,10 @@ mod Render3d.WebGpuBillboards {
 
     /// ビルボードの backend の状態。sceneLayout = group 0 の layout（3D の描き手の持ち物）・imageLayout = group 1 の layout（2D の描き手の絵の group の layout・2D の描き手の持ち物）・
     /// pipelines = (形式の番号, 標本の数) → pipeline。
+    /// shadowFragmentModule = 影の地図へ描く frag（Render3dWgsl.billboardShadowFragmentSource）・shadowPipeline = 影の地図の pipeline（初めて要る時に作る）。
     pub type alias Billboards = {
         gpu = WebGpu, sceneLayout = BindGroupLayout, imageLayout = BindGroupLayout, vertexModule = ShaderModule, fragmentModule = ShaderModule,
-        pipelines = Ref[Map[(Int32, Int32), RenderPipeline], Static]
+        pipelines = Ref[Map[(Int32, Int32), RenderPipeline], Static], shadowFragmentModule = ShaderModule, shadowPipeline = Ref[Option[RenderPipeline], Static]
     }
 
     /// device の上に shader module を作る（layout 2 つは持ち主が手放す）。
@@ -30,14 +31,38 @@ mod Render3d.WebGpuBillboards {
         { gpu = gpu, sceneLayout = sceneLayout, imageLayout = imageLayout,
           vertexModule = gpu.createShaderModule("fge scene3d billboard vs", Render3dWgsl.billboardVertexSource()),
           fragmentModule = gpu.createShaderModule("fge scene3d billboard fs", Render3dWgsl.billboardFragmentSource()),
-          pipelines = Ref.fresh(Static, Map.empty()) }
+          pipelines = Ref.fresh(Static, Map.empty()),
+          shadowFragmentModule = gpu.createShaderModule("fge scene3d billboard shadow fs", Render3dWgsl.billboardShadowFragmentSource()),
+          shadowPipeline = Ref.fresh(Static, None) }
 
     /// device の上に作った物を全部手放す（layout は持ち主が）。この後 b は使えない。
     pub def release(b: Billboards): Unit \ IO =
         Map.forEach((_, p) -> p.release(), Ref.get(b#pipelines));
         Ref.put(Map.empty(), b#pipelines);
+        Ref.get(b#shadowPipeline) |> Option.forEach(p -> p.release());
+        Ref.put(None, b#shadowPipeline);
         b#vertexModule.release();
-        b#fragmentModule.release()
+        b#fragmentModule.release();
+        b#shadowFragmentModule.release()
+
+    /// ビルボードを影の地図へ描く pipeline（無ければ作る）。group 0 = 影の地図の光の目（shadowLayout・Render3d.WebGpuShadows の持ち物）・group 1 = 貼る絵。
+    /// 色の描き先を持たず、深度（depthFormat）を LESS で書く。裏を間引かない（GL の影の地図と同じ）。
+    pub def shadowPipelineOf(b: Billboards, shadowLayout: BindGroupLayout, depthFormat: TextureFormat): RenderPipeline \ IO =
+        match Ref.get(b#shadowPipeline) {
+            case Some(p) => p
+            case None =>
+                let desc = new RenderPipelineDesc("fge scene3d billboard shadow");
+                discard desc.bindGroupLayout(shadowLayout).bindGroupLayout(b#imageLayout);
+                discard desc.vertex(b#vertexModule, "vs_main").fragment(b#shadowFragmentModule, "fs_main");
+                discard desc.vertexBuffer(0, true);
+                discard desc.attribute(VertexFormat.FLOAT32X4, 0, 0).attribute(VertexFormat.FLOAT32X4, 16, 1);
+                discard desc.attribute(VertexFormat.FLOAT32X4, 32, 2).attribute(VertexFormat.FLOAT32X4, 48, 3);
+                discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CW, CullMode.NONE);
+                discard desc.depthStencil(depthFormat, true, CompareFunction.LESS).multisample(1);
+                let made = b#gpu.createRenderPipeline(desc);
+                Ref.put(Some(made), b#shadowPipeline);
+                made
+        }
 
     /// 形式 format・標本 samples のビルボードの pipeline（無ければ作る）。裏を間引かず（四角はいつもカメラを向く）、深度は LESS で書く（GL のビルボードと同じく不透明の物の後・半透明の物の前に描く）。
     /// 奥行きの書き出しの pass も同じ pipeline で、frag が場面の値の uDepthOut で灰色を書く。

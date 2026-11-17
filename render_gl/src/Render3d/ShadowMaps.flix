@@ -38,8 +38,10 @@ mod Render3d.ShadowMaps {
     /// 影を落とす光 1 つに決めた描き先と引く値。view = world → 光の clip（地図を描く頂点シェーダーの目の行列。射影は単位行列）。
     pub type alias ShadowMapUse = { key = Key, view = Mat4.Mat4, sampling = ShadowSampling }
 
-    /// 影の地図を描く pass 1 つ（map の描き先へ list の行を深度だけで描く）。行は頂点の色の行（骨の無い物）と骨つきの行だけで、どれも分かれた理由は影の pass。
-    pub type alias ShadowPass = { map = ShadowMapUse, list = SceneList }
+    /// 影の地図を描く pass 1 つ（map の描き先へ list の行を深度だけで描く）。行は頂点の色の行（骨の無い物）と骨つきの行と、太陽の地図だけはその後に
+    /// castShadows のビルボードの行（Scene3d.shadowCastingBillboardsOf）で、どれも分かれた理由は影の pass。
+    /// billboardRight = ビルボードの板の横の向き（Scene3d.billboardShadowRightOf。縦は world の上）。
+    pub type alias ShadowPass = { map = ShadowMapUse, list = SceneList, billboardRight = Vec3.Vec3 }
 
     /// backend が描き先を作る・捨てる関数の組（鍵で控える）。
     pub type alias Allocator = { create = Key -> Unit \ IO, destroy = Key -> Unit \ IO }
@@ -88,8 +90,16 @@ mod Render3d.ShadowMaps {
     /// 1 体ごとの値の番号を振り終えた場面の計画 plan の影の材料を、uses（assign の答えの、その場面の分）の描き先へ描く pass にする（同じ並び）。
     /// 行の形の番号は tables で振る（GPU には作らない）。
     pub def buildPasses(tables: Tables, uses: List[ShadowMapUse], plan: ScenePlan[MeshBatch]): List[ShadowPass] \ IO =
-        let ctx = Render3d.SceneList.contextOf(tables, plan#cmd#scene);
-        List.zip(uses, plan#shadowPlans) |> List.map(match (m, sp) -> { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned) })
+        let scene = plan#cmd#scene;
+        let ctx = Render3d.SceneList.contextOf(tables, scene);
+        let right = Scene3d.billboardShadowRightOfScene(scene);
+        List.zip(uses, plan#shadowPlans) |> List.map(match (m, sp) -> {
+            let billboards = match sp#light {
+                case ShadowLight.Sun(_)  => Scene3d.shadowCastingBillboardsOf(sp#caster#frustum, scene)
+                case ShadowLight.Spot(_) => Nil
+            };
+            { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, billboards), billboardRight = right }
+        })
 
     /// 鍵 key の描き先を（無ければ allocator で作って）今の世代 gen で使ったと控える。作ったら真。
     pub def ensure(table: Table, allocator: Allocator, gen: Int64, key: Key): Bool \ IO =
