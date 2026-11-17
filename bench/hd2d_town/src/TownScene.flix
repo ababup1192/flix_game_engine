@@ -18,7 +18,8 @@ mod TownScene {
     /// extraLamps = 重さを測るために足す点光源の数（広場に並べる）・groundFog・groundFogColor = 地面を這う低い霧の板の濃さ（0 で置かない）と色・
     /// charShadow = 隊列のキャラの影の付け方・heightFog = 地面を這う高さの霧（engine の PostStack.HeightFog・長さは m）・
     /// boardLamplight・boardNightBase = 夜の板（キャラ・木）の明るさ（0 なら光の計算のまま。正なら光を当てない板にして、
-    /// 色の掛け目を boardNightBase に、近くの街灯の色を距離で足した物にする・強さの倍率）・bloomThreshold・bloomSize = ブルームの閾値と大きさ。
+    /// 色の掛け目を boardNightBase に、近くの街灯の色を距離で足した物にする・強さの倍率）・bloomThreshold・bloomSize = ブルームの閾値と大きさ・
+    /// lanternCore・lanternEdge = 火袋の芯と縁の色・haloColor・haloSize・haloGlow・haloFalloff = 火袋ごとの淡いハローの丸い板の色・直径（m）・強さ・落ち方（乗数）。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
@@ -28,7 +29,8 @@ mod TownScene {
                             sunColor = Color, lampIntensity = Float64, lampRange = Float64, lampColor = Color, lampGlow = Float64,
                             extraLamps = Int32, groundFog = Float64, groundFogColor = Color, charShadow = CharShadow,
                             heightFog = Option[PostStack.HeightFog], boardLamplight = Float64, boardNightBase = Color,
-                            bloomThreshold = Float64, bloomSize = Float64 }
+                            bloomThreshold = Float64, bloomSize = Float64,
+                            lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64 }
 
     /// 隊列のキャラの影。Silhouette = 板の絵の形の太陽の影（斜めに伸びる人形の影・足元は薄い小さな楕円だけ）・Soft = 薄い足元の楕円（前の版）・Dense = 濃く少し大きい楕円（案 1）・
     /// DenseCast = 案 1 に、太陽の向きへ薄く短く伸びる影の板を足す（案 2）・SmallBlob = 小さく濃い柔らかい塊を太陽の影の側へ少しずらす（案 3）。
@@ -67,8 +69,8 @@ mod TownScene {
             strips <- Result.traverse(Images.load, stripPaths);
             shadow <- Images.contactShadow();
             dense <- Images.denseShadow();
-            lantern <- Images.lanternGlow("sprites/street_lamp_ornate.png", lanternCenters(), 6.0);
-            halo <- Images.halo();
+            lantern <- Images.lanternGlow("sprites/street_lamp_ornate.png", lanternCenters(), 7.5, 0.42, 0.68, look#lanternCore, look#lanternEdge);
+            halo <- Images.halo(look#haloFalloff);
             contactMesh <- unitContactMesh()
         ) yield {
             let byPath = List.append(tiles, boards) |> List.map(l -> (l#path, l)) |> List.toMap;
@@ -291,21 +293,22 @@ mod TownScene {
             Mat4.mul(Mat4.translate(Vec3.v3(cx, cz, cy)), Mat4.mul(Mat4.rotateX(0.0 - Num.pi() / 2.0), Mat4.scale(Vec3.v3(sx, 1.0, sz))));
         let glows = if (look#lampGlow <= 0.0) Nil else lampFeet(res) |> List.flatMap(b ->
             (Scene3d.meshInstance(res#contactMesh, upright(b#x, b#y - 0.03, b#z + lh / 2.0, lw, lh))
-                |> Scene3d.withMaterial(glowMaterial(look, res#lanternTexture, look#lampGlow))) ::
+                |> Scene3d.withMaterial(glowMaterial(res#lanternTexture, Color.rgb(1.0, 1.0, 1.0), look#lampGlow))) ::
             (lanternCenters() |> List.map(uv ->
-                Scene3d.meshInstance(res#contactMesh, upright(b#x + (fst(uv) - 0.5) * lw, b#y - 0.06, b#z + snd(uv) * lh, 1.1, 1.1))
-                    |> Scene3d.withMaterial(glowMaterial(look, res#haloTexture, look#lampGlow * 0.04)))));
+                Scene3d.meshInstance(res#contactMesh, upright(b#x + (fst(uv) - 0.5) * lw, b#y - 0.06, b#z + snd(uv) * lh, look#haloSize, look#haloSize))
+                    |> Scene3d.withMaterial(glowMaterial(res#haloTexture, look#haloColor, look#haloGlow)))));
         let fogs = if (look#groundFog <= 0.0) Nil else (0.35 :: 0.8 :: Nil) |> List.mapWithIndex((i, h) ->
             Scene3d.meshInstance(res#contactMesh, Mat4.mul(Mat4.translate(Vec3.v3(13.5, 1.0 + h, 13.0)), Mat4.scale(Vec3.v3(60.0, 1.0, 60.0))))
                 |> Scene3d.withMaterial(fogMaterial(look, i)));
         List.append(glows, fogs)
 
-    /// 光る板の材質（絵 texture の α の所だけ、街灯の色で光る・半透明で重ねる・ブルームが拾う明るさ）。k = 光の強さ。
-    def glowMaterial(look: Look, texture: String, k: Float64): Scene3d.Material3d =
-        let c = (v: Float64) -> ShaderDoc.Field.Const(v);
-        let alpha = ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Nearest, of = ShaderDoc.Field.Tex({ name = texture, chan = ShaderDoc.TexChan.A }) });
-        let tinted = (v: Float64) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = c(v), b = alpha });
-        let rgb = ShaderDoc.Shade.Rgb({ r = tinted(look#lampColor#r), g = tinted(look#lampColor#g), b = tinted(look#lampColor#b) });
+    /// 光る板の材質（絵 texture の色 × tint を、絵の α の所だけ光らせる・半透明で重ねる・ブルームが拾う明るさ）。k = 光の強さ。
+    def glowMaterial(texture: String, tint: Color, k: Float64): Scene3d.Material3d =
+        let sample = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Nearest, of = ShaderDoc.Field.Tex({ name = texture, chan = ch }) });
+        let alpha = sample(ShaderDoc.TexChan.A);
+        let mul = (a: ShaderDoc.Field, b: ShaderDoc.Field) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = a, b = b });
+        let lit = (v: Float64, ch: ShaderDoc.TexChan) -> mul(ShaderDoc.Field.Const(v), sample(ch));
+        let rgb = ShaderDoc.Shade.Rgb({ r = lit(tint#r, ShaderDoc.TexChan.R), g = lit(tint#g, ShaderDoc.TexChan.G), b = lit(tint#b, ShaderDoc.TexChan.B) });
         Scene3d.material({ name = "hd2d:lamp-glow", cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = rgb, alpha = alpha }) })
             |> Scene3d.withEmission(rgb)
             |> Scene3d.withEmissionIntensity(k)

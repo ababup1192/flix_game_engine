@@ -13,7 +13,8 @@ mod TownLook {
           exposure = 0.25, bloomStrength = 0.35, fStop = 0.07, saturation = 0.85, lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.05, 1.0, 0.92), vignette = 0.35, fxaa = false, billboardTextures = TownScene.BillboardTextures.SceneTextures,
           sunColor = Color.rgb(1.0, 0.95, 0.86), lampIntensity = 0.0, lampRange = 7.0, lampColor = Color.rgb(1.0, 0.72, 0.42), lampGlow = 0.0,
           extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8), charShadow = TownScene.CharShadow.Soft,
-          heightFog = None, boardLamplight = 0.0, boardNightBase = Color.rgb(0.3, 0.33, 0.5), bloomThreshold = 0.8, bloomSize = 0.6 }
+          heightFog = None, boardLamplight = 0.0, boardNightBase = Color.rgb(0.3, 0.33, 0.5), bloomThreshold = 0.8, bloomSize = 0.6,
+          lanternCore = Color.rgb(1.0, 0.96, 0.42), lanternEdge = Color.rgb(1.0, 0.62, 0.06), haloColor = Color.rgb(1.0, 0.6, 0.08), haloSize = 1.9, haloGlow = 0.0, haloFalloff = 2.2 }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -46,7 +47,9 @@ mod TownLook {
           charShadow = charShadowOf(JsonCodec.stringOr("charShadow", "soft", m)),
           heightFog = Map.get("heightFog", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(heightFogOf),
           boardLamplight = num("boardLamplight", d#boardLamplight), boardNightBase = color("boardNightBase", d#boardNightBase),
-          bloomThreshold = num("bloomThreshold", d#bloomThreshold), bloomSize = num("bloomSize", d#bloomSize) }
+          bloomThreshold = num("bloomThreshold", d#bloomThreshold), bloomSize = num("bloomSize", d#bloomSize),
+          lanternCore = color("lanternCore", d#lanternCore), lanternEdge = color("lanternEdge", d#lanternEdge), haloColor = color("haloColor", d#haloColor),
+          haloSize = num("haloSize", d#haloSize), haloGlow = num("haloGlow", d#haloGlow), haloFalloff = num("haloFalloff", d#haloFalloff) }
 
     /// 地面を這う高さの霧の欄（長さは m・speed は [x, z] の m/秒）。
     def heightFogOf(h: Map[String, Json]): PostStack.HeightFog =
