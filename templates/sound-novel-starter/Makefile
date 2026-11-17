@@ -53,10 +53,13 @@ showcase-video:
 # 縦の分は debug/video/<名前>-phone で撮り、debug/tape/<名前> の tape-phone.json・video-phone.mp4 に置く（横は今までどおり tape.json・video.mp4）。
 # 片方だけ撮るなら TAPE_VIEWS=pc か TAPE_VIEWS=phone（1 つだけの時はその画面を tape.json・video.mp4 に置き、頁は切り替えのボタンを出さない）。
 # はじめから遊ぶ: 既定でゲームのブラウザ版も書き出し（bin/fge export-web）、各テープの play/ に写す。頁の上の「はじめから遊ぶ」がタイトルから開く。
+# 後始末: mp4 に束ねたら元のコマ（debug/video/<名前>[-phone]・1 本で 8 GB を超えることがある）を消す。残すなら TAPE_KEEP_FRAMES=1
+# （flow が途中で止まった時も残す）。同じ名前を撮り直す時は、前の debug/video・debug/tape の出力を先に消して置き換える。
 # 書き出さないなら TAPE_PLAY=0（頁はボタンを出さない）。書き出しの作業フォルダと出口は TAPE_WEB（既定 /tmp/fge-tape-web/<ゲームのフォルダ名>）。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
 TAPE_VIEWS = phone pc
 TAPE_PLAY = 1
+TAPE_KEEP_FRAMES = 0
 # WhyNot: 書き出しの作業フォルダをゲームの下（既定の build/web-export）にしない — 組んだ所のパスが wasm に残り、公開した頁からユーザー名が読める。
 TAPE_WEB = /tmp/fge-tape-web/$(notdir $(CURDIR))
 tape-play = $(if $(filter 1,$(TAPE_PLAY)),--play $(TAPE_WEB)/out)
@@ -70,6 +73,7 @@ tape-shoot = rm -rf debug/video/$(2) debug/video/$(2)-phone debug/tape/$(2); mkd
 	  test -f $$src/tape.json || { echo "tape: $$src/tape.json を書けなかった"; exit 1; }; \
 	  cp $$src/tape.json debug/tape/$(2)/tape$$suf.json; \
 	  { $(call flow-mp4,$$src,debug/tape/$(2)/video$$suf.mp4); } || exit 1; \
+	  test "$(TAPE_KEEP_FRAMES)" = 1 -o "$$code" = 1 || rm -rf $$src; \
 	done
 .PHONY: tape
 tape:

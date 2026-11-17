@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -55,7 +56,11 @@ const publishUsage = `使い方: bin/fge tape publish <テープのフォルダ>
   --init               目印の無い枝を初めて置き場にする（下の「置き場の目印」）
   --remote <url>       push 先の git の URL（既定 git@github.com:<owner/name>.git。
                        付けた時は GitHub の Pages の設定を確かめない）
-  --reindex            テープを置かずに、移し替えと 30 日の掃除と一覧の作り直しだけをする
+  --keep-videos <N|all>  同じゲームの同じ flow（分岐は組）で動画（video*.mp4）を残す版の数（既定 1・all は消さない・
+                       環境変数 FGE_TAPE_KEEP_VIDEOS でも指せる）。古い版は動画だけ外し、頁・tape.json・strip は
+                       残して頁の上に「動画は消えた・最新はこちら」を出す（渡した URL が開けなくなるのを避ける）。
+                       dry run が外す動画と大きさを出す。頁そのものは 30 日で外れる
+  --reindex            テープを置かずに、移し替えと 30 日の掃除と古い版の動画の掃除と一覧の作り直しだけをする
   --seed-from <file>   published.jsonl の行から、tapes.json に無い公開を一覧へ埋める（何度でも付けられる）。
                        渡したテープのフォルダの隣の published.jsonl は付けなくても読む
 
@@ -84,6 +89,8 @@ type PublishOptions struct {
 	Yes    bool
 	Wait   bool
 	Init   bool // 目印の無い既存の枝を置き場にしてよい
+	// KeepVideos は同じゲームの同じ flow で動画を残す版の数（0 は既定の 1・KeepAllVideos は消さない）。
+	KeepVideos int
 	// Reindex はテープを置かずに、移し替え・掃除・一覧の作り直しだけをする（Dirs は空）。
 	Reindex bool
 	// SeedFrom は tapes.json に無い公開を埋める published.jsonl。Dirs の隣の published.jsonl は付けなくても読む。
@@ -107,6 +114,7 @@ type PublishResult struct {
 	Entries []IndexEntry
 	Seeded  []string          // published.jsonl から埋めた件の乱数のフォルダ名
 	Dropped []string          // tapes.json から外した件（30 日を過ぎた・フォルダが無い）
+	Pruned  []PrunedVideo     // 古い版から動画だけ外した物
 	Files   map[string]string // 作り直した一覧（相対パス → 本文）
 	Paths   []string          // Files の書いた順
 	Pushed  bool
@@ -214,6 +222,14 @@ func RunPublish(args []string, stdout, stderr io.Writer) int {
 		opt.Repo = repo
 	}
 	opt.Now = time.Now()
+	if env := os.Getenv("FGE_TAPE_KEEP_VIDEOS"); env != "" && opt.KeepVideos == 0 {
+		n, err := parseKeepVideos(env)
+		if err != nil {
+			fmt.Fprintln(stderr, "tape publish: FGE_TAPE_KEEP_VIDEOS:", err)
+			return 2
+		}
+		opt.KeepVideos = n
+	}
 	if opt.Remote == "" {
 		opt.CheckPages = checkPagesWithGh
 	}
@@ -248,6 +264,17 @@ func RunPublish(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func parseKeepVideos(v string) (int, error) {
+	if v == "all" {
+		return KeepAllVideos, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("残す版の数は 1 以上の整数か all（受け取った値: %q）", v)
+	}
+	return n, nil
+}
+
 func parsePublishArgs(args []string) (PublishOptions, bool, error) {
 	opt := PublishOptions{Branch: DefaultBranch}
 	value := func(i *int, flag string) (string, error) {
@@ -271,6 +298,11 @@ func parsePublishArgs(args []string) (PublishOptions, bool, error) {
 			opt.Init = true
 		case a == "--reindex":
 			opt.Reindex = true
+		case a == "--keep-videos":
+			var v string
+			if v, err = value(&i, a); err == nil {
+				opt.KeepVideos, err = parseKeepVideos(v)
+			}
 		case a == "--seed-from":
 			var v string
 			v, err = value(&i, a)
@@ -469,6 +501,9 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	if err := updateIndex(site, opt, srcs, subs, &res, log); err != nil {
 		return res, err
 	}
+	if res.Pruned, err = pruneOldVideos(site, res.Entries, opt.KeepVideos); err != nil {
+		return res, err
+	}
 	if top, err := os.ReadDir(site); err == nil {
 		for _, e := range top {
 			switch e.Name() {
@@ -506,6 +541,7 @@ func Publish(opt PublishOptions) (PublishResult, error) {
 	}
 	fmt.Fprintf(log, "残す:   %d 本 %s\n", len(res.Kept), strings.Join(res.Kept, " "))
 	fmt.Fprintf(log, "外す:   %d 本 %s（%d 日を過ぎた物）\n", len(res.Removed), strings.Join(res.Removed, " "), KeepDays)
+	logPruned(log, res.Pruned, opt.KeepVideos)
 	fmt.Fprintf(log, "一覧:   %s に %d 件（埋めた: %s・外した: %s）\n", IndexJSON, len(res.Entries), orNone(res.Seeded), orNone(res.Dropped))
 	for _, e := range res.Entries {
 		if e.Unpushed {
