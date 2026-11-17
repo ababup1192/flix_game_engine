@@ -57,8 +57,10 @@ mod BuildVideo {
         let total = done + plan#holdSec;
         let n = Float64.round(total * Int32.toFloat64(fps())) |> Float64.tryToInt32 |> Option.getWithDefault(0);
         let dt = 1.0 / Int32.toFloat64(fps());
+        // WhyNot: 引きを時刻でなく輪の届いた割合で決める — 輪が加速して画面の外へ出る前にカメラが追いつくように
+        let reach = (t: Float64) -> Float64.pow(base = Num.clamp(0.0, 1.0, (t - plan#timing#startDelay) / r#buildSec), 1.0 / r#curve);
         let zoom = Vector.range(0, n) |> Vector.map(f -> {
-            let u = Num.clamp(0.0, 1.0, (Int32.toFloat64(f) * dt - plan#timing#startDelay) / Float64.max(0.1, done - plan#timing#startDelay));
+            let u = Num.clamp(0.0, 1.0, reach(Int32.toFloat64(f) * dt) / r#zoomLead);
             r#zoomFrom + (r#zoomTo - r#zoomFrom) * u * u * (3.0 - 2.0 * u)
         });
         { route = Route.make(m#height, at :: Nil, 1.0, 0.0), cameraX = Vector.map(_ -> x, zoom), cameraY = Vector.map(_ -> y, zoom),
@@ -126,7 +128,7 @@ mod BuildVideo {
                 match p#radial {
                     case Some(r) =>
                         let at = List.head(p#path) |> Option.getWithDefault({ col = 13, row = 15, wait = 0.0 });
-                        make(Buildup.radialFront(p#timing, at#col, at#row, m#width, m#height, r#buildSec, r#curve, r#jitter))
+                        make(Buildup.radialFront(p#timing, at#col, at#row, m#width, m#height, r))
                             |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = standTrackOf(m, look, p, r, show#done) })
                     case None =>
                         let tr = trackOf(m, look, p);
@@ -141,7 +143,7 @@ mod BuildVideo {
             let t = Int32.toFloat64(f) * dt;
             (t, Int32.toFloat64(m#height) - 0.5 - snd(fst(Route.pointAt(tr#route, Route.distanceAt(tr#route, t)))))
         });
-        { cellTime = (_c: Int32, r: Int32) -> Buildup.rowTimeOf(p#timing, leaderRows, r), monumentAt = None }
+        { cellTime = (_c: Int32, r: Int32) -> Buildup.rowTimeOf(p#timing, leaderRows, r), monumentAt = None, pace = _ -> 1.0 }
 
     /// コマ f の出来た物（staticGroup へまとめる鍵と物）。
     pub def settledAt(st: Setup, f: Int32): List[(String, Scene3d.Instance3d)] =

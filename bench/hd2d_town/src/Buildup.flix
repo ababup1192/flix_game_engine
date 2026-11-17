@@ -21,20 +21,32 @@ mod Buildup {
                               wallRise = Float64, roofDelay = Float64, roofFall = Float64, roofHeight = Float64,
                               openingDelay = Float64, openingStep = Float64, pop = Float64, dust = Float64, dustScale = Float64 }
 
-    /// 前線（マスごとに出来始める時刻）。cellTime = 列・行 → 時刻・monumentAt = 目印が降り始める時刻（None ならそのマスの時刻のすぐ後）。
-    pub type alias Front = { cellTime = Int32 -> Int32 -> Float64, monumentAt = Option[Float64] }
+    /// 前線（マスごとに出来始める時刻）。cellTime = 列・行 → 時刻・monumentAt = 目印が降り始める時刻（None ならそのマスの時刻のすぐ後）・
+    /// pace = 出始める時刻 → 部品の動きの秒の倍率（大きいほどゆっくり。土ぼこりの粒はその逆数の倍）。
+    pub type alias Front = { cellTime = Int32 -> Int32 -> Float64, monumentAt = Option[Float64], pace = Float64 -> Float64 }
 
-    /// 立つ点から輪が広がる前線。輪は buildSec 秒で一番遠いマスへ届き、curve 乗で外ほど速く広がる。目印は最後のマスの後に降る。
-    /// col・row = 立つマス・width・height = 地図の大きさ。マスごとに ±jitter 秒ずらしてそろい過ぎを崩す。
-    pub def radialFront(tm: Timing, col: Int32, row: Int32, width: Int32, height: Int32, buildSec: Float64, curve: Float64, jitter: Float64): Front =
+    /// 部品の動きの秒を k 倍にした決まり（土ぼこりの粒は 1/k 倍）。
+    pub def paced(tm: Timing, k: Float64): Timing =
+        { rise = tm#rise * k, fall = tm#fall * k, squash = tm#squash * k, monumentFall = tm#monumentFall * k,
+          wallRise = tm#wallRise * k, roofDelay = tm#roofDelay * k, roofFall = tm#roofFall * k, openingDelay = tm#openingDelay * k,
+          openingStep = tm#openingStep * k, pop = tm#pop * k, dustScale = tm#dustScale / k | tm }
+
+    /// 立つ点から輪が広がる前線。輪は r#buildSec 秒で一番遠いマスへ届き、届く距離は時間の 1/r#curve 乗で増える（curve が 1 より小さいほど、はじめはゆっくりで後ほど速い）。
+    /// 部品の動きの秒は r#paceFrom 倍から r#paceTo 倍へ、輪の進みに合わせて替える。目印は最後のマスの後に降る。
+    /// col・row = 立つマス・width・height = 地図の大きさ。マスごとに ±r#jitter 秒ずらしてそろい過ぎを崩す。
+    pub def radialFront(tm: Timing, col: Int32, row: Int32, width: Int32, height: Int32, r: Radial): Front =
         let far = List.foldLeft((a, cr) -> Float64.max(a, distanceOf(col, row, fst(cr), snd(cr))), 1.0,
                                 (0, 0) :: (width - 1, 0) :: (0, height - 1) :: (width - 1, height - 1) :: Nil);
-        let at = (c: Int32, r: Int32) -> {
-            let u = distanceOf(col, row, c, r) / far;
-            let wobble = (Int32.toFloat64(Int32.modulo(c * 73 + r * 151, 17)) / 16.0 - 0.5) * 2.0 * jitter;
-            Float64.max(tm#startDelay, tm#startDelay + buildSec * Float64.pow(base = u, curve) + wobble)
+        let at = (c: Int32, rr: Int32) -> {
+            let u = distanceOf(col, row, c, rr) / far;
+            let wobble = (Int32.toFloat64(Int32.modulo(c * 73 + rr * 151, 17)) / 16.0 - 0.5) * 2.0 * r#jitter * u;
+            Float64.max(tm#startDelay, tm#startDelay + r#buildSec * Float64.pow(base = u, r#curve) + wobble)
         };
-        { cellTime = at, monumentAt = Some(tm#startDelay + buildSec + jitter + 0.25) }
+        let pace = (t: Float64) -> {
+            let u = Num.clamp(0.0, 1.0, (t - tm#startDelay) / r#buildSec);
+            r#paceFrom + (r#paceTo - r#paceFrom) * u
+        };
+        { cellTime = at, monumentAt = Some(tm#startDelay + r#buildSec + r#jitter + 0.25), pace = pace }
 
     def distanceOf(c0: Int32, r0: Int32, c: Int32, r: Int32): Float64 =
         let dx = Int32.toFloat64(c - c0);
@@ -44,17 +56,17 @@ mod Buildup {
     /// 部品 1 つ（同じ持ち主・同じ材質の面を 1 つの形にした物）。base = 持ち主の部品の足元の真ん中（engine の座標）・
     /// center = この形の真ん中・start = 出始める時刻・plain = 窓と扉が出る前に貼る壁の形と材質。
     pub type alias Piece = { owner = Owner, key = String, mesh = Mesh3d.Mesh3d, material = Scene3d.Material3d, base = Vec3.Vec3, center = Vec3.Vec3,
-                             start = Float64, plain = Option[(Mesh3d.Mesh3d, Scene3d.Material3d)] }
+                             start = Float64, plain = Option[(Mesh3d.Mesh3d, Scene3d.Material3d)], timing = Timing }
 
     def placed(world: Mat4.Mat4, mesh: Mesh3d.Mesh3d, material: Scene3d.Material3d): Scene3d.Instance3d =
         Scene3d.meshInstance(mesh, world) |> Scene3d.withMaterial(material)
 
     /// 板の物 1 枚の出し方。land = 着地する時刻。
-    pub type alias BoardPiece = { board = Board, billboard = Scene3d.Billboard3d, start = Float64, land = Float64 }
+    pub type alias BoardPiece = { board = Board, billboard = Scene3d.Billboard3d, start = Float64, land = Float64, timing = Timing }
 
     /// 読み込みで 1 回作る物。fixed = はじめからある物（地図の外と、まだ出来ていないマスの下の低い地面）・done = 全部出来た後の時刻。
     pub type alias Show = { timing = Timing, pieces = Vector[Piece], boards = List[BoardPiece], fixed = Scene3d.StaticGroup,
-                            dustTexture = String, done = Float64, landings = List[(Vec3.Vec3, Float64, Bool)] }
+                            dustTexture = String, done = Float64, landings = List[(Vec3.Vec3, Float64, Bool, Float64)] }
 
     pub def defaultTiming(): Timing =
         { lead = 5.5, afterRowsPerSec = 4.0, rippleSec = 0.12, startDelay = 0.2,
@@ -143,8 +155,9 @@ mod Buildup {
                         |> Option.map(pm -> (pm, fst(mt))))
                 case _ => None
             };
+            let own = paced(tm, front#pace(startOf(tm, front, m, openingOrder, o)));
             { owner = o, key = "${o}:${material}", mesh = mesh, material = mat,
-              base = base, center = center, start = startOf(tm, front, m, openingOrder, o), plain = plain }
+              base = base, center = center, start = startOf(own, front, m, openingOrder, o), plain = plain, timing = own }
         };
         let byOwnerMaterial = moving |> List.foldLeft((acc, q) -> Map.insertWith((fresh, old) -> List.append(fresh, old), (q#owner, q#material), q :: Nil, acc), Map.empty());
         let pieces = byOwnerMaterial |> Map.toList |> List.map(entry -> { let ((o, mat), qs) = entry; pieceOf(o, mat, qs) }) |> Result.sequence;
@@ -159,20 +172,21 @@ mod Buildup {
         });
         let boardPieces = boards |> List.filterMap(b -> billboardOf(b) |> Option.map(bb -> {
             let start = startOf(tm, front, m, Map.empty(), b#owner);
-            { board = b, billboard = bb, start = start, land = if (b#owner == Owner.Fixed) 0.0 else start + tm#fall }
+            let own = paced(tm, front#pace(start));
+            { board = b, billboard = bb, start = start, land = if (b#owner == Owner.Fixed) 0.0 else start + own#fall, timing = own }
         }));
         pieces |> Result.map(ps -> {
             let landings = List.append(
                 ps |> List.filterMap(p -> match p#owner {
-                    case Owner.Prop(_, _)     => Some((p#owner, (p#base, p#start + tm#fall, false)))
-                    case Owner.Monument(_, _) => Some((p#owner, (p#base, p#start + tm#monumentFall, true)))
+                    case Owner.Prop(_, _)     => Some((p#owner, (p#base, p#start + p#timing#fall, false, p#timing#dustScale)))
+                    case Owner.Monument(_, _) => Some((p#owner, (p#base, p#start + p#timing#monumentFall, true, p#timing#dustScale)))
                     case _                    => None
                 }) |> List.toMap |> Map.valuesOf,
                 boardPieces |> List.filter(bp -> bp#board#owner != Owner.Fixed)
-                    |> List.map(bp -> (Vec3.v3(bp#board#x, bp#board#z, bp#board#y), bp#land, false)));
-            let done = List.foldLeft((a, p) -> Float64.max(a, endOf(tm, p#start, p#owner)), 0.0, ps);
+                    |> List.map(bp -> (Vec3.v3(bp#board#x, bp#board#z, bp#board#y), bp#land, false, bp#timing#dustScale)));
+            let done = List.foldLeft((a, p) -> Float64.max(a, endOf(p#timing, p#start, p#owner)), 0.0, ps);
             { timing = tm, pieces = List.toVector(ps), boards = boardPieces, fixed = Scene3d.staticGroup("outside", fixedItems),
-              dustTexture = Texture3d.name(dust), done = Float64.max(done, List.foldLeft((a, bp) -> Float64.max(a, bp#land + tm#squash), 0.0, boardPieces)),
+              dustTexture = Texture3d.name(dust), done = Float64.max(done, List.foldLeft((a, bp) -> Float64.max(a, bp#land + bp#timing#squash), 0.0, boardPieces)),
               landings = landings }
         })
 
@@ -251,13 +265,13 @@ mod Buildup {
 
     /// 時刻 t の部品の分け方と、板の物（位置とつぶれ）と、板の足元の影（点・幅・大きさの割合）。
     pub def frameAt(show: Show, t: Float64): Frame =
-        let tm = show#timing;
         let ps = Vector.toList(show#pieces);
-        let settled = ps |> List.filter(isSettled(tm, t)) |> List.map(p -> (p#key, placed(Mat4.identity(), p#mesh, p#material)));
-        let moving = ps |> List.filter(p -> not isSettled(tm, t, p)) |> List.flatMap(p ->
-            List.append(pieceWorld(tm, t, p) |> Option.map(w -> placed(w, p#mesh, p#material)) |> Option.toList,
-                        p#plain |> Option.flatMap(pl -> plainWorld(tm, show, t, p) |> Option.map(w -> placed(w, fst(pl), snd(pl)))) |> Option.toList));
+        let settled = ps |> List.filter(p -> isSettled(p#timing, t, p)) |> List.map(p -> (p#key, placed(Mat4.identity(), p#mesh, p#material)));
+        let moving = ps |> List.filter(p -> not isSettled(p#timing, t, p)) |> List.flatMap(p ->
+            List.append(pieceWorld(p#timing, t, p) |> Option.map(w -> placed(w, p#mesh, p#material)) |> Option.toList,
+                        p#plain |> Option.flatMap(pl -> plainWorld(p#timing, show, t, p) |> Option.map(w -> placed(w, fst(pl), snd(pl)))) |> Option.toList));
         let boards = show#boards |> List.filter(bp -> t >= bp#start) |> List.map(bp -> {
+            let tm = bp#timing;
             let (dy, sy, sxz) = dropOf(t, bp#start, tm#fall, tm#fallHeight, tm#squash);
             let f = Scene3d.billboardFieldsOf(bp#billboard);
             let shrink = clamp01((t - bp#start) / tm#fall);
@@ -271,10 +285,10 @@ mod Buildup {
     /// 着地した所から広がる土ぼこり（ドット絵の丸い粒を α で切る板・光を当てない）。
     def dustAt(show: Show, t: Float64): List[Scene3d.Billboard3d] =
         let tm = show#timing;
-        show#landings |> List.filter(l -> { let (_, at, _) = l; t >= at and t < at + tm#dust }) |> List.flatMap(l -> {
-            let (p, at, big) = l;
+        show#landings |> List.filter(l -> { let (_, at, _, _) = l; t >= at and t < at + tm#dust }) |> List.flatMap(l -> {
+            let (p, at, big, dustScale) = l;
             let tau = (t - at) / tm#dust;
-            let count = Float64.round((if (big) 10.0 else 6.0) * tm#dustScale) |> Float64.tryToInt32 |> Option.getWithDefault(6);
+            let count = Float64.round((if (big) 10.0 else 6.0) * dustScale) |> Float64.tryToInt32 |> Option.getWithDefault(6);
             let reach = if (big) 1.8 else 1.0;
             let size = (if (big) 0.6 else 0.36) * (1.0 - tau) + 0.05;
             List.range(0, count) |> List.map(k -> {
@@ -289,8 +303,8 @@ mod Buildup {
     /// 時刻 t のカメラの揺れ（目印の石の柱の着地から減っていく上下の揺れ・m）。
     pub def shakeAt(show: Show, t: Float64): Float64 =
         let tm = show#timing;
-        show#landings |> List.filter(l -> { let (_, _, big) = l; big }) |> List.foldLeft((acc, l) -> {
-            let (_, at, _) = l;
+        show#landings |> List.filter(l -> { let (_, _, big, _) = l; big }) |> List.foldLeft((acc, l) -> {
+            let (_, at, _, _) = l;
             let tau = t - at;
             if (tau < 0.0 or tau > tm#shake) acc
             else acc + tm#shakeAmp * Float64.pow(base = 2.718281828459045, -8.0 * tau) * Num.sin(2.0 * Num.pi() * 9.0 * tau)
@@ -322,8 +336,10 @@ mod Buildup {
                             idleFrameSec = Float64, idlePhaseSec = Float64, radial = Option[Radial] }
 
     /// 立ったまま輪で町が出来る台本の決まり。buildSec・curve・jitter = Buildup.radialFront の値・
-    /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・出来始めから全部出来るまでになめらかに替える）・spread = 横に並ぶ間（m）。
-    pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, spread = Float64 }
+    /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・輪の届いた距離に合わせる）・zoomLead = カメラが輪より先に引き終える割合（0.85 なら輪が 85% 届いた所で引き終える）・
+    /// paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり）・spread = 横に並ぶ間（m）。
+    pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, zoomLead = Float64,
+                              paceFrom = Float64, paceTo = Float64, spread = Float64 }
 
     /// 止まっている間の動き。Breath = 息遣い（縦に少し伸び縮み）・Step = 足踏み（歩きのコマをゆっくりその場で）。
     pub enum Idle with Eq {
@@ -388,7 +404,8 @@ mod Buildup {
     def radialOf(m: Map[String, Json]): Radial =
         let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, m);
         { buildSec = num("buildSec", 4.5), curve = num("curve", 0.85), jitter = num("jitter", 0.06),
-          zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), spread = num("spread", 0.95) }
+          zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), zoomLead = num("zoomLead", 0.85),
+          paceFrom = num("paceFrom", 1.0), paceTo = num("paceTo", 1.0), spread = num("spread", 0.95) }
 
     def idleOf(name: String): Idle = match name {
         case "step" => Idle.Step
