@@ -20,7 +20,7 @@ mod TestCast {
 
     /// 項目の既定の表情と位置。
     def entry(kind: Kind, name: String): CastDoc.Entry \ Fs.FileRead =
-        CastDoc.entryOf(kind, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil, layer = 0, attach = CastDoc.Attach.Screen, markers = Map.empty(), hideWindow = false, speakFx = None })
+        CastDoc.entryOf(kind, name, doc()) |> Option.getWithDefault({ label = "", aspect = 0.0, scale = 0.0, face = "", slot = "", faces = Nil, layer = 0, attach = CastDoc.Attach.Screen, markers = Map.empty(), hideWindow = false, speakFx = None, onPage = None })
 
     /// コマンド 1 つ（<<name args…>>）。
     def command(name: String, args: List[String]): Yarn.Command =

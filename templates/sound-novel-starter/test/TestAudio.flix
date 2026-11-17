@@ -2,7 +2,7 @@
 // 写真・時間帯・音量の名前・粒の名前は Doc（novel.backdrops.json・novel.mixer.json・novel.effects.json）から引き、期待値は Doc から導く。
 mod TestAudio {
 
-    use fge::{Clock, Render, Yarn}
+    use fge::{Clock, Curve, DocJson, JsonCodec, Render, Yarn}
     use Commands.Out
     use TestKit.{advance, begun, stepBy}
 
@@ -35,6 +35,34 @@ mod TestAudio {
     def testOmittedTransitionComesFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
         Assert.assertEq(expected = BackdropDoc.rec(res()#backdrops)#defaultTransition, bg(Nil)#switch#transition)
 
+    /// novel.backdrops.json の defaultSeconds・defaultEase を替えた描く元で <<bg>> を当てた舞台。
+    def bgWithDefaults(seconds: Float64, ease: Curve.Ease, args: List[String]): Stage.Stage \ Fs.FileRead =
+        let base = res();
+        let r = base |> Res.withBackdrops(BackdropDoc.Doc.Doc({ defaultSeconds = seconds, defaultEase = ease | BackdropDoc.rec(base#backdrops) }));
+        executed(r, 0.0, "bg", photo() :: "grade=${grade()}" :: args, Stage.empty()) |> Result.map(fst) |> Result.getWithDefault(Stage.empty())
+
+    @Test
+    def testOmittedTimeComesFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = 3.0, bgWithDefaults(3.0, Curve.Ease.Linear, Nil)#fadeSeconds)
+
+    @Test
+    def testWrittenTimeWinsOverTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = 0.5, bgWithDefaults(3.0, Curve.Ease.Linear, "time=0.5" :: Nil)#fadeSeconds)
+
+    @Test
+    def testOmittedEaseComesFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Curve.Ease.InOutSine, bgWithDefaults(1.0, Curve.Ease.InOutSine, Nil)#switch#ease)
+
+    @Test
+    def testWrittenEaseWinsOverTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Curve.Ease.OutQuad, bgWithDefaults(1.0, Curve.Ease.InOutSine, "ease=outQuad" :: Nil)#switch#ease)
+
+    @Test
+    def testBgDefaultsAreReadFromTheDoc(): Unit \ Assert =
+        let text = "{\"version\": 1, \"photos\": {}, \"grades\": {}, \"defaultSeconds\": 2.5, \"defaultEase\": \"inOutQuad\"}";
+        let read = BackdropDoc.fromJson(text) |> Option.map(d -> (BackdropDoc.rec(d)#defaultSeconds, BackdropDoc.rec(d)#defaultEase));
+        Assert.assertEq(expected = Some((2.5, Curve.Ease.InOutQuad)), read)
+
     @Test
     def testTransitionIsKeptOnTheStage(): Unit \ {Assert, Fs.FileRead} =
         Assert.assertEq(expected = BackdropDoc.Transition.Slide, bg("transition=slide" :: Nil)#switch#transition)
@@ -60,6 +88,49 @@ mod TestAudio {
             case _                                                           => None
         });
         Assert.assertTrue(lefts |> List.exists(x -> x > 0.0))
+
+    @Test
+    def testDocBlackHoldKeepsTheScreenDark(): Unit \ {Assert, Fs.FileRead} =
+        // novel.backdrops.json の black が 0.25・0.5・0.25 なら、2 秒の暗転の 1.4 秒目（進み 0.7）はまだ真っ暗の覆い（既定の形なら 0.6）。
+        let base = res();
+        let r = base |> Res.withBackdrops(BackdropDoc.Doc.Doc({ black = { fadeOut = 0.25, hold = 0.5, fadeIn = 0.25 } | BackdropDoc.rec(base#backdrops) }));
+        let start = executed(r, 0.0, "bg", photo() :: "grade=${grade()}" :: "transition=cut" :: Nil, Stage.empty()) |> Result.map(fst) |> Result.getWithDefault(Stage.empty());
+        let st = executed(r, 1.0, "bg", photo() :: "transition=black" :: "time=2" :: Nil, start) |> Result.map(fst) |> Result.getWithDefault(start);
+        let env = { storyNow = t(2.4) | View.envOf(Layout.Fit.Regular, r, TestKit.w0(r)) };
+        let veils = ViewStage.frame(env, st, true) |> List.filterMap(placed -> match placed#item {
+            case Render.Item.Box(b) if b#zIndex >= View.zWorldStride() => Some(b#alpha)
+            case _                                                    => None
+        });
+        Assert.assertTrue(veils |> List.exists(a -> TestKit.near(1.0, a)))
+
+    @Test
+    def testSchemaEaseNamesAreTheCurveTable(): Unit \ {Assert, Fs.FileRead} =
+        // スキーマの曲線の名前の一覧（novel.cast.json の fadeEase の enum）が Curve.easeTable と同じ並び（Studio のフォームで選べる名前）。
+        let names = Fs.FileRead.read("assets/cast.schema.json") |> Result.toOption
+            |> Option.flatMap(text -> DocJson.decodeObject(root -> root, text))
+            |> Option.flatMap(Map.get("sections")) |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(Map.get("fadeEase"))
+            |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(Map.get("type")) |> Option.flatMap(JsonCodec.expectObject)
+            |> Option.flatMap(Map.get("enum")) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString));
+        Assert.assertEq(expected = Some(Curve.easeTable() |> List.map(fst)), names)
+
+    @Test
+    def testBlackoutHoldsDarkForItsShare(): Unit \ Assert =
+        // fadeOut 0.4・hold 0.2・fadeIn 0.4 の暗転は、進み 0.55 でまだ真っ暗。
+        Assert.assertEq(expected = 1.0, BackdropDoc.blackoutDarknessOf({ fadeOut = 0.4, hold = 0.2, fadeIn = 0.4 }, 0.55))
+
+    @Test
+    def testDefaultBlackoutIsHalfDarkAtAQuarter(): Unit \ Assert =
+        Assert.assertTrue(TestKit.near(0.5, BackdropDoc.blackoutDarknessOf(BackdropDoc.defaultBlackout(), 0.25)))
+
+    @Test
+    def testBlackoutSwapsThePhotoInTheMiddleOfTheHold(): Unit \ Assert =
+        Assert.assertTrue(TestKit.near(0.5, BackdropDoc.blackoutSwapAt({ fadeOut = 0.3, hold = 0.4, fadeIn = 0.3 })))
+
+    @Test
+    def testBlackoutIsReadFromTheDoc(): Unit \ Assert =
+        let text = "{\"version\": 1, \"photos\": {}, \"grades\": {}, \"black\": {\"hold\": 0.3}}";
+        let hold = BackdropDoc.fromJson(text) |> Option.map(d -> BackdropDoc.rec(d)#black#hold);
+        Assert.assertEq(expected = Some(0.3), hold)
 
     @Test
     def testBlackCoversTheScreenHalfway(): Unit \ {Assert, Fs.FileRead} =

@@ -15,12 +15,12 @@ mod Cast {
     /// 下に敷いた形と、その濃さ（敷いた時に見えていた濃さのまま変えない）。
     pub type alias Under = { figure = Figure, alpha = Float64 }
 
-    /// 出ている物。now = 今の形、before = 同じ位置で表情を替えている間だけ下に敷く前の形、startedAt / seconds = 重ね始めた物語の時刻と長さ。
-    pub type alias Shown = { kind = Kind, now = Figure, before = Option[Under], startedAt = Clock.Time[Stage.Story], seconds = Float64 }
+    /// 出ている物。now = 今の形、before = 同じ位置で表情を替えている間だけ下に敷く前の形、startedAt / seconds / ease = 重ね始めた物語の時刻と長さと濃さの曲線。
+    pub type alias Shown = { kind = Kind, now = Figure, before = Option[Under], startedAt = Clock.Time[Stage.Story], seconds = Float64, ease = Curve.Ease }
 
     /// 消えていく物（消した・同じ位置に別の物が来た・位置を替えた前の位置）。alpha = 消え始めた時に見えていた濃さ（そこから 0 へ）。
     /// startedAt が先の時刻なら、その時刻まではその濃さのまま残る（<<move 名 to=…>> が端の外へ着いた時に消す）。
-    pub type alias Leaving = { kind = Kind, figure = Figure, alpha = Float64, startedAt = Clock.Time[Stage.Story], seconds = Float64 }
+    pub type alias Leaving = { kind = Kind, figure = Figure, alpha = Float64, startedAt = Clock.Time[Stage.Story], seconds = Float64, ease = Curve.Ease }
 
     /// 層。shown = 出ている物（出した順。描く時は Doc の layer で並べ直す）、leaving = 消えていく物。
     pub type alias Layer = { shown = List[Shown], leaving = List[Leaving] }
@@ -31,11 +31,11 @@ mod Cast {
     /// 省いた語。face / slot が真なら、その物がもう出ていれば今の表情 / 位置のまま（出ていなければ Figure に入れた Doc の既定）。
     pub type alias Keep = { face = Bool, slot = Bool }
 
-    /// 出す時の意味。exclusive = figure の位置が 1 つしか立てない位置か。
-    pub type alias ShowCue = { kind = Kind, figure = Figure, keep = Keep, seconds = Float64, exclusive = Bool }
+    /// 出す時の意味。exclusive = figure の位置が 1 つしか立てない位置か、ease = 濃さの曲線（novel.cast.json の fadeEase か ease=）。
+    pub type alias ShowCue = { kind = Kind, figure = Figure, keep = Keep, seconds = Float64, exclusive = Bool, ease = Curve.Ease }
 
-    /// 消す時の意味。name が None なら全部。delay 秒の後から seconds 秒で消す。
-    pub type alias HideCue = { name = Option[String], seconds = Float64, delay = Float64 }
+    /// 消す時の意味。name が None なら全部。delay 秒の後から seconds 秒で、ease の濃さの曲線で消す。
+    pub type alias HideCue = { name = Option[String], seconds = Float64, delay = Float64, ease = Curve.Ease }
 
     /// コマンド 1 つの意味。Show = 出す・表情や位置を替える、Hide = 消す。
     pub enum Cue {
@@ -70,23 +70,30 @@ mod Cast {
                 else {
                     let figure = { name = name, face = Option.getWithDefault(entry#face, face), slot = Option.getWithDefault(entry#slot, slot) };
                     Ok(Cue.Show({ kind = kind, figure = figure, keep = { face = Option.isEmpty(face), slot = Option.isEmpty(slot) },
-                                  seconds = secondsOr(d, seconds), exclusive = Map.get(figure#slot, d#slots) |> Option.exists(s -> s#exclusive) }))
+                                  seconds = secondsOr(d, seconds), exclusive = Map.get(figure#slot, d#slots) |> Option.exists(s -> s#exclusive), ease = d#fadeEase }))
                 }
         }
 
     /// その人（か小物）を delay 秒の後から消す。
     pub def hideCue(doc: CastDoc.Doc, name: String, seconds: Option[Float64], delay: Float64): Result[String, Cue] =
-        kindOf(doc, name) |> Option.map(_ -> Cue.Hide({ name = Some(name), seconds = secondsOr(CastDoc.rec(doc), seconds), delay = delay }))
+        kindOf(doc, name) |> Option.map(_ -> Cue.Hide({ name = Some(name), seconds = secondsOr(CastDoc.rec(doc), seconds), delay = delay, ease = CastDoc.rec(doc)#fadeEase }))
             |> Option.toOk("知らない人物か小物 '${name}'")
 
     /// 人物と小物を全部消す。
     pub def hideAllCues(doc: CastDoc.Doc, seconds: Option[Float64]): List[Cue] =
-        Cue.Hide({ name = None, seconds = secondsOr(CastDoc.rec(doc), seconds), delay = 0.0 }) :: Nil
+        Cue.Hide({ name = None, seconds = secondsOr(CastDoc.rec(doc), seconds), delay = 0.0, ease = CastDoc.rec(doc)#fadeEase }) :: Nil
 
     /// 位置 slot に出ている物を全部消す。
     pub def hideAtCues(doc: CastDoc.Doc, slot: String, seconds: Option[Float64], layer: Layer): List[Cue] =
         let s = secondsOr(CastDoc.rec(doc), seconds);
-        layer#shown |> List.filter(x -> x#now#slot == slot) |> List.map(x -> Cue.Hide({ name = Some(x#now#name), seconds = s, delay = 0.0 }))
+        let e = CastDoc.rec(doc)#fadeEase;
+        layer#shown |> List.filter(x -> x#now#slot == slot) |> List.map(x -> Cue.Hide({ name = Some(x#now#name), seconds = s, delay = 0.0, ease = e }))
+
+    /// 命令の ease= で、出し入れの濃さの曲線を替えた意味（novel.cast.json の fadeEase の代わりに使う）。
+    pub def withCueEase(ease: Curve.Ease, cue: Cue): Cue = match cue {
+        case Cue.Show(c) => Cue.Show({ ease = ease | c })
+        case Cue.Hide(c) => Cue.Hide({ ease = ease | c })
+    }
 
     /// cues が消す物の名前（今の層で出ている物のうち）。
     pub def hiddenNamesOf(cues: List[Cue], layer: Layer): List[String] =
@@ -138,11 +145,11 @@ mod Cast {
 
     pub def sameFigure(a: Figure, b: Figure): Bool = a#name == b#name and a#face == b#face and a#slot == b#slot
 
-    def entering(kind: Kind, now: Clock.Time[Stage.Story], figure: Figure, seconds: Float64): Shown =
-        { kind = kind, now = figure, before = None, startedAt = now, seconds = seconds }
+    def entering(kind: Kind, now: Clock.Time[Stage.Story], figure: Figure, seconds: Float64, ease: Curve.Ease): Shown =
+        { kind = kind, now = figure, before = None, startedAt = now, seconds = seconds, ease = ease }
 
     /// 今の形の濃さ（出てくる途中なら 0 と 1 の間）。
-    def nowAlphaOf(now: Clock.Time[Stage.Story], shown: Shown): Float64 = easedOf(progressOf(now, shown#startedAt, shown#seconds))
+    def nowAlphaOf(now: Clock.Time[Stage.Story], shown: Shown): Float64 = easedOf(shown#ease, progressOf(now, shown#startedAt, shown#seconds))
 
     /// いちばん濃く見えている形とその濃さ（表情を替えている途中なら、まだ下の形の方が濃いことがある）。
     def visibleOf(now: Clock.Time[Stage.Story], shown: Shown): Under =
@@ -154,33 +161,33 @@ mod Cast {
 
     /// 消えていく物にする。見えている濃さから 0 へ消す（出てくる途中で消しても一度濃くしない）。
     /// 表情を替えている途中なら、下に敷いた形もその濃さから消す。秒も delay も 0 ならその場で消すので残さない。
-    def leave(now: Clock.Time[Stage.Story], seconds: Float64, delay: Float64, shown: Shown): List[Leaving] =
+    def leave(now: Clock.Time[Stage.Story], seconds: Float64, delay: Float64, ease: Curve.Ease, shown: Shown): List[Leaving] =
         let startsAt = Clock.after(Float64.max(0.0, delay), now);
-        let going = (under: Under) -> { kind = shown#kind, figure = under#figure, alpha = under#alpha, startedAt = startsAt, seconds = seconds };
+        let going = (under: Under) -> { kind = shown#kind, figure = under#figure, alpha = under#alpha, startedAt = startsAt, seconds = seconds, ease = ease };
         let top = { figure = shown#now, alpha = nowAlphaOf(now, shown) };
         if (seconds <= 0.0 and delay <= 0.0) Nil
         else List.map(going, (shown#before |> Option.toList) ::: (top :: Nil)) |> List.filter(l -> l#alpha > 0.0)
 
     /// 同じ位置で表情を替える: 見えている形を、見えている濃さのまま下に敷き、新しい形を上から重ねる
     /// （前の形を濃さ 1 で敷くと、出てくる途中に替えた時に急に濃くなる）。形が同じなら何もしない。
-    def recast(now: Clock.Time[Stage.Story], figure: Figure, seconds: Float64, shown: Shown): Shown =
-        if (sameFigure(shown#now, figure)) shown else { now = figure, before = Some(visibleOf(now, shown)), startedAt = now, seconds = seconds | shown }
+    def recast(now: Clock.Time[Stage.Story], figure: Figure, seconds: Float64, ease: Curve.Ease, shown: Shown): Shown =
+        if (sameFigure(shown#now, figure)) shown else { now = figure, before = Some(visibleOf(now, shown)), startedAt = now, seconds = seconds, ease = ease | shown }
 
     /// 出す: 出ていて位置が同じなら重ねて替え、そうでなければ前の位置の形（と、1 つしか立てない位置に出ている物）を消して新しく出す。
     def showFigure(now: Clock.Time[Stage.Story], c: ShowCue, layer: Layer): Layer =
         let current = layer#shown |> List.find(s -> s#now#name == c#figure#name);
         let target = resolve(current |> Option.map(s -> s#now), c#figure, c#keep);
         if (current |> Option.exists(s -> s#now#slot == target#slot))
-            { shown = layer#shown |> List.map(s -> if (s#now#name == target#name) recast(now, target, c#seconds, s) else s) | layer }
+            { shown = layer#shown |> List.map(s -> if (s#now#name == target#name) recast(now, target, c#seconds, c#ease, s) else s) | layer }
         else {
             let (out, kept) = List.partition(s -> s#now#name == target#name or (c#exclusive and s#now#slot == target#slot), layer#shown);
-            { shown = List.append(kept, entering(c#kind, now, target, c#seconds) :: Nil),
-              leaving = List.append(layer#leaving, out |> List.flatMap(leave(now, c#seconds, 0.0))) | layer }
+            { shown = List.append(kept, entering(c#kind, now, target, c#seconds, c#ease) :: Nil),
+              leaving = List.append(layer#leaving, out |> List.flatMap(leave(now, c#seconds, 0.0, c#ease))) | layer }
         }
 
     def hideWhere(now: Clock.Time[Stage.Story], c: HideCue, layer: Layer): Layer =
         let (out, kept) = List.partition(s -> c#name |> Option.forAll(n -> s#now#name == n), layer#shown);
-        { shown = kept, leaving = List.append(layer#leaving, out |> List.flatMap(leave(now, c#seconds, c#delay))) | layer }
+        { shown = kept, leaving = List.append(layer#leaving, out |> List.flatMap(leave(now, c#seconds, c#delay, c#ease))) | layer }
 
     /// 消え終わった物と、重ね終わった前の形を落とす。
     def prune(now: Clock.Time[Stage.Story], layer: Layer): Layer =
@@ -200,7 +207,7 @@ mod Cast {
 
     /// 残した形から、重ね終わった層を作る（人物 → 小物の順）。
     pub def layerOf(mark: Mark): Layer =
-        let shown = (kind, figure) -> { kind = kind, now = figure, before = None, startedAt = Clock.never(), seconds = 0.0 };
+        let shown = (kind, figure) -> { kind = kind, now = figure, before = None, startedAt = Clock.never(), seconds = 0.0, ease = Curve.Ease.InOutSine };
         { shown = List.append(mark#cast |> List.map(f -> shown(Kind.Character, f)), mark#props |> List.map(f -> shown(Kind.Prop, f))), leaving = Nil }
 
     def figureToJson(f: Figure): Json =
@@ -235,11 +242,12 @@ mod Cast {
         let since = Clock.since(startedAt, now);
         if (since < 0.0) 0.0 else if (seconds <= 0.0) 1.0 else Float64.min(1.0, since / seconds)
 
-    /// 進みを、出だしと終わりがゆっくりの濃さにする（0 → 0・1 → 1）。
-    def easedOf(progress: Float64): Float64 = 0.5 + Curve.sine(0.5, Num.pi(), Num.pi() * -0.5, progress)
+    /// 進みを ease の曲線の濃さにする（0 → 0・1 → 1）。
+    def easedOf(ease: Curve.Ease, progress: Float64): Float64 =
+        Curve.ease(ease, progress)
 
     /// 消えていく物の今の濃さ。
-    def leavingAlphaOf(now: Clock.Time[Stage.Story], l: Leaving): Float64 = l#alpha * (1.0 - easedOf(progressOf(now, l#startedAt, l#seconds)))
+    def leavingAlphaOf(now: Clock.Time[Stage.Story], l: Leaving): Float64 = l#alpha * (1.0 - easedOf(l#ease, progressOf(now, l#startedAt, l#seconds)))
 
     /// 人物がどれだけ出ているか（0〜1）: 見えている人物の濃さの最大。縦の頁の覆いを薄くする量に使う。背景に付く絵は数えない。
     pub def presenceOf(now: Clock.Time[Stage.Story], doc: CastDoc.Doc, layer: Layer): Float64 =

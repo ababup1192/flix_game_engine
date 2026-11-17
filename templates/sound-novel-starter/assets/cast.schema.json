@@ -12,6 +12,43 @@
       "max": 3,
       "default": 0.4
     },
+    "fadeEase": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "linear",
+          "smoothstep",
+          "inSine",
+          "outSine",
+          "inOutSine",
+          "inQuad",
+          "outQuad",
+          "inOutQuad",
+          "inCubic",
+          "outCubic",
+          "inOutCubic",
+          "inQuart",
+          "outQuart",
+          "inOutQuart",
+          "inExpo",
+          "outExpo",
+          "inOutExpo",
+          "inBack",
+          "outBack",
+          "inOutBack",
+          "inElastic",
+          "outElastic",
+          "inOutElastic",
+          "inBounce",
+          "outBounce",
+          "inOutBounce"
+        ]
+      },
+      "label": "出入りと入れ替えの濃さの曲線（<<show>> / <<hide>> の ease= を書くとその行だけ替わる）",
+      "group": "出し方",
+      "order": 1.5,
+      "default": "inOutSine"
+    },
     "slideDistance": {
       "kind": "field",
       "type": "float",
@@ -70,6 +107,17 @@
           },
           "label": "立ち絵を持たないが、話している間はほかの人物を暗くする話し手の id（声だけの人物・ゲームが自分で描く人物）",
           "order": 3
+        },
+        "narration": {
+          "type": {
+            "enum": [
+              "brighten",
+              "keep"
+            ]
+          },
+          "label": "地の文の行での明るさ（brighten = 全員を明るく戻す・keep = 前の台詞の話し手を強調したまま）",
+          "order": 4,
+          "default": "brighten"
         }
       }
     },
@@ -321,6 +369,16 @@
           "label": "<<speak 名前>> が markers の mouth から一度出す粒（novel.effects.json の puff の粒の名前。空なら出さない）",
           "order": 11,
           "default": ""
+        },
+        "onPage": {
+          "type": {
+            "enum": [
+              "overWindow",
+              "underWindow"
+            ]
+          },
+          "label": "頁の幕がある間のこの小物の重なり順（書かなければ一番上の propsOnPage）",
+          "order": 12
         }
       }
     }

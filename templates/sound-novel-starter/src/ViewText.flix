@@ -16,12 +16,13 @@ mod ViewText {
     /// centered = 改行（\n）で区切った行ごとに、1 行に収まる物を幅の中央にそろえる。
     pub type alias Style = { outline = Bool, centered = Bool }
 
-    /// 今の舞台の本文の置き方（縁取りはメッセージ枠の型の frame、揃えは <<text align=>>）。
+    /// 今の舞台の本文の置き方（縁取りはメッセージ枠の型の frame、揃えは <<text align=>>。書いていなければ型の align、それも無ければ左）。
     // WhyNot: 幅で折り返す行は中央にそろえない — 描く RichText に揃えの API が無く、折り目ごとに分けるには折り目の位置を RichText の外で引き直すことになる。
     //   折り返す行は幅いっぱいなので動かす量もほぼ無い。改行の切れ目は字で分かるので、そこでだけ分けて置く。
     def styleOf(window: ThemeDoc.Window, stage: Stage.Stage): Style =
         { outline = window#frame == ThemeDoc.WindowFrame.Outline,
-          centered = PropertyTween.nameEnd(Stage.textAlignKey(), stage#props) == Some("center") }
+          centered = (PropertyTween.nameEnd(Stage.textAlignKey(), stage#props) |> Option.flatMap(ThemeDoc.textAlignOf) |> Option.withDefault(default = window#align))
+                         == Some(ThemeDoc.TextAlign.Center) }
 
     /// sizes に今の舞台の字の大きさの倍率（<<text size=>>）を掛けた物。
     def scaled(env: Env, stage: Stage.Stage, sizes: { body = Float64, ruby = Float64 }): { body = Float64, ruby = Float64 } =

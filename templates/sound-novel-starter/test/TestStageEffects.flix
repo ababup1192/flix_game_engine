@@ -211,4 +211,45 @@ mod TestStageEffects {
     def testLeftAlignedLineStaysAtTheLeftEdge(): Unit \ {Assert, Fs.FileRead, IO} =
         let glyphs = placedGlyphs(None, "あいうえお\nき", Nil, 100.0);
         Assert.assertEq(expected = Some(Layout.nvlText()#x), glyphs |> List.find(match (s, _, _) -> s == "き") |> Option.map(match (_, x, _) -> x))
+
+    // ══ メッセージ枠の型の揃えの既定（novel.theme.json の windows.<型>.align） ══
+
+    /// 今の型（作例の始まりの型）に align を書いた描く元で、align 引数を舞台に書いた時の「き」の x。
+    def rowXWithWindowAlign(windowAlign: ThemeDoc.TextAlign, align: Option[String]): Option[Float64] \ {Fs.FileRead, IO} =
+        let r0 = res();
+        let w = TestKit.begun(r0);
+        let atlas = SceneRender.cfgOf(Layout.size(Layout.Fit.Regular), "debug", Map.empty())#fontAtlas;
+        World.readOf(w) |> Option.flatMap(r -> {
+            let name = fst(Stage.windowOf(r0#theme, r#stage));
+            let typed = { align = Some(windowAlign) | snd(Stage.windowOf(r0#theme, r#stage)) };
+            let theme = ThemeDoc.Doc.Doc({ windows = Map.insert(name, typed, ThemeDoc.rec(r0#theme)#windows) | ThemeDoc.rec(r0#theme) });
+            let r1 = r0 |> Res.withTheme(theme);
+            let line = Page.plainLine("あいうえお\nき", "a:1");
+            let page = { lines = Nil, current = Some(line), reveal = { text = "あいうえお\nき", shown = 100.0 } | r#page };
+            let props = align |> Option.map(a -> PropertyTween.setName(Stage.textAlignKey(), Some(a), t(0.0), 0.0, r#stage#props)) |> Option.getWithDefault(r#stage#props);
+            ViewText.textLayer(atlas, View.envOf(Layout.Fit.Regular, r1, w), { page = page, stage = { props = props | r#stage } | r })
+                |> List.filterMap(p -> match p#item {
+                       case Render.Item.Text(x) if x#zIndex == View.zText() + 1 and x#text == "き" => Some(p#at#x)
+                       case _                                                                      => None
+                   })
+                |> List.head
+        })
+
+    @Test
+    def testWindowAlignCenterCentersWithoutTextAlign(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertTrue(rowXWithWindowAlign(ThemeDoc.TextAlign.Center, None) |> Option.exists(x -> Float64.abs(x - middleOfTheNvlPage()) < 30.0))
+
+    @Test
+    def testTextAlignWinsOverTheWindowAlign(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertEq(expected = Some(Layout.nvlText()#x), rowXWithWindowAlign(ThemeDoc.TextAlign.Center, Some("left")))
+
+    @Test
+    def testWindowAlignIsReadFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
+        let theme = res()#theme;
+        let name = fst(Stage.windowOf(theme, Stage.emptyFor(theme)));
+        let text = Fs.FileRead.read(ThemeDoc.path()) |> Result.getWithDefault("{}")
+            |> String.replace(src = "\"${name}\": {", dst = "\"${name}\": { \"align\": \"center\",");
+        let read = ThemeDoc.fromJson(text) |> Option.map(d -> snd(ThemeDoc.windowOf(name, d))#align);
+        Assert.assertEq(expected = Some(Some(ThemeDoc.TextAlign.Center)), read)
+
 }

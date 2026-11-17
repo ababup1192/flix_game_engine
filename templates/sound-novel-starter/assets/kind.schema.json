@@ -189,6 +189,15 @@
         }
       }
     },
+    "windowFadeSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "time= を書かない <<window off>> で薄くなる秒と <<window on>> で戻る秒（0 ですぐ。off の後に台詞が来て戻る時はすぐ戻る）",
+      "order": 16.5,
+      "min": 0,
+      "max": 3,
+      "default": 0.0
+    },
     "overlayStart": {
       "kind": "field",
       "type": "float",

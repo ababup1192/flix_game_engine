@@ -353,14 +353,14 @@ mod WorldRead {
     }
 
     /// 台詞 1 行を頁とバックログへ。NVL で頁に入り切らない時は頁をめくって（めくった数を足して）から積む。消していた文字の枠は出す。
-    /// 話し手（地の文は None）を舞台の cast.speaker に書く（話していない人物を暗くする）。台詞を「」で包むかはメッセージ枠の型の quotes。
+    /// 話し手（地の文は None。novel.cast.json の highlight.narration が keep なら地の文では書かない）を舞台の cast.speaker に書く（話していない人物を暗くする）。台詞を「」で包むかはメッセージ枠の型の quotes。
     /// 戻れる所は行を積んだ後の舞台と頁で作る（先に積んだ台詞なら、前にあってまだ当てていない命令も試しに当てる）。新しいノードの最初の行ならオートセーブ。
     def showLine(res: Res.Res, replay: Replay, bookmark: Option[YarnRunner.Bookmark], line: Yarn.Line, r: World.Read, w: World.World): World.World =
         let window = snd(Stage.windowOf(res#theme, r#stage));
         let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, res#story), window#quotes, line);
         let fits = fitsNvl(res, r#stage);
         let speaker = if (String.isEmpty(line#speaker)) None else Some(line#speaker);
-        let shownStage = Stage.withSpeaker(World.now(w), speaker, Stage.withWindowShown(World.now(w), r#stage));
+        let shownStage = Stage.withLineSpeaker(World.now(w), CastDoc.keepsSpeakerOnNarration(res#cast), speaker, Stage.withWindowShown(World.now(w), r#stage));
         let stage = if (Page.isFullFor(window#kind, fits, entry, r#page)) Stage.withPageTurned(shownStage) else shownStage;
         let page = Page.show(window#kind, fits, entry, r#page);
         let placed = { stage = stage, page = if (replay == Commands.Replay.Silent) Page.revealAll(page) else page | r };

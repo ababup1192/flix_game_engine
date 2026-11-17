@@ -18,7 +18,8 @@ mod ViewStage {
     /// world の層の物 1 グループ: layer = 層の数、order = 同じ層の数の中の順（絵 0・粒 1・GameView 2・覆い 3）、items = 物（中の z は 0..View.zWorldStride-1）。
     type alias Group = { layer = Int32, order = Int32, items = List[Render.PlacedItem] }
 
-    /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物もここで描くか（頁の幕がある間は、novel.cast.json の propsOnPage が overWindow なら View が幕の上に描く）。
+    /// 実際の画面の world の層: 層の数で並べ、カメラを掛け、揺れの分だけずらす。withProps = 小物を全部ここで描くか
+    /// （false なら、頁の幕の上に描く小物（novel.cast.json の onPage か propsOnPage が overWindow）を除く。それは View が幕の上に描く）。
     pub def frame(env: View.Env, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
         let (dx, dy) = Stage.shakeOffset(env#storyNow, Stage.ShakeTarget.Screen, stage);
         layered(env, photoRect(env#fit), stage, withProps) |> withCamera(env, stage) |> Render.movedAll({ x = dx, y = dy })
@@ -48,7 +49,7 @@ mod ViewStage {
 
     /// world の層の物を、層の数で並べて z を振った列（カメラと揺れの前）。areaOf = 写真の横÷縦（None は 16:9）→ 背景を塗る矩形。
     def layered(env: View.Env, areaOf: Option[Float64] -> Rect2.Rect2, stage: Stage.Stage, withProps: Bool): List[Render.PlacedItem] =
-        let keep = (kind, entry) -> CastDoc.isAttachedToBackdrop(entry) or withProps or kind == CastDoc.Kind.Character;
+        let keep = (kind, entry) -> CastDoc.isAttachedToBackdrop(entry) or withProps or kind == CastDoc.Kind.Character or not CastDoc.isOverWindow(env#res#cast, entry);
         let actors = Cast.groupsWhere(castEnv(env, stage), keep, stage#cast, 0) |> List.map(match (n, items) -> { layer = n, order = 0, items = items });
         let game = GameView.draw(env, stage) |> List.map(match (n, item) -> { layer = n, order = 2, items = item :: Nil });
         let groups = { layer = 0, order = 0, items = backdropsIn(areaOf, env, stage) } :: actors :::
@@ -179,7 +180,7 @@ mod ViewStage {
         let width = shownWidth(env, areaOf, stage);
         let moved = match stage#switch#transition {
             case _ if Option.nonEmpty(stage#switch#game) and p < 1.0 => photo(current, 0.0, 1.0, View.zBackdropShot())
-            case BackdropDoc.Transition.Black => if (p < 0.5 and not isFromDark(env, stage)) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
+            case BackdropDoc.Transition.Black => if (p < BackdropDoc.blackoutSwapAt(BackdropDoc.rec(env#res#backdrops)#black) and not isFromDark(env, stage)) photo(under, 0.0, 1.0, View.zBackdropUnder()) else photo(current, 0.0, 1.0, View.zBackdropShot())
             case BackdropDoc.Transition.Slide => List.append(photo(under, shift - slideGap(env, areaOf, under, current, width), 1.0, View.zBackdropUnder()), photo(current, shift, 1.0, View.zBackdropShot()))
             case BackdropDoc.Transition.Pan   => List.append(photo(under, shift - width * panShare(), 1.0, View.zBackdropUnder()), photo(current, shift, p, View.zBackdropShot()))
             case BackdropDoc.Transition.Wipe  => List.append(photo(under, 0.0, 1.0, View.zBackdropUnder()), wiped(paint, env, areaOf, stage, current, p))
@@ -210,12 +211,12 @@ mod ViewStage {
     def isFromDark(env: View.Env, stage: Stage.Stage): Bool =
         stage#under |> Option.forAll(s -> BackdropDoc.isBlank(s#photo, env#res#backdrops))
 
-    /// transition=black の暗転のグループ: 前半は暗くなり、後半は明ける（前の背景が絵を持たない時は、暗い所から全部の秒で明ける）。
+    /// transition=black の暗転のグループ: novel.backdrops.json の black の割合で暗くなり・止まり・明ける（前の背景が絵を持たない時は、暗い所から全部の秒で明ける）。
     /// 背景だけでなく人物・粒・GameView も暗くするので、覆いと同じ層の数に置く。
     // WhyNot: 前の背景が絵を持たない時も半分の秒を暗くなる側に使わない — 暗い地がもっと暗くなるだけで、秒の半分は何も変わらない画面になる。
     def blackoutGroup(env: View.Env, stage: Stage.Stage): Group =
         let p = Stage.fadeProgress(env#storyNow, stage);
-        let dark = if (isFromDark(env, stage)) 1.0 - p else if (p < 0.5) 2.0 * p else 2.0 * (1.0 - p);
+        let dark = if (isFromDark(env, stage)) 1.0 - p else BackdropDoc.blackoutDarknessOf(BackdropDoc.rec(env#res#backdrops)#black, p);
         let items = if (stage#switch#transition != BackdropDoc.Transition.Black or p >= 1.0 or dark <= 0.0) Nil
                     else {
                         let r = backdropRect(env#fit);
@@ -276,9 +277,10 @@ mod ViewStage {
 
     // ── 立ち絵と小物（Cast） ──
 
-    /// 頁の幕の上・字の下に描く小物（NVL と縦の画面の頁）。
+    /// 頁の幕の上・字の下に描く小物（NVL と縦の画面の頁。小物の onPage か propsOnPage が overWindow の物）。
     pub def pageProps(env: View.Env, stage: Stage.Stage): List[Render.PlacedItem] =
-        Cast.groupsWhere(castEnv(env, stage), (kind, entry) -> kind == CastDoc.Kind.Prop and not CastDoc.isAttachedToBackdrop(entry), stage#cast, View.zPageProp())
+        let onPage = (kind, entry) -> kind == CastDoc.Kind.Prop and not CastDoc.isAttachedToBackdrop(entry) and CastDoc.isOverWindow(env#res#cast, entry);
+        Cast.groupsWhere(castEnv(env, stage), onPage, stage#cast, View.zPageProp())
             |> List.flatMap(snd)
 
     /// 今の画面で、小物を hud の頁（幕の上）が描くか。読んでいる頁を hud が描いていて、その頁に幕がある時（NVL か縦の画面）。
@@ -289,10 +291,10 @@ mod ViewStage {
         case _ => false
     }
 
-    /// 小物を頁の幕の上に描く舞台か: novel.cast.json の propsOnPage が overWindow で、頁に幕があり、文字の枠を消す絵（hideWindow）が出ていない。
+    /// 小物を頁の幕の上に描ける舞台か: 頁に幕があり、文字の枠を消す絵（hideWindow）が出ていない（どの小物を描くかは pageProps が onPage・propsOnPage で選ぶ）。
     // WhyNot: 文字の枠を消す絵が出ている間も頁に描かない — 枠と一緒に頁の小物まで消え、hideWindow の小物そのものが見えなくなる。
     pub def propsOnPage(env: View.Env, stage: Stage.Stage): Bool =
-        CastDoc.rec(env#res#cast)#propsOnPage == CastDoc.PropsOnPage.OverWindow and hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
+        hasPageVeil(env, stage) and not Cast.hidesWindow(env#res#cast, stage#cast)
 
     /// 頁に幕がある（横の NVL・縦の画面は NVL も ADV も頁）。
     pub def hasPageVeil(env: View.Env, stage: Stage.Stage): Bool = Layout.isPortrait(env#fit) or Stage.kindOf(env#res#theme, stage) == ThemeDoc.WindowKind.Nvl

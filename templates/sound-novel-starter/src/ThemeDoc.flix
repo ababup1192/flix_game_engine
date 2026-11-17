@@ -31,6 +31,19 @@ mod ThemeDoc {
         case Outline
     }
 
+    /// 本文の行の揃え。Left = 左に揃える、Center = 改行で区切った行ごとに真ん中へ寄せる（幅で折り返す行は寄せない）。
+    pub enum TextAlign with Eq, ToString {
+        case Left
+        case Center
+    }
+
+    /// 揃えの字（left・center。知らない字は None）。<<text align=>> と windows の align が使う。
+    pub def textAlignOf(name: String): Option[TextAlign] = match name {
+        case "left"   => Some(TextAlign.Left)
+        case "center" => Some(TextAlign.Center)
+        case _        => None
+    }
+
     /// 縦の画面での字の出し方。Page = 画面いっぱいの頁に行を上から積む、Band(高さ) = 画面の下の帯（下端から高さ px）に今の行だけを出し、
     /// 覆いは帯の上にだけ敷く（帯より上の写真と HUD は沈めない）、Frame(真ん中の高さ) = 画面の真ん中の枠に今の行だけを出す
     /// （枠の真ん中は画面の高さに対する割合。高さは行の数で決まる。Layout.portraitFrame）。
@@ -41,8 +54,10 @@ mod ThemeDoc {
     }
 
     /// メッセージ枠の型 1 つ（<<window 型>> の型）。kind = 出し方、place = ADV の枠の置き場、frame = 字の立たせ方、
-    /// showName = ADV の枠に話し手の名前を出すか、quotes = 台詞を「」で包むか、portrait = 縦の画面での字の出し方。
-    pub type alias Window = { kind = WindowKind, place = WindowPlace, frame = WindowFrame, showName = Bool, quotes = Bool, portrait = PortraitText }
+    /// showName = ADV の枠に話し手の名前を出すか、quotes = 台詞を「」で包むか、portrait = 縦の画面での字の出し方、
+    /// align = この型の本文の揃えの既定（None なら <<text align=>> で替えるまで左。Some なら型に替えた時にこの揃えへ戻す）。
+    pub type alias Window = { kind = WindowKind, place = WindowPlace, frame = WindowFrame, showName = Bool, quotes = Bool, portrait = PortraitText,
+                              align = Option[TextAlign] }
 
     /// 話し手 1 人の色。id = シナリオの話し手の id（地の文は空）、name = 人に見せる名前（空なら novel.story.json の names）、
     /// color = 名前の字（テープの頁でシナリオの行を塗る色も同じ）、ink = 本文の字。
@@ -85,9 +100,9 @@ mod ThemeDoc {
                   windows = Map#{ "nvl" => nvlWindow(), "bottom" => advWindow() },
                   legacyModes = Map#{ "Nvl" => "nvl", "Adv" => "bottom" } })
 
-    def nvlWindow(): Window = { kind = WindowKind.Nvl, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true, portrait = PortraitText.Page }
+    def nvlWindow(): Window = { kind = WindowKind.Nvl, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true, portrait = PortraitText.Page, align = None }
 
-    def advWindow(): Window = { kind = WindowKind.Adv, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true, portrait = PortraitText.Page }
+    def advWindow(): Window = { kind = WindowKind.Adv, place = WindowPlace.Bottom, frame = WindowFrame.Panel, showName = true, quotes = true, portrait = PortraitText.Page, align = None }
 
     /// Mark v3 の mode が書いていた出し方の名前（Nvl・Adv。legacyModes の鍵。Doc の型の名前には使えない）。
     pub def kindAlias(kind: WindowKind): String = "${kind}"
@@ -188,7 +203,7 @@ mod ThemeDoc {
     def warnLegacy(doc: Doc): Doc =
         legacyProblemsOf(rec(doc)#windows, rec(doc)#legacyModes) |> List.foldLeft((acc, why) -> Log.warnThen("[theme] ${why}", acc), doc)
 
-    /// windows の表（名前 → { kind, place, frame, showName, quotes }）を読む。Nvl・Adv の名前と読めない行は落とし、落とした理由を 1 行ずつ返す。
+    /// windows の表（名前 → { kind, place, frame, showName, quotes, portrait, align }）を読む。Nvl・Adv の名前と読めない行は落とし、落とした理由を 1 行ずつ返す。
     // WhyNot: 型の名前に Nvl・Adv を許さない — セーブの Mark v3 の mode の古い値と同じ字になり、どちらの意味か読み分けられない。
     pub def windowsFrom(rows: Map[String, Json]): (Map[String, Window], List[String]) =
         let read = (name, json) ->
@@ -220,8 +235,17 @@ mod ThemeDoc {
                                       frame = if (JsonCodec.stringOr("frame", "panel", obj) == "outline") WindowFrame.Outline else WindowFrame.Panel,
                                       showName = JsonCodec.boolOr("showName", base(k)#showName, obj),
                                       quotes = JsonCodec.boolOr("quotes", base(k)#quotes, obj),
-                                      portrait = portraitTextOf(obj) })
+                                      portrait = portraitTextOf(obj),
+                                      align = alignIn(obj) })
         })
+
+    /// 型の align の欄（無ければ None・知らない字なら 1 行言って None）。
+    def alignIn(obj: Map[String, Json]): Option[TextAlign] =
+        match Map.get("align", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.map(text -> (text, textAlignOf(text))) {
+            case None                => None
+            case Some((_, Some(a)))  => Some(a)
+            case Some((text, None))  => Log.fellBackThen("theme", "${path()} の windows の align", "書かない（<<text align=>> が続く）", "知らない字 '${text}'（left・center）", None)
+        }
 
     /// band の帯の高さの既定（画面の下端から px）。
     pub def defaultBandHeight(): Float64 = 236.0

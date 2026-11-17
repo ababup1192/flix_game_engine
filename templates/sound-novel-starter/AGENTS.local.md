@@ -49,6 +49,7 @@
    このゲームだけの Doc（`src/GameRes.flix`）、テンプレートへの追随。ここまでで `make check`・`make test`・flow を緑にする。
 2. **その後は .yarn と JSON だけ**: 台詞・分岐・演出の並び・変数・背景や立ち絵の割り当て・色・文言・数。
    名前や引数の誤りは `bin/fge yarn build assets/talk`（vocab.json を通して Doc の名前も照らす）が止める。
+   **決まりは Doc の欄で変える**（暗転の形・背景の切り替えの秒と曲線・立ち絵の濃さの曲線・文字の枠を消す秒・型ごとの揃え・話し手の強調・小物の重なり）。欄の一覧はスキーマの label と各 Doc の note、その行だけ替えるなら命令の引数。Flix に戻るのは欄が無い時だけ。
 3. **走らせたまま反映する**: `DEBUG=1 make run` で起動する（DEBUG が無いと保存を見張らない）。
    - JSON の Doc は保存して約 0.5 秒で、いま出ている画面に反映される。
    - .yarn は保存だけでは反映されない。`bin/fge yarn build assets/talk`（0.1 秒ほど）で dialogue.json を書くと、ゲームが読み直す。
