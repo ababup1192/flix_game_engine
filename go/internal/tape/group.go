@@ -175,7 +175,7 @@ func BuildGroup(opt Options, warn io.Writer) ([]string, error) {
 	out := make([]string, len(dirs))
 	for i, d := range dirs {
 		b := branches[i]
-		index, err := build(Options{Dir: d, Commit: opt.Commit, FFmpeg: opt.FFmpeg, Splash: opt.Splash, Warn: opt.Warn, Branches: &b}, tapes[i])
+		index, err := build(Options{Dir: d, Commit: opt.Commit, FFmpeg: opt.FFmpeg, Splash: opt.Splash, Warn: opt.Warn, Branches: &b, Play: opt.Play}, tapes[i])
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", d, err)
 		}

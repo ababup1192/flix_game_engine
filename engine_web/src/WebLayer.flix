@@ -150,12 +150,19 @@ pub mod WebLayer {
             RenderPaintHandlers.handleDraw3d(paint, () ->
             Platform.runTasksInPlace(() ->
             handleFrameClock(state, () ->
-            handleWindow(state, onPoll, () ->
-            RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (_, _) -> checked_ecast(()), () ->
-            handleInput(state, () ->
-            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))))));
+            handleScreen(gl, paint, framebufferSize, state, onPoll, fonts, f))))))));
         Browser.ended();
         result
+
+    /// withWeb の内側の handler（ウィンドウ・2D の塗り・入力・GPU の素材）。
+    // WhyNot: withWeb の 1 つの式に 11 個の handler を重ねない — Flix 0.80 の型推論の上限（1 つの式の変数 11）を超え、E7352 で組めない。
+    def handleScreen(gl: GlContext, paint: RenderPaint.Paint, framebufferSize: Unit -> (Int32, Int32) \ IO, state: State,
+                     onPoll: Unit -> Unit \ IO, fonts: RenderPaint.Fonts, f: Unit -> a \ ef):
+                     a \ (ef - Platform.Window - Platform.Draw2d - Platform.Input - Platform.GpuResources) + IO =
+        handleWindow(state, onPoll, () ->
+        RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (_, _) -> checked_ecast(()), () ->
+        handleInput(state, () ->
+        RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f))))
 
     // WhyNot: 例外を Flix の try で受けて頁に出さない — effect の続きで再開した後の例外はその try の外で投げられる（bug! で確かめた）。
     //   頁に出すのは fge-web.js の window の error（wasm の外へ抜けた例外を全部受ける）。

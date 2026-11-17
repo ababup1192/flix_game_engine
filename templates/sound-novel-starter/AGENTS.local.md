@@ -67,6 +67,12 @@
    その機械で前の版から `make migrate-baseline MIGRATE_OVERWRITE=1 MIGRATE_PAINT=gpu` で撮り直す（GPU で塗れない前の版の基準は CPU のまま、`migrate-new` も CPU で塗って比べる）。
 6. **Flix に戻る合図**: 同じ演出をコマンドの組み合わせで何度も書いている（1 つのコマンドにまとめる）、
    `<<if>>` `<<set>>` で書けない式が要る、Doc の欄が足りない。戻ったら 1. の門を通してから、また 2. へ。
+7. **テープで見てもらう**（`make tape FLOW=e2e/tape.flow` → `debug/tape/tape/index.html`）: 同じ flow を縦の画面（スマホを縦に持った時・
+   `FLOW_VIEW=phone`）と横の画面（PC）の 2 回撮る。頁は縦の動画で開き、上のボタンで横へ替える（秒・帯・選んだ物はそのまま。横は URL に `?view=pc`）。
+   縦と横で台詞や待ちの秒が食い違うと `bin/fge tape` が欄の名前を言って止める（縦の組みだけ待ちが変わる演出を足した時）。
+   片方だけ撮るなら `TAPE_VIEWS=pc`（か `phone`）。既定でブラウザ版も書き出し（`bin/fge export-web`・作業フォルダは `/tmp/fge-tape-web/<ゲーム>`）、
+   頁の上の「はじめから遊ぶ」が見ている画面の向きでタイトルから開く。書き出しが要らなければ `TAPE_PLAY=0`（ボタンは出ない）。
+   縦の画面は SoftRaster で塗るので、横より撮るのが遅い。
 
 ## この画面の画風
 

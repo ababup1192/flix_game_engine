@@ -29,11 +29,12 @@ space := $(subst ,, )
 include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 
 # FlowVideo が書いたコマと音（$(1) のフォルダ）を、X に載せられる H.264 + AAC の mp4（$(2)）に束ねるシェルの 1 文。
-# GPU で塗れた時は frames.mkv、塗れない時は連番 PNG。
+# GPU で塗れた時は frames.mkv、塗れない時は連番 PNG。幅と高さは偶数に切り詰める（縦の design は 540×1169 のように奇数になる）。
+# WhyNot: 奇数のまま渡さない — yuv420p の H.264 は幅と高さが偶数でないと ffmpeg が書かずに止まる。
 flow-mp4 = fps=$$(cat $(1)/fps.txt); \
 	if [ -f $(1)/frames.mkv ]; then frames="-i $(1)/frames.mkv"; else frames="-framerate $$fps -i $(1)/f%04d.png"; fi; \
 	ffmpeg -y -loglevel error $$frames -f f64be -ar 44100 -ac 2 -i $(1)/audio.f64 \
-	  -c:v libx264 -pix_fmt yuv420p -crf 20 -r $$fps -c:a aac -b:a 192k -shortest -movflags +faststart $(2)
+	  -vf "crop=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -pix_fmt yuv420p -crf 20 -r $$fps -c:a aac -b:a 192k -shortest -movflags +faststart $(2)
 
 # 見せ場をつないだ紹介の動画（e2e/showcase.flow → debug/video/showcase.mp4）。
 # コマと音は FlowVideo が実機と同じ 1 フレームで書き、ここで mp4 に束ねる。
@@ -43,18 +44,33 @@ showcase-video:
 
 # テープの頁（make tape FLOW=e2e/tape.flow → debug/tape/tape/index.html）。
 # ① FlowVideo が flow を流してコマ・音（debug/video/<名前>）と tape.json を書き、② showcase-video と同じ ffmpeg で video.mp4 に束ね、
-# ③ bin/fge tape が strip.jpg と index.html を作る。debug/tape/<名前> には頁に要る物（tape.json・video.mp4・strip.jpg・index.html）だけを置く。
+# ③ bin/fge tape が strip.jpg と index.html を作る。debug/tape/<名前> には頁に要る物（tape.json・video.mp4・strip.jpg・index.html と、縦の分の tape-phone.json・video-phone.mp4・strip-phone.jpg）だけを置く。
 # tape.json が書けない（同じ名前の mark・2 つ以上の .yarn にまたがる flow）時は FlowVideo が理由を出し、ここで止める。
 # flow が途中で止まった時も、そこまでの頁を作ってから止まった印（終了コード 1）を返す。
 # 分岐: 結末ごとに 1 本ずつ flow を書き（同じ始まりから別の選択肢を選ぶ）、make tape FLOWS="e2e/a.flow e2e/b.flow" で
 # まとめて撮る。bin/fge tape --group が、選んだ道が分かれた所を分岐にして、頁のグラフの箱から隣の頁へつなぐ。
+# 画面: 既定は縦（スマホを縦に持った時・FLOW_VIEW=phone）と横（PC の画面）の 2 回撮る。頁は縦で開き、上のボタンで横へ替える。
+# 縦の分は debug/video/<名前>-phone で撮り、debug/tape/<名前> の tape-phone.json・video-phone.mp4 に置く（横は今までどおり tape.json・video.mp4）。
+# 片方だけ撮るなら TAPE_VIEWS=pc か TAPE_VIEWS=phone（1 つだけの時はその画面を tape.json・video.mp4 に置き、頁は切り替えのボタンを出さない）。
+# はじめから遊ぶ: 既定でゲームのブラウザ版も書き出し（bin/fge export-web）、各テープの play/ に写す。頁の上の「はじめから遊ぶ」がタイトルから開く。
+# 書き出さないなら TAPE_PLAY=0（頁はボタンを出さない）。書き出しの作業フォルダと出口は TAPE_WEB（既定 /tmp/fge-tape-web/<ゲームのフォルダ名>）。
 TAPE_NAME = $(basename $(notdir $(FLOW)))
+TAPE_VIEWS = phone pc
+TAPE_PLAY = 1
+# WhyNot: 書き出しの作業フォルダをゲームの下（既定の build/web-export）にしない — 組んだ所のパスが wasm に残り、公開した頁からユーザー名が読める。
+TAPE_WEB = /tmp/fge-tape-web/$(notdir $(CURDIR))
+tape-play = $(if $(filter 1,$(TAPE_PLAY)),--play $(TAPE_WEB)/out)
 # WhyNot: flow が途中で止まっても exit しない — そこまでの頁を作ってから、最後に終了コード 1 を返す（code）。
-tape-shoot = rm -rf debug/video/$(2) debug/tape/$(2); mkdir -p debug/tape/$(2); \
-	FLOW=$(1) FLOW_OUT=debug/video/$(2) $(HEADLESS_RUN) FlowVideo.play || code=1; \
-	test -f debug/video/$(2)/tape.json || { echo "tape: debug/video/$(2)/tape.json を書けなかった"; exit 1; }; \
-	cp debug/video/$(2)/tape.json debug/tape/$(2)/tape.json; \
-	{ $(call flow-mp4,debug/video/$(2),debug/tape/$(2)/video.mp4); } || exit 1
+tape-shoot = rm -rf debug/video/$(2) debug/video/$(2)-phone debug/tape/$(2); mkdir -p debug/tape/$(2); \
+	for v in $(TAPE_VIEWS); do \
+	  case "$$v" in pc) src=debug/video/$(2); suf="";; phone) src=debug/video/$(2)-phone; suf=-phone;; \
+	    *) echo "tape: TAPE_VIEWS に並べるのは phone と pc（$$v は知らない）"; exit 2;; esac; \
+	  test "$(words $(TAPE_VIEWS))" -gt 1 || suf=""; \
+	  FLOW=$(1) FLOW_OUT=$$src FLOW_VIEW=$$v $(HEADLESS_RUN) FlowVideo.play || code=1; \
+	  test -f $$src/tape.json || { echo "tape: $$src/tape.json を書けなかった"; exit 1; }; \
+	  cp $$src/tape.json debug/tape/$(2)/tape$$suf.json; \
+	  { $(call flow-mp4,$$src,debug/tape/$(2)/video$$suf.mp4); } || exit 1; \
+	done
 .PHONY: tape
 tape:
 	@test -n "$(TAPE_NAME)$(FLOWS)" || { echo "make tape FLOW=e2e/<名前>.flow（分岐は FLOWS=\"e2e/a.flow e2e/b.flow\"）"; exit 2; }
@@ -62,13 +78,17 @@ tape:
 	@dup=$$(for f in $(FLOWS); do basename $$f .flow; done | sort | uniq -d); \
 	 test -z "$$dup" || { echo "tape: FLOWS に同じ名前の flow がある: $$dup（debug/tape/<名前> が重なるので名前を分ける）"; exit 2; }
 	@code=0; \
+	 if [ "$(TAPE_PLAY)" = 1 ]; then \
+	   rm -rf "$(TAPE_WEB)"; \
+	   "$(ENGINE)/bin/fge" export-web . --out "$(TAPE_WEB)/out" --work "$(TAPE_WEB)/work" || { echo "tape: ブラウザ版を書き出せなかった（書き出さずに撮るなら TAPE_PLAY=0）"; exit 1; }; \
+	 fi; \
 	 if [ -n "$(FLOWS)" ]; then \
 	   dirs=""; \
 	   for f in $(FLOWS); do n=$$(basename $$f .flow); $(call tape-shoot,$$f,$$n); dirs="$$dirs debug/tape/$$n"; done; \
-	   "$(ENGINE)/bin/fge" tape --group $$dirs || exit 1; \
+	   "$(ENGINE)/bin/fge" tape --group $$dirs $(tape-play) || exit 1; \
 	 else \
 	   $(call tape-shoot,$(FLOW),$(TAPE_NAME)); \
-	   "$(ENGINE)/bin/fge" tape --dir debug/tape/$(TAPE_NAME) || exit 1; \
+	   "$(ENGINE)/bin/fge" tape --dir debug/tape/$(TAPE_NAME) $(tape-play) || exit 1; \
 	 fi; \
 	 exit $$code
 

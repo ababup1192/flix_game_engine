@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // StripCount は duration 秒の動画から 0.5 秒ごとに取るコマの数（0 秒のコマを含む）。
@@ -48,5 +49,5 @@ func MakeStrip(ffmpeg, video, out string, duration float64) (Strip, error) {
 	if cfg.Width != n*StripW || cfg.Height != StripH {
 		return Strip{}, fmt.Errorf("%s の大きさが %dx%d（%d 枚なら %dx%d のはず）", out, cfg.Width, cfg.Height, n, n*StripW, StripH)
 	}
-	return Strip{File: StripFile, Count: n, W: StripW, H: StripH}, nil
+	return Strip{File: filepath.Base(out), Count: n, W: StripW, H: StripH}, nil
 }
