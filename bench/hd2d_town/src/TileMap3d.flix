@@ -532,7 +532,7 @@ mod TileMap3d {
             match TownMap.propAt(m, c, r) {
                 case Prop.Tree    => at("sprites/tree_broadleaf.png", None)
                 case Prop.Cypress => at("sprites/tree_cypress.png", None)
-                case Prop.Lamp    => at("sprites/street_lamp.png", None)
+                case Prop.Lamp    => at("sprites/street_lamp_ornate.png", None)
                 case Prop.Bush    => at("sprites/tree_broadleaf.png", Some(0.8 + 0.5 * h01(c, r, 4)))
                 case Prop.Npc(k)  => if (skipNpcColumn == Some(c)) None else npcBoard(sizes, k, x, y, z) |> Option.map(b -> { owner = Faces.Owner.Prop(c, r) | b })
                 case _            => None

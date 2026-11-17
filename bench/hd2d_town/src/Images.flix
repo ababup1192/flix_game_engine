@@ -44,4 +44,45 @@ mod Images {
             Int32.bitwiseOr(Int32.leftShift(alpha, 24), color)
         })) |> List.toVector;
         Texture3d.fromArgb(side, side, argb)
+
+    /// 街灯の火袋だけが光る絵（path の絵と同じ大きさ）。ガラスの画素（明るさ 0.55〜0.8 を 0〜1）× 火袋ごとの真ん中から radius 画素でなめらかに 0 へ落ちる重み（和は 1 で頭打ち）を α に、色は白。
+    /// lanterns = 火袋の真ん中（uv・左下が 0,0）。
+    pub def lanternGlow(path: String, lanterns: List[(Float64, Float64)], radius: Float64): Result[String, Texture3d.Texture3d] \ IO =
+        let file = "assets/${path}";
+        let image: BufferedImage = ImageIO.read(new File(file));
+        if (Object.isNull(image)) Err("${file} を読めない")
+        else {
+            let w = image.getWidth();
+            let h = image.getHeight();
+            let argb = List.range(0, h) |> List.flatMap(y -> List.range(0, w) |> List.map(x -> {
+                let p = image.getRGB(x, y);
+                let a = Int32.bitwiseAnd(Int32.logicalRightShift(dist = 24, p), 255);
+                let lum = (0.2126 * Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = 16, p), 255))
+                         + 0.7152 * Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = 8, p), 255))
+                         + 0.0722 * Int32.toFloat64(Int32.bitwiseAnd(p, 255))) / 255.0;
+                let glass = if (a < 128) 0.0 else Num.clamp(0.0, 1.0, (lum - 0.55) / 0.25);
+                let weight = lanterns |> List.foldLeft((acc, uv) -> {
+                    let cx = fst(uv) * Int32.toFloat64(w);
+                    let cy = (1.0 - snd(uv)) * Int32.toFloat64(h);
+                    let d = Num.sqrt((Int32.toFloat64(x) + 0.5 - cx) * (Int32.toFloat64(x) + 0.5 - cx) + (Int32.toFloat64(y) + 0.5 - cy) * (Int32.toFloat64(y) + 0.5 - cy));
+                    let k = Num.clamp(0.0, 1.0, 1.0 - d / radius);
+                    acc + k * k * (3.0 - 2.0 * k)
+                }, 0.0);
+                let alpha = Float64.round(Num.clamp(0.0, 1.0, glass * Float64.min(1.0, weight)) * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+                Int32.bitwiseOr(Int32.leftShift(alpha, 24), 16777215)
+            })) |> List.toVector;
+            Texture3d.fromArgb(w, h, argb)
+        }
+
+    /// 淡いハローの丸い絵（32×32・真ん中 1 → 縁 0 を 3 乗・色は白）。
+    pub def halo(): Result[String, Texture3d.Texture3d] =
+        let side = 32;
+        let argb = List.range(0, side) |> List.flatMap(y -> List.range(0, side) |> List.map(x -> {
+            let u = (Int32.toFloat64(x) + 0.5) / Int32.toFloat64(side) - 0.5;
+            let v = (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(side) - 0.5;
+            let k = Num.clamp(0.0, 1.0, 1.0 - 2.0 * Num.sqrt(u * u + v * v));
+            let alpha = Float64.round(k * k * k * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+            Int32.bitwiseOr(Int32.leftShift(alpha, 24), 16777215)
+        })) |> List.toVector;
+        Texture3d.fromArgb(side, side, argb)
 }

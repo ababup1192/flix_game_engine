@@ -79,6 +79,11 @@
       "name": "girl_idle",
       "path": "assets/sprites/girl_idle.png",
       "hasAlpha": true
+    },
+    {
+      "name": "street_lamp_ornate",
+      "path": "assets/sprites/street_lamp_ornate.png",
+      "hasAlpha": true
     }
   ],
   "fonts": [],

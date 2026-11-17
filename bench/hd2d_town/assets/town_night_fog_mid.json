@@ -29,7 +29,7 @@
     0.1
   ],
   "exposure": -1.8,
-  "bloomStrength": 0.25,
+  "bloomStrength": 0.3,
   "fStop": 0.08,
   "saturation": 1.0,
   "vignette": 0.45,
@@ -41,9 +41,9 @@
   "shadowStrength": 0.6,
   "fxaa": true,
   "lift": [
-    1.0,
-    1.0,
-    1.0
+    0.98,
+    0.97,
+    1.06
   ],
   "gamma": [
     1.0,
@@ -57,13 +57,13 @@
     0.98
   ],
   "lampIntensity": 5.5,
-  "lampRange": 6.5,
+  "lampRange": 5.5,
   "lampColor": [
     1.0,
-    0.66,
-    0.34
+    0.7,
+    0.38
   ],
-  "lampGlow": 6.0,
+  "lampGlow": 16.0,
   "groundFog": 0.0,
   "heightFog": {
     "color": [
@@ -91,5 +91,7 @@
     0.26,
     0.24,
     0.42
-  ]
+  ],
+  "bloomThreshold": 0.9,
+  "bloomSize": 0.85
 }
