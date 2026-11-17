@@ -82,7 +82,8 @@ var mockFixes = [][2]string{
 		"setIcon(); buildTimeline(); refresh(); onTime(0);\n" +
 			splashScript +
 			"const startAt = +(/^#t=([\\d.]+)$/.exec(location.hash) || [])[1];\n" +
-			"if (startAt > 0) video.addEventListener(\"loadedmetadata\", () => seek(Math.min(startAt, TAPE.duration - .01)), { once: true });"},
+			"if (startAt > 0) video.addEventListener(\"loadedmetadata\", () => seek(Math.min(startAt, TAPE.duration - .01)), { once: true });" +
+			viewScript},
 	{"  .tip .m { color: var(--faint); font-size: 11px; }\n</style>",
 		"  .tip .m { color: var(--faint); font-size: 11px; }\n" +
 			"  #splash { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; background: #0b0e12; transition: opacity .2s; }\n" +
@@ -103,7 +104,78 @@ var mockFixes = [][2]string{
 		"const VAR_NAMES = (GRAPH && GRAPH.vars) || {};\n" +
 		"const withVarNames = html => html.replace(/\\$[A-Za-z_][A-Za-z0-9_]*/g, v => VAR_NAMES[v] ? `${esc(VAR_NAMES[v])}<span class=\"raw\">${v}</span>` : v);\n"},
 	{"style=\"padding-left:${r.d * 10}px\">${esc(r.t)}</span>", "style=\"padding-left:${r.d * 10}px\">${withVarNames(esc(r.t))}</span>"},
+	// 縦（スマホ）と横（PC）の 2 本の動画の切り替えと、頁の隣に置いたブラウザ版をはじめから開くボタン（plans/tape/spec.md の「縦と横の 2 本」）。
+	{"  .modes button.on { background: #fff; color: #111; }\n",
+		"  .modes button.on { background: #fff; color: #111; }\n  .topbtn { flex: none; height: 30px; min-width: 30px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 99px; background: var(--raised); color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; text-decoration: none; }\n  .topbtn[hidden] { display: none; }\n  .topbtn .long { display: none; }\n  body.wide .topbtn .long { display: inline; }\n  body.topbtns .titlebtn b { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }\n  body.topbtns .titlebtn small { max-width: 100%; overflow: hidden; white-space: nowrap; }\n"},
+	{"    <button class=\"export\" id=\"exportBtn\">書き出す</button>",
+		"    <a class=\"topbtn\" id=\"startBtn\" target=\"_blank\" rel=\"noopener\" href=\"#\" hidden aria-label=\"ゲームをはじめから遊ぶ（別のタブ）\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 5v14\"/><path d=\"M10 12l9-6v12z\" fill=\"currentColor\"/></svg><span class=\"long\">はじめから遊ぶ</span></a>\n    <button class=\"topbtn\" id=\"viewBtn\" hidden></button>\n    <button class=\"export\" id=\"exportBtn\">書き出す</button>"},
+	{"// 注釈は 3 つの帯のどれかに付く。",
+		"// 縦と横の 2 本を撮ったテープ（views.phone がある）は縦で開き、?view=pc の時だけ横で開く。上の欄の video・strip・msg・objects は横の分\nconst VIEWS = TAPE.views && TAPE.views.phone ? { pc: { video: TAPE.video, videoBytes: TAPE.videoBytes, strip: TAPE.strip, msg: TAPE.msg, objects: TAPE.objects }, phone: TAPE.views.phone } : null;\nlet tapeView = VIEWS ? (new URLSearchParams(location.search).get(\"view\") === \"pc\" ? \"pc\" : \"phone\") : null;\n// WhyNot: 選んだ分の msg をそのまま TAPE に入れない — 切り替えで MSG の中身を入れ替えるので、同じ物を指すと元の分が書き換わる\nif (VIEWS) Object.assign(TAPE, VIEWS[tapeView], { msg: { ...VIEWS[tapeView].msg }, objects: VIEWS[tapeView].objects.slice() });\n// 注釈は 3 つの帯のどれかに付く。"},
+	{"location.href = n.dataset.href;",
+		"location.href = withTapeView(n.dataset.href);"},
+	{"if (a.rect && Math.abs(a.frame - f) <= 12)",
+		"if (a.rect && (!a.screen || a.screen === tapeView) && Math.abs(a.frame - f) <= 12)"},
+	{"anns.push({ ...pending, note, script: scriptRef(lineAt(pending.seconds)), probes: probesAt(pending.seconds) });",
+		"anns.push({ ...pending, ...(VIEWS && pending.rect ? { screen: tapeView } : {}), note, script: scriptRef(lineAt(pending.seconds)), probes: probesAt(pending.seconds) });"},
+	{"rect は画面に対する割合（左上が 0,0）です。\"];",
+		"rect は画面に対する割合（左上が 0,0）です。\"];\n  if (VIEWS) out.push(\"同じ flow を スマホの縦の画面（screen: phone）と PC の横の画面（screen: pc）で撮っています。rect は screen の画面の割合です。\");"},
+	{"rect: a.rect, script: a.script, note: a.note, probes: a.probes }))",
+		"rect: a.rect, screen: a.screen, script: a.script, note: a.note, probes: a.probes }))"},
+	{"${a.script ? \" · \" + yarn + \":\" + a.script.line : \"\"}] ${a.note}`));",
+		"${a.script ? \" · \" + yarn + \":\" + a.script.line : \"\"}${a.screen ? \" · \" + SCREEN_NAME[a.screen] : \"\"}] ${a.note}`));"},
 }
+
+// viewScript は縦と横の動画の切り替えとはじめから遊ぶボタンの script（頁の最後に足す）。
+const viewScript = `
+// ── 縦（スマホ）と横（PC）の動画の切り替え: 秒・止めているか・選んでいる物・帯と一覧はそのまま、動画・帯の絵・メッセージウィンドウ・物の枠だけを替える ──
+const SCREEN_NAME = { phone: "スマホの画面", pc: "PC の画面" };
+const ICON_PC = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="11" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>';
+const ICON_PHONE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg>';
+// 選んでいる画面を隣の頁（分岐の道）へ持っていく。縦は既定なので何も足さない
+function withTapeView(href) {
+  if (tapeView !== "pc") return href;
+  const i = href.indexOf("#"), base = i < 0 ? href : href.slice(0, i), hash = i < 0 ? "" : href.slice(i);
+  return base + (base.includes("?") ? "&" : "?") + "view=pc" + hash;
+}
+// はじめから遊ぶ: 頁の隣に置いたブラウザ版（TAPE.start）を、見ている画面の向きで開く
+function syncStartBtn() {
+  const b = $("startBtn");
+  if (!TAPE.start) return;
+  b.hidden = false; document.body.classList.add("topbtns");
+  b.href = VIEWS ? TAPE.start + "?orientation=" + (tapeView === "pc" ? "landscape" : "portrait") : TAPE.start;
+}
+function syncViewBtn() {
+  const b = $("viewBtn");
+  if (!VIEWS) return;
+  b.hidden = false; document.body.classList.add("topbtns");
+  const to = tapeView === "phone" ? "pc" : "phone";
+  b.innerHTML = (to === "pc" ? ICON_PC : ICON_PHONE) + ` + "`" + `<span class="long">${SCREEN_NAME[to]}</span>` + "`" + `;
+  b.setAttribute("aria-label", ` + "`" + `${SCREEN_NAME[to]}で撮った動画に替える` + "`" + `);
+  syncStartBtn();
+}
+// 取り終えた動画（blob の URL）を画面ごとに持ち、行き来で取り直さない
+const viewSrc = {};
+function setTapeView(v) {
+  if (!VIEWS || !VIEWS[v] || v === tapeView) return;
+  const d = VIEWS[v], t = video.currentTime, playing = !video.paused, from = tapeView;
+  tapeView = v;
+  TAPE.video = d.video; TAPE.videoBytes = d.videoBytes; TAPE.strip = d.strip; TAPE.objects = d.objects.slice();
+  Object.keys(MSG).forEach(k => delete MSG[k]); Object.assign(MSG, d.msg);
+  document.documentElement.style.setProperty("--strip", ` + "`" + `url("${encodeURI(d.strip.file)}")` + "`" + `);
+  // WhyNot: 頁を読み直して替えない — 書きかけの注釈・開いている欄・帯の広げ具合が消え、動画も最初から取り直す
+  try { const u = new URL(location.href); if (v === "pc") u.searchParams.set("view", "pc"); else u.searchParams.delete("view"); history.replaceState(history.state, "", u.href); } catch {}
+  syncViewBtn();
+  if (video.src.startsWith("blob:")) viewSrc[from] = video.src;
+  // WhyNot: 動画の URL を video.src へ直に渡さない — Range を返さない置き場（手元の簡易な http サーバ）では秒へ送れず、頭へ戻る
+  const src = viewSrc[v] ? Promise.resolve(viewSrc[v]) : fetch(d.video).then(r => r.ok ? r.blob() : Promise.reject()).then(b => viewSrc[v] = URL.createObjectURL(b)).catch(() => d.video);
+  src.then(url => {
+    if (tapeView !== v) return;
+    video.addEventListener("loadedmetadata", () => { refresh(); seek(Math.min(t, TAPE.duration - .01)); if (playing) video.play(); }, { once: true });
+    video.src = url;
+  });
+}
+$("viewBtn").onclick = () => setTapeView(tapeView === "phone" ? "pc" : "phone");
+syncViewBtn(); syncStartBtn();`
 
 // splashScript は動画を全部取ってから渡していた所を、取りの割合を起動画面に出す形へ直した script（SPLASH は Splash{} を渡した時の字）。
 const splashScript = `

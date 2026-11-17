@@ -8,6 +8,8 @@
 //   fps.txt   … コマの速さ（flow の fps）
 //   tape.json … テープの頁が読むシナリオ・シーン・音・問いの流れ（TapeOut。同じ名前の mark・2 つ以上の .yarn にまたがる flow では書かずに理由を出す）
 //
+// FLOW_VIEW=phone の時は、縦に持ったスマホの画面（Display.defaultPortraitView の大きさ・縦の design）で流して撮る。無いか pc なら横（project.json の design）。
+//
 // MIGRATE_OUT=<フォルダ> の時は、移行の突き合わせ（bin/fge migrate diff）の記録もそこへ書く（MigrateOut）:
 //   tape.json   … 上の tape.json に events・buses（ミキサーにバスがある時）・frames・ranLines・screen を足した物
 //   frames/world/f0000.png … world の層だけのコマ（台詞を出し終えた所と時間を取る命令の途中）、frames/all/ … 全部の層のコマ（台詞を出し終えた所）
@@ -19,7 +21,7 @@
 //   FGE_PNG_PAINTER=webgpu|soft … 比べのコマの PNG を塗る描き手（engine の VideoOut が読む。bin/fge migrate shoot が基準に合わせて渡す）
 // restore（make migrate-baseline が呼ぶ）は MIGRATE_SAVE の saves.json の枠を 1 つずつ読み戻し、MIGRATE_OUT/<MIGRATE_NAME>-<枠>/restore.json に書く。
 mod FlowVideo {
-    use fge::{App, AudioMixdown, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Log, Rect2, Render, Resources, Vec2, VideoOut}
+    use fge::{App, AudioMixdown, Display, DocJson, Emit, Flow, FontAtlas, GpuShot, HeadlessLoad, JsonCodec, Log, Rect2, Render, Resources, Vec2, VideoOut}
 
     import java.io.BufferedOutputStream
     import java.io.DataOutputStream
@@ -41,13 +43,14 @@ mod FlowVideo {
     pub def playJob(req: App.Headless.Request): Int32 \ IO =
         let env = App.Headless.envOf(req);
         // WhyNot: 設定を字の用意より後に作らない —— GPU で塗る回は AWT より先に GL へ繋ぐ必要がある（VideoOut.settingsOf）。
-        let settings = VideoOut.settingsOf(env);
+        let view = viewOf(env);
+        let settings = VideoOut.settingsOf(gpuEnvOf(view, env));
         let path = Map.getWithDefault("FLOW", "", env);
         let out = Map.getWithDefault("FLOW_OUT", "debug/video/${nameOf(path)}", env);
         let migrate = Map.get("MIGRATE_OUT", env) |> Option.filter(dir -> not String.isEmpty(dir))
             |> Option.map(dir -> { dir = dir, layers = layersOf(env), paint = paintOf(env, settings#paint) });
         let writes = if (Option.nonEmpty(migrate) and Map.get("FLOW_VIDEO", env) == Some("off")) Writes.MigrateOnly else Writes.Everything;
-        let design = SceneRender.design();
+        let design = designOf(view);
         let played = run {
             let app = appOf();
             let fresh = App.freshWorld(app, design);
@@ -60,8 +63,40 @@ mod FlowVideo {
         } with Fs.FileRead.runWithIO;
         match played {
             case Err(why) => println("FAIL ${path} を読めない\n${why}"); 2
-            case Ok((script, declared, played1)) => finishPlay(settings, SceneRender.screenOf(design, declared), path, out, writes, migrate, script, played1)
+            case Ok((script, declared, played1)) => finishPlay(settings, screenOf(view, design, declared), path, out, writes, migrate, script, played1)
         }
+
+    /// 撮る画面の形: 横（project.json の design・デスクトップ版の実機）か、大きさ（CSS px）を持つ縦に持ったスマホ。
+    enum Shape {
+        case Landscape
+        case Phone(Vec2.Vec2)
+    }
+
+    /// FLOW_VIEW（phone か pc。無ければ pc）。知らない字は 1 行言って横。
+    def viewOf(env: Map[String, String]): Shape = match Map.get("FLOW_VIEW", env) |> Option.map(String.trim) {
+        case None          => Shape.Landscape
+        case Some("")      => Shape.Landscape
+        case Some("pc")    => Shape.Landscape
+        case Some("phone") => Shape.Phone(Display.defaultPortraitView())
+        case Some(other)   => Log.fellBackThen("flow", "FLOW_VIEW=${other}", "pc（横）", "phone か pc でない", Shape.Landscape)
+    }
+
+    /// 縦の画面は SoftRaster で塗る（FGE_GPU=off）。
+    // WhyNot: 縦の画面を GPU で塗らない — engine の VideoOut は GPU の窓を project.json の design（横）の大きさで先に開くので、縦の design のコマが横の大きさに切られる。
+    def gpuEnvOf(shape: Shape, env: Map[String, String]): Map[String, String] = match shape {
+        case Shape.Landscape => env
+        case Shape.Phone(_)  => Map.insert("FGE_GPU", "off", env)
+    }
+
+    def designOf(shape: Shape): Vec2.Vec2 \ IO = match shape {
+        case Shape.Landscape   => SceneRender.design()
+        case Shape.Phone(size) => SceneRender.portraitDesignOf(size)
+    }
+
+    def screenOf(shape: Shape, design: Vec2.Vec2, declared: List[String]): SceneRender.Screen \ IO = match shape {
+        case Shape.Landscape   => SceneRender.screenOf(design, declared)
+        case Shape.Phone(size) => SceneRender.phoneScreenOf(size, design, declared)
+    }
 
     /// 流した後に書く物。MigrateOnly = 移行の記録だけ（FLOW_OUT の全部のコマ・音・tape.json は書かない）。
     // WhyNot: FGE_VIDEO_PAINT=none で全部のコマを塗らない形にしない — 比べのコマは層ごとの MIGRATE_PAINT_* が無ければ FGE_VIDEO_PAINT を引き継ぐので、比べのコマの PNG も塗られなくなる。
@@ -255,7 +290,7 @@ mod FlowVideo {
     def layerSceneOf(screen: SceneRender.Screen, layer: MigrateOut.Layer, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] = match layer {
         case MigrateOut.Layer.AllLayers  => sceneOf(screen, fonts, h)
         case MigrateOut.Layer.WorldLayer =>
-            let ctx = App.viewCtxOfFonts(fonts(""), fonts, screen#design);
+            let ctx = { display = screen#display | App.viewCtxOfFonts(fonts(""), fonts, screen#design) };
             App.composeScene(None, 1.0, screen#design, { world = Resources.view(View.worldLayer, ctx, h), hud = Nil })
     }
 
@@ -427,7 +462,7 @@ mod FlowVideo {
 
     /// 1 コマの絵（SceneRender.shootAs と同じ合流: 背景は frame、文章とウィンドウは hud）。
     def sceneOf(screen: SceneRender.Screen, fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] =
-        let ctx = App.viewCtxOfFonts(fonts(""), fonts, screen#design);
+        let ctx = { display = screen#display | App.viewCtxOfFonts(fonts(""), fonts, screen#design) };
         App.composeScene(None, 1.0, screen#design, { world = Resources.view(View.frame, ctx, h), hud = Resources.view(View.hud, ctx, h) })
 
     def sampleRate(): Int32 = 44100

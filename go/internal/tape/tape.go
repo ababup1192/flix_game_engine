@@ -35,6 +35,14 @@ const (
 	StripFile = "strip.jpg"
 	IndexFile = "index.html"
 
+	// 縦の画面（スマホを縦に持った時）で同じ flow を撮った分。あれば頁は縦で開き、ボタンで横（上の 3 つ）へ替える。
+	PhoneTapeFile  = "tape-phone.json"
+	PhoneVideoFile = "video-phone.mp4"
+	PhoneStripFile = "strip-phone.jpg"
+
+	// PlayDir はテープのフォルダの中に置くゲームのブラウザ版（bin/fge export-web の書き出し）。あれば頁の上に「はじめから遊ぶ」を出す。
+	PlayDir = "play"
+
 	// StripPerSec は strip のコマの間隔（0.5 秒ごと）。頁の欄の名前 stripPerSec はモックのまま。
 	StripPerSec = 2
 	// StripW・StripH は strip の 1 コマ（帯とサムネの枠の比）。動画の比が違えば真ん中から切り抜く（横長の動画は左右が落ちる）。
@@ -62,6 +70,8 @@ type Options struct {
 	Splash Splash
 	// Warn は止めない注意の書き先（nil なら書かない）。
 	Warn io.Writer
+	// Play はゲームのブラウザ版の書き出しのフォルダ（--play）。空でなければテープのフォルダの play/ へ写す。
+	Play string
 }
 
 // Splash は頁の SPLASH。ゲームのブラウザ版の bundle.json の splash と同じ形（ロゴと組み込みフォントの PNG・字の表・字の寸法）。
@@ -111,6 +121,8 @@ func Run(args []string, splash Splash, stdout, stderr io.Writer) int {
 
 const usage = "使い方: bin/fge tape --dir <フォルダ>   （フォルダに tape.json と video.mp4。strip.jpg と index.html を書く。ゲームのシナリオが見つかれば分岐のグラフとシナリオ原稿 .md も頁に載せる）\n" +
 	"       bin/fge tape --group <フォルダ> <フォルダ>…   （同じ始まりから撮った複数のテープ。選んだ道が分かれた所を分岐にして、グラフの箱から隣の頁へつなぐ。フォルダは並べて置く）\n" +
+	"       どちらにも --play <書き出しのフォルダ> を付けると、ゲームのブラウザ版（bin/fge export-web の書き出し）を各フォルダの play/ へ写し、頁の上に「はじめから遊ぶ」を出す\n" +
+	"       （フォルダに tape-phone.json と video-phone.mp4 があれば、縦の画面の分として頁に載せ、頁は縦で開いて上のボタンで横へ替える）\n" +
 	"       bin/fge tape publish <フォルダ>…   （Pages の置き場へ置いて URL を出す。詳しくは publish --help）"
 
 func parseArgs(args []string) (Options, error) {
@@ -128,6 +140,11 @@ func parseArgs(args []string) (Options, error) {
 				opt.Group = append(opt.Group, args[i+1])
 				i++
 			}
+		case a == "--play" && i+1 < len(args):
+			opt.Play = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--play="):
+			opt.Play = strings.TrimPrefix(a, "--play=")
 		case a == "-h" || a == "--help":
 			return opt, errors.New("")
 		default:
@@ -177,6 +194,12 @@ func build(opt Options, t *Tape) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := addPhoneView(opt.FFmpeg, opt.Dir, t); err != nil {
+		return "", err
+	}
+	if err := addPlay(opt.Play, opt.Dir, t); err != nil {
+		return "", err
+	}
 	addScript(opt.Dir, t, opt.Warn)
 	if opt.Branches != nil {
 		b, err := json.Marshal(*opt.Branches)
@@ -194,6 +217,138 @@ func build(opt Options, t *Tape) (string, error) {
 		return "", err
 	}
 	return index, nil
+}
+
+// View は頁の TAPE.views の 1 つ（同じ flow を別の画面の大きさで撮った分）。台詞・帯・音の時刻は上の欄と同じ物を使い、
+// 画面の形で変わる物（動画・帯の絵・メッセージウィンドウ・画面に出ている物の枠）だけを持つ。
+type View struct {
+	Video      string          `json:"video"`
+	VideoBytes int64           `json:"videoBytes"`
+	Strip      Strip           `json:"strip"`
+	Msg        json.RawMessage `json:"msg"`
+	Objects    json.RawMessage `json:"objects"`
+}
+
+// sameTimeKeys は縦と横で一致しないといけない欄（頁はどちらの動画でも同じ時刻の台詞・帯・音・分岐を出す）。
+var sameTimeKeys = []string{"duration", "fps", "scenes", "timeline", "lines", "sounds", "choices", "yarn", "node"}
+
+// addPhoneView は dir に縦の画面の tape-phone.json があれば、video-phone.mp4 の strip を作り、頁の views.phone に足す。
+// tape-phone.json が無ければ何もしない（横だけのテープ。頁は切り替えのボタンを出さない）。
+// WhyNot: 時刻が食い違う縦の分を黙って載せない — 切り替えた途端に台詞と帯が動画とずれ、注釈が別のコマを指す。
+func addPhoneView(ffmpeg, dir string, t *Tape) error {
+	raw, err := os.ReadFile(filepath.Join(dir, PhoneTapeFile))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	phone, err := Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", PhoneTapeFile, err)
+	}
+	for _, key := range sameTimeKeys {
+		if !sameJSON(t.raw[key], phone.raw[key]) {
+			return fmt.Errorf("%s と %s で %q が違う（縦と横で同じ flow が同じ時刻に進んでいない。縦だけ・横だけで撮るならゲームの make tape の TAPE_VIEWS）", TapeFile, PhoneTapeFile, key)
+		}
+	}
+	video := filepath.Join(dir, PhoneVideoFile)
+	info, err := os.Stat(video)
+	if err != nil {
+		return fmt.Errorf("%s があるのに %s が無い（ゲームの Makefile の動画の手順が作る）: %w", PhoneTapeFile, video, err)
+	}
+	strip, err := MakeStrip(ffmpeg, video, filepath.Join(dir, PhoneStripFile), phone.Duration)
+	if err != nil {
+		return err
+	}
+	views, err := json.Marshal(map[string]View{"phone": {Video: PhoneVideoFile, VideoBytes: info.Size(), Strip: strip,
+		Msg: phone.raw["msg"], Objects: phone.raw["objects"]}})
+	if err != nil {
+		return err
+	}
+	t.raw["views"] = views
+	return nil
+}
+
+// addPlay は play（空なら写さない）を dir/play へ写し、dir/play/index.html があれば頁の start に足す。
+func addPlay(play, dir string, t *Tape) error {
+	dst := filepath.Join(dir, PlayDir)
+	if play != "" {
+		if _, err := os.Stat(filepath.Join(play, "index.html")); err != nil {
+			return fmt.Errorf("--play %s に index.html が無い（bin/fge export-web の書き出しのフォルダを渡す）: %w", play, err)
+		}
+		if err := os.RemoveAll(dst); err != nil {
+			return err
+		}
+		if err := copyTree(play, dst); err != nil {
+			return fmt.Errorf("%s を %s へ写せない: %w", play, dst, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dst, "index.html")); err != nil {
+		return nil
+	}
+	if err := checkNoHomePath(dst); err != nil {
+		return err
+	}
+	t.raw["start"] = json.RawMessage(`"` + PlayDir + `/index.html"`)
+	return nil
+}
+
+// checkNoHomePath は dir の下のファイルに、手元のホームのパス（ユーザー名を含む）が入っていないかを見る。
+// WhyNot: 書き出しをそのまま置き場へ出さない — 組み立てた作業フォルダのパスが wasm に残ることがあり、公開した頁からユーザー名が読める。
+func checkNoHomePath(dir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil || len(home) < 2 {
+		return nil
+	}
+	needles := [][]byte{[]byte(home), []byte(filepath.ToSlash(home))}
+	return filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		body, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		for _, n := range needles {
+			if bytes.Contains(body, n) {
+				return fmt.Errorf("%s にホームのパス（%s）が入っている。公開するとユーザー名が読めるので、ホームの外の作業フォルダで書き出し直す（bin/fge export-web --work /tmp/…）", p, home)
+			}
+		}
+		return nil
+	})
+}
+
+// copyTree は src の下を dst へ写す（dst は無い前提）。
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		to := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(to, 0o755)
+		}
+		return copyTapeFile(p, to)
+	})
+}
+
+// sameJSON は 2 つの JSON の値が同じか（空白と、オブジェクトの鍵の並びは見ない）。どちらも無い欄は同じ。
+func sameJSON(a, b json.RawMessage) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	ja, _ := json.Marshal(x)
+	jb, _ := json.Marshal(y)
+	return bytes.Equal(ja, jb)
 }
 
 // addScript は tape.json の yarn（ゲームのルートからのパス）のフォルダの .yarn から、分岐のグラフ（graph）と

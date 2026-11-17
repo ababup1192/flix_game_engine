@@ -81,6 +81,24 @@ e2e の flow を流して撮った動画を、スマホで 1 つの頁（index.h
 押すと別のタブで Pages の最新のブラウザ版が開き、そのシーン（台本の行）から始まる。直した台詞があれば、前の文が一致する行だけに当てて始める（ずれていたら当てずに言う）。直した台本で開いた時は、その旨の帯を出す。
 ポップアップを開くスクリプトは使わない（普通のリンク）。
 
+## 縦と横の 2 本・はじめから遊ぶ（2026-11-17 の人の指示。モックには無い・本物だけの機能）
+
+人の指示: 「PC で開いても基本はスマホの縦モードで開く。ボタンで PC 版と切り替えられるように」「トップに、ゲームをはじめからやるボタンも」。
+
+- **撮り方**: ゲームの `make tape` が同じ flow を縦の画面（`FLOW_VIEW=phone`・`Display.defaultPortraitView` の大きさ・縦の design）と横の画面（project.json の design）の 2 回撮る。
+  横は今までどおり `tape.json`・`video.mp4`、縦は `tape-phone.json`・`video-phone.mp4`。片方だけは `TAPE_VIEWS=pc` / `phone`（1 つだけの時はその画面を `tape.json`・`video.mp4` に置く）。
+- **束ね方**: `bin/fge tape` は `tape-phone.json` があれば `strip-phone.jpg` を作り、頁の `TAPE.views.phone` に縦の分（video・videoBytes・strip・msg・objects）を足す。
+  上の欄（video・strip・msg・objects）は横の分のまま。台詞・帯・音・分岐の時刻（duration・fps・scenes・timeline・lines・sounds・choices・yarn・node）は縦と横で一致しないと欄の名前を言って止める（切り替えた途端に動画と帯がずれるため）。
+- **頁**: `views.phone` があれば縦で開き、`?view=pc` の時だけ横で開く。上の帯のボタン（縦の時は PC の画面の絵・横の時はスマホの絵。広い画面では「PC の画面」「スマホの画面」の字も）で替える。
+  替えても秒・止めているか・選んでいる物・帯の位置・開いている欄は保ち、動画・帯の絵・メッセージウィンドウ（直した台詞を重ねる所）・物の枠だけを替える。URL の query は `history.replaceState` で書き換える（縦は既定なので query を消す）。
+  取り終えた動画は画面ごとに blob で持ち、行き来で取り直さない。`views` の無い古いテープは今までどおり横（か撮った 1 本）だけで開き、ボタンを出さない。
+- **分岐**: 横で見ている時は、グラフの箱から隣の頁へ移る道に `?view=pc` を付ける（縦は付けない）。
+- **注釈の画面**: 縦と横の 2 本を持つテープでは、矩形を持つ注釈（rect・object）に `screen`（`phone` / `pc`）を付ける。矩形は付けた画面の時だけ重ね、書き出す .md の行と JSON にも載せる（同じ割合でも縦と横では指す所が違う）。
+- **はじめから遊ぶ**: `bin/fge tape --play <書き出しのフォルダ>`（`make tape` の既定。`TAPE_PLAY=0` で止める）がブラウザ版を各テープの `play/` に写し、頁の `TAPE.start` を `play/index.html` にする。
+  上の帯の「はじめから遊ぶ」は別のタブで `play/index.html?orientation=portrait`（横で見ている時は `landscape`）を開く。書き出しが無ければボタンを出さない。
+  書き出しの作業フォルダはホームの外（`/tmp/fge-tape-web/<ゲーム>`）。組んだ所のパスが wasm に残るので、`tape --play` と `tape publish` は書き出しの中にホームのパスがあれば止める。
+  `tape publish` は `video-phone.mp4`・`strip-phone.jpg`・`play/` もあれば一緒に置く。
+
 ## 作らない物（モックに無い）
 
 - 台本の行を足す・消す・並べ替える編集

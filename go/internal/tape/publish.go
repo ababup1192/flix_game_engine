@@ -771,7 +771,27 @@ func copyTape(src, dst string) error {
 			return err
 		}
 	}
-	return nil
+	// 縦の画面の分は撮った時だけある（頁の TAPE.views が指す）。
+	for _, f := range []string{PhoneVideoFile, PhoneStripFile} {
+		if _, err := os.Stat(filepath.Join(src, f)); os.IsNotExist(err) {
+			continue
+		}
+		if err := copyTapeFile(filepath.Join(src, f), filepath.Join(dst, f)); err != nil {
+			return err
+		}
+	}
+	// ゲームのブラウザ版（頁の「はじめから遊ぶ」が指す）も、書き出した時だけある。
+	play := filepath.Join(src, PlayDir)
+	if _, err := os.Stat(filepath.Join(play, "index.html")); err != nil {
+		return nil
+	}
+	if err := checkNoHomePath(play); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(dst, PlayDir)); err != nil {
+		return err
+	}
+	return copyTree(play, filepath.Join(dst, PlayDir))
 }
 
 func copyTapeFile(src, dst string) error {

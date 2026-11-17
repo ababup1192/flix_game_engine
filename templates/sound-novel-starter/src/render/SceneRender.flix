@@ -37,7 +37,7 @@ mod SceneRender {
 
     /// 縦の画面の design（project.json の web.portraitDesign と画面の大きさ view から。実機のブラウザと同じ決め方）。
     /// 縦の指定が読めなければ 540×960。
-    def portraitDesignOf(view: Vec2.Vec2): Vec2.Vec2 \ IO =
+    pub def portraitDesignOf(view: Vec2.Vec2): Vec2.Vec2 \ IO =
         let loaded = run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO;
         loaded |> Result.toOption |> Option.flatMap(proj -> ProjectLoader.portraitConfigOf(proj, view))
                |> Option.map(c -> { x = Int32.toFloat64(c#designWidth), y = Int32.toFloat64(c#designHeight) })
@@ -51,14 +51,19 @@ mod SceneRender {
           fontTtf = ttf(), fontAtlas = HeadlessFont.buildUiAtlas(ttf(), ttf()), texturePath = textures,
           outDir = outDir, frameW = pixelsOf(design#x, 960), frameH = pixelsOf(design#y, 540) | HeadlessRender.defaults() }
 
-    /// 描き出しと flow の画面: design の大きさ・描き出しへ混ぜる本（extraFontsOf）・View に渡す字の本（本文の本と、名前で引く本）。
-    pub type alias Screen = { design = Vec2.Vec2, extra = Map[String, SoftRaster.FontEntry], fonts = View.Fonts }
+    /// 描き出しと flow の画面: design の大きさ・View に渡す画面の情報（display）・描き出しへ混ぜる本（extraFontsOf）・View に渡す字の本（本文の本と、名前で引く本）。
+    pub type alias Screen = { design = Vec2.Vec2, display = Display.Display, extra = Map[String, SoftRaster.FontEntry], fonts = View.Fonts }
 
     /// design と、App.withFonts で宣言した名前 declared から、描き出しの画面を 1 回だけ組む（本を作るのは重いので場面ごとに組まない）。
+    /// 画面の情報はデスクトップ版の実機と同じ（Display.desktop）。
     pub def screenOf(design: Vec2.Vec2, declared: List[String]): Screen \ IO =
         let extra = extraFontsOf(declared);
         let body = HeadlessFont.buildUiAtlas(ttf(), ttf());
-        { design = design, extra = extra, fonts = { atlas = body, fontOf = fontOfIn(extra, body) } }
+        { design = design, display = Display.desktop(design), extra = extra, fonts = { atlas = body, fontOf = fontOfIn(extra, body) } }
+
+    /// 縦に持ったスマホの画面（大きさ view の CSS px・縦の design は portraitDesignOf(view)）。画面の情報は shootAs の縦の画面と同じ Display.phonePortrait。
+    pub def phoneScreenOf(view: Vec2.Vec2, design: Vec2.Vec2, declared: List[String]): Screen \ IO =
+        { display = Display.phonePortrait(view, design) | screenOf(design, declared) }
 
     /// ゲームが App.withFonts で宣言した名前（GameBoot.app を通した App の fonts）。
     pub def declaredFontsOf(res: Res.Res): List[String] = App.rec(Game.app(res, Saves.fresh(res#kind), 0i64))#fonts
