@@ -380,8 +380,9 @@ mod Buildup {
 
     /// 立ったまま輪で町が出来る台本の決まり。buildSec・curve・jitter = Buildup.radialFront の値・
     /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・輪の届いた距離に合わせる）・zoomLead = カメラが輪より先に引き終える割合（0.85 なら輪が 85% 届いた所で引き終える）・aimNorth = 引き終えた時にカメラの追う点を北へずらす m（奥の目印が画面に入るように）・
+    /// walkPause = 揺れが収まってから歩き出すまでの秒・followSec = 歩き出してから追従カメラへ移りきる秒・walkZoom = 歩く追従カメラの引き（足元の点からの距離の倍率）・
     /// paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり）・spread = 横に並ぶ間（m）。
-    pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, zoomLead = Float64, aimNorth = Float64,
+    pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, zoomLead = Float64, aimNorth = Float64, walkPause = Float64, followSec = Float64, walkZoom = Float64,
                               paceFrom = Float64, paceTo = Float64, spread = Float64 }
 
     /// 止まっている間の動き。Breath = 息遣い（縦に少し伸び縮み）・Step = 足踏み（歩きのコマをゆっくりその場で）。
@@ -449,7 +450,7 @@ mod Buildup {
     def radialOf(m: Map[String, Json]): Radial =
         let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, m);
         { buildSec = num("buildSec", 4.5), curve = num("curve", 0.85), jitter = num("jitter", 0.06),
-          zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), zoomLead = num("zoomLead", 0.85), aimNorth = num("aimNorth", 0.0),
+          zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), zoomLead = num("zoomLead", 0.85), aimNorth = num("aimNorth", 0.0), walkPause = num("walkPause", 0.7), followSec = num("followSec", 1.2), walkZoom = num("walkZoom", 1.0),
           paceFrom = num("paceFrom", 1.0), paceTo = num("paceTo", 1.0), spread = num("spread", 0.95) }
 
     def idleOf(name: String): Idle = match name {

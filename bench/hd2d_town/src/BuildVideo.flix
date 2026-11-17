@@ -20,10 +20,11 @@ mod BuildVideo {
 
     /// 毎コマの決まり（台本から 1 回だけ作る）。leaderX・leaderY = 先頭の位置・cameraX・cameraY = ならしたカメラの追う点・
     /// clock = 歩いている間だけ進む時計（歩きのコマを替える）・feetDepth = 足元が画面の高さ feetV に来る水平の奥行き・
-    /// zoom = コマごとのカメラの引き（足元の点からの距離の倍率）・stand = 立ったままの台本の立つ点（地図の座標）。
+    /// zoom = コマごとのカメラの引き（足元の点からの距離の倍率）・stand = 立ったままの台本の立つ点（地図の座標）・
+    /// walkFrom = 立ったままの台本で歩き出す演出の時刻（横並びから隊列へ組み直す始まり）。
     pub type alias Track = { route = Route.Route, cameraX = Vector[Float64], cameraY = Vector[Float64], cameraHeight = Vector[Float64],
                          clock = Vector[Float64], frames = Int32, feetDepth = Float64, eye = TownCamera.Eye, lens = TownCamera.Lens, groundZ = Float64,
-                         zoom = Vector[Float64], stand = Option[(Float64, Float64)] }
+                         zoom = Vector[Float64], stand = Option[(Float64, Float64)], walkFrom = Float64 }
 
     pub def trackOf(m: TownMap, look: TownScene.Look, plan: Plan): Track =
         let lens = TownCamera.lensOf(look#topDeg, look#bottomDeg);
@@ -44,29 +45,52 @@ mod BuildVideo {
         { route = route, cameraX = Route.hannSmooth(half, Vector.map(fst, leader)), cameraY = Route.hannSmooth(half, Vector.map(snd, leader)),
           cameraHeight = Route.lagged(plan#camZLagK, dt, Vector.map(_ -> groundZ, leader)),
           clock = clock, frames = n, feetDepth = snap(TownCamera.depthAt(lens, eye, groundZ, plan#feetV)), eye = eye, lens = lens, groundZ = groundZ,
-          zoom = Vector.map(_ -> 1.0, leader), stand = None }
+          zoom = Vector.map(_ -> 1.0, leader), stand = None, walkFrom = 0.0 }
 
-    /// 立ったままの台本の毎コマの決まり。done = 町が全部出来る時刻（この後 holdSec 撮る）。
-    def standTrackOf(m: TownMap, look: TownScene.Look, plan: Plan, r: Buildup.Radial, done: Float64): Track =
+    /// 立ったままの台本の毎コマの決まり。町が出来て目印の揺れが収まった walkPause 秒後に、path の 2 点目から先を歩き出す。
+    /// カメラは引いた位置から、歩き出して r#followSec 秒かけて歩く追従カメラ（横と奥は先頭を追い、止まる所だけ丸める）へ移る。
+    def standTrackOf(m: TownMap, look: TownScene.Look, plan: Plan, r: Buildup.Radial, show: Buildup.Show): Track =
         let lens = TownCamera.lensOf(look#topDeg, look#bottomDeg);
         let eye = TownCamera.frameEye(m, lens);
         let at = List.head(plan#path) |> Option.getWithDefault({ col = 13, row = 15, wait = 0.0 });
         let groundZ = TownMap.topAt(m, at#col, at#row);
         let x = Int32.toFloat64(at#col) + 0.5;
         let y = Int32.toFloat64(m#height - 1 - at#row) + 0.5;
-        let total = done + plan#timing#hitstopSec + plan#holdSec;
-        let n = Float64.round(total * Int32.toFloat64(fps())) |> Float64.tryToInt32 |> Option.getWithDefault(0);
         let dt = 1.0 / Int32.toFloat64(fps());
+        let settle = Buildup.impactOf(show) |> Option.map(ip -> fst(ip) + plan#timing#shake) |> Option.getWithDefault(show#done);
+        let walkFrom = Float64.max(show#done, settle) + r#walkPause;
+        let speed = plan#groundFlowH / TownCamera.screenPerMeterAt(lens, eye, groundZ, 0.5);
+        let route = Route.make(m#height, plan#path, speed, walkFrom);
+        let total = route#endAt + plan#stopSec / 2.0 + plan#holdSec + plan#timing#hitstopSec;
+        let n = Float64.round(total * Int32.toFloat64(fps())) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        let story = Vector.range(0, n) |> Vector.map(f -> Buildup.storyTime(show, Int32.toFloat64(f) * dt));
+        let leader = story |> Vector.map(t -> fst(Route.pointAt(route, Route.distanceAt(route, t))));
+        let half = Float64.round(plan#stopSec / 2.0 / dt) |> Float64.tryToInt32 |> Option.getWithDefault(10);
+        let followX = Route.hannSmooth(half, Vector.map(fst, leader));
+        let followY = Route.hannSmooth(half, Vector.map(snd, leader));
+        let moving = story |> Vector.map(t -> if (Route.isMoving(route, t)) dt else 0.0);
         // WhyNot: 引きを時刻でなく輪の届いた割合で決める — 輪が加速して画面の外へ出る前にカメラが追いつくように
         let reach = (t: Float64) -> Float64.pow(base = Num.clamp(0.0, 1.0, (t - plan#timing#startDelay) / r#buildSec), 1.0 / r#curve);
-        let zoom = Vector.range(0, n) |> Vector.map(f -> {
-            let u = Num.clamp(0.0, 1.0, reach(Int32.toFloat64(f) * dt) / r#zoomLead);
-            r#zoomFrom + (r#zoomTo - r#zoomFrom) * u * u * (3.0 - 2.0 * u)
-        });
-        let aim = zoom |> Vector.map(k -> y + r#aimNorth * (k - r#zoomFrom) / Float64.max(0.001, r#zoomTo - r#zoomFrom));
-        { route = Route.make(m#height, at :: Nil, 1.0, 0.0), cameraX = Vector.map(_ -> x, zoom), cameraY = aim,
-          cameraHeight = Vector.map(_ -> groundZ, zoom), clock = Vector.map(_ -> 0.0, zoom), frames = n,
-          feetDepth = TownCamera.depthAt(lens, eye, groundZ, plan#feetV), eye = eye, lens = lens, groundZ = groundZ, zoom = zoom, stand = Some((x, y)) }
+        let smooth = (u: Float64) -> { let v = Num.clamp(0.0, 1.0, u); v * v * (3.0 - 2.0 * v) };
+        let pulled = story |> Vector.map(t -> r#zoomFrom + (r#zoomTo - r#zoomFrom) * smooth(reach(t) / r#zoomLead));
+        let follow = story |> Vector.map(t -> smooth((t - walkFrom) / r#followSec));
+        let zoom = Vector.zip(pulled, follow) |> Vector.map(kw -> { let (k, w) = kw; k + (r#walkZoom - k) * w });
+        let aimOf = (k: Float64) -> y + r#aimNorth * (k - r#zoomFrom) / Float64.max(0.001, r#zoomTo - r#zoomFrom);
+        let blend = (a: Float64, b: Float64, w: Float64) -> a + (b - a) * w;
+        let camX = Vector.range(0, n) |> Vector.map(f -> blend(x, Vector.get(f, followX), Vector.get(f, follow)));
+        let camY = Vector.range(0, n) |> Vector.map(f -> blend(aimOf(Vector.get(f, pulled)), Vector.get(f, followY), Vector.get(f, follow)));
+        { route = route, cameraX = camX, cameraY = camY,
+          cameraHeight = Vector.map(_ -> groundZ, zoom), clock = Vector.scanLeft((acc, v) -> acc + v, 0.0, moving), frames = n,
+          feetDepth = TownCamera.depthAt(lens, eye, groundZ, plan#feetV), eye = eye, lens = lens, groundZ = groundZ, zoom = zoom,
+          stand = Some((x, y)), walkFrom = walkFrom }
+
+    /// 立ったままの台本の i 人目の位置と向き。歩き出す前は横並びで正面、歩き出したら 0.9 秒かけて横並びの位置から道の 1 マスずつ後ろへ寄せる（先頭はそのまま道を行く）。
+    def formationAt(c: (Float64, Float64), spread: Float64, route: Route.Route, walkFrom: Float64, t: Float64, s: Float64, i: Int32): ((Float64, Float64), Dir) =
+        let ((rx, ry), d) = Route.pointAt(route, s - Int32.toFloat64(i));
+        let (sx, sy) = standAt(c, spread, i);
+        let u = Num.clamp(0.0, 1.0, (t - walkFrom) / 0.9);
+        let w = if (i == 0) 1.0 else u * u * (3.0 - 2.0 * u);
+        if (t < walkFrom) ((sx, sy), Dir.South) else ((sx + (rx - sx) * w, sy + (ry - sy) * w), d)
 
     /// 立ったままの隊列の i 人目の位置（先頭が真ん中・2 人目が左・3 人目が右で、後ろの 2 人は少し奥）。
     def standAt(c: (Float64, Float64), spread: Float64, i: Int32): (Float64, Float64) =
@@ -130,7 +154,7 @@ mod BuildVideo {
                     case Some(r) =>
                         let at = List.head(p#path) |> Option.getWithDefault({ col = 13, row = 15, wait = 0.0 });
                         make(Buildup.radialFront(p#timing, at#col, at#row, m#width, m#height, r))
-                            |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = standTrackOf(m, look, p, r, show#done) })
+                            |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = standTrackOf(m, look, p, r, show) })
                     case None =>
                         let tr = trackOf(m, look, p);
                         make(walkFront(m, p, tr)) |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = tr })
@@ -178,12 +202,13 @@ mod BuildVideo {
         let t = Buildup.storyTime(show, Int32.toFloat64(f) * dt);
         let route = tr#route;
         let s = Route.distanceAt(route, t);
-        let walking = Option.isEmpty(tr#stand) and Route.isMoving(route, t);
+        let walking = Route.isMoving(route, t);
         let spread = plan#radial |> Option.map(r -> r#spread) |> Option.getWithDefault(0.95);
         let clock = Vector.nth(f, tr#clock) |> Option.getWithDefault(0.0);
         let walkFrame = Int32.modulo(Float64.floor(clock / plan#frameSec) |> Float64.tryToInt32 |> Option.getWithDefault(0), 4);
         let members = plan#party |> List.mapWithIndex((i, w) -> {
-            let ((x, y), d0) = tr#stand |> Option.map(c -> (standAt(c, spread, i), plan#endFace)) |> Option.getWithDefault(Route.pointAt(route, s - Int32.toFloat64(i)));
+            let ((x, y), d0) = tr#stand |> Option.map(c -> formationAt(c, spread, route, tr#walkFrom, t, s, i))
+                |> Option.getWithDefault(Route.pointAt(route, s - Int32.toFloat64(i)));
             let d = if (not walking and t >= route#endAt) plan#endFace else d0;
             let (row, flip) = dirCell(d);
             let pose = if (walking) { strip = w#strip, frame = walkFrame, perDir = 4, stretch = 1.0 } else idlePose(plan, w, i, t);
@@ -195,7 +220,7 @@ mod BuildVideo {
         let eye = { x = snap(at(tr#cameraX, tr#eye#x)), z = snap(at(tr#cameraY, 0.0) - tr#feetDepth * pull),
                     height = tr#groundZ + (tr#eye#height - tr#groundZ) * pull + (at(tr#cameraHeight, tr#groundZ) - tr#groundZ) + shake };
         let camera = TownCamera.cameraAt(tr#lens, look#far, eye);
-        let leaderY = tr#stand |> Option.map(snd) |> Option.getWithDefault(snap(snd(fst(Route.pointAt(route, s)))));
+        let leaderY = snap(snd(fst(Route.pointAt(route, s))));
         let focus = Num.sqrt((leaderY - eye#z) * (leaderY - eye#z) + (eye#height - tr#groundZ) * (eye#height - tr#groundZ));
         let textures = st#dust :: res#textures;
         let partyBoards = List.map(fst, members);

@@ -1,16 +1,21 @@
 {
   "version": 1,
-  "note": "立ったまま、隊列を中心に輪で町が出来る動画（BUILDUP=assets/buildup_center.json）。path の最初の点に立つ・holdSec = 全部出来た後に撮る秒・radial の buildSec = 輪が一番遠いマスへ届く秒・curve = 届く距離が時間の 1/curve 乗で増える（小さいほど、はじめはゆっくりで後ほど速い）・zoomLead = 輪がこの割合届いた所でカメラが引き終える・paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり・土ぼこりの粒はその逆数の倍）・jitter = マスごとのずれ（秒）・zoomFrom・zoomTo = カメラの引き（足元からの距離の倍率）・spread = 横に並ぶ間（m）・部品の秒（rise・fall・squash・monumentFall・shake・shakeAmp・wallRise・roofDelay・roofFall・openingDelay・openingStep・pop・dust）と dustScale（土ぼこりの粒の倍率）は Buildup.Timing と同じ・impactDust = 記念碑の着地の土ぼこりの倍率・hitstopSec = 着地で止める秒・flash = 着地の瞬間に上げる露出（段）・waveSpeed・waveHeight = 衝撃が外へ伝わる速さと、木・街灯・町の人が跳ねる高さ",
+  "note": "立ったまま、隊列を中心に輪で町が出来る動画（BUILDUP=assets/buildup_center.json）。path の最初の点に立ち、町が出来て揺れが収まった walkPause 秒後に残りの点を歩く（followSec で追従カメラへ移る）・holdSec = 全部出来た後に撮る秒・radial の buildSec = 輪が一番遠いマスへ届く秒・curve = 届く距離が時間の 1/curve 乗で増える（小さいほど、はじめはゆっくりで後ほど速い）・zoomLead = 輪がこの割合届いた所でカメラが引き終える・paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり・土ぼこりの粒はその逆数の倍）・jitter = マスごとのずれ（秒）・zoomFrom・zoomTo = カメラの引き（足元からの距離の倍率）・spread = 横に並ぶ間（m）・部品の秒（rise・fall・squash・monumentFall・shake・shakeAmp・wallRise・roofDelay・roofFall・openingDelay・openingStep・pop・dust）と dustScale（土ぼこりの粒の倍率）は Buildup.Timing と同じ・impactDust = 記念碑の着地の土ぼこりの倍率・hitstopSec = 着地で止める秒・flash = 着地の瞬間に上げる露出（段）・waveSpeed・waveHeight = 衝撃が外へ伝わる速さと、木・街灯・町の人が跳ねる高さ",
   "path": [
     [
       13,
-      12,
+      15,
+      0.0
+    ],
+    [
+      13,
+      8,
       0.0
     ]
   ],
-  "holdSec": 2.5,
+  "holdSec": 4.5,
   "frameSec": 0.333,
-  "feetV": 0.55,
+  "feetV": 0.62,
   "endFace": "s",
   "party": [
     {
@@ -40,7 +45,10 @@
     "paceFrom": 2.2,
     "paceTo": 0.55,
     "spread": 0.95,
-    "aimNorth": 3.0
+    "aimNorth": 3.0,
+    "walkPause": 1.0,
+    "followSec": 1.5,
+    "walkZoom": 1.7
   },
   "rise": 0.22,
   "fall": 0.28,
