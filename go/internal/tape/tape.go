@@ -234,7 +234,7 @@ var sameTimeKeys = []string{"duration", "fps", "scenes", "timeline", "lines", "s
 
 // addPhoneView は dir に縦の画面の tape-phone.json があれば、video-phone.mp4 の strip を作り、頁の views.phone に足す。
 // tape-phone.json が無ければ何もしない（横だけのテープ。頁は切り替えのボタンを出さない）。
-// WhyNot: 時刻が食い違う縦の分を黙って載せない — 切り替えた途端に台詞と帯が動画とずれ、注釈が別のコマを指す。
+// WhyNot: 時刻が食い違う縦の分を言わずに載せない — 切り替えた途端に台詞と帯が動画とずれ、注釈が別のコマを指す。
 func addPhoneView(ffmpeg, dir string, t *Tape) error {
 	raw, err := os.ReadFile(filepath.Join(dir, PhoneTapeFile))
 	if os.IsNotExist(err) {

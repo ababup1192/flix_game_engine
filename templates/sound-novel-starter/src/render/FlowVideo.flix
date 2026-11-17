@@ -82,7 +82,7 @@ mod FlowVideo {
     }
 
     /// 縦の画面は SoftRaster で塗る（FGE_GPU=off）。
-    // WhyNot: 縦の画面を GPU で塗らない — engine の VideoOut は GPU の窓を project.json の design（横）の大きさで先に開くので、縦の design のコマが横の大きさに切られる。
+    // WhyNot: 縦の画面を GPU で塗らない — engine の VideoOut は GPU の描き先を project.json の design（横）の大きさで先に開くので、縦の design のコマが横の大きさに切られる。
     def gpuEnvOf(shape: Shape, env: Map[String, String]): Map[String, String] = match shape {
         case Shape.Landscape => env
         case Shape.Phone(_)  => Map.insert("FGE_GPU", "off", env)
