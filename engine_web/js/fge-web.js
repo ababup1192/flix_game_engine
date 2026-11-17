@@ -292,16 +292,15 @@ var fgeBackendParam = fgeQueryParam("backend");
 var fgeAskedWebGl2 = fgeBackendParam === "webgl2" || fgeBackendParam === "gl";
 var fgeWantWebGpu = !fgeAskedWebGl2 && !!navigator.gpu;
 var fgeWebGpuTaken = false;
-if (fgeAskedWebGl2) {
-  console.log("[backend] webgl2: ?backend=" + fgeBackendParam + " で選んだ");
-} else if (!navigator.gpu) {
-  console.warn("[backend] WebGPU を使えない: このブラウザには navigator.gpu が無い — WebGL2 で起動する");
-}
 (function () {
+  var why = null;
   try {
-    var why = sessionStorage.getItem(fgeBackendFallbackKey);
-    if (why) { sessionStorage.removeItem(fgeBackendFallbackKey); console.warn("[backend] 前の頁で WebGPU を使えなかった: " + why + " — WebGL2 で開き直した"); }
+    why = sessionStorage.getItem(fgeBackendFallbackKey);
+    if (why) sessionStorage.removeItem(fgeBackendFallbackKey);
   } catch (e) { /* sessionStorage を使えない頁 */ }
+  if (why) console.warn("[backend] 前の頁で WebGPU を使えなかった: " + why + " — WebGL2 で開き直した");
+  else if (fgeAskedWebGl2) console.log("[backend] webgl2: ?backend=" + fgeBackendParam + " で選んだ");
+  else if (!navigator.gpu) console.warn("[backend] WebGPU を使えない: このブラウザには navigator.gpu が無い — WebGL2 で起動する");
 })();
 
 // canvas の WebGL2 の文脈を取る（GL の道の頭）。
