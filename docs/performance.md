@@ -628,6 +628,8 @@ Flix 0.78 の出すバイトコードには JIT から外れる形が 2 つあ�
 | 逆順に `::` で積んで、最後に `List.reverse` | 積んだ cons がほかの値の間に散らばり、戻す 1 巡が 1 個ごとにキャッシュを外す | 個数が多い所は `region` の中の `MutList` へ `push` して `MutList.toList`。小さな列は今までどおり `::` と `List.reverse` でよい | `drawInto`（20,000 個で `List.reverse` の 約 1.6 ms が消えた。代わりに List にする所の時間は出していない） |
 | ループの 1 個ぶんが、effect を持つ def を呼ぶ（`\ ef` の関数を受けて回す形） | effect を持つ def は、呼ぶたびに続きを運ぶ入れ物を割り当てる。PC は JIT が消すことがあるが、ブラウザ版（wasm）はそのまま時間に出る | 数の多い種類だけ、effect の無い def で先に済ませる。残りを effect のある def へ回す | `drawInto` → `pushPlain`（Sprite と Box）。ブラウザ版の cpu p50 34.3 → 29.9 ms（main は 31.3〜31.5）。PC は静かな状態の 4 回で frame p50 7.9〜8.6 ms が 3 回・11.8 ms が 1 回（main は 31.0〜32.1） |
 
+| （ブラウザ版だけ）Flix の関数を呼ぶたびに、返った値へ `instanceof Thunk$` がかかる | `Thunk$` は Flix の関数の類（1 万を超える）がみな実装する interface。TeaVM の wasm-gc は interface の instanceof を、実装する類の番号と順に比べて答える。fps3d の部屋では、1 コマの CPU の 4 割がこの検査だった | ゲームの .flix では直さない。`bin/fge export-web` の付け替え（`fge.teavmfix.Rewrite`）で `FlixThunks.isThunk`（null でも final の `Value$`・`Suspension$` でもない）へ替える。書き出しの終わりに `rewrite instanceof-Thunk <数>` が出る | fps3d-room-bench（PC の headless Chrome・WebGPU）の cpu 中央 11.6〜13.3 → 7.1〜7.4 ms・split 4.3 → 1.9 ms・submit 8.4 → 3.8 ms。部屋の絵は WebGL2・WebGPU とも前後で 0 px の差 |
+
 **PC だけで測らない。** 「JIT から外れる形」の 1 つ目の直しは PC で 3 倍速く、ブラウザ版では 9% 遅くなった（「それ以外」の 2 つ目で戻した）。
 描く道を直したら `make bench-web` でも前後を 1 組測る。
 
