@@ -332,12 +332,15 @@ mod TownScene {
     pub def postOf(look: Look, focus: Float64): PostStack.Stack = postAt(look, focus, 0.0)
 
     /// postOf に時刻 t（秒・霧のむらを流す）を渡す形。
-    pub def postAt(look: Look, focus: Float64, t: Float64): PostStack.Stack =
+    pub def postAt(look: Look, focus: Float64, t: Float64): PostStack.Stack = postFlashAt(look, focus, t, 0.0)
+
+    /// postAt に、露出へ足す段 flash（着地の光）を渡す形。
+    pub def postFlashAt(look: Look, focus: Float64, t: Float64, flash: Float64): PostStack.Stack =
         PostStack.preset(PostStack.Preset.Neutral)
             |> PostStack.withHeightFog(look#heightFog)
             |> PostStack.withTime(ShotClock.at(t))
             |> PostStack.withViewTransform(PostStack.ViewTransform.AgX)
-            |> PostStack.withExposure(look#exposure)
+            |> PostStack.withExposure(look#exposure + flash)
             |> PostStack.withBloom(Some({ threshold = look#bloomThreshold, smoothness = 0.5, size = look#bloomSize, strength = look#bloomStrength }))
             |> PostStack.withDepthOfField(if (look#fStop > 0.0) Some(PostStack.DepthOfField.Physical({ focusDistance = focus, fStop = look#fStop })) else None)
             |> PostStack.withColorGrade(Some({ lift = look#lift, gamma = look#gamma, gain = look#gain, saturation = look#saturation }))

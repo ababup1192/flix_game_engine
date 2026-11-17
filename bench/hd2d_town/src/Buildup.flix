@@ -14,12 +14,15 @@ mod Buildup {
     /// rippleSec・startDelay = はじめに隊列のまわりの行が 1 行ずつ出来る間と、最初の遅れ・
     /// rise = 地面がせり上がる秒・fall・fallHeight = 物が降る秒と高さ・squash = つぶれて伸びる秒・
     /// monumentFall・monumentHeight・shake・shakeAmp = 目印が降る秒と高さ・カメラが揺れる秒と幅（m）・
-    /// wallRise・roofDelay・roofFall・roofHeight・openingDelay・openingStep・pop = 建物の部品の秒・dust = 土ぼこりの秒・dustScale = 土ぼこりの粒の数の倍率。
+    /// wallRise・roofDelay・roofFall・roofHeight・openingDelay・openingStep・pop = 建物の部品の秒・dust = 土ぼこりの秒・dustScale = 土ぼこりの粒の数の倍率・
+    /// impactDust = 目印の着地の土ぼこりの倍率（粒の数・広がり）・hitstopSec = 目印の着地で止める秒・flash = 着地の瞬間に上げる露出（段・2 コマで戻る）・
+    /// waveSpeed・waveHeight = 着地の衝撃が外へ伝わる速さ（m/秒）と、板の物（木・街灯・町の人）が跳ねる高さ（m・遠いほど小さい）。
     pub type alias Timing = { lead = Float64, afterRowsPerSec = Float64, rippleSec = Float64, startDelay = Float64,
                               rise = Float64, fall = Float64, fallHeight = Float64, squash = Float64,
                               monumentFall = Float64, monumentHeight = Float64, shake = Float64, shakeAmp = Float64,
                               wallRise = Float64, roofDelay = Float64, roofFall = Float64, roofHeight = Float64,
-                              openingDelay = Float64, openingStep = Float64, pop = Float64, dust = Float64, dustScale = Float64 }
+                              openingDelay = Float64, openingStep = Float64, pop = Float64, dust = Float64, dustScale = Float64,
+                              impactDust = Float64, hitstopSec = Float64, flash = Float64, waveSpeed = Float64, waveHeight = Float64 }
 
     /// 前線（マスごとに出来始める時刻）。cellTime = 列・行 → 時刻・monumentAt = 目印が降り始める時刻（None ならそのマスの時刻のすぐ後）・
     /// pace = 出始める時刻 → 部品の動きの秒の倍率（大きいほどゆっくり。土ぼこりの粒はその逆数の倍）。
@@ -32,7 +35,7 @@ mod Buildup {
           openingStep = tm#openingStep * k, pop = tm#pop * k, dustScale = tm#dustScale / k | tm }
 
     /// 立つ点から輪が広がる前線。輪は r#buildSec 秒で一番遠いマスへ届き、届く距離は時間の 1/r#curve 乗で増える（curve が 1 より小さいほど、はじめはゆっくりで後ほど速い）。
-    /// 部品の動きの秒は r#paceFrom 倍から r#paceTo 倍へ、輪の進みに合わせて替える。目印は最後のマスの後に降る。
+    /// 部品の動きの秒は r#paceFrom 倍から r#paceTo 倍へ、輪の進みに合わせて替える。目印は輪が止まった時に降りはじめる。
     /// col・row = 立つマス・width・height = 地図の大きさ。マスごとに ±r#jitter 秒ずらしてそろい過ぎを崩す。
     pub def radialFront(tm: Timing, col: Int32, row: Int32, width: Int32, height: Int32, r: Radial): Front =
         let far = List.foldLeft((a, cr) -> Float64.max(a, distanceOf(col, row, fst(cr), snd(cr))), 1.0,
@@ -40,13 +43,14 @@ mod Buildup {
         let at = (c: Int32, rr: Int32) -> {
             let u = distanceOf(col, row, c, rr) / far;
             let wobble = (Int32.toFloat64(Int32.modulo(c * 73 + rr * 151, 17)) / 16.0 - 0.5) * 2.0 * r#jitter * u;
-            Float64.max(tm#startDelay, tm#startDelay + r#buildSec * Float64.pow(base = u, r#curve) + wobble)
+            // WhyNot: ずれで輪の終わりより後に出る物を作らない — 輪が止まった後に遅れて降る物を待つ間が出来る
+            Num.clamp(tm#startDelay, tm#startDelay + r#buildSec, tm#startDelay + r#buildSec * Float64.pow(base = u, r#curve) + wobble)
         };
         let pace = (t: Float64) -> {
             let u = Num.clamp(0.0, 1.0, (t - tm#startDelay) / r#buildSec);
             r#paceFrom + (r#paceTo - r#paceFrom) * u
         };
-        { cellTime = at, monumentAt = Some(tm#startDelay + r#buildSec + r#jitter + 0.25), pace = pace }
+        { cellTime = at, monumentAt = Some(tm#startDelay + r#buildSec), pace = pace }
 
     def distanceOf(c0: Int32, r0: Int32, c: Int32, r: Int32): Float64 =
         let dx = Int32.toFloat64(c - c0);
@@ -73,7 +77,8 @@ mod Buildup {
           rise = 0.25, fall = 0.3, fallHeight = 5.0, squash = 0.22,
           monumentFall = 0.5, monumentHeight = 14.0, shake = 0.5, shakeAmp = 0.12,
           wallRise = 0.3, roofDelay = 0.4, roofFall = 0.24, roofHeight = 4.0,
-          openingDelay = 0.7, openingStep = 0.02, pop = 0.14, dust = 0.4, dustScale = 1.0 }
+          openingDelay = 0.7, openingStep = 0.02, pop = 0.14, dust = 0.4, dustScale = 1.0,
+          impactDust = 1.0, hitstopSec = 0.0, flash = 0.0, waveSpeed = 14.0, waveHeight = 0.0 }
 
     /// 行 r が出来る時刻。leaderRows = コマごとの (時刻, 先頭の行（小数）)。前線は先頭の lead 行先で、先頭と一緒に進む。
     /// はじめから前線の手前にある行は隊列のまわりから 1 行ずつ rippleSec おきに、先頭が行き着いた後に残る奥の行は afterRowsPerSec で出来る。
@@ -272,8 +277,11 @@ mod Buildup {
                         p#plain |> Option.flatMap(pl -> plainWorld(p#timing, show, t, p) |> Option.map(w -> placed(w, fst(pl), snd(pl)))) |> Option.toList));
         let boards = show#boards |> List.filter(bp -> t >= bp#start) |> List.map(bp -> {
             let tm = bp#timing;
-            let (dy, sy, sxz) = dropOf(t, bp#start, tm#fall, tm#fallHeight, tm#squash);
+            let (dy0, sy0, sxz) = dropOf(t, bp#start, tm#fall, tm#fallHeight, tm#squash);
             let f = Scene3d.billboardFieldsOf(bp#billboard);
+            let (hop, stretch) = waveAt(show, t, f#position);
+            let dy = dy0 + hop;
+            let sy = sy0 * stretch;
             let shrink = clamp01((t - bp#start) / tm#fall);
             (Scene3d.billboard(f#texture, f#regionRect, Vec3.add(f#position, Vec3.v3(0.0, dy, 0.0)), { x = f#size#x * sxz, y = f#size#y * sy })
                 |> Scene3d.withBillboardTint(f#tint) |> Scene3d.withCastShadows(f#castShadows) |> Scene3d.withReceiveShadows(f#receiveShadows),
@@ -288,9 +296,10 @@ mod Buildup {
         show#landings |> List.filter(l -> { let (_, at, _, _) = l; t >= at and t < at + tm#dust }) |> List.flatMap(l -> {
             let (p, at, big, dustScale) = l;
             let tau = (t - at) / tm#dust;
-            let count = Float64.round((if (big) 10.0 else 6.0) * dustScale) |> Float64.tryToInt32 |> Option.getWithDefault(6);
-            let reach = if (big) 1.8 else 1.0;
-            let size = (if (big) 0.6 else 0.36) * (1.0 - tau) + 0.05;
+            let boost = if (big) tm#impactDust else 1.0;
+            let count = Float64.round((if (big) 10.0 else 6.0) * dustScale * boost) |> Float64.tryToInt32 |> Option.getWithDefault(6);
+            let reach = (if (big) 1.8 else 1.0) * Num.sqrt(boost);
+            let size = (if (big) 0.6 else 0.36) * Float64.min(1.6, Num.sqrt(boost)) * (1.0 - tau) + 0.05;
             List.range(0, count) |> List.map(k -> {
                 let a = 2.0 * Num.pi() * Int32.toFloat64(k) / Int32.toFloat64(count) + 0.4;
                 let d = 0.25 + reach * (1.0 - (1.0 - tau) * (1.0 - tau));
@@ -299,6 +308,40 @@ mod Buildup {
                     |> Scene3d.unlit
             })
         })
+
+    /// 目印が着地する時刻と所（目印が無ければ None）。
+    pub def impactOf(show: Show): Option[(Float64, Vec3.Vec3)] =
+        show#landings |> List.find(l -> { let (_, _, big, _) = l; big }) |> Option.map(l -> { let (p, at, _, _) = l; (at, p) })
+
+    /// 実の時刻 real → 演出の時刻（目印の着地で hitstopSec だけ止める）。
+    pub def storyTime(show: Show, real: Float64): Float64 =
+        let h = show#timing#hitstopSec;
+        impactOf(show) |> Option.map(ip -> {
+            let at = fst(ip);
+            if (real < at) real else if (real < at + h) at else real - h
+        }) |> Option.getWithDefault(real)
+
+    /// 実の時刻 real の着地の光（露出に足す段・着地から 2 コマで 0 へ）。
+    pub def flashAt(show: Show, real: Float64): Float64 =
+        impactOf(show) |> Option.map(ip -> {
+            let u = (real - fst(ip)) * 15.0;
+            if (u < 0.0 or u >= 1.0) 0.0 else show#timing#flash * (1.0 - u)
+        }) |> Option.getWithDefault(0.0)
+
+    /// 着地の衝撃で板の物が跳ねる高さと、縦の伸び（衝撃は距離 / waveSpeed 秒遅れて届き、0.3 秒で跳ねて戻る）。
+    def waveAt(show: Show, t: Float64, at3: Vec3.Vec3): (Float64, Float64) =
+        let tm = show#timing;
+        if (tm#waveHeight <= 0.0) (0.0, 1.0)
+        else impactOf(show) |> Option.map(ip -> {
+            let (at, p) = ip;
+            let d = Num.sqrt((at3#x - p#x) * (at3#x - p#x) + (at3#z - p#z) * (at3#z - p#z));
+            let u = (t - at - d / tm#waveSpeed) / 0.3;
+            if (u < 0.0 or u >= 1.0) (0.0, 1.0)
+            else {
+                let k = tm#waveHeight * Float64.pow(base = 2.718281828459045, 0.0 - d / 14.0);
+                (k * Num.sin(Num.pi() * u), 1.0 - 0.6 * k * Num.sin(2.0 * Num.pi() * u))
+            }
+        }) |> Option.getWithDefault((0.0, 1.0))
 
     /// 時刻 t のカメラの揺れ（目印の石の柱の着地から減っていく上下の揺れ・m）。
     pub def shakeAt(show: Show, t: Float64): Float64 =
@@ -336,9 +379,9 @@ mod Buildup {
                             idleFrameSec = Float64, idlePhaseSec = Float64, radial = Option[Radial] }
 
     /// 立ったまま輪で町が出来る台本の決まり。buildSec・curve・jitter = Buildup.radialFront の値・
-    /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・輪の届いた距離に合わせる）・zoomLead = カメラが輪より先に引き終える割合（0.85 なら輪が 85% 届いた所で引き終える）・
+    /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・輪の届いた距離に合わせる）・zoomLead = カメラが輪より先に引き終える割合（0.85 なら輪が 85% 届いた所で引き終える）・aimNorth = 引き終えた時にカメラの追う点を北へずらす m（奥の目印が画面に入るように）・
     /// paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり）・spread = 横に並ぶ間（m）。
-    pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, zoomLead = Float64,
+    pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, zoomLead = Float64, aimNorth = Float64,
                               paceFrom = Float64, paceTo = Float64, spread = Float64 }
 
     /// 止まっている間の動き。Breath = 息遣い（縦に少し伸び縮み）・Step = 足踏み（歩きのコマをゆっくりその場で）。
@@ -399,12 +442,14 @@ mod Buildup {
                              monumentFall = num("monumentFall", d#monumentFall), shake = num("shake", d#shake), shakeAmp = num("shakeAmp", d#shakeAmp),
                              wallRise = num("wallRise", d#wallRise), roofDelay = num("roofDelay", d#roofDelay), roofFall = num("roofFall", d#roofFall),
                              openingDelay = num("openingDelay", d#openingDelay), openingStep = num("openingStep", d#openingStep),
-                             pop = num("pop", d#pop), dust = num("dust", d#dust), dustScale = num("dustScale", d#dustScale) | d } }
+                             pop = num("pop", d#pop), dust = num("dust", d#dust), dustScale = num("dustScale", d#dustScale),
+                             impactDust = num("impactDust", d#impactDust), hitstopSec = num("hitstopSec", d#hitstopSec), flash = num("flash", d#flash),
+                             waveSpeed = num("waveSpeed", d#waveSpeed), waveHeight = num("waveHeight", d#waveHeight) | d } }
 
     def radialOf(m: Map[String, Json]): Radial =
         let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, m);
         { buildSec = num("buildSec", 4.5), curve = num("curve", 0.85), jitter = num("jitter", 0.06),
-          zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), zoomLead = num("zoomLead", 0.85),
+          zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), zoomLead = num("zoomLead", 0.85), aimNorth = num("aimNorth", 0.0),
           paceFrom = num("paceFrom", 1.0), paceTo = num("paceTo", 1.0), spread = num("spread", 0.95) }
 
     def idleOf(name: String): Idle = match name {

@@ -54,7 +54,7 @@ mod BuildVideo {
         let groundZ = TownMap.topAt(m, at#col, at#row);
         let x = Int32.toFloat64(at#col) + 0.5;
         let y = Int32.toFloat64(m#height - 1 - at#row) + 0.5;
-        let total = done + plan#holdSec;
+        let total = done + plan#timing#hitstopSec + plan#holdSec;
         let n = Float64.round(total * Int32.toFloat64(fps())) |> Float64.tryToInt32 |> Option.getWithDefault(0);
         let dt = 1.0 / Int32.toFloat64(fps());
         // WhyNot: 引きを時刻でなく輪の届いた割合で決める — 輪が加速して画面の外へ出る前にカメラが追いつくように
@@ -63,7 +63,8 @@ mod BuildVideo {
             let u = Num.clamp(0.0, 1.0, reach(Int32.toFloat64(f) * dt) / r#zoomLead);
             r#zoomFrom + (r#zoomTo - r#zoomFrom) * u * u * (3.0 - 2.0 * u)
         });
-        { route = Route.make(m#height, at :: Nil, 1.0, 0.0), cameraX = Vector.map(_ -> x, zoom), cameraY = Vector.map(_ -> y, zoom),
+        let aim = zoom |> Vector.map(k -> y + r#aimNorth * (k - r#zoomFrom) / Float64.max(0.001, r#zoomTo - r#zoomFrom));
+        { route = Route.make(m#height, at :: Nil, 1.0, 0.0), cameraX = Vector.map(_ -> x, zoom), cameraY = aim,
           cameraHeight = Vector.map(_ -> groundZ, zoom), clock = Vector.map(_ -> 0.0, zoom), frames = n,
           feetDepth = TownCamera.depthAt(lens, eye, groundZ, plan#feetV), eye = eye, lens = lens, groundZ = groundZ, zoom = zoom, stand = Some((x, y)) }
 
@@ -174,7 +175,7 @@ mod BuildVideo {
         let look = res#look;
         let snap = (v: Float64) -> if (look#snapToTexels) TownCamera.snapToTexel(v) else v;
         let dt = 1.0 / Int32.toFloat64(fps());
-        let t = Int32.toFloat64(f) * dt;
+        let t = Buildup.storyTime(show, Int32.toFloat64(f) * dt);
         let route = tr#route;
         let s = Route.distanceAt(route, t);
         let walking = Option.isEmpty(tr#stand) and Route.isMoving(route, t);
@@ -212,8 +213,8 @@ mod BuildVideo {
                                  List.flatten(fr#moving :: loose :: contacts :: partyShadows :: Nil), textures) }, focus)
         }
 
-    def fullSceneOf(look: TownScene.Look, focus: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
-        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postAt(look, focus, scene#time));
+    def fullSceneOf(look: TownScene.Look, focus: Float64, flash: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
+        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postFlashAt(look, focus, scene#time, flash));
         let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
             |> List.map(sp -> { name = sp#name, clear = sp#clear, drawables = sp#drawables, polygons = sp#polygons, surfaces = sp#surfaces, scenes = sp#scenes, target = sp#target });
         let soft = Render.softSceneOf(_ -> None, built#present :: Nil);
@@ -244,7 +245,7 @@ mod BuildVideo {
                         if (new File("debug/build_frames/${name}.png").exists()) ()
                         else {
                             let (scene, focus) = shotAt(st, cachedGroup(cache, f - 1), design(), f - 1);
-                            HeadlessRender.renderPngFull(cfg, fullSceneOf(look, focus, scene), name);
+                            HeadlessRender.renderPngFull(cfg, fullSceneOf(look, focus, Buildup.flashAt(st#show, Int32.toFloat64(f - 1) / Int32.toFloat64(fps())), scene), name);
                             println("[hd2d_town] debug/build_frames/${name}.png")
                         }
                     });

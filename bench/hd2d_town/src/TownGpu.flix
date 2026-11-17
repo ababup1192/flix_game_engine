@@ -104,7 +104,8 @@ mod TownGpu {
                     |> BenchRun.withDiagnostics(plan())
                     |> App.withView((_ctx, w) -> checked_ecast(w#scene |> Option.map(sc -> Render.scene3d(Vec2.zero(), sc)) |> Option.toList))
                     |> App.quitWhen((_frame, w) -> checked_ecast(w#finished));
-                let app1 = if (post) app0 |> App.withPostStack(w -> checked_ecast(TownScene.postAt(look, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0)))) else app0;
+                let flashOf = (w: World) -> Buildup.flashAt(st#show, Int32.toFloat64(w#frame - 1) / Int32.toFloat64(BuildVideo.fps()));
+                let app1 = if (post) app0 |> App.withPostStack(w -> checked_ecast(TownScene.postFlashAt(look, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0), flashOf(w)))) else app0;
                 run { App.launchForBench(app1) }
                     with LwjglLayer.withProject(".")
                     with Fs.FileRead.runWithIO
