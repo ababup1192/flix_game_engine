@@ -118,3 +118,23 @@ main（6855cdb2）と直した engine を 1 本ずつ交互に 2 本ずつ（202
 - 直した後も標本の 34% は record の欄の引き当て（先頭が `String.equals` か `RecordExtend.lookupField`）。呼び手の def で多いのは
   `Render3d.Batch.hasSameTree`（`MaterialFields` の `spec`・`emission`・`metallicRoughnessShade`）・`Render3d.Batch.kindBits`（`ProgramKind` の Bool の 6 欄）・
   `Render3d.Batch.batchOf`・`Render3d.Instancing.packDraw`（`MeshDraw` の `fields`・`world`・`tint`）。JIT の中のインライン展開で行がずれる事があり、欄までは確かめていない。直していない。
+
+## 点光源の影（夜の街灯 8 本・`make run SCENE=lamps SHADOWS=n`）
+
+測った日 2026-11-18 / Apple M4 Pro・macOS / 垂直同期なし・音なし / 1 区間 240 コマ・2 区間（「a / b」）/ mapSize 512・pcfRadius 1・窓 960×540。
+影を落とす灯りは画面の真ん中に近い順に n 本（8 本のうち画面に掛かる物だけが候補）。GPU の時間は GL だけ（WebGPU は query を持たない）。
+
+| 描き手 | 影を落とす灯り | frame p50 | frame p95 | submit p50 | GPU p50 | draw call | CPU の shadows 区間 p50 |
+|---|---|---|---|---|---|---|---|
+| WebGPU | 0 | 1.27 / 1.12 | 1.60 / 1.52 | 0.53 / 0.43 | — | 6 | — |
+| WebGPU | 1 | 2.06 / 1.49 | 2.91 / 1.87 | 1.07 / 0.69 | — | 22 | — |
+| WebGPU | 4 | 2.62 / 1.68 | 3.35 / 2.12 | 1.32 / 0.80 | — | 82 | — |
+| WebGPU | 8 | 2.79 / 1.98 | 4.28 / 2.52 | 1.36 / 0.96 | — | 144 | — |
+| GL | 0 | 1.71 / 1.29 | 2.19 / 1.86 | 0.61 / 0.48 | 0.30 / 0.30 | 6 | 0.003 |
+| GL | 1 | 2.06 / 1.54 | 2.85 / 2.17 | 0.99 / 0.64 | 0.64 / 0.64 | 22 | 0.16 / 0.09 |
+| GL | 4 | 2.81 / 2.33 | 4.52 / 3.91 | 1.52 / 1.18 | 1.62 / 1.61 | 82 | 0.34 / 0.29 |
+| GL | 8 | 2.44 / 1.94 | 3.79 / 3.51 | 1.38 / 1.02 | 1.48 / 1.46 | 144 | 0.43 / 0.33 |
+
+- 灯り 1 本で draw call が 16 増える（面 6 × 影を落とす物の行）。GPU の時間は 1 本で +0.34 ms・4 本で +1.3 ms（GL）。
+- 8 本と 4 本がほぼ同じなのは、8 本のうち画面に光が掛かる灯りが 6 本ほどで、そのうち面の視錐台に物が入る面が少ないため。
+- スマホの数は測っていない。勧めは `maxShadowedLights = 1, mapSize = 256`（atlas 768 × 512）。

@@ -224,3 +224,15 @@ pub def withLightUnits(u: LightUnits, scene: Scene3dCmd): Scene3dCmd
 15. **F3 の診断**: 影の地図の draw は今の `shadowPass` に入る。atlas の大きさを縮めた時は 1 回知らせる（warnShadowOnce）。
 16. **比べの絵**: Physical は intensity を同じままの版と、拡散が今と同じ明るさになるよう intensity × π（点・スポットは 1 m の所で合わせる）の版の 2 つを並べる。
 17. **テスト**: 最後の 1 本の重みは「1 つ前と入れ替わる瞬間に両方 1」「次の候補と入れ替わる瞬間に 0」。CPU のテストの場面は mapSize 32〜64。WebGPU の面の viewport の y のテストを 1 本。
+
+## 9. 実装の記録（2026-11-18）
+
+- 枝のコミット: 4687f9e4（engine の約束）・ffb97b6f / 8945bf43（GL / WebGPU）・6ba1e99b（CPU）・389d3511 / 9b12ec03（ビルボードの影の板の倍率と点光源の影のビルボード）・5b06384b（normal offset × (pcf + 1)・gl-parity）・e0b36572（レビューの直し）。
+- §7 の「ビルボードは点光源の影を落とさない」は覆した（人の追加の依頼: HD-2D のキャラの影）。`withCastShadows(true)` の板は点光源の影の地図にも、板を光の方へ向けて描く。受けるのは今も太陽の影だけ。
+- §2.3 の 2 は `normalBias × (pcfRadius + 1)` 画素に替えた（すれすれの床の縞）。
+- 既定のバイト一致: gl-capture（GL・WebGPU の 54 枚ずつ・bench/scene3d の部屋を含む）が b209adfc とバイトまで同じ・bench/scene3d の CPU の部屋の絵が同じ・既定の GLSL と WGSL の字を固定したテスト（engine と render_gl）・DrawHash の既定の鍵。
+- gl-parity: `pointShadowPhysical3d`（灯り 2 本の点光源の影と Physical）が差 145 px・±3（許容 300）。撮る口が 64 枚で止まるので場面は 1 つにまとめた。
+- 重さ（PC）は bench/scene3d/RESULTS.md の「点光源の影」。
+- 光の単位の比べ（bench/scene3d の部屋・Blender の手本 `spikes/agx-presets` の room_standard）: Physical で intensity を 4π 倍にして点光源の影を付けると、画面の平均の明るさが手本とそろい（92 対 95 / 255）、松明の周りの壁の明るい溜まりと本棚の壁の影が手本に近づく。Legacy は平均は合うが明るさが部屋全体に平たく広がる。
+- 残り（人に上げる）: (1) Physical を既定にするか・preset の値の決め直し（intensity の目安は π × 3〜4）。(2) Preload に変種の欄を足すか（今は変種の場面の初めてのコマで組む）。(3) 本数 1 の時の影の入れ替わりのなめらかさ。(4) ambient を空のグラデーションで方向つきにする案。
+
