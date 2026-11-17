@@ -55,6 +55,13 @@ buildup-video:
 	ffmpeg -v error -y -framerate 30 -i $(FRAMES_DIR)/f%04d.png -c:v libx264 -pix_fmt yuv420p -crf 22 -movflags +faststart debug/hd2d_town_buildup.mp4
 	@ls -la debug/hd2d_town_buildup.mp4
 
+# 立ったまま、隊列を中心に輪で町が出来る動画（247 コマ・約 8 秒）を GPU で撮る
+center-video:
+	rm -rf debug/gpu_center_frames
+	BUILDUP=assets/buildup_center.json bin/gpu_frames.sh 247 build debug/gpu_center_frames
+	ffmpeg -v error -y -framerate 30 -i debug/gpu_center_frames/f%04d.png -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart debug/hd2d_town_buildup_center.mp4
+	@ls -la debug/hd2d_town_buildup_center.mp4
+
 gpu-bench:
 	@rm -f debug/gpu_bench.log
 	@for p in 1 0; do for s in 1 0; do POST=$$p SHADOW=$$s LIMIT=300 bin/gpu_run.sh bench debug/gpu_bench_$$p$$s.log; grep '\[bench\] result' debug/gpu_bench_$$p$$s.log >> debug/gpu_bench.log; done; done

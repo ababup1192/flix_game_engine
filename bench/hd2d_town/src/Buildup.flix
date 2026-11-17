@@ -14,12 +14,32 @@ mod Buildup {
     /// rippleSec・startDelay = はじめに隊列のまわりの行が 1 行ずつ出来る間と、最初の遅れ・
     /// rise = 地面がせり上がる秒・fall・fallHeight = 物が降る秒と高さ・squash = つぶれて伸びる秒・
     /// monumentFall・monumentHeight・shake・shakeAmp = 目印が降る秒と高さ・カメラが揺れる秒と幅（m）・
-    /// wallRise・roofDelay・roofFall・roofHeight・openingDelay・openingStep・pop = 建物の部品の秒・dust = 土ぼこりの秒。
+    /// wallRise・roofDelay・roofFall・roofHeight・openingDelay・openingStep・pop = 建物の部品の秒・dust = 土ぼこりの秒・dustScale = 土ぼこりの粒の数の倍率。
     pub type alias Timing = { lead = Float64, afterRowsPerSec = Float64, rippleSec = Float64, startDelay = Float64,
                               rise = Float64, fall = Float64, fallHeight = Float64, squash = Float64,
                               monumentFall = Float64, monumentHeight = Float64, shake = Float64, shakeAmp = Float64,
                               wallRise = Float64, roofDelay = Float64, roofFall = Float64, roofHeight = Float64,
-                              openingDelay = Float64, openingStep = Float64, pop = Float64, dust = Float64 }
+                              openingDelay = Float64, openingStep = Float64, pop = Float64, dust = Float64, dustScale = Float64 }
+
+    /// 前線（マスごとに出来始める時刻）。cellTime = 列・行 → 時刻・monumentAt = 目印が降り始める時刻（None ならそのマスの時刻のすぐ後）。
+    pub type alias Front = { cellTime = Int32 -> Int32 -> Float64, monumentAt = Option[Float64] }
+
+    /// 立つ点から輪が広がる前線。輪は buildSec 秒で一番遠いマスへ届き、curve 乗で外ほど速く広がる。目印は最後のマスの後に降る。
+    /// col・row = 立つマス・width・height = 地図の大きさ。マスごとに ±jitter 秒ずらしてそろい過ぎを崩す。
+    pub def radialFront(tm: Timing, col: Int32, row: Int32, width: Int32, height: Int32, buildSec: Float64, curve: Float64, jitter: Float64): Front =
+        let far = List.foldLeft((a, cr) -> Float64.max(a, distanceOf(col, row, fst(cr), snd(cr))), 1.0,
+                                (0, 0) :: (width - 1, 0) :: (0, height - 1) :: (width - 1, height - 1) :: Nil);
+        let at = (c: Int32, r: Int32) -> {
+            let u = distanceOf(col, row, c, r) / far;
+            let wobble = (Int32.toFloat64(Int32.modulo(c * 73 + r * 151, 17)) / 16.0 - 0.5) * 2.0 * jitter;
+            Float64.max(tm#startDelay, tm#startDelay + buildSec * Float64.pow(base = u, curve) + wobble)
+        };
+        { cellTime = at, monumentAt = Some(tm#startDelay + buildSec + jitter + 0.25) }
+
+    def distanceOf(c0: Int32, r0: Int32, c: Int32, r: Int32): Float64 =
+        let dx = Int32.toFloat64(c - c0);
+        let dy = Int32.toFloat64(r - r0);
+        Num.sqrt(dx * dx + dy * dy)
 
     /// 部品 1 つ（同じ持ち主・同じ材質の面を 1 つの形にした物）。base = 持ち主の部品の足元の真ん中（engine の座標）・
     /// center = この形の真ん中・start = 出始める時刻・plain = 窓と扉が出る前に貼る壁の形と材質。
@@ -41,7 +61,7 @@ mod Buildup {
           rise = 0.25, fall = 0.3, fallHeight = 5.0, squash = 0.22,
           monumentFall = 0.5, monumentHeight = 14.0, shake = 0.5, shakeAmp = 0.12,
           wallRise = 0.3, roofDelay = 0.4, roofFall = 0.24, roofHeight = 4.0,
-          openingDelay = 0.7, openingStep = 0.02, pop = 0.14, dust = 0.4 }
+          openingDelay = 0.7, openingStep = 0.02, pop = 0.14, dust = 0.4, dustScale = 1.0 }
 
     /// 行 r が出来る時刻。leaderRows = コマごとの (時刻, 先頭の行（小数）)。前線は先頭の lead 行先で、先頭と一緒に進む。
     /// はじめから前線の手前にある行は隊列のまわりから 1 行ずつ rippleSec おきに、先頭が行き着いた後に残る奥の行は afterRowsPerSec で出来る。
@@ -53,21 +73,22 @@ mod Buildup {
         else Vector.find(tr -> snd(tr) <= target, leaderRows) |> Option.map(fst)
             |> Option.getWithDefault(fst(deepest) + (snd(deepest) - target) / tm#afterRowsPerSec)
 
-    /// 建物が出始める時刻（建物の一番手前（南）の行に前線が来た時）。
-    def buildingTime(rowTime: Int32 -> Float64, m: TownMap, id: String): Float64 =
+    /// 建物が出始める時刻（建物の敷地のマスのどれかに前線が来た時）。
+    def buildingTime(front: Front, m: TownMap, id: String): Float64 =
         m#buildings |> List.find(b -> b#id == id)
-            |> Option.map(b -> rowTime(b#y + b#h - 1))
+            |> Option.map(b -> List.range(b#x, b#x + b#w) |> List.flatMap(c -> List.range(b#y, b#y + b#h) |> List.map(r -> front#cellTime(c, r)))
+                |> List.minimum |> Option.getWithDefault(0.0))
             |> Option.getWithDefault(0.0)
 
     /// 持ち主の部品が出始める時刻。
-    def startOf(tm: Timing, rowTime: Int32 -> Float64, m: TownMap, openingOrder: Map[Owner, Int32], o: Owner): Float64 = match o {
+    def startOf(tm: Timing, front: Front, m: TownMap, openingOrder: Map[Owner, Int32], o: Owner): Float64 = match o {
         case Owner.Fixed          => 0.0
-        case Owner.Cell(_, r)     => rowTime(r)
-        case Owner.Prop(_, r)     => rowTime(r) + 0.15
-        case Owner.Monument(_, r) => rowTime(r) + 0.2
-        case Owner.Walls(id)      => buildingTime(rowTime, m, id)
-        case Owner.Roof(id)       => buildingTime(rowTime, m, id) + tm#roofDelay
-        case Owner.Opening(id, _) => buildingTime(rowTime, m, id) + tm#openingDelay
+        case Owner.Cell(c, r)     => front#cellTime(c, r)
+        case Owner.Prop(c, r)     => front#cellTime(c, r) + 0.15
+        case Owner.Monument(c, r) => front#monumentAt |> Option.getWithDefault(front#cellTime(c, r) + 0.2)
+        case Owner.Walls(id)      => buildingTime(front, m, id)
+        case Owner.Roof(id)       => buildingTime(front, m, id) + tm#roofDelay
+        case Owner.Opening(id, _) => buildingTime(front, m, id) + tm#openingDelay
                                      + Int32.toFloat64(Map.getWithDefault(o, 0, openingOrder)) * tm#openingStep
     }
 
@@ -96,7 +117,7 @@ mod Buildup {
         String.splitOn(substr = "_", name) |> List.head |> Option.getWithDefault(name)
 
     /// 町の面と板から演出の部品を作る。materialOf = 材質の名前 → 置いた物の材質と色の掛け目・billboardOf = 板 → ビルボード。
-    pub def make(tm: Timing, rowTime: Int32 -> Float64, m: TownMap, quads: List[Quad], boards: List[Board],
+    pub def make(tm: Timing, front: Front, m: TownMap, quads: List[Quad], boards: List[Board],
                  materialOf: String -> Option[(Scene3d.Material3d, Faces.Rgb)], billboardOf: Board -> Option[Scene3d.Billboard3d],
                  dust: Texture3d.Texture3d): Result[String, Show] =
         let moving = quads |> List.filter(q -> q#owner != Owner.Fixed);
@@ -123,7 +144,7 @@ mod Buildup {
                 case _ => None
             };
             { owner = o, key = "${o}:${material}", mesh = mesh, material = mat,
-              base = base, center = center, start = startOf(tm, rowTime, m, openingOrder, o), plain = plain }
+              base = base, center = center, start = startOf(tm, front, m, openingOrder, o), plain = plain }
         };
         let byOwnerMaterial = moving |> List.foldLeft((acc, q) -> Map.insertWith((fresh, old) -> List.append(fresh, old), (q#owner, q#material), q :: Nil, acc), Map.empty());
         let pieces = byOwnerMaterial |> Map.toList |> List.map(entry -> { let ((o, mat), qs) = entry; pieceOf(o, mat, qs) }) |> Result.sequence;
@@ -137,7 +158,7 @@ mod Buildup {
             ) yield ("fixed:${mat}", Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material))
         });
         let boardPieces = boards |> List.filterMap(b -> billboardOf(b) |> Option.map(bb -> {
-            let start = startOf(tm, rowTime, m, Map.empty(), b#owner);
+            let start = startOf(tm, front, m, Map.empty(), b#owner);
             { board = b, billboard = bb, start = start, land = if (b#owner == Owner.Fixed) 0.0 else start + tm#fall }
         }));
         pieces |> Result.map(ps -> {
@@ -253,7 +274,7 @@ mod Buildup {
         show#landings |> List.filter(l -> { let (_, at, _) = l; t >= at and t < at + tm#dust }) |> List.flatMap(l -> {
             let (p, at, big) = l;
             let tau = (t - at) / tm#dust;
-            let count = if (big) 10 else 6;
+            let count = Float64.round((if (big) 10.0 else 6.0) * tm#dustScale) |> Float64.tryToInt32 |> Option.getWithDefault(6);
             let reach = if (big) 1.8 else 1.0;
             let size = (if (big) 0.6 else 0.36) * (1.0 - tau) + 0.05;
             List.range(0, count) |> List.map(k -> {
@@ -298,7 +319,11 @@ mod Buildup {
     /// 歩く台本。path = 曲がり角・endFace = 止まった後の向き・ほかは Doc の note のとおり。
     pub type alias Plan = { path = List[Route.Waypoint], idleSec = Float64, holdSec = Float64, frameSec = Float64, groundFlowH = Float64,
                             feetV = Float64, stopSec = Float64, camZLagK = Float64, endFace = Route.Dir, party = List[Walker], timing = Timing, idle = Idle,
-                            idleFrameSec = Float64, idlePhaseSec = Float64 }
+                            idleFrameSec = Float64, idlePhaseSec = Float64, radial = Option[Radial] }
+
+    /// 立ったまま輪で町が出来る台本の決まり。buildSec・curve・jitter = Buildup.radialFront の値・
+    /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・出来始めから全部出来るまでになめらかに替える）・spread = 横に並ぶ間（m）。
+    pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, spread = Float64 }
 
     /// 止まっている間の動き。Breath = 息遣い（縦に少し伸び縮み）・Step = 足踏み（歩きのコマをゆっくりその場で）。
     pub enum Idle with Eq {
@@ -351,8 +376,19 @@ mod Buildup {
                   camZLagK = num("camZLagK", 2.5), endFace = faceOf(JsonCodec.stringOr("endFace", "s", m)), party = party,
                   idle = idleOf(JsonCodec.stringOr("idle", "breath", m)),
                   idleFrameSec = num("idleFrameSec", 0.8), idlePhaseSec = num("idlePhaseSec", 0.27),
+                  radial = Map.get("radial", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(radialOf),
                   timing = { lead = num("lead", d#lead), afterRowsPerSec = num("afterRowsPerSec", d#afterRowsPerSec),
-                             rippleSec = num("rippleSec", d#rippleSec), startDelay = num("startDelay", d#startDelay) | d } }
+                             rippleSec = num("rippleSec", d#rippleSec), startDelay = num("startDelay", d#startDelay),
+                             rise = num("rise", d#rise), fall = num("fall", d#fall), squash = num("squash", d#squash),
+                             monumentFall = num("monumentFall", d#monumentFall), shake = num("shake", d#shake), shakeAmp = num("shakeAmp", d#shakeAmp),
+                             wallRise = num("wallRise", d#wallRise), roofDelay = num("roofDelay", d#roofDelay), roofFall = num("roofFall", d#roofFall),
+                             openingDelay = num("openingDelay", d#openingDelay), openingStep = num("openingStep", d#openingStep),
+                             pop = num("pop", d#pop), dust = num("dust", d#dust), dustScale = num("dustScale", d#dustScale) | d } }
+
+    def radialOf(m: Map[String, Json]): Radial =
+        let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, m);
+        { buildSec = num("buildSec", 4.5), curve = num("curve", 0.85), jitter = num("jitter", 0.06),
+          zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), spread = num("spread", 0.95) }
 
     def idleOf(name: String): Idle = match name {
         case "step" => Idle.Step

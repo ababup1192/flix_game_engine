@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "note": "立ったまま、隊列を中心に輪で町が出来る動画（BUILDUP=assets/buildup_center.json）。path の最初の点に立つ・holdSec = 全部出来た後に撮る秒・radial の buildSec = 輪が一番遠いマスへ届く秒・curve = 外ほど速く広がる乗数・jitter = マスごとのずれ（秒）・zoomFrom・zoomTo = カメラの引き（足元からの距離の倍率）・spread = 横に並ぶ間（m）・部品の秒（rise・fall・squash・monumentFall・shake・shakeAmp・wallRise・roofDelay・roofFall・openingDelay・openingStep・pop・dust）と dustScale（土ぼこりの粒の倍率）は Buildup.Timing と同じ",
+  "path": [
+    [
+      13,
+      12,
+      0.0
+    ]
+  ],
+  "holdSec": 2.5,
+  "frameSec": 0.333,
+  "feetV": 0.55,
+  "endFace": "s",
+  "party": [
+    {
+      "strip": "sprites/traveler_walk4.png",
+      "idleStrip": "sprites/traveler_idle.png"
+    },
+    {
+      "strip": "sprites/merchant_walk4.png",
+      "idleStrip": "sprites/merchant_idle.png"
+    },
+    {
+      "strip": "sprites/girl_walk4.png",
+      "idleStrip": "sprites/girl_idle.png"
+    }
+  ],
+  "startDelay": 0.6,
+  "idle": "breath",
+  "idleFrameSec": 0.8,
+  "idlePhaseSec": 0.27,
+  "radial": {
+    "buildSec": 4.2,
+    "curve": 0.8,
+    "jitter": 0.08,
+    "zoomFrom": 0.5,
+    "zoomTo": 1.35,
+    "spread": 0.95
+  },
+  "rise": 0.16,
+  "fall": 0.2,
+  "squash": 0.16,
+  "monumentFall": 0.45,
+  "shake": 0.7,
+  "shakeAmp": 0.2,
+  "wallRise": 0.2,
+  "roofDelay": 0.22,
+  "roofFall": 0.18,
+  "openingDelay": 0.4,
+  "openingStep": 0.012,
+  "pop": 0.1,
+  "dust": 0.55,
+  "dustScale": 2.0
+}
