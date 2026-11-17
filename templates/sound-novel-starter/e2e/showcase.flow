@@ -9,7 +9,9 @@ wait 1
 start talk node=StudioWindow
 drive reader until logSize>=4 max 30            # 工房の軒先（ADV）で冬馬が出る
 wait 1.2
-tap 544,524                                     # クイックメニューのセーブ
+hold 501,115 0.1                                  # 右の列のしおり
+wait 0.6
+tap 276,115                                     # しおりから開いた選びの「セーブ」
 expect panel=SaveSlots
 wait 1.2
 tap confirm                                     # 空の枠へセーブ: その時の画面がサムネになる
@@ -19,7 +21,9 @@ tap back
 start talk node=LastDelivery
 drive reader until logSize>=6 max 30            # 夕方の軒先に雪が降り始める
 wait 4
-tap 672,524                                     # クイックメニューの設定
+tap 501,45                                      # 右上の …
+wait 0.6
+tap 406,121                                     # … のメニューの「設定」
 expect panel=Settings
 wait 2.5
 tap back

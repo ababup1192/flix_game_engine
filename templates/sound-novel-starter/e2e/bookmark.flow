@@ -5,19 +5,23 @@ drive reader until choice max 90                # 最初の手紙の選択肢（
 tap confirm                                     # 「私は、坂をゆっくり上がります」と添える
 drive reader until talk=StudioWindow max 60
 wait 0.5
-tap 544,524                                     # 下の帯の「セーブ」
+hold 501,115 0.1                                  # 右の列のしおり
+tap 276,115                                     # しおりから開いた選びの「セーブ」
 expect panel=SaveSlots
-tap 268,189                                     # 1 ページ目の 1 枚目の枠（空なので確認なしで書く）
+tap confirm                                     # 1 ページ目の 1 枚目の枠（空なので確認なしで書く）
 expect panel=SaveSlots
 tap back
 expect panel=Closed&talk=StudioWindow
 drive reader until talk=Reply max 60
 expect photo=desk_room&mode=nvl
-tap 608,524                                     # 下の帯の「ロード」
+hold 501,115 0.1                                  # 右の列のしおり
+tap 396,115                                     # しおりから開いた選びの「ロード」
 expect panel=LoadSlots&tab=Auto                 # 開くのは一番新しいセーブのページ（灯の部屋のオートセーブ）
-tap 291,105                                     # 「1」のページへ
+tap tabNext                                     # 「クイック」のページを過ぎて
+tap tabNext                                     # 「1」のページへ
 expect tab=Numbered(1)
-tap 268,189                                     # 1 枚目の枠から読む
+tap confirm                                     # 1 枚目の枠から読む
 expect ask=Load(Numbered(1),0)
-tap 394,310                                     # 確認の「はい」
+tap left                                        # 確認の「はい」へ（初めは「いいえ」に居る）
+tap confirm                                     # 確認の「はい」
 expect panel=Closed&talk=StudioWindow&photo=studio_eaves&mode=bottom

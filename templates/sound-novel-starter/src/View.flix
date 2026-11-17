@@ -196,10 +196,17 @@ mod View {
     def textRight(right: Float64, y: Float64, text: String, atlas: FontAtlas, size: Float64, color: Color, z: Int32): Render.PlacedItem =
         textAt(right - TextDraw.width(text, atlas, size), y, text, atlas, size, color, z)
 
-    /// 矩形の真ん中に置いた 1 行。
+    /// 矩形の真ん中に置いた 1 行。幅に入らない字は、左右に 12 px ずつ空けて入る大きさまで縮める。
+    // WhyNot: 折り返さない — 押せる物の高さは 1 行の字で決めてあり、2 行にすると上下の空きが無くなる。
     def textIn(r: Rect2.Rect2, text: String, atlas: FontAtlas, size: Float64, color: Color, z: Int32): Render.PlacedItem =
-        TextDraw.centered({ text = text, atlas = atlas, size = size, color = color, z = z,
-                            centerX = r#position#x + r#size#x / 2.0, y = r#position#y + (r#size#y - size) / 2.0 - 1.0 })
+        let fitted = fittedSize(text, atlas, size, r#size#x - 24.0);
+        TextDraw.centered({ text = text, atlas = atlas, size = fitted, color = color, z = z,
+                            centerX = r#position#x + r#size#x / 2.0, y = r#position#y + (r#size#y - fitted) / 2.0 - 1.0 })
+
+    /// 1 行の字が幅 room に入る大きさ（入るなら size のまま）。
+    def fittedSize(text: String, atlas: FontAtlas, size: Float64, room: Float64): Float64 =
+        let w = TextDraw.width(text, atlas, size);
+        if (room <= 0.0 or w <= room) size else size * room / w
 
     /// 平らなボタンの地と縁（lit = 選んでいる・触れている）。
     def plate(r: Rect2.Rect2, lit: Bool, env: Env, z: Int32): Render.PlacedItem =
@@ -550,7 +557,9 @@ mod View {
         let shade = at(0.0, 0.0, Render.vgrad(Layout.size(env#fit),
                                               { top = t#panel, bottom = Color.darken(t#panel, 0.4) }, zVeil()) |> Render.fade(0.35));
         let fit = env#fit;
-        let heading = TextDraw.centered({ text = s#title, atlas = atlas, size = 64.0, color = t#ink, z = zText(), centerX = center, y = Layout.titleHeadingY(fit) });
+        let headingSize = fittedSize(s#title, atlas, 64.0, Layout.width(fit) - 48.0);
+        let heading = TextDraw.centered({ text = s#title, atlas = atlas, size = headingSize, color = t#ink, z = zText(), centerX = center,
+                                          y = Layout.titleHeadingY(fit) + (64.0 - headingSize) / 2.0 });
         let sub = TextDraw.centered({ text = s#subtitle, atlas = atlas, size = 18.0, color = t#inkSeen, z = zText(), centerX = center, y = Layout.titleSubtitleY(fit) });
         let placed = WorldMenu.titleItems() |> List.zipWithIndex;
         let count = List.length(placed);

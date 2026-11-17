@@ -6,11 +6,11 @@
   "defaultEase": "linear",
   "black": { "fadeOut": 0.5, "hold": 0.0, "fadeIn": 0.5 },
   "photos": {
-    "slope":             { "texture": "bg_slope", "label": "冬の坂" },
-    "desk_room":         { "texture": "bg_desk_room", "label": "灯の部屋" },
-    "studio_eaves":      { "texture": "bg_studio_eaves", "label": "工房の軒先" },
-    "studio":            { "texture": "bg_studio", "label": "工房" },
-    "still_akari_slope": { "texture": "bg_still_akari_slope", "label": "坂の後ろ姿" }
+    "slope":             { "texture": "bg_slope", "label": "冬の坂", "aspect": 0.463 },
+    "desk_room":         { "texture": "bg_desk_room", "label": "灯の部屋", "aspect": 0.463 },
+    "studio_eaves":      { "texture": "bg_studio_eaves", "label": "工房の軒先", "aspect": 0.463 },
+    "studio":            { "texture": "bg_studio", "label": "工房", "aspect": 0.463 },
+    "still_akari_slope": { "texture": "bg_still_akari_slope", "label": "坂の後ろ姿", "aspect": 0.463 }
   },
   "grades": {
     "dusk": {

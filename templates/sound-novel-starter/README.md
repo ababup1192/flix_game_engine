@@ -77,7 +77,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | タイトル画面・クレジット | `assets/novel.story.json`・`assets/novel.credits.json` | `View.title` / `View.credits` |
 | スマホ（横持ち）の字とボタンの大きさ | `assets/novel.small.json` | `Layout.Fit.Small` |
 | ブラウザ版で背景・音をタイトルの後に裏で取る（届く前の背景・環境音は暗転して待ち、20 秒で諦めて進む。一発の効果音は鳴らさず進む） | `project.json` の `web.deferred`（タイトルの写真と最初に鳴る音は入れない）・`web.compress`・秒は `novel.kind.json` の `hold*`・待つ間の印は `novel.theme.json` の `loadingMark`（`dots` = 右下の点 3 つ・`ring` = 真ん中の回る輪と labels の `waiting` の字・`none` = 黒だけ） | `Game.withAssetLoading`（Main と `web/WebMain.flix` だけが足す）・`WorldRead` の「素材の待ち」・`Controls.decodeBudget`・`View.holdLayer`・`View.loadingMark`。確かめ方: `bin/fge export-web` の大きさの表の「起動／後回し」・頁の `?loadtime=1`・描き出しの `hold`・`hold-ring`・`hold-none`・`portrait-hold-ring` |
-| スマホを縦に持った時の縦の画面（沈めた写真の上に画面いっぱいの頁・右端にアイコンの列（しおり・ログ・オート）・右上の … のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json`・列と … の積み方と大きさと長押しの秒は `assets/novel.rail.json` | `Layout.Fit.Portrait`・`Rail`（矩形と押しの判定 `Rail.judge`）・`View.portraitPage` / `portraitButtons` / `menuPanel` / `saveLoadPanel`・`WorldMenu.menuItems` / `saveLoadItems` / `longPressOf`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
+| 縦の画面（基本の画面。スマホを縦に持った時も PC も同じ。沈めた写真の上に画面いっぱいの頁・右端にアイコンの列（しおり・ログ・オート）・右上の … のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json`・列と … の積み方と大きさと長押しの秒は `assets/novel.rail.json` | `Layout.Fit.Portrait`・`Rail`（矩形と押しの判定 `Rail.judge`）・`View.portraitPage` / `portraitButtons` / `menuPanel` / `saveLoadPanel`・`WorldMenu.menuItems` / `saveLoadItems` / `longPressOf`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
 
 ## 読む順
 
@@ -136,8 +136,8 @@ stateDiagram-v2
 
 ## 素材を差し替える
 
-- **写真**: `assets/bg/` に 960×540 の JPG を置き、`project.json` の `textures` と `assets/novel.backdrops.json` の
-  `photos` に名前を足す。出典とライセンスは `CREDITS.md` と `assets/novel.credits.json` の両方に書く（CC BY は
+- **写真**: `assets/bg/` に縦の構図（9:19.5 前後・720×1560 など）の JPG を置き、`project.json` の `textures` と `assets/novel.backdrops.json` の
+  `photos` に名前と `aspect`（横÷縦）を足す（作り方は AGENTS.local.md の「縦が基本」）。出典とライセンスは `CREDITS.md` と `assets/novel.credits.json` の両方に書く（CC BY は
   作者名・ライセンス・元の場所を画面にも出す）。ぼかすので、写真の解像度は低くてよい。
 - **時間帯の色**: `novel.backdrops.json` の `grades`。夜は `exposure` を落とし `tint` を青へ、夕暮れは `sky` を橙へ。
 - **字**: `project.json` の `fonts`。使う字だけに縮めた subset を置いている（シナリオに無い字を足したら作り直す）。

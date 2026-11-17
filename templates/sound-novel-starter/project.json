@@ -1,10 +1,10 @@
 {
   "version": 1,
   "title": "雪どけを待たない便り",
-  "designWidth": 960,
-  "designHeight": 540,
-  "windowWidth": 1280,
-  "windowHeight": 720,
+  "designWidth": 540,
+  "designHeight": 1170,
+  "windowWidth": 432,
+  "windowHeight": 936,
   "clearColor": {
     "r": 0.04,
     "g": 0.05,

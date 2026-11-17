@@ -70,8 +70,15 @@ mod E2e {
                     else Flow.DriveAct.Idle, h) } :: Nil
               ::: GameE2e.drives(),
           ready = Some(onWorld(w -> if (WorldRead.isPaused(w)) Flow.Ready.Busy("waiting") else if (World.isReading(w) and not Page.isDone(World.pageOf(w))) Flow.Ready.Busy("typing") else Flow.Ready.Ready)),
-          replies = Some(onWorld(w -> Emit.countOf(w#events)))
+          replies = Some(onWorld(replyCountOf))
           | Flow.emptyTable() }
+
+    /// 返事の通し番号: 出来事の数に、縦の画面の右の列を押し始めた所（離すまで音を出さない）を 1 つ足す。
+    // WhyNot: 右の列を押し始めた時に音を鳴らして返事にしない — 離した時のボタンの音と 2 回鳴る。
+    def replyCountOf(w: World.World): Int64 = match w#grab {
+        case World.Grab.LongPress(_, _) => Emit.countOf(w#events) + 1i64
+        case _                          => Emit.countOf(w#events)
+    }
 
     /// 今のゲートで選べる操作の字（ゲートでなければ空）。flow は払いを役のキー（prev・next・left・right）で、tap の選択肢が 1 つなら confirm で選ぶ。
     def gateText(w: World.World): String =
