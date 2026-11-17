@@ -179,7 +179,7 @@ mod Render3d.TestPointShadowVariants {
     def testCastersPutSlotAtThePointIndex(): Unit \ Assert =
         let side = { position = Vec3.v3(8.0, 1.0, 0.0) | lamp() };
         let values = Render3d.Shadow.pointShadowUseOf(5, atlasOf(lampScene(side :: lamp() :: Nil)));
-        let slotAt = (i: Int32) -> { let (slot, _, _, _) = Vector.get(i, values#casters); slot };
+        let slotAt = (i: Int32) -> { let (slot, _, _, _) = Vector.get(i, values#lights); slot };
         Assert.assertEq(expected = (-1.0f32, 0.0f32), (slotAt(0), slotAt(1)))
 
     @Test
@@ -190,12 +190,12 @@ mod Render3d.TestPointShadowVariants {
             let (a, b) = Scene3d.PointShadows.depthTermsOf(light);
             (0.0f32, RenderUtil.f32(a), RenderUtil.f32(b), RenderUtil.f32(light#strength))
         });
-        Assert.assertEq(expected = expected, Vector.get(0, values#casters) :: Nil)
+        Assert.assertEq(expected = expected, Vector.get(0, values#lights) :: Nil)
 
     @Test
     def testUnusedCastersAreMinusOne(): Unit \ Assert =
         let values = Render3d.Shadow.pointShadowUseOf(5, atlasOf(lampScene(lamp() :: Nil)));
-        Assert.assertTrue(Vector.forAll(c -> { let (slot, _, _, _) = c; slot == -1.0f32 }, Vector.drop(1, values#casters)))
+        Assert.assertTrue(Vector.forAll(c -> { let (slot, _, _, _) = c; slot == -1.0f32 }, Vector.drop(1, values#lights)))
 
     @Test
     def testAtlasUniformIsTileColumnsScalePcf(): Unit \ Assert =

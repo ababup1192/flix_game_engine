@@ -57,13 +57,13 @@ pub mod Scene3d.PointShadows {
             let weight = shadowedLightWeightOf(scores, limit, slot, score);
             shadowedPointLightOf(guard, i, slot, Num.clamp01(m#strength) * weight, light)
         });
+        // WhyNot: normalBias を PCF の幅に依らず 1 画素ぶんだけにしない — すれすれに光を受ける床では、周りの (2r+1)² 画素の奥行きの差が
+        //   r 画素ぶん傾きで増え、床が自分の影を拾って縞になる。ずらす幅を (r + 1) 画素にすると、
+        //   どの傾きでも周りの画素の奥行きの誤差より遠くへ出る。
         { tileSize = size, blocksPerRow = columns, width = 3 * size * columns, height = 2 * size * rows, pcfRadius = pcf,
           bias = Float64.max(0.0, m#bias), normalBias = Float64.max(0.0, m#normalBias) * Int32.toFloat64(pcf + 1), guardScale = guard, lights = lights,
           requestedSize = m#mapSize }
 
-    // WhyNot: normalBias を PCF の幅に依らず 1 画素ぶんだけにしない — すれすれに光を受ける床では、周りの (2r+1)² 画素の奥行きの差が
-    //   r 画素ぶん傾きで増え、床が自分の影を拾って縞になる（mapSize 256・pcf 1 の床で gl-parity の場面に出た）。ずらす幅を (r + 1) 画素にすると、
-    //   どの傾きでも周りの画素の奥行きの誤差より遠くへ出る。
     /// 影を落とす slot 番目の灯りの境の重み（式は atlasOf の doc）。
     // WhyNot: 本数 1 の時も重みを付けない — 1 つ前の候補が無く、入れ替わる瞬間の両側を 1 と 0 でつなぐ幅が取れない。
     def shadowedLightWeightOf(scores: Vector[Float64], limit: Int32, slot: Int32, score: Float64): Float64 =

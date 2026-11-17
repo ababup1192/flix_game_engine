@@ -136,7 +136,11 @@ mod Render3d.ShadowMaps {
         let scene = plan#cmd#scene;
         let ctx = Render3d.SceneList.contextOf(tables, scene);
         let right = Scene3d.billboardShadowRightOfScene(scene);
-        List.zip(uses, plan#shadowPlans) |> List.map(match (m, sp) -> match sp#light {
+        List.zip(uses, plan#shadowPlans) |> List.map(pair -> passOf(ctx, scene, right, pair))
+
+    def passOf(ctx: Render3d.SceneList.Context, scene: Scene3d.Scene3dCmd, right: Vec3.Vec3, pair: (ShadowMapUse, ShadowPlan[MeshBatch])): ShadowPass \ IO =
+        let (m, sp) = pair;
+        match sp#light {
             case ShadowLight.Sun(_)   =>
                 { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, Scene3d.shadowCastingBillboardsOf(sp#caster#frustum, scene)),
                   billboardRight = right, rightPerBillboard = false }
@@ -147,7 +151,7 @@ mod Render3d.ShadowMaps {
                 let list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, List.map(fst, boards));
                 Render3d.SceneList.putBillboardRights(list, List.map(snd, boards));
                 { map = m, list = list, billboardRight = right, rightPerBillboard = true }
-        })
+        }
 
     /// 影の地図に描く板 f（大きさは倍率を掛けた後）が視錐台 frustum に掛かるか（外接球で見る。Scene3d.isBillboardOutsideFrustum と同じ半径）。
     def isBoardInside(frustum: Frustum.Frustum, f: Scene3d.BillboardFields): Bool =

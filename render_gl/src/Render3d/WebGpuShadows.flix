@@ -187,7 +187,7 @@ mod Render3d.WebGpuShadows {
     pub def packLightValues(buf: ByteBuffer, scene: Scene3d.Scene3dCmd, samplings: List[Render3d.ShadowMaps.ShadowSampling]): Unit \ IO =
         let values = samplings |> List.findMap(pointAtlasOf) |> Option.map(a -> Render3d.Shadow.pointShadowUseOf(0, a));
         let none = Vector.repeat(Scene3d.maxPointLights(), (-1.0f32, 0.0f32, 0.0f32, 0.0f32));
-        values |> Option.map(v -> v#casters) |> Option.getWithDefault(none) |> Vector.forEachWithIndex((i, c) -> {
+        values |> Option.map(v -> v#lights) |> Option.getWithDefault(none) |> Vector.forEachWithIndex((i, c) -> {
             let (slot, a, b, strength) = c;
             discard buf.putFloat(16 * i, slot).putFloat(16 * i + 4, a).putFloat(16 * i + 8, b).putFloat(16 * i + 12, strength)
         });

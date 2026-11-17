@@ -474,6 +474,14 @@ mod Render3d.ScenePlan {
                 warnShadowOnce(planner, "pointSize", "scene3d: 点光源の影の mapSize ${atlas#requestedSize} は atlas（上限 ${maxShadowMapSize()}）に収まらない"
                     + " — 面の一辺 ${atlas#tileSize} で描く（maxShadowedLights を減らすか mapSize を下げる）")
             else ();
+            scene#pointShadows |> Option.forEach(m -> {
+                if (m#maxShadowedLights > Scene3d.maxShadowedPointLights())
+                    warnShadowOnce(planner, "pointLights", "scene3d: 点光源の影の maxShadowedLights ${m#maxShadowedLights} は上限より多い — ${Scene3d.maxShadowedPointLights()} 本で描く")
+                else ();
+                if (m#pcfRadius > atlas#pcfRadius)
+                    warnShadowOnce(planner, "pointPcf", "scene3d: 点光源の影の pcfRadius ${m#pcfRadius} は面の一辺 ${atlas#tileSize} に対して大きい — ${atlas#pcfRadius} で数える")
+                else ()
+            });
             atlas#lights |> List.flatMap(light -> List.range(0, 6) |> List.map(face ->
                 (ShadowLight.Point({ atlas = atlas, light = light, face = face }),
                  { matrix = Vector.get(face, light#faces), frustum = Vector.get(face, light#frustums),

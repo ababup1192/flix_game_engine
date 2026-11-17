@@ -61,13 +61,13 @@ mod Render3d.Shadow {
     pub def pointShadowUseOf(tex: Int32, atlas: Scene3d.PointShadows.Atlas): PointShadowUse =
         let f = RenderUtil.f32;
         let byIndex = atlas#lights |> List.map(l -> (l#pointIndex, l)) |> List.toMap;
-        let casters = Vector.range(0, Scene3d.maxPointLights()) |> Vector.map(i -> match Map.get(i, byIndex) {
+        let lights = Vector.range(0, Scene3d.maxPointLights()) |> Vector.map(i -> match Map.get(i, byIndex) {
             case None    => (-1.0f32, 0.0f32, 0.0f32, 0.0f32)
             case Some(l) =>
                 let (a, b) = Scene3d.PointShadows.depthTermsOf(l);
                 (Int32.toFloat32(l#slot), f(a), f(b), f(l#strength))
         });
-        { tex = tex, casters = casters,
+        { tex = tex, lights = lights,
           atlas = (Int32.toFloat32(atlas#tileSize), Int32.toFloat32(atlas#blocksPerRow), f(atlas#guardScale), Int32.toFloat32(atlas#pcfRadius)),
           bias = (f(atlas#bias), f(atlas#normalBias)) }
 
@@ -320,9 +320,9 @@ mod Render3d.Shadow {
         else {
             gl.uniform1i(locs#map, if (Option.isEmpty(shadow)) blankTextureUnit() else pointShadowTextureUnit());
             match shadow {
-                case None    => locs#casters |> Vector.forEach(l -> gl.uniform4f(l, -1.0f32, 0.0f32, 0.0f32, 0.0f32))
+                case None    => locs#lights |> Vector.forEach(l -> gl.uniform4f(l, -1.0f32, 0.0f32, 0.0f32, 0.0f32))
                 case Some(s) =>
-                    Vector.zip(locs#casters, s#casters) |> Vector.forEach(lc -> {
+                    Vector.zip(locs#lights, s#lights) |> Vector.forEach(lc -> {
                         let (l, (slot, a, b, strength)) = lc;
                         gl.uniform4f(l, slot, a, b, strength)
                     });
@@ -334,10 +334,10 @@ mod Render3d.Shadow {
         }
 
     /// 変種 +ps でないプログラムの点光源の影の location（putPointShadow が何もしない）。
-    pub def noPointShadowLocs(): PointShadowLocs = { casters = Vector.empty(), atlas = -1, bias = -1, map = -1 }
+    pub def noPointShadowLocs(): PointShadowLocs = { lights = Vector.empty(), atlas = -1, bias = -1, map = -1 }
 
     pub def pointShadowLocsOf(gl: GlContext, program: Int32): PointShadowLocs \ IO =
-        { casters = Vector.range(0, Scene3d.maxPointLights()) |> Vector.map(i -> Render3d.loc(gl, program, "uPointShadow[${i}]")),
+        { lights = Vector.range(0, Scene3d.maxPointLights()) |> Vector.map(i -> Render3d.loc(gl, program, "uPointShadow[${i}]")),
           atlas = Render3d.loc(gl, program, "uPointShadowAtlas"), bias = Render3d.loc(gl, program, "uPointShadowBias"),
           map = Render3d.loc(gl, program, "uPointShadowMap") }
 

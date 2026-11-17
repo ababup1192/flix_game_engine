@@ -86,6 +86,7 @@ GL・WebGPU・CPU が同じ約束（`Scene3d.PointShadows.atlasOf` の doc）で
 - 重さ: 影の地図の draw は面 6 × 灯り × 範囲に入る物（`drawCalls` の `shadowPass`・時間は `Phase.Shadows`）。PCF は (2r+1)² 回を光が届く画素だけ。
   スマホは `{ maxShadowedLights = 1, mapSize = 256 | Scene3d.pointShadowMap() }`（atlas 768 × 512）を勧める
 - 既定（`pointShadows = None`）は今までの絵と同じ（GPU のシェーダーの字も同じ）。影つきの場面だけ別のプログラム（`+ps`）を組む
+- 先に上げる物（`App.withPreload3d`）は既定のプログラムだけを組む。点光源の影と `Physical` の場面は、その場面が初めて出たコマに変種のプログラム（`+ps`・`+pu`）を組む（そのコマが重い）
 
 ### 光の量の読み方（Legacy / Physical）
 

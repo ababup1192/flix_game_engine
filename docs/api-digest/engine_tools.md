@@ -412,15 +412,15 @@
 
 ## SoftRaster3d.PointShadows — `engine_tools/src/SoftRaster3d/PointShadows.flix`
 - 場面の点光源の影。atlas の値と、点光源の番号（pickLights の後の並び・maxPointLights() 個）ごとの影を落とす灯りと面 6 枚の地図（影を落とさない灯りは None）。
-  `pub enum Set { case Set(Scene3d.PointShadows.Atlas, Vector[Option[(Scene3d.PointShadows.ShadowedPointLight, Vector[Vector[Float64]])]]) }`
+  `pub enum PointShadowMaps { case PointShadowMaps(Scene3d.PointShadows.Atlas, Vector[Option[(Scene3d.PointShadows.ShadowedPointLight, Vector[Vector[Float64]])]]) }`
 - 影の割合がどの灯りも 1 の並び（影の無い場面は画素ごとに作らずこれを使い回す）。
   `pub def allLit(): Vector[Float64]`
 - 場面（pickLights の後）の点光源の影の地図を描く（影が無ければ None）。instances = 影を落とす不透明の物・
-  `pub def build(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): Option[Set] \ IO`
+  `pub def build(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): Option[PointShadowMaps] \ IO`
 - 点 p（g = 形の法線・n = 光の計算の法線）で、点光源の番号ごとの影の割合（maxPointLights() 個。影を落とさない・光が届かない・面が背を向けた灯りは 1）。
-  `pub def litAt(set: Option[Set], p: Vec3.Vec3, g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64]`
+  `pub def litAt(set: Option[PointShadowMaps], p: Vec3.Vec3, g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64]`
 - lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)。GL の uniform と同じ値）を入れた物。
-  `pub def withSceneLighting(points: Option[Set], scene: Scene3d.Scene3dCmd, lights: SoftRaster3d.Lights): SoftRaster3d.Lights`
+  `pub def withSceneLighting(points: Option[PointShadowMaps], scene: Scene3d.Scene3dCmd, lights: SoftRaster3d.Lights): SoftRaster3d.Lights`
 - どの点光源も影の割合 1 の並び（ビルボード）。
   `pub def unshadowedPointsOf(lights: SoftRaster3d.Lights): Vector[Float64]`
 - 点 p（g = 形の法線・n = 光の計算の法線）の点光源ごとの影の割合（影の無い場面は全部 1 の並びを使い回す）。

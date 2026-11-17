@@ -290,8 +290,8 @@ pub mod Render3dGlsl {
         "uniform sampler2D uPointShadowMap;\n" +
         "float r3d_pointLit[${p}];\n" +
         "float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n) {\n" +
-        "    vec4 caster = uPointShadow[i];\n" +
-        "    if (caster.x < 0.0) return 1.0;\n" +
+        "    vec4 shadowed = uPointShadow[i];\n" +
+        "    if (shadowed.x < 0.0) return 1.0;\n" +
         "    vec3 toLight = uPointPos[i] - p;\n" +
         "    if (dot(toLight, toLight) >= uPointRange[i] * uPointRange[i] || dot(n, toLight) <= 0.0) return 1.0;\n" +
         "    float tile = uPointShadowAtlas.x;\n" +
@@ -323,13 +323,13 @@ pub mod Render3dGlsl {
         "        rx = sz * d.x;\n" +
         "        uy = d.y;\n" +
         "    }\n" +
-        "    float near = caster.z / (caster.y + 1.0);\n" +
+        "    float near = shadowed.z / (shadowed.y + 1.0);\n" +
         "    if (depth <= near) return 1.0;\n" +
-        "    float ref = (caster.y - caster.z / max(depth - uPointShadowBias.x, near)) * 0.5 + 0.5;\n" +
+        "    float ref = (shadowed.y - shadowed.z / max(depth - uPointShadowBias.x, near)) * 0.5 + 0.5;\n" +
         "    int size = int(tile);\n" +
         "    ivec2 last = ivec2(size - 1);\n" +
         "    ivec2 center = clamp(ivec2(floor((vec2(scale * rx / depth, scale * uy / depth) * 0.5 + 0.5) * tile)), ivec2(0), last);\n" +
-        "    int slot = int(caster.x);\n" +
+        "    int slot = int(shadowed.x);\n" +
         "    int columns = int(uPointShadowAtlas.y);\n" +
         "    ivec2 origin = ivec2((slot % columns) * 3 * size + (face % 3) * size, (slot / columns) * 2 * size + (face / 3) * size);\n" +
         "    int pcf = int(uPointShadowAtlas.w);\n" +
@@ -342,7 +342,7 @@ pub mod Render3dGlsl {
         "            total++;\n" +
         "        }\n" +
         "    }\n" +
-        "    return 1.0 - caster.w * (1.0 - float(lit) / float(total));\n" +
+        "    return 1.0 - shadowed.w * (1.0 - float(lit) / float(total));\n" +
         "}\n" +
         "void r3d_pointShadowsAt(vec3 p, vec3 g, vec3 n) {\n" +
         "    for (int i = 0; i < ${p}; i++) r3d_pointLit[i] = r3d_pointShadowLit(i, p, g, n);\n" +

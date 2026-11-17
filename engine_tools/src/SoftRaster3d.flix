@@ -123,7 +123,7 @@ pub mod SoftRaster3d {
         // ambient r, g, b・hemisphere・toonSteps・点光源の並び・スポットの並び・影・太陽・点光源の影・全部 1 の影の割合（使い回す）・
         // Physical なら 1（Legacy は 0）・1 / unitsPerMeter²
         case Lights(Float64, Float64, Float64, Float64, Int32, Vector[Float64], Vector[Float64], SpotShadow, SoftRaster3d.Sun.Light,
-                    Option[SoftRaster3d.PointShadows.Set], Vector[Float64], Float64, Float64)
+                    Option[SoftRaster3d.PointShadows.PointShadowMaps], Vector[Float64], Float64, Float64)
     }
 
     /// 影を落とすスポット 1 本の地図と判定に要る値。スポットの並びの中の位置（spots の Vector の先頭からの欄の数）・

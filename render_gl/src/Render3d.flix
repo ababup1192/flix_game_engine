@@ -69,9 +69,9 @@ mod Render3d {
     }
 
     /// 塗りのシェーダーへ渡す点光源の影（Scene3d.PointShadows.atlasOf の値を uniform の並びにした物・pointShadowUseOf）。tex = atlas（深度テクスチャ）・
-    /// casters = uPointShadow の点光源 8 本分の (slot, A, B, strength)（影を落とさない灯りは slot −1）・atlas = uPointShadowAtlas の (S, 塊の横の数, s, pcf)・
+    /// lights = uPointShadow の点光源 8 本分の (slot, A, B, strength)（影を落とさない灯りは slot −1）・atlas = uPointShadowAtlas の (S, 塊の横の数, s, pcf)・
     /// bias = uPointShadowBias の (bias, normalBias)。
-    pub type alias PointShadowUse = { tex = Int32, casters = Vector[(Float32, Float32, Float32, Float32)], atlas = (Float32, Float32, Float32, Float32), bias = (Float32, Float32) }
+    pub type alias PointShadowUse = { tex = Int32, lights = Vector[(Float32, Float32, Float32, Float32)], atlas = (Float32, Float32, Float32, Float32), bias = (Float32, Float32) }
 
     /// 場面 1 つの影の地図（影を落とすスポットと、太陽と、点光源の atlas。無ければ None）。
     pub type alias SceneShadows = { spot = Option[ShadowUse], sun = Option[SunShadowUse], point = Option[PointShadowUse] }
@@ -115,8 +115,8 @@ mod Render3d {
     pub type alias SunShadowLocs = { on = Int32, matrix = Int32, map = Int32, bias = Int32, normalShift = Int32, pcf = Int32, strength = Int32,
                                  forward = Int32, fade = Int32 }
 
-    /// 点光源の影の uniform の location（変種 +ps のプログラムだけが持つ。ほかは map が −1）。casters = uPointShadow[0..7] の location。
-    pub type alias PointShadowLocs = { casters = Vector[Int32], atlas = Int32, bias = Int32, map = Int32 }
+    /// 点光源の影の uniform の location（変種 +ps のプログラムだけが持つ。ほかは map が −1）。lights = uPointShadow[0..7] の location。
+    pub type alias PointShadowLocs = { lights = Vector[Int32], atlas = Int32, bias = Int32, map = Int32 }
 
     type alias LitLocs = { mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, pointShadow = PointShadowLocs }
 

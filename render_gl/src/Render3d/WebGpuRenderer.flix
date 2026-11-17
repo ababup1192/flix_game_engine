@@ -1148,15 +1148,19 @@ pub mod Render3d.WebGpuRenderer {
         let key = variantKeyOf(variant);
         match spec {
             case ScenePassSpec.Color if key == "" => s#fragmentModule
-            case ScenePassSpec.Color              =>
-                match Map.get(key, Ref.get(s#variantFragments)) {
-                    case Some(m) => m
-                    case None    =>
-                        let made = s#gpu.createShaderModule("fge scene3d lit fs" + key, Render3dWgsl.litFragmentSourceFor(variant));
-                        Ref.put(Map.insert(key, made, Ref.get(s#variantFragments)), s#variantFragments);
-                        made
-                }
+            case ScenePassSpec.Color              => variantFragmentOf(r, variant, key)
             case ScenePassSpec.DepthOut(_) => s#depthModule
+        }
+
+    /// 変種 variant（鍵 key）の光の frag（初めて要る時に作って控える）。
+    def variantFragmentOf(r: Renderer, variant: ShaderVariant, key: String): ShaderModule \ IO =
+        let RendererData.RendererData(s) = r;
+        match Map.get(key, Ref.get(s#variantFragments)) {
+            case Some(m) => m
+            case None    =>
+                let made = s#gpu.createShaderModule("fge scene3d lit fs" + key, Render3dWgsl.litFragmentSourceFor(variant));
+                Ref.put(Map.insert(key, made, Ref.get(s#variantFragments)), s#variantFragments);
+                made
         }
 
     /// 形式 format・標本 samples・pass spec・頂点のバイト数 stride（Render3d.WebGpuRows の形の版）の頂点の色の pipeline（無ければ作る）。
