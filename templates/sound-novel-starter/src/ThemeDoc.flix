@@ -236,8 +236,16 @@ mod ThemeDoc {
                                       showName = JsonCodec.boolOr("showName", base(k)#showName, obj),
                                       quotes = JsonCodec.boolOr("quotes", base(k)#quotes, obj),
                                       portrait = portraitTextOf(obj),
-                                      align = Map.get("align", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(textAlignOf) })
+                                      align = alignIn(obj) })
         })
+
+    /// 型の align の欄（無ければ None・知らない字なら 1 行言って None）。
+    def alignIn(obj: Map[String, Json]): Option[TextAlign] =
+        match Map.get("align", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.map(text -> (text, textAlignOf(text))) {
+            case None                => None
+            case Some((_, Some(a)))  => Some(a)
+            case Some((text, None))  => Log.fellBackThen("theme", "${path()} の windows の align", "書かない（<<text align=>> が続く）", "知らない字 '${text}'（left・center）", None)
+        }
 
     /// band の帯の高さの既定（画面の下端から px）。
     pub def defaultBandHeight(): Float64 = 236.0

@@ -42,7 +42,7 @@
     },
     "black": {
       "type": "object",
-      "description": "transition=black の暗転の形。<<bg … time=>> の秒を、暗くなる間・暗いまま止まる間・明ける間に、この比で分ける（足して 1 でなくてよい）。写真は止まる間の真ん中で替わる。Ren'Py の Fade(out, hold, in) と同じ形",
+      "description": "transition=black の暗転の形。<<bg … time=>> の秒を、暗くなる間・暗いまま止まる間・明ける間に、この比で分ける（足して 1 でなくてよい）。写真は止まる間の真ん中で替わる。前の背景が無い（blank の）時は、この形によらず暗い所から全部の秒で明ける。Ren'Py の Fade(out, hold, in) と同じ形",
       "properties": {
         "fadeOut": { "type": "number", "minimum": 0, "default": 0.5, "description": "暗くなる間の比" },
         "hold":    { "type": "number", "minimum": 0, "default": 0.0, "description": "暗いまま止まる間の比" },

@@ -360,8 +360,7 @@ mod WorldRead {
         let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, res#story), window#quotes, line);
         let fits = fitsNvl(res, r#stage);
         let speaker = if (String.isEmpty(line#speaker)) None else Some(line#speaker);
-        let keepOnNarration = CastDoc.rec(res#cast)#highlight#narration == CastDoc.Narration.Keep;
-        let shownStage = Stage.withLineSpeaker(World.now(w), keepOnNarration, speaker, Stage.withWindowShown(World.now(w), r#stage));
+        let shownStage = Stage.withLineSpeaker(World.now(w), CastDoc.keepsSpeakerOnNarration(res#cast), speaker, Stage.withWindowShown(World.now(w), r#stage));
         let stage = if (Page.isFullFor(window#kind, fits, entry, r#page)) Stage.withPageTurned(shownStage) else shownStage;
         let page = Page.show(window#kind, fits, entry, r#page);
         let placed = { stage = stage, page = if (replay == Commands.Replay.Silent) Page.revealAll(page) else page | r };

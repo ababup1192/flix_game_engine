@@ -412,6 +412,12 @@ mod TestSpeaker {
         Assert.assertEq(expected = None, PropertyTween.nameEnd(Stage.speakerKey(), st#props))
 
     @Test
+    def testDocNarrationKeepKeepsTheSpeaker(): Unit \ {Assert, Fs.FileRead} =
+        let base = castRes();
+        let d = CastDoc.rec(base#cast);
+        Assert.assertTrue(CastDoc.keepsSpeakerOnNarration(CastDoc.Doc.Doc({ highlight = { narration = CastDoc.Narration.Keep | d#highlight } | d })))
+
+    @Test
     def testNarrationIsReadFromTheDoc(): Unit \ {Assert, Fs.FileRead} =
         let text = Fs.FileRead.read("test/fixtures/novel.cast.json") |> Result.getWithDefault("{}")
             |> String.replace(src = "\"voices\": [\"whale\"]", dst = "\"voices\": [\"whale\"], \"narration\": \"keep\"");

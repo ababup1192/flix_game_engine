@@ -127,7 +127,7 @@ mod Commands {
 
     /// 書いた ease= の曲線（書いていなければ None）。
     def easeArg(h: Param.Opt[String], a: YarnCommands.Args): Option[Curve.Ease] =
-        Param.getOpt(h, a) |> Option.flatMap(name -> Curve.easeTable() |> List.find(e -> fst(e) == name) |> Option.map(snd))
+        Param.getOpt(h, a) |> Option.flatMap(BackdropDoc.easeOf)
 
     /// ease= を書いた時だけ、出し入れの濃さの曲線をその曲線にした意味。
     def withEaseOf(ease: Option[Curve.Ease], cue: Cast.Cue): Cast.Cue =

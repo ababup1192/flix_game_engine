@@ -4,7 +4,7 @@
 // テクスチャの名前は「cast_<名前>_<表情>」で導き、project.json の textures にこの名前で登録する（TestDocs が見る）。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod CastDoc {
-    use fge::{Curve, DocJson, JsonCodec}
+    use fge::{Curve, DocJson, JsonCodec, Log}
     use Util.Json.Json
 
     /// 列: Character = 人物、Prop = 小物（既定の重ね順が人物より手前・NVL の頁では既定で幕の上。PropsOnPage）。何人・何個でも同時に出せる。
@@ -170,7 +170,7 @@ mod CastDoc {
               markers = Map.get("markers", obj) |> Option.flatMap(JsonCodec.decodeStringMap(markerFrom)) |> Option.getWithDefault(Map.empty()),
               hideWindow = JsonCodec.boolOr("hideWindow", false, obj),
               speakFx = Map.get("speakFx", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.filter(n -> not String.isEmpty(n)),
-              onPage = Map.get("onPage", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(propsOnPageOf) }
+              onPage = namedIn("onPage", text -> propsOnPageOf(text) |> Option.map(Some), None, "一番上の propsOnPage", obj) }
         })
 
     /// { "x": 割合, "y": 割合 } を読む（欠けた欄は真ん中）。
@@ -183,8 +183,7 @@ mod CastDoc {
              |> Option.map(obj -> { dim = JsonCodec.floatOr("dim", fallback#dim, obj), seconds = JsonCodec.floatOr("seconds", fallback#seconds, obj),
                                     voices = Map.get("voices", obj) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString)) |> Option.map(List.toSet)
                                                  |> Option.getWithDefault(fallback#voices),
-                                    narration = Map.get("narration", obj) |> Option.flatMap(JsonCodec.expectString) |> Option.flatMap(narrationOf)
-                                                    |> Option.getWithDefault(fallback#narration) })
+                                    narration = namedIn("narration", narrationOf, fallback#narration, "brighten", obj) })
              |> Option.getWithDefault(fallback)
 
     /// "attach": { "bg": { 写真の名前: 横のずれ } } を読む（無い・読めなければ画面に付く）。
@@ -193,11 +192,16 @@ mod CastDoc {
              |> Option.map(bg -> JsonCodec.decodeStringMap(JsonCodec.expectFloat, bg) |> Option.getWithDefault(Map.empty()))
              |> Option.map(Attach.Backdrop) |> Option.getWithDefault(Attach.Screen)
 
-    /// 曲線の名前の欄（Curve.easeTable の名前。無い・知らない名前は fallback）。
-    def easeIn(key: String, fallback: Curve.Ease, obj: Map[String, Json]): Curve.Ease =
-        Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString)
-            |> Option.flatMap(name -> Curve.easeTable() |> List.find(e -> fst(e) == name) |> Option.map(snd))
-            |> Option.getWithDefault(fallback)
+    /// 名前の欄 key を read で読む（無ければ黙って fallback・知らない字なら 1 行言って fallback）。
+    def namedIn(key: String, read: String -> Option[a], fallback: a, fallbackName: String, obj: Map[String, Json]): a =
+        match Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString) |> Option.map(text -> (text, read(text))) {
+            case None                => fallback
+            case Some((_, Some(v)))  => v
+            case Some((text, None))  => Log.fellBackThen("cast", "${path()} の ${key}", fallbackName, "知らない字 '${text}'", fallback)
+        }
+
+    /// 地の文の行で前の話し手の強調のままにするか（highlight.narration が keep）。
+    pub def keepsSpeakerOnNarration(doc: Doc): Bool = rec(doc)#highlight#narration == Narration.Keep
 
     /// 小物 entry を頁の幕の上に描くか（小物の onPage、書いていなければ一番上の propsOnPage）。
     pub def isOverWindow(doc: Doc, entry: Entry): Bool =
@@ -207,7 +211,7 @@ mod CastDoc {
         let d = rec(defaults());
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
                   fadeSeconds = JsonCodec.floatOr("fadeSeconds", d#fadeSeconds, root),
-                  fadeEase = easeIn("fadeEase", d#fadeEase, root),
+                  fadeEase = BackdropDoc.easeIn(path(), "fadeEase", d#fadeEase, root),
                   slideDistance = JsonCodec.floatOr("slideDistance", d#slideDistance, root),
                   sway = JsonCodec.floatOr("sway", d#sway, root),
                   portraitVeilWithCast = JsonCodec.floatOr("portraitVeilWithCast", d#portraitVeilWithCast, root),

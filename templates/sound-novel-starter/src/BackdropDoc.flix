@@ -72,6 +72,17 @@ mod BackdropDoc {
     /// （足して 1 でなくてよく、比で分ける）。<<bg … transition=black>> の形。
     pub type alias Blackout = { fadeOut = Float64, hold = Float64, fadeIn = Float64 }
 
+    /// 曲線の名前（Curve.easeTable の名前）の曲線。Doc の曲線の欄（defaultEase・novel.cast.json の fadeEase）と <<…ease=>> が引く。知らない名前は None。
+    pub def easeOf(name: String): Option[Curve.Ease] = Curve.easeTable() |> List.find(e -> fst(e) == name) |> Option.map(snd)
+
+    /// 曲線の名前の欄 key（無ければ黙って fallback・知らない名前なら 1 行言って fallback）。docName = 知らせに出す Doc の名前。
+    pub def easeIn(docName: String, key: String, fallback: Curve.Ease, obj: Map[String, Json]): Curve.Ease =
+        match Map.get(key, obj) |> Option.flatMap(JsonCodec.expectString) |> Option.map(name -> (name, easeOf(name))) {
+            case None                => fallback
+            case Some((_, Some(e)))  => e
+            case Some((name, None))  => Log.fellBackThen("docs", "${docName} の ${key}", ToString.toString(fallback), "知らない曲線の名前 '${name}'（Curve.easeTable の名前）", fallback)
+        }
+
     /// 暗転の形の既定（半分で暗くなりきり、止まらずに明ける）。
     pub def defaultBlackout(): Blackout = { fadeOut = 0.5, hold = 0.0, fadeIn = 0.5 }
 
@@ -82,7 +93,7 @@ mod BackdropDoc {
         let held = if (total <= 0.0) 0.0 else b#hold / total;
         if (p < out) p / out
         else if (p < out + held) 1.0
-        else if (out + held >= 1.0) 1.0
+        else if (b#fadeIn <= 0.0) 1.0
         else (1.0 - p) / (1.0 - out - held)
 
     /// 暗転の進みのどこで写真を替えるか（暗いまま止まる間の真ん中）。
@@ -148,9 +159,8 @@ mod BackdropDoc {
     def fromRoot(root: Map[String, Json]): Doc =
         Doc.Doc({ version = JsonCodec.intOr("version", 1, root),
                   defaultTransition = transitionOf(JsonCodec.stringOr("defaultTransition", "fade", root)) |> Option.getWithDefault(Transition.Fade),
-                  defaultSeconds = Float64.max(0.0, JsonCodec.floatOr("defaultSeconds", 1.0, root)),
-                  defaultEase = Map.get("defaultEase", root) |> Option.flatMap(JsonCodec.expectString)
-                      |> Option.flatMap(name -> Curve.easeTable() |> List.find(e -> fst(e) == name) |> Option.map(snd)) |> Option.getWithDefault(Curve.Ease.Linear),
+                  defaultSeconds = Float64.max(0.0, JsonCodec.floatOr("defaultSeconds", rec(defaults())#defaultSeconds, root)),
+                  defaultEase = easeIn(path(), "defaultEase", rec(defaults())#defaultEase, root),
                   black = blackoutFrom(Map.get("black", root)),
                   photos = Map.get("photos", root) |> Option.flatMap(JsonCodec.decodeStringMap(photoFromJson))
                       |> Option.getWithDefault(Map.empty()),

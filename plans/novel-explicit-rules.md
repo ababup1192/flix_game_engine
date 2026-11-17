@@ -40,7 +40,8 @@
 | `novel.theme.json` | `windows.<型>.align` | その型の本文の揃え（left・center）。書くと型に替えた時にこの揃えへ戻る。書かない型は今どおり `<<text align=>>` が続く | `<<text align=>>` |
 
 main で先に入っていた `highlight.voices`（立ち絵を持たない話し手も強調に数える）と `propsOnPage` と合わせて、
-棚卸しの「ゲームごとに変えたくなる、コードだけの決まり」（下の §3）のうち 7 つが Doc の欄になった。
+この枝で足した欄は 7 つ（§2 の表の行）。main の 2 つと合わせて、§3 の表の 10 行のうち 8 行が Doc の欄になった。
+欄の字が読めない時（曲線の名前の打ち間違い・知らない narration / onPage / align）は、既定で続けて `Log.fellBackThen` で 1 行言う。
 
 ### 決めたこと（細かい所）
 
@@ -88,8 +89,8 @@ main で先に入っていた `highlight.voices`（立ち絵を持たない話�
 
 ## 4. 確かめた事
 
-- テンプレートの `make test` **634 本緑**（足したテスト 25 本: 暗転の形 4・`<<bg>>` の既定 5・`windowFadeSeconds` 2・`onPage` 2・`narration` 3・
-  `fadeEase` と `ease=` 4・`align` 5）。足したテストのうち 3 本は、実装をわざと戻すと落ちることを確かめた。
+- テンプレートの `make test` **637 本緑**（足したテスト 28 本: 暗転の形 5・`<<bg>>` の既定 5・`windowFadeSeconds` 2・`onPage` 2・`narration` 4・
+  `fadeEase` と `ease=` 4・`align` 5・スキーマの曲線の名前が `Curve.easeTable` と同じ 1）。暗転と narration は、描く元の Doc を替えて舞台と描いた物で確かめるテストも置いた。
 - `make reference-check` **45 枚すべてバイト一致**・budget OK。
 - 比べ: main（05926221）で `make migrate-baseline` → この枝で `make migrate-new` が**通った**（止める違い 0 件・比べたコマ 473 枚）。
 - 新しいゲーム（`make new-game … TEMPLATE=sound-novel-starter`）の足元で `make agent-eval ONLY=novel-blackout-hold` が 100 点（2 回目）。
@@ -106,4 +107,14 @@ main で先に入っていた `highlight.voices`（立ち絵を持たない話�
 
 ## 6. 設計レビュー（最後の 1 回）
 
-（下に追記）
+**86 点・必須 0 件**（正しさ・設計・テスト・Doc の形・計画書）。既定値が今と同じになる理屈（暗転の式・inOutSine の式・onPage の分け方・align の順）を式の上で確かめた、との評。
+
+推奨で直した物:
+- 欄の字が読めない時に黙って既定へ戻していた → `Log.fellBackThen` で 1 行言う（曲線の名前・narration・onPage・align）。前からある `propsOnPage` は main の物なので触っていない。
+- Doc から振る舞いへつなぐ所のテストが 2 か所無かった → 暗転は Doc の `black` を替えて覆いの濃さを、narration は Doc から Bool にする所（`CastDoc.keepsSpeakerOnNarration`）を確かめるテストを足した。
+- 曲線の名前を引く処理が 3 か所にあった → `BackdropDoc.easeOf` / `easeIn` の 1 か所にした。スキーマの名前の一覧と `Curve.easeTable` を比べるテストを足した。
+- 計画書の数（7 つ / 8 行）と空の節。
+- 好みのうち: `fadeIn = 0` を比の足し算でなく直に見分ける・既定値を `defaults()` から引く・`windowFadeSeconds` の label（次の台詞で戻る時はすぐ）・前の背景が無い時の暗転の説明。
+
+残した物（好み）: 秒の上限がスキーマと命令でそろっていない・`Cast.layerOf` の効かない曲線の値・タプル 1 つで 2 つの事実を見るテスト。
+知らない名前で既定へ戻るテストは、`Log.fellBackThen` が標準エラーに書くとテストの道具が落とすので置いていない（言うことは手で確かめた）。
