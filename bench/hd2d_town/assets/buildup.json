@@ -61,13 +61,8 @@
       "idleStrip": "sprites/merchant_idle.png"
     },
     {
-      "strip": "sprites/traveler_walk4.png",
-      "tint": [
-        0.82,
-        0.86,
-        1.05
-      ],
-      "idleStrip": "sprites/traveler_idle.png"
+      "strip": "sprites/girl_walk4.png",
+      "idleStrip": "sprites/girl_idle.png"
     }
   ],
   "startDelay": 0.3,

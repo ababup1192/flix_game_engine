@@ -9,24 +9,24 @@
   "sunAzimuth": -35.0,
   "sunIntensity": 0.2,
   "ambient": [
+    0.07,
     0.05,
-    0.06,
     0.12
   ],
   "hemisphere": 0.08,
   "boardTint": 1.0,
   "snapToTexels": true,
-  "fogNear": 8.0,
-  "fogFar": 30.0,
+  "fogNear": 13.0,
+  "fogFar": 25.0,
   "fog": [
-    0.26,
-    0.24,
-    0.46
+    0.36,
+    0.28,
+    0.44
   ],
   "sky": [
-    0.05,
-    0.07,
-    0.14
+    0.045,
+    0.03,
+    0.1
   ],
   "exposure": -1.8,
   "bloomStrength": 0.25,
@@ -52,24 +52,24 @@
   ],
   "note": "夜と霧（強）。地面を這う霧は engine の PostStack.HeightFog（長さは m）・奥の霞は DistanceFog",
   "sunColor": [
-    0.45,
-    0.55,
-    1.0
+    0.68,
+    0.64,
+    0.98
   ],
   "lampIntensity": 7.0,
-  "lampRange": 5.5,
+  "lampRange": 8.0,
   "lampColor": [
     1.0,
-    0.72,
-    0.42
+    0.66,
+    0.34
   ],
   "lampGlow": 6.0,
   "groundFog": 0.0,
   "heightFog": {
     "color": [
-      0.56,
-      0.52,
-      0.82
+      0.62,
+      0.55,
+      0.75
     ],
     "density": 1.6,
     "baseHeight": 1.0,
@@ -88,8 +88,8 @@
   "shadowPcf": 2,
   "boardLamplight": 1.6,
   "boardNightBase": [
-    0.32,
-    0.35,
-    0.55
+    0.34,
+    0.3,
+    0.5
   ]
 }

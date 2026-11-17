@@ -69,6 +69,16 @@
       "name": "merchant_idle",
       "path": "assets/sprites/merchant_idle.png",
       "hasAlpha": true
+    },
+    {
+      "name": "girl_walk4",
+      "path": "assets/sprites/girl_walk4.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "girl_idle",
+      "path": "assets/sprites/girl_idle.png",
+      "hasAlpha": true
     }
   ],
   "fonts": [],
