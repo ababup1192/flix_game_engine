@@ -1814,8 +1814,8 @@
   `pub type alias Vignette = { strength = Float64, inner = Float64, outer = Float64, center = Vec2.Vec2 }`
 - 色の仕上げ（Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation）。
   `pub type alias ColorGrade = { lift = Color, gamma = Color, gain = Color, saturation = Float64 }`
-- 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる（Standard は曲線なし）。
-  `pub enum ViewTransform { case Standard case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 }) }`
+- 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる。Standard と KhronosNeutral は、場面の値を読む所で
+  `pub enum ViewTransform { case Standard case KhronosNeutral case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 }) }`
 - 奥行きのぼかし。ぼかしに使う奥行きの絵は、View が返す絵の中の 3D の場面から PostStack が作る（ゲームが場面を 2 回組まない）。
   `pub enum DepthOfField { case Physical({ focusDistance = Float64, fStop = Float64 }) case DepthBand({ focusDistance = Float64, range = Float64, band = Float64, soft = Float64, blur = Float64 }) }`
 - 重さと細かさの段。読む点の数と描き先の大きさだけを変え、値の意味は変えない。

@@ -4,6 +4,7 @@
 // 描き手（GL・WebGPU・CPU）は触らない。式の部品（トーンマップの曲線・FXAA・luma）が要る時だけ PostProcess を使う。
 //
 // 掛かる順（Blender の Color Management の順）: 奥行きのぼかし → ブルーム → 色の仕上げ → ビネット → 露出 → view transform → FXAA。
+// Standard と KhronosNeutral は場面の値を線形へ戻してから掛ける（Blender と同じ線形の値の上の式。曲線の門は engine_world/test の TestPostStackBlender）。
 // 掛ける範囲は View が返す絵の全部（App.withPostStack）。HUD（App.withHudView）とデバッグの重ねには掛からない —
 // トーンマップもぼかしも掛けたくない UI（会話の窓・メニュー・字幕）は HUD に置く。
 //
@@ -27,11 +28,14 @@ pub mod PostStack {
     /// どれも 1 が「何もしない」。lift は暗い所・gamma は中間・gain は明るい所を色ごとに持ち上げる。saturation は掛け算（0 = 灰色）。
     pub type alias ColorGrade = { lift = Color, gamma = Color, gain = Color, saturation = Float64 }
 
-    /// 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる（Standard は曲線なし）。
-    /// AcesNarkowicz は今までのゲームの見え方との互換（Narkowicz 2015 の ACES の近似を whitePoint で 1 にそろえ、曲線の後に
-    /// 0..1 の色の彩度を saturationAfter だけ足す。0 = そのまま）。
+    /// 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる。Standard と KhronosNeutral は、場面の値を読む所で
+    /// 線形へ戻し（描き手の Pass は画面の値を持つ）、ブルーム・色の仕上げ・ビネット・露出を線形の値に掛けてから曲線と sRGB の曲線で表示の値にする
+    /// （Standard = 曲線なしで 1 で切る・KhronosNeutral = Khronos PBR Neutral）。
+    /// AcesNarkowicz は今までのゲームの見え方との互換で、画面の値のまま掛ける（Narkowicz 2015 の ACES の近似を whitePoint で 1 にそろえ、曲線の後に
+    /// 0..1 の色の彩度を saturationAfter だけ足す。0 = そのまま。Blender に無い曲線）。
     pub enum ViewTransform {
         case Standard
+        case KhronosNeutral
         case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 })
     }
 

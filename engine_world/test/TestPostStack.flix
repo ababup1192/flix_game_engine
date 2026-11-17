@@ -57,8 +57,14 @@ mod TestPostStack {
 
     @Test
     def testDepthBandAddsDepthAndSoftPasses(): Unit \ Assert =
-        Assert.assertEq(expected = "ps_scene" :: "ps_depth" :: "ps_soft" :: Nil,
+        Assert.assertEq(expected = "ps_scene" :: "ps_depth" :: "ps_linear" :: "ps_soft" :: Nil,
                         passNames(neutral() |> PostStack.withDepthOfField(Some(band()))))
+
+    @Test
+    def testAcesNarkowiczBlursTheScenePassAsIs(): Unit \ Assert =
+        Assert.assertEq(expected = "ps_scene" :: "ps_depth" :: "ps_soft" :: Nil,
+                        passNames(neutral() |> PostStack.withViewTransform(PostStack.ViewTransform.AcesNarkowicz({ whitePoint = 4.0, saturationAfter = 0.0 }))
+                                            |> PostStack.withDepthOfField(Some(band()))))
 
     @Test
     def testLowQualityShrinksTheBrightPassToAQuarter(): Unit \ Assert =

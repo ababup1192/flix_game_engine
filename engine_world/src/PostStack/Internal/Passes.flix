@@ -15,6 +15,7 @@ pub mod PostStack.Internal.Passes {
     def brightPass(): String = "ps_bright"
     def bloomPassA(): String = "ps_bloomA"
     def bloomPassB(): String = "ps_bloomB"
+    def linearPass(): String = "ps_linear"
 
     /// 読む点の数と縮み（Quality から）。basis = 縮んだ Pass の倍率の基準。
     type alias Tuning = { bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32, basis = RenderTarget.Basis }
@@ -72,11 +73,15 @@ pub mod PostStack.Internal.Passes {
         let depthPasses = depthItem |> Option.map(item ->
             ({ name = depthPass(), clear = RenderTarget.LoadOp.Clear(Color.rgb(1.0, 1.0, 1.0)), items = item :: Nil }, shrunk(0.5)) :: Nil)
             |> Option.getWithDefault(Nil);
+        let toLinear = isLinear(f#viewTransform);
+        // WhyNot: ぼかしの中で線形へ戻さない — TexBlur は読む点ごとに式を挟めず、画面の値をぼかしてから戻すと明るい縁が細る。
+        let softSource = if (toLinear) linearPass() else current;
         let softPasses = focus |> Option.map(fo ->
-            ({ name = softPass(), clear = black, items = fill(blurSpec(aspect, softPass(), current, fo#blur, tune#blurTaps)) :: Nil }, shrunk(0.5)) :: Nil)
+            List.append(if (toLinear) ({ name = linearPass(), clear = black, items = fill(linearSpec(current)) :: Nil }, hdrAt(1.0)) :: Nil else Nil,
+                        ({ name = softPass(), clear = black, items = fill(blurSpec(aspect, softPass(), softSource, fo#blur, tune#blurTaps)) :: Nil }, shrunk(0.5)) :: Nil))
             |> Option.getWithDefault(Nil);
         let bloomPasses = f#bloom |> Option.map(b ->
-            ({ name = brightPass(), clear = black, items = fill(brightSpec(current, b)) :: Nil }, shrunk(tune#bloomScale))
+            ({ name = brightPass(), clear = black, items = fill(brightSpec(current, toLinear, b)) :: Nil }, shrunk(tune#bloomScale))
                 :: ({ name = bloomPassA(), clear = black, items = fill(blurSpec(aspect, bloomPassA(), brightPass(), b#size, tune#bloomTaps)) :: Nil }, shrunk(tune#bloomScale * 0.5))
                 :: ({ name = bloomPassB(), clear = black, items = fill(blurSpec(aspect, bloomPassB(), bloomPassA(), b#size * 0.5, tune#bloomTaps)) :: Nil }, shrunk(tune#bloomScale * 0.5))
                 :: Nil)
@@ -110,6 +115,12 @@ pub mod PostStack.Internal.Passes {
         case _                      => false
     }
 
+    /// 場面の値を線形へ戻してから掛けるか（Blender の view transform の物）。
+    def isLinear(v: ViewTransform): Bool = match v {
+        case ViewTransform.AcesNarkowicz(_) => false
+        case _                              => true
+    }
+
     def samplesOf(m: Msaa): Int32 = match m {
         case Msaa.Off => 1
         case Msaa.X4  => 4
@@ -119,7 +130,7 @@ pub mod PostStack.Internal.Passes {
     def paramsOf(f: Fields): Map[String, Float64] =
         let satAfter = match f#viewTransform {
             case ViewTransform.AcesNarkowicz(a) => 1.0 + a#saturationAfter
-            case ViewTransform.Standard         => 1.0
+            case _                              => 1.0
         };
         Map#{ "ps_exposure" => Float64.pow(base = 2.0, f#exposure),
               "ps_bloom" => f#bloom |> Option.map(b -> b#strength) |> Option.getWithDefault(0.0),
@@ -202,9 +213,17 @@ pub mod PostStack.Internal.Passes {
         let t = chan -> Field.Tex({ name = source, chan = chan });
         { name = "ps_copy:${source}", cycleRate = 0.0, bindings = Nil, out = rgbOf(t(TexChan.R), t(TexChan.G), t(TexChan.B)) }
 
-    /// 場面の明るい所だけを残す（明るさが threshold から threshold + smoothness の間でなめらかに 0 → 1）。
-    def brightSpec(source: String, b: Bloom): ShaderDoc.Spec =
-        let read = chan -> linear(Field.Tex({ name = source, chan = chan }));
+    /// 場面の値を線形へ戻して写す面（ぼかした場面の元）。
+    def linearSpec(source: String): ShaderDoc.Spec =
+        let t = chan -> toLinear(Field.Tex({ name = source, chan = chan }));
+        { name = "ps_linear", cycleRate = 0.0, bindings = Nil, out = rgbOf(t(TexChan.R), t(TexChan.G), t(TexChan.B)) }
+
+    /// 場面の明るい所だけを残す（明るさが threshold から threshold + smoothness の間でなめらかに 0 → 1）。toLin = 線形へ戻してから比べる。
+    def brightSpec(source: String, toLin: Bool, b: Bloom): ShaderDoc.Spec =
+        let read = chan -> {
+            let t = linear(Field.Tex({ name = source, chan = chan }));
+            if (toLin) toLinear(t) else t
+        };
         let luma = PostProcess.luma709(read(TexChan.R), read(TexChan.G), read(TexChan.B));
         let over = Field.Smoothstep({ lo = b#threshold, hi = b#threshold + Float64.max(0.01, b#smoothness), of = luma });
         let chan = c -> mul(read(c), Field.Ref("over"));
@@ -218,9 +237,10 @@ pub mod PostStack.Internal.Passes {
 
     /// 本編の面: 場面（奥行きでぼかした物）にブルームを足し、色を仕上げ、ビネットを掛け、露出と曲線で表示の値にする。
     def mainSpec(aspect: Float64, current: String, f: Fields, focus: Option[Focus]): ShaderDoc.Spec =
+        let scene = (chan: TexChan) -> if (isLinear(f#viewTransform)) toLinear(Field.Tex({ name = current, chan = chan })) else Field.Tex({ name = current, chan = chan });
         let sharp = (chan: TexChan) -> match focus {
-            case Some(_) => Field.Blend({ a = Field.Tex({ name = current, chan = chan }), b = linear(Field.Tex({ name = softPass(), chan = chan })), by = Field.Ref("ps_tilt") })
-            case None    => Field.Tex({ name = current, chan = chan })
+            case Some(_) => Field.Blend({ a = scene(chan), b = linear(Field.Tex({ name = softPass(), chan = chan })), by = Field.Ref("ps_tilt") })
+            case None    => scene(chan)
         };
         let bloomed = (chan: TexChan) -> match f#bloom {
             case Some(_) => add(sharp(chan), mul(p("ps_bloom"), linear(Field.Tex({ name = bloomPassB(), chan = chan }))))
@@ -241,8 +261,7 @@ pub mod PostStack.Internal.Passes {
             case None =>
                 ("ps_r", vignetted(bloomed(TexChan.R))) :: ("ps_g", vignetted(bloomed(TexChan.G))) :: ("ps_b", vignetted(bloomed(TexChan.B))) :: Nil
         };
-        let curve = curveOf(f#viewTransform);
-        let mapped = ("ps_tr", curve(Field.Ref("ps_r"))) :: ("ps_tg", curve(Field.Ref("ps_g"))) :: ("ps_tb", curve(Field.Ref("ps_b"))) :: Nil;
+        let mapped = mappedBindings(f#viewTransform);
         { name = "ps_main", cycleRate = 0.0,
           bindings = List.flatten(focusBindings :: vigBindings :: colorBindings :: mapped :: Nil),
           out = outOf(f, focus) }
@@ -252,15 +271,40 @@ pub mod PostStack.Internal.Passes {
         sub(k(1.0), mul(p("ps_vignette"), Field.Smoothstep({ lo = v#inner, hi = v#outer,
             of = Field.RadialAspect({ cx = v#center#x, cy = v#center#y, aspect = aspect }) })))
 
-    /// 露出を掛けて曲線で表示の値にする場。
+    /// ps_tr・ps_tg・ps_tb に、露出を掛けて曲線で表示の値にした色を置く。
     // WhyNot: PostProcess.tonemappedWith を使わない — 露出を Const で書き込むので、毎コマ露出を動かすと描き手が program を作り直す。
-    def curveOf(v: ViewTransform): Field -> Field = x -> {
-        let exposed = mul(x, p("ps_exposure"));
+    def mappedBindings(v: ViewTransform): List[(String, Field)] =
+        let ref = Field.Ref;
+        let exposed = (ch: String) -> mul(ref(ch), p("ps_exposure"));
         match v {
-            case ViewTransform.Standard         => exposed
-            case ViewTransform.AcesNarkowicz(a) => PostProcess.tonemapCurve(PostProcess.Tonemap.AcesFitted, a#whitePoint, maxF(exposed, k(0.0)))
+            case ViewTransform.Standard =>
+                ("ps_tr", toSrgb(exposed("ps_r"))) :: ("ps_tg", toSrgb(exposed("ps_g"))) :: ("ps_tb", toSrgb(exposed("ps_b"))) :: Nil
+            case ViewTransform.KhronosNeutral =>
+                ("ps_er", exposed("ps_r")) :: ("ps_eg", exposed("ps_g")) :: ("ps_eb", exposed("ps_b"))
+                    :: List.append(neutralBindings(), ("ps_tr", toSrgb(ref("ps_nr"))) :: ("ps_tg", toSrgb(ref("ps_ng"))) :: ("ps_tb", toSrgb(ref("ps_nb"))) :: Nil)
+            case ViewTransform.AcesNarkowicz(a) =>
+                let curve = (ch: String) -> PostProcess.tonemapCurve(PostProcess.Tonemap.AcesFitted, a#whitePoint, maxF(exposed(ch), k(0.0)));
+                ("ps_tr", curve("ps_r")) :: ("ps_tg", curve("ps_g")) :: ("ps_tb", curve("ps_b")) :: Nil
         }
-    }
+
+    /// Khronos PBR Neutral（Khronos の仕様の式）。ps_er・ps_eg・ps_eb（露出を掛けた線形の値）から ps_nr・ps_ng・ps_nb（線形の値）を作る。
+    /// 一番暗い成分で暗い所を少し沈め、一番明るい成分が 0.76 を超えたら肩で 1 へ寄せ、寄せた分だけ白へ近づける。
+    def neutralBindings(): List[(String, Field)] =
+        let ref = Field.Ref;
+        let start = 0.8 - 0.04;
+        let d = 1.0 - start;
+        let lo = minF(ref("ps_er"), minF(ref("ps_eg"), ref("ps_eb")));
+        let offset = Field.Blend({ a = k(0.04), b = sub(ref("ps_lo"), mul(k(6.25), mul(ref("ps_lo"), ref("ps_lo")))),
+                                   by = Field.Bin({ op = BinOp.Step, a = ref("ps_lo"), b = k(0.08) }) });
+        let peak = maxF(ref("ps_cr"), maxF(ref("ps_cg"), ref("ps_cb")));
+        let newPeak = sub(k(1.0), Field.Bin({ op = BinOp.Div, a = k(d * d), b = add(ref("ps_pk"), k(d - start)) }));
+        let toWhite = sub(k(1.0), Field.Bin({ op = BinOp.Div, a = k(1.0), b = add(mul(k(0.15), sub(ref("ps_pk"), ref("ps_np"))), k(1.0)) }));
+        let compressed = (ch: String) -> Field.Blend({ a = mul(ref(ch), Field.Bin({ op = BinOp.Div, a = ref("ps_np"), b = ref("ps_pk") })), b = ref("ps_np"), by = ref("ps_wh") });
+        let pick = (ch: String) -> Field.Blend({ a = ref(ch), b = compressed(ch), by = Field.Bin({ op = BinOp.Step, a = k(start), b = ref("ps_pk") }) });
+        ("ps_lo", lo) :: ("ps_off", offset)
+            :: ("ps_cr", sub(ref("ps_er"), ref("ps_off"))) :: ("ps_cg", sub(ref("ps_eg"), ref("ps_off"))) :: ("ps_cb", sub(ref("ps_eb"), ref("ps_off")))
+            :: ("ps_pk", peak) :: ("ps_np", newPeak) :: ("ps_wh", toWhite)
+            :: ("ps_nr", pick("ps_cr")) :: ("ps_ng", pick("ps_cg")) :: ("ps_nb", pick("ps_cb")) :: Nil
 
     /// 面の出力（途中の絵を見る時はその絵）。
     def outOf(f: Fields, focus: Option[Focus]): Out =

@@ -151,6 +151,7 @@ pub mod PostStack.Internal.Doc {
             };
             match kindOf(m) {
                 case Some("Standard")      => Ok(ViewTransform.Standard)
+                case Some("KhronosNeutral") => Ok(ViewTransform.KhronosNeutral)
                 case Some("AcesNarkowicz") =>
                     forM (wp <- numOr("whitePoint", acesStart#whitePoint, m); sat <- numOr("saturationAfter", acesStart#saturationAfter, m))
                     yield ViewTransform.AcesNarkowicz({ whitePoint = wp, saturationAfter = sat })
