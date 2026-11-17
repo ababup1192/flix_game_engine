@@ -22,6 +22,7 @@ import org.teavm.asm.Opcodes;
  *   Reference.refersTo                → References.refersTo（Java 16 の関数が無い）
  *   ByteBuffer.allocateDirect         → DirectBuffers.allocateDirect（64 KiB の倍数の大きさで memory に余裕があっても落ちる）
  *   正規表現の字 "\R"                  → "\r\n|[\n\r]"（TeaVM の正規表現に無い。Flix 標準の String.lines が使う）
+ *   instanceof dev/flix/runtime/Thunk$ → FlixThunks.isThunk（Flix の関数の呼び出しのたびに通る型の検査を、final の類 2 つの検査へ）
  * TeaVM 自身が持つ org/teavm/ の類は jar から落とす（Flix の依存の解決で同じ物が入り、TeaVM の物と二重になる）。
  * 付け替えた数を種類ごとに標準出力へ 1 行ずつ出す。
  */
@@ -29,6 +30,10 @@ public final class Rewrite {
     private Rewrite() { }
 
     private static final String FIX = "fge/teavmfix/";
+    private static final String THUNK = "dev/flix/runtime/Thunk$";
+    private static final String VALUE = "dev/flix/runtime/Value$";
+    private static final String SUSPENSION = "dev/flix/runtime/Suspension$";
+    private static final String THUNKS = FIX + "FlixThunks";
 
     public static void main(String[] args) throws Exception {
         if (args.length != 2) {
@@ -47,6 +52,10 @@ public final class Rewrite {
                 out.putNextEntry(new ZipEntry(name));
                 out.write(bytes);
             }
+            if (counts.containsKey("instanceof-Thunk")) {
+                out.putNextEntry(new ZipEntry(THUNKS + ".class"));
+                out.write(flixThunksClass());
+            }
         }
         counts.forEach((kind, n) -> System.out.println("rewrite " + kind + " " + n));
     }
@@ -61,6 +70,39 @@ public final class Rewrite {
             }
         }, 0);
         return writer.toByteArray();
+    }
+
+    /**
+     * Thunk$ は Flix の関数の類（1 万を超える）がみな実装する interface で、TeaVM の wasm-gc は interface の instanceof を
+     * 実装する類の番号の範囲を順に比べて答える（fps3d の部屋で 1 コマの CPU の 4 割がここ）。
+     * Flix の生成する instanceof Thunk$ の相手はいつも Result$ で、Result$ を実装するのは Thunk$・Value$・Suspension$ だけ
+     * （Value$ と Suspension$ は final）なので、「null でも Value$ でも Suspension$ でもない」と同じ答えになる。
+     * WhyNot: Java のソースで書かない — Value$ と Suspension$ はゲームの jar を Flix が組む時に生まれ、tools の jar を組む時には無い。
+     */
+    private static byte[] flixThunksClass() {
+        ClassWriter w = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        w.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_SUPER, THUNKS, null, "java/lang/Object", null);
+        MethodVisitor m = w.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "isThunk", "(Ljava/lang/Object;)Z", null, null);
+        m.visitCode();
+        org.teavm.asm.Label no = new org.teavm.asm.Label();
+        m.visitVarInsn(Opcodes.ALOAD, 0);
+        m.visitJumpInsn(Opcodes.IFNULL, no);
+        m.visitVarInsn(Opcodes.ALOAD, 0);
+        m.visitTypeInsn(Opcodes.INSTANCEOF, VALUE);
+        m.visitJumpInsn(Opcodes.IFNE, no);
+        m.visitVarInsn(Opcodes.ALOAD, 0);
+        m.visitTypeInsn(Opcodes.INSTANCEOF, SUSPENSION);
+        m.visitJumpInsn(Opcodes.IFNE, no);
+        m.visitInsn(Opcodes.ICONST_1);
+        m.visitInsn(Opcodes.IRETURN);
+        m.visitLabel(no);
+        m.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+        m.visitInsn(Opcodes.ICONST_0);
+        m.visitInsn(Opcodes.IRETURN);
+        m.visitMaxs(0, 0);
+        m.visitEnd();
+        w.visitEnd();
+        return w.toByteArray();
     }
 
     private static final class FixCalls extends MethodVisitor {
@@ -80,6 +122,16 @@ public final class Rewrite {
                 super.visitLdcInsn("\r\n|[\n\r]");
             } else {
                 super.visitLdcInsn(value);
+            }
+        }
+
+        @Override
+        public void visitTypeInsn(int op, String type) {
+            if (op == Opcodes.INSTANCEOF && type.equals(THUNK)) {
+                note("instanceof-Thunk");
+                super.visitMethodInsn(Opcodes.INVOKESTATIC, THUNKS, "isThunk", "(Ljava/lang/Object;)Z", false);
+            } else {
+                super.visitTypeInsn(op, type);
             }
         }
 
