@@ -131,6 +131,37 @@ mod TestPostStackFog {
         let got = decode(fogAt(sceneWith(Nil) :: Nil, fogged(h), 40.0, 0.5, 0.5));
         Assert.assertEq(expected = true, Float64.abs(got - want) < 0.01)
 
+    /// 目の線を細かく刻んで積んだ霧（1 − e^(−∫濃さ)）。dirY = 目の線の y の向き（長さ 1）。
+    def integratedFog(h: PostStack.HeightFog, dirY: Float64, distance: Float64): Float64 =
+        let n = 4000;
+        let start = h#startDistance;
+        let dt = Float64.max(0.0, distance - start) / Int32.toFloat64(n);
+        let tau = List.range(0, n) |> List.foldLeft((acc, i) -> {
+            let y = 2.0 + dirY * (start + (Int32.toFloat64(i) + 0.5) * dt);
+            acc + h#density * Float64.exp(0.0 - h#heightFalloff * (y - h#baseHeight)) * dt
+        }, 0.0);
+        1.0 - Float64.exp(0.0 - tau)
+
+    /// 画面の (0.5, v) を通る目の線の y の向き（camera の fovY 0.8・水平に見る）。
+    def dirYAt(v: Float64): Float64 =
+        let tanHalf = Num.sin(0.4) / Num.cos(0.4);
+        let up = (1.0 - 2.0 * v) * tanHalf;
+        up / Float64.pow(base = 1.0 + up * up, 0.5)
+
+    // 下を向いた目の線（積み始めを先へずらした物も）で、細かく刻んで積んだ値と 0.02 以内。
+    @Test
+    def testTiltedRayMatchesTheIntegral(): Unit \ Assert =
+        let h = { heightFalloff = 0.5, startDistance = 10.0 | fog() };
+        let world = sceneWith(Nil) :: Nil;
+        let gap = (v: Float64, d: Float64) -> Float64.abs(decode(fogAt(world, fogged(h), d, 0.5, v)) - integratedFog(h, dirYAt(v), d));
+        Assert.assertEq(expected = true, gap(0.95, 40.0) < 0.02 and gap(0.8, 90.0) < 0.02 and gap(0.2, 60.0) < 0.02)
+
+    @Test
+    def testOutsideTheSceneRectHasNoFog(): Unit \ Assert =
+        let small = Render.scene3d({ x = 80.0, y = 45.0 }, Scene3d.scene(camera(), { x = 160.0, y = 90.0 }));
+        Assert.assertEq(expected = (true, true), (fogAt(small :: Nil, fogged(fog()), 90.0, 0.05, 0.05) < 0.001,
+                                                  fogAt(small :: Nil, fogged(fog()), 90.0, 0.5, 0.6) > 0.05))
+
     @Test
     def testStartDistanceKeepsTheNearClear(): Unit \ Assert =
         Assert.assertEq(expected = true, fogAt(sceneWith(Nil) :: Nil, fogged({ startDistance = 20.0 | fog() }), 15.0, 0.5, 0.5) < 0.001)

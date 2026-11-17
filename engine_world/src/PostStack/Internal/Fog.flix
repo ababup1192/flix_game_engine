@@ -56,12 +56,19 @@ pub mod PostStack.Internal.Fog {
 
     type alias GlowLight = { u = Float64, v = Float64, invRadius2 = Float64, distance = Float64, range = Float64, r = Float64, g = Float64, b = Float64 }
 
-    /// 霧ににじませる灯り（目に近い順に maxGlowLights まで・目の前にある物だけ）。lightGlow ≤ 0 なら空。
+    /// 霧ににじませる灯り（目の前にある物を先に、目に近い順に maxGlowLights まで）。lightGlow ≤ 0 なら空。
+    // WhyNot: 目の後ろの灯りを列から外さない — 列の長さが変わると Spec の形が変わり、歩くたびに描き手が program を作り直す。後ろの灯りは色 0 で枠だけ使う。
     def glowLightsOf(fog: HeightFog, cmd: Scene3d.Scene3dCmd): List[Scene3d.PointLight] =
         if (fog#lightGlow <= 0.0) Nil
-        else cmd#pointLights
-            |> List.map(l -> (Vec3.length(Vec3.sub(l#position, cmd#camera#eye)), l))
-            |> Sort.sortStableBy(fst) |> List.map(snd) |> List.take(maxGlowLights())
+        else {
+            let fwd = Camera3d.forward(cmd#camera);
+            cmd#pointLights
+                |> List.map(l -> {
+                    let toward = Vec3.sub(l#position, cmd#camera#eye);
+                    ((if (Vec3.dot(toward, fwd) > 0.0) 0 else 1, Vec3.length(toward)), l)
+                })
+                |> Sort.sortStableBy(fst) |> List.map(snd) |> List.take(maxGlowLights())
+        }
 
     /// 灯り 1 つの、画面の上の真ん中・にじみの半径・届く距離・色（線形・霧の濃さ込み）。目の後ろなら色 0。
     def glowOf(fog: HeightFog, size: Vec2.Vec2, scene: (Vec2.Vec2, Scene3d.Scene3dCmd), l: Scene3d.PointLight): GlowLight =
@@ -83,7 +90,7 @@ pub mod PostStack.Internal.Fog {
         }
 
     def paramsOf(fog: HeightFog, size: Vec2.Vec2, time: Float64, scene: (Vec2.Vec2, Scene3d.Scene3dCmd), lights: List[Scene3d.PointLight]): Map[String, Float64] =
-        let (_, cmd) = scene;
+        let (at, cmd) = scene;
         let eye = cmd#camera#eye;
         let (r0, ru, rv) = rayBasis(size, scene);
         let base = Map#{
@@ -91,7 +98,9 @@ pub mod PostStack.Internal.Fog {
             "ps_fogMax" => Float64.max(0.0, Float64.min(1.0, fog#maxOpacity)),
             "ps_fogR" => srgbToLinear(fog#color#r), "ps_fogG" => srgbToLinear(fog#color#g), "ps_fogB" => srgbToLinear(fog#color#b),
             "ps_fr0x" => r0#x, "ps_fr0y" => r0#y, "ps_fr0z" => r0#z, "ps_frux" => ru#x, "ps_fruy" => ru#y, "ps_fruz" => ru#z,
-            "ps_frvx" => rv#x, "ps_frvy" => rv#y, "ps_frvz" => rv#z, "ps_fex" => eye#x, "ps_fez" => eye#z };
+            "ps_frvx" => rv#x, "ps_frvy" => rv#y, "ps_frvz" => rv#z, "ps_fex" => eye#x, "ps_fez" => eye#z,
+            "ps_fsx0" => at#x / size#x, "ps_fsy0" => at#y / size#y,
+            "ps_fsx1" => (at#x + cmd#size#x) / size#x, "ps_fsy1" => (at#y + cmd#size#y) / size#y };
         let withNoise = match fog#noise {
             case Some(n) =>
                 List.zip(noiseWaves(), noisePhaseNames())
@@ -120,14 +129,26 @@ pub mod PostStack.Internal.Fog {
     def minF(a: Field, b: Field): Field = Field.Bin({ op = BinOp.Min, a = a, b = b })
     def sat(a: Field): Field = Field.Un({ op = UnOp.Sat, of = a })
 
-    /// e^(−x)（x ≥ 0）。(1 + x/32)^−32 で近づける（x = 2 で 2.4%・x = 5 で 0.2 ポイントの差。霧の濃さには見えない差）。
+    /// e^(|x|/32) を 3 次までの式で（y = |x|/32 として 1 + y + y²/2 + y³/6）。32 乗すると e^|x| に近づく（|x| = 20 で 1% ほどの差）。
     // WhyNot: Field に e^x の節を足さない — 3 つの描き手の生成器に式を足すのは S2（式の木）の仕事。Pow の定数の指数で足りる。
-    def expNeg(x: Field): Field = Field.Pow({ of = add(k(1.0), mul(x, k(1.0 / 32.0))), p = -32.0 })
+    def expRoot(x: Field): Field =
+        let y = mul(Field.Un({ op = UnOp.Abs, of = x }), k(1.0 / 32.0));
+        add(k(1.0), mul(y, add(k(1.0), mul(y, add(k(0.5), mul(y, k(1.0 / 6.0)))))))
+
+    /// e^(−x)（x ≥ 0）。
+    def expNeg(x: Field): Field = Field.Pow({ of = expRoot(x), p = -32.0 })
 
     /// e^(−a)（a の符号はどちらでも）。
     def expSigned(a: Field): Field =
-        let m = add(k(1.0), mul(Field.Un({ op = UnOp.Abs, of = a }), k(1.0 / 32.0)));
+        let m = expRoot(a);
         Field.Blend({ a = Field.Pow({ of = m, p = -32.0 }), b = Field.Pow({ of = m, p = 32.0 }), by = Field.Bin({ op = BinOp.Step, a = a, b = k(0.0) }) })
+
+    /// Uv が 3D の場面の矩形の中なら 1（奥行きの絵は矩形の中にしか無い）。
+    def insideScene(): Field =
+        let u = Field.Uv({ axis = Axis.U });
+        let v = Field.Uv({ axis = Axis.V });
+        let step = (lo: Field, x: Field) -> Field.Bin({ op = BinOp.Step, a = lo, b = x });
+        mul(mul(step(p("ps_fsx0"), u), step(u, p("ps_fsx1"))), mul(step(p("ps_fsy0"), v), step(v, p("ps_fsy1"))))
 
     def sceneChan(source: String, toLin: Bool, chan: TexChan): Field =
         let t = Field.Tex({ name = source, chan = chan });
@@ -173,8 +194,11 @@ pub mod PostStack.Internal.Fog {
                 :: ("ps_fs", maxF(k(0.0), sub(ref("ps_ft"), p("ps_fogStart"))))
                 :: Nil)
             :: noiseBindings
-            :: (("ps_fa", clampedA) :: ("ps_ftau", mul(mul(mul(p("ps_fogEye"), integral), ref("ps_fs")), maxF(k(0.0), ref("ps_fn"))))
-                :: ("ps_fo", mul(sub(k(1.0), expNeg(ref("ps_ftau"))), p("ps_fogMax"))) :: Nil)
+            // 積み始めの点（目から startDistance 先）の高さの濃さから積む。tau は float32 で inf にならないよう 1e4 で切る（e^−1e4 は 0 と同じ）。
+            :: (("ps_fa", clampedA)
+                :: ("ps_fstart", expSigned(maxF(k(-400.0), minF(k(400.0), mul(mul(p("ps_fogFalloff"), ref("ps_fdy")), p("ps_fogStart"))))))
+                :: ("ps_ftau", minF(k(10000.0), mul(mul(mul(mul(p("ps_fogEye"), ref("ps_fstart")), integral), ref("ps_fs")), maxF(k(0.0), ref("ps_fn")))))
+                :: ("ps_fo", mul(mul(sub(k(1.0), expNeg(ref("ps_ftau"))), p("ps_fogMax")), insideScene())) :: Nil)
             :: glowBindings
             :: Nil);
         { name = "ps_fog", cycleRate = 0.0, bindings = bindings,

@@ -358,9 +358,10 @@ App.withPostStack(w -> PostStack.preset(PostStack.Preset.NightOutdoor)
 - 長さは Scene3d の場面の長さ（Blender の 1 m を 16 にした場面なら、地面から 0.4 m で e 分の 1 に薄くするには `heightFalloff = 1 / (0.4 × 16)`）
 - `noise`: むらの大きさ（場面の長さ）・揺らす割合・流れる速さ（x と z）。遠くでは細かい波がちらつかないよう、粒の 24 倍の距離で消える
 - `lightGlow`: 場面の `pointLights` の目に近い 8 つのまわりの霧を明るくする（届く距離の 0.2 倍を画面へ写した半径のにじみ・灯りの高さの霧の濃さで強さが決まる・
-  灯りより手前に面があればにじまない）
+  灯りより手前に面があればにじまない・目の前の灯りを先に選ぶ）。Unreal の体積の霧（Volumetric Fog）の光の散らしの、安い代わり
 - 3D の場面の奥行きの絵（目からの距離・窓の画素）を PostStack が作って読む。場面がもう 1 回描かれる（bench/scene3d の部屋で draw call 10 → 20）。
-  奥行きの絵に入らない半透明の物はその奥の面の霧が掛かる。View の中の 2D の絵は、その下の 3D の奥行きで霧が掛かる（字の窓は `App.withHudView` に置く）
+  奥行きの絵に入らない半透明の物はその奥の面の霧が掛かる。3D の場面の矩形の中の 2D の絵は、その下の 3D の奥行きで霧が掛かる（字の窓は `App.withHudView` に置く）。矩形の外には掛からない
+- 何も描かれない空の画素は camera の far まで積む（Unreal と同じく地平の近くの空が霧の色に染まる）。far を大きくすると空が霧の色ばかりになる
 - 掛かる順は後がけの一番先（自分の BeforeBloom の後・画面の歪みの前）。霧の中の明るい灯りにもブルームが掛かる
 - 毎コマ動かしてよいのは色・濃さ・高さの落ち方・`startDistance`・`maxOpacity`・`noise.amount`・`lightGlow` とカメラと灯り（Param で渡る）。`noise.size` を動かすと program を作り直す
 - `density` か `maxOpacity` が 0 以下なら Pass を足さない（使わない時の絵と DrawHash は前と同じ）
