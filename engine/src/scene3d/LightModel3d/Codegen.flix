@@ -6,7 +6,7 @@
 // WhyNot: 木と同じファイルに置かない — 木と式は GL と CPU の約束で、コード生成は engine_tools と Render3d の名前を字で知る。触る人と理由が違う。
 pub mod LightModel3d.Codegen {
     use LightModel3d.{ScalarExpr, Vec3Expr, Cond, ScalarInput, Vec3Input, ScalarLightField, Vec3LightField, LightKind}
-    use LightModel3d.{lightingModel, lightmapLightingModel, fogModel, skyModel, pbrModel, environmentDirection, strideOf, vec3FieldOffset, scalarFieldOffset}
+    use LightModel3d.{lightingModelFor, lightmapLightingModelFor, fogModel, skyModel, pbrModelFor, environmentDirection, cpuVariant, strideOf, vec3FieldOffset, scalarFieldOffset}
 
     // ════════════════════════════════════════════════════════
     // コード生成（2 つの出口が共に使う）
@@ -25,6 +25,8 @@ pub mod LightModel3d.Codegen {
         case Points
         case Spots
         case Shadow
+        /// 点光源ごとの影の割合（Vector[Float64]・点光源の番号で引く）。
+        case PointLit
         case Vec3Param(Vec3Input)
         case ScalarParam(ScalarInput)
     }
@@ -96,7 +98,20 @@ pub mod LightModel3d.Codegen {
                 case Target.Glsl => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
                 case Target.Wgsl => "spotShadow(i, ${vec3InputName(Vec3Input.Position)})"
             }
+        case (_, ScalarInput.PointShadowLit) =>
+            if (env#light != Some(LightKind.Point)) bug!("LightModel3d: PointShadowLit は SumPoints の中だけで読める")
+            else match t {
+                // Flix の i は並びの欄の位置（点光源の番号 × pointStride）。
+                case Target.Flix => "Vector.get(i / ${LightModel3d.pointStride()}, pointLit)"
+                // WhyNot: 地図を光のループの中で引かない — PBR の材質は拡散と鏡面の 2 つのループを回し、1 本につき 2 回引くことになる。frag の main が先に埋める。
+                case Target.Glsl => "r3d_pointLit[i]"
+                case Target.Wgsl => "r3d_pointLit[i]"
+            }
+        case (Target.Glsl, ScalarInput.PhysicalUnits) => bug!("LightModel3d: GL の木は光の量の読み方を Some で書き込む（PhysicalUnits は CPU だけが読む）")
+        case (Target.Wgsl, ScalarInput.PhysicalUnits) => bug!("LightModel3d: WebGPU の木は光の量の読み方を Some で書き込む（PhysicalUnits は CPU だけが読む）")
         case (Target.Flix, _) => scalarInputName(input)
+        case (Target.Glsl, ScalarInput.InverseUnitsPerMeterSquared) => "uInverseUnitsPerMeterSquared"
+        case (Target.Wgsl, ScalarInput.InverseUnitsPerMeterSquared) => "r3dLight.uInverseUnitsPerMeterSquared"
         // WhyNot: 太陽の影の割合を関数の引数にしない — toGlsl の引数の並びを変えず、frag の main が先に求めて渡す（地図を引くのは木の外）。
         case (Target.Glsl, ScalarInput.SunLit)            => "r3d_sunLit"
         case (Target.Glsl, ScalarInput.Hemisphere)        => "uHemisphere"
@@ -130,6 +145,9 @@ pub mod LightModel3d.Codegen {
         case ScalarInput.LightmapIntensity => "lightmapIntensity"
         case ScalarInput.EnvironmentOn     => "envOn"
         case ScalarInput.EnvironmentBoxOn  => "envBoxOn"
+        case ScalarInput.PointShadowLit    => "pointLit"
+        case ScalarInput.PhysicalUnits     => "physicalUnits"
+        case ScalarInput.InverseUnitsPerMeterSquared => "inverseUnitsPerMeterSquared"
     }
 
     def vec3InputName(input: Vec3Input): String = match input {
@@ -571,6 +589,7 @@ pub mod LightModel3d.Codegen {
     def paramsOfScalar(e: ScalarExpr): Set[Param] = match e {
         case ScalarExpr.Num(_)                => Set.empty()
         case ScalarExpr.In(ScalarInput.ShadowLit) => Set#{ Param.Shadow, Param.Vec3Param(Vec3Input.Position) }
+        case ScalarExpr.In(ScalarInput.PointShadowLit) => Set#{ Param.PointLit }
         case ScalarExpr.In(input)             => Set#{ Param.ScalarParam(input) }
         case ScalarExpr.LightField(_)         => Set.empty()
         case ScalarExpr.Add(a, b)             => Set.union(paramsOfScalar(a), paramsOfScalar(b))
@@ -696,24 +715,26 @@ pub mod LightModel3d.Codegen {
     def cpuEntries(): List[CpuEntry] =
         let p = Param.Vec3Param(Vec3Input.Position);
         let n = Param.Vec3Param(Vec3Input.Normal);
-        let lights = Param.Steps :: Param.Points :: Param.Spots :: Param.Shadow :: p :: n :: Nil;
+        let units = Param.ScalarParam(ScalarInput.PhysicalUnits) :: Param.ScalarParam(ScalarInput.InverseUnitsPerMeterSquared) :: Nil;
+        let lights = Param.Steps :: Param.Points :: Param.Spots :: Param.Shadow :: Param.PointLit :: p :: n :: Nil;
         let sun = Param.Vec3Param(Vec3Input.SunDirection) :: Param.Vec3Param(Vec3Input.SunColor) :: Param.ScalarParam(ScalarInput.SunLit) :: Nil;
-        { name = "lightAt", model = lightingModel(), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。",
-          params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: sun } ::
-        { name = "lightmapLightAt", model = lightmapLightingModel(), doc = "lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。",
+        let v = cpuVariant();
+        { name = "lightAt", model = lightingModelFor(v), doc = "lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。",
+          params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: sun ::: units } ::
+        { name = "lightmapLightAt", model = lightmapLightingModelFor(v), doc = "lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。",
           params = lights ::: Param.Vec3Param(Vec3Input.LightmapColor) :: Param.ScalarParam(ScalarInput.LightmapSrgb) ::
-                   Param.ScalarParam(ScalarInput.LightmapIntensity) :: Nil } ::
+                   Param.ScalarParam(ScalarInput.LightmapIntensity) :: units } ::
         { name = "fogAt", model = fogModel(), doc = "fogModel の色（fog が無い場面では呼ばない）。",
           params = p :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.Color) :: Param.Vec3Param(Vec3Input.FogColor) ::
                    Param.ScalarParam(ScalarInput.FogNear) :: Param.ScalarParam(ScalarInput.FogFar) :: Nil } ::
         { name = "skyAt", model = skyModel(), doc = "skyModel の空の色。",
           params = Param.Vec3Param(Vec3Input.SkyDirection) :: Param.Vec3Param(Vec3Input.SkyZenith) :: Param.Vec3Param(Vec3Input.SkyHorizon) ::
                    Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) :: Nil } ::
-        { name = "pbrAt", model = pbrModel(), doc = "pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。",
-          params = Param.Points :: Param.Spots :: Param.Shadow :: p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.Light) ::
+        { name = "pbrAt", model = pbrModelFor(v), doc = "pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。",
+          params = Param.Points :: Param.Spots :: Param.Shadow :: Param.PointLit :: p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.Light) ::
                    Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.SkyZenith) ::
                    Param.Vec3Param(Vec3Input.SkyHorizon) :: Param.Vec3Param(Vec3Input.SkyGround) :: Param.ScalarParam(ScalarInput.SkyCurve) ::
-                   Param.Vec3Param(Vec3Input.EnvironmentColor) :: Param.ScalarParam(ScalarInput.EnvironmentOn) :: sun } ::
+                   Param.Vec3Param(Vec3Input.EnvironmentColor) :: Param.ScalarParam(ScalarInput.EnvironmentOn) :: sun ::: units } ::
         { name = "environmentDirectionAt", model = environmentDirection(),
           doc = "environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。",
           params = p :: n :: Param.Vec3Param(Vec3Input.Albedo) :: Param.Vec3Param(Vec3Input.MetallicRoughness) :: Param.Vec3Param(Vec3Input.Eye) ::
@@ -817,6 +838,7 @@ pub mod LightModel3d.Codegen {
         case Param.Points   => "Vector[Float64]"
         case Param.Spots    => "Vector[Float64]"
         case Param.Shadow   => hooks#shadowType
+        case Param.PointLit => "Vector[Float64]"
         case Param.Vec3Param(_)   => "Float64"
         case Param.ScalarParam(_) => "Float64"
     }
@@ -826,6 +848,7 @@ pub mod LightModel3d.Codegen {
         case Param.Points   => "points" :: Nil
         case Param.Spots    => "spots" :: Nil
         case Param.Shadow   => "shadow" :: Nil
+        case Param.PointLit => "pointLit" :: Nil
         case Param.Vec3Param(input) => let n = vec3InputName(input); "${n}X" :: "${n}Y" :: "${n}Z" :: Nil
         case Param.ScalarParam(input) => scalarInputName(input) :: Nil
     }

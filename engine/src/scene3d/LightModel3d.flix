@@ -7,9 +7,12 @@
 ///   light  = toon(ambient + hemisphere × max(0, n.y) + Σ 点光源 + Σ スポット + 太陽)
 ///   太陽   = SunColor × facing × sunLit                        SunColor = color × intensity・facing = clamp01(wrap + n·l)・l = 点から太陽への向き（SunDirection）
 ///   sunLit = n·l > 0 かつ影の地図がある時だけ 1 − strength × fade × (1 − 照らされる割合)（ほかは 1。木の外で画素ごとに 1 回。Scene3d.directionalShadowOf）
-///   点光源 = color × intensity × att × facing
+///   点光源 = color × intensity × att × facing × pointLit
 ///   スポット = color × intensity × att × facing × cone × shadowLit
 ///   att    = (max(0, 1 − d² / max(range², 1e−12)))²            d = 光の位置 − 点・range² = max(range, 1e−6)²
+///   pointLit = 点光源の影の割合（変種 pointShadows の時だけ掛ける。木の外で画素ごとに 1 回・Scene3d.PointShadows.atlasOf）
+///   Physical の光（変種 lightUnits）: att = clamp01(1 − (d² / max(range², 1e−12))²)² / max(d² × InverseUnitsPerMeterSquared, 1e−4)、
+///     点光源・スポット・太陽の拡散に 1/π（鏡面は同じ）。Legacy は上の式のまま。
 ///   facing = clamp01(wrap + n·l)                               l = d / |d|（|d|² < 1e−24 なら 0）
 ///   cone   = smoothstep(outerCos, innerCos, −(l·spotDir))        縁の cos は Scene3d.spotConeOf
 ///   shadowLit = att × facing と cone が共に正の時だけ地図を引く（ほかは 1）
@@ -130,6 +133,12 @@ pub mod LightModel3d {
         case EnvironmentOn
         /// 環境マップの箱の補正があれば 1、無ければ 0（environmentDirection の選び）。
         case EnvironmentBoxOn
+        /// 今の点光源の光に掛ける影の割合（SumPoints の中だけ・変種 pointShadows の時だけ読む。影を落とさない灯りは 1。木の外で画素ごとに 1 回だけ求める）。
+        case PointShadowLit
+        /// Physical の光なら 1、Legacy なら 0（変種 lightUnits が None の時だけ読む）。
+        case PhysicalUnits
+        /// 1 / unitsPerMeter²（Physical の逆二乗を m で測る）。
+        case InverseUnitsPerMeterSquared
     }
 
     /// 画素ごと・場面ごとの vec3 の入力。
@@ -194,18 +203,39 @@ pub mod LightModel3d {
     /// 光が面を回り込む量（facing の wrap）。Environment3d に欄が無いので固定。
     def wrap(): Float64 = 0.0
 
+    /// 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
+    /// lightUnits = 光の量の読み方（Some なら木に書き込む・None なら ScalarInput.PhysicalUnits で画素ごとに選ぶ）。
+    /// GL と WebGPU は場面ごとに Some の変種のプログラムを組み、CPU は cpuVariant() の木 1 本を回す（Legacy では Select と × 1.0 だけが増え、値は同じ）。
+    pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits] }
+
+    /// 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
+    pub def legacyVariant(): LightVariant = { pointShadows = false, lightUnits = Some(Scene3d.LightUnits.Legacy) }
+
+    /// CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ）。
+    pub def cpuVariant(): LightVariant = { pointShadows = true, lightUnits = None }
+
+    /// 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
+    pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant =
+        { pointShadows = Option.nonEmpty(scene#pointShadows), lightUnits = Some(scene#lightUnits) }
+
     /// lightmap の無い面に当たる光（ファイルの頭の light）。
-    pub def lightingModel(): Vec3Expr =
+    pub def lightingModel(): Vec3Expr = lightingModelFor(legacyVariant())
+
+    /// 変種 v の lightingModel。
+    pub def lightingModelFor(v: LightVariant): Vec3Expr =
         Vec3Expr.LetScalar("sky", ScalarExpr.Mul(ScalarExpr.In(ScalarInput.Hemisphere),
                                                  ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Y(Vec3Expr.In(Vec3Input.Normal)))),
             Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.In(Vec3Input.Ambient),
                                                                  Vec3Expr.Make(ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"), ScalarExpr.Ref("sky"))),
-                                                    Vec3Expr.SumPoints(pointLight())),
-                                       Vec3Expr.SumSpots(spotLight())), sunLight())))
+                                                    Vec3Expr.SumPoints(pointLight(v))),
+                                       Vec3Expr.SumSpots(spotLight(v))), sunLight(v))))
 
     /// lightmap のある面に当たる光（ambient と hemisphere の代わりにベイクした光を足す）。
-    pub def lightmapLightingModel(): Vec3Expr =
-        Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(bakedLight(), Vec3Expr.SumPoints(pointLight())), Vec3Expr.SumSpots(spotLight())))
+    pub def lightmapLightingModel(): Vec3Expr = lightmapLightingModelFor(legacyVariant())
+
+    /// 変種 v の lightmapLightingModel。
+    pub def lightmapLightingModelFor(v: LightVariant): Vec3Expr =
+        Vec3Expr.Toon(Vec3Expr.Add(Vec3Expr.Add(bakedLight(), Vec3Expr.SumPoints(pointLight(v))), Vec3Expr.SumSpots(spotLight(v))))
 
     /// 色 Color に距離のかすみを掛けた色。
     pub def fogModel(): Vec3Expr =
@@ -234,10 +264,13 @@ pub mod LightModel3d {
 
     /// metallic と roughness を持つ材質の、かすみの前の色（式は頭の説明）。入力は Albedo・Light・MetallicRoughness（画素ごと）と、
     /// Position・Normal・Eye・空の 3 色と SkyCurve。空の 3 色は場面に空が無ければ ambient + hemisphere の色（reflectionSkyOf）。
-    pub def pbrModel(): Vec3Expr =
+    pub def pbrModel(): Vec3Expr = pbrModelFor(legacyVariant())
+
+    /// 変種 v の pbrModel（Light の入力は同じ変種の lightingModelFor か lightmapLightingModelFor の値）。
+    pub def pbrModelFor(v: LightVariant): Vec3Expr =
         let light = Vec3Expr.In(Vec3Input.Light);
         let diffuse = Vec3Expr.Scale(Vec3Expr.Mul(Vec3Expr.In(Vec3Input.Albedo), light), ScalarExpr.Sub(ScalarExpr.Num(1.0), ScalarExpr.Ref("metallic")));
-        withSurface(Vec3Expr.Add(Vec3Expr.Add(diffuse, Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.SumPoints(pointSpecular()), Vec3Expr.SumSpots(spotSpecular())), sunSpecular())),
+        withSurface(Vec3Expr.Add(Vec3Expr.Add(diffuse, Vec3Expr.Add(Vec3Expr.Add(Vec3Expr.SumPoints(pointSpecular(v)), Vec3Expr.SumSpots(spotSpecular(v))), sunSpecular())),
                                  skyReflection()))
 
     /// 面の値（metallic・roughness・α・α²・F0・目への向き v・n·v・見る側の項 viewTerm・分布の係数 dScale）を body の中で使えるようにする。
@@ -328,12 +361,12 @@ pub mod LightModel3d {
         roughness * Int32.toFloat64(Int32.max(1, levels) - 1)
 
     /// 点光源 1 本の鏡面（withSurface の中の光のループで使う）。
-    def pointSpecular(): Vec3Expr =
-        bindAttenuationAndFacing(whenReached(Cond.Greater(ScalarExpr.Ref("k"), ScalarExpr.Num(0.0)),
-            specularTerm(Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("att")))))
+    def pointSpecular(v: LightVariant): Vec3Expr =
+        bindAttenuationAndFacing(v, whenReached(Cond.Greater(ScalarExpr.Ref("k"), ScalarExpr.Num(0.0)),
+            specularTerm(pointShadowed(v, Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("att"))))))
 
-    def spotSpecular(): Vec3Expr =
-        spotGate(whenReached(Cond.And(Cond.Greater(ScalarExpr.Ref("k"), ScalarExpr.Num(0.0)), Cond.Greater(ScalarExpr.Ref("cone"), ScalarExpr.Num(0.0))),
+    def spotSpecular(v: LightVariant): Vec3Expr =
+        spotGate(v, whenReached(Cond.And(Cond.Greater(ScalarExpr.Ref("k"), ScalarExpr.Num(0.0)), Cond.Greater(ScalarExpr.Ref("cone"), ScalarExpr.Num(0.0))),
             specularTerm(
                 Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("att")), ScalarExpr.Ref("cone")),
                                ScalarExpr.Ref("lit")))))
@@ -347,9 +380,9 @@ pub mod LightModel3d {
 
     /// 太陽の拡散（lightingModel の足し算の最後・Toon の内側）。color × intensity × facing × sunLit。lightmap の面（lightmapLightingModel）には足さない
     /// （ベイクに含めるのが普通で二重になる。鏡面は足す）。太陽が無い時は SunColor = 0 なので 0 を足すだけ。
-    def sunLight(): Vec3Expr =
+    def sunLight(v: LightVariant): Vec3Expr =
         Vec3Expr.LetScalar("sunFacing", sunFacing(),
-            Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.In(Vec3Input.SunColor), ScalarExpr.Ref("sunFacing")), ScalarExpr.In(ScalarInput.SunLit)))
+            diffuseScaled(v, Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.In(Vec3Input.SunColor), ScalarExpr.Ref("sunFacing")), ScalarExpr.In(ScalarInput.SunLit))))
 
     /// 太陽の facing = clamp01(wrap + n·l)（点光源・スポットと同じ形）。
     def sunFacing(): ScalarExpr =
@@ -420,37 +453,66 @@ pub mod LightModel3d {
         let zero = Vec3Expr.Make(ScalarExpr.Num(0.0), ScalarExpr.Num(0.0), ScalarExpr.Num(0.0));
         Vec3Expr.Max(zero, Vec3Expr.Scale(linear, ScalarExpr.In(ScalarInput.LightmapIntensity)))
 
-    def pointLight(): Vec3Expr =
-        bindAttenuationAndFacing(Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("k")))
+    def pointLight(v: LightVariant): Vec3Expr =
+        bindAttenuationAndFacing(v, pointShadowed(v, diffuseScaled(v, Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("k")))))
 
-    def spotLight(): Vec3Expr =
-        spotGate(Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("k")), ScalarExpr.Ref("cone")),
-                                ScalarExpr.Ref("lit")))
+    def spotLight(v: LightVariant): Vec3Expr =
+        spotGate(v, diffuseScaled(v, Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("k")), ScalarExpr.Ref("cone")),
+                                                    ScalarExpr.Ref("lit"))))
+
+    /// 点光源 1 本の光 e に影の割合を掛ける（変種 pointShadows の時だけ）。
+    // WhyNot: k > 0 の Select で囲まない — 割合は木の外で画素ごとに 1 回求めた値を読むだけで、引く重さはループの中に無い。
+    def pointShadowed(v: LightVariant, e: Vec3Expr): Vec3Expr =
+        if (v#pointShadows) Vec3Expr.Scale(e, ScalarExpr.In(ScalarInput.PointShadowLit)) else e
+
+    /// 拡散の光 e に、Physical なら 1/π を掛ける（Legacy は掛けない。入力で選ぶ変種は Select で 1/π か 1）。
+    def diffuseScaled(v: LightVariant, e: Vec3Expr): Vec3Expr = match v#lightUnits {
+        case Some(Scene3d.LightUnits.Legacy)   => e
+        case Some(Scene3d.LightUnits.Physical) => Vec3Expr.Scale(e, ScalarExpr.Num(1.0 / pi()))
+        case None => Vec3Expr.Scale(e, ScalarExpr.Select(Cond.Greater(ScalarExpr.In(ScalarInput.PhysicalUnits), ScalarExpr.Num(0.0)),
+                                                         ScalarExpr.Num(1.0 / pi()), ScalarExpr.Num(1.0)))
+    }
 
     /// スポット 1 本の cone と shadowLit を、bindAttenuationAndFacing の名前に足して body の中で使えるようにする。
-    def spotGate(body: Vec3Expr): Vec3Expr =
+    def spotGate(v: LightVariant, body: Vec3Expr): Vec3Expr =
         let cone = ScalarExpr.Smoothstep(ScalarExpr.LightField(ScalarLightField.OuterCos), ScalarExpr.LightField(ScalarLightField.InnerCos),
                                          ScalarExpr.Sub(ScalarExpr.Num(0.0), ScalarExpr.Dot(Vec3Expr.Ref("l"), Vec3Expr.LightField(Vec3LightField.Direction))));
         // WhyNot: 地図をいつも引かない — 掛ける先が 0 なので結果は同じで、pcf の (2r+1)² 回が無駄になる。
         let lit = ScalarExpr.Select(Cond.And(Cond.Greater(ScalarExpr.Ref("k"), ScalarExpr.Num(0.0)), Cond.Greater(ScalarExpr.Ref("cone"), ScalarExpr.Num(0.0))),
                                     ScalarExpr.In(ScalarInput.ShadowLit), ScalarExpr.Num(1.0));
-        bindAttenuationAndFacing(Vec3Expr.LetScalar("cone", cone, Vec3Expr.LetScalar("lit", lit, body)))
+        bindAttenuationAndFacing(v, Vec3Expr.LetScalar("cone", cone, Vec3Expr.LetScalar("lit", lit, body)))
 
     /// 今の光から点へ届く量 k = att × facing と、点から光への向き l（長さ 1）を body の中で使えるようにする。
     // WhyNot: 向きを Sqrt で長さを出してから 1 / 長さ で求めない — GL で sqrt と割り算の 2 つになり、光 1 本ごとに重い演算が 1 つ増える
     //   （fragment の重い部屋の窓で 1 コマの時間が約 7% 増えた）。InverseSqrt は GL の inversesqrt 1 つ。
-    def bindAttenuationAndFacing(body: Vec3Expr): Vec3Expr =
+    def bindAttenuationAndFacing(v: LightVariant, body: Vec3Expr): Vec3Expr =
         let dSq = ScalarExpr.Ref("dSq");
-        let falloff = ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Sub(ScalarExpr.Num(1.0),
-                       ScalarExpr.Div(dSq, ScalarExpr.Max(ScalarExpr.LightField(ScalarLightField.RangeSquared), ScalarExpr.Num(1.0e-12)))));
+        let ratio = ScalarExpr.Div(dSq, ScalarExpr.Max(ScalarExpr.LightField(ScalarLightField.RangeSquared), ScalarExpr.Num(1.0e-12)));
+        let window = ScalarExpr.Let("ratio", ratio,
+                     ScalarExpr.Let("window", ScalarExpr.Clamp01(ScalarExpr.Sub(ScalarExpr.Num(1.0), ScalarExpr.Mul(ScalarExpr.Ref("ratio"), ScalarExpr.Ref("ratio")))),
+                         ScalarExpr.Div(ScalarExpr.Mul(ScalarExpr.Ref("window"), ScalarExpr.Ref("window")),
+                                        ScalarExpr.Max(ScalarExpr.Mul(dSq, ScalarExpr.In(ScalarInput.InverseUnitsPerMeterSquared)), ScalarExpr.Num(1.0e-4)))));
+        let legacyFalloff = ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Sub(ScalarExpr.Num(1.0), ratio));
+        // WhyNot: Legacy の時も falloff を att の Let の中へ畳まない — 生成する字の名前と並びが変わり、既定の GLSL の字が変える前とずれる。
+        let legacyBody = Vec3Expr.LetScalar("falloff", legacyFalloff,
+                         Vec3Expr.LetScalar("att", ScalarExpr.Mul(ScalarExpr.Ref("falloff"), ScalarExpr.Ref("falloff")), facingAndBody(body)));
+        let attBody = (att: ScalarExpr) -> Vec3Expr.LetScalar("att", att, facingAndBody(body));
+        let afterDistance = match v#lightUnits {
+            case Some(Scene3d.LightUnits.Legacy)   => legacyBody
+            case Some(Scene3d.LightUnits.Physical) => attBody(window)
+            case None => attBody(ScalarExpr.Select(Cond.Greater(ScalarExpr.In(ScalarInput.PhysicalUnits), ScalarExpr.Num(0.0)), window,
+                                                   ScalarExpr.Let("falloff", legacyFalloff, ScalarExpr.Mul(ScalarExpr.Ref("falloff"), ScalarExpr.Ref("falloff")))))
+        };
         Vec3Expr.Let("d", Vec3Expr.Sub(Vec3Expr.LightField(Vec3LightField.Position), Vec3Expr.In(Vec3Input.Position)),
-        Vec3Expr.LetScalar("dSq", ScalarExpr.Dot(Vec3Expr.Ref("d"), Vec3Expr.Ref("d")),
-        Vec3Expr.LetScalar("falloff", falloff,
-        Vec3Expr.LetScalar("att", ScalarExpr.Mul(ScalarExpr.Ref("falloff"), ScalarExpr.Ref("falloff")),
+        Vec3Expr.LetScalar("dSq", ScalarExpr.Dot(Vec3Expr.Ref("d"), Vec3Expr.Ref("d")), afterDistance))
+
+    /// att と d・dSq を束ねた後の、向き l・facing・k を body の中で使えるようにする。
+    def facingAndBody(body: Vec3Expr): Vec3Expr =
+        let dSq = ScalarExpr.Ref("dSq");
         Vec3Expr.LetScalar("inv", ScalarExpr.Select(Cond.Greater(ScalarExpr.Num(1.0e-24), dSq), ScalarExpr.Num(0.0), ScalarExpr.InverseSqrt(dSq)),
         Vec3Expr.Let("l", Vec3Expr.Scale(Vec3Expr.Ref("d"), ScalarExpr.Ref("inv")),
         Vec3Expr.LetScalar("facing", ScalarExpr.Clamp01(ScalarExpr.Add(ScalarExpr.Num(wrap()), ScalarExpr.Dot(Vec3Expr.In(Vec3Input.Normal), Vec3Expr.Ref("l")))),
-        Vec3Expr.LetScalar("k", ScalarExpr.Mul(ScalarExpr.Ref("att"), ScalarExpr.Ref("facing")), body))))))))
+        Vec3Expr.LetScalar("k", ScalarExpr.Mul(ScalarExpr.Ref("att"), ScalarExpr.Ref("facing")), body))))
 
     // ════════════════════════════════════════════════════════
     // CPU の描き手へ渡す光の並び
