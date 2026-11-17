@@ -162,6 +162,8 @@
 ## Camera3d — `engine/src/scene3d/Camera3d.flix`
 - eye = 目の位置・yaw / pitch = 向き（ラジアン。座標の約束はファイルの頭）・fovY = 縦の画角（ラジアン）・near / far = 写す奥行きの範囲。
   `pub type alias Camera3d = { eye = Vec3.Vec3, yaw = Float64, pitch = Float64, fovY = Float64, near = Float64, far = Float64, lensShift = Vec2.Vec2 }`
+- 目の位置 eye から yaw・pitch の向きを見るカメラ（near 0.1・far 100・lensShift 0）。
+  `pub def camera(eye: Vec3.Vec3, yaw: Float64, pitch: Float64, fovY: Float64): Camera3d`
 - レンズシフトが 0 か（0 の時は 0 の式を通らず、前と同じ値の行列を返すために使う）。
   `pub def hasLensShift(c: Camera3d): Bool`
 - 画面の真ん中の画素を通る向き（長さ 1）。レンズシフトが 0 なら forward と同じ。
@@ -178,7 +180,7 @@
   `pub def projectionMatrix(c: Camera3d, aspect: Float64): Mat4.Mat4`
 - このカメラに写る範囲（視錐台）。aspect = 幅 / 高さ。光や羽虫をゲームの側で間引く・数える時に使う
   `pub def frustum(c: Camera3d, aspect: Float64): Frustum.Frustum`
-- 目から見ている向きへ伸びるレイ（画面の真ん中・クロスヘアの先）。`Ray3d.pickNearest` で見ている物を引く。
+- 目から見ている向き（forward）へ伸びるレイ（レンズシフトが 0 なら画面の真ん中・クロスヘアの先。シフトのあるカメラの画面の真ん中は centerRayDirection）。`Ray3d.pickNearest` で見ている物を引く。
   `pub def forwardRay(c: Camera3d): Ray3d.Ray3d`
 - 描き物の中の点 p（左上が 0・y は下へ増える px。size = 描き物の大きさ）を通って目から伸びるレイ（worldToScreen の逆）。
   `pub def screenPointToRay(c: Camera3d, size: Vec2.Vec2, p: Vec2.Vec2): Ray3d.Ray3d`

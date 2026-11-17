@@ -10,6 +10,12 @@ pub mod Camera3d {
     pub type alias Camera3d = { eye = Vec3.Vec3, yaw = Float64, pitch = Float64, fovY = Float64, near = Float64, far = Float64,
                                 lensShift = Vec2.Vec2 }
 
+    /// 目の位置 eye から yaw・pitch の向きを見るカメラ（near 0.1・far 100・lensShift 0）。
+    /// ほかの値は `{ far = 60.0, lensShift = Vec2.v2(0.0, -0.8) | Camera3d.camera(eye, yaw, pitch, fovY) }` の形で替える
+    /// （欄を全部字で書くと、Camera3d に欄が増えた時に書いた所が全部コンパイルできなくなる）。
+    pub def camera(eye: Vec3.Vec3, yaw: Float64, pitch: Float64, fovY: Float64): Camera3d =
+        { eye = eye, yaw = yaw, pitch = pitch, fovY = fovY, near = 0.1, far = 100.0, lensShift = Vec2.zero() }
+
     /// レンズシフトが 0 か（0 の時は 0 の式を通らず、前と同じ値の行列を返すために使う）。
     pub def hasLensShift(c: Camera3d): Bool = c#lensShift#x != 0.0 or c#lensShift#y != 0.0
 
@@ -54,7 +60,7 @@ pub mod Camera3d {
     pub def frustum(c: Camera3d, aspect: Float64): Frustum.Frustum =
         Frustum.ofClipMatrix(Mat4.mul(projectionMatrix(c, aspect), viewMatrix(c)))
 
-    /// 目から見ている向きへ伸びるレイ（画面の真ん中・クロスヘアの先）。`Ray3d.pickNearest` で見ている物を引く。
+    /// 目から見ている向き（forward）へ伸びるレイ（レンズシフトが 0 なら画面の真ん中・クロスヘアの先。シフトのあるカメラの画面の真ん中は centerRayDirection）。`Ray3d.pickNearest` で見ている物を引く。
     pub def forwardRay(c: Camera3d): Ray3d.Ray3d = Ray3d.ray3d(c#eye, forward(c))
 
     /// 描き物の中の点 p（左上が 0・y は下へ増える px。size = 描き物の大きさ）を通って目から伸びるレイ（worldToScreen の逆）。

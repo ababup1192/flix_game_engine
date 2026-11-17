@@ -63,6 +63,18 @@ mod TestSoftRaster3d {
     def pixel(img: BufferedImage, x: Int32, y: Int32): (Int32, Int32, Int32, Int32) \ IO = channels(img.getRGB(x, y))
 
     // ════════════════════════════════════════════════════════
+    // レンズシフト
+    // ════════════════════════════════════════════════════════
+
+    // z = 4 の赤い板（±1）は画面の 3..5 行に写る。レンズシフト y = −0.25（画面の高さの 1/4 だけ下を写す）では 2 行上の 1..3 行に写る。
+    @Test
+    def testLensShiftMovesThePlateUp(): Unit \ {Assert, IO} =
+        let plain = sceneOf(plate(red(), 4.0, -1.0, 1.0, -1.0, 1.0) :: Nil);
+        let shifted = { camera = { lensShift = Vec2.v2(0.0, -0.25) | camera() } | plain };
+        let redAt = (sc: Scene3d.Scene3dCmd) -> { let (_, r, _, _) = pixel(render(sc), 4, 2); r > 128 };
+        Assert.assertEq(expected = (false, true), (redAt(plain), redAt(shifted)))
+
+    // ════════════════════════════════════════════════════════
     // 深度
     // ════════════════════════════════════════════════════════
 

@@ -147,14 +147,16 @@ let camera = { eye = Vec3.v3(snap(eyeX), eyeY, snap(eyeZ)) | camera0 };
 // 画面の上の端で地面を 15°、下の端で 50° 見下ろす（目の高さ h・水平に向ける）
 let ta = Num.tan(15° を rad で); let tb = Num.tan(50° を rad で);
 let tanHalf = (tb - ta) / 2.0;                       // 縦の画角の半分の tan
-let camera = { eye = Vec3.v3(x, h, z), yaw = 0.0, pitch = 0.0, fovY = 2.0 * Num.atan(tanHalf),
-               near = 0.5, far = 120.0, lensShift = Vec2.v2(0.0, 0.0 - (ta + tb) / 2.0 / (2.0 * tanHalf)) };
+let camera = { far = 60.0, lensShift = Vec2.v2(0.0, 0.0 - (ta + tb) / 2.0 / (2.0 * tanHalf))
+             | Camera3d.camera(Vec3.v3(x, h, z), 0.0, 0.0, 2.0 * Num.atan(tanHalf)) };
 ```
 
 - `lensShift` の単位は画面の幅（x）と高さ（y）に対する比。y = −0.5 で画面の高さの半分だけ下を写す。向き（`pitch`・`yaw`）は変えない。既定は `Vec2.zero()`（今までの絵とバイトまで同じ）
 - `Camera3d.projectionMatrix`・`frustum`・`worldToScreen`・`screenPointToRay`・空の向き（`Scene3d.skyBasisOf`）・太陽の影の範囲・点光源の選び方（画面の真ん中 = `Camera3d.centerRayDirection`）が同じ値を読む。GL・WebGPU・CPU の描き手は `projectionMatrix` を使うので、描き手ごとの設定は要らない
 - カメラが水平なので、カメラへ向くビルボードは地面に垂直に立つ。板の高さを `1 / cos(pitch)` 倍に伸ばす補正は要らない
 - `pitch` を傾けてシフトで縦を直す形にはしない（縦の線が平行になるのは pitch 0 の時だけ）
+- 下へ大きくずらすと視錐台が横と下へ広がり、太陽の影の地図がその全部を覆おうとして粗くなる。`far` と `directionalShadow` の `distance` を、画面の上の端の地面までの距離の少し先（見下ろしの町なら 40〜60 m）に絞る
+- カメラは欄を全部字で書かず `Camera3d.camera(eye, yaw, pitch, fovY)` から `{ .. | }` で替える
 
 ## glb のノードを名前で引く
 
