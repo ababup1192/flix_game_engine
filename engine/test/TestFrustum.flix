@@ -65,6 +65,15 @@ mod TestFrustum {
         let center = Vec3.v3(10.0 + 2.0 * Num.sqrt(2.0), 0.0, 10.0);
         Assert.assertEq(expected = (true, false), (Frustum.intersectsSphere(f, center, 3.0), Frustum.intersectsSphere(f, center, 1.0)))
 
+    /// 入っている度合い: 真ん中の半径 1 は 1・中心が横の面の上なら半分（小数 2 桁）・面から 2 外の半径 1 は 0。
+    @Test
+    def testSphereInsideRatioGoesFromZeroToOne(): Unit \ Assert =
+        let f = frustum();
+        let onPlane = Frustum.sphereInsideRatio(f, Vec3.v3(10.0, 0.0, 10.0), 1.0);
+        Assert.assertEq(expected = (1.0, 50, 0.0),
+            (Frustum.sphereInsideRatio(f, Vec3.v3(0.0, 0.0, 10.0), 1.0), Num.roundInt(onPlane * 100.0),
+             Frustum.sphereInsideRatio(f, Vec3.v3(10.0 + 2.0 * Num.sqrt(2.0), 0.0, 10.0), 1.0)))
+
     // ════════════════════════════════════════════════════════════════════
     // 描き手の判定
     // ════════════════════════════════════════════════════════════════════

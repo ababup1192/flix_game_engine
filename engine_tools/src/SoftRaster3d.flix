@@ -464,7 +464,7 @@ pub mod SoftRaster3d {
     def renderLayer(scene: Scene3d.Scene3dCmd, lw: Int32, lh: Int32,
                     textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, out: LayerOut): Unit \ IO = region rc {
         let cam = scene#camera;
-        let picked = Scene3d.pickLights(cam#eye, scene);
+        let picked = Scene3d.pickLights(scene);
         let view = Camera3d.viewMatrix(cam);
         let proj = Camera3d.projectionMatrix(cam, Scene3d.aspectOf(scene));
         let screen = { w = Int32.toFloat64(lw), h = Int32.toFloat64(lh), projection = Projection.Perspective(cam#near) };

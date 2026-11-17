@@ -167,14 +167,88 @@ def testMesh3dFromPolygonsKeepsClockwiseWindingFacingOut(): Unit \ Assert =
 // Scene3d.pickLights
 // ════════════════════════════════════════════════════════════════════
 
-/// 点光源 9 本（目からの距離 9・1・2…8）から、目に近い 8 本（距離 1〜8）が元の並びの順で残る。
+/// 目が全部の球の中にある点光源 9 本（目からの距離 9・1・2…8）からは、目に近い 8 本（距離 1〜8）が元の並びの順で残る。
 @Test
-def testScene3dPickLightsKeepsEightNearest(): Unit \ Assert =
+def testPickLightsInsideTheSpheresKeepsTheEightClosest(): Unit \ Assert =
     let lights = pointLightAt(9.0) :: pointLightAt(1.0) :: pointLightAt(2.0) :: pointLightAt(3.0) :: pointLightAt(4.0) ::
                  pointLightAt(5.0) :: pointLightAt(6.0) :: pointLightAt(7.0) :: pointLightAt(8.0) :: Nil;
     let cmd = { pointLights = lights | Scene3d.scene(cameraAt(Vec3.zero(), 0.0), { x = 200.0, y = 100.0 }) };
     Assert.assertEq(expected = List.drop(1, lights) |> List.map(l -> Vec3.length(l#position)),
-                    Scene3d.pickLights(Vec3.zero(), cmd)#pointLights |> List.map(l -> Vec3.length(l#position)))
+                    Scene3d.pickLights(cmd)#pointLights |> List.map(l -> Vec3.length(l#position)))
+
+/// 目の前 10 の所に横へ 0・±0.5・±1・±1.5・±2 と並べた小さな点光源 9 本（並びは真ん中から外へ）。
+def rowOfNineLights(): List[Scene3d.PointLight] =
+    (0.0 :: 0.5 :: -0.5 :: 1.0 :: -1.0 :: 1.5 :: -1.5 :: 2.0 :: -2.0 :: Nil)
+        |> List.map(x -> { position = Vec3.v3(x, 0.0, 10.0), range = 0.3 | pointLightAt(0.0) })
+
+def rowOfNineScene(eye: Vec3.Vec3): Scene3d.Scene3dCmd =
+    { pointLights = rowOfNineLights() | Scene3d.scene(cameraAt(eye, 0.0), { x = 200.0, y = 100.0 }) }
+
+/// 8 本以下の点光源は、並びも intensity もそのまま。
+@Test
+def testPickLightsKeepsEightOrFewerAsIs(): Unit \ Assert =
+    let cmd = { pointLights = List.take(8, rowOfNineLights()) | rowOfNineScene(Vec3.zero()) };
+    Assert.assertEq(expected = List.take(8, rowOfNineLights()) |> List.map(l -> (l#position#x, l#intensity)),
+                    Scene3d.pickLights(cmd)#pointLights |> List.map(l -> (l#position#x, l#intensity)))
+
+/// 横に並べた 9 本は画面の真ん中に近い 8 本が残り、8 番目と 9 番目が同じ近さ（±2）なら残った ±2 の強さは 0・ほかの 7 本は元の 1。
+@Test
+def testPickLightsFadesTheEighthToZeroAtATie(): Unit \ Assert =
+    let picked = Scene3d.pickLights(rowOfNineScene(Vec3.zero()))#pointLights;
+    Assert.assertEq(expected = (0.0 :: 0.5 :: -0.5 :: 1.0 :: -1.0 :: 1.5 :: -1.5 :: 2.0 :: Nil, 7.0),
+                    (picked |> List.map(l -> l#position#x), picked |> List.foldLeft((acc, l) -> acc + l#intensity, 0.0)))
+
+/// 目を少し右へずらして +2 が 8 番目に入れ替わっても、+2 の強さは 0 に近い（境をまたいでぱっと点かない）。
+@Test
+def testPickLightsSwapAtTheBorderStaysDark(): Unit \ Assert =
+    let picked = Scene3d.pickLights(rowOfNineScene(Vec3.v3(0.01, 0.0, 0.0)))#pointLights;
+    let edge = picked |> List.filter(l -> Float64.abs(l#position#x) > 1.9);
+    Assert.assertEq(expected = (2.0 :: Nil, true), (edge |> List.map(l -> l#position#x), edge |> List.forAll(l -> l#intensity < 0.05)))
+
+/// 目のすぐ後ろの小さな光（球が画面に掛からない）は、目に一番近くても選ばない。
+@Test
+def testPickLightsDropsLightsOutsideTheFrustum(): Unit \ Assert =
+    let behind = { position = Vec3.v3(0.0, 0.0, -1.0), range = 0.3 | pointLightAt(0.0) };
+    let cmd = { pointLights = behind :: List.take(8, rowOfNineLights()) | rowOfNineScene(Vec3.zero()) };
+    Assert.assertEq(expected = false, Scene3d.pickLights(cmd)#pointLights |> List.exists(l -> l#position#z < 0.0))
+
+/// 見下ろしのカメラ（高さ 13・pitch 0.82）では、目に近い画面の下の端の 8 本より、画面の真ん中の奥の 1 本を先に選ぶ。
+@Test
+def testPickLightsPrefersTheScreenCenterOverTheEye(): Unit \ Assert =
+    let camera = { eye = Vec3.v3(0.0, 13.0, -9.0), yaw = 0.0, pitch = 0.82, fovY = 0.75, near = 1.0, far = 80.0 };
+    let lamp = (x: Float64, z: Float64) -> { position = Vec3.v3(x, 2.2, z), range = 2.0 | pointLightAt(0.0) };
+    let bottom = List.range(0, 8) |> List.map(i -> lamp(-3.5 + Int32.toFloat64(i), -1.0));
+    let center = Vec3.add(camera#eye, Vec3.mul(Camera3d.forward(camera), 16.0));
+    let cmd = { pointLights = bottom ::: lamp(center#x, center#z) :: Nil | Scene3d.scene(camera, { x = 200.0, y = 120.0 }) };
+    Assert.assertEq(expected = true, Scene3d.pickLights(cmd)#pointLights |> List.exists(l -> l#position#z > 0.0))
+
+/// 目のすぐ後ろの手に持つ灯り（range 6）は、画面の真ん中の小さな光 8 本より先に選ばれ、元の強さのまま。
+@Test
+def testPickLightsKeepsAHeldLightJustBehindTheEye(): Unit \ Assert =
+    let held = { position = Vec3.v3(0.0, -0.3, -0.2), range = 6.0, intensity = 3.0 | pointLightAt(0.0) };
+    let cmd = { pointLights = List.take(8, rowOfNineLights()) ::: held :: Nil | rowOfNineScene(Vec3.zero()) };
+    Assert.assertEq(expected = 3.0 :: Nil,
+                    Scene3d.pickLights(cmd)#pointLights |> List.filter(l -> l#position#z < 0.0) |> List.map(l -> l#intensity))
+
+/// range が 0 の光と intensity が 0 の光は、9 本以上の時に枠を取らない（画面の真ん中にあっても選ばない）。
+@Test
+def testPickLightsSkipsLightsThatLightNothing(): Unit \ Assert =
+    let dead = { position = Vec3.v3(0.0, 0.0, 10.0), range = 0.0 | pointLightAt(0.0) };
+    let dark = { position = Vec3.v3(0.0, 0.0, 10.0), intensity = 0.0 | pointLightAt(0.0) };
+    let cmd = { pointLights = dead :: dark :: List.take(8, rowOfNineLights()) | rowOfNineScene(Vec3.zero()) };
+    Assert.assertEq(expected = (8, false),
+                    (List.length(Scene3d.pickLights(cmd)#pointLights), Scene3d.pickLights(cmd)#pointLights |> List.exists(l -> l#range <= 0.0 or l#intensity <= 0.0)))
+
+/// 横に並べた 9 本を見る目を −0.02 から 0.001 ずつ 40 歩右へずらして ±2 の順位が入れ替わっても、どの光の強さも 1 歩で 0.2 より大きく跳ばない。
+@Test
+def testPickLightsChangesSmoothlyWhileTheEyeSlides(): Unit \ Assert =
+    let strengths = (k: Int32) -> {
+        let picked = Scene3d.pickLights(rowOfNineScene(Vec3.v3(Int32.toFloat64(k - 20) * 0.001, 0.0, 0.0)))#pointLights;
+        rowOfNineLights() |> List.map(l -> picked |> List.find(p -> Float64.abs(p#position#x - l#position#x) < 1.0e-9)
+                                              |> Option.map(p -> p#intensity) |> Option.getWithDefault(0.0))
+    };
+    let steps = List.range(0, 40) |> List.map(k -> List.zip(strengths(k), strengths(k + 1)) |> List.map(pair -> Float64.abs(fst(pair) - snd(pair))));
+    Assert.assertEq(expected = true, steps |> List.forAll(row -> row |> List.forAll(jump -> jump <= 0.2)))
 
 /// 点光源 9 本・スポット 1 本の場面は、点光源を 1 本落とし（上限 8）、スポットは落とさない。知らせは点光源の 1 行だけ。
 @Test
@@ -185,8 +259,8 @@ def testDroppedLightsCountsOnlyOverTheLimit(): Unit \ Assert =
     let d = Scene3d.droppedLightsOf(cmd);
     Assert.assertEq(expected = (1, 0, "@lights:point" :: Nil), (d#points, d#spots, Scene3d.droppedLightsWarnings(cmd) |> List.map(fst)))
 
-/// 点光源 10 本の場面と、スポットを上限より 2 本多く持つ場面の列: 落とす数の合計は点 2・スポット 2 で、
-/// pickLights が実際に外した本数（描き手が描かない光）と同じ。
+/// 画面に全部が入る点光源 10 本の場面と、スポットを上限より 2 本多く持つ場面の列: 上限を超えた本数の合計は点 2・スポット 2 で、
+/// pickLights が外した本数と同じ。
 @Test
 def testDroppedLightsOfScenesSumsWhatPickLightsDrops(): Unit \ Assert =
     let base = Scene3d.scene(cameraAt(Vec3.zero(), 0.0), { x = 200.0, y = 100.0 });
@@ -195,8 +269,8 @@ def testDroppedLightsOfScenesSumsWhatPickLightsDrops(): Unit \ Assert =
     let spots = { spotLights = List.repeat(Scene3d.maxSpotLights() + 2, spot) | base };
     let cmds = (points :: spots :: Nil) |> List.map(c -> { at = Vec2.zero(), clip = None, scene = c });
     let removed = (pick: Scene3d.Scene3dCmd -> Int32) -> cmds |> List.foldLeft((acc, c) -> acc + pick(c#scene), 0);
-    let removedPoints = removed(c -> List.length(c#pointLights) - List.length(Scene3d.pickLights(Vec3.zero(), c)#pointLights));
-    let removedSpots = removed(c -> List.length(c#spotLights) - List.length(Scene3d.pickLights(Vec3.zero(), c)#spotLights));
+    let removedPoints = removed(c -> List.length(c#pointLights) - List.length(Scene3d.pickLights(c)#pointLights));
+    let removedSpots = removed(c -> List.length(c#spotLights) - List.length(Scene3d.pickLights(c)#spotLights));
     let d = Scene3d.droppedLightsOfScenes(cmds);
     Assert.assertEq(expected = ((2, 2), (2, 2)), ((d#points, d#spots), (removedPoints, removedSpots)))
 
