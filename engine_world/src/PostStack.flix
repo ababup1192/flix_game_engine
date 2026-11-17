@@ -9,7 +9,8 @@
 // トーンマップもぼかしも掛けたくない UI（会話の窓・メニュー・字幕）は HUD に置く。
 //
 // 使い方: `App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor) |> PostStack.withExposure(-0.3))`。
-// Doc から読むなら `PostStack.loadOr(PostStack.preset(PostStack.Preset.Neutral), "assets/post.json")`（schema は engine の docs/post.schema.json）。
+// Doc から読むなら読み込みの時に 1 回 `PostStack.loadOr(PostStack.preset(PostStack.Preset.Neutral), "assets/post.json")`（schema は engine の docs/post.schema.json）
+// を Resources に置き、withPostStack の関数はそれを返す（毎コマ読まない）。
 // App を通さない描き方（自前の Pass の並び・描き出し）は build が計画と画面へ置く面を返す。
 pub mod PostStack {
 
@@ -24,8 +25,9 @@ pub mod PostStack {
     /// 画面の縁を暗くする。画面の真ん中 center（0..1）から inner〜outer の距離（縦横比を直し、高さ = 1）で、1 から 1 − strength へ落ちる。
     pub type alias Vignette = { strength = Float64, inner = Float64, outer = Float64, center = Vec2.Vec2 }
 
-    /// 色の仕上げ（Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation）。
+    /// 色の仕上げ（Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation の式を写した物。Blender の絵とは未比較）。
     /// どれも 1 が「何もしない」。lift は暗い所・gamma は中間・gain は明るい所を色ごとに持ち上げる。saturation は掛け算（0 = 灰色）。
+    /// 線形の値を前提にした式なので、AcesNarkowicz（画面の値のまま掛ける互換の道）と組むと Blender の式とは意味がずれる。
     pub type alias ColorGrade = { lift = Color, gamma = Color, gain = Color, saturation = Float64 }
 
     /// 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる。Standard と KhronosNeutral は、場面の値を読む所で
@@ -44,6 +46,8 @@ pub mod PostStack {
     /// 長さの単位は Scene3d.withUnitsPerMeter）。
     /// DepthBand = ピントの奥行き focusDistance（場面の長さ）を中心に ±range の帯を見て、帯の中の割合 band までくっきり・
     /// band + soft でぼかし切る（模型を近くから撮ったような見え方）。blur はぼかしの半径（画面の高さ = 1）。
+    /// 奥行きは目からの距離（カメラの向きの奥行きではない）。毎コマ動かしてよいのは Physical の focusDistance と fStop（Param で渡る）と
+    /// DepthBand の focusDistance（奥行きの絵の切り出し）。DepthBand の band・soft・blur を毎コマ動かすと描き手が program を作り直す。
     pub enum DepthOfField {
         case Physical({ focusDistance = Float64, fStop = Float64 })
         case DepthBand({ focusDistance = Float64, range = Float64, band = Float64, soft = Float64, blur = Float64 })
@@ -65,7 +69,8 @@ pub mod PostStack {
         case X4
     }
 
-    /// 自分の Spec を挟む所。BeforeBloom = 場面の値（1 を超える）を読んで場面の値を書く・AfterViewTransform = 表示の値（0..1）を読んで書く。
+    /// 自分の Spec を挟む所。BeforeBloom = 場面の Pass の値（描き手が書いた画面の値・1 を超える）を読んで同じ形の値を書く（線形へ戻すのはこの後）・
+    /// AfterViewTransform = 表示の値（0..1）を読んで書く。
     pub enum CustomAt with Eq, ToString {
         case BeforeBloom
         case AfterViewTransform
@@ -115,12 +120,11 @@ pub mod PostStack {
     // ── 値の束 ──
 
     /// 全部の欄。外から作らせない（preset から始めて with* で替える・load で Doc から読む）。
-    // WhyNot: 組んだ Spec を中に持たない — Stack はゲームが毎コマ組み直す値で、持っても次のコマには残らない。
-    // 調整の数のうち毎コマ動かしたい物（露出・強さ）は Param で渡し、Spec を同じ形に保つ（描き手は形が同じ間 program を作り直さない）。
+    // WhyNot: 組んだ Spec を中に持たない — Stack は withPostStack の関数が毎コマ返す値で、同じ Stack を使い回すゲームでも build が毎コマ Spec を組む。
+    // 描き手は Spec を中身で比べ、形が同じ間は program を作り直さない。毎コマ動かしたい数（露出・強さ・Physical のピント）は Param で渡して形を保つ。
+    // 中身の比べの重さ（wasm の CPU）は測っていない。重ければ App の側で構造の鍵で引く控えを持つ。
     enum StackData {
-        case StackData({ exposure = Float64, viewTransform = ViewTransform, bloom = Option[Bloom], colorGrade = Option[ColorGrade],
-                         vignette = Option[Vignette], depthOfField = Option[DepthOfField], fxaa = Bool, custom = List[CustomPass],
-                         quality = Quality, msaa = Msaa, debugView = DebugView })
+        case StackData(Fields)
     }
 
     /// 後がけの値の束（Godot の Environment・Unity の Volume のように、効果ごとの欄を持つ値 1 つ）。
@@ -128,13 +132,14 @@ pub mod PostStack {
 
     type alias Fields = { exposure = Float64, viewTransform = ViewTransform, bloom = Option[Bloom], colorGrade = Option[ColorGrade],
                           vignette = Option[Vignette], depthOfField = Option[DepthOfField], fxaa = Bool, custom = List[CustomPass],
-                          quality = Quality, msaa = Msaa, debugView = DebugView }
+                          quality = Quality, msaa = Msaa, debugView = DebugView, background = Color }
 
     def fieldsOf(s: Stack): Fields = match s { case StackData.StackData(f) => f }
 
     def neutralFields(): Fields =
         { exposure = 0.0, viewTransform = ViewTransform.Standard, bloom = None, colorGrade = None, vignette = None,
-          depthOfField = None, fxaa = false, custom = Nil, quality = Quality.Auto, msaa = Msaa.Off, debugView = DebugView.Final }
+          depthOfField = None, fxaa = false, custom = Nil, quality = Quality.Auto, msaa = Msaa.Off, debugView = DebugView.Final,
+          background = Color.rgb(0.0, 0.0, 0.0) }
 
     def aces(saturation: Float64): ViewTransform = ViewTransform.AcesNarkowicz({ whitePoint = 4.0, saturationAfter = saturation })
 
@@ -182,6 +187,9 @@ pub mod PostStack {
 
     pub def withDebugView(v: DebugView, s: Stack): Stack = mapFields(f -> { debugView = v | f }, s)
 
+    /// 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。既定は黒。
+    pub def withBackground(c: Color, s: Stack): Stack = mapFields(f -> { background = c | f }, s)
+
     // ── 読む口（Doc の値を確かめる・テストする） ──
 
     pub def exposureOf(s: Stack): Float64 = fieldsOf(s)#exposure
@@ -201,6 +209,12 @@ pub mod PostStack {
     pub def qualityOf(s: Stack): Quality = fieldsOf(s)#quality
 
     pub def msaaOf(s: Stack): Msaa = fieldsOf(s)#msaa
+
+    pub def debugViewOf(s: Stack): DebugView = fieldsOf(s)#debugView
+
+    pub def customOf(s: Stack): List[CustomPass] = fieldsOf(s)#custom
+
+    pub def backgroundOf(s: Stack): Color = fieldsOf(s)#background
 
     // ── Pass の名前（自分の Spec が Field.Tex で読む） ──
 

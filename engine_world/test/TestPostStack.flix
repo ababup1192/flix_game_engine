@@ -133,7 +133,12 @@ mod TestPostStack {
 
     @Test
     def testTwoScenesAreReported(): Unit \ Assert =
-        Assert.assertEq(expected = PostStack.Issue.SeveralScenes(2) :: Nil, built(sceneItem() :: sceneItem() :: Nil, neutral())#issues)
+        Assert.assertEq(expected = PostStack.Issue.SeveralScenes(2) :: Nil,
+                        built(sceneItem() :: sceneItem() :: Nil, neutral() |> PostStack.withDepthOfField(Some(band())))#issues)
+
+    @Test
+    def testTwoScenesWithoutDepthAreNotReported(): Unit \ Assert =
+        Assert.assertEq(expected = Nil, built(sceneItem() :: sceneItem() :: Nil, neutral())#issues)
 
     @Test
     def testCustomPassWithReservedNameIsDroppedAndReported(): Unit \ Assert =
@@ -217,4 +222,93 @@ mod TestPostStack {
     def testPostStackLeavesTheHudOnTheScreen(): Unit \ Assert =
         let frame = App.buildFrame(postApp(), size(), App.pickCtx(size()), 0, (_, _) -> boxAt(1.0) :: Nil);
         Assert.assertEq(expected = "ps_main" :: "" :: Nil, List.map(specNameOf, frame#items))
+
+    // ── 本編の面の形 ──
+
+    def specOf(item: Render.PlacedItem): Option[ShaderDoc.Spec] = match item#item {
+        case Render.Item.Shader(sh) => Some(sh#spec)
+        case _                      => None
+    }
+
+    def bindingNames(s: PostStack.Stack): List[String] =
+        built(sceneItem() :: Nil, s)#present |> specOf |> Option.map(sp -> List.map(fst, sp#bindings)) |> Option.getWithDefault(Nil)
+
+    def physical(focus: Float64, fStop: Float64): PostStack.DepthOfField =
+        PostStack.DepthOfField.Physical({ focusDistance = focus, fStop = fStop })
+
+    def everything(v: PostStack.ViewTransform): PostStack.Stack =
+        neutral() |> PostStack.withViewTransform(v) |> PostStack.withBloom(Some(bloom()))
+            |> PostStack.withVignette(Some({ strength = 0.3, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } }))
+            |> PostStack.withColorGrade(Some({ lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.0, 1.0, 1.0), saturation = 1.0 }))
+            |> PostStack.withDepthOfField(Some(physical(8.0, 2.8)))
+
+    // GLSL と WGSL は binding ごとに変数を 1 つ宣言するので、同じ名前が 2 つあると shader が作れない。
+    @Test
+    def testBindingNamesAreUniqueWithEveryEffect(): Unit \ Assert =
+        let views = PostStack.ViewTransform.Standard :: PostStack.ViewTransform.KhronosNeutral
+            :: PostStack.ViewTransform.AcesNarkowicz({ whitePoint = 4.0, saturationAfter = 0.1 }) :: Nil;
+        let dupes = views |> List.flatMap(v -> { let names = bindingNames(everything(v)); if (List.length(names) == Set.size(List.toSet(names))) Nil else names :: Nil });
+        Assert.assertEq(expected = Nil, dupes)
+
+    @Test
+    def testMovingThePhysicalFocusKeepsTheSameSpec(): Unit \ Assert =
+        let a = built(sceneItem() :: Nil, neutral() |> PostStack.withDepthOfField(Some(physical(4.0, 2.8))))#present |> specOf;
+        let b = built(sceneItem() :: Nil, neutral() |> PostStack.withDepthOfField(Some(physical(9.0, 1.4))))#present |> specOf;
+        Assert.assertEq(expected = Option.map(sp -> "${ShaderJson.toJson(sp)}", a), Option.map(sp -> "${ShaderJson.toJson(sp)}", b))
+
+    @Test
+    def testPhysicalFocusIsPassedInSceneUnits(): Unit \ Assert =
+        let world = Render.scene3d(Vec2.zero(), Scene3d.scene(camera(), size()) |> Scene3d.withUnitsPerMeter(16.0)) :: Nil;
+        Assert.assertEq(expected = Some(128.0), paramOf("ps_focus", built(world, neutral() |> PostStack.withDepthOfField(Some(physical(8.0, 2.8))))#present))
+
+    @Test
+    def testPhysicalWithoutApertureDrawsNoDepthPass(): Unit \ Assert =
+        Assert.assertEq(expected = "ps_scene" :: Nil, passNames(neutral() |> PostStack.withDepthOfField(Some(physical(8.0, 0.0)))))
+
+    @Test
+    def testNeutralColorGradeKeepsTheColor(): Unit \ Assert =
+        let grade = { lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.0, 1.0, 1.0), saturation = 1.0 };
+        let present = built(Nil, neutral() |> PostStack.withColorGrade(Some(grade)))#present;
+        let out = match present#item {
+            case Render.Item.Shader(sh) =>
+                let tex = ShaderEval.hdrTextureOf(1, 1, Vector#{0.5, 0.25, 0.75, 1.0});
+                let compiled = ShaderEval.compile(ShaderDoc.bindParams(sh#params, sh#spec), Map#{ PostStack.sceneName() => ShaderEval.TexImage.Rgba16Float(tex) });
+                let (r, g, b, _) = ShaderEval.evalCompiled(compiled, 0.5, 0.5, 0.0);
+                Some((Float64.round(r * 255.0), Float64.round(g * 255.0), Float64.round(b * 255.0)))
+            case _ => None
+        };
+        Assert.assertEq(expected = Some((128.0, 64.0, 191.0)), out)
+
+    @Test
+    def testDocWithoutKindAndWithoutStartingDepthOfFieldIsAnError(): Unit \ Assert =
+        Assert.assertEq(expected = true, Result.isErr(parsed("{\"preset\": \"Neutral\", \"depthOfField\": {\"fStop\": 4.0}}")))
+
+    @Test
+    def testDocWithoutKindKeepsTheStartingViewTransform(): Unit \ Assert =
+        let vt = parsed("{\"preset\": \"DuskOutdoor\", \"viewTransform\": {\"saturationAfter\": 0.3}}") |> Result.toOption |> Option.map(PostStack.viewTransformOf);
+        let sat = match vt {
+            case Some(PostStack.ViewTransform.AcesNarkowicz(a)) => Some(a#saturationAfter)
+            case _                                               => None
+        };
+        Assert.assertEq(expected = Some(0.3), sat)
+
+    @Test
+    def testDocOtherKindReplacesTheWholeField(): Unit \ Assert =
+        let fd = parsed("{\"preset\": \"Neutral\", \"depthOfField\": {\"kind\": \"DepthBand\", \"blur\": 0.01}}") |> Result.toOption
+            |> Option.flatMap(PostStack.depthOfFieldOf);
+        let band = match fd {
+            case Some(PostStack.DepthOfField.DepthBand(b)) => Some((b#blur, b#band))
+            case _                                         => None
+        };
+        Assert.assertEq(expected = Some((0.01, 0.25)), band)
+
+    @Test
+    def testBackgroundClearsTheScenePass(): Unit \ Assert =
+        let frame = App.buildFrame(postApp() |> App.withPostStack(_ -> neutral() |> PostStack.withBackground(Color.rgb(0.2, 0.4, 0.6))),
+                                   size(), App.pickCtx(size()), 0, (_, _) -> Nil);
+        let clear = frame#plan#passes |> List.find(p -> p#name == PostStack.sceneName()) |> Option.map(p -> match p#clear {
+            case RenderTarget.LoadOp.Clear(c) => (c#r, c#g, c#b)
+            case _                            => (-1.0, -1.0, -1.0)
+        });
+        Assert.assertEq(expected = Some((0.2, 0.4, 0.6)), clear)
 }

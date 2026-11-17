@@ -50,7 +50,7 @@ pub mod App.Internal.Paint {
 
     /// 1 コマの Pass の計画と画面の絵（App.buildFrame の中身）。withPostStack があれば world を後がけの Pass へ回し、
     /// 画面には後がけの面と HUD を置く。計画の名前が重なれば後がけを掛けずに 1 行知らせる。
-    pub def frameOf(app: App[w, ef], design: Vec2.Vec2, base: App.ViewCtx, world: w,
+    pub def buildFrame(app: App[w, ef], design: Vec2.Vec2, base: App.ViewCtx, world: w,
                     toItems: (App.ViewCtx, w) -> List[Render.PlacedItem] \ ef): { plan = Render.PassPlan, items = List[Render.PlacedItem] } \ ef =
         let r = App.rec(app);
         let layers = sceneLayers(app, design, base, world, toItems);
@@ -60,8 +60,10 @@ pub mod App.Internal.Paint {
             case None    => plain
             case Some(f) =>
                 let stack = PostStack.resolveQuality(base#display#sizeClass, f(world));
-                let built = PostStack.build({ size = design, clear = Color.rgb(0.0, 0.0, 0.0), world = layers#world }, stack);
-                let noted = built#issues |> List.forEach(issue -> base#warnOnce("[post] ${PostStack.issueText(issue)}"));
+                let built = PostStack.build({ size = design, clear = PostStack.backgroundOf(stack), world = layers#world }, stack);
+                let reserved = gamePlan#passes |> List.filter(p -> String.startsWith(prefix = PostStack.reservedPrefix(), p#name))
+                    |> List.map(p -> "[post] withPassPlan の Pass '${p#name}' が ps_ で始まる（ps_ は PostStack の Pass。名前を替える）");
+                let noted = List.append(built#issues |> List.map(issue -> "[post] ${PostStack.issueText(issue)}"), reserved) |> List.forEach(base#warnOnce);
                 match (noted, Render.mergePassPlans(gamePlan, built#plan)) {
                     case ((), Ok(plan))     => { plan = plan, items = built#present :: layers#hud }
                     case ((), Err(clashes)) =>
@@ -338,7 +340,7 @@ pub mod App.Internal.Paint {
                 uploadAtlases((r#spriteAtlases)(world));
                 preloadCmd(app, tileCache#gen, world) |> Option.forEach(cmd -> Platform.Draw3d.preload3d(cmd));
                 let atlas = Platform.GpuResources.getFontAtlas("default");
-                let frame = frameOf(app, design, baseCtx(app, design, display, atlas, warnOnce, diagnostics), world, toItems);
+                let frame = buildFrame(app, design, baseCtx(app, design, display, atlas, warnOnce, diagnostics), world, toItems);
                 let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, frame#plan));
                 let passList = plan#passes;
                 renderPasses(warnOnce, design, plan);

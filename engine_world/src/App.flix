@@ -368,7 +368,8 @@ pub mod App {
 
     /// 画面全体の後がけ（PostStack: 奥行きのぼかし・ブルーム・色の仕上げ・ビネット・露出・トーンマップ・FXAA）を繋ぐ。
     /// 掛けるのは View（と視差レイヤ）が返す絵の全部で、HUD（withHudView）とデバッグの重ねには掛けない — 掛けたくない UI は HUD に置く。
-    /// withTileLayers・withStaticLayer の層は描き手が画面へ直に描くので掛からない。Pass は withPassPlan の計画の後ろに足される（名前は ps_ で始まる）。
+    /// withTileLayers・withStaticLayer の層は描き手が画面へ直に描き、後がけの面（全画面・不透明・z 0）より奥の層は隠れ、手前の層は後がけ無しで出る（後がけを掛けるなら View の絵にする）。
+    /// Pass は withPassPlan の計画の後ろに足される（名前は ps_ で始まる）。View が描かない所の色は PostStack.withBackground（既定は黒）。
     pub def withPostStack(f: w -> PostStack.Stack \ ef, app: App[w, ef]): App[w, ef] =
         App.App({ postStack = Some(f) | rec(app) })
 
@@ -1107,7 +1108,7 @@ pub mod App {
     /// 実機の毎コマと同じ物で、画面なしの描き出しが App から同じ絵を組む口。問題の知らせは base の warnOnce へ。
     pub def buildFrame(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w,
                        toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): { plan = Render.PassPlan, items = List[Render.PlacedItem] } \ ef =
-        App.Internal.Paint.frameOf(app, design, base, world, toItems)
+        App.Internal.Paint.buildFrame(app, design, base, world, toItems)
 
     /// 一時停止を抜ける地点: スクラブで表示していた瞬間の World を現在とし、
     /// 履歴とフレーム番号もそこを基準に数え直す（未来側の履歴は捨てる）。

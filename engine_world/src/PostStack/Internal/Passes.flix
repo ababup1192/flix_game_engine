@@ -29,7 +29,7 @@ pub mod PostStack.Internal.Passes {
     }
 
     /// 奥行きのぼかしの、場面から作る奥行きの絵と、本編の面が読む離れ具合（0 = くっきり・1 = ぼかし切る）。
-    type alias Focus = { depthItem = Render.PlacedItem, tilt = Field, blur = Float64 }
+    type alias Focus = { depthItem = Render.PlacedItem, amount = Field, blur = Float64, params = Map[String, Float64] }
 
     /// ぼかした場面の半径（Physical の F 値から出すぼけは、この半径を 1 とした割合で混ぜる）。
     def physicalBlur(): Float64 = 0.012
@@ -52,14 +52,15 @@ pub mod PostStack.Internal.Passes {
         let after = customs |> List.filter(c -> c#at == CustomAt.AfterViewTransform);
         let scenes = scenesOf(input#world);
         let largest = largestScene(scenes);
-        let wantsDepth = Option.nonEmpty(f#depthOfField) or List.exists(c -> List.memberOf(Read.SceneDepth, c#reads), customs);
+        let customDepth = List.exists(c -> List.memberOf(Read.SceneDepth, c#reads), customs);
+        let wantsDepth = Option.nonEmpty(f#depthOfField) or customDepth;
         let current = before |> List.map(c -> c#name) |> List.last |> Option.getWithDefault(PostStack.sceneName());
         let focus = forM (d <- f#depthOfField; s <- largest; fo <- focusOf(d, s)) yield fo;
-        let depthOnly = if (Option.isEmpty(focus) and wantsDepth) largest |> Option.map(s -> depthItemOf(s, 0.0, cameraFar(s))) else None;
+        let depthOnly = if (Option.isEmpty(focus) and customDepth) largest |> Option.map(s -> depthItemOf(s, 0.0, cameraFar(s))) else None;
         let issues = List.flatten(
             (reserved |> List.map(c -> Issue.ReservedPassName(c#name)))
                 :: (if (wantsDepth and Option.isEmpty(largest)) Issue.NoScene3d :: Nil else Nil)
-                :: (if (List.length(scenes) > 1) Issue.SeveralScenes(List.length(scenes)) :: Nil else Nil)
+                :: (if (wantsDepth and List.length(scenes) > 1) Issue.SeveralScenes(List.length(scenes)) :: Nil else Nil)
                 :: Nil);
         let sceneTarget = RenderTarget.withMsaa(samplesOf(f#msaa),
             if (isHdrNeeded(f)) RenderTarget.withHdr(RenderTarget.windowDescriptor()) else RenderTarget.windowDescriptor());
@@ -86,7 +87,8 @@ pub mod PostStack.Internal.Passes {
                 :: ({ name = bloomPassB(), clear = black, items = fill(blurSpec(aspect, bloomPassB(), bloomPassA(), b#size * 0.5, tune#bloomTaps)) :: Nil }, shrunk(tune#bloomScale * 0.5))
                 :: Nil)
             |> Option.getWithDefault(Nil);
-        let main = Render.withShaderParams(paramsOf(f), fill(mainSpec(aspect, current, f, focus)));
+        let focusParams = focus |> Option.map(fo -> fo#params) |> Option.getWithDefault(Map.empty());
+        let main = Render.withShaderParams(Map.union(paramsOf(f), focusParams), fill(mainSpec(aspect, current, f, focus)));
         let finishing = finishingOf(input#size, f#fxaa, main, after);
         let all = List.flatten((scenePass :: beforePasses) :: depthPasses :: softPasses :: bloomPasses :: finishing#passes :: Nil);
         { plan = { targets = List.toMap(List.map(e -> (fst(e)#name, snd(e)), all)) | Render.passPlan(List.map(fst, all)) },
@@ -175,22 +177,22 @@ pub mod PostStack.Internal.Passes {
                 // ピントの奥行き（灰色の 0.5）からの離れ具合（0 = ピント・1 = 帯の端）。
                 let away = mul(k(2.0), Field.Un({ op = UnOp.Abs, of = sub(Field.Ref("ps_depth"), k(0.5)) }));
                 Some({ depthItem = depthItemOf(s, b#focusDistance - b#range, 2.0 * b#range),
-                       tilt = Field.Smoothstep({ lo = b#band, hi = b#band + b#soft, of = away }), blur = b#blur })
+                       amount = Field.Smoothstep({ lo = b#band, hi = b#band + b#soft, of = away }), blur = b#blur, params = Map.empty() })
             }
-        case DepthOfField.Physical(p) =>
+        case DepthOfField.Physical(cam) =>
             let cmd = snd(s);
             let unit = cmd#unitsPerMeter;
-            let focusMm = p#focusDistance * 1000.0;
+            let focusMm = cam#focusDistance * 1000.0;
             let focalMm = sensorHeightMm() / 2.0 * Num.cos(cmd#camera#fovY / 2.0) / Num.sin(cmd#camera#fovY / 2.0);
-            if (p#fStop <= 0.0 or focusMm <= focalMm or unit <= 0.0) None
+            if (cam#fStop <= 0.0 or focusMm <= focalMm or unit <= 0.0) None
             else {
                 // 薄いレンズのぼけの径 c = f² / (N (s − f)) × |d − s| / d（mm）を、画面の高さの割合の半径にし、ぼかした場面の半径で割る。
-                let gain = focalMm * focalMm / (p#fStop * (focusMm - focalMm)) / sensorHeightMm() / 2.0 / physicalBlur();
+                let gain = focalMm * focalMm / (cam#fStop * (focusMm - focalMm)) / sensorHeightMm() / 2.0 / physicalBlur();
                 let far = cmd#camera#far;
                 let dist = mul(Field.Ref("ps_depth"), k(far));
-                let s0 = k(p#focusDistance * unit);
-                let ratio = Field.Bin({ op = BinOp.Div, a = Field.Un({ op = UnOp.Abs, of = sub(dist, s0) }), b = dist });
-                Some({ depthItem = depthItemOf(s, 0.0, far), tilt = Field.Un({ op = UnOp.Sat, of = mul(ratio, k(gain)) }), blur = physicalBlur() })
+                let ratio = Field.Bin({ op = BinOp.Div, a = Field.Un({ op = UnOp.Abs, of = sub(dist, p("ps_focus")) }), b = dist });
+                Some({ depthItem = depthItemOf(s, 0.0, far), amount = Field.Un({ op = UnOp.Sat, of = mul(ratio, p("ps_cocGain")) }), blur = physicalBlur(),
+                       params = Map#{ "ps_focus" => cam#focusDistance * unit, "ps_cocGain" => gain } })
             }
     }
 
@@ -239,7 +241,7 @@ pub mod PostStack.Internal.Passes {
     def mainSpec(aspect: Float64, current: String, f: Fields, focus: Option[Focus]): ShaderDoc.Spec =
         let scene = (chan: TexChan) -> if (isLinear(f#viewTransform)) toLinear(Field.Tex({ name = current, chan = chan })) else Field.Tex({ name = current, chan = chan });
         let sharp = (chan: TexChan) -> match focus {
-            case Some(_) => Field.Blend({ a = scene(chan), b = linear(Field.Tex({ name = softPass(), chan = chan })), by = Field.Ref("ps_tilt") })
+            case Some(_) => Field.Blend({ a = scene(chan), b = linear(Field.Tex({ name = softPass(), chan = chan })), by = Field.Ref("ps_blurAmount") })
             case None    => scene(chan)
         };
         let bloomed = (chan: TexChan) -> match f#bloom {
@@ -250,7 +252,7 @@ pub mod PostStack.Internal.Passes {
             case Some(_) => mul(x, Field.Ref("ps_vig"))
             case None    => x
         };
-        let focusBindings = focus |> Option.map(fo -> ("ps_depth", linear(Field.Tex({ name = depthPass(), chan = TexChan.R }))) :: ("ps_tilt", fo#tilt) :: Nil)
+        let focusBindings = focus |> Option.map(fo -> ("ps_depth", linear(Field.Tex({ name = depthPass(), chan = TexChan.R }))) :: ("ps_blurAmount", fo#amount) :: Nil)
             |> Option.getWithDefault(Nil);
         let vigBindings = f#vignette |> Option.map(v -> ("ps_vig", vignetteField(aspect, v)) :: Nil) |> Option.getWithDefault(Nil);
         let colorBindings = match f#colorGrade {
@@ -296,15 +298,15 @@ pub mod PostStack.Internal.Passes {
         let lo = minF(ref("ps_er"), minF(ref("ps_eg"), ref("ps_eb")));
         let offset = Field.Blend({ a = k(0.04), b = sub(ref("ps_lo"), mul(k(6.25), mul(ref("ps_lo"), ref("ps_lo")))),
                                    by = Field.Bin({ op = BinOp.Step, a = ref("ps_lo"), b = k(0.08) }) });
-        let peak = maxF(ref("ps_cr"), maxF(ref("ps_cg"), ref("ps_cb")));
+        let peak = maxF(ref("ps_kr"), maxF(ref("ps_kg"), ref("ps_kb")));
         let newPeak = sub(k(1.0), Field.Bin({ op = BinOp.Div, a = k(d * d), b = add(ref("ps_pk"), k(d - start)) }));
         let toWhite = sub(k(1.0), Field.Bin({ op = BinOp.Div, a = k(1.0), b = add(mul(k(0.15), sub(ref("ps_pk"), ref("ps_np"))), k(1.0)) }));
         let compressed = (ch: String) -> Field.Blend({ a = mul(ref(ch), Field.Bin({ op = BinOp.Div, a = ref("ps_np"), b = ref("ps_pk") })), b = ref("ps_np"), by = ref("ps_wh") });
         let pick = (ch: String) -> Field.Blend({ a = ref(ch), b = compressed(ch), by = Field.Bin({ op = BinOp.Step, a = k(start), b = ref("ps_pk") }) });
         ("ps_lo", lo) :: ("ps_off", offset)
-            :: ("ps_cr", sub(ref("ps_er"), ref("ps_off"))) :: ("ps_cg", sub(ref("ps_eg"), ref("ps_off"))) :: ("ps_cb", sub(ref("ps_eb"), ref("ps_off")))
+            :: ("ps_kr", sub(ref("ps_er"), ref("ps_off"))) :: ("ps_kg", sub(ref("ps_eg"), ref("ps_off"))) :: ("ps_kb", sub(ref("ps_eb"), ref("ps_off")))
             :: ("ps_pk", peak) :: ("ps_np", newPeak) :: ("ps_wh", toWhite)
-            :: ("ps_nr", pick("ps_cr")) :: ("ps_ng", pick("ps_cg")) :: ("ps_nb", pick("ps_cb")) :: Nil
+            :: ("ps_nr", pick("ps_kr")) :: ("ps_ng", pick("ps_kg")) :: ("ps_nb", pick("ps_kb")) :: Nil
 
     /// 面の出力（途中の絵を見る時はその絵）。
     def outOf(f: Fields, focus: Option[Focus]): Out =

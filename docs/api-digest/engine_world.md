@@ -1812,7 +1812,7 @@
   `pub type alias Bloom = { threshold = Float64, smoothness = Float64, size = Float64, strength = Float64 }`
 - 画面の縁を暗くする。画面の真ん中 center（0..1）から inner〜outer の距離（縦横比を直し、高さ = 1）で、1 から 1 − strength へ落ちる。
   `pub type alias Vignette = { strength = Float64, inner = Float64, outer = Float64, center = Vec2.Vec2 }`
-- 色の仕上げ（Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation）。
+- 色の仕上げ（Blender の compositor の Color Balance（Lift / Gamma / Gain）と Hue/Saturation/Value の Saturation の式を写した物。Blender の絵とは未比較）。
   `pub type alias ColorGrade = { lift = Color, gamma = Color, gain = Color, saturation = Float64 }`
 - 曲線（View Transform）。名前と曲線は Blender の Color Management に合わせる。Standard と KhronosNeutral は、場面の値を読む所で
   `pub enum ViewTransform { case Standard case KhronosNeutral case AcesNarkowicz({ whitePoint = Float64, saturationAfter = Float64 }) }`
@@ -1822,7 +1822,7 @@
   `pub enum Quality { case Auto case Low case Medium case High case Fixed({ bloomTaps = Int32, bloomScale = Float64, blurTaps = Int32 }) }`
 - 場面の Pass の縁のならし（MSAA）。WebGPU は 1 か 4 しか持たない。
   `pub enum Msaa with Eq, ToString { case Off case X4 }`
-- 自分の Spec を挟む所。BeforeBloom = 場面の値（1 を超える）を読んで場面の値を書く・AfterViewTransform = 表示の値（0..1）を読んで書く。
+- 自分の Spec を挟む所。BeforeBloom = 場面の Pass の値（描き手が書いた画面の値・1 を超える）を読んで同じ形の値を書く（線形へ戻すのはこの後）・
   `pub enum CustomAt with Eq, ToString { case BeforeBloom case AfterViewTransform }`
 - 自分の Spec の読む物の宣言（SceneDepth があれば PostStack が奥行きの絵の Pass を足す）。名前は sceneName()・depthName()・postName() か Pass の名前で読む。
   `pub enum Read with Eq, ToString { case SceneColor case SceneDepth case Pass(String) }`
@@ -1852,6 +1852,8 @@
 - `pub def withQuality(q: Quality, s: Stack): Stack`
 - `pub def withMsaa(m: Msaa, s: Stack): Stack`
 - `pub def withDebugView(v: DebugView, s: Stack): Stack`
+- 場面の Pass を消す色（View が描かない所の色。App.withPostStack の道で使う・build は BuildInput#clear）。既定は黒。
+  `pub def withBackground(c: Color, s: Stack): Stack`
 - `pub def exposureOf(s: Stack): Float64`
 - `pub def viewTransformOf(s: Stack): ViewTransform`
 - `pub def bloomOf(s: Stack): Option[Bloom]`
@@ -1861,6 +1863,9 @@
 - `pub def isFxaa(s: Stack): Bool`
 - `pub def qualityOf(s: Stack): Quality`
 - `pub def msaaOf(s: Stack): Msaa`
+- `pub def debugViewOf(s: Stack): DebugView`
+- `pub def customOf(s: Stack): List[CustomPass]`
+- `pub def backgroundOf(s: Stack): Color`
 - 場面（View が返す絵）を描いた Pass。BeforeBloom の自分の Spec はこれを読む。
   `pub def sceneName(): String`
 - 奥行きの絵（DepthBand は ±range の帯を 0..1・Physical は目からの距離を camera の far で割った値。r に入る）。

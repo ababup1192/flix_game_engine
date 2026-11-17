@@ -20,6 +20,7 @@ CONFIGS = [
     ("standardMinusTwo", "Standard", -2.0),
     ("neutralZero", "Khronos PBR Neutral", 0.0),
     ("neutralPlusTwo", "Khronos PBR Neutral", 2.0),
+    ("neutralMinusTwo", "Khronos PBR Neutral", -2.0),
 ]
 
 

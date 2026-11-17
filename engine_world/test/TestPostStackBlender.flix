@@ -75,6 +75,10 @@ mod TestPostStackBlender {
         Assert.assertEq(expected = Nil, neutralMisses(0.0, PostCurveCases.neutralZero()))
 
     @Test
+    def testKhronosNeutralMinusTwoStopsMatchesBlender(): Unit \ Assert =
+        Assert.assertEq(expected = Nil, neutralMisses(-2.0, PostCurveCases.neutralMinusTwo()))
+
+    @Test
     def testKhronosNeutralPlusTwoStopsMatchesBlender(): Unit \ Assert =
         Assert.assertEq(expected = Nil, neutralMisses(2.0, PostCurveCases.neutralPlusTwo()))
 }

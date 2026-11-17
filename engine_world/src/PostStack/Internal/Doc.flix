@@ -3,7 +3,7 @@
 //
 // preset が出発点で、書いた欄だけが上書き。効果の欄（bloom・vignette・colorGrade）は欄ごとに混ぜ、kind を持つ欄（viewTransform・depthOfField）は
 // kind が出発点と同じ時だけ欄ごとに混ぜ、違えば丸ごと替える（書いていない欄は新しい kind の既定）。null はその効果を外す。
-// 知らない名前（preset・quality・msaa・kind）は既定へ落として 1 行言う。数の欄に数でない物があれば Err。
+// kind を書かない欄は出発点の kind として混ぜる。知らない名前（preset・quality・msaa・kind）は出発点へ落として 1 行言う。数の欄に数でない物があれば Err。
 pub mod PostStack.Internal.Doc {
 
     use IoError.IoError
@@ -55,7 +55,10 @@ pub mod PostStack.Internal.Doc {
     // ── 名前の欄 ──
 
     def presetFrom(top: Map[String, Json]): Fields =
-        let name = Map.get("preset", top) |> Option.flatMap(JsonCodec.expectString) |> Option.getWithDefault("Neutral");
+        let name = match Map.get("preset", top) {
+            case None    => "Neutral"
+            case Some(j) => JsonCodec.expectString(j) |> Option.getWithDefault("（字でない値）")
+        };
         let found = presets() |> List.find(pr -> "${pr}" == name);
         let chosen = match found {
             case Some(pr) => pr
@@ -156,7 +159,12 @@ pub mod PostStack.Internal.Doc {
                     forM (wp <- numOr("whitePoint", acesStart#whitePoint, m); sat <- numOr("saturationAfter", acesStart#saturationAfter, m))
                     yield ViewTransform.AcesNarkowicz({ whitePoint = wp, saturationAfter = sat })
                 case Some(other)           => Ok(Log.fellBackThen("post", "viewTransform ${other}", "出発点の viewTransform", "知らない kind", start))
-                case None                  => Err(err("viewTransform は kind を書く"))
+                case None                  => match start {
+                    case ViewTransform.AcesNarkowicz(_) =>
+                        forM (wp <- numOr("whitePoint", acesStart#whitePoint, m); sat <- numOr("saturationAfter", acesStart#saturationAfter, m))
+                        yield ViewTransform.AcesNarkowicz({ whitePoint = wp, saturationAfter = sat })
+                    case _ => Ok(start)
+                }
             }
         case Some(_)          => Err(err("viewTransform は object で書く"))
     }
@@ -181,8 +189,12 @@ pub mod PostStack.Internal.Doc {
                     forM (fd <- numOr("focusDistance", band#focusDistance, m); range <- numOr("range", band#range, m);
                           b <- numOr("band", band#band, m); soft <- numOr("soft", band#soft, m); blur <- numOr("blur", band#blur, m))
                     yield Some(DepthOfField.DepthBand({ focusDistance = fd, range = range, band = b, soft = soft, blur = blur }))
-                case Some(other)       => Ok(Log.fellBackThen("post", "depthOfField ${other}", "外す", "知らない kind", None))
-                case None              => Err(err("depthOfField は kind を書く"))
+                case Some(other)       => Ok(Log.fellBackThen("post", "depthOfField ${other}", "出発点の depthOfField", "知らない kind", start))
+                case None              => match start {
+                    case Some(DepthOfField.Physical(_))  => dofFrom(Some(JObject(Map.insert("kind", Json.JString("Physical"), m))), start)
+                    case Some(DepthOfField.DepthBand(_)) => dofFrom(Some(JObject(Map.insert("kind", Json.JString("DepthBand"), m))), start)
+                    case None                            => Err(err("depthOfField は kind を書く（出発点に奥行きのぼかしが無い）"))
+                }
             }
         case Some(_)          => Err(err("depthOfField は object か null で書く"))
     }

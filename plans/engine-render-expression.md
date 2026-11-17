@@ -1,6 +1,6 @@
 # 3D の表現力を上げる仕組み — 後がけの値（PostStack）と、3D が出す名前つきの絵（prepass）
 
-状態: 設計とスパイクだけ（engine の本体は変えていない）。作業場 worktree `worktree-agent-ad56639e9d8579117`（v0.100.0 起点）。rev2（レビュー 1 回目 68 点・2 回目 78 点の指摘を反映。記録は付録 B）。
+状態: S0・S1a・S1b の前半を実装した（§11）。AgX・Filmic（Blender の LUT）はライセンスが分からず止めている。作業場 worktree `worktree-agent-ad56639e9d8579117`（v0.100.0 起点）。rev2（レビュー 1 回目 68 点・2 回目 78 点の指摘を反映。記録は付録 B）。
 **engine の拡張なので、実装の前にこの文書で人と決める（AGENTS.md）。** 人に決めてほしい事は §10。
 印: 【確】= コード・数で確かめた / 【推】= 推測 / 【未確認】= 確かめていない。
 
@@ -511,3 +511,47 @@ Adreno 750 を M4 Pro の 4〜6 倍遅いとし、画素を 4.9 倍とすると 
   - P7 Blender の順と K の案 (i) の衝突 → §10 の 8 に制約を足した。
   - P8 小物: DoF の正解の相手を Cycles にそろえた・`Render.mergePassPlans` を §4.1 に・`neutral()` を消し `Preset.Neutral` に・`Input` を `Read` に・history を読む効果が無い事を §2.2 に。
 - 3 回目は取っていない（「レビューは最大 3 回・80 点以上で必須が直っていれば GO」の決まりに対し、2 回目の必須 2 つを直した所で止めた。点は 2 回目の 78 点のまま）。
+
+## 11. 実装の記録（S0・S1a・S1b の前半）
+
+枝 `worktree-agent-a2e50307607c366f3`。コミットは S0 `1d68d5a9`・S1a `bb87be73`・S1b 前半 `bd5e4c69` と、レビュー（1 回目 72 点）の直し。
+
+### 11.1 S0 の門
+
+- 遅さの元は `ShaderEval.hdrTextureOf` の 1 回の呼び出しの中の長い輪（JVM が途中から JIT しない）で、`SoftRaster.frozenHdr` が Java の stream で丸めて `hdrTextureOfHalves` に渡す形に直した。値は同じ。
+- 測った物はスパイク (b) の prepass そのものではない（prepass はまだ本体に無い）。同じ形（3D の部屋を窓の画素の Pass に描き、本編でも描く・960×540・`FGE_SOFT_SERIAL=1`・12 回の中央値）で、
+  Rgba16Float の Pass の上乗せ（Rgba8 の Pass との差）が **170〜350 ms → 約 40 ms**。門の「441 → 100 ms 以下」は prepass の 1 枚の数なので、S3 で prepass を入れた時に測り直す【未確認】。
+  残る 40 ms は `fillClearHdr` と `drawSceneHdr` の画素ごとの組（tuple）で、門に要るなら同じ直し方で減らせる【推】。
+
+### 11.2 設計からのずれ（§4.1 を実装に合わせて読む）
+
+| 設計 | 実装 | 理由 |
+|---|---|---|
+| `DepthBand({ focusDistance, band, soft, blur })` | `range` を足した（band と soft は range に対する割合） | 奥行きの絵を PostStack が作るので帯の幅が要る。lamplighter の 0 px の錨 |
+| `Quality.Fixed({ bloomTaps, bloomScale })` | `blurTaps` を足し、Fixed は縮みを design の解像度に対して取る（ほかは窓の画素） | 今のゲームの手書きの Pass と同じ大きさ（0 px の錨） |
+| `BuildInput.msaa` | Stack の欄（`withMsaa`）。`withBackground`（場面の Pass を消す色）も Stack | App の道ではゲームが BuildInput を組まない |
+| `build` は `{ plan, present }`・`PostStack.issues(s)` | `build` が `issues` も返す・`issues(s)` は無い | 問題の大半（3D の場面の数）は world を見ないと分からない |
+| `Read.SceneLinear`・`DebugView.Linear` | `Read.SceneColor`・`DebugView.Scene` | Custom の BeforeBloom は描き手が書いた画面の値を読む（線形へ戻すのは本編の面） |
+| Stack が組んだ Spec を持つ | 持たない。毎コマ動かす数（露出・ブルームとビネットの強さ・彩度・Physical のピントと F 値）は Param | Stack は毎コマ返る値。描き手は Spec を中身で比べる（重さは未計測・下の残り） |
+
+### 11.3 先送りにした物（残り）
+
+- S1a の範囲: FilmGrain（noise の絵を engine が登録する口が要る・LUT と同じ道）・TiltShift（使うゲームが無い）。
+- S1b の後半: `Field.Lut3d`・AgX（look）・Filmic（Blender の LUT。下）・preset の値の決め直し（AgX の上で人が見る）・スマホの数（§7.1）・ColorGrade と Blender の比べ（式は `colorbalance_lgg` を写したが未比較）。
+- 検査: `HdrNeeded`・`FxaaOnScaledPass`・`SpecRebuiltEveryFrame`・描き出しの lint で止める口・`bin/fge view` の匂い・「View で tonemappedWith を直に組む」の知らせ。ゲームの計画の `ps_` の Pass は実機で 1 行知らせるだけ。
+- 中身の比べの重さ: 毎コマ新しい Spec を描き手が中身で比べる。wasm の CPU の予算（+1 ms）に効くかは bench/scene3d の POST=1 を web で測ってから。
+
+### 11.4 Blender の LUT のライセンス（S1b の前に止めた所）
+
+- Blender 5.2.3 の `datafiles/colormanagement/config.ocio` の頭は「See ocio-license.txt for details.」と書くが、その file は配られた Blender に入っていない。
+  AgX の作り手の repo（EaryChow/AgX・sobotka/AgX）にも LICENSE が見当たらない。Blender の本体は GPL-3.0 以上で、engine は MIT。
+- LUT（AgX・Filmic・Khronos Neutral の .cube）を engine の fpkg に入れてゲームへ配ってよいか分からないので、作る前に止めた（人の決定 4）。
+- Standard と Khronos PBR Neutral は式で書ける（Neutral は Khronos の仕様の式）ので入れ、Blender の絵と比べる門を通した。
+
+### 11.5 測った数
+
+- lamplighter の写し（`build/ps-lamplighter`・git の外）: alley・night・arrival が S1a の前後で CPU 3 枚・WebGPU 9 枚・GL 9 枚ともバイト一致。S1b の後も AcesNarkowicz の道は変わらない。
+- gl-parity: postStackLook 2,188 px（±4）・postStackDepthBand 547 px（±72・縁の帯）。上限 3,000・800。
+- bench/scene3d（隠し窓・`FLIX_GE_NO_VSYNC=1`・240 コマ × 2 区間 × 2 回・負荷の高い機械）: 後がけなし frame p95 1.04〜1.63 ms → POST=1（DuskOutdoor）1.69〜3.33 ms。submit p50 0.31〜0.49 → 0.47〜1.02 ms・2D の draw call 0 → 5。
+- 曲線の門（`TestPostStackBlender`）: Standard（露出 0・±2）・Khronos PBR Neutral（0・±2）が 2/255 以内。Neutral は Blender が log2 の 2^-9〜2^10 の LUT で 0 の成分を 2^-9 と読むので、暗い色で成分に 0 がある物（最大 6/255）は比べない。
+
