@@ -1,11 +1,66 @@
 {
   "title": "HD-2D Town",
-  "designWidth": 320,
-  "designHeight": 180,
-  "windowScale": 4,
-  "clearColor": { "r": 0.0, "g": 0.0, "b": 0.0 },
+  "designWidth": 1280,
+  "designHeight": 720,
+  "windowScale": 1,
+  "clearColor": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0
+  },
   "maxDeltaTime": 10.0,
-  "textures": [],
+  "textures": [
+    {
+      "name": "tree_broadleaf",
+      "path": "assets/sprites/tree_broadleaf.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "tree_cypress",
+      "path": "assets/sprites/tree_cypress.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "street_lamp",
+      "path": "assets/sprites/street_lamp.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "traveler_td",
+      "path": "assets/sprites/traveler_td.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "merchant_td",
+      "path": "assets/sprites/merchant_td.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "traveler_walk4",
+      "path": "assets/sprites/traveler_walk4.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "merchant_walk4",
+      "path": "assets/sprites/merchant_walk4.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "traveler_walk_n",
+      "path": "assets/sprites/traveler_walk_n.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "merchant_walk_n",
+      "path": "assets/sprites/merchant_walk_n.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "dust",
+      "path": "assets/sprites/dust.png",
+      "hasAlpha": true
+    }
+  ],
   "fonts": [],
   "sounds": []
 }

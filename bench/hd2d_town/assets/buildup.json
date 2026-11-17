@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "note": "歩く先の町が出来ていく動画（make buildup-frames → make buildup-video）。path = 先頭の曲がり角 [列, 行, 着いた後の待ち秒]・idleSec = 歩き出すまで・holdSec = 止まった後に撮る秒・速さは groundFlowH（画面の真ん中の行で地面が流れる速さ・画面の高さ/秒）から決まる（約 3.46 マス/秒）・frameSec = 歩きのコマを全員同じ時計で替える秒・feetV = 先頭の足元の画面の高さ・stopSec = カメラが止まる・曲がるのにかける秒・camZLagK = カメラの高さが遅れて追う速さ（/秒）・endFace = 止まった後の向き（n・e・s・w）・front* = 町が出来ていく前線（行と速さ）",
+  "path": [
+    [
+      13,
+      23,
+      0.0
+    ],
+    [
+      13,
+      20,
+      2.5
+    ],
+    [
+      13,
+      17,
+      2.5
+    ],
+    [
+      13,
+      15,
+      5.5
+    ],
+    [
+      18,
+      15,
+      1.0
+    ],
+    [
+      23,
+      15,
+      2.0
+    ],
+    [
+      23,
+      22,
+      0.0
+    ]
+  ],
+  "idleSec": 3.5,
+  "holdSec": 9.4,
+  "frameSec": 0.333,
+  "groundFlowH": 0.21,
+  "feetV": 0.55,
+  "stopSec": 0.7,
+  "camZLagK": 2.5,
+  "endFace": "s",
+  "party": [
+    {
+      "strip": "sprites/traveler_walk4.png"
+    },
+    {
+      "strip": "sprites/merchant_walk4.png"
+    },
+    {
+      "strip": "sprites/traveler_walk4.png",
+      "tint": [
+        0.82,
+        0.86,
+        1.05
+      ]
+    }
+  ],
+  "frontRow": 23.5,
+  "frontRowsPerSec": 2.2,
+  "sideDelay": 0.06,
+  "startDelay": 0.3
+}

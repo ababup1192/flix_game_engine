@@ -10,8 +10,24 @@ mod Faces {
     /// 線形の色（掛け目）。
     pub type alias Rgb = { r = Float64, g = Float64, b = Float64 }
 
-    /// 四角 1 枚。material = 材質の名前（TileMap3d.materialTable の鍵）・ao = 頂点ごとの暗さ（1 で明るいまま）。
-    pub type alias Quad = { points = List[P3], uvs = List[(Float64, Float64)], ao = List[Float64], material = String }
+    /// 四角 1 枚。material = 材質の名前（TileMap3d.materialTable の鍵）・ao = 頂点ごとの暗さ（1 で明るいまま）・
+    /// owner = どの部品に属するか（町が出来ていく演出で、部品ごとに出し方と時刻を決める）。
+    pub type alias Quad = { points = List[P3], uvs = List[(Float64, Float64)], ao = List[Float64], material = String, owner = Owner }
+
+    /// 面の持ち主の部品。Cell = マスの地面（床・段の側面・水面）・Prop = マスに置く箱の物・Monument = 目印の石の柱・
+    /// Walls・Roof = 建物の壁と屋根（建物の id）・Opening = 建物の窓か扉 1 枚（建物の id と、建物の中の番号）・Fixed = 地図の外（はじめからある）。
+    pub enum Owner with Eq, Order, ToString {
+        case Fixed
+        case Cell(Int32, Int32)
+        case Prop(Int32, Int32)
+        case Monument(Int32, Int32)
+        case Walls(String)
+        case Roof(String)
+        case Opening(String, Int32)
+    }
+
+    /// 四角の列の持ち主を owner にする。
+    pub def withOwner(owner: Owner, quads: List[Quad]): List[Quad] = quads |> List.map(q -> { owner = owner | q })
 
     pub def p3(x: Float64, y: Float64, z: Float64): P3 = { x = x, y = y, z = z }
 
@@ -19,7 +35,8 @@ mod Faces {
 
     /// 四角を作る（ao は 4 つ・渡さない所は 1）。
     pub def quad(material: String, points: List[P3], uvs: List[(Float64, Float64)], ao: List[Float64]): Quad =
-        { points = points, uvs = uvs, ao = if (List.length(ao) == List.length(points)) ao else List.map(_ -> 1.0, points), material = material }
+        { points = points, uvs = uvs, ao = if (List.length(ao) == List.length(points)) ao else List.map(_ -> 1.0, points), material = material,
+          owner = Owner.Fixed }
 
     /// 0..1 の uv を貼る四角（面ごとに絵 1 枚）。
     pub def fullUv(): List[(Float64, Float64)] = (0.0, 0.0) :: (1.0, 0.0) :: (1.0, 1.0) :: (0.0, 1.0) :: Nil

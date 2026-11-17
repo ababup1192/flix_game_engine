@@ -1,0 +1,80 @@
+// 入口（窓あり・GPU の描き手）。町が出来ていく動画を GPU で描く（HD2D_MODE=build・FLIX_GE_FRAME_SHOT でコマを書く）か、
+// 出来た町を歩く場面の 1 コマの重さを測る（HD2D_MODE=bench・POST=0 で後がけなし・SHADOW=0 で太陽の影なし・区間ごとに 1 行の JSON）。
+// どちらも決まったコマ数で閉じる（窓を開いたままにしない）。
+use fge::LwjglLayer
+
+mod TownGpu {
+    use fge::{App, LwjglLayer, Render, Scene3d, Vec2}
+    use BuildVideo.{Setup}
+
+    import java.lang.System
+
+    /// 描き物の大きさ（project.json の design と同じ 1280×720）。
+    def size(): Vec2.Vec2 = { x = 1280.0, y = 720.0 }
+
+    /// frame = 次に描くコマ・scene・focus = そのコマの場面とピントの距離・grouping = 出来た物の集まりの持ち越し・
+    /// progress = 重さを測る区間・finished = 閉じてよいか。
+    pub type alias World = { frame = Int32, scene = Option[Scene3d.Scene3dCmd], focus = Float64, grouping = BuildVideo.Grouping,
+                             progress = BenchRun.Run, finished = Bool }
+
+    /// 測る段取り（頭の 60 コマを捨て、240 コマを 2 区間）。
+    def plan(): BenchRun.Plan = { warmup = 60, measured = 240, segments = 2, diagnostics = true }
+
+    /// HD2D_MODE=bench の時に回すコマ（出来上がった後から歩き終わりまでを繰り返す）。
+    def benchFrame(st: Setup, k: Int32): Int32 =
+        let first = (Float64.round(st#show#done * 30.0) |> Float64.tryToInt32 |> Option.getWithDefault(0)) + 30;
+        let span = Int32.max(1, st#track#frames - first);
+        first + Int32.modulo(k, span)
+
+    /// FLIX_GE_FRAME_SHOT が 1 回の起動で書けるコマ数（engine の LwjglLayer.frameShotLimit と同じ）。
+    // WhyNot: 1 回の起動で全部のコマを撮らない — 窓の書き出しは 1 回の起動で 64 コマまでで、それ以降は書かれない。
+    def shotsPerLaunch(): Int32 = 64
+
+    /// 1 コマ進める（場面を組み、出来た物の集まりは regroupEvery コマごとに作り直す）。
+    def step(st: Setup, bench: Bool, first: Int32, knobs: List[(String, String)], frame: App.Frame, w: World): World \ IO =
+        let f = if (bench) benchFrame(st, w#frame) else w#frame;
+        let (grouping, loose) = BuildVideo.regroup(f, BuildVideo.settledAt(st, f), w#grouping);
+        let (scene, focus) = BuildVideo.shotAt(st, _ -> (grouping#group, loose), size(), f);
+        let progress = if (bench) BenchRun.advance(plan(), line -> println(line), _ -> knobs, BenchRun.sampleOf(frame, 0.0), w#progress) else w#progress;
+        { frame = w#frame + 1, scene = Some(scene), focus = focus, grouping = grouping, progress = progress,
+          finished = if (bench) progress#done else w#frame + 1 >= Int32.min(st#track#frames, first + shotsPerLaunch()) }
+
+    def envOr(name: String, fallback: String): String \ IO =
+        let v = System.getenv(name);
+        if (Object.isNull(v) or v == "") fallback else v
+
+    pub def go(): Unit \ IO =
+        let mode = envOr("HD2D_MODE", "build");
+        let bench = mode == "bench";
+        let post = envOr("POST", "1") == "1";
+        let shadow = envOr("SHADOW", "1") == "1";
+        let look0 = run { TownLook.loadOr("assets/town.json") } with Fs.FileRead.runWithIO;
+        let look = if (shadow) look0 else { shadowMapSize = 0 | look0 };
+        let first = Int32.fromString(envOr("HD2D_FRAME_FROM", "0")) |> Option.getWithDefault(0);
+        match BuildVideo.setup({ billboardTextures = TownScene.BillboardTextures.ProjectTextures | look }) {
+            case Err(why) =>
+                println("[hd2d_town] 町を組めない: ${why}");
+                System.exit(1)
+            case Ok(st0) =>
+                let st = { show = { dustTexture = "dust" | st0#show } | st0 };
+                let knobs = ("bench", BenchRun.quoted("hd2d_town")) :: ("post", if (post) "1" else "0") :: ("shadow", if (shadow) "1" else "0") :: Nil;
+                println("[hd2d_town] GPU ${mode}: コマ ${Int32.toString(st#track#frames)}・後がけ ${if (post) "あり" else "なし"}・太陽の影 ${if (shadow) "あり" else "なし"}");
+                let app0 = App.make({ frame = first, scene = None, focus = 10.0, grouping = BuildVideo.startGrouping(st), progress = BenchRun.start(), finished = false })
+                    |> App.addSystem(step(st, bench, first, knobs))
+                    |> BenchRun.withDiagnostics(plan())
+                    |> App.withView((_ctx, w) -> checked_ecast(w#scene |> Option.map(sc -> Render.scene3d(Vec2.zero(), sc)) |> Option.toList))
+                    |> App.quitWhen((_frame, w) -> checked_ecast(w#finished));
+                let app1 = if (post) app0 |> App.withPostStack(w -> checked_ecast(TownScene.postOf(look, w#focus))) else app0;
+                run { App.launchForBench(app1) }
+                    with LwjglLayer.withProject(".")
+                    with Fs.FileRead.runWithIO
+                    with Fs.FileWrite.runWithIO
+                    with Fs.Glob.runWithIO
+                    with Fs.ModificationTime.runWithFileTime
+                    with Fs.FileTime.runWithIO
+        }
+}
+
+def main(): Unit \ IO =
+    if (LwjglLayer.ensureMainThread()) ()
+    else TownGpu.go()

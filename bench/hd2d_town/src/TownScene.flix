@@ -12,24 +12,34 @@ mod TownScene {
     /// sunElevation・sunAzimuth = 太陽の高さと方位（度。方位は南 = 手前から東へ）・sunIntensity = 太陽の強さ・
     /// ambient = どこにでも当たる光（画面の値）・hemisphere = 上を向く面ほど明るくする量・
     /// boardTint = 板（木・街灯・キャラ）の明るさの掛け目・snapToTexels = 板とカメラの位置を 1 テクセルに丸めるか・
-    /// fogNear・fogFar・fog = かすみ（目からの距離と色）・sky = 背景の色・exposure・bloom・fStop・saturation・lift・gamma・gain（暗い所・中間・明るい所の持ち上げ。1 で何もしない）・vignette・fxaa = 後がけ。
+    /// fogNear・fogFar・fog = かすみ（目からの距離と色）・sky = 背景の色・exposure・bloom・fStop・saturation・lift・gamma・gain（暗い所・中間・明るい所の持ち上げ。1 で何もしない）・vignette・fxaa = 後がけ・
+    /// billboardTextures = 板の絵の引き方。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
                             fogNear = Float64, fogFar = Float64, fog = Color, sky = Color,
-                            exposure = Float64, bloomStrength = Float64, fStop = Float64, saturation = Float64, lift = Color, gamma = Color, gain = Color, vignette = Float64, fxaa = Bool }
+                            exposure = Float64, bloomStrength = Float64, fStop = Float64, saturation = Float64, lift = Color, gamma = Color, gain = Color, vignette = Float64, fxaa = Bool,
+                            billboardTextures = BillboardTextures }
+
+    /// 板の絵の引き方。SceneTextures = 場面の textures の Texture3d の名前（CPU の描き出し）・ProjectTextures = project.json の textures の名前（GPU の描き手）。
+    pub enum BillboardTextures with Eq {
+        case SceneTextures
+        case ProjectTextures
+    }
 
     /// 読み込みで 1 回作る物。group = 動かない面と足元の影・boards = 動かない板・textures = 場面に渡す絵・
-    /// strips = 隊列の歩きの絵（4 コマを横に並べた物）・contact = 足元の影の形と材質。
+    /// strips = 隊列の歩きの絵（4 コマを横に並べた物）・contact = 足元の影の形と材質・
+    /// town = 組んだ町の面と板（出来ていく演出が部品に分け直す）・materials = 材質の名前 → (材質, 色の掛け目)・sprites = 板の絵。
     pub type alias Res = { map = TownMap, look = Look, group = Scene3d.StaticGroup, boards = List[Scene3d.Billboard3d],
                            textures = List[Texture3d.Texture3d], strips = Map[String, Images.Loaded],
-                           contactMesh = Mesh3d.Mesh3d, contactMaterial = Scene3d.Material3d }
+                           contactMesh = Mesh3d.Mesh3d, contactMaterial = Scene3d.Material3d,
+                           town = TileMap3d.Town, materials = Map[String, (Scene3d.Material3d, Rgb)], sprites = Map[String, Images.Loaded] }
 
     /// 地図と絵を読み、町を組む。skipNpcColumn = 地図の 1・2・3 を置かない列（隊列で歩かせる列）。
     pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32]): Result[String, Res] \ IO =
         let sprites = "sprites/tree_broadleaf.png" :: "sprites/tree_cypress.png" :: "sprites/street_lamp.png" ::
                       "sprites/traveler_td.png" :: "sprites/merchant_td.png" :: Nil;
-        let stripPaths = m#walk#party |> List.map(p -> p#strip) |> List.distinct;
+        let stripPaths = List.append(m#walk#party |> List.map(p -> p#strip), "sprites/traveler_walk4.png" :: "sprites/merchant_walk4.png" :: Nil) |> List.distinct;
         let tilePaths = TileMap3d.materialTable() |> Map.valuesOf |> List.map(fst) |> List.distinct;
         forM (
             tiles <- Result.traverse(Images.load, tilePaths);
@@ -47,8 +57,32 @@ mod TownScene {
               boards = town#boards |> List.filterMap(billboardOf(byPath, look)),
               textures = shadow :: List.append(List.map(l -> l#texture, List.append(tiles, boards)), List.map(l -> l#texture, strips)),
               strips = strips |> List.map(l -> (l#path, l)) |> List.toMap,
-              contactMesh = contactMesh, contactMaterial = contactMaterial }
+              contactMesh = contactMesh, contactMaterial = contactMaterial,
+              town = town, materials = materialsOf(byPath), sprites = byPath }
         }
+
+    /// 材質の名前 → (置いた物の材質, 色の掛け目)。
+    def materialsOf(byPath: Map[String, Images.Loaded]): Map[String, (Scene3d.Material3d, Rgb)] =
+        TileMap3d.materialTable() |> Map.toList |> List.filterMap(entry -> {
+            let (name, (path, tint)) = entry;
+            Map.get(path, byPath) |> Option.map(tex ->
+                (name, (Scene3d.texturedMaterial(Texture3d.name(tex#texture), FilterMode.Nearest) |> Scene3d.withDoubleSided(true), tint)))
+        }) |> List.toMap
+
+    /// 板 1 枚のビルボード（演出が板の出し方を決める時に使う）。
+    pub def boardBillboard(res: Res, b: Board): Option[Scene3d.Billboard3d] = billboardOf(res#sprites, res#look, b)
+
+    /// 背中・右・正面の 4 コマずつを横に並べた帯（dirs "nes"）の 1 人の板と足元の影。dirIndex = 0 背中・1 右・2 正面・
+    /// flip = 左右反転（左向きは右の反転）・影は足元の楕円だけ（太陽の影は落とさない）。
+    pub def walkerBoard(res: Res, strip: String, tint: Rgb, dirIndex: Int32, frame: Int32, flip: Bool, x: Float64, y: Float64, z: Float64): Option[(Scene3d.Billboard3d, Scene3d.Instance3d)] =
+        Map.get(strip, res#strips) |> Option.map(l -> {
+            let cellW = l#width / 12;
+            let source = { position = { x = Int32.toFloat64(cellW * (dirIndex * 4 + frame)), y = 0.0 }, size = { x = Int32.toFloat64(cellW), y = Int32.toFloat64(l#height) } };
+            let w = Int32.toFloat64(cellW) / 32.0;
+            let h = Int32.toFloat64(l#height) / 32.0;
+            (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint), false),
+             contactInstance(res#contactMesh, res#contactMaterial, x, y, z, w))
+        })
 
     /// 材質ごとに 1 つの形（色の掛け目は頂点の色に焼き込み、絵ごとの材質は 1 つ）。
     // WhyNot: 裏の面を捨てる材質にしない — 写した決まり（Blender の試作）は両面で描いており、妻壁や軒の裏の巡りが面ごとに揃っていない。
@@ -86,10 +120,19 @@ mod TownScene {
     def tintColor(look: Look, t: Rgb): Color =
         Color.rgb(Faces.linearToSrgb(t#r * look#boardTint), Faces.linearToSrgb(t#g * look#boardTint), Faces.linearToSrgb(t#b * look#boardTint))
 
+    /// 板の絵の名前（project.json の textures の名前は、assets/sprites/<名前>.png の <名前>）。
+    // WhyNot: GPU でも場面の textures の名前で引かない — GPU の描き手のビルボードは project.json の textures だけを引き、Texture3d の名前は見つからないとして描かない。
+    def billboardName(look: Look, l: Images.Loaded): String =
+        if (look#billboardTextures == BillboardTextures.ProjectTextures) {
+            let stem = String.stripPrefix(substr = "sprites/", l#path) |> Option.getWithDefault(l#path);
+            String.stripSuffix(substr = ".png", stem) |> Option.getWithDefault(stem)
+        }
+        else Texture3d.name(l#texture)
+
     /// 板 1 枚。カメラが水平なので、カメラへ向く板は地面に垂直に立つ（高さを伸ばす補正は要らない）。
     def billboardOf(byPath: Map[String, Images.Loaded], look: Look, b: Board): Option[Scene3d.Billboard3d] =
         Map.get(b#sprite, byPath) |> Option.map(l ->
-            standing(Texture3d.name(l#texture), { position = Vec2.zero(), size = { x = Int32.toFloat64(l#width), y = Int32.toFloat64(l#height) } },
+            standing(billboardName(look, l), { position = Vec2.zero(), size = { x = Int32.toFloat64(l#width), y = Int32.toFloat64(l#height) } },
                      Vec3.v3(b#x, b#z, b#y), if (b#flip) 0.0 - b#width else b#width, b#height, tintColor(look, b#tint), b#shadow == TileMap3d.BoardShadow.Grounded))
 
     def standing(texture: String, source: Rect2.Rect2, at: Vec3.Vec3, width: Float64, height: Float64, tint: Color, cast: Bool): Scene3d.Billboard3d =
@@ -107,7 +150,7 @@ mod TownScene {
             let w = Int32.toFloat64(cellW) / 32.0;
             let h = Int32.toFloat64(l#height) / 32.0;
             let tint = member#tint |> Option.map(t -> { let (r, g, b) = t; { r = r, g = g, b = b } }) |> Option.getWithDefault(Faces.white());
-            (standing(Texture3d.name(l#texture), source, Vec3.v3(x, z, y), w, h, tintColor(res#look, tint), true),
+            (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), w, h, tintColor(res#look, tint), true),
              contactInstance(res#contactMesh, res#contactMaterial, x, y, z, w))
         })
 
@@ -119,6 +162,11 @@ mod TownScene {
         { intensity = look#sunIntensity, color = Color.rgb(1.0, 0.95, 0.86),
           shadow = Some({ distance = look#shadowDistance, mapSize = look#shadowMapSize, strength = look#shadowStrength, bias = 0.03, normalBias = 1.0 | Scene3d.directionalShadow() })
           | Scene3d.directionalLight(Vec3.mul(toward, -1.0)) }
+
+    /// 1 コマの場面（動かない物の集まりと板を渡す形・町が出来ていく間）。
+    pub def sceneWith(res: Res, camera: Camera3d.Camera3d, size: Vec2.Vec2, groups: List[Scene3d.StaticGroup], billboards: List[Scene3d.Billboard3d],
+                      instances: List[Scene3d.Instance3d], textures: List[Texture3d.Texture3d]): Scene3d.Scene3dCmd =
+        { groups = groups, billboards = billboards, textures = textures | sceneOf(res, camera, size, Nil, instances) }
 
     /// 1 コマの場面。billboards・instances = 毎コマ変わる板と置いた物（隊列）。
     pub def sceneOf(res: Res, camera: Camera3d.Camera3d, size: Vec2.Vec2, billboards: List[Scene3d.Billboard3d], instances: List[Scene3d.Instance3d]): Scene3d.Scene3dCmd =

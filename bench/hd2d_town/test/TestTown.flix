@@ -167,4 +167,43 @@ mod TestTown {
         let tl = timeline();
         Assert.assertEq(expected = 1, Party.frameOf({ col = 1, fromRow = 9, toRow = 1, party = Nil, frames = 4, cycleTiles = 1.0, idleSec = 1.0,
                                                        stopSec = 0.7, holdSec = 1.0, feetV = 0.55, groundFlowH = 0.14 }, tl, tl#stopAt + 0.5, 0))
+
+    // ── 町が出来ていく演出と曲がり角のある道 ──
+
+    @Test
+    def testCellsUnderThePartyExistFromTheStart(): Unit \ Assert =
+        Assert.assertEq(expected = 0.0, Buildup.cellTime(Buildup.defaultTiming(), 13, 24))
+
+    @Test
+    def testCellsFartherNorthAppearLater(): Unit \ Assert =
+        let tm = Buildup.defaultTiming();
+        Assert.assertTrue(Buildup.cellTime(tm, 13, 10) > Buildup.cellTime(tm, 13, 18))
+
+    @Test
+    def testCellsFartherFromThePathAppearLater(): Unit \ Assert =
+        let tm = Buildup.defaultTiming();
+        Assert.assertTrue(Buildup.cellTime(tm, 3, 18) > Buildup.cellTime(tm, 13, 18))
+
+    def route(): Route.Route =
+        Route.make(10, { col = 1, row = 8, wait = 0.0 } :: { col = 1, row = 6, wait = 1.0 } :: { col = 4, row = 6, wait = 0.0 } :: Nil, 2.0, 0.5)
+
+    @Test
+    def testRouteStandsStillDuringAWait(): Unit \ Assert =
+        let r = route();
+        Assert.assertTrue(near(Route.distanceAt(r, 1.6), 2.0) and near(Route.distanceAt(r, 2.4), 2.0))
+
+    @Test
+    def testRouteTurnsEastAfterTheCorner(): Unit \ Assert =
+        Assert.assertEq(expected = Route.Dir.East, snd(Route.pointAt(route(), 3.0)))
+
+    @Test
+    def testFollowerBeforeTheStartStandsBehindOnTheFirstSegment(): Unit \ Assert =
+        let ((_, y), _) = Route.pointAt(route(), -1.0);
+        Assert.assertTrue(near(y, 0.5))
+
+    @Test
+    def testHannSmoothKeepsAConstantSpeedLine(): Unit \ Assert =
+        let line = Vector.range(0, 40) |> Vector.map(i -> Int32.toFloat64(i) * 0.1);
+        Assert.assertTrue(near(Vector.get(20, Route.hannSmooth(5, line)), 2.0))
 }
+

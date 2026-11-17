@@ -34,6 +34,32 @@ video:
 time:
 	../../bin/flix run --entrypoint Video.time
 
+# 歩く先の町が出来ていく動画（台本は assets/buildup.json）。
+#   make buildup-frames … CPU で描く（debug/build_frames/・窓を開かない）
+#   make gpu-buildup    … GPU（隠しウィンドウ・FLIX_GE_FRAME_SHOT）で描く（debug/gpu_build_frames/・1 回の起動で 64 コマずつ・起動した JVM は PID で止める）
+#   make buildup-video  … GPU のコマを debug/hd2d_town_buildup.mp4 にする（CPU のコマなら FRAMES_DIR=debug/build_frames）
+#   make gpu-bench      … 出来た町を歩く場面の 1 コマの重さ（後がけ・太陽の影のあり・なしの 4 通り）を debug/gpu_bench.log へ
+FRAMES_DIR ?= debug/gpu_build_frames
+BUILDUP_FRAMES ?= 1018
+
+.PHONY: buildup-frames gpu-buildup buildup-video gpu-bench
+
+buildup-frames:
+	@mkdir -p debug/build_frames
+	../../bin/flix run --entrypoint BuildVideo.frames
+
+gpu-buildup:
+	bin/gpu_frames.sh $(BUILDUP_FRAMES)
+
+buildup-video:
+	ffmpeg -v error -y -framerate 30 -i $(FRAMES_DIR)/f%04d.png -c:v libx264 -pix_fmt yuv420p -crf 22 -movflags +faststart debug/hd2d_town_buildup.mp4
+	@ls -la debug/hd2d_town_buildup.mp4
+
+gpu-bench:
+	@rm -f debug/gpu_bench.log
+	@for p in 1 0; do for s in 1 0; do POST=$$p SHADOW=$$s LIMIT=300 bin/gpu_run.sh bench debug/gpu_bench_$$p$$s.log; grep '\[bench\] result' debug/gpu_bench_$$p$$s.log >> debug/gpu_bench.log; done; done
+	@cat debug/gpu_bench.log
+
 test:
 	../../bin/flix test
 

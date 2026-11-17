@@ -8,9 +8,9 @@ mod TileMap3d {
     use TownMap.{Building, Ground, Prop, Ridge, Shape, TownMap, Wall}
 
     /// 立てる板 1 枚。sprite = 絵のファイル（assets からの相対）・(x, y, z) = 足元（地図の座標）・
-    /// width・height = 板の大きさ（m）・tint = 色の掛け目（線形）・flip = 左右反転・shadow = 影の付け方。
+    /// width・height = 板の大きさ（m）・tint = 色の掛け目（線形）・flip = 左右反転・shadow = 影の付け方・owner = どのマスの物か（地図の外は Fixed）。
     pub type alias Board = { sprite = String, x = Float64, y = Float64, z = Float64, width = Float64, height = Float64,
-                             tint = Rgb, flip = Bool, shadow = BoardShadow }
+                             tint = Rgb, flip = Bool, shadow = BoardShadow, owner = Faces.Owner }
 
     /// 板の影。Grounded = 太陽の影を落とし足元に楕円の影も置く・Unshadowed = どちらも無し（遠くの森）。
     pub enum BoardShadow with Eq {
@@ -116,9 +116,9 @@ mod TileMap3d {
                 let x0 = fl(c);
                 let y0 = wy(m, r);
                 let ao = cornerAo(ctx, c, r, -1, 1, z) :: cornerAo(ctx, c, r, 1, 1, z) :: cornerAo(ctx, c, r, 1, -1, z) :: cornerAo(ctx, c, r, -1, -1, z) :: Nil;
-                Faces.quad(groundMaterial(TownMap.groundAt(m, c, r)),
+                { owner = Faces.Owner.Cell(c, r) | Faces.quad(groundMaterial(TownMap.groundAt(m, c, r)),
                            Faces.p3(x0, y0, z) :: Faces.p3(x0 + 1.0, y0, z) :: Faces.p3(x0 + 1.0, y0 + 1.0, z) :: Faces.p3(x0, y0 + 1.0, z) :: Nil,
-                           variantUv(floorInt(h01(c, r, 1) * 8.0)), ao)
+                           variantUv(floorInt(h01(c, r, 1) * 8.0)), ao) }
             })
 
     // ── 箱 ──
@@ -203,7 +203,7 @@ mod TileMap3d {
             let stair = TownMap.shapeAt(m, c, r) == Shape.Stairs;
             let sides = dirs() |> List.flatMap(d -> cliffSide(ctx, c, r, d));
             let lip = if (TownMap.groundAt(m, c, r) == Ground.Grass and not stair) lipOverhang(ctx, c, r, top(ctx, c, r)) else Nil;
-            List.append(sides, lip)
+            Faces.withOwner(Faces.Owner.Cell(c, r), List.append(sides, lip))
         })
 
     /// マス (c, r) の 1 つの向きの側面（隣より高い時だけ）。
@@ -258,8 +258,8 @@ mod TileMap3d {
             let y0 = wy(m, r);
             let k = floorInt(h01(c, r, 5) * 4.0);
             let uv = Faces.fullUv();
-            Faces.quad("water", Faces.p3(x0, y0, z) :: Faces.p3(x0 + 1.0, y0, z) :: Faces.p3(x0 + 1.0, y0 + 1.0, z) :: Faces.p3(x0, y0 + 1.0, z) :: Nil,
-                       List.append(List.drop(k, uv), List.take(k, uv)), Nil)
+            { owner = Faces.Owner.Cell(c, r) | Faces.quad("water", Faces.p3(x0, y0, z) :: Faces.p3(x0 + 1.0, y0, z) :: Faces.p3(x0 + 1.0, y0 + 1.0, z) :: Faces.p3(x0, y0 + 1.0, z) :: Nil,
+                       List.append(List.drop(k, uv), List.take(k, uv)), Nil) }
         })
 
     // ── ④ 草と石畳の境（同じ高さの時だけ。縁石を立てた地図では出ない） ──
@@ -317,7 +317,7 @@ mod TileMap3d {
                     List.range(0, b#h) |> List.map(i -> ("e", i, (x1, yS + fl(i)), (x1, yS + fl(i) + 1.0))) :::
                     List.range(0, b#h) |> List.map(i -> ("w", i, (x0, yN - fl(i)), (x0, yN - fl(i) - 1.0)));
         let walls = edges |> List.flatMap(e -> wallColumn(b, wall, z0, (b#w) / 2, e));
-        List.append(walls, gableRoof(wall, x0, x1, yS, yN, zt, b))
+        List.append(walls, Faces.withOwner(Faces.Owner.Roof(b#id), gableRoof(wall, x0, x1, yS, yN, zt, b)))
 
     /// 壁の 1 列（階ごとに下・中・上の 3 段の壁タイルと、階の境の帯）。
     def wallColumn(b: Building, wall: String, z0: Float64, door: Int32, e: (String, Int32, (Float64, Float64), (Float64, Float64))): List[Quad] =
@@ -334,8 +334,9 @@ mod TileMap3d {
                 let mat = if (rowKind == "plain") wall else "${wall}_${rowKind}";
                 let u0 = fst(p) + snd(p);
                 let uv = if (rowKind == "plain") (u0, za) :: (u0 + 1.0, za) :: (u0 + 1.0, zb) :: (u0, zb) :: Nil else Faces.fullUv();
-                Faces.quad(mat, Faces.p3(fst(p), snd(p), za) :: Faces.p3(fst(q), snd(q), za) :: Faces.p3(fst(q), snd(q), zb) :: Faces.p3(fst(p), snd(p), zb) :: Nil,
-                           uv, aa :: aa :: 1.0 :: 1.0 :: Nil)
+                let owner = if (rowKind == "plain") Faces.Owner.Walls(b#id) else Faces.Owner.Opening(b#id, openingNumber(side, i, f));
+                { owner = owner | Faces.quad(mat, Faces.p3(fst(p), snd(p), za) :: Faces.p3(fst(q), snd(q), za) :: Faces.p3(fst(q), snd(q), zb) :: Faces.p3(fst(p), snd(p), zb) :: Nil,
+                           uv, aa :: aa :: 1.0 :: 1.0 :: Nil) }
             })
         });
         let (nx, ny) = match side {
@@ -348,10 +349,20 @@ mod TileMap3d {
         let bands = List.range(1, b#floors) |> List.map(f -> {
             let zf = z0 + fl(f) * fh;
             let at = (pt: (Float64, Float64), zz: Float64) -> Faces.p3(fst(pt) + nx * o, snd(pt) + ny * o, zz);
-            Faces.quad("trim", at(p, zf - 0.08) :: at(q, zf - 0.08) :: at(q, zf + 0.08) :: at(p, zf + 0.08) :: Nil,
-                       (0.0, 0.0) :: (1.0, 0.0) :: (1.0, 0.16) :: (0.0, 0.16) :: Nil, Nil)
+            { owner = Faces.Owner.Walls(b#id) | Faces.quad("trim", at(p, zf - 0.08) :: at(q, zf - 0.08) :: at(q, zf + 0.08) :: at(p, zf + 0.08) :: Nil,
+                       (0.0, 0.0) :: (1.0, 0.0) :: (1.0, 0.16) :: (0.0, 0.16) :: Nil, Nil) }
         });
         List.append(panels, bands)
+
+    /// 建物の中の窓・扉 1 枚の番号（向き・列・階から。窓と扉を 1 枚ずつ出す時の鍵）。
+    def openingNumber(side: String, i: Int32, floor: Int32): Int32 =
+        let sideNumber = match side {
+            case "s" => 0
+            case "e" => 1
+            case "w" => 2
+            case _   => 3
+        };
+        sideNumber * 10000 + i * 10 + floor
 
     /// 切妻屋根を厚みのある 2 枚の斜面で作る（軒の裏・けらば・軒先の縁・妻壁）。ridge Y は棟が南北・X は東西。
     def gableRoof(wall: String, x0: Float64, x1: Float64, yS: Float64, yN: Float64, z: Float64, b: Building): List[Quad] =
@@ -427,10 +438,10 @@ mod TileMap3d {
             let x0 = fl(c);
             let y0 = wy(m, r);
             match TownMap.propAt(m, c, r) {
-                case Prop.Hedge   => hedge(ctx, c, r, z)
-                case Prop.Crate   => crate(x0 + 0.5 + jitter(c, r), y0 + 0.5, z)
-                case Prop.Fence   => fence(ctx, c, r, z)
-                case Prop.Obelisk => obelisk(x0 + 0.5, y0 + 0.5, z)
+                case Prop.Hedge   => Faces.withOwner(Faces.Owner.Prop(c, r), hedge(ctx, c, r, z))
+                case Prop.Crate   => Faces.withOwner(Faces.Owner.Prop(c, r), crate(x0 + 0.5 + jitter(c, r), y0 + 0.5, z))
+                case Prop.Fence   => Faces.withOwner(Faces.Owner.Prop(c, r), fence(ctx, c, r, z))
+                case Prop.Obelisk => Faces.withOwner(Faces.Owner.Monument(c, r), obelisk(x0 + 0.5, y0 + 0.5, z))
                 case _            => Nil
             }
         })
@@ -506,7 +517,7 @@ mod TileMap3d {
             let (pw, ph) = wh;
             let k = height |> Option.map(hh -> hh / fl(ph)) |> Option.getWithDefault(1.0 / 32.0);
             { sprite = sprite, x = x, y = y, z = z, width = fl(pw) * k, height = fl(ph) * k,
-              tint = Faces.white(), flip = false, shadow = BoardShadow.Grounded }
+              tint = Faces.white(), flip = false, shadow = BoardShadow.Grounded, owner = Faces.Owner.Fixed }
         })
 
     def propBoards(ctx: Ctx, sizes: SpriteSizes, skipNpcColumn: Option[Int32]): List[Board] =
@@ -516,13 +527,13 @@ mod TileMap3d {
             let z = top(ctx, c, r);
             let x = fl(c) + 0.5;
             let y = wy(m, r) + 0.5;
-            let at = (sprite: String, height: Option[Float64]) -> board(sizes, sprite, x + jitter(c, r), y, z, height);
+            let at = (sprite: String, height: Option[Float64]) -> board(sizes, sprite, x + jitter(c, r), y, z, height) |> Option.map(b -> { owner = Faces.Owner.Prop(c, r) | b });
             match TownMap.propAt(m, c, r) {
                 case Prop.Tree    => at("sprites/tree_broadleaf.png", None)
                 case Prop.Cypress => at("sprites/tree_cypress.png", None)
                 case Prop.Lamp    => at("sprites/street_lamp.png", None)
                 case Prop.Bush    => at("sprites/tree_broadleaf.png", Some(0.8 + 0.5 * h01(c, r, 4)))
-                case Prop.Npc(k)  => if (skipNpcColumn == Some(c)) None else npcBoard(sizes, k, x, y, z)
+                case Prop.Npc(k)  => if (skipNpcColumn == Some(c)) None else npcBoard(sizes, k, x, y, z) |> Option.map(b -> { owner = Faces.Owner.Prop(c, r) | b })
                 case _            => None
             }
         })
