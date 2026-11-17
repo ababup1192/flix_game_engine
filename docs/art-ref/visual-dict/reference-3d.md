@@ -86,7 +86,7 @@
 | 切り抜き・半透明・両面 | `Scene3d.withCutout` / `withAlphaBlend` / `withDoubleSided` | 半透明の物は影を落とさず、奥行きの Pass に描かれない。1 つの物の中の三角形は並べ替えない |
 | 光る面 | `Scene3d.withEmission(shade, m)` + `withEmissionIntensity(k, m)` | Spec の emission に 1 を超える色を書かない |
 | 毎コマ変わる数を material へ | ShaderDoc の `Param` + `Scene3d.withParams` | 木の `Const` に動く値を書くと毎コマ program を作り直す |
-| 点光源 | `{ position, color, intensity, range }` を `pointLights` へ | 計算するのは目に近い 8 本（`Scene3d.maxPointLights()`）。全部入れてよく、ゲームで選び直さない |
+| 点光源 | `{ position, color, intensity, range }` を `pointLights` へ | 計算するのは画面の真ん中に近い 8 本（`Scene3d.maxPointLights()`・境の近くは暗く）。全部入れてよく、ゲームで選び直さない |
 | スポット | `Scene3d.spotLight(position, target, fovY)` を `{ .. \| }` で替える | 2 本まで（`Scene3d.maxSpotLights()`）。縁の輪は `innerFovY` でぼかす |
 | 太陽 | `Scene3d.directionalLight(direction)` を `directionalLight = Some(..)` | 1 つまで。足したら ambient を下げる。点光源を遠くに置いて代わりにしない |
 | 落とした光の数を見る | `ctx#diagnostics` の `scene3dCounts#droppedPointLights` / `droppedSpotLights`・画面なしは `Scene3d.droppedLightsOf` | 8 番目と 9 番目の境で遠い光が点いたり消えたりする。離れた小さな光はまとめる |

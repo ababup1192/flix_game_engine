@@ -523,7 +523,7 @@
 - `pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool`
 - 中心 center・半径 radius の球が、視錐台に掛かりうるか。
   `pub def intersectsSphere(f: Frustum, center: Vec3.Vec3, radius: Float64): Bool`
-- 中心 center・半径 radius の球が視錐台の中へ入っている度合い（0〜1）。面ごとに「球が面の内側へ入っている長さ ÷ 直径」を出し、一番小さい物。
+- 中心 center・半径 radius の球が視錐台の中へ入っている度合い（0〜1）。6 つの面の「球が面の内側へ入っている長さ ÷ 直径」の一番小さい物。
   `pub def sphereInsideRatio(f: Frustum, center: Vec3.Vec3, radius: Float64): Float64`
 - 点 p が視錐台の中か（面の上は中）。
   `pub def containsPoint(f: Frustum, p: Vec3.Vec3): Bool`
@@ -1534,11 +1534,10 @@
 - `pub def spotShadowDepthBiasOf(spot: SpotLight, bias: Float64): Float64`
 - 影の地図の行列（world → 光の clip 空間。縦横の比は 1）。GL と CPU が同じ物を使う。
   `pub def shadowMatrix(spot: SpotLight): Mat4.Mat4`
-- 上限を超えた光を選んで残す。残った物は元の並びの順のまま。上限以下の光は何も変えない（intensity も触らない）。
-  `pub def pickLights(cmd: Scene3dCmd): Scene3dCmd`
-- pickLights が上限を超えて落とす光の数（points = 点光源・spots = スポット）。落とす物が無ければ 0。
+- `pub def pickLights(cmd: Scene3dCmd): Scene3dCmd`
+- 上限を超えた光の本数（points = 点光源・spots = スポット）。上限以下なら 0。
   `pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 }`
-- 1 コマに描く 3D の場面の列で pickLights が落とす光の数の合計（points = 点光源・spots = スポット）。
+- 1 コマに描く 3D の場面の列で上限を超えた光の本数の合計（points = 点光源・spots = スポット。droppedLightsOf の和）。
   `pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 }`
 - 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
   `pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)]`

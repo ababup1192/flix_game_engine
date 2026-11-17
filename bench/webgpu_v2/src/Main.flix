@@ -58,6 +58,7 @@ mod V2Main {
         billboardShadowCase("billboardShadowDiagonal", BillboardShadowYard.SunSide.Diagonal) ::
         billboardShadowCase("billboardShadowSide", BillboardShadowYard.SunSide.Side) ::
         lampsCase() ::
+        lampsSweepCase() ::
         sceneCase("atlasNearestHigh", Scene3d.Resolution.Native, V2Atlas.yard(false, false)) ::
         sceneCase("atlasNearestLow", Scene3d.Resolution.Native, V2Atlas.yard(true, false)) ::
         sceneCase("atlasNearestLowCapped", Scene3d.Resolution.Native, V2Atlas.yard(true, true)) ::
@@ -186,10 +187,16 @@ mod V2Main {
                   Render.scene3d({ x = half#x, y = 0.0 }, BillboardShadowYard.scene(side, half, true)) :: Nil }
 
     /// 夜の町の街灯 24 本（V2Lamps）を、カメラを横へ 0・2・4 m ずらした 3 つの場面で左から並べる（点光源 8 本の選び方の記録・probes）。
-    def lampsCase(): Case =
+    def lampsCase(): Case = lampsRow("lampsMany", 0.0, 2.0)
+
+    /// lampsMany のカメラを 1.6・1.8・2.0 m ずらした 3 つの場面（選ばれる光が入れ替わる所を細かく刻んで、ぱっと切り替わらないかを見る）。
+    def lampsSweepCase(): Case = lampsRow("lampsSweep", 1.6, 0.2)
+
+    def lampsRow(name: String, firstDx: Float64, stepDx: Float64): Case =
         let w = Room.design()#x / 3.0;
-        let panel = (i: Int32) -> Render.scene3d({ x = w * Int32.toFloat64(i), y = 0.0 }, V2Lamps.night(2.0 * Int32.toFloat64(i), { x = w, y = Room.design()#y }));
-        { name = "lampsMany", passes = Nil, targets = Map.empty(), items = panel(0) :: panel(1) :: panel(2) :: Nil }
+        let panel = (i: Int32) -> Render.scene3d({ x = w * Int32.toFloat64(i), y = 0.0 },
+            V2Lamps.night(firstDx + stepDx * Int32.toFloat64(i), { x = w, y = Room.design()#y }));
+        { name = name, passes = Nil, targets = Map.empty(), items = panel(0) :: panel(1) :: panel(2) :: Nil }
 
     /// ビルボードの場面を標本 4 の Pass に描いて貼る（ビルボードの pipeline の標本 4 の版・捨てた画素のふち）。
     def billboardMsaaPassCase(kit: Room.Kit): Case =
@@ -351,7 +358,7 @@ mod V2Main {
              "mipFloor" => (8, 850, 16), "mipFloorRegistered" => (4, 3600, 16)}
 
     /// 門にしない場面（行は出すが合否に入れない）。slant2dMsaaFlip は標本の位置の確かめ（slantFlipProbe）の材料。
-    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass", "lampsMany", "atlasNearestHigh", "atlasNearestLow", "atlasNearestLowCapped"}
+    def probes(): Set[String] = Set#{"slant2dMsaaFlip", "yardMsaaPass", "lampsMany", "lampsSweep", "atlasNearestHigh", "atlasNearestLow", "atlasNearestLowCapped"}
 
     def drawFrame(c: Case): Unit \ Platform.Rendering + Platform.Window + RenderTarget.Target =
         drawPasses(c);

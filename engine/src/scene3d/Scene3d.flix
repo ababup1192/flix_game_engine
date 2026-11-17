@@ -908,12 +908,14 @@ pub mod Scene3d {
         Mat4.mul(Camera3d.projectionMatrix(c, 1.0), Camera3d.viewMatrix(c))
 
     /// 上限を超えた光を選んで残す。残った物は元の並びの順のまま。上限以下の光は何も変えない（intensity も触らない）。
-    /// 点光源: range の球が視錐台に掛からない物を落とし、残りを点数（pointPickScoreOf）の小さい順に maxPointLights 本選ぶ
-    ///   （同じ点数なら並びの前の物）。選んだ物の intensity には重み（pointPickWeightOf・0〜1）を掛ける。境の近くの光は強さが 0 へ寄るので、
+    /// 点光源: range の球が視錐台に掛からない物と、range か intensity が 0 以下の物を落とし、残りを画面の真ん中に近い順に maxPointLights 本選ぶ
+    ///   （同じ近さなら並びの前の物）。選んだ物の intensity には 0〜1 の重みを掛ける。境の近くの光は強さが 0 へ寄るので、
     ///   カメラや光が動いて選ばれる物が替わっても、ぱっと点いたり消えたりしない。
-    /// スポット: 目に近い物から選ぶ（同じ距離なら並びの前の物）。
+    /// スポット: 目に近い物から選ぶ（同じ距離なら並びの前の物）。境をまたぐとぱっと切り替わる。
     /// GL・WebGPU・CPU が同じ物を使う。ゲームが選ばなくても描き手がこれで選ぶので、pointLights・spotLights には全部の光を渡してよい
     /// （ゲームの側で選び直さない）。
+    // WhyNot: スポットを点光源と同じ選び方にしない — 上限が 2 本で入れ替わりが少なく、影を落とすのは選んだ後の並びの最初の 1 本なので、
+    //   重みで暗くした光が影の地図を持つと、光が消えかけても影だけ濃く残る。
     pub def pickLights(cmd: Scene3dCmd): Scene3dCmd =
         { pointLights = pickPointLights(cmd),
           spotLights = nearest(maxSpotLights(), cmd#camera#eye, l -> l#position, cmd#spotLights) | cmd }
@@ -937,51 +939,58 @@ pub mod Scene3d {
                 |> List.map(snd)
         }
 
-    /// 点光源を選ぶ点数（小さいほど先に選ぶ）。range の球が視錐台に掛からない光は None。
-    /// 点数 = (画面の真ん中から光の球のふちまでの角 + π/2 + 1) ÷ 球が視錐台の中へ入っている度合い（Frustum.sphereInsideRatio）。
-    ///   角 = 見ている向きと光の中心の向きの間の角 − 球の見かけの半径（asin(range / 目からの距離)）。球が画面の真ん中に掛かれば負。
-    ///   目が球の中なら、球の表面で同じ値になるように π/2 と (1 − 距離 / range) を引く。
+    /// 点光源を選ぶ点数（小さいほど先に選ぶ）。選ばない光は None。
+    /// 目が球の外: (見ている向きと光の中心の向きの間の角 − asin(range / 距離) + π/2 + 1) ÷ 球が視錐台へ入っている度合い。
+    /// 目が球の中: (距離 / range) × (角 + 1) ÷ 度合いを 1 へ (1 − 距離 / range) だけ寄せた物。どちらも球の表面で同じ値になる。
     // WhyNot: 目からの距離で選ばない — 見下ろしの遠いカメラでは画面の下の端の光ばかり選ばれ、画面の真ん中から奥の光の溜まりが出ない。
     // WhyNot: 注目点を視線と地面の交点にしない — 場面に地面の高さの約束が無く、水平に見るカメラでは交わらない。
     // WhyNot: 視錐台に掛かるかだけで落とさない — 画面の端で光が出入りした瞬間に残りの順位がずれ、境の重みが跳ねる。度合いで割ると、
     //   出ていく光の点数は度合いが 0 へ近づくにつれて大きくなり、落ちる時には選ばれていない。
+    // WhyNot: 目が球の中の光に向きの角をそのまま使わない — 手に持つ灯りが目の少し後ろへずれただけで最下位へ落ちる。
+    //   度合いも、視錐台より大きな球は 0.5 から上がらないので、目の周りを照らす光ほど 1 へ寄せる。
+    // WhyNot: `+ π/2 + 1` を足さずに割らない — 角は負になりうるので、度合いで割って大きくするには分子を正にしておく。
+    // WhyNot: `insideRatio <= 0.0` で落とさない — NaN の位置や range も落とす。
     def pointPickScoreOf(camera: Camera3d.Camera3d, frustum: Frustum.Frustum, light: PointLight): Option[Float64] =
-        let inside = Frustum.sphereInsideRatio(frustum, light#position, light#range);
-        if (not (inside > 0.0)) None
+        let insideRatio = Frustum.sphereInsideRatio(frustum, light#position, light#range);
+        if (not (insideRatio > 0.0 and light#range > 0.0 and light#intensity > 0.0)) None
         else {
             let toLight = Vec3.sub(light#position, camera#eye);
             let dist = Vec3.length(toLight);
-            let reach = Float64.abs(light#range);
+            let reach = light#range;
             let forward = Camera3d.forward(camera);
-            let center = Num.atan2(Vec3.length(Vec3.cross(forward, toLight)), Vec3.dot(forward, toLight));
-            let edge = if (dist > reach) center - Num.asin(reach / dist) else center - Num.pi() / 2.0 - (1.0 - dist / reach);
-            Some((edge + Num.pi() / 2.0 + 1.0) / inside)
+            let centerAngle = Num.atan2(Vec3.length(Vec3.cross(forward, toLight)), Vec3.dot(forward, toLight));
+            if (dist > reach)
+                Some((centerAngle - Num.asin(reach / dist) + Num.pi() / 2.0 + 1.0) / insideRatio)
+            else {
+                let closeness = dist / reach;
+                Some(closeness * (centerAngle + 1.0) / (insideRatio + (1.0 - insideRatio) * (1.0 - closeness)))
+            }
         }
 
-    /// 選んだ点光源 1 本の重み（0〜1）。scores = 視錐台に掛かる光の点数の小さい順・score = その光の点数・limit = 選ぶ本数。
-    /// 選ばれない最初の光（limit + 1 番目）の点数で 0・limit + 1 − pointFadeRanks 番目の点数より小さければ 1・その間はまっすぐつなぐ。
-    /// 掛かる光が limit 本以下なら全部 1。
+    /// 選んだ点光源 1 本の重み（0〜1）。scores = 候補の点数の小さい順・score = その光の点数・limit = 選ぶ本数。
+    /// 選ばれない最初の光（limit + 1 番目）の点数で 0・pointFullRanks 番目の点数までは 1・その間はまっすぐつなぐ。候補が limit 本以下なら全部 1。
+    // WhyNot: 点数の差が 0 の時に 1 か 0 へ分けない — 格子に並べた光を真ん中から見ると同点になりやすく、その 1 コマだけ光が消える。
     def pointPickWeightOf(scores: Vector[Float64], limit: Int32, score: Float64): Float64 =
         if (Vector.length(scores) <= limit) 1.0
         else {
             let cutoff = Vector.get(limit, scores);
-            let full = Vector.get(limit - pointFadeRanks(), scores);
-            let span = cutoff - full;
-            if (span > 0.0) Num.clamp01((cutoff - score) / span)
-            else if (score < cutoff) 1.0
-            else 0.0
+            let full = Vector.get(pointFullRanks() - 1, scores);
+            let weight = Num.clamp01((cutoff - score) / Float64.max(cutoff - full, 1.0e-6));
+            if (Float64.isNan(weight)) 1.0 else weight
         }
 
-    // WhyNot: 選んだ全部を点数でなめらかに落とさない — 幅を広げると暗くなる光が増える。境の手前の 2 本だけを寄せ、残りの 6 本は元の強さのまま。
-    def pointFadeRanks(): Int32 = 3
+    /// 点光源を 8 本を超えて渡した時に、元の強さのまま残す本数（その先の 7・8 本目が 9 本目へ向けて暗くなる）。
+    // WhyNot: 選んだ全部を点数でなめらかに落とさない — 幅を広げると暗くなる光が増える。境の手前の 2 本だけを寄せる。
+    def pointFullRanks(): Int32 = 6
 
-    /// pickLights が上限を超えて落とす光の数（points = 点光源・spots = スポット）。落とす物が無ければ 0。
+    /// 上限を超えた光の本数（points = 点光源・spots = スポット）。上限以下なら 0。
+    /// pickLights は画面の外の光も落とすが、ここでは数えない（数がカメラの向きで揺れないように、渡した本数 − 上限）。
     pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 } =
         { points = Int32.max(0, List.length(cmd#pointLights) - maxPointLights()),
           spots = Int32.max(0, List.length(cmd#spotLights) - maxSpotLights()) }
 
-    /// 1 コマに描く 3D の場面の列で pickLights が落とす光の数の合計（points = 点光源・spots = スポット）。
-    /// GL の描き手が F3 の診断（FrameDiagnostics の droppedPointLights・droppedSpotLights）に足す数と、CPU の描き出しが落とす数に同じ。
+    /// 1 コマに描く 3D の場面の列で上限を超えた光の本数の合計（points = 点光源・spots = スポット。droppedLightsOf の和）。
+    /// GL・WebGPU の描き手が F3 の診断（FrameDiagnostics の droppedPointLights・droppedSpotLights）に足す数と同じ。
     /// 画面なしで確かめる時は `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`（描き出しの SoftScene なら `soft#scenes`）。
     pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 } =
         scenes |> List.foldLeft((acc, c) -> {

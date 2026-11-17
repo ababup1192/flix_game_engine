@@ -93,8 +93,8 @@ pub mod Frustum {
         };
         not (outside(0) or outside(1) or outside(2) or outside(3) or outside(4) or outside(5))
 
-    /// 中心 center・半径 radius の球が視錐台の中へ入っている度合い（0〜1）。面ごとに「球が面の内側へ入っている長さ ÷ 直径」を出し、一番小さい物。
-    /// 0 = 掛からない（intersectsSphere が偽）・1 = 6 つの面の内側に球がまるごとある。半径 0 は、中なら 1・外なら 0。
+    /// 中心 center・半径 radius の球が視錐台の中へ入っている度合い（0〜1）。6 つの面の「球が面の内側へ入っている長さ ÷ 直径」の一番小さい物。
+    /// 0 = 掛からない（intersectsSphere が偽）・1 = 6 つの面の内側に球がまるごとある。半径 0 は、中なら 1・外なら 0。半径が無限大は 1。
     /// 球が画面の端から出入りする時に 0 と 1 の間をなめらかに動くので、光を選ぶ点数のように、出入りでぱっと変えたくない値に掛ける。
     pub def sphereInsideRatio(f: Frustum, center: Vec3.Vec3, radius: Float64): Float64 =
         let FrustumData.FrustumData(planes) = f;
@@ -103,7 +103,8 @@ pub mod Frustum {
             let o = i * planeStride();
             let depth = Vector.get(o, planes) * center#x + Vector.get(o + 1, planes) * center#y + Vector.get(o + 2, planes) * center#z
                 + Vector.get(o + 3, planes) + reach + Vector.get(o + 4, planes);
-            if (reach > 0.0) Num.clamp01(depth / (2.0 * reach))
+            if (Float64.isInfinite(reach)) 1.0
+            else if (reach > 0.0) Num.clamp01(depth / (2.0 * reach))
             else if (depth >= 0.0) 1.0
             else 0.0
         };
