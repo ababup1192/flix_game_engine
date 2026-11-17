@@ -47,6 +47,8 @@
 
 1. **先に Flix で終わらせる物**: このゲームだけのコマンド（`src/GameCommands.flix`）、その描き方（`src/GameView.flix`）、
    このゲームだけの Doc（`src/GameRes.flix`）、テンプレートへの追随。ここまでで `make check`・`make test`・flow を緑にする。
+   コミットの時の門（独自語の `bin/fge jargon`・lint）もこの段で通しておく（`bin/fge precommit --files <触ったファイル…>` で素振りできる）。
+   後の段でコメントや Doc の note の言葉で止まると、そのために .flix を直して型検査と jar の作り直しが 1 回増える。
 2. **その後は .yarn と JSON だけ**: 台詞・分岐・演出の並び・変数・背景や立ち絵の割り当て・色・文言・数。
    名前や引数の誤りは `bin/fge yarn build assets/talk`（vocab.json を通して Doc の名前も照らす）が止める。
    **決まりは Doc の欄で変える**（暗転の形・背景の切り替えの秒と曲線・立ち絵の濃さの曲線・文字の枠を消す秒・型ごとの揃え・話し手の強調・小物の重なり）。欄の一覧はスキーマの label と各 Doc の note、その行だけ替えるなら命令の引数。Flix に戻るのは欄が無い時だけ。
