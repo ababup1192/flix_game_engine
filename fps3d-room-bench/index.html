@@ -18,8 +18,8 @@
 <body>
 <h3>fps3d-room bench</h3>
 <p class="note">部屋のカメラを 1 コマに 0.75 度ずつ回し（480 コマで 1 周）、部屋に入ってから 90 コマ後の 960 コマ（2 周）を測ります。
-WebGPU と WebGL2 は同じコマ番号で同じ向きを見るので、そのまま比べられます。WebGPU（main 05926221）→ WebGL2 を 2 回くり返し、続けて部屋の MSAA を切った回（480 コマ・1 周）、呼び出しを数える回と engine の診断の行を出す回（各 240 コマ・どちらも時間は読まない）を流します。
-スマホは横向き・画面を消さずに 2〜3 分。終わると下に表が出ます。前の基準（Galaxy S24 Ultra・WebGL2）は 46.5 fps・cpu 20.7 ms。</p>
+WebGPU と WebGL2 は同じコマ番号で同じ向きを見るので、そのまま比べられます。WebGPU（engine perf/fps3d-room 5da81393・型の検査の付け替え入り／ゲームは部屋の動かない物を staticGroup にした版）→ WebGL2 を 2 回くり返し、続けて部屋の MSAA を切った回（480 コマ・1 周）、呼び出しを数える回と engine の診断の行を出す回（各 240 コマ・どちらも時間は読まない）を流します。
+スマホは横向き・画面を消さずに 2〜3 分。終わると下に表が出ます。前の基準（Galaxy S24 Ultra・WebGL2）は 46.5 fps・cpu 20.7 ms。直す前（main 05926221）は WebGPU 37.7〜39.4 fps・cpu 25 ms、WebGL2 36.9〜37.1 fps・cpu 26.5 ms。</p>
 <button id="go" type="button">始める</button>
 <div id="out"></div>
 <script>
