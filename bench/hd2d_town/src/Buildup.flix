@@ -373,10 +373,10 @@ mod Buildup {
     /// idleStrip = 止まっている間の息遣いのコマの帯（背中・右・正面の 吸った・吐いた 2 コマずつ・左は右の反転。無ければ歩きの帯で代える）。
     pub type alias Walker = { strip = String, tint = Faces.Rgb, idleStrip = Option[String] }
 
-    /// 歩く台本。path = 曲がり角・endFace = 止まった後の向き・ほかは Doc の note のとおり。
+    /// 歩く台本。path = 曲がり角・endFace = 止まった後の向き・map = 地図の Doc・ほかは Doc の note のとおり。
     pub type alias Plan = { path = List[Route.Waypoint], idleSec = Float64, holdSec = Float64, frameSec = Float64, groundFlowH = Float64,
                             feetV = Float64, stopSec = Float64, camZLagK = Float64, endFace = Route.Dir, party = List[Walker], timing = Timing, idle = Idle,
-                            idleFrameSec = Float64, idlePhaseSec = Float64, radial = Option[Radial] }
+                            idleFrameSec = Float64, idlePhaseSec = Float64, radial = Option[Radial], map = String }
 
     /// 立ったまま輪で町が出来る台本の決まり。buildSec・curve・jitter = Buildup.radialFront の値・
     /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・輪の届いた距離に合わせる）・zoomLead = カメラが輪より先に引き終える割合（0.85 なら輪が 85% 届いた所で引き終える）・aimNorth = 引き終えた時にカメラの追う点を北へずらす m（奥の目印が画面に入るように）・
@@ -437,6 +437,7 @@ mod Buildup {
                   idle = idleOf(JsonCodec.stringOr("idle", "breath", m)),
                   idleFrameSec = num("idleFrameSec", 0.8), idlePhaseSec = num("idlePhaseSec", 0.27),
                   radial = Map.get("radial", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(radialOf),
+                  map = JsonCodec.stringOr("map", "assets/town_avenue.map.json", m),
                   timing = { lead = num("lead", d#lead), afterRowsPerSec = num("afterRowsPerSec", d#afterRowsPerSec),
                              rippleSec = num("rippleSec", d#rippleSec), startDelay = num("startDelay", d#startDelay),
                              rise = num("rise", d#rise), fall = num("fall", d#fall), squash = num("squash", d#squash),

@@ -138,10 +138,10 @@ mod BuildVideo {
     pub type alias Setup = { map = TownMap, plan = Plan, res = Res, dust = Texture3d.Texture3d, show = Show, track = Track }
 
     /// 地図・台本・町を読み、演出の部品と毎コマの決まりを作る。look = 見た目のつまみ。
-    /// 台本は BUILDUP（既定 assets/buildup.json）。
+    /// 台本は BUILDUP（既定 assets/buildup.json）・地図は台本の map。
     pub def setup(look: TownScene.Look): Result[String, Setup] \ IO =
         let planPath = { let v = System.getenv("BUILDUP"); if (Object.isNull(v) or v == "") "assets/buildup.json" else v };
-        (run { TownMap.load("step", "assets/town_avenue.map.json") |> Result.flatMap(m -> Buildup.loadPlan(planPath) |> Result.map(p -> (m, p))) } with Fs.FileRead.runWithIO)
+        (run { Buildup.loadPlan(planPath) |> Result.flatMap(p -> TownMap.load("step", p#map) |> Result.map(m -> (m, p))) } with Fs.FileRead.runWithIO)
             |> Result.flatMap(mp -> {
                 let (m, p) = mp;
                 TownScene.load(m, look, Some(m#walk#col), p#party |> List.filterMap(w -> w#idleStrip)) |> Result.map(res -> (m, p, res))

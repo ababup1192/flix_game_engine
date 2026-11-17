@@ -55,10 +55,10 @@ buildup-video:
 	ffmpeg -v error -y -framerate 30 -i $(FRAMES_DIR)/f%04d.png -c:v libx264 -pix_fmt yuv420p -crf 22 -movflags +faststart debug/hd2d_town_buildup.mp4
 	@ls -la debug/hd2d_town_buildup.mp4
 
-# 立ったまま、隊列を中心に輪で町が出来る動画（526 コマ・約 17.5 秒）を GPU で撮る
+# 立ったまま、隊列を中心に輪で町が出来る動画（613 コマ・約 20.4 秒）を GPU で撮る
 center-video:
 	rm -rf debug/gpu_center_frames
-	BUILDUP=assets/buildup_center.json bin/gpu_frames.sh 526 build debug/gpu_center_frames
+	BUILDUP=assets/buildup_center.json bin/gpu_frames.sh 613 build debug/gpu_center_frames
 	ffmpeg -v error -y -framerate 30 -i debug/gpu_center_frames/f%04d.png -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart debug/hd2d_town_buildup_center.mp4
 	@ls -la debug/hd2d_town_buildup_center.mp4
 
