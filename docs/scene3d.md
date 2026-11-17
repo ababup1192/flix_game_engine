@@ -73,7 +73,7 @@ GL・WebGPU・CPU が同じ約束（`Scene3d.PointShadows.atlasOf` の doc）で
 | `maxShadowedLights` | 4 | 影を落とす灯りの数の上限（0 以下で影なし・8 まで） |
 | `mapSize` | 512 | 面 1 つの一辺の画素（16 以上。atlas が 4096 に収まるよう縮める: 8 本で 512・4 本で 682・1 本で 1365） |
 | `bias` | 0.05 | world の長さ。比べる奥行きから引く量（太陽の `bias` と同じ単位） |
-| `normalBias` | 1.0 | 受ける点を形の法線の向きに「面 1 画素の world の幅 × normalBias」ずらす（床が自分の影を拾う縞を消す） |
+| `normalBias` | 1.0 | 受ける点を形の法線の向きに「面 1 画素の world の幅 × normalBias × (pcfRadius + 1)」ずらす（すれすれに光を受ける床が自分の影を拾う縞を消す） |
 | `pcfRadius` | 1 | 周りを平均する幅（画素）。大きいほど影の縁が柔らかい |
 | `strength` | 0.8 | 影の濃さ（0〜1） |
 

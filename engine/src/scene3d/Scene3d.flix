@@ -176,7 +176,7 @@ pub mod Scene3d {
     /// maxShadowedLights = 影を落とす灯りの数の上限（0 以下で影なし・maxShadowedPointLights() で頭打ち。どの灯りかは Scene3d.PointShadows.atlasOf）・
     /// mapSize = 面 1 つの一辺の画素（16 未満は 16。atlas が maxShadowMapSize() に収まるよう縮める）・
     /// bias = world の長さ。比べる奥行きから引く量（太陽の bias と同じ単位）・
-    /// normalBias = 受ける点を形の法線の向きに「面 1 画素の world の幅 × normalBias」だけずらしてから地図を引く量・
+    /// normalBias = 受ける点を形の法線の向きに「面 1 画素の world の幅 × normalBias × (pcfRadius + 1)」だけずらしてから地図を引く量・
     /// pcfRadius = 周りを平均する幅（画素）・strength = 影の濃さ（0〜1）。
     /// 字で全部の欄を書かず、pointShadowMap() を `{ maxShadowedLights = 2 | Scene3d.pointShadowMap() }` の形で替える。
     pub type alias PointShadowMap = { maxShadowedLights = Int32, mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64 }

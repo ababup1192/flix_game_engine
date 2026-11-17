@@ -52,7 +52,7 @@ mod Scenes {
             :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
             :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: skinCrowd() :: skinCrowdRows() :: instanceRows() :: batchKeys3d() :: sameDepthOrder3d()
             :: pbrSpheres3d() :: pbrNoSky3d() :: pbrMapped3d() :: gltfPbr3d() :: pbrEnvironment3d() :: pbrEnvironmentBox3d() :: pbrEnvironmentSky3d()
-            :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d()
+            :: sunLit3d() :: sunShadow3d() :: sunSpotShadow3d() :: sunPbr3d() :: pointShadowPhysical3d()
             :: billboardShadowOf(BillboardShadowYard.SunSide.Axis, "billboardShadowAxis")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Diagonal, "billboardShadowDiagonal")
             :: billboardShadowOf(BillboardShadowYard.SunSide.Side, "billboardShadowSide")
@@ -136,6 +136,7 @@ mod Scenes {
         case "sunShadow3d"     => Some(100)
         case "sunSpotShadow3d" => Some(200)
         case "sunPbr3d"        => Some(300)
+        case "pointShadowPhysical3d" => Some(300)
         case "billboardShadowAxis"     => Some(100)
         case "billboardShadowDiagonal" => Some(100)
         case "billboardShadowSide"     => Some(100)
@@ -674,6 +675,37 @@ mod Scenes {
                       environment = { background = None, ambient = c8(60, 60, 70) | lit#environment } | lit };
         { name = "sunPbr3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── 点光源の影と Physical の光。B 段階 ──
+    // 床の上に点光源を 2 本置き、間に柱と浮いた板を立てる。左は影つき（柱と板の影が 2 本の光から放射状に床へ伸びる。atlas の塊が 2 つ —
+    // 灯りと塊を取り違えると片方の影の向きが逆になる）・右は Physical の光（逆二乗 × 窓・拡散の 1/π。intensity は 4π 倍。床の光の溜まりの形が違う）。
+
+    def lampOf(x: Float64): Scene3d.PointLight =
+        { position = Vec3.v3(x, 1.5, 10.0), color = c8(255, 220, 180), intensity = 1.2, range = 14.0 }
+
+    /// 箱 1 つ（上と 4 方の側の 5 面。外を向く）。
+    def boxOf(lo: Vec3.Vec3, hi: Vec3.Vec3, color: Color): List[Mesh3d.Polygon] =
+        let v = Vec3.v3;
+        let quadOf = (a: Vec3.Vec3, b: Vec3.Vec3, c: Vec3.Vec3, d: Vec3.Vec3) -> { points = a :: b :: c :: d :: Nil, color = color };
+        quadOf(v(lo#x, hi#y, lo#z), v(lo#x, hi#y, hi#z), v(hi#x, hi#y, hi#z), v(hi#x, hi#y, lo#z)) ::
+        quadOf(v(hi#x, lo#y, hi#z), v(hi#x, hi#y, hi#z), v(lo#x, hi#y, hi#z), v(lo#x, lo#y, hi#z)) ::
+        quadOf(v(lo#x, lo#y, lo#z), v(lo#x, hi#y, lo#z), v(hi#x, hi#y, lo#z), v(hi#x, lo#y, lo#z)) ::
+        quadOf(v(hi#x, lo#y, lo#z), v(hi#x, hi#y, lo#z), v(hi#x, hi#y, hi#z), v(hi#x, lo#y, hi#z)) ::
+        quadOf(v(lo#x, lo#y, hi#z), v(lo#x, hi#y, hi#z), v(lo#x, hi#y, lo#z), v(lo#x, lo#y, lo#z)) :: Nil
+
+    def lampScene(): Scene3d.Scene3dCmd =
+        { pointLights = lampOf(-3.0) :: lampOf(3.0) :: Nil, spotLights = Nil,
+          instances = shape(upQuad(-8.0, 8.0, 2.0, 18.0, -2.0, c8(200, 200, 200)) :: Nil) ::
+                      shape(boxOf(Vec3.v3(-0.4, -2.0, 9.6), Vec3.v3(0.4, 1.0, 10.4), c8(120, 120, 140))) ::
+                      shape(upQuad(-1.2, 1.2, 6.5, 7.5, -0.5, c8(200, 80, 60)) :: Nil) :: Nil | shadowScene(false) }
+
+    def pointShadowPhysical3d(): Scene =
+        let shadowed = Scene3d.withPointShadows({ maxShadowedLights = 2, mapSize = 256, bias = 0.03 | Scene3d.pointShadowMap() }, lampScene());
+        let physical = { pointLights = lampScene()#pointLights |> List.map(l -> { intensity = l#intensity * 12.566370614359172 | l }) | lampScene() }
+            |> Scene3d.withLightUnits(Scene3d.LightUnits.Physical);
+        { name = "pointShadowPhysical3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, shadowed) ::
+            Render.scene3d({ x = 160.0, y = 0.0 }, physical) :: Nil }
 
     // ── scene 20: ジョイントで曲げた板（Scene3d.withPose → GL は骨つきの版のプログラム・CPU は SoftRaster3d のスキニング）。B 段階 ──
     // 縦に長い板 2 枚を、根のジョイント（下の端）と上のジョイント（真ん中）で曲げる。左は頂点の色・右は材質（縞）で、

@@ -11,7 +11,7 @@ pub mod Scene3d.PointShadows {
                                           strength = Float64, faces = Vector[Mat4.Mat4], frustums = Vector[Frustum.Frustum] }
 
     /// 点光源の影の atlas 1 枚の材料。tileSize = 面 1 つの一辺の画素（縮めた後）・blocksPerRow = 塊（灯り 1 本の 6 面を 3 × 2 に並べた物）の横の数・
-    /// width と height = atlas の画素・pcfRadius = 周りを平均する幅（縮めた後）・bias と normalBias = 設定の値（0 未満は 0）・
+    /// width と height = atlas の画素・pcfRadius = 周りを平均する幅（縮めた後）・bias = 設定の値（0 未満は 0）・normalBias = 設定の normalBias（0 未満は 0）× (pcfRadius + 1)（受ける点をずらす幅を面の画素で数えた物）・
     /// guardScale = 面の射影の倍率 s = (tileSize − 2 (pcfRadius + 1)) / tileSize・lights = 影を落とす灯り（slot の順）・
     /// requestedSize = 設定の mapSize（tileSize が小さければ縮めた。描き手が 1 回知らせる）。
     pub type alias Atlas = { tileSize = Int32, blocksPerRow = Int32, width = Int32, height = Int32, pcfRadius = Int32,
@@ -58,9 +58,12 @@ pub mod Scene3d.PointShadows {
             shadowedPointLightOf(guard, i, slot, Num.clamp01(m#strength) * weight, light)
         });
         { tileSize = size, blocksPerRow = columns, width = 3 * size * columns, height = 2 * size * rows, pcfRadius = pcf,
-          bias = Float64.max(0.0, m#bias), normalBias = Float64.max(0.0, m#normalBias), guardScale = guard, lights = lights,
+          bias = Float64.max(0.0, m#bias), normalBias = Float64.max(0.0, m#normalBias) * Int32.toFloat64(pcf + 1), guardScale = guard, lights = lights,
           requestedSize = m#mapSize }
 
+    // WhyNot: normalBias を PCF の幅に依らず 1 画素ぶんだけにしない — すれすれに光を受ける床では、周りの (2r+1)² 画素の奥行きの差が
+    //   r 画素ぶん傾きで増え、床が自分の影を拾って縞になる（mapSize 256・pcf 1 の床で gl-parity の場面に出た）。ずらす幅を (r + 1) 画素にすると、
+    //   どの傾きでも周りの画素の奥行きの誤差より遠くへ出る。
     /// 影を落とす slot 番目の灯りの境の重み（式は atlasOf の doc）。
     // WhyNot: 本数 1 の時も重みを付けない — 1 つ前の候補が無く、入れ替わる瞬間の両側を 1 と 0 でつなぐ幅が取れない。
     def shadowedLightWeightOf(scores: Vector[Float64], limit: Int32, slot: Int32, score: Float64): Float64 =
