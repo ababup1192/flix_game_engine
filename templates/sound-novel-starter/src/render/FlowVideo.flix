@@ -44,7 +44,7 @@ mod FlowVideo {
         let env = App.Headless.envOf(req);
         // WhyNot: 設定を字の用意より後に作らない —— GPU で塗る回は AWT より先に GL へ繋ぐ必要がある（VideoOut.settingsOf）。
         let view = viewOf(env);
-        let settings = VideoOut.settingsOf(gpuEnvOf(view, env));
+        let settings = VideoOut.settingsOf(env);
         let path = Map.getWithDefault("FLOW", "", env);
         let out = Map.getWithDefault("FLOW_OUT", "debug/video/${nameOf(path)}", env);
         let migrate = Map.get("MIGRATE_OUT", env) |> Option.filter(dir -> not String.isEmpty(dir))
@@ -79,13 +79,6 @@ mod FlowVideo {
         case Some("pc")    => Shape.Landscape
         case Some("phone") => Shape.Phone(Display.defaultPortraitView())
         case Some(other)   => Log.fellBackThen("flow", "FLOW_VIEW=${other}", "pc（横）", "phone か pc でない", Shape.Landscape)
-    }
-
-    /// 縦の画面は SoftRaster で塗る（FGE_GPU=off）。
-    // WhyNot: 縦の画面を GPU で塗らない — engine の VideoOut は GPU の描き先を project.json の design（横）の大きさで先に開くので、縦の design のコマが横の大きさに切られる。
-    def gpuEnvOf(shape: Shape, env: Map[String, String]): Map[String, String] = match shape {
-        case Shape.Landscape => env
-        case Shape.Phone(_)  => Map.insert("FGE_GPU", "off", env)
     }
 
     def designOf(shape: Shape): Vec2.Vec2 \ IO = match shape {

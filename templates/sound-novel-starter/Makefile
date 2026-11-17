@@ -29,8 +29,8 @@ space := $(subst ,, )
 include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 
 # FlowVideo が書いたコマと音（$(1) のフォルダ）を、X に載せられる H.264 + AAC の mp4（$(2)）に束ねるシェルの 1 文。
-# GPU で塗れた時は frames.mkv、塗れない時は連番 PNG。幅と高さは偶数に切り詰める（縦の design は 540×1169 のように奇数になる）。
-# WhyNot: 奇数のまま渡さない — yuv420p の H.264 は幅と高さが偶数でないと ffmpeg が書かずに止まる。
+# GPU で塗れた時は frames.mkv（幅と高さは engine が偶数にそろえる）、塗れない時は連番 PNG（縦の design は 540×1169 のように奇数のまま）。
+# WhyNot: crop を外さない — SoftRaster で塗った連番 PNG は奇数のままで、yuv420p の H.264 は幅と高さが偶数でないと ffmpeg が書かずに止まる。
 flow-mp4 = fps=$$(cat $(1)/fps.txt); \
 	if [ -f $(1)/frames.mkv ]; then frames="-i $(1)/frames.mkv"; else frames="-framerate $$fps -i $(1)/f%04d.png"; fi; \
 	ffmpeg -y -loglevel error $$frames -f f64be -ar 44100 -ac 2 -i $(1)/audio.f64 \
