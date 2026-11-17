@@ -170,6 +170,9 @@ mod TestTown {
 
     // ── 町が出来ていく演出と曲がり角のある道 ──
 
+    /// 前線が 4 行先・奥の行は 2.5 行毎秒の決まり（既定値が変わってもこのテストの数は変わらない）。
+    def fixedTiming(): Buildup.Timing = { lead = 4.0, afterRowsPerSec = 2.5 | Buildup.defaultTiming() }
+
     /// 先頭が 20 行目から 1 秒に 2 行ずつ 10 行目まで北へ歩く（5 秒）。
     def leaderRows(): Vector[(Float64, Float64)] =
         Vector.range(0, 300) |> Vector.map(f -> { let t = Int32.toFloat64(f) / 30.0; (t, Float64.max(10.0, 20.0 - 2.0 * t)) })
@@ -181,12 +184,12 @@ mod TestTown {
     @Test
     def testFrontRowAppearsWhenTheLeaderIsLeadRowsAway(): Unit \ Assert =
         // 12 行目は先頭が 16 行目（lead 4 行の手前）に来た 2 秒に出来る
-        Assert.assertTrue(Float64.abs(Buildup.rowTimeOf(Buildup.defaultTiming(), leaderRows(), 12) - 2.0) < 0.05)
+        Assert.assertTrue(Float64.abs(Buildup.rowTimeOf(fixedTiming(), leaderRows(), 12) - 2.0) < 0.05)
 
     @Test
     def testRowsBeyondTheWalkAppearAfterTheLeaderArrives(): Unit \ Assert =
         // 先頭が 10 行目に着くのは 5 秒・前線は 6 行目。2 行目はそこから 4 行 / 2.5 行毎秒
-        Assert.assertTrue(Float64.abs(Buildup.rowTimeOf(Buildup.defaultTiming(), leaderRows(), 2) - (5.0 + 4.0 / 2.5)) < 0.05)
+        Assert.assertTrue(Float64.abs(Buildup.rowTimeOf(fixedTiming(), leaderRows(), 2) - (5.0 + 4.0 / 2.5)) < 0.05)
 
     def route(): Route.Route =
         Route.make(10, { col = 1, row = 8, wait = 0.0 } :: { col = 1, row = 6, wait = 1.0 } :: { col = 4, row = 6, wait = 0.0 } :: Nil, 2.0, 0.5)

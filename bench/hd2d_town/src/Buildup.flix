@@ -37,11 +37,11 @@ mod Buildup {
                             dustTexture = String, done = Float64, landings = List[(Vec3.Vec3, Float64, Bool)] }
 
     pub def defaultTiming(): Timing =
-        { lead = 4.0, afterRowsPerSec = 2.5, rippleSec = 0.18, startDelay = 0.3,
-          rise = 0.35, fall = 0.45, fallHeight = 5.0, squash = 0.3,
-          monumentFall = 0.75, monumentHeight = 14.0, shake = 0.6, shakeAmp = 0.12,
-          wallRise = 0.45, roofDelay = 0.6, roofFall = 0.35, roofHeight = 4.0,
-          openingDelay = 1.05, openingStep = 0.03, pop = 0.2, dust = 0.5 }
+        { lead = 5.5, afterRowsPerSec = 4.0, rippleSec = 0.12, startDelay = 0.2,
+          rise = 0.25, fall = 0.3, fallHeight = 5.0, squash = 0.22,
+          monumentFall = 0.5, monumentHeight = 14.0, shake = 0.5, shakeAmp = 0.12,
+          wallRise = 0.3, roofDelay = 0.4, roofFall = 0.24, roofHeight = 4.0,
+          openingDelay = 0.7, openingStep = 0.02, pop = 0.14, dust = 0.4 }
 
     /// 行 r が出来る時刻。leaderRows = コマごとの (時刻, 先頭の行（小数）)。前線は先頭の lead 行先で、先頭と一緒に進む。
     /// はじめから前線の手前にある行は隊列のまわりから 1 行ずつ rippleSec おきに、先頭が行き着いた後に残る奥の行は afterRowsPerSec で出来る。
@@ -63,8 +63,8 @@ mod Buildup {
     def startOf(tm: Timing, rowTime: Int32 -> Float64, m: TownMap, openingOrder: Map[Owner, Int32], o: Owner): Float64 = match o {
         case Owner.Fixed          => 0.0
         case Owner.Cell(_, r)     => rowTime(r)
-        case Owner.Prop(_, r)     => rowTime(r) + 0.25
-        case Owner.Monument(_, r) => rowTime(r) + 0.3
+        case Owner.Prop(_, r)     => rowTime(r) + 0.15
+        case Owner.Monument(_, r) => rowTime(r) + 0.2
         case Owner.Walls(id)      => buildingTime(rowTime, m, id)
         case Owner.Roof(id)       => buildingTime(rowTime, m, id) + tm#roofDelay
         case Owner.Opening(id, _) => buildingTime(rowTime, m, id) + tm#openingDelay

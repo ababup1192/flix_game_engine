@@ -9,33 +9,18 @@
     ],
     [
       13,
-      18,
-      1.5
-    ],
-    [
-      13,
-      13,
-      1.5
-    ],
-    [
-      13,
       9,
-      5.0
+      0.0
     ],
     [
       13,
       15,
-      0.6
-    ],
-    [
-      18,
-      15,
-      1.0
+      0.0
     ],
     [
       23,
       15,
-      2.0
+      0.0
     ],
     [
       23,
@@ -43,7 +28,7 @@
       0.0
     ]
   ],
-  "idleSec": 3.0,
+  "idleSec": 2.0,
   "holdSec": 4.0,
   "frameSec": 0.333,
   "groundFlowH": 0.21,
@@ -65,10 +50,10 @@
       "idleStrip": "sprites/girl_idle.png"
     }
   ],
-  "startDelay": 0.3,
-  "lead": 4.0,
-  "afterRowsPerSec": 2.5,
-  "rippleSec": 0.18,
+  "startDelay": 0.2,
+  "lead": 5.5,
+  "afterRowsPerSec": 4.0,
+  "rippleSec": 0.12,
   "idle": "breath",
   "idleFrameSec": 0.8,
   "idlePhaseSec": 0.27
