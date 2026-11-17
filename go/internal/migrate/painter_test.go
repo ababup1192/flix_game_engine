@@ -171,3 +171,16 @@ func TestDiffStopsWhenThePaintersDiffer(t *testing.T) {
 		t.Fatalf("code %d err %q", code, errOut.String())
 	}
 }
+
+func TestCopyPainterFallsBackToTheRequestedOneWithoutABaselineSummary(t *testing.T) {
+	cases := []struct{ value, baseline, want string }{
+		{PainterSoft, "", PainterSoft},
+		{PainterSoft, PainterSoft, PainterSoft},
+		{painterWebGPU, testGPU, testGPU},
+	}
+	for _, c := range cases {
+		if got := copyPainter(c.value, c.baseline); got != c.want {
+			t.Fatalf("copyPainter(%q, %q) = %q, want %q", c.value, c.baseline, got, c.want)
+		}
+	}
+}

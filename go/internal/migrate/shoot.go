@@ -385,7 +385,7 @@ func runShoot(args []string, stdout, stderr io.Writer) int {
 			problems = append(problems, "鍵だけ撮る 1 回目で止まった仕事があるので、鍵の違うコマを塗らずに終える")
 		} else {
 			var paintJobs []*shootJob
-			plan, paintJobs, problems = paintAndCopy(pool, jobs, out, baseSide, flowJobs, logs, stdout, baselinePainter)
+			plan, paintJobs, problems = paintAndCopy(pool, jobs, out, baseSide, flowJobs, logs, stdout, copyPainter(painterValue, baselinePainter))
 			all = append(all, paintJobs...)
 		}
 	}
