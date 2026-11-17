@@ -171,3 +171,12 @@ func cachedPNGFor(dir, painter, key string) string {
 	}
 	return cachedPNG(dir, painterKey(key, painter))
 }
+
+// copyPainter は render-cache から写す時の描き手の素性。基準の描き手が分かればそれ、分からなければ（基準に logs/shoot.json が無い）頼んだ描き手 value。
+// WhyNot: 基準が分からない時に空を返さない — 空だと cachedPNGFor が写さず、塗る枚数に数えたまま engine だけが cache から写す（表示が実際と食い違う）。
+func copyPainter(value, baseline string) string {
+	if baseline != "" {
+		return baseline
+	}
+	return value
+}
