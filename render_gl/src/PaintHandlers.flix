@@ -48,6 +48,10 @@ mod RenderPaintHandlers {
                 RenderPaint.queueSurface(paint, cmd);
                 k(())
             }
+            def fillLetterbox(texture, k) = {
+                RenderPaint.queueLetterbox(paint, texture);
+                k(())
+            }
         }
 
     /// 3D の場面を paint の列へ積む（出すのは同じ paint の Draw2d.renderCommands）。

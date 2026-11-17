@@ -206,6 +206,16 @@
       ]
     },
     {
+      "id": "letterbox-fill",
+      "prompt": "縦長の design のゲームを PC の横長のウィンドウで開くと、左右が黒い帯になる。黒でなく、ぼかした背景を広げて埋めたい。どう書く？ まだ書かなくていいので手順だけ",
+      "expect": [
+        {"re": "withLetterboxView", "why": "App.withLetterboxView で design の外の余りを塗る絵を渡す"}
+      ],
+      "avoid": [
+        {"re": "calcViewport", "why": "描き手の黒帯の計算を直さない（App の口で足りる）"}
+      ]
+    },
+    {
       "id": "novel-portrait-backdrop",
       "prompt": "このノベルに新しい背景の写真（夜の駅のホーム）を 1 枚足したい。画像生成で作るつもりだけど、どんな形で作ってどこに何を書けばいい？ まだ作らなくていいので手順だけ",
       "expect": [

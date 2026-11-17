@@ -4,9 +4,9 @@
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
     use RenderFrame.{blendCode, calcViewport, closeSpriteRun, emitSprite, pushSpriteKeyed, stateSize, writeInstAt}
-    use RenderFrame.Internal.RenderList.{DepthStencil, PassHistory, PassSpec, RenderList, drawSamplesOf, resolveTargetOf, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
-                                         loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenClearColorOf, screenPass,
-                                         targetFormatOf, targetPass, targetTextureOf}
+    use RenderFrame.Internal.RenderList.{DepthStencil, Letterbox, PassHistory, PassSpec, RenderList, drawSamplesOf, resolveTargetOf, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
+                                         withLetterboxKept, letterboxOf, loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenClearColorOf, screenPass,
+                                         targetFormatOf, targetPass, targetTextureOf, fullTargetPass}
 
     // ── 組み立て ──
 
@@ -248,6 +248,46 @@ mod RenderFrame.TestRenderList {
         Assert.assertEq(expected = ((0, 0, 0), (51, 102, 153), (-2, -2, -2), (-1, -1, -1)),
                         (opOf(loadOpOf(letterboxedScreen())), opOf(loadOpOf(full)),
                          opOf(loadOpOf(passTo(RenderTarget.LoadOp.Keep))), opOf(loadOpOf(passTo(RenderTarget.LoadOp.ClearTransparent)))))
+
+    /// 余りを先に塗った本編の pass は、余りを残す（前の中身のまま始める）。余りの無い画面の pass は clearColor のまま。
+    @Test
+    def testKeepingLetterboxLoadsWhatWasPaintedOutside(): Unit \ Assert =
+        let full = screenPass((320, 180), (320.0, 180.0), clearColor(), DepthStencil.NoDepthStencil);
+        Assert.assertEq(expected = ((-2, -2, -2), (51, 102, 153)),
+                        (opOf(loadOpOf(withLetterboxKept(letterboxedScreen()))), opOf(loadOpOf(withLetterboxKept(full)))))
+
+    /// 余りを広げて塗る pass は、描き先の全面を viewport にして余りを持たない。
+    @Test
+    def testWindowPassCoversTheWholeTarget(): Unit \ Assert =
+        let window = fullTargetPass((400, 180), clearColor(), DepthStencil.NoDepthStencil);
+        Assert.assertEq(expected = ((0, 0, 400, 180), false), (window#viewport, hasLetterbox(window)))
+
+    /// 余りを残す pass も design の矩形は余りの内側のまま（viewport は替えない）。
+    @Test
+    def testKeepingLetterboxKeepsTheViewport(): Unit \ Assert =
+        Assert.assertEq(expected = ((0, 10, 320, 180), Letterbox.Kept),
+                        (withLetterboxKept(letterboxedScreen())#viewport, letterboxOf(withLetterboxKept(letterboxedScreen()))))
+
+    /// 1e-6 の桁に丸めた (x, y)。
+    def rounded(v: { x = Float64, y = Float64 }): (Int64, Int64) =
+        (Float64.round(v#x * 1000000.0) |> Float64.tryToInt64 |> Option.getWithDefault(0i64),
+         Float64.round(v#y * 1000000.0) |> Float64.tryToInt64 |> Option.getWithDefault(0i64))
+
+    /// 横長の窓（1280 × 720）に縦の design（540 × 1170）: 絵は横いっぱいに広げ、上下は真ん中で切る（uv の高さ = design の比 ÷ 窓の比）。
+    @Test
+    def testLetterboxFillCropsTopAndBottomInWideWindow(): Unit \ Assert =
+        let spec = DrawCmd.toSpec(RenderFrame.letterboxFillOf((1280, 720), (540.0, 1170.0), "fge_letterbox", (540.0, 1170.0)));
+        let h = (540.0 / 1170.0) / (1280.0 / 720.0);
+        Assert.assertEq(expected = (rounded({ x = 1.0, y = h }), rounded({ x = 0.0, y = (1.0 - h) / 2.0 }), rounded({ x = 1.0, y = 1.0 })),
+                        (rounded(spec#uvScale), rounded(spec#uvOffset), rounded(spec#scale)))
+
+    /// 縦長の窓（400 × 900）に横の design（320 × 180）: 絵は縦いっぱいに広げ、左右を真ん中で切る。絵の表の大きさが design と違えば倍率で合わせる。
+    @Test
+    def testLetterboxFillCropsSidesInTallWindow(): Unit \ Assert =
+        let spec = DrawCmd.toSpec(RenderFrame.letterboxFillOf((400, 900), (320.0, 180.0), "fge_letterbox", (640.0, 360.0)));
+        let w = (400.0 / 900.0) / (320.0 / 180.0);
+        Assert.assertEq(expected = (rounded({ x = w, y = 1.0 }), rounded({ x = (1.0 - w) / 2.0, y = 0.0 }), rounded({ x = 0.5, y = 0.5 })),
+                        (rounded(spec#uvScale), rounded(spec#uvOffset), rounded(spec#scale)))
 
     /// 描き先の絵の番号: 画面は -1・Pass は色の attachment の番号。
     @Test

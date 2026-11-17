@@ -9,7 +9,7 @@ pub mod RenderFrame.Internal.GlRows {
     import java.nio.FloatBuffer
     use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSceneRow, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, spriteCaps, surfaceMaskCap,
                      upsideDownTargetsOf}
-    use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, PassHistory, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
+    use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, Letterbox, PassHistory, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
                                          instanceFloats, kindMask, kindPoly, kindScene3d, kindStatic, kindSurface, kindTile, newRenderList, readsOf, rowAt, rowCountOf,
                                          rowsOf, screenPass, targetPass, valuesOf, vertexFloats}
 
@@ -48,15 +48,14 @@ pub mod RenderFrame.Internal.GlRows {
             endPass(gl)
         }
 
-    /// 描き先の前の中身を始末し、viewport を張る。画面は黒帯を含む全面を黒 → design 領域だけ clearColor の 2 段階の clear。
+    /// 描き先の前の中身を始末し、viewport を張る。画面は黒帯を含む全面を黒 → design 領域だけ clearColor の 2 段階の clear
+    /// （余りを先に塗ってある pass（Letterbox.Kept）は、全面の黒を飛ばして design 領域だけ塗る）。
     def beginPass(gl: GlContext, pass: PassSpec): Unit \ IO =
         let (vpX, vpY, vpW, vpH) = glViewportOf(pass);
         match pass#target {
             case PassTarget.Screen(screen) =>
                 let clearColor = screen#clearColor;
-                gl.viewport(0, 0, pass#width, pass#height);
-                gl.clearColor(0.0f32, 0.0f32, 0.0f32, 1.0f32);
-                gl.clear(GlConst.COLOR_BUFFER_BIT);
+                if (screen#letterbox == Letterbox.Kept) () else clearWhole(gl, pass);
                 gl.viewport(vpX, vpY, vpW, vpH);
                 gl.enable(GlConst.SCISSOR_TEST);
                 gl.scissor(vpX, vpY, vpW, vpH);
@@ -68,6 +67,12 @@ pub mod RenderFrame.Internal.GlRows {
                 gl.viewport(vpX, vpY, vpW, vpH);
                 clearColorAttachment(gl, color)
         }
+
+    /// 画面の全面（余りを含む）を黒で塗る。
+    def clearWhole(gl: GlContext, pass: PassSpec): Unit \ IO =
+        gl.viewport(0, 0, pass#width, pass#height);
+        gl.clearColor(0.0f32, 0.0f32, 0.0f32, 1.0f32);
+        gl.clear(GlConst.COLOR_BUFFER_BIT)
 
     /// Pass の色の attachment を load の 3 択で始末する（RenderTarget.LoadOp の doc を参照）。
     def clearColorAttachment(gl: GlContext, color: ColorAttachment): Unit \ IO =

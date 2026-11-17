@@ -59,6 +59,7 @@ mod TestPreload3d {
         } with handler Platform.Draw2d {
             def renderCommands(_sprites, _tileMaps, _polygons, _staticLayer, k) = { Ref.put("render" :: Ref.get(log), log); k(()) }
             def drawSurface(_cmd, k) = k(())
+            def fillLetterbox(_texture, k) = k(())
         } with handler Platform.Draw3d {
             def drawScene3d(_cmd, k) = k(())
             def preload3d(cmd, k) = { Ref.put(cmd#key :: Ref.get(log), log); k(()) }

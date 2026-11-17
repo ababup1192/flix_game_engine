@@ -27,6 +27,34 @@ mod RenderFrame {
         case MScene3d(Int32)
     }
 
+    /// App.withLetterboxView の絵（Pass の texture。登録簿の大きさは design）を窓いっぱいに広げるスプライト。
+    /// 描き先の全面を viewport にした pass（RenderList.fullTargetPass）で描く物で、design の矩形 = 描き先の全面になる。
+    /// 縦横比を保って窓を覆い、はみ出しは真ん中で切る（uv で）。fb = 描き先の画素の大きさ・texSize = 絵の登録簿の幅と高さ（Pass は design の大きさで登録するので今は倍率 1）。
+    // WhyNot: texSize を受けずに倍率を 1 と決め打ちしない — スプライトの大きさは登録簿の幅 × 倍率で決まるので、登録の決まりが変わると黙って大きさがずれる。
+    pub def letterboxFillOf(fb: (Int32, Int32), design: (Float64, Float64), texture: String, texSize: (Float64, Float64)): DrawCmd.Drawable =
+        let (fbW, fbH) = fb;
+        let (designW, designH) = design;
+        let (texW, texH) = texSize;
+        let windowAspect = Int32.toFloat64(fbW) / Float64.max(1.0, Int32.toFloat64(fbH));
+        let designAspect = designW / Float64.max(1.0, designH);
+        let (uvW, uvH) = if (windowAspect > designAspect) (1.0, designAspect / windowAspect) else (windowAspect / designAspect, 1.0);
+        DrawCmd.make({
+            texture = texture,
+            position = { x = 0.0, y = 0.0 },
+            scale = { x = designW / Float64.max(1.0, texW), y = designH / Float64.max(1.0, texH) },
+            rotation = 0.0,
+            color = { r = 1.0, g = 1.0, b = 1.0 },
+            alpha = 1.0,
+            centered = false,
+            uvOffset = { x = (1.0 - uvW) / 2.0, y = (1.0 - uvH) / 2.0 },
+            uvScale = { x = uvW, y = uvH },
+            zIndex = 0,
+            style = None,
+            clip = None,
+            blend = DrawCmd.BlendMode.Normal,
+            mask = Nil
+        })
+
     /// デザイン解像度のアスペクト比を維持しつつ、フレームバッファに収まる最大矩形を計算。
     /// 戻り値: (vpX, vpY, vpW, vpH)
     pub def calcViewport(fbW: Int32, fbH: Int32, designW: Float64, designH: Float64): (Int32, Int32, Int32, Int32) =

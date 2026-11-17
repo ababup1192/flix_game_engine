@@ -104,6 +104,22 @@ mod View {
             case _                    => ViewStage.frame(env, World.stageOf(res, w), not ViewStage.isPropOnPage(env, w))
         }
 
+    /// PC の横長の窓で縦の画面の左右に出る余り（ピラーボックス）を塗る絵（App.withLetterboxView）。今の背景の写真（時間帯の色とぼかし）を
+    /// 画面に置き、暗転・覆い・素材の待ちの黒を真ん中と同じ濃さで重ね、地の色で沈める。engine がこれを窓いっぱいに広げるので、ぼかしも広がる。
+    // WhyNot: frame をそのまま渡さない — 立ち絵・小物・粒まで窓の幅へ広がり、縦の画面の外に大きな人物が出る。
+    // WhyNot: タイトルの広げと漂い・カメラ・揺れを掛けない — 左右は広げてぼかした色の面で、動かすと真ん中の縁と食い違って見える。
+    pub def letterbox(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
+        let env = envOfCtx(ctx, res, w);
+        let stage = World.stageOf(res, w);
+        let photo = ViewStage.backdropsIn(ViewStage.photoRect(env#fit), env, stage);
+        let shade = ViewStage.shadeOf(env, stage) |> List.map(Render.overItem(ViewStage.mapZ(_ -> zVeil() - 1)));
+        let covered = ViewStage.screenOverlay(env, stage, zVeil() + 1);
+        let held = World.readOf(w) |> Option.flatMap(r -> r#hold)
+            |> Option.map(hold -> at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), Backdrop.groundOf(res#backdrops), zVeil() + 2) |> Render.fade(holdAlphaOf(env, hold))))
+            |> Option.toList;
+        let veil = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), Backdrop.groundOf(res#backdrops), zVeil()) |> Render.fade(0.45));
+        List.flatten(photo :: shade :: (veil :: Nil) :: covered :: held :: Nil)
+
     /// 舞台だけの絵（frame と、画面に被せる overlay）。文字の枠・HUD・画面・知らせ・素材の待ちの字は描かない（移行の突き合わせの world の層のコマ）。
     // WhyNot: frame だけにしない — layer=screen の overlay は hud の側に描くので、frame だけでは overlay の秒を替えた差が world の層のコマに出ない。
     pub def worldLayer(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
@@ -233,18 +249,22 @@ mod View {
     /// 重ねの進みは物語の時計（画面を開くと止まる）、印の動きは実時間。
     def holdLayer(atlas: FontAtlas, env: Env): World.Hold -> List[Render.PlacedItem] = hold ->
         let k = kindOf(env);
-        let progress = if (k#holdFadeSeconds <= 0.0) 1.0
-                       else Float64.min(1.0, Float64.max(0.0, Clock.since(hold#phaseFrom, env#storyNow) / k#holdFadeSeconds));
-        let alpha = match hold#phase {
-            case World.HoldPhase.FadingOut => progress
-            case World.HoldPhase.Waiting   => 1.0
-            case World.HoldPhase.FadingIn  => 1.0 - progress
-        };
         let whole = Layout.screen(env#fit);
-        let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundOf(env#res#backdrops), zHold()) |> Render.fade(alpha));
+        let veil = at(0.0, 0.0, RawDraw.box(whole#size, Backdrop.groundOf(env#res#backdrops), zHold()) |> Render.fade(holdAlphaOf(env, hold)));
         let marked = hold#phase == World.HoldPhase.Waiting and hold#waited >= k#holdMarkSeconds;
         let mark = if (marked) loadingMark(atlas, env, theme(env)#loadingMark, whole, { x = 60.0, y = 36.0 }, 1.0, zHoldMark()) else Nil;
         veil :: mark
+
+    /// 素材の待ちの覆いの濃さ（黒へ重ねる間は 0 → 1・黒のまま 1・黒から戻す間は 1 → 0。進みは物語の時計）。
+    def holdAlphaOf(env: Env, hold: World.Hold): Float64 =
+        let k = kindOf(env);
+        let progress = if (k#holdFadeSeconds <= 0.0) 1.0
+                       else Float64.min(1.0, Float64.max(0.0, Clock.since(hold#phaseFrom, env#storyNow) / k#holdFadeSeconds));
+        match hold#phase {
+            case World.HoldPhase.FadingOut => progress
+            case World.HoldPhase.Waiting   => 1.0
+            case World.HoldPhase.FadingIn  => 1.0 - progress
+        }
 
     /// 素材を待つ間の印を矩形 place（画面かサムネの枠）に置く。Dots = 右下の金の点 3 つ（左の点の中心を右下の角から inset だけ内へ）、
     /// Ring = 真ん中に回る点の輪と字のラベル、Hidden = 何も描かない。scale = 大きさの倍率（サムネは小さく）。
