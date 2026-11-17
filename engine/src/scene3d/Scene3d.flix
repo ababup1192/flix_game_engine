@@ -907,13 +907,73 @@ pub mod Scene3d {
         let c = shadowCamera(spot);
         Mat4.mul(Camera3d.projectionMatrix(c, 1.0), Camera3d.viewMatrix(c))
 
-    /// 上限を超えた光を、目に近い物から選んで残す（同じ距離なら並びの前の物）。残った物は元の並びの順のまま。
-    /// 境をまたいだ光がぱっと点いたり消えたりするのは許す（決まった手順で毎回同じなので、気になれば光を減らす）。
-    /// GL と CPU が同じ物を使う。ゲームが選ばなくても描き手がこれで選ぶので、pointLights・spotLights には全部の光を渡してよい
-    /// （ゲームの側で近い順に選び直さない）。
-    pub def pickLights(eye: Vec3.Vec3, cmd: Scene3dCmd): Scene3dCmd =
-        { pointLights = nearest(maxPointLights(), eye, l -> l#position, cmd#pointLights),
-          spotLights = nearest(maxSpotLights(), eye, l -> l#position, cmd#spotLights) | cmd }
+    /// 上限を超えた光を選んで残す。残った物は元の並びの順のまま。上限以下の光は何も変えない（intensity も触らない）。
+    /// 点光源: range の球が視錐台に掛からない物を落とし、残りを点数（pointPickScoreOf）の小さい順に maxPointLights 本選ぶ
+    ///   （同じ点数なら並びの前の物）。選んだ物の intensity には重み（pointPickWeightOf・0〜1）を掛ける。境の近くの光は強さが 0 へ寄るので、
+    ///   カメラや光が動いて選ばれる物が替わっても、ぱっと点いたり消えたりしない。
+    /// スポット: 目に近い物から選ぶ（同じ距離なら並びの前の物）。
+    /// GL・WebGPU・CPU が同じ物を使う。ゲームが選ばなくても描き手がこれで選ぶので、pointLights・spotLights には全部の光を渡してよい
+    /// （ゲームの側で選び直さない）。
+    pub def pickLights(cmd: Scene3dCmd): Scene3dCmd =
+        { pointLights = pickPointLights(cmd),
+          spotLights = nearest(maxSpotLights(), cmd#camera#eye, l -> l#position, cmd#spotLights) | cmd }
+
+    def pickPointLights(cmd: Scene3dCmd): List[PointLight] =
+        let limit = maxPointLights();
+        if (List.length(cmd#pointLights) <= limit) cmd#pointLights
+        else {
+            let frustum = frustumOf(cmd);
+            let ranked = List.zip(List.range(0, List.length(cmd#pointLights)), cmd#pointLights)
+                |> List.filterMap(pair -> pointPickScoreOf(cmd#camera, frustum, snd(pair)) |> Option.map(score -> (score, pair)))
+                |> Sort.sortStableBy(fst);
+            let scores = ranked |> List.map(fst) |> List.toVector;
+            ranked
+                |> List.take(limit)
+                |> List.map(entry -> {
+                    let (score, (i, light)) = entry;
+                    (i, { intensity = light#intensity * pointPickWeightOf(scores, limit, score) | light })
+                })
+                |> Sort.sortStableBy(fst)
+                |> List.map(snd)
+        }
+
+    /// 点光源を選ぶ点数（小さいほど先に選ぶ）。range の球が視錐台に掛からない光は None。
+    /// 点数 = (画面の真ん中から光の球のふちまでの角 + π/2 + 1) ÷ 球が視錐台の中へ入っている度合い（Frustum.sphereInsideRatio）。
+    ///   角 = 見ている向きと光の中心の向きの間の角 − 球の見かけの半径（asin(range / 目からの距離)）。球が画面の真ん中に掛かれば負。
+    ///   目が球の中なら、球の表面で同じ値になるように π/2 と (1 − 距離 / range) を引く。
+    // WhyNot: 目からの距離で選ばない — 見下ろしの遠いカメラでは画面の下の端の光ばかり選ばれ、画面の真ん中から奥の光の溜まりが出ない。
+    // WhyNot: 注目点を視線と地面の交点にしない — 場面に地面の高さの約束が無く、水平に見るカメラでは交わらない。
+    // WhyNot: 視錐台に掛かるかだけで落とさない — 画面の端で光が出入りした瞬間に残りの順位がずれ、境の重みが跳ねる。度合いで割ると、
+    //   出ていく光の点数は度合いが 0 へ近づくにつれて大きくなり、落ちる時には選ばれていない。
+    def pointPickScoreOf(camera: Camera3d.Camera3d, frustum: Frustum.Frustum, light: PointLight): Option[Float64] =
+        let inside = Frustum.sphereInsideRatio(frustum, light#position, light#range);
+        if (not (inside > 0.0)) None
+        else {
+            let toLight = Vec3.sub(light#position, camera#eye);
+            let dist = Vec3.length(toLight);
+            let reach = Float64.abs(light#range);
+            let forward = Camera3d.forward(camera);
+            let center = Num.atan2(Vec3.length(Vec3.cross(forward, toLight)), Vec3.dot(forward, toLight));
+            let edge = if (dist > reach) center - Num.asin(reach / dist) else center - Num.pi() / 2.0 - (1.0 - dist / reach);
+            Some((edge + Num.pi() / 2.0 + 1.0) / inside)
+        }
+
+    /// 選んだ点光源 1 本の重み（0〜1）。scores = 視錐台に掛かる光の点数の小さい順・score = その光の点数・limit = 選ぶ本数。
+    /// 選ばれない最初の光（limit + 1 番目）の点数で 0・limit + 1 − pointFadeRanks 番目の点数より小さければ 1・その間はまっすぐつなぐ。
+    /// 掛かる光が limit 本以下なら全部 1。
+    def pointPickWeightOf(scores: Vector[Float64], limit: Int32, score: Float64): Float64 =
+        if (Vector.length(scores) <= limit) 1.0
+        else {
+            let cutoff = Vector.get(limit, scores);
+            let full = Vector.get(limit - pointFadeRanks(), scores);
+            let span = cutoff - full;
+            if (span > 0.0) Num.clamp01((cutoff - score) / span)
+            else if (score < cutoff) 1.0
+            else 0.0
+        }
+
+    // WhyNot: 選んだ全部を点数でなめらかに落とさない — 幅を広げると暗くなる光が増える。境の手前の 2 本だけを寄せ、残りの 6 本は元の強さのまま。
+    def pointFadeRanks(): Int32 = 3
 
     /// pickLights が上限を超えて落とす光の数（points = 点光源・spots = スポット）。落とす物が無ければ 0。
     pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 } =
@@ -933,7 +993,7 @@ pub mod Scene3d {
     pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)] =
         let d = droppedLightsOf(cmd);
         let line = (kind: String, given: Int32, limit: Int32) ->
-            "scene3d: ${kind}が ${Int32.toString(given)} 本ある — 上限 ${Int32.toString(limit)} 本を目に近い順に選び、残りは描かない（Scene3d.pickLights）";
+            "scene3d: ${kind}が ${Int32.toString(given)} 本ある — 上限 ${Int32.toString(limit)} 本を選び、残りは描かない（Scene3d.pickLights）";
         (if (d#points > 0) ("@lights:point", line("点光源", List.length(cmd#pointLights), maxPointLights())) :: Nil else Nil)
             ::: (if (d#spots > 0) ("@lights:spot", line("スポットライト", List.length(cmd#spotLights), maxSpotLights())) :: Nil else Nil)
 

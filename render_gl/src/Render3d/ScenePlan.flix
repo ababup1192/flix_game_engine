@@ -485,7 +485,7 @@ mod Render3d.ScenePlan {
             case Scene3d.Output.Depth(_) => None
             case Scene3d.Output.Color if not Render3d.StaticRows.hasDrawnItem(scene) => None
             case Scene3d.Output.Color =>
-                let casters = Scene3d.pickLights(scene#camera#eye, scene)#spotLights
+                let casters = Scene3d.pickLights(scene)#spotLights
                     |> List.mapWithIndex((i, spot) -> spot#shadow |> Option.filter(m -> m#mapSize > 0)
                         |> Option.map(m -> (i, { matrix = Scene3d.shadowMatrix(spot), frustum = Scene3d.shadowFrustumOf(spot),
                                                  settings = { bias = Scene3d.spotShadowDepthBiasOf(spot, m#bias) | m } })))

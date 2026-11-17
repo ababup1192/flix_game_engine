@@ -174,7 +174,53 @@ def testScene3dPickLightsKeepsEightNearest(): Unit \ Assert =
                  pointLightAt(5.0) :: pointLightAt(6.0) :: pointLightAt(7.0) :: pointLightAt(8.0) :: Nil;
     let cmd = { pointLights = lights | Scene3d.scene(cameraAt(Vec3.zero(), 0.0), { x = 200.0, y = 100.0 }) };
     Assert.assertEq(expected = List.drop(1, lights) |> List.map(l -> Vec3.length(l#position)),
-                    Scene3d.pickLights(Vec3.zero(), cmd)#pointLights |> List.map(l -> Vec3.length(l#position)))
+                    Scene3d.pickLights(cmd)#pointLights |> List.map(l -> Vec3.length(l#position)))
+
+/// 目の前 10 の所に横へ 0・±0.5・±1・±1.5・±2 と並べた小さな点光源 9 本（並びは真ん中から外へ）。
+def rowOfNineLights(): List[Scene3d.PointLight] =
+    (0.0 :: 0.5 :: -0.5 :: 1.0 :: -1.0 :: 1.5 :: -1.5 :: 2.0 :: -2.0 :: Nil)
+        |> List.map(x -> { position = Vec3.v3(x, 0.0, 10.0), range = 0.3 | pointLightAt(0.0) })
+
+def rowOfNineScene(eye: Vec3.Vec3): Scene3d.Scene3dCmd =
+    { pointLights = rowOfNineLights() | Scene3d.scene(cameraAt(eye, 0.0), { x = 200.0, y = 100.0 }) }
+
+/// 8 本以下の点光源は、並びも intensity もそのまま。
+@Test
+def testPickLightsKeepsEightOrFewerAsIs(): Unit \ Assert =
+    let cmd = { pointLights = List.take(8, rowOfNineLights()) | rowOfNineScene(Vec3.zero()) };
+    Assert.assertEq(expected = List.take(8, rowOfNineLights()) |> List.map(l -> (l#position#x, l#intensity)),
+                    Scene3d.pickLights(cmd)#pointLights |> List.map(l -> (l#position#x, l#intensity)))
+
+/// 横に並べた 9 本は画面の真ん中に近い 8 本が残り、8 番目と 9 番目が同じ近さ（±2）なら残った ±2 の強さは 0・ほかの 7 本は元の 1。
+@Test
+def testPickLightsFadesTheEighthToZeroAtATie(): Unit \ Assert =
+    let picked = Scene3d.pickLights(rowOfNineScene(Vec3.zero()))#pointLights;
+    Assert.assertEq(expected = (0.0 :: 0.5 :: -0.5 :: 1.0 :: -1.0 :: 1.5 :: -1.5 :: 2.0 :: Nil, 7.0),
+                    (picked |> List.map(l -> l#position#x), picked |> List.foldLeft((acc, l) -> acc + l#intensity, 0.0)))
+
+/// 目を少し右へずらして +2 が 8 番目に入れ替わっても、+2 の強さは 0 に近い（境をまたいでぱっと点かない）。
+@Test
+def testPickLightsSwapAtTheBorderStaysDark(): Unit \ Assert =
+    let picked = Scene3d.pickLights(rowOfNineScene(Vec3.v3(0.01, 0.0, 0.0)))#pointLights;
+    let edge = picked |> List.filter(l -> Float64.abs(l#position#x) > 1.9);
+    Assert.assertEq(expected = (2.0 :: Nil, true), (edge |> List.map(l -> l#position#x), edge |> List.forAll(l -> l#intensity < 0.05)))
+
+/// 目のすぐ後ろの小さな光（球が画面に掛からない）は、目に一番近くても選ばない。
+@Test
+def testPickLightsDropsLightsOutsideTheFrustum(): Unit \ Assert =
+    let behind = { position = Vec3.v3(0.0, 0.0, -1.0), range = 0.3 | pointLightAt(0.0) };
+    let cmd = { pointLights = behind :: List.take(8, rowOfNineLights()) | rowOfNineScene(Vec3.zero()) };
+    Assert.assertEq(expected = false, Scene3d.pickLights(cmd)#pointLights |> List.exists(l -> l#position#z < 0.0))
+
+/// 見下ろしのカメラ（高さ 13・pitch 0.82）では、目に近い画面の下の端の 8 本より、画面の真ん中の奥の 1 本を先に選ぶ。
+@Test
+def testPickLightsPrefersTheScreenCenterOverTheEye(): Unit \ Assert =
+    let camera = { eye = Vec3.v3(0.0, 13.0, -9.0), yaw = 0.0, pitch = 0.82, fovY = 0.75, near = 1.0, far = 80.0 };
+    let lamp = (x: Float64, z: Float64) -> { position = Vec3.v3(x, 2.2, z), range = 2.0 | pointLightAt(0.0) };
+    let bottom = List.range(0, 8) |> List.map(i -> lamp(-3.5 + Int32.toFloat64(i), -1.0));
+    let center = Vec3.add(camera#eye, Vec3.mul(Camera3d.forward(camera), 16.0));
+    let cmd = { pointLights = bottom ::: lamp(center#x, center#z) :: Nil | Scene3d.scene(camera, { x = 200.0, y = 120.0 }) };
+    Assert.assertEq(expected = true, Scene3d.pickLights(cmd)#pointLights |> List.exists(l -> l#position#z > 0.0))
 
 /// 点光源 9 本・スポット 1 本の場面は、点光源を 1 本落とし（上限 8）、スポットは落とさない。知らせは点光源の 1 行だけ。
 @Test
@@ -195,8 +241,8 @@ def testDroppedLightsOfScenesSumsWhatPickLightsDrops(): Unit \ Assert =
     let spots = { spotLights = List.repeat(Scene3d.maxSpotLights() + 2, spot) | base };
     let cmds = (points :: spots :: Nil) |> List.map(c -> { at = Vec2.zero(), clip = None, scene = c });
     let removed = (pick: Scene3d.Scene3dCmd -> Int32) -> cmds |> List.foldLeft((acc, c) -> acc + pick(c#scene), 0);
-    let removedPoints = removed(c -> List.length(c#pointLights) - List.length(Scene3d.pickLights(Vec3.zero(), c)#pointLights));
-    let removedSpots = removed(c -> List.length(c#spotLights) - List.length(Scene3d.pickLights(Vec3.zero(), c)#spotLights));
+    let removedPoints = removed(c -> List.length(c#pointLights) - List.length(Scene3d.pickLights(c)#pointLights));
+    let removedSpots = removed(c -> List.length(c#spotLights) - List.length(Scene3d.pickLights(c)#spotLights));
     let d = Scene3d.droppedLightsOfScenes(cmds);
     Assert.assertEq(expected = ((2, 2), (2, 2)), ((d#points, d#spots), (removedPoints, removedSpots)))
 

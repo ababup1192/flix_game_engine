@@ -532,7 +532,7 @@ mod Render3d {
         let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let environmentLevels = bindEnvironmentMap(gl, state, gen, source, scene);
         if (area#fillBackground) drawSky(gl, state, area#viewport, scene) else ();
-        let picked = Scene3d.pickLights(scene#camera#eye, scene);
+        let picked = Scene3d.pickLights(scene);
         noteDroppedLights(state, scene);
         let lights = lightDataOf(picked, environmentLevels);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));

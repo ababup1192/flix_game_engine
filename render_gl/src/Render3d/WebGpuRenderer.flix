@@ -879,7 +879,7 @@ pub mod Render3d.WebGpuRenderer {
     def writeSceneValues(r: Renderer, target: SceneTarget, plan: ScenePlan[SpanBatch], shadows: List[ShadowPass], environment: Option[(Texture, Int32)]): Unit \ IO =
         let RendererData.RendererData(s) = r;
         let scene = plan#cmd#scene;
-        let picked = Scene3d.pickLights(scene#camera#eye, scene);
+        let picked = Scene3d.pickLights(scene);
         let values = s#cpuScene;
         packSceneValues(values, lightDataOf(picked, environment |> Option.map(snd) |> Option.getWithDefault(0)));
         packShadowValues(values, List.map(p -> p#map#sampling, shadows));
