@@ -117,8 +117,11 @@ seed clone bin/dist
 # WhyNot: gl-jar は clone — make gl-jar が classes/ を消して組み直す。clone の時刻は今になるので、
 # worktree の render_gl/java が main と同じなら組み直しは起きない。
 seed clone build/gl-jar
-# WhyNot: package.fpkg は clone — make sync-engine-full の build-pkg が書く。テンプレの lib/github の相対 symlink がこれを指す。
+# WhyNot: package.fpkg は clone — make sync-engine-full の build-pkg が書く。
 seed clone engine_full/artifact/package.fpkg
+# WhyNot: 束の置き場は clone — テンプレの lib/github（clone）の相対 symlink がこの中のエントリを指す。symlink だと worktree の
+# sync-engine-full が main の置き場へエントリを足し、current を替え、main の掃除の数え方まで変える（bin/fpkg-store.sh も symlink を見たら実体に替える）。
+seed clone build/fpkg-store
 # WhyNot: engine_full.fpkg は symlink — 作業コピーでは誰も書かない（check-docs-sync が有無を見るだけ）。
 seed symlink engine_full/artifact/engine_full.fpkg
 

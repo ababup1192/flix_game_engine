@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 )
 
 func write(t *testing.T, path, body string) {
@@ -71,6 +73,31 @@ func TestUsePutsEngineFpkgAndPointsLocalMk(t *testing.T) {
 	}
 	if engineOfLocalMk(read(t, filepath.Join(game, "local.mk"))) != engine {
 		t.Fatalf("local.mk が向けた先を指していない")
+	}
+}
+
+// 置き場があれば、build-pkg が書いている最中かもしれない artifact でなく、置き場のエントリの束と toml を写す。
+func TestUsePrefersTheStoreEntry(t *testing.T) {
+	engine := fakeEngine(t, "0.35.16", "artifact")
+	entry := filepath.Join(engine, "build", "fpkg-store", "engine_full-0.35.16-0123456789abcdef")
+	write(t, filepath.Join(entry, "package.fpkg"), "stored")
+	write(t, filepath.Join(entry, "flix.toml"), "stored-toml")
+	if err := os.MkdirAll(filepath.Join(engine, "build", "fpkg-store", "current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../engine_full-0.35.16-0123456789abcdef", filepath.Join(engine, "build", "fpkg-store", "current", "engine_full")); err != nil {
+		t.Fatal(err)
+	}
+	game := fakeGame(t, true)
+	if err := Use(engine, opts(game)); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(game, libEngineDir, "0.35.16")
+	if got := read(t, filepath.Join(dir, "flix_game_engine-0.35.16.fpkg")); got != "stored" {
+		t.Errorf("置き場の束を写していません: %q", got)
+	}
+	if got := read(t, filepath.Join(dir, "flix_game_engine-0.35.16.toml")); got != "stored-toml" {
+		t.Errorf("同じエントリの toml を写していません: %q", got)
 	}
 }
 
@@ -170,7 +197,7 @@ func TestUseAlignsLockWhenSameVersion(t *testing.T) {
 	if err := Use(eng, opts(game)); err != nil {
 		t.Fatal(err)
 	}
-	want, _ := sha256File(filepath.Join(eng, "engine_full", "artifact", "package.fpkg"))
+	want, _ := fpkgstore.Sha256File(filepath.Join(eng, "engine_full", "artifact", "package.fpkg"))
 	data, _ := os.ReadFile(filepath.Join(game, "packages.lock"))
 	if !strings.Contains(string(data), `fpkg    = "sha256:`+want+`"`) {
 		t.Fatalf("lock=%s", data)
@@ -195,7 +222,7 @@ func TestRestorePutsLockBack(t *testing.T) {
 }
 
 func TestLockOfOtherVersionIsUntouched(t *testing.T) {
-	got, found := withEngineLock(lockFor("0.35.15", "aa", "bb"), "0.35.16", "cc", "dd")
+	got, found := fpkgstore.WithEngineLock(lockFor("0.35.15", "aa", "bb"), "0.35.16", "cc", "dd")
 	if found || !strings.Contains(got, "sha256:bb") {
 		t.Fatalf("found=%v got=%s", found, got)
 	}

@@ -6,6 +6,8 @@ package upgradegame
 // 巻き戻しの取りこぼし、本物の make の呼び方。
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -380,5 +382,131 @@ func TestRealMakeIsRunAndItsExitCodeIsRead(t *testing.T) {
 	}
 	if hasTarget("make", dir, "nope") {
 		t.Error("無い的を在ると言っています")
+	}
+}
+
+// sameVersionGame は版の字が engine と同じ 0.31.0 で、lib に前の束（old-fpkg・old-toml）と、その sha の packages.lock を持つゲーム。
+func sameVersionGame(t *testing.T) (string, string, opts, *recorder) {
+	t.Helper()
+	root, game, o, r := setup(t)
+	write(t, game, "flix.toml", strings.Replace(gameToml, "0.30.0", "0.31.0", 1))
+	write(t, game, destDir+"/flix_game_engine-0.31.0.fpkg", "old-fpkg")
+	write(t, game, destDir+"/flix_game_engine-0.31.0.toml", "old-toml")
+	write(t, game, "packages.lock", "[lock]\nversion = 1\n\n"+
+		`[packages."github:ababup1192/flix_game_engine"."0.31.0"]`+"\n"+
+		`toml    = "sha256:`+sumOf("old-toml")+`"`+"\n"+
+		`fpkg    = "sha256:`+sumOf("old-fpkg")+`"`+"\n")
+	return root, game, o, r
+}
+
+func sumOf(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:])
+}
+
+// 版の字が同じでも engine の束を作り直せば中身は変わる。版だけ見ていると古い束を掴み続け、担当が手で lib と lock を替えていた。
+func TestSameVersionWithNewContentIsSwappedAndTheLockFollows(t *testing.T) {
+	root, game, o, _ := sameVersionGame(t)
+	code, progress, problems := call(t, root, o)
+	if code != exitDone {
+		t.Fatalf("code=%d problems=%s", code, problems)
+	}
+	if got := read(t, filepath.Join(game, destDir, "flix_game_engine-0.31.0.fpkg")); got != "new-fpkg" {
+		t.Errorf("fpkg を入れ替えていません: %q", got)
+	}
+	lock := read(t, filepath.Join(game, "packages.lock"))
+	if !strings.Contains(lock, sumOf("new-fpkg")) || !strings.Contains(lock, sumOf("new-toml")) {
+		t.Errorf("packages.lock の sha をそろえていません:\n%s", lock)
+	}
+	if !strings.Contains(progress, "v0.31.0 のまま engine の束の中身が新しくなっていたので入れ替えます") {
+		t.Errorf("入れ替えたと言っていません:\n%s", progress)
+	}
+}
+
+// 中身も同じなら何も写さない（打ち直しのたびに lib の時刻を進めると、jar を毎回組み直す）。
+func TestSameVersionWithSameContentIsLeftAlone(t *testing.T) {
+	root, game, o, _ := sameVersionGame(t)
+	write(t, game, destDir+"/flix_game_engine-0.31.0.fpkg", "new-fpkg")
+	write(t, game, destDir+"/flix_game_engine-0.31.0.toml", "new-toml")
+	_, progress, _ := call(t, root, o)
+	if !strings.Contains(progress, "既に v0.31.0 です") {
+		t.Errorf("同じ中身を入れ替えています:\n%s", progress)
+	}
+}
+
+// 入れ替えた束で check が赤く、当たる非互換も無ければ、前の束と前の lock へ戻す（lock だけ新しいと flix が止まる）。
+func TestSameVersionSwapIsRolledBackWithTheLock(t *testing.T) {
+	root, game, o, r := sameVersionGame(t)
+	r.failOn["check"] = true
+	code, _, problems := call(t, root, o)
+	if code != exitUnknown {
+		t.Errorf("code=%d", code)
+	}
+	if got := read(t, filepath.Join(game, destDir, "flix_game_engine-0.31.0.fpkg")); got != "old-fpkg" {
+		t.Errorf("fpkg を戻していません: %q", got)
+	}
+	if lock := read(t, filepath.Join(game, "packages.lock")); !strings.Contains(lock, sumOf("old-fpkg")) {
+		t.Errorf("packages.lock を戻していません:\n%s", lock)
+	}
+	if !strings.Contains(problems, "v0.31.0 の前の束へ戻しました") {
+		t.Errorf("何へ戻したか言っていません: %s", problems)
+	}
+}
+
+// lib の束は engine と同じで lock の sha だけ古い時も、engine-upgrade で直る（status がそう勧めるので、直らないと知らせが消えない）。
+func TestLockOnlyMismatchIsAligned(t *testing.T) {
+	root, game, o, _ := sameVersionGame(t)
+	write(t, game, destDir+"/flix_game_engine-0.31.0.fpkg", "new-fpkg")
+	write(t, game, destDir+"/flix_game_engine-0.31.0.toml", "new-toml")
+	if code, _, problems := call(t, root, o); code != exitDone {
+		t.Fatalf("code=%d problems=%s", code, problems)
+	}
+	if lock := read(t, filepath.Join(game, "packages.lock")); !strings.Contains(lock, sumOf("new-fpkg")) {
+		t.Errorf("lock だけの差を直していません:\n%s", lock)
+	}
+}
+
+// 配った版の engine は同じ版の束を中身で入れ替えない（use-engine で入れた作業場の束を同梱の束へ戻さない）。
+func TestNoContentSwapKeepsTheGameBundle(t *testing.T) {
+	root, game, o, _ := sameVersionGame(t)
+	o.noContentSwap = true
+	call(t, root, o)
+	if got := read(t, filepath.Join(game, destDir, "flix_game_engine-0.31.0.fpkg")); got != "old-fpkg" {
+		t.Errorf("--no-content-swap なのに入れ替えています: %q", got)
+	}
+}
+
+// lib に束の無い同じ版のゲーム（Release から flix に取らせる形）へは、手元の束を黙って置かない。
+func TestSameVersionWithoutALibBundleIsNotSwapped(t *testing.T) {
+	root, game, o, _ := setup(t)
+	write(t, game, "flix.toml", strings.Replace(gameToml, "0.30.0", "0.31.0", 1))
+	call(t, root, o)
+	if _, err := os.Stat(filepath.Join(game, destDir, "flix_game_engine-0.31.0.fpkg")); err == nil {
+		t.Error("lib に無かった束を置いています")
+	}
+}
+
+// lock にその版の節が無ければ触らない（flix が足す）。
+func TestLockWithoutTheSectionIsLeftToFlix(t *testing.T) {
+	root, game, o, _ := sameVersionGame(t)
+	body := "[lock]\nversion = 1\n"
+	write(t, game, "packages.lock", body)
+	call(t, root, o)
+	if got := read(t, filepath.Join(game, "packages.lock")); got != body {
+		t.Errorf("節の無い lock を書き換えています:\n%s", got)
+	}
+}
+
+// 置き場の束は読むだけ（0444）。前の回に写した物が 0444 でも、上書きできずに落ちてはいけない。
+func TestReadOnlyCopyInTheGameIsReplaced(t *testing.T) {
+	root, game, o, _ := sameVersionGame(t)
+	if err := os.Chmod(filepath.Join(game, destDir, "flix_game_engine-0.31.0.fpkg"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, problems := call(t, root, o); code != exitDone {
+		t.Fatalf("code=%d problems=%s", code, problems)
+	}
+	if got := read(t, filepath.Join(game, destDir, "flix_game_engine-0.31.0.fpkg")); got != "new-fpkg" {
+		t.Errorf("読むだけの写しを入れ替えていません: %q", got)
 	}
 }

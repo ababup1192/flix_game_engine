@@ -265,3 +265,57 @@ func TestExportDocFilesLeavesOutImagesAndAtlases(t *testing.T) {
 		t.Errorf("絵とアトラスは素材の行に数えないはず: %v", got)
 	}
 }
+
+// exportWebFixture は書き出しに要る物を置いたゲームと engine（置き場はまだ無い）。
+func exportWebFixture(t *testing.T) (string, string) {
+	t.Helper()
+	game, eng := t.TempDir(), t.TempDir()
+	put := func(dir, rel, body string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(game, "web/WebMain.flix", "")
+	put(game, "flix.toml", "[dependencies]\n\"github:ababup1192/flix_game_engine\" = { version = \"0.9.0\" }\n")
+	for _, rel := range []string{"mk/game.mk", "bin/flix.jar", "engine_web/js/fge-web.js", "engine_web/js/index.html"} {
+		put(eng, rel, "")
+	}
+	entry := "build/fpkg-store/engine_full_web-0.9.0-0123456789abcdef/"
+	for _, name := range []string{"package.fpkg", "flix.toml", "fge-gl-0.9.0.jar", "fge-web-0.9.0.jar", "fge-web-tools-0.9.0.jar"} {
+		put(eng, entry+name, "")
+	}
+	return game, eng
+}
+
+// 置き場があれば束も jar もそのエントリ 1 つから読む（別の所の sync-engine-full-web が build/ を書き換えても書き出しの途中で混ざらない）。
+func TestResolveExportWebPathsReadsTheStoreEntry(t *testing.T) {
+	game, eng := exportWebFixture(t)
+	if err := os.MkdirAll(filepath.Join(eng, "build/fpkg-store/current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../engine_full_web-0.9.0-0123456789abcdef", filepath.Join(eng, "build/fpkg-store/current/engine_full_web")); err != nil {
+		t.Fatal(err)
+	}
+	p, code, err := resolveExportWebPaths(exportWebOptions{Game: game, Engine: eng})
+	if err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	for _, f := range []string{p.FullWebFpkg, p.FullWebToml, p.GlJar, p.WebJar, p.WebToolsJar} {
+		if filepath.Dir(f) != p.FullWebEntry || !strings.Contains(f, "engine_full_web-0.9.0-0123456789abcdef") {
+			t.Errorf("置き場のエントリの外を読んでいます: %s", f)
+		}
+	}
+}
+
+// 置き場の無い engine（配った版）は build/engine_full_web を読み、無ければ sync-engine-full-web を案内する。
+func TestResolveExportWebPathsFallsBackWithoutAStore(t *testing.T) {
+	game, eng := exportWebFixture(t)
+	_, code, err := resolveExportWebPaths(exportWebOptions{Game: game, Engine: eng})
+	if code != 2 || err == nil || !strings.Contains(err.Error(), filepath.Join("build", "engine_full_web", "artifact", "package.fpkg")) {
+		t.Errorf("前の置き場を見ていません code=%d err=%v", code, err)
+	}
+}

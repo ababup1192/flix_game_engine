@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/agenteval"
+	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 	"github.com/ababup1192/flix_game_engine/go/internal/mvncache"
 	"github.com/ababup1192/flix_game_engine/go/internal/renderbudget"
 )
@@ -558,6 +559,79 @@ func sectionMvnCache(c *ctx, out *[]string) {
 		len(off), off[0], more))
 }
 
+// sectionFpkgStore は engine の束が置き場（build/fpkg-store）の形になっていない所を 1 行で知らせる（直すのは人。status は何も変えない）。
+// engine の作業場では、今の版の templates・bench の lib の束が置き場を指していない数。
+// ゲームでは、同じ版のまま engine の束が新しくなっているか、packages.lock の sha が lib の束と合わないか。
+func sectionFpkgStore(c *ctx, out *[]string) {
+	if c.isDir("templates") {
+		fpkgStoreEngineLine(c, out)
+		return
+	}
+	fpkgStoreGameLine(c, out)
+}
+
+func fpkgStoreEngineLine(c *ctx, out *[]string) {
+	v := ReadEngineVersion(c.root)
+	if v == "" || runtime.GOOS == "windows" {
+		return
+	}
+	rel := "lib/github/ababup1192/flix_game_engine/" + v + "/flix_game_engine-" + v + ".fpkg"
+	var old []string
+	for _, pkg := range append(c.glob("templates/*"), c.glob("bench/*")...) {
+		p := path.Join(pkg, rel)
+		info, err := os.Lstat(c.abs(p))
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		if !fpkgstore.IsInStore(c.root, c.abs(p)) {
+			old = append(old, pkg)
+		}
+	}
+	if len(old) == 0 {
+		return
+	}
+	sort.Strings(old)
+	more := ""
+	if len(old) > 1 {
+		more = " ほか"
+	}
+	*out = append(*out, fmt.Sprintf("fpkg     engine の束を置き場（build/fpkg-store）でなく直に指す lib が %d 個（%s%s）→ make sync-engine-full",
+		len(old), old[0], more))
+}
+
+func fpkgStoreGameLine(c *ctx, out *[]string) {
+	text, err := readTextPy(c.abs("flix.toml"))
+	if err != nil {
+		return
+	}
+	m := enginePinRe.FindStringSubmatch(text)
+	if m == nil {
+		return
+	}
+	v := m[1]
+	have, err := fpkgstore.Sha256File(c.abs("lib/github/ababup1192/flix_game_engine/" + v + "/flix_game_engine-" + v + ".fpkg"))
+	if err != nil {
+		return
+	}
+	var why []string
+	if engine := ReadEngineDir(c.root); engine != "" && ReadEngineVersion(engine) == v {
+		if entry, ok := fpkgstore.Current(engine, fpkgstore.EngineFull); ok {
+			if want, err := fpkgstore.Sha256File(filepath.Join(entry, "package.fpkg")); err == nil && want != have {
+				why = append(why, "同じ v"+v+" のまま engine の束が新しくなっている")
+			}
+		}
+	}
+	if lock, err := readTextPy(c.abs("packages.lock")); err == nil {
+		if _, fpkgSum, ok := fpkgstore.EngineLockSums(lock, v); ok && fpkgSum != "" && fpkgSum != have {
+			why = append(why, "packages.lock の fpkg の sha が lib の束と合わない")
+		}
+	}
+	if len(why) == 0 {
+		return
+	}
+	*out = append(*out, "engine   "+strings.Join(why, "・")+" → make engine-upgrade（版が同じでも中身で入れ替える）")
+}
+
 // sectionAgentEval は版ごとの agent-eval の記録（make agent-eval-release が書く）の最新を 1 行。
 // 記録が無いゲームでは黙る（測るかどうかは任意）。
 func sectionAgentEval(c *ctx, out *[]string) {
@@ -643,6 +717,7 @@ var sectionsByName = map[string]func(*ctx, *[]string){
 	"section_agent_eval":    sectionAgentEval,
 	"section_notes":         sectionNotes,
 	"section_mvn_cache":     sectionMvnCache,
+	"section_fpkg_store":    sectionFpkgStore,
 }
 
 // Options は Run の付加情報。

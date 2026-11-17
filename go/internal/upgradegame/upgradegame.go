@@ -11,7 +11,7 @@ package upgradegame
 //
 // WhyNot: sync-agents を check の前に走らせないのは、あれが agents-pack 一式
 // （fge 本体・skills・lint-rules）を消す方向にも書くミラーで、巻き戻す物に入れると
-// 戻す範囲が数百ファイルに広がるため。この順番なら戻す物は 3 ファイルで済む。
+// 戻す範囲が数百ファイルに広がるため。この順番なら戻す物は 4 ファイル（flix.toml・fpkg・toml・packages.lock）で済む。
 //
 // WhyNot: 赤を一律で巻き戻さないのは、非互換のあるバージョン上げでは
 // エージェントが直すまで check が必ず赤で、一律に戻すと本命の上げが永久に終わらないため。
@@ -31,13 +31,14 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fpkgstore"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 	"github.com/ababup1192/flix_game_engine/go/internal/updateplan"
 )
 
 const usage = "使い方: fge upgrade-game --game DIR --version X.Y.Z " +
 	"--fpkg SRC --toml SRC --dest SUBPATH --fpkg-name NAME --toml-name NAME " +
-	"[--reference] [--make MAKE] [--json]"
+	"[--reference] [--no-content-swap] [--make MAKE] [--json]"
 
 // 終了コード。
 const (
@@ -66,7 +67,9 @@ type opts struct {
 	planOut            string
 	makeBin            string
 	reference          bool
-	asJSON             bool
+	// 版が同じ時に中身で入れ替えない（配った版の engine。use-engine で入れた作業場の束を同梱の束へ戻さない）。
+	noContentSwap bool
+	asJSON        bool
 	// 進み具合はそのまま流す。溜めると make の長い出力より後に出て、
 	// 何が始まったのか分からないまま数分待つことになる。
 	progress, problems io.Writer
@@ -79,14 +82,16 @@ type opts struct {
 // result は --json で出す形。Studio は「上げ切った / 追随待ち / 失敗」を
 // 終了コードだけでは見分けられないので、こちらを読む。
 type result struct {
-	Swapped    bool   `json:"swapped"`
-	CheckGreen bool   `json:"checkGreen"`
-	PlanKnown  bool   `json:"planKnown"`
-	PlanCount  int    `json:"planCount"`
-	PlanPath   string `json:"planPath,omitempty"`
-	Reference  string `json:"reference,omitempty"`
-	RolledBack bool   `json:"rolledBack"`
-	Exit       int    `json:"exit"`
+	Swapped bool `json:"swapped"`
+	// 版は同じで中身（fpkg か toml の sha）が違ったので入れ替えた時の 1 行（違わなければ空）。
+	ContentChanged string `json:"contentChanged,omitempty"`
+	CheckGreen     bool   `json:"checkGreen"`
+	PlanKnown      bool   `json:"planKnown"`
+	PlanCount      int    `json:"planCount"`
+	PlanPath       string `json:"planPath,omitempty"`
+	Reference      string `json:"reference,omitempty"`
+	RolledBack     bool   `json:"rolledBack"`
+	Exit           int    `json:"exit"`
 }
 
 // Run はゲームを載せ替えて終了コードを返す。
@@ -117,6 +122,10 @@ func parse(o *opts, errOut *strings.Builder, args []string) int {
 		a := args[i]
 		if a == "--reference" {
 			o.reference = true
+			continue
+		}
+		if a == "--no-content-swap" {
+			o.noContentSwap = true
 			continue
 		}
 		name, inline := a, ""
@@ -183,11 +192,20 @@ func run(root string, o opts) (int, error) {
 	}
 	res := result{PlanKnown: planErr == nil, PlanCount: plan.Count}
 	res.Swapped = versionIn(before) != o.version
+	if !res.Swapped && !o.noContentSwap {
+		res.ContentChanged = contentChanged(o)
+		res.Swapped = res.ContentChanged != ""
+	}
 
 	var undo *backup
 	if res.Swapped {
-		fmt.Fprintf(o.progress, "[upgrade-game] %s: v%s -> v%s\n",
-			o.game, versionIn(before), o.version)
+		if res.ContentChanged != "" {
+			fmt.Fprintf(o.progress, "[upgrade-game] %s: v%s のまま engine の束の中身が新しくなっていたので入れ替えます（%s）\n",
+				o.game, o.version, res.ContentChanged)
+		} else {
+			fmt.Fprintf(o.progress, "[upgrade-game] %s: v%s -> v%s\n",
+				o.game, versionIn(before), o.version)
+		}
 		undo, err = apply(o, gameToml, before)
 		if err != nil {
 			if undo != nil {
@@ -201,6 +219,11 @@ func run(root string, o opts) (int, error) {
 		// 走っていないので、ここで check からやり直せる形にしておく。
 		fmt.Fprintf(o.progress, "[upgrade-game] %s: 既に v%s です。check からやり直します\n",
 			o.game, o.version)
+		// WhyNot: 束を替えない回も lock はそろえる — lib の束は新しいのに lock の sha だけ古い形（手で lib を替えた後など）は、
+		// ここで直さないと status の知らせが engine-upgrade を何度打っても消えない。lock は lib の束に合わせるだけなので戻さない。
+		if err := alignLock(o, &backup{replaced: map[string][]byte{}}); err != nil {
+			fmt.Fprintf(o.problems, "[upgrade-game] packages.lock をそろえられませんでした: %v\n", err)
+		}
 	}
 
 	code, err := decide(root, o, &res, plan, planErr, undo)
@@ -260,7 +283,9 @@ func red(o opts, res *result, plan updateplan.Plan, planErr error, undo *backup)
 			"  戻すなら flix.toml の engine のバージョンを手で書き戻してください\n", planErr)
 		return exitUnknown, nil
 	}
-	if plan.Count == 0 && !res.Swapped && hasPlanFile(o) {
+	// WhyNot: 版が同じまま束の中身だけ入れ替えた回も追随の途中として扱う — 直している途中に engine を作り直すと必ずこの形になり、
+	// 戻すと直している相手（新しい束）が消える。
+	if plan.Count == 0 && (!res.Swapped || res.ContentChanged != "") && hasPlanFile(o) {
 		// WhyNot: ここを「想定外」と言わないのは、既に上げてあるゲームでは数え元が
 		// 新しいバージョンになり、追随の途中でも必ず 0 件と出るため。
 		fmt.Fprintf(o.problems, "[upgrade-game] 追随の途中です。%s の残りを直してから"+
@@ -274,8 +299,12 @@ func red(o opts, res *result, plan updateplan.Plan, planErr error, undo *backup)
 			return exitUnknown, nil
 		}
 		res.RolledBack = true
+		to := "v" + undo.version + " "
+		if res.ContentChanged != "" {
+			to = "v" + undo.version + " の前の束"
+		}
 		fmt.Fprintf(o.problems, "[upgrade-game] 上がりませんでした。当たる非互換は 0 件なのに "+
-			"check が赤いので、想定外として v%s へ戻しました\n", undo.version)
+			"check が赤いので、想定外として %sへ戻しました\n", to)
 		return exitUnknown, nil
 	}
 	if plan.Count == 0 {
@@ -352,7 +381,7 @@ func referenceLine(root string, o opts) string {
 	return "絵は変わっていません（reference-check は緑）"
 }
 
-// backup は差し替えた 3 ファイルを元へ戻すための控え。
+// backup は差し替えた 4 ファイル（flix.toml・fpkg・toml・packages.lock）を元へ戻すための控え。
 type backup struct {
 	version    string
 	tomlPath   string
@@ -369,7 +398,7 @@ type backup struct {
 func (b *backup) restore() error {
 	err := os.WriteFile(b.tomlPath, b.tomlBody, 0o644)
 	for path, body := range b.replaced {
-		if e := os.WriteFile(path, body, 0o644); e != nil && err == nil {
+		if e := fpkgstore.WriteFileAtomic(path, body, 0o644); e != nil && err == nil {
 			err = e
 		}
 	}
@@ -392,18 +421,20 @@ func (b *backup) restore() error {
 // WhyNot: 書き込みに失敗した経路でも控えを返すのは、os.WriteFile が中身を切り詰めてから
 // 落ちうるため。控えを捨てると、切り詰められた flix.toml が戻されないまま残る。
 func apply(o opts, gameToml, before string) (*backup, error) {
-	after := depRe.ReplaceAllString(before, `${1}"`+o.version+`"`)
-	if after == before {
+	if !depRe.MatchString(before) {
 		return nil, fmt.Errorf("%s に flix_game_engine の依存行がありません", gameToml)
 	}
+	after := depRe.ReplaceAllString(before, `${1}"`+o.version+`"`)
 	undo := &backup{
 		version:  versionIn(before),
 		tomlPath: gameToml,
 		tomlBody: []byte(before),
 		replaced: map[string][]byte{},
 	}
-	if err := os.WriteFile(gameToml, []byte(after), 0o644); err != nil {
-		return undo, err
+	if after != before {
+		if err := os.WriteFile(gameToml, []byte(after), 0o644); err != nil {
+			return undo, err
+		}
 	}
 	destDir := filepath.Join(o.game, filepath.FromSlash(o.dest))
 	if _, err := os.Stat(destDir); os.IsNotExist(err) {
@@ -419,9 +450,11 @@ func apply(o opts, gameToml, before string) (*backup, error) {
 			return undo, err
 		}
 	}
-	return undo, nil
+	return undo, alignLock(o, undo)
 }
 
+// WhyNot: 写すのは一時の名前に書いてから rename — 置き場の束は読むだけ（0444）で、前の回に写した物も 0444 のことがあり、
+// 上書きでは書けない。切り詰めてから書く形だと、同じゲームで走っている flix に半分の束が見える。
 func copyInto(undo *backup, src, dest string) error {
 	body, err := os.ReadFile(src)
 	if err != nil {
@@ -432,7 +465,64 @@ func copyInto(undo *backup, src, dest string) error {
 	} else {
 		undo.created = append(undo.created, dest)
 	}
-	return os.WriteFile(dest, body, 0o644)
+	return fpkgstore.WriteFileAtomic(dest, body, 0o644)
+}
+
+// alignLock は packages.lock にこの版の engine の節があれば、その sha をゲームの lib の fpkg と toml にそろえる（lib に無ければ触らない）。
+//
+// WhyNot: 節が無ければ触らない — 版を上げた時は flix が次の解決で節を足す。節があるのに sha が古いと、
+// flix は「packages.lock の記録と違う」で止まり、refactor の索引も作れない（版が同じまま束が新しくなった時がこれ）。
+func alignLock(o opts, undo *backup) error {
+	lockPath := filepath.Join(o.game, "packages.lock")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return nil
+	}
+	destDir := filepath.Join(o.game, filepath.FromSlash(o.dest))
+	fpkgSum, err := fpkgstore.Sha256File(filepath.Join(destDir, o.fpkgName))
+	if err != nil {
+		return nil
+	}
+	tomlSum, err := fpkgstore.Sha256File(filepath.Join(destDir, o.tomlName))
+	if err != nil {
+		return nil
+	}
+	updated, found := fpkgstore.WithEngineLock(string(data), o.version, tomlSum, fpkgSum)
+	if !found || updated == string(data) {
+		return nil
+	}
+	undo.replaced[lockPath] = data
+	if err := fpkgstore.WriteFileAtomic(lockPath, []byte(updated), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(o.progress, "[upgrade-game] packages.lock の engine v%s の sha を lib の束にそろえました\n", o.version)
+	return nil
+}
+
+// contentChanged は版が同じ時に、ゲームの lib の束（fpkg と toml）が engine の物と中身で違うかを 1 行で返す（同じなら空）。
+//
+// WhyNot: ゲームの lib に束が無い時は入れ替えない — 版の字だけを書いて flix に Release から取らせているゲームで、
+// 手元の engine の束を黙って置くことになる。
+func contentChanged(o opts) string {
+	destDir := filepath.Join(o.game, filepath.FromSlash(o.dest))
+	var diffs []string
+	for _, f := range []struct{ label, src, name string }{
+		{"fpkg", o.fpkg, o.fpkgName}, {"toml", o.toml, o.tomlName},
+	} {
+		have, err := fpkgstore.Sha256File(filepath.Join(destDir, f.name))
+		if err != nil {
+			continue
+		}
+		want, err := fpkgstore.Sha256File(f.src)
+		if err != nil {
+			// 読めない元は apply が言う。ここでは入れ替える側へ倒す。
+			return f.label + " の元を読めない"
+		}
+		if have != want {
+			diffs = append(diffs, fmt.Sprintf("%s sha256 %s… → %s…", f.label, have[:12], want[:12]))
+		}
+	}
+	return strings.Join(diffs, "・")
 }
 
 // versionIn は flix.toml が今指しているバージョン（読めなければ空）。
