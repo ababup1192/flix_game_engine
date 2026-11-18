@@ -8,23 +8,23 @@ mod TestDocs {
 
     @Test
     def testExploreWithOneFieldKeepsTheOtherDefaults(): Unit \ Assert =
-        let e = ExploreDoc.fromJson("{\"speed\": 3.0}") |> Option.getWithDefault(ExploreDoc.defaults()) |> ExploreDoc.rec;
-        Assert.assertEq(expected = ExploreDoc.rec(ExploreDoc.defaults())#walkFrameSec, e#walkFrameSec)
+        Assert.assertEq(expected = Some(ExploreDoc.rec(ExploreDoc.defaults())#walkFrameSec),
+            ExploreDoc.fromJson("{\"speed\": 3.0}") |> Option.map(e -> ExploreDoc.rec(e)#walkFrameSec))
 
     @Test
     def testExploreReadsTheSpeed(): Unit \ Assert =
-        let e = ExploreDoc.fromJson("{\"speed\": 3.0}") |> Option.getWithDefault(ExploreDoc.defaults()) |> ExploreDoc.rec;
-        Assert.assertEq(expected = 3.0, e#speed)
+        Assert.assertEq(expected = Some(3.0), ExploreDoc.fromJson("{\"speed\": 3.0}") |> Option.map(e -> ExploreDoc.rec(e)#speed))
 
     @Test
     def testEmptyPartyKeepsTheDefaultParty(): Unit \ Assert =
-        let e = ExploreDoc.fromJson("{\"party\": []}") |> Option.getWithDefault(ExploreDoc.defaults()) |> ExploreDoc.rec;
-        Assert.assertEq(expected = List.length(ExploreDoc.rec(ExploreDoc.defaults())#party), List.length(e#party))
+        Assert.assertEq(expected = Some(List.length(ExploreDoc.rec(ExploreDoc.defaults())#party)),
+            ExploreDoc.fromJson("{\"party\": []}") |> Option.map(e -> List.length(ExploreDoc.rec(e)#party)))
 
     @Test
     def testPartyStripIsReadUnderSprites(): Unit \ Assert =
-        let e = ExploreDoc.fromJson("{\"party\": [{\"strip\": \"a.png\", \"idleStrip\": \"b.png\"}]}") |> Option.getWithDefault(ExploreDoc.defaults()) |> ExploreDoc.rec;
-        Assert.assertEq(expected = ("sprites/a.png", "sprites/b.png") :: Nil, e#party |> List.map(w -> (w#strip, w#idleStrip)))
+        let e = ExploreDoc.fromJson("{\"party\": [{\"strip\": \"a.png\", \"idleStrip\": \"b.png\"}]}");
+        Assert.assertEq(expected = Some(("sprites/a.png", "sprites/b.png")),
+            e |> Option.flatMap(d -> List.head(ExploreDoc.rec(d)#party)) |> Option.map(w -> (w#strip, w#idleStrip)))
 
     @Test
     def testShadowKnobReplacesTheShadowMapSize(): Unit \ Assert =
@@ -46,25 +46,24 @@ mod TestDocs {
 
     @Test
     def testLookReadsAHexColor(): Unit \ Assert =
-        let l = TownLook.fromJson("{\"sky\": \"#ff0000\"}") |> Option.getWithDefault(TownLook.defaults()) |> TownLook.rec;
-        Assert.assertEq(expected = 1.0, l#sky#r)
+        Assert.assertEq(expected = Some(1.0), TownLook.fromJson("{\"sky\": \"#ff0000\"}") |> Option.map(l -> TownLook.rec(l)#sky#r))
 
     @Test
     def testLookWithABrokenColorKeepsTheDefault(): Unit \ Assert =
-        let l = TownLook.fromJson("{\"sky\": \"blue\"}") |> Option.getWithDefault(TownLook.defaults()) |> TownLook.rec;
-        Assert.assertEq(expected = TownLook.rec(TownLook.defaults())#sky#b, l#sky#b)
+        Assert.assertEq(expected = Some(TownLook.rec(TownLook.defaults())#sky#b),
+            TownLook.fromJson("{\"sky\": \"blue\"}") |> Option.map(l -> TownLook.rec(l)#sky#b))
 
     @Test
     def testDecorWithoutPropsIsRefused(): Unit \ Assert =
-        Assert.assertTrue(DocJson.parse("{\"version\": 1}") |> Option.map(j -> Result.isErr(TownDecor.decode(j))) |> Option.getWithDefault(false))
+        Assert.assertEq(expected = Some(true), DocJson.parse("{\"version\": 1}") |> Option.map(j -> Result.isErr(TownDecor.decode(j))))
 
     @Test
     def testDecorWithoutSpriteIsSkipped(): Unit \ Assert =
         let ds = DocJson.parse("{\"props\": [{\"col\": 1}, {\"sprite\": \"dog.png\"}]}") |> Option.toOk("JSON") |> Result.flatMap(TownDecor.decode);
-        Assert.assertEq(expected = Ok("sprites/dog.png" :: Nil), ds |> Result.map(List.map(d -> d#sprite)))
+        Assert.assertEq(expected = Ok(Some("sprites/dog.png")), ds |> Result.map(xs -> List.head(xs) |> Option.map(d -> d#sprite)))
 
     @Test
     def testDecorSwayNeedsAnAmplitude(): Unit \ Assert =
         let ds = DocJson.parse("{\"props\": [{\"sprite\": \"balloon.png\", \"swaySec\": 2.0}]}") |> Option.toOk("JSON") |> Result.flatMap(TownDecor.decode);
-        Assert.assertEq(expected = Ok(None :: Nil), ds |> Result.map(List.map(d -> d#sway)))
+        Assert.assertEq(expected = Ok(Some(None)), ds |> Result.map(xs -> List.head(xs) |> Option.map(d -> d#sway)))
 }

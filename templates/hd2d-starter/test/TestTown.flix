@@ -50,7 +50,7 @@ mod TestTown {
     @Test
     def testRowsOfDifferentSizeAreRefused(): Unit \ Assert =
         let broken = String.replace(src = "\"shape\": [\"...\", \"...\", \"...\"]", dst = "\"shape\": [\"..\"]", miniJson());
-        Assert.assertTrue(DocJson.parse(broken) |> Option.map(j -> Result.isErr(TownMap.decode(j))) |> Option.getWithDefault(false))
+        Assert.assertEq(expected = Some(true), DocJson.parse(broken) |> Option.map(j -> Result.isErr(TownMap.decode(j))))
 
     @Test
     def testBuildingRoofFieldsAreReadFlat(): Unit \ Assert =
@@ -63,30 +63,28 @@ mod TestTown {
 
     def townOf(m: TownMap): TileMap3d.Town = TileMap3d.build(m, Map.empty())
 
-    def zRange(q: Quad): (Float64, Float64) =
-        let zs = q#points |> List.map(p -> p#z);
-        (List.foldLeft(Float64.min, 1000.0, zs), List.foldLeft(Float64.max, -1000.0, zs))
-
     /// 真ん中を 1 段下げた石畳にした地図: 真ん中の高さ 1・まわりの草 1.25。
     def sunkCenter(): TownMap =
         let m = mini();
         { levels = Vector#{ Vector#{ 1, 1, 1 }, Vector#{ 1, 1, 1 }, Vector#{ 1, 1, 1 } } | m }
 
+    /// 真ん中を下げた町の、材質 material で高さの幅（下 lo・上 hi）が keep(lo, hi) に合う面の数。
+    def sunkQuadCount(material: String, keep: (Float64, Float64) -> Bool): Int32 =
+        let zRange = q -> { let zs = q#points |> List.map(p -> p#z); (List.foldLeft(Float64.min, 1000.0, zs), List.foldLeft(Float64.max, -1000.0, zs)) };
+        townOf(sunkCenter())#quads |> List.count(q -> q#material == material and { let (lo, hi) = zRange(q); keep(lo, hi) })
+
     @Test
     def testCurbStandsOnTheFourEdgesBetweenGrassAndCobble(): Unit \ Assert =
-        let curbs = townOf(sunkCenter())#quads |> List.filter(q -> q#material == "stone_cut" and { let (lo, hi) = zRange(q); near(lo, 1.0) and near(hi, 1.25) });
-        Assert.assertEq(expected = 4, List.length(curbs))
+        Assert.assertEq(expected = 4, sunkQuadCount("stone_cut", (lo, hi) -> near(lo, 1.0) and near(hi, 1.25)))
 
     @Test
     def testCopingIsPlacedOnEachCurb(): Unit \ Assert =
         // 笠石の箱 1 つは 5 面（上・4 方）で、縁石の 4 辺に 1 つずつ
-        let copings = townOf(sunkCenter())#quads |> List.filter(q -> q#material == "stone_cut" and { let (_, hi) = zRange(q); near(hi, 1.3) });
-        Assert.assertEq(expected = 20, List.length(copings))
+        Assert.assertEq(expected = 20, sunkQuadCount("stone_cut", (_, hi) -> near(hi, 1.3)))
 
     @Test
     def testAdjacentHedgesShareNoInnerFace(): Unit \ Assert =
-        let hedges = townOf(sunkCenter())#quads |> List.filter(q -> q#material == "hedge");
-        Assert.assertEq(expected = 8, List.length(hedges))
+        Assert.assertEq(expected = 8, sunkQuadCount("hedge", (_, _) -> true))
 
     @Test
     def testCoordinateHashIsFixed(): Unit \ Assert =
@@ -110,10 +108,17 @@ mod TestTown {
     def testSouthWallFacesTheCameraInEngine(): Unit \ Assert =
         Assert.assertTrue(Faces.engineNormal(southWall())#z < -0.999)
 
+    /// 南の壁の、エンジンの座標で高さ y の頂点の v。
+    def southWallVsAt(y: Float64): List[Float64] =
+        Faces.engineVertices(southWall()) |> List.filter(pv -> near(fst(pv)#y, y)) |> List.map(pv -> snd(snd(pv)))
+
     @Test
     def testWallUvTopOfThePictureIsAtTheTopOfTheWall(): Unit \ Assert =
-        let topVs = Faces.engineVertices(southWall()) |> List.filter(pv -> near(fst(pv)#y, 1.0)) |> List.map(pv -> snd(snd(pv)));
-        Assert.assertEq(expected = 0.0 :: 0.0 :: Nil, topVs)
+        Assert.assertEq(expected = 0.0 :: 0.0 :: Nil, southWallVsAt(1.0))
+
+    @Test
+    def testWallUvBottomOfThePictureIsAtTheFootOfTheWall(): Unit \ Assert =
+        Assert.assertEq(expected = 1.0 :: 1.0 :: Nil, southWallVsAt(0.0))
 
     // ── カメラ ──
 

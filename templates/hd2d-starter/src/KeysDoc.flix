@@ -30,7 +30,7 @@ mod KeysDoc {
                   down  = Key.Down :: Key.S :: Nil })
 
     /// テキストから Doc へ（fail-open）。JSON でない・形が違う欄は既定へ落とす。
-    pub def fromJson(text: String): Option[Doc] =
+    def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。

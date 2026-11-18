@@ -6,7 +6,7 @@ mod Controls {
 
     /// 動く向きと強さ（長さ 0〜1・右が +x・上（北）が +y）。スティック（パッド・画面のスティック）を倒していればその値、
     /// 無ければキー（2 つ押しで斜め・長さ 1）。
-    pub def inputOf(keys: KeysDoc.Doc, frame: App.Frame): (Float64, Float64) =
+    def inputOf(keys: KeysDoc.Doc, frame: App.Frame): (Float64, Float64) =
         let stick = frame#leftStick;
         let stickLength = Num.sqrt(stick#x * stick#x + stick#y * stick#y);
         if (stickLength > 0.01) { let k = Float64.min(1.0, stickLength) / stickLength; (stick#x * k, stick#y * k) }
@@ -34,7 +34,7 @@ mod Controls {
         World.step(res, inputOf(res#docs#keys, frame), Float64.min(frame#dt, 0.1), w2)
 
     /// cursor を押した。押した物は絵と同じ木（View.promptLayers）から描く順の手前で選ぶ。
-    pub def tapAt(res: Res.Res, cursor: Vec2.Vec2, w: World.World): World.World =
+    def tapAt(res: Res.Res, cursor: Vec2.Vec2, w: World.World): World.World =
         let ctx = App.pickCtx(View.size());
         match SortingLayer.pickFrom(cursor, View.promptLayers(ctx, View.promptOf(res, w))) {
             case Some(World.Press.QuitYes) => World.answerQuit(true, w)

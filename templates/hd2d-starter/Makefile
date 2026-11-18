@@ -32,5 +32,12 @@ endif
 space := $(subst ,, )
 include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 
-# WhyNot: lint/rules.flix（flixlint の層の決まり）を持たない — flixlint 0.9.0 はこのテンプレートが使う engine の 3D の口
-# （Scene3d.LightUnits・Camera3d.lensShift）を解けず、事実を集める所で止まる。flixlint が追いついたら tidepool-starter の物を写す。
+# コミットで .flix か lint/ を触ったら、lint/rules.flix の決まり（依存の向き・View が World を受けない・テストの形）も見る。
+# flixlint を取れない時（オフラインの初回など）は止めずに知らせる（make lint-flixlint で後から流せる）。
+.PHONY: precommit-local
+precommit-local:
+	@if grep -qE '\.flix$$|^lint/' "$(STAGED_FILE)"; then \
+	  fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	  if "$$fge" flixlint-prepare > /dev/null; then $(MAKE) --no-print-directory lint-flixlint; \
+	  else echo "[pre-commit] flixlint を用意できないので lint/rules.flix の検査は飛ばします（後で make lint-flixlint）"; fi; \
+	fi

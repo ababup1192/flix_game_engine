@@ -92,7 +92,7 @@ mod TownScene {
 
     /// 板の絵の名前（project.json の textures の名前は、assets/sprites/<名前>.png の <名前>）。
     // WhyNot: GPU でも場面の textures の名前で引かない — GPU の描き手のビルボードは project.json の textures だけを引き、Texture3d の名前は見つからないとして描かない。
-    pub def textureNameOf(names: TextureNames, l: Images.Loaded): String =
+    def textureNameOf(names: TextureNames, l: Images.Loaded): String =
         if (names == TextureNames.ProjectTextures) projectTextureName(l#path) else Texture3d.name(l#texture)
 
     /// assets からの相対のパス → project.json の textures の名前。
@@ -157,7 +157,7 @@ mod TownScene {
         else List.drop(step(List.length(d#seq)), d#seq) |> List.head |> Option.getWithDefault(0) |> Num.clampInt(0, nf - 1)
 
     /// 太陽（光の進む向き）。方位は南（手前）から東へ・高さは地平から。shadowMapSize = 影の地図の一辺（0 で影なし）。
-    pub def sunOf(look: TownLook.Look, shadowMapSize: Int32): Scene3d.DirectionalLight =
+    def sunOf(look: TownLook.Look, shadowMapSize: Int32): Scene3d.DirectionalLight =
         let l = TownLook.rec(look);
         let el = l#sunElevation * Num.pi() / 180.0;
         let az = l#sunAzimuth * Num.pi() / 180.0;

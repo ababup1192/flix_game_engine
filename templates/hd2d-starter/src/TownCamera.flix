@@ -33,9 +33,6 @@ mod TownCamera {
         { near = 0.3, far = far, lensShift = Vec2.v2(0.0, lens#shiftY)
           | Camera3d.camera(Vec3.v3(eye#x, eye#height, eye#z), 0.0, 0.0, lens#fovY) }
 
-    /// 高さ groundZ の地面で、画面の高さ v に写る点までの水平の奥行き。
-    pub def depthAt(lens: Lens, eye: Eye, groundZ: Float64, v: Float64): Float64 = (eye#height - groundZ) / tanAt(lens, v)
-
     /// 1 テクセル（1/32 m）に丸める。
     pub def snapToTexel(v: Float64): Float64 = Float64.round(v * Images.texelsPerMeter()) / Images.texelsPerMeter()
 

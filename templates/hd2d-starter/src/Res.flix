@@ -25,7 +25,7 @@ mod Res {
     pub def decorPaths(): List[String] = "assets/market.decor.json" :: "assets/animals.decor.json" :: Nil
 
     /// Doc の束を読む。地図と小物は無いと町が組めないので読めなければ Err・見た目と手触りとキーは既定値で続ける。
-    pub def loadDocs(): Result[String, Docs] \ Fs.FileRead =
+    def loadDocs(): Result[String, Docs] \ Fs.FileRead =
         forM (
             m <- TownMap.load(mapPath());
             decor <- decorPaths() |> Result.traverse(p -> TownDecor.load(p) |> Result.map(ds -> (p, ds)))

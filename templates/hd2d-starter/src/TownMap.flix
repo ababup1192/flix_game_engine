@@ -104,7 +104,7 @@ mod TownMap {
         rows |> List.map(row -> String.toList(row) |> List.map(cellOf) |> List.toVector) |> List.toVector
 
     /// 地面の文字。知らない文字は草（地図の外と同じ）にする。
-    pub def groundOf(ch: Char): Ground = match ch {
+    def groundOf(ch: Char): Ground = match ch {
         case 'c' => Ground.Cobble
         case 'b' => Ground.Cobble
         case 'w' => Ground.Water
@@ -116,7 +116,7 @@ mod TownMap {
         String.indexOf(substr = String.toLowerCase(Char.toString(ch)), "0123456789abcdefghijklmnopqrstuvwxyz") |> Option.getWithDefault(0)
 
     /// 物の字。知らない字は何も置かない。
-    pub def propOf(ch: Char): Prop = match ch {
+    def propOf(ch: Char): Prop = match ch {
         case 'T' => Prop.Tree
         case 'C' => Prop.Cypress
         case 'L' => Prop.Lamp
@@ -169,7 +169,7 @@ mod TownMap {
     pub def propAt(m: TownMap, c: Int32, r: Int32): Prop = cell(m#props, Prop.Empty, c, r)
 
     /// 水路の底は、マスの高さからこれだけ下げる（m）。
-    pub def waterDrop(): Float64 = 0.9
+    def waterDrop(): Float64 = 0.9
 
     /// 水面は、マスの高さからこれだけ下げる（m）。
     pub def waterSurface(): Float64 = 0.35

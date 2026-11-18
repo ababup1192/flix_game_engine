@@ -143,10 +143,13 @@ mod TestExplore {
 
     // ── 先を見せるカメラ ──
 
-    /// 北へ速さ 3.46 m/秒で n コマ（1/60 秒）歩いた後の先へ見せる量の北の成分。
-    def aheadAfterWalking(n: Int32): Float64 =
+    /// 先へ見せる量 start から、北へ速さ speed m/秒で n コマ（1/60 秒）動いた後の先へ見せる量の北の成分。
+    def aheadAfter(n: Int32, speed: Float64, start: (Float64, Float64)): Float64 =
         let dt = 1.0 / 60.0;
-        snd(List.range(0, n) |> List.foldLeft((a, _) -> TownCamera.lookAhead(1.5, 2.0, 3.46, (0.0, 3.46 * dt), dt, a), (0.0, 0.0)))
+        snd(List.range(0, n) |> List.foldLeft((a, _) -> TownCamera.lookAhead(1.5, 2.0, 3.46, (0.0, speed * dt), dt, a), start))
+
+    /// 北へ速さ 3.46 m/秒で n コマ歩いた後の先へ見せる量の北の成分。
+    def aheadAfterWalking(n: Int32): Float64 = aheadAfter(n, 3.46, (0.0, 0.0))
 
     @Test
     def testLookAheadReachesTheSetLengthAfterWalking(): Unit \ Assert = Assert.assertTrue(near(aheadAfterWalking(600), 1.5))
@@ -156,9 +159,7 @@ mod TestExplore {
 
     @Test
     def testLookAheadReturnsWhenStopped(): Unit \ Assert =
-        let dt = 1.0 / 60.0;
-        let back = List.range(0, 600) |> List.foldLeft((a, _) -> TownCamera.lookAhead(1.5, 2.0, 3.46, (0.0, 0.0), dt, a), (0.0, 1.5));
-        Assert.assertTrue(near(snd(back), 0.0))
+        Assert.assertTrue(near(aheadAfter(600, 0.0, (0.0, 1.5)), 0.0))
 
     // ── 描く元と World（その場で書いた Doc と、どの道も 32×32 の白い絵を返す読み口で組む） ──
 
@@ -179,6 +180,10 @@ mod TestExplore {
 
     def leaderOf(r: Res.Res, w: World.World): Option[(Int32, Int32)] = World.leaderCell(r, w)
 
+    /// 立ち始めから入力 dir で 30 コマ（1/60 秒）歩いた World。
+    def walkedHalfASecond(r: Res.Res, dir: (Float64, Float64)): World.World =
+        List.range(0, 30) |> List.foldLeft((acc, _) -> World.step(r, dir, 1.0 / 60.0, acc), World.initial(r))
+
     @Test
     def testLeaderStartsOnTheStartCell(): Unit \ Assert =
         let r = res();
@@ -188,15 +193,13 @@ mod TestExplore {
     def testWalkingNorthForHalfASecondMovesOneMetre(): Unit \ Assert =
         // 立ち始め (0, 3) の真ん中は y = 4.5。北の (0, 2) は通れる
         let r = res();
-        let w = List.range(0, 30) |> List.foldLeft((acc, _) -> World.step(r, (0.0, 1.0), 1.0 / 60.0, acc), World.initial(r));
-        Assert.assertTrue(World.partyOf(w) |> Option.map(p -> near(snd(p#leader), 5.5)) |> Option.getWithDefault(false))
+        Assert.assertEq(expected = Some(true), World.partyOf(walkedHalfASecond(r, (0.0, 1.0))) |> Option.map(p -> near(snd(p#leader), 5.5)))
 
     @Test
     def testWalkingEastStopsAtTheStall(): Unit \ Assert =
         // 東の (1, 3) は屋台で塞がれ、円は四角の手前 0.3 m（x = 0.7）で止まる
         let r = res();
-        let w = List.range(0, 30) |> List.foldLeft((acc, _) -> World.step(r, (1.0, 0.0), 1.0 / 60.0, acc), World.initial(r));
-        Assert.assertTrue(World.partyOf(w) |> Option.map(p -> near(fst(p#leader), 0.7)) |> Option.getWithDefault(false))
+        Assert.assertEq(expected = Some(true), World.partyOf(walkedHalfASecond(r, (1.0, 0.0))) |> Option.map(p -> near(fst(p#leader), 0.7)))
 
     @Test
     def testLeaderDoesNotMoveWhileTheQuitPromptIsOpen(): Unit \ Assert =
@@ -209,7 +212,7 @@ mod TestExplore {
         let r = res();
         let onWater = World.placeLeader(r, 4, 2, Facing.Dir.North, World.initial(r));
         let settled = World.settle(r, onWater);
-        Assert.assertTrue(leaderOf(r, settled) |> Option.map(cr -> not Set.memberOf(cr, r#grid#blocked)) |> Option.getWithDefault(false))
+        Assert.assertEq(expected = Some(true), leaderOf(r, settled) |> Option.map(cr -> not Set.memberOf(cr, r#grid#blocked)))
 
     @Test
     def testMapReloadRebuildsTheGrid(): Unit \ Assert =
@@ -251,5 +254,5 @@ mod TestExplore {
         let r = res();
         let r2 = shallowRes(r);
         let settled = World.settle(r2, World.placeLeader(r, 2, 1, Facing.Dir.North, World.initial(r)));
-        Assert.assertTrue(leaderOf(r2, settled) |> Option.map(cr -> not Set.memberOf(cr, r2#grid#blocked)) |> Option.getWithDefault(false))
+        Assert.assertEq(expected = Some(true), leaderOf(r2, settled) |> Option.map(cr -> not Set.memberOf(cr, r2#grid#blocked)))
 }
