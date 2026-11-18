@@ -291,8 +291,9 @@ mod Buildup {
             let dy = dy0 + hop;
             let sy = sy0 * stretch;
             let shrink = clamp01((t - bp#start) / tm#fall);
+            // WhyNot: 降りている間の板に太陽の影を落とさせない — 宙の板は自分の影を受けて、着地まで黒い人形に見える
             (Scene3d.billboard(f#texture, f#regionRect, Vec3.add(f#position, Vec3.v3(0.0, dy, 0.0)), { x = f#size#x * sxz, y = f#size#y * sy })
-                |> Scene3d.withBillboardTint(f#tint) |> Scene3d.withCastShadows(f#castShadows) |> Scene3d.withReceiveShadows(f#receiveShadows),
+                |> Scene3d.withBillboardTint(f#tint) |> Scene3d.withCastShadows(f#castShadows and dy0 <= 0.0) |> Scene3d.withReceiveShadows(f#receiveShadows),
              if (bp#board#shadow == TileMap3d.BoardShadow.Grounded) Some((Vec3.v3(bp#board#x, bp#board#z, bp#board#y), bp#board#width, 0.25 + 0.75 * shrink)) else None)
         });
         { settled = settled, moving = moving, billboards = List.append(boards |> List.map(fst), dustAt(show, t)),

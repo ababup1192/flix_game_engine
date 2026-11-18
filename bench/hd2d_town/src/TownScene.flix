@@ -24,7 +24,8 @@ mod TownScene {
     /// charNightBase = 夜のキャラ（隊列と町の人）の板の地の明るさ（夜の露出で暗くなる分を 1 より大きい値で戻す）・charNightFar = 街灯から遠い暗がりのキャラの明るさの割合・
     /// lightUnits = 光の量の読み方（Physical は逆二乗・拡散に 1/π）・pointShadows = 街灯の点光源の影（None で落とさない・街灯の強さが 0 の間も落とさない）・
     /// boardLight = 板（キャラ・木・小物）に光を当てるか（Unlit は boardNightBase・charNightBase の掛け目で塗る。Doc では boardLamplight が正なら Unlit）・
-    /// glowAlpha = 火袋とハローの光る板の濃さ（0〜1・歩きながら街灯が点く間に 0 から上げる）。
+    /// glowAlpha = 火袋とハローの光る板の濃さ（0〜1・歩きながら街灯が点く間に 0 から上げる）・
+    /// litToUnlit = 光を当てない板の色の掛け目を、光を当てた時の明るさ（0）から夜の掛け目（1）へ移す割合（光を当てない板へ切り替えた直後に 0 から上げる）。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
@@ -37,7 +38,7 @@ mod TownScene {
                             bloomThreshold = Float64, bloomSize = Float64,
                             lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64,
                             charShadowScale = Vec2.Vec2, charNightBase = Color, charNightFar = Float64, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap],
-                            boardLight = BoardLight, glowAlpha = Float64 }
+                            boardLight = BoardLight, glowAlpha = Float64, litToUnlit = Float64 }
 
     /// 板の明るさの決め方。Lit = 場面の光で照らす・Unlit = 光を当てず、色の掛け目で明るさを決める（夜）。
     pub enum BoardLight with Eq, ToString {
@@ -63,12 +64,14 @@ mod TownScene {
 
     /// 読み込みで 1 回作る物。group = 動かない面と足元の影・textures = 場面に渡す絵・
     /// strips = 隊列の歩きの絵（4 コマを横に並べた物）・contact = 足元の影の形と材質・
-    /// town = 組んだ町の面と板（出来ていく演出が部品に分け直す）・materials = 材質の名前 → (材質, 色の掛け目)・sprites = 板の絵。
+    /// town = 組んだ町の面と板（出来ていく演出が部品に分け直す）・materials = 材質の名前 → (材質, 色の掛け目)・sprites = 板の絵・
+    /// litLights = そのコマで描き手が選ぶ街灯の点光源（withCamera で入れる・読み込みでは空）。
     pub type alias Res = { map = TownMap, look = Look, group = Scene3d.StaticGroup,
                            textures = List[Texture3d.Texture3d], strips = Map[String, Images.Loaded],
                            contactMesh = Mesh3d.Mesh3d, contactMaterial = Scene3d.Material3d,
                            town = TileMap3d.Town, materials = Map[String, (Scene3d.Material3d, Rgb)], sprites = Map[String, Images.Loaded],
-                           denseMaterial = Scene3d.Material3d, lanternTexture = String, haloTexture = String }
+                           denseMaterial = Scene3d.Material3d, lanternTexture = String, haloTexture = String,
+                           litLights = List[Scene3d.PointLight] }
 
     /// 地図と絵を読み、町を組む。skipNpcColumn = 地図の 1・2・3 を置かない列（隊列で歩かせる列）。
     pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
@@ -98,7 +101,7 @@ mod TownScene {
               contactMesh = contactMesh, contactMaterial = contactMaterial,
               town = town, materials = materialsOf(byPath), sprites = byPath,
               denseMaterial = Scene3d.texturedMaterial(Texture3d.name(dense), FilterMode.Linear) |> Scene3d.withAlphaBlend(true),
-              lanternTexture = Texture3d.name(lantern), haloTexture = Texture3d.name(halo) }
+              lanternTexture = Texture3d.name(lantern), haloTexture = Texture3d.name(halo), litLights = Nil }
         }
 
     /// 材質の名前 → (置いた物の材質, 色の掛け目)。
@@ -110,16 +113,26 @@ mod TownScene {
         }) |> List.toMap
 
     /// 板 1 枚のビルボード（演出が板の出し方を決める時に使う）。
-    pub def boardBillboard(res: Res, b: Board): Option[Scene3d.Billboard3d] = billboardOf(res#sprites, res#look, lampBoards(res#town), b)
+    pub def boardBillboard(res: Res, b: Board): Option[Scene3d.Billboard3d] = billboardOf(res#sprites, res#look, lampsOf(res), b)
 
     /// 動かない板（木・街灯・町の人）。look の板の明るさで毎コマ作る。
     // WhyNot: 読み込みで 1 回作って持たない — 歩きながら Look が替わり、行 29 で光を当てない板へ切り替わる。
     pub def staticBoards(res: Res): List[Scene3d.Billboard3d] =
-        let lamps = lampBoards(res#town);
+        let lamps = lampsOf(res);
         res#town#boards |> List.filterMap(billboardOf(res#sprites, res#look, lamps))
 
     /// res の見た目のつまみを look に替える（読み込みで作った絵と形はそのまま）。
     pub def withLook(res: Res, look: Look): Res = { look = look | res }
+
+    /// res に、カメラ camera・描き物の大きさ size で描き手が選ぶ街灯の点光源を持たせる（光を当てない板へ移る間の明るさに使う）。
+    // WhyNot: 街灯の点光源を全部足して明るさを見積もらない — 描き手は画面の真ん中に近い 8 本だけを選んで重みを掛け、画面の外の街灯の光は板に届かない
+    pub def withCamera(res: Res, camera: Camera3d.Camera3d, size: Vec2.Vec2): Res =
+        { litLights = Scene3d.pickLights({ pointLights = lampLights(res) | Scene3d.scene(camera, size) })#pointLights | res }
+
+    /// 街灯の足元（夜の板の寄り具合）と、描き手が選んだ街灯の点光源（光を当てた時の明るさの見積もり）。
+    type alias Lamps = { feet = List[Board], lights = List[Scene3d.PointLight] }
+
+    def lampsOf(res: Res): Lamps = { feet = lampBoards(res#town), lights = res#litLights }
 
     /// 街灯の板（夜の板の明るさを決める）。
     def lampBoards(town: TileMap3d.Town): List[Board] = town#boards |> List.filter(b -> b#sprite == "sprites/street_lamp_ornate.png")
@@ -142,7 +155,7 @@ mod TownScene {
             let h = Int32.toFloat64(l#height) / 32.0 * stretch;
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint),
                       res#look#charShadow == CharShadow.Silhouette) |> Scene3d.withShadowCasterScale(res#look#charShadowScale)
-                |> charLit(res#look, lampBoards(res#town), x, y, tint),
+                |> charLit(res#look, lampsOf(res), x, y, tint),
              characterShadows(res, x, y, z, w))
         })
 
@@ -218,7 +231,7 @@ mod TownScene {
         else Texture3d.name(l#texture)
 
     /// 板 1 枚。カメラが水平なので、カメラへ向く板は地面に垂直に立つ（高さを伸ばす補正は要らない）。
-    def billboardOf(byPath: Map[String, Images.Loaded], look: Look, lamps: List[Board], b: Board): Option[Scene3d.Billboard3d] =
+    def billboardOf(byPath: Map[String, Images.Loaded], look: Look, lamps: Lamps, b: Board): Option[Scene3d.Billboard3d] =
         Map.get(b#sprite, byPath) |> Option.map(l ->
             standing(billboardName(look, l), { position = Vec2.zero(), size = { x = Int32.toFloat64(l#width), y = Int32.toFloat64(l#height) } },
                      Vec3.v3(b#x, b#z, b#y), if (b#flip) 0.0 - b#width else b#width, b#height, tintColor(look, b#tint), b#shadow == TileMap3d.BoardShadow.Grounded)
@@ -231,9 +244,9 @@ mod TownScene {
         String.contains(substr = "_td", sprite) or String.contains(substr = "_walk", sprite) or String.contains(substr = "_idle", sprite)
 
     /// 近くの街灯の寄り具合（街灯ごとに、届く距離の 1.2 倍で 0 になる重みの 2 乗の和）。
-    def lampNearness(look: Look, lamps: List[Board], x: Float64, y: Float64): Float64 =
+    def lampNearness(look: Look, lamps: Lamps, x: Float64, y: Float64): Float64 =
         let reach = look#lampRange * 1.2;
-        lamps |> List.foldLeft((acc, lamp) -> {
+        lamps#feet |> List.foldLeft((acc, lamp) -> {
             let d = Num.sqrt((lamp#x - x) * (lamp#x - x) + (lamp#y - y) * (lamp#y - y));
             let k = Num.clamp(0.0, 1.0, 1.0 - d / reach);
             acc + k * k
@@ -241,25 +254,57 @@ mod TownScene {
 
     /// 夜の板の明るさ（boardLight が Unlit の時だけ）: 光を当てない板にして、色の掛け目を夜の地の明るさに近くの街灯の色を足した物にする。
     // WhyNot: 光の計算のまま夜の板を照らさない — 板の光の法線はいつもカメラ向きで、キャラの北に立つ街灯の光は板の裏から当たり、真っ黒な影絵になる。
-    def lampLit(look: Look, lamps: List[Board], x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
+    def lampLit(look: Look, lamps: Lamps, x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
         if (look#boardLight == BoardLight.Lit) bb
         else {
             let glow = lampNearness(look, lamps, x, y) * look#boardLamplight;
             let c = (floor: Float64, lamp: Float64, tint: Float64) -> Num.clamp(0.0, 1.0, (floor + lamp * glow) * tint);
-            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(Color.rgb(c(look#boardNightBase#r, look#lampColor#r, t#r),
-                                                                     c(look#boardNightBase#g, look#lampColor#g, t#g),
-                                                                     c(look#boardNightBase#b, look#lampColor#b, t#b)))
+            let night = Color.rgb(c(look#boardNightBase#r, look#lampColor#r, t#r), c(look#boardNightBase#g, look#lampColor#g, t#g), c(look#boardNightBase#b, look#lampColor#b, t#b));
+            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(fromLitTint(look, lamps, bb, t, night))
         }
 
     /// 夜のキャラ（隊列と町の人）の板の明るさ: 光を当てない板にして、色の掛け目を charNightBase × （溜まりの中は 1・遠い暗がりは charNightFar）にする。
     // WhyNot: 掛け目を 1 で頭打ちにしない — 夜の露出（−2 段）で光を当てない板も 1/4 に暗くなり、溜まりの中のキャラの顔と服が読めない
-    def charLit(look: Look, lamps: List[Board], x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
+    def charLit(look: Look, lamps: Lamps, x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
         if (look#boardLight == BoardLight.Lit) bb
         else {
             let near = Float64.min(1.0, lampNearness(look, lamps, x, y));
             let k = look#charNightFar + (1.0 - look#charNightFar) * near;
-            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(Color.rgb(look#charNightBase#r * k * t#r, look#charNightBase#g * k * t#g, look#charNightBase#b * k * t#b))
+            let night = Color.rgb(look#charNightBase#r * k * t#r, look#charNightBase#g * k * t#g, look#charNightBase#b * k * t#b);
+            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(fromLitTint(look, lamps, bb, t, night))
         }
+
+    /// 光を当てない板の色の掛け目: 光を当てた時の明るさから、夜の掛け目 night へ litToUnlit の割合で移した物。
+    // WhyNot: 切り替えの瞬間の掛け目を場面に 1 つの値にしない — 街灯が点いた後で切り替えるので、街灯の手前の板と遠い板で明るさが違い、1 つの値ではどちらかが跳ねる
+    def fromLitTint(look: Look, lamps: Lamps, bb: Scene3d.Billboard3d, t: Rgb, night: Color): Color =
+        if (look#litToUnlit >= 1.0) night
+        else {
+            let f = Scene3d.billboardFieldsOf(bb);
+            let e = litLightAt(look, lamps, f#position#x, f#position#y + Float64.abs(f#size#y) * 0.5, f#position#z);
+            let w = Num.clamp(0.0, 1.0, look#litToUnlit);
+            let k = (lin: Float64, nightC: Float64) -> { let lit = Texture3d.linearToSrgb(lin); lit + (nightC - lit) * w };
+            Color.rgb(k(t#r * e#r, night#r), k(t#g * e#g, night#g), k(t#b * e#b, night#b))
+        }
+
+    /// 光を当てる板が world の点 (px, py, pz) で受ける光（線形の量）: どこにでも当たる光・描き手が選んだ街灯（lamps#lights）・太陽（月）。
+    /// 板の向きはカメラ（南）・光の量の読み方は Physical（逆二乗 × 届く範囲の窓・拡散に 1/π）。影は見ない。
+    def litLightAt(look: Look, lamps: Lamps, px: Float64, py: Float64, pz: Float64): Rgb =
+        let amb = Texture3d.srgbToLinearColor(look#ambient);
+        let sunLin = Texture3d.srgbToLinearColor(look#sunColor);
+        let el = look#sunElevation * Num.pi() / 180.0;
+        let az = look#sunAzimuth * Num.pi() / 180.0;
+        let sun = look#sunIntensity * Float64.max(0.0, Num.cos(el) * Num.cos(az)) / Num.pi();
+        let start = { r = amb#r + sunLin#r * sun, g = amb#g + sunLin#g * sun, b = amb#b + sunLin#b * sun };
+        lamps#lights |> List.foldLeft((acc, l) -> {
+            let (dx, dy, dz) = (l#position#x - px, l#position#y - py, l#position#z - pz);
+            let d2 = dx * dx + dy * dy + dz * dz;
+            let facing = Float64.max(0.0, 0.0 - dz / Num.sqrt(Float64.max(d2, 0.000001)));
+            let r2 = Float64.max(0.000001, l#range * l#range);
+            let q = Num.clamp(0.0, 1.0, 1.0 - (d2 / r2) * (d2 / r2));
+            let e = l#intensity * q * q / Float64.max(d2, 0.0001) * facing / Num.pi();
+            let c = Texture3d.srgbToLinearColor(l#color);
+            { r = acc#r + c#r * e, g = acc#g + c#g * e, b = acc#b + c#b * e }
+        }, start)
 
     def standing(texture: String, source: Rect2.Rect2, at: Vec3.Vec3, width: Float64, height: Float64, tint: Color, cast: Bool): Scene3d.Billboard3d =
         Scene3d.billboard(texture, source, at, { x = width, y = height })
@@ -278,7 +323,7 @@ mod TownScene {
             let tint = member#tint |> Option.map(t -> { let (r, g, b) = t; { r = r, g = g, b = b } }) |> Option.getWithDefault(Faces.white());
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), w, h, tintColor(res#look, tint), true)
                 |> Scene3d.withShadowCasterScale(res#look#charShadowScale)
-                |> charLit(res#look, lampBoards(res#town), x, y, tint),
+                |> charLit(res#look, lampsOf(res), x, y, tint),
              contactInstance(res#contactMesh, res#contactMaterial, x, y, z, w))
         })
 
@@ -330,10 +375,11 @@ mod TownScene {
                 let x = Int32.toFloat64(d#col) + 0.5 + d#offX + swayX;
                 let y = Int32.toFloat64(m#height - 1 - d#row) + 0.5 + d#offY;
                 let ground = TownMap.topAt(m, d#col, d#row);
+                // WhyNot: 降りている間の板に太陽の影を落とさせない — 宙の板は自分の影を受けて、着地まで黒い人形に見える
                 let board = standing(billboardName(res#look, l), source, Vec3.v3(x, ground + d#z + swayZ + dy, y), (if (d#flip) 0.0 - w else w) * sxz, h * sy,
-                                     tintColor(res#look, Faces.white()), TownMap.castsShadow(d#shadow))
-                    |> (bb -> if (isCharacterSprite(d#sprite)) charLit(res#look, lampBoards(res#town), x, y, Faces.white(), bb)
-                              else lampLit(res#look, lampBoards(res#town), x, y, Faces.white(), bb));
+                                     tintColor(res#look, Faces.white()), TownMap.castsShadow(d#shadow) and dy <= 0.0)
+                    |> (bb -> if (isCharacterSprite(d#sprite)) charLit(res#look, lampsOf(res), x, y, Faces.white(), bb)
+                              else lampLit(res#look, lampsOf(res), x, y, Faces.white(), bb));
                 (board, if (TownMap.hasFootShadow(d#shadow) and d#sway == None) Some(contactInstance(res#contactMesh, res#contactMaterial, x, y, ground, w)) else None)
             }
         })

@@ -211,7 +211,7 @@ mod BuildVideo {
     /// コマ f の場面とピントの距離。groupOf = 出来た物の列 → (集まり, 集まりにまだ入っていない物)・size = 描き物の大きさ。
     pub def shotAt(st: Setup, groupOf: List[(String, Scene3d.Instance3d)] -> (Scene3d.StaticGroup, List[Scene3d.Instance3d]) \ ef, size: Vec2.Vec2, f: Int32): (Scene3d.Scene3dCmd, Float64) \ ef =
         let look = lookAt(st, f);
-        let res = TownScene.withLook(st#res, look);
+        let res = TownScene.withCamera(TownScene.withLook(st#res, look), TownCamera.cameraAt(st#track#lens, look#far, eyeAt(st, look, f)), size);
         let plan = st#plan;
         let show = st#show;
         let tr = st#track;
@@ -232,15 +232,11 @@ mod BuildVideo {
             let pose = if (walking) { strip = w#strip, frame = walkFrame, perDir = 4, stretch = 1.0 } else idlePose(plan, w, i, t);
             TownScene.walkerBoardFrames(res, pose#strip, w#tint, row, pose#perDir, pose#frame, flip, pose#stretch, snap(x), snap(y), tr#groundZ)
         }) |> List.filterMap(identity);
-        let shake = Buildup.shakeAt(show, t);
         // WhyNot: 広場のにぎやかしを建物と一緒に出さない — 記念碑の揺れと跳ねに重なって読めない。揺れが収まってから 1 つずつ落とす
         let decorFrom = Buildup.impactOf(show) |> Option.map(ip -> fst(ip) + show#timing#shake) |> Option.getWithDefault(show#done);
         let decor = TownScene.decorBoards(res, t, i -> Buildup.boardDropAt(show, t, decorFrom + 0.1 * Int32.toFloat64(i)));
         let decorShadows = decor |> List.filterMap(snd);
-        let at = (v: Vector[Float64], fallback: Float64) -> Vector.nth(f, v) |> Option.getWithDefault(fallback);
-        let pull = at(tr#zoom, 1.0);
-        let eye = { x = snap(at(tr#cameraX, tr#eye#x)), z = snap(at(tr#cameraY, 0.0) - tr#feetDepth * pull),
-                    height = tr#groundZ + (tr#eye#height - tr#groundZ) * pull + (at(tr#cameraHeight, tr#groundZ) - tr#groundZ) + shake };
+        let eye = eyeAt(st, look, f);
         let camera = TownCamera.cameraAt(tr#lens, look#far, eye);
         let leaderY = snap(snd(fst(Route.pointAt(route, s))));
         let focus = Num.sqrt((leaderY - eye#z) * (leaderY - eye#z) + (eye#height - tr#groundZ) * (eye#height - tr#groundZ));
@@ -260,6 +256,16 @@ mod BuildVideo {
             ({ time = t | TownScene.sceneWith(res, camera, size, show#fixed :: settledGroup :: Nil, List.flatten(fr#billboards :: partyBoards :: List.map(fst, decor) :: Nil),
                                  List.flatten(fr#moving :: loose :: contacts :: partyShadows :: decorShadows :: Nil), textures) }, focus)
         }
+
+    /// コマ f の目の位置（ならした追う点・引き・遅れて追う高さ・揺れ）。
+    def eyeAt(st: Setup, look: TownScene.Look, f: Int32): TownCamera.Eye =
+        let tr = st#track;
+        let snap = (v: Float64) -> if (look#snapToTexels) TownCamera.snapToTexel(v) else v;
+        let t = Buildup.storyTime(st#show, Int32.toFloat64(f) / Int32.toFloat64(fps()));
+        let at = (v: Vector[Float64], fallback: Float64) -> Vector.nth(f, v) |> Option.getWithDefault(fallback);
+        let pull = at(tr#zoom, 1.0);
+        { x = snap(at(tr#cameraX, tr#eye#x)), z = snap(at(tr#cameraY, 0.0) - tr#feetDepth * pull),
+          height = tr#groundZ + (tr#eye#height - tr#groundZ) * pull + (at(tr#cameraHeight, tr#groundZ) - tr#groundZ) + Buildup.shakeAt(st#show, t) }
 
     def fullSceneOf(look: TownScene.Look, focus: Float64, flash: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
         let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postFlashAt(look, focus, scene#time, flash));

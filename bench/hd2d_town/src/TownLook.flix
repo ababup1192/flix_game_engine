@@ -16,7 +16,7 @@ mod TownLook {
           heightFog = None, boardLamplight = 0.0, boardNightBase = Color.rgb(0.3, 0.33, 0.5), bloomThreshold = 0.8, bloomSize = 0.6,
           lanternCore = Color.rgb(1.0, 0.96, 0.42), lanternEdge = Color.rgb(1.0, 0.62, 0.06), haloColor = Color.rgb(1.0, 0.6, 0.08), haloSize = 1.9, haloGlow = 0.0, haloFalloff = 2.2,
           charShadowScale = Vec2.v2(1.0, 1.0), charNightBase = Color.rgb(0.3, 0.33, 0.5), charNightFar = 1.0, lightUnits = Scene3d.LightUnits.Legacy, pointShadows = None,
-          boardLight = TownScene.BoardLight.Lit, glowAlpha = 1.0 }
+          boardLight = TownScene.BoardLight.Lit, glowAlpha = 1.0, litToUnlit = 1.0 }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -62,7 +62,7 @@ mod TownLook {
           lightUnits = if (JsonCodec.stringOr("lightUnits", "legacy", m) == "physical") Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy,
           pointShadows = Map.get("pointShadows", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(pointShadowsOf),
           boardLight = if (num("boardLamplight", d#boardLamplight) > 0.0) TownScene.BoardLight.Unlit else TownScene.BoardLight.Lit,
-          glowAlpha = num("glowAlpha", d#glowAlpha) }
+          glowAlpha = num("glowAlpha", d#glowAlpha), litToUnlit = d#litToUnlit }
 
     /// 点光源の影の欄（count = 影を落とす灯りの数・mapSize・pcf・strength・bias・normalBias。無い欄は engine の既定）。
     def pointShadowsOf(h: Map[String, Json]): Scene3d.PointShadowMap =
@@ -100,8 +100,10 @@ mod TownLook {
     // ── 歩きながら変わる時刻（昼 → 夕方 → 夜 → 霧） ──
 
     /// つなぐ境目の行（地図の行・北ほど小さい）。dayToDusk・duskToNight・nightToFog = つなぎ始める行とつなぎ終える行・
-    /// moonRow = 夕方 → 夜の中で、太陽が強さ 0 になって月へ替わり、街灯が点き、板が光を当てない板へ切り替わる行。
-    pub type alias Rows = { dayToDusk = (Float64, Float64), duskToNight = (Float64, Float64), moonRow = Float64, nightToFog = (Float64, Float64) }
+    /// moonRow = 夕方 → 夜の中で、太陽が強さ 0 になって月へ替わり、板が光を当てない板へ切り替わる行・
+    /// lampOn = 街灯（点光源・火袋・ハロー）を点け始める行と、夜の強さに届く行。
+    pub type alias Rows = { dayToDusk = (Float64, Float64), duskToNight = (Float64, Float64), moonRow = Float64, lampOn = (Float64, Float64),
+                            nightToFog = (Float64, Float64) }
 
     /// 台本の timeOfDay（4 つの Look の Doc の道と境目の行）。
     pub type alias TimeOfDay = { day = String, dusk = String, night = String, fog = String, rows = Rows }
@@ -119,7 +121,7 @@ mod TownLook {
         { day = JsonCodec.stringOr("day", "assets/town.json", m), dusk = JsonCodec.stringOr("dusk", "assets/town_dusk.json", m),
           night = JsonCodec.stringOr("night", "assets/town_night.json", m), fog = JsonCodec.stringOr("fog", "assets/town_night_fog_mid.json", m),
           rows = { dayToDusk = pair("dayToDusk", (50.0, 44.0)), duskToNight = pair("duskToNight", (36.0, 24.0)),
-                   moonRow = JsonCodec.floatOr("moonRow", 29.0, m), nightToFog = pair("nightToFog", (17.0, 8.0)) } }
+                   moonRow = JsonCodec.floatOr("moonRow", 29.0, m), lampOn = pair("lampOn", (36.0, 25.0)), nightToFog = pair("nightToFog", (17.0, 8.0)) } }
 
     /// 4 つの Look の Doc を読む（読めない Doc は loadOr のとおり既定値で続ける）。tweak = 読んだ Look に毎回掛ける差し替え。
     pub def loadSchedule(t: TimeOfDay, tweak: Look -> Look): Schedule \ Fs.FileRead =
@@ -141,7 +143,8 @@ mod TownLook {
             if (row >= fst(r#dayToDusk)) s#day
             else if (row > snd(r#dayToDusk)) blend(s#day, s#dusk, smoothstep(progressOf(r#dayToDusk, row)))
             else if (row >= fst(r#duskToNight)) s#dusk
-            else if (row > snd(r#duskToNight)) nightfall(s#dusk, s#night, progressOf(r#duskToNight, row), progressOf(r#duskToNight, r#moonRow))
+            else if (row > snd(r#duskToNight))
+                nightfall(s#dusk, s#night, progressOf(r#duskToNight, row), progressOf(r#duskToNight, r#moonRow), smoothstep(progressOf(r#lampOn, row)))
             else if (row >= fst(r#nightToFog)) s#night
             else if (row > snd(r#nightToFog)) blend(s#night, s#fog, smoothstep(progressOf(r#nightToFog, row)))
             else s#fog;
@@ -181,37 +184,28 @@ mod TownLook {
         };
         fog |> Option.filter(f -> f#density > 0.0)
 
-    /// 夕方 a から夜 b へ（x = 区間の中で歩いた割合・moon = 太陽が月へ替わる割合）。
-    /// moon の手前は太陽（a の向きと色）の強さを 0 まで落とし、街灯は消したまま・板は光を当てる板。
-    /// moon から先は月（b の向きと色）の強さと街灯を上げ、板は光を当てない板にして、掛け目を切り替えの瞬間の明るさから b の値へつなぐ。
+    /// 夕方 a から夜 b へ（x = 区間の中で歩いた割合・moon = 太陽が月へ替わる割合・lamp = 街灯の点き具合 0〜1）。
+    /// moon の手前は太陽（a の向きと色）の強さを 0 まで落とし、板は光を当てる板。moon から先は月（b の向きと色）の強さを上げ、
+    /// 板は光を当てない板にして、掛け目を光を当てた時の明るさ（板ごと）から b の値へつなぐ（litToUnlit）。街灯は moon と関わりなく lamp で点ける。
     /// 霞の近い端は moon で場面の奥の端（far）まで引き、moon から先で b の値へ戻す。
     // WhyNot: 太陽の高さと向きを月の物へなめらかにつながない — 影が地面を回って見え、低い西日が真上を通って月になる。
-    pub def nightfall(a: Look, b: Look, x: Float64, moon: Float64): Look =
-        let base = blend(a, b, smoothstep(x));
+    // WhyNot: 街灯を太陽が 0 になってから点けない — 太陽が落ちきる所で町もキャラも見えない暗い谷になる
+    pub def nightfall(a: Look, b: Look, x: Float64, moon: Float64, lamp: Float64): Look =
+        let base = { lampIntensity = b#lampIntensity * lamp, lampRange = b#lampRange, lampColor = b#lampColor,
+                     lampGlow = b#lampGlow * lamp, haloGlow = b#haloGlow * lamp, glowAlpha = b#glowAlpha * lamp | blend(a, b, smoothstep(x)) };
         let clearNear = Float64.max(a#far, b#fogNear);
         let clearFar = Float64.max(clearNear + 1.0, b#fogFar);
         if (x < moon) {
             let toMoon = smoothstep(x / Float64.max(0.000001, moon));
-            let fade = 1.0 - toMoon;
             // WhyNot: 霞の距離を区間全体でつながない — 光を当てない板は霞を受けず、切り替えの瞬間に遠くの森だけ霞が抜けて黒く跳ねる
             { fogNear = a#fogNear + (clearNear - a#fogNear) * toMoon, fogFar = a#fogFar + (clearFar - a#fogFar) * toMoon,
-              sunElevation = a#sunElevation, sunAzimuth = a#sunAzimuth, sunColor = a#sunColor, sunIntensity = a#sunIntensity * fade,
-              lampIntensity = 0.0, lampGlow = 0.0, haloGlow = 0.0, glowAlpha = 0.0, boardLamplight = 0.0, boardLight = TownScene.BoardLight.Lit | base }
+              sunElevation = a#sunElevation, sunAzimuth = a#sunAzimuth, sunColor = a#sunColor, sunIntensity = a#sunIntensity * (1.0 - toMoon),
+              boardLamplight = 0.0, boardLight = TownScene.BoardLight.Lit | base }
         } else {
             let rise = smoothstep((x - moon) / Float64.max(0.000001, 1.0 - moon));
-            let level = litLevel(blend(a, b, smoothstep(moon)));
-            // WhyNot: 街灯の点光源を板と同じ立ち上がりで上げない — 街灯の板は火袋の 0.7 m 先の光を逆二乗で受け、切り替えの次のコマで赤く跳ねる
-            { lampIntensity = b#lampIntensity * rise * rise,
-              fogNear = clearNear + (b#fogNear - clearNear) * rise, fogFar = clearFar + (b#fogFar - clearFar) * rise,
+            { fogNear = clearNear + (b#fogNear - clearNear) * rise, fogFar = clearFar + (b#fogFar - clearFar) * rise,
               sunElevation = b#sunElevation, sunAzimuth = b#sunAzimuth, sunColor = b#sunColor, sunIntensity = b#sunIntensity * rise,
-              lampRange = b#lampRange, lampColor = b#lampColor, lampGlow = b#lampGlow * rise, haloGlow = b#haloGlow * rise, glowAlpha = b#glowAlpha * rise,
-              boardLamplight = b#boardLamplight * rise, boardLight = TownScene.BoardLight.Unlit,
-              boardNightBase = mixColor(level, b#boardNightBase, rise), charNightBase = mixColor(level, b#charNightBase, rise),
-              charNightFar = 1.0 + (b#charNightFar - 1.0) * rise | base }
+              boardLamplight = b#boardLamplight, boardLight = TownScene.BoardLight.Unlit, litToUnlit = rise,
+              boardNightBase = b#boardNightBase, charNightBase = b#charNightBase, charNightFar = b#charNightFar | base }
         }
-
-    /// 太陽も街灯も 0 の時に、光を当てる板が受ける明るさ（光を当てない板の色の掛け目・画面の値）。
-    /// 立った板にはどこにでも当たる光（ambient）だけが届く。
-    // WhyNot: 上を向く面の明るさ（hemisphere）を足さない — 足すと切り替えの瞬間に木とキャラが明るく跳ねた（行 29 の前後の 2 コマで測った）
-    pub def litLevel(look: Look): Color = look#ambient
 }

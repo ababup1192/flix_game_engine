@@ -246,7 +246,7 @@ mod TestTown {
 
     def schedule(): TownLook.Schedule =
         { day = TownLook.defaults(), dusk = dusk(), night = night(), fog = fogNight(),
-          rows = { dayToDusk = (50.0, 44.0), duskToNight = (36.0, 24.0), moonRow = 29.0, nightToFog = (17.0, 8.0) } }
+          rows = { dayToDusk = (50.0, 44.0), duskToNight = (36.0, 24.0), moonRow = 29.0, lampOn = (36.0, 25.0), nightToFog = (17.0, 8.0) } }
 
     @Test
     def testBlendAtZeroKeepsTheFirstLook(): Unit \ Assert =
@@ -280,4 +280,13 @@ mod TestTown {
     @Test
     def testJustAfterTheMoonRowTheBoardsAreUnlit(): Unit \ Assert =
         Assert.assertEq(expected = TownScene.BoardLight.Unlit, TownLook.atRow(schedule(), 28.95)#boardLight)
+
+    @Test
+    def testAtTheMoonRowTheLampsAreAlreadyMostlyOn(): Unit \ Assert =
+        let k = TownLook.atRow(schedule(), 29.0)#lampIntensity / 260.0;
+        Assert.assertTrue(k >= 0.5 and k <= 0.75)
+
+    @Test
+    def testJustAfterTheMoonRowTheBoardsStillLookLit(): Unit \ Assert =
+        Assert.assertTrue(TownLook.atRow(schedule(), 28.95)#litToUnlit < 0.05)
 }
