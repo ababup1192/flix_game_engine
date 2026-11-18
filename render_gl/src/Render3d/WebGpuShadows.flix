@@ -182,21 +182,27 @@ mod Render3d.WebGpuShadows {
             rp.end()
         })
 
-    /// 変種の場面の R3dLight の値（Render3dWgsl.lightValueBytes の並び）を buf へ詰める: samplings の点光源の影の atlas の値（無ければ全部の slot が −1）と
+    /// 変種の場面の R3dLight の値（Render3d.UniformLayout.lightFields の並び）を buf へ詰める: samplings の点光源の影の atlas の値（無ければ全部の slot が −1）と
     /// 場面の 1 / unitsPerMeter²（GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）。
     pub def packLightValues(buf: ByteBuffer, scene: Scene3d.Scene3dCmd, samplings: List[Render3d.ShadowMaps.ShadowSampling]): Unit \ IO =
         let values = samplings |> List.findMap(pointAtlasOf) |> Option.map(a -> Render3d.Shadow.pointShadowUseOf(0, a));
+        let o = Render3d.UniformLayout.lightOffsets();
+        let at = f -> Render3d.UniformLayout.offsetOf(o, f);
+        let shadowsAt = at(Render3d.UniformLayout.LightField.PointShadow);
         let none = Vector.repeat(Scene3d.maxPointLights(), (-1.0f32, 0.0f32, 0.0f32, 0.0f32));
         values |> Option.map(v -> v#lights) |> Option.getWithDefault(none) |> Vector.forEachWithIndex((i, c) -> {
             let (slot, a, b, strength) = c;
-            discard buf.putFloat(16 * i, slot).putFloat(16 * i + 4, a).putFloat(16 * i + 8, b).putFloat(16 * i + 12, strength)
+            let base = shadowsAt + 16 * i;
+            discard buf.putFloat(base, slot).putFloat(base + 4, a).putFloat(base + 8, b).putFloat(base + 12, strength)
         });
-        let at = 16 * Scene3d.maxPointLights();
+        let atlasAt = at(Render3d.UniformLayout.LightField.PointShadowAtlas);
         let (size, columns, scale, pcf) = values |> Option.map(v -> v#atlas) |> Option.getWithDefault((1.0f32, 1.0f32, 1.0f32, 0.0f32));
-        discard buf.putFloat(at, size).putFloat(at + 4, columns).putFloat(at + 8, scale).putFloat(at + 12, pcf);
+        discard buf.putFloat(atlasAt, size).putFloat(atlasAt + 4, columns).putFloat(atlasAt + 8, scale).putFloat(atlasAt + 12, pcf);
+        let biasAt = at(Render3d.UniformLayout.LightField.PointShadowBias);
         let (bias, normalBias) = values |> Option.map(v -> v#bias) |> Option.getWithDefault((0.0f32, 0.0f32));
-        discard buf.putFloat(at + 16, bias).putFloat(at + 20, normalBias);
-        discard buf.putFloat(at + 24, RenderUtil.f32(Render3d.Light.inverseUnitsPerMeterSquaredOf(scene))).putFloat(at + 28, 0.0f32)
+        discard buf.putFloat(biasAt, bias).putFloat(biasAt + 4, normalBias);
+        discard buf.putFloat(at(Render3d.UniformLayout.LightField.InverseUnitsPerMeterSquared), RenderUtil.f32(Render3d.Light.inverseUnitsPerMeterSquaredOf(scene)));
+        discard buf.putFloat(at(Render3d.UniformLayout.LightField.Pad0), 0.0f32)
 
     def pointAtlasOf(s: Render3d.ShadowMaps.ShadowSampling): Option[Scene3d.PointShadows.Atlas] = match s {
         case Render3d.ShadowMaps.ShadowSampling.Point(a) => Some(a)

@@ -578,14 +578,14 @@ pub mod RenderPaint.Internal.WebGpuPaint {
 
     def bindWhole(pass: RenderPass, slot: Int32, buffer: Buffer): Unit \ IO = pass.setVertexBuffer(slot, buffer, 0i64, buffer.size())
 
-    /// 頂点の buffer の 0 番を、行の種類の buffer にする（WebGpuRows.renderFrame の setVertices）。返すのはその buffer に入っている要素の数
+    /// 頂点の buffer の 0 番を、積む物 source（WebGpuRows.vertexSource*）の buffer にする（WebGpuRows.renderFrame の setVertices）。返すのはその buffer に入っている要素の数
     /// （タイルは枚数・static は頂点の数・stencil を 0 に戻す矩形は 6・スプライトと多角形はこのコマに送った分なので上限を設けない）。表に無い番号は 0（その行は描かない）。
-    def setVertices(paint: Paint, pass: RenderPass, kind: Int32, buffer: Int32): Int32 \ IO =
+    def setVertices(paint: Paint, pass: RenderPass, source: Int32, buffer: Int32): Int32 \ IO =
         let PaintData.PaintData(p) = paint;
-        if (kind == RenderList.kindPoly()) { bindWhole(pass, 0, Array.get(0, p#vertices#gpuBuffer)); Int32.maxValue() }
-        else if (kind == RenderList.kindMask()) { bindWhole(pass, 0, p#pipes#stencilResetQuad); 6 }
-        else if (kind == RenderList.kindTile()) bindCounted(pass, Map.get(buffer, Ref.get(p#tileBuffers)))
-        else if (kind == RenderList.kindStatic()) bindCounted(pass, Map.get(buffer, Ref.get(p#staticBuffers)))
+        if (source == RenderFrame.Internal.WebGpuRows.vertexSourcePoly()) { bindWhole(pass, 0, Array.get(0, p#vertices#gpuBuffer)); Int32.maxValue() }
+        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceStencilQuad()) { bindWhole(pass, 0, p#pipes#stencilResetQuad); 6 }
+        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceTile()) bindCounted(pass, Map.get(buffer, Ref.get(p#tileBuffers)))
+        else if (source == RenderFrame.Internal.WebGpuRows.vertexSourceStatic()) bindCounted(pass, Map.get(buffer, Ref.get(p#staticBuffers)))
         else { bindWhole(pass, 0, Array.get(0, p#instances#gpuBuffer)); Int32.maxValue() }
 
     /// 表の (buffer, 要素の数) を頂点の buffer の 0 番に付けて要素の数を返す（表に無ければ 0）。

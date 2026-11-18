@@ -5,8 +5,8 @@ mod RenderFrame.TestShapeRows {
     import java.nio.FloatBuffer
     use RenderFrame.{Merged, blendCode, closeRuns, countBase, emitRowItem, newRunState, stateSize}
     use RenderFrame.Internal.GlRows
-    use RenderFrame.Internal.RenderList.{RenderList, clearRenderList, instanceFloats, kindPoly, kindScene3d, kindSprite, kindStatic, kindSurface, kindTile,
-                                         newRenderList, nextVertexOf, readFields, readsOf, rowAt, rowCountOf, rowsOf, surfaceValueAlign, valueCountOf, valuesOf,
+    use RenderFrame.Internal.RenderList.{ListRowKind, RenderList, clearRenderList, instanceFloats,
+                                         newRenderList, nextVertexOf, readFields, readsOf, rowCountOf, rowsOf, surfaceValueAlign, valueCountOf, valuesOf,
                                          vertexFloats, viewValueFloats}
 
     // ── 組み立て ──
@@ -52,7 +52,7 @@ mod RenderFrame.TestShapeRows {
         closeRuns(st, list);
         list
 
-    def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = rowAt(rowsOf(list), row, col)
+    def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = RenderFrame.TestRenderList.cellAt(rowsOf(list), row, col)
 
     def clipRect(): Rect2.Rect2 = { position = v(1.0, 2.0), size = v(30.0, 20.0) }
 
@@ -76,12 +76,12 @@ mod RenderFrame.TestShapeRows {
     @Test
     def testSameKeyPolygonsAreOneRow(): Unit \ {Assert, IO} =
         let list = listOf(poly() :: poly() :: Nil);
-        Assert.assertEq(expected = (1, kindPoly(), 12), (rowCountOf(list), cell(list, 0, 0), cell(list, 0, 2)))
+        Assert.assertEq(expected = (1, RenderFrame.TestRenderList.codeOf(ListRowKind.Poly), 12), (rowCountOf(list), cell(list, 0, 0), cell(list, 0, 2)))
 
     /// 多角形・箱・多角形は、列の順のまま 3 行（多角形・スプライト・多角形）。
     @Test
     def testPolygonAndSpriteKeepOrder(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindPoly() :: kindSprite() :: kindPoly() :: Nil, kindsOf(listOf(poly() :: box() :: poly() :: Nil)))
+        Assert.assertEq(expected = RenderFrame.TestRenderList.codeOf(ListRowKind.Poly) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Sprite) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Poly) :: Nil, kindsOf(listOf(poly() :: box() :: poly() :: Nil)))
 
     /// 2 本目の多角形の run の頭の頂点は、1 本目の後ろ（6）。
     @Test
@@ -117,7 +117,7 @@ mod RenderFrame.TestShapeRows {
     /// タイルの層の行の種類はタイル。
     @Test
     def testTileRowKind(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindTile(), cell(listOf(tile() :: Nil), 0, 0))
+        Assert.assertEq(expected = RenderFrame.TestRenderList.codeOf(ListRowKind.Tile), cell(listOf(tile() :: Nil), 0, 0))
 
     /// タイルの層の行は、枚数（12）と絵の番号（9）を持つ。
     @Test
@@ -140,7 +140,7 @@ mod RenderFrame.TestShapeRows {
     /// 多角形の run はタイルの層の前で閉じる（多角形・タイル・多角形の 3 行）。
     @Test
     def testTileClosesPolygonRun(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindPoly() :: kindTile() :: kindPoly() :: Nil, kindsOf(listOf(poly() :: tile() :: poly() :: Nil)))
+        Assert.assertEq(expected = RenderFrame.TestRenderList.codeOf(ListRowKind.Poly) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Tile) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Poly) :: Nil, kindsOf(listOf(poly() :: tile() :: poly() :: Nil)))
 
     /// 表に無い絵のタイルの層は行を作らない。
     @Test
@@ -154,7 +154,7 @@ mod RenderFrame.TestShapeRows {
     /// static の行の種類は static。
     @Test
     def testStaticRowKind(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindStatic(), cell(listOf(staticRange() :: Nil), 0, 0))
+        Assert.assertEq(expected = RenderFrame.TestRenderList.codeOf(ListRowKind.StaticRange), cell(listOf(staticRange() :: Nil), 0, 0))
 
     /// static の行は、buffer の中の頭の頂点（6）と頂点の数（9）を持つ。
     @Test
@@ -217,17 +217,17 @@ mod RenderFrame.TestShapeRows {
     @Test
     def testSceneRowHoldsSceneNumber(): Unit \ {Assert, IO} =
         let list = listOf(Merged.MScene3d(5) :: Nil);
-        Assert.assertEq(expected = (kindScene3d(), 5), (cell(list, 0, 0), cell(list, 0, 1)))
+        Assert.assertEq(expected = (RenderFrame.TestRenderList.codeOf(ListRowKind.Scene3d), 5), (cell(list, 0, 0), cell(list, 0, 1)))
 
     /// 同じ絵の箱の間に場面が入ると、箱の run は場面の前で閉じる（箱・場面・箱の 3 行）。
     @Test
     def testSceneSplitsSpriteRun(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindSprite() :: kindScene3d() :: kindSprite() :: Nil, kindsOf(listOf(box() :: Merged.MScene3d(0) :: box() :: Nil)))
+        Assert.assertEq(expected = RenderFrame.TestRenderList.codeOf(ListRowKind.Sprite) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Scene3d) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Sprite) :: Nil, kindsOf(listOf(box() :: Merged.MScene3d(0) :: box() :: Nil)))
 
     /// 多角形の run も場面の前で閉じる。
     @Test
     def testSceneSplitsPolyRun(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindPoly() :: kindScene3d() :: kindPoly() :: Nil, kindsOf(listOf(poly() :: Merged.MScene3d(0) :: poly() :: Nil)))
+        Assert.assertEq(expected = RenderFrame.TestRenderList.codeOf(ListRowKind.Poly) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Scene3d) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Poly) :: Nil, kindsOf(listOf(poly() :: Merged.MScene3d(0) :: poly() :: Nil)))
 
     /// GL の backend は場面の行で、行の順に場面の番号を渡して描かせる。
     @Test
@@ -263,7 +263,7 @@ mod RenderFrame.TestShapeRows {
     @Test
     def testSurfaceIsARow(): Unit \ {Assert, IO} =
         let list = listOf(plainSurface() :: Nil);
-        Assert.assertEq(expected = (1, kindSurface(), 1, 7), (rowCountOf(list), cell(list, 0, 0), cell(list, 0, 1), cell(list, 0, 2)))
+        Assert.assertEq(expected = (1, RenderFrame.TestRenderList.codeOf(ListRowKind.Surface), 1, 7), (rowCountOf(list), cell(list, 0, 0), cell(list, 0, 1), cell(list, 0, 2)))
 
     /// 面の値は values の 64 の倍数の位置（static の値の後ろの 12 → 64）から、rect・time・alpha・params の順。
     @Test
@@ -283,7 +283,7 @@ mod RenderFrame.TestShapeRows {
     /// 同じ絵の箱の間に面が入ると、箱の run は面の前で閉じる（箱・面・箱の 3 行）。
     @Test
     def testSurfaceSplitsSpriteRun(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindSprite() :: kindSurface() :: kindSprite() :: Nil, kindsOf(listOf(box() :: plainSurface() :: box() :: Nil)))
+        Assert.assertEq(expected = RenderFrame.TestRenderList.codeOf(ListRowKind.Sprite) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Surface) :: RenderFrame.TestRenderList.codeOf(ListRowKind.Sprite) :: Nil, kindsOf(listOf(box() :: plainSurface() :: box() :: Nil)))
 
     /// 面の行の reads 1 つ分の (絵の番号, 補間, 上下逆)。
     def readAt(list: RenderList, row: Int32, k: Int32): (Int32, Int32, Int32) \ IO =

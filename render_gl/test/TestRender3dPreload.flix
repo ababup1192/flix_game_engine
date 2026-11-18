@@ -42,7 +42,7 @@ mod Render3d.TestPreload {
                               color = { r = 1.0, g = 1.0, b = 1.0 } } :: Nil)
 
     def cmdWith(key: String, side: Float64): Scene3d.PreloadCmd =
-        { key = key, instances = () -> Scene3d.meshInstance(meshWithSide(side), Mat4.identity()) :: Nil, textures = () -> Nil }
+        Scene3d.preloadCmd(key, () -> Scene3d.meshInstance(meshWithSide(side), Mat4.identity()) :: Nil)
 
     def noTexture(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
 
@@ -68,8 +68,8 @@ mod Render3d.TestPreload {
     /// 名前 name の絵を読む材質を付けた物の宣言。
     def cmdReading(name: String, textures: List[Texture3d.Texture3d]): Scene3d.PreloadCmd =
         let material = Scene3d.texturedMaterial(name, ShaderDoc.FilterMode.Linear);
-        { key = "textured", instances = () -> (Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, meshWithSide(1.0)), Mat4.identity()) |> Scene3d.withMaterial(material)) :: Nil,
-          textures = () -> textures }
+        { textures = () -> textures
+          | Scene3d.preloadCmd("textured", () -> (Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, meshWithSide(1.0)), Mat4.identity()) |> Scene3d.withMaterial(material)) :: Nil) }
 
     /// textures に渡した絵は、場面が 1 つも無くても置き場へ上がる。
     @Test
@@ -123,8 +123,7 @@ mod Render3d.TestPreload {
 
     def cutoutCmd(): Scene3d.PreloadCmd =
         let material = Scene3d.texturedMaterial("wall", ShaderDoc.FilterMode.Linear) |> Scene3d.withCutout(true);
-        { key = "cutout", instances = () -> (Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, meshWithSide(1.0)), Mat4.identity()) |> Scene3d.withMaterial(material)) :: Nil,
-          textures = () -> Nil }
+        Scene3d.preloadCmd("cutout", () -> (Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, meshWithSide(1.0)), Mat4.identity()) |> Scene3d.withMaterial(material)) :: Nil)
 
     /// cutout の材質は、alpha to one のある GL では 2 版、無い GL では 1 版を組み、どれも控える。
     @Test
@@ -154,13 +153,21 @@ mod Render3d.TestPreload {
     /// 姿勢を付けて渡した物は、骨つきの版のプログラムまで組む。
     @Test
     def testPosedInstanceBuildsSkinnedPrograms(): Unit \ {Assert, IO} =
-        let cmd = { key = "skin", instances = () -> skinnedInstance() :: Nil, textures = () -> Nil };
+        let cmd = Scene3d.preloadCmd("skin", () -> skinnedInstance() :: Nil);
         Assert.assertTrue(Option.nonEmpty(Ref.get(stateAfter(false, cmd)#skinnedRef)))
+
+    /// variants に +ps と +pu を渡すと、その版の頂点の色のプログラムまで組み、既定の版だけの宣言では変種を組まない（同じ変種を 2 回書いても 1 つ）。
+    @Test
+    def testVariantsBuildVariantPrograms(): Unit \ {Assert, IO} =
+        let ps = { pointShadows = true, physicalUnits = false };
+        let pu = { pointShadows = false, physicalUnits = true };
+        let withVariants = { variants = ps :: pu :: ps :: Nil | cmdWith("v", 1.0) };
+        Assert.assertEq(expected = (2, 0), (Map.size(Ref.get(stateAfter(false, withVariants)#variantLitRef)), Map.size(Ref.get(stateAfter(false, cmdWith("d", 1.0))#variantLitRef))))
 
     /// 置く物があれば頂点の色のプログラムも組み、何も置かない宣言では組まない。
     @Test
     def testBasePrograms(): Unit \ {Assert, IO} =
-        let empty = { key = "none", instances = () -> Nil, textures = () -> Nil };
+        let empty = Scene3d.preloadCmd("none", () -> Nil);
         Assert.assertEq(expected = (true, false),
                         (Option.nonEmpty(Ref.get(stateAfter(false, cmdWith("a", 1.0))#programsRef)), Option.nonEmpty(Ref.get(stateAfter(false, empty)#programsRef))))
 

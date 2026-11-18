@@ -1,6 +1,6 @@
 // Render3d.WebGpuStatic — 動かない物の集まりの持ち越した行（Render3d.StaticRows）を GPU に置いて毎コマ描く所（WebGPU の backend）。
 // 集まりごとに 1 体ごとの値の buffer と材質の値の buffer を 1 回だけ作って書き、毎コマは形と絵を使った物にして、時刻が変わった値の区画だけ書き直す。
-// 描くのは場面の色の pass の空の後・場面の行の前（場面の行の頭は不透明の行なので、半透明の行は持ち越した物より後に重なる）と、場面の影の地図の pass。
+// 描くのは場面の pass の空の後・場面の行の前（場面の行の頭は不透明の行なので、半透明の行は持ち越した物より後に重なる）と、場面の影の地図の pass。奥行きの書き出しの場面も同じ。
 // 行は描き先の形式・標本・pass ごとの render bundle に 1 回だけ積み、毎コマはその bundle を流す（runBundle）。group 0 か材質の絵が替わったら積み直す。
 // WhyNot: 持ち越した buffer と bundle を作り直す時にその場で手放さない — 同じ encoder の前の場面がまだ submit していない pass で読んでいる。
 //   2D の描き手の submit の後（afterSubmit）でも手放さない — コマの途中の submit の後に、同じコマの後の場面が前に引いた物を描く。コマを締めた後（endFrame）に手放す。
@@ -20,7 +20,7 @@ mod Render3d.WebGpuStatic {
     use Render3d.{TextureSource}
     use Render3d.MeshTable
     use Render3d.ScenePlan.{Planner}
-    use Render3d.SceneList.{SceneList, flagSameBinding, hasFlag, kindMaterial, rowAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{SceneList, SceneRowKind, flagSameBinding, hasFlag, kindAt, rowCountOf, valuesAt}
     use Render3d.StaticRows
     use Render3d.StaticRows.{CarriedRows}
     use Render3d.WebGpuMaterials
@@ -66,10 +66,11 @@ mod Render3d.WebGpuStatic {
     /// この数のコマ描かなかった集まりの持ち越しは手放す（描き先の Render3d.WebGpuRenderer の idleTargetFrames と同じ）。
     def idleFrames(): Int64 = 128i64
 
-    /// 場面 scene の持ち越す集まりの物（色の場面だけ・同じ集まりが続くコマは作らずに前の物）。
+    /// 場面 scene の持ち越す集まりの物（同じ集まりが続くコマは作らずに前の物。色の場面と奥行きの書き出しの場面は別の物）。
+    // WhyNot: alpha to coverage の版で行を作らない — WebGPU の backend は alpha to one を答えない（Render3d.WebGpuMaterials の頭）。
     pub def carriedOf(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd): List[Carried] \ IO =
-        let variant = Render3d.variantKeyOf(Render3d.shaderVariantOf(scene));
-        StaticRows.carriedGroupsOf(scene) |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, variant, () -> buildCarried(b, scene, g), retire(st)))
+        let variant = StaticRows.carriedKeyOf(false, scene);
+        scene#groups |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, variant, () -> buildCarried(b, scene, g), retire(st)))
 
     def buildCarried(b: Builder, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Carried \ IO =
         let programs = Ref.fresh(Static, Vector.empty());
@@ -78,7 +79,7 @@ mod Render3d.WebGpuStatic {
             Ref.put(found, programs);
             WebGpuMaterials.ordersOf(found)
         };
-        let rows = StaticRows.build(b#planner, b#tables, resolve, scene, g);
+        let rows = StaticRows.build(b#planner, b#tables, resolve, false, scene, g);
         uploadRows(b#tables#meshes, b#allocator, b#tables#gen, rows#list);
         uploadRows(b#tables#meshes, b#allocator, b#tables#gen, rows#shadowList);
         let instanceBytes = rows#instanceCount * Render3dWgsl.instanceBytes();
@@ -91,7 +92,7 @@ mod Render3d.WebGpuStatic {
     /// 値を前の行と分け合わない材質の行（材質の絵を作り、使った物にする行）。
     def ownBindingRows(list: SceneList): Vector[Int32] \ IO =
         Vector.range(0, rowCountOf(list)) |> Vector.filter(row ->
-            rowAt(list, row, 0) == kindMaterial() and valuesAt(list, row) >= 0 and not hasFlag(list, row, flagSameBinding()))
+            kindAt(list, row) == SceneRowKind.Material and valuesAt(list, row) >= 0 and not hasFlag(list, row, flagSameBinding()))
 
     def retire(st: StaticCache): Carried -> Unit \ IO = c -> {
         Map.forEach((_, b) -> retireBundle(st, b), Ref.get(c#bundles));

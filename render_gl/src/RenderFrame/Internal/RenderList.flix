@@ -1,14 +1,14 @@
 // RenderFrame.Internal.RenderList — 1 回の renderCommands で描く行の列（GL と WebGPU が同じ物を流す）と、その行を描く pass の指定。
 // 1 行 = 物の集まりを 1 回描く（種類はスプライト・字・箱の run・多角形の run・タイルの層・static layer の範囲・mask つきスプライト 1 体・面 1 枚・3D の場面を貼る所）。
 // GL の物（program・VAO・buffer）を持たず、絵と頂点の buffer は backend の表の番号（GL の backend ではテクスチャ・VAO の番号）で持つ。
-// rows の頭: 0=行の数 1=次に書く instance の番号 2=次に書く頂点の番号。その後ろに 1 行 rowStride() 個:
-//   0=種類（kind*） 1=先頭（スプライトは instance・多角形と static は頂点の番号） 2=数（体数・頂点数・タイルの数）
+// rows の頭: 0=行の数 1=次に書く instance の番号 2=次に書く頂点の番号。その後ろに 1 行 rowStride() 個（欄の番号は col* の def・読むのは名前の読み出し口）:
+//   0=種類（kindCodeOf） 1=先頭（スプライトは instance・多角形と static は頂点の番号） 2=数（体数・頂点数・タイルの数）
 //   3=絵の番号（0 = 絵の無い箱・多角形と static は 0） 4=blend 5=clip有無 6-9=clip矩形（viewport の左上原点の px）
 //   10=頂点の buffer の番号（タイルの instance・static の頂点。backend の表の番号。ほかは 0） 11=values の先頭（draw ごとの値。スプライトは 0）
-//   mask つきスプライト（kindMask）だけ欄の意味が違う: 1=instance の番号（1 体） 2=mask の頂点の数（三角形にほどいた物・3 未満なら 0） 10=mask の先頭の頂点の番号
+//   mask つきスプライト（ListRowKind.Mask）だけ欄の意味が違う: 1=instance の番号（1 体） 2=mask の頂点の数（三角形にほどいた物・3 未満なら 0） 10=mask の先頭の頂点の番号
 //   11=stencil に書いて比べる値（nextMaskRef が決める・0 = mask が 3 頂点未満で stencil を使わずに描く）。mask の頂点は values の頭の identity の view で描く。
-//   3D の場面を貼る行（kindScene3d）: 1=場面の番号（Scene3dRenderer.Prepared の番号）。ほかの欄は 0。
-//   面の行（kindSurface・ShaderDoc の面 1 枚）: 1=program（backend の表の番号） 2=values に書いた値の数（rect 4・time・alpha・params の順） 3=0 4=blend
+//   3D の場面を貼る行（ListRowKind.Scene3d）: 1=場面の番号（Scene3dRenderer.Prepared の番号）。ほかの欄は 0。
+//   面の行（ListRowKind.Surface・ShaderDoc の面 1 枚）: 1=program（backend の表の番号） 2=values に書いた値の数（rect 4・time・alpha・params の順） 3=0 4=blend
 //   5=0（面は clip を持たない） 6=reads の先頭（絵の組の 1 つ目の番号） 7=絵の数 8=mask の先頭の頂点の番号 9=mask の頂点の数（3 未満なら 0）
 //   10=stencil に書いて比べる値（nextMaskRef・0 = mask が無い） 11=values の先頭（surfaceValueAlign() の倍数）。
 // reads は面が読む絵の組（1 つ readFields() 個: 0=絵の番号（無い名前は 0） 1=補間（0 = Nearest・1 = Linear） 2=上下逆に格納された描き先なら 1）。
@@ -39,17 +39,64 @@ pub mod RenderFrame.Internal.RenderList {
     /// 多角形の 1 頂点の float の数。
     pub def vertexFloats(): Int32 = 6
 
-    /// 行の種類（draw call の数えの種類と同じ番号）。
-    pub def kindSprite(): Int32 = 1
-    pub def kindPoly(): Int32 = 2
-    pub def kindTile(): Int32 = 3
-    pub def kindStatic(): Int32 = 4
-    pub def kindSurface(): Int32 = 5
-    pub def kindScene3d(): Int32 = 6
-    /// mask つきスプライトの行（draw call は kindSprite で数える）。
-    pub def kindMask(): Int32 = 7
+    /// 行の種類（欄 0）。StaticRange = static layer の範囲・Mask = mask つきスプライト 1 体（draw call は Sprite で数える）・Scene3d = 3D の場面を貼る所・Surface = ShaderDoc の面 1 枚。
+    pub enum ListRowKind with Eq, ToString {
+        case Sprite
+        case Poly
+        case Tile
+        case StaticRange
+        case Surface
+        case Scene3d
+        case Mask
+    }
+
+    /// 行 row の種類。
+    pub def kindAt(rows: Array[Int32, Static], row: Int32): ListRowKind \ IO = kindOfCode(rowAt(rows, row, colKind()))
+
+    /// 欄 0 の番号 → 種類（範囲の外は書く側の誤り）。
+    pub def kindOfCode(code: Int32): ListRowKind = match code {
+        case 1 => ListRowKind.Sprite
+        case 2 => ListRowKind.Poly
+        case 3 => ListRowKind.Tile
+        case 4 => ListRowKind.StaticRange
+        case 5 => ListRowKind.Surface
+        case 6 => ListRowKind.Scene3d
+        case 7 => ListRowKind.Mask
+        case _ => bug!("RenderList: 行の種類の番号 ${code} は無い")
+    }
+
+    /// 種類 → 欄 0 の番号。
+    pub def kindCodeOf(kind: ListRowKind): Int32 = match kind {
+        case ListRowKind.Sprite  => 1
+        case ListRowKind.Poly    => 2
+        case ListRowKind.Tile    => 3
+        case ListRowKind.StaticRange  => 4
+        case ListRowKind.Surface => 5
+        case ListRowKind.Scene3d => 6
+        case ListRowKind.Mask    => 7
+    }
+
+    /// draw call の数え（RenderFrame の run の状態の「前の種類」）の番号。mask つきスプライトはスプライトと同じ番号で数える。
+    pub def drawCountCodeOf(kind: ListRowKind): Int32 = match kind {
+        case ListRowKind.Mask => kindCodeOf(ListRowKind.Sprite)
+        case _                => kindCodeOf(kind)
+    }
 
     def rowStride(): Int32 = 12
+
+    // 欄の番号（並びはこのファイルの頭のコメント）。書く側（putRow）と読み出し口の両方がここを使う。
+    def colKind(): Int32 = 0
+    def colFirst(): Int32 = 1
+    def colCount(): Int32 = 2
+    def colTexture(): Int32 = 3
+    def colBlend(): Int32 = 4
+    def colClip(): Int32 = 5
+    def colClipX0(): Int32 = 6
+    def colClipY0(): Int32 = 7
+    def colClipX1(): Int32 = 8
+    def colClipY1(): Int32 = 9
+    def colBuffer(): Int32 = 10
+    def colValues(): Int32 = 11
 
     def rowsHead(): Int32 = 3
 
@@ -98,9 +145,97 @@ pub mod RenderFrame.Internal.RenderList {
     /// 頭と行を並べた Int32 の配列（広げると差し替わるので、行を足した後は取り直す）。
     pub def rowsOf(list: RenderList): Array[Int32, Static] \ IO = Array.get(0, list#rows)
 
-    /// 行 row の欄 col（並びはこのファイルの頭のコメント）。
-    pub def rowAt(rows: Array[Int32, Static], row: Int32, col: Int32): Int32 \ IO =
+    /// 行 row の欄 col（並びはこのファイルの頭のコメント）。外からは名前の読み出し口で読む。
+    def rowAt(rows: Array[Int32, Static], row: Int32, col: Int32): Int32 \ IO =
         Array.get(rowsHead() + row * rowStride() + col, rows)
+
+    // ── 読み出し口（スプライト・多角形・タイル・static の行。mask の行も 1〜9 の意味は同じ） ──
+    // WhyNot: 違う種類の欄を同じ名前で読ませない — 面の行の欄 6〜11 は reads・mask・stencil・values で、clip ではない。種類ごとの口は頭に種類の名前を付ける。
+
+    /// 行 row の先頭（スプライトは instance・多角形と static は頂点の番号）。
+    pub def firstAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colFirst())
+
+    /// 行 row の数（体数・頂点数・タイルの数）。
+    pub def countAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colCount())
+
+    /// 行 row の絵の番号（0 = 絵の無い箱・多角形と static は 0）。
+    pub def textureAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colTexture())
+
+    /// 行 row の blend（RenderFrame.blendCode の番号。面の行も同じ欄）。
+    pub def blendAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colBlend())
+
+    /// 行 row が clip を持つか（1 = 持つ）と、その矩形（viewport の左上原点の px）。clip を持つのはスプライト・多角形・static・mask の行。
+    pub def clipFlagAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClip())
+    pub def clipX0At(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipX0())
+    pub def clipY0At(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipY0())
+    pub def clipX1At(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipX1())
+    pub def clipY1At(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipY1())
+
+    /// 種類 kind が clip の欄を持つか（持たないタイル・面・3D の場面の行は、描き先の全面に描く）。
+    pub def hasClipColumns(kind: ListRowKind): Bool = match kind {
+        case ListRowKind.Sprite  => true
+        case ListRowKind.Poly    => true
+        case ListRowKind.StaticRange  => true
+        case ListRowKind.Mask    => true
+        case ListRowKind.Tile    => false
+        case ListRowKind.Surface => false
+        case ListRowKind.Scene3d => false
+    }
+
+    /// 種類 kind が欄 3 に絵の番号を持つか（スプライト・タイル・mask の行）。
+    pub def hasTextureColumn(kind: ListRowKind): Bool = match kind {
+        case ListRowKind.Sprite  => true
+        case ListRowKind.Tile    => true
+        case ListRowKind.Mask    => true
+        case ListRowKind.Poly    => false
+        case ListRowKind.StaticRange  => false
+        case ListRowKind.Surface => false
+        case ListRowKind.Scene3d => false
+    }
+
+    /// タイルと static の行の頂点の buffer の番号（backend の表の番号）。
+    pub def bufferAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colBuffer())
+
+    /// 行 row の values の先頭（draw ごとの値。スプライトは 0・面の行も同じ欄）。
+    pub def valuesAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colValues())
+
+    // ── mask つきスプライトの行 ──
+
+    /// mask の行の 1 体の instance の番号。
+    pub def maskInstanceAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colFirst())
+
+    /// mask の行の mask の頂点の数（3 未満なら 0）。
+    pub def maskVertexCountAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colCount())
+
+    /// mask の行の mask の先頭の頂点の番号。
+    pub def maskFirstVertexAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colBuffer())
+
+    /// mask の行の stencil に書いて比べる値（0 = stencil を使わない）。
+    pub def maskStencilRefAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colValues())
+
+    // ── 面の行 ──
+
+    /// 面の行の program（backend の表の番号）。
+    pub def surfaceProgramAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colFirst())
+
+    /// 面の行が values に書いた値の数（rect 4・time・alpha・params の順）。
+    pub def surfaceValueCountAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colCount())
+
+    /// 面の行の reads の先頭（絵の組の 1 つ目の番号）と絵の数。
+    pub def surfaceFirstReadAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipX0())
+    pub def surfaceReadCountAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipY0())
+
+    /// 面の行の mask の先頭の頂点の番号と頂点の数（3 未満なら 0）。
+    pub def surfaceMaskFirstAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipX1())
+    pub def surfaceMaskCountAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colClipY1())
+
+    /// 面の行の stencil に書いて比べる値（0 = mask が無い）。
+    pub def surfaceStencilAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colBuffer())
+
+    // ── 3D の場面の行 ──
+
+    /// 3D の場面の行の場面の番号（Scene3dRenderer.Prepared の番号）。
+    pub def sceneIndexAt(rows: Array[Int32, Static], row: Int32): Int32 \ IO = rowAt(rows, row, colFirst())
 
     /// 行を全部捨てる（instances と頂点の書く位置も頭へ戻し、values は頭の identity の view だけにする）。
     pub def clearRenderList(list: RenderList): Unit \ IO =
@@ -179,7 +314,7 @@ pub mod RenderFrame.Internal.RenderList {
     pub def appendSpriteRow(list: RenderList, first: Int32, count: Int32, texId: Int32, blendC: Int32,
                             clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
         let rows = rowsWithRoom(list);
-        putRow(rows, Array.get(0, rows), kindSprite(), first, count, texId, blendC, clipFlag, x0, y0, x1, y1, 0, 0);
+        putRow(rows, Array.get(0, rows), ListRowKind.Sprite, first, count, texId, blendC, clipFlag, x0, y0, x1, y1, 0, 0);
         Array.put(first + count, 1, rows)
 
     /// 多角形の run（vertices の [first, first + count)）を 1 行として足す。次の run の頂点は、この run の後ろから始まる。
@@ -187,7 +322,7 @@ pub mod RenderFrame.Internal.RenderList {
     pub def appendPolyRow(list: RenderList, first: Int32, count: Int32, blendC: Int32,
                           clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
         let rows = rowsWithRoom(list);
-        putRow(rows, Array.get(0, rows), kindPoly(), first, count, 0, blendC, clipFlag, x0, y0, x1, y1, 0, 0);
+        putRow(rows, Array.get(0, rows), ListRowKind.Poly, first, count, 0, blendC, clipFlag, x0, y0, x1, y1, 0, 0);
         Array.put(first + count, 2, rows)
 
     /// タイルの層を 1 行として足す。buffer = タイルの instance の buffer の番号・count = タイルの数。blend は Normal・clip は無し。
@@ -204,7 +339,7 @@ pub mod RenderFrame.Internal.RenderList {
         Array.put(layer#g, at + 6, values);
         Array.put(layer#b, at + 7, values);
         let rows = rowsWithRoom(list);
-        putRow(rows, Array.get(0, rows), kindTile(), 0, count, texId, 0, 0, 0, 0, 0, 0, buffer, at)
+        putRow(rows, Array.get(0, rows), ListRowKind.Tile, 0, count, texId, 0, 0, 0, 0, 0, 0, buffer, at)
 
     /// static layer の範囲（buffer の頂点 [first, first + count)）を 1 行として足す。view = 世界の座標を画面へ写す値。
     pub def appendStaticRow(list: RenderList, buffer: Int32, first: Int32, count: Int32, blendC: Int32,
@@ -219,14 +354,14 @@ pub mod RenderFrame.Internal.RenderList {
         Array.put(view#halfX, at + 4, values);
         Array.put(view#halfY, at + 5, values);
         let rows = rowsWithRoom(list);
-        putRow(rows, Array.get(0, rows), kindStatic(), first, count, 0, blendC, clipFlag, x0, y0, x1, y1, buffer, at)
+        putRow(rows, Array.get(0, rows), ListRowKind.StaticRange, first, count, 0, blendC, clipFlag, x0, y0, x1, y1, buffer, at)
 
     /// mask つきスプライト 1 体を 1 行として足す。instanceAt = 書いた 1 体の番号・maskFirst と maskCount = vertices に書いた mask の三角形の頂点・
     /// ref = stencil に書いて比べる値（nextMaskRef。maskCount が 3 未満なら 0）。次の instance と頂点は、この行の後ろから始まる。
     pub def appendMaskRow(list: RenderList, instanceAt: Int32, maskFirst: Int32, maskCount: Int32, texId: Int32, blendC: Int32,
                           clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32, ref: Int32): Unit \ IO =
         let rows = rowsWithRoom(list);
-        putRow(rows, Array.get(0, rows), kindMask(), instanceAt, maskCount, texId, blendC, clipFlag, x0, y0, x1, y1, maskFirst, ref);
+        putRow(rows, Array.get(0, rows), ListRowKind.Mask, instanceAt, maskCount, texId, blendC, clipFlag, x0, y0, x1, y1, maskFirst, ref);
         Array.put(instanceAt + 1, 1, rows);
         Array.put(maskFirst + maskCount, 2, rows)
 
@@ -245,7 +380,7 @@ pub mod RenderFrame.Internal.RenderList {
     // WhyNot: 場面の矩形と clip を欄に入れない — 番号で引ける場面の命令が持ち、GL は Render3d.drawItem がそこから出す。行にも写すと 2 か所が食い違いうる。
     pub def appendSceneRow(list: RenderList, scene: Int32): Unit \ IO =
         let rows = rowsWithRoom(list);
-        putRow(rows, Array.get(0, rows), kindScene3d(), scene, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        putRow(rows, Array.get(0, rows), ListRowKind.Scene3d, scene, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
     /// 面 1 枚を 1 行として足す。program = backend の表の番号・surface と params = 面の値（values へ rect・time・alpha・params の順に書く）・
     /// reads = 絵の組（(絵の番号, 補間, 上下逆なら 1)）・maskFirst と maskCount = vertices に書いた mask の三角形の頂点・
@@ -273,32 +408,32 @@ pub mod RenderFrame.Internal.RenderList {
             Array.put(flip, base + 2, readArray)
         }, reads);
         let rows = rowsWithRoom(list);
-        putRow(rows, Array.get(0, rows), kindSurface(), program, count, 0, blendC, 0, readsAt, readCount, maskFirst, maskCount, ref, at);
+        putRow(rows, Array.get(0, rows), ListRowKind.Surface, program, count, 0, blendC, 0, readsAt, readCount, maskFirst, maskCount, ref, at);
         Array.put(maskFirst + maskCount, 2, rows)
 
     /// 行 row が stencil に書いて比べる値（mask つきスプライトと面の行。ほかの行と、mask が 3 頂点未満の行は 0）。
-    pub def stencilRefOf(rows: Array[Int32, Static], row: Int32): Int32 \ IO =
-        let kind = rowAt(rows, row, 0);
-        if (kind == kindMask()) rowAt(rows, row, 11)
-        else if (kind == kindSurface()) rowAt(rows, row, 10)
-        else 0
+    pub def stencilRefOf(rows: Array[Int32, Static], row: Int32): Int32 \ IO = match kindAt(rows, row) {
+        case ListRowKind.Mask    => maskStencilRefAt(rows, row)
+        case ListRowKind.Surface => surfaceStencilAt(rows, row)
+        case _                   => 0
+    }
 
     /// 行の欄を書いて行の数を 1 進める（rows は rowsWithRoom で取った物）。
-    def putRow(rows: Array[Int32, Static], n: Int32, kind: Int32, first: Int32, count: Int32, texId: Int32, blendC: Int32,
-               clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32, buffer: Int32, valuesAt: Int32): Unit \ IO =
+    def putRow(rows: Array[Int32, Static], n: Int32, kind: ListRowKind, first: Int32, count: Int32, texId: Int32, blendC: Int32,
+               clipFlag: Int32, x0: Int32, y0: Int32, x1: Int32, y1: Int32, buffer: Int32, valuesFirst: Int32): Unit \ IO =
         let at = rowsHead() + n * rowStride();
-        Array.put(kind, at + 0, rows);
-        Array.put(first, at + 1, rows);
-        Array.put(count, at + 2, rows);
-        Array.put(texId, at + 3, rows);
-        Array.put(blendC, at + 4, rows);
-        Array.put(clipFlag, at + 5, rows);
-        Array.put(x0, at + 6, rows);
-        Array.put(y0, at + 7, rows);
-        Array.put(x1, at + 8, rows);
-        Array.put(y1, at + 9, rows);
-        Array.put(buffer, at + 10, rows);
-        Array.put(valuesAt, at + 11, rows);
+        Array.put(kindCodeOf(kind), at + colKind(), rows);
+        Array.put(first, at + colFirst(), rows);
+        Array.put(count, at + colCount(), rows);
+        Array.put(texId, at + colTexture(), rows);
+        Array.put(blendC, at + colBlend(), rows);
+        Array.put(clipFlag, at + colClip(), rows);
+        Array.put(x0, at + colClipX0(), rows);
+        Array.put(y0, at + colClipY0(), rows);
+        Array.put(x1, at + colClipX1(), rows);
+        Array.put(y1, at + colClipY1(), rows);
+        Array.put(buffer, at + colBuffer(), rows);
+        Array.put(valuesFirst, at + colValues(), rows);
         Array.put(n + 1, 0, rows)
 
     // ── pass の指定 ──

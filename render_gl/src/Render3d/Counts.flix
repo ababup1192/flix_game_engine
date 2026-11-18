@@ -17,7 +17,7 @@ mod Render3d.Counts {
     /// 数える物。並びは countsHolder の添え字（slotOf）。
     pub enum Counter {
         case Instances, Drawn, DrawCalls, DroppedPointLights, DroppedSpotLights,
-             MeshUploads, MeshEvictions, Texture3dUploads, MipCopies, JointUploads, TargetRebuilds
+             MeshUploads, MeshEvictions, Texture3dUploads, MipCopies, JointUploads, TargetRebuilds, BillboardRuns, BillboardImages
     }
 
     /// draw call が分かれた理由（FrameDiagnostics.Scene3dBatchBreaks の欄）。並びは countsHolder の添え字（breakSlotOf）。
@@ -54,10 +54,12 @@ mod Render3d.Counts {
         case Counter.MipCopies          => 8
         case Counter.JointUploads       => 9
         case Counter.TargetRebuilds     => 10
+        case Counter.BillboardRuns      => 19
+        case Counter.BillboardImages    => 20
     }
 
     /// countsHolder の長さ。
-    pub def counterSlots(): Int32 = 19
+    pub def counterSlots(): Int32 = 21
 
     def phaseSlotOf(p: Phase): Int32 = match p {
         case Phase.Shadows  => 0
@@ -115,7 +117,8 @@ mod Render3d.Counts {
             cpuPhases = phases() |> List.filterMap(p -> { let v = Array.get(phaseSlotOf(p), ns); if (v == 0i64) None else Some((phaseName(p), v)) }),
             batchBreaks = { shadowPass = breakAt(BatchBreak.ShadowPass), billboard = breakAt(BatchBreak.Billboard), sky = breakAt(BatchBreak.Sky),
                             transparent = breakAt(BatchBreak.Transparent), lightmap = breakAt(BatchBreak.Lightmap), skinned = breakAt(BatchBreak.Skinned),
-                            material = breakAt(BatchBreak.Material), mesh = breakAt(BatchBreak.Mesh) }
+                            material = breakAt(BatchBreak.Material), mesh = breakAt(BatchBreak.Mesh) },
+            billboardRuns = at(Counter.BillboardRuns), billboardImages = at(Counter.BillboardImages)
         };
         Ref.put(Nil, state#materialBuildsRef);
         List.range(0, Array.length(h)) |> List.forEach(i -> Array.put(0, i, h));
@@ -127,12 +130,22 @@ mod Render3d.Counts {
         count(state, Counter.Instances, placed);
         count(state, Counter.Drawn, drawn)
 
+    /// 場面の pass の行の列 list のビルボードの行（絵のある行）の数と、その行が貼る絵の種類の数を足す。
+    pub def countBillboardRuns(state: { countsHolder = Array[Int32, Static] | r }, list: Render3d.SceneList.SceneList): Unit \ IO =
+        let textures = Render3d.SceneList.billboardTexturesOf(list);
+        count(state, Counter.BillboardRuns, List.length(textures));
+        count(state, Counter.BillboardImages, Set.size(List.toSet(textures)))
+
     /// 場面 1 つで上限を超えて落とした光を数え、種類ごとに初めての時だけ知らせる。
     pub def noteDroppedLights(state: State, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        countDroppedLights(state, scene);
+        Scene3d.droppedLightsWarnings(scene) |> List.forEach(kl -> warnSceneOnce(state, fst(kl), snd(kl)))
+
+    /// 場面 1 つで上限を超えて落とした光を種類ごとに数える（知らせない）。
+    pub def countDroppedLights(state: { countsHolder = Array[Int32, Static] | r }, scene: Scene3d.Scene3dCmd): Unit \ IO =
         let d = Scene3d.droppedLightsOf(scene);
         count(state, Counter.DroppedPointLights, d#points);
-        count(state, Counter.DroppedSpotLights, d#spots);
-        Scene3d.droppedLightsWarnings(scene) |> List.forEach(kl -> warnSceneOnce(state, fst(kl), snd(kl)))
+        count(state, Counter.DroppedSpotLights, d#spots)
 
     /// 組んだ材質のプログラムを 1 つ控える（name = プログラムの名前）。
     pub def noteMaterialBuild(state: { materialBuildsRef = Ref[List[FrameDiagnostics.ShaderBuild], Static] | r }, name: String,

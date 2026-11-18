@@ -3,7 +3,7 @@
 mod LightModel3d.Codegen.TestGenerator {
     use LightModel3d.{ScalarExpr, Vec3Expr, Cond, Vec3Input, Vec3LightField}
 
-    def hooksForTest(): LightModel3d.Codegen.CpuHooks = { shadowType = "ShadowForTest", shadowFunction = "shadowForTest" }
+    def hooksForTest(): LightModel3d.Codegen.CpuHooks = { shadowType = "ShadowForTest", shadowFunction = "shadowForTest", countLitFunction = "countLitForTest" }
 
     def flixOf(params: List[LightModel3d.Codegen.Param], e: Vec3Expr): String =
         LightModel3d.Codegen.generateFlixOf(hooksForTest(), { module = "M", origin = "", about = "" }, { name = "f", model = e, doc = "", params = params } :: Nil)

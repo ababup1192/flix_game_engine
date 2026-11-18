@@ -1,6 +1,9 @@
 package maxlines
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -38,6 +41,7 @@ func TestExemptFilePasses(t *testing.T) {
 		"engine/src/Big.flix":                 lines(1300),
 		"bin/lint-rules/max-lines.local.json": `{"exempt": {"engine/src/Big.flix::max-lines": "分けるまで"}}`,
 	})
+	withExemptLines(t, root, `{"engine/src/Big.flix::max-lines": 1300}`)
 	code, msg := run(t, root, "engine/src/Big.flix")
 	if code != 0 {
 		t.Fatalf("code=%d msg=%s", code, msg)
@@ -61,5 +65,53 @@ func TestAllReportsStaleExempt(t *testing.T) {
 func TestCountLinesWithoutTrailingNewline(t *testing.T) {
 	if got := CountLines([]byte("a\nb")); got != 2 {
 		t.Fatalf("got %d", got)
+	}
+}
+
+// withExemptLines は規約ファイルへ exemptLines を足す。
+func withExemptLines(t *testing.T, root, lines string) {
+	t.Helper()
+	p := filepath.Join(root, "bin/lint-rules/max-lines.json")
+	body, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatal(err)
+	}
+	var l map[string]any
+	if err := json.Unmarshal([]byte(lines), &l); err != nil {
+		t.Fatal(err)
+	}
+	m["exemptLines"] = l
+	out, _ := json.Marshal(m)
+	if err := os.WriteFile(p, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 除外に載せた時の行数より伸びたファイルは、除外でも止まる。
+func TestExemptFileFiresWhenGrownPastRecordedLines(t *testing.T) {
+	root := lintconf.TestRepo(t, Name, map[string]string{
+		"engine/src/Big.flix":                 lines(1301),
+		"bin/lint-rules/max-lines.local.json": `{"exempt": {"engine/src/Big.flix::max-lines": "分けるまで"}}`,
+	})
+	withExemptLines(t, root, `{"engine/src/Big.flix::max-lines": 1300}`)
+	code, msg := run(t, root, "engine/src/Big.flix")
+	if code != 1 || !strings.Contains(msg, "1301 行。除外に載せた時の 1300 行より伸びた") {
+		t.Fatalf("code=%d msg=%s", code, msg)
+	}
+}
+
+// 除外に載っていても、載せた時の行数が無ければ止まる。
+func TestExemptFileWithoutRecordedLinesFires(t *testing.T) {
+	root := lintconf.TestRepo(t, Name, map[string]string{
+		"engine/src/Big.flix":                 lines(1300),
+		"bin/lint-rules/max-lines.local.json": `{"exempt": {"engine/src/Big.flix::max-lines": "分けるまで"}}`,
+	})
+	code, msg := run(t, root, "engine/src/Big.flix")
+	if code != 1 || !strings.Contains(msg, "載せた時の行数がありません") {
+		t.Fatalf("code=%d msg=%s", code, msg)
 	}
 }

@@ -498,7 +498,7 @@
 - 一番多い理由と数（同じ数なら欄の順で先の物・どれも 0 なら None）。
   `pub def topBreak(breaks: List[(String, Int32)]): Option[(String, Int32)]`
 - 3D の場面の数（Diagnostics#scene3dCounts）。
-  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32, meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild], jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks }`
+  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32, meshUploads = Int32, meshEvictions = Int32, texture3dUploads = Int32, mipCopies = Int32, materialBuilds = List[ShaderBuild], jointUploads = Int32, targetRebuilds = Int32, cpuPhases = List[(String, Int64)], batchBreaks = Scene3dBatchBreaks, billboardRuns = Int32, billboardImages = Int32 }`
 - 3D の draw call が分かれた理由ごとの数。3D は batch を鍵でまとめてから描くので、draw call 1 つを 1 つの理由に数える（合計は drawCalls）。
   `pub type alias Scene3dBatchBreaks = { shadowPass = Int32, billboard = Int32, sky = Int32, transparent = Int32, lightmap = Int32, skinned = Int32, material = Int32, mesh = Int32 }`
 - どの理由も 0。
@@ -743,13 +743,20 @@
   `pub def packSpotLights(lights: List[Scene3d.SpotLight]): Vector[Float64]`
 
 ## LightModel3d.Codegen — `engine/src/scene3d/LightModel3d/Codegen.flix`
-- shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前。
-  `pub type alias CpuHooks = { shadowType = String, shadowFunction = String }`
+- shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前・
+  `pub type alias CpuHooks = { shadowType = String, shadowFunction = String, countLitFunction = String }`
 - `pub def generateFlix(hooks: CpuHooks): String`
 - `pub def generateFlixCases(hooks: CpuHooks): String`
 - `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 - 式 e を WGSL の関数 `fn name(…) -> vec3f` に生成した字（toGlsl と同じ木・同じ引数の並び）。場面の値は `r3d` の欄（Render3dWgsl の struct）で読み、
   `pub def toWgsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
+
+## LightModel3d.PointShadowCodegen — `engine/src/scene3d/LightModel3d/PointShadowCodegen.flix`
+- GLSL の float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n)（uniform は Render3dGlsl.pointShadowSource が宣言する）。
+  `pub def toGlsl(): String`
+- WGSL の fn r3d_pointShadowLit(i, p, g, n) -> f32（場面の値は r3d と r3dLight の欄。atlas の行は読む時だけ高さ − 1 − 行 に返す）。
+  `pub def toWgsl(): String`
+- `pub def toFlix(countLit: String): String`
 
 ## LoadProgress — `engine/src/platform/LoadProgress.flix`
 - 起動の読み込みの進み具合（区切りごとに 1 回）と、読み込みの仕事を回す口。
@@ -1307,8 +1314,10 @@
 - `pub def sqrtF(x: Float64): Float64`
 
 ## Scene3d — `engine/src/scene3d/Scene3d.flix`
-- 点光源。range より遠い所には届かない（落ち方は (1 − d² / range²)²）。
+- 点光源。range より遠い所には届かない。intensity の読み方は場面の LightUnits で決まる:
   `pub type alias PointLight = { position = Vec3.Vec3, color = Color, intensity = Float64, range = Float64 }`
+- 白・intensity 1 の点光源。ほかの値は `{ color = .., intensity = 2.0 | Scene3d.pointLight(p, range) }` の形で替える。
+  `pub def pointLight(position: Vec3.Vec3, range: Float64): PointLight`
 - 影の地図（段 C）。mapSize = 一辺の画素数・bias = 自分の面に影を落とさないための奥行きのずらし・
   `pub type alias ShadowMap = { mapSize = Int32, bias = Float64, pcfRadius = Int32, strength = Float64 }`
 - スポットライト。position から target を向き、fovY（ラジアン・円錐の全体の角）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
@@ -1327,6 +1336,8 @@
   `pub def directionalLight(direction: Vec3.Vec3): DirectionalLight`
 - mapSize 2048・bias 0.05 m・normalBias 1・pcfRadius 1・strength 0.8・distance 150 m・casterReach 200 m の太陽の影。
   `pub def directionalShadow(): DirectionalShadow`
+- 端末の区分ごとの太陽の影。Small（スマホ）= mapSize 1024・Medium と Large = 2048。ほかの欄は directionalShadow() と同じ。
+  `pub def directionalShadowFor(sizeClass: Display.SizeClass): DirectionalShadow`
 - 描く時に使う太陽（使える時だけ Some。direction は長さ 1 にした光の進む向き）。GL・CPU・描き出しの鍵はこれだけを読む。
   `pub def directionalLightOf(scene: Scene3dCmd): Option[DirectionalLight]`
 - `pub def directionalLightWarning(scene: Scene3dCmd): Option[String]`
@@ -1338,8 +1349,10 @@
   `pub def directionalShadowOf(scene: Scene3dCmd): Option[SunShadowSetup]`
 - 点光源の影（光から見た 6 方向の深度を 1 枚の絵 atlas に並べる。Unity・Unreal の Shadow Atlas・Bevy の PointLightShadowMap に当たる）。
   `pub type alias PointShadowMap = { maxShadowedLights = Int32, mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64 }`
-- maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影。
+- maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影（pointShadowMapFor(Large) と同じ）。
   `pub def pointShadowMap(): PointShadowMap`
+- 端末の区分ごとの点光源の影（PostStack.resolveQuality と同じく区分で重さを決める）。
+  `pub def pointShadowMapFor(sizeClass: Display.SizeClass): PointShadowMap`
 - 場面に点光源の影を付ける（Scene3dCmd の pointShadows = Some(m)）。
   `pub def withPointShadows(m: PointShadowMap, scene: Scene3dCmd): Scene3dCmd`
 - 1 つの場面で影を落とす点光源の上限。
@@ -1578,7 +1591,15 @@
   `pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)]`
 - `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
 - 描き手へ渡す、先に GPU へ上げる物の宣言（App.withPreload3d）。key = 中身を決める全入力をまとめた字・
-  `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d] }`
+  `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d], variants = List[PreloadVariant] }`
+- textures が空・variants が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
+  `pub def preloadCmd(key: DrawCmd.StaticKey, instances: Unit -> List[Instance3d]): PreloadCmd`
+- 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
+  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool }`
+- 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
+  `pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant`
+- 変種 v の字（"" = 既定・+ps・+pu・+ps+pu。描き手のプログラムの鍵と同じ並び）。
+  `pub def preloadVariantKey(v: PreloadVariant): String`
 
 ## Scene3d.PointShadows — `engine/src/scene3d/Scene3d/PointShadows.flix`
 - 影を落とす点光源 1 本の材料。pointIndex = pickLights の後の点光源の並びの番号・slot = atlas の塊の番号（0 から）・
@@ -1595,18 +1616,12 @@
   `pub def faceViewOf(position: Vec3.Vec3, face: Int32): Mat4.Mat4`
 - 面の射影 = perspective(s, s, near, far)（s = guard。6 面で同じ）。
   `pub def faceProjectionOf(near: Float64, far: Float64, guard: Float64): Mat4.Mat4`
-- 光から点への向き d が写る面（|x| ≥ |y| かつ |x| ≥ |z| なら X・ほかに |y| ≥ |z| なら Y・ほかは Z。成分が 0 以上なら + の面）。
-  `pub def faceOf(d: Vec3.Vec3): Int32`
 - atlas の中の slot 番目の灯りの面 f の画素の原点 (x, y)（行 0 が ndc.y = −1 の側。GL の深度テクスチャと CPU の地図の数え方）。
   `pub def tileOriginOf(atlas: Atlas, slot: Int32, face: Int32): (Int32, Int32)`
 - 面の目の奥行きを地図の値（ndc.z = A − B / 奥行き）へ写す A と B（A = (far + near) / (far − near)・B = 2 far near / (far − near)）。
   `pub def depthTermsOf(light: ShadowedPointLight): (Float64, Float64)`
-- 受ける点 p（g = 形の法線・長さ 1）が引く面と、その面の中の真ん中の画素 (x, y)（0..tileSize − 1 に寄せた後）と、地図の値と比べる値 ref。
-  `pub def sampleOf(atlas: Atlas, light: ShadowedPointLight, p: Vec3.Vec3, g: Vec3.Vec3): Option[{ face = Int32, x = Int32, y = Int32, ref = Float64 }]`
 - 点光源 light の影の地図に描くビルボード（castShadows が真で shadowCasterScale の成分が両方正・板の外の円が光の range の球に掛かる物。来た順）と、
   `pub def castingBillboardsOf(scene: Scene3d.Scene3dCmd, light: ShadowedPointLight): List[(Scene3d.BillboardFields, Vec3.Vec3)]`
-- 受ける点 p（n = 光の計算の法線）で点光源 light の影の地図を引くか（光が届き、面が光へ向いている時だけ）。
-  `pub def isSampled(light: ShadowedPointLight, p: Vec3.Vec3, n: Vec3.Vec3): Bool`
 
 ## ShaderDoc — `engine/src/shader/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。
@@ -1751,7 +1766,7 @@
   `pub def vertexSource(): String`
 - ノイズ関数の固定テンプレ（hash2 / worley / fbm）。Spec に依存しないので 1 度だけ pin し、
   `pub def preludeSource(): String`
-- Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので
+- Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので GLSL も等しい。
   `pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
 - 2 つの材質（spec・自分で光る色 emission・metallic と roughness の場 metallicRoughness）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
   `pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], metallicRoughnessA: Option[ShaderDoc.Shade], specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade], metallicRoughnessB: Option[ShaderDoc.Shade]): Bool`
@@ -1759,7 +1774,8 @@
   `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
 - 2 つの色（emission か metallicRoughness）が同じ物か（両方無いか、参照が同じ）。
   `pub def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool`
-- `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): Int64`
+- 材質（spec・emission・metallicRoughness）の中身の鍵。eqMaterial が真の 2 つは必ず同じ値になる（違う中身が同じ値になることはありうるので、
+  `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], metallicRoughness: Option[ShaderDoc.Shade]): Int64`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`
 - 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。

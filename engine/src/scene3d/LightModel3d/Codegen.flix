@@ -706,8 +706,9 @@ pub mod LightModel3d.Codegen {
     /// 生成する CPU の光の関数が呼ぶ engine_tools の名前（影の地図の型と、地図・スポットの並びの位置・world の点 → 影の割合の関数）。
     // WhyNot: 影の割合を関数の値（クロージャ）で渡さない — Flix の関数の値は Float64 を箱に入れて呼ぶので、画素 × スポットの数だけ重くなる
     //   （影を落とす場面で 1 スレッドの時間が約 1 割増えた）。生成した字は engine_tools の中でだけ組むので、名前で直に呼ぶ。
-    /// shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前。
-    pub type alias CpuHooks = { shadowType = String, shadowFunction = String }
+    /// shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前・
+    /// countLitFunction は点光源の影の PCF の数え（LightModel3d.PointShadowCodegen.toFlix の countLit）の関数の名前。
+    pub type alias CpuHooks = { shadowType = String, shadowFunction = String, countLitFunction = String }
 
     /// CPU の描き手が使う関数（生成するファイルの並びの順）。params = 引数の並び（引数の順はこの並びで決まり、enum の宣言の順に頼らない）。
     type alias CpuEntry = { name = String, model = Vec3Expr, doc = String, params = List[Param] }
@@ -742,12 +743,13 @@ pub mod LightModel3d.Codegen {
                    Param.Vec3Param(Vec3Input.EnvironmentBoxCenter) :: Param.ScalarParam(ScalarInput.EnvironmentBoxOn) :: Nil } :: Nil
 
     /// 生成した CPU の光の関数（engine_tools の gen/SoftRaster3dLight.flix）のソースの全部（engine の開発用。ゲームは使わない）。
-    /// 光の種類ごと（点光源の輪・スポットの輪）に関数を分けて出す。
+    /// 光の種類ごと（点光源の輪・スポットの輪）に関数を分けて出し、最後に点光源の影の割合（LightModel3d.PointShadowCodegen.toFlix）を置く。
     // WhyNot: 1 つの関数に全部を書き下さない — 長い 1 本の式は Flix の型推論が崩れる。
     pub def generateFlix(hooks: CpuHooks): String =
-        generateFlixOf(hooks, { module = "SoftRaster3dLight", origin = "LightModel3d.Codegen.generateFlix",
-                                about = "3D の光の式（LightModel3d の木）を CPU の描き手が画素ごとに回す関数（engine の中で使う。ゲームは使わない）。\n" +
-                                        "/// 光の並びは LightModel3d.packPointLights・packSpotLights の形。shadow = 影を落とすスポット（${hooks#shadowType}）。" }, cpuEntries())
+        generateFlixWith(hooks, { module = "SoftRaster3dLight", origin = "LightModel3d.Codegen.generateFlix",
+                                  about = "3D の光の式（LightModel3d の木）と点光源の影を引く式（LightModel3d.PointShadowCodegen）を CPU の描き手が画素ごとに回す関数（engine の中で使う。ゲームは使わない）。\n" +
+                                          "/// 光の並びは LightModel3d.packPointLights・packSpotLights の形。shadow = 影を落とすスポット（${hooks#shadowType}）。" },
+                         cpuEntries(), LightModel3d.PointShadowCodegen.toFlix(hooks#countLitFunction) :: Nil)
 
     /// 生成器のエッジケース（1 成分だけ使う Let・引数を読まない光のループ・同じエントリの 2 つのループ・文のある枝の Select・エントリに書いた引数の順）を
     /// 集めた確かめ用のソース（engine_tools の test/gen/SoftRaster3dLightCases.flix。engine の開発用）。
@@ -759,14 +761,17 @@ pub mod LightModel3d.Codegen {
     /// 生成するファイルの mod の名前・作った関数の名前・mod の doc。
     type alias FlixModule = { module = String, origin = String, about = String }
 
-    def generateFlixOf(hooks: CpuHooks, m: FlixModule, entries: List[CpuEntry]): String = region rc {
+    def generateFlixOf(hooks: CpuHooks, m: FlixModule, entries: List[CpuEntry]): String = generateFlixWith(hooks, m, entries, Nil)
+
+    /// generateFlixOf の、木でない関数の字 extra を後ろに足した版。
+    def generateFlixWith(hooks: CpuHooks, m: FlixModule, entries: List[CpuEntry], extra: List[String]): String = region rc {
         let loops: Ref[List[(String, String, String)], rc] = Ref.fresh(rc, Nil);
         let defs = entries |> List.map(entry -> flixEntry(rc, hooks, loops, entry));
         let loopList = Ref.get(loops) |> List.reverse;
         let loopDefs = loopList |> List.map(l -> { let (_, _, text) = l; text });
         let entryNames = entries |> List.map(e -> e#name) |> List.toSet;
         let clash = loopList |> List.map(l -> { let (_, n, _) = l; n }) |> List.find(n -> Set.memberOf(n, entryNames));
-        let body = List.join("\n", defs ::: loopDefs);
+        let body = List.join("\n", defs ::: loopDefs ::: extra);
         match clash {
             case Some(n) => bug!("LightModel3d: ループの関数の名前 ${n} がエントリの名前とぶつかる（エントリの名前を替える）")
             case None    => flixHeader(m) + flixHelpers(identifiersIn(withoutDocLines(body))) + body + "}\n"

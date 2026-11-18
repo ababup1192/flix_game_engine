@@ -6,6 +6,7 @@
 //
 // 見るのは規約の prefixes の下の suffixes のファイルだけ。超えている物は、除外の一覧に載っていれば通す。
 // 除外は分けるまでの一覧で、分け終えたら --all が「もう鳴らない」と言うので消す。
+// 除外には載せた時の行数 (exemptLines) を添え、それより伸びたら除外でも止める (載せた後に黙って太らせない)。
 //
 // WhyNot: 行数の上限をゲームの src にかけない — ゲームの大きさとファイルの分け方はゲームが決める。
 // 規約は bin/lint-rules/max-lines.json (除外の鍵は "パス::max-lines")。
@@ -32,7 +33,9 @@ type Rules struct {
 	Suffixes []string `json:"suffixes"`
 	MaxLines int      `json:"maxLines"`
 	Hint     string   `json:"hint"`
-	exempt   *lintconf.Exempt
+	// ExemptLines は除外の鍵 → 載せた時の行数。除外に載っていて行数の無い物は止める。
+	ExemptLines map[string]int `json:"exemptLines"`
+	exempt      *lintconf.Exempt
 }
 
 // LoadRules は規約と除外を読む。
@@ -114,13 +117,22 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 func report(out, errOut *strings.Builder, root string, rules *Rules, hits []Hit, all bool, seen int) int {
 	live := map[string]bool{}
 	var bad []Hit
+	code := 0
 	for _, h := range hits {
 		live[key(h.Path)] = true
 		if _, ok := rules.exempt.Why[key(h.Path)]; !ok {
 			bad = append(bad, h)
+			continue
+		}
+		recorded, ok := rules.ExemptLines[key(h.Path)]
+		if !ok {
+			fmt.Fprintf(errOut, "!! %s は除外に載っていますが、載せた時の行数がありません（bin/lint-rules/max-lines.json の exemptLines へ \"%s\": %d）\n", h.Path, key(h.Path), h.Lines)
+			code = 1
+		} else if h.Lines > recorded {
+			fmt.Fprintf(errOut, "!! %s は %d 行。除外に載せた時の %d 行より伸びた（伸ばした分を子のモジュールへ出すか、分ける。%s）\n", h.Path, h.Lines, recorded, rules.Hint)
+			code = 1
 		}
 	}
-	code := 0
 	if all {
 		for _, k := range rules.exempt.Stale(root, live) {
 			fmt.Fprintf(errOut, "  %s は %s の exempt に載っていますが、もう %d 行以下です（消してください）\n", k, rules.exempt.From[k], rules.MaxLines)
@@ -138,7 +150,7 @@ func report(out, errOut *strings.Builder, root string, rules *Rules, hits []Hit,
 		fmt.Fprintf(errOut, "!! %s は %d 行（上限 %d 行）\n", h.Path, h.Lines, rules.MaxLines)
 	}
 	fmt.Fprintf(errOut, "[lint-max-lines] %d 件。%s\n"+
-		"  分けるまで残すなら bin/lint-rules/max-lines.json の exempt へ \"パス::max-lines\" と理由 1 行\n",
+		"  分けるまで残すなら bin/lint-rules/max-lines.json の exempt へ \"パス::max-lines\" と理由 1 行、exemptLines へ今の行数\n",
 		len(bad), rules.Hint)
 	return 1
 }

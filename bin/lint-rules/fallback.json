@@ -35,6 +35,11 @@
     "engine/src/platform/LoadProgress.flix::parMapWithProgress": "正当 B: 待つ回数の上限は Int32.maxValue × 50 ms（約 3 年）で、届くのはスレッドの待ち方の誤り",
     "render_gl/src/LwjglLayer.flix::withProject": "正当 C: project.json は起動時の必須入力 (決まり 1 の loadOrBug 相当。名前が *OrBug でないのが宿題)",
     "engine_world/src/SpatialGrid.flix::build": "正当 C: xs と ys の長さ違いは呼び手のプログラムの誤り。短い方に合わせて続けると、一部の物が黙って探索から漏れる",
-    "engine/src/scene3d/LightModel3d/Codegen.flix::scalarInputCode": "正当 B: PointShadowLit を SumPoints の外で読む・GPU の木に PhysicalUnits を残すのは光の式の書き誤り（ShadowLit と同じ前提。生成するのは engine の中の決まった木だけで、読み込みの途中ではない）"
+    "engine/src/scene3d/LightModel3d/Codegen.flix::scalarInputCode": "正当 B: PointShadowLit を SumPoints の外で読む・GPU の木に PhysicalUnits を残すのは光の式の書き誤り（ShadowLit と同じ前提。生成するのは engine の中の決まった木だけで、読み込みの途中ではない）",
+    "render_gl/src/Render3d/SceneList.flix::kindOfCode": "正当 B: 欄 0 は putRow と putBillboardRow が kindCodeOf で書く番号だけで、範囲の外はエンジンの書き誤り（読み込みではない）",
+    "render_gl/src/RenderFrame/Internal/RenderList.flix::kindOfCode": "正当 B: 欄 0 は putRow が kindCodeOf で書く番号だけで、範囲の外はエンジンの書き誤り（読み込みではない）",
+    "render_gl/src/Render3d/GlRows.flix::drawRow": "正当 B: drawRow を通るのは firstBillboard の前と firstBlended の後の行だけで、ビルボードの行が来るのは行の列の組み立ての誤り（届かない分岐）",
+    "render_gl/src/Render3d/WebGpuRows.flix::isBound": "正当 B: drawRow はビルボードの行を drawer#billboard へ渡して isBound を呼ばない（届かない分岐）",
+    "render_gl/src/Render3d/UniformLayout.flix::offsetOf": "正当 B: 引く鍵は表の enum の case で、表に無い鍵は表の書き漏らし（エンジンの誤り・TestUniformLayout が全部の欄を引く）"
   }
 }

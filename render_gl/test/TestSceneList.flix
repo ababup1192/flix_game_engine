@@ -5,7 +5,7 @@ mod Render3d.TestSceneList {
     use Render3d.Counts.{BatchBreak, breakSlotOf}
     use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.FakeGl.{cmdOf, freshRecorded, freshState, paint, plainTriangle, poseAt, recordingGl, sceneOf, timesCalled}
-    use Render3d.SceneList.{SceneList, buildSceneList, buildScenePasses, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindMaterial, kindSkinned, kindVertexColor, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, SceneRowKind, breakSlotAt, buildSceneList, buildScenePasses, countAt, firstInstanceAt, flagCoverage, flagDoubleSided, flagSameBinding, hasFlag, kindAt, materialHandleAt, materialOrderAt, readCountAt, rowCountOf, textureIdAt, valuesAt}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, freshPlanner, groupScenes, kindOf, meshDrawOf, planScenes}
 
     def triangle(side: Float64): Mesh3d.Mesh3d =
@@ -39,22 +39,31 @@ mod Render3d.TestSceneList {
         { meshes = Render3d.MeshTable.fresh(), textures = Render3d.TextureTable3d.fresh(), layouts = Render3d.MaterialValues.freshLayouts(), gen = 1i64,
           gpuMip = false, textureOf = noRegistered, flipsTargetV = false }
 
-    def column(list: SceneList, col: Int32): List[Int32] \ IO =
-        List.range(0, rowCountOf(list)) |> List.map(row -> rowAt(list, row, col))
+    def column(list: SceneList, at: (SceneList, Int32) -> Int32 \ IO): List[Int32] \ IO =
+        List.range(0, rowCountOf(list)) |> List.map(row -> at(list, row))
+
+    def kinds(list: SceneList): List[SceneRowKind] \ IO =
+        List.range(0, rowCountOf(list)) |> List.map(row -> kindAt(list, row))
 
     // ── 行 ──
+
+    /// 種類 → 欄 0 の番号 → 種類が全部の種類で元に戻る（番号の振り間違いで黙って別の種類にならない）。
+    @Test
+    def testRowKindCodeRoundTrips(): Unit \ Assert =
+        let all = SceneRowKind.VertexColor :: SceneRowKind.Skinned :: SceneRowKind.Material :: SceneRowKind.Billboard :: Nil;
+        Assert.assertEq(expected = all, all |> List.map(k -> Render3d.SceneList.kindOfCode(Render3d.SceneList.kindCodeOf(k))))
 
     /// 行は頂点の色・骨つき・材質の順に並ぶ。
     @Test
     def testRowsKeepVertexColorSkinnedMaterialOrder(): Unit \ {Assert, IO} =
         let list = listOf(batchOf(triangle(1.0), 0, 1) :: Nil, batchOf(triangle(2.0), 1, 1) :: Nil, materialBatch(0, 5, 0.1, batchOf(triangle(3.0), 2, 1)) :: Nil);
-        Assert.assertEq(expected = kindVertexColor() :: kindSkinned() :: kindMaterial() :: Nil, column(list, 0))
+        Assert.assertEq(expected = SceneRowKind.VertexColor :: SceneRowKind.Skinned :: SceneRowKind.Material :: Nil, kinds(list))
 
     /// 材質の行は材質の表の番号と順の番号を持つ。
     @Test
     def testMaterialRowCarriesHandleAndOrder(): Unit \ {Assert, IO} =
         let list = listOf(Nil, Nil, materialBatch(4, 9, 0.1, batchOf(triangle(1.0), 0, 1)) :: Nil);
-        Assert.assertEq(expected = (4, 9), (rowAt(list, 0, 1), rowAt(list, 0, 2)))
+        Assert.assertEq(expected = (4, 9), (materialHandleAt(list, 0), materialOrderAt(list, 0)))
 
     /// 材質の行の値は 2 つの区画を 256 バイトずつそろえて並べ（物ごとの値 64 個・sg 64 個）、cutout を物ごとの値の頭に書く。描く物の無い材質の行と形の行は値を持たない。
     @Test
@@ -63,34 +72,34 @@ mod Render3d.TestSceneList {
         let list = listOf(batchOf(triangle(4.0), 0, 1) :: Nil, Nil,
                           cutout(batchOf(triangle(1.0), 1, 1)) :: materialBatch(1, 4, 0.9, batchOf(triangle(2.0), 2, 0))
                           :: materialBatch(2, 5, 0.5, batchOf(triangle(3.0), 2, 1)) :: Nil);
-        let at = (row: Int32) -> rowAt(list, row, 8);
+        let at = (row: Int32) -> valuesAt(list, row);
         Assert.assertEq(expected = (-1, 0, -1, 128, 1.0f32, 0.0f32, 256), (at(0), at(1), at(2), at(3), Array.get(0, list#values), Array.get(128, list#values), Array.length(list#values)))
 
     /// 行は 1 体ごとの値の先頭と描く物の数を持つ。
     @Test
     def testRowCarriesFirstAndCount(): Unit \ {Assert, IO} =
         let list = listOf(batchOf(triangle(1.0), 7, 3) :: Nil, Nil, Nil);
-        Assert.assertEq(expected = (7, 3), (rowAt(list, 0, 3), rowAt(list, 0, 4)))
+        Assert.assertEq(expected = (7, 3), (firstInstanceAt(list, 0), countAt(list, 0)))
 
     /// 頂点の色の行は Mesh・骨つきの行は Skinned で分かれた理由を数える。
     @Test
     def testShapeRowsBreakByMeshAndSkinned(): Unit \ {Assert, IO} =
         let list = listOf(batchOf(triangle(1.0), 0, 1) :: Nil, batchOf(triangle(2.0), 1, 1) :: Nil, Nil);
-        Assert.assertEq(expected = breakSlotOf(BatchBreak.Mesh) :: breakSlotOf(BatchBreak.Skinned) :: Nil, column(list, 5))
+        Assert.assertEq(expected = breakSlotOf(BatchBreak.Mesh) :: breakSlotOf(BatchBreak.Skinned) :: Nil, column(list, breakSlotAt))
 
     /// 同じ材質で形が違う行は Mesh・違う材質の行は Material で分かれる。
     @Test
     def testMaterialRowsBreakByMeshOrMaterial(): Unit \ {Assert, IO} =
         let list = listOf(Nil, Nil, materialBatch(0, 3, 0.1, batchOf(triangle(1.0), 0, 1)) :: materialBatch(1, 3, 0.1, batchOf(triangle(2.0), 1, 1))
                                     :: materialBatch(2, 4, 0.9, batchOf(triangle(2.0), 2, 1)) :: Nil);
-        Assert.assertEq(expected = breakSlotOf(BatchBreak.Material) :: breakSlotOf(BatchBreak.Mesh) :: breakSlotOf(BatchBreak.Material) :: Nil, column(list, 5))
+        Assert.assertEq(expected = breakSlotOf(BatchBreak.Material) :: breakSlotOf(BatchBreak.Mesh) :: breakSlotOf(BatchBreak.Material) :: Nil, column(list, breakSlotAt))
 
     /// 描く物の無い材質の行は前の材質を替えない（その次の同じ材質の別の形は Mesh で分かれる）。
     @Test
     def testCulledMaterialRowKeepsPrevious(): Unit \ {Assert, IO} =
         let list = listOf(Nil, Nil, materialBatch(0, 3, 0.1, batchOf(triangle(1.0), 0, 1)) :: materialBatch(1, 4, 0.9, batchOf(triangle(2.0), 1, 0))
                                     :: materialBatch(2, 3, 0.1, batchOf(triangle(3.0), 1, 1)) :: Nil);
-        Assert.assertEq(expected = breakSlotOf(BatchBreak.Mesh), rowAt(list, 2, 5))
+        Assert.assertEq(expected = breakSlotOf(BatchBreak.Mesh), breakSlotAt(list, 2))
 
     /// 両面の材質と alpha to coverage の版はフラグに立つ。
     @Test
@@ -390,9 +399,9 @@ mod Render3d.TestSceneList {
         let list = buildSceneList(Render3d.SceneList.contextOf(freshTables(), { textures = t :: Nil | sceneOf(Nil) }),
                                   { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil, billboards = Nil });
         let v = (i: Int32) -> Array.get(i, list#values);
-        let last = rowAt(list, 0, 10) - 1;
+        let last = readCountAt(list, 0) - 1;
         Assert.assertEq(expected = (1.0f32, 1.0f32, 2.0f32, 2, true, 1, 1, true),
-                        (v(3), v(4), v(5), rowAt(list, 0, 10), hasFlag(list, 0, Render3d.SceneList.flagLightmap()),
+                        (v(3), v(4), v(5), readCountAt(list, 0), hasFlag(list, 0, Render3d.SceneList.flagLightmap()),
                          Render3d.SceneList.readAt(list, 0, last, 1), Render3d.SceneList.readAt(list, 0, last, 2), Render3d.SceneList.readAt(list, 0, last, 0) >= 0))
 
     /// 法線マップと lightmap の両方を持つ行の絵の組は 材質の絵 → 法線マップ（材質の読み方 Repeat）→ lightmap（Clamp）の順で、線形の lightmap は色空間の欄が 0。
@@ -408,7 +417,7 @@ mod Render3d.TestSceneList {
         let list = buildSceneList(Render3d.SceneList.contextOf(freshTables(), { textures = t :: Nil | sceneOf(Nil) }),
                                   { plain = Nil, skinned = Nil, opaque = d :: Nil, blended = Nil, billboards = Nil });
         let wrapAt = (k: Int32) -> Render3d.SceneList.readAt(list, 0, k, 2);
-        Assert.assertEq(expected = (3, 0, 0, 1, 0.0f32), (rowAt(list, 0, 10), wrapAt(0), wrapAt(1), wrapAt(2), Array.get(4, list#values)))
+        Assert.assertEq(expected = (3, 0, 0, 1, 0.0f32), (readCountAt(list, 0), wrapAt(0), wrapAt(1), wrapAt(2), Array.get(4, list#values)))
 
     // ── pass ──
 
@@ -441,7 +450,7 @@ mod Render3d.TestSceneList {
     def testBlendedRowsFollowOpaqueRows(): Unit \ {Assert, IO} =
         let list = listWithBlended(batchOf(triangle(1.0), 0, 1) :: Nil, materialBatch(0, 5, 0.1, batchOf(triangle(2.0), 1, 1)) :: Nil,
                                    blendedBatch(1, 6, 0.2, batchOf(triangle(3.0), 2, 1)) :: blendedBatch(2, 7, 0.3, batchOf(triangle(4.0), 3, 1)) :: Nil);
-        Assert.assertEq(expected = (2, 4, 2 :: 3 :: Nil), (Render3d.SceneList.firstBlendedRowOf(list), rowCountOf(list), column(list, 3) |> List.drop(2)))
+        Assert.assertEq(expected = (2, 4, 2 :: 3 :: Nil), (Render3d.SceneList.firstBlendedRowOf(list), rowCountOf(list), column(list, firstInstanceAt) |> List.drop(2)))
 
     /// 半透明の行が無ければ firstBlendedRowOf は行の数と同じ。
     @Test
@@ -460,7 +469,7 @@ mod Render3d.TestSceneList {
     @Test
     def testBlendedRowHasValuesAndTransparentBreak(): Unit \ {Assert, IO} =
         let list = listWithBlended(Nil, Nil, blendedBatch(0, 5, 0.1, batchOf(triangle(1.0), 0, 1)) :: Nil);
-        Assert.assertEq(expected = (true, breakSlotOf(BatchBreak.Transparent)), (Render3d.SceneList.valuesAt(list, 0) >= 0, rowAt(list, 0, 5)))
+        Assert.assertEq(expected = (true, breakSlotOf(BatchBreak.Transparent)), (Render3d.SceneList.valuesAt(list, 0) >= 0, breakSlotAt(list, 0)))
 
     def glassAt(red: Float64, z: Float64): Scene3d.Instance3d =
         Scene3d.meshInstance(plainTriangle(), Mat4.translate(Vec3.v3(0.0, 0.0, z))) |> Scene3d.withMaterial(materialOf(red) |> Scene3d.withAlphaBlend(true))
@@ -506,9 +515,9 @@ mod Render3d.TestSceneList {
     @Test
     def testBillboardRowsSitBetweenOpaqueAndBlended(): Unit \ {Assert, IO} =
         let list = listWithTwoTextures(billboardDraw(false) :: boardDraw("other", 6.0, false) :: Nil);
-        let bb = Render3d.SceneList.kindBillboard();
-        Assert.assertEq(expected = (kindVertexColor() :: kindMaterial() :: bb :: bb :: kindMaterial() :: Nil, 2, 4),
-                        (column(list, 0), Render3d.SceneList.firstBillboardRowOf(list), Render3d.SceneList.firstBlendedRowOf(list)))
+        let bb = SceneRowKind.Billboard;
+        Assert.assertEq(expected = (SceneRowKind.VertexColor :: SceneRowKind.Material :: bb :: bb :: SceneRowKind.Material :: Nil, 2, 4),
+                        (kinds(list), Render3d.SceneList.firstBillboardRowOf(list), Render3d.SceneList.firstBlendedRowOf(list)))
 
     /// 絵 "sprite"（番号 7）と "other"（番号 9）を引ける表。
     def tablesWithTwo(): Render3d.SceneList.Tables \ IO =
@@ -527,13 +536,19 @@ mod Render3d.TestSceneList {
 
     /// ビルボードの行の (絵の番号, 板の数) の並び。
     def billboardRunsIn(list: SceneList): List[(Int32, Int32)] \ IO =
-        List.range(Render3d.SceneList.firstBillboardRowOf(list), Render3d.SceneList.firstBlendedRowOf(list)) |> List.map(row -> (rowAt(list, row, 1), rowAt(list, row, 4)))
+        List.range(Render3d.SceneList.firstBillboardRowOf(list), Render3d.SceneList.firstBlendedRowOf(list)) |> List.map(row -> (textureIdAt(list, row), countAt(list, row)))
 
     /// 来た順で続く同じ絵の板は 1 つの行（板の数 = 並びの長さ）になり、絵が替わると行が分かれる（来た順は崩さない）。
     @Test
     def testSameTextureBillboardsShareOneRow(): Unit \ {Assert, IO} =
         let list = listWithTwoTextures(boardDraw("sprite", 5.0, false) :: boardDraw("sprite", 6.0, false) :: boardDraw("other", 7.0, false) :: boardDraw("sprite", 8.0, false) :: Nil);
         Assert.assertEq(expected = (7, 2) :: (9, 1) :: (7, 1) :: Nil, billboardRunsIn(list))
+
+    /// 絵 A・A・B・A の板は 3 行で、行の絵は A・B・A（診断の billboardRuns 3・billboardImages 2 の元）。
+    @Test
+    def testBillboardTexturesListOneEntryPerRow(): Unit \ {Assert, IO} =
+        let list = listWithTwoTextures(boardDraw("sprite", 5.0, false) :: boardDraw("sprite", 6.0, false) :: boardDraw("other", 7.0, false) :: boardDraw("sprite", 8.0, false) :: Nil);
+        Assert.assertEq(expected = 7 :: 9 :: 7 :: Nil, Render3d.SceneList.billboardTexturesOf(list))
 
     /// 視錐台の外の板は行を作らず、前後の同じ絵の板はその外の板をまたいで 1 つの行になる。
     @Test
@@ -557,7 +572,7 @@ mod Render3d.TestSceneList {
         Assert.assertEq(expected = (7, 1, breakSlotOf(BatchBreak.Billboard),
                                     1.0f32 :: 2.0f32 :: 5.0f32 :: 1.0f32 :: 0.5f32 :: 1.0f32 :: 2.0f32 :: 3.0f32 ::
                                     0.25f32 :: 0.25f32 :: 0.5f32 :: 0.5f32 :: 1.0f32 :: 1.0f32 :: 1.0f32 :: 0.0f32 :: Nil),
-                        (rowAt(list, 2, 1), rowAt(list, 2, 4), rowAt(list, 2, 5), values))
+                        (textureIdAt(list, 2), countAt(list, 2), breakSlotAt(list, 2), values))
 
     /// レンダーターゲット（flipped）の絵でも、v を返さない backend（flipsTargetV 偽・WebGPU）の値の uv は上の行から数える。
     @Test
@@ -601,7 +616,7 @@ mod Render3d.TestSceneList {
     def testMissingBillboardTextureIsListed(): Unit \ {Assert, IO} =
         let list = listWithBillboards(None, billboardDraw(false) :: Nil);
         Assert.assertEq(expected = (-1, 0, -1, "sprite" :: Nil),
-                        (rowAt(list, 2, 1), rowAt(list, 2, 4), Render3d.SceneList.valuesAt(list, 2), Render3d.SceneList.missingBillboardTexturesOf(list)))
+                        (textureIdAt(list, 2), countAt(list, 2), Render3d.SceneList.valuesAt(list, 2), Render3d.SceneList.missingBillboardTexturesOf(list)))
 
     /// 絵が見つからない板は視錐台の外でも行に残る（知らせが外の板の分も出る）。
     @Test
@@ -629,8 +644,8 @@ mod Render3d.TestSceneList {
     def testShadowListPutsBillboardRowsAfterShapes(): Unit \ {Assert, IO} =
         let ctx = Render3d.SceneList.contextOf(tablesWith(Some(registered(false))), sceneOf(Nil));
         let list = Render3d.SceneList.buildShadowList(ctx, batchOf(triangle(1.0), 0, 1) :: Nil, Nil, (billboardDraw(false)#fields, None) :: Nil);
-        Assert.assertEq(expected = (kindVertexColor() :: Render3d.SceneList.kindBillboard() :: Nil, 1, breakSlotOf(BatchBreak.ShadowPass), 0),
-                        (column(list, 0), Render3d.SceneList.firstBillboardRowOf(list), rowAt(list, 1, 5), Render3d.SceneList.valuesAt(list, 1)))
+        Assert.assertEq(expected = (SceneRowKind.VertexColor :: SceneRowKind.Billboard :: Nil, 1, breakSlotOf(BatchBreak.ShadowPass), 0),
+                        (kinds(list), Render3d.SceneList.firstBillboardRowOf(list), breakSlotAt(list, 1), Render3d.SceneList.valuesAt(list, 1)))
 
     /// 影の地図の板は絵の名前で並べ替えてからまとめる（来た順で絵が交互でも、絵ごとに 1 行）。
     @Test

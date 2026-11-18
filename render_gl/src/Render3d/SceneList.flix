@@ -1,11 +1,11 @@
 // Render3d.SceneList — 3D の場面 1 つの batch を描く行の列（RenderList の 3D の分。計画の側が pass ごとに作り（buildScenePasses）、GL の backend は Render3d.GlRows・WebGPU の backend は Render3d.WebGpuRows が流す）。
 // 1 行 = 形 1 つの集まりを 1 回の instanced draw で描く（頂点の色の物・骨つきの物・不透明の材質の物・半透明の材質の物）か、同じ絵の板の並びを 1 回の instanced draw で描く。空は行にしない。
 // 影の地図の pass の行（buildShadowList・計画は Render3d.ShadowMaps）は頂点の色の行と骨つきの行と、その後に地図に描くビルボードの行で、backend は形（ビルボードは α で切った板）を深度で描く。
-// rows は 1 行 rowStride() 個: 0=種類（kind*） 1=材質の表の番号（MaterialBatch#handle。頂点の色と骨つきは 0） 2=材質の順の番号（MaterialBatch#order。同じく 0）
+// rows は 1 行 rowStride() 個（欄の番号は col* の def・読むのは名前の読み出し口）: 0=種類（kindCodeOf） 1=材質の表の番号（MaterialBatch#handle。頂点の色と骨つきは 0） 2=材質の順の番号（MaterialBatch#order。同じく 0）
 //   3=1 体ごとの値の先頭 4=描く物の数（0 なら描かず、形と絵を今のコマで使った物として数えるだけ） 5=1 つの draw call に分かれた理由（Render3d.Counts.breakSlotOf）
 //   6=フラグ（flag*: 両面・alpha to coverage・法線マップ・前の材質の行と同じ付け方・lightmap） 7=形の番号（Render3d.MeshTable。backend は行を流す前にこの番号の形を作り、描く時にこの番号で引く）
 //   8=材質の値の先頭（values の位置・材質の行で描く物がある時だけ。ほかは -1） 9=絵の組の先頭（reads の組の番号） 10=絵の組の数。
-//   ビルボードの行（kindBillboard・billboardRunsOf）は、来た順で続く同じ絵の板の並び（視錐台の外の板は行にしない）か、絵が見つからない板 1 枚:
+//   ビルボードの行（SceneRowKind.Billboard・billboardRunsOf）は、来た順で続く同じ絵の板の並び（視錐台の外の板は行にしない）か、絵が見つからない板 1 枚:
 //   1=全体の登録の絵の番号（RegisteredTexture#texId・見つからなければ -1） 4=並びの板の数（見つからない行は 0）
 //   5=分かれた理由（Billboard） 7=-1 8=並びの頭の板の値の先頭（並びの板の値は billboardValueFloats() 個ずつ続く。見つからない行は -1） で、ほかの欄は 0。
 //   GL と WebGPU は欄 8 の値のある行だけを、欄 1 の絵で 欄 4 の数の instance で描く。
@@ -56,11 +56,33 @@ mod Render3d.SceneList {
         { meshes = tables#meshes, layouts = tables#layouts, time = scene#time, flipsTargetV = tables#flipsTargetV,
           naming = { source = source, gpuMip = tables#gpuMip, textures = tables#textures, gen = tables#gen } }
 
-    /// 行の種類。
-    pub def kindVertexColor(): Int32 = 1
-    pub def kindSkinned(): Int32 = 2
-    pub def kindMaterial(): Int32 = 3
-    pub def kindBillboard(): Int32 = 4
+    /// 行の種類（欄 0）。VertexColor = 材質の無い骨の無い物・Skinned = 材質の無い骨つきの物・Material = 材質の物（半透明も）・Billboard = 同じ絵の板の並び。
+    pub enum SceneRowKind with Eq, ToString {
+        case VertexColor
+        case Skinned
+        case Material
+        case Billboard
+    }
+
+    /// 行 row の種類。
+    pub def kindAt(list: SceneList, row: Int32): SceneRowKind \ IO = kindOfCode(rowAt(list, row, colKind()))
+
+    /// 欄 0 の番号 → 種類（範囲の外は書く側の誤り）。
+    pub def kindOfCode(code: Int32): SceneRowKind = match code {
+        case 1 => SceneRowKind.VertexColor
+        case 2 => SceneRowKind.Skinned
+        case 3 => SceneRowKind.Material
+        case 4 => SceneRowKind.Billboard
+        case _ => bug!("Render3d.SceneList: 行の種類の番号 ${code} は無い")
+    }
+
+    /// 種類 → 欄 0 の番号。
+    pub def kindCodeOf(kind: SceneRowKind): Int32 = match kind {
+        case SceneRowKind.VertexColor => 1
+        case SceneRowKind.Skinned     => 2
+        case SceneRowKind.Material    => 3
+        case SceneRowKind.Billboard   => 4
+    }
 
     /// ビルボードの行の値の float の数: 立てる点の xyz と光の当て方（0 = 当てない・1 = 当てる・2 = 当てて太陽の影も受ける）・anchor の xy と size の xy・
     /// 貼る範囲の uv（左上 u・v と幅・高さ。上の行が v = 0・flipsTargetV ならレンダーターゲットの絵は返した値）・線形へ戻した tint の rgb と、
@@ -78,6 +100,19 @@ mod Render3d.SceneList {
 
     def rowStride(): Int32 = 11
 
+    // 欄の番号（並びはこのファイルの頭のコメント）。書く側と読み出し口の両方がここを使う。
+    def colKind(): Int32 = 0
+    def colHandle(): Int32 = 1
+    def colOrder(): Int32 = 2
+    def colFirst(): Int32 = 3
+    def colCount(): Int32 = 4
+    def colBreak(): Int32 = 5
+    def colFlags(): Int32 = 6
+    def colMesh(): Int32 = 7
+    def colValues(): Int32 = 8
+    def colFirstRead(): Int32 = 9
+    def colReadCount(): Int32 = 10
+
     pub def rowCountOf(list: SceneList): Int32 = list#count
 
     /// ビルボードの行の頭（無ければ firstBlendedRowOf と同じ）。
@@ -88,35 +123,60 @@ mod Render3d.SceneList {
 
     /// 絵が見つからなかったビルボードの行の絵の名前（行の順）。
     pub def missingBillboardTexturesOf(list: SceneList): List[String] \ IO =
-        List.range(list#firstBillboard, list#firstBlended) |> List.filter(row -> rowAt(list, row, 1) < 0) |> List.map(row -> billboardAt(list, row)#texture)
+        List.range(list#firstBillboard, list#firstBlended) |> List.filter(row -> textureIdAt(list, row) < 0) |> List.map(row -> billboardAt(list, row)#texture)
+
+    /// 絵のあるビルボードの行が貼る全体の登録の絵の番号（行の順。同じ絵が離れた行に出れば何度も入る）。
+    pub def billboardTexturesOf(list: SceneList): List[Int32] \ IO =
+        List.range(list#firstBillboard, list#firstBlended) |> List.map(row -> textureIdAt(list, row)) |> List.filter(t -> t >= 0)
 
     /// ビルボードの行 row の中身。
     pub def billboardAt(list: SceneList, row: Int32): Scene3d.BillboardFields \ IO = Array.get(row - list#firstBillboard, list#billboards)
 
-    /// 行 row の欄 col（並びはこのファイルの頭のコメント）。
-    pub def rowAt(list: SceneList, row: Int32, col: Int32): Int32 \ IO = Array.get(row * rowStride() + col, list#rows)
+    /// 行 row の欄 col（並びはこのファイルの頭のコメント）。外からは名前の読み出し口で読む。
+    def rowAt(list: SceneList, row: Int32, col: Int32): Int32 \ IO = Array.get(row * rowStride() + col, list#rows)
+
+    /// 材質の行 row の材質の表の番号（MaterialBatch#handle。頂点の色と骨つきの行は 0）。
+    pub def materialHandleAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colHandle())
+
+    /// ビルボードの行 row の全体の登録の絵の番号（RegisteredTexture#texId・見つからなければ −1）。
+    pub def textureIdAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colHandle())
+
+    /// 材質の行 row の材質の順の番号（MaterialBatch#order）。
+    pub def materialOrderAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colOrder())
+
+    /// 行 row の 1 体ごとの値の先頭。
+    pub def firstInstanceAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colFirst())
+
+    /// 行 row の描く物の数（ビルボードの行は並びの板の数）。
+    pub def countAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colCount())
+
+    /// 行 row が 1 つの draw call に分かれた理由（Render3d.Counts.breakSlotOf の番号）。
+    pub def breakSlotAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colBreak())
+
+    /// 材質の行 row の絵の組の数。
+    pub def readCountAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colReadCount())
 
     pub def headAt(list: SceneList, row: Int32): MeshDraw \ IO = Array.get(row, list#heads)
 
     /// 行 row の形の番号（Render3d.MeshTable）。
-    pub def meshAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, 7)
+    pub def meshAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colMesh())
 
     /// 材質の行 row の材質（頂点の色と骨つきとビルボードの行は None）。
     pub def materialAt(list: SceneList, row: Int32): Option[Scene3d.MaterialFields] \ IO =
         if (row < list#firstMaterial or (row >= list#firstBillboard and row < list#firstBlended)) None else Some(Array.get(row - list#firstMaterial, list#materials))
 
     /// 行 row の材質の値の先頭（values の位置。値の無い行は -1）。
-    pub def valuesAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, 8)
+    pub def valuesAt(list: SceneList, row: Int32): Int32 \ IO = rowAt(list, row, colValues())
 
     /// 材質の行 row の値の位置を at にする（同じ中身の値を前の行と分け合う時・Render3d.StaticRows）。
-    pub def setValuesAt(list: SceneList, row: Int32, at: Int32): Unit \ IO = Array.put(at, row * rowStride() + 8, list#rows)
+    pub def setValuesAt(list: SceneList, row: Int32, at: Int32): Unit \ IO = Array.put(at, row * rowStride() + colValues(), list#rows)
 
     /// 行 row の絵の組の k 番目の欄 col（並びは Render3d.MaterialValues の頭）。
     pub def readAt(list: SceneList, row: Int32, k: Int32, col: Int32): Int32 \ IO =
-        Array.get((rowAt(list, row, 9) + k) * MaterialValues.readStride() + col, list#reads)
+        Array.get((rowAt(list, row, colFirstRead()) + k) * MaterialValues.readStride() + col, list#reads)
 
     /// 行 row のフラグに flag が立っているか。
-    pub def hasFlag(list: SceneList, row: Int32, flag: Int32): Bool \ IO = Int32.bitwiseAnd(rowAt(list, row, 6), flag) != 0
+    pub def hasFlag(list: SceneList, row: Int32, flag: Int32): Bool \ IO = Int32.bitwiseAnd(rowAt(list, row, colFlags()), flag) != 0
 
     /// 場面の batch とビルボードを描く順の行にする（ビルボードは不透明の行の後に来た順・半透明の blended は計画が並べた順のまま末尾へ）。形と材質の絵の番号は ctx の表で振る。
     // WhyNot: 半透明の頭の行の「前の材質の行と同じ付け方」を不透明の最後の行から続けて見ない — 間にビルボードの行が来て、GL の drawBlendedRows は
@@ -138,8 +198,8 @@ mod Render3d.SceneList {
                      values = Array.repeat(Static, Int32.max(1, materialTotal + billboardFloatsOf(runs)), 0.0f32),
                      reads = Array.repeat(Static, Int32.max(1, readTotal * MaterialValues.readStride()), 0) };
         let next = Array#{0, 0, 0} @ Static;
-        draws#plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.Mesh, b));
-        draws#skinned |> List.forEach(b -> putShapeRow(list, next, ctx, kindSkinned(), BatchBreak.Skinned, b));
+        draws#plain |> List.forEach(b -> putShapeRow(list, next, ctx, SceneRowKind.VertexColor, BatchBreak.Mesh, b));
+        draws#skinned |> List.forEach(b -> putShapeRow(list, next, ctx, SceneRowKind.Skinned, BatchBreak.Skinned, b));
         discard List.foldLeft(putMaterialRow(list, next, ctx), None, opaque);
         let valueCursor = Array#{materialTotal} @ Static;
         runs |> List.forEach(putBillboardRow(list, next, valueCursor, ctx#flipsTargetV, BatchBreak.Billboard));
@@ -186,16 +246,16 @@ mod Render3d.SceneList {
         let row = Array.get(0, next);
         let base = row * rowStride();
         let rows = list#rows;
-        Array.put(kindBillboard(), base, rows);
-        Array.put(boardRun#texture |> Option.map(t -> t#texId) |> Option.getWithDefault(-1), base + 1, rows);
-        Array.put(breakSlotOf(why), base + 5, rows);
-        Array.put(-1, base + 7, rows);
-        Array.put(-1, base + 8, rows);
+        Array.put(kindCodeOf(SceneRowKind.Billboard), base + colKind(), rows);
+        Array.put(boardRun#texture |> Option.map(t -> t#texId) |> Option.getWithDefault(-1), base + colHandle(), rows);
+        Array.put(breakSlotOf(why), base + colBreak(), rows);
+        Array.put(-1, base + colMesh(), rows);
+        Array.put(-1, base + colValues(), rows);
         boardRun#texture |> Option.forEach(t -> {
             let v = Array.get(0, at);
             let n = List.length(boardRun#boards);
-            Array.put(v, base + 8, rows);
-            Array.put(n, base + 4, rows);
+            Array.put(v, base + colValues(), rows);
+            Array.put(n, base + colCount(), rows);
             boardRun#boards |> List.forEachWithIndex((i, board) -> putBillboardValues(list#values, v + i * billboardValueFloats(), board, t, flipsV));
             Array.put(v + n * billboardValueFloats(), 0, at)
         });
@@ -243,8 +303,8 @@ mod Render3d.SceneList {
                      values = Array.repeat(Static, Int32.max(1, billboardFloatsOf(runs)), 0.0f32),
                      reads = Array.repeat(Static, 1, 0) };
         let next = Array#{0, 0, 0} @ Static;
-        plain |> List.forEach(b -> putShapeRow(list, next, ctx, kindVertexColor(), BatchBreak.ShadowPass, b));
-        skinned |> List.forEach(b -> putShapeRow(list, next, ctx, kindSkinned(), BatchBreak.ShadowPass, b));
+        plain |> List.forEach(b -> putShapeRow(list, next, ctx, SceneRowKind.VertexColor, BatchBreak.ShadowPass, b));
+        skinned |> List.forEach(b -> putShapeRow(list, next, ctx, SceneRowKind.Skinned, BatchBreak.ShadowPass, b));
         let valueCursor = Array#{0} @ Static;
         runs |> List.forEach(putBillboardRow(list, next, valueCursor, ctx#flipsTargetV, BatchBreak.ShadowPass));
         list
@@ -263,7 +323,7 @@ mod Render3d.SceneList {
             { boards = List.zip(List.map(fst, r#boards), List.take(n, rights)) | r } :: withRights(rest, List.drop(n, rights))
     }
 
-    def putShapeRow(list: SceneList, next: Array[Int32, Static], ctx: Context, kind: Int32, why: BatchBreak, b: MeshBatch): Unit \ IO =
+    def putShapeRow(list: SceneList, next: Array[Int32, Static], ctx: Context, kind: SceneRowKind, why: BatchBreak, b: MeshBatch): Unit \ IO =
         putRow(list, next, ctx, kind, (0, 0), b, breakSlotOf(why), 0)
 
     /// d の行を足し、前に描いた材質の batch を返す（描く物の無い batch は前の物を替えない）。layout = d の値の並びの元（描く物の無い batch は None で、値を書かない）。
@@ -276,7 +336,7 @@ mod Render3d.SceneList {
         let same = if (drawn and Option.exists(p -> isSameBinding(p, d), previous)) flagSameBinding() else 0;
         let row = Array.get(0, next);
         Array.put(d#material, row - list#firstMaterial, list#materials);
-        putRow(list, next, ctx, kindMaterial(), (d#handle, d#order), d#batch, breakSlotOf(why), flagsOf(d) + same);
+        putRow(list, next, ctx, SceneRowKind.Material, (d#handle, d#order), d#batch, breakSlotOf(why), flagsOf(d) + same);
         layout |> Option.forEach(l -> putMaterialValues(list, next, ctx, row, d, l));
         if (drawn) Some(d) else previous
 
@@ -287,9 +347,9 @@ mod Render3d.SceneList {
         let readCount = MaterialValues.readCountOf(layout, d#kind);
         MaterialValues.put(ctx#naming, layout, d, ctx#time, list#values, at, list#reads, readAt * MaterialValues.readStride());
         let base = row * rowStride();
-        Array.put(at, base + 8, list#rows);
-        Array.put(readAt, base + 9, list#rows);
-        Array.put(readCount, base + 10, list#rows);
+        Array.put(at, base + colValues(), list#rows);
+        Array.put(readAt, base + colFirstRead(), list#rows);
+        Array.put(readCount, base + colReadCount(), list#rows);
         Array.put(at + MaterialValues.valueSizeOf(layout), 1, next);
         Array.put(readAt + readCount, 2, next)
 
@@ -305,21 +365,21 @@ mod Render3d.SceneList {
     def textureReadsOf(m: Scene3d.MaterialFields): List[(String, ShaderDoc.FilterMode)] =
         ShaderDoc.materialTexReads(m#spec, m#emission, m#metallicRoughnessShade)
 
-    def putRow(list: SceneList, next: Array[Int32, Static], ctx: Context, kind: Int32, material: (Int32, Int32), b: MeshBatch, why: Int32,
+    def putRow(list: SceneList, next: Array[Int32, Static], ctx: Context, kind: SceneRowKind, material: (Int32, Int32), b: MeshBatch, why: Int32,
                flags: Int32): Unit \ IO =
         let row = Array.get(0, next);
         let rows = list#rows;
         let at = row * rowStride();
         let (handle, order) = material;
-        Array.put(kind, at, rows);
-        Array.put(handle, at + 1, rows);
-        Array.put(order, at + 2, rows);
-        Array.put(b#first, at + 3, rows);
-        Array.put(b#count, at + 4, rows);
-        Array.put(why, at + 5, rows);
-        Array.put(flags, at + 6, rows);
-        Array.put(MeshTable.numberOf(ctx#meshes, ctx#naming#gen, b#head#fields#mesh), at + 7, rows);
-        Array.put(-1, at + 8, rows);
+        Array.put(kindCodeOf(kind), at + colKind(), rows);
+        Array.put(handle, at + colHandle(), rows);
+        Array.put(order, at + colOrder(), rows);
+        Array.put(b#first, at + colFirst(), rows);
+        Array.put(b#count, at + colCount(), rows);
+        Array.put(why, at + colBreak(), rows);
+        Array.put(flags, at + colFlags(), rows);
+        Array.put(MeshTable.numberOf(ctx#meshes, ctx#naming#gen, b#head#fields#mesh), at + colMesh(), rows);
+        Array.put(-1, at + colValues(), rows);
         Array.put(b#head, row, list#heads);
         Array.put(row + 1, 0, next)
 

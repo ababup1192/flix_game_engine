@@ -6,7 +6,8 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     import java.nio.ByteOrder
     use Render3d.ScenePlan.ScenePassSpec
     use Render3d.ShadowMaps.ShadowSampling
-    use Render3d.WebGpuRenderer.{clearOf, packPassValues, packSceneValues, packShadowValues, sceneValueBytes, skipsOf, topLeftOf}
+    use Render3d.WebGpuRenderer.{clearOf, skipsOf, topLeftOf}
+    use Render3d.WebGpuSceneValues.{packPassValues, packSceneValues, packShadowValues, sceneValueBytes}
 
     def camera(): Camera3d.Camera3d = { eye = Vec3.v3(1.0, 2.0, 3.0), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0, lensShift = Vec2.zero() }
 
@@ -21,7 +22,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
 
     def packed(): ByteBuffer \ IO =
         let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
-        packSceneValues(buf, Render3d.Light.lightDataOf(scene(), 0));
+        packSceneValues(buf, Render3d.UniformLayout.sceneOffsets(), Render3d.Light.lightDataOf(scene(), 0));
         buf
 
     /// 頭の欄: 環境光の r（0）・hemisphere（12）・目の x（16）・toonSteps（28）・かすみ（44）・かすみの遠い端（52）・点光源の数（56）。
@@ -56,7 +57,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     @Test
     def testSpotShadowFieldsSitAtWgslOffsets(): Unit \ {Assert, IO} =
         let buf = packed();
-        packShadowValues(buf, spotSampling() :: Nil);
+        packShadowValues(buf, Render3d.UniformLayout.sceneOffsets(), spotSampling() :: Nil);
         Assert.assertEq(expected = (1, 2, 3, 0.25f32, 0.75f32, 7.0f32, 0),
                         (buf.getInt(220), buf.getInt(232), buf.getInt(236), buf.getFloat(240), buf.getFloat(244), buf.getFloat(272 + 48), buf.getInt(76)))
 
@@ -64,7 +65,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     @Test
     def testSunShadowFieldsSitAtWgslOffsets(): Unit \ {Assert, IO} =
         let buf = packed();
-        packShadowValues(buf, sunSampling() :: Nil);
+        packShadowValues(buf, Render3d.UniformLayout.sceneOffsets(), sunSampling() :: Nil);
         Assert.assertEq(expected = (1, 1.5f32, 0.3f32, 0.5f32, 40.0f32, 6.0f32, 2, 0.625f32, 9.0f32, 0),
                         (buf.getInt(76), buf.getFloat(92), buf.getFloat(104), buf.getFloat(108), buf.getFloat(112), buf.getFloat(116),
                          buf.getInt(120), buf.getFloat(124), buf.getFloat(336 + 48), buf.getInt(220)))
@@ -73,30 +74,30 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     @Test
     def testNoShadowTurnsBothOff(): Unit \ {Assert, IO} =
         let buf = packed();
-        packShadowValues(buf, spotSampling() :: sunSampling() :: Nil);
-        packShadowValues(buf, Nil);
+        packShadowValues(buf, Render3d.UniformLayout.sceneOffsets(), spotSampling() :: sunSampling() :: Nil);
+        packShadowValues(buf, Render3d.UniformLayout.sceneOffsets(), Nil);
         Assert.assertEq(expected = (0, 0), (buf.getInt(220), buf.getInt(76)))
 
     /// 奥行きの書き出しの pass は uDepthRange（224・228）に near と幅・uDepthOut（248）に 1。
     @Test
     def testDepthPassWritesRangeAndFlag(): Unit \ {Assert, IO} =
         let buf = packed();
-        packPassValues(buf, ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
+        packPassValues(buf, Render3d.UniformLayout.sceneOffsets(), ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
         Assert.assertEq(expected = (0.5f32, 12.0f32, 1), (buf.getFloat(224), buf.getFloat(228), buf.getInt(248)))
 
     /// 色の pass は、前の場面が奥行きの書き出しでも uDepthOut を 0 に戻し、幅を 1 にする（入れ物を場面をまたいで使い回す）。
     @Test
     def testColorPassClearsDepthFlag(): Unit \ {Assert, IO} =
         let buf = packed();
-        packPassValues(buf, ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
-        packPassValues(buf, ScenePassSpec.Color);
+        packPassValues(buf, Render3d.UniformLayout.sceneOffsets(), ScenePassSpec.DepthOut({ near = 0.5, range = 12.0 }));
+        packPassValues(buf, Render3d.UniformLayout.sceneOffsets(), ScenePassSpec.Color);
         Assert.assertEq(expected = (1.0f32, 0), (buf.getFloat(228), buf.getInt(248)))
 
     /// 奥行きの書き出しの幅が 0 でも 0 で割らない（GL の Render3d.putDepthRange と同じ下限）。
     @Test
     def testDepthPassRangeIsNeverZero(): Unit \ {Assert, IO} =
         let buf = packed();
-        packPassValues(buf, ScenePassSpec.DepthOut({ near = 0.5, range = 0.0 }));
+        packPassValues(buf, Render3d.UniformLayout.sceneOffsets(), ScenePassSpec.DepthOut({ near = 0.5, range = 0.0 }));
         Assert.assertEq(expected = RenderUtil.f32(0.000001), buf.getFloat(228))
 
     // ── 場面の地の色（clearOf）──
@@ -144,7 +145,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     def testSkySceneValuesAreLinearSkyColors(): Unit \ {Assert, IO} =
         let s = { sky = Some(sky() |> Scene3d.withSkyCurve(2.0)) | scene() };
         let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
-        packSceneValues(buf, Render3d.Light.lightDataOf(s, 0));
+        packSceneValues(buf, Render3d.UniformLayout.sceneOffsets(), Render3d.Light.lightDataOf(s, 0));
         let lin = (c: Float64) -> RenderUtil.f32(Texture3d.srgbToLinearColor(Color.rgb(c, c, c))#r);
         Assert.assertEq(expected = (lin(0.1), 2.0f32, lin(0.8), lin(0.3)), (buf.getFloat(128), buf.getFloat(140), buf.getFloat(144), buf.getFloat(160)))
 
@@ -153,7 +154,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
     @Test
     def testSkyValuesSitAtWgslOffsets(): Unit \ {Assert, IO} =
         let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
-        Render3d.WebGpuSky.packValues(buf, scene(), 640, 360);
+        Render3d.WebGpuSky.packValues(buf, Render3d.UniformLayout.sceneOffsets(), scene(), 640, 360);
         let at = Render3dWgsl.skyValuesAt();
         let tanHalf = Num.sin(0.5) / Num.cos(0.5);
         Assert.assertEq(expected = (1.0f32, 640.0f32, RenderUtil.f32(tanHalf * 320.0 / 180.0), 360.0f32, RenderUtil.f32(tanHalf)),
@@ -179,7 +180,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentAsBackground(true);
         let flagOf = (s: Scene3d.Scene3dCmd) -> {
             let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
-            Render3d.WebGpuSky.packValues(buf, s, 64, 32);
+            Render3d.WebGpuSky.packValues(buf, Render3d.UniformLayout.sceneOffsets(), s, 64, 32);
             buf.getFloat(Render3dWgsl.skyValuesAt() + 44)
         };
         Assert.assertEq(expected = (1.0f32, 0.0f32), (flagOf({ environmentMap = Some(e) | scene() }), flagOf({ sky = Some(sky()), environmentMap = Some(e) | scene() })))
@@ -193,7 +194,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let box = { min = Vec3.v3(-6.0, -5.0, 8.0), max = Vec3.v3(6.0, 5.0, 20.0), center = Vec3.v3(0.0, 0.0, 14.0) };
         let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentBox(box) |> Scene3d.withEnvironmentIntensity(0.8);
         let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
-        packSceneValues(buf, Render3d.Light.lightDataOf({ environmentMap = Some(e) | scene() }, 5));
+        packSceneValues(buf, Render3d.UniformLayout.sceneOffsets(), Render3d.Light.lightDataOf({ environmentMap = Some(e) | scene() }, 5));
         Assert.assertEq(expected = (1, 1, -6.0f32, 5.0f32, 5.0f32, 0.8f32, 14.0f32),
                         (buf.getInt(156), buf.getInt(172), buf.getFloat(176), buf.getFloat(188), buf.getFloat(196), buf.getFloat(204), buf.getFloat(216)))
 
@@ -203,8 +204,8 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3d {
         let box = { min = Vec3.v3(-1.0, -1.0, -1.0), max = Vec3.v3(1.0, 1.0, 1.0), center = Vec3.zero() };
         let e = Scene3d.environmentMap(panorama()) |> Scene3d.withEnvironmentBox(box);
         let buf = ByteBuffer.allocate(sceneValueBytes()).order(ByteOrder.LITTLE_ENDIAN);
-        packSceneValues(buf, Render3d.Light.lightDataOf({ environmentMap = Some(e) | scene() }, 3));
-        packSceneValues(buf, Render3d.Light.lightDataOf(scene(), 0));
+        packSceneValues(buf, Render3d.UniformLayout.sceneOffsets(), Render3d.Light.lightDataOf({ environmentMap = Some(e) | scene() }, 3));
+        packSceneValues(buf, Render3d.UniformLayout.sceneOffsets(), Render3d.Light.lightDataOf(scene(), 0));
         Assert.assertEq(expected = (0, 0), (buf.getInt(156), buf.getInt(172)))
 
     /// 環境マップのある場面は、まだ描けない物に環境マップの種類を出さない（映り込みと背景を描く）。

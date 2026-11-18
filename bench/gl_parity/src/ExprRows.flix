@@ -817,7 +817,7 @@ mod ExprRows {
             })
         }))
 
-    /// 太陽の拡散つきの lightAt（GPU は sunLightFragment）と CPU の SoftRaster3d.lightWithSunAt の差。太陽が光の量を動かした組の数も返す（0 なら太陽の項を通っていない）。
+    /// 太陽の拡散つきの lightAt（GPU は sunLightFragment）と CPU の SoftRaster3d.lightAt（太陽つきの LightProbe）の差。太陽が光の量を動かした組の数も返す（0 なら太陽の項を通っていない）。
     def sunLightOutcome(inputs: Inputs, rows: GlRows): (Outcome, Int32) =
         let cases = List.zip(List.zip(inputs#sets, inputs#sun#terms), rows#sunLight);
         let outcome = outcomeOf(cases |> List.flatMap(d -> {
@@ -840,7 +840,7 @@ mod ExprRows {
     def cpuSunLight(s: LightSet, t: (Vec3.Vec3, Vec3.Vec3), sunLit: Float64, pr: Probe): (Float64, Float64, Float64) =
         let (toward, color) = t;
         let env = { ambient = colorOf(s#ambient), hemisphere = s#hemisphere, toonSteps = 0, fog = None, background = None };
-        let c = SoftRaster3d.lightWithSunAt(env, s#points, s#spots, toward, color, sunLit, xyz(pr#a), xyz(pr#b));
+        let c = SoftRaster3d.lightAt({ sun = Some({ toward = toward, color = color, lit = sunLit }) | SoftRaster3d.lightProbe(env, s#points, s#spots) }, xyz(pr#a), xyz(pr#b));
         (c#r, c#g, c#b)
 
     /// 太陽の鏡面つきの pbrAt（GPU は sunPbrFragment）と CPU の SoftRaster3dLight.pbrAt の差。太陽の鏡面が色を動かした組の数も返す。

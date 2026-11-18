@@ -42,6 +42,8 @@ let flashlight = { color = Color.rgb(1.0, 0.95, 0.85), intensity = 3.0, range = 
 
 ### 点光源
 
+- 作るのは `{ color = .., intensity = 2.0 | Scene3d.pointLight(position, range) }`（白・intensity 1 から書き替える。字で全部の欄を書かない）。
+  intensity の意味は下の「光の量の読み方」で替わる（Legacy は光の所の明るさの倍率・Physical は 1 m の所の照度）
 - 1 つの場面で計算するのは 8 本まで（`Scene3d.maxPointLights()`）。**8 本を超えても `pointLights` に全部入れてよい** —
   描き手（GL・WebGPU・CPU）が `Scene3d.pickLights` で選ぶ。ゲームの側で選び直さない
 - 選び方（8 本を超えた時だけ。8 本以下は並びも強さもそのまま）:
@@ -84,9 +86,10 @@ GL・WebGPU・CPU が同じ約束（`Scene3d.PointShadows.atlasOf` の doc）で
 - 影の割合は木の外で画素ごとに 1 回求め、点光源の拡散と鏡面の両方に掛ける。光が届かない点（range の外）と面が光に背を向けた点は地図を引かない
 - 面の継ぎ目は guard band（面の角を 90° より少し広く取り、PCF の周りの画素が隣の面へはみ出さない）で筋を出さない
 - 重さ: 影の地図の draw は面 6 × 灯り × 範囲に入る物（`drawCalls` の `shadowPass`・時間は `Phase.Shadows`）。PCF は (2r+1)² 回を光が届く画素だけ。
-  スマホは `{ maxShadowedLights = 1, mapSize = 256 | Scene3d.pointShadowMap() }`（atlas 768 × 512）を勧める
+  端末で重さを替えるなら `Scene3d.pointShadowMapFor(ctx#display#sizeClass)`（Small = 1 本・256（atlas 768 × 512）・Medium = 2 本・512・Large = 4 本・512 = `pointShadowMap()`）。
+  太陽の影も `Scene3d.directionalShadowFor(ctx#display#sizeClass)`（Small = 1024・Medium と Large = 2048 = `directionalShadow()`）。どちらも `{ .. | }` で欄を替えてよい
 - 既定（`pointShadows = None`）は今までの絵と同じ（GPU のシェーダーの字も同じ）。影つきの場面だけ別のプログラム（`+ps`）を組む
-- 先に上げる物（`App.withPreload3d`）は既定のプログラムだけを組む。点光源の影と `Physical` の場面は、その場面が初めて出たコマに変種のプログラム（`+ps`・`+pu`）を組む（そのコマが重い）
+- 点光源の影と `Physical` の場面は、その場面が初めて出たコマに変種のプログラム（`+ps`・`+pu`）を組む（そのコマが重い）。先に組むなら `App.withPreload3d` の `variants` に `Scene3d.preloadVariantOf(場面)` を渡す（「初めて出る物を先に上げる」）
 
 ### 光の量の読み方（Legacy / Physical）
 
@@ -333,6 +336,18 @@ GL と CPU の描き手は、場面のカメラの視錐台の外の置いた物
 - 光や羽虫をゲームの側で間引く・数える時は `Camera3d.frustum(camera, aspect)` → `Frustum.intersectsSphere` / `intersectsBox`。
   場面と同じ判定は `Scene3d.frustumOf(scene)` + `Scene3d.isOutsideFrustum`・置いた物の world の境界は `Scene3d.worldBoundsOf`
 
+### 動かない物をまとめる（staticGroup）
+
+町の建物・木・家具のように動かない物が数千個ある場面は、読み込みで 1 回 `Scene3d.staticGroup(名前, (鍵, 物) の列)` を作って Resources に持ち、
+毎コマ `{ groups = 集まり :: Nil | scene }` に載せる（毎コマ staticGroup を呼ばない）。WebGPU と GL の描き手は集まりの計画と 1 体ごとの値を持ち越す。
+
+- 奥行きの書き出しの場面（`Output.Depth`。DoF・HeightFog・SceneDepth の Pass が描き直す場面）も持ち越す。色の場面とは別の行を控えるので、同じ集まりを両方で描くと控えは 2 つ
+- 半透明の物と骨つきの物は持ち越さず、毎コマ instances と同じに計画する
+- 置いた物が 2,000 個を超え groups の無い場面が約 2 秒（120 場面）続くと、1 回だけ「動かない物は staticGroup に」と知らせる
+- **点光源の影と使う時は、集まりを区画（街区・部屋）ごとに分ける。** 持ち越した集まりの影の行は光の視錐台で間引かず、影を落とす灯り 1 本 × 面 6 つごとに集まりの全部の物を描く。
+  町 1 つを 1 つの集まりにすると、街灯 4 本の影で 24 回町の全部を描く。灯りの届く区画だけの集まりなら、その区画の分だけで済む
+- **材質は読み込みで 1 回作って持ち、毎コマ `Scene3d.material` を呼ばない。** 描き手は材質の値（参照）でまとめ描きの分け方を控えるので、毎コマ作った材質は控えに当たらず、物ごとに材質の中身を比べ直す
+
 ### ビルボードの draw の数（同じ絵の板をまとめる）
 
 GL と WebGPU の描き手は、`scene#billboards` の**来た順で続く同じ絵の板**を 1 回の instanced draw で描く（Unity の GPU Instancing・Godot の MultiMesh と同じ考え。ゲームは何も書かなくてよい）。
@@ -343,6 +358,8 @@ GL と WebGPU の描き手は、`scene#billboards` の**来た順で続く同じ
   描き手が絵ごとに並べ替えると絵が変わる。**draw を減らしたいゲームは、同じ絵の板を続けて `billboards` に並べる**（森の木を絵ごとに出す・人を絵ごとに出す。
   重なる板の前後を来た順で決めている所は崩さない）
 - 影の地図（太陽・点光源の 6 面）は深度だけなので、描き手が絵ごとに並べ替えてからまとめる（ゲームの並べ方に依らない）
+- まとまりの数と絵の種類の数は `scene3dCounts#billboardRuns`・`billboardImages`（F3 の 3D の行の「billboard runs 100 / images 12」）。
+  runs が images よりずっと多いなら、違う絵の板が交互に来ている
 - 効き目は `drawCalls` の `billboard`・`shadowPass`（まとまり 1 つで 1）。bench/hd2d_town の立ち始め（WebGPU・1280×720）で 3D の draw 584 → 250・
   billboard 318 → 100・shadowPass 155 → 39（絵は 0 差）
 
@@ -410,8 +427,7 @@ let plan = { targets = Map#{ "scene" => RenderTarget.withMsaa(4, RenderTarget.wi
 
 ```flix
 App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
-    |> PostStack.withDistortion(Some({ strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 },
-                                       mask = PostStack.DistortionMask.BottomBand({ top = 0.5, soft = 0.3 }) }))
+    |> PostStack.withDistortion(Some({ mask = PostStack.DistortionMask.BottomBand({ top = 0.5, soft = 0.3 }) | PostStack.distortion() }))
     |> PostStack.withTime(Clock.nowOf(w#playClock)))
 ```
 
@@ -437,11 +453,14 @@ App.withPostStack(w -> PostStack.preset(PostStack.Preset.DuskOutdoor)
 
 ```flix
 App.withPostStack(w -> PostStack.preset(PostStack.Preset.NightOutdoor)
-    |> PostStack.withHeightFog(Some({ color = Color.rgb(0.42, 0.46, 0.56), density = 0.05, baseHeight = 0.0, heightFalloff = 0.15,
-                                      startDistance = 0.0, maxOpacity = 0.92,
-                                      noise = Some({ size = 40.0, amount = 0.6, speed = { x = 10.0, y = 4.0 } }), lightGlow = 0.5 }))
+    |> PostStack.withHeightFog(Some({ color = Color.rgb(0.42, 0.46, 0.56), density = 0.05, heightFalloff = 0.15, maxOpacity = 0.92,
+                                      noise = Some({ size = 40.0, amount = 0.6, speed = { x = 10.0, y = 4.0 } | PostStack.fogNoise() }), lightGlow = 0.5
+                                      | PostStack.heightFog() }))
     |> PostStack.withTime(Clock.nowOf(w#playClock)))
 ```
+
+効果の値は既定値の関数から欄を書き替えて作る（`PostStack.bloom()`・`vignette()`・`colorGrade()`・`distortion()`・`heightFog()`・`fogNoise()`。
+post.json で効果の欄を書いた時の出発点も同じ値）。字で全部の欄を書かないので、欄が増えても書き直さなくてよい。
 
 - 式は Unreal の Exponential Height Fog と同じ（名前もそろえた）: 高さ y の濃さ = `density × e^(−heightFalloff × (y − baseHeight))`。目から面までその濃さを積み、
   `1 − e^(−積んだ量)` だけ `color` に寄せる（`maxOpacity` で上限）。`startDistance` までは積まない
@@ -478,7 +497,9 @@ PostStack.withExposure(ExposureAdaptation.computeExposure(ExposureAdaptation.def
 
 ## 初めて出る物を先に上げる
 
-`App.withPreload3d({ key, instances, textures })` は、遊びの途中で初めて出る物の形・絵・材質のプログラムを GPU へ上げる。`key` は毎コマ読み、`instances` と `textures` は `key` が変わった時と Doc の読み直しの時だけ読む。3D の場面が 1 つも出ていないタイトルの間でも上がる。
+`App.withPreload3d({ textures = .., variants = .. | App.preload3d(key, instances) })` は、遊びの途中で初めて出る物の形・絵・材質のプログラムを GPU へ上げる。`key` と `variants` は毎コマ読み、`instances` と `textures` は `key` か `variants` が変わった時と Doc の読み直しの時だけ読む。3D の場面が 1 つも出ていないタイトルの間でも上がる。
+
+- `variants` = 既定の版に足して組むシェーダーの変種。点光源の影（`withPointShadows`）か `Physical` の光の場面を出すなら `Scene3d.preloadVariantOf(その場面)` を渡す（`+ps`・`+pu` の材質と頂点の色のプログラムも先に組む）。空なら既定の版だけ
 
 - 描かないので、置く場所は何でもよい。骨つきの物は姿勢を付けたまま渡すと、骨つきの版のプログラムも組める。
 - `Instance3d` は `tex3d:` の絵の名前しか持たないので、中身は `textures` で渡す（無い絵は 1 回知らせる）。描く時は今まで通り場面の `textures` にも載せる。

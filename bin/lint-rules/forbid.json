@@ -379,9 +379,9 @@
       "id": "light-uniform-in-glsl",
       "suffixes": [".flix"],
       "rawLine": true,
-      "skip": ["render_gl/src/Render3dGlsl.flix", "src/render_gl/Render3dGlsl.flix", "engine/src/scene3d/LightModel3d/Codegen.flix", "src/engine/scene3d/LightModel3d/Codegen.flix", "engine_full/", "lib/", "build/"],
+      "skip": ["render_gl/src/Render3dGlsl.flix", "src/render_gl/Render3dGlsl.flix", "engine/src/scene3d/LightModel3d/Codegen.flix", "src/engine/scene3d/LightModel3d/Codegen.flix", "engine/src/scene3d/LightModel3d/PointShadowCodegen.flix", "src/engine/scene3d/LightModel3d/PointShadowCodegen.flix", "engine_full/", "lib/", "build/"],
       "pattern": "\"[^\"]*\\bu(?:Point|Spot)(?:Pos|Color|Range|Dir|Cone)\\[[A-Za-z_]\\w*\\]",
-      "hint": "光の式を GLSL の字で手で書かない（CPU の描き手と式が分かれる）。式は engine の LightModel3d の木に書き、GLSL は LightModel3d.Codegen.toGlsl で作る（3D の描き手の字は Render3dGlsl。uniform の位置を引く loc(program, \"uPointPos\") は止めない）"
+      "hint": "光の式を GLSL の字で手で書かない（CPU の描き手と式が分かれる）。式は engine の LightModel3d の木に書き、GLSL は LightModel3d.Codegen.toGlsl で作る（点光源の影を引く式は LightModel3d.PointShadowCodegen。3D の描き手の字は Render3dGlsl。uniform の位置を引く loc(program, \"uPointPos\") は止めない）"
     },
     {
       "id": "scene3d-linear-color-flag",
@@ -415,7 +415,6 @@
   ],
   "exempt": {
     "engine/test/TestShaderGenWgsl.flix::light-uniform-in-glsl": "LightModel3d.Codegen.toWgsl が出した字の欄の読み（vec4 の配列の x）を確かめるテスト。光の式を手で書いてはいない",
-    "render_gl/src/Render3dWgsl.flix::light-uniform-in-glsl": "点光源の影の地図の引き方（木の外の PCF・Render3dGlsl.pointShadowSource と同じ式）が灯りの位置と range を読む。光の式は木から作っている",
     "src/AssistShow.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
     "src/CardPile.flix::game-unchecked-pure": "internet_dungeon の Math.sin の包み。Num.sin へ寄せるまで",
     "src/EndScreen.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで"

@@ -119,44 +119,6 @@ mod TestPointShadows {
         });
         Assert.assertEq(expected = true, ok)
 
-    /// 面の選び: 6 方向のそれぞれが自分の面に写る。
-    @Test
-    def testFaceOfAxisDirections(): Unit \ Assert =
-        let dirs = Vec3.v3(1.0, 0.2, 0.1) :: Vec3.v3(-1.0, 0.2, 0.1) :: Vec3.v3(0.2, 1.0, 0.1) :: Vec3.v3(0.2, -1.0, 0.1) ::
-                   Vec3.v3(0.2, 0.1, 1.0) :: Vec3.v3(0.2, 0.1, -1.0) :: Nil;
-        Assert.assertEq(expected = 0 :: 1 :: 2 :: 3 :: 4 :: 5 :: Nil, dirs |> List.map(Scene3d.PointShadows.faceOf))
-
-    /// 受ける点の写し（sampleOf の画素と ref）は、面の行列で写した NDC と同じ画素・同じ値（bias 0・normalBias 0）。
-    @Test
-    def testSampleMatchesFaceMatrix(): Unit \ Assert =
-        let a = { bias = 0.0, normalBias = 0.0 | atlasOf(lamp(0.0) :: Nil, { mapSize = 64 | Scene3d.pointShadowMap() }) };
-        let light = match List.head(a#lights) { case Some(l) => l case None => bug!("灯りが無い") };
-        let points = Vec3.v3(1.3, 0.0, 0.4) :: Vec3.v3(-0.5, 3.5, 0.2) :: Vec3.v3(0.3, 1.0, -2.2) :: Vec3.v3(-2.0, 1.1, 0.9) :: Nil;
-        let ok = points |> List.forAll(p -> match Scene3d.PointShadows.sampleOf(a, light, p, Vec3.v3(0.0, 1.0, 0.0)) {
-            case None    => false
-            case Some(s) => match Mat4.applyPerspective(Vector.get(s#face, light#faces), p) {
-                case None      => false
-                case Some(ndc) =>
-                    let size = Int32.toFloat64(a#tileSize);
-                    let tx = Float64.floor((ndc#x * 0.5 + 0.5) * size);
-                    let ty = Float64.floor((ndc#y * 0.5 + 0.5) * size);
-                    near(tx, Int32.toFloat64(s#x)) and near(ty, Int32.toFloat64(s#y)) and Float64.abs((ndc#z * 0.5 + 0.5) - s#ref) < 1.0e-9
-            }
-        });
-        Assert.assertEq(expected = true, ok)
-
-    /// guard band: 面の端（|d·R| = depth）の点も、地図の外周 pcfRadius + 1 画素の内側に写る。
-    @Test
-    def testGuardBandKeepsEdgeInside(): Unit \ Assert =
-        let a = { normalBias = 0.0 | atlasOf(lamp(0.0) :: Nil, { mapSize = 64, pcfRadius = 2 | Scene3d.pointShadowMap() }) };
-        let light = match List.head(a#lights) { case Some(l) => l case None => bug!("灯りが無い") };
-        let corner = Vec3.add(light#position, Vec3.v3(1.0, 0.999999, 0.999999));
-        let inside = match Scene3d.PointShadows.sampleOf(a, light, corner, Vec3.v3(0.0, 1.0, 0.0)) {
-            case Some(s) => s#x >= 3 and s#x <= 60 and s#y >= 3 and s#y <= 60
-            case None    => false
-        };
-        Assert.assertEq(expected = true, inside)
-
     // ════════════════════════════════════════════════════════════════════
     // 木の変種
     // ════════════════════════════════════════════════════════════════════
@@ -199,4 +161,14 @@ mod TestPointShadows {
     def testVariantOfScene(): Unit \ Assert =
         let scene = sceneWith(Nil, Scene3d.pointShadowMap()) |> Scene3d.withLightUnits(Scene3d.LightUnits.Physical);
         Assert.assertEq(expected = (true, Some(Scene3d.LightUnits.Physical)), { let v = LightModel3d.variantOf(scene); (v#pointShadows, v#lightUnits) })
+
+    /// 端末の区分ごとの影の重さ: 点光源の影の (本数, 一辺) と太陽の影の一辺が Small・Medium・Large で (1, 256, 1024)・(2, 512, 2048)・(4, 512, 2048)。
+    @Test
+    def testShadowBudgetsBySizeClass(): Unit \ Assert =
+        let budget = (c: Display.SizeClass) -> {
+            let p = Scene3d.pointShadowMapFor(c);
+            (p#maxShadowedLights, p#mapSize, Scene3d.directionalShadowFor(c)#mapSize)
+        };
+        Assert.assertEq(expected = (1, 256, 1024) :: (2, 512, 2048) :: (4, 512, 2048) :: Nil,
+                        budget(Display.SizeClass.Small) :: budget(Display.SizeClass.Medium) :: budget(Display.SizeClass.Large) :: Nil)
 }

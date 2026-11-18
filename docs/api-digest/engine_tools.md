@@ -380,11 +380,11 @@
   `pub def billboardCutoff(): Float64`
 - cutout の材質で、α がこれ未満の画素は捨てる。
   `pub def materialCutoff(): Float64`
-- `pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], position: Vec3.Vec3, normal: Vec3.Vec3): Color`
-- lightAt を光の量の読み方 units（unitsPerMeter = 1 m が場面の長さのいくつか）で求めた物。engine の開発用の口: gl-parity の式の行が GL と値をそろえて確かめる。
-  `pub def lightWithUnitsAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], units: Scene3d.LightUnits, unitsPerMeter: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
-- lightAt に太陽を足した光の量。toward = 点から太陽への向き（長さ 1）・color = 太陽の color × intensity（lightAt の光の color と同じく書いた値のまま）・
-  `pub def lightWithSunAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], toward: Vec3.Vec3, color: Vec3.Vec3, sunLit: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
+- 光の量を 1 点で求める材料（engine の開発用の口。gl-parity の式の行と engine_tools のテストが GL と値をそろえて確かめる）。
+  `pub type alias LightProbe = { environment = Scene3d.Environment3d, pointLights = List[Scene3d.PointLight], spotLights = List[Scene3d.SpotLight], units = Scene3d.LightUnits, unitsPerMeter = Float64, sun = Option[{ toward = Vec3.Vec3, color = Vec3.Vec3, lit = Float64 }] }`
+- Legacy・unitsPerMeter 1・太陽なしの材料。
+  `pub def lightProbe(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight]): LightProbe`
+- `pub def lightAt(probe: LightProbe, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
 - 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
   `pub def fogAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, c: Color): Color`
 - `pub def surfaceOutAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, albedoLinear: Color, tint: Color, light: Color, emission: Color, intensity: Float64, fogOn: Bool): Color`
@@ -465,6 +465,8 @@
   `pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64)`
 - environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。
   `pub def environmentDirectionAt(pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, _albedoX: Float64, _albedoY: Float64, _albedoZ: Float64, _metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, envBoxMinX: Float64, envBoxMinY: Float64, envBoxMinZ: Float64, envBoxMaxX: Float64, envBoxMaxY: Float64, envBoxMaxZ: Float64, envBoxCenterX: Float64, envBoxCenterY: Float64, envBoxCenterZ: Float64, envBoxOn: Float64): (Float64, Float64, Float64)`
+- 点光源 1 本の影の割合（LightModel3d.PointShadowCodegen の式。光が届かない・面が背を向けた・near より手前の点は 1）。
+  `pub def pointShadowLitAt(faces: Vector[Vector[Float64]], tileSize: Int32, pcf: Int32, scale: Float64, bias: Float64, normalBias: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, reach: Float64, near: Float64, depthA: Float64, depthB: Float64, strength: Float64, pX: Float64, pY: Float64, pZ: Float64, gX: Float64, gY: Float64, gZ: Float64, nX: Float64, nY: Float64, nZ: Float64): Float64`
 
 ## ToolsProcessEnv — `engine_tools/src/ToolsProcessEnv.flix`
 - 今のプロセスの環境変数を丸ごと表にする。

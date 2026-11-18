@@ -143,7 +143,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[w -> PostStack.Stack \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[{ key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, postStack = Option[w -> PostStack.Stack \ ef], screenClear = Color, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], letterboxView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], preload3d = Option[Preload3d[w]], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], pipelinedRendering = Bool, clocks = List[(Float64, w) -> w], backgroundSteps = List[(LoadProgress.DecodeBudget, Float64, w) -> w \ {IO, Fs.FileRead}], decodeBudget = w -> LoadProgress.DecodeBudget, cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -175,7 +175,10 @@
 - 「1 度だけ GPU に生成して使い回す静的な絵」を宣言する。key は静的な中身を決める全入力を
   `pub def withStaticLayer(key: w -> GameEngine.StaticKey, build: w -> List[Render.PlacedItem], app: App[w, ef]): App[w, ef]`
 - 遊びの途中で初めて出る物（形・絵・材質のプログラム）を GPU へ先に上げる宣言。初めて出るコマに mipmap 作りとプログラムの組み立てが乗って
-  `pub def withPreload3d(plan: { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }, app: App[w, ef]): App[w, ef]`
+  `pub def withPreload3d(plan: Preload3d[w], app: App[w, ef]): App[w, ef]`
+- withPreload3d の宣言（欄の意味は withPreload3d の doc）。preload3d は textures と variants を空にして作る。
+  `pub type alias Preload3d[w] = { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d], variants = w -> List[Scene3d.PreloadVariant] }`
+- `pub def preload3d(key: w -> GameEngine.StaticKey, instances: w -> List[Scene3d.Instance3d]): Preload3d[w]`
 - タイルの層（床・壁 1 行目など、格子に敷く静的な絵）を宣言する。エンジンが Spec ごとに
   `pub def withTileLayers(f: w -> List[TileLayerSpec], app: App[w, ef]): App[w, ef]`
 - World から「画面中央に映したい world 座標」を導く関数を繋ぐ。view は world 座標のまま
@@ -1858,6 +1861,18 @@
   `pub enum Preset with Eq, ToString { case Neutral case DuskOutdoor case NightOutdoor case SunnyCity case EveningBeach case Cave case NightCorridor case TorchRoom }`
 - 組み方の問題（build が返す。実機は 1 回だけ知らせ、描き出しの lint は止める）。
   `pub enum Issue with Eq, ToString { case NoScene3d case SeveralScenes(Int32) case ReservedPassName(String) }`
+- threshold 1・smoothness 0.5・size 0.04・strength 0.6 のブルーム。
+  `pub def bloom(): Bloom`
+- strength 0.3・inner 0.35・outer 1.05・画面の真ん中のビネット。
+  `pub def vignette(): Vignette`
+- 何もしない色の仕上げ（lift・gamma・gain・saturation がどれも 1）。
+  `pub def colorGrade(): ColorGrade`
+- 画面全体を上へ流れる揺らぎで歪める（strength (2, 1)・noiseSize 24・speed (0, −20)・mask Full）。
+  `pub def distortion(): Distortion`
+- size 8・amount 0.4・speed (0.5, 0.2) の霧のむら。
+  `pub def fogNoise(): FogNoise`
+- 青みの灰色・density 0.02・heightFalloff 0.2・むらと灯りのにじみ無しの高さの霧。
+  `pub def heightFog(): HeightFog`
 - 後がけの値の束（Godot の Environment・Unity の Volume のように、効果ごとの欄を持つ値 1 つ）。
   `pub type alias Stack = StackData`
 - 見た目の名前の出発点。Neutral は「Standard・露出 0・ほかは無し」。
@@ -2613,8 +2628,8 @@
   `pub def scaled(k: Float64, p: Plan): Plan`
 
 ## Timeline — `engine_world/src/Timeline.flix`
-- 組み上がった時刻表。sounds は (時刻, 書いた順) の昇順。
-  `pub enum Timeline[a] { case Timeline({ clips = Map[a, Clip[a]], segments = Map[a, Int32], sounds = Vector[SoundAt], waits = List[Float64], fitted = Map[String, Float64], duration = Float64 }) }`
+- 組み上がった時刻表。build / buildOrPanic だけが作る（外から組み立て・分解はできない）。
+  `pub type alias Timeline[a] = TimelineData[a]`
 - クリップ: start 秒に始まり dur 秒続く。tag = 拍の名前か出来事（ゲームの enum。文字列にしないのは、
   `pub type alias Clip[a] = { tag = a, start = Float64, dur = Float64 }`
 - クリップを値として作る（表に無い名前の既定値など。長さは負にしない）。
@@ -2665,7 +2680,6 @@
   `pub def build(tempo: Tempo, steps: List[Step[a]]): Result[List[BuildError[a]], Timeline[a]] with Order[a]`
 - build の、書き間違いで止める包み。並びをゲームのコードが書く表（Doc は長さしか持たない）では、Err は
   `pub def buildOrPanic(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
-- `pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
 - 鳴らす予定の効果音（秒）。
   `pub type alias SoundAt = { at = Float64, segment = Int32, sound = String }`
 - 再生位置: 時刻表の上の時刻 t と、解いた待ちの数 passed。待ちの位置ちょうどでは、

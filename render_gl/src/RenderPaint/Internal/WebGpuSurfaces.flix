@@ -153,16 +153,16 @@ pub mod RenderPaint.Internal.WebGpuSurfaces {
     pub def draw(surfaces: Surfaces, pass: RenderPass, target: (RenderTarget.Format, Int32), stencil: Int32, values: Buffer, bytes: Int32,
                  textureOf: Int32 -> Option[Texture] \ IO, skip: String -> Unit \ IO,
                  rows: Array[Int32, Static], row: Int32, reads: Array[Int32, Static]): Unit \ IO =
-        let id = RenderList.rowAt(rows, row, 1);
+        let id = RenderList.surfaceProgramAt(rows, row);
         match Map.get(id, Ref.get(surfaces#programs)) {
             case None => skip("面（組んでいない program）")
             case Some(program) =>
-                if (not canReadValues(program#slots, RenderList.rowAt(rows, row, 2))) skip("面（program の値の欄が行の値より多い）")
+                if (not canReadValues(program#slots, RenderList.surfaceValueCountAt(rows, row))) skip("面（program の値の欄が行の値より多い）")
                 else {
                     let (format, samples) = target;
                     let group = buildDrawGroup(surfaces, program, values, bytes, valueBytesOf(program#slots), textureOf, reads,
-                                               RenderList.rowAt(rows, row, 6), RenderList.rowAt(rows, row, 7));
-                    pass.setPipeline(pipelineOf(surfaces, id, program, RenderList.rowAt(rows, row, 4), format, samples, stencil));
+                                               RenderList.surfaceFirstReadAt(rows, row), RenderList.surfaceReadCountAt(rows, row));
+                    pass.setPipeline(pipelineOf(surfaces, id, program, RenderList.blendAt(rows, row), format, samples, stencil));
                     pass.setBindGroup(0, group);
                     pass.setBindGroup(1, surfaces#frameGroup);
                     pass.draw(6, 1, 0, 0);

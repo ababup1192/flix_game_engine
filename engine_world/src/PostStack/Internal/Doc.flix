@@ -44,13 +44,13 @@ pub mod PostStack.Internal.Doc {
         let start = presetFrom(top);
         forM (exposure <- numOr("exposure", start#exposure, top);
               vt <- viewTransformFrom(Map.get("viewTransform", top), start#viewTransform);
-              bloom <- effectFrom("bloom", bloomFrom, { threshold = 1.0, smoothness = 0.5, size = 0.04, strength = 0.6 }, top, start#bloom);
-              vignette <- effectFrom("vignette", vignetteFrom, { strength = 0.3, inner = 0.35, outer = 1.05, center = { x = 0.5, y = 0.5 } }, top, start#vignette);
-              grade <- effectFrom("colorGrade", gradeFrom, { lift = Color.rgb(1.0, 1.0, 1.0), gamma = Color.rgb(1.0, 1.0, 1.0), gain = Color.rgb(1.0, 1.0, 1.0), saturation = 1.0 }, top, start#colorGrade);
+              bloom <- effectFrom("bloom", bloomFrom, PostStack.bloom(), top, start#bloom);
+              vignette <- effectFrom("vignette", vignetteFrom, PostStack.vignette(), top, start#vignette);
+              grade <- effectFrom("colorGrade", gradeFrom, PostStack.colorGrade(), top, start#colorGrade);
               dof <- dofFrom(Map.get("depthOfField", top), start#depthOfField);
               fxaa <- boolOr("fxaa", start#fxaa, top);
-              distortion <- effectFrom("distortion", distortionFrom, { strength = { x = 2.0, y = 1.0 }, noiseSize = 24.0, speed = { x = 0.0, y = -20.0 }, mask = DistortionMask.Full }, top, start#distortion);
-              heightFog <- effectFrom("heightFog", heightFogFrom, freshFog(), top, start#heightFog))
+              distortion <- effectFrom("distortion", distortionFrom, PostStack.distortion(), top, start#distortion);
+              heightFog <- effectFrom("heightFog", heightFogFrom, PostStack.heightFog(), top, start#heightFog))
         yield { exposure = exposure, viewTransform = vt, bloom = bloom, vignette = vignette, colorGrade = grade, depthOfField = dof, fxaa = fxaa, distortion = distortion,
                 heightFog = heightFog,
                 quality = qualityFrom(top, start#quality), msaa = msaaFrom(top, start#msaa) | start }
@@ -149,15 +149,11 @@ pub mod PostStack.Internal.Doc {
               mask <- maskFrom(Map.get("mask", m), d#mask))
         yield { strength = { x = sx, y = sy }, noiseSize = size, speed = { x = vx, y = vy }, mask = mask }
 
-    def freshFog(): HeightFog =
-        { color = Color.rgb(0.62, 0.66, 0.74), density = 0.02, baseHeight = 0.0, heightFalloff = 0.2, startDistance = 0.0, maxOpacity = 1.0,
-          noise = None, lightGlow = 0.0 }
-
     def heightFogFrom(m: Map[String, Json], h: HeightFog): Result[JsonError, HeightFog] =
         forM (color <- rgbOr("color", h#color, m); density <- numOr("density", h#density, m); base <- numOr("baseHeight", h#baseHeight, m);
               falloff <- numOr("heightFalloff", h#heightFalloff, m); start <- numOr("startDistance", h#startDistance, m);
               maxOpacity <- numOr("maxOpacity", h#maxOpacity, m); glow <- numOr("lightGlow", h#lightGlow, m);
-              noise <- effectFrom("noise", fogNoiseFrom, { size = 8.0, amount = 0.4, speed = { x = 0.5, y = 0.2 } }, m, h#noise))
+              noise <- effectFrom("noise", fogNoiseFrom, PostStack.fogNoise(), m, h#noise))
         yield { color = color, density = density, baseHeight = base, heightFalloff = falloff, startDistance = start, maxOpacity = maxOpacity,
                 noise = noise, lightGlow = glow }
 

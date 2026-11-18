@@ -14,7 +14,7 @@ mod Render3d.WebGpuRows {
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
     use Render3d.MeshTable
-    use Render3d.SceneList.{SceneList, headAt, kindBillboard, kindMaterial, kindSkinned, kindVertexColor, meshAt, rowAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{SceneList, SceneRowKind, breakSlotAt, countAt, firstInstanceAt, headAt, kindAt, meshAt, rowCountOf, valuesAt}
 
     /// GPU に置いた形 1 つ。vertices = 頂点を交互に並べた buffer（並びはこのファイルの頭）・stride = 頂点 1 つのバイト数・
     /// hasUv = uv とタンジェントを持つ（36 バイト目から）・uv2At = 2 本目の uv の位置（バイト・2 本目の uv つきの形だけ）・
@@ -124,8 +124,7 @@ mod Render3d.WebGpuRows {
         }
 
     def uploadRow(up: Uploads, list: SceneList, row: Int32): Unit \ IO =
-        let kind = rowAt(list, row, 0);
-        if (kind == kindVertexColor() or kind == kindSkinned() or kind == kindMaterial()) discard MeshTable.ensure(up#table, up#allocator, up#gen, headAt(list, row)#fields#mesh) else ();
+        if (kindAt(list, row) == SceneRowKind.Billboard) () else discard MeshTable.ensure(up#table, up#allocator, up#gen, headAt(list, row)#fields#mesh);
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で uploadRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
         ()
 
@@ -146,15 +145,15 @@ mod Render3d.WebGpuRows {
 
     def drawRow(pass: RenderCommands, ds: Draws, row: Int32): Unit \ IO =
         let list = ds#list;
-        let count = rowAt(list, row, 4);
+        let count = countAt(list, row);
         if (count <= 0) ()
-        else if (rowAt(list, row, 0) == kindBillboard()) { if ((ds#drawer#billboard)(pass, list, row)) () else (ds#drawer#unbound)(count) }
+        else if (kindAt(list, row) == SceneRowKind.Billboard) { if ((ds#drawer#billboard)(pass, list, row)) () else (ds#drawer#unbound)(count) }
         else Map.get(meshAt(list, row), ds#meshes) |> Option.forEach(mesh -> {
             if (mesh#indexCount <= 0) ()
             else if (isBound(pass, ds, row, mesh)) {
                 pass.setVertexBuffer(0, mesh#vertices, 0i64, mesh#vertices.size());
                 pass.setIndexBuffer(mesh#indices, IndexFormat.UINT32, 0i64, mesh#indices.size());
-                pass.drawIndexed(mesh#indexCount, count, 0, 0, ds#instanceBase + rowAt(list, row, 3))
+                pass.drawIndexed(mesh#indexCount, count, 0, 0, ds#instanceBase + firstInstanceAt(list, row))
             } else (ds#drawer#unbound)(count)
         });
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
@@ -167,21 +166,27 @@ mod Render3d.WebGpuRows {
         if (row >= n) acc
         else countRowsFrom(holder, list, row + 1, n, acc + countRow(holder, list, row))
 
+    /// 行 row を数え、描く物の数を返す: draw call は描く行（形の行・値のある材質の行・値のあるビルボードの行）で 1 つ、物の数はビルボードの行を足さない。
     def countRow(holder: { countsHolder = Array[Int32, Static] | r }, list: SceneList, row: Int32): Int32 \ IO =
-        let kind = rowAt(list, row, 0);
-        let count = rowAt(list, row, 4);
-        let isMesh = kind == kindVertexColor() or kind == kindSkinned() or (kind == kindMaterial() and valuesAt(list, row) >= 0);
-        if (count <= 0 or not (isMesh or (kind == kindBillboard() and valuesAt(list, row) >= 0))) 0
+        let count = countAt(list, row);
+        let (drawn, instances) = match kindAt(list, row) {
+            case SceneRowKind.VertexColor => (true, count)
+            case SceneRowKind.Skinned     => (true, count)
+            case SceneRowKind.Material    => if (valuesAt(list, row) >= 0) (true, count) else (false, 0)
+            case SceneRowKind.Billboard   => (valuesAt(list, row) >= 0, 0)
+        };
+        if (count <= 0 or not drawn) 0
         else {
-            Render3d.Counts.countDrawCallAt(holder, rowAt(list, row, 5));
-            if (isMesh) count else 0
+            Render3d.Counts.countDrawCallAt(holder, breakSlotAt(list, row));
+            instances
         }
 
     /// 行 row の pipeline（と group）を付けたか（付けられない行は偽）。
     def isBound(pass: RenderCommands, ds: Draws, row: Int32, mesh: MeshBuffers): Bool \ IO =
-        let kind = rowAt(ds#list, row, 0);
-        if (kind == kindVertexColor()) (ds#drawer#shape)(pass, mesh)
-        else if (kind == kindSkinned()) (ds#drawer#skinned)(pass, mesh)
-        else if (kind == kindMaterial()) (ds#drawer#material)(pass, ds#list, row, mesh)
-        else false
+        match kindAt(ds#list, row) {
+            case SceneRowKind.VertexColor => (ds#drawer#shape)(pass, mesh)
+            case SceneRowKind.Skinned     => (ds#drawer#skinned)(pass, mesh)
+            case SceneRowKind.Material    => (ds#drawer#material)(pass, ds#list, row, mesh)
+            case SceneRowKind.Billboard   => bug!("Render3d.WebGpuRows.isBound: ビルボードの行は drawRow が drawer#billboard へ渡す（形を引かない）")
+        }
 }
