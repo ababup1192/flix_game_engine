@@ -118,6 +118,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | ブラウザ版の指の長押しを、キーボードの Esc（戻るのキー）と取り違えずに読む（押した所のボタンの名前を出す・ほかの所は隠す） | キーの Doc に長押しだけの操作を足し `web.touchGestures.longPress` に（戻るのキーにしない・engine の `docs/web-export.md` の「長押しを Esc（戻るのキー）と取り違えない」） |
 | スマホを縦に持った時に縦長の画面で起動する（縦の並べ方を足す） | project.json の `web.portraitDesign`・View は `ViewCtx#display#orientation`・当たりは `Display.orientationOf(frame#viewport)`（確かめ方は engine の `docs/web-export.md` の「縦の画面で起動する」） |
 | ブラウザ版の書き出しを小さくする（絵・音・字のアトラス） | `bin/fge export-web` が WebP・Opus に替える。強さは project.json の `web.compress`（engine の `docs/web-export.md` の「書き出しを小さくする」） |
+| ブラウザ版を GitHub Pages（gh-pages の枝）のサブフォルダに出す | `make web-pages-stage DEST=<サブフォルダ>`（書き出し直し → 音のファイル・sounds・deferred が残れば止める（配ってよい音だけなら `AUDIO=ok`）→ gh-pages の worktree に置いてコミット → サブフォルダの道で開けるか。push は人が最後の 1 行を打つ。手で gh-pages の worktree を作って写さない・engine の `docs/web-export.md` の「GitHub Pages に出す」） |
+| ブラウザ版の重さを測る（fps・CPU の ms・WebGPU か WebGL2 か・スマホで） | 頁の URL に `?fps=1`（左上に fps・CPU の ms・描き手。どのゲームの書き出しでも同じ）・`?backend=webgl2` で比べる。GPU の時間はブラウザでは出ない・前と後は同じ場所で比べる・スマホは人に URL を開いてもらう（engine の `docs/web-export.md` の「ブラウザで重さを測る」） |
 | ブラウザ版でシナリオを開発者ツールから読まれにくくする | project.json の `web.embed: [glob]`（wasm へ埋め込む）・`web.omit: [glob]`（配らない）（wasm を解析する人には読める・engine の `docs/web-export.md` の「シナリオを開発者ツールから読まれにくくする」） |
 | ブラウザ版の「押して始める」までに取る量を減らす（重い背景・BGM・効果音を後から取る） | project.json の `web.deferred: [glob]`・ゲームは `LoadProgress.downloads()` の `#missing()` で描き分ける（タイトルの背景は後回しにしない・engine の `docs/startup.md` の「ブラウザで素材を後から取る」） |
 | ブラウザ版の「押して始める」の画面の文言を替える（日本語の「タッチして開始」など） | project.json の `web.startPrompt`（既定 `"Tap to start"`）。押す前の画面はデスクトップの起動画面（ロゴ・題字・ゲージ・英語の一行）と同じ絵を頁が描き、満ちたら文言と指のアイコンを出す（後回しの素材の進み具合はゲージの下の細い線）。頁の HTML や fge-web.js を書き替えない（engine の `docs/startup.md`） |
@@ -156,6 +158,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 知らせ（`Log.warnThen` など）を出す経路をテストで通す・知らせの文面を確かめる | `let (value, lines) = LogCapture.capture(() -> 式)`（stderr に出るとテストの実行器が FAIL にする。テストで System.setErr を自分で差し替えない） |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
+| 描き出した絵がリファレンスと違った（画素の差が出た）時のコミット | 狙っていない差なら入れずに止めて報告。意図した差は `make reference-update` で直した `reference/SHA256SUMS.txt` を同じコミットに入れる（入れずに出すと pre-commit が止める） |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
 | 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `make lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
@@ -168,6 +171,9 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 描き出しに ShaderDoc の面と追加フォントを一緒に渡す（字の縁は本ごとに） | `HeadlessRender.renderPngFull(cfg, scene, name)`（`Scene` の `fonts`・本ごとの字の縁は `fontAntialias`） |
 | 遊ぶ起動を速くする（src を変えていない 2 回目からコンパイルしない） | `make run` / `make debug`（engine の headless-run `--window main` が描き出しと同じ jar から流す）・裏で作るだけは `--build-only` |
 | 起動して確かめるだけ（数十秒で自分で止め、ウィンドウを残さない） | `make run RUN_SECONDS=40`（プロセスの組ごと止め、時間で止めた時は成功で返る） |
+| 起こしたまま残ったプロセス（ヘッドレスの Chrome・http.server・ゲームのウィンドウ・消した worktree の常駐）を探して止める | `make strays`（このリポから起こして親のいない物だけ。人の普段の Chrome やアプリは拾わない）→ `make strays KILL=1`（`AGE` 分より古い物だけ。ps や pkill で名前から止めない） |
+| たまった git worktree を片付ける（ディスクが減った） | `make worktree-gc`（main に取り込み済み・未コミット 0・未追跡 0・使っているプロセス無しの物を一覧に）→ `APPLY=1` で git worktree remove（枝は残す）。`make status` に本数と大きさ |
+| Makefile のレシピや shell スクリプトから python3 を呼ぶ（macOS で `tool 'python3' not found` になる） | レシピは `$(PYTHON3)`（mk/common.mk）・shell スクリプトは `$(ENGINE)/bin/py3`（DEVELOPER_DIR が nix の apple-sdk を指す時だけ直して python3 を起こす。素の python3 は lint-forbid が止める） |
 | 描き出しを続けて流すたびの JVM の立ち上げを省く（render・reference-check・会話の撮り） | `HEADLESS_RESIDENT=1`（窓なしのゲームを常駐・入口は `<名前>Job(req): Int32` と `jobs()`）・`bin/fge resident status` / `verify` |
 | F8 のチケット・閉じる | `debug/annotations/` の README → `world.json`・`bin/fge tickets close` |
 | 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |
