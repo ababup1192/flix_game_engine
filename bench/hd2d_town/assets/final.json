@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "note": "最終動画の通しの台本（FinalCut）。scenes = 並べる場面の順（buildup = 町が出来ていく台本の Doc・walkMap = 地図の walk.path で歩くだけの地図の Doc・look = 見た目のつまみの Doc・start = 場面のどのコマから使うか（0 から）・frames = 使うコマ数（30 fps））。境目は白飛び: 前の場面の終わり fadeInSec 秒で白い四角の α が 0 → 1・後の場面の頭 fadeOutSec 秒で α = (1 − u)^fadeOutPower で 1 → 0。町は門の手前で止まって 0.6 秒の所から白くし始める（着くのは場面のコマ 974）。炎と氷は歩き出す前の息遣いを白の下に入れる（歩き出すのは炎 36・氷 45 コマ目）。炎は着いて（コマ 235）0.6 秒で白くし始める。氷は着いて（コマ 201）正面を向いて 2.5 秒で終わる。",
+  "note": "最終動画の通しの台本（FinalCut）。scenes = 並べる場面の順（buildup = 町が出来ていく台本の Doc・walkMap = 地図の walk.path で歩くだけの地図の Doc・look = 見た目のつまみの Doc・start = 場面のどのコマから使うか（0 から）・frames = 使うコマ数（30 fps））。境目は白飛び: 前の場面の終わり fadeInSec 秒で白い四角の α が 0 → 1・後の場面の頭 fadeOutSec 秒で α = (1 − u)^fadeOutPower で 1 → 0。町は門の手前で止まって 0.6 秒の所から白くし始める（着くのは場面のコマ 1064）。炎と氷は場面の頭から使い、歩き出す前の息遣いを白の下に入れる（歩き出すのは炎 36・氷 45 コマ目）。炎は着いて（コマ 235）1.5 秒で白くし始める。氷は着いて（コマ 201）正面を向いて 3.5 秒で終わる（地図の holdSec 3.5）。",
   "fadeInSec": 0.8,
   "fadeOutSec": 1.2,
   "fadeOutPower": 2.5,
   "scenes": [
-    { "name": "town", "buildup": "assets/buildup_center.json", "look": "assets/town.json", "start": 0, "frames": 1016 },
-    { "name": "fire", "walkMap": "assets/fire_cave.map.json", "look": "assets/fire.json", "start": 12, "frames": 265 },
-    { "name": "ice", "walkMap": "assets/ice_cave.map.json", "look": "assets/ice.json", "start": 18, "frames": 258 }
+    { "name": "town", "buildup": "assets/buildup_center.json", "look": "assets/town.json", "start": 0, "frames": 1106 },
+    { "name": "fire", "walkMap": "assets/fire_cave.map.json", "look": "assets/fire.json", "start": 0, "frames": 304 },
+    { "name": "ice", "walkMap": "assets/ice_cave.map.json", "look": "assets/ice.json", "start": 0, "frames": 306 }
   ]
 }

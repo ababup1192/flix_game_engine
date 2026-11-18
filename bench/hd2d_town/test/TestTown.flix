@@ -247,10 +247,42 @@ mod TestTown {
     def schedule(): TownLook.Schedule =
         { day = TownLook.defaults(), dusk = dusk(), night = night(), fog = fogNight(),
           rows = { dayToDusk = (50.0, 44.0), duskToNight = (36.0, 24.0), moonRow = 29.0, lampOn = (36.0, 25.0), nightToFog = (17.0, 8.0) },
-          mode = TownLook.Transition.Blend }
+          mode = TownLook.Transition.Blend, transitionSec = 0.0, transitionRows = 0.0 }
 
     /// 同じ境目で、区間の真ん中の行（47・30・12.5）で 1 コマで替える移り方。
     def cutSchedule(): TownLook.Schedule = { mode = TownLook.Transition.Cut | schedule() }
+
+    /// 同じ境目で、真ん中の行の前後 2 行（± 1 行）だけでつなぐ移り方。
+    def shortSchedule(): TownLook.Schedule = { transitionRows = 2.0 | cutSchedule() }
+
+    @Test
+    def testShortTransitionKeepsTheDayBeforeItsWindow(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(shortSchedule(), 48.05)#exposure, TownLook.defaults()#exposure))
+
+    @Test
+    def testShortTransitionIsHalfwayAtTheMiddleRow(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(shortSchedule(), 47.0)#exposure, (TownLook.defaults()#exposure + -0.2) / 2.0))
+
+    @Test
+    def testShortTransitionIsTheWholeDuskAfterItsWindow(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(shortSchedule(), 45.95)#exposure, -0.2))
+
+    @Test
+    def testShortNightfallLightsTheLampsBeforeTheSunIsGone(): Unit \ Assert =
+        let look = TownLook.atRow(shortSchedule(), 30.0);
+        Assert.assertTrue(near(look#lampIntensity, 260.0) and look#sunIntensity > 0.0)
+
+    @Test
+    def testShortNightfallIsTheWholeNightAfterItsWindow(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(shortSchedule(), 28.95)#exposure, -2.0))
+
+    @Test
+    def testTransitionSecondsBecomeRowsAtTheWalkSpeed(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.withWalkSpeed(3.5, { transitionSec = 0.4 | cutSchedule() })#transitionRows, 1.4))
+
+    @Test
+    def testWalkSpeedSkipsTheWait(): Unit \ Assert =
+        Assert.assertTrue(near(BuildVideo.walkSpeedOf(route()), 2.0))
 
     @Test
     def testCutKeepsTheDayJustSouthOfRow47(): Unit \ Assert =

@@ -116,11 +116,11 @@ mod TownLook {
         case Blend
     }
 
-    /// 台本の timeOfDay（4 つの Look の Doc の道と境目の行と移り方）。
-    pub type alias TimeOfDay = { day = String, dusk = String, night = String, fog = String, rows = Rows, mode = Transition }
+    /// 台本の timeOfDay（4 つの Look の Doc の道と境目の行と移り方）。transitionSec = Cut の時、境目の行の前後でなめらかにつなぐ秒（0 なら 1 コマで替える）。
+    pub type alias TimeOfDay = { day = String, dusk = String, night = String, fog = String, rows = Rows, mode = Transition, transitionSec = Float64 }
 
-    /// 読み込んだ 4 つの Look と境目の行と移り方。
-    pub type alias Schedule = { day = Look, dusk = Look, night = Look, fog = Look, rows = Rows, mode = Transition }
+    /// 読み込んだ 4 つの Look と境目の行と移り方。transitionSec = Cut の時のつなぐ秒・transitionRows = それを歩く速さで行に直した幅。
+    pub type alias Schedule = { day = Look, dusk = Look, night = Look, fog = Look, rows = Rows, mode = Transition, transitionSec = Float64, transitionRows = Float64 }
 
     /// 台本の timeOfDay の欄を読む（無い欄は計画の 1 節の境目）。
     pub def timeOfDayOf(m: Map[String, Json]): TimeOfDay =
@@ -133,11 +133,17 @@ mod TownLook {
           night = JsonCodec.stringOr("night", "assets/town_night.json", m), fog = JsonCodec.stringOr("fog", "assets/town_night_fog_mid.json", m),
           rows = { dayToDusk = pair("dayToDusk", (50.0, 44.0)), duskToNight = pair("duskToNight", (36.0, 24.0)),
                    moonRow = JsonCodec.floatOr("moonRow", 29.0, m), lampOn = pair("lampOn", (36.0, 25.0)), nightToFog = pair("nightToFog", (17.0, 8.0)) },
-          mode = if (JsonCodec.stringOr("mode", "cut", m) == "blend") Transition.Blend else Transition.Cut }
+          mode = if (JsonCodec.stringOr("mode", "cut", m) == "blend") Transition.Blend else Transition.Cut,
+          transitionSec = JsonCodec.floatOr("transitionSec", 0.0, m) }
 
     /// 4 つの Look の Doc を読む（読めない Doc は loadOr のとおり既定値で続ける）。tweak = 読んだ Look に毎回掛ける差し替え。
     pub def loadSchedule(t: TimeOfDay, tweak: Look -> Look): Schedule \ Fs.FileRead =
-        { day = tweak(loadOr(t#day)), dusk = tweak(loadOr(t#dusk)), night = tweak(loadOr(t#night)), fog = tweak(loadOr(t#fog)), rows = t#rows, mode = t#mode }
+        { day = tweak(loadOr(t#day)), dusk = tweak(loadOr(t#dusk)), night = tweak(loadOr(t#night)), fog = tweak(loadOr(t#fog)), rows = t#rows, mode = t#mode,
+          transitionSec = t#transitionSec, transitionRows = 0.0 }
+
+    /// 歩く速さ（マス/秒）から、つなぐ秒を行の幅に直す。
+    pub def withWalkSpeed(cellsPerSec: Float64, s: Schedule): Schedule =
+        { transitionRows = s#transitionSec * cellsPerSec | s }
 
     def smoothstep(u: Float64): Float64 =
         let v = Num.clamp(0.0, 1.0, u);
@@ -152,7 +158,7 @@ mod TownLook {
     pub def atRow(s: Schedule, row: Float64): Look =
         let look = match s#mode {
             case Transition.Cut   => cutAt(s, row)
-            case Transition.Blend => blendAt(s, row)
+            case Transition.Blend => blendAt(s, s#rows, row)
         };
         { lightUnits = s#night#lightUnits, pointShadows = s#night#pointShadows | look }
 
@@ -163,14 +169,23 @@ mod TownLook {
     // WhyNot: 切り替えのコマに白や黒の 1 コマをはさまない — 人の注文は「パッパッと替わる」で、はさむとまばたきに見える。
     def cutAt(s: Schedule, row: Float64): Look =
         let r = s#rows;
-        if (row >= middleOf(r#dayToDusk)) s#day
+        if (s#transitionRows > 0.0) blendAt(s, narrowed(r, s#transitionRows), row)
+        else if (row >= middleOf(r#dayToDusk)) s#day
         else if (row >= middleOf(r#duskToNight)) s#dusk
         else if (row >= middleOf(r#nightToFog)) s#night
         else s#fog
 
-    /// Blend の時の Look（区間の中でなめらかにつなぎ、夕方 → 夜は nightfall）。
-    def blendAt(s: Schedule, row: Float64): Look =
-        let r = s#rows;
+    /// Cut の境目を、区間の真ん中の行を中心にした幅 width の行だけでつなぐ境目にする。夕方 → 夜は、街灯が幅の前半で点ききり、
+    /// 太陽は幅の 3/4 で落ちきって月へ替わる（街灯が先・太陽が後）。
+    pub def narrowed(r: Rows, width: Float64): Rows =
+        let h = width / 2.0;
+        let around = (span: (Float64, Float64)) -> { let m = middleOf(span); (m + h, m - h) };
+        let night = middleOf(r#duskToNight);
+        { dayToDusk = around(r#dayToDusk), duskToNight = (night + h, night - h), moonRow = night - h / 2.0, lampOn = (night + h, night),
+          nightToFog = around(r#nightToFog) }
+
+    /// Blend の時の Look（境目の行 r の区間の中でなめらかにつなぎ、夕方 → 夜は nightfall）。
+    def blendAt(s: Schedule, r: Rows, row: Float64): Look =
         if (row >= fst(r#dayToDusk)) s#day
         else if (row > snd(r#dayToDusk)) blend(s#day, s#dusk, smoothstep(progressOf(r#dayToDusk, row)))
         else if (row >= fst(r#duskToNight)) s#dusk

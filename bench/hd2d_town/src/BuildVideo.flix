@@ -210,7 +210,7 @@ mod BuildVideo {
         (run { Buildup.loadPlan(planPath) |> Result.flatMap(p -> TownMap.load("step", p#map) |> Result.map(m -> (m, p))) } with Fs.FileRead.runWithIO)
             |> Result.flatMap(mp -> {
                 let (m, p) = mp;
-                TownScene.load(m, look, Some(m#walk#col), p#party |> List.filterMap(w -> w#idleStrip)) |> Result.map(res -> (m, p, res))
+                TownScene.load(m, look, Some(m#walk#col), p#party |> List.flatMap(w -> w#strip :: Option.toList(w#idleStrip))) |> Result.map(res -> (m, p, res))
             })
             |> Result.flatMap(mpr -> { let (m, p, res) = mpr; Buildup.dustTexture() |> Result.map(d -> (m, p, res, d)) })
             |> Result.flatMap(all -> {
@@ -220,15 +220,27 @@ mod BuildVideo {
                     case Some(r) =>
                         let at = List.head(p#path) |> Option.getWithDefault({ col = 13, row = 15, wait = 0.0 });
                         make(Buildup.radialFront(p#timing, at#col, at#row, m#width, m#height, r))
-                            |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = standTrackOf(m, look, p, r, show), schedule = scheduleOf(p, tweak) })
+                            |> Result.map(show -> {
+                                let tr = standTrackOf(m, look, p, r, show);
+                                { map = m, plan = p, res = res, dust = d, show = show, track = tr, schedule = scheduleOf(p, tweak, tr) }
+                            })
                     case None =>
                         let tr = trackOf(m, look, p);
-                        make(walkFront(m, p, tr)) |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = tr, schedule = scheduleOf(p, tweak) })
+                        make(walkFront(m, p, tr)) |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = tr, schedule = scheduleOf(p, tweak, tr) })
                 }
             })
 
-    def scheduleOf(p: Plan, tweak: TownScene.Look -> TownScene.Look): Option[TownLook.Schedule] \ IO =
-        p#timeOfDay |> Option.map(t -> run { TownLook.loadSchedule(t, tweak) } with Fs.FileRead.runWithIO)
+    def scheduleOf(p: Plan, tweak: TownScene.Look -> TownScene.Look, tr: Track): Option[TownLook.Schedule] \ IO =
+        p#timeOfDay |> Option.map(t -> (run { TownLook.loadSchedule(t, tweak) } with Fs.FileRead.runWithIO) |> TownLook.withWalkSpeed(walkSpeedOf(tr#route)))
+
+    /// 道を歩く速さ（マス/秒・待ちの間を除く）。
+    pub def walkSpeedOf(route: Route.Route): Float64 =
+        let pairs = List.zip(route#knots, List.drop(1, route#knots));
+        let (dist, secs) = pairs |> List.foldLeft((acc, ab) -> {
+            let ((t0, s0), (t1, s1)) = ab;
+            if (s1 > s0) (fst(acc) + s1 - s0, snd(acc) + t1 - t0) else acc
+        }, (0.0, 0.0));
+        if (secs > 0.0) dist / secs else 0.0
 
     /// コマ f の Look（台本に timeOfDay があれば先頭の行で替える・無ければ読み込んだ Look のまま）。
     pub def lookAt(st: Setup, f: Int32): TownScene.Look =
