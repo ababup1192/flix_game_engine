@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # ブラウザ版の手触りを数で測る（ヘッドレスの Chrome・CDP）。直す前の切り分け用。
 # usage: web_feel_measure.py <URL> <出力のフォルダ>
-#   1. 区間ごとの 1 コマ: 手順書 bin/web_walk_demo.json の区間（＋止まっている区間）ごとに、rAF の間隔（ms）と
+#   2. 区間ごとの 1 コマ: 手順書 bin/web_walk_demo.json の区間（＋止まっている区間）ごとに、rAF の間隔（ms）と
 #      engine の頁が数える 1 コマの CPU（fgeStats・wasm がコマを組む時間）を集める → sections.json
-#   2. 入力の遅れとカメラの止まり方: 画面を Page.startScreencast で毎コマ受け取り（f*.jpg と frames.tsv）、キーを押した時刻・離した時刻と並べる。
+#   1. 入力の遅れとカメラの止まり方: 画面を Page.startScreencast で毎コマ受け取り（f*.jpg と frames.tsv）、キーを押した時刻・離した時刻と並べる。
 #      画面の動きは ffmpeg で地面の帯の前のコマとの差（YAVG）にする → motion.tsv。キーの時刻は keys.tsv。
 # 起こした Chrome はプロセスの組ごと止め、使い捨ての user-data-dir を消す。
 import base64, json, os, shutil, signal, subprocess, sys, tempfile, time, urllib.request
@@ -27,6 +27,17 @@ TAKE = """(function () {
   p.gaps = []; if (window.fgeStats) fgeStats.reset();
   return JSON.stringify(out);
 })()"""
+
+
+def start(ws, url):
+    ws.call("Page.navigate", {"url": url})
+    assert R.wait_for(ws, "!!(window.fgeSplash && window.fgeSplash.ready)", 120), "押せる所まで来ない"
+    for t in ("mousePressed", "mouseReleased"):
+        ws.call("Input.dispatchMouseEvent", {"type": t, "x": 640, "y": 360, "button": "left", "clickCount": 1})
+    assert R.wait_for(ws, "(document.getElementById('fge-boot') || {style: {}}).style.display === 'none'", 120), "最初のコマまで来ない"
+    R.evaluate(ws, PROBE)
+    time.sleep(1.5)
+    R.evaluate(ws, TAKE)
 
 
 def hold(ws, keys, secs):
@@ -60,36 +71,9 @@ def main():
         ws.call("Page.enable")
         ws.call("Page.bringToFront")
         ws.call("Emulation.setFocusEmulationEnabled", {"enabled": True})
-        ws.call("Page.navigate", {"url": url})
-        assert R.wait_for(ws, "!!(window.fgeSplash && window.fgeSplash.ready)", 120), "押せる所まで来ない"
-        for t in ("mousePressed", "mouseReleased"):
-            ws.call("Input.dispatchMouseEvent", {"type": t, "x": 640, "y": 360, "button": "left", "clickCount": 1})
-        assert R.wait_for(ws, "(document.getElementById('fge-boot') || {style: {}}).style.display === 'none'", 120), "最初のコマまで来ない"
-        R.evaluate(ws, PROBE)
-        time.sleep(1.5)
-        R.evaluate(ws, TAKE)
+        start(ws, url)
 
-        # 1. 区間ごとの 1 コマ（手順書の区間に名前を付けて流す）
-        sections = []
-        plan = [("南の大通り・止まって立つ", [], 2.0)] + [
-            (name, keys, secs) for name, keys, secs in [
-                ("南の大通り・低木に当たる（左）", ["ArrowLeft"], 0.7),
-                ("南の大通り → 広場（左上・水路に沿って滑る）", ["ArrowLeft", "ArrowUp"], 1.1),
-                ("広場（右）", ["ArrowRight"], 0.5),
-                ("広場 → 北の大通り（上）", ["ArrowUp"], 2.8),
-                ("北の大通り（上・建物の間）", ["ArrowUp"], 3.0),
-                ("池の脇・建物の前（右上）", ["ArrowRight", "ArrowUp"], 1.4),
-                ("池の東（左・池に当たる）", ["ArrowLeft"], 1.2),
-            ]] + [("池の東・止まって立つ", [], 2.0)]
-        for name, keys, secs in plan:
-            hold(ws, keys, secs)
-            row = json.loads(R.evaluate(ws, TAKE))
-            row["section"] = name
-            sections.append(row)
-            print("[feel]", name, row)
-        json.dump(sections, open(os.path.join(out, "sections.json"), "w"), ensure_ascii=False, indent=1)
-
-        # 2. 入力の遅れとカメラの止まり方（画面を毎コマ受け取る）
+        # 1. 入力の遅れとカメラの止まり方（区間の測りより先・立ち始めの開いた所で）（画面を毎コマ受け取る）
         frames = []
         ws.call("Page.startScreencast", {"format": "jpeg", "quality": 80, "everyNthFrame": 1, "maxWidth": 1280, "maxHeight": 720})
         keys = []
@@ -115,13 +99,14 @@ def main():
                                 "params": {"type": "rawKeyDown" if kind == "down" else "keyUp", "code": code, "key": name,
                                            "windowsVirtualKeyCode": R.KEYS[code], "nativeVirtualKeyCode": R.KEYS[code]}}))
 
+        # 立ち始め（南の大通り・北へ 12 m ほど開いている）から: 北へ歩いて止まり、広場で斜め → 横だけへ向きを替えて止まる
         pump(1.5)
-        press("down", "ArrowDown", "歩き出す（下）"); pump(1.5)
-        press("up", "ArrowDown", "止まる"); pump(2.5)
-        press("down", "ArrowUp", "歩き出す（上）"); pump(1.2)
-        press("down", "ArrowRight", "斜め（右上）"); pump(0.8)
-        press("up", "ArrowUp", "向きを替える（右だけ）"); pump(0.8)
-        press("up", "ArrowRight", "止まる"); pump(2.5)
+        press("down", "ArrowUp", "歩き出す（上）"); pump(1.3)
+        press("up", "ArrowUp", "止まる"); pump(2.0)
+        press("down", "ArrowUp", "歩き出す（上・2 回目）"); pump(0.4)
+        press("down", "ArrowRight", "斜め（右上）"); pump(0.5)
+        press("up", "ArrowUp", "向きを替える（右だけ）"); pump(0.5)
+        press("up", "ArrowRight", "止まる"); pump(2.0)
         ws.call("Page.stopScreencast")
         with open(os.path.join(out, "frames.tsv"), "w") as f:
             for name, at in frames:
@@ -130,6 +115,29 @@ def main():
             for label, kind, code, at in keys:
                 f.write("%.4f\t%s\t%s\t%s\n" % (at, kind, code, label))
         print("[feel] 画面 %d 枚" % len(frames))
+
+        # 区間の測りは立ち始めから流すので、頁を開き直す
+        start(ws, url)
+
+        # 2. 区間ごとの 1 コマ（手順書の区間に名前を付けて流す）
+        sections = []
+        plan = [("広場・止まって立つ", [], 2.0)] + [
+            (name, keys, secs) for name, keys, secs in [
+                ("南の大通り・低木に当たる（左）", ["ArrowLeft"], 0.5),
+                ("南の大通り → 広場（左上・水路に沿って滑る）", ["ArrowLeft", "ArrowUp"], 0.8),
+                ("広場（右）", ["ArrowRight"], 0.36),
+                ("広場 → 北の大通り（上）", ["ArrowUp"], 2.0),
+                ("北の大通り（上・建物の間）", ["ArrowUp"], 2.1),
+                ("池の脇・建物の前（右上）", ["ArrowRight", "ArrowUp"], 1.0),
+                ("池の東（左・池に当たる）", ["ArrowLeft"], 0.9),
+            ]] + [("池の東・止まって立つ", [], 2.0)]
+        for name, keys, secs in plan:
+            hold(ws, keys, secs)
+            row = json.loads(R.evaluate(ws, TAKE))
+            row["section"] = name
+            sections.append(row)
+            print("[feel]", name, row)
+        json.dump(sections, open(os.path.join(out, "sections.json"), "w"), ensure_ascii=False, indent=1)
     finally:
         try:
             os.killpg(proc.pid, signal.SIGTERM)

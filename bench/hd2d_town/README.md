@@ -192,6 +192,7 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 | `make explore-serve` | 書き出した物を手元のサーバーで配る（`PORT`・既定 8765・`0.0.0.0` で待つ） |
 | `make explore-grid` | 通れるマスの格子を字で出す（`#` 地図と建物・`+` 建物の北に隠れるので塞いだ・`d` 広場のにぎやかし） |
 | `make explore-record` | ヘッドレスの Chrome（CDP）でキーを押して歩かせ `debug/web_walk.mp4` にする（手順書は `bin/web_walk_demo.json`・先に explore-serve を立てる）。頁の音も録る（`audio.webm`） |
+| `bin/web_feel_measure.py <URL> <出力>` | 手触りを数で測る（ヘッドレスの Chrome）: キーを押して・離してから画面が動く・止まるまでの時刻（画面を毎コマ受け取って地面の帯の差を見る）と、区間ごとの rAF の間隔と 1 コマの CPU。先に explore-serve を立てる |
 
 - 作り: `src/Explore.flix`（App・World は先頭の位置・向き・道・歩きの時計・カメラの先読みと高さ・時刻だけ。町・格子・Doc は Res）・
   `src/CollisionGrid.flix`（通れるマスの格子と、半径 0.3 m の円を通れないマスの四角から押し出して壁に沿って滑らせる動き）・
