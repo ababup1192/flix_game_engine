@@ -84,6 +84,76 @@
       "name": "street_lamp_ornate",
       "path": "assets/sprites/street_lamp_ornate.png",
       "hasAlpha": true
+    },
+    {
+      "name": "market_stall",
+      "path": "assets/sprites/market_stall.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "peddler_idle",
+      "path": "assets/sprites/peddler_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "barrel",
+      "path": "assets/sprites/barrel.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "crate_td",
+      "path": "assets/sprites/crate_td.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "flower_pot",
+      "path": "assets/sprites/flower_pot.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "balloon_kid_idle",
+      "path": "assets/sprites/balloon_kid_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "balloon",
+      "path": "assets/sprites/balloon.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "dog",
+      "path": "assets/sprites/dog.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "townsman_idle",
+      "path": "assets/sprites/townsman_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "townswoman_idle",
+      "path": "assets/sprites/townswoman_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "elder_idle",
+      "path": "assets/sprites/elder_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "carriage",
+      "path": "assets/sprites/carriage.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "horse",
+      "path": "assets/sprites/horse.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "pigeon",
+      "path": "assets/sprites/pigeon.png",
+      "hasAlpha": true
     }
   ],
   "fonts": [],

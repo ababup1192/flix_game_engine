@@ -78,7 +78,8 @@ mod Video {
         let focus = focusOf(eye, Int32.toFloat64(m#height) - m#frame#targetRow, m#frame#targetZ);
         let scale = envInt("SCALE", 6);
         let name = { let v = System.getenv("SHOT"); if (Object.isNull(v) or v == "") "compare_engine" else v };
-        HeadlessRender.renderPngFull(configOf(scale, "debug"), fullSceneOf(look, focus, { time = 4.0 | TownScene.sceneOf(res, camera, design(), Nil, Nil) }), name);
+        let decor = TownScene.decorBoards(res, 4.0, _ -> Some((0.0, 1.0, 1.0)));
+        HeadlessRender.renderPngFull(configOf(scale, "debug"), fullSceneOf(look, focus, { time = 4.0 | TownScene.sceneOf(res, camera, design(), List.map(fst, decor), List.filterMap(snd, decor)) }), name);
         println("[hd2d_town] debug/${name}.png（${Int32.toString(320 * scale)}×${Int32.toString(180 * scale)}・目の高さ ${Float64.toString(eye#height)} m・lensShift ${Float64.toString(lens#shiftY)}）")
 
     /// 歩く台本の 1 コマの場面と、ピントの距離（目から先頭の足元まで）。
@@ -114,7 +115,9 @@ mod Video {
         let eye = { z = snap(Party.cameraTargetY(m, tl, t) - wk#feetDepth) | wk#eye };
         let camera = TownCamera.cameraAt(wk#lens, look#far, eye);
         let leaderY = snap(snd(Party.memberAt(m, tl, t, 0)));
-        { scene = { time = t | TownScene.sceneOf(res, camera, size, List.map(fst, members), List.map(snd, members)) },
+        let decor = TownScene.decorBoards(res, t, _ -> Some((0.0, 1.0, 1.0)));
+        { scene = { time = t | TownScene.sceneOf(res, camera, size, List.append(List.map(fst, members), List.map(fst, decor)),
+                                                  List.append(List.map(snd, members), List.filterMap(snd, decor))) },
           focus = focusOf(eye, leaderY, wk#groundZ) }
 
     def pad4(i: Int32): String = String.padLeft(4, '0', Int32.toString(i))

@@ -223,6 +223,11 @@ mod Buildup {
         Mat4.mul(Mat4.translate(Vec3.add(base, offset)), Mat4.mul(Mat4.scale(scale), Mat4.translate(Vec3.mul(base, -1.0))))
 
     /// 降って着地する物の (高さのずれ, 縦の倍率, 横の倍率)。
+    /// 時刻 t に、start に降り始める板の (上からの高さ, 縦の倍率, 横の倍率)。start より前は None。
+    pub def boardDropAt(show: Show, t: Float64, start: Float64): Option[(Float64, Float64, Float64)] =
+        let tm = show#timing;
+        if (t < start) None else Some(dropOf(t, start, tm#fall, tm#fallHeight, tm#squash))
+
     def dropOf(t: Float64, start: Float64, fallSec: Float64, height: Float64, squashSec: Float64): (Float64, Float64, Float64) =
         let u = clamp01((t - start) / fallSec);
         let k = squashOf((t - start - fallSec) / squashSec);

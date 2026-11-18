@@ -215,6 +215,10 @@ mod BuildVideo {
             TownScene.walkerBoardFrames(res, pose#strip, w#tint, row, pose#perDir, pose#frame, flip, pose#stretch, snap(x), snap(y), tr#groundZ)
         }) |> List.filterMap(identity);
         let shake = Buildup.shakeAt(show, t);
+        // WhyNot: 広場のにぎやかしを建物と一緒に出さない — 記念碑の揺れと跳ねに重なって読めない。揺れが収まってから 1 つずつ落とす
+        let decorFrom = Buildup.impactOf(show) |> Option.map(ip -> fst(ip) + show#timing#shake) |> Option.getWithDefault(show#done);
+        let decor = TownScene.decorBoards(res, t, i -> Buildup.boardDropAt(show, t, decorFrom + 0.1 * Int32.toFloat64(i)));
+        let decorShadows = decor |> List.filterMap(snd);
         let at = (v: Vector[Float64], fallback: Float64) -> Vector.nth(f, v) |> Option.getWithDefault(fallback);
         let pull = at(tr#zoom, 1.0);
         let eye = { x = snap(at(tr#cameraX, tr#eye#x)), z = snap(at(tr#cameraY, 0.0) - tr#feetDepth * pull),
@@ -226,7 +230,8 @@ mod BuildVideo {
         let partyBoards = List.map(fst, members);
         let partyShadows = List.flatMap(snd, members);
         if (t >= show#done)
-            ({ time = t | TownScene.sceneWith(res, camera, size, res#group :: Nil, List.append(res#boards, partyBoards), partyShadows, textures) }, focus)
+            ({ time = t | TownScene.sceneWith(res, camera, size, res#group :: Nil, List.flatten(res#boards :: partyBoards :: List.map(fst, decor) :: Nil),
+                                              List.append(partyShadows, decorShadows), textures) }, focus)
         else {
             let fr = Buildup.frameAt(show, t);
             let contacts = fr#contacts |> List.map(c -> {
@@ -234,8 +239,8 @@ mod BuildVideo {
                 TownScene.contactInstance(res#contactMesh, res#contactMaterial, p#x, p#z, p#y, w * k)
             });
             let (settledGroup, loose) = groupOf(fr#settled);
-            ({ time = t | TownScene.sceneWith(res, camera, size, show#fixed :: settledGroup :: Nil, List.append(fr#billboards, partyBoards),
-                                 List.flatten(fr#moving :: loose :: contacts :: partyShadows :: Nil), textures) }, focus)
+            ({ time = t | TownScene.sceneWith(res, camera, size, show#fixed :: settledGroup :: Nil, List.flatten(fr#billboards :: partyBoards :: List.map(fst, decor) :: Nil),
+                                 List.flatten(fr#moving :: loose :: contacts :: partyShadows :: decorShadows :: Nil), textures) }, focus)
         }
 
     def fullSceneOf(look: TownScene.Look, focus: Float64, flash: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =

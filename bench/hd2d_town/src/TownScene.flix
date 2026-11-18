@@ -65,7 +65,8 @@ mod TownScene {
     pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
         let sprites = "sprites/tree_broadleaf.png" :: "sprites/tree_cypress.png" :: "sprites/street_lamp_ornate.png" ::
                       "sprites/traveler_td.png" :: "sprites/merchant_td.png" :: Nil;
-        let stripPaths = List.flatten(m#walk#party |> List.map(p -> p#strip) :: ("sprites/traveler_walk4.png" :: "sprites/merchant_walk4.png" :: Nil) :: extraStrips :: Nil) |> List.distinct;
+        let stripPaths = List.flatten(m#walk#party |> List.map(p -> p#strip) :: ("sprites/traveler_walk4.png" :: "sprites/merchant_walk4.png" :: Nil) :: extraStrips ::
+                                      List.map(d -> d#sprite, m#decor) :: Nil) |> List.distinct;
         let tilePaths = TileMap3d.materialTable() |> Map.valuesOf |> List.map(fst) |> List.distinct;
         forM (
             tiles <- Result.traverse(Images.load, tilePaths);
@@ -289,6 +290,43 @@ mod TownScene {
           | Scene3d.scene(camera, size) }
             |> Scene3d.withLightUnits(look#lightUnits)
             |> (sc -> look#pointShadows |> Option.map(m -> Scene3d.withPointShadows(m, sc)) |> Option.getWithDefault(sc))
+
+    /// 広場のにぎやかしの板と足元の影。t = 時刻（コマと揺れ）・drop = i 番目の板の (上からの高さ m, 縦の倍率, 横の倍率)（None はまだ出ていない）。
+    pub def decorBoards(res: Res, t: Float64, drop: Int32 -> Option[(Float64, Float64, Float64)]): List[(Scene3d.Billboard3d, Option[Scene3d.Instance3d])] =
+        let m = res#map;
+        m#decor |> List.zipWithIndex |> List.filterMap(entry -> {
+            let (i, d) = entry;
+            forM (
+                (dy, sy, sxz) <- drop(i);
+                l <- Map.get(d#sprite, res#strips)
+            ) yield {
+                let nf = Int32.max(1, d#frames);
+                let cellW = l#width / nf;
+                let k = decorFrame(d, nf, t);
+                let source = { position = { x = Int32.toFloat64(cellW * k), y = 0.0 }, size = { x = Int32.toFloat64(cellW), y = Int32.toFloat64(l#height) } };
+                let w = Int32.toFloat64(cellW) / 32.0;
+                let h = d#height |> Option.getWithDefault(Int32.toFloat64(l#height) / 32.0);
+                let (swayX, swayZ) = d#sway |> Option.map(sw -> {
+                    let (amp, per) = sw;
+                    (amp * Num.sin(2.0 * Num.pi() * t / per + d#phase * 6.28), 0.5 * amp * Num.sin(4.0 * Num.pi() * t / per + d#phase * 6.28))
+                }) |> Option.getWithDefault((0.0, 0.0));
+                let x = Int32.toFloat64(d#col) + 0.5 + d#offX + swayX;
+                let y = Int32.toFloat64(m#height - 1 - d#row) + 0.5 + d#offY;
+                let ground = TownMap.topAt(m, d#col, d#row);
+                let board = standing(billboardName(res#look, l), source, Vec3.v3(x, ground + d#z + swayZ + dy, y), (if (d#flip) 0.0 - w else w) * sxz, h * sy,
+                                     tintColor(res#look, Faces.white()), TownMap.castsShadow(d#shadow))
+                    |> (bb -> if (isCharacterSprite(d#sprite)) charLit(res#look, lampBoards(res#town), x, y, Faces.white(), bb)
+                              else lampLit(res#look, lampBoards(res#town), x, y, Faces.white(), bb));
+                (board, if (TownMap.hasFootShadow(d#shadow) and d#sway == None) Some(contactInstance(res#contactMesh, res#contactMaterial, x, y, ground, w)) else None)
+            }
+        })
+
+    /// 板のコマ（seq があれば seq の並び・無ければ 0, 1, 2, …）。
+    def decorFrame(d: TownMap.Decor, nf: Int32, t: Float64): Int32 =
+        let step = (count: Int32) -> Int32.modulo(Float64.floor(t / d#frameSec + d#phase * Int32.toFloat64(count)) |> Float64.tryToInt32 |> Option.getWithDefault(0), Int32.max(1, count));
+        if (nf <= 1) 0
+        else if (List.isEmpty(d#seq)) step(nf)
+        else List.drop(step(List.length(d#seq)), d#seq) |> List.head |> Option.getWithDefault(0) |> Num.clampInt(0, nf - 1)
 
     /// 街灯の足元（地図の座標）。
     def lampFeet(res: Res): List[Board] = res#town#boards |> List.filter(b -> b#sprite == "sprites/street_lamp_ornate.png")

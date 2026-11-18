@@ -53,6 +53,25 @@ mod TestTown {
     def testWithoutVariantGrassStaysAtLevel(): Unit \ Assert =
         Assert.assertTrue(near(TownMap.topAt(mini(""), 0, 0), 1.0))
 
+    /// 広場のにぎやかしの 3 件（park の屋台・pass の馬車・行き来する馬）を足した地図。
+    def withDecor(): TownMap =
+        let props = ", \"props\": [{\"sprite\": \"market_stall.png\", \"at\": [1, 2], \"off\": [0.1, 0.2], \"frames\": 2, \"seq\": [0, 1, 1]}," +
+                    " {\"variant\": \"pass\", \"sprite\": \"carriage.png\", \"at\": [0, 0]}," +
+                    " {\"variant\": \"park\", \"sprite\": \"horse.png\", \"at\": [2, 0], \"move\": [0, 0, 0.9]}]}";
+        let json = String.dropRight(1, miniJson()) + props;
+        match DocJson.parse(json) |> Option.toOk("JSON が読めない") |> Result.flatMap(TownMap.decode("step")) {
+            case Ok(m)    => m
+            case Err(why) => bug!(why)
+        }
+
+    @Test
+    def testDecorKeepsOnlyParkWithoutMove(): Unit \ Assert =
+        Assert.assertEq(expected = "sprites/market_stall.png" :: Nil, withDecor()#decor |> List.map(d -> d#sprite))
+
+    @Test
+    def testDecorReadsTheFrameSequence(): Unit \ Assert =
+        Assert.assertEq(expected = 0 :: 1 :: 1 :: Nil, withDecor()#decor |> List.flatMap(d -> d#seq))
+
     @Test
     def testRowsOfDifferentSizeAreRefused(): Unit \ Assert =
         let broken = String.replace(src = "\"shape\": [\"...\", \"...\", \"...\"]", dst = "\"shape\": [\"..\"]", miniJson());

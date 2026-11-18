@@ -55,6 +55,11 @@ for c0, r0, c1, r1, ch in lab['variants']['nightlamps']['objects']:
     lab_objects[r0][c0] = ch
 lab_objects[4][15] = '.'
 lab_objects[4][16] = 'L'
+# 広場の 2 本（元の (10,21)・(16,21)）は屋台の行商人と風船の子のすぐ前に立って隠すので、大通りの帯の列（11・15）へ寄せる。
+lab_objects[21][10] = '.'
+lab_objects[21][11] = 'L'
+lab_objects[21][16] = '.'
+lab_objects[21][15] = 'L'
 lab_objects = [''.join(r) for r in lab_objects]
 lab_buildings = [dict(b, y=b['y'] + NORTH) for b in lab['buildings']]
 
@@ -73,24 +78,20 @@ d.update({
     "version": 1,
     "title": "最終動画の町（北の門・北の大通り・十字の広場・南の大通り）",
     "note": "最終動画の地図の写し（bench だけ・bin/make_final_map.py が作る・hd2d_lab の地図は触らない）。"
-            "行 0〜25 は北の新しい部分（行 0〜3 が北の門・行 4〜25 が北の大通り）、行 26〜51 は hd2d_lab f730800 の town_avenue.map.json をそのまま（夜の街灯の差分を入れ、(15,30) の街灯を (16,30) へ動かした）、行 52〜63 は南の大通り。",
+            "行 0〜25 は北の新しい部分（行 0〜3 が北の門・行 4〜25 が北の大通り）、行 26〜51 は hd2d_lab f730800 の town_avenue.map.json をそのまま（夜の街灯の差分を入れ、(15,30) の街灯を (16,30) へ、広場の (10,47)・(16,47) を (11,47)・(15,47) へ動かした）、行 52〜63 は南の大通り。",
     "ground": ground, "objects": objects, "height": ['1' * W] * H, "shape": ['.' * W] * H,
     "buildings": north_buildings + lab_buildings,
     "camera": dict(lab['camera'], target=[lab['camera']['target'][0], lab['camera']['target'][1] + NORTH],
                    frame=dict(lab['camera']['frame'], anchor=[lab['camera']['frame']['anchor'][0], lab['camera']['frame']['anchor'][1] + NORTH])),
     "walk": dict(lab['walk'], fromRow=lab['walk']['fromRow'] + NORTH, toRow=lab['walk']['toRow'] + NORTH),
 })
-# 広場のにぎやかし（park の案）。行を 26 ずらし、夜の街灯と重なる植木鉢と、街灯のすぐ隣の犬を 1 マス動かす。
+# 広場のにぎやかし（park の案）。行を 26 ずらす。
 props = []
 for p in lab['props']:
     if p.get('variant', 'park') != 'park':
         continue
     q = dict(p)
     c, r = q['at']
-    if q['sprite'].startswith('flower_pot') and [c, r] == [10, 21]:
-        c = 9
-    if q['sprite'].startswith('dog') and [c, r] == [16, 22]:
-        c = 15
     q['at'] = [c, r + NORTH]
     props.append(q)
 d['props'] = props

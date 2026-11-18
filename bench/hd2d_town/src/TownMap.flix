@@ -65,12 +65,33 @@ mod TownMap {
     pub type alias Walk = { col = Int32, fromRow = Int32, toRow = Int32, party = List[Member], frames = Int32, cycleTiles = Float64,
                             idleSec = Float64, stopSec = Float64, holdSec = Float64, feetV = Float64, groundFlowH = Float64 }
 
+    /// 広場のにぎやかしの板 1 枚（地図の props 欄・Blender の build_props と同じ読み方）。sprite = 絵（assets からの相対）・col・row = マス・
+    /// offX・offY = マスの真ん中からのずれ（m・offY は北が正）・z = 地面からの高さ（m）・frames・frameSec・seq・phase = 横 1 列の絵のコマ・
+    /// flip = 左右を裏返す・sway = 揺れ（振れ幅 m と周期 秒）・shadow = 影の付け方・height = 板の高さ（m・無ければ絵の高さ）。
+    pub type alias Decor = { sprite = String, col = Int32, row = Int32, offX = Float64, offY = Float64, z = Float64,
+                             frames = Int32, frameSec = Float64, seq = List[Int32], phase = Float64, flip = Bool,
+                             sway = Option[(Float64, Float64)], shadow = DecorShadow, height = Option[Float64] }
+
+    /// 飾りの板の影（地図の shadow = 足元の影・cast = 太陽の影を落とす の組）。
+    pub enum DecorShadow with Eq {
+        case Full
+        case FootOnly
+        case CastOnly
+        case NoShadow
+    }
+
+    /// 足元の影を置くか。
+    pub def hasFootShadow(s: DecorShadow): Bool = s == DecorShadow.Full or s == DecorShadow.FootOnly
+
+    /// 太陽の影を落とすか。
+    pub def castsShadow(s: DecorShadow): Bool = s == DecorShadow.Full or s == DecorShadow.CastOnly
+
     /// 地図 1 枚。rows は行ごとの文字を enum にした物（行 r・列 c は Vector.get(c, Vector.get(r, …))）。
     /// heightStep = 1 レベルの m・curbRaise = 草のマスを道より上げる m（縁石）・coping = 段と水の縁に笠石を付けるか。
     pub type alias TownMap = { width = Int32, height = Int32, ground = Vector[Vector[Ground]], levels = Vector[Vector[Int32]],
                                shapes = Vector[Vector[Shape]], props = Vector[Vector[Prop]], buildings = List[Building],
                                heightStep = Float64, margin = Margin, frame = Frame, walk = Walk,
-                               curbRaise = Float64, coping = Bool }
+                               curbRaise = Float64, coping = Bool, decor = List[Decor] }
 
     /// path の地図を読む。variant = 使う差分の名前（"step" など・無ければ差分なし）。
     pub def load(variant: String, path: String): Result[String, TownMap] \ Fs.FileRead =
@@ -105,8 +126,37 @@ mod TownMap {
               margin = { cells = JsonCodec.intOr("cells", 10, marginDoc), level = JsonCodec.intOr("level", -2, marginDoc) },
               frame = frame, walk = walk,
               curbRaise = JsonCodec.floatOr("curbRaise", 0.0, variantDoc),
-              coping = JsonCodec.boolOr("coping", false, variantDoc) }
+              coping = JsonCodec.boolOr("coping", false, variantDoc),
+              decor = Map.get("props", top) |> Option.flatMap(JsonCodec.decodeList(decorOf)) |> Option.getWithDefault(Nil) |> List.filterMap(identity) }
         }
+
+    def shadowOf(foot: Bool, cast: Bool): DecorShadow =
+        if (foot and cast) DecorShadow.Full else if (foot) DecorShadow.FootOnly else if (cast) DecorShadow.CastOnly else DecorShadow.NoShadow
+
+    /// props 欄の 1 件（案 park の物と、案の無い物だけ。行き来する move の物は読まない）。
+    def decorOf(j: Json): Option[Option[Decor]] =
+        JsonCodec.expectObject(j) |> Option.map(o -> {
+            let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, o);
+            let pair = (key: String) -> Map.get(key, o) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat));
+            let at = pair("at") |> Option.getWithDefault(Nil);
+            let off = pair("off") |> Option.getWithDefault(Nil);
+            let nth = (xs: List[Float64], i: Int32) -> List.drop(i, xs) |> List.head |> Option.getWithDefault(0.0);
+            let toInt = (v: Float64) -> Float64.round(v) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+            let sprite = JsonCodec.stringOr("sprite", "", o);
+            let variant = JsonCodec.stringOr("variant", "park", o);
+            if (variant != "park" or Map.memberOf("move", o) or sprite == "") None
+            else Some({ sprite = if (String.contains(substr = "/", sprite)) sprite else "sprites/${sprite}",
+                        col = toInt(nth(at, 0)), row = toInt(nth(at, 1)), offX = nth(off, 0), offY = nth(off, 1), z = num("z", 0.0),
+                        frames = JsonCodec.intOr("frames", 1, o), frameSec = num("frameSec", 0.8),
+                        seq = pair("seq") |> Option.getWithDefault(Nil) |> List.map(toInt), phase = num("phase", 0.0),
+                        flip = JsonCodec.boolOr("flip", false, o),
+                        sway = pair("sway") |> Option.flatMap(xs -> match xs {
+                            case amp :: per :: _ => Some((amp, per))
+                            case _               => None
+                        }),
+                        shadow = shadowOf(JsonCodec.boolOr("shadow", true, o), JsonCodec.boolOr("cast", true, o)),
+                        height = Map.get("height", o) |> Option.flatMap(JsonCodec.expectFloat) })
+        })
 
     def objectOf(label: String, json: Json): Result[String, Map[String, Json]] =
         JsonCodec.expectObject(json) |> Option.toOk("${label} がオブジェクトでない")
