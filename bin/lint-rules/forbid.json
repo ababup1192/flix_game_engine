@@ -411,6 +411,26 @@
       "skipDirs": ["build", "lib"],
       "pattern": "\\bApp\\.withPasses\\b",
       "hint": "App.withPasses は 0.101.0 で消した。Pass の列は Render.passPlan(列) で包んで App.withPassPlan へ渡す（倍率は targets）。画面全体のトーンマップ・ブルーム・奥行きのぼかしは App.withPostStack（engine の docs/migrations/0.101.0.md）"
+    },
+    {
+      "id": "bare-python3-in-make",
+      "suffixes": [
+        ".mk"
+      ],
+      "basenames": [
+        "Makefile"
+      ],
+      "skip": [
+        "lib/",
+        "build/",
+        "testdata/"
+      ],
+      "skipDirs": [
+        "build",
+        "lib"
+      ],
+      "pattern": "^\\t(.*[\\s;&|(@])?python3\\s",
+      "hint": "レシピで python3 を素のまま呼ばない。macOS で DEVELOPER_DIR が nix の apple-sdk を指すと「error: tool 'python3' not found」で止まる。$(PYTHON3)（mk/common.mk・中身は engine の bin/py3）と書く。common.mk を読まない Makefile は PYTHON3 ?= <engine>/bin/py3 を頭で決める"
     }
   ],
   "exempt": {

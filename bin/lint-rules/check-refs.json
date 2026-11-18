@@ -47,7 +47,7 @@
   "manifestKeys": ["copy", "copyIfAbsent", "copyDirs"],
   "templateGlobs": ["templates/*/Makefile", "mk/*.mk"],
   "enginePathSkip": ["bin/flix.jar"],
-  "distExempt": ["bin/flix", "bin/flix.jar"],
+  "distExempt": ["bin/flix", "bin/flix.jar", "bin/py3"],
   "pathPattern": "(?<![\\w$.:/-])(bin|docs)/[A-Za-z0-9_*/.-]+",
   "enginePathPattern": "\\$\\(ENGINE\\)/((?:bin|docs)/[A-Za-z0-9_*/.-]+)",
   "rulePattern": "\\.claude/rules/([A-Za-z0-9_-]+\\.md)",

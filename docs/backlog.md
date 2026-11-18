@@ -280,3 +280,15 @@ Studio が実際にその経路を毎フレーム通るかは未確認。
   build/refactor/spans-resolved.tsv）がある所では木の代わりにそれを読む。
 - **トリガー**: 3 本のどれかで Flix の構文の読み違い（新しい宣言の形・入れ子の数え違い）を直す時。
   その時に直す所が 3 か所に分かれていれば、直すのと一緒にまとめる。
+
+## CPU の描き出しでブルームを掛けると、左上に場面の縮んだ写しのまだらが出る（2026-11-18）
+
+- **起きる事**: 画面なしの描き出し（`HeadlessRender`・`SoftRaster`）で、後がけ（`PostStack`）のブルームの強さを 0 より大きくすると、
+  画面の左上に、場面を縮めた写しのような赤いまだらが重なる。GPU（GL）の絵には出ない。
+- **再現の条件**: `bench/hd2d_town` の炎の Look（`assets/fire.json`）か氷の Look（`assets/ice.json`）の `bloomStrength` を 0 → 0.3 ほどにして、
+  CPU で 1 コマ描く（`make -C bench/hd2d_town frames` か `compare`）。炎の Look は陽炎の Pass（BeforeBloom の 2 枚）も重ねている。
+  陽炎なしの場面（町の夜の `bloomStrength` を上げる）でも出るかは、まだ切り分けていない。
+- **今の逃げ方**: 炎と氷は `bloomStrength: 0`（`bench/hd2d_town/README.md` の「engine に相談する事」）。GPU の絵とは光のにじみの分だけずれる。
+- **当たりを付けている所**: 縮めたブルームの段（解像度を落とした中間の絵）を、画面の大きさの絵の左上へ書いたまま消していない形に見える。未確認。
+- **トリガー**: CPU の描き出しでブルームを使う場面を作る時（3D の場面のギャラリー・HD-2D のテンプレート）か、`SoftRaster` の後がけを直す時。
+  直したら、炎の Look のブルームを戻して CPU と GPU の絵を並べる。

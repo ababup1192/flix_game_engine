@@ -11,6 +11,7 @@
 .PHONY: compare side frames video time test check
 
 BLENDER_SHOT ?= $(HOME)/Desktop/hd2d_lab/art/hd2d_gen/out/blender_tilemap_avenue_15_50_day.png
+PYTHON3 ?= ../../bin/py3
 JFONT ?= /System/Library/Fonts/ヒラギノ角ゴシック W6.ttc
 
 compare:
@@ -143,7 +144,7 @@ explore-web-public:
 
 explore-serve:
 	@echo "[explore-serve] http://localhost:$(PORT)/ ・スマホは http://$$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):$(PORT)/?fps=1&measure=1"
-	DEVELOPER_DIR=/Library/Developer/CommandLineTools python3 -m http.server $(PORT) --bind 0.0.0.0 --directory build/web
+	$(PYTHON3) -m http.server $(PORT) --bind 0.0.0.0 --directory build/web
 
 explore-grid:
 	../../bin/flix run --entrypoint Explore.printGrid
@@ -154,6 +155,6 @@ explore-draws:
 
 explore-record:
 	rm -rf debug/web_walk_frames
-	DEVELOPER_DIR=/Library/Developer/CommandLineTools python3 bin/web_walk_record.py "http://127.0.0.1:$(PORT)/?$(QUERY)" debug/web_walk_frames
+	$(PYTHON3) bin/web_walk_record.py "http://127.0.0.1:$(PORT)/?$(QUERY)" debug/web_walk_frames
 	cd debug/web_walk_frames && ffmpeg -v error -y -f concat -safe 0 -i frames.txt -vf "fps=15,format=yuv420p" -c:v libx264 -crf 22 -movflags +faststart ../web_walk.mp4
 	@ls -la debug/web_walk.mp4

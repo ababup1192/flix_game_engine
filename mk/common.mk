@@ -12,6 +12,10 @@
 
 .PHONY: help help-all hooks api module mvn-cache-share
 
+# python3 を起こす前置き（レシピでは素の python3 でなく $(PYTHON3) と書く）。macOS で DEVELOPER_DIR が nix の apple-sdk を
+# 指していても動くように、bin/py3 が起こす 1 回だけ CommandLineTools へ向け直す（理由は bin/py3 の頭）。
+PYTHON3 ?= $(if $(filter Windows_NT,$(OS)),python3,"$(FGE_PREFIX)bin/py3")
+
 ##@ 一覧・引く・配線
 help: ### | 日ごろ使うターゲットの一覧（全部は make help-all）
 	@$(HELP_HEAD)
