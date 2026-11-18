@@ -58,7 +58,7 @@ mod Render3d.WebGpuBillboards {
 
     /// ビルボードを影の地図へ描く pipeline（無ければ作る）。group 0 = 影の地図の光の目（shadowLayout・Render3d.WebGpuShadows の持ち物）・group 1 = 貼る絵。
     /// 色の描き先を持たず、深度（depthFormat）を LESS で書く。裏を間引かない（GL の影の地図と同じ）。
-    /// rightPerBillboard なら板の横の向きを行の値の tint の rgb から読む頂点シェーダーの版（点光源の面・Render3d.SceneList.putBillboardRow）。
+    /// rightPerBillboard なら板の横の向きを行の値の tint の rgb から読む頂点シェーダーの版（点光源の面・Render3d.SceneList.putBillboardValues）。
     pub def shadowPipelineOf(b: Billboards, shadowLayout: BindGroupLayout, depthFormat: TextureFormat, rightPerBillboard: Bool): RenderPipeline \ IO =
         let held = if (rightPerBillboard) b#rowRightShadowPipeline else b#shadowPipeline;
         match Ref.get(held) {

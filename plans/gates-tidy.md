@@ -83,7 +83,7 @@ bin/fge gates --check               gates.json と Makefile の食い違い（ch
 
 - 落ちた時: 門を 1 つずつ流し、赤でも次へ進み、最後に赤の門を並べて exit 1。ただし `prereq` の門が赤ならそこで止める。
   子の make が signal で止まった（Ctrl-C）・`bin/fge gates` が SIGINT / SIGTERM を受けた時は残りを流さず 130 で抜ける。
-- 子の make の環境から `MAKEFLAGS`・`MFLAGS`・`MAKELEVEL` を外す（`make verify SUITE=quick ONLY=x` の ONLY が全部の門へ漏れるのを止める）。
+- 子の make の環境から `MAKEFLAGS`・`MFLAGS`・`MAKELEVEL` と、MAKEFLAGS に載ったコマンド行の変数の名前の環境変数を外す（`make verify SUITE=quick ONLY=x` の ONLY が全部の門へ漏れるのを止める）。
   門へ渡したい変数は `ARGS="STUDIO=none"`（全部の門の make の行の後ろに付ける）。
 - `make help` には Makefile の `##> make verify SUITE=<名前> | …（一覧は make verify）` の 1 行で出す（mk/common.mk の help を触らない＝ゲームに波及しない）。
 - `precommit-dry`: `bin/fge precommit --files <ステージした物と作業ツリーの差分（追跡していない新しいファイルを含む）>`。
@@ -125,7 +125,7 @@ make test ALL=1 JOBS=6    今の test-par-all
   `make test ALL=1 JOBS=$(or $(JOBS),$(TEST_PAR_JOBS),6)`。逐次に倒すのは `make release JOBS=1`。
   `TEST=` を渡された時は「古い書き方」と 1 行出し、RELEASE_GATES の真ん中を `$(TEST)` に置き換えて流す（verified.txt の gates の行にもその名前が出る。
   release-marker-check は gates の行を読まない）。1 リリース後に TEST= ごと消す。
-  studio-parity の `$(MAKE) -C $(STUDIO)` には `MAKEOVERRIDES=` を付け、コマンド行の変数（JOBS・TEST・ALL など）を丸ごと Studio の Makefile へ渡さない。
+  studio-parity の `$(MAKE) -C $(STUDIO)` は `env -u JOBS -u ALL -u TEST …` と `MAKEOVERRIDES=` で包む（make はコマンド行の変数を MAKEFLAGS だけでなく子の環境にも書き出すので、MAKEOVERRIDES だけでは環境に残る）。
 - forbid.json に `make test-par-all` / `make test-all` / `make test-par` / `TEST=test` / `TEST_PAR_JOBS` を .md・Makefile・.json で止める規則を足す。
   skip に `docs/migrations/`・`plans/`・`NOTES.md`（過去の記録）。Makefile の別名の定義の行は unlessLine で外す。forbid.json はゲームへ配られるが、
   ゲームの Makefile にこの口は無く、当たるのはゲームの .md に engine の古い口を書いた時だけ（直してよい物）。

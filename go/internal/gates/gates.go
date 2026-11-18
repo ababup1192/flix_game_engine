@@ -9,6 +9,7 @@
 package gates
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -50,6 +51,7 @@ type Suite struct {
 
 // File は gates.json の中身。
 type File struct {
+	Note   string            `json:"note"`
 	Runs   map[string]string `json:"runs"`
 	Gates  []Gate            `json:"gates"`
 	Suites []Suite           `json:"suites"`
@@ -63,7 +65,10 @@ func Load(root string) (*File, error) {
 		return nil, err
 	}
 	var f File
-	if err := json.Unmarshal(data, &f); err != nil {
+	// 知らないキー（prereq の綴りの誤りなど）を黙って通さない。
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&f); err != nil {
 		return nil, fmt.Errorf("%s が JSON として壊れています: %v", path, err)
 	}
 	for i := range f.Gates {

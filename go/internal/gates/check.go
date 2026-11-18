@@ -25,18 +25,41 @@ type Facts struct {
 	Targets map[string]bool
 }
 
-// makeEnv は子の make の環境。呼んだ make のコマンド行の変数（MAKEFLAGS）を子へ持ち込まない。
+// makeEnv は子の make の環境。呼んだ make のコマンド行の変数を子へ持ち込まない（make verify SUITE=quick ONLY=x の ONLY が
+// lint へ届くなど）。make verify 自身の変数（SUITE・DRY・ARGS）も外す。
+// WhyNot: MAKEFLAGS を外すだけにしない — make はコマンド行の変数を MAKEFLAGS に入れるだけでなく、子の環境変数にも書き出す。
+// MAKEFLAGS の中の K=V から名前を拾い、その名前の環境変数も外す。
 func makeEnv(env []string) []string {
+	drop := map[string]bool{"MAKEFLAGS": true, "MFLAGS": true, "MAKELEVEL": true, "MAKEOVERRIDES": true,
+		"SUITE": true, "DRY": true, "ARGS": true}
+	for _, kv := range env {
+		if name, val, _ := strings.Cut(kv, "="); name == "MAKEFLAGS" {
+			for _, n := range commandLineVars(val) {
+				drop[n] = true
+			}
+		}
+	}
 	var out []string
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
-		switch name {
-		case "MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES":
-			continue
+		if !drop[name] {
+			out = append(out, kv)
 		}
-		out = append(out, kv)
 	}
 	return out
+}
+
+var varName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// commandLineVars は MAKEFLAGS（例「s -- ONLY=x JOBS=3」）の中のコマンド行の変数の名前。値の中の空白は make が \ で逃がす。
+func commandLineVars(makeflags string) []string {
+	var names []string
+	for _, w := range strings.Fields(strings.ReplaceAll(makeflags, `\ `, "\x00")) {
+		if name, _, ok := strings.Cut(w, "="); ok && varName.MatchString(name) {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // LoadFacts は Makefile から値を受け取る。

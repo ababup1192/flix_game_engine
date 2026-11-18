@@ -26,10 +26,11 @@ func TestParseTargetsKeepsOnlyExplicitTargets(t *testing.T) {
 	}
 }
 
-// 呼んだ make のコマンド行の変数（MAKEFLAGS など）は子の make へ持ち込まない。
-func TestMakeEnvDropsMakeflags(t *testing.T) {
-	got := makeEnv([]string{"PATH=/bin", "MAKEFLAGS=ONLY=x", "MFLAGS=-s", "MAKELEVEL=1", "MAKEOVERRIDES=ONLY=x", "HOME=/h"})
-	if strings.Join(got, " ") != "PATH=/bin HOME=/h" {
+// 呼んだ make のコマンド行の変数は、MAKEFLAGS も、make が環境へ書き出した同じ名前の変数も子の make へ持ち込まない。
+func TestMakeEnvDropsCommandLineVars(t *testing.T) {
+	got := makeEnv([]string{"PATH=/bin", "MAKEFLAGS=s -- ONLY=forbid ARGS=K=a\\ b", "ONLY=forbid", "ARGS=K=a b", "SUITE=quick",
+		"MFLAGS=-s", "MAKELEVEL=1", "HOME=/h", "JOBS=4"})
+	if strings.Join(got, " ") != "PATH=/bin HOME=/h JOBS=4" {
 		t.Errorf("got %v", got)
 	}
 }

@@ -63,7 +63,7 @@
     {"id": "docs-sync:gates", "about": "gates.json が Makefile の口・テストのパッケージ・検査の名前・リリースの門とそろっているか", "make": "check-docs-sync", "vars": {"ONLY": "gates"}, "input": {"anyOf": [{"basenames": ["gates.json", "Makefile", "precommit.json", "hooks.json"]}, {"prefixes": ["templates/", "go/internal/gates/"]}]}, "samples": ["gates.json", "Makefile", "bin/lint-rules/precommit.json", "go/internal/gates/x.go"], "runs": ["precommit", "manual"], "time": "0.3s"}
   ],
   "suites": [
-    {"name": "quick", "about": "作業中の軽い確かめ（根の 4 パッケージの型検査・precommit の素振り・lint の既定の束）", "gates": ["check", "precommit-dry", "lint"]},
+    {"name": "quick", "about": "作業中の軽い確かめ（根の 4 パッケージの型検査・precommit の素振り・lint の既定の束・配線の検査の全部）", "gates": ["check", "precommit-dry", "lint", "check-docs-sync"]},
     {"name": "test", "about": "パッケージのテスト全部（engine の束を配り直してから、テンプレートを含めて並列）", "gates": ["sync-engine-full", "test-release"]},
     {"name": "release", "about": "リリースの全量（make release-verify と同じ。release/verified.txt を書く）", "gates": ["release-verify"]},
     {"name": "gui", "about": "画面を開く門（release の前に手元で。約 21 分）", "gates": ["sync-engine-full", "determinism", "gl-capture-check", "smoke-devtools", "webgpu-v1-check-web"]},

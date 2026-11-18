@@ -158,9 +158,9 @@ TEMPLATE_DIRS := $(filter-out templates/game-starter,$(wildcard templates/*))
 TEST_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
 # 1 つのパッケージ ($$dir) のテストを流す形 (test・test-<名前> が共有する)。
 PKG_TEST = (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test)
-# WhyNot: JOBS をシェルの環境から受けない — 環境に JOBS がある機械で make test が黙って並列になる。コマンド行から来た時だけ効かせる。
+# WhyNot: JOBS と ALL をシェルの環境から受けない — 環境に JOBS がある機械で make test が黙って並列になる。コマンド行から来た時だけ効かせる。
 TEST_JOBS := $(if $(filter command line,$(origin JOBS)),$(JOBS),1)
-TEST_RUN_DIRS := $(TEST_DIRS) $(if $(ALL),$(TEMPLATE_DIRS))
+TEST_RUN_DIRS := $(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(ALL)),$(TEMPLATE_DIRS))
 
 ##@ テスト
 # 逐次（JOBS=1）は最初の赤で止める。並列はパッケージごとにログを .test-logs/ に残し、赤があれば最後にログの末尾を出す。
@@ -170,7 +170,8 @@ TEST_RUN_DIRS := $(TEST_DIRS) $(if $(ALL),$(TEMPLATE_DIRS))
 # WhyNot: 逐次も xargs -P 1 にしない — xargs は子が非 0 で返しても次へ進み、最初の赤で止まらない。
 .PHONY: test
 test: sync-layers ## [ALL=1] [JOBS=<数>] | engine と 3 層のテスト（ALL=1 でテンプレートも・JOBS で並べて流す。並列のログは .test-logs/）
-	@if [ "$(TEST_JOBS)" = 1 ]; then \
+	@case "$(TEST_JOBS)" in ''|0|*[!0-9]*) echo "[test] JOBS は 1 以上の数にする（JOBS=$(TEST_JOBS)）"; exit 2;; esac; \
+	if [ "$(TEST_JOBS)" = 1 ]; then \
 		for dir in $(TEST_RUN_DIRS); do \
 			if [ -f "$$dir/flix.toml" ]; then \
 				echo "===== $$dir ====="; \
@@ -288,7 +289,7 @@ render-changed: ## | git で変更のあった template だけ描き出す（eng
 	if [ "$$ran" -eq 0 ]; then echo "[render-changed] 変更のあったテンプレはありません (全量は make render-all)"; \
 	else echo "[render-changed] done ($$ran templates)"; fi
 
-# 並列の描き出し。テンプレ同士は生成物が交わらないので同時に走れる。ログ・失敗の扱いは test-par と同じ。
+# 並列の描き出し。テンプレ同士は生成物が交わらないので同時に走れる。ログ・失敗の扱いは並列の make test と同じ。
 RENDER_PAR_JOBS ?= 4
 .PHONY: render-par
 render-par: ### [RENDER_PAR_JOBS=4] | make render-all を並べて流す
@@ -970,7 +971,7 @@ fpkg-store-gc: ### [DRY=1] | 束の置き場（build/fpkg-store）から、ど�
 #
 # 流れ (公開は CI の 1 本。手元は門だけ):
 #   1) make bump FROM=<旧> TO=<新>   … 全 flix.toml と VERSION を一括更新 → commit → main へ push
-#   2) make release (= make release-verify) … sync → test-par-all(全量ゲート) → gl-parity(A 段階の全一致) を手元で通し、
+#   2) make release (= make release-verify) … sync → test-release(全量ゲート) → gl-parity(A 段階の全一致) を手元で通し、
 #                                          通した commit を release/verified.txt に書く
 #   3) release/verified.txt を commit → main へ push
 #   4) GitHub の Actions で release を main で手で起動 … CI が make release-publish で組んで gh release
@@ -986,7 +987,7 @@ fpkg-store-gc: ### [DRY=1] | 束の置き場（build/fpkg-store）から、ど�
 RELEASE_SHA := $(shell git rev-parse HEAD)
 # 古い書き方: TEST= は 1 リリース後に消す（渡された時だけ、その口をテストの門に使う）
 RELEASE_TEST := $(if $(filter command line,$(origin TEST)),$(TEST),test-release)
-$(if $(filter command line,$(origin TEST)),$(info [release] 古い書き方: TEST= は次から付けない（逐次は make release JOBS=1）))
+$(if $(and $(filter command line,$(origin TEST)),$(filter 0,$(MAKELEVEL))),$(info [release] 古い書き方: TEST= は次から付けない（逐次は make release JOBS=1）))
 .PHONY: release-guard
 release-guard: ### | 公開の前の安全策（未コミット・壊れた flix.toml・flix.jar の版・追随の材料・jar の行）
 	@# WhyNot: 追随の材料も未コミット検査に入れるのは、bump が生成した物をコミットし
@@ -1030,7 +1031,7 @@ studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity を�
 	   && [ "$$(git -C "$(STUDIO)" rev-parse HEAD)" = "$$(git -C "$(STUDIO)" rev-parse origin/main)" ] \
 	   || { echo "[release] Studio の clone ($(STUDIO)) が origin/main と違います。git -C $(STUDIO) pull --ff-only で最新にしてから"; exit 1; }; \
 	 echo "[release] Studio ($(STUDIO)) の check-agents-parity をこの engine で流します"; \
-	 $(MAKE) --no-print-directory -C "$(STUDIO)" MAKEOVERRIDES= check-agents-parity ENGINE="$(CURDIR)" \
+	 env -u JOBS -u ALL -u TEST -u SUITE -u ONLY $(MAKE) --no-print-directory -C "$(STUDIO)" MAKEOVERRIDES= check-agents-parity ENGINE="$(CURDIR)" \
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
 RELEASE_GATES := release-guard studio-parity sync $(RELEASE_TEST) gl-parity
@@ -1388,17 +1389,17 @@ check-docs-sync: ## [ONLY=<名前>,…] | 規約まわりの配線が崩れて�
 # bin/fge gates（一覧）・bin/fge gates --files <パス…>（当たる門だけ。流さない）。
 # WhyNot: make test-<名前> の形にしない — test-% はパッケージ 1 本のテストの口で、suite の名前がテンプレートの名前と取り合う。
 # 下の ##> の行の名前は gates.json の suites と同じ並び（bin/fge gates --check が見る）。
-##> make verify SUITE=quick|test|release|gui|affected | quick=作業中の型検査・素振り・lint／test=全部のテスト／release=リリースの門／gui=画面を開く門／affected=差分から（今は test）
+##> make verify SUITE=quick|test|release|gui|affected | quick=作業中の型検査・素振り・lint・配線／test=全部のテスト／release=リリースの門／gui=画面を開く門／affected=差分から（今は test）
 .PHONY: verify
 verify: ## SUITE=<名前> [DRY=1] [ARGS="K=V …"] | 流し方を 1 つ選んで門を順に流す（SUITE が無ければ一覧・DRY=1 は何を流すかだけ）
 	@if [ -z "$(SUITE)" ]; then bin/fge gates --suites; \
 	else bin/fge gates --suite "$(SUITE)" $(if $(DRY),--dry-run) -- $(ARGS); fi
 
-# ステージした物と作業ツリーの差分（追跡していない新しいファイルを含む）でコミットの門を素振りする。
+# ステージした物と作業ツリーの差分（追跡していない新しいファイルを含む）でコミットの門を素振りする。 消したファイルは本物の precommit と同じく渡さない（--diff-filter=ACMR）。
 # jargon はステージした行（git diff --cached）しか見ないので、ステージしていない行の独自語はここでは拾えない。
 .PHONY: precommit-dry
 precommit-dry: ### | ステージした物と作業ツリーの差分で bin/fge precommit を素振りする（コミットはしない）
-	@files=$$( { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u); \
+	@files=$$( { git diff --name-only --diff-filter=ACMR HEAD; git ls-files --others --exclude-standard; } | sort -u); \
 	if [ -z "$$files" ]; then echo "[precommit-dry] 差分がありません"; exit 0; fi; \
 	bin/fge precommit --files $$files
 
