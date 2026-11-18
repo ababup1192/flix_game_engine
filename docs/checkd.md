@@ -47,8 +47,9 @@ make check ──> bin/fge checkd ──> Unix ソケット (~/Library/Caches/fl
   作り、新しい型・欄が「無い」と言っていた（`CHECKD=0` だと通る）。今は check（`bin/fge checkd`）・`bin/fge refactor`・
   `make lint-flixlint` の前に、socket の時刻（常駐の起きた時刻）より後に lib/github の fpkg・toml が置き換わっていれば、
   `[checkd] … の常駐は古い依存を持っている（…）。止めて起こし直す` と 1 行言って常駐を止め、次の頼みが新しい束で起こし直す。
-  答えの版（下）は依存の中身を含まないので、版の照合ではこの古さに気づけない。根の直しは flixlint 0.9.1 の常駐
-  （依存のファイルが替われば自分でコンパイラを作り直す）で、それを pin した後もこの見張りは残してよい（止めるのは古い時だけ）。
+  答えの版（下）は依存の中身を含まないので、版の照合ではこの古さに気づけない。hooks.json が pin する flixlint 0.9.1 からは
+  常駐が自分でも気づく（依存のファイルが替わればコンパイラを作り直す）。この見張りは、0.9.0 の常駐がまだ生きている機械と
+  ほかの版の flixlint を名指しした時のために残す（止めるのは古い時だけ）。
   lib/external の jar は見ない（engine の jar は名前に中身の hash を持ち、替われば依存のパスが替わる）。
   確かめる口は `make refactor-smoke`（engine の新しい型を使う小さな場面で checkd・refactor・flixlint を流す）。
 - `bin/fge refactor` の索引（flixlint --spans）も同じ常駐で作る（同じ shim の jar・ヒープ・寿命を渡すので socket は 1 本）。

@@ -7,7 +7,8 @@
 # 確かめる事:
 #   1. checkd の常駐で check が通る
 #   2. 束を張り替える（make sync-engine-full と同じ symlink の置き換え）と、次の check が古い常駐を止めて起こし直す
-#   3. refactor search・usages（record の欄・enum の case）が場面のソースを引ける
+#   3. refactor search・usages（record の欄・パッケージの record の組み立て・enum の case）が場面のソースを引け、
+#      当たらない名前（companion の case の前に mod を足した形）には末尾が同じ宣言を出す
 #   4. flixlint の規則が facts を作り切り、違反 0 で終わる
 # 起こした常駐は最後に止める。
 set -uo pipefail
@@ -42,13 +43,26 @@ expect() {
     else ok "$name"; fi
 }
 
+# expect_missing <名前> <出力に含むべき字> <コマンド…>: 当たらずに 0 でない終了コードで、出力に字を含む（近い名前の案内）
+expect_missing() {
+    local name=$1 want=$2; shift 2
+    local out="$log/$name.log"
+    (cd "$work" && "$@") > "$out" 2>&1
+    local code=$?
+    if [ "$code" -eq 0 ]; then ng "$name" "当たってしまった・${out}"
+    elif ! grep -qF -- "$want" "$out"; then ng "$name" "「${want}」が出ない・${out}"
+    else ok "$name"; fi
+}
+
 expect check "" "$fge" checkd .
 sleep 1
 link
 expect check-after-relink "古い依存" "$fge" checkd .
 expect search "Shot.shiftY" "$fge" refactor search shiftY
 expect usages-field "src/Shot.flix" "$fge" refactor usages 'Camera3d.Camera3d#lensShift'
+expect usages-construct "Shot.literalCamera" "$fge" refactor usages 'Camera3d.Camera3d#lensShift' --all
 expect usages-case "src/Shot.flix" "$fge" refactor usages 'Scene3d.LightUnits.Physical'
+expect_missing usages-near "Mood.Mood（case）" "$fge" refactor usages 'Mood.Mood.Mood'
 
 prep="$(cd "$work" && "$fge" flixlint-prepare 2>"$log/flixlint-prepare.log")" || { ng flixlint "flixlint-prepare が落ちた・$log/flixlint-prepare.log"; prep=""; }
 if [ -n "$prep" ]; then
