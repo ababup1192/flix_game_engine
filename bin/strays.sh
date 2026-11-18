@@ -56,7 +56,7 @@ while IFS= read -r line; do
       case "$udd" in */fge-web-capture-*|*/hd2d_cdp_*) kind=chrome; where=$udd ;; *) under "$udd" && { kind=chrome; where=$udd; } ;; esac ;;
     *flixlint.Resident*server*)
       r=$(printf '%s' "$cmd" | sed -n 's/.*--root \([^ ]*\).*/\1/p')
-      if [ -n "$r" ] && under "$r" && [ ! -d "$r" ]; then kind=resident; where="$r（もう無い）"; else continue; fi ;;
+      if [ -n "$r" ] && under "$r" && [ ! -d "$r" ]; then kind=resident; where="${r}（もう無い）"; else continue; fi ;;
     *http.server*|*jwebserver*|*SimpleHTTPServer*)
       d=$(printf '%s' "$cmd" | sed -n 's/.*--directory[ =]\([^ ]*\).*/\1/p')
       c=$(cwd_of "$pid")

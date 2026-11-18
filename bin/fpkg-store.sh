@@ -231,7 +231,7 @@ cmd_gc() {
 			removed=$((removed + 1))
 		done
 	done
-	echo "[fpkg-store] 残した ${kept} 個・消した ${removed} 個（$store）"
+	echo "[fpkg-store] 残した ${kept} 個・消した ${removed} 個（${store}）"
 }
 
 sub=${1:-}

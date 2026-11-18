@@ -100,11 +100,11 @@ rsync -a --delete --exclude .git "$out/" "$wt/$dest/"
 [ -f "$wt/.nojekyll" ] || : > "$wt/.nojekyll"
 git -C "$wt" add -A -- "$dest" .nojekyll
 if git -C "$wt" diff --cached --quiet; then
-  say "前のコミットと同じ中身なので、コミットしない（$wt/$dest）"
+  say "前のコミットと同じ中身なので、コミットしない（$wt/${dest}）"
 else
   src_rev=$(git -C "$game" rev-parse --short HEAD 2>/dev/null || echo "?")
   ver=$(sed -n 's/^VERSION *:= *//p' "$engine/Makefile" 2>/dev/null | head -1)
-  git -C "$wt" commit -q -m "pages: $dest に $(basename "$game") の書き出しを置く（ゲーム $src_rev・engine ${ver:-?}）"
+  git -C "$wt" commit -q -m "pages: $dest に $(basename "$game") の書き出しを置く（ゲーム ${src_rev}・engine ${ver:-?}）"
   say "コミットした: $(git -C "$wt" log --oneline -1)"
 fi
 
@@ -112,7 +112,7 @@ fi
 if [ "${NO_BROWSER_CHECK:-}" != 1 ]; then
   shot="$game/build/web-pages-check.png"
   if "$fge" web-capture "$dest/index.html?capture=3" "$shot" --dir "$wt" --wait 90 >/dev/null; then
-    say "ヘッドレスの Chrome で $dest/index.html を開き、3 コマ目まで描けた（$shot）"
+    say "ヘッドレスの Chrome で $dest/index.html を開き、3 コマ目まで描けた（${shot}）"
   else
     die "置いた頁を $dest/ の道で開けなかった（上の字を見る。コミットは残っているので、直したら流し直す）"
   fi
@@ -129,4 +129,4 @@ say "手元で開く: $engine/bin/py3 -m http.server 8000 --bind 0.0.0.0 --direc
 say "  PC は http://127.0.0.1:8000/$dest/ ・スマホ（同じ Wi-Fi）は http://$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):8000/$dest/?fps=1"
 say "  見終えたら Ctrl-C でサーバーを止める"
 say "公開する（人が打つ）: git -C $wt push origin $branch"
-[ -z "$url" ] || say "  公開の後の URL: $url（Pages の反映に 1〜2 分）"
+[ -z "$url" ] || say "  公開の後の URL: ${url}（Pages の反映に 1〜2 分）"
