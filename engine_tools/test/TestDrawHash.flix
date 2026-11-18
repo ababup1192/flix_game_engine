@@ -318,6 +318,22 @@ mod TestDrawHash {
                           and at(Some(shadowed)) != at(Some({ shadow = Some({ mapSize = 512 | Scene3d.directionalShadow() }) | sun }))
                           and at(None) == at(Some({ intensity = 0.0 | sun })))
 
+    // 点光源の影と Physical の光を付けると鍵が変わる（設定の違いでも変わる）。Physical では unitsPerMeter も鍵に入り、Legacy では入らない。
+    @Test
+    def testPointShadowsAndLightUnitsChangeKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let at = (s: Scene3d.Scene3dCmd -> Scene3d.Scene3dCmd) ->
+            keyOf(inputs(), { req = { scenes = { scene = s(base#scene) | base } :: Nil | f#req } | f });
+        let shadows = (m: Scene3d.PointShadowMap) -> (s: Scene3d.Scene3dCmd) -> Scene3d.withPointShadows(m, s);
+        let physical = (upm: Float64) -> (s: Scene3d.Scene3dCmd) -> { unitsPerMeter = upm | Scene3d.withLightUnits(Scene3d.LightUnits.Physical, s) };
+        let legacyUpm = (s: Scene3d.Scene3dCmd) -> { unitsPerMeter = 16.0 | s };
+        let same = (s: Scene3d.Scene3dCmd) -> s;
+        Assert.assertTrue(at(same) != at(shadows(Scene3d.pointShadowMap()))
+                          and at(shadows(Scene3d.pointShadowMap())) != at(shadows({ mapSize = 256 | Scene3d.pointShadowMap() }))
+                          and at(same) != at(physical(1.0)) and at(physical(1.0)) != at(physical(16.0))
+                          and at(same) == at(legacyUpm))
+
     // pose の無い置いた物の鍵は、pose の欄を足す前の字のまま（3D の場面のキャッシュの PNG を塗り直させない）。
     @Test
     def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =

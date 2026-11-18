@@ -241,12 +241,13 @@ mod TestWgslDawn {
             flags |> List.flatMap(lightmap -> flags |> List.flatMap(blend -> flags |> List.flatMap(doubleSided ->
                 flags |> List.flatMap(coverage -> flags |> List.map(metallic ->
                     { skinned = false, uv = uv, normalMap = normalMap, lightmap = lightmap, blend = blend, doubleSided = doubleSided,
-                      coverage = coverage, metallicRoughness = metallic })))))
+                      coverage = coverage, metallicRoughness = metallic, pointShadows = false, physicalUnits = false })))))
         })
 
     def kindLabel(k: Render3d.ProgramKind): String =
         let bit = (b: Bool, ch: String) -> if (b) ch else "-";
         bit(k#uv, "u") + bit(k#normalMap, "n") + bit(k#lightmap, "l") + bit(k#blend, "b") + bit(k#doubleSided, "d") + bit(k#coverage, "c") + bit(k#metallicRoughness, "m")
+            + bit(k#pointShadows, "s") + bit(k#physicalUnits, "p")
 
     /// 3D の材質の frag の変種: 絵を読む材質と読まない材質は ProgramKind の全部の組・ほかの材質は 2 つの組。
     def materialFragments(): List[(String, String)] =
@@ -256,7 +257,8 @@ mod TestWgslDawn {
             let (name, spec, glow, metal) = v;
             let m = ShaderGen.Wgsl.compile3d(spec, glow, metal, 1);
             let chosen = if (name == "scene3d-field" or name == "textured-metal") kinds else few;
-            chosen |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
+            let variants = if (name == "textured-metal") few |> List.flatMap(k -> { pointShadows = true | k } :: { physicalUnits = true | k } :: { pointShadows = true, physicalUnits = true | k } :: Nil) else Nil;
+            (chosen ::: variants) |> List.map(k -> ("frag ${name} ${kindLabel(k)}", Render3dWgsl.materialFragmentSource(m, k)))
         })
 
     /// 手で書いた 2D の面の WGSL（組めない面の単色の代わり）。
@@ -268,6 +270,10 @@ mod TestWgslDawn {
     def sceneFunctions(): List[(String, String)] =
         let head = Render3dWgsl.sceneDeclarations() + Render3dWgsl.colorSpaceSource() + Render3dWgsl.lightSource();
         ("frag lit", Render3dWgsl.litFragmentSource()) ::
+        ("frag lit +ps", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = false })) ::
+        ("frag lit +pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = false, physicalUnits = true })) ::
+        ("frag lit +ps+pu", Render3dWgsl.litFragmentSourceFor({ pointShadows = true, physicalUnits = true })) ::
+        ("frag billboard +pu", Render3dWgsl.billboardFragmentSourceFor({ pointShadows = true, physicalUnits = true })) ::
         ("frag depth", Render3dWgsl.depthFragmentSource()) ::
         ("vertex lit", Render3dWgsl.litVertexSource(false)) ::
         ("vertex material", Render3dWgsl.materialVertexSource(false, false, false)) ::
@@ -280,6 +286,7 @@ mod TestWgslDawn {
         ("vertex sky", Render3dWgsl.skyVertexSource()) ::
         ("frag sky", Render3dWgsl.skyFragmentSource()) ::
         ("vertex billboard", Render3dWgsl.billboardVertexSource()) ::
+        ("vertex billboard row right", Render3dWgsl.billboardRowRightVertexSource()) ::
         ("frag billboard", Render3dWgsl.billboardFragmentSource()) ::
         ("sky", head + Render3dWgsl.skyLightSource() +
                 "@fragment fn fs_main(@location(0) d: vec3f) -> @location(0) vec4f { return vec4f(skyAt(d), 1.0); }\n") :: Nil
@@ -373,6 +380,6 @@ mod TestWgslDawn {
     @Test
     def testNormalMappedFragmentDoesNotFlipRows(): Unit \ Assert =
         let textured = fill("textured", 0.0, Nil, Shade.Solid(red()), Field.Tex({ name = "albedo", chan = TexChan.A }));
-        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false };
+        let kind = { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false };
         Assert.assertFalse(String.contains(substr = "Flip", Render3dWgsl.materialFragmentSource(ShaderGen.Wgsl.compile3d(textured, None, None, 1), kind)))
 }

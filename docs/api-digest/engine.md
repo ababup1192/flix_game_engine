@@ -1,4 +1,4 @@
-<!-- engine v0.101.1 / 生成: 2026-11-17 -->
+<!-- engine v0.101.1 / 生成: 2026-11-18 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -695,23 +695,37 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case SunLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case EnvironmentOn case EnvironmentBoxOn case PointShadowLit case PhysicalUnits case InverseUnitsPerMeterSquared }`
 - 画素ごと・場面ごとの vec3 の入力。
   `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround case Albedo case Light case MetallicRoughness case EnvironmentColor case EnvironmentBoxMin case EnvironmentBoxMax case EnvironmentBoxCenter case SunDirection case SunColor }`
 - 光のループの中で読めるスカラーの欄。
   `pub enum ScalarLightField with Eq { case RangeSquared case OuterCos case InnerCos }`
 - 光のループの中で読める vec3 の欄。
   `pub enum Vec3LightField with Eq { case Position case Color case Direction }`
+- 木の変種（Unity の shader variant に当たる）。pointShadows = 点光源の光に影の割合（ScalarInput.PointShadowLit）を掛けるか・
+  `pub type alias LightVariant = { pointShadows = Bool, lightUnits = Option[Scene3d.LightUnits] }`
+- 点光源の影なし・Legacy の変種（lightingModel() などと同じ木）。
+  `pub def legacyVariant(): LightVariant`
+- CPU の描き手が回す変種（点光源の影の割合を読み・光の量の読み方を入力で選ぶ）。
+  `pub def cpuVariant(): LightVariant`
+- 場面 scene に使う GPU の変種（pointShadows が Some なら影の割合を読む・光の量の読み方は場面のまま）。
+  `pub def variantOf(scene: Scene3d.Scene3dCmd): LightVariant`
 - lightmap の無い面に当たる光（ファイルの頭の light）。
   `pub def lightingModel(): Vec3Expr`
+- 変種 v の lightingModel。
+  `pub def lightingModelFor(v: LightVariant): Vec3Expr`
 - lightmap のある面に当たる光（ambient と hemisphere の代わりにベイクした光を足す）。
   `pub def lightmapLightingModel(): Vec3Expr`
+- 変種 v の lightmapLightingModel。
+  `pub def lightmapLightingModelFor(v: LightVariant): Vec3Expr`
 - 色 Color に距離のかすみを掛けた色。
   `pub def fogModel(): Vec3Expr`
 - 向き SkyDirection の空の色。
   `pub def skyModel(): Vec3Expr`
 - metallic と roughness を持つ材質の、かすみの前の色（式は頭の説明）。入力は Albedo・Light・MetallicRoughness（画素ごと）と、
   `pub def pbrModel(): Vec3Expr`
+- 変種 v の pbrModel（Light の入力は同じ変種の lightingModelFor か lightmapLightingModelFor の値）。
+  `pub def pbrModelFor(v: LightVariant): Vec3Expr`
 - 環境マップを読む向き（長さ 1・world）。入力は Position・Normal・Albedo・Eye・MetallicRoughness（pbrModel と同じ）と箱の 4 つ（EnvironmentBox…・EnvironmentBoxOn）。
   `pub def environmentDirection(): Vec3Expr`
 - 向き d（長さ 1）で環境マップ（正距円筒）を読む座標。u = 0.5 + atan2(d.x, −d.z) / 2π・v = 0.5 − asin(d.y) / π（v = 0 が絵の上 = 真上）。
@@ -1322,6 +1336,18 @@
   `pub type alias SunShadowSetup = { matrix = Mat4.Mat4, frustum = Frustum.Frustum, mapSize = Int32, pcfRadius = Int32, strength = Float64, depthBias = Float64, normalShift = Float64, forward = Vec3.Vec3, distance = Float64, fadeWidth = Float64, radius = Float64 }`
 - 太陽の影の地図の約束（GL と CPU で同じ。スポットの shadowMatrix の判定 1〜4 と同じ読み方で、行列だけ正射影）:
   `pub def directionalShadowOf(scene: Scene3dCmd): Option[SunShadowSetup]`
+- 点光源の影（光から見た 6 方向の深度を 1 枚の絵 atlas に並べる。Unity・Unreal の Shadow Atlas・Bevy の PointLightShadowMap に当たる）。
+  `pub type alias PointShadowMap = { maxShadowedLights = Int32, mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64 }`
+- maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影。
+  `pub def pointShadowMap(): PointShadowMap`
+- 場面に点光源の影を付ける（Scene3dCmd の pointShadows = Some(m)）。
+  `pub def withPointShadows(m: PointShadowMap, scene: Scene3dCmd): Scene3dCmd`
+- 1 つの場面で影を落とす点光源の上限。
+  `pub def maxShadowedPointLights(): Int32`
+- 光の量の読み方（Godot の Use Physical Light Units に当たる切り替え）。
+  `pub enum LightUnits with Eq, ToString { case Legacy case Physical }`
+- 場面の光の量の読み方を替える（Scene3dCmd の lightUnits）。
+  `pub def withLightUnits(u: LightUnits, scene: Scene3dCmd): Scene3dCmd`
 - 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
   `pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }`
 - 場面全体の光。ambient = どこにでも当たる光の色・hemisphere = 上を向く面ほど明るくする量（0 で無し）・
@@ -1438,12 +1464,15 @@
 - 置いた物が読む絵の名前（材質の tex 場と emission・法線マップ・使える lightmap）。材質の絵の上限（maxMaterialTextures）で切らずに全部。
   `pub def textureNamesOf(i: Instance3d): List[String]`
 - ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
-  `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool }`
+  `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool, shadowCasterScale = Vec2.Vec2 }`
 - 深度つきのビルボード（ドット絵を 3D に立てる。閉じた型 — 欄を後から足してもゲームの値が壊れない）。
   `pub type alias Billboard3d = BillboardData`
 - anchor 足元の真ん中・tint 白・光を当てる・影を落とさない・影を受けない。
   `pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d`
 - `pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d`
+- `pub def withShadowCasterScale(scale: Vec2.Vec2, b: Billboard3d): Billboard3d`
+- 影の地図に描く時の板（size に shadowCasterScale を掛けた物）。描き手は影の地図にこの値を描く。
+  `pub def shadowCasterFieldsOf(f: BillboardFields): BillboardFields`
 - 太陽の影を受ける（Unity の Receive Shadows）。lit の時だけ効く。受ける点は絵の中の高さごとに 1 つ（billboardShadowPointOf）で、
   `pub def withReceiveShadows(on: Bool, b: Billboard3d): Billboard3d`
 - `pub def billboardShadowRightOf(toward: Vec3.Vec3, fallback: Vec3.Vec3): Vec3.Vec3`
@@ -1454,7 +1483,7 @@
   `pub def billboardShadowOffsetOf(f: BillboardFields): Float64`
 - billboardShadowPointOf が割る、太陽への向きの水平の長さの下限（太陽の高さ約 75.5°）。GLSL・WGSL の字にも同じ数を書く。
   `pub def billboardShadowMinFlat(): Float64`
-- 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。
+- 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。大きさは shadowCasterFieldsOf の物。
   `pub def shadowCastingBillboardsOf(frustum: Frustum.Frustum, scene: Scene3dCmd): List[BillboardFields]`
 - `pub def withAnchor(a: Vec2.Vec2, b: Billboard3d): Billboard3d`
 - `pub def withBillboardTint(c: Color, b: Billboard3d): Billboard3d`
@@ -1463,7 +1492,7 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64 }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64, pointShadows = Option[PointShadowMap], lightUnits = LightUnits }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
 - 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
   `pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd`
@@ -1550,6 +1579,34 @@
 - `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
 - 描き手へ渡す、先に GPU へ上げる物の宣言（App.withPreload3d）。key = 中身を決める全入力をまとめた字・
   `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d] }`
+
+## Scene3d.PointShadows — `engine/src/scene3d/Scene3d/PointShadows.flix`
+- 影を落とす点光源 1 本の材料。pointIndex = pickLights の後の点光源の並びの番号・slot = atlas の塊の番号（0 から）・
+  `pub type alias ShadowedPointLight = { pointIndex = Int32, slot = Int32, position = Vec3.Vec3, range = Float64, near = Float64, far = Float64, strength = Float64, faces = Vector[Mat4.Mat4], frustums = Vector[Frustum.Frustum] }`
+- 点光源の影の atlas 1 枚の材料。tileSize = 面 1 つの一辺の画素（縮めた後）・blocksPerRow = 塊（灯り 1 本の 6 面を 3 × 2 に並べた物）の横の数・
+  `pub type alias Atlas = { tileSize = Int32, blocksPerRow = Int32, width = Int32, height = Int32, pcfRadius = Int32, bias = Float64, normalBias = Float64, guardScale = Float64, lights = List[ShadowedPointLight], requestedSize = Int32 }`
+- 点光源の影の約束（GL・WebGPU・CPU で同じ）。scene は pickLights の後の場面。
+  `pub def atlasOf(scene: Scene3d.Scene3dCmd): Option[Atlas]`
+- 面 f（0〜5 = +X・−X・+Y・−Y・+Z・−Z）の前の向き F・上 U・右 R（R × U = F。Camera3d の right × up = forward と同じ向き）。
+  `pub def basisOf(face: Int32): { right = Vec3.Vec3, up = Vec3.Vec3, forward = Vec3.Vec3 }`
+- 面 f の world → 光の clip の行列 = perspective(s, s, near, far) × ofLinearRows(R, U, −F) × translate(−位置)（s = guard）。
+  `pub def faceMatrixOf(position: Vec3.Vec3, near: Float64, far: Float64, guard: Float64, face: Int32): Mat4.Mat4`
+- 面 f の world → 光の目の座標（GL の目の座標・−Z を見る）= ofLinearRows(R, U, −F) × translate(−位置)。
+  `pub def faceViewOf(position: Vec3.Vec3, face: Int32): Mat4.Mat4`
+- 面の射影 = perspective(s, s, near, far)（s = guard。6 面で同じ）。
+  `pub def faceProjectionOf(near: Float64, far: Float64, guard: Float64): Mat4.Mat4`
+- 光から点への向き d が写る面（|x| ≥ |y| かつ |x| ≥ |z| なら X・ほかに |y| ≥ |z| なら Y・ほかは Z。成分が 0 以上なら + の面）。
+  `pub def faceOf(d: Vec3.Vec3): Int32`
+- atlas の中の slot 番目の灯りの面 f の画素の原点 (x, y)（行 0 が ndc.y = −1 の側。GL の深度テクスチャと CPU の地図の数え方）。
+  `pub def tileOriginOf(atlas: Atlas, slot: Int32, face: Int32): (Int32, Int32)`
+- 面の目の奥行きを地図の値（ndc.z = A − B / 奥行き）へ写す A と B（A = (far + near) / (far − near)・B = 2 far near / (far − near)）。
+  `pub def depthTermsOf(light: ShadowedPointLight): (Float64, Float64)`
+- 受ける点 p（g = 形の法線・長さ 1）が引く面と、その面の中の真ん中の画素 (x, y)（0..tileSize − 1 に寄せた後）と、地図の値と比べる値 ref。
+  `pub def sampleOf(atlas: Atlas, light: ShadowedPointLight, p: Vec3.Vec3, g: Vec3.Vec3): Option[{ face = Int32, x = Int32, y = Int32, ref = Float64 }]`
+- 点光源 light の影の地図に描くビルボード（castShadows が真で shadowCasterScale の成分が両方正・板の外の円が光の range の球に掛かる物。来た順）と、
+  `pub def castingBillboardsOf(scene: Scene3d.Scene3dCmd, light: ShadowedPointLight): List[(Scene3d.BillboardFields, Vec3.Vec3)]`
+- 受ける点 p（n = 光の計算の法線）で点光源 light の影の地図を引くか（光が届き、面が光へ向いている時だけ）。
+  `pub def isSampled(light: ShadowedPointLight, p: Vec3.Vec3, n: Vec3.Vec3): Bool`
 
 ## ShaderDoc — `engine/src/shader/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。

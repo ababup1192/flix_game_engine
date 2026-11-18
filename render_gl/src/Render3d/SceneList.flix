@@ -190,6 +190,19 @@ mod Render3d.SceneList {
     def layoutPairsOf(ctx: Context, ds: List[MaterialBatch[MeshBatch]]): List[(MaterialBatch[MeshBatch], Option[MaterialValues.Layout])] \ IO =
         ds |> List.map(d -> (d, if (d#batch#count > 0) Some(MaterialValues.layoutOf(ctx#layouts, d#material)) else None))
 
+    /// 影の地図の pass の list のビルボードの行（来た順）の値の tint の rgb の欄（12〜14）に、板ごとの横の向き rights を入れる（点光源の面。値の無い行は飛ばす）。
+    // WhyNot: 板ごとの横の向きのために値の並びを伸ばさない — 影の地図へ描く時は tint を読まず、場面の行と同じ並びのまま WebGPU の頂点の buffer 0 から読める。
+    pub def putBillboardRights(list: SceneList, rights: List[Vec3.Vec3]): Unit \ IO =
+        rights |> List.forEachWithIndex((i, r) -> {
+            let at = rowAt(list, list#firstBillboard + i, 8);
+            if (at < 0) ()
+            else {
+                Array.put(RenderUtil.f32(r#x), at + 12, list#values);
+                Array.put(RenderUtil.f32(r#y), at + 13, list#values);
+                Array.put(RenderUtil.f32(r#z), at + 14, list#values)
+            }
+        })
+
     /// 影の地図の pass の行（骨の無い物 plain → 骨つきの物 skinned → 地図に描くビルボード boards の順。どれも分かれた理由は影の pass）。形の番号は ctx の表で振る。
     /// ビルボードの行の値（values）は場面の行と同じ並び（billboardValueFloats）で、板の向きは backend が Render3d.ShadowMaps.ShadowPass#billboardRight で決める。
     pub def buildShadowList(ctx: Context, plain: List[MeshBatch], skinned: List[MeshBatch], boards: List[Scene3d.BillboardFields]): SceneList \ IO =

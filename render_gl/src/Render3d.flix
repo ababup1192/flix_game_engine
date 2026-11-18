@@ -8,7 +8,8 @@
 //   色 = 頂点の色 × tint × light。
 //   材質のある物は 色 = fog(albedo × tint × light) + emission（頂点の色は掛けない）。cutout なら α < 0.5 を捨てる。
 //   材質の Tex は unit 0〜5（ShaderDoc.materialTexReads の並び・上限 Scene3d.maxMaterialTextures()）に貼り、材質を描いた後に
-//   その unit の sampler を外して unit 0 へ戻す（ビルボードと 2D の面が unit 0 で読む）。法線マップは unit 6・スポットの影の地図は unit 7・太陽の影の地図は unit 13。
+//   その unit の sampler を外して unit 0 へ戻す（ビルボードと 2D の面が unit 0 で読む）。法線マップは unit 6・スポットの影の地図は unit 7・太陽の影の地図は unit 13・
+//   点光源の影の atlas は unit 14。
 //   骨つきの物の joint 行列は unit 10 の絵（Render3d.GlRows.JointTexture・行の割り当ては Render3d.PoseRows）を頂点シェーダーが読む。行は prepare の中で 1 回だけ決めて MeshDraw に持たせる。
 //   同じ形と材質の物は batch （Render3d.Batch）にして 1 回の instanced draw で描き、batch にならない物も instance 数 1 で同じプログラムで描く。world・法線の行列・tint・emissionIntensity・joint の行は
 //   1 体ごとの値で、unit 11 の絵（Render3d.GlRows.Instancing・並びは Render3d.InstanceValues）を頂点シェーダーが uInstanceBase + gl_InstanceID で読む。
@@ -67,17 +68,24 @@ mod Render3d {
         forward = Array[Float32, Static], distance = Float64, fadeWidth = Float64
     }
 
-    /// 場面 1 つの影の地図（影を落とすスポットと、太陽。無ければ None）。
-    pub type alias SceneShadows = { spot = Option[ShadowUse], sun = Option[SunShadowUse] }
+    /// 塗りのシェーダーへ渡す点光源の影（Scene3d.PointShadows.atlasOf の値を uniform の並びにした物・pointShadowUseOf）。tex = atlas（深度テクスチャ）・
+    /// lights = uPointShadow の点光源 8 本分の (slot, A, B, strength)（影を落とさない灯りは slot −1）・atlas = uPointShadowAtlas の (S, 塊の横の数, s, pcf)・
+    /// bias = uPointShadowBias の (bias, normalBias)。
+    pub type alias PointShadowUse = { tex = Int32, lights = Vector[(Float32, Float32, Float32, Float32)], atlas = (Float32, Float32, Float32, Float32), bias = (Float32, Float32) }
 
-    /// 影の地図を落とす光の種類。Spot = pickLights の後のスポットの並びの番号・Sun = 太陽（その地図の約束 Scene3d.directionalShadowOf の値）。
+    /// 場面 1 つの影の地図（影を落とすスポットと、太陽と、点光源の atlas。無ければ None）。
+    pub type alias SceneShadows = { spot = Option[ShadowUse], sun = Option[SunShadowUse], point = Option[PointShadowUse] }
+
+    /// 影の地図を落とす光の種類。Spot = pickLights の後のスポットの並びの番号・Sun = 太陽（その地図の約束 Scene3d.directionalShadowOf の値）・
+    /// Point = 点光源の影の atlas の 1 面（light の面 face。0〜5）。
     enum ShadowLight {
         case Spot(Int32)
         case Sun(Scene3d.SunShadowSetup)
+        case Point({ atlas = Scene3d.PointShadows.Atlas, light = Scene3d.PointShadows.ShadowedPointLight, face = Int32 })
     }
 
-    /// 影の地図の描き先 1 枚（深度テクスチャだけを付けた FBO）。size = 縦横の画素。作る・捨てるのは寿命の表（Render3d.ShadowMaps）が決める。
-    type alias ShadowTarget = { fbo = Int32, tex = Int32, size = Int32 }
+    /// 影の地図の描き先 1 枚（深度テクスチャだけを付けた FBO）。width と height = 画素。作る・捨てるのは寿命の表（Render3d.ShadowMaps）が決める。
+    type alias ShadowTarget = { fbo = Int32, tex = Int32, width = Int32, height = Int32 }
 
     /// 影を落とす光 1 つ（光の種類に依らない）。matrix = world → 光の clip（Scene3d が Float64 で出す）・
     /// frustum = 影を落とす物の間引き・settings = mapSize・bias・pcfRadius・strength。
@@ -94,7 +102,7 @@ mod Render3d {
         fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32,
         reflectZenith = Int32, reflectHorizon = Int32, reflectGround = Int32, reflectCurve = Int32,
         envOn = Int32, envBoxOn = Int32, envBoxMin = Int32, envBoxMax = Int32, envBoxCenter = Int32, envLevels = Int32, envIntensity = Int32,
-        sunDir = Int32, sunColor = Int32
+        sunDir = Int32, sunColor = Int32, inverseUnitsPerMeterSquared = Int32
     }
 
     /// instanceBase = batch の頭の 1 体ごとの値の番号の uniform。
@@ -107,10 +115,13 @@ mod Render3d {
     pub type alias SunShadowLocs = { on = Int32, matrix = Int32, map = Int32, bias = Int32, normalShift = Int32, pcf = Int32, strength = Int32,
                                  forward = Int32, fade = Int32 }
 
-    type alias LitLocs = { mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs }
+    /// 点光源の影の uniform の location（変種 +ps のプログラムだけが持つ。ほかは map が −1）。lights = uPointShadow[0..7] の location。
+    pub type alias PointShadowLocs = { lights = Vector[Int32], atlas = Int32, bias = Int32, map = Int32 }
 
-    /// 1 つの場面の目と光と影（置いた物を描くプログラムへ渡す物）。
-    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadows = SceneShadows }
+    type alias LitLocs = { mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, pointShadow = PointShadowLocs }
+
+    /// 1 つの場面の目と光と影（置いた物を描くプログラムへ渡す物）。variant = 場面のシェーダーの変種（shaderVariantOf）。
+    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadows = SceneShadows, variant = ShaderVariant }
 
     type alias DepthLocs = { mesh = MeshLocs, eye = Int32, depthRange = Int32 }
 
@@ -137,7 +148,7 @@ mod Render3d {
     /// 材質のプログラムの uniform の location。params = uParamN の location（paramNames の並び）・
     /// texFlips = uTexFlipN の location（texReads の並び）。
     type alias MaterialLocs = {
-        mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, time = Int32, cutout = Int32,
+        mesh = MeshLocs, light = LightLocs, shadow = ShadowLocs, sunShadow = SunShadowLocs, pointShadow = PointShadowLocs, time = Int32, cutout = Int32,
         depthOut = Int32, depthRange = Int32, params = List[Int32], texFlips = List[Int32],
         normalStrength = Int32, normalFlip = Int32, texLevels = List[Int32], normalLevels = Int32,
         lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32
@@ -172,11 +183,44 @@ mod Render3d {
     /// lightmap = ベイクした光を 2 本目の uv で読む（Scene3d.lightmapOfFields が Some の時だけ真。骨つきには付かない）・
     /// blend = 半透明（出す α を材質の α に）・doubleSided = 裏の面の光の法線を裏返す・
     /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）・
-    /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）。
-    // WhyNot: blend・doubleSided・coverage・metallicRoughness を uniform で切り替えない — 使わない材質の GLSL の字が変わり、どの GPU でも同じ絵になる保証が崩れる。
-    //   どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
+    /// metallicRoughness = metallic と roughness を持つ材質（鏡面ハイライトと空の映り込みを足す式のプログラム。持たない材質の GLSL は変わらない）・
+    /// pointShadows と physicalUnits = 場面のシェーダーの変種（ShaderVariant。点光源の影を引く・Physical の光）。
+    // WhyNot: blend・doubleSided・coverage・metallicRoughness・pointShadows・physicalUnits を uniform で切り替えない — 使わない材質の GLSL の字が変わり、
+    //   どの GPU でも同じ絵になる保証が崩れる。どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool,
-                                   metallicRoughness = Bool }
+                                   metallicRoughness = Bool, pointShadows = Bool, physicalUnits = Bool }
+
+    /// 場面ごとのシェーダーの変種（Unity の shader variant に当たる）。pointShadows = 点光源の影を引く（鍵の +ps）・physicalUnits = Physical の光（鍵の +pu）。
+    /// どちらも偽なら既定のプログラム（変種を足す前と同じ字）。
+    pub type alias ShaderVariant = { pointShadows = Bool, physicalUnits = Bool }
+
+    /// 点光源の影なし・Legacy の光の変種。
+    pub def defaultShaderVariant(): ShaderVariant = { pointShadows = false, physicalUnits = false }
+
+    /// 場面 scene の変種（pointShadows が Some なら +ps — このコマで影を落とす灯りが 0 本でも +ps のまま・Physical なら +pu）。
+    // WhyNot: このコマで影を落とす灯りの数で +ps を決めない — 灯りが画面に出入りするたびにシェーダーを組み直す。
+    pub def shaderVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant =
+        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == Scene3d.LightUnits.Physical }
+
+    /// 場面 scene の pass のプログラムの変種（色の場面は shaderVariantOf・奥行きの書き出しは既定。Render3d.ScenePlan の groupScene と同じ決め方）。
+    pub def passVariantOf(scene: Scene3d.Scene3dCmd): ShaderVariant = match scene#output {
+        case Scene3d.Output.Color    => shaderVariantOf(scene)
+        case Scene3d.Output.Depth(_) => defaultShaderVariant()
+    }
+
+    /// 材質のプログラムの版 kind の変種。
+    pub def shaderVariantOfKind(kind: ProgramKind): ShaderVariant = { pointShadows = kind#pointShadows, physicalUnits = kind#physicalUnits }
+
+    /// ビルボードのプログラムの変種（点光源の影を受けないので +ps を落とす）。
+    pub def billboardVariantOf(v: ShaderVariant): ShaderVariant = { pointShadows = false, physicalUnits = v#physicalUnits }
+
+    /// 変種 v の光の式の木の変種（LightModel3d.lightingModelFor などへ渡す）。
+    pub def lightVariantOf(v: ShaderVariant): LightModel3d.LightVariant =
+        { pointShadows = v#pointShadows, lightUnits = Some(if (v#physicalUnits) Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy) }
+
+    /// 変種 v の鍵の字（+ps・+pu。既定は空）。
+    pub def variantKeyOf(v: ShaderVariant): String =
+        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "")
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
     /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。
@@ -184,7 +228,7 @@ mod Render3d {
     pub def materialKey(m: Scene3d.MaterialFields, kind: ProgramKind): String =
         "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
             + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
-            + (if (kind#metallicRoughness) "+mr" else "")
+            + (if (kind#metallicRoughness) "+mr" else "") + variantKeyOf(shaderVariantOfKind(kind))
             + ":" + Int64.toString(force m#shaderHash)
 
     /// 置いた物をどう描くか。Instanced = batch にして 1 回の instanced draw・OneByOne = 全部の物を batch にせず、物ごとの材質で来た順に描く（batch の鍵と順の確かめの比べ相手）。
@@ -220,7 +264,7 @@ mod Render3d {
         reflectZenith = Array[Float32, Static], reflectHorizon = Array[Float32, Static], reflectGround = Array[Float32, Static], reflectCurve = Float32,
         envOn = Int32, envBoxOn = Int32, envBoxMin = Array[Float32, Static], envBoxMax = Array[Float32, Static], envBoxCenter = Array[Float32, Static],
         envLevels = Float32, envIntensity = Float32,
-        sunDir = Array[Float32, Static], sunColor = Array[Float32, Static]
+        sunDir = Array[Float32, Static], sunColor = Array[Float32, Static], inverseUnitsPerMeterSquared = Float32
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshes = 形の置き場の表（番号と上限）・meshEntriesRef = 表の番号 → GPU に置いたメッシュ。
@@ -241,6 +285,10 @@ mod Render3d {
         skinnedRef = Ref[Option[SkinnedPrograms], Static],
         // 空を初めて描く時に組む（空を使わない場面は空のプログラムのコンパイルを払わない）。
         skyRef = Ref[Option[SkyLocs], Static],
+        // 変種の頂点の色のプログラム（(variantKeyOf, 骨つきか) → location）。その変種の場面を初めて描く時に組む。
+        variantLitRef = Ref[Map[(String, Bool), LitLocs], Static],
+        // 変種のビルボードのプログラム（variantKeyOf → location）。
+        variantBillboardRef = Ref[Map[String, BillboardLocs], Static],
         // Design の解像度の描き先の寿命の表（(そのコマの Design の場面の並びの番号, 形式の名前) → FBO。形が同じなら使い回す）。
         designTargets = Render3d.SceneTargets.Table[(Int32, String), RenderTargetGl.Entry],
         // 見つからないと知らせたビルボードのテクスチャの名前。
@@ -299,8 +347,11 @@ mod Render3d {
     /// 影の地図を貼るテクスチャの unit（2D の Shader 面は 0 から順に使い、描いた後に unit 0 へ戻す）。
     def shadowTextureUnit(): Int32 = 7
 
-    /// 太陽の影の地図を貼るテクスチャの unit（0〜12 は使用中。GL 3.3 と WebGL2 が約束する 16 の内）。
+    /// 太陽の影の地図を貼るテクスチャの unit（0〜12 と 14 は使用中。GL 3.3 と WebGL2 が約束する 16 の内）。
     def sunShadowTextureUnit(): Int32 = 13
+
+    /// 点光源の影の atlas を貼るテクスチャの unit（0〜13 は使用中。GL 3.3 と WebGL2 が約束する 16 の内）。
+    def pointShadowTextureUnit(): Int32 = 14
 
     /// 材質の法線マップを貼るテクスチャの unit（材質の絵は 0〜5）。
     def normalMapTextureUnit(): Int32 = 6
@@ -338,6 +389,7 @@ mod Render3d {
           textureCountBudget = Int32.max(1, textureBudget#count), meshes = Render3d.MeshTable.fresh(), meshEntriesRef = Ref.fresh(Static, Map.empty()),
           uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
           skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None),
+          variantLitRef = Ref.fresh(Static, Map.empty()), variantBillboardRef = Ref.fresh(Static, Map.empty()),
           designTargets = Render3d.SceneTargets.fresh(), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
@@ -412,7 +464,7 @@ mod Render3d {
             };
             { cmd = plan#cmd, target = target }
         });
-        let movedTarget = Array.get(0, designCount) > 0 or List.exists(s -> Option.nonEmpty(s#spot) or Option.nonEmpty(s#sun), shadows);
+        let movedTarget = Array.get(0, designCount) > 0 or List.exists(s -> Option.nonEmpty(s#spot) or Option.nonEmpty(s#sun) or Option.nonEmpty(s#point), shadows);
         if (movedTarget) gl.bindFramebuffer(GlConst.FRAMEBUFFER, dest#framebuffer) else ();
         items
 
@@ -526,7 +578,7 @@ mod Render3d {
                   area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool }, inputs: SceneInputs,
                   scene: Scene3d.Scene3dCmd): Unit \ IO =
         Array.put(scene#time, 0, state#timeHolder);
-        let programs = programsOf(gl, state);
+        discard programsOf(gl, state);
         let background = if (area#fillBackground and Option.isEmpty(scene#sky)) scene#environment#background else None;
         beginScene(gl, area#viewport, area#scissor, background);
         let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
@@ -538,11 +590,12 @@ mod Render3d {
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let shadows = inputs#shadows;
-        let camera = { view = view, proj = proj, lights = lights, shadows = shadows };
+        let variant = passVariantOf(scene);
+        let camera = { view = view, proj = proj, lights = lights, shadows = shadows, variant = variant };
         Render3d.GlRows.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
         uploadRows(gl, state, gen, source, inputs, List.length(Scene3d.instancesOf(scene)));
-        let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = programs#billboard, scene = scene };
+        let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardLocsFor(gl, state, variant), scene = scene };
         inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, textureOf, ctx, inputs, spec, list));
         releaseEnvironmentMap(gl, scene);
         endScene(gl)
@@ -1065,7 +1118,8 @@ mod Render3d {
         }
 
     def litLocsOf(gl: GlContext, program: Int32): LitLocs \ IO =
-        { mesh = meshLocsOf(gl, program), light = Render3d.Light.lightLocsOf(gl, program), shadow = Render3d.Shadow.shadowLocsOf(gl, program), sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program) }
+        { mesh = meshLocsOf(gl, program), light = Render3d.Light.lightLocsOf(gl, program), shadow = Render3d.Shadow.shadowLocsOf(gl, program), sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program),
+          pointShadow = Render3d.Shadow.noPointShadowLocs() }
 
     def depthLocsOf(gl: GlContext, program: Int32): DepthLocs \ IO =
         { mesh = meshLocsOf(gl, program), eye = loc(gl, program, "uEye"), depthRange = loc(gl, program, "uDepthRange") }

@@ -2,6 +2,8 @@
 #   make still … CPU（SoftRaster）で静止画を 1 枚描く → debug/room.png（窓を開かない）
 #   make presets … 部屋に PostStack の preset を 1 つずつ掛けて debug/preset_<名前>.png に書く（preset の値を人が目で見る用・窓を開かない）
 #   make haze … 部屋の床から立つ陽炎（PostStack.Distortion の下側の帯）を debug/haze/off.png と on_000〜047.png に書く（窓を開かない）
+#   make lighting … 点光源の影・光の量の読み方・ビルボードの影の板の倍率の見比べの静止画を CPU で debug/lighting/ に書く（src/Lighting.flix）。make lighting-frames で動画のコマ
+#   make run SCENE=lamps SHADOWS=n … 夜の街灯 8 本の場面で、影を落とす灯りを n 本（0 = 影なし）にして重さを測る（MAPSIZE=512・PCF=1）
 #   make cpu-time … CPU で同じ部屋を温めてから何回か描き（回数は Still.timingPlan）、1 枚の時間の中央値を出す（窓を開かない。PNG は書かない）
 #   make run   … 実機の窓で毎コマ同じ部屋を描き、カメラを少しずつ回す。区間ごとに 1 行の JSON（[bench] result …。1 コマ・GL へ送る・GPU の時間・
 #                draw call・3D の描き手の CPU の区間）を出し、4 区間で閉じる（GL の確かめと重さを測る用。垂直同期は切る）
@@ -18,7 +20,7 @@
 # 家具は assets/models/*.obj（fps3d_lab の写し。Blender の 1 m = world の 16）。
 # 基準は RESULTS.md。ブラウザ版は engine の根で make bench-web BENCH=scene3d ARGS='scene=field&n=12000'。
 
-.PHONY: common-fresh still presets haze haze-video cpu-time run check
+.PHONY: common-fresh still presets haze haze-video cpu-time run check lighting lighting-frames
 
 still:
 	../../bin/flix run --entrypoint Still.write
@@ -34,6 +36,14 @@ haze-video:
 
 cpu-time:
 	../../bin/flix run --entrypoint Still.time
+
+lighting:
+	mkdir -p debug/lighting
+	../../bin/flix run --entrypoint LightingStill.stills
+
+lighting-frames:
+	mkdir -p debug/lighting/frames
+	../../bin/flix run --entrypoint LightingStill.frames
 
 run: common-fresh
 	FLIX_GE_NO_VSYNC=1 FLIX_GE_MUTE=1 ../../bin/flix run

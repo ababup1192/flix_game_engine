@@ -6,6 +6,7 @@ mod Render3d.FakeGl {
     import java.lang.Boolean
     import java.io.ByteArrayOutputStream
     import java.io.PrintStream
+    import java.lang.Float
     import java.lang.Integer
     import java.lang.Object
     import java.lang.RuntimeException
@@ -34,18 +35,23 @@ mod Render3d.FakeGl {
     /// instanceBases = uInstanceBase へ入れた値（新しい物が頭）・instanceCounts = drawElementsInstanced の instance 数（新しい物が頭）・
     /// jointBinds = joint の unit へ貼ったテクスチャ（新しい物が頭）・activeUnit = 今の unit・targets = 描き先へ戻した bindFramebuffer の番号（新しい物が頭）・
     /// texParams = texParameteri の (pname, param)（新しい物が頭）・attribs = enableVertexAttribArray の番号（新しい物が頭）・
-    /// booleans = Bool を返す呼び出しの名前ごとの答え（無い名前は偽。prefersGpuMipmap を真にすると GPU の段の描き手になる）。
+    /// booleans = Bool を返す呼び出しの名前ごとの答え（無い名前は偽。prefersGpuMipmap を真にすると GPU の段の描き手になる）・
+    /// viewports = viewport の (x, y, 幅, 高さ)（新しい物が頭）・depthTextures = texImageDepth24 の (幅, 高さ)（新しい物が頭）・
+    /// vec2s と vec3s = uniform2f と uniform3f へ渡した値（新しい物が頭）。
     pub type alias Recorded = { calls = Ref[List[String], Static], allocated = Ref[List[Int32], Static], uploaded = Ref[List[(Int32, List[Float32])], Static],
                             uploadWidths = Ref[List[Int32], Static], textureLimit = Ref[Int32, Static], instanceData = Ref[List[List[Float32]], Static], instanceWidths = Ref[List[Int32], Static], usedPrograms = Ref[List[Int32], Static], instanceBinds = Ref[List[Int32], Static],
                             instanceBases = Ref[List[Int32], Static], instanceCounts = Ref[List[Int32], Static], jointBinds = Ref[List[Int32], Static],
                             activeUnit = Ref[Int32, Static], targets = Ref[List[Int32], Static], texParams = Ref[List[(Int32, Int32)], Static],
-                            attribs = Ref[List[Int32], Static], booleans = Ref[Map[String, Bool], Static] }
+                            attribs = Ref[List[Int32], Static], booleans = Ref[Map[String, Bool], Static],
+                            viewports = Ref[List[(Int32, Int32, Int32, Int32)], Static], depthTextures = Ref[List[(Int32, Int32)], Static],
+                            vec2s = Ref[List[(Float32, Float32)], Static], vec3s = Ref[List[(Float32, Float32, Float32)], Static] }
 
     pub def freshRecorded(): Recorded \ IO =
         { calls = Ref.fresh(Static, Nil), allocated = Ref.fresh(Static, Nil), uploaded = Ref.fresh(Static, Nil), uploadWidths = Ref.fresh(Static, Nil), textureLimit = Ref.fresh(Static, 4096),
           instanceData = Ref.fresh(Static, Nil), instanceWidths = Ref.fresh(Static, Nil), usedPrograms = Ref.fresh(Static, Nil), instanceBinds = Ref.fresh(Static, Nil), instanceBases = Ref.fresh(Static, Nil), instanceCounts = Ref.fresh(Static, Nil),
           jointBinds = Ref.fresh(Static, Nil), activeUnit = Ref.fresh(Static, 0), targets = Ref.fresh(Static, Nil), texParams = Ref.fresh(Static, Nil),
-          attribs = Ref.fresh(Static, Nil), booleans = Ref.fresh(Static, Map.empty()) }
+          attribs = Ref.fresh(Static, Nil), booleans = Ref.fresh(Static, Map.empty()), viewports = Ref.fresh(Static, Nil), depthTextures = Ref.fresh(Static, Nil),
+          vec2s = Ref.fresh(Static, Nil), vec3s = Ref.fresh(Static, Nil) }
 
     /// getUniformLocation("uInstanceBase") の番号。
     pub def instanceBaseLocation(): Int32 = 77
@@ -53,6 +59,10 @@ mod Render3d.FakeGl {
     pub def intArg(args: Array[Object, Static], i: Int32): Int32 \ IO =
         let boxed = Array.get(i, args);
         (unchecked_cast(boxed as Integer)).intValue()
+
+    pub def floatArg(args: Array[Object, Static], i: Int32): Float32 \ IO =
+        let boxed = Array.get(i, args);
+        (unchecked_cast(boxed as Float)).floatValue()
 
     pub def stringArg(args: Array[Object, Static], i: Int32): String \ IO =
         let boxed = Array.get(i, args);
@@ -89,6 +99,10 @@ mod Render3d.FakeGl {
             case "bindFramebuffer" => Ref.put(intArg(args, 1) :: Ref.get(log#targets), log#targets)
             case "texParameteri"   => Ref.put((intArg(args, 1), intArg(args, 2)) :: Ref.get(log#texParams), log#texParams)
             case "enableVertexAttribArray" => Ref.put(intArg(args, 0) :: Ref.get(log#attribs), log#attribs)
+            case "viewport"        => Ref.put((intArg(args, 0), intArg(args, 1), intArg(args, 2), intArg(args, 3)) :: Ref.get(log#viewports), log#viewports)
+            case "texImageDepth24" => Ref.put((intArg(args, 0), intArg(args, 1)) :: Ref.get(log#depthTextures), log#depthTextures)
+            case "uniform2f"       => Ref.put((floatArg(args, 1), floatArg(args, 2)) :: Ref.get(log#vec2s), log#vec2s)
+            case "uniform3f"       => Ref.put((floatArg(args, 1), floatArg(args, 2), floatArg(args, 3)) :: Ref.get(log#vec3s), log#vec3s)
             case _ => ()
         }
 

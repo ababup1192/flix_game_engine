@@ -47,7 +47,7 @@ pub mod Render3d.WebGpuRenderer {
     import java.nio.FloatBuffer
     import java.lang.Object
     import java.util.Objects
-    use Render3d.{LightData, MeshDraw, PixelBox, TextureSlot, TextureSource, clipBox, matrixArray, sceneRect}
+    use Render3d.{LightData, MeshDraw, PixelBox, ShaderVariant, TextureSlot, TextureSource, clipBox, defaultShaderVariant, matrixArray, passVariantOf, sceneRect, variantKeyOf}
     use Render3d.Batch.{MeshBatch, SpanBatch}
     use Render3d.InstanceValues.{PackMode, numberSpan}
     use Render3d.Light.{lightDataOf}
@@ -71,11 +71,12 @@ pub mod Render3d.WebGpuRenderer {
 
     /// 場面 1 つの描き先と、その場面の値の buffer と bind group（2D の描き手の描き先の鍵とそのコマの場面の番号ごとに 1 つ・大きさか形式か標本が変われば作り直す）。
     /// color = 貼る時に読む 1 標本の texture・msaa = 標本つきの描き先（標本 1 なら None）・depth = 深度（DEPTH24_PLUS）・
-    /// sceneValues = Render3dWgsl の R3dScene・camera = R3dCamera・sceneGroup = group 0・paste = 貼る矩形（WebGpuShader.sceneWgsl の Paste）・pasteGroup = 貼る形の group 1。
+    /// sceneValues = Render3dWgsl の R3dScene・camera = R3dCamera・sceneGroup = group 0・paste = 貼る矩形（WebGpuShader.sceneWgsl の Paste）・pasteGroup = 貼る形の group 1・
+    /// lightValues = 変種の場面の R3dLight（Render3dWgsl.variantDeclarations。既定の場面は読まない）。
     type alias SceneTarget = {
         width = Int32, height = Int32, format = RenderTarget.Format, samples = Int32,
         color = Texture, msaa = Option[Texture], depth = Texture,
-        sceneValues = Buffer, camera = Buffer, sceneGroup = BindGroup, paste = Buffer, pasteGroup = BindGroup
+        sceneValues = Buffer, camera = Buffer, sceneGroup = BindGroup, paste = Buffer, pasteGroup = BindGroup, lightValues = Buffer
     }
 
     /// 2D の描き手から借りる物。encoder = 今のコマの encoder・notePass = encoder に pass を 1 つ積んだと知らせる・
@@ -102,7 +103,9 @@ pub mod Render3d.WebGpuRenderer {
     /// 描き手の状態。欄の中身:
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・poseLayout = group 2（姿勢）の layout・
     /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・
-    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）, 頂点のバイト数, 骨つきか) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
+    /// lightLayout と atlasLayout = 変種の場面の group 0 の layout（sceneLayout に R3dLight を足した物・さらに点光源の影の atlas を足した物。layoutCodeOf）・
+    /// variantFragments = 変種の鍵（Render3d.variantKeyOf）→ 頂点の色の frag・cpuLight = R3dLight を詰める入れ物・
+    /// pipelines = (形式の番号, 標本の数, pass の番号（passCodeOf）, 頂点のバイト数, 骨つきか, 変種の鍵) → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
     /// poseGroups = 今の encoder の group 2（submit の後に手放す）・sceneGroups = 影の地図か環境マップを読む場面の group 0 の控え（描き先と読む絵が同じなら使い回し、コマの間に使わなかった物を手放す）・shadows = 影の地図の描き先と pass・epoch = submit の数（姿勢をこの encoder で書いたかを見る）・
@@ -113,6 +116,10 @@ pub mod Render3d.WebGpuRenderer {
             gpu = WebGpu,
             planner = Planner,
             sceneLayout = BindGroupLayout,
+            lightLayout = BindGroupLayout,
+            atlasLayout = BindGroupLayout,
+            variantFragments = Ref[Map[String, ShaderModule], Static],
+            cpuLight = ByteBuffer,
             pasteLayout = BindGroupLayout,
             vertexModule = ShaderModule,
             skinnedModule = ShaderModule,
@@ -121,7 +128,7 @@ pub mod Render3d.WebGpuRenderer {
             poseLayout = BindGroupLayout,
             emptyLayout = BindGroupLayout,
             emptyGroup = BindGroup,
-            pipelines = Ref[Map[(Int32, Int32, Int32, Int32, Bool), RenderPipeline], Static],
+            pipelines = Ref[Map[(Int32, Int32, Int32, Int32, Bool, String), RenderPipeline], Static],
             blankDepth = Texture,
             blankImage = Texture,
             environmentSampler = Sampler,
@@ -181,11 +188,7 @@ pub mod Render3d.WebGpuRenderer {
 
     /// create の、材質の値の binding の形を選ぶ版（uniform と storage の比べ・bench/webgpu_v2）。
     pub def createWith(gpu: WebGpu, pasteLayout: BindGroupLayout, imageLayout: BindGroupLayout, binding: ValuesBinding): Renderer \ IO =
-        let layoutDesc = new BindGroupLayoutDesc("fge scene3d");
-        discard layoutDesc.buffer(0, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
-        discard layoutDesc.texture(1, ShaderStage.FRAGMENT, TextureSampleType.DEPTH).texture(2, ShaderStage.FRAGMENT, TextureSampleType.DEPTH);
-        discard layoutDesc.texture(3, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(4, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING);
-        discard layoutDesc.buffer(5, ShaderStage.VERTEX, BufferBindingType.UNIFORM);
+        let layoutDesc = sceneLayoutDesc("fge scene3d", 0);
         let poseDesc = new BindGroupLayoutDesc("fge scene3d poses");
         discard poseDesc.buffer(0, ShaderStage.VERTEX, BufferBindingType.READ_ONLY_STORAGE);
         let emptyLayout = gpu.createBindGroupLayout(new BindGroupLayoutDesc("fge scene3d empty"));
@@ -196,6 +199,9 @@ pub mod Render3d.WebGpuRenderer {
         let r = RendererData.RendererData({
             gpu = gpu, planner = freshPlanner(Render3d.DrawMode.Instanced),
             sceneLayout = sceneLayout, pasteLayout = pasteLayout,
+            lightLayout = gpu.createBindGroupLayout(sceneLayoutDesc("fge scene3d light", 1)),
+            atlasLayout = gpu.createBindGroupLayout(sceneLayoutDesc("fge scene3d point shadows", 2)),
+            variantFragments = Ref.fresh(Static, Map.empty()), cpuLight = directBytes(Render3dWgsl.lightValueBytes()),
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource(false)),
             skinnedModule = gpu.createShaderModule("fge scene3d skinned vs", Render3dWgsl.litVertexSource(true)),
             fragmentModule = gpu.createShaderModule("fge scene3d lit fs", Render3dWgsl.litFragmentSource()),
@@ -225,8 +231,28 @@ pub mod Render3d.WebGpuRenderer {
             gen = Array#{1i64} @ Static
         });
         // WhyNot: 画面（RGBA8・標本 1）の pipeline を初めて場面が出たコマで作らない — Dawn は pipeline を作り終えるまで待つので、そのコマが詰まる（WebGpuPipelines.buildStartupPipelines と同じ）。
-        discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, 36, None);
+        discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, 36, None, defaultShaderVariant());
         r
+
+    /// 場面の group 0 の layout の作り方。code = layoutCodeOf の番号（0 = 既定・1 = R3dLight を足す・2 = R3dLight と点光源の影の atlas を足す）。
+    // WhyNot: 既定の layout に変種の binding を足しておかない — 既定の pipeline の group 0 の layout が変わる（変種を使わない場面は今の layout のまま）。
+    def sceneLayoutDesc(label: String, code: Int32): BindGroupLayoutDesc \ IO =
+        let desc = new BindGroupLayoutDesc(label);
+        discard desc.buffer(0, ShaderStage.FRAGMENT, BufferBindingType.UNIFORM);
+        discard desc.texture(1, ShaderStage.FRAGMENT, TextureSampleType.DEPTH).texture(2, ShaderStage.FRAGMENT, TextureSampleType.DEPTH);
+        discard desc.texture(3, ShaderStage.FRAGMENT, TextureSampleType.FLOAT).sampler(4, ShaderStage.FRAGMENT, SamplerBindingType.FILTERING);
+        discard desc.buffer(5, ShaderStage.VERTEX, BufferBindingType.UNIFORM);
+        if (code >= 1) discard desc.buffer(Render3dWgsl.lightBinding(), ShaderStage.FRAGMENT, BufferBindingType.UNIFORM) else ();
+        if (code >= 2) discard desc.texture(Render3dWgsl.pointShadowMapBinding(), ShaderStage.FRAGMENT, TextureSampleType.DEPTH) else ();
+        desc
+
+    /// 変種 v の場面の group 0 の形の番号（0 = 既定・1 = +pu だけ・2 = +ps がある。ビルボード・空も同じ場面の pass ではこの layout で作る）。
+    pub def layoutCodeOf(v: ShaderVariant): Int32 = if (v#pointShadows) 2 else if (v#physicalUnits) 1 else 0
+
+    /// 形の番号 code の group 0 の layout。
+    def sceneLayoutOf(r: Renderer, code: Int32): BindGroupLayout =
+        let RendererData.RendererData(s) = r;
+        if (code >= 2) s#atlasLayout else if (code == 1) s#lightLayout else s#sceneLayout
 
     /// 場面の描き先の深度の形式（描き先・pipeline・持ち越した集まりの bundle で同じ物）。
     def sceneDepthFormat(): TextureFormat = TextureFormat.DEPTH24_PLUS
@@ -267,6 +293,9 @@ pub mod Render3d.WebGpuRenderer {
         s#vertexModule.release();
         s#fragmentModule.release();
         s#depthModule.release();
+        Map.forEach((_, m) -> m.release(), Ref.get(s#variantFragments));
+        s#lightLayout.release();
+        s#atlasLayout.release();
         s#sceneLayout.release()
 
     /// 場面のどれかのビルボードが name の絵を貼るか（GL の Render3d.readsTexture と同じ。2D の描き手が Pass の history の要否を決める）。
@@ -349,7 +378,7 @@ pub mod Render3d.WebGpuRenderer {
     /// cmd の置いた物を候補に分け、候補ごとに形と、材質の program と絵か頂点の色の pipeline を上げて、上げた物の控えを返す。
     def preloadCmd(r: Renderer, host: Host, gen: Int64, cmd: Scene3d.PreloadCmd): Preloaded \ IO =
         let RendererData.RendererData(s) = r;
-        let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, _ -> true, _ -> true, false, (cmd#instances)());
+        let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, Render3d.defaultShaderVariant(), _ -> true, _ -> true, false, (cmd#instances)());
         let source = { textureOf = host#textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let allocator = countingAllocator(r);
         let mp = { base = 0, values = WebGpuMaterials.valuesBufferOf(s#materials), programs = Vector.empty(), format = RenderTarget.Format.Rgba8Unorm, samples = 1,
@@ -373,7 +402,7 @@ pub mod Render3d.WebGpuRenderer {
     /// 形 mesh の頂点の色の pipeline（画面の形式・標本 1・色の pass）を作る。骨つきの物は形にジョイントがある時だけ。
     def preloadShape(r: Renderer, mesh: MeshBuffers, skinned: Bool): Unit \ IO =
         if (skinned and Option.isEmpty(mesh#skinAt)) ()
-        else discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, mesh#stride, if (skinned) mesh#skinAt else None)
+        else discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, mesh#stride, if (skinned) mesh#skinAt else None, defaultShaderVariant())
 
     // ── 1 回の renderCommands ──
 
@@ -492,39 +521,48 @@ pub mod Render3d.WebGpuRenderer {
                            carried = List.map(c -> WebGpuStatic.shadowRunnerOf(s#statics, s#gpu, Array.get(0, s#gen), c, WebGpuShadows.depthFormat()), carried),
                            billboard = drawShadowBillboardRow(r, host) };
         staged#shadows |> List.forEach(WebGpuShadows.encode(s#shadows, Array.get(0, s#gen), shadowDraw));
-        let sceneGroup = sceneGroupOf(r, target, List.map(st -> st#pass, staged#shadows), staged#environment);
         let scene = plan#cmd#scene;
+        let variant = passVariantOf(scene);
+        let sceneGroup = sceneGroupOf(r, target, List.map(st -> st#pass, staged#shadows), staged#environment, variant);
         Scene3d.skyWarning(scene) |> Option.forEach(line -> Render3d.ScenePlan.warnOnce(s#planner, "@sky+background", line));
         let drawn = target#msaa |> Option.getWithDefault(target#color);
         let full = (0, 0, target#width, target#height);
         staged#passes |> List.forEach(match (spec, list, valuesBase) ->
             encodeScene(r, host, target, { spec = spec, list = list, instanceBase = staged#instanceBase, valuesBase = valuesBase, poseGroup = staged#poseGroup,
-                                           sceneGroup = sceneGroup, sky = WebGpuSky.isDrawn(scene), carried = carried, targetKey = targetKey },
+                                           sceneGroup = sceneGroup, sky = WebGpuSky.isDrawn(scene), carried = carried, targetKey = targetKey, variant = variant },
                         { color = drawn.defaultView(), resolve = target#msaa |> Option.map(_ -> target#color.defaultView()),
                           clear = Some(clearOf(spec, scene)), depth = target#depth.defaultView(), viewport = full, scissor = full }))
 
-    /// 場面の group 0: 影の地図も環境マップも無ければ target の物。どちらかがあれば、スポットと太陽の影の地図（無い方は代わりの絵）を binding 1・2 に、
-    /// 環境マップの絵 environment（無ければ代わりの絵）を binding 3 に付けた物を作る（submit の後に手放す）。影の地図の pass を積んだ後に呼ぶ（その間の submit で手放さない）。
+    /// 場面の group 0: 影の地図も環境マップも無い既定の変種の場面なら target の物。ほかは、スポットと太陽の影の地図（無い方は代わりの絵）を binding 1・2 に、
+    /// 環境マップの絵 environment（無ければ代わりの絵）を binding 3 に、変種 variant の場面は R3dLight（target#lightValues）を 6 に・+ps なら点光源の影の atlas
+    /// （無ければ代わりの絵）を 7 に付けた物を作る（submit の後に手放す）。影の地図の pass を積んだ後に呼ぶ（その間の submit で手放さない）。
     /// 描き先と読む絵が同じ group は前のコマの物を使う（持ち越した集まりの bundle が group 0 を参照で比べて使い続ける）。
-    def sceneGroupOf(r: Renderer, target: SceneTarget, shadows: List[ShadowPass], environment: Option[(Texture, Int32)]): BindGroup \ IO =
+    def sceneGroupOf(r: Renderer, target: SceneTarget, shadows: List[ShadowPass], environment: Option[(Texture, Int32)], variant: ShaderVariant): BindGroup \ IO =
         let RendererData.RendererData(s) = r;
-        if (List.isEmpty(shadows) and Option.isEmpty(environment)) target#sceneGroup
+        let code = layoutCodeOf(variant);
+        if (code == 0 and List.isEmpty(shadows) and Option.isEmpty(environment)) target#sceneGroup
         else {
-            let viewFor = (isSpot: Bool) -> shadows |> List.find(p -> isSpotSampling(p#map#sampling) == isSpot) |> Option.flatMap(p -> WebGpuShadows.viewOf(s#shadows, p#map#key))
-                                                    |> Option.getWithDefault(s#blankDepth.defaultView());
+            let viewFor = (kind: Int32) -> shadows |> List.find(p -> samplingCodeOf(p#map#sampling) == kind) |> Option.flatMap(p -> WebGpuShadows.viewOf(s#shadows, p#map#key))
+                                                  |> Option.getWithDefault(s#blankDepth.defaultView());
             let envImage = environment |> Option.map(fst) |> Option.getWithDefault(s#blankImage);
-            let parts: Vector[Object] = Vector#{checked_cast(target#sceneValues), checked_cast(target#camera), checked_cast(viewFor(true)), checked_cast(viewFor(false)),
-                                                checked_cast(envImage.defaultView())};
+            let base: Vector[Object] = Vector#{checked_cast(target#sceneValues), checked_cast(target#camera), checked_cast(viewFor(0)), checked_cast(viewFor(1)),
+                                               checked_cast(envImage.defaultView())};
+            let extra: Vector[Object] = if (code == 0) Vector.empty()
+                                        else if (code == 1) Vector#{checked_cast(target#lightValues)}
+                                        else Vector#{checked_cast(target#lightValues), checked_cast(viewFor(2))};
+            let parts = Vector.append(base, extra);
             let gen = Array.get(0, s#gen);
             match Ref.get(s#sceneGroups) |> List.find(e -> isSameParts(e#parts, parts)) {
                 case Some(e) =>
                     Array.put(gen, 0, e#lastUsed);
                     e#group
                 case None =>
-                    let desc = new BindGroupDesc("fge scene3d shadowed or environment", s#sceneLayout);
+                    let desc = new BindGroupDesc("fge scene3d shadowed or environment", sceneLayoutOf(r, code));
                     discard desc.buffer(0, target#sceneValues, 0i64, Int32.toInt64(sceneValueBytes()));
-                    discard desc.textureView(1, viewFor(true)).textureView(2, viewFor(false));
+                    discard desc.textureView(1, viewFor(0)).textureView(2, viewFor(1));
                     discard desc.textureView(3, envImage.defaultView()).sampler(4, s#environmentSampler).buffer(5, target#camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
+                    if (code >= 1) discard desc.buffer(Render3dWgsl.lightBinding(), target#lightValues, 0i64, Int32.toInt64(Render3dWgsl.lightValueBytes())) else ();
+                    if (code >= 2) discard desc.textureView(Render3dWgsl.pointShadowMapBinding(), viewFor(2)) else ();
                     let group = s#gpu.createBindGroup(desc);
                     Ref.put({ parts = parts, group = group, lastUsed = Array#{gen} @ Static } :: Ref.get(s#sceneGroups), s#sceneGroups);
                     group
@@ -539,9 +577,11 @@ pub mod Render3d.WebGpuRenderer {
     def isSameParts(a: Vector[Object], b: Vector[Object]): Bool \ IO =
         Vector.length(a) == Vector.length(b) and Vector.forAll(i -> Objects.equals(Vector.get(i, a), Vector.get(i, b)), Vector.range(0, Vector.length(a)))
 
-    def isSpotSampling(s: ShadowSampling): Bool = match s {
-        case ShadowSampling.Spot(_) => true
-        case ShadowSampling.Sun(_)  => false
+    /// 影の地図の種類の番号（0 = スポット・1 = 太陽・2 = 点光源の atlas）。
+    def samplingCodeOf(s: ShadowSampling): Int32 = match s {
+        case ShadowSampling.Spot(_)  => 0
+        case ShadowSampling.Sun(_)   => 1
+        case ShadowSampling.Point(_) => 2
     }
 
     /// pass spec の地の色（GL の Render3d.drawScene の beginScene と drawSky と同じ）: 空の無い場面は background（無ければ透明）。
@@ -641,9 +681,10 @@ pub mod Render3d.WebGpuRenderer {
                           environment = Option[(Texture, Int32)] }
 
     /// encodeScene が描く pass 1 つ。valuesBase = 行の values を送った位置（バイト）・poseGroup = 姿勢の group 2・sceneGroup = 場面の group 0（sceneGroupOf）・
-    /// sky = 色の pass の頭で空を描くか（WebGpuSky.isDrawn）・carried = 場面の持ち越した集まり（空の後・行の前に描く）・targetKey = 描き先の鍵の字。
+    /// sky = 色の pass の頭で空を描くか（WebGpuSky.isDrawn）・carried = 場面の持ち越した集まり（空の後・行の前に描く）・targetKey = 描き先の鍵の字・
+    /// variant = 場面の pass の変種（passVariantOf。pass の pipeline の group 0 の layout と frag を決める）。
     type alias StagedPass = { spec = ScenePassSpec, list = SceneList, instanceBase = Int32, valuesBase = Int32, poseGroup = Option[BindGroup], sceneGroup = BindGroup,
-                              sky = Bool, carried = List[Carried], targetKey = String }
+                              sky = Bool, carried = List[Carried], targetKey = String, variant = ShaderVariant }
 
     /// 場面を描く pass の描き先。color = 描く view・resolve = 標本つきの描き先なら resolve する先・clear = 消す色（None なら前の中身に描き足す）・
     /// depth = 深度の view（いつも 1 で消す）・viewport と scissor = 描き先の左上が原点の (x, y, 幅, 高さ)。
@@ -669,17 +710,18 @@ pub mod Render3d.WebGpuRenderer {
         let (sx, sy, sw, sh) = onto#scissor;
         pass.setScissorRect(sx, sy, sw, sh);
         pass.setBindGroup(0, staged#sceneGroup);
+        let code = layoutCodeOf(staged#variant);
         if (staged#sky and isColorPass(staged#spec)) {
-            WebGpuSky.draw(s#sky, pass, target#format, target#samples);
+            WebGpuSky.draw(s#sky, pass, target#format, target#samples, (code, sceneLayoutOf(r, code)));
             Render3d.Counts.countDrawCall(s, Render3d.Counts.BatchBreak.Sky)
         } else ();
         let materialPass = (base: Int32, values: Buffer, programs: Vector[Option[WebGpuMaterials.Program]], groups: Ref[List[BindGroup], Static]) ->
-            { base = base, values = values, programs = programs, format = target#format, samples = target#samples, sceneLayout = s#sceneLayout,
+            { base = base, values = values, programs = programs, format = target#format, samples = target#samples, sceneLayout = sceneLayoutOf(r, code),
               poseLayout = s#poseLayout, hasPoses = Option.nonEmpty(staged#poseGroup), bound = Ref.fresh(Static, BoundPipeline.Unbound), groupRow = Array#{-1} @ Static,
               groups = groups };
         let bundleTarget = { color = Some(WebGpuPipelines.textureFormatOf(target#format)), depth = sceneDepthFormat(), samples = target#samples };
         // WhyNot: 鍵に描き先を入れずに形式と標本だけにしない — group 0 は描き先ごとに違い、同じ集まりを 2 つの描き先の場面で描くと毎コマ積み直しになる。
-        let bundleKey = "color:${staged#targetKey}:${WebGpuPipelines.formatCode(target#format)}:${target#samples}:${passCodeOf(staged#spec)}";
+        let bundleKey = "color:${staged#targetKey}:${WebGpuPipelines.formatCode(target#format)}:${target#samples}:${passCodeOf(staged#spec)}${variantKeyOf(staged#variant)}";
         let epoch = WebGpuMaterials.textureEpochOf(s#materials);
         // WhyNot: 持ち越した物を場面の行の後に描かない — 半透明の行は場面の行の末尾にあり、持ち越した不透明の物より後に重ねる。同じ深さで重なる面の勝ち方は GL（集まりを instances の後ろに並べる）と逆になりうる。
         staged#carried |> List.forEach(c -> WebGpuStatic.runBundle(s#statics, s#gpu, Array.get(0, s#gen), c, bundleKey, staged#sceneGroup, epoch, bundleTarget, (commands, groups) -> {
@@ -704,7 +746,7 @@ pub mod Render3d.WebGpuRenderer {
         let bindShape = (p: RenderCommands, mesh: MeshBuffers, skin: Option[Int32]) -> {
             let key = BoundPipeline.Shape(passCodeOf(staged#spec), mesh#stride, Option.nonEmpty(skin));
             if (Ref.get(mp#bound) == key) () else {
-                p.setPipeline(pipelineOf(r, target#format, target#samples, staged#spec, mesh#stride, skin));
+                p.setPipeline(pipelineOf(r, target#format, target#samples, staged#spec, mesh#stride, skin, staged#variant));
                 // WhyNot: 骨つきの版で group 1 を付けずに描かない — pipeline の layout に group 2 があると group 1 も付いていなければならず、前の材質の group 1 は layout が違う。
                 if (Option.nonEmpty(skin)) p.setBindGroup(1, s#emptyGroup) else ();
                 Ref.put(key, mp#bound);
@@ -715,13 +757,13 @@ pub mod Render3d.WebGpuRenderer {
         { shape = (p, mesh) -> bindShape(p, mesh, None),
           skinned = (p, mesh) -> Option.nonEmpty(staged#poseGroup) and Option.nonEmpty(mesh#skinAt) and bindShape(p, mesh, mesh#skinAt),
           material = (p, list, row, mesh) -> WebGpuMaterials.bindRow(s#materials, mp, p, list, row, mesh),
-          billboard = (p, list, row) -> drawBillboardRow(r, host, mp, p, list, row),
+          billboard = (p, list, row) -> drawBillboardRow(r, host, mp, staged#variant, p, list, row),
           unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n) }
 
     /// ビルボードの行 row を描く（貼る絵の group が無ければ偽）。絵が見つからなかった行（値の無い行・知らせは stageScene）は描かずに真。
     /// 値は行の values を送った位置（mp#base）から頂点の buffer 0 として読む。
     /// 付けた pipeline と group 1 は材質の行と共用の控え（mp）に書き、次の材質の行が付け直すようにする。
-    def drawBillboardRow(r: Renderer, host: Host, mp: WebGpuMaterials.MaterialPass, p: RenderCommands, list: SceneList, row: Int32): Bool \ IO =
+    def drawBillboardRow(r: Renderer, host: Host, mp: WebGpuMaterials.MaterialPass, variant: ShaderVariant, p: RenderCommands, list: SceneList, row: Int32): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
         match host#groupById(rowAt(list, row, 1)) {
@@ -729,7 +771,7 @@ pub mod Render3d.WebGpuRenderer {
             case None => false
             case Some(group) =>
                 if (Ref.get(mp#bound) == BoundPipeline.Billboard) () else {
-                    p.setPipeline(WebGpuBillboards.pipelineOf(s#billboards, mp#format, mp#samples));
+                    p.setPipeline(WebGpuBillboards.pipelineOf(s#billboards, mp#format, mp#samples, variant, (layoutCodeOf(variant), mp#sceneLayout)));
                     Ref.put(BoundPipeline.Billboard, mp#bound)
                 };
                 Array.put(-1, 0, mp#groupRow);
@@ -740,15 +782,15 @@ pub mod Render3d.WebGpuRenderer {
         }
 
     /// 影の地図のビルボードの行 row を描く（貼る絵の group が無ければ偽）。値は行の values を送った位置 valuesBase から頂点の buffer 0 として読む（場面の行の drawBillboardRow と同じ）。
-    /// group 0（光の目と板の向き）は pass の頭で付けてある。
-    def drawShadowBillboardRow(r: Renderer, host: Host, p: RenderCommands, list: SceneList, row: Int32, valuesBase: Int32): Bool \ IO =
+    /// group 0（光の目と板の向き）は pass の頭で付けてある。rightPerBillboard なら板の横の向きを行の値から読む pipeline（点光源の面）。
+    def drawShadowBillboardRow(r: Renderer, host: Host, p: RenderCommands, list: SceneList, row: Int32, valuesBase: Int32, rightPerBillboard: Bool): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
         match host#groupById(rowAt(list, row, 1)) {
             case _ if values < 0 => true
             case None => false
             case Some(group) =>
-                p.setPipeline(WebGpuBillboards.shadowPipelineOf(s#billboards, WebGpuShadows.layoutOf(s#shadows), WebGpuShadows.depthFormat()));
+                p.setPipeline(WebGpuBillboards.shadowPipelineOf(s#billboards, WebGpuShadows.layoutOf(s#shadows), WebGpuShadows.depthFormat(), rightPerBillboard));
                 p.setBindGroup(1, group);
                 p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(valuesBase + 4 * values), WebGpuBillboards.valueBytes());
                 p.draw(6, 1, 0, 0);
@@ -883,6 +925,7 @@ pub mod Render3d.WebGpuRenderer {
         let values = s#cpuScene;
         packSceneValues(values, lightDataOf(picked, environment |> Option.map(snd) |> Option.getWithDefault(0)));
         packShadowValues(values, List.map(p -> p#map#sampling, shadows));
+        writeLightValues(r, target, scene, shadows);
         // WhyNot: pass ごとに場面の値を書き分けない — 場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、
         //   1 つの encoder の中で pass ごとに書き替えると、どの pass も最後に書いた値で描く。pass が場面の置いた物の 1 つの間は mainPass で足りる。
         packPassValues(values, plan#mainPass);
@@ -896,6 +939,16 @@ pub mod Render3d.WebGpuRenderer {
         putVec3(camera, 144, cameraVec(Camera3d.up(scene#camera)), 0);
         putVec3(camera, 160, cameraVec(Vec3.mul(Camera3d.forward(scene#camera), -1.0)), 0);
         s#gpu.writeBuffer(target#camera, 0i64, camera, 0, Render3dWgsl.cameraBytes())
+
+    /// 変種の場面の R3dLight（点光源の影の値と 1 / unitsPerMeter²。GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）を target#lightValues へ書く。
+    /// 既定の変種の場面は書かない。影を落とす灯りの無い場面は全部の slot が −1。
+    def writeLightValues(r: Renderer, target: SceneTarget, scene: Scene3d.Scene3dCmd, shadows: List[ShadowPass]): Unit \ IO =
+        let RendererData.RendererData(s) = r;
+        if (layoutCodeOf(passVariantOf(scene)) == 0) ()
+        else {
+            WebGpuShadows.packLightValues(s#cpuLight, scene, List.map(p -> p#map#sampling, shadows));
+            s#gpu.writeBuffer(target#lightValues, 0i64, s#cpuLight, 0, Render3dWgsl.lightValueBytes())
+        }
 
     /// v を 3 個の float にする（GL の Render3d.putVec3 と同じく 1 つずつ f32 へ）。
     def cameraVec(v: Vec3.Vec3): Array[Float32, Static] \ IO = Array#{RenderUtil.f32(v#x), RenderUtil.f32(v#y), RenderUtil.f32(v#z)} @ Static
@@ -969,6 +1022,7 @@ pub mod Render3d.WebGpuRenderer {
                 discard buf.putInt(120, sun#pcfRadius);
                 discard buf.putFloat(124, RenderUtil.f32(sun#strength));
                 putMatrix(buf, 336, sun#matrix)
+            case ShadowSampling.Point(_) => ()
         })
 
     /// 行列 m を列優先 16 個の float で buf の at へ。
@@ -1055,6 +1109,7 @@ pub mod Render3d.WebGpuRenderer {
         let sceneValues = gpu.createBuffer("fge scene3d values", Int32.toInt64(sceneValueBytes()), uniformUsage);
         let camera = gpu.createBuffer("fge scene3d camera", Int32.toInt64(Render3dWgsl.cameraBytes()), uniformUsage);
         let paste = gpu.createBuffer("fge scene3d paste", 16i64, uniformUsage);
+        let lightValues = gpu.createBuffer("fge scene3d light", Int32.toInt64(Render3dWgsl.lightValueBytes()), uniformUsage);
         let sceneDesc = new BindGroupDesc("fge scene3d", s#sceneLayout);
         discard sceneDesc.buffer(0, sceneValues, 0i64, Int32.toInt64(sceneValueBytes()));
         discard sceneDesc.textureView(1, s#blankDepth.defaultView()).textureView(2, s#blankDepth.defaultView());
@@ -1063,7 +1118,7 @@ pub mod Render3d.WebGpuRenderer {
         discard pasteDesc.textureView(0, color.defaultView()).buffer(1, paste, 0i64, 16i64);
         { width = shape#width, height = shape#height, format = shape#format, samples = shape#samples, color = color, msaa = msaa, depth = depth,
           sceneValues = sceneValues, camera = camera, sceneGroup = gpu.createBindGroup(sceneDesc),
-          paste = paste, pasteGroup = gpu.createBindGroup(pasteDesc) }
+          paste = paste, pasteGroup = gpu.createBindGroup(pasteDesc), lightValues = lightValues }
 
     def destroyTarget(t: SceneTarget): Unit \ IO =
         t#sceneGroup.release();
@@ -1073,7 +1128,8 @@ pub mod Render3d.WebGpuRenderer {
         t#depth.destroy();
         t#sceneValues.destroy();
         t#camera.destroy();
-        t#paste.destroy()
+        t#paste.destroy();
+        t#lightValues.destroy()
 
     def isColorPass(spec: ScenePassSpec): Bool = match spec {
         case ScenePassSpec.Color       => true
@@ -1086,26 +1142,40 @@ pub mod Render3d.WebGpuRenderer {
         case ScenePassSpec.DepthOut(_) => 1
     }
 
-    /// pass の種類の frag（色の pass は光の frag・奥行きの書き出しは灰色の frag）。
-    def fragmentOf(r: Renderer, spec: ScenePassSpec): ShaderModule =
+    /// pass の種類の frag（色の pass は変種 variant の光の frag・奥行きの書き出しは灰色の frag）。変種の光の frag は初めて要る時に作る。
+    def fragmentOf(r: Renderer, spec: ScenePassSpec, variant: ShaderVariant): ShaderModule \ IO =
         let RendererData.RendererData(s) = r;
+        let key = variantKeyOf(variant);
         match spec {
-            case ScenePassSpec.Color       => s#fragmentModule
+            case ScenePassSpec.Color if key == "" => s#fragmentModule
+            case ScenePassSpec.Color              => variantFragmentOf(r, variant, key)
             case ScenePassSpec.DepthOut(_) => s#depthModule
+        }
+
+    /// 変種 variant（鍵 key）の光の frag（初めて要る時に作って控える）。
+    def variantFragmentOf(r: Renderer, variant: ShaderVariant, key: String): ShaderModule \ IO =
+        let RendererData.RendererData(s) = r;
+        match Map.get(key, Ref.get(s#variantFragments)) {
+            case Some(m) => m
+            case None    =>
+                let made = s#gpu.createShaderModule("fge scene3d lit fs" + key, Render3dWgsl.litFragmentSourceFor(variant));
+                Ref.put(Map.insert(key, made, Ref.get(s#variantFragments)), s#variantFragments);
+                made
         }
 
     /// 形式 format・標本 samples・pass spec・頂点のバイト数 stride（Render3d.WebGpuRows の形の版）の頂点の色の pipeline（無ければ作る）。
     /// skin = 骨つきの版なら形の版のジョイントの番号の位置（バイト。group 1 は空・group 2 に姿勢）。表の面は時計回り（Render3d の頭の約束）で裏を間引き、深度は LESS で書く。
     // WhyNot: 鍵にジョイントの番号の位置を入れない — 位置は形の版の末尾の 8 float（Render3d.WebGpuRows.floatsPerVertex）で、頂点のバイト数から 1 つに決まる。
-    def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32, spec: ScenePassSpec, stride: Int32, skin: Option[Int32]): RenderPipeline \ IO =
+    /// variant = 場面の pass の変種（frag と group 0 の layout を決める）。
+    def pipelineOf(r: Renderer, format: RenderTarget.Format, samples: Int32, spec: ScenePassSpec, stride: Int32, skin: Option[Int32], variant: ShaderVariant): RenderPipeline \ IO =
         let RendererData.RendererData(s) = r;
-        let key = (WebGpuPipelines.formatCode(format), samples, passCodeOf(spec), stride, Option.nonEmpty(skin));
+        let key = (WebGpuPipelines.formatCode(format), samples, passCodeOf(spec), stride, Option.nonEmpty(skin), variantKeyOf(variant));
         match Map.get(key, Ref.get(s#pipelines)) {
             case Some(p) => p
             case None =>
                 let desc = new RenderPipelineDesc("fge scene3d lit");
                 let vertexModule = if (Option.nonEmpty(skin)) s#skinnedModule else s#vertexModule;
-                discard desc.bindGroupLayout(s#sceneLayout).vertex(vertexModule, "vs_main").fragment(fragmentOf(r, spec), "fs_main");
+                discard desc.bindGroupLayout(sceneLayoutOf(r, layoutCodeOf(variant))).vertex(vertexModule, "vs_main").fragment(fragmentOf(r, spec, variant), "fs_main");
                 if (Option.nonEmpty(skin)) discard desc.bindGroupLayout(s#emptyLayout).bindGroupLayout(s#poseLayout) else ();
                 discard desc.vertexBuffer(stride, false).attribute(VertexFormat.FLOAT32X3, 0, 0).attribute(VertexFormat.FLOAT32X3, 12, 1).attribute(VertexFormat.FLOAT32X3, 24, 2);
                 skin |> Option.forEach(at -> discard desc.attribute(VertexFormat.FLOAT32X4, at, 14).attribute(VertexFormat.FLOAT32X4, at + 16, 15));

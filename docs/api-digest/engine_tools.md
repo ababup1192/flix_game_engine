@@ -1,4 +1,4 @@
-<!-- engine v0.101.1 / 生成: 2026-11-17 -->
+<!-- engine v0.101.1 / 生成: 2026-11-18 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -381,6 +381,8 @@
 - cutout の材質で、α がこれ未満の画素は捨てる。
   `pub def materialCutoff(): Float64`
 - `pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], position: Vec3.Vec3, normal: Vec3.Vec3): Color`
+- lightAt を光の量の読み方 units（unitsPerMeter = 1 m が場面の長さのいくつか）で求めた物。engine の開発用の口: gl-parity の式の行が GL と値をそろえて確かめる。
+  `pub def lightWithUnitsAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], units: Scene3d.LightUnits, unitsPerMeter: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
 - lightAt に太陽を足した光の量。toward = 点から太陽への向き（長さ 1）・color = 太陽の color × intensity（lightAt の光の color と同じく書いた値のまま）・
   `pub def lightWithSunAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], toward: Vec3.Vec3, color: Vec3.Vec3, sunLit: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
 - 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
@@ -408,13 +410,29 @@
   `pub type alias LightEye = { view = Mat4.Mat4, proj = Mat4.Mat4, projection = Projection }`
 - `pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3`
 
+## SoftRaster3d.PointShadows — `engine_tools/src/SoftRaster3d/PointShadows.flix`
+- 場面の点光源の影。atlas の値と、点光源の番号（pickLights の後の並び・maxPointLights() 個）ごとの影を落とす灯りと面 6 枚の地図（影を落とさない灯りは None）。
+  `pub enum PointShadowMaps { case PointShadowMaps(Scene3d.PointShadows.Atlas, Vector[Option[(Scene3d.PointShadows.ShadowedPointLight, Vector[Vector[Float64]])]]) }`
+- 影の割合がどの灯りも 1 の並び（影の無い場面は画素ごとに作らずこれを使い回す）。
+  `pub def allLit(): Vector[Float64]`
+- 場面（pickLights の後）の点光源の影の地図を描く（影が無ければ None）。instances = 影を落とす不透明の物・
+  `pub def build(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): Option[PointShadowMaps] \ IO`
+- 点 p（g = 形の法線・n = 光の計算の法線）で、点光源の番号ごとの影の割合（maxPointLights() 個。影を落とさない・光が届かない・面が背を向けた灯りは 1）。
+  `pub def litAt(set: Option[PointShadowMaps], p: Vec3.Vec3, g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64]`
+- lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)。GL の uniform と同じ値）を入れた物。
+  `pub def withSceneLighting(points: Option[PointShadowMaps], scene: Scene3d.Scene3dCmd, lights: SoftRaster3d.Lights): SoftRaster3d.Lights`
+- どの点光源も影の割合 1 の並び（ビルボード）。
+  `pub def unshadowedPointsOf(lights: SoftRaster3d.Lights): Vector[Float64]`
+- 点 p（g = 形の法線・n = 光の計算の法線）の点光源ごとの影の割合（影の無い場面は全部 1 の並びを使い回す）。
+  `pub def pointLitOf(lights: SoftRaster3d.Lights, p: (Float64, Float64, Float64), g: Vec3.Vec3, n: Vec3.Vec3): Vector[Float64]`
+
 ## SoftRaster3d.ShadowMaps — `engine_tools/src/SoftRaster3d/ShadowMaps.flix`
 - spots（pickLights の後の並び）のうち shadow が Some の最初の 1 本の地図。mapSize が 0 以下なら影を落とさない。
   `pub def shadowOf(instances: List[Placed], spots: List[Scene3d.SpotLight]): SpotShadow \ IO`
 - 場面の太陽（Scene3d.directionalLightOf）と、その影の地図（Scene3d.directionalShadowOf の箱で、影を落とす物から作る）。
   `pub def sunOf(instances: List[Placed], textureOf: String -> Option[ShaderEval.TexData], scene: Scene3d.Scene3dCmd): SoftRaster3d.Sun.Light \ IO`
-- 影の地図に描くビルボード（中身と段 0 の絵）と、その板の向き。
-  `pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }`
+- 影の地図に描くビルボード（中身と段 0 の絵と板の横の向き）と、その板の縦と前の向き（basis の right は使わず、板ごとの横の向きを使う）。
+  `pub type alias BillboardCasters = { casters = List[(Scene3d.BillboardFields, ShaderEval.TexData, Vec3.Vec3)], basis = { right = Vec3.Vec3, up = Vec3.Vec3, facing = Vec3.Vec3 } }`
 - `pub def noBillboards(): BillboardCasters`
 - `pub def buildShadowMap(instances: List[Placed], billboards: BillboardCasters, eye: LightEye, frustum: Frustum.Frustum, n: Int32): Vector[Float64] \ IO`
 
@@ -436,15 +454,15 @@
 
 ## SoftRaster3dLight — `engine_tools/src/gen/SoftRaster3dLight.flix`
 - lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。
-  `pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64): (Float64, Float64, Float64)`
+  `pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64)`
 - lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
-  `pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64): (Float64, Float64, Float64)`
+  `pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64)`
 - fogModel の色（fog が無い場面では呼ばない）。
   `pub def fogAt(pX: Float64, pY: Float64, pZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, colorX: Float64, colorY: Float64, colorZ: Float64, fogColorX: Float64, fogColorY: Float64, fogColorZ: Float64, fogNear: Float64, fogFar: Float64): (Float64, Float64, Float64)`
 - skyModel の空の色。
   `pub def skyAt(_dirX: Float64, dirY: Float64, _dirZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64): (Float64, Float64, Float64)`
 - pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。
-  `pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64): (Float64, Float64, Float64)`
+  `pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64)`
 - environmentDirection の、環境マップを読む向き（長さ 1。metalRough の x は使わない）。
   `pub def environmentDirectionAt(pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, _albedoX: Float64, _albedoY: Float64, _albedoZ: Float64, _metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, envBoxMinX: Float64, envBoxMinY: Float64, envBoxMinZ: Float64, envBoxMaxX: Float64, envBoxMaxY: Float64, envBoxMaxZ: Float64, envBoxCenterX: Float64, envBoxCenterY: Float64, envBoxCenterZ: Float64, envBoxOn: Float64): (Float64, Float64, Float64)`
 

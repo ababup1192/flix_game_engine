@@ -68,7 +68,8 @@ mod Render3d.WebGpuStatic {
 
     /// 場面 scene の持ち越す集まりの物（色の場面だけ・同じ集まりが続くコマは作らずに前の物）。
     pub def carriedOf(st: StaticCache, b: Builder, scene: Scene3d.Scene3dCmd): List[Carried] \ IO =
-        StaticRows.carriedGroupsOf(scene) |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, () -> buildCarried(b, scene, g), retire(st)))
+        let variant = Render3d.variantKeyOf(Render3d.shaderVariantOf(scene));
+        StaticRows.carriedGroupsOf(scene) |> List.map(g -> StaticRows.ensure(b#planner, st#cache, b#tables#gen, g, variant, () -> buildCarried(b, scene, g), retire(st)))
 
     def buildCarried(b: Builder, scene: Scene3d.Scene3dCmd, g: Scene3d.StaticGroup): Carried \ IO =
         let programs = Ref.fresh(Static, Vector.empty());

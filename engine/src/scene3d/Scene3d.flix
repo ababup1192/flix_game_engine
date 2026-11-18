@@ -193,6 +193,38 @@ pub mod Scene3d {
         Camera3d.viewMatrix({ eye = Vec3.zero(), yaw = Num.atan2(direction#x, direction#z), pitch = Num.atan2(0.0 - direction#y, flat),
                               fovY = 1.0, near = 1.0, far = 2.0, lensShift = Vec2.zero() })
 
+    /// 点光源の影（光から見た 6 方向の深度を 1 枚の絵 atlas に並べる。Unity・Unreal の Shadow Atlas・Bevy の PointLightShadowMap に当たる）。
+    /// maxShadowedLights = 影を落とす灯りの数の上限（0 以下で影なし・maxShadowedPointLights() で頭打ち。どの灯りかは Scene3d.PointShadows.atlasOf）・
+    /// mapSize = 面 1 つの一辺の画素（16 未満は 16。atlas が maxShadowMapSize() に収まるよう縮める）・
+    /// bias = world の長さ。比べる奥行きから引く量（太陽の bias と同じ単位）・
+    /// normalBias = 受ける点を形の法線の向きに「面 1 画素の world の幅 × normalBias × (pcfRadius + 1)」だけずらしてから地図を引く量・
+    /// pcfRadius = 周りを平均する幅（画素）・strength = 影の濃さ（0〜1）。
+    /// 字で全部の欄を書かず、pointShadowMap() を `{ maxShadowedLights = 2 | Scene3d.pointShadowMap() }` の形で替える。
+    pub type alias PointShadowMap = { maxShadowedLights = Int32, mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64 }
+
+    /// maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影。
+    /// スマホは `{ maxShadowedLights = 1, mapSize = 256 | Scene3d.pointShadowMap() }` を勧める（atlas 768 × 512）。
+    pub def pointShadowMap(): PointShadowMap =
+        { maxShadowedLights = 4, mapSize = 512, bias = 0.05, normalBias = 1.0, pcfRadius = 1, strength = 0.8 }
+
+    /// 場面に点光源の影を付ける（Scene3dCmd の pointShadows = Some(m)）。
+    pub def withPointShadows(m: PointShadowMap, scene: Scene3dCmd): Scene3dCmd = { pointShadows = Some(m) | scene }
+
+    /// 1 つの場面で影を落とす点光源の上限。
+    pub def maxShadowedPointLights(): Int32 = 8
+
+    /// 光の量の読み方（Godot の Use Physical Light Units に当たる切り替え）。
+    /// Legacy = 点・スポットの落ち方は (1 − d² / range²)²・拡散に 1/π を掛けない（今までの絵）。
+    /// Physical = 点・スポットの落ち方は 逆二乗 × range の窓 clamp01(1 − (d² / range²)²)² / max(d_m², 1e−4)（d_m = d / unitsPerMeter。Filament・UE4 と同じ形）、
+    ///   点・スポット・太陽の拡散に 1/π（鏡面と ambient・hemisphere・lightmap・emission は同じ）。intensity は点・スポットが 1 m の所の照度（cd に当たる）・太陽が照度（lux に当たる）。
+    pub enum LightUnits with Eq, ToString {
+        case Legacy
+        case Physical
+    }
+
+    /// 場面の光の量の読み方を替える（Scene3dCmd の lightUnits）。
+    pub def withLightUnits(u: LightUnits, scene: Scene3dCmd): Scene3dCmd = { lightUnits = u | scene }
+
     /// 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
     pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }
 
@@ -598,9 +630,11 @@ pub mod Scene3d {
     /// ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
     /// size = world の幅と高さ・anchor = position に合わせる絵の中の点（0〜1。(0.5, 1) で足元の真ん中）・
     /// tint = 絵に掛ける色・lit = 光とかすみを当てるか・
-    /// castShadows = 太陽の影の地図に描くか（withCastShadows）・receiveShadows = 太陽の影を受けるか（withReceiveShadows。lit の時だけ効く）。
+    /// castShadows = 太陽と点光源の影の地図に描くか（withCastShadows）・receiveShadows = 太陽の影を受けるか（withReceiveShadows。lit の時だけ効く）・
+    /// shadowCasterScale = 影の地図に描く板の幅と高さに掛ける倍率（withShadowCasterScale。既定 (1, 1)）。
     pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2,
-                                       anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool }
+                                       anchor = Vec2.Vec2, tint = Color, lit = Bool, castShadows = Bool, receiveShadows = Bool,
+                                       shadowCasterScale = Vec2.Vec2 }
 
     enum BillboardData { case BillboardData(BillboardFields) }
 
@@ -611,15 +645,30 @@ pub mod Scene3d {
     pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d =
         BillboardData.BillboardData({ texture = texture, regionRect = regionRect, position = position, size = size,
                                       anchor = { x = 0.5, y = 1.0 }, tint = Color.rgb(1.0, 1.0, 1.0), lit = true,
-                                      castShadows = false, receiveShadows = false })
+                                      castShadows = false, receiveShadows = false, shadowCasterScale = Vec2.one() })
 
     /// 太陽の影の地図に描く（Unity の Cast Shadows・Godot の cast_shadow）。地図の中では、同じ大きさの板を地面に垂直に立て、
     /// 太陽の方へ向けて（billboardShadowRightOf）絵の α < 0.5 を捨てて描くので、影は絵の形で太陽の向きに伸びる。
-    /// 太陽の影だけ（スポットの影の地図には描かない）。影の地図の無い場面では何もしない。
+    /// 点光源の影（withPointShadows）の地図にも、板を光の方へ向けて描く（Scene3d.PointShadows.castingBillboardsOf）。スポットの影の地図には描かない。影の地図の無い場面では何もしない。
     // WhyNot: スポットの影に入れない — スポットの影の判定は光の式の木の中（spotShadow）で受ける点を動かせず、ビルボードが自分の影を受けて黒くなる。
     pub def withCastShadows(on: Bool, b: Billboard3d): Billboard3d =
         let BillboardData.BillboardData(r) = b;
         BillboardData.BillboardData({ castShadows = on | r })
+
+    /// 影の地図に描く板の大きさの倍率（x = 幅・y = 高さ。既定 (1, 1)）。見えている板は変えず、影だけを細く・短くする
+    /// （ドット絵のキャラの影が「人形がそのまま大きくなった」ように見える時に、幅を 0.5〜0.7・高さを 0.6〜0.8 に絞る）。
+    /// 板は anchor を中心に縮むので、anchor が足元なら影の根元は足元のまま。太陽と点光源の影の両方に効く。0 以下の成分は影を描かない。
+    // WhyNot: 影の板をカメラの向きへ寄せる角度で細くしない — 太陽が横からの時ほど細り方が変わり、点光源では灯りごとに違う角度になる。倍率なら光の向きに依らず同じ細さ。
+    pub def withShadowCasterScale(scale: Vec2.Vec2, b: Billboard3d): Billboard3d =
+        let BillboardData.BillboardData(r) = b;
+        BillboardData.BillboardData({ shadowCasterScale = scale | r })
+
+    /// 影の地図に描く時の板（size に shadowCasterScale を掛けた物）。描き手は影の地図にこの値を描く。
+    pub def shadowCasterFieldsOf(f: BillboardFields): BillboardFields =
+        { size = Vec2.v2(f#size#x * f#shadowCasterScale#x, f#size#y * f#shadowCasterScale#y) | f }
+
+    /// 影の地図に描く大きさが残るか（shadowCasterScale の成分が両方とも正）。
+    def hasShadowCasterSize(f: BillboardFields): Bool = f#shadowCasterScale#x > 0.0 and f#shadowCasterScale#y > 0.0
 
     /// 太陽の影を受ける（Unity の Receive Shadows）。lit の時だけ効く。受ける点は絵の中の高さごとに 1 つ（billboardShadowPointOf）で、
     /// 建物の影に入ると絵の行ごとに暗くなる。
@@ -660,9 +709,10 @@ pub mod Scene3d {
     /// billboardShadowPointOf が割る、太陽への向きの水平の長さの下限（太陽の高さ約 75.5°）。GLSL・WGSL の字にも同じ数を書く。
     pub def billboardShadowMinFlat(): Float64 = 0.25
 
-    /// 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。
+    /// 太陽の影の地図に描くビルボード（castShadows が真で、影を落とす物の視錐台 frustum の中の物。来た順）。大きさは shadowCasterFieldsOf の物。
     pub def shadowCastingBillboardsOf(frustum: Frustum.Frustum, scene: Scene3dCmd): List[BillboardFields] =
-        scene#billboards |> List.filter(b -> billboardFieldsOf(b)#castShadows and not isBillboardOutsideFrustum(frustum, b)) |> List.map(billboardFieldsOf)
+        scene#billboards |> List.filter(b -> { let f = billboardFieldsOf(b); f#castShadows and hasShadowCasterSize(f) } and not isBillboardOutsideFrustum(frustum, b))
+            |> List.map(b -> shadowCasterFieldsOf(billboardFieldsOf(b)))
 
     pub def withAnchor(a: Vec2.Vec2, b: Billboard3d): Billboard3d =
         let BillboardData.BillboardData(r) = b;
@@ -688,13 +738,15 @@ pub mod Scene3d {
     /// environmentMap = metallic と roughness を持つ材質の映り込みが読む周りの景色（environmentMap。None なら空のグラデーションを映す）・
     /// directionalLight = 太陽（1 つまで。None なら無し。使うかどうかは directionalLightOf で決める）・
     /// groups = 動かない物の集まり（staticGroup。中の物は instances と同じに描かれる。読むのは instancesOf）・
-    /// unitsPerMeter = 1 m が場面の長さのいくつか（withUnitsPerMeter。描き方は変えず、m で受ける値（PostStack の奥行きのぼかし）が読む）。
+    /// unitsPerMeter = 1 m が場面の長さのいくつか（withUnitsPerMeter。Legacy の光では描き方は変えず、m で受ける値（PostStack の奥行きのぼかし）と Physical の光の逆二乗が読む）・
+    /// pointShadows = 点光源の影（withPointShadows。None なら影なし）・lightUnits = 光の量の読み方（withLightUnits。既定 Legacy）。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], groups = List[StaticGroup], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], directionalLight = Option[DirectionalLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
-                                  textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64 }
+                                  textures = List[Texture3d.Texture3d], sky = Option[Sky3d], environmentMap = Option[EnvironmentMap], unitsPerMeter = Float64,
+                                  pointShadows = Option[PointShadowMap], lightUnits = LightUnits }
 
-    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1）。
+    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし・1 m = 1・点光源の影なし・Legacy の光）。
     /// time = 材質の ShaderDoc の時刻（秒）（ゲームの遊びの時計を渡すと、ポーズやヒットストップで材質の動きも止まる）。
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
@@ -702,7 +754,7 @@ pub mod Scene3d {
         { size = size, camera = camera, instances = Nil, groups = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil, directionalLight = None,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
           resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None, environmentMap = None,
-          unitsPerMeter = 1.0 }
+          unitsPerMeter = 1.0, pointShadows = None, lightUnits = LightUnits.Legacy }
 
     /// 1 m が場面の長さのいくつかを言う（既定 1 = glTF・Blender と同じ）。Blender の 1 m を 16 で置いた場面は 16。
     pub def withUnitsPerMeter(k: Float64, scene: Scene3dCmd): Scene3dCmd = { unitsPerMeter = k | scene }

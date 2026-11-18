@@ -2,13 +2,14 @@
 //   部屋（既定）… 固定の部屋をカメラを左右へゆっくり振りながら描く
 //   物を並べた場面（SCENE=field）… Field のつまみ（Makefile の頭）で物の数・形・材質・動く割合・半透明・影を替える
 //   書斎の場面（SCENE=study）… 実写スキャンの家具（Poly Haven の glb。MODELS=<フォルダ>・既定 ../../build/polyhaven-glb・git に入れない）の卓に光る球・燭台・ランタン（src/Study.flix）
+//   夜の街灯の場面（SCENE=lamps）… 街灯 8 本・SHADOWS=n で影を落とす灯りの数（0 = 影なし）・MAPSIZE・PCF（src/Lighting.flix）
 //   光る球の場面（SCENE=orb）… 暗い部屋に強く光る緑の球・ろうそく・赤い瓶・本（src/Orb.flix。view transform の見比べ用）
 // POST=1 で画面全体の後がけ（App.withPostStack の夕方の屋外の preset）を掛ける（後がけの重さを前後で比べる・PostStack の手本）。
 // 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Platform.Draw3d.drawScene3d）。
 use fge::LwjglLayer
 
 mod SceneBench {
-    use fge::{App, Clock, Color, LwjglLayer, Num, PostStack, Render}
+    use fge::{App, Clock, Color, LwjglLayer, Num, PostStack, Render, Scene3d}
 
     import java.lang.System
 
@@ -18,12 +19,12 @@ mod SceneBench {
         case Field(Field.Kit)
         case Orb
         case Study(Study.Kit)
+        case Lamps(Lighting.Config)
     }
 
     pub type alias World = { t = Float64, now = Clock.Time[Clock.Real], progress = BenchRun.Run }
 
     pub def initialWorld(): World = { t = 0.0, now = Clock.zero(), progress = BenchRun.start() }
-
 
     /// 起動直後は JIT とメッシュの初めての上げで dt が荒れるため、各区間の頭を捨てる。
     def warmup(): Int32 = 60
@@ -45,6 +46,11 @@ mod SceneBench {
             case Scene.Field(kit) => List.append(head, ("scene", BenchRun.quoted("field")) :: Field.knobFields(kit#config))
             case Scene.Orb        => List.append(head, ("scene", BenchRun.quoted("orb")) :: Nil)
             case Scene.Study(_)   => List.append(head, ("scene", BenchRun.quoted("study")) :: Nil)
+            case Scene.Lamps(cfg) =>
+                let shadowed = cfg#shadows |> Option.map(m -> m#maxShadowedLights) |> Option.getWithDefault(0);
+                let size = cfg#shadows |> Option.map(m -> m#mapSize) |> Option.getWithDefault(0);
+                List.append(head, ("scene", BenchRun.quoted("lamps")) :: ("lamps", Int32.toString(cfg#lamps)) :: ("shadows", Int32.toString(shadowed)) ::
+                                  ("mapSize", Int32.toString(size)) :: Nil)
         }
 
     pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO =
@@ -56,7 +62,15 @@ mod SceneBench {
         case Scene.Field(kit) => Field.items(kit, w#t)
         case Scene.Orb        => Orb.items(0.0)
         case Scene.Study(kit) => Study.items(kit)
+        case Scene.Lamps(cfg) => Lighting.lampsItems(cfg, w#t)
     }
+
+    /// 夜の街灯の場面のつまみ（shadows = 影を落とす灯りの数・0 で影なし・mapsize・pcf）。
+    def lampsConfigOf(knobs: Map[String, String]): Lighting.Config =
+        let n = BenchRun.intKnob("shadows", 0, knobs);
+        let m = { maxShadowedLights = n, mapSize = BenchRun.intKnob("mapsize", 512, knobs), pcfRadius = BenchRun.intKnob("pcf", 1, knobs), bias = 0.04
+                | Scene3d.pointShadowMap() };
+        { lamps = 8, shadows = if (n > 0) Some(m) else None | Lighting.defaultConfig() }
 
     /// つまみの表の post（1 = 夕方の屋外の preset・standard / agx / neutral = その view transform だけを替えた同じ後がけ・preset-<名前> = その preset・無し = 掛けない）。
     pub def postOf(knobs: Map[String, String]): Option[PostStack.Stack] = match Map.get("post", knobs) {
@@ -101,12 +115,14 @@ mod SceneBench {
     def loadScene(knobs: Map[String, String]): Result[String, Scene] \ Fs.FileRead + IO =
         if (isField(knobs)) Ok(Scene.Field(Field.kitOf(Field.configOf(knobs))))
         else if (Map.get("scene", knobs) == Some("orb")) Ok(Scene.Orb)
+        else if (Map.get("scene", knobs) == Some("lamps")) Ok(Scene.Lamps(lampsConfigOf(knobs)))
         else if (Map.get("scene", knobs) == Some("study")) Study.load(Map.getWithDefault("models", "../../build/polyhaven-glb", knobs)) |> Result.map(Scene.Study)
         else Room.loadMeshes() |> Result.map(meshes -> Scene.Room(Room.kitOf(meshes)))
 
     pub def go(): Unit \ IO =
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
-                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: ("MODELS", "models") :: Nil);
+                                   ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: ("MODELS", "models") ::
+                                   ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>

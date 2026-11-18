@@ -15,7 +15,7 @@ mod Render3d.TestRender3dSun {
                                               paramNames = Nil, texReads = Nil, cutoutAlpha = "albedo.a" }, kind)
 
     def plainKind(): Render3d.ProgramKind =
-        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false }
+        { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false, metallicRoughness = false, pointShadows = false, physicalUnits = false }
 
     def indexOf(part: String, s: String): Int32 = String.indexOf(substr = part, s) |> Option.getWithDefault(-1)
 

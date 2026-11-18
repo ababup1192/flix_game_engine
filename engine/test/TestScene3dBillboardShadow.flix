@@ -56,3 +56,43 @@ def testOnlyCastingBillboardsAreShadowCasters(): Unit \ Assert =
     let scene = { billboards = shadowBoard() :: caster :: Nil | Scene3d.scene(camera, { x = 160.0, y = 90.0 }) };
     let found = Scene3d.shadowCastingBillboardsOf(Scene3d.frustumOf(scene), scene);
     Assert.assertEq(expected = 1.0 :: Nil, found |> List.map(f -> f#tint#r))
+
+/// 足したての板の影の板の倍率は (1, 1)（影の地図の板は見えている板と同じ大きさ）。
+@Test
+def testNewBillboardShadowCasterScaleIsOne(): Unit \ Assert =
+    let f = Scene3d.shadowCasterFieldsOf(Scene3d.billboardFieldsOf(shadowBoard()));
+    Assert.assertEq(expected = (1.0, 1.5), (f#size#x, f#size#y))
+
+/// withShadowCasterScale(0.5, 0.5) の板は、影の地図に幅と高さを 0.5 倍で描く（見えている板の大きさは変えない）。
+@Test
+def testShadowCasterScaleShrinksOnlyTheShadowBoard(): Unit \ Assert =
+    let camera = { eye = Vec3.v3(0.0, 2.0, -5.0), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 0.5, far = 100.0, lensShift = Vec2.zero() };
+    let caster = shadowBoard() |> Scene3d.withCastShadows(true) |> Scene3d.withShadowCasterScale(Vec2.v2(0.5, 0.5));
+    let scene = { billboards = caster :: Nil | Scene3d.scene(camera, { x = 160.0, y = 90.0 }) };
+    let found = Scene3d.shadowCastingBillboardsOf(Scene3d.frustumOf(scene), scene) |> List.map(f -> (f#size#x, f#size#y));
+    let shown = Scene3d.billboardFieldsOf(caster);
+    Assert.assertEq(expected = ((0.5, 0.75) :: Nil, (1.0, 1.5)), (found, (shown#size#x, shown#size#y)))
+
+/// 倍率の成分が 0 の板は影の地図に描かない。
+@Test
+def testZeroShadowCasterScaleCastsNothing(): Unit \ Assert =
+    let camera = { eye = Vec3.v3(0.0, 2.0, -5.0), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 0.5, far = 100.0, lensShift = Vec2.zero() };
+    let caster = shadowBoard() |> Scene3d.withCastShadows(true) |> Scene3d.withShadowCasterScale(Vec2.v2(0.0, 1.0));
+    let scene = { billboards = caster :: Nil | Scene3d.scene(camera, { x = 160.0, y = 90.0 }) };
+    Assert.assertEq(expected = 0, List.length(Scene3d.shadowCastingBillboardsOf(Scene3d.frustumOf(scene), scene)))
+
+/// 点光源の影: 光が板の西（−x）にあれば、板の横は光へ全面を向ける z の向き。range の外の板と castShadows でない板は描かない。
+@Test
+def testPointLightBillboardCastersFaceTheLight(): Unit \ Assert =
+    let camera = { eye = Vec3.v3(0.0, 2.0, -5.0), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 0.5, far = 100.0, lensShift = Vec2.zero() };
+    let caster = shadowBoard() |> Scene3d.withCastShadows(true);
+    let distant = Scene3d.billboard("chars", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 24.0 } }, Vec3.v3(40.0, 0.0, 5.0), { x = 1.0, y = 1.5 })
+        |> Scene3d.withCastShadows(true);
+    let lamp = { position = Vec3.v3(0.0, 2.0, 5.0), color = Color.rgb(1.0, 1.0, 1.0), intensity = 1.0, range = 6.0 };
+    let floor = Scene3d.meshInstance(Mesh3d.fromPolygons({ points = Vec3.v3(-5.0, 0.0, 0.0) :: Vec3.v3(0.0, 0.0, 9.0) :: Vec3.v3(5.0, 0.0, 0.0) :: Nil,
+                                                          color = Color.rgb(1.0, 1.0, 1.0) } :: Nil), Mat4.identity());
+    let scene = { billboards = shadowBoard() :: caster :: distant :: Nil, pointLights = lamp :: Nil, instances = floor :: Nil
+                | Scene3d.scene(camera, { x = 160.0, y = 90.0 }) } |> Scene3d.withPointShadows(Scene3d.pointShadowMap());
+    let found = Scene3d.PointShadows.atlasOf(scene) |> Option.toList |> List.flatMap(a -> a#lights)
+        |> List.flatMap(l -> Scene3d.PointShadows.castingBillboardsOf(scene, l)) |> List.map(pair -> { let (_, r) = pair; (r#x, r#y, r#z) });
+    Assert.assertEq(expected = (0.0, 0.0, -1.0) :: Nil, found)

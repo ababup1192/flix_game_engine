@@ -19,21 +19,22 @@ pub mod SoftRaster3dLight {
         }
 
     /// lightingModel の光の量（toon の丸めまで済ませた値。sunLit = 太陽の影の割合）。
-    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64): (Float64, Float64, Float64) =
+    pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64) =
         let sky_0 = (hemisphere * Float64.max(0.0, nY));
-        let (points_1X, points_1Y, points_1Z) = lightAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
-        let (spots_2X, spots_2Y, spots_2Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
+        let (points_1X, points_1Y, points_1Z) = lightAtPoints(points, 0, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
+        let (spots_2X, spots_2Y, spots_2Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
         let sunFacing_3 = clamp01((0.0 + (((nX * sunDirX) + (nY * sunDirY)) + (nZ * sunDirZ))));
-        (toon(steps, ((((ambientX + sky_0) + points_1X) + spots_2X) + ((sunColorX * sunFacing_3) * sunLit))), toon(steps, ((((ambientY + sky_0) + points_1Y) + spots_2Y) + ((sunColorY * sunFacing_3) * sunLit))), toon(steps, ((((ambientZ + sky_0) + points_1Z) + spots_2Z) + ((sunColorZ * sunFacing_3) * sunLit))))
+        let t_4 = (if ((physicalUnits > 0.0)) 0.3183098861837907 else 1.0);
+        (toon(steps, ((((ambientX + sky_0) + points_1X) + spots_2X) + (((sunColorX * sunFacing_3) * sunLit) * t_4))), toon(steps, ((((ambientY + sky_0) + points_1Y) + spots_2Y) + (((sunColorY * sunFacing_3) * sunLit) * t_4))), toon(steps, ((((ambientZ + sky_0) + points_1Z) + spots_2Z) + (((sunColorZ * sunFacing_3) * sunLit) * t_4))))
 
     /// lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
-    pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64): (Float64, Float64, Float64) =
+    pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64) =
         let c_1 = (lightmapSrgb > 0.0);
         let t_0X = (if (c_1) Texture3d.srgbToLinear(lightmapX) else lightmapX);
         let t_0Y = (if (c_1) Texture3d.srgbToLinear(lightmapY) else lightmapY);
         let t_0Z = (if (c_1) Texture3d.srgbToLinear(lightmapZ) else lightmapZ);
-        let (points_2X, points_2Y, points_2Z) = lightAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
-        let (spots_3X, spots_3Y, spots_3Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
+        let (points_2X, points_2Y, points_2Z) = lightAtPoints(points, 0, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
+        let (spots_3X, spots_3Y, spots_3Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, 0.0, 0.0, 0.0);
         (toon(steps, ((Float64.max(0.0, (t_0X * lightmapIntensity)) + points_2X) + spots_3X)), toon(steps, ((Float64.max(0.0, (t_0Y * lightmapIntensity)) + points_2Y) + spots_3Y)), toon(steps, ((Float64.max(0.0, (t_0Z * lightmapIntensity)) + points_2Z) + spots_3Z)))
 
     /// fogModel の色（fog が無い場面では呼ばない）。
@@ -54,7 +55,7 @@ pub mod SoftRaster3dLight {
         ((horizonX + ((t_0X - horizonX) * t_2)), (horizonY + ((t_0Y - horizonY) * t_2)), (horizonZ + ((t_0Z - horizonZ) * t_2)))
 
     /// pbrModel の、かすみの前の色（light = lightAt か lightmapLightAt の値・metalRough の x = metallic・y = roughness・z は使わない）。
-    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64): (Float64, Float64, Float64) =
+    pub def pbrAt(points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, albedoX: Float64, albedoY: Float64, albedoZ: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, metalRoughX: Float64, metalRoughY: Float64, _metalRoughZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64, envColorX: Float64, envColorY: Float64, envColorZ: Float64, envOn: Float64, sunDirX: Float64, sunDirY: Float64, sunDirZ: Float64, sunColorX: Float64, sunColorY: Float64, sunColorZ: Float64, sunLit: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64): (Float64, Float64, Float64) =
         let metallic_0 = metalRoughX;
         let roughness_1 = metalRoughY;
         let alpha_2 = Float64.max(0.002, (roughness_1 * roughness_1));
@@ -74,8 +75,8 @@ pub mod SoftRaster3dLight {
         let viewTerm_10 = ((nv_9 / ((nv_9 * (1.0 - (0.5 * alpha_2))) + (0.5 * alpha_2))) / (4.0 * nv_9));
         let dScale_11 = (alphaSq_3 / 3.141592653589793);
         let t_12 = (1.0 - metallic_0);
-        let (points_13X, points_13Y, points_13Z) = pbrAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
-        let (spots_14X, spots_14Y, spots_14Z) = pbrAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
+        let (points_13X, points_13Y, points_13Z) = pbrAtPoints(points, 0, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
+        let (spots_14X, spots_14Y, spots_14Z) = pbrAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, 0.0, 0.0, 0.0);
         let l_15X = sunDirX;
         let l_15Y = sunDirY;
         let l_15Z = sunDirZ;
@@ -166,111 +167,143 @@ pub mod SoftRaster3dLight {
         };
         (t_30X, t_30Y, t_30Z)
 
-    def lightAtPoints(lights: Vector[Float64], i: Int32, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
+    def lightAtPoints(lights: Vector[Float64], i: Int32, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
         if (i + 7 > Vector.length(lights)) (accX, accY, accZ)
         else {
             let d_l0X = (Vector.get(i, lights) - pX);
             let d_l0Y = (Vector.get(i + 1, lights) - pY);
             let d_l0Z = (Vector.get(i + 2, lights) - pZ);
             let dSq_l1 = (((d_l0X * d_l0X) + (d_l0Y * d_l0Y)) + (d_l0Z * d_l0Z));
-            let falloff_l2 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 6, lights), 1.0e-12))));
-            let att_l3 = (falloff_l2 * falloff_l2);
-            let inv_l4 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
-            let l_l5X = (d_l0X * inv_l4);
-            let l_l5Y = (d_l0Y * inv_l4);
-            let l_l5Z = (d_l0Z * inv_l4);
-            let facing_l6 = clamp01((0.0 + (((nX * l_l5X) + (nY * l_l5Y)) + (nZ * l_l5Z))));
-            let k_l7 = (att_l3 * facing_l6);
-            lightAtPoints(lights, i + 7, pX, pY, pZ, nX, nY, nZ, (accX + (Vector.get(i + 3, lights) * k_l7)), (accY + (Vector.get(i + 4, lights) * k_l7)), (accZ + (Vector.get(i + 5, lights) * k_l7)))
+            let t_l5 = if ((physicalUnits > 0.0)) {
+                let ratio_l2 = (dSq_l1 / Float64.max(Vector.get(i + 6, lights), 1.0e-12));
+                let window_l3 = clamp01((1.0 - (ratio_l2 * ratio_l2)));
+                ((window_l3 * window_l3) / Float64.max((dSq_l1 * inverseUnitsPerMeterSquared), 1.0e-4))
+            } else {
+                let falloff_l4 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 6, lights), 1.0e-12))));
+                (falloff_l4 * falloff_l4)
+            };
+            let att_l6 = t_l5;
+            let inv_l7 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
+            let l_l8X = (d_l0X * inv_l7);
+            let l_l8Y = (d_l0Y * inv_l7);
+            let l_l8Z = (d_l0Z * inv_l7);
+            let facing_l9 = clamp01((0.0 + (((nX * l_l8X) + (nY * l_l8Y)) + (nZ * l_l8Z))));
+            let k_l10 = (att_l6 * facing_l9);
+            let t_l11 = (if ((physicalUnits > 0.0)) 0.3183098861837907 else 1.0);
+            let t_l12 = Vector.get(i / 7, pointLit);
+            lightAtPoints(lights, i + 7, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, (accX + (((Vector.get(i + 3, lights) * k_l10) * t_l11) * t_l12)), (accY + (((Vector.get(i + 4, lights) * k_l10) * t_l11) * t_l12)), (accZ + (((Vector.get(i + 5, lights) * k_l10) * t_l11) * t_l12)))
         }
 
-    def lightAtSpots(lights: Vector[Float64], i: Int32, shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
+    def lightAtSpots(lights: Vector[Float64], i: Int32, shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
         if (i + 12 > Vector.length(lights)) (accX, accY, accZ)
         else {
             let d_l0X = (Vector.get(i, lights) - pX);
             let d_l0Y = (Vector.get(i + 1, lights) - pY);
             let d_l0Z = (Vector.get(i + 2, lights) - pZ);
             let dSq_l1 = (((d_l0X * d_l0X) + (d_l0Y * d_l0Y)) + (d_l0Z * d_l0Z));
-            let falloff_l2 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 11, lights), 1.0e-12))));
-            let att_l3 = (falloff_l2 * falloff_l2);
-            let inv_l4 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
-            let l_l5X = (d_l0X * inv_l4);
-            let l_l5Y = (d_l0Y * inv_l4);
-            let l_l5Z = (d_l0Z * inv_l4);
-            let facing_l6 = clamp01((0.0 + (((nX * l_l5X) + (nY * l_l5Y)) + (nZ * l_l5Z))));
-            let k_l7 = (att_l3 * facing_l6);
-            let cone_l8 = smoothstep(Vector.get(i + 6, lights), Vector.get(i + 7, lights), (0.0 - (((l_l5X * Vector.get(i + 3, lights)) + (l_l5Y * Vector.get(i + 4, lights))) + (l_l5Z * Vector.get(i + 5, lights)))));
-            let lit_l9 = (if (((k_l7 > 0.0) and (cone_l8 > 0.0))) SoftRaster3d.shadowFactorAt(shadow, i, pX, pY, pZ) else 1.0);
-            lightAtSpots(lights, i + 12, shadow, pX, pY, pZ, nX, nY, nZ, (accX + (((Vector.get(i + 8, lights) * k_l7) * cone_l8) * lit_l9)), (accY + (((Vector.get(i + 9, lights) * k_l7) * cone_l8) * lit_l9)), (accZ + (((Vector.get(i + 10, lights) * k_l7) * cone_l8) * lit_l9)))
+            let t_l5 = if ((physicalUnits > 0.0)) {
+                let ratio_l2 = (dSq_l1 / Float64.max(Vector.get(i + 11, lights), 1.0e-12));
+                let window_l3 = clamp01((1.0 - (ratio_l2 * ratio_l2)));
+                ((window_l3 * window_l3) / Float64.max((dSq_l1 * inverseUnitsPerMeterSquared), 1.0e-4))
+            } else {
+                let falloff_l4 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 11, lights), 1.0e-12))));
+                (falloff_l4 * falloff_l4)
+            };
+            let att_l6 = t_l5;
+            let inv_l7 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
+            let l_l8X = (d_l0X * inv_l7);
+            let l_l8Y = (d_l0Y * inv_l7);
+            let l_l8Z = (d_l0Z * inv_l7);
+            let facing_l9 = clamp01((0.0 + (((nX * l_l8X) + (nY * l_l8Y)) + (nZ * l_l8Z))));
+            let k_l10 = (att_l6 * facing_l9);
+            let cone_l11 = smoothstep(Vector.get(i + 6, lights), Vector.get(i + 7, lights), (0.0 - (((l_l8X * Vector.get(i + 3, lights)) + (l_l8Y * Vector.get(i + 4, lights))) + (l_l8Z * Vector.get(i + 5, lights)))));
+            let lit_l12 = (if (((k_l10 > 0.0) and (cone_l11 > 0.0))) SoftRaster3d.shadowFactorAt(shadow, i, pX, pY, pZ) else 1.0);
+            let t_l13 = (if ((physicalUnits > 0.0)) 0.3183098861837907 else 1.0);
+            lightAtSpots(lights, i + 12, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, (accX + ((((Vector.get(i + 8, lights) * k_l10) * cone_l11) * lit_l12) * t_l13)), (accY + ((((Vector.get(i + 9, lights) * k_l10) * cone_l11) * lit_l12) * t_l13)), (accZ + ((((Vector.get(i + 10, lights) * k_l10) * cone_l11) * lit_l12) * t_l13)))
         }
 
-    def pbrAtPoints(lights: Vector[Float64], i: Int32, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, alphaSq_3: Float64, alpha_2: Float64, dScale_11: Float64, fZero_4X: Float64, fZero_4Y: Float64, fZero_4Z: Float64, v_8X: Float64, v_8Y: Float64, v_8Z: Float64, viewTerm_10: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
+    def pbrAtPoints(lights: Vector[Float64], i: Int32, pointLit: Vector[Float64], pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, alphaSq_3: Float64, alpha_2: Float64, dScale_11: Float64, fZero_4X: Float64, fZero_4Y: Float64, fZero_4Z: Float64, v_8X: Float64, v_8Y: Float64, v_8Z: Float64, viewTerm_10: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
         if (i + 7 > Vector.length(lights)) (accX, accY, accZ)
         else {
             let d_l0X = (Vector.get(i, lights) - pX);
             let d_l0Y = (Vector.get(i + 1, lights) - pY);
             let d_l0Z = (Vector.get(i + 2, lights) - pZ);
             let dSq_l1 = (((d_l0X * d_l0X) + (d_l0Y * d_l0Y)) + (d_l0Z * d_l0Z));
-            let falloff_l2 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 6, lights), 1.0e-12))));
-            let att_l3 = (falloff_l2 * falloff_l2);
-            let inv_l4 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
-            let l_l5X = (d_l0X * inv_l4);
-            let l_l5Y = (d_l0Y * inv_l4);
-            let l_l5Z = (d_l0Z * inv_l4);
-            let facing_l6 = clamp01((0.0 + (((nX * l_l5X) + (nY * l_l5Y)) + (nZ * l_l5Z))));
-            let k_l7 = (att_l3 * facing_l6);
-            let (t_l17X, t_l17Y, t_l17Z) = if ((k_l7 > 0.0)) {
-                let h_l8X = (l_l5X + v_8X);
-                let h_l8Y = (l_l5Y + v_8Y);
-                let h_l8Z = (l_l5Z + v_8Z);
-                let hSq_l9 = (((h_l8X * h_l8X) + (h_l8Y * h_l8Y)) + (h_l8Z * h_l8Z));
-                let invH_l10 = (if ((1.0e-24 > hSq_l9)) 0.0 else (1.0 / Num.sqrt(hSq_l9)));
-                let nh_l11 = Float64.max(0.0, ((((nX * h_l8X) + (nY * h_l8Y)) + (nZ * h_l8Z)) * invH_l10));
-                let vh_l12 = Float64.max(0.0, ((((v_8X * h_l8X) + (v_8Y * h_l8Y)) + (v_8Z * h_l8Z)) * invH_l10));
-                let spread_l13 = (((nh_l11 * nh_l11) * (alphaSq_3 - 1.0)) + 1.0);
-                let base_l14 = (1.0 - vh_l12);
-                let t_l15 = (((base_l14 * base_l14) * (base_l14 * base_l14)) * base_l14);
-                let t_l16 = ((dScale_11 / (spread_l13 * spread_l13)) * ((facing_l6 / ((facing_l6 * (1.0 - (0.5 * alpha_2))) + (0.5 * alpha_2))) * viewTerm_10));
-                ((((Vector.get(i + 3, lights) * att_l3) * (fZero_4X + ((1.0 - fZero_4X) * t_l15))) * t_l16), (((Vector.get(i + 4, lights) * att_l3) * (fZero_4Y + ((1.0 - fZero_4Y) * t_l15))) * t_l16), (((Vector.get(i + 5, lights) * att_l3) * (fZero_4Z + ((1.0 - fZero_4Z) * t_l15))) * t_l16))
+            let t_l5 = if ((physicalUnits > 0.0)) {
+                let ratio_l2 = (dSq_l1 / Float64.max(Vector.get(i + 6, lights), 1.0e-12));
+                let window_l3 = clamp01((1.0 - (ratio_l2 * ratio_l2)));
+                ((window_l3 * window_l3) / Float64.max((dSq_l1 * inverseUnitsPerMeterSquared), 1.0e-4))
+            } else {
+                let falloff_l4 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 6, lights), 1.0e-12))));
+                (falloff_l4 * falloff_l4)
+            };
+            let att_l6 = t_l5;
+            let inv_l7 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
+            let l_l8X = (d_l0X * inv_l7);
+            let l_l8Y = (d_l0Y * inv_l7);
+            let l_l8Z = (d_l0Z * inv_l7);
+            let facing_l9 = clamp01((0.0 + (((nX * l_l8X) + (nY * l_l8Y)) + (nZ * l_l8Z))));
+            let k_l10 = (att_l6 * facing_l9);
+            let (t_l21X, t_l21Y, t_l21Z) = if ((k_l10 > 0.0)) {
+                let h_l11X = (l_l8X + v_8X);
+                let h_l11Y = (l_l8Y + v_8Y);
+                let h_l11Z = (l_l8Z + v_8Z);
+                let hSq_l12 = (((h_l11X * h_l11X) + (h_l11Y * h_l11Y)) + (h_l11Z * h_l11Z));
+                let invH_l13 = (if ((1.0e-24 > hSq_l12)) 0.0 else (1.0 / Num.sqrt(hSq_l12)));
+                let nh_l14 = Float64.max(0.0, ((((nX * h_l11X) + (nY * h_l11Y)) + (nZ * h_l11Z)) * invH_l13));
+                let vh_l15 = Float64.max(0.0, ((((v_8X * h_l11X) + (v_8Y * h_l11Y)) + (v_8Z * h_l11Z)) * invH_l13));
+                let spread_l16 = (((nh_l14 * nh_l14) * (alphaSq_3 - 1.0)) + 1.0);
+                let t_l17 = Vector.get(i / 7, pointLit);
+                let base_l18 = (1.0 - vh_l15);
+                let t_l19 = (((base_l18 * base_l18) * (base_l18 * base_l18)) * base_l18);
+                let t_l20 = ((dScale_11 / (spread_l16 * spread_l16)) * ((facing_l9 / ((facing_l9 * (1.0 - (0.5 * alpha_2))) + (0.5 * alpha_2))) * viewTerm_10));
+                (((((Vector.get(i + 3, lights) * att_l6) * t_l17) * (fZero_4X + ((1.0 - fZero_4X) * t_l19))) * t_l20), ((((Vector.get(i + 4, lights) * att_l6) * t_l17) * (fZero_4Y + ((1.0 - fZero_4Y) * t_l19))) * t_l20), ((((Vector.get(i + 5, lights) * att_l6) * t_l17) * (fZero_4Z + ((1.0 - fZero_4Z) * t_l19))) * t_l20))
             } else {
                 (0.0, 0.0, 0.0)
             };
-            pbrAtPoints(lights, i + 7, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, (accX + t_l17X), (accY + t_l17Y), (accZ + t_l17Z))
+            pbrAtPoints(lights, i + 7, pointLit, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, (accX + t_l21X), (accY + t_l21Y), (accZ + t_l21Z))
         }
 
-    def pbrAtSpots(lights: Vector[Float64], i: Int32, shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, alphaSq_3: Float64, alpha_2: Float64, dScale_11: Float64, fZero_4X: Float64, fZero_4Y: Float64, fZero_4Z: Float64, v_8X: Float64, v_8Y: Float64, v_8Z: Float64, viewTerm_10: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
+    def pbrAtSpots(lights: Vector[Float64], i: Int32, shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, physicalUnits: Float64, inverseUnitsPerMeterSquared: Float64, alphaSq_3: Float64, alpha_2: Float64, dScale_11: Float64, fZero_4X: Float64, fZero_4Y: Float64, fZero_4Z: Float64, v_8X: Float64, v_8Y: Float64, v_8Z: Float64, viewTerm_10: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
         if (i + 12 > Vector.length(lights)) (accX, accY, accZ)
         else {
             let d_l0X = (Vector.get(i, lights) - pX);
             let d_l0Y = (Vector.get(i + 1, lights) - pY);
             let d_l0Z = (Vector.get(i + 2, lights) - pZ);
             let dSq_l1 = (((d_l0X * d_l0X) + (d_l0Y * d_l0Y)) + (d_l0Z * d_l0Z));
-            let falloff_l2 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 11, lights), 1.0e-12))));
-            let att_l3 = (falloff_l2 * falloff_l2);
-            let inv_l4 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
-            let l_l5X = (d_l0X * inv_l4);
-            let l_l5Y = (d_l0Y * inv_l4);
-            let l_l5Z = (d_l0Z * inv_l4);
-            let facing_l6 = clamp01((0.0 + (((nX * l_l5X) + (nY * l_l5Y)) + (nZ * l_l5Z))));
-            let k_l7 = (att_l3 * facing_l6);
-            let cone_l8 = smoothstep(Vector.get(i + 6, lights), Vector.get(i + 7, lights), (0.0 - (((l_l5X * Vector.get(i + 3, lights)) + (l_l5Y * Vector.get(i + 4, lights))) + (l_l5Z * Vector.get(i + 5, lights)))));
-            let lit_l9 = (if (((k_l7 > 0.0) and (cone_l8 > 0.0))) SoftRaster3d.shadowFactorAt(shadow, i, pX, pY, pZ) else 1.0);
-            let (t_l19X, t_l19Y, t_l19Z) = if (((k_l7 > 0.0) and (cone_l8 > 0.0))) {
-                let h_l10X = (l_l5X + v_8X);
-                let h_l10Y = (l_l5Y + v_8Y);
-                let h_l10Z = (l_l5Z + v_8Z);
-                let hSq_l11 = (((h_l10X * h_l10X) + (h_l10Y * h_l10Y)) + (h_l10Z * h_l10Z));
-                let invH_l12 = (if ((1.0e-24 > hSq_l11)) 0.0 else (1.0 / Num.sqrt(hSq_l11)));
-                let nh_l13 = Float64.max(0.0, ((((nX * h_l10X) + (nY * h_l10Y)) + (nZ * h_l10Z)) * invH_l12));
-                let vh_l14 = Float64.max(0.0, ((((v_8X * h_l10X) + (v_8Y * h_l10Y)) + (v_8Z * h_l10Z)) * invH_l12));
-                let spread_l15 = (((nh_l13 * nh_l13) * (alphaSq_3 - 1.0)) + 1.0);
-                let base_l16 = (1.0 - vh_l14);
-                let t_l17 = (((base_l16 * base_l16) * (base_l16 * base_l16)) * base_l16);
-                let t_l18 = ((dScale_11 / (spread_l15 * spread_l15)) * ((facing_l6 / ((facing_l6 * (1.0 - (0.5 * alpha_2))) + (0.5 * alpha_2))) * viewTerm_10));
-                ((((((Vector.get(i + 8, lights) * att_l3) * cone_l8) * lit_l9) * (fZero_4X + ((1.0 - fZero_4X) * t_l17))) * t_l18), (((((Vector.get(i + 9, lights) * att_l3) * cone_l8) * lit_l9) * (fZero_4Y + ((1.0 - fZero_4Y) * t_l17))) * t_l18), (((((Vector.get(i + 10, lights) * att_l3) * cone_l8) * lit_l9) * (fZero_4Z + ((1.0 - fZero_4Z) * t_l17))) * t_l18))
+            let t_l5 = if ((physicalUnits > 0.0)) {
+                let ratio_l2 = (dSq_l1 / Float64.max(Vector.get(i + 11, lights), 1.0e-12));
+                let window_l3 = clamp01((1.0 - (ratio_l2 * ratio_l2)));
+                ((window_l3 * window_l3) / Float64.max((dSq_l1 * inverseUnitsPerMeterSquared), 1.0e-4))
+            } else {
+                let falloff_l4 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 11, lights), 1.0e-12))));
+                (falloff_l4 * falloff_l4)
+            };
+            let att_l6 = t_l5;
+            let inv_l7 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
+            let l_l8X = (d_l0X * inv_l7);
+            let l_l8Y = (d_l0Y * inv_l7);
+            let l_l8Z = (d_l0Z * inv_l7);
+            let facing_l9 = clamp01((0.0 + (((nX * l_l8X) + (nY * l_l8Y)) + (nZ * l_l8Z))));
+            let k_l10 = (att_l6 * facing_l9);
+            let cone_l11 = smoothstep(Vector.get(i + 6, lights), Vector.get(i + 7, lights), (0.0 - (((l_l8X * Vector.get(i + 3, lights)) + (l_l8Y * Vector.get(i + 4, lights))) + (l_l8Z * Vector.get(i + 5, lights)))));
+            let lit_l12 = (if (((k_l10 > 0.0) and (cone_l11 > 0.0))) SoftRaster3d.shadowFactorAt(shadow, i, pX, pY, pZ) else 1.0);
+            let (t_l22X, t_l22Y, t_l22Z) = if (((k_l10 > 0.0) and (cone_l11 > 0.0))) {
+                let h_l13X = (l_l8X + v_8X);
+                let h_l13Y = (l_l8Y + v_8Y);
+                let h_l13Z = (l_l8Z + v_8Z);
+                let hSq_l14 = (((h_l13X * h_l13X) + (h_l13Y * h_l13Y)) + (h_l13Z * h_l13Z));
+                let invH_l15 = (if ((1.0e-24 > hSq_l14)) 0.0 else (1.0 / Num.sqrt(hSq_l14)));
+                let nh_l16 = Float64.max(0.0, ((((nX * h_l13X) + (nY * h_l13Y)) + (nZ * h_l13Z)) * invH_l15));
+                let vh_l17 = Float64.max(0.0, ((((v_8X * h_l13X) + (v_8Y * h_l13Y)) + (v_8Z * h_l13Z)) * invH_l15));
+                let spread_l18 = (((nh_l16 * nh_l16) * (alphaSq_3 - 1.0)) + 1.0);
+                let base_l19 = (1.0 - vh_l17);
+                let t_l20 = (((base_l19 * base_l19) * (base_l19 * base_l19)) * base_l19);
+                let t_l21 = ((dScale_11 / (spread_l18 * spread_l18)) * ((facing_l9 / ((facing_l9 * (1.0 - (0.5 * alpha_2))) + (0.5 * alpha_2))) * viewTerm_10));
+                ((((((Vector.get(i + 8, lights) * att_l6) * cone_l11) * lit_l12) * (fZero_4X + ((1.0 - fZero_4X) * t_l20))) * t_l21), (((((Vector.get(i + 9, lights) * att_l6) * cone_l11) * lit_l12) * (fZero_4Y + ((1.0 - fZero_4Y) * t_l20))) * t_l21), (((((Vector.get(i + 10, lights) * att_l6) * cone_l11) * lit_l12) * (fZero_4Z + ((1.0 - fZero_4Z) * t_l20))) * t_l21))
             } else {
                 (0.0, 0.0, 0.0)
             };
-            pbrAtSpots(lights, i + 12, shadow, pX, pY, pZ, nX, nY, nZ, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, (accX + t_l19X), (accY + t_l19Y), (accZ + t_l19Z))
+            pbrAtSpots(lights, i + 12, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, (accX + t_l22X), (accY + t_l22Y), (accZ + t_l22Z))
         }
 }
