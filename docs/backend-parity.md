@@ -171,6 +171,15 @@ gl-parity は 1 コマずつの場面を GL と CPU で比べる。こちらは*
 - GL の絵は機械とドライバで変わる。基準の SHA を別の機械の撮った物と比べない
 - game-starter は src に `make new-game` が埋める字が残っていて、その場では組めないので撮らない
 
+### GL の呼び出しの並びを控えて比べる（`FLIX_GE_GL_LOG`）
+
+描き手（render_gl）を直した前後で、実機の GL の呼び出しの並び（関数・引数・戻り値・送ったバッファの CRC）が同じかを比べる。
+
+- `FLIX_GE_GL_LOG=<ファイル>` を上の撮り方と一緒に置いて 2 回起動し、ファイルを diff する。起動の分と頭の `FLIX_GE_GL_LOG_FRAMES` コマ（既定 6）を 1 行ずつ書き、コマは `--- frame n` で区切る
+- GL の backend だけの口（`FLIX_GE_BACKEND` を置かなければ GL で起動する）
+- 控える間は起動画面を描かない
+- engine の作業場では gl-capture の場面で流す
+
 ## 基準（bench/baseline/<版>/）
 
 後の段の「変わっていない」を数で比べるための控え。0.76.0 の分は `bench/baseline/0.76.0/` にある。

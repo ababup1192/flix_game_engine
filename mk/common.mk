@@ -10,7 +10,11 @@
 # WhyNot: 前置きを ENGINE の名前で決めない — エンジンの Makefile で ENGINE を決めると、環境変数で来た
 # ENGINE（Studio が渡す同梱の engine）を書き換えたまま子の make と道具へ渡してしまう。
 
-.PHONY: help help-all hooks api module mvn-cache-share
+.PHONY: help help-all hooks api module mvn-cache-share strays worktree-gc
+
+# python3 を起こす前置き（レシピでは素の python3 でなく $(PYTHON3) と書く）。macOS で DEVELOPER_DIR が nix の apple-sdk を
+# 指していても動くように、bin/py3 が起こす 1 回だけ CommandLineTools へ向け直す（理由は bin/py3 の頭）。
+PYTHON3 ?= $(if $(filter Windows_NT,$(OS)),python3,"$(FGE_PREFIX)bin/py3")
 
 ##@ 一覧・引く・配線
 help: ### | 日ごろ使うターゲットの一覧（全部は make help-all）
@@ -52,3 +56,14 @@ module: ## Q=<語> | やりたいこと → エンジンのモジュールを 1 
 # ROOT を省くとこの作業場。置き場・移し方・同時に使っても壊れない根拠は bin/mvn-cache-share.sh。
 mvn-cache-share: ### [ROOT=<dir>] | lib/cache を共有の置き場への symlink にする（status が「向いていない」と言ったら）
 	@"$(MVN_CACHE_SHARE)" "$(or $(ROOT),$(CURDIR))"
+
+# このリポジトリ（engine なら main と全部の worktree）から起こして、親がいなくなったまま残っているプロセス
+# （ヘッドレスの Chrome・http.server・ゲームのウィンドウ・消した worktree の常駐）を一覧にする。人の普段の Chrome やアプリは拾わない。
+# 拾い方と止めない物の理由は bin/strays.sh の頭。
+strays: ## [KILL=1] [AGE=<分>] | このリポから起こして取り残されたプロセス（Chrome・http.server・ウィンドウ・常駐）を一覧に（KILL=1 で AGE 分より古い物を止める）
+	@KILL="$(KILL)" AGE="$(AGE)" ROOT="$(STRAYS_ROOT)" "$(FGE_PREFIX)bin/strays.sh" "$(CURDIR)"
+
+# たまった git worktree のうち、main（INTO=<枝> で替える）に取り込み済み・未コミット 0・未追跡 0・使っているプロセス無し・
+# GC_AGE 時間（既定 12）触っていない物を一覧にする。APPLY=1 で git worktree remove（枝は残す）。make status が結果を 1 行に出す。
+worktree-gc: ## [APPLY=1] [INTO=<枝>] [GC_AGE=<時間>] | 取り込み済みで変更の無い git worktree を一覧に（APPLY=1 で消す・枝は残す）
+	@"$(FGE_PREFIX)bin/fge" worktree-gc $(if $(INTO),--base "$(INTO)") $(if $(GC_AGE),--age "$(GC_AGE)") $(if $(filter 1,$(APPLY)),--apply)

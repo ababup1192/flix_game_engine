@@ -121,6 +121,9 @@ def main():
     url, out = sys.argv[1], sys.argv[2]
     script = json.load(open(sys.argv[3] if len(sys.argv) > 3 else DEMO))
     os.makedirs(out, exist_ok=True)
+    # WhyNot: TERM・HUP を既定のまま落ちさせない — 既定では finally を通らず、別の組（start_new_session）の Chrome が親を失って残る。
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda n, _f: sys.exit(128 + n))
     profile = tempfile.mkdtemp(prefix="hd2d_cdp_")
     proc = subprocess.Popen([CHROME, "--headless=new", "--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1",
                              "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--disable-extensions",

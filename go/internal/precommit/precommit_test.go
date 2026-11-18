@@ -1,12 +1,15 @@
 package precommit
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // repoRoot はこのリポジトリのルート（テストの cwd は go/internal/precommit）。
@@ -451,5 +454,87 @@ func TestLocalGateMissingIsSilent(t *testing.T) {
 	parent, _, _, code := gateRun(t, root, []string{"--files", "notes.txt"}, okLints(t), nil)
 	if code != 0 || parent != "" {
 		t.Errorf("口が無いのに何か言った: code=%d %q", code, parent)
+	}
+}
+
+// driftRepo はリファレンス 1 枚（a.png）を持つゲームの根を作り、前のコミットの後に描き出した gallery を置く。
+func driftRepo(t *testing.T, galleryBytes string) string {
+	t.Helper()
+	root := fakeRepo(t)
+	for _, d := range []string{"reference", "gallery", "src"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	sum := sha256.Sum256([]byte("same"))
+	os.WriteFile(filepath.Join(root, "reference", "SHA256SUMS.txt"), []byte(hex.EncodeToString(sum[:])+"  a.png\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "src", "View.flix"), []byte("mod View {}\n"), 0o644)
+	git := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+			"GIT_AUTHOR_DATE=2020-01-01T00:00:00", "GIT_COMMITTER_DATE=2020-01-01T00:00:00")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "reference", "src")
+	git("commit", "-q", "-m", "base")
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	os.Chtimes(filepath.Join(root, "reference", "SHA256SUMS.txt"), old, old)
+	os.WriteFile(filepath.Join(root, "gallery", "a.png"), []byte(galleryBytes), 0o644)
+	return root
+}
+
+func TestReferenceDriftStopsRenderedDiff(t *testing.T) {
+	root := driftRepo(t, "changed")
+	parent, _, _, code := gateRun(t, root, []string{"--files", "src/View.flix"}, okLints(t), nil)
+	if code == 0 || !strings.Contains(parent, "絵の差") || !strings.Contains(parent, "a.png") {
+		t.Errorf("描き出した差のあるコミットが通った: parent=%q code=%d", parent, code)
+	}
+}
+
+func TestReferenceDriftPassesWithUpdatedSums(t *testing.T) {
+	root := driftRepo(t, "changed")
+	parent, _, _, code := gateRun(t, root, []string{"--files", "src/View.flix,reference/SHA256SUMS.txt"}, okLints(t), nil)
+	if code != 0 || strings.Contains(parent, "絵の差") {
+		t.Errorf("SHA256SUMS を入れた（意図した差のマーカー）のに止まった: parent=%q code=%d", parent, code)
+	}
+}
+
+func TestReferenceDriftPassesSamePicture(t *testing.T) {
+	root := driftRepo(t, "same")
+	parent, _, _, code := gateRun(t, root, []string{"--files", "src/View.flix"}, okLints(t), nil)
+	if code != 0 || strings.Contains(parent, "絵の差") {
+		t.Errorf("同じ絵なのに止まった: parent=%q code=%d", parent, code)
+	}
+}
+
+func TestReferenceDriftIgnoresDocsOnlyCommit(t *testing.T) {
+	root := driftRepo(t, "changed")
+	os.MkdirAll(filepath.Join(root, "docs"), 0o755)
+	os.WriteFile(filepath.Join(root, "docs", "x.md"), []byte("x"), 0o644)
+	parent, _, _, code := gateRun(t, root, []string{"--files", "docs/x.md"}, okLints(t), nil)
+	if code != 0 || strings.Contains(parent, "絵の差") {
+		t.Errorf("絵を変えない文書のコミットで止まった: parent=%q code=%d", parent, code)
+	}
+}
+
+// engine の作業場では templates/<名前>/ の組ごとに見て、engine のソースの直しでも止める。
+func TestReferenceDriftInEngineLayout(t *testing.T) {
+	game := driftRepo(t, "changed")
+	root := fakeRepo(t)
+	tpl := filepath.Join(root, "templates", "demo")
+	os.MkdirAll(filepath.Join(root, "templates"), 0o755)
+	if err := os.Rename(filepath.Join(game, "reference"), filepath.Join(tpl+"-tmp")); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(tpl, 0o755)
+	os.Rename(tpl+"-tmp", filepath.Join(tpl, "reference"))
+	os.Rename(filepath.Join(game, "gallery"), filepath.Join(tpl, "gallery"))
+	os.MkdirAll(filepath.Join(root, "engine", "src"), 0o755)
+	os.WriteFile(filepath.Join(root, "engine", "src", "Draw.flix"), []byte("mod Draw {}\n"), 0o644)
+	exec.Command("git", "-C", root, "init", "-q").Run()
+	parent, _, _, code := gateRun(t, root, []string{"--files", "engine/src/Draw.flix"}, okLints(t), nil)
+	if code == 0 || !strings.Contains(parent, "templates/demo") {
+		t.Errorf("engine のソースの直しで描き出した差が通った: parent=%q code=%d", parent, code)
 	}
 }

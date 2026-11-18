@@ -1,0 +1,14 @@
+#!/bin/sh
+# python3 を、DEVELOPER_DIR が nix の apple-sdk を指していても動く形で起こす。引数はそのまま python3 へ渡す。
+# make と bin/ の中で python3 を呼ぶ所は、素の python3 でなくこれ（make の中は $(PYTHON3)・mk/common.mk）を使う。
+#
+# WhyNot: DEVELOPER_DIR を make 全体へ export して直さない — devbox の go（cgo）と clang は nix の apple-sdk を
+# 前提に組まれていて、全部を CommandLineTools へ向けると go-build の方が壊れる。python3 を起こす 1 回だけ差し替える。
+# WhyNot: nix の python3 が PATH の先にある機械でも差し替える — 差し替えても nix の python3 は DEVELOPER_DIR を見ないので害が無く、
+# PATH の順が違う機械（Studio・別の shell）で /usr/bin/python3 のシムに当たった時だけ効く。
+if [ "$(uname -s)" = Darwin ] && [ -d /Library/Developer/CommandLineTools ]; then
+  case "${DEVELOPER_DIR:-}" in
+    /nix/store/*) DEVELOPER_DIR=/Library/Developer/CommandLineTools; export DEVELOPER_DIR ;;
+  esac
+fi
+exec python3 "$@"

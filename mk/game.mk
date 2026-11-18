@@ -86,7 +86,7 @@ HELP_TAIL = echo ""; echo "make render の場面: $(SHOTS)"; $(if $(RENDER_NOTE)
 fge_space := $(subst ,, )
 include $(subst $(fge_space),\$(fge_space),$(ENGINE))/mk/common.mk
 
-.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade
+.PHONY: status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-huge-methods lint-rules-link video-entries src check-docs-sync compare agent-eval agent-eval-compare agent-eval-release engine-upgrade web-pages-stage
 
 ##@ 遊ぶ・確かめる
 # RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
@@ -182,6 +182,17 @@ ifeq ($(FGE_NO_BASH),1)
 else
 	FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --build-only
 	"$(ENGINE)/bin/fge" dist $(DIST_OS) $(DIST_ARGS)
+endif
+
+# ブラウザ版を gh-pages の枝の <DEST>/ へ置いてコミットするまで（push は人。打つ 1 行と手元で開く手順を最後に出す）。
+# 書き出しは build/web-pages へ毎回作り直す。音のファイル・sounds・deferred の音が 1 本でもあれば止める（配ってよい音だけなら AUDIO=ok）。
+# SRC=<書き出し済みのフォルダ> なら書き出さずにそれを置く。中身と止める理由は $(ENGINE)/bin/web-pages-stage.sh の頭・docs/web-export.md。
+web-pages-stage: ## DEST=<サブフォルダ> [SRC=<書き出し済み>] [AUDIO=ok] | ブラウザ版を gh-pages の <DEST>/ に置いてコミット（音が残れば止める・push は人）
+ifeq ($(FGE_NO_BASH),1)
+	@echo "[web-pages-stage] Windows では流せません（bash の道具）。macOS か Linux で流してください"; exit 1
+else
+	@AUDIO="$(AUDIO)" BRANCH="$(BRANCH)" PAGES_WT="$(PAGES_WT)" NO_BROWSER_CHECK="$(NO_BROWSER_CHECK)" \
+		"$(ENGINE)/bin/web-pages-stage.sh" "$(ENGINE)" "$(CURDIR)" "$(DEST)" "$(SRC)"
 endif
 
 ##@ 描き出し

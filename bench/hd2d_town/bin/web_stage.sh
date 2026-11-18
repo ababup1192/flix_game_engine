@@ -21,7 +21,7 @@ if [ -z "$bgm" ] || [ ! -f "$bgm" ]; then
 fi
 mkdir -p "$stage/assets/bgm"
 cp "$bgm" "$stage/assets/bgm/firmament3_loop.ogg"
-DEVELOPER_DIR=/Library/Developer/CommandLineTools python3 - "$stage/project.json" <<'EOF'
+../../bin/py3 - "$stage/project.json" <<'EOF'
 import json, sys
 p = sys.argv[1]
 d = json.load(open(p))

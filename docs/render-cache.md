@@ -99,6 +99,7 @@ writeFramePng と同じ鍵が返る（指紋の取り方を写さない）。
 - 鍵に絵に効く物が全部入っているので、作業場・worktree・ゲームをまたいで共有してよい（compare の基準と今で共有するのが狙い）
 - 写すたびに時刻を今にする。`bin/fge render-cache prune [--max-mb N]`（既定 16,384 MB・環境変数 `FGE_RENDER_CACHE_MAX_MB` で差し替え。compare の終わりの自動の prune も同じ上限）が古い順に消す。
   reference-check と compare の終わりに自動で流れる。消すのは鍵の形のファイルと 1 時間より古い書きかけだけ。様子は `bin/fge render-cache status`
+  数えた大きさは置き場の `.fge-summary.json` に控え、8 GB を超えていれば `make status` が 1 行で知らせる（status は置き場を歩かない）。
 
 ## compare の基準の写し
 

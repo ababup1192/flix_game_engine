@@ -41,6 +41,7 @@ bin/fge agent-eval --tasks agent-eval/engine.json --tasks agent-eval/<ゲーム>
 同じ版の記録が既にあると `make agent-eval-release` は止まる（`use-engine` で開発中のエンジンを向けると、
 番号がまだ前の版のままのため）。わざと測り直すなら `OVERWRITE=1`。
 失敗した回（10 分の打ち切りなど）は平均に入れず、表と status に「失敗 n 回」と出す。
+流す前に claude -p を 1 回だけ軽く呼び、ログインが切れていれば（`OAuth session expired` など）「ターミナルで claude を開いて /login」と 1 行言って止まる（お題を 0 点の列で埋めない）。飛ばすのは `--no-preflight`。
 
 ## ぶれの大きさ（0.35.21 で 3 回ずつ流した結果）
 

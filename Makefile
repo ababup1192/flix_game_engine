@@ -1395,7 +1395,7 @@ engine-full-fresh: ### | engine_full.fpkg がソースより古くないか（ne
 	 entry=$$(bin/fpkg-store.sh path engine_full) || { echo "error: 置き場（build/fpkg-store）に engine_full がありません。make sync-engine-full で入れてください"; exit 1; }; \
 	 case "$${entry##*/}" in engine_full-$(VERSION)-*) ;; *) echo "error: 置き場の今のエントリ（$${entry##*/}）が v$(VERSION) の物ではありません。make sync-engine-full で入れ直してください"; exit 1;; esac; \
 	 { cmp -s "$$entry/package.fpkg" "$(ENGINE_FULL_FPKG_SRC)" && cmp -s "$$entry/flix.toml" "$(ENGINE_FULL_TOML_SRC)"; } || \
-	   { echo "error: 置き場の今の束（$$entry）が $(ENGINE_FULL_FPKG_SRC)・$(ENGINE_FULL_TOML_SRC) と違います。make sync-engine-full で入れ直してください"; exit 1; }
+	   { echo "error: 置き場の今の束（$${entry}）が $(ENGINE_FULL_FPKG_SRC)・$(ENGINE_FULL_TOML_SRC) と違います。make sync-engine-full で入れ直してください"; exit 1; }
 
 .PHONY: new-game
 new-game: engine-full-fresh ## GAME=/abs/path NAME=<名前> [TITLE=] [W=] [H=] [TEMPLATE=] | 新しいゲームを 1 コマンドで産む（check → test → render-all まで通す）

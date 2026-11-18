@@ -54,6 +54,43 @@ bin/fge migrate fill <記録>
 - 終わりの番号: 0 通った・1 止める違いがある（`--strict` なら自動で通らなかった迷った差も。`--no-auto` なら自動で通した物も）・2 引数か記録が読めない。
 - `video`: 2 本を高さ 960 にそろえて左右に並べる。短い方は最後のコマと無音で長い方の長さまで伸ばす（長さが替わった所を見るため）。音の無い mp4 は無音として並べる。動画が無い時の終わりの番号は 2。音は前を左・新しい方を右のチャンネルに入れる（片耳ずつ聞いて間と音量の差を聞き分ける）。`--tape` があれば台詞ごとに「ノード #番号 秒」の字幕を絵に重ねる（`<OUT>.srt` も残る）。ffmpeg は環境変数 `FFMPEG` か PATH の物。長さと音の有無を読む ffprobe は ffmpeg と同じフォルダの物を使い、無ければ終わりの番号 1 で落ちる。
 
+## ゲームの make の口（sound-novel-starter の子）
+
+テンプレートを当て直す・書き換える前と後で同じ flow を流し、前と同じ動きか（台詞・選択肢・変数・音の順・world の層の絵・古いセーブの読み戻し）を確かめる。
+
+1. 前の版（git worktree）で `make migrate-baseline`
+2. 新しい版へ debug/migrate/baseline を写して `make migrate-new`（中で `bin/fge migrate diff debug/migrate/baseline debug/migrate/new`。頁は debug/migrate/report/index.html・承認は debug/migrate/migrate-accept.json）
+3. 手触りとテンポは `make migrate-video FLOW=e2e/<名前>.flow [OLD=<前の版のゲームのフォルダ>]`（前後の動画を左右に並べる。Makefile がリポジトリの下のフォルダにあるゲームは、そのフォルダを OLD に渡す）
+
+撮るのが遅い時:
+
+- `make migrate-baseline` / `make migrate-new` は中で `bin/fge migrate shoot`（flow を並べて流す・全部のコマの動画と音は書かない）
+- 基準の video.mp4 が要る時（`make migrate-video` で OLD を渡さない）だけ `MIGRATE_VIDEO=1`
+- `migrate-new` は frames/all を撮らない（要れば `MIGRATE_ALL=on`）
+- 基準があれば比べのコマは鍵を先に撮って基準と鍵の違うコマだけ塗り、diff も鍵が同じコマは画素を読まない（疑う時は `--no-keys`）
+- 鍵だけ撮った new を基準に上げる前は `bin/fge migrate fill debug/migrate/new` で PNG を埋める
+
+描き手（CPU か GPU か）:
+
+- 比べのコマの PNG は既定で画面なしの WebGPU（GPU）で塗る（基準を撮る回。開けなければ CPU で塗って 1 行知らせる）
+- `make migrate-new` は基準と同じ描き手で塗り、描き手（`logs/shoot.json` の painter）が違う記録は画素を比べずに止める
+- GPU の基準は機械ごとに違うので、その機械で前の版のフォルダから `make migrate-baseline MIGRATE_OVERWRITE=1 MIGRATE_PAINT=gpu` で撮り直す。CPU で塗るなら `MIGRATE_PAINT=cpu`
+- テンプレートの `reference-check` は CPU のまま
+
+## テープ（flow の動画に注釈を付けてもらう頁）
+
+- sound-novel-starter の子では `make tape FLOW=e2e/tape.flow`（中で `bin/fge tape --dir debug/tape/<名前>` が strip.jpg と index.html を書く）
+- 既定は縦（スマホ）の 1 本だけ撮る（ノベルは縦が基本で PC も同じ縦の画面）。PC の物と並べるなら `TAPE_VIEWS="phone pc"` で、頁の上のボタンで替える
+- ブラウザ版も書き出して頁の上の「はじめから遊ぶ」から開く（要らなければ `TAPE_PLAY=0`）
+
+### 動画が大きすぎて push が落ちる（`remote unpack failed`・1 ファイル 100 MB が上限）
+
+- `make tape` の mp4 はノベル向けに小さく作る（Makefile の `TAPE_X264`・`TAPE_AAC`: `-preset slow -crf 32 -tune animation`・`aac 96k`。雨の降る画面でも 10 分 40 MB ほど）
+- 前の版のテンプレートから作ったゲームは `make engine-upgrade` では変わらないので、sound-novel-starter の Makefile から 2 行と flow-mp4 を写す
+- `bin/fge tape publish` は 1 本 95 MB を超える動画を dry run でも知らせ、`--yes` の時は同じ設定で縮めてから置く（頁の videoBytes もそろえる・手元のテープは書き換えない）
+- 縮めても超えたら止まるので、flow を短く分けて撮り直す
+- 置く木の全部（30 日以内の前の分も毎回送る）が 2 GB（1 回の push の上限）を超えても `--yes` は止まる
+
 ## 記録のフォルダ
 
 ```

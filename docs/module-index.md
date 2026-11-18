@@ -26,7 +26,7 @@ make module Q=<語>    # 例: make module Q=スクロール / Q=ツールチッ�
 | [input.md](modules/input.md) | 入力（InputEdge / InputMap / Flow / PropertyTest）・当たり判定（Hit / HitDoc / Collision）・Physics2D・3D を一人称で歩く CharacterBody3d |
 | [data.md](modules/data.md) | Doc を足す順（Schema → Doc → DocJson → DocTable）・fail-open の読み込みと知らせ（Log）・セーブ・Worldline |
 | [debug.md](modules/debug.md) | F8 のチケット Annotate・RemoteDebug・ActiveDocs・GameLogger・描き出し（HeadlessRender / SoftRaster / RenderManifest） |
-| [engine.md](modules/engine.md) | エンジンの奥（engine/src）: GameEngine の効果口・Vec2 / Rect2 / Color などの基礎の型・ShaderDoc / ShaderGen・Drawable 経路の描画物（ゲームから直に触ることは少ない） |
+| [engine.md](modules/engine.md) | エンジンの奥（engine/src）: GameEngine の効果口・Vec2 / Rect2 / Color などの基礎の型・ShaderDoc / ShaderGen・Drawable 経路の描画物・3D（Scene3d の灯りと影 PointShadows・光の量 LightUnits・Camera3d の lensShift・LightModel3d の LightVariant） |
 
 各モジュールの詳しい説明は `engine_world/src/<名前>.flix` 冒頭の doc コメント。型と引数は `make api Q=<名前>`
 （[api-digest.md](api-digest.md)）。

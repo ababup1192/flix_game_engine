@@ -1,32 +1,38 @@
 ---
 name: verify
-description: "コード変更後にflix testとflix runの2段階検証を順番に行う"
+description: "コード変更後に、変えたパッケージだけのテストと実機での動作確認を順番に行う（人が /verify で呼ぶ）"
 disable-model-invocation: true
 allowed-tools:
-  - "Bash(devbox run -- java -jar bin/flix.jar *)"
+  - "Bash(make test-*)"
+  - "Bash(make check*)"
+  - "Bash(bin/flix *)"
 ---
 
-# 変更後の検証実行
+# 変更後の検証
 
-コード変更後に `flix test` と `flix run` の2段階検証を順番に行います。
+**テストは絞って速く回す。全量の検証はリリース直前の 1 回だけ**（AGENTS.md の「検証」・`/release`）。
+ここでは全量（`make test-all`・`make test-par-all`）は流さない。
+
+flix は `bin/flix`・`bin/fge`・make から流す。`java -jar bin/flix.jar` を直に叩くと
+Maven の取り物の置き場（lib/cache）を通らず、依存を取りに行って止まる。
 
 ## 手順
 
-### ステップ 1: テスト実行
+### ステップ 1: テスト
 
-`flix test` を実行する。
+変更が波及したパッケージだけ `make test-<name>` を流す（例: `make test-engine`・`make test-engine_world`・
+`make test-rpg-starter`）。テストを持たないパッケージ（templates など）は `make check` か、そのフォルダで `bin/flix check` で足りる。
 
-- **成功した場合**: ステップ2に進む
-- **失敗した場合**: 失敗したテストの詳細を報告して**停止**する。`flix run` は実行しない
+- **緑**: ステップ 2 へ
+- **赤**: `.test-logs/<名前>.log` から失敗したテストとエラーを省かずに報告して**止まる**。ステップ 2 には進まない。
+  コンパイルエラーなら `/compile-fix` を引く
 
 ### ステップ 2: 動作確認
 
-テストが全て通過した後、`flix run` を開発者に実行してもらい、以下を確認する：
-
-- ビルドエラーや動作確認に問題がないことを確認しもらう。
-
+テストが緑になった後、ゲームのフォルダで `make run` を人に流してもらい、ビルドエラーや動きの問題が無いかを確かめてもらう。
+自分で起動した時は、確かめ終えたら PID で止めて `ps` で消えたのを見る。
 
 ## 注意事項
 
-- `flix test` が失敗した場合は絶対に `flix run` を実行しないこと
-- エラーメッセージは省略せず、ユーザーが修正に必要な情報を全て含めること
+- テストが赤のまま動作確認へ進まない
+- エラーメッセージは省略せず、直すのに要る情報を全部含める

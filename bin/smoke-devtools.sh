@@ -16,7 +16,7 @@ FAIL=0
 tree() { local p=$1; echo "$p"; for c in $(pgrep -P "$p"); do tree "$c"; done; }
 stopall() { local ps; ps=$(tree "$1"); kill -TERM $ps 2>/dev/null; sleep 5; kill -KILL $ps 2>/dev/null; }
 portOf() {
-  python3 -c "
+  "$ROOT/bin/py3" -c "
 import json
 try:
   for g in json.load(open('$REG')).get('games', []):

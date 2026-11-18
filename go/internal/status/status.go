@@ -718,6 +718,7 @@ var sectionsByName = map[string]func(*ctx, *[]string){
 	"section_notes":         sectionNotes,
 	"section_mvn_cache":     sectionMvnCache,
 	"section_fpkg_store":    sectionFpkgStore,
+	"section_disk":          sectionDisk,
 }
 
 // Options は Run の付加情報。

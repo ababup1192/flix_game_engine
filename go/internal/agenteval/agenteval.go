@@ -155,6 +155,12 @@ func Run(out, errOut io.Writer, args []string) (int, error) {
 			return 2, errors.New("どの答えにも \"choice\" がありません。0.35.27 までの記録なら --loose を付けて付け直す")
 		}
 	} else {
+		if !opt.noPreflight {
+			if err := preflight(opt.claude, opt.model); err != nil {
+				fmt.Fprintf(errOut, "[agent-eval] %v\n", err)
+				return 2, nil
+			}
+		}
 		results = runAll(errOut, dir, jobs, opt)
 	}
 	// ばらまきの量は、--only で絞っても全部のお題の期待の語で数える。
@@ -227,6 +233,7 @@ const usage = `fge agent-eval — 何も教えていないエージェントが�
 同じ答えを答え全体に当てた点（--loose の採点）も記録に残し、loose の記録しか無い前の版とはそれで比べる。
 走らせる claude は読むだけの道具に絞る（Edit・Write・Agent なし）。それ以外は使う人の設定（~/.claude・
 プロジェクトのフック・権限のモード）のまま走る —— 実際に使う環境で測るため。engine を読ませるなら --add-dir <engine>。
+流す前に claude -p を 1 回だけ軽く呼び、ログインが切れていれば 1 行言って止まる（--no-preflight で飛ばす）。
 1 お題 10 分で打ち切る。heavy の鍵は取らない（claude -p は待ちが主で CPU をほとんど使わず、鍵を取ると
 ほかの作業場の check・test を止めるため）。代わりに claude -p の同時本数をマシン全体で数える
 （/tmp/fge-agent-eval.slots・既定 3 本・FGE_AGENT_EVAL_SLOTS で変える）。
@@ -236,23 +243,24 @@ const usage = `fge agent-eval — 何も教えていないエージェントが�
 `
 
 type options struct {
-	tasks     []string
-	only      map[string]bool
-	label     string
-	out       string
-	jobs      int
-	maxTurns  int
-	model     string
-	claude    string
-	addDirs   []string
-	rescore   bool
-	help      bool
-	repeat    int
-	history   string
-	version   string
-	overwrite bool
-	loose     bool
-	compare   []string
+	noPreflight bool
+	tasks       []string
+	only        map[string]bool
+	label       string
+	out         string
+	jobs        int
+	maxTurns    int
+	model       string
+	claude      string
+	addDirs     []string
+	rescore     bool
+	help        bool
+	repeat      int
+	history     string
+	version     string
+	overwrite   bool
+	loose       bool
+	compare     []string
 }
 
 func parseArgs(args []string) (options, error) {
@@ -278,6 +286,8 @@ func parseArgs(args []string) (options, error) {
 			o.overwrite = true
 		case "--loose":
 			o.loose = true
+		case "--no-preflight":
+			o.noPreflight = true
 		case "--tasks", "--only", "--label", "--out", "--jobs", "--max-turns", "--model", "--claude", "--add-dir",
 			"--repeat", "--history", "--version":
 			if v, err = next(&i, a); err != nil {

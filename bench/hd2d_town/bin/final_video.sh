@@ -7,8 +7,8 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 export FLIX_GE_BACKEND=gl
 out=debug/final_gpu_frames
-total=$(python3 -c 'import json; print(sum(s["frames"] for s in json.load(open("assets/final.json"))["scenes"]))')
-starts=$(python3 -c '
+total=$(../../bin/py3 -c 'import json; print(sum(s["frames"] for s in json.load(open("assets/final.json"))["scenes"]))')
+starts=$(../../bin/py3 -c '
 import json
 d = json.load(open("assets/final.json")); a = 0
 for s in d["scenes"][:-1]:

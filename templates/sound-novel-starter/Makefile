@@ -149,7 +149,7 @@ tape:
 # 元の絵を縮めて縁を埋めるのは python3 art/cast/prepare.py <元の絵の置き場>（Pillow が要る）。
 .PHONY: lint-cast
 lint-cast:
-	python3 art/cast/lint.py
+	$(PYTHON3) art/cast/lint.py
 
 lint: lint-cast
 
