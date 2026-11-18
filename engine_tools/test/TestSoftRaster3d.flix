@@ -444,7 +444,7 @@ mod TestSoftRaster3d {
         let spot = { color = white(), range = 4.0 | Scene3d.spotLight(Vec3.zero(), Vec3.v3(0.0, 0.0, 2.0), 1.5707963267948966) };
         let scene = spotLit(spot, plate(white(), 2.0, -2.0, 2.0, -2.0, 2.0) :: Nil);
         let env = { ambient = Texture3d.srgbToLinearColor(scene#environment#ambient) | scene#environment };
-        let light = SoftRaster3d.lightAt(env, Nil, spot :: Nil, Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
+        let light = SoftRaster3d.lightAt(SoftRaster3d.lightProbe(env, Nil, spot :: Nil), Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
         let screen = Texture3d.linearToSrgb;
         Assert.assertEq(expected = channels(SoftRaster.argbOfRgba(screen(light#r), screen(light#g), screen(light#b), 1.0)), pixel(render(scene), 4, 4))
 
@@ -456,7 +456,7 @@ mod TestSoftRaster3d {
         let spot = { innerFovY = innerFovY | Scene3d.spotLight(Vec3.zero(), Vec3.v3(0.0, 0.0, 1.0), 1.0) };
         let point = Vec3.v3(0.0, Num.sin(angle), Num.cos(angle));
         let env = { ambient = black() | Scene3d.scene(camera(), { x = 8.0, y = 8.0 })#environment };
-        SoftRaster3d.lightAt(env, Nil, spot :: Nil, point, Vec3.mul(point, -1.0))#r
+        SoftRaster3d.lightAt(SoftRaster3d.lightProbe(env, Nil, spot :: Nil), point, Vec3.mul(point, -1.0))#r
 
     // 内側の角（Some(0.6) = 半角 0.3）の中の点（0.2）は縁による減りが無い: 縁の無いスポット（innerFovY = fovY）と同じ光。
     @Test

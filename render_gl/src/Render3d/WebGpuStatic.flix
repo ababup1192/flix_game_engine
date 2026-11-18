@@ -20,7 +20,7 @@ mod Render3d.WebGpuStatic {
     use Render3d.{TextureSource}
     use Render3d.MeshTable
     use Render3d.ScenePlan.{Planner}
-    use Render3d.SceneList.{SceneList, flagSameBinding, hasFlag, kindMaterial, rowAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{SceneList, SceneRowKind, flagSameBinding, hasFlag, kindAt, rowCountOf, valuesAt}
     use Render3d.StaticRows
     use Render3d.StaticRows.{CarriedRows}
     use Render3d.WebGpuMaterials
@@ -91,7 +91,7 @@ mod Render3d.WebGpuStatic {
     /// 値を前の行と分け合わない材質の行（材質の絵を作り、使った物にする行）。
     def ownBindingRows(list: SceneList): Vector[Int32] \ IO =
         Vector.range(0, rowCountOf(list)) |> Vector.filter(row ->
-            rowAt(list, row, 0) == kindMaterial() and valuesAt(list, row) >= 0 and not hasFlag(list, row, flagSameBinding()))
+            kindAt(list, row) == SceneRowKind.Material and valuesAt(list, row) >= 0 and not hasFlag(list, row, flagSameBinding()))
 
     def retire(st: StaticCache): Carried -> Unit \ IO = c -> {
         Map.forEach((_, b) -> retireBundle(st, b), Ref.get(c#bundles));

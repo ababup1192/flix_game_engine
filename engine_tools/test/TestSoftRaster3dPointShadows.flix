@@ -63,7 +63,7 @@ mod SoftRaster3d.TestSoftRaster3dPointShadows {
     def testPhysicalPointIsInverseSquareOverPi(): Unit \ Assert =
         let env = { ambient = gray(0.0) | Scene3d.scene(camera(), { x = 1.0, y = 1.0 })#environment };
         let light = { position = Vec3.v3(0.0, 4.0, 0.0), color = gray(1.0), intensity = 3.0, range = 400.0 };
-        let c = SoftRaster3d.lightWithUnitsAt(env, light :: Nil, Nil, Scene3d.LightUnits.Physical, 1.0, Vec3.zero(), Vec3.v3(0.0, 1.0, 0.0));
+        let c = SoftRaster3d.lightAt({ units = Scene3d.LightUnits.Physical | SoftRaster3d.lightProbe(env, light :: Nil, Nil) }, Vec3.zero(), Vec3.v3(0.0, 1.0, 0.0));
         let ratio = 16.0 / 160000.0;
         let window = (1.0 - ratio * ratio) * (1.0 - ratio * ratio);
         Assert.assertTrue(Float64.abs(c#r - 3.0 * window / 16.0 / Num.pi()) < 1.0e-9)
@@ -73,18 +73,19 @@ mod SoftRaster3d.TestSoftRaster3dPointShadows {
     def testPhysicalMeasuresMeters(): Unit \ Assert =
         let env = { ambient = gray(0.0) | Scene3d.scene(camera(), { x = 1.0, y = 1.0 })#environment };
         let at = (h: Float64, range: Float64, upm: Float64) ->
-            SoftRaster3d.lightWithUnitsAt(env, { position = Vec3.v3(0.0, h, 0.0), color = gray(1.0), intensity = 3.0, range = range } :: Nil, Nil,
-                                          Scene3d.LightUnits.Physical, upm, Vec3.zero(), Vec3.v3(0.0, 1.0, 0.0))#r;
+            SoftRaster3d.lightAt({ units = Scene3d.LightUnits.Physical, unitsPerMeter = upm
+                                   | SoftRaster3d.lightProbe(env, { position = Vec3.v3(0.0, h, 0.0), color = gray(1.0), intensity = 3.0, range = range } :: Nil, Nil) },
+                                 Vec3.zero(), Vec3.v3(0.0, 1.0, 0.0))#r;
         Assert.assertTrue(Float64.abs(at(64.0, 6400.0, 16.0) - at(4.0, 400.0, 1.0)) < 1.0e-12)
 
-    /// Legacy の lightWithUnitsAt は lightAt と同じ値（ビットまで）。
+    /// Legacy の光は unitsPerMeter を替えても同じ値（ビットまで）。
     @Test
     def testLegacyUnitsMatchLightAt(): Unit \ Assert =
         let env = { ambient = gray(0.1) | Scene3d.scene(camera(), { x = 1.0, y = 1.0 })#environment };
         let light = { position = Vec3.v3(0.3, 2.0, 0.1), color = Color.rgb(1.0, 0.7, 0.4), intensity = 1.5, range = 6.0 };
         let p = Vec3.v3(0.2, 0.0, -0.1);
         let n = Vec3.v3(0.0, 1.0, 0.0);
-        let a = SoftRaster3d.lightAt(env, light :: Nil, Nil, p, n);
-        let b = SoftRaster3d.lightWithUnitsAt(env, light :: Nil, Nil, Scene3d.LightUnits.Legacy, 16.0, p, n);
+        let a = SoftRaster3d.lightAt(SoftRaster3d.lightProbe(env, light :: Nil, Nil), p, n);
+        let b = SoftRaster3d.lightAt({ unitsPerMeter = 16.0 | SoftRaster3d.lightProbe(env, light :: Nil, Nil) }, p, n);
         Assert.assertEq(expected = (a#r, a#g, a#b), (b#r, b#g, b#b))
 }

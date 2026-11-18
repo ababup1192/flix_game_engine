@@ -30,7 +30,7 @@ mod Render3d {
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, groupScenes, planScenes}
-    use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, firstBillboardRowOf, firstBlendedRowOf, rowAt, valuesAt}
+    use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, firstBillboardRowOf, firstBlendedRowOf, valuesAt}
     use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawBlendedRows, drawRows, uploadRows}
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, resolveMaterials, sweepMaterials, sweepTextures3d}

@@ -1,7 +1,7 @@
 // 動かない物の集まりの持ち越し（Render3d.StaticRows）: いつ前のコマの行を使い、いつ作り直すか・持ち越す物と毎コマの物の分け方・持ち越す行の値。
 mod Render3d.TestStaticRows {
     use Render3d.FakeGl.{camera, plainTriangle, poseAt, sceneOf, skinnedAt, stderrOf}
-    use Render3d.SceneList.{flagSameBinding, hasFlag, rowAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{countAt, flagSameBinding, hasFlag, rowCountOf, valuesAt}
     use Render3d.ScenePlan.{freshPlanner}
     use Render3d.StaticRows.{CarriedRows, build, carriedGroupsOf, ensure, freshCache, isCarriedItem, perFrameOf, setTime, sizeOf, sweep}
 
@@ -153,7 +153,7 @@ mod Render3d.TestStaticRows {
     def testBuildDoesNotCullOutsideFrustum(): Unit \ {Assert, IO} =
         let behind = Scene3d.meshInstance(plainTriangle(), Mat4.translate(Vec3.v3(0.0, 0.0, -50.0))) |> Scene3d.withMaterial(materialOf(0.1));
         let rows = built(Scene3d.staticGroup("behind", ("z", behind) :: Nil));
-        Assert.assertEq(expected = (1, 1), (rowCountOf(rows#list), rowAt(rows#list, 0, 4)))
+        Assert.assertEq(expected = (1, 1), (rowCountOf(rows#list), countAt(rows#list, 0)))
 
     /// 前の行と同じ付け方の行は、前の行の値を指す（時刻を書き直す区画は 1 つ）。
     @Test

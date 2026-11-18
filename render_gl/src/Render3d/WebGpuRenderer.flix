@@ -56,7 +56,7 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.Counts.{Phase, countDrawCallAt, countInstances, noteMaterialBuild, timed}
     use Render3d.MeshTable
     use Render3d.PoseRows.{PoseRows, floatCountOf, packRows, posesInRowOrder}
-    use Render3d.SceneList.{firstBillboardRowOf, firstBlendedRowOf, kindBillboard, kindMaterial, kindSkinned, kindVertexColor, missingBillboardTexturesOf, rowAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{countAt, firstBillboardRowOf, firstBlendedRowOf, missingBillboardTexturesOf, rowCountOf, textureIdAt, valuesAt}
     use Render3d.WebGpuBillboards
     use Render3d.WebGpuMaterials
     use Render3d.WebGpuMaterials.{BoundPipeline, ValuesBinding}
@@ -67,6 +67,7 @@ pub mod Render3d.WebGpuRenderer {
     use Render3d.ShadowMaps.{ShadowMapUse, ShadowPass, ShadowSampling}
     use Render3d.WebGpuShadows
     use Render3d.WebGpuSky
+    use Render3d.WebGpuSceneValues
     use RenderPaint.Internal.WebGpuPipelines
 
     /// 場面 1 つの描き先と、その場面の値の buffer と bind group（2D の描き手の描き先の鍵とそのコマの場面の番号ごとに 1 つ・大きさか形式か標本が変われば作り直す）。
@@ -104,7 +105,7 @@ pub mod Render3d.WebGpuRenderer {
     /// vertexModule と skinnedModule = 頂点の色の頂点シェーダー（骨の無い版と骨つきの版）・poseLayout = group 2（姿勢）の layout・
     /// emptyLayout と emptyGroup = 骨つきの頂点の色の pipeline の group 1（材質を読まない版で、group 2 の前を埋める）・
     /// lightLayout と atlasLayout = 変種の場面の group 0 の layout（sceneLayout に R3dLight を足した物・さらに点光源の影の atlas を足した物。layoutCodeOf）・
-    /// variantFragments = 変種の鍵（Render3d.variantKeyOf）→ 頂点の色の frag・cpuLight = R3dLight を詰める入れ物・
+    /// variantFragments = 変種の鍵（Render3d.variantKeyOf）→ 頂点の色の frag・cpuLight = R3dLight を詰める入れ物・sceneOffsets = R3dScene の欄の位置（作る時に 1 回求める）・
     /// pipelines = LitPipelineKey → 頂点の色の pipeline・depthModule = 奥行きの書き出しの frag・blankDepth と blankImage = 影の地図と環境マップの代わり（影は場面の値が切るので読まれない・環境マップは絵が見つからない時に透明な黒として読む）・
     /// written = 今の encoder（submit まで）で値を書いたか、貼る pass を積んだ描き先の鍵・instances = 1 体ごとの値の buffer（頂点の buffer の 1 番）・
     /// instanceUsed = 今の encoder で使ったそのバイト数・poses = 姿勢の storage の buffer・posesUsed = 今の encoder で使ったそのバイト数・
@@ -119,7 +120,7 @@ pub mod Render3d.WebGpuRenderer {
             lightLayout = BindGroupLayout,
             atlasLayout = BindGroupLayout,
             variantFragments = Ref[Map[String, ShaderModule], Static],
-            cpuLight = ByteBuffer,
+            cpuLight = ByteBuffer, sceneOffsets = Map[Render3d.UniformLayout.SceneField, Int32],
             pasteLayout = BindGroupLayout,
             vertexModule = ShaderModule,
             skinnedModule = ShaderModule,
@@ -201,7 +202,7 @@ pub mod Render3d.WebGpuRenderer {
             sceneLayout = sceneLayout, pasteLayout = pasteLayout,
             lightLayout = gpu.createBindGroupLayout(sceneLayoutDesc("fge scene3d light", 1)),
             atlasLayout = gpu.createBindGroupLayout(sceneLayoutDesc("fge scene3d point shadows", 2)),
-            variantFragments = Ref.fresh(Static, Map.empty()), cpuLight = directBytes(Render3dWgsl.lightValueBytes()),
+            variantFragments = Ref.fresh(Static, Map.empty()), cpuLight = directBytes(Render3dWgsl.lightValueBytes()), sceneOffsets = Render3d.UniformLayout.sceneOffsets(),
             vertexModule = gpu.createShaderModule("fge scene3d lit vs", Render3dWgsl.litVertexSource(false)),
             skinnedModule = gpu.createShaderModule("fge scene3d skinned vs", Render3dWgsl.litVertexSource(true)),
             fragmentModule = gpu.createShaderModule("fge scene3d lit fs", Render3dWgsl.litFragmentSource()),
@@ -225,7 +226,7 @@ pub mod Render3d.WebGpuRenderer {
             preloaded = Ref.fresh(Static, { builtKey = None, meshes = Set.empty(), textures = Set.empty(), rebuilds = Nil }), epoch = Array#{0i64} @ Static,
             cpuInstances = Array#{directBytes(initialInstances() * Render3dWgsl.instanceBytes())} @ Static,
             cpuPoses = Array#{directBytes(initialPoseBytes())} @ Static,
-            cpuScene = directBytes(sceneValueBytes()), cpuCamera = directBytes(Render3dWgsl.cameraBytes()), cpuPaste = directBytes(16),
+            cpuScene = directBytes(WebGpuSceneValues.sceneValueBytes()), cpuCamera = directBytes(Render3dWgsl.cameraBytes()), cpuPaste = directBytes(16),
             scratch = Array.repeat(Static, Render3dWgsl.instanceBytes() / 4, 0.0f32),
             statics = WebGpuStatic.fresh(),
             gen = Array#{1i64} @ Static
@@ -557,7 +558,7 @@ pub mod Render3d.WebGpuRenderer {
                     e#group
                 case None =>
                     let desc = new BindGroupDesc("fge scene3d shadowed or environment", sceneLayoutOf(r, code));
-                    discard desc.buffer(0, target#sceneValues, 0i64, Int32.toInt64(sceneValueBytes()));
+                    discard desc.buffer(0, target#sceneValues, 0i64, Int32.toInt64(WebGpuSceneValues.sceneValueBytes()));
                     discard desc.textureView(1, viewFor(0)).textureView(2, viewFor(1));
                     discard desc.textureView(3, envImage.defaultView()).sampler(4, s#environmentSampler).buffer(5, target#camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
                     if (code >= 1) discard desc.buffer(Render3dWgsl.lightBinding(), target#lightValues, 0i64, Int32.toInt64(Render3dWgsl.lightValueBytes())) else ();
@@ -765,8 +766,8 @@ pub mod Render3d.WebGpuRenderer {
     def drawBillboardRow(r: Renderer, host: Host, mp: WebGpuMaterials.MaterialPass, variant: ShaderVariant, p: RenderCommands, list: SceneList, row: Int32): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
-        let n = rowAt(list, row, 4);
-        match host#groupById(rowAt(list, row, 1)) {
+        let n = countAt(list, row);
+        match host#groupById(textureIdAt(list, row)) {
             case _ if values < 0 => true
             case None => false
             case Some(group) =>
@@ -786,8 +787,8 @@ pub mod Render3d.WebGpuRenderer {
     def drawShadowBillboardRow(r: Renderer, host: Host, p: RenderCommands, list: SceneList, row: Int32, valuesBase: Int32, rightPerBillboard: Bool): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
-        let n = rowAt(list, row, 4);
-        match host#groupById(rowAt(list, row, 1)) {
+        let n = countAt(list, row);
+        match host#groupById(textureIdAt(list, row)) {
             case _ if values < 0 => true
             case None => false
             case Some(group) =>
@@ -914,9 +915,6 @@ pub mod Render3d.WebGpuRenderer {
 
     // ── 場面の値 ──
 
-    /// R3dScene のバイト数（Render3dWgsl.sceneDeclarations の並び: 頭の 400 バイトの後に光の vec4 の配列が点光源 3 本・スポット 5 本・末尾に空の vec4 が 3 本）。
-    pub def sceneValueBytes(): Int32 = Render3dWgsl.skyValuesAt() + 48
-
     /// 場面の値（光・かすみ・目・環境マップ・奥行きの書き出し・影の地図 shadows を引く値・空の向きの材料）と目と射影の行列とカメラの向き（Render3dWgsl.cameraDeclarations）を
     /// target の buffer へ書く。environment = 環境マップの絵と mip のレベルの数（ensureEnvironment。lightmap は物ごとの値・Render3d.MaterialValues）。
     def writeSceneValues(r: Renderer, target: SceneTarget, plan: ScenePlan[SpanBatch], shadows: List[ShadowPass], environment: Option[(Texture, Int32)]): Unit \ IO =
@@ -924,21 +922,21 @@ pub mod Render3d.WebGpuRenderer {
         let scene = plan#cmd#scene;
         let picked = Scene3d.pickLights(scene);
         let values = s#cpuScene;
-        packSceneValues(values, lightDataOf(picked, environment |> Option.map(snd) |> Option.getWithDefault(0)));
-        packShadowValues(values, List.map(p -> p#map#sampling, shadows));
+        WebGpuSceneValues.packSceneValues(values, s#sceneOffsets, lightDataOf(picked, environment |> Option.map(snd) |> Option.getWithDefault(0)));
+        WebGpuSceneValues.packShadowValues(values, s#sceneOffsets, List.map(p -> p#map#sampling, shadows));
         writeLightValues(r, target, scene, shadows);
         // WhyNot: pass ごとに場面の値を書き分けない — 場面の値の buffer は描き先ごとに 1 つで、writeBuffer は encoder の pass より先に効くので、
         //   1 つの encoder の中で pass ごとに書き替えると、どの pass も最後に書いた値で描く。pass が場面の置いた物の 1 つの間は mainPass で足りる。
-        packPassValues(values, plan#mainPass);
-        WebGpuSky.packValues(values, scene, target#width, target#height);
-        s#gpu.writeBuffer(target#sceneValues, 0i64, values, 0, sceneValueBytes());
+        WebGpuSceneValues.packPassValues(values, s#sceneOffsets, plan#mainPass);
+        WebGpuSky.packValues(values, s#sceneOffsets, scene, target#width, target#height);
+        s#gpu.writeBuffer(target#sceneValues, 0i64, values, 0, WebGpuSceneValues.sceneValueBytes());
         let camera = s#cpuCamera;
         let floats = camera.asFloatBuffer();
         discard floats.put(matrixArray(Camera3d.viewMatrix(scene#camera)));
         discard floats.put(matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene))));
-        putVec3(camera, 128, cameraVec(Camera3d.right(scene#camera)), 0);
-        putVec3(camera, 144, cameraVec(Camera3d.up(scene#camera)), 0);
-        putVec3(camera, 160, cameraVec(Vec3.mul(Camera3d.forward(scene#camera), -1.0)), 0);
+        WebGpuSceneValues.putVec3(camera, 128, cameraVec(Camera3d.right(scene#camera)), 0);
+        WebGpuSceneValues.putVec3(camera, 144, cameraVec(Camera3d.up(scene#camera)), 0);
+        WebGpuSceneValues.putVec3(camera, 160, cameraVec(Vec3.mul(Camera3d.forward(scene#camera), -1.0)), 0);
         s#gpu.writeBuffer(target#camera, 0i64, camera, 0, Render3dWgsl.cameraBytes())
 
     /// 変種の場面の R3dLight（点光源の影の値と 1 / unitsPerMeter²。GL の Render3d.Shadow.putPointShadow と Render3d.Light.putLights が渡す値と同じ）を target#lightValues へ書く。
@@ -953,120 +951,6 @@ pub mod Render3d.WebGpuRenderer {
 
     /// v を 3 個の float にする（GL の Render3d.putVec3 と同じく 1 つずつ f32 へ）。
     def cameraVec(v: Vec3.Vec3): Array[Float32, Static] \ IO = Array#{RenderUtil.f32(v#x), RenderUtil.f32(v#y), RenderUtil.f32(v#z)} @ Static
-
-    /// 光と環境マップの値 d を R3dScene の並びで buf へ詰める（欄の位置は Render3dWgsl.sceneDeclarations の頭のコメント）。影の欄は切る値
-    /// （影の地図を引く値は packShadowValues・奥行きの書き出しの欄は packPassValues）。GL の Render3d.Light.putLights が渡す欄と同じ値を、同じ名前の欄へ入れる。
-    // WhyNot: 書く欄の組を場面ごとに変えない — buf は場面をまたいで使い回すので、ある場面だけ書いた欄には次の場面で前の値が残る。
-    //   ここで書く欄は毎回すべて書き、書かない欄は作った時の 0 のまま読ませる。
-    pub def packSceneValues(buf: ByteBuffer, d: LightData): Unit \ IO =
-        putVec3(buf, 0, d#ambient, 0);
-        discard buf.putFloat(12, d#hemisphere);
-        putVec3(buf, 16, d#eye, 0);
-        discard buf.putInt(28, d#toonSteps);
-        putVec3(buf, 32, d#fogColor, 0);
-        discard buf.putInt(44, d#fogOn);
-        discard buf.putFloat(48, Array.get(0, d#fogRange));
-        discard buf.putFloat(52, Array.get(1, d#fogRange));
-        discard buf.putInt(56, d#pointCount);
-        discard buf.putInt(60, d#spotCount);
-        putVec3(buf, 64, d#sunDir, 0);
-        putVec3(buf, 80, d#sunColor, 0);
-        // WhyNot: 太陽の影の fade の幅を 0 のままにしない — 影を切っていて読まれないが、0 で割る式を残さない。
-        discard buf.putFloat(116, 1.0f32);
-        putVec3(buf, 128, d#reflectZenith, 0);
-        discard buf.putFloat(140, d#reflectCurve);
-        putVec3(buf, 144, d#reflectHorizon, 0);
-        discard buf.putInt(156, d#envOn);
-        putVec3(buf, 160, d#reflectGround, 0);
-        discard buf.putInt(172, d#envBoxOn);
-        putVec3(buf, 176, d#envBoxMin, 0);
-        discard buf.putFloat(188, d#envLevels);
-        putVec3(buf, 192, d#envBoxMax, 0);
-        discard buf.putFloat(204, d#envIntensity);
-        putVec3(buf, 208, d#envBoxCenter, 0);
-        discard buf.putInt(232, -1);
-        let p = Scene3d.maxPointLights();
-        let sp = Scene3d.maxSpotLights();
-        let arrays = 400;
-        putVec3Array(buf, arrays, d#pointPos, p);
-        putVec3Array(buf, arrays + 16 * p, d#pointColor, p);
-        putScalarArray(buf, arrays + 32 * p, d#pointRange, 1, p);
-        let spots = arrays + 48 * p;
-        putVec3Array(buf, spots, d#spotPos, sp);
-        putVec3Array(buf, spots + 16 * sp, d#spotDir, sp);
-        putVec3Array(buf, spots + 32 * sp, d#spotColor, sp);
-        putScalarArray(buf, spots + 48 * sp, d#spotRange, 1, sp);
-        putScalarArray(buf, spots + 64 * sp, d#spotCone, 2, sp)
-
-    /// 影の地図を引く値 samplings（スポットと太陽が 1 つずつまで）を R3dScene の並びで buf へ詰める（GL の Render3d.Shadow.putShadow と putSunShadow が渡す欄と同じ値）。
-    /// 地図の無い方は on の欄（スポットは 220・太陽は 76）を 0 にするだけで、ほかの欄は packSceneValues が書いた切る値か、前の場面の値のまま読まれない。packSceneValues の後に呼ぶ。
-    pub def packShadowValues(buf: ByteBuffer, samplings: List[ShadowSampling]): Unit \ IO =
-        discard buf.putInt(220, 0);
-        discard buf.putInt(76, 0);
-        samplings |> List.forEach(sampling -> match sampling {
-            case ShadowSampling.Spot(sp) =>
-                discard buf.putInt(220, 1);
-                discard buf.putInt(232, sp#spotIndex);
-                discard buf.putInt(236, sp#pcfRadius);
-                discard buf.putFloat(240, RenderUtil.f32(sp#bias));
-                discard buf.putFloat(244, RenderUtil.f32(sp#strength));
-                putMatrix(buf, 272, sp#matrix)
-            case ShadowSampling.Sun(sun) =>
-                discard buf.putInt(76, 1);
-                discard buf.putFloat(92, RenderUtil.f32(sun#normalShift));
-                discard buf.putFloat(96, RenderUtil.f32(sun#forward#x));
-                discard buf.putFloat(100, RenderUtil.f32(sun#forward#y));
-                discard buf.putFloat(104, RenderUtil.f32(sun#forward#z));
-                discard buf.putFloat(108, RenderUtil.f32(sun#bias));
-                discard buf.putFloat(112, RenderUtil.f32(sun#distance));
-                discard buf.putFloat(116, RenderUtil.f32(sun#fadeWidth));
-                discard buf.putInt(120, sun#pcfRadius);
-                discard buf.putFloat(124, RenderUtil.f32(sun#strength));
-                putMatrix(buf, 336, sun#matrix)
-            case ShadowSampling.Point(_) => ()
-        })
-
-    /// 行列 m を列優先 16 個の float で buf の at へ。
-    def putMatrix(buf: ByteBuffer, at: Int32, m: Mat4.Mat4): Unit \ IO =
-        Mat4.toColumns(m) |> Vector.forEachWithIndex((i, v) -> discard buf.putFloat(at + 4 * i, RenderUtil.f32(v)))
-
-    /// pass spec の奥行きの書き出しの欄を R3dScene の並びで buf へ詰める: uDepthRange（224・228。GL の Render3d.putDepthRange と同じく幅は 0 にしない）と uDepthOut（248）。
-    /// 色の pass では uDepthOut が 0 で、uDepthRange は読まれない（0 で割る式を残さないよう幅は 1）。
-    pub def packPassValues(buf: ByteBuffer, spec: ScenePassSpec): Unit \ IO =
-        let (near, range, on) = match spec {
-            case ScenePassSpec.Color        => (0.0, 1.0, 0)
-            case ScenePassSpec.DepthOut(dr) => (dr#near, Float64.max(0.000001, dr#range), 1)
-        };
-        discard buf.putFloat(224, RenderUtil.f32(near));
-        discard buf.putFloat(228, RenderUtil.f32(range));
-        discard buf.putInt(248, on)
-
-    /// values の i 番目の vec3（3 個ずつ）を buf の at へ。
-    def putVec3(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], i: Int32): Unit \ IO =
-        discard buf.putFloat(at, Array.get(3 * i, values));
-        discard buf.putFloat(at + 4, Array.get(3 * i + 1, values));
-        discard buf.putFloat(at + 8, Array.get(3 * i + 2, values))
-
-    /// 3 個ずつの values の count 本を、16 バイト刻みの vec4 の配列として at から。
-    def putVec3Array(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], count: Int32): Unit \ IO = putVec3sFrom(buf, at, values, 0, count)
-
-    def putVec3sFrom(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], i: Int32, count: Int32): Unit \ IO =
-        if (i >= count) ()
-        else {
-            putVec3(buf, at + 16 * i, values, i);
-            putVec3sFrom(buf, at, values, i + 1, count)
-        }
-
-    /// width 個ずつの values の count 本を、16 バイト刻みの vec4 の頭の width 個として at から。
-    def putScalarArray(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], width: Int32, count: Int32): Unit \ IO =
-        putScalarsFrom(buf, at, values, width, 0, count * width)
-
-    def putScalarsFrom(buf: ByteBuffer, at: Int32, values: Array[Float32, Static], width: Int32, k: Int32, n: Int32): Unit \ IO =
-        if (k >= n) ()
-        else {
-            discard buf.putFloat(at + 16 * (k / width) + 4 * Int32.remainder(k, width), Array.get(k, values));
-            putScalarsFrom(buf, at, values, width, k + 1, n)
-        }
 
     /// 貼る矩形 rect（描き先の左上が原点）を target の Paste へ書く: 左上と大きさ。
     def writePaste(r: Renderer, target: SceneTarget, rect: (Int32, Int32, Int32, Int32)): Unit \ IO =
@@ -1107,12 +991,12 @@ pub mod Render3d.WebGpuRenderer {
                    else None;
         let depth = gpu.createTexture("fge scene3d depth", shape#width, shape#height, sceneDepthFormat(), TextureUsage.RENDER_ATTACHMENT, 1, shape#samples);
         let uniformUsage = Int32.bitwiseOr(BufferUsage.UNIFORM, BufferUsage.COPY_DST);
-        let sceneValues = gpu.createBuffer("fge scene3d values", Int32.toInt64(sceneValueBytes()), uniformUsage);
+        let sceneValues = gpu.createBuffer("fge scene3d values", Int32.toInt64(WebGpuSceneValues.sceneValueBytes()), uniformUsage);
         let camera = gpu.createBuffer("fge scene3d camera", Int32.toInt64(Render3dWgsl.cameraBytes()), uniformUsage);
         let paste = gpu.createBuffer("fge scene3d paste", 16i64, uniformUsage);
         let lightValues = gpu.createBuffer("fge scene3d light", Int32.toInt64(Render3dWgsl.lightValueBytes()), uniformUsage);
         let sceneDesc = new BindGroupDesc("fge scene3d", s#sceneLayout);
-        discard sceneDesc.buffer(0, sceneValues, 0i64, Int32.toInt64(sceneValueBytes()));
+        discard sceneDesc.buffer(0, sceneValues, 0i64, Int32.toInt64(WebGpuSceneValues.sceneValueBytes()));
         discard sceneDesc.textureView(1, s#blankDepth.defaultView()).textureView(2, s#blankDepth.defaultView());
         discard sceneDesc.textureView(3, s#blankImage.defaultView()).sampler(4, s#environmentSampler).buffer(5, camera, 0i64, Int32.toInt64(Render3dWgsl.cameraBytes()));
         let pasteDesc = new BindGroupDesc("fge scene3d paste", s#pasteLayout);

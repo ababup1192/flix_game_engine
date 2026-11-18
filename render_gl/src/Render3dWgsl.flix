@@ -8,46 +8,10 @@
 pub mod Render3dWgsl {
     use LightModel3d.Vec3Input
 
-    /// 場面の値の struct と、場面の絵の宣言（group 0）。欄の名前は Render3dGlsl の uniform と同じ。
+    /// 場面の値の struct と、場面の絵の宣言（group 0）。struct の欄と並びは Render3d.UniformLayout.sceneFields（詰める側も同じ表から位置を引く）。
     /// f32 と vec2 の光の配列は、uniform の配列の 16 バイト刻みに合わせて vec4 の配列にした（x・y を読む。LightModel3d.Codegen の WGSL の欄と同じ）。
-    /// 詰める側は WGSL の並びの決まり（vec3 と vec4 と mat4 は 16 バイトそろえ・vec2 は 8）に従う。vec3 の後ろの 4 バイトに f32 か i32 を 1 つ入れ、
-    /// mat4 の前の隙間は pad0〜pad4 で埋めてあるので、欄は書いた順に 4 バイトずつ続く（uShadowMatrix は 272 バイト目）。
-    /// 末尾の uSky* は空の画素の向きの材料（Scene3d.skyBasisOf の forward・right・up）で、w に描き先の幅と高さと景色を背景に描くか（skyValuesAt から・Render3d.WebGpuSky.packValues）。
     pub def sceneDeclarations(): String =
-        let p = Scene3d.maxPointLights();
-        let s = Scene3d.maxSpotLights();
-        "struct R3dScene {\n" +
-        "    uAmbient: vec3f, uHemisphere: f32,\n" +
-        "    uEye: vec3f, uToonSteps: i32,\n" +
-        "    uFogColor: vec3f, uFogOn: i32,\n" +
-        "    uFogRange: vec2f, uPointCount: i32, uSpotCount: i32,\n" +
-        "    uSunDir: vec3f, uSunShadowOn: i32,\n" +
-        "    uSunColor: vec3f, uSunNormalShift: f32,\n" +
-        "    uSunForward: vec3f, uSunBias: f32,\n" +
-        "    uSunFade: vec2f, uSunPcf: i32, uSunStrength: f32,\n" +
-        "    uZenith: vec3f, uCurve: f32,\n" +
-        "    uHorizon: vec3f, uEnvOn: i32,\n" +
-        "    uGround: vec3f, uEnvBoxOn: i32,\n" +
-        "    uEnvBoxMin: vec3f, uEnvLevels: f32,\n" +
-        "    uEnvBoxMax: vec3f, uEnvIntensity: f32,\n" +
-        "    uEnvBoxCenter: vec3f, uShadowOn: i32,\n" +
-        "    uDepthRange: vec2f, uShadowSpot: i32, uShadowPcf: i32,\n" +
-        "    uShadowBias: f32, uShadowStrength: f32, uDepthOut: i32, pad0: i32,\n" +
-        "    pad1: f32, pad2: f32, pad3: f32, pad4: f32,\n" +
-        "    uShadowMatrix: mat4x4f,\n" +
-        "    uSunMatrix: mat4x4f,\n" +
-        "    uPointPos: array<vec4f, ${p}>,\n" +
-        "    uPointColor: array<vec4f, ${p}>,\n" +
-        "    uPointRange: array<vec4f, ${p}>,\n" +
-        "    uSpotPos: array<vec4f, ${s}>,\n" +
-        "    uSpotDir: array<vec4f, ${s}>,\n" +
-        "    uSpotColor: array<vec4f, ${s}>,\n" +
-        "    uSpotRange: array<vec4f, ${s}>,\n" +
-        "    uSpotCone: array<vec4f, ${s}>,\n" +
-        "    uSkyForward: vec4f,\n" +
-        "    uSkyRight: vec4f,\n" +
-        "    uSkyUp: vec4f,\n" +
-        "};\n" +
+        Render3d.UniformLayout.structSource("R3dScene", Render3d.UniformLayout.sceneFields()) +
         "@group(0) @binding(0) var<uniform> r3d: R3dScene;\n" +
         "@group(0) @binding(1) var uShadowMap: texture_depth_2d;\n" +
         "@group(0) @binding(2) var uSunMap: texture_depth_2d;\n" +
@@ -55,16 +19,12 @@ pub mod Render3dWgsl {
         "@group(0) @binding(4) var uEnvSampler: sampler;\n"
 
     /// 変種 v の pipeline だけが group 0 に足す binding（どちらも偽なら空の字）。6 = 点光源の影と光の量の読み方の値の buffer（R3dLight・+ps か +pu）・
-    /// 7 = 点光源の影の atlas（+ps だけ）。R3dLight の欄の名前は Render3dGlsl の uniform と同じで、並びは lightValueBytes の doc。
+    /// 7 = 点光源の影の atlas（+ps だけ）。R3dLight の欄の名前は Render3dGlsl の uniform と同じで、並びは Render3d.UniformLayout.lightFields。
     // WhyNot: 既定の R3dScene の struct に欄を足さない — 既定の pipeline の WGSL の字と group 0 の layout が変わり、変種を使わない場面まで値の並びが動く。
     pub def variantDeclarations(v: Render3d.ShaderVariant): String =
         if (not v#pointShadows and not v#physicalUnits) ""
         else
-            "struct R3dLight {\n" +
-            "    uPointShadow: array<vec4f, ${Scene3d.maxPointLights()}>,\n" +
-            "    uPointShadowAtlas: vec4f,\n" +
-            "    uPointShadowBias: vec2f, uInverseUnitsPerMeterSquared: f32, pad0: f32,\n" +
-            "};\n" +
+            Render3d.UniformLayout.structSource("R3dLight", Render3d.UniformLayout.lightFields()) +
             "@group(0) @binding(${lightBinding()}) var<uniform> r3dLight: R3dLight;\n" +
             (if (v#pointShadows) "@group(0) @binding(${pointShadowMapBinding()}) var uPointShadowMap: texture_depth_2d;\n" else "")
 
@@ -74,9 +34,8 @@ pub mod Render3dWgsl {
     /// 変種 +ps の group 0 の点光源の影の atlas の binding。
     pub def pointShadowMapBinding(): Int32 = 7
 
-    /// R3dLight のバイト数。並び: uPointShadow（点光源 8 本の (slot, A, B, strength)・16 バイトずつ）の後に uPointShadowAtlas（128）・
-    /// uPointShadowBias（144）・uInverseUnitsPerMeterSquared（152）。
-    pub def lightValueBytes(): Int32 = 16 * Scene3d.maxPointLights() + 32
+    /// R3dLight のバイト数（並びは Render3d.UniformLayout.lightFields）。
+    pub def lightValueBytes(): Int32 = Render3d.UniformLayout.bytesOf(Render3d.UniformLayout.lightFields())
 
     /// 物ごとの値（group 1 の drawBinding() から）。uCutout = cutout の材質か（1.0）・法線マップの強さと mip のレベルの数・lightmap の mip のレベルの数と
     /// 色空間（sRGB なら 1.0）と強さ（LightModel3d.Codegen の WGSL が r3dDraw.uLightmapSrgb・uLightmapIntensity で読む）。
@@ -660,7 +619,7 @@ pub mod Render3dWgsl {
         LightModel3d.Codegen.toWgsl("skyAt", Vec3Input.SkyDirection :: Nil, LightModel3d.skyModel())
 
     /// R3dScene の uSkyForward のバイトの位置（光の配列の後ろ・uSkyRight と uSkyUp が 16 バイトずつ続く）。
-    pub def skyValuesAt(): Int32 = 400 + 16 * (3 * Scene3d.maxPointLights() + 5 * Scene3d.maxSpotLights())
+    pub def skyValuesAt(): Int32 = Render3d.UniformLayout.offsetOf(Render3d.UniformLayout.sceneOffsets(), Render3d.UniformLayout.SceneField.SkyForward)
 
     /// 空の頂点シェーダー: 頂点の buffer を読まず、vertex_index の 3 点で描き先いっぱいを覆う三角形を出す。入口は vs_main。
     // WhyNot: GL と同じ 6 点の四角の buffer を持たない — 覆う画素は同じで、buffer と頂点の属性の宣言が要らない。

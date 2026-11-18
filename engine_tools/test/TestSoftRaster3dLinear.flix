@@ -129,7 +129,7 @@ mod TestSoftRaster3dLinear {
     def testPointLightIsLinearAmount(): Unit \ {Assert, IO} =
         let lamp = { position = Vec3.v3(0.0, 0.0, 1.0), color = gray(1.0), intensity = 1.0, range = 4.0 };
         let scene = { pointLights = lamp :: Nil | sceneOf(gray(0.0), Nil, plate(gray(1.0)) :: Nil) };
-        let light = SoftRaster3d.lightAt(scene#environment, lamp :: Nil, Nil, Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
+        let light = SoftRaster3d.lightAt(SoftRaster3d.lightProbe(scene#environment, lamp :: Nil, Nil), Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
         Assert.assertTrue(isNear(screen(light#r), redAt(render(scene), 4, 4)))
 
     /// 点光源の color 0.5 は線形へ戻してから intensity を掛ける。
@@ -137,7 +137,7 @@ mod TestSoftRaster3dLinear {
     def testPointLightColorIsLinearized(): Unit \ {Assert, IO} =
         let lamp = { position = Vec3.v3(0.0, 0.0, 1.0), color = gray(1.0), intensity = 1.0, range = 4.0 };
         let scene = { pointLights = { color = gray(0.5) | lamp } :: Nil | sceneOf(gray(0.0), Nil, plate(gray(1.0)) :: Nil) };
-        let light = SoftRaster3d.lightAt(scene#environment, { color = gray(lin(0.5)) | lamp } :: Nil, Nil, Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
+        let light = SoftRaster3d.lightAt(SoftRaster3d.lightProbe(scene#environment, { color = gray(lin(0.5)) | lamp } :: Nil, Nil), Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
         Assert.assertTrue(isNear(screen(light#r), redAt(render(scene), 4, 4)))
 
     /// かすみの色 0.5（near 0・far 4・白い板・環境光は白）: 線形の量の中で寄せる。
@@ -217,7 +217,7 @@ mod TestSoftRaster3dLinear {
         let base = sceneOf(gray(0.5), Nil, (plate(gray(1.0)) |> Scene3d.withMaterial(m)) :: Nil);
         let scene = { environment = { fog = Some({ color = gray(0.5), near = 0.0, far = 4.0 }) | base#environment } | base };
         let p = Vec3.v3(0.25, -0.25, 2.0);
-        let light = SoftRaster3d.lightAt({ ambient = gray(lin(0.5)) | scene#environment }, Nil, Nil, p, Vec3.v3(0.0, 0.0, -1.0));
+        let light = SoftRaster3d.lightAt(SoftRaster3d.lightProbe({ ambient = gray(lin(0.5)) | scene#environment }, Nil, Nil), p, Vec3.v3(0.0, 0.0, -1.0));
         let c = SoftRaster3d.surfaceOutAt(scene#environment, Vec3.zero(), p, gray(lin(0.5)), gray(1.0), light, gray(0.25), 2.0, true);
         Assert.assertTrue(isNear(c#r, redAt(render(scene), 4, 4)))
 

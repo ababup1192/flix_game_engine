@@ -5,7 +5,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
     import fge.webgpu.RenderPass
     import java.nio.FloatBuffer
     use RenderFrame.{closeSpriteRun, emitSprite, stateSize}
-    use RenderFrame.Internal.RenderList.{appendSceneRow, instanceFloats, newRenderList, rowAt, rowsOf}
+    use RenderFrame.Internal.RenderList.{appendSceneRow, blendAt, countAt, instanceFloats, newRenderList, rowsOf, textureAt}
     use RenderFrame.Internal.WebGpuRows.{drawSceneRow, firstInstanceAt, geometryOf, isSameScissor, noteScissor, putScissor, scissorInto, stencilKeep, viewportTop}
 
     def fb(): (Int32, Int32) = (320, 200)
@@ -84,7 +84,7 @@ mod RenderFrame.Internal.WebGpuRows.TestWebGpuRows {
         emitSprite(st, list, 1.0, 1.0, registry, Set.empty(), warnLog, spriteOf("b"));
         closeSpriteRun(st, list);
         let rows = rowsOf(list);
-        Assert.assertEq(expected = (0, 6, 101, 1), (rowAt(rows, 1, 4), rowAt(rows, 1, 3), firstInstanceAt(rows, 1, 100), rowAt(rows, 1, 2)))
+        Assert.assertEq(expected = (0, 6, 101, 1), (blendAt(rows, 1), textureAt(rows, 1), firstInstanceAt(rows, 1, 100), countAt(rows, 1)))
 
     // ── 3D の場面を貼る行 ──
 

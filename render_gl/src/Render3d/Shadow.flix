@@ -7,7 +7,7 @@ mod Render3d.Shadow {
                   programsOf, blankTextureUnit, pointShadowTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram}
     use Render3d.GlRows.{drawBillboardRuns}
     use Render3d.Counts.{BatchBreak, Counter, count, countDrawCall}
-    use Render3d.SceneList.{SceneList, billboardAt, firstBillboardRowOf, firstBlendedRowOf, headAt, kindSkinned, rowAt, valuesAt}
+    use Render3d.SceneList.{SceneList, SceneRowKind, billboardAt, breakSlotAt, countAt, firstBillboardRowOf, firstBlendedRowOf, firstInstanceAt, headAt, kindAt, valuesAt}
     use Render3d.ShadowMaps.{Key, ShadowPass, ShadowSampling}
 
     // ── 影の地図 ──
@@ -201,7 +201,7 @@ mod Render3d.Shadow {
     /// 行 row を深度だけのプログラムで描く。骨つきの行は骨つきの版（Output.Depth と共用）で、曲がった形で影を落とす。描く物の無い行も形を今のコマで使った物として数える。
     def drawShadowRow(gl: GlContext, state: State, gen: Int64, frame: ShadowFrame, row: Int32): Unit \ IO =
         let list = frame#list;
-        let mesh = shadowLocsFor(gl, state, rowAt(list, row, 0) == kindSkinned());
+        let mesh = shadowLocsFor(gl, state, kindAt(list, row) == SceneRowKind.Skinned);
         if (mesh#program == 0) ()
         else {
             if (mesh#program == Array.get(0, frame#bound)) ()
@@ -210,7 +210,7 @@ mod Render3d.Shadow {
                 useMeshProgram(gl, mesh, frame#lightView, frame#identity)
             };
             let entry = meshEntry(gl, state, gen, headAt(list, row)#fields#mesh);
-            drawMeshRange(gl, state, mesh, rowAt(list, row, 5), (entry#vao, entry#indexCount), rowAt(list, row, 3), rowAt(list, row, 4))
+            drawMeshRange(gl, state, mesh, breakSlotAt(list, row), (entry#vao, entry#indexCount), firstInstanceAt(list, row), countAt(list, row))
         };
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawShadowRows のループが JIT から外れる（docs/performance.md の 13 節）。
         ()

@@ -188,7 +188,7 @@ mod RenderPaint {
         // コンパイル失敗した複数 Spec が同じ fallback program を鍵に uniform cache を上書きし合い、
         // fallback では locs が空（または全 -1）になるため、絵 2 枚 × locs 0 本は正常系（glUniform の location -1 も無視される）。
         let drawSurface = (surfaceGl: GlContext, rows: Array[Int32, Static], row: Int32, reads: Array[Int32, Static], values: Array[Float32, Static]) -> {
-            let program = RenderList.rowAt(rows, row, 1);
+            let program = RenderList.surfaceProgramAt(rows, row);
             // buildProgram だけで使用を刻むと足りない — Platform.GpuResources.buildProgram の doc は
             // 「起動時/リロード時に 1 回 compile」と約束していて、その通りに 1 回だけ
             // compile してハンドルを持ち回るゲームの program が「未使用」に見えて
@@ -198,16 +198,16 @@ mod RenderPaint {
             let (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs) =
                 Map.get(program, Ref.get(shaderUniformCache))
                 |> Option.getWithDefault((-1, -1, -1, -1, (Nil: List[(Int32, Int32)]), (Nil: List[Int32])));
-            let at = RenderList.rowAt(rows, row, 11);
-            let paramCount = RenderList.rowAt(rows, row, 2) - 6;
+            let at = RenderList.valuesAt(rows, row);
+            let paramCount = RenderList.surfaceValueCountAt(rows, row) - 6;
             // Param の値（uParamN・正典順）。program を使う間だけ効く uniform なので、描く直前に差す。
             if (List.isEmpty(paramLocs)) ()
             else {
                 surfaceGl.useProgram(program);
                 List.forEachWithIndex((k, loc) -> if (k < paramCount) surfaceGl.uniform1f(loc, Array.get(at + 6 + k, values)) else (), paramLocs)
             };
-            let readsAt = RenderList.rowAt(rows, row, 6);
-            let readCount = RenderList.rowAt(rows, row, 7);
+            let readsAt = RenderList.surfaceFirstReadAt(rows, row);
+            let readCount = RenderList.surfaceReadCountAt(rows, row);
             let texBinds = List.zipWithIndex(texLocs) |> List.filter(il -> fst(il) < readCount) |> List.map(il -> {
                 let (i, (_samplerLoc, flipLoc)) = il;
                 let base = (readsAt + i) * RenderList.readFields();
@@ -215,7 +215,7 @@ mod RenderPaint {
                 ({ texUnit = i, texId = Array.get(base, reads), flipLoc = flipLoc, flip = Int32.toFloat64(Array.get(base + 2, reads)), sampler = sampler }: RenderSprite.SurfaceTexBind)
             });
             RenderSprite.drawShaderSurface(surfaceGl, program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
-                                           texBinds, values, at, RenderFrame.blendOf(RenderList.rowAt(rows, row, 4)))
+                                           texBinds, values, at, RenderFrame.blendOf(RenderList.blendAt(rows, row)))
         };
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が
         // 大半なので、共通ベースを 1 つ組み、呼び出し側は変わる所だけ上書きする。

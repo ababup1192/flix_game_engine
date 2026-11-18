@@ -10,7 +10,7 @@ mod Render3d.GlRows {
     use Render3d.Counts.{BatchBreak, countBillboardRuns, countDrawCall, countInstances}
     use Render3d.Light.{putLights}
     use Render3d.Material.{MaterialTable, bindMaterial, drawWithLook, entryAt, freshBound, releaseBound, resolveTextureAs, useMaterial}
-    use Render3d.SceneList.{SceneList, ScenePasses, billboardAt, valuesAt, firstBillboardRowOf, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindBillboard, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, ScenePasses, SceneRowKind, billboardAt, breakSlotAt, countAt, firstInstanceAt, kindAt, materialHandleAt, textureIdAt, valuesAt, firstBillboardRowOf, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, materialAt, meshAt, rowCountOf}
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow}
     use Render3d.VariantPrograms.{litLocsOfVariant}
 
@@ -54,7 +54,7 @@ mod Render3d.GlRows {
     /// touched = [絵を引いたら 1, 行の描く物の数の合計]。
     def uploadRow(gl: GlContext, state: State, gen: Int64, source: TextureSource, inputs: SceneInputs, list: SceneList,
                   touched: Array[Int32, Static], row: Int32): Unit \ IO =
-        if (rowAt(list, row, 0) == kindBillboard()) () else uploadMeshRow(gl, state, gen, source, inputs, list, touched, row);
+        if (kindAt(list, row) == SceneRowKind.Billboard) () else uploadMeshRow(gl, state, gen, source, inputs, list, touched, row);
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で uploadRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
         ()
 
@@ -62,9 +62,9 @@ mod Render3d.GlRows {
                       touched: Array[Int32, Static], row: Int32): Unit \ IO =
         let head = headAt(list, row);
         discard meshEntry(gl, state, gen, head#fields#mesh);
-        Array.put(Array.get(1, touched) + rowAt(list, row, 4), 1, touched);
+        Array.put(Array.get(1, touched) + countAt(list, row), 1, touched);
         materialAt(list, row) |> Option.forEach(m -> {
-            let material = entryAt(inputs#materials, rowAt(list, row, 1));
+            let material = entryAt(inputs#materials, materialHandleAt(list, row));
             uploadTextures(gl, state, gen, source, touched, material, m, head);
             if (hasFlag(list, row, flagNormalMap())) ensureTangents(gl, state, gen, head#fields#mesh) else ()
         })
@@ -118,9 +118,12 @@ mod Render3d.GlRows {
     }
 
     def drawRow(gl: GlContext, state: State, gen: Int64, frame: RowFrame, row: Int32): Unit \ IO =
-        let kind = rowAt(frame#list, row, 0);
-        if (kind == kindMaterial()) drawMaterialRow(gl, state, gen, frame, row)
-        else drawShapeRow(gl, state, frame, kind == kindSkinned(), row);
+        match kindAt(frame#list, row) {
+            case SceneRowKind.Material    => drawMaterialRow(gl, state, gen, frame, row)
+            case SceneRowKind.VertexColor => drawShapeRow(gl, state, frame, false, row)
+            case SceneRowKind.Skinned     => drawShapeRow(gl, state, frame, true, row)
+            case SceneRowKind.Billboard   => bug!("Render3d.GlRows.drawRow: ビルボードの行は drawBillboardRuns が描く（firstBillboard と firstBlended の間の行はここへ来ない）")
+        };
         // WhyNot: 末尾を呼び出しで終えない — 行が物の数だけある場面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
         ()
 
@@ -139,9 +142,9 @@ mod Render3d.GlRows {
 
     def drawMaterialRow(gl: GlContext, state: State, gen: Int64, frame: RowFrame, row: Int32): Unit \ IO =
         let list = frame#list;
-        if (rowAt(list, row, 4) == 0) ()
+        if (countAt(list, row) == 0) ()
         else materialAt(list, row) |> Option.forEach(m -> {
-            let entry = entryAt(frame#inputs#materials, rowAt(list, row, 1));
+            let entry = entryAt(frame#inputs#materials, materialHandleAt(list, row));
             let look = { coverage = hasFlag(list, row, flagCoverage()), doubleSided = hasFlag(list, row, flagDoubleSided()) };
             if (hasFlag(list, row, flagSameBinding())) ()
             else {
@@ -154,7 +157,7 @@ mod Render3d.GlRows {
     def drawRowRange(gl: GlContext, state: State, mesh: MeshLocs, frame: RowFrame, row: Int32): Unit \ IO =
         let list = frame#list;
         let entry = meshEntryAt(state, meshAt(list, row));
-        drawMeshRange(gl, state, mesh, rowAt(list, row, 5), (entry#vao, entry#indexCount), rowAt(list, row, 3), rowAt(list, row, 4))
+        drawMeshRange(gl, state, mesh, breakSlotAt(list, row), (entry#vao, entry#indexCount), firstInstanceAt(list, row), countAt(list, row))
 
     def shapeMeshLocs(gl: GlContext, state: State, frameVariant: ShaderVariant, pass: MaterialPass, skinned: Bool): MeshLocs \ IO = match pass {
         case MaterialPass.Color    => litLocsOfVariant(gl, state, frameVariant, skinned)#mesh
@@ -209,14 +212,14 @@ mod Render3d.GlRows {
 
     def drawBillboardRun(gl: GlContext, state: State, d: BillboardRunDraw, row: Int32): Unit \ IO =
         let list = d#list;
-        let texId = rowAt(list, row, 1);
+        let texId = textureIdAt(list, row);
         let values = valuesAt(list, row);
         if (texId < 0) warnMissingTexture(state, billboardAt(list, row)#texture)
         else if (values < 0) ()
         else {
             gl.bindTexture(GlConst.TEXTURE_2D, texId);
             pointBillboardValues(gl, d#vbo, 4 * (values - d#start));
-            gl.drawArraysInstanced(GlConst.TRIANGLES, 0, 6, rowAt(list, row, 4));
+            gl.drawArraysInstanced(GlConst.TRIANGLES, 0, 6, countAt(list, row));
             countDrawCall(state, d#why)
         };
         // WhyNot: 末尾を呼び出しで終えない — ビルボードが多い場面で drawBillboardRunsFrom のループが JIT から外れる（docs/performance.md の 13 節）。

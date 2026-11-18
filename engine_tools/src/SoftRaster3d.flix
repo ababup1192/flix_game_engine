@@ -74,29 +74,27 @@ pub mod SoftRaster3d {
     // 光の式（pub の口は GL の担当と値を突き合わせるため）
     // ════════════════════════════════════════════════════════
 
-    /// world の点 position・法線 normal（長さ 1）に当たる光の量（色ごと。toonSteps の丸めまで済ませた値）。
-    // WhyNot: ここで影を見ない — 影の地図は場面の置いた物から作るので、光の並びだけでは作れない。影は drawScene の道でだけ付く。
-    pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight],
-                    position: Vec3.Vec3, normal: Vec3.Vec3): Color =
-        let (r, g, b) = evalLight(compileLights(env, pointLights, spotLights, None, SoftRaster3d.Sun.none()), SoftRaster3d.PointShadows.allLit(),
-                                  position#x, position#y, position#z, normal#x, normal#y, normal#z, 1.0);
-        { r = r, g = g, b = b }
+    /// 光の量を 1 点で求める材料（engine の開発用の口。gl-parity の式の行と engine_tools のテストが GL と値をそろえて確かめる）。
+    /// units と unitsPerMeter = 光の量の読み方（Scene3d.withLightUnits・withUnitsPerMeter と同じ）・
+    /// sun = 太陽（toward = 点から太陽への向き（長さ 1）・color = 太陽の color × intensity を書いた値のまま・lit = 太陽の影の割合。影の地図は場面の置いた物から作るので呼ぶ側が決める）。
+    /// 字で全部の欄を書かず、`{ units = Scene3d.LightUnits.Physical | SoftRaster3d.lightProbe(env, points, spots) }` の形で書く。
+    pub type alias LightProbe = { environment = Scene3d.Environment3d, pointLights = List[Scene3d.PointLight], spotLights = List[Scene3d.SpotLight],
+                                  units = Scene3d.LightUnits, unitsPerMeter = Float64,
+                                  sun = Option[{ toward = Vec3.Vec3, color = Vec3.Vec3, lit = Float64 }] }
 
-    /// lightAt を光の量の読み方 units（unitsPerMeter = 1 m が場面の長さのいくつか）で求めた物。engine の開発用の口: gl-parity の式の行が GL と値をそろえて確かめる。
-    pub def lightWithUnitsAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight],
-                             units: Scene3d.LightUnits, unitsPerMeter: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color =
-        let scene = { lightUnits = units, unitsPerMeter = unitsPerMeter | Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 10.0, lensShift = Vec2.zero() }, Vec2.v2(1.0, 1.0)) };
-        let lights = SoftRaster3d.PointShadows.withSceneLighting(None, scene, compileLights(env, pointLights, spotLights, None, SoftRaster3d.Sun.none()));
-        let (r, g, b) = evalLight(lights, SoftRaster3d.PointShadows.allLit(), position#x, position#y, position#z, normal#x, normal#y, normal#z, 1.0);
-        { r = r, g = g, b = b }
+    /// Legacy・unitsPerMeter 1・太陽なしの材料。
+    pub def lightProbe(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight]): LightProbe =
+        { environment = env, pointLights = pointLights, spotLights = spotLights, units = Scene3d.LightUnits.Legacy, unitsPerMeter = 1.0, sun = None }
 
-    /// lightAt に太陽を足した光の量。toward = 点から太陽への向き（長さ 1）・color = 太陽の color × intensity（lightAt の光の color と同じく書いた値のまま）・
-    /// sunLit = 太陽の影の割合（影の地図は場面の置いた物から作るので、呼ぶ側が決めて渡す）。
-    /// 太陽の拡散は lightmap の面には足さない。engine の開発用の口: gl-parity の式の行が GL と値をそろえて確かめる。
-    pub def lightWithSunAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight],
-                           toward: Vec3.Vec3, color: Vec3.Vec3, sunLit: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color =
-        let (r, g, b) = evalLight(compileLights(env, pointLights, spotLights, None, SoftRaster3d.Sun.raw(toward, color, None)), SoftRaster3d.PointShadows.allLit(),
-                                  position#x, position#y, position#z, normal#x, normal#y, normal#z, sunLit);
+    /// world の点 position・法線 normal（長さ 1）に probe の光が当てる量（色ごと。toonSteps の丸めまで済ませた値）。太陽の拡散は lightmap の面には足さない。
+    // WhyNot: ここで影を見ない — 影の地図は場面の置いた物から作るので、光の並びだけでは作れない。影は drawScene の道でだけ付く（太陽の影は probe#sun#lit で受ける）。
+    pub def lightAt(probe: LightProbe, position: Vec3.Vec3, normal: Vec3.Vec3): Color =
+        let sun = probe#sun |> Option.map(s -> SoftRaster3d.Sun.raw(s#toward, s#color, None)) |> Option.getWithDefault(SoftRaster3d.Sun.none());
+        let sunLit = probe#sun |> Option.map(s -> s#lit) |> Option.getWithDefault(1.0);
+        let scene = { lightUnits = probe#units, unitsPerMeter = probe#unitsPerMeter
+                      | Scene3d.scene({ eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 10.0, lensShift = Vec2.zero() }, Vec2.v2(1.0, 1.0)) };
+        let lights = SoftRaster3d.PointShadows.withSceneLighting(None, scene, compileLights(probe#environment, probe#pointLights, probe#spotLights, None, sun));
+        let (r, g, b) = evalLight(lights, SoftRaster3d.PointShadows.allLit(), position#x, position#y, position#z, normal#x, normal#y, normal#z, sunLit);
         { r = r, g = g, b = b }
 
     /// 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。

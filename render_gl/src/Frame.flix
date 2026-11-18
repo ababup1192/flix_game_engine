@@ -12,7 +12,7 @@ mod RenderFrame {
     use RenderFrame.Internal.GlRows
     use RenderFrame.Internal.GlRows.drawRenderList
     use RenderFrame.Internal.RenderList.{PassSpec, RenderList, appendMaskRow, appendPolyRow, appendSceneRow, appendSpriteRow, appendStaticRow, appendSurfaceRow,
-                                         appendTileRow, instanceFloats, kindPoly, kindScene3d, kindSprite, nextInstanceOf, nextMaskRef, nextVertexOf, rowCountOf}
+                                         appendTileRow, instanceFloats, ListRowKind, drawCountCodeOf, nextInstanceOf, nextMaskRef, nextVertexOf, rowCountOf}
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず
@@ -497,7 +497,7 @@ mod RenderFrame {
     /// スプライトの draw call を数え、その鍵を「前に出したスプライトの鍵」に控える。draws = 出した draw call の数（mask つきは 2）。
     def countSpriteDraw(st: Array[Int32, Static], texId: Int32, clipFlag: Int32,
                         x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32, masked: Bool, draws: Int32): Unit \ IO =
-        countDraw(st, kindSprite(), spriteBreakOf(st, texId, clipFlag, x0, y0, x1, y1, blendC, masked));
+        countDraw(st, drawCountCodeOf(ListRowKind.Sprite), spriteBreakOf(st, texId, clipFlag, x0, y0, x1, y1, blendC, masked));
         if (draws > 1) {
             bump(st, RenderDrawCounts.drawCallsSlot(), draws - 1);
             bump(st, RenderDrawCounts.maskSlot(), draws - 1)
@@ -519,7 +519,7 @@ mod RenderFrame {
                      or (clipFlag != 0 and (Array.get(27, st) != x0 or Array.get(28, st) != y0
                                             or Array.get(29, st) != x1 or Array.get(30, st) != y1))) RenderDrawCounts.clipSlot()
             else RenderDrawCounts.kindSlot();
-        countDraw(st, kindPoly(), reason);
+        countDraw(st, drawCountCodeOf(ListRowKind.Poly), reason);
         Array.put(0, 17, st);
         Array.put(clipFlag, 26, st);
         Array.put(x0, 27, st);
@@ -593,7 +593,7 @@ mod RenderFrame {
 
     /// 3D の場面を貼る行を描いた事を数えに残す（GL と WebGPU で同じ数え方にする）。
     // WhyNot: 場面を 2D の draw call に数えない — 中の draw call は 3D の数（Scene3dCounts）に入る。次の 2D の draw call は kind で切れる。
-    def countSceneRow(st: Array[Int32, Static]): Unit \ IO = Array.put(kindScene3d(), 15, st)
+    def countSceneRow(st: Array[Int32, Static]): Unit \ IO = Array.put(drawCountCodeOf(ListRowKind.Scene3d), 15, st)
 
     /// 積むときにその場で RenderList の instances へ書く。テクスチャ・clip 矩形・重ね方が変わるところでは
     /// **先に**溜めた run を 1 行にして閉じる — 新しい run の先頭はその行の後ろなので、

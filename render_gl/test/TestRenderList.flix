@@ -4,11 +4,17 @@
 mod RenderFrame.TestRenderList {
     import java.nio.FloatBuffer
     use RenderFrame.{blendCode, calcViewport, closeSpriteRun, emitSprite, pushSpriteKeyed, stateSize, writeInstAt}
-    use RenderFrame.Internal.RenderList.{DepthStencil, Letterbox, PassHistory, PassSpec, RenderList, drawSamplesOf, resolveTargetOf, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, kindSprite,
-                                         withLetterboxKept, letterboxOf, loadOpOf, newRenderList, nextInstanceOf, rowAt, rowCountOf, rowsOf, screenClearColorOf, screenPass,
+    use RenderFrame.Internal.RenderList.{DepthStencil, Letterbox, PassHistory, PassSpec, RenderList, drawSamplesOf, resolveTargetOf, clearRenderList, glViewportOf, hasLetterbox, instanceFloats, ListRowKind,
+                                         withLetterboxKept, letterboxOf, loadOpOf, newRenderList, nextInstanceOf, rowCountOf, rowsOf, screenClearColorOf, screenPass,
                                          targetFormatOf, targetPass, targetTextureOf, fullTargetPass}
 
     // ── 組み立て ──
+
+    /// 種類 → 欄 0 の番号 → 種類が全部の種類で元に戻る（番号の振り間違いで黙って別の種類にならない）。
+    @Test
+    def testRowKindCodeRoundTrips(): Unit \ Assert =
+        let all = ListRowKind.Sprite :: ListRowKind.Poly :: ListRowKind.Tile :: ListRowKind.StaticRange :: ListRowKind.Surface :: ListRowKind.Scene3d :: ListRowKind.Mask :: Nil;
+        Assert.assertEq(expected = all, all |> List.map(k -> RenderFrame.Internal.RenderList.kindOfCode(codeOf(k))))
 
     def spriteWith(spec: { texture = String, x = Float64, blend = DrawCmd.BlendMode, clip = Option[Rect2.Rect2] }): DrawCmd.Drawable =
         DrawCmd.make({
@@ -41,7 +47,27 @@ mod RenderFrame.TestRenderList {
         list
 
     /// 行 row の欄 col。
-    def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = rowAt(rowsOf(list), row, col)
+    def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = cellAt(rowsOf(list), row, col)
+
+    /// 行 row の欄 col を RenderList の読み出し口で読む（欄の番号は RenderList の頭のコメント・種類は kindCodeOf の番号。2D の行のテストが共に使う）。
+    pub def cellAt(rows: Array[Int32, Static], row: Int32, col: Int32): Int32 \ IO = match col {
+        case 0  => RenderFrame.Internal.RenderList.kindCodeOf(RenderFrame.Internal.RenderList.kindAt(rows, row))
+        case 1  => RenderFrame.Internal.RenderList.firstAt(rows, row)
+        case 2  => RenderFrame.Internal.RenderList.countAt(rows, row)
+        case 3  => RenderFrame.Internal.RenderList.textureAt(rows, row)
+        case 4  => RenderFrame.Internal.RenderList.blendAt(rows, row)
+        case 5  => RenderFrame.Internal.RenderList.clipFlagAt(rows, row)
+        case 6  => RenderFrame.Internal.RenderList.clipX0At(rows, row)
+        case 7  => RenderFrame.Internal.RenderList.clipY0At(rows, row)
+        case 8  => RenderFrame.Internal.RenderList.clipX1At(rows, row)
+        case 9  => RenderFrame.Internal.RenderList.clipY1At(rows, row)
+        case 10 => RenderFrame.Internal.RenderList.bufferAt(rows, row)
+        case 11 => RenderFrame.Internal.RenderList.valuesAt(rows, row)
+        case _  => bug!("TestRenderList.cellAt: 欄 ${col} は無い")
+    }
+
+    /// 種類の番号（cellAt の欄 0 と比べる）。
+    pub def codeOf(kind: RenderFrame.Internal.RenderList.ListRowKind): Int32 = RenderFrame.Internal.RenderList.kindCodeOf(kind)
 
     /// 行 row の instances（1 体 38 個）の n 体目。
     def instanceFloatsAt(list: RenderList, row: Int32, n: Int32): List[Float32] \ IO =
@@ -74,7 +100,7 @@ mod RenderFrame.TestRenderList {
     /// 行の種類はスプライトの run。
     @Test
     def testRowKindIsSprite(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = kindSprite(), cell(listOf(sprite("a", 0.0) :: Nil), 0, 0))
+        Assert.assertEq(expected = codeOf(ListRowKind.Sprite), cell(listOf(sprite("a", 0.0) :: Nil), 0, 0))
 
     /// 絵が交互の 3 個は 3 行。
     @Test

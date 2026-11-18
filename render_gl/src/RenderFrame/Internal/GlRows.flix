@@ -10,7 +10,9 @@ pub mod RenderFrame.Internal.GlRows {
     use RenderFrame.{FrameArgs, blendOf, countPolyDraw, countSceneRow, countSingleDraw, countSpriteDraw, emitFrameMixed, polyVertCap, spriteCaps, surfaceMaskCap,
                      upsideDownTargetsOf}
     use RenderFrame.Internal.RenderList.{ColorAttachment, DepthStencil, Letterbox, PassHistory, PassSpec, PassTarget, RenderList, clearRenderList, glViewportOf,
-                                         instanceFloats, kindMask, kindPoly, kindScene3d, kindStatic, kindSurface, kindTile, newRenderList, readsOf, rowAt, rowCountOf,
+                                         ListRowKind, blendAt, bufferAt, clipFlagAt, clipX0At, clipX1At, clipY0At, clipY1At, countAt, drawCountCodeOf, firstAt,
+                                         hasClipColumns, instanceFloats, kindAt, maskFirstVertexAt, maskInstanceAt, maskStencilRefAt, maskVertexCountAt, newRenderList,
+                                         readsOf, rowCountOf, sceneIndexAt, surfaceMaskCountAt, surfaceMaskFirstAt, surfaceStencilAt, textureAt, valuesAt,
                                          rowsOf, screenPass, targetPass, valuesOf, vertexFloats}
 
     /// 面の行の面を塗る口: (gl, rows, 行, reads, values)。行の program と values と reads の絵で塗る（stencil は GlRows が張ってから呼ぶ）。
@@ -146,70 +148,89 @@ pub mod RenderFrame.Internal.GlRows {
 
     /// 行を順に GL へ流し、列を空にする。st = front-end の状態（draw call を数える先）・draw = 3D の場面と面を描く口。
     pub def drawRenderList(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], list: RenderList, draw: RowDrawers): Unit \ IO =
-        drawRowsFrom(gl, gs, st, draw#scene, draw#surface, list#instances, list#vertices, rowsOf(list), valuesOf(list), readsOf(list), 0, rowCountOf(list));
+        drawRowsFrom(gl, GlCache.GlCache(gs), DrawTally.DrawTally(st), draw#scene, draw#surface, list#instances, list#vertices, rowsOf(list), valuesOf(list),
+                     ReadTable.ReadTable(readsOf(list)), 0, rowCountOf(list));
         clearRenderList(list)
 
+    // 行のループの引数で、同じ Array[Int32, Static] が並ぶ物を型で分ける（入口で包み、drawRow の頭で 1 回剥がす）。
+    // WhyNot: 葉（RenderSprite・RenderFrame の数え・SurfaceDrawer）まで包んだまま渡さない — 別のモジュールの pub の型を替えることになる。
+    /// GL の状態の控え（program・VAO・viewport・uniform の位置）。
+    enum GlCache { case GlCache(Array[Int32, Static]) }
+    /// front-end の run の状態（draw call を数える先）。
+    enum DrawTally { case DrawTally(Array[Int32, Static]) }
+    /// 面の行が読む絵の組（RenderList の reads）。
+    enum ReadTable { case ReadTable(Array[Int32, Static]) }
+
     // WhyNot: 行ごとに list と draw の欄を引かない — 行が描く物の数だけある画面で、record の欄を辿る代金が 1 コマに出る。入れ物と配列はここで 1 回取る。
-    def drawRowsFrom(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], drawScene: Int32 -> Unit \ IO,
+    def drawRowsFrom(gl: GlContext, cache: GlCache, tally: DrawTally, drawScene: Int32 -> Unit \ IO,
                      drawSurface: SurfaceDrawer,
                      instances: FloatBuffer, vertices: FloatBuffer,
-                     rows: Array[Int32, Static], values: Array[Float32, Static], reads: Array[Int32, Static], row: Int32, n: Int32): Unit \ IO =
+                     rows: Array[Int32, Static], values: Array[Float32, Static], readTable: ReadTable, row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
-            drawRow(gl, gs, st, drawScene, drawSurface, instances, vertices, rows, values, reads, row);
-            drawRowsFrom(gl, gs, st, drawScene, drawSurface, instances, vertices, rows, values, reads, row + 1, n)
+            drawRow(gl, cache, tally, drawScene, drawSurface, instances, vertices, rows, values, readTable, row);
+            drawRowsFrom(gl, cache, tally, drawScene, drawSurface, instances, vertices, rows, values, readTable, row + 1, n)
         }
 
-    /// 行 1 つを draw 1 回で描き、draw call を数える（種類ごとの描き方は drawPolyRow などへ）。
+    /// 行 1 つを draw 1 回で描き、draw call を数える（種類ごとの描き方は drawPolyRow などへ）。clip の欄を持たない種類（タイル・面・3D の場面）は scissor を切って描く。
     // WhyNot: 末尾を呼び出しで終えない — 行が描く物の数だけある画面で drawRowsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
     @DontInline
-    def drawRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], drawScene: Int32 -> Unit \ IO,
+    def drawRow(gl: GlContext, cache: GlCache, tally: DrawTally, drawScene: Int32 -> Unit \ IO,
                 drawSurface: SurfaceDrawer,
                 instances: FloatBuffer, vertices: FloatBuffer,
-                rows: Array[Int32, Static], values: Array[Float32, Static], reads: Array[Int32, Static], row: Int32): Unit \ IO =
-        let kind = rowAt(rows, row, 0);
-        setScissorAt(gl, gs, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9));
-        if (kind == kindPoly()) drawPolyRow(gl, gs, st, vertices, rows, values, row)
-        else if (kind == kindTile()) drawTileRow(gl, gs, st, rows, values, row)
-        else if (kind == kindStatic()) drawStaticRow(gl, gs, st, rows, values, row)
-        else if (kind == kindMask()) drawMaskRow(gl, gs, st, instances, vertices, rows, values, row)
-        else if (kind == kindScene3d()) drawSceneRow(st, drawScene, rows, row)
-        else if (kind == kindSurface()) drawSurfaceRow(gl, gs, st, drawSurface, vertices, rows, values, reads, row)
-        else drawSpriteRow(gl, gs, st, instances, rows, row);
+                rows: Array[Int32, Static], values: Array[Float32, Static], readTable: ReadTable, row: Int32): Unit \ IO =
+        let GlCache.GlCache(gs) = cache;
+        let DrawTally.DrawTally(st) = tally;
+        let ReadTable.ReadTable(reads) = readTable;
+        let kind = kindAt(rows, row);
+        if (hasClipColumns(kind)) setRowScissor(gl, gs, rows, row) else gl.disable(GlConst.SCISSOR_TEST);
+        match kind {
+            case ListRowKind.Sprite  => drawSpriteRow(gl, gs, st, instances, rows, row)
+            case ListRowKind.Poly    => drawPolyRow(gl, gs, st, vertices, rows, values, row)
+            case ListRowKind.Tile    => drawTileRow(gl, gs, st, rows, values, row)
+            case ListRowKind.StaticRange  => drawStaticRow(gl, gs, st, rows, values, row)
+            case ListRowKind.Mask    => drawMaskRow(gl, gs, st, instances, vertices, rows, values, row)
+            case ListRowKind.Scene3d => drawSceneRow(st, drawScene, rows, row)
+            case ListRowKind.Surface => drawSurfaceRow(gl, gs, st, drawSurface, vertices, rows, values, reads, row)
+        };
         ()
+
+    /// 行 row の clip で scissor を張る（clip の欄を持つ種類の行だけ）。
+    def setRowScissor(gl: GlContext, gs: Array[Int32, Static], rows: Array[Int32, Static], row: Int32): Unit \ IO =
+        setScissorAt(gl, gs, clipFlagAt(rows, row), clipX0At(rows, row), clipY0At(rows, row), clipX1At(rows, row), clipY1At(rows, row))
 
     /// スプライトの行（instances の run）を 1 回の instanced draw で描く。
     def drawSpriteRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instances: FloatBuffer,
                       rows: Array[Int32, Static], row: Int32): Unit \ IO =
-        let texId = rowAt(rows, row, 3);
-        let blendC = rowAt(rows, row, 4);
+        let texId = textureAt(rows, row);
+        let blendC = blendAt(rows, row);
         RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
-                                            Array.get(3, gs), blendOf(blendC), instances, rowAt(rows, row, 1), rowAt(rows, row, 2));
-        countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
+                                            Array.get(3, gs), blendOf(blendC), instances, firstAt(rows, row), countAt(rows, row));
+        countSpriteDraw(st, texId, clipFlagAt(rows, row), clipX0At(rows, row), clipY0At(rows, row), clipX1At(rows, row), clipY1At(rows, row),
                         blendC, false, 1)
 
     /// mask つきスプライトの行: stencil の値が 1 なら先に stencil を全部 0 にし（RenderList.nextMaskRef）、mask を stencil へ書いて
     /// その内側だけ 1 体を描く（draw 2 回）。値が 0（mask が 3 頂点未満）なら stencil を使わずに 1 体を描く。
     def drawMaskRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], instances: FloatBuffer, vertices: FloatBuffer,
                     rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
-        let texId = rowAt(rows, row, 3);
-        let blendC = rowAt(rows, row, 4);
-        let ref = rowAt(rows, row, 11);
+        let texId = textureAt(rows, row);
+        let blendC = blendAt(rows, row);
+        let ref = maskStencilRefAt(rows, row);
         if (ref == 0)
             RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
-                                                Array.get(3, gs), blendOf(blendC), instances, rowAt(rows, row, 1), 1)
+                                                Array.get(3, gs), blendOf(blendC), instances, maskInstanceAt(rows, row), 1)
         else {
             if (ref == 1) {
                 RenderSprite.clearStencil(gl);
-                setScissorAt(gl, gs, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9))
+                setRowScissor(gl, gs, rows, row)
             } else ();
             RenderSprite.writeStencilMask(gl, Array.get(4, gs), Array.get(5, gs), Array.get(6, gs), gs, polyLocsAt(),
-                                          values, 0, vertices, rowAt(rows, row, 10), rowAt(rows, row, 2), ref);
+                                          values, 0, vertices, maskFirstVertexAt(rows, row), maskVertexCountAt(rows, row), ref);
             RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, gs), Array.get(1, gs), Array.get(2, gs), texId,
-                                                Array.get(3, gs), blendOf(blendC), instances, rowAt(rows, row, 1), 1);
+                                                Array.get(3, gs), blendOf(blendC), instances, maskInstanceAt(rows, row), 1);
             RenderSprite.endStencilMask(gl)
         };
-        countSpriteDraw(st, texId, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9),
+        countSpriteDraw(st, texId, clipFlagAt(rows, row), clipX0At(rows, row), clipY0At(rows, row), clipX1At(rows, row), clipY1At(rows, row),
                         blendC, true, if (ref == 0) 1 else 2)
 
     /// 面の行: stencil の値が 1 なら先に stencil を全部 0 にし、mask を stencil へ書いてその内側だけ面を塗る（draw 2 回）。
@@ -217,43 +238,43 @@ pub mod RenderFrame.Internal.GlRows {
     def drawSurfaceRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static],
                        drawSurface: SurfaceDrawer,
                        vertices: FloatBuffer, rows: Array[Int32, Static], values: Array[Float32, Static], reads: Array[Int32, Static], row: Int32): Unit \ IO =
-        let ref = rowAt(rows, row, 10);
+        let ref = surfaceStencilAt(rows, row);
         if (ref == 0) drawSurface(gl, rows, row, reads, values)
         else {
             if (ref == 1) RenderSprite.clearStencil(gl) else ();
             RenderSprite.writeStencilMask(gl, Array.get(4, gs), Array.get(5, gs), Array.get(6, gs), gs, polyLocsAt(),
-                                          values, 0, vertices, rowAt(rows, row, 8), rowAt(rows, row, 9), ref);
+                                          values, 0, vertices, surfaceMaskFirstAt(rows, row), surfaceMaskCountAt(rows, row), ref);
             drawSurface(gl, rows, row, reads, values);
             RenderSprite.endStencilMask(gl)
         };
-        countSingleDraw(st, kindSurface(), if (ref == 0) 1 else 2)
+        countSingleDraw(st, drawCountCodeOf(ListRowKind.Surface), if (ref == 0) 1 else 2)
 
     /// 3D の場面を貼る行: 番号の場面を描く（描き終えた場面は viewport を design の矩形へ戻し・scissor を切り・blend を Normal へ戻す）。
     def drawSceneRow(st: Array[Int32, Static], drawScene: Int32 -> Unit \ IO, rows: Array[Int32, Static], row: Int32): Unit \ IO =
-        drawScene(rowAt(rows, row, 1));
+        drawScene(sceneIndexAt(rows, row));
         countSceneRow(st)
 
     /// 多角形の行（vertices の run）を 1 回の draw で描く。
     def drawPolyRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static], vertices: FloatBuffer,
                     rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
-        let blendC = rowAt(rows, row, 4);
+        let blendC = blendAt(rows, row);
         RenderSprite.drawPolygonRange(gl, Array.get(4, gs), Array.get(5, gs), Array.get(6, gs), gs, polyLocsAt(), blendOf(blendC),
-                                      values, rowAt(rows, row, 11), vertices, rowAt(rows, row, 1), rowAt(rows, row, 2));
-        countPolyDraw(st, rowAt(rows, row, 5), rowAt(rows, row, 6), rowAt(rows, row, 7), rowAt(rows, row, 8), rowAt(rows, row, 9), blendC)
+                                      values, valuesAt(rows, row), vertices, firstAt(rows, row), countAt(rows, row));
+        countPolyDraw(st, clipFlagAt(rows, row), clipX0At(rows, row), clipY0At(rows, row), clipX1At(rows, row), clipY1At(rows, row), blendC)
 
     /// タイルの層の行を 1 回の instanced draw で描く。TileMapRenderCmd は blend を持たない（いつも Normal）ので、前の行の Add / Multiply を戻す。
     def drawTileRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static],
                     rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
         RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
-        RenderSprite.drawTileMapInstanced(gl, Array.get(11, gs), rowAt(rows, row, 3), rowAt(rows, row, 10), gs, tileLocsAt(),
-                                          values, rowAt(rows, row, 11), rowAt(rows, row, 2));
-        countSingleDraw(st, kindTile(), 1)
+        RenderSprite.drawTileMapInstanced(gl, Array.get(11, gs), textureAt(rows, row), bufferAt(rows, row), gs, tileLocsAt(),
+                                          values, valuesAt(rows, row), countAt(rows, row));
+        countSingleDraw(st, drawCountCodeOf(ListRowKind.Tile), 1)
 
     /// static layer の範囲の行を、頂点の buffer（VAO）の範囲で 1 回の draw で描く（上げも三角形化もしない）。
     def drawStaticRow(gl: GlContext, gs: Array[Int32, Static], st: Array[Int32, Static],
                       rows: Array[Int32, Static], values: Array[Float32, Static], row: Int32): Unit \ IO =
-        let count = rowAt(rows, row, 2);
-        RenderSprite.drawStaticRange(gl, Array.get(4, gs), rowAt(rows, row, 10), gs, polyLocsAt(), blendOf(rowAt(rows, row, 4)),
-                                     values, rowAt(rows, row, 11), rowAt(rows, row, 1), count);
-        countSingleDraw(st, kindStatic(), if (count < 3) 0 else 1)
+        let count = countAt(rows, row);
+        RenderSprite.drawStaticRange(gl, Array.get(4, gs), bufferAt(rows, row), gs, polyLocsAt(), blendOf(blendAt(rows, row)),
+                                     values, valuesAt(rows, row), firstAt(rows, row), count);
+        countSingleDraw(st, drawCountCodeOf(ListRowKind.StaticRange), if (count < 3) 0 else 1)
 }

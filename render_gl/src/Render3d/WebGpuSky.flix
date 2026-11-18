@@ -35,18 +35,20 @@ mod Render3d.WebGpuSky {
         sky#fragmentModule.release()
 
     /// 場面 scene の空の向きの材料（Scene3d.skyBasisOf）と描き先の大きさ width・height を、R3dScene の末尾の uSkyForward・uSkyRight・uSkyUp の並び
-    /// （xyz に forward・right・up、w に幅・高さ・景色を背景に描くかのフラグ（Scene3d.backgroundEnvironmentOf が Some なら 1））で buf へ詰める（位置は Render3dWgsl.skyValuesAt）。
+    /// （xyz に forward・right・up、w に幅・高さ・景色を背景に描くかのフラグ（Scene3d.backgroundEnvironmentOf が Some なら 1））で buf へ詰める（位置は Render3d.UniformLayout の表）。
     // WhyNot: 景色を背景に描くかを R3dScene の uEnvOn で見ない — uEnvOn は環境マップがあれば立ち（材質の映り込み）、sky と背景の景色が両方ある場面は空の坂を描く。
     // WhyNot: 空の無い場面で詰めるのを飛ばさない — buf は場面をまたいで使い回し、書く欄の組を場面ごとに変えない（WebGpuRenderer.packSceneValues と同じ決まり）。
-    pub def packValues(buf: ByteBuffer, scene: Scene3d.Scene3dCmd, width: Int32, height: Int32): Unit \ IO =
-        let at = Render3dWgsl.skyValuesAt();
+    /// o = R3dScene の欄の位置（Render3d.UniformLayout.sceneOffsets）。
+    pub def packValues(buf: ByteBuffer, o: Map[Render3d.UniformLayout.SceneField, Int32], scene: Scene3d.Scene3dCmd, width: Int32, height: Int32): Unit \ IO =
+        let at = f -> Render3d.UniformLayout.offsetOf(o, f);
         let basis = Scene3d.skyBasisOf(scene);
-        putVec3(buf, at, basis#forward);
-        discard buf.putFloat(at + 12, Int32.toFloat32(width));
-        putVec3(buf, at + 16, basis#right);
-        discard buf.putFloat(at + 28, Int32.toFloat32(height));
-        putVec3(buf, at + 32, basis#up);
-        discard buf.putFloat(at + 44, if (Option.isEmpty(Scene3d.backgroundEnvironmentOf(scene))) 0.0f32 else 1.0f32)
+        putVec3(buf, at(Render3d.UniformLayout.SceneField.SkyForward), basis#forward);
+        Render3d.WebGpuSceneValues.putFloatAt(buf, at(Render3d.UniformLayout.SceneField.SkyForward), 3, Int32.toFloat32(width));
+        putVec3(buf, at(Render3d.UniformLayout.SceneField.SkyRight), basis#right);
+        Render3d.WebGpuSceneValues.putFloatAt(buf, at(Render3d.UniformLayout.SceneField.SkyRight), 3, Int32.toFloat32(height));
+        putVec3(buf, at(Render3d.UniformLayout.SceneField.SkyUp), basis#up);
+        Render3d.WebGpuSceneValues.putFloatAt(buf, at(Render3d.UniformLayout.SceneField.SkyUp), 3,
+                                              if (Option.isEmpty(Scene3d.backgroundEnvironmentOf(scene))) 0.0f32 else 1.0f32)
 
     def putVec3(buf: ByteBuffer, at: Int32, v: Vec3.Vec3): Unit \ IO =
         discard buf.putFloat(at, RenderUtil.f32(v#x));

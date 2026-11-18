@@ -380,11 +380,11 @@
   `pub def billboardCutoff(): Float64`
 - cutout の材質で、α がこれ未満の画素は捨てる。
   `pub def materialCutoff(): Float64`
-- `pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], position: Vec3.Vec3, normal: Vec3.Vec3): Color`
-- lightAt を光の量の読み方 units（unitsPerMeter = 1 m が場面の長さのいくつか）で求めた物。engine の開発用の口: gl-parity の式の行が GL と値をそろえて確かめる。
-  `pub def lightWithUnitsAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], units: Scene3d.LightUnits, unitsPerMeter: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
-- lightAt に太陽を足した光の量。toward = 点から太陽への向き（長さ 1）・color = 太陽の color × intensity（lightAt の光の color と同じく書いた値のまま）・
-  `pub def lightWithSunAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], toward: Vec3.Vec3, color: Vec3.Vec3, sunLit: Float64, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
+- 光の量を 1 点で求める材料（engine の開発用の口。gl-parity の式の行と engine_tools のテストが GL と値をそろえて確かめる）。
+  `pub type alias LightProbe = { environment = Scene3d.Environment3d, pointLights = List[Scene3d.PointLight], spotLights = List[Scene3d.SpotLight], units = Scene3d.LightUnits, unitsPerMeter = Float64, sun = Option[{ toward = Vec3.Vec3, color = Vec3.Vec3, lit = Float64 }] }`
+- Legacy・unitsPerMeter 1・太陽なしの材料。
+  `pub def lightProbe(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight]): LightProbe`
+- `pub def lightAt(probe: LightProbe, position: Vec3.Vec3, normal: Vec3.Vec3): Color`
 - 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
   `pub def fogAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, c: Color): Color`
 - `pub def surfaceOutAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, albedoLinear: Color, tint: Color, light: Color, emission: Color, intensity: Float64, fogOn: Bool): Color`

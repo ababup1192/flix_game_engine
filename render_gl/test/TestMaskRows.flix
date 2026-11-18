@@ -4,8 +4,8 @@
 mod RenderFrame.TestMaskRows {
     import java.nio.FloatBuffer
     use RenderFrame.{Merged, closeRuns, emitRowItem, stateSize, usesStencil}
-    use RenderFrame.Internal.RenderList.{RenderList, instanceFloats, kindMask, kindSprite, maxMaskRef, newRenderList, nextInstanceOf, nextMaskRef,
-                                         nextVertexOf, rowAt, rowCountOf, rowsOf, stencilRefOf, vertexFloats}
+    use RenderFrame.Internal.RenderList.{ListRowKind, RenderList, instanceFloats, maxMaskRef, newRenderList, nextInstanceOf, nextMaskRef,
+                                         nextVertexOf, rowCountOf, rowsOf, stencilRefOf, vertexFloats}
 
     // ── 組み立て ──
 
@@ -43,7 +43,7 @@ mod RenderFrame.TestMaskRows {
 
     def listOf(items: List[Merged]): RenderList \ IO = snd(emitted(items))
 
-    def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = rowAt(rowsOf(list), row, col)
+    def cell(list: RenderList, row: Int32, col: Int32): Int32 \ IO = RenderFrame.TestRenderList.cellAt(rowsOf(list), row, col)
 
     /// 行の (種類, 1 番の欄, 2 番の欄, 10 番の欄, 11 番の欄)。
     def maskCells(list: RenderList, row: Int32): (Int32, Int32, Int32, Int32, Int32) \ IO =
@@ -54,7 +54,7 @@ mod RenderFrame.TestMaskRows {
     /// mask つきスプライト 1 体は 1 行で、instance 0・三角形 3 頂点（先頭 0）・比べる値 1。
     @Test
     def testMaskedSpriteIsAMaskRow(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = (kindMask(), 0, 3, 0, 1), maskCells(listOf(masked() :: Nil), 0))
+        Assert.assertEq(expected = (RenderFrame.TestRenderList.codeOf(ListRowKind.Mask), 0, 3, 0, 1), maskCells(listOf(masked() :: Nil), 0))
 
     /// 2 つの多角形の mask は、両方を三角形にほどいた頂点（6 + 3）を 1 行に持つ。
     @Test
@@ -74,7 +74,7 @@ mod RenderFrame.TestMaskRows {
     /// 三角形にならない mask は頂点 0・比べる値 0（stencil を使わずに描く）。
     @Test
     def testDegenerateMaskHasNoRef(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = (kindMask(), 0, 0, 0, 0), maskCells(listOf(boxAt(0.0, degenerate()) :: Nil), 0))
+        Assert.assertEq(expected = (RenderFrame.TestRenderList.codeOf(ListRowKind.Mask), 0, 0, 0, 0), maskCells(listOf(boxAt(0.0, degenerate()) :: Nil), 0))
 
     /// 三角形にならない mask は比べる値を進めない（次の mask は 1）。
     @Test
@@ -85,13 +85,13 @@ mod RenderFrame.TestMaskRows {
     @Test
     def testRunBeforeMaskIsClosed(): Unit \ {Assert, IO} =
         let list = listOf(plain() :: plain() :: masked() :: Nil);
-        Assert.assertEq(expected = (kindSprite(), 2, kindMask()), (cell(list, 0, 0), cell(list, 0, 2), cell(list, 1, 0)))
+        Assert.assertEq(expected = (RenderFrame.TestRenderList.codeOf(ListRowKind.Sprite), 2, RenderFrame.TestRenderList.codeOf(ListRowKind.Mask)), (cell(list, 0, 0), cell(list, 0, 2), cell(list, 1, 0)))
 
     /// mask の後の mask の無いスプライトは、mask の行に混ざらず次の行の頭（instance 1）から始まる。
     @Test
     def testPlainAfterMaskIsOwnRow(): Unit \ {Assert, IO} =
         let list = listOf(masked() :: plain() :: Nil);
-        Assert.assertEq(expected = (kindSprite(), 1, 1), (cell(list, 1, 0), cell(list, 1, 1), cell(list, 1, 2)))
+        Assert.assertEq(expected = (RenderFrame.TestRenderList.codeOf(ListRowKind.Sprite), 1, 1), (cell(list, 1, 0), cell(list, 1, 1), cell(list, 1, 2)))
 
     /// 行を積んだ後の次の instance と頂点の番号は、mask の 1 体と 3 頂点の後ろ。
     @Test

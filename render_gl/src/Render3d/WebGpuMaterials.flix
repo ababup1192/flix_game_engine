@@ -40,7 +40,7 @@ pub mod Render3d.WebGpuMaterials {
     use Render3d.{MeshDraw, ProgramKind, TextureSlot, TextureSource, materialKey}
     use Render3d.MaterialValues
     use Render3d.ScenePlan.{MaterialRequest}
-    use Render3d.SceneList.{SceneList, flagLightmap, flagNormalMap, flagSameBinding, hasFlag, headAt, kindMaterial, materialAt, readAt, rowAt, rowCountOf, valuesAt}
+    use Render3d.SceneList.{SceneList, SceneRowKind, flagLightmap, flagNormalMap, flagSameBinding, hasFlag, headAt, kindAt, materialAt, materialHandleAt, readAt, readCountAt, rowCountOf, valuesAt}
     use Render3d.TextureTable3d
     use Render3d.TextureTable3d.{TextureHit}
     use Render3d.WebGpuRows.{MeshBuffers}
@@ -274,7 +274,7 @@ pub mod Render3d.WebGpuMaterials {
     def uploadTexturesFrom(m: Materials, up: TextureUploads, list: SceneList, row: Int32, n: Int32): Unit \ IO =
         if (row >= n) ()
         else {
-            if (rowAt(list, row, 0) == kindMaterial() and valuesAt(list, row) >= 0) materialAt(list, row) |> Option.forEach(f -> uploadRowTextures(m, up, list, row, f))
+            if (kindAt(list, row) == SceneRowKind.Material and valuesAt(list, row) >= 0) materialAt(list, row) |> Option.forEach(f -> uploadRowTextures(m, up, list, row, f))
             else ();
             uploadTexturesFrom(m, up, list, row + 1, n)
         }
@@ -289,7 +289,7 @@ pub mod Render3d.WebGpuMaterials {
 
     def uploadRowTextures(m: Materials, up: TextureUploads, list: SceneList, row: Int32, f: Scene3d.MaterialFields): Unit \ IO =
         let readsWith = (colorCount: Int32) -> textureReadsOf(f, colorCount, hasFlag(list, row, flagNormalMap()), hasFlag(list, row, flagLightmap()), headAt(list, row));
-        readsWith(rowAt(list, row, 10) - List.length(readsWith(0))) |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse))
+        readsWith(readCountAt(list, row) - List.length(readsWith(0))) |> List.forEach(match (name, textureUse) -> ensureTexture(m, up, name, textureUse))
 
     /// 材質 f で頭の物 head を描く時に読む絵の (名前, 使い方)（並びは材質の絵 colorCount 枚 → 法線マップ → lightmap。行の reads と同じ）。
     def textureReadsOf(f: Scene3d.MaterialFields, colorCount: Int32, normalMapped: Bool, lightmapped: Bool, head: MeshDraw): List[(String, Texture3d.TextureUse)] =
@@ -476,7 +476,7 @@ pub mod Render3d.WebGpuMaterials {
     /// 行 row の材質の pipeline と group 1 を pass に付ける（描けない行は偽。骨つきの材質は pass に姿勢の group が無いか、形にジョイントが無ければ偽・
     /// lightmap の材質は形に 2 本目の uv が無ければ偽）。前の材質の行と同じ付け方（flagSameBinding）の行は group を付け直さない。
     pub def bindRow(m: Materials, mp: MaterialPass, pass: RenderCommands, list: SceneList, row: Int32, mesh: MeshBuffers): Bool \ IO =
-        let handle = rowAt(list, row, 1);
+        let handle = materialHandleAt(list, row);
         let current = mp#programs;
         let program = if (handle >= 0 and handle < Vector.length(current)) Vector.get(handle, current) else None;
         let valuesOk = valuesAt(list, row) >= 0;
