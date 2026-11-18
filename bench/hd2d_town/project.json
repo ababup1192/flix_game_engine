@@ -183,7 +183,7 @@
     "keysDoc": "assets/explore.keys.json",
     "orientation": "landscape",
     "virtualPad": {
-      "dpad": true
+      "stick": true
     }
   }
 }
