@@ -646,6 +646,7 @@ refactor-smoke: ### | engine の新しい型を使う小さな場面で checkd�
 #   anim           コマ間の飛び・体積・接地と 4 方向のそろい
 #   ui             ui.json の text の折り返し宣言漏れ（固定幅の枠 + wrap/fit なし。実寸は測らない）
 #   loop           ループ GIF の継ぎ目（最終コマ→0 コマ）。描き出し済みのコマが前提なので手で回す
+#   load-copy      render_gl の LwjglLoad と engine_tools の HeadlessLoad の写し（pool とデコーダー）が同じか
 #   huge-methods   JVM が JIT しない大きさ（8,000 バイト超）の関数を jar から数える（JARS=<jar…>）
 #
 # 名前ごとの bin/fge のサブコマンドと引数。LINT_SELF_TEST の物は先に --self-test を通す（自己テストが壊れた lint には門番をさせない）。
@@ -680,6 +681,12 @@ LINT_SH_huge-methods = jars="$(if $(JARS),$(JARS),$(HUGE_METHODS_JARS))"; \
 	if [ -z "$$jars" ]; then echo "[lint huge-methods] 見る jar がありません。ベンチを 1 回流すか JARS=<jar> で渡してください"; exit 2; fi; \
 	bin/fge huge-methods $$jars
 
+# LwjglLoad と HeadlessLoad は層が互いを見ないので同じ部分を 2 つ持つ。毎コミットの precommit-local もこの 1 文を使う。
+LINT_SH_load-copy = copy_of() { sed -n -e '/def pollMillis/p' -e '/PNG \/ JPEG を javax.imageio/,$$p' "$$1"; }; \
+	if [ "$$(copy_of render_gl/src/LwjglLoad.flix)" != "$$(copy_of engine_tools/src/HeadlessLoad.flix)" ]; then \
+	  echo "[lint load-copy] NG: LwjglLoad と HeadlessLoad の写し（pollMillis と「PNG / JPEG を javax.imageio」から下）が違います。片方を直したらもう片方へ写す（層が互いに見えないので 2 つ持つ）"; exit 1; \
+	fi; echo "[lint load-copy] OK"
+
 LINT_NAMES := $(sort $(patsubst LINT_CMD_%,%,$(filter LINT_CMD_%,$(.VARIABLES))) $(patsubst LINT_SH_%,%,$(filter LINT_SH_%,$(.VARIABLES))))
 # 名前 1 つの検査のシェルの 1 文。
 lint_sh = $(if $(LINT_CMD_$1),$(if $(filter $1,$(LINT_SELF_TEST)),bin/fge $(firstword $(LINT_CMD_$1)) --self-test >/dev/null && )bin/fge $(LINT_CMD_$1),$(LINT_SH_$1))
@@ -688,10 +695,10 @@ lint_sh = $(if $(LINT_CMD_$1),$(if $(filter $1,$(LINT_SELF_TEST)),bin/fge $(firs
 # WhyNot: quadratic・fallback・jargon を既定の束にまだ入れない — 全量では前からの当たりが残っていて、ここが毎回赤になる。
 # WhyNot: 名前ごとのターゲットに分けて依存に並べない — make -j で並べると出力が混ざり、どの lint が落ちたか読めない。
 # WhyNot: 1 本ずつサブシェルで流す — 検査の 1 文が exit しても、後ろの lint の当たりを 1 回で見たい。
-LINT_DEFAULT := forbid max-lines value-discard hoist record-wrap state-shape doc-refs z-table f32
+LINT_DEFAULT := forbid max-lines value-discard hoist record-wrap state-shape doc-refs z-table f32 load-copy
 LINT_RUN := $(if $(ONLY),$(subst $(comma), ,$(ONLY)),$(LINT_DEFAULT))
 .PHONY: lint
-lint: ## [ONLY=<名前>,…] | 検査をまとめて流す（無ければ今 0 件の 9 本）。名前は make help-all の最後
+lint: ## [ONLY=<名前>,…] | 検査をまとめて流す（無ければ今 0 件の 10 本）。名前は make help-all の最後
 	@$(if $(filter-out $(LINT_NAMES),$(LINT_RUN)),$(error [lint] 知らない名前: $(filter-out $(LINT_NAMES),$(LINT_RUN))（名前: $(LINT_NAMES)）))failed=""; \
 	$(foreach n,$(LINT_RUN),( $(call lint_sh,$n) ) || failed="$$failed $n"; ) \
 	if [ -n "$$failed" ]; then echo "[lint] 落ちた物:$$failed"; exit 1; fi; \
@@ -829,7 +836,8 @@ gl-jar-publish: gl-jar-pin-check $(GL_JAR) ### | 置き場の Release fge-gl-<�
 # WhyNot: レシピで $(MAKE) を呼ばない — precommit は make -q で口の有無を見るが、$(MAKE) の行は -q でも走り、
 # pin のずれが「口が壊れている」と読まれて門が黙って開く。
 .PHONY: precommit-local
-precommit-local: gl-jar-pin-check ### | bin/fge precommit が流すエンジンの門（gl-jar-pin-check）
+precommit-local: gl-jar-pin-check ### | bin/fge precommit が流すエンジンの門（gl-jar-pin-check と LwjglLoad・HeadlessLoad の写し）
+	@$(LINT_SH_load-copy)
 
 ##@ 配る（engine_full・ブラウザ版）
 .PHONY: sync
@@ -1251,51 +1259,62 @@ rules: api-digest ### | docs/ の規約から .claude/rules/ を作り直す（a
 api-digest: ### | engine の pub API を docs/api-digest.md に 1 つにまとめる
 	@bin/fge api-digest
 
-# 規約まわりの配線が崩れていないかの検査（生成はしない）。
-.PHONY: check-docs-sync
-check-docs-sync: ## | 規約まわりの配線が崩れていないかの検査（生成はしない）
-	@ok=1; \
-	if [ ! -f CLAUDE.md ] || [ ! -f AGENTS.md ]; then \
-	  echo "[check-docs-sync] CLAUDE.md か AGENTS.md が見つかりません"; exit 1; \
-	fi; \
-	echo "[check-docs-sync] CLAUDE.md が AGENTS.md を import しているか"; \
-	if ! grep -q '^@AGENTS.md' CLAUDE.md; then \
-	  echo "[check-docs-sync] NG: CLAUDE.md は @AGENTS.md の 1 行にしてください（本文の二重管理を避ける）"; ok=0; \
-	fi; \
-	echo "[check-docs-sync] .claude/rules が docs/ と一致しているか"; \
-	bin/fge gen-rules --check || ok=0; \
-	echo "[check-docs-sync] docs/px-ops.md と px のスキーマが op の登録と一致しているか"; \
-	bin/fge px ops --check || ok=0; \
-	bin/fge px schema --check || ok=0; \
-	echo "[check-docs-sync] docs/check-codes.md が検査の code の表と一致しているか"; \
-	bin/fge check codes --check || ok=0; \
-	echo "[check-docs-sync] AGENTS.md のスキル表が実在する skill を指しているか"; \
+# 規約まわりの配線が崩れていないかの検査（生成はしない）。名前つきの小さな検査の集まりで、1 つ落ちても後ろを流し、最後に落ちた名前を並べる。
+# 名前ごとの入力（どのファイルを触った時に効くか）は根の gates.json の docs-sync:<名前> の門が持つ（bin/fge gates --files で引く）。
+# DOCS_SYNC_DESC_<名前> は流す時に出す 1 行、DOCS_SYNC_SH_<名前> はシェルの 1 文（落ちたら非 0）。
+# WhyNot: 名前ごとのターゲットに分けない — make -j で並ぶと出力が混ざる（lint と同じ）。
+DOCS_SYNC_NAMES := claude-import rules px-ops check-codes skill-table core-skills core-bridge skill-links skill-frontmatter \
+	skill-sync old-prim-names manifest check-refs api-index api-digest docs-links template-claude
+
+DOCS_SYNC_DESC_claude-import = CLAUDE.md が AGENTS.md を import しているか
+DOCS_SYNC_SH_claude-import = \
+	if [ ! -f CLAUDE.md ] || [ ! -f AGENTS.md ]; then echo "[check-docs-sync] CLAUDE.md か AGENTS.md が見つかりません"; exit 1; fi; \
+	grep -q '^@AGENTS.md' CLAUDE.md || { echo "[check-docs-sync] NG: CLAUDE.md は @AGENTS.md の 1 行にしてください（本文の二重管理を避ける）"; exit 1; }
+
+DOCS_SYNC_DESC_rules = .claude/rules が docs/ と一致しているか
+DOCS_SYNC_SH_rules = bin/fge gen-rules --check
+
+DOCS_SYNC_DESC_px-ops = docs/px-ops.md と px のスキーマが op の登録と一致しているか
+DOCS_SYNC_SH_px-ops = ok=1; bin/fge px ops --check || ok=0; bin/fge px schema --check || ok=0; [ $$ok = 1 ]
+
+DOCS_SYNC_DESC_check-codes = docs/check-codes.md が検査の code の表と一致しているか
+DOCS_SYNC_SH_check-codes = bin/fge check codes --check
+
+DOCS_SYNC_DESC_skill-table = AGENTS.md のスキル表が実在する skill を指しているか
+DOCS_SYNC_SH_skill-table = ok=1; \
 	for s in $$(grep -o '`/[a-z][a-z-]*`' AGENTS.md | tr -d '`/' | sort -u); do \
 	  if [ ! -f ".claude/skills/$$s/SKILL.md" ]; then \
 	    echo "[check-docs-sync] NG: AGENTS.md が /$$s を指していますが .claude/skills/$$s/SKILL.md がありません"; ok=0; \
 	  fi; \
-	done; \
-	echo "[check-docs-sync] AGENTS.core.md のスキル参照が agents-pack/skills に実在するか"; \
+	done; [ $$ok = 1 ]
+
+DOCS_SYNC_DESC_core-skills = AGENTS.core.md のスキル参照が agents-pack/skills に実在するか
+DOCS_SYNC_SH_core-skills = ok=1; \
 	for s in $$(grep -o '`/[a-z][a-z-]*`' agents-pack/AGENTS.core.md | tr -d '`/' | sort -u) \
 	         $$(grep -o '\.claude/skills/[a-z][a-z-]*' agents-pack/AGENTS.core.md | sed 's|.*/||' | sort -u); do \
 	  if [ ! -f "agents-pack/skills/$$s/SKILL.md" ]; then \
 	    echo "[check-docs-sync] NG: AGENTS.core.md が $$s を指していますが agents-pack/skills/$$s/SKILL.md がありません（ゲームに配られるのは agents-pack/skills だけ）"; ok=0; \
 	  fi; \
-	done; \
-	echo "[check-docs-sync] AGENTS.core.md に skills への橋渡しがあるか"; \
-	if ! grep -q 'SKILL.md' agents-pack/AGENTS.core.md; then \
-	  echo "[check-docs-sync] NG: AGENTS.core.md に「.claude/skills/<名前>/SKILL.md を直接読む」案内がありません（スキル機構を持たないエージェントが skills に気づけなくなります）"; ok=0; \
-	fi; \
-	echo "[check-docs-sync] agents-pack/skills にコピー先のゲームで切れる相対リンクが無いか"; \
-	if grep -rn '](\.\./' agents-pack/skills/; then \
-	  echo "[check-docs-sync] NG: 上の相対リンクは skills フォルダの外を指していて、コピー先のゲームで切れます。「engine リポの docs/...」の文言参照にしてください"; ok=0; \
-	fi; \
-	echo "[check-docs-sync] skill の frontmatter に name と description があるか"; \
+	done; [ $$ok = 1 ]
+
+DOCS_SYNC_DESC_core-bridge = AGENTS.core.md に skills への橋渡しがあるか
+DOCS_SYNC_SH_core-bridge = grep -q 'SKILL.md' agents-pack/AGENTS.core.md || \
+	{ echo "[check-docs-sync] NG: AGENTS.core.md に「.claude/skills/<名前>/SKILL.md を直接読む」案内がありません（スキル機構を持たないエージェントが skills に気づけなくなります）"; exit 1; }
+
+DOCS_SYNC_DESC_skill-links = agents-pack/skills にコピー先のゲームで切れる相対リンクが無いか
+DOCS_SYNC_SH_skill-links = if grep -rn '](\.\./' agents-pack/skills/; then \
+	  echo "[check-docs-sync] NG: 上の相対リンクは skills フォルダの外を指していて、コピー先のゲームで切れます。「engine リポの docs/...」の文言参照にしてください"; exit 1; \
+	fi
+
+DOCS_SYNC_DESC_skill-frontmatter = skill の frontmatter に name と description があるか
+DOCS_SYNC_SH_skill-frontmatter = ok=1; \
 	for f in .claude/skills/*/SKILL.md agents-pack/skills/*/SKILL.md; do \
 	  if ! grep -q '^name:' $$f; then echo "[check-docs-sync] NG: $$f に name がありません"; ok=0; fi; \
 	  if ! grep -q '^description:' $$f; then echo "[check-docs-sync] NG: $$f に description がありません"; ok=0; fi; \
-	done; \
-	echo "[check-docs-sync] 同名スキルの sync 印が両側で一致するか"; \
+	done; [ $$ok = 1 ]
+
+DOCS_SYNC_DESC_skill-sync = 同名スキルの sync 印が両側で一致するか
+DOCS_SYNC_SH_skill-sync = ok=1; \
 	for d in agents-pack/skills/*/; do \
 	  s=$$(basename $$d); \
 	  if [ -f ".claude/skills/$$s/SKILL.md" ]; then \
@@ -1305,57 +1324,51 @@ check-docs-sync: ## | 規約まわりの配線が崩れていないかの検査�
 	      echo "[check-docs-sync] NG: skill $$s の sync 印が不一致（agents-pack=$$a / .claude=$${b}）。片方を直したらもう片方へ内容を移植し、両方の sync: を同じ日付に上げる"; ok=0; \
 	    fi; \
 	  fi; \
-	done; \
-	echo "[check-docs-sync] render_gl の LwjglLoad と engine_tools の HeadlessLoad の pool とデコーダーが同じか"; \
-	copy_of() { sed -n -e '/def pollMillis/p' -e '/PNG \/ JPEG を javax.imageio/,$$p' "$$1"; }; \
-	if [ "$$(copy_of render_gl/src/LwjglLoad.flix)" != "$$(copy_of engine_tools/src/HeadlessLoad.flix)" ]; then \
-	  echo "[check-docs-sync] NG: LwjglLoad と HeadlessLoad の写し（pollMillis と「PNG / JPEG を javax.imageio」から下）が違います。片方を直したらもう片方へ写す（層が互いに見えないので 2 つ持つ）"; ok=0; \
-	fi; \
-	echo "[check-docs-sync] 図形プリミティブの旧名 Render.box 等が docs/ と AGENTS.md に残っていないか"; \
+	done; [ $$ok = 1 ]
+
+DOCS_SYNC_DESC_old-prim-names = 図形プリミティブの旧名 Render.box 等が docs/ と AGENTS.md に残っていないか
+DOCS_SYNC_SH_old-prim-names = \
 	old_names='Render\.(box|boxAt|orBoxAt|circle|circleAt|polygon|ngon|ngonAt|ellipse|ellipseAt|ellipseSegs|ellipseSegsAt|ellipseSegsFor|sector|sectorAt|circleSegment|circleSegmentAt|star|starAt|lineQuad|lineSeg)\b'; \
 	if grep -rlE "$$old_names" docs/*.md AGENTS.md 2>/dev/null | grep -v docs/api-digest; then \
-	  echo "[check-docs-sync] NG: 上のファイルに図形プリミティブの旧名（Render.box 等）が残っています。RawDraw.* へ書き換えてください"; ok=0; \
-	fi; \
-	echo "[check-docs-sync] agents-pack/manifest.json が正しい JSON で src が全実在するか"; \
-	bin/fge sync-agents --check-manifest || ok=0; \
-	echo "[check-docs-sync] Makefile / templates / agents-pack の参照先が実在するか"; \
-	bin/fge check-refs || ok=0; \
-	echo "[check-docs-sync] pub def を持つモジュールが API 索引に載っているか"; \
-	bin/fge check-api-index || ok=0; \
-	echo "[check-docs-sync] docs/api-digest.md が作り直しても差分ゼロか"; \
-	bin/fge api-digest --check || ok=0; \
-	echo "[check-docs-sync] AGENTS.md から docs/ への導線があるか"; \
-	for kw in \
-	  "docs/audio.md" \
-	  "docs/module-index.md" \
-	  "docs/drawing-floor.md" \
-	  "docs/flix-conventions.md" \
-	  "docs/z-bands.md" \
-	  "docs/performance.md" \
-	; do \
-	  if ! grep -q "$$kw" AGENTS.md; then \
-	    echo "[check-docs-sync] NG: AGENTS.md に $$kw への導線がありません"; ok=0; \
-	  fi; \
-	done; \
-	echo "[check-docs-sync] templates/ に CLAUDE.md を置いていないか"; \
+	  echo "[check-docs-sync] NG: 上のファイルに図形プリミティブの旧名（Render.box 等）が残っています。RawDraw.* へ書き換えてください"; exit 1; \
+	fi
+
+DOCS_SYNC_DESC_manifest = agents-pack/manifest.json が正しい JSON で src が全実在するか
+DOCS_SYNC_SH_manifest = bin/fge sync-agents --check-manifest
+
+DOCS_SYNC_DESC_check-refs = Makefile / templates / agents-pack の参照先が実在するか
+DOCS_SYNC_SH_check-refs = bin/fge check-refs
+
+DOCS_SYNC_DESC_api-index = pub def を持つモジュールが API 索引に載っているか
+DOCS_SYNC_SH_api-index = bin/fge check-api-index
+
+DOCS_SYNC_DESC_api-digest = docs/api-digest.md が作り直しても差分ゼロか
+DOCS_SYNC_SH_api-digest = bin/fge api-digest --check
+
+DOCS_SYNC_DESC_docs-links = AGENTS.md から docs/ への導線があるか
+DOCS_SYNC_SH_docs-links = ok=1; \
+	for kw in docs/audio.md docs/module-index.md docs/drawing-floor.md docs/flix-conventions.md docs/z-bands.md docs/performance.md; do \
+	  if ! grep -q "$$kw" AGENTS.md; then echo "[check-docs-sync] NG: AGENTS.md に $$kw への導線がありません"; ok=0; fi; \
+	done; [ $$ok = 1 ]
+
+DOCS_SYNC_DESC_template-claude = templates/ に CLAUDE.md を置いていないか
+DOCS_SYNC_SH_template-claude = ok=1; \
 	for f in templates/*/CLAUDE.md; do \
 	  if [ -f "$$f" ]; then \
 	    echo "[check-docs-sync] NG: $$f は make new-game の sync-agents が @AGENTS.md で上書きするので、書いても捨てられます。ゲーム固有の事は AGENTS.local.md に、共通の方針は agents-pack/AGENTS.core.md に書いてください"; ok=0; \
 	  fi; \
-	done; \
-	if [ -d .agents/skills ]; then \
-	  for d in .agents/skills/*/; do \
-	    n=$$(basename $$d); \
-	    if [ ! -f ".claude/skills/$$n/SKILL.md" ] || ! diff -q "$$d/SKILL.md" ".claude/skills/$$n/SKILL.md" >/dev/null 2>&1; then \
-	      echo "[check-docs-sync] WARN: .agents/skills/$$n が .claude/skills/ と違います（どこからも参照されていない古い写しです。消すか揃えるか決めてください）"; \
-	    fi; \
-	  done; \
-	fi; \
-	if [ "$$ok" = "1" ]; then \
-	  echo "[check-docs-sync] OK"; \
-	else \
-	  exit 1; \
-	fi
+	done; [ $$ok = 1 ]
+
+DOCS_SYNC_DESC_gates = 根の gates.json が Makefile の口・テストのパッケージ・検査の名前・リリースの門とそろっているか
+DOCS_SYNC_SH_gates = bin/fge gates --check
+
+DOCS_SYNC_RUN := $(if $(ONLY),$(subst $(comma), ,$(ONLY)),$(DOCS_SYNC_NAMES))
+.PHONY: check-docs-sync
+check-docs-sync: ## [ONLY=<名前>,…] | 規約まわりの配線が崩れていないかの検査（生成はしない・無ければ全部）。知らない名前を渡すと名前の一覧が出る
+	@$(if $(filter-out $(DOCS_SYNC_NAMES),$(DOCS_SYNC_RUN)),$(error [check-docs-sync] 知らない名前: $(filter-out $(DOCS_SYNC_NAMES),$(DOCS_SYNC_RUN))（名前: $(DOCS_SYNC_NAMES)）))failed=""; \
+	$(foreach n,$(DOCS_SYNC_RUN),echo "[check-docs-sync] $(DOCS_SYNC_DESC_$n)"; ( $(DOCS_SYNC_SH_$n) ) || failed="$$failed $n"; ) \
+	if [ -n "$$failed" ]; then echo "[check-docs-sync] 落ちた物:$$failed"; exit 1; fi; \
+	echo "[check-docs-sync] OK"
 
 # ── 新しいゲームを 1 コマンドで産む ──────────────────────
 # 使い方: make new-game GAME=/abs/path/to/dir NAME=<パッケージ名> TITLE=<題名> W=240 H=320 TEMPLATE=sound-novel-starter
