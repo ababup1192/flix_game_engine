@@ -190,7 +190,6 @@
     "orientation": "landscape",
     "virtualPad": {
       "stick": true
-    },
-    "deferred": []
+    }
   }
 }
