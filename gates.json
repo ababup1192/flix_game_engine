@@ -11,7 +11,7 @@
     {"id": "release-guard", "about": "公開の前の安全策（配る物が未コミットでないか・flix.toml・同梱の flix.jar の版・追随の材料・jar の行）", "make": "release-guard", "runs": ["release"], "time": "?"},
     {"id": "studio-parity", "about": "外の Studio の clone で check-agents-parity（sync-agents の出力が Studio とずれていないか）", "make": "studio-parity", "input": {"anyOf": [{"prefixes": ["agents-pack/", "templates/", "go/internal/syncagents/"]}]}, "runs": ["release"], "time": "?"},
     {"id": "sync", "about": "層の作業場を張り、engine_full を build-pkg して templates / bench に配る（全パッケージのコンパイル）", "make": "sync", "prereq": true, "input": {"anyOf": [{"prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/src/", "render_gl/java/"]}, {"basenames": ["flix.toml"]}]}, "runs": ["release"], "time": "20s"},
-    {"id": "test-release", "about": "全パッケージの flix test（テンプレートを含む・6 並列。make test ALL=1 JOBS=6 と同じ）", "make": "test-release", "runs": ["release"], "time": "2m"},
+    {"id": "test-release", "about": "全パッケージの flix test（テンプレートとテストを持つ bench を含む・6 並列。make test ALL=1 JOBS=6 と同じ）", "make": "test-release", "runs": ["release"], "time": "2m"},
     {"id": "gl-parity", "about": "GL と SoftRaster の絵の一致・式の差の上限", "make": "gl-parity", "input": {"anyOf": [{"prefixes": ["render_gl/", "engine_tools/src/", "engine/src/shader/", "engine/src/scene3d/", "bench/gl_parity/"]}]}, "runs": ["release"], "time": "18s"},
 
     {"id": "release-verify", "about": "リリースの門（上の runs: release の 5 本）を通し、通した commit を release/verified.txt に書く", "make": "release-verify", "runs": ["manual"], "time": "3m"},
@@ -37,6 +37,9 @@
     {"id": "test-rpg-starter", "about": "rpg-starter の flix test（置き場の fpkg を読む）", "make": "test-rpg-starter", "input": {"anyOf": [{"prefixes": ["templates/rpg-starter/", "engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/src/"]}]}, "runs": ["manual"], "time": "1m52s"},
     {"id": "test-sound-novel-starter", "about": "sound-novel-starter の flix test（置き場の fpkg を読む）", "make": "test-sound-novel-starter", "input": {"anyOf": [{"prefixes": ["templates/sound-novel-starter/", "engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/src/"]}]}, "runs": ["manual"], "time": "35s"},
     {"id": "test-tidepool-starter", "about": "tidepool-starter の flix test（置き場の fpkg を読む）", "make": "test-tidepool-starter", "input": {"anyOf": [{"prefixes": ["templates/tidepool-starter/", "engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/src/"]}]}, "runs": ["manual"], "time": "24s"},
+
+    {"id": "test-hd2d_town", "about": "bench/hd2d_town の flix test（142 本・置き場の fpkg を読む。test-release に入る）", "make": "test-hd2d_town", "input": {"anyOf": [{"prefixes": ["bench/hd2d_town/", "engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/src/"]}]}, "runs": ["manual"], "time": "13s"},
+    {"id": "lint:template-rules", "about": "テンプレートの lint/rules.flix（hd2d・rpg・tidepool。コミットでは precommit-local が触ったテンプレートの分だけ流す・1 本 4〜7 秒）", "make": "lint", "vars": {"ONLY": "template-rules"}, "input": {"anyOf": [{"prefixes": ["templates/hd2d-starter/", "templates/rpg-starter/", "templates/tidepool-starter/"]}]}, "runs": ["precommit", "manual"], "time": "10s"},
 
     {"id": "determinism", "about": "rpg・sound-novel・tidepool を隠しウィンドウでシナリオどおり流し、記録の再生と World の指紋が同じか", "make": "determinism", "input": {"anyOf": [{"prefixes": ["testdata/determinism/", "templates/", "engine/src/", "engine_world/src/", "engine_tools/src/", "render_gl/"]}]}, "runs": ["pre-release"], "time": "3m32s"},
     {"id": "gl-capture-check", "about": "既定の場面を WebGPU で 2 回撮り SHA を比べ、機械の基準とも比べる（SCENES=<名前> で絞れる）", "make": "gl-capture-check", "input": {"anyOf": [{"prefixes": ["templates/", "bench/scene3d/", "bench/baseline/", "render_gl/", "engine/src/", "engine_world/src/"]}]}, "runs": ["pre-release"], "time": "12m"},

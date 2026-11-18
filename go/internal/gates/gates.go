@@ -134,8 +134,8 @@ func All(root string, f *File) ([]Gate, error) {
 	out = append(out, Gate{ID: "precommit:docs-sync", About: "コミットの時の配線の検査（全部）", Make: pr.DocsSync.Target,
 		Input: &when, Runs: []string{"precommit"}, Time: "1s", From: precommit.RulesPath})
 	if pr.LocalGate.Target != "" {
-		out = append(out, Gate{ID: "precommit:local", About: "コミットの時の engine の門", Make: pr.LocalGate.Target,
-			Runs: []string{"precommit"}, Time: "1s", From: precommit.RulesPath})
+		out = append(out, Gate{ID: "precommit:local", About: "コミットの時の engine の門（engine では gl-jar-pin-check・写しの検査・触ったテンプレートの lint/rules.flix）", Make: pr.LocalGate.Target,
+			Runs: []string{"precommit"}, Time: "1〜5s", From: precommit.RulesPath})
 	}
 	hr, err := hooks.LoadRules(root)
 	if err != nil {

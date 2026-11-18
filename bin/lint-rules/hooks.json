@@ -90,7 +90,7 @@
         "prefix": "lint-sprite が失敗しました。画素の並び（浮き・階段・細長さ・色数）を直すか、意図した物ならスプライトに \"lint-sprite\": \"対象外(種類) — 理由\" を書いてください。"
       },
       {
-        "suffix": ".anim.json",
+        "suffix": ".sprite.json",
         "sub": "anim",
         "args": ["{file}"],
         "prefix": "lint-anim が失敗しました。コマ間の飛び・体積・接地と 4 方向のそろいを直してください。"

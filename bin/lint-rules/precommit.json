@@ -328,6 +328,36 @@
       }
     },
     {
+      "id": "sprite",
+      "sub": "sprite",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".sprite.json"
+        ],
+        "exceptPrefixes": [
+          "go/",
+          "testdata/"
+        ]
+      }
+    },
+    {
+      "id": "anim",
+      "sub": "anim",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".sprite.json"
+        ],
+        "exceptPrefixes": [
+          "go/",
+          "testdata/"
+        ]
+      }
+    },
+    {
       "id": "jargon",
       "sub": "jargon",
       "flags": [],

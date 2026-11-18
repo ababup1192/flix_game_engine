@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/anim"
 	"github.com/ababup1192/flix_game_engine/go/internal/docrefs"
 	"github.com/ababup1192/flix_game_engine/go/internal/docshape"
 	"github.com/ababup1192/flix_game_engine/go/internal/f32"
@@ -18,6 +19,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/precommit"
 	"github.com/ababup1192/flix_game_engine/go/internal/quadratic"
 	"github.com/ababup1192/flix_game_engine/go/internal/recordwrap"
+	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
 	"github.com/ababup1192/flix_game_engine/go/internal/stateshape"
 	"github.com/ababup1192/flix_game_engine/go/internal/uioverflow"
 	"github.com/ababup1192/flix_game_engine/go/internal/valuediscard"
@@ -83,6 +85,14 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		},
 		"yarn": func(o, e *strings.Builder, args []string) int {
 			return yarn.Run(o, e, abs, args)
+		},
+		"sprite": func(o, e *strings.Builder, args []string) int {
+			code, err := sprite.Run(o, e, abs, args)
+			return orAbort(e, code, err)
+		},
+		"anim": func(o, e *strings.Builder, args []string) int {
+			code, err := anim.Run(o, abs, args)
+			return orAbort(e, code, err)
 		},
 	}
 

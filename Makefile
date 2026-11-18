@@ -150,6 +150,8 @@ clean-game-builds: ### | templates/*/build/ と bench/*/build/ と engine のパ
 # トークンを入れたままの写し元で、そのままではコンパイルできないため
 # (トークンを置換したコピー側で make new-game が check / test / render を通す)。
 TEMPLATE_DIRS := $(filter-out templates/game-starter,$(wildcard templates/*))
+# テストを持つ bench（ALL=1 とリリースの門で流す）。ほかの bench は test/ を持たない。
+BENCH_TEST_DIRS := bench/hd2d_town
 
 # make test は engine と 3 層を流す。ALL=1 でテンプレート（TEMPLATE_DIRS）も、JOBS=<数> で並べて流す。
 # WhyNot: テンプレートを既定に入れない —— テンプレートのコンパイルがエンジンのテストの約半分を占め、
@@ -160,7 +162,7 @@ TEST_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
 PKG_TEST = (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test)
 # WhyNot: JOBS と ALL をシェルの環境から受けない — 環境に JOBS がある機械で make test が黙って並列になる。コマンド行から来た時だけ効かせる。
 TEST_JOBS := $(if $(filter command line,$(origin JOBS)),$(JOBS),1)
-TEST_RUN_DIRS := $(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(ALL)),$(TEMPLATE_DIRS))
+TEST_RUN_DIRS := $(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(ALL)),$(TEMPLATE_DIRS) $(BENCH_TEST_DIRS))
 
 ##@ テスト
 # 逐次（JOBS=1）は最初の赤で止める。並列はパッケージごとにログを .test-logs/ に残し、赤があれば最後にログの末尾を出す。
@@ -169,7 +171,7 @@ TEST_RUN_DIRS := $(TEST_DIRS) $(if $(and $(filter command line,$(origin ALL)),$(
 # 「1 本も走っていないのに green」の偽陽性は実行数ガードで落とす。
 # WhyNot: 逐次も xargs -P 1 にしない — xargs は子が非 0 で返しても次へ進み、最初の赤で止まらない。
 .PHONY: test
-test: sync-layers ## [ALL=1] [JOBS=<数>] | engine と 3 層のテスト（ALL=1 でテンプレートも・JOBS で並べて流す。並列のログは .test-logs/）
+test: sync-layers ## [ALL=1] [JOBS=<数>] | engine と 3 層のテスト（ALL=1 でテンプレートとテストを持つ bench も・JOBS で並べて流す。並列のログは .test-logs/）
 	@case "$(TEST_JOBS)" in ''|0|*[!0-9]*) echo "[test] JOBS は 1 以上の数にする（JOBS=$(TEST_JOBS)）"; exit 2;; esac; \
 	if [ "$(TEST_JOBS)" = 1 ]; then \
 		for dir in $(TEST_RUN_DIRS); do \
@@ -225,7 +227,7 @@ test-par-all: ### | 古い口（make test ALL=1 JOBS=6 を呼ぶ）
 $(addprefix test-,$(LAYER_PKGS)): sync-layers
 test-%: ## <名前> | 1 つだけテスト（例: make test-rpg-starter / test-engine / test-engine_world）
 	@mkdir -p .test-logs; \
-	$(if $(filter $*,$(LAYER_PKGS)),dir="$(LAYER_ROOT)/$*",if [ -d "templates/$*" ]; then dir="templates/$*"; else dir="$*"; fi); \
+	$(if $(filter $*,$(LAYER_PKGS)),dir="$(LAYER_ROOT)/$*",if [ -d "templates/$*" ]; then dir="templates/$*"; elif [ -d "bench/$*" ]; then dir="bench/$*"; else dir="$*"; fi); \
 	name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
 	rm -f ".test-logs/$$name.fail"; \
 	if $(PKG_TEST) > ".test-logs/$$name.log" 2>&1; then \
@@ -699,6 +701,15 @@ LINT_SH_load-copy = copy_of() { sed -n -e '/def pollMillis/p' -e '/PNG \/ JPEG �
 	  echo "[lint load-copy] NG: LwjglLoad と HeadlessLoad の写し（pollMillis と「PNG / JPEG を javax.imageio」から下）が違います。片方を直したらもう片方へ写す（層が互いに見えないので 2 つ持つ）"; exit 1; \
 	fi; echo "[lint load-copy] OK"
 
+# テンプレートの lint/rules.flix（依存の向き・View が World を受けない・テストの形）を、そのテンプレートの make lint-flixlint で見る。
+# 1 本 7 秒ほどで CPU を多く使うので、既定の束には入れない。コミットでは precommit-local が、触ったテンプレートの分だけ流す。
+# WhyNot: game-starter を入れない — src に make new-game が埋める字（__WW__ など）が残っていて読めない（TEMPLATE_DIRS が外している）。
+# WhyNot: $(MAKE) でなく make と書く — precommit は make -q で口の有無を見て、$(MAKE) の行は -q でも走る。
+TEMPLATE_RULES_DIRS := $(patsubst %/lint/rules.flix,%,$(wildcard $(addsuffix /lint/rules.flix,$(TEMPLATE_DIRS))))
+LINT_SH_template-rules = for t in $(TEMPLATE_RULES_DIRS); do \
+	  echo "[lint template-rules] $$t"; (cd "$$t" && make -s --no-print-directory lint-flixlint) || exit 1; \
+	done
+
 LINT_NAMES := $(sort $(patsubst LINT_CMD_%,%,$(filter LINT_CMD_%,$(.VARIABLES))) $(patsubst LINT_SH_%,%,$(filter LINT_SH_%,$(.VARIABLES))))
 # 名前 1 つの検査のシェルの 1 文。
 lint_sh = $(if $(LINT_CMD_$1),$(if $(filter $1,$(LINT_SELF_TEST)),bin/fge $(firstword $(LINT_CMD_$1)) --self-test >/dev/null && )bin/fge $(LINT_CMD_$1),$(LINT_SH_$1))
@@ -848,8 +859,16 @@ gl-jar-publish: gl-jar-pin-check $(GL_JAR) ### | 置き場の Release fge-gl-<�
 # WhyNot: レシピで $(MAKE) を呼ばない — precommit は make -q で口の有無を見るが、$(MAKE) の行は -q でも走り、
 # pin のずれが「口が壊れている」と読まれて門が黙って開く。
 .PHONY: precommit-local
-precommit-local: gl-jar-pin-check ### | bin/fge precommit が流すエンジンの門（gl-jar-pin-check と LwjglLoad・HeadlessLoad の写し）
+# テンプレートの lint/rules.flix は、ステージした物（STAGED_FILE・1 行 1 つ）にそのテンプレートのファイルがある時だけ流す（1 本 7 秒ほど）。
+precommit-local: gl-jar-pin-check ### | bin/fge precommit が流すエンジンの門（gl-jar-pin-check・LwjglLoad と HeadlessLoad の写し・触ったテンプレートの lint/rules.flix）
 	@$(LINT_SH_load-copy)
+	@if [ -n "$(STAGED_FILE)" ] && [ -f "$(STAGED_FILE)" ]; then \
+	  for t in $(TEMPLATE_RULES_DIRS); do \
+	    if grep -q "^$$t/" "$(STAGED_FILE)"; then \
+	      echo "[precommit-local] $$t の lint/rules.flix"; (cd "$$t" && make -s --no-print-directory lint-flixlint) || exit 1; \
+	    fi; \
+	  done; \
+	fi
 
 ##@ 配る（engine_full・ブラウザ版）
 .PHONY: sync
@@ -1406,7 +1425,7 @@ precommit-dry: ### | ステージした物と作業ツリーの差分で bin/fge
 # bin/fge gates --check が Makefile の値を受け取る口（1 行 1 つ）。
 .PHONY: gates-facts
 gates-facts: ### | gates.json と比べる Makefile の値（テストのパッケージ・lint と check-docs-sync の名前・リリースの門）
-	@echo "test-pkgs $(notdir $(TEST_DIRS) $(TEMPLATE_DIRS))"
+	@echo "test-pkgs $(notdir $(TEST_DIRS) $(TEMPLATE_DIRS) $(BENCH_TEST_DIRS))"
 	@echo "lint-names $(LINT_NAMES)"
 	@echo "docs-sync-names $(DOCS_SYNC_NAMES)"
 	@echo "release-gates $(RELEASE_GATES)"

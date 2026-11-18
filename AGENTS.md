@@ -167,7 +167,7 @@ git log 掘りやテスト回し直しから始めない。
 門（テスト・検査）の一覧は根の `gates.json`。触ったファイルに当たる門は `bin/fge gates --files <パス…>`（流さない）。
 まとめて流すのは `make verify SUITE=<名前>`（`quick` = 作業中の型検査・precommit の素振り・lint／`test` = テンプレートを含む全部のテスト／
 `release` = リリースの門／`gui` = 画面を開く門（release の前に手元で）。`SUITE` 無しで一覧・`DRY=1` で何を流すかだけ）。
-テストの口は `make test`（`ALL=1` でテンプレートも・`JOBS=<数>` で並べて流す）。絞る旗は `make gl-capture-check SCENES=<テンプレートか場面>`・`make go-test PKG=<名前>`。
+テストの口は `make test`（`ALL=1` でテンプレートとテストを持つ bench（bench/hd2d_town）も・`JOBS=<数>` で並べて流す）。絞る旗は `make gl-capture-check SCENES=<テンプレートか場面>`・`make go-test PKG=<名前>`。
 テストの範囲・書き方は `/quality-assurance`、リリース手順は `/release`。
 
 ## Doc（`*.kind.json`）の流儀

@@ -146,3 +146,14 @@ agents-pack の早見表（ゲームへ配る AGENTS.core.md）とお題（ゲ�
 1. 案 B（レビュー 1 回目も推し）。
 2. 早見表とお題は engine の口なので足さない（レビュー 1 回目の推し）。依頼の「早見表に 1 行とお題 1 本」とずれるので報告で人に確かめる。
 3. load-copy は precommit-local に足す（レビュー 1 回目も推し）。
+
+## 9. 実装の後の人の決め（2026-11-19）
+
+- 早見表とお題の置き場は AGENTS.md の「検証」と testdata/agent-eval/engine-repo.json でよい。
+- 消した: release-gate.yml・hooks.json の sessionDiet のキー（hook-session-diet の口は配った先がまだ呼ぶので残す）・bench/baseline/0.78.0 と 0.88.4（0.95.0 は残す）。
+- 全量に足した（安い 3 つ）:
+  - テンプレートの lint/rules.flix（hd2d・rpg・tidepool。game-starter は字が埋まっていないので読めない・sound-novel は rules.flix を持たない）。
+    コミットでは precommit-local が触ったテンプレートの分だけ流す（1 本 4〜7 秒）。全部は `make lint ONLY=template-rules`（約 10 秒）。
+  - sprite と anim の検査を precommit にも（.sprite.json・go/ と testdata/ の外。anim は .sprite.json を読む検査で、hooks.json の .anim.json はどこにも無い拡張子だったので .sprite.json に直した）。
+  - bench/hd2d_town のテスト（142 本・約 13 秒）を make test ALL=1（＝ test-release）へ。
+- 足さない: bench の型検査・go の全量・画面を開く門。
