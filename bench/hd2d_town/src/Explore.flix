@@ -29,7 +29,7 @@ mod Explore {
 
     /// Doc と絵を読んで描く元を組む。readImage = 絵を画素にする口（assets からの相対の道 → 画素）・knobs = 描き方の重さの差し替え。
     pub def load(readImage: String -> Result[String, ImageData.ImageData] \ ef, knobs: Map[String, String]): Result[String, Res] \ ef + Fs.FileRead =
-        let doc = ExploreDoc.loadOr(ExploreDoc.path());
+        let doc = ExploreDoc.withPlaceKnobs(knobs, ExploreDoc.loadOr(ExploreDoc.path()));
         let keys = ExploreDoc.loadKeys(ExploreDoc.keysPath());
         let quality = ExploreDoc.qualityWith(knobs, doc#quality);
         let music = if (ExploreDoc.isSoundDeclared(doc#music#sound)) Some(doc#music) else None;
@@ -324,7 +324,7 @@ mod Explore {
     pub def main(): Unit \ IO =
         if (LwjglLayer.ensureMainThread()) ()
         else {
-            let knobs = BenchEnv.knobs(("SHADOW_MAP", "shadow") :: ("DOF", "dof") :: ("POST", "post") :: ("DEBUG", "debug") :: Nil);
+            let knobs = BenchEnv.knobs(("SHADOW_MAP", "shadow") :: ("DOF", "dof") :: ("POST", "post") :: ("DEBUG", "debug") :: ("START_CELL", "start") :: ("LOOK", "look") :: Nil);
             run {
                 App.loadAndLaunch(() -> {
                     let decoder = LoadProgress.imageDecoder();

@@ -83,6 +83,17 @@ mod ExploreDoc {
         { shadowMapSize = Map.get("shadow", knobs) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(q#shadowMapSize),
           depthOfField = flag("dof", q#depthOfField), post = flag("post", q#post) }
 
+    /// 立ち始めのマスと見た目の Doc を、つまみの表 knobs で差し替える（撮り比べで同じ束のまま場面を替える）。
+    /// start = "列,行"・look = 見た目の Doc の道。読めない値は Doc のまま。
+    pub def withPlaceKnobs(knobs: Map[String, String], d: Rec): Rec =
+        let cells = Map.get("start", knobs) |> Option.map(s -> String.splitOn(substr = ",", s) |> List.filterMap(x -> Int32.fromString(String.trim(x))))
+            |> Option.getWithDefault(Nil);
+        let start = match cells {
+            case c :: r :: _ => (c, r)
+            case _           => d#start
+        };
+        { start = start, look = Map.get("look", knobs) |> Option.getWithDefault(d#look) | d }
+
     /// 操作ごとのキーの列（1 つの操作に複数キー・矢印と WASD）。
     pub type alias Keys = { left = List[Key], right = List[Key], up = List[Key], down = List[Key] }
 
