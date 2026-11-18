@@ -15,7 +15,7 @@ mod TownLook {
           extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8), charShadow = TownScene.CharShadow.Soft,
           heightFog = None, boardLamplight = 0.0, boardNightBase = Color.rgb(0.3, 0.33, 0.5), bloomThreshold = 0.8, bloomSize = 0.6,
           lanternCore = Color.rgb(1.0, 0.96, 0.42), lanternEdge = Color.rgb(1.0, 0.62, 0.06), haloColor = Color.rgb(1.0, 0.6, 0.08), haloSize = 1.9, haloGlow = 0.0, haloFalloff = 2.2,
-          charShadowScale = Vec2.v2(1.0, 1.0), charNightBase = Color.rgb(0.3, 0.33, 0.5), lightUnits = Scene3d.LightUnits.Legacy, pointShadows = None }
+          charShadowScale = Vec2.v2(1.0, 1.0), charNightBase = Color.rgb(0.3, 0.33, 0.5), charNightFar = 1.0, lightUnits = Scene3d.LightUnits.Legacy, pointShadows = None }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -57,6 +57,7 @@ mod TownLook {
                   case _           => None
               }) |> Option.getWithDefault(d#charShadowScale),
           charNightBase = color("charNightBase", color("boardNightBase", d#boardNightBase)),
+          charNightFar = num("charNightFar", d#charNightFar),
           lightUnits = if (JsonCodec.stringOr("lightUnits", "legacy", m) == "physical") Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy,
           pointShadows = Map.get("pointShadows", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(pointShadowsOf) }
 

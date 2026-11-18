@@ -21,7 +21,7 @@ mod TownScene {
     /// 色の掛け目を boardNightBase に、近くの街灯の色を距離で足した物にする・強さの倍率）・bloomThreshold・bloomSize = ブルームの閾値と大きさ・
     /// lanternCore・lanternEdge = 火袋の芯と縁の色・haloColor・haloSize・haloGlow・haloFalloff = 火袋ごとの淡いハローの丸い板の色・直径（m）・強さ・落ち方（乗数）・
     /// charShadowScale = 隊列のキャラの影の板の幅と高さの倍率（見えている板は変えない・太陽と点光源の影の両方）・
-    /// charNightBase = 夜のキャラ（隊列と町の人）の板の地の明るさ（夜の露出で暗くなる分を 1 より大きい値で戻す）・
+    /// charNightBase = 夜のキャラ（隊列と町の人）の板の地の明るさ（夜の露出で暗くなる分を 1 より大きい値で戻す）・charNightFar = 街灯から遠い暗がりのキャラの明るさの割合・
     /// lightUnits = 光の量の読み方（Physical は逆二乗・拡散に 1/π）・pointShadows = 街灯の点光源の影（None で落とさない）。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
@@ -34,7 +34,7 @@ mod TownScene {
                             heightFog = Option[PostStack.HeightFog], boardLamplight = Float64, boardNightBase = Color,
                             bloomThreshold = Float64, bloomSize = Float64,
                             lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64,
-                            charShadowScale = Vec2.Vec2, charNightBase = Color, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap] }
+                            charShadowScale = Vec2.Vec2, charNightBase = Color, charNightFar = Float64, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap] }
 
     /// 隊列のキャラの影。Silhouette = 板の絵の形の太陽の影（斜めに伸びる人形の影・足元は薄い小さな楕円だけ）・Soft = 薄い足元の楕円（前の版）・Dense = 濃く少し大きい楕円（案 1）・
     /// DenseCast = 案 1 に、太陽の向きへ薄く短く伸びる影の板を足す（案 2）・SmallBlob = 小さく濃い柔らかい塊を太陽の影の側へ少しずらす（案 3）。
@@ -124,7 +124,7 @@ mod TownScene {
             let h = Int32.toFloat64(l#height) / 32.0 * stretch;
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint),
                       res#look#charShadow == CharShadow.Silhouette) |> Scene3d.withShadowCasterScale(res#look#charShadowScale)
-                |> lampLit(res#look, res#look#charNightBase, lampBoards(res#town), x, y, tint),
+                |> charLit(res#look, lampBoards(res#town), x, y, tint),
              characterShadows(res, x, y, z, w))
         })
 
@@ -205,29 +205,42 @@ mod TownScene {
             standing(billboardName(look, l), { position = Vec2.zero(), size = { x = Int32.toFloat64(l#width), y = Int32.toFloat64(l#height) } },
                      Vec3.v3(b#x, b#z, b#y), if (b#flip) 0.0 - b#width else b#width, b#height, tintColor(look, b#tint), b#shadow == TileMap3d.BoardShadow.Grounded)
                 |> (bb -> if (b#sprite == "sprites/street_lamp_ornate.png") bb
-                          else lampLit(look, if (isCharacterSprite(b#sprite)) look#charNightBase else look#boardNightBase, lamps, b#x, b#y, b#tint, bb)))
+                          else if (isCharacterSprite(b#sprite)) charLit(look, lamps, b#x, b#y, b#tint, bb)
+                          else lampLit(look, lamps, b#x, b#y, b#tint, bb)))
 
     /// 町の人と隊列の絵か（木と街灯でない板）。
     def isCharacterSprite(sprite: String): Bool =
         String.contains(substr = "_td", sprite) or String.contains(substr = "_walk", sprite) or String.contains(substr = "_idle", sprite)
 
+    /// 近くの街灯の寄り具合（街灯ごとに、届く距離の 1.2 倍で 0 になる重みの 2 乗の和）。
+    def lampNearness(look: Look, lamps: List[Board], x: Float64, y: Float64): Float64 =
+        let reach = look#lampRange * 1.2;
+        lamps |> List.foldLeft((acc, lamp) -> {
+            let d = Num.sqrt((lamp#x - x) * (lamp#x - x) + (lamp#y - y) * (lamp#y - y));
+            let k = Num.clamp(0.0, 1.0, 1.0 - d / reach);
+            acc + k * k
+        }, 0.0)
+
     /// 夜の板の明るさ（boardLamplight が正の時だけ）: 光を当てない板にして、色の掛け目を夜の地の明るさに近くの街灯の色を足した物にする。
     // WhyNot: 光の計算のまま夜の板を照らさない — 板の光の法線はいつもカメラ向きで、キャラの北に立つ街灯の光は板の裏から当たり、真っ黒な影絵になる。
-    /// base = 夜の地の明るさ（キャラは look#charNightBase・ほかの板は look#boardNightBase）。
-    def lampLit(look: Look, base: Color, lamps: List[Board], x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
+    def lampLit(look: Look, lamps: List[Board], x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
         if (look#boardLamplight <= 0.0) bb
         else {
-            let reach = look#lampRange * 1.2;
-            let glow = lamps |> List.foldLeft((acc, lamp) -> {
-                let d = Num.sqrt((lamp#x - x) * (lamp#x - x) + (lamp#y - y) * (lamp#y - y));
-                let k = Num.clamp(0.0, 1.0, 1.0 - d / reach);
-                acc + k * k * look#boardLamplight
-            }, 0.0);
-            // WhyNot: 掛け目を 1 で頭打ちにしない — 夜の露出（−2 段）で光を当てない板も 1/4 に暗くなり、キャラが昼の明るさに届かない（頭打ちは地の明るさまで上げる）
-            let c = (floor: Float64, lamp: Float64, tint: Float64) -> Num.clamp(0.0, Float64.max(1.0, floor), floor + lamp * glow) * tint;
-            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(Color.rgb(c(base#r, look#lampColor#r, t#r),
-                                                                     c(base#g, look#lampColor#g, t#g),
-                                                                     c(base#b, look#lampColor#b, t#b)))
+            let glow = lampNearness(look, lamps, x, y) * look#boardLamplight;
+            let c = (floor: Float64, lamp: Float64, tint: Float64) -> Num.clamp(0.0, 1.0, (floor + lamp * glow) * tint);
+            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(Color.rgb(c(look#boardNightBase#r, look#lampColor#r, t#r),
+                                                                     c(look#boardNightBase#g, look#lampColor#g, t#g),
+                                                                     c(look#boardNightBase#b, look#lampColor#b, t#b)))
+        }
+
+    /// 夜のキャラ（隊列と町の人）の板の明るさ: 光を当てない板にして、色の掛け目を charNightBase × （溜まりの中は 1・遠い暗がりは charNightFar）にする。
+    // WhyNot: 掛け目を 1 で頭打ちにしない — 夜の露出（−2 段）で光を当てない板も 1/4 に暗くなり、溜まりの中のキャラの顔と服が読めない
+    def charLit(look: Look, lamps: List[Board], x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
+        if (look#boardLamplight <= 0.0) bb
+        else {
+            let near = Float64.min(1.0, lampNearness(look, lamps, x, y));
+            let k = look#charNightFar + (1.0 - look#charNightFar) * near;
+            Scene3d.unlit(bb) |> Scene3d.withBillboardTint(Color.rgb(look#charNightBase#r * k * t#r, look#charNightBase#g * k * t#g, look#charNightBase#b * k * t#b))
         }
 
     def standing(texture: String, source: Rect2.Rect2, at: Vec3.Vec3, width: Float64, height: Float64, tint: Color, cast: Bool): Scene3d.Billboard3d =
@@ -247,7 +260,7 @@ mod TownScene {
             let tint = member#tint |> Option.map(t -> { let (r, g, b) = t; { r = r, g = g, b = b } }) |> Option.getWithDefault(Faces.white());
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), w, h, tintColor(res#look, tint), true)
                 |> Scene3d.withShadowCasterScale(res#look#charShadowScale)
-                |> lampLit(res#look, res#look#charNightBase, lampBoards(res#town), x, y, tint),
+                |> charLit(res#look, lampBoards(res#town), x, y, tint),
              contactInstance(res#contactMesh, res#contactMaterial, x, y, z, w))
         })
 
