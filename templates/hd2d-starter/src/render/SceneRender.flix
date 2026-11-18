@@ -14,7 +14,7 @@ mod SceneRender {
     def knobs(): Knobs.Knobs = Map#{ "shadow" => "2048" }
 
     def loadRes(): Res.Res \ IO =
-        run { Res.loadOrBug(Images.readImageIo, TownScene.TextureNames.SceneTextures, knobs(), Res.loadDocsOrBug()) } with Fs.FileRead.runWithIO
+        Res.loadOrBugIo(knobs())
 
     // ── 決定的な場面（スナップショット） ──
 
@@ -58,7 +58,8 @@ mod SceneRender {
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let res = loadRes();
         let cfg = { design = View.size(), scale = 1, background = Color.rgb(0.0, 0.0, 0.0), fontTtf = ttf(), fontAtlas = atlas,
-                    outDir = outDir, frameW = 1280, frameH = 720 | HeadlessRender.defaults() };
+                    outDir = outDir, frameW = Float64.round(View.size()#x) |> Float64.tryToInt32 |> Option.getWithDefault(1280),
+                    frameH = Float64.round(View.size()#y) |> Float64.tryToInt32 |> Option.getWithDefault(720) | HeadlessRender.defaults() };
         let ctx = App.viewCtxOf(atlas, View.size());
         Shots.names() |> List.filter(keep) |> List.filterMap(name ->
             Shots.worldOf(name, res) |> Option.map(w -> {

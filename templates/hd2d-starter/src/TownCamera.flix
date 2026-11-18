@@ -44,7 +44,7 @@ mod TownCamera {
     pub def lookAhead(meters: Float64, rate: Float64, speed: Float64, motion: (Float64, Float64), dt: Float64, ahead: (Float64, Float64)): (Float64, Float64) =
         if (dt <= 0.0) ahead
         else {
-            let k = meters / (speed * dt);
+            let k = meters / (Float64.max(0.01, speed) * dt);
             let a = followRate(rate, dt);
             (fst(ahead) + (fst(motion) * k - fst(ahead)) * a, snd(ahead) + (snd(motion) * k - snd(ahead)) * a)
         }

@@ -1,7 +1,7 @@
 // TestSample — 作例の町（assets の地図と小物と手触り）そのものの具体値。ゲームは Doc を書き換えるので、テンプレートの中でだけ流す（new-game.exclude）。
 mod TestSample {
     def res(): Res.Res \ IO =
-        run { Res.loadOrBug(Images.readImageIo, TownScene.TextureNames.SceneTextures, Map.empty(), Res.loadDocsOrBug()) } with Fs.FileRead.runWithIO
+        Res.loadOrBugIo(Map.empty())
 
     def isBlocked(r: Res.Res, cr: (Int32, Int32)): Bool = Set.memberOf(cr, r#grid#blocked)
 

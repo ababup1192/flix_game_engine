@@ -25,4 +25,5 @@ sync で AGENTS.md に入るので、重複して書かない。書いたら eng
 | 音を足す | 曲や効果音のファイルを `assets/` に置き、`project.json` の sounds に登録して `Game.app` に `App.withSustained`（BGM）・`App.withAudio`（効果音）を足す（engine の `docs/audio.md`） |
 
 - 地図や小物の Doc は保存すると走っているゲームにその場で映る（読めない形で保存した時は前の町のまま 1 行言う）。新しい絵の名前を書いた時だけは起動し直す。
+- ギャラリーの場面（`src/Shots.flix`）・始まりの既定（`src/Starts.flix`）・`e2e/walk.flow` は作例の地図のマスを指している。地図を描き替えたら、この 3 つのマスも直す（`TestStarts` の「先頭は通れるマスに立つ」が知らせる）。
 - 描き出し（`make render` / `render-all`）は CPU で描くので 1 枚 10 秒ほどかかる。影の地図は描き出しだけ 2048 に落としている（`src/render/SceneRender.flix`）。

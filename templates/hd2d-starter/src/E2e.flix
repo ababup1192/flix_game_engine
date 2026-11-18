@@ -24,7 +24,7 @@ mod E2e {
 
     /// 画面なしの描く元（窓を開かないので絵は javax.imageio で読む）。
     def loadRes(): Res.Res \ IO =
-        run { Res.loadOrBug(Images.readImageIo, TownScene.TextureNames.SceneTextures, Map.empty(), Res.loadDocsOrBug()) } with Fs.FileRead.runWithIO
+        Res.loadOrBugIo(Map.empty())
 
     /// 役の名前 → キー（表の先頭のキーを押す。explore.keys.json の既定と同じ）。
     def roles(): InputMap.Table[String] =

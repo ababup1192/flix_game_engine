@@ -3,7 +3,7 @@ mod TestDocs {
     use fge::{DocJson}
 
     @Test
-    def testBrokenExploreJsonFallsBackToDefaults(): Unit \ Assert =
+    def testBrokenExploreJsonIsNotADoc(): Unit \ Assert =
         Assert.assertTrue(Option.isEmpty(ExploreDoc.fromJson("{ speed: ")))
 
     @Test
@@ -41,7 +41,7 @@ mod TestDocs {
         Assert.assertEq(expected = Map#{ "shadow" => "2048", "dof" => "0" }, Knobs.ofPairs("shadow" :: "2048" :: "dof" :: "0" :: Nil))
 
     @Test
-    def testBrokenLookJsonFallsBackToDefaults(): Unit \ Assert =
+    def testBrokenLookJsonIsNotADoc(): Unit \ Assert =
         Assert.assertTrue(Option.isEmpty(TownLook.fromJson("[1, 2")))
 
     @Test

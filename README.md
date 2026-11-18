@@ -122,6 +122,7 @@ your own.
 | **rpg-starter** | FC-style classic RPG: a village whose spring has run dry, a world map, a mine dungeon and command battles |
 | **sound-novel-starter** | Sound novel in the countryside: blurred real photos, Mincho prose with ruby, NVL/ADV, log, auto, skip, save/load — all scripted in Yarn |
 | **tidepool-starter** | Turn-based puzzle on a tide pool: push rocks to reroute channels as the tide rises and falls each move; undo, retry and a look-ahead preview |
+| **hd2d-starter** | HD-2D town walk: a 3D harbor town built from a tile map with pixel-art billboards, a party of three that follows the leader, wall sliding, sun shadows and depth of field; keys, gamepad or an on-screen stick |
 
 Every template runs and tests the same way:
 
@@ -351,6 +352,7 @@ make help            # 他ターゲット（sync-layers など）を一覧表示
 | **rpg-starter** | FC 風の王道 RPG。泉の枯れた村から、ワールドマップと坑道を抜け、コマンドバトルで進む |
 | **sound-novel-starter** | 田舎のサウンドノベル。実写の写真をシェーダーでぼかした背景・明朝とルビ・NVL/ADV・ログ・オート・スキップ・セーブとロード。台本は Yarn |
 | **tidepool-starter** | 潮だまりのターン制パズル。1 手ごとに潮が満ち引きする磯で岩を押して水路を作り変える。取り消し・やり直し・先読みつき |
+| **hd2d-starter** | HD-2D の町歩き。タイルの地図から組んだ 3D の港町にドット絵の板を立て、旅の 3 人で歩き回る。壁で滑る・仲間が後をなぞる・太陽の影と手前と奥のぼけ。キー・パッド・画面のスティック |
 
 どのテンプレも同じ手順で実行・テストできる:
 

@@ -7,21 +7,21 @@ mod Res {
     use TownDecor.{Decor}
     use TownMap.{TownMap}
 
-    /// 起動と描き出しが同じ形で読む Doc の束。decor = 小物の Doc の道 → 小物の列（decorPaths の順に描く）。
+    /// 起動と描き出しが同じ形で読む Doc の束。decor = 小物の Doc のパス → 小物の列（decorPaths の順に描く）。
     pub type alias Docs = { map = TownMap, decor = Map[String, List[Decor]], look = TownLook.Look, explore = ExploreDoc.Doc, keys = KeysDoc.Doc }
 
     /// 描く元の束。
     /// docs = Doc の束・knobs = 描き方の重さのつまみ（Doc を読み直しても残す）・quality = Doc の重さにつまみを掛けた物・
-    /// boards = 板を作る道具（読み込んだ絵・引き方・足元の影）・built = 組んだ町・grid = 通れるマスの格子・hide = 建物の北に隠れるマスの決め方・
+    /// boards = 板を作る道具（読み込んだ絵・引き方・足元の影の形と材質）・built = 組んだ町・grid = 通れるマスの格子・
     /// lens = カメラのレンズ・groundZ = 立ち始めの床の高さ・eyeRise = 引き 1 の時の目の、立ち始めの床からの高さ・
-    /// feetDepth = 足元が画面の feetV に来る奥行き。contact・contactMesh = 足元の影の絵と形（組み直しで使い回す）。
+    /// feetDepth = 足元が画面の feetV に来る奥行き・contact = 足元の影の絵（組み直しで使い回す）。
     pub type alias Res = { docs = Docs, knobs = Knobs.Knobs, quality = ExploreDoc.Quality, boards = TownScene.Boards, built = TownScene.Built,
-                           grid = CollisionGrid.Grid, hide = CollisionGrid.HideRule, lens = TownCamera.Lens, groundZ = Float64,
-                           eyeRise = Float64, feetDepth = Float64, contact = Texture3d.Texture3d, contactMesh = Mesh3d.Mesh3d }
+                           grid = CollisionGrid.Grid, lens = TownCamera.Lens, groundZ = Float64,
+                           eyeRise = Float64, feetDepth = Float64, contact = Texture3d.Texture3d }
 
     pub def mapPath(): String = "assets/town.map.json"
 
-    /// 小物の Doc の道（店と人・動物と馬車）。
+    /// 小物の Doc のパス（店と人・動物と馬車）。
     pub def decorPaths(): List[String] = "assets/market.decor.json" :: "assets/animals.decor.json" :: Nil
 
     /// Doc の束を読む。地図と小物は無いと町が組めないので読めなければ Err・見た目と手触りとキーは既定値で続ける。
@@ -42,20 +42,23 @@ mod Res {
     pub def decorOf(docs: Docs): List[Decor] =
         decorPaths() |> List.flatMap(p -> Map.get(p, docs#decor) |> Option.getWithDefault(Nil))
 
-    /// 読み込む絵の道（地図のタイル・地図の板・小物・隊列の帯）。
+    /// 読み込む絵のパス（地図のタイル・地図の板・小物・隊列のストリップ）。
     pub def picturePathsOf(docs: Docs): List[String] =
         let strips = ExploreDoc.rec(docs#explore)#party |> List.flatMap(w -> w#strip :: w#idleStrip :: Nil);
         TownScene.picturePaths(decorOf(docs), strips)
 
-    /// 絵を読んで描く元を組む。readImage = 絵を画素にする口（assets からの相対の道 → 画素）・names = 板の絵の引き方。
+    /// 絵を読んで描く元を組む。readImage = 絵を画素にする関数（assets からの相対のパス → 画素）・names = 板の絵の引き方。
     pub def load(readImage: String -> Result[String, ImageData.ImageData] \ ef, names: TownScene.TextureNames, knobs: Knobs.Knobs,
                  docs: Docs): Result[String, Res] \ ef =
         forM (
             pictures <- picturePathsOf(docs) |> Result.traverse(p -> readImage(p) |> Result.flatMap(Images.loadedOf(p)));
             contact <- Images.contactShadow();
             contactMesh <- TownScene.unitContactMesh()
-        ) yield build(docs, knobs, TownScene.boardsOf(pictures |> List.map(l -> (l#path, l)) |> List.toMap, names, docs#look, contact, contactMesh),
-                      contact, contactMesh)
+        ) yield build(docs, knobs, pictures |> List.map(l -> (l#path, l)) |> List.toMap, names, contact, contactMesh)
+
+    /// 窓を開かない入口（描き出し・flow・テスト）の描く元。Doc と絵を javax.imageio で読み、読めなければ止める。
+    pub def loadOrBugIo(knobs: Knobs.Knobs): Res \ IO =
+        run { loadOrBug(Images.readImageIo, TownScene.TextureNames.SceneTextures, knobs, loadDocsOrBug()) } with Fs.FileRead.runWithIO
 
     /// 起動の描き手の描く元（読めなければ止める: 起動時に絵の実体が読めない）。
     pub def loadOrBug(readImage: String -> Result[String, ImageData.ImageData] \ ef, names: TownScene.TextureNames, knobs: Knobs.Knobs,
@@ -64,11 +67,12 @@ mod Res {
         case Err(why) => bug!("[hd2d] 町を組めない: ${why}")
     }
 
-    /// Doc の束から組む（絵は boards が持つ読み込んだ物）。
-    def build(docs: Docs, knobs: Knobs.Knobs, boards0: TownScene.Boards, contact: Texture3d.Texture3d, contactMesh: Mesh3d.Mesh3d): Res =
+    /// Doc の束と読み込んだ絵 pictures から組む。
+    def build(docs: Docs, knobs: Knobs.Knobs, pictures: TownScene.Pictures, names: TownScene.TextureNames, contact: Texture3d.Texture3d,
+              contactMesh: Mesh3d.Mesh3d): Res =
         let e = ExploreDoc.rec(docs#explore);
         let look = TownLook.rec(docs#look);
-        let boards = TownScene.boardsOf(boards0#pictures, boards0#names, docs#look, contact, contactMesh);
+        let boards = TownScene.boardsOf(pictures, names, docs#look, contact, contactMesh);
         let m = docs#map;
         let lens = TownCamera.lensOf(look#topDeg, look#bottomDeg);
         let groundZ = TownMap.topAt(m, e#startCol, e#startRow);
@@ -80,8 +84,8 @@ mod Res {
         let hide = { slope = TownCamera.tanAt(lens, e#feetV), seenHeight = e#seenHeight, reach = e#hideReach,
                      halfWidth = halfWidthOf(boards, e#party), sideDrift = e#aheadMeters / Float64.max(1.0, feetDepth * e#walkZoom) };
         { docs = docs, knobs = knobs, quality = ExploreDoc.qualityWith(knobs, e#quality), boards = boards,
-          built = TownScene.build(boards, contact, m), grid = CollisionGrid.build(m, decor, decorWidth, Some(hide)), hide = hide,
-          lens = lens, groundZ = groundZ, eyeRise = eyeRise, feetDepth = feetDepth, contact = contact, contactMesh = contactMesh }
+          built = TownScene.build(boards, contact, m), grid = CollisionGrid.build(m, decor, decorWidth, Some(hide)),
+          lens = lens, groundZ = groundZ, eyeRise = eyeRise, feetDepth = feetDepth, contact = contact }
 
     /// 隊列の歩きの絵の 1 コマの横幅の半分（m・一番広い人）。
     def halfWidthOf(boards: TownScene.Boards, party: List[Walkers.Walker]): Float64 =
@@ -89,7 +93,10 @@ mod Res {
             |> List.foldLeft(Float64.max, 0.0)
 
     /// Doc の束を docs に替えて組み直す（絵は読み直さない）。
-    pub def withDocs(docs: Docs, res: Res): Res = build(docs, res#knobs, res#boards, res#contact, res#contactMesh)
+    pub def withDocs(docs: Docs, res: Res): Res = build(docs, res#knobs, res#boards#pictures, res#boards#names, res#contact, res#boards#contactMesh)
+
+    /// キーの割り当てを keys に替える（町と格子はそのまま）。
+    pub def withKeys(keys: KeysDoc.Doc, res: Res): Res = { docs = { keys = keys | res#docs } | res }
 
     /// 歩きの手触りの Doc。
     pub def exploreOf(res: Res): ExploreDoc.Rec = ExploreDoc.rec(res#docs#explore)

@@ -61,7 +61,7 @@ mod TileMap3d {
 
     def fl(i: Int32): Float64 = Int32.toFloat64(i)
 
-    /// 座標のハッシュ（0〜1）。Blender の試作と同じ式（下 32 bit で畳む）。
+    /// 座標のハッシュ（0〜1・下 32 bit で畳む）。
     pub def h01(c: Int32, r: Int32, salt: Int32): Float64 =
         let n = Int64.bitwiseXor(Int64.bitwiseXor(Int32.toInt64(c) * 73856093i64, Int32.toInt64(r) * 19349663i64), Int32.toInt64(salt) * 83492791i64);
         let mixed = Int64.bitwiseAnd(Int64.bitwiseXor(n, Int64.rightShift(n, 13)) * 1274126177i64, 0xFFFFFFFFi64);
@@ -123,7 +123,7 @@ mod TileMap3d {
 
     // ── 階段（地図の ^・北へ上る 4 段） ──
 
-    /// 階段のマスの踏み面と蹴上げと、低い隣に面した横の面（Blender の試作の build_stairs と同じ寸法）。
+    /// 階段のマスの踏み面と蹴上げと、低い隣に面した横の面。
     def stairQuads(ctx: Ctx): List[Quad] =
         let m = ctx#map;
         cells(m) |> List.filter(cr -> { let (c, r) = cr; TownMap.shapeAt(m, c, r) == Shape.Stairs and not isFoot(ctx, c, r) })

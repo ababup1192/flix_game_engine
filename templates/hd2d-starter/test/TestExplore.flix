@@ -216,10 +216,40 @@ mod TestExplore {
         // 水路 (4, 2) を草にした地図を読み直すと、そのマスは通れる
         let r = res();
         let dried = DocJson.parse(String.replace(src = "\"ggggwg\"", dst = "\"gggggg\"", gridJson())) |> Option.toOk("JSON") |> Result.flatMap(TownMap.decode);
-        Assert.assertFalse(Set.memberOf((4, 2), Controls.mapReloaded(dried, r)#grid#blocked))
+        Assert.assertFalse(Set.memberOf((4, 2), fst(Controls.mapReloaded(dried, r))#grid#blocked))
+
+    @Test
+    def testBrokenMapReloadKeepsTheGrid(): Unit \ Assert =
+        let r = res();
+        Assert.assertTrue(Set.memberOf((4, 2), fst(Controls.mapReloaded(Err("書きかけ"), r))#grid#blocked))
+
+    @Test
+    def testBrokenMapReloadTellsWhy(): Unit \ Assert =
+        Assert.assertEq(expected = Some("書きかけ"), snd(Controls.mapReloaded(Err("書きかけ"), res())))
 
     @Test
     def testDecorReloadReplacesTheGrid(): Unit \ Assert =
         let r = res();
-        Assert.assertFalse(Set.memberOf((1, 3), Controls.decorReloaded("assets/market.decor.json", Ok(Nil), r)#grid#blocked))
+        Assert.assertFalse(Set.memberOf((1, 3), fst(Controls.decorReloaded("assets/market.decor.json", Ok(Nil), r))#grid#blocked))
+
+    @Test
+    def testBrokenDecorReloadKeepsTheStall(): Unit \ Assert =
+        let r = res();
+        Assert.assertTrue(Set.memberOf((1, 3), fst(Controls.decorReloaded("assets/market.decor.json", Err("書きかけ"), r))#grid#blocked))
+
+    /// 見下ろす角度を浅くした見た目（建物の北の、足元が屋根に隠れる行が増える）に替えた描く元。
+    def shallowRes(r: Res.Res): Res.Res =
+        let look = TownLook.fromJson("{\"topDeg\": 5.0, \"bottomDeg\": 20.0}") |> Option.getWithDefault(TownLook.defaults());
+        Res.withDocs({ look = look | r#docs }, r)
+
+    @Test
+    def testShallowLookHidesTheFifthRowNorthOfTheBuilding(): Unit \ Assert =
+        Assert.assertTrue(Set.memberOf((2, 1), shallowRes(res())#grid#blocked))
+
+    @Test
+    def testSettleAfterALookReloadMovesTheLeaderOffTheHiddenCell(): Unit \ Assert =
+        let r = res();
+        let r2 = shallowRes(r);
+        let settled = World.settle(r2, World.placeLeader(r, 2, 1, Facing.Dir.North, World.initial(r)));
+        Assert.assertTrue(leaderOf(r2, settled) |> Option.map(cr -> not Set.memberOf(cr, r2#grid#blocked)) |> Option.getWithDefault(false))
 }

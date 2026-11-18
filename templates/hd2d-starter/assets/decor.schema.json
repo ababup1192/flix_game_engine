@@ -102,7 +102,7 @@
           "type": "float",
           "label": "揺れの周期（秒）",
           "order": 13,
-          "default": 2.0,
+          "default": 1.0,
           "min": 0.1,
           "max": 10.0
         },

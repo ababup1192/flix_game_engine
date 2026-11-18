@@ -129,3 +129,12 @@ lossyImages 無し（ドット絵）・deferred 無し（待てる暗転が無�
 - **M11 README のテンプレートの表**（英・日）に行を足す。
 - **任意から取る物**: ShotClock を持たない（昼は heightFog も陽炎も無い）。Prop → 絵の表を 1 つにし（TileMap3d）、読む道はそこと小物・隊列から作る。帯のコマ割りと 32 テクセル/m は `Walkers.cellOf` と `TownScene.texelsPerMeter()` の 1 か所。isCharacterSprite・withCamera・litLights・decorBoards の drop・Idle の enum（Step を外し idleStrip を必須に）・BoardLight・CharShadow・bloom の欄・staticBoards の WhyNot を削る。look と explore を group で束ね、全 Doc に version・title・note。終了の確認（Esc・閉じるボタン → 「終了しますか？」）を game-starter から写す（World の欄 quit）。AGENTS.local.md に早見表、AGENTS.core.md に「HD-2D の町を始める」の 1 行と agent-eval のお題 1 本。画風の「やらない事」は 1 つ「影を黒にしない（影は青紫まで）」にし、光と影の色は look の sunColor・ambient と結ぶ。palette は F9 の「色票は Look の Doc の色に合わせる」から外れる（sprite.json を持たないので色票を作らない）事を明記。web 欄の keysDoc は残す（ブラウザでもキーボードで歩けるようにキーの割り当てを渡す）。言葉は「台本」→シナリオ・「にぎやかし」→広場の NPC と小物・「息遣い」→待機モーション（idle）・「後がけ」→ポストプロセス。project.json は rpg-starter の並び（version・windowWidth・windowHeight）。
 - **確かめる事に足す**: 3 枚の CPU 描き出しの時間・reference-check を 2 回流して同じ SHA・テンプレートの中で `../../bin/fge refactor search Town`・`make lint`（record-wrap・state-shape）。bench の測りのスクリプト（check-external・determinism・gl-capture）には入れない（テンプレートは TEMPLATE_DIRS で test-all と reference-check に入るので足りる）。
+
+## 実装で決めた事（e9e34b7b の後・この節がいちばん新しい）
+
+- lint/rules.flix は持たない（flixlint 0.9.0 が engine の Scene3d.LightUnits・Camera3d.lensShift を解けず、事実を集める所で止まる。bench/hd2d_town の refactor の索引が作れないのも同じ原因）。Makefile に WhyNot。flixlint が追いついたら tidepool-starter の物を写す。
+- 地図の groundTiles を外した（町の材質の表と同じ絵だった）。隊列の tint を外した。web 欄の keysDoc を外した（スティックだけなので要らない）。ShotClock は持たない。
+- 小物は `market.decor.json`（12 件）と `animals.decor.json`（6 件）。鳩と風船の「通れる」は小物の欄 passable（explore.json の passDecor は持たない）。
+- 読み直しは map・decor・explore・look（カメラの角度が隠れるマスを決める）で格子を組み直して settle、keys は Doc を差し替えるだけ。読めない地図と小物は前の Res のまま 1 行言う（`Controls.mapReloaded` が理由を返し、`keptWarned` が言う）。
+- 描き出しは design 1280×720・scale 1・影の地図だけつまみで 2048。4 枚で約 9 秒。
+- 実装後のレビュー（78 点）の必須 4 件（look の読み直しの settle・ルートの README の表・読み直しの fail-open のテスト・explore.json の note の tint）を直した。

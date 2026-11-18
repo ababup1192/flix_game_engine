@@ -15,7 +15,7 @@ mod TownScene {
         case ProjectTextures
     }
 
-    /// 読み込んだ絵の表（assets からの相対の道 → 絵）。
+    /// 読み込んだ絵の表（assets からの相対のパス → 絵）。
     pub type alias Pictures = Map[String, Images.Loaded]
 
     /// 板と足元の影を作るのに要る物。pictures = 読み込んだ絵・names = 板の絵の引き方・boardTint = 板の明るさの掛け目（Look の boardTint）・
@@ -26,7 +26,7 @@ mod TownScene {
     /// 組んだ町。group = 動かない面と足元の影・boards = 動かない板（木・街灯・町の人・地図の外の森）・textures = 場面に渡す絵。
     pub type alias Built = { group = Scene3d.StaticGroup, boards = List[Scene3d.Billboard3d], textures = List[Texture3d.Texture3d] }
 
-    /// 地図のタイルと板・小物 decor・隊列の帯 strips を描くのに読む絵の道（重ならない）。
+    /// 地図のタイルと板・小物 decor・隊列のストリップ strips を描くのに読む絵のパス（重ならない）。
     pub def picturePaths(decor: List[Decor], strips: List[String]): List[String] =
         let tiles = TileMap3d.materialTable() |> Map.valuesOf |> List.map(fst);
         List.flatten(tiles :: TileMap3d.boardSprites() :: List.map(d -> d#sprite, decor) :: strips :: Nil) |> List.distinct
@@ -95,7 +95,7 @@ mod TownScene {
     pub def textureNameOf(names: TextureNames, l: Images.Loaded): String =
         if (names == TextureNames.ProjectTextures) projectTextureName(l#path) else Texture3d.name(l#texture)
 
-    /// assets からの相対の道 → project.json の textures の名前。
+    /// assets からの相対のパス → project.json の textures の名前。
     pub def projectTextureName(path: String): String =
         let stem = String.stripPrefix(substr = "sprites/", path) |> Option.getWithDefault(path);
         String.stripSuffix(substr = ".png", stem) |> Option.getWithDefault(stem)

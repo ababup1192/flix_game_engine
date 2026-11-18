@@ -9,7 +9,6 @@ mod KeysDoc {
     use Util.Json.Json
 
     /// 操作ごとのキーの列。同じ操作に複数キーを割り当ててよい。
-    // World が持つ record は enum で包む（型検査が record を展開しないため）。
     pub type alias Rec = {
         version = Int32,
         left = List[Key],   // 左へ動く

@@ -90,7 +90,11 @@ mod TestTown {
 
     @Test
     def testCoordinateHashIsFixed(): Unit \ Assert =
-        Assert.assertTrue(near(TileMap3d.h01(3, 5, 1), 0.7966430151827267) and near(TileMap3d.h01(-30, 2, 7), 0.5274128328374151))
+        Assert.assertTrue(near(TileMap3d.h01(3, 5, 1), 0.7966430151827267))
+
+    @Test
+    def testCoordinateHashOfANegativeColumnIsFixed(): Unit \ Assert =
+        Assert.assertTrue(near(TileMap3d.h01(-30, 2, 7), 0.5274128328374151))
 
     // ── 面の向きと uv ──
 

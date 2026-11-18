@@ -4,7 +4,7 @@ mod TestStarts {
     use fge::{App, DocJson, JsonCodec, Resources, Vec2}
 
     def res(): Res.Res \ IO =
-        run { Res.loadOrBug(Images.readImageIo, TownScene.TextureNames.SceneTextures, Map.empty(), Res.loadDocsOrBug()) } with Fs.FileRead.runWithIO
+        Res.loadOrBugIo(Map.empty())
 
     /// ギャラリーの場面は全部、実機と同じ App から shot:<名前> の始まりで組める。
     @Test
