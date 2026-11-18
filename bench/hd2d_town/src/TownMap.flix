@@ -6,7 +6,7 @@ mod TownMap {
 
     /// 上の面の材質。Water = 床を下げて水面を張る水路（溶岩も同じ形）。
     /// Path・RockTop・SnowPath・SnowTop = 地図の p・r・n・s（絵は地図の groundTiles で決める）。
-    pub enum Ground with Eq, ToString {
+    pub enum Ground with Eq, Order, ToString {
         case Grass
         case Cobble
         case Dirt
@@ -247,7 +247,7 @@ mod TownMap {
         rows |> List.map(row -> String.toList(row) |> List.map(cellOf) |> List.toVector) |> List.toVector
 
     /// 地面の文字。知らない文字は草（地図の外と同じ）にする。
-    def groundOf(ch: Char): Ground = match ch {
+    pub def groundOf(ch: Char): Ground = match ch {
         case 'c' => Ground.Cobble
         case 'b' => Ground.Cobble
         case 'd' => Ground.Dirt

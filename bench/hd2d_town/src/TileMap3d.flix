@@ -45,8 +45,14 @@ mod TileMap3d {
     pub def materialTableOf(m: TownMap): Map[String, (String, Rgb)] =
         let w = Faces.white();
         let grounds = m#groundTiles |> List.map(gt -> (groundMaterial(fst(gt)), (snd(gt), w)));
-        let overrides = m#tileOverrides |> List.map(kv -> (if (fst(kv) == "w") groundMaterial(Ground.Water) else fst(kv), (snd(kv), w)));
+        let overrides = m#tileOverrides |> List.map(kv -> (materialKey(fst(kv)), (snd(kv), w)));
         List.foldLeft((acc, kv) -> Map.insert(fst(kv), snd(kv), acc), materialTable(), List.append(grounds, overrides))
+
+    /// 地図の Doc の材質の鍵（tileOverrides・emission・layers・flow・gloss の鍵）→ 材質の名前。1 字は地面の字（"w" は水路の底）・それ以外は名前のまま。
+    pub def materialKey(key: String): String = match String.toList(key) {
+        case ch :: Nil => groundMaterial(TownMap.groundOf(ch))
+        case _         => key
+    }
 
     /// 町を組む。skipNpcColumn = この列の町の人（地図の 1・2・3）を置かない（歩く隊列で置き換える列）。
     pub def build(m: TownMap, sizes: SpriteSizes, skipNpcColumn: Option[Int32]): Town =
