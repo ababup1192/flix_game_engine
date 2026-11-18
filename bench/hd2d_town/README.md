@@ -181,6 +181,45 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 
 音楽：ユーフルカ https://youfulca.com/
 
+## 昼の町を歩き回る（ブラウザ版・計画 8 節）
+
+| 口 | 中身 |
+|---|---|
+| `make explore` | ウィンドウを開いて歩く（矢印・WASD・パッドの左スティック）。重さは `SHADOW_MAP=2048 DOF=0 POST=0` で落とす |
+| `make explore-web` | ブラウザ版へ書き出す（`build/web`・`bin/fge export-web`）。`web/measure.js` を index.html に差し込む |
+| `make explore-serve` | 書き出した物を手元のサーバーで配る（`PORT`・既定 8765・`0.0.0.0` で待つ） |
+| `make explore-grid` | 通れるマスの格子を字で出す（`#` 地図と建物・`+` 建物の北に隠れるので塞いだ・`d` 広場のにぎやかし） |
+| `make explore-record` | ヘッドレスの Chrome（CDP）でキーを押して歩かせ `debug/web_walk.mp4` にする（手順書は `bin/web_walk_demo.json`・先に explore-serve を立てる） |
+
+- 作り: `src/Explore.flix`（App・World は先頭の位置・向き・道・歩きの時計・カメラの先読みと高さ・時刻だけ。町・格子・Doc は Res）・
+  `src/CollisionGrid.flix`（通れるマスの格子と、半径 0.3 m の円を通れないマスの四角から押し出して壁に沿って滑らせる動き）・
+  `src/FollowTrail.flix`（仲間 2 人が先頭の通った道を 1 m ずつ遅れてなぞる）・`src/ExploreDoc.flix`（`assets/explore.json`・`assets/explore.keys.json`）・`web/WebMain.flix`。
+- カメラ（C3）: 横と奥は先頭へ合わせ、歩く向きへ `aheadMeters`（1.5 m）先をなめらかに見せる（止まると戻る）。高さは足元を遅れて追う。
+- 建物に隠れる所（H1）は格子で塞ぐ。地図の写しは最終動画と共有なので直さない。建物の高さ（階・屋根）とカメラの角度から、足元から `seenHeight`（0.9 m）の点が
+  隠れる行を出す（1 階の建物で北の 2 行・2 階で 6 行）。軒の出っ張り・キャラの板の幅・カメラが横へ先を見せる分だけ、脇の列も塞ぐ。
+- 残り: 建物の真横（同じ行）に立つと、横へ先を見せるカメラの線で 2 階の建物の軒にかかる事がある（北の行しか塞いでいない）。
+
+### スマホの重さを測る段取り（人と一緒に）
+
+1. `make explore-web`（数分）→ `make explore-serve`。表示された `http://<この機械の IP>:8765/` を、同じ Wi-Fi のスマホで開く。
+2. 開く URL に測る旗を付ける: `?fps=1&measure=1`。左上（engine）に fps・1 コマの CPU の時間（中央値）・描き手（webgpu / webgl2）、
+   最初のコマの後に左下（`web/measure.js`）に「押せるまで」「押してから最初のコマまで」・canvas の画素・dpr が出る。
+3. 測る数: 1 コマの時間（fps と cpu ms・歩いている時と止まっている時）・起動時間（押せるまで／押してから最初のコマまで）。PC のブラウザでも同じ URL で並べる
+   （スマホの 3D の基準は fps3d-room で 46.5 fps・cpu 20.7 ms）。
+4. 重い時に落とす手（URL の query で切り替える・書き出し直しは要らない）:
+
+| 旗 | 中身 |
+|---|---|
+| `shadow=2048` / `1024` / `0` | 太陽の影の地図の一辺（既定 4096・0 で影なし） |
+| `dof=0` | 手前と奥のぼけを外す |
+| `post=0` | 画面全体の後がけ（露出・色・周りの暗さ・FXAA）を外す |
+| `dpr=1` / `0.75` / `0.5` | 描く解像度（canvas の画素の細かさ。`web/measure.js` が `devicePixelRatio` を差し替える） |
+| `backend=webgl2` | WebGPU でなく WebGL2 で描く |
+
+   例: `http://<IP>:8765/?fps=1&measure=1&shadow=2048&dof=0&dpr=1`。既定の値は `assets/explore.json` の `quality`（実機は環境変数 `SHADOW_MAP`・`DOF`・`POST`）。
+5. 既定の WebGPU では、広場より北で engine の材質の値の置き場（64 KB）が溢れて GPUValidationError が出て、画面が数秒止まる（engine の 5459049e の直しが要る）。
+   直しが入るまでは `backend=webgl2` で測る。
+
 ## engine に相談する事
 
 - CPU の描き出し（HeadlessRender・SoftRaster）で、後がけのブルームの強さを 0 より大きくすると、画面の左上に場面の縮んだ写しのようなまだらが出る（GPU の GL では出ない）。

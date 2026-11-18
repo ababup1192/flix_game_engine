@@ -1,5 +1,5 @@
 {
-  "//": "explore.keys.json の形の宣言(Studio の sections 方言)。widget \"key\" で『行を押してキーを叩く』割り当て UI になる。既定は src/ExploreDoc.flix の defaultKeys() が正。名前は GameEngine.Key の綴り。1 つの操作に複数キーを並べられ、上の行ほど先に見る。",
+  "//": "explore.keys.json の形の宣言(Studio の sections の書き方)。widget \"key\" で『行を押してキーを叩く』割り当て UI になる。既定は src/ExploreDoc.flix の defaultKeys() が正。名前は GameEngine.Key の綴り。1 つの操作に複数キーを並べられ、上の行ほど先に見る。",
   "version": 1,
   "sections": {
     "left": {

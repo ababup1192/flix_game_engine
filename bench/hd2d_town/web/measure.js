@@ -1,7 +1,7 @@
 // measure.js — 昼の町のブラウザ版の頁に足す script（make explore-web が index.html の fge-web.js より前へ差し込む）。
 // ?dpr=<数> … 描き先の画素の細かさ（window.devicePixelRatio）を差し替える（描く解像度を落とす手。0.5 なら CSS px 2 つに 1 画素）。
 // ?measure=1 … 押せるようになるまで・押してから最初のコマまでの時間を頁の左下に出す（1 コマの時間は engine の ?fps=1 が左上に出す）。
-// WhyNot: engine_web の fge-web.js に入れない — 描く解像度の差し替えと起動の時間の表示は、この試作の重さを測る段取りだけが使う。
+// WhyNot: engine_web の fge-web.js に入れない — 描く解像度の差し替えと起動の時間の表示は、この試作の重さを測る手順だけが使う。
 (function () {
   "use strict";
   var q = new URLSearchParams(location.search);

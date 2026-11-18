@@ -1,4 +1,4 @@
-// Explore — 昼の町を歩き回る場面（窓あり・ブラウザ版も同じ App）。先頭をキーかスティックで動かし、仲間 2 人は先頭の通った道をなぞる。
+// Explore — 昼の町を歩き回る場面（ウィンドウあり・ブラウザ版も同じ App）。先頭をキーかスティックで動かし、仲間 2 人は先頭の通った道をなぞる。
 // 町は出来上がった姿から（降ってくる演出なし）。カメラは横と奥を先頭へ合わせ、歩く向きへ少し先を見せ（止まると戻る）、高さは遅れて追う。
 // App の w は Resources.With[Res, World]: 地図・絵・格子・Doc は Res、遊びで変わる物（先頭・向き・道・カメラ・時刻）は World。
 
@@ -96,7 +96,7 @@ mod Explore {
             if (length < 0.5) (0.0, 0.0) else (x / length, y / length)
         }
 
-    /// 1 コマ進める（先頭を動かして壁で滑らせ、道を延ばし、カメラを寄せる）。
+    /// 1 コマ進める（先頭を動かして壁で滑らせ、道を延ばし、カメラを近づける）。
     pub def step(frame: App.Frame, res: Res, w: World): World = stepWith(inputOf(res#keys, frame), Float64.min(frame#dt, 0.1), res, w)
 
     /// 操作 input（長さ 0〜1）で dt 秒進める。
@@ -163,7 +163,7 @@ mod Explore {
         let shadows = List.append(List.flatMap(snd, members), List.filterMap(snd, decor));
         { time = w#time | TownScene.sceneOfBoards(town, res#boards, camera, size(), billboards, shadows) }
 
-    /// 遊べる App（実機の窓とブラウザで同じ）。描き方の重さの post が偽なら後がけを掛けない。
+    /// 遊べる App（実機のウィンドウとブラウザで同じ）。描き方の重さの post が偽なら後がけを掛けない。
     pub def appOf(res: Res): App.App[Resources.With[Res, World], {}] =
         let app = App.make(Resources.of(res, initial(res)))
             |> App.addSystem(Resources.system(step))
@@ -186,14 +186,14 @@ mod Explore {
             "${String.padLeft(2, ' ', Int32.toString(r))} ${row}"
         }) |> String.intercalate("\n")
 
-    /// 格子を字で出す（窓を開かない・make explore-grid）。
+    /// 格子を字で出す（ウィンドウを開かない・make explore-grid）。
     pub def printGrid(): Unit \ IO =
         match (run { load(Images.readImageIo, Map.empty()) } with Fs.FileRead.runWithIO) {
             case Ok(res)  => println("[hd2d_town] 板の半分の幅 ${res#hide#halfWidth} m・目への線の横のずれ ${res#hide#sideDrift} m/m・上がり ${res#hide#slope} m/m\n${gridText(res)}")
             case Err(why) => println("[hd2d_town] 町を組めない: ${why}")
         }
 
-    /// 窓ありの入口（make explore）。つまみは環境変数 SHADOW_MAP・DOF・POST（ExploreDoc.qualityWith）。
+    /// ウィンドウありの入口（make explore）。つまみは環境変数 SHADOW_MAP・DOF・POST（ExploreDoc.qualityWith）。
     pub def main(): Unit \ IO =
         if (LwjglLayer.ensureMainThread()) ()
         else {

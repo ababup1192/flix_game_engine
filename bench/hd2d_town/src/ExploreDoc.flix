@@ -9,7 +9,7 @@ mod ExploreDoc {
     /// depthOfField = 手前と奥のぼけ・post = 画面全体の後がけ。
     pub type alias Quality = { shadowMapSize = Int32, depthOfField = Bool, post = Bool }
 
-    /// つまみ。map・look・plan = 地図・見た目・隊列の台本（party と歩きのコマ・息遣い・足元の画面の高さ）の Doc・
+    /// つまみ。map・look・plan = 地図・見た目・隊列のシナリオ（party と歩きのコマ・息遣い・足元の画面の高さ）の Doc・
     /// start・startFace = 先頭が立つマスと向き・speed = 歩く速さ（m/秒・スティックは倒した量を掛ける）・radius = 先頭の円の半径（m）・
     /// spacing = 隊列の間（m）・aheadMeters・aheadRate = 歩く向きへ先を見せる長さ（m）と、そこへ寄る速さ（/秒・止まると同じ速さで戻る）・
     /// heightLagK = カメラの高さが足元の高さを遅れて追う速さ（/秒）・walkZoom = カメラの引き（足元の点からの距離の倍率）・
@@ -27,7 +27,7 @@ mod ExploreDoc {
           walkZoom = 1.35, seenHeight = 0.9, hideReach = 8, passDecor = Set#{"sprites/pigeon.png", "sprites/balloon.png"},
           quality = { shadowMapSize = 4096, depthOfField = true, post = true } }
 
-    /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
+    /// path の Doc を読む。無ければ何も知らせずに既定値・読めなければ 1 行言って既定値。
     pub def loadOr(p: String): Rec \ Fs.FileRead =
         match DocJson.readJson(p) {
             case Ok(json) => JsonCodec.expectObject(json) |> Option.map(decode) |> Option.getWithDefault(defaults())

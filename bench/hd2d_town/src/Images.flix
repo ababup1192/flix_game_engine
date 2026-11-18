@@ -22,7 +22,7 @@ mod Images {
             Ok({ width = w, height = h, argb = argb })
         }
 
-    /// assets/<path> のバイトを decoder で画素にする（ブラウザと実機の窓で同じ道）。
+    /// assets/<path> のバイトを decoder で画素にする（ブラウザと実機のウィンドウで同じ道）。
     pub def readImageWith(decoder: ImageData.ImageDecoder, path: String): Result[String, ImageData.ImageData] \ Fs.FileRead + IO =
         let file = "assets/${path}";
         Fs.FileRead.readBytes(file) |> Result.mapErr(_ -> "${file} を読めない")

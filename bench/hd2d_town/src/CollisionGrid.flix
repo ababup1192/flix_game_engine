@@ -59,7 +59,7 @@ mod CollisionGrid {
 
     /// 建物 b の北の k 行目の列 c に立つキャラの板が、横から見て建物（軒と、南へ行くほど横へずれる目への線）にかかるか。
     def isUnderSide(rule: HideRule, b: Building, c: Int32, k: Int32): Bool =
-        // 先頭の足元はマスの中のどこにも立てるので、建物に一番近い縁で測る
+        // 先頭の足元はマスの中のどこにも立てるので、建物に一番近いふちで測る
         let gap = Float64.max(Int32.toFloat64(b#x - c - 1), Int32.toFloat64(c - b#x - b#w));
         gap < b#overhang + rule#halfWidth + rule#sideDrift * (Int32.toFloat64(k) - 0.5 + Int32.toFloat64(b#h))
 

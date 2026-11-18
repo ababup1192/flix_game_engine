@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ブラウザ版の昼の町を、ヘッドレスの Chrome（CDP）でキーを押して歩かせ、画面を続けて撮る（PC のブラウザで歩けるかの確かめと短い動画）。
-# usage: web_walk_record.py <URL> <出力のフォルダ> [台本.json]
-#   台本 = [[始まりの秒, 終わりの秒, ["ArrowUp", ...]], ...]（押している間のキー・最初のコマからの秒）。無ければ bin/web_walk_demo.json
+# usage: web_walk_record.py <URL> <出力のフォルダ> [手順書.json]
+#   手順書 = [[始まりの秒, 終わりの秒, ["ArrowUp", ...]], ...]（押している間のキー・最初のコマからの秒）。無ければ bin/web_walk_demo.json
 #   （水路の脇の低木に当たって滑り、広場を抜けて大通りを北へ・池に当たって回り込み・木と建物に当たる）。
 #   出力: <フォルダ>/f0000.jpg … と frames.txt（ffmpeg の concat の形・1 枚ごとの長さ）。最後に頁の console の行を console.txt へ。
 # 起こした Chrome はプロセスの組ごと止め、使い捨ての user-data-dir を消す（人の Chrome には触らない）。
