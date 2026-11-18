@@ -1,9 +1,9 @@
 // 動かない物の集まりの持ち越し（Render3d.StaticRows）: いつ前のコマの行を使い、いつ作り直すか・持ち越す物と毎コマの物の分け方・持ち越す行の値。
 mod Render3d.TestStaticRows {
-    use Render3d.FakeGl.{camera, plainTriangle, poseAt, sceneOf, skinnedAt, stderrOf}
+    use Render3d.FakeGl.{camera, cmdOf, freshRecorded, freshState, paint, plainTriangle, poseAt, recordingGl, sceneOf, skinnedAt, stderrOf, timesCalled}
     use Render3d.SceneList.{countAt, flagSameBinding, hasFlag, rowCountOf, valuesAt}
     use Render3d.ScenePlan.{freshPlanner}
-    use Render3d.StaticRows.{CarriedRows, build, carriedGroupsOf, ensure, freshCache, isCarriedItem, perFrameOf, setTime, sizeOf, sweep}
+    use Render3d.StaticRows.{CarriedRows, build, carriedKeyOf, ensure, freshCache, isCarriedItem, perFrameOf, setTime, sizeOf, sweep}
 
     def noRegistered(_name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO = checked_ecast(None)
 
@@ -126,7 +126,7 @@ mod Render3d.TestStaticRows {
 
     def built(g: Scene3d.StaticGroup): CarriedRows \ IO =
         let answer = (requests: Vector[Render3d.ScenePlan.MaterialRequest]) -> Vector.map(_ -> 3, requests);
-        build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, sceneOf(Nil), g)
+        build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, false, sceneOf(Nil), g)
 
     /// 集まりの持ち越さない物は perFrame に入り、色の場面の計画へ instances の後ろに通る。
     @Test
@@ -136,12 +136,39 @@ mod Render3d.TestStaticRows {
         let scene = { instances = walker :: Nil, groups = g :: Nil | sceneOf(Nil) };
         Assert.assertEq(expected = "walker" :: "glass" :: Nil, perFrameOf(scene, built(g) :: Nil) |> List.map(Scene3d.nameOf))
 
-    /// 奥行きの書き出しの場面は集まりを持ち越さず、全部を計画へ通す。
+    def depthScene(): Scene3d.Scene3dCmd = { output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 }) | sceneOf(Nil) }
+
+    def builtDepth(g: Scene3d.StaticGroup): CarriedRows \ IO =
+        let answer = (requests: Vector[Render3d.ScenePlan.MaterialRequest]) -> Vector.map(_ -> 3, requests);
+        build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, false, { groups = g :: Nil | depthScene() }, g)
+
+    /// 奥行きの書き出しの場面も集まりを持ち越し、計画へ通すのは instances と持ち越さない物だけ。
     @Test
-    def testDepthSceneCarriesNothing(): Unit \ Assert =
-        let g = town();
-        let scene = { groups = g :: Nil, output = Scene3d.Output.Depth({ near = 0.1, range = 10.0 }) | sceneOf(Nil) };
-        Assert.assertEq(expected = (0, 3), (List.length(carriedGroupsOf(scene)), List.length(perFrameOf(scene, Nil))))
+    def testDepthScenePerFrameOmitsCarriedItems(): Unit \ {Assert, IO} =
+        let g = Scene3d.staticGroup("mix", ("a", boxAt(1.0)) :: ("g", glass() |> Scene3d.withName("glass")) :: Nil);
+        let walker = boxAt(5.0) |> Scene3d.withName("walker");
+        let scene = { instances = walker :: Nil, groups = g :: Nil | depthScene() };
+        Assert.assertEq(expected = "walker" :: "glass" :: Nil, perFrameOf(scene, builtDepth(g) :: Nil) |> List.map(Scene3d.nameOf))
+
+    /// 色の場面と奥行きの書き出しの場面は、持ち越しの控えの鍵が違う（同じ集まりでも別の行）。
+    @Test
+    def testDepthAndColorScenesUseDifferentKeys(): Unit \ Assert =
+        Assert.assertFalse(carriedKeyOf(false, sceneOf(Nil)) == carriedKeyOf(false, depthScene()))
+
+    /// alpha to coverage の版で作る行は、版を聞かない行と控えの鍵が違う。
+    @Test
+    def testCoverageChangesKey(): Unit \ Assert =
+        Assert.assertFalse(carriedKeyOf(false, sceneOf(Nil)) == carriedKeyOf(true, sceneOf(Nil)))
+
+    /// 奥行きの書き出しの場面の行は、cutout でも両面でもない材質の物を頂点の色の行で描く（材質を問い合わせない）。
+    @Test
+    def testDepthRowsDrawPlainMaterialsAsShapes(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = 0, Vector.length(builtDepth(town())#requests))
+
+    /// 奥行きの書き出しの場面の行は影の地図の行を持たない（その場面は影の地図を描かない）。
+    @Test
+    def testDepthRowsHaveNoShadowRows(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = 0, rowCountOf(builtDepth(town())#shadowList))
 
     /// 持ち越す行は外した鍵の物を描かない。
     @Test
@@ -183,8 +210,31 @@ mod Render3d.TestStaticRows {
         let answer = (requests: Vector[Render3d.ScenePlan.MaterialRequest]) -> Vector.map(_ -> 3, requests);
         let at = (eye: Vec3.Vec3) -> {
             let scene = Scene3d.scene({ eye = eye | camera() }, { x = 64.0, y = 64.0 });
-            let rows = build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, scene, town());
+            let rows = build(freshPlanner(Render3d.DrawMode.Instanced), freshTables(), answer, false, scene, town());
             Array.toList(rows#list#rows)
         };
         Assert.assertEq(expected = at(Vec3.v3(0.0, 0.0, -5.0)), at(Vec3.v3(40.0, 10.0, 30.0)))
+
+    // ── GL の描き手 ──
+
+    /// GL の描き手は同じ集まりを毎コマ描いても、1 体ごとの値のテクスチャを上げるのは最初の 1 回だけ。
+    @Test
+    def testGlUploadsGroupValuesOnce(): Unit \ {Assert, IO} =
+        let log = freshRecorded();
+        let gl = recordingGl(log);
+        let state = freshState();
+        let scene = { groups = town() :: Nil | sceneOf(Nil) };
+        List.range(0, 3) |> List.forEach(_ -> paint(gl, state, cmdOf(scene) :: Nil));
+        Assert.assertEq(expected = 1, timesCalled("texSubImageRgba32f", log))
+
+    /// GL の描き手で同じ集まりを色の場面と奥行きの書き出しの場面で描くと、控えは 2 つ（行の決め方が違う）。
+    @Test
+    def testGlKeepsColorAndDepthRowsApart(): Unit \ {Assert, IO} =
+        let gl = recordingGl(freshRecorded());
+        let state = freshState();
+        let g = town();
+        let color = { groups = g :: Nil | sceneOf(Nil) };
+        let depth = { groups = g :: Nil | depthScene() };
+        paint(gl, state, cmdOf(color) :: cmdOf(depth) :: Nil);
+        Assert.assertEq(expected = 2, Render3d.GlStatic.sizeOf(state#statics))
 }

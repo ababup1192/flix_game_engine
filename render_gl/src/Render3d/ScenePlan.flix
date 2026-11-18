@@ -167,14 +167,28 @@ mod Render3d.ScenePlan {
         let scenes = cmds |> List.map(groupScene(planner, tables, caps, samples));
         { scenes = scenes, requests = MutList.toArray(Static, tables#requests) |> Array.toVector, members = tables#members }
 
-    /// 持ち越す物 items を、視錐台で間引かずに候補に分ける（色の pass の材質の候補と、影の地図の形だけの候補）。variant = 場面のシェーダーの変種。
-    /// 答えは (色の pass の候補, 影の地図の候補, backend に聞く材質, batch の描く物)。
-    // WhyNot: alpha to coverage の版を聞かない — 持ち越すのは alpha to coverage を持たない WebGPU の backend だけ（GL は持ち越さない・Render3d.StaticRows の頭）。
-    pub def groupCarried(planner: Planner, variant: ShaderVariant, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
+    /// 場面 scene の持ち越す物 items を、視錐台で間引かずに候補に分ける（場面の pass の候補と、影の地図の形だけの候補）。
+    /// 場面の pass の候補は groupScene と同じ決め方（材質を組む物・変種は場面の Output で決まる）。奥行きの書き出しの場面は影の地図を描かないので影の候補は空。
+    /// coverage = cutout を alpha to coverage の版にするか（coverageOf。持ち越しの控えの鍵にも入れる）。
+    /// 答えは (場面の pass の候補, 影の地図の候補, backend に聞く材質, batch の描く物)。
+    pub def groupCarried(planner: Planner, coverage: Bool, scene: Scene3d.Scene3dCmd, items: List[Scene3d.Instance3d]): (List[Group], List[SpanBatch], Vector[MaterialRequest], MutList[MeshDraw, Static]) \ IO =
         let tables = freshTables();
-        let lit = groupWith(grouping(planner, tables, _ -> false, _ -> true, false, variant), items);
-        let shadow = groupWith(grouping(planner, tables, _ -> false, _ -> false, false, variant), items) |> List.map(gr -> gr#batch);
+        let spec = passSpecOf(scene#output);
+        let variant = Render3d.passVariantOf(scene);
+        let lit = groupWith(grouping(planner, tables, _ -> false, materialWantedIn(spec), coverage, variant), items);
+        let shadow = match spec {
+            case ScenePassSpec.Color       => groupWith(grouping(planner, tables, _ -> false, _ -> false, false, variant), items) |> List.map(gr -> gr#batch)
+            case ScenePassSpec.DepthOut(_) => Nil
+        };
         (lit, shadow, MutList.toArray(Static, tables#requests) |> Array.toVector, tables#members)
+
+    /// pass spec の場面で材質のプログラムを組む材質か（組まない材質の物は頂点の色の道で形だけ描く）。
+    // WhyNot: 奥行きの書き出しで cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
+    //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
+    def materialWantedIn(spec: ScenePassSpec): Scene3d.MaterialFields -> Bool = match spec {
+        case ScenePassSpec.Color       => _ -> true
+        case ScenePassSpec.DepthOut(_) => m -> m#cutout or m#doubleSided
+    }
 
     /// 置いた物を候補に分ける（Preload の形。場面の矩形も影も持たない）。outside = 間引く物か・variant = 組むプログラムの変種。
     pub def groupInstances(planner: Planner, variant: ShaderVariant, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
@@ -187,26 +201,28 @@ mod Render3d.ScenePlan {
                  variant: ShaderVariant): Grouping \ IO =
         { planner = planner, tables = tables, outside = outside, wants = wants, coverage = coverage, variant = variant, cache = new IdentityHashMap() }
 
-    /// 場面の置いた物を、Output に合わせて batch の候補に分け、影の地図の batch も分ける。
+    /// 場面 scene の色の pass で cutout を alpha to coverage の版にするか（標本を持つ Native の描き先で、backend が alpha to one を持つ時）。
+    /// samples = 描き先の標本の数。奥行きの書き出しの場面は版を聞かないので偽。
     // WhyNot: Design の解像度の描き先に標本を持たせない — ドット絵と画素をそろえる場面に縁のならしは要らない。
+    pub def coverageOf(caps: PlanCaps, samples: Int32, scene: Scene3d.Scene3dCmd): Bool = match (scene#resolution, scene#output) {
+        case (Scene3d.Resolution.Native, Scene3d.Output.Color) => samples > 1 and caps#alphaToOne
+        case _                                                 => false
+    }
+
+    /// 場面の置いた物を、Output に合わせて batch の候補に分け、影の地図の batch も分ける。
     def groupScene(planner: Planner, tables: Tables, caps: PlanCaps, samples: Int32, cd: (Scene3d.RenderCmd, List[Scene3d.Instance3d])): GroupedScene \ IO =
         let (cmd, drawn) = cd;
         let scene = cmd#scene;
         let outside = Scene3d.isOutsideFrustum(Scene3d.frustumOf(scene));
-        let coverage = match scene#resolution {
-            case Scene3d.Resolution.Native => samples > 1 and caps#alphaToOne
-            case Scene3d.Resolution.Design => false
-        };
+        let coverage = coverageOf(caps, samples, scene);
         let mainPass = passSpecOf(scene#output);
         let variant = Render3d.passVariantOf(scene);
         let groups = match mainPass {
-            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, _ -> true, coverage, variant), drawn)
+            case ScenePassSpec.Color => groupWith(grouping(planner, tables, outside, materialWantedIn(mainPass), coverage, variant), drawn)
             case ScenePassSpec.DepthOut(_) =>
-                // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
-                //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
                 // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
                 let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), drawn);
-                groupWith(grouping(planner, tables, outside, m -> m#cutout or m#doubleSided, false, variant), solidInstances)
+                groupWith(grouping(planner, tables, outside, materialWantedIn(mainPass), false, variant), solidInstances)
         };
         { cmd = cmd, mainPass = mainPass, groups = groups, shadowPlans = shadowPlansOf(planner, tables, scene, drawn) }
 

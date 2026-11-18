@@ -1,9 +1,9 @@
 // Render3d.StaticRows — 動かない物の集まり（Scene3d.staticGroup）の計画と描く行を、コマをまたいで持ち越す所（前半の側。GPU を呼ばない）。
-// 集まりごとに 1 回だけ候補に分け、1 体ごとの値を詰め、色の pass の行（頂点の色と不透明の材質）と影の地図の行を作る（build）。backend は答えを GPU に置いて毎コマ描く。
-// 同じ集まりかは、名前・staticGroup で作った items の値そのもの（参照）・外した鍵・tint で見る（中身は比べない・Cache）。
-// 半透明（目から遠い順に毎コマ並べ直す）と骨つき（姿勢が毎コマ変わる）は持ち越さず、場面の計画へ通す（perFrameOf）。奥行きの書き出しの場面は全部を計画へ通す。
+// 集まりごとに 1 回だけ候補に分け、1 体ごとの値を詰め、場面の pass の行（頂点の色と不透明の材質）と影の地図の行を作る（build）。backend は答えを GPU に置いて毎コマ描く。
+// 同じ集まりかは、名前・staticGroup で作った items の値そのもの（参照）・外した鍵・tint・行の決め方の鍵（色の場面か奥行きの書き出しか・変種・alpha to coverage）で見る（中身は比べない・Cache）。
+// 半透明（目から遠い順に毎コマ並べ直す）と骨つき（姿勢が毎コマ変わる）は持ち越さず、場面の計画へ通す（perFrameOf）。
 // WhyNot: 持ち越す物を視錐台で間引かない — 持ち越した行は目の位置に依らず、間引くと目が動くたびに作り直しになる（遠くを描かないのは、集まりを区画に分けてゲームが載せ外しする）。
-// WhyNot: GL の backend から使わない — GL は集まりの物を instances の後ろに並べて今の道で描く（GL の絵を 1 bit も変えない）。
+// backend は WebGPU（Render3d.WebGpuStatic）と GL（Render3d.GlStatic）。どちらも持ち越した行を場面の行の前に描く。
 mod Render3d.StaticRows {
     import java.lang.Object
     import java.nio.ByteBuffer
@@ -21,11 +21,9 @@ mod Render3d.StaticRows {
     pub def isCarriedItem(i: Scene3d.Instance3d): Bool =
         not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)) and Option.isEmpty(Scene3d.skinningOf(i))
 
-    /// 場面の計画へ通す物: 色の場面は instances と、持ち越した集まりの持ち越さない物（carried の perFrame）・奥行きの書き出しの場面は全部（Scene3d.instancesOf）。
-    pub def perFrameOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): List[Scene3d.Instance3d] = match scene#output {
-        case Scene3d.Output.Depth(_) => Scene3d.instancesOf(scene)
-        case Scene3d.Output.Color    => List.foldRight((c, acc) -> List.append(c#perFrame, acc), Nil, carried) |> List.append(scene#instances)
-    }
+    /// 場面の計画へ通す物: instances と、持ち越した集まりの持ち越さない物（carried の perFrame）。
+    pub def perFrameOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): List[Scene3d.Instance3d] =
+        List.foldRight((c, acc) -> List.append(c#perFrame, acc), Nil, carried) |> List.append(scene#instances)
 
     /// 場面に描く物が 1 つでもあるか（集まりは外していない鍵が 1 つでもあるか。先頭で止まり、描く物の列を作らない）。
     pub def hasDrawnItem(scene: Scene3d.Scene3dCmd): Bool =
@@ -34,21 +32,24 @@ mod Render3d.StaticRows {
             List.exists(kv -> not Set.memberOf(fst(kv), r#removed), r#items)
         }, scene#groups)
 
-    /// 場面の置いた物の数（診断）。carried = 持ち越した集まり（色の場面）。奥行きの書き出しの場面は集まりの物も数える。
-    pub def placedCountOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): Int32 = match scene#output {
-        case Scene3d.Output.Color    => List.length(scene#instances) + List.sumWith(c -> c#placed + List.length(c#perFrame), carried)
-        case Scene3d.Output.Depth(_) => List.length(Scene3d.instancesOf(scene))
-    }
+    /// 場面の置いた物の数（診断）。carried = 場面の持ち越した集まり。
+    pub def placedCountOf(scene: Scene3d.Scene3dCmd, carried: List[CarriedRows]): Int32 =
+        List.length(scene#instances) + List.sumWith(c -> c#placed + List.length(c#perFrame), carried)
 
-    /// 場面の持ち越す集まり（色の場面だけ）。
-    pub def carriedGroupsOf(scene: Scene3d.Scene3dCmd): List[Scene3d.StaticGroup] = match scene#output {
-        case Scene3d.Output.Color    => scene#groups
-        case Scene3d.Output.Depth(_) => Nil
-    }
+    /// 場面 scene の持ち越した行の決め方の鍵（ensure の variant）。色の場面か奥行きの書き出しか・場面の pass の変種（Render3d.passVariantOf）・
+    /// coverage = cutout を alpha to coverage の版にするか（Render3d.ScenePlan.coverageOf）。
+    // WhyNot: 奥行きの書き出しの場面で色の場面の行を使わない — 奥行きの書き出しは cutout でも両面でもない材質を頂点の色の道で描き、変種も既定で、行が違う。
+    // WhyNot: 奥行きの書き出しの near と range を鍵に入れない — 行には入らず、場面の値で渡す。
+    pub def carriedKeyOf(coverage: Bool, scene: Scene3d.Scene3dCmd): String =
+        let output = match scene#output {
+            case Scene3d.Output.Color    => "color"
+            case Scene3d.Output.Depth(_) => "depth"
+        };
+        output + Render3d.variantKeyOf(Render3d.passVariantOf(scene)) + (if (coverage) "+a2c" else "")
 
     // ── 行を作る ──
 
-    /// 集まり 1 つの持ち越す行。list = 色の pass の行（頂点の色 → 不透明の材質。ビルボードと半透明の行は無い）・shadowList = 影の地図の行（形だけ）・
+    /// 集まり 1 つの持ち越す行。list = 場面の pass の行（頂点の色 → 不透明の材質。ビルボードと半透明の行は無い）・shadowList = 影の地図の行（形だけ・奥行きの書き出しの場面は空）・
     /// instances = 1 体ごとの値（list と shadowList の行の欄 3 が頭からの番号で指す）・instanceCount = その体の数・requests = 行の欄 1 が引く材質の問い合わせ・
     /// timeAt = list の values の中の uTime の位置（値の区画ごとに 1 つ）・time = values に書いた時刻（要素 1 つ）・placed = 持ち越す物の数・
     /// meshSlots = 行の形の控え（毎コマ使った物にする）・perFrame = 集まりの持ち越さない物（半透明と骨つき。毎コマ場面の計画へ通す）。
@@ -57,12 +58,13 @@ mod Render3d.StaticRows {
         timeAt = Vector[Int32], time = Array[Float64, Static], placed = Int32, meshSlots = Vector[MeshTable.Slot], perFrame = List[Scene3d.Instance3d]
     }
 
-    /// 集まり g の持ち越す物の行を作る。resolve = 材質の問い合わせに順の番号で答える（backend。0 なら頂点の色で描く）・scene = 絵の名前と時刻を引く場面。
+    /// 集まり g の持ち越す物の行を作る。resolve = 材質の問い合わせに順の番号で答える（backend。0 なら頂点の色で描く）・
+    /// coverage = cutout を alpha to coverage の版にするか（carriedKeyOf に渡す物と同じ）・scene = 行の決め方（Output・変種）と絵の名前と時刻を引く場面。
     /// 形と絵の番号は tables で振る（GPU には作らない）。
-    pub def build(planner: Planner, tables: Tables, resolve: Vector[MaterialRequest] -> Vector[Int32] \ ef, scene: Scene3d.Scene3dCmd,
+    pub def build(planner: Planner, tables: Tables, resolve: Vector[MaterialRequest] -> Vector[Int32] \ ef, coverage: Bool, scene: Scene3d.Scene3dCmd,
                   g: Scene3d.StaticGroup): CarriedRows \ ef + IO =
         let (items, perFrame) = Scene3d.groupInstancesOf(g) |> List.partition(isCarriedItem);
-        let (lit, shadow, requests, members) = groupCarried(planner, Render3d.shaderVariantOf(scene), items);
+        let (lit, shadow, requests, members) = groupCarried(planner, coverage, scene, items);
         let (plain, materials) = splitGroups(lit, resolve(requests));
         let opaque = materialsInOrder(planner, materials);
         let total = List.sumWith(b -> b#count, plain) + List.sumWith(d -> d#batch#count, opaque) + List.sumWith(b -> b#count, shadow);
@@ -129,7 +131,7 @@ mod Render3d.StaticRows {
     /// 集まり 1 つの控え。items = staticGroup で作った items の値だけを鍵に持つ表（参照で比べる）・removed と tint = 作った時の外した鍵と色・
     /// payload = backend が置いた物・lastUsed = 最後に描いたコマの世代（要素 1 つ）。
     // WhyNot: items を Eq で比べない — 中身の比べは物の数だけ形と材質を辿り、持ち越しで省きたい仕事と同じ重さになる。
-    /// variant = 作った時の場面のシェーダーの変種の鍵（Render3d.variantKeyOf。材質のプログラムの版が変種で違う）。
+    /// variant = 作った時の行の決め方の鍵（carriedKeyOf。材質のプログラムの版と、材質を組む物が場面で違う）。
     type alias Entry[a] = { items = IdentityHashMap[Object, Object], removed = Set[String], tint = Color, variant = String, payload = a, lastUsed = Array[Int64, Static] }
 
     /// 持ち越しの控え（a = backend が GPU に置いた物）。entries = 集まりの名前 → 控えの列（同じ名前でも中身の違う集まりを 1 コマに何場面かで描くと 2 つ以上）・
@@ -142,7 +144,7 @@ mod Render3d.StaticRows {
     /// この数のコマ続けて同じ名前の集まりを作り直したら、1 回知らせる。
     def rebuildStreakLimit(): Int32 = 30
 
-    /// 集まり g の持ち越した物。名前・items の値・外した鍵・tint・場面の変種の鍵 variant が同じ控えがあればその物、無ければ build で作る（重い）。gen = 今のコマの世代。
+    /// 集まり g の持ち越した物。名前・items の値・外した鍵・tint・行の決め方の鍵 variant（carriedKeyOf）が同じ控えがあればその物、無ければ build で作る（重い）。gen = 今のコマの世代。
     /// 作る時は、同じ名前の控えのうち今のコマで使っていない物を retire へ渡す（今のコマで使った物は、ほかの場面が描くので残す）。
     pub def ensure(planner: Planner, cache: Cache[a], gen: Int64, g: Scene3d.StaticGroup, variant: String, make: Unit -> a \ ef1, retire: a -> Unit \ ef2): a \ ef1 + ef2 + IO =
         let f = Scene3d.staticGroupFieldsOf(g);

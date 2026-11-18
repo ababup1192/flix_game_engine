@@ -7,7 +7,7 @@ mod Render3d.Shadow {
                   programsOf, blankTextureUnit, pointShadowTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram}
     use Render3d.GlRows.{drawBillboardRuns}
     use Render3d.Counts.{BatchBreak, Counter, count, countDrawCall}
-    use Render3d.SceneList.{SceneList, SceneRowKind, billboardAt, breakSlotAt, countAt, firstBillboardRowOf, firstBlendedRowOf, firstInstanceAt, headAt, kindAt, valuesAt}
+    use Render3d.SceneList.{SceneList, SceneRowKind, billboardAt, breakSlotAt, countAt, firstBillboardRowOf, firstBlendedRowOf, firstInstanceAt, headAt, kindAt, rowCountOf, valuesAt}
     use Render3d.ShadowMaps.{Key, ShadowPass, ShadowSampling}
 
     // ── 影の地図 ──
@@ -25,13 +25,16 @@ mod Render3d.Shadow {
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
     /// ビルボードの行は行に入れた絵の番号（行を作る時に全体の登録から引いた物）で描く。
     /// 点光源の影の atlas は鍵ごとに初めの面の前に 1 回だけ全体を消し、面ごとに viewport と scissor を面の塊に置いて描く。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, passes: List[List[ShadowPass]]): List[SceneShadows] \ IO =
+    /// passes の組の 2 つ目 = 場面の持ち越した集まり（影の行を場面の行の後に描く）・instanceTexture = その prepare の 1 体ごとの値のテクスチャ（集まりの行を描いた後に貼り直す）。
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, instanceTexture: Option[Int32],
+                          passes: List[(List[ShadowPass], List[Render3d.GlStatic.CarriedDraw])]): List[SceneShadows] \ IO =
         let cleared = Ref.fresh(Static, (Set.empty(): Set[Key]));
-        let shadows = passes |> List.map(scenePasses -> {
+        let shadows = passes |> List.map(pc -> {
+            let (scenePasses, carried) = pc;
             let casts = scenePasses |> List.filterMap(pass -> shadowTarget(gl, state, gen, pass#map#key) |> Option.map(target -> {
                 let first = not Set.memberOf(pass#map#key, Ref.get(cleared));
                 Ref.put(Set.insert(pass#map#key, Ref.get(cleared)), cleared);
-                renderShadowMap(gl, state, gen, target, pass, first);
+                renderShadowMap(gl, state, gen, target, pass, first, { carried = carried, restore = instanceTexture });
                 castOf(target, pass#map#sampling)
             }));
             { spot = List.findMap(spotOf, casts), sun = List.findMap(sunOf, casts), point = List.findMap(pointOf, casts) }
@@ -123,8 +126,10 @@ mod Render3d.Shadow {
         else ()
 
     /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。行は骨の無い物 → 骨つきの物 → castShadows のビルボードの順（Render3d.SceneList.buildShadowList）。
-    /// first = この描き先へ今の renderShadows で初めて描くか（atlas は初めての面の前だけ全体を消す）。
-    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, pass: ShadowPass, first: Bool): Unit \ IO =
+    /// first = この描き先へ今の renderShadows で初めて描くか（atlas は初めての面の前だけ全体を消す）・
+    /// carried = 場面の持ち越した集まり（場面の行の後にその影の行を描く）と、描いた後に貼り直す 1 体ごとの値のテクスチャ restore。
+    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, pass: ShadowPass, first: Bool,
+                        carried: { carried = List[Render3d.GlStatic.CarriedDraw], restore = Option[Int32] }): Unit \ IO =
         let locs = programsOf(gl, state)#depth;
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
         match pass#map#tile {
@@ -141,6 +146,10 @@ mod Render3d.Shadow {
             let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{locs#mesh#program} @ Static };
             useMeshProgram(gl, locs#mesh, frame#lightView, frame#identity);
             drawShadowRows(gl, state, gen, frame, 0, firstBillboardRowOf(pass#list));
+            Render3d.GlStatic.withValues(gl, carried#restore, c -> {
+                let shadowList = c#carried#rows#shadowList;
+                drawShadowRows(gl, state, gen, { list = shadowList | frame }, 0, rowCountOf(shadowList))
+            }, carried#carried);
             drawShadowBillboards(gl, state, frame, pass)
         }
 

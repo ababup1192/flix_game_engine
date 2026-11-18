@@ -29,7 +29,7 @@ mod Render3d {
                        depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
-    use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, groupScenes, planScenes}
+    use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, coverageOf, groupScenesWith, planScenes}
     use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, firstBillboardRowOf, firstBlendedRowOf, valuesAt}
     use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawBlendedRows, drawRows, uploadRows}
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
@@ -333,7 +333,9 @@ mod Render3d {
         // 1 体ごとの値のテクスチャの置き場。
         instances = Render3d.GlRows.DataTexture.DataTextures,
         // 計画の側の状態（置いた物の描き方と知らせ済みの鍵。GL の物を持たない）。
-        planner = Render3d.ScenePlan.Planner
+        planner = Render3d.ScenePlan.Planner,
+        // 動かない物の集まりの持ち越し（Render3d.GlStatic）。
+        statics = Render3d.GlStatic.StaticCache
     }
 
     // ── 決まりの数 ──
@@ -403,7 +405,7 @@ mod Render3d {
           phaseNsHolder = Array.repeat(Static, Render3d.Counts.phaseSlots(), 0i64), materialBuildsRef = Ref.fresh(Static, Nil),
           preloadRef = Ref.fresh(Static, Render3d.Preload.empty()),
           joints = Render3d.GlRows.DataTexture.freshTextures(), instances = Render3d.GlRows.DataTexture.freshTextures(),
-          planner = Render3d.ScenePlan.freshPlanner(drawMode) }
+          planner = Render3d.ScenePlan.freshPlanner(drawMode), statics = Render3d.GlStatic.fresh() }
 
     /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限は config（project.json）から読む。
     pub def makeRenderer(gl: GlContext, config: GameEngine.EngineConfig, drawMode: DrawMode): Scene3dRenderer.Renderer \ IO =
@@ -437,27 +439,29 @@ mod Render3d {
     def prepareScenes(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                       dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
         // 影の地図は全部の場面の姿勢を上げた後に描く — 影の道も同じ行を読む。
-        let (plans, lists, materials, textures, shadowPasses) = timed(state, Phase.Split, () -> {
+        let (plans, lists, materials, textures, shadowPasses, carried) = timed(state, Phase.Split, () -> {
             let caps = planCapsOf(gl, state);
-            let grouped = groupScenes(state#planner, caps, dest#samples, cmds);
+            let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf, flipsTargetV = true };
+            let carried = cmds |> List.map(cmd -> Render3d.GlStatic.carriedOf(gl, state, gen, tables, coverageOf(caps, dest#samples, cmd#scene), cmd#scene));
+            let perFrame = List.zip(cmds, carried) |> List.map(match (cmd, cs) -> (cmd, Render3d.StaticRows.perFrameOf(cmd#scene, List.map(c -> c#carried#rows, cs))));
+            let grouped = groupScenesWith(state#planner, caps, dest#samples, perFrame);
             let materials = resolveMaterials(gl, state, gen, grouped#requests);
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
             let joints = Render3d.GlRows.JointTexture.upload(gl, state, gen, rows);
             let (numbered, instances) = Render3d.GlRows.Instancing.upload(gl, state, gen, planned, grouped#members);
-            let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf, flipsTargetV = true };
             let lists = List.map(buildScenePasses(tables), numbered);
             let shadowUses = Render3d.ShadowMaps.assign(state#planner, List.map(plan -> plan#shadowPlans, numbered));
             let shadowPasses = List.zip(shadowUses, numbered) |> List.map(match (uses, plan) -> Render3d.ShadowMaps.buildPasses(tables, uses, plan));
-            (numbered, lists, materials, (joints, instances), shadowPasses)
+            (numbered, lists, materials, (joints, instances), shadowPasses, carried)
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, shadowPasses));
+        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, instanceTexture, List.zip(shadowPasses, carried)));
         let designCount = Array#{0} @ Static;
-        let items = List.zip(List.zip(plans, lists), shadows) |> List.map(pls -> {
-            let ((plan, passes), shadow) = pls;
+        let items = List.zip(List.zip(plans, lists), List.zip(shadows, carried)) |> List.map(pls -> {
+            let ((plan, passes), (shadow, cs)) = pls;
             let inputs = { passes = passes, materials = materials, shadows = shadow,
-                           jointTexture = jointTexture, instanceTexture = instanceTexture };
+                           jointTexture = jointTexture, instanceTexture = instanceTexture, carried = cs };
             let target = match plan#cmd#scene#resolution {
                 case Scene3d.Resolution.Native => SceneTarget.Native(inputs)
                 case Scene3d.Resolution.Design =>
@@ -589,7 +593,7 @@ mod Render3d {
         if (area#fillBackground) drawSky(gl, state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene);
         noteDroppedLights(state, scene);
-        noteStaticGroups(state, scene);
+        Render3d.ScenePlan.noteStaticGroupHint(state#planner, Scene3d.instancesOf(scene) |> List.length, scene);
         let lights = lightDataOf(picked, environmentLevels);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
@@ -598,6 +602,8 @@ mod Render3d {
         let camera = { view = view, proj = proj, lights = lights, shadows = shadows, variant = variant };
         Render3d.GlRows.DataTexture.bind(gl, jointTextureUnit(), inputs#jointTexture);
         Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
+        Render3d.GlStatic.setTime(scene#time, inputs#carried);
+        inputs#carried |> List.forEach(c -> uploadRows(gl, state, gen, source, Render3d.GlStatic.inputsOf(inputs, c), 0));
         uploadRows(gl, state, gen, source, inputs, List.length(Scene3d.instancesOf(scene)));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardLocsFor(gl, state, variant), scene = scene };
         inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
@@ -608,6 +614,7 @@ mod Render3d {
     type alias PassContext = { camera = CameraData, eye = Vec3.Vec3, source = TextureSource, billboard = BillboardLocs, scene = Scene3d.Scene3dCmd }
 
     /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。色の pass は不透明の行 → ビルボードの行 → 半透明の行・奥行きの書き出しは不透明の行 → ビルボードの行。
+    /// 持ち越した集まり（inputs#carried）の行は、不透明の行の前に描く（Render3d.GlStatic の頭）。
     // WhyNot: ビルボードの灰色と空の白を spec でなく scene#output で決めたままにする — 場面の pass が 1 つで spec と output が 1 対 1（空は行になっていない）。
     def drawPass(gl: GlContext, state: State, gen: Int64, ctx: PassContext,
                  inputs: SceneInputs, spec: ScenePassSpec, list: SceneList): Unit \ IO =
@@ -615,14 +622,20 @@ mod Render3d {
         match spec {
             case ScenePassSpec.Color =>
                 bindShadowMap(gl, inputs#shadows);
+                drawCarriedRows(gl, state, gen, ctx, MaterialPass.Color, inputs);
                 drawRows(gl, state, gen, camera, MaterialPass.Color, ctx#eye, ctx#source, inputs, list);
                 drawBillboards(gl, state, ctx#billboard, camera, ctx#scene, list);
                 drawBlendedRows(gl, state, gen, camera, ctx#eye, ctx#source, inputs, list);
                 unbindShadowMap(gl, inputs#shadows)
             case ScenePassSpec.DepthOut(dr) =>
+                drawCarriedRows(gl, state, gen, ctx, MaterialPass.Depth(dr), inputs);
                 drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), ctx#eye, ctx#source, inputs, list);
                 drawBillboards(gl, state, ctx#billboard, camera, ctx#scene, list)
         }
+
+    def drawCarriedRows(gl: GlContext, state: State, gen: Int64, ctx: PassContext, pass: MaterialPass, inputs: SceneInputs): Unit \ IO =
+        Render3d.GlStatic.withValues(gl, inputs#instanceTexture, c ->
+            drawRows(gl, state, gen, ctx#camera, pass, ctx#eye, ctx#source, Render3d.GlStatic.inputsOf(inputs, c), c#carried#rows#list), inputs#carried)
 
     /// プログラム entry と材質 m で頭の物 head の batch を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
     def materialTextureNames(entry: MaterialEntry, m: Scene3d.MaterialFields, head: MeshDraw): List[TextureRead] =
@@ -716,13 +729,6 @@ mod Render3d {
         else ()
 
     def warnSceneOnce(state: State, key: String, message: String): Unit \ IO = Render3d.ScenePlan.warnOnce(state#planner, key, message)
-
-    /// GL の描き手は staticGroup を持ち越さない（毎コマ instances と同じに計画して描く）ので、groups のある場面で 1 回だけ知らせる。
-    /// 置いた物が多く groups の無い場面が続いた時の知らせ（noteStaticGroupHint）も出す。
-    def noteStaticGroups(state: State, scene: Scene3d.Scene3dCmd): Unit \ IO =
-        if (List.isEmpty(scene#groups)) ()
-        else warnSceneOnce(state, "@gl-static-groups", "scene3d: GL の描き手は staticGroup の計画と 1 体ごとの値を持ち越さない — 毎コマ置いた物と同じに描く（絵は同じ・CPU は減らない）");
-        Render3d.ScenePlan.noteStaticGroupHint(state#planner, Scene3d.instancesOf(scene) |> List.length, scene)
 
     // ── 置いた物 ──
 
@@ -920,20 +926,25 @@ mod Render3d {
         sweepTextures3d(gl, state, gen);
         Render3d.GlRows.DataTexture.endFrame(gl, state#joints, gen);
         Render3d.GlRows.DataTexture.endFrame(gl, state#instances, gen);
-        trimToBudget(gl, state, gen)
+        let evicted = trimToBudget(gl, state, gen);
+        Render3d.GlStatic.endFrame(gl, state#statics, gen, evicted)
     })
 
-    /// 頂点の合計が上限に収まるまで、形を捨てる（捨てる順は meshEvictions・選ぶのは Render3d.MeshTable.trim）。
-    def trimToBudget(gl: GlContext, state: State, gen: Int64): Unit \ IO =
+    /// 頂点の合計が上限に収まるまで、形を捨てる（捨てる順は meshEvictions・選ぶのは Render3d.MeshTable.trim）。捨てた形があれば真。
+    def trimToBudget(gl: GlContext, state: State, gen: Int64): Bool \ IO =
         let preloaded = Ref.get(state#preloadRef)#meshes;
         let victims = Render3d.MeshTable.trim(state#meshes, meshAllocator(gl, state), gen, vertexBudget(), preloaded);
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る。
-        if (List.isEmpty(victims)) ()
+        if (List.isEmpty(victims)) false
         else {
-            count(state, Counter.MeshEvictions, List.length(victims));
-            warnDroppedMeshes(state#planner, victims, preloaded);
-            Log.warn("scene3d: メッシュの置き場が頂点 ${vertexBudget()} を超えたので、古い形を ${List.length(victims)} 個捨てた")
+            noteEvictions(state, victims, preloaded);
+            true
         }
+
+    def noteEvictions(state: State, victims: List[String], preloaded: Set[String]): Unit \ IO =
+        count(state, Counter.MeshEvictions, List.length(victims));
+        warnDroppedMeshes(state#planner, victims, preloaded);
+        Log.warn("scene3d: メッシュの置き場が頂点 ${vertexBudget()} を超えたので、古い形を ${List.length(victims)} 個捨てた")
 
     /// entries = (鍵, 頂点の数, 最後に使った世代)。頂点の合計を vertexLimit に収めるために捨てる形の鍵。今と前のコマで使った物
     /// （Pass の場面は画面のコマの 1 つ前の世代で描かれる）は選ばず、先に上げていない物から、最後に使ったのが古い順に選ぶ。

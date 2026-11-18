@@ -87,9 +87,9 @@ pub mod Render3d.GlRows.DataTexture {
         Ref.put(Map.insert(slot, texture, held), textures#texturesRef);
         texture
 
-    /// NEAREST で読むテクスチャを作り、今の unit に貼って返す。
+    /// NEAREST で読むテクスチャ（幅 textureWidth()・高さ height）を作り、今の unit に貼って返す。
     // WhyNot: LINEAR にしない — WebGL2 の RGBA32F は不完全なテクスチャになり、読むと 0 が返って形が消える。
-    def createTexture(gl: GlContext, gen: Int64, height: Int32): DataTexture \ IO =
+    pub def createTexture(gl: GlContext, gen: Int64, height: Int32): DataTexture \ IO =
         let texId = gl.createTexture();
         gl.bindTexture(GlConst.TEXTURE_2D, texId);
         gl.texImageRgba32f(textureWidth(), height);

@@ -16,10 +16,10 @@ mod Render3d.GlRows {
 
     /// 場面を描く時に場面の外から渡す物。passes = 場面の pass と、その行（計画の答え・列の順に描く）・materials = その prepare の材質の表・
     /// shadows = 先に描いておいた影の地図（スポットと太陽。無ければ None）・jointTexture = その prepare の joint texture（姿勢が無ければ None）・
-    /// instanceTexture = その prepare の 1 体ごとの値のテクスチャ（描く物が無ければ None）。
+    /// instanceTexture = その prepare の 1 体ごとの値のテクスチャ（描く物が無ければ None）・carried = 場面の持ち越した集まり（Render3d.GlStatic）。
     pub type alias SceneInputs = {
         passes = ScenePasses, materials = MaterialTable, shadows = SceneShadows,
-        jointTexture = Option[Int32], instanceTexture = Option[Int32]
+        jointTexture = Option[Int32], instanceTexture = Option[Int32], carried = List[Render3d.GlStatic.CarriedDraw]
     }
 
     /// 場面をどう 2D の並びへ出すか。Native = その場で描く・Design = 先に描いておいた描き先を貼る（大きさの無い場面は None で、何も出さない）。
