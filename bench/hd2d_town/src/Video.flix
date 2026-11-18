@@ -54,7 +54,7 @@ mod Video {
 
     /// 場面に後がけを掛けた、CPU で描く 1 枚の中身。
     def fullSceneOf(look: Look, focus: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
-        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postAt(look, focus, scene#time));
+        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postAt(look, focus, scene#time, design()#x));
         let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
             |> List.map(s -> { name = s#name, clear = s#clear, drawables = s#drawables, polygons = s#polygons, surfaces = s#surfaces, scenes = s#scenes, target = s#target });
         let soft = Render.softSceneOf(_ -> None, built#present :: Nil);

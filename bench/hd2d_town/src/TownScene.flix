@@ -25,7 +25,9 @@ mod TownScene {
     /// lightUnits = 光の量の読み方（Physical は逆二乗・拡散に 1/π）・pointShadows = 街灯の点光源の影（None で落とさない・街灯の強さが 0 の間も落とさない）・
     /// boardLight = 板（キャラ・木・小物）に光を当てるか（Unlit は boardNightBase・charNightBase の掛け目で塗る。Doc では boardLamplight が正なら Unlit）・
     /// glowAlpha = 火袋とハローの光る板の濃さ（0〜1・歩きながら街灯が点く間に 0 から上げる）・
-    /// litToUnlit = 光を当てない板の色の掛け目を、光を当てた時の明るさ（0）から夜の掛け目（1）へ移す割合（光を当てない板へ切り替えた直後に 0 から上げる）。
+    /// litToUnlit = 光を当てない板の色の掛け目を、光を当てた時の明るさ（0）から夜の掛け目（1）へ移す割合（光を当てない板へ切り替えた直後に 0 から上げる）・
+    /// view = 後がけの曲線（View Transform）・heatHaze = 溶岩の上の陽炎（None で掛けない）・
+    /// stageLightScale・stageGlowScale = 地図の見た目の欄の点光源の強さと、自分で光る強さに掛ける倍率。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
@@ -38,7 +40,12 @@ mod TownScene {
                             bloomThreshold = Float64, bloomSize = Float64,
                             lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64,
                             charShadowScale = Vec2.Vec2, charNightBase = Color, charNightFar = Float64, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap],
-                            boardLight = BoardLight, glowAlpha = Float64, litToUnlit = Float64 }
+                            boardLight = BoardLight, glowAlpha = Float64, litToUnlit = Float64,
+                            view = PostStack.ViewTransform, heatHaze = Option[HeatHaze], stageLightScale = Float64, stageGlowScale = Float64 }
+
+    /// 陽炎（長さは 1280 × 720 の画面の px）。amplitude = ずらす最大の量・wavelength = 縦の波の長さ・rate = 揺れの速さ（Hz）・
+    /// rise = 赤く明るい所から上へ広げる長さ。
+    pub type alias HeatHaze = { amplitude = Float64, wavelength = Float64, rate = Float64, rise = Float64 }
 
     /// 板の明るさの決め方。Lit = 場面の光で照らす・Unlit = 光を当てず、色の掛け目で明るさを決める（夜）。
     pub enum BoardLight with Eq, ToString {
@@ -71,17 +78,22 @@ mod TownScene {
                            contactMesh = Mesh3d.Mesh3d, contactMaterial = Scene3d.Material3d,
                            town = TileMap3d.Town, materials = Map[String, (Scene3d.Material3d, Rgb)], sprites = Map[String, Images.Loaded],
                            denseMaterial = Scene3d.Material3d, lanternTexture = String, haloTexture = String,
-                           litLights = List[Scene3d.PointLight] }
+                           litLights = List[Scene3d.PointLight], fx = StageFx.Fx, environmentMap = Option[Scene3d.EnvironmentMap],
+                           spriteGlows = Map[String, Float64], particleMaterial = Option[Scene3d.Material3d] }
 
     /// 地図と絵を読み、町を組む。skipNpcColumn = 地図の 1・2・3 を置かない列（隊列で歩かせる列）。
     pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
+        loadWithFx(m, StageFx.none(), look, skipNpcColumn, extraStrips)
+
+    /// load に地図の見た目の欄 fx（炎・氷の材質・熱の地図・崖の根元の光る縁・点光源・粒・空の映り込み）を渡す形。
+    pub def loadWithFx(m: TownMap, fx: StageFx.Fx, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
         let sprites = "sprites/tree_broadleaf.png" :: "sprites/tree_cypress.png" :: "sprites/street_lamp_ornate.png" ::
                       "sprites/traveler_td.png" :: "sprites/merchant_td.png" ::
                       (m#objectSprites |> Map.valuesOf |> List.map(o -> o#sprite) |> List.distinct);
         let stripPaths = List.flatten(m#walk#party |> List.map(p -> p#strip) :: ("sprites/traveler_walk4.png" :: "sprites/merchant_walk4.png" :: Nil) :: extraStrips ::
                                       List.map(d -> d#sprite, m#decor) :: Nil) |> List.distinct;
         let table = TileMap3d.materialTableOf(m);
-        let tilePaths = table |> Map.valuesOf |> List.map(fst) |> List.distinct;
+        let tilePaths = List.append(table |> Map.valuesOf |> List.map(fst), StageFx.extraTiles(fx)) |> List.distinct;
         forM (
             tiles <- Result.traverse(Images.load, tilePaths);
             boards <- Result.traverse(Images.load, sprites);
@@ -90,20 +102,33 @@ mod TownScene {
             dense <- Images.denseShadow();
             lantern <- Images.lanternGlow("sprites/street_lamp_ornate.png", lanternCenters(), 7.5, 0.42, 0.68, look#lanternCore, look#lanternEdge);
             halo <- Images.halo(look#haloFalloff);
-            contactMesh <- unitContactMesh()
+            contactMesh <- unitContactMesh();
+            heat <- fx#heat |> Option.map(h -> StageFx.heatTexture(m, h) |> Result.map(Some)) |> Option.getWithDefault(Ok(None));
+            sky <- if (fx#reflections) StageFx.skyPanorama(look#sky, look#fog, look#fog) |> Result.map(Some) else Ok(None)
         ) yield {
             let byPath = List.append(tiles, boards) |> List.map(l -> (l#path, l)) |> List.toMap;
             let sizes = byPath |> Map.map(l -> (l#width, l#height));
-            let town = TileMap3d.build(m, sizes, skipNpcColumn);
+            let town0 = TileMap3d.build(m, sizes, skipNpcColumn);
+            let town = { quads = List.append(town0#quads, StageFx.rimQuads(m, fx)) | town0 };
             let contactMaterial = Scene3d.texturedMaterial(Texture3d.name(shadow), FilterMode.Linear) |> Scene3d.withAlphaBlend(true);
-            let items = List.append(groupItems(table, byPath, town#quads), contactItems(contactMesh, contactMaterial, town#boards));
+            let texOf = (path: String) -> Map.get(path, byPath) |> Option.map(l -> Texture3d.name(l#texture));
+            let overrides = StageFx.materialsOf(m, fx, look#stageGlowScale, table, texOf, heat |> Option.map(Texture3d.name));
+            let materials = overrides |> Map.toList |> List.foldLeft((acc, kv) -> {
+                let (name, mat) = kv;
+                let tint = Map.get(name, acc) |> Option.map(snd) |> Option.getWithDefault(Faces.white());
+                Map.insert(name, (mat, tint), acc)
+            }, materialsOf(table, byPath));
+            let items = List.append(groupItems(materials, town#quads), contactItems(contactMesh, contactMaterial, town#boards));
             { map = m, look = look, group = Scene3d.staticGroup("town", items),
-              textures = shadow :: dense :: lantern :: halo :: List.append(List.map(l -> l#texture, List.append(tiles, boards)), List.map(l -> l#texture, strips)),
+              textures = List.flatten((shadow :: dense :: lantern :: halo :: Nil) :: Option.toList(heat) :: Option.toList(sky) ::
+                                      List.map(l -> l#texture, List.append(tiles, boards)) :: List.map(l -> l#texture, strips) :: Nil),
               strips = strips |> List.map(l -> (l#path, l)) |> List.toMap,
               contactMesh = contactMesh, contactMaterial = contactMaterial,
-              town = town, materials = materialsOf(table, byPath), sprites = byPath,
+              town = town, materials = materials, sprites = byPath,
               denseMaterial = Scene3d.texturedMaterial(Texture3d.name(dense), FilterMode.Linear) |> Scene3d.withAlphaBlend(true),
-              lanternTexture = Texture3d.name(lantern), haloTexture = Texture3d.name(halo), litLights = Nil }
+              lanternTexture = Texture3d.name(lantern), haloTexture = Texture3d.name(halo), litLights = Nil,
+              fx = fx, environmentMap = sky |> Option.map(Scene3d.environmentMap), spriteGlows = StageFx.spriteGlows(m, fx),
+              particleMaterial = fx#particles |> Option.map(StageFx.particleMaterial) }
         }
 
     /// 材質の名前 → (置いた物の材質, 色の掛け目)。
@@ -121,7 +146,20 @@ mod TownScene {
     // WhyNot: 読み込みで 1 回作って持たない — 歩きながら Look が替わり、行 29 で光を当てない板へ切り替わる。
     pub def staticBoards(res: Res): List[Scene3d.Billboard3d] =
         let lamps = lampsOf(res);
-        res#town#boards |> List.filterMap(billboardOf(res#sprites, res#look, lamps))
+        res#town#boards |> List.filterMap(b -> billboardOf(res#sprites, res#look, lamps, b) |> Option.map(bb ->
+            Map.get(b#sprite, res#spriteGlows) |> Option.map(g -> Scene3d.unlit(bb) |> Scene3d.withBillboardTint(Color.rgb(1.0 + g, 1.0 + g, 1.0 + g)))
+                |> Option.getWithDefault(bb)))
+
+    /// 場面 scene に地図の見た目の欄の時刻 t の物（溶岩と結晶の点光源・粒・空の映り込み）を足す。
+    /// center = カメラの追う点（地図の座標の x・y と床の高さ z・雪の箱の真ん中）。
+    pub def withStageFx(res: Res, t: Float64, center: (Float64, Float64, Float64), scene: Scene3d.Scene3dCmd): Scene3d.Scene3dCmd =
+        let particles = forM (p <- res#fx#particles; mat <- res#particleMaterial) yield StageFx.particleInstances(res#contactMesh, mat, res#map, p, t, center);
+        { pointLights = List.append(scene#pointLights, StageFx.lightsAt(res#map, res#fx, res#look#stageLightScale, t)),
+          instances = List.append(scene#instances, particles |> Option.getWithDefault(Nil)),
+          environmentMap = match res#environmentMap {
+              case Some(e) => Some(e)
+              case None    => scene#environmentMap
+          } | scene }
 
     /// res の見た目のつまみを look に替える（読み込みで作った絵と形はそのまま）。
     pub def withLook(res: Res, look: Look): Res = { look = look | res }
@@ -189,18 +227,14 @@ mod TownScene {
 
     /// 材質ごとに 1 つの形（色の掛け目は頂点の色に焼き込み、絵ごとの材質は 1 つ）。
     // WhyNot: 裏の面を捨てる材質にしない — 写した決まり（Blender の試作）は両面で描いており、妻壁や軒の裏の巡りが面ごとに揃っていない。
-    def groupItems(table: Map[String, (String, Rgb)], byPath: Map[String, Images.Loaded], quads: List[Quad]): List[(String, Scene3d.Instance3d)] =
+    def groupItems(materials: Map[String, (Scene3d.Material3d, Rgb)], quads: List[Quad]): List[(String, Scene3d.Instance3d)] =
         let grouped = quads |> List.foldLeft((acc, q) -> Map.insertWith((fresh, old) -> List.append(fresh, old), q#material, q :: Nil, acc), Map.empty());
         grouped |> Map.toList |> List.filterMap(entry -> {
             let (name, qs) = entry;
             forM (
-                (path, tint) <- Map.get(name, table);
-                tex <- Map.get(path, byPath);
+                (material, tint) <- Map.get(name, materials);
                 mesh <- Faces.toMesh(tint, qs) |> Result.toOption
-            ) yield {
-                let material = Scene3d.texturedMaterial(Texture3d.name(tex#texture), FilterMode.Nearest) |> Scene3d.withDoubleSided(true);
-                ("terrain:${name}", Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material) |> Scene3d.withName(name))
-            }
+            ) yield ("terrain:${name}", Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material) |> Scene3d.withName(name))
         })
 
     /// 1 × 1 m の上を向く四角（足元の影を置く時に大きさと位置を行列で掛ける）。
@@ -462,24 +496,52 @@ mod TownScene {
             |> Scene3d.withAlphaBlend(true)
             |> Scene3d.withDoubleSided(true)
 
-    /// 後がけ（AgX・露出・ブルーム・ピントの奥行きでぼかす・彩度・周りを暗く）。focus = ピントの合う奥行き（m）。
-    pub def postOf(look: Look, focus: Float64): PostStack.Stack = postAt(look, focus, 0.0)
-
-    /// postOf に時刻 t（秒・霧のむらを流す）を渡す形。
-    pub def postAt(look: Look, focus: Float64, t: Float64): PostStack.Stack = postFlashAt(look, focus, t, 0.0)
+    /// 後がけ（Look の曲線・露出・ブルーム・ピントの奥行きでぼかす・彩度・周りを暗く・陽炎）。focus = ピントの合う奥行き（m）・t = 時刻（秒・霧のむらと陽炎を流す）・
+    /// width = 描き物の横の大きさ（design px・陽炎の長さを 1280 の画面から直す）。
+    pub def postAt(look: Look, focus: Float64, t: Float64, width: Float64): PostStack.Stack = postFlashAt(look, focus, t, 0.0, width)
 
     /// postAt に、露出へ足す段 flash（着地の光）を渡す形。
-    pub def postFlashAt(look: Look, focus: Float64, t: Float64, flash: Float64): PostStack.Stack =
+    pub def postFlashAt(look: Look, focus: Float64, t: Float64, flash: Float64, width: Float64): PostStack.Stack =
         PostStack.preset(PostStack.Preset.Neutral)
             |> PostStack.withHeightFog(look#heightFog)
             |> PostStack.withTime(ShotClock.at(t))
-            |> PostStack.withViewTransform(PostStack.ViewTransform.AgX)
+            |> PostStack.withViewTransform(look#view)
+            |> withHeatHaze(look#heatHaze, width / 1280.0)
             |> PostStack.withExposure(look#exposure + flash)
             |> PostStack.withBloom(Some({ threshold = look#bloomThreshold, smoothness = 0.5, size = look#bloomSize, strength = look#bloomStrength }))
             |> PostStack.withDepthOfField(if (look#fStop > 0.0) Some(PostStack.DepthOfField.Physical({ focusDistance = focus, fStop = look#fStop })) else None)
             |> PostStack.withColorGrade(Some({ lift = look#lift, gamma = look#gamma, gain = look#gain, saturation = look#saturation }))
             |> PostStack.withVignette(Some({ strength = look#vignette, inner = 0.45, outer = 1.1, center = { x = 0.5, y = 0.5 } }))
             |> PostStack.withFxaa(look#fxaa)
+
+    /// 陽炎の型紙の Pass の名前（場面の色の赤く明るい所と、その上 rise の所を r に書く）。
+    def hazeMaskPass(): String = "haze_mask"
+
+    /// 陽炎の後に場面として読ませる Pass の名前（場面の写し）。
+    // WhyNot: 型紙の Pass を最後の BeforeBloom の Pass にしない — 後の効果は最後の Pass を場面として読み、型紙の赤が画面に出る。
+    def hazeScenePass(): String = "haze_scene"
+
+    /// 陽炎を掛ける（型紙の Pass と場面の写しの Pass を足し、Distortion の範囲を型紙の r にする）。k = 1280 の画面の px → design px の倍率。
+    def withHeatHaze(haze: Option[HeatHaze], k: Float64, s: PostStack.Stack): PostStack.Stack = match haze {
+        case None    => s
+        case Some(h) =>
+            let scene = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = ShaderDoc.Field.Tex({ name = PostStack.sceneName(), chan = ch }) });
+            let blurred = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.TexBlur({ name = PostStack.sceneName(), chan = ch, radius = { x = 0.022, y = 0.039 }, taps = 9, amount = ShaderDoc.Field.Const(1.0) });
+            let bin = (op: ShaderDoc.BinOp, a: ShaderDoc.Field, b: ShaderDoc.Field) -> ShaderDoc.Field.Bin({ op = op, a = a, b = b });
+            let hot = bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Smoothstep({ lo = 0.75, hi = 1.05, of = blurred(ShaderDoc.TexChan.R) }),
+                          ShaderDoc.Field.Smoothstep({ lo = 0.25, hi = 0.5, of = bin(ShaderDoc.BinOp.Sub, blurred(ShaderDoc.TexChan.R), blurred(ShaderDoc.TexChan.B)) }));
+            let rise = h#rise / 720.0;
+            let lifted = ShaderDoc.Field.Shift({ dx = ShaderDoc.Field.Const(0.0), dy = ShaderDoc.Field.Const(rise), of = hot });
+            let mask = ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Sat, of = bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Const(4.0),
+                                                                           bin(ShaderDoc.BinOp.Max, hot, bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Const(0.8), lifted))) });
+            let fill = (r: ShaderDoc.Field, g: ShaderDoc.Field, b: ShaderDoc.Field) -> ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = r, g = g, b = b }), alpha = ShaderDoc.Field.Const(1.0) });
+            let maskSpec = { name = "hd2d:haze-mask", cycleRate = 0.0, bindings = Nil, out = fill(mask, mask, mask) };
+            let copySpec = { name = "hd2d:haze-scene", cycleRate = 0.0, bindings = Nil, out = fill(scene(ShaderDoc.TexChan.R), scene(ShaderDoc.TexChan.G), scene(ShaderDoc.TexChan.B)) };
+            s |> PostStack.withCustom({ name = hazeMaskPass(), at = PostStack.CustomAt.BeforeBloom, spec = maskSpec, reads = PostStack.Read.SceneColor :: Nil, scale = 0.5 } ::
+                                      { name = hazeScenePass(), at = PostStack.CustomAt.BeforeBloom, spec = copySpec, reads = PostStack.Read.SceneColor :: Nil, scale = 1.0 } :: Nil)
+              |> PostStack.withDistortion(Some({ strength = { x = h#amplitude * k, y = 0.4 * h#amplitude * k }, noiseSize = h#wavelength / 2.0 * k,
+                                                 speed = { x = 0.0, y = 0.0 - h#wavelength * h#rate * k }, mask = PostStack.DistortionMask.Texture(hazeMaskPass()) }))
+    }
 
     /// 描き物の列（画面いっぱいに場面を 1 つ）。
     pub def items(scene: Scene3d.Scene3dCmd): List[Render.PlacedItem] = Render.scene3d(Vec2.zero(), scene) :: Nil

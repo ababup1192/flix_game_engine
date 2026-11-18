@@ -216,20 +216,28 @@ mod StageFx {
         case _         => c#b
     }
 
-    /// 熱の地図を world の点（東 X・北 Z）で引く場（地図の外は縁の値のまま）。
+    /// 熱の地図を world の点（東 X・北 Z）で引く場（地図の外は 0）。
+    // WhyNot: 地図の外を縁の値のまま読ませない — 溶岩に近い西の縁の熱が地図の外の低い地面へ帯になって伸び、赤いまだらが並ぶ。
     def heatField(m: TownMap, texture: String): Field =
         let (w, h) = (Int32.toFloat64(m#width), Int32.toFloat64(m#height));
-        Field.Sampler({ filter = FilterMode.Linear,
-                        of = Field.Shift({ dx = sub(mul(Field.World({ axis = Axis3.X }), k(1.0 / w)), Field.Uv({ axis = Axis.U })),
-                                           dy = sub(sub(k(1.0), mul(Field.World({ axis = Axis3.Z }), k(1.0 / h))), Field.Uv({ axis = Axis.V })),
-                                           of = Field.Tex({ name = texture, chan = TexChan.R }) }) })
+        let within = (axis: Axis3, size: Float64) -> {
+            let p = Field.World({ axis = axis });
+            mul(Field.Smoothstep({ lo = -0.05, hi = 0.0, of = p }), sub(k(1.0), Field.Smoothstep({ lo = size, hi = size + 0.05, of = p })))
+        };
+        mul(mul(within(Axis3.X, w), within(Axis3.Z, h)), Field.Sampler({ filter = FilterMode.Linear,
+                        of = Field.Shift({ dx = sub(sat(mul(Field.World({ axis = Axis3.X }), k(1.0 / w))), Field.Uv({ axis = Axis.U })),
+                                           dy = sub(sat(sub(k(1.0), mul(Field.World({ axis = Axis3.Z }), k(1.0 / h)))), Field.Uv({ axis = Axis.V })),
+                                           of = Field.Tex({ name = texture, chan = TexChan.R }) }) }))
 
     /// 熱 → 色の掛け目の折れ線の 1 色（前の段から次の段へ、熱が段の間にある割合だけ足していく）。
+    /// 掛け目は線形の値なので、画面の値（絵の色）に掛ける前に 1/2.2 乗へ直す。
+    // WhyNot: 線形の掛け目を絵の色へそのまま掛けない — 描き手が線形へ戻す時に 2.2 乗され、1.45 倍の赤が 2.3 倍になって崖が橙に飛ぶ。
     def rampField(stops: List[(Float64, Rgb)], ch: TexChan, heat: Field): Field =
-        let first = List.head(stops) |> Option.map(s -> pick(snd(s), ch)) |> Option.getWithDefault(1.0);
+        let screen = (c: Rgb) -> Float64.pow(base = Float64.max(0.0, pick(c, ch)), 1.0 / 2.2);
+        let first = List.head(stops) |> Option.map(s -> screen(snd(s))) |> Option.getWithDefault(1.0);
         List.zip(stops, List.drop(1, stops)) |> List.foldLeft((acc, pair) -> {
             let ((p0, c0), (p1, c1)) = pair;
-            add(acc, mul(k(pick(c1, ch) - pick(c0, ch)), sat(mul(sub(heat, k(p0)), k(1.0 / Float64.max(p1 - p0, 0.0001))))))
+            add(acc, mul(k(screen(c1) - screen(c0)), sat(mul(sub(heat, k(p0)), k(1.0 / Float64.max(p1 - p0, 0.0001))))))
         }, k(first))
 
     /// 熱で色を移す層の材質（2 枚目の絵をむらで混ぜる → 熱い所で 3 枚目へ替える → 冷えた所ほど灰色へ → 熱のランプを掛ける → 頂点の色（AO）を掛ける）。
@@ -287,13 +295,20 @@ mod StageFx {
 
     /// 材質の名前 → 町の材質の代わりに使う材質（見た目の欄が触る名前だけ）。table = 材質の表・texOf = assets のパス → 材質の絵の名前・
     /// heatTexture = 熱の地図の絵の名前。
-    pub def materialsOf(m: TownMap, fx: Fx, table: Map[String, (String, Rgb)], texOf: String -> Option[String], heatTexture: Option[String]): Map[String, Scene3d.Material3d] =
+    /// glowScale = 自分で光る強さ（emission・rim）に掛ける倍率（Blender の試作の強さを engine の露出へ直す）。
+    pub def materialsOf(m: TownMap, fx: Fx, glowScale: Float64, table: Map[String, (String, Rgb)], texOf: String -> Option[String], heatTexture: Option[String]): Map[String, Scene3d.Material3d] =
+        let scaled = { glows = fx#glows |> Map.map(g -> scaleGlow(glowScale, g)) | fx };
         let surfaces = table |> Map.toList |> List.filterMap(entry -> {
             let (name, (path, _)) = entry;
-            texOf(path) |> Option.flatMap(tile -> surfaceOf(m, fx, name, tile, texOf, heatTexture)) |> Option.map(mat -> (name, mat))
+            texOf(path) |> Option.flatMap(tile -> surfaceOf(m, scaled, name, tile, texOf, heatTexture)) |> Option.map(mat -> (name, mat))
         });
-        let rim = fx#rim |> Option.map(rc -> (rimMaterialName(), solidGlow("hd2d:lava-rim", fst(rc), snd(rc)))) |> Option.toList;
+        let rim = fx#rim |> Option.map(rc -> (rimMaterialName(), solidGlow("hd2d:lava-rim", fst(rc), snd(rc) * glowScale))) |> Option.toList;
         List.append(surfaces, rim) |> List.toMap
+
+    def scaleGlow(k0: Float64, g: Glow): Glow = match g {
+        case Glow.Unlit(s)  => Glow.Unlit(s * k0)
+        case Glow.Cracks(c) => Glow.Cracks({ strength = c#strength * k0 | c })
+    }
 
     def surfaceOf(m: TownMap, fx: Fx, name: String, tile: String, texOf: String -> Option[String], heatTexture: Option[String]): Option[Scene3d.Material3d] =
         let glow = Map.get(name, fx#glows);
@@ -393,17 +408,17 @@ mod StageFx {
             }
         })
 
-    /// 時刻 t の点光源。地面の点光源は周期の違う 3 つの波の和で ±flicker 揺らす（物の板の光は揺らさない）。
-    pub def lightsAt(m: TownMap, fx: Fx, t: Float64): List[Scene3d.PointLight] =
+    /// 時刻 t の点光源。地面の点光源は周期の違う 3 つの波の和で ±flicker 揺らす（物の板の光は揺らさない）。scale = 強さに掛ける倍率。
+    pub def lightsAt(m: TownMap, fx: Fx, scale: Float64, t: Float64): List[Scene3d.PointLight] =
         let colorOf = (c: Rgb) -> Color.rgb(Faces.linearToSrgb(c#r), Faces.linearToSrgb(c#g), Faces.linearToSrgb(c#b));
         let ground = groundLights(m, fx) |> List.map(l -> {
             let (p, e, c, ph) = l;
             let wave = 0.5 * Num.sin(2.1 * t + ph) + 0.3 * Num.sin(5.3 * t + 2.0 * ph) + 0.2 * Num.sin(11.7 * t + 3.0 * ph);
-            { position = p, color = colorOf(c), intensity = e * wattsToIntensity() * (1.0 + fx#flicker * wave), range = lightRange() }
+            { position = p, color = colorOf(c), intensity = e * wattsToIntensity() * scale * (1.0 + fx#flicker * wave), range = lightRange() }
         });
         let sprites = spriteLights(m, fx) |> List.map(l -> {
             let (p, e, c) = l;
-            { position = p, color = colorOf(c), intensity = e * wattsToIntensity(), range = lightRange() }
+            { position = p, color = colorOf(c), intensity = e * wattsToIntensity() * scale, range = lightRange() }
         });
         List.append(ground, sprites)
 

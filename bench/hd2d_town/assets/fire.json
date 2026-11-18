@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "note": "炎の洞窟の見た目（段 F5）: hd2d_lab の fire_cave.map.json の lighting を写した物。太陽 2.4 W・露出 1.3（Standard）・ブルーム 0.6 / 閾値 0.9 を、町の昼（Blender 6.5 W ↔ 10.367・露出 0.7 ↔ −0.3）と同じ比で直した。溶岩の発光・熱の層・点光源・火の粉は地図の欄から StageFx が作る。heatHaze = 陽炎（1280 × 720 の画面の px・tools/heat_haze.py の引数）。CPU の描き出しで v4 と並べて寄せた値: 点光源 0.15 倍（溶岩の上 1 m の灯りが崖を橙に塗りつぶす）・露出 −0.1・霞は v4 の桃色の遠景・ブルーム 0（CPU の描き出しでブルームを掛けると画面の左上に場面の写しのまだらが出る）",
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "shadowDistance": 28.0,
+  "shadowMapSize": 4096,
+  "sunElevation": 66.0,
+  "sunAzimuth": 25.0,
+  "sunIntensity": 3.83,
+  "ambient": [
+    0.25,
+    0.2,
+    0.2
+  ],
+  "hemisphere": 0.25,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 22.0,
+  "fogFar": 60.0,
+  "fog": [
+    0.42,
+    0.3,
+    0.28
+  ],
+  "sky": [
+    0.42,
+    0.3,
+    0.28
+  ],
+  "exposure": -0.1,
+  "bloomStrength": 0.0,
+  "fStop": 0.08,
+  "saturation": 1.05,
+  "vignette": 0.35,
+  "gain": [
+    1.04,
+    0.98,
+    0.92
+  ],
+  "shadowStrength": 1.0,
+  "fxaa": true,
+  "lift": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "charShadow": "silhouette",
+  "shadowPcf": 2,
+  "charShadowScale": [
+    0.6,
+    0.8
+  ],
+  "lightUnits": "physical",
+  "sunColor": [
+    0.98,
+    0.94,
+    0.92
+  ],
+  "view": "standard",
+  "bloomThreshold": 0.9,
+  "bloomSize": 0.6,
+  "heatHaze": {
+    "amplitude": 2.0,
+    "wavelength": 18.0,
+    "rate": 1.2,
+    "rise": 40.0
+  },
+  "stageLightScale": 0.15,
+  "stageGlowScale": 1.0
+}

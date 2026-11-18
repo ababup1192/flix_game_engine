@@ -174,13 +174,13 @@ mod BuildVideo {
 
     /// 地図 mapPath の walk.path で歩くだけの場面（出来ていく演出なし）。
     def setupMapWalk(look: TownScene.Look, mapPath: String): Result[String, Setup] \ IO =
-        (run { TownMap.load("step", mapPath) } with Fs.FileRead.runWithIO)
-            |> Result.flatMap(m -> m#walkPath |> Option.toOk("${mapPath}: walk.path が無い") |> Result.map(pw -> (m, pw)))
-            |> Result.flatMap(mp -> {
-                let (m, pw) = mp;
+        (run { TownMap.load("step", mapPath) |> Result.flatMap(m -> StageFx.load(mapPath) |> Result.map(fx -> (m, fx))) } with Fs.FileRead.runWithIO)
+            |> Result.flatMap(mf -> { let (m, fx) = mf; m#walkPath |> Option.toOk("${mapPath}: walk.path が無い") |> Result.map(pw -> (m, fx, pw)) })
+            |> Result.flatMap(mfp -> {
+                let (m, fx, pw) = mfp;
                 let p = Buildup.planOfMap(m, mapPath, pw);
                 forM (
-                    res <- TownScene.load(m, look, None, p#party |> List.filterMap(w -> w#idleStrip));
+                    res <- TownScene.loadWithFx(m, fx, look, None, p#party |> List.filterMap(w -> w#idleStrip));
                     d <- Buildup.dustTexture()
                 ) yield { map = m, plan = p, res = res, dust = d, show = Buildup.alreadyBuilt(p#timing, d),
                           track = pathTrackOf(m, look, p, pw#followZoom), schedule = None }
@@ -291,9 +291,11 @@ mod BuildVideo {
         let textures = st#dust :: res#textures;
         let partyBoards = List.map(fst, members);
         let partyShadows = List.flatMap(snd, members);
+        let at = (v: Vector[Float64], fallback: Float64) -> Vector.nth(f, v) |> Option.getWithDefault(fallback);
+        let center = (at(tr#cameraX, leaderX), at(tr#cameraY, leaderY0), at(tr#cameraHeight, tr#groundZ));
         if (t >= show#done)
             ({ time = t | TownScene.sceneWith(res, camera, size, res#group :: Nil, List.flatten(TownScene.staticBoards(res) :: partyBoards :: List.map(fst, decor) :: Nil),
-                                              List.append(partyShadows, decorShadows), textures) }, focus)
+                                              List.append(partyShadows, decorShadows), textures) } |> TownScene.withStageFx(res, t, center), focus)
         else {
             let fr = Buildup.frameAt(show, t);
             let contacts = fr#contacts |> List.map(c -> {
@@ -316,7 +318,7 @@ mod BuildVideo {
           height = tr#groundZ + (tr#eye#height - tr#groundZ) * pull + (at(tr#cameraHeight, tr#groundZ) - tr#groundZ) + Buildup.shakeAt(st#show, t) }
 
     def fullSceneOf(look: TownScene.Look, focus: Float64, flash: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
-        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postFlashAt(look, focus, scene#time, flash));
+        let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postFlashAt(look, focus, scene#time, flash, design()#x));
         let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
             |> List.map(sp -> { name = sp#name, clear = sp#clear, drawables = sp#drawables, polygons = sp#polygons, surfaces = sp#surfaces, scenes = sp#scenes, target = sp#target });
         let soft = Render.softSceneOf(_ -> None, built#present :: Nil);

@@ -54,7 +54,7 @@ mod TownGpu {
             |> App.addSystem(step1)
             |> App.withView((_ctx, w) -> checked_ecast(w#scene |> Option.map(sc -> Render.scene3d(Vec2.zero(), sc)) |> Option.toList))
             |> App.quitWhen((_frame, w) -> checked_ecast(w#finished))
-            |> App.withPostStack(w -> checked_ecast(TownScene.postAt(look0, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0))));
+            |> App.withPostStack(w -> checked_ecast(TownScene.postAt(look0, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0), size()#x)));
         run { App.launchForBench(app0) }
             with LwjglLayer.withProject(".")
             with Fs.FileRead.runWithIO
@@ -113,7 +113,7 @@ mod TownGpu {
                     |> App.withView((_ctx, w) -> checked_ecast(w#scene |> Option.map(sc -> Render.scene3d(Vec2.zero(), sc)) |> Option.toList))
                     |> App.quitWhen((_frame, w) -> checked_ecast(w#finished));
                 let flashOf = (w: World) -> Buildup.flashAt(st#show, Int32.toFloat64(w#frame - 1) / Int32.toFloat64(BuildVideo.fps()));
-                let app1 = if (post) app0 |> App.withPostStack(w -> checked_ecast(TownScene.postFlashAt(w#look, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0), flashOf(w)))) else app0;
+                let app1 = if (post) app0 |> App.withPostStack(w -> checked_ecast(TownScene.postFlashAt(w#look, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0), flashOf(w), size()#x))) else app0;
                 run { App.launchForBench(app1) }
                     with LwjglLayer.withProject(".")
                     with Fs.FileRead.runWithIO

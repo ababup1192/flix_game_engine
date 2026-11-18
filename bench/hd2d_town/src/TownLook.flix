@@ -16,7 +16,7 @@ mod TownLook {
           heightFog = None, boardLamplight = 0.0, boardNightBase = Color.rgb(0.3, 0.33, 0.5), bloomThreshold = 0.8, bloomSize = 0.6,
           lanternCore = Color.rgb(1.0, 0.96, 0.42), lanternEdge = Color.rgb(1.0, 0.62, 0.06), haloColor = Color.rgb(1.0, 0.6, 0.08), haloSize = 1.9, haloGlow = 0.0, haloFalloff = 2.2,
           charShadowScale = Vec2.v2(1.0, 1.0), charNightBase = Color.rgb(0.3, 0.33, 0.5), charNightFar = 1.0, lightUnits = Scene3d.LightUnits.Legacy, pointShadows = None,
-          boardLight = TownScene.BoardLight.Lit, glowAlpha = 1.0, litToUnlit = 1.0 }
+          boardLight = TownScene.BoardLight.Lit, glowAlpha = 1.0, litToUnlit = 1.0, view = PostStack.ViewTransform.AgX, heatHaze = None, stageLightScale = 1.0, stageGlowScale = 1.0 }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -62,7 +62,12 @@ mod TownLook {
           lightUnits = if (JsonCodec.stringOr("lightUnits", "legacy", m) == "physical") Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy,
           pointShadows = Map.get("pointShadows", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(pointShadowsOf),
           boardLight = if (num("boardLamplight", d#boardLamplight) > 0.0) TownScene.BoardLight.Unlit else TownScene.BoardLight.Lit,
-          glowAlpha = num("glowAlpha", d#glowAlpha), litToUnlit = d#litToUnlit }
+          glowAlpha = num("glowAlpha", d#glowAlpha), litToUnlit = d#litToUnlit,
+          view = if (JsonCodec.stringOr("view", "agx", m) == "standard") PostStack.ViewTransform.Standard else PostStack.ViewTransform.AgX,
+          heatHaze = Map.get("heatHaze", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(h ->
+              { amplitude = JsonCodec.floatOr("amplitude", 2.0, h), wavelength = JsonCodec.floatOr("wavelength", 18.0, h),
+                rate = JsonCodec.floatOr("rate", 1.2, h), rise = JsonCodec.floatOr("rise", 40.0, h) }),
+          stageLightScale = num("stageLightScale", d#stageLightScale), stageGlowScale = num("stageGlowScale", d#stageGlowScale) }
 
     /// 点光源の影の欄（count = 影を落とす灯りの数・mapSize・pcf・strength・bias・normalBias。無い欄は engine の既定）。
     def pointShadowsOf(h: Map[String, Json]): Scene3d.PointShadowMap =

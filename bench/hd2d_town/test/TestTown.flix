@@ -417,4 +417,56 @@ mod TestTown {
             case Ok(m)    => Assert.assertEq(expected = 172, List.length(m#rockBoxes))
             case Err(why) => bug!(why)
         }
+
+    // ── 炎・氷の見た目の欄（StageFx） ──
+
+    def fireMap(): (TownMap, StageFx.Fx) \ IO =
+        match (run { TownMap.load("step", "assets/fire_cave.map.json") |> Result.flatMap(m -> StageFx.load("assets/fire_cave.map.json") |> Result.map(fx -> (m, fx))) } with Fs.FileRead.runWithIO) {
+            case Ok(mf)   => mf
+            case Err(why) => bug!(why)
+        }
+
+    @Test
+    def testFireLavaGlowsWithoutLight(): Unit \ {Assert, IO} =
+        let (_, fx) = fireMap();
+        let unlit = match Map.get("water", fx#glows) {
+            case Some(StageFx.Glow.Unlit(_)) => true
+            case _                           => false
+        };
+        Assert.assertTrue(unlit)
+
+    @Test
+    def testFireFloorCracksGlowRed(): Unit \ {Assert, IO} =
+        let (_, fx) = fireMap();
+        let cracks = match Map.get("path", fx#glows) {
+            case Some(StageFx.Glow.Cracks(c)) => near(c#k, 1.6)
+            case _                            => false
+        };
+        Assert.assertTrue(cracks)
+
+    @Test
+    def testFireLavaLightsAreThinnedToAtMostEight(): Unit \ {Assert, IO} =
+        let (m, fx) = fireMap();
+        let n = List.length(StageFx.lightsAt(m, fx, 1.0, 0.0));
+        Assert.assertTrue(n >= 4 and n <= 10)
+
+    @Test
+    def testFireHasFiveEmbers(): Unit \ {Assert, IO} =
+        let (m, fx) = fireMap();
+        let n = fx#particles |> Option.map(p -> List.length(StageFx.particlesAt(m, p, 1.0, (0.0, 0.0, 0.0)))) |> Option.getWithDefault(0);
+        Assert.assertEq(expected = 5, n)
+
+    @Test
+    def testFireRimStandsBesideTheLava(): Unit \ {Assert, IO} =
+        let (m, fx) = fireMap();
+        Assert.assertTrue(List.length(StageFx.rimQuads(m, fx)) > 10)
+
+    @Test
+    def testFireHeatComesFromTheLava(): Unit \ {Assert, IO} =
+        let (_, fx) = fireMap();
+        Assert.assertTrue(fx#heat |> Option.map(h -> Set.memberOf(Ground.Water, h#grounds)) |> Option.getWithDefault(false))
+
+    @Test
+    def testTownHasNoStageFx(): Unit \ Assert =
+        Assert.assertTrue(Option.isEmpty(StageFx.none()#heat) and Map.isEmpty(StageFx.none()#glows))
 }
