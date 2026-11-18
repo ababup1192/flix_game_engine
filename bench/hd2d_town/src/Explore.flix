@@ -3,7 +3,7 @@
 // App の w は Resources.With[Res, World]: 地図・絵・格子・Doc は Res、遊びで変わる物（先頭・向き・道・カメラ・時刻）は World。
 
 mod Explore {
-    use fge::{App, Color, FrameDiagnostics, ImageData, LoadProgress, LwjglLayer, Num, Render, Resources, Scene3d, Text, Vec2}
+    use fge::{App, Color, FrameDiagnostics, ImageData, LoadProgress, LwjglLayer, Num, Render, Resources, Scene3d, Sort, Text, Vec2}
     use fge::GameEngine.Key
     use Route.{Dir}
 
@@ -272,6 +272,46 @@ mod Explore {
             let row = List.range(0, m#width) |> List.map(c -> mark((c, r))) |> String.flatten;
             "${String.padLeft(2, ' ', Int32.toString(r))} ${row}"
         }) |> String.intercalate("\n")
+
+    /// 板の物の draw の内訳（描き手は板 1 枚を 1 回の draw で描くので、視錐台の中の板の数がそのまま「billboard の切れ目」になる）。
+    /// col・row = 先頭を立たせるマス。視錐台の中の板を、出所（町の動かない板の絵ごと・地図の外の森・隊列・広場のにぎやかし）と絵の名前で数える。
+    pub def drawBreakdown(res: Res, col: Int32, row: Int32): List[String] =
+        let m = res#town#map;
+        let at = (Int32.toFloat64(col) + 0.5, Int32.toFloat64(m#height - 1 - row) + 0.5);
+        let w0 = initial(res);
+        let w = { leader = at, trail = FollowTrail.lineBehind(at, (0.0, -1.0), res#doc#spacing, List.length(res#plan#party)), camera = { height = res#groundZ | w0#camera } | w0 };
+        let scene = sceneOf(res, w);
+        let frustum = Scene3d.frustumOf(scene);
+        let inside = scene#billboards |> List.filter(b -> not Scene3d.isBillboardOutsideFrustum(frustum, b)) |> List.map(Scene3d.billboardFieldsOf);
+        let outsideMap = (f: Scene3d.BillboardFields) -> f#position#x < 0.0 or f#position#x > Int32.toFloat64(m#width) or f#position#z < 0.0 or f#position#z > Int32.toFloat64(m#height);
+        let byTexture = inside |> List.foldLeft((acc, f) -> Map.insertWith((x, y) -> List.append(y, x), f#texture, f :: Nil, acc), Map.empty()) |> Map.valuesOf;
+        let lines = byTexture |> List.map(g -> {
+            let n = List.length(g);
+            let tex = List.head(g) |> Option.map(f -> f#texture) |> Option.getWithDefault("?");
+            let outside = List.count(outsideMap, g);
+            let casts = List.count(f -> f#castShadows, g);
+            let lit = List.count(f -> f#lit, g);
+            (0 - n, "  ${tex}: ${n}（地図の外 ${outside}・影を落とす ${casts}・光を当てる ${lit}）")
+        }) |> Sort.sortStableBy(fst) |> List.map(snd);
+        let total = List.length(inside);
+        let casts = List.count(f -> f#castShadows, inside);
+        let outsideAll = List.count(outsideMap, inside);
+        let textures = List.length(byTexture);
+        let runs = inside |> List.foldLeft((acc, f) -> {
+            let (n, prev) = acc;
+            if (prev == Some(f#texture)) (n, prev) else (n + 1, Some(f#texture))
+        }, (0, None)) |> fst;
+        "マス (${col}, ${row})・場面の板 ${List.length(scene#billboards)}・視錐台の中 ${total}（地図の外 ${outsideAll}・影を落とす ${casts}）・絵の種類 ${textures}・来た順で絵が替わる回数 ${runs}" :: lines
+
+    /// 板の物の draw の内訳を、立ち始め・広場・北の大通りで出す（ウィンドウを開かない・make explore-draws）。
+    pub def printDrawBreakdown(): Unit \ IO =
+        match (run { load(Images.readImageIo, Map.empty()) } with Fs.FileRead.runWithIO) {
+            case Ok(res)  => ((13, 54) :: (13, 47) :: (13, 44) :: (13, 36) :: Nil) |> List.forEach(cr -> {
+                let (c, r) = cr;
+                drawBreakdown(res, c, r) |> List.forEach(println)
+            })
+            case Err(why) => println("[hd2d_town] 町を組めない: ${why}")
+        }
 
     /// 格子を字で出す（ウィンドウを開かない・make explore-grid）。
     pub def printGrid(): Unit \ IO =

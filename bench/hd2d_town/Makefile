@@ -148,6 +148,10 @@ explore-serve:
 explore-grid:
 	../../bin/flix run --entrypoint Explore.printGrid
 
+# 板の物の draw の内訳（視錐台の中の板を絵ごと・地図の外の森・影を落とす物で数える。立ち始め・広場・北の大通り・ウィンドウを開かない）
+explore-draws:
+	../../bin/flix run --entrypoint Explore.printDrawBreakdown
+
 explore-record:
 	rm -rf debug/web_walk_frames
 	DEVELOPER_DIR=/Library/Developer/CommandLineTools python3 bin/web_walk_record.py "http://127.0.0.1:$(PORT)/?$(QUERY)" debug/web_walk_frames
