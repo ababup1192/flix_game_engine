@@ -51,7 +51,7 @@ func checkPortraitDesign(p *exportPortraitDesign, orientation string) error {
 
 type exportVirtualPad struct {
 	Dpad json.RawMessage `json:"dpad"`
-	// Stick は左の帯に十字キーの代わりに出す画面のスティック（倒した向きと強さを frame#leftStick へ渡す・キーは押さない）。
+	// Stick は左のゾーンに十字キーの代わりに出す画面のスティック（倒した向きと強さを frame#leftStick へ渡す・キーは押さない）。
 	Stick   bool `json:"stick"`
 	Buttons []struct {
 		Label  string `json:"label"`
@@ -184,7 +184,7 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 			return t, err
 		}
 		if dpad != nil && s.VirtualPad.Stick {
-			return t, fmt.Errorf("project.json の web.virtualPad に dpad と stick が両方ある（どちらも左の帯に出す）。\n  次: 斜めや強さで動かすなら stick: true だけ、上下左右のキーで動かすなら dpad だけにする")
+			return t, fmt.Errorf("project.json の web.virtualPad に dpad と stick が両方ある（どちらも左のゾーンに出す）。\n  次: 斜めや強さで動かすなら stick: true だけ、上下左右のキーで動かすなら dpad だけにする")
 		}
 		if dpad != nil {
 			pad.Dpad = map[string]string{}

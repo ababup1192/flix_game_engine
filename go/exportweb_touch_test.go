@@ -136,7 +136,7 @@ func TestResolveWebTouchRejectsStickWithDpad(t *testing.T) {
 	game := writeTouchGame(t, touchKeys)
 	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "virtualPad": {"dpad": true, "stick": true}}`)
 	if _, err := resolveWebTouch(game, raw); err == nil {
-		t.Error("dpad と stick は同じ左の帯なので誤りのはず")
+		t.Error("dpad と stick は同じ左のゾーンなので誤りのはず")
 	}
 }
 

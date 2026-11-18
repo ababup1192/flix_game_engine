@@ -64,7 +64,7 @@
   .fge-rotate-portrait, .fge-rotate-landscape { display: none; }
   body.fge-want-landscape .fge-rotate-landscape, body.fge-want-portrait .fge-rotate-portrait { display: block; }
 
-  /* ── バーチャルパッド（指の端末で、ゲームが web.virtualPad を決めた時だけ。左の帯は十字キーか画面のスティック）── */
+  /* ── バーチャルパッド（指の端末で、ゲームが web.virtualPad を決めた時だけ。左のゾーンは十字キーか画面のスティック）── */
   #fge-pad { display: none; }
   body.fge-pad-on #fge-pad { display: block; }
   .fge-pad-zone { position: fixed; display: flex; align-items: center; box-sizing: border-box; touch-action: none; }
@@ -84,8 +84,8 @@
   .fge-pad-button-1 { margin-top: 34px; }
   .fge-pad-button-3 { margin-top: 34px; }
   .fge-dpad-arm.on, .fge-pad-button.on { background: rgba(255, 255, 255, .45); }
-  /* 画面のスティック（web.virtualPad.stick）。指を置くと台がその所へ動く。置いていない間は帯の下寄りに薄く出す。 */
-  /* WhyNot: 台で指を受けない（pointer-events: none）— 台は指に付いて動くので、帯が受けないと台の外へ出た指を落とす。 */
+  /* 画面のスティック（web.virtualPad.stick）。指を置くと台がその所へ動く。置いていない間はゾーンの下寄りに薄く出す。 */
+  /* WhyNot: 台で指を受けない（pointer-events: none）— 台は指に付いて動くので、ゾーンが受けないと台の外へ出た指を落とす。 */
   .fge-stick { position: relative; align-self: flex-end; margin-bottom: 12px; width: 140px; height: 140px; border-radius: 50%;
                background: rgba(255, 255, 255, .06); border: 2px solid rgba(255, 255, 255, .18); box-sizing: border-box;
                opacity: .55; pointer-events: none; transition: opacity .12s ease-out; }

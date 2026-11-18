@@ -494,7 +494,7 @@ function fgePadSync() {
   fgeStickDraw();
 }
 
-// 画面のスティック（web.virtualPad.stick）。左の帯に指を置いた所が台の中心になり（floating）、そこからのずれを
+// 画面のスティック（web.virtualPad.stick）。左のゾーンに指を置いた所が台の中心になり（floating）、そこからのずれを
 // 実機のパッドの左スティックと同じ生の軸（-1..1・右と下が正・長さは 1 で頭打ち）にする。遊びは Flix の側の GamepadMap.stickOf が外す。
 // WhyNot: 台を決まった位置に置かない — 端末の大きさと持ち方で親指の届く所が違い、台の外を押した指が空振りする。
 function fgeStickFinger() {
@@ -636,7 +636,7 @@ function fgeBuildPad(cfg) {
       // WhyNot: 暗黙の capture を当てにしない — マウスで確かめる時は capture されず、指を滑らせた後の move が帯の外へ逃げる。
       try { zone.setPointerCapture(e.pointerId); } catch (err) { /* 押し終えた指 */ }
       var f = { kind: fgeInDpad(e.clientX, e.clientY) ? "dpad" : "button", dir: null, code: null };
-      // WhyNot: 2 本目の指でスティックを掴み直さない — 1 本目の向きが途中で別の指の向きへ跳ぶ。2 本目は帯の中のボタンを探すだけ。
+      // WhyNot: 2 本目の指でスティックを掴み直さない — 1 本目の向きが途中で別の指の向きへ跳ぶ。2 本目はゾーンの中のボタンを探すだけ。
       if (zone === left && fgePad.stick && !fgeStickFinger()) fgeStickBegin(f, e.clientX, e.clientY);
       fgePadAim(f, e.clientX, e.clientY);
       fgePad.fingers.set(e.pointerId, f);
