@@ -291,17 +291,17 @@ func TestPickKeepsSlotTwoFromOldEntries(t *testing.T) {
 	old := Owner{PID: 1}                  // 1 本だった頃の heavy のエントリ（Long も AnySlot も無い）
 	long := Owner{PID: 2, Long: true}     // 枠 1 だけ
 	short := Owner{PID: 3, AnySlot: true} // どこでも
-	if slot, _ := pick(o, []Owner{old, long, short}, 1); slot != -1 {
+	if slot, _ := pick(o, []Owner{old, long, short}, Owner{PID: 1}); slot != -1 {
 		t.Fatalf("古い heavy のエントリに枠 %d を配った（枠 1 だけを待つはず）", slot+1)
 	}
-	if slot, _ := pick(o, []Owner{old, long, short}, 3); slot != 1 {
+	if slot, _ := pick(o, []Owner{old, long, short}, Owner{PID: 3}); slot != 1 {
 		t.Fatalf("枠 1 を待つエントリの後ろの短い物が枠 2 を取れない (got %d)", slot+1)
 	}
 	os.Remove(slotPath(lock, 0))
-	if slot, _ := pick(o, []Owner{short, long}, 3); slot != 1 {
+	if slot, _ := pick(o, []Owner{short, long}, Owner{PID: 3}); slot != 1 {
 		t.Fatalf("短い物が枠 1 を先に取った（長い物のために枠 2 から取るはず）")
 	}
-	if slot, _ := pick(o, []Owner{short, long}, 2); slot != 0 {
+	if slot, _ := pick(o, []Owner{short, long}, Owner{PID: 2}); slot != 0 {
 		t.Fatalf("前の短い物が枠 2 を取るのに、長い物が枠 1 を取れない")
 	}
 }
@@ -436,7 +436,7 @@ func TestPickHonorsFewerSlotsOfEntriesAhead(t *testing.T) {
 	os.Mkdir(slotPath(lock, 0), 0o755)
 	one := Owner{PID: 1, AnySlot: true, Slots: 1} // FGE_HEAVY_SLOTS=1 のエントリは枠 2 を使えない
 	me := Owner{PID: 2, AnySlot: true, Slots: 2}
-	if slot, _ := pick(o, []Owner{one, me}, 2); slot != 1 {
+	if slot, _ := pick(o, []Owner{one, me}, Owner{PID: 2}); slot != 1 {
 		t.Fatalf("枠 1 しか知らないエントリの後ろで、空いた枠 2 を取れない (got %d)", slot+1)
 	}
 }
@@ -775,6 +775,27 @@ func TestHelpPrintsFullUsage(t *testing.T) {
 			if !strings.Contains(string(out), want) {
 				t.Fatalf("%s の出力に %q が無い:\n%s", flag, want, out)
 			}
+		}
+	}
+}
+
+// 1 つのプロセスの中で並べて Hold しても、どれも列に並べて流れる（refactor が木ごとの索引を並べて作る形）。
+func TestParallelHoldsInOneProcessAllRun(t *testing.T) {
+	o := Options{Lock: newLock(t), Slots: 2, Short: true, Poll: 10 * time.Millisecond, Err: io.Discard}
+	const n = 8
+	codes := make([]int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			codes[i] = Hold("test", t.TempDir(), o, func(run Runner) int { return run("", "true") })
+		}(i)
+	}
+	wg.Wait()
+	for i, c := range codes {
+		if c != 0 {
+			t.Fatalf("%d 本目の Hold が %d で終わった（列に並べなかった）", i+1, c)
 		}
 	}
 }

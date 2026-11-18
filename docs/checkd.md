@@ -42,6 +42,16 @@ make check ──> bin/fge checkd ──> Unix ソケット (~/Library/Caches/fl
 - 型の別名（`type alias`）が変わった時は、常駐（flixlint 0.8.5 から）がコンパイラのキャッシュを捨ててから検査する。
   Flix 0.78 の増分の compile は別名を引数の型にだけ使うファイルを型付けし直さず、触っていないファイルの呼び出しが
   「Extra label」で落ちていた（素の flix check は通る）。その回は全部を検査し直す分だけ遅い（internet_dungeon で 4〜5 秒・普段は 1〜4 秒）。
+- **engine の束を張り替えた後**: `make sync-engine-full` は lib/github/…/flix_game_engine-<版>.fpkg の symlink を同じ名前のまま
+  新しい束へ張り替える。flixlint の常駐（0.9.0 まで）はコンパイラを依存のパスで持ち続けるので、古い engine のまま check と索引を
+  作り、新しい型・欄が「無い」と言っていた（`CHECKD=0` だと通る）。今は check（`bin/fge checkd`）・`bin/fge refactor`・
+  `make lint-flixlint` の前に、socket の時刻（常駐の起きた時刻）より後に lib/github の fpkg・toml が置き換わっていれば、
+  `[checkd] … の常駐は古い依存を持っている（…）。止めて起こし直す` と 1 行言って常駐を止め、次の頼みが新しい束で起こし直す。
+  答えの版（下）は依存の中身を含まないので、版の照合ではこの古さに気づけない。hooks.json が pin する flixlint 0.9.1 からは
+  常駐が自分でも気づく（依存のファイルが替わればコンパイラを作り直す）。この見張りは、0.9.0 の常駐がまだ生きている機械と
+  ほかの版の flixlint を名指しした時のために残す（止めるのは古い時だけ）。
+  lib/external の jar は見ない（engine の jar は名前に中身の hash を持ち、替われば依存のパスが替わる）。
+  確かめる口は `make refactor-smoke`（engine の新しい型を使う小さな場面で checkd・refactor・flixlint を流す）。
 - `bin/fge refactor` の索引（flixlint --spans）も同じ常駐で作る（同じ shim の jar・ヒープ・寿命を渡すので socket は 1 本）。
   常駐で作る索引は heavy の枠を取らず、書き換えの後の確かめの `make check` は heavy の外で流す（heavy は既定で `CHECKD=0` を
   入れるため、枠の中では素の flix check になる）。
@@ -98,6 +108,10 @@ bin/fge checkd --stop-all   # 全部止める。次の check が立て直すの�
 
 check の結果がどうしても疑わしい時は `CHECKD=0 make check`（または `bin/flix check`）で素の経路と比べる。
 `CHECKD_DEBUG=1` を付けると、受けた版と頼み直しの数、素の check に落ちた訳を表示する。
+
+engine の根の `bin/fge refactor` が bench を「前に索引を作れなかったので引いていない」と飛ばし続け、その bench の
+`make check` は通る時は、`build/refactor/trees-skip.json` を消す（飛ばす覚えは flix.toml・lib・src が新しくなるまで残る）。
+flixlint が動かずに落ちた回（heavy の枠を取れなかった等）は今は覚えないが、それより前に覚えた物は残っている。
 
 ## 対象外 (今はやらない)
 

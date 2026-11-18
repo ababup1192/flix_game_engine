@@ -613,6 +613,13 @@ go-test: ### | go/ のテスト（CIEDE2000 の参照 34 組・外部依存ゼ�
 go-test-amd64: ### | arm64 の Mac で x86-64 の結果を確かめる（Rosetta。px の FMA のずれ）
 	@cd go && CGO_ENABLED=0 GOARCH=amd64 go test ./internal/px ./internal/pxlib ./internal/anim
 
+# engine の新しい型を使う小さなゲーム（testdata/refactor-smoke）で、checkd・bin/fge refactor・flixlint が通るかを確かめる。
+# 束は make sync-engine-full の置き場の物を使う（engine を直したら先に sync-engine-full）。中身は bin/refactor-smoke.sh。
+# WhyNot: bench やテンプレートで確かめない。それぞれの lib の束と常駐の状態が残っていて、道具の誤りと古い束の誤りを見分けられない。
+.PHONY: refactor-smoke
+refactor-smoke: ### | engine の新しい型を使う小さな場面で checkd（束の張り替えで常駐を起こし直す）・refactor search / usages・flixlint が通るか
+	@bin/refactor-smoke.sh $(VERSION) $(ENGINE_FULL_SUBPATH) $(ENGINE_FULL_FPKG_NAME) $(ENGINE_FULL_TOML_NAME)
+
 ##@ lint
 # ── lint ──────────────────────────────────────────────────
 # 中身はどれも bin/fge の検査で、規約は bin/lint-rules/<名前>.json。使い方は make lint ONLY=<名前>[,<名前>…]。

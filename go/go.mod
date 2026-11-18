@@ -3,7 +3,7 @@ module github.com/ababup1192/flix_game_engine/go
 go 1.26.5
 
 require (
-	github.com/ababup1192/flixlint/go v0.0.0-20261103234301-e13b97c0c856
+	github.com/ababup1192/flixlint/go v0.0.0-20261118130033-a9f938ce3ce1
 	go.starlark.net v0.0.0-20261016124120-4811d7e34ea3
 )
 

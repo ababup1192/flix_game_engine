@@ -382,7 +382,7 @@ func writeJSON(path string, v any) error {
 	// WhyNot: 一時ファイルを鍵のフォルダの外（隣）に置くのは、書いている途中で殺されると
 	// 鍵の中に残り、手書きの rmdir も heavy の外しも「空でない」で失敗し続けるため。
 	tmp := filepath.Join(filepath.Dir(filepath.Dir(path)),
-		"."+filepath.Base(filepath.Dir(path))+"."+filepath.Base(path)+".tmp"+strconv.Itoa(os.Getpid()))
+		"."+filepath.Base(filepath.Dir(path))+"."+filepath.Base(path)+".tmp"+strconv.Itoa(os.Getpid())+"-"+newToken())
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
@@ -470,13 +470,26 @@ func waiting(o Options) []Owner {
 		if !list[i].Since.Equal(list[j].Since) {
 			return list[i].Since.Before(list[j].Since)
 		}
-		return list[i].PID < list[j].PID
+		if list[i].PID != list[j].PID {
+			return list[i].PID < list[j].PID
+		}
+		return list[i].Token < list[j].Token
 	})
 	return list
 }
 
-func queuePath(o Options, pid int) string {
-	return filepath.Join(queueDir(o.Lock), strconv.Itoa(pid)+".json")
+// queuePath は 1 回の Hold の列のエントリ。pid だけで名付けない — 1 つのプロセスが並べて Hold する
+// （refactor が木ごとの索引を goroutine で作る）と、同じ名前を取り合い、一時ファイルの rename が「無い」で落ちていた。
+func queuePath(o Options, me Owner) string {
+	return filepath.Join(queueDir(o.Lock), strconv.Itoa(me.PID)+"-"+me.Token+".json")
+}
+
+// isMe は列のエントリ w が me か。合言葉の無いエントリ（古い heavy）は pid で見る。
+func isMe(w, me Owner) bool {
+	if w.Token != "" && me.Token != "" {
+		return w.Token == me.Token
+	}
+	return w.PID == me.PID
 }
 
 // ── 流す ─────────────────────────────────────────────────
@@ -607,7 +620,7 @@ func eligible(w Owner, n int) []int {
 // WhyNot: 先頭だけが取る決まりを「列の順に配る」に広げるのは、枠 1 を待つ長い物が先頭に
 // 居ても、後ろの短い物が空いた枠 2 で流れられるようにするため。前のエントリが使える枠を
 // 後ろが先に取らないので、空いた瞬間に後から来た方が割り込むことは無い。
-func pick(o Options, list []Owner, pid int) (slot int, reap []int) {
+func pick(o Options, list []Owner, me Owner) (slot int, reap []int) {
 	free := make([]bool, o.Slots)
 	for i := range free {
 		_, err := os.Stat(slotPath(o.Lock, i))
@@ -623,7 +636,7 @@ func pick(o Options, list []Owner, pid int) (slot int, reap []int) {
 			}
 		}
 		if got >= 0 {
-			if w.PID == pid {
+			if isMe(w, me) {
 				return got, nil
 			}
 			free[got] = false
@@ -632,12 +645,12 @@ func pick(o Options, list []Owner, pid int) (slot int, reap []int) {
 		for _, i := range eligible(w, o.Slots) {
 			if !claimed[i] {
 				claimed[i] = true
-				if w.PID == pid {
+				if isMe(w, me) {
 					reap = append(reap, i)
 				}
 			}
 		}
-		if w.PID == pid {
+		if isMe(w, me) {
 			return -1, reap
 		}
 	}
@@ -649,7 +662,7 @@ func acquire(me *Owner, sigs chan os.Signal, o Options) (string, error) {
 	if err := os.MkdirAll(queueDir(o.Lock), 0o777); err != nil {
 		return "", fmt.Errorf("待ちの列 %s を作れません: %v", queueDir(o.Lock), err)
 	}
-	qp := queuePath(o, me.PID)
+	qp := queuePath(o, *me)
 	if err := writeJSON(qp, me); err != nil {
 		return "", fmt.Errorf("待ちの列に並べません: %v", err)
 	}
@@ -659,11 +672,11 @@ func acquire(me *Owner, sigs chan os.Signal, o Options) (string, error) {
 	var lastNote time.Time
 	for {
 		list := waiting(o)
-		if position(list, me.PID) == len(list) {
+		if position(list, *me) == len(list) {
 			// 自分のエントリが心拍切れで飛ばされていても、最後尾に並んでいるとみなす。
 			list = append(list, *me)
 		}
-		slot, toReap := pick(o, list, me.PID)
+		slot, toReap := pick(o, list, *me)
 		if slot >= 0 {
 			path := slotPath(o.Lock, slot)
 			if err := os.Mkdir(path, 0o755); err == nil {
@@ -692,7 +705,7 @@ func acquire(me *Owner, sigs chan os.Signal, o Options) (string, error) {
 		}
 		if lastNote.IsZero() || o.Now().Sub(lastNote) >= 2*time.Minute {
 			fmt.Fprintf(o.Err, "[heavy] 鍵を待っています (%s): %s・前に %d 本\n",
-				kindLabel(*me), describeHolders(o, me), position(list, me.PID))
+				kindLabel(*me), describeHolders(o, me), position(list, *me))
 			lastNote = o.Now()
 		}
 		select {
@@ -705,9 +718,9 @@ func acquire(me *Owner, sigs chan os.Signal, o Options) (string, error) {
 	}
 }
 
-func position(list []Owner, pid int) int {
+func position(list []Owner, me Owner) int {
 	for i, w := range list {
-		if w.PID == pid {
+		if isMe(w, me) {
 			return i
 		}
 	}

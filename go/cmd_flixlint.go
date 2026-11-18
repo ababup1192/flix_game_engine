@@ -26,6 +26,10 @@ func init() {
 			if err != nil {
 				return orAbort(errOut, 0, err)
 			}
+			// lint も check・索引と同じ常駐を使うので、起きた後に lib の engine が張り替わった常駐はここで止める。
+			if r, err := hooks.LoadRules(repoRoot()); err == nil {
+				checkd.StopStaleResident(r, repoRoot(), refactorRoot(), os.Stderr)
+			}
 			fmt.Fprintf(out, "FLIXLINT_DIR='%s'\nFLIXLINT_SHIM='%s'\n", dir, shim)
 			// WhyNot: flixlint へ java のパスを渡す口は無いので、PATH の java が動かない時は engine の devbox の jdk を前に足させる。
 			if !javacmd.PathWorks() {
