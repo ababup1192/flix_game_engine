@@ -67,9 +67,9 @@
   "bloomThreshold": 0.9,
   "bloomSize": 0.6,
   "heatHaze": {
-    "amplitude": 12.0,
-    "wavelength": 30.0,
-    "rate": 1.8,
+    "amplitude": 6.0,
+    "wavelength": 26.0,
+    "rate": 1.6,
     "rise": 90.0
   },
   "stageLightScale": 0.15,
