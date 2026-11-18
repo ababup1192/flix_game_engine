@@ -70,6 +70,11 @@ Studio がフォームにできるのはこの 5 種類。**それ以外の `kin
 - `order` は**整数だけ**。`42.5` と書くと黙って無視されて並びが崩れる
 - `project.json` の登録キーは `schema`（`schemaPath` ではない）
 
+**engine が配る Doc を先に探す**: 後がけ（`post.json`・`PostStack.loadOr`）・UI（`ui.json`）・パーティクル（`fx.json`）・音量（`mixer.json`）などは
+schema が engine の `docs/*.schema.json` にあり、ゲームが schema を書かずに使える。一覧と post.json の例は
+[docs/doc-conventions.md](../../../docs/doc-conventions.md) の「engine が配る Doc の種類」。post.json は「出発点の preset + 書いた欄だけ上書き」の形で、
+調整したい数だけを書く Doc の手本になる。
+
 ## 5. 作ったあとの確認
 
 - [ ] エディタで開いてフォームが出るか（出なければ方言の書き間違い）

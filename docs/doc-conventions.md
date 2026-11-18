@@ -250,6 +250,46 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
 冒頭 doc コメントと `engine_world/test/TestTerrainDoc.flix` を見る。仕組みは
 [dual-grid.md](dual-grid.md)。
 
+## engine が配る Doc の種類（`docs/*.schema.json`）
+
+ゲームが自分で schema を書かずに使える Doc。schema は engine の `docs/` に置いてあり、JSON Schema（draft-07）の形で書く
+（欄ごとの `label` と `description` はエディタのフォームの見出しと説明になる）。
+
+| Doc | schema | 読む口 | 例と説明 |
+|---|---|---|---|
+| `*.post.json`（画面全体の後がけ） | `post.schema.json` | `PostStack.loadOr(fallback, path)`（壊れていたら fallback で続ける）・`PostStack.load` | 下の「Doc の例: post.json」 |
+| `*.ui.json`（UI の宣言） | `ui.schema.json` | `UiDoc.load`・`UiSpec.load` | [modules/ui.md](modules/ui.md) |
+| `*.fx.json`（パーティクル） | `fx.schema.json` | `FxDoc`（`Fx.sample` が毎回計算する） | [modules/fx.md](modules/fx.md) |
+| `*.mixer.json`（音量の束） | `mixer.schema.json` | `AudioMixerDoc.load` | [audio.md](audio.md)・[modules/sound.md](modules/sound.md) |
+| `*.sprite.json`・`*.pxsrc.json`・`*.colorgate.json`（ドット絵） | `sprite.schema.json`・`pxsrc.schema.json`・`colorgate.schema.json` | `bin/fge px build` | [px-ops.md](px-ops.md)・`/pixel-art` |
+| `*.sndsrc.json`・`*.chip.json`（効果音・曲） | `sndsrc.schema.json`・`chip.schema.json` | `bin/fge snd build` | [snd-ops.md](snd-ops.md) |
+
+### Doc の例: post.json
+
+`post.json` は「出発点の preset + 書いた欄だけを上書き」の形で、調整したい数だけを書く Doc の手本。
+
+```json
+{
+  "$schema": "post.schema.json",
+  "version": 1,
+  "preset": "NightOutdoor",
+  "exposure": 0.3,
+  "bloom": { "strength": 0.6 },
+  "vignette": null
+}
+```
+
+```flix
+// 読み込みで 1 回読んで World（か Resources）に持ち、View の側で渡す
+let post = PostStack.loadOr(PostStack.preset(PostStack.Preset.NightOutdoor), "assets/game.post.json");
+app |> App.withPostStack(w -> w#post)
+```
+
+- 効果の欄（`bloom`・`vignette`・`colorGrade`）は欄ごとに出発点へ混ぜる。`null` はその効果を外す
+- `kind` を持つ欄（`viewTransform`・`depthOfField`）は、`kind` が出発点と同じ時だけ欄ごとに混ぜ、違えば丸ごと替える
+- 読めない・壊れている時は 1 行知らせて fallback で続ける（ファイルが無いのは正常で黙る。[error-handling.md](error-handling.md) の「既定値で続ける」）
+- 毎コマ動かす値（時刻・ピントの距離）は Doc に置かず、View で `PostStack.withTime` などを重ねる
+
 ## 文書（.md）と .flix のコメントの中で名前・パスを書く記法（doc-refs が読む）
 
 ここまでは JSON の Doc の規約。この節だけは文書（`docs/**/*.md`・`NOTES.md`・`AGENTS.local.md`・agents-pack）の書き方で、
