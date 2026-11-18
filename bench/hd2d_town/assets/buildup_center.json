@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "立ったまま、隊列を中心に輪で町が出来る動画（BUILDUP=assets/buildup_center.json）。path の最初の点に立ち、町が出来て揺れが収まった walkPause 秒後に残りの点を歩く（followSec で追従カメラへ移る）・holdSec = 全部出来た後に撮る秒・radial の buildSec = 輪が一番遠いマスへ届く秒・curve = 届く距離が時間の 1/curve 乗で増える（小さいほど、はじめはゆっくりで後ほど速い）・zoomLead = 輪がこの割合届いた所でカメラが引き終える・paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり・土ぼこりの粒はその逆数の倍）・jitter = マスごとのずれ（秒）・zoomFrom・zoomTo = カメラの引き（足元からの距離の倍率）・spread = 横に並ぶ間（m）・部品の秒（rise・fall・squash・monumentFall・shake・shakeAmp・wallRise・roofDelay・roofFall・openingDelay・openingStep・pop・dust）と dustScale（土ぼこりの粒の倍率）は Buildup.Timing と同じ・impactDust = 記念碑の着地の土ぼこりの倍率・hitstopSec = 着地で止める秒・flash = 着地の瞬間に上げる露出（段）・waveSpeed・waveHeight = 衝撃が外へ伝わる速さと、木・街灯・町の人が跳ねる高さ・map = 地図の Doc（最終動画の写し）・radial の fromRow = 輪の届く範囲の北の端の行・shakeDecay = 揺れが減る速さ（/秒）・waveReach = 跳ねる高さが 1/e になる距離（m）・timeOfDay = 先頭の行で 4 つの Look（昼・夕方・夜・霧）を替える（mode = cut は各区間の真ん中の行を中心に transitionSec 秒だけなめらかにつなぐ（0 なら 1 コマで替える・行の幅は歩く速さから出す）・blend は区間の中でなめらかにつなぐ）（dayToDusk・duskToNight・nightToFog = つなぎ始めと終わりの行・moonRow = 太陽が月へ替わり板が光を当てない板へ切り替わる行・lampOn = 街灯を点け始める行と夜の強さに届く行）",
+  "note": "立ったまま、隊列を中心に輪で町が出来る動画（BUILDUP=assets/buildup_center.json）。path の最初の点に立ち、町が出来て揺れが収まった walkPause 秒後に残りの点を歩く（followSec で追従カメラへ移る）・holdSec = 全部出来た後に撮る秒・radial の buildSec = 輪が一番遠いマスへ届く秒・curve = 届く距離が時間の 1/curve 乗で増える（小さいほど、はじめはゆっくりで後ほど速い）・zoomLead = 輪がこの割合届いた所でカメラが引き終える・paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり・土ぼこりの粒はその逆数の倍）・jitter = マスごとのずれ（秒）・zoomFrom・zoomTo = カメラの引き（足元からの距離の倍率）・spread = 横に並ぶ間（m）・部品の秒（rise・fall・squash・monumentFall・shake・shakeAmp・wallRise・roofDelay・roofFall・openingDelay・openingStep・pop・dust）と dustScale（土ぼこりの粒の倍率）は Buildup.Timing と同じ・impactDust = 記念碑の着地の土ぼこりの倍率・hitstopSec = 着地で止める秒・flash = 着地の瞬間に上げる露出（段）・waveSpeed・waveHeight = 衝撃が外へ伝わる速さと、木・街灯・町の人が跳ねる高さ・map = 地図の Doc（最終動画の写し）・radial の fromRow = 輪の届く範囲の北の端の行・shakeDecay = 揺れが減る速さ（/秒）・waveReach = 跳ねる高さが 1/e になる距離（m）・timeOfDay = 先頭の行で 4 つの Look（昼・夕方・夜・霧）を替える（mode = cut は各区間の真ん中の行を中心に transitionSec 秒だけなめらかにつなぐ（0 なら 1 コマで替える・行の幅は歩く速さから出す）・blend は区間の中でなめらかにつなぐ）（dayToDusk・duskToNight・nightToFog = つなぎ始めと終わりの行・moonRow = 太陽が月へ替わり板が光を当てない板へ切り替わる行・lampOn = 街灯を点け始める行と夜の強さに届く行）・radial の monumentAim・monumentZoom・monumentLead・monumentHold・monumentBack = 記念碑の着地の前後にカメラの追う点を記念碑へ寄せ・引きを詰める（Buildup.Radial）・timeOfDay の fog = 最後の Look（今は朝の霧 town_morning_fog.json。夜から光を当てる板の朝へは、月 → 太陽の受け渡しでつなぐ）",
   "path": [
     [
       13,
@@ -67,6 +67,9 @@
     "spread": 0.95,
     "aimNorth": 3.0,
     "walkPause": 2.0,
+    "monumentAim": 0.9,
+    "monumentZoom": 0.75,
+    "monumentBack": 1.4,
     "followSec": 1.5,
     "walkZoom": 1.35,
     "fromRow": 26
@@ -97,7 +100,7 @@
     "day": "assets/town.json",
     "dusk": "assets/town_dusk.json",
     "night": "assets/town_night.json",
-    "fog": "assets/town_night_fog_mid.json",
+    "fog": "assets/town_morning_fog.json",
     "dayToDusk": [
       50,
       44

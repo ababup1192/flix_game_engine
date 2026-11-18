@@ -297,6 +297,18 @@ mod TestTown {
         Assert.assertTrue(near(Buildup.monumentPullAt(aimRadial(), 10.0, 12.3), 0.0))
 
     @Test
+    def testDaybreakKeepsTheLampsOnWhenTheMoonIsGone(): Unit \ Assert =
+        Assert.assertTrue(TownLook.daybreak(night(), TownLook.defaults(), 0.5)#lampIntensity > 0.0)
+
+    @Test
+    def testDaybreakLightsTheBoardsAfterTheMiddle(): Unit \ Assert =
+        Assert.assertEq(expected = TownScene.BoardLight.Lit, TownLook.daybreak(night(), TownLook.defaults(), 0.6)#boardLight)
+
+    @Test
+    def testDaybreakKeepsTheMoonDirectionBeforeTheMiddle(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.daybreak(night(), TownLook.defaults(), 0.3)#sunAzimuth, -35.0))
+
+    @Test
     def testCharGainIsBlendedBetweenLooks(): Unit \ Assert =
         Assert.assertTrue(near(TownLook.blend(TownLook.defaults(), { charGain = 1.5 | TownLook.defaults() }, 0.5)#charGain, 1.25))
 

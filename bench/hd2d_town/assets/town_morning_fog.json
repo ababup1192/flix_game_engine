@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "shadowDistance": 28.0,
+  "shadowMapSize": 4096,
+  "sunElevation": 24.0,
+  "sunAzimuth": 60.0,
+  "sunIntensity": 6.0,
+  "ambient": [
+    0.28,
+    0.30240000000000006,
+    0.37800000000000006
+  ],
+  "hemisphere": 0.2,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 10.0,
+  "fogFar": 42.0,
+  "fog": [
+    0.86,
+    0.89,
+    0.94
+  ],
+  "sky": [
+    0.86,
+    0.9,
+    0.96
+  ],
+  "exposure": -0.45,
+  "bloomStrength": 0.0,
+  "fStop": 0.08,
+  "saturation": 0.9,
+  "vignette": 0.35,
+  "gain": [
+    1.02,
+    1.0,
+    0.98
+  ],
+  "shadowStrength": 0.55,
+  "fxaa": true,
+  "lift": [
+    1.03,
+    1.03,
+    1.05
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "charShadow": "silhouette",
+  "shadowPcf": 2,
+  "charShadowScale": [
+    0.6,
+    0.8
+  ],
+  "lightUnits": "physical",
+  "note": "朝の霧（人の言葉「朝の霧みたいな」）。町の流れの 昼 → 夕方 → 夜 → 朝の霧 の最後。昼の Doc（town.json）を元に、夜明けの低い太陽（東・淡い暖色）・白〜薄い青白の空・夜より明るく昼より暗い露出・淡く長い影・地面に溜まる白い霧（heightFog・夜霧の「強」くらいの濃さ）・奥ほど白く消える霞（fogNear・fogFar）にした。街灯は消えている（lampIntensity 0）。板とキャラは昼と同じ光を当てる板。",
+  "sunColor": [
+    1.0,
+    0.9,
+    0.78
+  ],
+  "heightFog": {
+    "color": [
+      0.9,
+      0.92,
+      0.96
+    ],
+    "density": 1.4,
+    "baseHeight": 1.0,
+    "heightFalloff": 0.9,
+    "startDistance": 0.0,
+    "maxOpacity": 0.7,
+    "noiseSize": 5.0,
+    "noiseAmount": 0.5,
+    "noiseSpeed": [
+      0.4,
+      0.15
+    ],
+    "lightGlow": 0.0
+  },
+  "lampIntensity": 0.0
+}

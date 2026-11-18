@@ -192,8 +192,40 @@ mod TownLook {
         else if (row > snd(r#duskToNight))
             nightfall(s#dusk, s#night, progressOf(r#duskToNight, row), progressOf(r#duskToNight, r#moonRow), smoothstep(progressOf(r#lampOn, row)))
         else if (row >= fst(r#nightToFog)) s#night
-        else if (row > snd(r#nightToFog)) blend(s#night, s#fog, smoothstep(progressOf(r#nightToFog, row)))
+        else if (row > snd(r#nightToFog)) toLastLook(s#night, s#fog, progressOf(r#nightToFog, row))
         else s#fog
+
+    /// 夜 a から最後の Look b へ（x = 区間の中で歩いた割合）。b が光を当てる板の朝なら daybreak・夜霧なら blend。
+    def toLastLook(a: Look, b: Look, x: Float64): Look =
+        if (a#boardLight == TownScene.BoardLight.Unlit and b#boardLight == TownScene.BoardLight.Lit) daybreak(a, b, x)
+        else blend(a, b, smoothstep(x))
+
+    /// 夜 a から朝 b へ（nightfall の逆向き・x = 区間の中で歩いた割合）。区間の前半で月（a の向きと色）の強さを 0 まで落とし、
+    /// 街灯を消し、板は光を当てない板のまま。真ん中で太陽（b の向きと色）へ替えて板を光を当てる板にし、後半で太陽の強さを上げる。
+    /// キャラの板は、太陽が昇りきるまで夜の掛け目から光を当てた明るさへ charToNight で移す。霞の距離は真ん中で場面の奥の端まで引く。
+    // WhyNot: 月の向きを太陽の向きへなめらかにつながない — 影が地面を回って見える。
+    // WhyNot: 太陽が昇りきってから板を光を当てる板にしない — 光を当てない板は霞を受けず、切り替えの瞬間に遠くの板だけ霧が掛かって跳ねる。
+    pub def daybreak(a: Look, b: Look, x: Float64): Look =
+        let half = 0.5;
+        // WhyNot: 街灯を月と一緒に消さない — 月が 0 になってから太陽が昇るまでの間、町もキャラも見えない暗い谷になる。
+        let lamp = 1.0 - smoothstep((x - 0.25) / 0.6);
+        let base = { lampIntensity = a#lampIntensity * lamp, lampRange = a#lampRange, lampColor = a#lampColor,
+                     lampGlow = a#lampGlow * lamp, haloGlow = a#haloGlow * lamp, glowAlpha = a#glowAlpha * lamp | blend(a, b, smoothstep(x)) };
+        let clearNear = Float64.max(b#far, a#fogNear);
+        let clearFar = Float64.max(clearNear + 1.0, a#fogFar);
+        if (x < half) {
+            let toSun = smoothstep(x / half);
+            { fogNear = a#fogNear + (clearNear - a#fogNear) * toSun, fogFar = a#fogFar + (clearFar - a#fogFar) * toSun,
+              sunElevation = a#sunElevation, sunAzimuth = a#sunAzimuth, sunColor = a#sunColor, sunIntensity = a#sunIntensity * (1.0 - toSun),
+              boardLamplight = a#boardLamplight * lamp, boardLight = TownScene.BoardLight.Unlit, litToUnlit = 1.0, charToNight = 0.0,
+              boardNightBase = a#boardNightBase, charNightBase = a#charNightBase, charNightFar = a#charNightFar | base }
+        } else {
+            let rise = smoothstep((x - half) / (half * 0.6));
+            { fogNear = clearNear + (b#fogNear - clearNear) * rise, fogFar = clearFar + (b#fogFar - clearFar) * rise,
+              sunElevation = b#sunElevation, sunAzimuth = b#sunAzimuth, sunColor = b#sunColor, sunIntensity = b#sunIntensity * rise,
+              boardLamplight = 0.0, boardLight = TownScene.BoardLight.Lit, charToNight = 1.0 - rise,
+              charNightBase = a#charNightBase, charNightFar = a#charNightFar | base }
+        }
 
     /// 2 つの Look の間を u（0 で a・1 で b）でつなぐ。場面で 1 つに決まる欄（角度・影の地図・光の量の読み方・読み込みで作った絵の色）は a の値。
     /// 板の明るさの決め方は u が 1 に届いた時だけ b に替える。
