@@ -22,6 +22,7 @@ mod TownScene {
     /// lanternCore・lanternEdge = 火袋の芯と縁の色・haloColor・haloSize・haloGlow・haloFalloff = 火袋ごとの淡いハローの丸い板の色・直径（m）・強さ・落ち方（乗数）・
     /// charShadowScale = 隊列のキャラの影の板の幅と高さの倍率（見えている板は変えない・太陽と点光源の影の両方）・
     /// charNightBase = 夜のキャラ（隊列と町の人）の板の地の明るさ（夜の露出で暗くなる分を 1 より大きい値で戻す）・charNightFar = 街灯から遠い暗がりのキャラの明るさの割合・
+    /// charGain = 光を当てるキャラの板の色の掛け目（景色はそのままでキャラだけ明るくする・夕方）・
     /// lightUnits = 光の量の読み方（Physical は逆二乗・拡散に 1/π）・pointShadows = 街灯の点光源の影（None で落とさない・街灯の強さが 0 の間も落とさない）・
     /// boardLight = 板（キャラ・木・小物）に光を当てるか（Unlit は boardNightBase・charNightBase の掛け目で塗る。Doc では boardLamplight が正なら Unlit）・
     /// glowAlpha = 火袋とハローの光る板の濃さ（0〜1・歩きながら街灯が点く間に 0 から上げる）・
@@ -39,7 +40,7 @@ mod TownScene {
                             heightFog = Option[PostStack.HeightFog], boardLamplight = Float64, boardNightBase = Color,
                             bloomThreshold = Float64, bloomSize = Float64,
                             lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64,
-                            charShadowScale = Vec2.Vec2, charNightBase = Color, charNightFar = Float64, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap],
+                            charShadowScale = Vec2.Vec2, charNightBase = Color, charNightFar = Float64, charGain = Float64, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap],
                             boardLight = BoardLight, glowAlpha = Float64, litToUnlit = Float64,
                             view = PostStack.ViewTransform, heatHaze = Option[HeatHaze], stageLightScale = Float64, stageGlowScale = Float64 }
 
@@ -252,6 +253,13 @@ mod TownScene {
         boards |> List.filter(b -> b#shadow == TileMap3d.BoardShadow.Grounded) |> List.mapWithIndex((i, b) ->
             ("contact:${Int32.toString(i)}", contactInstance(mesh, material, b#x, b#y, b#z, b#width)))
 
+    /// キャラの板の色の掛け目: tintColor に charGain（線形）を掛けた物。
+    // WhyNot: charGain を線形の掛け目へ掛けてから tintColor に渡さない — tintColor は 1 で頭打ちにするので、白い板が明るくならない。
+    def gainedTint(look: Look, t: Rgb): Color =
+        let c = tintColor(look, t);
+        let k = Float64.pow(base = Float64.max(0.0, look#charGain), 1.0 / 2.4);
+        Color.rgb(c#r * k, c#g * k, c#b * k)
+
     /// 線形の掛け目を、場面の色（画面の値）にする。
     def tintColor(look: Look, t: Rgb): Color =
         Color.rgb(Faces.linearToSrgb(t#r * look#boardTint), Faces.linearToSrgb(t#g * look#boardTint), Faces.linearToSrgb(t#b * look#boardTint))
@@ -300,12 +308,13 @@ mod TownScene {
 
     /// 夜のキャラ（隊列と町の人）の板の明るさ: 光を当てない板にして、色の掛け目を charNightBase × （溜まりの中は 1・遠い暗がりは charNightFar）にする。
     // WhyNot: 掛け目を 1 で頭打ちにしない — 夜の露出（−2 段）で光を当てない板も 1/4 に暗くなり、溜まりの中のキャラの顔と服が読めない
-    def charLit(look: Look, lamps: Lamps, x: Float64, y: Float64, t: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
-        if (look#boardLight == BoardLight.Lit) bb
+    def charLit(look: Look, lamps: Lamps, x: Float64, y: Float64, t0: Rgb, bb: Scene3d.Billboard3d): Scene3d.Billboard3d =
+        let t = { r = t0#r * look#charGain, g = t0#g * look#charGain, b = t0#b * look#charGain };
+        if (look#boardLight == BoardLight.Lit) bb |> Scene3d.withBillboardTint(gainedTint(look, t0))
         else {
             let near = Float64.min(1.0, lampNearness(look, lamps, x, y));
             let k = look#charNightFar + (1.0 - look#charNightFar) * near;
-            let night = Color.rgb(look#charNightBase#r * k * t#r, look#charNightBase#g * k * t#g, look#charNightBase#b * k * t#b);
+            let night = Color.rgb(look#charNightBase#r * k * t0#r, look#charNightBase#g * k * t0#g, look#charNightBase#b * k * t0#b);
             Scene3d.unlit(bb) |> Scene3d.withBillboardTint(fromLitTint(look, lamps, bb, t, night))
         }
 

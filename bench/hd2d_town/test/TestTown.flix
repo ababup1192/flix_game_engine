@@ -281,6 +281,10 @@ mod TestTown {
         Assert.assertTrue(near(TownLook.withWalkSpeed(3.5, { transitionSec = 0.4 | cutSchedule() })#transitionRows, 1.4))
 
     @Test
+    def testCharGainIsBlendedBetweenLooks(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.blend(TownLook.defaults(), { charGain = 1.5 | TownLook.defaults() }, 0.5)#charGain, 1.25))
+
+    @Test
     def testWalkSpeedSkipsTheWait(): Unit \ Assert =
         Assert.assertTrue(near(BuildVideo.walkSpeedOf(route()), 2.0))
 

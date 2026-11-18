@@ -15,6 +15,7 @@
   ],
   "hemisphere": 0.12,
   "boardTint": 1.0,
+  "charGain": 1.5,
   "snapToTexels": true,
   "fogNear": 16.0,
   "fogFar": 60.0,

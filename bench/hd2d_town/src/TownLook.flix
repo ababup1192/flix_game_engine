@@ -15,7 +15,7 @@ mod TownLook {
           extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8), charShadow = TownScene.CharShadow.Soft,
           heightFog = None, boardLamplight = 0.0, boardNightBase = Color.rgb(0.3, 0.33, 0.5), bloomThreshold = 0.8, bloomSize = 0.6,
           lanternCore = Color.rgb(1.0, 0.96, 0.42), lanternEdge = Color.rgb(1.0, 0.62, 0.06), haloColor = Color.rgb(1.0, 0.6, 0.08), haloSize = 1.9, haloGlow = 0.0, haloFalloff = 2.2,
-          charShadowScale = Vec2.v2(1.0, 1.0), charNightBase = Color.rgb(0.3, 0.33, 0.5), charNightFar = 1.0, lightUnits = Scene3d.LightUnits.Legacy, pointShadows = None,
+          charShadowScale = Vec2.v2(1.0, 1.0), charNightBase = Color.rgb(0.3, 0.33, 0.5), charNightFar = 1.0, charGain = 1.0, lightUnits = Scene3d.LightUnits.Legacy, pointShadows = None,
           boardLight = TownScene.BoardLight.Lit, glowAlpha = 1.0, litToUnlit = 1.0, view = PostStack.ViewTransform.AgX, heatHaze = None, stageLightScale = 1.0, stageGlowScale = 1.0 }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
@@ -58,7 +58,7 @@ mod TownLook {
                   case _           => None
               }) |> Option.getWithDefault(d#charShadowScale),
           charNightBase = color("charNightBase", color("boardNightBase", d#boardNightBase)),
-          charNightFar = num("charNightFar", d#charNightFar),
+          charNightFar = num("charNightFar", d#charNightFar), charGain = num("charGain", d#charGain),
           lightUnits = if (JsonCodec.stringOr("lightUnits", "legacy", m) == "physical") Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy,
           pointShadows = Map.get("pointShadows", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(pointShadowsOf),
           boardLight = if (num("boardLamplight", d#boardLamplight) > 0.0) TownScene.BoardLight.Unlit else TownScene.BoardLight.Lit,
@@ -212,7 +212,7 @@ mod TownLook {
           bloomThreshold = n(a#bloomThreshold, b#bloomThreshold), bloomSize = n(a#bloomSize, b#bloomSize),
           haloColor = c(a#haloColor, b#haloColor), haloGlow = n(a#haloGlow, b#haloGlow), glowAlpha = n(a#glowAlpha, b#glowAlpha),
           charShadowScale = Vec2.v2(n(a#charShadowScale#x, b#charShadowScale#x), n(a#charShadowScale#y, b#charShadowScale#y)),
-          charNightBase = c(a#charNightBase, b#charNightBase), charNightFar = n(a#charNightFar, b#charNightFar),
+          charNightBase = c(a#charNightBase, b#charNightBase), charNightFar = n(a#charNightFar, b#charNightFar), charGain = n(a#charGain, b#charGain),
           boardLight = if (u >= 1.0) b#boardLight else a#boardLight | a }
 
     def mixColor(x: Color, y: Color, u: Float64): Color =
