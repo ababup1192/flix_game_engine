@@ -3,6 +3,7 @@ package agenteval
 import (
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -105,5 +106,28 @@ func TestScoreReadsStreamJSON(t *testing.T) {
 	// (当たり 1 − 減点 1) / 期待 2 = 0 点
 	if r.Hit != 1 || r.Penalty != 1 || r.Points() != 0 {
 		t.Errorf("hit %d penalty %d points %d", r.Hit, r.Penalty, r.Points())
+	}
+}
+
+func TestPreflightProblem(t *testing.T) {
+	cases := []struct {
+		name, stdout, stderr string
+		failed               bool
+		want                 string
+	}{
+		{"動いた", `{"type":"result","is_error":false,"result":"OK"}`, "", false, ""},
+		{"OAuth が切れた", `{"type":"result","is_error":true,"result":"OAuth session expired. Please run /login"}`, "", true, "ログインが切れている"},
+		{"stderr だけ", "", "Invalid API key · Please run /login", true, "ログインが切れている"},
+		{"ほかの失敗", `{"type":"result","is_error":true,"result":"overloaded"}`, "", true, "動かない（overloaded）"},
+		{"JSON でない", "panic", "", false, "動かない（panic）"},
+	}
+	for _, c := range cases {
+		err := preflightProblem(c.stdout, c.stderr, c.failed)
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: 通るはずが %v", c.name, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: %q を含むはずが %v", c.name, c.want, err)
+		}
 	}
 }
