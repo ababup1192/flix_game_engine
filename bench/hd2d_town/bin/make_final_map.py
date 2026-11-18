@@ -26,7 +26,8 @@ for r in range(NORTH):
         north_objects.append(row({10: 'L', 16: 'L'} if r == 3 else {}))
         continue
     north_ground.append(AVENUE_GROUND)
-    cells = {11: 'L', 15: 'L'} if r % 3 == 2 else {11: 'h', 15: 'h'}
+    # WhyNot: 北の大通りの街灯を植え込みの帯（列 11・15）に立てない — 追従カメラの手前で柱がパーティの上に重なって隠した。水路の外（列 9・17）に立てる
+    cells = {11: 'h', 15: 'h', 9: 'L', 17: 'L'} if r % 3 == 2 else {11: 'h', 15: 'h'}
     if r == 9:
         cells.update({c: 'H' for c in range(1, 10)})
     if r in (12, 22):
@@ -34,7 +35,7 @@ for r in range(NORTH):
     if r in (8, 21):
         cells.update({20 if r == 8 else 21: 'T'})
     if 18 <= r <= 21:
-        cells.update({17: 'X', 18: 'f'})
+        cells.update({18: 'X', 19: 'f'})
     north_objects.append(row(cells))
 north_buildings = [
     {"id": "gate_left", "x": 4, "y": 0, "w": 6, "h": 3, "level": 1, "floors": 2, "wall": "stone",
@@ -43,7 +44,7 @@ north_buildings = [
      "roof": {"kind": "gable", "ridge": "x", "pitchDeg": 40, "overhang": 0.4}},
     {"id": "north_left", "x": 1, "y": 4, "w": 7, "h": 4, "level": 1, "floors": 1, "wall": "plaster",
      "roof": {"kind": "gable", "ridge": "x", "pitchDeg": 40, "overhang": 0.4}},
-    {"id": "north_right", "x": 19, "y": 11, "w": 6, "h": 5, "level": 1, "floors": 2, "wall": "stone",
+    {"id": "north_right", "x": 21, "y": 11, "w": 5, "h": 5, "level": 1, "floors": 2, "wall": "stone",
      "roof": {"kind": "gable", "ridge": "x", "pitchDeg": 40, "overhang": 0.4}},
     {"id": "north_left2", "x": 1, "y": 14, "w": 6, "h": 4, "level": 1, "floors": 1, "wall": "plaster",
      "roof": {"kind": "gable", "ridge": "x", "pitchDeg": 38, "overhang": 0.5}},
