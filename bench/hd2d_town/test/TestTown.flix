@@ -280,6 +280,22 @@ mod TestTown {
     def testTransitionSecondsBecomeRowsAtTheWalkSpeed(): Unit \ Assert =
         Assert.assertTrue(near(TownLook.withWalkSpeed(3.5, { transitionSec = 0.4 | cutSchedule() })#transitionRows, 1.4))
 
+    def aimRadial(): Buildup.Radial =
+        { buildSec = 1.0, curve = 1.0, jitter = 0.0, zoomFrom = 1.0, zoomTo = 1.0, zoomLead = 1.0, aimNorth = 0.0, fromRow = 0, walkPause = 1.0, followSec = 1.0,
+          walkZoom = 1.0, paceFrom = 1.0, paceTo = 1.0, spread = 1.0, monumentAim = 0.9, monumentLead = 1.0, monumentHold = 0.8, monumentBack = 1.4, monumentZoom = 0.75 }
+
+    @Test
+    def testMonumentPullIsFullAtTheLanding(): Unit \ Assert =
+        Assert.assertTrue(near(Buildup.monumentPullAt(aimRadial(), 10.0, 10.0), 0.9))
+
+    @Test
+    def testMonumentPullIsZeroBeforeItsLead(): Unit \ Assert =
+        Assert.assertTrue(near(Buildup.monumentPullAt(aimRadial(), 10.0, 8.9), 0.0))
+
+    @Test
+    def testMonumentPullIsBackAfterHoldAndReturn(): Unit \ Assert =
+        Assert.assertTrue(near(Buildup.monumentPullAt(aimRadial(), 10.0, 12.3), 0.0))
+
     @Test
     def testCharGainIsBlendedBetweenLooks(): Unit \ Assert =
         Assert.assertTrue(near(TownLook.blend(TownLook.defaults(), { charGain = 1.5 | TownLook.defaults() }, 0.5)#charGain, 1.25))

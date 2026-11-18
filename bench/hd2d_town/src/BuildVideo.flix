@@ -1,7 +1,7 @@
 // BuildVideo — 歩く先の町が出来ていく動画のコマを、窓を開かずに CPU（SoftRaster）で書く（debug/build_frames/f0001.png …）。
 // FRAME_FROM・FRAME_TO で範囲を選び、もう書いたコマは飛ばす。出来た物を staticGroup にまとめ直した回数と時間を最後に出す。
 mod BuildVideo {
-    use fge::{Color, HeadlessFont, HeadlessRender, Num, PostStack, Render, Scene3d, Texture3d, Vec2}
+    use fge::{Color, HeadlessFont, HeadlessRender, Num, PostStack, Render, Scene3d, Texture3d, Vec2, Vec3}
     use Buildup.{Plan, Show}
     use Route.{Dir}
     use TownMap.{TownMap}
@@ -101,11 +101,22 @@ mod BuildVideo {
         let zoom = Vector.zip(pulled, follow) |> Vector.map(kw -> { let (k, w) = kw; k + (r#walkZoom - k) * w });
         let aimOf = (k: Float64) -> y + r#aimNorth * (k - r#zoomFrom) / Float64.max(0.001, r#zoomTo - r#zoomFrom);
         let blend = (a: Float64, b: Float64, w: Float64) -> a + (b - a) * w;
-        let camX = Vector.range(0, n) |> Vector.map(f -> blend(x, Vector.get(f, followX), Vector.get(f, follow)));
-        let camY = Vector.range(0, n) |> Vector.map(f -> blend(aimOf(Vector.get(f, pulled)), Vector.get(f, followY), Vector.get(f, follow)));
+        let camX0 = Vector.range(0, n) |> Vector.map(f -> blend(x, Vector.get(f, followX), Vector.get(f, follow)));
+        let camY0 = Vector.range(0, n) |> Vector.map(f -> blend(aimOf(Vector.get(f, pulled)), Vector.get(f, followY), Vector.get(f, follow)));
+        let pull = Buildup.impactOf(show) |> Option.map(ip -> story |> Vector.map(t -> (Buildup.monumentPullAt(r, fst(ip), t), snd(ip))));
+        let toward = (cam: Vector[Float64], pick: Vec3.Vec3 -> Float64) -> pull |> Option.map(pw -> Vector.zip(cam, pw) |> Vector.map(cp -> {
+            let (c, (w, p)) = cp;
+            blend(c, pick(p), w)
+        })) |> Option.getWithDefault(cam);
+        let camX = toward(camX0, p -> p#x);
+        let camY = toward(camY0, p -> p#z);
+        let zoomed = pull |> Option.map(pw -> Vector.zip(zoom, pw) |> Vector.map(zp -> {
+            let (k, (w, _)) = zp;
+            k * (1.0 + (r#monumentZoom - 1.0) * w / Float64.max(0.001, r#monumentAim))
+        })) |> Option.getWithDefault(zoom);
         { route = route, cameraX = camX, cameraY = camY,
           cameraHeight = Vector.map(_ -> groundZ, zoom), clock = Vector.scanLeft((acc, v) -> acc + v, 0.0, moving), frames = n,
-          feetDepth = TownCamera.depthAt(lens, eye, groundZ, plan#feetV), eye = eye, lens = lens, groundZ = groundZ, zoom = zoom,
+          feetDepth = TownCamera.depthAt(lens, eye, groundZ, plan#feetV), eye = eye, lens = lens, groundZ = groundZ, zoom = zoomed,
           stand = Some((x, y)), walkFrom = walkFrom, feetZ = (_, _) -> groundZ }
 
     /// 立ったままの台本の i 人目の位置と向き。歩き出す前は横並びで正面、歩き出したら 0.9 秒かけて横並びの位置から道の 1 マスずつ後ろへ寄せる（先頭はそのまま道を行く）。

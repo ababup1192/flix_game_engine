@@ -392,9 +392,11 @@ mod Buildup {
     /// 立ったまま輪で町が出来る台本の決まり。buildSec・curve・jitter = Buildup.radialFront の値・
     /// zoomFrom・zoomTo = カメラの引き（足元の点からの距離の倍率・輪の届いた距離に合わせる）・zoomLead = カメラが輪より先に引き終える割合（0.85 なら輪が 85% 届いた所で引き終える）・aimNorth = 引き終えた時にカメラの追う点を北へずらす m（奥の目印が画面に入るように）・fromRow = 輪の届く範囲の北の端の行・
     /// walkPause = 揺れが収まってから歩き出すまでの秒・followSec = 歩き出してから追従カメラへ移りきる秒・walkZoom = 歩く追従カメラの引き（足元の点からの距離の倍率）・
-    /// paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり）・spread = 横に並ぶ間（m）。
+    /// paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり）・spread = 横に並ぶ間（m）・
+    /// monumentAim = 目印の着地の前後に、カメラの追う点を目印へ寄せる割合（0 で寄せない・1 で目印が真ん中）・monumentLead = 着地の何秒前から寄せ始めるか・
+    /// monumentHold = 着地の後に寄せたまま待つ秒・monumentBack = 元の追う点へ戻す秒・monumentZoom = 寄せきった時のカメラの引きの倍率（1 で変えない・小さいほど寄る）。
     pub type alias Radial = { buildSec = Float64, curve = Float64, jitter = Float64, zoomFrom = Float64, zoomTo = Float64, zoomLead = Float64, aimNorth = Float64, fromRow = Int32, walkPause = Float64, followSec = Float64, walkZoom = Float64,
-                              paceFrom = Float64, paceTo = Float64, spread = Float64 }
+                              paceFrom = Float64, paceTo = Float64, spread = Float64, monumentAim = Float64, monumentLead = Float64, monumentHold = Float64, monumentBack = Float64, monumentZoom = Float64 }
 
     /// 止まっている間の動き。Breath = 息遣い（縦に少し伸び縮み）・Step = 足踏み（歩きのコマをゆっくりその場で）。
     pub enum Idle with Eq {
@@ -466,7 +468,15 @@ mod Buildup {
         let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, m);
         { buildSec = num("buildSec", 4.5), curve = num("curve", 0.85), jitter = num("jitter", 0.06),
           zoomFrom = num("zoomFrom", 0.6), zoomTo = num("zoomTo", 1.0), zoomLead = num("zoomLead", 0.85), aimNorth = num("aimNorth", 0.0), fromRow = JsonCodec.intOr("fromRow", 0, m), walkPause = num("walkPause", 0.7), followSec = num("followSec", 1.2), walkZoom = num("walkZoom", 1.0),
-          paceFrom = num("paceFrom", 1.0), paceTo = num("paceTo", 1.0), spread = num("spread", 0.95) }
+          paceFrom = num("paceFrom", 1.0), paceTo = num("paceTo", 1.0), spread = num("spread", 0.95),
+          monumentAim = num("monumentAim", 0.0), monumentLead = num("monumentLead", 1.0), monumentHold = num("monumentHold", 0.8), monumentBack = num("monumentBack", 1.2), monumentZoom = num("monumentZoom", 1.0) }
+
+    /// 演出の時刻 t に、カメラの追う点を目印へ寄せる割合（着地 at の monumentLead 秒前から寄せ、monumentHold 秒待って monumentBack 秒で戻す）。
+    pub def monumentPullAt(r: Radial, at: Float64, t: Float64): Float64 =
+        let smooth = (u: Float64) -> { let v = Num.clamp(0.0, 1.0, u); v * v * (3.0 - 2.0 * v) };
+        let rise = smooth((t - (at - r#monumentLead)) / Float64.max(0.001, r#monumentLead));
+        let fall = 1.0 - smooth((t - (at + r#monumentHold)) / Float64.max(0.001, r#monumentBack));
+        r#monumentAim * Float64.min(rise, fall)
 
     def idleOf(name: String): Idle = match name {
         case "step" => Idle.Step
