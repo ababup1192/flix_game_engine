@@ -93,3 +93,57 @@ design の大きさの画面に描くつもりの絵（ぼかした背景だけ�
 - 実行時に読まない元のファイルは `web.omit: [glob]`（例 `assets/talk/*.yarn`）で外す
 - 書き出しの最後に平文が書き出し先に残っていないかを見て、残れば止まる
 - 鍵も wasm に入るので、wasm を解析する人には読める
+
+## GitHub Pages に出す（`make web-pages-stage`）
+
+ゲームの足元で `make web-pages-stage DEST=<サブフォルダ>`。gh-pages の枝の `<DEST>/` に置いてコミットするまでで、push は人が打つ（最後に 1 行出る）。
+手で gh-pages の worktree を作って写さない。中でやる事:
+
+1. 書き出し: `build/web-pages` を消して `bin/fge export-web` で作り直す（手元で曲を足した `build/web` の残りを公開へ回さない）。
+   書き出し済みのフォルダを置くなら `SRC=<フォルダ>`（写し方を変えた書き出し。手本は `bench/hd2d_town` の `make explore-pages`）
+2. 音の検査: 音のファイル（ogg・mp3・wav・opus・webm…）・`bundle.json` の `sounds`・`deferred` の音が 1 本でもあれば止める。
+   外から持ってきた BGM・効果音は配る許しが要る物が多い（[audio.md](audio.md)）。自分で作った音・許しのある素材だけなら `AUDIO=ok`
+3. gh-pages の worktree: その枝の worktree があれば使い、無ければ `<ゲーム>/build/gh-pages` に作る（枝が無ければ何も無い枝として作る）。
+   未コミットの変更がある worktree には置かない。`.nojekyll` を置く（Jekyll は `_` で始まるファイルを配らない）
+4. コミット: `pages: <DEST> に <ゲーム> の書き出しを置く（ゲーム <commit>・engine <版>）`。中身が前と同じならコミットしない
+5. 開けるかの確かめ: 置いた頁を `<DEST>/index.html?capture=3` の道でヘッドレスの Chrome に開かせる（サブフォルダの道で素材を取れない形を止める）。飛ばすなら `NO_BROWSER_CHECK=1`
+6. 最後に出る物: 手元で配るコマンド（`bin/py3 -m http.server 8000 --bind 0.0.0.0 --directory <worktree>`）と PC・スマホで開く URL・`git -C <worktree> push origin gh-pages`・公開後の URL
+
+- 枝や worktree を替えるのは `BRANCH=`・`PAGES_WT=`。gh-pages の根の `index.html`（頁の一覧）は手で直す
+- 手元で配ったサーバーは見終えたら Ctrl-C で止める（残った物は `make strays` で見つかる）
+- Windows では流せない（bash の道具）
+
+## ブラウザで重さを測る
+
+### 頁の旗（どのゲームの書き出しでも同じに使える）
+
+`bin/fge export-web` の頁（`engine_web/js/fge-web.js`）が読む物。テンプレート（rpg-starter・sound-novel-starter）でも bench でも同じに使える。
+
+| 旗 | 出る物 |
+|---|---|
+| `?fps=1` | 左上に fps・CPU の ms（中央値）・描き手（`webgpu` / `webgl2`） |
+| `?backend=webgl2` | WebGPU を使わず WebGL2 で描く（既定は WebGPU。取れなければ WebGL2 に落ちるので、`?fps=1` の描き手の欄で確かめる） |
+| `?glcheck=1` | GL の呼び出しごとに `getError` を見て console に出す（WebGL2 の時） |
+| `?loadtime=1` | 絵の解読の時間と、最初のコマまでの ms を console に出す |
+| `?capture=<n>` | dt を 1/60 に固定し、n コマ目を撮る合図を出す（[web-capture.md](web-capture.md)） |
+| `?size=small&input=touch`・`?orientation=portrait` | スマホの区分・指の入力・縦の design で開く（上の節） |
+
+`WebLayer.devTools()` で起こすゲームは、ここに無い鍵をクエリの最初に置くと Start の名前として読む（知らない名前なら先頭の始まりで開いて console.error に 1 行）。
+ゲームの側の旗を足す時は、Start の名前と重ねない。
+
+### ゲームごとの旗（engine の物ではない）
+
+`bench/hd2d_town` の `?debug=1`（CPU と GPU の時間・draw の数の HUD）・`?shadow=<画素>`・`?dof=0`・`?post=0`（描き方の重さの差し替え。`web/WebMain.flix`）・
+`?dpr=<数>`・`?measure=1`（押せるまでと最初のコマまでの時間。`make explore-web` が差し込む `web/measure.js`）は、そのゲームが自分で読んでいる。
+ほかのゲームで同じ物が要るなら、そのゲームの `web/WebMain.flix` で読む（draw の数を画面に出すのは `App.withDiagnostics` と `FrameDiagnostics.summaryLines`。[performance.md](performance.md) の §11）。
+
+### 読み方と比べ方
+
+- **GPU の時間はブラウザでは出ない**: WebGPU の描き手は GPU の時間を測っていない（`frame#diagnostics` の `gpuNs` は None）。WebGL2 でも query を作れない。
+  見るのは fps と CPU の ms。GPU の重さを詰めるのはデスクトップの GL の `gpuNs` で
+- **draw の内訳**: `draw2dCounts`・`scene3dCounts#batchBreaks` の読み方は [performance.md](performance.md) の「draw call がまとまらない時の読み方」。ブラウザでも同じ数が出る
+- **前と後は同じ場所・同じ向き・同じ旗で比べる**: 町の広場と路地のように描く物の量が違う所どうしを並べると、ブラウザとデスクトップの差に見えてしまう。
+  開始の場所を URL か Start の名前で決めて、同じ所から測る（デスクトップとの比べも同じ場所で）
+- **ヘッドレスの Chrome で数を取る**のは `make bench-web BENCH=<名前>`（bench の頁だけ）。スマホの数の代わりにはならない
+- **スマホは人に URL を開いてもらうしかない**: 同じ Wi-Fi で `http://<この機械の IP>:8000/<道>/?fps=1`（上の `make web-pages-stage` の最後の行）か、公開した URL を渡して、
+  左上の fps と CPU の ms を読んでもらう（何秒か置いてからの値）。機種と OS の版も聞く

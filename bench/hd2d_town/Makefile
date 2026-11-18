@@ -121,7 +121,7 @@ QUERY ?=
 WEB_BGM ?=
 WEB_OUT ?= build/web
 
-.PHONY: explore explore-web explore-web-public explore-serve explore-grid explore-record
+.PHONY: explore explore-web explore-web-public explore-pages explore-serve explore-grid explore-record
 
 explore:
 	../../bin/headless-run --build-only
@@ -141,6 +141,10 @@ explore-web-public:
 	if [ -n "$$left" ]; then echo "[explore-web-public] 束に音のファイルが残っている（公開しない・前の書き出しの残りなら build/web-public を消して流し直す）: $$left"; exit 1; fi
 	@grep -q '"sounds": *\[\]' build/web-public/bundle.json || { echo "[explore-web-public] bundle.json の sounds が空でない（公開しない）"; exit 1; }
 	@echo "[explore-web-public] build/web-public（音なし・公開の場所へ置くのはこちら）"
+
+# 音なしの書き出しを gh-pages の hd2d-town/ に置いてコミットする（push は人。音・sounds・deferred の検査と手元で開く手順は engine の bin/web-pages-stage.sh）。
+explore-pages: explore-web-public
+	../../bin/web-pages-stage.sh ../.. . "$(or $(DEST),hd2d-town)" build/web-public
 
 explore-serve:
 	@echo "[explore-serve] http://localhost:$(PORT)/ ・スマホは http://$$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):$(PORT)/?fps=1&measure=1"

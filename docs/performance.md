@@ -597,6 +597,8 @@ GL・WebGPU・CPU の描き手は、カメラの視錐台の外の置いた物�
 | 3D のビルボード（木・人・草）が多くて draw call が数百 | 同じ絵の板を続けて `billboards` に並べる（描き手が 1 回の instanced draw にまとめる） | 来た順は描き手が崩さない（重なりの前後が来た順で決まるため）。効き目は `drawCalls` の `billboard`（[scene3d.md](scene3d.md) の「ビルボードの draw の数」） |
 | 3D で初めて出る物のコマだけ跳ねる（mipmap 作り・材質のプログラムの組み立て） | `App.withPreload3d({ key, instances, textures })` | 視錐台の外へ置いて毎コマ描かせない。骨つきの物は姿勢を付けたまま渡す。`tex3d:` の絵は `textures` に渡す。上げるのは起動と読み直しのコマで、そのコマは長くなる。`key` に時刻を混ぜると毎コマ組み直す（300 コマの内に 30 回変わると知らせる） |
 
+ブラウザ（PC の Chrome・スマホ）で測る時の旗と比べ方は [web-export.md](web-export.md) の「ブラウザで重さを測る」。
+
 `bin/fge quadratic` は perf-near-scan として、回すラムダの本体とそこから呼ぶ同じファイルの def の中の `List.filter` / `exists` / `find` を知らせる（止めない。回す物の大きさは字から分からない）。
 小さいと決まった列は `quadratic.local.json` の `exempt` へ理由つきで載せると黙る。
 
