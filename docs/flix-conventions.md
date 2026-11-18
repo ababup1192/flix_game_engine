@@ -137,7 +137,7 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
   private ヘルパが多いモジュール（View）は、ヘルパの引数を `Rec` にして呼び側で 1 回だけ
   剥がす方が差分が小さい
 - 置き換え漏れは `fixture()#start` のような「Doc を返す関数の戻り値に直接 `#`」と、
-  `{ x = v | defaults() }` のような「既定値の上書き」（`Doc.Doc({ x = v | rec(defaults()) })`）に
+  `{ x = v | defaults() }` のような「既定値の上書き」（`<種類>Doc.Doc({ x = v | rec(defaults()) })`）に
   集まる。E6794（`Doc` と record の unify）が出たらこの 2 つを疑う
 
 ### ゲームが組む型は開いたレコード・エンジンが中身を守る型は閉じた型
@@ -206,6 +206,8 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
 - **新しい機種（コンシューマなど）の切れ目**: 描画は上の 2 行目の **`RenderList` の backend の高さ**（何を描くかは今の前半を使い、
   その機種の GPU の API で行を流す backend を 1 本足す）。入力・音・窓・ファイルは 1 行目の handler 一式の高さ（`Platform.Services` と Fs と
   `LoadProgress` の handler を自分で書く）。GL の無い機種のために `GlContext` を広げない。
+  - 後回しの素材（`web.deferred`）を受ける handler を書く時の、機種に依らない部品（道の状態の字を `LoadState` へ・道ごとのまとめ・届く前の音への呼び出しの覚え書き）は `LoadProgress.Deferred`（`engine/src/platform/LoadProgress/Deferred.flix`・ゲームからは呼ばない。素材を後から取る決まりは [startup.md](startup.md) の「ブラウザで素材を後から取る」）
+  - WebGPU の backend が読むシェーダーの字（WGSL）は `ShaderGen.Wgsl`（`engine/src/shader/ShaderGen/Wgsl.flix`）が ShaderDoc の Spec から作る。GL の GLSL と同じ式の組み立てを使い、文の形が違う所だけをここに置く
 - 機種の差を、ビルドの時に同じ名前の **Flix のモジュール**を束ごとに差し替えて吸収しない（束ごとに別のファイルを組む手間が増え、片方の版は普段の型検査を通らない）。
   JVM のバイトコードを訳して動かす機種（ブラウザの TeaVM など）で足りない Java の部品は、訳す前の付け替えの道具で手当てする。
 - 層を足す前に、2 つ目の実装がいつ・どこで要るかを 1 行で書く（エンジン拡張の相談の時に添える）。書けなければ足さない。
