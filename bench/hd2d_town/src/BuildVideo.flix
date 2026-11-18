@@ -325,6 +325,14 @@ mod BuildVideo {
 
     def pad4(i: Int32): String = String.padLeft(4, '0', Int32.toString(i))
 
+    /// 台本の毎コマの先頭の行を 1 行ずつ出す（"row <コマ 1 から> <行>"・絵は描かない。動画に時刻のラベルを入れる時に読む）。
+    pub def leaderRows(): Unit \ IO =
+        let look = run { TownLook.loadOr(Video.lookPath()) } with Fs.FileRead.runWithIO;
+        match setup(look, identity) {
+            case Err(why) => bug!("[hd2d_town] 町を組めない: ${why}")
+            case Ok(st)   => List.range(0, st#track#frames) |> List.forEach(f -> println("row ${Int32.toString(f + 1)} ${Float64.toString(leaderRowAt(st, f))}"))
+        }
+
     /// 町が出来ていく動画のコマを書く（LOOK = 見た目のつまみ・既定 assets/town.json・FRAMES_DIR = 書く所・既定 debug/build_frames・FRAME_STEP = FRAME_FROM から何コマおきに描くか）。
     pub def frames(): Unit \ IO =
         let look = run { TownLook.loadOr(Video.lookPath()) } with Fs.FileRead.runWithIO;

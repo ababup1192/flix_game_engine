@@ -246,7 +246,48 @@ mod TestTown {
 
     def schedule(): TownLook.Schedule =
         { day = TownLook.defaults(), dusk = dusk(), night = night(), fog = fogNight(),
-          rows = { dayToDusk = (50.0, 44.0), duskToNight = (36.0, 24.0), moonRow = 29.0, lampOn = (36.0, 25.0), nightToFog = (17.0, 8.0) } }
+          rows = { dayToDusk = (50.0, 44.0), duskToNight = (36.0, 24.0), moonRow = 29.0, lampOn = (36.0, 25.0), nightToFog = (17.0, 8.0) },
+          mode = TownLook.Transition.Blend }
+
+    /// 同じ境目で、区間の真ん中の行（47・30・12.5）で 1 コマで替える移り方。
+    def cutSchedule(): TownLook.Schedule = { mode = TownLook.Transition.Cut | schedule() }
+
+    @Test
+    def testCutKeepsTheDayJustSouthOfRow47(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(cutSchedule(), 47.05)#sunAzimuth, 35.0))
+
+    @Test
+    def testCutIsTheWholeDuskJustNorthOfRow47(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(cutSchedule(), 46.95)#exposure, -0.2))
+
+    @Test
+    def testCutKeepsTheDuskJustSouthOfRow30(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(cutSchedule(), 30.05)#sunAzimuth, -75.0))
+
+    @Test
+    def testCutTakesTheMoonJustNorthOfRow30(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(cutSchedule(), 29.95)#sunAzimuth, -35.0))
+
+    @Test
+    def testCutMakesTheBoardsUnlitJustNorthOfRow30(): Unit \ Assert =
+        Assert.assertEq(expected = TownScene.BoardLight.Unlit, TownLook.atRow(cutSchedule(), 29.95)#boardLight)
+
+    @Test
+    def testCutLightsTheLampsFullyJustNorthOfRow30(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(cutSchedule(), 29.95)#lampIntensity, 260.0))
+
+    @Test
+    def testCutHasNoHeightFogJustSouthOfRow12AndAHalf(): Unit \ Assert =
+        Assert.assertTrue(Option.isEmpty(TownLook.atRow(cutSchedule(), 12.55)#heightFog))
+
+    @Test
+    def testCutHasTheWholeHeightFogJustNorthOfRow12AndAHalf(): Unit \ Assert =
+        let density = TownLook.atRow(cutSchedule(), 12.45)#heightFog |> Option.map(h -> h#density) |> Option.getWithDefault(0.0);
+        Assert.assertTrue(near(density, 0.8))
+
+    @Test
+    def testTimeOfDayWithoutModeCuts(): Unit \ Assert =
+        Assert.assertEq(expected = TownLook.Transition.Cut, TownLook.timeOfDayOf(Map.empty())#mode)
 
     @Test
     def testBlendAtZeroKeepsTheFirstLook(): Unit \ Assert =
