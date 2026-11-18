@@ -370,7 +370,7 @@
     {
       "id": "dev-request-outside-main",
       "suffixes": [".flix"],
-      "skip": ["src/Main.flix", "src/E2e.flix", "templates/game-starter/src/Main.flix", "templates/game-starter/src/E2e.flix", "templates/rpg-starter/src/Main.flix", "templates/rpg-starter/src/E2e.flix", "templates/sound-novel-starter/src/Main.flix", "templates/sound-novel-starter/src/E2e.flix", "templates/tidepool-starter/src/Main.flix", "templates/tidepool-starter/src/E2e.flix", "engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
+      "skip": ["src/Main.flix", "src/E2e.flix", "templates/game-starter/src/Main.flix", "templates/game-starter/src/E2e.flix", "templates/rpg-starter/src/Main.flix", "templates/rpg-starter/src/E2e.flix", "templates/sound-novel-starter/src/Main.flix", "templates/sound-novel-starter/src/E2e.flix", "templates/tidepool-starter/src/Main.flix", "templates/tidepool-starter/src/E2e.flix", "templates/hd2d-starter/src/Main.flix", "templates/hd2d-starter/src/E2e.flix", "engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
       "skipDirs": ["build", "lib", "test", "render"],
       "pattern": "\\bApp\\.on(?:Render|Shot)Request\\b",
       "hint": "App.onRenderRequest・App.onShotRequest は開発の道具（リモートデバッグの /render と view=shot）の API なので、Game.app（テスト・flow・ブラウザ版と共有）では繋がず、Main（デスクトップの入口）と E2e（画面なしの入口）で繋ぐ（engine の docs/migrations/0.81.0.md）"

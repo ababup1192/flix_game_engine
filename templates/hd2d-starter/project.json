@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "title": "HD-2D の町",
+  "designWidth": 1280,
+  "designHeight": 720,
+  "windowWidth": 1280,
+  "windowHeight": 720,
+  "windowScale": 1,
+  "clearColor": {
+    "r": 0.7,
+    "g": 0.8,
+    "b": 0.95
+  },
+  "maxDeltaTime": 0.1,
+  "// glyphs": "起動時に焼く字。auto=出た字から順に焼く / used=ソースとアセットにある字を先に焼く / all=フォントの全字",
+  "glyphs": "auto",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/PixelMplus10-Regular.ttf",
+      "fontSize": 10.0
+    }
+  ],
+  "// textures": "板（ビルボード）の絵。名前は assets/sprites/<名前>.png の <名前>（GPU の描き手は板の絵をこの名前で引く）。地図・小物・隊列に新しい絵を書いたらここにも足す",
+  "textures": [
+    {
+      "name": "balloon",
+      "path": "assets/sprites/balloon.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "balloon_kid_idle",
+      "path": "assets/sprites/balloon_kid_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "barrel",
+      "path": "assets/sprites/barrel.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "carriage",
+      "path": "assets/sprites/carriage.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "crate_td",
+      "path": "assets/sprites/crate_td.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "dog",
+      "path": "assets/sprites/dog.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "elder_idle",
+      "path": "assets/sprites/elder_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "flower_pot",
+      "path": "assets/sprites/flower_pot.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "girl_idle",
+      "path": "assets/sprites/girl_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "girl_walk4",
+      "path": "assets/sprites/girl_walk4.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "horse",
+      "path": "assets/sprites/horse.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "market_stall",
+      "path": "assets/sprites/market_stall.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "merchant_idle",
+      "path": "assets/sprites/merchant_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "merchant_td",
+      "path": "assets/sprites/merchant_td.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "merchant_walk4",
+      "path": "assets/sprites/merchant_walk4.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "peddler_idle",
+      "path": "assets/sprites/peddler_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "pigeon",
+      "path": "assets/sprites/pigeon.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "street_lamp_ornate",
+      "path": "assets/sprites/street_lamp_ornate.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "townsman_idle",
+      "path": "assets/sprites/townsman_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "townswoman_idle",
+      "path": "assets/sprites/townswoman_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "traveler_idle",
+      "path": "assets/sprites/traveler_idle.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "traveler_td",
+      "path": "assets/sprites/traveler_td.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "traveler_walk4",
+      "path": "assets/sprites/traveler_walk4.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "tree_broadleaf",
+      "path": "assets/sprites/tree_broadleaf.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "tree_cypress",
+      "path": "assets/sprites/tree_cypress.png",
+      "hasAlpha": true
+    }
+  ],
+  "sounds": [],
+  "editor": {
+    "resources": [
+      {
+        "id": "map",
+        "pattern": "assets/town.map.json",
+        "title": "町の地図（地面・高さ・物・建物）",
+        "schema": "assets/map.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "decor",
+        "pattern": "assets/*.decor.json",
+        "title": "広場の小物と NPC",
+        "schema": "assets/decor.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "explore",
+        "pattern": "assets/explore.json",
+        "title": "歩き回る手触り（歩き・隊列・カメラ・ぶつかり・重さ）",
+        "schema": "assets/explore.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "look",
+        "pattern": "assets/town.look.json",
+        "title": "昼の見た目（カメラ・太陽と影・空・ポストプロセス）",
+        "schema": "assets/look.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "keys",
+        "pattern": "assets/explore.keys.json",
+        "title": "操作（キーの割り当て）",
+        "schema": "assets/keys.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "project",
+        "pattern": "project.json",
+        "schema": "project.schema.json",
+        "title": "ゲームの題・画面",
+        "role": "tuning"
+      }
+    ]
+  },
+  "web": {
+    "startPrompt": "タッチして開始",
+    "orientation": "landscape",
+    "virtualPad": {
+      "stick": true
+    }
+  }
+}

@@ -1,0 +1,260 @@
+{
+  "//": "assets/explore.json の形の宣言（Studio の sections 方言）。既定は src/ExploreDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "speed": {
+      "kind": "field",
+      "type": "float",
+      "label": "歩く速さ（m/秒・スティックは倒した量を掛ける）",
+      "group": "歩き",
+      "order": 1,
+      "default": 4.85,
+      "min": 0.5,
+      "max": 12.0
+    },
+    "walkFrameSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "歩きのコマを替える秒",
+      "group": "歩き",
+      "order": 2,
+      "default": 0.24,
+      "min": 0.05,
+      "max": 1.0
+    },
+    "radius": {
+      "kind": "field",
+      "type": "float",
+      "label": "先頭をぶつける円の半径（m）",
+      "group": "歩き",
+      "order": 3,
+      "default": 0.3,
+      "min": 0.1,
+      "max": 0.49
+    },
+    "spacing": {
+      "kind": "field",
+      "type": "float",
+      "label": "隊列の間（m）",
+      "group": "隊列",
+      "order": 4,
+      "default": 1.0,
+      "min": 0.3,
+      "max": 3.0
+    },
+    "idleFrameSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "待機モーションのコマを替える秒",
+      "group": "隊列",
+      "order": 5,
+      "default": 0.8,
+      "min": 0.1,
+      "max": 3.0
+    },
+    "idlePhaseSec": {
+      "kind": "field",
+      "type": "float",
+      "label": "待機モーションの 1 人ごとのずれ（秒）",
+      "group": "隊列",
+      "order": 6,
+      "default": 0.27,
+      "min": 0.0,
+      "max": 2.0
+    },
+    "party": {
+      "kind": "list",
+      "label": "隊列（先頭から）",
+      "order": 7,
+      "fields": {
+        "strip": {
+          "type": "text",
+          "label": "歩きの帯（assets/sprites/ の名前・向きごとに 4 コマ）",
+          "order": 1,
+          "default": "traveler_walk4.png",
+          "required": true
+        },
+        "idleStrip": {
+          "type": "text",
+          "label": "待機モーションの帯（向きごとに 2 コマ）",
+          "order": 2,
+          "default": "traveler_idle.png"
+        },
+        "dirs": {
+          "type": "text",
+          "label": "帯に並ぶ向きの字（nes = 背中・右・正面。w が無ければ左は右の反転）",
+          "order": 3,
+          "default": "nes"
+        }
+      }
+    },
+    "startCol": {
+      "kind": "field",
+      "type": "int",
+      "label": "立ち始めの列",
+      "group": "立ち始め",
+      "order": 8,
+      "default": 13,
+      "min": 0
+    },
+    "startRow": {
+      "kind": "field",
+      "type": "int",
+      "label": "立ち始めの行（0 が一番北）",
+      "group": "立ち始め",
+      "order": 9,
+      "default": 54,
+      "min": 0
+    },
+    "startFace": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "n",
+          "e",
+          "s",
+          "w"
+        ]
+      },
+      "label": "立ち始めの向き",
+      "group": "立ち始め",
+      "order": 10,
+      "default": "n"
+    },
+    "feetV": {
+      "kind": "field",
+      "type": "float",
+      "label": "先頭の足元を写す画面の高さ（上の端 0・下の端 1）",
+      "group": "カメラ",
+      "order": 11,
+      "default": 0.62,
+      "min": 0.2,
+      "max": 0.9
+    },
+    "walkZoom": {
+      "kind": "field",
+      "type": "float",
+      "label": "カメラの引き（大きいほど遠い）",
+      "group": "カメラ",
+      "order": 12,
+      "default": 1.35,
+      "min": 0.5,
+      "max": 3.0
+    },
+    "heightLagK": {
+      "kind": "field",
+      "type": "float",
+      "label": "高さが足元を遅れて追う速さ（/秒・大きいほど遅れない）",
+      "group": "カメラ",
+      "order": 13,
+      "default": 12.0,
+      "min": 0.5,
+      "max": 40.0
+    },
+    "aheadMeters": {
+      "kind": "field",
+      "type": "float",
+      "label": "歩く向きへ先を見せる長さ（m・0 で見せない）",
+      "group": "カメラ",
+      "order": 14,
+      "default": 0.0,
+      "min": 0.0,
+      "max": 4.0
+    },
+    "aheadRate": {
+      "kind": "field",
+      "type": "float",
+      "label": "先を見せる量へ寄る速さ（/秒）",
+      "group": "カメラ",
+      "order": 15,
+      "default": 2.0,
+      "min": 0.1,
+      "max": 10.0
+    },
+    "frameWidth": {
+      "kind": "field",
+      "type": "float",
+      "label": "引き 1 の時の画面の横幅（m）",
+      "group": "カメラ",
+      "order": 16,
+      "default": 16.3,
+      "min": 4.0,
+      "max": 60.0
+    },
+    "frameV": {
+      "kind": "field",
+      "type": "float",
+      "label": "引き 1 の時に地面の点を写す画面の高さ",
+      "group": "カメラ",
+      "order": 17,
+      "default": 0.72,
+      "min": 0.1,
+      "max": 0.95
+    },
+    "frameTargetZ": {
+      "kind": "field",
+      "type": "float",
+      "label": "引き 1 の時に写す地面の高さ（m）",
+      "group": "カメラ",
+      "order": 18,
+      "default": 1.25,
+      "min": -5.0,
+      "max": 10.0
+    },
+    "seenHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "建物の北で、隠れたら塞ぐ足元からの高さ（m）",
+      "group": "ぶつかり",
+      "order": 19,
+      "default": 0.9,
+      "min": 0.0,
+      "max": 3.0
+    },
+    "hideReach": {
+      "kind": "field",
+      "type": "int",
+      "label": "建物の北へ塞ぐ行の上限",
+      "group": "ぶつかり",
+      "order": 20,
+      "default": 8,
+      "min": 0,
+      "max": 20
+    },
+    "quality": {
+      "kind": "record",
+      "label": "描き方の重さ（実機は環境変数 SHADOW_MAP・DOF・POST、ブラウザは ?shadow=・?dof=・?post= で差し替え）",
+      "order": 21,
+      "fields": {
+        "shadowMapSize": {
+          "type": "int",
+          "label": "太陽の影の地図の一辺（画素・0 で影なし）",
+          "order": 1,
+          "default": 4096,
+          "min": 0,
+          "max": 4096
+        },
+        "depthOfField": {
+          "type": "bool",
+          "label": "手前と奥のぼけ",
+          "order": 2,
+          "default": true
+        },
+        "post": {
+          "type": "bool",
+          "label": "ポストプロセス（起動し直すと効く）",
+          "order": 3,
+          "default": true
+        }
+      }
+    },
+    "quitPrompt": {
+      "kind": "field",
+      "type": "text",
+      "label": "終了の確認の窓の文言",
+      "group": "文言",
+      "order": 22,
+      "default": "終了しますか？（Enter: はい / Esc: いいえ）"
+    }
+  }
+}

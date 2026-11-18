@@ -1,0 +1,10 @@
+# 南の大通りの立ち始めから北へ歩いて十字の広場へ入り、Esc で終了の確認を出して取り消す。
+start at col=13 row=54 face=n
+expect quit=Walking&col=13&row=54
+hold up 1.6
+expect col=13&row<49
+tap cancel
+expect quit=Asking
+hold up 0.5
+tap cancel
+expect quit=Walking

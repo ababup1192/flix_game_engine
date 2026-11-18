@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "title": "歩き回る手触り（歩き・隊列・カメラ・ぶつかり・描き方の重さ）",
+  "note": "歩き: speed = 歩く速さ（m/秒・スティックは倒した量を掛ける）・walkFrameSec = 歩きのコマを替える秒・radius = 先頭をぶつける円の半径（m）。隊列: spacing = 間（m）・party = 先頭から順の 1 人ずつ（strip = 歩きの帯・idleStrip = 待機モーションの帯・dirs = 帯に並ぶ向きの字（nes = 背中・右・正面・左は右の反転）・tint = 色の掛け目）・idleFrameSec・idlePhaseSec = 待機モーションのコマを替える秒と 1 人ごとのずれ。立ち始め: startCol・startRow・startFace（n・e・s・w）。カメラ: feetV = 先頭の足元を写す画面の高さ（上の端 0・下の端 1）・walkZoom = 引き・heightLagK = 高さが足元を遅れて追う速さ（/秒・大きいほど遅れない）・aheadMeters・aheadRate = 歩く向きへ先を見せる長さ（m・0 で見せない）と寄る速さ・frameWidth・frameV・frameTargetZ = 引き 1 の写す範囲（高さ frameTargetZ の地面の点を画面の上から frameV に置き、その奥行きで横幅 frameWidth m）。ぶつかり: seenHeight・hideReach = 建物の北で、足元からこの高さ（m）の点が建物に隠れるマスを塞ぐ（北へ hideReach 行まで）。quality = 描き方の重さ（shadowMapSize = 太陽の影の地図の一辺の画素・0 で影なし・depthOfField = 手前と奥のぼけ・post = ポストプロセス（起動し直すと効く））。実機は環境変数 SHADOW_MAP・DOF・POST、ブラウザは頁の ?shadow=・?dof=・?post= で差し替えられる。quitPrompt = 終了の確認の窓の文言。",
+  "speed": 4.85,
+  "walkFrameSec": 0.24,
+  "radius": 0.3,
+  "spacing": 1.0,
+  "party": [
+    {
+      "strip": "traveler_walk4.png",
+      "idleStrip": "traveler_idle.png",
+      "dirs": "nes"
+    },
+    {
+      "strip": "merchant_walk4.png",
+      "idleStrip": "merchant_idle.png",
+      "dirs": "nes"
+    },
+    {
+      "strip": "girl_walk4.png",
+      "idleStrip": "girl_idle.png",
+      "dirs": "nes"
+    }
+  ],
+  "idleFrameSec": 0.8,
+  "idlePhaseSec": 0.27,
+  "startCol": 13,
+  "startRow": 54,
+  "startFace": "n",
+  "feetV": 0.62,
+  "walkZoom": 1.35,
+  "heightLagK": 12.0,
+  "aheadMeters": 0.0,
+  "aheadRate": 2.0,
+  "frameWidth": 16.3,
+  "frameV": 0.72,
+  "frameTargetZ": 1.25,
+  "seenHeight": 0.9,
+  "hideReach": 8,
+  "quality": {
+    "shadowMapSize": 4096,
+    "depthOfField": true,
+    "post": true
+  },
+  "quitPrompt": "終了しますか？（Enter: はい / Esc: いいえ）"
+}

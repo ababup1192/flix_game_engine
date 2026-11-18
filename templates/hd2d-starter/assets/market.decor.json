@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "title": "広場の店と人",
+  "note": "十字の広場の西の屋台と行商人・東の風船の子ども・北東の立ち話の 3 人。sprite = assets/sprites/ の絵の名前（横 1 列に frames コマ）・col・row = マス・offX・offY = マスの真ん中からのずれ（m・offY は北が正）・z = 地面からの高さ（m）・frames・frameSec = コマの数と替える秒・seq = コマの並び（無ければ 0, 1, 2, …）・phase = 時刻のずれ（0〜1）・flip = 左右を裏返す・swayAmp・swaySec = 揺れの振れ幅（m）と周期（秒）・shadow = 足元の楕円の影・cast = 太陽の影を落とす・height = 板の高さ（m・無ければ 32 画素 = 1 m）・passable = 歩いて通れる（無ければ塞ぐ）。新しい絵を書いた時は project.json の textures にも足し、起動し直すと出る。",
+  "props": [
+    {
+      "sprite": "market_stall.png",
+      "col": 8,
+      "row": 46,
+      "offY": 0.1
+    },
+    {
+      "sprite": "peddler_idle.png",
+      "col": 9,
+      "row": 47,
+      "offX": 0.15,
+      "offY": 0.35,
+      "frames": 2,
+      "frameSec": 0.8,
+      "phase": 0.1
+    },
+    {
+      "sprite": "barrel.png",
+      "col": 6,
+      "row": 46,
+      "offX": 0.2,
+      "offY": 0.2
+    },
+    {
+      "sprite": "barrel.png",
+      "col": 6,
+      "row": 47,
+      "offX": 0.3,
+      "offY": 0.4
+    },
+    {
+      "sprite": "crate_td.png",
+      "col": 10,
+      "row": 46,
+      "offX": -0.1,
+      "offY": 0.3
+    },
+    {
+      "sprite": "flower_pot.png",
+      "col": 10,
+      "row": 47,
+      "offX": -0.2,
+      "offY": 0.4
+    },
+    {
+      "sprite": "flower_pot.png",
+      "col": 5,
+      "row": 46,
+      "offX": 0.3,
+      "offY": 0.1
+    },
+    {
+      "sprite": "balloon_kid_idle.png",
+      "col": 17,
+      "row": 47,
+      "frames": 2,
+      "frameSec": 0.7,
+      "phase": 0.4
+    },
+    {
+      "sprite": "balloon.png",
+      "col": 17,
+      "row": 47,
+      "offX": 0.22,
+      "offY": 0.02,
+      "z": 1.25,
+      "swayAmp": 0.08,
+      "swaySec": 2.4,
+      "shadow": false,
+      "cast": false,
+      "passable": true
+    },
+    {
+      "sprite": "townsman_idle.png",
+      "col": 19,
+      "row": 45,
+      "offX": 0.2,
+      "frames": 2,
+      "frameSec": 0.9,
+      "phase": 0.0
+    },
+    {
+      "sprite": "townswoman_idle.png",
+      "col": 20,
+      "row": 45,
+      "frames": 2,
+      "frameSec": 1.0,
+      "phase": 0.5,
+      "flip": true
+    },
+    {
+      "sprite": "elder_idle.png",
+      "col": 19,
+      "row": 46,
+      "offX": 0.6,
+      "offY": 0.2,
+      "frames": 2,
+      "frameSec": 1.1,
+      "phase": 0.3
+    }
+  ]
+}

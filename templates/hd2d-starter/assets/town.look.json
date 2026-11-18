@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "title": "昼の見た目（カメラ・太陽と影・空と霞・ポストプロセス）",
+  "note": "カメラの角度（topDeg・bottomDeg = 画面の上の端・下の端で地面を見下ろす角度。カメラは水平のまま写す範囲を下へずらす lensShift）・far = 奥の端（m）・太陽（sunElevation・sunAzimuth = 高さと方位（度・方位は南 = 手前から東へ）・sunIntensity・sunColor）・lightUnits = 光の量の読み方（physical か legacy）・影（shadowDistance = 描く奥行き m・shadowStrength = 濃さ・shadowPcf = 縁をならす幅・charShadowScale = キャラの影の板の幅と高さの倍率）・ambient = どこにでも当たる光・hemisphere = 上を向く面ほど明るく・boardTint = 板の明るさ・snapToTexels = 板とカメラを 1 テクセルに丸める・霞（fogNear・fogFar・fog）・sky = 空の色・ポストプロセス（view = agx か standard・exposure = 露出（段）・fStop = ピントのぼけの強さ（0 でぼかさない）・saturation・lift・gamma・gain = 暗い所・中間・明るい所の掛け目・vignette = 周りを暗く・fxaa）。影の地図の大きさは explore.json の quality。保存するとその場で変わる。",
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "sunElevation": 40.0,
+  "sunAzimuth": 35.0,
+  "sunIntensity": 10.367,
+  "sunColor": "#fff2db",
+  "lightUnits": "physical",
+  "shadowDistance": 28.0,
+  "shadowStrength": 1.0,
+  "shadowPcf": 2,
+  "charShadowScale": {
+    "x": 0.6,
+    "y": 0.8
+  },
+  "ambient": "#262b3d",
+  "hemisphere": 0.15,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 18.0,
+  "fogFar": 70.0,
+  "fog": "#e0ebfa",
+  "sky": "#b3ccf2",
+  "view": "agx",
+  "exposure": -0.3,
+  "fStop": 0.08,
+  "saturation": 1.05,
+  "lift": {
+    "r": 1.0,
+    "g": 1.0,
+    "b": 1.0
+  },
+  "gamma": {
+    "r": 1.0,
+    "g": 1.0,
+    "b": 1.0
+  },
+  "gain": {
+    "r": 1.06,
+    "g": 0.99,
+    "b": 0.88
+  },
+  "vignette": 0.35,
+  "fxaa": true
+}

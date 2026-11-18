@@ -1,0 +1,24 @@
+{
+  "verbs": ["start", "tap", "hold", "release", "wait", "until", "drive", "expect", "mark", "run", "reload", "request", "close", "rewind"],
+  "settings": ["fps", "ready"],
+  "options": {},
+  "roles": ["left", "right", "up", "down", "confirm", "cancel"],
+  "probes": [
+    {"name": "col", "kind": "num", "doc": "先頭の立つマスの列（Walk の外では -1）"},
+    {"name": "row", "kind": "num", "doc": "先頭の立つマスの行（0 が一番北・Walk の外では -1）"},
+    {"name": "quit", "kind": "text", "doc": "終了の確認（Walking・Asking・Confirmed）"}
+  ],
+  "drives": [],
+  "starts": [
+    {"name": "walk", "doc": "explore.json の立ち始めのマスに立つ所（起動の既定）", "args": {}},
+    {"name": "at", "doc": "先頭をマス col・row に、face（n・e・s・w）を向けて立たせた所", "args": {"col": "13", "face": "n", "row": "54"}},
+    {"name": "shot:title", "doc": "ギャラリーの場面（gallery/title.png）", "args": {}},
+    {"name": "shot:start", "doc": "ギャラリーの場面（gallery/start.png）", "args": {}},
+    {"name": "shot:avenue", "doc": "ギャラリーの場面（gallery/avenue.png）", "args": {}},
+    {"name": "shot:quit", "doc": "ギャラリーの場面（gallery/quit.png）", "args": {}}
+  ],
+  "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],
+  "ready": false,
+  "replies": false,
+  "fingerprint": true
+}

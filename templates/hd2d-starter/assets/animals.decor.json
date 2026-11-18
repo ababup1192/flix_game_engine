@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "title": "広場の動物と馬車",
+  "note": "広場の犬・止めた馬車と馬・道の脇の鳩（鳩は通れる）。sprite = assets/sprites/ の絵の名前（横 1 列に frames コマ）・col・row = マス・offX・offY = マスの真ん中からのずれ（m・offY は北が正）・z = 地面からの高さ（m）・frames・frameSec = コマの数と替える秒・seq = コマの並び（無ければ 0, 1, 2, …）・phase = 時刻のずれ（0〜1）・flip = 左右を裏返す・swayAmp・swaySec = 揺れの振れ幅（m）と周期（秒）・shadow = 足元の楕円の影・cast = 太陽の影を落とす・height = 板の高さ（m・無ければ 32 画素 = 1 m）・passable = 歩いて通れる（無ければ塞ぐ）。新しい絵を書いた時は project.json の textures にも足し、起動し直すと出る。",
+  "props": [
+    {
+      "sprite": "dog.png",
+      "col": 16,
+      "row": 48,
+      "offX": 0.2,
+      "offY": 0.1,
+      "frames": 3,
+      "frameSec": 0.9,
+      "seq": [
+        0,
+        0,
+        1,
+        0,
+        2,
+        0
+      ],
+      "phase": 0.2
+    },
+    {
+      "sprite": "carriage.png",
+      "col": 21,
+      "row": 49,
+      "offX": 0.3
+    },
+    {
+      "sprite": "horse.png",
+      "col": 19,
+      "row": 49,
+      "frames": 2,
+      "frameSec": 1.2,
+      "seq": [
+        0,
+        0,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "sprite": "pigeon.png",
+      "col": 11,
+      "row": 49,
+      "frames": 2,
+      "frameSec": 0.5,
+      "seq": [
+        0,
+        1,
+        0,
+        0,
+        1,
+        1
+      ],
+      "phase": 0.0,
+      "cast": false,
+      "passable": true
+    },
+    {
+      "sprite": "pigeon.png",
+      "col": 11,
+      "row": 49,
+      "offX": 0.45,
+      "offY": 0.3,
+      "frames": 2,
+      "frameSec": 0.6,
+      "seq": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "phase": 0.5,
+      "flip": true,
+      "cast": false,
+      "passable": true
+    },
+    {
+      "sprite": "pigeon.png",
+      "col": 10,
+      "row": 50,
+      "offX": 0.3,
+      "frames": 2,
+      "frameSec": 0.55,
+      "seq": [
+        1,
+        0,
+        0,
+        1
+      ],
+      "phase": 0.3,
+      "cast": false,
+      "passable": true
+    }
+  ]
+}

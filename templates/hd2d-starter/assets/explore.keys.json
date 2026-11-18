@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "title": "操作（キーの割り当て）",
+  "note": "町を歩き回るキーの割り当て。1 つの操作に複数キーを並べられる（どれを押しても効く）。2 つ押すと斜めに歩く。名前は GameEngine.Key の綴り（A〜Z / Up / Down / Left / Right など）。知らない名前はその 1 個だけ無視され、操作が空になったときはコードの既定（src/KeysDoc.flix の defaults）へ落ちる。パッドと画面のスティックは frame#leftStick から読み、ここには書かない。",
+  "left": [
+    "Left",
+    "A"
+  ],
+  "right": [
+    "Right",
+    "D"
+  ],
+  "up": [
+    "Up",
+    "W"
+  ],
+  "down": [
+    "Down",
+    "S"
+  ]
+}

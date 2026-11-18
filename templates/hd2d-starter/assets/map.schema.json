@@ -1,0 +1,196 @@
+{
+  "//": "assets/town.map.json の形の宣言（Studio の sections 方言）。4 つの格子（ground・height・shape・objects）は 1 文字 = 1 マス（1 m）・行 0 が一番北で、同じ大きさにそろえる。字の意味はコード（src/TownMap.flix の groundOf・propOf）が決める。広場の小物と NPC は *.decor.json（decor.schema.json）。",
+  "version": 1,
+  "sections": {
+    "ground": {
+      "kind": "field",
+      "type": "grid",
+      "label": "地面（g 草・c 石畳・w 水路）",
+      "group": "格子",
+      "order": 1
+    },
+    "height": {
+      "kind": "field",
+      "type": "grid",
+      "label": "床の高さのレベル（0〜9・a〜z。1 レベル = heightStep m）",
+      "group": "格子",
+      "order": 2
+    },
+    "shape": {
+      "kind": "field",
+      "type": "grid",
+      "label": "マスの形（^ 北へ上る階段・. 平ら）",
+      "group": "格子",
+      "order": 3
+    },
+    "objects": {
+      "kind": "field",
+      "type": "grid",
+      "label": "置く物（T 広葉樹・C 糸杉・L 街灯・X 木箱・h 低木・H 生垣・f 柵・O 石の柱・1 旅人・2 商人・3 旅人の色違い・. なし）",
+      "group": "格子",
+      "order": 4
+    },
+    "heightStep": {
+      "kind": "field",
+      "type": "float",
+      "label": "1 レベルの高さ（m）",
+      "group": "段と縁",
+      "order": 5,
+      "default": 1.0,
+      "min": 0.25,
+      "max": 4.0
+    },
+    "curbRaise": {
+      "kind": "field",
+      "type": "float",
+      "label": "草を道より上げる高さ（m・縁石）",
+      "group": "段と縁",
+      "order": 6,
+      "default": 0.25,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "coping": {
+      "kind": "field",
+      "type": "bool",
+      "label": "段と水の縁に笠石を付ける",
+      "group": "段と縁",
+      "order": 7,
+      "default": true
+    },
+    "margin": {
+      "kind": "record",
+      "label": "地図の外",
+      "order": 8,
+      "fields": {
+        "cells": {
+          "type": "int",
+          "label": "足すマスの数",
+          "order": 1,
+          "default": 30,
+          "min": 0,
+          "max": 80
+        },
+        "level": {
+          "type": "int",
+          "label": "高さのレベル",
+          "order": 2,
+          "default": -2,
+          "min": -10,
+          "max": 10
+        },
+        "ground": {
+          "type": {
+            "enum": [
+              "g",
+              "c",
+              "w"
+            ]
+          },
+          "label": "地面の字",
+          "order": 3,
+          "default": "g"
+        },
+        "forest": {
+          "type": "bool",
+          "label": "暗い森を立てる",
+          "order": 4,
+          "default": true
+        }
+      }
+    },
+    "buildings": {
+      "kind": "list",
+      "label": "建物",
+      "order": 10,
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "名前",
+          "order": 1,
+          "default": ""
+        },
+        "x": {
+          "type": "int",
+          "label": "足元の左の列",
+          "order": 2,
+          "default": 0,
+          "min": 0
+        },
+        "y": {
+          "type": "int",
+          "label": "足元の上（北）の行",
+          "order": 3,
+          "default": 0,
+          "min": 0
+        },
+        "w": {
+          "type": "int",
+          "label": "幅（マス）",
+          "order": 4,
+          "default": 4,
+          "min": 1
+        },
+        "h": {
+          "type": "int",
+          "label": "奥行き（マス）",
+          "order": 5,
+          "default": 3,
+          "min": 1
+        },
+        "level": {
+          "type": "int",
+          "label": "床の高さのレベル",
+          "order": 6,
+          "default": 1
+        },
+        "floors": {
+          "type": "int",
+          "label": "階数",
+          "order": 7,
+          "default": 2,
+          "min": 1,
+          "max": 5
+        },
+        "wall": {
+          "type": {
+            "enum": [
+              "plaster",
+              "stone"
+            ]
+          },
+          "label": "壁（漆喰か石）",
+          "order": 8,
+          "default": "plaster"
+        },
+        "ridge": {
+          "type": {
+            "enum": [
+              "x",
+              "y"
+            ]
+          },
+          "label": "屋根の棟の向き（x 東西・y 南北）",
+          "order": 9,
+          "default": "x"
+        },
+        "pitchDeg": {
+          "type": "float",
+          "label": "屋根の勾配（度）",
+          "order": 10,
+          "default": 40.0,
+          "min": 10.0,
+          "max": 60.0
+        },
+        "overhang": {
+          "type": "float",
+          "label": "軒の出（m）",
+          "order": 11,
+          "default": 0.4,
+          "min": 0.0,
+          "max": 1.0
+        }
+      }
+    }
+  }
+}

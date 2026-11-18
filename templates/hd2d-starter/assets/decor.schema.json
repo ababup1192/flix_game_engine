@@ -1,0 +1,137 @@
+{
+  "//": "assets/*.decor.json の形の宣言（Studio の sections 方言）。1 行 = 地図のマスに立てる板 1 枚（広場の店・NPC・動物）。絵は assets/sprites/ の PNG で、project.json の textures にも同じ名前を足す。",
+  "version": 1,
+  "sections": {
+    "props": {
+      "kind": "list",
+      "label": "小物と NPC の板",
+      "order": 1,
+      "fields": {
+        "sprite": {
+          "type": "text",
+          "label": "絵（assets/sprites/ の名前・横 1 列に frames コマ）",
+          "order": 1,
+          "default": "barrel.png",
+          "required": true
+        },
+        "col": {
+          "type": "int",
+          "label": "列",
+          "order": 2,
+          "default": 0,
+          "min": 0
+        },
+        "row": {
+          "type": "int",
+          "label": "行（0 が一番北）",
+          "order": 3,
+          "default": 0,
+          "min": 0
+        },
+        "offX": {
+          "type": "float",
+          "label": "マスの真ん中からの東へのずれ（m）",
+          "order": 4,
+          "default": 0.0,
+          "min": -1.0,
+          "max": 1.0
+        },
+        "offY": {
+          "type": "float",
+          "label": "マスの真ん中からの北へのずれ（m）",
+          "order": 5,
+          "default": 0.0,
+          "min": -1.0,
+          "max": 1.0
+        },
+        "z": {
+          "type": "float",
+          "label": "地面からの高さ（m）",
+          "order": 6,
+          "default": 0.0,
+          "min": 0.0,
+          "max": 5.0
+        },
+        "frames": {
+          "type": "int",
+          "label": "コマの数",
+          "order": 7,
+          "default": 1,
+          "min": 1,
+          "max": 16
+        },
+        "frameSec": {
+          "type": "float",
+          "label": "コマを替える秒",
+          "order": 8,
+          "default": 0.8,
+          "min": 0.05,
+          "max": 5.0
+        },
+        "seq": {
+          "type": {
+            "list": "int"
+          },
+          "label": "コマの並び（空なら 0, 1, 2, …）",
+          "order": 9,
+          "default": []
+        },
+        "phase": {
+          "type": "float",
+          "label": "時刻のずれ（0〜1）",
+          "order": 10,
+          "default": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        },
+        "flip": {
+          "type": "bool",
+          "label": "左右を裏返す",
+          "order": 11,
+          "default": false
+        },
+        "swayAmp": {
+          "type": "float",
+          "label": "揺れの振れ幅（m・0 で揺れない）",
+          "order": 12,
+          "default": 0.0,
+          "min": 0.0,
+          "max": 0.5
+        },
+        "swaySec": {
+          "type": "float",
+          "label": "揺れの周期（秒）",
+          "order": 13,
+          "default": 2.0,
+          "min": 0.1,
+          "max": 10.0
+        },
+        "shadow": {
+          "type": "bool",
+          "label": "足元の楕円の影",
+          "order": 14,
+          "default": true
+        },
+        "cast": {
+          "type": "bool",
+          "label": "太陽の影を落とす",
+          "order": 15,
+          "default": true
+        },
+        "height": {
+          "type": "float",
+          "label": "板の高さ（m・空なら 32 画素 = 1 m）",
+          "order": 16,
+          "min": 0.1,
+          "max": 10.0
+        },
+        "passable": {
+          "type": "bool",
+          "label": "歩いて通れる（鳩・宙の風船）",
+          "order": 17,
+          "default": false
+        }
+      }
+    }
+  }
+}

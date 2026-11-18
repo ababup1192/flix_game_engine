@@ -1,0 +1,354 @@
+{
+  "//": "assets/town.look.json の形の宣言（Studio の sections 方言）。既定は src/TownLook.flix の defaults() が正。影の地図の大きさは explore.json の quality。",
+  "version": 1,
+  "sections": {
+    "topDeg": {
+      "kind": "field",
+      "type": "float",
+      "label": "画面の上の端で地面を見下ろす角度（度）",
+      "group": "カメラ",
+      "order": 1,
+      "default": 15.0,
+      "min": 0.0,
+      "max": 60.0
+    },
+    "bottomDeg": {
+      "kind": "field",
+      "type": "float",
+      "label": "画面の下の端で地面を見下ろす角度（度）",
+      "group": "カメラ",
+      "order": 2,
+      "default": 50.0,
+      "min": 20.0,
+      "max": 85.0
+    },
+    "far": {
+      "kind": "field",
+      "type": "float",
+      "label": "カメラの奥の端（m）",
+      "group": "カメラ",
+      "order": 3,
+      "default": 60.0,
+      "min": 20.0,
+      "max": 300.0
+    },
+    "sunElevation": {
+      "kind": "field",
+      "type": "float",
+      "label": "太陽の高さ（度）",
+      "group": "太陽と影",
+      "order": 4,
+      "default": 40.0,
+      "min": 5.0,
+      "max": 89.0
+    },
+    "sunAzimuth": {
+      "kind": "field",
+      "type": "float",
+      "label": "太陽の方位（度・南 = 手前から東へ）",
+      "group": "太陽と影",
+      "order": 5,
+      "default": 35.0,
+      "min": -180.0,
+      "max": 180.0
+    },
+    "sunIntensity": {
+      "kind": "field",
+      "type": "float",
+      "label": "太陽の強さ",
+      "group": "太陽と影",
+      "order": 6,
+      "default": 10.367,
+      "min": 0.0,
+      "max": 30.0
+    },
+    "sunColor": {
+      "kind": "field",
+      "type": "color",
+      "label": "太陽の色",
+      "group": "太陽と影",
+      "order": 7,
+      "default": "#fff2db"
+    },
+    "lightUnits": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "physical",
+          "legacy"
+        ]
+      },
+      "label": "光の量の読み方（physical = 逆二乗・拡散に 1/π）",
+      "group": "太陽と影",
+      "order": 8,
+      "default": "physical"
+    },
+    "shadowDistance": {
+      "kind": "field",
+      "type": "float",
+      "label": "太陽の影を描く奥行き（m）",
+      "group": "太陽と影",
+      "order": 9,
+      "default": 28.0,
+      "min": 5.0,
+      "max": 150.0
+    },
+    "shadowStrength": {
+      "kind": "field",
+      "type": "float",
+      "label": "影の濃さ（0〜1）",
+      "group": "太陽と影",
+      "order": 10,
+      "default": 1.0,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "shadowPcf": {
+      "kind": "field",
+      "type": "int",
+      "label": "影の縁をならす幅（画素）",
+      "group": "太陽と影",
+      "order": 11,
+      "default": 2,
+      "min": 0,
+      "max": 8
+    },
+    "charShadowScale": {
+      "kind": "field",
+      "type": "vec2",
+      "label": "キャラの影の板の幅と高さの倍率（見えている板は変えない）",
+      "group": "太陽と影",
+      "order": 12,
+      "default": {
+        "x": 0.6,
+        "y": 0.8
+      }
+    },
+    "ambient": {
+      "kind": "field",
+      "type": "color",
+      "label": "どこにでも当たる光",
+      "group": "空と霞",
+      "order": 13,
+      "default": "#262b3d"
+    },
+    "hemisphere": {
+      "kind": "field",
+      "type": "float",
+      "label": "上を向く面ほど明るくする量",
+      "group": "空と霞",
+      "order": 14,
+      "default": 0.15,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "boardTint": {
+      "kind": "field",
+      "type": "float",
+      "label": "板（木・街灯・キャラ）の明るさ",
+      "group": "空と霞",
+      "order": 15,
+      "default": 1.0,
+      "min": 0.2,
+      "max": 2.0
+    },
+    "snapToTexels": {
+      "kind": "field",
+      "type": "bool",
+      "label": "板とカメラを 1 テクセルに丸める（ドット絵の揺れを止める）",
+      "group": "空と霞",
+      "order": 16,
+      "default": true
+    },
+    "fogNear": {
+      "kind": "field",
+      "type": "float",
+      "label": "霞の始まる距離（m）",
+      "group": "空と霞",
+      "order": 17,
+      "default": 18.0,
+      "min": 0.0,
+      "max": 200.0
+    },
+    "fogFar": {
+      "kind": "field",
+      "type": "float",
+      "label": "霞が濃くなりきる距離（m）",
+      "group": "空と霞",
+      "order": 18,
+      "default": 70.0,
+      "min": 1.0,
+      "max": 300.0
+    },
+    "fog": {
+      "kind": "field",
+      "type": "color",
+      "label": "霞の色",
+      "group": "空と霞",
+      "order": 19,
+      "default": "#e0ebfa"
+    },
+    "sky": {
+      "kind": "field",
+      "type": "color",
+      "label": "空の色",
+      "group": "空と霞",
+      "order": 20,
+      "default": "#b3ccf2"
+    },
+    "view": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "agx",
+          "standard"
+        ]
+      },
+      "label": "曲線（agx = 明るい所を白飛びさせない）",
+      "group": "ポストプロセス",
+      "order": 21,
+      "default": "agx"
+    },
+    "exposure": {
+      "kind": "field",
+      "type": "float",
+      "label": "露出（段）",
+      "group": "ポストプロセス",
+      "order": 22,
+      "default": -0.3,
+      "min": -4.0,
+      "max": 4.0
+    },
+    "fStop": {
+      "kind": "field",
+      "type": "float",
+      "label": "ピントのぼけの強さ（0 でぼかさない）",
+      "group": "ポストプロセス",
+      "order": 23,
+      "default": 0.08,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "saturation": {
+      "kind": "field",
+      "type": "float",
+      "label": "彩度",
+      "group": "ポストプロセス",
+      "order": 24,
+      "default": 1.05,
+      "min": 0.0,
+      "max": 2.0
+    },
+    "vignette": {
+      "kind": "field",
+      "type": "float",
+      "label": "周りを暗く",
+      "group": "ポストプロセス",
+      "order": 25,
+      "default": 0.35,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "fxaa": {
+      "kind": "field",
+      "type": "bool",
+      "label": "縁のならし（FXAA）",
+      "group": "ポストプロセス",
+      "order": 26,
+      "default": true
+    },
+    "lift": {
+      "kind": "record",
+      "label": "暗い所の掛け目",
+      "order": 27,
+      "fields": {
+        "r": {
+          "type": "float",
+          "label": "赤",
+          "order": 1,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 2.0
+        },
+        "g": {
+          "type": "float",
+          "label": "緑",
+          "order": 2,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 2.0
+        },
+        "b": {
+          "type": "float",
+          "label": "青",
+          "order": 3,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 2.0
+        }
+      }
+    },
+    "gamma": {
+      "kind": "record",
+      "label": "中間の掛け目",
+      "order": 28,
+      "fields": {
+        "r": {
+          "type": "float",
+          "label": "赤",
+          "order": 1,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 2.0
+        },
+        "g": {
+          "type": "float",
+          "label": "緑",
+          "order": 2,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 2.0
+        },
+        "b": {
+          "type": "float",
+          "label": "青",
+          "order": 3,
+          "default": 1.0,
+          "min": 0.0,
+          "max": 2.0
+        }
+      }
+    },
+    "gain": {
+      "kind": "record",
+      "label": "明るい所の掛け目",
+      "order": 29,
+      "fields": {
+        "r": {
+          "type": "float",
+          "label": "赤",
+          "order": 1,
+          "default": 1.06,
+          "min": 0.0,
+          "max": 2.0
+        },
+        "g": {
+          "type": "float",
+          "label": "緑",
+          "order": 2,
+          "default": 0.99,
+          "min": 0.0,
+          "max": 2.0
+        },
+        "b": {
+          "type": "float",
+          "label": "青",
+          "order": 3,
+          "default": 0.88,
+          "min": 0.0,
+          "max": 2.0
+        }
+      }
+    }
+  }
+}
