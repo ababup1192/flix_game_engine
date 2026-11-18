@@ -162,6 +162,8 @@ type Rules struct {
 	DocsSync     DocsSync     `json:"docsSync"`
 	LocalGate    LocalGate    `json:"localGate"`
 	FailOpen     FailOpen     `json:"failOpen"`
+	// ReferenceDrift は無くてよい（古い precommit.json では見ない）。
+	ReferenceDrift ReferenceDrift `json:"referenceDrift"`
 }
 
 // LoadRules は規約データを読む。

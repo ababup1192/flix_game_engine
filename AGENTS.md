@@ -117,6 +117,10 @@ SubagentStop で走り、他人が編集中の赤で止まる。常駐 repl の�
 [docs/checkd.md](docs/checkd.md)）。設定でサブエージェントが使えないときは、
 黙って全部自分でやらず**止まっていることを人へ言う**。
 
+絵に触る担当には**「画素の差が出たら入れる前に止めて報告」**を依頼文に書く。前のコミットの後に描き出した gallery が
+リファレンスと違うままのコミットは pre-commit が止める（意図した差は `make reference-update` の SHA256SUMS.txt を同じコミットに入れて通す）。
+片付け: 担当が終わったら `make strays`（取り残された Chrome・http.server・ウィンドウ・常駐）、worktree がたまったら `make worktree-gc`（どちらも一覧が先・止める / 消すのは `KILL=1` / `APPLY=1`）。
+
 ## コーディングポリシー
 
 コードには **How** / テストコードには **What** / コミットログには **Why** / コードコメントには **WhyNot**

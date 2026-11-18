@@ -167,6 +167,16 @@ func (r *runner) gate(staged []string) (int, error) {
 		}
 	}
 
+	if drift := r.checkReferenceDrift(staged); len(drift) > 0 {
+		failed = true
+		fmt.Fprintf(r.parent, "[pre-commit] 絵の差 %d 件:\n", len(drift))
+		for _, m := range drift {
+			fmt.Fprintf(r.parent, "  %s\n", m)
+		}
+		fmt.Fprint(r.parent, "  意図しない差なら、コミットせずに止めて報告する（差の中身を見るのは、ゲームなら make compare BASE=HEAD・engine の作業場なら make diff DIR=templates/<名前>）。\n"+
+			"  意図した差なら make reference-update（テンプレは make -C templates/<名前> reference-update）で reference/SHA256SUMS.txt を直し、同じコミットに入れる。\n")
+	}
+
 	for _, c := range r.rules.Checks {
 		matched := selectPaths(staged, c.When)
 		if len(matched) == 0 {

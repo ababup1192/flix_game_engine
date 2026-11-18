@@ -388,5 +388,20 @@
     "makeMissing": "[pre-commit] make が見つからないので配線検査 (check-docs-sync) は飛ばします",
     "targetMissing": "[pre-commit] make check-docs-sync が無いので配線検査は飛ばします",
     "targetMissingExitCode": 2
+  },
+  "referenceDrift": {
+    "note": "描き出した絵がリファレンスと違うのに、そのままコミットするのを止める（go/internal/precommit/refdrift.go）。affects はゲーム（テンプレート）の根からの相対で当てる、絵を変えうるファイル。engineSources は engine の作業場で全部のテンプレートの絵を変えうるファイル。見るのは前のコミットより後に描き出した gallery だけで、reference/SHA256SUMS.txt を同じコミットに入れていれば（make reference-update = 意図した差のマーカー）通す。",
+    "affects": {
+      "anyOf": [{"suffixes": [".flix", ".json", ".png", ".wav", ".ttf", ".otf"]}],
+      "exceptPrefixes": ["gallery/", "reference/", "debug/", "docs/", "agent-eval/", "build/", "lib/", "notes/"]
+    },
+    "engineSources": {
+      "anyOf": [
+        {"prefixes": ["engine/src/"], "suffixes": [".flix"]},
+        {"prefixes": ["engine_world/src/"], "suffixes": [".flix"]},
+        {"prefixes": ["engine_tools/src/"], "suffixes": [".flix"]},
+        {"prefixes": ["render_gl/src/"], "suffixes": [".flix"]}
+      ]
+    }
   }
 }
