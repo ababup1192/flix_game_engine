@@ -84,3 +84,19 @@ test:
 
 check:
 	../../bin/flix check
+
+# 最終動画: 町・炎・氷を 1 本の通しのコマで並べ、境目を白い四角で白飛びさせる（台本は assets/final.json）。
+#   make final-plan   … 場面ごとの通しのコマの区間と全体の秒を出す（絵は描かない）
+#   make final-frames … CPU で描く（debug/final_frames/・FRAME_FROM / FRAME_TO / FRAME_STEP で範囲・要る場面だけ読む）
+#   make final-video  … GPU（GL）で 64 コマずつ撮り、debug/hd2d_town_final.mp4・_sheet.png・_flash.png にする（KEEP=1 で撮ったコマを残す）
+.PHONY: final-plan final-frames final-video
+
+final-plan:
+	../../bin/flix run --entrypoint FinalCut.plan
+
+final-frames:
+	@mkdir -p debug/final_frames
+	../../bin/flix run --entrypoint FinalCut.frames
+
+final-video:
+	bin/final_video.sh

@@ -12,9 +12,9 @@ mod BuildVideo {
 
     pub def fps(): Int32 = 30
 
-    def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
+    pub def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
 
-    def envInt(name: String, fallback: Int32): Int32 \ IO =
+    pub def envInt(name: String, fallback: Int32): Int32 \ IO =
         let v = System.getenv(name);
         if (Object.isNull(v)) fallback else Int32.fromString(v) |> Option.getWithDefault(fallback)
 
@@ -169,8 +169,28 @@ mod BuildVideo {
     /// tweak = 台本の timeOfDay の Look に掛ける差し替え（look に掛けた物と同じ）。台本は BUILDUP（既定 assets/buildup.json）・地図は台本の map。
     /// WALK_MAP（地図の Doc）があれば、その地図の walk の台本で、はじめから全部出来ている場面を歩く（look の Look のまま）。
     pub def setup(look: TownScene.Look, tweak: TownScene.Look -> TownScene.Look): Result[String, Setup] \ IO =
+        setupOf(look, tweak, sourceFromEnv())
+
+    /// 場面の元。Plan = 町が出来ていく台本の Doc（buildup の形）・MapWalk = 地図の Doc の walk.path で歩くだけ。
+    pub enum Source with Eq, ToString {
+        case Plan(String)
+        case MapWalk(String)
+    }
+
+    /// 環境変数の場面の元（WALK_MAP があれば MapWalk・無ければ BUILDUP の台本・既定 assets/buildup.json）。
+    pub def sourceFromEnv(): Source \ IO =
         let walkMap = System.getenv("WALK_MAP");
-        if (Object.isNull(walkMap) or walkMap == "") setupPlan(look, tweak) else setupMapWalk(look, walkMap)
+        let planPath = System.getenv("BUILDUP");
+        if (not (Object.isNull(walkMap) or walkMap == "")) Source.MapWalk(walkMap)
+        else if (Object.isNull(planPath) or planPath == "") Source.Plan("assets/buildup.json")
+        else Source.Plan(planPath)
+
+    /// setup の、場面の元を渡す形。
+    pub def setupOf(look: TownScene.Look, tweak: TownScene.Look -> TownScene.Look, src: Source): Result[String, Setup] \ IO =
+        match src {
+            case Source.Plan(planPath)   => setupPlan(look, tweak, planPath)
+            case Source.MapWalk(mapPath) => setupMapWalk(look, mapPath)
+        }
 
     /// 地図 mapPath の walk.path で歩くだけの場面（出来ていく演出なし）。
     def setupMapWalk(look: TownScene.Look, mapPath: String): Result[String, Setup] \ IO =
@@ -186,8 +206,7 @@ mod BuildVideo {
                           track = pathTrackOf(m, look, p, pw#followZoom), schedule = None }
             })
 
-    def setupPlan(look: TownScene.Look, tweak: TownScene.Look -> TownScene.Look): Result[String, Setup] \ IO =
-        let planPath = { let v = System.getenv("BUILDUP"); if (Object.isNull(v) or v == "") "assets/buildup.json" else v };
+    def setupPlan(look: TownScene.Look, tweak: TownScene.Look -> TownScene.Look, planPath: String): Result[String, Setup] \ IO =
         (run { Buildup.loadPlan(planPath) |> Result.flatMap(p -> TownMap.load("step", p#map) |> Result.map(m -> (m, p))) } with Fs.FileRead.runWithIO)
             |> Result.flatMap(mp -> {
                 let (m, p) = mp;
@@ -317,15 +336,16 @@ mod BuildVideo {
         { x = snap(at(tr#cameraX, tr#eye#x)), z = snap(at(tr#cameraY, 0.0) - tr#feetDepth * pull),
           height = tr#groundZ + (tr#eye#height - tr#groundZ) * pull + (at(tr#cameraHeight, tr#groundZ) - tr#groundZ) + Buildup.shakeAt(st#show, t) }
 
-    def fullSceneOf(look: TownScene.Look, focus: Float64, flash: Float64, scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
+    /// 場面に後がけを掛けた、CPU で描く 1 枚の中身。overlay = 後がけの後に重ねる 2D の絵（白飛びの白い四角）。
+    pub def fullSceneOf(look: TownScene.Look, focus: Float64, flash: Float64, overlay: List[Render.PlacedItem], scene: Scene3d.Scene3dCmd): HeadlessRender.Scene =
         let built = PostStack.build({ size = design(), clear = Color.rgb(0.0, 0.0, 0.0), world = TownScene.items(scene) }, TownScene.postFlashAt(look, focus, scene#time, flash, design()#x));
         let specs = Render.passSpecsOf(_ -> None, built#plan)#specs
             |> List.map(sp -> { name = sp#name, clear = sp#clear, drawables = sp#drawables, polygons = sp#polygons, surfaces = sp#surfaces, scenes = sp#scenes, target = sp#target });
-        let soft = Render.softSceneOf(_ -> None, built#present :: Nil);
+        let soft = Render.softSceneOf(_ -> None, built#present :: overlay);
         { passes = specs, drawables = soft#drawables, polygons = soft#polygons, surfaces = soft#surfaces,
           scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() }
 
-    def pad4(i: Int32): String = String.padLeft(4, '0', Int32.toString(i))
+    pub def pad4(i: Int32): String = String.padLeft(4, '0', Int32.toString(i))
 
     /// 台本の毎コマの先頭の行を 1 行ずつ出す（"row <コマ 1 から> <行>"・絵は描かない。動画に時刻のラベルを入れる時に読む）。
     pub def leaderRows(): Unit \ IO =
@@ -359,7 +379,7 @@ mod BuildVideo {
                         if (new File("${outDir}/${name}.png").exists()) ()
                         else {
                             let (scene, focus) = shotAt(st, cachedGroup(cache, f - 1), design(), f - 1);
-                            HeadlessRender.renderPngFull(cfg, fullSceneOf(lookAt(st, f - 1), focus, Buildup.flashAt(st#show, Int32.toFloat64(f - 1) / Int32.toFloat64(fps())), scene), name);
+                            HeadlessRender.renderPngFull(cfg, fullSceneOf(lookAt(st, f - 1), focus, Buildup.flashAt(st#show, Int32.toFloat64(f - 1) / Int32.toFloat64(fps())), Nil, scene), name);
                             println("[hd2d_town] ${outDir}/${name}.png（先頭の行 ${Float64.toString(leaderRowAt(st, f - 1))}）")
                         }
                     });
