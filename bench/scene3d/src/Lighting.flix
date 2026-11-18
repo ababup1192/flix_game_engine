@@ -6,12 +6,12 @@ mod Lighting {
 
     /// 夜の街灯の場面のつまみ。lamps = 街灯の本数（1〜8）・shadows = 点光源の影（None で影なし）・
     /// casterScale = 人の板の影の板の倍率・units = 光の量の読み方・intensityScale = 灯りの intensity に掛ける数（Physical で π 倍の比べ）・
-    /// sun = 夕方の低い太陽と影を足す（ビルボードの太陽の影の比べ）。
+    /// sun = 夕方の低い太陽と影を足す（ビルボードの太陽の影の比べ）・crowd = 道に足す立っている人の板の数（影を落とす板が多い場面の重さと値の量）。
     pub type alias Config = { lamps = Int32, shadows = Option[Scene3d.PointShadowMap], casterScale = Vec2.Vec2,
-                              units = Scene3d.LightUnits, intensityScale = Float64, sun = Bool }
+                              units = Scene3d.LightUnits, intensityScale = Float64, sun = Bool, crowd = Int32 }
 
     pub def defaultConfig(): Config =
-        { lamps = 6, shadows = None, casterScale = Vec2.one(), units = Scene3d.LightUnits.Legacy, intensityScale = 1.0, sun = false }
+        { lamps = 6, shadows = None, casterScale = Vec2.one(), units = Scene3d.LightUnits.Legacy, intensityScale = 1.0, sun = false, crowd = 0 }
 
     /// 描き物の大きさ（design px）。
     pub def design(): Vec2.Vec2 = { x = 320.0, y = 180.0 }
@@ -81,7 +81,9 @@ mod Lighting {
     /// 歩く人の板の位置（t 秒で道の真ん中を北へ歩く）と、立っている人。
     def people(cfg: Config, t: Float64): List[Scene3d.Billboard3d] =
         let walker = Vec3.v3(0.3, 0.0, { let u = t * 1.2; u - 16.0 * Float64.floor(u / 16.0) } - 1.0);
-        let standing = Vec3.v3(-1.8, 0.0, 3.2) :: Vec3.v3(1.6, 0.0, 6.8) :: Vec3.v3(-0.4, 0.0, 11.0) :: Nil;
+        let crowd = List.range(0, cfg#crowd) |> List.map(i ->
+            Vec3.v3(Int32.toFloat64(Int32.remainder(i, 12)) * 0.5 - 2.75, 0.0, Int32.toFloat64(i / 12) * 0.6 + 1.0));
+        let standing = Vec3.v3(-1.8, 0.0, 3.2) :: Vec3.v3(1.6, 0.0, 6.8) :: Vec3.v3(-0.4, 0.0, 11.0) :: crowd;
         (walker :: standing) |> List.map(p ->
             Scene3d.billboard("person", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 32.0 } }, p, { x = 0.8, y = 1.6 })
                 |> Scene3d.withCastShadows(true) |> Scene3d.withShadowCasterScale(cfg#casterScale))
