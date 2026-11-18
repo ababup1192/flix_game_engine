@@ -173,6 +173,14 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 - 地図の walk の隊列の板（`memberBoard`）にも夜の板の明るさ（`lampLit`）を通した。通していないと、奥の街灯の光が板の裏から当たって 3 人目が 0.3 秒ほど影絵になった。
 - GPU の重さを測る時の影を落とす灯りの数は `POINT_SHADOWS=n`（0 = 影なし）。
 
+## 最終動画の BGM とクレジット
+
+- 曲: ユーフルカ「【フィールド】天翔る飛空挺」（https://youfulca.com/2022/08/11/field_airship/ ・規約 https://youfulca.com/kiyaku_jp/ ）。
+- `make final-video` が、通しの mp4 に頭から重ねる（`bin/add_bgm.sh`）。曲のファイルは素材の再配布になるので git に入れず、`HD2D_LAB`（既定 `~/Desktop/hd2d_lab`）の `audio/bgm_candidates/01_field-airship.mp3` を読む（`BGM=…` で差し替え・無ければ音なしで作って 1 行言う）。
+- 動画には字幕を入れない約束なので、クレジットは映像に入れず、ここに書く。
+
+音楽：ユーフルカ https://youfulca.com/
+
 ## engine に相談する事
 
 - CPU の描き出し（HeadlessRender・SoftRaster）で、後がけのブルームの強さを 0 より大きくすると、画面の左上に場面の縮んだ写しのようなまだらが出る（GPU の GL では出ない）。

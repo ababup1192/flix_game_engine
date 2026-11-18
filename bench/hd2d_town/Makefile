@@ -89,7 +89,11 @@ check:
 #   make final-plan   … 場面ごとの通しのコマの区間と全体の秒を出す（絵は描かない）
 #   make final-frames … CPU で描く（debug/final_frames/・FRAME_FROM / FRAME_TO / FRAME_STEP で範囲・要る場面だけ読む）
 #   make final-video  … GPU（GL）で 64 コマずつ撮り、debug/hd2d_town_final.mp4・_sheet.png・_flash.png にする（KEEP=1 で撮ったコマを残す）
+#                       BGM を頭から重ねる（0.5 秒で入り終わり 3 秒で消す・ピーク −1 dB 前後）。曲は git に入れず hd2d_lab から読む（無ければ音なし）
 .PHONY: final-plan final-frames final-video
+
+HD2D_LAB ?= $(HOME)/Desktop/hd2d_lab
+BGM ?= $(HD2D_LAB)/audio/bgm_candidates/01_field-airship.mp3
 
 final-plan:
 	../../bin/flix run --entrypoint FinalCut.plan
@@ -99,4 +103,4 @@ final-frames:
 	../../bin/flix run --entrypoint FinalCut.frames
 
 final-video:
-	bin/final_video.sh
+	BGM="$(BGM)" bin/final_video.sh

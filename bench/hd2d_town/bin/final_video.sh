@@ -2,7 +2,7 @@
 # 通しの台本（assets/final.json）の全部のコマを GPU（GL）で 64 コマずつ撮り、最終動画と確かめの絵にする:
 #   debug/hd2d_town_final.mp4（30 fps・crf 20・1280×720）・debug/hd2d_town_final_sheet.png（1 秒ごとのコマ）・
 #   debug/hd2d_town_final_flash.png（白飛びの境目ごとに、白くなる前・真っ白・消えた後の 3 コマ）
-# usage: bin/final_video.sh   （KEEP=1 で撮ったコマを残したまま、無いコマだけ撮り直す）
+# usage: bin/final_video.sh   （KEEP=1 で撮ったコマを残したまま、無いコマだけ撮り直す・BGM = 重ねる曲のファイル。無ければ音なし）
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 export FLIX_GE_BACKEND=gl
@@ -29,7 +29,8 @@ for from in $(seq 0 64 $((total - 1))); do
 done
 got=$(ls "$out"/f*.png | wc -l | tr -d ' ')
 echo "[final_video] コマ $got / $total・残った TownGpu: $(pgrep -f TownGpu | wc -l | tr -d ' ')"
-ffmpeg -v error -y -framerate 30 -i "$out/f%04d.png" -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart debug/hd2d_town_final.mp4
+ffmpeg -v error -y -framerate 30 -i "$out/f%04d.png" -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart debug/hd2d_town_final_silent.mp4
+bin/add_bgm.sh debug/hd2d_town_final_silent.mp4 debug/hd2d_town_final.mp4 "${BGM:-}"
 secs=$(( (total + 29) / 30 ))
 rows=$(( (secs + 7) / 8 ))
 ffmpeg -v error -y -i debug/hd2d_town_final.mp4 -vf "fps=1,scale=320:180,tile=8x${rows}" -frames:v 1 debug/hd2d_town_final_sheet.png
