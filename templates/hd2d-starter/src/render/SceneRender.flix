@@ -3,8 +3,9 @@
 //       make render SHOT=title → debug/title.png（1 枚だけ）
 // 描くのは実機と同じ View.frame（3D の場面）に View.postOf（ポストプロセス）を掛け、View.hud（終了の確認の窓）を重ねた物。
 mod SceneRender {
-    use fge::{App, Color, HeadlessFont, HeadlessRender, PostStack, Render}
+    use fge::{App, Color, Filmstrip, HeadlessFont, HeadlessRender, PostStack, Render}
 
+    import java.awt.image.BufferedImage
     import java.io.File
 
     def ttf(): String = "assets/PixelMplus10-Regular.ttf"
@@ -63,12 +64,65 @@ mod SceneRender {
         let ctx = App.viewCtxOf(atlas, View.size());
         Shots.names() |> List.filter(keep) |> List.filterMap(name ->
             Shots.worldOf(name, res) |> Option.map(w -> {
-                HeadlessRender.renderPngFull(cfg, sceneOf(ctx, res, w), name);
+                writeShot(cfg, sceneOf(ctx, res, w), name);
                 App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
                 let path = "${outDir}/${name}.png";
                 println("rendered: ${path}");
                 path
             }))
+
+    /// Studio のジャンルカードの顔（reference/title.png・git に入る 1 枚）の大きさ。ほかの場面は View.size() のまま。
+    // WhyNot: title も 1280×720 のまま入れない — 石畳と木の細かい絵は PNG で縮まず 1.9 MB になり、git に入れる絵の上限
+    // （bin/fge images の 8 MB）を 1 枚で食う。カードは幅数百 px で見るので 960×540 で粗くならない。
+    def titleSize(): (Int32, Int32) = (960, 540)
+
+    /// 1 枚を outDir/<name>.png へ書く。title だけ View.size() で描いてから titleSize() へ面積の平均で縮める。
+    def writeShot(cfg: HeadlessRender.RenderConfig, scene: HeadlessRender.Scene, name: String): Unit \ IO =
+        if (name == "title") {
+            let (w, h) = titleSize();
+            Filmstrip.renderFrame(shrinkByArea(HeadlessRender.renderImageFull(cfg, scene), w, h), "${cfg#outDir}/${name}.png")
+        } else HeadlessRender.renderPngFull(cfg, scene, name)
+
+    /// img を w × h へ縮める。先の 1 画素は元の画像の重なる範囲の画素を、重なる面積で重みを付けて平均した色（ARGB の 4 つとも）。
+    def shrinkByArea(img: BufferedImage, w: Int32, h: Int32): BufferedImage \ IO = region rc {
+        let sw = img.getWidth();
+        let sh = img.getHeight();
+        let src: Array[Int32, rc] = Array.empty(rc, sw * sh);
+        discard img.getRGB(0i32, 0i32, sw, sh, src, 0i32, sw);
+        let cols = Vector.range(0, w) |> Vector.map(o -> coverageOf(o, w, sw));
+        let rows = Vector.range(0, h) |> Vector.map(o -> coverageOf(o, h, sh));
+        let area = Int32.toFloat64(sw) / Int32.toFloat64(w) * Int32.toFloat64(sh) / Int32.toFloat64(h);
+        let out: Array[Int32, rc] = Array.empty(rc, w * h);
+        List.range(0, h) |> List.forEach(y -> {
+            let row = Vector.get(y, rows);
+            List.range(0, w) |> List.forEach(x -> {
+                let samples = row |> List.flatMap(ry -> Vector.get(x, cols) |> List.map(cx ->
+                    (Array.get(fst(ry) * sw + fst(cx), src), snd(ry) * snd(cx))));
+                Array.put(averageArgb(samples, area), y * w + x, out)
+            })
+        });
+        let dest = new BufferedImage(w, h, 2i32);
+        dest.setRGB(0i32, 0i32, w, h, out, 0i32, w);
+        dest
+    }
+
+    /// 先の o 番目（全部で n）が重なる元の画素（全部で srcN）と、重なる長さ。
+    def coverageOf(o: Int32, n: Int32, srcN: Int32): List[(Int32, Float64)] =
+        let scale = Int32.toFloat64(srcN) / Int32.toFloat64(n);
+        let lo = Int32.toFloat64(o) * scale;
+        let hi = lo + scale;
+        let first = Float64.floor(lo) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        let last = Int32.min(srcN - 1, (Float64.ceil(hi) |> Float64.tryToInt32 |> Option.getWithDefault(srcN)) - 1);
+        List.range(first, last + 1) |> List.map(i -> (i, Float64.min(hi, Int32.toFloat64(i + 1)) - Float64.max(lo, Int32.toFloat64(i))))
+            |> List.filter(p -> snd(p) > 0.0)
+
+    /// (ARGB, 重み) の列の重み付きの平均を area で割った ARGB。
+    def averageArgb(samples: List[(Int32, Float64)], area: Float64): Int32 =
+        List.foldLeft((acc, shift) -> {
+            let sum = samples |> List.foldLeft((s, p) -> s + Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, fst(p)), 255)) * snd(p), 0.0);
+            let channel = Int32.max(0, Int32.min(255, Float64.round(sum / area) |> Float64.tryToInt32 |> Option.getWithDefault(0)));
+            Int32.bitwiseOr(acc, Int32.leftShift(channel, shift))
+        }, 0, 24 :: 16 :: 8 :: 0 :: Nil)
 
     /// 1 枚の中身: View.frame にポストプロセス（explore.json の post が偽なら掛けない）を掛け、View.hud を重ねる。
     def sceneOf(ctx: App.ViewCtx, res: Res.Res, w: World.World): HeadlessRender.Scene =
