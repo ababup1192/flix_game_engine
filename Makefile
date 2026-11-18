@@ -561,7 +561,7 @@ gl-capture: ### OUT=<dir> [BACKEND=gl] | テンプレの場面を隠しウィン
 	@if [ -z "$(OUT)" ]; then echo "usage: make gl-capture OUT=<出力のフォルダ> [BACKEND=gl]"; exit 2; fi
 	@bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) "$(OUT)"
 
-# WhyNot: gl-capture の基準を BASELINE と分ける — 3D の GL の絵は C2 の後で 1 画素変わり、0.78.0 の基準は gl-capture だけを持つ。
+# WhyNot: gl-capture の基準を BASELINE と分ける — 3D の GL の絵は C2 の後で 1 画素変わり、gl-capture の基準だけを撮り直す版がある。
 # WhyNot: 基準を 1 つのファイルにしない — M2 と M4 Pro で 54 枚のうち 30 枚がずれ、別の機械の基準との差が毎回の門に混ざった。
 # WhyNot: WebGPU の基準の名前に jWebGPU の版を入れずに置かない — 版を上げると Dawn が替わり絵が変わりうる。名前に入れておけば、
 #   版を上げた木では基準が無いと言って止まり（2 回撮りの一致だけ）、撮り直すまで古い Dawn の基準と比べない。
@@ -1064,8 +1064,8 @@ release-marker-check: ### | CI が公開の前に見るマーカー（版・comm
 	 echo "[release] 印を確かめました: v$$ver は $$sha で門を通し、その後の変更は印だけ"
 
 # CI が流す公開。テストは手元の release-verify が通した物を印で受け取る。
-# WhyNot: CI で全量テストを流し直さない。描き出しのスナップショットは OS と JRE のフォントの差で CI ではずれる
-# (release-gate.yml と同じ理由)。studio-parity も Studio の clone が要るので手元の門に任せる。
+# WhyNot: CI で全量テストを流し直さない。描き出しのスナップショットは OS と JRE のフォントの差で CI ではずれる。
+# studio-parity も Studio の clone が要るので手元の門に任せる。
 .PHONY: release-publish
 release-publish: release-marker-check ### | CI が流す公開（マーカーを確かめて組み、gh release）
 	@# WhyNot: go-build を先に置く。release-guard が呼ぶ bin/fge は bin/fge-go を要り、CI の checkout には無い。

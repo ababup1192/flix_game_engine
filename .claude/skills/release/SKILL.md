@@ -50,7 +50,7 @@ allowed-tools: Read, Grep, Glob, Bash
 印を書くだけで、公開はしない。CI は、印の版が `VERSION` と同じか・印の commit から HEAD までの差が印だけか・
 タグがまだ無いかを見て（`make release-marker-check`）、`sync` → `gl-jar-publish` → build-pkg → `bundle-zip` → `gh release create` を
 流す。tag は印を載せた commit に付く。2 の後に 1 行でも変えたら止まるので、2 からやり直す。
-CI ではテストを流し直さない（スナップショットが OS と JRE のフォントの差でずれる。`release-gate.yml` と同じ）。
+CI ではテストを流し直さない（スナップショットが OS と JRE のフォントの差でずれる）。
 画面を開く門は `make release` に入っていないので、`make verify SUITE=gui`（sync-engine-full の後に determinism・gl-capture-check・
 smoke-devtools・webgpu-v1-check-web。並びの正は根の gates.json）を手元で流して緑を確かめてから 2 へ進む（`docs/flow.md` の決定性の門）。
 何が流れるかだけ見るなら `DRY=1`。

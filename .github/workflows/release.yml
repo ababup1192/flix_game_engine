@@ -21,7 +21,7 @@ jobs:
       - name: Run on main only
         run: test "${GITHUB_REF_NAME}" = main || { echo "main で起動してください（今は ${GITHUB_REF_NAME}）" >&2; exit 1; }
 
-      # devbox が nix 経由で JDK25 / Flix コンパイラ / Go / make を用意する（ローカルと同じ環境。release-gate.yml と同じ）。
+      # devbox が nix 経由で JDK25 / Flix コンパイラ / Go / make を用意する（ローカルと同じ環境）。
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.13.0
 

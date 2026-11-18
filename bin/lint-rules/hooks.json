@@ -1,13 +1,5 @@
 {
   "note": "エージェントのフック（bin/fge hook-*）の判定値。この JSON が source of truth で、bin/fge hook-art-edit / hook-flix-touch / hook-flix-work / hook-flix-edit / hook-asset-guard / hook-read-guard はこれを読んで動く。呼び出しの配線は .claude/settings.json と agents-pack/settings.json・agents-pack/codex-hooks.json にある。",
-  "sessionDiet": {
-    "note": "廃止（hook-session-diet は何もしない。セッションの長さは Claude Code 標準に任せる）。古い bin/fge-go が欠けキーで止まらないよう値だけ 1 リリース残す — 0.36.0 で消す。",
-    "thresholdTokens": 130000,
-    "stepTokens": 30000,
-    "tailBytes": 65536,
-    "usageMark": "cache_read_input_tokens",
-    "markerPrefix": "claude-session-diet-"
-  },
   "checkd": {
     "note": "常駐 (bin/fge checkd) との話し方と、起動予約の歯止め。maxDaemons は常駐の数の上限で、クライアント側 (起動予約) と常駐側の両方がこの 1 か所を読む。",
     "cacheDir": "~/.cache/flix-checkd",
