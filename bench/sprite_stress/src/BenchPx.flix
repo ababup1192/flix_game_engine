@@ -50,9 +50,7 @@ mod BenchPx {
             let doc = run { PxSpriteDoc.load(spritePath()) } with Fs.FileRead.runWithIO;
             let baked = PxSpriteAtlas.bake(doc, resolver);
             run {
-                App.make(initialWorld(doc, baked))
-                    |> App.addSystem(step)
-                    |> App.withView((ctx, w) -> checked_ecast(view(ctx, w)))
+                app(doc, baked)
                     |> App.quitWhen((_frame, w) -> checked_ecast(w#done))
                     |> App.launchForBench
             } with LwjglLayer.withProject(".")
@@ -62,6 +60,13 @@ mod BenchPx {
               with Fs.ModificationTime.runWithFileTime
               with Fs.FileTime.runWithIO
         }
+
+    // WhyNot: App の組み立てを run の中に直に書かない — 戻り値の型を書かないと、Flix 0.80 の型検査が
+    // 手前の handler の束と効果の集合を解くのに 10 分を超えて終わらない（flix check も止まる）。
+    pub def app(doc: PxSpriteDoc.Doc, baked: PxSpriteAtlas.Baked): App.App[World, IO] =
+        App.make(initialWorld(doc, baked))
+            |> App.addSystem(step)
+            |> App.withView((ctx, w) -> checked_ecast(view(ctx, w)))
 
     pub def initialWorld(doc: PxSpriteDoc.Doc, baked: PxSpriteAtlas.Baked): World =
         { t = 0.0, segment = 0, frameInSegment = 0, samples = Nil, done = false,
