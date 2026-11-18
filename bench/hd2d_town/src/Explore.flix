@@ -320,19 +320,22 @@ mod Explore {
             case Err(why) => println("[hd2d_town] 町を組めない: ${why}")
         }
 
+    /// 町を読み、遊ぶ App にする（読めなければ止める）。
+    // WhyNot: loadAndLaunch へ渡す lambda に本文を書かない — 読み込みが lambda の中へ畳まれ、JVM の 1 メソッドの上限を超える。
+    def loadedApp(knobs: Map[String, String]): App.App[Resources.With[Res, World], {}] \ IO + Fs.FileRead + LoadProgress =
+        let decoder = LoadProgress.imageDecoder();
+        match load(Images.readImageWith(decoder), knobs) {
+            case Ok(res)  => appOf(res)
+            case Err(why) => bug!("[hd2d_town] 町を組めない: ${why}")
+        }
+
     /// ウィンドウありの入口（make explore）。つまみは環境変数 SHADOW_MAP・DOF・POST（ExploreDoc.qualityWith）。
     pub def main(): Unit \ IO =
         if (LwjglLayer.ensureMainThread()) ()
         else {
             let knobs = BenchEnv.knobs(("SHADOW_MAP", "shadow") :: ("DOF", "dof") :: ("POST", "post") :: ("DEBUG", "debug") :: ("START_CELL", "start") :: ("LOOK", "look") :: Nil);
             run {
-                App.loadAndLaunch(() -> {
-                    let decoder = LoadProgress.imageDecoder();
-                    match load(Images.readImageWith(decoder), knobs) {
-                        case Ok(res)  => appOf(res)
-                        case Err(why) => bug!("[hd2d_town] 町を組めない: ${why}")
-                    }
-                })
+                App.loadAndLaunch(() -> loadedApp(knobs))
             } with LwjglLayer.withProject(".")
               with Fs.FileRead.runWithIO
               with Fs.FileWrite.runWithIO
