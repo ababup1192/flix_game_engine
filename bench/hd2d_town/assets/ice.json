@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "氷の谷の見た目（段 F6）: hd2d_lab の ice_cave.map.json の lighting を写した物。太陽 4.5 W・露出 0.45（AgX）・ブルーム 0.45 を、町の昼と同じ比で直した。池と崖のつや・空の映り込み・結晶の点光源・雪は地図の欄から StageFx が作る。CPU の描き出しで手本と並べて寄せた値: 結晶の点光源 0.4 倍・露出 −0.8・ブルーム 0（CPU の描き出しでブルームを掛けると画面に場面の写しのまだらが出る）",
+  "note": "氷の谷の見た目（段 F6）: hd2d_lab の ice_cave.map.json の lighting を写した物。太陽 4.5 W・露出 0.45（AgX）・ブルーム 0.45 を、町の昼と同じ比で直した。池と崖のつや・空の映り込み・結晶の点光源・雪は地図の欄から StageFx が作る。CPU の描き出しで手本と並べて寄せた値: 結晶の点光源 0.4 倍・露出 −0.8・ブルーム 0（CPU の描き出しでブルームを掛けると画面に場面の写しのまだらが出る） 雪の日の空気（人の言葉「きれいな空気が澄んでるなかで、雪が振ってるので変」の後）: 霞を近く（fogNear・fogFar）して灰色がかった青白に寄せ、高さの霧（heightFog）で奥ほど白く霞ませ、彩度を下げ・lift で暗い所を持ち上げてコントラストを落とした（手本は hd2d_lab の stage_ice.png）",
   "topDeg": 15.0,
   "bottomDeg": 50.0,
   "far": 60.0,
@@ -17,22 +17,22 @@
   "hemisphere": 0.3,
   "boardTint": 1.0,
   "snapToTexels": true,
-  "fogNear": 18.0,
-  "fogFar": 70.0,
+  "fogNear": 16.0,
+  "fogFar": 55.0,
   "fog": [
-    0.9,
-    0.94,
-    1.0
+    0.8,
+    0.84,
+    0.9
   ],
   "sky": [
-    0.81,
-    0.89,
-    0.99
+    0.8,
+    0.84,
+    0.9
   ],
   "exposure": -0.8,
   "bloomStrength": 0.0,
   "fStop": 0.08,
-  "saturation": 1.05,
+  "saturation": 0.88,
   "vignette": 0.35,
   "gain": [
     0.98,
@@ -42,9 +42,9 @@
   "shadowStrength": 1.0,
   "fxaa": true,
   "lift": [
-    1.0,
-    1.0,
-    1.0
+    1.02,
+    1.02,
+    1.05
   ],
   "gamma": [
     1.0,
@@ -63,5 +63,24 @@
     0.97,
     1.0
   ],
-  "stageLightScale": 0.4
+  "stageLightScale": 0.4,
+  "heightFog": {
+    "color": [
+      0.82,
+      0.86,
+      0.92
+    ],
+    "density": 0.4,
+    "baseHeight": 1.5,
+    "heightFalloff": 0.5,
+    "startDistance": 8.0,
+    "maxOpacity": 0.45,
+    "noiseSize": 6.0,
+    "noiseAmount": 0.4,
+    "noiseSpeed": [
+      0.4,
+      0.1
+    ],
+    "lightGlow": 0.0
+  }
 }

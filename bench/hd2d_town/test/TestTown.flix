@@ -462,6 +462,24 @@ mod TestTown {
             case Err(why) => bug!(why)
         }
 
+    def iceMap(): (TownMap, StageFx.Fx) \ IO =
+        match (run { TownMap.load("step", "assets/ice_cave.map.json") |> Result.flatMap(m -> StageFx.load("assets/ice_cave.map.json") |> Result.map(fx -> (m, fx))) } with Fs.FileRead.runWithIO) {
+            case Ok(mf)   => mf
+            case Err(why) => bug!(why)
+        }
+
+    @Test
+    def testSnowStaysInTheWorldWhenTheCameraMovesSideways(): Unit \ {Assert, IO} =
+        let (m, fx) = iceMap();
+        let at = (cx: Float64) -> fx#particles |> Option.map(p -> StageFx.particlesAt(m, p, 3.0, (cx, 10.0, 1.0)) |> List.map(e -> { let (pos, _, _) = e; (pos#x, pos#y, pos#z) }));
+        Assert.assertEq(expected = at(0.0), at(6.0))
+
+    @Test
+    def testFarSnowFadesIntoTheHaze(): Unit \ {Assert, IO} =
+        let (m, fx) = iceMap();
+        let fades = fx#particles |> Option.map(p -> StageFx.particlesAt(m, p, 3.0, (10.0, 0.0, 1.0)) |> List.filter(e -> { let (pos, _, _) = e; pos#y > p#fadeFar }) |> List.map(e -> { let (_, _, f) = e; f })) |> Option.getWithDefault(Nil);
+        Assert.assertTrue(not List.isEmpty(fades) and List.forAll(f -> f < 0.01, fades))
+
     @Test
     def testFireLavaGlowsWithoutLight(): Unit \ {Assert, IO} =
         let (_, fx) = fireMap();
