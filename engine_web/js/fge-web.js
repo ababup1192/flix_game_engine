@@ -484,13 +484,65 @@ function fgeUsePortraitDesign(aspect) {
 }
 
 fgePointer.touch = fgeCoarseAtBoot;
-var fgePad = { fingers: new Map(), targets: [], dpad: null };
+var fgePad = { fingers: new Map(), targets: [], dpad: null, stick: null };
 function fgePadSync() {
   var held = Object.create(null);
   fgePad.fingers.forEach(function (f) { if (f.code) held[f.code] = true; });
   for (var code in held) if (!fgePadHeld[code]) fgeLatch[code] = true;
   fgePadHeld = held;
   fgePad.targets.forEach(function (t) { t.el.classList.toggle("on", !!held[t.code]); });
+  fgeStickDraw();
+}
+
+// 画面のスティック（web.virtualPad.stick）。左の帯に指を置いた所が台の中心になり（floating）、そこからのずれを
+// 実機のパッドの左スティックと同じ生の軸（-1..1・右と下が正・長さは 1 で頭打ち）にする。遊びは Flix の側の GamepadMap.stickOf が外す。
+// WhyNot: 台を決まった位置に置かない — 端末の大きさと持ち方で親指の届く所が違い、台の外を押した指が空振りする。
+function fgeStickFinger() {
+  var found = null;
+  fgePad.fingers.forEach(function (f) { if (f.kind === "stick") found = f; });
+  return found;
+}
+function fgeStickAxes(f) {
+  var x = (f.x - f.cx) / f.radius, y = (f.y - f.cy) / f.radius;
+  var len = Math.sqrt(x * x + y * y);
+  return len > 1 ? { x: x / len, y: y / len } : { x: x, y: y };
+}
+function fgeStickDraw() {
+  var s = fgePad.stick;
+  if (!s) return;
+  var f = fgeStickFinger();
+  s.el.classList.toggle("on", !!f);
+  if (!f) { s.el.style.transform = ""; s.knob.style.transform = ""; return; }
+  var a = fgeStickAxes(f);
+  s.el.style.transform = "translate(" + (f.cx - f.restX) + "px, " + (f.cy - f.restY) + "px)";
+  s.knob.style.transform = "translate(" + a.x * f.radius + "px, " + a.y * f.radius + "px)";
+}
+function fgeStickBegin(f, x, y) {
+  var r = fgePad.stick.el.getBoundingClientRect();
+  f.kind = "stick";
+  f.restX = r.left + r.width / 2;
+  f.restY = r.top + r.height / 2;
+  f.radius = Math.max(1, r.width * 0.4);
+  f.cx = x;
+  f.cy = y;
+  f.x = x;
+  f.y = y;
+}
+
+// 1 台目のパッドの軸 index の生の値（fge.web.Gamepads.axis が読む）。画面のスティックに指が載っている間は、左スティック（0・1）はそちら。
+// WhyNot: 大きい方を採らない — 指を中心に置いたまま実機のパッドを倒すと、指を離していないのに歩き出す。
+function fgeGamepadAxis(index) {
+  var f = fgePad.stick && index < 2 ? fgeStickFinger() : null;
+  if (f) {
+    var a = fgeStickAxes(f);
+    return index === 0 ? a.x : a.y;
+  }
+  var list = (navigator.getGamepads ? navigator.getGamepads() : []) || [];
+  for (var i = 0; i < list.length; i++) {
+    var g = list[i];
+    if (g && g.connected) { var v = g.axes[index]; return (typeof v === "number" && isFinite(v)) ? v : 0; }
+  }
+  return 0;
 }
 function fgePadReleaseAll() { fgePad.fingers.clear(); fgePadSync(); }
 
@@ -525,7 +577,10 @@ function fgeInDpad(x, y) {
   return x >= r.left - slop && x <= r.right + slop && y >= r.top - slop && y <= r.bottom + slop;
 }
 function fgePadAim(f, x, y) {
-  if (f.kind === "dpad") {
+  if (f.kind === "stick") {
+    f.x = x;
+    f.y = y;
+  } else if (f.kind === "dpad") {
     f.dir = fgeDpadDir(f.dir, x, y);
     f.code = f.dir ? fgePad.dpad.codes[f.dir] : null;
   } else {
@@ -553,6 +608,15 @@ function fgeBuildPad(cfg) {
     });
     left.appendChild(dpad);
   }
+  if (cfg.stick) {
+    var base = document.createElement("div");
+    base.className = "fge-stick";
+    var knob = document.createElement("div");
+    knob.className = "fge-stick-knob";
+    base.appendChild(knob);
+    fgePad.stick = { el: base, knob: knob };
+    left.appendChild(base);
+  }
   var buttons = document.createElement("div");
   buttons.className = "fge-pad-buttons";
   (cfg.buttons || []).forEach(function (b, i) {
@@ -572,6 +636,8 @@ function fgeBuildPad(cfg) {
       // WhyNot: 暗黙の capture を当てにしない — マウスで確かめる時は capture されず、指を滑らせた後の move が帯の外へ逃げる。
       try { zone.setPointerCapture(e.pointerId); } catch (err) { /* 押し終えた指 */ }
       var f = { kind: fgeInDpad(e.clientX, e.clientY) ? "dpad" : "button", dir: null, code: null };
+      // WhyNot: 2 本目の指でスティックを掴み直さない — 1 本目の向きが途中で別の指の向きへ跳ぶ。2 本目は帯の中のボタンを探すだけ。
+      if (zone === left && fgePad.stick && !fgeStickFinger()) fgeStickBegin(f, e.clientX, e.clientY);
       fgePadAim(f, e.clientX, e.clientY);
       fgePad.fingers.set(e.pointerId, f);
       fgePadSync();

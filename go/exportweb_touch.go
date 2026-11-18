@@ -50,7 +50,9 @@ func checkPortraitDesign(p *exportPortraitDesign, orientation string) error {
 }
 
 type exportVirtualPad struct {
-	Dpad    json.RawMessage `json:"dpad"`
+	Dpad json.RawMessage `json:"dpad"`
+	// Stick は左の帯に十字キーの代わりに出す画面のスティック（倒した向きと強さを frame#leftStick へ渡す・キーは押さない）。
+	Stick   bool `json:"stick"`
 	Buttons []struct {
 		Label  string `json:"label"`
 		Action string `json:"action"`
@@ -60,6 +62,7 @@ type exportVirtualPad struct {
 // bundle.json に書く形。キーは KeyboardEvent.code に解いてある（頁の JS は code だけを扱う）。
 type webVirtualPad struct {
 	Dpad    map[string]string `json:"dpad,omitempty"`
+	Stick   bool              `json:"stick,omitempty"`
 	Buttons []webPadButton    `json:"buttons"`
 }
 
@@ -138,11 +141,16 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 	if s.VirtualPad == nil && len(s.TouchGestures) == 0 {
 		return t, nil
 	}
-	actions, err := loadWebKeysDoc(game, s.KeysDoc)
-	if err != nil {
-		return t, err
-	}
+	// WhyNot: 先に keysDoc を読まない — スティックだけのパッドはキーを押さないので、keysDoc の無いゲームでも出せる。
+	var actions map[string][]string
 	codeOf := func(field, action string) (string, error) {
+		if actions == nil {
+			loaded, err := loadWebKeysDoc(game, s.KeysDoc)
+			if err != nil {
+				return "", err
+			}
+			actions = loaded
+		}
 		keys, ok := actions[action]
 		if !ok {
 			return "", fmt.Errorf("project.json の %s の操作 %q が %s に無い。\n  次: %s にある操作の名前（%s）にする",
@@ -170,10 +178,13 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 			s.KeysDoc, action, keys)
 	}
 	if s.VirtualPad != nil {
-		pad := &webVirtualPad{Buttons: []webPadButton{}}
+		pad := &webVirtualPad{Buttons: []webPadButton{}, Stick: s.VirtualPad.Stick}
 		dpad, err := webDpadActions(s.VirtualPad.Dpad)
 		if err != nil {
 			return t, err
+		}
+		if dpad != nil && s.VirtualPad.Stick {
+			return t, fmt.Errorf("project.json の web.virtualPad に dpad と stick が両方ある（どちらも左の帯に出す）。\n  次: 斜めや強さで動かすなら stick: true だけ、上下左右のキーで動かすなら dpad だけにする")
 		}
 		if dpad != nil {
 			pad.Dpad = map[string]string{}

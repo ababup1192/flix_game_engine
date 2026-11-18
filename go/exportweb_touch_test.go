@@ -116,6 +116,30 @@ func TestResolveWebTouchWithoutWebIsEmpty(t *testing.T) {
 	}
 }
 
+func TestResolveWebTouchStickOnlyNeedsNoKeysDoc(t *testing.T) {
+	got, err := resolveWebTouch(t.TempDir(), json.RawMessage(`{"virtualPad": {"stick": true}}`))
+	if err != nil || got.VirtualPad == nil || !got.VirtualPad.Stick {
+		t.Errorf("スティックだけなら keysDoc 無しで出せるはず: %+v %v", got.VirtualPad, err)
+	}
+}
+
+func TestResolveWebTouchStickWithButtons(t *testing.T) {
+	game := writeTouchGame(t, touchKeys)
+	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "virtualPad": {"stick": true, "buttons": [{"label": "A", "action": "confirm"}]}}`)
+	got, err := resolveWebTouch(game, raw)
+	if err != nil || !got.VirtualPad.Stick || got.VirtualPad.Buttons[0].Code != "KeyZ" {
+		t.Errorf("スティックとボタンは一緒に出せるはず: %+v %v", got.VirtualPad, err)
+	}
+}
+
+func TestResolveWebTouchRejectsStickWithDpad(t *testing.T) {
+	game := writeTouchGame(t, touchKeys)
+	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "virtualPad": {"dpad": true, "stick": true}}`)
+	if _, err := resolveWebTouch(game, raw); err == nil {
+		t.Error("dpad と stick は同じ左の帯なので誤りのはず")
+	}
+}
+
 func TestResolveWebTouchReadsTemplates(t *testing.T) {
 	root := filepath.Join("..", "templates")
 	for _, game := range []string{"rpg-starter", "sound-novel-starter"} {

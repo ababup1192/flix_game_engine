@@ -127,6 +127,21 @@ App.make(...)
   デスクトップと画面なしは `localDownloads` で `start` が全部読み、表は全部 Loaded なので、step は毎コマ同じ World を返す。
 - テストで偽の downloads を流すなら、コマの間に `App.stepBackgroundLoad(app, w)` を呼ぶ（実機と同じ予算で全部の step を当てる）。
 
+## ブラウザ版の画面のスティック（`web.virtualPad.stick`）
+
+project.json の `"web": { "virtualPad": { "stick": true, "buttons": [...] } }` で、指の端末（coarse pointer）のパッドの左の帯に
+画面のスティック（Unity の On-Screen Stick・Godot の VirtualJoystick に当たる物）を出す。ゲームの側は実機のパッドと同じく `frame#leftStick` を読むだけ。
+
+- 左の帯のどこに指を置いても、そこが台の中心になる（floating）。置いていない間は帯の下寄りに薄く出る。
+- 倒した向きと強さは、実機のパッドの左スティックと同じ生の軸（台の半径の 0.4 倍の CSS px で長さ 1）として `GamepadMap.stickOf` を通る。
+  遊び 0.18・長さ 0..1・右が +x・上が +y・小数 4 桁は実機のパッドと同じ。
+- 画面のスティックに指が載っている間は、左スティックは画面のスティックの値（実機のパッドの左スティックは見ない。右スティックは実機のまま）。指を離すと実機のパッドに戻る。
+- 上下左右のキーは押さない（ブラウザの実機のパッドと同じ）。メニューを上下左右のキーで動かすゲームは、タップかボタンで選べるようにする。
+- `dpad` とは一緒に書けない（どちらも左の帯。書き出しで止まる）。`buttons` とは一緒に使える（左手でスティック・右手でボタン）。
+  スティックだけなら `keysDoc` は要らない。
+- 左の帯で 2 本目に置いた指は、スティックを掴み直さない。向きを替えた時・タブが裏に回った時は、十字キーと同じく指を全部離す。
+- PC で確かめる時は頁を `?input=touch` で開き、左の帯をマウスで押して動かす。
+
 ## ブラウザ版の指の操作（`web.touchGestures`）
 
 project.json の `"web": { "keysDoc": "assets/<名前>.keys.json", "touchGestures": { "swipeUp": "advance" } }` の値はキーの Doc の操作の名前。
