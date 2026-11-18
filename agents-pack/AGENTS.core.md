@@ -41,6 +41,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 後がけを掛けたくない会話の窓・メニュー・字幕 | `App.withHudView` に置く（`App.withPostStack` は View の絵の全部に掛かり、HUD には掛からない） |
 | 3D の場面の奥行きでぼかす（ピントを主人公に） | `PostStack.withDepthOfField(Some(PostStack.DepthOfField.Physical({ focusDistance, fStop })))`（m・F 値。奥行きの絵はエンジンが場面から作る。場面の長さが m でなければ `Scene3d.withUnitsPerMeter`） |
 | 画面を時間で揺らがせる（陽炎・水の中・魔法） | `PostStack.withDistortion(Some({ strength, noiseSize, speed, mask = PostStack.DistortionMask.BottomBand({ top, soft }) }))` + `PostStack.withTime(遊びの時計)`（Shift と Fbm で Spec を手で組まない） |
+| 画面の揺らぎを熱い所（溶岩の上・炎のまわり）だけに掛ける | `PostStack.withCustom` で場面の色から熱い所を r に書く型紙の Pass を足し、`mask = PostStack.DistortionMask.Texture(型紙の Pass の名前)`（r が重み・画面いっぱいに引き伸ばして読む・型紙の Pass を最後の BeforeBloom の Pass にしない（後の効果が最後の Pass を場面として読む）。範囲を画面の下の帯で決めるなら `BottomBand`） |
 | 3D の夜の町に地面を這う霧・街灯が霧ににじむ | `PostStack.withHeightFog(Some({ color, density, baseHeight, heightFalloff, startDistance, maxOpacity, noise, lightGlow }))` + `PostStack.withTime(遊びの時計)`（長さは場面の長さ。DistanceFog は物ごとの距離のかすみで別物） |
 | 明るい所へ入った直後に白飛びして、だんだん目が慣れる | `ExposureAdaptation.step`（World の明るさを狙いへ寄せる・dt は実時間）→ `computeExposure` → `PostStack.withExposure`（絵は測らない） |
 | 3D の場面の光・空・かすみ・露出・bloom の値を決める（夕方の屋外・夜の部屋・洞窟など） | engine の `docs/art-ref/visual-dict/reference-3d.md`（見た目の名前 → 値の組・Pass の並びの手本・見た目が悪い時の切り分け。前のゲームの値を写す前に引く） |
