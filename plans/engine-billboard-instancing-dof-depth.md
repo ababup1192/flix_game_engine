@@ -147,3 +147,15 @@ bench/hd2d_town のブラウザ版（PC の Chrome・WebGPU・1280×720）: 立�
    - 場面: 立ち始め・広場・夜の町。`bin/fge pixel-diff` と自前の数（平均の差・最大の差・差 > 2 の画素の割合）。
 4. `make gl-parity`・`make test-engine`・層（render_gl・engine_world・engine_tools）・hd2d_town の 142 本。
 5. 測り: PC の Chrome の debug=1 で draw・batch breaks・1 コマの CPU を前と後の表に（立ち始めと広場）。手元の窓（JVM・GL）も。dof=0 の差から 1 draw の値段を出す。
+
+## 結果（2026-11-18）
+
+- **C は入れた**（GL と WebGPU）。撮り比べ（立ち始め 13,54・広場 13,44・夜 13,47 の town_night_fog_mid）:
+  手元の窓の GL と WebGPU（Dawn）は 64 コマのうち 2・20・40・64 コマ目が 0 差。Chrome の WebGPU は 40 コマ目が 0 差。
+  **Chrome の WebGL2（ANGLE Metal）の広場だけ 1 画素（1122, 119）の G が 1 段違う**（毎回同じ・前どうしは 0 差）。シェーダーの字が変わった丸めの差と見ている。
+- 数（3D の draw / batch breaks）: 立ち始め 584 → 250（billboard 318 → 100・shadowPass 155 → 39）・広場 848 → 374（billboard 574 → 216）。
+- 1 コマの CPU: 手元の窓の GL は 3D の shadows 0.40 → 0.18 ms・draw 1.47 → 0.89 ms（広場 1.89 → 1.04 ms）。
+  **Chrome の WebGPU の頁の CPU（fgeStats の中央値）は立ち始め 5.9〜6.0 ms・広場 6.2 ms で前と変わらない**（draw の数は 1 コマの CPU を決めていない）。
+  `dof=0` は前後とも立ち始め 4.5〜5.1・広場 5.3 ms（DoF の Pass を全部外して約 1 ms）。
+- **D は入れていない**。C の後も WebGPU の頁の CPU が変わらず、`dof=0` でも約 1 ms（後がけの Pass も含む上限）なので、D の描き直しを無くして減る分はそれより小さい。
+  しかも半分の大きさの奥行きの絵（昼の既定）では縁の画素が変わる見込み。口の形の了承と、頁の CPU の中身を先に測るかを人へ聞く。
