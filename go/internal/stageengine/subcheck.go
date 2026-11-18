@@ -30,6 +30,16 @@ func checkStagedSubs(out, errOut *strings.Builder, opts Options) bool {
 		ext = ".exe"
 	}
 	bin := filepath.Join(opts.Out, "bin", "fge-go"+ext)
+	if opts.AllPlatforms {
+		// WhyNot: bin/fge-go を決め打ちで起こさない — 中身は darwin/arm64 向けで、CI (linux) では走らない。
+		// 照合するのは同じソースから組んだ 5 種の 1 つなので、組んでいるこの機械の物で足りる。
+		host, err := hostToolIn(opts.Out)
+		if err != nil {
+			fmt.Fprintf(errOut, "[stage-engine] 入口の照合ができません: %v\n", err)
+			return false
+		}
+		bin = host
+	}
 	if _, err := os.Stat(bin); err != nil {
 		fmt.Fprintf(errOut, "[stage-engine] 入口の照合ができません: %s がありません\n", bin)
 		return false
@@ -40,7 +50,7 @@ func checkStagedSubs(out, errOut *strings.Builder, opts Options) bool {
 		fmt.Fprintf(errOut, "[stage-engine] 入口の照合ができません: %v\n", err)
 		return false
 	}
-	known, err := binarySubs(bin)
+	known, err := binarySubs(bin, opts.Out)
 	if err != nil {
 		fmt.Fprintf(errOut, "[stage-engine] 入口の照合ができません: %v\n", err)
 		return false
@@ -111,7 +121,7 @@ func collectSubs(node any, into map[string]bool) {
 }
 
 // binarySubs は組み上げたバイナリ自身に一覧を言わせる。
-func binarySubs(bin string) (map[string]bool, error) {
+func binarySubs(bin, bundle string) (map[string]bool, error) {
 	// WhyNot: 絶対パスに直してから渡すのは、下で Dir を移すため。相対パスのままだと
 	// 移した先から解決し直され、バンドルの中のバンドルを探しに行く
 	// (Studio は絶対パスを渡すので踏まず、engine の make bundle-zip だけが踏む)。
@@ -122,7 +132,13 @@ func binarySubs(bin string) (map[string]bool, error) {
 	cmd := exec.Command(abs, "--list")
 	// WhyNot: バンドルの中で走らせるのは、engineOnly のサブコマンドが
 	// 「engine のリポかどうか」で一覧から消えるため。配った先と同じ見え方で照合する。
-	cmd.Dir = filepath.Dir(filepath.Dir(abs))
+	root, err := filepath.Abs(bundle)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Dir = root
+	// WhyNot: 根を FGE_ROOT で渡すのは、bin/dist/ の物は自分の置き場の親の親 (bin/) を根と読むため。
+	cmd.Env = append(os.Environ(), "FGE_ROOT="+root)
 	stdout, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("%s --list が走りません: %v", bin, err)

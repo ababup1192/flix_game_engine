@@ -9,6 +9,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	"debug/elf"
+	"debug/macho"
+	"debug/pe"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -290,6 +293,9 @@ func install(o *opts) (installResult, error) {
 	if err != nil {
 		return installResult{}, err
 	}
+	if err := pickFgeGo(rules, staging, runtime.GOOS, runtime.GOARCH); err != nil {
+		return installResult{}, err
+	}
 	applyExec(rules, staging)
 	if err := checkContents(o, rules, staging); err != nil {
 		return installResult{}, err
@@ -488,14 +494,157 @@ func checkContents(o *opts, rules *stageengine.Rules, staging string) error {
 		return nil
 	}
 	fge := filepath.Join(staging, filepath.FromSlash(rel))
-	if info, err := os.Stat(fge); err == nil && !info.IsDir() {
-		// WhyNot: 走らせて確かめるのは、zip に入るのが zip を作ったマシンの
-		// OS と CPU 向けの 1 つだけで、名前が在るだけでは走るとは限らないため。
-		if err := o.runExe(fge, "--version"); err != nil {
-			return fmt.Errorf("%s がこの環境で走りません: %v", rel, err)
-		}
+	info, err := os.Stat(fge)
+	if err != nil || info.IsDir() {
+		// WhyNot: 無いのを通さない — 入れた後のゲームで bin/fge が毎回 exit 127 になり、
+		// 更新が済んだように見えて、検査だけが何も知らせずに効かなくなる。
+		return fmt.Errorf("%s がありません (この機械 %s/%s 向けの検査の中身が zip に入っていません)",
+			rel, runtime.GOOS, runtime.GOARCH)
+	}
+	// WhyNot: 走らせて確かめるのは、名前が在るだけでは別の OS/CPU 向けかもしれないため。
+	if err := o.runExe(fge, "--version"); err != nil {
+		return fmt.Errorf("%s がこの機械 (%s/%s) で走りません: %v", rel, runtime.GOOS, runtime.GOARCH, err)
 	}
 	return nil
+}
+
+// pickFgeGo は、zip に入っている検査の中身 (bin/fge-go・bin/fge-go.exe・bin/dist/ の中) から
+// この機械の OS/CPU 向けの 1 つを選び、規約データの置き先 (bin/fge-go・Windows は bin/fge-go.exe) に置く。
+// 置いた後は他の機械向けの物を消し、Studio の同梱と同じ 1 つだけの形にする。
+//
+// WhyNot: 名前の並びで選ばず中身の頭 (Mach-O・ELF・PE) を読む — これを走らせるのは今の
+// engine で、入れるのは次の版の zip。並びの約束を持つと、次の版で並びを変えた時に
+// 古い側が選び違える。頭を読めば、1 つしか入っていない 0.102.0 までの zip でも
+// 「linux/amd64 向けしか無い」と言って止まれる。
+func pickFgeGo(rules *stageengine.Rules, staging, goos, arch string) error {
+	rel := destForSrc(rules, "@fge-go", goos == "windows")
+	if rel == "" {
+		return nil
+	}
+	dest := filepath.Join(staging, filepath.FromSlash(rel))
+	candidates := []string{filepath.Join(staging, "bin", "fge-go"), filepath.Join(staging, "bin", "fge-go.exe")}
+	dist := filepath.Join(staging, "bin", "dist")
+	if entries, err := os.ReadDir(dist); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				candidates = append(candidates, filepath.Join(dist, e.Name()))
+			}
+		}
+	}
+	match, seen, unknown := "", []string{}, false
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err != nil {
+			continue
+		}
+		cos, carch, ok := targetOf(c)
+		if !ok {
+			unknown = unknown || c == dest
+			continue
+		}
+		seen = append(seen, cos+"/"+carch)
+		if cos == goos && carch == arch && match == "" {
+			match = c
+		}
+	}
+	if match == "" {
+		// WhyNot: 頭の読めない置き先 (sh など) は止めずに後の --version に任せる — 読めないだけで
+		// 走る物を、この機械向けでないと決めつけない。
+		if unknown || len(seen) == 0 {
+			return nil
+		}
+		return fmt.Errorf("この zip には、この機械 (%s/%s) で走る検査の中身 (fge-go) がありません (入っているのは %s 向け)",
+			goos, arch, strings.Join(seen, "・"))
+	}
+	if match != dest {
+		if err := replaceWith(match, dest); err != nil {
+			return fmt.Errorf("%s を %s へ置けません: %v", match, rel, err)
+		}
+	}
+	for _, c := range candidates {
+		if c == dest {
+			continue
+		}
+		if _, _, ok := targetOf(c); ok {
+			_ = os.Remove(c)
+		}
+	}
+	_ = os.Remove(dist)
+	return nil
+}
+
+// replaceWith は src を dest に写す。
+// WhyNot: dest へ上書きせず別名に写してから名前を替える — macOS は同じ inode の実行ファイルを
+// 書き換えられると、覚えていた署名の検証結果を捨てて次の実行を SIGKILL する。
+func replaceWith(src, dest string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	tmp := dest + ".new"
+	if err := copyFile(src, tmp, info); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dest)
+}
+
+// targetOf は実行ファイルの頭から、走る OS と CPU を読む。読めなければ ok が false。
+func targetOf(path string) (goos, arch string, ok bool) {
+	if f, err := macho.Open(path); err == nil {
+		defer f.Close()
+		return "darwin", machoArch(f.Cpu), machoArch(f.Cpu) != ""
+	}
+	if f, err := elf.Open(path); err == nil {
+		defer f.Close()
+		a := elfArch(f.Machine)
+		switch f.OSABI {
+		case elf.ELFOSABI_NONE, elf.ELFOSABI_LINUX:
+			return "linux", a, a != ""
+		case elf.ELFOSABI_FREEBSD:
+			return "freebsd", a, a != ""
+		}
+		return "", "", false
+	}
+	if f, err := pe.Open(path); err == nil {
+		defer f.Close()
+		a := peArch(f.Machine)
+		return "windows", a, a != ""
+	}
+	return "", "", false
+}
+
+func machoArch(cpu macho.Cpu) string {
+	switch cpu {
+	case macho.CpuArm64:
+		return "arm64"
+	case macho.CpuAmd64:
+		return "amd64"
+	}
+	return ""
+}
+
+func elfArch(m elf.Machine) string {
+	switch m {
+	case elf.EM_AARCH64:
+		return "arm64"
+	case elf.EM_X86_64:
+		return "amd64"
+	case elf.EM_RISCV:
+		return "riscv64"
+	}
+	return ""
+}
+
+func peArch(m uint16) string {
+	switch m {
+	case pe.IMAGE_FILE_MACHINE_AMD64:
+		return "amd64"
+	case pe.IMAGE_FILE_MACHINE_ARM64:
+		return "arm64"
+	}
+	return ""
 }
 
 // destForSrc は規約データの src の印から、置き先の相対パスを引く。

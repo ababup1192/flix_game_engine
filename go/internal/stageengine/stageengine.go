@@ -4,8 +4,10 @@ package stageengine
 //
 //	fge stage-engine --out DIR [--windows]
 //	                 [--flix-jar PATH] [--flix-wrapper PATH]
-//	                 [--fge-go PATH] [--maven-seed DIR]
+//	                 [--fge-go PATH] [--maven-seed DIR] [--all-platforms]
 //	fge stage-engine --sources
+//
+// --all-platforms は Release の zip 用。検査の中身を配る先 5 種ぶん入れる（AllPlatformLayout）。
 //
 // --sources は運ぶ物の元をリポの根からの相対で 1 行ずつ出す（make release-guard が
 // 未コミットを見る範囲。@fge-go は中身の Go のソース go/ に読み替える）。
@@ -34,6 +36,8 @@ type Options struct {
 	FgeGo       string
 	MavenSeed   string
 	Sources     bool
+	// AllPlatforms は検査の中身を 1 つに絞らず、配る先 5 種を全部入れる。
+	AllPlatforms bool
 }
 
 // Run は組み立てを走らせて終了コードを返す。
@@ -55,7 +59,11 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 	if opts.Out == "" {
 		fmt.Fprintln(errOut, "usage: fge stage-engine --out DIR [--windows] "+
-			"[--flix-jar PATH] [--flix-wrapper PATH] [--fge-go PATH] [--maven-seed DIR]")
+			"[--flix-jar PATH] [--flix-wrapper PATH] [--fge-go PATH] [--maven-seed DIR] [--all-platforms]")
+		return 2, nil
+	}
+	if opts.AllPlatforms && (opts.Windows || opts.FgeGo != "") {
+		fmt.Fprintln(errOut, "[stage-engine] --all-platforms は --windows・--fge-go と一緒に使えません")
 		return 2, nil
 	}
 	rules, err := LoadRules(root)
@@ -72,6 +80,13 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 
 	for _, it := range rules.Items {
 		if opts.Windows && it.SkipOnWindows {
+			continue
+		}
+		if opts.AllPlatforms && it.Src == srcFgeGo {
+			if err := stageAllFgeGo(out, root, opts.Out, it); err != nil {
+				fmt.Fprintf(errOut, "[stage-engine] %v\n", err)
+				return 1, nil
+			}
 			continue
 		}
 		src, skipped, err := resolveSrc(root, it, opts)
@@ -121,7 +136,7 @@ func parseArgs(args []string) (Options, error) {
 		name, value := a, ""
 		if eq := strings.Index(a, "="); strings.HasPrefix(a, "--") && eq > 0 {
 			name, value = a[:eq], a[eq+1:]
-		} else if strings.HasPrefix(a, "--") && i+1 < len(args) && a != "--windows" && a != "--sources" {
+		} else if strings.HasPrefix(a, "--") && i+1 < len(args) && a != "--windows" && a != "--sources" && a != "--all-platforms" {
 			value = args[i+1]
 			i++
 		}
@@ -140,6 +155,8 @@ func parseArgs(args []string) (Options, error) {
 			opts.FgeGo = value
 		case "--maven-seed":
 			opts.MavenSeed = value
+		case "--all-platforms":
+			opts.AllPlatforms = true
 		default:
 			return opts, fmt.Errorf("知らない引数です: %s", a)
 		}
@@ -237,6 +254,60 @@ func resolveFgeGo(root string, it Item, opts Options) (string, string, error) {
 	}
 	return "", "", fmt.Errorf("%s が見つかりません (%s)。engine で make go-build してください",
 		it.Src, strings.Join(candidates, " / "))
+}
+
+// AllPlatforms のときの検査の中身の置き方。配る先 5 種を 1 つずつ置く。
+//
+// bin/fge-go を darwin/arm64 向け、bin/fge-go.exe を windows/amd64 向けにし、残りの 3 種を
+// bin/dist/ に置く。取り込む側 (fetch-engine) は中身の頭 (Mach-O・ELF・PE) を読んで
+// 自分の機械に合う 1 つを選ぶので、この並びを知らなくても選べる。
+//
+// WhyNot: bin/fge-go を機種を見て bin/dist/ へ exec する sh にしない — 配られている
+// Studio (mac は arm64 だけ) は engine の bin/fge-go をゲームの bin/ へ写すので、
+// sh を写すと隣に bin/dist/ の無いゲームで fge が一切走らない。arm64 の実物を置けば、
+// 古い Studio の fetch-engine の検査 (bin/fge-go --version) もその写しもそのまま走る。
+//
+// WhyNot: bin/dist/ に 5 種を全部置いて bin/fge-go(.exe) と重ねない — 重なった 2 つで
+// zip が 17MB ふくらみ、更新のたびにそれを落とすことになる。
+var AllPlatformTools = []struct{ GOOS, Arch, Dest string }{
+	{"darwin", "arm64", "bin/fge-go"},
+	{"windows", "amd64", "bin/fge-go.exe"},
+	{"darwin", "amd64", "bin/dist/fge-go-darwin-amd64"},
+	{"linux", "amd64", "bin/dist/fge-go-linux-amd64"},
+	{"linux", "arm64", "bin/dist/fge-go-linux-arm64"},
+}
+
+// DistName は engine の bin/dist/ (make go-build の出口) の中の、その OS/CPU 向けの名前。
+func DistName(goos, arch string) string {
+	if goos == "windows" {
+		return fmt.Sprintf("fge-go-%s-%s.exe", goos, arch)
+	}
+	return fmt.Sprintf("fge-go-%s-%s", goos, arch)
+}
+
+// hostToolIn は、AllPlatforms で組んだ out の中の、この機械で走る 1 つ。
+func hostToolIn(out string) (string, error) {
+	for _, t := range AllPlatformTools {
+		if t.GOOS == runtime.GOOS && t.Arch == runtime.GOARCH {
+			return filepath.Join(out, filepath.FromSlash(t.Dest)), nil
+		}
+	}
+	return "", fmt.Errorf("この機械 (%s/%s) 向けの検査の中身は組みません", runtime.GOOS, runtime.GOARCH)
+}
+
+func stageAllFgeGo(out *strings.Builder, root, outDir string, it Item) error {
+	for _, t := range AllPlatformTools {
+		name := DistName(t.GOOS, t.Arch)
+		src := filepath.Join(root, "bin", "dist", name)
+		if _, err := os.Stat(src); err != nil {
+			return fmt.Errorf("%s が見つかりません (%s)。engine で make go-build してください", it.Src, src)
+		}
+		if err := copyFile(src, filepath.Join(outDir, filepath.FromSlash(t.Dest)), 0o755); err != nil {
+			return fmt.Errorf("%s を運べません: %v", src, err)
+		}
+		fmt.Fprintf(out, "-- %s -> %s (%s/%s)\n", it.Src, t.Dest, t.GOOS, t.Arch)
+	}
+	return nil
 }
 
 // ------------------------------------------------------------ 複製

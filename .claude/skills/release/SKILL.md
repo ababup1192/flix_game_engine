@@ -61,6 +61,9 @@ CI ではテストを流し直さない（スナップショットが OS と JRE
 `flix_game_engine-engine-v<バージョン>.zip` に固める。中身の一覧は
 `bin/lint-rules/stage-engine.json` が source of truth で、組み立てた後に `check-refs --bundle` 相当の
 照合まで通る。lwjgl（Maven）の種は入っていない（Studio 側が自分の `server/lib` から渡す）。
+検査の中身 `bin/fge-go` は `--all-platforms` で 5 種を 1 つずつ入れ、`bin/fge-go` を darwin/arm64・`bin/fge-go.exe` を
+windows/amd64・残りを `bin/dist/` に置く（配られている Studio は `bin/fge-go` をそのまま走らせてゲームへ写す。取り込む `fge fetch-engine` が中身の頭を読んで機械に合う物を選び直す）。
+CI（linux）で 1 つに絞ると mac と Windows の「engine を更新」が `exec format error` で止まる（公開を CI に移した 0.69.0〜0.102.0）。
 
 ## GL の層の jar の置き場（版とは別）
 

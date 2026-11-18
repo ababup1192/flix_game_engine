@@ -7,11 +7,16 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	"debug/elf"
+	"debug/macho"
+	"debug/pe"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -30,6 +35,9 @@ const stageRules = `{
     {"src": "Makefile", "dest": "Makefile", "why": "バージョンの出どころ"}
   ]
 }`
+
+// toolName は、テストを流している機械での検査の中身の置き先 (規約データの dest / destWindows)。
+var toolName = map[bool]string{false: "bin/fge-go", true: "bin/fge-go.exe"}[runtime.GOOS == "windows"]
 
 type zipEntry struct {
 	body string
@@ -142,6 +150,7 @@ func TestInstallsVerifiedZipAndCarriesStudioOwnedItems(t *testing.T) {
 	body := makeZip(t, map[string]string{
 		"bin/lint-rules/stage-engine.json": stageRules,
 		"bin/flix.jar":                     "jar",
+		toolName:                           "tool",
 		"Makefile":                         "VERSION := 0.32.0\n",
 	})
 	o := newOpts(t, pagesFor(t, body))
@@ -176,6 +185,7 @@ func TestKeepsExecutableBitFromTheZip(t *testing.T) {
 	body := makeZipOf(t, map[string]zipEntry{
 		"bin/lint-rules/stage-engine.json": {body: stageRules, mode: 0o644},
 		"bin/githooks/pre-commit":          {body: "#!/bin/sh\n", mode: 0o755},
+		toolName:                           {body: "tool", mode: 0o755},
 		"Makefile":                         {body: "VERSION := 0.32.0\n", mode: 0o644},
 	})
 	o := newOpts(t, pagesFor(t, body))
@@ -200,6 +210,7 @@ func TestKeepsExecutableBitFromTheZip(t *testing.T) {
 func TestCarriesOnWithoutAnOptionalItem(t *testing.T) {
 	body := makeZip(t, map[string]string{
 		"bin/lint-rules/stage-engine.json": stageRules,
+		toolName:                           "tool",
 		"Makefile":                         "VERSION := 0.32.0\n",
 	})
 	o := newOpts(t, pagesFor(t, body))
@@ -247,6 +258,9 @@ func TestTreatsAnAlreadyPlacedEngineAsDone(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dest, "bin", "lint-rules", "stage-engine.json"), []byte(stageRules), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dest, filepath.FromSlash(toolName)), []byte("tool"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	res, err := install(o)
 	if err != nil || !res.Installed || res.Dir != dest {
@@ -258,6 +272,7 @@ func TestTreatsAnAlreadyPlacedEngineAsDone(t *testing.T) {
 func TestReplacesAnAlreadyPlacedEngineThatDoesNotRun(t *testing.T) {
 	body := makeZip(t, map[string]string{
 		"bin/lint-rules/stage-engine.json": stageRules,
+		toolName:                           "tool",
 		"Makefile":                         "VERSION := 0.32.0\n",
 	})
 	o := newOpts(t, pagesFor(t, body))
@@ -372,6 +387,194 @@ func TestRefusesWhenBundledToolDoesNotRun(t *testing.T) {
 
 	if _, err := install(o); err == nil || !strings.Contains(err.Error(), "fge-go") {
 		t.Fatalf("走らない道具を通した: %v", err)
+	}
+}
+
+// 検査の中身が zip に無ければ止める（入れた後のゲームで bin/fge が毎回 exit 127 になる）。
+func TestRefusesWhenBundledToolIsMissing(t *testing.T) {
+	body := makeZip(t, map[string]string{
+		"bin/lint-rules/stage-engine.json": stageRules,
+		"Makefile":                         "VERSION := 0.32.0\n",
+	})
+	o := newOpts(t, pagesFor(t, body))
+	o.carryFrom = makeCurrent(t)
+
+	if _, err := install(o); err == nil || !strings.Contains(err.Error(), "がありません") {
+		t.Fatalf("検査の中身の無い engine を置いた: %v", err)
+	}
+}
+
+// 実行ファイルの頭だけを持つ偽物（debug/macho・elf・pe が OS と CPU を読める最小の形）。
+func fakeExe(t *testing.T, goos, arch string) string {
+	t.Helper()
+	var b bytes.Buffer
+	le := binary.LittleEndian
+	switch goos {
+	case "darwin":
+		cpu := map[string]uint32{"arm64": uint32(macho.CpuArm64), "amd64": uint32(macho.CpuAmd64)}[arch]
+		for _, v := range []uint32{macho.Magic64, cpu, 0, uint32(macho.TypeExec), 0, 0, 0, 0} {
+			_ = binary.Write(&b, le, v)
+		}
+	case "linux":
+		m := map[string]uint16{"arm64": uint16(elf.EM_AARCH64), "amd64": uint16(elf.EM_X86_64)}[arch]
+		b.Write([]byte{0x7f, 'E', 'L', 'F', 2, 1, 1, 0})
+		b.Write(make([]byte, 8))
+		for _, v := range []any{uint16(elf.ET_EXEC), m, uint32(1), uint64(0), uint64(0), uint64(0),
+			uint32(0), uint16(64), uint16(56), uint16(0), uint16(64), uint16(0), uint16(0)} {
+			_ = binary.Write(&b, le, v)
+		}
+	case "windows":
+		m := map[string]uint16{"arm64": pe.IMAGE_FILE_MACHINE_ARM64, "amd64": pe.IMAGE_FILE_MACHINE_AMD64}[arch]
+		dos := make([]byte, 64)
+		copy(dos, "MZ")
+		le.PutUint32(dos[0x3c:], 64)
+		b.Write(dos)
+		b.WriteString("PE\x00\x00")
+		for _, v := range []any{m, uint16(0), uint32(0), uint32(0), uint32(0), uint16(0), uint16(0x22)} {
+			_ = binary.Write(&b, le, v)
+		}
+		// pe.NewFile は頭の 96 バイトを一度に読むので、短いと EOF になる。
+		b.Write(make([]byte, 64))
+	default:
+		t.Fatalf("偽物を作れない OS: %s", goos)
+	}
+	return b.String()
+}
+
+// bin/dist/ のある zip は、流している機械に合う物が bin/fge-go(.exe) に置き直され、他の機械向けは消える。
+func TestInstallPutsTheToolForThisMachine(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+		t.Skip("偽物の頭を作れない OS")
+	}
+	files := map[string]string{
+		"bin/lint-rules/stage-engine.json": stageRules,
+		"bin/fge-go":                       fakeExe(t, "darwin", "arm64"),
+		"bin/fge-go.exe":                   fakeExe(t, "windows", "amd64"),
+		"bin/dist/fge-go-darwin-amd64":     fakeExe(t, "darwin", "amd64"),
+		"bin/dist/fge-go-linux-amd64":      fakeExe(t, "linux", "amd64"),
+		"bin/dist/fge-go-linux-arm64":      fakeExe(t, "linux", "arm64"),
+		"Makefile":                         "VERSION := 0.32.0\n",
+	}
+	body := makeZip(t, files)
+	o := newOpts(t, pagesFor(t, body))
+	o.carryFrom = makeCurrent(t)
+
+	res, err := install(o)
+	if err != nil {
+		t.Fatalf("入れられませんでした: %v", err)
+	}
+	goos, arch, ok := targetOf(filepath.Join(res.Dir, filepath.FromSlash(toolName)))
+	if !ok || goos != runtime.GOOS || arch != runtime.GOARCH {
+		t.Fatalf("この機械向けに置き直されていない: %s/%s", goos, arch)
+	}
+	if _, err := os.Stat(filepath.Join(res.Dir, "bin", "dist")); err == nil {
+		t.Fatal("他の機械向けの bin/dist/ が残っている")
+	}
+}
+
+func stagingWith(t *testing.T, files map[string]string) (string, *stageengine.Rules) {
+	t.Helper()
+	dir := t.TempDir()
+	writeAt(t, filepath.Join(dir, "bin", "lint-rules", "stage-engine.json"), stageRules)
+	for rel, body := range files {
+		writeAt(t, filepath.Join(dir, filepath.FromSlash(rel)), body)
+	}
+	rules, err := stageengine.LoadRules(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir, rules
+}
+
+func writeAt(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func allTargets(t *testing.T) map[string]string {
+	return map[string]string{
+		"bin/fge-go":                   fakeExe(t, "darwin", "arm64"),
+		"bin/fge-go.exe":               fakeExe(t, "windows", "amd64"),
+		"bin/dist/fge-go-darwin-amd64": fakeExe(t, "darwin", "amd64"),
+		"bin/dist/fge-go-linux-amd64":  fakeExe(t, "linux", "amd64"),
+		"bin/dist/fge-go-linux-arm64":  fakeExe(t, "linux", "arm64"),
+	}
+}
+
+func TestPickFgeGoReadsWhatEachToolRunsOn(t *testing.T) {
+	cases := map[string][2]string{
+		"darwin":  {"darwin", "arm64"},
+		"windows": {"windows", "amd64"},
+		"linux":   {"linux", "arm64"},
+	}
+	for name, c := range cases {
+		path := filepath.Join(t.TempDir(), "x")
+		writeAt(t, path, fakeExe(t, c[0], c[1]))
+		goos, arch, ok := targetOf(path)
+		if !ok || goos != c[0] || arch != c[1] {
+			t.Errorf("%s: %s/%s (%v)", name, goos, arch, ok)
+		}
+	}
+}
+
+func TestPickFgeGoPutsTheLinuxOneAtTheToolName(t *testing.T) {
+	dir, rules := stagingWith(t, allTargets(t))
+	if err := pickFgeGo(rules, dir, "linux", "amd64"); err != nil {
+		t.Fatal(err)
+	}
+	goos, arch, _ := targetOf(filepath.Join(dir, "bin", "fge-go"))
+	if goos+"/"+arch != "linux/amd64" {
+		t.Fatalf("linux/amd64 向けに置き直されていない: %s/%s", goos, arch)
+	}
+}
+
+func TestPickFgeGoKeepsOnlyTheToolForThisMachine(t *testing.T) {
+	dir, rules := stagingWith(t, allTargets(t))
+	if err := pickFgeGo(rules, dir, "darwin", "amd64"); err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	_ = filepath.WalkDir(filepath.Join(dir, "bin"), func(p string, d os.DirEntry, err error) error {
+		if err == nil && strings.HasPrefix(d.Name(), "fge-go") {
+			left = append(left, d.Name())
+		}
+		return nil
+	})
+	if len(left) != 1 || left[0] != "fge-go" {
+		t.Fatalf("他の機械向けが残っている: %v", left)
+	}
+}
+
+func TestPickFgeGoPutsTheWindowsOneAtExe(t *testing.T) {
+	dir, rules := stagingWith(t, allTargets(t))
+	if err := pickFgeGo(rules, dir, "windows", "amd64"); err != nil {
+		t.Fatal(err)
+	}
+	goos, _, _ := targetOf(filepath.Join(dir, "bin", "fge-go.exe"))
+	if goos != "windows" {
+		t.Fatalf("bin/fge-go.exe が windows 向けでない: %s", goos)
+	}
+}
+
+// 0.102.0 までの zip（CI の linux 向け 1 つだけ）は、機械の名前と入っている物を言って止める。
+func TestPickFgeGoNamesTheMachineWhenNothingFits(t *testing.T) {
+	dir, rules := stagingWith(t, map[string]string{"bin/fge-go": fakeExe(t, "linux", "amd64")})
+	err := pickFgeGo(rules, dir, "darwin", "arm64")
+	if err == nil || !strings.Contains(err.Error(), "darwin/arm64") || !strings.Contains(err.Error(), "linux/amd64") {
+		t.Fatalf("合う物が無いのに分かる言葉で止まらない: %v", err)
+	}
+}
+
+// 頭の読めない置き先（sh など）は、決めつけずに後の --version に任せる。
+func TestPickFgeGoLeavesAnUnreadableToolToTheRunCheck(t *testing.T) {
+	dir, rules := stagingWith(t, map[string]string{"bin/fge-go": "#!/bin/sh\n"})
+	if err := pickFgeGo(rules, dir, "darwin", "arm64"); err != nil {
+		t.Fatalf("読めないだけで止めた: %v", err)
 	}
 }
 

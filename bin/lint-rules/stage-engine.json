@@ -73,7 +73,7 @@
       "dest": "bin/fge-go",
       "destWindows": "bin/fge-go.exe",
       "exec": true,
-      "why": "検査の中身 (Go)。OS/CPU ごとに別物なので走らせる先に合う 1 つだけ"
+      "why": "検査の中身 (Go)。OS/CPU ごとに別物なので、Studio の同梱は走らせる先に合う 1 つだけ。Release の zip (make bundle-zip が --all-platforms で組む) は 5 種を 1 つずつ入れ、bin/fge-go を darwin/arm64・bin/fge-go.exe を windows/amd64・残りを bin/dist/ に置く (配られている Studio が bin/fge-go をそのまま走らせて写すため)。fetch-engine が中身の頭を読んで機械に合う物を選び直す"
     },
     {
       "src": "bin/lint-rules",

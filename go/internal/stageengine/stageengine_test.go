@@ -136,3 +136,54 @@ func TestUnknownArgStops(t *testing.T) {
 		t.Fatal("知らない引数なのにエラーになりません")
 	}
 }
+
+// Release の zip は 5 種を 1 つずつ持ち、bin/fge-go は darwin/arm64・bin/fge-go.exe は windows/amd64 向け
+// （配られている Studio は bin/fge-go をそのまま走らせて、ゲームへも写す）。
+func TestAllPlatformsPutsEveryTargetOnceAndTheNamesOldStudiosRun(t *testing.T) {
+	root := t.TempDir()
+	for _, tool := range AllPlatformTools {
+		name := DistName(tool.GOOS, tool.Arch)
+		writeFile(t, filepath.Join(root, "bin", "dist", name), name)
+	}
+	out := t.TempDir()
+	var log strings.Builder
+	if err := stageAllFgeGo(&log, root, out, Item{Src: srcFgeGo}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"bin/fge-go":                   "fge-go-darwin-arm64",
+		"bin/fge-go.exe":               "fge-go-windows-amd64.exe",
+		"bin/dist/fge-go-darwin-amd64": "fge-go-darwin-amd64",
+		"bin/dist/fge-go-linux-amd64":  "fge-go-linux-amd64",
+		"bin/dist/fge-go-linux-arm64":  "fge-go-linux-arm64",
+	}
+	for rel, body := range want {
+		got, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
+		if err != nil || string(got) != body {
+			t.Errorf("%s: %q / %v (want %q)", rel, got, err, body)
+		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(out, "bin", "dist")); len(entries) != 3 {
+		t.Errorf("bin/dist/ に bin/fge-go(.exe) と重なる物がある: %v", entries)
+	}
+}
+
+func TestAllPlatformsStopsWhenATargetIsMissing(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "bin", "dist", "fge-go-darwin-arm64"), "x")
+	var log strings.Builder
+	err := stageAllFgeGo(&log, root, t.TempDir(), Item{Src: srcFgeGo})
+	if err == nil || !strings.Contains(err.Error(), "make go-build") {
+		t.Fatalf("足りないのに止まらない: %v", err)
+	}
+}
+
+func TestAllPlatformsRefusesWindowsFlag(t *testing.T) {
+	root := t.TempDir()
+	writeRules(t, root, `{"items": [{"src": "Makefile", "dest": "Makefile"}]}`)
+	var out, errOut strings.Builder
+	code, err := Run(&out, &errOut, root, []string{"--out", t.TempDir(), "--all-platforms", "--windows"})
+	if err != nil || code != 2 {
+		t.Fatalf("--all-platforms と --windows を一緒に受けた: %d / %v", code, err)
+	}
+}

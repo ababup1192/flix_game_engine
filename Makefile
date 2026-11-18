@@ -47,7 +47,7 @@ LAYER_DIRS := $(addprefix $(LAYER_ROOT)/,$(LAYER_PKGS))
 ENGINE_FULL_DIR       := engine_full
 ENGINE_FULL_FPKG_SRC  := $(ENGINE_FULL_DIR)/artifact/package.fpkg
 # 配った版（Release の zip・Studio の同梱）は、組み立て（bin/lint-rules/stage-engine.json）で fpkg を
-# engine_full.fpkg へ付け替え、Go のソース go/ を運ばない（組んだ bin/fge-go を 1 本だけ運ぶ）。
+# engine_full.fpkg へ付け替え、Go のソース go/ を運ばない（組んだ bin/fge-go を運ぶ。Release の zip は 5 種・Studio の同梱は 1 本）。
 # new-game と sync-fge-go はこの 2 つで、リポの作業コピーか配った版かを見分けて同じ口で動く。
 ENGINE_FULL_FPKG_BUNDLED := $(ENGINE_FULL_DIR)/artifact/engine_full.fpkg
 IS_BUNDLE := $(shell test -d go || echo 1)
@@ -1101,7 +1101,9 @@ bundle-zip: go-build ### | Studio に同梱する engine 一式を zip に固め
 	  || (echo "!! flix.jar が見つかりません (BUNDLE_FLIX_JAR= で場所を指定してください)" && exit 1)
 	@$(MAKE) --no-print-directory check-bundle-flix
 	rm -rf build/bundle "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
-	bin/fge stage-engine --out "$(BUNDLE_STAGE)" \
+	@# WhyNot: --all-platforms で 5 種を全部入れる — 1 つに絞ると zip を組んだ機械 (CI は linux) 向けしか入らず、
+	@# mac と Windows の Studio の「engine を更新」が、取ってきた bin/fge-go を走らせる所で exec format error になる。
+	bin/fge stage-engine --out "$(BUNDLE_STAGE)" --all-platforms \
 	  --flix-jar "$(BUNDLE_FLIX_JAR)" \
 	  --flix-wrapper "$(BUNDLE_FLIX_WRAPPER)"
 	cd build/bundle && zip -qry "../../$(BUNDLE_ZIP)" engine
