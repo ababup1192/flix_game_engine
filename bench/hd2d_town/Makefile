@@ -108,15 +108,16 @@ final-video:
 # 昼の町を歩き回る場面（src/Explore.flix・つまみは assets/explore.json・キーは assets/explore.keys.json）。
 #   make explore        … ウィンドウを開いて歩く（矢印・WASD・パッドの左スティック。重さは SHADOW_MAP=2048 DOF=0 POST=0 で落とす）
 #   make explore-web    … ブラウザ版へ書き出す（build/web・bin/fge export-web）。web/measure.js を index.html に差し込む。
-#                         曲（WEB_BGM・PeriTune「Firmament3」のループ版）は git に入れず、build/web-stage に写したゲームにだけ足す（無ければ音なし・WEB_BGM= で音なし）
+#                         既定は音なし（人の決め）。WEB_BGM=<曲のファイル> を渡した時だけ、build/web-stage に写したゲームに曲を足す（曲は git に入れない）
 #   make explore-web-public … 公開の場所へ置く物を build/web-public に書き出す（WEB_BGM を空にして音なし・束に音のファイルが残っていたら止める）
+#   曲の例: make explore-web WEB_BGM=$(HD2D_LAB)/audio/bgm_loop/PerituneMaterial_Firmament3_Active_loop.ogg（手元の確かめだけ・公開しない）
 #   make explore-serve  … 書き出した物を手元のサーバーで配る（PORT・既定 8765。スマホは同じ Wi-Fi で http://<この機械の IP>:<PORT>/）
 #   make explore-grid   … 通れるマスの格子を字で出す（# 地図と建物・+ 建物の北に隠れるので塞いだ・d 広場のにぎやかし・ウィンドウを開かない）
 #   make explore-record … ブラウザ版をヘッドレスの Chrome でキーを押して歩かせ、debug/web_walk.mp4 にする（手順書は bin/web_walk_demo.json・
 #                         先に make explore-serve を別に立てておく・URL の query は QUERY）
 PORT ?= 8765
 QUERY ?=
-WEB_BGM ?= $(HD2D_LAB)/audio/bgm_loop/PerituneMaterial_Firmament3_Active_loop.ogg
+WEB_BGM ?=
 WEB_OUT ?= build/web
 
 .PHONY: explore explore-web explore-web-public explore-serve explore-grid explore-record

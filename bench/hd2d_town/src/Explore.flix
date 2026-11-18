@@ -3,7 +3,7 @@
 // App の w は Resources.With[Res, World]: 地図・絵・格子・Doc は Res、遊びで変わる物（先頭・向き・道・カメラ・時刻）は World。
 
 mod Explore {
-    use fge::{App, Color, ImageData, LoadProgress, LwjglLayer, Num, Render, Resources, Scene3d, Text, Vec2}
+    use fge::{App, Color, FrameDiagnostics, ImageData, LoadProgress, LwjglLayer, Num, Render, Resources, Scene3d, Text, Vec2}
     use fge::GameEngine.Key
     use Route.{Dir}
 
@@ -12,11 +12,12 @@ mod Explore {
 
     /// 描く元。town = 組んだ町・boards = 動かない板（読み込みで 1 回作る）・grid = 通れるマスの格子・doc・keys・plan = Doc・
     /// lens・eye = カメラのレンズと、地図の frame に合わせた目の位置・groundZ = 立ち始めの床の高さ・feetDepth = 足元が画面の feetV に来る奥行き・
-    /// quality = 描き方の重さ・hide = 建物の北に隠れるマスの決め方・music = 鳴らす曲とクレジット（project.json に曲が無ければ None）。
+    /// quality = 描き方の重さ・hide = 建物の北に隠れるマスの決め方・music = 鳴らす曲とクレジット（project.json に曲が無ければ None）・
+    /// debugHud = 1 コマの CPU と GPU の時間を左上に出すか（つまみ debug=1）。
     pub type alias Res = { town = TownScene.Res, boards = List[Scene3d.Billboard3d], grid = CollisionGrid.Grid, doc = ExploreDoc.Rec,
                            keys = ExploreDoc.Keys, plan = Buildup.Plan, lens = TownCamera.Lens, eye = TownCamera.Eye, groundZ = Float64,
                            feetDepth = Float64, quality = ExploreDoc.Quality, hide = CollisionGrid.HideRule,
-                           music = Option[ExploreDoc.Music] }
+                           music = Option[ExploreDoc.Music], debugHud = Bool }
 
     /// カメラの遅れて追う物。ahead = 先頭から先へ見せる量（m・地図の座標）・height = 遅れて追う床の高さ（m）。
     pub type alias CameraState = { ahead = (Float64, Float64), height = Float64 }
@@ -53,7 +54,7 @@ mod Explore {
             { town = town, boards = TownScene.staticBoards(town),
               grid = CollisionGrid.build(m, Some(m#walk#col), decorWidth, d -> Set.memberOf(d#sprite, doc#passDecor), Some(hide)),
               doc = doc, keys = keys, plan = plan, lens = lens, eye = eye, groundZ = groundZ,
-              feetDepth = feetDepth, quality = quality, hide = hide, music = music }
+              feetDepth = feetDepth, quality = quality, hide = hide, music = music, debugHud = Map.get("debug", knobs) == Some("1") }
         }
 
     /// 隊列の歩きの絵の 1 コマの横幅の半分（m・一番広い人）。
@@ -152,7 +153,7 @@ mod Explore {
         let plan = res#plan;
         let camera = TownCamera.cameraAt(res#lens, town0#look#far, eyeOf(res, w));
         let town = TownScene.withCamera(town0, camera, size());
-        let walkFrame = Int32.modulo(Float64.floor(w#walkClock / plan#frameSec) |> Float64.tryToInt32 |> Option.getWithDefault(0), 4);
+        let walkFrame = Int32.modulo(Float64.floor(w#walkClock / Float64.max(0.01, res#doc#walkFrameSec)) |> Float64.tryToInt32 |> Option.getWithDefault(0), 4);
         let members = plan#party |> List.mapWithIndex((i, walker) -> {
             let ((x, y), d) = memberAt(res, w, i);
             let (row, flip) = BuildVideo.dirCell(walker#dirs, d);
@@ -227,6 +228,21 @@ mod Explore {
         });
         Render.gradPolygon(vertices, z)
 
+    /// 1 コマの診断（CPU・GPU の時間と 3D の数）を左上に出す（engine の ?fps=1 の行の下）。
+    def debugItems(ctx: App.ViewCtx, res: Res): List[Render.PlacedItem] =
+        if (not res#debugHud) Nil
+        else ctx#diagnostics |> Option.map(d -> {
+            let atlas = ctx#fontOf(creditFont());
+            let lines = FrameDiagnostics.summaryLines(d);
+            let width = lines |> List.map(l -> Text.measure(Text.make(l, atlas, 20.0))#x) |> List.foldLeft(Float64.max, 0.0);
+            let size = { x = width + 16.0, y = 12.0 + 22.0 * Int32.toFloat64(List.length(lines)) };
+            let origin = { x = 8.0, y = 44.0 };
+            let plate = Render.at(origin, roundedPlate(size, 6.0, Color.rgb(0.05, 0.05, 0.06), Color.rgb(0.0, 0.0, 0.0), 0.65, 20));
+            let texts = lines |> List.mapWithIndex((i, l) ->
+                Render.at({ x = origin#x + 8.0, y = origin#y + 6.0 + 22.0 * Int32.toFloat64(i) }, Render.textTinted(l, atlas, 20.0, Color.rgb(1.0, 1.0, 1.0), 21)));
+            plate :: texts
+        }) |> Option.getWithDefault(Nil)
+
     /// クレジットの字のフォント（project.json の fonts の名前）。
     pub def creditFont(): String = "credit"
 
@@ -236,10 +252,11 @@ mod Explore {
             |> App.addSystem(Resources.system(step))
             |> App.withView(Resources.view((_ctx, r, w) -> Render.scene3d(Vec2.zero(), sceneOf(r, w)) :: Nil))
             |> App.withFonts(creditFont() :: Nil)
-            |> App.withHudView(Resources.view(creditItems))
+            |> App.withHudView(Resources.view((ctx, r, w) -> List.append(creditItems(ctx, r, w), debugItems(ctx, r))))
             |> App.withSustained(Resources.read((r, _) -> musicOf(r)));
-        if (res#quality#post) app |> App.withPostStack(Resources.read((r, w) -> TownScene.postAt(r#town#look, focusOf(r, w), w#time, size()#x)))
-        else app
+        let app1 = if (res#debugHud) App.withDiagnostics(app) else app;
+        if (res#quality#post) app1 |> App.withPostStack(Resources.read((r, w) -> TownScene.postAt(r#town#look, focusOf(r, w), w#time, size()#x)))
+        else app1
 
     /// 通れるマスの格子を字の地図にする（# = 地図の字と建物で塞いだマス・+ = 建物の北に隠れるので塞いだマス・d = 広場のにぎやかしで塞いだマス・. = 通れる）。
     pub def gridText(res: Res): String =
@@ -267,7 +284,7 @@ mod Explore {
     pub def main(): Unit \ IO =
         if (LwjglLayer.ensureMainThread()) ()
         else {
-            let knobs = BenchEnv.knobs(("SHADOW_MAP", "shadow") :: ("DOF", "dof") :: ("POST", "post") :: Nil);
+            let knobs = BenchEnv.knobs(("SHADOW_MAP", "shadow") :: ("DOF", "dof") :: ("POST", "post") :: ("DEBUG", "debug") :: Nil);
             run {
                 App.loadAndLaunch(() -> {
                     let decoder = LoadProgress.imageDecoder();

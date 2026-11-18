@@ -16,7 +16,7 @@ ln -sfn "$PWD/lib" "$stage/lib"
 # 昼の町だけを歩く版なので、夕方・夜・霧・炎・氷・最終動画の手順書の Doc は束に入れない（配る量が減り、使わない字をフォントへ求めない）。
 (cd "$stage/assets" && rm -f fire*.json ice*.json town_night*.json town_dusk.json town_morning_fog*.json town_avenue*.map.json buildup.json final.json)
 if [ -z "$bgm" ] || [ ! -f "$bgm" ]; then
-  echo "[web_stage] 曲が無いので音なしで書き出す（WEB_BGM=… で指定）: ${bgm:-（空）}"
+  if [ -n "$bgm" ]; then echo "[web_stage] 曲が無いので音なしで書き出す: $bgm"; else echo "[web_stage] 音なしで書き出す（曲を入れるなら WEB_BGM=<曲のファイル>）"; fi
   exit 0
 fi
 mkdir -p "$stage/assets/bgm"

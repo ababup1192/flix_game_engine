@@ -14,12 +14,12 @@ mod ExploreDoc {
     pub type alias Music = { sound = String, volume = Float64, credit = List[String], creditFrom = Float64, creditSec = Float64, fadeSec = Float64 }
 
     /// つまみ。map・look・plan = 地図・見た目・隊列のシナリオ（party と歩きのコマ・息遣い・足元の画面の高さ）の Doc・
-    /// start・startFace = 先頭が立つマスと向き・speed = 歩く速さ（m/秒・スティックは倒した量を掛ける）・radius = 先頭の円の半径（m）・
+    /// start・startFace = 先頭が立つマスと向き・speed = 歩く速さ（m/秒・スティックは倒した量を掛ける）・walkFrameSec = 歩きのコマを替える秒・radius = 先頭の円の半径（m）・
     /// spacing = 隊列の間（m）・aheadMeters・aheadRate = 歩く向きへ先を見せる長さ（m）と、そこへ寄る速さ（/秒・止まると同じ速さで戻る）・
     /// heightLagK = カメラの高さが足元の高さを遅れて追う速さ（/秒）・walkZoom = カメラの引き（足元の点からの距離の倍率）・
     /// seenHeight・hideReach = 建物の北で、足元からこの高さの点が隠れるマスを塞ぐ（塞ぐのは北へ hideReach 行まで）・
     /// passDecor = 通れる広場のにぎやかしの絵・quality = 描き方の重さの既定・music = 曲とクレジット。
-    pub type alias Rec = { map = String, look = String, plan = String, start = (Int32, Int32), startFace = Route.Dir, speed = Float64,
+    pub type alias Rec = { map = String, look = String, plan = String, start = (Int32, Int32), startFace = Route.Dir, speed = Float64, walkFrameSec = Float64,
                            radius = Float64, spacing = Float64, aheadMeters = Float64, aheadRate = Float64, heightLagK = Float64,
                            walkZoom = Float64, seenHeight = Float64, hideReach = Int32, passDecor = Set[String], quality = Quality,
                            music = Music }
@@ -28,7 +28,7 @@ mod ExploreDoc {
 
     pub def defaults(): Rec =
         { map = "assets/town_final.map.json", look = "assets/town.json", plan = "assets/buildup_center.json", start = (13, 54),
-          startFace = Route.Dir.North, speed = 3.46, radius = 0.3, spacing = 1.0, aheadMeters = 1.5, aheadRate = 2.0, heightLagK = 2.5,
+          startFace = Route.Dir.North, speed = 4.85, walkFrameSec = 0.24, radius = 0.3, spacing = 1.0, aheadMeters = 0.0, aheadRate = 2.0, heightLagK = 12.0,
           walkZoom = 1.35, seenHeight = 0.9, hideReach = 8, passDecor = Set#{"sprites/pigeon.png", "sprites/balloon.png"},
           quality = { shadowMapSize = 4096, depthOfField = true, post = true },
           music = { sound = "firmament3_loop", volume = 0.35, credit = Nil, creditFrom = 1.5, creditSec = 8.0, fadeSec = 0.8 } }
@@ -53,7 +53,7 @@ mod ExploreDoc {
         let mu = Map.get("music", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty());
         { map = JsonCodec.stringOr("map", d#map, m), look = JsonCodec.stringOr("look", d#look, m), plan = JsonCodec.stringOr("plan", d#plan, m),
           start = start, startFace = Route.dirOfLetter(JsonCodec.stringOr("startFace", "n", m)),
-          speed = num("speed", d#speed), radius = num("radius", d#radius), spacing = num("spacing", d#spacing),
+          speed = num("speed", d#speed), walkFrameSec = num("walkFrameSec", d#walkFrameSec), radius = num("radius", d#radius), spacing = num("spacing", d#spacing),
           aheadMeters = num("aheadMeters", d#aheadMeters), aheadRate = num("aheadRate", d#aheadRate), heightLagK = num("heightLagK", d#heightLagK),
           walkZoom = num("walkZoom", d#walkZoom), seenHeight = num("seenHeight", d#seenHeight), hideReach = JsonCodec.intOr("hideReach", d#hideReach, m),
           passDecor = Map.get("passDecor", m) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString)) |> Option.map(List.toSet)
