@@ -11,7 +11,7 @@ allowed-tools:
 # 変更後の検証
 
 **テストは絞って速く回す。全量の検証はリリース直前の 1 回だけ**（AGENTS.md の「検証」・`/release`）。
-ここでは全量（`make test-all`・`make test-par-all`）は流さない。
+ここでは全量（`make test ALL=1`）は流さない。
 
 flix は `bin/flix`・`bin/fge`・make から流す。`java -jar bin/flix.jar` を直に叩くと
 Maven の取り物の置き場（lib/cache）を通らず、依存を取りに行って止まる。

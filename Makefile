@@ -151,63 +151,74 @@ clean-game-builds: ### | templates/*/build/ と bench/*/build/ と engine のパ
 # (トークンを置換したコピー側で make new-game が check / test / render を通す)。
 TEMPLATE_DIRS := $(filter-out templates/game-starter,$(wildcard templates/*))
 
-# エンジンのパッケージのテストを順に回す。1 つでも赤ならそこで止まり exit 1。
-# テンプレート（TEMPLATE_DIRS）は test-all / test-par-all（リリースのゲート）だけで回す。
-# WhyNot: 毎回の test に入れない —— テンプレートのコンパイルがエンジンのテストの約半分を占め、
+# make test は engine と 3 層を流す。ALL=1 でテンプレート（TEMPLATE_DIRS）も、JOBS=<数> で並べて流す。
+# WhyNot: テンプレートを既定に入れない —— テンプレートのコンパイルがエンジンのテストの約半分を占め、
 #   エンジンを直すたびに払うには重い。退行はリリース前の全量と new-game の産声の確認で拾う。
 # engine の上の 3 層は .layers/ の作業場で回す (張り方は sync-layers)。
 TEST_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
-# 1 つのパッケージ ($$dir) のテストを流す形 (test・test-par・test-<名前> が共有する)。
+# 1 つのパッケージ ($$dir) のテストを流す形 (test・test-<名前> が共有する)。
 PKG_TEST = (cd "$$dir" && "$(CURDIR)/bin/with-sample-tests" . "$(FLIX_TEST)" test)
+# WhyNot: JOBS をシェルの環境から受けない — 環境に JOBS がある機械で make test が黙って並列になる。コマンド行から来た時だけ効かせる。
+TEST_JOBS := $(if $(filter command line,$(origin JOBS)),$(JOBS),1)
+TEST_RUN_DIRS := $(TEST_DIRS) $(if $(ALL),$(TEMPLATE_DIRS))
 
 ##@ テスト
-.PHONY: test
-test: sync-layers ## | engine 系パッケージのテストを headless で流す（templates は test-all）
-	@for dir in $(TEST_DIRS); do \
-		if [ -f "$$dir/flix.toml" ]; then \
-			echo "===== $$dir ====="; \
-			$(PKG_TEST) || exit 1; \
-		fi \
-	done
-
-# テンプレートまで含めた全量（リリースのゲート・テンプレートを直した後）。
-.PHONY: test-all test-par-all
-test-all: ### | templates まで含めた全量を順に流す（リリースの門）
-	@$(MAKE) --no-print-directory test TEST_DIRS="$(TEST_DIRS) $(TEMPLATE_DIRS)"
-
-test-par-all: ### | templates まで含めた全量を並べて流す（リリースの門）
-	@$(MAKE) --no-print-directory test-par TEST_DIRS="$(TEST_DIRS) $(TEMPLATE_DIRS)"
-
-# 並列テスト。各パッケージは独立 (別ディレクトリ・別 JVM) なので同時に回せて、
-# 実時間は最遅パッケージ 1本分まで縮む。ログは .test-logs/ にパッケージ別で残し、
-# 赤があれば最後にそのログ末尾を表示して exit 1。並列数は TEST_PAR_JOBS で変えられる。
-# xargs は -I でなく -n1 + $$0 渡し (BSD xargs の -I は置換後の引数が 255 バイト制限で、
+# 逐次（JOBS=1）は最初の赤で止める。並列はパッケージごとにログを .test-logs/ に残し、赤があれば最後にログの末尾を出す。
+# 並列の xargs は -I でなく -n1 + $$0 渡し (BSD xargs の -I は置換後の引数が 255 バイト制限で、
 # スクリプトに埋めると「command line cannot be assembled」で 1 本も走らない)。
 # 「1 本も走っていないのに green」の偽陽性は実行数ガードで落とす。
-TEST_PAR_JOBS ?= 6
-.PHONY: test-par
-test-par: sync-layers ## [TEST_PAR_JOBS=6] | make test を並べて流す（実時間 ≈ 最遅パッケージ 1 本分。ログは .test-logs/）
-	@mkdir -p .test-logs; rm -f .test-logs/*.log .test-logs/*.fail; \
-	printf '%s\n' $(TEST_DIRS) | xargs -P $(TEST_PAR_JOBS) -n 1 sh -c ' \
+# WhyNot: 逐次も xargs -P 1 にしない — xargs は子が非 0 で返しても次へ進み、最初の赤で止まらない。
+.PHONY: test
+test: sync-layers ## [ALL=1] [JOBS=<数>] | engine と 3 層のテスト（ALL=1 でテンプレートも・JOBS で並べて流す。並列のログは .test-logs/）
+	@if [ "$(TEST_JOBS)" = 1 ]; then \
+		for dir in $(TEST_RUN_DIRS); do \
+			if [ -f "$$dir/flix.toml" ]; then \
+				echo "===== $$dir ====="; \
+				$(PKG_TEST) || exit 1; \
+			fi \
+		done; \
+		exit 0; \
+	fi; \
+	mkdir -p .test-logs; rm -f .test-logs/*.log .test-logs/*.fail; \
+	printf '%s\n' $(TEST_RUN_DIRS) | xargs -P $(TEST_JOBS) -n 1 sh -c ' \
 		dir="$$0"; [ -f "$$dir/flix.toml" ] || exit 0; \
 		name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
 		if $(PKG_TEST) > ".test-logs/$$name.log" 2>&1; then \
-			echo "[test-par] PASS $$dir"; \
+			echo "[test] PASS $$dir"; \
 		else \
-			echo "[test-par] FAIL $$dir"; touch ".test-logs/$$name.fail"; \
+			echo "[test] FAIL $$dir"; touch ".test-logs/$$name.fail"; \
 		fi'; \
 	ran=$$(ls .test-logs/*.log 2>/dev/null | wc -l | tr -d ' '); \
-	if [ "$$ran" -eq 0 ]; then echo "[test-par] 1 本も実行されていない (xargs 失敗の疑い)"; exit 1; fi; \
+	if [ "$$ran" -eq 0 ]; then echo "[test] 1 本も実行されていない (xargs 失敗の疑い)"; exit 1; fi; \
 	if ls .test-logs/*.fail > /dev/null 2>&1; then \
 		echo "===== 失敗したパッケージのログ末尾 ====="; \
 		for f in .test-logs/*.fail; do base=$${f%.fail}; echo "--- $$base"; tail -40 "$$base.log"; done; \
 		exit 1; \
 	fi; \
-	echo "[test-par] all green ($$ran packages)"
+	echo "[test] all green ($$ran packages)"
+
+# リリースの門の全量（テンプレートを含む・並列）。逐次に倒すのは make release JOBS=1。
+OLD_PAR_JOBS := $(or $(TEST_PAR_JOBS),6)# 古い書き方: TEST_PAR_JOBS は 1 リリース後に消す
+RELEASE_TEST_JOBS = $(or $(if $(filter command line,$(origin JOBS)),$(JOBS)),$(OLD_PAR_JOBS))
+.PHONY: test-release
+test-release: ### [JOBS=6] | リリースの門のテスト（make test ALL=1 JOBS=6 と同じ）
+	@$(MAKE) --no-print-directory test ALL=1 JOBS=$(RELEASE_TEST_JOBS)
+
+# 古い書き方: test-par・test-all・test-par-all は 1 リリース後に消す
+.PHONY: test-all test-par test-par-all
+test-all: ### | 古い口（make test ALL=1 を呼ぶ）
+	@echo "[test] 次から make test ALL=1"
+	@$(MAKE) --no-print-directory test ALL=1
+test-par: ### | 古い口（make test JOBS=6 を呼ぶ）
+	@echo "[test] 次から make test JOBS=$(OLD_PAR_JOBS)"
+	@$(MAKE) --no-print-directory test JOBS=$(OLD_PAR_JOBS)
+test-par-all: ### | 古い口（make test ALL=1 JOBS=6 を呼ぶ）
+	@echo "[test] 次から make test ALL=1 JOBS=$(OLD_PAR_JOBS)"
+	@$(MAKE) --no-print-directory test ALL=1 JOBS=$(OLD_PAR_JOBS)
 
 # 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
 # engine の上の 3 層は .layers/<層> の作業場で流す (make test と同じ。張り方は sync-layers)。
-# 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。
+# 出力は .test-logs/ に落とし (並列の make test と同じ命名)、緑なら末尾 5 行だけ見せる。
 # make status が「最後にいつ・どれが緑/赤だったか」をこの記録から読む。
 # WhyNot: 層を素のフォルダで流さない — 層のフォルダは engine のソースを持たず、use flix_engine_core の名前が解けずに落ちる。
 $(addprefix test-,$(LAYER_PKGS)): sync-layers
@@ -971,9 +982,11 @@ fpkg-store-gc: ### [DRY=1] | 束の置き場（build/fpkg-store）から、ど�
 #
 # release-guard の安全策:
 #   - engine ソースが未コミットだと配布 fpkg がどのコミットにも対応しなくなるため中断する。
-# test-par-all に不審な挙動があれば逐次にフォールバックする (make release TEST=test-all)。
+# 並列のテストに不審な挙動があれば逐次にフォールバックする (make release JOBS=1)。
 RELEASE_SHA := $(shell git rev-parse HEAD)
-TEST := test-par-all
+# 古い書き方: TEST= は 1 リリース後に消す（渡された時だけ、その口をテストの門に使う）
+RELEASE_TEST := $(if $(filter command line,$(origin TEST)),$(TEST),test-release)
+$(if $(filter command line,$(origin TEST)),$(info [release] 古い書き方: TEST= は次から付けない（逐次は make release JOBS=1）))
 .PHONY: release-guard
 release-guard: ### | 公開の前の安全策（未コミット・壊れた flix.toml・flix.jar の版・追随の材料・jar の行）
 	@# WhyNot: 追随の材料も未コミット検査に入れるのは、bump が生成した物をコミットし
@@ -1017,19 +1030,19 @@ studio-parity: ### [STUDIO=<パス>|none] | Studio の check-agents-parity を�
 	   && [ "$$(git -C "$(STUDIO)" rev-parse HEAD)" = "$$(git -C "$(STUDIO)" rev-parse origin/main)" ] \
 	   || { echo "[release] Studio の clone ($(STUDIO)) が origin/main と違います。git -C $(STUDIO) pull --ff-only で最新にしてから"; exit 1; }; \
 	 echo "[release] Studio ($(STUDIO)) の check-agents-parity をこの engine で流します"; \
-	 $(MAKE) --no-print-directory -C "$(STUDIO)" check-agents-parity ENGINE="$(CURDIR)" \
+	 $(MAKE) --no-print-directory -C "$(STUDIO)" MAKEOVERRIDES= check-agents-parity ENGINE="$(CURDIR)" \
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
-RELEASE_GATES := release-guard studio-parity sync $(TEST) gl-parity
+RELEASE_GATES := release-guard studio-parity sync $(RELEASE_TEST) gl-parity
 .PHONY: release
-release: release-verify ### [TEST=test-all] | release-verify と同じ
+release: release-verify ### [JOBS=1] | release-verify と同じ
 
 # 手元で門を通し、通した commit を印に書く。公開は CI の release-publish がする。
 # WhyNot: 印に commit を書き、CI はそこから HEAD までの差が印だけかを見る。版やテストの名前だけだと、
 # 門を通した後に入った変更も同じ印で出てしまう。
 RELEASE_MARKER := release/verified.txt
 .PHONY: release-verify
-release-verify: $(RELEASE_GATES) ## [STUDIO=none] [TEST=test-all] | リリースの門を手元で通し、通した commit を release/verified.txt に書く（公開は CI の release-publish）
+release-verify: $(RELEASE_GATES) ## [STUDIO=none] [JOBS=1] | リリースの門を手元で通し、通した commit を release/verified.txt に書く（公開は CI の release-publish）
 	@mkdir -p $(dir $(RELEASE_MARKER))
 	@printf 'version %s\nsha %s\ngates %s\nat %s\n' "$(VERSION)" "$(RELEASE_SHA)" "$(RELEASE_GATES)" "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" > $(RELEASE_MARKER)
 	@echo "[release-verify] v$(VERSION) の門を $(RELEASE_SHA) で通しました。次は:"

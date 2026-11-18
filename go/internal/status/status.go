@@ -149,7 +149,7 @@ func sectionTests(c *ctx, out *[]string) {
 		}
 	}
 	if len(logs) == 0 {
-		*out = append(*out, "テスト   記録なし (make test / make test-par を一度も通していない)")
+		*out = append(*out, "テスト   記録なし (make test / make test-<名前> を一度も通していない)")
 		return
 	}
 	*out = append(*out, "テスト   (最終実行の記録から。回し直してはいない)")

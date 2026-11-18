@@ -64,7 +64,7 @@ func TestHeaderUsesRootBasenameAndNow(t *testing.T) {
 
 func TestNoTestLogsSaysNoRecord(t *testing.T) {
 	lines := build(t, t.TempDir())
-	want := "テスト   記録なし (make test / make test-par を一度も通していない)"
+	want := "テスト   記録なし (make test / make test-<名前> を一度も通していない)"
 	if !has(lines, want) {
 		t.Errorf("記録なしの行が出ません: %v", lines)
 	}
@@ -128,7 +128,7 @@ func TestRenderLogsAreExcludedButFailsShow(t *testing.T) {
 	write(t, filepath.Join(root, ".test-logs", "render-title.log"), "")
 	write(t, filepath.Join(root, ".test-logs", "render-title.fail"), "")
 	lines := build(t, root)
-	if !has(lines, "テスト   記録なし (make test / make test-par を一度も通していない)") {
+	if !has(lines, "テスト   記録なし (make test / make test-<名前> を一度も通していない)") {
 		t.Errorf("render- の記録は数に入れません: %v", lines)
 	}
 }
@@ -369,7 +369,7 @@ func TestTooLongIsCut(t *testing.T) {
 func TestHiddenNamesAreNotGlobbed(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".test-logs", ".hidden.log"), "")
-	if !has(build(t, root), "テスト   記録なし (make test / make test-par を一度も通していない)") {
+	if !has(build(t, root), "テスト   記録なし (make test / make test-<名前> を一度も通していない)") {
 		t.Error("先頭が . の名前は * に当たりません")
 	}
 }

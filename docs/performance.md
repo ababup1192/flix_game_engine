@@ -191,7 +191,7 @@ CPU の描く時間（SoftRaster・SoftRaster3d）は `CpuTiming.measure({ warmu
 （3D の部屋は `make bench B=scene3d-cpu`・gl-parity の場面ごとは `make bench B=gl-parity-cpu`。描き出しの `renderPng*` はキャッシュが写すだけの回があるので、
 時間を測るのは同じ塗りの `HeadlessRender.renderImageFull` / `renderImageSoft`）。同じ機械でも負荷で 5〜10% ほど揺れる（`bench/baseline/0.76.0/scene3d.txt`）。
 
-**時間で測る物はゲートに乗せない。** `make release` は `test-par` の直後で熱と CPU の
+**時間で測る物はゲートに乗せない。** `make release` は並列のテスト（`test-release`）の直後で熱と CPU の
 取り合いのピークなので、偽陽性を出しうる検査をリリースの経路へ置かない。
 
 ---

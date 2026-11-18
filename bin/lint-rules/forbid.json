@@ -433,6 +433,15 @@
       ],
       "pattern": "^\\t(.*[\\s;&|(@])?python3\\s",
       "hint": "レシピで python3 を素のまま呼ばない。macOS で DEVELOPER_DIR が nix の apple-sdk を指すと「error: tool 'python3' not found」で止まる。$(PYTHON3)（mk/common.mk・中身は engine の bin/py3）と書く。common.mk を読まない Makefile は PYTHON3 ?= <engine>/bin/py3 を頭で決める"
+    },
+    {
+      "id": "old-test-targets",
+      "suffixes": [".md", ".json"],
+      "basenames": ["Makefile"],
+      "skip": ["docs/migrations/", "plans/", "NOTES.md", "lib/", "build/", "testdata/", "bin/lint-rules/forbid.json"],
+      "pattern": "\\bmake (test-par-all|test-par|test-all)\\b|\\bTEST=test(-all|-par|-par-all)?\\b|\\bTEST_PAR_JOBS\\b",
+      "unlessLine": "古い書き方|古い口",
+      "hint": "engine のテストの口は make test 1 つ（ALL=1 でテンプレートも・JOBS=<数> で並べて流す）。test-par-all → make test ALL=1 JOBS=6、test-all → make test ALL=1、test-par → make test JOBS=6、release の TEST=test-all → make release JOBS=1、TEST_PAR_JOBS → JOBS（engine の plans/gates-tidy.md 6 節）"
     }
   ],
   "exempt": {

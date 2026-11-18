@@ -46,7 +46,7 @@ allowed-tools: Read, Grep, Glob, Bash
 - [ ] 5. lib/ を消したコピーで外部 fetch 検証（fpkg と toml に加え、GL の層の jar `fge-gl-<ハッシュ>.jar` も置き場の Release から取れて build と run が通るか）
 ```
 
-手元の `make release` は release-guard → studio-parity → `sync` → `test-par-all`（全量ゲート）→ `gl-parity` を通して
+手元の `make release` は release-guard → studio-parity → `sync` → `test-release`（全量ゲート・`make test ALL=1 JOBS=6` と同じ）→ `gl-parity` を通して
 印を書くだけで、公開はしない。CI は、印の版が `VERSION` と同じか・印の commit から HEAD までの差が印だけか・
 タグがまだ無いかを見て（`make release-marker-check`）、`sync` → `gl-jar-publish` → build-pkg → `bundle-zip` → `gh release create` を
 流す。tag は印を載せた commit に付く。2 の後に 1 行でも変えたら止まるので、2 からやり直す。
@@ -107,11 +107,11 @@ CI の `make release-publish` は版を出す前に `make gl-jar-publish` で置
   層のテスト（`make test-<層>`）は `.layers/` を自分で張り直すので要らない
 - **lint 群は先に手で回す**: フック任せにせず `make lint ONLY=view,palette,ui,audio` を
   リリース前に一巡させる。既知の赤が残ったままだとゲートで止まる
-- **`make test-par` の偽 FAIL**: ログが依存解決で途切れテスト 0 本なら並列の食い合い。
-  当該パッケージを単体 `make test-<name>` で確かめ、必要なら `make release TEST=test-all`（逐次）
+- **並列の `make test JOBS=<数>` の偽 FAIL**: ログが依存解決で途切れテスト 0 本なら並列の食い合い。
+  当該パッケージを単体 `make test-<name>` で確かめ、必要なら `make release JOBS=1`（逐次）
 - **`make release` は未コミットで中断する**: `gallery/` や `NOTES.md` は git 管理外なので
   `git status` に出ない＝残っていても邪魔しない。出ている差分だけ全部コミットする
 
-**全量ゲート**は `make test-par-all`（テンプレートを含む全パッケージ並列・実時間 ≈ 最遅パッケージ 1 本分・ログは `.test-logs/`）。
+**全量ゲート**は `make test ALL=1 JOBS=6`（テンプレートを含む全パッケージ並列・実時間 ≈ 最遅パッケージ 1 本分・ログは `.test-logs/`）。
 併せて `make gl-parity` を回して A 段階の全一致（全 scene 0 px）を確認する（GL と SoftRaster の絵の退行はテストに出ない）。
-並列版に不審な挙動があれば逐次へフォールバックする（`make test-all` / `make release TEST=test-all`）。
+並列版に不審な挙動があれば逐次へフォールバックする（`make test ALL=1` / `make release JOBS=1`）。
