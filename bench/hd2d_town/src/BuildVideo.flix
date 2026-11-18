@@ -133,7 +133,7 @@ mod BuildVideo {
         (fst(c) + side, snd(c) + (if (i == 0) 0.0 else 0.3))
 
     /// 向き → 帯の中の段（dirs の字の順・"nes" なら 0 背中・1 右・2 正面）と左右反転（dirs に w が無ければ左は右の反転）。
-    def dirCell(dirs: String, d: Dir): (Int32, Bool) =
+    pub def dirCell(dirs: String, d: Dir): (Int32, Bool) =
         let letter = match d {
             case Dir.North => "n"
             case Dir.East  => "e"
@@ -160,7 +160,7 @@ mod BuildVideo {
     /// 止まっている間の 1 人の絵（帯・コマ・縦の倍率）。3 人の位相は 1 人ごとに少しずらす。
     /// 息遣い = 1.8 秒周期で縦に ±1.5%（足元はそのまま）・足踏み = 歩きのコマを 0.5 秒ごとにその場で替える。
     /// 息遣いのコマの帯（向きごとに 吸った・吐いた の 2 コマ）があれば、それを idleFrameSec ごとに・1 人ごとに idlePhaseSec ずらして替える。
-    def idlePose(plan: Plan, w: Buildup.Walker, i: Int32, t: Float64): { strip = String, frame = Int32, perDir = Int32, stretch = Float64 } =
+    pub def idlePose(plan: Plan, w: Buildup.Walker, i: Int32, t: Float64): { strip = String, frame = Int32, perDir = Int32, stretch = Float64 } =
         let phase = Int32.toFloat64(i) * 0.37;
         let cycleFrame = (sec: Float64) -> Int32.modulo(Float64.floor(t / sec + phase * 4.0) |> Float64.tryToInt32 |> Option.getWithDefault(0), 4);
         match (w#idleStrip, plan#idle) {

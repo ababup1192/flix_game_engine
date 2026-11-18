@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "note": "昼の町を歩き回る場面（make explore・ブラウザ版・src/Explore.flix）のつまみ。map・look・plan = 地図・昼の見た目・隊列の台本（party と歩きのコマ・息遣い・足元の画面の高さ feetV はこの台本の物を使う）・start = 先頭が立つマス [列, 行]・startFace = その向き（n・e・s・w）・speed = 歩く速さ（m/秒・スティックは倒した量を掛ける）・radius = 先頭をぶつける円の半径（m）・spacing = 隊列の間（m）・aheadMeters = 歩く向きへ先を見せる長さ（m）・aheadRate = そこへ寄る速さと、止まって戻る速さ（/秒・大きいほど速い）・heightLagK = カメラの高さが足元の高さを遅れて追う速さ（/秒）・walkZoom = カメラの引き（足元の点からの距離の倍率）・seenHeight = 建物の北で、足元からこの高さ（m）の点が建物に隠れるマスを通れなくする（小さいほど塞ぐ行が増える）・hideReach = 塞ぐのは建物の北へ何行まで・passDecor = 通れる広場のにぎやかしの絵（鳩・風船）・quality = 描き方の重さの既定（shadowMapSize = 太陽の影の地図の一辺の画素で 0 なら影なし・depthOfField = 手前と奥のぼけ・post = 画面全体の後がけ）。quality は実機なら環境変数 SHADOW_MAP・DOF・POST、ブラウザなら頁の ?shadow=・?dof=・?post= で差し替えられる",
+  "map": "assets/town_final.map.json",
+  "look": "assets/town.json",
+  "plan": "assets/buildup_center.json",
+  "start": [13, 54],
+  "startFace": "n",
+  "speed": 3.46,
+  "radius": 0.3,
+  "spacing": 1.0,
+  "aheadMeters": 1.5,
+  "aheadRate": 2.0,
+  "heightLagK": 2.5,
+  "walkZoom": 1.35,
+  "seenHeight": 0.9,
+  "hideReach": 8,
+  "passDecor": ["sprites/pigeon.png", "sprites/balloon.png"],
+  "quality": {
+    "shadowMapSize": 4096,
+    "depthOfField": true,
+    "post": true
+  }
+}

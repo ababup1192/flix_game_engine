@@ -1,7 +1,7 @@
 // TownScene — 組んだ町（TileMap3d）と絵（Images）から、毎コマ渡す 3D の場面を作る。
 // 動かない面と足元の影は読み込みで 1 回 staticGroup にまとめ、毎コマは隊列の板とカメラだけを差し替える。
 mod TownScene {
-    use fge::{Camera3d, Color, Mat4, Mesh3d, Num, PostStack, Rect2, Render, Scene3d, ShaderDoc, Texture3d, Transform3d, Vec2, Vec3}
+    use fge::{Camera3d, Color, ImageData, Mat4, Mesh3d, Num, PostStack, Rect2, Render, Scene3d, ShaderDoc, Texture3d, Transform3d, Vec2, Vec3}
     use fge::ShaderDoc.FilterMode
     use Faces.{Quad, Rgb}
     use TileMap3d.{Board}
@@ -89,6 +89,12 @@ mod TownScene {
 
     /// load に地図の見た目の欄 fx（炎・氷の材質・熱の地図・崖の根元の光る縁・点光源・粒・空の映り込み）を渡す形。
     pub def loadWithFx(m: TownMap, fx: StageFx.Fx, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
+        loadWithFxUsing(Images.readImageIo, m, fx, look, skipNpcColumn, extraStrips)
+
+    /// loadWithFx の、絵を画素にする口 readImage（assets からの相対の道 → 画素）を渡す形（ブラウザは Fs と decoder で読む）。
+    pub def loadWithFxUsing(readImage: String -> Result[String, ImageData.ImageData] \ ef, m: TownMap, fx: StageFx.Fx, look: Look, skipNpcColumn: Option[Int32],
+                            extraStrips: List[String]): Result[String, Res] \ ef =
+        let loadImage = (path: String) -> readImage(path) |> Result.flatMap(Images.loadedOf(path));
         let sprites = "sprites/tree_broadleaf.png" :: "sprites/tree_cypress.png" :: "sprites/street_lamp_ornate.png" ::
                       "sprites/traveler_td.png" :: "sprites/merchant_td.png" ::
                       (m#objectSprites |> Map.valuesOf |> List.map(o -> o#sprite) |> List.distinct);
@@ -97,12 +103,12 @@ mod TownScene {
         let table = TileMap3d.materialTableOf(m);
         let tilePaths = List.append(table |> Map.valuesOf |> List.map(fst), StageFx.extraTiles(fx)) |> List.distinct;
         forM (
-            tiles <- Result.traverse(Images.load, tilePaths);
-            boards <- Result.traverse(Images.load, sprites);
-            strips <- Result.traverse(Images.load, stripPaths);
+            tiles <- Result.traverse(loadImage, tilePaths);
+            boards <- Result.traverse(loadImage, sprites);
+            strips <- Result.traverse(loadImage, stripPaths);
             shadow <- Images.contactShadow();
             dense <- Images.denseShadow();
-            lantern <- Images.lanternGlow("sprites/street_lamp_ornate.png", lanternCenters(), 7.5, 0.42, 0.68, look#lanternCore, look#lanternEdge);
+            lantern <- readImage("sprites/street_lamp_ornate.png") |> Result.flatMap(Images.lanternGlowOf(lanternCenters(), 7.5, 0.42, 0.68, look#lanternCore, look#lanternEdge));
             halo <- Images.halo(look#haloFalloff);
             contactMesh <- unitContactMesh();
             heat <- fx#heat |> Option.map(h -> StageFx.heatTexture(m, h) |> Result.map(Some)) |> Option.getWithDefault(Ok(None));
@@ -395,8 +401,13 @@ mod TownScene {
 
     /// 1 コマの場面。billboards・instances = 毎コマ変わる板と置いた物（隊列）。
     pub def sceneOf(res: Res, camera: Camera3d.Camera3d, size: Vec2.Vec2, billboards: List[Scene3d.Billboard3d], instances: List[Scene3d.Instance3d]): Scene3d.Scene3dCmd =
+        sceneOfBoards(res, staticBoards(res), camera, size, billboards, instances)
+
+    /// sceneOf の、動かない板 boards（staticBoards）を先に作って渡す形（Look が替わらない場面は読み込みで 1 回作れば足りる）。
+    pub def sceneOfBoards(res: Res, boards: List[Scene3d.Billboard3d], camera: Camera3d.Camera3d, size: Vec2.Vec2, billboards: List[Scene3d.Billboard3d],
+                          instances: List[Scene3d.Instance3d]): Scene3d.Scene3dCmd =
         let look = res#look;
-        { groups = res#group :: Nil, instances = List.append(nightInstances(res), instances), billboards = List.append(staticBoards(res), billboards),
+        { groups = res#group :: Nil, instances = List.append(nightInstances(res), instances), billboards = List.append(boards, billboards),
           directionalLight = Some(sunOf(look)), textures = res#textures, pointLights = lampLights(res),
           environment = { ambient = look#ambient, hemisphere = look#hemisphere, toonSteps = 0,
                           fog = Some({ color = look#fog, near = look#fogNear, far = look#fogFar }), background = Some(look#sky) }

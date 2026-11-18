@@ -104,3 +104,39 @@ final-frames:
 
 final-video:
 	BGM="$(BGM)" bin/final_video.sh
+
+# 昼の町を歩き回る場面（src/Explore.flix・つまみは assets/explore.json・キーは assets/explore.keys.json）。
+#   make explore        … 窓を開いて歩く（矢印・WASD・パッドの左スティック。重さは SHADOW_MAP=2048 DOF=0 POST=0 で落とす）
+#   make explore-web    … ブラウザ版へ書き出す（build/web・bin/fge export-web）。web/measure.js を index.html に差し込む
+#   make explore-serve  … 書き出した物を手元のサーバーで配る（PORT・既定 8765。スマホは同じ Wi-Fi で http://<この機械の IP>:<PORT>/）
+#   make explore-grid   … 通れるマスの格子を字で出す（# 地図と建物・+ 建物の北に隠れるので塞いだ・d 広場のにぎやかし・窓を開かない）
+#   make explore-record … ブラウザ版をヘッドレスの Chrome でキーを押して歩かせ、debug/web_walk.mp4 にする（台本は bin/web_walk_demo.json・
+#                         先に make explore-serve を別に立てておく・URL の query は QUERY）
+PORT ?= 8765
+QUERY ?= backend=webgl2
+
+.PHONY: explore explore-web explore-serve explore-grid explore-record
+
+explore:
+	../../bin/headless-run --build-only
+	../../bin/headless-run --window Explore.main
+
+explore-web:
+	../../bin/fge export-web . --out build/web $(EXPORT_FLAGS)
+	cp web/measure.js build/web/measure.js
+	perl -0pi -e 's|<script>\n\(function \(\) \{\n  var baked|<script src="measure.js"></script>\n$$&|' build/web/index.html
+	@grep -q 'measure.js' build/web/index.html || { echo "[explore-web] index.html に fge-web.js を読む script が無く、measure.js を差し込めない"; exit 1; }
+	@echo "[explore-web] build/web（make explore-serve で配る）"
+
+explore-serve:
+	@echo "[explore-serve] http://localhost:$(PORT)/ ・スマホは http://$$(ipconfig getifaddr en0 2>/dev/null || echo '<この機械の IP>'):$(PORT)/?fps=1&measure=1"
+	DEVELOPER_DIR=/Library/Developer/CommandLineTools python3 -m http.server $(PORT) --bind 0.0.0.0 --directory build/web
+
+explore-grid:
+	../../bin/flix run --entrypoint Explore.printGrid
+
+explore-record:
+	rm -rf debug/web_walk_frames
+	DEVELOPER_DIR=/Library/Developer/CommandLineTools python3 bin/web_walk_record.py "http://127.0.0.1:$(PORT)/?$(QUERY)" debug/web_walk_frames
+	cd debug/web_walk_frames && ffmpeg -v error -y -f concat -safe 0 -i frames.txt -vf "fps=15,format=yuv420p" -c:v libx264 -crf 22 -movflags +faststart ../web_walk.mp4
+	@ls -la debug/web_walk.mp4

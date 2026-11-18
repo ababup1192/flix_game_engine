@@ -177,5 +177,13 @@
     }
   ],
   "fonts": [],
-  "sounds": []
+  "sounds": [],
+  "web": {
+    "startPrompt": "タッチして開始",
+    "keysDoc": "assets/explore.keys.json",
+    "orientation": "landscape",
+    "virtualPad": {
+      "dpad": true
+    }
+  }
 }

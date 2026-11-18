@@ -48,4 +48,18 @@ mod TownCamera {
 
     /// 1 テクセル（1/32 m）に丸める。
     pub def snapToTexel(v: Float64): Float64 = Float64.round(v * 32.0) / 32.0
+
+    /// 歩く向きへ先を見せる量（C3）を dt 秒進める。motion = このコマで先頭が動いた量（m）・speed = 歩く速さ（m/秒）・
+    /// meters = 歩く速さで歩いている時に先へ見せる長さ・rate = そこへ寄る速さ（/秒・止まると同じ速さで 0 へ戻る）。
+    pub def lookAhead(meters: Float64, rate: Float64, speed: Float64, motion: (Float64, Float64), dt: Float64, ahead: (Float64, Float64)): (Float64, Float64) =
+        if (dt <= 0.0) ahead
+        else {
+            let k = meters / (speed * dt);
+            let a = followRate(rate, dt);
+            (fst(ahead) + (fst(motion) * k - fst(ahead)) * a, snd(ahead) + (snd(motion) * k - snd(ahead)) * a)
+        }
+
+    /// 遅れて追う量の 1 コマの寄り（1 − exp(−k·dt)）。
+    // WhyNot: k·dt をそのまま寄りにしない — コマの長さが揺れると寄る速さが変わり、30 fps と 60 fps で追い方が違って見える。
+    pub def followRate(k: Float64, dt: Float64): Float64 = 1.0 - Float64.pow(base = 2.718281828459045, 0.0 - k * dt)
 }
