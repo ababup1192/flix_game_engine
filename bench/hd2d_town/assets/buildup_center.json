@@ -1,15 +1,35 @@
 {
   "version": 1,
-  "note": "立ったまま、隊列を中心に輪で町が出来る動画（BUILDUP=assets/buildup_center.json）。path の最初の点に立ち、町が出来て揺れが収まった walkPause 秒後に残りの点を歩く（followSec で追従カメラへ移る）・holdSec = 全部出来た後に撮る秒・radial の buildSec = 輪が一番遠いマスへ届く秒・curve = 届く距離が時間の 1/curve 乗で増える（小さいほど、はじめはゆっくりで後ほど速い）・zoomLead = 輪がこの割合届いた所でカメラが引き終える・paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり・土ぼこりの粒はその逆数の倍）・jitter = マスごとのずれ（秒）・zoomFrom・zoomTo = カメラの引き（足元からの距離の倍率）・spread = 横に並ぶ間（m）・部品の秒（rise・fall・squash・monumentFall・shake・shakeAmp・wallRise・roofDelay・roofFall・openingDelay・openingStep・pop・dust）と dustScale（土ぼこりの粒の倍率）は Buildup.Timing と同じ・impactDust = 記念碑の着地の土ぼこりの倍率・hitstopSec = 着地で止める秒・flash = 着地の瞬間に上げる露出（段）・waveSpeed・waveHeight = 衝撃が外へ伝わる速さと、木・街灯・町の人が跳ねる高さ・map = 地図の Doc（南へ広げた写し）・shakeDecay = 揺れが減る速さ（/秒）・waveReach = 跳ねる高さが 1/e になる距離（m）",
+  "note": "立ったまま、隊列を中心に輪で町が出来る動画（BUILDUP=assets/buildup_center.json）。path の最初の点に立ち、町が出来て揺れが収まった walkPause 秒後に残りの点を歩く（followSec で追従カメラへ移る）・holdSec = 全部出来た後に撮る秒・radial の buildSec = 輪が一番遠いマスへ届く秒・curve = 届く距離が時間の 1/curve 乗で増える（小さいほど、はじめはゆっくりで後ほど速い）・zoomLead = 輪がこの割合届いた所でカメラが引き終える・paceFrom・paceTo = 部品の動きの秒の倍率（出始めと終わり・土ぼこりの粒はその逆数の倍）・jitter = マスごとのずれ（秒）・zoomFrom・zoomTo = カメラの引き（足元からの距離の倍率）・spread = 横に並ぶ間（m）・部品の秒（rise・fall・squash・monumentFall・shake・shakeAmp・wallRise・roofDelay・roofFall・openingDelay・openingStep・pop・dust）と dustScale（土ぼこりの粒の倍率）は Buildup.Timing と同じ・impactDust = 記念碑の着地の土ぼこりの倍率・hitstopSec = 着地で止める秒・flash = 着地の瞬間に上げる露出（段）・waveSpeed・waveHeight = 衝撃が外へ伝わる速さと、木・街灯・町の人が跳ねる高さ・map = 地図の Doc（最終動画の写し）・radial の fromRow = 輪の届く範囲の北の端の行・shakeDecay = 揺れが減る速さ（/秒）・waveReach = 跳ねる高さが 1/e になる距離（m）",
   "path": [
     [
       13,
-      25,
+      54,
       0.0
     ],
     [
       13,
-      8,
+      33,
+      0.0
+    ],
+    [
+      15,
+      33,
+      0.0
+    ],
+    [
+      15,
+      28,
+      0.0
+    ],
+    [
+      13,
+      28,
+      0.0
+    ],
+    [
+      13,
+      2,
       0.0
     ]
   ],
@@ -36,7 +56,7 @@
   "idleFrameSec": 0.8,
   "idlePhaseSec": 0.27,
   "radial": {
-    "buildSec": 8.0,
+    "buildSec": 14.0,
     "curve": 0.65,
     "jitter": 0.15,
     "zoomFrom": 0.45,
@@ -48,7 +68,8 @@
     "aimNorth": 3.0,
     "walkPause": 1.0,
     "followSec": 1.5,
-    "walkZoom": 1.35
+    "walkZoom": 1.35,
+    "fromRow": 26
   },
   "rise": 0.22,
   "fall": 0.28,
@@ -69,7 +90,7 @@
   "flash": 4.5,
   "waveSpeed": 14.0,
   "waveHeight": 0.6,
-  "map": "assets/town_avenue_south.map.json",
+  "map": "assets/town_final.map.json",
   "shakeDecay": 4.5,
   "waveReach": 28.0
 }

@@ -15,6 +15,7 @@
   "hint": "Doc の外形（docs/doc-conventions.md）: version を持つ・note に「いじると何が変わるか」・<種類>.schema.json を置く・スキーマの各項目に label（Studio の欄の名前）か description。",
   "exempt": {
     "bench/hd2d_town/assets/town_avenue.map.json::schema": "hd2d_lab の地図の写し。形は hd2d_lab の blender_tilemap.py が持ち、試作の間はスキーマを足さない（試作を hd2d_lab へ移す時に map3d.schema.json と一緒に決める）",
-    "bench/hd2d_town/assets/town_avenue_south.map.json::schema": "hd2d_lab の地図の写し。形は hd2d_lab の blender_tilemap.py が持ち、試作の間はスキーマを足さない（試作を hd2d_lab へ移す時に map3d.schema.json と一緒に決める）"
+    "bench/hd2d_town/assets/town_avenue_south.map.json::schema": "hd2d_lab の地図の写し。形は hd2d_lab の blender_tilemap.py が持ち、試作の間はスキーマを足さない（試作を hd2d_lab へ移す時に map3d.schema.json と一緒に決める）",
+    "bench/hd2d_town/assets/town_final.map.json::schema": "hd2d_lab の地図の写し。形は hd2d_lab の blender_tilemap.py が持ち、試作の間はスキーマを足さない（試作を hd2d_lab へ移す時に map3d.schema.json と一緒に決める）"
   }
 }
