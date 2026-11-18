@@ -43,13 +43,11 @@ mod SoftRaster3d.PointShadows {
               p: Vec3.Vec3, g: Vec3.Vec3, n: Vec3.Vec3): Float64 = match entry {
         case None => 1.0
         case Some((light, faces)) =>
-            if (not Scene3d.PointShadows.isSampled(light, p, n)) 1.0
-            else Scene3d.PointShadows.sampleOf(atlas, light, p, g) |> Option.map(s -> {
-                let r = atlas#pcfRadius;
-                let side = 2 * r + 1;
-                let lit = SoftRaster3d.Internal.countLit(Vector.get(s#face, faces), atlas#tileSize, s#x - r, s#y - r, side, s#ref, 0, 0);
-                1.0 - light#strength * (1.0 - Int32.toFloat64(lit) / Int32.toFloat64(side * side))
-            }) |> Option.getWithDefault(1.0)
+            let (depthA, depthB) = Scene3d.PointShadows.depthTermsOf(light);
+            let position = light#position;
+            SoftRaster3dLight.pointShadowLitAt(faces, atlas#tileSize, atlas#pcfRadius, atlas#guardScale, atlas#bias, atlas#normalBias,
+                                               position#x, position#y, position#z, light#range, light#near, depthA, depthB, light#strength,
+                                               p#x, p#y, p#z, g#x, g#y, g#z, n#x, n#y, n#z)
     }
 
     /// lights に場面の点光源の影と光の量の読み方（Physical か・1 / max(unitsPerMeter², 1e−12)。GL の uniform と同じ値）を入れた物。

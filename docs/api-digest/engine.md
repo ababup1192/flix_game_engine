@@ -743,13 +743,20 @@
   `pub def packSpotLights(lights: List[Scene3d.SpotLight]): Vector[Float64]`
 
 ## LightModel3d.Codegen — `engine/src/scene3d/LightModel3d/Codegen.flix`
-- shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前。
-  `pub type alias CpuHooks = { shadowType = String, shadowFunction = String }`
+- shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前・
+  `pub type alias CpuHooks = { shadowType = String, shadowFunction = String, countLitFunction = String }`
 - `pub def generateFlix(hooks: CpuHooks): String`
 - `pub def generateFlixCases(hooks: CpuHooks): String`
 - `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 - 式 e を WGSL の関数 `fn name(…) -> vec3f` に生成した字（toGlsl と同じ木・同じ引数の並び）。場面の値は `r3d` の欄（Render3dWgsl の struct）で読み、
   `pub def toWgsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
+
+## LightModel3d.PointShadowCodegen — `engine/src/scene3d/LightModel3d/PointShadowCodegen.flix`
+- GLSL の float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n)（uniform は Render3dGlsl.pointShadowSource が宣言する）。
+  `pub def toGlsl(): String`
+- WGSL の fn r3d_pointShadowLit(i, p, g, n) -> f32（場面の値は r3d と r3dLight の欄。atlas の行は読む時だけ高さ − 1 − 行 に返す）。
+  `pub def toWgsl(): String`
+- `pub def toFlix(countLit: String): String`
 
 ## LoadProgress — `engine/src/platform/LoadProgress.flix`
 - 起動の読み込みの進み具合（区切りごとに 1 回）と、読み込みの仕事を回す口。
@@ -1597,18 +1604,12 @@
   `pub def faceViewOf(position: Vec3.Vec3, face: Int32): Mat4.Mat4`
 - 面の射影 = perspective(s, s, near, far)（s = guard。6 面で同じ）。
   `pub def faceProjectionOf(near: Float64, far: Float64, guard: Float64): Mat4.Mat4`
-- 光から点への向き d が写る面（|x| ≥ |y| かつ |x| ≥ |z| なら X・ほかに |y| ≥ |z| なら Y・ほかは Z。成分が 0 以上なら + の面）。
-  `pub def faceOf(d: Vec3.Vec3): Int32`
 - atlas の中の slot 番目の灯りの面 f の画素の原点 (x, y)（行 0 が ndc.y = −1 の側。GL の深度テクスチャと CPU の地図の数え方）。
   `pub def tileOriginOf(atlas: Atlas, slot: Int32, face: Int32): (Int32, Int32)`
 - 面の目の奥行きを地図の値（ndc.z = A − B / 奥行き）へ写す A と B（A = (far + near) / (far − near)・B = 2 far near / (far − near)）。
   `pub def depthTermsOf(light: ShadowedPointLight): (Float64, Float64)`
-- 受ける点 p（g = 形の法線・長さ 1）が引く面と、その面の中の真ん中の画素 (x, y)（0..tileSize − 1 に寄せた後）と、地図の値と比べる値 ref。
-  `pub def sampleOf(atlas: Atlas, light: ShadowedPointLight, p: Vec3.Vec3, g: Vec3.Vec3): Option[{ face = Int32, x = Int32, y = Int32, ref = Float64 }]`
 - 点光源 light の影の地図に描くビルボード（castShadows が真で shadowCasterScale の成分が両方正・板の外の円が光の range の球に掛かる物。来た順）と、
   `pub def castingBillboardsOf(scene: Scene3d.Scene3dCmd, light: ShadowedPointLight): List[(Scene3d.BillboardFields, Vec3.Vec3)]`
-- 受ける点 p（n = 光の計算の法線）で点光源 light の影の地図を引くか（光が届き、面が光へ向いている時だけ）。
-  `pub def isSampled(light: ShadowedPointLight, p: Vec3.Vec3, n: Vec3.Vec3): Bool`
 
 ## ShaderDoc — `engine/src/shader/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。

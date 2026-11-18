@@ -277,11 +277,10 @@ pub mod Render3dGlsl {
         "}\n"
 
     /// 点光源の影の uniform と、点光源 i の光に掛ける割合 r3d_pointShadowLit(i, p, g, n)・それを点光源の数だけ r3d_pointLit へ埋める r3d_pointShadowsAt(p, g, n)
-    /// （約束は Scene3d.PointShadows の atlasOf と sampleOf。CPU の描き手も同じ式）。g = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・n = 光の計算の法線。
+    /// （r3d_pointShadowLit は LightModel3d.PointShadowCodegen.toGlsl の生成物。CPU の描き手も同じ所から作る）。g = 点をずらす向きの法線（法線マップを当てる前・裏の面は裏返した物）・n = 光の計算の法線。
     /// uPointShadow[i] = (slot, A, B, strength)（slot が負なら影なし・near = B / (A + 1)）・uPointShadowAtlas = (面の一辺 S, 塊の横の数, 面の射影の倍率 s, pcf)・
     /// uPointShadowBias = (bias, normalBias)。frag の main が光の計算の前に r3d_pointShadowsAt を呼び、光の式の木は r3d_pointLit[i] を読む。
     // WhyNot: 光の式の木の中で地図を引かない — PBR の材質は拡散と鏡面の 2 つのループを回し、1 本につき 2 回引くことになる。
-    // WhyNot: 周りの画素を atlas の画素で端へ寄せない — 面の塊の外へ出ると隣の面の深度を読む。面の中（0..S − 1）で寄せてから原点を足す。
     def pointShadowSource(): String =
         let p = Scene3d.maxPointLights();
         "uniform vec4 uPointShadow[${p}];\n" +
@@ -289,61 +288,7 @@ pub mod Render3dGlsl {
         "uniform vec2 uPointShadowBias;\n" +
         "uniform sampler2D uPointShadowMap;\n" +
         "float r3d_pointLit[${p}];\n" +
-        "float r3d_pointShadowLit(int i, vec3 p, vec3 g, vec3 n) {\n" +
-        "    vec4 shadowed = uPointShadow[i];\n" +
-        "    if (shadowed.x < 0.0) return 1.0;\n" +
-        "    vec3 toLight = uPointPos[i] - p;\n" +
-        "    if (dot(toLight, toLight) >= uPointRange[i] * uPointRange[i] || dot(n, toLight) <= 0.0) return 1.0;\n" +
-        "    float tile = uPointShadowAtlas.x;\n" +
-        "    float scale = uPointShadowAtlas.z;\n" +
-        "    vec3 d0 = -toLight;\n" +
-        "    float major = max(abs(d0.x), max(abs(d0.y), abs(d0.z)));\n" +
-        "    vec3 d = d0 + g * (uPointShadowBias.y * 2.0 * major / (scale * tile));\n" +
-        "    vec3 a = abs(d);\n" +
-        "    int face;\n" +
-        "    float depth;\n" +
-        "    float rx;\n" +
-        "    float uy;\n" +
-        "    if (a.x >= a.y && a.x >= a.z) {\n" +
-        "        float sx = d.x >= 0.0 ? 1.0 : -1.0;\n" +
-        "        face = d.x >= 0.0 ? 0 : 1;\n" +
-        "        depth = sx * d.x;\n" +
-        "        rx = -sx * d.z;\n" +
-        "        uy = d.y;\n" +
-        "    } else if (a.y >= a.z) {\n" +
-        "        float sy = d.y >= 0.0 ? 1.0 : -1.0;\n" +
-        "        face = d.y >= 0.0 ? 2 : 3;\n" +
-        "        depth = sy * d.y;\n" +
-        "        rx = -sy * d.x;\n" +
-        "        uy = d.z;\n" +
-        "    } else {\n" +
-        "        float sz = d.z >= 0.0 ? 1.0 : -1.0;\n" +
-        "        face = d.z >= 0.0 ? 4 : 5;\n" +
-        "        depth = sz * d.z;\n" +
-        "        rx = sz * d.x;\n" +
-        "        uy = d.y;\n" +
-        "    }\n" +
-        "    float near = shadowed.z / (shadowed.y + 1.0);\n" +
-        "    if (depth <= near) return 1.0;\n" +
-        "    float ref = (shadowed.y - shadowed.z / max(depth - uPointShadowBias.x, near)) * 0.5 + 0.5;\n" +
-        "    int size = int(tile);\n" +
-        "    ivec2 last = ivec2(size - 1);\n" +
-        "    ivec2 center = clamp(ivec2(floor((vec2(scale * rx / depth, scale * uy / depth) * 0.5 + 0.5) * tile)), ivec2(0), last);\n" +
-        "    int slot = int(shadowed.x);\n" +
-        "    int columns = int(uPointShadowAtlas.y);\n" +
-        "    ivec2 origin = ivec2((slot % columns) * 3 * size + (face % 3) * size, (slot / columns) * 2 * size + (face / 3) * size);\n" +
-        "    int pcf = int(uPointShadowAtlas.w);\n" +
-        "    int lit = 0;\n" +
-        "    int total = 0;\n" +
-        "    for (int dy = -pcf; dy <= pcf; dy++) {\n" +
-        "        for (int dx = -pcf; dx <= pcf; dx++) {\n" +
-        "            ivec2 t = origin + clamp(center + ivec2(dx, dy), ivec2(0), last);\n" +
-        "            if (ref <= texelFetch(uPointShadowMap, t, 0).r) lit++;\n" +
-        "            total++;\n" +
-        "        }\n" +
-        "    }\n" +
-        "    return 1.0 - shadowed.w * (1.0 - float(lit) / float(total));\n" +
-        "}\n" +
+        LightModel3d.PointShadowCodegen.toGlsl() +
         "void r3d_pointShadowsAt(vec3 p, vec3 g, vec3 n) {\n" +
         "    for (int i = 0; i < ${p}; i++) r3d_pointLit[i] = r3d_pointShadowLit(i, p, g, n);\n" +
         "}\n"

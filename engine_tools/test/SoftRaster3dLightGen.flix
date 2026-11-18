@@ -21,7 +21,7 @@ pub mod SoftRaster3dLightGen {
     def casesPath(): String = "test/gen/SoftRaster3dLightCases.flix"
 
     /// 生成した関数が呼ぶ SoftRaster3d の名前。
-    pub def hooks(): LightModel3d.Codegen.CpuHooks = { shadowType = "SoftRaster3d.SpotShadow", shadowFunction = "SoftRaster3d.shadowFactorAt" }
+    pub def hooks(): LightModel3d.Codegen.CpuHooks = { shadowType = "SoftRaster3d.SpotShadow", shadowFunction = "SoftRaster3d.shadowFactorAt", countLitFunction = "SoftRaster3d.Internal.countLit" }
 
     /// 入っている gen/SoftRaster3dLight.flix の中身（無ければ None）。行の終わりは \n にそろえる。
     pub def readCurrent(): Option[String] \ IO = readFile(sourcePath())

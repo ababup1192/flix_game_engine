@@ -25,8 +25,8 @@ pub mod Scene3d.PointShadows {
     ///     （1 つ前と入れ替わる時は 1・次の候補と入れ替わる時は 0。影がぱっと出たり消えたりしない）。
     ///   atlas: 塊の横の数 = 本数が 1 なら 1・ほかは 2。width = 3 S × 横・height = 2 S × ceil(本数 / 横)（本数は設定の上限で決め、今のコマの本数で変えない）。
     ///     S = max(16, mapSize) を width・height が Scene3d.maxShadowMapSize() に収まるまで縮めた物。pcfRadius は 0..Scene3d.maxShadowPcfRadius() と S / 4 − 2 以下に縮める。
-    ///   面 f の画素の原点（行 0 が ndc.y = −1 の数え方）= tileOriginOf。面の行列と受ける点の写しは faceMatrixOf・sampleOf。
-    ///   受ける点の光の量に 1 − strength × (1 − 照らされる割合) を掛ける（拡散と鏡面）。|p − 位置|² ≥ range² か dot(n, 位置 − p) ≤ 0 の点は引かない（1）。
+    ///   面 f の画素の原点（行 0 が ndc.y = −1 の数え方）= tileOriginOf。面の行列は faceMatrixOf。
+    ///   受ける点の光の量に影の割合を掛ける（拡散と鏡面）。受ける点の写しと影の割合の式は LightModel3d.PointShadowCodegen（GL・WebGPU・CPU の関数をそこから作る）。
     pub def atlasOf(scene: Scene3d.Scene3dCmd): Option[Atlas] =
         let castsShadow = match scene#output {
             case Scene3d.Output.Color    => Scene3d.hasDrawnInstance(scene)
@@ -107,15 +107,6 @@ pub mod Scene3d.PointShadows {
     pub def faceProjectionOf(near: Float64, far: Float64, guard: Float64): Mat4.Mat4 =
         Mat4.perspective({ xScale = guard, yScale = guard, near = near, far = far })
 
-    /// 光から点への向き d が写る面（|x| ≥ |y| かつ |x| ≥ |z| なら X・ほかに |y| ≥ |z| なら Y・ほかは Z。成分が 0 以上なら + の面）。
-    pub def faceOf(d: Vec3.Vec3): Int32 =
-        let ax = Float64.abs(d#x);
-        let ay = Float64.abs(d#y);
-        let az = Float64.abs(d#z);
-        if (ax >= ay and ax >= az) (if (d#x >= 0.0) 0 else 1)
-        else if (ay >= az) (if (d#y >= 0.0) 2 else 3)
-        else if (d#z >= 0.0) 4 else 5
-
     /// atlas の中の slot 番目の灯りの面 f の画素の原点 (x, y)（行 0 が ndc.y = −1 の側。GL の深度テクスチャと CPU の地図の数え方）。
     /// WebGPU は viewport を (x, height − (y + tileSize)) に置き、読む画素の行を height − 1 − 行 で返す。
     pub def tileOriginOf(atlas: Atlas, slot: Int32, face: Int32): (Int32, Int32) =
@@ -129,33 +120,6 @@ pub mod Scene3d.PointShadows {
         let span = light#far - light#near;
         ((light#far + light#near) / span, 2.0 * light#far * light#near / span)
 
-    /// 受ける点 p（g = 形の法線・長さ 1）が引く面と、その面の中の真ん中の画素 (x, y)（0..tileSize − 1 に寄せた後）と、地図の値と比べる値 ref。
-    /// 1. d0 = p − 位置・major = max(|d0.x|, |d0.y|, |d0.z|)。q = p + g × normalBias × 2 major / (s × tileSize)・d = q − 位置。
-    /// 2. 面 = faceOf(d)・depth = d·F。depth ≤ near なら None（影にしない）。
-    /// 3. ndc = (s (d·R) / depth, s (d·U) / depth)・ref = (A − B / max(depth − bias, near)) × 0.5 + 0.5・画素 = clamp(floor((ndc × 0.5 + 0.5) × tileSize), 0, tileSize − 1)。
-    /// PCF は (x + dx, y + dy) を 0..tileSize − 1 に寄せてから面の原点を足し、ref ≤ 地図の値 の数を数える。
-    pub def sampleOf(atlas: Atlas, light: ShadowedPointLight, p: Vec3.Vec3, g: Vec3.Vec3): Option[{ face = Int32, x = Int32, y = Int32, ref = Float64 }] =
-        let s = atlas#guardScale;
-        let size = Int32.toFloat64(atlas#tileSize);
-        let d0 = Vec3.sub(p, light#position);
-        let major = Float64.max(Float64.abs(d0#x), Float64.max(Float64.abs(d0#y), Float64.abs(d0#z)));
-        let shift = atlas#normalBias * 2.0 * major / (s * size);
-        let d = Vec3.add(d0, Vec3.mul(g, shift));
-        let face = faceOf(d);
-        let b = basisOf(face);
-        let depth = Vec3.dot(d, b#forward);
-        if (not (depth > light#near)) None
-        else {
-            let (a, bb) = depthTermsOf(light);
-            let ndcX = s * Vec3.dot(d, b#right) / depth;
-            let ndcY = s * Vec3.dot(d, b#up) / depth;
-            let ref = (a - bb / Float64.max(depth - atlas#bias, light#near)) * 0.5 + 0.5;
-            let last = atlas#tileSize - 1;
-            let texel = (v: Float64) -> Float64.max(0.0, Float64.min(Int32.toFloat64(last), Float64.floor((v * 0.5 + 0.5) * size)))
-                |> Float64.tryToInt32 |> Option.getWithDefault(0);
-            Some({ face = face, x = texel(ndcX), y = texel(ndcY), ref = ref })
-        }
-
     /// 点光源 light の影の地図に描くビルボード（castShadows が真で shadowCasterScale の成分が両方正・板の外の円が光の range の球に掛かる物。来た順）と、
     /// その板の横の向き（板から光への向きで billboardShadowRightOf。光が板の真上ならカメラの right）。大きさは shadowCasterFieldsOf の物。
     /// 板は地面に垂直に立て、光の方へ向けて描く（太陽の影の板と同じ約束で、向きだけ灯りごと・板ごとに変わる）。面ごとの間引きは描き手が face の視錐台で行う。
@@ -166,9 +130,4 @@ pub mod Scene3d.PointShadows {
             let reach = light#range + Float64.abs(c#size#x) + Float64.abs(c#size#y);
             f#castShadows and f#shadowCasterScale#x > 0.0 and f#shadowCasterScale#y > 0.0 and Vec3.distanceSquared(f#position, light#position) < reach * reach
         }) |> List.map(f -> (Scene3d.shadowCasterFieldsOf(f), Scene3d.billboardShadowRightOf(Vec3.sub(light#position, f#position), fallback)))
-
-    /// 受ける点 p（n = 光の計算の法線）で点光源 light の影の地図を引くか（光が届き、面が光へ向いている時だけ）。
-    pub def isSampled(light: ShadowedPointLight, p: Vec3.Vec3, n: Vec3.Vec3): Bool =
-        let toLight = Vec3.sub(light#position, p);
-        Vec3.dot(toLight, toLight) < light#range * light#range and Vec3.dot(n, toLight) > 0.0
 }

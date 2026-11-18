@@ -133,69 +133,12 @@ pub mod Render3dWgsl {
         "    return 1.0 - r3d.uSunStrength * fade * (1.0 - shadowLitFraction(uSunMap, r3d.uSunMatrix, r3d.uSunBias, r3d.uSunPcf, r3d.uSunNormalShift, g, p));\n" +
         "}\n"
 
-    /// 点光源の影の割合 r3d_pointShadowLit と、それを点光源の数だけ r3d_pointLit へ埋める r3d_pointShadowsAt（Render3dGlsl.pointShadowSource と同じ式）。
+    /// 点光源の影の割合 r3d_pointShadowLit（LightModel3d.PointShadowCodegen.toWgsl の生成物）と、それを点光源の数だけ r3d_pointLit へ埋める r3d_pointShadowsAt。
     /// atlas の画素の数え方は GL と同じ（行 0 が ndc.y = −1）で、読む時だけ行を atlas の高さ − 1 − 行 に返す（WebGPU で描いた atlas は行 0 が上）。
-    // WhyNot: 周りの画素を返した後の行で面の塊へ寄せない — 面の中へ寄せるのを GL の行で済ませてから返せば、CPU の描き手と同じ画素の組を読む。
     def pointShadowSource(): String =
         let p = Scene3d.maxPointLights();
         "var<private> r3d_pointLit: array<f32, ${p}>;\n" +
-        "fn r3d_pointShadowLit(i: i32, p: vec3f, g: vec3f, n: vec3f) -> f32 {\n" +
-        "    let shadowed = r3dLight.uPointShadow[i];\n" +
-        "    if (shadowed.x < 0.0) { return 1.0; }\n" +
-        "    let toLight = r3d.uPointPos[i].xyz - p;\n" +
-        "    let reach = r3d.uPointRange[i].x;\n" +
-        "    if (dot(toLight, toLight) >= reach * reach || dot(n, toLight) <= 0.0) { return 1.0; }\n" +
-        "    let tile = r3dLight.uPointShadowAtlas.x;\n" +
-        "    let scale = r3dLight.uPointShadowAtlas.z;\n" +
-        "    let d0 = -toLight;\n" +
-        "    let major = max(abs(d0.x), max(abs(d0.y), abs(d0.z)));\n" +
-        "    let d = d0 + g * (r3dLight.uPointShadowBias.y * 2.0 * major / (scale * tile));\n" +
-        "    let a = abs(d);\n" +
-        "    var face = 0;\n" +
-        "    var along = 0.0;\n" +
-        "    var rx = 0.0;\n" +
-        "    var uy = 0.0;\n" +
-        "    if (a.x >= a.y && a.x >= a.z) {\n" +
-        "        let sx = select(-1.0, 1.0, d.x >= 0.0);\n" +
-        "        face = select(1, 0, d.x >= 0.0);\n" +
-        "        along = sx * d.x;\n" +
-        "        rx = -sx * d.z;\n" +
-        "        uy = d.y;\n" +
-        "    } else if (a.y >= a.z) {\n" +
-        "        let sy = select(-1.0, 1.0, d.y >= 0.0);\n" +
-        "        face = select(3, 2, d.y >= 0.0);\n" +
-        "        along = sy * d.y;\n" +
-        "        rx = -sy * d.x;\n" +
-        "        uy = d.z;\n" +
-        "    } else {\n" +
-        "        let sz = select(-1.0, 1.0, d.z >= 0.0);\n" +
-        "        face = select(5, 4, d.z >= 0.0);\n" +
-        "        along = sz * d.z;\n" +
-        "        rx = sz * d.x;\n" +
-        "        uy = d.y;\n" +
-        "    }\n" +
-        "    let near = shadowed.z / (shadowed.y + 1.0);\n" +
-        "    if (along <= near) { return 1.0; }\n" +
-        "    let refDepth = (shadowed.y - shadowed.z / max(along - r3dLight.uPointShadowBias.x, near)) * 0.5 + 0.5;\n" +
-        "    let size = i32(tile);\n" +
-        "    let last = vec2i(size - 1);\n" +
-        "    let center = clamp(vec2i(floor((vec2f(scale * rx / along, scale * uy / along) * 0.5 + 0.5) * tile)), vec2i(0), last);\n" +
-        "    let slot = i32(shadowed.x);\n" +
-        "    let columns = i32(r3dLight.uPointShadowAtlas.y);\n" +
-        "    let origin = vec2i((slot % columns) * 3 * size + (face % 3) * size, (slot / columns) * 2 * size + (face / 3) * size);\n" +
-        "    let pcf = i32(r3dLight.uPointShadowAtlas.w);\n" +
-        "    let top = i32(textureDimensions(uPointShadowMap, 0).y) - 1;\n" +
-        "    var lit = 0;\n" +
-        "    var total = 0;\n" +
-        "    for (var dy = -pcf; dy <= pcf; dy++) {\n" +
-        "        for (var dx = -pcf; dx <= pcf; dx++) {\n" +
-        "            let t = origin + clamp(center + vec2i(dx, dy), vec2i(0), last);\n" +
-        "            if (refDepth <= textureLoad(uPointShadowMap, vec2i(t.x, top - t.y), 0)) { lit++; }\n" +
-        "            total++;\n" +
-        "        }\n" +
-        "    }\n" +
-        "    return 1.0 - shadowed.w * (1.0 - f32(lit) / f32(total));\n" +
-        "}\n" +
+        LightModel3d.PointShadowCodegen.toWgsl() +
         "fn r3d_pointShadowsAt(p: vec3f, g: vec3f, n: vec3f) {\n" +
         "    for (var i = 0; i < ${p}; i++) { r3d_pointLit[i] = r3d_pointShadowLit(i, p, g, n); }\n" +
         "}\n"

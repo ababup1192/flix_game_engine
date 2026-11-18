@@ -1,7 +1,7 @@
 // SoftRaster3dLight — 生成した物（LightModel3d.Codegen.generateFlix）。手で直さない。直すのは LightModel3d の木で、
 // `make gen-light3d` で作り直す（入っている物と作り直した物が同じことは engine_tools の TestSoftRaster3dLight が確かめる）。
 
-/// 3D の光の式（LightModel3d の木）を CPU の描き手が画素ごとに回す関数（engine の中で使う。ゲームは使わない）。
+/// 3D の光の式（LightModel3d の木）と点光源の影を引く式（LightModel3d.PointShadowCodegen）を CPU の描き手が画素ごとに回す関数（engine の中で使う。ゲームは使わない）。
 /// 光の並びは LightModel3d.packPointLights・packSpotLights の形。shadow = 影を落とすスポット（SoftRaster3d.SpotShadow）。
 pub mod SoftRaster3dLight {
 
@@ -305,5 +305,42 @@ pub mod SoftRaster3dLight {
                 (0.0, 0.0, 0.0)
             };
             pbrAtSpots(lights, i + 12, shadow, pX, pY, pZ, nX, nY, nZ, physicalUnits, inverseUnitsPerMeterSquared, alphaSq_3, alpha_2, dScale_11, fZero_4X, fZero_4Y, fZero_4Z, v_8X, v_8Y, v_8Z, viewTerm_10, (accX + t_l22X), (accY + t_l22Y), (accZ + t_l22Z))
+        }
+
+    /// 点光源 1 本の影の割合（LightModel3d.PointShadowCodegen の式。光が届かない・面が背を向けた・near より手前の点は 1）。
+    pub def pointShadowLitAt(faces: Vector[Vector[Float64]], tileSize: Int32, pcf: Int32, scale: Float64, bias: Float64, normalBias: Float64, lightX: Float64, lightY: Float64, lightZ: Float64, reach: Float64, near: Float64, depthA: Float64, depthB: Float64, strength: Float64, pX: Float64, pY: Float64, pZ: Float64, gX: Float64, gY: Float64, gZ: Float64, nX: Float64, nY: Float64, nZ: Float64): Float64 =
+        let toLightX = lightX - pX;
+        let toLightY = lightY - pY;
+        let toLightZ = lightZ - pZ;
+        if (not (toLightX * toLightX + toLightY * toLightY + toLightZ * toLightZ < reach * reach and nX * toLightX + nY * toLightY + nZ * toLightZ > 0.0)) 1.0
+        else {
+            let tile = Int32.toFloat64(tileSize);
+            let d0X = -toLightX;
+            let d0Y = -toLightY;
+            let d0Z = -toLightZ;
+            let major = Float64.max(Float64.abs(d0X), Float64.max(Float64.abs(d0Y), Float64.abs(d0Z)));
+            let dX = d0X + gX * (normalBias * 2.0 * major / (scale * tile));
+            let dY = d0Y + gY * (normalBias * 2.0 * major / (scale * tile));
+            let dZ = d0Z + gZ * (normalBias * 2.0 * major / (scale * tile));
+            let aX = Float64.abs(dX);
+            let aY = Float64.abs(dY);
+            let aZ = Float64.abs(dZ);
+            let sx = if (dX >= 0.0) 1.0 else -1.0;
+            let sy = if (dY >= 0.0) 1.0 else -1.0;
+            let sz = if (dZ >= 0.0) 1.0 else -1.0;
+            let onX = aX >= aY and aX >= aZ;
+            let onY = aY >= aZ;
+            let face = if (onX) (if (dX >= 0.0) 0 else 1) else if (onY) (if (dY >= 0.0) 2 else 3) else (if (dZ >= 0.0) 4 else 5);
+            let along = if (onX) sx * dX else if (onY) sy * dY else sz * dZ;
+            let rx = if (onX) -sx * dZ else if (onY) -sy * dX else sz * dX;
+            let uy = if (onX) dY else if (onY) dZ else dY;
+            if (not (along > near)) 1.0
+            else {
+                let refDepth = (depthA - depthB / Float64.max(along - bias, near)) * 0.5 + 0.5;
+                let last = tileSize - 1;
+                let side = 2 * pcf + 1;
+                let lit = SoftRaster3d.Internal.countLit(Vector.get(face, faces), tileSize, Int32.max(0, Int32.min(last, Float64.truncateToInt32(Float64.floor((scale * rx / along * 0.5 + 0.5) * tile)))) - pcf, Int32.max(0, Int32.min(last, Float64.truncateToInt32(Float64.floor((scale * uy / along * 0.5 + 0.5) * tile)))) - pcf, side, refDepth, 0, 0);
+                1.0 - strength * (1.0 - Int32.toFloat64(lit) / Int32.toFloat64(side * side))
+            }
         }
 }

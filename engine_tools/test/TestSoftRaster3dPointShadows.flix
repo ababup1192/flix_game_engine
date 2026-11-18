@@ -88,4 +88,64 @@ mod SoftRaster3d.TestSoftRaster3dPointShadows {
         let a = SoftRaster3d.lightAt(SoftRaster3d.lightProbe(env, light :: Nil, Nil), p, n);
         let b = SoftRaster3d.lightAt({ unitsPerMeter = 16.0 | SoftRaster3d.lightProbe(env, light :: Nil, Nil) }, p, n);
         Assert.assertEq(expected = (a#r, a#g, a#b), (b#r, b#g, b#b))
+
+    // ════════════════════════════════════════════════════════════════════
+    // 受ける点の写し（生成した SoftRaster3dLight.pointShadowLitAt）
+    // ════════════════════════════════════════════════════════════════════
+
+    def shadowedLight(m: Scene3d.PointShadowMap): (Scene3d.PointShadows.Atlas, Scene3d.PointShadows.ShadowedPointLight) =
+        let found = Scene3d.PointShadows.atlasOf(sceneOf(true) |> Scene3d.withPointShadows(m))
+            |> Option.flatMap(a -> List.head(a#lights) |> Option.map(light -> (a, light)));
+        match found {
+            case Some(pair) => pair
+            case None       => bug!("影を落とす灯りが無い")
+        }
+
+    /// bias 0・normalBias 0・pcf 0・strength 1 の影の割合（n = 受ける点から光への向き・g は上）。
+    def litOf(a: Scene3d.PointShadows.Atlas, light: Scene3d.PointShadows.ShadowedPointLight, faces: Vector[Vector[Float64]], p: Vec3.Vec3): Float64 =
+        let (depthA, depthB) = Scene3d.PointShadows.depthTermsOf(light);
+        let q = light#position;
+        let n = Vec3.sub(q, p);
+        SoftRaster3dLight.pointShadowLitAt(faces, a#tileSize, 0, a#guardScale, 0.0, 0.0, q#x, q#y, q#z, light#range, light#near, depthA, depthB, 1.0,
+                                           p#x, p#y, p#z, 0.0, 1.0, 0.0, n#x, n#y, n#z)
+
+    /// 面の行列で写した NDC が一番真ん中に来る面と、その NDC。
+    def facingNdcOf(light: Scene3d.PointShadows.ShadowedPointLight, p: Vec3.Vec3): Option[(Int32, Vec3.Vec3)] =
+        List.range(0, 6)
+            |> List.filterMap(f -> Mat4.applyPerspective(Vector.get(f, light#faces), p)
+                                       |> Option.map(ndc -> (Float64.max(Float64.abs(ndc#x), Float64.abs(ndc#y)), (f, ndc))))
+            |> Sort.sortStableBy(fst) |> List.head |> Option.map(snd)
+
+    def texelOf(size: Int32, v: Float64): Int32 = Float64.truncateToInt32(Float64.floor((v * 0.5 + 0.5) * Int32.toFloat64(size)))
+
+    /// 面の行列の NDC の画素と奥行きの値で地図を 1 画素だけ書き、その値が比べる値の少し下なら影（0）・少し上なら光（1）。
+    @Test
+    def testReadsTheTexelAndDepthOfTheFaceMatrix(): Unit \ Assert =
+        let (a, light) = shadowedLight(shadowMap());
+        let size = a#tileSize;
+        let offsets = Vec3.v3(1.3, -2.0, 0.4) :: Vec3.v3(-0.5, 1.5, 0.2) :: Vec3.v3(0.3, -1.0, -2.2) :: Vec3.v3(-2.0, -1.1, 0.9) :: Nil;
+        let ok = offsets |> List.forAll(o -> {
+            let p = Vec3.add(light#position, o);
+            facingNdcOf(light, p) |> Option.map(entry -> {
+                let (face, ndc) = entry;
+                let at = texelOf(size, ndc#y) * size + texelOf(size, ndc#x);
+                let depth = ndc#z * 0.5 + 0.5;
+                let mapsWith = (v: Float64) -> Vector.range(0, 6) |> Vector.map(f -> Vector.range(0, size * size) |> Vector.map(k -> if (f == face and k == at) v else 1.0));
+                litOf(a, light, mapsWith(depth - 1.0e-7), p) == 0.0 and litOf(a, light, mapsWith(depth + 1.0e-7), p) == 1.0
+            }) |> Option.getWithDefault(false)
+        });
+        Assert.assertTrue(ok)
+
+    /// guard band: 面の端（|d·R| = 奥行き）の点も、地図の外周 pcfRadius + 1 画素の内側の画素を読む。
+    @Test
+    def testGuardBandKeepsTheFaceEdgeInsideThePcfRing(): Unit \ Assert =
+        let (a, light) = shadowedLight({ pcfRadius = 2, normalBias = 0.0 | shadowMap() });
+        let size = a#tileSize;
+        let inside = (k: Int32) -> {
+            let x = Int32.remainder(k, size);
+            let y = k / size;
+            x >= 3 and x <= size - 4 and y >= 3 and y <= size - 4
+        };
+        let ring = Vector.range(0, size * size) |> Vector.map(k -> if (inside(k)) 1.0 else 0.0);
+        Assert.assertEq(expected = 1.0, litOf(a, light, Vector.repeat(6, ring), Vec3.add(light#position, Vec3.v3(1.0, 0.999999, 0.999999))))
 }
