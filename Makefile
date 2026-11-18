@@ -557,17 +557,20 @@ GL_CAPTURE_MACHINE ?= $(shell sysctl -n machdep.cpu.brand_string 2>/dev/null | t
 GL_CAPTURE_BASELINE_GL ?= bench/baseline/0.96.0/gl-capture-$(GL_CAPTURE_MACHINE).sha256
 GL_CAPTURE_BASELINE_WEBGPU ?= bench/baseline/0.99.0/gl-capture-webgpu-jwebgpu$(GL_JAR_JWEBGPU)-$(GL_CAPTURE_MACHINE).sha256
 GL_CAPTURE_BASELINE_FILE ?= $(if $(filter gl,$(GL_CAPTURE_BACKEND)),$(GL_CAPTURE_BASELINE_GL),$(GL_CAPTURE_BASELINE_WEBGPU))
-gl-capture-check: ### [BACKEND=gl] [BASE=off] [SKIP=<フォルダ名>] | 同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる（違えば exit 1）
+# SCENES は撮った物のフォルダ名（rpg-starter__title）か、テンプレートのフォルダ名（rpg-starter = その場面全部）を , で並べる。
+GL_CAPTURE_ONLY = $(foreach n,$(subst $(comma), ,$(SCENES)),--only $(n))
+gl-capture-check: ### [BACKEND=gl] [BASE=off] [SKIP=<フォルダ名>] [SCENES=<名前>,…] | 同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる（違えば exit 1）
 	@rm -rf build/gl-capture/a build/gl-capture/b
-	@bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) build/gl-capture/a && bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) build/gl-capture/b && \
-		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b $(if $(SKIP),--skip $(SKIP))
+	@bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) $(GL_CAPTURE_ONLY) build/gl-capture/a && bin/gl-capture.sh --backend $(GL_CAPTURE_BACKEND) $(GL_CAPTURE_ONLY) build/gl-capture/b && \
+		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b $(if $(SKIP),--skip $(SKIP)) $(GL_CAPTURE_ONLY)
 	@if [ "$(BASE)" = off ]; then :; \
-	elif [ -f "$(GL_CAPTURE_BASELINE_FILE)" ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE_FILE) build/gl-capture/a $(if $(SKIP),--skip $(SKIP)); \
+	elif [ -f "$(GL_CAPTURE_BASELINE_FILE)" ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE_FILE) build/gl-capture/a $(if $(SKIP),--skip $(SKIP)) $(GL_CAPTURE_ONLY); \
 	else echo "[gl-capture] この機械 ($(GL_CAPTURE_MACHINE)) の $(GL_CAPTURE_BACKEND) の基準 ($(GL_CAPTURE_BASELINE_FILE)) が無いので、2 回撮りの一致だけを見た（撮るなら make gl-capture-baseline）"; fi
 
 # この機械の基準を今の絵で撮る（撮った絵は 2 回撮りで一致した物だけ）。WebGPU の基準の頭には、撮った時の adapter の行（Dawn の名乗り）を # で残す。
 .PHONY: gl-capture-baseline
 gl-capture-baseline: ### [BACKEND=gl] | この機械の gl-capture の基準を今の絵で撮る（WebGPU は bench/baseline/<版>/gl-capture-webgpu-jwebgpu<版>-<機械>.sha256）
+	@if [ -n "$(SCENES)" ]; then echo "[gl-capture] 基準は全部の場面で撮る（SCENES= を外す）"; exit 2; fi
 	@$(MAKE) --no-print-directory gl-capture-check BASE=off
 	@mkdir -p $(dir $(GL_CAPTURE_BASELINE_FILE))
 	@{ grep -ah '^\[backend\] webgpu:' build/gl-capture/a/*/run.log 2>/dev/null | head -1 | sed 's/^/# /'; cat build/gl-capture/a/SHA256SUMS; } > $(GL_CAPTURE_BASELINE_FILE)
@@ -604,8 +607,8 @@ go-build: ## | go/ を bin/fge-go と、配る先ごとの 5 種にビルドす�
 # WhyNot: = で置く（:= にしない）のは、go env を呼ぶのをこの口を使う時だけにするため。
 GO_HOST = $(shell cd go && go env GOOS)/$(shell cd go && go env GOARCH)
 .PHONY: go-test
-go-test: ### | go/ のテスト（CIEDE2000 の参照 34 組・外部依存ゼロの検査を含む）
-	@cd go && CGO_ENABLED=0 go test ./...
+go-test: ### [PKG=<名前>,…] | go/ のテスト（PKG は go/internal/<名前>。既定は全部）
+	@cd go && CGO_ENABLED=0 go test $(if $(PKG),$(foreach n,$(subst $(comma), ,$(PKG)),./internal/$(n)/...),./...)
 
 # arm64 の Mac で x86-64 の結果を確かめる（Rosetta）。arm64 は a*b+c を FMA にまとめることがあり、
 # 包み忘れると境目の画素だけが Mac と Windows でずれる（px の積は float64(…) か dot で包む）。

@@ -7,6 +7,8 @@
 #   bin/gl-capture.sh --backend gl|webgpu <出力のフォルダ> [...]       描き手を選んで撮る（gl は FLIX_GE_BACKEND=gl の GL の backend）
 #   bin/gl-capture.sh --compare <A> <B> [--skip <フォルダ名> ...]       2 回の SHA を比べる（フォルダか SHA の一覧のファイル。違えば exit 1）
 #                                                                      --skip は撮った物のフォルダ名（例 scene3d・rpg-starter__title）と完全に一致する場面を比べない
+#   --only <名前>（撮る時は出力のフォルダの前・比べる時は --skip と同じ所。何度でも）  撮る場面と比べる行をその名前だけにする。名前は撮った物の
+#                                                                      フォルダ名（rpg-starter__title）か、その __ の前（rpg-starter = その場面全部）
 #
 # 組む口: FLIX_GE_HIDDEN（framebuffer を design の大きさに固定）・FLIX_GE_FRAME_SHOT（swap の直前の絵を frame-N.png へ）・
 # FLIX_GE_FIXED_DT（dt を固定。2 コマ目以降もバイトで比べられる）・FLIX_GE_MUTE・START（App.withStarts の場面から起動）。
@@ -48,12 +50,26 @@ default_scenes=(
 
 # 比べる相手はフォルダ（中の SHA256SUMS）か SHA の一覧のファイル（bench/baseline/<版>/gl-capture.sha256）。# の行と、
 # skipped（空白で区切ったフォルダ名。撮る時に START の空白は _ にしてある）に入る場面の行は読まない。
+# only（空白で区切った名前）が空でなければ、その名前のフォルダ（か __ の前がその名前のフォルダ）の行だけを読む。
+# WhyNot: 基準のファイルの側も絞る — 基準は全部の場面を持つので、撮った場面だけと比べると必ず食い違う。
 skipped=""
+only=""
 sums_of() {
 	local src
 	if [ -d "$1" ]; then src="$1/SHA256SUMS"; else src="$1"; fi
-	grep -v '^#' "$src" | awk -v skip="$skipped" 'BEGIN { n = split(skip, s, " "); for (i = 1; i <= n; i++) if (s[i] != "") drop[s[i]] = 1 }
-		{ dir = $2; sub(/\/.*$/, "", dir); if (!(dir in drop)) print }'
+	grep -v '^#' "$src" | awk -v skip="$skipped" -v only="$only" 'BEGIN { n = split(skip, s, " "); for (i = 1; i <= n; i++) if (s[i] != "") drop[s[i]] = 1
+			m = split(only, o, " "); for (i = 1; i <= m; i++) if (o[i] != "") keep[o[i]] = 1 }
+		{ dir = $2; sub(/\/.*$/, "", dir); head = dir; sub(/__.*$/, "", head)
+		  if (!(dir in drop) && (m == 0 || (dir in keep) || (head in keep))) print }'
+}
+# 撮った物のフォルダ名 $1 が only に入るか。
+selected() {
+	[ -z "$only" ] && return 0
+	local o
+	for o in $only; do
+		[ "$1" = "$o" ] || [ "${1%%__*}" = "$o" ] && return 0
+	done
+	return 1
 }
 
 if [ "${1:-}" = "--compare" ]; then
@@ -62,9 +78,11 @@ if [ "${1:-}" = "--compare" ]; then
 	shift 3
 	while [ $# -gt 0 ]; do
 		if [ "$1" = --skip ] && [ $# -ge 2 ]; then skipped="$skipped$2 "; shift 2
-		else echo "usage: $0 --compare <A> <B> [--skip <フォルダ名> ...]" >&2; exit 2; fi
+		elif [ "$1" = --only ] && [ $# -ge 2 ]; then only="$only$2 "; shift 2
+		else echo "usage: $0 --compare <A> <B> [--skip <フォルダ名> ...] [--only <名前> ...]" >&2; exit 2; fi
 	done
 	[ -z "$skipped" ] || echo "[gl-capture] 比べない場面: $skipped"
+	[ -z "$only" ] || echo "[gl-capture] 比べる場面だけ: $only"
 	set -- --compare "$a" "$b"
 	if diff -u <(sums_of "$2") <(sums_of "$3"); then
 		echo "[gl-capture] 一致: $(sums_of "$2" | wc -l | tr -d ' ') 枚がバイトまで同じ"
@@ -80,6 +98,7 @@ if [ "${1:-}" = "--backend" ]; then
 	backend=$2
 	shift 2
 fi
+while [ "${1:-}" = "--only" ] && [ $# -ge 2 ]; do only="$only$2 "; shift 2; done
 
 if [ $# -lt 1 ]; then
 	echo "usage: $0 [--backend gl|webgpu] <出力のフォルダ> [<フォルダ>:<START> ...] | --compare <A> <B>" >&2
@@ -96,7 +115,13 @@ frames=${FRAMES:-6}
 if [ "$frames" -lt 1 ] || [ "$frames" -gt 63 ]; then echo "error: FRAMES は 1〜63（撮る口の上限が 64 枚）: $frames" >&2; exit 2; fi
 dt=${DT:-1/60}
 wait_seconds=${WAIT_SECONDS:-180}
-if [ $# -gt 0 ]; then scenes=("$@"); else scenes=("${default_scenes[@]}"); fi
+if [ $# -gt 0 ]; then all_scenes=("$@"); else all_scenes=("${default_scenes[@]}"); fi
+scenes=()
+for scene in "${all_scenes[@]}"; do
+	start=${scene#*:}
+	if selected "$(basename "${scene%%:*}")${start:+__${start// /_}}"; then scenes+=("$scene"); fi
+done
+if [ ${#scenes[@]} -eq 0 ]; then echo "[gl-capture] --only $only に当たる場面がありません（名前は rpg-starter か rpg-starter__title の形）" >&2; exit 2; fi
 
 # 絵・時間・起動の道を変えうる環境変数。撮る時は外して、誰が撮っても同じ条件にする。
 reset_env=(FLIX_GE_SPLASH_SHOT FLIX_GE_FRAME_STATS FLIX_GE_NO_SPLASH FLIX_GE_GLYPHS FLIX_GE_NO_FONT_CACHE
