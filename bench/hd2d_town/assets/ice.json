@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "氷の谷の見た目（段 F6）: hd2d_lab の ice_cave.map.json の lighting を写した物。太陽 4.5 W・露出 0.45（AgX）・ブルーム 0.45 を、町の昼と同じ比で直した。池と崖のつや・空の映り込み・結晶の点光源・雪は地図の欄から StageFx が作る",
+  "note": "氷の谷の見た目（段 F6）: hd2d_lab の ice_cave.map.json の lighting を写した物。太陽 4.5 W・露出 0.45（AgX）・ブルーム 0.45 を、町の昼と同じ比で直した。池と崖のつや・空の映り込み・結晶の点光源・雪は地図の欄から StageFx が作る。CPU の描き出しで手本と並べて寄せた値: 結晶の点光源 0.4 倍・露出 −0.8・ブルーム 0（CPU の描き出しでブルームを掛けると画面に場面の写しのまだらが出る）",
   "topDeg": 15.0,
   "bottomDeg": 50.0,
   "far": 60.0,
@@ -29,8 +29,8 @@
     0.89,
     0.99
   ],
-  "exposure": -0.55,
-  "bloomStrength": 0.45,
+  "exposure": -0.8,
+  "bloomStrength": 0.0,
   "fStop": 0.08,
   "saturation": 1.05,
   "vignette": 0.35,
@@ -62,5 +62,6 @@
     0.94,
     0.97,
     1.0
-  ]
+  ],
+  "stageLightScale": 0.4
 }

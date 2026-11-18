@@ -83,7 +83,7 @@
       1.0
     ],
     "emit": 1.2,
-    "size": 0.06,
+    "size": 0.12,
     "vel": [
       0.25,
       0.0,
@@ -276,6 +276,6 @@
     "holdSec": 3.0,
     "camZLagK": 2.5,
     "followZoom": 1.35,
-    "benchNote": "bench/hd2d_town の写しで足した欄: idleStrip = 止まった後の息遣いの帯（町の buildup_center.json の party と同じ）・followZoom = 追従カメラの引き（足元からの距離の倍率。町の歩く追従の 1.35 とそろえ、白飛びの前後でキャラの大きさを跳ねさせない）・feetV = 町の歩く台本（buildup_center.json）の 0.62 にそろえた（hd2d_lab の写しは 0.55。キャラの写る奥行きが変わり大きさが 1 割ずれる）"
+    "benchNote": "bench/hd2d_town の写しで足した欄: idleStrip = 止まった後の息遣いの帯（町の buildup_center.json の party と同じ）・followZoom = 追従カメラの引き（足元からの距離の倍率。町の歩く追従の 1.35 とそろえ、白飛びの前後でキャラの大きさを跳ねさせない）・feetV = 町の歩く台本（buildup_center.json）の 0.62 にそろえた（hd2d_lab の写しは 0.55。キャラの写る奥行きが変わり大きさが 1 割ずれる）・particles.size = 0.06 → 0.12（Blender の試作は粒が奥行きのぼかしでにじんで大きく見える。engine の 1280 × 720 では 0.06 m が 1〜2 画素で雪に読めない）"
   }
 }
