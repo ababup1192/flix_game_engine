@@ -83,11 +83,15 @@ mod TownGpu {
         let charShadow = envOr("CHAR_SHADOW", "");
         let mapSize = Int32.fromString(envOr("SHADOW_MAP", "0")) |> Option.getWithDefault(0);
         let pcf = Int32.fromString(envOr("SHADOW_PCF", "-1")) |> Option.getWithDefault(-1);
+        let pointShadows = Int32.fromString(envOr("POINT_SHADOWS", "-1")) |> Option.getWithDefault(-1);
         let look1 = { billboardTextures = TownScene.BillboardTextures.ProjectTextures, extraLamps = if (extra >= 0) extra else look#extraLamps,
                       groundFog = if (fog == "0") 0.0 else look#groundFog,
                       charShadow = if (charShadow == "") look#charShadow else TownLook.charShadowOf(charShadow),
                       shadowMapSize = if (mapSize > 0) mapSize else look#shadowMapSize, shadowPcf = if (pcf >= 0) pcf else look#shadowPcf,
-                      fogFar = if (fog == "0") 400.0 else look#fogFar, fogNear = if (fog == "0") 300.0 else look#fogNear | look };
+                      fogFar = if (fog == "0") 400.0 else look#fogFar, fogNear = if (fog == "0") 300.0 else look#fogNear,
+                      pointShadows = if (pointShadows < 0) look#pointShadows
+                                     else if (pointShadows == 0) None
+                                     else Some({ maxShadowedLights = pointShadows | look#pointShadows |> Option.getWithDefault(Scene3d.pointShadowMap()) }) | look };
         if (mode == "walk") goWalk(look1, first) else
         match BuildVideo.setup(look1) {
             case Err(why) =>
@@ -97,7 +101,8 @@ mod TownGpu {
                 let st = { show = { dustTexture = "dust" | st0#show } | st0 };
                 let knobs = ("bench", BenchRun.quoted("hd2d_town")) :: ("post", if (post) "1" else "0") :: ("shadow", if (shadow) "1" else "0") ::
                             ("look", BenchRun.quoted(Video.lookPath())) :: ("lights", Int32.toString(List.length(TownScene.lampLights(st#res)))) ::
-                            ("ground_fog", Float64.toString(look1#groundFog)) :: Nil;
+                            ("ground_fog", Float64.toString(look1#groundFog)) ::
+                            ("point_shadows", Int32.toString(look1#pointShadows |> Option.map(m -> m#maxShadowedLights) |> Option.getWithDefault(0))) :: Nil;
                 println("[hd2d_town] GPU ${mode}: コマ ${Int32.toString(st#track#frames)}・後がけ ${if (post) "あり" else "なし"}・太陽の影 ${if (shadow) "あり" else "なし"}");
                 let app0 = App.make({ frame = first, scene = None, focus = 10.0, grouping = BuildVideo.startGrouping(st), progress = BenchRun.start(), finished = false })
                     |> App.addSystem(step(st, bench, first, knobs))

@@ -164,3 +164,12 @@ engine の plans/engine-hd2d.md §3.3.13 の数に寄せた夜（`town_night*.js
 Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variants.nightlamps）で 6 本足して 12 本。bench の写し `assets/town_avenue.map.json` は、その 6 本（列・行 = 11・13 / 15・13 / 10・21 / 16・21 / 11・4 / 15・4）を objects に入れて、昼も夜も 12 本にした。
 南へ広げた写しは、北の 10 本（行 21 の 2 本は南の大通りの街灯に代える）＋ 南の大通り 3 マスおき 8 本 ＋ 手前の広場 2 本 = 20 本。点光源は柱 1 本に 1 つで、engine が画面に入る物から 8 本を選ぶ。
 
+## Physical の光と点光源の影（engine の枝を取り込んだ後）
+
+- 昼のキャラの影: `charShadowScale` [0.6, 0.8]（`Scene3d.withShadowCasterScale`・見えている板は同じ）。前後は `debug/day_char_shadow_scale.png`。
+- 夜: `lightUnits` "physical"・`pointShadows` { count 4 }（engine の既定 512・pcf 1）・街灯の強さ 260（前の 22 × π × 3.8）・色 (1, 0.58, 0.25)・霧の灯りのにじみ 0.02（Physical で強さが 10 倍なので）・火袋 16・ハロー 6。
+  前・後・Blender は `debug/night4_physical_vs_blender.png`。
+- 光る板の地の色は黒にして光らせるだけにした（点光源の 0.7 m 先で、逆二乗の光が地の色を白く飛ばし、火袋の黄色が消えた）。
+- 地図の walk の隊列の板（`memberBoard`）にも夜の板の明るさ（`lampLit`）を通した。通していないと、奥の街灯の光が板の裏から当たって 3 人目が 0.3 秒ほど影絵になった。
+- GPU の重さを測る時の影を落とす灯りの数は `POINT_SHADOWS=n`（0 = 影なし）。
+
