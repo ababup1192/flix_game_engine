@@ -173,3 +173,8 @@ Blender の夜は地図の差分（hd2d_lab の town_avenue.map.json の variant
 - 地図の walk の隊列の板（`memberBoard`）にも夜の板の明るさ（`lampLit`）を通した。通していないと、奥の街灯の光が板の裏から当たって 3 人目が 0.3 秒ほど影絵になった。
 - GPU の重さを測る時の影を落とす灯りの数は `POINT_SHADOWS=n`（0 = 影なし）。
 
+## engine に相談する事
+
+- CPU の描き出し（HeadlessRender・SoftRaster）で、後がけのブルームの強さを 0 より大きくすると、画面の左上に場面の縮んだ写しのようなまだらが出る（GPU の GL では出ない）。
+  炎（`assets/fire.json`）と氷（`assets/ice.json`）は、CPU と GPU の絵をそろえるためにブルーム 0 にしてある。engine の描き出し側の話なので、ここでは追わない。
+

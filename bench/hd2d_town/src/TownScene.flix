@@ -543,7 +543,7 @@ mod TownScene {
         case Some(h) =>
             let scene = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = ShaderDoc.Field.Tex({ name = PostStack.sceneName(), chan = ch }) });
             // WhyNot: 型紙のぼかしを小さくしない — 1 マスの火の結晶や橙に照らされたキャラも熱い所に数えられ、そばのキャラの顔が揺れる。広い溶岩だけがぼかしの後も熱く残る。
-            let blurred = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.TexBlur({ name = PostStack.sceneName(), chan = ch, radius = { x = 0.045, y = 0.08 }, taps = 9, amount = ShaderDoc.Field.Const(1.0) });
+            let blurred = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.TexBlur({ name = PostStack.sceneName(), chan = ch, radius = { x = 0.07, y = 0.12 }, taps = 9, amount = ShaderDoc.Field.Const(1.0) });
             let bin = (op: ShaderDoc.BinOp, a: ShaderDoc.Field, b: ShaderDoc.Field) -> ShaderDoc.Field.Bin({ op = op, a = a, b = b });
             let hot = bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Smoothstep({ lo = 0.45, hi = 0.85, of = blurred(ShaderDoc.TexChan.R) }),
                           ShaderDoc.Field.Smoothstep({ lo = 0.2, hi = 0.45, of = bin(ShaderDoc.BinOp.Sub, blurred(ShaderDoc.TexChan.R), blurred(ShaderDoc.TexChan.B)) }));
