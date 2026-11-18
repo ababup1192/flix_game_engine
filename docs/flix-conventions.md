@@ -19,9 +19,9 @@
 
 ## 予約語を識別子に使わない
 
-**全量は `bin/lint-rules/flix-reserved.json` が source of truth**（0.75.1 で実測した 43 語）。
+**全量は `bin/lint-rules/flix-reserved.json` が source of truth**（0.80.0 で Lexer の予約語と突き合わせて実測した 72 語）。
 よく踏むのは `from` / `into` / `run` / `spawn` / `region` / `project` / `solve` / `inject` /
-`handler` / `query` / `select` / `where` / `force` / `discard`。
+`handler` / `query` / `select` / `choose` / `where` / `force` / `discard` / `type` / `mod` / `instance`。
 
 変数・関数名だけでなく**レコードのフィールド名**でも落ちる（`{ spawn = ... }` は不可）。
 エラーは `Expected ',' before '='` のような間接的なパースエラーで出るので、原因に見えない。
