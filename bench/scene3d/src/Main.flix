@@ -50,7 +50,7 @@ mod SceneBench {
                 let shadowed = cfg#shadows |> Option.map(m -> m#maxShadowedLights) |> Option.getWithDefault(0);
                 let size = cfg#shadows |> Option.map(m -> m#mapSize) |> Option.getWithDefault(0);
                 List.append(head, ("scene", BenchRun.quoted("lamps")) :: ("lamps", Int32.toString(cfg#lamps)) :: ("shadows", Int32.toString(shadowed)) ::
-                                  ("mapSize", Int32.toString(size)) :: Nil)
+                                  ("mapSize", Int32.toString(size)) :: ("crowd", Int32.toString(cfg#crowd)) :: Nil)
         }
 
     pub def step(plan: BenchRun.Plan, emit: String -> Unit \ IO, scene: Scene, frame: App.Frame, w: World): World \ IO =
@@ -70,7 +70,7 @@ mod SceneBench {
         let n = BenchRun.intKnob("shadows", 0, knobs);
         let m = { maxShadowedLights = n, mapSize = BenchRun.intKnob("mapsize", 512, knobs), pcfRadius = BenchRun.intKnob("pcf", 1, knobs), bias = 0.04
                 | Scene3d.pointShadowMap() };
-        { lamps = 8, shadows = if (n > 0) Some(m) else None | Lighting.defaultConfig() }
+        { lamps = 8, shadows = if (n > 0) Some(m) else None, crowd = BenchRun.intKnob("crowd", 0, knobs) | Lighting.defaultConfig() }
 
     /// つまみの表の post（1 = 夕方の屋外の preset・standard / agx / neutral = その view transform だけを替えた同じ後がけ・preset-<名前> = その preset・無し = 掛けない）。
     pub def postOf(knobs: Map[String, String]): Option[PostStack.Stack] = match Map.get("post", knobs) {
@@ -122,7 +122,7 @@ mod SceneBench {
     pub def go(): Unit \ IO =
         let knobs = BenchEnv.knobs(("SCENE", "scene") :: ("COUNT", "n") :: ("SHAPES", "shapes") :: ("MATS", "mats") :: ("MOVING", "moving") ::
                                    ("ALPHA", "alpha") :: ("SHADOW", "shadow") :: ("GROUP", "group") :: ("FRAMES", "frames") :: ("REPEAT", "repeat") :: ("DIAG", "diag") :: ("POST", "post") :: ("MODELS", "models") ::
-                                   ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: Nil);
+                                   ("SHADOWS", "shadows") :: ("MAPSIZE", "mapsize") :: ("PCF", "pcf") :: ("CROWD", "crowd") :: Nil);
         run {
             match loadScene(knobs) {
                 case Err(why) =>

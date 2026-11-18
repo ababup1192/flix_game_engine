@@ -61,14 +61,17 @@ mod Render3d.WebGpuRenderer.TestWebGpuPointShadowsDawn {
         Render3d.FakeGl.cmdOf(scene)
 
     /// 場面 cmd を 1 回の prepare で描いた時の (積んだ pass の数, device の誤りの数)。
-    def passesAndErrors(gpu: WebGpu, cmd: Scene3d.RenderCmd): (Int32, Int32) \ IO =
+    def passesAndErrors(gpu: WebGpu, cmd: Scene3d.RenderCmd): (Int32, Int32) \ IO = passesAndErrorsWith(gpu, _ -> None, cmd)
+
+    /// passesAndErrors の、ビルボードの絵の名前 → 登録した絵 textureOf を渡す版。
+    def passesAndErrorsWith(gpu: WebGpu, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture], cmd: Scene3d.RenderCmd): (Int32, Int32) \ IO =
         let layout = pasteLayout(gpu);
         let image = imageLayout(gpu);
         let renderer = Render3d.WebGpuRenderer.create(gpu, layout, image);
         let encoder = gpu.createCommandEncoder("test");
         let passes = Ref.fresh(Static, 0);
         let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> Ref.put(Ref.get(passes) + 1, passes), flush = () -> checked_ecast(()),
-                           skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+                           skip = (_, _) -> checked_ecast(()), textureOf = name -> checked_ecast(textureOf(name)), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
         discard prepare(renderer, host, dest(), cmd :: Nil);
         gpu.submit(encoder.finish());
         let errors = gpu.errorCount();
@@ -93,5 +96,35 @@ mod Render3d.WebGpuRenderer.TestWebGpuPointShadowsDawn {
                 let both = passesAndErrors(gpu, lampScene(true, Scene3d.LightUnits.Physical));
                 gpu.destroy();
                 Assert.assertEq(expected = ((7, 0), (1, 0), (7, 0)), (shadowed, physical, both))
+        }
+
+    /// 影を落とす灯り 4 本と、影を落とすビルボード 300 枚の場面（面ごとの行の値の合計が値の buffer の始めの 64 KB を超える）。
+    def crowdScene(): Scene3d.RenderCmd =
+        let lampAt = (x: Float64, z: Float64) -> { position = Vec3.v3(x, 1.0, z), color = { r = 1.0, g = 1.0, b = 1.0 }, intensity = 1.0, range = 10.0 };
+        let boards = List.range(0, 300) |> List.map(i -> {
+            let x = Int32.toFloat64(Int32.remainder(i, 20)) * 0.2 - 2.0;
+            let z = Int32.toFloat64(i / 20) * 0.2 - 1.5;
+            Scene3d.billboard("chars", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 24.0 } }, Vec3.v3(x, 0.0, z), { x = 0.1, y = 0.2 })
+                |> Scene3d.withCastShadows(true)
+        });
+        let base = { pointLights = lampAt(-1.0, -1.0) :: lampAt(1.0, -1.0) :: lampAt(-1.0, 1.0) :: lampAt(1.0, 1.0) :: Nil, billboards = boards
+                   | Render3d.FakeGl.sceneOf(Scene3d.meshInstance(Render3d.FakeGl.plainTriangle(), Mat4.identity()) :: Nil) };
+        Render3d.FakeGl.cmdOf(Scene3d.withPointShadows({ maxShadowedLights = 4, mapSize = 32 | Scene3d.pointShadowMap() }, base))
+
+    /// 面ごとの行の値の合計が値の buffer より大きい場面でも、値の buffer を先に場面の分だけ取るので device の誤り（書く範囲が buffer に入らない）が無い。
+    @Test
+    def testManyShadowFacesFitTheValueBuffer(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let registered = (_: String) -> Some({ texId = 1, width = 16.0, height = 24.0, flipped = false, version = "1" });
+                let (_, errors) = passesAndErrorsWith(gpu, registered, crowdScene());
+                gpu.destroy();
+                Assert.assertEq(expected = 0, errors)
         }
 }

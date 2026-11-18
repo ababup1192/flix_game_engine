@@ -419,11 +419,37 @@ pub mod Render3d.WebGpuMaterials {
             Array.put(createValueBuffer(s#gpu, Int32.max(bytes, 2 * capacity)), 0, s#values)
         } else ();
         let at = roundUp(Array.get(0, s#valuesUsed), valueAlignBytes());
-        let data = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN);
-        discard data.asFloatBuffer().put(list#values);
-        s#gpu.writeBuffer(Array.get(0, s#values), Int32.toInt64(at), data, 0, bytes);
-        Array.put(at + bytes, 0, s#valuesUsed);
-        at
+        if (at + bytes > capacityOf(m)) {
+            warnValuesOnce(m, "scene3d: 材質の値（${Int32.toString(at + bytes)} バイト）が値の buffer（${Int32.toString(capacityOf(m))} バイト）に入らない — この行の材質は書かずに描く（呼ぶ側が reserveValues で場面の分を先に取る）");
+            at
+        } else {
+            let data = ByteBuffer.allocateDirect(Int32.max(4, bytes)).order(ByteOrder.LITTLE_ENDIAN);
+            discard data.asFloatBuffer().put(list#values);
+            s#gpu.writeBuffer(Array.get(0, s#values), Int32.toInt64(at), data, 0, bytes);
+            Array.put(at + bytes, 0, s#valuesUsed);
+            at
+        }
+
+    /// 場面 1 つの材質の値 bytes（そろえの余りを含めて呼ぶ側が見積もる）を、空の値の buffer に入るようにする（入らなければ要る大きさか倍の大きい方へ作り直す）。
+    /// 呼ぶ前に hasRoom が偽なら submit しておく（buffer を使っていない時だけ作り直す）。
+    // WhyNot: 行ごとの sendValues の作り直しだけに任せない — 作り直せるのは buffer が空の時だけで、点光源の影の面ごとの行が続くと 2 本目から先は空でなく、
+    //   場面の合計が buffer を超えた所から書けずに材質が黒くなる。場面の合計で先に取る。
+    pub def reserveValues(m: Materials, bytes: Int32): Unit \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        let capacity = capacityOf(m);
+        if (Array.get(0, s#valuesUsed) == 0 and bytes > capacity) {
+            Array.get(0, s#values).destroy();
+            Array.put(createValueBuffer(s#gpu, Int32.max(bytes, 2 * capacity)), 0, s#values)
+        } else ()
+
+    /// 値の buffer の知らせを 1 回だけ出す。
+    def warnValuesOnce(m: Materials, line: String): Unit \ IO =
+        let MaterialsData.MaterialsData(s) = m;
+        if (Set.memberOf("@values", Ref.get(s#warned))) ()
+        else {
+            Ref.put(Set.insert("@values", Ref.get(s#warned)), s#warned);
+            Log.warn(line)
+        }
 
     def roundUp(n: Int32, step: Int32): Int32 = ((n + step - 1) / step) * step
 

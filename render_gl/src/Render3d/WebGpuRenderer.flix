@@ -615,6 +615,7 @@ pub mod Render3d.WebGpuRenderer {
         // WhyNot: 1 体ごとの値・姿勢・材質の値を別々に「入らなければ submit」で送らない — 後に送る方が submit すると、先に送った方を次の場面が頭から上書きする。
         // WhyNot: 影の地図の描き先を描き直す submit を送った後に回さない — 送った姿勢の group 2 と 1 体ごとの値の位置を、submit の後の影の描き込みが使う。
         if (needsFlush(r, instances#bytes, valueBytes, poseBytes) or WebGpuShadows.needsFlush(s#shadows, shadows)) flushHost(r, host) else ();
+        WebGpuMaterials.reserveValues(s#materials, valueBytes);
         let instanceBase = sendInstances(r, host, instances#data, instances#bytes);
         let poseGroup = inputs#poses |> Option.map(sendPoses(r));
         let staged = passes |> List.map(match (spec, list) -> (spec, list, WebGpuMaterials.sendValues(s#materials, list)));
