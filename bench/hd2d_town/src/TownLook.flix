@@ -1,6 +1,6 @@
 // TownLook — 見た目のつまみの Doc（assets/town.json）を読む。無い欄は既定値で続ける。
 mod TownLook {
-    use fge::{Color, DocJson, JsonCodec, Log, PostStack}
+    use fge::{Color, DocJson, JsonCodec, Log, PostStack, Scene3d, Vec2}
     use Util.Json.Json
     use TownScene.{Look}
 
@@ -14,7 +14,8 @@ mod TownLook {
           sunColor = Color.rgb(1.0, 0.95, 0.86), lampIntensity = 0.0, lampRange = 7.0, lampColor = Color.rgb(1.0, 0.72, 0.42), lampGlow = 0.0,
           extraLamps = 0, groundFog = 0.0, groundFogColor = Color.rgb(0.6, 0.66, 0.8), charShadow = TownScene.CharShadow.Soft,
           heightFog = None, boardLamplight = 0.0, boardNightBase = Color.rgb(0.3, 0.33, 0.5), bloomThreshold = 0.8, bloomSize = 0.6,
-          lanternCore = Color.rgb(1.0, 0.96, 0.42), lanternEdge = Color.rgb(1.0, 0.62, 0.06), haloColor = Color.rgb(1.0, 0.6, 0.08), haloSize = 1.9, haloGlow = 0.0, haloFalloff = 2.2 }
+          lanternCore = Color.rgb(1.0, 0.96, 0.42), lanternEdge = Color.rgb(1.0, 0.62, 0.06), haloColor = Color.rgb(1.0, 0.6, 0.08), haloSize = 1.9, haloGlow = 0.0, haloFalloff = 2.2,
+          charShadowScale = Vec2.v2(1.0, 1.0), lightUnits = Scene3d.LightUnits.Legacy, pointShadows = None }
 
     /// path の Doc を読む。無ければ黙って既定値・読めなければ 1 行言って既定値。
     pub def loadOr(path: String): Look \ Fs.FileRead =
@@ -49,7 +50,21 @@ mod TownLook {
           boardLamplight = num("boardLamplight", d#boardLamplight), boardNightBase = color("boardNightBase", d#boardNightBase),
           bloomThreshold = num("bloomThreshold", d#bloomThreshold), bloomSize = num("bloomSize", d#bloomSize),
           lanternCore = color("lanternCore", d#lanternCore), lanternEdge = color("lanternEdge", d#lanternEdge), haloColor = color("haloColor", d#haloColor),
-          haloSize = num("haloSize", d#haloSize), haloGlow = num("haloGlow", d#haloGlow), haloFalloff = num("haloFalloff", d#haloFalloff) }
+          haloSize = num("haloSize", d#haloSize), haloGlow = num("haloGlow", d#haloGlow), haloFalloff = num("haloFalloff", d#haloFalloff),
+          charShadowScale = Map.get("charShadowScale", m) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat))
+              |> Option.flatMap(xs -> match xs {
+                  case x :: y :: _ => Some(Vec2.v2(x, y))
+                  case _           => None
+              }) |> Option.getWithDefault(d#charShadowScale),
+          lightUnits = if (JsonCodec.stringOr("lightUnits", "legacy", m) == "physical") Scene3d.LightUnits.Physical else Scene3d.LightUnits.Legacy,
+          pointShadows = Map.get("pointShadows", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(pointShadowsOf) }
+
+    /// 点光源の影の欄（count = 影を落とす灯りの数・mapSize・pcf・strength・bias・normalBias。無い欄は engine の既定）。
+    def pointShadowsOf(h: Map[String, Json]): Scene3d.PointShadowMap =
+        let d = Scene3d.pointShadowMap();
+        { maxShadowedLights = JsonCodec.intOr("count", d#maxShadowedLights, h), mapSize = JsonCodec.intOr("mapSize", d#mapSize, h),
+          pcfRadius = JsonCodec.intOr("pcf", d#pcfRadius, h), strength = JsonCodec.floatOr("strength", d#strength, h),
+          bias = JsonCodec.floatOr("bias", d#bias, h), normalBias = JsonCodec.floatOr("normalBias", d#normalBias, h) }
 
     /// 地面を這う高さの霧の欄（長さは m・speed は [x, z] の m/秒）。
     def heightFogOf(h: Map[String, Json]): PostStack.HeightFog =

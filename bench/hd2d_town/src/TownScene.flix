@@ -19,7 +19,9 @@ mod TownScene {
     /// charShadow = 隊列のキャラの影の付け方・heightFog = 地面を這う高さの霧（engine の PostStack.HeightFog・長さは m）・
     /// boardLamplight・boardNightBase = 夜の板（キャラ・木）の明るさ（0 なら光の計算のまま。正なら光を当てない板にして、
     /// 色の掛け目を boardNightBase に、近くの街灯の色を距離で足した物にする・強さの倍率）・bloomThreshold・bloomSize = ブルームの閾値と大きさ・
-    /// lanternCore・lanternEdge = 火袋の芯と縁の色・haloColor・haloSize・haloGlow・haloFalloff = 火袋ごとの淡いハローの丸い板の色・直径（m）・強さ・落ち方（乗数）。
+    /// lanternCore・lanternEdge = 火袋の芯と縁の色・haloColor・haloSize・haloGlow・haloFalloff = 火袋ごとの淡いハローの丸い板の色・直径（m）・強さ・落ち方（乗数）・
+    /// charShadowScale = 隊列のキャラの影の板の幅と高さの倍率（見えている板は変えない・太陽と点光源の影の両方）・
+    /// lightUnits = 光の量の読み方（Physical は逆二乗・拡散に 1/π）・pointShadows = 街灯の点光源の影（None で落とさない）。
     pub type alias Look = { topDeg = Float64, bottomDeg = Float64, far = Float64, shadowDistance = Float64, shadowMapSize = Int32, shadowStrength = Float64, shadowPcf = Int32,
                             sunElevation = Float64, sunAzimuth = Float64, sunIntensity = Float64,
                             ambient = Color, hemisphere = Float64, boardTint = Float64, snapToTexels = Bool,
@@ -30,7 +32,8 @@ mod TownScene {
                             extraLamps = Int32, groundFog = Float64, groundFogColor = Color, charShadow = CharShadow,
                             heightFog = Option[PostStack.HeightFog], boardLamplight = Float64, boardNightBase = Color,
                             bloomThreshold = Float64, bloomSize = Float64,
-                            lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64 }
+                            lanternCore = Color, lanternEdge = Color, haloColor = Color, haloSize = Float64, haloGlow = Float64, haloFalloff = Float64,
+                            charShadowScale = Vec2.Vec2, lightUnits = Scene3d.LightUnits, pointShadows = Option[Scene3d.PointShadowMap] }
 
     /// 隊列のキャラの影。Silhouette = 板の絵の形の太陽の影（斜めに伸びる人形の影・足元は薄い小さな楕円だけ）・Soft = 薄い足元の楕円（前の版）・Dense = 濃く少し大きい楕円（案 1）・
     /// DenseCast = 案 1 に、太陽の向きへ薄く短く伸びる影の板を足す（案 2）・SmallBlob = 小さく濃い柔らかい塊を太陽の影の側へ少しずらす（案 3）。
@@ -119,7 +122,8 @@ mod TownScene {
             let w = Int32.toFloat64(cellW) / 32.0;
             let h = Int32.toFloat64(l#height) / 32.0 * stretch;
             (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), if (flip) 0.0 - w else w, h, tintColor(res#look, tint),
-                      res#look#charShadow == CharShadow.Silhouette) |> lampLit(res#look, lampBoards(res#town), x, y, tint),
+                      res#look#charShadow == CharShadow.Silhouette) |> Scene3d.withShadowCasterScale(res#look#charShadowScale)
+                |> lampLit(res#look, lampBoards(res#town), x, y, tint),
              characterShadows(res, x, y, z, w))
         })
 
@@ -233,7 +237,9 @@ mod TownScene {
             let w = Int32.toFloat64(cellW) / 32.0;
             let h = Int32.toFloat64(l#height) / 32.0;
             let tint = member#tint |> Option.map(t -> { let (r, g, b) = t; { r = r, g = g, b = b } }) |> Option.getWithDefault(Faces.white());
-            (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), w, h, tintColor(res#look, tint), true),
+            (standing(billboardName(res#look, l), source, Vec3.v3(x, z, y), w, h, tintColor(res#look, tint), true)
+                |> Scene3d.withShadowCasterScale(res#look#charShadowScale)
+                |> lampLit(res#look, lampBoards(res#town), x, y, tint),
              contactInstance(res#contactMesh, res#contactMaterial, x, y, z, w))
         })
 
@@ -260,6 +266,8 @@ mod TownScene {
           environment = { ambient = look#ambient, hemisphere = look#hemisphere, toonSteps = 0,
                           fog = Some({ color = look#fog, near = look#fogNear, far = look#fogFar }), background = Some(look#sky) }
           | Scene3d.scene(camera, size) }
+            |> Scene3d.withLightUnits(look#lightUnits)
+            |> (sc -> look#pointShadows |> Option.map(m -> Scene3d.withPointShadows(m, sc)) |> Option.getWithDefault(sc))
 
     /// 街灯の足元（地図の座標）。
     def lampFeet(res: Res): List[Board] = res#town#boards |> List.filter(b -> b#sprite == "sprites/street_lamp_ornate.png")
@@ -309,7 +317,9 @@ mod TownScene {
         let mul = (a: ShaderDoc.Field, b: ShaderDoc.Field) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = a, b = b });
         let lit = (v: Float64, ch: ShaderDoc.TexChan) -> mul(ShaderDoc.Field.Const(v), sample(ch));
         let rgb = ShaderDoc.Shade.Rgb({ r = lit(tint#r, ShaderDoc.TexChan.R), g = lit(tint#g, ShaderDoc.TexChan.G), b = lit(tint#b, ShaderDoc.TexChan.B) });
-        Scene3d.material({ name = "hd2d:lamp-glow", cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = rgb, alpha = alpha }) })
+        let dark = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Const(0.0), g = ShaderDoc.Field.Const(0.0), b = ShaderDoc.Field.Const(0.0) });
+        // WhyNot: 地の色を絵の色にしない — 板は点光源の 0.7 m 先にあり、Physical の逆二乗で地の色が白く飛んで火袋の黄色が消える
+        Scene3d.material({ name = "hd2d:lamp-glow", cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = dark, alpha = alpha }) })
             |> Scene3d.withEmission(rgb)
             |> Scene3d.withEmissionIntensity(k)
             |> Scene3d.withAlphaBlend(true)

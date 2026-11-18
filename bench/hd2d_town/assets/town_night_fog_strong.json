@@ -56,14 +56,14 @@
     0.64,
     0.98
   ],
-  "lampIntensity": 22.0,
+  "lampIntensity": 260.0,
   "lampRange": 5.0,
   "lampColor": [
     1.0,
-    0.7,
-    0.38
+    0.58,
+    0.25
   ],
-  "lampGlow": 30.0,
+  "lampGlow": 16.0,
   "groundFog": 0.0,
   "heightFog": {
     "color": [
@@ -82,7 +82,7 @@
       0.5,
       0.2
     ],
-    "lightGlow": 0.4
+    "lightGlow": 0.03
   },
   "charShadow": "silhouette",
   "shadowPcf": 2,
@@ -94,7 +94,7 @@
   ],
   "bloomThreshold": 1.2,
   "bloomSize": 0.85,
-  "haloGlow": 4.5,
+  "haloGlow": 6.0,
   "haloSize": 1.9,
   "haloFalloff": 2.2,
   "lanternCore": [
@@ -111,5 +111,9 @@
     1.0,
     0.6,
     0.08
-  ]
+  ],
+  "lightUnits": "physical",
+  "pointShadows": {
+    "count": 4
+  }
 }
