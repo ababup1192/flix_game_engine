@@ -211,7 +211,7 @@ pub mod App {
         // 純粋な投影から作れる）。
         staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }],
         // withPreload3d の宣言。
-        preload3d = Option[{ key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }],
+        preload3d = Option[Preload3d[w]],
         // 「1 度だけ GPU に生成して 1 draw call で敷くタイルの層」の宣言（無ければ None）。
         // Spec の key が変わるとエンジンが作り直す。純粋関数に限る理由は staticLayer と同じ。
         // タイル層は動的な絵より必ず奥に描かれる — キャラを隠す絵（屋根・庇）は置けない。
@@ -450,8 +450,13 @@ pub mod App {
     /// textures = 材質が "tex3d:" の名前で読む絵（Instance3d は名前しか持たない。その物を描く場面の textures にも載せる）。
     /// 上げた物は置き場の上限で捨てられにくくなる。形と絵は上限に足りなければ捨て、1 回知らせる。
     /// 描き手が GPU の 3D を持たない時（CPU の描き手・窓の無い描き手・WebLayer.withProject）は何もしない。view = None のゲームでは効かない。
-    pub def withPreload3d(plan: { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d] }, app: App[w, ef]): App[w, ef] =
-        App.App({ preload3d = Some(plan) | rec(app) })
+    /// variants = 足して組むシェーダーの変種（点光源の影・Physical の光の場面は `Scene3d.preloadVariantOf(場面)` を渡すと +ps・+pu の版も先に組む）。
+    /// 字で全部の欄を書かず、`{ textures = .., variants = .. | App.preload3d(key, instances) }` の形で書く。
+    pub def withPreload3d(plan: Preload3d[w], app: App[w, ef]): App[w, ef] = App.App({ preload3d = Some(plan) | rec(app) })
+
+    /// withPreload3d の宣言（欄の意味は withPreload3d の doc）。preload3d は textures と variants を空にして作る。
+    pub type alias Preload3d[w] = { key = w -> GameEngine.StaticKey, instances = w -> List[Scene3d.Instance3d], textures = w -> List[Texture3d.Texture3d], variants = w -> List[Scene3d.PreloadVariant] }
+    pub def preload3d(key: w -> GameEngine.StaticKey, instances: w -> List[Scene3d.Instance3d]): Preload3d[w] = { key = key, instances = instances, textures = _ -> Nil, variants = _ -> Nil }
 
     /// タイルの層（床・壁 1 行目など、格子に敷く静的な絵）を宣言する。エンジンが Spec ごとに
     /// 1 度だけ GPU に生成し、以後は毎フレーム 1 draw call で敷く（数百〜千マスでも軽い）。
@@ -1076,7 +1081,7 @@ pub mod App {
     /// まま（0..ZBand.innerMax に clamp）。world 側の z には触らない。
     pub def composeScene(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2,
                          items: { world = List[Render.PlacedItem], hud = List[Render.PlacedItem] }): List[Render.PlacedItem] =
-        let shifted = match zoomedCenter(center, zoom, design) {
+        let shifted = match App.Internal.Paint.zoomedCenter(center, zoom, design) {
             case None    => items#world
             case Some(c) => CameraRig.centerOn(c, zoom = zoom, design = design, items#world)
         };
@@ -1087,20 +1092,11 @@ pub mod App {
         if (List.isEmpty(lifted)) shifted
         else List.append(shifted, lifted)
 
-    /// camera 無しでも zoom があれば「画面中央の world 点 = design/2」を軸に据える正規化。
-    /// composeScene と visibleOf が同じ規則を共有するための1点
-    /// （NaN も 1.0 と等しくないので Some 側へ落ち、下流の safeZoom が丸める）。
-    def zoomedCenter(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Option[Vec2.Vec2] =
-        match center {
-            case Some(c) => Some(c)
-            case None    => if (zoom != 1.0) Some(Vec2.div(design, 2.0)) else None
-        }
-
     /// camera 中心と zoom から、画面に見えている world の矩形を出す（大きさ design/zoom。
     /// center = None かつ等倍なら design 全体）。view へ渡す ViewCtx の visible の源。
     /// composeScene と同じ正規化（zoomedCenter）を通るので、culling と絵は必ず一致する。
     pub def visibleOf(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Rect2.Rect2 =
-        match zoomedCenter(center, zoom, design) {
+        match App.Internal.Paint.zoomedCenter(center, zoom, design) {
             case Some(c) => CameraRig.visibleRect(c, zoom = zoom, design = design)
             case None    => { position = Vec2.zero(), size = design }
         }

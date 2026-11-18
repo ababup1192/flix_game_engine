@@ -4,7 +4,7 @@ mod TestPreload3d {
 
     /// World の値をそのまま key にし、instances を読むと止まる App。
     def appWithPlan(): App[Int32, ef] =
-        App.make(0) |> App.withPreload3d({ key = world -> "floor${world}", instances = _ -> bug!("頼みを作る時は読まない"), textures = _ -> bug!("頼みを作る時は読まない") })
+        App.make(0) |> App.withPreload3d({ textures = _ -> bug!("頼みを作る時は読まない") | App.preload3d(world -> "floor${world}", _ -> bug!("頼みを作る時は読まない")) })
 
     def keyOf(app: App[Int32, ef], docGen: Int32, world: Int32): Option[String] =
         App.Internal.Paint.preloadCmd(app, docGen, world) |> Option.map(cmd -> cmd#key)
@@ -26,11 +26,20 @@ mod TestPreload3d {
         let reloaded = App.Internal.Paint.bumpTileGen(true, cache);
         Assert.assertTrue(keyOf(appWithPlan(), cache#gen, 1) != keyOf(appWithPlan(), reloaded#gen, 1))
 
+    /// 変種を足すと、ゲームの key が同じでも頼みの key が変わり、頼みに変種が乗る。
+    @Test
+    def testVariantsChangeTheKey(): Unit \ Assert =
+        let ps = { pointShadows = true, physicalUnits = false };
+        let withVariants = App.make(0) |> App.withPreload3d({ variants = _ -> ps :: Nil | App.preload3d(_ -> "k", _ -> Nil) });
+        let plain = App.make(0) |> App.withPreload3d(App.preload3d(_ -> "k", _ -> Nil));
+        let variantsOf = (app: App[Int32, {}]) -> App.Internal.Paint.preloadCmd(app, 0, 1) |> Option.map(cmd -> List.map(Scene3d.preloadVariantKey, cmd#variants));
+        Assert.assertEq(expected = (true, Some("+ps" :: Nil)), (keyOf(withVariants, 0, 1) != keyOf(plain, 0, 1), variantsOf(withVariants)))
+
     /// 頼みの instances は、その時の World でゲームの instances を読む。
     @Test
     def testInstancesReadTheWorld(): Unit \ Assert =
         let mesh = Mesh3d.fromPolygons(Nil);
-        let app = App.make(0) |> App.withPreload3d({ key = _ -> "k", instances = world -> List.repeat(world, Scene3d.meshInstance(mesh, Mat4.identity())), textures = _ -> Nil });
+        let app = App.make(0) |> App.withPreload3d(App.preload3d(_ -> "k", world -> List.repeat(world, Scene3d.meshInstance(mesh, Mat4.identity()))));
         let count = App.Internal.Paint.preloadCmd(app, 0, 3) |> Option.map(cmd -> List.length((cmd#instances)()));
         Assert.assertEq(expected = Some(3), count)
 
@@ -48,7 +57,7 @@ mod TestPreload3d {
         app |> App.withView((_ctx, _world) -> checked_ecast(Nil))
 
     def planned(app: App[Int32, ef]): App[Int32, ef] =
-        app |> App.withPreload3d({ key = _ -> "k", instances = _ -> Nil, textures = _ -> Nil })
+        app |> App.withPreload3d(App.preload3d(_ -> "k", _ -> Nil))
 
     /// app の 1 コマで描き手が受けた op の並び（preload3d はその key・render = renderCommands。Pass の分と画面の分で 2 回出る）。
     def opsWith(cache: App.Internal.Paint.TileCache, app: App[Int32, {}]): List[String] \ IO =

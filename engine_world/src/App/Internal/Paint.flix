@@ -149,11 +149,24 @@ pub mod App.Internal.Paint {
     /// まだ何も生成していない起動時の持ち回し。
     pub def freshTileCache(): TileCache = { gen = 0, entries = Map.empty(), passTargets = Set.empty() }
 
-    /// 先に上げる物の宣言（withPreload3d）を、この World の頼みにする。ゲームの key に Doc の世代 docGen を足すので、読み直しのたびに組み直す。
-    /// instances と textures は包むだけで、ここでは読まない。
+    /// camera 無しでも zoom があれば「画面中央の world 点 = design/2」を軸に据える正規化。
+    /// App.composeScene・App.visibleOf・resolvedCamera が同じ規則を共有するための 1 点
+    /// （NaN も 1.0 と等しくないので Some 側へ落ち、下流の safeZoom が丸める）。
+    pub def zoomedCenter(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Option[Vec2.Vec2] =
+        match center {
+            case Some(c) => Some(c)
+            case None    => if (zoom != 1.0) Some(Vec2.div(design, 2.0)) else None
+        }
+
+    /// 先に上げる物の宣言（withPreload3d）を、この World の頼みにする。ゲームの key に Doc の世代 docGen と変種の字を足すので、読み直しと変種が替わるたびに組み直す。
+    /// instances と textures は包むだけで、ここでは読まない（variants は毎コマ読む。短い列）。
     pub def preloadCmd(app: App[w, ef], docGen: Int32, world: w): Option[Scene3d.PreloadCmd] =
-        App.rec(app)#preload3d |> Option.map(plan ->
-            { key = "${docGen}:" + (plan#key)(world), instances = () -> (plan#instances)(world), textures = () -> (plan#textures)(world) })
+        App.rec(app)#preload3d |> Option.map(plan -> {
+            let variants = (plan#variants)(world);
+            let variantKey = if (List.isEmpty(variants)) "" else (variants |> List.map(Scene3d.preloadVariantKey) |> String.intercalate(",")) + ":";
+            { key = "${docGen}:${variantKey}" + (plan#key)(world), instances = () -> (plan#instances)(world), textures = () -> (plan#textures)(world),
+              variants = variants }
+        })
 
     /// Doc の読み直しが起きたフレームで世代を進める。ゲームの書く key は素のまま、
     /// 世代の不一致が「作り直しが要る」の判定になる（tileCacheHit が見る）。
@@ -487,7 +500,7 @@ pub mod App.Internal.Paint {
             case Some(f) => Some(f(world))
             case None    => None
         };
-        let center = match (App.zoomedCenter(center0, z, design), r#cameraBounds) {
+        let center = match (zoomedCenter(center0, z, design), r#cameraBounds) {
             case (Some(c), Some(fb)) =>
                 let seen = Vec2.div(design, CameraRig.safeZoom(z));
                 Some(CameraRig.clampCenter(bounds = fb(world), seen = seen, c))

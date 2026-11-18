@@ -161,4 +161,14 @@ mod TestPointShadows {
     def testVariantOfScene(): Unit \ Assert =
         let scene = sceneWith(Nil, Scene3d.pointShadowMap()) |> Scene3d.withLightUnits(Scene3d.LightUnits.Physical);
         Assert.assertEq(expected = (true, Some(Scene3d.LightUnits.Physical)), { let v = LightModel3d.variantOf(scene); (v#pointShadows, v#lightUnits) })
+
+    /// 端末の区分ごとの影の重さ: 点光源の影の (本数, 一辺) と太陽の影の一辺が Small・Medium・Large で (1, 256, 1024)・(2, 512, 2048)・(4, 512, 2048)。
+    @Test
+    def testShadowBudgetsBySizeClass(): Unit \ Assert =
+        let budget = (c: Display.SizeClass) -> {
+            let p = Scene3d.pointShadowMapFor(c);
+            (p#maxShadowedLights, p#mapSize, Scene3d.directionalShadowFor(c)#mapSize)
+        };
+        Assert.assertEq(expected = (1, 256, 1024) :: (2, 512, 2048) :: (4, 512, 2048) :: Nil,
+                        budget(Display.SizeClass.Small) :: budget(Display.SizeClass.Medium) :: budget(Display.SizeClass.Large) :: Nil)
 }

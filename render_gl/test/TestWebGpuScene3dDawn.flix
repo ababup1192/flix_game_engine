@@ -211,7 +211,7 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
         let textured = Scene3d.meshInstance(Mesh3d.withBoxUvs(1.0, Render3d.FakeGl.plainTriangle()), Mat4.identity())
             |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Linear));
         let plain = Scene3d.meshInstance(Render3d.FakeGl.skinnedTriangle(), Mat4.identity());
-        { key = key, instances = () -> textured :: plain :: Nil, textures = () -> tex :: Nil }
+        { textures = () -> tex :: Nil | Scene3d.preloadCmd(key, () -> textured :: plain :: Nil) }
 
     /// 宣言を上げると、形 2 つ・材質の絵 1 枚（mip のレベル 3 つ）が置き場に載って控えに残り、submit は頼まない。
     /// 同じ key の 2 回目は何もしない。上げた形と絵は、使わないコマが続いても endFrame の上限の内なら残る。
@@ -229,6 +229,38 @@ mod Render3d.WebGpuRenderer.TestWebGpuScene3dDawn {
                 gpu.destroy();
                 Assert.assertEq(expected = (2, 1, 3, 0, 2, 0, 0), found)
         }
+
+    /// variants に +ps と +pu を渡した宣言は、Dawn の誤り無しに上がり、変種の頂点の色の frag を組む（材質の pipeline は変種の group 0 の layout で作る）。
+    @Test
+    def testPreloadVariantsBuildWithoutErrors(): Unit \ {Assert, IO} =
+        match WebGpuDevice.runDawn(() -> WebGpuDevice.requestDevice()) {
+            case Err(why) =>
+                if (isSkippable(why)) {
+                    println("[scene3d-dawn] SKIP: Dawn で開かない（${why}）");
+                    Assert.assertEq(expected = 0, 0)
+                } else
+                    Assert.assertEq(expected = "Dawn の device が開ける", why)
+            case Ok(gpu) =>
+                let found = preloadedVariants(gpu);
+                gpu.destroy();
+                Assert.assertEq(expected = (0, true), found)
+        }
+
+    /// (Dawn の誤りの数, 変種の frag を組んだか)。
+    def preloadedVariants(gpu: WebGpu): (Int32, Bool) \ IO =
+        let layout = pasteLayout(gpu);
+        let renderer = Render3d.WebGpuRenderer.create(gpu, layout, imageLayout(gpu));
+        let RendererData.RendererData(s) = renderer;
+        let encoder = gpu.createCommandEncoder("test");
+        let host: Host = { encoder = () -> checked_ecast(encoder), notePass = () -> checked_ecast(()), flush = () -> checked_ecast(()), skip = (_, _) -> checked_ecast(()), textureOf = _ -> checked_ecast(None), textureById = _ -> checked_ecast(None), groupById = _ -> checked_ecast(None) };
+        let variants = { pointShadows = true, physicalUnits = false } :: { pointShadows = false, physicalUnits = true } :: Nil;
+        Render3d.WebGpuRenderer.preload(renderer, host, { variants = variants | preloadCmd("v") });
+        let built = not Map.isEmpty(Ref.get(s#variantFragments));
+        discard encoder.finish();
+        let errors = gpu.errorCount();
+        Render3d.WebGpuRenderer.release(renderer);
+        layout.release();
+        (errors, built)
 
     /// (形の数, 控えた絵の鍵の数, 絵の mip のレベルの数, submit の数, 2 回目の後の形の数, 2 回目の後の submit の数, Dawn の誤りの数)。
     /// 2 回目の前に endFrame を 200 回呼ぶ（使わない形と絵が古くなる）。

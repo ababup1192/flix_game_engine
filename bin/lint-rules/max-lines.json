@@ -15,6 +15,6 @@
     "engine_world/src/App.flix::max-lines": "ゲームが繋ぐ with* の口（withLetterboxView など）は App に置く決まりで、中身は App.Internal.Paint に出してある。with* の口を役ごとに App.Internal.* へ分ける時に外す"
   },
   "exemptLines": {
-    "engine_world/src/App.flix::max-lines": 1209
+    "engine_world/src/App.flix::max-lines": 1205
   }
 }

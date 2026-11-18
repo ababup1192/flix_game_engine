@@ -90,6 +90,13 @@ pub mod Scene3d {
     pub def directionalShadow(): DirectionalShadow =
         { mapSize = 2048, bias = 0.05, normalBias = 1.0, pcfRadius = 1, strength = 0.8, distance = 150.0, casterReach = 200.0 }
 
+    /// 端末の区分ごとの太陽の影。Small（スマホ）= mapSize 1024・Medium と Large = 2048。ほかの欄は directionalShadow() と同じ。
+    pub def directionalShadowFor(sizeClass: Display.SizeClass): DirectionalShadow = match sizeClass {
+        case Display.SizeClass.Small  => { mapSize = 1024 | directionalShadow() }
+        case Display.SizeClass.Medium => directionalShadow()
+        case Display.SizeClass.Large  => directionalShadow()
+    }
+
     /// 描く時に使う太陽（使える時だけ Some。direction は長さ 1 にした光の進む向き）。GL・CPU・描き出しの鍵はこれだけを読む。
     /// 向きの長さが 0 か有限でない・intensity が 0 以下か有限でない・色が黒の時は None（太陽なしと同じ。影の地図も描かない）。
     pub def directionalLightOf(scene: Scene3dCmd): Option[DirectionalLight] =
@@ -214,10 +221,18 @@ pub mod Scene3d {
     /// 字で全部の欄を書かず、pointShadowMap() を `{ maxShadowedLights = 2 | Scene3d.pointShadowMap() }` の形で替える。
     pub type alias PointShadowMap = { maxShadowedLights = Int32, mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64 }
 
-    /// maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影。
-    /// スマホは `{ maxShadowedLights = 1, mapSize = 256 | Scene3d.pointShadowMap() }` を勧める（atlas 768 × 512）。
+    /// maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影（pointShadowMapFor(Large) と同じ）。
+    /// 端末で重さを替えるなら pointShadowMapFor(ctx#display#sizeClass)。
     pub def pointShadowMap(): PointShadowMap =
         { maxShadowedLights = 4, mapSize = 512, bias = 0.05, normalBias = 1.0, pcfRadius = 1, strength = 0.8 }
+
+    /// 端末の区分ごとの点光源の影（PostStack.resolveQuality と同じく区分で重さを決める）。
+    /// Small（スマホ）= 1 本・256（atlas 768 × 512）・Medium（タブレット）= 2 本・512・Large（PC）= 4 本・512。ほかの欄は pointShadowMap() と同じ。
+    pub def pointShadowMapFor(sizeClass: Display.SizeClass): PointShadowMap = match sizeClass {
+        case Display.SizeClass.Small  => { maxShadowedLights = 1, mapSize = 256 | pointShadowMap() }
+        case Display.SizeClass.Medium => { maxShadowedLights = 2, mapSize = 512 | pointShadowMap() }
+        case Display.SizeClass.Large  => pointShadowMap()
+    }
 
     /// 場面に点光源の影を付ける（Scene3dCmd の pointShadows = Some(m)）。
     pub def withPointShadows(m: PointShadowMap, scene: Scene3dCmd): Scene3dCmd = { pointShadows = Some(m) | scene }
@@ -1110,6 +1125,24 @@ pub mod Scene3d {
     pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }
 
     /// 描き手へ渡す、先に GPU へ上げる物の宣言（App.withPreload3d）。key = 中身を決める全入力をまとめた字・
-    /// instances・textures = 上げる物と、その材質が "tex3d:" の名前で読む絵の作り方（key が変わった時だけ呼ばれる）。
-    pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d] }
+    /// instances・textures = 上げる物と、その材質が "tex3d:" の名前で読む絵の作り方（key が変わった時だけ呼ばれる）・
+    /// variants = 既定の版に足して組むシェーダーの変種（preloadVariantOf）。
+    pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d],
+                                  variants = List[PreloadVariant] }
+
+    /// textures が空・variants が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
+    pub def preloadCmd(key: DrawCmd.StaticKey, instances: Unit -> List[Instance3d]): PreloadCmd =
+        { key = key, instances = instances, textures = () -> Nil, variants = Nil }
+
+    /// 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
+    /// physicalUnits = Physical の光の版（場面の lightUnits が Physical・+pu）。どちらも偽なら既定の版（いつも組む）。
+    pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool }
+
+    /// 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
+    pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant =
+        { pointShadows = Option.nonEmpty(scene#pointShadows), physicalUnits = scene#lightUnits == LightUnits.Physical }
+
+    /// 変種 v の字（"" = 既定・+ps・+pu・+ps+pu。描き手のプログラムの鍵と同じ並び）。
+    pub def preloadVariantKey(v: PreloadVariant): String =
+        (if (v#pointShadows) "+ps" else "") + (if (v#physicalUnits) "+pu" else "")
 }

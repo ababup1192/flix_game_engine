@@ -375,10 +375,13 @@ pub mod Render3d.WebGpuRenderer {
             Ref.put({ rebuilds = rebuilds | uploaded }, s#preloaded)
         }
 
-    /// cmd の置いた物を候補に分け、候補ごとに形と、材質の program と絵か頂点の色の pipeline を上げて、上げた物の控えを返す。
+    /// cmd の置いた物を、既定の版と cmd#variants の版ごとに候補に分け、候補ごとに形と、材質の program と絵か頂点の色の pipeline を上げて、上げた物の控えを返す。
+    /// 材質の pipeline は変種の group 0 の layout で作る（場面を描く時と同じ layout の物が控えに残る）。
     def preloadCmd(r: Renderer, host: Host, gen: Int64, cmd: Scene3d.PreloadCmd): Preloaded \ IO =
         let RendererData.RendererData(s) = r;
-        let (groups, _) = Render3d.ScenePlan.groupInstances(s#planner, Render3d.defaultShaderVariant(), _ -> true, _ -> true, false, (cmd#instances)());
+        let instances = (cmd#instances)();
+        let groups = (Render3d.defaultShaderVariant() :: Render3d.Preload.extraVariantsOf(cmd))
+            |> List.flatMap(v -> Render3d.ScenePlan.groupInstances(s#planner, v, _ -> true, _ -> true, false, instances) |> fst |> List.map(g -> (v, g)));
         let source = { textureOf = host#textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         let allocator = countingAllocator(r);
         let mp = { base = 0, values = WebGpuMaterials.valuesBufferOf(s#materials), programs = Vector.empty(), format = RenderTarget.Format.Rgba8Unorm, samples = 1,
@@ -386,23 +389,25 @@ pub mod Render3d.WebGpuRenderer {
                    groups = WebGpuMaterials.frameGroupsOf(s#materials) };
         let noteBuild = name -> noteMaterialBuild(s, name, FrameDiagnostics.BuildReason.First);
         let missing = name -> Render3d.ScenePlan.warnOnce(s#planner, "preload:" + name, Render3d.Preload.missingTextureLine(name));
-        let textures = groups |> List.flatMap(g -> {
+        let textures = groups |> List.flatMap(vg -> {
+            let (v, g) = vg;
             let head = g#batch#head;
             let mesh = Map.get(MeshTable.ensure(s#meshes, allocator, gen, head#fields#mesh), Ref.get(s#meshStore));
             match g#surface {
-                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, missing, mp, source, registeredOf(r, host), gen, request, head, mesh)
+                case Some(request) => WebGpuMaterials.preloadMaterial(s#materials, noteBuild, missing, { sceneLayout = sceneLayoutOf(r, layoutCodeOf(v)) | mp }, source,
+                                                                      registeredOf(r, host), gen, request, head, mesh)
                 case None =>
-                    mesh |> Option.forEach(b -> preloadShape(r, b, isSkinned(head)));
+                    mesh |> Option.forEach(b -> preloadShape(r, b, isSkinned(head), v));
                     Nil
             }
         });
-        { builtKey = Some(cmd#key), rebuilds = Nil, meshes = groups |> List.map(g -> Mesh3d.contentHash(g#batch#head#fields#mesh)) |> List.toSet,
+        { builtKey = Some(cmd#key), rebuilds = Nil, meshes = groups |> List.map(vg -> Mesh3d.contentHash(snd(vg)#batch#head#fields#mesh)) |> List.toSet,
           textures = List.toSet(textures) }
 
     /// 形 mesh の頂点の色の pipeline（画面の形式・標本 1・色の pass）を作る。骨つきの物は形にジョイントがある時だけ。
-    def preloadShape(r: Renderer, mesh: MeshBuffers, skinned: Bool): Unit \ IO =
+    def preloadShape(r: Renderer, mesh: MeshBuffers, skinned: Bool, variant: ShaderVariant): Unit \ IO =
         if (skinned and Option.isEmpty(mesh#skinAt)) ()
-        else discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, mesh#stride, if (skinned) mesh#skinAt else None, defaultShaderVariant())
+        else discard pipelineOf(r, RenderTarget.Format.Rgba8Unorm, 1, ScenePassSpec.Color, mesh#stride, if (skinned) mesh#skinAt else None, variant)
 
     // ── 1 回の renderCommands ──
 

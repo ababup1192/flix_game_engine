@@ -181,7 +181,7 @@ mod Render3d.TestInstancing {
     @Test
     def testPreloadBuildsInArrivalOrder(): Unit \ {Assert, IO} =
         let state = freshState();
-        Render3d.Preload.upload(recordingGl(freshRecorded()), state, 1i64, noTexture, { key = "three", instances = () -> threeMaterials(), textures = () -> Nil });
+        Render3d.Preload.upload(recordingGl(freshRecorded()), state, 1i64, noTexture, Scene3d.preloadCmd("three", () -> threeMaterials()));
         Assert.assertEq(expected = "m0.1" :: "m0.5" :: "m0.9" :: Nil, namesInBuildOrder(state))
 
     /// 描く物が 1 つも無い prepare は 1 体ごとの値のテクスチャを作らない。
@@ -200,7 +200,7 @@ mod Render3d.TestInstancing {
         let state = freshState();
         let tinted = Scene3d.meshInstance(plainTriangle(), Mat4.identity()) |> Scene3d.withMaterial(solidMaterial());
         let crowd = () -> skinnedAt(poseAt(1.0)) :: tinted :: Scene3d.meshInstance(plainTriangle(), Mat4.identity()) :: Nil;
-        Render3d.Preload.upload(gl, state, 1i64, noTexture, { key = "crowd", instances = crowd, textures = () -> Nil });
+        Render3d.Preload.upload(gl, state, 1i64, noTexture, Scene3d.preloadCmd("crowd", crowd));
         let built = timesCalled("createProgram", log);
         paint(gl, state, cmdOf(sceneOf(crowd())) :: Nil);
         Assert.assertEq(expected = (true, built), (built > 0, timesCalled("createProgram", log)))

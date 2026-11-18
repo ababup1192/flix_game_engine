@@ -1336,6 +1336,8 @@
   `pub def directionalLight(direction: Vec3.Vec3): DirectionalLight`
 - mapSize 2048・bias 0.05 m・normalBias 1・pcfRadius 1・strength 0.8・distance 150 m・casterReach 200 m の太陽の影。
   `pub def directionalShadow(): DirectionalShadow`
+- 端末の区分ごとの太陽の影。Small（スマホ）= mapSize 1024・Medium と Large = 2048。ほかの欄は directionalShadow() と同じ。
+  `pub def directionalShadowFor(sizeClass: Display.SizeClass): DirectionalShadow`
 - 描く時に使う太陽（使える時だけ Some。direction は長さ 1 にした光の進む向き）。GL・CPU・描き出しの鍵はこれだけを読む。
   `pub def directionalLightOf(scene: Scene3dCmd): Option[DirectionalLight]`
 - `pub def directionalLightWarning(scene: Scene3dCmd): Option[String]`
@@ -1347,8 +1349,10 @@
   `pub def directionalShadowOf(scene: Scene3dCmd): Option[SunShadowSetup]`
 - 点光源の影（光から見た 6 方向の深度を 1 枚の絵 atlas に並べる。Unity・Unreal の Shadow Atlas・Bevy の PointLightShadowMap に当たる）。
   `pub type alias PointShadowMap = { maxShadowedLights = Int32, mapSize = Int32, bias = Float64, normalBias = Float64, pcfRadius = Int32, strength = Float64 }`
-- maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影。
+- maxShadowedLights 4・mapSize 512・bias 0.05・normalBias 1・pcfRadius 1・strength 0.8 の点光源の影（pointShadowMapFor(Large) と同じ）。
   `pub def pointShadowMap(): PointShadowMap`
+- 端末の区分ごとの点光源の影（PostStack.resolveQuality と同じく区分で重さを決める）。
+  `pub def pointShadowMapFor(sizeClass: Display.SizeClass): PointShadowMap`
 - 場面に点光源の影を付ける（Scene3dCmd の pointShadows = Some(m)）。
   `pub def withPointShadows(m: PointShadowMap, scene: Scene3dCmd): Scene3dCmd`
 - 1 つの場面で影を落とす点光源の上限。
@@ -1587,7 +1591,15 @@
   `pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)]`
 - `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
 - 描き手へ渡す、先に GPU へ上げる物の宣言（App.withPreload3d）。key = 中身を決める全入力をまとめた字・
-  `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d] }`
+  `pub type alias PreloadCmd = { key = DrawCmd.StaticKey, instances = Unit -> List[Instance3d], textures = Unit -> List[Texture3d.Texture3d], variants = List[PreloadVariant] }`
+- textures が空・variants が空の宣言（`{ textures = () -> .. | Scene3d.preloadCmd(key, instances) }` で替える）。
+  `pub def preloadCmd(key: DrawCmd.StaticKey, instances: Unit -> List[Instance3d]): PreloadCmd`
+- 先に組むシェーダーの変種（場面の設定で決まる版）。pointShadows = 点光源の影を引く版（場面の pointShadows が Some・描き手の鍵の +ps）・
+  `pub type alias PreloadVariant = { pointShadows = Bool, physicalUnits = Bool }`
+- 場面 scene を描く時に描き手が組む変種（先に上げる宣言に、遊びで出す場面の設定から渡す）。
+  `pub def preloadVariantOf(scene: Scene3dCmd): PreloadVariant`
+- 変種 v の字（"" = 既定・+ps・+pu・+ps+pu。描き手のプログラムの鍵と同じ並び）。
+  `pub def preloadVariantKey(v: PreloadVariant): String`
 
 ## Scene3d.PointShadows — `engine/src/scene3d/Scene3d/PointShadows.flix`
 - 影を落とす点光源 1 本の材料。pointIndex = pickLights の後の点光源の並びの番号・slot = atlas の塊の番号（0 から）・

@@ -5,8 +5,8 @@ mod Render3d.Preload {
                   skinnedProgramsOf, warnSceneOnce}
     use Render3d.Batch.{MaterialBatch, SpanBatch}
     use Render3d.Counts.{Phase, timed}
-    use Render3d.Material.{MaterialTable, entryAt, resolveTextureAs, splitByMaterial, textureSlotOf}
-    use Render3d.ScenePlan.{isCoverageCutout, isSkinned}
+    use Render3d.Material.{MaterialTable, entryAt, resolveMaterials, resolveTextureAs, splitByMaterial, textureSlotOf}
+    use Render3d.ScenePlan.{groupInstances, isCoverageCutout, isSkinned, splitGroups}
 
     /// 何も上げていない状態。
     pub def empty(): PreloadState =
@@ -53,12 +53,27 @@ mod Render3d.Preload {
         let draws = List.append(plain, List.map(d -> d#batch, materials)) |> List.map(b -> b#head);
         if (List.exists(isSkinned, draws)) discard skinnedProgramsOf(gl, state) else ();
         draws |> List.forEach(d -> discard meshEntry(gl, state, gen, d#fields#mesh));
-        let allMaterials = List.append(List.map(d -> (table, d), materials), coverageVersions(gl, state, gen, instances));
+        let extra = extraVariantsOf(cmd) |> List.flatMap(v -> variantVersions(gl, state, gen, v, List.exists(d -> not isSkinned(d), draws), List.exists(isSkinned, draws), instances));
+        let allMaterials = List.append(List.map(d -> (table, d), materials), List.append(coverageVersions(gl, state, gen, instances), extra));
         let source = { textureOf = textureOf, own = (cmd#textures)() |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         { builtKey = Some(cmd#key), rebuilds = Nil, meshes = draws |> List.map(d -> Mesh3d.contentHash(d#fields#mesh)) |> List.toSet,
           programs = allMaterials |> List.map(td -> { let (t, d) = td; entryAt(t, d#handle)#locs#mesh#program }) |> List.toSet,
           textures = allMaterials |> List.flatMap(td -> { let (t, d) = td; materialTextureNames(entryAt(t, d#handle), d#material, d#batch#head) })
               |> List.toSet |> Set.toList |> uploadTextures(gl, state, gen, source) }
+
+    /// cmd#variants のうち既定でない変種（字が重なる物は 1 つ）。
+    pub def extraVariantsOf(cmd: Scene3d.PreloadCmd): List[Render3d.ShaderVariant] =
+        cmd#variants |> List.filter(v -> Scene3d.preloadVariantKey(v) != "") |> List.map(v -> (Scene3d.preloadVariantKey(v), v)) |> List.toMap |> Map.valuesOf
+
+    /// 変種 v の材質のプログラムを組み、その batch を引いた表と組にして返す。shapes・skinned = 頂点の色の物（骨の無い物・骨つきの物）があれば、その版の頂点の色のプログラムも組む。
+    def variantVersions(gl: GlContext, state: State, gen: Int64, v: Render3d.ShaderVariant, shapes: Bool, skinned: Bool,
+                        instances: List[Scene3d.Instance3d]): List[(MaterialTable, MaterialBatch[SpanBatch])] \ IO =
+        if (shapes) discard Render3d.VariantPrograms.litLocsOfVariant(gl, state, v, false) else ();
+        if (skinned) discard Render3d.VariantPrograms.litLocsOfVariant(gl, state, v, true) else ();
+        let (groups, requests) = groupInstances(state#planner, v, _ -> true, _ -> true, false, instances);
+        let table = resolveMaterials(gl, state, gen, requests);
+        let (_, materials) = splitGroups(groups, table#orders);
+        List.map(d -> (table, d), materials)
 
     /// cutout の材質の alpha to coverage の版を組み、その batch を引いた表と組にして返す。
     // WhyNot: 版を描き先から選ばない — 描き先が標本を持つかは場面ごとに決まり、宣言の時には分からない。

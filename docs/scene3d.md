@@ -86,9 +86,10 @@ GL・WebGPU・CPU が同じ約束（`Scene3d.PointShadows.atlasOf` の doc）で
 - 影の割合は木の外で画素ごとに 1 回求め、点光源の拡散と鏡面の両方に掛ける。光が届かない点（range の外）と面が光に背を向けた点は地図を引かない
 - 面の継ぎ目は guard band（面の角を 90° より少し広く取り、PCF の周りの画素が隣の面へはみ出さない）で筋を出さない
 - 重さ: 影の地図の draw は面 6 × 灯り × 範囲に入る物（`drawCalls` の `shadowPass`・時間は `Phase.Shadows`）。PCF は (2r+1)² 回を光が届く画素だけ。
-  スマホは `{ maxShadowedLights = 1, mapSize = 256 | Scene3d.pointShadowMap() }`（atlas 768 × 512）を勧める
+  端末で重さを替えるなら `Scene3d.pointShadowMapFor(ctx#display#sizeClass)`（Small = 1 本・256（atlas 768 × 512）・Medium = 2 本・512・Large = 4 本・512 = `pointShadowMap()`）。
+  太陽の影も `Scene3d.directionalShadowFor(ctx#display#sizeClass)`（Small = 1024・Medium と Large = 2048 = `directionalShadow()`）。どちらも `{ .. | }` で欄を替えてよい
 - 既定（`pointShadows = None`）は今までの絵と同じ（GPU のシェーダーの字も同じ）。影つきの場面だけ別のプログラム（`+ps`）を組む
-- 先に上げる物（`App.withPreload3d`）は既定のプログラムだけを組む。点光源の影と `Physical` の場面は、その場面が初めて出たコマに変種のプログラム（`+ps`・`+pu`）を組む（そのコマが重い）
+- 点光源の影と `Physical` の場面は、その場面が初めて出たコマに変種のプログラム（`+ps`・`+pu`）を組む（そのコマが重い）。先に組むなら `App.withPreload3d` の `variants` に `Scene3d.preloadVariantOf(場面)` を渡す（「初めて出る物を先に上げる」）
 
 ### 光の量の読み方（Legacy / Physical）
 
@@ -496,7 +497,9 @@ PostStack.withExposure(ExposureAdaptation.computeExposure(ExposureAdaptation.def
 
 ## 初めて出る物を先に上げる
 
-`App.withPreload3d({ key, instances, textures })` は、遊びの途中で初めて出る物の形・絵・材質のプログラムを GPU へ上げる。`key` は毎コマ読み、`instances` と `textures` は `key` が変わった時と Doc の読み直しの時だけ読む。3D の場面が 1 つも出ていないタイトルの間でも上がる。
+`App.withPreload3d({ textures = .., variants = .. | App.preload3d(key, instances) })` は、遊びの途中で初めて出る物の形・絵・材質のプログラムを GPU へ上げる。`key` と `variants` は毎コマ読み、`instances` と `textures` は `key` か `variants` が変わった時と Doc の読み直しの時だけ読む。3D の場面が 1 つも出ていないタイトルの間でも上がる。
+
+- `variants` = 既定の版に足して組むシェーダーの変種。点光源の影（`withPointShadows`）か `Physical` の光の場面を出すなら `Scene3d.preloadVariantOf(その場面)` を渡す（`+ps`・`+pu` の材質と頂点の色のプログラムも先に組む）。空なら既定の版だけ
 
 - 描かないので、置く場所は何でもよい。骨つきの物は姿勢を付けたまま渡すと、骨つきの版のプログラムも組める。
 - `Instance3d` は `tex3d:` の絵の名前しか持たないので、中身は `textures` で渡す（無い絵は 1 回知らせる）。描く時は今まで通り場面の `textures` にも載せる。
