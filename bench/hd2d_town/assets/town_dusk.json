@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "shadowDistance": 34.0,
+  "shadowMapSize": 4096,
+  "sunElevation": 12.0,
+  "sunAzimuth": -75.0,
+  "sunIntensity": 2.6,
+  "ambient": [
+    0.2,
+    0.14,
+    0.2
+  ],
+  "hemisphere": 0.12,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 16.0,
+  "fogFar": 60.0,
+  "fog": [
+    0.86,
+    0.6,
+    0.55
+  ],
+  "sky": [
+    0.9,
+    0.55,
+    0.45
+  ],
+  "exposure": -0.2,
+  "bloomStrength": 0.0,
+  "fStop": 0.08,
+  "saturation": 1.08,
+  "vignette": 0.4,
+  "gain": [
+    1.1,
+    0.96,
+    0.84
+  ],
+  "shadowStrength": 1.0,
+  "fxaa": true,
+  "lift": [
+    1.0,
+    0.98,
+    1.03
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "charShadow": "silhouette",
+  "shadowPcf": 2,
+  "charShadowScale": [
+    0.6,
+    0.8
+  ],
+  "note": "夕方（歩きながら昼から夜へつなぐ間の 1 つ）。太陽は西の低い所（高さ 12°・向き −75°）で橙・空は橙から藤色・霞は橙・影は長い。",
+  "sunColor": [
+    1.0,
+    0.56,
+    0.3
+  ]
+}

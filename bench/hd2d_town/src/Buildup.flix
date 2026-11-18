@@ -16,13 +16,15 @@ mod Buildup {
     /// monumentFall・monumentHeight・shake・shakeAmp = 目印が降る秒と高さ・カメラが揺れる秒と幅（m）・
     /// wallRise・roofDelay・roofFall・roofHeight・openingDelay・openingStep・pop = 建物の部品の秒・dust = 土ぼこりの秒・dustScale = 土ぼこりの粒の数の倍率・
     /// impactDust = 目印の着地の土ぼこりの倍率（粒の数・広がり）・hitstopSec = 目印の着地で止める秒・flash = 着地の瞬間に上げる露出（段・2 コマで戻る）・
-    /// waveSpeed・waveHeight = 着地の衝撃が外へ伝わる速さ（m/秒）と、板の物（木・街灯・町の人）が跳ねる高さ（m・遠いほど小さい）。
+    /// waveSpeed・waveHeight = 着地の衝撃が外へ伝わる速さ（m/秒）と、板の物（木・街灯・町の人）が跳ねる高さ（m・遠いほど小さい）・
+    /// shakeDecay = カメラの揺れが減る速さ（/秒）・waveReach = 跳ねる高さが 1/e になる距離（m）。
     pub type alias Timing = { lead = Float64, afterRowsPerSec = Float64, rippleSec = Float64, startDelay = Float64,
                               rise = Float64, fall = Float64, fallHeight = Float64, squash = Float64,
                               monumentFall = Float64, monumentHeight = Float64, shake = Float64, shakeAmp = Float64,
                               wallRise = Float64, roofDelay = Float64, roofFall = Float64, roofHeight = Float64,
                               openingDelay = Float64, openingStep = Float64, pop = Float64, dust = Float64, dustScale = Float64,
-                              impactDust = Float64, hitstopSec = Float64, flash = Float64, waveSpeed = Float64, waveHeight = Float64 }
+                              impactDust = Float64, hitstopSec = Float64, flash = Float64, waveSpeed = Float64, waveHeight = Float64,
+                              shakeDecay = Float64, waveReach = Float64 }
 
     /// 前線（マスごとに出来始める時刻）。cellTime = 列・行 → 時刻・monumentAt = 目印が降り始める時刻（None ならそのマスの時刻のすぐ後）・
     /// pace = 出始める時刻 → 部品の動きの秒の倍率（大きいほどゆっくり。土ぼこりの粒はその逆数の倍）。
@@ -78,7 +80,7 @@ mod Buildup {
           monumentFall = 0.5, monumentHeight = 14.0, shake = 0.5, shakeAmp = 0.12,
           wallRise = 0.3, roofDelay = 0.4, roofFall = 0.24, roofHeight = 4.0,
           openingDelay = 0.7, openingStep = 0.02, pop = 0.14, dust = 0.4, dustScale = 1.0,
-          impactDust = 1.0, hitstopSec = 0.0, flash = 0.0, waveSpeed = 14.0, waveHeight = 0.0 }
+          impactDust = 1.0, hitstopSec = 0.0, flash = 0.0, waveSpeed = 14.0, waveHeight = 0.0, shakeDecay = 8.0, waveReach = 14.0 }
 
     /// 行 r が出来る時刻。leaderRows = コマごとの (時刻, 先頭の行（小数）)。前線は先頭の lead 行先で、先頭と一緒に進む。
     /// はじめから前線の手前にある行は隊列のまわりから 1 行ずつ rippleSec おきに、先頭が行き着いた後に残る奥の行は afterRowsPerSec で出来る。
@@ -338,7 +340,7 @@ mod Buildup {
             let u = (t - at - d / tm#waveSpeed) / 0.3;
             if (u < 0.0 or u >= 1.0) (0.0, 1.0)
             else {
-                let k = tm#waveHeight * Float64.pow(base = 2.718281828459045, 0.0 - d / 14.0);
+                let k = tm#waveHeight * Float64.pow(base = 2.718281828459045, 0.0 - d / tm#waveReach);
                 (k * Num.sin(Num.pi() * u), 1.0 - 0.6 * k * Num.sin(2.0 * Num.pi() * u))
             }
         }) |> Option.getWithDefault((0.0, 1.0))
@@ -350,7 +352,7 @@ mod Buildup {
             let (_, at, _, _) = l;
             let tau = t - at;
             if (tau < 0.0 or tau > tm#shake) acc
-            else acc + tm#shakeAmp * Float64.pow(base = 2.718281828459045, -8.0 * tau) * Num.sin(2.0 * Num.pi() * 9.0 * tau)
+            else acc + tm#shakeAmp * Float64.pow(base = 2.718281828459045, 0.0 - tm#shakeDecay * tau) * Num.sin(2.0 * Num.pi() * 9.0 * tau)
         }, 0.0)
 
     /// 土ぼこりの絵（16×16 のドット絵の丸い粒・明るい砂の色）。
@@ -446,7 +448,8 @@ mod Buildup {
                              openingDelay = num("openingDelay", d#openingDelay), openingStep = num("openingStep", d#openingStep),
                              pop = num("pop", d#pop), dust = num("dust", d#dust), dustScale = num("dustScale", d#dustScale),
                              impactDust = num("impactDust", d#impactDust), hitstopSec = num("hitstopSec", d#hitstopSec), flash = num("flash", d#flash),
-                             waveSpeed = num("waveSpeed", d#waveSpeed), waveHeight = num("waveHeight", d#waveHeight) | d } }
+                             waveSpeed = num("waveSpeed", d#waveSpeed), waveHeight = num("waveHeight", d#waveHeight),
+                             shakeDecay = num("shakeDecay", d#shakeDecay), waveReach = num("waveReach", d#waveReach) | d } }
 
     def radialOf(m: Map[String, Json]): Radial =
         let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, m);
