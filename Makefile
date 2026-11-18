@@ -152,7 +152,7 @@ clean-game-builds: ### | templates/*/build/ と bench/*/build/ と engine のパ
 TEMPLATE_DIRS := $(filter-out templates/game-starter,$(wildcard templates/*))
 
 # エンジンのパッケージのテストを順に回す。1 つでも赤ならそこで止まり exit 1。
-# テンプレート 5 本は test-all / test-par-all（リリースのゲート）だけで回す。
+# テンプレート（TEMPLATE_DIRS）は test-all / test-par-all（リリースのゲート）だけで回す。
 # WhyNot: 毎回の test に入れない —— テンプレートのコンパイルがエンジンのテストの約半分を占め、
 #   エンジンを直すたびに払うには重い。退行はリリース前の全量と new-game の産声の確認で拾う。
 # engine の上の 3 層は .layers/ の作業場で回す (張り方は sync-layers)。

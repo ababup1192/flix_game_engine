@@ -14,7 +14,7 @@ pub mod PxSpriteDoc {
     /// Forward = 順送り(0→1→2→0)・PingPong = 往復(0→1→2→1→0)・Once = 最終コマで止まる。
     ///
     /// なぜ Doc に要るか: 往復のコマ列は「最終コマ → 0 コマ」が飛んで見えるが、それは
-    /// 正しい絵で、順送りの本物の破綻と数値では見分けが付かない(bin/lint-anim.py)。
+    /// 正しい絵で、順送りの本物の破綻と数値では見分けが付かない(bin/fge anim)。
     /// 描く側にもここが要る — sin 波でコマを選ぶ絵は実体が往復なのに、Doc は順送りに見える。
     pub enum Loop with Eq, ToString {
         case Forward

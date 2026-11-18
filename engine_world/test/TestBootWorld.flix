@@ -1,4 +1,4 @@
-// 起動の World（非 pub の App.Internal.Runner.bootFrom・App.Internal.Runner.buildBootRecord）が、記録しない起動では Doc を読み直さず、
+// 起動の World（App.Internal.Runner.bootFrom・App.Internal.DevTools.buildBootRecord）が、記録しない起動では Doc を読み直さず、
 // 記録する起動では start の行に載せた中身で、再生（Flow.play の start）が同じ World から始まること。
 // デスクトップの組（START の行）とブラウザ版の組（URL のクエリから組んだ始まり）が、頼む始まりをどう渡すか。
 mod App.Internal.Runner.TestBoot {

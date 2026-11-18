@@ -4,7 +4,7 @@
     {
       "id": "teavm-jso-outside-fge-web",
       "suffixes": [".java", ".flix"],
-      "skip": ["engine_web/java/fge/web/", "lib/", "build/"],
+      "skip": ["engine_web/java/fge/web/", "plans/", "lib/", "build/"],
       "pattern": "^\\s*import\\s+org\\.teavm\\.(jso|interop)\\b",
       "rawLine": true,
       "hint": "TeaVM の JSO（JS の物）は fge.web（engine_web/java/fge/web）の外へ出さない。Flix の総称のデータや Object へ JS の物が入ると wasm が落ちる。fge.web に int・字・数・java.nio だけを受け渡す static の関数を足して、それを呼ぶ"
@@ -213,6 +213,8 @@
       ],
       "skip": [
         "engine/",
+        "engine_web/",
+        "engine_full_web/",
         "engine_world/",
         "engine_tools/",
         "engine_full/",

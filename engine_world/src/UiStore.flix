@@ -50,7 +50,7 @@ pub mod UiStore {
          layers = Map.empty(), sources = Map.empty()}
 
     /// 次の entity id を採番して返す（nextId を進めた新 UiWorld と組で返す）。
-    /// 各 store への登録・名前パス登録は呼び側（UiSpec.spawn）が行う低レベル口。
+    /// 各 store への登録・名前パス登録は呼び側（UiSpec.spawnNode）が行う低レベル口。
     pub def alloc(ui: UiWorld): (EntityId, UiWorld) =
         (ui#nextId, {nextId = ui#nextId + 1 | ui})
 

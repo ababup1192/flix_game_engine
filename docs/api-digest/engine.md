@@ -359,7 +359,7 @@
 ## DrawCmd — `engine/src/core/DrawCmd.flix`
 - ピクセルの重ね方（ブレンドモード）。
   `pub enum BlendMode with Eq, Order, ToString { case Normal case Add case Multiply }`
-- 角丸＋枠線スタイル。`Drawable.style = Some(..)` かつ texture="" のとき、
+- 角丸＋枠線スタイル。`DrawCmd.DrawableSpec.style = Some(..)` かつ texture="" のとき、
   `pub enum BoxStyle with Eq, ToString { case BoxStyle( Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Int32, Float64, Float64, Float64, Float64, Float64 ) }`
 - BoxStyle の全フィールドを名前で持つレコード（`makeStyle` の入力・`styleToSpec` の出力）。
   `pub type alias BoxStyleSpec = { cornerRadius = Float64, borderWidth = Float64, borderColor = Color, borderAlpha = Float64, stripeColor = Color, stripeAlpha = Float64, stripeWidth = Float64, stripePeriod = Float64, stripeDir = Int32, checkerColor = Color, checkerAlpha = Float64, checkerCell = Float64 }`
@@ -2016,7 +2016,7 @@
 ## TileLayer — `engine/src/render2d/TileLayer.flix`
 - 色変調なし（白 = テクスチャの色のまま）。tint の既定値として使う。
   `pub def noTint(): Color`
-- TileLayer を TileMapRenderCmd に変換する（GameEngine.render 内で使用）。
+- TileLayer を TileMapRenderCmd に変換する。
   `pub def toRenderCmd(layerScreenPos: Vec2.Vec2, tileScale: Vec2.Vec2, tileMap: TileLayer): GameEngine.TileMapRenderCmd`
 - デフォルト値で TileLayer を構築するビルドヘルパー
   `pub def make(config: { tileSet = Tileset, tiles = List[TileData], collisionCells = List[Vec2.Vec2], gridSize = {x = Int32, y = Int32} }): TileLayer`

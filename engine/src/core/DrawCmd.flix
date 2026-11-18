@@ -18,7 +18,7 @@ pub mod DrawCmd {
         case Multiply
     }
 
-    /// 角丸＋枠線スタイル。`Drawable.style = Some(..)` かつ texture="" のとき、
+    /// 角丸＋枠線スタイル。`DrawCmd.DrawableSpec.style = Some(..)` かつ texture="" のとき、
     /// 単色矩形を「塗り＋枠＋角丸＋AA」で 1 フラグメント描画する。長さはすべて px。
     ///
     /// stripe* は塗り領域に重ねる斜線ハッチ（CSS の repeating-linear-gradient 相当）。

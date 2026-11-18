@@ -3,7 +3,7 @@ assets/hud.ui.json
   NG: hud/panel/money: 固定幅 160px の枠内の text が wrap も fit も宣言していない — 長い文言が来るとはみ出す。折るなら "wrap": "auto"、意図的な 1 行固定なら "lint-ui": "対象外 — 理由" を書く
 
 1 ファイル / NG 1 件
-※ この lint は ui.json の構造だけを見る。コードから直組みした Text と instance 参照ノードは見えない (詳細は bin/lint-ui-overflow.py の冒頭)
+※ この lint は ui.json の構造だけを見る。コードから直組みした Text と instance 参照ノードは見えない (それらの wrap / fit は書いた所で自分で付ける)
 [lint-doc-shape] OK (Doc 1 件 / 除外 0 件)
 [lint-jargon] OK (34 語で検査)
 [pre-commit] 止めました。上の文を読んで直してから再コミット

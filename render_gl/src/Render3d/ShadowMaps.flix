@@ -54,7 +54,7 @@ mod Render3d.ShadowMaps {
     /// 影の地図を描く pass 1 つ（map の描き先へ list の行を深度だけで描く）。行は頂点の色の行（骨の無い物）と骨つきの行と、太陽の地図だけはその後に
     /// castShadows のビルボードの行（Scene3d.shadowCastingBillboardsOf）で、どれも分かれた理由は影の pass。
     /// billboardRight = ビルボードの板の横の向き（Scene3d.billboardShadowRightOf。縦は world の上）・
-    /// rightPerBillboard = 板ごとの横の向きを行の値（Render3d.SceneList.putBillboardRights）から読むか（点光源の面。真なら billboardRight は読まない）。
+    /// rightPerBillboard = 板ごとの横の向きを行の値（Render3d.SceneList.putBillboardRow）から読むか（点光源の面。真なら billboardRight は読まない）。
     pub type alias ShadowPass = { map = ShadowMapUse, list = SceneList, billboardRight = Vec3.Vec3, rightPerBillboard = Bool }
 
     /// backend が描き先を作る・捨てる関数の組（鍵で控える）。

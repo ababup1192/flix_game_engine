@@ -3,7 +3,7 @@
 // 家づくりでいう柱や板のような「材料」で、PxShade・Material・Scatter・Terrain・
 // shader.json などの高レイヤー部品が、図形プリミティブを多数合成して見た目を作る土台。
 // 正当な用途: HUD の下地・デバッグ描画・fail-open の仮板・高レイヤー部品の内部実装。
-// 依存方向は RawDraw→Render のみ可。UI の入れ子レイアウトは UiLayout.box(別物)。
+// 依存方向は RawDraw→Render のみ可。UI の入れ子レイアウトは Flex.box(別物)。
 // lineQuad+rotated の時計の針イディオムはここに残る(線を引くこと自体は可)。
 
 pub mod RawDraw {

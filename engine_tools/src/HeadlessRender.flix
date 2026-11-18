@@ -114,7 +114,7 @@ pub mod HeadlessRender {
 
     // ════════════════════════════════════════════════════════
     // 絵の値段（1 場面が組んだ描き物の数）の記録
-    // 判定は bin/check-render-budget.py が reference-check と status から読む。
+    // 判定は bin/fge check-render-budget が reference-check と status から読む。
     // ════════════════════════════════════════════════════════
 
     /// 場面 1 枚ぶんの数を PNG の隣へ書く。

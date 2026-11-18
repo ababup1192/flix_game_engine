@@ -313,8 +313,8 @@ pub mod ShaderGen {
 
     def colorKey(): String = "@color"
 
-    /// ぼかし（TexBlur）の標本。点の並びは ShaderEval.blurTex と同じ。ぼかしを使う Spec にだけ足す
-    /// （使わない Spec の出力を 1 文字も変えない）。半径が 0 なら 1 点だけ読む（ShaderEval.blurTex と同じ分岐）。
+    /// ぼかし（TexBlur）の標本。点の並びは ShaderEval.Internal.blurTex と同じ。ぼかしを使う Spec にだけ足す
+    /// （使わない Spec の出力を 1 文字も変えない）。半径が 0 なら 1 点だけ読む（ShaderEval.Internal.blurTex と同じ分岐）。
     /// WhyNot: 分岐の中の texture() を textureLod にしない — ターゲットにも面のテクスチャにも mipmap が無く、微分は答えに効かない。
     /// mipmap を入れる時は textureLod(…, 0.0) に替える。
     def blurSource(): String = blurSourceWith(e -> "texture(tex, " + e + ")")

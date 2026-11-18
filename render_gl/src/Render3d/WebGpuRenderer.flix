@@ -663,7 +663,7 @@ pub mod Render3d.WebGpuRenderer {
 
     def sizeOf(b: Buffer): Int32 \ IO =Int64.tryToInt32(b.size()) |> Option.getWithDefault(Int32.maxValue())
 
-    /// 場面の置いた物と描く物の数と、行ごとの draw call と分かれた理由を数える（GL の Render3d.GlRows.uploadRows と drawMeshRange と Render3d.drawBillboard と同じ欄）。
+    /// 場面の置いた物と描く物の数と、行ごとの draw call と分かれた理由を数える（GL の Render3d.GlRows.uploadRows と drawMeshRange と Render3d.drawBillboards と同じ欄）。
     /// 描く行は描く物のある頂点の色の行・骨つきの行と、値のある材質の行とビルボードの行（ビルボードは描く物の数に入れない）。
     /// 数えるのは描く前（GL は描いた時）なので、描く時に pipeline か group が付かずに飛ばした行も数に残る（その行は host#skip にも出る）。
     /// 影の地図の pass の行は draw call と分かれた理由だけを数える（描く物の数は GL と同じく場面の pass の分）。

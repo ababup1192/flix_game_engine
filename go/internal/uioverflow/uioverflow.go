@@ -19,7 +19,7 @@ import (
 
 // LimitsNote は出力の最後に必ず付く但し書き。
 const LimitsNote = "※ この lint は ui.json の構造だけを見る。コードから直組みした Text と" +
-	" instance 参照ノードは見えない (詳細は bin/lint-ui-overflow.py の冒頭)"
+	" instance 参照ノードは見えない (それらの wrap / fit は書いた所で自分で付ける)"
 
 // noteBody は宣言漏れ 1 件分の文面。
 const noteBody = "%s: 固定幅 %spx の枠内の text が wrap も fit も宣言していない " +

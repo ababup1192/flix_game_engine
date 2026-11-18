@@ -37,7 +37,7 @@ pub mod TileLayer {
     /// per-tile の照明（松明の暖色・月光）を乗せるゲームは、マスごとの明度色をここに渡す。
     pub def noTint(): Color = { r = 1.0, g = 1.0, b = 1.0 }
 
-    /// TileLayer を TileMapRenderCmd に変換する（GameEngine.render 内で使用）。
+    /// TileLayer を TileMapRenderCmd に変換する。
     /// `position` は既にカメラ ViewTransform を適用したスクリーン座標、
     /// `tileScale` は ViewTransform.scale（zoom）。シェーダ側でタイル本体に乗算する
     pub def toRenderCmd(layerScreenPos: Vec2.Vec2, tileScale: Vec2.Vec2,

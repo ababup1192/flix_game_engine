@@ -26,7 +26,8 @@ allowed-tools: Read, Grep, Glob, Bash
    `make -C templates/<name> render-all`（`make render SHOT=<場面名>` は 1 枚だけなので
    リリースの全量ゲートには使わない）
 2. `git status` で assets/sfx の差分ゼロを確認（音や素材の退行はここに出る）
-3. `for d in templates/*/; do make -C "$d" bench; done` で全テンプレの絵が基準と一致するか確認
+3. `for d in templates/*/; do [ "$d" = templates/game-starter/ ] || make -C "$d" reference-check; done` で全テンプレの絵が基準と一致するか確認
+   （game-starter はトークンを入れたままの写し元で組めないので外す）
 4. 基準を持たない絵は、生成し直した `gallery/` を自分で目視する
    （`.claude/skills/critique-render` の手順）
 
@@ -101,15 +102,16 @@ CI の `make release-publish` は版を出す前に `make gl-jar-publish` で置
 - **jargon は `bin/fge jargon <触ったパス…>` で素振りする**（コミットコマンドを
   人へ渡す前に自分で通す）。precommit 経由は `git diff --cached` を読むので、`git add` の
   後に直しても同じ指摘が出続ける
-- **sync の出し忘れ**: engine / engine_world / engine_tools のソースを触ったら対応する
-  `make sync-<name>` を通してからテストする。古い fpkg のまま緑になっても信用できない
+- **sync の出し忘れ**: engine / engine_world / engine_tools / render_gl のソースを触ったら、テンプレートで確かめる前に
+  `make sync-engine-full` を通す（テンプレートは置き場の fpkg を読む。古い fpkg のまま緑になっても信用できない）。
+  層のテスト（`make test-<層>`）は `.layers/` を自分で張り直すので要らない
 - **lint 群は先に手で回す**: フック任せにせず `make lint ONLY=view,palette,ui,audio` を
   リリース前に一巡させる。既知の赤が残ったままだとゲートで止まる
 - **`make test-par` の偽 FAIL**: ログが依存解決で途切れテスト 0 本なら並列の食い合い。
-  当該パッケージを単体 `make test-<name>` で確かめ、必要なら `make release TEST=test`（逐次）
+  当該パッケージを単体 `make test-<name>` で確かめ、必要なら `make release TEST=test-all`（逐次）
 - **`make release` は未コミットで中断する**: `gallery/` や `NOTES.md` は git 管理外なので
   `git status` に出ない＝残っていても邪魔しない。出ている差分だけ全部コミットする
 
-**全量ゲート**は `make test-par`（全パッケージ並列・実時間 ≈ 最遅パッケージ 1 本分・ログは `.test-logs/`）。
+**全量ゲート**は `make test-par-all`（テンプレートを含む全パッケージ並列・実時間 ≈ 最遅パッケージ 1 本分・ログは `.test-logs/`）。
 併せて `make gl-parity` を回して A 段階の全一致（全 scene 0 px）を確認する（GL と SoftRaster の絵の退行はテストに出ない）。
-並列版に不審な挙動があれば逐次へフォールバックする（`make test` / `make release TEST=test`）。
+並列版に不審な挙動があれば逐次へフォールバックする（`make test-all` / `make release TEST=test-all`）。

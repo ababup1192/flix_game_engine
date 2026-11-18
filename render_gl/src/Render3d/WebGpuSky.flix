@@ -37,7 +37,7 @@ mod Render3d.WebGpuSky {
     /// 場面 scene の空の向きの材料（Scene3d.skyBasisOf）と描き先の大きさ width・height を、R3dScene の末尾の uSkyForward・uSkyRight・uSkyUp の並び
     /// （xyz に forward・right・up、w に幅・高さ・景色を背景に描くかのフラグ（Scene3d.backgroundEnvironmentOf が Some なら 1））で buf へ詰める（位置は Render3d.UniformLayout の表）。
     // WhyNot: 景色を背景に描くかを R3dScene の uEnvOn で見ない — uEnvOn は環境マップがあれば立ち（材質の映り込み）、sky と背景の景色が両方ある場面は空の坂を描く。
-    // WhyNot: 空の無い場面で詰めるのを飛ばさない — buf は場面をまたいで使い回し、書く欄の組を場面ごとに変えない（WebGpuRenderer.packSceneValues と同じ決まり）。
+    // WhyNot: 空の無い場面で詰めるのを飛ばさない — buf は場面をまたいで使い回し、書く欄の組を場面ごとに変えない（Render3d.WebGpuSceneValues.packSceneValues と同じ決まり）。
     /// o = R3dScene の欄の位置（Render3d.UniformLayout.sceneOffsets）。
     pub def packValues(buf: ByteBuffer, o: Map[Render3d.UniformLayout.SceneField, Int32], scene: Scene3d.Scene3dCmd, width: Int32, height: Int32): Unit \ IO =
         let at = f -> Render3d.UniformLayout.offsetOf(o, f);

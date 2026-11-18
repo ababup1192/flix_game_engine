@@ -134,7 +134,7 @@ mod RenderStatic {
             case _                    => false
         }
 
-    /// zIndex 昇順・同 z 内は入力順のまま並べ替える（RenderFrame.stableByZ と同じ考え方の局所版）。
+    /// zIndex 昇順・同 z 内は入力順のまま並べ替える（RenderFrame.stableByZTree と同じ考え方の局所版）。
     def stableByZ(zOf: a -> Int32, items: List[a]): List[a] =
         let buckets = List.foldLeft((m, x) -> {
             let z = zOf(x);

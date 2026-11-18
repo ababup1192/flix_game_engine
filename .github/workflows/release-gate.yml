@@ -1,8 +1,9 @@
 name: Release Gate
 
 # tag (v*) を push したとき、エンジン全パッケージがコンパイルできることを確認する門番。
-# fe_rogue の描画スナップショットは OS/JRE のフォント計測差でズレるため CI では回さない。
-# スナップショットを含む全テストは開発機ローカルの `make test` に任せ、CI は「ビルドが通るか」だけを見る。
+# 描画スナップショットは OS/JRE のフォント計測差でズレるため CI では回さない。
+# スナップショットを含む全テストは開発機ローカルの `make release`（全量の門）に任せ、CI は「ビルドが通るか」だけを見る。
+# 注: タグは release.yml が GITHUB_TOKEN で作るので、このワークフローは on: push: tags では起きない（GitHub の仕様）。
 on:
   push:
     tags: ["v*"]
@@ -18,7 +19,7 @@ jobs:
       - name: Install devbox
         uses: jetify-com/devbox-install-action@v0.13.0
 
-      # make sync は5パッケージすべてを build-pkg する = 全パッケージのコンパイル検証になる。
+      # make sync は engine_full（4 パッケージの src を集めた物）を build-pkg する = 全パッケージのコンパイル検証になる。
       - name: Build all packages
         run: devbox run -- make sync
         env:

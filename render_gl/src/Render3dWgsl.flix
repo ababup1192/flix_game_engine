@@ -338,7 +338,7 @@ pub mod Render3dWgsl {
     /// （並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を板から離す長さ）。影の地図へ描く時も同じ（group 0 が光の目と板の向き）。
     pub def billboardVertexSource(): String = billboardVertexSourceWith("r3dCamera.uRight.xyz")
 
-    /// 板の横の向きを行の値の tint の rgb から読む billboardVertexSource（点光源の影の面へ描く時。Render3d.SceneList.putBillboardRights）。
+    /// 板の横の向きを行の値の tint の rgb から読む billboardVertexSource（点光源の影の面へ描く時。Render3d.SceneList.putBillboardRow）。
     pub def billboardRowRightVertexSource(): String = billboardVertexSourceWith("v.tint.xyz")
 
     /// right = 板の横の向きの式。

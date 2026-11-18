@@ -1,7 +1,9 @@
 package docrefs
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -85,5 +87,26 @@ func TestLimitFileLeftInTheOldPlaceStops(t *testing.T) {
 	code, err := Run(&out, &errOut, root, nil)
 	if code != 2 || err == nil || !strings.Contains(err.Error(), "git mv lint/limits/doc-refs-callers.json lint/doc-refs/callers.json") {
 		t.Errorf("古い置き場で止めていない: code %d err %v", code, err)
+	}
+}
+
+// 根の src/ が engine/src への symlink の木でも、.flix は実体の置き場のパスで出る（直す人が開くファイルと同じ）。
+func TestFlixFilesReportsTheRealPathOfSymlinkedFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "engine", "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "src", "engine"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "engine", "src", "A.flix"), []byte("mod A {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "..", "engine", "src", "A.flix"), filepath.Join(root, "src", "engine", "A.flix")); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := flixFiles(root, []string{"src", "engine/src"})
+	if len(files) != 1 || files[0] != "engine/src/A.flix" {
+		t.Errorf("files = %v", files)
 	}
 }

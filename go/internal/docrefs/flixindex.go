@@ -437,7 +437,7 @@ func flixFiles(root string, dirs []string) ([]string, int64) {
 					continue
 				}
 				seen[realFile] = true
-				out = append(out, filepath.ToSlash(rel))
+				out = append(out, filepath.ToSlash(ownPath(root, rel, realFile)))
 				newest = max(newest, info.ModTime().UnixNano())
 			}
 		}
@@ -447,6 +447,21 @@ func flixFiles(root string, dirs []string) ([]string, int64) {
 	}
 	sort.Strings(out)
 	return out, newest
+}
+
+// ownPath は symlink の .flix を、根の中にある実体の相対パスで返す。
+// WhyNot: 張った側のパスで出さない — engine のリポの根の src/ は engine/src などへの symlink の木で、
+// 当たりが src/engine/... と出ると、直す人が開くファイル・コミットで触ったファイルのパスと食い違う。
+func ownPath(root, rel, realFile string) string {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil || filepath.Join(realRoot, rel) == realFile {
+		return rel
+	}
+	own, err := filepath.Rel(realRoot, realFile)
+	if err != nil || own == ".." || strings.HasPrefix(own, ".."+string(filepath.Separator)) {
+		return rel
+	}
+	return own
 }
 
 // readSpans は flixlint の索引から宣言（def・enum・case・alias）の名前を読む。頭の行が flixlint-spans で

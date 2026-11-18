@@ -2,7 +2,7 @@
 // 「暗さ・照り返しフチ・ハロの大きさ・光源の並び」を JSON に書き、Spec（pure data）へ読み取る。
 // occluders（壁の遮蔽ポリゴン）は含めない — 壁はゲームの World が持つ形であって、
 // json は光の質感パラメータだけを持つ、という分業のため（items へ渡す SceneLightConfig の
-// occluders/viewport/glow/z はゲーム側が Spec.toConfig で自分の値を足して組み立てる）。
+// occluders/viewport/glow/z はゲーム側が LightDoc.toConfig で自分の値を足して組み立てる）。
 // light#at も json の値は初期値の扱いで、実行時は World（プレイヤー位置等）が上書きしてよい。
 //
 // 語彙（version 1）: トップレベルの darkness / rim / haloDiameterFactor / ambient /
@@ -125,7 +125,7 @@ pub mod LightDoc {
             _h      <- require(halo >= 0.0 and halo <= 1.0, "halo must be within 0..1 (got: ${halo})")
         ) yield ({ at = at, radius = radius, color = color, halo = halo }: LightSpec))
 
-    /// halo 省略時の既定値（View.lanternLight 等の実運用値に合わせた素朴な目安）。
+    /// halo 省略時の既定値（ゲームの灯りの実運用値に合わせた素朴な目安）。
     def defaultHalo(): Float64 = 0.35
 
     def require(ok: Bool, msg: String): Result[JsonError, Unit] =
