@@ -41,14 +41,22 @@ mod TileMap3d {
             "crate_top" => ("props3d/crate_top.png", w), "crate_front" => ("props3d/crate_front.png", w)
         }
 
+    /// 地図の材質の表: 町の表に、地図の groundTiles（地面の材質ごと）と tileOverrides（材質の名前ごと・"w" は水路の底）の絵を上書きした物。
+    pub def materialTableOf(m: TownMap): Map[String, (String, Rgb)] =
+        let w = Faces.white();
+        let grounds = m#groundTiles |> List.map(gt -> (groundMaterial(fst(gt)), (snd(gt), w)));
+        let overrides = m#tileOverrides |> List.map(kv -> (if (fst(kv) == "w") groundMaterial(Ground.Water) else fst(kv), (snd(kv), w)));
+        List.foldLeft((acc, kv) -> Map.insert(fst(kv), snd(kv), acc), materialTable(), List.append(grounds, overrides))
+
     /// 町を組む。skipNpcColumn = この列の町の人（地図の 1・2・3）を置かない（歩く隊列で置き換える列）。
     pub def build(m: TownMap, sizes: SpriteSizes, skipNpcColumn: Option[Int32]): Town =
         let foot = TownMap.footprints(m);
         let ctx = { map = m, foot = foot };
         let quads = List.flatten(
-            floorQuads(ctx) :: cliffQuads(ctx) :: groundEdgeQuads(ctx) :: waterQuads(ctx) ::
-            List.flatMap(buildingQuads(ctx), m#buildings) :: propQuads(ctx) :: marginQuads(ctx) :: Nil);
-        { quads = quads, boards = List.append(propBoards(ctx, sizes, skipNpcColumn), forestBoards(ctx, sizes)) }
+            floorQuads(ctx) :: stairQuads(ctx) :: cliffQuads(ctx) :: groundEdgeQuads(ctx) :: waterQuads(ctx) ::
+            List.flatMap(buildingQuads(ctx), m#buildings) :: propQuads(ctx) :: rockBoxQuads(ctx) :: marginQuads(ctx) :: Nil);
+        let forest = if (m#margin#forest) forestBoards(ctx, sizes) else Nil;
+        { quads = quads, boards = List.append(propBoards(ctx, sizes, skipNpcColumn), forest) }
 
     /// 組む時に毎回引く物（地図と、建物の足元の表）。
     type alias Ctx = { map = TownMap, foot = Map[(Int32, Int32), Building] }
@@ -78,10 +86,14 @@ mod TileMap3d {
         List.range(0, m#height) |> List.flatMap(r -> List.range(0, m#width) |> List.map(c -> (c, r)))
 
     def groundMaterial(g: Ground): String = match g {
-        case Ground.Grass  => "grass"
-        case Ground.Cobble => "cobble"
-        case Ground.Dirt   => "dirt"
-        case Ground.Water  => "canal_floor"
+        case Ground.Grass    => "grass"
+        case Ground.Cobble   => "cobble"
+        case Ground.Dirt     => "dirt"
+        case Ground.Water    => "canal_floor"
+        case Ground.Path     => "path"
+        case Ground.RockTop  => "rock_top"
+        case Ground.SnowPath => "snow_path"
+        case Ground.SnowTop  => "snow_top"
     }
 
     // ── ① 床 ──
@@ -120,6 +132,46 @@ mod TileMap3d {
                            Faces.p3(x0, y0, z) :: Faces.p3(x0 + 1.0, y0, z) :: Faces.p3(x0 + 1.0, y0 + 1.0, z) :: Faces.p3(x0, y0 + 1.0, z) :: Nil,
                            variantUv(floorInt(h01(c, r, 1) * 8.0)), ao) }
             })
+
+    // ── 階段（地図の ^・北へ上る 4 段） ──
+
+    /// 階段のマスの踏み面と蹴上げと、低い隣に面した横の面（Blender の試作の build_stairs と同じ寸法）。
+    def stairQuads(ctx: Ctx): List[Quad] =
+        let m = ctx#map;
+        cells(m) |> List.filter(cr -> { let (c, r) = cr; TownMap.shapeAt(m, c, r) == Shape.Stairs and not isFoot(ctx, c, r) })
+            |> List.flatMap(cr -> {
+                let (c, r) = cr;
+                let tread = groundMaterial(TownMap.groundAt(m, c, r));
+                Faces.withOwner(Faces.Owner.Cell(c, r), List.range(0, stairSteps()) |> List.flatMap(stairStep(ctx, c, r, tread)))
+            })
+
+    def stairSteps(): Int32 = 4
+
+    /// 階段の i 段目（下から）。踏み面はその段の前の縁から北の辺まで（上の段の下に隠れる所も張る）。
+    def stairStep(ctx: Ctx, c: Int32, r: Int32, tread: String, i: Int32): List[Quad] =
+        let m = ctx#map;
+        let n = fl(stairSteps());
+        let z0 = top(ctx, c, r);
+        let x0 = fl(c);
+        let za = z0 + m#heightStep * fl(i) / n;
+        let zb = z0 + m#heightStep * fl(i + 1) / n;
+        let ya = wy(m, r) + fl(i) / n;
+        let yn = wy(m, r) + 1.0;
+        let p = Faces.p3;
+        let treadQuad = Faces.quad(tread, p(x0, ya, zb) :: p(x0 + 1.0, ya, zb) :: p(x0 + 1.0, yn, zb) :: p(x0, yn, zb) :: Nil,
+                                   (0.0, ya) :: (1.0, ya) :: (1.0, yn) :: (0.0, yn) :: Nil, Nil);
+        let riser = Faces.quad("bank", p(x0, ya, za) :: p(x0 + 1.0, ya, za) :: p(x0 + 1.0, ya, zb) :: p(x0, ya, zb) :: Nil,
+                               (0.0, za) :: (1.0, za) :: (1.0, zb) :: (0.0, zb) :: Nil, 0.7 :: 0.7 :: 1.0 :: 1.0 :: Nil);
+        let sides = ((x0, -1) :: (x0 + 1.0, 1) :: Nil) |> List.filterMap(side -> {
+            let (xx, dc) = side;
+            let nz = top(ctx, c + dc, r);
+            if (nz >= zb) None
+            else {
+                let pts = p(xx, yn, nz) :: p(xx, ya, nz) :: p(xx, ya, zb) :: p(xx, yn, zb) :: Nil;
+                Some(Faces.quad("bank", if (dc > 0) swapPairs(pts) else pts, (0.0, nz) :: (1.0, nz) :: (1.0, zb) :: (0.0, zb) :: Nil, 0.6 :: 0.6 :: 1.0 :: 1.0 :: Nil))
+            }
+        });
+        treadQuad :: riser :: sides
 
     // ── 箱 ──
 
@@ -214,11 +266,12 @@ mod TileMap3d {
         let z = top(ctx, c, r);
         let stair = TownMap.shapeAt(m, c, r) == Shape.Stairs;
         let neighborFoot = Map.get((nc, nr), ctx#foot);
-        if (stair and (name == "n" or name == "s")) Nil
+        if (stair and name == "n") Nil
         else if (Option.nonEmpty(neighborFoot) and m#curbRaise > 0.0) Nil
         else {
             let nz = neighborFoot |> Option.map(b -> fl(b#level) * m#heightStep) |> Option.getWithDefault(top(ctx, nc, nr));
-            let ztop = z + (if (stair) m#heightStep else 0.0);
+            // WhyNot: 階段の南の辺に段の高さを足さない — 南の辺は段の下端で、足すと段の手前に段 1 つ分の壁が立って最初の段を隠す
+            let ztop = z + (if (stair and name != "s") m#heightStep else 0.0);
             if (nz >= ztop - 0.000001) Nil
             else {
                 let (p, q) = edgePoints(m, c, r, name);
@@ -256,10 +309,14 @@ mod TileMap3d {
             let z = fl(TownMap.levelAt(m, c, r)) * m#heightStep - TownMap.waterSurface();
             let x0 = fl(c);
             let y0 = wy(m, r);
-            let k = floorInt(h01(c, r, 5) * 4.0);
-            let uv = Faces.fullUv();
-            { owner = Faces.Owner.Cell(c, r) | Faces.quad("water", Faces.p3(x0, y0, z) :: Faces.p3(x0 + 1.0, y0, z) :: Faces.p3(x0 + 1.0, y0 + 1.0, z) :: Faces.p3(x0, y0 + 1.0, z) :: Nil,
-                       List.append(List.drop(k, uv), List.take(k, uv)), Nil) }
+            let pts = Faces.p3(x0, y0, z) :: Faces.p3(x0 + 1.0, y0, z) :: Faces.p3(x0 + 1.0, y0 + 1.0, z) :: Faces.p3(x0, y0 + 1.0, z) :: Nil;
+            let uv = match m#waterUv {
+                case TownMap.WaterUv.World   => Faces.fullUv() |> List.map(ab -> ((x0 + fst(ab)) / 2.0, (y0 + snd(ab)) / 2.0))
+                case TownMap.WaterUv.PerCell =>
+                    let k = floorInt(h01(c, r, 5) * 4.0);
+                    List.append(List.drop(k, Faces.fullUv()), List.take(k, Faces.fullUv()))
+            };
+            { owner = Faces.Owner.Cell(c, r) | Faces.quad("water", pts, uv, Nil) }
         })
 
     // ── ④ 草と石畳の境（同じ高さの時だけ。縁石を立てた地図では出ない） ──
@@ -503,12 +560,32 @@ mod TileMap3d {
         let n = fl(m#margin#cells);
         let (w, h) = (fl(m#width), fl(m#height));
         let south = fl(TownMap.southLevel(m)) * m#heightStep;
+        let ground = groundMaterial(m#margin#ground);
         ((0.0 - n, 0.0 - n, w + n, 0.0, south) :: (0.0 - n, h, w + n, h + n * 3.0, low) :: (0.0 - n, 0.0, 0.0, h, low) :: (w, 0.0, w + n, h, low) :: Nil)
             |> List.map(rect -> {
                 let (x0, y0, x1, y1, z) = rect;
-                Faces.quad("grass", Faces.p3(x0, y0, z) :: Faces.p3(x1, y0, z) :: Faces.p3(x1, y1, z) :: Faces.p3(x0, y1, z) :: Nil,
+                Faces.quad(ground, Faces.p3(x0, y0, z) :: Faces.p3(x1, y0, z) :: Faces.p3(x1, y1, z) :: Faces.p3(x0, y1, z) :: Nil,
                            (x0, y0) :: (x1, y0) :: (x1, y1) :: (x0, y1) :: Nil, 0.7 :: 0.7 :: 0.7 :: 0.7 :: Nil)
             })
+
+    // ── ⑧ 岩の塊（地図の rockBoxes） ──
+
+    /// 岩の塊: マスの真ん中から少しずらした箱（上面は rockBoxTop の地面の絵・側面は崖の絵）。1.2 m より高い塊は上に一回り小さい段を重ねる。
+    // WhyNot: 高い塊を 1 つの箱のままにしない — 角ばった柱に見える。
+    def rockBoxQuads(ctx: Ctx): List[Quad] =
+        let m = ctx#map;
+        let mat = { top = groundMaterial(m#rockBoxTop), south = "rock", side = "rock", fit = false };
+        m#rockBoxes |> List.flatMap(rb -> {
+            let (c, r) = (rb#col, rb#row);
+            let x = fl(c) + 0.5 + (h01(c, r, 41) - 0.5) * 0.3;
+            let y = wy(m, r) + 0.5 + (h01(c, r, 42) - 0.5) * 0.3;
+            let z = top(ctx, c, r);
+            let (hw, hd) = (rb#width / 2.0, rb#depth / 2.0);
+            let body = box(mat, Faces.p3(x - hw, y - hd, z), Faces.p3(x + hw, y + hd, z + rb#height), allFaces(), 0.45);
+            let (cw, cd) = (rb#width * 0.35, rb#depth * 0.35);
+            let cap = if (rb#height > 1.2) box(mat, Faces.p3(x - cw, y - cd, z + rb#height), Faces.p3(x + cw, y + cd, z + rb#height + 0.35), allFaces(), 0.8) else Nil;
+            Faces.withOwner(Faces.Owner.Cell(c, r), List.append(body, cap))
+        })
 
     // ── 板の物 ──
 
@@ -535,6 +612,8 @@ mod TileMap3d {
                 case Prop.Lamp    => at("sprites/street_lamp_ornate.png", None)
                 case Prop.Bush    => at("sprites/tree_broadleaf.png", Some(0.8 + 0.5 * h01(c, r, 4)))
                 case Prop.Npc(k)  => if (skipNpcColumn == Some(c)) None else npcBoard(sizes, k, x, y, z) |> Option.map(b -> { owner = Faces.Owner.Prop(c, r) | b })
+                case Prop.Sprite(ch) => Map.get(ch, m#objectSprites) |> Option.flatMap(o ->
+                    board(sizes, o#sprite, x + (h01(c, r, 3) - 0.5) * 0.3, y, z, o#height) |> Option.map(b -> { owner = Faces.Owner.Prop(c, r) | b }))
                 case _            => None
             }
         })

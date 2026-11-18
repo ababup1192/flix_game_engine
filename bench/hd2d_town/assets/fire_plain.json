@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "note": "炎の洞窟の素の絵（段 F4）: 昼の町の Look に、hd2d_lab の fire_cave.map.json の lighting の太陽（高さ 66°・方位 25°・色）と空・かすみの色を写した物。溶岩の発光・点光源・熱・火の粉・陽炎は段 F5 で足す",
+  "topDeg": 15.0,
+  "bottomDeg": 50.0,
+  "far": 60.0,
+  "shadowDistance": 28.0,
+  "shadowMapSize": 4096,
+  "sunElevation": 66.0,
+  "sunAzimuth": 25.0,
+  "sunIntensity": 10.367,
+  "ambient": [
+    0.32,
+    0.22,
+    0.2
+  ],
+  "hemisphere": 0.25,
+  "boardTint": 1.0,
+  "snapToTexels": true,
+  "fogNear": 20.0,
+  "fogFar": 70.0,
+  "fog": [
+    0.16,
+    0.09,
+    0.08
+  ],
+  "sky": [
+    0.12,
+    0.07,
+    0.06
+  ],
+  "exposure": -0.3,
+  "bloomStrength": 0.0,
+  "fStop": 0.08,
+  "saturation": 1.05,
+  "vignette": 0.35,
+  "gain": [
+    1.04,
+    0.98,
+    0.92
+  ],
+  "shadowStrength": 1.0,
+  "fxaa": true,
+  "lift": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "gamma": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "charShadow": "silhouette",
+  "shadowPcf": 2,
+  "charShadowScale": [
+    0.6,
+    0.8
+  ],
+  "lightUnits": "physical",
+  "sunColor": [
+    0.98,
+    0.94,
+    0.92
+  ]
+}

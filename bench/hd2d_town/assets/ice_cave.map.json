@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "title": "氷の谷（予告に氷の場面は無い。炎の洞窟と同じ骨組みを氷と雪に置き換えた場面）",
+  "note": "南の入口から北へ 3 マス幅の雪の道・真ん中の広間の左に凍った池・2 マスの氷の階段を上って上の広場へ。崖は氷の壁 3 m（高さ 4）、手前（南）は 1〜2 m、上面は雪。空は開いている（谷）",
+  "legend": {
+    "ground": {
+      "n": "踏み固めた雪の道",
+      "s": "雪の上面",
+      "w": "凍った池（床を下げてつやのある氷を張る）"
+    },
+    "objects": {
+      "K": "氷の結晶（うすく光る）",
+      "Q": "雪をかぶった針葉樹",
+      ".": "なし"
+    }
+  },
+  "groundTiles": {
+    "n": "tiles/snow_path.png",
+    "s": "tiles/snow_top.png"
+  },
+  "tileOverrides": {
+    "rock": "tiles/ice_wall.png",
+    "bank": "tiles/ice_wall.png",
+    "w": "tiles/ice_wall.png",
+    "water": "tiles/ice_pond.png"
+  },
+  "gloss": {
+    "water": 0.06,
+    "rock": 0.3,
+    "bank": 0.3
+  },
+  "emission": {},
+  "objectSprites": {
+    "K": {
+      "sprite": "ice_crystal.png",
+      "emit": 0.6,
+      "light": {
+        "energy": 25,
+        "color": [
+          0.55,
+          0.85,
+          1.0
+        ],
+        "height": 0.7
+      }
+    },
+    "Q": {
+      "sprite": "snow_pine.png"
+    }
+  },
+  "lighting": {
+    "sun": {
+      "energy": 4.5,
+      "color": [
+        0.86,
+        0.93,
+        1.0
+      ],
+      "elev": 48,
+      "az": 30
+    },
+    "sky": [
+      0.62,
+      0.76,
+      0.98
+    ],
+    "skyStrength": 0.9,
+    "haze": [
+      0.86,
+      0.92,
+      1.0
+    ],
+    "exposure": 0.45,
+    "bloom": 0.45,
+    "reflections": true
+  },
+  "particles": {
+    "kind": "snow",
+    "count": 140,
+    "color": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "emit": 1.2,
+    "size": 0.06,
+    "vel": [
+      0.25,
+      0.0,
+      -0.9
+    ],
+    "sway": 0.4,
+    "box": [
+      18,
+      16,
+      6
+    ],
+    "ahead": 3.0
+  },
+  "tileset": "hd2d_gen",
+  "heightStep": 1.0,
+  "margin": {
+    "cells": 20,
+    "ground": "s",
+    "level": -6,
+    "objects": "none"
+  },
+  "ground": [
+    "sssssssssssssssssssss",
+    "sssssssssssssssssssss",
+    "ssssssnnnnnnnnnssssss",
+    "ssssssnnnnnnnnnssssss",
+    "ssssssnnnnnnnnnssssss",
+    "ssssssnnnnnnnnnssssss",
+    "ssssssnnnnnnnnnssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssswwwwnnnnnnnnnssss",
+    "sssswwwwnnnnnnnnnnnss",
+    "sssswwwwnnnnnnnnnnnss",
+    "sssswwwwnnnnnnnnnnnss",
+    "sssswwwwnnnnnnnnnnnss",
+    "ssssnnnnnnnnnnnnnssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss",
+    "sssssssssnnnsssssssss"
+  ],
+  "height": [
+    "555555555555555555555",
+    "555555555555555555555",
+    "444444333333333444444",
+    "444444333333333444444",
+    "444444333333333444444",
+    "444444333333333444444",
+    "444444333333333444444",
+    "444444444333444444444",
+    "444444444333444444444",
+    "444444444333444444444",
+    "444444444222444444444",
+    "444444444111444444444",
+    "444444444111444444444",
+    "444411111111111114444",
+    "444411111111111111144",
+    "444411111111111111144",
+    "444411111111111111144",
+    "444411111111111111144",
+    "444411111111111114444",
+    "222222222111222222222",
+    "222333322111222222222",
+    "222333322111223333222",
+    "222333322111223333222",
+    "222222222111223333222",
+    "222222222111222222222",
+    "222222222111222222222"
+  ],
+  "shape": [
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".........^^^.........",
+    ".........^^^.........",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    "....................."
+  ],
+  "objects": [
+    ".....................",
+    ".....................",
+    ".....................",
+    ".......Q.....K.......",
+    ".....................",
+    ".....................",
+    "........K.....Q......",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    ".....................",
+    "................K....",
+    ".....................",
+    "..............K......",
+    ".....................",
+    ".....................",
+    ".....................",
+    "............K........",
+    ".....................",
+    "...Q........Q...Q....",
+    "........K............",
+    ".....................",
+    ".....................",
+    "....................."
+  ],
+  "buildings": [],
+  "camera": {
+    "pitchDeg": 45,
+    "lensMm": 35,
+    "target": [
+      10.5,
+      14
+    ],
+    "targetZ": 1.25,
+    "distance": 20,
+    "fstop": 0.15,
+    "frame": {
+      "anchor": [
+        10.5,
+        20.0
+      ],
+      "v": 0.72,
+      "width": 16.3,
+      "note": "町の大通りと同じ画角（足元の 1 m の写り方をそろえる）"
+    }
+  },
+  "walk": {
+    "note": "パーティが南の入口から北へ歩き、階段を上って上の広場で止まる。歩きの決まりは walk_refpace と同じ・カメラの高さは B",
+    "party": [
+      {
+        "strip": "sprites/traveler_walk4.png",
+        "dirs": "nes",
+        "idleStrip": "sprites/traveler_idle.png"
+      },
+      {
+        "strip": "sprites/merchant_walk4.png",
+        "dirs": "nes",
+        "idleStrip": "sprites/merchant_idle.png"
+      },
+      {
+        "strip": "sprites/girl_walk4.png",
+        "dirs": "nes",
+        "idleStrip": "sprites/girl_idle.png"
+      }
+    ],
+    "frames": 4,
+    "frameSec": 0.333,
+    "feetV": 0.62,
+    "groundFlowH": 0.21,
+    "stopSec": 0.7,
+    "path": [
+      [
+        10,
+        22
+      ],
+      [
+        10,
+        4
+      ]
+    ],
+    "idleSec": 1.5,
+    "holdSec": 3.0,
+    "camZLagK": 2.5,
+    "followZoom": 1.35,
+    "benchNote": "bench/hd2d_town の写しで足した欄: idleStrip = 止まった後の息遣いの帯（町の buildup_center.json の party と同じ）・followZoom = 追従カメラの引き（足元からの距離の倍率。町の歩く追従の 1.35 とそろえ、白飛びの前後でキャラの大きさを跳ねさせない）・feetV = 町の歩く台本（buildup_center.json）の 0.62 にそろえた（hd2d_lab の写しは 0.55。キャラの写る奥行きが変わり大きさが 1 割ずれる）"
+  }
+}

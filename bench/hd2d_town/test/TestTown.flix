@@ -289,4 +289,91 @@ mod TestTown {
     @Test
     def testJustAfterTheMoonRowTheBoardsStillLookLit(): Unit \ Assert =
         Assert.assertTrue(TownLook.atRow(schedule(), 28.95)#litToUnlit < 0.05)
+
+    // ── 洞窟の地図（段・足の高さ・path・地図ごとの板・地図の外） ──
+
+    /// 1 列 × 3 行の洞窟（南の平らなマス → 北へ上る段 → 北の平らなマス・0.5 m 刻み・北のマスに結晶 K と高さ 2 m の岩の塊・地図の外は岩で森なし）。
+    def caveJson(): String =
+        "{\"ground\": [\"p\", \"p\", \"p\"], \"height\": [\"2\", \"1\", \"1\"], \"shape\": [\".\", \"^\", \".\"], \"objects\": [\"K\", \".\", \".\"]," +
+        " \"buildings\": [], \"heightStep\": 0.5, \"margin\": {\"cells\": 2, \"level\": -6, \"ground\": \"r\", \"objects\": \"none\"}," +
+        " \"groundTiles\": {\"p\": \"tiles/lava_path.png\", \"r\": \"tiles/basalt_top.png\"}, \"tileOverrides\": {\"water\": \"tiles/lava.png\"}," +
+        " \"objectSprites\": {\"K\": {\"sprite\": \"lava_crystal.png\", \"height\": 1.2}}, \"rockBoxes\": [[0, 0, 1.0, 1.0, 2.0]], \"rockBoxTop\": \"r\"," +
+        " \"camera\": {\"targetZ\": 1.25, \"target\": [0.5, 1.0], \"frame\": {\"anchor\": [0.5, 2.0], \"v\": 0.72, \"width\": 16.3}}," +
+        " \"walk\": {\"path\": [[0, 2], [0, 0]], \"endFace\": \"n\", \"camZLagK\": 2.5, \"followZoom\": 1.35, \"party\": [{\"strip\": \"a.png\", \"idleStrip\": \"b.png\"}]}}"
+
+    def cave(): TownMap =
+        match DocJson.parse(caveJson()) |> Option.toOk("JSON が読めない") |> Result.flatMap(TownMap.decode("step")) {
+            case Ok(m)    => m
+            case Err(why) => bug!(why)
+        }
+
+    def caveQuads(material: String): Int32 =
+        TileMap3d.build(cave(), Map#{ "sprites/lava_crystal.png" => (42, 48) }, None)#quads |> List.filter(q -> q#material == material) |> List.length
+
+    @Test
+    def testFlatCellFootIsItsTop(): Unit \ Assert =
+        Assert.assertTrue(near(TownMap.groundZAt(cave(), 0.5, 0.5), 0.5))
+
+    @Test
+    def testStairFootIsOnTheFrontEdgeOfTheTread(): Unit \ Assert =
+        // 段のマスの真ん中は 3 段目の踏み面の前の縁: 0.5 + (0.5 + 0.25) × 0.5
+        Assert.assertTrue(near(TownMap.groundZAt(cave(), 0.5, 1.5), 0.875))
+
+    @Test
+    def testCellBeforeTheStairsRisesInItsLastQuarter(): Unit \ Assert =
+        Assert.assertTrue(near(TownMap.groundZAt(cave(), 0.5, 0.9), 0.575))
+
+    @Test
+    def testFootHeightHasNoJumpAcrossTheStairs(): Unit \ Assert =
+        let m = cave();
+        let zs = List.range(0, 300) |> List.map(i -> TownMap.groundZAt(m, 0.5, Int32.toFloat64(i) / 100.0));
+        Assert.assertTrue(List.zip(zs, List.drop(1, zs)) |> List.forAll(pair -> Float64.abs(snd(pair) - fst(pair)) < 0.01))
+
+    @Test
+    def testWalkPathIsRead(): Unit \ Assert =
+        let path = cave()#walkPath |> Option.map(pw -> pw#path |> List.map(w -> (w#col, w#row))) |> Option.getWithDefault(Nil);
+        Assert.assertEq(expected = (0, 2) :: (0, 0) :: Nil, path)
+
+    @Test
+    def testWalkEndFaceIsRead(): Unit \ Assert =
+        Assert.assertEq(expected = Some(Route.Dir.North), cave()#walkPath |> Option.map(pw -> pw#endFace))
+
+    @Test
+    def testWalkWithoutPathHasNoPathWalk(): Unit \ Assert =
+        Assert.assertTrue(Option.isEmpty(mini("")#walkPath))
+
+    @Test
+    def testObjectSpriteLetterBecomesASprite(): Unit \ Assert =
+        Assert.assertEq(expected = Prop.Sprite('K'), TownMap.propAt(cave(), 0, 0))
+
+    @Test
+    def testObjectSpriteReadsThePictureUnderSprites(): Unit \ Assert =
+        Assert.assertEq(expected = Some("sprites/lava_crystal.png"), Map.get('K', cave()#objectSprites) |> Option.map(o -> o#sprite))
+
+    @Test
+    def testMarginGroundIsTheRockTop(): Unit \ Assert =
+        Assert.assertEq(expected = Ground.RockTop, TownMap.groundAt(cave(), -1, 0))
+
+    @Test
+    def testMarginNoneLeavesOnlyTheMapsBoards(): Unit \ Assert =
+        Assert.assertEq(expected = 1, List.length(TileMap3d.build(cave(), Map#{ "sprites/lava_crystal.png" => (42, 48) }, None)#boards))
+
+    @Test
+    def testStairsHaveFourTreadsBesideTheTwoFloors(): Unit \ Assert =
+        Assert.assertEq(expected = 6, caveQuads("path"))
+
+    @Test
+    def testTallRockBoxGetsACapBesideTheFourMarginPlanes(): Unit \ Assert =
+        Assert.assertEq(expected = 6, caveQuads("rock_top"))
+
+    @Test
+    def testTileOverrideReplacesTheWaterPicture(): Unit \ Assert =
+        Assert.assertEq(expected = Some("tiles/lava.png"), Map.get("water", TileMap3d.materialTableOf(cave())) |> Option.map(fst))
+
+    @Test
+    def testFireCaveReadsAllRockBoxes(): Unit \ {Assert, IO} =
+        match (run { TownMap.load("step", "assets/fire_cave.map.json") } with Fs.FileRead.runWithIO) {
+            case Ok(m)    => Assert.assertEq(expected = 172, List.length(m#rockBoxes))
+            case Err(why) => bug!(why)
+        }
 }

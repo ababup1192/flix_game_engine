@@ -379,8 +379,9 @@ mod Buildup {
     // ── 台本の Doc（assets/buildup.json） ──
 
     /// 歩く隊列の 1 人。strip = 背中・右・正面の 4 コマずつの帯・tint = 色の掛け目（線形）。
-    /// idleStrip = 止まっている間の息遣いのコマの帯（背中・右・正面の 吸った・吐いた 2 コマずつ・左は右の反転。無ければ歩きの帯で代える）。
-    pub type alias Walker = { strip = String, tint = Faces.Rgb, idleStrip = Option[String] }
+    /// idleStrip = 止まっている間の息遣いのコマの帯（背中・右・正面の 吸った・吐いた 2 コマずつ・左は右の反転。無ければ歩きの帯で代える）・
+    /// dirs = 帯に並ぶ向きの字の順（"nes" = 背中・右・正面。w が無ければ左は右の反転）。
+    pub type alias Walker = { strip = String, tint = Faces.Rgb, idleStrip = Option[String], dirs = String }
 
     /// 歩く台本。path = 曲がり角・endFace = 止まった後の向き・map = 地図の Doc・timeOfDay = 歩きながら替える Look（None は 1 つの Look のまま）・ほかは Doc の note のとおり。
     pub type alias Plan = { path = List[Route.Waypoint], idleSec = Float64, holdSec = Float64, frameSec = Float64, groundFlowH = Float64,
@@ -401,19 +402,27 @@ mod Buildup {
         case Step
     }
 
+    /// 地図の walk（曲がり角のある台本 pw）を台本にする。mapPath = 地図の Doc（台本の map 欄に入れる）。
+    pub def planOfMap(m: TownMap, mapPath: String, pw: TownMap.PathWalk): Plan =
+        let w = m#walk;
+        let walkerOfMember = (mb: TownMap.Member) -> {
+            let tint = mb#tint |> Option.map(t -> { let (r, g, b) = t; { r = r, g = g, b = b } }) |> Option.getWithDefault(Faces.white());
+            { strip = mb#strip, tint = tint, idleStrip = mb#idleStrip, dirs = mb#dirs }
+        };
+        { path = pw#path, idleSec = w#idleSec, holdSec = w#holdSec, frameSec = pw#frameSec, groundFlowH = w#groundFlowH,
+          feetV = w#feetV, stopSec = w#stopSec, camZLagK = pw#camZLagK, endFace = pw#endFace, party = List.map(walkerOfMember, w#party),
+          timing = defaultTiming(), idle = Idle.Breath, idleFrameSec = 0.8, idlePhaseSec = 0.27, radial = None, map = mapPath, timeOfDay = None }
+
+    /// はじめから全部出来ている演出（出来ていく部品も着地も無い。地図の walk で歩くだけの場面）。
+    pub def alreadyBuilt(tm: Timing, dust: Texture3d.Texture3d): Show =
+        { timing = tm, pieces = Vector.empty(), boards = Nil, fixed = Scene3d.staticGroup("outside", Nil),
+          dustTexture = Texture3d.name(dust), done = 0.0, landings = Nil }
+
     /// path の台本を読む。
     pub def loadPlan(path: String): Result[String, Plan] \ Fs.FileRead =
         DocJson.readJson(path) |> Result.mapErr(e -> "${path}: ${DocJson.describe(e)}")
             |> Result.flatMap(json -> JsonCodec.expectObject(json) |> Option.toOk("${path} がオブジェクトでない"))
             |> Result.flatMap(planOf)
-
-    def waypointOf(j: Json): Option[Route.Waypoint] =
-        JsonCodec.decodeList(JsonCodec.expectFloat, j) |> Option.flatMap(xs -> match xs {
-            case c :: r :: rest => Some({ col = Float64.round(c) |> Float64.tryToInt32 |> Option.getWithDefault(0),
-                                          row = Float64.round(r) |> Float64.tryToInt32 |> Option.getWithDefault(0),
-                                          wait = List.head(rest) |> Option.getWithDefault(0.0) })
-            case _ => None
-        })
 
     def rgbOf(xs: List[Float64]): Option[Faces.Rgb] = match xs {
         case r :: g :: b :: _ => Some({ r = r, g = g, b = b })
@@ -425,25 +434,18 @@ mod Buildup {
             let tint = Map.get("tint", w) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat)) |> Option.flatMap(rgbOf)
                 |> Option.getWithDefault(Faces.white());
             { strip = JsonCodec.stringOr("strip", "", w), tint = tint,
-              idleStrip = Map.get("idleStrip", w) |> Option.flatMap(JsonCodec.expectString) }
+              idleStrip = Map.get("idleStrip", w) |> Option.flatMap(JsonCodec.expectString), dirs = JsonCodec.stringOr("dirs", "nes", w) }
         })
-
-    def faceOf(letter: String): Route.Dir = match letter {
-        case "n" => Route.Dir.North
-        case "e" => Route.Dir.East
-        case "w" => Route.Dir.West
-        case _   => Route.Dir.South
-    }
 
     def planOf(m: Map[String, Json]): Result[String, Plan] =
         let num = (key: String, fallback: Float64) -> JsonCodec.floatOr(key, fallback, m);
         let d = defaultTiming();
         forM (
-            path <- Map.get("path", m) |> Option.flatMap(JsonCodec.decodeList(waypointOf)) |> Option.toOk("path が読めない");
+            path <- Map.get("path", m) |> Option.flatMap(JsonCodec.decodeList(Route.waypointOf)) |> Option.toOk("path が読めない");
             party <- Map.get("party", m) |> Option.flatMap(JsonCodec.decodeList(walkerOf)) |> Option.toOk("party が読めない")
         ) yield { path = path, idleSec = num("idleSec", 3.0), holdSec = num("holdSec", 5.0), frameSec = num("frameSec", 0.333),
                   groundFlowH = num("groundFlowH", 0.21), feetV = num("feetV", 0.55), stopSec = num("stopSec", 0.7),
-                  camZLagK = num("camZLagK", 2.5), endFace = faceOf(JsonCodec.stringOr("endFace", "s", m)), party = party,
+                  camZLagK = num("camZLagK", 2.5), endFace = Route.dirOfLetter(JsonCodec.stringOr("endFace", "s", m)), party = party,
                   idle = idleOf(JsonCodec.stringOr("idle", "breath", m)),
                   idleFrameSec = num("idleFrameSec", 0.8), idlePhaseSec = num("idlePhaseSec", 0.27),
                   radial = Map.get("radial", m) |> Option.flatMap(JsonCodec.expectObject) |> Option.map(radialOf),

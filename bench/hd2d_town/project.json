@@ -154,6 +154,26 @@
       "name": "pigeon",
       "path": "assets/sprites/pigeon.png",
       "hasAlpha": true
+    },
+    {
+      "name": "lava_crystal",
+      "path": "assets/sprites/lava_crystal.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "charred_tree",
+      "path": "assets/sprites/charred_tree.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "ice_crystal",
+      "path": "assets/sprites/ice_crystal.png",
+      "hasAlpha": true
+    },
+    {
+      "name": "snow_pine",
+      "path": "assets/sprites/snow_pine.png",
+      "hasAlpha": true
     }
   ],
   "fonts": [],

@@ -4,12 +4,17 @@ mod TownMap {
     use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
-    /// 上の面の材質。Water = 床を下げて水面を張る水路。
+    /// 上の面の材質。Water = 床を下げて水面を張る水路（溶岩も同じ形）。
+    /// Path・RockTop・SnowPath・SnowTop = 地図の p・r・n・s（絵は地図の groundTiles で決める）。
     pub enum Ground with Eq, ToString {
         case Grass
         case Cobble
         case Dirt
         case Water
+        case Path
+        case RockTop
+        case SnowPath
+        case SnowTop
     }
 
     /// マスの形。Stairs = 北へ上る階段（地図の "^"）。
@@ -29,8 +34,25 @@ mod TownMap {
         case Fence
         case Obelisk
         case Npc(Int32)
+        case Sprite(Char)
         case Empty
     }
+
+    /// 地図の objectSprites の 1 つ（物の字 → 立てる板）。sprite = 絵（assets からの相対）・height = 板の高さ（m・無ければ 32 画素 = 1 m）。
+    pub type alias ObjectSprite = { sprite = String, height = Option[Float64] }
+
+    /// 岩の塊 1 つ（地図の rockBoxes: [列, 行, 幅 m, 奥行き m, 高さ m]）。
+    pub type alias RockBox = { col = Int32, row = Int32, width = Float64, depth = Float64, height = Float64 }
+
+    /// 水面の絵の貼り方。PerCell = マスごとに 1 枚を回して貼る・World = 位置で貼って継ぎ目を見せない（2 マスで 1 枚）。
+    pub enum WaterUv with Eq {
+        case PerCell
+        case World
+    }
+
+    /// 曲がり角のある歩く台本（地図の walk.path）。endFace = 止まった後の向き・camZLagK = カメラの高さが遅れて追う速さ（/秒）・
+    /// frameSec = 歩きのコマを替える秒・followZoom = 追従カメラの引き（足元の点からの距離の倍率）。
+    pub type alias PathWalk = { path = List[Route.Waypoint], endFace = Route.Dir, camZLagK = Float64, frameSec = Float64, followZoom = Float64 }
 
     /// 切妻屋根の棟の向き。X = 東西（棟が横に通る）・Y = 南北（妻がカメラを向く）。
     pub enum Ridge with Eq {
@@ -48,15 +70,17 @@ mod TownMap {
     pub type alias Building = { id = String, x = Int32, y = Int32, w = Int32, h = Int32, level = Int32, floors = Int32,
                                 wall = Wall, ridge = Ridge, pitchDeg = Float64, overhang = Float64 }
 
-    /// 地図のまわり。cells = 足すマスの数・level = 高さのレベル。
-    pub type alias Margin = { cells = Int32, level = Int32 }
+    /// 地図のまわり。cells = 足すマスの数・level = 高さのレベル・ground = 地面の材質・forest = 暗い森を立てるか（洞窟は立てない）。
+    pub type alias Margin = { cells = Int32, level = Int32, ground = Ground, forest = Bool }
 
     /// カメラの写す範囲: 地面の点 anchor（列・行）を画面の上から v の高さに置き、その奥行きで画面の横幅が width m。
-    /// targetZ = 写す範囲をそろえる面の高さ（m）・targetRow = ピントを合わせる行。
-    pub type alias Frame = { anchorX = Float64, anchorRow = Float64, v = Float64, width = Float64, targetZ = Float64, targetRow = Float64 }
+    /// targetZ = 写す範囲をそろえる面の高さ（m）・targetRow = ピントを合わせる行・
+    /// groundZ = 写す範囲を決めた時の歩く床の高さ（m。歩く床がこれより高い・低い時は目の高さを同じだけずらす）。
+    pub type alias Frame = { anchorX = Float64, anchorRow = Float64, v = Float64, width = Float64, targetZ = Float64, targetRow = Float64, groundZ = Float64 }
 
-    /// 歩く隊列の 1 人。strip = 4 コマを横に並べた絵・tint = 色の掛け目（線形の値）。
-    pub type alias Member = { strip = String, tint = Option[(Float64, Float64, Float64)] }
+    /// 歩く隊列の 1 人。strip = 4 コマを横に並べた絵・tint = 色の掛け目（線形の値）・
+    /// idleStrip = 止まっている間の息遣いの帯・dirs = 帯に並ぶ向きの字（"nes" = 背中・右・正面）。
+    pub type alias Member = { strip = String, tint = Option[(Float64, Float64, Float64)], idleStrip = Option[String], dirs = String }
 
     /// 歩く台本: 先頭が col 列を fromRow 行から toRow 行まで北へ歩いて止まる。
     /// idleSec = 歩き出すまで・stopSec = カメラが止まるのにかける秒・holdSec = 止まった後に撮る秒・
@@ -87,11 +111,17 @@ mod TownMap {
     pub def castsShadow(s: DecorShadow): Bool = s == DecorShadow.Full or s == DecorShadow.CastOnly
 
     /// 地図 1 枚。rows は行ごとの文字を enum にした物（行 r・列 c は Vector.get(c, Vector.get(r, …))）。
-    /// heightStep = 1 レベルの m・curbRaise = 草のマスを道より上げる m（縁石）・coping = 段と水の縁に笠石を付けるか。
+    /// heightStep = 1 レベルの m・curbRaise = 草のマスを道より上げる m（縁石）・coping = 段と水の縁に笠石を付けるか・
+    /// groundTiles = 地面の材質ごとの絵の差し替え・tileOverrides = 材質の名前（rock・bank・water・w）ごとの絵の差し替え・
+    /// objectSprites = 物の字 → 板・rockBoxes・rockBoxTop = 岩の塊と、その上面の地面の材質・waterUv = 水面の絵の貼り方・
+    /// walkPath = 曲がり角のある歩く台本（walk.path が無ければ None）。
     pub type alias TownMap = { width = Int32, height = Int32, ground = Vector[Vector[Ground]], levels = Vector[Vector[Int32]],
                                shapes = Vector[Vector[Shape]], props = Vector[Vector[Prop]], buildings = List[Building],
                                heightStep = Float64, margin = Margin, frame = Frame, walk = Walk,
-                               curbRaise = Float64, coping = Bool, decor = List[Decor] }
+                               curbRaise = Float64, coping = Bool, decor = List[Decor],
+                               groundTiles = List[(Ground, String)], tileOverrides = List[(String, String)],
+                               objectSprites = Map[Char, ObjectSprite], rockBoxes = List[RockBox], rockBoxTop = Ground,
+                               waterUv = WaterUv, walkPath = Option[PathWalk] }
 
     /// path の地図を読む。variant = 使う差分の名前（"step" など・無ければ差分なし）。
     pub def load(variant: String, path: String): Result[String, TownMap] \ Fs.FileRead =
@@ -115,20 +145,65 @@ mod TownMap {
             let variantDoc = Map.get("variants", top) |> Option.flatMap(JsonCodec.expectObject)
                 |> Option.flatMap(Map.get(variant)) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty());
             let marginDoc = Map.get("margin", top) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty());
+            let sprites = objectSpritesAt(top);
             { width = groundRows |> List.head |> Option.map(String.length) |> Option.getWithDefault(0),
               height = List.length(groundRows),
               ground = gridOf(groundOf, groundRows),
               levels = gridOf(levelOf, heightRows),
               shapes = gridOf(ch -> if (ch == '^') Shape.Stairs else Shape.Flat, shapeRows),
-              props = gridOf(propOf, objectRows),
+              props = gridOf(propOf(Map.keysOf(sprites)), objectRows),
               buildings = buildings,
               heightStep = JsonCodec.floatOr("heightStep", 1.0, top),
-              margin = { cells = JsonCodec.intOr("cells", 10, marginDoc), level = JsonCodec.intOr("level", -2, marginDoc) },
+              margin = { cells = JsonCodec.intOr("cells", 10, marginDoc), level = JsonCodec.intOr("level", -2, marginDoc),
+                         ground = groundOf(firstChar(JsonCodec.stringOr("ground", "g", marginDoc))),
+                         forest = JsonCodec.stringOr("objects", "forest", marginDoc) != "none" },
               frame = frame, walk = walk,
               curbRaise = JsonCodec.floatOr("curbRaise", 0.0, variantDoc),
               coping = JsonCodec.boolOr("coping", false, variantDoc),
-              decor = Map.get("props", top) |> Option.flatMap(JsonCodec.decodeList(decorOf)) |> Option.getWithDefault(Nil) |> List.filterMap(identity) }
+              decor = Map.get("props", top) |> Option.flatMap(JsonCodec.decodeList(decorOf)) |> Option.getWithDefault(Nil) |> List.filterMap(identity),
+              groundTiles = stringsAt("groundTiles", top) |> List.map(kv -> (groundOf(firstChar(fst(kv))), snd(kv))),
+              tileOverrides = stringsAt("tileOverrides", top),
+              objectSprites = sprites,
+              rockBoxes = Map.get("rockBoxes", top) |> Option.flatMap(JsonCodec.decodeList(rockBoxOf)) |> Option.getWithDefault(Nil),
+              rockBoxTop = groundOf(firstChar(JsonCodec.stringOr("rockBoxTop", "r", top))),
+              waterUv = if (JsonCodec.stringOr("waterUV", "cell", top) == "world") WaterUv.World else WaterUv.PerCell,
+              walkPath = Map.get("walk", top) |> Option.flatMap(JsonCodec.expectObject) |> Option.flatMap(pathWalkOf) }
         }
+
+    /// 文字列の頭の 1 字（空なら草の字）。
+    def firstChar(s: String): Char = String.toList(s) |> List.head |> Option.getWithDefault('g')
+
+    /// 文字列の値のオブジェクトの欄（名前 → 絵のパス）。
+    def stringsAt(key: String, top: Map[String, Json]): List[(String, String)] =
+        Map.get(key, top) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
+            |> Map.toList |> List.filterMap(kv -> JsonCodec.expectString(snd(kv)) |> Option.map(path -> (fst(kv), path)))
+
+    /// objectSprites 欄（字 → 板）。
+    def objectSpritesAt(top: Map[String, Json]): Map[Char, ObjectSprite] =
+        Map.get("objectSprites", top) |> Option.flatMap(JsonCodec.expectObject) |> Option.getWithDefault(Map.empty())
+            |> Map.toList |> List.filterMap(kv -> JsonCodec.expectObject(snd(kv)) |> Option.flatMap(objectSpriteOf(fst(kv)))) |> List.toMap
+
+    def objectSpriteOf(key: String, o: Map[String, Json]): Option[(Char, ObjectSprite)] =
+        let sprite = JsonCodec.stringOr("sprite", "", o);
+        if (sprite == "") None
+        else Some((firstChar(key), { sprite = if (String.contains(substr = "/", sprite)) sprite else "sprites/${sprite}",
+                                     height = Map.get("height", o) |> Option.flatMap(JsonCodec.expectFloat) }))
+
+    /// rockBoxes の 1 件 [列, 行, 幅, 奥行き, 高さ]。
+    def rockBoxOf(j: Json): Option[RockBox] =
+        JsonCodec.decodeList(JsonCodec.expectFloat, j) |> Option.flatMap(xs -> match xs {
+            case c :: r :: w :: d :: h :: _ => Some({ col = Float64.round(c) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                                      row = Float64.round(r) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                                      width = w, depth = d, height = h })
+            case _ => None
+        })
+
+    /// walk.path がある時の曲がり角のある台本。
+    def pathWalkOf(walk: Map[String, Json]): Option[PathWalk] =
+        Map.get("path", walk) |> Option.flatMap(JsonCodec.decodeList(Route.waypointOf)) |> Option.map(path ->
+            { path = path, endFace = Route.dirOfLetter(JsonCodec.stringOr("endFace", "s", walk)),
+              camZLagK = JsonCodec.floatOr("camZLagK", 2.5, walk), frameSec = JsonCodec.floatOr("frameSec", 0.333, walk),
+              followZoom = JsonCodec.floatOr("followZoom", 1.0, walk) })
 
     def shadowOf(foot: Bool, cast: Bool): DecorShadow =
         if (foot and cast) DecorShadow.Full else if (foot) DecorShadow.FootOnly else if (cast) DecorShadow.CastOnly else DecorShadow.NoShadow
@@ -177,6 +252,10 @@ mod TownMap {
         case 'b' => Ground.Cobble
         case 'd' => Ground.Dirt
         case 'w' => Ground.Water
+        case 'p' => Ground.Path
+        case 'r' => Ground.RockTop
+        case 'n' => Ground.SnowPath
+        case 's' => Ground.SnowTop
         case _   => Ground.Grass
     }
 
@@ -184,7 +263,11 @@ mod TownMap {
     def levelOf(ch: Char): Int32 =
         String.indexOf(substr = String.toLowerCase(Char.toString(ch)), "0123456789abcdefghijklmnopqrstuvwxyz") |> Option.getWithDefault(0)
 
-    def propOf(ch: Char): Prop = match ch {
+    /// 物の字。sprites = objectSprites に書かれた字（地図ごとの板。決まった字より先に見る）。
+    def propOf(sprites: Set[Char], ch: Char): Prop =
+        if (Set.memberOf(ch, sprites)) Prop.Sprite(ch) else fixedPropOf(ch)
+
+    def fixedPropOf(ch: Char): Prop = match ch {
         case 'T' => Prop.Tree
         case 'C' => Prop.Cypress
         case 'L' => Prop.Lamp
@@ -224,7 +307,7 @@ mod TownMap {
             let targetRow = Map.get("target", camera) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat))
                 |> Option.flatMap(xs -> List.drop(1, xs) |> List.head) |> Option.getWithDefault(ar);
             { anchorX = ax, anchorRow = ar, v = JsonCodec.floatOr("v", 0.72, frame), width = JsonCodec.floatOr("width", 16.3, frame),
-              targetZ = JsonCodec.floatOr("targetZ", 1.5, camera), targetRow = targetRow }
+              targetZ = JsonCodec.floatOr("targetZ", 1.5, camera), targetRow = targetRow, groundZ = JsonCodec.floatOr("groundZ", 1.0, camera) }
         }
 
     def walkAt(top: Map[String, Json]): Result[String, Walk] =
@@ -240,7 +323,8 @@ mod TownMap {
     def memberOf(json: Json): Option[Member] =
         JsonCodec.expectObject(json) |> Option.map(m -> {
             let tint = Map.get("tint", m) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectFloat)) |> Option.flatMap(rgbOf);
-            { strip = JsonCodec.stringOr("strip", "", m), tint = tint }
+            { strip = JsonCodec.stringOr("strip", "", m), tint = tint, idleStrip = Map.get("idleStrip", m) |> Option.flatMap(JsonCodec.expectString),
+              dirs = JsonCodec.stringOr("dirs", "nes", m) }
         })
 
     def rgbOf(xs: List[Float64]): Option[(Float64, Float64, Float64)] = match xs {
@@ -256,8 +340,8 @@ mod TownMap {
     def cell(grid: Vector[Vector[a]], fallback: a, c: Int32, r: Int32): a =
         Vector.nth(r, grid) |> Option.flatMap(Vector.nth(c)) |> Option.getWithDefault(fallback)
 
-    /// 地面の材質（地図の外は草）。
-    pub def groundAt(m: TownMap, c: Int32, r: Int32): Ground = cell(m#ground, Ground.Grass, c, r)
+    /// 地面の材質（地図の外は margin の地面）。
+    pub def groundAt(m: TownMap, c: Int32, r: Int32): Ground = cell(m#ground, m#margin#ground, c, r)
 
     /// 高さのレベル（地図の外は margin のレベル。ただし南の外（カメラの手前）は地図の一番南の行と同じ高さ）。
     // WhyNot: 南の外も margin の低い地面にしない — 地図の南の端の崖の面がカメラのすぐ前に横たわり、画面の下を屋根のような帯が横切る。
@@ -293,6 +377,20 @@ mod TownMap {
             case Ground.Grass => if (inside(m, c, r)) z + m#curbRaise else z
             case _            => z
         }
+
+    /// 地図の座標の点 (x = 東, y = 北) の足の高さ（m）。平らなマスは上面・階段は 4 段の踏み面の前の縁・
+    /// 階段の 1 つ手前（南）のマスは奥の 1/4 で最初の蹴上げ（1/4 段）まで上げる。
+    // WhyNot: 階段の上を南の辺から北の辺への斜めの線にしない — 踏み面より最大 1/4 段沈み、足が段に埋まる。
+    // WhyNot: 手前のマスを平らなまま段に入らせない — 段に入った瞬間に 1/4 段跳ねる。
+    pub def groundZAt(m: TownMap, x: Float64, y: Float64): Float64 =
+        let c = Float64.floor(x) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        let fromSouth = Float64.floor(y) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        let r = m#height - 1 - fromSouth;
+        let fy = y - Float64.floor(y);
+        let isStair = (cc: Int32, rr: Int32) -> inside(m, cc, rr) and shapeAt(m, cc, rr) == Shape.Stairs;
+        if (isStair(c, r)) Int32.toFloat64(levelAt(m, c, r)) * m#heightStep + Float64.min(fy + 0.25, 1.0) * m#heightStep
+        else if (isStair(c, r - 1)) topAt(m, c, r) + Float64.max(0.0, fy - 0.75) * m#heightStep
+        else topAt(m, c, r)
 
     /// 足元の建物を引く表（マス → 建物）。
     pub def footprints(m: TownMap): Map[(Int32, Int32), Building] =

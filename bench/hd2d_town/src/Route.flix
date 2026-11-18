@@ -1,7 +1,8 @@
 // Route — 曲がり角のある道を歩く隊列（先頭が曲がり角の点を速さ v で順にたどり、点ごとの待ちで止まる）と、
 // その道を追うカメラ（横と奥は歩く間は遅れ 0・止まる・曲がる所だけ stopSec かけて丸める）。座標は地図の座標（x = 東・y = 北）。
 mod Route {
-    use fge::{Num}
+    use fge::{JsonCodec, Num}
+    use Util.Json.Json
 
     /// 向き（地図の東西南北）。
     pub enum Dir with Eq, ToString {
@@ -19,6 +20,23 @@ mod Route {
 
     /// 曲がり角の点（マスの列・行・その点に着いた後の待ち秒）。
     pub type alias Waypoint = { col = Int32, row = Int32, wait = Float64 }
+
+    /// 道の点の Doc の形 [列, 行] か [列, 行, 待ち秒] を読む（地図の walk.path・台本の path）。
+    pub def waypointOf(j: Json): Option[Waypoint] =
+        JsonCodec.decodeList(JsonCodec.expectFloat, j) |> Option.flatMap(xs -> match xs {
+            case c :: r :: rest => Some({ col = Float64.round(c) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                          row = Float64.round(r) |> Float64.tryToInt32 |> Option.getWithDefault(0),
+                                          wait = List.head(rest) |> Option.getWithDefault(0.0) })
+            case _ => None
+        })
+
+    /// 向きの字（n・e・s・w）。知らない字は南（正面）。
+    pub def dirOfLetter(letter: String): Dir = match letter {
+        case "n" => Dir.North
+        case "e" => Dir.East
+        case "w" => Dir.West
+        case _   => Dir.South
+    }
 
     def dirOf(a: (Float64, Float64), b: (Float64, Float64)): Dir =
         if (fst(b) > fst(a) + 0.000001) Dir.East

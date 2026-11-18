@@ -21,10 +21,10 @@ mod BuildVideo {
     /// 毎コマの決まり（台本から 1 回だけ作る）。leaderX・leaderY = 先頭の位置・cameraX・cameraY = ならしたカメラの追う点・
     /// clock = 歩いている間だけ進む時計（歩きのコマを替える）・feetDepth = 足元が画面の高さ feetV に来る水平の奥行き・
     /// zoom = コマごとのカメラの引き（足元の点からの距離の倍率）・stand = 立ったままの台本の立つ点（地図の座標）・
-    /// walkFrom = 立ったままの台本で歩き出す演出の時刻（横並びから隊列へ組み直す始まり）。
+    /// walkFrom = 立ったままの台本で歩き出す演出の時刻（横並びから隊列へ組み直す始まり）・feetZ = 地図の座標の点の足の高さ。
     pub type alias Track = { route = Route.Route, cameraX = Vector[Float64], cameraY = Vector[Float64], cameraHeight = Vector[Float64],
                          clock = Vector[Float64], frames = Int32, feetDepth = Float64, eye = TownCamera.Eye, lens = TownCamera.Lens, groundZ = Float64,
-                         zoom = Vector[Float64], stand = Option[(Float64, Float64)], walkFrom = Float64 }
+                         zoom = Vector[Float64], stand = Option[(Float64, Float64)], walkFrom = Float64, feetZ = Float64 -> Float64 -> Float64 }
 
     pub def trackOf(m: TownMap, look: TownScene.Look, plan: Plan): Track =
         let lens = TownCamera.lensOf(look#topDeg, look#bottomDeg);
@@ -45,7 +45,31 @@ mod BuildVideo {
         { route = route, cameraX = Route.hannSmooth(half, Vector.map(fst, leader)), cameraY = Route.hannSmooth(half, Vector.map(snd, leader)),
           cameraHeight = Route.lagged(plan#camZLagK, dt, Vector.map(_ -> groundZ, leader)),
           clock = clock, frames = n, feetDepth = snap(TownCamera.depthAt(lens, eye, groundZ, plan#feetV)), eye = eye, lens = lens, groundZ = groundZ,
-          zoom = Vector.map(_ -> 1.0, leader), stand = None, walkFrom = 0.0 }
+          zoom = Vector.map(_ -> 1.0, leader), stand = None, walkFrom = 0.0, feetZ = (_, _) -> groundZ }
+
+    /// 地図の walk の台本（段のある道）の毎コマの決まり。足は段の上の高さ・カメラの高さは先頭の足の高さを camZLagK で遅れて追う・
+    /// 目の位置は地図の frame の目を、道の頭の床が frame の groundZ より高い分だけ上げた物・zoom = 追従カメラの引き（足元からの距離の倍率）。
+    // WhyNot: 地図の frame の目の高さをそのまま使わない — frame は床 groundZ の上で決めた画角で、高い所から歩き出すと目が床に近づき、キャラが町より大きく写る。
+    pub def pathTrackOf(m: TownMap, look: TownScene.Look, plan: Plan, zoom: Float64): Track =
+        let lens = TownCamera.lensOf(look#topDeg, look#bottomDeg);
+        let first = List.head(plan#path) |> Option.getWithDefault({ col = 0, row = 0, wait = 0.0 });
+        let z0 = TownMap.groundZAt(m, Int32.toFloat64(first#col) + 0.5, Int32.toFloat64(m#height - 1 - first#row) + 0.5);
+        let framed = TownCamera.frameEye(m, lens);
+        let eye = { height = framed#height + z0 - m#frame#groundZ | framed };
+        let speed = plan#groundFlowH / TownCamera.screenPerMeterAt(lens, eye, z0, 0.5);
+        let route = Route.make(m#height, plan#path, speed, plan#idleSec);
+        let total = route#endAt + plan#stopSec / 2.0 + plan#holdSec;
+        let n = Float64.round(total * Int32.toFloat64(fps())) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        let dt = 1.0 / Int32.toFloat64(fps());
+        let leader = Vector.range(0, n) |> Vector.map(f -> fst(Route.pointAt(route, Route.distanceAt(route, Int32.toFloat64(f) * dt))));
+        let half = Float64.round(plan#stopSec / 2.0 / dt) |> Float64.tryToInt32 |> Option.getWithDefault(10);
+        let moving = Vector.range(0, n) |> Vector.map(f -> if (Route.isMoving(route, Int32.toFloat64(f) * dt)) dt else 0.0);
+        let snap = (v: Float64) -> if (look#snapToTexels) TownCamera.snapToTexel(v) else v;
+        { route = route, cameraX = Route.hannSmooth(half, Vector.map(fst, leader)), cameraY = Route.hannSmooth(half, Vector.map(snd, leader)),
+          cameraHeight = Route.lagged(plan#camZLagK, dt, Vector.map(p -> TownMap.groundZAt(m, fst(p), snd(p)), leader)),
+          clock = Vector.scanLeft((a, x) -> a + x, 0.0, moving), frames = n, feetDepth = snap(TownCamera.depthAt(lens, eye, z0, plan#feetV)),
+          eye = eye, lens = lens, groundZ = z0, zoom = Vector.map(_ -> zoom, leader), stand = None, walkFrom = 0.0,
+          feetZ = TownMap.groundZAt(m) }
 
     /// 立ったままの台本の毎コマの決まり。町が出来て目印の揺れが収まった walkPause 秒後に、path の 2 点目から先を歩き出す。
     /// カメラは引いた位置から、歩き出して r#followSec 秒かけて歩く追従カメラ（横と奥は先頭を追い、止まる所だけ丸める）へ移る。
@@ -82,7 +106,7 @@ mod BuildVideo {
         { route = route, cameraX = camX, cameraY = camY,
           cameraHeight = Vector.map(_ -> groundZ, zoom), clock = Vector.scanLeft((acc, v) -> acc + v, 0.0, moving), frames = n,
           feetDepth = TownCamera.depthAt(lens, eye, groundZ, plan#feetV), eye = eye, lens = lens, groundZ = groundZ, zoom = zoom,
-          stand = Some((x, y)), walkFrom = walkFrom }
+          stand = Some((x, y)), walkFrom = walkFrom, feetZ = (_, _) -> groundZ }
 
     /// 立ったままの台本の i 人目の位置と向き。歩き出す前は横並びで正面、歩き出したら 0.9 秒かけて横並びの位置から道の 1 マスずつ後ろへ寄せる（先頭はそのまま道を行く）。
     def formationAt(c: (Float64, Float64), spread: Float64, route: Route.Route, walkFrom: Float64, t: Float64, s: Float64, i: Int32): ((Float64, Float64), Dir) =
@@ -97,13 +121,16 @@ mod BuildVideo {
         let side = if (i == 0) 0.0 else if (Int32.modulo(i, 2) == 1) 0.0 - spread * Int32.toFloat64((i + 1) / 2) else spread * Int32.toFloat64((i + 1) / 2);
         (fst(c) + side, snd(c) + (if (i == 0) 0.0 else 0.3))
 
-    /// 向き → 帯の中の段（0 背中・1 右・2 正面）と左右反転（左は右の反転）。
-    def dirCell(d: Dir): (Int32, Bool) = match d {
-        case Dir.North => (0, false)
-        case Dir.East  => (1, false)
-        case Dir.South => (2, false)
-        case Dir.West  => (1, true)
-    }
+    /// 向き → 帯の中の段（dirs の字の順・"nes" なら 0 背中・1 右・2 正面）と左右反転（dirs に w が無ければ左は右の反転）。
+    def dirCell(dirs: String, d: Dir): (Int32, Bool) =
+        let letter = match d {
+            case Dir.North => "n"
+            case Dir.East  => "e"
+            case Dir.South => "s"
+            case Dir.West  => "w"
+        };
+        let flip = d == Dir.West and not String.contains(substr = "w", dirs);
+        (String.indexOf(substr = if (flip) "e" else letter, dirs) |> Option.getWithDefault(0), flip)
 
     /// 出来た物の集まりの作り置きと、作り直しにかかった時間（ns）。
     type alias GroupCache = { grouping = Grouping, totalNs = Int64, maxNs = Int64, listed = Int32 }
@@ -140,7 +167,26 @@ mod BuildVideo {
 
     /// 地図・台本・町を読み、演出の部品と毎コマの決まりを作る。look = 見た目のつまみ（台本に timeOfDay があれば歩き出す前の昼にも使う）・
     /// tweak = 台本の timeOfDay の Look に掛ける差し替え（look に掛けた物と同じ）。台本は BUILDUP（既定 assets/buildup.json）・地図は台本の map。
+    /// WALK_MAP（地図の Doc）があれば、その地図の walk の台本で、はじめから全部出来ている場面を歩く（look の Look のまま）。
     pub def setup(look: TownScene.Look, tweak: TownScene.Look -> TownScene.Look): Result[String, Setup] \ IO =
+        let walkMap = System.getenv("WALK_MAP");
+        if (Object.isNull(walkMap) or walkMap == "") setupPlan(look, tweak) else setupMapWalk(look, walkMap)
+
+    /// 地図 mapPath の walk.path で歩くだけの場面（出来ていく演出なし）。
+    def setupMapWalk(look: TownScene.Look, mapPath: String): Result[String, Setup] \ IO =
+        (run { TownMap.load("step", mapPath) } with Fs.FileRead.runWithIO)
+            |> Result.flatMap(m -> m#walkPath |> Option.toOk("${mapPath}: walk.path が無い") |> Result.map(pw -> (m, pw)))
+            |> Result.flatMap(mp -> {
+                let (m, pw) = mp;
+                let p = Buildup.planOfMap(m, mapPath, pw);
+                forM (
+                    res <- TownScene.load(m, look, None, p#party |> List.filterMap(w -> w#idleStrip));
+                    d <- Buildup.dustTexture()
+                ) yield { map = m, plan = p, res = res, dust = d, show = Buildup.alreadyBuilt(p#timing, d),
+                          track = pathTrackOf(m, look, p, pw#followZoom), schedule = None }
+            })
+
+    def setupPlan(look: TownScene.Look, tweak: TownScene.Look -> TownScene.Look): Result[String, Setup] \ IO =
         let planPath = { let v = System.getenv("BUILDUP"); if (Object.isNull(v) or v == "") "assets/buildup.json" else v };
         (run { Buildup.loadPlan(planPath) |> Result.flatMap(p -> TownMap.load("step", p#map) |> Result.map(m -> (m, p))) } with Fs.FileRead.runWithIO)
             |> Result.flatMap(mp -> {
@@ -228,9 +274,9 @@ mod BuildVideo {
             let ((x, y), d0) = tr#stand |> Option.map(c -> formationAt(c, spread, route, tr#walkFrom, t, s, i))
                 |> Option.getWithDefault(Route.pointAt(route, s - Int32.toFloat64(i)));
             let d = if (not walking and t >= route#endAt) plan#endFace else d0;
-            let (row, flip) = dirCell(d);
+            let (row, flip) = dirCell(w#dirs, d);
             let pose = if (walking) { strip = w#strip, frame = walkFrame, perDir = 4, stretch = 1.0 } else idlePose(plan, w, i, t);
-            TownScene.walkerBoardFrames(res, pose#strip, w#tint, row, pose#perDir, pose#frame, flip, pose#stretch, snap(x), snap(y), tr#groundZ)
+            TownScene.walkerBoardFrames(res, pose#strip, w#tint, row, pose#perDir, pose#frame, flip, pose#stretch, snap(x), snap(y), tr#feetZ(x, y))
         }) |> List.filterMap(identity);
         // WhyNot: 広場のにぎやかしを建物と一緒に出さない — 記念碑の揺れと跳ねに重なって読めない。揺れが収まってから 1 つずつ落とす
         let decorFrom = Buildup.impactOf(show) |> Option.map(ip -> fst(ip) + show#timing#shake) |> Option.getWithDefault(show#done);
@@ -238,8 +284,10 @@ mod BuildVideo {
         let decorShadows = decor |> List.filterMap(snd);
         let eye = eyeAt(st, look, f);
         let camera = TownCamera.cameraAt(tr#lens, look#far, eye);
-        let leaderY = snap(snd(fst(Route.pointAt(route, s))));
-        let focus = Num.sqrt((leaderY - eye#z) * (leaderY - eye#z) + (eye#height - tr#groundZ) * (eye#height - tr#groundZ));
+        let (leaderX, leaderY0) = fst(Route.pointAt(route, s));
+        let leaderY = snap(leaderY0);
+        let leaderZ = tr#feetZ(leaderX, leaderY0);
+        let focus = Num.sqrt((leaderY - eye#z) * (leaderY - eye#z) + (eye#height - leaderZ) * (eye#height - leaderZ));
         let textures = st#dust :: res#textures;
         let partyBoards = List.map(fst, members);
         let partyShadows = List.flatMap(snd, members);
@@ -277,9 +325,10 @@ mod BuildVideo {
 
     def pad4(i: Int32): String = String.padLeft(4, '0', Int32.toString(i))
 
-    /// 町が出来ていく動画のコマを書く。
+    /// 町が出来ていく動画のコマを書く（LOOK = 見た目のつまみ・既定 assets/town.json・FRAMES_DIR = 書く所・既定 debug/build_frames・FRAME_STEP = FRAME_FROM から何コマおきに描くか）。
     pub def frames(): Unit \ IO =
-        let look = run { TownLook.loadOr("assets/town.json") } with Fs.FileRead.runWithIO;
+        let look = run { TownLook.loadOr(Video.lookPath()) } with Fs.FileRead.runWithIO;
+        let outDir = { let v = System.getenv("FRAMES_DIR"); if (Object.isNull(v) or v == "") "debug/build_frames" else v };
         match setup(look, identity) {
             case Err(why) => bug!("[hd2d_town] 町を組めない: ${why}")
             case Ok(st)   =>
@@ -287,20 +336,21 @@ mod BuildVideo {
                 let scale = envInt("SCALE", 4);
                 let first = envInt("FRAME_FROM", 1);
                 let last = Int32.min(tr#frames, envInt("FRAME_TO", tr#frames));
+                let step = Int32.max(1, envInt("FRAME_STEP", 1));
                 let atlas = HeadlessFont.buildUiAtlas("assets/Xolonium-Regular.ttf", "assets/Xolonium-Regular.ttf");
-                let cfg = { design = design(), scale = scale, outDir = "debug/build_frames", fontTtf = "assets/Xolonium-Regular.ttf", fontAtlas = atlas,
+                let cfg = { design = design(), scale = scale, outDir = outDir, fontTtf = "assets/Xolonium-Regular.ttf", fontAtlas = atlas,
                             frameW = 320 * scale, frameH = 180 * scale | HeadlessRender.defaults() };
                 println("[hd2d_town] 町が出来ていく動画: コマ ${Int32.toString(tr#frames)}（${Float64.toString(Int32.toFloat64(tr#frames) / 30.0)} 秒）・" +
                         "部品 ${Int32.toString(Vector.length(st#show#pieces))}・全部出来る ${Float64.toString(st#show#done)} 秒・先頭が止まる ${Float64.toString(tr#route#endAt)} 秒");
                 region rc {
                     let cache = Ref.fresh(rc, { grouping = startGrouping(st), totalNs = 0i64, maxNs = 0i64, listed = 0 });
-                    List.range(first, last + 1) |> List.forEach(f -> {
+                    List.range(first, last + 1) |> List.filter(f -> Int32.modulo(f - first, step) == 0) |> List.forEach(f -> {
                         let name = "f${pad4(f)}";
-                        if (new File("debug/build_frames/${name}.png").exists()) ()
+                        if (new File("${outDir}/${name}.png").exists()) ()
                         else {
                             let (scene, focus) = shotAt(st, cachedGroup(cache, f - 1), design(), f - 1);
                             HeadlessRender.renderPngFull(cfg, fullSceneOf(lookAt(st, f - 1), focus, Buildup.flashAt(st#show, Int32.toFloat64(f - 1) / Int32.toFloat64(fps())), scene), name);
-                            println("[hd2d_town] debug/build_frames/${name}.png（先頭の行 ${Float64.toString(leaderRowAt(st, f - 1))}）")
+                            println("[hd2d_town] ${outDir}/${name}.png（先頭の行 ${Float64.toString(leaderRowAt(st, f - 1))}）")
                         }
                     });
                     let c = Ref.get(cache);

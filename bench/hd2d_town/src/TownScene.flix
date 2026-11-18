@@ -76,10 +76,12 @@ mod TownScene {
     /// 地図と絵を読み、町を組む。skipNpcColumn = 地図の 1・2・3 を置かない列（隊列で歩かせる列）。
     pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
         let sprites = "sprites/tree_broadleaf.png" :: "sprites/tree_cypress.png" :: "sprites/street_lamp_ornate.png" ::
-                      "sprites/traveler_td.png" :: "sprites/merchant_td.png" :: Nil;
+                      "sprites/traveler_td.png" :: "sprites/merchant_td.png" ::
+                      (m#objectSprites |> Map.valuesOf |> List.map(o -> o#sprite) |> List.distinct);
         let stripPaths = List.flatten(m#walk#party |> List.map(p -> p#strip) :: ("sprites/traveler_walk4.png" :: "sprites/merchant_walk4.png" :: Nil) :: extraStrips ::
                                       List.map(d -> d#sprite, m#decor) :: Nil) |> List.distinct;
-        let tilePaths = TileMap3d.materialTable() |> Map.valuesOf |> List.map(fst) |> List.distinct;
+        let table = TileMap3d.materialTableOf(m);
+        let tilePaths = table |> Map.valuesOf |> List.map(fst) |> List.distinct;
         forM (
             tiles <- Result.traverse(Images.load, tilePaths);
             boards <- Result.traverse(Images.load, sprites);
@@ -94,19 +96,19 @@ mod TownScene {
             let sizes = byPath |> Map.map(l -> (l#width, l#height));
             let town = TileMap3d.build(m, sizes, skipNpcColumn);
             let contactMaterial = Scene3d.texturedMaterial(Texture3d.name(shadow), FilterMode.Linear) |> Scene3d.withAlphaBlend(true);
-            let items = List.append(groupItems(byPath, town#quads), contactItems(contactMesh, contactMaterial, town#boards));
+            let items = List.append(groupItems(table, byPath, town#quads), contactItems(contactMesh, contactMaterial, town#boards));
             { map = m, look = look, group = Scene3d.staticGroup("town", items),
               textures = shadow :: dense :: lantern :: halo :: List.append(List.map(l -> l#texture, List.append(tiles, boards)), List.map(l -> l#texture, strips)),
               strips = strips |> List.map(l -> (l#path, l)) |> List.toMap,
               contactMesh = contactMesh, contactMaterial = contactMaterial,
-              town = town, materials = materialsOf(byPath), sprites = byPath,
+              town = town, materials = materialsOf(table, byPath), sprites = byPath,
               denseMaterial = Scene3d.texturedMaterial(Texture3d.name(dense), FilterMode.Linear) |> Scene3d.withAlphaBlend(true),
               lanternTexture = Texture3d.name(lantern), haloTexture = Texture3d.name(halo), litLights = Nil }
         }
 
     /// 材質の名前 → (置いた物の材質, 色の掛け目)。
-    def materialsOf(byPath: Map[String, Images.Loaded]): Map[String, (Scene3d.Material3d, Rgb)] =
-        TileMap3d.materialTable() |> Map.toList |> List.filterMap(entry -> {
+    def materialsOf(table: Map[String, (String, Rgb)], byPath: Map[String, Images.Loaded]): Map[String, (Scene3d.Material3d, Rgb)] =
+        table |> Map.toList |> List.filterMap(entry -> {
             let (name, (path, tint)) = entry;
             Map.get(path, byPath) |> Option.map(tex ->
                 (name, (Scene3d.texturedMaterial(Texture3d.name(tex#texture), FilterMode.Nearest) |> Scene3d.withDoubleSided(true), tint)))
@@ -187,8 +189,7 @@ mod TownScene {
 
     /// 材質ごとに 1 つの形（色の掛け目は頂点の色に焼き込み、絵ごとの材質は 1 つ）。
     // WhyNot: 裏の面を捨てる材質にしない — 写した決まり（Blender の試作）は両面で描いており、妻壁や軒の裏の巡りが面ごとに揃っていない。
-    def groupItems(byPath: Map[String, Images.Loaded], quads: List[Quad]): List[(String, Scene3d.Instance3d)] =
-        let table = TileMap3d.materialTable();
+    def groupItems(table: Map[String, (String, Rgb)], byPath: Map[String, Images.Loaded], quads: List[Quad]): List[(String, Scene3d.Instance3d)] =
         let grouped = quads |> List.foldLeft((acc, q) -> Map.insertWith((fresh, old) -> List.append(fresh, old), q#material, q :: Nil, acc), Map.empty());
         grouped |> Map.toList |> List.filterMap(entry -> {
             let (name, qs) = entry;

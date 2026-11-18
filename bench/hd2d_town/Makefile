@@ -62,6 +62,18 @@ center-video:
 	ffmpeg -v error -y -framerate 30 -i debug/gpu_center_frames/f%04d.png -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart debug/hd2d_town_buildup_center.mp4
 	@ls -la debug/hd2d_town_buildup_center.mp4
 
+# 炎の洞窟・氷の谷を地図の walk.path で歩く CPU のコマ（光なしの素の絵・debug/fire_frames/・debug/ice_frames/）。
+#   FRAME_STEP=30 で 1 秒ごと・FRAME_FROM / FRAME_TO で範囲（BuildVideo.frames に WALK_MAP と LOOK を渡す）
+.PHONY: fire-frames ice-frames
+
+fire-frames:
+	@mkdir -p debug/fire_frames
+	WALK_MAP=assets/fire_cave.map.json LOOK=assets/fire_plain.json FRAMES_DIR=debug/fire_frames ../../bin/flix run --entrypoint BuildVideo.frames
+
+ice-frames:
+	@mkdir -p debug/ice_frames
+	WALK_MAP=assets/ice_cave.map.json LOOK=assets/ice_plain.json FRAMES_DIR=debug/ice_frames ../../bin/flix run --entrypoint BuildVideo.frames
+
 gpu-bench:
 	@rm -f debug/gpu_bench.log
 	@for p in 1 0; do for s in 1 0; do POST=$$p SHADOW=$$s LIMIT=300 bin/gpu_run.sh bench debug/gpu_bench_$$p$$s.log; grep '\[bench\] result' debug/gpu_bench_$$p$$s.log >> debug/gpu_bench.log; done; done
