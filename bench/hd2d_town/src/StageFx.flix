@@ -32,16 +32,21 @@ mod StageFx {
     /// 物の字の板の光り方。emit = 自分で光る強さ（0 で光らない）・light = 板に添える点光源。
     pub type alias SpriteFx = { emit = Float64, light = Option[SpriteLight] }
 
-    /// 粒の出る所。OnGround = その地面のマスから昇って消える（火の粉）・AroundCamera = カメラの前の箱の中で回る（雪）。
+    /// 粒の出る所。OnGround = その地面のマスから昇って消える（火の粉）・Falling = 地図の広さに散らして上から落ち、地面で消える（雪）。
     pub enum Spawn with Eq {
         case OnGround(Ground)
-        case AroundCamera
+        case Falling
     }
 
-    /// 粒。count = 数・emit = 光る強さ・size = 一辺（m）・vel = 速さ（m/秒・x 東・y 北・z 上）・sway = 横の揺れ（m）・
-    /// life = 昇る高さ（m・火の粉）・box = 回る箱の大きさ（m・雪）・ahead = 箱をカメラの追う点から北へずらす量（m）。
-    pub type alias Particles = { origin = Spawn, count = Int32, color = Rgb, emit = Float64, size = Float64, vel = (Float64, Float64, Float64),
-                                 sway = Float64, life = Float64, box = (Float64, Float64, Float64), ahead = Float64 }
+    /// 粒。count = 数・color = 近い・明るい粒の色・fadeColor = 消えかけ（火の粉）か遠い（雪）粒の色・emit = 光る強さ・size = 一辺（m）・
+    /// vel = 速さ（m/秒・x 東・y 北・z 上）・sway = 横のゆらぎ（m）・life = 昇る高さ（m・火の粉）・fall = 落ちる高さ（m・雪）・
+    /// spread = 地図の外へ散らす幅（m・雪）・fadeFar = 雪が fadeColor に溶けきる、カメラの追う点から北への距離（m）。
+    pub type alias Particles = { origin = Spawn, count = Int32, color = Rgb, fadeColor = Rgb, emit = Float64, size = Float64, vel = (Float64, Float64, Float64),
+                                 sway = Float64, life = Float64, fall = Float64, spread = Float64, fadeFar = Float64 }
+
+    /// 粒の色の段の数（fade 0 → fadeColor・1 → color の間を等分）。
+    // WhyNot: 粒ごとに材質を作らない — 毎コマ材質が増えて描き手の持ち越しが効かない。
+    pub def particleLevels(): Int32 = 6
 
     /// 地図の見た目の欄。glows・layers・flow・gloss = 材質の名前ごと（flow = uv の流れ /秒・gloss = 粗さ）・rim = 崖の根元の光る縁の色と強さ・
     /// lightRules・flicker = 地面の上の点光源と揺らぎの割合・sprites = 物の字ごとの光・particles = 粒・reflections = 空を映すか。
@@ -147,12 +152,14 @@ mod StageFx {
 
     def particlesOf(o: Map[String, Json]): Particles =
         let origin = Map.get("spawnOn", o) |> Option.flatMap(JsonCodec.expectString) |> Option.map(s -> Spawn.OnGround(TownMap.groundOf(firstChar(s))))
-            |> Option.getWithDefault(Spawn.AroundCamera);
-        { origin = origin, count = JsonCodec.intOr("count", 80, o), color = floats("color", o) |> Option.flatMap(rgbOf) |> Option.getWithDefault(Faces.white()),
+            |> Option.getWithDefault(Spawn.Falling);
+        let color = floats("color", o) |> Option.flatMap(rgbOf) |> Option.getWithDefault(Faces.white());
+        { origin = origin, count = JsonCodec.intOr("count", 80, o), color = color,
+          fadeColor = floats("fadeColor", o) |> Option.flatMap(rgbOf) |> Option.getWithDefault(color),
           emit = JsonCodec.floatOr("emit", 0.0, o), size = JsonCodec.floatOr("size", 0.06, o),
           vel = tripleOf(floats("vel", o) |> Option.getWithDefault(Nil), (0.0, 0.0, 0.5)), sway = JsonCodec.floatOr("sway", 0.3, o),
-          life = JsonCodec.floatOr("life", 1.2, o), box = tripleOf(floats("box", o) |> Option.getWithDefault(Nil), (14.0, 14.0, 5.0)),
-          ahead = JsonCodec.floatOr("ahead", 2.0, o) }
+          life = JsonCodec.floatOr("life", 1.2, o), fall = JsonCodec.floatOr("fall", 6.0, o), spread = JsonCodec.floatOr("spread", 4.0, o),
+          fadeFar = JsonCodec.floatOr("fadeFar", 16.0, o) }
 
     // ── 熱の地図 ──
 
@@ -431,49 +438,90 @@ mod StageFx {
 
     // ── 粒 ──
 
-    def wrap(v: Float64, n: Float64): Float64 = if (n <= 0.0) v else v - n * Float64.floor(v / n)
-
-    /// 時刻 t の粒の (位置, 一辺 m)。center = カメラの追う点（地図の座標の x・y と床の高さ z）。乱数を使わず座標のハッシュで決める（毎回同じ）。
-    pub def particlesAt(m: TownMap, p: Particles, t: Float64, center: (Float64, Float64, Float64)): List[(Faces.P3, Float64)] =
-        let (vx, vy, vz) = p#vel;
+    /// 時刻 t の粒の (位置, 一辺 m, fade)。fade = 1 で color・0 で fadeColor（火の粉は消えかけ・雪は遠く）。
+    /// center = カメラの追う点（地図の座標の x・y と床の高さ z）。乱数を使わず粒の番号と回りのハッシュで決める（毎回同じ）。
+    pub def particlesAt(m: TownMap, p: Particles, t: Float64, center: (Float64, Float64, Float64)): List[(Faces.P3, Float64, Float64)] =
         match p#origin {
-            case Spawn.OnGround(g) =>
-                let spawns = cellsOf(m) |> List.filter(cr -> TownMap.groundAt(m, fst(cr), snd(cr)) == g)
-                    |> Sort.sortStableBy(cr -> TileMap3d.h01(fst(cr), snd(cr), 51)) |> List.take(p#count) |> List.toVector;
-                let n = Vector.length(spawns);
-                if (n == 0) Nil
-                else List.range(0, p#count) |> List.map(i -> {
-                    let (c, r) = Vector.get(Int32.modulo(i, n), spawns);
-                    let speed = 0.6 + 0.8 * TileMap3d.h01(i, 3, 21);
-                    let phase = TileMap3d.h01(i, 4, 20) * 2.0 * Num.pi();
-                    let bx = Int32.toFloat64(c) + TileMap3d.h01(i, 1, 17);
-                    let by = Int32.toFloat64(m#height - 1 - r) + TileMap3d.h01(i, 2, 18);
-                    let bz = Int32.toFloat64(TownMap.levelAt(m, c, r)) * m#heightStep - TownMap.waterSurface();
-                    let u = wrap(vz * speed * t / p#life + phase / (2.0 * Num.pi()), 1.0);
-                    (Faces.p3(bx + p#sway * Num.sin(1.1 * t + phase) * u, by, bz + u * p#life), p#size * (1.0 - u))
-                })
-            case Spawn.AroundCamera =>
-                let (bw, bd, bh) = p#box;
-                let (cx, cy, cz) = center;
-                List.range(0, p#count) |> List.map(i -> {
-                    let speed = 0.6 + 0.8 * TileMap3d.h01(i, 3, 21);
-                    let phase = TileMap3d.h01(i, 4, 20) * 2.0 * Num.pi();
-                    let rx = wrap(TileMap3d.h01(i, 1, 17) * bw + vx * speed * t + p#sway * Num.sin(1.3 * t + phase), bw);
-                    let ry = wrap(TileMap3d.h01(i, 2, 18) * bd + vy * speed * t, bd);
-                    let rz = wrap(TileMap3d.h01(i, 3, 19) * bh + vz * speed * t, bh);
-                    (Faces.p3(cx + rx - bw / 2.0, cy + p#ahead + ry - bd / 2.0, cz + rz), p#size)
-                })
+            case Spawn.OnGround(g) => embersAt(m, p, g, t)
+            case Spawn.Falling     => snowAt(m, p, t, center)
         }
 
-    /// 粒の材質（決まった色で光る・光を当てない）。
-    pub def particleMaterial(p: Particles): Scene3d.Material3d = solidGlow("hd2d:particle", p#color, Float64.max(1.0, p#emit))
+    def smooth01(lo: Float64, hi: Float64, x: Float64): Float64 =
+        let v = Num.clamp(0.0, 1.0, (x - lo) / Float64.max(0.000001, hi - lo));
+        v * v * (3.0 - 2.0 * v)
 
-    /// 時刻 t の粒をカメラへ向けて立てた四角（mesh = 1 × 1 m の上を向く四角）。
-    pub def particleInstances(mesh: Mesh3d.Mesh3d, material: Scene3d.Material3d, m: TownMap, p: Particles, t: Float64, center: (Float64, Float64, Float64)): List[Scene3d.Instance3d] =
-        particlesAt(m, p, t, center) |> List.filter(ps -> snd(ps) > 0.001) |> List.map(ps -> {
-            let (at, s) = ps;
-            Scene3d.meshInstance(mesh, Mat4.mul(Mat4.translate(Vec3.v3(at#x, at#z, at#y)), Mat4.mul(Mat4.rotateX(0.0 - Num.pi() / 2.0), Mat4.scale(Vec3.v3(s, 1.0, s)))))
-                |> Scene3d.withMaterial(material)
+    /// 火の粉: 1 粒ごとに、のぼる速さ・高さ・大きさ・明るさをばらつかせ、1 回のぼるごとに地面 g のマスから出る所を替える。
+    /// 横にゆらぎながらのぼり、のぼりきる手前で暗くなって消える。
+    def embersAt(m: TownMap, p: Particles, g: Ground, t: Float64): List[(Faces.P3, Float64, Float64)] =
+        let spawns = cellsOf(m) |> List.filter(cr -> TownMap.groundAt(m, fst(cr), snd(cr)) == g) |> List.toVector;
+        let n = Vector.length(spawns);
+        let (_, _, vz) = p#vel;
+        if (n == 0) Nil
+        else List.range(0, p#count) |> List.map(i -> {
+            let speed = vz * (0.55 + 0.9 * TileMap3d.h01(i, 3, 21));
+            let height = p#life * (0.6 + 0.7 * TileMap3d.h01(i, 5, 23));
+            let span = height / Float64.max(0.01, speed);
+            let phase = TileMap3d.h01(i, 4, 20);
+            let cycle = t / span + phase;
+            let k = Float64.floor(cycle) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+            let u = cycle - Float64.floor(cycle);
+            let (c, r) = Vector.get(Int32.modulo(Float64.floor(TileMap3d.h01(i, k, 29) * Int32.toFloat64(n)) |> Float64.tryToInt32 |> Option.getWithDefault(0), n), spawns);
+            let bx = Int32.toFloat64(c) + TileMap3d.h01(i, k, 17);
+            let by = Int32.toFloat64(m#height - 1 - r) + TileMap3d.h01(i, k, 18);
+            let bz = Int32.toFloat64(TownMap.levelAt(m, c, r)) * m#heightStep - TownMap.waterSurface();
+            let wobble = p#sway * (0.4 + 0.8 * u) * Num.sin(2.0 * Num.pi() * (1.2 * u + phase) + 0.7 * t);
+            let bright = 0.45 + 0.55 * TileMap3d.h01(i, k, 31);
+            let fade = bright * smooth01(0.0, 0.08, u) * (1.0 - smooth01(0.55, 1.0, u));
+            let size = p#size * (0.6 + 0.9 * TileMap3d.h01(i, 6, 25)) * (1.0 - 0.4 * u);
+            (Faces.p3(bx + wobble, by + 0.3 * wobble, bz + u * height), size, fade)
+        })
+
+    /// 雪: 地図の広さ（外へ spread m まで）に散らし、fall m 上から落ちて地面で消える。風で斜めに流れ、粒ごとに横へゆらぐ。
+    /// カメラの追う点より北（奥）ほど fadeColor へ溶かす（fadeFar m で溶けきる）。
+    def snowAt(m: TownMap, p: Particles, t: Float64, center: (Float64, Float64, Float64)): List[(Faces.P3, Float64, Float64)] =
+        let (vx, vy, vz) = p#vel;
+        let (_, cy, _) = center;
+        let w = Int32.toFloat64(m#width) + 2.0 * p#spread;
+        let d = Int32.toFloat64(m#height) + 2.0 * p#spread;
+        List.range(0, p#count) |> List.filterMap(i -> {
+            let fallSpeed = Float64.abs(vz) * (0.7 + 0.6 * TileMap3d.h01(i, 3, 21));
+            let span = p#fall / Float64.max(0.01, fallSpeed);
+            let phase = TileMap3d.h01(i, 4, 20);
+            let cycle = t / span + phase;
+            let k = Float64.floor(cycle) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+            let age = (cycle - Float64.floor(cycle)) * span;
+            let x0 = TileMap3d.h01(i, k, 17) * w - p#spread;
+            let y0 = TileMap3d.h01(i, k, 18) * d - p#spread;
+            let sway = p#sway * Num.sin(2.0 * Num.pi() * (0.35 * age + phase) + Int32.toFloat64(i));
+            let x = x0 + vx * age + sway;
+            let y = y0 + vy * age;
+            let floor = TownMap.groundZAt(m, Num.clamp(0.0, Int32.toFloat64(m#width) - 0.01, x), Num.clamp(0.0, Int32.toFloat64(m#height) - 0.01, y));
+            let z = floor + p#fall - fallSpeed * age;
+            let size = p#size * (0.6 + 0.8 * TileMap3d.h01(i, 6, 25));
+            let fade = 1.0 - smooth01(0.0, p#fadeFar, y - cy);
+            if (z <= floor) None else Some((Faces.p3(x, y, z), size, fade))
+        })
+
+    /// 粒の材質の段（particleLevels 段・fade 0 → fadeColor と弱い光・1 → color と emit の光）。
+    pub def particleMaterials(p: Particles): Vector[Scene3d.Material3d] =
+        let n = particleLevels();
+        Vector.range(0, n) |> Vector.map(k -> {
+            let f = Int32.toFloat64(k) / Int32.toFloat64(n - 1);
+            let mix = (a: Float64, b: Float64) -> a + (b - a) * f;
+            let c = { r = mix(p#fadeColor#r, p#color#r), g = mix(p#fadeColor#g, p#color#g), b = mix(p#fadeColor#b, p#color#b) };
+            solidGlow("hd2d:particle-${Int32.toString(k)}", c, Float64.max(1.0, p#emit) * (0.3 + 0.7 * f))
+        })
+
+    /// 時刻 t の粒をカメラへ向けて立てた四角（mesh = 1 × 1 m の上を向く四角・materials = particleMaterials）。
+    pub def particleInstances(mesh: Mesh3d.Mesh3d, materials: Vector[Scene3d.Material3d], m: TownMap, p: Particles, t: Float64, center: (Float64, Float64, Float64)): List[Scene3d.Instance3d] =
+        let n = Vector.length(materials);
+        particlesAt(m, p, t, center) |> List.filterMap(ps -> {
+            let (at, s, fade) = ps;
+            let level = Num.clampInt(0, n - 1, Float64.round(fade * Int32.toFloat64(n - 1)) |> Float64.tryToInt32 |> Option.getWithDefault(0));
+            if (s <= 0.001 or fade <= 0.04) None
+            else Vector.nth(level, materials) |> Option.map(mat ->
+                Scene3d.meshInstance(mesh, Mat4.mul(Mat4.translate(Vec3.v3(at#x, at#z, at#y)), Mat4.mul(Mat4.rotateX(0.0 - Num.pi() / 2.0), Mat4.scale(Vec3.v3(s, 1.0, s)))))
+                    |> Scene3d.withMaterial(mat))
         })
 
     // ── 空の映り込み ──

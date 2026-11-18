@@ -80,7 +80,7 @@ mod TownScene {
                            town = TileMap3d.Town, materials = Map[String, (Scene3d.Material3d, Rgb)], sprites = Map[String, Images.Loaded],
                            denseMaterial = Scene3d.Material3d, lanternTexture = String, haloTexture = String,
                            litLights = List[Scene3d.PointLight], fx = StageFx.Fx, environmentMap = Option[Scene3d.EnvironmentMap],
-                           spriteGlows = Map[String, Float64], particleMaterial = Option[Scene3d.Material3d] }
+                           spriteGlows = Map[String, Float64], particleMaterials = Option[Vector[Scene3d.Material3d]] }
 
     /// 地図と絵を読み、町を組む。skipNpcColumn = 地図の 1・2・3 を置かない列（隊列で歩かせる列）。
     pub def load(m: TownMap, look: Look, skipNpcColumn: Option[Int32], extraStrips: List[String]): Result[String, Res] \ IO =
@@ -129,7 +129,7 @@ mod TownScene {
               denseMaterial = Scene3d.texturedMaterial(Texture3d.name(dense), FilterMode.Linear) |> Scene3d.withAlphaBlend(true),
               lanternTexture = Texture3d.name(lantern), haloTexture = Texture3d.name(halo), litLights = Nil,
               fx = fx, environmentMap = sky |> Option.map(Scene3d.environmentMap), spriteGlows = StageFx.spriteGlows(m, fx),
-              particleMaterial = fx#particles |> Option.map(StageFx.particleMaterial) }
+              particleMaterials = fx#particles |> Option.map(StageFx.particleMaterials) }
         }
 
     /// 材質の名前 → (置いた物の材質, 色の掛け目)。
@@ -154,7 +154,7 @@ mod TownScene {
     /// 場面 scene に地図の見た目の欄の時刻 t の物（溶岩と結晶の点光源・粒・空の映り込み）を足す。
     /// center = カメラの追う点（地図の座標の x・y と床の高さ z・雪の箱の真ん中）。
     pub def withStageFx(res: Res, t: Float64, center: (Float64, Float64, Float64), scene: Scene3d.Scene3dCmd): Scene3d.Scene3dCmd =
-        let particles = forM (p <- res#fx#particles; mat <- res#particleMaterial) yield StageFx.particleInstances(res#contactMesh, mat, res#map, p, t, center);
+        let particles = forM (p <- res#fx#particles; mats <- res#particleMaterials) yield StageFx.particleInstances(res#contactMesh, mats, res#map, p, t, center);
         { pointLights = List.append(scene#pointLights, StageFx.lightsAt(res#map, res#fx, res#look#stageLightScale, t)),
           instances = List.append(scene#instances, particles |> Option.getWithDefault(Nil)),
           environmentMap = match res#environmentMap {
@@ -535,14 +535,17 @@ mod TownScene {
         case None    => s
         case Some(h) =>
             let scene = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = ShaderDoc.Field.Tex({ name = PostStack.sceneName(), chan = ch }) });
-            let blurred = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.TexBlur({ name = PostStack.sceneName(), chan = ch, radius = { x = 0.022, y = 0.039 }, taps = 9, amount = ShaderDoc.Field.Const(1.0) });
+            // WhyNot: 型紙のぼかしを小さくしない — 1 マスの火の結晶や橙に照らされたキャラも熱い所に数えられ、そばのキャラの顔が揺れる。広い溶岩だけがぼかしの後も熱く残る。
+            let blurred = (ch: ShaderDoc.TexChan) -> ShaderDoc.Field.TexBlur({ name = PostStack.sceneName(), chan = ch, radius = { x = 0.045, y = 0.08 }, taps = 9, amount = ShaderDoc.Field.Const(1.0) });
             let bin = (op: ShaderDoc.BinOp, a: ShaderDoc.Field, b: ShaderDoc.Field) -> ShaderDoc.Field.Bin({ op = op, a = a, b = b });
-            let hot = bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Smoothstep({ lo = 0.75, hi = 1.05, of = blurred(ShaderDoc.TexChan.R) }),
-                          ShaderDoc.Field.Smoothstep({ lo = 0.25, hi = 0.5, of = bin(ShaderDoc.BinOp.Sub, blurred(ShaderDoc.TexChan.R), blurred(ShaderDoc.TexChan.B)) }));
+            let hot = bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Smoothstep({ lo = 0.45, hi = 0.85, of = blurred(ShaderDoc.TexChan.R) }),
+                          ShaderDoc.Field.Smoothstep({ lo = 0.2, hi = 0.45, of = bin(ShaderDoc.BinOp.Sub, blurred(ShaderDoc.TexChan.R), blurred(ShaderDoc.TexChan.B)) }));
             let rise = h#rise / 720.0;
-            let lifted = ShaderDoc.Field.Shift({ dx = ShaderDoc.Field.Const(0.0), dy = ShaderDoc.Field.Const(rise), of = hot });
-            let mask = ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Sat, of = bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Const(4.0),
-                                                                           bin(ShaderDoc.BinOp.Max, hot, bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Const(0.8), lifted))) });
+            let lifted = (part: Float64, weight: Float64) ->
+                bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Const(weight), ShaderDoc.Field.Shift({ dx = ShaderDoc.Field.Const(0.0), dy = ShaderDoc.Field.Const(rise * part), of = hot }));
+            // WhyNot: 持ち上げた写しを 1 枚にしない — 溶岩の上の空気が途中で切れ、崖のふちの 1 本の帯だけが揺れる。
+            let above = bin(ShaderDoc.BinOp.Max, lifted(0.33, 0.9), bin(ShaderDoc.BinOp.Max, lifted(0.66, 0.7), lifted(1.0, 0.5)));
+            let mask = ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Sat, of = bin(ShaderDoc.BinOp.Mul, ShaderDoc.Field.Const(4.0), bin(ShaderDoc.BinOp.Max, hot, above)) });
             let fill = (r: ShaderDoc.Field, g: ShaderDoc.Field, b: ShaderDoc.Field) -> ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = r, g = g, b = b }), alpha = ShaderDoc.Field.Const(1.0) });
             let maskSpec = { name = "hd2d:haze-mask", cycleRate = 0.0, bindings = Nil, out = fill(mask, mask, mask) };
             let copySpec = { name = "hd2d:haze-scene", cycleRate = 0.0, bindings = Nil, out = fill(scene(ShaderDoc.TexChan.R), scene(ShaderDoc.TexChan.G), scene(ShaderDoc.TexChan.B)) };

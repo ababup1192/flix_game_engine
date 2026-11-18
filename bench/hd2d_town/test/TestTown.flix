@@ -487,10 +487,19 @@ mod TestTown {
         Assert.assertTrue(n >= 4 and n <= 10)
 
     @Test
-    def testFireHasFiveEmbers(): Unit \ {Assert, IO} =
+    def testFireEmbersAreAsManyAsTheDocSays(): Unit \ {Assert, IO} =
         let (m, fx) = fireMap();
-        let n = fx#particles |> Option.map(p -> List.length(StageFx.particlesAt(m, p, 1.0, (0.0, 0.0, 0.0)))) |> Option.getWithDefault(0);
-        Assert.assertEq(expected = 5, n)
+        let counts = fx#particles |> Option.map(p -> (p#count, List.length(StageFx.particlesAt(m, p, 1.0, (0.0, 0.0, 0.0)))));
+        Assert.assertTrue(counts |> Option.map(c -> fst(c) == snd(c) and fst(c) >= 15) |> Option.getWithDefault(false))
+
+    @Test
+    def testEmberFadeStaysBetweenZeroAndOne(): Unit \ {Assert, IO} =
+        let (m, fx) = fireMap();
+        let ok = fx#particles |> Option.map(p -> StageFx.particlesAt(m, p, 2.0, (0.0, 0.0, 0.0)) |> List.forAll(e -> {
+            let (_, _, fade) = e;
+            fade >= 0.0 and fade <= 1.0
+        })) |> Option.getWithDefault(false);
+        Assert.assertTrue(ok)
 
     @Test
     def testFireRimStandsBesideTheLava(): Unit \ {Assert, IO} =
