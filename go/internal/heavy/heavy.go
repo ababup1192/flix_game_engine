@@ -60,7 +60,7 @@ const LongSlotsEnv = "FGE_HEAVY_LONG_SLOTS"
 const DefaultLongSlots = 2
 
 // longTarget は「長い物」の make の口の名前。語ごとに丸ごと照らす。
-var longTarget = regexp.MustCompile(`^(render-all|reference-update|gallery-[\w-]+|[\w-]*-video(-[\w-]+)?|video-[\w-]+|compare:?)$`)
+var longTarget = regexp.MustCompile(`^(render-all|verify|reference-update|gallery-[\w-]+|[\w-]*-video(-[\w-]+)?|video-[\w-]+|compare:?)$`)
 
 // noLockTarget は鍵を取らずにそのまま流す口（claude -p を待つだけで CPU をほとんど使わない物）。
 //

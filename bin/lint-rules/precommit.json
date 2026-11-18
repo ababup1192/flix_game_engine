@@ -358,7 +358,10 @@
       "anyOf": [
         {
           "basenames": [
-            "Makefile"
+            "Makefile",
+            "gates.json",
+            "precommit.json",
+            "hooks.json"
           ]
         },
         {
@@ -367,6 +370,11 @@
             "agents-pack/",
             "templates/",
             "go/internal/genrules/",
+            "go/internal/gates/",
+            "go/internal/syncagents/",
+            "go/internal/check/",
+            "go/internal/px/",
+            "go/internal/pxlib/",
             "go/internal/apidigest/",
             "go/internal/apiindex/",
             "go/internal/checkrefs/"

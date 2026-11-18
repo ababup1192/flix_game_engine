@@ -51,8 +51,9 @@ allowed-tools: Read, Grep, Glob, Bash
 タグがまだ無いかを見て（`make release-marker-check`）、`sync` → `gl-jar-publish` → build-pkg → `bundle-zip` → `gh release create` を
 流す。tag は印を載せた commit に付く。2 の後に 1 行でも変えたら止まるので、2 からやり直す。
 CI ではテストを流し直さない（スナップショットが OS と JRE のフォントの差でずれる。`release-gate.yml` と同じ）。
-窓を開く門（`make determinism`・`make gl-capture-check`・`make smoke-devtools`）は `make release` に入っていないので、
-`make sync-engine-full` の後に手元で流して緑を確かめてから 2 へ進む（`docs/flow.md` の決定性の門）。
+画面を開く門は `make release` に入っていないので、`make verify SUITE=gui`（sync-engine-full の後に determinism・gl-capture-check・
+smoke-devtools・webgpu-v1-check-web。並びの正は根の gates.json）を手元で流して緑を確かめてから 2 へ進む（`docs/flow.md` の決定性の門）。
+何が流れるかだけ見るなら `DRY=1`。
 
 配る物を手元で組まないのは、作業ツリーを写すと git の管理外の `debug/`・`gallery/`・`packages.lock` まで
 同梱 zip に入るため（0.67.0・0.68.0 は tidepool-starter の録画で 1.2 GB になった）。CI のきれいな checkout から

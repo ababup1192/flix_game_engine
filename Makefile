@@ -1277,7 +1277,7 @@ api-digest: ### | engine の pub API を docs/api-digest.md に 1 つにまと�
 # DOCS_SYNC_DESC_<名前> は流す時に出す 1 行、DOCS_SYNC_SH_<名前> はシェルの 1 文（落ちたら非 0）。
 # WhyNot: 名前ごとのターゲットに分けない — make -j で並ぶと出力が混ざる（lint と同じ）。
 DOCS_SYNC_NAMES := claude-import rules px-ops check-codes skill-table core-skills core-bridge skill-links skill-frontmatter \
-	skill-sync old-prim-names manifest check-refs api-index api-digest docs-links template-claude
+	skill-sync old-prim-names manifest check-refs api-index api-digest docs-links template-claude gates
 
 DOCS_SYNC_DESC_claude-import = CLAUDE.md が AGENTS.md を import しているか
 DOCS_SYNC_SH_claude-import = \
@@ -1382,6 +1382,33 @@ check-docs-sync: ## [ONLY=<名前>,…] | 規約まわりの配線が崩れて�
 	$(foreach n,$(DOCS_SYNC_RUN),echo "[check-docs-sync] $(DOCS_SYNC_DESC_$n)"; ( $(DOCS_SYNC_SH_$n) ) || failed="$$failed $n"; ) \
 	if [ -n "$$failed" ]; then echo "[check-docs-sync] 落ちた物:$$failed"; exit 1; fi; \
 	echo "[check-docs-sync] OK"
+
+##@ 門をまとめて流す
+# 門の一覧（make の口・当たるファイル・いつ流すか）は根の gates.json。流し方（suite）の中身もそこに書き、ここには書かない。
+# bin/fge gates（一覧）・bin/fge gates --files <パス…>（当たる門だけ。流さない）。
+# WhyNot: make test-<名前> の形にしない — test-% はパッケージ 1 本のテストの口で、suite の名前がテンプレートの名前と取り合う。
+# 下の ##> の行の名前は gates.json の suites と同じ並び（bin/fge gates --check が見る）。
+##> make verify SUITE=quick|test|release|gui|affected | quick=作業中の型検査・素振り・lint／test=全部のテスト／release=リリースの門／gui=画面を開く門／affected=差分から（今は test）
+.PHONY: verify
+verify: ## SUITE=<名前> [DRY=1] [ARGS="K=V …"] | 流し方を 1 つ選んで門を順に流す（SUITE が無ければ一覧・DRY=1 は何を流すかだけ）
+	@if [ -z "$(SUITE)" ]; then bin/fge gates --suites; \
+	else bin/fge gates --suite "$(SUITE)" $(if $(DRY),--dry-run) -- $(ARGS); fi
+
+# ステージした物と作業ツリーの差分（追跡していない新しいファイルを含む）でコミットの門を素振りする。
+# jargon はステージした行（git diff --cached）しか見ないので、ステージしていない行の独自語はここでは拾えない。
+.PHONY: precommit-dry
+precommit-dry: ### | ステージした物と作業ツリーの差分で bin/fge precommit を素振りする（コミットはしない）
+	@files=$$( { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u); \
+	if [ -z "$$files" ]; then echo "[precommit-dry] 差分がありません"; exit 0; fi; \
+	bin/fge precommit --files $$files
+
+# bin/fge gates --check が Makefile の値を受け取る口（1 行 1 つ）。
+.PHONY: gates-facts
+gates-facts: ### | gates.json と比べる Makefile の値（テストのパッケージ・lint と check-docs-sync の名前・リリースの門）
+	@echo "test-pkgs $(notdir $(TEST_DIRS) $(TEMPLATE_DIRS))"
+	@echo "lint-names $(LINT_NAMES)"
+	@echo "docs-sync-names $(DOCS_SYNC_NAMES)"
+	@echo "release-gates $(RELEASE_GATES)"
 
 # ── 新しいゲームを 1 コマンドで産む ──────────────────────
 # 使い方: make new-game GAME=/abs/path/to/dir NAME=<パッケージ名> TITLE=<題名> W=240 H=320 TEMPLATE=sound-novel-starter

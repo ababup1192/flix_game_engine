@@ -156,11 +156,18 @@ git log 掘りやテスト回し直しから始めない。
 
 **新しい仕組み（API・make の口・lint）を入れたら**、`agents-pack/AGENTS.core.md` の早見表に 1 行と
 `agents-pack/agent-eval/engine.json` にお題を 1 本足し、ゲームの足元で `make agent-eval ONLY=<お題>` が当たるのを確かめる。
+ただし engine のリポでだけ打てる口（門をまとめて流す `make verify`・`bin/fge gates` のような）はゲームへ配る早見表とお題に入れず、
+この節に 1 行と `testdata/agent-eval/engine-repo.json` にお題を 1 本足し、engine の根で
+`bin/fge agent-eval --tasks testdata/agent-eval/engine-repo.json --only <お題>` が当たるのを確かめる。
 古い書き方は `bin/lint-rules/forbid.json`（1 行の正規表現 + 代わりの物）で止める。
 リリースの後は、ゲームを追随させてから `make agent-eval-release`（全部のお題を 3 回・約 20 分・`docs/agent-eval.md`）で前の版と比べる。ゲートではない（知らせるだけ）。
 
 **テストは絞って速く回す。全量の検証はリリース直前の 1 回だけ。**
 変更が波及したパッケージだけ `make test-<name>`、それ以外は `flix check` で足りる。
+門（テスト・検査）の一覧は根の `gates.json`。触ったファイルに当たる門は `bin/fge gates --files <パス…>`（流さない）。
+まとめて流すのは `make verify SUITE=<名前>`（`quick` = 作業中の型検査・precommit の素振り・lint／`test` = テンプレートを含む全部のテスト／
+`release` = リリースの門／`gui` = 画面を開く門（release の前に手元で）。`SUITE` 無しで一覧・`DRY=1` で何を流すかだけ）。
+テストの口は `make test`（`ALL=1` でテンプレートも・`JOBS=<数>` で並べて流す）。絞る旗は `make gl-capture-check SCENES=<テンプレートか場面>`・`make go-test PKG=<名前>`。
 テストの範囲・書き方は `/quality-assurance`、リリース手順は `/release`。
 
 ## Doc（`*.kind.json`）の流儀

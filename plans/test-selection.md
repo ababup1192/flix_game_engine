@@ -149,7 +149,7 @@ release の外で手元で流す重い門（determinism → gl-capture-check →
 | 索引を作れない木（bench 4 本・engine_web）と facts の無い hd2d-starter | 索引の失敗を直す（多くは lib か束ね方）。refactor の `--json` に「引かなかった木」を足す | **案 B が engine の変更で gl-parity・hd2d・web の門を外せるかはこれに頼る** | 2〜4 時間（原因による） | go と bench（engine ではない） |
 | rpg-starter の実行が重い（1 本 0.3 秒のテストが並ぶ） | Fixtures の起動・Doc の読み込みを毎回しているかを測り、共有できるなら共有する | release の門の 1分52s もそのまま縮む（絞りとは別に縮む） | 測るのに 1 時間・直しは結果しだい | テンプレートだけ |
 | テストの helper が別のテストのファイルにあり、mod の親子で非 pub を共有する | 決まり: 共有の helper は `Test*Kit.flix` / `Fixtures.flix` に pub で置く。テストのファイルは他のテストのファイルの非 pub を使わない（lint で止める） | ファイル単位の木のたどりが「選んだファイル + Kit」で済む | 2〜3 時間（engine/test と層の test の該当の数による） | **engine/test を触る → 相談** |
-| 門ごとの入力が Makefile のレシピと precommit.json とコメントに散らばる | `bin/lint-rules/precommit.json` の `when`（拡張子・場所）を広げて門の入力も書ける形にし、選ぶ道具と precommit が同じ表を読む（新しいファイルを足す前に、今ある表を広げる） | 「表に当てはまらない変更は全部流す」の判定を 1 か所で書ける | 3 時間 | go と json だけ |
+| 門ごとの入力が Makefile のレシピと precommit.json とコメントに散らばる | **済（plans/gates-tidy.md）**: 根の `gates.json` に門ごとの入力（precommit.json の `when` と同じ書き方）を持たせた。precommit.json はゲームへ配られてゲームのコミットでも走る表なので広げず、`bin/fge gates` が読み込んで混ぜる | 「表に当てはまらない変更は全部流す」の判定を 1 か所で書ける | 3 時間 | go と json だけ |
 | go のパッケージと門の関係 | 同じ表に go のパッケージ → 門（yarn の testdata → engine_world のテスト、flow・headlessrun・rendercache → 描き出しと determinism、checkd・precommit・forbid → 型検査と precommit の素振り、fontbake・px・sprite → 生成した素材） | go を直した時の門が表から引ける | 1 時間 | go と json |
 | 生成物と写し | 表に「生成元 → 生成物」「写しの組」を書く。bench-common の cp は symlink にする | 規則を表から引ける | 1 時間 | Makefile |
 | テンプレートのテストの前に fpkg が新しいか分からない | 選ぶ道具が engine 側の差を見たら先に `sync-engine-full` を流す | 古い fpkg で緑になる誤りが無くなる | 30 分 | Makefile |
@@ -163,7 +163,7 @@ release の外で手元で流す重い門（determinism → gl-capture-check →
 
 3 案とも共通の決まり:
 
-- 入口は `bin/fge test-select [--base <ref>] [--files …] [--explain] [--json]`（go の道具。engine/ ではない）と、それを流す `make test-changed`。
+- 入口は `bin/fge test-select [--base <ref>] [--files …] [--explain] [--json]`（go の道具。engine/ ではない）と、それを流す `make verify SUITE=affected`（受け口は gates.json の suite にある。今は test に倒す）。
   base の既定は `HEAD`（作業ツリーの差分 + 未追跡）。
 - 出す物は「流す門の一覧」と「なぜ選んだか（どの変更 → どの宣言 → どのパッケージ・テスト・門）」。`--explain` で人が読める形にする。
 - **順番**: (1) engine 側（4 パッケージの src）に差があれば `sync-engine-full`（約 14s）→ (2) 下流を全部型検査 → (3) 索引を作り直す（古ければ）→ (4) 呼び手をたどる → (5) 門を流す。
@@ -181,7 +181,7 @@ release の外で手元で流す重い門（determinism → gl-capture-check →
 ### 案 A（最小）: パッケージ単位の表
 
 仕組み:
-- 差分のファイル → 表（precommit.json を広げた物）の glob → パッケージ → 依存の向きで下流のパッケージ（engine → 3 層 → engine_full → テンプレート・game-starter・bench）
+- 差分のファイル → 表（根の gates.json の input）の glob → パッケージ → 依存の向きで下流のパッケージ（engine → 3 層 → engine_full → テンプレート・game-starter・bench）
 - 流す物: 当たったパッケージの flix test 全部と、表に書いた門（テンプレートなら render-changed・determinism のそのテンプレート、render_gl なら gl-parity、engine の pub 面なら new-game の確かめ、go/ なら表の go の行）
 - engine の pub 面が変わったかは、変わった宣言が pub か（`def.tsv` の pub の欄）と、`bin/fge api-digest --check` に差が出たかの両方で見る。どちらかが当たれば new-game の確かめ（game-starter を作業場へ写して check → test。時間は不明・測ってから表に入れる。5 種の表では T3・T4・T6 の engine の pub の def を変えた時だけ足す）
 - 文書だけの変更はテストを流さない（precommit と check-docs-sync だけ）
@@ -318,11 +318,11 @@ B に足す物:
 2. 索引を作れない木を直す・`--json` に引かなかった木を出す（2〜4 時間）
 3. B（5〜7 時間）
 4. test-select-replay（4〜6 時間）と答え合わせ（夜 1〜3 回）
-5. 漏れ 0 で `make test-changed` を作業中の既定の確かめにし、agents-pack の早見表と agent-eval のお題を足す
+5. 漏れ 0 で `make verify SUITE=affected` を作業中の既定の確かめにし、AGENTS.md の検証の節と testdata/agent-eval/engine-repo.json のお題を足す（engine のリポだけの口なので agents-pack には入れない）
 
 相談事（人に決めてほしい事）:
 1. 案 C の「テストの helper の決まり」を engine/test・層の test に入れるか（engine の層の作りの決まりを増やす。lint が 1 本増える）。B の答え合わせの後に決めればよい。
-2. 門の入力の表を precommit.json を広げて持たせるか、別のファイルにするか（今ある表を広げる方を推す。Makefile のレシピは今のまま）。
+2. ~~門の入力の表を precommit.json を広げて持たせるか、別のファイルにするか~~ → 根の gates.json に決めた（plans/gates-tidy.md・配る物の都合）。
 3. 答え合わせの機械の時間（夜 1〜3 回）を使ってよいか。
 
 ---
