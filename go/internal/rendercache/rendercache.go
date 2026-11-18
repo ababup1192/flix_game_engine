@@ -11,6 +11,7 @@
 package rendercache
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -104,6 +105,34 @@ func Status(out io.Writer, dir string) {
 		total += e.size
 	}
 	fmt.Fprintf(out, "render-cache: %s に %d 枚・%d MB\n", dir, len(es), total>>20)
+	writeSummary(dir, len(es), total)
+}
+
+// SummaryName は数えた大きさの控え（置き場の中）。make status は置き場を歩かずにこれを読む。
+const SummaryName = ".fge-summary.json"
+
+// Summary は最後に数えた時の枚数と大きさ。
+type Summary struct {
+	Time  time.Time `json:"time"`
+	Files int       `json:"files"`
+	Bytes int64     `json:"bytes"`
+}
+
+func writeSummary(dir string, files int, bytes int64) {
+	data, err := json.Marshal(Summary{Time: time.Now(), Files: files, Bytes: bytes})
+	if err == nil {
+		_ = os.WriteFile(filepath.Join(dir, SummaryName), append(data, '\n'), 0o644)
+	}
+}
+
+// ReadSummary は最後に数えた控えを読む（無ければ false）。
+func ReadSummary(dir string) (Summary, bool) {
+	var s Summary
+	data, err := os.ReadFile(filepath.Join(dir, SummaryName))
+	if dir == "" || err != nil || json.Unmarshal(data, &s) != nil {
+		return s, false
+	}
+	return s, true
 }
 
 // Prune は maxBytes を超えた分を、使った時刻の古い順に消す。消した枚数と残りの大きさを返す。
@@ -125,5 +154,6 @@ func Prune(dir string, maxBytes int64) (removed int, kept int64) {
 			removed++
 		}
 	}
+	writeSummary(dir, len(es)-removed, kept)
 	return removed, kept
 }
