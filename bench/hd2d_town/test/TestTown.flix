@@ -231,5 +231,53 @@ mod TestTown {
     def testHannSmoothKeepsAConstantSpeedLine(): Unit \ Assert =
         let line = Vector.range(0, 40) |> Vector.map(i -> Int32.toFloat64(i) * 0.1);
         Assert.assertTrue(near(Vector.get(20, Route.hannSmooth(5, line)), 2.0))
-}
 
+    // ── 歩きながら変わる時刻 ──
+
+    def dusk(): TownScene.Look = { exposure = -0.2, sunAzimuth = -75.0, sunIntensity = 8.0 | TownLook.defaults() }
+
+    def night(): TownScene.Look =
+        { exposure = -2.0, sunAzimuth = -35.0, sunIntensity = 0.2, lampIntensity = 260.0,
+          boardLight = TownScene.BoardLight.Unlit | TownLook.defaults() }
+
+    def fogNight(): TownScene.Look =
+        { heightFog = Some({ color = TownLook.defaults()#fog, density = 0.8, baseHeight = 1.0, heightFalloff = 1.2, startDistance = 0.0,
+                             maxOpacity = 0.5, noise = None, lightGlow = 0.02 }) | night() }
+
+    def schedule(): TownLook.Schedule =
+        { day = TownLook.defaults(), dusk = dusk(), night = night(), fog = fogNight(),
+          rows = { dayToDusk = (50.0, 44.0), duskToNight = (36.0, 24.0), moonRow = 29.0, nightToFog = (17.0, 8.0) } }
+
+    @Test
+    def testBlendAtZeroKeepsTheFirstLook(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.blend(dusk(), night(), 0.0)#exposure, -0.2))
+
+    @Test
+    def testBlendAtOneReachesTheSecondLook(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.blend(dusk(), night(), 1.0)#exposure, -2.0))
+
+    @Test
+    def testHalfwayToFogHasHalfTheHeightFogDensity(): Unit \ Assert =
+        let density = TownLook.blend(night(), fogNight(), 0.5)#heightFog |> Option.map(h -> h#density) |> Option.getWithDefault(0.0);
+        Assert.assertTrue(near(density, 0.4))
+
+    @Test
+    def testJustBeforeTheMoonRowTheSunKeepsTheDuskDirection(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(schedule(), 29.05)#sunAzimuth, -75.0))
+
+    @Test
+    def testJustAfterTheMoonRowTheLightTakesTheMoonDirection(): Unit \ Assert =
+        Assert.assertTrue(near(TownLook.atRow(schedule(), 28.95)#sunAzimuth, -35.0))
+
+    @Test
+    def testAtTheMoonRowTheSunIsOff(): Unit \ Assert =
+        Assert.assertTrue(TownLook.atRow(schedule(), 29.0)#sunIntensity < 0.001)
+
+    @Test
+    def testJustBeforeTheMoonRowTheBoardsAreLit(): Unit \ Assert =
+        Assert.assertEq(expected = TownScene.BoardLight.Lit, TownLook.atRow(schedule(), 29.05)#boardLight)
+
+    @Test
+    def testJustAfterTheMoonRowTheBoardsAreUnlit(): Unit \ Assert =
+        Assert.assertEq(expected = TownScene.BoardLight.Unlit, TownLook.atRow(schedule(), 28.95)#boardLight)
+}

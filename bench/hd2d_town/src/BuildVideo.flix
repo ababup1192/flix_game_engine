@@ -134,12 +134,13 @@ mod BuildVideo {
                 { strip = w#strip, frame = 1, perDir = 4, stretch = 1.0 + 0.015 * Num.sin(2.0 * Num.pi() * (t / 1.8 + phase)) }
         }
 
-    /// 読み込んだ物（地図・台本・町・土ぼこりの絵・演出の部品・毎コマの決まり）。
-    pub type alias Setup = { map = TownMap, plan = Plan, res = Res, dust = Texture3d.Texture3d, show = Show, track = Track }
+    /// 読み込んだ物（地図・台本・町・土ぼこりの絵・演出の部品・毎コマの決まり・歩きながら替える Look）。
+    pub type alias Setup = { map = TownMap, plan = Plan, res = Res, dust = Texture3d.Texture3d, show = Show, track = Track,
+                             schedule = Option[TownLook.Schedule] }
 
-    /// 地図・台本・町を読み、演出の部品と毎コマの決まりを作る。look = 見た目のつまみ。
-    /// 台本は BUILDUP（既定 assets/buildup.json）・地図は台本の map。
-    pub def setup(look: TownScene.Look): Result[String, Setup] \ IO =
+    /// 地図・台本・町を読み、演出の部品と毎コマの決まりを作る。look = 見た目のつまみ（台本に timeOfDay があれば歩き出す前の昼にも使う）・
+    /// tweak = 台本の timeOfDay の Look に掛ける差し替え（look に掛けた物と同じ）。台本は BUILDUP（既定 assets/buildup.json）・地図は台本の map。
+    pub def setup(look: TownScene.Look, tweak: TownScene.Look -> TownScene.Look): Result[String, Setup] \ IO =
         let planPath = { let v = System.getenv("BUILDUP"); if (Object.isNull(v) or v == "") "assets/buildup.json" else v };
         (run { Buildup.loadPlan(planPath) |> Result.flatMap(p -> TownMap.load("step", p#map) |> Result.map(m -> (m, p))) } with Fs.FileRead.runWithIO)
             |> Result.flatMap(mp -> {
@@ -154,12 +155,29 @@ mod BuildVideo {
                     case Some(r) =>
                         let at = List.head(p#path) |> Option.getWithDefault({ col = 13, row = 15, wait = 0.0 });
                         make(Buildup.radialFront(p#timing, at#col, at#row, m#width, m#height, r))
-                            |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = standTrackOf(m, look, p, r, show) })
+                            |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = standTrackOf(m, look, p, r, show), schedule = scheduleOf(p, tweak) })
                     case None =>
                         let tr = trackOf(m, look, p);
-                        make(walkFront(m, p, tr)) |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = tr })
+                        make(walkFront(m, p, tr)) |> Result.map(show -> { map = m, plan = p, res = res, dust = d, show = show, track = tr, schedule = scheduleOf(p, tweak) })
                 }
             })
+
+    def scheduleOf(p: Plan, tweak: TownScene.Look -> TownScene.Look): Option[TownLook.Schedule] \ IO =
+        p#timeOfDay |> Option.map(t -> run { TownLook.loadSchedule(t, tweak) } with Fs.FileRead.runWithIO)
+
+    /// コマ f の Look（台本に timeOfDay があれば先頭の行で替える・無ければ読み込んだ Look のまま）。
+    pub def lookAt(st: Setup, f: Int32): TownScene.Look =
+        match st#schedule {
+            case None    => st#res#look
+            case Some(s) => TownLook.atRow(s, leaderRowAt(st, f))
+        }
+
+    /// コマ f の先頭の地図の行（マスの真ん中で整数・その間はなめらかに）。
+    // WhyNot: 行を floor で整数に丸めない — 1 マス歩くごとに Look が段で跳ねる。
+    def leaderRowAt(st: Setup, f: Int32): Float64 =
+        let t = Buildup.storyTime(st#show, Int32.toFloat64(f) / Int32.toFloat64(fps()));
+        let y = snd(fst(Route.pointAt(st#track#route, Route.distanceAt(st#track#route, t))));
+        Int32.toFloat64(st#map#height) - 0.5 - y
 
     /// 歩く台本の前線（先頭の lead 行先の行が出来る）。
     def walkFront(m: TownMap, p: Plan, tr: Track): Buildup.Front =
@@ -192,11 +210,11 @@ mod BuildVideo {
 
     /// コマ f の場面とピントの距離。groupOf = 出来た物の列 → (集まり, 集まりにまだ入っていない物)・size = 描き物の大きさ。
     pub def shotAt(st: Setup, groupOf: List[(String, Scene3d.Instance3d)] -> (Scene3d.StaticGroup, List[Scene3d.Instance3d]) \ ef, size: Vec2.Vec2, f: Int32): (Scene3d.Scene3dCmd, Float64) \ ef =
-        let res = st#res;
+        let look = lookAt(st, f);
+        let res = TownScene.withLook(st#res, look);
         let plan = st#plan;
         let show = st#show;
         let tr = st#track;
-        let look = res#look;
         let snap = (v: Float64) -> if (look#snapToTexels) TownCamera.snapToTexel(v) else v;
         let dt = 1.0 / Int32.toFloat64(fps());
         let t = Buildup.storyTime(show, Int32.toFloat64(f) * dt);
@@ -230,7 +248,7 @@ mod BuildVideo {
         let partyBoards = List.map(fst, members);
         let partyShadows = List.flatMap(snd, members);
         if (t >= show#done)
-            ({ time = t | TownScene.sceneWith(res, camera, size, res#group :: Nil, List.flatten(res#boards :: partyBoards :: List.map(fst, decor) :: Nil),
+            ({ time = t | TownScene.sceneWith(res, camera, size, res#group :: Nil, List.flatten(TownScene.staticBoards(res) :: partyBoards :: List.map(fst, decor) :: Nil),
                                               List.append(partyShadows, decorShadows), textures) }, focus)
         else {
             let fr = Buildup.frameAt(show, t);
@@ -256,7 +274,7 @@ mod BuildVideo {
     /// 町が出来ていく動画のコマを書く。
     pub def frames(): Unit \ IO =
         let look = run { TownLook.loadOr("assets/town.json") } with Fs.FileRead.runWithIO;
-        match setup(look) {
+        match setup(look, identity) {
             case Err(why) => bug!("[hd2d_town] 町を組めない: ${why}")
             case Ok(st)   =>
                 let tr = st#track;
@@ -275,8 +293,8 @@ mod BuildVideo {
                         if (new File("debug/build_frames/${name}.png").exists()) ()
                         else {
                             let (scene, focus) = shotAt(st, cachedGroup(cache, f - 1), design(), f - 1);
-                            HeadlessRender.renderPngFull(cfg, fullSceneOf(look, focus, Buildup.flashAt(st#show, Int32.toFloat64(f - 1) / Int32.toFloat64(fps())), scene), name);
-                            println("[hd2d_town] debug/build_frames/${name}.png")
+                            HeadlessRender.renderPngFull(cfg, fullSceneOf(lookAt(st, f - 1), focus, Buildup.flashAt(st#show, Int32.toFloat64(f - 1) / Int32.toFloat64(fps())), scene), name);
+                            println("[hd2d_town] debug/build_frames/${name}.png（先頭の行 ${Float64.toString(leaderRowAt(st, f - 1))}）")
                         }
                     });
                     let c = Ref.get(cache);

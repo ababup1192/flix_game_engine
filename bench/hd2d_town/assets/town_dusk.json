@@ -7,7 +7,7 @@
   "shadowMapSize": 4096,
   "sunElevation": 12.0,
   "sunAzimuth": -75.0,
-  "sunIntensity": 2.6,
+  "sunIntensity": 8.168,
   "ambient": [
     0.2,
     0.14,
@@ -61,5 +61,6 @@
     1.0,
     0.56,
     0.3
-  ]
+  ],
+  "lightUnits": "physical"
 }

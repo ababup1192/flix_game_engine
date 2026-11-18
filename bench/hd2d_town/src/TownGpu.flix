@@ -12,9 +12,9 @@ mod TownGpu {
     /// 描き物の大きさ（project.json の design と同じ 1280×720）。
     def size(): Vec2.Vec2 = { x = 1280.0, y = 720.0 }
 
-    /// frame = 次に描くコマ・scene・focus = そのコマの場面とピントの距離・grouping = 出来た物の集まりの持ち越し・
+    /// frame = 次に描くコマ・scene・focus・look = そのコマの場面とピントの距離と Look・grouping = 出来た物の集まりの持ち越し・
     /// progress = 重さを測る区間・finished = 閉じてよいか。
-    pub type alias World = { frame = Int32, scene = Option[Scene3d.Scene3dCmd], focus = Float64, grouping = BuildVideo.Grouping,
+    pub type alias World = { frame = Int32, scene = Option[Scene3d.Scene3dCmd], focus = Float64, look = TownScene.Look, grouping = BuildVideo.Grouping,
                              progress = BenchRun.Run, finished = Bool }
 
     /// 測る段取り（頭の 60 コマを捨て、240 コマを 2 区間）。
@@ -36,7 +36,7 @@ mod TownGpu {
         let (grouping, loose) = BuildVideo.regroup(f, BuildVideo.settledAt(st, f), w#grouping);
         let (scene, focus) = BuildVideo.shotAt(st, _ -> (grouping#group, loose), size(), f);
         let progress = if (bench) BenchRun.advance(plan(), line -> println(line), _ -> knobs, BenchRun.sampleOf(frame, 0.0), w#progress) else w#progress;
-        { frame = w#frame + 1, scene = Some(scene), focus = focus, grouping = grouping, progress = progress,
+        { frame = w#frame + 1, scene = Some(scene), focus = focus, look = BuildVideo.lookAt(st, f), grouping = grouping, progress = progress,
           finished = if (bench) progress#done else w#frame + 1 >= Int32.min(st#track#frames, first + shotsPerLaunch()) }
 
     /// HD2D_MODE=walk: 地図の walk の台本で歩いて止まる場面（Video.frames と同じ）を GPU で撮る（64 コマずつ）。
@@ -76,7 +76,6 @@ mod TownGpu {
         let post = envOr("POST", "1") == "1";
         let shadow = envOr("SHADOW", "1") == "1";
         let look0 = run { TownLook.loadOr(Video.lookPath()) } with Fs.FileRead.runWithIO;
-        let look = if (shadow) look0 else { shadowMapSize = 0 | look0 };
         let first = Int32.fromString(envOr("HD2D_FRAME_FROM", "0")) |> Option.getWithDefault(0);
         let extra = Int32.fromString(envOr("EXTRA_LAMPS", "-1")) |> Option.getWithDefault(-1);
         let fog = envOr("FOG", "");
@@ -84,16 +83,20 @@ mod TownGpu {
         let mapSize = Int32.fromString(envOr("SHADOW_MAP", "0")) |> Option.getWithDefault(0);
         let pcf = Int32.fromString(envOr("SHADOW_PCF", "-1")) |> Option.getWithDefault(-1);
         let pointShadows = Int32.fromString(envOr("POINT_SHADOWS", "-1")) |> Option.getWithDefault(-1);
-        let look1 = { billboardTextures = TownScene.BillboardTextures.ProjectTextures, extraLamps = if (extra >= 0) extra else look#extraLamps,
+        let tweak = (look2: TownScene.Look) -> {
+            let look = if (shadow) look2 else { shadowMapSize = 0 | look2 };
+            { billboardTextures = TownScene.BillboardTextures.ProjectTextures, extraLamps = if (extra >= 0) extra else look#extraLamps,
                       groundFog = if (fog == "0") 0.0 else look#groundFog,
                       charShadow = if (charShadow == "") look#charShadow else TownLook.charShadowOf(charShadow),
                       shadowMapSize = if (mapSize > 0) mapSize else look#shadowMapSize, shadowPcf = if (pcf >= 0) pcf else look#shadowPcf,
                       fogFar = if (fog == "0") 400.0 else look#fogFar, fogNear = if (fog == "0") 300.0 else look#fogNear,
                       pointShadows = if (pointShadows < 0) look#pointShadows
                                      else if (pointShadows == 0) None
-                                     else Some({ maxShadowedLights = pointShadows | look#pointShadows |> Option.getWithDefault(Scene3d.pointShadowMap()) }) | look };
+                                     else Some({ maxShadowedLights = pointShadows | look#pointShadows |> Option.getWithDefault(Scene3d.pointShadowMap()) }) | look }
+        };
+        let look1 = tweak(look0);
         if (mode == "walk") goWalk(look1, first) else
-        match BuildVideo.setup(look1) {
+        match BuildVideo.setup(look1, tweak) {
             case Err(why) =>
                 println("[hd2d_town] 町を組めない: ${why}");
                 System.exit(1)
@@ -104,13 +107,13 @@ mod TownGpu {
                             ("ground_fog", Float64.toString(look1#groundFog)) ::
                             ("point_shadows", Int32.toString(look1#pointShadows |> Option.map(m -> m#maxShadowedLights) |> Option.getWithDefault(0))) :: Nil;
                 println("[hd2d_town] GPU ${mode}: コマ ${Int32.toString(st#track#frames)}・後がけ ${if (post) "あり" else "なし"}・太陽の影 ${if (shadow) "あり" else "なし"}");
-                let app0 = App.make({ frame = first, scene = None, focus = 10.0, grouping = BuildVideo.startGrouping(st), progress = BenchRun.start(), finished = false })
+                let app0 = App.make({ frame = first, scene = None, focus = 10.0, look = look1, grouping = BuildVideo.startGrouping(st), progress = BenchRun.start(), finished = false })
                     |> App.addSystem(step(st, bench, first, knobs))
                     |> BenchRun.withDiagnostics(plan())
                     |> App.withView((_ctx, w) -> checked_ecast(w#scene |> Option.map(sc -> Render.scene3d(Vec2.zero(), sc)) |> Option.toList))
                     |> App.quitWhen((_frame, w) -> checked_ecast(w#finished));
                 let flashOf = (w: World) -> Buildup.flashAt(st#show, Int32.toFloat64(w#frame - 1) / Int32.toFloat64(BuildVideo.fps()));
-                let app1 = if (post) app0 |> App.withPostStack(w -> checked_ecast(TownScene.postFlashAt(look, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0), flashOf(w)))) else app0;
+                let app1 = if (post) app0 |> App.withPostStack(w -> checked_ecast(TownScene.postFlashAt(w#look, w#focus, w#scene |> Option.map(sc -> sc#time) |> Option.getWithDefault(0.0), flashOf(w)))) else app0;
                 run { App.launchForBench(app1) }
                     with LwjglLayer.withProject(".")
                     with Fs.FileRead.runWithIO
