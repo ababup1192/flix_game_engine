@@ -477,6 +477,7 @@ func serverCheck(r *hooks.Rules, out, errOut *strings.Builder, root, pkg string)
 		debugLog(errOut, "flixlint の常駐の支度ができない ("+err.Error()+") → 素の check へ")
 		return runFallback(root, pkg, "check")
 	}
+	stopIfStale(r, s, pkg, os.Stderr)
 	sv := r.Checkd.Server
 	t0 := time.Now()
 	started := false

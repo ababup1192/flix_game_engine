@@ -198,6 +198,8 @@ type treeGate struct {
 	stamp func(t refactorTree) int64
 	run   treeRun
 	mu    *sync.Mutex // ソースツリーを並べて問う時に、覚えておくファイルの読み書きを 1 つずつにする
+	// ran は since の後に flixlint が t の索引を作りに動いたか（動いたなら書いたログ）。nil なら動いたとみなす。
+	ran func(t refactorTree, since time.Time) (string, bool)
 }
 
 type treeSkip struct {
@@ -273,18 +275,39 @@ func (g treeGate) ask(t refactorTree, rest []string) (string, int, string) {
 	if s, skipped := g.skipped(t); skipped {
 		return "", -1, fmt.Sprintf("%s は前に索引を作れなかったので引いていない（%s）。flix.toml・lib・src が新しくなったら引き直す", t.Name, s.Reason)
 	}
+	start := time.Now()
 	out, errOut, code := g.run(t, rest)
 	if code != 0 && strings.Contains(errOut, "を作れません") {
 		reason := shortReason(errOut)
+		log, ran := filepath.Join(t.Root, "build", "refactor", "index-resolved.log"), true
+		if g.ran != nil {
+			log, ran = g.ran(t, start)
+		}
+		// WhyNot: flixlint が動かなかった時（heavy の枠を取れない等。索引のログが書かれていない）は覚えない。
+		// 覚えると、道具が直っても flix.toml・lib・src が新しくなるまでそのソースツリーを問わなくなる。
+		if !ran {
+			return "", code, fmt.Sprintf("%s は索引を作れず飛ばした（%s・flixlint が動かなかった）。次の問いで引き直す", t.Name, reason)
+		}
 		if strings.Contains(errOut, "flix check") || strings.Contains(errOut, "依存") {
 			reason += "。" + t.Root + " で make check して依存を入れる"
 		}
 		// WhyNot: 問う前の時刻で覚えない。落ちる途中で flix が lib/ に書くので、次の問いで「新しくなった」と取り違える。
 		g.update(t.Name, &treeSkip{Stamp: g.stamp(t), Reason: reason})
-		return "", code, fmt.Sprintf("%s は索引を作れず飛ばした（%s・ログ %s）。直るまで問わない", t.Name, reason, filepath.Join(t.Root, "build", "refactor", "index-resolved.log"))
+		return "", code, fmt.Sprintf("%s は索引を作れず飛ばした（%s・ログ %s）。直るまで問わない", t.Name, reason, log)
 	}
 	g.update(t.Name, nil)
 	return out, code, ""
+}
+
+// indexLogSince は t の索引のログ（resolved・typed）のうち since の後に書かれた物（flixlint が動いた目印）。
+func indexLogSince(t refactorTree, since time.Time) (string, bool) {
+	for _, stage := range []string{"typed", "resolved"} {
+		log := filepath.Join(t.Root, "build", "refactor", "index-"+stage+".log")
+		if info, err := os.Stat(log); err == nil && !info.ModTime().Before(since.Add(-time.Second)) {
+			return log, true
+		}
+	}
+	return "", false
 }
 
 // treeStamp は t の flix.toml・lib・src の中で一番新しい更新時刻（UnixNano）。
@@ -306,6 +329,53 @@ func treeStamp(t refactorTree) int64 {
 		})
 	}
 	return newest
+}
+
+// mentionWord は、答えのあるソースツリーの自分のソースに必ず字で現れる語（無ければ ""）: 欄（Alias#欄）は欄の名前、
+// ほかは名前の末尾（最後の . の後。search の Mod.名前 の形も末尾。名前の頭の Mod. はソースでは mod の行に分かれて書かれる）。
+// WhyNot: 字の現れないソースツリーを問わないのは、欄の usages が型つきの索引（1 本 20〜60 秒・heavy の長い物の枠）を
+// bench ごとに作り、使っていない bench の分まで数分待たせていたため。Flix の名前と欄は、使う所でも組み立てる所でも
+// 字で書かれる（use の別名も元の名前を書く）ので、字の無いソースツリーに使われ所は無い。
+func mentionWord(q treeQuery) string {
+	if q.target == "" {
+		return ""
+	}
+	w := q.target
+	if i := strings.LastIndex(w, "#"); i >= 0 {
+		return w[i+1:]
+	}
+	if i := strings.LastIndex(w, "."); i >= 0 {
+		w = w[i+1:]
+	}
+	return w
+}
+
+// treeMentions は t の自分のソース（src・test の .flix のうち Own の下）が word を含むか（大文字小文字は見ない）。
+func treeMentions(t refactorTree, word string) bool {
+	want := strings.ToLower(word)
+	hit := false
+	for _, dir := range []string{"src", "test"} {
+		filepath.WalkDir(filepath.Join(t.Root, dir), func(path string, d fs.DirEntry, err error) error {
+			if hit || err != nil {
+				return filepath.SkipAll
+			}
+			if d.IsDir() || !strings.HasSuffix(d.Name(), ".flix") {
+				return nil
+			}
+			rel, err := filepath.Rel(t.Root, path)
+			if err != nil || !strings.HasPrefix(filepath.ToSlash(rel), t.Own) {
+				return nil
+			}
+			if b, err := os.ReadFile(path); err == nil && strings.Contains(strings.ToLower(string(b)), want) {
+				hit = true
+			}
+			return nil
+		})
+		if hit {
+			return true
+		}
+	}
+	return false
 }
 
 // treeAnswer は 1 本のソースツリーの答え（engine のルートからの相対へ置き換え済み）。
@@ -695,6 +765,8 @@ type treeRefactor struct {
 	gate      treeGate
 	readRows  func(t refactorTree) ([]refactor.Row, error)
 	lastUsage func(since time.Time) (io.ReadCloser, error) // ルートの last-usages.txt（since より古ければ誤り）
+	// mentions はソースツリー t の自分のソースが字 word を含むか（nil なら全部のソースツリーを問う）。
+	mentions func(t refactorTree, word string) bool
 }
 
 // rootSymOf はルートが当てた usages の名前の完全な形（--json の sym）。字の問いならルートを --json でもう 1 度流す。
@@ -747,6 +819,9 @@ func (r treeRefactor) run(out, errOut *strings.Builder, rest []string, asJSON bo
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if w := mentionWord(tq); w != "" && r.mentions != nil && !r.mentions(t, w) {
+				return
+			}
 			a, ok, note := askTree(r.gate, t, treeRest, tq, rootSym)
 			results[i] = asked{a, ok, note}
 		}()

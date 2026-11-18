@@ -47,6 +47,8 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	opts := refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)}
 	q, ok := parseTreeQuery(rest)
 	trees, notes := refactorTrees(root)
+	gate := treeGate{path: filepath.Join(root, "build", "refactor", "trees-skip.json"), stamp: treeStamp, run: runTreeRefactor, mu: &sync.Mutex{}, ran: indexLogSince}
+	stopStaleResidents(root, trees, gate)
 	if !ok || (len(trees) == 0 && len(notes) == 0) {
 		return refactor.Run(out, errOut, root, rest, opts)
 	}
@@ -57,13 +59,31 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	}
 	r := treeRefactor{
 		runRoot:  runRoot,
-		gate:     treeGate{path: filepath.Join(root, "build", "refactor", "trees-skip.json"), stamp: treeStamp, run: runTreeRefactor, mu: &sync.Mutex{}},
+		gate:     gate,
 		readRows: readTreeRows,
 		lastUsage: func(since time.Time) (io.ReadCloser, error) {
 			return openFresh(filepath.Join(root, "build", "refactor", "last-usages.txt"), since)
 		},
+		mentions: treeMentions,
 	}
 	return r.run(out, errOut, rest, asJSON, q, trees, notes)
+}
+
+// stopStaleResidents は索引を作る常駐（ルートと各ソースツリーの物）のうち、起きた後に lib の依存
+// （make sync-engine-full で張り替えた engine の束）が置き換わった物を止める。次の索引が新しい依存で起こし直す。
+// 止めたソースツリーは、索引を作れなかった覚えも消す（古い engine で落ちたのかもしれない）。
+// WhyNot: 常駐で作らないソースツリー（bench）も見る。bin/flixlint は --resident が無くても、socket があれば常駐に頼む。
+func stopStaleResidents(root string, trees []refactorTree, gate treeGate) {
+	r, err := hooks.LoadRules(root)
+	if err != nil {
+		return
+	}
+	checkd.StopStaleResident(r, repoRoot(), root, os.Stderr)
+	for _, t := range trees {
+		if checkd.StopStaleResident(r, repoRoot(), t.Root, os.Stderr) {
+			gate.update(t.Name, nil)
+		}
+	}
 }
 
 // reportRootSrcSync は engine のルートで索引を作る前に、ルートの src/（索引の元）を各パッケージの src に追いつかせる。

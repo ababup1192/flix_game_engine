@@ -33,6 +33,14 @@ sync: 2026-10-26
 | 直す前に本文・呼び手・呼ぶ先・型を見る | `context <Mod.f>`（呼ぶ先の木は `trace`） | 呼び手と型を 1 つずつ探し直すたびに往復が増え、直し漏れが出る |
 | 名前の使われ所を探す | `usages <名前>` | 同じ名前の別物を拾う |
 
+名前の書き方: def・型 alias は `Mod.名前`、record の欄は `<Alias>#<欄>`（`Camera3d.Camera3d#lensShift`）。
+enum と同じ名前の mod（companion）の case は `Enum.Case`（`Timeline.Timeline`）で、mod の名前を前にもう 1 つ足さない（`Timeline.Timeline.Timeline` は当たらない）。
+当たらない時は、名前の末尾（最後の . の後）が同じ宣言が答えに並ぶ（flixlint 0.9.1 から）。
+
+engine を直して `make sync-engine-full` した後も、そのまま引いてよい: 古い engine を持った常駐は、
+check・索引・lint の前に止めて起こし直す（[docs/checkd.md](../../../docs/checkd.md) の「engine の束を張り替えた後」）。
+engine の根の usages は bench の索引も引くが、欄・名前の字を含まない bench は問わない（型つきの索引を作りに行かない）。
+
 ## 名前と引数
 
 - 変数名は省略しない。型があるならまず型名にそろえる（`p` → `player`、`scn` → `scene`）

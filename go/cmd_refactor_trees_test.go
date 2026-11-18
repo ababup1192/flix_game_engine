@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ababup1192/flixlint/go/refactor"
 )
@@ -387,4 +388,70 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+// flixlint が動かずに落ちた時（heavy の枠を取れない等）は覚えず、次の問いでもう 1 度問う。
+func TestTreeGateAsksAgainWhenFlixlintDidNotRun(t *testing.T) {
+	calls := 0
+	run := func(_ refactorTree, _ []string) (string, string, int) {
+		calls++
+		return "", "refactor: 索引を作れません: flixlint の終了コード 2\n", 2
+	}
+	notRun := func(refactorTree, time.Time) (string, bool) { return "", false }
+	g := treeGate{path: filepath.Join(t.TempDir(), "skip.json"), stamp: func(refactorTree) int64 { return 7 }, run: run, ran: notRun}
+	tr := treeWithLib(t, benchTree)
+	g.ask(tr, []string{"search", "x"})
+	g.ask(tr, []string{"search", "x"})
+	if calls != 2 {
+		t.Errorf("%d 回問うた", calls)
+	}
+}
+
+// 欄の usages は欄の名前を、名前の問いは名前の末尾を、字を含まないソースツリーを問わない語にする。
+func TestMentionWordTakesFieldOrLastSegment(t *testing.T) {
+	cases := map[string][]string{
+		"lensShift": {"usages", "Camera3d.Camera3d#lensShift"},
+		"Timeline":  {"usages", "Timeline.Timeline"},
+		"lens":      {"search", "Camera3d.lens"},
+	}
+	for want, rest := range cases {
+		q, _ := parseTreeQuery(rest)
+		if got := mentionWord(q); got != want {
+			t.Errorf("%v: got %q, want %q", rest, got, want)
+		}
+	}
+}
+
+// 字を含まないソースツリーは問わない（型つきの索引を作りに行かない）。
+func TestTreeRefactorSkipsTreesThatDoNotMentionTheWord(t *testing.T) {
+	asked := 0
+	run := func(_ refactorTree, _ []string) (string, string, int) { asked++; return `{"sym":"A.f"}`, "", 0 }
+	r := treeRefactor{
+		runRoot:  func([]string) (string, string, int) { return `{"exit":0}`, "", 0 },
+		gate:     gateOf(run),
+		mentions: func(refactorTree, string) bool { return false },
+	}
+	var out, errOut strings.Builder
+	rest := []string{"usages", "A#f", "--json"}
+	q, _ := parseTreeQuery(rest)
+	r.run(&out, &errOut, rest, true, q, []refactorTree{treeWithLib(t, benchTree)}, nil)
+	if asked != 0 {
+		t.Errorf("字の無いソースツリーを %d 回問うた", asked)
+	}
+}
+
+// 自分のソースの字を見て、Own の外（engine の写し）は数えない。
+func TestTreeMentionsLooksOnlyAtOwnSources(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "src", "engine"), 0o755)
+	os.MkdirAll(filepath.Join(root, "src", "engine_web"), 0o755)
+	os.WriteFile(filepath.Join(root, "src", "engine", "A.flix"), []byte("def lensShift(): Int32 = 1"), 0o644)
+	os.WriteFile(filepath.Join(root, "src", "engine_web", "W.flix"), []byte("def web(): Int32 = 1"), 0o644)
+	tr := refactorTree{Name: "engine_web", Root: root, Own: "src/engine_web/"}
+	if treeMentions(tr, "lensShift") {
+		t.Error("Own の外の字を数えた")
+	}
+	if !treeMentions(tr, "WEB") {
+		t.Error("Own の中の字を大文字小文字を越えて見つけない")
+	}
 }
