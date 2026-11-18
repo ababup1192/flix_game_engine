@@ -562,32 +562,45 @@ pub mod Render3dGlsl {
         "    fragColor = vec4(g, g, g, 1.0);\n" +
         "}\n"
 
-    /// ビルボードの頂点シェーダー: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。
+    /// ビルボードの頂点シェーダー: カメラの right / up で四角を立てる（aCorner は 0〜1・y は下向き）。板ごとの値は instance の attribute（location 1〜4・
+    /// 並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を離す長さ）。
+    /// uRightPerBillboard = 1 なら板の横の向きを tint の欄から読む（影の地図の点光源の面）。
     pub def billboardVertexSource(): String =
         "#version 330 core\n" +
         "layout (location = 0) in vec2 aCorner;\n" +
+        "layout (location = 1) in vec4 aCenterLit;\n" +
+        "layout (location = 2) in vec4 aAnchorSize;\n" +
+        "layout (location = 3) in vec4 aUvRect;\n" +
+        "layout (location = 4) in vec4 aTintOffset;\n" +
         "uniform mat4 uView;\n" +
         "uniform mat4 uProj;\n" +
-        "uniform vec3 uCenter;\n" +
         "uniform vec3 uRight;\n" +
         "uniform vec3 uUp;\n" +
-        "uniform vec2 uAnchor;\n" +
-        "uniform vec2 uSize;\n" +
-        "uniform vec4 uUvRect;\n" +
+        "uniform int uRightPerBillboard;\n" +
         "out vec3 vWorld;\n" +
         "out vec2 vUv;\n" +
         "out vec3 vShadowBase;\n" +
+        "flat out vec3 vTint;\n" +
+        "flat out int vLit;\n" +
+        "flat out float vShadowOffset;\n" +
         "void main() {\n" +
-        "    vec3 world = uCenter + uRight * ((aCorner.x - uAnchor.x) * uSize.x)\n" +
-        "                         + uUp * ((uAnchor.y - aCorner.y) * uSize.y);\n" +
+        "    vec3 center = aCenterLit.xyz;\n" +
+        "    vec2 anchor = aAnchorSize.xy;\n" +
+        "    vec2 size = aAnchorSize.zw;\n" +
+        "    vec3 right = uRightPerBillboard == 1 ? aTintOffset.xyz : uRight;\n" +
+        "    vec3 world = center + right * ((aCorner.x - anchor.x) * size.x)\n" +
+        "                        + uUp * ((anchor.y - aCorner.y) * size.y);\n" +
         "    vWorld = world;\n" +
-        "    vUv = uUvRect.xy + aCorner * uUvRect.zw;\n" +
-        "    vShadowBase = uCenter + vec3(0.0, (uAnchor.y - aCorner.y) * uSize.y, 0.0);\n" +
+        "    vUv = aUvRect.xy + aCorner * aUvRect.zw;\n" +
+        "    vShadowBase = center + vec3(0.0, (anchor.y - aCorner.y) * size.y, 0.0);\n" +
+        "    vTint = aTintOffset.xyz;\n" +
+        "    vLit = int(aCenterLit.w + 0.5);\n" +
+        "    vShadowOffset = aTintOffset.w;\n" +
         "    gl_Position = uProj * uView * vec4(world, 1.0);\n" +
         "}\n"
 
-    /// uReceive = 1 なら太陽の影を受ける（lit の時だけ）。受ける点は vShadowBase（Scene3d.billboardShadowPointOf の太陽の方へ進める前の点）を
-    /// 太陽の方へ uShadowOffset / max(太陽への向きの水平の長さ, Scene3d.billboardShadowMinFlat()) だけ進めた点。影の地図に描く時（Render3d.Shadow）は uDepthOut = 1 で、α で捨てた後に色を出さずに返る。
+    /// vLit（光の当て方）が 2 なら太陽の影を受ける。受ける点は vShadowBase（Scene3d.billboardShadowPointOf の太陽の方へ進める前の点）を
+    /// 太陽の方へ vShadowOffset / max(太陽への向きの水平の長さ, Scene3d.billboardShadowMinFlat()) だけ進めた点。影の地図に描く時（Render3d.Shadow）は uDepthOut = 1 で、α で捨てた後に色を出さずに返る。
     pub def billboardFragmentSource(): String = billboardFragmentSourceFor(Render3d.defaultShaderVariant())
 
     /// 変種 v の billboardFragmentSource。ビルボードは点光源の影を受けないので v#pointShadows は読まない（Physical の光だけを変える）。
@@ -596,14 +609,13 @@ pub mod Render3dGlsl {
         "in vec3 vWorld;\n" +
         "in vec2 vUv;\n" +
         "in vec3 vShadowBase;\n" +
+        "flat in vec3 vTint;\n" +
+        "flat in int vLit;\n" +
+        "flat in float vShadowOffset;\n" +
         "out vec4 fragColor;\n" +
         "uniform sampler2D uImage;\n" +
-        "uniform vec3 uTint;\n" +
-        "uniform int uLit;\n" +
         "uniform vec3 uFacing;\n" +
         "uniform int uDepthOut;\n" +
-        "uniform int uReceive;\n" +
-        "uniform float uShadowOffset;\n" +
         colorSpaceSource() +
         lightSourceFor(Render3d.billboardVariantOf(v)) +
         depthGraySource() +
@@ -615,9 +627,9 @@ pub mod Render3dGlsl {
         "        fragColor = vec4(g, g, g, 1.0);\n" +
         "        return;\n" +
         "    }\n" +
-        "    if (uLit == 1 && uReceive == 1) r3d_sunLit = sunLitAt(vShadowBase + uSunDir * (uShadowOffset / max(length(uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), uSunDir, normalize(uFacing));\n" +
-        "    vec3 light = uLit == 1 ? lightAt(vWorld, normalize(uFacing)) : vec3(1.0);\n" +
-        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), uTint, light, vec3(0.0), 1.0, vWorld, uLit == 1), 1.0);\n" +
+        "    if (vLit == 2) r3d_sunLit = sunLitAt(vShadowBase + uSunDir * (vShadowOffset / max(length(uSunDir.xz), ${Scene3d.billboardShadowMinFlat()})), uSunDir, normalize(uFacing));\n" +
+        "    vec3 light = vLit >= 1 ? lightAt(vWorld, normalize(uFacing)) : vec3(1.0);\n" +
+        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), vTint, light, vec3(0.0), 1.0, vWorld, vLit >= 1), 1.0);\n" +
         "}\n"
 
     /// 空の frag（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。

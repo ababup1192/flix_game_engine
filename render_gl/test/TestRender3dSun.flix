@@ -74,14 +74,14 @@ mod Render3d.TestRender3dSun {
     def testCastingBillboardIsDrawnIntoSunMap(): Unit \ {Assert, IO} =
         let log = freshRecorded();
         paintWithChars(log, { billboards = (charBoard() |> Scene3d.withCastShadows(true)) :: Nil | sunScene(Some(sunLight(Some(smallShadow())))) });
-        Assert.assertEq(expected = 2, timesCalled("drawArrays", log))
+        Assert.assertEq(expected = 2, timesCalled("drawArraysInstanced", log))
 
     /// castShadows でないビルボードは影の地図に描かない（色の pass の 1 回だけ）。
     @Test
     def testPlainBillboardIsNotDrawnIntoSunMap(): Unit \ {Assert, IO} =
         let log = freshRecorded();
         paintWithChars(log, { billboards = charBoard() :: Nil | sunScene(Some(sunLight(Some(smallShadow())))) });
-        Assert.assertEq(expected = 1, timesCalled("drawArrays", log))
+        Assert.assertEq(expected = 1, timesCalled("drawArraysInstanced", log))
 
     /// スポットの影の地図には castShadows のビルボードも描かない（太陽の地図の 1 回だけが足される）。
     @Test
@@ -89,7 +89,7 @@ mod Render3d.TestRender3dSun {
         let log = freshRecorded();
         let base = sunScene(Some(sunLight(Some(smallShadow()))));
         paintWithChars(log, { billboards = (charBoard() |> Scene3d.withCastShadows(true)) :: Nil, spotLights = shadowSpot() :: Nil | base });
-        Assert.assertEq(expected = 2, timesCalled("drawArrays", log))
+        Assert.assertEq(expected = 2, timesCalled("drawArraysInstanced", log))
 
     /// 使わない太陽は理由を 1 回だけ知らせる（2 コマ描いても 1 行）。
     @Test
@@ -127,5 +127,5 @@ mod Render3d.TestRender3dSun {
     @Test
     def testBillboardReceivesSunShadowOnlyWhenAsked(): Unit \ Assert =
         let source = Render3dGlsl.billboardFragmentSource();
-        Assert.assertTrue(indexOf("if (uLit == 1 && uReceive == 1) r3d_sunLit = sunLitAt(", source) >= 0)
+        Assert.assertTrue(indexOf("if (vLit == 2) r3d_sunLit = sunLitAt(", source) >= 0)
 }

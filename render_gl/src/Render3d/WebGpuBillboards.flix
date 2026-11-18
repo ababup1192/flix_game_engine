@@ -1,6 +1,7 @@
-// Render3d.WebGpuBillboards — 3D のビルボードの WebGPU の backend（GL の Render3d.drawBillboards と対）。場面の行（Render3d.SceneList）のビルボードの行を 1 行 1 つ描く。
+// Render3d.WebGpuBillboards — 3D のビルボードの WebGPU の backend（GL の Render3d.drawBillboards と対）。場面の行（Render3d.SceneList）のビルボードの行（同じ絵の板の並び）を
+// 1 行 1 回の instanced draw で描く。
 // bind group は 0 = 場面（WebGpuRenderer の group 0。光・かすみ・奥行きの書き出しの値とカメラの向き）・1 = 貼る絵（2D の描き手の絵の group をそのまま借りる）。
-// ビルボードの値は行の values（Render3d.SceneList.billboardValueFloats）を、材質の値の buffer から stride 0 の instance の頂点の buffer 0 として読む。
+// ビルボードの値は行の values（Render3d.SceneList.billboardValueFloats）を、材質の値の buffer から instance ごとの頂点の buffer 0（stride = 値 1 つ）として読む。
 // WhyNot: ビルボードの絵を材質の絵の表（Render3d.TextureTable3d）へ載せない — 2D の描き手の絵の group は絵と sampler を GL の 2D の絵と同じ組で持ち、
 //   借りれば絵ごとの group を作らずに済む（材質の絵の表は段つきの写しと置き場の上限のための物）。
 // WhyNot: 値を行ごとの uniform の区画で読まない — 区画ごとに group を作ることになる。頂点の buffer の位置だけを替えれば group は絵の物だけで済む。
@@ -66,7 +67,7 @@ mod Render3d.WebGpuBillboards {
                 let desc = new RenderPipelineDesc("fge scene3d billboard shadow");
                 discard desc.bindGroupLayout(shadowLayout).bindGroupLayout(b#imageLayout);
                 discard desc.vertex(if (rightPerBillboard) rowRightVertexModuleOf(b) else b#vertexModule, "vs_main").fragment(b#shadowFragmentModule, "fs_main");
-                discard desc.vertexBuffer(0, true);
+                discard desc.vertexBuffer(valueStride(), true);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 0, 0).attribute(VertexFormat.FLOAT32X4, 16, 1);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 32, 2).attribute(VertexFormat.FLOAT32X4, 48, 3);
                 discard desc.primitive(PrimitiveTopology.TRIANGLE_LIST, FrontFace.CW, CullMode.NONE);
@@ -96,7 +97,7 @@ mod Render3d.WebGpuBillboards {
                 let desc = new RenderPipelineDesc("fge scene3d billboard");
                 discard desc.bindGroupLayout(layout).bindGroupLayout(b#imageLayout);
                 discard desc.vertex(b#vertexModule, "vs_main").fragment(fragmentOf(b, variant), "fs_main");
-                discard desc.vertexBuffer(0, true);
+                discard desc.vertexBuffer(valueStride(), true);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 0, 0).attribute(VertexFormat.FLOAT32X4, 16, 1);
                 discard desc.attribute(VertexFormat.FLOAT32X4, 32, 2).attribute(VertexFormat.FLOAT32X4, 48, 3);
                 discard desc.colorTarget(WebGpuPipelines.textureFormatOf(format));
@@ -119,5 +120,8 @@ mod Render3d.WebGpuBillboards {
         }
 
     /// ビルボードの値 1 つのバイト数（頂点の buffer 0 に渡す大きさ）。
-    pub def valueBytes(): Int64 = Int32.toInt64(4 * Render3d.SceneList.billboardValueFloats())
+    pub def valueBytes(): Int64 = Int32.toInt64(valueStride())
+
+    /// 頂点の buffer 0 の instance 1 つ分の stride（バイト）。
+    def valueStride(): Int32 = 4 * Render3d.SceneList.billboardValueFloats()
 }

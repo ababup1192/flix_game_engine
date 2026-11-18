@@ -30,7 +30,7 @@ mod Render3d {
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
     use Render3d.ScenePlan.{PlanCaps, ScenePassSpec, groupScenes, planScenes}
-    use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, firstBillboardRowOf, firstBlendedRowOf, rowAt}
+    use Render3d.SceneList.{SceneList, billboardAt, buildScenePasses, firstBillboardRowOf, firstBlendedRowOf, rowAt, valuesAt}
     use Render3d.GlRows.{SceneInputs, SceneItem, SceneTarget, drawBlendedRows, drawRows, uploadRows}
     use Render3d.Shadow.{bindShadowMap, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{MaterialTable, bindEnvironmentMap, releaseEnvironmentMap, blankTextureId, budgetEvictions, resolveMaterials, sweepMaterials, sweepTextures3d}
@@ -125,13 +125,16 @@ mod Render3d {
 
     type alias DepthLocs = { mesh = MeshLocs, eye = Int32, depthRange = Int32 }
 
+    /// rightPerBillboard = uRightPerBillboard（板の横の向きを instance の値から読む）。板ごとの値は uniform でなく instance の attribute（Render3dGlsl.billboardVertexSource）。
     type alias BillboardLocs = {
-        program = Int32, view = Int32, proj = Int32, center = Int32, right = Int32, up = Int32,
-        anchor = Int32, size = Int32, uvRect = Int32, tint = Int32, lit = Int32, facing = Int32,
-        depthOut = Int32, depthRange = Int32, light = LightLocs, receive = Int32, shadowOffset = Int32, sunShadow = SunShadowLocs
+        program = Int32, view = Int32, proj = Int32, right = Int32, up = Int32, rightPerBillboard = Int32, facing = Int32,
+        depthOut = Int32, depthRange = Int32, light = LightLocs, sunShadow = SunShadowLocs
     }
 
-    type alias Programs = { lit = LitLocs, depth = DepthLocs, billboard = BillboardLocs, blit = Int32, quadVao = Int32, quadVbo = Int32 }
+    /// billboardVao = 板の VAO（location 0 = 四角の角・1〜4 = 板ごとの値）・billboardVbo = 板ごとの値の VBO・billboardBuf = それへ送る前に詰める入れ物。
+    // WhyNot: 板ごとの値の attribute を quadVao に持たせない — quadVao は Design の重ねも使い、そちらは location 1〜4 を読まない。
+    type alias Programs = { lit = LitLocs, depth = DepthLocs, billboard = BillboardLocs, blit = Int32, quadVao = Int32, quadVbo = Int32,
+                            billboardVao = Int32, billboardVbo = Int32, billboardBuf = RenderBuf.Buf }
 
     /// 空のプログラムの uniform の location。
     type alias SkyLocs = { program = Int32, viewport = Int32, forward = Int32, right = Int32, up = Int32,
@@ -441,7 +444,7 @@ mod Render3d {
             let (planned, rows) = planScenes(state#planner, caps, materials#orders, grouped);
             let joints = Render3d.GlRows.JointTexture.upload(gl, state, gen, rows);
             let (numbered, instances) = Render3d.GlRows.Instancing.upload(gl, state, gen, planned, grouped#members);
-            let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf };
+            let tables = { meshes = state#meshes, textures = state#textures3d, layouts = state#layoutsRef, gen = gen, gpuMip = gl.prefersGpuMipmap(), textureOf = textureOf, flipsTargetV = true };
             let lists = List.map(buildScenePasses(tables), numbered);
             let shadowUses = Render3d.ShadowMaps.assign(state#planner, List.map(plan -> plan#shadowPlans, numbered));
             let shadowPasses = List.zip(shadowUses, numbered) |> List.map(match (uses, plan) -> Render3d.ShadowMaps.buildPasses(tables, uses, plan));
@@ -449,7 +452,7 @@ mod Render3d {
         });
         let (jointTexture, instanceTexture) = textures;
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, textureOf, shadowPasses));
+        let shadows = timed(state, Phase.Shadows, () -> renderShadows(gl, state, gen, shadowPasses));
         let designCount = Array#{0} @ Static;
         let items = List.zip(List.zip(plans, lists), shadows) |> List.map(pls -> {
             let ((plan, passes), shadow) = pls;
@@ -596,7 +599,7 @@ mod Render3d {
         Render3d.GlRows.DataTexture.bind(gl, instanceTextureUnit(), inputs#instanceTexture);
         uploadRows(gl, state, gen, source, inputs, List.length(Scene3d.instancesOf(scene)));
         let ctx = { camera = camera, eye = scene#camera#eye, source = source, billboard = Render3d.VariantPrograms.billboardLocsFor(gl, state, variant), scene = scene };
-        inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, textureOf, ctx, inputs, spec, list));
+        inputs#passes |> List.forEach(match (spec, list) -> drawPass(gl, state, gen, ctx, inputs, spec, list));
         releaseEnvironmentMap(gl, scene);
         endScene(gl)
 
@@ -605,19 +608,19 @@ mod Render3d {
 
     /// 場面の pass spec の行 list を描く（形は uploadRows で上げてある）。色の pass は不透明の行 → ビルボードの行 → 半透明の行・奥行きの書き出しは不透明の行 → ビルボードの行。
     // WhyNot: ビルボードの灰色と空の白を spec でなく scene#output で決めたままにする — 場面の pass が 1 つで spec と output が 1 対 1（空は行になっていない）。
-    def drawPass(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, ctx: PassContext,
+    def drawPass(gl: GlContext, state: State, gen: Int64, ctx: PassContext,
                  inputs: SceneInputs, spec: ScenePassSpec, list: SceneList): Unit \ IO =
         let camera = ctx#camera;
         match spec {
             case ScenePassSpec.Color =>
                 bindShadowMap(gl, inputs#shadows);
                 drawRows(gl, state, gen, camera, MaterialPass.Color, ctx#eye, ctx#source, inputs, list);
-                drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene, list);
+                drawBillboards(gl, state, ctx#billboard, camera, ctx#scene, list);
                 drawBlendedRows(gl, state, gen, camera, ctx#eye, ctx#source, inputs, list);
                 unbindShadowMap(gl, inputs#shadows)
             case ScenePassSpec.DepthOut(dr) =>
                 drawRows(gl, state, gen, camera, MaterialPass.Depth(dr), ctx#eye, ctx#source, inputs, list);
-                drawBillboards(gl, state, textureOf, ctx#billboard, camera, ctx#scene, list)
+                drawBillboards(gl, state, ctx#billboard, camera, ctx#scene, list)
         }
 
     /// プログラム entry と材質 m で頭の物 head の batch を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
@@ -954,10 +957,8 @@ mod Render3d {
 
     // ── ビルボード ──
 
-    /// 行 list のビルボードの行（firstBillboardRowOf から firstBlendedRowOf の前まで）を描く。描く物の無い行（視錐台の外）は描かない（見つからない絵の知らせは描く物と同じに出す）。
-    /// 絵は描く時に引く（行の欄 1 の番号は WebGPU の物）。
-    def drawBillboards(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
-                       camera: CameraData, scene: Scene3d.Scene3dCmd, list: SceneList): Unit \ IO =
+    /// 行 list のビルボードの行（firstBillboardRowOf から firstBlendedRowOf の前まで・同じ絵の板の並び）を描く（drawBillboardRuns）。
+    def drawBillboards(gl: GlContext, state: State, locs: BillboardLocs, camera: CameraData, scene: Scene3d.Scene3dCmd, list: SceneList): Unit \ IO =
         let first = firstBillboardRowOf(list);
         let end = firstBlendedRowOf(list);
         if (first >= end or locs#program == 0) ()
@@ -971,21 +972,11 @@ mod Render3d {
             Render3d.Shadow.putSunShadow(gl, locs#sunShadow, camera#shadows#sun);
             putVec3(gl, locs#right, Camera3d.right(scene#camera));
             putVec3(gl, locs#up, Camera3d.up(scene#camera));
+            gl.uniform1i(locs#rightPerBillboard, 0);
             putVec3(gl, locs#facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
             putBillboardOutput(gl, locs, scene#output);
-            gl.activeTexture(GlConst.TEXTURE0);
-            gl.bindVertexArray(programsOf(gl, state)#quadVao);
-            drawBillboardsFrom(gl, state, textureOf, locs, list, first, end);
-            gl.bindVertexArray(0);
+            Render3d.GlRows.drawBillboardRuns(gl, state, list, BatchBreak.Billboard);
             gl.enable(GlConst.CULL_FACE)
-        }
-
-    def drawBillboardsFrom(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
-                           list: SceneList, row: Int32, end: Int32): Unit \ IO =
-        if (row >= end) ()
-        else {
-            drawBillboard(gl, state, textureOf, locs, rowAt(list, row, 4) == 0, billboardAt(list, row));
-            drawBillboardsFrom(gl, state, textureOf, locs, list, row + 1, end)
         }
 
     def putBillboardOutput(gl: GlContext, locs: BillboardLocs, output: Scene3d.Output): Unit \ IO =
@@ -995,44 +986,6 @@ mod Render3d {
                 gl.uniform1i(locs#depthOut, 1);
                 putDepthRange(gl, locs#depthRange, dr)
         }
-
-    def drawBillboard(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
-                      culled: Bool, b: Scene3d.BillboardFields): Unit \ IO =
-        match textureOf(b#texture) {
-            case None          => warnMissingTexture(state, b#texture)
-            case Some(_) if culled => ()
-            case Some(texture) =>
-                putBillboardShape(gl, locs, texture, b);
-                putLinearizedColor(gl, locs#tint, b#tint);
-                gl.uniform1i(locs#lit, if (b#lit) 1 else 0);
-                gl.uniform1i(locs#receive, if (b#receiveShadows) 1 else 0);
-                gl.uniform1f(locs#shadowOffset, RenderUtil.f32(Scene3d.billboardShadowOffsetOf(b)));
-                gl.drawArrays(GlConst.TRIANGLES, 0, 6);
-                countDrawCall(state, BatchBreak.Billboard)
-        };
-        // WhyNot: 末尾を呼び出しで終えない — ビルボードが多い場面で drawBillboardsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
-        ()
-
-    /// ビルボード b の絵を unit 0 に貼り、四角の形（立てる点・anchor・size・貼る範囲）の uniform を入れる（色の pass と影の地図の pass で同じ）。
-    def putBillboardShape(gl: GlContext, locs: BillboardLocs, texture: Scene3dRenderer.RegisteredTexture, b: Scene3d.BillboardFields): Unit \ IO =
-        gl.bindTexture(GlConst.TEXTURE_2D, texture#texId);
-        putVec3(gl, locs#center, b#position);
-        gl.uniform2f(locs#anchor, RenderUtil.f32(b#anchor#x), RenderUtil.f32(b#anchor#y));
-        gl.uniform2f(locs#size, RenderUtil.f32(b#size#x), RenderUtil.f32(b#size#y));
-        putUvRect(gl, locs#uvRect, texture, b#regionRect)
-
-    /// 貼る範囲の uv（左上 u・v と幅・高さ）。レンダーターゲットは行 0 が下なので v を反転する。
-    def putUvRect(gl: GlContext, loc: Int32, texture: Scene3dRenderer.RegisteredTexture, source: Rect2.Rect2): Unit \ IO =
-        let w = Float64.max(1.0, texture#width);
-        let h = Float64.max(1.0, texture#height);
-        let u0 = source#position#x / w;
-        let v0 = source#position#y / h;
-        let du = source#size#x / w;
-        let dv = source#size#y / h;
-        if (texture#flipped)
-            gl.uniform4f(loc, RenderUtil.f32(u0), RenderUtil.f32(1.0 - v0), RenderUtil.f32(du), RenderUtil.f32(0.0 - dv))
-        else
-            gl.uniform4f(loc, RenderUtil.f32(u0), RenderUtil.f32(v0), RenderUtil.f32(du), RenderUtil.f32(dv))
 
     def warnMissingTexture(state: State, name: String): Unit \ IO =
         let warned = Ref.get(state#missingTexturesRef);
@@ -1072,8 +1025,10 @@ mod Render3d {
         bindDataTextureUnits(gl, lit);
         bindDataTextureUnits(gl, depth);
         let (quadVao, quadVbo) = buildQuad(gl);
+        let (billboardVao, billboardVbo) = Render3d.GlRows.buildBillboardVao(gl, quadVbo);
         { lit = litLocsOf(gl, lit), depth = depthLocsOf(gl, depth),
-          billboard = billboardLocsOf(gl, billboard), blit = blit, quadVao = quadVao, quadVbo = quadVbo }
+          billboard = billboardLocsOf(gl, billboard), blit = blit, quadVao = quadVao, quadVbo = quadVbo,
+          billboardVao = billboardVao, billboardVbo = billboardVbo, billboardBuf = RenderBuf.make(gl, 64 * Render3d.SceneList.billboardValueFloats()) }
 
     /// 空のプログラムを初めて要る時に組む。組めなかったプログラムは 0（空を描かず、地の色も塗らない）。
     def skyProgramOf(gl: GlContext, state: State): SkyLocs \ IO =
@@ -1144,11 +1099,9 @@ mod Render3d {
             gl.useProgram(0)
         };
         { program = program, view = loc(gl, program, "uView"), proj = loc(gl, program, "uProj"),
-          center = loc(gl, program, "uCenter"), right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"),
-          anchor = loc(gl, program, "uAnchor"), size = loc(gl, program, "uSize"), uvRect = loc(gl, program, "uUvRect"),
-          tint = loc(gl, program, "uTint"), lit = loc(gl, program, "uLit"), facing = loc(gl, program, "uFacing"),
+          right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"), rightPerBillboard = loc(gl, program, "uRightPerBillboard"), facing = loc(gl, program, "uFacing"),
           depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"), light = Render3d.Light.lightLocsOf(gl, program),
-          receive = loc(gl, program, "uReceive"), shadowOffset = loc(gl, program, "uShadowOffset"), sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program) }
+          sunShadow = Render3d.Shadow.sunShadowLocsOf(gl, program) }
 
     /// 四角の 6 頂点（角の 0〜1。y は下向き = 絵の上が 0）。ビルボードと Design の重ねで共有する。
     def buildQuad(gl: GlContext): (Int32, Int32) \ IO =

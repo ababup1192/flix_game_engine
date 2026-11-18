@@ -4,7 +4,8 @@ mod Render3d.Shadow {
     import fge.gl.GlConst
     import fge.gl.GlContext
     use Render3d.{BillboardLocs, PointShadowLocs, PointShadowUse, SceneShadows, ShadowLocs, SunShadowLocs, ShadowTarget, ShadowUse, SunShadowUse, State, MeshLocs, drawMeshRange, matrixArray, meshEntry,
-                  programsOf, blankTextureUnit, pointShadowTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram, putBillboardShape}
+                  programsOf, blankTextureUnit, pointShadowTextureUnit, shadowTextureUnit, sunShadowTextureUnit, skinnedProgramsOf, useMeshProgram}
+    use Render3d.GlRows.{drawBillboardRuns}
     use Render3d.Counts.{BatchBreak, Counter, count, countDrawCall}
     use Render3d.SceneList.{SceneList, billboardAt, firstBillboardRowOf, firstBlendedRowOf, headAt, kindSkinned, rowAt, valuesAt}
     use Render3d.ShadowMaps.{Key, ShadowPass, ShadowSampling}
@@ -22,16 +23,15 @@ mod Render3d.Shadow {
     /// 描き終えたら深度と scissor を切り、program と VAO を外す。描き先は呼ぶ側が戻す。
     // WhyNot: viewport をここで戻さない — glGet で前の値を読まない決まりで、この後に描く Design の場面と
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
-    /// textureOf = ビルボードの行の絵を引く元（全体の登録）。
+    /// ビルボードの行は行に入れた絵の番号（行を作る時に全体の登録から引いた物）で描く。
     /// 点光源の影の atlas は鍵ごとに初めの面の前に 1 回だけ全体を消し、面ごとに viewport と scissor を面の塊に置いて描く。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
-                          passes: List[List[ShadowPass]]): List[SceneShadows] \ IO =
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, passes: List[List[ShadowPass]]): List[SceneShadows] \ IO =
         let cleared = Ref.fresh(Static, (Set.empty(): Set[Key]));
         let shadows = passes |> List.map(scenePasses -> {
             let casts = scenePasses |> List.filterMap(pass -> shadowTarget(gl, state, gen, pass#map#key) |> Option.map(target -> {
                 let first = not Set.memberOf(pass#map#key, Ref.get(cleared));
                 Ref.put(Set.insert(pass#map#key, Ref.get(cleared)), cleared);
-                renderShadowMap(gl, state, gen, textureOf, target, pass, first);
+                renderShadowMap(gl, state, gen, target, pass, first);
                 castOf(target, pass#map#sampling)
             }));
             { spot = List.findMap(spotOf, casts), sun = List.findMap(sunOf, casts), point = List.findMap(pointOf, casts) }
@@ -124,8 +124,7 @@ mod Render3d.Shadow {
 
     /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。行は骨の無い物 → 骨つきの物 → castShadows のビルボードの順（Render3d.SceneList.buildShadowList）。
     /// first = この描き先へ今の renderShadows で初めて描くか（atlas は初めての面の前だけ全体を消す）。
-    def renderShadowMap(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
-                        target: ShadowTarget, pass: ShadowPass, first: Bool): Unit \ IO =
+    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, pass: ShadowPass, first: Bool): Unit \ IO =
         let locs = programsOf(gl, state)#depth;
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
         match pass#map#tile {
@@ -142,7 +141,7 @@ mod Render3d.Shadow {
             let frame = { list = pass#list, lightView = matrixArray(pass#map#view), identity = matrixArray(Mat4.identity()), bound = Array#{locs#mesh#program} @ Static };
             useMeshProgram(gl, locs#mesh, frame#lightView, frame#identity);
             drawShadowRows(gl, state, gen, frame, 0, firstBillboardRowOf(pass#list));
-            drawShadowBillboards(gl, state, textureOf, frame, pass)
+            drawShadowBillboards(gl, state, frame, pass)
         }
 
     def clearWholeTarget(gl: GlContext, target: ShadowTarget): Unit \ IO =
@@ -165,12 +164,11 @@ mod Render3d.Shadow {
         gl.enable(GlConst.SCISSOR_TEST);
         gl.scissor(t#x, t#y, t#size, t#size)
 
-    /// 行 list のビルボードの行を、ビルボードのプログラムで影の地図へ描く: 板の横は pass#billboardRight・縦は world の上・目は光の行列（射影は単位行列）。
-    /// uDepthOut = 1 で、絵の α < 0.5 の画素を捨てた後に色を出さずに返る（描き先に色は無い）。絵の無い行は描かない（知らせは場面の行が出す）。
+    /// 行 list のビルボードの行を、ビルボードのプログラムで影の地図へ描く: 板の横は pass#billboardRight（点光源の面は板ごとの値の向き）・縦は world の上・目は光の行列（射影は単位行列）。
+    /// uDepthOut = 1 で、絵の α < 0.5 の画素を捨てた後に色を出さずに返る（描き先に色は無い）。同じ絵の板の並びを 1 回の instanced draw で描く（Render3d.GlRows.drawBillboardRuns）。
     // WhyNot: 影の地図のためのビルボードのプログラムを別に組まない — 色の段を捨てる描き先で、α で捨てる所まではビルボードのプログラムと同じ。
     // WhyNot: uSunMap を描いている地図の unit へ向けたままにしない — 読まない枝でも、描き先に付けた絵を sampler が指すと WebGL2 が feedback loop と見て draw を止める。
-    def drawShadowBillboards(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
-                             frame: ShadowFrame, pass: ShadowPass): Unit \ IO =
+    def drawShadowBillboards(gl: GlContext, state: State, frame: ShadowFrame, pass: ShadowPass): Unit \ IO =
         let list = pass#list;
         let first = firstBillboardRowOf(list);
         let end = firstBlendedRowOf(list);
@@ -183,33 +181,12 @@ mod Render3d.Shadow {
             gl.uniformMatrix4fv(locs#proj, false, frame#identity);
             putSunShadow(gl, locs#sunShadow, None);
             gl.uniform1i(locs#depthOut, 1);
-            gl.uniform1i(locs#lit, 0);
-            gl.uniform1i(locs#receive, 0);
             let right = pass#billboardRight;
             gl.uniform3f(locs#right, RenderUtil.f32(right#x), RenderUtil.f32(right#y), RenderUtil.f32(right#z));
             gl.uniform3f(locs#up, 0.0f32, 1.0f32, 0.0f32);
-            gl.activeTexture(GlConst.TEXTURE0);
-            gl.bindVertexArray(programsOf(gl, state)#quadVao);
-            List.range(first, end) |> List.forEach(row -> {
-                if (pass#rightPerBillboard) putRowRight(gl, locs, list, row) else ();
-                drawShadowBillboard(gl, state, textureOf, locs, billboardAt(list, row))
-            });
-            gl.bindVertexArray(0)
+            gl.uniform1i(locs#rightPerBillboard, if (pass#rightPerBillboard) 1 else 0);
+            drawBillboardRuns(gl, state, list, BatchBreak.ShadowPass)
         }
-
-    /// 行 row の板の横の向き（Render3d.SceneList.putBillboardRights が値に入れた物）を uRight に入れる（値の無い行は描かないので何もしない）。
-    def putRowRight(gl: GlContext, locs: BillboardLocs, list: SceneList, row: Int32): Unit \ IO =
-        let at = valuesAt(list, row);
-        if (at < 0) ()
-        else gl.uniform3f(locs#right, Array.get(at + 12, list#values), Array.get(at + 13, list#values), Array.get(at + 14, list#values))
-
-    def drawShadowBillboard(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
-                            b: Scene3d.BillboardFields): Unit \ IO =
-        textureOf(b#texture) |> Option.forEach(texture -> {
-            putBillboardShape(gl, locs, texture, b);
-            gl.drawArrays(GlConst.TRIANGLES, 0, 6);
-            countDrawCall(state, BatchBreak.ShadowPass)
-        })
 
     /// drawShadowRows の 1 回で行をまたいで変わらない物。bound = 今付いているプログラム（要素 1 つ）。
     type alias ShadowFrame = { list = SceneList, lightView = Array[Float32, Static], identity = Array[Float32, Static], bound = Array[Int32, Static] }

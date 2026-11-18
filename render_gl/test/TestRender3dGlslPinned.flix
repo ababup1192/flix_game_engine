@@ -104,5 +104,5 @@ mod Render3d.TestGlslPinned {
     /// ビルボードの frag は絵の rgb を線形へ戻して r3d_surfaceOut に渡す。
     @Test
     def testBillboardLinearizesTexel(): Unit \ Assert =
-        Assert.assertEq(expected = 1, count("r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), uTint, light", Render3dGlsl.billboardFragmentSource()))
+        Assert.assertEq(expected = 1, count("r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), vTint, light", Render3dGlsl.billboardFragmentSource()))
 }

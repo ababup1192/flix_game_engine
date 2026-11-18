@@ -432,7 +432,7 @@ pub mod Render3dWgsl {
     pub def cameraBytes(): Int32 = 176
 
     /// ビルボードの頂点シェーダー（Render3dGlsl.billboardVertexSource と同じ式）。入口は vs_main。
-    /// 四角の角は vertex_index の 6 点（GL の Render3d.buildQuad と同じ並び・y は下向き）。ビルボードの値は buffer 0（instance・stride 0）の location 0〜3
+    /// 四角の角は vertex_index の 6 点（GL の Render3d.buildQuad と同じ並び・y は下向き）。ビルボードの値は buffer 0（instance ごと・stride は値 1 つ）の location 0〜3
     /// （並びは Render3d.SceneList.billboardValueFloats: 点と光の当て方・anchor と size・貼る範囲の uv・tint と影を受ける点を板から離す長さ）。影の地図へ描く時も同じ（group 0 が光の目と板の向き）。
     pub def billboardVertexSource(): String = billboardVertexSourceWith("r3dCamera.uRight.xyz")
 

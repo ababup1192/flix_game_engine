@@ -438,7 +438,7 @@ pub mod Render3d.WebGpuRenderer {
     def tablesOf(r: Renderer, host: Host): Render3d.SceneList.Tables \ IO =
         let RendererData.RendererData(s) = r;
         { meshes = s#meshes, textures = WebGpuMaterials.texturesOf(s#materials), layouts = s#layouts, gen = Array.get(0, s#gen), gpuMip = false,
-          textureOf = host#textureOf }
+          textureOf = host#textureOf, flipsTargetV = false }
 
     /// 1 回の prepare の場面をまたいで変わらない物。members = batch の描く物（Render3d.ScenePlan.Grouped#members）・poses = その prepare の姿勢（無ければ None）。
     type alias PrepareInputs = { members = MutList[MeshDraw, Static], poses = Option[Poses] }
@@ -761,12 +761,13 @@ pub mod Render3d.WebGpuRenderer {
           billboard = (p, list, row) -> drawBillboardRow(r, host, mp, staged#variant, p, list, row),
           unbound = n -> host#skip("3D の付けられなかった行の物（pipeline か group が無い・飛ばす）", n) }
 
-    /// ビルボードの行 row を描く（貼る絵の group が無ければ偽）。絵が見つからなかった行（値の無い行・知らせは stageScene）は描かずに真。
-    /// 値は行の values を送った位置（mp#base）から頂点の buffer 0 として読む。
+    /// ビルボードの行 row（同じ絵の板の並び）を 1 回の instanced draw で描く（貼る絵の group が無ければ偽）。絵が見つからなかった行（値の無い行・知らせは stageScene）は描かずに真。
+    /// 値は行の values を送った位置（mp#base）から頂点の buffer 0（instance ごと）として読む。
     /// 付けた pipeline と group 1 は材質の行と共用の控え（mp）に書き、次の材質の行が付け直すようにする。
     def drawBillboardRow(r: Renderer, host: Host, mp: WebGpuMaterials.MaterialPass, variant: ShaderVariant, p: RenderCommands, list: SceneList, row: Int32): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
+        let n = rowAt(list, row, 4);
         match host#groupById(rowAt(list, row, 1)) {
             case _ if values < 0 => true
             case None => false
@@ -777,24 +778,25 @@ pub mod Render3d.WebGpuRenderer {
                 };
                 Array.put(-1, 0, mp#groupRow);
                 p.setBindGroup(1, group);
-                p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(mp#base + 4 * values), WebGpuBillboards.valueBytes());
-                p.draw(6, 1, 0, 0);
+                p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(mp#base + 4 * values), Int32.toInt64(n) * WebGpuBillboards.valueBytes());
+                p.draw(6, n, 0, 0);
                 true
         }
 
-    /// 影の地図のビルボードの行 row を描く（貼る絵の group が無ければ偽）。値は行の values を送った位置 valuesBase から頂点の buffer 0 として読む（場面の行の drawBillboardRow と同じ）。
+    /// 影の地図のビルボードの行 row（同じ絵の板の並び）を描く（貼る絵の group が無ければ偽）。値は行の values を送った位置 valuesBase から頂点の buffer 0 として読む（場面の行の drawBillboardRow と同じ）。
     /// group 0（光の目と板の向き）は pass の頭で付けてある。rightPerBillboard なら板の横の向きを行の値から読む pipeline（点光源の面）。
     def drawShadowBillboardRow(r: Renderer, host: Host, p: RenderCommands, list: SceneList, row: Int32, valuesBase: Int32, rightPerBillboard: Bool): Bool \ IO =
         let RendererData.RendererData(s) = r;
         let values = valuesAt(list, row);
+        let n = rowAt(list, row, 4);
         match host#groupById(rowAt(list, row, 1)) {
             case _ if values < 0 => true
             case None => false
             case Some(group) =>
                 p.setPipeline(WebGpuBillboards.shadowPipelineOf(s#billboards, WebGpuShadows.layoutOf(s#shadows), WebGpuShadows.depthFormat(), rightPerBillboard));
                 p.setBindGroup(1, group);
-                p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(valuesBase + 4 * values), WebGpuBillboards.valueBytes());
-                p.draw(6, 1, 0, 0);
+                p.setVertexBuffer(0, WebGpuMaterials.valuesBufferOf(s#materials), Int32.toInt64(valuesBase + 4 * values), Int32.toInt64(n) * WebGpuBillboards.valueBytes());
+                p.draw(6, n, 0, 0);
                 true
         }
 

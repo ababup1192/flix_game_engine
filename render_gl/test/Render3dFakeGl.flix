@@ -37,8 +37,8 @@ mod Render3d.FakeGl {
     /// texParams = texParameteri の (pname, param)（新しい物が頭）・attribs = enableVertexAttribArray の番号（新しい物が頭）・
     /// booleans = Bool を返す呼び出しの名前ごとの答え（無い名前は偽。prefersGpuMipmap を真にすると GPU の段の描き手になる）・
     /// viewports = viewport の (x, y, 幅, 高さ)（新しい物が頭）・depthTextures = texImageDepth24 の (幅, 高さ)（新しい物が頭）・
-    /// vec2s と vec3s = uniform2f と uniform3f へ渡した値（新しい物が頭）。
-    pub type alias Recorded = { calls = Ref[List[String], Static], allocated = Ref[List[Int32], Static], uploaded = Ref[List[(Int32, List[Float32])], Static],
+    /// vec2s と vec3s = uniform2f と uniform3f へ渡した値（新しい物が頭）・floatBuffers = bufferData へ FloatBuffer で送った float の列（新しい物が頭）。
+    pub type alias Recorded = { floatBuffers = Ref[List[List[Float32]], Static], calls = Ref[List[String], Static], allocated = Ref[List[Int32], Static], uploaded = Ref[List[(Int32, List[Float32])], Static],
                             uploadWidths = Ref[List[Int32], Static], textureLimit = Ref[Int32, Static], instanceData = Ref[List[List[Float32]], Static], instanceWidths = Ref[List[Int32], Static], usedPrograms = Ref[List[Int32], Static], instanceBinds = Ref[List[Int32], Static],
                             instanceBases = Ref[List[Int32], Static], instanceCounts = Ref[List[Int32], Static], jointBinds = Ref[List[Int32], Static],
                             activeUnit = Ref[Int32, Static], targets = Ref[List[Int32], Static], texParams = Ref[List[(Int32, Int32)], Static],
@@ -47,7 +47,7 @@ mod Render3d.FakeGl {
                             vec2s = Ref[List[(Float32, Float32)], Static], vec3s = Ref[List[(Float32, Float32, Float32)], Static] }
 
     pub def freshRecorded(): Recorded \ IO =
-        { calls = Ref.fresh(Static, Nil), allocated = Ref.fresh(Static, Nil), uploaded = Ref.fresh(Static, Nil), uploadWidths = Ref.fresh(Static, Nil), textureLimit = Ref.fresh(Static, 4096),
+        { floatBuffers = Ref.fresh(Static, Nil), calls = Ref.fresh(Static, Nil), allocated = Ref.fresh(Static, Nil), uploaded = Ref.fresh(Static, Nil), uploadWidths = Ref.fresh(Static, Nil), textureLimit = Ref.fresh(Static, 4096),
           instanceData = Ref.fresh(Static, Nil), instanceWidths = Ref.fresh(Static, Nil), usedPrograms = Ref.fresh(Static, Nil), instanceBinds = Ref.fresh(Static, Nil), instanceBases = Ref.fresh(Static, Nil), instanceCounts = Ref.fresh(Static, Nil),
           jointBinds = Ref.fresh(Static, Nil), activeUnit = Ref.fresh(Static, 0), targets = Ref.fresh(Static, Nil), texParams = Ref.fresh(Static, Nil),
           attribs = Ref.fresh(Static, Nil), booleans = Ref.fresh(Static, Map.empty()), viewports = Ref.fresh(Static, Nil), depthTextures = Ref.fresh(Static, Nil),
@@ -103,8 +103,25 @@ mod Render3d.FakeGl {
             case "texImageDepth24" => Ref.put((intArg(args, 0), intArg(args, 1)) :: Ref.get(log#depthTextures), log#depthTextures)
             case "uniform2f"       => Ref.put((floatArg(args, 1), floatArg(args, 2)) :: Ref.get(log#vec2s), log#vec2s)
             case "uniform3f"       => Ref.put((floatArg(args, 1), floatArg(args, 2), floatArg(args, 3)) :: Ref.get(log#vec3s), log#vec3s)
+            case "bufferData"      => noteFloatBuffer(log, args)
             case _ => ()
         }
+
+    /// bufferData の 2 番目の引数が FloatBuffer なら、送った範囲の float を log#floatBuffers へ足す（float[] と int[] の版は数えない）。
+    def noteFloatBuffer(log: Recorded, args: Array[Object, Static]): Unit \ IO =
+        if (not String.contains(substr = "FloatBuffer", Array.get(1, args).getClass().getName())) ()
+        else {
+            let fb = bufferArg(args, 1);
+            Ref.put((List.range(fb.position(), fb.limit()) |> List.map(i -> fb.get(i))) :: Ref.get(log#floatBuffers), log#floatBuffers)
+        }
+
+    /// bufferData で送った板の値（Render3d.SceneList.billboardValueFloats 個ずつ）の、欄 at から n 個の組の並び（送った順は問わない）。
+    pub def boardValuesAt(log: Recorded, at: Int32, n: Int32): List[List[Float32]] \ IO =
+        let stride = Render3d.SceneList.billboardValueFloats();
+        Ref.get(log#floatBuffers) |> List.flatMap(floats -> {
+            let arr = List.toVector(floats);
+            List.range(0, Vector.length(arr) / stride) |> List.map(k -> List.range(0, n) |> List.map(i -> Vector.get(k * stride + at + i, arr)))
+        })
 
     /// 何も描かない GL。create で始まる呼び出しは連番、FBO の検査は完成、テクスチャの高さの上限は log#textureLimit、
     /// Bool は log#booleans の答え、ほかは 1 と偽を返す。

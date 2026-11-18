@@ -9,7 +9,7 @@ mod Render3d.TestStaticRows {
 
     def freshTables(): Render3d.SceneList.Tables \ IO =
         { meshes = Render3d.MeshTable.fresh(), textures = Render3d.TextureTable3d.fresh(), layouts = Render3d.MaterialValues.freshLayouts(), gen = 1i64,
-          gpuMip = false, textureOf = noRegistered }
+          gpuMip = false, textureOf = noRegistered, flipsTargetV = false }
 
     def materialOf(red: Float64): Scene3d.Material3d =
         Scene3d.material({ name = "m${red}", cycleRate = 0.0, bindings = Nil,

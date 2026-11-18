@@ -142,15 +142,14 @@ mod Render3d.ShadowMaps {
         let (m, sp) = pair;
         match sp#light {
             case ShadowLight.Sun(_)   =>
-                { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, Scene3d.shadowCastingBillboardsOf(sp#caster#frustum, scene)),
-                  billboardRight = right, rightPerBillboard = false }
+                let boards = Scene3d.shadowCastingBillboardsOf(sp#caster#frustum, scene) |> List.map(f -> (f, None));
+                { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, boards), billboardRight = right, rightPerBillboard = false }
             case ShadowLight.Spot(_)  =>
                 { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, Nil), billboardRight = right, rightPerBillboard = false }
             case ShadowLight.Point(p) =>
-                let boards = Scene3d.PointShadows.castingBillboardsOf(scene, p#light) |> List.filter(fr -> isBoardInside(sp#caster#frustum, fst(fr)));
-                let list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, List.map(fst, boards));
-                Render3d.SceneList.putBillboardRights(list, List.map(snd, boards));
-                { map = m, list = list, billboardRight = right, rightPerBillboard = true }
+                let boards = Scene3d.PointShadows.castingBillboardsOf(scene, p#light) |> List.filter(fr -> isBoardInside(sp#caster#frustum, fst(fr)))
+                    |> List.map(fr -> (fst(fr), Some(snd(fr))));
+                { map = m, list = Render3d.SceneList.buildShadowList(ctx, sp#plain, sp#skinned, boards), billboardRight = right, rightPerBillboard = true }
         }
 
     /// 影の地図に描く板 f（大きさは倍率を掛けた後）が視錐台 frustum に掛かるか（外接球で見る。Scene3d.isBillboardOutsideFrustum と同じ半径）。

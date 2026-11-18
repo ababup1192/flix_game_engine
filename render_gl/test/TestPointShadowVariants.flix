@@ -37,7 +37,7 @@ mod Render3d.TestPointShadowVariants {
 
     @Test
     def testDefaultGlslIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "0dc5779846de9b786a8737aa705308c3466682bdb404dccb5c39d1134568a40d", sha256(defaultGlsl()))
+        Assert.assertEq(expected = "37baee1d465f287e3d16237f8a95957f8fd350ab6fac746a63344c07ccece46a", sha256(defaultGlsl()))
 
     @Test
     def testDefaultWgslIsUnchanged(): Unit \ Assert =
@@ -266,7 +266,7 @@ mod Render3d.TestPointShadowVariants {
     def drawsWith(scene: Scene3d.Scene3dCmd): Int32 \ IO =
         let log = freshRecorded();
         paintWithChars(log, scene);
-        timesCalled("drawArrays", log)
+        timesCalled("drawArraysInstanced", log)
 
     @Test
     def testCastingBillboardIsDrawnIntoPointFaces(): Unit \ {Assert, IO} =
@@ -286,7 +286,10 @@ mod Render3d.TestPointShadowVariants {
     def testEachPointShadowBoardTurnsToTheLamp(): Unit \ {Assert, IO} =
         let log = freshRecorded();
         paintWithChars(log, boardScene((boardAt(0.5) |> Scene3d.withCastShadows(true)) :: (boardAt(-0.7) |> Scene3d.withCastShadows(true)) :: Nil));
-        let put = Ref.get(log#vec3s);
+        let put = Render3d.FakeGl.boardValuesAt(log, 12, 3) |> List.filterMap(v -> match v {
+            case x :: y :: z :: _ => Some((x, y, z))
+            case _                => None
+        });
         Assert.assertEq(expected = (true, true, false), (List.memberOf(rightToward(0.5), put), List.memberOf(rightToward(-0.7), put), rightToward(0.5) == rightToward(-0.7)))
 
     def sunBoardScene(scale: Vec2.Vec2): Scene3d.Scene3dCmd =
@@ -297,14 +300,21 @@ mod Render3d.TestPointShadowVariants {
     def testCasterScaleShrinksTheSunShadowBoard(): Unit \ {Assert, IO} =
         let log = freshRecorded();
         paintWithChars(log, sunBoardScene({ x = 0.5, y = 0.25 }));
-        let put = Ref.get(log#vec2s);
+        let put = boardSizes(log);
         Assert.assertEq(expected = (true, true), (List.memberOf((0.5f32, 0.5f32), put), List.memberOf((1.0f32, 2.0f32), put)))
 
     @Test
     def testDefaultCasterScaleKeepsTheSunShadowBoard(): Unit \ {Assert, IO} =
         let log = freshRecorded();
         paintWithChars(log, sunBoardScene({ x = 1.0, y = 1.0 }));
-        Assert.assertEq(expected = 2, Ref.get(log#vec2s) |> List.count(v -> v == (1.0f32, 2.0f32)))
+        Assert.assertEq(expected = 2, boardSizes(log) |> List.count(v -> v == (1.0f32, 2.0f32)))
+
+    /// 送った板の値の size（欄 6・7）の並び。
+    def boardSizes(log: Render3d.FakeGl.Recorded): List[(Float32, Float32)] \ IO =
+        Render3d.FakeGl.boardValuesAt(log, 6, 2) |> List.filterMap(v -> match v {
+            case w :: h :: _ => Some((w, h))
+            case _           => None
+        })
 
     @Test
     def testRowRightVertexSourceOnlyChangesTheRight(): Unit \ Assert =

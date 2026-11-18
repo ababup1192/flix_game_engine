@@ -1,16 +1,16 @@
 // Render3d.GlRows — 3D の場面の行（Render3d.SceneList）を GL で流す所（GL の backend）と、場面を描く時に場面の外から渡す物。約束は Render3d.flix の頭。
-// 1 つの場面は uploadRows（形と絵を上げる）→ drawRows（ビルボードの行の前までを描く）→（ビルボードの行・Render3d.drawBillboards）→ drawBlendedRows（半透明の行を重ねる）の順に通る。
+// 1 つの場面は uploadRows（形と絵を上げる）→ drawRows（ビルボードの行の前までを描く）→（ビルボードの行・Render3d.drawBillboards が drawBillboardRuns で）→ drawBlendedRows（半透明の行を重ねる）の順に通る。
 // 行の欄の意味は Render3d.SceneList の頭。
 mod Render3d.GlRows {
     import fge.gl.GlConst
     import fge.gl.GlContext
     use Render3d.{CameraData, DepthLocs, LitLocs, MaterialEntry, MaterialPass, MeshDraw, MeshLocs, SceneShadows, ShaderVariant, State, TextureSource,
-                  drawMeshRange, ensureTangents, materialTextureNames, meshEntry, meshEntryAt, programsOf, putDepthRange, skinnedProgramsOf, useMeshProgram}
+                  Programs, drawMeshRange, ensureTangents, materialTextureNames, meshEntry, meshEntryAt, programsOf, putDepthRange, skinnedProgramsOf, useMeshProgram, warnMissingTexture}
     use Render3d.Batch.{MaterialBatch, MeshBatch}
-    use Render3d.Counts.{countInstances}
+    use Render3d.Counts.{BatchBreak, countDrawCall, countInstances}
     use Render3d.Light.{putLights}
     use Render3d.Material.{MaterialTable, bindMaterial, drawWithLook, entryAt, freshBound, releaseBound, resolveTextureAs, useMaterial}
-    use Render3d.SceneList.{SceneList, ScenePasses, firstBillboardRowOf, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindBillboard, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
+    use Render3d.SceneList.{SceneList, ScenePasses, billboardAt, valuesAt, firstBillboardRowOf, firstBlendedRowOf, flagCoverage, flagDoubleSided, flagNormalMap, flagSameBinding, hasFlag, headAt, kindBillboard, kindMaterial, kindSkinned, materialAt, meshAt, rowAt, rowCountOf}
     use Render3d.Shadow.{putPointShadow, putShadow, putSunShadow}
     use Render3d.VariantPrograms.{litLocsOfVariant}
 
@@ -180,4 +180,90 @@ mod Render3d.GlRows {
 
     def depthLocsFor(gl: GlContext, state: State, skinned: Bool): DepthLocs \ IO =
         if (skinned) skinnedProgramsOf(gl, state)#depth else programsOf(gl, state)#depth
+
+    // ── ビルボードの行 ──
+
+    /// 行 list のビルボードの行を、行ごとに欄 1 の絵を unit 0 に貼り、欄 4 の数の instance で描く（板ごとの値は list の values を板専用の VBO へ 1 回送って読む）。
+    /// 絵の見つからない行は名前ごとに 1 回知らせて描かない。draw 1 回を why として数える。プログラムと uniform は呼ぶ側が付けておく。
+    pub def drawBillboardRuns(gl: GlContext, state: State, list: SceneList, why: BatchBreak): Unit \ IO =
+        let programs = programsOf(gl, state);
+        let first = firstBillboardRowOf(list);
+        let end = firstBlendedRowOf(list);
+        let start = firstBillboardValueOf(list, first, end);
+        if (start >= 0) uploadBillboardValues(gl, programs, list, start) else ();
+        gl.activeTexture(GlConst.TEXTURE0);
+        gl.bindVertexArray(programs#billboardVao);
+        drawBillboardRunsFrom(gl, state, { list = list, start = start, why = why, vbo = programs#billboardVbo }, first, end);
+        gl.bindVertexArray(0)
+
+    /// drawBillboardRunsFrom の 1 回で行をまたいで変わらない物。start = VBO の頭に送った values の位置・vbo = 板専用の VBO。
+    type alias BillboardRunDraw = { list = SceneList, start = Int32, why = BatchBreak, vbo = Int32 }
+
+    def drawBillboardRunsFrom(gl: GlContext, state: State, d: BillboardRunDraw, row: Int32, end: Int32): Unit \ IO =
+        if (row >= end) ()
+        else {
+            drawBillboardRun(gl, state, d, row);
+            drawBillboardRunsFrom(gl, state, d, row + 1, end)
+        }
+
+    def drawBillboardRun(gl: GlContext, state: State, d: BillboardRunDraw, row: Int32): Unit \ IO =
+        let list = d#list;
+        let texId = rowAt(list, row, 1);
+        let values = valuesAt(list, row);
+        if (texId < 0) warnMissingTexture(state, billboardAt(list, row)#texture)
+        else if (values < 0) ()
+        else {
+            gl.bindTexture(GlConst.TEXTURE_2D, texId);
+            pointBillboardValues(gl, d#vbo, 4 * (values - d#start));
+            gl.drawArraysInstanced(GlConst.TRIANGLES, 0, 6, rowAt(list, row, 4));
+            countDrawCall(state, d#why)
+        };
+        // WhyNot: 末尾を呼び出しで終えない — ビルボードが多い場面で drawBillboardRunsFrom のループが JIT から外れる（docs/performance.md の 13 節）。
+        ()
+
+    /// 行 first から end の前までで、値のある最初の行の値の位置（無ければ −1）。値は行の順に続いて values の末尾まで並ぶ。
+    def firstBillboardValueOf(list: SceneList, row: Int32, end: Int32): Int32 \ IO =
+        if (row >= end) -1
+        else if (valuesAt(list, row) >= 0) valuesAt(list, row)
+        else firstBillboardValueOf(list, row + 1, end)
+
+    /// list の values の start から末尾までを、板専用の VBO へ送る（中身は毎回差し替える）。
+    def uploadBillboardValues(gl: GlContext, programs: Programs, list: SceneList, start: Int32): Unit \ IO =
+        let n = Array.length(list#values) - start;
+        let buf = programs#billboardBuf;
+        RenderBuf.ensure(gl, buf, n);
+        let fb = RenderBuf.buffer(buf);
+        discard fb.clear();
+        discard fb.put(list#values, start, n);
+        discard fb.flip();
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, programs#billboardVbo);
+        gl.bufferData(GlConst.ARRAY_BUFFER, fb, GlConst.DYNAMIC_DRAW);
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, 0)
+
+    /// 板専用の VAO（bind してある物）の location 1〜4 を、VBO の byteOffset から始まる板の値（stride = 値 1 つ・instance ごと）へ向ける。
+    // WhyNot: 並びごとに base instance で頭を選ばない — GL 3.3 と WebGL2 に glDrawArraysInstancedBaseInstance が無い。
+    def pointBillboardValues(gl: GlContext, vbo: Int32, byteOffset: Int32): Unit \ IO =
+        let stride = 4 * Render3d.SceneList.billboardValueFloats();
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
+        gl.vertexAttribPointer(1, 4, GlConst.FLOAT, false, stride, byteOffset);
+        gl.vertexAttribPointer(2, 4, GlConst.FLOAT, false, stride, byteOffset + 16);
+        gl.vertexAttribPointer(3, 4, GlConst.FLOAT, false, stride, byteOffset + 32);
+        gl.vertexAttribPointer(4, 4, GlConst.FLOAT, false, stride, byteOffset + 48);
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, 0)
+
+    /// 板の VAO と、板ごとの値の VBO（中身は描く時に送る）。location 0 = quadVbo の四角の角・1〜4 = 板ごとの値（instance ごと・向ける位置は pointBillboardValues）。
+    pub def buildBillboardVao(gl: GlContext, quadVbo: Int32): (Int32, Int32) \ IO =
+        let vao = gl.createVertexArray();
+        let vbo = gl.createBuffer();
+        gl.bindVertexArray(vao);
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, quadVbo);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, GlConst.FLOAT, false, 8, 0);
+        List.range(1, 5) |> List.forEach(i -> {
+            gl.enableVertexAttribArray(i);
+            gl.vertexAttribDivisor(i, 1)
+        });
+        pointBillboardValues(gl, vbo, 0);
+        gl.bindVertexArray(0);
+        (vao, vbo)
 }
