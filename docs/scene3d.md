@@ -91,7 +91,7 @@ let flashlight = { color = Color.rgb(1.0, 0.95, 0.85), intensity = 3.0, range = 
   動かない街灯の地面の光の溜まりを全部出したいなら、頂点の色か lightmap（ベイク）に入れる
 - 8 本を超える場面は、7・8 番目の光が元の強さより暗く描かれる。全部の光を元の強さで出したいなら 8 本以下にまとめる。
   光を 8 本から 9 本へ増やしたコマでは、7・8 番目がその場で暗くなる（光そのものが増えるので、つなぎはしない）
-- F3 の診断の `droppedPointLights` と `Scene3d.droppedLightsOf` は「渡した本数 − 8」。画面の外で落とした光も数える（カメラを回すたびに数が揺れないように）
+- F3 の診断の `droppedPointLights` と `Scene3d.droppedLightsOf` は「渡した本数 − 8」。画面の外で落とした光も数える（カメラを回すたびに数が揺れないように）。画面なしのテストで 1 コマの合計を見るのは `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`
 
 ### 点光源の影（街灯・たいまつの放射状の影）
 
